@@ -4,5 +4,78 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"extensions": {
+		"recommendations": [
+			// zh-hans
+			"ms-ceintl.vscode-language-pack-zh-hans",
+			// c/c++
+			"ms-vscode.cpptools",
+			"ms-vscode.cpptools-extension-pack",
+			"ms-vscode.cpptools-themes",
+			// python
+			"ms-python.python",
+			"ms-python.debugpy",
+			"ms-python.black-formatter",
+			"ms-python.vscode-pylance",
+			// pdf预览
+			"tomoki1207.pdf",
+			// markdown格式化
+			"DavidAnson.vscode-markdownlint",
+			"yzhang.markdown-all-in-one",
+			// "shd101wyy.markdown-preview-enhanced",
+			// jinja语法高亮
+			"samuelcolvin.jinjahtml",
+			// toml格式化
+			"tamasfe.even-better-toml",
+			// yaml格式化
+			"redhat.vscode-yaml"
+		]
+	},
+	"settings": {
+		"editor.formatOnPaste": true,
+		"editor.formatOnSave": true,
+		"editor.formatOnType": true,
+		"files.autoGuessEncoding": true,
+		"files.insertFinalNewline": true,
+		"files.trimFinalNewlines": true,
+		"files.trimTrailingWhitespace": true,
+		// c/c++
+		"C_Cpp.clang_format_fallbackStyle": "LLVM",
+		"C_Cpp.formatting": "clangFormat",
+		"C_Cpp.autocompleteAddParentheses": true,
+		"C_Cpp.default.cppStandard": "c++14",
+		"C_Cpp.default.cStandard": "c11",
+		// git
+		"git.rebaseWhenSync": true,
+		"git.autofetch": "all",
+		"git.pruneOnFetch": true,
+		"git.pullBeforeCheckout": true,
+		// toml
+		"evenBetterToml.formatter.trailingNewline": true,
+		"evenBetterToml.formatter.alignComments": true,
+		"evenBetterToml.formatter.alignEntries": true,
+		"evenBetterToml.formatter.allowedBlankLines": 3,
+		// python
+		"python.analysis.autoFormatStrings": false,
+		"python.analysis.autoImportCompletions": true,
+		"python.terminal.executeInFileDir": true,
+		"python.analysis.completeFunctionParens": true,
+		"[python]": {
+			"editor.defaultFormatter": "ms-python.black-formatter"
+		},
+		"black-formatter.args": [
+			"--line-length=128"
+			// "--extend-exclude=rtos/**/*.py"
+		],
+		// markdown
+		"[markdown]": {
+			"editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
+		},
+		"files.associations": {
+			".clang-format-ignore": "ignore",
+			"*.jinja": "jinja",
+			"*.hpp.jinja": "jinja-cpp",
+			"memory": "cpp"
+		}
+	}
 }

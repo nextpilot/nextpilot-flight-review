@@ -7,7 +7,7 @@ nextpilot飞行日志分析工具。该工具借鉴了[PlotJuggler]()、[PX4-fli
 ### 支持的数据源（文件和流）
 
 - CSV
-- [ULOG]((https://dev.px4.io/v1.9.0/en/log/ulog_file_format.html))，PX4飞控日志记录格式
+- [ULOG](https://dev.px4.io/v1.9.0/en/log/ulog_file_format.html)，PX4飞控日志记录格式
 
 ### 使用的三方库
 
