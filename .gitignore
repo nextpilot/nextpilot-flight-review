@@ -23,6 +23,8 @@ tags
 .DS_Store
 .directory
 build
+.qtc_clangd
+.qmake.stash
 *.debug
 Makefile*
 *.prl

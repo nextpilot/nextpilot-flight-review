@@ -33,4 +33,4 @@ endif()
 
 include(helper)
 message(STATUS "${CMAKE_CURRENT_SOURCE_DIR}")
-add_all_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR})
+add_all_subdirectory(${CMAKE_CURRENT_SOURCE_DIR})
