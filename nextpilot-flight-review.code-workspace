@@ -76,6 +76,7 @@
 			"*.jinja": "jinja",
 			"*.hpp.jinja": "jinja-cpp",
 			"memory": "cpp"
-		}
+		},
+		"cmakeFormat.exePath": "cmake-format"
 	}
 }

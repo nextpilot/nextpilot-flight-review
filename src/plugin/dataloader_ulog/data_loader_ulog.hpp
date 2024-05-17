@@ -18,6 +18,9 @@
 
 namespace nextpilot {
 
+class QwtSeriesUlog : public QwtSeriesData<QPointF> {
+};
+
 class DataLoaderUlog : public DataLoader {
     Q_OBJECT
 #if QT_VERSION >= 0x050000
@@ -32,6 +35,8 @@ public:
     const char *name() const override {
         return "DataLoader ULog";
     }
+
+    QwtSeriesData<QPointF> *getSeriesData(QString name) override;
 
 private:
     std::string _default_time_axis;

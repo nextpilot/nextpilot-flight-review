@@ -6,18 +6,20 @@
 #include <QMenu>
 #include <QWidget>
 #include <QDomDocument>
+#include "qwt_series_data.h"
 
 namespace nextpilot {
 
-class DataLoadIfo {
-    QString url;
-};
 
 class DataLoader : public QObject {
 public:
     DataLoader() = default;
 
     virtual ~DataLoader() = default;
+
+    virtual QwtSeriesData<QPointF> *getDataSeries(QString name) {
+        return nullptr;
+    }
 };
 
 using DataLoaderPtr = std::shared_ptr<DataLoader>;

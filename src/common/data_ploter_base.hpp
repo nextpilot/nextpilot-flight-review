@@ -8,21 +8,17 @@
  * Copyright All Reserved © 2015-2024 NextPilot Development Team
  ******************************************************************/
 
-#include "data_loader_ulog.hpp"
+#ifndef __DATA_PLOTER_BASE_H__
+#define __DATA_PLOTER_BASE_H__
 
-namespace nextpilot {
-
-DataLoaderUlog::DataLoaderUlog() :
-    _main_win{nullptr} {
-    for (QWidget *widget : qApp->topLevelWidgets()) {
-        if (widget->inherits("QMainWindow")) {
-            _main_win = widget;
-            break;
-        }
+template <typename TimeType, typename ValueType>
+class TimeSeriesBase {
+    virtual ValueType &getValueAt(TimeType) {
     }
-}
+};
 
-DataLoaderUlog::~DataLoaderUlog() {
-}
+class PlotDataMapRef {
+};
 
-} // namespace nextpilot
+
+#endif // __DATA_PLOTER_BASE_H__
