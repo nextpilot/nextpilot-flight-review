@@ -1,4 +1,4 @@
-/*****************************************************************
+﻿/*****************************************************************
  *     _   __             __   ____   _  __        __
  *    / | / /___   _  __ / /_ / __ \ (_)/ /____   / /_
  *   /  |/ // _ \ | |/_// __// /_/ // // // __ \ / __/
@@ -14,18 +14,20 @@
 #include <QObject>
 #include <QtPlugin>
 #include <QWidget>
-#include "data_loader_base.hpp"
+#include "data_source_base.hpp"
+#include "ulog_cpp/data_container.hpp"
+#include "ulog_cpp/reader.hpp"
 
 namespace nextpilot {
 
 class QwtSeriesUlog : public QwtSeriesData<QPointF> {
 };
 
-class DataLoaderUlog : public DataLoader {
+class DataLoaderUlog : public DataSourceBase {
     Q_OBJECT
 #if QT_VERSION >= 0x050000
-    Q_PLUGIN_METADATA(IID, "nextpilot.plugin.dataloader")
-    Q_INTERFACES(DataLoader)
+    Q_PLUGIN_METADATA(IID "nextpilot.plugin.DataSource")
+    Q_INTERFACES(nextpilot::DataSourceBase)
 #endif
 
 public:
@@ -36,9 +38,14 @@ public:
         return "DataLoader ULog";
     }
 
+    bool readDataFromFile();
+
     QwtSeriesData<QPointF> *getSeriesData(QString name) override;
 
 private:
+    std::shared_ptr<ulog_cpp::DataContainer> _container{std::make_shared<ulog_cpp::DataContainer>(ulog_cpp::DataContainer::StorageConfig::FullLog)};
+    ulog_cpp::Reader _reader{_container};
+
     std::string _default_time_axis;
     QWidget    *_main_win;
 };

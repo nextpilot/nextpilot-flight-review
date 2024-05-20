@@ -23,6 +23,9 @@ tags
 .DS_Store
 .directory
 build
+debug
+release
+.vs
 .qtc_clangd
 .qmake.stash
 *.debug

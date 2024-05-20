@@ -1,11 +1,12 @@
-/****************************************************************************
+﻿/****************************************************************************
  * Copyright (c) 2023 PX4 Development Team.
  * SPDX-License-Identifier: BSD-3-Clause
  ****************************************************************************/
 
 #include "simple_writer.hpp"
 
-#include <unistd.h>
+// #include <unistd.h>
+#include <io.h>
 
 namespace ulog_cpp {
 

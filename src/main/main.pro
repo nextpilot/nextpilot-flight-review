@@ -30,6 +30,12 @@ TRANSLATIONS += \
 CONFIG += lrelease
 CONFIG += embed_translations
 
+# add qwt lib
+LIBS += -L$$PWD/../3rdparty/qwt/lib -lqwtd
+LIBS += -L$$PWD/../3rdparty/qwt/lib -lqwt
+INCLUDEPATH += $$PWD/../3rdparty/qwt/src
+
+# add SARibbon lib
 include($$PWD/../3rdparty/SARibbon/src/SARibbon.pri)
 
 # Default rules for deployment.
