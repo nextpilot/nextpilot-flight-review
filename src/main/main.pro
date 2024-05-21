@@ -1,14 +1,15 @@
-QT       += core gui
+QT       += core gui widgets xml
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
+CONFIG += debug_and_release
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
-TARGET = Nextpilot-Flight-review
+TARGET = Nextpilot-Flight-Review
 TEMPLATE = app
 
 SOURCES += \
@@ -25,18 +26,19 @@ RESOURCES += \
     resources.qrc
 
 TRANSLATIONS += \
-    ../language/nextpilot-flight-review_zh_CN.ts
+    $$PWD/../language/nextpilot-flight-review_zh_CN.ts
 
 CONFIG += lrelease
 CONFIG += embed_translations
 
+# add ads lib
+#include($$PWD/../3rdparty/Qt-Advanced-Docking-System/importAdsLib.pri)
+
 # add qwt lib
-LIBS += -L$$PWD/../3rdparty/qwt/lib -lqwtd
-LIBS += -L$$PWD/../3rdparty/qwt/lib -lqwt
-INCLUDEPATH += $$PWD/../3rdparty/qwt/src
+#include($$PWD/../3rdparty/qwt/importQwtLib.pri)
 
 # add SARibbon lib
-include($$PWD/../3rdparty/SARibbon/src/SARibbon.pri)
+include($$PWD/../3rdparty/SARibbon/importSARibbonBarLib.pri)
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

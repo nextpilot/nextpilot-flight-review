@@ -30,6 +30,15 @@ DataLoaderCSV::DataLoaderCSV() {
 DataLoaderCSV::~DataLoaderCSV() {
 }
 
+//bool DataLoaderCSV::previewFile(QString filename, QString delimiter, int timestamp_index, QString timestamp_format) {
+//    QString line = file.readLine();
+//    if (line.isEmpty()) {
+//        return false;
+//    }
+
+//    return parseColName(line);
+//}
+
 bool DataLoaderCSV::parseColName(QString line) {
     QString     delimeter = "\\s+|,";
     QStringList names     = line.split(QRegularExpression(delimeter));

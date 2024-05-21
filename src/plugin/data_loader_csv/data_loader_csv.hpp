@@ -49,6 +49,8 @@ private:
     int         _timestamp_index = TIME_INDEX_NOT_DEFINED;
     //
     std::vector<std::string> _column_names;
+    // 预览行
+
 };
 
 } // namespace nextpilot
