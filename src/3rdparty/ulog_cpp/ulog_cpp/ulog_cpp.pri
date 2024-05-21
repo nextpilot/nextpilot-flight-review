@@ -1,5 +1,7 @@
 CONFIG += c++17
 
+#SOURCES += $$files($$PWD/*.c)
+
 SOURCES += $$PWD/data_container.cpp \
            $$PWD/messages.cpp       \
            $$PWD/reader.cpp

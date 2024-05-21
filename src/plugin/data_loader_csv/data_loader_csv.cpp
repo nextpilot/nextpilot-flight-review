@@ -16,7 +16,7 @@
 #include <QSettings>
 #include <QMainWindow>
 #include <QMessageBox>
-#include <QSyntaxStyle>
+//#include <QSyntaxStyle>
 #include <QProgressDialog>
 #include <QRegularExpression>
 // #include <stdexcept>

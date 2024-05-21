@@ -154,6 +154,7 @@
 			"xstddef": "cpp",
 			"xtr1common": "cpp"
 		},
-		"cmakeFormat.exePath": "cmake-format"
+		"cmakeFormat.exePath": "cmake-format",
+		"cmake.options.statusBarVisibility": "visible"
 	}
 }
