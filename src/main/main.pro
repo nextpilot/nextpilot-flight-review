@@ -32,10 +32,10 @@ CONFIG += lrelease
 CONFIG += embed_translations
 
 # add ads lib
-#include($$PWD/../3rdparty/Qt-Advanced-Docking-System/importAdsLib.pri)
+include($$PWD/../3rdparty/Qt-Advanced-Docking-System/importAdsLib.pri)
 
 # add qwt lib
-#include($$PWD/../3rdparty/qwt/importQwtLib.pri)
+include($$PWD/../3rdparty/qwt/importQwtLib.pri)
 
 # add SARibbon lib
 include($$PWD/../3rdparty/SARibbon/importSARibbonBarLib.pri)

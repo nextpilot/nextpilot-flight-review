@@ -3,14 +3,17 @@
 
 #include <QMainWindow>
 #include "SARibbonMainWindow.h"
-
+#include "DockManager.h"
 
 QT_BEGIN_NAMESPACE
-namespace Ui { class MainWindow; }
+
+namespace Ui {
+class MainWindow;
+}
+
 QT_END_NAMESPACE
 
-class MainWindow : public SARibbonMainWindow
-{
+class MainWindow : public SARibbonMainWindow {
     Q_OBJECT
 
 public:
@@ -19,5 +22,7 @@ public:
 
 private:
     Ui::MainWindow *ui;
+
+    ads::CDockManager *_dock_manager;
 };
 #endif // MAINWINDOW_H
