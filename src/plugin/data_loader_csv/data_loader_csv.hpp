@@ -34,17 +34,22 @@ public:
         return "DataLoader CSV";
     }
 
+    bool parseColName(QString line);
     bool parseHeader(QFile &file);
     bool readDataFromFile();
 
+    static constexpr int TIME_INDEX_NOT_DEFINED = -2;
+    static constexpr int TIME_INDEX_GENERATED   = -1;
 
 private:
     // 分隔符
     std::vector<char> _delimeter;
     // 时间轴
-    std::string _timestamp_name = "_ROW_INDEX_";
+    std::string _timestamp_name  = "_ROW_INDEX_";
+    int         _timestamp_index = TIME_INDEX_NOT_DEFINED;
     //
     std::vector<std::string> _column_names;
+};
 
 } // namespace nextpilot
 
