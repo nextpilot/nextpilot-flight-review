@@ -14,10 +14,18 @@ TEMPLATE = app
 
 SOURCES += \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    plot/plot_axes.cpp \
+    plot/plot_figure.cpp \
+    plot/tabbed_plot_widget.cpp \
+    project_explorer.cpp
 
 HEADERS += \
-   mainwindow.h
+   mainwindow.h \
+   plot/plot_axes.hpp \
+   plot/plot_figure.hpp \
+   plot/tabbed_plot_widget.hpp \
+   project_explorer.hpp
 
 FORMS += \
     mainwindow.ui
