@@ -45,11 +45,12 @@ MainWindow::MainWindow(QWidget *parent) :
     // dock管理器
     createDockManager();
 
+    // 项目浏览器窗口
+    createPrjectExplorer();
+
     // 绘图窗口(中心窗口)
     createTabbedPlot();
 
-    // 项目浏览器窗口
-    createPrjectExplorer();
 
     // 属性窗口
 }
@@ -89,9 +90,13 @@ void MainWindow::createRibbon() {
 
 void MainWindow::createDockManager() {
     // 配置docker
+    ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaHasTabsMenuButton, true);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaHasUndockButton, true);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, false);
     ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize, true);
     ads::CDockManager::setConfigFlag(ads::CDockManager::XmlCompressionEnabled, false);
     ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting, true);
+
     // must be after the config flags!
     ads::CDockManager::setAutoHideConfigFlags(ads::CDockManager::DefaultAutoHideConfig);
     ads::CDockManager::setAutoHideConfigFlag(ads::CDockManager::AutoHideShowOnMouseOver, true);
@@ -100,7 +105,9 @@ void MainWindow::createDockManager() {
     // Create the dock manager after the ui is setup. Because the
     // parent parameter is a QMainWindow the dock manager registers
     // itself as the central widget as such the ui must be set up first.
-    _dock_manager = new ads::CDockManager(this);
+    if (!_dock_manager) {
+        _dock_manager = new ads::CDockManager(this);
+    }
 }
 
 void MainWindow::createPrjectExplorer() {
@@ -119,5 +126,10 @@ void MainWindow::createTabbedPlot() {
     _main_tabbed_plot      = new TabbedPlotWidget(this);
     ads::CDockWidget *dock = new ads::CDockWidget("Tabbed Plot");
     dock->setWidget(_main_tabbed_plot);
-    _dock_manager->setCentralWidget(dock);
+    _dock_manager->addDockWidget(ads::RightDockWidgetArea, dock);
+    // _dock_manager->setCentralWidget(dock);
+
+    //    auto* wdg = new QPushButton(this);
+    //    dock->setWidget(wdg);
+    //   _dock_manager->addDockWidget(ads::CenterDockWidgetArea,dock);
 }
