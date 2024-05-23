@@ -15,7 +15,7 @@ class MainWindow;
 
 QT_END_NAMESPACE
 
-class MainWindow : public SARibbonMainWindow {
+class MainWindow : public SARibbonMainWindow /*, public ads::DockManager */ {
     Q_OBJECT
 
 public:
@@ -24,16 +24,20 @@ public:
 
 
     void createRibbon();
+    void createDockManager();
+    void createPrjectExplorer();
+    void createTabbedPlot();
+
 private:
     Ui::MainWindow *ui;
 
     // ribbon工具栏
-    SARibbonBar* _ribbon_bar;
+    SARibbonBar *_ribbon_bar;
 
     // ads管理器
     ads::CDockManager *_dock_manager;
     // 项目浏览器
-    ProjectExplorer* _project_explorer;
+    ProjectExplorer *_project_explorer;
     // 绘图窗口
     TabbedPlotWidget *_main_tabbed_plot;
     // 属性窗口

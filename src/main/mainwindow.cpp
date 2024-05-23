@@ -30,56 +30,36 @@
 #include "DockComponentsFactory.h"
 
 MainWindow::MainWindow(QWidget *parent) :
-    SARibbonMainWindow(parent), ui(new Ui::MainWindow) {
-    ui->setupUi(this);
+    SARibbonMainWindow(parent),
+    // ads::CDockManager(this),
+    ui(new Ui::MainWindow) {
     setAcceptDrops(true);
 
+    // 创建ui界面
+    ui->setupUi(this);
+
+
+    // 创建ribbon菜单
     createRibbon();
 
-
-    // CDockManager::setConfigFlag(CDockManager::OpaqueSplitterResize, true);
-    // CDockManager::setConfigFlag(CDockManager::XmlCompressionEnabled, false);
-    // CDockManager::setConfigFlag(CDockManager::FocusHighlighting, true);
-    // CDockManager::setAutoHideConfigFlags(CDockManager::DefaultAutoHideConfig);
-
-    // Create the dock manager after the ui is setup. Because the
-    // parent parameter is a QMainWindow the dock manager registers
-    // itself as the central widget as such the ui must be set up first.
-    _dock_manager = new ads::CDockManager(this);
-
+    // dock管理器
+    createDockManager();
 
     // 绘图窗口(中心窗口)
-    {
-        _main_tabbed_plot      = new TabbedPlotWidget(this);
-        ads::CDockWidget *dock = new ads::CDockWidget("Tabbed Plot");
-        dock->setWidget(_main_tabbed_plot);
-        _dock_manager->setCentralWidget(dock);
-    }
+    createTabbedPlot();
 
     // 项目浏览器窗口
-    {
-        _project_explorer   = new ProjectExplorer(this);
-        ads::CDockWidget *dock = new ads::CDockWidget("Project Explore");
-        dock->setWidget(_project_explorer);
-        dock->setMinimumSizeHintMode(ads::CDockWidget::MinimumSizeHintFromDockWidget);
-        dock->resize(250, 150);
-        dock->setMinimumSize(200, 150);
-        _dock_manager->addDockWidget(ads::DockWidgetArea::LeftDockWidgetArea, dock);
-
-        // ui->menuView->addAction(dock->toggleViewAction());
-    }
+    createPrjectExplorer();
 
     // 属性窗口
-
-
 }
 
 MainWindow::~MainWindow() {
     delete ui;
 }
 
-void MainWindow::createRibbon(){
-   _ribbon_bar = ribbonBar();
+void MainWindow::createRibbon() {
+    _ribbon_bar = ribbonBar();
     _ribbon_bar->applicationButton()->setText(tr("  HOME  "));
     //
     SARibbonCategory *main   = _ribbon_bar->addCategoryPage(tr("IMPORT"));
@@ -105,5 +85,39 @@ void MainWindow::createRibbon(){
     //SARibbonCategory* data = bar->addCategoryPage(tr("Data"));
 
     //
+}
 
+void MainWindow::createDockManager() {
+    // 配置docker
+    ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize, true);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::XmlCompressionEnabled, false);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting, true);
+    // must be after the config flags!
+    ads::CDockManager::setAutoHideConfigFlags(ads::CDockManager::DefaultAutoHideConfig);
+    ads::CDockManager::setAutoHideConfigFlag(ads::CDockManager::AutoHideShowOnMouseOver, true);
+
+
+    // Create the dock manager after the ui is setup. Because the
+    // parent parameter is a QMainWindow the dock manager registers
+    // itself as the central widget as such the ui must be set up first.
+    _dock_manager = new ads::CDockManager(this);
+}
+
+void MainWindow::createPrjectExplorer() {
+    _project_explorer      = new ProjectExplorer(this);
+    ads::CDockWidget *dock = new ads::CDockWidget("Project Explore");
+    dock->setWidget(_project_explorer);
+    dock->setMinimumSizeHintMode(ads::CDockWidget::MinimumSizeHintFromDockWidget);
+    dock->resize(250, 150);
+    dock->setMinimumSize(200, 150);
+    _dock_manager->addDockWidget(ads::DockWidgetArea::LeftDockWidgetArea, dock);
+
+    // ui->menuView->addAction(dock->toggleViewAction());
+}
+
+void MainWindow::createTabbedPlot() {
+    _main_tabbed_plot      = new TabbedPlotWidget(this);
+    ads::CDockWidget *dock = new ads::CDockWidget("Tabbed Plot");
+    dock->setWidget(_main_tabbed_plot);
+    _dock_manager->setCentralWidget(dock);
 }
