@@ -45,6 +45,12 @@ TabbedPlotWidget::~TabbedPlotWidget() {
 }
 
 PlotFigure *TabbedPlotWidget::addTab(QString name) {
+    ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaHasTabsMenuButton, false);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaHasUndockButton, false);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, true);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::EqualSplitOnInsertion, true);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize, true);
+
     PlotFigure *page = new PlotFigure(this);
     QTabWidget::addTab(page, name);
 

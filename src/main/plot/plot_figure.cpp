@@ -9,41 +9,35 @@
  ******************************************************************/
 
 #include "plot_figure.hpp"
+#include "DockComponentsFactory.h"
+#include "DockAreaTitleBar.h"
+#include "DockAreaWidget.h"
+
+class SplittableComponentsFactory : public ads::CDockComponentsFactory {
+public:
+    ads::CDockAreaTitleBar *createDockAreaTitleBar(ads::CDockAreaWidget *dock_area) const override {
+        auto title_bar = new ads::CDockAreaTitleBar(dock_area);
+        title_bar->setVisible(false);
+        return title_bar;
+    }
+};
 
 PlotFigure::PlotFigure(QWidget *parent) :
     ads::CDockManager(parent) {
-    // ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaHasTabsMenuButton, false);
-    // ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaHasUndockButton, false);
-    // ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, true);
-    // ads::CDockManager::setConfigFlag(ads::CDockManager::EqualSplitOnInsertion, true);
-    // ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize, true);
-    // setStyleSheet("QWidget { background-color: #1e1e1e; }");
-    // addAxes("");
+    ads::CDockComponentsFactory::setFactory(new SplittableComponentsFactory());
 
-
-    //    {
-    //        // Create example content label - this can be any application specific
-    //        // widget
-    //        QLabel *l = new QLabel();
-    //        l->setWordWrap(true);
-    //        l->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    //        l->setText("Lorem ipsum dolor sit amet, consectetuer adipiscing elit. ");
-
-    //        // Create a dock widget with the title Label 1 and set the created label
-    //        // as the dock widget content
-    //        ads::CDockWidget *DockWidget = new ads::CDockWidget("Label 1");
-    //        DockWidget->setWidget(l);
-
-
-    //        // Add the toggleViewAction of the dock widget to the menu to give
-    //        // the user the possibility to show the dock widget if it has been closed
-    //        //ui->menuView->addAction(DockWidget->toggleViewAction());
-
-    //        // Add the dock widget to the top dock widget area
-    //        _dock_manager->addDockWidget(ads::TopDockWidgetArea, DockWidget);
-    //    }
+    // 先添加2个坐标系
+    addAxes("axes 1");
+    addAxes("axes 2");
 }
 
-PlotAxes *PlotFigure::addAxes(QString) {
-    return nullptr;
+PlotFigure::~PlotFigure() {
+}
+
+PlotAxes *PlotFigure::addAxes(QString title) {
+    PlotAxes *axes = new PlotAxes(title, this);
+    auto     *area = addDockWidget(ads::TopDockWidgetArea, axes);
+    area->setAllowedAreas(ads::OuterDockAreas);
+
+    return axes;
 }

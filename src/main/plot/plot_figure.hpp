@@ -22,6 +22,7 @@ class PlotFigure : public ads::CDockManager {
 
 public:
     PlotFigure(QWidget *parent);
+    ~PlotFigure() override;
 
     PlotAxes *addAxes(QString name);
     PlotAxes *addSubplot();
