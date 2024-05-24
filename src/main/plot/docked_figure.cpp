@@ -8,7 +8,7 @@
  * Copyright All Reserved © 2015-2024 NextPilot Development Team
  ******************************************************************/
 
-#include "plot_figure.hpp"
+#include "docked_figure.hpp"
 #include "DockComponentsFactory.h"
 #include "DockAreaTitleBar.h"
 #include "DockAreaWidget.h"
@@ -22,7 +22,7 @@ public:
     }
 };
 
-PlotFigure::PlotFigure(QWidget *parent) :
+DockedFigure::DockedFigure(QWidget *parent) :
     ads::CDockManager(parent) {
     ads::CDockComponentsFactory::setFactory(new SplittableComponentsFactory());
 
@@ -31,12 +31,12 @@ PlotFigure::PlotFigure(QWidget *parent) :
     addAxes("axes 2");
 }
 
-PlotFigure::~PlotFigure() {
+DockedFigure::~DockedFigure() {
 }
 
-PlotAxes *PlotFigure::addAxes(QString title) {
-    PlotAxes *axes = new PlotAxes(title, this);
-    auto     *area = addDockWidget(ads::TopDockWidgetArea, axes);
+DockedAxes *DockedFigure::addAxes(QString title) {
+    DockedAxes *axes = new DockedAxes(title, this);
+    auto       *area = addDockWidget(ads::TopDockWidgetArea, axes);
     area->setAllowedAreas(ads::OuterDockAreas);
 
     return axes;

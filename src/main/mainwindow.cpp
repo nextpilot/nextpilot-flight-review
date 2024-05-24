@@ -38,19 +38,14 @@ MainWindow::MainWindow(QWidget *parent) :
     // 创建ui界面
     ui->setupUi(this);
 
-
     // 创建ribbon菜单
     createRibbon();
-
-    // dock管理器
-    createDockManager();
 
     // 项目浏览器窗口
     createPrjectExplorer();
 
     // 绘图窗口(中心窗口)
     createTabbedPlot();
-
 
     // 属性窗口
 }
@@ -66,8 +61,8 @@ void MainWindow::createRibbon() {
     SARibbonCategory *main   = _ribbon_bar->addCategoryPage(tr("IMPORT"));
     SARibbonPannel   *pannel = main->addPannel(tr("actions"));
     pannel->addAction(tr("action1"), QIcon(":/core/resources/svg/grid.svg"), QToolButton::InstantPopup);
-    pannel->addAction(tr("action2"), QIcon(":/app/icon/customize0.svg"), QToolButton::InstantPopup);
-    pannel->addAction(tr("action3"), QIcon(":/app/icon/save.svg"), QToolButton::InstantPopup);
+    // pannel->addAction(tr("action2"), QIcon(":/app/icon/customize0.svg"), QToolButton::InstantPopup);
+    // pannel->addAction(tr("action3"), QIcon(":/app/icon/save.svg"), QToolButton::InstantPopup);
     pannel->addAction(tr("action4"), QIcon(":/core/resources/svg/grid.svg"), QToolButton::InstantPopup, SARibbonPannelItem::Small);
     pannel->addAction(tr("action5"), QIcon(":/core/resources/svg/grid.svg"), QToolButton::InstantPopup, SARibbonPannelItem::Small);
     pannel->addAction(tr("action6"), QIcon(":/core/resources/svg/grid.svg"), QToolButton::InstantPopup, SARibbonPannelItem::Small);
@@ -92,7 +87,7 @@ void MainWindow::createDockManager() {
     // 配置docker
     ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaHasTabsMenuButton, true);
     ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaHasUndockButton, true);
-    ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, false);
+    // ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, false);
     ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize, true);
     ads::CDockManager::setConfigFlag(ads::CDockManager::XmlCompressionEnabled, false);
     ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting, true);
@@ -111,6 +106,7 @@ void MainWindow::createDockManager() {
 }
 
 void MainWindow::createPrjectExplorer() {
+    createDockManager();
     _project_explorer      = new ProjectExplorer(this);
     ads::CDockWidget *dock = new ads::CDockWidget("Project Explore");
     dock->setWidget(_project_explorer);
@@ -123,11 +119,12 @@ void MainWindow::createPrjectExplorer() {
 }
 
 void MainWindow::createTabbedPlot() {
+    createDockManager();
     _main_tabbed_plot      = new TabbedPlotWidget(this);
     ads::CDockWidget *dock = new ads::CDockWidget("Tabbed Plot");
     dock->setWidget(_main_tabbed_plot);
     _dock_manager->addDockWidget(ads::RightDockWidgetArea, dock);
-    // _dock_manager->setCentralWidget(dock);
+    //_dock_manager->setCentralWidget(dock);
 
     //    auto* wdg = new QPushButton(this);
     //    dock->setWidget(wdg);

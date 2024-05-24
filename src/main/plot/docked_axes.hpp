@@ -34,12 +34,12 @@
 #include "qwt_symbol.h"
 #include "qwt_text.h"
 
-class PlotAxes : public ads::CDockWidget {
+class DockedAxes : public ads::CDockWidget {
     Q_OBJECT
 
 public:
-    PlotAxes(QWidget *parent = nullptr);
-    PlotAxes(const QString &title, QWidget *parent = nullptr);
+    DockedAxes(QWidget *parent = nullptr);
+    DockedAxes(const QString &title, QWidget *parent = nullptr);
 
 
 private:

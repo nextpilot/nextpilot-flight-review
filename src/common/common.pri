@@ -1,6 +1,7 @@
 QT += xml
 
-HEADERS += $$PWD/data_source_base.hpp
+HEADERS += $$PWD/data_source_base.hpp \
+           $$PWD/load_svg.hpp
 
 INCLUDEPATH += $$PWD
 

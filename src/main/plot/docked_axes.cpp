@@ -8,13 +8,13 @@
  * Copyright All Reserved © 2015-2024 NextPilot Development Team
  ******************************************************************/
 
-#include "plot_axes.hpp"
+#include "docked_axes.hpp"
 
-PlotAxes::PlotAxes(QWidget *parent) :
-    PlotAxes("plot", parent) {
+DockedAxes::DockedAxes(QWidget *parent) :
+    DockedAxes("plot", parent) {
 }
 
-PlotAxes::PlotAxes(const QString &title, QWidget *parent) :
+DockedAxes::DockedAxes(const QString &title, QWidget *parent) :
     ads::CDockWidget(title, parent) {
     setFrameShape(QFrame::NoFrame);
     setFeature(ads::CDockWidget::DockWidgetFloatable, false);

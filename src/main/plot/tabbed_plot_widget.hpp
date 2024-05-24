@@ -17,7 +17,7 @@
 #include <QTableWidget>
 #include <QDomDocument>
 #include <QPushButton>
-#include "plot_figure.hpp"
+#include "docked_figure.hpp"
 
 class TabbedPlotWidget : public QTabWidget {
     Q_OBJECT
@@ -26,11 +26,23 @@ public:
     explicit TabbedPlotWidget(QWidget *parent = nullptr);
     ~TabbedPlotWidget() override;
 
-    PlotFigure *addTab(QString name);
-    // PlotFigure *addTab(Widget *page, const QString &label);
+    DockedFigure *addTab(QString name);
+    // DockedFigure *addTab(Widget *page, const QString &label);
+
+protected:
+    virtual bool eventFilter(QObject *obj, QEvent *event) override;
+
+private slots:
+    void on_tabBar_doubleClicked();
+    void on_tabWidget_currentChanged(int index);
+    void on_tabWidget_tabCloseRequested(int index);
+    void on_addTabButton_pressed();
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     QPushButton *_button_add_new_tab;
+
+    int _tab_index_count = 0;
 };
 
 #endif // __TABBED_PLOT_WIDGET_H__

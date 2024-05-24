@@ -15,16 +15,16 @@
 #include <QDomElement>
 #include <QXmlStreamReader>
 #include "DockManager.h"
-#include "plot_axes.hpp"
+#include "docked_axes.hpp"
 
-class PlotFigure : public ads::CDockManager {
+class DockedFigure : public ads::CDockManager {
     Q_OBJECT
 
 public:
-    PlotFigure(QWidget *parent);
-    ~PlotFigure() override;
+    DockedFigure(QWidget *parent);
+    ~DockedFigure() override;
 
-    PlotAxes *addAxes(QString name);
-    PlotAxes *addSubplot();
+    DockedAxes *addAxes(QString name);
+    DockedAxes *addSubplot();
 };
 #endif // __PLOT_FIGURE_H__

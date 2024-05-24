@@ -1,4 +1,4 @@
-QT       += core gui widgets xml
+QT       += core gui widgets xml svg
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -15,15 +15,15 @@ TEMPLATE = app
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
-    plot/plot_axes.cpp \
-    plot/plot_figure.cpp \
+    plot/docked_axes.cpp \
+    plot/docked_figure.cpp \
     plot/tabbed_plot_widget.cpp \
     project_explorer.cpp
 
 HEADERS += \
    mainwindow.h \
-   plot/plot_axes.hpp \
-   plot/plot_figure.hpp \
+   plot/docked_axes.hpp \
+   plot/docked_figure.hpp \
    plot/tabbed_plot_widget.hpp \
    project_explorer.hpp
 
@@ -47,6 +47,9 @@ include($$PWD/../3rdparty/qwt/importQwtLib.pri)
 
 # add SARibbon lib
 include($$PWD/../3rdparty/SARibbon/importSARibbonBarLib.pri)
+
+# add commm lib
+include($$PWD/../common/common.pri)
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
