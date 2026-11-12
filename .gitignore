@@ -1,5 +1,7 @@
 # 构建产物
 /build/
+# SARibbon 的 configure 会在其源码树里生成版本头（不要提交）
+src/3dparty/saribbon/src/SARibbonBar/SARibbonBarVersionInfo.h
 /build-*/
 CMakeCache.txt
 CMakeFiles/

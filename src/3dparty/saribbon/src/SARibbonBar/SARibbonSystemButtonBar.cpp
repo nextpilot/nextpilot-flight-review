@@ -1,0 +1,1146 @@
+#include "SARibbonSystemButtonBar.h"
+#include <QToolButton>
+#include <QResizeEvent>
+#include <QStyle>
+#include <QDebug>
+#include <QScopedPointer>
+#include <QWindowStateChangeEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPaintEvent>
+#include "SARibbonMainWindow.h"
+#include "SARibbonWidget.h"
+#include "SARibbonBar.h"
+#include "SARibbonButtonGroupWidget.h"
+#include "SARibbonUtil.h"
+
+// 为了避免使用此框架的app设置了全局的qpushbutton 的 qss样式影响此按钮，定义了一个类
+
+/**
+ * @brief The SARibbonSystemButtonBar class
+ */
+class SARibbonSystemButtonBar::PrivateData
+{
+    SA_RIBBON_DECLARE_PUBLIC(SARibbonSystemButtonBar)
+public:
+    SARibbonSystemToolButton* buttonClose { nullptr };
+    SARibbonSystemToolButton* buttonMinimize { nullptr };
+    SARibbonSystemToolButton* buttonMaximize { nullptr };
+    int mCloseStretch { 4 };
+    int mMaxStretch { 3 };
+    int mMinStretch { 3 };
+    int mWindowButtonWidth { 35 };
+    int mTitleBarHeight { 28 };
+    Qt::WindowFlags mFlags { Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint };
+    SARibbonButtonGroupWidget* mButtonGroup;
+
+public:
+    PrivateData(SARibbonSystemButtonBar* p) : q_ptr(p)
+    {
+        mButtonGroup = new SARibbonButtonGroupWidget(p);
+        mButtonGroup->setObjectName("SASystemButtonGroup");
+    }
+
+    void setupMinimizeButton(bool on)
+    {
+        SARibbonSystemButtonBar* par = q_ptr;
+
+        if (on) {
+            if (buttonMinimize) {
+                buttonMinimize->hide();
+                buttonMinimize->deleteLater();
+                buttonMinimize = nullptr;
+            }
+            buttonMinimize = new SARibbonSystemToolButton(par);
+            buttonMinimize->setObjectName(QStringLiteral("SAMinimizeWindowButton"));
+            buttonMinimize->setFocusPolicy(Qt::NoFocus);  // 避免铺抓到
+            buttonMinimize->show();
+            par->connect(buttonMinimize, &QAbstractButton::clicked, par, &SARibbonSystemButtonBar::minimizeWindow);
+        } else {
+            if (buttonMinimize) {
+                buttonMinimize->hide();
+                buttonMinimize->deleteLater();
+                buttonMinimize = nullptr;
+            }
+        }
+        updateSize();
+    }
+
+    void setupMaximizeButton(bool on)
+    {
+        SARibbonSystemButtonBar* par = q_ptr;
+
+        if (on) {
+            if (buttonMaximize) {
+                buttonMaximize->hide();
+                buttonMaximize->deleteLater();
+                buttonMaximize = nullptr;
+            }
+            buttonMaximize = new SARibbonSystemToolButton(par);
+            buttonMaximize->setObjectName(QStringLiteral("SAMaximizeWindowButton"));
+            buttonMaximize->setCheckable(true);
+            buttonMaximize->setFocusPolicy(Qt::NoFocus);  // 避免铺抓到
+            //            buttonMaximize->setIconSize(buttonMaximize->size() * mIconscale);
+            buttonMaximize->show();
+            par->connect(buttonMaximize, &QAbstractButton::clicked, par, &SARibbonSystemButtonBar::maximizeWindow);
+        } else {
+            if (buttonMaximize) {
+                buttonMaximize->hide();
+                buttonMaximize->deleteLater();
+                buttonMaximize = nullptr;
+            }
+        }
+        updateSize();
+    }
+
+    void setupCloseButton(bool on)
+    {
+        SARibbonSystemButtonBar* par = q_ptr;
+
+        if (on) {
+            if (buttonClose) {
+                buttonClose->hide();
+                buttonClose->deleteLater();
+                buttonClose = nullptr;
+            }
+            buttonClose = new SARibbonSystemToolButton(par);
+            buttonClose->setObjectName(QStringLiteral("SACloseWindowButton"));
+            buttonClose->setFocusPolicy(Qt::NoFocus);  // 避免铺抓到
+            // buttonClose->setFlat(true);
+            par->connect(buttonClose, &QAbstractButton::clicked, par, &SARibbonSystemButtonBar::closeWindow);
+            //            buttonClose->setIconSize(buttonClose->size() * mIconscale);
+            buttonClose->show();
+        } else {
+            if (buttonClose) {
+                buttonClose->hide();
+                buttonClose->deleteLater();
+                buttonClose = nullptr;
+            }
+        }
+        updateSize();
+    }
+
+    void updateSize()
+    {
+        resizeElement(q_ptr->size());
+    }
+
+    /**
+     * \if ENGLISH
+     * @brief Resizes and positions all elements in the button bar
+     * @param size New size of the button bar
+     * @details Handles both LTR and RTL layouts: in LTR, system buttons are positioned at the right edge;
+     *          in RTL, system buttons are positioned at the left edge while maintaining the same order (min → max → close)
+     * \endif
+     *
+     * \if CHINESE
+     * @brief 调整按钮栏中所有元素的大小和位置
+     * @param size 按钮栏的新尺寸
+     * @details 同时处理LTR和RTL布局：在LTR模式下，系统按钮位于右边缘；
+     *          在RTL模式下，系统按钮位于左边缘，同时保持相同的顺序（最小化→最大化→关闭）
+     * \endif
+     */
+    void resizeElement(QSize size)
+    {
+        if (SA::saIsRTL()) {
+            int x = 0;
+            if (buttonMinimize) {
+                int w = minButtonWidthHint();
+                buttonMinimize->setGeometry(x, 0, w, size.height());
+                x += w;
+            }
+            if (buttonMaximize) {
+                int w = maxButtonWidthHint();
+                buttonMaximize->setGeometry(x, 0, w, size.height());
+                x += w;
+            }
+            if (buttonClose) {
+                int w = closeButtonWidthHint();
+                buttonClose->setGeometry(x, 0, w, size.height());
+                x += w;
+            }
+            if (mButtonGroup) {
+                mButtonGroup->setGeometry(x, 0, size.width() - x, size.height());
+            }
+        } else {
+            int x = size.width();
+            if (buttonClose) {
+                int w = closeButtonWidthHint();
+                x -= w;
+                buttonClose->setGeometry(x, 0, w, size.height());
+            }
+            if (buttonMaximize) {
+                int w = maxButtonWidthHint();
+                x -= w;
+                buttonMaximize->setGeometry(x, 0, w, size.height());
+            }
+            if (buttonMinimize) {
+                int w = minButtonWidthHint();
+                x -= w;
+                buttonMinimize->setGeometry(x, 0, w, size.height());
+            }
+            if (mButtonGroup) {
+                mButtonGroup->setGeometry(0, 0, x, size.height());
+            }
+        }
+    }
+
+    int closeButtonWidthHint() const
+    {
+        qreal t = mCloseStretch + mMaxStretch + mMinStretch;
+        if (qFuzzyIsNull(t)) {
+            return mWindowButtonWidth;
+        }
+        return (mCloseStretch * (3 * mWindowButtonWidth)) / t;
+    }
+
+    /**
+     * \if ENGLISH
+     * @brief Recalculate the bar's own geometry and all internal elements
+     * @param mainWindow The main window being filtered
+     * @details Shared by the Resize / LayoutDirectionChange / ScreenChangeInternal branches of eventFilter.
+     *          resizeElement() must be called explicitly: on screen or DPI changes the window size may stay
+     *          unchanged, in which case setGeometry() with the same size does not fire a resizeEvent and the
+     *          internal buttons would keep stale geometry (issue #118)
+     * \endif
+     *
+     * \if CHINESE
+     * @brief 重算按钮栏自身几何与所有内部元素
+     * @param mainWindow 被过滤事件的主窗口
+     * @details 由 eventFilter 的 Resize / LayoutDirectionChange / ScreenChangeInternal 分支共用。
+     *          resizeElement() 必须显式调用：屏幕或 DPI 变化时窗口尺寸可能不变，
+     *          setGeometry() 尺寸相同不会触发 resizeEvent，内部按钮将保留旧几何（issue #118）
+     * \endif
+     */
+    void refreshGeometry(SARibbonMainWindow* mainWindow)
+    {
+        SARibbonSystemButtonBar* par = q_ptr;
+        int th = 25;
+        SARibbonBar* ribbonBar = mainWindow->ribbonBar();
+        if (ribbonBar) {
+            th = ribbonBar->titleBarHeight();
+        }
+        if (th != par->height()) {
+            par->setWindowTitleHeight(th);
+        }
+        QRect fr         = mainWindow->geometry();
+        QSize wgSizeHint = par->sizeHint();
+        if (SA::saIsRTL()) {
+            par->setGeometry(0, 0, wgSizeHint.width(), wgSizeHint.height());
+        } else {
+            par->setGeometry(fr.width() - wgSizeHint.width(), 0, wgSizeHint.width(), wgSizeHint.height());
+        }
+        // 把设置好的尺寸给 ribbonbar
+        if (ribbonBar) {
+            ribbonBar->setSystemButtonGroupSize(par->size());
+        }
+        // 显式重算内部按钮几何，不依赖 resizeEvent 的隐式触发
+        resizeElement(par->size());
+    }
+
+
+    int maxButtonWidthHint() const
+    {
+        qreal t = mCloseStretch + mMaxStretch + mMinStretch;
+        if (qFuzzyIsNull(t)) {
+            return mWindowButtonWidth;
+        }
+        return (mMaxStretch * (3 * mWindowButtonWidth)) / t;
+    }
+
+    int minButtonWidthHint() const
+    {
+        qreal t = mCloseStretch + mMaxStretch + mMinStretch;
+        if (qFuzzyIsNull(t)) {
+            return mWindowButtonWidth;
+        }
+        return (mMinStretch * (3 * mWindowButtonWidth)) / t;
+    }
+
+    QSize sizeHint() const
+    {
+        int height = mTitleBarHeight;
+        if (height < 20) {
+            height = 20;
+        }
+        QSize res(0, 0);
+        if (mButtonGroup) {
+            res = mButtonGroup->sizeHint();
+        }
+        res.setHeight(height);
+        if (buttonClose) {
+            res.setWidth(res.width() + closeButtonWidthHint());
+        }
+        if (buttonMaximize) {
+            res.setWidth(res.width() + maxButtonWidthHint());
+        }
+        if (buttonMinimize) {
+            res.setWidth(res.width() + minButtonWidthHint());
+        }
+        return res;
+    }
+};
+
+//===================================================
+// SARibbonSystemToolButton
+//===================================================
+namespace
+{
+// Glyph kinds of the window system buttons
+enum SaSysButtonGlyph
+{
+    SaSysButtonGlyphNone = 0,
+    SaSysButtonGlyphMinimize,
+    SaSysButtonGlyphMaximize,
+    SaSysButtonGlyphRestore,
+    SaSysButtonGlyphClose
+};
+
+/**
+ * \if ENGLISH
+ * @brief Whether the ribbon theme uses a dark title bar background
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 判断ribbon主题的标题栏背景是否为深色
+ * \endif
+ */
+bool saIsDarkRibbonTheme(SARibbonTheme theme)
+{
+    switch (theme) {
+    case SARibbonTheme::RibbonThemeOffice2016Dark:
+    case SARibbonTheme::RibbonThemeOffice2021Dark:
+    case SARibbonTheme::RibbonThemeDark:
+    case SARibbonTheme::RibbonThemeDark2:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/**
+ * \if ENGLISH
+ * @brief Derive a visible glyph color from the ribbon theme of the top level window
+ * @details Fallback used when the glyphColor property was never set (e.g. custom palettes
+ * without the titlebar-icon token or user stylesheets without qproperty-glyphColor)
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 根据顶层窗口的ribbon主题推导可见的图元颜色
+ * @details 作为glyphColor属性未设置时的兜底（例如自定义调色板缺少titlebar-icon标记，
+ * 或用户样式表未包含qproperty-glyphColor的情况）
+ * \endif
+ */
+QColor saAutoGlyphColor(const QWidget* w)
+{
+    const QWidget* top = w ? w->window() : nullptr;
+    SARibbonTheme theme;
+    if (const SARibbonMainWindow* mw = qobject_cast< const SARibbonMainWindow* >(top)) {
+        theme = mw->ribbonTheme();
+    } else if (const SARibbonWidget* rw = qobject_cast< const SARibbonWidget* >(top)) {
+        theme = rw->ribbonTheme();
+    } else {
+        return w ? w->palette().windowText().color() : QColor(Qt::black);
+    }
+    return saIsDarkRibbonTheme(theme) ? QColor(Qt::white) : QColor(Qt::black);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Draw one window system button glyph with a 1 logical pixel pen
+ * @details Vector drawing keeps the glyph sharp at any DPI, the geometry follows the
+ * native Windows 11 caption button proportions (glyph box about 36% of the button size)
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 以1逻辑像素线宽绘制单个窗口系统按钮图元
+ * @details 矢量绘制保证任意DPI下清晰，几何比例参照Windows 11原生标题栏按钮
+ * （图元约为按钮尺寸的36%）
+ * \endif
+ */
+void saDrawSysButtonGlyph(QPainter* painter, const QRectF& buttonRect, int glyph, const QColor& color)
+{
+    const qreal glyphSize = qMin(buttonRect.width(), buttonRect.height()) * 0.36;
+    const QPointF center  = buttonRect.center();
+    QPen pen(color);
+    pen.setWidthF(1.0);
+    pen.setCapStyle(Qt::FlatCap);
+    painter->setPen(pen);
+    painter->setBrush(Qt::NoBrush);
+    switch (glyph) {
+    case SaSysButtonGlyphMinimize: {
+        // 最小化：居中横线
+        painter->drawLine(QPointF(center.x() - glyphSize / 2, center.y()), QPointF(center.x() + glyphSize / 2, center.y()));
+    } break;
+    case SaSysButtonGlyphMaximize: {
+        // 最大化：方框
+        painter->drawRect(QRectF(center.x() - glyphSize / 2, center.y() - glyphSize / 2, glyphSize, glyphSize));
+    } break;
+    case SaSysButtonGlyphRestore: {
+        // 还原：两个错位的方框，只绘制背框露出的部分，避免线条交叉
+        const qreal s  = glyphSize;
+        const qreal x0 = center.x() - s / 2;
+        const qreal y0 = center.y() - s / 2;
+        QPainterPath path;
+        path.moveTo(x0 + s * 0.25, y0 + s * 0.25);
+        path.lineTo(x0 + s * 0.25, y0);
+        path.lineTo(x0 + s, y0);
+        path.lineTo(x0 + s, y0 + s * 0.75);
+        path.lineTo(x0 + s * 0.75, y0 + s * 0.75);
+        path.addRect(QRectF(x0, y0 + s * 0.25, s * 0.75, s * 0.75));
+        painter->drawPath(path);
+    } break;
+    case SaSysButtonGlyphClose: {
+        // 关闭：交叉线
+        const qreal half = glyphSize / 2;
+        painter->drawLine(QPointF(center.x() - half, center.y() - half), QPointF(center.x() + half, center.y() + half));
+        painter->drawLine(QPointF(center.x() + half, center.y() - half), QPointF(center.x() - half, center.y() + half));
+    } break;
+    default:
+        break;
+    }
+}
+
+}  // namespace
+
+/**
+ * \if ENGLISH
+ * @brief Constructs a SARibbonSystemToolButton instance
+ * @param p Parent widget
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 构造一个 SARibbonSystemToolButton 实例
+ * @param p 父窗口部件
+ * \endif
+ */
+SARibbonSystemToolButton::SARibbonSystemToolButton(QWidget* p) : QToolButton(p)
+{
+    setAutoRaise(true);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets the glyph color, an invalid color means auto deriving from the ribbon theme
+ * @param color Glyph color
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 设置图元颜色，无效颜色表示根据ribbon主题自动推导
+ * @param color 图元颜色
+ * \endif
+ */
+void SARibbonSystemToolButton::setGlyphColor(const QColor& color)
+{
+    if (m_glyphColor == color) {
+        return;
+    }
+    m_glyphColor = color;
+    update();
+}
+
+/**
+ * \if ENGLISH
+ * @brief Gets the glyph color
+ * @return Glyph color, may be invalid which means auto deriving
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 获取图元颜色
+ * @return 图元颜色，可能无效，无效表示自动推导
+ * \endif
+ */
+QColor SARibbonSystemToolButton::glyphColor() const
+{
+    return m_glyphColor;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Draws the qss background first, then draws the button glyph on top
+ * @details The glyph is identified by objectName (SAMinimizeWindowButton / SAMaximizeWindowButton /
+ * SACloseWindowButton), the maximize button draws the restore glyph when checked.
+ * The close button uses a white glyph on hover/pressed since its background turns red
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 先绘制qss背景，再在其上绘制按钮图元
+ * @details 图元类型通过objectName识别（SAMinimizeWindowButton / SAMaximizeWindowButton /
+ * SACloseWindowButton），最大化按钮在checked状态绘制还原图元。
+ * 关闭按钮悬停/按下时背景变红，图元使用白色
+ * \endif
+ */
+void SARibbonSystemToolButton::paintEvent(QPaintEvent* e)
+{
+    QToolButton::paintEvent(e);
+    const QString name = objectName();
+    int glyph          = SaSysButtonGlyphNone;
+    if (name == QLatin1String("SAMinimizeWindowButton")) {
+        glyph = SaSysButtonGlyphMinimize;
+    } else if (name == QLatin1String("SAMaximizeWindowButton")) {
+        glyph = isChecked() ? SaSysButtonGlyphRestore : SaSysButtonGlyphMaximize;
+    } else if (name == QLatin1String("SACloseWindowButton")) {
+        glyph = SaSysButtonGlyphClose;
+    }
+    if (SaSysButtonGlyphNone == glyph) {
+        return;
+    }
+    QColor color = m_glyphColor.isValid() ? m_glyphColor : saAutoGlyphColor(this);
+    if (SaSysButtonGlyphClose == glyph && (isDown() || underMouse())) {
+        // 关闭按钮悬停/按下背景为红色（close-bg），图元用白色，与原生Windows一致
+        color = QColor(Qt::white);
+    }
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    saDrawSysButtonGlyph(&painter, QRectF(rect()), glyph, color);
+}
+//===================================================
+// SARibbonSystemButtonBar
+//===================================================
+/**
+ * \if ENGLISH
+ * @brief Constructs a SARibbonSystemButtonBar instance
+ * @param parent Parent widget
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 构造一个 SARibbonSystemButtonBar 实例
+ * @param parent 父窗口部件
+ * \endif
+ */
+SARibbonSystemButtonBar::SARibbonSystemButtonBar(QWidget* parent)
+    : QFrame(parent), d_ptr(new SARibbonSystemButtonBar::PrivateData(this))
+{
+    updateWindowFlag();
+}
+
+/**
+ * \if ENGLISH
+ * @brief Constructor that forces the use of flags instead of the parent's flags
+ * @param parent Parent widget
+ * @param flags Window flags
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 构造函数，强制使用flags，而不是用parent的flags进行构造
+ * @param parent 父窗口部件
+ * @param flags 窗口标志
+ * \endif
+ */
+SARibbonSystemButtonBar::SARibbonSystemButtonBar(QWidget* parent, Qt::WindowFlags flags)
+    : QFrame(parent), d_ptr(new SARibbonSystemButtonBar::PrivateData(this))
+{
+    d_ptr->mFlags = flags;
+    updateWindowFlag();
+}
+
+/**
+ * \if ENGLISH
+ * @brief Destructor
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 析构函数
+ * \endif
+ */
+SARibbonSystemButtonBar::~SARibbonSystemButtonBar()
+{
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets up the minimize button
+ * @param on Whether to show the minimize button
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 设置最小化按钮
+ * @param on 是否显示最小化按钮
+ * \endif
+ */
+void SARibbonSystemButtonBar::setupMinimizeButton(bool on)
+{
+    d_ptr->setupMinimizeButton(on);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets up the maximize button
+ * @param on Whether to show the maximize button
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 设置最大化按钮
+ * @param on 是否显示最大化按钮
+ * \endif
+ */
+void SARibbonSystemButtonBar::setupMaximizeButton(bool on)
+{
+    d_ptr->setupMaximizeButton(on);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets up the close button
+ * @param on Whether to show the close button
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 设置关闭按钮
+ * @param on 是否显示关闭按钮
+ * \endif
+ */
+void SARibbonSystemButtonBar::setupCloseButton(bool on)
+{
+    d_ptr->setupCloseButton(on);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Updates the window flag based on the top-level window's flags
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 根据顶层窗口的标志更新窗口标志
+ * \endif
+ */
+void SARibbonSystemButtonBar::updateWindowFlag()
+{
+    QWidget* topedWidget = this;
+    // 找到最顶层窗口
+    while (topedWidget->parentWidget()) {
+        topedWidget = topedWidget->parentWidget();
+    }
+    Qt::WindowFlags flags = topedWidget->windowFlags();
+    updateWindowFlag(flags);
+}
+
+/**
+ * \if ENGLISH
+ * @brief This function is only used to control the display of minimize, maximize, and close buttons
+ * @param flags Window flags
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 此函数仅用于控制最小最大化和关闭按钮的显示
+ * @param flags 窗口标志
+ * \endif
+ */
+void SARibbonSystemButtonBar::updateWindowFlag(Qt::WindowFlags flags)
+{
+    d_ptr->mFlags = flags;
+    setupMinimizeButton(flags & Qt::WindowMinimizeButtonHint);
+    setupMaximizeButton(flags & Qt::WindowMaximizeButtonHint);
+    setupCloseButton(flags & Qt::WindowCloseButtonHint);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets the width ratio of the buttons, the final button width will be set according to this ratio
+ * @param close Close button ratio
+ * @param max Maximize button ratio
+ * @param min Minimize button ratio
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 设置按钮的宽度比例,最终按钮宽度将按照此比例进行设置
+ * @param close 关闭按钮比例
+ * @param max 最大化按钮比例
+ * @param min 最小化按钮比例
+ * \endif
+ */
+void SARibbonSystemButtonBar::setButtonWidthStretch(int close, int max, int min)
+{
+    d_ptr->mMaxStretch   = max;
+    d_ptr->mMinStretch   = min;
+    d_ptr->mCloseStretch = close;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets the title bar height
+ *
+ * The title bar height affects the sizeHint
+ * @param h Height
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 标题栏高度
+ *
+ * 标题栏高度会影响sizeHint
+ * @param h 高度
+ * \endif
+ */
+void SARibbonSystemButtonBar::setWindowTitleHeight(int h)
+{
+    d_ptr->mTitleBarHeight = h;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Gets the title bar height
+ * @return Title bar height
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 标题栏高度
+ * @return 标题栏高度
+ * \endif
+ */
+int SARibbonSystemButtonBar::windowTitleHeight() const
+{
+    return d_ptr->mTitleBarHeight;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets the width of the system buttons
+ * @param w Width
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 系统按钮的宽度
+ * @param w 宽度
+ * \endif
+ */
+void SARibbonSystemButtonBar::setWindowButtonWidth(int w)
+{
+    d_ptr->mWindowButtonWidth = w;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Gets the width of the system buttons
+ * @return System button width
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 系统按钮的宽度
+ * @return 系统按钮宽度
+ * \endif
+ */
+int SARibbonSystemButtonBar::windowButtonWidth() const
+{
+    return d_ptr->mWindowButtonWidth;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets the window state (maximize/minimize button state)
+ * @param s Window states
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 设置窗口状态（最大最小化按钮状态）
+ * @param s 窗口状态
+ * \endif
+ */
+void SARibbonSystemButtonBar::setWindowStates(Qt::WindowStates s)
+{
+    if (d_ptr->buttonMaximize) {
+        bool on = s.testFlag(Qt::WindowMaximized);
+        d_ptr->buttonMaximize->setChecked(on);
+        d_ptr->buttonMaximize->setToolTip(on ? tr("Restore") : tr("Maximize"));
+    }
+}
+
+/**
+ * \if ENGLISH
+ * @brief This function returns flags that only include Qt::WindowCloseButtonHint, Qt::WindowMaximizeButtonHint, Qt::WindowMinimizeButtonHint
+ * @return Window flags
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 此函数返回的flags仅包括 Qt::WindowCloseButtonHint，Qt::WindowMaximizeButtonHint，Qt::WindowMinimizeButtonHint
+ * 三个
+ * @return 窗口标志
+ * \endif
+ */
+Qt::WindowFlags SARibbonSystemButtonBar::windowButtonFlags() const
+{
+    Qt::WindowFlags f = Qt::Widget;  // widget是000
+
+    if (d_ptr->mFlags & Qt::WindowCloseButtonHint) {
+        f |= Qt::WindowCloseButtonHint;
+    }
+    if (d_ptr->mFlags & Qt::WindowMaximizeButtonHint) {
+        f |= Qt::WindowMaximizeButtonHint;
+    }
+    if (d_ptr->mFlags & Qt::WindowMinimizeButtonHint) {
+        f |= Qt::WindowMinimizeButtonHint;
+    }
+
+    return (f);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Gets the recommended size for the widget
+ * @return Recommended size
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 获取部件的推荐尺寸
+ * @return 推荐尺寸
+ * \endif
+ */
+QSize SARibbonSystemButtonBar::sizeHint() const
+{
+    return (d_ptr->sizeHint());
+}
+
+/**
+ * \if ENGLISH
+ * @brief Event filter for handling events from SARibbonMainWindow
+ * @param obj The object that is sending the event
+ * @param event The event being sent
+ * @return true if the event was handled, false otherwise
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 用于处理来自SARibbonMainWindow的事件的事件过滤器
+ * @param obj 发送事件的对象
+ * @param event 正在发送的事件
+ * @return 如果事件已处理则返回true，否则返回false
+ * \endif
+ */
+bool SARibbonSystemButtonBar::eventFilter(QObject* obj, QEvent* event)
+{
+    if (obj && event) {
+        SARibbonMainWindow* mainWindow = qobject_cast< SARibbonMainWindow* >(obj);
+        if (!mainWindow) {
+            // 所有事件都不消费
+            return QFrame::eventFilter(obj, event);
+        }
+        // SARibbonMainWindow的事件
+        switch (event->type()) {
+        case QEvent::Resize: {
+            d_ptr->refreshGeometry(mainWindow);
+        } break;
+        case QEvent::WindowStateChange: {
+            setWindowStates(mainWindow->windowState());
+        } break;
+        case QEvent::LayoutDirectionChange: {
+            /**
+             * \if ENGLISH
+             * @brief Handle layout direction change (LTR/RTL) - recalculate position
+             * @details When the application's layout direction changes, the system button bar
+             * needs to reposition itself (left edge for RTL, right edge for LTR).
+             * Event is NOT consumed - it continues to propagate.
+             * \endif
+             *
+             * \if CHINESE
+             * @brief 处理布局方向变化 (从左到右/从右到左) - 重新计算位置
+             * @details 当应用程序的布局方向改变时，系统按钮栏需要重新定位
+             * (RTL 时在左侧，LTR 时在右侧)。
+             * 事件不会被消费 - 它将继续传播。
+             * \endif
+             */
+            d_ptr->refreshGeometry(mainWindow);
+        } break;
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+        case QEvent::ScreenChangeInternal:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+        case QEvent::DevicePixelRatioChange:
+#endif
+        {
+            /**
+             * \if ENGLISH
+             * @brief Handle screen change / DPI change - recalculate position
+             * @details When the window is dragged to another screen or the screen's DPI scaling
+             * changes, the system button bar needs to recalculate its geometry. The window size
+             * may stay unchanged, so the internal elements are refreshed explicitly instead of
+             * relying on an implicit resizeEvent (issue #118).
+             * Qt delivers QEvent::ScreenChangeInternal recursively to the window and its children
+             * when the window's screen changes (QWidgetWindow::handleScreenChange).
+             * Event is NOT consumed - it continues to propagate.
+             * \endif
+             *
+             * \if CHINESE
+             * @brief 处理屏幕切换 / DPI 变化 - 重新计算位置
+             * @details 当窗口被拖到另一块屏幕或系统 DPI 缩放变化时，系统按钮栏需要重算几何。
+             * 此时窗口尺寸可能不变，因此显式刷新内部元素，而不依赖隐式的 resizeEvent（issue #118）。
+             * 窗口换屏时 Qt 会把 QEvent::ScreenChangeInternal 递归发送给窗口及其子控件
+             * （QWidgetWindow::handleScreenChange）。
+             * 事件不会被消费 - 它将继续传播。
+             * \endif
+             */
+            d_ptr->refreshGeometry(mainWindow);
+        } break;
+#endif
+        default:
+            break;
+        }
+    }
+    return QFrame::eventFilter(obj, event);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Gets the minimize button
+ * @return Pointer to the minimize button
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 获取最小化按钮
+ * @return 指向最小化按钮的指针
+ * \endif
+ */
+QAbstractButton* SARibbonSystemButtonBar::minimizeButton() const
+{
+    return d_ptr->buttonMinimize;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Gets the maximize button
+ * @return Pointer to the maximize button
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 获取最大化按钮
+ * @return 指向最大化按钮的指针
+ * \endif
+ */
+QAbstractButton* SARibbonSystemButtonBar::maximizeButton() const
+{
+    return d_ptr->buttonMaximize;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Gets the close button
+ * @return Pointer to the close button
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 获取关闭按钮
+ * @return 指向关闭按钮的指针
+ * \endif
+ */
+QAbstractButton* SARibbonSystemButtonBar::closeButton() const
+{
+    return d_ptr->buttonClose;
+}
+
+/**
+ * \if ENGLISH
+ * @brief Sets the icon size
+ * @param ic Icon size
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 设置图标大小
+ * @param ic 图标大小
+ * \endif
+ */
+void SARibbonSystemButtonBar::setIconSize(const QSize& ic)
+{
+    d_ptr->mButtonGroup->setIconSize(ic);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Gets the icon size
+ * @return Icon size
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 获取图标大小
+ * @return 图标大小
+ * \endif
+ */
+QSize SARibbonSystemButtonBar::iconSize() const
+{
+    return d_ptr->mButtonGroup->iconSize();
+}
+
+/**
+ * \if ENGLISH
+ * @brief Adds an action to the button group
+ * @param a Action to add
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 向按钮组添加一个动作
+ * @param a 要添加的动作
+ * \endif
+ */
+void SARibbonSystemButtonBar::addAction(QAction* a)
+{
+    d_ptr->mButtonGroup->addAction(a);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Adds a menu action to the button group
+ * @param menuAction Menu action to add
+ * @param popupMode Popup mode
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 向按钮组添加一个菜单动作
+ * @param menuAction 要添加的菜单动作
+ * @param popupMode 弹出模式
+ * \endif
+ */
+void SARibbonSystemButtonBar::addMenuAction(QAction* menuAction, QToolButton::ToolButtonPopupMode popupMode)
+{
+    d_ptr->mButtonGroup->addMenuAction(menuAction, popupMode);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Adds a menu to the button group
+ * @param menu Menu to add
+ * @param popupMode Popup mode
+ * @return The added action
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 向按钮组添加一个菜单
+ * @param menu 要添加的菜单
+ * @param popupMode 弹出模式
+ * @return 添加的动作
+ * \endif
+ */
+QAction* SARibbonSystemButtonBar::addMenuAction(QMenu* menu, QToolButton::ToolButtonPopupMode popupMode)
+{
+    return d_ptr->mButtonGroup->addMenuAction(menu, popupMode);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Adds a separator to the button group
+ * @return The added separator action
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 向按钮组添加一个分隔符
+ * @return 添加的分隔符动作
+ * \endif
+ */
+QAction* SARibbonSystemButtonBar::addSeparator()
+{
+    return d_ptr->mButtonGroup->addSeparator();
+}
+
+/**
+ * \if ENGLISH
+ * @brief Adds a widget to the button group
+ * @param w Widget to add
+ * @return The added action
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 向按钮组添加一个窗口部件
+ * @param w 要添加的窗口部件
+ * @return 添加的动作
+ * \endif
+ */
+QAction* SARibbonSystemButtonBar::addWidget(QWidget* w)
+{
+    return d_ptr->mButtonGroup->addWidget(w);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Handles resize events
+ * @param e Resize event
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 处理 resize 事件
+ * @param e  resize 事件
+ * \endif
+ */
+void SARibbonSystemButtonBar::resizeEvent(QResizeEvent* e)
+{
+    Q_UNUSED(e);
+    d_ptr->resizeElement(size());
+    QFrame::resizeEvent(e);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Handles change events, specifically layout direction changes
+ * @param e Change event
+ * @details When layout direction changes (LTR to RTL or vice versa), repositions internal buttons
+ *          by calling resizeElement() to handle RTL/LTR positioning correctly.
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 处理变更事件，特别是布局方向变更
+ * @param e 变更事件
+ * @details 当布局方向改变时（LTR 到 RTL 或反之），通过调用 resizeElement() 重新定位内部按钮，
+ *          以正确处理 RTL/LTR 布局。
+ * \endif
+ */
+void SARibbonSystemButtonBar::changeEvent(QEvent* e)
+{
+    if (nullptr == e) {
+        return;
+    }
+    switch (e->type()) {
+    case QEvent::LayoutDirectionChange: {
+        d_ptr->resizeElement(size());
+    } break;
+    default:
+        break;
+    }
+    QFrame::changeEvent(e);
+}
+
+/**
+ * \if ENGLISH
+ * @brief Closes the window
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 关闭窗口
+ * \endif
+ */
+void SARibbonSystemButtonBar::closeWindow()
+{
+    if (parentWidget()) {
+        parentWidget()->close();
+    }
+}
+
+/**
+ * \if ENGLISH
+ * @brief Minimizes the window
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 最小化窗口
+ * \endif
+ */
+void SARibbonSystemButtonBar::minimizeWindow()
+{
+    if (parentWidget()) {
+        parentWidget()->showMinimized();
+    }
+}
+
+/**
+ * \if ENGLISH
+ * @brief Maximizes or restores the window
+ * \endif
+ *
+ * \if CHINESE
+ * @brief 最大化或还原窗口
+ * \endif
+ */
+void SARibbonSystemButtonBar::maximizeWindow()
+{
+    QWidget* par = parentWidget();
+
+    if (par) {
+        if (par->isMaximized()) {
+            par->showNormal();
+        } else {
+            par->showMaximized();
+        }
+    }
+}

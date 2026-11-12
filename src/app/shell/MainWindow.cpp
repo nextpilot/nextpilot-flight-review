@@ -26,6 +26,12 @@
 #include "plot/CanvasWidget.h"
 #include "ps_kernel.h"
 
+#include "SARibbonBar.h"
+#include "SARibbonCategory.h"
+#include "SARibbonPanel.h"
+#include "SARibbonButtonGroupWidget.h"
+#include "SARibbonThemeManager.h"
+
 namespace {
 const char *kStyle = R"(
 QWidget { background:#0d1117; color:#c9d1d9; font-size:12px; }
@@ -66,166 +72,180 @@ MainWindow::MainWindow(QWidget *parent)
 
 QWidget *MainWindow::createRibbon()
 {
-    auto *wrap = new QWidget(this);
-    auto *lay = new QVBoxLayout(wrap);
-    lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(0);
+    // Ribbon 结构层交给 SARibbon（MIT，vendored 在 src/3dparty/saribbon）：
+    // 页签溢出、键盘导航、面板布局都是它的事；我们只负责配色与命令。
+    auto *ribbon = new SARibbonBar(this);
+    ribbon->setRibbonStyle(SARibbonBar::RibbonStyleLooseSingleRow);
+    ribbon->setTitleVisible(false);       // 窗口标题在 titlebar，不占 ribbon 高度
+    ribbon->setTabBarHeight(22);
+    ribbon->setPanelTitleHeight(10);
+    ribbon->setPanelToolButtonIconSize(QSize(0, 0), QSize(0, 0));
+    ribbon->setEnableShowPanelTitle(true);
 
-    auto *tabs = new QTabBar(wrap);
-    tabs->setExpanding(false);
-    tabs->setDrawBase(false);
-    auto *stack = new QStackedWidget(wrap);
-
-    struct TabDef
-    {
-        const char *name;
-        QList<QPair<QString, std::function<void()>>> actions;
+    auto addLarge = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
+        auto *a = new QAction(text, ctx);
+        QObject::connect(a, &QAction::triggered, ctx, fn);
+        panel->addLargeAction(a);
+    };
+    auto addSmall = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
+        auto *a = new QAction(text, ctx);
+        QObject::connect(a, &QAction::triggered, ctx, fn);
+        panel->addSmallAction(a);
     };
 
-    const QStringList groups = {
-        QStringLiteral("文件"), QStringLiteral("数据"), QStringLiteral("绘图"),
-        QStringLiteral("仪表"), QStringLiteral("脚本"), QStringLiteral("协议"), QStringLiteral("视图")};
-
-    for (const QString &g : groups)
+    // 文件
     {
-        auto *bar = new QToolBar(wrap);
-        bar->setToolButtonStyle(Qt::ToolButtonTextOnly);
-        if (g == QStringLiteral("文件"))
-        {
-            auto add = [&](const QString &text, auto fn) {
-                auto *a = bar->addAction(text);
-                connect(a, &QAction::triggered, this, fn);
-            };
-            add(QStringLiteral("打开文件"), [this] {
-                const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("打开文件"), {},
-                    QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-                if (!f.isEmpty())
-                    loadFile(f);
-            });
-            add(QStringLiteral("导入 .psl"), [this] {
-                const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
-                    QStringLiteral("PlotScope 布局 (*.psl)"));
-                if (!f.isEmpty())
-                    log(QStringLiteral("导入布局：%1").arg(f));
-            });
-            add(QStringLiteral("导出 .psl"), [this] {
-                const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出布局"), {},
-                    QStringLiteral("PlotScope 布局 (*.psl)"));
-                if (!f.isEmpty())
-                    log(QStringLiteral("导出布局：%1").arg(f));
-            });
-            add(QStringLiteral("截图当前页"), [this] {
-                QWidget *page = m_pages ? m_pages->currentWidget() : nullptr;
-                if (!page)
-                    return;
-                const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("截图另存为"), {},
-                    QStringLiteral("PNG (*.png)"));
-                if (f.isEmpty())
-                    return;
-                if (page->grab().save(f))
-                    log(QStringLiteral("已截图：%1").arg(f));
-            });
-            add(QStringLiteral("设置"), [this] {
-                QMessageBox::information(this, QStringLiteral("设置"),
-                    QStringLiteral("M0 骨架：设置页在 M1 接 QSettings。"));
-            });
-        }
-        else if (g == QStringLiteral("数据"))
-        {
-            auto add = [&](const QString &text, auto fn) {
-                auto *a = bar->addAction(text);
-                connect(a, &QAction::triggered, this, fn);
-            };
-            add(QStringLiteral("打开数据源"), [this] { log(QStringLiteral("数据源对话框：M1 接 Loader 选择器")); });
-            add(QStringLiteral("全部开始"), [this] {
-                m_runLabel->setText(QStringLiteral("运行中"));
-                m_runLabel->setStyleSheet(QStringLiteral("color:#7ee787;"));
-                log(QStringLiteral("所有数据源开始"));
-            });
-            add(QStringLiteral("全部暂停"), [this] {
-                m_runLabel->setText(QStringLiteral("已暂停"));
-                m_runLabel->setStyleSheet(QStringLiteral("color:#ffb454;"));
-                log(QStringLiteral("所有数据源暂停"));
-            });
-        }
-        else if (g == QStringLiteral("绘图"))
-        {
-            auto add = [&](const QString &text, auto fn) {
-                auto *a = bar->addAction(text);
-                connect(a, &QAction::triggered, this, fn);
-            };
-            add(QStringLiteral("新建页"), [this] {
-                auto *c = new CanvasWidget(this);
-                c->setTitle(QStringLiteral("新页 · 画布"));
-                connect(c, &CanvasWidget::activated, this,
-                        [this](const QString &t) {
-                            setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
-                                            {QStringLiteral("时间窗"), QStringLiteral("30.0 s")},
-                                            {QStringLiteral("降采样"), QStringLiteral("min/max 1:4")}});
-                        });
-                m_pages->addTab(c, QStringLiteral("新页"));
-                m_pages->setCurrentWidget(c);
-                log(QStringLiteral("新建页"));
-            });
-            add(QStringLiteral("自动 Y"), [this] { log(QStringLiteral("自动 Y：按可见曲线量程重算")); });
-            add(QStringLiteral("游标"), [this] { log(QStringLiteral("十字光标已启用")); });
-        }
-        else if (g == QStringLiteral("仪表"))
-        {
-            auto add = [&](const QString &text, auto fn) {
-                auto *a = bar->addAction(text);
-                connect(a, &QAction::triggered, this, fn);
-            };
-            add(QStringLiteral("添加地平仪"), [this] { log(QStringLiteral("添加地平仪（QPainter 自绘，M1 落地）")); });
-            add(QStringLiteral("添加罗盘"), [this] { log(QStringLiteral("添加罗盘（QPainter 自绘，M1 落地）")); });
-        }
-        else if (g == QStringLiteral("脚本"))
-        {
-            auto add = [&](const QString &text, auto fn) {
-                auto *a = bar->addAction(text);
-                connect(a, &QAction::triggered, this, fn);
-            };
-            add(QStringLiteral("运行"), [this] {
-                log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）：out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)"));
-            });
-            add(QStringLiteral("格式化"), [this] { log(QStringLiteral("脚本格式化（stylua 规则，M2 接）")); });
-        }
-        else if (g == QStringLiteral("协议"))
-        {
-            auto add = [&](const QString &text, auto fn) {
-                auto *a = bar->addAction(text);
-                connect(a, &QAction::triggered, this, fn);
-            };
-            add(QStringLiteral("新建 Loader"), [this] { log(QStringLiteral("新建 Loader：打开附属编辑器（QDialog，D13）")); });
-            add(QStringLiteral("帧模板 YAML"), [this] { log(QStringLiteral("帧模板：YAML 热编译（D6）")); });
-            add(QStringLiteral("校验"), [this] { log(QStringLiteral("校验模板：字段偏移/位域越界检查（M1）")); });
-        }
-        else // 视图
-        {
-            auto add = [&](const QString &text, const char *objName) {
-                auto *a = bar->addAction(text);
-                connect(a, &QAction::triggered, this, [this, objName] {
-                    if (auto *d = findChild<QDockWidget *>(QString::fromLatin1(objName)))
-                        d->setVisible(!d->isVisible());
-                });
-            };
-            add(QStringLiteral("数据源面板"), "dock.src");
-            add(QStringLiteral("属性面板"), "dock.prop");
-            add(QStringLiteral("脚本面板"), "dock.script");
-            add(QStringLiteral("日志面板"), "dock.log");
-        }
+        auto *cat = ribbon->addCategoryPage(QStringLiteral("文件"));
+        auto *pLayout = cat->addPanel(QStringLiteral("布局"));
+        addLarge(pLayout, QStringLiteral("打开文件"), [this] {
+            const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("打开文件"), {},
+                QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+            if (!f.isEmpty())
+                loadFile(f);
+        }, this);
+        addSmall(pLayout, QStringLiteral("导入布局"), [this] {
+            const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
+                QStringLiteral("PlotScope 布局 (*.psl)"));
+            if (!f.isEmpty())
+                log(QStringLiteral("导入布局：%1").arg(f));
+        }, this);
+        addSmall(pLayout, QStringLiteral("设置"), [this] {
+            QMessageBox::information(this, QStringLiteral("设置"),
+                QStringLiteral("M0 骨架：设置页在 M1 接 QSettings。"));
+        }, this);
 
-        tabs->addTab(g);
-        stack->addWidget(bar);
+        auto *pExport = cat->addPanel(QStringLiteral("导出"));
+        addLarge(pExport, QStringLiteral("导出布局"), [this] {
+            const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出布局"), {},
+                QStringLiteral("PlotScope 布局 (*.psl)"));
+            if (!f.isEmpty())
+                log(QStringLiteral("导出布局：%1").arg(f));
+        }, this);
+        addSmall(pExport, QStringLiteral("导出设置"), [this] { log(QStringLiteral("导出设置：M1 接 YAML")); }, this);
+        addSmall(pExport, QStringLiteral("导出数据"), [this] { log(QStringLiteral("导出数据：M1 接 CSV/NDF")); }, this);
+
+        auto *pShot = cat->addPanel(QStringLiteral("截图"));
+        addLarge(pShot, QStringLiteral("截图当前页"), [this] {
+            QWidget *page = m_pages ? m_pages->currentWidget() : nullptr;
+            if (!page)
+                return;
+            const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("截图另存为"), {},
+                QStringLiteral("PNG (*.png)"));
+            if (f.isEmpty())
+                return;
+            if (page->grab().save(f))
+                log(QStringLiteral("已截图：%1").arg(f));
+        }, this);
     }
 
-    connect(tabs, &QTabBar::currentChanged, stack, &QStackedWidget::setCurrentIndex);
+    // 数据
+    {
+        auto *cat = ribbon->addCategoryPage(QStringLiteral("数据"));
+        auto *pSrc = cat->addPanel(QStringLiteral("来源"));
+        addLarge(pSrc, QStringLiteral("打开数据源"), [this] {
+            const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("打开数据源"), {},
+                QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+            if (!f.isEmpty())
+                loadFile(f);
+        }, this);
+        auto *pRun = cat->addPanel(QStringLiteral("传输"));
+        addLarge(pRun, QStringLiteral("全部开始"), [this] {
+            m_runLabel->setText(QStringLiteral("运行中"));
+            m_runLabel->setStyleSheet(QStringLiteral("color:#7ee787;"));
+            log(QStringLiteral("所有数据源开始"));
+        }, this);
+        addSmall(pRun, QStringLiteral("全部暂停"), [this] {
+            m_runLabel->setText(QStringLiteral("已暂停"));
+            m_runLabel->setStyleSheet(QStringLiteral("color:#ffb454;"));
+            log(QStringLiteral("所有数据源暂停"));
+        }, this);
+    }
 
-    lay->addWidget(tabs);
-    lay->addWidget(stack);
-    return wrap;
+    // 绘图
+    {
+        auto *cat = ribbon->addCategoryPage(QStringLiteral("绘图"));
+        auto *pPage = cat->addPanel(QStringLiteral("页"));
+        addLarge(pPage, QStringLiteral("新建页"), [this] {
+            auto *c = new CanvasWidget(this);
+            c->setTitle(QStringLiteral("新页 · 画布"));
+            connect(c, &CanvasWidget::activated, this, [this](const QString &t) {
+                setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
+                                {QStringLiteral("时间窗"), QStringLiteral("30.0 s")},
+                                {QStringLiteral("降采样"), QStringLiteral("min/max 1:4")}});
+            });
+            m_pages->addTab(c, QStringLiteral("新页"));
+            m_pages->setCurrentWidget(c);
+            log(QStringLiteral("新建页"));
+        }, this);
+        auto *pView = cat->addPanel(QStringLiteral("视图"));
+        addSmall(pView, QStringLiteral("自动 Y"), [this] { log(QStringLiteral("自动 Y：按可见曲线量程重算")); }, this);
+        addSmall(pView, QStringLiteral("游标"), [this] { log(QStringLiteral("十字光标已启用")); }, this);
+        addSmall(pView, QStringLiteral("复位视图"), [this] { log(QStringLiteral("双击画布也可复位")); }, this);
+    }
+
+    // 仪表
+    {
+        auto *cat = ribbon->addCategoryPage(QStringLiteral("仪表"));
+        auto *p = cat->addPanel(QStringLiteral("新建"));
+        addLarge(p, QStringLiteral("地平仪"), [this] { log(QStringLiteral("添加地平仪（QPainter 自绘，M1 落地）")); }, this);
+        addSmall(p, QStringLiteral("罗盘"), [this] { log(QStringLiteral("添加罗盘（QPainter 自绘，M1 落地）")); }, this);
+        addSmall(p, QStringLiteral("表盘"), [this] { log(QStringLiteral("添加表盘（QPainter 自绘，M1 落地）")); }, this);
+    }
+
+    // 脚本
+    {
+        auto *cat = ribbon->addCategoryPage(QStringLiteral("脚本"));
+        auto *p = cat->addPanel(QStringLiteral("Lua"));
+        addLarge(p, QStringLiteral("运行"), [this] {
+            log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）：out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)"));
+        }, this);
+        addSmall(p, QStringLiteral("格式化"), [this] { log(QStringLiteral("脚本格式化（stylua 规则，M2 接）")); }, this);
+    }
+
+    // 协议
+    {
+        auto *cat = ribbon->addCategoryPage(QStringLiteral("协议"));
+        auto *p = cat->addPanel(QStringLiteral("编辑器"));
+        addLarge(p, QStringLiteral("新建 Loader"), [this] {
+            log(QStringLiteral("新建 Loader：打开附属编辑器（QDialog，D13）"));
+        }, this);
+        addSmall(p, QStringLiteral("帧模板 YAML"), [this] { log(QStringLiteral("帧模板：YAML 热编译（D6）")); }, this);
+        addSmall(p, QStringLiteral("校验"), [this] { log(QStringLiteral("校验模板：字段偏移/位域越界检查（M1）")); }, this);
+    }
+
+    // 视图
+    {
+        auto *cat = ribbon->addCategoryPage(QStringLiteral("视图"));
+        auto *p = cat->addPanel(QStringLiteral("面板"));
+        auto toggle = [this](const char *obj) {
+            if (auto *d = findChild<QDockWidget *>(QString::fromLatin1(obj)))
+                d->setVisible(!d->isVisible());
+        };
+        addLarge(p, QStringLiteral("数据源"), [toggle] { toggle("dock.src"); }, this);
+        addSmall(p, QStringLiteral("属性"), [toggle] { toggle("dock.prop"); }, this);
+        addSmall(p, QStringLiteral("脚本"), [toggle] { toggle("dock.script"); }, this);
+        addSmall(p, QStringLiteral("日志"), [toggle] { toggle("dock.log"); }, this);
+    }
+
+    // 右侧芯片位（原型里的 qchip）：状态摘要不做成按钮也得看得见，先用只读 action 占位
+    auto *rg = ribbon->rightButtonGroup();
+    for (const QString &t : {QStringLiteral("CSV · 3000×5"), QStringLiteral("LOD: Rust")})
+    {
+        auto *a = new QAction(t, this);
+        a->setEnabled(false);
+        rg->addAction(a);
+    }
+
+    // 静态库里资源要显式初始化，否则 dark 主题静默回退浅色 QSS
+    Q_INIT_RESOURCE(SARibbonResource);
+    SA::applyRibbonTheme(this, ribbon, SARibbonTheme::RibbonThemeDark);
+    ribbon->setStyleSheet(ribbon->styleSheet() + QStringLiteral(R"(
+        SARibbonBar { background:#161b22; }
+        QTabBar::tab { background:#161b22; color:#9aa4b2; padding:4px 14px; margin-right:1px; }
+        QTabBar::tab:selected { background:#1f2632; color:#ffffff; border-bottom:2px solid #4ea1ff; }
+    )"));
+    return ribbon;
 }
-
 void MainWindow::createDocks()
 {
     // 左：数据源（一个数据源一棵子树，行内“配置”打开 Loader 附属编辑器）

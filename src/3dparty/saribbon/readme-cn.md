@@ -1,0 +1,181 @@
+﻿# SARibbon简介
+
+[Click here for English](./readme.md)
+
+<div align="center">
+<p>
+<img src="https://img.shields.io/badge/C++-17-blue"/>
+<img src="https://img.shields.io/badge/Qt-5.14+-green"/>
+<img src="https://img.shields.io/badge/Qt-6-green"/>
+<img src="https://img.shields.io/badge/Python-PyQt5%20%7C%20PyQt6%20%7C%20PySide6-blueviolet"/>
+<img src="https://img.shields.io/badge/license-MIT-yellow"/>
+</p>
+<p>
+<img src="https://img.shields.io/badge/windows-0077d6"/>
+<img src="https://img.shields.io/badge/ubuntu-ed6432"/>
+<img src="https://img.shields.io/badge/macos-000"/>
+</p>
+</div>
+
+**QQ 交流群**：755294806（群2）、434014314（已满）  
+
+<div align="center">
+<img src="./docs/assets/SARibbon-qq交流群2.jpg" style="width:300px;"/>
+</div>
+
+📚 **项目文档**：[https://czyt1988.github.io/SARibbon/zh](https://czyt1988.github.io/SARibbon/zh)
+
+---
+
+||Windows(latest)|Linux ubuntu(latest)|Mac(latest)|
+|:-|:-|:-|:-|
+|Qt5.15 LTS|[![cmake-win-qt5.15](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-win-qt5.15.yml/badge.svg)](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-win-qt5.15.yml)|[![CMake-Linux-Qt5.15](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-linux-qt5.15.yml/badge.svg)](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-linux-qt5.15.yml)|[![cmake-mac-qt5.15](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-mac-qt5.15.yml/badge.svg)](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-mac-qt5.15.yml)|
+|Qt6.8 LTS|[![cmake-win-qt6.8](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-win-qt6.8.yml/badge.svg)](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-win-qt6.8.yml)|[![CMake-Linux-Qt6.8](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-linux-qt6.8.yml/badge.svg)](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-linux-qt6.8.yml)|[![cmake-mac-qt6.8](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-mac-qt6.8.yml/badge.svg)](https://github.com/czyt1988/SARibbon/actions/workflows/cmake-mac-qt6.8.yml)|
+
+---
+
+## 项目概述
+
+**SARibbon** 是一个基于 **Qt** 的 Ribbon 界面控件库，旨在为桌面应用程序提供类似 Microsoft Office 系列软件的现代化操作界面。
+
+### 适用场景
+
+- 大型软件
+- 工业级软件
+- 功能复杂的桌面应用
+
+### 设计理念
+
+- 接口命名风格参考 **MFC Ribbon**
+- 界面样式融合 **Microsoft Office** 与 **WPS Office** 的优点
+- 支持通过 **QSS（Qt 样式表）** 快速自定义主题风格
+- 提供丰富的内置控件封装（如 [颜色选择按钮与调色板](https://github.com/czyt1988/SAColorWidgets)）
+
+## 功能特点
+
+- 针对Ribbon的布局和显示
+
+    ![Ribbon的布局和显示](./docs/assets/screenshot/SARibbonBar-overview.png)
+
+- 支持最小化模式，ribbon只显示标签（默认双击标签会进行切换）,支持上下文标签tab
+
+    ![SARibbon最小化模式](./docs/assets/screenshot/SARibbonBar-minMode.gif)
+
+- 支持quickAccessBar（word快速菜单）和rightButtonGroup，在不同布局模式下会有不同的显示效果
+- 支持多种不同风格的ribbon button，普通按钮，延迟弹出菜单按钮，菜单按钮，action菜单按钮（action菜单按钮是此ribbon控件最主要解决的问题之一）
+    ![SARibbon-多种不同风格的ribbon button](./docs/assets/screenshot/SARibbonBar-ribbonbutton.gif)
+    具体可参阅文档：[Ribbon栏按钮布局说明](./docs/zh/use-guide/layout-of-ribbonbutton.md)
+
+- 支持多种不同风格的布局样式，包括宽松三行、宽松两行、紧凑三行、紧凑两行、宽松单行、紧凑单行
+  - 布局风格
+    ![SARibbon-多种不同风格的布局样式](./docs/assets/screenshot/SARibbonBar-style.gif)
+  - 单行布局
+    ![single-style-compact](./docs/assets/screenshot/single-style-compact.png)
+  具体可参阅文档：[SARibbon布局方式](./docs/zh/use-guide/layout-of-SARibbon.md)
+
+- 支持qss对ribbon进行自定义设置，可实时切换主题,内置了6种不同风格的主题
+
+  - win7主题：
+        ![SARibbon-theme-win7](./docs/assets/screenshot/SARibbon-theme-win7.png)
+  - office2013主题：
+        ![SARibbon-theme-office2013](./docs/assets/screenshot/SARibbon-theme-office2013.png)
+  - office2016主题：
+        ![SARibbon-theme-office2016](./docs/assets/screenshot/SARibbon-theme-office2016.png)
+  - office2021主题：
+        ![SARibbon-theme-office2021](./docs/assets/screenshot/SARibbon-theme-office2021.png)
+  - dark主题：
+        ![SARibbon-theme-dark](./docs/assets/screenshot/SARibbon-theme-dark.png)
+  - dark2主题：
+        ![SARibbon-theme-dark](./docs/assets/screenshot/SARibbon-theme-dark2.png)
+
+    你可以通过qss定制任意主题，具体可参阅文档：[自定义样式](./docs/zh/use-guide/design-your-theme.md)
+
+- 提供Gallery控件
+    ![SARibbonBar-gallery](./docs/assets/screenshot/SARibbonBar-gallery.png)
+
+- 支持超长滚动和Option Action
+    ![SARibbonBar-option-action](./docs/assets/screenshot/SARibbonBar-option-action.gif)
+
+- 提供居中对齐模式
+    ![SARibbon-aligment-center](./docs/assets/screenshot/SARibbon-aligment-center.png)
+
+- 支持4K屏和多屏幕扩展
+- 支持linux和MacOS（界面未做深度适配）
+- 提供RTL模式，可根据系统自动适配
+
+**协议**：MIT（自由使用、修改、分发）
+**欢迎贡献**：欢迎提交 Issue、PR 或加入交流群讨论！
+
+[gitee(码云) - https://gitee.com/czyt1988/SARibbon](https://gitee.com/czyt1988/SARibbon)
+
+[github - https://github.com/czyt1988/SARibbon](https://github.com/czyt1988/SARibbon)
+
+## 构建及使用
+
+SARibbon提供了集成文件，位于src目录下，你只需要在项目中引入`SARibbon.h`和`SARibbon.cpp`即可使用
+
+如果你想编译为动态库，你可以参考下面文档[SARibbon构建说明](./docs/zh/build-guide/build-instructions.md)
+
+快速开始可以参阅:[创建Ribbon风格的窗口](./docs/zh/use-guide/create-ribbon-style-window.md)和[创建Ribbon界面](./docs/zh/use-guide/create-ribbon-ui.md)两篇入门文章
+
+**推荐从 `example/MainWindowExample` 入手学习 SARibbon 的使用方式，你也可以直接运行该示例，体验各项功能**
+
+## Python绑定
+
+SARibbon 提供了三种 Python 绑定方案，可在 Python 应用中使用 SARibbon：
+
+| 绑定包名 | 框架 | 构建工具 |
+|----------|------|----------|
+| PyQtSARibbon | PyQt5 | SIP |
+| PyQtSARibbon6 | PyQt6 | SIP |
+| PySideSARibbon | PySide6 | Shiboken6 |
+
+通过 pip 安装：
+
+```bash
+pip install PyQtSARibbon    # PyQt5
+pip install PyQtSARibbon6   # PyQt6
+pip install PySideSARibbon  # PySide6
+```
+
+构建和使用文档：
+- [构建Python绑定](./docs/zh/python-guide/build-python-bindings.md)
+- [使用Python绑定](./docs/zh/python-guide/use-python-bindings.md)
+- [构建PySide6绑定](./docs/zh/python-guide/build-pyside6-bindings.md)
+- [发布到PyPI](./docs/zh/python-guide/publish-to-pypi.md)
+
+Python 示例程序位于 `pyexamples/` 目录。
+
+## 更多截图
+
+- 这是使用SARibbon构建的软件截图
+    DAWorkbench，地址：[github](https://github.com/czyt1988/data-workbench)、[gitee](https://gitee.com/czyt1988/data-workbench)
+    
+    这是一个带agent的数据分析软件，支持工作流，ai agent分析，如果你想了解如何在c++/Qt程序中嵌入agent,也可以通过此软件了解
+
+    ![data-workbench-screenshot1-cn](./docs/assets/screenshot/data-workbench-screenshot1-cn.gif)
+    ![data-workbench-screenshot01-en](./docs/assets/screenshot/data-workbench-screenshot02-cn.png)
+    ![data-workbench-screenshot01-cn](./docs/assets/screenshot/data-workbench-screenshot01-cn.png)
+
+    具体Ribbon的生成代码可见：
+
+    [https://github.com/czyt1988/data-workbench/blob/master/src/APP/DAAppRibbonArea.cpp](https://github.com/czyt1988/data-workbench/blob/master/src/APP/DAAppRibbonArea.cpp)
+
+## 文档生成
+
+**项目文档位于 docs/zh文件夹下，你可以直接点击此链接：**[https://czyt1988.github.io/SARibbon/zh](https://czyt1988.github.io/SARibbon/zh)
+
+**项目的doxygen文档部署于：**[https://czyt1988.github.io/SARibbon/doxygen/index.html](https://czyt1988.github.io/SARibbon/doxygen/index.html)
+
+- 使用 `doxygen` 生成 HTML 或 `.qch` 格式文档：
+  - `docs/doxygen-doc-file/Doxyfile-wiki-cn` → 生成网页版文档
+  - `docs/doxygen-doc-file/Doxyfile-qch-cn` → 生成 Qt Creator 可集成的帮助文档
+- 项目静态文档通过 `mkdocs` 构建并部署于 GitHub Pages，你可以通过此链接来访问：[https://czyt1988.github.io/SARibbon/zh](https://czyt1988.github.io/SARibbon/zh)
+
+## 给我一个鼓励❤️
+
+如果 SARibbon 对你的项目有所帮助，欢迎扫码赞赏支持！
+
+<div style="text-align:center">
+    <img src="./docs/assets/pic/赞赏码.png" alt="赞赏码" style="width:350px;" />
+</div>

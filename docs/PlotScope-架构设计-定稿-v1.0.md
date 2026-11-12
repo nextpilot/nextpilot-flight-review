@@ -555,6 +555,8 @@ ps_plugin_<family>   # MODULE 库：src/plugin/<family>/，输出到 bin/plugins
 - Dock：`QDockWidget` 直接够用（四区 + 浮动 + `tabifyDockWidget` + `saveState/restoreState`），零第三方许可义务；Qt-ADS（LGPL-2.1）留作 M1 升级项；KDDockWidgets 含 GPL，排除。
 - 取舍：Ribbon 承认"多 23 px 换键盘导航/溢出折叠/无障碍"；QSS 压缩目标 ≤84 px。达不到就退回自绘（现有 `QTabBar + QToolBar` 骨架已在 `src/app/shell`）。
 
+**已实装（2026-11-12 晚）**：SARibbon 2.9.6 源码裁到 3.3 MB（去掉 `docs/`、`example/`、`pyqt6/`、`pyside6/`、`sip/`、`tools/`、`tests/`）放进 `src/3dparty/saribbon`，`src/3dparty/CMakeLists.txt` 里强制 `SARIBBON_BUILD_STATIC_LIBS=ON` / `SARIBBON_BUILD_EXAMPLES=OFF` / `SARIBBON_USE_FRAMELESS_LIB=OFF`（frameless 要 QWindowKit 子模块，内网拿不到），`add_subdirectory(... EXCLUDE_FROM_ALL)`，app 链 `SARibbonBar::SARibbonBar`。`MainWindow::createRibbon()` 从自绘 `QTabBar + QStackedWidget(QToolBar)` 换成 `SARibbonBar`：7 页签 / 文件页三组（布局·导出·截图）/ 右侧状态 action。`RibbonStyleLooseSingleRow` + tab 22 px + panel 标题 10 px → **84 px**（原型 74 px，目标 ≤84 达成；同参数下 CompactTwoRow 94 px、CompactSingleRow 62 px 但组标题会挤压换行）。**已知缺口**：单行模式下每个按钮左侧留图标位，没图标就是空方块——必须补一套自绘 SVG 图标（约 22 个），否则观感不成立。
+
 **M0-0 画布 spike（2026-11-12 实测，改判 D3）**
 
 环境：Qt 6.2.4、4 vCPU 云主机、软件光栅、`QT_QPA_PLATFORM=offscreen` 下 `QWidget::render`；数据 20 通道 × 8000 点，视口 1500×900，预热 3 帧后取 30 帧均值。JKQTPlotter 5.0.0（HEAD `9e9f0af`）静态编译接入。可复跑脚本：`test/perf/canvas_spike/`。
