@@ -18,6 +18,7 @@
     <file alias="panel.svg">icons/panel.svg</file>
     <file alias="pause.svg">icons/pause.svg</file>
     <file alias="play.svg">icons/play.svg</file>
+    <file alias="close.svg">icons/close.svg</file>
     <file alias="prop.svg">icons/prop.svg</file>
     <file alias="reset.svg">icons/reset.svg</file>
     <file alias="run.svg">icons/run.svg</file>

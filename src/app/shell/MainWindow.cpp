@@ -13,6 +13,8 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QIcon>
+#include <QResizeEvent>
+#include <QStyle>
 #include <QHash>
 #include <QPainter>
 #include <QPixmap>
@@ -41,6 +43,21 @@
 #include "SARibbonToolButton.h"
 
 static void darkenDocks(MainWindow *w);
+
+// 源行名称按可用宽度省略中部，避免把右侧"配置"挤出去
+class ElideLabel : public QLabel
+{
+public:
+    ElideLabel(const QString &full, QWidget *parent) : QLabel(full, parent), m_full(full) {}
+protected:
+    void resizeEvent(QResizeEvent *e) override
+    {
+        QLabel::resizeEvent(e);
+        setText(fontMetrics().elidedText(m_full, Qt::ElideMiddle, width()));
+    }
+private:
+    QString m_full;
+};
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -76,24 +93,28 @@ QWidget *MainWindow::createRibbon()
         mb->hide();
     ribbon->setTitleVisible(false);       // 窗口标题在 titlebar，不占 ribbon 高度
     ribbon->setTabBarHeight(26);
-    ribbon->setPanelTitleHeight(10);
-    // vendored 布局里标题几何会溢出 category 底边被裁掉半行，索性不显示（原型的分组标签改用 tooltip）
-    ribbon->setEnableShowPanelTitle(false);
+    ribbon->setPanelTitleHeight(12);
+    // 分组标题：vendored 布局把标题画在面板底边内，category 高度必须把它算进去
+    ribbon->setEnableShowPanelTitle(true);
     ribbon->setPanelToolButtonIconSize(QSize(16, 16), QSize(23, 23));
     ribbon->setPanelSpacing(3);
-    ribbon->setCategoryHeight(74, true); // 原型体部 74 px
+    ribbon->setCategoryHeight(70, true); // 图标 23 + 内边距 + 分组标题 12
 
+    // 大按钮同样只留图标：分组标题已说明用途，图标下再叠一行字就是原型里最挤的部分
     auto addLarge = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(text, ctx);
+        auto *a = new QAction(text, ctx); // 先用全名建 action：图标按 text 查表
+        a->setToolTip(text);
+        if (text.size() > 2)
+            a->setProperty("rbIconOnly", true); // 图标查完后清空文字，只留 tooltip
         QObject::connect(a, &QAction::triggered, ctx, fn);
         panel->addLargeAction(a);
     };
     // 小按钮：只有 1~2 个字才显示文字，其余只留图标 + tooltip（图标 16px 撑得住）
     auto addSmall = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(ctx);
+        auto *a = new QAction(text, ctx);
         a->setToolTip(text);
-        if (text.size() <= 2)
-            a->setText(text);
+        if (text.size() > 2)
+            a->setProperty("rbIconOnly", true);
         QObject::connect(a, &QAction::triggered, ctx, fn);
         panel->addSmallAction(a);
     };
@@ -101,7 +122,7 @@ QWidget *MainWindow::createRibbon()
     // 文件
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("文件"));
-        auto *pLayout = cat->addPanel(QStringLiteral("布局"));
+        auto *pLayout = cat->addPanel(QStringLiteral("文件"));
         addLarge(pLayout, QStringLiteral("打开文件"), [this] {
             const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("打开文件"), {},
                 QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
@@ -278,6 +299,8 @@ QWidget *MainWindow::createRibbon()
             if (it != kIcon.end())
             {
                 a->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(it.value())));
+                if (a->property("rbIconOnly").toBool())
+                    a->setText(QString());
 
             }
         }
@@ -289,7 +312,7 @@ QWidget *MainWindow::createRibbon()
     // 面板本体撑到 68 px：SARibbon 的 category 高度不会自动把 panel 拉满
     for (auto *p : ribbon->findChildren<SARibbonPanel *>())
     {
-        p->setMinimumHeight(68);
+        p->setMinimumHeight(56);
         if (auto *l = p->layout())
             l->setContentsMargins(4, 4, 9, 4);
     }
@@ -356,11 +379,14 @@ void MainWindow::createDocks()
     headLay->addStretch();
     auto mkTiny = [&](const QString &t, const QString &tip) {
         auto *b = new QToolButton(head);
-        b->setText(t);
+        b->setIcon(QIcon(QStringLiteral(":/icons/%1.svg")
+                             .arg(t == QStringLiteral("\u25b6") ? QStringLiteral("play") : QStringLiteral("pause"))));
+        b->setIconSize(QSize(11, 11));
         b->setToolTip(tip);
         b->setFixedSize(20, 18);
         b->setStyleSheet(QStringLiteral(
-            "QToolButton{background:transparent;border:1px solid #232b33;color:#8494a0;font-size:10px;}"
+            "QToolButton{background:transparent;border:0;color:#8494a0;font-size:10px;padding:0;}"
+            "QToolButton:hover{background:#222b33;}"
             "QToolButton:hover{color:#f2b134;border-color:#f2b134;}"));
         headLay->addWidget(b);
         return b;
@@ -400,7 +426,7 @@ void MainWindow::createDocks()
         auto *colLay = new QVBoxLayout(col);
         colLay->setContentsMargins(0, 0, 0, 0);
         colLay->setSpacing(0);
-        auto *nameLb = new QLabel(QString::fromUtf8(srcs[i].name), col);
+        auto *nameLb = new ElideLabel(QString::fromUtf8(srcs[i].name), col);
         nameLb->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:10.5px;background:transparent;"));
         auto *metaLb = new QLabel(QString::fromUtf8(srcs[i].meta), col);
         metaLb->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:9.5px;background:transparent;"));
@@ -564,11 +590,12 @@ void darkenDocks(MainWindow *w)
         lay->addStretch();
 
         auto *close = new QToolButton(bar);
-        close->setText(QStringLiteral("×"));
+        close->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
+        close->setIconSize(QSize(11, 11));
         close->setCursor(Qt::PointingHandCursor);
         close->setFixedSize(18, 18);
         close->setStyleSheet(QStringLiteral(
-            "QToolButton{background:transparent;border:0;color:#5d6c77;font-size:13px;}"
+            "QToolButton{background:transparent;border:0;color:#5d6c77;padding:0;}"
             "QToolButton:hover{color:#f2b134;}"));
         QObject::connect(close, &QToolButton::clicked, d, &QDockWidget::close);
         lay->addWidget(close);

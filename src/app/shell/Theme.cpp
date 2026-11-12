@@ -90,6 +90,7 @@ QSplitter::handle:hover { background:#2d3841; }
 /* ---- 状态栏 / 提示 ---- */
 QStatusBar { background:#161b20; color:#6e7681; border-top:1px solid #232b33; }
 QStatusBar::item { border:0; }
+SARibbonPanelLabel { background:transparent; color:#7d8b96; font-size:10px; }
 QToolTip { background:#161b20; color:#c9d1d9; border:1px solid #232b33; padding:3px 6px; }
 QMenu { background:#161b20; color:#c9d1d9; border:1px solid #2d3841; }
 QMenu::item:selected { background:#1b232a; color:#f2b134; }
