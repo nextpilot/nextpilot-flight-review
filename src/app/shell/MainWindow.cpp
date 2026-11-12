@@ -485,10 +485,21 @@ bool MainWindow::loadFile(const QString &path)
     char err[256] = {0};
     PsDataset *ds = nullptr;
     const QFileInfo fi(path);
-    // 分流：ULog 交给内核的 ulog 解析器，其余按 CSV 走（M1 再补 blf/asc）
-    const bool is_ulog = fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0;
-    const int32_t rc = is_ulog ? ps_ulog_load(path.toUtf8().constData(), &ds, err, sizeof(err))
-                               : ps_csv_load(path.toUtf8().constData(), &ds, err, sizeof(err));
+    // 分流：ulg → ULog，asc → Vector ASC，blf → Vector BLF，其余按 CSV
+    const QString suffix = fi.suffix().toLower();
+    const bool is_ulog = suffix == QLatin1String("ulg");
+    const bool is_asc = suffix == QLatin1String("asc");
+    const bool is_blf = suffix == QLatin1String("blf");
+    const bool is_tree = is_ulog || is_asc || is_blf; // 有 topic/ID 层级，要分组挂树
+    int32_t rc;
+    if (is_ulog)
+        rc = ps_ulog_load(path.toUtf8().constData(), &ds, err, sizeof(err));
+    else if (is_asc)
+        rc = ps_asc_load(path.toUtf8().constData(), &ds, err, sizeof(err));
+    else if (is_blf)
+        rc = ps_blf_load(path.toUtf8().constData(), &ds, err, sizeof(err));
+    else
+        rc = ps_csv_load(path.toUtf8().constData(), &ds, err, sizeof(err));
     if (rc != 0)
     {
         const QString msg = QString::fromUtf8(err);
@@ -508,7 +519,10 @@ bool MainWindow::loadFile(const QString &path)
     m_dataset = ds;
 
     const uint32_t n = ps_dataset_channel_count(ds);
-    const QString fmt_tag = is_ulog ? QStringLiteral("ULog") : QStringLiteral("CSV");
+    const QString fmt_tag = is_ulog ? QStringLiteral("ULog")
+                          : is_asc  ? QStringLiteral("ASC · CAN")
+                          : is_blf  ? QStringLiteral("BLF · CAN")
+                                    : QStringLiteral("CSV");
     auto *top = new QTreeWidgetItem(m_srcTree,
         {QStringLiteral("%1  [%2 · %3 通道]").arg(fi.fileName(), fmt_tag).arg(n)});
     QVector<const PsChannelInfo *> channels;
@@ -525,7 +539,7 @@ bool MainWindow::loadFile(const QString &path)
         const QString name = QString::fromUtf8(ch->name);
         QString group;
         QString leaf = name;
-        if (is_ulog)
+        if (is_tree)
         {
             const int dot = name.lastIndexOf(QLatin1Char('.'));
             if (dot > 0)
@@ -551,10 +565,10 @@ bool MainWindow::loadFile(const QString &path)
         item->setData(0, Qt::UserRole + 1, name);
     }
     const bool few_groups = groups.size() <= 8;
-    top->setExpanded(is_ulog ? few_groups : true);
+    top->setExpanded(is_tree ? few_groups : true);
     for (auto *g : groups)
-        g->setExpanded(few_groups);
-    if (is_ulog && !few_groups)
+        g->setExpanded(few_groups && is_tree);
+    if (is_tree && !few_groups)
         groups.first()->setExpanded(true);
 
     // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线

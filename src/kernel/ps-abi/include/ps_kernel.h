@@ -43,6 +43,13 @@ int32_t              ps_csv_load(const char *path, PsDataset **out, char *err, u
  * 多实例为 `topic.00.field`；`timestamp` 与 `_padding` 不产出通道。
  * 单位信息 ULog 里没有（只能靠字段名/格式约定），unit 返回空串。 */
 int32_t              ps_ulog_load(const char *path, PsDataset **out, char *err, uint32_t err_cap);
+/* 读 Vector ASC（文本 CAN 日志）→ 数据集。没有 DBC 就不猜物理量，
+ * 只给可验证的两类通道：`CAN<总线>.<ID>.bN`（报文第 N 字节原始值）
+ * 与 `CAN<总线>.<ID>.period`（同 ID 相邻帧间隔 ms）。 */
+int32_t              ps_asc_load(const char *path, PsDataset **out, char *err, uint32_t err_cap);
+
+/* 读 Vector BLF（二进制 CAN 日志）→ 数据集，通道规则同 ps_asc_load。 */
+int32_t              ps_blf_load(const char *path, PsDataset **out, char *err, uint32_t err_cap);
 uint32_t             ps_dataset_channel_count(const PsDataset *ds);
 const PsChannelInfo *ps_dataset_channel(const PsDataset *ds, uint32_t index);
 void                 ps_dataset_free(PsDataset *ds);

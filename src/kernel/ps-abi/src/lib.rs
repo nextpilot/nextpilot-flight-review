@@ -176,6 +176,60 @@ pub unsafe extern "C" fn ps_csv_load(
     0
 }
 
+/// ASC / BLF 共用：解析 → 帧 → 曲线 → dataset
+unsafe fn can_load(
+    path: *const c_char,
+    out: *mut *mut Dataset,
+    err: *mut c_char,
+    err_cap: u32,
+    f: fn(&Path) -> Result<ps_parse::can::CanLog, String>,
+) -> i32 {
+    if path.is_null() || out.is_null() {
+        return 1;
+    }
+    let path_str = match CStr::from_ptr(path).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            write_err(err, err_cap, "路径不是合法 UTF-8");
+            return 2;
+        }
+    };
+    let log = match f(Path::new(path_str)) {
+        Ok(l) => l,
+        Err(e) => {
+            write_err(err, err_cap, e.as_str());
+            return 3;
+        }
+    };
+    let series = ps_parse::can::frames_to_series(&log.frames);
+    if series.is_empty() {
+        write_err(err, err_cap, "所有字节都恒定，没有可画的通道");
+        return 4;
+    }
+    *out = Box::into_raw(Box::new(dataset_from_series(series)));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_asc_load(
+    path: *const c_char,
+    out: *mut *mut Dataset,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    can_load(path, out, err, err_cap, ps_parse::asc::parse_file)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_blf_load(
+    path: *const c_char,
+    out: *mut *mut Dataset,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    can_load(path, out, err, err_cap, ps_parse::blf::parse_file)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_channel_count(ds: *const Dataset) -> u32 {
     if ds.is_null() {

@@ -390,7 +390,7 @@ Ribbon 的价值不是好看，是**把命令按任务分组、一屏全露**：
 
 ## 10. 插件与 ABI
 
-**C ABI（数据面 6 函数；插件面 5 函数）**
+**C ABI（数据面 8 函数；插件面 5 函数）**
 
 ```c
 uint32_t           ps_abi_version(void);
@@ -548,7 +548,10 @@ ps_plugin_<family>   # MODULE 库：src/plugin/<family>/，输出到 bin/plugins
 - 降采样落到 Rust：UI 每次重绘按像素宽度调 `ps_lod_minmax`，只拿 ≤px 个 `(x,min,max)` 三元组；3000 点 CSV 画到三格（每格一个通道，避免混量纲压成直线）。
 - 内核单测 19 例（`cargo test`），`ctest` 2/2 通过（ABI 冒烟 + cargo）。
 - **ULog 已接**（2026-11-12 晚）：`ps-parse::ulog` 按 PX4 `ulog_file_format` 实现（16 字节头 + 消息流，`F/A/D/L/B/P/Q/M/I` 类型），命名与展平规则对齐 PlotJuggler `data_load_ulog`——`timestamp` 与 `_padding*` 不产出曲线、嵌套结构用 `.`、数组下标补两位 `.00`、`char[N]` 当字符串不当数值、同 topic 有 `multi_id>0` 时全部实例加 `.NN` 后缀。新增数据面函数 `ps_ulog_load`；UI 按后缀分流，通道按 topic 分组挂树，双击出图。实测：自造 `test/fixture/demo_flight.ulg`（250 Hz / 12 s / 4 topic）→ 13 通道 × 3000 点、解析 10 ms；PX4 官方 900 KB 样例 → **1351 通道 / 1812 行 / 解析 16.9 ms**。
-- 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、BLF/ASC/NMEA、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
+- **CAN 双格式（ASC / BLF）已接**（2026-11-13）：`ps-parse::can` 统一帧模型，`asc.rs` 解析 Vector 文本导出（经典帧 / 扩展帧 `x` 后缀 / `CANFD` 行 / `base hex|dec`），`blf.rs` 解析二进制（`LOGG` 头 + `LOBJ` 对象流 + `LOG_CONTAINER` zlib 解压，对象跨容器时留半截续接）。BLF 无公开规范，字段偏移按 python-can `io/blf.py`（源于 vector_blf）逐项对照。
+- CAN 出通道**不猜物理量**：没有 DBC 就不知道哪几个字节拼成一个信号，硬猜的曲线是假的。只给两类可验证量——`CAN<总线>.<ID>.bN`（报文第 N 字节原始值，恒定字节直接丢弃，否则 500 个 ID × 8 字节会把通道树撑成几千行）与 `CAN<总线>.<ID>.period`（同 ID 相邻帧间隔 ms，看周期抖动最直接）。DBC 解码归 M2 协议编辑器（D13）。
+- **对拍证据**：用 python-can 4.6.1 的 `ASCWriter`/`BLFWriter` 把同一批 3020 帧写成 `test/fixture/demo_can.asc`（190 KB）与 `demo_can.blf`（19.5 KB），两种格式各自解析后**逐通道逐点相同**（`ps-parse/tests/can_formats.rs`），帧数/每 ID 帧数也与 python-can `LogReader` 完全一致；解析耗时 ASC 0.9 ms、BLF 0.7 ms。
+- 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、NMEA/DFLog、DBC 解码、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
 
 **Ribbon / Dock spike（2026-11-12 实测）**
 

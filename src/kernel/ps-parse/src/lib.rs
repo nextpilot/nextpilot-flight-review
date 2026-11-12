@@ -1,6 +1,9 @@
 //! 格式嗅探：只读文件头部若干字节，给出最可能的解析器家族。
 //! 真正的解析器在 src/plugin 下按家族实现（D16：plugin 是官方解析器）。
 
+pub mod asc;
+pub mod blf;
+pub mod can;
 pub mod csv;
 pub mod ulog;
 
@@ -25,7 +28,8 @@ pub fn sniff(head: &[u8]) -> Format {
     if head.starts_with(b"$GP") || head.starts_with(b"$GN") || head.starts_with(b"$GL") {
         return Format::Nmea;
     }
-    if head.len() >= 4 && &head[0..4] == [0x42, 0x4C, 0x46, 0x00] {
+    // BLF 文件头签名是 "LOGG"（不是 "BLF"）
+    if head.len() >= 4 && &head[0..4] == b"LOGG" {
         return Format::Blf;
     }
     let ascii_csv = head
@@ -35,10 +39,19 @@ pub fn sniff(head: &[u8]) -> Format {
     if ascii_csv && head.iter().any(|b| *b == b',' || *b == b'\t' || *b == b';') {
         return Format::Csv;
     }
-    if head.starts_with(b"date ") && head.windows(3).any(|w| w == b"ASC") {
+    // ASC：文本头 `date …` / `base hex` / `Begin Triggerblock`，正文有 Rx/Tx 帧行
+    if head.starts_with(b"date ")
+        || head.windows(11).any(|w| w == b"base hex  t")
+        || text_has(head, b"Triggerblock")
+        || (text_has(head, b" CANFD ") && text_has(head, b" Rx "))
+    {
         return Format::Asc;
     }
     Format::Unknown
+}
+
+fn text_has(hay: &[u8], needle: &[u8]) -> bool {
+    hay.windows(needle.len()).any(|w| w == needle)
 }
 
 #[cfg(test)]
@@ -53,6 +66,16 @@ mod tests {
     #[test]
     fn detects_csv() {
         assert_eq!(sniff(b"time,att.roll\n0.0,1.2\n"), Format::Csv);
+    }
+
+    #[test]
+    fn detects_blf_and_asc() {
+        assert_eq!(sniff(b"LOGG\x90\x00\x00\x00"), Format::Blf);
+        assert_eq!(sniff(b"date Thu Nov 12 10:00:00.000 2026"), Format::Asc);
+        assert_eq!(
+            sniff(b"   0.010000 CANFD   1 Rx  2B0  1 0 9 12 11"),
+            Format::Asc
+        );
     }
 
     #[test]
