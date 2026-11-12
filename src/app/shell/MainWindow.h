@@ -3,6 +3,7 @@
 #include <QMainWindow>
 
 struct PsDataset;
+struct PsChannelInfo;
 class CanvasWidget;
 class QLabel;
 class QPlainTextEdit;
@@ -38,7 +39,9 @@ private:
     void createPages();
     void log(const QString &text);
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
-    void addSourceRow(const QString &name, const QString &meta, const QString &dotColor);
+    void addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed = false);
+    void activateSource(QWidget *row);   // 每个源各自一份字段/参数/消息视图
+    void renderSourceData();
     void refreshSrcCount();
     void applySrcFilter();
     void newPage();
@@ -49,6 +52,11 @@ private:
     QTabBar *m_srcTabs = nullptr;          // 字段 / 参数 / 消息
     QStackedWidget *m_srcStack = nullptr;
     QLabel *m_srcCount = nullptr;          // “3 源 · 2 已连接”
+    bool m_viewBacked = false;            // 当前选中的数据源是否持有内核数据集
+    QString m_srcFmt;                     // 当前源的格式标签（ULog/CSV/...）
+    QVector<const PsChannelInfo *> m_srcChannels;
+    QVector<QPair<QString, QString>> m_srcParams;
+    QVector<QStringList> m_srcMsgs;
     QLineEdit *m_srcFilter = nullptr;      // 字段/参数/消息 共用的搜索框
     QString m_kernelInfo;                  // 状态栏常驻信息（Ribbon 悬停时临时替换）
     QTableWidget *m_paramTable = nullptr;

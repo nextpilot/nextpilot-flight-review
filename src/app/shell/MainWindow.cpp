@@ -31,6 +31,7 @@
 #include <QStackedWidget>
 #include <QLineEdit>
 #include <QEvent>
+#include <QMouseEvent>
 #include <QDrag>
 #include <QMimeData>
 #include <QDropEvent>
@@ -473,9 +474,9 @@ void MainWindow::createDocks()
     m_srcRows = new QVBoxLayout(rowsHost);
     m_srcRows->setContentsMargins(0, 0, 0, 0);
     m_srcRows->setSpacing(0);
-    addSourceRow(QStringLiteral("ulog · flight_2026-11-12.ulg"), QStringLiteral("已加载 · 13 通道"), QStringLiteral("#7ee787"));
-    addSourceRow(QStringLiteral("can · vehicle_bus"), QStringLiteral("已暂停 · 2 通道"), QStringLiteral("#ffb454"));
-    addSourceRow(QStringLiteral("mav · 192.168.1.20:14550"), QStringLiteral("空闲 · 未连接"), QStringLiteral("#4a545d"));
+    addSourceRow(QStringLiteral("ulog · 示例会话"), QStringLiteral("示例 · 未接入"), QStringLiteral("#4a545d"));
+    addSourceRow(QStringLiteral("can · vehicle_bus"), QStringLiteral("示例 · 未接入"), QStringLiteral("#4a545d"));
+    addSourceRow(QStringLiteral("mav · 192.168.1.20:14550"), QStringLiteral("示例 · 未接入"), QStringLiteral("#4a545d"));
     srcLay->addWidget(rowsHost);
 
     // 搜索：字段树/参数表/消息表共用，按当前页签生效
@@ -676,15 +677,163 @@ void darkenDocks(MainWindow *w)
     }
 }
 
-void MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor)
+void MainWindow::renderSourceData()
+{
+    if (!m_srcTree || !m_srcTabs)
+        return;
+    m_srcTree->clear();
+    const int n = m_viewBacked ? m_srcChannels.size() : 0;
+
+    if (!m_viewBacked)
+    {
+        auto *it = new QTreeWidgetItem(m_srcTree, {QStringLiteral("该数据源暂未提供字段")});
+        it->setFlags(Qt::NoItemFlags);
+        m_srcTabs->setTabText(0, QStringLiteral("字段 0"));
+        m_srcTabs->setTabText(1, QStringLiteral("参数 0"));
+        m_srcTabs->setTabText(2, QStringLiteral("消息 0"));
+
+        m_paramTable->setRowCount(1);
+        auto *pk = new QTableWidgetItem(QStringLiteral("—"));
+        auto *pv = new QTableWidgetItem(QStringLiteral("该数据源未接入，没有参数表"));
+        pk->setFlags(Qt::ItemIsEnabled);
+        pv->setFlags(Qt::ItemIsEnabled);
+        m_paramTable->setItem(0, 0, pk);
+        m_paramTable->setItem(0, 1, pv);
+
+        m_msgTable->setRowCount(1);
+        for (int c = 0; c < 3; ++c)
+        {
+            auto *mi = new QTableWidgetItem(c == 0 ? QStringLiteral("—") : QString());
+            mi->setFlags(Qt::ItemIsEnabled);
+            m_msgTable->setItem(0, c, mi);
+        }
+        return;
+    }
+
+    const bool is_tree = m_srcFmt == QStringLiteral("ULog");
+    QMap<QString, QTreeWidgetItem *> groups;
+    for (const PsChannelInfo *ch : m_srcChannels)
+    {
+        const QString name = QString::fromUtf8(ch->name);
+        QString group;
+        QString leaf = name;
+        if (is_tree)
+        {
+            const int dot = name.lastIndexOf(QLatin1Char('.'));
+            if (dot > 0)
+            {
+                group = name.left(dot);
+                leaf = name.mid(dot + 1);
+            }
+        }
+        QTreeWidgetItem *parent = nullptr;
+        if (!group.isEmpty())
+        {
+            auto it = groups.find(group);
+            if (it == groups.end())
+            {
+                auto *g = new QTreeWidgetItem(m_srcTree, {group});
+                it = groups.insert(group, g);
+            }
+            parent = it.value();
+        }
+        QTreeWidgetItem *item = parent ? new QTreeWidgetItem(parent, {leaf})
+                                       : new QTreeWidgetItem(m_srcTree, {leaf});
+        item->setToolTip(0, name);
+        item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+        item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
+        item->setData(0, Qt::UserRole + 1, name);
+    }
+    const bool few_groups = groups.size() <= 8;
+    for (auto *g : groups)
+        g->setExpanded(few_groups && is_tree);
+    if (is_tree && !few_groups && !groups.isEmpty())
+        groups.first()->setExpanded(true);
+
+    m_srcTabs->setTabText(0, QStringLiteral("字段 %1").arg(n));
+    m_srcTabs->setTabText(1, QStringLiteral("参数 %1").arg(m_srcParams.size()));
+    m_srcTabs->setTabText(2, QStringLiteral("消息 %1").arg(m_srcMsgs.size()));
+
+    m_paramTable->setRowCount(m_srcParams.size());
+    for (int i = 0; i < m_srcParams.size(); ++i)
+    {
+        auto *k = new QTableWidgetItem(m_srcParams[i].first);
+        auto *v = new QTableWidgetItem(m_srcParams[i].second);
+        k->setFlags(Qt::ItemIsEnabled);
+        v->setFlags(Qt::ItemIsEnabled);
+        m_paramTable->setItem(i, 0, k);
+        m_paramTable->setItem(i, 1, v);
+    }
+    if (m_srcParams.isEmpty())
+    {
+        m_paramTable->setRowCount(1);
+        auto *k = new QTableWidgetItem(QStringLiteral("—"));
+        auto *v = new QTableWidgetItem(QStringLiteral("%1 未提供参数表（仅 ULog 带 P/Q 参数消息）").arg(m_srcFmt));
+        k->setFlags(Qt::ItemIsEnabled);
+        v->setFlags(Qt::ItemIsEnabled);
+        m_paramTable->setItem(0, 0, k);
+        m_paramTable->setItem(0, 1, v);
+    }
+
+    m_msgTable->setRowCount(m_srcMsgs.size());
+    for (int i = 0; i < m_srcMsgs.size(); ++i)
+    {
+        for (int c = 0; c < 3; ++c)
+        {
+            auto *mi = new QTableWidgetItem(m_srcMsgs[i].value(c));
+            mi->setFlags(Qt::ItemIsEnabled);
+            if (c > 0)
+                mi->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            m_msgTable->setItem(i, c, mi);
+        }
+    }
+    if (m_srcMsgs.isEmpty())
+    {
+        m_msgTable->setRowCount(1);
+        for (int c = 0; c < 3; ++c)
+        {
+            auto *mi = new QTableWidgetItem(c == 0 ? QStringLiteral("—") : QStringLiteral("—"));
+            mi->setFlags(Qt::ItemIsEnabled);
+            if (c > 0)
+                mi->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            m_msgTable->setItem(0, c, mi);
+        }
+    }
+}
+
+void MainWindow::activateSource(QWidget *row)
+{
+    if (!row || !m_srcRows)
+        return;
+    for (int i = 0; i < m_srcRows->count(); ++i)
+    {
+        QWidget *w = m_srcRows->itemAt(i) ? m_srcRows->itemAt(i)->widget() : nullptr;
+        if (!w)
+            continue;
+        const bool on = (w == row);
+        if (w->property("active").toBool() != on)
+        {
+            w->setProperty("active", on);
+            w->style()->unpolish(w);
+            w->style()->polish(w);
+        }
+    }
+    m_viewBacked = row->property("backed").toBool();
+    renderSourceData();
+}
+
+void MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed)
 {
     if (!m_srcRows)
         return;
     QWidget *rowsHost = m_srcRows->parentWidget();
     auto *row = new QWidget(rowsHost);
     row->setFixedHeight(40);
-    row->setProperty("active", m_srcRows->count() == 0);
+    row->setProperty("active", false);
     row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
+    row->setProperty("srcRow", true);
+    row->setProperty("backed", backed);
+    row->installEventFilter(this);
     row->setStyleSheet(QStringLiteral(
         "QWidget{background:transparent;border-left:2px solid transparent;border-bottom:1px solid #171f26;}"
         "QWidget[active=true]{background:#1a2127;border-left-color:#f2b134;}"
@@ -694,11 +843,13 @@ void MainWindow::addSourceRow(const QString &name, const QString &meta, const QS
     lay->setSpacing(6);
 
     auto *dot = new QLabel(row);
+    dot->setAttribute(Qt::WA_TransparentForMouseEvents);
     dot->setFixedSize(6, 6);
     dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
     lay->addWidget(dot);
 
     auto *col = new QWidget(row);
+    col->setAttribute(Qt::WA_TransparentForMouseEvents);
     col->setStyleSheet(QStringLiteral("background:transparent;"));
     auto *colLay = new QVBoxLayout(col);
     colLay->setContentsMargins(0, 0, 0, 0);
@@ -742,6 +893,8 @@ void MainWindow::addSourceRow(const QString &name, const QString &meta, const QS
 
     m_srcRows->addWidget(row);
     refreshSrcCount();
+    if (backed)
+        activateSource(row);
 }
 
 void MainWindow::refreshSrcCount()
@@ -833,6 +986,12 @@ void MainWindow::newPage()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    // 数据源行：点行切换该源自己的字段/参数/消息
+    if (event->type() == QEvent::MouseButtonRelease && watched->property("srcRow").toBool())
+    {
+        activateSource(qobject_cast<QWidget *>(watched));
+        return false;
+    }
     // Ribbon 按钮的自定义 tooltip：开着它会在鼠标下方盖住分组标题，改走状态栏
     if (event->type() == QEvent::Enter || event->type() == QEvent::Leave)
     {
@@ -985,116 +1144,53 @@ bool MainWindow::loadFile(const QString &path)
                           : is_asc  ? QStringLiteral("ASC · CAN")
                           : is_blf  ? QStringLiteral("BLF · CAN")
                                     : QStringLiteral("CSV");
-    // 源列表已在上面，字段页只放通道树：清空重填，按 topic 分组
-    m_srcTree->clear();
-    QVector<const PsChannelInfo *> channels;
-
-    // ULog 通道名是 `topic.field`（多实例 `topic.NN.field`）：按 topic 分组，
-    // 否则 1351 条通道平铺在一层，找不动。CSV 没有层级，保持一层。
-    QMap<QString, QTreeWidgetItem *> groups;
+    m_srcChannels.clear();
+    m_srcParams.clear();
+    m_srcMsgs.clear();
+    m_srcFmt = fmt_tag;
     for (uint32_t i = 0; i < n; ++i)
-    {
-        const PsChannelInfo *ch = ps_dataset_channel(ds, i);
-        if (!ch)
-            continue;
-        channels.append(ch);
-        const QString name = QString::fromUtf8(ch->name);
-        QString group;
-        QString leaf = name;
-        if (is_tree)
-        {
-            const int dot = name.lastIndexOf(QLatin1Char('.'));
-            if (dot > 0)
-            {
-                group = name.left(dot);
-                leaf = name.mid(dot + 1);
-            }
-        }
-        QTreeWidgetItem *parent = nullptr;
-        if (!group.isEmpty())
-        {
-            auto it = groups.find(group);
-            if (it == groups.end())
-            {
-                auto *g = new QTreeWidgetItem(m_srcTree, {group});
-                it = groups.insert(group, g);
-            }
-            parent = it.value();
-        }
-        QTreeWidgetItem *item = parent ? new QTreeWidgetItem(parent, {leaf})
-                                       : new QTreeWidgetItem(m_srcTree, {leaf});
-        item->setToolTip(0, name);
-        item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
-        item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
-        item->setData(0, Qt::UserRole + 1, name);
-    }
-    const bool few_groups = groups.size() <= 8;
-    for (auto *g : groups)
-        g->setExpanded(few_groups && is_tree);
-    if (is_tree && !few_groups && !groups.isEmpty())
-        groups.first()->setExpanded(true);
+        if (const PsChannelInfo *ch = ps_dataset_channel(ds, i))
+            m_srcChannels.append(ch);
 
-    // 页签计数 + 参数/消息两页（消息按 topic 聚合成“速率/字段数/点数”）
-    m_srcTabs->setTabText(0, QStringLiteral("字段 %1").arg(n));
-    m_srcTabs->setTabText(1, QStringLiteral("参数 0"));
-    m_srcTabs->setTabText(2, QStringLiteral("消息 %1").arg(groups.size()));
-
-    // 参数页：ULog 走 ps_ulog_params（P/Q 消息），其它格式暂无参数表
-    int nparam = 0;
-    m_paramTable->setRowCount(0);
+    // 参数：ULog 走 ps_ulog_params（P/Q 消息），其它格式暂无参数表
     if (fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0)
     {
         QByteArray buf(96 * 1024, '\0');
         char err[256] = {0};
         const int prc = ps_ulog_params(fi.absoluteFilePath().toUtf8().constData(),
                                       buf.data(), static_cast<uint32_t>(buf.size()), err, sizeof err);
-        // 缓冲预填 0，解析前必须削掉尾部 NUL，否则 Qt 的 JSON 解析器会当作非法尾字符
         while (!buf.isEmpty() && buf.at(buf.size() - 1) == '\0')
             buf.chop(1);
         if (prc == 0)
         {
-            const QJsonArray arr = QJsonDocument::fromJson(buf).array();
-            nparam = arr.size();
-            m_paramTable->setRowCount(nparam);
-            for (int i = 0; i < nparam; ++i)
+            for (const QJsonValue &v : QJsonDocument::fromJson(buf).array())
             {
-                const QJsonObject o = arr[i].toObject();
-                auto *k = new QTableWidgetItem(o.value(QStringLiteral("name")).toString());
-                auto *v = new QTableWidgetItem(o.value(QStringLiteral("value")).toString());
-                k->setFlags(Qt::ItemIsEnabled);
-                v->setFlags(Qt::ItemIsEnabled);
-                m_paramTable->setItem(i, 0, k);
-                m_paramTable->setItem(i, 1, v);
+                const QJsonObject o = v.toObject();
+                m_srcParams.append({o.value(QStringLiteral("name")).toString(),
+                                    o.value(QStringLiteral("value")).toString()});
             }
         }
         else
         {
             log(QStringLiteral("ps_ulog_params rc=%1 err=%2").arg(prc).arg(QString::fromUtf8(err)));
-            m_paramTable->insertRow(0);
-            m_paramTable->setItem(0, 0, new QTableWidgetItem(QStringLiteral("—")));
-            m_paramTable->setItem(0, 1, new QTableWidgetItem(QStringLiteral("参数表读取失败：%1").arg(QString::fromUtf8(err))));
         }
     }
-    if (m_paramTable->rowCount() == 0)
-    {
-        m_paramTable->insertRow(0);
-        m_paramTable->setItem(0, 0, new QTableWidgetItem(QStringLiteral("—")));
-        m_paramTable->setItem(0, 1, new QTableWidgetItem(
-            QStringLiteral("%1 未提供参数表（仅 ULog 带 P/Q 参数消息）").arg(fmt_tag)));
-    }
-    m_srcTabs->setTabText(1, QStringLiteral("参数 %1").arg(nparam));
 
-    // 消息页：topic + 字段数 + 采样率（由该 topic 首通道的时间戳差分算出）
-    m_msgTable->setRowCount(0);
-    for (auto it = groups.constBegin(); it != groups.constEnd(); ++it)
+    // 消息：按 topic 聚合（ULog 才有 `topic.field` 层级）
+    if (is_tree)
     {
-        auto *g = it.value();
-        QString hz = QStringLiteral("—");
-        if (g->childCount() > 0)
+        QMap<QString, QVector<const PsChannelInfo *>> byTopic;
+        for (const PsChannelInfo *ch : m_srcChannels)
         {
-            auto *leaf = g->child(0);
-            const PsChannelInfo *ch = reinterpret_cast<const PsChannelInfo *>(
-                leaf->data(0, Qt::UserRole).value<qulonglong>());
+            const QString name = QString::fromUtf8(ch->name);
+            const int dot = name.lastIndexOf(QLatin1Char('.'));
+            if (dot > 0)
+                byTopic[name.left(dot)].append(ch);
+        }
+        for (auto it = byTopic.constBegin(); it != byTopic.constEnd(); ++it)
+        {
+            QString hz = QStringLiteral("—");
+            const PsChannelInfo *ch = it.value().isEmpty() ? nullptr : it.value().first();
             if (ch && ch->point_count > 1)
             {
                 const double span = ch->time[ch->point_count - 1] - ch->time[0];
@@ -1102,44 +1198,19 @@ bool MainWindow::loadFile(const QString &path)
                     hz = QStringLiteral("%1 Hz").arg((ch->point_count - 1) / span, 0, 'f',
                                                      (ch->point_count - 1) / span >= 10 ? 0 : 1);
             }
-            const int row = m_msgTable->rowCount();
-            m_msgTable->insertRow(row);
-            auto *name = new QTableWidgetItem(it.key());
-            name->setToolTip(QStringLiteral("%1 · %2 点").arg(it.key()).arg(ch ? ch->point_count : 0));
-            name->setFlags(Qt::ItemIsEnabled);
-            auto *rate = new QTableWidgetItem(hz);
-            rate->setFlags(Qt::ItemIsEnabled);
-            rate->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            auto *nf = new QTableWidgetItem(QString::number(g->childCount()));
-            nf->setFlags(Qt::ItemIsEnabled);
-            nf->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            m_msgTable->setItem(row, 0, name);
-            m_msgTable->setItem(row, 1, rate);
-            m_msgTable->setItem(row, 2, nf);
-        }
-    }
-    if (m_msgTable->rowCount() == 0)
-    {
-        m_msgTable->insertRow(0);
-        auto *name = new QTableWidgetItem(QStringLiteral("—"));
-        name->setFlags(Qt::ItemIsEnabled);
-        name->setToolTip(QStringLiteral("%1 · 无 topic 分组（平表）").arg(fmt_tag));
-        m_msgTable->setItem(0, 0, name);
-        for (int c = 1; c < 3; ++c)
-        {
-            auto *it2 = new QTableWidgetItem(QStringLiteral("—"));
-            it2->setFlags(Qt::ItemIsEnabled);
-            it2->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            m_msgTable->setItem(0, c, it2);
+            m_srcMsgs.append({it.key(), hz, QString::number(it.value().size())});
         }
     }
 
+    m_viewBacked = true;
+    renderSourceData();
+
     // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线
     const QVector<CanvasWidget *> canvases = pageCanvases();
-    for (int i = 0; i < canvases.size() && i < channels.size(); ++i)
+    for (int i = 0; i < canvases.size() && i < m_srcChannels.size(); ++i)
     {
-        canvases[i]->setChannels({channels[i]});
-        canvases[i]->setTitle(QStringLiteral("%1 · %2").arg(fi.completeBaseName(), QString::fromUtf8(channels[i]->name)));
+        canvases[i]->setChannels({m_srcChannels[i]});
+        canvases[i]->setTitle(QStringLiteral("%1 · %2").arg(fi.completeBaseName(), QString::fromUtf8(m_srcChannels[i]->name)));
     }
 
     if (const PsChannelInfo *first = ps_dataset_channel(ds, 0))
@@ -1150,7 +1221,7 @@ bool MainWindow::loadFile(const QString &path)
                 .arg(fi.fileName(), fmt_tag).arg(n).arg(first->point_count)
                 .arg(t1 - t0, 0, 'f', 2));
     }
-    addSourceRow(fi.fileName(), QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"));
+    addSourceRow(fi.fileName(), QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true);
     statusBar()->showMessage(QStringLiteral("%1 · %2 通道 · %3 点").arg(fi.fileName()).arg(n)
                              .arg(ps_dataset_channel(ds, 0) ? ps_dataset_channel(ds, 0)->point_count : 0));
     return true;
