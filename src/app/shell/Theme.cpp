@@ -99,6 +99,9 @@ QMenu::item { padding:5px 22px 5px 18px; font-size:12px; }
 QMenu::item:selected { background:#1f2a33; }
 QMenu::item:disabled { color:#5d6c77; }
 QMenu::separator { height:1px; background:#232b33; margin:4px 6px; }
+QMenu::indicator { width:10px; height:10px; margin-left:4px; border-radius:5px; }
+QMenu::indicator:checked { background:#f2b134; }
+QMenu::indicator:unchecked { background:transparent; border:1px solid #2d3841; }
 QMenu { background:#161b20; border:1px solid #2d3841; padding:4px; }
 QMenu::item { padding:5px 24px 5px 20px; font-size:12px; color:#c9d1d9; border-radius:2px; }
 QMenu::item:selected { background:#1f2a33; color:#f2b134; }

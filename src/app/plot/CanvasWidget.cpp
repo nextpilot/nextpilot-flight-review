@@ -9,6 +9,7 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QMenu>
+#include <QColorDialog>
 
 #include <algorithm>
 #include <cmath>
@@ -283,8 +284,11 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     p.save();
     p.setClipRect(plot);
     p.setRenderHint(QPainter::Antialiasing, false);  // 曲线统一关 AA，整段开一次而不是每条切一次
-    for (const Series &s : m_series)
+    m_hitPaths.clear();
+    m_hitOwner.clear();
+    for (int si = 0; si < m_series.size(); ++si)
     {
+        const Series &s = m_series.at(si);
         if (!s.visible || s.count() < 2)
             continue;
         QVector<double> buf(static_cast<int>(px) * 3);
@@ -302,8 +306,10 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         poly.reserve(static_cast<int>(got));
         for (uint32_t i = 0; i < got; ++i)
             poly.append(QPointF(toX(buf[i * 3]), toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0)));
-        p.setPen(QPen(s.color, 1.0));  // 1.0 走快速 Bresenham；1.3 这类小数宽度在 Qt 6.2 上会掉进宽线轮廓器，慢 7 倍
+        p.setPen(QPen(s.color, s.width));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
         p.drawPolyline(poly);
+        m_hitPaths.append(poly);
+        m_hitOwner.append(si);
     }
     p.restore();
     p.setRenderHint(QPainter::Antialiasing, true);
@@ -349,6 +355,31 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         p.setPen(colorText());
         p.drawText(box.adjusted(7, 0, -7, 0), Qt::AlignVCenter | Qt::AlignLeft, tip);
     }
+}
+
+int CanvasWidget::seriesAt(const QPointF &pos) const
+{
+    const double lim = 20.0;
+    for (int i = 0; i < m_hitPaths.size(); ++i)
+    {
+        const QPolygonF &poly = m_hitPaths.at(i);
+        for (int k = 1; k < poly.size(); ++k)
+        {
+            const QPointF a = poly.at(k - 1);
+            const QPointF b = poly.at(k);
+            const QPointF ab = b - a;
+            const double len2 = ab.x() * ab.x() + ab.y() * ab.y();
+            const QPointF ap = pos - a;
+            double t = len2 > 0 ? (ap.x() * ab.x() + ap.y() * ab.y()) / len2 : 0.0;
+            t = std::clamp(t, 0.0, 1.0);
+            const QPointF q = a + ab * t;
+            const double dx = q.x() - pos.x();
+            const double dy = q.y() - pos.y();
+            if (dx * dx + dy * dy <= lim * lim)
+                return m_hitOwner.value(i, -1);
+        }
+    }
+    return -1;
 }
 
 void CanvasWidget::wheelEvent(QWheelEvent *event)
@@ -408,10 +439,54 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
             removeChannel(legend);
         return;
     }
+    if (event->button() == Qt::RightButton && seriesAt(event->position()) >= 0)
+    {
+        const int idx = seriesAt(event->position());
+        Series &s = m_series[idx];
+        QMenu menu(this);
+        QAction *head = menu.addAction(s.name);
+        head->setEnabled(false);
+        menu.addSeparator();
+        QAction *vis = menu.addAction(s.visible ? QStringLiteral("隐藏曲线") : QStringLiteral("显示曲线"));
+        QPixmap swatch(12, 12);
+        swatch.fill(s.color);
+        QAction *color = menu.addAction(QIcon(swatch), QStringLiteral("修改颜色…"));
+        QMenu *widths = menu.addMenu(QStringLiteral("线宽"));
+        QAction *w1 = widths->addAction(QStringLiteral("1 px"));
+        QAction *w2 = widths->addAction(QStringLiteral("2 px"));
+        QAction *w3 = widths->addAction(QStringLiteral("3 px"));
+        for (QAction *a : {w1, w2, w3})
+            a->setCheckable(true);
+        (s.width == 1 ? w1 : (s.width == 2 ? w2 : w3))->setChecked(true);
+        menu.addSeparator();
+        QAction *del = menu.addAction(QStringLiteral("删除曲线"));
+        QAction *chosen = menu.exec(event->globalPosition().toPoint());
+        if (chosen == vis)
+            toggleChannel(idx);
+        else if (chosen == color)
+        {
+            const QColor c = QColorDialog::getColor(s.color, this, QStringLiteral("曲线颜色"));
+            if (c.isValid())
+            {
+                s.color = c;
+                update();
+            }
+        }
+        else if (chosen == w1 || chosen == w2 || chosen == w3)
+        {
+            s.width = chosen == w1 ? 1 : (chosen == w2 ? 2 : 3);
+            update();
+        }
+        else if (chosen == del)
+            removeChannel(idx);
+        return;
+    }
     if (event->button() == Qt::RightButton)
     {
         QMenu menu(this);
-        QAction *reset = menu.addAction(QStringLiteral("重置视图"));
+        QAction *addCurve = menu.addAction(QStringLiteral("添加曲线…"));
+        menu.addSeparator();
+        QAction *reset = menu.addAction(QStringLiteral("重置缩放"));
         QAction *fit = menu.addAction(QStringLiteral("自适应 Y"));
         menu.addSeparator();
         QAction *legend = menu.addAction(QStringLiteral("显示图例"));
@@ -424,7 +499,9 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         QAction *add = menu.addAction(QStringLiteral("向下添加画布"));
         QAction *del = menu.addAction(QStringLiteral("删除此画布"));
         QAction *chosen = menu.exec(event->globalPosition().toPoint());
-        if (chosen == reset)
+        if (chosen == addCurve)
+            emit addChannelRequested();
+        else if (chosen == reset)
         {
             m_autoY = true;
             resetView();

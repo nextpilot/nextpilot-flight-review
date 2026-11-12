@@ -38,6 +38,7 @@ signals:
     void activated(const QString &title);
     void timeRangeChanged(double t0, double t1);   // 用户缩放/拖动 X 后发出，供同页画布联动
     void addRequested();                            // 右键“添加画布”
+    void addChannelRequested();                     // 右键“添加曲线…”：由主窗选通道
     void removeRequested();                         // 右键“删除画布”
 
 protected:
@@ -61,6 +62,7 @@ private:
         const double *v = nullptr;
         quint32 n = 0;
         bool visible = true;
+        int width = 1;
         QVector<double> tOwn;      // demo 数据所有权
         QVector<double> vOwn;
 
@@ -70,6 +72,7 @@ private:
     };
 
     QRectF plotRect() const;
+    int seriesAt(const QPointF &pos) const;          // 右键命中哪条曲线
     void resetView();
     void ensureTimeRange();
     void addDemoCurves();
@@ -89,5 +92,7 @@ private:
     QPointF m_lastPos;
     QPointF m_cursor;
     QVector<QRectF> m_legendRects;   // 图例命中区，随 paint 重算
+    QVector<QPolygonF> m_hitPaths;   // 最近一帧的曲线折线，用于右键命中
+    QVector<int> m_hitOwner;         // m_hitPaths 对应的 series 下标
     int m_legendHit = -1;
 };

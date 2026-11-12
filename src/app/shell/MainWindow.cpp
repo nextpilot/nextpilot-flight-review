@@ -1172,6 +1172,27 @@ void MainWindow::setupCanvas(CanvasWidget *c)
         }
     });
     connect(c, &CanvasWidget::addRequested, this, [this] { addCanvasToPage(); });
+    connect(c, &CanvasWidget::addChannelRequested, this, [this, c] {
+        if (m_srcChannels.isEmpty())
+        {
+            log(QStringLiteral("先加载数据文件，再添加曲线"));
+            return;
+        }
+        QStringList names;
+        for (const PsChannelInfo *ch : m_srcChannels)
+        {
+            const QString n = QString::fromUtf8(ch->name);
+            names.append(ch->unit ? QStringLiteral("%1 [%2]").arg(n, QString::fromUtf8(ch->unit)) : n);
+        }
+        bool ok = false;
+        const QString pick = QInputDialog::getItem(this, QStringLiteral("添加曲线"),
+                                                   QStringLiteral("通道"), names, 0, false, &ok);
+        if (ok && !pick.isEmpty())
+        {
+            c->addChannel(m_srcChannels.value(names.indexOf(pick)));
+            log(QStringLiteral("添加曲线：%1").arg(pick));
+        }
+    });
     connect(c, &CanvasWidget::removeRequested, this, [this, c] { removeCanvas(c); });
 }
 
