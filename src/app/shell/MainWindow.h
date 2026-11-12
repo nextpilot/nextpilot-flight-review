@@ -42,7 +42,7 @@ private:
     QStackedWidget *m_srcStack = nullptr;
     QLabel *m_srcCount = nullptr;          // “3 源 · 2 已连接”
     QTableWidget *m_paramTable = nullptr;
-    QListWidget *m_msgList = nullptr;
+    QTableWidget *m_msgTable = nullptr;
     QVBoxLayout *m_srcRows = nullptr;
     QTableWidget *m_propTable = nullptr;
     QLabel *m_selLabel = nullptr;

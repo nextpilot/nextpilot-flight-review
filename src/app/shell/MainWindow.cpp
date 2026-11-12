@@ -31,6 +31,9 @@
 #include <QStackedWidget>
 #include <QListWidget>
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include "plot/CanvasWidget.h"
 #include "ps_kernel.h"
@@ -475,14 +478,28 @@ void MainWindow::createDocks()
     m_paramTable = new QTableWidget(0, 2, m_srcStack);
     m_paramTable->setHorizontalHeaderLabels({QStringLiteral("参数"), QStringLiteral("值")});
     m_paramTable->verticalHeader()->setVisible(false);
-    m_paramTable->horizontalHeader()->setStretchLastSection(true);
+    m_paramTable->horizontalHeader()->setStretchLastSection(false);
+    m_paramTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_paramTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+    m_paramTable->setColumnWidth(1, 66);
     m_paramTable->setShowGrid(false);
     m_paramTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_srcStack->addWidget(m_paramTable);
 
-    m_msgList = new QListWidget(m_srcStack);
-    m_msgList->setStyleSheet(QStringLiteral("QListWidget{border:0;background:#0d1117;font-size:11px;}"));
-    m_srcStack->addWidget(m_msgList);
+    m_msgTable = new QTableWidget(0, 3, m_srcStack);
+    m_msgTable->setHorizontalHeaderLabels(
+        {QStringLiteral("消息"), QStringLiteral("速率"), QStringLiteral("字段")});
+    m_msgTable->verticalHeader()->setVisible(false);
+    m_msgTable->horizontalHeader()->setStretchLastSection(false);
+    m_msgTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_msgTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+    m_msgTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
+    m_msgTable->setColumnWidth(1, 62);
+    m_msgTable->setColumnWidth(2, 40);
+    m_msgTable->setShowGrid(false);
+    m_msgTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_msgTable->setSelectionMode(QAbstractItemView::NoSelection);
+    m_srcStack->addWidget(m_msgTable);
 
     connect(m_srcTabs, &QTabBar::currentChanged, m_srcStack, &QStackedWidget::setCurrentIndex);
     srcLay->addWidget(m_srcStack, 1);
@@ -778,24 +795,100 @@ bool MainWindow::loadFile(const QString &path)
     m_srcTabs->setTabText(1, QStringLiteral("参数 0"));
     m_srcTabs->setTabText(2, QStringLiteral("消息 %1").arg(groups.size()));
 
+    // 参数页：ULog 走 ps_ulog_params（P/Q 消息），其它格式暂无参数表
+    int nparam = 0;
     m_paramTable->setRowCount(0);
-    m_paramTable->insertRow(0);
-    m_paramTable->setItem(0, 0, new QTableWidgetItem(QStringLiteral("—")));
-    m_paramTable->setItem(0, 1, new QTableWidgetItem(
-        QStringLiteral("%1 未提供参数表（ULog P 消息待接 ABI）").arg(fmt_tag)));
+    if (fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0)
+    {
+        QByteArray buf(96 * 1024, '\0');
+        char err[256] = {0};
+        const int prc = ps_ulog_params(fi.absoluteFilePath().toUtf8().constData(),
+                                      buf.data(), static_cast<uint32_t>(buf.size()), err, sizeof err);
+        // 缓冲预填 0，解析前必须削掉尾部 NUL，否则 Qt 的 JSON 解析器会当作非法尾字符
+        while (!buf.isEmpty() && buf.at(buf.size() - 1) == '\0')
+            buf.chop(1);
+        if (prc == 0)
+        {
+            const QJsonArray arr = QJsonDocument::fromJson(buf).array();
+            nparam = arr.size();
+            m_paramTable->setRowCount(nparam);
+            for (int i = 0; i < nparam; ++i)
+            {
+                const QJsonObject o = arr[i].toObject();
+                auto *k = new QTableWidgetItem(o.value(QStringLiteral("name")).toString());
+                auto *v = new QTableWidgetItem(o.value(QStringLiteral("value")).toString());
+                k->setFlags(Qt::ItemIsEnabled);
+                v->setFlags(Qt::ItemIsEnabled);
+                m_paramTable->setItem(i, 0, k);
+                m_paramTable->setItem(i, 1, v);
+            }
+        }
+        else
+        {
+            log(QStringLiteral("ps_ulog_params rc=%1 err=%2").arg(prc).arg(QString::fromUtf8(err)));
+            m_paramTable->insertRow(0);
+            m_paramTable->setItem(0, 0, new QTableWidgetItem(QStringLiteral("—")));
+            m_paramTable->setItem(0, 1, new QTableWidgetItem(QStringLiteral("参数表读取失败：%1").arg(QString::fromUtf8(err))));
+        }
+    }
+    if (m_paramTable->rowCount() == 0)
+    {
+        m_paramTable->insertRow(0);
+        m_paramTable->setItem(0, 0, new QTableWidgetItem(QStringLiteral("—")));
+        m_paramTable->setItem(0, 1, new QTableWidgetItem(
+            QStringLiteral("%1 未提供参数表（仅 ULog 带 P/Q 参数消息）").arg(fmt_tag)));
+    }
+    m_srcTabs->setTabText(1, QStringLiteral("参数 %1").arg(nparam));
 
-    m_msgList->clear();
-    const PsChannelInfo *first0 = ps_dataset_channel(ds, 0);
-    const int rows0 = first0 ? static_cast<int>(first0->point_count) : 0;
+    // 消息页：topic + 字段数 + 采样率（由该 topic 首通道的时间戳差分算出）
+    m_msgTable->setRowCount(0);
     for (auto it = groups.constBegin(); it != groups.constEnd(); ++it)
     {
-        auto *li = new QListWidgetItem(QStringLiteral("%1    字段 %2 · %3 点")
-            .arg(it.key()).arg(it.value()->childCount()).arg(rows0));
-        li->setToolTip(it.key());
-        m_msgList->addItem(li);
+        auto *g = it.value();
+        QString hz = QStringLiteral("—");
+        if (g->childCount() > 0)
+        {
+            auto *leaf = g->child(0);
+            const PsChannelInfo *ch = reinterpret_cast<const PsChannelInfo *>(
+                leaf->data(0, Qt::UserRole).value<qulonglong>());
+            if (ch && ch->point_count > 1)
+            {
+                const double span = ch->time[ch->point_count - 1] - ch->time[0];
+                if (span > 0)
+                    hz = QStringLiteral("%1 Hz").arg((ch->point_count - 1) / span, 0, 'f',
+                                                     (ch->point_count - 1) / span >= 10 ? 0 : 1);
+            }
+            const int row = m_msgTable->rowCount();
+            m_msgTable->insertRow(row);
+            auto *name = new QTableWidgetItem(it.key());
+            name->setToolTip(QStringLiteral("%1 · %2 点").arg(it.key()).arg(ch ? ch->point_count : 0));
+            name->setFlags(Qt::ItemIsEnabled);
+            auto *rate = new QTableWidgetItem(hz);
+            rate->setFlags(Qt::ItemIsEnabled);
+            rate->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            auto *nf = new QTableWidgetItem(QString::number(g->childCount()));
+            nf->setFlags(Qt::ItemIsEnabled);
+            nf->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            m_msgTable->setItem(row, 0, name);
+            m_msgTable->setItem(row, 1, rate);
+            m_msgTable->setItem(row, 2, nf);
+        }
     }
-    if (m_msgList->count() == 0)
-        m_msgList->addItem(QStringLiteral("%1 · 无 topic 分组（平表），消息页为空").arg(fmt_tag));
+    if (m_msgTable->rowCount() == 0)
+    {
+        m_msgTable->insertRow(0);
+        auto *name = new QTableWidgetItem(QStringLiteral("—"));
+        name->setFlags(Qt::ItemIsEnabled);
+        name->setToolTip(QStringLiteral("%1 · 无 topic 分组（平表）").arg(fmt_tag));
+        m_msgTable->setItem(0, 0, name);
+        for (int c = 1; c < 3; ++c)
+        {
+            auto *it2 = new QTableWidgetItem(QStringLiteral("—"));
+            it2->setFlags(Qt::ItemIsEnabled);
+            it2->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            m_msgTable->setItem(0, c, it2);
+        }
+    }
 
     // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线
     const QVector<CanvasWidget *> canvases = pageCanvases();

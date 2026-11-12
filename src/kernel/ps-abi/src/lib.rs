@@ -424,6 +424,46 @@ mod tests {
 
 
 /// 读 ULog → 数据集。成功返回 0 并写 `out`；失败返回非 0，`err` 里给原因。
+/// ULog 参数表：`P`/`Q` 消息解出的 `[{name,value}]` JSON 数组（M1 参数页用）。
+/// 参数表与数据面分开暴露，避免把非等长序列塞进 `PsDataset`。
+#[no_mangle]
+pub unsafe extern "C" fn ps_ulog_params(
+    path: *const c_char,
+    out_json: *mut c_char,
+    cap: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if path.is_null() || out_json.is_null() || cap == 0 {
+        return 1;
+    }
+    let path_str = match CStr::from_ptr(path).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            write_err(err, err_cap, "路径不是合法 UTF-8");
+            return 2;
+        }
+    };
+    let log = match ps_parse::ulog::parse_file(Path::new(path_str)) {
+        Ok(l) => l,
+        Err(e) => {
+            write_err(err, err_cap, e.as_str());
+            return 3;
+        }
+    };
+    let arr: Vec<serde_json::Value> = log
+        .params
+        .iter()
+        .map(|(k, v)| serde_json::json!({ "name": k, "value": v }))
+        .collect();
+    let text = serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string());
+    let bytes = text.as_bytes();
+    let n = bytes.len().min(cap as usize - 1);
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_json as *mut u8, n);
+    *((out_json as *mut u8).add(n)) = 0;
+    0
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ps_ulog_load(
     path: *const c_char,

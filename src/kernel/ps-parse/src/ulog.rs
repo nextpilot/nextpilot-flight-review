@@ -121,6 +121,8 @@ pub struct ChannelData {
 
 pub struct Log {
     pub channels: Vec<ChannelData>,
+    /// `P`（运行参数）/`Q`（默认参数）消息解出的「名称 → 值」
+    pub params: Vec<(String, String)>,
     pub notes: Vec<String>,
     pub point_rows: usize,
 }
@@ -218,6 +220,42 @@ fn u16_at(b: &[u8], o: usize) -> Option<usize> {
     Some(u16::from_le_bytes([*b.get(o)?, *b.get(o + 1)?]) as usize)
 }
 
+/// `P`/`Q` 消息体：msg_id(u16) + key_len(u8) + key + (type char + value)
+/// 规范里 value 是「类型字符 + 定长数据」，不是 format 定义的位域。
+fn decode_param(payload: &[u8]) -> Option<(String, String)> {
+    // payload 已经跳过 msg_type：msg_id(2) + key_len(1) + key + type + value
+    let key_len = *payload.get(2)? as usize;
+    let key_end = 3usize.checked_add(key_len)?;
+    let key = String::from_utf8_lossy(payload.get(3..key_end)?).to_string();
+    if key.is_empty() {
+        return None;
+    }
+    let ty = *payload.get(key_end)? as char;
+    let data = payload.get(key_end + 1..)?;
+    let text = match ty {
+        'b' => (*data.first()? as i8).to_string(),
+        'B' => return Some((key, format!("{}", *data.first()?))),
+        'h' => i16::from_le_bytes([*data.first()?, *data.get(1)?]).to_string(),
+        'H' => u16::from_le_bytes([*data.first()?, *data.get(1)?]).to_string(),
+        'i' => i32::from_le_bytes([data[0], data[1], data[2], data[3]]).to_string(),
+        'I' => u32::from_le_bytes([data[0], data[1], data[2], data[3]]).to_string(),
+        'q' => i64::from_le_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]])
+            .to_string(),
+        'Q' => u64::from_le_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]])
+            .to_string(),
+        'f' => {
+            let v = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            format!("{}", v)
+        }
+        'd' => {
+            let v = f64::from_le_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]]);
+            format!("{}", v)
+        }
+        _ => return None,
+    };
+    Some((key, text))
+}
+
 pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
     if buf.len() < 16 {
         return Err("文件太短，不是 ULog".into());
@@ -238,7 +276,9 @@ pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
     let mut notes: Vec<String> = Vec::new();
     let mut rows = 0usize;
     let mut infos = 0usize;
-    let mut params = 0usize;
+    let mut params: Vec<(String, String)> = Vec::new();
+    let mut param_msgs = 0usize;
+    let mut param_bad = 0usize;
     let mut pos = 16usize;
 
     while pos + 3 <= buf.len() {
@@ -380,7 +420,19 @@ pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
                 }
             }
             b'I' => infos += 1,
-            b'P' => params += 1,
+            b'P' | b'Q' => {
+                param_msgs += 1;
+                if let Some((k, v)) = decode_param(payload) {
+                    // 同名参数以最后一次为准（PX4 参数在飞行中会被改）
+                    if let Some(slot) = params.iter_mut().find(|(n, _)| *n == k) {
+                        slot.1 = v;
+                    } else {
+                        params.push((k, v));
+                    }
+                } else {
+                    param_bad += 1;
+                }
+            }
             b'R' => {
                 if let Some(msg_id) = u16_at(payload, 0).map(|v| v as u16) {
                     by_id.remove(&msg_id);
@@ -401,8 +453,11 @@ pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
     if infos > 0 {
         notes.push(format!("{infos} 条 info 消息（机型/固件/版本，M1 进信息面板）"));
     }
-    if params > 0 {
-        notes.push(format!("{params} 条参数消息（M1 参数面板再接）"));
+    if param_msgs > 0 {
+        notes.push(format!(
+            "{param_msgs} 条参数消息（解析 {} 个，跳过 {param_bad} 个）",
+            params.len()
+        ));
     }
 
     // 同一 topic 只要存在 multi_id > 0 的实例，全部实例加 .NN 后缀（PJ 规则）
@@ -435,7 +490,7 @@ pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
     if channels.is_empty() {
         return Err("没有可绘制的数值通道（可能只有参数/文本）".into());
     }
-    Ok(Log { channels, notes, point_rows: rows })
+    Ok(Log { channels, params, notes, point_rows: rows })
 }
 
 pub fn parse_file(path: &Path) -> Result<Log, String> {
@@ -545,6 +600,45 @@ mod tests {
         let log = parse_bytes(&out).expect("ok");
         assert_eq!(log.channels.len(), 1, "重复订阅不应产生第二条通道");
         assert!(log.notes.iter().any(|n| n.contains("重复")), "{:?}", log.notes);
+    }
+
+    #[test]
+    fn param_message_decodes_float_and_int() {
+        let mut p = vec![0u8, 0u8]; // msg_id
+        p.push(14); // key_len
+        p.extend_from_slice(b"MPC_XY_VEL_MAX");
+        p.push(b'f');
+        p.extend_from_slice(&12.5f32.to_le_bytes());
+        assert_eq!(decode_param(&p), Some(("MPC_XY_VEL_MAX".into(), "12.5".into())));
+
+        let mut q = vec![1u8, 0u8];
+        q.push(9);
+        q.extend_from_slice(b"MAV_TYPE_X"); // 长度不符，应拒绝而不是 panic
+        assert_eq!(decode_param(&q), None);
+    }
+
+    #[test]
+    fn parameter_message_lands_in_log_params() {
+        let mut out = MAGIC.to_vec();
+        out.push(1);
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend(msg(b'F', b"t:uint64_t timestamp;float v;"));
+        let mut a = vec![0u8, 0, 0];
+        a.extend_from_slice(b"t");
+        out.extend(msg(b'A', &a));
+        let mut d = vec![0u8, 0];
+        d.extend_from_slice(&0u64.to_le_bytes());
+        d.extend_from_slice(&1.0f32.to_le_bytes());
+        out.extend(msg(b'D', &d));
+        let mut p = vec![0u8, 0, 14];
+        p.extend_from_slice(b"MPC_XY_VEL_MAX");
+        p.push(b'f');
+        p.extend_from_slice(&12.5f32.to_le_bytes());
+        out.extend(msg(b'P', &p));
+        let log = parse_bytes(&out).expect("解析失败");
+        assert_eq!(log.params.len(), 1, "{:?}", log.params);
+        assert_eq!(log.params[0].0, "MPC_XY_VEL_MAX");
+        assert_eq!(log.params[0].1, "12.5");
     }
 
     #[test]

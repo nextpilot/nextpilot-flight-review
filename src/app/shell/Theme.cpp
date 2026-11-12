@@ -52,6 +52,8 @@ QTabBar::tab {
 }
 QTabBar::tab:selected { background:#1a2127; color:#c9d1d9; border-bottom:2px solid #f2b134; }
 QTabBar::tab:hover:!selected { color:#c8d2da; background:#1a2127; }
+QTabBar::close-button { image:url(:/icons/close.svg); subcontrol-position:right; }
+QTabBar::close-button:hover { background:#222b33; }
 
 /* ---- 视图类 ---- */
 QTreeWidget, QTableWidget, QListWidget, QPlainTextEdit, QTextEdit {

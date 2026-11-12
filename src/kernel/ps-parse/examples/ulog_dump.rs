@@ -13,6 +13,10 @@ fn main() {
             for c in log.channels.iter().take(6) {
                 println!("  {} ({} 点)", c.name, c.t.len());
             }
+            println!("参数 {} 个：", log.params.len());
+            for (k,v) in log.params.iter().take(5) {
+                println!("  {} = {}", k, v);
+            }
             for n in log.notes.iter().take(3) {
                 println!("  note: {}", n);
             }
