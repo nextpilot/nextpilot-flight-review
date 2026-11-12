@@ -40,25 +40,7 @@ CsvLoaderDialog::CsvLoaderDialog(const QString &path, QWidget *parent)
     setWindowTitle(QStringLiteral("加载 CSV · %1").arg(QFileInfo(path).fileName()));
     setMinimumSize(900, 480);
     resize(980, 500);
-    // 主窗是深色，对话框必须自己带一套深色样式，否则标签是深蓝黑、几乎看不见
-    setStyleSheet(QStringLiteral(
-        "QDialog{background:#0f1419;}"
-        "QLabel{color:#c9d1d9;font-size:11.5px;}"
-        "QGroupBox{color:#8b949e;border:1px solid #222b33;margin-top:9px;font-size:11px;}"
-        "QGroupBox::title{subcontrol-origin:margin;left:9px;padding:0 4px;}"
-        "QComboBox,QSpinBox{background:#0b0f13;border:1px solid #2d3841;color:#c9d1d9;"
-        "padding:2px 6px;font-size:11.5px;min-height:20px;}"
-        "QComboBox QAbstractItemView{background:#0f1419;color:#c9d1d9;"
-        "selection-background-color:#1b232a;border:1px solid #2d3841;}"
-        "QCheckBox{color:#c9d1d9;font-size:11.5px;}"
-        "QPushButton{background:#1b232a;border:1px solid #2d3841;color:#c9d1d9;"
-        "padding:4px 16px;font-size:11.5px;}"
-        "QPushButton:hover{border-color:#f2b134;color:#f2b134;}"
-        "QPushButton:disabled{color:#4a545d;border-color:#222b33;}"
-        "QTableWidget,QAbstractScrollArea{background:#0f1419;}"
-        "QHeaderView{background:#161b22;}"
-        "QTableWidget QTableCornerButton::section{background:#161b22;border:0;}"));
-
+    // 颜色/控件样式来自全局 Theme（main.cpp 统一安装），这里不再局部写 QSS
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(14, 12, 14, 12);
     root->setSpacing(8);

@@ -27,6 +27,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QListWidget>
 #include <QDateTime>
 
 #include "plot/CanvasWidget.h"
@@ -39,43 +40,6 @@
 #include "SARibbonThemeManager.h"
 #include "SARibbonToolButton.h"
 
-namespace {
-const char *kStyle = R"(
-QWidget { background:#0d1117; color:#c9d1d9; font-size:12px; }
-QDockWidget { titlebar-close-icon:none; border:1px solid #1b232a; }
-QDockWidget::title { background:#161b20; padding:5px 8px; color:#8b949e; border-bottom:1px solid #232b33; }
-QMainWindow::separator { background:#0f1419; width:1px; height:1px; }
-QMainWindow::separator:hover { background:#2d3841; }
-QToolBar { background:#161b22; border:0; spacing:2px; padding:3px 6px; }
-QToolButton { padding:5px 9px; border:1px solid transparent; border-radius:3px; }
-QToolButton:hover { background:#21262d; border-color:#30363d; }
-QTabBar::tab { background:#161b22; padding:5px 14px; margin-right:1px; }
-QTabBar::tab:selected { background:#1f2632; color:#ffffff; border-bottom:2px solid #4ea1ff; }
-QTabWidget::pane { border:0; }
-QTabBar { border:0; background:#0d1117; }
-QSplitter::handle { background:#1b232a; }
-QSplitter::handle:horizontal { width:1px; }
-QSplitter::handle:vertical { height:1px; }
-QSplitter::handle:hover { background:#2d3841; }
-QStatusBar { background:#161b20; color:#6e7681; border-top:1px solid #232b33; }
-QStatusBar::item { border:0; }
-QScrollBar:vertical { background:#0d1117; width:10px; border:0; margin:0; }
-QScrollBar::handle:vertical { background:#2d3841; min-height:24px; border-radius:5px; }
-QScrollBar::handle:vertical:hover { background:#3d4a55; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background:transparent; }
-QScrollBar:horizontal { background:#0d1117; height:10px; border:0; margin:0; }
-QScrollBar::handle:horizontal { background:#2d3841; min-width:24px; border-radius:5px; }
-QScrollBar::handle:horizontal:hover { background:#3d4a55; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:0; }
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background:transparent; }
-QAbstractScrollArea::corner { background:#0d1117; border:0; }
-QToolTip { background:#161b20; color:#c9d1d9; border:1px solid #232b33; padding:3px 6px; }
-QTreeWidget, QTableWidget, QPlainTextEdit { background:#0d1117; border:1px solid #21262d; }
-QHeaderView::section { background:#161b22; border:0; padding:4px; color:#8b949e; }
-)";
-}
-
 static void darkenDocks(MainWindow *w);
 
 MainWindow::MainWindow(QWidget *parent)
@@ -83,7 +47,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
     resize(1440, 880);
-    setStyleSheet(QString::fromLatin1(kStyle));
+
 
     setMenuWidget(createRibbon());
     createDocks();
@@ -191,13 +155,13 @@ QWidget *MainWindow::createRibbon()
         }, this);
         auto *pRun = cat->addPanel(QStringLiteral("传输"));
         addLarge(pRun, QStringLiteral("全部开始"), [this] {
-            m_runLabel->setText(QStringLiteral("运行中"));
-            m_runLabel->setStyleSheet(QStringLiteral("color:#7ee787;"));
+            m_srcCount->setText(QStringLiteral("3 源 · 运行中"));
+            m_srcCount->setStyleSheet(QStringLiteral("color:#7ee787;font-size:10px;background:transparent;"));
             log(QStringLiteral("所有数据源开始"));
         }, this);
         addSmall(pRun, QStringLiteral("全部暂停"), [this] {
-            m_runLabel->setText(QStringLiteral("已暂停"));
-            m_runLabel->setStyleSheet(QStringLiteral("color:#ffb454;"));
+            m_srcCount->setText(QStringLiteral("3 源 · 已暂停"));
+            m_srcCount->setStyleSheet(QStringLiteral("color:#ffb454;font-size:10px;background:transparent;"));
             log(QStringLiteral("所有数据源暂停"));
         }, this);
     }
@@ -374,40 +338,128 @@ QWidget *MainWindow::createRibbon()
 }
 void MainWindow::createDocks()
 {
-    // 左：数据源（一个数据源一棵子树，行内“配置”打开 Loader 附属编辑器）
-    auto *srcDock = new QDockWidget(QStringLiteral("数据源 · Loader"), this);
+    // 左：数据源（对齐原型 d-src）：源列表 → 字段/参数/消息 三页签 → 内容
+    auto *srcDock = new QDockWidget(QStringLiteral("数据源"), this);
     srcDock->setObjectName(QStringLiteral("dock.src"));
     auto *srcHost = new QWidget(srcDock);
     auto *srcLay = new QVBoxLayout(srcHost);
     srcLay->setContentsMargins(0, 0, 0, 0);
     srcLay->setSpacing(0);
 
-    auto *srcBar = new QToolBar(srcHost);
-    auto *runAct = srcBar->addAction(QStringLiteral("▶ 开始"));
-    auto *pauseAct = srcBar->addAction(QStringLiteral("⏸ 暂停"));
-    srcLay->addWidget(srcBar);
+    auto *head = new QWidget(srcHost);
+    auto *headLay = new QHBoxLayout(head);
+    headLay->setContentsMargins(8, 3, 6, 3);
+    headLay->setSpacing(4);
+    m_srcCount = new QLabel(QStringLiteral("3 源 · 2 已连接"), head);
+    m_srcCount->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:10px;background:transparent;"));
+    headLay->addWidget(m_srcCount);
+    headLay->addStretch();
+    auto mkTiny = [&](const QString &t, const QString &tip) {
+        auto *b = new QToolButton(head);
+        b->setText(t);
+        b->setToolTip(tip);
+        b->setFixedSize(20, 18);
+        b->setStyleSheet(QStringLiteral(
+            "QToolButton{background:transparent;border:1px solid #232b33;color:#8494a0;font-size:10px;}"
+            "QToolButton:hover{color:#f2b134;border-color:#f2b134;}"));
+        headLay->addWidget(b);
+        return b;
+    };
+    auto *runBtn = mkTiny(QStringLiteral("▶"), QStringLiteral("全部开始"));
+    auto *pauseBtn = mkTiny(QStringLiteral("⏸"), QStringLiteral("全部暂停"));
+    srcLay->addWidget(head);
 
-    m_runLabel = new QLabel(QStringLiteral("ulog 已加载 · can 已暂停 · mav 空闲"), srcHost);
-    m_runLabel->setContentsMargins(8, 3, 8, 3);
-    m_runLabel->setStyleSheet(QStringLiteral("color:#8b949e;"));
-    srcLay->addWidget(m_runLabel);
+    // 源列表：每条=状态点 + 名称 + 速率/条目 + 配置
+    auto *rowsHost = new QWidget(srcHost);
+    m_srcRows = new QVBoxLayout(rowsHost);
+    m_srcRows->setContentsMargins(0, 0, 0, 0);
+    m_srcRows->setSpacing(0);
+    struct SrcDef { const char *name; const char *meta; const char *dot; };
+    const SrcDef srcs[] = {
+        {"ulog · flight_2026-11-12.ulg", "已加载 · 13 通道", "#7ee787"},
+        {"can · vehicle_bus", "已暂停 · 2 通道", "#ffb454"},
+        {"mav · 192.168.1.20:14550", "空闲 · 未连接", "#4a545d"},
+    };
+    for (int i = 0; i < 3; ++i) {
+        auto *row = new QWidget(rowsHost);
+        row->setFixedHeight(38);
+        row->setProperty("active", i == 0);
+        row->setStyleSheet(QStringLiteral(
+            "QWidget{background:transparent;border-left:2px solid transparent;}"
+            "QWidget[active=true]{background:#1a2127;border-left-color:#f2b134;}"
+            "QWidget:hover{background:#1d242a;}"));
+        auto *lay = new QHBoxLayout(row);
+        lay->setContentsMargins(8, 2, 6, 2);
+        lay->setSpacing(6);
+        auto *dot = new QLabel(row);
+        dot->setFixedSize(6, 6);
+        dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(QString::fromUtf8(srcs[i].dot)));
+        lay->addWidget(dot);
+        auto *col = new QWidget(row);
+        col->setStyleSheet(QStringLiteral("background:transparent;"));
+        auto *colLay = new QVBoxLayout(col);
+        colLay->setContentsMargins(0, 0, 0, 0);
+        colLay->setSpacing(0);
+        auto *nameLb = new QLabel(QString::fromUtf8(srcs[i].name), col);
+        nameLb->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:10.5px;background:transparent;"));
+        auto *metaLb = new QLabel(QString::fromUtf8(srcs[i].meta), col);
+        metaLb->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:9.5px;background:transparent;"));
+        colLay->addWidget(nameLb);
+        colLay->addWidget(metaLb);
+        lay->addWidget(col, 1);
+        auto *cfg = new QToolButton(row);
+        cfg->setText(QStringLiteral("配置"));
+        cfg->setCursor(Qt::PointingHandCursor);
+        cfg->setStyleSheet(QStringLiteral(
+            "QToolButton{background:transparent;border:0;color:#5d6c77;font-size:10px;}"
+            "QToolButton:hover{color:#f2b134;}"));
+        lay->addWidget(cfg);
+        m_srcRows->addWidget(row);
+        connect(cfg, &QToolButton::clicked, this, [this] {
+            QMessageBox::information(this, QStringLiteral("配置"),
+                QStringLiteral("Loader 附属编辑器（D13）：M1 接字段映射/帧模板。"));
+        });
+        connect(row, &QWidget::customContextMenuRequested, this, [] {});
+    }
+    srcLay->addWidget(rowsHost);
 
-    m_srcTree = new QTreeWidget(srcHost);
+    // 三页签：字段 / 参数 / 消息
+    m_srcTabs = new QTabBar(srcHost);
+    m_srcTabs->setExpanding(false);
+    m_srcTabs->setDrawBase(false);
+    m_srcTabs->addTab(QStringLiteral("字段 0"));
+    m_srcTabs->addTab(QStringLiteral("参数 0"));
+    m_srcTabs->addTab(QStringLiteral("消息 0"));
+    m_srcTabs->setStyleSheet(QStringLiteral(
+        "QTabBar{background:#161b20;border-bottom:1px solid #232b33;}"
+        "QTabBar::tab{background:transparent;color:#5d6c77;font-size:10.5px;padding:4px 10px;"
+        "border:0;border-bottom:2px solid transparent;}"
+        "QTabBar::tab:hover{color:#c8d2da;}"
+        "QTabBar::tab:selected{color:#f2b134;border-bottom:2px solid #f2b134;}"));
+    srcLay->addWidget(m_srcTabs);
+
+    m_srcStack = new QStackedWidget(srcHost);
+
+    m_srcTree = new QTreeWidget(m_srcStack);
     m_srcTree->setHeaderHidden(true);
     m_srcTree->setRootIsDecorated(true);
-    const struct { const char *name; const char *state; QStringList ch; } srcs[] = {
-        {"ulog · flight_2026-11-12.ulg", "loaded", {"att.roll", "att.pitch", "engine_rpm"}},
-        {"can · vehicle_bus", "paused", {"CAN.vehicle_speed", "CAN.engine_rpm"}},
-        {"mav · 192.168.1.20:14550", "idle", {"attitude.yaw", "battery.voltage"}},
-    };
-    for (const auto &s : srcs)
-    {
-        auto *top = new QTreeWidgetItem(m_srcTree, {QStringLiteral("%1  [%2]").arg(QString::fromUtf8(s.name), QString::fromUtf8(s.state))});
-        for (const QString &c : s.ch)
-            new QTreeWidgetItem(top, {c});
-        top->setExpanded(true);
-    }
-    srcLay->addWidget(m_srcTree, 1);
+    m_srcTree->setStyleSheet(QStringLiteral("QTreeWidget{border:0;background:#0d1117;font-size:11.5px;}"));
+    m_srcStack->addWidget(m_srcTree);
+
+    m_paramTable = new QTableWidget(0, 2, m_srcStack);
+    m_paramTable->setHorizontalHeaderLabels({QStringLiteral("参数"), QStringLiteral("值")});
+    m_paramTable->verticalHeader()->setVisible(false);
+    m_paramTable->horizontalHeader()->setStretchLastSection(true);
+    m_paramTable->setShowGrid(false);
+    m_paramTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_srcStack->addWidget(m_paramTable);
+
+    m_msgList = new QListWidget(m_srcStack);
+    m_msgList->setStyleSheet(QStringLiteral("QListWidget{border:0;background:#0d1117;font-size:11px;}"));
+    m_srcStack->addWidget(m_msgList);
+
+    connect(m_srcTabs, &QTabBar::currentChanged, m_srcStack, &QStackedWidget::setCurrentIndex);
+    srcLay->addWidget(m_srcStack, 1);
 
     // 双击通道 → 画到当前页第一格（后续换成字段拖拽，见 §8.10）
     connect(m_srcTree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
@@ -425,14 +477,14 @@ void MainWindow::createDocks()
     srcDock->setWidget(srcHost);
     addDockWidget(Qt::LeftDockWidgetArea, srcDock);
 
-    connect(runAct, &QAction::triggered, this, [this] {
-        m_runLabel->setText(QStringLiteral("运行中 · 背压策略：丢旧留新"));
-        m_runLabel->setStyleSheet(QStringLiteral("color:#7ee787;"));
+    connect(runBtn, &QToolButton::clicked, this, [this] {
+        m_srcCount->setText(QStringLiteral("3 源 · 运行中"));
+        m_srcCount->setStyleSheet(QStringLiteral("color:#7ee787;font-size:10px;background:transparent;"));
         log(QStringLiteral("数据源开始"));
     });
-    connect(pauseAct, &QAction::triggered, this, [this] {
-        m_runLabel->setText(QStringLiteral("已暂停 · 视图冻结，采集继续"));
-        m_runLabel->setStyleSheet(QStringLiteral("color:#ffb454;"));
+    connect(pauseBtn, &QToolButton::clicked, this, [this] {
+        m_srcCount->setText(QStringLiteral("3 源 · 已暂停"));
+        m_srcCount->setStyleSheet(QStringLiteral("color:#ffb454;font-size:10px;background:transparent;"));
         log(QStringLiteral("数据源暂停"));
     });
 
@@ -470,12 +522,12 @@ void MainWindow::createDocks()
         "-- 一页一组算子：整块进，向量算，禁止逐点循环\n"
         "out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)\n"
         "ps.plot(\"yaw_rate\", out)\n"));
-    auto *runBtn = new QPushButton(QStringLiteral("运行"), scriptHost);
+    auto *runScriptBtn = new QPushButton(QStringLiteral("运行"), scriptHost);
     scriptLay->addWidget(m_script, 1);
-    scriptLay->addWidget(runBtn);
+    scriptLay->addWidget(runScriptBtn);
     scriptDock->setWidget(scriptHost);
     addDockWidget(Qt::RightDockWidgetArea, scriptDock);
-    connect(runBtn, &QPushButton::clicked, this, [this] {
+    connect(runScriptBtn, &QPushButton::clicked, this, [this] {
         log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）→ yaw_rate 已物化"));
     });
 
@@ -646,8 +698,8 @@ bool MainWindow::loadFile(const QString &path)
                           : is_asc  ? QStringLiteral("ASC · CAN")
                           : is_blf  ? QStringLiteral("BLF · CAN")
                                     : QStringLiteral("CSV");
-    auto *top = new QTreeWidgetItem(m_srcTree,
-        {QStringLiteral("%1  [%2 · %3 通道]").arg(fi.fileName(), fmt_tag).arg(n)});
+    // 源列表已在上面，字段页只放通道树：清空重填，按 topic 分组
+    m_srcTree->clear();
     QVector<const PsChannelInfo *> channels;
 
     // ULog 通道名是 `topic.field`（多实例 `topic.NN.field`）：按 topic 分组，
@@ -671,28 +723,52 @@ bool MainWindow::loadFile(const QString &path)
                 leaf = name.mid(dot + 1);
             }
         }
-        QTreeWidgetItem *parent = top;
+        QTreeWidgetItem *parent = nullptr;
         if (!group.isEmpty())
         {
             auto it = groups.find(group);
             if (it == groups.end())
             {
-                auto *g = new QTreeWidgetItem(top, {group});
+                auto *g = new QTreeWidgetItem(m_srcTree, {group});
                 it = groups.insert(group, g);
             }
             parent = it.value();
         }
-        auto *item = new QTreeWidgetItem(parent, {leaf});
+        QTreeWidgetItem *item = parent ? new QTreeWidgetItem(parent, {leaf})
+                                       : new QTreeWidgetItem(m_srcTree, {leaf});
         item->setToolTip(0, name);
         item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
         item->setData(0, Qt::UserRole + 1, name);
     }
     const bool few_groups = groups.size() <= 8;
-    top->setExpanded(is_tree ? few_groups : true);
     for (auto *g : groups)
         g->setExpanded(few_groups && is_tree);
-    if (is_tree && !few_groups)
+    if (is_tree && !few_groups && !groups.isEmpty())
         groups.first()->setExpanded(true);
+
+    // 页签计数 + 参数/消息两页（消息按 topic 聚合成“速率/字段数/点数”）
+    m_srcTabs->setTabText(0, QStringLiteral("字段 %1").arg(n));
+    m_srcTabs->setTabText(1, QStringLiteral("参数 0"));
+    m_srcTabs->setTabText(2, QStringLiteral("消息 %1").arg(groups.size()));
+
+    m_paramTable->setRowCount(0);
+    m_paramTable->insertRow(0);
+    m_paramTable->setItem(0, 0, new QTableWidgetItem(QStringLiteral("—")));
+    m_paramTable->setItem(0, 1, new QTableWidgetItem(
+        QStringLiteral("%1 未提供参数表（ULog P 消息待接 ABI）").arg(fmt_tag)));
+
+    m_msgList->clear();
+    const PsChannelInfo *first0 = ps_dataset_channel(ds, 0);
+    const int rows0 = first0 ? static_cast<int>(first0->point_count) : 0;
+    for (auto it = groups.constBegin(); it != groups.constEnd(); ++it)
+    {
+        auto *li = new QListWidgetItem(QStringLiteral("%1    字段 %2 · %3 点")
+            .arg(it.key()).arg(it.value()->childCount()).arg(rows0));
+        li->setToolTip(it.key());
+        m_msgList->addItem(li);
+    }
+    if (m_msgList->count() == 0)
+        m_msgList->addItem(QStringLiteral("%1 · 无 topic 分组（平表），消息页为空").arg(fmt_tag));
 
     // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线
     const QVector<CanvasWidget *> canvases = pageCanvases();

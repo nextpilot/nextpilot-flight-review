@@ -10,6 +10,9 @@ class QTabWidget;
 class QTabBar;
 class QTreeWidget;
 class QTableWidget;
+class QStackedWidget;
+class QListWidget;
+class QVBoxLayout;
 
 // 主窗口骨架（对应 §8 / D14）：
 //   Ribbon（顶部任务页签） + 四个可停靠区（数据源 / 属性 / 脚本 / 日志） + 固定绘图区（页签=页）
@@ -34,7 +37,13 @@ private:
 
     QTabWidget *m_pages = nullptr;
     QPlainTextEdit *m_logView = nullptr;
-    QTreeWidget *m_srcTree = nullptr;
+    QTreeWidget *m_srcTree = nullptr;      // 字段页：通道树（按 topic 分组）
+    QTabBar *m_srcTabs = nullptr;          // 字段 / 参数 / 消息
+    QStackedWidget *m_srcStack = nullptr;
+    QLabel *m_srcCount = nullptr;          // “3 源 · 2 已连接”
+    QTableWidget *m_paramTable = nullptr;
+    QListWidget *m_msgList = nullptr;
+    QVBoxLayout *m_srcRows = nullptr;
     QTableWidget *m_propTable = nullptr;
     QLabel *m_selLabel = nullptr;
     QLabel *m_runLabel = nullptr;
