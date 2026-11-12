@@ -18,7 +18,7 @@
 | D4 | 数据中间态 | **NDF**（自研列存）+ **Arrow IPC** 做缓存与交换格式 |
 | D5 | 脚本 | **Lua 5.4 内嵌**（MIT，静态库），表达式与脚本同一套语法；算子数学在 Rust 向量核心里，Lua 只做编排（`userdata` + 元表，一次调用算一整块）；**不再用 QuickJS** |
 | D6 | 协议模板 | YAML/JSON 帧模板 → Rust 侧热编译为状态机 |
-| D7 | 停靠 | `QDockWidget` / Qt-ADS（二选一，M0-0 一并验） |
+| D7 | 停靠 | **`QDockWidget`**（Qt 内建，零第三方许可义务，四区/浮动/tabify/saveState 够用）；Qt-ADS（LGPL-2.1）作升级项，M1 交互评审不够"跟手"再换，换的成本只在 `DockHost` 一层；KDDockWidgets（商业 + GPL）排除 |
 | D8 | 缺省构建 | **CMake + Corrosion**（KDAB），Rust crate 随 CMake 一起编 |
 | D9 | 插件 ABI | 5 个 C 函数 + `PsBytes`/`PsBatchOut` + `abiVersion` + `ps_abi_selftest()`；四种后端 builtin/dylib/wasm/sidecar |
 | D10 | 布局持久化 | `.psl`（JSON，可分享可进 git）+ `.psc-workspace`（项目级）；`semantic`/`view` 分块；幽灵曲线；键序固定、原子写；撤销走命令模式 |
@@ -295,6 +295,8 @@ PJ 现在的界面（实测）：`File` 下拉 + 左侧竖排六个分组（Data
 
 Ribbon 的价值不是好看，是**把命令按任务分组、一屏全露**：组名就是任务名（数据源 / 缓存 / 源管理），一屏 12~16 个高频命令，点一次就到。
 
+**库选型（spike 实测 2026-11-12）**：**SARibbon 2.9.6**（MIT；CMake 包 `SARibbonBar::SARibbonBar`；Qt 6.2.4 编译通过；静态库单 target；源码 24 MB）。七页签 + panel + 右侧 `rightButtonGroup()` 全成立；`CompactTwoRow` + 隐藏标题栏 + tab 26 px / panel 标题 15 px / 图标 32 px → **展开 97 px**，`setMinimumMode(true)` → **折叠 28 px**（原型目标 74 / 32 px，展开态高 23 px、折叠态还低 4 px）。两个坑：静态库必须手动 `Q_INIT_RESOURCE(SARibbonResource)`，否则 dark 主题静默回退浅色 QSS；内置观感是 Office 风格，要还原原型那套扁平/1px 分隔必须整体重写 QSS 并换自绘 SVG 图标。
+
 | 项 | 结论 |
 |---|---|
 | 页签 | **文件** · 数据源 · 绘图 · 仪表 · 脚本 · 协议 · 视图（文件页专管布局/设置/截图/导出，不与数据操作混） |
@@ -546,6 +548,12 @@ ps_plugin_<family>   # MODULE 库：src/plugin/<family>/，输出到 bin/plugins
 - 降采样落到 Rust：UI 每次重绘按像素宽度调 `ps_lod_minmax`，只拿 ≤px 个 `(x,min,max)` 三元组；3000 点 CSV 画到三格（每格一个通道，避免混量纲压成直线）。
 - 内核单测 19 例（`cargo test`），`ctest` 2/2 通过（ABI 冒烟 + cargo）。
 - 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、ULog/DFLog 等真实 Loader、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
+
+**Ribbon / Dock spike（2026-11-12 实测）**
+
+- Ribbon：SARibbon 2.9.6 跑通（MIT、Qt 6.2.4、静态库单 target、24 MB 源码）。实测七页签 + 分组 + 右侧 qchip 位（`rightButtonGroup`）都可用；展开高度 **97 px**、折叠 **28 px**（原型 74 / 32 px）。静态库需 `Q_INIT_RESOURCE(SARibbonResource)`；观感偏 Office，要贴原型必须重写 QSS + 自绘图标。
+- Dock：`QDockWidget` 直接够用（四区 + 浮动 + `tabifyDockWidget` + `saveState/restoreState`），零第三方许可义务；Qt-ADS（LGPL-2.1）留作 M1 升级项；KDDockWidgets 含 GPL，排除。
+- 取舍：Ribbon 承认"多 23 px 换键盘导航/溢出折叠/无障碍"；QSS 压缩目标 ≤84 px。达不到就退回自绘（现有 `QTabBar + QToolBar` 骨架已在 `src/app/shell`）。
 
 **M0-0 画布 spike（2026-11-12 实测，改判 D3）**
 
