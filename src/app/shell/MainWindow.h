@@ -13,6 +13,7 @@ class QTableWidget;
 class QStackedWidget;
 class QListWidget;
 class QVBoxLayout;
+class QLineEdit;
 
 // 主窗口骨架（对应 §8 / D14）：
 //   Ribbon（顶部任务页签） + 四个可停靠区（数据源 / 属性 / 脚本 / 日志） + 固定绘图区（页签=页）
@@ -26,6 +27,9 @@ public:
     // 打开一份 CSV（内核解析），把前 3 个通道画到当前页画布
     bool loadFile(const QString &path);
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
     CanvasWidget *currentCanvas() const;
     QVector<CanvasWidget *> pageCanvases() const;
@@ -34,6 +38,10 @@ private:
     void createPages();
     void log(const QString &text);
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
+    void addSourceRow(const QString &name, const QString &meta, const QString &dotColor);
+    void refreshSrcCount();
+    void applySrcFilter();
+    void newPage();
 
     QTabWidget *m_pages = nullptr;
     QPlainTextEdit *m_logView = nullptr;
@@ -41,6 +49,8 @@ private:
     QTabBar *m_srcTabs = nullptr;          // 字段 / 参数 / 消息
     QStackedWidget *m_srcStack = nullptr;
     QLabel *m_srcCount = nullptr;          // “3 源 · 2 已连接”
+    QLineEdit *m_srcFilter = nullptr;      // 字段/参数/消息 共用的搜索框
+    QString m_kernelInfo;                  // 状态栏常驻信息（Ribbon 悬停时临时替换）
     QTableWidget *m_paramTable = nullptr;
     QTableWidget *m_msgTable = nullptr;
     QVBoxLayout *m_srcRows = nullptr;

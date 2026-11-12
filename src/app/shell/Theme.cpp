@@ -45,7 +45,7 @@ QGroupBox::title { subcontrol-origin:margin; left:9px; padding:0 4px; }
 
 /* ---- 页签（固定绘图区/对话框通用） ---- */
 QTabWidget::pane { border:0; background:#0d1117; }
-QTabBar { background:#0d1117; border:0; }
+QTabBar { background:#0d1117; border:0; border-top:1px solid #232b33; }
 QTabBar::tab {
     background:#161b20; color:#8494a0; font-size:11px;
     padding:4px 12px; margin-right:1px; border:0; border-bottom:2px solid transparent;

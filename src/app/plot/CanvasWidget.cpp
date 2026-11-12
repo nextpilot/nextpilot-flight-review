@@ -5,6 +5,9 @@
 #include <QPainterPath>
 #include <QPen>
 #include <QWheelEvent>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +17,7 @@
 namespace {
 constexpr double kPi = 3.14159265358979323846;
 
-QColor colorBg()   { return QColor("#0d1117"); }
+QColor colorBg()   { return QColor("#10161c"); }
 QColor colorGrid() { return QColor("#1c2430"); }
 QColor colorText() { return QColor("#8b949e"); }
 QColor colorDim()  { return QColor("#6e7681"); }
@@ -28,6 +31,7 @@ CanvasWidget::CanvasWidget(QWidget *parent)
 {
     setMinimumSize(240, 140);
     setMouseTracking(true);
+    setAcceptDrops(true);
     m_title = QStringLiteral("未命名画布");
     m_kernelBacked = false;
     addDemoCurves();
@@ -107,6 +111,49 @@ void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
     resetView();
 }
 
+void CanvasWidget::addChannel(const PsChannelInfo *ch)
+{
+    if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
+        return;
+    for (const Series &s : m_series)
+    {
+        if (s.name == QString::fromUtf8(ch->name) && s.t == ch->time)
+            return; // 同一通道重复拖入不重复加
+    }
+    Series s;
+    s.name = QString::fromUtf8(ch->name);
+    s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
+    s.color = kPalette[m_series.size() % 6];
+    s.t = ch->time;
+    s.v = ch->value;
+    s.n = ch->point_count;
+    m_series.append(s);
+    m_kernelBacked = true;
+    m_autoY = true;
+    resetView();
+    update();
+    emit activated(m_title);
+}
+
+void CanvasWidget::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasFormat(QStringLiteral("application/x-plotscope-channel")))
+        event->acceptProposedAction();
+}
+
+void CanvasWidget::dropEvent(QDropEvent *event)
+{
+    const QByteArray raw = event->mimeData()->data(QStringLiteral("application/x-plotscope-channel"));
+    if (raw.isEmpty())
+        return;
+    bool ok = false;
+    const qulonglong ptr = raw.toULongLong(&ok);
+    if (!ok || !ptr)
+        return;
+    addChannel(reinterpret_cast<const PsChannelInfo *>(ptr));
+    event->acceptProposedAction();
+}
+
 QRectF CanvasWidget::plotRect() const
 {
     return QRectF(rect()).adjusted(62, 30, -16, -26);
@@ -175,6 +222,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
     p.fillRect(rect(), colorBg());
+    p.setPen(QColor("#1f2831"));
+    p.drawRect(rect().adjusted(0, 0, -1, -1));
 
     const QRectF plot = plotRect();
     if (plot.width() <= 1 || plot.height() <= 1)

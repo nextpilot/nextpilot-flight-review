@@ -29,6 +29,11 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QLineEdit>
+#include <QEvent>
+#include <QDrag>
+#include <QMimeData>
+#include <QDropEvent>
 #include <QListWidget>
 #include <QDateTime>
 #include <QJsonArray>
@@ -46,6 +51,39 @@
 #include "SARibbonToolButton.h"
 
 static void darkenDocks(MainWindow *w);
+
+// 只重写 sizeHint 的标题栏：QDockWidget 按 sizeHint 预留高度，固定 height 不算数，
+// 32px 的 bar 只留 24px 空间就会压住正文第一行。
+class DockTitleBar : public QWidget
+{
+public:
+    explicit DockTitleBar(QWidget *parent = nullptr) : QWidget(parent) { setFixedHeight(32); }
+    QSize sizeHint() const override { return QSize(QWidget::sizeHint().width(), 32); }
+    QSize minimumSizeHint() const override { return sizeHint(); }
+};
+
+// 字段树拖拽：Item 里存的是内核通道指针，默认 QTreeWidget 的 MIME 带不过去，自己塞一条
+class ChannelTree : public QTreeWidget
+{
+public:
+    using QTreeWidget::QTreeWidget;
+
+protected:
+    void startDrag(Qt::DropActions) override
+    {
+        QTreeWidgetItem *item = currentItem();
+        if (!item || item->childCount() > 0)
+            return;
+        const qulonglong ptr = item->data(0, Qt::UserRole).value<qulonglong>();
+        if (!ptr)
+            return;
+        auto *mime = new QMimeData;
+        mime->setData(QStringLiteral("application/x-plotscope-channel"), QByteArray::number(ptr));
+        auto *drag = new QDrag(this);
+        drag->setMimeData(mime);
+        drag->exec(Qt::CopyAction);
+    }
+};
 
 // 源行名称按可用宽度省略中部，避免把右侧"配置"挤出去
 class ElideLabel : public QLabel
@@ -80,6 +118,7 @@ MainWindow::MainWindow(QWidget *parent)
             .arg(QString::fromUtf8(ps_kernel_version()))
             .arg(ps_abi_version())
             .arg(ps_abi_selftest() == 0 ? QStringLiteral("通过") : QStringLiteral("失败"));
+    m_kernelInfo = kernelInfo;
     statusBar()->showMessage(kernelInfo);
 
     log(QStringLiteral("启动完成：%1").arg(kernelInfo));
@@ -95,11 +134,16 @@ QWidget *MainWindow::createRibbon()
     if (auto *mb = menuBar())
         mb->hide();
     ribbon->setTitleVisible(false);       // 窗口标题在 titlebar，不占 ribbon 高度
+    // 标题带直接压成 0：留 30px 空行只会把页签往下推，组标题也被挤掉
+    ribbon->setTitleBarHeight(0, true);
     ribbon->setTabBarHeight(26);
+    // 收缩：右下角 chevron + 双击页签，都能把面板收起只留页签行
+    ribbon->showMinimumModeButton(true);
+    ribbon->setTabDoubleClickToMinimumMode(true);
     ribbon->setPanelTitleHeight(12);
     // 分组标题：vendored 布局把标题画在面板底边内，category 高度必须把它算进去
     ribbon->setEnableShowPanelTitle(true);
-    ribbon->setPanelToolButtonIconSize(QSize(16, 16), QSize(23, 23));
+    ribbon->setPanelToolButtonIconSize(QSize(18, 18), QSize(26, 26));
     ribbon->setPanelSpacing(3);
     ribbon->setCategoryHeight(70, true); // 图标 23 + 内边距 + 分组标题 12
 
@@ -194,18 +238,7 @@ QWidget *MainWindow::createRibbon()
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("绘图"));
         auto *pPage = cat->addPanel(QStringLiteral("页"));
-        addLarge(pPage, QStringLiteral("新建页"), [this] {
-            auto *c = new CanvasWidget(this);
-            c->setTitle(QStringLiteral("新页 · 画布"));
-            connect(c, &CanvasWidget::activated, this, [this](const QString &t) {
-                setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
-                                {QStringLiteral("时间窗"), QStringLiteral("30.0 s")},
-                                {QStringLiteral("降采样"), QStringLiteral("min/max 1:4")}});
-            });
-            m_pages->addTab(c, QStringLiteral("新页"));
-            m_pages->setCurrentWidget(c);
-            log(QStringLiteral("新建页"));
-        }, this);
+        addLarge(pPage, QStringLiteral("新建页"), [this] { newPage(); }, this);
         auto *pView = cat->addPanel(QStringLiteral("视图"));
         addSmall(pView, QStringLiteral("自动 Y"), [this] { log(QStringLiteral("自动 Y：按可见曲线量程重算")); }, this);
         addSmall(pView, QStringLiteral("游标"), [this] { log(QStringLiteral("十字光标已启用")); }, this);
@@ -312,6 +345,18 @@ QWidget *MainWindow::createRibbon()
     if (auto *ab = ribbon->applicationButton())
         ab->hide(); // 左上角默认有个空按钮，留白很难看
 
+    // 悬停提示改状态栏：QToolTip 会飘在按钮下方，正好盖住分组标题
+    for (auto *b : ribbon->findChildren<SARibbonToolButton *>())
+    {
+        b->setToolTip(QString());
+        if (auto *a = b->defaultAction())
+        {
+            b->setProperty("rbTip", a->toolTip());
+            a->setToolTip(QString());
+        }
+        b->installEventFilter(this);
+    }
+
     // 面板本体撑到 68 px：SARibbon 的 category 高度不会自动把 panel 拉满
     for (auto *p : ribbon->findChildren<SARibbonPanel *>())
     {
@@ -335,10 +380,10 @@ QWidget *MainWindow::createRibbon()
         SARibbonBar { background:#141a1f; border-bottom:1px solid #232b33; }
         SARibbonCategory { background:#141a1f; border:0; }
         SARibbonPanel { background:#141a1f; border:0; border-right:1px solid #1b232a; }
-        SARibbonPanelLabel { color:#5d6c77; font-size:9.5px; background:transparent; padding-bottom:3px; }
+        SARibbonPanelLabel { color:#7d8b96; font-size:10px; background:transparent; padding-bottom:3px; }
         SARibbonToolButton {
             background:transparent; border:1px solid transparent; border-radius:0;
-            color:#8494a0; font-size:10.5px; padding:0; margin:0;
+            color:#8494a0; font-size:12px; padding:0; margin:0;
         }
         SARibbonToolButton[rbLarge="true"] { min-width:52px; max-width:60px; min-height:48px; max-height:48px; }
         SARibbonToolButton[rbLarge="false"] { min-height:21px; max-height:22px; padding:2px 8px; }
@@ -352,7 +397,7 @@ QWidget *MainWindow::createRibbon()
         SARibbonPanelOptionButton:hover { background:#1b232a; }
         #objSARibbonTabBar { background:#141a1f; border:0; }
         #objSARibbonTabBar::tab {
-            background:transparent; color:#5d6c77; font-size:11.5px;
+            background:transparent; color:#5d6c77; font-size:11px;
             padding:0 11px; margin:0 1px; border:0; border-bottom:2px solid transparent;
             min-width:0;
         }
@@ -367,90 +412,83 @@ void MainWindow::createDocks()
     // 左：数据源（对齐原型 d-src）：源列表 → 字段/参数/消息 三页签 → 内容
     auto *srcDock = new QDockWidget(QStringLiteral("数据源"), this);
     srcDock->setObjectName(QStringLiteral("dock.src"));
-    auto *srcHost = new QWidget(srcDock);
-    auto *srcLay = new QVBoxLayout(srcHost);
-    srcLay->setContentsMargins(0, 0, 0, 0);
-    srcLay->setSpacing(0);
 
-    auto *head = new QWidget(srcHost);
-    auto *headLay = new QHBoxLayout(head);
-    headLay->setContentsMargins(8, 3, 6, 3);
-    headLay->setSpacing(4);
-    m_srcCount = new QLabel(QStringLiteral("3 源 · 2 已连接"), head);
-    m_srcCount->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:10px;background:transparent;"));
-    headLay->addWidget(m_srcCount);
-    headLay->addStretch();
-    auto mkTiny = [&](const QString &t, const QString &tip) {
-        auto *b = new QToolButton(head);
-        b->setIcon(QIcon(QStringLiteral(":/icons/%1.svg")
-                             .arg(t == QStringLiteral("\u25b6") ? QStringLiteral("play") : QStringLiteral("pause"))));
-        b->setIconSize(QSize(11, 11));
+    // 标题栏：标题 + 汇总 + 全局起停 + 关闭，全部放一行，正文从源列表直接开始（不再叠第二行头部）
+    auto *srcBar = new DockTitleBar(srcDock);
+    srcBar->setStyleSheet(QStringLiteral(
+        "background:#26303a;border-bottom:1px solid #3a4854;"));
+    auto *barLay = new QHBoxLayout(srcBar);
+    barLay->setContentsMargins(10, 0, 6, 0);
+    barLay->setSpacing(6);
+    auto *barTitle = new QLabel(QStringLiteral("数据源"), srcBar);
+    barTitle->setStyleSheet(QStringLiteral(
+        "color:#e6edf3;font-size:13px;font-weight:600;background:transparent;"));
+    barLay->addWidget(barTitle);
+    m_srcCount = new QLabel(QStringLiteral("3 源 · 2 已连接"), srcBar);
+    m_srcCount->setStyleSheet(QStringLiteral("color:#8494a0;font-size:10px;background:transparent;"));
+    barLay->addWidget(m_srcCount);
+    barLay->addStretch();
+    auto mkTiny = [&](const QString &icon, const QString &tip) {
+        auto *b = new QToolButton(srcBar);
+        b->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(icon)));
+        b->setIconSize(QSize(14, 14));
         b->setToolTip(tip);
-        b->setFixedSize(20, 18);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setFixedSize(22, 22);
         b->setStyleSheet(QStringLiteral(
-            "QToolButton{background:transparent;border:0;color:#8494a0;font-size:10px;padding:0;}"
-            "QToolButton:hover{background:#222b33;}"
-            "QToolButton:hover{color:#f2b134;border-color:#f2b134;}"));
-        headLay->addWidget(b);
+            "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;}"
+            "QToolButton:hover{background:#222b33;}"));
+        barLay->addWidget(b);
         return b;
     };
-    auto *runBtn = mkTiny(QStringLiteral("▶"), QStringLiteral("全部开始"));
-    auto *pauseBtn = mkTiny(QStringLiteral("⏸"), QStringLiteral("全部暂停"));
-    srcLay->addWidget(head);
+    auto *addSrcBtn = mkTiny(QStringLiteral("newpage"), QStringLiteral("添加数据源"));
+    QObject::connect(addSrcBtn, &QToolButton::clicked, this, [this] {
+        const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("添加数据源"), {},
+            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+        if (!f.isEmpty())
+            loadFile(f);
+    });
+    auto *runBtn = mkTiny(QStringLiteral("play"), QStringLiteral("全部开始"));
+    auto *pauseBtn = mkTiny(QStringLiteral("pause"), QStringLiteral("全部暂停"));
+    auto *barClose = new QToolButton(srcBar);
+    barClose->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
+    barClose->setIconSize(QSize(13, 13));
+    barClose->setToolTip(QStringLiteral("关闭面板"));
+    barClose->setCursor(Qt::PointingHandCursor);
+    barClose->setFixedSize(22, 22);
+    barClose->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;color:#5d6c77;padding:0;}"
+        "QToolButton:hover{color:#f85149;background:#222b33;}"));
+    QObject::connect(barClose, &QToolButton::clicked, srcDock, &QDockWidget::close);
+    barLay->addWidget(barClose);
+    srcDock->setTitleBarWidget(srcBar);
+
+    auto *srcHost = new QWidget(srcDock);
+    auto *srcLay = new QVBoxLayout(srcHost);
+    srcLay->setContentsMargins(0, 2, 0, 0);
+    srcLay->setSpacing(0);
 
     // 源列表：每条=状态点 + 名称 + 速率/条目 + 配置
     auto *rowsHost = new QWidget(srcHost);
     m_srcRows = new QVBoxLayout(rowsHost);
     m_srcRows->setContentsMargins(0, 0, 0, 0);
     m_srcRows->setSpacing(0);
-    struct SrcDef { const char *name; const char *meta; const char *dot; };
-    const SrcDef srcs[] = {
-        {"ulog · flight_2026-11-12.ulg", "已加载 · 13 通道", "#7ee787"},
-        {"can · vehicle_bus", "已暂停 · 2 通道", "#ffb454"},
-        {"mav · 192.168.1.20:14550", "空闲 · 未连接", "#4a545d"},
-    };
-    for (int i = 0; i < 3; ++i) {
-        auto *row = new QWidget(rowsHost);
-        row->setFixedHeight(38);
-        row->setProperty("active", i == 0);
-        row->setStyleSheet(QStringLiteral(
-            "QWidget{background:transparent;border-left:2px solid transparent;}"
-            "QWidget[active=true]{background:#1a2127;border-left-color:#f2b134;}"
-            "QWidget:hover{background:#1d242a;}"));
-        auto *lay = new QHBoxLayout(row);
-        lay->setContentsMargins(8, 2, 6, 2);
-        lay->setSpacing(6);
-        auto *dot = new QLabel(row);
-        dot->setFixedSize(6, 6);
-        dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(QString::fromUtf8(srcs[i].dot)));
-        lay->addWidget(dot);
-        auto *col = new QWidget(row);
-        col->setStyleSheet(QStringLiteral("background:transparent;"));
-        auto *colLay = new QVBoxLayout(col);
-        colLay->setContentsMargins(0, 0, 0, 0);
-        colLay->setSpacing(0);
-        auto *nameLb = new ElideLabel(QString::fromUtf8(srcs[i].name), col);
-        nameLb->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:10.5px;background:transparent;"));
-        auto *metaLb = new QLabel(QString::fromUtf8(srcs[i].meta), col);
-        metaLb->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:9.5px;background:transparent;"));
-        colLay->addWidget(nameLb);
-        colLay->addWidget(metaLb);
-        lay->addWidget(col, 1);
-        auto *cfg = new QToolButton(row);
-        cfg->setText(QStringLiteral("配置"));
-        cfg->setCursor(Qt::PointingHandCursor);
-        cfg->setStyleSheet(QStringLiteral(
-            "QToolButton{background:transparent;border:0;color:#5d6c77;font-size:10px;}"
-            "QToolButton:hover{color:#f2b134;}"));
-        lay->addWidget(cfg);
-        m_srcRows->addWidget(row);
-        connect(cfg, &QToolButton::clicked, this, [this] {
-            QMessageBox::information(this, QStringLiteral("配置"),
-                QStringLiteral("Loader 附属编辑器（D13）：M1 接字段映射/帧模板。"));
-        });
-        connect(row, &QWidget::customContextMenuRequested, this, [] {});
-    }
+    addSourceRow(QStringLiteral("ulog · flight_2026-11-12.ulg"), QStringLiteral("已加载 · 13 通道"), QStringLiteral("#7ee787"));
+    addSourceRow(QStringLiteral("can · vehicle_bus"), QStringLiteral("已暂停 · 2 通道"), QStringLiteral("#ffb454"));
+    addSourceRow(QStringLiteral("mav · 192.168.1.20:14550"), QStringLiteral("空闲 · 未连接"), QStringLiteral("#4a545d"));
     srcLay->addWidget(rowsHost);
+
+    // 搜索：字段树/参数表/消息表共用，按当前页签生效
+    m_srcFilter = new QLineEdit(srcHost);
+    m_srcFilter->setPlaceholderText(QStringLiteral("搜索字段 / 参数 / 消息"));
+    m_srcFilter->setClearButtonEnabled(true);
+    m_srcFilter->setFixedHeight(28);
+    m_srcFilter->setStyleSheet(QStringLiteral(
+        "QLineEdit{background:#0f151a;border:0;border-top:1px solid #232b33;border-bottom:1px solid #232b33;"
+        "color:#c9d1d9;font-size:11px;padding:0 8px;}"
+        "QLineEdit:focus{border-bottom:1px solid #f2b134;}"));
+    srcLay->addWidget(m_srcFilter);
+    connect(m_srcFilter, &QLineEdit::textChanged, this, [this] { applySrcFilter(); });
 
     // 三页签：字段 / 参数 / 消息
     m_srcTabs = new QTabBar(srcHost);
@@ -461,18 +499,22 @@ void MainWindow::createDocks()
     m_srcTabs->addTab(QStringLiteral("消息 0"));
     m_srcTabs->setStyleSheet(QStringLiteral(
         "QTabBar{background:#161b20;border-bottom:1px solid #232b33;}"
-        "QTabBar::tab{background:transparent;color:#5d6c77;font-size:10.5px;padding:4px 10px;"
+        "QTabBar::tab{background:transparent;color:#5d6c77;font-size:11px;padding:5px 12px;"
         "border:0;border-bottom:2px solid transparent;}"
         "QTabBar::tab:hover{color:#c8d2da;}"
         "QTabBar::tab:selected{color:#f2b134;border-bottom:2px solid #f2b134;}"));
     srcLay->addWidget(m_srcTabs);
+    connect(m_srcTabs, &QTabBar::currentChanged, this, [this] { applySrcFilter(); });
 
     m_srcStack = new QStackedWidget(srcHost);
 
-    m_srcTree = new QTreeWidget(m_srcStack);
+    m_srcTree = new ChannelTree(m_srcStack);
     m_srcTree->setHeaderHidden(true);
+    m_srcTree->setDragEnabled(true);
+    m_srcTree->setDragDropMode(QAbstractItemView::DragOnly);
+    m_srcTree->setDefaultDropAction(Qt::CopyAction);
     m_srcTree->setRootIsDecorated(true);
-    m_srcTree->setStyleSheet(QStringLiteral("QTreeWidget{border:0;background:#0d1117;font-size:11.5px;}"));
+    m_srcTree->setStyleSheet(QStringLiteral("QTreeWidget{border:0;background:#0d1117;font-size:12px;}"));
     m_srcStack->addWidget(m_srcTree);
 
     m_paramTable = new QTableWidget(0, 2, m_srcStack);
@@ -550,9 +592,8 @@ void MainWindow::createDocks()
     propDock->setWidget(propHost);
     addDockWidget(Qt::RightDockWidgetArea, propDock);
     setPropRows(QStringLiteral("画布"),
-                {{QStringLiteral("时间窗"), QStringLiteral("30.0 s")},
-                 {QStringLiteral("Y 轴"), QStringLiteral("线性 · -1.60 ~ 1.60")},
-                 {QStringLiteral("曲线数"), QStringLiteral("3")}});
+                {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")},
+                 {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
 
     // 右下：脚本
     auto *scriptDock = new QDockWidget(QStringLiteral("脚本 · Lua 5.4"), this);
@@ -592,33 +633,212 @@ void darkenDocks(MainWindow *w)
 {
     for (auto *d : w->findChildren<QDockWidget *>())
     {
-        auto *bar = new QWidget(d);
-        bar->setFixedHeight(26);
+        if (d->titleBarWidget())
+            continue; // 数据源 dock 自带一行式标题栏，别盖一层
+
+        auto *bar = new DockTitleBar(d);
         bar->setStyleSheet(QStringLiteral(
-            "background:#161b20;border-bottom:1px solid #232b33;"));
+            "background:#26303a;border-bottom:1px solid #3a4854;"));
         auto *lay = new QHBoxLayout(bar);
-        lay->setContentsMargins(8, 0, 6, 0);
+        lay->setContentsMargins(10, 0, 6, 0);
         lay->setSpacing(4);
 
         auto *title = new QLabel(d->windowTitle(), bar);
         title->setStyleSheet(QStringLiteral(
-            "color:#8494a0;font-size:11px;background:transparent;"));
+            "color:#e6edf3;font-size:13px;font-weight:600;background:transparent;"));
         lay->addWidget(title);
         lay->addStretch();
 
         auto *close = new QToolButton(bar);
         close->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
-        close->setIconSize(QSize(11, 11));
+        close->setIconSize(QSize(13, 13));
         close->setCursor(Qt::PointingHandCursor);
-        close->setFixedSize(18, 18);
+        close->setFixedSize(22, 22);
         close->setStyleSheet(QStringLiteral(
             "QToolButton{background:transparent;border:0;color:#5d6c77;padding:0;}"
-            "QToolButton:hover{color:#f2b134;}"));
+            "QToolButton:hover{color:#f85149;background:#222b33;}"));
         QObject::connect(close, &QToolButton::clicked, d, &QDockWidget::close);
         lay->addWidget(close);
 
         d->setTitleBarWidget(bar);
     }
+}
+
+void MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor)
+{
+    if (!m_srcRows)
+        return;
+    QWidget *rowsHost = m_srcRows->parentWidget();
+    auto *row = new QWidget(rowsHost);
+    row->setFixedHeight(40);
+    row->setProperty("active", m_srcRows->count() == 0);
+    row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
+    row->setStyleSheet(QStringLiteral(
+        "QWidget{background:transparent;border-left:2px solid transparent;border-bottom:1px solid #171f26;}"
+        "QWidget[active=true]{background:#1a2127;border-left-color:#f2b134;}"
+        "QWidget:hover{background:#1d242a;}"));
+    auto *lay = new QHBoxLayout(row);
+    lay->setContentsMargins(8, 2, 6, 2);
+    lay->setSpacing(6);
+
+    auto *dot = new QLabel(row);
+    dot->setFixedSize(6, 6);
+    dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
+    lay->addWidget(dot);
+
+    auto *col = new QWidget(row);
+    col->setStyleSheet(QStringLiteral("background:transparent;"));
+    auto *colLay = new QVBoxLayout(col);
+    colLay->setContentsMargins(0, 0, 0, 0);
+    colLay->setSpacing(0);
+    auto *nameLb = new ElideLabel(name, col);
+    nameLb->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:12px;background:transparent;"));
+    auto *metaLb = new QLabel(meta, col);
+    metaLb->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:10px;background:transparent;"));
+    colLay->addWidget(nameLb);
+    colLay->addWidget(metaLb);
+    lay->addWidget(col, 1);
+
+    auto *cfg = new QToolButton(row);
+    cfg->setText(QStringLiteral("配置"));
+    cfg->setCursor(Qt::PointingHandCursor);
+    cfg->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;color:#5d6c77;font-size:10px;}"
+        "QToolButton:hover{color:#f2b134;}"));
+    lay->addWidget(cfg);
+    connect(cfg, &QToolButton::clicked, this, [this] {
+        QMessageBox::information(this, QStringLiteral("配置"),
+            QStringLiteral("Loader 附属编辑器（D13）：M1 接字段映射/帧模板。"));
+    });
+
+    auto *del = new QToolButton(row);
+    del->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
+    del->setIconSize(QSize(11, 11));
+    del->setToolTip(QStringLiteral("移除该数据源"));
+    del->setCursor(Qt::PointingHandCursor);
+    del->setFixedSize(20, 20);
+    del->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;color:#4a545d;padding:0;}"
+        "QToolButton:hover{color:#f85149;background:#222b33;}"));
+    lay->addWidget(del);
+    connect(del, &QToolButton::clicked, this, [this, row, name] {
+        m_srcRows->removeWidget(row);
+        row->deleteLater();
+        refreshSrcCount();
+        log(QStringLiteral("移除数据源：%1").arg(name));
+    });
+
+    m_srcRows->addWidget(row);
+    refreshSrcCount();
+}
+
+void MainWindow::refreshSrcCount()
+{
+    if (!m_srcCount || !m_srcRows)
+        return;
+    int total = 0;
+    int connected = 0;
+    for (int i = 0; i < m_srcRows->count(); ++i)
+    {
+        QWidget *row = m_srcRows->itemAt(i) ? m_srcRows->itemAt(i)->widget() : nullptr;
+        if (!row)
+            continue;
+        ++total;
+        if (row->property("connected").toBool())
+            ++connected;
+    }
+    m_srcCount->setText(QStringLiteral("%1 源 · %2 已连接").arg(total).arg(connected));
+    m_srcCount->setStyleSheet(QStringLiteral("color:#8494a0;font-size:10px;background:transparent;"));
+}
+
+void MainWindow::applySrcFilter()
+{
+    if (!m_srcFilter || !m_srcTabs)
+        return;
+    const QString q = m_srcFilter->text().trimmed();
+    const int tab = m_srcTabs->currentIndex();
+    if (tab == 0 && m_srcTree)
+    {
+        for (int i = 0; i < m_srcTree->topLevelItemCount(); ++i)
+        {
+            QTreeWidgetItem *topic = m_srcTree->topLevelItem(i);
+            const bool topicHit = q.isEmpty() || topic->text(0).contains(q, Qt::CaseInsensitive);
+            int childHit = 0;
+            for (int j = 0; j < topic->childCount(); ++j)
+            {
+                QTreeWidgetItem *leaf = topic->child(j);
+                const bool hit = topicHit || leaf->text(0).contains(q, Qt::CaseInsensitive);
+                leaf->setHidden(!hit);
+                if (hit)
+                    ++childHit;
+            }
+            topic->setHidden(q.isEmpty() ? false : (!topicHit && childHit == 0));
+            if (!q.isEmpty() && childHit > 0)
+                topic->setExpanded(true);
+        }
+    }
+    else if (tab == 1 && m_paramTable)
+    {
+        for (int r = 0; r < m_paramTable->rowCount(); ++r)
+        {
+            bool hit = q.isEmpty();
+            for (int c = 0; c < m_paramTable->columnCount() && !hit; ++c)
+                hit = m_paramTable->item(r, c) && m_paramTable->item(r, c)->text().contains(q, Qt::CaseInsensitive);
+            m_paramTable->setRowHidden(r, !hit);
+        }
+    }
+    else if (tab == 2 && m_msgTable)
+    {
+        for (int r = 0; r < m_msgTable->rowCount(); ++r)
+        {
+            bool hit = q.isEmpty();
+            for (int c = 0; c < m_msgTable->columnCount() && !hit; ++c)
+                hit = m_msgTable->item(r, c) && m_msgTable->item(r, c)->text().contains(q, Qt::CaseInsensitive);
+            m_msgTable->setRowHidden(r, !hit);
+        }
+    }
+}
+
+void MainWindow::newPage()
+{
+    auto *c = new CanvasWidget(this);
+    c->clearChannels();
+    c->setTitle(QStringLiteral("新页 · 画布"));
+    connect(c, &CanvasWidget::activated, this, [this, c](const QString &t) {
+        setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
+                        {QStringLiteral("时间窗"), QStringLiteral("%1 ~ %2 s")
+                                                  .arg(c->t0(), 0, 'f', 2)
+                                                  .arg(c->t1(), 0, 'f', 2)},
+                        {QStringLiteral("数据来源"), c->kernelBacked() ? QStringLiteral("数据集（内核内存）")
+                                                                      : QStringLiteral("演示合成数据")},
+                        {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩 / 拖动平移 / 双击复位")}});
+    });
+    const int plusIdx = m_pages->count() - 1;
+    m_pages->insertTab(plusIdx, c, QStringLiteral("新页"));
+    m_pages->setCurrentWidget(c);
+    log(QStringLiteral("新建页"));
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    // Ribbon 按钮的自定义 tooltip：开着它会在鼠标下方盖住分组标题，改走状态栏
+    if (event->type() == QEvent::Enter || event->type() == QEvent::Leave)
+    {
+        if (qobject_cast<SARibbonToolButton *>(watched))
+        {
+            if (event->type() == QEvent::Enter)
+            {
+                const QString tip = watched->property("rbTip").toString();
+                if (!tip.isEmpty())
+                    statusBar()->showMessage(tip);
+            }
+            else
+            {
+                statusBar()->showMessage(m_kernelInfo);
+            }
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::createPages()
@@ -645,6 +865,7 @@ void MainWindow::createPages()
 
     // 页 1：三 plot 竖排（QSplitter 树，D15）
     auto *page1 = new QSplitter(Qt::Vertical, this);
+    page1->setHandleWidth(6);
     page1->addWidget(makeCanvas(QStringLiteral("姿态角 · plot")));
     page1->addWidget(makeCanvas(QStringLiteral("振动 · plot")));
     page1->addWidget(makeCanvas(QStringLiteral("总线 · plot")));
@@ -663,6 +884,16 @@ void MainWindow::createPages()
     });
 
     setCentralWidget(m_pages);
+    // 末尾 “+” 页签：浏览器式新建入口，避免挂角落控件被右侧 dock 挤住
+    const int plusIdx = m_pages->count();
+    m_pages->addTab(new QWidget(m_pages), QStringLiteral("+"));
+    m_pages->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
+    m_pages->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
+    connect(m_pages, &QTabWidget::currentChanged, this, [this](int i) {
+        if (i >= 0 && i == m_pages->count() - 1 && m_pages->tabText(i) == QStringLiteral("+"))
+            newPage();
+    });
+
 }
 
 QVector<CanvasWidget *> MainWindow::pageCanvases() const
@@ -781,6 +1012,7 @@ bool MainWindow::loadFile(const QString &path)
         QTreeWidgetItem *item = parent ? new QTreeWidgetItem(parent, {leaf})
                                        : new QTreeWidgetItem(m_srcTree, {leaf});
         item->setToolTip(0, name);
+        item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
         item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
         item->setData(0, Qt::UserRole + 1, name);
     }
@@ -906,6 +1138,7 @@ bool MainWindow::loadFile(const QString &path)
                 .arg(fi.fileName(), fmt_tag).arg(n).arg(first->point_count)
                 .arg(t1 - t0, 0, 'f', 2));
     }
+    addSourceRow(fi.fileName(), QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"));
     statusBar()->showMessage(QStringLiteral("%1 · %2 通道 · %3 点").arg(fi.fileName()).arg(n)
                              .arg(ps_dataset_channel(ds, 0) ? ps_dataset_channel(ds, 0)->point_count : 0));
     return true;

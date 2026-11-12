@@ -23,6 +23,7 @@ public:
 
     // 用内核通道替换当前所有曲线；传空则只清空。
     void setChannels(const QVector<const PsChannelInfo *> &channels);
+    void addChannel(const PsChannelInfo *channel);   // 字段树拖入时追加一条曲线
     void clearChannels();
     bool hasData() const { return !m_series.isEmpty(); }
     bool kernelBacked() const { return m_kernelBacked; }  // 数据指针属于内核数据集
@@ -40,6 +41,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     struct Series
