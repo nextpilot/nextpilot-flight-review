@@ -879,18 +879,18 @@ void MainWindow::createPages()
                     QStringLiteral("仪表大屏"));
 
     connect(m_pages, &QTabWidget::tabCloseRequested, this, [this](int idx) {
-        if (m_pages->count() > 1)
+        if (m_pages->count() > 2 && !m_pages->tabText(idx).isEmpty())
             m_pages->removeTab(idx);
     });
 
     setCentralWidget(m_pages);
     // 末尾 “+” 页签：浏览器式新建入口，避免挂角落控件被右侧 dock 挤住
     const int plusIdx = m_pages->count();
-    m_pages->addTab(new QWidget(m_pages), QStringLiteral("+"));
+    m_pages->addTab(new QWidget(m_pages), QStringLiteral("＋"));
     m_pages->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
     m_pages->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
     connect(m_pages, &QTabWidget::currentChanged, this, [this](int i) {
-        if (i >= 0 && i == m_pages->count() - 1 && m_pages->tabText(i) == QStringLiteral("+"))
+        if (i >= 0 && i == m_pages->count() - 1 && m_pages->tabText(i) == QStringLiteral("＋"))
             newPage();
     });
 

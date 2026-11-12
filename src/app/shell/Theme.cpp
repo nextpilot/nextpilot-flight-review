@@ -47,12 +47,12 @@ QGroupBox::title { subcontrol-origin:margin; left:9px; padding:0 4px; }
 QTabWidget::pane { border:0; background:#0d1117; }
 QTabBar { background:#0d1117; border:0; border-top:1px solid #232b33; }
 QTabBar::tab {
-    background:#161b20; color:#8494a0; font-size:11px;
+    background:#161b20; color:#8494a0; font-size:12px;
     padding:4px 12px; margin-right:1px; border:0; border-bottom:2px solid transparent;
 }
 QTabBar::tab:selected { background:#1a2127; color:#c9d1d9; border-bottom:2px solid #f2b134; }
 QTabBar::tab:hover:!selected { color:#c8d2da; background:#1a2127; }
-QTabBar::close-button { image:url(:/icons/close.svg); subcontrol-position:right; }
+QTabBar::close-button { image:url(:/icons/close_small.svg); subcontrol-position:right; margin:2px 3px; }
 QTabBar::close-button:hover { background:#222b33; }
 
 /* ---- 视图类 ---- */
