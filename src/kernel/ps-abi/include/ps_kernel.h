@@ -38,6 +38,11 @@ typedef struct PsChannelInfo {
 
 /* 读 CSV → 数据集。0 = 成功（写 out）；非 0 = 失败（err 里给原因）。 */
 int32_t              ps_csv_load(const char *path, PsDataset **out, char *err, uint32_t err_cap);
+
+/* 读 ULog（PX4/ArduPilot 飞行日志）→ 数据集。通道名形如 `topic.field`，
+ * 多实例为 `topic.00.field`；`timestamp` 与 `_padding` 不产出通道。
+ * 单位信息 ULog 里没有（只能靠字段名/格式约定），unit 返回空串。 */
+int32_t              ps_ulog_load(const char *path, PsDataset **out, char *err, uint32_t err_cap);
 uint32_t             ps_dataset_channel_count(const PsDataset *ds);
 const PsChannelInfo *ps_dataset_channel(const PsDataset *ds, uint32_t index);
 void                 ps_dataset_free(PsDataset *ds);

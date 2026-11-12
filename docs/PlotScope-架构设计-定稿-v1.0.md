@@ -390,7 +390,7 @@ Ribbon 的价值不是好看，是**把命令按任务分组、一屏全露**：
 
 ## 10. 插件与 ABI
 
-**C ABI 5 函数**
+**C ABI（数据面 6 函数；插件面 5 函数）**
 
 ```c
 uint32_t           ps_abi_version(void);
@@ -547,7 +547,8 @@ ps_plugin_<family>   # MODULE 库：src/plugin/<family>/，输出到 bin/plugins
 - 数据面已开：`ps_csv_load` / `ps_dataset_channel_count` / `ps_dataset_channel` / `ps_dataset_free` / `ps_lod_minmax`；`PsChannelInfo` 的 `time/value` 指针直指内核内存（UI 零拷贝，数据集释放后失效）。`ps-parse` 的 CSV 解析支持 `, ; \t` 三种分隔符与 ns/us/ms/s 时间单位识别，坏单元格记 NaN 不整份报废。
 - 降采样落到 Rust：UI 每次重绘按像素宽度调 `ps_lod_minmax`，只拿 ≤px 个 `(x,min,max)` 三元组；3000 点 CSV 画到三格（每格一个通道，避免混量纲压成直线）。
 - 内核单测 19 例（`cargo test`），`ctest` 2/2 通过（ABI 冒烟 + cargo）。
-- 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、ULog/DFLog 等真实 Loader、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
+- **ULog 已接**（2026-11-12 晚）：`ps-parse::ulog` 按 PX4 `ulog_file_format` 实现（16 字节头 + 消息流，`F/A/D/L/B/P/Q/M/I` 类型），命名与展平规则对齐 PlotJuggler `data_load_ulog`——`timestamp` 与 `_padding*` 不产出曲线、嵌套结构用 `.`、数组下标补两位 `.00`、`char[N]` 当字符串不当数值、同 topic 有 `multi_id>0` 时全部实例加 `.NN` 后缀。新增数据面函数 `ps_ulog_load`；UI 按后缀分流，通道按 topic 分组挂树，双击出图。实测：自造 `test/fixture/demo_flight.ulg`（250 Hz / 12 s / 4 topic）→ 13 通道 × 3000 点、解析 10 ms；PX4 官方 900 KB 样例 → **1351 通道 / 1812 行 / 解析 16.9 ms**。
+- 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、BLF/ASC/NMEA、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
 
 **Ribbon / Dock spike（2026-11-12 实测）**
 

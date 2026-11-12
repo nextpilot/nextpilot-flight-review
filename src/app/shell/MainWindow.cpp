@@ -440,7 +440,12 @@ bool MainWindow::loadFile(const QString &path)
 {
     char err[256] = {0};
     PsDataset *ds = nullptr;
-    if (ps_csv_load(path.toUtf8().constData(), &ds, err, sizeof(err)) != 0)
+    const QFileInfo fi(path);
+    // 分流：ULog 交给内核的 ulog 解析器，其余按 CSV 走（M1 再补 blf/asc）
+    const bool is_ulog = fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0;
+    const int32_t rc = is_ulog ? ps_ulog_load(path.toUtf8().constData(), &ds, err, sizeof(err))
+                               : ps_csv_load(path.toUtf8().constData(), &ds, err, sizeof(err));
+    if (rc != 0)
     {
         const QString msg = QString::fromUtf8(err);
         log(QStringLiteral("加载失败：%1").arg(msg));
@@ -459,21 +464,54 @@ bool MainWindow::loadFile(const QString &path)
     m_dataset = ds;
 
     const uint32_t n = ps_dataset_channel_count(ds);
-    Q_UNUSED(n);
-    const QFileInfo fi(path);
+    const QString fmt_tag = is_ulog ? QStringLiteral("ULog") : QStringLiteral("CSV");
     auto *top = new QTreeWidgetItem(m_srcTree,
-        {QStringLiteral("%1  [CSV · %2 通道]").arg(fi.fileName()).arg(n)});
+        {QStringLiteral("%1  [%2 · %3 通道]").arg(fi.fileName(), fmt_tag).arg(n)});
     QVector<const PsChannelInfo *> channels;
+
+    // ULog 通道名是 `topic.field`（多实例 `topic.NN.field`）：按 topic 分组，
+    // 否则 1351 条通道平铺在一层，找不动。CSV 没有层级，保持一层。
+    QMap<QString, QTreeWidgetItem *> groups;
     for (uint32_t i = 0; i < n; ++i)
     {
         const PsChannelInfo *ch = ps_dataset_channel(ds, i);
         if (!ch)
             continue;
         channels.append(ch);
-        auto *item = new QTreeWidgetItem(top, {QString::fromUtf8(ch->name)});
+        const QString name = QString::fromUtf8(ch->name);
+        QString group;
+        QString leaf = name;
+        if (is_ulog)
+        {
+            const int dot = name.lastIndexOf(QLatin1Char('.'));
+            if (dot > 0)
+            {
+                group = name.left(dot);
+                leaf = name.mid(dot + 1);
+            }
+        }
+        QTreeWidgetItem *parent = top;
+        if (!group.isEmpty())
+        {
+            auto it = groups.find(group);
+            if (it == groups.end())
+            {
+                auto *g = new QTreeWidgetItem(top, {group});
+                it = groups.insert(group, g);
+            }
+            parent = it.value();
+        }
+        auto *item = new QTreeWidgetItem(parent, {leaf});
+        item->setToolTip(0, name);
         item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
+        item->setData(0, Qt::UserRole + 1, name);
     }
-    top->setExpanded(true);
+    const bool few_groups = groups.size() <= 8;
+    top->setExpanded(is_ulog ? few_groups : true);
+    for (auto *g : groups)
+        g->setExpanded(few_groups);
+    if (is_ulog && !few_groups)
+        groups.first()->setExpanded(true);
 
     // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线
     const QVector<CanvasWidget *> canvases = pageCanvases();
@@ -487,8 +525,8 @@ bool MainWindow::loadFile(const QString &path)
     {
         const double t0 = first->time[0];
         const double t1 = first->time[first->point_count - 1];
-        log(QStringLiteral("已加载 %1：%2 通道 × %3 点，时间窗 %4 s")
-                .arg(fi.fileName()).arg(n).arg(first->point_count)
+        log(QStringLiteral("已加载 %1（%2）：%3 通道 × %4 点，时间窗 %5 s")
+                .arg(fi.fileName(), fmt_tag).arg(n).arg(first->point_count)
                 .arg(t1 - t0, 0, 'f', 2));
     }
     statusBar()->showMessage(QStringLiteral("%1 · %2 通道 · %3 点").arg(fi.fileName()).arg(n)

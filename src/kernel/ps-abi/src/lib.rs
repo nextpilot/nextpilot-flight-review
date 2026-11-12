@@ -119,6 +119,21 @@ unsafe fn write_err(err: *mut c_char, cap: u32, msg: &str) {
     *((err as *mut u8).add(n)) = 0;
 }
 
+/// 把 (名称, 时间, 值) 列表装成数据集。CSV / ULog 共用。
+fn dataset_from_series(series: Vec<(String, Vec<f64>, Vec<f64>)>) -> Dataset {
+    let mut ds = Dataset { channels: Vec::new(), infos: Vec::new() };
+    for (name, t, v) in series {
+        ds.channels.push(Channel {
+            name: CString::new(name.as_str()).unwrap_or_else(|_| CString::new("channel").unwrap()),
+            unit: CString::default(),
+            t,
+            v,
+        });
+    }
+    ds.rebuild_infos();
+    ds
+}
+
 /// 读 CSV → 数据集。成功返回 0 并写 `out`；失败返回非 0，`err` 里给原因。
 #[no_mangle]
 pub unsafe extern "C" fn ps_csv_load(
@@ -225,4 +240,39 @@ mod tests {
         assert_eq!(ps_abi_version(), ABI_VERSION);
         assert!(!ps_kernel_version().is_null());
     }
+}
+
+
+/// 读 ULog → 数据集。成功返回 0 并写 `out`；失败返回非 0，`err` 里给原因。
+#[no_mangle]
+pub unsafe extern "C" fn ps_ulog_load(
+    path: *const c_char,
+    out: *mut *mut Dataset,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if path.is_null() || out.is_null() {
+        return 1;
+    }
+    let path_str = match CStr::from_ptr(path).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            write_err(err, err_cap, "路径不是合法 UTF-8");
+            return 2;
+        }
+    };
+    let log = match ps_parse::ulog::parse_file(Path::new(path_str)) {
+        Ok(l) => l,
+        Err(e) => {
+            write_err(err, err_cap, e.as_str());
+            return 3;
+        }
+    };
+    let series = log
+        .channels
+        .into_iter()
+        .map(|c| (c.name, c.t, c.v))
+        .collect::<Vec<_>>();
+    *out = Box::into_raw(Box::new(dataset_from_series(series)));
+    0
 }
