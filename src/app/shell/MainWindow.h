@@ -39,7 +39,10 @@ private:
     void createPages();
     void log(const QString &text);
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
-    void addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed = false);
+    void addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed = false,
+                      const QString &path = QString());
+    void showSourceMenu(QWidget *row, const QPoint &globalPos);
+    void removeSourceRow(QWidget *row);
     void activateSource(QWidget *row);   // 每个源各自一份字段/参数/消息视图
     void renderSourceData();
     void setupCanvas(CanvasWidget *c);

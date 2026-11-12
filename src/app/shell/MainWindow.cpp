@@ -12,6 +12,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QIcon>
 #include <QResizeEvent>
 #include <QStyle>
@@ -679,6 +680,97 @@ void darkenDocks(MainWindow *w)
     }
 }
 
+void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
+{
+    if (!row)
+        return;
+    const bool backed = row->property("backed").toBool();
+    const QString path = row->property("srcPath").toString();
+
+    QMenu menu(this);
+    QAction *toggle = menu.addAction(backed ? QStringLiteral("暂停数据源")
+                                            : QStringLiteral("开始数据源"));
+    toggle->setEnabled(backed);
+    QAction *reload = menu.addAction(QStringLiteral("重新加载"));
+    reload->setEnabled(!path.isEmpty());
+    QAction *rename = menu.addAction(QStringLiteral("重命名"));
+    menu.addSeparator();
+    QAction *del = menu.addAction(QStringLiteral("移除数据源"));
+
+    QAction *chosen = menu.exec(globalPos);
+    if (chosen == toggle)
+    {
+        QList<QLabel *> labels = row->findChildren<QLabel *>();
+        QLabel *meta = labels.value(2, nullptr);
+        if (!meta)
+            return;
+        const QString cur = meta->text();
+        if (cur.contains(QStringLiteral("已暂停")))
+        {
+            meta->setText(row->property("srcMeta").toString());
+            log(QStringLiteral("开始数据源：%1").arg(row->property("srcName").toString()));
+        }
+        else
+        {
+            meta->setText(QStringLiteral("已暂停 · %1").arg(cur.section(QStringLiteral("·"), 1).trimmed()));
+            log(QStringLiteral("暂停数据源：%1").arg(row->property("srcName").toString()));
+        }
+    }
+    else if (chosen == reload)
+    {
+        log(QStringLiteral("重新加载：%1").arg(path));
+        loadFile(path);
+    }
+    else if (chosen == rename)
+    {
+        QList<QLabel *> labels = row->findChildren<QLabel *>();
+        QLabel *name = labels.value(1, nullptr);
+        if (!name)
+            return;
+        bool ok = false;
+        const QString text = QInputDialog::getText(this, QStringLiteral("重命名数据源"),
+                                                   QStringLiteral("名称"), QLineEdit::Normal,
+                                                   name->text(), &ok);
+        if (ok && !text.trimmed().isEmpty())
+        {
+            name->setText(text.trimmed());
+            row->setProperty("srcName", text.trimmed());
+            log(QStringLiteral("重命名数据源：%1").arg(text.trimmed()));
+        }
+    }
+    else if (chosen == del)
+    {
+        removeSourceRow(row);
+    }
+}
+
+void MainWindow::removeSourceRow(QWidget *row)
+{
+    if (!row || !m_srcRows)
+        return;
+    const QString name = row->property("srcName").toString();
+    if (row->property("backed").toBool())
+    {
+        for (auto *c : findChildren<CanvasWidget *>())
+            if (c->kernelBacked())
+                c->clearChannels();
+        if (m_dataset)
+        {
+            ps_dataset_free(m_dataset);
+            m_dataset = nullptr;
+        }
+        m_srcChannels.clear();
+        m_srcParams.clear();
+        m_srcMsgs.clear();
+        m_viewBacked = false;
+        renderSourceData();
+    }
+    m_srcRows->removeWidget(row);
+    row->deleteLater();
+    refreshSrcCount();
+    log(QStringLiteral("移除数据源：%1").arg(name));
+}
+
 void MainWindow::renderSourceData()
 {
     if (!m_srcTree || !m_srcTabs)
@@ -824,7 +916,8 @@ void MainWindow::activateSource(QWidget *row)
     renderSourceData();
 }
 
-void MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed)
+void MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
+                              const QString &path)
 {
     if (!m_srcRows)
         return;
@@ -835,6 +928,9 @@ void MainWindow::addSourceRow(const QString &name, const QString &meta, const QS
     row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
     row->setProperty("srcRow", true);
     row->setProperty("backed", backed);
+    row->setProperty("srcPath", path);
+    row->setProperty("srcMeta", meta);
+    row->setProperty("srcName", name);
     row->installEventFilter(this);
     row->setStyleSheet(QStringLiteral(
         "QWidget{background:transparent;border-left:2px solid transparent;border-bottom:1px solid #171f26;}"
@@ -886,11 +982,8 @@ void MainWindow::addSourceRow(const QString &name, const QString &meta, const QS
         "QToolButton{background:transparent;border:0;color:#4a545d;padding:0;}"
         "QToolButton:hover{color:#f85149;background:#222b33;}"));
     lay->addWidget(del);
-    connect(del, &QToolButton::clicked, this, [this, row, name] {
-        m_srcRows->removeWidget(row);
-        row->deleteLater();
-        refreshSrcCount();
-        log(QStringLiteral("移除数据源：%1").arg(name));
+    connect(del, &QToolButton::clicked, this, [this, row] {
+        removeSourceRow(row);
     });
 
     m_srcRows->addWidget(row);
@@ -983,7 +1076,11 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     // 数据源行：点行切换该源自己的字段/参数/消息
     if (event->type() == QEvent::MouseButtonRelease && watched->property("srcRow").toBool())
     {
-        activateSource(qobject_cast<QWidget *>(watched));
+        auto *me = static_cast<QMouseEvent *>(event);
+        QWidget *row = qobject_cast<QWidget *>(watched);
+        activateSource(row);
+        if (me->button() == Qt::RightButton)
+            showSourceMenu(row, me->globalPosition().toPoint());
         return false;
     }
     // Ribbon 按钮的自定义 tooltip：开着它会在鼠标下方盖住分组标题，改走状态栏
@@ -1293,7 +1390,8 @@ bool MainWindow::loadFile(const QString &path)
                 .arg(fi.fileName(), fmt_tag).arg(n).arg(first->point_count)
                 .arg(t1 - t0, 0, 'f', 2));
     }
-    addSourceRow(fi.fileName(), QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true);
+    addSourceRow(fi.fileName(), QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true,
+                 fi.absoluteFilePath());
     statusBar()->showMessage(QStringLiteral("%1 · %2 通道 · %3 点").arg(fi.fileName()).arg(n)
                              .arg(ps_dataset_channel(ds, 0) ? ps_dataset_channel(ds, 0)->point_count : 0));
     return true;

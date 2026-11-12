@@ -81,6 +81,8 @@ private:
     double m_yMin = -1.6;
     double m_yMax = 1.6;
     bool m_autoY = true;
+    bool m_showLegend = true;
+    bool m_showGrid = true;
     bool m_kernelBacked = false;
     bool m_dragging = false;
     bool m_hover = false;

@@ -248,6 +248,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
                             : QStringLiteral("%1 通道 · 抽稀在 Rust 侧完成").arg(m_series.size());
     p.drawText(QPointF(14 + titleWidth + 14, 21), sub);
 
+    if (m_showGrid)
+    {
     // 网格 + Y 刻度
     const int yTicks = 5;
     for (int i = 0; i <= yTicks; ++i)
@@ -272,6 +274,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         p.setPen(colorText());
         const QString lbl = QString::number(t, 'f', t >= 100 ? 0 : 2);
         p.drawText(QPointF(x - fm.horizontalAdvance(lbl) / 2, plot.bottom() + fm.ascent() + 6), lbl);
+    }
+
     }
 
     // 曲线：每像素一个 min/max 桶，画"包络带 + 中线"
@@ -304,21 +308,25 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     p.restore();
     p.setRenderHint(QPainter::Antialiasing, true);
 
-    // 图例（带单位）：点击切换显隐，右键删除
-    double lx = plot.left() + 6;
-    const double ly = plot.top() + 14;
-    m_legendRects.clear();
-    for (int i = 0; i < m_series.size(); ++i)
+    if (m_showLegend)
     {
-        const Series &s = m_series.at(i);
-        const QString lbl = s.unit.isEmpty() ? s.name : QStringLiteral("%1 [%2]").arg(s.name, s.unit);
-        const double w = 19 + fm.horizontalAdvance(lbl) + 12;
-        m_legendRects.append(QRectF(lx - 2, ly - 12, w, 18));
-        p.setPen(QPen(s.color, 1.2));
-        p.drawLine(QPointF(lx, ly - 4), QPointF(lx + 14, ly - 4));
-        p.setPen(s.visible ? colorText() : colorDim());
-        p.drawText(QPointF(lx + 19, ly), lbl);
-        lx += w + 8;
+        // 图例（带单位）：点击切换显隐，右键删除
+        double lx = plot.left() + 6;
+        const double ly = plot.top() + 14;
+        m_legendRects.clear();
+        for (int i = 0; i < m_series.size(); ++i)
+        {
+            const Series &s = m_series.at(i);
+            const QString lbl = s.unit.isEmpty() ? s.name : QStringLiteral("%1 [%2]").arg(s.name, s.unit);
+            const double w = 19 + fm.horizontalAdvance(lbl) + 12;
+            m_legendRects.append(QRectF(lx - 2, ly - 12, w, 18));
+            p.setPen(QPen(s.color, 1.2));
+            p.drawLine(QPointF(lx, ly - 4), QPointF(lx + 14, ly - 4));
+            p.setPen(s.visible ? colorText() : colorDim());
+            p.drawText(QPointF(lx + 19, ly), lbl);
+            lx += w + 8;
+        }
+
     }
 
     // 十字光标
@@ -403,18 +411,35 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::RightButton)
     {
         QMenu menu(this);
-        QAction *fit = menu.addAction(QStringLiteral("自适应 Y"));
         QAction *reset = menu.addAction(QStringLiteral("重置视图"));
+        QAction *fit = menu.addAction(QStringLiteral("自适应 Y"));
         menu.addSeparator();
-        QAction *add = menu.addAction(QStringLiteral("垂直添加画布"));
+        QAction *legend = menu.addAction(QStringLiteral("显示图例"));
+        legend->setCheckable(true);
+        legend->setChecked(m_showLegend);
+        QAction *grid = menu.addAction(QStringLiteral("显示网格"));
+        grid->setCheckable(true);
+        grid->setChecked(m_showGrid);
+        menu.addSeparator();
+        QAction *add = menu.addAction(QStringLiteral("向下添加画布"));
         QAction *del = menu.addAction(QStringLiteral("删除此画布"));
         QAction *chosen = menu.exec(event->globalPosition().toPoint());
-        if (chosen == fit)
-            requestAutoY();
-        else if (chosen == reset)
+        if (chosen == reset)
         {
             m_autoY = true;
             resetView();
+            update();
+        }
+        else if (chosen == fit)
+            requestAutoY();
+        else if (chosen == legend)
+        {
+            m_showLegend = legend->isChecked();
+            update();
+        }
+        else if (chosen == grid)
+        {
+            m_showGrid = grid->isChecked();
             update();
         }
         else if (chosen == add)

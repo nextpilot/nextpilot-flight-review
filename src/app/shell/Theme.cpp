@@ -94,6 +94,18 @@ QStatusBar { background:#161b20; color:#6e7681; border-top:1px solid #232b33; }
 QStatusBar::item { border:0; }
 SARibbonPanelLabel { background:transparent; color:#7d8b96; font-size:10px; }
 QToolTip { background:#161b20; color:#c9d1d9; border:1px solid #232b33; padding:3px 6px; }
+QMenu { background:#161b20; color:#c9d1d9; border:1px solid #2d3841; padding:4px; }
+QMenu::item { padding:5px 22px 5px 18px; font-size:12px; }
+QMenu::item:selected { background:#1f2a33; }
+QMenu::item:disabled { color:#5d6c77; }
+QMenu::separator { height:1px; background:#232b33; margin:4px 6px; }
+QMenu { background:#161b20; border:1px solid #2d3841; padding:4px; }
+QMenu::item { padding:5px 24px 5px 20px; font-size:12px; color:#c9d1d9; border-radius:2px; }
+QMenu::item:selected { background:#1f2a33; color:#f2b134; }
+QMenu::item:disabled { color:#5d6c77; }
+QMenu::separator { height:1px; background:#232b33; margin:4px 8px; }
+QMenu::indicator { width:12px; height:12px; left:6px; }
+QMenu::indicator:checked { image:url(:/icons/check.svg); }
 QMenu { background:#161b20; color:#c9d1d9; border:1px solid #2d3841; }
 QMenu::item:selected { background:#1b232a; color:#f2b134; }
 QMessageBox { background:#0f1419; }
