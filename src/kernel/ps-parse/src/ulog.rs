@@ -135,15 +135,22 @@ fn split_format(text: &str) -> Option<(String, Vec<Field>)> {
         }
         let mut parts = f.splitn(2, ' ');
         let ty = parts.next()?;
-        let fname = parts.next().unwrap_or("").trim();
+        let mut fname = parts.next().unwrap_or("").trim();
         if fname.is_empty() {
             return None;
         }
-        // type / type[N]
-        let (base_name, array) = match ty.split_once('[') {
+        // 数组长度有两种写法：规范是 type[N] name（PX4 实际日志都这么写），
+        // 但 type name[N] 也要能读——否则 char name[8] 会被当成名为 "name[8]" 的标量
+        let (base_name, mut array) = match ty.split_once('[') {
             Some((b, r)) => (b, r.trim_end_matches(']').parse::<usize>().unwrap_or(0)),
             None => (ty, 0),
         };
+        if array == 0 {
+            if let Some((n, len)) = fname.split_once('[') {
+                array = len.trim_end_matches(']').parse::<usize>().unwrap_or(0);
+                fname = n;
+            }
+        }
         let base = match Prim::from_name(base_name) {
             Some(p) => Base::Prim(p),
             None => Base::Msg(base_name.to_string()),
@@ -179,20 +186,20 @@ fn flatten(
             format!("{prefix}.{}", f.name)
         };
         let repeated = f.array.max(1);
+        // PJ 的 isSkippedField 作用在【字段名】上，所以 _padding[4] 是整个数组都跳过，
+        // 不能等展开成 _padding.00 再按最后一段判断
+        let skip = f.name == "timestamp" || f.name.starts_with("_padding");
         match &f.base {
             Base::Prim(Prim::Char) if f.array > 0 => {
-                // char[N] 是一条字符串序列，不是 N 个点
-                for k in 0..repeated {
-                    let leaf_path = if repeated > 1 { format!("{path}.{k:02}") } else { path.clone() };
-                    // char[N] 是字符串，本体不进曲线表（只占位，保证后续偏移正确）
-                    out.push(Leaf { emit: false, path: leaf_path, off: cur, prim: None });
-                    cur += f.array;
-                }
+                // char[N] 是【一条】字符串序列（PJ isStringField），不是 N 个数值点，
+                // 也不做 .00/.01 展开；只占一个叶子位，保证后面字段的偏移正确
+                out.push(Leaf { emit: false, path: path.clone(), off: cur, prim: None });
+                cur += f.array;
             }
             Base::Prim(p) => {
                 for k in 0..repeated {
                     let leaf_path = if repeated > 1 { format!("{path}.{k:02}") } else { path.clone() };
-                    out.push(Leaf { emit: keep(&leaf_path), path: leaf_path, off: cur, prim: Some(*p) });
+                    out.push(Leaf { emit: !skip, path: leaf_path, off: cur, prim: Some(*p) });
                     cur += p.size();
                 }
             }
@@ -226,8 +233,12 @@ pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
     let mut formats: HashMap<String, Vec<Field>> = HashMap::new();
     let mut subs: Vec<Subscription> = Vec::new();
     let mut by_id: HashMap<u16, usize> = HashMap::new();
+    // PJ 的规则：同一 (name, multi_id) 只导入第一个订阅，后来的重复 msg_id 不合并
+    let mut by_topic: HashMap<(String, u8), usize> = HashMap::new();
     let mut notes: Vec<String> = Vec::new();
     let mut rows = 0usize;
+    let mut infos = 0usize;
+    let mut params = 0usize;
     let mut pos = 16usize;
 
     while pos + 3 <= buf.len() {
@@ -275,15 +286,38 @@ pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
                     pos = body + size;
                     continue;
                 }
-                let ts_off = leaves.iter().find(|l| l.path == "timestamp").map(|l| l.off);
+                // 时间戳按"名字"找，且必须是顶层 uint64 标量（PJ findTimestampOffset 同规则）
+                let ts_off = leaves
+                    .iter()
+                    .find(|l| l.path == "timestamp" && l.prim == Some(Prim::U64))
+                    .map(|l| l.off);
                 if ts_off.is_none() {
-                    notes.push(format!("订阅 {name} 无 timestamp 字段，跳过"));
+                    notes.push(format!("订阅 {name} 无 uint64 timestamp 字段，跳过"));
                     pos = body + size;
                     continue;
+                }
+                if let Some(&prev) = by_topic.get(&(name.clone(), multi_id)) {
+                    notes.push(format!(
+                        "订阅 {name} multi_id={multi_id} 与 msg_id {} 重复，按 PJ 规则只保留第一个",
+                        by_id.iter().find(|(_, &v)| v == prev).map(|(k, _)| *k).unwrap_or(0)
+                    ));
+                    pos = body + size;
+                    continue;
+                }
+                // char[N]：PJ 产出字符串序列；我们暂时没有字符串通道，至少把它列出来
+                let strings: Vec<&Leaf> = leaves.iter().filter(|l| l.prim.is_none() && keep(&l.path)).collect();
+                if !strings.is_empty() && notes.len() < 64 {
+                    let names: Vec<&str> = strings.iter().take(5).map(|l| l.path.as_str()).collect();
+                    notes.push(format!(
+                        "{name} 有 {} 个字符串字段（{}）未产出，字符串通道待 M2",
+                        strings.len(),
+                        names.join(", ")
+                    ));
                 }
                 let numeric = leaves.iter().filter(|l| l.prim.is_some() && l.emit).count();
                 let _ = fields;
                 let sub_idx = subs.len();
+                by_topic.insert((name.clone(), multi_id), sub_idx);
                 subs.push(Subscription {
                     topic: name,
                     multi_id,
@@ -328,15 +362,28 @@ pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
                 }
                 rows += 1;
             }
-            b'L' | b'C' => {
-                // 日志文本：进 note，不进曲线
-                if notes.len() < 64 {
-                    let txt = if ty == b'L' {
-                        String::from_utf8_lossy(&payload[8.min(payload.len())..]).to_string()
-                    } else {
-                        String::from_utf8_lossy(payload).to_string()
-                    };
-                    notes.push(format!("log: {}", txt.trim()));
+            b'L' => {
+                // 规范 'L'：uint8_t log_level; uint64_t timestamp(µs); char message[]
+                if notes.len() < 64 && payload.len() >= 9 {
+                    let lvl = payload[0] as char;
+                    let txt = String::from_utf8_lossy(&payload[9..]);
+                    notes.push(format!("log[{lvl}]: {}", txt.trim_matches(char::from(0)).trim()));
+                }
+            }
+            b'C' => {
+                // 规范 'C'：uint8_t log_level; uint16_t tag; uint64_t timestamp; char message[]
+                if notes.len() < 64 && payload.len() >= 11 {
+                    let lvl = payload[0] as char;
+                    let tag = u16::from_le_bytes([payload[1], payload[2]]);
+                    let txt = String::from_utf8_lossy(&payload[11..]);
+                    notes.push(format!("log[{lvl}/{tag}]: {}", txt.trim_matches(char::from(0)).trim()));
+                }
+            }
+            b'I' => infos += 1,
+            b'P' => params += 1,
+            b'R' => {
+                if let Some(msg_id) = u16_at(payload, 0).map(|v| v as u16) {
+                    by_id.remove(&msg_id);
                 }
             }
             b'B' => {
@@ -349,6 +396,13 @@ pub fn parse_bytes(buf: &[u8]) -> Result<Log, String> {
             _ => {}
         }
         pos = body + size;
+    }
+
+    if infos > 0 {
+        notes.push(format!("{infos} 条 info 消息（机型/固件/版本，M1 进信息面板）"));
+    }
+    if params > 0 {
+        notes.push(format!("{params} 条参数消息（M1 参数面板再接）"));
     }
 
     // 同一 topic 只要存在 multi_id > 0 的实例，全部实例加 .NN 后缀（PJ 规则）
@@ -446,6 +500,75 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn trailing_padding_may_be_absent() {
+        // PJ 规则：最后一个字段是 _padding 时可以不写进数据段
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        out.push(1);
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend(msg(b'F', b"pad_fmt:uint64_t timestamp;float v;uint8_t _padding[4];"));
+        let mut a = vec![0u8, 0, 0];
+        a.extend_from_slice(b"pad_fmt");
+        out.extend(msg(b'A', &a));
+
+        let mut d = vec![0u8, 0];
+        d.extend_from_slice(&2_000_000u64.to_le_bytes());
+        d.extend_from_slice(&1.25f32.to_le_bytes()); // 故意不写 _padding[4]
+        out.extend(msg(b'D', &d));
+
+        let log = parse_bytes(&out).expect("短 payload 也要能解析");
+        assert_eq!(log.channels.len(), 1);
+        assert_eq!(log.channels[0].v, vec![1.25]);
+        assert_eq!(log.point_rows, 1);
+    }
+
+    #[test]
+    fn duplicate_subscription_kept_once() {
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        out.push(1);
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend(msg(b'F', b"dup:uint64_t timestamp;float v;"));
+        for id in [0u16, 7u16] {
+            let mut a = vec![0u8];
+            a.extend_from_slice(&id.to_le_bytes());
+            a.extend_from_slice(b"dup");
+            out.extend(msg(b'A', &a));
+        }
+        for id in [0u16, 7u16] {
+            let mut d = id.to_le_bytes().to_vec();
+            d.extend_from_slice(&500_000u64.to_le_bytes());
+            d.extend_from_slice(&(id as f32).to_le_bytes());
+            out.extend(msg(b'D', &d));
+        }
+        let log = parse_bytes(&out).expect("ok");
+        assert_eq!(log.channels.len(), 1, "重复订阅不应产生第二条通道");
+        assert!(log.notes.iter().any(|n| n.contains("重复")), "{:?}", log.notes);
+    }
+
+    #[test]
+    fn char_array_is_string_not_points() {
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        out.push(1);
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend(msg(b'F', b"str_fmt:uint64_t timestamp;char name[8];float v;"));
+        let mut a = vec![0u8, 0, 0];
+        a.extend_from_slice(b"str_fmt");
+        out.extend(msg(b'A', &a));
+        let mut d = vec![0u8, 0];
+        d.extend_from_slice(&1_000_000u64.to_le_bytes());
+        d.extend_from_slice(b"PX4\0\0\0\0\0");
+        d.extend_from_slice(&2.5f32.to_le_bytes());
+        out.extend(msg(b'D', &d));
+
+        let log = parse_bytes(&out).expect("ok");
+        let names: Vec<&str> = log.channels.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(log.channels.len(), 1, "char[N] 不该拆成 8 条数值通道: {names:?}");
+        assert!(log.notes.iter().any(|n| n.contains("字符串字段")), "{:?}", log.notes);
+    }
+
     fn parses_flat_and_multi() {
         let log = parse_bytes(&build_log()).unwrap();
         let names: Vec<&str> = log.channels.iter().map(|c| c.name.as_str()).collect();

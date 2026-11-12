@@ -3,6 +3,8 @@
 
 #include <QAction>
 #include <QDockWidget>
+#include <QHBoxLayout>
+#include <QToolButton>
 #include <QFileDialog>
 #include <QTimer>
 #include <QFileInfo>
@@ -40,18 +42,29 @@
 namespace {
 const char *kStyle = R"(
 QWidget { background:#0d1117; color:#c9d1d9; font-size:12px; }
-QDockWidget { titlebar-close-icon:none; }
-QDockWidget::title { background:#161b22; padding:5px 8px; color:#8b949e; }
+QDockWidget { titlebar-close-icon:none; border:1px solid #1b232a; }
+QDockWidget::title { background:#161b20; padding:5px 8px; color:#8b949e; border-bottom:1px solid #232b33; }
+QMainWindow::separator { background:#0f1419; width:1px; height:1px; }
+QMainWindow::separator:hover { background:#2d3841; }
 QToolBar { background:#161b22; border:0; spacing:2px; padding:3px 6px; }
 QToolButton { padding:5px 9px; border:1px solid transparent; border-radius:3px; }
 QToolButton:hover { background:#21262d; border-color:#30363d; }
 QTabBar::tab { background:#161b22; padding:5px 14px; margin-right:1px; }
 QTabBar::tab:selected { background:#1f2632; color:#ffffff; border-bottom:2px solid #4ea1ff; }
 QTabWidget::pane { border:0; }
+QTabBar { border:0; background:#0d1117; }
+QSplitter::handle { background:#1b232a; }
+QSplitter::handle:horizontal { width:1px; }
+QSplitter::handle:vertical { height:1px; }
+QSplitter::handle:hover { background:#2d3841; }
+QStatusBar { background:#161b20; color:#6e7681; border-top:1px solid #232b33; }
+QStatusBar::item { border:0; }
 QTreeWidget, QTableWidget, QPlainTextEdit { background:#0d1117; border:1px solid #21262d; }
 QHeaderView::section { background:#161b22; border:0; padding:4px; color:#8b949e; }
 )";
 }
+
+static void darkenDocks(MainWindow *w);
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -62,6 +75,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setMenuWidget(createRibbon());
     createDocks();
+    darkenDocks(this);
     createPages();
 
     // 内核连通性：状态栏直接读 ABI，证明 C ABI 已经打通
@@ -89,7 +103,7 @@ QWidget *MainWindow::createRibbon()
     ribbon->setPanelTitleHeight(10);
     // vendored 布局里标题几何会溢出 category 底边被裁掉半行，索性不显示（原型的分组标签改用 tooltip）
     ribbon->setEnableShowPanelTitle(false);
-    ribbon->setPanelToolButtonIconSize(QSize(13, 13), QSize(20, 20));
+    ribbon->setPanelToolButtonIconSize(QSize(16, 16), QSize(23, 23));
     ribbon->setPanelSpacing(3);
     ribbon->setCategoryHeight(74, true); // 原型体部 74 px
 
@@ -98,8 +112,12 @@ QWidget *MainWindow::createRibbon()
         QObject::connect(a, &QAction::triggered, ctx, fn);
         panel->addLargeAction(a);
     };
+    // 小按钮：只有 1~2 个字才显示文字，其余只留图标 + tooltip（图标 16px 撑得住）
     auto addSmall = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(text, ctx);
+        auto *a = new QAction(ctx);
+        a->setToolTip(text);
+        if (text.size() <= 2)
+            a->setText(text);
         QObject::connect(a, &QAction::triggered, ctx, fn);
         panel->addSmallAction(a);
     };
@@ -459,6 +477,40 @@ void MainWindow::createDocks()
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
 
     resizeDocks({logDock}, {150}, Qt::Vertical);
+}
+
+// dock 标题栏在部分平台/主题下会画成浅灰，QSS 与 palette 都压不住：
+// 直接换成自绘的深色标题条（26px，和原型 dock-h 一致），顺带把关闭按钮收进来
+void darkenDocks(MainWindow *w)
+{
+    for (auto *d : w->findChildren<QDockWidget *>())
+    {
+        auto *bar = new QWidget(d);
+        bar->setFixedHeight(26);
+        bar->setStyleSheet(QStringLiteral(
+            "background:#161b20;border-bottom:1px solid #232b33;"));
+        auto *lay = new QHBoxLayout(bar);
+        lay->setContentsMargins(8, 0, 6, 0);
+        lay->setSpacing(4);
+
+        auto *title = new QLabel(d->windowTitle(), bar);
+        title->setStyleSheet(QStringLiteral(
+            "color:#8494a0;font-size:11px;background:transparent;"));
+        lay->addWidget(title);
+        lay->addStretch();
+
+        auto *close = new QToolButton(bar);
+        close->setText(QStringLiteral("×"));
+        close->setCursor(Qt::PointingHandCursor);
+        close->setFixedSize(18, 18);
+        close->setStyleSheet(QStringLiteral(
+            "QToolButton{background:transparent;border:0;color:#5d6c77;font-size:13px;}"
+            "QToolButton:hover{color:#f2b134;}"));
+        QObject::connect(close, &QToolButton::clicked, d, &QDockWidget::close);
+        lay->addWidget(close);
+
+        d->setTitleBarWidget(bar);
+    }
 }
 
 void MainWindow::createPages()
