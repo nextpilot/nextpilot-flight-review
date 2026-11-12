@@ -8,6 +8,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
+#include <QMenu>
 
 #include <algorithm>
 #include <cmath>
@@ -280,7 +281,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     p.setRenderHint(QPainter::Antialiasing, false);  // 曲线统一关 AA，整段开一次而不是每条切一次
     for (const Series &s : m_series)
     {
-        if (s.count() < 2)
+        if (!s.visible || s.count() < 2)
             continue;
         QVector<double> buf(static_cast<int>(px) * 3);
         const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(), m_t0, m_t1, px, buf.data(), px);
@@ -303,17 +304,21 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     p.restore();
     p.setRenderHint(QPainter::Antialiasing, true);
 
-    // 图例（带单位）
+    // 图例（带单位）：点击切换显隐，右键删除
     double lx = plot.left() + 6;
     const double ly = plot.top() + 14;
-    for (const Series &s : m_series)
+    m_legendRects.clear();
+    for (int i = 0; i < m_series.size(); ++i)
     {
+        const Series &s = m_series.at(i);
+        const QString lbl = s.unit.isEmpty() ? s.name : QStringLiteral("%1 [%2]").arg(s.name, s.unit);
+        const double w = 19 + fm.horizontalAdvance(lbl) + 12;
+        m_legendRects.append(QRectF(lx - 2, ly - 12, w, 18));
         p.setPen(QPen(s.color, 1.2));
         p.drawLine(QPointF(lx, ly - 4), QPointF(lx + 14, ly - 4));
-        p.setPen(colorText());
-        const QString lbl = s.unit.isEmpty() ? s.name : QStringLiteral("%1 [%2]").arg(s.name, s.unit);
+        p.setPen(s.visible ? colorText() : colorDim());
         p.drawText(QPointF(lx + 19, ly), lbl);
-        lx += 19 + fm.horizontalAdvance(lbl) + 18;
+        lx += w + 8;
     }
 
     // 十字光标
@@ -347,11 +352,23 @@ void CanvasWidget::wheelEvent(QWheelEvent *event)
     if (steps == 0)
         return;
 
-    // 以指针所在 Y 为锚点缩放（§8.9）
-    const double anchor = m_yMax - (m_yMax - m_yMin) * (event->position().y() - plot.top()) / plot.height();
-    const double k = steps > 0 ? 0.85 : 1.18;
-    m_yMin = anchor + (m_yMin - anchor) * k;
-    m_yMax = anchor + (m_yMax - anchor) * k;
+    // PJ 习惯：滚轮缩时间轴，Ctrl+滚轮缩 Y 轴，锚点都在指针处
+    const double factor = std::pow(0.85, steps / 120.0);
+    const QPointF pos = event->position();
+    if (event->modifiers() & Qt::ControlModifier)
+    {
+        const double anchor = m_yMax - (m_yMax - m_yMin) * (pos.y() - plot.top()) / plot.height();
+        m_yMin = anchor + (m_yMin - anchor) * factor;
+        m_yMax = anchor + (m_yMax - anchor) * factor;
+    }
+    else
+    {
+        const double tc = m_t0 + (m_t1 - m_t0) * (pos.x() - plot.left()) / plot.width();
+        const double span = std::clamp((m_t1 - m_t0) * factor, 1e-6, 1e9);
+        const double ratio = span / std::max(1e-12, m_t1 - m_t0);
+        m_t0 = tc - (tc - m_t0) * ratio;
+        m_t1 = m_t0 + span;
+    }
     m_autoY = false;
     update();
     event->accept();
@@ -359,6 +376,29 @@ void CanvasWidget::wheelEvent(QWheelEvent *event)
 
 void CanvasWidget::mousePressEvent(QMouseEvent *event)
 {
+    int legend = -1;
+    for (int i = 0; i < m_legendRects.size(); ++i)
+        if (m_legendRects.at(i).contains(event->position()))
+            legend = i;
+    if (event->button() == Qt::LeftButton && legend >= 0)
+    {
+        toggleChannel(legend);
+        emit activated(m_title);
+        return;
+    }
+    if (event->button() == Qt::RightButton && legend >= 0)
+    {
+        QMenu menu(this);
+        QAction *hide = menu.addAction(m_series.at(legend).visible ? QStringLiteral("隐藏曲线")
+                                                                   : QStringLiteral("显示曲线"));
+        QAction *del = menu.addAction(QStringLiteral("删除曲线"));
+        QAction *chosen = menu.exec(event->globalPosition().toPoint());
+        if (chosen == hide)
+            toggleChannel(legend);
+        else if (chosen == del)
+            removeChannel(legend);
+        return;
+    }
     if (event->button() == Qt::LeftButton)
     {
         m_dragging = true;
@@ -368,6 +408,24 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
     QWidget::mousePressEvent(event);
 }
 
+void CanvasWidget::toggleChannel(int index)
+{
+    if (index < 0 || index >= m_series.size())
+        return;
+    m_series[index].visible = !m_series[index].visible;
+    update();
+}
+
+void CanvasWidget::removeChannel(int index)
+{
+    if (index < 0 || index >= m_series.size())
+        return;
+    m_series.removeAt(index);
+    resetView();
+    update();
+    emit activated(m_title);
+}
+
 void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
 {
     m_cursor = event->position();
@@ -375,10 +433,14 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
     if (m_dragging)
     {
         const QRectF plot = plotRect();
+        const double dx = event->position().x() - m_lastPos.x();
         const double dy = event->position().y() - m_lastPos.y();
-        const double shift = -dy * (m_yMax - m_yMin) / plot.height();
-        m_yMin += shift;
-        m_yMax += shift;
+        const double tShift = -dx * (m_t1 - m_t0) / plot.width();
+        m_t0 += tShift;
+        m_t1 += tShift;
+        const double yShift = -dy * (m_yMax - m_yMin) / plot.height();
+        m_yMin += yShift;
+        m_yMax += yShift;
         m_lastPos = event->position();
         m_autoY = false;
     }

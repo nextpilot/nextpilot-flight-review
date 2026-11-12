@@ -25,6 +25,8 @@ public:
     void setChannels(const QVector<const PsChannelInfo *> &channels);
     void addChannel(const PsChannelInfo *channel);   // 字段树拖入时追加一条曲线
     void clearChannels();
+    void removeChannel(int index);
+    void toggleChannel(int index);
     bool hasData() const { return !m_series.isEmpty(); }
     bool kernelBacked() const { return m_kernelBacked; }  // 数据指针属于内核数据集
     double t0() const { return m_t0; }
@@ -53,6 +55,7 @@ private:
         const double *t = nullptr; // 内核内存（或 demo 自有内存）
         const double *v = nullptr;
         quint32 n = 0;
+        bool visible = true;
         QVector<double> tOwn;      // demo 数据所有权
         QVector<double> vOwn;
 
@@ -78,4 +81,6 @@ private:
     bool m_hover = false;
     QPointF m_lastPos;
     QPointF m_cursor;
+    QVector<QRectF> m_legendRects;   // 图例命中区，随 paint 重算
+    int m_legendHit = -1;
 };

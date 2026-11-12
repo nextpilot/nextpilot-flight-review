@@ -513,6 +513,18 @@ void MainWindow::createDocks()
     m_srcTree->setDragEnabled(true);
     m_srcTree->setDragDropMode(QAbstractItemView::DragOnly);
     m_srcTree->setDefaultDropAction(Qt::CopyAction);
+    connect(m_srcTree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
+        if (!item || item->childCount() > 0)
+            return;
+        const qulonglong ptr = item->data(0, Qt::UserRole).value<qulonglong>();
+        if (!ptr)
+            return;
+        if (auto *c = currentCanvas())
+        {
+            c->addChannel(reinterpret_cast<const PsChannelInfo *>(ptr));
+            log(QStringLiteral("双击加曲线：%1").arg(item->text(0)));
+        }
+    });
     m_srcTree->setRootIsDecorated(true);
     m_srcTree->setStyleSheet(QStringLiteral("QTreeWidget{border:0;background:#0d1117;font-size:12px;}"));
     m_srcStack->addWidget(m_srcTree);
