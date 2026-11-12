@@ -1,6 +1,8 @@
 //! 格式嗅探：只读文件头部若干字节，给出最可能的解析器家族。
 //! 真正的解析器在 src/plugin 下按家族实现（D16：plugin 是官方解析器）。
 
+pub mod csv;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Csv,

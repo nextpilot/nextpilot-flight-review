@@ -2,6 +2,8 @@
 
 #include <QMainWindow>
 
+struct PsDataset;
+class CanvasWidget;
 class QLabel;
 class QPlainTextEdit;
 class QTabWidget;
@@ -18,7 +20,12 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
+    // 打开一份 CSV（内核解析），把前 3 个通道画到当前页画布
+    bool loadFile(const QString &path);
+
 private:
+    CanvasWidget *currentCanvas() const;
+    QVector<CanvasWidget *> pageCanvases() const;
     QWidget *createRibbon();
     void createDocks();
     void createPages();
@@ -32,4 +39,5 @@ private:
     QLabel *m_selLabel = nullptr;
     QLabel *m_runLabel = nullptr;
     QPlainTextEdit *m_script = nullptr;
+    PsDataset *m_dataset = nullptr;
 };

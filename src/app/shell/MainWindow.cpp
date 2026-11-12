@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QDockWidget>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -99,7 +100,7 @@ QWidget *MainWindow::createRibbon()
                 const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("打开文件"), {},
                     QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
                 if (!f.isEmpty())
-                    log(QStringLiteral("打开：%1").arg(f));
+                    loadFile(f);
             });
             add(QStringLiteral("导入 .psl"), [this] {
                 const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
@@ -261,6 +262,20 @@ void MainWindow::createDocks()
         top->setExpanded(true);
     }
     srcLay->addWidget(m_srcTree, 1);
+
+    // 双击通道 → 画到当前页第一格（后续换成字段拖拽，见 §8.10）
+    connect(m_srcTree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
+        const qulonglong raw = item->data(0, Qt::UserRole).toULongLong();
+        const PsChannelInfo *ch = reinterpret_cast<const PsChannelInfo *>(raw);
+        if (!ch)
+            return;
+        if (auto *c = currentCanvas())
+        {
+            c->setChannels({ch});
+            c->setTitle(QString::fromUtf8(ch->name));
+            log(QStringLiteral("画布加载通道：%1").arg(QString::fromUtf8(ch->name)));
+        }
+    });
     srcDock->setWidget(srcHost);
     addDockWidget(Qt::LeftDockWidgetArea, srcDock);
 
@@ -340,10 +355,14 @@ void MainWindow::createPages()
     auto makeCanvas = [this](const QString &title) {
         auto *c = new CanvasWidget(this);
         c->setTitle(title);
-        connect(c, &CanvasWidget::activated, this, [this](const QString &t) {
+        connect(c, &CanvasWidget::activated, this, [this, c](const QString &t) {
             setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
-                            {QStringLiteral("时间窗"), QStringLiteral("30.0 s")},
-                            {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩 / 拖动平移")}});
+                            {QStringLiteral("时间窗"), QStringLiteral("%1 ~ %2 s")
+                                                      .arg(c->t0(), 0, 'f', 2)
+                                                      .arg(c->t1(), 0, 'f', 2)},
+                            {QStringLiteral("数据来源"), c->kernelBacked() ? QStringLiteral("CSV 数据集（内核内存）")
+                                                                          : QStringLiteral("演示合成数据")},
+                            {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩 / 拖动平移 / 双击复位")}});
         });
         return c;
     };
@@ -368,6 +387,93 @@ void MainWindow::createPages()
     });
 
     setCentralWidget(m_pages);
+}
+
+QVector<CanvasWidget *> MainWindow::pageCanvases() const
+{
+    QVector<CanvasWidget *> out;
+    if (!m_pages)
+        return out;
+    QWidget *page = m_pages->currentWidget();
+    if (auto *c = qobject_cast<CanvasWidget *>(page))
+    {
+        out.append(c);
+        return out;
+    }
+    if (auto *sp = qobject_cast<QSplitter *>(page))
+    {
+        for (int i = 0; i < sp->count(); ++i)
+        {
+            if (auto *c = qobject_cast<CanvasWidget *>(sp->widget(i)))
+                out.append(c);
+        }
+    }
+    return out;
+}
+
+CanvasWidget *MainWindow::currentCanvas() const
+{
+    return pageCanvases().value(0, nullptr);
+}
+
+bool MainWindow::loadFile(const QString &path)
+{
+    char err[256] = {0};
+    PsDataset *ds = nullptr;
+    if (ps_csv_load(path.toUtf8().constData(), &ds, err, sizeof(err)) != 0)
+    {
+        const QString msg = QString::fromUtf8(err);
+        log(QStringLiteral("加载失败：%1").arg(msg));
+        QMessageBox::warning(this, QStringLiteral("加载失败"), msg);
+        return false;
+    }
+
+    // 先清空画布，再释放旧数据集——画布持有通道指针，顺序反了就是悬垂指针
+    for (auto *c : findChildren<CanvasWidget *>())
+    {
+        if (c->kernelBacked())
+            c->clearChannels();
+    }
+    if (m_dataset)
+        ps_dataset_free(m_dataset);
+    m_dataset = ds;
+
+    const uint32_t n = ps_dataset_channel_count(ds);
+    Q_UNUSED(n);
+    const QFileInfo fi(path);
+    auto *top = new QTreeWidgetItem(m_srcTree,
+        {QStringLiteral("%1  [CSV · %2 通道]").arg(fi.fileName()).arg(n)});
+    QVector<const PsChannelInfo *> channels;
+    for (uint32_t i = 0; i < n; ++i)
+    {
+        const PsChannelInfo *ch = ps_dataset_channel(ds, i);
+        if (!ch)
+            continue;
+        channels.append(ch);
+        auto *item = new QTreeWidgetItem(top, {QString::fromUtf8(ch->name)});
+        item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
+    }
+    top->setExpanded(true);
+
+    // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线
+    const QVector<CanvasWidget *> canvases = pageCanvases();
+    for (int i = 0; i < canvases.size() && i < channels.size(); ++i)
+    {
+        canvases[i]->setChannels({channels[i]});
+        canvases[i]->setTitle(QStringLiteral("%1 · %2").arg(fi.completeBaseName(), QString::fromUtf8(channels[i]->name)));
+    }
+
+    if (const PsChannelInfo *first = ps_dataset_channel(ds, 0))
+    {
+        const double t0 = first->time[0];
+        const double t1 = first->time[first->point_count - 1];
+        log(QStringLiteral("已加载 %1：%2 通道 × %3 点，时间窗 %4 s")
+                .arg(fi.fileName()).arg(n).arg(first->point_count)
+                .arg(t1 - t0, 0, 'f', 2));
+    }
+    statusBar()->showMessage(QStringLiteral("%1 · %2 通道 · %3 点").arg(fi.fileName()).arg(n)
+                             .arg(ps_dataset_channel(ds, 0) ? ps_dataset_channel(ds, 0)->point_count : 0));
+    return true;
 }
 
 void MainWindow::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows)

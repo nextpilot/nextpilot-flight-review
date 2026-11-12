@@ -6,9 +6,11 @@
 #include <QVector>
 #include <QWidget>
 
+struct PsChannelInfo;
+
 // 一块画布（一页里的一个 plot 格）。
-// M0 用 QPainter 自绘：只做坐标轴 + 曲线 + 十字光标 + 滚轮缩 Y / 拖动平移 Y，
-// JKQTPlotter 接入后这层退化为数据源适配（D3）。
+// 曲线数据来自内核（PsChannelInfo 指针，不拷贝）；视口抽稀调用 ps_lod_minmax，
+// 只把 ≤px 个 (x,min,max) 三元组拿到 UI 侧画——对应 §11 铁律 3。
 class CanvasWidget : public QWidget
 {
     Q_OBJECT
@@ -19,8 +21,16 @@ public:
     void setTitle(const QString &title);
     QString title() const { return m_title; }
 
+    // 用内核通道替换当前所有曲线；传空则只清空。
+    void setChannels(const QVector<const PsChannelInfo *> &channels);
+    void clearChannels();
+    bool hasData() const { return !m_series.isEmpty(); }
+    bool kernelBacked() const { return m_kernelBacked; }  // 数据指针属于内核数据集
+    double t0() const { return m_t0; }
+    double t1() const { return m_t1; }
+
 signals:
-    void activated(const QString &title); // 被点中 → 属性面板切换对象
+    void activated(const QString &title);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -32,23 +42,35 @@ protected:
     void leaveEvent(QEvent *event) override;
 
 private:
-    struct Curve
+    struct Series
     {
         QString name;
+        QString unit;
         QColor color;
-        QVector<double> v;
+        const double *t = nullptr; // 内核内存（或 demo 自有内存）
+        const double *v = nullptr;
+        quint32 n = 0;
+        QVector<double> tOwn;      // demo 数据所有权
+        QVector<double> vOwn;
+
+        const double *time() const { return t ? t : tOwn.constData(); }
+        const double *value() const { return v ? v : vOwn.constData(); }
+        quint32 count() const { return t ? n : static_cast<quint32>(qMin(tOwn.size(), vOwn.size())); }
     };
 
     QRectF plotRect() const;
     void resetView();
+    void ensureTimeRange();
+    void addDemoCurves();
 
     QString m_title;
-    int m_seed = 0;
-    QVector<Curve> m_curves;
+    QVector<Series> m_series;
     double m_t0 = 0.0;
     double m_t1 = 30.0;
     double m_yMin = -1.6;
     double m_yMax = 1.6;
+    bool m_autoY = true;
+    bool m_kernelBacked = false;
     bool m_dragging = false;
     bool m_hover = false;
     QPointF m_lastPos;

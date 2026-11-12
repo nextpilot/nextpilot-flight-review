@@ -17,14 +17,18 @@ function(ps_import_kernel target)
     set(kernel_lib "${kernel_dir}/target/${profile}/libps_abi.a")
   endif()
 
-  add_custom_command(
-    OUTPUT "${kernel_lib}"
+  # 用 BYPRODUCTS + 每次都跑的 custom target：cargo 自己做增量判断（几十毫秒），
+  # 避免"库源码改了但 CMake 认为 OUTPUT 没变"导致链的是旧 .a。
+  add_custom_target(ps_kernel_cargo
     COMMAND "${PS_CARGO}" build --manifest-path "${kernel_dir}/Cargo.toml" -p ps-abi --release
     WORKING_DIRECTORY "${kernel_dir}"
+    BYPRODUCTS "${kernel_lib}"
     COMMENT "cargo build -p ps-abi (${profile})"
     VERBATIM)
 
-  add_custom_target(ps_kernel_cargo DEPENDS "${kernel_lib}")
+  if(EXISTS "${kernel_lib}")
+    set(kernel_lib_exists TRUE)
+  endif()
 
   add_library(${target} INTERFACE)
   add_dependencies(${target} ps_kernel_cargo)

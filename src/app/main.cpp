@@ -18,5 +18,10 @@ int main(int argc, char **argv)
 
     MainWindow win;
     win.show();
+
+    // 命令行带文件时直接加载：plotscope_app flight.csv
+    if (argc > 1)
+        win.loadFile(QString::fromLocal8Bit(argv[1]));
+
     return app.exec();
 }

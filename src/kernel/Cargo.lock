@@ -9,6 +9,7 @@ dependencies = [
  "ps-align",
  "ps-ndf",
  "ps-ops",
+ "ps-parse",
 ]
 
 [[package]]

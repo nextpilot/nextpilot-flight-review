@@ -37,9 +37,11 @@ ctest --test-dir build --output-on-failure
 
 - 内核：`ps-abi`（版本 / 自检）、`ps-ndf`（序列 + 抽稀）、`ps-ops`（scale/add/moving_avg）、
   `ps-align`（最近邻 / 线性）、`ps-parse`（格式嗅探）、`ps-script`（预算占位），14 个单元测试通过。
+- 数据面：`ps_csv_load` 读 CSV 成数据集（`, ; tab` 三种分隔、ns/us/ms/s 时间识别），
+  `ps_dataset_channel*` 暴露通道指针，`ps_lod_minmax` 在 Rust 侧按像素做 min/max 抽稀。
 - 主程序：Ribbon 七页签 + 四可停靠区 + 页签式绘图区；自绘画布支持滚轮缩 Y（锚指针）、拖动平移、
-  双击复位、十字光标；状态栏读 ABI 版本与自检结果。
-- 未接入：JKQTPlotter、Lua 5.4、真实 Loader、NDF 落盘、LOD、仪表自绘。
+  双击复位、十字光标；命令行带 CSV 直接加载（`plotscope_app flight.csv`）。
+- 未接入：JKQTPlotter、Lua 5.4、ULog/DFLog 等真实 Loader、NDF 落盘、多 Y 轴、仪表自绘。
 
 ## 许可
 

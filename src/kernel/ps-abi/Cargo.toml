@@ -12,3 +12,4 @@ crate-type = ["staticlib", "rlib"]
 ps-ndf.workspace = true
 ps-ops.workspace = true
 ps-align.workspace = true
+ps-parse.workspace = true

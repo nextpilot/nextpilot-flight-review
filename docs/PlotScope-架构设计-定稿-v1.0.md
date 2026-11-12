@@ -412,6 +412,8 @@ int32_t            ps_abi_selftest(void);
 
 **封装块归宿主**：插件只 push 行，宿主 `flushPending` 时按 `Chunk<8192>` 封块提交。
 
+**宿主面已实现（M0，已在 `ps_kernel.h` 里）**：`ps_csv_load`、`ps_dataset_channel_count`、`ps_dataset_channel`、`ps_dataset_free`、`ps_lod_minmax`。上面 5 个插件面函数随第一个 Loader 在 M1 落。
+
 **四种后端**
 
 | 后端 | 吞吐 | 何时用 |
@@ -539,8 +541,10 @@ ps_plugin_<family>   # MODULE 库：src/plugin/<family>/，输出到 bin/plugins
 - `cmake/Rust.cmake` 改为 cargo 直调：离线机器无网，Corrosion 的 FetchContent 拉不下来；有网时换回 Corrosion 只改这一个文件，对外接口（`ps_kernel` 目标 + `ps_kernel.h`）不变。
 - 内核 6 个 crate 已建：`ps-abi`（`ps_abi_version` / `ps_kernel_version` / `ps_abi_selftest`）、`ps-ndf`（序列 + min/max 抽稀）、`ps-ops`（scale / add / moving_avg）、`ps-align`（最近邻 / 线性）、`ps-parse`（ULog/CSV/BLF/NMEA 嗅探）、`ps-script`（预算占位）；`cargo test` 14 例全绿。
 - 主程序：Ribbon 七页签 + 四可停靠区（数据源 / 属性 / 脚本 / 日志）+ 页签式绘图区；自绘画布支持滚轮缩 Y（锚指针）、拖动平移 Y、双击复位、十字光标；状态栏直读 `ps_abi_version()` 与自检结果，证明 C ABI 已打通。
-- `ctest` 2/2 通过（ABI 冒烟 + `cargo test`）。
-- 未接：JKQTPlotter、Lua 5.4、真实 Loader、NDF 落盘、LOD、仪表自绘、`.psl`。
+- 数据面已开：`ps_csv_load` / `ps_dataset_channel_count` / `ps_dataset_channel` / `ps_dataset_free` / `ps_lod_minmax`；`PsChannelInfo` 的 `time/value` 指针直指内核内存（UI 零拷贝，数据集释放后失效）。`ps-parse` 的 CSV 解析支持 `, ; \t` 三种分隔符与 ns/us/ms/s 时间单位识别，坏单元格记 NaN 不整份报废。
+- 降采样落到 Rust：UI 每次重绘按像素宽度调 `ps_lod_minmax`，只拿 ≤px 个 `(x,min,max)` 三元组；3000 点 CSV 画到三格（每格一个通道，避免混量纲压成直线）。
+- 内核单测 19 例（`cargo test`），`ctest` 2/2 通过（ABI 冒烟 + cargo）。
+- 未接：JKQTPlotter、Lua 5.4、ULog/DFLog 等真实 Loader、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
 
 **安装布局**（安装器与便携版共用一套）
 
