@@ -458,7 +458,7 @@ plotscope/
 │   ├── PlotScope-架构设计-定稿-v1.0.md
 │   └── prototype/PlotScope-工作区原型.html
 ├── cmake/                         # 自写 CMake 模块（不用宏库）
-│   ├── Rust.cmake                 # Corrosion 包装：import 静态库 + 头文件路径
+│   ├── Rust.cmake                 # 内核导入：优先 Corrosion，离线退化 cargo 直调（接口一致）
 │   ├── FindJKQTPlotter.cmake      # 上游没有官方 CMake 包，得自己找
 │   ├── Warnings.cmake             # /W4 + -Wall -Wextra，内核头文件降级为 system
 │   ├── Version.cmake              # 版本号单一来源，生成 version.h
@@ -528,11 +528,19 @@ plotscope/
 ```cmake
 plotscope_app        # 可执行：main.cpp + src/app/**（瘦壳，不含业务实现）
 plotscope_core       # 静态库：pages/plot/inst/panels/proto，app 链接它
-ps_kernel            # Corrosion 导入的 Rust staticlib（src/kernel/ps-abi）
+ps_kernel            # Rust staticlib 目标（src/kernel/ps-abi，Corrosion 或 cargo 导入）
 ps_plugin_<family>   # MODULE 库：src/plugin/<family>/，输出到 bin/plugins
 ```
 
 选项：`PS_BUILD_TESTS`（默认 ON）、`PS_ENABLE_LUA`（默认 ON，关掉则只留内置算子）、`PS_USE_QWT_FALLBACK`（M0-0 对照组）、`PS_PLUGIN_DIR`（默认 `bin/plugins`）。
+
+**M0 已落地（2026-11-12，仓库 main `fceab7b`）**
+
+- `cmake/Rust.cmake` 改为 cargo 直调：离线机器无网，Corrosion 的 FetchContent 拉不下来；有网时换回 Corrosion 只改这一个文件，对外接口（`ps_kernel` 目标 + `ps_kernel.h`）不变。
+- 内核 6 个 crate 已建：`ps-abi`（`ps_abi_version` / `ps_kernel_version` / `ps_abi_selftest`）、`ps-ndf`（序列 + min/max 抽稀）、`ps-ops`（scale / add / moving_avg）、`ps-align`（最近邻 / 线性）、`ps-parse`（ULog/CSV/BLF/NMEA 嗅探）、`ps-script`（预算占位）；`cargo test` 14 例全绿。
+- 主程序：Ribbon 七页签 + 四可停靠区（数据源 / 属性 / 脚本 / 日志）+ 页签式绘图区；自绘画布支持滚轮缩 Y（锚指针）、拖动平移 Y、双击复位、十字光标；状态栏直读 `ps_abi_version()` 与自检结果，证明 C ABI 已打通。
+- `ctest` 2/2 通过（ABI 冒烟 + `cargo test`）。
+- 未接：JKQTPlotter、Lua 5.4、真实 Loader、NDF 落盘、LOD、仪表自绘、`.psl`。
 
 **安装布局**（安装器与便携版共用一套）
 
@@ -549,7 +557,7 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 | 里程碑 | 内容 | 工期 |
 |---|---|---|
 | **M0-0** | 选型 spike：JKQTPlotter vs Qwt，20 通道 × 8k 点 @60fps，单帧 ≤8 ms | **0.5 天** |
-| **M0** | 骨架：按 §12 目录落地、CMake+Corrosion、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 |
+| **M0** | 骨架：按 §12 目录落地、CMake + Rust 内核接通、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 |
 | **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） |
 | **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 |
 | **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 |
