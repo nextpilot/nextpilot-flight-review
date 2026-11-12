@@ -5,6 +5,8 @@ add_executable(plotscope_app
   main.cpp
   shell/MainWindow.h
   shell/MainWindow.cpp
+  shell/CsvLoaderDialog.h
+  shell/CsvLoaderDialog.cpp
   plot/CanvasWidget.h
   plot/CanvasWidget.cpp
   res/icons.qrc

@@ -135,6 +135,144 @@ fn dataset_from_series(series: Vec<(String, Vec<f64>, Vec<f64>)>) -> Dataset {
 }
 
 /// 读 CSV → 数据集。成功返回 0 并写 `out`；失败返回非 0，`err` 里给原因。
+fn csv_table_to_dataset(table: &ps_parse::csv::Table) -> Dataset {
+    let mut ds = Dataset { channels: Vec::new(), infos: Vec::new() };
+    let t = table.columns.first().cloned().unwrap_or_default();
+    for (i, header) in table.headers.iter().enumerate().skip(1) {
+        let v = table.columns.get(i).cloned().unwrap_or_default();
+        ds.channels.push(Channel {
+            name: CString::new(header.as_str()).unwrap_or_else(|_| CString::new("channel").unwrap()),
+            unit: unit_of(header),
+            t: t.clone(),
+            v,
+        });
+    }
+    ds.rebuild_infos();
+    ds
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_csv_probe(
+    path: *const c_char,
+    delimiter_override: c_char,
+    out_json: *mut c_char,
+    cap: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if path.is_null() || out_json.is_null() || cap == 0 {
+        return 1;
+    }
+    let path_str = match CStr::from_ptr(path).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            write_err(err, err_cap, "路径不是合法 UTF-8");
+            return 2;
+        }
+    };
+    let text = match std::fs::read_to_string(path_str) {
+        Ok(t) => t,
+        Err(e) => {
+            write_err(err, err_cap, format!("读取失败: {}", e).as_str());
+            return 3;
+        }
+    };
+    let forced = match delimiter_override as u8 {
+        0 => None,
+        c => Some(c as char),
+    };
+    let probe = match ps_parse::csv::probe_with(&text, forced) {
+        Ok(p) => p,
+        Err(e) => {
+            write_err(err, err_cap, e.as_str());
+            return 4;
+        }
+    };
+    let json = match serde_json::to_string(&probe) {
+        Ok(j) => j,
+        Err(e) => {
+            write_err(err, err_cap, e.to_string().as_str());
+            return 5;
+        }
+    };
+    let bytes = json.as_bytes();
+    if bytes.len() + 1 > cap as usize {
+        write_err(err, err_cap, "探测结果太大，缓冲区不够");
+        return 6;
+    }
+    std::ptr::copy_nonoverlapping(bytes.as_ptr() as *const u8, out_json as *mut u8, bytes.len());
+    *out_json.add(bytes.len()) = 0;
+    bytes.len() as i32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_csv_load_opts(
+    path: *const c_char,
+    opts_json: *const c_char,
+    out: *mut *mut Dataset,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    use ps_parse::csv::TimeMode;
+    if path.is_null() || opts_json.is_null() || out.is_null() {
+        return 1;
+    }
+    let (path_str, opts_str) = match (CStr::from_ptr(path).to_str(), CStr::from_ptr(opts_json).to_str()) {
+        (Ok(a), Ok(b)) => (a, b),
+        _ => {
+            write_err(err, err_cap, "参数不是合法 UTF-8");
+            return 2;
+        }
+    };
+    let v: serde_json::Value = match serde_json::from_str(opts_str) {
+        Ok(v) => v,
+        Err(e) => {
+            write_err(err, err_cap, format!("opts JSON 解析失败: {}", e).as_str());
+            return 3;
+        }
+    };
+    let delimiter = v
+        .get("delimiter")
+        .and_then(|d| d.as_str())
+        .and_then(|d| d.chars().next())
+        .unwrap_or(',');
+    let has_header = v.get("has_header").and_then(|b| b.as_bool()).unwrap_or(true);
+    let skip_rows = v.get("skip_rows").and_then(|n| n.as_u64()).unwrap_or(0) as usize;
+    let time = match v.get("time") {
+        Some(t) => {
+            let mode = t.get("mode").and_then(|m| m.as_str()).unwrap_or("row");
+            match mode {
+                "column" => TimeMode::Column(t.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize),
+                "combined" => TimeMode::Combined(
+                    t.get("date").and_then(|i| i.as_u64()).unwrap_or(0) as usize,
+                    t.get("time").and_then(|i| i.as_u64()).unwrap_or(1) as usize,
+                ),
+                _ => TimeMode::RowNumber,
+            }
+        }
+        None => TimeMode::RowNumber,
+    };
+    let text = match std::fs::read_to_string(path_str) {
+        Ok(t) => t,
+        Err(e) => {
+            write_err(err, err_cap, format!("读取失败: {}", e).as_str());
+            return 4;
+        }
+    };
+    let table = match ps_parse::csv::parse_with(
+        &text,
+        &ps_parse::csv::Options { delimiter, has_header, skip_rows, time },
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            write_err(err, err_cap, e.as_str());
+            return 5;
+        }
+    };
+    *out = Box::into_raw(Box::new(csv_table_to_dataset(&table)));
+    0
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ps_csv_load(
     path: *const c_char,
@@ -160,19 +298,7 @@ pub unsafe extern "C" fn ps_csv_load(
         }
     };
 
-    let mut ds = Dataset { channels: Vec::new(), infos: Vec::new() };
-    for (i, header) in table.headers.iter().enumerate().skip(1) {
-        let t = table.columns.first().cloned().unwrap_or_default();
-        let v = table.columns.get(i).cloned().unwrap_or_default();
-        ds.channels.push(Channel {
-            name: CString::new(header.as_str()).unwrap_or_else(|_| CString::new("channel").unwrap()),
-            unit: unit_of(header),
-            t,
-            v,
-        });
-    }
-    ds.rebuild_infos();
-    *out = Box::into_raw(Box::new(ds));
+    *out = Box::into_raw(Box::new(csv_table_to_dataset(&table)));
     0
 }
 

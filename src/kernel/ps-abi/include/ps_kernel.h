@@ -36,8 +36,21 @@ typedef struct PsChannelInfo {
     const double *value;
 } PsChannelInfo;
 
-/* 读 CSV → 数据集。0 = 成功（写 out）；非 0 = 失败（err 里给原因）。 */
+/* 读 CSV → 数据集。0 = 成功（写 out）；非 0 = 失败（err 里给原因）。
+ * 这是"探测后按建议自动加载"的便捷入口；要用户选时间列就用下面的 opts 版本。 */
 int32_t              ps_csv_load(const char *path, PsDataset **out, char *err, uint32_t err_cap);
+
+/* 只探测、不加载：返回 JSON（分隔符、首行是否表头、列名/类型、前 9 行预览、
+ * 建议时间列、警告）。写进 out_json，返回写入字节数；-1 = 失败。 */
+/* delimiter_override：0 = 自动探测；否则传 ',' / ';' / '\t' / ' ' 之一 */
+int32_t              ps_csv_probe(const char *path, char delimiter_override,
+                                 char *out_json, uint32_t cap, char *err, uint32_t err_cap);
+
+/* 按用户选项加载 CSV。opts_json 形如：
+ * {"delimiter":",","has_header":true,"skip_rows":0,"time":{"mode":"column","index":1}}
+ * time.mode: row | column | combined（combined 需 date / time 两个下标） */
+int32_t              ps_csv_load_opts(const char *path, const char *opts_json,
+                                     PsDataset **out, char *err, uint32_t err_cap);
 
 /* 读 ULog（PX4/ArduPilot 飞行日志）→ 数据集。通道名形如 `topic.field`，
  * 多实例为 `topic.00.field`；`timestamp` 与 `_padding` 不产出通道。

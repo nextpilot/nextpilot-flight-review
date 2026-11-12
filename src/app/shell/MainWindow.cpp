@@ -1,8 +1,10 @@
 #include "shell/MainWindow.h"
+#include "shell/CsvLoaderDialog.h"
 
 #include <QAction>
 #include <QDockWidget>
 #include <QFileDialog>
+#include <QTimer>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QHeaderView>
@@ -33,6 +35,7 @@
 #include "SARibbonPanel.h"
 #include "SARibbonButtonGroupWidget.h"
 #include "SARibbonThemeManager.h"
+#include "SARibbonToolButton.h"
 
 namespace {
 const char *kStyle = R"(
@@ -78,11 +81,17 @@ QWidget *MainWindow::createRibbon()
     // 页签溢出、键盘导航、面板布局都是它的事；我们只负责配色与命令。
     auto *ribbon = new SARibbonBar(this);
     ribbon->setRibbonStyle(SARibbonBar::RibbonStyleLooseSingleRow);
+    // 有 Ribbon 就不要再留一条同名 QMenuBar，两排"文件/数据/绘图"并排是最刺眼的不协调
+    if (auto *mb = menuBar())
+        mb->hide();
     ribbon->setTitleVisible(false);       // 窗口标题在 titlebar，不占 ribbon 高度
-    ribbon->setTabBarHeight(22);
+    ribbon->setTabBarHeight(26);
     ribbon->setPanelTitleHeight(10);
-    ribbon->setPanelToolButtonIconSize(QSize(16, 16), QSize(24, 24));
-    ribbon->setEnableShowPanelTitle(true);
+    // vendored 布局里标题几何会溢出 category 底边被裁掉半行，索性不显示（原型的分组标签改用 tooltip）
+    ribbon->setEnableShowPanelTitle(false);
+    ribbon->setPanelToolButtonIconSize(QSize(13, 13), QSize(20, 20));
+    ribbon->setPanelSpacing(3);
+    ribbon->setCategoryHeight(74, true); // 原型体部 74 px
 
     auto addLarge = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
         auto *a = new QAction(text, ctx);
@@ -280,13 +289,56 @@ QWidget *MainWindow::createRibbon()
         }
     }
 
+    if (auto *ab = ribbon->applicationButton())
+        ab->hide(); // 左上角默认有个空按钮，留白很难看
+
+    // 面板本体撑到 68 px：SARibbon 的 category 高度不会自动把 panel 拉满
+    for (auto *p : ribbon->findChildren<SARibbonPanel *>())
+    {
+        p->setMinimumHeight(68);
+        if (auto *l = p->layout())
+            l->setContentsMargins(4, 4, 9, 4);
+    }
+
+    // 大按钮 54×54、小按钮单行 22：只用 QSS 分不开两种形态，先打属性标记
+    for (auto *b : ribbon->findChildren<SARibbonToolButton *>())
+    {
+        b->setProperty("rbLarge", b->buttonType() == SARibbonToolButton::LargeButton);
+    }
+
     // 静态库里资源要显式初始化，否则 dark 主题静默回退浅色 QSS
     Q_INIT_RESOURCE(SARibbonResource);
     SA::applyRibbonTheme(this, ribbon, SARibbonTheme::RibbonThemeDark);
+    // 视觉对齐 design/prototype/PlotScope-工作区原型.html 的 ribbon 段：
+    // 扁平、无边框、琥珀色选中，压掉 Office 味的蓝色和内边距
     ribbon->setStyleSheet(ribbon->styleSheet() + QStringLiteral(R"(
-        SARibbonBar { background:#161b22; }
-        QTabBar::tab { background:#161b22; color:#9aa4b2; padding:4px 14px; margin-right:1px; }
-        QTabBar::tab:selected { background:#1f2632; color:#ffffff; border-bottom:2px solid #4ea1ff; }
+        SARibbonBar { background:#141a1f; border-bottom:1px solid #232b33; }
+        SARibbonCategory { background:#141a1f; border:0; }
+        SARibbonPanel { background:#141a1f; border:0; border-right:1px solid #1b232a; }
+        SARibbonPanelLabel { color:#5d6c77; font-size:9.5px; background:transparent; padding-bottom:3px; }
+        SARibbonToolButton {
+            background:transparent; border:1px solid transparent; border-radius:0;
+            color:#8494a0; font-size:10.5px; padding:0; margin:0;
+        }
+        SARibbonToolButton[rbLarge="true"] { min-width:52px; max-width:60px; min-height:48px; max-height:48px; }
+        SARibbonToolButton[rbLarge="false"] { min-height:21px; max-height:22px; padding:2px 8px; }
+        SARibbonToolButton:hover { background:#1b232a; color:#c8d2da; border-color:#222b33; }
+        SARibbonToolButton:pressed { background:#212a31; }
+        SARibbonToolButton:checked { background:#212a31; color:#f2b134; border-color:#222b33; }
+        SARibbonToolButton:disabled { color:#4a545d; }
+        SARibbonToolButton::menu-indicator { image:none; width:0; }
+        SARibbonSeparatorWidget { background:#1b232a; }
+        SARibbonPanelOptionButton { background:transparent; border:0; }
+        SARibbonPanelOptionButton:hover { background:#1b232a; }
+        #objSARibbonTabBar { background:#141a1f; border:0; }
+        #objSARibbonTabBar::tab {
+            background:transparent; color:#5d6c77; font-size:11.5px;
+            padding:0 11px; margin:0 1px; border:0; border-bottom:2px solid transparent;
+            min-width:0;
+        }
+        #objSARibbonTabBar::tab:hover { color:#c8d2da; background:#1a2127; }
+        #objSARibbonTabBar::tab:selected { color:#f2b134; border-bottom:2px solid #f2b134; }
+        #objSARibbonQuickAccessBar { background:#141a1f; }
     )"));
     return ribbon;
 }
@@ -499,7 +551,14 @@ bool MainWindow::loadFile(const QString &path)
     else if (is_blf)
         rc = ps_blf_load(path.toUtf8().constData(), &ds, err, sizeof(err));
     else
-        rc = ps_csv_load(path.toUtf8().constData(), &ds, err, sizeof(err));
+    {
+        // CSV：先探测，由用户确认时间轴/分隔符/表头，再按选项解析
+        CsvLoaderDialog dlg(path, this);
+        if (dlg.exec() != QDialog::Accepted)
+            return false;
+        rc = ps_csv_load_opts(path.toUtf8().constData(), dlg.optionsJson().toUtf8().constData(),
+                              &ds, err, sizeof(err));
+    }
     if (rc != 0)
     {
         const QString msg = QString::fromUtf8(err);
