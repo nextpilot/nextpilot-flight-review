@@ -13,7 +13,7 @@
 | D1b | 图表区渲染 | 图表用 `QWindow` + 自绘 GL/RHI 或二维码图集；**禁用 `QQuickWidget`**（每帧一次全屏纹理拷贝，4K 下 2~4ms） |
 | D1c | UI 框架范围 | **主界面全 Widgets**；QML 仅允许"演示大屏/仪表页"且必须独立 `QQuickWindow` 窗口 |
 | D2 | Rust 内核依赖 | `arrow-rs` + `memmap2` + `rayon` + `tokio` |
-| D3 | 画布选型 | **JKQTPlotter**（M0–M1）+ 抽象 `IPlotCanvas`；Qwt 降为 spike 对照组/退路；M2 起"实时滚动面板"自绘 GPU；M3 视瓶颈全量自绘 |
+| D3 | 画布选型 | **默认自绘**：Rust LOD + `drawPolyline`，实测 7.2 ms/帧 @20ch×8k（M0-0 结论见 §12）；**JKQTPlotter 降为可选后端**（同数据 13.1 ms，仍 <16.7 ms 帧预算，接入必须由 LOD 喂数）；Qwt 仅对照（许可未核）；要抗锯齿平滑曲线则换 GPU 渲染，另立 spike |
 | D3b | 画布禁用项 | Qt Charts / Qt Graphs / QCustomPlot（GPL 或商业授权）不可用 |
 | D4 | 数据中间态 | **NDF**（自研列存）+ **Arrow IPC** 做缓存与交换格式 |
 | D5 | 脚本 | **Lua 5.4 内嵌**（MIT，静态库），表达式与脚本同一套语法；算子数学在 Rust 向量核心里，Lua 只做编排（`userdata` + 元表，一次调用算一整块）；**不再用 QuickJS** |
@@ -85,10 +85,11 @@
 
 **归属判定三问**：① 要遍历/变换数据 → **Rust**；② 只在屏幕上存在 → **Qt**；③ 必须能被跨语言插件替换 → **Rust 宿主 + C ABI**。
 
-**边界三条铁律**
+**边界四条铁律**
 1. 跨 C ABI 只传批量（`{指针, 长度, 采样数, 通道数}`），绝不为单点调用。
 2. UI 线程永不阻塞、永不做重活；查询异步，结果是"已降采样的只读切片"。
 3. 内核不认识 `QWidget`，Qt 侧不碰 `Chunk`。
+4. 曲线一律 `drawPolyline` + 关 AA + **整数 1px** 线宽：Qt 6.2 软件光栅下 AA 描边慢两个数量级（20×1500 段 367 ms vs 3.6 ms），线宽 1.3 这类小数会掉进宽线轮廓器（26.5 ms）。
 
 **容易错判的六处归属**
 
@@ -447,7 +448,7 @@ int32_t            ps_abi_selftest(void);
 | 绘制 | ≤16.7 ms |
 | **合计** | **≤22 ms** |
 
-三条铁律：批量跨 ABI；UI 线程不阻塞；降采样在 Rust 侧完成。
+四条铁律：批量跨 ABI；UI 线程不阻塞；降采样在 Rust 侧完成；曲线 1px 关 AA。
 
 ---
 
@@ -544,7 +545,22 @@ ps_plugin_<family>   # MODULE 库：src/plugin/<family>/，输出到 bin/plugins
 - 数据面已开：`ps_csv_load` / `ps_dataset_channel_count` / `ps_dataset_channel` / `ps_dataset_free` / `ps_lod_minmax`；`PsChannelInfo` 的 `time/value` 指针直指内核内存（UI 零拷贝，数据集释放后失效）。`ps-parse` 的 CSV 解析支持 `, ; \t` 三种分隔符与 ns/us/ms/s 时间单位识别，坏单元格记 NaN 不整份报废。
 - 降采样落到 Rust：UI 每次重绘按像素宽度调 `ps_lod_minmax`，只拿 ≤px 个 `(x,min,max)` 三元组；3000 点 CSV 画到三格（每格一个通道，避免混量纲压成直线）。
 - 内核单测 19 例（`cargo test`），`ctest` 2/2 通过（ABI 冒烟 + cargo）。
-- 未接：JKQTPlotter、Lua 5.4、ULog/DFLog 等真实 Loader、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
+- 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、ULog/DFLog 等真实 Loader、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
+
+**M0-0 画布 spike（2026-11-12 实测，改判 D3）**
+
+环境：Qt 6.2.4、4 vCPU 云主机、软件光栅、`QT_QPA_PLATFORM=offscreen` 下 `QWidget::render`；数据 20 通道 × 8000 点，视口 1500×900，预热 3 帧后取 30 帧均值。JKQTPlotter 5.0.0（HEAD `9e9f0af`）静态编译接入。可复跑脚本：`test/perf/canvas_spike/`。
+
+| 方案 | 单帧 |
+|---|---|
+| 自绘：Rust LOD → 1500 桶 + `drawPolyline`，AA 关、线宽 1.0 | **7.2 ms** |
+| 自绘：同数据，AA 开 + `QPainterPath`、线宽 1.3 | 915 ms |
+| JKQTPlotter：原始 16 万点/帧（AA 开关无差别） | 60–64 ms |
+| JKQTPlotter：喂同样的 LOD（20×1500） | 13.1 ms |
+
+1. 决定 60 fps 的不是图表库，是"1px + 关 AA + LOD"。→ 已写成 §11 铁律 4。
+2. JKQTPlotter 过不了 ≤8 ms 的门（13.1 ms），但仍在 16.7 ms 帧预算内。所以它从"首选"降为"可选后端"：当我们确实需要它的坐标轴/图例/框选/导出时才接，且数据必须由 LOD 喂，不能把原始点扔给它。
+3. 两条路都做不了抗锯齿平滑曲线（AA 下都超预算一个数量级以上）。真要平滑，换 `QOpenGLWidget`/QSG 批量上传顶点，另立 spike；否则接受 1px 折线这种工程软件惯用观感（PlotJuggler 也这么画）。
 
 **安装布局**（安装器与便携版共用一套）
 
@@ -560,7 +576,7 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 
 | 里程碑 | 内容 | 工期 |
 |---|---|---|
-| **M0-0** | 选型 spike：JKQTPlotter vs Qwt，20 通道 × 8k 点 @60fps，单帧 ≤8 ms | **0.5 天** |
+| **M0-0** | 选型 spike：JKQTPlotter vs Qwt，20 通道 × 8k 点 @60fps，单帧 ≤8 ms | **0.5 天（已完成：自绘 7.2 ms 达标；JKQ 13.1 ms，见 §12）** |
 | **M0** | 骨架：按 §12 目录落地、CMake + Rust 内核接通、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 |
 | **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） |
 | **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 |

@@ -228,6 +228,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     const uint32_t px = static_cast<uint32_t>(std::max(1.0, plot.width()));
     p.save();
     p.setClipRect(plot);
+    p.setRenderHint(QPainter::Antialiasing, false);  // 曲线统一关 AA，整段开一次而不是每条切一次
     for (const Series &s : m_series)
     {
         if (s.count() < 2)
@@ -241,20 +242,17 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         const auto toY = [&](double v) { return plot.bottom() - plot.height() * (v - m_yMin) / (m_yMax - m_yMin); };
 
         // 单屏只画中线：包络带留给"缩到很近、一像素含大量样本"的场景（M1）
-        QPainterPath line;
+        // 折线一律关 AA 用 drawPolyline：QPainterPath + AA 描边在 Qt 6.2 上是毫米级的
+        // 灾难（20 条 × 1500 段实测 365 ms/帧，同样数据 drawPolyline 只要 1~2 ms）。
+        QPolygonF poly;
+        poly.reserve(static_cast<int>(got));
         for (uint32_t i = 0; i < got; ++i)
-        {
-            const double x = toX(buf[i * 3]);
-            const double y = toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0);
-            if (i == 0)
-                line.moveTo(x, y);
-            else
-                line.lineTo(x, y);
-        }
-        p.setPen(QPen(s.color, 1.3));
-        p.drawPath(line);
+            poly.append(QPointF(toX(buf[i * 3]), toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0)));
+        p.setPen(QPen(s.color, 1.0));  // 1.0 走快速 Bresenham；1.3 这类小数宽度在 Qt 6.2 上会掉进宽线轮廓器，慢 7 倍
+        p.drawPolyline(poly);
     }
     p.restore();
+    p.setRenderHint(QPainter::Antialiasing, true);
 
     // 图例（带单位）
     double lx = plot.left() + 6;
