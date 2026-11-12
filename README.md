@@ -14,7 +14,7 @@ src/kernel/       Rust 内核，Cargo workspace 根，产出 ps-abi（C ABI）
 src/app/          Qt 6 Widgets 主程序，只 include ps_kernel.h
 src/plugin/       官方 Loader（按家族一个目录，带 manifest.json）
 src/function/     Lua 算子与批处理脚本
-src/3dparty/      锁版本三方库（JKQTPlotter / lua-5.4）
+src/3rdparty/      锁版本三方库（JKQTPlotter / lua-5.4）
 tool/             ps-plugin-check / ps-bench / ps-pack
 test/             unit / kernel / golden / perf / fixture
 docs/             架构文档 + 单文件原型（不进安装包）

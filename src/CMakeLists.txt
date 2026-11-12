@@ -2,7 +2,7 @@ include(Rust)
 ps_import_kernel(ps_kernel)
 
 # 必须先处理 3dparty：app 链接 SARibbonBar
-add_subdirectory(3dparty)
+add_subdirectory(3rdparty)
 
 if(PS_BUILD_GUI)
   find_package(Qt6 QUIET COMPONENTS Widgets)
