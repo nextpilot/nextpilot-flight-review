@@ -1,0 +1,10 @@
+[package]
+name = "ps-script"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+
+[dependencies]
+ps-ndf.workspace = true

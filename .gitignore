@@ -1,0 +1,17 @@
+# 构建产物
+/build/
+/build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.user
+
+# Rust
+target/
+src/kernel/target/
+
+# 本地产物 / 抓取数据
+*.psl
+*.log
+refs/

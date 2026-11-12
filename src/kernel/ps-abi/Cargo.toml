@@ -1,0 +1,14 @@
+[package]
+name = "ps-abi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "ps_abi"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+ps-ndf.workspace = true
+ps-ops.workspace = true
+ps-align.workspace = true
