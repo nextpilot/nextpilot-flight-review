@@ -1,0 +1,30 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="autoy.svg">icons/autoy.svg</file>
+    <file alias="compass.svg">icons/compass.svg</file>
+    <file alias="cursor.svg">icons/cursor.svg</file>
+    <file alias="datasource.svg">icons/datasource.svg</file>
+    <file alias="export.svg">icons/export.svg</file>
+    <file alias="export_cfg.svg">icons/export_cfg.svg</file>
+    <file alias="export_data.svg">icons/export_data.svg</file>
+    <file alias="format.svg">icons/format.svg</file>
+    <file alias="gauge.svg">icons/gauge.svg</file>
+    <file alias="horizon.svg">icons/horizon.svg</file>
+    <file alias="import.svg">icons/import.svg</file>
+    <file alias="loader.svg">icons/loader.svg</file>
+    <file alias="log.svg">icons/log.svg</file>
+    <file alias="newpage.svg">icons/newpage.svg</file>
+    <file alias="open.svg">icons/open.svg</file>
+    <file alias="panel.svg">icons/panel.svg</file>
+    <file alias="pause.svg">icons/pause.svg</file>
+    <file alias="play.svg">icons/play.svg</file>
+    <file alias="prop.svg">icons/prop.svg</file>
+    <file alias="reset.svg">icons/reset.svg</file>
+    <file alias="run.svg">icons/run.svg</file>
+    <file alias="screenshot.svg">icons/screenshot.svg</file>
+    <file alias="script.svg">icons/script.svg</file>
+    <file alias="settings.svg">icons/settings.svg</file>
+    <file alias="validate.svg">icons/validate.svg</file>
+    <file alias="yaml.svg">icons/yaml.svg</file>
+  </qresource>
+</RCC>

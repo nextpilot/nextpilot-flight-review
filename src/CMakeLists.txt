@@ -5,7 +5,7 @@ ps_import_kernel(ps_kernel)
 add_subdirectory(3rdparty)
 
 if(PS_BUILD_GUI)
-  find_package(Qt6 QUIET COMPONENTS Widgets)
+  find_package(Qt6 QUIET COMPONENTS Widgets Svg)
   if(Qt6_FOUND)
     add_subdirectory(app)
   else()

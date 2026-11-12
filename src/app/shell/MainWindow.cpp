@@ -8,6 +8,8 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
+#include <QIcon>
+#include <QHash>
 #include <QPainter>
 #include <QPixmap>
 #include <QSplitter>
@@ -79,7 +81,7 @@ QWidget *MainWindow::createRibbon()
     ribbon->setTitleVisible(false);       // 窗口标题在 titlebar，不占 ribbon 高度
     ribbon->setTabBarHeight(22);
     ribbon->setPanelTitleHeight(10);
-    ribbon->setPanelToolButtonIconSize(QSize(0, 0), QSize(0, 0));
+    ribbon->setPanelToolButtonIconSize(QSize(16, 16), QSize(24, 24));
     ribbon->setEnableShowPanelTitle(true);
 
     auto addLarge = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
@@ -234,6 +236,48 @@ QWidget *MainWindow::createRibbon()
         auto *a = new QAction(t, this);
         a->setEnabled(false);
         rg->addAction(a);
+    }
+
+    // 自绘 SVG 图标：没有图标时 SARibbon 会在按钮左侧留空方块，观感直接崩
+    {
+        static const QHash<QString, QString> kIcon = {
+            {QStringLiteral("打开文件"), QStringLiteral("open")},
+            {QStringLiteral("导入布局"), QStringLiteral("import")},
+            {QStringLiteral("设置"), QStringLiteral("settings")},
+            {QStringLiteral("导出布局"), QStringLiteral("export")},
+            {QStringLiteral("导出设置"), QStringLiteral("export_cfg")},
+            {QStringLiteral("导出数据"), QStringLiteral("export_data")},
+            {QStringLiteral("截图当前页"), QStringLiteral("screenshot")},
+            {QStringLiteral("打开数据源"), QStringLiteral("datasource")},
+            {QStringLiteral("全部开始"), QStringLiteral("play")},
+            {QStringLiteral("全部暂停"), QStringLiteral("pause")},
+            {QStringLiteral("新建页"), QStringLiteral("newpage")},
+            {QStringLiteral("自动 Y"), QStringLiteral("autoy")},
+            {QStringLiteral("游标"), QStringLiteral("cursor")},
+            {QStringLiteral("复位视图"), QStringLiteral("reset")},
+            {QStringLiteral("地平仪"), QStringLiteral("horizon")},
+            {QStringLiteral("罗盘"), QStringLiteral("compass")},
+            {QStringLiteral("表盘"), QStringLiteral("gauge")},
+            {QStringLiteral("运行"), QStringLiteral("run")},
+            {QStringLiteral("格式化"), QStringLiteral("format")},
+            {QStringLiteral("新建 Loader"), QStringLiteral("loader")},
+            {QStringLiteral("帧模板 YAML"), QStringLiteral("yaml")},
+            {QStringLiteral("校验"), QStringLiteral("validate")},
+            {QStringLiteral("数据源"), QStringLiteral("datasource")},
+            {QStringLiteral("属性"), QStringLiteral("prop")},
+            {QStringLiteral("脚本"), QStringLiteral("script")},
+            {QStringLiteral("日志"), QStringLiteral("log")},
+        };
+        // QAction 的 parent 是 this（不是 ribbon），按 ribbon 找会一个都拿不到
+        for (auto *a : findChildren<QAction *>())
+        {
+            const auto it = kIcon.find(a->text());
+            if (it != kIcon.end())
+            {
+                a->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(it.value())));
+
+            }
+        }
     }
 
     // 静态库里资源要显式初始化，否则 dark 主题静默回退浅色 QSS

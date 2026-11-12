@@ -7,10 +7,11 @@ add_executable(plotscope_app
   shell/MainWindow.cpp
   plot/CanvasWidget.h
   plot/CanvasWidget.cpp
+  res/icons.qrc
 )
 
 target_include_directories(plotscope_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(plotscope_app PRIVATE Qt6::Widgets ps_kernel)
+target_link_libraries(plotscope_app PRIVATE Qt6::Widgets Qt6::Svg ps_kernel)
 
 # Ribbon 结构层（SARibbon，MIT，vendored）
 target_link_libraries(plotscope_app PRIVATE SARibbonBar::SARibbonBar)
