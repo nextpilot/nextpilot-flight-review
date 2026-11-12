@@ -42,6 +42,9 @@ private:
     void addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed = false);
     void activateSource(QWidget *row);   // 每个源各自一份字段/参数/消息视图
     void renderSourceData();
+    void setupCanvas(CanvasWidget *c);
+    void addCanvasToPage();
+    void removeCanvas(CanvasWidget *c);
     void refreshSrcCount();
     void applySrcFilter();
     void newPage();

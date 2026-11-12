@@ -29,11 +29,16 @@ public:
     void toggleChannel(int index);
     bool hasData() const { return !m_series.isEmpty(); }
     bool kernelBacked() const { return m_kernelBacked; }  // 数据指针属于内核数据集
+    void setTimeRange(double t0, double t1);             // 同页 X 轴联动时被动设置
+    void requestAutoY();                                  // 按可见曲线量程重算 Y
     double t0() const { return m_t0; }
     double t1() const { return m_t1; }
 
 signals:
     void activated(const QString &title);
+    void timeRangeChanged(double t0, double t1);   // 用户缩放/拖动 X 后发出，供同页画布联动
+    void addRequested();                            // 右键“添加画布”
+    void removeRequested();                         // 右键“删除画布”
 
 protected:
     void paintEvent(QPaintEvent *event) override;

@@ -240,6 +240,7 @@ QWidget *MainWindow::createRibbon()
         auto *cat = ribbon->addCategoryPage(QStringLiteral("绘图"));
         auto *pPage = cat->addPanel(QStringLiteral("页"));
         addLarge(pPage, QStringLiteral("新建页"), [this] { newPage(); }, this);
+        addLarge(pPage, QStringLiteral("添加画布"), [this] { addCanvasToPage(); }, this);
         auto *pView = cat->addPanel(QStringLiteral("视图"));
         addSmall(pView, QStringLiteral("自动 Y"), [this] { log(QStringLiteral("自动 Y：按可见曲线量程重算")); }, this);
         addSmall(pView, QStringLiteral("游标"), [this] { log(QStringLiteral("十字光标已启用")); }, this);
@@ -313,6 +314,7 @@ QWidget *MainWindow::createRibbon()
             {QStringLiteral("全部开始"), QStringLiteral("play")},
             {QStringLiteral("全部暂停"), QStringLiteral("pause")},
             {QStringLiteral("新建页"), QStringLiteral("newpage")},
+            {QStringLiteral("添加画布"), QStringLiteral("plus")},
             {QStringLiteral("自动 Y"), QStringLiteral("autoy")},
             {QStringLiteral("游标"), QStringLiteral("cursor")},
             {QStringLiteral("复位视图"), QStringLiteral("reset")},
@@ -969,15 +971,7 @@ void MainWindow::newPage()
     auto *c = new CanvasWidget(this);
     c->clearChannels();
     c->setTitle(QStringLiteral("新页 · 画布"));
-    connect(c, &CanvasWidget::activated, this, [this, c](const QString &t) {
-        setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
-                        {QStringLiteral("时间窗"), QStringLiteral("%1 ~ %2 s")
-                                                  .arg(c->t0(), 0, 'f', 2)
-                                                  .arg(c->t1(), 0, 'f', 2)},
-                        {QStringLiteral("数据来源"), c->kernelBacked() ? QStringLiteral("数据集（内核内存）")
-                                                                      : QStringLiteral("演示合成数据")},
-                        {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩 / 拖动平移 / 双击复位")}});
-    });
+    setupCanvas(c);
     const int plusIdx = m_pages->count() - 1;
     m_pages->insertTab(plusIdx, c, QStringLiteral("新页"));
     m_pages->setCurrentWidget(c);
@@ -1022,15 +1016,7 @@ void MainWindow::createPages()
     auto makeCanvas = [this](const QString &title) {
         auto *c = new CanvasWidget(this);
         c->setTitle(title);
-        connect(c, &CanvasWidget::activated, this, [this, c](const QString &t) {
-            setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
-                            {QStringLiteral("时间窗"), QStringLiteral("%1 ~ %2 s")
-                                                      .arg(c->t0(), 0, 'f', 2)
-                                                      .arg(c->t1(), 0, 'f', 2)},
-                            {QStringLiteral("数据来源"), c->kernelBacked() ? QStringLiteral("CSV 数据集（内核内存）")
-                                                                          : QStringLiteral("演示合成数据")},
-                            {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩 / 拖动平移 / 双击复位")}});
-        });
+        setupCanvas(c);
         return c;
     };
 
@@ -1065,6 +1051,92 @@ void MainWindow::createPages()
             newPage();
     });
 
+}
+
+void MainWindow::setupCanvas(CanvasWidget *c)
+{
+    connect(c, &CanvasWidget::activated, this, [this, c](const QString &t) {
+        setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
+                        {QStringLiteral("时间窗"), QStringLiteral("%1 ~ %2 s")
+                                                  .arg(c->t0(), 0, 'f', 2)
+                                                  .arg(c->t1(), 0, 'f', 2)},
+                        {QStringLiteral("数据来源"), c->kernelBacked() ? QStringLiteral("数据集（内核内存）")
+                                                                      : QStringLiteral("演示合成数据")},
+                        {QStringLiteral("Y 轴"), QStringLiteral("线性 · Ctrl+滚轮缩 / 拖动平移 / 右键复位")}});
+    });
+    // 同页 X 轴联动：任一画布缩放或平移，其余画布跟着走
+    connect(c, &CanvasWidget::timeRangeChanged, this, [this, c](double t0, double t1) {
+        if (auto *sp = qobject_cast<QSplitter *>(c->parentWidget()))
+        {
+            for (int i = 0; i < sp->count(); ++i)
+                if (auto *o = qobject_cast<CanvasWidget *>(sp->widget(i)))
+                    if (o != c)
+                        o->setTimeRange(t0, t1);
+        }
+    });
+    connect(c, &CanvasWidget::addRequested, this, [this] { addCanvasToPage(); });
+    connect(c, &CanvasWidget::removeRequested, this, [this, c] { removeCanvas(c); });
+}
+
+void MainWindow::addCanvasToPage()
+{
+    QWidget *page = m_pages->currentWidget();
+    const int idx = m_pages->currentIndex();
+    const QString tabText = m_pages->tabText(idx);
+    if (qobject_cast<QLabel *>(page))
+    {
+        log(QStringLiteral("该页不是绘图页，先切到绘图页再加画布"));
+        return;
+    }
+
+    auto *c = new CanvasWidget(m_pages);
+    c->clearChannels();
+    c->setTitle(QStringLiteral("新画布 · plot"));
+    setupCanvas(c);
+
+    if (auto *sp = qobject_cast<QSplitter *>(page))
+    {
+        QList<int> sizes = sp->sizes();
+        int total = 0;
+        for (int v : sizes)
+            total += v;
+        sizes.append(total > 0 ? total / (sizes.size() + 1) : 200);
+        sp->addWidget(c);
+        sp->setSizes(sizes);
+        const double t0 = pageCanvases().value(0, nullptr) ? pageCanvases().first()->t0() : 0.0;
+        const double t1 = pageCanvases().value(0, nullptr) ? pageCanvases().first()->t1() : 30.0;
+        c->setTimeRange(t0, t1);
+    }
+    else if (auto *old = qobject_cast<CanvasWidget *>(page))
+    {
+        auto *sp = new QSplitter(Qt::Vertical, m_pages);
+        sp->setHandleWidth(6);
+        m_pages->removeTab(idx);
+        m_pages->insertTab(idx, sp, tabText);
+        sp->addWidget(old);
+        sp->addWidget(c);
+        sp->setSizes({1, 1});
+        m_pages->setCurrentIndex(idx);
+    }
+    log(QStringLiteral("添加画布"));
+}
+
+void MainWindow::removeCanvas(CanvasWidget *c)
+{
+    if (!c)
+        return;
+    if (auto *sp = qobject_cast<QSplitter *>(c->parentWidget()))
+    {
+        if (sp->count() <= 1)
+        {
+            log(QStringLiteral("页内至少保留一个画布"));
+            return;
+        }
+        c->deleteLater();
+        log(QStringLiteral("删除画布"));
+        return;
+    }
+    log(QStringLiteral("页内至少保留一个画布"));
 }
 
 QVector<CanvasWidget *> MainWindow::pageCanvases() const

@@ -368,6 +368,7 @@ void CanvasWidget::wheelEvent(QWheelEvent *event)
         const double ratio = span / std::max(1e-12, m_t1 - m_t0);
         m_t0 = tc - (tc - m_t0) * ratio;
         m_t1 = m_t0 + span;
+        emit timeRangeChanged(m_t0, m_t1);
     }
     m_autoY = false;
     update();
@@ -399,6 +400,29 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
             removeChannel(legend);
         return;
     }
+    if (event->button() == Qt::RightButton)
+    {
+        QMenu menu(this);
+        QAction *fit = menu.addAction(QStringLiteral("自适应 Y"));
+        QAction *reset = menu.addAction(QStringLiteral("重置视图"));
+        menu.addSeparator();
+        QAction *add = menu.addAction(QStringLiteral("垂直添加画布"));
+        QAction *del = menu.addAction(QStringLiteral("删除此画布"));
+        QAction *chosen = menu.exec(event->globalPosition().toPoint());
+        if (chosen == fit)
+            requestAutoY();
+        else if (chosen == reset)
+        {
+            m_autoY = true;
+            resetView();
+            update();
+        }
+        else if (chosen == add)
+            emit addRequested();
+        else if (chosen == del)
+            emit removeRequested();
+        return;
+    }
     if (event->button() == Qt::LeftButton)
     {
         m_dragging = true;
@@ -406,6 +430,22 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         emit activated(m_title);
     }
     QWidget::mousePressEvent(event);
+}
+
+void CanvasWidget::setTimeRange(double t0, double t1)
+{
+    if (t1 <= t0)
+        return;
+    m_t0 = t0;
+    m_t1 = t1;
+    update();
+}
+
+void CanvasWidget::requestAutoY()
+{
+    m_autoY = true;
+    resetView();
+    update();
 }
 
 void CanvasWidget::toggleChannel(int index)
@@ -443,6 +483,8 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
         m_yMax += yShift;
         m_lastPos = event->position();
         m_autoY = false;
+        if (dx != 0.0)
+            emit timeRangeChanged(m_t0, m_t1);
     }
     update();
     QWidget::mouseMoveEvent(event);
