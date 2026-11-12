@@ -1,5 +1,7 @@
 // PlotScope 入口。Qt Widgets 单线程 UI（D1 / D1b / D1c），数据面全部走 ps-abi。
 #include <QApplication>
+#include <QFile>
+#include <QSettings>
 
 #include "shell/Theme.h"
 
@@ -24,9 +26,22 @@ int main(int argc, char **argv)
     MainWindow win;
     win.show();
 
-    // 命令行带文件时直接加载：plotscope_app flight.csv
+    // 命令行带文件时直接加载：plotscope_app flight.csv / layout.psl
     if (argc > 1)
-        win.loadFile(QString::fromLocal8Bit(argv[1]));
+    {
+        const QString arg = QString::fromLocal8Bit(argv[1]);
+        if (arg.endsWith(QStringLiteral(".psl"), Qt::CaseInsensitive))
+            win.importLayoutFrom(arg);
+        else
+            win.loadFile(arg);
+    }
+    else if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+                 .value(QStringLiteral("restoreLayout"), false).toBool())
+    {
+        const QString last = win.defaultLayoutPath();
+        if (QFile::exists(last))
+            win.importLayoutFrom(last);
+    }
 
     return app.exec();
 }

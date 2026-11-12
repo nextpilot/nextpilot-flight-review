@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QColor>
+#include <QHash>
+#include <QJsonObject>
 #include <QPointF>
 #include <QString>
 #include <QVector>
@@ -31,6 +33,8 @@ public:
     bool kernelBacked() const { return m_kernelBacked; }  // 数据指针属于内核数据集
     void setTimeRange(double t0, double t1);             // 同页 X 轴联动时被动设置
     void requestAutoY();                                  // 按可见曲线量程重算 Y
+    QJsonObject saveState() const;                        // 布局/曲线快照
+    void restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool);
     double t0() const { return m_t0; }
     double t1() const { return m_t1; }
 

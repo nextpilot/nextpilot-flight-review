@@ -9,7 +9,9 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QMenu>
+#include <QSettings>
 #include <QColorDialog>
+#include <QJsonArray>
 
 #include <algorithm>
 #include <cmath>
@@ -36,6 +38,9 @@ CanvasWidget::CanvasWidget(QWidget *parent)
     setAcceptDrops(true);
     m_title = QStringLiteral("未命名画布");
     m_kernelBacked = false;
+    const QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    m_showGrid = st.value(QStringLiteral("gridDefault"), true).toBool();
+    m_showLegend = st.value(QStringLiteral("legendDefault"), true).toBool();
     addDemoCurves();
 }
 
@@ -532,6 +537,68 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         emit activated(m_title);
     }
     QWidget::mousePressEvent(event);
+}
+
+QJsonObject CanvasWidget::saveState() const
+{
+    QJsonObject o;
+    o[QStringLiteral("title")] = m_title;
+    o[QStringLiteral("t0")] = m_t0;
+    o[QStringLiteral("t1")] = m_t1;
+    o[QStringLiteral("yMin")] = m_yMin;
+    o[QStringLiteral("yMax")] = m_yMax;
+    o[QStringLiteral("autoY")] = m_autoY;
+    o[QStringLiteral("legend")] = m_showLegend;
+    o[QStringLiteral("grid")] = m_showGrid;
+    QJsonArray arr;
+    for (const Series &s : m_series)
+    {
+        QJsonObject so;
+        so[QStringLiteral("name")] = s.name;
+        so[QStringLiteral("unit")] = s.unit;
+        so[QStringLiteral("color")] = s.color.name();
+        so[QStringLiteral("width")] = s.width;
+        so[QStringLiteral("visible")] = s.visible;
+        arr.append(so);
+    }
+    o[QStringLiteral("series")] = arr;
+    return o;
+}
+
+void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool)
+{
+    m_title = o.value(QStringLiteral("title")).toString(m_title);
+    m_series.clear();
+    const QJsonArray arr = o.value(QStringLiteral("series")).toArray();
+    for (const QJsonValue &v : arr)
+    {
+        const QJsonObject so = v.toObject();
+        const QString name = so.value(QStringLiteral("name")).toString();
+        const PsChannelInfo *ch = pool.value(name, nullptr);
+        if (!ch)
+            continue;
+        Series s;
+        s.name = name;
+        s.unit = so.value(QStringLiteral("unit")).toString(QString::fromUtf8(ch->unit ? ch->unit : ""));
+        s.color = QColor(so.value(QStringLiteral("color")).toString());
+        if (!s.color.isValid())
+            s.color = kPalette[m_series.size() % 6];
+        s.width = so.value(QStringLiteral("width")).toInt(1);
+        s.visible = so.value(QStringLiteral("visible")).toBool(true);
+        s.t = ch->time;
+        s.v = ch->value;
+        s.n = ch->point_count;
+        m_series.append(s);
+    }
+    m_t0 = o.value(QStringLiteral("t0")).toDouble(m_t0);
+    m_t1 = o.value(QStringLiteral("t1")).toDouble(m_t1);
+    m_yMin = o.value(QStringLiteral("yMin")).toDouble(m_yMin);
+    m_yMax = o.value(QStringLiteral("yMax")).toDouble(m_yMax);
+    m_autoY = o.value(QStringLiteral("autoY")).toBool(m_autoY);
+    m_showLegend = o.value(QStringLiteral("legend")).toBool(true);
+    m_showGrid = o.value(QStringLiteral("grid")).toBool(true);
+    m_kernelBacked = !m_series.isEmpty();
+    update();
 }
 
 void CanvasWidget::setTimeRange(double t0, double t1)

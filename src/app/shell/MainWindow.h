@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QJsonObject>
 
 struct PsDataset;
 struct PsChannelInfo;
@@ -27,9 +28,13 @@ public:
 
     // 打开一份 CSV（内核解析），把前 3 个通道画到当前页画布
     bool loadFile(const QString &path);
+    void importLayoutFrom(const QString &path);
+    void saveLayoutTo(const QString &path);
+    QString defaultLayoutPath() const;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 
 private:
     CanvasWidget *currentCanvas() const;
@@ -48,6 +53,9 @@ private:
     void setupCanvas(CanvasWidget *c);
     void addCanvasToPage();
     void removeCanvas(CanvasWidget *c);
+    void openSettings();
+    QJsonObject pageState(QWidget *page) const;
+    QWidget *buildPage(const QJsonObject &o);
     void refreshSrcCount();
     void applySrcFilter();
     void newPage();

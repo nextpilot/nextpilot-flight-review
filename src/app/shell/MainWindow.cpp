@@ -13,6 +13,16 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QDir>
+#include <QFile>
+#include <QCloseEvent>
+#include <QCheckBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QIcon>
 #include <QResizeEvent>
 #include <QStyle>
@@ -162,8 +172,6 @@ QWidget *MainWindow::createRibbon()
     auto addSmall = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
         auto *a = new QAction(text, ctx);
         a->setToolTip(text);
-        if (text.size() > 2)
-            a->setProperty("rbIconOnly", true);
         QObject::connect(a, &QAction::triggered, ctx, fn);
         panel->addSmallAction(a);
     };
@@ -178,23 +186,20 @@ QWidget *MainWindow::createRibbon()
             if (!f.isEmpty())
                 loadFile(f);
         }, this);
-        addSmall(pLayout, QStringLiteral("导入布局"), [this] {
+        addLarge(pLayout, QStringLiteral("导入布局"), [this] {
             const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
                 QStringLiteral("PlotScope 布局 (*.psl)"));
             if (!f.isEmpty())
-                log(QStringLiteral("导入布局：%1").arg(f));
+                importLayoutFrom(f);
         }, this);
-        addSmall(pLayout, QStringLiteral("设置"), [this] {
-            QMessageBox::information(this, QStringLiteral("设置"),
-                QStringLiteral("M0 骨架：设置页在 M1 接 QSettings。"));
-        }, this);
+        addLarge(pLayout, QStringLiteral("设置"), [this] { openSettings(); }, this);
 
         auto *pExport = cat->addPanel(QStringLiteral("导出"));
-        addLarge(pExport, QStringLiteral("导出布局"), [this] {
+        addLarge(pExport, QStringLiteral("保存布局"), [this] {
             const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出布局"), {},
                 QStringLiteral("PlotScope 布局 (*.psl)"));
             if (!f.isEmpty())
-                log(QStringLiteral("导出布局：%1").arg(f));
+                saveLayoutTo(f);
         }, this);
         addSmall(pExport, QStringLiteral("导出设置"), [this] { log(QStringLiteral("导出设置：M1 接 YAML")); }, this);
         addSmall(pExport, QStringLiteral("导出数据"), [this] { log(QStringLiteral("导出数据：M1 接 CSV/NDF")); }, this);
@@ -1071,6 +1076,14 @@ void MainWindow::newPage()
     log(QStringLiteral("新建页"));
 }
 
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+            .value(QStringLiteral("restoreLayout"), false).toBool())
+        saveLayoutTo(defaultLayoutPath());
+    QMainWindow::closeEvent(event);
+}
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     // 数据源行：点行切换该源自己的字段/参数/消息
@@ -1255,6 +1268,224 @@ void MainWindow::removeCanvas(CanvasWidget *c)
         return;
     }
     log(QStringLiteral("页内至少保留一个画布"));
+}
+
+QString MainWindow::defaultLayoutPath() const
+{
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    if (dir.isEmpty())
+        dir = QDir::homePath() + QStringLiteral("/.plotscope");
+    return dir + QStringLiteral("/last.psl");
+}
+
+QJsonObject MainWindow::pageState(QWidget *page) const
+{
+    QJsonObject o;
+    if (auto *c = qobject_cast<CanvasWidget *>(page))
+    {
+        o = c->saveState();
+        o[QStringLiteral("type")] = QStringLiteral("canvas");
+    }
+    else if (auto *sp = qobject_cast<QSplitter *>(page))
+    {
+        o[QStringLiteral("type")] = QStringLiteral("splitter");
+        o[QStringLiteral("vertical")] = sp->orientation() == Qt::Vertical;
+        QJsonArray sizes;
+        for (int v : sp->sizes())
+            sizes.append(v);
+        o[QStringLiteral("sizes")] = sizes;
+        QJsonArray kids;
+        for (int i = 0; i < sp->count(); ++i)
+            kids.append(pageState(sp->widget(i)));
+        o[QStringLiteral("children")] = kids;
+    }
+    else if (auto *lb = qobject_cast<QLabel *>(page))
+    {
+        o[QStringLiteral("type")] = QStringLiteral("label");
+        o[QStringLiteral("text")] = lb->text();
+    }
+    return o;
+}
+
+QWidget *MainWindow::buildPage(const QJsonObject &o)
+{
+    const QString type = o.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("canvas"))
+    {
+        auto *c = new CanvasWidget(m_pages);
+        c->clearChannels();
+        QHash<QString, const PsChannelInfo *> pool;
+        for (const PsChannelInfo *ch : m_srcChannels)
+            pool.insert(QString::fromUtf8(ch->name), ch);
+        c->restoreState(o, pool);
+        setupCanvas(c);
+        return c;
+    }
+    if (type == QLatin1String("splitter"))
+    {
+        auto *sp = new QSplitter(o.value(QStringLiteral("vertical")).toBool(true) ? Qt::Vertical
+                                                                                 : Qt::Horizontal,
+                                 m_pages);
+        sp->setHandleWidth(6);
+        for (const QJsonValue &v : o.value(QStringLiteral("children")).toArray())
+            sp->addWidget(buildPage(v.toObject()));
+        QList<int> sizes;
+        for (const QJsonValue &v : o.value(QStringLiteral("sizes")).toArray())
+            sizes.append(v.toInt());
+        if (!sizes.isEmpty())
+            sp->setSizes(sizes);
+        return sp;
+    }
+    return new QLabel(o.value(QStringLiteral("text")).toString(), m_pages);
+}
+
+void MainWindow::saveLayoutTo(const QString &path)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QJsonObject root;
+    root[QStringLiteral("app")] = QStringLiteral("PlotScope");
+    root[QStringLiteral("version")] = 1;
+    root[QStringLiteral("geometry")] = QString::fromLatin1(saveGeometry().toBase64());
+    root[QStringLiteral("docks")] = QString::fromLatin1(saveState().toBase64());
+    root[QStringLiteral("current")] = m_pages->currentIndex();
+
+    QJsonArray pages;
+    QJsonArray titles;
+    const int last = m_pages->count() - 1;
+    for (int i = 0; i < m_pages->count(); ++i)
+    {
+        if (i == last && m_pages->tabText(i) == QStringLiteral("＋"))
+            continue;
+        pages.append(pageState(m_pages->widget(i)));
+        titles.append(m_pages->tabText(i));
+    }
+    root[QStringLiteral("pages")] = pages;
+    root[QStringLiteral("titles")] = titles;
+
+    // 数据源与布局一起保存：重启后先重新加载日志，再回填画布通道
+    // 内核目前只持有一个 PsDataset：只随附最后一个已加载源，避免重启后重放多个源造成悬垂
+    QJsonArray sources;
+    if (m_srcRows)
+    {
+        for (int i = 0; i < m_srcRows->count(); ++i)
+        {
+            QWidget *row = m_srcRows->itemAt(i) ? m_srcRows->itemAt(i)->widget() : nullptr;
+            const QString srcPath = row ? row->property("srcPath").toString() : QString();
+            if (srcPath.isEmpty())
+                continue;
+            QJsonObject so;
+            so[QStringLiteral("path")] = srcPath;
+            so[QStringLiteral("name")] = row->property("srcName").toString();
+            sources = QJsonArray{so};
+        }
+    }
+    root[QStringLiteral("sources")] = sources;
+
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    {
+        log(QStringLiteral("保存布局失败：%1").arg(f.errorString()));
+        return;
+    }
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    f.close();
+    QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
+    log(QStringLiteral("已保存布局：%1").arg(path));
+}
+
+void MainWindow::importLayoutFrom(const QString &path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+    {
+        log(QStringLiteral("导入布局失败：%1").arg(f.errorString()));
+        return;
+    }
+    const QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
+    f.close();
+    if (root.value(QStringLiteral("app")).toString() != QLatin1String("PlotScope"))
+    {
+        log(QStringLiteral("不是 PlotScope 布局文件"));
+        return;
+    }
+
+    // 先恢复数据源，buildPage 才能按通道名取到内核指针
+    for (const QJsonValue &v : root.value(QStringLiteral("sources")).toArray())
+    {
+        const QString path = v.toObject().value(QStringLiteral("path")).toString();
+        if (path.isEmpty() || !QFile::exists(path))
+            continue;
+        bool loaded = false;
+        for (int i = 0; m_srcRows && i < m_srcRows->count(); ++i)
+        {
+            QWidget *row = m_srcRows->itemAt(i) ? m_srcRows->itemAt(i)->widget() : nullptr;
+            if (row && row->property("srcPath").toString() == path)
+            {
+                loaded = true;
+                break;
+            }
+        }
+        if (!loaded)
+            loadFile(path);
+    }
+
+    // 清空页签时屏蔽 currentChanged：末尾的 ＋ 触发 newPage 会和删除循环互踢
+    m_pages->blockSignals(true);
+    while (m_pages->count() > 0)
+        m_pages->removeTab(0);
+    m_pages->blockSignals(false);
+
+    const QJsonArray pages = root.value(QStringLiteral("pages")).toArray();
+    const QJsonArray titles = root.value(QStringLiteral("titles")).toArray();
+    for (int i = 0; i < pages.size(); ++i)
+        m_pages->addTab(buildPage(pages[i].toObject()),
+                        titles.at(i).toString(QStringLiteral("页 %1").arg(i + 1)));
+
+    const int plusIdx = m_pages->count();
+    m_pages->addTab(new QWidget(m_pages), QStringLiteral("＋"));
+    m_pages->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
+    m_pages->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
+
+    const QByteArray geo = QByteArray::fromBase64(root.value(QStringLiteral("geometry")).toString().toLatin1());
+    if (!geo.isEmpty())
+        restoreGeometry(geo);
+    const QByteArray docks = QByteArray::fromBase64(root.value(QStringLiteral("docks")).toString().toLatin1());
+    if (!docks.isEmpty())
+        restoreState(docks);
+
+    const int cur = root.value(QStringLiteral("current")).toInt(0);
+    if (cur >= 0 && cur < m_pages->count() - 1)
+        m_pages->setCurrentIndex(cur);
+
+    QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
+    log(QStringLiteral("已导入布局：%1").arg(path));
+}
+
+void MainWindow::openSettings()
+{
+    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("设置"));
+    auto *lay = new QVBoxLayout(&dlg);
+    auto *restore = new QCheckBox(QStringLiteral("启动时恢复上次布局"), &dlg);
+    restore->setChecked(st.value(QStringLiteral("restoreLayout"), false).toBool());
+    auto *grid = new QCheckBox(QStringLiteral("新建画布默认显示网格"), &dlg);
+    grid->setChecked(st.value(QStringLiteral("gridDefault"), true).toBool());
+    auto *legend = new QCheckBox(QStringLiteral("新建画布默认显示图例"), &dlg);
+    legend->setChecked(st.value(QStringLiteral("legendDefault"), true).toBool());
+    lay->addWidget(restore);
+    lay->addWidget(grid);
+    lay->addWidget(legend);
+    auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    lay->addWidget(bb);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    st.setValue(QStringLiteral("restoreLayout"), restore->isChecked());
+    st.setValue(QStringLiteral("gridDefault"), grid->isChecked());
+    st.setValue(QStringLiteral("legendDefault"), legend->isChecked());
+    log(QStringLiteral("设置已保存"));
 }
 
 QVector<CanvasWidget *> MainWindow::pageCanvases() const
