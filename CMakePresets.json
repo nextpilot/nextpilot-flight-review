@@ -1,0 +1,30 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "msvc",
+      "displayName": "MSVC 2022 x64 (Qt 6.12.0 msvc2022_64)",
+      "description": "Visual Studio 17 2022 + Qt 6.12.0 msvc2022_64，多配置生成器",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/msvc",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "D:/program/Qt/6.12.0/msvc2022_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msvc-debug",
+      "displayName": "MSVC 2022 Debug",
+      "configurePreset": "msvc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "msvc-release",
+      "displayName": "MSVC 2022 Release",
+      "configurePreset": "msvc",
+      "configuration": "Release"
+    }
+  ]
+}

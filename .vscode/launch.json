@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "plotscope_app (Debug)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/msvc/src/app/Debug/plotscope_app.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "D:/program/Qt/6.12.0/msvc2022_64/bin;${env:PATH}"
+        }
+      ],
+      "console": "integratedTerminal"
+    }
+  ]
+}
