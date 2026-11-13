@@ -1,9 +1,9 @@
-# src/plugin — 官方 Loader
+# src/plugin — 官方 Loader 插件
 
-一个家族一个目录，目录内自带 `manifest.json`、`CMakeLists.txt` 与样例文件（≤2 MB）。
+一个插件一个目录，目录内自带 `manifest`（编译期内嵌）、`CMakeLists.txt` 与样例。
 
-- 解析器用 Rust 写（`src/kernel` 里复用 ps-ndf / ps-parse），也可以 C++，语言不限，只要按 D9 的 C ABI 吐数据。
-- 插件不碰 Qt，也不 emit 信号：数据通过 `append_record` / `append_bound_record` / `append_arrow_stream` 三种粒度交给宿主。
-- 计划家族：PX4 ULog、ArduPilot DFLog、Vector BLF/ASC、CAN（DBC + raw）、GNSS（NMEA/OEM7/UBX/RTCM）、SEGGER RTT/SystemView、CSV。
-
-M0 只有目录与约定，第一个 Loader 在 M1 落地。
+- 数据面只走 `src/plugin_sdk/ps_plugin_api.h` 的 C 契约：`schema_json / probe_json / default_options / load`。
+- 插件不 include `src/app`，也不持有宿主 UI；格式专属的 `.ui` 随插件目录分发，由 app 的 `DialogEngine` 加载。
+- 首个落地插件：`csv/`，app 只通过 `LoaderRegistry::registerDescriptor()` 注册，不再包含 CSV schema 代码。
+- 后续：ULog / DataFlash / ASC / BLF 逐个迁出；OEM7 作为 device 插件，额外带连接向导与状态面板。
+- 外部 `.so` + `manifest.json` 的发现、`dlopen`、ABI 校验统一由 `ps-runtime` 负责，不放在 app。

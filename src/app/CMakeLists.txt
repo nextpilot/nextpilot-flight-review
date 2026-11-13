@@ -21,8 +21,11 @@ add_executable(plotscope_app
   res/icons.qrc
 )
 
-target_include_directories(plotscope_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(plotscope_app PRIVATE Qt6::Widgets Qt6::Svg ps_kernel)
+target_include_directories(plotscope_app PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${PROJECT_SOURCE_DIR}/src
+)
+target_link_libraries(plotscope_app PRIVATE Qt6::Widgets Qt6::Svg ps_kernel ps_loader_csv)
 
 if(PS_ENABLE_LUA)
   find_package(Lua 5.4)

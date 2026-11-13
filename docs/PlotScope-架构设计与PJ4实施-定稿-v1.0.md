@@ -21,7 +21,7 @@
 | D6 | 协议模板 | YAML/JSON 帧模板 → Rust 侧热编译为状态机 |
 | D7 | 停靠 | **`QDockWidget`**（Qt 内建，零第三方许可义务，四区/浮动/tabify/saveState 够用）；Qt-ADS（LGPL-2.1）作升级项，M1 交互评审不够"跟手"再换，换的成本只在 `DockHost` 一层；KDDockWidgets（商业 + GPL）排除 |
 | D8 | 缺省构建 | **CMake + Corrosion**（KDAB），Rust crate 随 CMake 一起编 |
-| D9 | 插件 ABI | 5 个 C 函数 + `PsBytes`/`PsBatchOut` + `abiVersion` + `ps_abi_selftest()`；四种后端 builtin/dylib/wasm/sidecar |
+| D9 | 插件 ABI | `ps_plugin_entry()` 返回 `PsPluginDescriptor`：编译期内嵌 manifest + 可选 `PsLoaderVtable` / `PsUiVtable`；loader 数据面 `schema_json/probe_json/default_options/load` 四函数；`abiVersion` + `ps_abi_selftest()`；四种后端 builtin/dylib/wasm/sidecar |
 | D10 | 布局持久化 | `.psl`（JSON，可分享可进 git）+ `.psc-workspace`（项目级）；`semantic`/`view` 分块；幽灵曲线；键序固定、原子写；撤销走命令模式 |
 | D11 | 类型系统 | f32/f64 为主 + `kEnum`（i32 码 + 字典）+ `kString`（sidecar）；布尔并入 `kEnum`(0/1) |
 | D12 | 许可红线 | 主程序与内核 **BSD-3** 兼容；引入第三方必须逐条核对许可（Qwt License 1.0 待核，未核前只用 JKQTPlotter） |
@@ -75,16 +75,32 @@
 ```
 ┌──────────────────────── Qt 6 Widgets（C++）────────────────────────┐
 │ 主窗口 / 停靠 / 通道树 / 属性面板 / hex 编辑器 / 表格 / 图表画布 / 仪表页 │
+│ PluginCatalog / ContributionRegistry / DialogEngine / PanelEngine    │
 └───────────────────────────────┬───────────────────────────────────┘
-                      C ABI（一张 C 函数表，批量传递）
+                      PsHostApi + 插件 .ui（批量传递）
 ┌───────────────────────────────┴───────────────────────────────────┐
-│                    plotscope-kernel（Rust）                        │
-│ 接入编排 │ 解析器宿主 │ NDF 列存 │ Arrow 缓存+mmap │ 查询/LOD │ 摄取 │
-│ 表达式引擎 │ 协议模板编译 │ 插件 ABI 宿主                           │
+│                    ps-runtime（Rust）                              │
+│ 插件目录 / manifest / dlopen / ABI 校验 / 会话 / 源管理 / 写入口      │
+└───────────────────────────────┬───────────────────────────────────┘
+                      C ABI（只传批量数据）
+┌───────────────────────────────┴───────────────────────────────────┐
+│                    ps-datastore（Rust）                            │
+│ NDF 列存 │ Chunk/Column │ Writer/Reader │ 查询/LOD │ 对齐/算子       │
+│ 派生变换 DAG │ retention │ Arrow 缓存+mmap                          │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-**归属判定三问**：① 要遍历/变换数据 → **Rust**；② 只在屏幕上存在 → **Qt**；③ 必须能被跨语言插件替换 → **Rust 宿主 + C ABI**。
+**五层分工（硬边界）**
+
+| 层 | 只负责 | 不允许 |
+|---|---|---|
+| `ps-base` | 公共类型、ID、错误码、`PsBytes`、ABI 版本 | 不碰存储、不碰 Qt |
+| `ps-datastore` | 数据集、Topic/Chunk/Column、写入、查询、LOD、对齐、算子、派生 | 不认识 `.csv`/`.ulg`/OEM7 |
+| `ps-runtime` | 插件发现、manifest、`dlopen`、ABI 校验、会话、源管理、`PsHostApi` | 不画界面、不解析具体格式 |
+| `ps-format` | 官方解析器：CSV/ULog/APBin/ASC/BLF/… | 不持有 UI、不建窗口 |
+| `app` + `plugins` | Qt 壳、ContributionRegistry、Dialog/Panel 引擎；插件只提供数据入口与 `.ui` | app 不 include 插件 UI；插件不 include app 内部 |
+
+**归属判定三问**：① 要遍历/变换数据 → **ps-datastore**；② 决定数据从哪来 → **ps-format 或 plugins**；③ 只在屏幕上存在 → **app + 插件 `.ui`**。
 
 **边界四条铁律**
 1. 跨 C ABI 只传批量（`{指针, 长度, 采样数, 通道数}`），绝不为单点调用。
@@ -96,12 +112,19 @@
 
 | 功能 | 归属 | 判据 |
 |---|---|---|
-| 插件加载、ABI 校验、`selftest` | Rust | 管数据流不管界面 |
-| 协议模板编译（YAML→状态机） | Rust | 产物是解码器 |
+| 插件加载、ABI 校验、`selftest` | **ps-runtime** | 管数据流不管界面 |
+| 协议模板编译（YAML→状态机） | **ps-format / 插件** | 产物是解码器，不是存储 |
 | 协议编辑器本体（字段树/hex/联动/CRC 试算） | Qt（宿主提供通用控件） | 纯交互绘制；帧结构由 Loader 声明 |
-| 单位换算（factor/offset） | **Rust** | 改变数值 → 影响降采样正确性 |
+| 单位换算（factor/offset） | **ps-datastore / ps-format** | 改变数值 → 影响降采样正确性 |
 | 图表画布（轴/图例/游标/框选） | Qt | 数据由 Rust 给切片 |
 | 仪表页（地平仪/罗盘/表盘） | Qt | `QPainter` + `QPropertyAnimation` |
+
+**插件 UI 归属（新增硬约束）**
+
+- 任何格式专属的 Dialog / Ribbon / Dock / Panel 类，都放在 `plugins/<id>/`，app 不存放、不 include。
+- app 只提供通用 `DialogEngine` / `PanelEngine`，负责加载插件 `.ui`、绑定 `widget_data`、tick、事件、accept/reject。
+- 插件不返回 `QWidget*`，只交 `.ui` 资源 + JSON 协议；外部插件因此不需要和宿主 Qt ABI 完全一致。
+- 通用 schema 对话框是 app 的框架能力，不是某个 loader 的 UI；CSV 的 schema 由插件声明，布局由 app 统一渲染。
 
 ---
 
@@ -390,6 +413,24 @@ Ribbon 的价值不是好看，是**把命令按任务分组、一屏全露**：
 ---
 
 ## 10. 插件与 ABI
+
+**插件不是“loader 的子类型”，而是一组 family：DataSource / Parser / Toolbox / Panel。** 每个插件包自带 `manifest.json`、数据 vtable、可选 UI vtable 和 `.ui` 资源；`ps-runtime` 负责发现和加载，app 只负责渲染。
+
+```text
+plugins/<id>/
+├── manifest.json
+├── lib<id>.so
+├── <id>_open.ui          # 可选：插件自己的对话框
+├── <id>_status.ui        # 可选：长生命周期面板
+└── ribbon.json           # 可选：声明式命令
+```
+
+**当前落地（M1 第一步）**
+
+- `src/plugin_sdk/ps_plugin_api.h`：`PsPluginDescriptor` + `PsLoaderVtable`，纯 C、零 Qt 依赖。
+- `src/plugin/csv/CsvPlugin.cpp`：CSV 已是独立插件，导出 `ps_plugin_entry_csv()`；schema/probe/default/load 全部在插件内，app 不再有 CSV schema 代码。
+- `LoaderRegistry::registerDescriptor()`：app 唯一入口，只做 ABI 版本校验和 JSON 缓冲区桥接。
+- `test/unit/test_plugin_csv.cpp`：直接走插件入口验证 schema、default options、load 与数据集通道。
 
 **C ABI（数据面 8 函数；插件面 5 函数）**
 

@@ -1,158 +1,53 @@
 #include "loader/LoaderRegistry.h"
 
+#include "plugin_sdk/ps_plugin_api.h"
 #include "ps_kernel.h"
 
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
+extern "C" const PsPluginDescriptor *ps_plugin_entry_csv(void);
+
 namespace {
 
-QJsonObject csvSchema()
+QJsonObject readSchema(const PsLoaderVtable *v)
 {
-    QJsonObject s;
-    s[QStringLiteral("id")] = QStringLiteral("csv");
-    s[QStringLiteral("title")] = QStringLiteral("加载 CSV");
-    QJsonArray fields;
-
-    auto field = [](const QString &key, const QString &type, const QString &label) {
-        QJsonObject f;
-        f[QStringLiteral("key")] = key;
-        f[QStringLiteral("type")] = type;
-        f[QStringLiteral("label")] = label;
-        return f;
-    };
-    {
-        QJsonObject f = field(QStringLiteral("delimiter"), QStringLiteral("enum"), QStringLiteral("分隔符"));
-        f[QStringLiteral("default")] = QStringLiteral("auto");
-        QJsonArray opts;
-        auto add = [&opts](const QString &v, const QString &t) {
-            QJsonObject o;
-            o[QStringLiteral("value")] = v;
-            o[QStringLiteral("label")] = t;
-            opts.append(o);
-        };
-        add(QStringLiteral("auto"), QStringLiteral("自动探测"));
-        add(QStringLiteral(","), QStringLiteral("逗号  ,"));
-        add(QStringLiteral(";"), QStringLiteral("分号  ;"));
-        add(QStringLiteral("\t"), QStringLiteral("制表符  \\t"));
-        add(QStringLiteral(" "), QStringLiteral("空格"));
-        f[QStringLiteral("options")] = opts;
-        fields.append(f);
-    }
-    {
-        QJsonObject f = field(QStringLiteral("has_header"), QStringLiteral("bool"),
-                              QStringLiteral("第一行是表头"));
-        f[QStringLiteral("default")] = true;
-        fields.append(f);
-    }
-    {
-        QJsonObject f = field(QStringLiteral("skip_rows"), QStringLiteral("int"),
-                              QStringLiteral("跳过开头行"));
-        f[QStringLiteral("default")] = 0;
-        f[QStringLiteral("min")] = 0;
-        f[QStringLiteral("max")] = 1000;
-        fields.append(f);
-    }
-    {
-        QJsonObject f = field(QStringLiteral("time.mode"), QStringLiteral("enum"),
-                              QStringLiteral("时间轴"));
-        f[QStringLiteral("default")] = QStringLiteral("row");
-        QJsonArray opts;
-        auto add = [&opts](const QString &v, const QString &t) {
-            QJsonObject o;
-            o[QStringLiteral("value")] = v;
-            o[QStringLiteral("label")] = t;
-            opts.append(o);
-        };
-        add(QStringLiteral("row"), QStringLiteral("行号（不解析时间）"));
-        add(QStringLiteral("column"), QStringLiteral("指定一列作为时间"));
-        add(QStringLiteral("combined"), QStringLiteral("日期列 + 时间列合并"));
-        f[QStringLiteral("options")] = opts;
-        fields.append(f);
-    }
-    {
-        QJsonObject f = field(QStringLiteral("time.index"), QStringLiteral("enum"),
-                              QStringLiteral("时间列"));
-        f[QStringLiteral("source")] = QStringLiteral("columns");
-        f[QStringLiteral("column_filter")] = QStringLiteral("all");
-        QJsonObject vi;
-        vi[QStringLiteral("key")] = QStringLiteral("time.mode");
-        vi[QStringLiteral("equals")] = QStringLiteral("column");
-        f[QStringLiteral("visible_if")] = vi;
-        fields.append(f);
-    }
-    {
-        QJsonObject f = field(QStringLiteral("time.date"), QStringLiteral("enum"),
-                              QStringLiteral("日期列"));
-        f[QStringLiteral("source")] = QStringLiteral("columns");
-        f[QStringLiteral("column_filter")] = QStringLiteral("date_only");
-        QJsonObject vi;
-        vi[QStringLiteral("key")] = QStringLiteral("time.mode");
-        vi[QStringLiteral("equals")] = QStringLiteral("combined");
-        f[QStringLiteral("visible_if")] = vi;
-        fields.append(f);
-    }
-    {
-        QJsonObject f = field(QStringLiteral("time.time"), QStringLiteral("enum"),
-                              QStringLiteral("时间列（时:分:秒）"));
-        f[QStringLiteral("source")] = QStringLiteral("columns");
-        f[QStringLiteral("column_filter")] = QStringLiteral("time_only");
-        QJsonObject vi;
-        vi[QStringLiteral("key")] = QStringLiteral("time.mode");
-        vi[QStringLiteral("equals")] = QStringLiteral("combined");
-        f[QStringLiteral("visible_if")] = vi;
-        fields.append(f);
-    }
-
-    s[QStringLiteral("fields")] = fields;
-    return s;
+    if (!v->schema_json)
+        return {};
+    QByteArray buf(64 * 1024, '\0');
+    const int32_t n = v->schema_json(buf.data(), static_cast<uint32_t>(buf.size()));
+    if (n <= 0)
+        return {};
+    return QJsonDocument::fromJson(QByteArray(buf.constData(), n)).object();
 }
 
-QJsonObject probeCsv(const QString &path, const QJsonObject &opts)
+QJsonObject readProbe(const PsLoaderVtable *v, const QString &path, const QJsonObject &opts)
 {
-    char err[256] = {0};
-    QByteArray buf(1 << 16, '\0');
-    QString delim = opts.value(QStringLiteral("delimiter")).toString();
-    char force = 0;
-    if (delim != QLatin1String("auto") && !delim.isEmpty())
-        force = delim.at(0).toLatin1();
-    const int32_t n = ps_csv_probe(path.toUtf8().constData(), force, buf.data(),
-                                   static_cast<uint32_t>(buf.size()), err, sizeof(err));
+    if (!v->probe_json)
+        return {};
+    const QByteArray optsJson = QJsonDocument(opts).toJson(QJsonDocument::Compact);
+    QByteArray out(64 * 1024, '\0');
+    const int32_t n = v->probe_json(path.toUtf8().constData(), optsJson.constData(),
+                                    out.data(), static_cast<uint32_t>(out.size()));
     if (n < 0)
     {
         QJsonObject e;
-        e[QStringLiteral("error")] = QString::fromUtf8(err);
+        e[QStringLiteral("error")] = QStringLiteral("probe 失败");
         return e;
     }
-    QJsonObject probe = QJsonDocument::fromJson(QByteArray(buf.constData(), n)).object();
-    probe[QStringLiteral("_opts")] = opts;
-    return probe;
+    return QJsonDocument::fromJson(QByteArray(out.constData(), n)).object();
 }
 
-QString defaultCsvOptions(const QString &path)
+QString readDefaultOptions(const PsLoaderVtable *v, const QString &path)
 {
-    QJsonObject o;
-    QJsonObject opts;
-    opts[QStringLiteral("delimiter")] = QStringLiteral("auto");
-    QJsonObject probe = probeCsv(path, opts);
-    if (probe.contains(QStringLiteral("error")))
-        return QString();
-
-    QString delim = probe.value(QStringLiteral("delimiter")).toString();
-    o[QStringLiteral("delimiter")] = delim.isEmpty() ? QStringLiteral(",") : delim.left(1);
-    o[QStringLiteral("has_header")] = probe.value(QStringLiteral("has_header")).toBool(true);
-    o[QStringLiteral("skip_rows")] = 0;
-    QJsonObject t;
-    if (probe.contains(QStringLiteral("suggested_time")))
-    {
-        t[QStringLiteral("mode")] = QStringLiteral("column");
-        t[QStringLiteral("index")] = probe.value(QStringLiteral("suggested_time")).toInt();
-    }
-    else
-        t[QStringLiteral("mode")] = QStringLiteral("row");
-    o[QStringLiteral("time")] = t;
-    return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
+    if (!v->default_options)
+        return {};
+    QByteArray out(16 * 1024, '\0');
+    const int32_t n = v->default_options(path.toUtf8().constData(), out.data(),
+                                        static_cast<uint32_t>(out.size()));
+    if (n < 0)
+        return {};
+    return QString::fromUtf8(out.constData(), n);
 }
 
 } // namespace
@@ -194,20 +89,37 @@ LoaderRegistry::LoaderRegistry()
               QStringLiteral("Vector BLF (*.blf);;全部 (*)"),
               QStringLiteral("BLF · CAN"), true, false, ps_blf_load);
 
-    LoaderPlugin csv;
-    csv.id = QStringLiteral("csv");
-    csv.label = QStringLiteral("CSV");
-    csv.filter = QStringLiteral("分隔文本 (*.csv *.tsv *.txt);;全部 (*)");
-    csv.formatTag = QStringLiteral("CSV");
-    csv.tree = false;
-    csv.hasParams = false;
-    csv.schema = csvSchema();
-    csv.probe = probeCsv;
-    csv.defaultOptions = defaultCsvOptions;
-    csv.load = [](const QString &path, const QString &opts, PsDataset **ds, char *err, unsigned int cap) {
-        return ps_csv_load_opts(path.toUtf8().constData(), opts.toUtf8().constData(), ds, err, cap);
+    registerDescriptor(ps_plugin_entry_csv());
+}
+
+void LoaderRegistry::registerDescriptor(const PsPluginDescriptor *desc)
+{
+    if (!desc || desc->abi_version != PS_PLUGIN_ABI_VERSION || !desc->loader)
+        return;
+    const PsLoaderVtable *v = desc->loader;
+    if (v->abi_version != PS_PLUGIN_ABI_VERSION || !v->id || !v->load)
+        return;
+
+    LoaderPlugin p;
+    p.id = QString::fromUtf8(v->id);
+    p.label = QString::fromUtf8(v->label ? v->label : v->id);
+    p.filter = QString::fromUtf8(v->filter ? v->filter : "* (*)");
+    p.formatTag = QString::fromUtf8(v->format_tag ? v->format_tag : v->label);
+    p.tree = v->tree != 0;
+    p.hasParams = v->has_params != 0;
+    p.schema = readSchema(v);
+    p.probe = [v](const QString &path, const QJsonObject &opts) {
+        return readProbe(v, path, opts);
     };
-    m_plugins.append(csv);
+    p.defaultOptions = [v](const QString &path) {
+        return readDefaultOptions(v, path);
+    };
+    p.load = [v](const QString &path, const QString &opts, PsDataset **ds,
+                 char *err, unsigned int cap) {
+        return v->load(path.toUtf8().constData(), opts.toUtf8().constData(),
+                       reinterpret_cast<void **>(ds), err, cap);
+    };
+    m_plugins.append(p);
 }
 
 const LoaderPlugin *LoaderRegistry::findBySuffix(const QString &suffix) const
