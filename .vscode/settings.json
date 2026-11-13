@@ -1,4 +1,18 @@
 {
   "cmake.useCMakePresets": "always",
-  "cmake.configureOnOpen": true
+  "cmake.configureOnOpen": true,
+  "cmake.configurePreset": "msvc",
+  "cmake.buildPreset": "msvc-debug",
+  "cmake.debugConfig": {
+    "type": "cppvsdbg",
+    "request": "launch",
+    "program": "${command:cmake.launchTargetPath}",
+    "cwd": "${workspaceFolder}",
+    "environment": [
+      {
+        "name": "PATH",
+        "value": "D:/program/Qt/6.12.0/msvc2022_64/bin;${env:PATH}"
+      }
+    ]
+  }
 }
