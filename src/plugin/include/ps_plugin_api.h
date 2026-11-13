@@ -5,14 +5,16 @@
  * UI 面只给 .ui 路径和 JSON 回调：插件提供 .ui + JSON，宿主加载，不返回 QWidget*。
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define PS_PLUGIN_ABI_VERSION 4u
+#define PS_PLUGIN_ABI_VERSION 5u
 #define PS_HOST_API_VERSION 1u
+#define PS_DATA_INPUT_PROTOCOL_VERSION 1u
 
 /* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
@@ -20,6 +22,7 @@ extern "C" {
 #define PS_FAMILY_PARSER      3u   /* 消息解析：DBC/MAVLink/RTCM */
 #define PS_FAMILY_TOOLBOX     4u   /* 算子/分析工具 */
 #define PS_FAMILY_PANEL        5u   /* 面板/可视化扩展 */
+#define PS_FAMILY_DATA_INPUT   6u   /* 统一数据输入：文件/流同一族，替代 loader + source */
 
 /* 能力位：宿主据此决定显示哪些入口、是否写缓存。 */
 #define PS_CAP_FILE      (1u << 0)
@@ -31,6 +34,7 @@ extern "C" {
 #define PS_CAP_STREAM    (1u << 6)
 #define PS_CAP_RECORD    (1u << 7)
 #define PS_CAP_COMMAND   (1u << 8)   /* 支持向设备发送调试/控制命令 */
+#define PS_CAP_REPLAY    (1u << 9)   /* 同一插件可用 __replay_path 回放原始文件 */
 
 /* 宿主函数表：插件不再直接链接 kernel，也不靠 exe 导出 ps_dataset_* 符号。
  * 插件用 host->dataset_new/add_channel 构造数据集；数据集所有权仍归宿主。
@@ -75,6 +79,85 @@ typedef struct PsSourceSink {
                              const double *time_s, const double *value, uint32_t count);
     int32_t (*event)(void *ctx, const char *topic, const char *payload_json);
 } PsSourceSink;
+
+/* ---- 统一数据输入 ABI（PJ4 形状，PlotScope 宿主服务） --------------------
+ * 一个 DataSource 插件族：文件/流是 capabilities，不是两个 family。
+ * 插件内部可用 C++ class；跨边界只暴露本结构 + opaque ctx。
+ * 所有槽位必须 noexcept；失败写 PsError，不让异常穿过 ABI。
+ */
+
+#define PS_INPUT_FILE        (1u << 0)  /* 有限文件导入 */
+#define PS_INPUT_STREAM      (1u << 1)  /* 长连接流 */
+#define PS_INPUT_DIRECT      (1u << 2)  /* 插件自己解码并写 sink */
+#define PS_INPUT_DELEGATED   (1u << 3)  /* 插件只把原始字节交给宿主 parser */
+#define PS_INPUT_PAUSE       (1u << 4)  /* pause/resume 可用 */
+#define PS_INPUT_DIALOG      (1u << 5)  /* get_dialog 返回配置界面 */
+#define PS_INPUT_COMMAND     (1u << 6)  /* send_command 可用 */
+#define PS_INPUT_REPLAY      (1u << 7)  /* 同一插件可回放自己录制的原始文件 */
+
+typedef enum PsInputState {
+    PS_INPUT_IDLE = 0,
+    PS_INPUT_RUNNING = 1,
+    PS_INPUT_PAUSED = 2,
+    PS_INPUT_DONE = 3,
+    PS_INPUT_ERROR = 4
+} PsInputState;
+
+typedef struct PsError {
+    int32_t code;
+    char message[256];
+} PsError;
+
+typedef struct PsStringView {
+    const char *data;
+    uint32_t size;
+} PsStringView;
+
+/* 插件自带 UI：要么给 .ui 路径，要么给 schema JSON；都归插件所有。 */
+typedef struct PsInputDialog {
+    const char *ui_path;
+    const char *schema_json;
+} PsInputDialog;
+
+/* 宿主服务在 bind() 一次性注入。sink/host 生命周期覆盖整个实例。 */
+typedef struct PsDataInputServices {
+    uint32_t abi_version;
+    const PsHostApi *host;
+    const PsSourceSink *sink;
+} PsDataInputServices;
+
+typedef struct PsDataInputVtable {
+    uint32_t protocol_version;   /* = PS_DATA_INPUT_PROTOCOL_VERSION */
+    uint32_t struct_size;        /* = sizeof(PsDataInputVtable) */
+
+    void *(*create)(void);       /* 插件内 new，返回 opaque ctx */
+    void (*destroy)(void *ctx);  /* 插件内 delete，与 create 配对 */
+
+    const char *manifest_json;   /* 编译期常量；id/name/version/file_extensions */
+
+    uint64_t (*capabilities)(void *ctx);
+
+    bool (*bind)(void *ctx, PsDataInputServices services, PsError *err);
+
+    bool (*save_config)(void *ctx, PsStringView *out_json, PsError *err);
+    bool (*load_config)(void *ctx, PsStringView config_json, PsError *err);
+
+    bool (*start)(void *ctx, PsError *err);
+    void (*stop)(void *ctx);
+    bool (*pause)(void *ctx, PsError *err);
+    bool (*resume)(void *ctx, PsError *err);
+    bool (*poll)(void *ctx, PsError *err);
+
+    PsInputState (*current_state)(void *ctx);
+    PsInputDialog (*get_dialog)(void *ctx);
+    const void *(*get_extension)(void *ctx, PsStringView id);
+
+    /* 可选尾部：宿主按 struct_size 判断是否存在。 */
+    bool (*send_command)(void *ctx, PsStringView command,
+                         PsStringView *out_json, PsError *err);
+    bool (*seek)(void *ctx, double time_s, PsError *err);
+} PsDataInputVtable;
+
 
 /* 实时源：不返回 QWidget*，不持有宿主 UI。config 用 JSON，status 用 JSON。
  * open 成功后 handle 归插件所有，close 必须释放；poll 在宿主 UI 线程调用。 */
@@ -121,6 +204,7 @@ typedef struct PsPluginDescriptor {
     const PsLoaderVtable *loader;   /* data_loader 家族使用，其他家族可为 NULL */
     const PsUiVtable *ui;           /* 可选；无自定义 UI 时为 NULL */
     const PsDataSourceVtable *source; /* data_source 家族使用，其他家族可为 NULL */
+    const PsDataInputVtable *data_input; /* PS_FAMILY_DATA_INPUT 使用，过渡期可为 NULL */
 } PsPluginDescriptor;
 
 typedef const PsPluginDescriptor *(*PsPluginEntryFn)(void);

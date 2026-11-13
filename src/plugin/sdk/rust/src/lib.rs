@@ -4,13 +4,14 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-pub const PS_PLUGIN_ABI_VERSION: u32 = 4;
+pub const PS_PLUGIN_ABI_VERSION: u32 = 5;
 pub const PS_HOST_API_VERSION: u32 = 1;
 pub const PS_FAMILY_DATA_LOADER: u32 = 1;
 pub const PS_FAMILY_DATA_SOURCE: u32 = 2;
 pub const PS_FAMILY_PARSER: u32 = 3;
 pub const PS_FAMILY_TOOLBOX: u32 = 4;
 pub const PS_FAMILY_PANEL: u32 = 5;
+pub const PS_FAMILY_DATA_INPUT: u32 = 6;
 
 pub const PS_CAP_FILE: u32 = 1 << 0;
 pub const PS_CAP_PROBE: u32 = 1 << 1;
@@ -21,6 +22,16 @@ pub const PS_CAP_CACHE: u32 = 1 << 5;
 pub const PS_CAP_STREAM: u32 = 1 << 6;
 pub const PS_CAP_RECORD: u32 = 1 << 7;
 pub const PS_CAP_COMMAND: u32 = 1 << 8;
+pub const PS_CAP_REPLAY: u32 = 1 << 9;
+
+pub const PS_INPUT_FILE: u32 = 1 << 0;
+pub const PS_INPUT_STREAM: u32 = 1 << 1;
+pub const PS_INPUT_DIRECT: u32 = 1 << 2;
+pub const PS_INPUT_DELEGATED: u32 = 1 << 3;
+pub const PS_INPUT_PAUSE: u32 = 1 << 4;
+pub const PS_INPUT_DIALOG: u32 = 1 << 5;
+pub const PS_INPUT_COMMAND: u32 = 1 << 6;
+pub const PS_INPUT_REPLAY: u32 = 1 << 7;
 
 pub type DatasetNewFn = unsafe extern "C" fn() -> *mut c_void;
 pub type DatasetAddChannelFn = unsafe extern "C" fn(
@@ -135,6 +146,7 @@ pub struct PsPluginDescriptor {
     pub loader: *const PsLoaderVtable,
     pub ui: *const PsUiVtable,
     pub source: *const PsDataSourceVtable,
+    pub data_input: *const c_void,
 }
 
 pub type PsPluginEntryFn = unsafe extern "C" fn() -> *const PsPluginDescriptor;

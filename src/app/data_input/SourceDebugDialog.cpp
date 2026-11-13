@@ -1,4 +1,4 @@
-#include "source/SourceDebugDialog.h"
+#include "data_input/SourceDebugDialog.h"
 
 #include <QComboBox>
 #include <QDateTime>

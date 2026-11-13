@@ -1,15 +1,18 @@
-#include "source/SourceConfigDialog.h"
+#include "data_input/SourceConfigDialog.h"
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFileDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
@@ -95,6 +98,28 @@ SourceConfigDialog::SourceConfigDialog(const SourcePlugin &plugin, const QString
             form->addRow(label, editor);
         }
     }
+    if (plugin.replayable)
+    {
+        auto *row = new QWidget(this);
+        auto *h = new QHBoxLayout(row);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(6);
+        m_replayPath = new QLineEdit(initial.value(QStringLiteral("__replay_path")).toString(), row);
+        m_replayPath->setPlaceholderText(QStringLiteral("留空=实时连接；选择文件=同插件回放原始字节"));
+        auto *browse = new QPushButton(QStringLiteral("浏览…"), row);
+        h->addWidget(m_replayPath, 1);
+        h->addWidget(browse);
+        form->addRow(QStringLiteral("回放原始文件"), row);
+        connect(browse, &QPushButton::clicked, this, [this] {
+            const QString filter = m_plugin.replayExtensions.isEmpty()
+                                       ? QStringLiteral("原始流 (*.bin *.dat *.mav *.log);;全部 (*)")
+                                       : QStringLiteral("原始流 (%1);;全部 (*)").arg(m_plugin.replayExtensions);
+            const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择原始流文件"),
+                                                             QString(), filter);
+            if (!path.isEmpty())
+                m_replayPath->setText(path);
+        });
+    }
     root->addLayout(form);
     if (plugin.recordable)
     {
@@ -127,5 +152,7 @@ QString SourceConfigDialog::configJson() const
     }
     if (m_record)
         o.insert(QStringLiteral("__record"), m_record->isChecked());
+    if (m_replayPath && !m_replayPath->text().trimmed().isEmpty())
+        o.insert(QStringLiteral("__replay_path"), m_replayPath->text().trimmed());
     return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
 }

@@ -27,7 +27,7 @@ const char *descriptorId(const PsPluginDescriptor *d)
 bool descriptorOk(const PsPluginDescriptor *d)
 {
     if (!d || d->abi_version != PS_PLUGIN_ABI_VERSION || !d->manifest_json ||
-        d->family < PS_FAMILY_DATA_LOADER || d->family > PS_FAMILY_PANEL || d->capabilities == 0)
+        d->family < PS_FAMILY_DATA_LOADER || d->family > PS_FAMILY_DATA_INPUT)
         return false;
     if (d->ui && d->ui->abi_version != PS_PLUGIN_ABI_VERSION)
         return false;
@@ -41,7 +41,14 @@ bool descriptorOk(const PsPluginDescriptor *d)
         return d->source && d->source->abi_version == PS_PLUGIN_ABI_VERSION && d->source->id &&
                d->source->id[0] && d->source->open && d->source->poll && d->source->close;
     }
-    return true;
+    if (d->family == PS_FAMILY_DATA_INPUT)
+    {
+        const PsDataInputVtable *v = d->data_input;
+        return v && v->protocol_version == PS_DATA_INPUT_PROTOCOL_VERSION &&
+               v->struct_size >= sizeof(PsDataInputVtable) && v->create && v->destroy &&
+               v->capabilities && v->start && v->stop && v->poll && v->current_state;
+    }
+    return d->capabilities != 0;
 }
 
 // 子进程预检：插件静态初始化或入口崩溃时，宿主只丢一个插件，不跟着死。

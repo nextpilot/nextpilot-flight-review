@@ -1,12 +1,12 @@
 #include "shell/MainWindow.h"
-#include "loader/DialogEngine.h"
-#include "loader/LoaderOptionsDialog.h"
+#include "data_input/DialogEngine.h"
+#include "data_input/LoaderOptionsDialog.h"
 #include "app/cache/DatasetCache.h"
-#include "loader/LoaderRegistry.h"
-#include "source/LiveStream.h"
-#include "source/SourceConfigDialog.h"
-#include "source/SourceDebugDialog.h"
-#include "source/SourceRegistry.h"
+#include "data_input/DataInputRegistry.h"
+#include "data_input/LiveStream.h"
+#include "data_input/SourceConfigDialog.h"
+#include "data_input/SourceDebugDialog.h"
+#include "data_input/DataInputRegistry.h"
 
 #include <QAction>
 #include <QDockWidget>
@@ -849,12 +849,12 @@ QWidget *MainWindow::createRibbon()
             srcActs.append(a);
         };
         // 文件入口来自 loader catalog，来源入口来自 source catalog；Ribbon 不写死格式。
-        for (const LoaderPlugin &lp : LoaderRegistry::instance().plugins())
+        for (const LoaderPlugin &lp : DataInputRegistry::instance().filePlugins())
         {
             const QString kind = lp.id.section(QLatin1Char('_'), -1);
             addSource(kind, lp.label, lp.filter.isEmpty() ? QStringLiteral("全部 (*)") : lp.filter);
         }
-        for (const SourcePlugin &sp : SourceRegistry::instance().plugins())
+        for (const SourcePlugin &sp : DataInputRegistry::instance().streamPlugins())
         {
             auto *a = new QAction(QIcon(sourceThumb(sp.kind)), sp.label, this);
             a->setToolTip(QStringLiteral("连接 %1（%2）").arg(sp.label, sp.transport));
@@ -2193,7 +2193,7 @@ void MainWindow::switchSource(int id)
 
 void MainWindow::connectLiveSource(const QString &pluginId)
 {
-    const SourcePlugin *sp = SourceRegistry::instance().findById(pluginId);
+    const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(pluginId);
     if (!sp)
     {
         log(QStringLiteral("实时源未注册：%1").arg(pluginId));
@@ -2246,7 +2246,7 @@ void MainWindow::openSourceDebug(SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const SourcePlugin *sp = SourceRegistry::instance().findById(src->sourceId);
+    const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
     if (!sp || !sp->send)
     {
         QMessageBox::information(this, QStringLiteral("调试"),
@@ -2267,7 +2267,7 @@ void MainWindow::configureLiveSource(SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const SourcePlugin *sp = SourceRegistry::instance().findById(src->sourceId);
+    const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
     if (!sp)
         return;
     SourceConfigDialog dlg(*sp, src->config, this);
@@ -2316,7 +2316,7 @@ void MainWindow::pollLiveSources()
     {
         if (!src.live || !src.handle || !src.stream)
             continue;
-        const SourcePlugin *sp = SourceRegistry::instance().findById(src.sourceId);
+        const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src.sourceId);
         if (!sp)
             continue;
         QString err;
@@ -2410,7 +2410,7 @@ void MainWindow::closeLiveSource(SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const SourcePlugin *sp = SourceRegistry::instance().findById(src->sourceId);
+    const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
     if (src->handle && sp)
         sp->close(src->handle);
     src->handle = nullptr;
@@ -2591,7 +2591,7 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
     bool hasDebug = false;
     if (const SourceData *src = sourceById(srcId))
     {
-        const SourcePlugin *sp = SourceRegistry::instance().findById(src->sourceId);
+        const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
         hasDebug = src->live && sp && sp->send;
     }
     dbg->setVisible(hasDebug);
@@ -3377,7 +3377,7 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
     PsDataset *ds = nullptr;
     const QFileInfo fi(path);
     // 加载器由 registry 提供：app 不再按扩展名写 if/else，也不再为每个格式写对话框
-    const LoaderPlugin *plugin = LoaderRegistry::instance().findBySuffix(fi.suffix());
+    const LoaderPlugin *plugin = DataInputRegistry::instance().findFileBySuffix(fi.suffix());
     if (!plugin || !plugin->load)
     {
         QMessageBox::warning(this, QStringLiteral("加载失败"),

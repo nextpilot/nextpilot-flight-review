@@ -1,6 +1,7 @@
 #include "ps_plugin_api.h"
 
 #include <QByteArray>
+#include <QFile>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -50,11 +51,15 @@ const char *kSchema = R"({
     {"label":"关闭全部日志","command":"UNLOGALL"}
   ]
 })";
-const char *kDefaults = R"({"host":"192.168.1.20","port":3001,"timeout_ms":2000,"raw":true,"database":""})";
+const char *kDefaults = R"({"host":"192.168.1.20","port":3001,"timeout_ms":2000,"raw":true,"database":"","raw_path":""})";
 
 struct OemState
 {
     PsSourceSink sink{};
+    QFile rawFile;
+    QFile replayFile;
+    bool replayMode = false;
+    bool replayFinished = false;
     std::unique_ptr<QTcpSocket> socket;
     QElapsedTimer clock;
     QByteArray rx;
@@ -600,6 +605,34 @@ int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi
     auto *st = new OemState;
     st->sink = *sink;
     loadDatabase(st, findDatabase(cfg.value(QStringLiteral("database")).toString()));
+    const QString replayPath = cfg.value(QStringLiteral("__replay_path")).toString();
+    if (!replayPath.isEmpty())
+    {
+        st->replayFile.setFileName(replayPath);
+        if (!st->replayFile.open(QIODevice::ReadOnly))
+        {
+            if (err && errCap)
+                std::snprintf(err, errCap, "打开回放文件失败：%s", replayPath.toUtf8().constData());
+            delete st;
+            return 3;
+        }
+        st->replayMode = true;
+        st->clock.start();
+        *handle = st;
+        return 0;
+    }
+    const QString rawPath = cfg.value(QStringLiteral("raw_path")).toString();
+    if (!rawPath.isEmpty())
+    {
+        st->rawFile.setFileName(rawPath);
+        if (!st->rawFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        {
+            if (err && errCap)
+                std::snprintf(err, errCap, "无法写原始流：%s", rawPath.toUtf8().constData());
+            delete st;
+            return 4;
+        }
+    }
     st->socket = std::make_unique<QTcpSocket>();
     const QString host = cfg.value(QStringLiteral("host")).toString(QStringLiteral("192.168.1.20"));
     const quint16 port = static_cast<quint16>(qBound(1, cfg.value(QStringLiteral("port")).toInt(3001), 65535));
@@ -623,11 +656,35 @@ int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
     Q_UNUSED(err);
     Q_UNUSED(errCap);
     auto *st = static_cast<OemState *>(handle);
-    if (!st || !st->socket)
+    if (!st)
+        return 1;
+    if (st->replayMode)
+    {
+        if (st->replayFinished)
+            return 0;
+        const QByteArray chunk = st->replayFile.read(256 * 1024);
+        if (chunk.isEmpty())
+        {
+            parseBinary(st);
+            parseLines(st);
+            flush(st);
+            st->replayFinished = true;
+            return 0;
+        }
+        st->rx.append(chunk);
+        parseBinary(st);
+        parseLines(st);
+        flush(st);
+        return 0;
+    }
+    if (!st->socket)
         return 1;
     if (timeoutMs > 0)
         st->socket->waitForReadyRead(qMin(timeoutMs, 50));
-    st->rx.append(st->socket->readAll());
+    const QByteArray in = st->socket->readAll();
+    if (st->rawFile.isOpen())
+        st->rawFile.write(in);
+    st->rx.append(in);
     parseBinary(st);
     parseLines(st);
     flush(st);
@@ -637,8 +694,15 @@ int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
 int32_t closeSource(void *handle)
 {
     auto *st = static_cast<OemState *>(handle);
-    if (st && st->socket)
-        st->socket->disconnectFromHost();
+    if (st)
+    {
+        if (st->socket)
+            st->socket->disconnectFromHost();
+        if (st->rawFile.isOpen())
+            st->rawFile.close();
+        if (st->replayFile.isOpen())
+            st->replayFile.close();
+    }
     delete st;
     return 0;
 }
@@ -671,10 +735,15 @@ int32_t statusSource(void *handle, char *out, uint32_t cap)
     auto *st = static_cast<OemState *>(handle);
     if (!st)
         return writeJson("{\"state\":\"closed\"}", out, cap);
+    const QString state = st->replayMode
+                              ? (st->replayFinished ? "replay_done" : "replaying")
+                              : (st->socket && st->socket->state() == QAbstractSocket::ConnectedState
+                                     ? "connected" : "disconnected");
     const QJsonObject res{
-        {QStringLiteral("state"), st->socket->state() == QAbstractSocket::ConnectedState ? "connected" : "disconnected"},
-        {QStringLiteral("host"), st->socket->peerName()},
-        {QStringLiteral("port"), st->socket->peerPort()},
+        {QStringLiteral("state"), state},
+        {QStringLiteral("source"), st->replayMode ? "file" : "tcp"},
+        {QStringLiteral("host"), st->socket ? st->socket->peerName() : QString()},
+        {QStringLiteral("port"), st->socket ? st->socket->peerPort() : 0},
         {QStringLiteral("lines"), static_cast<double>(st->lines)},
         {QStringLiteral("logs"), static_cast<double>(st->logs)},
         {QStringLiteral("frames"), static_cast<double>(st->frames)},
@@ -713,9 +782,9 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_oem7()
     };
     static const PsPluginDescriptor desc = {
         PS_PLUGIN_ABI_VERSION,
-        R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","family":"data_source"})",
+        R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","family":"data_source","replay_extensions":".bin,.gps,.log,.dat"})",
         PS_FAMILY_DATA_SOURCE,
-        PS_CAP_STREAM | PS_CAP_RECORD | PS_CAP_SCHEMA | PS_CAP_COMMAND,
+        PS_CAP_STREAM | PS_CAP_RECORD | PS_CAP_SCHEMA | PS_CAP_COMMAND | PS_CAP_REPLAY,
         nullptr,
         nullptr,
         &vtable,

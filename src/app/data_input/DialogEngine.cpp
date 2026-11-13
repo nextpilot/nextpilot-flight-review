@@ -1,6 +1,6 @@
-#include "loader/DialogEngine.h"
+#include "data_input/DialogEngine.h"
 
-#include "loader/LoaderPlugin.h"
+#include "data_input/LoaderPlugin.h"
 
 #include <QApplication>
 #include <QLabel>

@@ -1,12 +1,13 @@
 #pragma once
 
-#include "source/SourcePlugin.h"
+#include "data_input/SourcePlugin.h"
 
 #include <QDialog>
 #include <QHash>
 #include <QString>
 
 class QCheckBox;
+class QLineEdit;
 
 class QWidget;
 
@@ -24,4 +25,5 @@ private:
     const SourcePlugin &m_plugin;
     QHash<QString, QWidget *> m_editors;
     QCheckBox *m_record = nullptr;
+    QLineEdit *m_replayPath = nullptr;
 };

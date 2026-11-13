@@ -2,6 +2,14 @@ add_executable(test_abi unit/test_abi.cpp)
 target_link_libraries(test_abi PRIVATE ps_kernel)
 add_test(NAME abi_selftest COMMAND test_abi)
 
+if(EXISTS ${PROJECT_SOURCE_DIR}/src/plugin/sdk/cpp/PsDataInputBase.hpp)
+  add_executable(test_data_input_sdk unit/test_data_input_sdk.cpp)
+  target_include_directories(test_data_input_sdk PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/plugin/include
+    ${PROJECT_SOURCE_DIR}/src/plugin/sdk/cpp)
+  add_test(NAME data_input_sdk COMMAND test_data_input_sdk)
+endif()
+
 if(TARGET ps_data_loader_csv)
   add_executable(test_plugin_csv unit/test_plugin_csv.cpp)
   target_include_directories(test_plugin_csv PRIVATE ${PROJECT_SOURCE_DIR}/src

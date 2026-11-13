@@ -1,6 +1,6 @@
-#include "loader/LoaderOptionsDialog.h"
+#include "data_input/LoaderOptionsDialog.h"
 
-#include "loader/LoaderPlugin.h"
+#include "data_input/LoaderPlugin.h"
 
 #include <QCheckBox>
 #include <QComboBox>

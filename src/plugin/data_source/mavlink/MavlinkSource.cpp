@@ -1,6 +1,7 @@
 #include "ps_plugin_api.h"
 
 #include <QByteArray>
+#include <QFile>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QHostAddress>
@@ -59,14 +60,20 @@ const char *kSchema = R"({
   "fields":[
     {"key":"port","type":"int","label":"UDP 端口","default":14550,"min":1,"max":65535},
     {"key":"bind","type":"string","label":"绑定地址","default":"0.0.0.0"},
-    {"key":"sysid","type":"int","label":"只接收系统 ID（0=全部）","default":0,"min":0,"max":255}
+    {"key":"sysid","type":"int","label":"只接收系统 ID（0=全部）","default":0,"min":0,"max":255},
+    {"key":"raw_path","type":"string","label":"原始字节落盘（留空不录）","default":""}
   ]
 })";
-const char *kDefaults = R"({"port":14550,"bind":"0.0.0.0","sysid":0})";
+const char *kDefaults = R"({"port":14550,"bind":"0.0.0.0","sysid":0,"raw_path":""})";
 
 struct MavState
 {
     PsSourceSink sink{};
+    QFile rawFile;
+    QFile replayFile;
+    bool replayMode = false;
+    bool replayFinished = false;
+    bool rawDropped = false;
     std::unique_ptr<QUdpSocket> socket;
     QElapsedTimer clock;
     QByteArray rx;
@@ -249,6 +256,34 @@ int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi
     auto *st = new MavState;
     st->sink = *sink;
     st->sysid = qBound(0, cfg.value(QStringLiteral("sysid")).toInt(0), 255);
+    const QString replayPath = cfg.value(QStringLiteral("__replay_path")).toString();
+    if (!replayPath.isEmpty())
+    {
+        st->replayFile.setFileName(replayPath);
+        if (!st->replayFile.open(QIODevice::ReadOnly))
+        {
+            if (err && errCap)
+                std::snprintf(err, errCap, "打开回放文件失败：%s", replayPath.toUtf8().constData());
+            delete st;
+            return 3;
+        }
+        st->replayMode = true;
+        st->clock.start();
+        *handle = st;
+        return 0;
+    }
+    const QString rawPath = cfg.value(QStringLiteral("raw_path")).toString();
+    if (!rawPath.isEmpty())
+    {
+        st->rawFile.setFileName(rawPath);
+        if (!st->rawFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        {
+            if (err && errCap)
+                std::snprintf(err, errCap, "无法写原始流：%s", rawPath.toUtf8().constData());
+            delete st;
+            return 4;
+        }
+    }
     st->socket = std::make_unique<QUdpSocket>();
     const quint16 port = static_cast<quint16>(qBound(1, cfg.value(QStringLiteral("port")).toInt(14550), 65535));
     const QString bind = cfg.value(QStringLiteral("bind")).toString(QStringLiteral("0.0.0.0"));
@@ -275,11 +310,31 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
     auto *st = static_cast<MavState *>(handle);
     if (!st)
         return 1;
+    if (st->replayMode)
+    {
+        if (st->replayFinished)
+            return 0;
+        const QByteArray chunk = st->replayFile.read(256 * 1024);
+        if (chunk.isEmpty())
+        {
+            parse(st);
+            flush(st);
+            st->replayFinished = true;
+            return 0;
+        }
+        st->rx.append(chunk);
+        ++st->packets;
+        parse(st);
+        flush(st);
+        return 0;
+    }
     while (st->socket && st->socket->hasPendingDatagrams())
     {
         QByteArray dgram;
         dgram.resize(static_cast<int>(st->socket->pendingDatagramSize()));
         st->socket->readDatagram(dgram.data(), dgram.size());
+        if (st->rawFile.isOpen())
+            st->rawFile.write(dgram);
         st->rx.append(dgram);
         ++st->packets;
         parse(st);
@@ -295,7 +350,15 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
 
 int32_t closeSource(void *handle)
 {
-    delete static_cast<MavState *>(handle);
+    auto *st = static_cast<MavState *>(handle);
+    if (st)
+    {
+        if (st->rawFile.isOpen())
+            st->rawFile.close();
+        if (st->replayFile.isOpen())
+            st->replayFile.close();
+    }
+    delete st;
     return 0;
 }
 
@@ -304,7 +367,17 @@ int32_t statusSource(void *handle, char *out, uint32_t cap)
     auto *st = static_cast<MavState *>(handle);
     if (!st)
         return writeJson("{\"state\":\"closed\"}", out, cap);
-    static thread_local char buf[512];
+    static thread_local char buf[640];
+    if (st->replayMode)
+    {
+        std::snprintf(buf, sizeof(buf),
+                      R"({"state":"%s","source":"file","packets":%llu,"frames":%llu,"dropped":%llu})",
+                      st->replayFinished ? "replay_done" : "replaying",
+                      static_cast<unsigned long long>(st->packets),
+                      static_cast<unsigned long long>(st->frames),
+                      static_cast<unsigned long long>(st->dropped));
+        return writeJson(buf, out, cap);
+    }
     std::snprintf(buf, sizeof(buf),
                   R"({"state":"listening","packets":%llu,"frames":%llu,"dropped":%llu,"last_sysid":%d})",
                   static_cast<unsigned long long>(st->packets),
@@ -338,9 +411,9 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_mavlink()
     };
     static const PsPluginDescriptor desc = {
         PS_PLUGIN_ABI_VERSION,
-        R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","family":"data_source"})",
+        R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","family":"data_source","replay_extensions":".mav,.bin,.dat,.log"})",
         PS_FAMILY_DATA_SOURCE,
-        PS_CAP_STREAM | PS_CAP_RECORD | PS_CAP_SCHEMA,
+        PS_CAP_STREAM | PS_CAP_RECORD | PS_CAP_SCHEMA | PS_CAP_REPLAY,
         nullptr,
         nullptr,
         &vtable,

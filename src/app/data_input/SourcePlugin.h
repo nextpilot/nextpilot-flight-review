@@ -18,7 +18,9 @@ struct SourcePlugin
     QString kind;
     QString transport;
     bool recordable = false;
+    bool replayable = false;
     uint32_t capabilities = 0;
+    QString replayExtensions;
     QJsonObject schema;
 
     std::function<QString()> defaultConfig;
