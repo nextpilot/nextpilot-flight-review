@@ -34,7 +34,7 @@ int main()
     }
     void *raw = nullptr;
     char err[256] = {0};
-    const int32_t rc = desc->loader->load(path.c_str(), "{\"has_header\":true}", ps_host_api(), &raw,
+    const int32_t rc = desc->loader->load(path.string().c_str(), "{\"has_header\":true}", ps_host_api(), &raw,
                                           err, sizeof(err));
     if (rc != 0)
     {

@@ -140,7 +140,7 @@ int main()
 
     void *raw = nullptr;
     char err[256] = {0};
-    const int32_t rc = vt->import_file(ctx, path.c_str(), "{}", &raw, err, sizeof(err));
+    const int32_t rc = vt->import_file(ctx, path.string().c_str(), "{}", &raw, err, sizeof(err));
     if (rc != 0)
     {
         std::cerr << "mcap import failed: " << err << "\n";
@@ -165,7 +165,7 @@ int main()
     assert(vt->bind(ctx, services, &pe));
     raw = nullptr;
     std::memset(err, 0, sizeof(err));
-    const int32_t badRc = vt->import_file(ctx, bad.c_str(), "{}", &raw, err, sizeof(err));
+    const int32_t badRc = vt->import_file(ctx, bad.string().c_str(), "{}", &raw, err, sizeof(err));
     assert(badRc != 0);
     assert(std::strstr(err, "不支持的 encoding") != nullptr);
     vt->destroy(ctx);

@@ -61,7 +61,7 @@ const PsPluginDescriptor kDemoPlugin = {
 
 } // namespace
 
-extern "C" __attribute__((visibility("default"))) const PsPluginDescriptor *ps_plugin_entry(void)
+extern "C" PS_PLUGIN_EXPORT const PsPluginDescriptor *ps_plugin_entry(void)
 {
     return &kDemoPlugin;
 }

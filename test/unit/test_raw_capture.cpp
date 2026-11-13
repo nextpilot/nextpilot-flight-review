@@ -44,6 +44,7 @@ int main()
 
     assert(ps::capture::isRawFile(path.string()));
 
+    {
     ps::capture::RawReader reader;
     assert(reader.open(path.string(), err));
     assert(reader.header().source_id == "test_source");
@@ -71,6 +72,8 @@ int main()
     assert(reader.seek(100, err));
     assert(reader.next(got, err));
     assert(got.timestamp_ns == 100);
+
+    }
 
     std::filesystem::remove(path);
 

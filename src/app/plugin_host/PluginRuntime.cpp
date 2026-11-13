@@ -5,15 +5,84 @@
 #include <fstream>
 #include <set>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 
 namespace {
 
 using EntryFn = const PsPluginDescriptor *(*)();
+
+#if defined(_WIN32)
+
+void *openLibrary(const char *path)
+{
+    return reinterpret_cast<void *>(LoadLibraryA(path));
+}
+
+void closeLibrary(void *handle)
+{
+    if (handle)
+        FreeLibrary(reinterpret_cast<HMODULE>(handle));
+}
+
+void *librarySymbol(void *handle, const char *name)
+{
+    return reinterpret_cast<void *>(GetProcAddress(reinterpret_cast<HMODULE>(handle), name));
+}
+
+std::string libraryError()
+{
+    char buf[256] = {0};
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+                   GetLastError(), 0, buf, sizeof(buf), nullptr);
+    return buf;
+}
+
+const char *libraryExtension()
+{
+    return ".dll";
+}
+
+#else
+
+void *openLibrary(const char *path)
+{
+    return dlopen(path, RTLD_NOW | RTLD_LOCAL);
+}
+
+void closeLibrary(void *handle)
+{
+    if (handle)
+        dlclose(handle);
+}
+
+void *librarySymbol(void *handle, const char *name)
+{
+    return dlsym(handle, name);
+}
+
+std::string libraryError()
+{
+    const char *e = dlerror();
+    return e ? e : std::string();
+}
+
+const char *libraryExtension()
+{
+    return ".so";
+}
+
+#endif
 
 const char *descriptorId(const PsPluginDescriptor *d)
 {
@@ -119,7 +188,7 @@ void PluginRuntime::scanDirectory(const std::string &dir)
     {
         if (!e.is_regular_file())
             continue;
-        if (e.path().extension() == ".so")
+        if (e.path().extension() == libraryExtension())
             libs.push_back(e.path());
     }
     std::sort(libs.begin(), libs.end());
@@ -152,18 +221,18 @@ void PluginRuntime::scanDirectory(const std::string &dir)
             continue;
         }
 
-        void *h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+        void *h = openLibrary(path.c_str());
         if (!h)
         {
-            m_errors.push_back(path + "：dlopen 失败 " + (dlerror() ? dlerror() : ""));
+            m_errors.push_back(path + "：加载失败 " + libraryError());
             continue;
         }
 
-        auto fn = reinterpret_cast<EntryFn>(dlsym(h, "ps_plugin_entry"));
+        auto fn = reinterpret_cast<EntryFn>(librarySymbol(h, "ps_plugin_entry"));
         if (!fn)
         {
             m_errors.push_back(path + "：缺少 ps_plugin_entry");
-            dlclose(h);
+            closeLibrary(h);
             continue;
         }
 
@@ -171,7 +240,7 @@ void PluginRuntime::scanDirectory(const std::string &dir)
         if (!isValid(d))
         {
             m_errors.push_back(path + "：ABI 版本或 loader vtable 非法");
-            dlclose(h);
+            closeLibrary(h);
             continue;
         }
 
@@ -185,7 +254,7 @@ void PluginRuntime::scanDirectory(const std::string &dir)
         if (ids.count(id))
         {
             m_errors.push_back(path + "：重复插件 id " + id + "，已跳过");
-            dlclose(h);
+            closeLibrary(h);
             continue;
         }
         ids.insert(id);
@@ -197,7 +266,7 @@ void PluginRuntime::clear()
 {
     for (PsLoadedPlugin &p : m_plugins)
         if (p.handle)
-            dlclose(p.handle);
+            closeLibrary(p.handle);
     m_plugins.clear();
     m_errors.clear();
 }

@@ -2,9 +2,11 @@
 #include "app/plugin_host/HostApi.h"
 
 #include <cassert>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_sim(void);
@@ -69,8 +71,7 @@ int main()
     for (int i = 0; i < 20; ++i)
     {
         assert(v->poll(handle, &err));
-        struct timespec ts{0, 10 * 1000 * 1000};
-        nanosleep(&ts, nullptr);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     assert(state.batches > 0);
     assert(state.points > 0);

@@ -16,6 +16,14 @@ extern "C" {
 #define PS_HOST_API_VERSION 1u
 #define PS_DATA_INPUT_PROTOCOL_VERSION 3u
 
+#if defined(_WIN32)
+#define PS_PLUGIN_EXPORT __declspec(dllexport)
+#elif defined(__GNUC__)
+#define PS_PLUGIN_EXPORT __attribute__((visibility("default")))
+#else
+#define PS_PLUGIN_EXPORT
+#endif
+
 /* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
 #define PS_FAMILY_DATA_SOURCE 2u   /* 实时源：MAVLink/ROS/OEM7/串口 */

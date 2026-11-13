@@ -4,6 +4,7 @@ add_test(NAME abi_selftest COMMAND test_abi)
 
 if(EXISTS ${PROJECT_SOURCE_DIR}/src/plugin/sdk/cpp/PsDataInputBase.hpp)
   add_executable(test_data_input_sdk unit/test_data_input_sdk.cpp)
+  set_target_properties(test_data_input_sdk PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   target_include_directories(test_data_input_sdk PRIVATE
     ${PROJECT_SOURCE_DIR}/src/plugin/include
     ${PROJECT_SOURCE_DIR}/src/plugin/sdk/cpp)
@@ -83,9 +84,15 @@ if(TARGET ps_plugin_host)
   add_library(ps_demo_plugin MODULE external_plugin/DemoPlugin.cpp)
   target_include_directories(ps_demo_plugin PRIVATE ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/plugin/include)
+  add_custom_command(TARGET ps_demo_plugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${PROJECT_SOURCE_DIR}/test/external_plugin/manifest.json
+            ${PROJECT_SOURCE_DIR}/test/external_plugin/dialog.ui
+            $<TARGET_FILE_DIR:ps_demo_plugin>)
   set_target_properties(ps_demo_plugin PROPERTIES
     PREFIX "" OUTPUT_NAME "demo_plugin"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+  ps_set_warnings(ps_demo_plugin)
 
   add_library(ps_bad_plugin MODULE external_plugin/BadPlugin.cpp)
   target_include_directories(ps_bad_plugin PRIVATE ${PROJECT_SOURCE_DIR}/src
@@ -93,6 +100,7 @@ if(TARGET ps_plugin_host)
   set_target_properties(ps_bad_plugin PROPERTIES
     PREFIX "" OUTPUT_NAME "bad_plugin"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+  ps_set_warnings(ps_bad_plugin)
 
   add_executable(test_plugin_runtime unit/test_plugin_runtime.cpp)
   target_include_directories(test_plugin_runtime PRIVATE ${PROJECT_SOURCE_DIR}/src
@@ -100,6 +108,7 @@ if(TARGET ps_plugin_host)
   target_compile_definitions(test_plugin_runtime PRIVATE
     PS_PLUGIN_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}/plugins")
   target_link_libraries(test_plugin_runtime PRIVATE ps_plugin_host)
+  ps_set_warnings(test_plugin_runtime)
   add_dependencies(test_plugin_runtime ps_demo_plugin ps_bad_plugin)
   add_test(NAME plugin_runtime COMMAND test_plugin_runtime)
   file(COPY ${PROJECT_SOURCE_DIR}/test/external_plugin/manifest.json
@@ -116,8 +125,13 @@ endif()
 # P2 Rust SDK 样板：cdylib 只依赖宿主函数表，不链接第二份 kernel。
 find_program(CARGO_EXECUTABLE NAMES cargo HINTS "$ENV{HOME}/.cargo/bin" /usr/local/bin)
 if(CARGO_EXECUTABLE)
+  if(WIN32)
+    set(RUST_PLUGIN_NAME "ps_data_loader_rustcsv.dll")
+  else()
+    set(RUST_PLUGIN_NAME "libps_data_loader_rustcsv.so")
+  endif()
   set(RUST_PLUGIN_DIR ${CMAKE_BINARY_DIR}/rust-plugin)
-  set(RUST_PLUGIN_SO ${RUST_PLUGIN_DIR}/libps_data_loader_rustcsv.so)
+  set(RUST_PLUGIN_SO ${RUST_PLUGIN_DIR}/${RUST_PLUGIN_NAME})
   set(RUST_APP_PLUGIN_DIR ${CMAKE_BINARY_DIR}/src/app/plugins/data_loader_rustcsv)
   add_custom_command(OUTPUT ${RUST_PLUGIN_SO}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${RUST_PLUGIN_DIR} ${RUST_APP_PLUGIN_DIR}
@@ -125,10 +139,10 @@ if(CARGO_EXECUTABLE)
             ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/rustcsv/Cargo.toml --release
             --target-dir ${CMAKE_BINARY_DIR}/rust-target
     COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_BINARY_DIR}/rust-target/release/libps_data_loader_rustcsv.so ${RUST_PLUGIN_SO}
+            ${CMAKE_BINARY_DIR}/rust-target/release/${RUST_PLUGIN_NAME} ${RUST_PLUGIN_SO}
     COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_BINARY_DIR}/rust-target/release/libps_data_loader_rustcsv.so
-            ${RUST_APP_PLUGIN_DIR}/libps_data_loader_rustcsv.so
+            ${CMAKE_BINARY_DIR}/rust-target/release/${RUST_PLUGIN_NAME}
+            ${RUST_APP_PLUGIN_DIR}/${RUST_PLUGIN_NAME}
     COMMAND ${CMAKE_COMMAND} -E copy
             ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/rustcsv/manifest.json
             ${RUST_APP_PLUGIN_DIR}/manifest.json
@@ -143,6 +157,7 @@ if(CARGO_EXECUTABLE)
     ${PROJECT_SOURCE_DIR}/src/plugin/include ${PROJECT_SOURCE_DIR}/src/kernel/include)
   target_compile_definitions(test_rust_plugin PRIVATE PS_RUST_PLUGIN_DIR="${RUST_PLUGIN_DIR}")
   target_link_libraries(test_rust_plugin PRIVATE ps_plugin_host ps_kernel)
+  ps_set_warnings(test_rust_plugin)
   add_dependencies(test_rust_plugin ps_data_loader_rustcsv)
   add_test(NAME rust_plugin COMMAND test_rust_plugin)
 endif()
