@@ -39,7 +39,7 @@ target_include_directories(plotscope_app PRIVATE
 )
 target_link_libraries(plotscope_app PRIVATE
   Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_plugin_host ps_cache
-  ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf
+  ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_load_mcap
   ps_data_source_sim ps_data_source_mavlink ps_data_source_oem7
 )
 # 外部插件靠宿主导出 ps_* 符号

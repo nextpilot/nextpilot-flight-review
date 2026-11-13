@@ -37,6 +37,22 @@ if(TARGET ps_data_loader_ulog AND TARGET ps_data_loader_apbin AND TARGET ps_data
   add_test(NAME plugin_file_formats COMMAND test_plugin_file_formats)
 endif()
 
+if(TARGET ps_loader_common)
+  add_executable(test_raw_capture unit/test_raw_capture.cpp)
+  target_include_directories(test_raw_capture PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/common)
+  target_link_libraries(test_raw_capture PRIVATE ps_loader_common)
+  add_test(NAME raw_capture COMMAND test_raw_capture)
+endif()
+
+if(TARGET ps_data_load_mcap)
+  add_executable(test_mcap_loader unit/test_mcap_loader.cpp)
+  target_include_directories(test_mcap_loader PRIVATE ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/plugin/include)
+  target_link_libraries(test_mcap_loader PRIVATE ps_data_load_mcap ps_plugin_host ps_kernel)
+  add_test(NAME mcap_loader COMMAND test_mcap_loader)
+endif()
+
 if(TARGET ps_data_source_mavlink)
   find_package(Qt6 REQUIRED COMPONENTS Network)
   add_executable(test_mavlink_source unit/test_mavlink_source.cpp)

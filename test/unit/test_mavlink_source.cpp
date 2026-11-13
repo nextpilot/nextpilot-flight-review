@@ -109,6 +109,11 @@ int main(int argc, char **argv)
     v->stop(h);
     v->destroy(h);
     assert(QFileInfo(rawPath).size() > 0);
+    {
+        QFile raw(rawPath);
+        assert(raw.open(QIODevice::ReadOnly));
+        assert(raw.read(6) == QByteArrayLiteral("PSRAW1"));
+    }
 
     // 原始文件由同一个 MAVLink 插件回放，不依赖新 loader 插件。
     void *rh = v->create();

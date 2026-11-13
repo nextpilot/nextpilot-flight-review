@@ -1,5 +1,6 @@
 #include "ps_plugin_api.h"
 #include "PsDataInputBase.hpp"
+#include "PsCaptureFormat.h"
 
 #include <QByteArray>
 #include <QFile>
@@ -11,6 +12,7 @@
 #include <QString>
 #include <QUdpSocket>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -70,11 +72,15 @@ const char *kDefaults = R"({"port":14550,"bind":"0.0.0.0","sysid":0,"raw_path":"
 struct MavState
 {
     PsSourceSink sink{};
-    QFile rawFile;
-    QFile replayFile;
+    ps::capture::RawWriter rawWriter;
+    ps::capture::RawReader rawReader;
+    QFile legacyReplayFile;
+    bool legacyReplay = false;
     bool replayMode = false;
     bool replayFinished = false;
     bool rawDropped = false;
+    bool replayStarted = false;
+    std::string rawError;
     std::unique_ptr<QUdpSocket> socket;
     QElapsedTimer clock;
     QByteArray rx;
@@ -87,7 +93,20 @@ struct MavState
     uint64_t dropped = 0;
     int sysid = 0;
     int lastSysid = 0;
+    double replay_t = 0.0;
+    int64_t replayBaseNs = 0;
 };
+
+int64_t nowNs()
+{
+    using namespace std::chrono;
+    return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+double nowSeconds(const MavState *st)
+{
+    return st->replayMode ? st->replay_t : st->clock.elapsed() / 1000.0;
+}
 
 void addSample(MavState *st, const QString &name, const QString &unit, double t, double v)
 {
@@ -123,7 +142,7 @@ void decodePayload(MavState *st, uint8_t msgid, const uint8_t *p, int len, int s
 {
     if (st->sysid && sysid != st->sysid)
         return;
-    const double fallback = st->clock.elapsed() / 1000.0;
+    const double fallback = nowSeconds(st);
     switch (msgid)
     {
     case 30: // ATTITUDE
@@ -257,18 +276,36 @@ int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi
     auto *st = new MavState;
     st->sink = *sink;
     st->sysid = qBound(0, cfg.value(QStringLiteral("sysid")).toInt(0), 255);
+    const std::string cfgJson = (config && config[0]) ? config : "{}";
     QString replayPath = cfg.value(QStringLiteral("filepath")).toString();
     if (replayPath.isEmpty())
         replayPath = cfg.value(QStringLiteral("__replay_path")).toString();
     if (!replayPath.isEmpty())
     {
-        st->replayFile.setFileName(replayPath);
-        if (!st->replayFile.open(QIODevice::ReadOnly))
+        const std::string path = replayPath.toStdString();
+        if (ps::capture::isRawFile(path))
         {
-            if (err && errCap)
-                std::snprintf(err, errCap, "打开回放文件失败：%s", replayPath.toUtf8().constData());
-            delete st;
-            return 3;
+            std::string re;
+            if (!st->rawReader.open(path, re))
+            {
+                if (err && errCap)
+                    std::snprintf(err, errCap, "打开回放文件失败：%s", re.c_str());
+                delete st;
+                return 3;
+            }
+        }
+        else
+        {
+            // 旧版本直接落裸字节；保留兼容，不让历史文件失效。
+            st->legacyReplayFile.setFileName(replayPath);
+            if (!st->legacyReplayFile.open(QIODevice::ReadOnly))
+            {
+                if (err && errCap)
+                    std::snprintf(err, errCap, "打开回放文件失败：%s", replayPath.toUtf8().constData());
+                delete st;
+                return 3;
+            }
+            st->legacyReplay = true;
         }
         st->replayMode = true;
         st->clock.start();
@@ -278,11 +315,16 @@ int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi
     const QString rawPath = cfg.value(QStringLiteral("raw_path")).toString();
     if (!rawPath.isEmpty())
     {
-        st->rawFile.setFileName(rawPath);
-        if (!st->rawFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        ps::capture::Header h;
+        h.source_id = "data_source_mavlink";
+        h.plugin_id = "data_source_mavlink";
+        h.config_json = cfgJson;
+        h.created_at_ns = nowNs();
+        std::string re;
+        if (!st->rawWriter.open(rawPath.toStdString(), h, re))
         {
             if (err && errCap)
-                std::snprintf(err, errCap, "无法写原始流：%s", rawPath.toUtf8().constData());
+                std::snprintf(err, errCap, "无法写原始流：%s", re.c_str());
             delete st;
             return 4;
         }
@@ -317,18 +359,62 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
     {
         if (st->replayFinished)
             return 0;
-        const QByteArray chunk = st->replayFile.read(256 * 1024);
-        if (chunk.isEmpty())
+        if (st->legacyReplay)
         {
+            const QByteArray chunk = st->legacyReplayFile.read(256 * 1024);
+            if (chunk.isEmpty())
+            {
+                parse(st);
+                flush(st);
+                st->replayFinished = true;
+                return 0;
+            }
+            st->rx.append(chunk);
+            ++st->packets;
             parse(st);
             flush(st);
-            st->replayFinished = true;
             return 0;
         }
-        st->rx.append(chunk);
-        ++st->packets;
-        parse(st);
-        flush(st);
+
+        size_t budget = 256 * 1024;
+        while (budget > 0)
+        {
+            ps::capture::Record record;
+            std::string re;
+            if (!st->rawReader.next(record, re))
+            {
+                if (!re.empty())
+                {
+                    if (err && errCap)
+                        std::snprintf(err, errCap, "读取 raw 失败：%s", re.c_str());
+                    return 1;
+                }
+                parse(st);
+                flush(st);
+                st->replayFinished = true;
+                return 0;
+            }
+            if (record.encoding != "mavlink")
+            {
+                if (err && errCap)
+                    std::snprintf(err, errCap, "raw 记录 encoding=%s，不是 mavlink",
+                                  record.encoding.c_str());
+                return 1;
+            }
+            if (!st->replayStarted)
+            {
+                st->replayBaseNs = record.timestamp_ns;
+                st->replayStarted = true;
+            }
+            st->replay_t = static_cast<double>(record.timestamp_ns - st->replayBaseNs) / 1e9;
+            if (!record.payload.empty())
+                st->rx.append(reinterpret_cast<const char *>(record.payload.data()),
+                              static_cast<int>(record.payload.size()));
+            ++st->packets;
+            parse(st);
+            flush(st);
+            budget = record.payload.size() >= budget ? 0 : budget - record.payload.size();
+        }
         return 0;
     }
     while (st->socket && st->socket->hasPendingDatagrams())
@@ -336,8 +422,23 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
         QByteArray dgram;
         dgram.resize(static_cast<int>(st->socket->pendingDatagramSize()));
         st->socket->readDatagram(dgram.data(), dgram.size());
-        if (st->rawFile.isOpen())
-            st->rawFile.write(dgram);
+        if (st->rawWriter.isOpen() && !st->rawDropped)
+        {
+            ps::capture::Record record;
+            record.timestamp_ns = nowNs();
+            record.topic = "mavlink";
+            record.encoding = "mavlink";
+            record.part_count = 1;
+            record.part_lengths = {static_cast<uint32_t>(dgram.size())};
+            record.payload.assign(reinterpret_cast<const uint8_t *>(dgram.constData()),
+                                  reinterpret_cast<const uint8_t *>(dgram.constData()) + dgram.size());
+            std::string re;
+            if (!st->rawWriter.write(record, re))
+            {
+                st->rawDropped = true;
+                st->rawError = re;
+            }
+        }
         st->rx.append(dgram);
         ++st->packets;
         parse(st);
@@ -356,10 +457,13 @@ int32_t closeSource(void *handle)
     auto *st = static_cast<MavState *>(handle);
     if (st)
     {
-        if (st->rawFile.isOpen())
-            st->rawFile.close();
-        if (st->replayFile.isOpen())
-            st->replayFile.close();
+        if (st->rawWriter.isOpen())
+        {
+            std::string re;
+            st->rawWriter.close(re);
+        }
+        if (st->legacyReplayFile.isOpen())
+            st->legacyReplayFile.close();
     }
     delete st;
     return 0;
@@ -370,23 +474,24 @@ int32_t statusSource(void *handle, char *out, uint32_t cap)
     auto *st = static_cast<MavState *>(handle);
     if (!st)
         return writeJson("{\"state\":\"closed\"}", out, cap);
-    static thread_local char buf[640];
-    if (st->replayMode)
-    {
-        std::snprintf(buf, sizeof(buf),
-                      R"({"state":"%s","source":"file","packets":%llu,"frames":%llu,"dropped":%llu})",
-                      st->replayFinished ? "replay_done" : "replaying",
-                      static_cast<unsigned long long>(st->packets),
-                      static_cast<unsigned long long>(st->frames),
-                      static_cast<unsigned long long>(st->dropped));
-        return writeJson(buf, out, cap);
-    }
-    std::snprintf(buf, sizeof(buf),
-                  R"({"state":"listening","packets":%llu,"frames":%llu,"dropped":%llu,"last_sysid":%d})",
-                  static_cast<unsigned long long>(st->packets),
-                  static_cast<unsigned long long>(st->frames),
-                  static_cast<unsigned long long>(st->dropped), st->lastSysid);
-    return writeJson(buf, out, cap);
+    QJsonObject res;
+    res[QStringLiteral("source")] = st->replayMode ? QStringLiteral("file") : QStringLiteral("udp");
+    res[QStringLiteral("format")] = st->replayMode
+                                        ? (st->legacyReplay ? QStringLiteral("legacy")
+                                                            : QStringLiteral("PSRAW1"))
+                                        : QStringLiteral("PSRAW1");
+    res[QStringLiteral("state")] = st->replayMode
+                                       ? (st->replayFinished ? QStringLiteral("replay_done")
+                                                             : QStringLiteral("replaying"))
+                                       : QStringLiteral("listening");
+    res[QStringLiteral("packets")] = static_cast<double>(st->packets);
+    res[QStringLiteral("frames")] = static_cast<double>(st->frames);
+    res[QStringLiteral("dropped")] = static_cast<double>(st->dropped);
+    res[QStringLiteral("last_sysid")] = st->lastSysid;
+    if (!st->rawError.empty())
+        res[QStringLiteral("raw_error")] = QString::fromStdString(st->rawError);
+    const QByteArray json = QJsonDocument(res).toJson(QJsonDocument::Compact);
+    return writeJson(json.constData(), out, cap);
 }
 
 int32_t schema(char *out, uint32_t cap) { return writeJson(kSchema, out, cap); }

@@ -19,6 +19,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ulog(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_apbin(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_asc(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_blf(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_load_mcap(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_sim(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_mavlink(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_oem7(void);
@@ -108,6 +109,7 @@ DataInputRegistry::DataInputRegistry()
     registerDescriptor(ps_plugin_entry_data_loader_asc());
     registerDescriptor(ps_plugin_entry_data_loader_blf());
     registerDescriptor(ps_plugin_entry_data_loader_csv());
+    registerDescriptor(ps_plugin_entry_data_load_mcap());
     registerDescriptor(ps_plugin_entry_data_source_sim());
     registerDescriptor(ps_plugin_entry_data_source_mavlink());
     registerDescriptor(ps_plugin_entry_data_source_oem7());
@@ -188,55 +190,96 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
         if (caps & PS_INPUT_FILE && !(caps & (PS_INPUT_STREAM | PS_INPUT_REPLAY)))
         {
             const PsLoaderVtable *legacy = desc->loader;
-            if (!legacy || !legacy->load || !v->import_file || findFileById(legacy->id))
+            if (!v->import_file)
+                return false;
+            const QString manifestId = manifest.value(QStringLiteral("id")).toString();
+            if (legacy ? !legacy->load || findFileById(QString::fromUtf8(legacy->id))
+                       : manifestId.isEmpty() || findFileById(manifestId))
                 return false;
             LoaderPlugin p;
-            p.id = QString::fromUtf8(legacy->id);
-            p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
-            p.cacheNamespace = p.id + QLatin1Char('@') + p.version;
-            p.family = QStringLiteral("data_input");
-            p.label = QString::fromUtf8(legacy->label);
-            p.filter = QString::fromUtf8(legacy->filter);
-            for (const QString &e : QString::fromUtf8(legacy->extensions).split(QLatin1Char(','), Qt::SkipEmptyParts))
-                p.extensions << (e.startsWith(QLatin1Char('.')) ? e.toLower() : QString(QLatin1Char('.')) + e.toLower());
-            p.formatTag = QString::fromUtf8(legacy->format_tag);
-            p.tree = legacy->tree != 0;
-            p.hasParams = legacy->has_params != 0;
+            if (legacy)
+            {
+                p.id = QString::fromUtf8(legacy->id);
+                p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
+                p.cacheNamespace = p.id + QLatin1Char('@') + p.version;
+                p.family = QStringLiteral("data_input");
+                p.label = QString::fromUtf8(legacy->label);
+                p.filter = QString::fromUtf8(legacy->filter);
+                for (const QString &e : QString::fromUtf8(legacy->extensions).split(QLatin1Char(','), Qt::SkipEmptyParts))
+                    p.extensions << (e.startsWith(QLatin1Char('.')) ? e.toLower() : QString(QLatin1Char('.')) + e.toLower());
+                p.formatTag = QString::fromUtf8(legacy->format_tag);
+                p.tree = legacy->tree != 0;
+                p.hasParams = legacy->has_params != 0;
+            }
+            else
+            {
+                p.id = manifestId;
+                p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
+                p.cacheNamespace = p.id + QLatin1Char('@') + p.version;
+                p.family = QStringLiteral("data_input");
+                p.label = manifest.value(QStringLiteral("name")).toString(manifestId);
+                QStringList exts;
+                for (const QJsonValue &e : manifest.value(QStringLiteral("file_extensions")).toArray())
+                {
+                    QString ext = e.toString().toLower();
+                    if (!ext.startsWith(QLatin1Char('.')))
+                        ext.prepend(QLatin1Char('.'));
+                    if (!ext.isEmpty())
+                        exts << ext;
+                }
+                p.extensions = exts;
+                p.filter = p.label + QStringLiteral(" (*") + exts.join(QStringLiteral(" *")) + QLatin1Char(')');
+                p.formatTag = p.label;
+                p.tree = false;
+                p.hasParams = false;
+            }
             p.cacheable = (desc->capabilities & PS_CAP_CACHE) != 0;
             p.capabilities = desc->capabilities;
             p.uiDialog = dlg.ui_path ? QString::fromUtf8(dlg.ui_path) : QString();
-            if (legacy->schema_json)
+            if (dlg.schema_json)
+                p.schema = QJsonDocument::fromJson(QByteArray(dlg.schema_json)).object();
+            else if (legacy && legacy->schema_json)
             {
                 QByteArray buf(64 * 1024, '\0');
                 const int32_t n = legacy->schema_json(buf.data(), static_cast<uint32_t>(buf.size()));
                 if (n > 0)
                     p.schema = QJsonDocument::fromJson(QByteArray(buf.constData(), n)).object();
             }
-            p.probe = [legacy](const QString &path, const QJsonObject &opts) {
-                if (!legacy->probe_json)
-                    return QJsonObject{};
-                const QByteArray o = QJsonDocument(opts).toJson(QJsonDocument::Compact);
-                QByteArray buf(64 * 1024, '\0');
-                const int32_t n = legacy->probe_json(path.toUtf8().constData(), o.constData(),
-                                                      buf.data(), static_cast<uint32_t>(buf.size()));
-                return n > 0 ? QJsonDocument::fromJson(QByteArray(buf.constData(), n)).object() : QJsonObject{};
-            };
-            p.defaultOptions = [legacy](const QString &path) {
-                if (!legacy->default_options)
-                    return QStringLiteral("{}");
-                QByteArray buf(16 * 1024, '\0');
-                const int32_t n = legacy->default_options(path.toUtf8().constData(), buf.data(),
+            if (legacy)
+            {
+                p.probe = [legacy](const QString &path, const QJsonObject &opts) {
+                    if (!legacy->probe_json)
+                        return QJsonObject{};
+                    const QByteArray o = QJsonDocument(opts).toJson(QJsonDocument::Compact);
+                    QByteArray buf(64 * 1024, '\0');
+                    const int32_t n = legacy->probe_json(path.toUtf8().constData(), o.constData(),
+                                                          buf.data(), static_cast<uint32_t>(buf.size()));
+                    return n > 0 ? QJsonDocument::fromJson(QByteArray(buf.constData(), n)).object() : QJsonObject{};
+                };
+                p.defaultOptions = [legacy](const QString &path) {
+                    if (!legacy->default_options)
+                        return QStringLiteral("{}");
+                    QByteArray buf(16 * 1024, '\0');
+                    const int32_t n = legacy->default_options(path.toUtf8().constData(), buf.data(),
+                                                               static_cast<uint32_t>(buf.size()));
+                    return n > 0 ? QString::fromUtf8(buf.constData(), n) : QStringLiteral("{}");
+                };
+                p.paramsJson = [legacy](const QString &path) {
+                    if (!legacy->params_json)
+                        return QString();
+                    QByteArray buf(1024 * 1024, '\0');
+                    const int32_t n = legacy->params_json(path.toUtf8().constData(), buf.data(),
                                                            static_cast<uint32_t>(buf.size()));
-                return n > 0 ? QString::fromUtf8(buf.constData(), n) : QStringLiteral("{}");
-            };
-            p.paramsJson = [legacy](const QString &path) {
-                if (!legacy->params_json)
-                    return QString();
-                QByteArray buf(1024 * 1024, '\0');
-                const int32_t n = legacy->params_json(path.toUtf8().constData(), buf.data(),
-                                                       static_cast<uint32_t>(buf.size()));
-                return n > 0 ? QString::fromUtf8(buf.constData(), n) : QString();
-            };
+                    return n > 0 ? QString::fromUtf8(buf.constData(), n) : QString();
+                };
+            }
+            else
+            {
+                const QString defaults = QString::fromUtf8(dlg.default_config_json ? dlg.default_config_json : "{}");
+                p.probe = [](const QString &, const QJsonObject &) { return QJsonObject{}; };
+                p.defaultOptions = [defaults](const QString &) { return defaults; };
+                p.paramsJson = [](const QString &) { return QString(); };
+            }
             p.load = [v](const QString &path, const QString &opts, PsDataset **ds,
                          char *err, unsigned int errCap) {
                 PsError pe{};

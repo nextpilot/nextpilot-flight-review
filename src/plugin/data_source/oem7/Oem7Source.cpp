@@ -1,5 +1,6 @@
 #include "ps_plugin_api.h"
 #include "PsDataInputBase.hpp"
+#include "PsCaptureFormat.h"
 
 #include <QByteArray>
 #include <QFile>
@@ -15,11 +16,20 @@
 #include <QTcpSocket>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 #include <vector>
+
+#ifdef Q_OS_UNIX
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <termios.h>
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -37,8 +47,11 @@ int32_t writeJson(const char *json, char *out, uint32_t cap)
 const char *kSchema = R"({
   "title":"NovAtel OEM7 接收机",
   "fields":[
+    {"key":"transport","type":"enum","label":"连接方式","default":"tcp","options":[{"value":"tcp","label":"TCP 网络"},{"value":"serial","label":"串口"}]},
     {"key":"host","type":"string","label":"接收机地址","default":"192.168.1.20"},
     {"key":"port","type":"int","label":"TCP 端口","default":3001,"min":1,"max":65535},
+    {"key":"serial_port","type":"string","label":"串口设备","default":"/dev/ttyUSB0"},
+    {"key":"baud","type":"int","label":"波特率","default":115200,"min":1200,"max":921600},
     {"key":"timeout_ms","type":"int","label":"连接超时","default":2000,"min":100,"max":10000,"suffix":" ms"},
     {"key":"raw","type":"bool","label":"保留未知报文（调试）","default":true},
     {"key":"database","type":"string","label":"OEM7 协议库（空=自动查找）","default":""}
@@ -52,16 +65,180 @@ const char *kSchema = R"({
     {"label":"关闭全部日志","command":"UNLOGALL"}
   ]
 })";
-const char *kDefaults = R"({"host":"192.168.1.20","port":3001,"timeout_ms":2000,"raw":true,"database":"","raw_path":""})";
+const char *kDefaults = R"({"transport":"tcp","host":"192.168.1.20","port":3001,"timeout_ms":2000,"serial_port":"/dev/ttyUSB0","baud":115200,"raw":true,"database":"","raw_path":""})";
+
+class SerialPort
+{
+public:
+    ~SerialPort() { close(); }
+
+    bool open(const QString &path, int baud, QString &err)
+    {
+#ifdef Q_OS_UNIX
+        close();
+        fd_ = ::open(path.toUtf8().constData(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+        if (fd_ < 0)
+        {
+            err = QStringLiteral("打开串口失败：%1").arg(path);
+            return false;
+        }
+        struct termios tio;
+        if (tcgetattr(fd_, &tio) != 0)
+        {
+            err = QStringLiteral("读取串口属性失败：%1").arg(path);
+            close();
+            return false;
+        }
+        cfmakeraw(&tio);
+        tio.c_cflag |= CLOCAL | CREAD;
+        tio.c_cflag &= ~(PARENB | CSTOPB | CSIZE);
+        tio.c_cflag |= CS8;
+        tio.c_iflag &= ~(IXON | IXOFF | IXANY);
+        tio.c_lflag &= ~(ICANON | ECHO | ISIG);
+        tio.c_cc[VMIN] = 0;
+        tio.c_cc[VTIME] = 0;
+        const speed_t speed = baudSpeed(baud);
+        if (speed == 0)
+        {
+            err = QStringLiteral("不支持的波特率：%1").arg(baud);
+            close();
+            return false;
+        }
+        cfsetispeed(&tio, speed);
+        cfsetospeed(&tio, speed);
+        if (tcsetattr(fd_, TCSANOW, &tio) != 0)
+        {
+            err = QStringLiteral("配置串口失败：%1").arg(path);
+            close();
+            return false;
+        }
+        path_ = path;
+        return true;
+#else
+        (void)path;
+        (void)baud;
+        err = QStringLiteral("串口模式当前仅支持 Linux/macOS");
+        return false;
+#endif
+    }
+
+    QByteArray readAll()
+    {
+        QByteArray out;
+#ifdef Q_OS_UNIX
+        if (fd_ < 0)
+            return out;
+        char buf[64 * 1024];
+        while (true)
+        {
+            const ssize_t n = ::read(fd_, buf, sizeof(buf));
+            if (n > 0)
+            {
+                out.append(buf, static_cast<int>(n));
+                continue;
+            }
+            if (n < 0 && errno == EINTR)
+                continue;
+            break;
+        }
+#endif
+        return out;
+    }
+
+    bool waitReadable(int timeoutMs)
+    {
+#ifdef Q_OS_UNIX
+        if (fd_ < 0)
+            return false;
+        struct pollfd pfd{fd_, POLLIN, 0};
+        const int rc = ::poll(&pfd, 1, timeoutMs);
+        return rc > 0 && (pfd.revents & (POLLIN | POLLHUP | POLLERR));
+#else
+        (void)timeoutMs;
+        return false;
+#endif
+    }
+
+    bool write(const QByteArray &data, QString &err)
+    {
+#ifdef Q_OS_UNIX
+        if (fd_ < 0)
+        {
+            err = QStringLiteral("串口未打开");
+            return false;
+        }
+        size_t off = 0;
+        while (off < static_cast<size_t>(data.size()))
+        {
+            const ssize_t n = ::write(fd_, data.constData() + off,
+                                      static_cast<size_t>(data.size()) - off);
+            if (n > 0)
+            {
+                off += static_cast<size_t>(n);
+                continue;
+            }
+            if (n < 0 && (errno == EINTR || errno == EAGAIN))
+                continue;
+            err = QStringLiteral("写串口失败");
+            return false;
+        }
+        return true;
+#else
+        (void)data;
+        err = QStringLiteral("串口模式当前仅支持 Linux/macOS");
+        return false;
+#endif
+    }
+
+    void close()
+    {
+#ifdef Q_OS_UNIX
+        if (fd_ >= 0)
+        {
+            ::close(fd_);
+            fd_ = -1;
+        }
+#endif
+    }
+
+    bool isOpen() const { return fd_ >= 0; }
+    QString path() const { return path_; }
+
+private:
+#ifdef Q_OS_UNIX
+    static speed_t baudSpeed(int baud)
+    {
+        switch (baud)
+        {
+        case 9600: return B9600;
+        case 19200: return B19200;
+        case 38400: return B38400;
+        case 57600: return B57600;
+        case 115200: return B115200;
+        case 230400: return B230400;
+        case 460800: return B460800;
+        case 921600: return B921600;
+        default: return 0;
+        }
+    }
+#endif
+    int fd_ = -1;
+    QString path_;
+};
 
 struct OemState
 {
     PsSourceSink sink{};
-    QFile rawFile;
-    QFile replayFile;
+    ps::capture::RawWriter rawWriter;
+    ps::capture::RawReader rawReader;
+    QFile legacyReplayFile;
+    bool legacyReplay = false;
     bool replayMode = false;
     bool replayFinished = false;
+    bool rawDropped = false;
+    std::string rawError;
     std::unique_ptr<QTcpSocket> socket;
+    std::unique_ptr<SerialPort> serial;
     QElapsedTimer clock;
     QByteArray rx;
     QHash<QString, QVector<double>> times;
@@ -72,7 +249,9 @@ struct OemState
     QHash<int, QString> byId;
     QHash<QString, QHash<QString, int>> enums;
     bool dbLoaded = false;
+    bool dbEmbedded = false;
     QString dbPath;
+    std::string dbBytes;
     uint64_t lines = 0;
     uint64_t logs = 0;
     uint64_t frames = 0;
@@ -80,7 +259,41 @@ struct OemState
     uint64_t tx = 0;
     QString lastRx;
     double last_sow = 0.0;
+    double replay_t = 0.0;
+    bool replayStarted = false;
+    int64_t replayBaseNs = 0;
 };
+
+int64_t nowNs()
+{
+    using namespace std::chrono;
+    return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+double nowSeconds(const OemState *st)
+{
+    return st->replayMode ? st->replay_t : st->clock.elapsed() / 1000.0;
+}
+
+void recordRaw(OemState *st, const QByteArray &in)
+{
+    if (!st->rawWriter.isOpen() || st->rawDropped || in.isEmpty())
+        return;
+    ps::capture::Record record;
+    record.timestamp_ns = nowNs();
+    record.topic = "oem7";
+    record.encoding = "oem7";
+    record.part_count = 1;
+    record.part_lengths = {static_cast<uint32_t>(in.size())};
+    record.payload.assign(reinterpret_cast<const uint8_t *>(in.constData()),
+                          reinterpret_cast<const uint8_t *>(in.constData()) + in.size());
+    std::string re;
+    if (!st->rawWriter.write(record, re))
+    {
+        st->rawDropped = true;
+        st->rawError = re;
+    }
+}
 
 void addSample(OemState *st, const QString &name, const QString &unit, double t, double v)
 {
@@ -416,7 +629,7 @@ void parseNovatelLine(OemState *st, const QString &line)
         name.chop(1);
     bool ok = false;
     const double sow = head.at(6).toDouble(&ok);
-    const double t = ok ? sow : st->clock.elapsed() / 1000.0;
+    const double t = ok ? sow : nowSeconds(st);
     st->last_sow = t;
     ++st->logs;
     if (st->dbLoaded && parseGeneric(st, name, head, body, t))
@@ -475,7 +688,7 @@ void parseNmeaLine(OemState *st, const QString &line)
     const QStringList f = core.split(QLatin1Char(','));
     if (f.size() < 3)
         return;
-    const double t = st->clock.elapsed() / 1000.0;
+    const double t = nowSeconds(st);
     if (f.at(0).endsWith(QStringLiteral("GGA")) && f.size() >= 10)
     {
         double lat = 0, lon = 0, alt = 0;
@@ -524,17 +737,18 @@ void parseLines(OemState *st)
         st->rx.clear();
 }
 
-void loadDatabase(OemState *st, const QString &path)
+void loadDatabaseBytes(OemState *st, const std::string &bytes, const QString &label)
 {
-    if (path.isEmpty())
+    if (bytes.empty())
         return;
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-        return;
+    const QByteArray data(reinterpret_cast<const char *>(bytes.data()), static_cast<int>(bytes.size()));
     QJsonParseError pe;
-    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &pe);
+    const QJsonDocument doc = QJsonDocument::fromJson(data, &pe);
     if (!doc.isObject())
         return;
+    st->defs.clear();
+    st->byId.clear();
+    st->enums.clear();
     const QJsonObject root = doc.object();
     for (const QJsonValue &v : root.value(QStringLiteral("messages")).toArray())
     {
@@ -560,7 +774,20 @@ void loadDatabase(OemState *st, const QString &path)
         st->enums.insert(id, values);
     }
     st->dbLoaded = !st->defs.isEmpty();
-    st->dbPath = path;
+    st->dbPath = label;
+}
+
+void loadDatabase(OemState *st, const QString &path)
+{
+    if (path.isEmpty())
+        return;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return;
+    const QByteArray data = file.readAll();
+    st->dbBytes.assign(reinterpret_cast<const char *>(data.constData()),
+                       static_cast<size_t>(data.size()));
+    loadDatabaseBytes(st, st->dbBytes, path);
 }
 
 QString findDatabase(const QString &configured)
@@ -605,37 +832,92 @@ int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi
     }
     auto *st = new OemState;
     st->sink = *sink;
-    loadDatabase(st, findDatabase(cfg.value(QStringLiteral("database")).toString()));
+    const std::string cfgJson = (config && config[0]) ? config : "{}";
     QString replayPath = cfg.value(QStringLiteral("filepath")).toString();
     if (replayPath.isEmpty())
         replayPath = cfg.value(QStringLiteral("__replay_path")).toString();
     if (!replayPath.isEmpty())
     {
-        st->replayFile.setFileName(replayPath);
-        if (!st->replayFile.open(QIODevice::ReadOnly))
+        const std::string path = replayPath.toStdString();
+        if (ps::capture::isRawFile(path))
         {
-            if (err && errCap)
-                std::snprintf(err, errCap, "打开回放文件失败：%s", replayPath.toUtf8().constData());
-            delete st;
-            return 3;
+            std::string re;
+            if (!st->rawReader.open(path, re))
+            {
+                if (err && errCap)
+                    std::snprintf(err, errCap, "打开回放文件失败：%s", re.c_str());
+                delete st;
+                return 3;
+            }
+            if (!st->rawReader.header().schema_blob.empty())
+            {
+                st->dbBytes = st->rawReader.header().schema_blob;
+                st->dbEmbedded = true;
+                loadDatabaseBytes(st, st->dbBytes, QStringLiteral("<embedded>"));
+            }
+            else
+            {
+                loadDatabase(st, findDatabase(cfg.value(QStringLiteral("database")).toString()));
+            }
+        }
+        else
+        {
+            st->legacyReplayFile.setFileName(replayPath);
+            if (!st->legacyReplayFile.open(QIODevice::ReadOnly))
+            {
+                if (err && errCap)
+                    std::snprintf(err, errCap, "打开回放文件失败：%s", replayPath.toUtf8().constData());
+                delete st;
+                return 3;
+            }
+            st->legacyReplay = true;
+            loadDatabase(st, findDatabase(cfg.value(QStringLiteral("database")).toString()));
         }
         st->replayMode = true;
         st->clock.start();
         *handle = st;
         return 0;
     }
+
+    loadDatabase(st, findDatabase(cfg.value(QStringLiteral("database")).toString()));
     const QString rawPath = cfg.value(QStringLiteral("raw_path")).toString();
     if (!rawPath.isEmpty())
     {
-        st->rawFile.setFileName(rawPath);
-        if (!st->rawFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        ps::capture::Header h;
+        h.source_id = "data_source_oem7";
+        h.plugin_id = "data_source_oem7";
+        h.config_json = cfgJson;
+        h.schema_blob = st->dbBytes;
+        h.created_at_ns = nowNs();
+        std::string re;
+        if (!st->rawWriter.open(rawPath.toStdString(), h, re))
         {
             if (err && errCap)
-                std::snprintf(err, errCap, "无法写原始流：%s", rawPath.toUtf8().constData());
+                std::snprintf(err, errCap, "无法写原始流：%s", re.c_str());
             delete st;
             return 4;
         }
     }
+    const QString transport = cfg.value(QStringLiteral("transport")).toString(QStringLiteral("tcp"));
+    if (transport == QLatin1String("serial"))
+    {
+        st->serial = std::make_unique<SerialPort>();
+        const QString port = cfg.value(QStringLiteral("serial_port"))
+                                 .toString(QStringLiteral("/dev/ttyUSB0"));
+        const int baud = qBound(1200, cfg.value(QStringLiteral("baud")).toInt(115200), 921600);
+        QString serialErr;
+        if (!st->serial->open(port, baud, serialErr))
+        {
+            if (err && errCap)
+                std::snprintf(err, errCap, "%s", serialErr.toUtf8().constData());
+            delete st;
+            return 3;
+        }
+        st->clock.start();
+        *handle = st;
+        return 0;
+    }
+
     st->socket = std::make_unique<QTcpSocket>();
     const QString host = cfg.value(QStringLiteral("host")).toString(QStringLiteral("192.168.1.20"));
     const quint16 port = static_cast<quint16>(qBound(1, cfg.value(QStringLiteral("port")).toInt(3001), 65535));
@@ -656,8 +938,6 @@ int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi
 
 int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
 {
-    Q_UNUSED(err);
-    Q_UNUSED(errCap);
     auto *st = static_cast<OemState *>(handle);
     if (!st)
         return 1;
@@ -665,28 +945,82 @@ int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
     {
         if (st->replayFinished)
             return 0;
-        const QByteArray chunk = st->replayFile.read(256 * 1024);
-        if (chunk.isEmpty())
+        if (st->legacyReplay)
         {
+            const QByteArray chunk = st->legacyReplayFile.read(256 * 1024);
+            if (chunk.isEmpty())
+            {
+                parseBinary(st);
+                parseLines(st);
+                flush(st);
+                st->replayFinished = true;
+                return 0;
+            }
+            st->rx.append(chunk);
             parseBinary(st);
             parseLines(st);
             flush(st);
-            st->replayFinished = true;
             return 0;
         }
-        st->rx.append(chunk);
-        parseBinary(st);
-        parseLines(st);
-        flush(st);
+
+        size_t budget = 256 * 1024;
+        while (budget > 0)
+        {
+            ps::capture::Record record;
+            std::string re;
+            if (!st->rawReader.next(record, re))
+            {
+                if (!re.empty())
+                {
+                    if (err && errCap)
+                        std::snprintf(err, errCap, "读取 raw 失败：%s", re.c_str());
+                    return 1;
+                }
+                parseBinary(st);
+                parseLines(st);
+                flush(st);
+                st->replayFinished = true;
+                return 0;
+            }
+            if (record.encoding != "oem7")
+            {
+                if (err && errCap)
+                    std::snprintf(err, errCap, "raw 记录 encoding=%s，不是 oem7",
+                                  record.encoding.c_str());
+                return 1;
+            }
+            if (!st->replayStarted)
+            {
+                st->replayBaseNs = record.timestamp_ns;
+                st->replayStarted = true;
+            }
+            st->replay_t = static_cast<double>(record.timestamp_ns - st->replayBaseNs) / 1e9;
+            if (!record.payload.empty())
+                st->rx.append(reinterpret_cast<const char *>(record.payload.data()),
+                              static_cast<int>(record.payload.size()));
+            parseBinary(st);
+            parseLines(st);
+            flush(st);
+            budget = record.payload.size() >= budget ? 0 : budget - record.payload.size();
+        }
         return 0;
     }
-    if (!st->socket)
-        return 1;
-    if (timeoutMs > 0)
-        st->socket->waitForReadyRead(qMin(timeoutMs, 50));
-    const QByteArray in = st->socket->readAll();
-    if (st->rawFile.isOpen())
-        st->rawFile.write(in);
+    QByteArray in;
+    if (st->serial)
+    {
+        if (timeoutMs > 0)
+            st->serial->waitReadable(qMin(timeoutMs, 10));
+        in = st->serial->readAll();
+    }
+    else
+    {
+        if (!st->socket)
+            return 1;
+        if (timeoutMs > 0)
+            st->socket->waitForReadyRead(qMin(timeoutMs, 50));
+        in = st->socket->readAll();
+    }
+    recordRaw(st, in);
     st->rx.append(in);
     parseBinary(st);
     parseLines(st);
@@ -701,10 +1035,15 @@ int32_t closeSource(void *handle)
     {
         if (st->socket)
             st->socket->disconnectFromHost();
-        if (st->rawFile.isOpen())
-            st->rawFile.close();
-        if (st->replayFile.isOpen())
-            st->replayFile.close();
+        if (st->serial)
+            st->serial->close();
+        if (st->rawWriter.isOpen())
+        {
+            std::string re;
+            st->rawWriter.close(re);
+        }
+        if (st->legacyReplayFile.isOpen())
+            st->legacyReplayFile.close();
     }
     delete st;
     return 0;
@@ -713,7 +1052,9 @@ int32_t closeSource(void *handle)
 int32_t sendCommand(void *handle, const char *command, char *out, uint32_t cap)
 {
     auto *st = static_cast<OemState *>(handle);
-    if (!st || !st->socket || st->socket->state() != QAbstractSocket::ConnectedState)
+    const bool tcp = st && st->socket && st->socket->state() == QAbstractSocket::ConnectedState;
+    const bool serial = st && st->serial && st->serial->isOpen();
+    if (!tcp && !serial)
         return writeJson(R"({"ok":false,"error":"未连接"})", out, cap);
     QString cmd = QString::fromUtf8(command ? command : "").trimmed();
     if (cmd.isEmpty())
@@ -723,9 +1064,22 @@ int32_t sendCommand(void *handle, const char *command, char *out, uint32_t cap)
     QByteArray tx = cmd.toLatin1();
     if (!tx.endsWith("\r\n"))
         tx.append("\r\n");
-    st->socket->write(tx);
-    st->socket->flush();
-    st->socket->waitForBytesWritten(100);
+    if (serial)
+    {
+        QString we;
+        if (!st->serial->write(tx, we))
+        {
+            const QJsonObject res{{QStringLiteral("ok"), false},
+                                  {QStringLiteral("error"), we}};
+            return writeJson(QJsonDocument(res).toJson(QJsonDocument::Compact).constData(), out, cap);
+        }
+    }
+    else
+    {
+        st->socket->write(tx);
+        st->socket->flush();
+        st->socket->waitForBytesWritten(100);
+    }
     ++st->tx;
     const QJsonObject res{{QStringLiteral("ok"), true},
                           {QStringLiteral("command"), cmd},
@@ -738,13 +1092,17 @@ int32_t statusSource(void *handle, char *out, uint32_t cap)
     auto *st = static_cast<OemState *>(handle);
     if (!st)
         return writeJson("{\"state\":\"closed\"}", out, cap);
+    const bool serial = st->serial && st->serial->isOpen();
     const QString state = st->replayMode
                               ? (st->replayFinished ? "replay_done" : "replaying")
-                              : (st->socket && st->socket->state() == QAbstractSocket::ConnectedState
-                                     ? "connected" : "disconnected");
-    const QJsonObject res{
+                              : (serial ? "connected"
+                                        : (st->socket && st->socket->state() == QAbstractSocket::ConnectedState
+                                               ? "connected" : "disconnected"));
+    QJsonObject res{
         {QStringLiteral("state"), state},
-        {QStringLiteral("source"), st->replayMode ? "file" : "tcp"},
+        {QStringLiteral("source"), st->replayMode ? "file" : (serial ? "serial" : "tcp")},
+        {QStringLiteral("transport"), serial ? "serial" : "tcp"},
+        {QStringLiteral("serial_port"), serial ? st->serial->path() : QString()},
         {QStringLiteral("host"), st->socket ? st->socket->peerName() : QString()},
         {QStringLiteral("port"), st->socket ? st->socket->peerPort() : 0},
         {QStringLiteral("lines"), static_cast<double>(st->lines)},
@@ -754,8 +1112,15 @@ int32_t statusSource(void *handle, char *out, uint32_t cap)
         {QStringLiteral("tx"), static_cast<double>(st->tx)},
         {QStringLiteral("sow"), st->last_sow},
         {QStringLiteral("db"), st->dbLoaded},
+        {QStringLiteral("db_source"), st->dbEmbedded ? QStringLiteral("embedded") : st->dbPath},
+        {QStringLiteral("format"), st->replayMode
+                                       ? (st->legacyReplay ? QStringLiteral("legacy")
+                                                           : QStringLiteral("PSRAW1"))
+                                       : QStringLiteral("PSRAW1")},
         {QStringLiteral("last_rx"), st->lastRx},
     };
+    if (!st->rawError.empty())
+        res.insert(QStringLiteral("raw_error"), QString::fromStdString(st->rawError));
     const QByteArray json = QJsonDocument(res).toJson(QJsonDocument::Compact);
     return writeJson(json.constData(), out, cap);
 }

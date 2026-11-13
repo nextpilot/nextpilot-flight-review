@@ -124,6 +124,8 @@ int main(int argc, char **argv)
     assert((caps & PS_INPUT_COMMAND) != 0);
     PsInputDialog dlg = v->get_dialog(probe);
     assert(dlg.schema_json && std::strstr(dlg.schema_json, "port"));
+    assert(std::strstr(dlg.schema_json, "serial_port"));
+    assert(std::strstr(dlg.schema_json, "transport"));
     assert(std::strstr(dlg.schema_json, "commands"));
     v->destroy(probe);
 
@@ -206,17 +208,28 @@ int main(int argc, char **argv)
     v->stop(h);
     v->destroy(h);
     assert(QFileInfo(rawPath).size() > 0);
+    {
+        QFile raw(rawPath);
+        assert(raw.open(QIODevice::ReadOnly));
+        const QByteArray magic = raw.read(6);
+        assert(magic == QByteArrayLiteral("PSRAW1"));
+    }
 
-    // OEM7 原始字节回放：同一个 OEM7 插件，filepath 模式。
+    // OEM7 原始字节回放：同一个 OEM7 插件，filepath 模式；
+    // database 已嵌入 raw 头，这里故意不再传 database。
     void *rh = v->create();
     assert(rh);
     assert(v->bind(rh, services, &perr));
-    QJsonObject replayObj{{QStringLiteral("filepath"), rawPath},
-                           {QStringLiteral("database"), QString::fromUtf8(TEST_OEM7_DB)}};
+    QJsonObject replayObj{{QStringLiteral("filepath"), rawPath}};
     const QByteArray replayBytes = QJsonDocument(replayObj).toJson(QJsonDocument::Compact);
     PsStringView rsv{replayBytes.constData(), static_cast<uint32_t>(replayBytes.size())};
     assert(v->load_config(rh, rsv, &perr));
     assert(v->start(rh, &perr));
+    {
+        char status[1024] = {0};
+        const int32_t n = v->status_json(rh, status, sizeof(status));
+        assert(n > 0 && std::strstr(status, "\"db_source\":\"embedded\""));
+    }
     for (int i = 0; i < 5 && sink.data["oem7.bestpos.latitude"].size() <= liveCount; ++i)
         v->poll(rh, &perr);
     assert(sink.data["oem7.bestpos.latitude"].size() > liveCount);
