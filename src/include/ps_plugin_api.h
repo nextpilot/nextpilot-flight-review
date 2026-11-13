@@ -11,7 +11,7 @@
 extern "C" {
 #endif
 
-#define PS_PLUGIN_ABI_VERSION 2u
+#define PS_PLUGIN_ABI_VERSION 3u
 
 /* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
@@ -29,6 +29,7 @@ extern "C" {
 #define PS_CAP_CACHE     (1u << 5)
 #define PS_CAP_STREAM    (1u << 6)
 #define PS_CAP_RECORD    (1u << 7)
+#define PS_CAP_COMMAND   (1u << 8)   /* 支持向设备发送调试/控制命令 */
 
 /* Loader 数据面。所有 JSON 返回：>=0 为写入字节数；<0 失败。
  * load 返回 0 成功，数据集所有权交给宿主。 */
@@ -79,6 +80,9 @@ typedef struct PsDataSourceVtable {
     int32_t (*poll)(void *handle, int32_t timeout_ms, char *err, uint32_t err_cap);
     int32_t (*close)(void *handle);
     int32_t (*status_json)(void *handle, char *out, uint32_t cap);
+    /* 可选。向设备发送一条调试/控制命令；返回 >0 为 out 的 JSON 字节数，<0 失败。
+     * 具体命令语法由插件决定，宿主只做通用调试控制台。 */
+    int32_t (*send_command)(void *handle, const char *command, char *out, uint32_t cap);
 } PsDataSourceVtable;
 
 /* 插件 UI：只交 .ui 文件和 JSON，绝不返回 QWidget*。

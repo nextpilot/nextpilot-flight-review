@@ -173,6 +173,7 @@ const PsDataSourceVtable kSource = {
     pollSource,
     closeSource,
     statusSource,
+    nullptr,
 };
 
 const PsPluginDescriptor kDescriptor = {

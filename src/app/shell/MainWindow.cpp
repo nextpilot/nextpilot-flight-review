@@ -5,6 +5,7 @@
 #include "loader/LoaderRegistry.h"
 #include "source/LiveStream.h"
 #include "source/SourceConfigDialog.h"
+#include "source/SourceDebugDialog.h"
 #include "source/SourceRegistry.h"
 
 #include <QAction>
@@ -2241,6 +2242,27 @@ void MainWindow::connectLiveSource(const QString &pluginId)
     log(QStringLiteral("实时源已连接：%1（%2）").arg(sp->label, sp->transport));
 }
 
+void MainWindow::openSourceDebug(SourceData *src)
+{
+    if (!src || !src->live)
+        return;
+    const SourcePlugin *sp = SourceRegistry::instance().findById(src->sourceId);
+    if (!sp || !sp->send)
+    {
+        QMessageBox::information(this, QStringLiteral("调试"),
+                                 QStringLiteral("该实时源未提供命令通道。"));
+        return;
+    }
+    SourceDebugDialog dlg(src->name, sp->schema,
+                          [sp, src] { return src->handle ? sp->status(src->handle) : QString(); },
+                          [sp, src](const QString &cmd) {
+                              return src->handle ? sp->send(src->handle, cmd)
+                                                 : QStringLiteral("{\"ok\":false,\"error\":\"未连接\"}");
+                          },
+                          this);
+    dlg.exec();
+}
+
 void MainWindow::configureLiveSource(SourceData *src)
 {
     if (!src || !src->live)
@@ -2556,6 +2578,29 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
     colLay->addWidget(nameLb);
     colLay->addWidget(metaLb);
     lay->addWidget(col, 1);
+
+    auto *dbg = new QToolButton(row);
+    dbg->setIcon(QIcon(QStringLiteral(":/icons/script.svg")));
+    dbg->setIconSize(QSize(14, 14));
+    dbg->setToolTip(QStringLiteral("调试终端"));
+    dbg->setCursor(Qt::PointingHandCursor);
+    dbg->setFixedSize(22, 22);
+    dbg->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;padding:0;}"
+        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
+    bool hasDebug = false;
+    if (const SourceData *src = sourceById(srcId))
+    {
+        const SourcePlugin *sp = SourceRegistry::instance().findById(src->sourceId);
+        hasDebug = src->live && sp && sp->send;
+    }
+    dbg->setVisible(hasDebug);
+    lay->addWidget(dbg);
+    connect(dbg, &QToolButton::clicked, this, [this, srcId] {
+        SourceData *src = sourceById(srcId);
+        if (src)
+            openSourceDebug(src);
+    });
 
     auto *cfg = new QToolButton(row);
     cfg->setIcon(QIcon(QStringLiteral(":/icons/settings.svg")));

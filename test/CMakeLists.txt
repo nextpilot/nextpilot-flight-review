@@ -42,6 +42,8 @@ if(TARGET ps_data_source_oem7)
   add_executable(test_oem7_source unit/test_oem7_source.cpp)
   target_include_directories(test_oem7_source PRIVATE ${PROJECT_SOURCE_DIR}/src/include)
   target_link_libraries(test_oem7_source PRIVATE ps_data_source_oem7 Qt6::Network)
+  target_compile_definitions(test_oem7_source PRIVATE
+    TEST_OEM7_DB="${CMAKE_SOURCE_DIR}/src/plugins/data_source/oem7/oem7_database.json")
   add_test(NAME oem7_source COMMAND test_oem7_source)
 endif()
 

@@ -334,6 +334,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_mavlink()
         pollSource,
         closeSource,
         statusSource,
+        nullptr,
     };
     static const PsPluginDescriptor desc = {
         PS_PLUGIN_ABI_VERSION,

@@ -40,6 +40,14 @@ const char *kSchema = R"({
     {"key":"timeout_ms","type":"int","label":"连接超时","default":2000,"min":100,"max":10000,"suffix":" ms"},
     {"key":"raw","type":"bool","label":"保留未知报文（调试）","default":true},
     {"key":"database","type":"string","label":"OEM7 协议库（空=自动查找）","default":""}
+  ],
+  "commands":[
+    {"label":"查询版本","command":"VERSION"},
+    {"label":"BESTPOS 变化输出","command":"LOG BESTPOSA ONCHANGED"},
+    {"label":"INSPVA 1 Hz","command":"LOG INSPVAA ONTIME 1"},
+    {"label":"BESTATT 变化输出","command":"LOG BESTATTA ONCHANGED"},
+    {"label":"BESTVEL 变化输出","command":"LOG BESTVELA ONCHANGED"},
+    {"label":"关闭全部日志","command":"UNLOGALL"}
   ]
 })";
 const char *kDefaults = R"({"host":"192.168.1.20","port":3001,"timeout_ms":2000,"raw":true,"database":""})";
@@ -55,12 +63,16 @@ struct OemState
     QHash<QString, QString> units;
     QStringList order;
     QHash<QString, QJsonObject> defs;
+    QHash<int, QString> byId;
     QHash<QString, QHash<QString, int>> enums;
     bool dbLoaded = false;
     QString dbPath;
     uint64_t lines = 0;
     uint64_t logs = 0;
+    uint64_t frames = 0;
     uint64_t events = 0;
+    uint64_t tx = 0;
+    QString lastRx;
     double last_sow = 0.0;
 };
 
@@ -99,6 +111,168 @@ bool parseDouble(const QString &s, double *out)
     if (ok && std::isfinite(v) && out)
         *out = v;
     return ok;
+}
+
+uint16_t rd16(const unsigned char *p)
+{
+    return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+uint32_t rd32(const unsigned char *p)
+{
+    return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8) |
+           (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
+}
+double rdDouble(const unsigned char *p)
+{
+    double v = 0;
+    std::memcpy(&v, p, sizeof(v));
+    return v;
+}
+int fieldSize(const QString &dtype)
+{
+    if (dtype == QStringLiteral("DOUBLE")) return 8;
+    if (dtype == QStringLiteral("FLOAT") || dtype == QStringLiteral("INT") ||
+        dtype == QStringLiteral("UINT") || dtype == QStringLiteral("LONG") ||
+        dtype == QStringLiteral("ULONG") || dtype == QStringLiteral("ENUM")) return 4;
+    if (dtype == QStringLiteral("SHORT") || dtype == QStringLiteral("USHORT")) return 2;
+    return 1;
+}
+double readScalar(const QString &dtype, const unsigned char *p)
+{
+    if (dtype == QStringLiteral("DOUBLE")) return rdDouble(p);
+    if (dtype == QStringLiteral("FLOAT"))
+    {
+        float f = 0;
+        std::memcpy(&f, p, sizeof(f));
+        return f;
+    }
+    if (dtype == QStringLiteral("INT") || dtype == QStringLiteral("LONG") || dtype == QStringLiteral("ENUM"))
+        return static_cast<int32_t>(rd32(p));
+    if (dtype == QStringLiteral("UINT") || dtype == QStringLiteral("ULONG")) return rd32(p);
+    if (dtype == QStringLiteral("SHORT")) return static_cast<int16_t>(rd16(p));
+    if (dtype == QStringLiteral("USHORT")) return rd16(p);
+    if (dtype == QStringLiteral("CHAR")) return static_cast<int8_t>(p[0]);
+    return p[0];
+}
+QString unitOf(const QString &fname)
+{
+    const QString lower = fname.toLower();
+    if (lower.contains(QStringLiteral("latitude")) || lower.contains(QStringLiteral("longitude")) ||
+        lower.contains(QStringLiteral("azimuth")) || lower.contains(QStringLiteral("roll")) ||
+        lower.contains(QStringLiteral("pitch")) || lower.contains(QStringLiteral("heading")))
+        return QStringLiteral("deg");
+    if (lower.contains(QStringLiteral("height")) || lower.contains(QStringLiteral("altitude")) ||
+        lower.contains(QStringLiteral("undulation")))
+        return QStringLiteral("m");
+    if (lower.contains(QStringLiteral("velocity")) || lower.contains(QStringLiteral("speed")))
+        return QStringLiteral("m/s");
+    return {};
+}
+
+// OEM7 standard/short binary 头之后的字段按 database.json 的 dataType 长度顺序读取。
+bool parseBinaryFrame(OemState *st, int headerLength, const unsigned char *hdr,
+                      const unsigned char *body, int bodyLength, int msgId,
+                      int msgDefCrc, double t)
+{
+    const QString name = st->byId.value(msgId);
+    if (name.isEmpty())
+        return false;
+    const QJsonObject def = st->defs.value(name);
+    if (def.isEmpty())
+        return false;
+    const QJsonObject fields = def.value(QStringLiteral("fields")).toObject();
+    QJsonArray arr = fields.value(QString::number(msgDefCrc)).toArray();
+    if (arr.isEmpty())
+        arr = fields.value(def.value(QStringLiteral("latestMsgDefCrc")).toString()).toArray();
+    if (arr.isEmpty())
+        return false;
+    int offset = 0;
+    int emitted = 0;
+    for (const QJsonValue &fv : arr)
+    {
+        const QJsonObject f = fv.toObject();
+        const QString fname = f.value(QStringLiteral("name")).toString();
+        const QString type = f.value(QStringLiteral("type")).toString();
+        const QJsonObject dataType = f.value(QStringLiteral("dataType")).toObject();
+        const QString dtype = dataType.value(QStringLiteral("name")).toString();
+        const int elem = fieldSize(dtype);
+        int count = 1;
+        if (type == QStringLiteral("FIXED_LENGTH_ARRAY") || type == QStringLiteral("VARIABLE_LENGTH_ARRAY"))
+            count = f.value(QStringLiteral("arrayLength")).toInt(1);
+        if (type == QStringLiteral("VARIABLE_LENGTH_ARRAY") || count <= 0)
+            break;
+        const int total = elem * count;
+        if (offset + total > bodyLength)
+            break;
+        if (!fname.isEmpty() && !fname.contains(QStringLiteral("reserved")) && count == 1 &&
+            emitted < 64)
+        {
+            double value = readScalar(dtype, body + offset);
+            if (std::isfinite(value))
+            {
+                addSample(st, QStringLiteral("oem7.%1.%2").arg(name.toLower(), fname),
+                          unitOf(fname), t, value);
+                ++emitted;
+            }
+        }
+        offset += total;
+    }
+    Q_UNUSED(headerLength);
+    Q_UNUSED(hdr);
+    return emitted > 0;
+}
+
+// 从 TCP 字节流里切出 OEM7 binary frame；ASCII 行留给 parseLines。
+void parseBinary(OemState *st)
+{
+    while (true)
+    {
+        const int sync = st->rx.indexOf(QByteArray("\xAA\x44", 2));
+        if (sync < 0)
+            return;
+        if (sync > 0)
+            st->rx.remove(0, sync);
+        if (st->rx.size() < 4)
+            return;
+        const unsigned char *p = reinterpret_cast<const unsigned char *>(st->rx.constData());
+        if (p[2] == 0x12)
+        {
+            if (p[3] != 28 || st->rx.size() < 28)
+                return;
+            const int bodyLen = rd16(p + 8);
+            const int total = 28 + bodyLen + 4;
+            if (st->rx.size() < total)
+                return;
+            const int msgId = rd16(p + 4);
+            const int crc = rd16(p + 24);
+            const double t = rd16(p + 14) * 604800.0 + rd32(p + 16) / 1000.0;
+            ++st->frames;
+            st->logs++;
+            st->lastRx = QStringLiteral("#%1 (binary)").arg(st->byId.value(msgId));
+            parseBinaryFrame(st, 28, p, p + 28, bodyLen, msgId, crc, t);
+            st->rx.remove(0, total);
+        }
+        else if (p[2] == 0x13)
+        {
+            if (st->rx.size() < 12)
+                return;
+            const int bodyLen = p[3];
+            const int total = 12 + bodyLen + 4;
+            if (st->rx.size() < total)
+                return;
+            const int msgId = rd16(p + 4);
+            const double t = rd16(p + 6) * 604800.0 + rd32(p + 8) / 1000.0;
+            ++st->frames;
+            st->logs++;
+            st->lastRx = QStringLiteral("#%1 (short binary)").arg(st->byId.value(msgId));
+            parseBinaryFrame(st, 12, p, p + 12, bodyLen, msgId, -1, t);
+            st->rx.remove(0, total);
+        }
+        else
+        {
+            st->rx.remove(0, 1);
+        }
+    }
 }
 
 QStringList splitCsv(const QString &text)
@@ -313,6 +487,9 @@ void parseNmeaLine(OemState *st, const QString &line)
 
 void parseLines(OemState *st)
 {
+    // 以 OEM7 binary sync 开头时不按行切，避免把帧体里的 0x0A 当换行。
+    if (st->rx.startsWith(QByteArray("\xAA\x44", 2)))
+        return;
     while (true)
     {
         const int nl = st->rx.indexOf('\n');
@@ -324,6 +501,7 @@ void parseLines(OemState *st)
         if (line.isEmpty())
             continue;
         ++st->lines;
+        st->lastRx = line.left(240);
         if (line.startsWith(QLatin1Char('#')) || line.startsWith(QLatin1Char('<')))
             parseNovatelLine(st, line);
         else if (line.startsWith(QLatin1Char('$')))
@@ -357,7 +535,10 @@ void loadDatabase(OemState *st, const QString &path)
         const QJsonObject msg = v.toObject();
         const QString name = msg.value(QStringLiteral("name")).toString();
         if (!name.isEmpty())
+        {
             st->defs.insert(name, msg);
+            st->byId.insert(msg.value(QStringLiteral("messageID")).toInt(), name);
+        }
     }
     for (const QJsonValue &v : root.value(QStringLiteral("enums")).toArray())
     {
@@ -447,6 +628,7 @@ int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
     if (timeoutMs > 0)
         st->socket->waitForReadyRead(qMin(timeoutMs, 50));
     st->rx.append(st->socket->readAll());
+    parseBinary(st);
     parseLines(st);
     flush(st);
     return 0;
@@ -461,20 +643,49 @@ int32_t closeSource(void *handle)
     return 0;
 }
 
+int32_t sendCommand(void *handle, const char *command, char *out, uint32_t cap)
+{
+    auto *st = static_cast<OemState *>(handle);
+    if (!st || !st->socket || st->socket->state() != QAbstractSocket::ConnectedState)
+        return writeJson(R"({"ok":false,"error":"未连接"})", out, cap);
+    QString cmd = QString::fromUtf8(command ? command : "").trimmed();
+    if (cmd.isEmpty())
+        return writeJson(R"({"ok":false,"error":"空命令"})", out, cap);
+    if (!cmd.startsWith(QLatin1Char('$')) && !cmd.startsWith(QLatin1Char('%')))
+        cmd.prepend(QLatin1Char('$'));
+    QByteArray tx = cmd.toLatin1();
+    if (!tx.endsWith("\r\n"))
+        tx.append("\r\n");
+    st->socket->write(tx);
+    st->socket->flush();
+    st->socket->waitForBytesWritten(100);
+    ++st->tx;
+    const QJsonObject res{{QStringLiteral("ok"), true},
+                          {QStringLiteral("command"), cmd},
+                          {QStringLiteral("tx"), static_cast<double>(st->tx)}};
+    return writeJson(QJsonDocument(res).toJson(QJsonDocument::Compact).constData(), out, cap);
+}
+
 int32_t statusSource(void *handle, char *out, uint32_t cap)
 {
     auto *st = static_cast<OemState *>(handle);
     if (!st)
         return writeJson("{\"state\":\"closed\"}", out, cap);
-    char buf[512];
-    std::snprintf(buf, sizeof(buf),
-                  R"({"state":"%s","host":"%s","port":%u,"lines":%llu,"logs":%llu,"events":%llu,"sow":%.3f,"db":%u})",
-                  st->socket->state() == QAbstractSocket::ConnectedState ? "connected" : "disconnected",
-                  st->socket->peerName().toUtf8().constData(), st->socket->peerPort(),
-                  static_cast<unsigned long long>(st->lines), static_cast<unsigned long long>(st->logs),
-                  static_cast<unsigned long long>(st->events), st->last_sow,
-                  static_cast<unsigned>(st->dbLoaded));
-    return writeJson(buf, out, cap);
+    const QJsonObject res{
+        {QStringLiteral("state"), st->socket->state() == QAbstractSocket::ConnectedState ? "connected" : "disconnected"},
+        {QStringLiteral("host"), st->socket->peerName()},
+        {QStringLiteral("port"), st->socket->peerPort()},
+        {QStringLiteral("lines"), static_cast<double>(st->lines)},
+        {QStringLiteral("logs"), static_cast<double>(st->logs)},
+        {QStringLiteral("frames"), static_cast<double>(st->frames)},
+        {QStringLiteral("events"), static_cast<double>(st->events)},
+        {QStringLiteral("tx"), static_cast<double>(st->tx)},
+        {QStringLiteral("sow"), st->last_sow},
+        {QStringLiteral("db"), st->dbLoaded},
+        {QStringLiteral("last_rx"), st->lastRx},
+    };
+    const QByteArray json = QJsonDocument(res).toJson(QJsonDocument::Compact);
+    return writeJson(json.constData(), out, cap);
 }
 
 int32_t schema(char *out, uint32_t cap) { return writeJson(kSchema, out, cap); }
@@ -498,12 +709,13 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_oem7()
         pollSource,
         closeSource,
         statusSource,
+        sendCommand,
     };
     static const PsPluginDescriptor desc = {
         PS_PLUGIN_ABI_VERSION,
         R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","family":"data_source"})",
         PS_FAMILY_DATA_SOURCE,
-        PS_CAP_STREAM | PS_CAP_RECORD | PS_CAP_SCHEMA,
+        PS_CAP_STREAM | PS_CAP_RECORD | PS_CAP_SCHEMA | PS_CAP_COMMAND,
         nullptr,
         nullptr,
         &vtable,

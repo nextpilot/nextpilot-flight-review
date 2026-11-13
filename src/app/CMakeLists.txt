@@ -21,6 +21,8 @@ add_executable(plotscope_app
   source/SourceRegistry.cpp
   source/SourceConfigDialog.h
   source/SourceConfigDialog.cpp
+  source/SourceDebugDialog.h
+  source/SourceDebugDialog.cpp
   shell/Theme.h
   shell/Theme.cpp
   transform/TransformDialog.h

@@ -80,6 +80,12 @@ bool SourceRegistry::registerDescriptor(const PsPluginDescriptor *desc, const QS
     p.status = [v](void *handle) { return readJson([v, handle](char *o, uint32_t c) {
         return v->status_json ? v->status_json(handle, o, c) : -1;
     }); };
+    if (v->send_command)
+        p.send = [v](void *handle, const QString &command) {
+            return readJson([v, handle, command](char *o, uint32_t c) {
+                return v->send_command(handle, command.toUtf8().constData(), o, c);
+            });
+        };
     m_plugins.append(p);
     return true;
 }

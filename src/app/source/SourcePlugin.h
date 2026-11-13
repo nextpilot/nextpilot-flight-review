@@ -27,5 +27,6 @@ struct SourcePlugin
     std::function<int(void *handle, int timeoutMs, QString *err)> poll;
     std::function<void(void *handle)> close;
     std::function<QString(void *handle)> status;
+    std::function<QString(void *handle, const QString &command)> send; // 可选：设备调试命令
 };
 

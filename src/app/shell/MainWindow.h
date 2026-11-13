@@ -101,6 +101,7 @@ private:
     void addTransformFor(const QString &channel);
     void connectLiveSource(const QString &pluginId);
     void configureLiveSource(SourceData *src);
+    void openSourceDebug(SourceData *src);
     void pollLiveSources();
     void refreshLiveSource(SourceData *src);
     void closeLiveSource(SourceData *src);
