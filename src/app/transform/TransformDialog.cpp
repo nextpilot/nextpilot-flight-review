@@ -12,6 +12,10 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QTimer>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -57,7 +61,90 @@ QSpinBox *ispin(int lo, int hi, int val)
     s->setValue(val);
     return s;
 }
+
 } // namespace
+
+class PreviewPlot : public QWidget
+{
+public:
+    explicit PreviewPlot(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setMinimumHeight(112);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+
+    void setData(QVector<double> t, QVector<double> in, QVector<double> out)
+    {
+        m_t = std::move(t);
+        m_in = std::move(in);
+        m_out = std::move(out);
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.fillRect(rect(), QColor(QStringLiteral("#0d1117")));
+        p.setPen(QColor(QStringLiteral("#232b33")));
+        p.drawRect(rect().adjusted(0, 0, -1, -1));
+
+        const QRectF area = rect().adjusted(10, 22, -12, -12);
+        if (m_in.size() < 2 || m_out.size() < 2)
+        {
+            p.setPen(QColor(QStringLiteral("#5d6c77")));
+            p.drawText(area, Qt::AlignCenter, QStringLiteral("无预览数据"));
+            return;
+        }
+
+        double lo = m_in.first(), hi = m_in.first();
+        for (double v : m_in) { lo = std::min(lo, v); hi = std::max(hi, v); }
+        for (double v : m_out) { lo = std::min(lo, v); hi = std::max(hi, v); }
+        if (hi - lo < 1e-12) { hi += 1.0; lo -= 1.0; }
+
+        auto xy = [&](double t, double v) {
+            const double x = area.left() + (t - m_t.first()) / std::max(1e-12, m_t.last() - m_t.first()) * area.width();
+            const double y = area.bottom() - (v - lo) / (hi - lo) * area.height();
+            return QPointF(x, y);
+        };
+
+        p.setPen(QPen(QColor(QStringLiteral("#232b33")), 1));
+        for (int i = 1; i < 4; ++i)
+        {
+            const double y = area.top() + area.height() * i / 4.0;
+            p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y));
+        }
+
+        auto stroke = [&](const QVector<double> &v, const QPen &pen) {
+            QPainterPath path;
+            const int step = std::max(1, int(v.size()) / std::max(1, width() * 2));
+            bool first = true;
+            for (int i = 0; i < v.size(); i += step)
+            {
+                const int ti = std::min(i, int(m_t.size()) - 1);
+                const QPointF pt = xy(m_t.at(ti), v.at(i));
+                if (first) { path.moveTo(pt); first = false; }
+                else path.lineTo(pt);
+            }
+            p.setPen(pen);
+            p.drawPath(path);
+        };
+        stroke(m_in, QPen(QColor(QStringLiteral("#5d6c77")), 1, Qt::DashLine));
+        stroke(m_out, QPen(QColor(QStringLiteral("#f2b134")), 1.6));
+
+        QFont f = p.font();
+        f.setPointSize(8);
+        p.setFont(f);
+        p.setPen(QColor(QStringLiteral("#5d6c77")));
+        p.drawText(QRectF(10, 4, width() / 2, 16), Qt::AlignLeft, QStringLiteral("— 原始"));
+        p.setPen(QColor(QStringLiteral("#f2b134")));
+        p.drawText(QRectF(width() / 2.0, 4, width() / 2.0 - 10, 16), Qt::AlignRight, QStringLiteral("— 结果"));
+    }
+
+private:
+    QVector<double> m_t, m_in, m_out;
+};
+
 
 TransformDialog::TransformDialog(PsDataset *ds, const QVector<const PsChannelInfo *> &channels,
                                  const QString &sourceName, const QString &preselect, QWidget *parent)
@@ -123,13 +210,32 @@ QWidget *TransformDialog::buildFilterPage()
     m_output = new QLineEdit;
     form->addRow(QStringLiteral("输出通道"), m_output);
 
+    m_preview = new PreviewPlot;
+    form->addRow(QStringLiteral("预览"), m_preview);
+
     connect(m_filter, &QComboBox::currentIndexChanged, this, &TransformDialog::onFilterChanged);
     connect(m_input, &QComboBox::currentTextChanged, this, &TransformDialog::refreshOutputName);
     connect(m_output, &QLineEdit::textEdited, this, [this] { m_autoOutput = false; });
 
     const int pre = m_input->findText(m_preselect);
     m_input->setCurrentIndex(pre >= 0 ? pre : (m_input->count() > 0 ? 0 : -1));
+    m_previewTimer = new QTimer(this);
+    m_previewTimer->setSingleShot(true);
+    m_previewTimer->setInterval(120);
+    connect(m_previewTimer, &QTimer::timeout, this, &TransformDialog::updatePreview);
+    for (QDoubleSpinBox *b : std::as_const(m_doubles))
+        connect(b, &QDoubleSpinBox::valueChanged, m_previewTimer, qOverload<>(&QTimer::start));
+    for (QSpinBox *b : std::as_const(m_ints))
+        connect(b, &QSpinBox::valueChanged, m_previewTimer, qOverload<>(&QTimer::start));
+    for (QCheckBox *b : std::as_const(m_checks))
+        connect(b, &QCheckBox::toggled, m_previewTimer, qOverload<>(&QTimer::start));
+    for (QComboBox *b : std::as_const(m_combos))
+        connect(b, &QComboBox::currentIndexChanged, m_previewTimer, qOverload<>(&QTimer::start));
+    connect(m_input, &QComboBox::currentTextChanged, m_previewTimer, qOverload<>(&QTimer::start));
+    connect(m_filter, &QComboBox::currentIndexChanged, m_previewTimer, qOverload<>(&QTimer::start));
+
     onFilterChanged(0);
+    updatePreview();
     return w;
 }
 
@@ -276,6 +382,59 @@ void TransformDialog::refreshOutputName()
     m_output->setText(m_input->currentText() + QLatin1Char('.') + m_filter->currentData().toString());
 }
 
+QJsonObject TransformDialog::currentParams(const QString &id) const
+{
+    QJsonObject p;
+    const QString prefix = id + QLatin1Char('.');
+    for (auto it = m_doubles.constBegin(); it != m_doubles.constEnd(); ++it)
+        if (it.key().startsWith(prefix))
+            p.insert(it.key().mid(prefix.size()), it.value()->value());
+    for (auto it = m_ints.constBegin(); it != m_ints.constEnd(); ++it)
+        if (it.key().startsWith(prefix))
+            p.insert(it.key().mid(prefix.size()), it.value()->value());
+    for (auto it = m_checks.constBegin(); it != m_checks.constEnd(); ++it)
+        if (it.key().startsWith(prefix))
+            p.insert(it.key().mid(prefix.size()), it.value()->isChecked());
+    for (auto it = m_combos.constBegin(); it != m_combos.constEnd(); ++it)
+        if (it.key().startsWith(prefix))
+            p.insert(it.key().mid(prefix.size()), it.value()->currentData().toInt());
+    return p;
+}
+
+void TransformDialog::updatePreview()
+{
+    if (!m_preview || !m_ds || !m_input || !m_filter)
+        return;
+    const QString name = m_input->currentText();
+    const PsChannelInfo *ch = nullptr;
+    for (const PsChannelInfo *c : m_channels)
+        if (name == QString::fromUtf8(c->name)) { ch = c; break; }
+    if (!ch || ch->point_count < 2)
+    {
+        m_preview->setData({}, {}, {});
+        return;
+    }
+    const uint32_t n = ch->point_count;
+    QVector<double> in_t(n), in_v(n), out_t(n), out_v(n);
+    std::copy(ch->time, ch->time + n, in_t.begin());
+    std::copy(ch->value, ch->value + n, in_v.begin());
+
+    const QString id = m_filter->currentData().toString();
+    const QByteArray json = QJsonDocument(currentParams(id)).toJson(QJsonDocument::Compact);
+    char err[256] = {0};
+    uint32_t got = 0;
+    const int rc = ps_preview_filter(m_ds, name.toUtf8().constData(), id.toUtf8().constData(),
+                                    json.constData(), out_t.data(), out_v.data(), n, &got, err, sizeof err);
+    if (rc != 0 && rc != 6)
+    {
+        m_preview->setData({}, {}, {});
+        return;
+    }
+    out_t.resize(got);
+    out_v.resize(got);
+    m_preview->setData(in_t, in_v, out_v);
+}
+
 void TransformDialog::apply()
 {
     if (!m_ds)
@@ -314,21 +473,7 @@ void TransformDialog::apply()
     const QString id = m_filter->currentData().toString();
     m_inputName = m_input->currentText();
     const QString out = m_output->text().trimmed();
-    QJsonObject p;
-    const QString prefix = id + QLatin1Char('.');
-    for (auto it = m_doubles.constBegin(); it != m_doubles.constEnd(); ++it)
-        if (it.key().startsWith(prefix))
-            p.insert(it.key().mid(prefix.size()), it.value()->value());
-    for (auto it = m_ints.constBegin(); it != m_ints.constEnd(); ++it)
-        if (it.key().startsWith(prefix))
-            p.insert(it.key().mid(prefix.size()), it.value()->value());
-    for (auto it = m_checks.constBegin(); it != m_checks.constEnd(); ++it)
-        if (it.key().startsWith(prefix))
-            p.insert(it.key().mid(prefix.size()), it.value()->isChecked());
-    for (auto it = m_combos.constBegin(); it != m_combos.constEnd(); ++it)
-        if (it.key().startsWith(prefix))
-            p.insert(it.key().mid(prefix.size()), it.value()->currentData().toInt());
-
+    const QJsonObject p = currentParams(id);
     const QByteArray json = QJsonDocument(p).toJson(QJsonDocument::Compact);
     const int rc = ps_dataset_apply_filter(m_ds, m_input->currentText().toUtf8().constData(),
                                            id.toUtf8().constData(), json.constData(),

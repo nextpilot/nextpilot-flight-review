@@ -40,6 +40,19 @@ int main() {
         std::fprintf(stderr, "base channels=%u\n", base);
         return 6;
     }
+    {
+        double pt[2] = {0}, pv[2] = {0};
+        uint32_t pn = 0;
+        if (ps_preview_filter(ds, "roll", "moving_average", "{\"window\":2}", pt, pv, 2, &pn,
+                              err, sizeof err) != 0 || pn != 2 || pv[0] != 0.0 || pv[1] != 1.0) {
+            std::fprintf(stderr, "preview failed: %s\n", err);
+            return 11;
+        }
+        if (ps_dataset_channel_count(ds) != base) {
+            std::fprintf(stderr, "preview mutated dataset\n");
+            return 12;
+        }
+    }
     if (ps_dataset_apply_filter(ds, "roll", "moving_average", "{\"window\":2}", "roll.ma",
                                 err, sizeof err) != 0) {
         std::fprintf(stderr, "filter failed: %s\n", err);
