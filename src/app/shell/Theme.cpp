@@ -58,10 +58,17 @@ QTabBar::close-button { image:url(:/icons/close_small.svg); subcontrol-position:
 QTabBar::close-button:hover { background:#222b33; }
 
 /* ---- 视图类 ---- */
-QTreeWidget, QTableWidget, QListWidget, QPlainTextEdit, QTextEdit {
+QTreeWidget, QListWidget, QPlainTextEdit, QTextEdit {
     background:#0d1117; border:1px solid #21262d; alternate-background-color:#131a20;
     selection-background-color:#1b232a; selection-color:#c9d1d9; outline:0;
 }
+/* 参数/属性表：和正文同一底色，不靠条纹和边框抢视觉 */
+QTableWidget {
+    background:#0d1117; border:0; alternate-background-color:#0d1117;
+    selection-background-color:#1b232a; selection-color:#c9d1d9; outline:0;
+}
+QTableWidget::item { padding:0 6px; border:0; }
+QTableWidget::item:hover { background:#161d24; }
 QTreeWidget::item { height:22px; border-left:2px solid transparent; }
 QTreeWidget::item:hover { background:#1d242a; }
 QTreeWidget::item:selected { background:#1a2127; color:#c9d1d9; border-left-color:#f2b134; }
@@ -69,8 +76,8 @@ QListWidget::item { padding:3px 6px; }
 QListWidget::item:hover { background:#1d242a; }
 QListWidget::item:selected { background:#1a2127; color:#c9d1d9; }
 QTableWidget::item:selected { background:#1a2127; color:#c9d1d9; }
-QHeaderView { background:#161b20; border:0; }
-QHeaderView::section { background:#161b20; color:#8494a0; border:0; border-bottom:1px solid #232b33; padding:5px 6px; font-size:11px; }
+QHeaderView { background:transparent; border:0; }
+QHeaderView::section { background:#0d1117; color:#6f7d88; border:0; border-bottom:1px solid #202830; padding:2px 6px; font-size:11px; }
 QTableCornerButton::section { background:#161b20; border:0; }
 QPlainTextEdit { font-size:11.5px; }
 

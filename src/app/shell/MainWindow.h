@@ -58,7 +58,7 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
 
     // 打开一份 CSV（内核解析），把前 3 个通道画到当前页画布
-    bool loadFile(const QString &path);
+    bool loadFile(const QString &path, bool interactive = true);
     void importLayoutFrom(const QString &path);
     void saveLayoutTo(const QString &path);
     QString defaultLayoutPath() const;

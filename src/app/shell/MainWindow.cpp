@@ -30,6 +30,8 @@
 #include <QStyle>
 #include <QHash>
 #include <QPainter>
+#include <QPainterPath>
+#include <cmath>
 #include <QPixmap>
 #include <QSplitter>
 #include <QStatusBar>
@@ -58,10 +60,222 @@
 #include "ps_kernel.h"
 #include "transform/TransformDialog.h"
 
+namespace {
+
+// Ribbon 里的图表选择卡：用缩略图表达图型，比一排纯文字按钮更接近 Office/MATLAB 的样式库
+void compactValueTable(QTableWidget *t)
+{
+    if (!t)
+        return;
+    t->setAlternatingRowColors(false);
+    t->setWordWrap(false);
+    t->verticalHeader()->setVisible(false);
+    t->verticalHeader()->setDefaultSectionSize(21);
+    t->verticalHeader()->setMinimumSectionSize(21);
+    t->horizontalHeader()->setFixedHeight(23);
+    QFont f = t->font();
+    f.setPixelSize(12);
+    t->setFont(f);
+}
+
+QPixmap plotThumb(const QString &kind)
+{
+    QPixmap pm(76, 38);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setPen(QPen(QColor("#2d3841"), 1));
+    p.setBrush(QColor("#0b0f13"));
+    p.drawRoundedRect(QRectF(0.5, 0.5, 75, 37), 3, 3);
+    const QRectF r(7, 6, 62, 26);
+    p.setPen(QPen(QColor("#26313a"), 1));
+    p.drawLine(r.bottomLeft(), r.bottomRight());
+    p.drawLine(r.bottomLeft(), r.topLeft());
+
+    if (kind == QLatin1String("timeseries"))
+    {
+        QPainterPath path;
+        for (int i = 0; i <= 40; ++i)
+        {
+            const double x = r.left() + r.width() * i / 40.0;
+            const double y = r.center().y() - std::sin(i * 0.28) * 8.0;
+            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+        }
+        p.setPen(QPen(QColor("#4ea1ff"), 1.6));
+        p.drawPath(path);
+    }
+    else if (kind == QLatin1String("xy"))
+    {
+        for (int i = 0; i < 9; ++i)
+        {
+            const double x = r.left() + 6 + (i * 13) % 50;
+            const double y = r.bottom() - 3 - (i * 7) % 20;
+            p.setPen(QPen(QColor("#ffb454"), 1));
+            p.setBrush(QColor("#ffb454"));
+            p.drawEllipse(QPointF(x, y), 1.8, 1.8);
+        }
+    }
+    else if (kind == QLatin1String("scatter"))
+    {
+        for (int i = 0; i < 14; ++i)
+        {
+            const double x = r.left() + 5 + (i * 17) % 52;
+            const double y = r.bottom() - 2 - (i * 11) % 21;
+            p.setPen(Qt::NoPen);
+            p.setBrush(i % 3 ? QColor("#7ee787") : QColor("#ffb454"));
+            p.drawEllipse(QPointF(x, y), 1.5, 1.5);
+        }
+    }
+    else if (kind == QLatin1String("bar"))
+    {
+        for (int i = 0; i < 5; ++i)
+        {
+            const double h = 4 + (i * 7) % 19;
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor("#7ee787"));
+            p.drawRect(QRectF(r.left() + 5 + i * 11, r.bottom() - h, 6, h));
+        }
+    }
+    else if (kind == QLatin1String("traj3d"))
+    {
+        p.setPen(QPen(QColor("#26313a"), 1));
+        p.drawLine(QPointF(12, 28), QPointF(32, 21));
+        p.drawLine(QPointF(32, 21), QPointF(58, 27));
+        p.drawLine(QPointF(58, 27), QPointF(58, 9));
+        p.drawLine(QPointF(58, 9), QPointF(36, 8));
+        p.drawLine(QPointF(36, 8), QPointF(12, 14));
+        p.drawLine(QPointF(12, 14), QPointF(12, 28));
+        QPainterPath path;
+        path.moveTo(14, 25);
+        path.cubicTo(24, 8, 40, 12, 54, 20);
+        p.setPen(QPen(QColor("#f2b134"), 1.6));
+        p.drawPath(path);
+    }
+    else if (kind == QLatin1String("surface3d"))
+    {
+        p.setPen(QPen(QColor("#2a3b48"), 1));
+        for (int i = 0; i < 6; ++i)
+        {
+            p.drawLine(QPointF(12 + i * 9, 25), QPointF(22 + i * 9, 31));
+            p.drawLine(QPointF(12 + i * 9, 25), QPointF(34 + i * 9, 9));
+        }
+        QPainterPath path;
+        path.moveTo(12, 22);
+        path.cubicTo(26, 8, 44, 27, 64, 13);
+        p.setPen(QPen(QColor("#39c5cf"), 1.4));
+        p.drawPath(path);
+    }
+    else if (kind == QLatin1String("horizon"))
+    {
+        p.setPen(QPen(QColor("#4a5a68"), 1));
+        p.setBrush(QColor("#2b3a4a"));
+        p.drawEllipse(QPointF(38, 19), 14, 14);
+        p.setBrush(QColor("#3a2f22"));
+        p.drawChord(QRectF(24, 5, 28, 28), 180 * 16, 180 * 16);
+        p.setPen(QPen(QColor("#f2b134"), 1.4));
+        p.drawLine(QPointF(25, 19), QPointF(51, 19));
+        p.drawLine(QPointF(38, 17), QPointF(38, 21));
+        p.drawLine(QPointF(31, 19), QPointF(45, 19));
+    }
+    else if (kind == QLatin1String("compass"))
+    {
+        p.setPen(QPen(QColor("#4a5a68"), 1));
+        p.drawEllipse(QPointF(38, 19), 13, 13);
+        p.drawText(QRectF(35, 5, 8, 8), Qt::AlignCenter, QStringLiteral("N"));
+        p.setPen(QPen(QColor("#ff7b72"), 1.8));
+        p.drawLine(QPointF(38, 19), QPointF(43, 10));
+        p.setPen(QPen(QColor("#c9d1d9"), 1));
+        p.drawLine(QPointF(38, 19), QPointF(34, 27));
+    }
+    else if (kind == QLatin1String("gauge"))
+    {
+        p.setPen(QPen(QColor("#4a5a68"), 1.2));
+        p.drawArc(QRectF(18, 7, 40, 34), 200 * 16, -220 * 16);
+        p.setPen(QPen(QColor("#f2b134"), 1.6));
+        p.drawLine(QPointF(38, 23), QPointF(51, 13));
+        p.setBrush(QColor("#f2b134"));
+        p.drawEllipse(QPointF(38, 23), 2, 2);
+    }
+    return pm;
+}
+
+QPixmap sourceThumb(const QString &kind)
+{
+    QPixmap pm(76, 38);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setPen(QPen(QColor("#2d3841"), 1));
+    p.setBrush(QColor("#0b0f13"));
+    p.drawRoundedRect(QRectF(0.5, 0.5, 75, 37), 3, 3);
+    const QColor accent = kind == QLatin1String("ulog")     ? QColor("#4ea1ff")
+                       : kind == QLatin1String("bin")      ? QColor("#ffb454")
+                       : kind == QLatin1String("csv")      ? QColor("#7ee787")
+                       : kind == QLatin1String("can")      ? QColor("#d2a8ff")
+                       : kind == QLatin1String("mavlink")  ? QColor("#39c5cf")
+                       : kind == QLatin1String("ros2")     ? QColor("#ff7b72")
+                                                          : QColor("#f2b134");
+    p.setPen(Qt::NoPen);
+    p.setBrush(accent);
+    p.drawRect(QRectF(0, 0, 3, 38));
+    p.setPen(QPen(accent, 1.2));
+    QPainterPath path;
+    for (int i = 0; i <= 28; ++i)
+    {
+        const double x = 10 + i * 2.0;
+        const double y = 19 - std::sin(i * 0.42) * (kind == QLatin1String("can") ? 6.0 : 8.0);
+        if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+    }
+    p.drawPath(path);
+    p.setPen(QColor("#c9d1d9"));
+    QFont f = p.font();
+    f.setPixelSize(9);
+    f.setBold(true);
+    p.setFont(f);
+    p.drawText(QRectF(9, 3, 60, 10), Qt::AlignLeft | Qt::AlignVCenter,
+               kind == QLatin1String("ulog") ? QStringLiteral("ULog")
+               : kind == QLatin1String("bin") ? QStringLiteral("BIN")
+               : kind == QLatin1String("csv") ? QStringLiteral("CSV")
+               : kind == QLatin1String("can") ? QStringLiteral("CAN")
+               : kind == QLatin1String("mavlink") ? QStringLiteral("MAV")
+               : kind == QLatin1String("ros2") ? QStringLiteral("ROS2")
+                                               : QStringLiteral("RT"));
+    return pm;
+}
+
+QString autoCsvOptions(const QString &path)
+{
+    char err[256] = {0};
+    QByteArray json(1 << 16, '\0');
+    const int32_t n = ps_csv_probe(path.toUtf8().constData(), 0, json.data(),
+                                   static_cast<uint32_t>(json.size()), err, sizeof(err));
+    if (n < 0)
+        return QString();
+    const QJsonObject probe = QJsonDocument::fromJson(QByteArray(json.constData(), n)).object();
+    QJsonObject o;
+    QString delim = probe.value(QStringLiteral("delimiter")).toString();
+    o.insert(QStringLiteral("delimiter"), delim.isEmpty() ? QStringLiteral(",") : delim.left(1));
+    o.insert(QStringLiteral("has_header"), probe.value(QStringLiteral("has_header")).toBool(true));
+    o.insert(QStringLiteral("skip_rows"), 0);
+    QJsonObject t;
+    if (probe.contains(QStringLiteral("suggested_time")))
+    {
+        t.insert(QStringLiteral("mode"), QStringLiteral("column"));
+        t.insert(QStringLiteral("index"), probe.value(QStringLiteral("suggested_time")).toInt());
+    }
+    else
+        t.insert(QStringLiteral("mode"), QStringLiteral("row"));
+    o.insert(QStringLiteral("time"), t);
+    return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
+}
+
+} // namespace
 #include "SARibbonBar.h"
 #include "SARibbonCategory.h"
 #include "SARibbonPanel.h"
 #include "SARibbonButtonGroupWidget.h"
+#include "SARibbonGallery.h"
+#include "SARibbonGalleryGroup.h"
 #include "SARibbonThemeManager.h"
 #include "SARibbonToolButton.h"
 
@@ -236,12 +450,49 @@ QWidget *MainWindow::createRibbon()
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("数据"));
         auto *pSrc = cat->addPanel(QStringLiteral("来源"));
-        addLarge(pSrc, QStringLiteral("打开数据源"), [this] {
-            const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("打开数据源"), {},
-                QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-            for (const QString &f : fs)
-                loadFile(f);
-        }, this);
+        auto *srcGallery = pSrc->addGallery(true);
+        QList<QAction *> srcActs;
+        auto addSource = [&](const QString &kind, const QString &label, const QString &filter, bool implemented) {
+            auto *a = new QAction(QIcon(sourceThumb(kind)), label, this);
+            a->setToolTip(implemented ? QStringLiteral("选择 %1 文件（可多选）").arg(label)
+                                      : QStringLiteral("%1 解析尚未接入").arg(label));
+            connect(a, &QAction::triggered, this, [this, label, filter, implemented] {
+                if (!implemented)
+                {
+                    log(QStringLiteral("%1：解析器尚未接入（M1/M2）").arg(label));
+                    QMessageBox::information(this, QStringLiteral("数据源"),
+                                             QStringLiteral("%1 解析尚未接入，当前可用 ULog / DataFlash / CSV / CAN。")
+                                                 .arg(label));
+                    return;
+                }
+                const QStringList fs = QFileDialog::getOpenFileNames(this, label, {}, filter);
+                for (const QString &f : fs)
+                    loadFile(f);
+            });
+            srcActs.append(a);
+        };
+        addSource(QStringLiteral("ulog"), QStringLiteral("ULog"),
+                  QStringLiteral("ULog (*.ulg);;全部 (*)"), true);
+        addSource(QStringLiteral("bin"), QStringLiteral("DataFlash"),
+                  QStringLiteral("ArduPilot BIN (*.bin);;全部 (*)"), true);
+        addSource(QStringLiteral("csv"), QStringLiteral("CSV"),
+                  QStringLiteral("CSV (*.csv);;全部 (*)"), true);
+        addSource(QStringLiteral("can"), QStringLiteral("CAN"),
+                  QStringLiteral("CAN 日志 (*.asc *.blf);;全部 (*)"), true);
+        addSource(QStringLiteral("mavlink"), QStringLiteral("MAVLink"), QString(), false);
+        addSource(QStringLiteral("ros2"), QStringLiteral("ROS2"), QString(), false);
+        addSource(QStringLiteral("rt"), QStringLiteral("实时流"), QString(), false);
+        auto *srcGroup = srcGallery->addCategoryActions(QStringLiteral("数据源类型"), srcActs);
+        srcGroup->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
+        srcGroup->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+        srcGroup->setIconSize(QSize(66, 32));
+        srcGroup->setGridMinimumWidth(76);
+        srcGroup->setGridMaximumWidth(96);
+        srcGallery->setSingleRowMode(true);
+        srcGallery->setMinimumWidth(600);
+        srcGallery->setMaximumWidth(600);
+        srcGallery->setCurrentViewGroup(srcGroup);
+
         auto *pRun = cat->addPanel(QStringLiteral("传输"));
         addLarge(pRun, QStringLiteral("全部开始"), [this] {
             m_srcCount->setText(QStringLiteral("3 源 · 运行中"));
@@ -255,9 +506,58 @@ QWidget *MainWindow::createRibbon()
         }, this);
     }
 
-    // 绘图
+    // 绘图 + 仪表合并：像 Office/MATLAB 的图表样式库，缩略图直接表达图型
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("绘图"));
+        auto *pType = cat->addPanel(QStringLiteral("图表"));
+        auto *plotGallery = pType->addGallery(true);
+        QList<QAction *> plotActs;
+        auto addPlot = [&](const QString &kind, const QString &label, const QString &tip) {
+            auto *a = new QAction(QIcon(plotThumb(kind)), label, this);
+            a->setToolTip(tip);
+            connect(a, &QAction::triggered, this, [this, kind, label] {
+                if (kind == QLatin1String("timeseries"))
+                {
+                    newPage();
+                    if (auto *c = currentCanvas())
+                    {
+                        c->setTitle(QStringLiteral("%1 · 选择通道").arg(label));
+                        log(QStringLiteral("新建图页：%1").arg(label));
+                    }
+                }
+                else
+                {
+                    auto *page = new QLabel(QStringLiteral("%1\n该图型将在 M1 接入，先保留页签与布局位置。").arg(label), this);
+                    page->setAlignment(Qt::AlignCenter);
+                    page->setStyleSheet(QStringLiteral("color:#8494a0;background:#0d1117;font-size:13px;"));
+                    const int plusIdx = m_pages->count() - 1;
+                    m_pages->insertTab(plusIdx, page, label);
+                    m_pages->setCurrentWidget(page);
+                    log(QStringLiteral("新建图页：%1（M1 实现）").arg(label));
+                }
+            });
+            plotActs.append(a);
+        };
+        addPlot(QStringLiteral("timeseries"), QStringLiteral("时间序列"), QStringLiteral("时间轴曲线，当前已实现"));
+        addPlot(QStringLiteral("xy"), QStringLiteral("XY 曲线"), QStringLiteral("X-Y 双通道曲线"));
+        addPlot(QStringLiteral("scatter"), QStringLiteral("散点图"), QStringLiteral("二维散点"));
+        addPlot(QStringLiteral("bar"), QStringLiteral("柱状图"), QStringLiteral("离散量柱状对比"));
+        addPlot(QStringLiteral("traj3d"), QStringLiteral("3D 轨迹"), QStringLiteral("三维空间轨迹"));
+        addPlot(QStringLiteral("surface3d"), QStringLiteral("3D 曲面"), QStringLiteral("三维曲面 / 频谱"));
+        addPlot(QStringLiteral("horizon"), QStringLiteral("地平仪"), QStringLiteral("姿态地平仪"));
+        addPlot(QStringLiteral("compass"), QStringLiteral("罗盘"), QStringLiteral("航向罗盘"));
+        addPlot(QStringLiteral("gauge"), QStringLiteral("表盘"), QStringLiteral("单值仪表盘"));
+        auto *plotGroup = plotGallery->addCategoryActions(QStringLiteral("图表类型"), plotActs);
+        plotGroup->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
+        plotGroup->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+        plotGroup->setIconSize(QSize(66, 32));
+        plotGroup->setGridMinimumWidth(74);
+        plotGroup->setGridMaximumWidth(94);
+        plotGallery->setSingleRowMode(true);
+        plotGallery->setMinimumWidth(700);
+        plotGallery->setMaximumWidth(700);
+        plotGallery->setCurrentViewGroup(plotGroup);
+
         auto *pPage = cat->addPanel(QStringLiteral("页"));
         addLarge(pPage, QStringLiteral("新建页"), [this] { newPage(); }, this);
         addLarge(pPage, QStringLiteral("添加画布"), [this] { addCanvasToPage(); }, this);
@@ -265,15 +565,6 @@ QWidget *MainWindow::createRibbon()
         addSmall(pView, QStringLiteral("自动 Y"), [this] { log(QStringLiteral("自动 Y：按可见曲线量程重算")); }, this);
         addSmall(pView, QStringLiteral("游标"), [this] { log(QStringLiteral("十字光标已启用")); }, this);
         addSmall(pView, QStringLiteral("复位视图"), [this] { log(QStringLiteral("双击画布也可复位")); }, this);
-    }
-
-    // 仪表
-    {
-        auto *cat = ribbon->addCategoryPage(QStringLiteral("仪表"));
-        auto *p = cat->addPanel(QStringLiteral("新建"));
-        addLarge(p, QStringLiteral("地平仪"), [this] { log(QStringLiteral("添加地平仪（QPainter 自绘，M1 落地）")); }, this);
-        addSmall(p, QStringLiteral("罗盘"), [this] { log(QStringLiteral("添加罗盘（QPainter 自绘，M1 落地）")); }, this);
-        addSmall(p, QStringLiteral("表盘"), [this] { log(QStringLiteral("添加表盘（QPainter 自绘，M1 落地）")); }, this);
     }
 
     // 脚本
@@ -628,9 +919,10 @@ void MainWindow::createDocks()
     m_paramTable->horizontalHeader()->setStretchLastSection(false);
     m_paramTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_paramTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
-    m_paramTable->setColumnWidth(1, 66);
+    m_paramTable->setColumnWidth(1, 110);
     m_paramTable->setShowGrid(false);
     m_paramTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    compactValueTable(m_paramTable);
     m_srcStack->addWidget(m_paramTable);
 
     m_msgTable = new QTableWidget(0, 3, m_srcStack);
@@ -646,6 +938,7 @@ void MainWindow::createDocks()
     m_msgTable->setShowGrid(false);
     m_msgTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_msgTable->setSelectionMode(QAbstractItemView::NoSelection);
+    compactValueTable(m_msgTable);
     m_srcStack->addWidget(m_msgTable);
 
     connect(m_srcTabs, &QTabBar::currentChanged, m_srcStack, &QStackedWidget::setCurrentIndex);
@@ -692,6 +985,7 @@ void MainWindow::createDocks()
     m_propTable->horizontalHeader()->setStretchLastSection(true);
     m_propTable->verticalHeader()->setVisible(false);
     m_propTable->setShowGrid(false);
+    compactValueTable(m_propTable);
     propLay->addWidget(m_selLabel);
     propLay->addWidget(m_propTable, 1);
     propDock->setWidget(propHost);
@@ -1040,6 +1334,8 @@ void MainWindow::renderSourceData()
         auto *v = new QTableWidgetItem(m_srcParams[i].second);
         k->setFlags(Qt::ItemIsEnabled);
         v->setFlags(Qt::ItemIsEnabled);
+        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
+        v->setForeground(QColor(QStringLiteral("#d5dde5")));
         m_paramTable->setItem(i, 0, k);
         m_paramTable->setItem(i, 1, v);
     }
@@ -1050,6 +1346,8 @@ void MainWindow::renderSourceData()
         auto *v = new QTableWidgetItem(QStringLiteral("%1 未提供参数表（仅 ULog 带 P/Q 参数消息）").arg(m_srcFmt));
         k->setFlags(Qt::ItemIsEnabled);
         v->setFlags(Qt::ItemIsEnabled);
+        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
+        v->setForeground(QColor(QStringLiteral("#d5dde5")));
         m_paramTable->setItem(0, 0, k);
         m_paramTable->setItem(0, 1, v);
     }
@@ -1061,6 +1359,7 @@ void MainWindow::renderSourceData()
         {
             auto *mi = new QTableWidgetItem(m_srcMsgs[i].value(c));
             mi->setFlags(Qt::ItemIsEnabled);
+            mi->setForeground(QColor(c == 0 ? QStringLiteral("#d5dde5") : QStringLiteral("#9aa7b2")));
             if (c > 0)
                 mi->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
             m_msgTable->setItem(i, c, mi);
@@ -1071,8 +1370,9 @@ void MainWindow::renderSourceData()
         m_msgTable->setRowCount(1);
         for (int c = 0; c < 3; ++c)
         {
-            auto *mi = new QTableWidgetItem(c == 0 ? QStringLiteral("—") : QStringLiteral("—"));
+            auto *mi = new QTableWidgetItem(QStringLiteral("—"));
             mi->setFlags(Qt::ItemIsEnabled);
+            mi->setForeground(QColor(c == 0 ? QStringLiteral("#d5dde5") : QStringLiteral("#9aa7b2")));
             if (c > 0)
                 mi->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
             m_msgTable->setItem(0, c, mi);
@@ -1868,7 +2168,7 @@ void MainWindow::importLayoutFrom(const QString &path)
             }
         }
         if (!loaded)
-            loadFile(path);
+            loadFile(path, false);
         const QString alias = v.toObject().value(QStringLiteral("alias")).toString();
         if (!alias.isEmpty())
         {
@@ -2023,7 +2323,7 @@ CanvasWidget *MainWindow::currentCanvas() const
     return pageCanvases().value(0, nullptr);
 }
 
-bool MainWindow::loadFile(const QString &path)
+bool MainWindow::loadFile(const QString &path, bool interactive)
 {
     char err[256] = {0};
     PsDataset *ds = nullptr;
@@ -2046,11 +2346,18 @@ bool MainWindow::loadFile(const QString &path)
         rc = ps_blf_load(path.toUtf8().constData(), &ds, err, sizeof(err));
     else
     {
-        // CSV：先探测，由用户确认时间轴/分隔符/表头，再按选项解析
-        CsvLoaderDialog dlg(path, this);
-        if (dlg.exec() != QDialog::Accepted)
-            return false;
-        rc = ps_csv_load_opts(path.toUtf8().constData(), dlg.optionsJson().toUtf8().constData(),
+        // CSV：交互打开时由用户确认；恢复布局时按探测结果静默加载，避免启动弹窗
+        QString opts;
+        if (interactive)
+        {
+            CsvLoaderDialog dlg(path, this);
+            if (dlg.exec() != QDialog::Accepted)
+                return false;
+            opts = dlg.optionsJson();
+        }
+        else
+            opts = autoCsvOptions(path);
+        rc = ps_csv_load_opts(path.toUtf8().constData(), opts.toUtf8().constData(),
                               &ds, err, sizeof(err));
     }
     if (rc != 0)
@@ -2196,7 +2503,9 @@ void MainWindow::setPropRows(const QString &object, const QVector<QPair<QString,
     {
         auto *k = new QTableWidgetItem(rows[i].first);
         k->setFlags(Qt::ItemIsEnabled);
+        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
         auto *v = new QTableWidgetItem(rows[i].second);
+        v->setForeground(QColor(QStringLiteral("#d5dde5")));
         m_propTable->setItem(i, 0, k);
         m_propTable->setItem(i, 1, v);
     }
