@@ -106,7 +106,6 @@ public:
 | `samples_counter` | 窗口内样本数 | `samples_ms` |
 | `binary_filter` | 阈值二值化 | `binary_op`, `binary_a`, `binary_b`, `binary_tol` |
 | `time_since_previous` | 相邻样本 Δt | — |
-'
 
 四元数不在 PJ4 内置目录里，而是官方 Quaternion 插件：4 输入（w,x,y,z）→ 一个分组 topic `rpy:roll,pitch,yaw`。我们按同样语义单独实现，不做三条独立通道；支持 degree、unwrap、pitch ±π/2 截断。
 
