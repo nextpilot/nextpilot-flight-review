@@ -136,3 +136,26 @@ pj_scene2D / pj_scene3D：图像、视频、点云、TF、机器人模型
 - `pj_app/CLAUDE.md`、`CurveListPanel.h`、`SourceTimelineController.h`、`LayoutXml.h`
 - `pj_marketplace/README.md`
 - `pj-official-plugins`: `data_load_*`、`data_stream_*`、`parser_*`、`toolbox_quaternion`、`toolbox_transform_editor`、`toolbox_fft`、`toolbox_data_exporter`
+
+
+## 11. PJ3→PJ4 迁移欠账（官方自述）
+
+PJ4 是平台级重写：SDK 换 C ABI、插件全部重制、数据层换列式存储。官方插件仓库的 `PORTING_PLAN.md` 就是逐插件对比 PJ3 的欠账表：
+
+- 统计：12 个移植插件，**46 项逐插件缺口 + 11 项横切缺口**；其中 CRITICAL 3、HIGH 16、MEDIUM 17、LOW 10。
+- 3 个 CRITICAL 已修：MQTT TLS 证书、Protobuf 内嵌时间戳、PJ Bridge 的 u16/u32 线格式。
+- 大多数 HIGH 已补：CSV 日期格式帮助、Parquet 时区/排序、Protobuf 枚举/字符串字段、JSON 的 CBOR/BSON/MessagePack、Foxglove 断线重连、PJ Bridge 心跳等。
+- **仍未收尾的**：ULog 的参数/Info/日志三页对话框——数据已写成 `_parameters` / `_info` / `_log` topic，但宿主没有状态面板 UI；部分流插件的暂停/恢复、主题列表刷新、错误弹窗仍靠宿主补。
+
+PJ3 有、PJ4 官方插件里直接没有的：
+- **StatePublisherCSV / StatePublisherZMQ**：向机器人回写状态/指令。PJ4 明确“不能向机器人发布”。
+- **ZCM** 插件。
+- **通用 WebSocket 流**：PJ4 只剩 Foxglove Bridge 和 PJ Bridge 两种协议专用的 WS。
+- **Lua Editor**：被 `toolbox_transform_editor` 的自定义函数/脚本编辑器替代，形态变了，不是原样保留。
+- **ROS1 传输链路**：PJ4 的 `parser_ros` 仍认 `ros1msg` schema，但没有 ROS1 流/连接器；PJ3 的 ParserROS + 通用 WS 组合没了。
+- **VideoViewer**：被核心 2D viewer（图像/视频/深度）取代，能力是增强不是丢失。
+
+所以：
+- **“PJ4 没来得及完善 PJ3 功能”在插件生态、发布链路、旧格式兼容上是真的**，官方迁移表就是证据。
+- **但不是整体倒退**：核心新增了数据处理器、源时间轴、页签复制/全屏、2D/3D、GPU 画布、市场、录制、MCP，这些 PJ3 没有。
+- 对我们最有用的结论：**PJ3 当“成熟分析交互”的参考，PJ4 当“架构与数据模型”的参考**。像直方图、GPS、姿态仪这些 PJ3 第三方生态功能，不能拿 PJ4 当缺口标准；而发布、ZCM、通用 WS、ULog 参数页这类，确实是 PJ4 的欠账，我们可以按需做，但不必为了“对标 PJ4”而做。
