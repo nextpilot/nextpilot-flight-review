@@ -6,7 +6,7 @@
 src/
   app/          Qt 实现 + 宿主基础设施
     shell/      主窗口、Ribbon、Dock
-    plot/       画布、坐标轴、图例
+    canvas/     画布、坐标轴、图例
     loader/     loader 注册与通用选项/对话框
     source/     实时源注册与配置/调试
     transform/  变换对话框

@@ -25,11 +25,11 @@ add_executable(plotscope_app
   shell/Theme.cpp
   transform/TransformDialog.h
   transform/TransformDialog.cpp
-  plot/CanvasWidget.h
-  plot/CanvasWidget.cpp
+  canvas/CanvasWidget.h
+  canvas/CanvasWidget.cpp
   script/ScriptEngine.h
   script/ScriptEngine.cpp
-  res/icons.qrc
+  resource/icons.qrc
 )
 
 target_include_directories(plotscope_app PRIVATE

@@ -66,7 +66,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "plot/CanvasWidget.h"
+#include "canvas/CanvasWidget.h"
 #include "script/ScriptEngine.h"
 #include "ps_kernel.h"
 #include "transform/TransformDialog.h"

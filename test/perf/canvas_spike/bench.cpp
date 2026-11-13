@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "ps_kernel.h"
-#include "plot/CanvasWidget.h"
+#include "canvas/CanvasWidget.h"
 #include "jkqtplotter/jkqtplotter.h"
 #include "jkqtplotter/graphs/jkqtplines.h"
 

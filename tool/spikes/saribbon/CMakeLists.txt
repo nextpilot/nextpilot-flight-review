@@ -5,7 +5,7 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Svg)
 find_package(SARibbonBar REQUIRED)
 set(REPO "/home/user/Doubao/chats/38453274206336514/nextpilot-advance-plotscope")
-add_executable(ps_sari_spike main.cpp ${REPO}/src/app/plot/CanvasWidget.cpp)
+add_executable(ps_sari_spike main.cpp ${REPO}/src/app/canvas/CanvasWidget.cpp)
 target_include_directories(ps_sari_spike PRIVATE ${REPO}/src/app ${REPO}/src/kernel/include)
 target_link_libraries(ps_sari_spike PRIVATE SARibbonBar::SARibbonBar Qt6::Widgets
   ${REPO}/src/kernel/target/release/libps_abi.a Threads::Threads ${CMAKE_DL_LIBS})

@@ -17,7 +17,7 @@
 #include "SARibbonGlobal.h"
 
 #include "ps_kernel.h"
-#include "plot/CanvasWidget.h"
+#include "canvas/CanvasWidget.h"
 
 static QAction *act(QObject *owner, const QString &text)
 {

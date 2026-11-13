@@ -529,7 +529,7 @@ plotscope/
 │   │   ├── main.cpp
 │   │   ├── shell/                 # Ribbon、DockHost、Workspace、页签栏
 │   │   ├── pages/                 # Page = QSplitter 树，叶子装配
-│   │   ├── plot/                  # Canvas、Axis、CurveLayer、游标/框选/LOD 调度
+│   │   ├── canvas/                # Canvas、Axis、CurveLayer、游标/框选/LOD 调度
 │   │   ├── inst/                  # 地平仪、罗盘、表盘、告警灯（QPainter 自绘）
 │   │   ├── panels/                # 数据源树、属性面板（QObject 选中 → 属性模型）
 │   │   ├── proto/                 # 协议编辑器：Loader 的 options 子窗口（帧模板/位域/CRC）

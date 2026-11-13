@@ -1,4 +1,4 @@
-#include "plot/CanvasWidget.h"
+#include "canvas/CanvasWidget.h"
 
 #include <QMouseEvent>
 #include <QPainter>
