@@ -609,7 +609,7 @@ private:
 namespace {
 const PsDataInputVtable *mavVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<MavInput>(R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_input","file_extensions":[".mav",".bin",".dat",".log"]})");
+    static const PsDataInputVtable vt = ps::VtableBuilder::make<MavInput>(R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_input","file_extensions":[".mav",".bin",".dat",".log",".tlog"]})");
     return &vt;
 }
 } // namespace
@@ -619,7 +619,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_mavlink()
 {
     static const PsPluginDescriptor desc = {
         PS_PLUGIN_ABI_VERSION,
-        R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_input","file_extensions":[".mav",".bin",".dat",".log"]})",
+        R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_input","file_extensions":[".mav",".bin",".dat",".log",".tlog"]})",
         PS_FAMILY_DATA_INPUT,
         0,
         nullptr,

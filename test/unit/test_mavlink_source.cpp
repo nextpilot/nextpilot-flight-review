@@ -48,6 +48,11 @@ static void putI16(QByteArray &b, int16_t v)
     b.append(char(static_cast<uint8_t>(v)));
     b.append(char(static_cast<uint8_t>(static_cast<uint16_t>(v) >> 8)));
 }
+static void putU64(QByteArray &b, uint64_t v)
+{
+    for (int i = 0; i < 8; ++i)
+        b.append(char((v >> (8 * i)) & 0xff));
+}
 
 int main(int argc, char **argv)
 {
@@ -129,6 +134,33 @@ int main(int argc, char **argv)
     assert(sink.data["mav.att.roll"].size() > liveCount);
     v->stop(rh);
     v->destroy(rh);
+
+    // .tlog：8 字节时间戳 + MAVLink 帧，同一个插件原生回放。
+    const QString tlogPath = rawDir.filePath(QStringLiteral("sample.tlog"));
+    {
+        QFile tlog(tlogPath);
+        assert(tlog.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QByteArray rec;
+        putU64(rec, 1000000);
+        rec.append(f);
+        tlog.write(rec);
+        tlog.close();
+    }
+    const size_t tlogBase = sink.data["mav.att.roll"].size();
+    void *th = v->create();
+    assert(th);
+    assert(v->bind(th, services, &perr));
+    QJsonObject tlogObj{{QStringLiteral("filepath"), tlogPath}};
+    const QByteArray tlogBytes = QJsonDocument(tlogObj).toJson(QJsonDocument::Compact);
+    PsStringView tsv{tlogBytes.constData(), static_cast<uint32_t>(tlogBytes.size())};
+    assert(v->load_config(th, tsv, &perr));
+    assert(v->start(th, &perr));
+    for (int i = 0; i < 5 && sink.data["mav.att.roll"].size() <= tlogBase; ++i)
+        v->poll(th, &perr);
+    assert(sink.data["mav.att.roll"].size() > tlogBase);
+    v->stop(th);
+    v->destroy(th);
+
     std::printf("mavlink ok: %zu channels, roll=%.4f\n", sink.data.size(), roll[0].second);
     return 0;
 }

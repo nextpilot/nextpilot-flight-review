@@ -1270,7 +1270,7 @@ private:
 namespace {
 const PsDataInputVtable *oemVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<OemInput>(R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","kind":"gnss","transport":"tcp","family":"data_input","file_extensions":[".bin",".gps",".log",".dat"]})");
+    static const PsDataInputVtable vt = ps::VtableBuilder::make<OemInput>(R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","kind":"gnss","transport":"tcp","family":"data_input","file_extensions":[".bin",".gps",".log",".dat",".psraw",".raw"]})");
     return &vt;
 }
 } // namespace
@@ -1280,7 +1280,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_oem7()
 {
     static const PsPluginDescriptor desc = {
         PS_PLUGIN_ABI_VERSION,
-        R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","kind":"gnss","transport":"tcp","family":"data_input","file_extensions":[".bin",".gps",".log",".dat"]})",
+        R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","kind":"gnss","transport":"tcp","family":"data_input","file_extensions":[".bin",".gps",".log",".dat",".psraw",".raw"]})",
         PS_FAMILY_DATA_INPUT,
         0,
         nullptr,
