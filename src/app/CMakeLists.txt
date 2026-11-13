@@ -73,3 +73,7 @@ ps_set_warnings(plotscope_app)
 if(WIN32)
   set_target_properties(plotscope_app PROPERTIES WIN32_EXECUTABLE ON)
 endif()
+add_custom_command(TARGET plotscope_app POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${PROJECT_SOURCE_DIR}/src/plugins/data_source/oem7/oem7_database.json
+          $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json)

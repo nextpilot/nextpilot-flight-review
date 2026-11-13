@@ -2340,12 +2340,34 @@ void MainWindow::refreshLiveSource(SourceData *src)
     if (!src->plotted && src->id == m_activeSource && currentCanvas())
     {
         QVector<const PsChannelInfo *> first;
+        auto continuous = [](const PsChannelInfo *ch) {
+            if (!ch || ch->point_count < 2)
+                return false;
+            const QString n = QString::fromUtf8(ch->name ? ch->name : "");
+            for (const QString &skip : {QStringLiteral("status"), QStringLiteral("type"),
+                                        QStringLiteral("datum"), QStringLiteral("num_"),
+                                        QStringLiteral("id"), QStringLiteral("flag")})
+                if (n.contains(skip, Qt::CaseInsensitive))
+                    return false;
+            return true;
+        };
         for (const PsChannelInfo *ch : src->channels)
         {
-            if (ch && ch->point_count >= 2)
+            if (continuous(ch))
                 first.append(ch);
             if (first.size() >= 2)
                 break;
+        }
+        if (first.size() < 2)
+        {
+            first.clear();
+            for (const PsChannelInfo *ch : src->channels)
+            {
+                if (ch && ch->point_count >= 2)
+                    first.append(ch);
+                if (first.size() >= 2)
+                    break;
+            }
         }
         if (!first.isEmpty())
         {

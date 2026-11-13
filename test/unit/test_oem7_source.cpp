@@ -58,8 +58,10 @@ int main(int argc, char **argv)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         d->source->poll(h, 0, err, sizeof(err));
     }
-    assert(sink.data.count("oem7.bestpos.lat") == 1);
-    assert(std::fabs(sink.data["oem7.bestpos.lat"][0].second - 51.15043874397) < 1e-6);
+    const std::string latKey = sink.data.count("oem7.bestpos.latitude") ? "oem7.bestpos.latitude"
+                                                                      : "oem7.bestpos.lat";
+    assert(sink.data.count(latKey) == 1);
+    assert(std::fabs(sink.data[latKey][0].second - 51.15043874397) < 1e-6);
     assert(d->source->close(h) == 0);
     std::printf("oem7 ok: %zu channels\n", sink.data.size());
     return 0;
