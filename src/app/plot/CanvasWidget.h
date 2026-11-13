@@ -46,6 +46,8 @@ public:
     void setLegendVisible(bool on);
     void setBoxVisible(bool on);
     void setRubberZoomEnabled(bool on);
+    void exportPng();                                   // 当前画布渲染结果另存
+    void exportCsv();                                   // 当前可见时间窗内的长表 CSV
     void zoomBy(double factor);                          // 1.25 放大，0.8 缩小
     bool gridVisible() const { return m_showGrid; }
     bool legendVisible() const { return m_showLegend; }
@@ -62,6 +64,7 @@ signals:
     void addRequested();                            // 右键“添加画布”
     void addChannelRequested();                     // 右键“添加曲线…”：由主窗选通道
     void removeRequested();                         // 右键“删除画布”
+    void splitRequested(int orientation);           // 0=左右拆分 1=上下拆分
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -98,7 +101,8 @@ private:
     };
 
     QRectF plotRect() const;
-    int seriesAt(const QPointF &pos) const;          // 右键命中哪条曲线
+    int seriesAt(const QPointF &pos) const;
+    double sampleAt(const Series &s, double displayT, bool *ok) const;          // 右键命中哪条曲线
     void resetView();
     void ensureTimeRange();
     void addDemoCurves();
@@ -115,6 +119,11 @@ private:
     bool m_showBox = true;
     bool m_rubberZoom = false;
     bool m_rubbering = false;
+    bool m_abEnabled = false;      // A/B 游标测量
+    bool m_abHasA = false;
+    bool m_abHasB = false;
+    double m_abA = 0.0;
+    double m_abB = 0.0;
     QPointF m_rubberStart;
     QRectF m_rubberRect;
     bool m_kernelBacked = false;

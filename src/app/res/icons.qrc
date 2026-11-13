@@ -30,5 +30,12 @@
     <file alias="trash.svg">icons/trash.svg</file>
     <file alias="validate.svg">icons/validate.svg</file>
     <file alias="yaml.svg">icons/yaml.svg</file>
+    <file alias="grid.svg">icons/grid.svg</file>
+    <file alias="box.svg">icons/box.svg</file>
+    <file alias="legend.svg">icons/legend.svg</file>
+    <file alias="zoom_in.svg">icons/zoom_in.svg</file>
+    <file alias="zoom_out.svg">icons/zoom_out.svg</file>
+    <file alias="split_h.svg">icons/split_h.svg</file>
+    <file alias="split_v.svg">icons/split_v.svg</file>
   </qresource>
 </RCC>

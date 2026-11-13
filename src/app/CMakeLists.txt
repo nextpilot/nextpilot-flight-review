@@ -5,8 +5,11 @@ add_executable(plotscope_app
   main.cpp
   shell/MainWindow.h
   shell/MainWindow.cpp
-  shell/CsvLoaderDialog.h
-  shell/CsvLoaderDialog.cpp
+  loader/LoaderPlugin.h
+  loader/LoaderRegistry.h
+  loader/LoaderRegistry.cpp
+  loader/LoaderOptionsDialog.h
+  loader/LoaderOptionsDialog.cpp
   shell/Theme.h
   shell/Theme.cpp
   transform/TransformDialog.h

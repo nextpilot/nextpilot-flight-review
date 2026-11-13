@@ -93,6 +93,7 @@ private:
     void addCanvasToPage();
     void removeCanvas(CanvasWidget *c);
     void applyCanvasGrid(int rows, int cols);
+    void splitCanvas(CanvasWidget *target, Qt::Orientation orientation);
     void exportActiveCsv();
     void openSettings();
     QJsonObject pageState(QWidget *page) const;

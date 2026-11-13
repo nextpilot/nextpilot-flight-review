@@ -8,7 +8,13 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
+#include <QApplication>
+#include <QClipboard>
+#include <QFileDialog>
 #include <QMenu>
+#include <QMessageBox>
+#include <QSaveFile>
+#include <QTextStream>
 #include <QSettings>
 #include <QColorDialog>
 #include <QJsonArray>
@@ -445,6 +451,62 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     }
 
     // 十字光标
+    if (m_abEnabled && m_abHasA)
+    {
+        const auto xOf = [&](double t) { return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0); };
+        p.setPen(QPen(QColor("#f2b134"), 1, Qt::DashLine));
+        p.drawLine(QPointF(xOf(m_abA), plot.top()), QPointF(xOf(m_abA), plot.bottom()));
+        p.setPen(QColor("#f2b134"));
+        p.drawText(QPointF(xOf(m_abA) + 4, plot.top() + fm.ascent() + 2), QStringLiteral("A"));
+        if (m_abHasB)
+        {
+            p.setPen(QPen(QColor("#58a6ff"), 1, Qt::DashLine));
+            p.drawLine(QPointF(xOf(m_abB), plot.top()), QPointF(xOf(m_abB), plot.bottom()));
+            p.setPen(QColor("#58a6ff"));
+            p.drawText(QPointF(xOf(m_abB) + 4, plot.top() + fm.ascent() + 2), QStringLiteral("B"));
+
+            const double dt = m_abB - m_abA;
+            QStringList rows;
+            for (const Series &sr : m_series)
+            {
+                if (!sr.visible)
+                    continue;
+                bool oa = false, ob = false;
+                const double va = sampleAt(sr, m_abA, &oa);
+                const double vb = sampleAt(sr, m_abB, &ob);
+                const QString lbl = fm.elidedText(sr.label, Qt::ElideMiddle, 132);
+                const QString dy = (oa && ob) ? QString::number(vb - va, 'g', 6) : QStringLiteral("--");
+                const QString k = (oa && ob && qAbs(dt) > 1e-12)
+                                      ? QString::number((vb - va) / dt, 'g', 5) + QStringLiteral("/s")
+                                      : QStringLiteral("--");
+                rows << QStringLiteral("%1  Δy %2   k %3").arg(lbl, -10).arg(dy, -9).arg(k);
+                if (rows.size() >= 6)
+                    break;
+            }
+            const int lineH = fm.height() + 2;
+            const int boxH = 42 + rows.size() * lineH + 6;
+            QRectF box(plot.left() + 10, plot.bottom() - boxH - 8, 300, boxH);
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor(22, 27, 34, 238));
+            p.drawRoundedRect(box, 3, 3);
+            p.setPen(QColor("#f2b134"));
+            p.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
+                       Qt::AlignVCenter | Qt::AlignLeft,
+                       QStringLiteral("A→B  Δt = %1 s").arg(dt, 0, 'f', 4));
+            p.setPen(QColor("#8b949e"));
+            p.drawLine(QPointF(box.left() + 7, box.top() + 21),
+                       QPointF(box.right() - 7, box.top() + 21));
+            int yy = int(box.top()) + 23;
+            for (int i = 0; i < rows.size(); ++i)
+            {
+                p.setPen(i < m_series.size() ? m_series.at(i).color : colorText());
+                p.drawText(QRectF(box.left() + 8, yy, box.width() - 16, lineH),
+                           Qt::AlignVCenter | Qt::AlignLeft, rows.at(i));
+                yy += lineH;
+            }
+        }
+    }
+
     if (m_hover && plot.contains(m_cursor))
     {
         p.setPen(QPen(QColor(255, 255, 255, 60), 1, Qt::DashLine));
@@ -452,17 +514,67 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         p.drawLine(QPointF(plot.left(), m_cursor.y()), QPointF(plot.right(), m_cursor.y()));
 
         const double t = m_t0 + (m_t1 - m_t0) * (m_cursor.x() - plot.left()) / plot.width();
-        const double v = m_yMax - (m_yMax - m_yMin) * (m_cursor.y() - plot.top()) / plot.height();
-        const QString tip = QStringLiteral("t %1 s · y %2").arg(t, 0, 'f', 3).arg(v, 0, 'f', 3);
-        const int tw = fm.horizontalAdvance(tip) + 14;
-        QRectF box(m_cursor.x() + 12, plot.top() + 8, tw, 20);
+
+        // 逐曲线读数：按显示时间找最近样本，不做插值；源间时间偏移已在此消掉。
+        QStringList rows;
+        int shown = 0;
+        for (const Series &s : m_series)
+        {
+            if (!s.visible)
+                continue;
+            if (shown++ >= 8)
+            {
+                rows << QStringLiteral("…");
+                break;
+            }
+            const QString lbl = fm.elidedText(s.label, Qt::ElideMiddle, 150);
+            bool ok = false;
+            const double v = sampleAt(s, t, &ok);
+            rows << QStringLiteral("%1  %2").arg(lbl, ok ? QString::number(v, 'g', 6) : QStringLiteral("--"));
+        }
+        if (rows.isEmpty())
+            rows << QStringLiteral("（无可见曲线）");
+
+        const int lineH = fm.height() + 2;
+        const int boxW = qMin(int(plot.width() - 16), 280);
+        const int boxH = 22 + rows.size() * lineH + 6;
+        QRectF box(m_cursor.x() + 12, plot.top() + 8, boxW, boxH);
         if (box.right() > plot.right())
-            box.moveLeft(m_cursor.x() - 12 - tw);
+            box.moveLeft(m_cursor.x() - 12 - boxW);
+        if (box.bottom() > plot.bottom())
+            box.moveTop(plot.bottom() - boxH - 4);
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(22, 27, 34, 230));
+        p.setBrush(QColor(22, 27, 34, 238));
         p.drawRoundedRect(box, 3, 3);
-        p.setPen(colorText());
-        p.drawText(box.adjusted(7, 0, -7, 0), Qt::AlignVCenter | Qt::AlignLeft, tip);
+
+        p.setPen(QColor("#f2b134"));
+        p.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
+                   Qt::AlignVCenter | Qt::AlignLeft,
+                   QStringLiteral("t = %1 s").arg(t, 0, 'f', 4));
+        p.setPen(QColor("#8b949e"));
+        p.drawLine(QPointF(box.left() + 7, box.top() + 21),
+                   QPointF(box.right() - 7, box.top() + 21));
+
+        int y = int(box.top()) + 23;
+        int colorIdx = 0;
+        for (const Series &s : m_series)
+        {
+            if (!s.visible)
+                continue;
+            if (colorIdx >= 8)
+                break;
+            const QString lbl = fm.elidedText(s.label, Qt::ElideMiddle, 150);
+            bool ok = false;
+            const double v = sampleAt(s, t, &ok);
+            const QString val = ok ? QString::number(v, 'g', 6) : QStringLiteral("--");
+            p.setPen(s.color);
+            p.drawText(QRectF(box.left() + 8, y, 155, lineH), Qt::AlignVCenter | Qt::AlignLeft, lbl);
+            p.setPen(colorText());
+            p.drawText(QRectF(box.left() + 166, y, box.width() - 174, lineH),
+                       Qt::AlignVCenter | Qt::AlignRight, val);
+            y += lineH;
+            ++colorIdx;
+        }
     }
 
     if (m_rubbering && m_rubberRect.isValid())
@@ -472,6 +584,78 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         p.drawRect(m_rubberRect);
         p.setBrush(Qt::NoBrush);
     }
+}
+
+void CanvasWidget::exportPng()
+{
+    const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出画布 PNG"), {},
+                                                   QStringLiteral("PNG (*.png)"));
+    if (f.isEmpty())
+        return;
+    if (grab().save(f))
+        return;
+    QMessageBox::warning(this, QStringLiteral("导出失败"), QStringLiteral("无法写入 %1").arg(f));
+}
+
+void CanvasWidget::exportCsv()
+{
+    const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出画布 CSV"), {},
+                                                   QStringLiteral("CSV (*.csv)"));
+    if (f.isEmpty())
+        return;
+    QSaveFile out(f);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return;
+    QTextStream ts(&out);
+    ts << "time,source,channel,value,unit\n";
+    for (const Series &s : m_series)
+    {
+        if (!s.visible || !s.count())
+            continue;
+        for (quint32 i = 0; i < s.count(); ++i)
+        {
+            const double t = s.time()[i] - s.offsetSec;
+            if (t < m_t0 || t > m_t1)
+                continue;
+            const double v = s.value()[i];
+            if (!std::isfinite(v))
+                continue;
+            ts << QString::number(t, 'g', 10) << ',' << s.label.section(QStringLiteral(" · "), 0, 0)
+               << ',' << s.name << ',' << QString::number(v, 'g', 12) << ',' << s.unit << '\n';
+        }
+    }
+    if (!out.commit())
+        QMessageBox::warning(this, QStringLiteral("导出失败"), QStringLiteral("无法写入 %1").arg(f));
+}
+
+double CanvasWidget::sampleAt(const Series &s, double displayT, bool *ok) const
+{
+    if (ok)
+        *ok = false;
+    const quint32 n = s.count();
+    if (!n || !s.time() || !s.value())
+        return 0.0;
+    const double rawT = displayT + s.offsetSec;
+    quint32 lo = 0, hi = n;
+    while (lo < hi)
+    {
+        const quint32 mid = (lo + hi) / 2;
+        if (s.time()[mid] < rawT)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    quint32 idx = lo;
+    if (idx >= n)
+        idx = n - 1;
+    else if (idx > 0 && qAbs(s.time()[idx - 1] - rawT) <= qAbs(s.time()[idx] - rawT))
+        --idx;
+    const double v = s.value()[idx];
+    if (!std::isfinite(v))
+        return 0.0;
+    if (ok)
+        *ok = true;
+    return v;
 }
 
 int CanvasWidget::seriesAt(const QPointF &pos) const
@@ -612,8 +796,15 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         QAction *grid = menu.addAction(QStringLiteral("显示网格"));
         grid->setCheckable(true);
         grid->setChecked(m_showGrid);
+        QAction *ab = menu.addAction(QStringLiteral("A/B 游标测量（Δt/Δy）"));
+        ab->setCheckable(true);
+        ab->setChecked(m_abEnabled);
         menu.addSeparator();
-        QAction *add = menu.addAction(QStringLiteral("向下添加画布"));
+        QAction *splitH = menu.addAction(QStringLiteral("向右拆分画布"));
+        QAction *splitV = menu.addAction(QStringLiteral("向下拆分画布"));
+        QAction *png = menu.addAction(QStringLiteral("导出 PNG…"));
+        QAction *csv = menu.addAction(QStringLiteral("导出当前画布 CSV…"));
+        menu.addSeparator();
         QAction *del = menu.addAction(QStringLiteral("删除此画布"));
         QAction *chosen = menu.exec(event->globalPosition().toPoint());
         if (chosen == addCurve)
@@ -636,10 +827,44 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
             m_showGrid = grid->isChecked();
             update();
         }
-        else if (chosen == add)
-            emit addRequested();
+        else if (chosen == ab)
+        {
+            m_abEnabled = ab->isChecked();
+            if (!m_abEnabled)
+            {
+                m_abHasA = m_abHasB = false;
+            }
+            update();
+        }
+        else if (chosen == splitH)
+            emit splitRequested(0);
+        else if (chosen == splitV)
+            emit splitRequested(1);
+        else if (chosen == png)
+            exportPng();
+        else if (chosen == csv)
+            exportCsv();
         else if (chosen == del)
             emit removeRequested();
+        return;
+    }
+    if (event->button() == Qt::LeftButton && m_abEnabled && plotRect().contains(event->position()))
+    {
+        const QRectF plot = plotRect();
+        const double t = m_t0 + (m_t1 - m_t0) * (event->position().x() - plot.left()) / plot.width();
+        if (!m_abHasA || m_abHasB)
+        {
+            m_abA = t;
+            m_abHasA = true;
+            m_abHasB = false;
+        }
+        else
+        {
+            m_abB = t;
+            m_abHasB = true;
+        }
+        emit activated(m_title);
+        update();
         return;
     }
     if (event->button() == Qt::LeftButton && m_rubberZoom && plotRect().contains(event->position()))
