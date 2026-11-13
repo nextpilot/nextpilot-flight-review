@@ -1,4 +1,4 @@
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 
 #include "ps_kernel.h"
 
@@ -22,9 +22,10 @@ int32_t apbinLoad(const char *path, const char *, void **dataset, char *err, uin
 
 const PsLoaderVtable kApbinLoader = {
     PS_PLUGIN_ABI_VERSION,
-    "apbin",
+    "data_loader_apbin",
     "DataFlash",
     "ArduPilot BIN (*.bin);;全部 (*)",
+    ".bin",
     "ArduPilot · BIN",
     1,
     1,
@@ -38,14 +39,16 @@ const PsLoaderVtable kApbinLoader = {
 
 const PsPluginDescriptor kApbinPlugin = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"apbin","name":"DataFlash","version":"1.0.0","sdk":"1.0","kind":"file","entry":"ps_plugin_entry_apbin"})",
+    R"({"id":"data_loader_apbin","name":"DataFlash","version":"1.0.0","sdk":"1.0","family":"data_loader","kind":"file","entry":"ps_plugin_entry_data_loader_apbin"})",
+    PS_FAMILY_DATA_LOADER,
+    PS_CAP_FILE | PS_CAP_PARAMS | PS_CAP_CACHE,
     &kApbinLoader,
     nullptr,
 };
 
 } // namespace
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_apbin(void)
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_apbin(void)
 {
     return &kApbinPlugin;
 }

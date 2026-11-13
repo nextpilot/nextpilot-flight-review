@@ -1,13 +1,18 @@
 {
-  "id": "demo",
+  "id": "data_loader_demo",
   "name": "Demo",
   "version": "1.0.0",
   "sdk": "1.0",
+  "family": "data_loader",
   "kind": "file",
   "entry": "ps_plugin_entry",
-  "library": "demo_plugin.so",
+  "library": "demo_plugind.so",
+  "capabilities": ["file", "ui"],
+  "data": {
+    "extensions": [".demo"]
+  },
   "ui": {
-    "dialog": null,
+    "dialog": "dialog.ui",
     "panels": [],
     "ribbon": null
   }

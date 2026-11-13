@@ -635,6 +635,59 @@ pub unsafe extern "C" fn ps_dataset_free(ds: *mut Dataset) {
     }
 }
 
+/// 新建空数据集。缓存层用它把磁盘上的通道数组还原成数据集，不重新解析源文件。
+#[no_mangle]
+pub extern "C" fn ps_dataset_new() -> *mut Dataset {
+    Box::into_raw(Box::new(Dataset { channels: Vec::new(), infos: Vec::new() }))
+}
+
+/// 往数据集追加一条通道。name/unit 为 UTF-8；time/value 由内核复制。
+/// 返回 0 成功；1 数据集为空；2 名称非法；3 数组为空但点数非 0；4 内存不足。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_add_channel(
+    ds: *mut Dataset,
+    name: *const c_char,
+    unit: *const c_char,
+    time: *const f64,
+    value: *const f64,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 1;
+    }
+    if name.is_null() {
+        write_err(err, err_cap, "通道名为空");
+        return 2;
+    }
+    let n = count as usize;
+    if n > 0 && (time.is_null() || value.is_null()) {
+        write_err(err, err_cap, "通道数组为空");
+        return 3;
+    }
+    let name = std::ffi::CStr::from_ptr(name).to_string_lossy().into_owned();
+    let unit = if unit.is_null() {
+        String::new()
+    } else {
+        std::ffi::CStr::from_ptr(unit).to_string_lossy().into_owned()
+    };
+    let t = if n == 0 { Vec::new() } else { std::slice::from_raw_parts(time, n).to_vec() };
+    let v = if n == 0 { Vec::new() } else { std::slice::from_raw_parts(value, n).to_vec() };
+    match (CString::new(name), CString::new(unit)) {
+        (Ok(name), Ok(unit)) => {
+            (*ds).channels.push(Channel { name, unit, t, v });
+            (*ds).rebuild_infos();
+            0
+        }
+        _ => {
+            write_err(err, err_cap, "通道名含 NUL");
+            2
+        }
+    }
+}
+
 /// 视口抽稀：写 `(x, min, max)` 三元组，返回写入的三元组个数。
 #[no_mangle]
 pub unsafe extern "C" fn ps_lod_minmax(

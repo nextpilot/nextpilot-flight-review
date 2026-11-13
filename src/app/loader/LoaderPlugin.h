@@ -12,11 +12,17 @@ struct PsDataset;
 struct LoaderPlugin
 {
     QString id;
+    QString version;                // manifest version，缓存命名空间用
+    QString cacheNamespace;         // id@version；插件升级后旧缓存自然失效
+    QString family;                 // data_loader / data_source / parser / toolbox / panel
     QString label;
     QString filter;                 // QFileDialog 过滤器
+    QStringList extensions;         // 插件声明的扩展名
     QString formatTag;              // 数据源列表显示名
     bool tree = false;              // 是否有 topic/ID 层级
     bool hasParams = false;         // 是否有 P/Q、PARM 参数表
+    bool cacheable = false;         // 是否允许写解析缓存
+    unsigned int capabilities = 0;  // PS_CAP_*
     QJsonObject schema;             // 空对象 = 无选项，直接加载
     QString uiDialog;               // 插件自带 .ui 绝对路径，空 = 用通用 schema 对话框
 

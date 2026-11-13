@@ -1,5 +1,5 @@
 // 外部插件样例：只导出 ps_plugin_entry，不链接内核，也不碰 Qt。
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -25,9 +25,10 @@ int32_t demoGetData(const char *, char *out, uint32_t cap)
 
 const PsLoaderVtable kDemoLoader = {
     PS_PLUGIN_ABI_VERSION,
-    "demo",
+    "data_loader_demo",
     "Demo",
     "Demo (*.demo);;全部 (*)",
+    ".demo",
     "Demo",
     0,
     0,
@@ -51,7 +52,9 @@ const PsUiVtable kDemoUi = {
 
 const PsPluginDescriptor kDemoPlugin = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"demo","name":"Demo","version":"1.0.0","sdk":"1.0","kind":"file","entry":"ps_plugin_entry"})",
+    R"({"id":"data_loader_demo","name":"Demo","version":"1.0.0","sdk":"1.0","family":"data_loader","kind":"file","entry":"ps_plugin_entry"})",
+    PS_FAMILY_DATA_LOADER,
+    PS_CAP_FILE | PS_CAP_UI,
     &kDemoLoader,
     &kDemoUi,
 };

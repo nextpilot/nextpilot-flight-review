@@ -1,6 +1,7 @@
 #include "shell/MainWindow.h"
 #include "loader/DialogEngine.h"
 #include "loader/LoaderOptionsDialog.h"
+#include "datastore/DatasetCache.h"
 #include "loader/LoaderRegistry.h"
 
 #include <QAction>
@@ -3054,6 +3055,12 @@ void MainWindow::openSettings()
     lay->addWidget(restore);
     lay->addWidget(grid);
     lay->addWidget(legend);
+    auto *clearCache = new QPushButton(QStringLiteral("清空解析缓存"), &dlg);
+    lay->addWidget(clearCache);
+    connect(clearCache, &QPushButton::clicked, this, [this] {
+        DatasetCache::clear();
+        log(QStringLiteral("解析缓存已清空"));
+    });
     auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -3120,13 +3127,25 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
         else if (plugin->defaultOptions)
             opts = plugin->defaultOptions(path);
     }
-    const int32_t rc = plugin->load(path, opts, &ds, err, sizeof(err));
-    if (rc != 0)
+    // 解析缓存：同文件 + 同 loader + 同选项二次打开直接还原，不再 probe/parse。
+    if (plugin->cacheable)
+        ds = DatasetCache::load(path, plugin->cacheNamespace, opts);
+    if (ds)
     {
-        const QString msg = QString::fromUtf8(err);
-        log(QStringLiteral("加载失败：%1").arg(msg));
-        QMessageBox::warning(this, QStringLiteral("加载失败"), msg);
-        return false;
+        log(QStringLiteral("解析缓存命中：%1").arg(fi.fileName()));
+    }
+    else
+    {
+        const int32_t rc = plugin->load(path, opts, &ds, err, sizeof(err));
+        if (rc != 0)
+        {
+            const QString msg = QString::fromUtf8(err);
+            log(QStringLiteral("加载失败：%1").arg(msg));
+            QMessageBox::warning(this, QStringLiteral("加载失败"), msg);
+            return false;
+        }
+        if (plugin->cacheable)
+            DatasetCache::save(path, plugin->cacheNamespace, opts, ds);
     }
 
 

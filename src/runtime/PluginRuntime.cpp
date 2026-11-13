@@ -17,9 +17,10 @@ using EntryFn = const PsPluginDescriptor *(*)();
 
 bool descriptorOk(const PsPluginDescriptor *d)
 {
-    if (!d || d->abi_version != PS_PLUGIN_ABI_VERSION || !d->manifest_json || !d->loader ||
-        d->loader->abi_version != PS_PLUGIN_ABI_VERSION || !d->loader->id || !d->loader->id[0] ||
-        !d->loader->load)
+    if (!d || d->abi_version != PS_PLUGIN_ABI_VERSION || !d->manifest_json ||
+        d->family < PS_FAMILY_DATA_LOADER || d->family > PS_FAMILY_PANEL || d->capabilities == 0 ||
+        !d->loader || d->loader->abi_version != PS_PLUGIN_ABI_VERSION || !d->loader->id ||
+        !d->loader->id[0] || !d->loader->load)
         return false;
     if (d->ui && d->ui->abi_version != PS_PLUGIN_ABI_VERSION)
         return false;
@@ -100,8 +101,13 @@ void PluginRuntime::scanDirectory(const std::string &dir)
     std::sort(libs.begin(), libs.end());
 
     std::set<std::string> known;
+    std::set<std::string> ids;
     for (const PsLoadedPlugin &p : m_plugins)
+    {
         known.insert(p.library);
+        if (p.descriptor && p.descriptor->loader && p.descriptor->loader->id)
+            ids.insert(p.descriptor->loader->id);
+    }
 
     for (const fs::path &lib : libs)
     {
@@ -150,6 +156,14 @@ void PluginRuntime::scanDirectory(const std::string &dir)
         rec.manifest = readText(lib.parent_path() / "manifest.json");
         rec.descriptor = d;
         rec.handle = h;
+        const std::string id(d->loader->id);
+        if (ids.count(id))
+        {
+            m_errors.push_back(path + "：重复插件 id " + id + "，已跳过");
+            dlclose(h);
+            continue;
+        }
+        ids.insert(id);
         m_plugins.push_back(rec);
     }
 }

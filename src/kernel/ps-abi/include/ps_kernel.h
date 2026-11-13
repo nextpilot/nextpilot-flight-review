@@ -75,6 +75,13 @@ uint32_t             ps_dataset_channel_count(const PsDataset *ds);
 const PsChannelInfo *ps_dataset_channel(const PsDataset *ds, uint32_t index);
 void                 ps_dataset_free(PsDataset *ds);
 
+/* 缓存层用：新建空数据集并追加通道，避免二次加载重新解析源文件。
+ * 数组由内核复制；返回 0 成功，非 0 见 err。 */
+PsDataset           *ps_dataset_new(void);
+int32_t              ps_dataset_add_channel(PsDataset *ds, const char *name, const char *unit,
+                                            const double *time, const double *value, uint32_t count,
+                                            char *err, uint32_t err_cap);
+
 /* 绘图前变换：结果作为普通通道写回同一 PsDataset。
  * ps_dataset_apply_filter：input 为通道名，filter_id 为 PJ4 内置算子，
  * params_json 为对象；output 为空时自动 `<input>.<filter_id>`。

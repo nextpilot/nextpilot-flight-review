@@ -1,6 +1,6 @@
 #include "loader/LoaderRegistry.h"
 
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 #include "runtime/PluginRuntime.h"
 #include "ps_kernel.h"
 
@@ -8,11 +8,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_csv(void);
-extern "C" const PsPluginDescriptor *ps_plugin_entry_ulog(void);
-extern "C" const PsPluginDescriptor *ps_plugin_entry_apbin(void);
-extern "C" const PsPluginDescriptor *ps_plugin_entry_asc(void);
-extern "C" const PsPluginDescriptor *ps_plugin_entry_blf(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_csv(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ulog(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_apbin(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_asc(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_blf(void);
 
 namespace {
 
@@ -78,16 +78,19 @@ LoaderRegistry &LoaderRegistry::instance()
 
 LoaderRegistry::LoaderRegistry()
 {
-    registerDescriptor(ps_plugin_entry_ulog());
-    registerDescriptor(ps_plugin_entry_apbin());
-    registerDescriptor(ps_plugin_entry_asc());
-    registerDescriptor(ps_plugin_entry_blf());
-    registerDescriptor(ps_plugin_entry_csv());
+    registerDescriptor(ps_plugin_entry_data_loader_ulog());
+    registerDescriptor(ps_plugin_entry_data_loader_apbin());
+    registerDescriptor(ps_plugin_entry_data_loader_asc());
+    registerDescriptor(ps_plugin_entry_data_loader_blf());
+    registerDescriptor(ps_plugin_entry_data_loader_csv());
 }
 
 bool LoaderRegistry::registerDescriptor(const PsPluginDescriptor *desc, const QString &packageDir)
 {
     if (!desc || desc->abi_version != PS_PLUGIN_ABI_VERSION || !desc->loader)
+        return false;
+    // LoaderRegistry 只收 data_loader；其他 family 由各自的 catalog 管理。
+    if (desc->family != PS_FAMILY_DATA_LOADER)
         return false;
     const PsLoaderVtable *v = desc->loader;
     if (v->abi_version != PS_PLUGIN_ABI_VERSION || !v->id || !v->load)
@@ -99,11 +102,18 @@ bool LoaderRegistry::registerDescriptor(const PsPluginDescriptor *desc, const QS
 
     LoaderPlugin p;
     p.id = id;
+    const QJsonObject manifest = QJsonDocument::fromJson(QByteArray(desc->manifest_json)).object();
+    p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
+    p.cacheNamespace = id + QLatin1Char('@') + p.version;
+    p.family = QStringLiteral("data_loader");
     p.label = QString::fromUtf8(v->label ? v->label : v->id);
     p.filter = QString::fromUtf8(v->filter ? v->filter : "* (*)");
+    p.extensions = QString::fromUtf8(v->extensions ? v->extensions : "").split(',', Qt::SkipEmptyParts);
     p.formatTag = QString::fromUtf8(v->format_tag ? v->format_tag : v->label);
     p.tree = v->tree != 0;
     p.hasParams = v->has_params != 0;
+    p.cacheable = (desc->capabilities & PS_CAP_CACHE) != 0;
+    p.capabilities = desc->capabilities;
     p.schema = readSchema(v);
     p.probe = [v](const QString &path, const QJsonObject &opts) {
         return readProbe(v, path, opts);
@@ -161,21 +171,13 @@ QStringList LoaderRegistry::scanPlugins(const QStringList &dirs)
 
 const LoaderPlugin *LoaderRegistry::findBySuffix(const QString &suffix) const
 {
-    const QString s = suffix.toLower();
+    const QString dot = suffix.startsWith('.') ? suffix.toLower() : QStringLiteral(".") + suffix.toLower();
     for (const LoaderPlugin &p : m_plugins)
-    {
-        if (p.id == s)
+        if (p.extensions.contains(dot, Qt::CaseInsensitive))
             return &p;
-        if (p.id == QLatin1String("ulog") && s == QLatin1String("ulg"))
-            return &p;
-        if (p.id == QLatin1String("apbin") && s == QLatin1String("bin"))
-            return &p;
-        if (p.id == QLatin1String("csv") && (s == QLatin1String("tsv") || s == QLatin1String("txt")))
-            return &p;
-    }
-    // 未知扩展名沿用旧的兜底：按 CSV 尝试，失败由解析器报错
+    // 未知扩展名兜底给 CSV；解析失败由插件报错。
     for (const LoaderPlugin &p : m_plugins)
-        if (p.id == QLatin1String("csv"))
+        if (p.id == QLatin1String("data_loader_csv"))
             return &p;
     return nullptr;
 }

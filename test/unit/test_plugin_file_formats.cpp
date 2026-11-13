@@ -1,4 +1,4 @@
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 #include "ps_kernel.h"
 
 #include <cassert>
@@ -6,10 +6,10 @@
 #include <iostream>
 #include <string>
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_ulog(void);
-extern "C" const PsPluginDescriptor *ps_plugin_entry_apbin(void);
-extern "C" const PsPluginDescriptor *ps_plugin_entry_asc(void);
-extern "C" const PsPluginDescriptor *ps_plugin_entry_blf(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ulog(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_apbin(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_asc(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_blf(void);
 
 namespace {
 
@@ -41,20 +41,20 @@ int main()
 {
     const std::string fix = PS_FIXTURE_DIR;
 
-    assert(ps_plugin_entry_ulog()->loader->params_json != nullptr);
-    assert(ps_plugin_entry_apbin()->loader->params_json != nullptr);
-    assert(ps_plugin_entry_asc()->loader->params_json == nullptr);
-    assert(ps_plugin_entry_blf()->loader->params_json == nullptr);
+    assert(ps_plugin_entry_data_loader_ulog()->loader->params_json != nullptr);
+    assert(ps_plugin_entry_data_loader_apbin()->loader->params_json != nullptr);
+    assert(ps_plugin_entry_data_loader_asc()->loader->params_json == nullptr);
+    assert(ps_plugin_entry_data_loader_blf()->loader->params_json == nullptr);
 
-    if (!loadAndCheck(ps_plugin_entry_ulog(), fix + "/demo_flight.ulg", 2))
+    if (!loadAndCheck(ps_plugin_entry_data_loader_ulog(), fix + "/demo_flight.ulg", 2))
         return 1;
-    if (!loadAndCheck(ps_plugin_entry_asc(), fix + "/demo_can.asc", 1))
+    if (!loadAndCheck(ps_plugin_entry_data_loader_asc(), fix + "/demo_can.asc", 1))
         return 1;
-    if (!loadAndCheck(ps_plugin_entry_blf(), fix + "/demo_can.blf", 1))
+    if (!loadAndCheck(ps_plugin_entry_data_loader_blf(), fix + "/demo_can.blf", 1))
         return 1;
 
     char params[256 * 1024] = {0};
-    const int32_t pn = ps_plugin_entry_ulog()->loader->params_json(
+    const int32_t pn = ps_plugin_entry_data_loader_ulog()->loader->params_json(
         (fix + "/demo_params.ulg").c_str(), params, sizeof(params));
     if (pn <= 0)
     {

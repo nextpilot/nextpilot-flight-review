@@ -9,7 +9,7 @@ include(Warnings)
 option(PS_BUILD_GUI   "构建 Qt Widgets 主程序" ON)
 option(PS_BUILD_TESTS "构建测试"                ON)
 option(PS_ENABLE_LUA  "启用 Lua 5.4 脚本（M2 接）" ON)
-set(PS_PLUGIN_DIR "${PROJECT_SOURCE_DIR}/src/plugin" CACHE PATH "官方 Loader 目录")
+set(PS_PLUGIN_DIR "${PROJECT_SOURCE_DIR}/src/plugins" CACHE PATH "官方插件目录")
 
 add_subdirectory(src)
 

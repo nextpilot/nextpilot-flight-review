@@ -1,0 +1,4 @@
+add_library(ps_data_loader_ulog STATIC UlogDataLoader.cpp)
+target_include_directories(ps_data_loader_ulog PRIVATE ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/src/include)
+target_link_libraries(ps_data_loader_ulog PRIVATE ps_kernel)

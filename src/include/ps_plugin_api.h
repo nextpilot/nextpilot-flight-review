@@ -13,6 +13,23 @@ extern "C" {
 
 #define PS_PLUGIN_ABI_VERSION 1u
 
+/* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
+#define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
+#define PS_FAMILY_DATA_SOURCE 2u   /* 实时源：MAVLink/ROS/OEM7/串口 */
+#define PS_FAMILY_PARSER      3u   /* 消息解析：DBC/MAVLink/RTCM */
+#define PS_FAMILY_TOOLBOX     4u   /* 算子/分析工具 */
+#define PS_FAMILY_PANEL        5u   /* 面板/可视化扩展 */
+
+/* 能力位：宿主据此决定显示哪些入口、是否写缓存。 */
+#define PS_CAP_FILE      (1u << 0)
+#define PS_CAP_PROBE     (1u << 1)
+#define PS_CAP_PARAMS    (1u << 2)
+#define PS_CAP_SCHEMA    (1u << 3)
+#define PS_CAP_UI        (1u << 4)
+#define PS_CAP_CACHE     (1u << 5)
+#define PS_CAP_STREAM    (1u << 6)
+#define PS_CAP_RECORD    (1u << 7)
+
 /* Loader 数据面。所有 JSON 返回：>=0 为写入字节数；<0 失败。
  * load 返回 0 成功，数据集所有权交给宿主。 */
 typedef struct PsLoaderVtable {
@@ -20,6 +37,7 @@ typedef struct PsLoaderVtable {
     const char *id;
     const char *label;
     const char *filter;       /* QFileDialog 过滤器 */
+    const char *extensions;   /* 逗号分隔，如 ".csv,.tsv"；带点、小写 */
     const char *format_tag;   /* 数据源列表显示名 */
     uint8_t tree;             /* 是否有 topic/ID 层级 */
     uint8_t has_params;       /* 是否有参数表 */
@@ -51,6 +69,8 @@ typedef struct PsUiVtable {
 typedef struct PsPluginDescriptor {
     uint32_t abi_version;      /* 必须等于 PS_PLUGIN_ABI_VERSION */
     const char *manifest_json; /* 编译期内嵌，不读外部 JSON */
+    uint32_t family;           /* PS_FAMILY_* */
+    uint32_t capabilities;     /* PS_CAP_* 位或 */
     const PsLoaderVtable *loader;
     const PsUiVtable *ui;      /* 可选；无自定义 UI 时为 NULL */
 } PsPluginDescriptor;

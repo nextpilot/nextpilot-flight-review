@@ -427,12 +427,13 @@ plugins/<id>/
 
 **当前落地（M1 第一步）**
 
-- `src/plugin_sdk/ps_plugin_api.h`：`PsPluginDescriptor` + `PsLoaderVtable` + `PsUiVtable`，纯 C、零 Qt 依赖。
-- `src/plugin/{csv,ulog,apbin,asc,blf}/`：五个文件加载器全部是独立插件；schema/probe/default/params/load 全在插件内，app 不再有格式专属代码。
-- `src/runtime/PluginRuntime.cpp`：递归扫描 `*.so`，子进程预检隔离坏插件，`dlopen` + `ps_plugin_entry` + ABI 校验；坏插件只记错误，不拖死宿主。
+- `src/include/ps_plugin_api.h`：`PsPluginDescriptor` + `PsLoaderVtable` + `PsUiVtable`，声明 `family / capabilities / extensions`，纯 C、零 Qt 依赖。
+- `src/plugins/data_loader/{csv,ulog,apbin,asc,blf}/`：目录、target、入口、manifest id 统一为 `data_loader_<id>`；schema/probe/default/params/load 全在插件内，app 不再有格式专属代码。
+- `src/runtime/PluginRuntime.cpp`：递归扫描 `*.so`，子进程预检隔离坏插件，`dlopen` + `ps_plugin_entry` + ABI 校验；重复 id 只保留第一个，坏插件只记错误，不拖死宿主。
 - `src/app/loader/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按插件 `dialog_ui` 加载 `.ui`，取值走 `get_data` JSON；app 不 include 任何插件 UI 头文件。
-- `LoaderRegistry::registerDescriptor()` / `scanPlugins()`：app 唯一注册入口，只做 ABI 校验与 JSON 桥接。
-- `test/unit/test_plugin_csv.cpp` / `test_plugin_file_formats.cpp` / `test_plugin_runtime.cpp`：覆盖内置插件、外部 `.so`、非法 ABI 拒绝与插件 `.ui`。
+- `LoaderRegistry::registerDescriptor()` / `scanPlugins()`：app 唯一注册入口，只收 `PS_FAMILY_DATA_LOADER`；扩展名由插件 `extensions` 声明，不再写 app 分支。
+- `src/datastore/DatasetCache.cpp`：解析结果磁盘缓存，键为源文件 + `loader@version` + 选项；校验 size/mtime，命中直接 `ps_dataset_new/add_channel` 还原，不重新 probe/parse。
+- `test/unit/test_plugin_csv.cpp` / `test_plugin_file_formats.cpp` / `test_plugin_runtime.cpp` / `test_dataset_cache.cpp`：覆盖内置插件、外部 `.so`、非法 ABI、重复 id 与缓存失效。
 
 **C ABI（数据面 8 函数；插件面 5 函数）**
 
@@ -566,7 +567,7 @@ plotscope/
 |---|---|
 | C++ 与 Rust 都放 `src/`，**按语言分目录**（`app`/`plugin` vs `kernel`），不设两个顶层代码根 | 两套"代码根"让新人分不清产品入口在哪；`src/kernel/` 当 Cargo workspace 根完全合法，代价只是 `target/` 落在 `src/kernel/target`、CI 缓存路径跟着改 |
 | `src/app` 只允许 `#include "ps_kernel.h"`，不得 include 内核内部头 | 一旦 C++ 直接依赖 Rust 内部类型，C ABI 就白设计了，未来换内核实现等于重写 UI |
-| `src/plugin` 是**官方解析器**（随包发），第三方插件源码不进仓 | 官方与第三方混住，会让"插件准入检查"这条安全边界失效 |
+| `src/plugins` 是**官方插件**（随包发），第三方插件源码不进仓 | 官方与第三方混住，会让"插件准入检查"这条安全边界失效 |
 | `src/3dparty` 只放锁版本/打补丁的库 | 什么都往里塞，仓库三年后 2 GB，clone 一次十分钟 |
 | `src/function` 只放 `.lua` 与算子 schema，不放 C++ | Lua 脚本要能热重载、能被用户改，和二进制解耦才能做到 |
 | `test/` 五类分目录，`golden` 用哈希清单 | 二进制样例堆进 git，仓库体积按周膨胀 |
@@ -578,7 +579,7 @@ plotscope/
 plotscope_app        # 可执行：main.cpp + src/app/**（瘦壳，不含业务实现）
 plotscope_core       # 静态库：pages/plot/inst/panels/proto，app 链接它
 ps_kernel            # Rust staticlib 目标（src/kernel/ps-abi，Corrosion 或 cargo 导入）
-ps_plugin_<family>   # MODULE 库：src/plugin/<family>/，输出到 bin/plugins
+ps_plugin_<family>_<id> # 插件库：src/plugins/<family>/<id>/，输出到 bin/plugins
 ```
 
 选项：`PS_BUILD_TESTS`（默认 ON）、`PS_ENABLE_LUA`（默认 ON，关掉则只留内置算子）、`PS_USE_QWT_FALLBACK`（M0-0 对照组）、`PS_PLUGIN_DIR`（默认 `bin/plugins`）。

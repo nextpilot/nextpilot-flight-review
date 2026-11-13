@@ -13,11 +13,13 @@ int main()
     int good = 0;
     for (const PsLoadedPlugin &p : rt.plugins())
     {
-        if (std::strcmp(p.descriptor->loader->id, "demo") == 0)
+        if (std::strcmp(p.descriptor->loader->id, "data_loader_demo") == 0)
         {
             ++good;
             assert(!p.manifest.empty());
             assert(p.handle != nullptr);
+            assert(p.descriptor->family == PS_FAMILY_DATA_LOADER);
+            assert(p.descriptor->capabilities & PS_CAP_UI);
         }
     }
     if (good != 1)

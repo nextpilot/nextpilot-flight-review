@@ -1,4 +1,4 @@
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 #include "ps_kernel.h"
 
 #include <cassert>
@@ -8,13 +8,16 @@
 #include <fstream>
 #include <iostream>
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_csv(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_csv(void);
 
 int main()
 {
-    const PsPluginDescriptor *desc = ps_plugin_entry_csv();
+    const PsPluginDescriptor *desc = ps_plugin_entry_data_loader_csv();
     assert(desc && desc->abi_version == PS_PLUGIN_ABI_VERSION);
-    assert(desc->loader && std::strcmp(desc->loader->id, "csv") == 0);
+    assert(desc->family == PS_FAMILY_DATA_LOADER);
+    assert(desc->capabilities & PS_CAP_CACHE);
+    assert(desc->loader && std::strcmp(desc->loader->id, "data_loader_csv") == 0);
+    assert(std::strcmp(desc->loader->extensions, ".csv,.tsv,.txt") == 0);
 
     char schema[4096] = {0};
     const int32_t sn = desc->loader->schema_json(schema, sizeof(schema));

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 
 #include <string>
 #include <vector>

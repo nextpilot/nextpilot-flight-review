@@ -1,4 +1,4 @@
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 
 #include "ps_kernel.h"
 
@@ -22,9 +22,10 @@ int32_t ulogLoad(const char *path, const char *, void **dataset, char *err, uint
 
 const PsLoaderVtable kUlogLoader = {
     PS_PLUGIN_ABI_VERSION,
-    "ulog",
+    "data_loader_ulog",
     "ULog",
     "ULog (*.ulg);;全部 (*)",
+    ".ulg",
     "ULog",
     1,
     1,
@@ -38,14 +39,16 @@ const PsLoaderVtable kUlogLoader = {
 
 const PsPluginDescriptor kUlogPlugin = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"ulog","name":"ULog","version":"1.0.0","sdk":"1.0","kind":"file","entry":"ps_plugin_entry_ulog"})",
+    R"({"id":"data_loader_ulog","name":"ULog","version":"1.0.0","sdk":"1.0","family":"data_loader","kind":"file","entry":"ps_plugin_entry_data_loader_ulog"})",
+    PS_FAMILY_DATA_LOADER,
+    PS_CAP_FILE | PS_CAP_PARAMS | PS_CAP_CACHE,
     &kUlogLoader,
     nullptr,
 };
 
 } // namespace
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_ulog(void)
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ulog(void)
 {
     return &kUlogPlugin;
 }

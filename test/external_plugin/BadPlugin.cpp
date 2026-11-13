@@ -1,5 +1,5 @@
 // 故意损坏的插件：入口存在但 ABI 版本非法。宿主必须丢弃它而不是崩溃。
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 
 #include <cstdint>
 
@@ -12,9 +12,10 @@ int32_t badLoad(const char *, const char *, void **, char *, uint32_t)
 
 const PsLoaderVtable kBadLoader = {
     999,
-    "bad",
+    "data_loader_bad",
     "Bad",
     "Bad (*.bad);;全部 (*)",
+    ".bad",
     "Bad",
     0,
     0,
@@ -29,6 +30,8 @@ const PsLoaderVtable kBadLoader = {
 const PsPluginDescriptor kBadPlugin = {
     999,
     "{}",
+    PS_FAMILY_DATA_LOADER,
+    PS_CAP_FILE,
     &kBadLoader,
     nullptr,
 };

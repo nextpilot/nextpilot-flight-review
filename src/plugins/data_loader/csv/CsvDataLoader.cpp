@@ -1,4 +1,4 @@
-#include "plugin_sdk/ps_plugin_api.h"
+#include "ps_plugin_api.h"
 
 #include "ps_kernel.h"
 
@@ -15,7 +15,7 @@ namespace {
 QJsonObject schema()
 {
     QJsonObject s;
-    s[QStringLiteral("id")] = QStringLiteral("csv");
+    s[QStringLiteral("id")] = QStringLiteral("data_loader_csv");
     s[QStringLiteral("title")] = QStringLiteral("加载 CSV");
     QJsonArray fields;
 
@@ -190,9 +190,10 @@ int32_t csvLoad(const char *path, const char *optsJson, void **dataset,
 
 const PsLoaderVtable kCsvLoader = {
     PS_PLUGIN_ABI_VERSION,
-    "csv",
+    "data_loader_csv",
     "CSV",
     "分隔文本 (*.csv *.tsv *.txt);;全部 (*)",
+    ".csv,.tsv,.txt",
     "CSV",
     0,
     0,
@@ -206,14 +207,16 @@ const PsLoaderVtable kCsvLoader = {
 
 const PsPluginDescriptor kCsvPlugin = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"csv","name":"CSV","version":"1.0.0","sdk":"1.0","kind":"file","entry":"ps_plugin_entry_csv"})",
+    R"({"id":"data_loader_csv","name":"CSV","version":"1.0.0","sdk":"1.0","family":"data_loader","kind":"file","entry":"ps_plugin_entry_data_loader_csv"})",
+    PS_FAMILY_DATA_LOADER,
+    PS_CAP_FILE | PS_CAP_PROBE | PS_CAP_SCHEMA | PS_CAP_CACHE,
     &kCsvLoader,
     nullptr,
 };
 
 } // namespace
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_csv(void)
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_csv(void)
 {
     return &kCsvPlugin;
 }
