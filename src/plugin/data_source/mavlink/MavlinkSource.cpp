@@ -1,4 +1,5 @@
 #include "ps_plugin_api.h"
+#include "PsDataInputBase.hpp"
 
 #include <QByteArray>
 #include <QFile>
@@ -256,7 +257,9 @@ int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi
     auto *st = new MavState;
     st->sink = *sink;
     st->sysid = qBound(0, cfg.value(QStringLiteral("sysid")).toInt(0), 255);
-    const QString replayPath = cfg.value(QStringLiteral("__replay_path")).toString();
+    QString replayPath = cfg.value(QStringLiteral("filepath")).toString();
+    if (replayPath.isEmpty())
+        replayPath = cfg.value(QStringLiteral("__replay_path")).toString();
     if (!replayPath.isEmpty())
     {
         st->replayFile.setFileName(replayPath);
@@ -391,32 +394,126 @@ int32_t defaults(char *out, uint32_t cap) { return writeJson(kDefaults, out, cap
 
 } // namespace
 
+class MavInput final : public ps::DataInputBase
+{
+public:
+    uint64_t capabilities() const override
+    {
+        return PS_INPUT_STREAM | PS_INPUT_FILE | PS_INPUT_DIRECT | PS_INPUT_REPLAY |
+               PS_INPUT_RECORD | PS_INPUT_DIALOG;
+    }
+
+    bool loadConfig(std::string_view json, PsError *err) override
+    {
+        config_.assign(json.data() ? json.data() : "", json.size());
+        if (!config_.empty())
+        {
+            const QJsonDocument doc = QJsonDocument::fromJson(QByteArray(config_.c_str()));
+            if (!doc.isObject())
+            {
+                ps::fillError(err, 2, "config 不是 JSON 对象");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool saveConfig(std::string &out, PsError *err) override
+    {
+        (void)err;
+        out = config_.empty() ? "{}" : config_;
+        return true;
+    }
+
+    PsInputDialog dialog() const override
+    {
+        return PsInputDialog{nullptr, kSchema, kDefaults};
+    }
+
+    bool start(PsError *err) override
+    {
+        if (handle_)
+            return true;
+        const PsSourceSink *s = sink();
+        if (!s || !s->channel_batch)
+        {
+            ps::fillError(err, 1, "宿主 sink 未绑定");
+            return false;
+        }
+        char e[256] = {0};
+        if (openSource(config_.c_str(), s, host(), &handle_, e, sizeof(e)) != 0)
+        {
+            ps::fillError(err, 3, e[0] ? e : "打开 MAVLink 失败");
+            return false;
+        }
+        state_ = PS_INPUT_RUNNING;
+        return true;
+    }
+
+    bool poll(PsError *err) override
+    {
+        if (!handle_)
+            return true;
+        char e[256] = {0};
+        if (pollSource(handle_, 0, e, sizeof(e)) != 0)
+        {
+            ps::fillError(err, 4, e[0] ? e : "MAVLink poll 失败");
+            return false;
+        }
+        char st[640] = {0};
+        if (statusSource(handle_, st, sizeof(st)) > 0 && std::strstr(st, "replay_done"))
+            state_ = PS_INPUT_DONE;
+        return true;
+    }
+
+    void stop() override
+    {
+        if (handle_)
+        {
+            closeSource(handle_);
+            handle_ = nullptr;
+        }
+        state_ = PS_INPUT_IDLE;
+    }
+
+    PsInputState currentState() const override { return state_; }
+
+    bool statusJson(std::string &out) override
+    {
+        char b[768] = {0};
+        const int n = statusSource(handle_, b, sizeof(b));
+        if (n < 0)
+            return false;
+        out.assign(b, static_cast<size_t>(n));
+        return true;
+    }
+
+private:
+    std::string config_;
+    void *handle_ = nullptr;
+    PsInputState state_ = PS_INPUT_IDLE;
+};
+
+namespace {
+const PsDataInputVtable *mavVtable()
+{
+    static const PsDataInputVtable vt = ps::VtableBuilder::make<MavInput>(R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_input","file_extensions":[".mav",".bin",".dat",".log"]})");
+    return &vt;
+}
+} // namespace
+
+
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_mavlink()
 {
-    static const PsDataSourceVtable vtable = {
-        PS_PLUGIN_ABI_VERSION,
-        "data_source_mavlink",
-        "MAVLink",
-        "telemetry",
-        "udp",
-        1,
-        {0, 0, 0, 0, 0, 0, 0},
-        schema,
-        defaults,
-        openSource,
-        pollSource,
-        closeSource,
-        statusSource,
-        nullptr,
-    };
     static const PsPluginDescriptor desc = {
         PS_PLUGIN_ABI_VERSION,
-        R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","family":"data_source","replay_extensions":".mav,.bin,.dat,.log"})",
-        PS_FAMILY_DATA_SOURCE,
-        PS_CAP_STREAM | PS_CAP_RECORD | PS_CAP_SCHEMA | PS_CAP_REPLAY,
+        R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_input","file_extensions":[".mav",".bin",".dat",".log"]})",
+        PS_FAMILY_DATA_INPUT,
+        0,
         nullptr,
         nullptr,
-        &vtable,
+        nullptr,
+        mavVtable(),
     };
     return &desc;
 }

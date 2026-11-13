@@ -104,7 +104,7 @@ SourceConfigDialog::SourceConfigDialog(const SourcePlugin &plugin, const QString
         auto *h = new QHBoxLayout(row);
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(6);
-        m_replayPath = new QLineEdit(initial.value(QStringLiteral("__replay_path")).toString(), row);
+        m_replayPath = new QLineEdit(initial.value(QStringLiteral("filepath")).toString(), row);
         m_replayPath->setPlaceholderText(QStringLiteral("留空=实时连接；选择文件=同插件回放原始字节"));
         auto *browse = new QPushButton(QStringLiteral("浏览…"), row);
         h->addWidget(m_replayPath, 1);
@@ -153,6 +153,6 @@ QString SourceConfigDialog::configJson() const
     if (m_record)
         o.insert(QStringLiteral("__record"), m_record->isChecked());
     if (m_replayPath && !m_replayPath->text().trimmed().isEmpty())
-        o.insert(QStringLiteral("__replay_path"), m_replayPath->text().trimmed());
+        o.insert(QStringLiteral("filepath"), m_replayPath->text().trimmed());
     return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
 }

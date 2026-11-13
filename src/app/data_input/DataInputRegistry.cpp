@@ -7,8 +7,11 @@
 
 #include <QByteArray>
 #include <QDir>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+
+#include <cstring>
 
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_csv(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ulog(void);
@@ -165,6 +168,123 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
         return true;
     }
 
+    if (desc->family == PS_FAMILY_DATA_INPUT)
+    {
+        const PsDataInputVtable *v = desc->data_input;
+        if (!v || v->protocol_version != PS_DATA_INPUT_PROTOCOL_VERSION ||
+            v->struct_size < sizeof(PsDataInputVtable) || !v->create || !v->destroy ||
+            !v->capabilities || !v->start || !v->stop || !v->poll || !v->current_state)
+            return false;
+
+        void *probe = v->create();
+        if (!probe)
+            return false;
+        const uint64_t caps = v->capabilities(probe);
+        PsInputDialog dlg = v->get_dialog ? v->get_dialog(probe) : PsInputDialog{nullptr, nullptr, nullptr};
+        v->destroy(probe);
+
+        // 当前 UI 的数据源列表只承载 stream / replay；纯文件 loader 仍走旧 loader 列表直到迁移完成。
+        if (!(caps & (PS_INPUT_STREAM | PS_INPUT_REPLAY)))
+            return false;
+
+        const QJsonObject manifest = QJsonDocument::fromJson(QByteArray(desc->manifest_json)).object();
+        const QString id = manifest.value(QStringLiteral("id")).toString();
+        if (id.isEmpty() || findSourceById(id))
+            return false;
+
+        SourcePlugin p;
+        p.id = id;
+        p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
+        p.label = manifest.value(QStringLiteral("name")).toString(id);
+        p.kind = manifest.value(QStringLiteral("kind")).toString(QStringLiteral("source"));
+        p.transport = manifest.value(QStringLiteral("transport")).toString(QStringLiteral("internal"));
+        p.recordable = (caps & PS_INPUT_RECORD) != 0;
+        p.replayable = (caps & PS_INPUT_REPLAY) != 0;
+        p.capabilities = static_cast<uint32_t>(caps);
+        const QJsonArray exts = manifest.value(QStringLiteral("file_extensions")).toArray();
+        QStringList extList;
+        for (const QJsonValue &e : exts)
+            extList << e.toString();
+        p.replayExtensions = extList.join(QStringLiteral(", "));
+        p.schema = QJsonDocument::fromJson(QByteArray(dlg.schema_json ? dlg.schema_json : "")).object();
+        const QString defaults = QString::fromUtf8(dlg.default_config_json ? dlg.default_config_json : "{}");
+        p.defaultConfig = [defaults] { return defaults; };
+        p.open = [v](const QString &config, const PsSourceSink *sink, void **handle, QString *err) {
+            char e[256] = {0};
+            void *ctx = v->create();
+            if (!ctx) {
+                if (err) *err = QStringLiteral("create 失败");
+                return 1;
+            }
+            PsDataInputServices services{};
+            services.abi_version = PS_HOST_API_VERSION;
+            services.host = ps_host_api();
+            services.sink = sink;
+            PsError pe{};
+            if (!v->bind(ctx, services, &pe)) {
+                if (err) *err = QString::fromUtf8(pe.message[0] ? pe.message : "bind failed");
+                v->destroy(ctx);
+                return 1;
+            }
+            const QByteArray cfgBytes = config.isEmpty() ? QByteArrayLiteral("{}") : config.toUtf8();
+            PsStringView sv{cfgBytes.constData(), static_cast<uint32_t>(cfgBytes.size())};
+            if (!v->load_config(ctx, sv, &pe)) {
+                if (err) *err = QString::fromUtf8(pe.message[0] ? pe.message : "load_config failed");
+                v->destroy(ctx);
+                return 1;
+            }
+            if (!v->start(ctx, &pe)) {
+                if (err) *err = QString::fromUtf8(pe.message[0] ? pe.message : "start failed");
+                v->stop(ctx);
+                v->destroy(ctx);
+                return 1;
+            }
+            *handle = ctx;
+            (void)e;
+            return 0;
+        };
+        p.poll = [v](void *handle, int, QString *err) {
+            PsError pe{};
+            if (!v->poll(handle, &pe)) {
+                if (err) *err = QString::fromUtf8(pe.message[0] ? pe.message : "poll failed");
+                return 1;
+            }
+            return 0;
+        };
+        p.close = [v](void *handle) {
+            if (!handle) return;
+            v->stop(handle);
+            v->destroy(handle);
+        };
+        p.status = [v](void *handle) {
+            if (v->status_json)
+            {
+                char buf[2048] = {0};
+                const int32_t n = v->status_json(handle, buf, sizeof(buf));
+                if (n >= 0)
+                    return QString::fromUtf8(buf, n);
+            }
+            const PsInputState st = handle ? v->current_state(handle) : PS_INPUT_IDLE;
+            const char *s = st == PS_INPUT_RUNNING ? "running"
+                           : st == PS_INPUT_DONE ? "done"
+                           : st == PS_INPUT_ERROR ? "error"
+                           : st == PS_INPUT_PAUSED ? "paused" : "idle";
+            return QStringLiteral("{\"state\":\"%1\"}").arg(QString::fromLatin1(s));
+        };
+        if (v->send_command)
+            p.send = [v](void *handle, const QString &command) {
+                PsStringView out{};
+                PsError pe{};
+                const QByteArray cmdBytes = command.toUtf8();
+                PsStringView cmd{cmdBytes.constData(), static_cast<uint32_t>(cmdBytes.size())};
+                if (!v->send_command(handle, cmd, &out, &pe))
+                    return QString::fromUtf8(pe.message[0] ? pe.message : "send failed");
+                return QString::fromUtf8(out.data ? out.data : "{}", static_cast<int>(out.size));
+            };
+        m_streamPlugins.append(p);
+        return true;
+    }
+
     if (desc->family == PS_FAMILY_DATA_SOURCE)
     {
         const PsDataSourceVtable *v = desc->source;
@@ -218,7 +338,6 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
         return true;
     }
 
-    // PS_FAMILY_DATA_INPUT 的统一注册在下一阶段接入；这里先不误收。
     return false;
 }
 
@@ -234,7 +353,8 @@ QStringList DataInputRegistry::scanPlugins(const QStringList &dirs)
         if (!p.descriptor)
             continue;
         if (p.descriptor->family != PS_FAMILY_DATA_LOADER &&
-            p.descriptor->family != PS_FAMILY_DATA_SOURCE)
+            p.descriptor->family != PS_FAMILY_DATA_SOURCE &&
+            p.descriptor->family != PS_FAMILY_DATA_INPUT)
             continue;
         if (!registerDescriptor(p.descriptor, QString::fromStdString(p.packageDir)))
             errors << QStringLiteral("%1：数据输入插件注册失败").arg(QString::fromStdString(p.library));

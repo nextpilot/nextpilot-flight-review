@@ -2,7 +2,12 @@
 #include "app/plugin_host/HostApi.h"
 
 #include <QCoreApplication>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTcpServer>
+#include <QTemporaryDir>
 #include <QTcpSocket>
 #include <cassert>
 #include <cmath>
@@ -110,22 +115,42 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     const auto *d = ps_plugin_entry_data_source_oem7();
-    assert(d && d->family == PS_FAMILY_DATA_SOURCE && d->source);
-    char schema[4096] = {0};
-    assert(d->source->config_schema_json(schema, sizeof(schema)) > 0);
-    assert(std::strstr(schema, "port"));
-    assert(std::strstr(schema, "commands"));
-    assert(d->capabilities & PS_CAP_COMMAND);
+    assert(d && d->family == PS_FAMILY_DATA_INPUT && d->data_input);
+    const PsDataInputVtable *v = d->data_input;
+    void *probe = v->create();
+    assert(probe);
+    const uint64_t caps = v->capabilities(probe);
+    assert((caps & PS_INPUT_STREAM) != 0);
+    assert((caps & PS_INPUT_COMMAND) != 0);
+    PsInputDialog dlg = v->get_dialog(probe);
+    assert(dlg.schema_json && std::strstr(dlg.schema_json, "port"));
+    assert(std::strstr(dlg.schema_json, "commands"));
+    v->destroy(probe);
 
     QTcpServer server;
     assert(server.listen(QHostAddress::LocalHost, 14601));
     Sink sink;
     PsSourceSink ps{&sink, onBatch, onEvent};
-    void *h = nullptr;
-    char err[256] = {0};
-    const std::string cfg = std::string("{\"host\":\"127.0.0.1\",\"port\":14601,\"timeout_ms\":1000")
-                            + ",\"database\":\"" + TEST_OEM7_DB + "\"}";
-    assert(d->source->open(cfg.c_str(), &ps, ps_host_api(), &h, err, sizeof(err)) == 0);
+    void *h = v->create();
+    assert(h);
+    PsDataInputServices services{};
+    services.abi_version = PS_HOST_API_VERSION;
+    services.host = ps_host_api();
+    services.sink = &ps;
+    PsError perr{};
+    assert(v->bind(h, services, &perr));
+    QTemporaryDir rawDir;
+    assert(rawDir.isValid());
+    const QString rawPath = rawDir.filePath(QStringLiteral("oem7.raw"));
+    QJsonObject cfgObj{{QStringLiteral("host"), QStringLiteral("127.0.0.1")},
+                       {QStringLiteral("port"), 14601},
+                       {QStringLiteral("timeout_ms"), 1000},
+                       {QStringLiteral("database"), QString::fromUtf8(TEST_OEM7_DB)},
+                       {QStringLiteral("raw_path"), rawPath}};
+    const QByteArray cfg = QJsonDocument(cfgObj).toJson(QJsonDocument::Compact);
+    PsStringView sv{cfg.constData(), static_cast<uint32_t>(cfg.size())};
+    assert(v->load_config(h, sv, &perr));
+    assert(v->start(h, &perr));
     QTcpSocket *peer = nullptr;
     assert(server.waitForNewConnection(1000));
     peer = server.nextPendingConnection();
@@ -138,7 +163,7 @@ int main(int argc, char **argv)
     {
         QCoreApplication::processEvents();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        d->source->poll(h, 0, err, sizeof(err));
+        v->poll(h, &perr);
     }
     const std::string latKey = sink.data.count("oem7.bestpos.latitude") ? "oem7.bestpos.latitude"
                                                                       : "oem7.bestpos.lat";
@@ -152,7 +177,7 @@ int main(int argc, char **argv)
     {
         QCoreApplication::processEvents();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        d->source->poll(h, 0, err, sizeof(err));
+        v->poll(h, &perr);
     }
     assert(sink.data["oem7.bestpos.latitude"].size() == 2);
     assert(std::fabs(sink.data["oem7.bestpos.latitude"].back().second - 51.15043874397) < 1e-6);
@@ -165,18 +190,38 @@ int main(int argc, char **argv)
     {
         QCoreApplication::processEvents();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        d->source->poll(h, 0, err, sizeof(err));
+        v->poll(h, &perr);
     }
     assert(sink.data["oem7.bestpos.latitude"].size() == 3);
 
-    char cmdOut[512] = {0};
-    assert(d->source->send_command && d->source->send_command(h, "VERSION", cmdOut, sizeof(cmdOut)) > 0);
-    assert(std::strstr(cmdOut, "\"ok\":true"));
+    PsStringView cmdOut{};
+    const char *cmd = "VERSION";
+    assert(v->send_command && v->send_command(h, PsStringView{cmd, 7}, &cmdOut, &perr));
+    assert(cmdOut.data && std::strstr(cmdOut.data, "\"ok\":true"));
     peer->waitForReadyRead(500);
     const QByteArray sent = peer->readAll();
     assert(sent.contains("$VERSION\r\n"));
 
-    assert(d->source->close(h) == 0);
+    const size_t liveCount = sink.data["oem7.bestpos.latitude"].size();
+    v->stop(h);
+    v->destroy(h);
+    assert(QFileInfo(rawPath).size() > 0);
+
+    // OEM7 原始字节回放：同一个 OEM7 插件，filepath 模式。
+    void *rh = v->create();
+    assert(rh);
+    assert(v->bind(rh, services, &perr));
+    QJsonObject replayObj{{QStringLiteral("filepath"), rawPath},
+                           {QStringLiteral("database"), QString::fromUtf8(TEST_OEM7_DB)}};
+    const QByteArray replayBytes = QJsonDocument(replayObj).toJson(QJsonDocument::Compact);
+    PsStringView rsv{replayBytes.constData(), static_cast<uint32_t>(replayBytes.size())};
+    assert(v->load_config(rh, rsv, &perr));
+    assert(v->start(rh, &perr));
+    for (int i = 0; i < 5 && sink.data["oem7.bestpos.latitude"].size() <= liveCount; ++i)
+        v->poll(rh, &perr);
+    assert(sink.data["oem7.bestpos.latitude"].size() > liveCount);
+    v->stop(rh);
+    v->destroy(rh);
     std::printf("oem7 ok: %zu channels\n", sink.data.size());
     return 0;
 }

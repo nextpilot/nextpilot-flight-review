@@ -32,6 +32,8 @@ pub const PS_INPUT_PAUSE: u32 = 1 << 4;
 pub const PS_INPUT_DIALOG: u32 = 1 << 5;
 pub const PS_INPUT_COMMAND: u32 = 1 << 6;
 pub const PS_INPUT_REPLAY: u32 = 1 << 7;
+pub const PS_INPUT_RECORD: u32 = 1 << 8;
+pub const PS_INPUT_SEEK: u32 = 1 << 9;
 
 pub type DatasetNewFn = unsafe extern "C" fn() -> *mut c_void;
 pub type DatasetAddChannelFn = unsafe extern "C" fn(

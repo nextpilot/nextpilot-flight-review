@@ -2,6 +2,12 @@
 #include "app/plugin_host/HostApi.h"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QTemporaryDir>
 #include <QUdpSocket>
 #include <QVector>
 #include <cassert>
@@ -47,16 +53,34 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     const auto *d = ps_plugin_entry_data_source_mavlink();
-    assert(d && d->family == PS_FAMILY_DATA_SOURCE && d->source);
-    char schema[4096] = {0};
-    assert(d->source->config_schema_json(schema, sizeof(schema)) > 0);
-    assert(std::strstr(schema, "port"));
+    assert(d && d->family == PS_FAMILY_DATA_INPUT && d->data_input);
+    const PsDataInputVtable *v = d->data_input;
+    void *probe = v->create();
+    assert(probe);
+    assert((v->capabilities(probe) & PS_INPUT_STREAM) != 0);
+    PsInputDialog dlg = v->get_dialog(probe);
+    assert(dlg.schema_json && std::strstr(dlg.schema_json, "port"));
+    v->destroy(probe);
 
     Sink sink;
     PsSourceSink ps{&sink, onBatch, onEvent};
-    void *h = nullptr;
-    char err[256] = {0};
-    assert(d->source->open("{\"port\":14555,\"bind\":\"127.0.0.1\"}", &ps, ps_host_api(), &h, err, sizeof(err)) == 0);
+    void *h = v->create();
+    assert(h);
+    PsDataInputServices services{};
+    services.abi_version = PS_HOST_API_VERSION;
+    services.host = ps_host_api();
+    services.sink = &ps;
+    PsError perr{};
+    assert(v->bind(h, services, &perr));
+    QTemporaryDir rawDir;
+    assert(rawDir.isValid());
+    const QString rawPath = rawDir.filePath(QStringLiteral("mav.raw"));
+    QJsonObject cfgObj{{QStringLiteral("port"), 14555}, {QStringLiteral("bind"), QStringLiteral("127.0.0.1")},
+                       {QStringLiteral("raw_path"), rawPath}};
+    const QByteArray cfgBytes = QJsonDocument(cfgObj).toJson(QJsonDocument::Compact);
+    PsStringView sv{cfgBytes.constData(), static_cast<uint32_t>(cfgBytes.size())};
+    assert(v->load_config(h, sv, &perr));
+    assert(v->start(h, &perr));
 
     QByteArray f;
     f.append(char(0xFD)).append(char(16)).append(char(0)).append(char(0)).append(char(0));
@@ -74,14 +98,32 @@ int main(int argc, char **argv)
     {
         QCoreApplication::processEvents();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        d->source->poll(h, 0, err, sizeof(err));
+        v->poll(h, &perr);
     }
     assert(!sink.data.empty());
     assert(sink.data.count("mav.att.roll") == 1);
     const auto &roll = sink.data["mav.att.roll"];
     assert(roll.size() == 1);
     assert(std::fabs(roll[0].second - 5.729578) < 0.01);
-    assert(d->source->close(h) == 0);
+    const size_t liveCount = roll.size();
+    v->stop(h);
+    v->destroy(h);
+    assert(QFileInfo(rawPath).size() > 0);
+
+    // 原始文件由同一个 MAVLink 插件回放，不依赖新 loader 插件。
+    void *rh = v->create();
+    assert(rh);
+    assert(v->bind(rh, services, &perr));
+    QJsonObject replayObj{{QStringLiteral("filepath"), rawPath}};
+    const QByteArray replayBytes = QJsonDocument(replayObj).toJson(QJsonDocument::Compact);
+    PsStringView rsv{replayBytes.constData(), static_cast<uint32_t>(replayBytes.size())};
+    assert(v->load_config(rh, rsv, &perr));
+    assert(v->start(rh, &perr));
+    for (int i = 0; i < 5 && sink.data["mav.att.roll"].size() <= liveCount; ++i)
+        v->poll(rh, &perr);
+    assert(sink.data["mav.att.roll"].size() > liveCount);
+    v->stop(rh);
+    v->destroy(rh);
     std::printf("mavlink ok: %zu channels, roll=%.4f\n", sink.data.size(), roll[0].second);
     return 0;
 }

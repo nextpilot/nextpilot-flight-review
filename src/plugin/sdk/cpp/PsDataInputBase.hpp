@@ -65,6 +65,13 @@ public:
 
     virtual PsInputState currentState() const = 0;
 
+    /* 可选：详细状态给调试面板；不实现时宿主只用 current_state。 */
+    virtual bool statusJson(std::string &out)
+    {
+        out = "{}";
+        return true;
+    }
+
     virtual bool saveConfig(std::string &out, PsError *err)
     {
         (void)err;
@@ -78,7 +85,7 @@ public:
         return true;
     }
 
-    virtual PsInputDialog dialog() const { return PsInputDialog{nullptr, nullptr}; }
+    virtual PsInputDialog dialog() const { return PsInputDialog{nullptr, nullptr, nullptr}; }
     virtual const void *extension(std::string_view id) const
     {
         (void)id;
@@ -279,7 +286,7 @@ struct VtableBuilder
         try {
             return static_cast<T *>(ctx)->dialog();
         } catch (...) {
-            return PsInputDialog{nullptr, nullptr};
+            return PsInputDialog{nullptr, nullptr, nullptr};
         }
     }
 
@@ -327,6 +334,23 @@ struct VtableBuilder
     }
 
     template <typename T>
+    static int32_t statusJsonT(void *ctx, char *out, uint32_t cap) noexcept
+    {
+        try {
+            auto *self = static_cast<T *>(ctx);
+            std::string s;
+            if (!self->statusJson(s))
+                return -1;
+            if (!out || cap == 0 || s.size() + 1 > cap)
+                return -1;
+            std::memcpy(out, s.c_str(), s.size() + 1);
+            return static_cast<int32_t>(s.size());
+        } catch (...) {
+            return -1;
+        }
+    }
+
+    template <typename T>
     static PsDataInputVtable make(const char *manifest)
     {
         return PsDataInputVtable{
@@ -349,6 +373,7 @@ struct VtableBuilder
             &extensionT<T>,
             &sendCommandT<T>,
             &seekT<T>,
+            &statusJsonT<T>,
         };
     }
 };

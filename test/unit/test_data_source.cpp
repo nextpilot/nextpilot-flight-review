@@ -39,35 +39,45 @@ int main()
 {
     const PsPluginDescriptor *d = ps_plugin_entry_data_source_sim();
     assert(d && d->abi_version == PS_PLUGIN_ABI_VERSION);
-    assert(d->family == PS_FAMILY_DATA_SOURCE);
-    assert(d->source && d->source->id && std::strcmp(d->source->id, "data_source_sim") == 0);
-    assert(d->source->open && d->source->poll && d->source->close);
+    assert(d->family == PS_FAMILY_DATA_INPUT && d->data_input);
+    const PsDataInputVtable *v = d->data_input;
+    assert(v->protocol_version == PS_DATA_INPUT_PROTOCOL_VERSION);
+    assert(v->struct_size >= sizeof(PsDataInputVtable));
 
-    char schema[8192] = {0};
-    assert(d->source->config_schema_json(schema, sizeof(schema)) > 0);
-    assert(std::strstr(schema, "rate_hz"));
-    char defaults[1024] = {0};
-    assert(d->source->default_config_json(defaults, sizeof(defaults)) > 0);
+    void *probe = v->create();
+    assert(probe);
+    assert((v->capabilities(probe) & PS_INPUT_STREAM) != 0);
+    PsInputDialog dlg = v->get_dialog(probe);
+    assert(dlg.schema_json && std::strstr(dlg.schema_json, "rate_hz"));
+    assert(dlg.default_config_json && std::strstr(dlg.default_config_json, "rate_hz"));
+    v->destroy(probe);
 
     SinkState state;
     PsSourceSink sink{&state, onBatch, onEvent};
-    void *handle = nullptr;
-    char err[256] = {0};
-    assert(d->source->open("{\"rate_hz\":200,\"channels\":2}", &sink, ps_host_api(), &handle, err, sizeof(err)) == 0);
+    void *handle = v->create();
     assert(handle);
+    PsDataInputServices services{};
+    services.abi_version = PS_HOST_API_VERSION;
+    services.host = ps_host_api();
+    services.sink = &sink;
+    PsError err{};
+    assert(v->bind(handle, services, &err));
+    const char *config = "{\"rate_hz\":200,\"channels\":2}";
+    PsStringView cfg{config, static_cast<uint32_t>(std::strlen(config))};
+    assert(v->load_config(handle, cfg, &err));
+    assert(v->start(handle, &err));
     for (int i = 0; i < 20; ++i)
     {
-        assert(d->source->poll(handle, 0, err, sizeof(err)) == 0);
+        assert(v->poll(handle, &err));
         struct timespec ts{0, 10 * 1000 * 1000};
         nanosleep(&ts, nullptr);
     }
     assert(state.batches > 0);
     assert(state.points > 0);
     assert(state.names.size() == 2);
-    char status[512] = {0};
-    assert(d->source->status_json(handle, status, sizeof(status)) > 0);
-    assert(std::strstr(status, "running") || std::strstr(status, "finished"));
-    assert(d->source->close(handle) == 0);
+    assert(v->current_state(handle) == PS_INPUT_RUNNING || v->current_state(handle) == PS_INPUT_DONE);
+    v->stop(handle);
+    v->destroy(handle);
 
     std::cout << "data source ok: " << state.points << " points\n";
     return 0;

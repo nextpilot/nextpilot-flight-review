@@ -14,7 +14,7 @@ extern "C" {
 
 #define PS_PLUGIN_ABI_VERSION 5u
 #define PS_HOST_API_VERSION 1u
-#define PS_DATA_INPUT_PROTOCOL_VERSION 1u
+#define PS_DATA_INPUT_PROTOCOL_VERSION 2u
 
 /* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
@@ -94,6 +94,8 @@ typedef struct PsSourceSink {
 #define PS_INPUT_DIALOG      (1u << 5)  /* get_dialog 返回配置界面 */
 #define PS_INPUT_COMMAND     (1u << 6)  /* send_command 可用 */
 #define PS_INPUT_REPLAY      (1u << 7)  /* 同一插件可回放自己录制的原始文件 */
+#define PS_INPUT_RECORD      (1u << 8)  /* 支持把原始字节落盘 */
+#define PS_INPUT_SEEK        (1u << 9)  /* 文件模式支持 seek */
 
 typedef enum PsInputState {
     PS_INPUT_IDLE = 0,
@@ -117,6 +119,7 @@ typedef struct PsStringView {
 typedef struct PsInputDialog {
     const char *ui_path;
     const char *schema_json;
+    const char *default_config_json;
 } PsInputDialog;
 
 /* 宿主服务在 bind() 一次性注入。sink/host 生命周期覆盖整个实例。 */
@@ -156,6 +159,7 @@ typedef struct PsDataInputVtable {
     bool (*send_command)(void *ctx, PsStringView command,
                          PsStringView *out_json, PsError *err);
     bool (*seek)(void *ctx, double time_s, PsError *err);
+    int32_t (*status_json)(void *ctx, char *out, uint32_t cap);
 } PsDataInputVtable;
 
 
