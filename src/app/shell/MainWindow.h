@@ -7,7 +7,7 @@
 
 struct PsDataset;
 struct PsChannelInfo;
-class LiveStream;
+class LiveSession;
 class CanvasWidget;
 class QLabel;
 class QPlainTextEdit;
@@ -52,13 +52,13 @@ struct SourceData
     QVector<TransformRecipe> recipes;
     QWidget *row = nullptr;
 
-    // 实时源：ds 为空，通道视图由 LiveStream 持有；handle 归插件所有。
+    // 实时源：ds 为空，通道视图由 LiveSession 持有；handle 归插件所有。
     bool live = false;
     bool plotted = false;
     QString sourceId;
     QString config;
     void *handle = nullptr;
-    std::shared_ptr<LiveStream> stream;
+    std::shared_ptr<LiveSession> liveSession;
 };
 
 // 主窗口骨架（对应 §8 / D14）：

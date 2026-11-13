@@ -1,7 +1,6 @@
 #pragma once
 
-#include "data_input/LoaderPlugin.h"
-#include "data_input/SourcePlugin.h"
+#include "data_input/DataInputPlugin.h"
 
 #include <QStringList>
 #include <QVector>
@@ -15,12 +14,12 @@ class DataInputRegistry
 public:
     static DataInputRegistry &instance();
 
-    const LoaderPlugin *findFileBySuffix(const QString &suffix) const;
-    const LoaderPlugin *findFileById(const QString &id) const;
-    const SourcePlugin *findSourceById(const QString &id) const;
+    const DataInputPlugin *findFileBySuffix(const QString &suffix) const;
+    const DataInputPlugin *findFileById(const QString &id) const;
+    const DataInputPlugin *findSourceById(const QString &id) const;
 
-    const QVector<LoaderPlugin> &filePlugins() const { return m_filePlugins; }
-    const QVector<SourcePlugin> &streamPlugins() const { return m_streamPlugins; }
+    const QVector<DataInputPlugin> &filePlugins() const { return m_filePlugins; }
+    const QVector<DataInputPlugin> &streamPlugins() const { return m_streamPlugins; }
 
     bool registerDescriptor(const PsPluginDescriptor *desc, const QString &packageDir = QString());
 
@@ -30,6 +29,6 @@ public:
 private:
     DataInputRegistry();
 
-    QVector<LoaderPlugin> m_filePlugins;
-    QVector<SourcePlugin> m_streamPlugins;
+    QVector<DataInputPlugin> m_filePlugins;
+    QVector<DataInputPlugin> m_streamPlugins;
 };

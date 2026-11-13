@@ -10,16 +10,16 @@
 
 // 实时源实例的宿主侧缓冲与记录器。缓冲本身由 kernel 的 ps-stream 持有，
 // app 只负责启停、UI 刷新和落盘策略。
-class LiveStream
+class LiveSession
 {
 public:
     static constexpr int kChannelCapacity = 262144;
 
-    LiveStream(QString pluginId, QString label);
-    ~LiveStream();
+    LiveSession(QString pluginId, QString label);
+    ~LiveSession();
 
-    LiveStream(const LiveStream &) = delete;
-    LiveStream &operator=(const LiveStream &) = delete;
+    LiveSession(const LiveSession &) = delete;
+    LiveSession &operator=(const LiveSession &) = delete;
 
     const QString &pluginId() const { return m_pluginId; }
     const QString &label() const { return m_label; }

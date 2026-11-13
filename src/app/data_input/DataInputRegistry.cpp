@@ -129,7 +129,7 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
         if (findFileById(id))
             return false;
 
-        LoaderPlugin p;
+        DataInputPlugin p;
         p.id = id;
         p.version = manifestVersion(desc);
         p.cacheNamespace = id + QLatin1Char('@') + p.version;
@@ -196,7 +196,7 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
             if (legacy ? !legacy->load || findFileById(QString::fromUtf8(legacy->id))
                        : manifestId.isEmpty() || findFileById(manifestId))
                 return false;
-            LoaderPlugin p;
+            DataInputPlugin p;
             if (legacy)
             {
                 p.id = QString::fromUtf8(legacy->id);
@@ -312,7 +312,7 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
         if (id.isEmpty() || findSourceById(id))
             return false;
 
-        SourcePlugin p;
+        DataInputPlugin p;
         p.id = id;
         p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
         p.label = manifest.value(QStringLiteral("name")).toString(id);
@@ -415,7 +415,7 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
         if (findSourceById(id))
             return false;
 
-        SourcePlugin p;
+        DataInputPlugin p;
         p.id = id;
         p.version = manifestVersion(desc);
         p.label = QString::fromUtf8(v->label ? v->label : v->id);
@@ -484,30 +484,30 @@ QStringList DataInputRegistry::scanPlugins(const QStringList &dirs)
     return errors;
 }
 
-const LoaderPlugin *DataInputRegistry::findFileBySuffix(const QString &suffix) const
+const DataInputPlugin *DataInputRegistry::findFileBySuffix(const QString &suffix) const
 {
     const QString dot = suffix.startsWith('.') ? suffix.toLower() : QStringLiteral(".") + suffix.toLower();
-    for (const LoaderPlugin &p : m_filePlugins)
+    for (const DataInputPlugin &p : m_filePlugins)
         if (p.extensions.contains(dot, Qt::CaseInsensitive))
             return &p;
     // 未知扩展名兜底给 CSV；解析失败由插件报错。
-    for (const LoaderPlugin &p : m_filePlugins)
+    for (const DataInputPlugin &p : m_filePlugins)
         if (p.id == QLatin1String("data_loader_csv"))
             return &p;
     return nullptr;
 }
 
-const LoaderPlugin *DataInputRegistry::findFileById(const QString &id) const
+const DataInputPlugin *DataInputRegistry::findFileById(const QString &id) const
 {
-    for (const LoaderPlugin &p : m_filePlugins)
+    for (const DataInputPlugin &p : m_filePlugins)
         if (p.id == id)
             return &p;
     return nullptr;
 }
 
-const SourcePlugin *DataInputRegistry::findSourceById(const QString &id) const
+const DataInputPlugin *DataInputRegistry::findSourceById(const QString &id) const
 {
-    for (const SourcePlugin &p : m_streamPlugins)
+    for (const DataInputPlugin &p : m_streamPlugins)
         if (p.id == id)
             return &p;
     return nullptr;

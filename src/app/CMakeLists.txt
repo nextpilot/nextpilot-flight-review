@@ -7,20 +7,17 @@ add_executable(plotscope_app
   main.cpp
   shell/MainWindow.h
   shell/MainWindow.cpp
-  data_input/LoaderPlugin.h
+  data_input/DataInputPlugin.h
   data_input/DataInputRegistry.h
   data_input/DataInputRegistry.cpp
-  data_input/LoaderOptionsDialog.h
-  data_input/LoaderOptionsDialog.cpp
-  data_input/DialogEngine.h
-  data_input/DialogEngine.cpp
-  data_input/LiveStream.h
-  data_input/LiveStream.cpp
-  data_input/SourcePlugin.h
-  data_input/SourceConfigDialog.h
-  data_input/SourceConfigDialog.cpp
-  data_input/SourceDebugDialog.h
-  data_input/SourceDebugDialog.cpp
+  data_input/DataInputDialog.h
+  data_input/DataInputDialog.cpp
+  plugin_host/DialogEngine.h
+  plugin_host/DialogEngine.cpp
+  live/LiveSession.h
+  live/LiveSession.cpp
+  device/DeviceDebugDialog.h
+  device/DeviceDebugDialog.cpp
   shell/Theme.h
   shell/Theme.cpp
   transform/TransformDialog.h

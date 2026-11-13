@@ -1,11 +1,10 @@
 #include "shell/MainWindow.h"
-#include "data_input/DialogEngine.h"
-#include "data_input/LoaderOptionsDialog.h"
+#include "plugin_host/DialogEngine.h"
+#include "data_input/DataInputDialog.h"
 #include "app/cache/DatasetCache.h"
 #include "data_input/DataInputRegistry.h"
-#include "data_input/LiveStream.h"
-#include "data_input/SourceConfigDialog.h"
-#include "data_input/SourceDebugDialog.h"
+#include "live/LiveSession.h"
+#include "device/DeviceDebugDialog.h"
 #include "data_input/DataInputRegistry.h"
 
 #include <QAction>
@@ -849,12 +848,12 @@ QWidget *MainWindow::createRibbon()
             srcActs.append(a);
         };
         // 文件入口来自 loader catalog，来源入口来自 source catalog；Ribbon 不写死格式。
-        for (const LoaderPlugin &lp : DataInputRegistry::instance().filePlugins())
+        for (const DataInputPlugin &lp : DataInputRegistry::instance().filePlugins())
         {
             const QString kind = lp.id.section(QLatin1Char('_'), -1);
             addSource(kind, lp.label, lp.filter.isEmpty() ? QStringLiteral("全部 (*)") : lp.filter);
         }
-        for (const SourcePlugin &sp : DataInputRegistry::instance().streamPlugins())
+        for (const DataInputPlugin &sp : DataInputRegistry::instance().streamPlugins())
         {
             auto *a = new QAction(QIcon(sourceThumb(sp.kind)), sp.label, this);
             a->setToolTip(QStringLiteral("连接 %1（%2）").arg(sp.label, sp.transport));
@@ -2193,22 +2192,25 @@ void MainWindow::switchSource(int id)
 
 void MainWindow::connectLiveSource(const QString &pluginId)
 {
-    const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(pluginId);
+    const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(pluginId);
     if (!sp)
     {
         log(QStringLiteral("实时源未注册：%1").arg(pluginId));
         return;
     }
-    SourceConfigDialog dlg(*sp, QString(), this);
+    const auto parsers = DataInputRegistry::instance().streamPlugins();
+    DataInputDialog dlg(parsers, sp->id, QString(), this);
     if (dlg.exec() != QDialog::Accepted)
         return;
+    if (dlg.selectedParserCount() > 1)
+        log(QStringLiteral("多解析器配置已保存；当前连接仅启动 %1").arg(sp->label));
     const QString config = dlg.configJson();
 
-    auto stream = std::make_shared<LiveStream>(sp->id, sp->label);
+    auto session = std::make_shared<LiveSession>(sp->id, sp->label);
     if (QJsonDocument::fromJson(config.toUtf8()).object().value(QStringLiteral("__record")).toBool())
     {
         QString path, err;
-        if (stream->startRecording(&path, &err))
+        if (session->startRecording(&path, &err))
             log(QStringLiteral("实时记录：%1").arg(path));
         else
             QMessageBox::warning(this, QStringLiteral("记录"), err);
@@ -2216,7 +2218,7 @@ void MainWindow::connectLiveSource(const QString &pluginId)
 
     void *handle = nullptr;
     QString err;
-    if (sp->open(config, stream->sink(), &handle, &err) != 0)
+    if (sp->open(config, session->sink(), &handle, &err) != 0)
     {
         QMessageBox::warning(this, QStringLiteral("连接失败"),
                              QStringLiteral("%1\n%2").arg(sp->label, err));
@@ -2234,7 +2236,7 @@ void MainWindow::connectLiveSource(const QString &pluginId)
     src.sourceId = sp->id;
     src.config = config;
     src.handle = handle;
-    src.stream = stream;
+    src.liveSession = session;
     m_sources.append(src);
 
     addSourceRow(src.name, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"), true,
@@ -2246,14 +2248,14 @@ void MainWindow::openSourceDebug(SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+    const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
     if (!sp || !sp->send)
     {
         QMessageBox::information(this, QStringLiteral("调试"),
                                  QStringLiteral("该实时源未提供命令通道。"));
         return;
     }
-    SourceDebugDialog dlg(src->name, sp->schema,
+    DeviceDebugDialog dlg(*sp, src->name,
                           [sp, src] { return src->handle ? sp->status(src->handle) : QString(); },
                           [sp, src](const QString &cmd) {
                               return src->handle ? sp->send(src->handle, cmd)
@@ -2267,10 +2269,11 @@ void MainWindow::configureLiveSource(SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+    const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
     if (!sp)
         return;
-    SourceConfigDialog dlg(*sp, src->config, this);
+    const auto parsers = DataInputRegistry::instance().streamPlugins();
+    DataInputDialog dlg(parsers, sp->id, src->config, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
     const QString config = dlg.configJson();
@@ -2278,7 +2281,7 @@ void MainWindow::configureLiveSource(SourceData *src)
     closeLiveSource(src);
     for (auto *c : findChildren<CanvasWidget *>())
         c->removeChannelsFromSource(src->path);
-    src->stream = std::make_shared<LiveStream>(sp->id, sp->label);
+    src->liveSession = std::make_shared<LiveSession>(sp->id, sp->label);
     src->config = config;
     src->handle = nullptr;
     src->channels.clear();
@@ -2289,13 +2292,13 @@ void MainWindow::configureLiveSource(SourceData *src)
     if (QJsonDocument::fromJson(config.toUtf8()).object().value(QStringLiteral("__record")).toBool())
     {
         QString path, err;
-        if (src->stream->startRecording(&path, &err))
+        if (src->liveSession->startRecording(&path, &err))
             log(QStringLiteral("实时记录：%1").arg(path));
         else
             QMessageBox::warning(this, QStringLiteral("记录"), err);
     }
     QString err;
-    if (sp->open(config, src->stream->sink(), &src->handle, &err) != 0)
+    if (sp->open(config, src->liveSession->sink(), &src->handle, &err) != 0)
     {
         src->handle = nullptr;
         updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
@@ -2314,9 +2317,9 @@ void MainWindow::pollLiveSources()
         return;
     for (SourceData &src : m_sources)
     {
-        if (!src.live || !src.handle || !src.stream)
+        if (!src.live || !src.handle || !src.liveSession)
             continue;
-        const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src.sourceId);
+        const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(src.sourceId);
         if (!sp)
             continue;
         QString err;
@@ -2326,18 +2329,18 @@ void MainWindow::pollLiveSources()
             closeLiveSource(&src);
             continue;
         }
-        if (src.stream->changed())
+        if (src.liveSession->changed())
             refreshLiveSource(&src);
     }
 }
 
 void MainWindow::refreshLiveSource(SourceData *src)
 {
-    if (!src || !src->stream)
+    if (!src || !src->liveSession)
         return;
-    src->stream->clearChanged();
-    src->channels = src->stream->channels();
-    if (src->stream->overflow())
+    src->liveSession->clearChanged();
+    src->channels = src->liveSession->channels();
+    if (src->liveSession->overflow())
         return;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (src->id == m_activeSource)
@@ -2410,12 +2413,12 @@ void MainWindow::closeLiveSource(SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+    const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
     if (src->handle && sp)
         sp->close(src->handle);
     src->handle = nullptr;
-    if (src->stream)
-        src->stream->stopRecording();
+    if (src->liveSession)
+        src->liveSession->stopRecording();
     updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
     refreshSrcCount();
 }
@@ -2480,9 +2483,9 @@ void MainWindow::reloadChannels(SourceData *src)
     if (!src)
         return;
     src->channels.clear();
-    if (src->live && src->stream)
+    if (src->live && src->liveSession)
     {
-        src->channels = src->stream->channels();
+        src->channels = src->liveSession->channels();
         return;
     }
     if (!src->ds)
@@ -2591,7 +2594,7 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
     bool hasDebug = false;
     if (const SourceData *src = sourceById(srcId))
     {
-        const SourcePlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+        const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
         hasDebug = src->live && sp && sp->send;
     }
     dbg->setVisible(hasDebug);
@@ -3377,7 +3380,7 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
     PsDataset *ds = nullptr;
     const QFileInfo fi(path);
     // 加载器由 registry 提供：app 不再按扩展名写 if/else，也不再为每个格式写对话框
-    const LoaderPlugin *plugin = DataInputRegistry::instance().findFileBySuffix(fi.suffix());
+    const DataInputPlugin *plugin = DataInputRegistry::instance().findFileBySuffix(fi.suffix());
     if (!plugin || !plugin->load)
     {
         QMessageBox::warning(this, QStringLiteral("加载失败"),
@@ -3404,7 +3407,7 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
         // 交互打开：schema 渲染选项；恢复布局：按加载器默认探测静默加载
         if (interactive)
         {
-            LoaderOptionsDialog dlg(*plugin, path, this);
+            DataInputDialog dlg(*plugin, path, this);
             if (dlg.exec() != QDialog::Accepted)
                 return false;
             opts = dlg.optionsJson();

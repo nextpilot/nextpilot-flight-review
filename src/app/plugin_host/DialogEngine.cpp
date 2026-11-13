@@ -1,6 +1,6 @@
-#include "data_input/DialogEngine.h"
+#include "plugin_host/DialogEngine.h"
 
-#include "data_input/LoaderPlugin.h"
+#include "data_input/DataInputPlugin.h"
 
 #include <QApplication>
 #include <QLabel>
@@ -12,7 +12,7 @@
 #include <QUiLoader>
 #endif
 
-PluginDialogEngine::PluginDialogEngine(const LoaderPlugin &plugin, const QString &path, QWidget *parent)
+PluginDialogEngine::PluginDialogEngine(const DataInputPlugin &plugin, const QString &path, QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(plugin.label);
@@ -61,7 +61,7 @@ PluginDialogEngine::PluginDialogEngine(const LoaderPlugin &plugin, const QString
         box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
         lay->addWidget(box);
     }
-    const LoaderPlugin *p = &plugin;
+    const DataInputPlugin *p = &plugin;
     connect(box, &QDialogButtonBox::accepted, this, [this, p] {
         if (p->uiData)
             m_options = p->uiData(QString());

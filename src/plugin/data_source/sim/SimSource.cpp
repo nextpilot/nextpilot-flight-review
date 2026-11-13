@@ -15,14 +15,18 @@ constexpr double kPi = 3.14159265358979323846;
 
 const char *kSchema = R"({
   "title":"实时仿真源",
-  "fields":[
-    {"key":"rate_hz","type":"int","label":"采样率","default":50,"min":1,"max":1000,"suffix":" Hz"},
-    {"key":"channels","type":"int","label":"通道数","default":3,"min":1,"max":4},
-    {"key":"duration_s","type":"int","label":"时长（0=不限）","default":0,"min":0,"max":3600,"suffix":" s"}
-  ]
+  "transport":{"supported":["internal"],"default":"internal"},
+  "parser":{
+    "label":"解析参数",
+    "fields":[
+      {"key":"rate_hz","type":"int","label":"采样率","default":50,"min":1,"max":1000,"suffix":" Hz"},
+      {"key":"channels","type":"int","label":"通道数","default":3,"min":1,"max":4},
+      {"key":"duration_s","type":"int","label":"时长（0=不限）","default":0,"min":0,"max":3600,"suffix":" s"}
+    ]
+  }
 })";
 
-const char *kDefaults = R"({"rate_hz":50,"channels":3,"duration_s":0})";
+const char *kDefaults = R"({"transport":"internal","rate_hz":50,"channels":3,"duration_s":0})";
 
 class SimInput final : public ps::DataInputBase
 {

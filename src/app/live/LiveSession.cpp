@@ -1,4 +1,4 @@
-#include "data_input/LiveStream.h"
+#include "live/LiveSession.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -18,22 +18,22 @@ QString csvField(QString s)
 
 } // namespace
 
-LiveStream::LiveStream(QString pluginId, QString label)
+LiveSession::LiveSession(QString pluginId, QString label)
     : m_pluginId(std::move(pluginId)), m_label(std::move(label)),
       m_stream(ps_stream_new(static_cast<uint32_t>(kChannelCapacity)))
 {
     m_sink.ctx = this;
-    m_sink.channel_batch = &LiveStream::onChannel;
-    m_sink.event = &LiveStream::onEvent;
+    m_sink.channel_batch = &LiveSession::onChannel;
+    m_sink.event = &LiveSession::onEvent;
 }
 
-LiveStream::~LiveStream()
+LiveSession::~LiveSession()
 {
     stopRecording();
     ps_stream_free(m_stream);
 }
 
-QVector<const PsChannelInfo *> LiveStream::channels() const
+QVector<const PsChannelInfo *> LiveSession::channels() const
 {
     QVector<const PsChannelInfo *> out;
     const uint32_t n = ps_stream_channel_count(m_stream);
@@ -44,7 +44,7 @@ QVector<const PsChannelInfo *> LiveStream::channels() const
     return out;
 }
 
-const PsChannelInfo *LiveStream::channelByName(const QString &name) const
+const PsChannelInfo *LiveSession::channelByName(const QString &name) const
 {
     const uint32_t n = ps_stream_channel_count(m_stream);
     for (uint32_t i = 0; i < n; ++i)
@@ -56,10 +56,10 @@ const PsChannelInfo *LiveStream::channelByName(const QString &name) const
     return nullptr;
 }
 
-int32_t LiveStream::onChannel(void *ctx, const char *name, const char *unit,
+int32_t LiveSession::onChannel(void *ctx, const char *name, const char *unit,
                               const double *time_s, const double *value, uint32_t count)
 {
-    auto *self = static_cast<LiveStream *>(ctx);
+    auto *self = static_cast<LiveSession *>(ctx);
     if (!self || !name || !name[0] || !time_s || !value || count == 0)
         return 1;
     const QString channelName = QString::fromUtf8(name);
@@ -81,9 +81,9 @@ int32_t LiveStream::onChannel(void *ctx, const char *name, const char *unit,
     return rc;
 }
 
-int32_t LiveStream::onEvent(void *ctx, const char *topic, const char *payload_json)
+int32_t LiveSession::onEvent(void *ctx, const char *topic, const char *payload_json)
 {
-    auto *self = static_cast<LiveStream *>(ctx);
+    auto *self = static_cast<LiveSession *>(ctx);
     if (!self || !topic)
         return 1;
     self->m_lastEvent = QStringLiteral("%1 %2").arg(QString::fromUtf8(topic),
@@ -92,14 +92,14 @@ int32_t LiveStream::onEvent(void *ctx, const char *topic, const char *payload_js
     return 0;
 }
 
-void LiveStream::appendRecord(const PsChannelInfo &ch, uint32_t from, uint32_t count)
+void LiveSession::appendRecord(const PsChannelInfo &ch, uint32_t from, uint32_t count)
 {
     for (uint32_t i = from; i < from + count && i < ch.point_count; ++i)
         m_out << QString::number(ch.time[i], 'g', 10) << ',' << csvField(QString::fromUtf8(ch.name))
               << ',' << QString::number(ch.value[i], 'g', 10) << '\n';
 }
 
-bool LiveStream::startRecording(QString *path, QString *err)
+bool LiveSession::startRecording(QString *path, QString *err)
 {
     stopRecording();
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
@@ -129,7 +129,7 @@ bool LiveStream::startRecording(QString *path, QString *err)
     return true;
 }
 
-void LiveStream::stopRecording()
+void LiveSession::stopRecording()
 {
     if (!m_record.isOpen())
         return;

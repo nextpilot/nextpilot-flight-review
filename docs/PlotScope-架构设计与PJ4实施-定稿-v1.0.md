@@ -430,7 +430,7 @@ plugins/<id>/
 - `src/include/ps_plugin_api.h`：`PsPluginDescriptor` + `PsLoaderVtable` + `PsUiVtable`，声明 `family / capabilities / extensions`，纯 C、零 Qt 依赖。
 - `src/plugins/data_loader/{csv,ulog,apbin,asc,blf}/`：目录、target、入口、manifest id 统一为 `data_loader_<id>`；schema/probe/default/params/load 全在插件内，app 不再有格式专属代码。
 - `src/runtime/PluginRuntime.cpp`：递归扫描 `*.so`，子进程预检隔离坏插件，`dlopen` + `ps_plugin_entry` + ABI 校验；重复 id 只保留第一个，坏插件只记错误，不拖死宿主。
-- `src/app/loader/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按插件 `dialog_ui` 加载 `.ui`，取值走 `get_data` JSON；app 不 include 任何插件 UI 头文件。
+- `src/app/plugin_host/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按插件 `uiDialog` 加载 `.ui`，取值走 `uiData` JSON；app 不 include 任何插件 UI 头文件。
 - `LoaderRegistry::registerDescriptor()` / `scanPlugins()`：app 唯一注册入口，只收 `PS_FAMILY_DATA_LOADER`；扩展名由插件 `extensions` 声明，不再写 app 分支。
 - `src/datastore/DatasetCache.cpp`：解析结果磁盘缓存，键为源文件 + `loader@version` + 选项；校验 size/mtime，命中直接 `ps_dataset_new/add_channel` 还原，不重新 probe/parse。
 - `test/unit/test_plugin_csv.cpp` / `test_plugin_file_formats.cpp` / `test_plugin_runtime.cpp` / `test_dataset_cache.cpp`：覆盖内置插件、外部 `.so`、非法 ABI、重复 id 与缓存失效。
@@ -605,7 +605,8 @@ ps_plugin_<family>_<id> # 插件库：src/plugins/<family>/<id>/，输出到 bin
 - APBin：`ApbinParser.{h,cpp}` 在插件内实现 DataFlash `A3 95` / FMT 自描述 / FMTU 单位倍率 / UNIT / MULT / PARM，通道名 `MSG.#N.Field`，参数表由插件输出 JSON。
 - ULog：`UlogParser.{h,cpp}` 在插件内实现 `F/A/D` + `P/Q`，展平/多实例/字符串跳过规则不变；`demo_flight.ulg` 仍为 13 通道。
 - ASC / BLF：各自 `*Parser.{h,cpp}`，共用 `common/CanFrames` 的帧→通道规则（只保留变化字节 + `period`）；BLF 的 zlib 容器由插件自己解压，内核不链 zlib。
-- loader 选项 UI 的归属：`schema_json.fields` + `ui.preview` + `initial_from_probe` 由插件提供，app 的 `LoaderOptionsDialog` 只做通用渲染；app 源码不再出现 `delimiter / has_header / suggested_time`，新增格式不需要在 app 里加对话框。
+- loader 选项 UI 的归属：`schema_json.fields` + `ui.preview` + `initial_from_probe` 由插件提供，app 的 `DataInputDialog` 只做通用渲染；app 源码不再出现 `delimiter / has_header / suggested_time`，新增格式不需要在 app 里加对话框。
+- 数据源与 loader 共用 `DataInputDialog`：`transport` 只声明 `{"supported":[...],"default":"udp://127.0.0.1:1223"}`，通信页由 app 按 transport 固定字段渲染（`file → filepath`、`udp → bind/port`、`tcp → host/port/timeout_ms`、`serial/uart → serial_port/baud`、`internal` 无字段），插件不再提供 transport 字段；解析参数由插件 `schema.parser.fields`（loader 用 `schema.fields`）提供，app 不解释具体解析字段；parse 可多选，每个 parse 展示自己的配置，只有一个 parse 或一种 transport 时不渲染对应选择器。
 - 测试：`ctest` 6/6；`plugin_file_formats` 覆盖 ULog 13 通道、APBin 通道+PARAM、ASC/BLF 各 10 通道；新增 `test/fixture/demo_apbin.bin` 作为可复现夹具。
 
 **Ribbon / Dock spike（2026-11-12 实测）**
@@ -859,9 +860,9 @@ public:
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
 已落地：
-1. `src/app/loader/LoaderPlugin.h` 定义加载器描述：`id/label/filter/formatTag/tree/hasParams/schema/probe/defaultOptions/load`。
+1. `src/app/data_input/DataInputPlugin.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderPlugin` / `SourcePlugin` 别名。
 2. `LoaderRegistry` 注册 ULog、ArduPilot DataFlash、ASC、BLF、CSV；按后缀匹配，`loadFile()` 不再按扩展名写 `if/else`。
-3. `LoaderOptionsDialog` 完全由 schema 渲染：`enum/bool/int`、`visible_if`、动态列（`source=columns` + `column_filter`）、探测预览表、警告；新增格式只需注册 schema，不再在 app 里加对话框。
+3. `DataInputDialog` 完全由 schema 渲染：`enum/bool/int`、`visible_if`、动态列（`source=columns` + `column_filter`）、探测预览表、警告；新增格式只需注册 schema，不再在 app 里加对话框。
 4. CSV schema 覆盖分隔符、表头、跳行、`time.mode=row|column|combined` 及时间列选择。
 5. 删除 `src/app/shell/CsvLoaderDialog.*`。
 

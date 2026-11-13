@@ -58,16 +58,17 @@ int32_t writeJson(const char *json, char *out, uint32_t cap)
     return static_cast<int32_t>(len);
 }
 
-const char *kSchema = R"({
+const char *kSchema = R"JSON({
   "title":"MAVLink 遥测源",
-  "fields":[
-    {"key":"port","type":"int","label":"UDP 端口","default":14550,"min":1,"max":65535},
-    {"key":"bind","type":"string","label":"绑定地址","default":"0.0.0.0"},
-    {"key":"sysid","type":"int","label":"只接收系统 ID（0=全部）","default":0,"min":0,"max":255},
-    {"key":"raw_path","type":"string","label":"原始字节落盘（留空不录）","default":""}
-  ]
-})";
-const char *kDefaults = R"({"port":14550,"bind":"0.0.0.0","sysid":0,"raw_path":""})";
+  "transport":{"supported":["udp","file"],"default":"udp://127.0.0.1:1223"},
+  "parser":{
+    "label":"解析参数",
+    "fields":[
+      {"key":"sysid","type":"int","label":"只接收系统 ID（0=全部）","default":0,"min":0,"max":255}
+    ]
+  }
+})JSON";
+const char *kDefaults = R"({"transport":"udp","port":14550,"bind":"0.0.0.0","sysid":0,"raw_path":"","filepath":""})";
 
 struct MavState
 {

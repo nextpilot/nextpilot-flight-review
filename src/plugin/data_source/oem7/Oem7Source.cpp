@@ -44,28 +44,38 @@ int32_t writeJson(const char *json, char *out, uint32_t cap)
     return static_cast<int32_t>(len);
 }
 
-const char *kSchema = R"({
+const char *kSchema = R"JSON({
   "title":"NovAtel OEM7 接收机",
-  "fields":[
-    {"key":"transport","type":"enum","label":"连接方式","default":"tcp","options":[{"value":"tcp","label":"TCP 网络"},{"value":"serial","label":"串口"}]},
-    {"key":"host","type":"string","label":"接收机地址","default":"192.168.1.20"},
-    {"key":"port","type":"int","label":"TCP 端口","default":3001,"min":1,"max":65535},
-    {"key":"serial_port","type":"string","label":"串口设备","default":"/dev/ttyUSB0"},
-    {"key":"baud","type":"int","label":"波特率","default":115200,"min":1200,"max":921600},
-    {"key":"timeout_ms","type":"int","label":"连接超时","default":2000,"min":100,"max":10000,"suffix":" ms"},
-    {"key":"raw","type":"bool","label":"保留未知报文（调试）","default":true},
-    {"key":"database","type":"string","label":"OEM7 协议库（空=自动查找）","default":""}
-  ],
-  "commands":[
-    {"label":"查询版本","command":"VERSION"},
-    {"label":"BESTPOS 变化输出","command":"LOG BESTPOSA ONCHANGED"},
-    {"label":"INSPVA 1 Hz","command":"LOG INSPVAA ONTIME 1"},
-    {"label":"BESTATT 变化输出","command":"LOG BESTATTA ONCHANGED"},
-    {"label":"BESTVEL 变化输出","command":"LOG BESTVELA ONCHANGED"},
-    {"label":"关闭全部日志","command":"UNLOGALL"}
-  ]
-})";
-const char *kDefaults = R"({"transport":"tcp","host":"192.168.1.20","port":3001,"timeout_ms":2000,"serial_port":"/dev/ttyUSB0","baud":115200,"raw":true,"database":"","raw_path":""})";
+  "transport":{"supported":["tcp","serial","file"],"default":"tcp://192.168.1.20:3001"},
+  "parser":{
+    "label":"解析参数",
+    "fields":[
+      {"key":"raw","type":"bool","label":"保留未知报文（调试）","default":true},
+      {"key":"database","type":"string","label":"OEM7 协议库（空=自动查找）","default":""}
+    ]
+  },
+  "debug":{
+    "title":"设备调试",
+    "hint":"发送命令后，接收机响应显示在下方。",
+    "commands":[
+      {"label":"查询版本","command":"VERSION"},
+      {"label":"BESTPOS 变化输出","command":"LOG BESTPOSA ONCHANGED"},
+      {"label":"INSPVA 1 Hz","command":"LOG INSPVAA ONTIME 1"},
+      {"label":"BESTATT 变化输出","command":"LOG BESTATTA ONCHANGED"},
+      {"label":"BESTVEL 变化输出","command":"LOG BESTVELA ONCHANGED"},
+      {"label":"关闭全部日志","command":"UNLOGALL"}
+    ],
+    "status":[
+      {"key":"state","label":"状态"},
+      {"key":"tx","label":"TX"},
+      {"key":"lines","label":"行数"},
+      {"key":"logs","label":"日志"},
+      {"key":"frames","label":"报文"},
+      {"key":"db","label":"协议库","type":"bool","true":"已加载","false":"-"}
+    ]
+  }
+})JSON";
+const char *kDefaults = R"({"transport":"tcp","host":"192.168.1.20","port":3001,"timeout_ms":2000,"serial_port":"/dev/ttyUSB0","baud":115200,"raw":true,"database":"","raw_path":"","filepath":""})";
 
 class SerialPort
 {

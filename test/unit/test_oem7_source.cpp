@@ -124,13 +124,14 @@ int main(int argc, char **argv)
     assert((caps & PS_INPUT_COMMAND) != 0);
     PsInputDialog dlg = v->get_dialog(probe);
     assert(dlg.schema_json && std::strstr(dlg.schema_json, "port"));
-    assert(std::strstr(dlg.schema_json, "serial_port"));
+    assert(std::strstr(dlg.schema_json, "serial"));
     assert(std::strstr(dlg.schema_json, "transport"));
     assert(std::strstr(dlg.schema_json, "commands"));
     v->destroy(probe);
 
     QTcpServer server;
-    assert(server.listen(QHostAddress::LocalHost, 14601));
+    assert(server.listen(QHostAddress::LocalHost, 0));
+    const int port = server.serverPort();
     Sink sink;
     PsSourceSink ps{&sink, onBatch, onEvent};
     void *h = v->create();
@@ -145,7 +146,7 @@ int main(int argc, char **argv)
     assert(rawDir.isValid());
     const QString rawPath = rawDir.filePath(QStringLiteral("oem7.raw"));
     QJsonObject cfgObj{{QStringLiteral("host"), QStringLiteral("127.0.0.1")},
-                       {QStringLiteral("port"), 14601},
+                       {QStringLiteral("port"), port},
                        {QStringLiteral("timeout_ms"), 1000},
                        {QStringLiteral("database"), QString::fromUtf8(TEST_OEM7_DB)},
                        {QStringLiteral("raw_path"), rawPath}};
