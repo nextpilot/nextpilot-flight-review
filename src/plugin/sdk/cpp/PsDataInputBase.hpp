@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <string>
@@ -70,6 +71,16 @@ public:
     {
         out = "{}";
         return true;
+    }
+
+    /* 可选：有限文件导入。文件插件实现它；流插件不实现。 */
+    virtual bool importFile(std::string_view path, std::string_view opts, void **dataset, PsError *err)
+    {
+        (void)path;
+        (void)opts;
+        (void)dataset;
+        fillError(err, 1, "import_file is not supported");
+        return false;
     }
 
     virtual bool saveConfig(std::string &out, PsError *err)
@@ -351,6 +362,35 @@ struct VtableBuilder
     }
 
     template <typename T>
+    static int32_t importFileT(void *ctx, const char *path, const char *opts, void **dataset,
+                               char *err, uint32_t errCap) noexcept
+    {
+        try {
+            auto *self = static_cast<T *>(ctx);
+            PsError e{};
+            const bool ok = self->importFile(path ? path : "", opts ? opts : "",
+                                             dataset, &e);
+            if (!ok) {
+                if (err && errCap) {
+                    const size_t n = std::min<size_t>(sizeof(e.message) - 1, errCap - 1);
+                    std::memcpy(err, e.message, n);
+                    err[n] = '\0';
+                }
+                return e.code ? e.code : 1;
+            }
+            return 0;
+        } catch (const std::exception &ex) {
+            if (err && errCap)
+                std::snprintf(err, errCap, "%s", ex.what());
+            return 1;
+        } catch (...) {
+            if (err && errCap)
+                std::snprintf(err, errCap, "unknown exception in import_file");
+            return 1;
+        }
+    }
+
+    template <typename T>
     static PsDataInputVtable make(const char *manifest)
     {
         return PsDataInputVtable{
@@ -374,6 +414,7 @@ struct VtableBuilder
             &sendCommandT<T>,
             &seekT<T>,
             &statusJsonT<T>,
+            &importFileT<T>,
         };
     }
 };

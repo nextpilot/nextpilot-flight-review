@@ -15,7 +15,7 @@ int main()
 {
     const PsPluginDescriptor *desc = ps_plugin_entry_data_loader_csv();
     assert(desc && desc->abi_version == PS_PLUGIN_ABI_VERSION);
-    assert(desc->family == PS_FAMILY_DATA_LOADER);
+    assert(desc->family == PS_FAMILY_DATA_INPUT);
     assert(desc->capabilities & PS_CAP_CACHE);
     assert(desc->loader && std::strcmp(desc->loader->id, "data_loader_csv") == 0);
     assert(std::strcmp(desc->loader->extensions, ".csv,.tsv,.txt") == 0);
@@ -52,6 +52,30 @@ int main()
     assert(ds != nullptr);
     assert(ps_dataset_channel_count(ds) >= 2);
     ps_dataset_free(ds);
+
+    // 统一 ABI 的 import_file 路径：宿主只看 PS_INPUT_FILE，不再分 loader 族。
+    const PsDataInputVtable *vt = desc->data_input;
+    assert(vt && vt->import_file);
+    void *ctx = vt->create();
+    assert(ctx);
+    PsDataInputServices services{};
+    services.abi_version = PS_HOST_API_VERSION;
+    services.host = ps_host_api();
+    PsError pe{};
+    assert(vt->bind(ctx, services, &pe));
+    void *raw2 = nullptr;
+    char err2[256] = {0};
+    const int32_t rc2 = vt->import_file(ctx, p.c_str(), opts, &raw2, err2, sizeof(err2));
+    if (rc2 != 0)
+    {
+        std::cerr << "import_file failed: " << err2 << "\n";
+        return 1;
+    }
+    PsDataset *ds2 = static_cast<PsDataset *>(raw2);
+    assert(ds2 && ps_dataset_channel_count(ds2) >= 2);
+    ps_dataset_free(ds2);
+    vt->destroy(ctx);
+
     std::filesystem::remove(path);
     return 0;
 }

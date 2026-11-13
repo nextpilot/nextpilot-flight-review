@@ -14,7 +14,7 @@ extern "C" {
 
 #define PS_PLUGIN_ABI_VERSION 5u
 #define PS_HOST_API_VERSION 1u
-#define PS_DATA_INPUT_PROTOCOL_VERSION 2u
+#define PS_DATA_INPUT_PROTOCOL_VERSION 3u
 
 /* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
@@ -160,6 +160,9 @@ typedef struct PsDataInputVtable {
                          PsStringView *out_json, PsError *err);
     bool (*seek)(void *ctx, double time_s, PsError *err);
     int32_t (*status_json)(void *ctx, char *out, uint32_t cap);
+    /* 有限文件导入：成功返回 0 并交出一个 PsDataset*；失败写 err。 */
+    int32_t (*import_file)(void *ctx, const char *path, const char *opts_json,
+                           void **dataset, char *err, uint32_t err_cap);
 } PsDataInputVtable;
 
 

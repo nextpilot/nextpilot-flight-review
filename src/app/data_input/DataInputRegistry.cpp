@@ -11,6 +11,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
+#include <cstdio>
 #include <cstring>
 
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_csv(void);
@@ -179,15 +180,91 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
         void *probe = v->create();
         if (!probe)
             return false;
+        const QJsonObject manifest = QJsonDocument::fromJson(QByteArray(desc->manifest_json)).object();
         const uint64_t caps = v->capabilities(probe);
         PsInputDialog dlg = v->get_dialog ? v->get_dialog(probe) : PsInputDialog{nullptr, nullptr, nullptr};
         v->destroy(probe);
 
-        // 当前 UI 的数据源列表只承载 stream / replay；纯文件 loader 仍走旧 loader 列表直到迁移完成。
+        if (caps & PS_INPUT_FILE && !(caps & (PS_INPUT_STREAM | PS_INPUT_REPLAY)))
+        {
+            const PsLoaderVtable *legacy = desc->loader;
+            if (!legacy || !legacy->load || !v->import_file || findFileById(legacy->id))
+                return false;
+            LoaderPlugin p;
+            p.id = QString::fromUtf8(legacy->id);
+            p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
+            p.cacheNamespace = p.id + QLatin1Char('@') + p.version;
+            p.family = QStringLiteral("data_input");
+            p.label = QString::fromUtf8(legacy->label);
+            p.filter = QString::fromUtf8(legacy->filter);
+            for (const QString &e : QString::fromUtf8(legacy->extensions).split(QLatin1Char(','), Qt::SkipEmptyParts))
+                p.extensions << (e.startsWith(QLatin1Char('.')) ? e.toLower() : QString(QLatin1Char('.')) + e.toLower());
+            p.formatTag = QString::fromUtf8(legacy->format_tag);
+            p.tree = legacy->tree != 0;
+            p.hasParams = legacy->has_params != 0;
+            p.cacheable = (desc->capabilities & PS_CAP_CACHE) != 0;
+            p.capabilities = desc->capabilities;
+            p.uiDialog = dlg.ui_path ? QString::fromUtf8(dlg.ui_path) : QString();
+            if (legacy->schema_json)
+            {
+                QByteArray buf(64 * 1024, '\0');
+                const int32_t n = legacy->schema_json(buf.data(), static_cast<uint32_t>(buf.size()));
+                if (n > 0)
+                    p.schema = QJsonDocument::fromJson(QByteArray(buf.constData(), n)).object();
+            }
+            p.probe = [legacy](const QString &path, const QJsonObject &opts) {
+                if (!legacy->probe_json)
+                    return QJsonObject{};
+                const QByteArray o = QJsonDocument(opts).toJson(QJsonDocument::Compact);
+                QByteArray buf(64 * 1024, '\0');
+                const int32_t n = legacy->probe_json(path.toUtf8().constData(), o.constData(),
+                                                      buf.data(), static_cast<uint32_t>(buf.size()));
+                return n > 0 ? QJsonDocument::fromJson(QByteArray(buf.constData(), n)).object() : QJsonObject{};
+            };
+            p.defaultOptions = [legacy](const QString &path) {
+                if (!legacy->default_options)
+                    return QStringLiteral("{}");
+                QByteArray buf(16 * 1024, '\0');
+                const int32_t n = legacy->default_options(path.toUtf8().constData(), buf.data(),
+                                                           static_cast<uint32_t>(buf.size()));
+                return n > 0 ? QString::fromUtf8(buf.constData(), n) : QStringLiteral("{}");
+            };
+            p.paramsJson = [legacy](const QString &path) {
+                if (!legacy->params_json)
+                    return QString();
+                QByteArray buf(1024 * 1024, '\0');
+                const int32_t n = legacy->params_json(path.toUtf8().constData(), buf.data(),
+                                                       static_cast<uint32_t>(buf.size()));
+                return n > 0 ? QString::fromUtf8(buf.constData(), n) : QString();
+            };
+            p.load = [v](const QString &path, const QString &opts, PsDataset **ds,
+                         char *err, unsigned int errCap) {
+                PsError pe{};
+                PsDataInputServices services{};
+                services.abi_version = PS_HOST_API_VERSION;
+                services.host = ps_host_api();
+                void *ctx = v->create();
+                if (!ctx)
+                    return 1;
+                if (!v->bind(ctx, services, &pe))
+                {
+                    if (err && errCap) std::snprintf(err, errCap, "%s", pe.message);
+                    v->destroy(ctx);
+                    return 1;
+                }
+                const QByteArray o = opts.isEmpty() ? QByteArrayLiteral("{}") : opts.toUtf8();
+                const int32_t rc = v->import_file(ctx, path.toUtf8().constData(), o.constData(),
+                                                   reinterpret_cast<void **>(ds), err, errCap);
+                v->destroy(ctx);
+                return rc;
+            };
+            m_filePlugins.append(p);
+            return true;
+        }
+
+        // 流 / 回放插件进数据源列表。
         if (!(caps & (PS_INPUT_STREAM | PS_INPUT_REPLAY)))
             return false;
-
-        const QJsonObject manifest = QJsonDocument::fromJson(QByteArray(desc->manifest_json)).object();
         const QString id = manifest.value(QStringLiteral("id")).toString();
         if (id.isEmpty() || findSourceById(id))
             return false;

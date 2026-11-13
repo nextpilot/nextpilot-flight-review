@@ -1,4 +1,5 @@
 #include "ps_plugin_api.h"
+#include "LegacyFileInput.hpp"
 
 #include "UlogParser.h"
 
@@ -62,13 +63,21 @@ const PsLoaderVtable kUlogLoader = {
     ulogLoad,
 };
 
+const PsDataInputVtable *ulogInputVtable()
+{
+    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kUlogLoader>>(R"({"id":"data_loader_ulog","name":"ULog","version":"1.0.0","sdk":"1.0","kind":"file"})");
+    return &vt;
+}
+
 const PsPluginDescriptor kUlogPlugin = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"data_loader_ulog","name":"ULog","version":"1.0.0","sdk":"1.0","family":"data_loader","kind":"file","entry":"ps_plugin_entry_data_loader_ulog"})",
-    PS_FAMILY_DATA_LOADER,
+    R"({"id":"data_loader_ulog","name":"ULog","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","entry":"ps_plugin_entry_data_loader_ulog"})",
+    PS_FAMILY_DATA_INPUT,
     PS_CAP_FILE | PS_CAP_PARAMS | PS_CAP_CACHE,
     &kUlogLoader,
     nullptr,
+    nullptr,
+    ulogInputVtable(),
 };
 
 } // namespace

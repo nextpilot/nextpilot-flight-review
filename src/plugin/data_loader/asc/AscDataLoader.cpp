@@ -1,4 +1,5 @@
 #include "ps_plugin_api.h"
+#include "LegacyFileInput.hpp"
 
 #include "AscParser.h"
 
@@ -46,13 +47,21 @@ const PsLoaderVtable kAscLoader = {
     ascLoad,
 };
 
+const PsDataInputVtable *ascInputVtable()
+{
+    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kAscLoader>>(R"({"id":"data_loader_asc","name":"ASC","version":"1.0.0","sdk":"1.0","kind":"file"})");
+    return &vt;
+}
+
 const PsPluginDescriptor kAscPlugin = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"data_loader_asc","name":"ASC","version":"1.0.0","sdk":"1.0","family":"data_loader","kind":"file","entry":"ps_plugin_entry_data_loader_asc"})",
-    PS_FAMILY_DATA_LOADER,
+    R"({"id":"data_loader_asc","name":"ASC","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","entry":"ps_plugin_entry_data_loader_asc"})",
+    PS_FAMILY_DATA_INPUT,
     PS_CAP_FILE | PS_CAP_CACHE,
     &kAscLoader,
     nullptr,
+    nullptr,
+    ascInputVtable(),
 };
 
 } // namespace

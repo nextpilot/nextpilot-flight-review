@@ -1,4 +1,5 @@
 #include "ps_plugin_api.h"
+#include "LegacyFileInput.hpp"
 
 #include "ApbinParser.h"
 
@@ -67,13 +68,21 @@ const PsLoaderVtable kApbinLoader = {
     apbinLoad,
 };
 
+const PsDataInputVtable *apbinInputVtable()
+{
+    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kApbinLoader>>(R"({"id":"data_loader_apbin","name":"DataFlash","version":"1.0.0","sdk":"1.0","kind":"file"})");
+    return &vt;
+}
+
 const PsPluginDescriptor kApbinPlugin = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"data_loader_apbin","name":"DataFlash","version":"1.0.0","sdk":"1.0","family":"data_loader","kind":"file","entry":"ps_plugin_entry_data_loader_apbin"})",
-    PS_FAMILY_DATA_LOADER,
+    R"({"id":"data_loader_apbin","name":"DataFlash","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","entry":"ps_plugin_entry_data_loader_apbin"})",
+    PS_FAMILY_DATA_INPUT,
     PS_CAP_FILE | PS_CAP_PARAMS | PS_CAP_CACHE,
     &kApbinLoader,
     nullptr,
+    nullptr,
+    apbinInputVtable(),
 };
 
 } // namespace
