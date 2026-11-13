@@ -1,6 +1,7 @@
-# PlotScope 对标 PJ4 补全计划 v1.0
+# PlotScope 对标 PJ4 补全计划 v1.1
 
 基线：`488fea9`（多数据源 + 源别名图例 + 布局持久化）
+修订依据：`docs/PJ4-源码核对笔记.md`（已读 PJ4 源码与官方插件仓库）。v1.0 中“派生数组归 UI、四元数算内置、低通算 PJ 能力”等判断已作废。
 原则：
 - UI 保持我们自己的深色工作台，不照搬 PJ 的 Qwt 观感。
 - 内部机制按 PJ4 的分层来：数据存储 → 处理器 → 派生曲线 → 绘图适配。
@@ -67,8 +68,8 @@ public:
 
 要点照 PJ：
 - 顺序契约：按时间升序逐样本调用，状态跨样本保留，只有 `reset()` 清状态。
-- 派生曲线惰性重算：参数或输入变化只置 dirty，下次绘制重算一次（对应 PJ `FilteredCurveAdapter::ensureFiltered()`）。
-- 预览用“新建处理器 + 全量重算”，不复用累加器，避免预览污染正式结果。
+- 派生结果按 PJ 的方式物化成数据集里的普通通道/主题，而不是只活在 UI 数组里；多画布、导出、布局都按普通通道引用。
+- 预览阶段用“新建处理器 + 全量重算”，不复用累加器；Apply 后输出替换原曲线并继承颜色，原始数据仍在数据树。
 - 多输入（四元数）先做 4→3，时间戳必须同拍；不同拍按最近邻 join，并记录告警。
 
 ### 2.2 派生曲线
@@ -82,11 +83,12 @@ public:
 }
 ```
 
-- 结果数组归 `DerivedSeries` 所有（`QVector<double> t/v`），不改内核数据。
-- 画布 `Series` 增加 `derivedId`，图例显示 `flight1 · attitude.roll → MA(100)`。
-- 原始曲线可保留为半透明 ghost（PJ 的 raw ghost 行为），可开关。
-- 派生曲线参与右键菜单：编辑变换、移除变换、导出数据。
-- 派生定义写入 `.psl` 根节点 `derived`，画布系列按 `derivedId` 引用；导入时重建处理器和缓存。
+- 给 `ps_kernel` 增加派生通道写入：同一 `PsDataset` 下新增普通通道（名字如 `attitude.roll.abs`），拥有独立 t/v 数组。
+- 画布 `Series` 增加 `derivedChannel` 引用；图例显示 `flight1 · attitude.roll · Absolute`。
+- 预览时 before 曲线画虚线 ghost；Apply 后用输出替换来源曲线并继承颜色（对齐 `PlotWidget::replaceCurve`）。原始通道保留在树里，可重新拖回。
+- 派生通道参与右键菜单：编辑变换、移除变换、导出数据。
+- 配方写入 `.psl` v2 的 `derived` 根节点（id、源路径、输入通道、processor_id、params、输出名）；导入时先重建通道再绑曲线。
+- 链式：对派生通道再次应用过滤器即可，不做单独的链编辑器。
 
 ### 2.3 内置算子（首批，ID 与 PJ4 对齐）
 
@@ -104,7 +106,9 @@ public:
 | `samples_counter` | 窗口内样本数 | `samples_ms` |
 | `binary_filter` | 阈值二值化 | `binary_op`, `binary_a`, `binary_b`, `binary_tol` |
 | `time_since_previous` | 相邻样本 Δt | — |
-| `quaternion_to_rpy` | 四元数→RPY（4 入 3 出） | `order`（wxyz / xyzw） |
+'
+
+四元数不在 PJ4 内置目录里，而是官方 Quaternion 插件：4 输入（w,x,y,z）→ 一个分组 topic `rpy:roll,pitch,yaw`。我们按同样语义单独实现，不做三条独立通道；支持 degree、unwrap、pitch ±π/2 截断。
 
 语义细节按 PJ `resources/filters/builtin_filters.luau`：
 - moving_average 不足窗口时用当前值补齐，除以完整窗口；可选按缓冲跨度居中时间戳。
@@ -115,11 +119,12 @@ public:
 
 ### 2.4 多源对比
 
-- 每个 `SourceData` 增加 `displayOffsetSec`：绘制 X = raw + offset；只影响显示和游标，不改数据。
-- 源行右键/属性面板提供“时间偏移”“设为基准”。
-- “对比同名通道”：选中两个源，按通道名配对，一次把两源的同一通道加到当前画布，颜色分源。
-- 布局保存每源 offset 和别名。
-- 说明：PJ4 用 `DatasetMergeSource{dataset_id, raw_shift_ns}` 把源折进 anchor；我们 v1 先用显示偏移，等数据层支持多 dataset 合并再做真正的 merge。
+- 每个 `SourceData` 增加 `displayOffsetSec`：显示时间 = raw − offset；再预留全局 reference（PJ 的 `sourceDisplayOffset` 与 `globalTimeReference` 分层）。
+- 源行右键/底部源时间轴：拖动偏移、Align starts / centers / ends、Reset all。
+- 加载时提供 prefix/别名，同名 topic 用前缀区分（PJ 的 `recordLoadedSource(prefix)` 语义）。
+- “对比同名通道”：选中两个源，按通道名配对，一次把两源同一通道加到当前画布，颜色分源。
+- 布局保存每源 offset、别名、时间轴顺序。
+- 真正的合并不急：PJ 的 `mergeDatasets` 是破坏性的 anchor 合并，先把显示对齐做对，再决定是否实现。
 
 ---
 
@@ -129,15 +134,15 @@ public:
 任务：
 1. 新建 `src/app/transform/`：`Processor.h`、`Catalogue.{h,cpp}`、`SisoFilters.cpp`、`QuatToRpy.cpp`、`DerivedSeries.{h,cpp}`。
 2. 实现 12 个 SISO + 四元数 4→3，参数用 JSON 描述，目录可查询。
-3. 字段树右键“添加变换…”；变换对话框：输入通道、算子、参数表单、预览（raw 虚线 + 结果实线）、确定生成派生曲线。
-4. 派生曲线进树（每源一个“派生”分组）、进画布、可编辑/移除。
-5. 画布 Series 支持 `derivedId` 与 ghost 原曲线。
+3. 字段树右键“添加变换…”；面板式编辑器：输入通道、算子、参数表单、预览（before 虚线 + after 实线）、Apply。
+4. 输出作为普通派生通道进树（每源一个“派生”分组）、进画布、可编辑/移除。
+5. Apply 替换来源曲线并继承颜色；不保留 ghost。
 6. `.psl` v2 保存派生 recipes，导入重建。
 7. 测试：`test/transform_golden.cpp`，逐算子比对首/末/数量与关键点；四元数用已知姿态（0/90/45°）验证。
 
 验收：
-- `attitude.roll` 加 MA(100) 后原始与派生同图，图例可区分。
-- `attitude_quat q[0..3]` 生成 roll/pitch/yaw 三条派生曲线，数值与 PX4 公式一致。
+- `attitude.roll` 加 MA(100) 后输出替换原曲线，颜色不变；重新拖原始通道可对比。
+- `attitude_quat` 的 w/x/y/z 生成一个分组 `rpy`（roll/pitch/yaw 三列），数值与 PX4 公式一致。
 - 保存布局重启后派生曲线和参数原样恢复。
 - ctest 全绿，过滤算子有 golden 数值。
 
