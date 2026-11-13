@@ -25,7 +25,10 @@ target_include_directories(plotscope_app PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/src
 )
-target_link_libraries(plotscope_app PRIVATE Qt6::Widgets Qt6::Svg ps_kernel ps_loader_csv)
+target_link_libraries(plotscope_app PRIVATE
+  Qt6::Widgets Qt6::Svg ps_kernel
+  ps_loader_csv ps_loader_ulog ps_loader_apbin ps_loader_asc ps_loader_blf
+)
 
 if(PS_ENABLE_LUA)
   find_package(Lua 5.4)

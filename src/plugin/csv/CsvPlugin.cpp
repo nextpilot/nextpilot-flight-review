@@ -200,6 +200,7 @@ const PsLoaderVtable kCsvLoader = {
     csvSchemaJson,
     csvProbeJson,
     csvDefaultOptions,
+    nullptr,
     csvLoad,
 };
 

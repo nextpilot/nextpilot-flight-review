@@ -21,6 +21,7 @@ struct LoaderPlugin
 
     std::function<QJsonObject(const QString &path, const QJsonObject &opts)> probe;
     std::function<QString(const QString &path)> defaultOptions;
+    std::function<QString(const QString &path)> paramsJson;
     std::function<int(const QString &path, const QString &opts, PsDataset **ds,
                       char *err, unsigned int errCap)> load;
 };

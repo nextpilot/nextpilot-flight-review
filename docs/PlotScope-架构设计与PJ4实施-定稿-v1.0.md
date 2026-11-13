@@ -21,7 +21,7 @@
 | D6 | 协议模板 | YAML/JSON 帧模板 → Rust 侧热编译为状态机 |
 | D7 | 停靠 | **`QDockWidget`**（Qt 内建，零第三方许可义务，四区/浮动/tabify/saveState 够用）；Qt-ADS（LGPL-2.1）作升级项，M1 交互评审不够"跟手"再换，换的成本只在 `DockHost` 一层；KDDockWidgets（商业 + GPL）排除 |
 | D8 | 缺省构建 | **CMake + Corrosion**（KDAB），Rust crate 随 CMake 一起编 |
-| D9 | 插件 ABI | `ps_plugin_entry()` 返回 `PsPluginDescriptor`：编译期内嵌 manifest + 可选 `PsLoaderVtable` / `PsUiVtable`；loader 数据面 `schema_json/probe_json/default_options/load` 四函数；`abiVersion` + `ps_abi_selftest()`；四种后端 builtin/dylib/wasm/sidecar |
+| D9 | 插件 ABI | `ps_plugin_entry()` 返回 `PsPluginDescriptor`：编译期内嵌 manifest + 可选 `PsLoaderVtable` / `PsUiVtable`；loader 数据面 `schema_json/probe_json/default_options/params_json/load` 五函数；`abiVersion` + `ps_abi_selftest()`；四种后端 builtin/dylib/wasm/sidecar |
 | D10 | 布局持久化 | `.psl`（JSON，可分享可进 git）+ `.psc-workspace`（项目级）；`semantic`/`view` 分块；幽灵曲线；键序固定、原子写；撤销走命令模式 |
 | D11 | 类型系统 | f32/f64 为主 + `kEnum`（i32 码 + 字典）+ `kString`（sidecar）；布尔并入 `kEnum`(0/1) |
 | D12 | 许可红线 | 主程序与内核 **BSD-3** 兼容；引入第三方必须逐条核对许可（Qwt License 1.0 待核，未核前只用 JKQTPlotter） |
@@ -428,9 +428,9 @@ plugins/<id>/
 **当前落地（M1 第一步）**
 
 - `src/plugin_sdk/ps_plugin_api.h`：`PsPluginDescriptor` + `PsLoaderVtable`，纯 C、零 Qt 依赖。
-- `src/plugin/csv/CsvPlugin.cpp`：CSV 已是独立插件，导出 `ps_plugin_entry_csv()`；schema/probe/default/load 全部在插件内，app 不再有 CSV schema 代码。
+- `src/plugin/{csv,ulog,apbin,asc,blf}/`：五个文件加载器全部是独立插件；schema/probe/default/params/load 全在插件内，app 不再有格式专属代码。
 - `LoaderRegistry::registerDescriptor()`：app 唯一入口，只做 ABI 版本校验和 JSON 缓冲区桥接。
-- `test/unit/test_plugin_csv.cpp`：直接走插件入口验证 schema、default options、load 与数据集通道。
+- `test/unit/test_plugin_csv.cpp` / `test_plugin_file_formats.cpp`：直接走插件入口验证 schema、参数表与数据集加载。
 
 **C ABI（数据面 8 函数；插件面 5 函数）**
 

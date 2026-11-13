@@ -3069,8 +3069,6 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
                              QStringLiteral("没有匹配的加载器：%1").arg(fi.fileName()));
         return false;
     }
-    const bool is_ulog = plugin->id == QLatin1String("ulog");
-    const bool is_apbin = plugin->id == QLatin1String("apbin");
     const bool is_tree = plugin->tree;
     QString opts;
     if (!plugin->schema.isEmpty())
@@ -3113,32 +3111,22 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
         if (const PsChannelInfo *ch = ps_dataset_channel(ds, i))
             src.channels.append(ch);
 
-    // 参数：ULog 走 P/Q，DataFlash 走 PARM
-    if (is_ulog || is_apbin)
+    // 参数：由插件提供 JSON，app 不认格式
+    if (plugin->hasParams && plugin->paramsJson)
     {
-        QByteArray buf(is_apbin ? 512 * 1024 : 96 * 1024, '\0');
-        char err[256] = {0};
-        const int prc = is_apbin
-            ? ps_apbin_params(fi.absoluteFilePath().toUtf8().constData(),
-                              buf.data(), static_cast<uint32_t>(buf.size()), err, sizeof err)
-            : ps_ulog_params(fi.absoluteFilePath().toUtf8().constData(),
-                             buf.data(), static_cast<uint32_t>(buf.size()), err, sizeof err);
-        while (!buf.isEmpty() && buf.at(buf.size() - 1) == '\0')
-            buf.chop(1);
-        if (prc == 0)
+        const QString json = plugin->paramsJson(src.path);
+        if (json.isEmpty())
         {
-            for (const QJsonValue &v : QJsonDocument::fromJson(buf).array())
+            log(QStringLiteral("参数表读取失败：%1").arg(plugin->id));
+        }
+        else
+        {
+            for (const QJsonValue &v : QJsonDocument::fromJson(json.toUtf8()).array())
             {
                 const QJsonObject o = v.toObject();
                 src.params.append({o.value(QStringLiteral("name")).toString(),
                                     o.value(QStringLiteral("value")).toString()});
             }
-        }
-        else
-        {
-            log(QStringLiteral("%1 rc=%2 err=%3")
-                    .arg(is_apbin ? QStringLiteral("ps_apbin_params") : QStringLiteral("ps_ulog_params"))
-                    .arg(prc).arg(QString::fromUtf8(err)));
         }
     }
 

@@ -7,6 +7,10 @@
 #include <QJsonObject>
 
 extern "C" const PsPluginDescriptor *ps_plugin_entry_csv(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_ulog(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_apbin(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_asc(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_blf(void);
 
 namespace {
 
@@ -50,6 +54,18 @@ QString readDefaultOptions(const PsLoaderVtable *v, const QString &path)
     return QString::fromUtf8(out.constData(), n);
 }
 
+QString readParams(const PsLoaderVtable *v, const QString &path)
+{
+    if (!v->params_json)
+        return {};
+    QByteArray out(1024 * 1024, '\0');
+    const int32_t n = v->params_json(path.toUtf8().constData(), out.data(),
+                                     static_cast<uint32_t>(out.size()));
+    if (n <= 0)
+        return {};
+    return QString::fromUtf8(out.constData(), n);
+}
+
 } // namespace
 
 LoaderRegistry &LoaderRegistry::instance()
@@ -60,35 +76,10 @@ LoaderRegistry &LoaderRegistry::instance()
 
 LoaderRegistry::LoaderRegistry()
 {
-    auto addSimple = [this](const QString &id, const QString &label, const QString &filter,
-                            const QString &tag, bool tree, bool params,
-                            int (*fn)(const char *, PsDataset **, char *, uint32_t)) {
-        LoaderPlugin p;
-        p.id = id;
-        p.label = label;
-        p.filter = filter;
-        p.formatTag = tag;
-        p.tree = tree;
-        p.hasParams = params;
-        p.load = [fn](const QString &path, const QString &, PsDataset **ds, char *err, unsigned int cap) {
-            return fn(path.toUtf8().constData(), ds, err, cap);
-        };
-        m_plugins.append(p);
-    };
-
-    addSimple(QStringLiteral("ulog"), QStringLiteral("ULog"),
-              QStringLiteral("ULog (*.ulg);;全部 (*)"), QStringLiteral("ULog"), true, true,
-              ps_ulog_load);
-    addSimple(QStringLiteral("apbin"), QStringLiteral("DataFlash"),
-              QStringLiteral("ArduPilot BIN (*.bin);;全部 (*)"),
-              QStringLiteral("ArduPilot · BIN"), true, true, ps_apbin_load);
-    addSimple(QStringLiteral("asc"), QStringLiteral("ASC · CAN"),
-              QStringLiteral("Vector ASC (*.asc);;全部 (*)"),
-              QStringLiteral("ASC · CAN"), true, false, ps_asc_load);
-    addSimple(QStringLiteral("blf"), QStringLiteral("BLF · CAN"),
-              QStringLiteral("Vector BLF (*.blf);;全部 (*)"),
-              QStringLiteral("BLF · CAN"), true, false, ps_blf_load);
-
+    registerDescriptor(ps_plugin_entry_ulog());
+    registerDescriptor(ps_plugin_entry_apbin());
+    registerDescriptor(ps_plugin_entry_asc());
+    registerDescriptor(ps_plugin_entry_blf());
     registerDescriptor(ps_plugin_entry_csv());
 }
 
@@ -114,6 +105,9 @@ void LoaderRegistry::registerDescriptor(const PsPluginDescriptor *desc)
     p.defaultOptions = [v](const QString &path) {
         return readDefaultOptions(v, path);
     };
+    p.paramsJson = [v](const QString &path) {
+        return readParams(v, path);
+    };
     p.load = [v](const QString &path, const QString &opts, PsDataset **ds,
                  char *err, unsigned int cap) {
         return v->load(path.toUtf8().constData(), opts.toUtf8().constData(),
@@ -128,6 +122,8 @@ const LoaderPlugin *LoaderRegistry::findBySuffix(const QString &suffix) const
     for (const LoaderPlugin &p : m_plugins)
     {
         if (p.id == s)
+            return &p;
+        if (p.id == QLatin1String("ulog") && s == QLatin1String("ulg"))
             return &p;
         if (p.id == QLatin1String("apbin") && s == QLatin1String("bin"))
             return &p;
