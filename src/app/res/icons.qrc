@@ -27,6 +27,7 @@
     <file alias="screenshot.svg">icons/screenshot.svg</file>
     <file alias="script.svg">icons/script.svg</file>
     <file alias="settings.svg">icons/settings.svg</file>
+    <file alias="trash.svg">icons/trash.svg</file>
     <file alias="validate.svg">icons/validate.svg</file>
     <file alias="yaml.svg">icons/yaml.svg</file>
   </qresource>

@@ -576,7 +576,7 @@ protected:
     }
 };
 
-// 源行名称按可用宽度省略中部，避免把右侧"配置"挤出去
+// 源行名称按可用宽度省略中部，避免把右侧操作图标挤出去
 class ElideLabel : public QLabel
 {
 public:
@@ -2098,11 +2098,14 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
     lay->addWidget(col, 1);
 
     auto *cfg = new QToolButton(row);
-    cfg->setText(QStringLiteral("配置"));
+    cfg->setIcon(QIcon(QStringLiteral(":/icons/settings.svg")));
+    cfg->setIconSize(QSize(14, 14));
+    cfg->setToolTip(QStringLiteral("配置数据源"));
     cfg->setCursor(Qt::PointingHandCursor);
+    cfg->setFixedSize(22, 22);
     cfg->setStyleSheet(QStringLiteral(
-        "QToolButton{background:transparent;border:0;color:#5d6c77;font-size:10px;}"
-        "QToolButton:hover{color:#f2b134;}"));
+        "QToolButton{background:transparent;border:0;padding:0;}"
+        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
     lay->addWidget(cfg);
     connect(cfg, &QToolButton::clicked, this, [this] {
         QMessageBox::information(this, QStringLiteral("配置"),
@@ -2110,8 +2113,8 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
     });
 
     auto *del = new QToolButton(row);
-    del->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
-    del->setIconSize(QSize(11, 11));
+    del->setIcon(QIcon(QStringLiteral(":/icons/trash.svg")));
+    del->setIconSize(QSize(14, 14));
     del->setToolTip(QStringLiteral("移除该数据源"));
     del->setCursor(Qt::PointingHandCursor);
     del->setFixedSize(20, 20);
