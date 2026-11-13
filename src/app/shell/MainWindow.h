@@ -11,6 +11,7 @@ class LiveSession;
 class CanvasWidget;
 class QLabel;
 class QPlainTextEdit;
+class QComboBox;
 class QTabWidget;
 class QTabBar;
 class QTreeWidget;
@@ -149,6 +150,7 @@ private:
     QLabel *m_selLabel = nullptr;
     QLabel *m_runLabel = nullptr;
     QPlainTextEdit *m_script = nullptr;
+    QComboBox *m_scriptInputs[4] = {nullptr, nullptr, nullptr, nullptr};
     QVector<SourceData> m_sources;
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;

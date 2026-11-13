@@ -12,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QSpinBox>
+#include <QComboBox>
 #include <QToolButton>
 #include <QFileDialog>
 #include <QTimer>
@@ -38,6 +39,7 @@
 #include <QResizeEvent>
 #include <QStyle>
 #include <QHash>
+#include <QRegularExpression>
 #include <QPainter>
 #include <QPainterPath>
 #include <cmath>
@@ -1564,10 +1566,22 @@ void MainWindow::createDocks()
     m_script->setFont(scriptFont);
     m_script->setTabStopDistance(28);
     m_script->setPlainText(QStringLiteral(
-        "-- 一页一组算子：整块进，向量算，禁止逐点循环\n"
-        "rate = ps.derivative(ps.ch(\"roll\"), ps.time())\n"
+        "-- 绑定面板可选 1–4 个输入，v1..v4 或 ps.input(n)\n"
+        "rate = ps.derivative(ps.input(1), ps.time())\n"
         "out = ps.movingAvg(rate, 5)\n"
         "ps.plot(\"roll_rate\", out)\n"));
+    auto *bindRow = new QHBoxLayout;
+    bindRow->addWidget(new QLabel(QStringLiteral("绑定"), scriptHost));
+    for (int i = 0; i < 4; ++i)
+    {
+        auto *cb = new QComboBox(scriptHost);
+        cb->addItem(QStringLiteral("（未绑定）"), QString());
+        cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        cb->setMinimumContentsLength(8);
+        bindRow->addWidget(cb, 1);
+        m_scriptInputs[i] = cb;
+    }
+    scriptLay->addLayout(bindRow);
     auto *runScriptBtn = new QPushButton(QStringLiteral("运行"), scriptHost);
     scriptLay->addWidget(m_script, 1);
     scriptLay->addWidget(runScriptBtn);
@@ -1591,16 +1605,56 @@ void MainWindow::createDocks()
             log(QStringLiteral("脚本：当前页没有可见曲线"));
             return;
         }
+        QStringList names;
+        for (const ScriptSeries &s : inputs)
+            names.append(s.name);
+        for (QComboBox *cb : m_scriptInputs)
         {
-            QStringList names;
-            for (const ScriptSeries &s : inputs)
-                names.append(s.name);
-            log(QStringLiteral("脚本输入：%1").arg(names.join(QStringLiteral(" | "))));
+            if (!cb)
+                continue;
+            const QString keep = cb->currentData().toString();
+            cb->clear();
+            cb->addItem(QStringLiteral("（未绑定）"), QString());
+            for (const QString &name : names)
+                cb->addItem(name, name);
+            cb->setCurrentIndex(qMax(0, cb->findData(keep)));
         }
-        const ScriptResult r = ScriptEngine::run(m_script->toPlainText(), inputs);
+
+        QVector<ScriptSeries> bound;
+        QStringList boundNames;
+        for (QComboBox *cb : m_scriptInputs)
+        {
+            const QString name = cb ? cb->currentData().toString() : QString();
+            if (name.isEmpty())
+                continue;
+            for (const ScriptSeries &s : inputs)
+            {
+                if (s.name != name)
+                    continue;
+                bound.append(s);
+                boundNames.append(QStringLiteral("v%1=%2").arg(bound.size()).arg(name));
+                break;
+            }
+        }
+        if (bound.isEmpty())
+            bound = inputs;
+        log(QStringLiteral("脚本输入：%1").arg(
+            boundNames.isEmpty() ? names.join(QStringLiteral(" | ")) : boundNames.join(QStringLiteral(" | "))));
+        const ScriptResult r = ScriptEngine::run(m_script->toPlainText(), bound);
         if (!r.ok)
         {
             log(QStringLiteral("脚本失败：%1").arg(r.error));
+            const QRegularExpression re(QStringLiteral(":(\\d+):"));
+            const auto match = re.match(r.error);
+            if (match.hasMatch())
+            {
+                const int line = match.captured(1).toInt();
+                QTextCursor cur = m_script->textCursor();
+                cur.movePosition(QTextCursor::Start);
+                cur.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, qMax(0, line - 1));
+                cur.select(QTextCursor::LineUnderCursor);
+                m_script->setTextCursor(cur);
+            }
             scriptDock->show();
             scriptDock->raise();
             return;
@@ -3221,6 +3275,14 @@ void MainWindow::saveLayoutTo(const QString &path)
     }
     root[QStringLiteral("transforms")] = transforms;
 
+    QJsonObject script;
+    script[QStringLiteral("source")] = m_script ? m_script->toPlainText() : QString();
+    QJsonArray binds;
+    for (QComboBox *cb : m_scriptInputs)
+        binds.append(cb ? cb->currentData().toString() : QString());
+    script[QStringLiteral("inputs")] = binds;
+    root[QStringLiteral("script")] = script;
+
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
@@ -3301,6 +3363,34 @@ void MainWindow::importLayoutFrom(const QString &path)
         const QJsonArray q = o.value(QStringLiteral("quat")).toArray();
         for (int i = 0; i < 4 && i < q.size(); ++i)
             r.quat[i] = q.at(i).toString();
+        const int derivedCap = QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+                                   .value(QStringLiteral("derivedMaxPoints"), 2000000).toInt();
+        if (derivedCap > 0)
+        {
+            QStringList ins = r.kind == QLatin1String("quat")
+                                  ? QStringList{r.quat[0], r.quat[1], r.quat[2], r.quat[3]}
+                                  : QStringList{r.input};
+            uint32_t worst = 0;
+            for (const QString &name : ins)
+            {
+                const uint32_t count = ps_dataset_channel_count(src->ds);
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const PsChannelInfo *ch = ps_dataset_channel(src->ds, i);
+                    if (ch && name == QString::fromUtf8(ch->name))
+                    {
+                        worst = qMax(worst, ch->point_count);
+                        break;
+                    }
+                }
+            }
+            if (worst > static_cast<uint32_t>(derivedCap))
+            {
+                log(QStringLiteral("重放变换跳过：%1（%2 点 > 上限 %3）")
+                        .arg(r.output).arg(worst).arg(derivedCap));
+                continue;
+            }
+        }
         char err[512] = {0};
         int rc = 0;
         if (r.kind == QLatin1String("quat"))
@@ -3363,6 +3453,26 @@ void MainWindow::importLayoutFrom(const QString &path)
     if (cur >= 0 && cur < m_pages->count() - 1)
         m_pages->setCurrentIndex(cur);
 
+    const QJsonObject script = root.value(QStringLiteral("script")).toObject();
+    if (!script.isEmpty())
+    {
+        if (m_script)
+            m_script->setPlainText(script.value(QStringLiteral("source")).toString());
+        const QJsonArray binds = script.value(QStringLiteral("inputs")).toArray();
+        for (int i = 0; i < 4; ++i)
+        {
+            QComboBox *cb = m_scriptInputs[i];
+            if (!cb)
+                continue;
+            cb->clear();
+            cb->addItem(QStringLiteral("（未绑定）"), QString());
+            const QString name = binds.at(i).toString();
+            if (!name.isEmpty())
+                cb->addItem(name, name);
+            cb->setCurrentIndex(name.isEmpty() ? 0 : 1);
+        }
+    }
+
     QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
     log(QStringLiteral("已导入布局：%1").arg(path));
 }
@@ -3379,9 +3489,30 @@ void MainWindow::openSettings()
     grid->setChecked(st.value(QStringLiteral("gridDefault"), true).toBool());
     auto *legend = new QCheckBox(QStringLiteral("新建画布默认显示图例"), &dlg);
     legend->setChecked(st.value(QStringLiteral("legendDefault"), true).toBool());
+    auto *timeFmt = new QComboBox(&dlg);
+    timeFmt->addItem(QStringLiteral("相对秒"), QStringLiteral("relative"));
+    timeFmt->addItem(QStringLiteral("时分秒"), QStringLiteral("clock"));
+    timeFmt->addItem(QStringLiteral("UTC（Unix 秒时间戳）"), QStringLiteral("utc"));
+    const QString savedFmt = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
+    timeFmt->setCurrentIndex(qMax(0, timeFmt->findData(savedFmt)));
+    auto *exportCap = new QSpinBox(&dlg);
+    exportCap->setRange(0, 100000000);
+    exportCap->setSingleStep(1000);
+    exportCap->setSuffix(QStringLiteral(" 点/通道（0=不限）"));
+    exportCap->setValue(st.value(QStringLiteral("exportSampleLimit"), 0).toInt());
+    auto *derivedCap = new QSpinBox(&dlg);
+    derivedCap->setRange(0, 100000000);
+    derivedCap->setSingleStep(100000);
+    derivedCap->setSuffix(QStringLiteral(" 点（0=不限）"));
+    derivedCap->setValue(st.value(QStringLiteral("derivedMaxPoints"), 2000000).toInt());
+    auto *form = new QFormLayout;
+    form->addRow(QStringLiteral("时间轴格式"), timeFmt);
+    form->addRow(QStringLiteral("CSV 导出采样上限"), exportCap);
+    form->addRow(QStringLiteral("派生通道重算上限"), derivedCap);
     lay->addWidget(restore);
     lay->addWidget(grid);
     lay->addWidget(legend);
+    lay->addLayout(form);
     auto *clearCache = new QPushButton(QStringLiteral("清空解析缓存"), &dlg);
     lay->addWidget(clearCache);
     connect(clearCache, &QPushButton::clicked, this, [this] {
@@ -3397,6 +3528,11 @@ void MainWindow::openSettings()
     st.setValue(QStringLiteral("restoreLayout"), restore->isChecked());
     st.setValue(QStringLiteral("gridDefault"), grid->isChecked());
     st.setValue(QStringLiteral("legendDefault"), legend->isChecked());
+    st.setValue(QStringLiteral("timeFormat"), timeFmt->currentData().toString());
+    st.setValue(QStringLiteral("exportSampleLimit"), exportCap->value());
+    st.setValue(QStringLiteral("derivedMaxPoints"), derivedCap->value());
+    for (auto *c : findChildren<CanvasWidget *>())
+        c->reloadDisplaySettings();
     log(QStringLiteral("设置已保存"));
 }
 
@@ -3628,27 +3764,35 @@ void MainWindow::exportActiveCsv()
     ts.setEncoding(QStringConverter::Utf8);
     auto esc = [](const QString &v) {
         QString s = v;
-        s.replace(QLatin1Char('"'), QStringLiteral("\""));
+        s.replace(QLatin1Char('"'), QStringLiteral("\"\""));
         return s.contains(QLatin1Char(',')) || s.contains(QLatin1Char('"')) || s.contains(QLatin1Char('\n'))
             ? QStringLiteral("\"%1\"").arg(s) : s;
     };
-    ts << "time,channel,value,unit\n";
+    const int sampleCap = QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+                              .value(QStringLiteral("exportSampleLimit"), 0).toInt();
+    ts << "time,source,channel,value,unit\n";
     qulonglong rows = 0;
+    const QString alias = esc(src->alias);
     for (const PsChannelInfo *ch : src->channels)
     {
         if (!ch)
             continue;
         const QString name = esc(QString::fromUtf8(ch->name));
         const QString unit = esc(QString::fromUtf8(ch->unit ? ch->unit : ""));
-        for (uint32_t i = 0; i < ch->point_count; ++i)
+        const uint32_t step = sampleCap > 0 && ch->point_count > static_cast<uint32_t>(sampleCap)
+                                  ? (ch->point_count + static_cast<uint32_t>(sampleCap) - 1) /
+                                        static_cast<uint32_t>(sampleCap)
+                                  : 1;
+        for (uint32_t i = 0; i < ch->point_count; i += step)
         {
-            ts << QString::number(ch->time[i], 'g', 17) << ',' << name << ','
+            ts << QString::number(ch->time[i], 'g', 17) << ',' << alias << ',' << name << ','
                << QString::number(ch->value[i], 'g', 17) << ',' << unit << '\n';
             ++rows;
         }
     }
     out.close();
-    log(QStringLiteral("已导出数据快照：%1（%2 行）").arg(f).arg(rows));
+    log(QStringLiteral("已导出数据快照：%1（%2 行）").arg(f).arg(rows)
+        + (sampleCap > 0 ? QStringLiteral("；采样上限 %1 点/通道").arg(sampleCap) : QString()));
 }
 
 void MainWindow::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows)

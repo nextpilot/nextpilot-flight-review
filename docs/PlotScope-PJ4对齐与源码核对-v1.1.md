@@ -11,6 +11,8 @@
 状态：✅ 已有；⚠️ 部分/需验证；❌ 没有。
 
 > 2026-11-13 复核：下表已按当前代码回填。实时源（MAVLink UDP / OEM7 TCP·串口 / Sim internal）、MCAP 加载与录制、CSV/MCAP/PSRAW1 统一录制、外部插件 ABI 已落地；仍缺 MQTT/ZMQ/ROS2、MDF4、Parquet、视频同步等。
+>
+> 2026-11-14 追加：P2 设置三项与 CSV 源别名已落地；P3 增加 1–4 输入绑定、`init/reset/step`、错误行定位、源码随 `.psl` 保存；OEM7 RAW 写 `schema_blob`。`ctest` 15/15。
 
 ## 1. 文件加载
 

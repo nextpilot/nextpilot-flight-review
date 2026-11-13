@@ -3,6 +3,9 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QStandardPaths>
 
 #include <chrono>
@@ -161,6 +164,17 @@ bool StreamRecorder::start(Format format, const QString &pluginId, const QString
         header.plugin_id = pluginId.toStdString();
         header.config_json = configJson.toStdString();
         header.created_at_ns = m_epochNs;
+        // OEM7 的 database.json 是回放解码必需，随 raw 头一起存，避免回放另配路径。
+        const QString database = QJsonDocument::fromJson(configJson.toUtf8())
+                                     .object().value(QStringLiteral("database")).toString();
+        if (!database.isEmpty())
+        {
+            QFile db(database);
+            if (db.open(QIODevice::ReadOnly))
+                header.schema_blob = db.readAll().toStdString();
+            else
+                header.schema_blob.clear();
+        }
         opened = m_raw.open(m_path.toStdString(), header, openError);
         break;
     }

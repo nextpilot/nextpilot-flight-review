@@ -53,6 +53,7 @@ public:
     bool hasData() const { return !m_series.isEmpty(); }
     bool kernelBacked() const { return m_kernelBacked; }  // 数据指针属于内核数据集
     void setTimeRange(double t0, double t1);             // 同页 X 轴联动时被动设置
+    void reloadDisplaySettings();                         // 设置页保存后刷新时间格式
     void requestAutoY();                                  // 按可见曲线量程重算 Y
     void setGridVisible(bool on);
     void setLegendVisible(bool on);
@@ -116,6 +117,7 @@ private:
     QRectF plotRect() const;
     int seriesAt(const QPointF &pos) const;
     double sampleAt(const Series &s, double displayT, bool *ok) const;          // 右键命中哪条曲线
+    QString formatTime(double t) const;
     void resetView();
     void ensureTimeRange();
     void addDemoCurves();
@@ -131,6 +133,7 @@ private:
     double lastValue(const QString &namePart, bool *ok) const;
 
     QString m_title;
+    QString m_timeFormat = QStringLiteral("relative");
     QVector<Series> m_series;
     double m_t0 = 0.0;
     double m_t1 = 30.0;

@@ -830,7 +830,7 @@ public:
 
 验收：两次仿真的 `attitude.roll` 叠在一张画布，能手动对齐起点；重启后偏移保留。
 
-#### 14.3.3 P2 导出与测量（主体完成）
+#### 14.3.3 P2 导出与测量（已完成，2026-11-14）
 任务：
 1. 导出数据 CSV：原始/派生/当前时间窗，列名带源别名。
 2. 单画布导出 PNG、复制曲线数据到剪贴板。
@@ -839,7 +839,12 @@ public:
 
 验收：CSV 可被 Excel 打开，列名不歧义；测量值与数据一致。
 
-#### 14.3.4 P3 自定义函数编辑器（Lua 5.4，Luau 后续兼容）
+本轮收口：
+- 当前源 CSV 表头改为 `time,source,channel,value,unit`，`source` 写源别名。
+- 设置页增加时间轴格式（相对秒 / 时分秒 / UTC）、CSV 导出每通道采样上限、派生通道重算上限；后两项 0 表示不限。
+- 采样上限按通道均匀抽点，日志记录实际上限；派生上限在 `TransformDialog` 与 `.psl` 重放两处生效，超限拒绝并给原因。
+
+#### 14.3.4 P3 自定义函数编辑器（Lua 5.4，部分完成）
 不照搬 PJ 的 Lua Editor 界面，能力对齐：
 1. `ps-script` 接 Lua 5.4（mlua，vendored），沙箱禁 `io/os/package`，步数/内存/单块时间预算。
 2. 契约：`init(params)`、`reset()`、`step(t, value, v1..v3)` 返回 number 或分组 table；支持 1–4 输入、单/多输出。
@@ -853,9 +858,12 @@ public:
 
 本轮落地与差异：
 - 实际接的是 PUC Lua 5.4 C API（`liblua5.4-dev`），不是 `mlua`；仍是进程内沙箱，禁 `os/io/package/debug`，20M 指令预算 + 64 MB allocator。
-- API 采用即时计算式 `ps.ch/ps.time/ps.plot/ps.movingAvg/ps.derivative/ps.integral/ps.scale`，暂未实现 `init/reset/step` 逐块协议。
+- API 采用即时计算式 `ps.ch/ps.time/ps.plot/ps.movingAvg/ps.derivative/ps.integral/ps.scale`，并增加 `ps.input(1..4)` 与 `v1..v4`。
+- 已实现 `init(params)` / `reset()` / `step(t, v1..v4)` 逐点协议：`step` 返回 number 或 `{name=number}` 表，按名字聚合成序列；存在 `step` 时优先于即时式输出。
+- 脚本面板增加 1–4 输入绑定下拉；运行时按绑定顺序映射为 `v1..v4`，未绑定则回退当前画布全部曲线。
+- 语法错误包含行号，面板自动选中出错行；源码与绑定写入 `.psl` 的 `script` 对象，导入时恢复。
 - 输出追加到当前工作区画布；已修复 `ps.plot` 与全局 `out` 重复输出（改用 `lua_next` 判断空表，`lua_rawlen` 对字符串键表恒为 0）。
-- 未做：行号/语法高亮/错误定位、`ps.ch` 多输入绑定 UI、源码随 `.psl` 保存、Luau 适配、Python。
+- 未做：参数表单、before/after 预览与 Apply 替换、Luau 适配、Python。
 
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
@@ -870,6 +878,7 @@ public:
 1. 外部插件 `.json` manifest 发现 + 动态库 ABI 已落地（`PluginRuntime` / `ps_plugin_host`，DemoPlugin 回归），`PS_PLUGIN_ABI_VERSION=6`。
 2. MAVLink UDP 实时流、OEM7 TCP/串口、Sim internal 已接入；MCAP 文件加载已落地；实时记录已落地（CSV/MCAP/RAW）。
 3. 实时环形缓冲由 kernel `PsStream` 承担，`LiveSession` 每通道 262144。
+4. OEM7 RAW 录制时，`StreamRecorder` 从配置 `database` 读取协议库字节写入 PSRAW1 `schema_blob`；回放不再依赖外部 database 路径。
 
 未完成：
 1. 多 parse 共享同一 transport 的运行时（当前只启动入口 parser；`dataInputJson()` 已生成但未消费）。
@@ -948,9 +957,19 @@ public:
 - 提交：`6f56ca9 feat(app): 实时数据流统一录制 StreamRecorder（CSV/MCAP/RAW）`。
 
 仍未完成：
-- 多 parse 运行时；OEM7 raw 的 schema_blob；`LiveSession` 的暂停/继续只影响 UI 刷新，不暂停插件轮询。
-- GUI 冒烟未做（云主机无桌面会话）；raw 回放端到端未实测。
+- 多 parse 运行时；`LiveSession` 的暂停/继续只影响 UI 刷新，不暂停插件轮询。
+- GUI 交互冒烟未做；仅 `QT_QPA_PLATFORM=offscreen` 启动存活验证；raw 回放端到端未实测。
 - MCAP writer 无 chunk/summary/索引，标准工具可读但大文件索引性能未验证。
+
+### 14.8 2026-11-14 P2/P3 收尾
+
+已落地：
+- 设置：时间轴格式、CSV 导出采样上限、派生重算上限；画布设置保存后即时刷新。
+- CSV：当前源导出带 `source` 列与源别名。
+- P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码随 `.psl` 保存。
+- RAW：OEM7 `database.json` 写入 PSRAW1 `schema_blob`。
+- 测试：`ctest` 15/15，新增 `test_script_engine`（`ps.input`、`ps.input(5)` 报错、`step` 聚合）。
+- 启动：`QT_QPA_PLATFORM=offscreen` 运行 8 秒存活，无崩溃；非交互冒烟。
 ---
 
 ## 附录 A：必须守住的不变量（摘 11 条）

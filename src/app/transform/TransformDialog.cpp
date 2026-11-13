@@ -18,6 +18,7 @@
 #include <QTimer>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QSettings>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -28,6 +29,18 @@ struct FilterDef
     const char *id;
     const char *label;
 };
+
+uint32_t channelPoints(PsDataset *ds, const QString &name)
+{
+    const uint32_t n = ps_dataset_channel_count(ds);
+    for (uint32_t i = 0; i < n; ++i)
+    {
+        const PsChannelInfo *ch = ps_dataset_channel(ds, i);
+        if (ch && name == QString::fromUtf8(ch->name))
+            return ch->point_count;
+    }
+    return 0;
+}
 
 const FilterDef kFilters[] = {
     {"none", "直通（无变化）"},
@@ -439,6 +452,38 @@ void TransformDialog::apply()
 {
     if (!m_ds)
         return;
+    const int maxPoints = QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+                              .value(QStringLiteral("derivedMaxPoints"), 2000000).toInt();
+    if (maxPoints > 0)
+    {
+        bool quatTab = false;
+        if (auto *tabs = findChild<QTabWidget *>())
+            quatTab = tabs->currentIndex() == 1;
+        uint32_t worst = 0;
+        QString worstName;
+        QStringList ins;
+        if (quatTab)
+            ins = {m_qw->currentText(), m_qx->currentText(), m_qy->currentText(), m_qz->currentText()};
+        else
+            ins = {m_input->currentText()};
+        for (const QString &name : ins)
+        {
+            const uint32_t n = channelPoints(m_ds, name);
+            if (n > worst)
+            {
+                worst = n;
+                worstName = name;
+            }
+        }
+        if (worst > static_cast<uint32_t>(maxPoints))
+        {
+            QMessageBox::warning(this, QStringLiteral("派生通道"),
+                                 QStringLiteral("输入 %1 有 %2 点，超过重算上限 %3；\n"
+                                                "请在“设置”里调高派生通道重算上限。")
+                                     .arg(worstName).arg(worst).arg(maxPoints));
+            return;
+        }
+    }
     char err[512] = {0};
     if (auto *tabs = findChild<QTabWidget *>())
     {

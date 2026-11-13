@@ -172,3 +172,16 @@ if(CARGO_EXECUTABLE)
   add_dependencies(test_rust_plugin ps_data_loader_rustcsv)
   add_test(NAME rust_plugin COMMAND test_rust_plugin)
 endif()
+
+find_package(Lua 5.4 QUIET)
+if(LUA_FOUND)
+  add_executable(test_script_engine
+    unit/test_script_engine.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/script/ScriptEngine.cpp)
+  target_include_directories(test_script_engine PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/app
+    ${LUA_INCLUDE_DIR})
+  target_compile_definitions(test_script_engine PRIVATE PS_HAVE_LUA=1)
+  target_link_libraries(test_script_engine PRIVATE Qt6::Core ${LUA_LIBRARIES})
+  add_test(NAME script_engine COMMAND test_script_engine)
+endif()

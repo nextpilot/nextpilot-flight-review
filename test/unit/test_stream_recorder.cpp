@@ -6,6 +6,9 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QStandardPaths>
+#include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include <cassert>
 #include <filesystem>
@@ -76,12 +79,21 @@ int main(int argc, char **argv)
         std::filesystem::remove(path.toStdString());
     }
 
-    // RAW：PSRAW1 记录原始字节，encoding 供回放路由。
+    // RAW：PSRAW1 记录原始字节，encoding 供回放路由；database 随头存 schema_blob。
     {
+        const QString dbPath = QDir(QDir::tempPath()).filePath(QStringLiteral("ps_stream_db.json"));
+        QFile db(dbPath);
+        if (!db.open(QIODevice::WriteOnly | QIODevice::Truncate)) return 1;
+        db.write("{\"schema\":\"oem7\"}");
+        db.close();
+        QJsonObject cfg;
+        cfg.insert(QStringLiteral("database"), dbPath);
+        const QString cfgJson = QString::fromUtf8(QJsonDocument(cfg).toJson(QJsonDocument::Compact));
+
         StreamRecorder recorder;
         QString path;
         QString recErr;
-        if (!recorder.start(StreamRecorder::Format::Raw, "mavlink", "mavlink", "{}", &path, &recErr)) { fprintf(stderr, "raw start: %s\n", recErr.toUtf8().constData()); return 1; }
+        if (!recorder.start(StreamRecorder::Format::Raw, "mavlink", "mavlink", cfgJson, &path, &recErr)) { fprintf(stderr, "raw start: %s\n", recErr.toUtf8().constData()); return 1; }
         const uint8_t first[3] = {1, 2, 3};
         const uint8_t second[2] = {4, 5};
         recorder.writeRaw("mavlink", "mavlink", 100, first, 3);
@@ -93,6 +105,7 @@ int main(int argc, char **argv)
         ps::capture::RawReader reader;
         assert(reader.open(path.toStdString(), err));
         assert(reader.recordCount() == 2);
+        assert(reader.header().schema_blob == "{\"schema\":\"oem7\"}");
         ps::capture::Record record;
         assert(reader.next(record, err));
         assert(record.encoding == "mavlink");
@@ -101,6 +114,7 @@ int main(int argc, char **argv)
         assert(record.timestamp_ns == 200);
         assert(record.payload.size() == 2 && record.payload[1] == 5);
         std::filesystem::remove(path.toStdString());
+        std::filesystem::remove(dbPath.toStdString());
     }
 
     return 0;

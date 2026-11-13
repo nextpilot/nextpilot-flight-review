@@ -16,6 +16,7 @@
 #include <QSaveFile>
 #include <QTextStream>
 #include <QSettings>
+#include <QDateTime>
 #include <QColorDialog>
 #include <QJsonArray>
 #include <QMap>
@@ -48,7 +49,37 @@ CanvasWidget::CanvasWidget(QWidget *parent)
     const QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
     m_showGrid = st.value(QStringLiteral("gridDefault"), true).toBool();
     m_showLegend = st.value(QStringLiteral("legendDefault"), true).toBool();
+    m_timeFormat = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
     addDemoCurves();
+}
+
+void CanvasWidget::reloadDisplaySettings()
+{
+    const QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    m_timeFormat = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
+    update();
+}
+
+QString CanvasWidget::formatTime(double t) const
+{
+    if (m_timeFormat == QLatin1String("clock"))
+    {
+        const bool neg = t < 0;
+        const double abs = neg ? -t : t;
+        const qint64 whole = static_cast<qint64>(abs);
+        const int h = static_cast<int>(whole / 3600);
+        const int m = static_cast<int>((whole / 60) % 60);
+        const double sec = std::fmod(abs, 60.0);
+        return QStringLiteral("%1%2:%3:%4")
+            .arg(neg ? QStringLiteral("-") : QString())
+            .arg(h, 2, 10, QChar('0'))
+            .arg(m, 2, 10, QChar('0'))
+            .arg(QString::number(sec, 'f', 2).rightJustified(5, QChar('0')));
+    }
+    if (m_timeFormat == QLatin1String("utc") && std::abs(t) >= 100000000.0)
+        return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(t * 1000.0), Qt::UTC)
+            .toString(QStringLiteral("HH:mm:ss"));
+    return QString::number(t, 'f', t >= 100 ? 0 : 2);
 }
 
 void CanvasWidget::addDemoCurves()
@@ -948,7 +979,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
             p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
         }
         p.setPen(colorText());
-        const QString lbl = QString::number(t, 'f', t >= 100 ? 0 : 2);
+        const QString lbl = formatTime(t);
         p.drawText(QPointF(x - fm.horizontalAdvance(lbl) / 2, plot.bottom() + fm.ascent() + 6), lbl);
     }
     if (m_showBox)
@@ -1145,7 +1176,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         p.setPen(QColor("#f2b134"));
         p.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
                    Qt::AlignVCenter | Qt::AlignLeft,
-                   QStringLiteral("t = %1 s").arg(t, 0, 'f', 4));
+                   QStringLiteral("t = %1").arg(formatTime(t)));
         p.setPen(QColor("#8b949e"));
         p.drawLine(QPointF(box.left() + 7, box.top() + 21),
                    QPointF(box.right() - 7, box.top() + 21));

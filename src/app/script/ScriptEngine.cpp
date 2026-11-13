@@ -1,6 +1,7 @@
 #include "script/ScriptEngine.h"
 
 #include <cmath>
+#include <QMap>
 #include <cstdlib>
 #include <cstring>
 
@@ -101,6 +102,17 @@ int l_time(lua_State *L)
     return 1;
 }
 
+int l_input(lua_State *L)
+{
+    const int n = static_cast<int>(luaL_checkinteger(L, 1));
+    if (n < 1 || n > 4)
+        return luaL_error(L, "ps.input 只支持 1..4");
+    lua_getglobal(L, "__ps_v");
+    lua_rawgeti(L, -1, n);
+    lua_remove(L, -2);
+    return 1;
+}
+
 int l_plot(lua_State *L)
 {
     const char *name = luaL_checkstring(L, 1);
@@ -187,6 +199,8 @@ void registerApi(lua_State *L)
     lua_setfield(L, -2, "ch");
     lua_pushcfunction(L, l_time);
     lua_setfield(L, -2, "time");
+    lua_pushcfunction(L, l_input);
+    lua_setfield(L, -2, "input");
     lua_pushcfunction(L, l_plot);
     lua_setfield(L, -2, "plot");
     lua_pushcfunction(L, l_moving_avg);
@@ -208,6 +222,101 @@ void clearDangerous(lua_State *L)
         lua_pushnil(L);
         lua_setglobal(L, n);
     }
+}
+
+QVector<double> timeFor(const QVector<ScriptSeries> &inputs, int len);
+
+ScriptResult runStepMode(lua_State *L, const QVector<ScriptSeries> &inputs)
+{
+    ScriptResult r;
+    auto fail = [&](const char *where) {
+        const char *msg = lua_tostring(L, -1);
+        r.error = QStringLiteral("%1：%2").arg(QString::fromUtf8(where),
+                                               QString::fromUtf8(msg ? msg : "未知错误"));
+        return r;
+    };
+
+    lua_getglobal(L, "init");
+    if (lua_isfunction(L, -1))
+    {
+        lua_newtable(L);
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK)
+            return fail("init");
+    }
+    else
+    {
+        lua_pop(L, 1);
+    }
+
+    lua_getglobal(L, "reset");
+    if (lua_isfunction(L, -1))
+    {
+        if (lua_pcall(L, 0, 0, 0) != LUA_OK)
+            return fail("reset");
+    }
+    else
+    {
+        lua_pop(L, 1);
+    }
+
+    const int n = inputs.isEmpty() ? 0 : inputs.first().value.size();
+    QMap<QString, QVector<double>> out;
+    for (int i = 0; i < n; ++i)
+    {
+        lua_getglobal(L, "step");
+        if (!lua_isfunction(L, -1))
+        {
+            lua_pop(L, 1);
+            r.error = QStringLiteral("step 不是函数");
+            return r;
+        }
+        const double t = inputs.first().time.size() > i ? inputs.first().time.at(i) : static_cast<double>(i);
+        lua_pushnumber(L, t);
+        for (int j = 0; j < 4; ++j)
+            if (j < inputs.size() && inputs.at(j).value.size() > i)
+                lua_pushnumber(L, inputs.at(j).value.at(i));
+            else
+                lua_pushnil(L);
+        if (lua_pcall(L, 5, 1, 0) != LUA_OK)
+            return fail("step");
+        if (lua_isnumber(L, -1))
+        {
+            out[QStringLiteral("step")].append(lua_tonumber(L, -1));
+        }
+        else if (lua_istable(L, -1))
+        {
+            lua_pushnil(L);
+            while (lua_next(L, -2) != 0)
+            {
+                if (lua_isstring(L, -2) && lua_isnumber(L, -1))
+                    out[QString::fromUtf8(lua_tostring(L, -2))].append(lua_tonumber(L, -1));
+                lua_pop(L, 1);
+            }
+        }
+        else
+        {
+            lua_pop(L, 1);
+            r.error = QStringLiteral("step 返回类型必须是 number 或 table");
+            return r;
+        }
+        lua_pop(L, 1);
+    }
+
+    for (auto it = out.begin(); it != out.end(); ++it)
+    {
+        ScriptOutput o;
+        o.name = it.key();
+        o.value = it.value();
+        o.time = timeFor(inputs, o.value.size());
+        r.outputs.append(o);
+    }
+    if (r.outputs.isEmpty())
+    {
+        r.error = QStringLiteral("step 没有输出");
+        return r;
+    }
+    r.ok = true;
+    return r;
 }
 
 QVector<double> timeFor(const QVector<ScriptSeries> &inputs, int len)
@@ -270,6 +379,14 @@ ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries
     }
     lua_setglobal(L, "__ps_inputs");
 
+    lua_newtable(L); // __ps_v：按绑定顺序暴露 v1..v4
+    for (int i = 0; i < 4 && i < inputs.size(); ++i)
+    {
+        pushVector(L, inputs.at(i).value);
+        lua_rawseti(L, -2, i + 1);
+    }
+    lua_setglobal(L, "__ps_v");
+
     pushVector(L, inputs.isEmpty() ? QVector<double>() : inputs.first().time);
     lua_setglobal(L, "__ps_time");
 
@@ -289,6 +406,17 @@ ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries
         r.error = QString::fromUtf8(lua_tostring(L, -1));
         lua_close(L);
         return r;
+    }
+
+    // init/reset/step 协议优先：逐点调用，结果按名字聚合成序列。
+    lua_getglobal(L, "step");
+    const bool stepMode = lua_isfunction(L, -1);
+    lua_pop(L, 1);
+    if (stepMode)
+    {
+        const ScriptResult sr = runStepMode(L, inputs);
+        lua_close(L);
+        return sr;
     }
 
     // 没有 ps.plot 时，把全局 out 当作唯一输出
