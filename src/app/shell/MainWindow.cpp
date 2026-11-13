@@ -283,6 +283,7 @@ static void darkenDocks(MainWindow *w);
 
 // 只重写 sizeHint 的标题栏：QDockWidget 按 sizeHint 预留高度，固定 height 不算数，
 // 32px 的 bar 只留 24px 空间就会压住正文第一行。
+
 class DockTitleBar : public QWidget
 {
 public:
@@ -290,6 +291,103 @@ public:
     QSize sizeHint() const override { return QSize(QWidget::sizeHint().width(), 32); }
     QSize minimumSizeHint() const override { return sizeHint(); }
 };
+
+namespace {
+
+QHash<QDockWidget *, QToolButton *> g_dockMinHandles;
+
+void positionDockHandle(QDockWidget *dock, QToolButton *btn, MainWindow *win, int index = 0, int total = 1)
+{
+    if (!dock || !btn || !win)
+        return;
+    const QRect cg = win->centralWidget()->geometry();
+    const Qt::DockWidgetArea area = win->dockWidgetArea(dock);
+    const int W = 16, H = 56, GAP = 6;
+    if (area == Qt::LeftDockWidgetArea || area == Qt::RightDockWidgetArea)
+    {
+        btn->setFixedSize(W, H);
+        btn->setText(area == Qt::LeftDockWidgetArea ? QStringLiteral("›") : QStringLiteral("‹"));
+        const int x = area == Qt::LeftDockWidgetArea ? cg.left() + 2 : cg.right() - W - 2;
+        const int block = total * H + (total - 1) * GAP;
+        const int y = cg.center().y() - block / 2 + index * (H + GAP);
+        btn->move(x, y);
+    }
+    else
+    {
+        btn->setFixedSize(H, W);
+        btn->setText(area == Qt::BottomDockWidgetArea ? QStringLiteral("▲") : QStringLiteral("▼"));
+        const int y = area == Qt::TopDockWidgetArea ? cg.top() + 2 : cg.bottom() - W - 2;
+        const int block = total * H + (total - 1) * GAP;
+        const int x = cg.center().x() - block / 2 + index * (H + GAP);
+        btn->move(x, y);
+    }
+    btn->raise();
+}
+
+void repositionDockHandles(MainWindow *win)
+{
+    if (!win)
+        return;
+    QHash<int, int> totals, seen;
+    for (auto it = g_dockMinHandles.begin(); it != g_dockMinHandles.end(); ++it)
+        if (it.value() && it.value()->isVisible())
+            ++totals[static_cast<int>(win->dockWidgetArea(it.key()))];
+    for (auto it = g_dockMinHandles.begin(); it != g_dockMinHandles.end(); ++it)
+    {
+        if (!it.value() || !it.value()->isVisible())
+            continue;
+        const int area = static_cast<int>(win->dockWidgetArea(it.key()));
+        const int idx = seen[area]++;
+        positionDockHandle(it.key(), it.value(), win, idx, qMax(1, totals.value(area, 1)));
+    }
+}
+
+void collapseDock(QDockWidget *dock, MainWindow *win)
+{
+    if (!dock || !win)
+        return;
+    QToolButton *btn = g_dockMinHandles.value(dock);
+    if (!btn)
+    {
+        btn = new QToolButton(win);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setToolTip(QStringLiteral("展开 %1").arg(dock->windowTitle()));
+        btn->setStyleSheet(QStringLiteral(
+            "QToolButton{background:#161b20;color:#c9d1d9;border:1px solid #2d3841;"
+            "border-radius:2px;padding:0;font-size:13px;}"
+            "QToolButton:hover{color:#f2b134;border-color:#f2b134;background:#1b232a;}"));
+        QObject::connect(btn, &QToolButton::clicked, dock, [dock, btn] {
+            dock->show();
+            dock->raise();
+            btn->hide();
+        });
+        QObject::connect(dock, &QDockWidget::visibilityChanged, btn, [btn](bool visible) {
+            if (visible)
+                btn->hide();
+        });
+        g_dockMinHandles.insert(dock, btn);
+    }
+    dock->hide();
+    btn->show();
+    repositionDockHandles(win);
+}
+
+void dockToArea(QDockWidget *dock, MainWindow *win, Qt::DockWidgetArea area)
+{
+    if (!dock || !win)
+        return;
+    const bool floating = dock->isFloating();
+    if (floating)
+        dock->setFloating(false);
+    win->removeDockWidget(dock);
+    win->addDockWidget(area, dock);
+    dock->show();
+    dock->raise();
+    if (auto *btn = g_dockMinHandles.value(dock))
+        btn->hide();
+}
+
+} // namespace
 
 // 字段树拖拽：Item 里存的是内核通道指针，默认 QTreeWidget 的 MIME 带不过去，自己塞一条
 class ChannelTree : public QTreeWidget
@@ -764,6 +862,30 @@ void MainWindow::createDocks()
     });
     auto *runBtn = mkTiny(QStringLiteral("play"), QStringLiteral("全部开始"));
     auto *pauseBtn = mkTiny(QStringLiteral("pause"), QStringLiteral("全部暂停"));
+    auto *dockMenuBtn = new QToolButton(srcBar);
+    dockMenuBtn->setText(QStringLiteral("⋯"));
+    dockMenuBtn->setToolTip(QStringLiteral("停靠 / 收起"));
+    dockMenuBtn->setCursor(Qt::PointingHandCursor);
+    dockMenuBtn->setFixedSize(22, 22);
+    dockMenuBtn->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;font-size:13px;}"
+        "QToolButton:hover{background:#222b33;color:#f2b134;}"));
+    auto *dockMenu = new QMenu(dockMenuBtn);
+    QAction *toLeft = dockMenu->addAction(QStringLiteral("停靠到左侧"));
+    QAction *toRight = dockMenu->addAction(QStringLiteral("停靠到右侧"));
+    QAction *toBottom = dockMenu->addAction(QStringLiteral("停靠到底部"));
+    dockMenu->addSeparator();
+    QAction *collapse = dockMenu->addAction(QStringLiteral("最小化 / 收起"));
+    QAction *floatAct = dockMenu->addAction(QStringLiteral("浮动"));
+    QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::LeftDockWidgetArea); });
+    QObject::connect(toRight, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::RightDockWidgetArea); });
+    QObject::connect(toBottom, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::BottomDockWidgetArea); });
+    QObject::connect(collapse, &QAction::triggered, this, [this, srcDock] { collapseDock(srcDock, this); });
+    QObject::connect(floatAct, &QAction::triggered, srcDock, [srcDock] { srcDock->setFloating(!srcDock->isFloating()); });
+    QObject::connect(dockMenuBtn, &QToolButton::clicked, dockMenu, [dockMenu, dockMenuBtn] {
+        dockMenu->exec(dockMenuBtn->mapToGlobal(QPoint(0, dockMenuBtn->height())));
+    });
+    barLay->addWidget(dockMenuBtn);
     auto *barClose = new QToolButton(srcBar);
     barClose->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
     barClose->setIconSize(QSize(13, 13));
@@ -1047,6 +1169,25 @@ void darkenDocks(MainWindow *w)
             "color:#e6edf3;font-size:13px;font-weight:600;background:transparent;"));
         lay->addWidget(title);
         lay->addStretch();
+
+        auto mkBtn = [&](const QString &text, const QString &tip, const char *hover) {
+            auto *b = new QToolButton(bar);
+            b->setText(text);
+            b->setToolTip(tip);
+            b->setCursor(Qt::PointingHandCursor);
+            b->setFixedSize(24, 24);
+            b->setStyleSheet(QStringLiteral(
+                "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;font-size:12px;}")
+                + QStringLiteral("QToolButton:hover{color:%1;background:#222b33;}").arg(QString::fromLatin1(hover)));
+            lay->addWidget(b);
+            return b;
+        };
+        auto *leftBtn = mkBtn(QStringLiteral("左"), QStringLiteral("停靠到左侧"), "#f2b134");
+        auto *rightBtn = mkBtn(QStringLiteral("右"), QStringLiteral("停靠到右侧"), "#f2b134");
+        auto *minBtn = mkBtn(QStringLiteral("—"), QStringLiteral("最小化 / 收起"), "#4ea1ff");
+        QObject::connect(leftBtn, &QToolButton::clicked, w, [w, d] { dockToArea(d, w, Qt::LeftDockWidgetArea); });
+        QObject::connect(rightBtn, &QToolButton::clicked, w, [w, d] { dockToArea(d, w, Qt::RightDockWidgetArea); });
+        QObject::connect(minBtn, &QToolButton::clicked, w, [w, d] { collapseDock(d, w); });
 
         auto *close = new QToolButton(bar);
         close->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
@@ -1785,6 +1926,12 @@ void MainWindow::newPage()
     m_pages->insertTab(plusIdx, c, QStringLiteral("新页"));
     m_pages->setCurrentWidget(c);
     log(QStringLiteral("新建页"));
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    QTimer::singleShot(0, this, [this] { repositionDockHandles(this); });
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

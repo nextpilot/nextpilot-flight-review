@@ -65,6 +65,7 @@ public:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 private:
