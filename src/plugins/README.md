@@ -22,6 +22,7 @@ src/plugins/
 - **格式解析属于插件**：每个 loader 自带 `*Parser.{h,cpp}`，只通过 `ps_dataset_new / ps_dataset_add_channel` 写内核；`ps_kernel.h` 不再提供 `ps_csv_load / ps_ulog_load / ...` 这类格式 API，内核也不依赖 zlib。
 - `common/` 只放跨 loader 复用的机械层（`psBuildDataset`、文件/JSON/错误 helper、CAN 帧模型），不放任何单格式解析。
 - `extensions` 由插件声明，app 不再按格式写 `if (suffix == ...)`。
-- 插件不 include `src/app`，也不持有宿主 UI；格式专属 `.ui` 随插件目录分发，由 app 的 `DialogEngine` 加载。
+- 插件不 include `src/app`，也不持有宿主 UI。简单选项页放在 `schema_json.fields + ui.preview`，由 app 的 `LoaderOptionsDialog` 按 schema 渲染；需要复杂自定义界面时，`.ui` 随插件目录分发，由 `DialogEngine` 加载。
+- app 不出现 `delimiter / has_header / suggested_time` 这类格式键；只认识 `fields / source / initial_from_probe / ui.preview` 这些通用 UI 描述。
 - 外部 `.so` + `manifest.json` 的发现、预检、`dlopen`、ABI 校验由 `src/runtime` 负责；重复 id 只保留第一个。
 - 有 `PS_CAP_CACHE` 的文件加载器，解析结果由 `src/datastore/DatasetCache` 落盘；源文件 size/mtime 变化或插件版本变化自动失效。

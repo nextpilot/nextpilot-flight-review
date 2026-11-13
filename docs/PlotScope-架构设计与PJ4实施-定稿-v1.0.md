@@ -605,6 +605,7 @@ ps_plugin_<family>_<id> # 插件库：src/plugins/<family>/<id>/，输出到 bin
 - APBin：`ApbinParser.{h,cpp}` 在插件内实现 DataFlash `A3 95` / FMT 自描述 / FMTU 单位倍率 / UNIT / MULT / PARM，通道名 `MSG.#N.Field`，参数表由插件输出 JSON。
 - ULog：`UlogParser.{h,cpp}` 在插件内实现 `F/A/D` + `P/Q`，展平/多实例/字符串跳过规则不变；`demo_flight.ulg` 仍为 13 通道。
 - ASC / BLF：各自 `*Parser.{h,cpp}`，共用 `common/CanFrames` 的帧→通道规则（只保留变化字节 + `period`）；BLF 的 zlib 容器由插件自己解压，内核不链 zlib。
+- loader 选项 UI 的归属：`schema_json.fields` + `ui.preview` + `initial_from_probe` 由插件提供，app 的 `LoaderOptionsDialog` 只做通用渲染；app 源码不再出现 `delimiter / has_header / suggested_time`，新增格式不需要在 app 里加对话框。
 - 测试：`ctest` 6/6；`plugin_file_formats` 覆盖 ULog 13 通道、APBin 通道+PARAM、ASC/BLF 各 10 通道；新增 `test/fixture/demo_apbin.bin` 作为可复现夹具。
 
 **Ribbon / Dock spike（2026-11-12 实测）**

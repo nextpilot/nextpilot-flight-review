@@ -34,6 +34,13 @@ QJsonObject schema()
         o[QStringLiteral("label")] = t;
         opts.append(o);
     };
+    auto columnsSource = [] {
+        QJsonObject o;
+        o[QStringLiteral("probe_key")] = QStringLiteral("columns");
+        o[QStringLiteral("label_key")] = QStringLiteral("name");
+        o[QStringLiteral("filter_key")] = QStringLiteral("kind");
+        return o;
+    };
 
     {
         QJsonObject f = field(QStringLiteral("delimiter"), QStringLiteral("enum"), QStringLiteral("分隔符"));
@@ -45,12 +52,19 @@ QJsonObject schema()
         addOption(opts, QStringLiteral("\t"), QStringLiteral("制表符  \\t"));
         addOption(opts, QStringLiteral(" "), QStringLiteral("空格"));
         f[QStringLiteral("options")] = opts;
+        QJsonObject init;
+        init[QStringLiteral("probe_key")] = QStringLiteral("delimiter");
+        init[QStringLiteral("trim")] = 1;
+        f[QStringLiteral("initial_from_probe")] = init;
         fields.append(f);
     }
     {
         QJsonObject f = field(QStringLiteral("has_header"), QStringLiteral("bool"),
                               QStringLiteral("第一行是表头"));
         f[QStringLiteral("default")] = true;
+        QJsonObject init;
+        init[QStringLiteral("probe_key")] = QStringLiteral("has_header");
+        f[QStringLiteral("initial_from_probe")] = init;
         fields.append(f);
     }
     {
@@ -70,13 +84,20 @@ QJsonObject schema()
         addOption(opts, QStringLiteral("column"), QStringLiteral("指定一列作为时间"));
         addOption(opts, QStringLiteral("combined"), QStringLiteral("日期列 + 时间列合并"));
         f[QStringLiteral("options")] = opts;
+        QJsonObject init;
+        init[QStringLiteral("probe_key")] = QStringLiteral("suggested_time");
+        init[QStringLiteral("set")] = QStringLiteral("column");
+        f[QStringLiteral("initial_from_probe")] = init;
         fields.append(f);
     }
     {
         QJsonObject f = field(QStringLiteral("time.index"), QStringLiteral("enum"),
                               QStringLiteral("时间列"));
-        f[QStringLiteral("source")] = QStringLiteral("columns");
-        f[QStringLiteral("column_filter")] = QStringLiteral("all");
+        f[QStringLiteral("source")] = columnsSource();
+        f[QStringLiteral("filter_kind")] = QStringLiteral("all");
+        QJsonObject init;
+        init[QStringLiteral("probe_key")] = QStringLiteral("suggested_time");
+        f[QStringLiteral("initial_from_probe")] = init;
         QJsonObject vi;
         vi[QStringLiteral("key")] = QStringLiteral("time.mode");
         vi[QStringLiteral("equals")] = QStringLiteral("column");
@@ -86,8 +107,8 @@ QJsonObject schema()
     {
         QJsonObject f = field(QStringLiteral("time.date"), QStringLiteral("enum"),
                               QStringLiteral("日期列"));
-        f[QStringLiteral("source")] = QStringLiteral("columns");
-        f[QStringLiteral("column_filter")] = QStringLiteral("date_only");
+        f[QStringLiteral("source")] = columnsSource();
+        f[QStringLiteral("filter_kind")] = QStringLiteral("date_only");
         QJsonObject vi;
         vi[QStringLiteral("key")] = QStringLiteral("time.mode");
         vi[QStringLiteral("equals")] = QStringLiteral("combined");
@@ -97,8 +118,8 @@ QJsonObject schema()
     {
         QJsonObject f = field(QStringLiteral("time.time"), QStringLiteral("enum"),
                               QStringLiteral("时间列（时:分:秒）"));
-        f[QStringLiteral("source")] = QStringLiteral("columns");
-        f[QStringLiteral("column_filter")] = QStringLiteral("time_only");
+        f[QStringLiteral("source")] = columnsSource();
+        f[QStringLiteral("filter_kind")] = QStringLiteral("time_only");
         QJsonObject vi;
         vi[QStringLiteral("key")] = QStringLiteral("time.mode");
         vi[QStringLiteral("equals")] = QStringLiteral("combined");
@@ -107,6 +128,27 @@ QJsonObject schema()
     }
 
     s[QStringLiteral("fields")] = fields;
+
+    QJsonObject preview;
+    preview[QStringLiteral("columns_key")] = QStringLiteral("columns");
+    preview[QStringLiteral("rows_key")] = QStringLiteral("preview");
+    preview[QStringLiteral("label_key")] = QStringLiteral("name");
+    preview[QStringLiteral("summary")] = QStringLiteral("探测：{column_count} 列 · {row_count} 行预览");
+    preview[QStringLiteral("warnings_key")] = QStringLiteral("warnings");
+
+    QJsonArray warnRules;
+    QJsonObject warn;
+    warn[QStringLiteral("probe_key")] = QStringLiteral("has_header");
+    warn[QStringLiteral("probe_equals")] = false;
+    warn[QStringLiteral("field_key")] = QStringLiteral("has_header");
+    warn[QStringLiteral("field_equals")] = true;
+    warn[QStringLiteral("text")] = QStringLiteral("探测认为首行是数据，但勾了“第一行是表头”，请确认。");
+    warnRules.append(warn);
+
+    QJsonObject ui;
+    ui[QStringLiteral("preview")] = preview;
+    ui[QStringLiteral("warnings")] = warnRules;
+    s[QStringLiteral("ui")] = ui;
     return s;
 }
 

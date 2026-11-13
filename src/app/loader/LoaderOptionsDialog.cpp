@@ -24,11 +24,6 @@
 
 namespace {
 
-QString kindOf(const QJsonObject &c)
-{
-    return c.value(QStringLiteral("kind")).toString();
-}
-
 void setNested(QJsonObject &o, const QString &path, const QJsonValue &value)
 {
     const QStringList parts = path.split(QLatin1Char('.'), Qt::SkipEmptyParts);
@@ -42,6 +37,18 @@ void setNested(QJsonObject &o, const QString &path, const QJsonValue &value)
     QJsonObject child = o.value(parts.first()).toObject();
     setNested(child, QStringList(parts.mid(1)).join(QLatin1Char('.')), value);
     o.insert(parts.first(), child);
+}
+
+QVariant probeVariant(const QJsonObject &probe, const QString &key)
+{
+    const QJsonValue v = probe.value(key);
+    if (v.isString())
+        return v.toString();
+    if (v.isBool())
+        return v.toBool();
+    if (v.isDouble())
+        return static_cast<int>(v.toDouble());
+    return {};
 }
 
 } // namespace
@@ -229,6 +236,8 @@ void LoaderOptionsDialog::setCurrentValue(const QString &key, const QVariant &va
     else if (auto *co = qobject_cast<QComboBox *>(w))
     {
         int idx = co->findData(value);
+        if (idx < 0 && value.canConvert<int>())
+            idx = co->findData(value.toInt());
         if (idx < 0)
             idx = co->findData(value.toString());
         if (idx >= 0)
@@ -255,7 +264,7 @@ QJsonObject LoaderOptionsDialog::currentOptions() const
             setNested(o, f.key, v.toBool());
         else if (f.type == QLatin1String("int"))
             setNested(o, f.key, v.toInt());
-        else if (f.spec.value(QStringLiteral("source")).toString() == QLatin1String("columns"))
+        else if (f.spec.value(QStringLiteral("source")).isObject())
             setNested(o, f.key, v.toInt());
         else
         {
@@ -265,6 +274,62 @@ QJsonObject LoaderOptionsDialog::currentOptions() const
         }
     }
     return o;
+}
+
+void LoaderOptionsDialog::applyInitialFromProbe()
+{
+    for (const Field &f : m_fields)
+    {
+        const QJsonObject init = f.spec.value(QStringLiteral("initial_from_probe")).toObject();
+        if (init.isEmpty())
+            continue;
+        const QString key = init.value(QStringLiteral("probe_key")).toString();
+        if (!m_probe.contains(key))
+            continue;
+        QVariant value = init.contains(QStringLiteral("set"))
+                             ? init.value(QStringLiteral("set")).toVariant()
+                             : probeVariant(m_probe, key);
+        if (init.contains(QStringLiteral("trim")) && value.canConvert<QString>())
+            value = value.toString().left(init.value(QStringLiteral("trim")).toInt());
+        setCurrentValue(f.key, value);
+    }
+}
+
+void LoaderOptionsDialog::populateChoices()
+{
+    for (const Field &f : m_fields)
+    {
+        const QJsonObject src = f.spec.value(QStringLiteral("source")).toObject();
+        if (src.isEmpty())
+            continue;
+        auto *cb = comboFor(f.key);
+        if (!cb)
+            continue;
+        const QString probeKey = src.value(QStringLiteral("probe_key")).toString();
+        const QString labelKey = src.value(QStringLiteral("label_key")).toString();
+        const QString filterKey = src.value(QStringLiteral("filter_key")).toString();
+        const QString wanted = f.spec.value(QStringLiteral("filter_kind")).toString();
+        const QJsonArray items = m_probe.value(probeKey).toArray();
+        const int keep = cb->currentData().toInt();
+        QSignalBlocker block(cb);
+        cb->clear();
+        for (int i = 0; i < items.size(); ++i)
+        {
+            const QJsonObject item = items.at(i).toObject();
+            if (!wanted.isEmpty() && wanted != QLatin1String("all") && !filterKey.isEmpty() &&
+                item.value(filterKey).toString() != wanted)
+                continue;
+            cb->addItem(item.value(labelKey).toString(), i);
+        }
+        if (keep >= 0)
+        {
+            const int idx = cb->findData(keep);
+            if (idx >= 0)
+                cb->setCurrentIndex(idx);
+        }
+        if (cb->count() > 0 && cb->currentIndex() < 0)
+            cb->setCurrentIndex(0);
+    }
 }
 
 void LoaderOptionsDialog::refreshProbe(bool initial)
@@ -284,66 +349,11 @@ void LoaderOptionsDialog::refreshProbe(bool initial)
     }
     m_probe = probe;
     m_updating = true;
-
-    const QJsonArray cols = probe.value(QStringLiteral("columns")).toArray();
     if (initial)
-    {
-        const QString d = probe.value(QStringLiteral("delimiter")).toString();
-        if (!d.isEmpty())
-            setCurrentValue(QStringLiteral("delimiter"), d.left(1));
-        setCurrentValue(QStringLiteral("has_header"), probe.value(QStringLiteral("has_header")).toBool(true));
-        if (probe.contains(QStringLiteral("suggested_time")) && cols.size() > 0)
-        {
-            setCurrentValue(QStringLiteral("time.mode"), QStringLiteral("column"));
-            setCurrentValue(QStringLiteral("time.index"),
-                            probe.value(QStringLiteral("suggested_time")).toInt());
-        }
-    }
-
-    // 动态列：按 kind 过滤，保留原选择
-    for (const Field &f : m_fields)
-    {
-        if (f.spec.value(QStringLiteral("source")).toString() != QLatin1String("columns"))
-            continue;
-        auto *cb = comboFor(f.key);
-        if (!cb)
-            continue;
-        const int keep = cb->currentData().toInt();
-        const QString filter = f.spec.value(QStringLiteral("column_filter")).toString();
-        QSignalBlocker block(cb);
-        cb->clear();
-        for (int i = 0; i < cols.size(); ++i)
-        {
-            const QJsonObject c = cols.at(i).toObject();
-            const QString kind = kindOf(c);
-            if (filter == QLatin1String("date_only") && kind != QLatin1String("date_only"))
-                continue;
-            if (filter == QLatin1String("time_only") && kind != QLatin1String("time_only"))
-                continue;
-            cb->addItem(c.value(QStringLiteral("name")).toString(), i);
-        }
-        if (keep >= 0)
-        {
-            const int idx = cb->findData(keep);
-            if (idx >= 0)
-                cb->setCurrentIndex(idx);
-        }
-        if (cb->count() > 0 && cb->currentIndex() < 0)
-            cb->setCurrentIndex(0);
-    }
-
+        applyInitialFromProbe();
+    populateChoices();
     if (initial)
-    {
-        const QJsonValue suggested = probe.value(QStringLiteral("suggested_time"));
-        auto *timeCb = comboFor(QStringLiteral("time.index"));
-        if (timeCb && suggested.isDouble())
-        {
-            const int idx = timeCb->findData(suggested.toInt());
-            if (idx >= 0)
-                timeCb->setCurrentIndex(idx);
-        }
-    }
-
+        applyInitialFromProbe();
     updateVisibility();
     fillPreview();
     m_updating = false;
@@ -367,17 +377,36 @@ void LoaderOptionsDialog::updateVisibility()
 
 void LoaderOptionsDialog::fillPreview()
 {
-    const QJsonArray cols = m_probe.value(QStringLiteral("columns")).toArray();
-    const QJsonArray rows = m_probe.value(QStringLiteral("preview")).toArray();
-    m_summary->setText(QStringLiteral("探测：%1 列 · %2 行预览")
-                           .arg(cols.size())
-                           .arg(rows.size()));
+    const QJsonObject ui = m_plugin.schema.value(QStringLiteral("ui")).toObject();
+    const QJsonObject preview = ui.value(QStringLiteral("preview")).toObject();
+    if (preview.isEmpty())
+    {
+        m_summary->setVisible(false);
+        m_preview->setVisible(false);
+        m_warn->setVisible(false);
+        return;
+    }
+    m_summary->setVisible(true);
+    m_preview->setVisible(true);
+
+    const QString columnsKey = preview.value(QStringLiteral("columns_key")).toString();
+    const QString rowsKey = preview.value(QStringLiteral("rows_key")).toString();
+    const QString labelKey = preview.value(QStringLiteral("label_key")).toString();
+    const QJsonArray cols = m_probe.value(columnsKey).toArray();
+    const QJsonArray rows = m_probe.value(rowsKey).toArray();
+
+    QString summary = preview.value(QStringLiteral("summary")).toString();
+    if (summary.isEmpty())
+        summary = QStringLiteral("{column_count} 列 · {row_count} 行");
+    summary.replace(QStringLiteral("{column_count}"), QString::number(cols.size()));
+    summary.replace(QStringLiteral("{row_count}"), QString::number(rows.size()));
+    m_summary->setText(summary);
 
     m_preview->clear();
     m_preview->setColumnCount(cols.size() + 1);
     QStringList heads{QStringLiteral("#")};
     for (const QJsonValue &cv : cols)
-        heads << cv.toObject().value(QStringLiteral("name")).toString();
+        heads << cv.toObject().value(labelKey).toString();
     m_preview->setHorizontalHeaderLabels(heads);
     m_preview->setRowCount(rows.size());
     for (int r = 0; r < rows.size(); ++r)
@@ -398,12 +427,23 @@ void LoaderOptionsDialog::fillPreview()
     m_preview->setFixedHeight(m_preview->horizontalHeader()->height() + rowCount * 20 + 4);
 
     QStringList warns;
-    const QJsonArray wa = m_probe.value(QStringLiteral("warnings")).toArray();
-    for (const QJsonValue &w : wa)
+    const QString warningsKey = preview.value(QStringLiteral("warnings_key")).toString();
+    for (const QJsonValue &w : m_probe.value(warningsKey).toArray())
         warns << w.toString();
-    if (!m_probe.value(QStringLiteral("has_header")).toBool() &&
-        currentValue(QStringLiteral("has_header")).toBool())
-        warns << QStringLiteral("探测认为首行是数据，但勾了“第一行是表头”，请确认。");
+    for (const QJsonValue &rv : ui.value(QStringLiteral("warnings")).toArray())
+    {
+        const QJsonObject r = rv.toObject();
+        const QString probeKey = r.value(QStringLiteral("probe_key")).toString();
+        const QString fieldKey = r.value(QStringLiteral("field_key")).toString();
+        if (!m_probe.contains(probeKey) || !m_editors.contains(fieldKey))
+            continue;
+        const QString probeText = probeVariant(m_probe, probeKey).toString();
+        const QString expectProbe = r.value(QStringLiteral("probe_equals")).toVariant().toString();
+        const QString fieldText = currentValue(fieldKey).toString();
+        const QString expectField = r.value(QStringLiteral("field_equals")).toVariant().toString();
+        if (probeText == expectProbe && fieldText == expectField)
+            warns << r.value(QStringLiteral("text")).toString();
+    }
     m_warn->setVisible(!warns.isEmpty());
     m_warn->setText(warns.join(QStringLiteral("  ·  ")));
 }

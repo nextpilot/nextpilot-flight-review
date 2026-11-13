@@ -37,6 +37,8 @@ private:
     };
 
     void buildFields();
+    void applyInitialFromProbe();
+    void populateChoices();
     void refreshProbe(bool initial);
     void updateVisibility();
     void fillPreview();

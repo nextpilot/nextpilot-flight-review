@@ -23,6 +23,9 @@ int main()
     const int32_t sn = desc->loader->schema_json(schema, sizeof(schema));
     assert(sn > 0);
     assert(std::strstr(schema, "\"delimiter\"") != nullptr);
+    assert(std::strstr(schema, "\"initial_from_probe\"") != nullptr);
+    assert(std::strstr(schema, "\"ui\"") != nullptr);
+    assert(std::strstr(schema, "\"preview\"") != nullptr);
 
     const auto path = std::filesystem::temp_directory_path() / "ps_csv_plugin_test.csv";
     {
