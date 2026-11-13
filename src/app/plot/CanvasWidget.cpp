@@ -130,6 +130,49 @@ void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
     resetView();
 }
 
+QVector<CanvasWidget::SampleSeries> CanvasWidget::sampleSeries() const
+{
+    QVector<SampleSeries> out;
+    for (const Series &s : m_series)
+    {
+        if (!s.visible || s.count() == 0)
+            continue;
+        SampleSeries o;
+        o.name = s.label;
+        o.time.reserve(static_cast<int>(s.count()));
+        o.value.reserve(static_cast<int>(s.count()));
+        for (quint32 i = 0; i < s.count(); ++i)
+        {
+            o.time.append(s.time()[i] - s.offsetSec);
+            o.value.append(s.value()[i]);
+        }
+        out.append(o);
+    }
+    return out;
+}
+
+void CanvasWidget::addGeneratedSeries(const QString &name, const QVector<double> &time,
+                                      const QVector<double> &value)
+{
+    if (time.isEmpty() || value.isEmpty() || time.size() != value.size())
+        return;
+    for (int i = m_series.size() - 1; i >= 0; --i)
+        if (m_series.at(i).name == name && !m_series.at(i).t)
+            m_series.removeAt(i);
+    Series s;
+    s.name = name;
+    s.label = name;
+    s.color = kPalette[m_series.size() % 6];
+    s.tOwn = time;
+    s.vOwn = value;
+    m_series.append(s);
+    m_kernelBacked = false;
+    m_autoY = true;
+    resetView();
+    update();
+    emit activated(m_title);
+}
+
 void CanvasWidget::setInputSource(int id, const QString &path, const QString &alias, double offsetSec)
 {
     m_inputSrcId = id;
@@ -325,6 +368,503 @@ void CanvasWidget::resetView()
     update();
 }
 
+
+void CanvasWidget::setPlotMode(PlotMode mode, const QString &tag)
+{
+    m_mode = mode;
+    m_modeTag = tag;
+    m_abEnabled = false;
+    m_abHasA = m_abHasB = false;
+    update();
+}
+
+double CanvasWidget::lastValue(const QString &namePart, bool *ok) const
+{
+    if (ok)
+        *ok = false;
+    const Series *hit = nullptr;
+    for (const Series &s : m_series)
+    {
+        if (s.visible && s.count() && (namePart.isEmpty() || s.label.contains(namePart, Qt::CaseInsensitive)))
+        {
+            hit = &s;
+            break;
+        }
+    }
+    if (!hit)
+    {
+        for (const Series &s : m_series)
+            if (s.visible && s.count())
+            {
+                hit = &s;
+                break;
+            }
+    }
+    if (!hit)
+        return 0.0;
+    for (int i = int(hit->count()) - 1; i >= 0; --i)
+    {
+        const double t = hit->time()[i] - hit->offsetSec;
+        if (t < m_t0 || t > m_t1)
+            continue;
+        const double v = hit->value()[i];
+        if (!std::isfinite(v))
+            continue;
+        if (ok)
+            *ok = true;
+        return v;
+    }
+    return 0.0;
+}
+
+void CanvasWidget::paintXy(QPainter &p, const QRectF &plot, const QFontMetrics &fm, bool scatter)
+{
+    QVector<const Series *> vis;
+    for (const Series &s : m_series)
+        if (s.visible && s.count() >= 2)
+            vis.append(&s);
+    if (vis.isEmpty())
+    {
+        p.setPen(colorDim());
+        p.drawText(plot, Qt::AlignCenter, QStringLiteral("XY：拖入两条通道"));
+        return;
+    }
+    const Series *sx = vis.first();
+    QVector<double> xv;
+    xv.reserve(int(sx->count()));
+    for (quint32 i = 0; i < sx->count(); ++i)
+        xv.append(sx->value()[i]);
+    double xlo = 0, xhi = 1, ylo = 0, yhi = 1;
+    bool init = false;
+    for (double x : xv)
+    {
+        if (!init) { xlo = xhi = x; init = true; }
+        else { xlo = std::min(xlo, x); xhi = std::max(xhi, x); }
+    }
+    if (!init) { xlo = 0; xhi = 1; }
+    if (xhi - xlo < 1e-12) { xlo -= 0.5; xhi += 0.5; }
+
+    QVector<const Series *> yseries;
+    QVector<QVector<double>> ys;
+    for (int i = 1; i < vis.size(); ++i)
+    {
+        const Series *sy = vis.at(i);
+        QVector<double> y;
+        y.reserve(xv.size());
+        for (int k = 0; k < xv.size(); ++k)
+        {
+            double v = 0.0;
+            if (sy->count() == sx->count())
+                v = sy->value()[k];
+            else
+            {
+                bool ok = false;
+                v = sampleAt(*sy, sx->time()[k] - sx->offsetSec, &ok);
+                if (!ok)
+                    continue;
+            }
+            if (!std::isfinite(v))
+                continue;
+            y.append(v);
+            if (!init) { ylo = yhi = v; init = true; }
+            else { ylo = std::min(ylo, v); yhi = std::max(yhi, v); }
+        }
+        yseries.append(sy);
+        ys.append(y);
+    }
+    if (vis.size() == 1)
+    {
+        QVector<double> y;
+        for (double v : xv)
+        {
+            y.append(v);
+            if (!init) { ylo = yhi = v; init = true; }
+            else { ylo = std::min(ylo, v); yhi = std::max(yhi, v); }
+        }
+        yseries.append(sx);
+        ys.append(y);
+        xv.clear();
+        for (int i = 0; i < y.size(); ++i)
+            xv.append(i);
+        xlo = 0;
+        xhi = std::max(1, int(xv.size()) - 1);
+    }
+    if (!init) { ylo = -1; yhi = 1; }
+    if (yhi - ylo < 1e-12) { ylo -= 0.5; yhi += 0.5; }
+
+    p.setPen(colorGrid());
+    for (int i = 0; i <= 4; ++i)
+        p.drawLine(QPointF(plot.left(), plot.top() + plot.height() * i / 4),
+                   QPointF(plot.right(), plot.top() + plot.height() * i / 4));
+    for (int i = 0; i <= 4; ++i)
+        p.drawLine(QPointF(plot.left() + plot.width() * i / 4, plot.top()),
+                   QPointF(plot.left() + plot.width() * i / 4, plot.bottom()));
+    p.setPen(colorText());
+    for (int i = 0; i <= 4; ++i)
+    {
+        const double v = yhi - (yhi - ylo) * i / 4;
+        p.drawText(QPointF(plot.left() - 8 - fm.horizontalAdvance(QString::number(v, 'g', 4)),
+                           plot.top() + plot.height() * i / 4 + fm.ascent() / 2 - 1),
+                   QString::number(v, 'g', 4));
+        const double x = xlo + (xhi - xlo) * i / 4;
+        p.drawText(QPointF(plot.left() + plot.width() * i / 4 - 20, plot.bottom() + fm.ascent() + 6),
+                   QString::number(x, 'g', 4));
+    }
+    p.setPen(colorDim());
+    p.drawText(QPointF(plot.left(), plot.top() - 6), QStringLiteral("Y"));
+    p.drawText(QPointF(plot.right() - 30, plot.bottom() + fm.ascent() + 16), QStringLiteral("X"));
+
+    p.save();
+    p.setClipRect(plot);
+    for (int yi = 0; yi < ys.size(); ++yi)
+    {
+        const QVector<double> &y = ys.at(yi);
+        if (y.isEmpty())
+            continue;
+        QPolygonF poly;
+        const int n = std::min(int(xv.size()), int(y.size()));
+        for (int i = 0; i < n; ++i)
+        {
+            const double px = plot.left() + plot.width() * (xv.at(i) - xlo) / (xhi - xlo);
+            const double py = plot.bottom() - plot.height() * (y.at(i) - ylo) / (yhi - ylo);
+            poly.append(QPointF(px, py));
+        }
+        p.setPen(QPen(yseries.at(yi)->color, scatter ? 1.4 : yseries.at(yi)->width));
+        if (scatter)
+        {
+            for (const QPointF &q : poly)
+                p.drawEllipse(q, 2.0, 2.0);
+        }
+        else
+        {
+            p.drawPolyline(poly);
+        }
+        m_hitPaths.append(poly);
+    }
+    p.restore();
+}
+
+void CanvasWidget::paintBar(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    QVector<const Series *> vis;
+    for (const Series &s : m_series)
+        if (s.visible && s.count())
+            vis.append(&s);
+    if (vis.isEmpty())
+        return;
+    QVector<double> means;
+    double lo = 0, hi = 0;
+    for (const Series *s : vis)
+    {
+        double sum = 0;
+        int n = 0;
+        for (quint32 i = 0; i < s->count(); ++i)
+        {
+            const double t = s->time()[i] - s->offsetSec;
+            if (t < m_t0 || t > m_t1 || !std::isfinite(s->value()[i]))
+                continue;
+            sum += s->value()[i];
+            ++n;
+        }
+        const double m = n ? sum / n : 0;
+        means.append(m);
+        lo = std::min(lo, m);
+        hi = std::max(hi, m);
+    }
+    if (hi - lo < 1e-9) hi = lo + 1;
+    const double y0 = std::min(0.0, lo);
+    const double y1 = std::max(0.0, hi);
+    const double bw = plot.width() / std::max(1, int(means.size())) * 0.55;
+    p.save();
+    p.setClipRect(plot);
+    for (int i = 0; i < means.size(); ++i)
+    {
+        const double x = plot.left() + plot.width() * (i + 0.5) / means.size();
+        const double y = plot.bottom() - plot.height() * (means.at(i) - y0) / std::max(1e-9, y1 - y0);
+        QRectF bar(x - bw / 2, y, bw, plot.bottom() - y);
+        p.fillRect(bar, vis.at(i)->color);
+        p.setPen(colorText());
+        p.drawText(QRectF(x - bw, y - fm.height() - 2, bw * 2, fm.height()),
+                   Qt::AlignCenter, fm.elidedText(vis.at(i)->label, Qt::ElideRight, int(bw * 2)));
+    }
+    p.restore();
+}
+
+void CanvasWidget::paintHistogram(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    const Series *s = nullptr;
+    for (const Series &x : m_series)
+        if (x.visible && x.count()) { s = &x; break; }
+    if (!s)
+        return;
+    QVector<double> v;
+    for (quint32 i = 0; i < s->count(); ++i)
+    {
+        const double t = s->time()[i] - s->offsetSec;
+        if (t >= m_t0 && t <= m_t1 && std::isfinite(s->value()[i]))
+            v.append(s->value()[i]);
+    }
+    if (v.isEmpty())
+        return;
+    const int bins = 40;
+    const double lo = *std::min_element(v.begin(), v.end());
+    const double hi = *std::max_element(v.begin(), v.end());
+    const double span = std::max(1e-9, hi - lo);
+    QVector<int> counts(bins, 0);
+    for (double x : v)
+        counts[std::clamp(int((x - lo) / span * bins), 0, bins - 1)]++;
+    const int maxC = *std::max_element(counts.begin(), counts.end());
+    p.save();
+    p.setClipRect(plot);
+    for (int i = 0; i < bins; ++i)
+    {
+        const double x = plot.left() + plot.width() * i / bins;
+        const double h = plot.height() * counts.at(i) / std::max(1, maxC);
+        p.fillRect(QRectF(x + 1, plot.bottom() - h, plot.width() / bins - 2, h), s->color);
+    }
+    p.setPen(colorText());
+    p.drawText(QPointF(plot.left(), plot.bottom() + fm.ascent() + 6), QString::number(lo, 'g', 4));
+    p.drawText(QPointF(plot.right() - 40, plot.bottom() + fm.ascent() + 6), QString::number(hi, 'g', 4));
+    p.drawText(QPointF(plot.left(), plot.top() - 6), QStringLiteral("N"));
+    p.restore();
+}
+
+void CanvasWidget::paintSpectrum(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    const Series *s = nullptr;
+    for (const Series &x : m_series)
+        if (x.visible && x.count()) { s = &x; break; }
+    if (!s || s->count() < 4)
+        return;
+    const int n = std::min(512, int(s->count()));
+    QVector<double> x(n);
+    const double t0 = s->time()[s->count() - n] - s->offsetSec;
+    const double t1 = s->time()[s->count() - 1] - s->offsetSec;
+    const double dt = (t1 - t0) / std::max(1, n - 1);
+    double mean = 0;
+    for (int i = 0; i < n; ++i)
+        mean += s->value()[s->count() - n + i];
+    mean /= n;
+    for (int i = 0; i < n; ++i)
+        x[i] = s->value()[s->count() - n + i] - mean;
+    const int half = n / 2;
+    QVector<double> amp(half, 0);
+    for (int k = 0; k < half; ++k)
+    {
+        double re = 0, im = 0;
+        for (int i = 0; i < n; ++i)
+        {
+            const double a = -2.0 * kPi * k * i / n;
+            re += x.at(i) * std::cos(a);
+            im += x.at(i) * std::sin(a);
+        }
+        amp[k] = 2.0 * std::sqrt(re * re + im * im) / n;
+    }
+    const double fmax = half / std::max(1e-9, n * dt);
+    const double amax = *std::max_element(amp.begin(), amp.end());
+    p.save();
+    p.setClipRect(plot);
+    QPolygonF poly;
+    for (int k = 0; k < half; ++k)
+    {
+        poly.append(QPointF(plot.left() + plot.width() * k / std::max(1, half - 1),
+                            plot.bottom() - plot.height() * amp.at(k) / std::max(1e-12, amax)));
+    }
+    p.setPen(QPen(s->color, 1));
+    p.drawPolyline(poly);
+    p.setPen(colorText());
+    p.drawText(QPointF(plot.left(), plot.bottom() + fm.ascent() + 6), QStringLiteral("0"));
+    p.drawText(QPointF(plot.right() - 56, plot.bottom() + fm.ascent() + 6),
+               QStringLiteral("%1 Hz").arg(fmax, 0, 'g', 3));
+    p.drawText(QPointF(plot.left(), plot.top() - 6), QStringLiteral("幅值"));
+    p.restore();
+}
+
+void CanvasWidget::paintHorizon(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    bool okr = false, okp = false;
+    const double roll = lastValue(QStringLiteral("roll"), &okr);
+    const double pitch = lastValue(QStringLiteral("pitch"), &okp);
+    const double r = okr ? roll : 0.0, pt = okp ? pitch : 0.0;
+    const QPointF c = plot.center();
+    const double rad = std::min(plot.width(), plot.height()) * 0.42;
+    p.save();
+    p.translate(c);
+    p.rotate(-r);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor("#1b4f72"));
+    p.drawEllipse(QPointF(0, -pt * 2.0), rad, rad);
+    p.setBrush(QColor("#6b4f2a"));
+    p.drawEllipse(QPointF(0, -pt * 2.0 + rad), rad, rad);
+    p.restore();
+    p.setPen(QPen(QColor("#f2b134"), 2));
+    p.drawEllipse(c, rad, rad);
+    p.drawLine(QPointF(c.x() - rad, c.y()), QPointF(c.x() + rad, c.y()));
+    p.drawLine(QPointF(c.x(), c.y() - rad), QPointF(c.x(), c.y() + rad));
+    p.setPen(colorText());
+    p.drawText(QRectF(c.x() - 120, c.y() + rad + 6, 240, fm.height()),
+               Qt::AlignCenter, QStringLiteral("roll %1°   pitch %2°")
+                                   .arg(r, 0, 'f', 1).arg(pt, 0, 'f', 1));
+}
+
+void CanvasWidget::paintCompass(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    bool ok = false;
+    const double hdg = lastValue(QStringLiteral("yaw"), &ok);
+    const double h = ok ? hdg : lastValue(QStringLiteral("heading"), &ok) ? hdg : 0.0;
+    const QPointF c = plot.center();
+    const double rad = std::min(plot.width(), plot.height()) * 0.40;
+    p.setPen(QPen(colorGrid(), 1));
+    p.drawEllipse(c, rad, rad);
+    for (int i = 0; i < 12; ++i)
+    {
+        const double a = i * 30.0 * kPi / 180.0;
+        p.drawLine(c + QPointF(std::sin(a) * (rad - 5), -std::cos(a) * (rad - 5)),
+                   c + QPointF(std::sin(a) * rad, -std::cos(a) * rad));
+    }
+    const double a = h * kPi / 180.0;
+    p.setPen(QPen(QColor("#f85149"), 2));
+    p.drawLine(c, c + QPointF(std::sin(a) * rad * 0.75, -std::cos(a) * rad * 0.75));
+    p.setPen(colorText());
+    p.drawText(QRectF(c.x() - 100, c.y() + rad + 6, 200, fm.height()),
+               Qt::AlignCenter, QStringLiteral("HDG %1°").arg(h, 0, 'f', 1));
+}
+
+void CanvasWidget::paintGauge(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    bool ok = false;
+    const double v = lastValue(QString(), &ok);
+    double lo = 0, hi = 1;
+    for (const Series &s : m_series)
+    {
+        if (!s.visible || !s.count())
+            continue;
+        for (quint32 i = 0; i < s.count(); ++i)
+        {
+            const double x = s.value()[i];
+            if (!std::isfinite(x))
+                continue;
+            lo = std::min(lo, x);
+            hi = std::max(hi, x);
+        }
+    }
+    if (hi - lo < 1e-9) hi = lo + 1;
+    const QPointF c = plot.center();
+    const double rad = std::min(plot.width(), plot.height()) * 0.40;
+    const QRectF arc(c.x() - rad, c.y() - rad, rad * 2, rad * 2);
+    p.setPen(QPen(colorGrid(), 2));
+    p.drawArc(arc, 225 * 16, -270 * 16);
+    const double frac = std::clamp((v - lo) / (hi - lo), 0.0, 1.0);
+    p.setPen(QPen(QColor("#4ea1ff"), 4));
+    p.drawArc(arc, 225 * 16, int(-270.0 * frac * 16));
+    const double a = (225.0 - 270.0 * frac) * kPi / 180.0;
+    p.setPen(QPen(QColor("#f2b134"), 2));
+    p.drawLine(c, c + QPointF(std::cos(a) * rad * 0.9, -std::sin(a) * rad * 0.9));
+    p.setPen(colorText());
+    p.drawText(QRectF(c.x() - 100, c.y() - fm.height() / 2, 200, fm.height()),
+               Qt::AlignCenter, ok ? QString::number(v, 'g', 5) : QStringLiteral("--"));
+    p.drawText(QRectF(c.x() - 100, c.y() + rad + 6, 200, fm.height()),
+               Qt::AlignCenter, QStringLiteral("%1 ~ %2").arg(lo, 0, 'g', 3).arg(hi, 0, 'g', 3));
+}
+
+void CanvasWidget::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    QVector<const Series *> vis;
+    for (const Series &s : m_series)
+        if (s.visible && s.count())
+            vis.append(&s);
+    if (vis.size() < 2)
+    {
+        p.setPen(colorDim());
+        p.drawText(plot, Qt::AlignCenter, QStringLiteral("3D 轨迹：至少两条通道（X/Y）"));
+        return;
+    }
+    const int n = std::min(2000, int(vis.at(0)->count()));
+    const Series *ax = vis.at(0);
+    const Series *ay = vis.at(1);
+    const Series *az = vis.size() > 2 ? vis.at(2) : nullptr;
+    QVector<QPointF> proj;
+    double cx = 0, cy = 0, cz = 0;
+    int cnt = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        const double x = ax->value()[i];
+        const double y = ay->count() == ax->count() ? ay->value()[i] : ax->value()[i];
+        const double z = az && az->count() == ax->count() ? az->value()[i] : 0.0;
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+            continue;
+        cx += x; cy += y; cz += z; ++cnt;
+    }
+    if (!cnt)
+        return;
+    cx /= cnt; cy /= cnt; cz /= cnt;
+    double span = 1e-9;
+    for (int i = 0; i < n; ++i)
+    {
+        const double x = ax->value()[i], y = ay->count() == ax->count() ? ay->value()[i] : ax->value()[i];
+        const double z = az && az->count() == ax->count() ? az->value()[i] : 0.0;
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+            continue;
+        span = std::max(span, std::max(std::abs(x - cx), std::max(std::abs(y - cy), std::abs(z - cz))));
+    }
+    const double scale = std::min(plot.width(), plot.height()) * 0.36 / span;
+    auto prj = [&](double x, double y, double z) {
+        const double dx = (x - cx) * scale, dy = (y - cy) * scale, dz = (z - cz) * scale;
+        return QPointF(plot.center().x() + (dx - dy) * 0.72,
+                       plot.center().y() + dz * 0.9 - (dx + dy) * 0.22);
+    };
+    for (int i = 0; i < n; ++i)
+    {
+        const double x = ax->value()[i], y = ay->count() == ax->count() ? ay->value()[i] : ax->value()[i];
+        const double z = az && az->count() == ax->count() ? az->value()[i] : 0.0;
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+            continue;
+        proj.append(prj(x, y, z));
+    }
+    if (proj.size() < 2)
+        return;
+    // 参考立方体边框
+    p.setPen(QPen(colorGrid(), 1));
+    const double s = span;
+    const QPointF o = prj(cx - s, cy - s, cz - s);
+    const QPointF ex = prj(cx + s, cy - s, cz - s);
+    const QPointF ey = prj(cx - s, cy + s, cz - s);
+    const QPointF ez = prj(cx - s, cy - s, cz + s);
+    p.drawLine(o, ex); p.drawLine(o, ey); p.drawLine(o, ez);
+    p.drawLine(prj(cx + s, cy + s, cz - s), ex);
+    p.drawLine(prj(cx + s, cy + s, cz - s), ey);
+    p.drawLine(prj(cx + s, cy + s, cz + s), ez);
+    p.save();
+    p.setClipRect(plot);
+    p.setPen(QPen(ax->color, 1.6));
+    p.drawPolyline(QPolygonF(proj));
+    p.restore();
+    p.setPen(colorDim());
+    p.drawText(QPointF(plot.left(), plot.top() - 6),
+               QStringLiteral("X %1  Y %2  Z %3")
+                   .arg(ax->label, ay->label, az ? az->label : QStringLiteral("-")));
+}
+
+void CanvasWidget::paintSpecial(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+    switch (m_mode)
+    {
+    case Xy: paintXy(p, plot, fm, false); break;
+    case Scatter: paintXy(p, plot, fm, true); break;
+    case BarChart: paintBar(p, plot, fm); break;
+    case Histogram: paintHistogram(p, plot, fm); break;
+    case Spectrum: paintSpectrum(p, plot, fm); break;
+    case Horizon: paintHorizon(p, plot, fm); break;
+    case Compass: paintCompass(p, plot, fm); break;
+    case Gauge: paintGauge(p, plot, fm); break;
+    case Traj3D: paintTraj3D(p, plot, fm); break;
+    default: break;
+    }
+    p.restore();
+}
+
 void CanvasWidget::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
@@ -354,6 +894,12 @@ void CanvasWidget::paintEvent(QPaintEvent *)
                             ? QStringLiteral("空画布 · 拖字段到这里，或「文件 → 打开文件」")
                             : QStringLiteral("%1 通道 · 抽稀在 Rust 侧完成").arg(m_series.size());
     p.drawText(QPointF(14 + titleWidth + 14, 21), sub);
+
+    if (m_mode != TimeSeries)
+    {
+        paintSpecial(p, plot, fm);
+        return;
+    }
 
     // 刻度与网格分开：grid off 保留坐标读数，只去掉网格线（MATLAB 习惯）
     const int yTicks = 5;
@@ -898,6 +1444,8 @@ QJsonObject CanvasWidget::saveState() const
     o[QStringLiteral("grid")] = m_showGrid;
     o[QStringLiteral("box")] = m_showBox;
     o[QStringLiteral("rubberZoom")] = m_rubberZoom;
+    o[QStringLiteral("mode")] = int(m_mode);
+    o[QStringLiteral("modeTag")] = m_modeTag;
     QJsonArray arr;
     for (const Series &s : m_series)
     {
@@ -919,6 +1467,8 @@ QJsonObject CanvasWidget::saveState() const
 void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool)
 {
     m_title = o.value(QStringLiteral("title")).toString(m_title);
+    m_mode = PlotMode(std::clamp(o.value(QStringLiteral("mode")).toInt(0), 0, int(Gauge)));
+    m_modeTag = o.value(QStringLiteral("modeTag")).toString();
     m_series.clear();
     const QJsonArray arr = o.value(QStringLiteral("series")).toArray();
     for (const QJsonValue &v : arr)

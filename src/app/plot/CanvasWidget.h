@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QFontMetrics>
 #include <QHash>
 #include <QJsonObject>
 #include <QPointF>
@@ -18,7 +19,12 @@ class CanvasWidget : public QWidget
     Q_OBJECT
 
 public:
+    enum PlotMode { TimeSeries, Xy, Scatter, BarChart, Histogram, Spectrum, Horizon, Compass, Gauge, Traj3D };
     explicit CanvasWidget(QWidget *parent = nullptr);
+
+    void setPlotMode(PlotMode mode, const QString &tag = QString());
+    PlotMode plotMode() const { return m_mode; }
+    QString plotModeTag() const { return m_modeTag; }
 
     void setTitle(const QString &title);
     QString title() const { return m_title; }
@@ -36,6 +42,11 @@ public:
     void removeChannelsFromSource(const QString &path);
     void renameSource(const QString &path, const QString &alias);
     void clearChannels();
+    // 脚本/派生输出：时间与值由 UI 侧持有，不指向内核内存
+    struct SampleSeries { QString name; QVector<double> time; QVector<double> value; };
+    QVector<SampleSeries> sampleSeries() const;
+    void addGeneratedSeries(const QString &name, const QVector<double> &time,
+                            const QVector<double> &value);
     void removeChannel(int index);
     void toggleChannel(int index);
     bool hasData() const { return !m_series.isEmpty(); }
@@ -106,6 +117,16 @@ private:
     void resetView();
     void ensureTimeRange();
     void addDemoCurves();
+    void paintSpecial(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void paintXy(QPainter &p, const QRectF &plot, const QFontMetrics &fm, bool scatter);
+    void paintBar(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void paintHistogram(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void paintSpectrum(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void paintHorizon(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void paintCompass(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void paintGauge(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    double lastValue(const QString &namePart, bool *ok) const;
 
     QString m_title;
     QVector<Series> m_series;
@@ -127,6 +148,8 @@ private:
     QPointF m_rubberStart;
     QRectF m_rubberRect;
     bool m_kernelBacked = false;
+    PlotMode m_mode = TimeSeries;
+    QString m_modeTag;
     bool m_dragging = false;
     bool m_hover = false;
     QPointF m_lastPos;

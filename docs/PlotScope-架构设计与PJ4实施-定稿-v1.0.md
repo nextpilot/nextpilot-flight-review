@@ -796,6 +796,12 @@ public:
 
 验收：写一个 4 输入四元数脚本能出 roll/pitch/yaw 并绘图；错误脚本只报错不崩 UI；重启后脚本和参数恢复。
 
+本轮落地与差异：
+- 实际接的是 PUC Lua 5.4 C API（`liblua5.4-dev`），不是 `mlua`；仍是进程内沙箱，禁 `os/io/package/debug`，20M 指令预算 + 64 MB allocator。
+- API 采用即时计算式 `ps.ch/ps.time/ps.plot/ps.movingAvg/ps.derivative/ps.integral/ps.scale`，暂未实现 `init/reset/step` 逐块协议。
+- 输出追加到当前工作区画布；已修复 `ps.plot` 与全局 `out` 重复输出（改用 `lua_next` 判断空表，`lua_rawlen` 对字符串键表恒为 0）。
+- 未做：行号/语法高亮/错误定位、`ps.ch` 多输入绑定 UI、源码随 `.psl` 保存、Luau 适配、Python。
+
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
 已落地：
@@ -819,12 +825,19 @@ public:
 5. **Ribbon 图标优先**：大/小按钮只留图标 + tooltip；新增网格、边框、图例、框选、放大/缩小、左右/上下拆分图标。
 6. **Dock**：标题栏可拖动浮动，拖到主窗口边缘吸附停靠；双击切换浮动；`—` 收成 26px 竖排页签，点击恢复。仍是 Qt 原生 `QDockWidget` 四区，未做 VS 式拖拽引导框/面板分组。
 
-#### 14.3.7 P4 数据源 / 插件 / 渲染
+#### 14.3.7 P4 图型 / 数据源 / 插件 / 渲染
+
+已落地（本轮）：
+- `CanvasWidget::PlotMode`：时间序列、XY、散点、柱状、直方图、频谱 FFT、3D 轨迹、地平仪、罗盘、表盘。
+- 绘图 Ribbon 画廊 11 个入口全部落到真实画布，不再建 `QLabel` 占位页；新图页沿用当前画布可见通道。
+- XY 以首条通道为 X、其余为 Y；直方图按首条通道分桶；FFT 对首条通道做 512 点 DFT；仪表类按通道名/末值取数；3D 轨迹用正交投影。
+- 图型随 `.psl` 保存（`mode` / `modeTag`）。
+
+未落地：
 - MCAP、Parquet、ROS2、JSON/CBOR/MessagePack。
 - MQTT/UDP/WebSocket/LSL 实时流与真正的暂停/继续。
-- 插件 SDK：loader/streamer/parser 三类，动态库 ABI。
-- FFT、XY 图、直方图、姿态仪、GPS 地图。
-- GPU 渲染与百万点基准。
+- 插件 SDK：loader/streamer/parser 三类，动态库 ABI。当前仍是宿主内 `LoaderRegistry`。
+- 3D 曲面、GPS 地图、GPU 渲染与百万点基准。
 
 ---
 

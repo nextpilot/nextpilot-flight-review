@@ -60,6 +60,7 @@
 #include <QJsonObject>
 
 #include "plot/CanvasWidget.h"
+#include "script/ScriptEngine.h"
 #include "ps_kernel.h"
 #include "transform/TransformDialog.h"
 
@@ -138,6 +139,29 @@ QPixmap plotThumb(const QString &kind)
             p.setBrush(QColor("#7ee787"));
             p.drawRect(QRectF(r.left() + 5 + i * 11, r.bottom() - h, 6, h));
         }
+    }
+    else if (kind == QLatin1String("histogram"))
+    {
+        for (int i = 0; i < 7; ++i)
+        {
+            const double h = 3 + (i * 5 + i * i) % 21;
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor("#d2a8ff"));
+            p.drawRect(QRectF(r.left() + 4 + i * 8, r.bottom() - h, 6, h));
+        }
+    }
+    else if (kind == QLatin1String("fft"))
+    {
+        QPainterPath path;
+        for (int i = 0; i <= 32; ++i)
+        {
+            const double x = r.left() + r.width() * i / 32.0;
+            const double env = std::exp(-i * 0.12);
+            const double y = r.bottom() - 2 - std::fabs(std::sin(i * 0.55)) * 18.0 * env;
+            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+        }
+        p.setPen(QPen(QColor("#39c5cf"), 1.4));
+        p.drawPath(path);
     }
     else if (kind == QLatin1String("traj3d"))
     {
@@ -905,13 +929,41 @@ QWidget *MainWindow::createRibbon()
                 }
                 else
                 {
-                    auto *page = new QLabel(QStringLiteral("%1\n该图型将在 M1 接入，先保留页签与布局位置。").arg(label), this);
-                    page->setAlignment(Qt::AlignCenter);
-                    page->setStyleSheet(QStringLiteral("color:#8494a0;background:#0d1117;font-size:13px;"));
+                    auto *c = new CanvasWidget(this);
+                    c->clearChannels();
+                    c->setTitle(label);
+                    CanvasWidget::PlotMode mode = CanvasWidget::Xy;
+                    if (kind == QLatin1String("scatter")) mode = CanvasWidget::Scatter;
+                    else if (kind == QLatin1String("bar")) mode = CanvasWidget::BarChart;
+                    else if (kind == QLatin1String("histogram")) mode = CanvasWidget::Histogram;
+                    else if (kind == QLatin1String("fft")) mode = CanvasWidget::Spectrum;
+                    else if (kind == QLatin1String("horizon")) mode = CanvasWidget::Horizon;
+                    else if (kind == QLatin1String("compass")) mode = CanvasWidget::Compass;
+                    else if (kind == QLatin1String("gauge")) mode = CanvasWidget::Gauge;
+                    else if (kind == QLatin1String("traj3d")) mode = CanvasWidget::Traj3D;
+                    else if (kind == QLatin1String("surface3d")) mode = CanvasWidget::Xy;
+                    c->setPlotMode(mode, kind);
+                    CanvasWidget *seed = nullptr;
+                    int best = 0;
+                    for (CanvasWidget *w : findChildren<CanvasWidget *>())
+                    {
+                        if (w == c)
+                            continue;
+                        const int n = w->sampleSeries().size();
+                        if (n > best)
+                        {
+                            best = n;
+                            seed = w;
+                        }
+                    }
+                    if (seed)
+                        for (const CanvasWidget::SampleSeries &s : seed->sampleSeries())
+                            c->addGeneratedSeries(s.name, s.time, s.value);
+                    setupCanvas(c);
                     const int plusIdx = m_pages->count() - 1;
-                    m_pages->insertTab(plusIdx, page, label);
-                    m_pages->setCurrentWidget(page);
-                    log(QStringLiteral("新建图页：%1（M1 实现）").arg(label));
+                    m_pages->insertTab(plusIdx, c, label);
+                    m_pages->setCurrentWidget(c);
+                    log(QStringLiteral("新建图页：%1").arg(label));
                 }
             });
             plotActs.append(a);
@@ -920,6 +972,8 @@ QWidget *MainWindow::createRibbon()
         addPlot(QStringLiteral("xy"), QStringLiteral("XY 曲线"), QStringLiteral("X-Y 双通道曲线"));
         addPlot(QStringLiteral("scatter"), QStringLiteral("散点图"), QStringLiteral("二维散点"));
         addPlot(QStringLiteral("bar"), QStringLiteral("柱状图"), QStringLiteral("离散量柱状对比"));
+        addPlot(QStringLiteral("histogram"), QStringLiteral("直方图"), QStringLiteral("样本分布"));
+        addPlot(QStringLiteral("fft"), QStringLiteral("频谱 FFT"), QStringLiteral("幅值频谱"));
         addPlot(QStringLiteral("traj3d"), QStringLiteral("3D 轨迹"), QStringLiteral("三维空间轨迹"));
         addPlot(QStringLiteral("surface3d"), QStringLiteral("3D 曲面"), QStringLiteral("三维曲面 / 频谱"));
         addPlot(QStringLiteral("horizon"), QStringLiteral("地平仪"), QStringLiteral("姿态地平仪"));
@@ -932,8 +986,8 @@ QWidget *MainWindow::createRibbon()
         plotGroup->setGridMinimumWidth(74);
         plotGroup->setGridMaximumWidth(94);
         plotGallery->setSingleRowMode(true);
-        plotGallery->setMinimumWidth(700);
-        plotGallery->setMaximumWidth(700);
+        plotGallery->setMinimumWidth(860);
+        plotGallery->setMaximumWidth(860);
         plotGallery->setCurrentViewGroup(plotGroup);
 
         auto *pPage = cat->addPanel(QStringLiteral("页"));
@@ -1500,17 +1554,59 @@ void MainWindow::createDocks()
     auto *scriptLay = new QVBoxLayout(scriptHost);
     scriptLay->setContentsMargins(0, 0, 0, 0);
     m_script = new QPlainTextEdit(scriptHost);
+    QFont scriptFont(QStringLiteral("monospace"));
+    scriptFont.setStyleHint(QFont::Monospace);
+    scriptFont.setPixelSize(12);
+    m_script->setFont(scriptFont);
+    m_script->setTabStopDistance(28);
     m_script->setPlainText(QStringLiteral(
         "-- 一页一组算子：整块进，向量算，禁止逐点循环\n"
-        "out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)\n"
-        "ps.plot(\"yaw_rate\", out)\n"));
+        "rate = ps.derivative(ps.ch(\"roll\"), ps.time())\n"
+        "out = ps.movingAvg(rate, 5)\n"
+        "ps.plot(\"roll_rate\", out)\n"));
     auto *runScriptBtn = new QPushButton(QStringLiteral("运行"), scriptHost);
     scriptLay->addWidget(m_script, 1);
     scriptLay->addWidget(runScriptBtn);
     scriptDock->setWidget(scriptHost);
     addDockWidget(Qt::RightDockWidgetArea, scriptDock);
-    connect(runScriptBtn, &QPushButton::clicked, this, [this] {
-        log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）→ yaw_rate 已物化"));
+    connect(runScriptBtn, &QPushButton::clicked, this, [this, scriptDock] {
+        CanvasWidget *canvas = nullptr;
+        QVector<ScriptSeries> inputs;
+        for (CanvasWidget *c : findChildren<CanvasWidget *>())
+        {
+            const auto samples = c->sampleSeries();
+            if (samples.isEmpty() || (canvas && inputs.size() >= samples.size()))
+                continue;
+            canvas = c;
+            inputs.clear();
+            for (const CanvasWidget::SampleSeries &s : samples)
+                inputs.append({s.name, s.time, s.value});
+        }
+        if (!canvas)
+        {
+            log(QStringLiteral("脚本：当前页没有可见曲线"));
+            return;
+        }
+        {
+            QStringList names;
+            for (const ScriptSeries &s : inputs)
+                names.append(s.name);
+            log(QStringLiteral("脚本输入：%1").arg(names.join(QStringLiteral(" | "))));
+        }
+        const ScriptResult r = ScriptEngine::run(m_script->toPlainText(), inputs);
+        if (!r.ok)
+        {
+            log(QStringLiteral("脚本失败：%1").arg(r.error));
+            scriptDock->show();
+            scriptDock->raise();
+            return;
+        }
+        for (const ScriptOutput &o : r.outputs)
+        {
+            canvas->addGeneratedSeries(o.name, o.time, o.value);
+            log(QStringLiteral("Lua 输出：%1（%2 点）").arg(o.name).arg(o.value.size()));
+        }
+        log(QStringLiteral("Lua 5.4 执行完成：%1 条输出").arg(r.outputs.size()));
     });
 
     // 底部：日志
@@ -1549,10 +1645,10 @@ void darkenDocks(MainWindow *w)
 
         // 最小化：像 VS 的“自动隐藏”图钉，一键收成侧边竖条
         auto *minBtn = new QToolButton(bar);
-        minBtn->setText(QStringLiteral("—"));
+        minBtn->setText(QStringLiteral("–"));
         minBtn->setToolTip(QStringLiteral("自动隐藏 / 收起为侧边页签"));
         minBtn->setCursor(Qt::PointingHandCursor);
-        minBtn->setFixedSize(26, 26);
+        minBtn->setFixedSize(30, 26);
         minBtn->setStyleSheet(QStringLiteral(
             "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;font-size:14px;}"
             "QToolButton:hover{color:#4ea1ff;background:#222b33;}"));
@@ -1561,14 +1657,14 @@ void darkenDocks(MainWindow *w)
 
         // 所有停靠/浮靠/关闭集中到一个菜单，避免标题栏塞满小按钮
         auto *menuBtn = new QToolButton(bar);
-        menuBtn->setText(QStringLiteral("▾"));
+        menuBtn->setText(QStringLiteral("⋮"));
         menuBtn->setToolTip(QStringLiteral("停靠 / 自动隐藏 / 浮动 / 关闭"));
         menuBtn->setCursor(Qt::PointingHandCursor);
         menuBtn->setPopupMode(QToolButton::InstantPopup);
-        menuBtn->setFixedSize(28, 26);
+        menuBtn->setFixedSize(32, 26);
         menuBtn->setStyleSheet(QStringLiteral(
             "QToolButton{background:#1b232b;border:1px solid #2d3841;border-radius:2px;color:#c9d1d9;"
-            "padding:0 0 2px 0;font-size:15px;font-weight:600;}"
+            "padding:0;font-size:17px;font-weight:700;}"
             "QToolButton:hover{border-color:#f2b134;color:#f2b134;background:#222b33;}"));
         auto *menu = new QMenu(menuBtn);
         QAction *left = menu->addAction(QStringLiteral("停靠到左侧"));
