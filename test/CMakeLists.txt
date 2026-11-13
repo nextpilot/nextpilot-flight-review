@@ -29,6 +29,29 @@ if(TARGET ps_data_loader_ulog AND TARGET ps_data_loader_apbin AND TARGET ps_data
   add_test(NAME plugin_file_formats COMMAND test_plugin_file_formats)
 endif()
 
+if(TARGET ps_data_source_mavlink)
+  find_package(Qt6 REQUIRED COMPONENTS Network)
+  add_executable(test_mavlink_source unit/test_mavlink_source.cpp)
+  target_include_directories(test_mavlink_source PRIVATE ${PROJECT_SOURCE_DIR}/src/include)
+  target_link_libraries(test_mavlink_source PRIVATE ps_data_source_mavlink Qt6::Network)
+  add_test(NAME mavlink_source COMMAND test_mavlink_source)
+endif()
+
+if(TARGET ps_data_source_oem7)
+  find_package(Qt6 REQUIRED COMPONENTS Network)
+  add_executable(test_oem7_source unit/test_oem7_source.cpp)
+  target_include_directories(test_oem7_source PRIVATE ${PROJECT_SOURCE_DIR}/src/include)
+  target_link_libraries(test_oem7_source PRIVATE ps_data_source_oem7 Qt6::Network)
+  add_test(NAME oem7_source COMMAND test_oem7_source)
+endif()
+
+if(TARGET ps_data_source_sim)
+  add_executable(test_data_source unit/test_data_source.cpp)
+  target_include_directories(test_data_source PRIVATE ${PROJECT_SOURCE_DIR}/src/include)
+  target_link_libraries(test_data_source PRIVATE ps_data_source_sim)
+  add_test(NAME data_source COMMAND test_data_source)
+endif()
+
 if(TARGET ps_runtime)
   add_library(ps_demo_plugin MODULE external_plugin/DemoPlugin.cpp)
   target_include_directories(ps_demo_plugin PRIVATE ${PROJECT_SOURCE_DIR}/src

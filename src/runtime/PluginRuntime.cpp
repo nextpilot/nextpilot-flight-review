@@ -15,15 +15,32 @@ namespace {
 
 using EntryFn = const PsPluginDescriptor *(*)();
 
+const char *descriptorId(const PsPluginDescriptor *d)
+{
+    if (d->loader && d->loader->id && d->loader->id[0])
+        return d->loader->id;
+    if (d->source && d->source->id && d->source->id[0])
+        return d->source->id;
+    return nullptr;
+}
+
 bool descriptorOk(const PsPluginDescriptor *d)
 {
     if (!d || d->abi_version != PS_PLUGIN_ABI_VERSION || !d->manifest_json ||
-        d->family < PS_FAMILY_DATA_LOADER || d->family > PS_FAMILY_PANEL || d->capabilities == 0 ||
-        !d->loader || d->loader->abi_version != PS_PLUGIN_ABI_VERSION || !d->loader->id ||
-        !d->loader->id[0] || !d->loader->load)
+        d->family < PS_FAMILY_DATA_LOADER || d->family > PS_FAMILY_PANEL || d->capabilities == 0)
         return false;
     if (d->ui && d->ui->abi_version != PS_PLUGIN_ABI_VERSION)
         return false;
+    if (d->family == PS_FAMILY_DATA_LOADER)
+    {
+        return d->loader && d->loader->abi_version == PS_PLUGIN_ABI_VERSION && d->loader->id &&
+               d->loader->id[0] && d->loader->load;
+    }
+    if (d->family == PS_FAMILY_DATA_SOURCE)
+    {
+        return d->source && d->source->abi_version == PS_PLUGIN_ABI_VERSION && d->source->id &&
+               d->source->id[0] && d->source->open && d->source->poll && d->source->close;
+    }
     return true;
 }
 
@@ -105,8 +122,9 @@ void PluginRuntime::scanDirectory(const std::string &dir)
     for (const PsLoadedPlugin &p : m_plugins)
     {
         known.insert(p.library);
-        if (p.descriptor && p.descriptor->loader && p.descriptor->loader->id)
-            ids.insert(p.descriptor->loader->id);
+        if (p.descriptor)
+            if (const char *id = descriptorId(p.descriptor))
+                ids.insert(id);
     }
 
     for (const fs::path &lib : libs)
@@ -156,7 +174,7 @@ void PluginRuntime::scanDirectory(const std::string &dir)
         rec.manifest = readText(lib.parent_path() / "manifest.json");
         rec.descriptor = d;
         rec.handle = h;
-        const std::string id(d->loader->id);
+        const std::string id(descriptorId(d));
         if (ids.count(id))
         {
             m_errors.push_back(path + "：重复插件 id " + id + "，已跳过");

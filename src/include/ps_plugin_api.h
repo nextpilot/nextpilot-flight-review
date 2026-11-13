@@ -11,7 +11,7 @@
 extern "C" {
 #endif
 
-#define PS_PLUGIN_ABI_VERSION 1u
+#define PS_PLUGIN_ABI_VERSION 2u
 
 /* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
@@ -52,6 +52,35 @@ typedef struct PsLoaderVtable {
                     char *err, uint32_t err_cap);
 } PsLoaderVtable;
 
+/* 实时源向宿主写数据的唯一通道：插件按批提交，宿主负责追加到实时通道。
+ * 返回非 0 表示宿主拒绝该批（例如缓冲区已满）；插件可停止本次 poll。 */
+typedef struct PsSourceSink {
+    void *ctx;
+    int32_t (*channel_batch)(void *ctx, const char *name, const char *unit,
+                             const double *time_s, const double *value, uint32_t count);
+    int32_t (*event)(void *ctx, const char *topic, const char *payload_json);
+} PsSourceSink;
+
+/* 实时源：不返回 QWidget*，不持有宿主 UI。config 用 JSON，status 用 JSON。
+ * open 成功后 handle 归插件所有，close 必须释放；poll 在宿主 UI 线程调用。 */
+typedef struct PsDataSourceVtable {
+    uint32_t abi_version;
+    const char *id;
+    const char *label;
+    const char *kind;          /* sim / mavlink / serial / oem7 ... */
+    const char *transport;     /* internal / udp / serial ... */
+    uint8_t recordable;
+    uint8_t reserved[7];
+
+    int32_t (*config_schema_json)(char *out, uint32_t cap);
+    int32_t (*default_config_json)(char *out, uint32_t cap);
+    int32_t (*open)(const char *config_json, const PsSourceSink *sink, void **handle,
+                    char *err, uint32_t err_cap);
+    int32_t (*poll)(void *handle, int32_t timeout_ms, char *err, uint32_t err_cap);
+    int32_t (*close)(void *handle);
+    int32_t (*status_json)(void *handle, char *out, uint32_t cap);
+} PsDataSourceVtable;
+
 /* 插件 UI：只交 .ui 文件和 JSON，绝不返回 QWidget*。
  * dialog_ui 相对插件包目录；panels_json/ribbon_json 为贡献声明，可为 NULL。 */
 typedef struct PsUiVtable {
@@ -71,8 +100,9 @@ typedef struct PsPluginDescriptor {
     const char *manifest_json; /* 编译期内嵌，不读外部 JSON */
     uint32_t family;           /* PS_FAMILY_* */
     uint32_t capabilities;     /* PS_CAP_* 位或 */
-    const PsLoaderVtable *loader;
-    const PsUiVtable *ui;      /* 可选；无自定义 UI 时为 NULL */
+    const PsLoaderVtable *loader;   /* data_loader 家族使用，其他家族可为 NULL */
+    const PsUiVtable *ui;           /* 可选；无自定义 UI 时为 NULL */
+    const PsDataSourceVtable *source; /* data_source 家族使用，其他家族可为 NULL */
 } PsPluginDescriptor;
 
 typedef const PsPluginDescriptor *(*PsPluginEntryFn)(void);

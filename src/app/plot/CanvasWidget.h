@@ -28,6 +28,7 @@ public:
 
     void setTitle(const QString &title);
     QString title() const { return m_title; }
+    void notifyActivated() { emit activated(m_title); }
 
     // 用内核通道替换当前所有曲线；传空则只清空。
     void setChannels(const QVector<const PsChannelInfo *> &channels);
@@ -98,6 +99,7 @@ private:
         QString srcPath;           // 布局持久化用：源文件路径
         QColor color;
         double offsetSec = 0.0;    // 显示时间 = 原始时间 - offset
+        const PsChannelInfo *info = nullptr; // 实时通道：point_count 会增长
         const double *t = nullptr; // 内核内存（或 demo 自有内存）
         const double *v = nullptr;
         quint32 n = 0;

@@ -6,6 +6,7 @@
 #include <QStandardPaths>
 
 #include "loader/LoaderRegistry.h"
+#include "source/SourceRegistry.h"
 #include "shell/Theme.h"
 
 #include "ps_kernel.h"
@@ -34,7 +35,9 @@ int main(int argc, char **argv)
     if (!envPath.isEmpty())
         pluginDirs << envPath.split(QDir::listSeparator(), Qt::SkipEmptyParts);
     for (const QString &e : LoaderRegistry::instance().scanPlugins(pluginDirs))
-        qWarning("[plugin] %s", qPrintable(e));
+        qWarning("[loader] %s", qPrintable(e));
+    for (const QString &e : SourceRegistry::instance().scanPlugins(pluginDirs))
+        qWarning("[source] %s", qPrintable(e));
 
     MainWindow win;
     win.show();

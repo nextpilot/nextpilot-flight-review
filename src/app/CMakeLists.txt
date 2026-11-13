@@ -1,3 +1,5 @@
+find_package(Qt6 REQUIRED COMPONENTS Network)
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
@@ -12,6 +14,13 @@ add_executable(plotscope_app
   loader/LoaderOptionsDialog.cpp
   loader/DialogEngine.h
   loader/DialogEngine.cpp
+  source/LiveStream.h
+  source/LiveStream.cpp
+  source/SourcePlugin.h
+  source/SourceRegistry.h
+  source/SourceRegistry.cpp
+  source/SourceConfigDialog.h
+  source/SourceConfigDialog.cpp
   shell/Theme.h
   shell/Theme.cpp
   transform/TransformDialog.h
@@ -29,8 +38,9 @@ target_include_directories(plotscope_app PRIVATE
   ${PROJECT_SOURCE_DIR}/src/include
 )
 target_link_libraries(plotscope_app PRIVATE
-  Qt6::Widgets Qt6::Svg ps_kernel ps_runtime ps_dataset_cache
+  Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_runtime ps_dataset_cache
   ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf
+  ps_data_source_sim ps_data_source_mavlink ps_data_source_oem7
 )
 # 外部插件靠宿主导出 ps_* 符号
 set_target_properties(plotscope_app PROPERTIES ENABLE_EXPORTS ON)

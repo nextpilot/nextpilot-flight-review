@@ -158,9 +158,13 @@ QStringList LoaderRegistry::scanPlugins(const QStringList &dirs)
 
     for (const PsLoadedPlugin &p : rt.plugins())
     {
+        if (!p.descriptor || p.descriptor->family != PS_FAMILY_DATA_LOADER)
+            continue;
         if (registerDescriptor(p.descriptor, QString::fromStdString(p.packageDir)))
             continue;
-        const QString id = QString::fromUtf8(p.descriptor->loader->id);
+        const QString id = p.descriptor->loader && p.descriptor->loader->id
+                               ? QString::fromUtf8(p.descriptor->loader->id)
+                               : QString();
         if (!findById(id))
             errors << QStringLiteral("%1：注册失败").arg(QString::fromStdString(p.library));
     }

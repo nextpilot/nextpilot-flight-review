@@ -223,6 +223,7 @@ void CanvasWidget::addChannelEx(const PsChannelInfo *ch, int srcId, const QStrin
     s.srcPath = path;
     s.offsetSec = offsetSec;
     s.color = kPalette[m_series.size() % 6];
+    s.info = ch;
     s.t = ch->time;
     s.v = ch->value;
     s.n = ch->point_count;
@@ -867,6 +868,24 @@ void CanvasWidget::paintSpecial(QPainter &p, const QRectF &plot, const QFontMetr
 
 void CanvasWidget::paintEvent(QPaintEvent *)
 {
+    // 实时源的 PsChannelInfo 指针稳定，point_count 可能已增长；绘制前同步并跟随 X 轴。
+    bool liveGrew = false;
+    for (Series &s : m_series)
+    {
+        if (s.info)
+        {
+            if (s.info->point_count != s.n)
+            {
+                s.n = s.info->point_count;
+                liveGrew = liveGrew || s.srcPath.startsWith(QStringLiteral("live://"));
+            }
+        }
+    }
+    if (liveGrew)
+    {
+        resetView();
+        emit activated(m_title);
+    }
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
     p.fillRect(rect(), colorBg());

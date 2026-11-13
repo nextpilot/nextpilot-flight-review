@@ -3,6 +3,9 @@
 #include "loader/LoaderOptionsDialog.h"
 #include "datastore/DatasetCache.h"
 #include "loader/LoaderRegistry.h"
+#include "source/LiveStream.h"
+#include "source/SourceConfigDialog.h"
+#include "source/SourceRegistry.h"
 
 #include <QAction>
 #include <QDockWidget>
@@ -27,6 +30,7 @@
 #include <QDir>
 #include <QFile>
 #include <QCloseEvent>
+#include <QDateTime>
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -737,6 +741,11 @@ MainWindow::MainWindow(QWidget *parent)
             importLayoutFrom(f);
     });
 
+    m_liveTimer = new QTimer(this);
+    m_liveTimer->setInterval(30);
+    connect(m_liveTimer, &QTimer::timeout, this, &MainWindow::pollLiveSources);
+    m_liveTimer->start();
+
     log(QStringLiteral("启动完成：%1").arg(kernelInfo));
 }
 
@@ -828,45 +837,38 @@ QWidget *MainWindow::createRibbon()
         auto *pSrc = cat->addPanel(QStringLiteral("来源"));
         auto *srcGallery = pSrc->addGallery(true);
         QList<QAction *> srcActs;
-        auto addSource = [&](const QString &kind, const QString &label, const QString &filter, bool implemented) {
+        auto addSource = [&](const QString &kind, const QString &label, const QString &filter) {
             auto *a = new QAction(QIcon(sourceThumb(kind)), label, this);
-            a->setToolTip(implemented ? QStringLiteral("选择 %1 文件（可多选）").arg(label)
-                                      : QStringLiteral("%1 解析尚未接入").arg(label));
-            connect(a, &QAction::triggered, this, [this, label, filter, implemented] {
-                if (!implemented)
-                {
-                    log(QStringLiteral("%1：解析器尚未接入（M1/M2）").arg(label));
-                    QMessageBox::information(this, QStringLiteral("数据源"),
-                                             QStringLiteral("%1 解析尚未接入，当前可用 ULog / DataFlash / CSV / CAN。")
-                                                 .arg(label));
-                    return;
-                }
+            a->setToolTip(QStringLiteral("选择 %1 文件（可多选）").arg(label));
+            connect(a, &QAction::triggered, this, [this, label, filter] {
                 const QStringList fs = QFileDialog::getOpenFileNames(this, label, {}, filter);
                 for (const QString &f : fs)
                     loadFile(f);
             });
             srcActs.append(a);
         };
-        addSource(QStringLiteral("ulog"), QStringLiteral("ULog"),
-                  QStringLiteral("ULog (*.ulg);;全部 (*)"), true);
-        addSource(QStringLiteral("bin"), QStringLiteral("DataFlash"),
-                  QStringLiteral("ArduPilot BIN (*.bin);;全部 (*)"), true);
-        addSource(QStringLiteral("csv"), QStringLiteral("CSV"),
-                  QStringLiteral("CSV (*.csv);;全部 (*)"), true);
-        addSource(QStringLiteral("can"), QStringLiteral("CAN"),
-                  QStringLiteral("CAN 日志 (*.asc *.blf);;全部 (*)"), true);
-        addSource(QStringLiteral("mavlink"), QStringLiteral("MAVLink"), QString(), false);
-        addSource(QStringLiteral("ros2"), QStringLiteral("ROS2"), QString(), false);
-        addSource(QStringLiteral("rt"), QStringLiteral("实时流"), QString(), false);
+        // 文件入口来自 loader catalog，来源入口来自 source catalog；Ribbon 不写死格式。
+        for (const LoaderPlugin &lp : LoaderRegistry::instance().plugins())
+        {
+            const QString kind = lp.id.section(QLatin1Char('_'), -1);
+            addSource(kind, lp.label, lp.filter.isEmpty() ? QStringLiteral("全部 (*)") : lp.filter);
+        }
+        for (const SourcePlugin &sp : SourceRegistry::instance().plugins())
+        {
+            auto *a = new QAction(QIcon(sourceThumb(sp.kind)), sp.label, this);
+            a->setToolTip(QStringLiteral("连接 %1（%2）").arg(sp.label, sp.transport));
+            connect(a, &QAction::triggered, this, [this, id = sp.id] { connectLiveSource(id); });
+            srcActs.append(a);
+        }
         auto *srcGroup = srcGallery->addCategoryActions(QStringLiteral("数据源类型"), srcActs);
         srcGroup->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
         srcGroup->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-        srcGroup->setIconSize(QSize(66, 32));
-        srcGroup->setGridMinimumWidth(76);
-        srcGroup->setGridMaximumWidth(96);
+        srcGroup->setIconSize(QSize(62, 30));
+        srcGroup->setGridMinimumWidth(72);
+        srcGroup->setGridMaximumWidth(88);
         srcGallery->setSingleRowMode(true);
-        srcGallery->setMinimumWidth(600);
-        srcGallery->setMaximumWidth(600);
+        srcGallery->setMinimumWidth(760);
+        srcGallery->setMaximumWidth(760);
         srcGallery->setCurrentViewGroup(srcGroup);
 
         auto *pQuick = cat->addPanel(QStringLiteral("工作区"));
@@ -1278,7 +1280,7 @@ void MainWindow::createDocks()
     barTitle->setStyleSheet(QStringLiteral(
         "color:#e6edf3;font-size:13px;font-weight:600;background:transparent;"));
     barLay->addWidget(barTitle);
-    m_srcCount = new QLabel(QStringLiteral("3 源 · 2 已连接"), srcBar);
+    m_srcCount = new QLabel(QStringLiteral("0 源 · 0 已连接"), srcBar);
     m_srcCount->setStyleSheet(QStringLiteral("color:#8494a0;font-size:10px;background:transparent;"));
     barLay->addWidget(m_srcCount);
     barLay->addStretch();
@@ -1344,9 +1346,7 @@ void MainWindow::createDocks()
     m_srcRows = new QVBoxLayout(rowsHost);
     m_srcRows->setContentsMargins(0, 0, 0, 0);
     m_srcRows->setSpacing(0);
-    addSourceRow(QStringLiteral("ulog · 示例会话"), QStringLiteral("示例 · 未接入"), QStringLiteral("#4a545d"));
-    addSourceRow(QStringLiteral("can · vehicle_bus"), QStringLiteral("示例 · 未接入"), QStringLiteral("#4a545d"));
-    addSourceRow(QStringLiteral("mav · 192.168.1.20:14550"), QStringLiteral("示例 · 未接入"), QStringLiteral("#4a545d"));
+    // 不再预置假源；列表只显示真实加载的文件与已连接 source。
     srcLay->addWidget(rowsHost);
 
     // 搜索：字段树/参数表/消息表共用，按当前页签生效
@@ -1518,14 +1518,14 @@ void MainWindow::createDocks()
     addDockWidget(Qt::LeftDockWidgetArea, srcDock);
 
     connect(runBtn, &QToolButton::clicked, this, [this] {
-        m_srcCount->setText(QStringLiteral("3 源 · 运行中"));
-        m_srcCount->setStyleSheet(QStringLiteral("color:#7ee787;font-size:10px;background:transparent;"));
-        log(QStringLiteral("数据源开始"));
+        m_livePaused = false;
+        updateStatusChips();
+        log(QStringLiteral("实时源继续"));
     });
     connect(pauseBtn, &QToolButton::clicked, this, [this] {
-        m_srcCount->setText(QStringLiteral("3 源 · 已暂停"));
-        m_srcCount->setStyleSheet(QStringLiteral("color:#ffb454;font-size:10px;background:transparent;"));
-        log(QStringLiteral("数据源暂停"));
+        m_livePaused = true;
+        updateStatusChips();
+        log(QStringLiteral("实时源暂停"));
     });
 
     // 右：属性面板（命中什么对象就显示什么属性）
@@ -1828,6 +1828,7 @@ void MainWindow::removeSourceRow(QWidget *row)
         const QString path = src->path;
         for (auto *c : findChildren<CanvasWidget *>())
             c->removeChannelsFromSource(path);
+        closeLiveSource(src);
         if (src->ds)
             ps_dataset_free(src->ds);
         if (m_activeSource == id)
@@ -1870,6 +1871,8 @@ void MainWindow::updateStatusChips()
         channels += s.channels.size();
     if (m_sources.isEmpty())
         m_chipSource->setText(QStringLiteral("无数据"));
+    else if (m_livePaused)
+        m_chipSource->setText(QStringLiteral("%1 源 · 已暂停").arg(m_sources.size()));
     else if (m_sources.size() == 1)
         m_chipSource->setText(QStringLiteral("%1 · %2 通道")
                                   .arg(m_sources.first().fmt)
@@ -2174,7 +2177,7 @@ void MainWindow::compareSources(SourceData *src, SourceData *other, bool all, co
 void MainWindow::switchSource(int id)
 {
     SourceData *src = sourceById(id);
-    if (!src || !src->ds)
+    if (!src || (!src->ds && !src->live))
         return;
     m_activeSource = id;
     m_viewBacked = true;
@@ -2185,6 +2188,204 @@ void MainWindow::switchSource(int id)
     for (auto *c : findChildren<CanvasWidget *>())
         c->setInputSource(src->id, src->path, src->alias, src->offsetSec);
     renderSourceData();
+}
+
+void MainWindow::connectLiveSource(const QString &pluginId)
+{
+    const SourcePlugin *sp = SourceRegistry::instance().findById(pluginId);
+    if (!sp)
+    {
+        log(QStringLiteral("实时源未注册：%1").arg(pluginId));
+        return;
+    }
+    SourceConfigDialog dlg(*sp, QString(), this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    const QString config = dlg.configJson();
+
+    auto stream = std::make_shared<LiveStream>(sp->id, sp->label);
+    if (QJsonDocument::fromJson(config.toUtf8()).object().value(QStringLiteral("__record")).toBool())
+    {
+        QString path, err;
+        if (stream->startRecording(&path, &err))
+            log(QStringLiteral("实时记录：%1").arg(path));
+        else
+            QMessageBox::warning(this, QStringLiteral("记录"), err);
+    }
+
+    void *handle = nullptr;
+    QString err;
+    if (sp->open(config, stream->sink(), &handle, &err) != 0)
+    {
+        QMessageBox::warning(this, QStringLiteral("连接失败"),
+                             QStringLiteral("%1\n%2").arg(sp->label, err));
+        return;
+    }
+
+    SourceData src;
+    for (const SourceData &old : m_sources)
+        src.id = qMax(src.id, old.id + 1);
+    src.name = QStringLiteral("%1 · 实时").arg(sp->label);
+    src.alias = QStringLiteral("%1_%2").arg(sp->kind).arg(src.id + 1);
+    src.fmt = sp->label;
+    src.path = QStringLiteral("live://%1/%2").arg(sp->id).arg(src.id);
+    src.live = true;
+    src.sourceId = sp->id;
+    src.config = config;
+    src.handle = handle;
+    src.stream = stream;
+    m_sources.append(src);
+
+    addSourceRow(src.name, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"), true,
+                 src.path, src.id);
+    log(QStringLiteral("实时源已连接：%1（%2）").arg(sp->label, sp->transport));
+}
+
+void MainWindow::configureLiveSource(SourceData *src)
+{
+    if (!src || !src->live)
+        return;
+    const SourcePlugin *sp = SourceRegistry::instance().findById(src->sourceId);
+    if (!sp)
+        return;
+    SourceConfigDialog dlg(*sp, src->config, this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    const QString config = dlg.configJson();
+
+    closeLiveSource(src);
+    for (auto *c : findChildren<CanvasWidget *>())
+        c->removeChannelsFromSource(src->path);
+    src->stream = std::make_shared<LiveStream>(sp->id, sp->label);
+    src->config = config;
+    src->handle = nullptr;
+    src->channels.clear();
+    src->plotted = false;
+    if (src->id == m_activeSource)
+        m_srcChannels.clear();
+
+    if (QJsonDocument::fromJson(config.toUtf8()).object().value(QStringLiteral("__record")).toBool())
+    {
+        QString path, err;
+        if (src->stream->startRecording(&path, &err))
+            log(QStringLiteral("实时记录：%1").arg(path));
+        else
+            QMessageBox::warning(this, QStringLiteral("记录"), err);
+    }
+    QString err;
+    if (sp->open(config, src->stream->sink(), &src->handle, &err) != 0)
+    {
+        src->handle = nullptr;
+        updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
+        QMessageBox::warning(this, QStringLiteral("连接失败"),
+                             QStringLiteral("%1\n%2").arg(sp->label, err));
+        return;
+    }
+    updateSourceMeta(src->row, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"));
+    renderSourceData();
+    log(QStringLiteral("实时源已重连：%1").arg(sp->label));
+}
+
+void MainWindow::pollLiveSources()
+{
+    if (m_livePaused)
+        return;
+    for (SourceData &src : m_sources)
+    {
+        if (!src.live || !src.handle || !src.stream)
+            continue;
+        const SourcePlugin *sp = SourceRegistry::instance().findById(src.sourceId);
+        if (!sp)
+            continue;
+        QString err;
+        if (sp->poll(src.handle, 0, &err) != 0)
+        {
+            log(QStringLiteral("实时源 poll 失败：%1 %2").arg(sp->label, err));
+            closeLiveSource(&src);
+            continue;
+        }
+        if (src.stream->changed())
+            refreshLiveSource(&src);
+    }
+}
+
+void MainWindow::refreshLiveSource(SourceData *src)
+{
+    if (!src || !src->stream)
+        return;
+    src->stream->clearChanged();
+    src->channels = src->stream->channels();
+    if (src->stream->overflow())
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (src->id == m_activeSource)
+    {
+        if (now - m_liveUiMs >= 200 || m_srcChannels.isEmpty())
+        {
+            m_liveUiMs = now;
+            m_srcChannels = src->channels;
+            renderSourceData();
+            if (CanvasWidget *c = currentCanvas())
+                c->notifyActivated();
+            for (auto *c : findChildren<CanvasWidget *>())
+                c->update();
+        }
+    }
+    const uint32_t points = src->channels.isEmpty() ? 0 : src->channels.first()->point_count;
+    updateSourceMeta(src->row, QStringLiteral("运行中 · %1 通道 · %2 点")
+                                  .arg(src->channels.size())
+                                  .arg(points),
+                     QStringLiteral("#39c5cf"));
+
+    if (!src->plotted && src->id == m_activeSource && currentCanvas())
+    {
+        QVector<const PsChannelInfo *> first;
+        for (const PsChannelInfo *ch : src->channels)
+        {
+            if (ch && ch->point_count >= 2)
+                first.append(ch);
+            if (first.size() >= 2)
+                break;
+        }
+        if (!first.isEmpty())
+        {
+            // 已有别的曲线时不混轴：实时源单独开一页，避免 demo 的 30s 轴把实时数据压扁。
+            if (currentCanvas()->hasData())
+                newPage();
+            if (CanvasWidget *c = currentCanvas())
+                c->setInputSource(src->id, src->path, src->alias, src->offsetSec);
+            for (const PsChannelInfo *ch : first)
+                currentCanvas()->addChannel(ch);
+            currentCanvas()->setTitle(src->alias);
+            src->plotted = true;
+        }
+    }
+}
+
+void MainWindow::closeLiveSource(SourceData *src)
+{
+    if (!src || !src->live)
+        return;
+    const SourcePlugin *sp = SourceRegistry::instance().findById(src->sourceId);
+    if (src->handle && sp)
+        sp->close(src->handle);
+    src->handle = nullptr;
+    if (src->stream)
+        src->stream->stopRecording();
+    updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
+    refreshSrcCount();
+}
+
+void MainWindow::updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor)
+{
+    if (!row)
+        return;
+    row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
+    if (auto *label = row->findChild<QLabel *>(QStringLiteral("srcMeta")))
+        label->setText(meta);
+    if (auto *dot = row->findChild<QLabel *>(QStringLiteral("srcDot")))
+        dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
+    refreshSrcCount();
 }
 
 void MainWindow::addTransformFor(const QString &channel)
@@ -2232,9 +2433,16 @@ void MainWindow::addTransformFor(const QString &channel)
 
 void MainWindow::reloadChannels(SourceData *src)
 {
-    if (!src || !src->ds)
+    if (!src)
         return;
     src->channels.clear();
+    if (src->live && src->stream)
+    {
+        src->channels = src->stream->channels();
+        return;
+    }
+    if (!src->ds)
+        return;
     const uint32_t n = ps_dataset_channel_count(src->ds);
     for (uint32_t i = 0; i < n; ++i)
         if (const PsChannelInfo *ch = ps_dataset_channel(src->ds, i))
@@ -2244,7 +2452,7 @@ void MainWindow::reloadChannels(SourceData *src)
 void MainWindow::refreshActiveSource()
 {
     SourceData *src = sourceById(m_activeSource);
-    if (!src || !src->ds)
+    if (!src || (!src->ds && !src->live))
         return;
     reloadChannels(src);
     m_srcChannels = src->channels;
@@ -2306,6 +2514,7 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
     lay->setSpacing(6);
 
     auto *dot = new QLabel(row);
+    dot->setObjectName(QStringLiteral("srcDot"));
     dot->setAttribute(Qt::WA_TransparentForMouseEvents);
     dot->setFixedSize(6, 6);
     dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
@@ -2320,6 +2529,7 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
     auto *nameLb = new ElideLabel(name, col);
     nameLb->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:12px;background:transparent;"));
     auto *metaLb = new QLabel(meta, col);
+    metaLb->setObjectName(QStringLiteral("srcMeta"));
     metaLb->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:10px;background:transparent;"));
     colLay->addWidget(nameLb);
     colLay->addWidget(metaLb);
@@ -2335,9 +2545,13 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
         "QToolButton{background:transparent;border:0;padding:0;}"
         "QToolButton:hover{background:#222b33;border-radius:2px;}"));
     lay->addWidget(cfg);
-    connect(cfg, &QToolButton::clicked, this, [this] {
-        QMessageBox::information(this, QStringLiteral("配置"),
-            QStringLiteral("Loader 附属编辑器（D13）：M1 接字段映射/帧模板。"));
+    connect(cfg, &QToolButton::clicked, this, [this, srcId] {
+        SourceData *src = sourceById(srcId);
+        if (src && src->live)
+            configureLiveSource(src);
+        else
+            QMessageBox::information(this, QStringLiteral("配置"),
+                QStringLiteral("文件源使用打开时的选项；实时源可重连修改参数。"));
     });
 
     auto *del = new QToolButton(row);
@@ -2451,6 +2665,10 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    for (SourceData &src : m_sources)
+        closeLiveSource(&src);
+    if (m_liveTimer)
+        m_liveTimer->stop();
     if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
             .value(QStringLiteral("restoreLayout"), true).toBool())
         saveLayoutTo(defaultLayoutPath());
@@ -2857,7 +3075,7 @@ void MainWindow::saveLayoutTo(const QString &path)
     QJsonArray sources;
     for (const SourceData &src : m_sources)
     {
-        if (src.path.isEmpty())
+        if (src.path.isEmpty() || src.live)
             continue;
         QJsonObject so;
         so[QStringLiteral("path")] = src.path;

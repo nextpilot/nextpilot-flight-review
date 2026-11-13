@@ -3,8 +3,11 @@
 #include <QMainWindow>
 #include <QJsonObject>
 
+#include <memory>
+
 struct PsDataset;
 struct PsChannelInfo;
+class LiveStream;
 class CanvasWidget;
 class QLabel;
 class QPlainTextEdit;
@@ -17,6 +20,7 @@ class QListWidget;
 class QVBoxLayout;
 class QLineEdit;
 class QAction;
+class QTimer;
 
 // 变换配方：写入 .psl，重启/导入时按序重放
 struct TransformRecipe
@@ -47,6 +51,14 @@ struct SourceData
     QStringList derived;       // 本源由变换产生的通道名，右键才允许删除
     QVector<TransformRecipe> recipes;
     QWidget *row = nullptr;
+
+    // 实时源：ds 为空，通道视图由 LiveStream 持有；handle 归插件所有。
+    bool live = false;
+    bool plotted = false;
+    QString sourceId;
+    QString config;
+    void *handle = nullptr;
+    std::shared_ptr<LiveStream> stream;
 };
 
 // 主窗口骨架（对应 §8 / D14）：
@@ -87,6 +99,12 @@ private:
     void refreshActiveSource();          // 变换写回后重建通道指针与字段树
     void reloadChannels(SourceData *src);
     void addTransformFor(const QString &channel);
+    void connectLiveSource(const QString &pluginId);
+    void configureLiveSource(SourceData *src);
+    void pollLiveSources();
+    void refreshLiveSource(SourceData *src);
+    void closeLiveSource(SourceData *src);
+    void updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor);
     void setSourceOffset(SourceData *src, double offsetSec, bool refit);
     void alignSource(SourceData *src, int mode);          // 0 起点 / 1 中心 / 2 终点
     void setSourceBase(SourceData *src);
@@ -112,7 +130,10 @@ private:
     QTreeWidget *m_srcTree = nullptr;      // 字段页：通道树（按 topic 分组）
     QTabBar *m_srcTabs = nullptr;          // 字段 / 参数 / 消息
     QStackedWidget *m_srcStack = nullptr;
-    QLabel *m_srcCount = nullptr;          // “3 源 · 2 已连接”
+    QLabel *m_srcCount = nullptr;          // “0 源 · 0 已连接”
+    QTimer *m_liveTimer = nullptr;
+    qint64 m_liveUiMs = 0;
+    bool m_livePaused = false;
     bool m_viewBacked = false;            // 当前选中的数据源是否持有内核数据集
     QString m_srcFmt;                     // 当前源的格式标签（ULog/CSV/...）
     QVector<const PsChannelInfo *> m_srcChannels;
