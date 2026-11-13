@@ -52,8 +52,8 @@ QTabBar::tab {
 }
 QTabBar::tab:selected { background:#1a2127; color:#c9d1d9; border-bottom:2px solid #f2b134; }
 QTabBar::tab:hover:!selected { color:#c8d2da; background:#1a2127; }
-QTabBar::tab:last { min-width:20px; padding:4px 8px; font-size:15px; color:#8494a0; }
-QTabBar::tab:last:selected { color:#f2b134; }
+QTabBar#pageTabs::tab:last { min-width:20px; padding:4px 8px; font-size:15px; color:#8494a0; }
+QTabBar#pageTabs::tab:last:selected { color:#f2b134; }
 QTabBar::close-button { image:url(:/icons/close_small.svg); subcontrol-position:right; margin:2px 4px; width:10px; height:10px; }
 QTabBar::close-button:hover { background:#222b33; }
 

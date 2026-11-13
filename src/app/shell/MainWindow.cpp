@@ -1833,6 +1833,8 @@ void MainWindow::createPages()
     m_pages->setDocumentMode(true);
     m_pages->setTabsClosable(true);
     m_pages->tabBar()->setExpanding(false);
+    // 只给绘图页签的“＋”开特殊字号，避免 QSS 的 :last 误伤数据源/停靠面板页签
+    m_pages->tabBar()->setObjectName(QStringLiteral("pageTabs"));
 
     auto makeCanvas = [this](const QString &title) {
         auto *c = new CanvasWidget(this);
