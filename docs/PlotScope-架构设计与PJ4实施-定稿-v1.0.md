@@ -969,7 +969,8 @@ public:
 - P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码随 `.psl` 保存。
 - RAW：OEM7 `database.json` 写入 PSRAW1 `schema_blob`。
 - 测试：`ctest` 15/15，新增 `test_script_engine`（`ps.input`、`ps.input(5)` 报错、`step` 聚合）。
-- 启动：`QT_QPA_PLATFORM=offscreen` 运行 8 秒存活，无崩溃；非交互冒烟。
+- 启动：`QT_QPA_PLATFORM=offscreen` 运行 8 秒存活；Xvfb 下真实 xcb 窗口启动并截图，非交互冒烟。
+- 依赖：Qt 6.2.4 / Lua 5.4.4 固定到仓库 `deps/`（gitignore），`scripts/bootstrap-deps.sh` 可重建，`scripts/build-local.sh` 不读系统 Qt。
 ---
 
 ## 附录 A：必须守住的不变量（摘 11 条）

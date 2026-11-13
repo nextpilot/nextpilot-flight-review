@@ -66,6 +66,13 @@ PlotScope 是一个面向无人机、嵌入式与车辆研发的桌面日志分�
 
 依赖：CMake ≥ 3.22、Qt 6 Widgets、Rust 工具链（`cargo` 在 `PATH` 或通过 `-DPS_CARGO=` 指定）。
 
+云主机/开发机可把 Qt 与 Lua 固定到仓库 `deps/`（已 gitignore，不随提交走），避免系统包被环境快照回退：
+
+```bash
+scripts/bootstrap-deps.sh   # 下载 Qt 6.2.4 + 编译 Lua 5.4.4 到 deps/
+scripts/build-local.sh      # 只用 deps/ 的 Qt/Lua 构建并跑 ctest
+```
+
 zlib/zstd/lz4 缺失时由 CMake 自动从 Gitee 镜像拉源码静态构建，不访问 GitHub；已有系统库或 vcpkg 时优先复用。也可以 `-DPS_DEPS_ROOT=<prefix>` 指向已安装的 `include/` + `lib/`。
 
 ```bash
