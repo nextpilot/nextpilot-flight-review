@@ -1159,8 +1159,13 @@ void MainWindow::setSourceBase(SourceData *src)
     double a0 = 0, a1 = 0;
     if (!src || !sourceTimeRange(src, a0, a1))
         return;
-    setSourceOffset(src, a0, true);
-    log(QStringLiteral("时间基准：%1，起点归零").arg(src->alias));
+    // 基准源的起点为 0，其余源用同一基准换算（PJ globalTimeReference 语义）
+    for (SourceData &s : m_sources)
+        setSourceOffset(&s, a0, false);
+    for (auto *c : findChildren<CanvasWidget *>())
+        for (const SourceData &s : m_sources)
+            c->setSourceOffset(s.path, a0, true);
+    log(QStringLiteral("时间基准：%1，起点归零，其余源同步换算").arg(src->alias));
 }
 
 void MainWindow::compareSources(SourceData *src, SourceData *other, bool all, const QString &pick)
