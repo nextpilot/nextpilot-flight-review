@@ -765,7 +765,7 @@ public:
 - 保存布局重启后派生曲线和参数原样恢复。
 - ctest 全绿，过滤算子有 golden 数值。
 
-#### 14.3.2 P1 多源对比 + 时间对齐
+#### 14.3.2 P1 多源对比 + 时间对齐（已完成）
 任务：
 1. `SourceData.displayOffsetSec`，画布 X 统一走 `displayTime()`。
 2. 源行右键“时间偏移”“设为基准”“对比同名通道”。
@@ -775,7 +775,7 @@ public:
 
 验收：两次仿真的 `attitude.roll` 叠在一张画布，能手动对齐起点；重启后偏移保留。
 
-#### 14.3.3 P2 导出与测量
+#### 14.3.3 P2 导出与测量（主体完成）
 任务：
 1. 导出数据 CSV：原始/派生/当前时间窗，列名带源别名。
 2. 单画布导出 PNG、复制曲线数据到剪贴板。
@@ -796,7 +796,30 @@ public:
 
 验收：写一个 4 输入四元数脚本能出 roll/pitch/yaw 并绘图；错误脚本只报错不崩 UI；重启后脚本和参数恢复。
 
-#### 14.3.5 P4 数据源 / 插件 / 渲染
+#### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
+
+已落地：
+1. `src/app/loader/LoaderPlugin.h` 定义加载器描述：`id/label/filter/formatTag/tree/hasParams/schema/probe/defaultOptions/load`。
+2. `LoaderRegistry` 注册 ULog、ArduPilot DataFlash、ASC、BLF、CSV；按后缀匹配，`loadFile()` 不再按扩展名写 `if/else`。
+3. `LoaderOptionsDialog` 完全由 schema 渲染：`enum/bool/int`、`visible_if`、动态列（`source=columns` + `column_filter`）、探测预览表、警告；新增格式只需注册 schema，不再在 app 里加对话框。
+4. CSV schema 覆盖分隔符、表头、跳行、`time.mode=row|column|combined` 及时间列选择。
+5. 删除 `src/app/shell/CsvLoaderDialog.*`。
+
+未完成：
+1. 外部插件 `.json` manifest 发现 + 动态库 ABI；当前只是宿主进程内注册。
+2. MAVLink tlog/实时流、ROS1/ROS2、MCAP、MDF4、GNSS 原始解析。
+3. 实时记录（UDP/串口原始流落盘）与环形缓冲。
+
+#### 14.3.6 UI / 画布本轮补齐
+
+1. **任意画布布局**：页内改为 `QSplitter` 树；右键/绘图 Ribbon 支持“向右拆分/向下拆分”，拆分方向不同时自动嵌套；`m×n` 只作为一次性快捷布局，落地后仍可继续拆。
+2. **逐曲线游标**：画布十字线对每条可见曲线二分查最近样本，框内列出 `label + value`，时间已扣源偏移。
+3. **A/B 测量**：右键开启后点两下打 A/B 标线，显示 `Δt`，逐曲线 `Δy` 与斜率 `k`。
+4. **导出**：右键“导出 PNG…”“导出当前画布 CSV…”；CSV 为长表 `time,source,channel,value,unit`，只导当前可见时间窗。
+5. **Ribbon 图标优先**：大/小按钮只留图标 + tooltip；新增网格、边框、图例、框选、放大/缩小、左右/上下拆分图标。
+6. **Dock**：标题栏可拖动浮动，拖到主窗口边缘吸附停靠；双击切换浮动；`—` 收成 26px 竖排页签，点击恢复。仍是 Qt 原生 `QDockWidget` 四区，未做 VS 式拖拽引导框/面板分组。
+
+#### 14.3.7 P4 数据源 / 插件 / 渲染
 - MCAP、Parquet、ROS2、JSON/CBOR/MessagePack。
 - MQTT/UDP/WebSocket/LSL 实时流与真正的暂停/继续。
 - 插件 SDK：loader/streamer/parser 三类，动态库 ABI。
