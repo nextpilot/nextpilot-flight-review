@@ -3,7 +3,7 @@
 面向飞控 / 嵌入式 / 车辆研发分析的通用绘图与数据分析工具。对标 PlotJuggler + JCom，
 主打**千万点级数据、5 kHz × 200 通道**的实时可视化与脚本算子。
 
-设计文档：`docs/PlotScope-架构设计-定稿-v1.0.md`（决策 D1~D16 在此）
+设计文档：`docs/PlotScope-架构设计与PJ4实施-定稿-v1.0.md`（决策 D1~D16 + PJ4 补全计划）
 UI 原型：`docs/prototype/PlotScope-工作区原型.html`
 
 ## 目录
