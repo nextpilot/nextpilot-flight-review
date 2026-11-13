@@ -1,6 +1,7 @@
 //! 格式嗅探：只读文件头部若干字节，给出最可能的解析器家族。
 //! 真正的解析器在 src/plugin 下按家族实现（D16：plugin 是官方解析器）。
 
+pub mod apbin;
 pub mod asc;
 pub mod blf;
 pub mod can;
@@ -10,6 +11,7 @@ pub mod ulog;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Csv,
+    ApBin,
     Ulog,
     Blf,
     Asc,
@@ -19,6 +21,10 @@ pub enum Format {
 
 /// 输入建议不超过 4 KiB（各格式的 magic 都在头部）。
 pub fn sniff(head: &[u8]) -> Format {
+    // ArduPilot DataFlash：0xA3 0x95 + msgid；比 ASCII 嗅探优先
+    if head.len() >= 3 && head[0] == 0xA3 && head[1] == 0x95 {
+        return Format::ApBin;
+    }
     if head.len() >= 7 && &head[0..7] == b"ULog\0\x01" {
         return Format::Ulog;
     }
@@ -64,6 +70,10 @@ mod tests {
     }
 
     #[test]
+    fn detects_apbin() {
+        assert_eq!(sniff(&[0xA3, 0x95, 0x80]), Format::ApBin);
+    }
+
     fn detects_csv() {
         assert_eq!(sniff(b"time,att.roll\n0.0,1.2\n"), Format::Csv);
     }

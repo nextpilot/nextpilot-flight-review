@@ -1613,15 +1613,18 @@ bool MainWindow::loadFile(const QString &path)
     char err[256] = {0};
     PsDataset *ds = nullptr;
     const QFileInfo fi(path);
-    // 分流：ulg → ULog，asc → Vector ASC，blf → Vector BLF，其余按 CSV
+    // 分流：ulg → ULog，bin → ArduPilot DataFlash，asc/blf → Vector CAN，其余按 CSV
     const QString suffix = fi.suffix().toLower();
     const bool is_ulog = suffix == QLatin1String("ulg");
+    const bool is_apbin = suffix == QLatin1String("bin");
     const bool is_asc = suffix == QLatin1String("asc");
     const bool is_blf = suffix == QLatin1String("blf");
-    const bool is_tree = is_ulog || is_asc || is_blf; // 有 topic/ID 层级，要分组挂树
+    const bool is_tree = is_ulog || is_apbin || is_asc || is_blf; // 有 topic/ID 层级，要分组挂树
     int32_t rc;
     if (is_ulog)
         rc = ps_ulog_load(path.toUtf8().constData(), &ds, err, sizeof(err));
+    else if (is_apbin)
+        rc = ps_apbin_load(path.toUtf8().constData(), &ds, err, sizeof(err));
     else if (is_asc)
         rc = ps_asc_load(path.toUtf8().constData(), &ds, err, sizeof(err));
     else if (is_blf)
@@ -1646,6 +1649,7 @@ bool MainWindow::loadFile(const QString &path)
 
     const uint32_t n = ps_dataset_channel_count(ds);
     const QString fmt_tag = is_ulog ? QStringLiteral("ULog")
+                          : is_apbin ? QStringLiteral("ArduPilot · BIN")
                           : is_asc  ? QStringLiteral("ASC · CAN")
                           : is_blf  ? QStringLiteral("BLF · CAN")
                                     : QStringLiteral("CSV");
@@ -1664,13 +1668,16 @@ bool MainWindow::loadFile(const QString &path)
         if (const PsChannelInfo *ch = ps_dataset_channel(ds, i))
             src.channels.append(ch);
 
-    // 参数：ULog 走 ps_ulog_params（P/Q 消息），其它格式暂无参数表
-    if (fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0)
+    // 参数：ULog 走 P/Q，DataFlash 走 PARM
+    if (is_ulog || is_apbin)
     {
-        QByteArray buf(96 * 1024, '\0');
+        QByteArray buf(is_apbin ? 512 * 1024 : 96 * 1024, '\0');
         char err[256] = {0};
-        const int prc = ps_ulog_params(fi.absoluteFilePath().toUtf8().constData(),
-                                      buf.data(), static_cast<uint32_t>(buf.size()), err, sizeof err);
+        const int prc = is_apbin
+            ? ps_apbin_params(fi.absoluteFilePath().toUtf8().constData(),
+                              buf.data(), static_cast<uint32_t>(buf.size()), err, sizeof err)
+            : ps_ulog_params(fi.absoluteFilePath().toUtf8().constData(),
+                             buf.data(), static_cast<uint32_t>(buf.size()), err, sizeof err);
         while (!buf.isEmpty() && buf.at(buf.size() - 1) == '\0')
             buf.chop(1);
         if (prc == 0)
@@ -1684,7 +1691,9 @@ bool MainWindow::loadFile(const QString &path)
         }
         else
         {
-            log(QStringLiteral("ps_ulog_params rc=%1 err=%2").arg(prc).arg(QString::fromUtf8(err)));
+            log(QStringLiteral("%1 rc=%2 err=%3")
+                    .arg(is_apbin ? QStringLiteral("ps_apbin_params") : QStringLiteral("ps_ulog_params"))
+                    .arg(prc).arg(QString::fromUtf8(err)));
         }
     }
 
@@ -1718,13 +1727,35 @@ bool MainWindow::loadFile(const QString &path)
     addSourceRow(src.name, QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true, src.path,
                  src.id);
 
-    // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线
+    // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线。
+    // 自动挑前几路"有变化"的通道：DataFlash 按字母序首段常是 RC 输入全 0。
     const QVector<CanvasWidget *> canvases = pageCanvases();
     const bool firstSource = m_sources.size() == 1;
-    for (int i = 0; firstSource && i < canvases.size() && i < m_srcChannels.size(); ++i)
+    if (firstSource)
     {
-        canvases[i]->setChannels({m_srcChannels[i]});
-        canvases[i]->setTitle(QStringLiteral("%1 · %2").arg(fi.completeBaseName(), QString::fromUtf8(m_srcChannels[i]->name)));
+        QVector<const PsChannelInfo *> pick;
+        for (const PsChannelInfo *ch : m_srcChannels)
+        {
+            const uint32_t np = ch->point_count;
+            if (np < 8)
+                continue;
+            double lo = ch->value[0], hi = lo;
+            for (uint32_t k = 1; k < np; ++k)
+            {
+                lo = qMin(lo, ch->value[k]);
+                hi = qMax(hi, ch->value[k]);
+            }
+            if (hi - lo > 1e-9)
+                pick.append(ch);
+        }
+        if (pick.isEmpty())
+            pick = m_srcChannels;
+        for (int i = 0; i < canvases.size() && i < pick.size(); ++i)
+        {
+            canvases[i]->setChannels({pick[i]});
+            canvases[i]->setTitle(QStringLiteral("%1 · %2")
+                                  .arg(fi.completeBaseName(), QString::fromUtf8(pick[i]->name)));
+        }
     }
 
     if (const PsChannelInfo *first = ps_dataset_channel(ds, 0))

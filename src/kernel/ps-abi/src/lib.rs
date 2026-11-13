@@ -134,6 +134,21 @@ fn dataset_from_series(series: Vec<(String, Vec<f64>, Vec<f64>)>) -> Dataset {
     ds
 }
 
+/// 带单位版本：ArduPilot 的 FMTU 能给出单位，ULog 没有。
+fn dataset_from_series_units(series: Vec<(String, String, Vec<f64>, Vec<f64>)>) -> Dataset {
+    let mut ds = Dataset { channels: Vec::new(), infos: Vec::new() };
+    for (name, unit, t, v) in series {
+        ds.channels.push(Channel {
+            name: CString::new(name.as_str()).unwrap_or_else(|_| CString::new("channel").unwrap()),
+            unit: CString::new(unit.as_str()).unwrap_or_default(),
+            t,
+            v,
+        });
+    }
+    ds.rebuild_infos();
+    ds
+}
+
 /// 读 CSV → 数据集。成功返回 0 并写 `out`；失败返回非 0，`err` 里给原因。
 fn csv_table_to_dataset(table: &ps_parse::csv::Table) -> Dataset {
     let mut ds = Dataset { channels: Vec::new(), infos: Vec::new() };
@@ -457,6 +472,10 @@ pub unsafe extern "C" fn ps_ulog_params(
         .map(|(k, v)| serde_json::json!({ "name": k, "value": v }))
         .collect();
     let text = serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string());
+    if text.len() >= cap as usize {
+        write_err(err, err_cap, "参数表超过输出缓冲区");
+        return 4;
+    }
     let bytes = text.as_bytes();
     let n = bytes.len().min(cap as usize - 1);
     std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_json as *mut u8, n);
@@ -494,5 +513,80 @@ pub unsafe extern "C" fn ps_ulog_load(
         .map(|c| (c.name, c.t, c.v))
         .collect::<Vec<_>>();
     *out = Box::into_raw(Box::new(dataset_from_series(series)));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_apbin_load(
+    path: *const c_char,
+    out: *mut *mut Dataset,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if path.is_null() || out.is_null() {
+        return 1;
+    }
+    let path_str = match CStr::from_ptr(path).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            write_err(err, err_cap, "路径不是合法 UTF-8");
+            return 2;
+        }
+    };
+    let log = match ps_parse::apbin::parse_file(Path::new(path_str)) {
+        Ok(l) => l,
+        Err(e) => {
+            write_err(err, err_cap, e.as_str());
+            return 3;
+        }
+    };
+    let series = log
+        .channels
+        .into_iter()
+        .map(|c| (c.name, c.unit, c.t, c.v))
+        .collect::<Vec<_>>();
+    *out = Box::into_raw(Box::new(dataset_from_series_units(series)));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_apbin_params(
+    path: *const c_char,
+    out_json: *mut c_char,
+    cap: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if path.is_null() || out_json.is_null() || cap == 0 {
+        return 1;
+    }
+    let path_str = match CStr::from_ptr(path).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            write_err(err, err_cap, "路径不是合法 UTF-8");
+            return 2;
+        }
+    };
+    let log = match ps_parse::apbin::parse_file(Path::new(path_str)) {
+        Ok(l) => l,
+        Err(e) => {
+            write_err(err, err_cap, e.as_str());
+            return 3;
+        }
+    };
+    let arr: Vec<serde_json::Value> = log
+        .params
+        .iter()
+        .map(|(k, v)| serde_json::json!({ "name": k, "value": v }))
+        .collect();
+    let text = serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string());
+    if text.len() >= cap as usize {
+        write_err(err, err_cap, "参数表超过输出缓冲区");
+        return 4;
+    }
+    let bytes = text.as_bytes();
+    let n = bytes.len().min(cap as usize - 1);
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_json as *mut u8, n);
+    *((out_json as *mut u8).add(n)) = 0;
     0
 }

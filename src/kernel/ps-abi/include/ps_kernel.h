@@ -52,12 +52,18 @@ int32_t              ps_csv_probe(const char *path, char delimiter_override,
 int32_t              ps_csv_load_opts(const char *path, const char *opts_json,
                                      PsDataset **out, char *err, uint32_t err_cap);
 
-/* 读 ULog（PX4/ArduPilot 飞行日志）→ 数据集。通道名形如 `topic.field`，
+/* 读 ULog（PX4 飞行日志）→ 数据集。通道名形如 `topic.field`，
  * 多实例为 `topic.00.field`；`timestamp` 与 `_padding` 不产出通道。
  * 单位信息 ULog 里没有（只能靠字段名/格式约定），unit 返回空串。 */
 int32_t              ps_ulog_load(const char *path, PsDataset **out, char *err, uint32_t err_cap);
 /* ULog 参数表：[{"name":...,"value":...}] JSON；cap 不足时截断，返回非 0 看 err */
 int32_t              ps_ulog_params(const char *path, char *out_json, uint32_t cap, char *err, uint32_t err_cap);
+
+/* 读 ArduPilot DataFlash `.bin` → 数据集。通道名形如 `ATT.Roll`，
+ * 多实例 `IMU.#0.AccX`；FMTU 的单位写进 unit。 */
+int32_t              ps_apbin_load(const char *path, PsDataset **out, char *err, uint32_t err_cap);
+/* DataFlash 参数表（PARM）：[{"name":...,"value":...}] JSON */
+int32_t              ps_apbin_params(const char *path, char *out_json, uint32_t cap, char *err, uint32_t err_cap);
 /* 读 Vector ASC（文本 CAN 日志）→ 数据集。没有 DBC 就不猜物理量，
  * 只给可验证的两类通道：`CAN<总线>.<ID>.bN`（报文第 N 字节原始值）
  * 与 `CAN<总线>.<ID>.period`（同 ID 相邻帧间隔 ms）。 */
