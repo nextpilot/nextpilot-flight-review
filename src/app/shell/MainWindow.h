@@ -75,6 +75,7 @@ public:
     bool loadFile(const QString &path, bool interactive = true);
     void importLayoutFrom(const QString &path);
     void saveLayoutTo(const QString &path);
+    void runScript();
     QString defaultLayoutPath() const;
 
 protected:

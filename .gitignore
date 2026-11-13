@@ -17,3 +17,6 @@ src/kernel/target/
 *.psl
 *.log
 refs/
+
+# 本地可搬移依赖（Qt/Lua）
+/deps/

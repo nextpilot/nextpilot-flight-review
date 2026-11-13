@@ -1587,85 +1587,7 @@ void MainWindow::createDocks()
     scriptLay->addWidget(runScriptBtn);
     scriptDock->setWidget(scriptHost);
     addDockWidget(Qt::RightDockWidgetArea, scriptDock);
-    connect(runScriptBtn, &QPushButton::clicked, this, [this, scriptDock] {
-        CanvasWidget *canvas = nullptr;
-        QVector<ScriptSeries> inputs;
-        for (CanvasWidget *c : findChildren<CanvasWidget *>())
-        {
-            const auto samples = c->sampleSeries();
-            if (samples.isEmpty() || (canvas && inputs.size() >= samples.size()))
-                continue;
-            canvas = c;
-            inputs.clear();
-            for (const CanvasWidget::SampleSeries &s : samples)
-                inputs.append({s.name, s.time, s.value});
-        }
-        if (!canvas)
-        {
-            log(QStringLiteral("脚本：当前页没有可见曲线"));
-            return;
-        }
-        QStringList names;
-        for (const ScriptSeries &s : inputs)
-            names.append(s.name);
-        for (QComboBox *cb : m_scriptInputs)
-        {
-            if (!cb)
-                continue;
-            const QString keep = cb->currentData().toString();
-            cb->clear();
-            cb->addItem(QStringLiteral("（未绑定）"), QString());
-            for (const QString &name : names)
-                cb->addItem(name, name);
-            cb->setCurrentIndex(qMax(0, cb->findData(keep)));
-        }
-
-        QVector<ScriptSeries> bound;
-        QStringList boundNames;
-        for (QComboBox *cb : m_scriptInputs)
-        {
-            const QString name = cb ? cb->currentData().toString() : QString();
-            if (name.isEmpty())
-                continue;
-            for (const ScriptSeries &s : inputs)
-            {
-                if (s.name != name)
-                    continue;
-                bound.append(s);
-                boundNames.append(QStringLiteral("v%1=%2").arg(bound.size()).arg(name));
-                break;
-            }
-        }
-        if (bound.isEmpty())
-            bound = inputs;
-        log(QStringLiteral("脚本输入：%1").arg(
-            boundNames.isEmpty() ? names.join(QStringLiteral(" | ")) : boundNames.join(QStringLiteral(" | "))));
-        const ScriptResult r = ScriptEngine::run(m_script->toPlainText(), bound);
-        if (!r.ok)
-        {
-            log(QStringLiteral("脚本失败：%1").arg(r.error));
-            const QRegularExpression re(QStringLiteral(":(\\d+):"));
-            const auto match = re.match(r.error);
-            if (match.hasMatch())
-            {
-                const int line = match.captured(1).toInt();
-                QTextCursor cur = m_script->textCursor();
-                cur.movePosition(QTextCursor::Start);
-                cur.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, qMax(0, line - 1));
-                cur.select(QTextCursor::LineUnderCursor);
-                m_script->setTextCursor(cur);
-            }
-            scriptDock->show();
-            scriptDock->raise();
-            return;
-        }
-        for (const ScriptOutput &o : r.outputs)
-        {
-            canvas->addGeneratedSeries(o.name, o.time, o.value);
-            log(QStringLiteral("Lua 输出：%1（%2 点）").arg(o.name).arg(o.value.size()));
-        }
-        log(QStringLiteral("Lua 5.4 执行完成：%1 条输出").arg(r.outputs.size()));
-    });
+    connect(runScriptBtn, &QPushButton::clicked, this, &MainWindow::runScript);
 
     // 底部：日志
     auto *logDock = new QDockWidget(QStringLiteral("日志"), this);
@@ -3210,6 +3132,94 @@ QWidget *MainWindow::buildPage(const QJsonObject &o)
     return new QLabel(o.value(QStringLiteral("text")).toString(), m_pages);
 }
 
+void MainWindow::runScript()
+{
+    QDockWidget *scriptDock = findChild<QDockWidget *>(QStringLiteral("dock.script"));
+    CanvasWidget *canvas = nullptr;
+    QVector<ScriptSeries> inputs;
+    QVector<CanvasWidget *> candidates = pageCanvases();
+    if (candidates.isEmpty())
+        candidates = findChildren<CanvasWidget *>();
+    for (CanvasWidget *c : candidates)
+    {
+        const auto samples = c->sampleSeries();
+        if (samples.isEmpty() || (canvas && inputs.size() >= samples.size()))
+            continue;
+        canvas = c;
+        inputs.clear();
+        for (const CanvasWidget::SampleSeries &s : samples)
+            inputs.append({s.name, s.time, s.value});
+    }
+    if (!canvas)
+    {
+        log(QStringLiteral("脚本：当前页没有可见曲线"));
+        return;
+    }
+    QStringList names;
+    for (const ScriptSeries &s : inputs)
+        names.append(s.name);
+    for (QComboBox *cb : m_scriptInputs)
+    {
+        if (!cb)
+            continue;
+        const QString keep = cb->currentData().toString();
+        cb->clear();
+        cb->addItem(QStringLiteral("（未绑定）"), QString());
+        for (const QString &name : names)
+            cb->addItem(name, name);
+        cb->setCurrentIndex(qMax(0, cb->findData(keep)));
+    }
+
+    QVector<ScriptSeries> bound;
+    QStringList boundNames;
+    for (QComboBox *cb : m_scriptInputs)
+    {
+        const QString name = cb ? cb->currentData().toString() : QString();
+        if (name.isEmpty())
+            continue;
+        for (const ScriptSeries &s : inputs)
+        {
+            if (s.name != name)
+                continue;
+            bound.append(s);
+            boundNames.append(QStringLiteral("v%1=%2").arg(bound.size()).arg(name));
+            break;
+        }
+    }
+    if (bound.isEmpty())
+        bound = inputs;
+    log(QStringLiteral("脚本输入：%1").arg(
+        boundNames.isEmpty() ? names.join(QStringLiteral(" | ")) : boundNames.join(QStringLiteral(" | "))));
+    const ScriptResult r = ScriptEngine::run(m_script->toPlainText(), bound);
+    if (!r.ok)
+    {
+        log(QStringLiteral("脚本失败：%1").arg(r.error));
+        const QRegularExpression re(QStringLiteral(":(\\d+):"));
+        const auto match = re.match(r.error);
+        if (match.hasMatch())
+        {
+            const int line = match.captured(1).toInt();
+            QTextCursor cur = m_script->textCursor();
+            cur.movePosition(QTextCursor::Start);
+            cur.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, qMax(0, line - 1));
+            cur.select(QTextCursor::LineUnderCursor);
+            m_script->setTextCursor(cur);
+        }
+        if (scriptDock)
+        {
+            scriptDock->show();
+            scriptDock->raise();
+        }
+        return;
+    }
+    for (const ScriptOutput &o : r.outputs)
+    {
+        canvas->addGeneratedSeries(o.name, o.time, o.value);
+        log(QStringLiteral("Lua 输出：%1（%2 点）").arg(o.name).arg(o.value.size()));
+    }
+    log(QStringLiteral("Lua 5.4 执行完成：%1 条输出").arg(r.outputs.size()));
+}
+
 void MainWindow::saveLayoutTo(const QString &path)
 {
     QDir().mkpath(QFileInfo(path).absolutePath());
@@ -3471,6 +3481,8 @@ void MainWindow::importLayoutFrom(const QString &path)
                 cb->addItem(name, name);
             cb->setCurrentIndex(name.isEmpty() ? 0 : 1);
         }
+        if (!m_script->toPlainText().trimmed().isEmpty())
+            runScript();
     }
 
     QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
