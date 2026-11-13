@@ -210,4 +210,5 @@ public:
 - UI：`TransformDialog` 双页签；字段树右键「添加变换… / 画到当前画布 / 删除派生通道」；`Ctrl+T`；产物进「派生通道」分组。
 - 验证：`ctest` 2/2（含 CSV → MA(2) → 四元数闭环），AP 真实样本手测滤器与四元数。
 - 已做：配方写 `.psl` `transforms[]`，导入时按源路径重放；删除派生通道同步移除配方。
-- 未做：before/after 预览、变换链编辑、12 算子逐项 golden。
+- 已做：12 算子 golden（none/absolute/scale/MA/RMS/方差/计数/二值化/Δt）+ 四元数 degrees/unwrap/零模长测试。
+- 未做：before/after 预览、变换链编辑。

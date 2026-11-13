@@ -52,7 +52,9 @@ QTabBar::tab {
 }
 QTabBar::tab:selected { background:#1a2127; color:#c9d1d9; border-bottom:2px solid #f2b134; }
 QTabBar::tab:hover:!selected { color:#c8d2da; background:#1a2127; }
-QTabBar::close-button { image:url(:/icons/close_small.svg); subcontrol-position:right; margin:2px 3px; }
+QTabBar::tab:last { min-width:20px; padding:4px 8px; font-size:15px; color:#8494a0; }
+QTabBar::tab:last:selected { color:#f2b134; }
+QTabBar::close-button { image:url(:/icons/close_small.svg); subcontrol-position:right; margin:2px 4px; width:10px; height:10px; }
 QTabBar::close-button:hover { background:#222b33; }
 
 /* ---- 视图类 ---- */
@@ -103,7 +105,7 @@ QMenu::indicator { width:10px; height:10px; margin-left:4px; border-radius:5px; 
 QMenu::indicator:checked { background:#f2b134; }
 QMenu::indicator:unchecked { background:transparent; border:1px solid #2d3841; }
 QMenu { background:#161b20; border:1px solid #2d3841; padding:4px; }
-QMenu::item { padding:5px 24px 5px 20px; font-size:12px; color:#c9d1d9; border-radius:2px; }
+QMenu::item { padding:5px 24px 5px 20px; font-size:12px; color:#c9d1d9; background:#161b20; border-radius:2px; }
 QMenu::item:selected { background:#1f2a33; color:#f2b134; }
 QMenu::item:disabled { color:#5d6c77; }
 QMenu::separator { height:1px; background:#232b33; margin:4px 8px; }

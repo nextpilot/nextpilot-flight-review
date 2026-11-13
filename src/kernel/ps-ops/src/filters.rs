@@ -226,6 +226,38 @@ mod tests {
         assert_eq!(y, vec![0.0, 1.0]);
     }
 
+
+    #[test]
+    fn all_basic_ops_golden() {
+        let t = [0.0, 1.0, 2.0, 3.0];
+        let v = [-1.0, 0.0, 3.0, 4.0];
+        let (_, none) = apply("none", &t, &v, &json!({})).unwrap();
+        assert_eq!(none, vec![-1.0, 0.0, 3.0, 4.0]);
+        let (_, abs) = apply("absolute", &t, &v, &json!({})).unwrap();
+        assert_eq!(abs, vec![1.0, 0.0, 3.0, 4.0]);
+        let (ot, sc) = apply("scale", &t, &v,
+            &json!({"value_scale":2.0,"value_offset":10.0,"time_offset_sec":1.0})).unwrap();
+        assert_eq!(ot, vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(sc, vec![8.0, 10.0, 16.0, 18.0]);
+        let (_, ma) = apply("moving_average", &t, &v, &json!({"window":2})).unwrap();
+        assert_eq!(ma, vec![-1.0, -0.5, 1.5, 3.5]);
+        let (_, rms) = apply("moving_rms", &t, &v, &json!({"window":2})).unwrap();
+        assert!((rms[0] - 1.0).abs() < 1e-9 && (rms[1] - 0.7071067811865476).abs() < 1e-9);
+        assert!((rms[2] - 2.1213203435596424).abs() < 1e-9 && (rms[3] - 3.5355339059327378).abs() < 1e-9);
+        let (_, var) = apply("moving_variance", &t, &v, &json!({"window":2})).unwrap();
+        assert_eq!(var, vec![0.0, 0.25, 2.25, 0.25]);
+        let (_, std) = apply("moving_variance", &t, &v,
+            &json!({"window":2,"std_dev":true})).unwrap();
+        assert_eq!(std, vec![0.0, 0.5, 1.5, 0.5]);
+        let (_, cnt) = apply("samples_counter", &t, &v, &json!({"samples_ms":2000})).unwrap();
+        assert_eq!(cnt, vec![1.0, 2.0, 3.0, 3.0]);
+        let (_, bin) = apply("binary_filter", &t, &v,
+            &json!({"binary_op":5,"binary_a":0.0,"binary_b":3.0})).unwrap();
+        assert_eq!(bin, vec![0.0, 1.0, 1.0, 0.0]);
+        let (_, dts) = apply("time_since_previous", &t, &v, &json!({})).unwrap();
+        assert_eq!(dts, vec![1.0, 1.0, 1.0]);
+    }
+
     #[test]
     fn unknown_filter_errors() {
         assert!(apply("nope", &[0.0], &[1.0], &json!({})).is_err());

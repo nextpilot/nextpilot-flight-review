@@ -56,7 +56,7 @@
 | 能力 | PJ3 | PJ4 | PlotScope | 阶段 |
 |---|---|---|---|---|
 | Transform Editor | ✅ | ✅ | ⚠️ 单通道滤波 + 四元数对话框；before/after 预览、链式编辑未做 | A |
-| 12 个内置过滤器 | ✅ | ✅ | ✅ 内核 12 算子批处理 + 参数 UI；逐算子 golden 未全测 | A |
+| 12 个内置过滤器 | ✅ | ✅ | ✅ 内核 12 算子批处理 + 参数 UI；12 算子 golden 已覆盖 | A |
 | 四元数 → RPY | ✅ 插件 | ✅ 插件（单 topic 三列） | ✅ 4→3，三条扁平通道 `rpy.roll/.pitch/.yaw`；尚无单 topic 三列 | A |
 | 自定义函数编辑器（多输入、预览、应用、存布局） | ✅ Lua | ✅ Luau | ❌ | B（A 后第一项） |
 | 过滤器输出作为普通通道 | ⚠️ 派生序列 | ✅ datastore topic | ✅ 写回同一 `PsDataset`，进「派生通道」组 | A |

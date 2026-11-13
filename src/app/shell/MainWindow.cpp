@@ -563,9 +563,17 @@ void MainWindow::createDocks()
             return;
         QMenu menu(this);
         menu.setAttribute(Qt::WA_StyledBackground, true);
+        menu.setAttribute(Qt::WA_TranslucentBackground, false);
+        menu.setAutoFillBackground(true);
+        QPalette pal = menu.palette();
+        pal.setColor(QPalette::Window, QColor(QStringLiteral("#161b20")));
+        pal.setColor(QPalette::Base, QColor(QStringLiteral("#161b20")));
+        pal.setColor(QPalette::WindowText, QColor(QStringLiteral("#c9d1d9")));
+        pal.setColor(QPalette::Text, QColor(QStringLiteral("#c9d1d9")));
+        menu.setPalette(pal);
         menu.setStyleSheet(QStringLiteral(
             "QMenu{background:#161b20;color:#c9d1d9;border:1px solid #2d3841;padding:4px;}"
-            "QMenu::item{padding:5px 24px 5px 20px;font-size:12px;color:#c9d1d9;}"
+            "QMenu::item{padding:5px 24px 5px 20px;font-size:12px;color:#c9d1d9;background:#161b20;}"
             "QMenu::item:selected{background:#1f2a33;color:#f2b134;}"));
         QAction *add = menu.addAction(QStringLiteral("添加变换…"));
         QAction *draw = menu.addAction(QStringLiteral("画到当前画布"));

@@ -105,6 +105,30 @@ mod tests {
     }
 
     #[test]
+    fn degrees_and_unwrap_cross_pi() {
+        let yaws = [179.0f64, -179.0, -170.0];
+        let mut q = Vec::new();
+        for y in yaws {
+            let a = y.to_radians() / 2.0;
+            q.push((a.cos(), a.sin()));
+        }
+        let w: Vec<f64> = q.iter().map(|x| x.0).collect();
+        let z: Vec<f64> = q.iter().map(|x| x.1).collect();
+        let zeros = vec![0.0; 3];
+        let (_, _, plain) = to_rpy(&w, &zeros, &zeros, &z, true, false).unwrap();
+        assert!((plain[0] - 179.0).abs() < 1e-9);
+        assert!((plain[1] + 179.0).abs() < 1e-9);
+        assert!((plain[2] + 170.0).abs() < 1e-9);
+        let (_, _, wrapped) = to_rpy(&w, &zeros, &zeros, &z, true, true).unwrap();
+        assert!((wrapped[1] - 181.0).abs() < 1e-9 && (wrapped[2] - 190.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zero_norm_errors() {
+        assert!(to_rpy(&[0.0], &[0.0], &[0.0], &[0.0], false, false).is_err());
+    }
+
+    #[test]
     fn roll_pitch_yaw_roundtrip() {
         let (r, p, y) = ((20.0f64).to_radians(), (10.0f64).to_radians(), (30.0f64).to_radians());
         let (cr, sr) = ((r / 2.0).cos(), (r / 2.0).sin());
