@@ -22,7 +22,7 @@
 | MP4 | ⚠️ 仅视频查看 | ✅ 作为数据源 | ❌ | C |
 | 3D（PLY/PCD） | ❌ | ✅ | ❌ | C |
 | ROS1 bag | ⚠️ README 声称，3.9.3 代码仅见 ROS2 | ❌ | ❌ | C |
-| ArduPilot .bin | ❌ | ❌ | ❌ | 不做 |
+| ArduPilot .bin | ❌ | ❌ | ✅ DataFlash 二进制；597 通道 / 1304 参数 / 40 MSG 验收 | A |
 
 ## 2. 实时流与录制
 
@@ -134,7 +134,7 @@ MCAP、Parquet、MF4、BLF/candump 的 DBC 解码、JSON/Protobuf 解析、XY �
 MQTT/ZMQ/UDP/LSL/ROS2/Foxglove/PJ Bridge/WebRTC、MCAP 录制、Luau/Python、插件 SDK 与市场、2D/3D、GPU/列式存储、MCP。
 
 ### D. 超越 PJ 的部分
-- 飞控语义：PX4 ULog 参数/消息/飞行模式/估计器新息的结构化视图；后续 ArduPilot。
+- 飞控语义：PX4 ULog 与 ArduPilot DataFlash 的参数/消息/飞行模式/估计器新息结构化视图。
 - 两次仿真/试飞对比：同名通道配对 + 时间对齐 + 参数差异 + 指标差异，一步出结论。
 - 批量与自动化：无界面 CLI、批量截图/报告、回归对比。
 - 本地化与离线：中文界面、离线安装、轻量部署。
