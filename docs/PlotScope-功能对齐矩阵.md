@@ -58,10 +58,18 @@
 | Transform Editor | ✅ | ✅ | ❌ | A |
 | 12 个内置过滤器 | ✅ | ✅ | ❌ | A |
 | 四元数 → RPY | ✅ 插件 | ✅ 插件（单 topic 三列） | ❌ | A |
-| 自定义函数（Lua/Luau） | ✅ Lua | ✅ Luau | ❌ | C |
+| 自定义函数编辑器（多输入、预览、应用、存布局） | ✅ Lua | ✅ Luau | ❌ | B（A 后第一项） |
 | 过滤器输出作为普通通道 | ⚠️ 派生序列 | ✅ datastore topic | ❌ | A |
 | 配方进布局、可移植 | ✅ XML | ✅ 内嵌源码 | ❌ | A |
 | FFT | ✅ 插件 | ✅ 插件 | ❌ | C |
+
+自定义函数编辑器不照搬 PJ 的界面，但必须保留同等能力：
+- 1–4 个输入通道 + 若干标量参数；输出单值或分组多列（如 roll/pitch/yaw）。
+- 代码编辑区、输入绑定、参数表单、before/after 预览、Apply 替换。
+- 内置片段：`quat_to_rpy`、derivative、integral、clamp、rad2deg、moving_average。
+- 脚本 API：`init(params)` / `reset()` / `step(t, value, v1..v3)` 返回 number 或 table。
+- 沙箱：禁 `io/os/package`，步数与内存上限；错误带行号，不崩 UI。
+- 源码随 `.psl` 保存，换机器可恢复；支持导入 PJ3 Lua 脚本改写使用。
 
 ## 5. 绘图与交互
 

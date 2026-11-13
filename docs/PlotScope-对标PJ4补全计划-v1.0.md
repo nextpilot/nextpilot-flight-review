@@ -164,15 +164,17 @@ public:
 
 验收：CSV 可被 Excel 打开，列名不歧义；测量值与数据一致。
 
-### P3 脚本（Luau / Python）
-任务：
-1. 先接 Luau（PJ4 用 Luau，兼容 Lua 语法），沙箱 + 步数/内存限制。
-2. 自定义函数契约：`create(params)` 返回 `calculate(t, v)` / MIMO 版本。
-3. 函数库：`quat_to_roll/pitch/yaw`、滤波模板、示例脚本。
-4. 脚本随布局保存；错误显示在变换面板，不静默吞。
-5. Python 后置，编译开关控制。
+### P3 自定义函数编辑器（Lua 5.4，Luau 后续兼容）
+不照搬 PJ 的 Lua Editor 界面，能力对齐：
+1. `ps-script` 接 Lua 5.4（mlua，vendored），沙箱禁 `io/os/package`，步数/内存/单块时间预算。
+2. 契约：`init(params)`、`reset()`、`step(t, value, v1..v3)` 返回 number 或分组 table；支持 1–4 输入、单/多输出。
+3. UI：代码编辑、输入绑定、参数表单、before 虚线 + after 实线预览、Apply 替换、错误行号。
+4. 内置片段：`quat_to_rpy`、derivative、integral、clamp、rad2deg、moving_average。
+5. 源码随 `.psl` 保存；导入时重建通道并重新编译。
+6. 兼容：先保证 PJ3 Lua 脚本可改写运行；Luau 语法差异后续加适配层，不阻塞。
+7. Python 后置，编译开关控制。
 
-验收：PJ 风格的 Lua 脚本可直接改写使用；错误脚本不会崩 UI。
+验收：写一个 4 输入四元数脚本能出 roll/pitch/yaw 并绘图；错误脚本只报错不崩 UI；重启后脚本和参数恢复。
 
 ### P4 数据源 / 插件 / 渲染
 - MCAP、Parquet、ROS2、JSON/CBOR/MessagePack。
