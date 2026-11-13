@@ -11,7 +11,8 @@
 extern "C" {
 #endif
 
-#define PS_PLUGIN_ABI_VERSION 3u
+#define PS_PLUGIN_ABI_VERSION 4u
+#define PS_HOST_API_VERSION 1u
 
 /* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
@@ -31,6 +32,19 @@ extern "C" {
 #define PS_CAP_RECORD    (1u << 7)
 #define PS_CAP_COMMAND   (1u << 8)   /* 支持向设备发送调试/控制命令 */
 
+/* 宿主函数表：插件不再直接链接 kernel，也不靠 exe 导出 ps_dataset_* 符号。
+ * 插件用 host->dataset_new/add_channel 构造数据集；数据集所有权仍归宿主。
+ * 这张表由宿主在 load/open 时传入，跨 Windows/Linux 同一套语义。 */
+typedef struct PsHostApi {
+    uint32_t abi_version;       /* 必须等于 PS_HOST_API_VERSION */
+    uint32_t kernel_abi_version;/* 当前 kernel ABI 版本，供插件诊断 */
+    void *(*dataset_new)(void);
+    int32_t (*dataset_add_channel)(void *dataset, const char *name, const char *unit,
+                                   const double *time_s, const double *value, uint32_t count,
+                                   char *err, uint32_t err_cap);
+    void (*dataset_free)(void *dataset);
+} PsHostApi;
+
 /* Loader 数据面。所有 JSON 返回：>=0 为写入字节数；<0 失败。
  * load 返回 0 成功，数据集所有权交给宿主。 */
 typedef struct PsLoaderVtable {
@@ -49,8 +63,8 @@ typedef struct PsLoaderVtable {
                           char *out, uint32_t cap);
     int32_t (*default_options)(const char *path, char *out, uint32_t cap);
     int32_t (*params_json)(const char *path, char *out, uint32_t cap);
-    int32_t (*load)(const char *path, const char *opts_json, void **dataset,
-                    char *err, uint32_t err_cap);
+    int32_t (*load)(const char *path, const char *opts_json, const PsHostApi *host,
+                    void **dataset, char *err, uint32_t err_cap);
 } PsLoaderVtable;
 
 /* 实时源向宿主写数据的唯一通道：插件按批提交，宿主负责追加到实时通道。
@@ -75,8 +89,8 @@ typedef struct PsDataSourceVtable {
 
     int32_t (*config_schema_json)(char *out, uint32_t cap);
     int32_t (*default_config_json)(char *out, uint32_t cap);
-    int32_t (*open)(const char *config_json, const PsSourceSink *sink, void **handle,
-                    char *err, uint32_t err_cap);
+    int32_t (*open)(const char *config_json, const PsSourceSink *sink, const PsHostApi *host,
+                    void **handle, char *err, uint32_t err_cap);
     int32_t (*poll)(void *handle, int32_t timeout_ms, char *err, uint32_t err_cap);
     int32_t (*close)(void *handle);
     int32_t (*status_json)(void *handle, char *out, uint32_t cap);

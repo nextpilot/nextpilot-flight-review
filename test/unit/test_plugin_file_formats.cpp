@@ -1,5 +1,6 @@
 #include "ps_plugin_api.h"
 #include "ps_kernel.h"
+#include "app/plugin_host/HostApi.h"
 
 #include <cassert>
 #include <cstring>
@@ -18,7 +19,7 @@ bool loadAndCheck(const PsPluginDescriptor *d, const std::string &path, uint32_t
     assert(d && d->loader);
     void *raw = nullptr;
     char err[256] = {0};
-    const int32_t rc = d->loader->load(path.c_str(), "", &raw, err, sizeof(err));
+    const int32_t rc = d->loader->load(path.c_str(), "", ps_host_api(), &raw, err, sizeof(err));
     if (rc != 0)
     {
         std::cerr << d->loader->id << " load failed: " << err << "\n";

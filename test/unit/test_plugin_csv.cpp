@@ -1,5 +1,6 @@
 #include "ps_plugin_api.h"
 #include "ps_kernel.h"
+#include "app/plugin_host/HostApi.h"
 
 #include <cassert>
 #include <cstdio>
@@ -41,7 +42,7 @@ int main()
 
     void *raw = nullptr;
     char err[256] = {0};
-    const int32_t rc = desc->loader->load(p.c_str(), opts, &raw, err, sizeof(err));
+    const int32_t rc = desc->loader->load(p.c_str(), opts, ps_host_api(), &raw, err, sizeof(err));
     if (rc != 0)
     {
         std::cerr << "load failed: " << err << "\n";

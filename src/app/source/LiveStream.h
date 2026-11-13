@@ -4,32 +4,12 @@
 #include "ps_kernel.h"
 
 #include <QFile>
-#include <QHash>
 #include <QString>
 #include <QTextStream>
 #include <QVector>
 
-#include <memory>
-#include <vector>
-
-// 实时源的一路通道。PsChannelInfo 指针在对象生命周期内稳定，
-// 因为底层 vector 在构造时一次性 reserve，追加不再 realloc。
-struct LiveChannel
-{
-    QString name;
-    QString unit;
-    QByteArray nameBytes;
-    QByteArray unitBytes;
-    std::vector<double> time;
-    std::vector<double> value;
-    PsChannelInfo info{};
-
-    LiveChannel(const QString &n, const QString &u, int capacity);
-    void append(const double *t, const double *v, uint32_t n);
-};
-
-// 一个实时源实例的宿主侧缓冲与记录器。插件只通过 PsSourceSink 写批数据；
-// 宿主决定保留多少、是否落盘、何时刷新 UI。
+// 实时源实例的宿主侧缓冲与记录器。缓冲本身由 kernel 的 ps-stream 持有，
+// app 只负责启停、UI 刷新和落盘策略。
 class LiveStream
 {
 public:
@@ -61,13 +41,12 @@ private:
     static int32_t onChannel(void *ctx, const char *name, const char *unit,
                              const double *time_s, const double *value, uint32_t count);
     static int32_t onEvent(void *ctx, const char *topic, const char *payload_json);
-    LiveChannel *channel(const QString &name, const QString &unit);
-    void appendRecord(const LiveChannel &ch, uint32_t from, uint32_t count);
+    const PsChannelInfo *channelByName(const QString &name) const;
+    void appendRecord(const PsChannelInfo &ch, uint32_t from, uint32_t count);
 
     QString m_pluginId;
     QString m_label;
-    QVector<LiveChannel *> m_channels;
-    QHash<QString, LiveChannel *> m_byName;
+    PsStream *m_stream = nullptr;
     PsSourceSink m_sink{};
     QFile m_record;
     QTextStream m_out;

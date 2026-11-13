@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 /* ABI 版本闸门：宿主用它挡掉不兼容的实现，见 D9 */
-#define PS_ABI_VERSION 1u
+#define PS_ABI_VERSION 2u
 
 /* 借用型字节片：宿主分配、内核不释放 */
 typedef struct PsBytes {
@@ -86,6 +86,41 @@ uint32_t ps_lod_minmax_many(const double *const *time,
                             double t0, double t1, uint32_t px,
                             double *out, uint32_t out_stride,
                             uint32_t *out_counts);
+
+/* ---- 缓存：机制在 kernel，key/失效策略在 app ---- */
+
+/* 按源文件指纹写数据集缓存；原子写（临时文件 + rename）。
+ * 返回 0 成功；1 参数错误；2 IO/格式错误。 */
+int32_t ps_cache_save_dataset(const PsDataset *ds, const char *path,
+                              int64_t source_size, int64_t source_mtime,
+                              char *err, uint32_t err_cap);
+
+/* 读回缓存：0 命中；1 不存在/指纹过期；2 文件损坏。
+ * 命中时 *out 为新数据集，调用方用 ps_dataset_free 释放。 */
+int32_t ps_cache_load_dataset(const char *path,
+                              int64_t source_size, int64_t source_mtime,
+                              PsDataset **out, char *err, uint32_t err_cap);
+
+/* ---- 实时流：固定容量缓冲 + 通道视图 + 视口 LOD ---- */
+
+typedef struct PsStream PsStream;  /* 不透明句柄，ps_stream_free 释放 */
+
+PsStream *ps_stream_new(uint32_t capacity);
+void      ps_stream_free(PsStream *stream);
+
+/* 追加一批样本；0 全收；1 容量不足截断；2 参数错误。 */
+int32_t ps_stream_push(PsStream *stream, const char *name, const char *unit,
+                       const double *time, const double *value, uint32_t count);
+
+uint32_t             ps_stream_channel_count(const PsStream *stream);
+/* 与 PsChannelInfo 同布局；指针指向流内部，下一次追加/释放后失效。 */
+const PsChannelInfo *ps_stream_channel(const PsStream *stream, uint32_t index);
+
+/* 对流通道做视口 LOD；返回三元组数。 */
+uint32_t ps_stream_lod(const PsStream *stream, const char *name,
+                       double t0, double t1, uint32_t px,
+                       double *out_xyz, uint32_t cap_triples);
+
 
 #ifdef __cplusplus
 }

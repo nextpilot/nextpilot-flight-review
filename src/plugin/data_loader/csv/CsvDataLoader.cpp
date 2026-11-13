@@ -249,7 +249,7 @@ int32_t csvDefaultOptions(const char *path, char *out, uint32_t cap)
     return writeJson(defaultOptions(QString::fromUtf8(path)), out, cap);
 }
 
-int32_t csvLoad(const char *path, const char *optsJson, void **dataset,
+int32_t csvLoad(const char *path, const char *optsJson, const PsHostApi *host, void **dataset,
                 char *err, uint32_t errCap)
 {
     const QJsonObject opts = QJsonDocument::fromJson(QByteArray(optsJson ? optsJson : "")).object();
@@ -296,7 +296,7 @@ int32_t csvLoad(const char *path, const char *optsJson, void **dataset,
         c.v = table.columns[i];
         channels.push_back(std::move(c));
     }
-    PsDataset *ds = psBuildDataset(channels, perr);
+    PsDataset *ds = psBuildDataset(channels, perr, host);
     if (!ds)
     {
         psWriteErr(err, errCap, perr);

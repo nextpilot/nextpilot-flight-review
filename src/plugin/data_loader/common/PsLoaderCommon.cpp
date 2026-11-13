@@ -70,9 +70,16 @@ std::string psUnitFromHeader(const std::string &header)
     return {};
 }
 
-PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err)
+PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err,
+                          const PsHostApi *host)
 {
-    PsDataset *ds = ps_dataset_new();
+    if (!host || host->abi_version != PS_HOST_API_VERSION)
+    {
+        err = "宿主 API 版本不匹配";
+        return nullptr;
+    }
+    void *raw = host->dataset_new();
+    PsDataset *ds = static_cast<PsDataset *>(raw);
     if (!ds)
     {
         err = "数据集分配失败";
@@ -83,14 +90,14 @@ PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::strin
     {
         if (c.name.empty())
             continue;
-        const int32_t rc = ps_dataset_add_channel(ds, c.name.c_str(), c.unit.c_str(),
-                                                  c.t.data(), c.v.data(),
-                                                  static_cast<uint32_t>(std::min(c.t.size(), c.v.size())),
-                                                  e, sizeof(e));
+        const int32_t rc = host->dataset_add_channel(raw, c.name.c_str(), c.unit.c_str(),
+                                                     c.t.data(), c.v.data(),
+                                                     static_cast<uint32_t>(std::min(c.t.size(), c.v.size())),
+                                                     e, sizeof(e));
         if (rc != 0)
         {
             err = c.name + "：" + e;
-            ps_dataset_free(ds);
+            host->dataset_free(raw);
             return nullptr;
         }
     }

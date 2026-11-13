@@ -4,7 +4,7 @@
 
 namespace {
 
-int32_t ascLoad(const char *path, const char *, void **dataset, char *err, uint32_t errCap)
+int32_t ascLoad(const char *path, const char *, const PsHostApi *host, void **dataset, char *err, uint32_t errCap)
 {
     AscLog log;
     std::string perr;
@@ -19,7 +19,7 @@ int32_t ascLoad(const char *path, const char *, void **dataset, char *err, uint3
         psWriteErr(err, errCap, "ASC 里没有变化的 CAN 字节（可能全是常量帧）");
         return 2;
     }
-    PsDataset *ds = psBuildDataset(channels, perr);
+    PsDataset *ds = psBuildDataset(channels, perr, host);
     if (!ds)
     {
         psWriteErr(err, errCap, perr);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ps_plugin_api.h"
 #include "ps_kernel.h"
 
 #include <QByteArray>
@@ -18,7 +19,8 @@ struct PsChannelData
 };
 
 /* 把通道列表交给内核通用 dataset API，插件不直接构造 PsDataset。 */
-PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err);
+PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err,
+                          const PsHostApi *host);
 
 void psWriteErr(char *err, uint32_t cap, const std::string &msg);
 int32_t psWriteJson(const QByteArray &json, char *out, uint32_t cap);

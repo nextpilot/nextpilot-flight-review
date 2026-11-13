@@ -1,0 +1,7 @@
+[package]
+name = "ps-stream"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ps-ndf = { path = "../ps-ndf" }

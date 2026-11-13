@@ -5,7 +5,7 @@
 
 namespace {
 
-int32_t badLoad(const char *, const char *, void **, char *, uint32_t)
+int32_t badLoad(const char *, const char *, const PsHostApi *, void **, char *, uint32_t)
 {
     return -1;
 }

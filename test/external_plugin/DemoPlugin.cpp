@@ -7,7 +7,7 @@
 
 namespace {
 
-int32_t demoLoad(const char *, const char *, void **, char *err, uint32_t cap)
+int32_t demoLoad(const char *, const char *, const PsHostApi *, void **, char *err, uint32_t cap)
 {
     std::snprintf(err, cap, "demo 插件只验证装载，不提供数据");
     return -1;

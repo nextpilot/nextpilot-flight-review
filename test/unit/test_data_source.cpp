@@ -1,4 +1,5 @@
 #include "ps_plugin_api.h"
+#include "app/plugin_host/HostApi.h"
 
 #include <cassert>
 #include <cstring>
@@ -52,7 +53,7 @@ int main()
     PsSourceSink sink{&state, onBatch, onEvent};
     void *handle = nullptr;
     char err[256] = {0};
-    assert(d->source->open("{\"rate_hz\":200,\"channels\":2}", &sink, &handle, err, sizeof(err)) == 0);
+    assert(d->source->open("{\"rate_hz\":200,\"channels\":2}", &sink, ps_host_api(), &handle, err, sizeof(err)) == 0);
     assert(handle);
     for (int i = 0; i < 20; ++i)
     {

@@ -18,36 +18,9 @@ QString csvField(QString s)
 
 } // namespace
 
-LiveChannel::LiveChannel(const QString &n, const QString &u, int capacity)
-    : name(n), unit(u), nameBytes(n.toUtf8()), unitBytes(u.toUtf8())
-{
-    time.reserve(static_cast<size_t>(capacity));
-    value.reserve(static_cast<size_t>(capacity));
-    info.name = nameBytes.constData();
-    info.unit = unitBytes.constData();
-    info.point_count = 0;
-    info.time = nullptr;
-    info.value = nullptr;
-}
-
-void LiveChannel::append(const double *t, const double *v, uint32_t n)
-{
-    if (n == 0)
-        return;
-    const size_t room = time.capacity() - time.size();
-    const uint32_t take = static_cast<uint32_t>(qMin<size_t>(n, room));
-    for (uint32_t i = 0; i < take; ++i)
-    {
-        time.push_back(t[i]);
-        value.push_back(v[i]);
-    }
-    info.point_count = static_cast<uint32_t>(time.size());
-    info.time = time.data();
-    info.value = value.data();
-}
-
 LiveStream::LiveStream(QString pluginId, QString label)
-    : m_pluginId(std::move(pluginId)), m_label(std::move(label))
+    : m_pluginId(std::move(pluginId)), m_label(std::move(label)),
+      m_stream(ps_stream_new(static_cast<uint32_t>(kChannelCapacity)))
 {
     m_sink.ctx = this;
     m_sink.channel_batch = &LiveStream::onChannel;
@@ -57,27 +30,30 @@ LiveStream::LiveStream(QString pluginId, QString label)
 LiveStream::~LiveStream()
 {
     stopRecording();
-    qDeleteAll(m_channels);
+    ps_stream_free(m_stream);
 }
 
 QVector<const PsChannelInfo *> LiveStream::channels() const
 {
     QVector<const PsChannelInfo *> out;
-    out.reserve(m_channels.size());
-    for (const LiveChannel *ch : m_channels)
-        out.append(&ch->info);
+    const uint32_t n = ps_stream_channel_count(m_stream);
+    out.reserve(static_cast<int>(n));
+    for (uint32_t i = 0; i < n; ++i)
+        if (const PsChannelInfo *ch = ps_stream_channel(m_stream, i))
+            out.append(ch);
     return out;
 }
 
-LiveChannel *LiveStream::channel(const QString &name, const QString &unit)
+const PsChannelInfo *LiveStream::channelByName(const QString &name) const
 {
-    auto it = m_byName.find(name);
-    if (it != m_byName.end())
-        return it.value();
-    auto *ch = new LiveChannel(name, unit, kChannelCapacity);
-    m_channels.append(ch);
-    m_byName.insert(name, ch);
-    return ch;
+    const uint32_t n = ps_stream_channel_count(m_stream);
+    for (uint32_t i = 0; i < n; ++i)
+    {
+        const PsChannelInfo *ch = ps_stream_channel(m_stream, i);
+        if (ch && QString::fromUtf8(ch->name) == name)
+            return ch;
+    }
+    return nullptr;
 }
 
 int32_t LiveStream::onChannel(void *ctx, const char *name, const char *unit,
@@ -86,20 +62,23 @@ int32_t LiveStream::onChannel(void *ctx, const char *name, const char *unit,
     auto *self = static_cast<LiveStream *>(ctx);
     if (!self || !name || !name[0] || !time_s || !value || count == 0)
         return 1;
-    auto *ch = self->channel(QString::fromUtf8(name), QString::fromUtf8(unit ? unit : ""));
-    const uint32_t before = static_cast<uint32_t>(ch->time.size());
-    ch->append(time_s, value, count);
-    const uint32_t appended = static_cast<uint32_t>(ch->time.size()) - before;
+    const QString channelName = QString::fromUtf8(name);
+    const PsChannelInfo *beforeInfo = self->channelByName(channelName);
+    const uint32_t before = beforeInfo ? beforeInfo->point_count : 0;
+    const int rc = ps_stream_push(self->m_stream, name, unit ? unit : "", time_s, value, count);
+    const PsChannelInfo *afterInfo = self->channelByName(channelName);
+    const uint32_t after = afterInfo ? afterInfo->point_count : before;
+    const uint32_t appended = after - before;
     self->m_totalSamples += static_cast<int>(appended);
     if (appended > 0)
     {
         self->m_changed = true;
         if (self->m_record.isOpen())
-            self->appendRecord(*ch, before, appended);
+            self->appendRecord(*afterInfo, before, appended);
     }
-    if (appended < count)
+    if (rc != 0 || appended < count)
         self->m_overflow = true;
-    return appended < count ? 1 : 0;
+    return rc;
 }
 
 int32_t LiveStream::onEvent(void *ctx, const char *topic, const char *payload_json)
@@ -113,11 +92,11 @@ int32_t LiveStream::onEvent(void *ctx, const char *topic, const char *payload_js
     return 0;
 }
 
-void LiveStream::appendRecord(const LiveChannel &ch, uint32_t from, uint32_t count)
+void LiveStream::appendRecord(const PsChannelInfo &ch, uint32_t from, uint32_t count)
 {
-    for (uint32_t i = from; i < from + count && i < ch.time.size(); ++i)
-        m_out << QString::number(ch.time[i], 'g', 10) << ',' << csvField(ch.name) << ','
-              << QString::number(ch.value[i], 'g', 10) << '\n';
+    for (uint32_t i = from; i < from + count && i < ch.point_count; ++i)
+        m_out << QString::number(ch.time[i], 'g', 10) << ',' << csvField(QString::fromUtf8(ch.name))
+              << ',' << QString::number(ch.value[i], 'g', 10) << '\n';
 }
 
 bool LiveStream::startRecording(QString *path, QString *err)

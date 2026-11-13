@@ -4,6 +4,8 @@ members = [
     "ps-abi",
     "ps-ndf",
     "ps-ops",
+    "ps-cache",
+    "ps-stream",
 ]
 
 [workspace.package]
@@ -16,3 +18,5 @@ authors = ["NextPilot"]
 ps-abi = { path = "ps-abi" }
 ps-ndf = { path = "ps-ndf" }
 ps-ops = { path = "ps-ops" }
+ps-cache = { path = "ps-cache" }
+ps-stream = { path = "ps-stream" }

@@ -12,16 +12,20 @@ src/
     transform/  变换对话框
     script/     Lua 绑定
     plugin_host/ 插件发现、装载、ABI 校验、生命周期
-    cache/       解析结果缓存、参数缓存（不是内核数据模型）
+    cache/       缓存 key/目录/失效策略；数据落盘调 kernel 的 ps-cache
 
   kernel/       与 Qt 无关的抽象业务逻辑（当前 Rust 实现）
     include/    ps_kernel.h，唯一对外 C ABI
     ps-ndf/     数据模型：Dataset / Series / LOD / 精度
     ps-ops/     通用算子：filter / quat / align
+    ps-cache/   数据集二进制缓存机制（原子写、指纹校验）
+    ps-stream/  实时流缓冲机制（固定容量、通道视图、流上 LOD）
     ps-abi/     C ABI 门面：只做指针、错误码、panic 隔离
 
   plugin/       插件（官方随包发布）
-    include/    ps_plugin_api.h，插件契约
+    include/    ps_plugin_api.h，插件契约（ABI 4 + 宿主函数表）
+    sdk/rust/   Rust 插件 SDK（C 布局镜像，不依赖 kernel）
+    data_loader/rustcsv/  Rust 真实 I/O 样板
     data_loader/ CSV / ULog / APBin / ASC / BLF
     data_source/ 仿真 / MAVLink / OEM7
 
@@ -35,7 +39,7 @@ src/
 |---|---|---|
 | 数据模型、通用算子、LOD | `kernel/` | 要遍历/变换/降采样，且不碰 Qt、不做 I/O |
 | 插件发现、ABI 校验、装载 | `app/plugin_host/` | 管宿主生命周期，不负责计算 |
-| 解析缓存、参数缓存 | `app/cache/` | 管“上次解析结果”，不持有内存数据模型 |
+| 缓存 key/目录/失效策略 | `app/cache/` | 策略归 app；落盘机制在 kernel `ps-cache` |
 | 文件/协议解析、配置 schema | `plugin/` | 决定数据从哪来 |
 | 窗口、Ribbon、Dock、对话框 | `app/` | 只在屏幕上存在 |
 | 用户 Lua 脚本 | `scripts/` | 可热改、可重载，不编进二进制 |

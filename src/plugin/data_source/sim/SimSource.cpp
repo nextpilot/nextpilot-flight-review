@@ -47,7 +47,7 @@ const char *kSchema = R"({
 
 const char *kDefaults = R"({"rate_hz":50,"channels":3,"duration_s":0})";
 
-int32_t openSource(const char *config, const PsSourceSink *sink, void **handle,
+int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi *host, void **handle,
                    char *err, uint32_t errCap)
 {
     if (!handle || !sink || !sink->channel_batch)

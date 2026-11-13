@@ -26,7 +26,7 @@ int32_t ulogParams(const char *path, char *out, uint32_t cap)
     return psWriteJson(QJsonDocument(arr).toJson(QJsonDocument::Compact), out, cap);
 }
 
-int32_t ulogLoad(const char *path, const char *, void **dataset, char *err, uint32_t errCap)
+int32_t ulogLoad(const char *path, const char *, const PsHostApi *host, void **dataset, char *err, uint32_t errCap)
 {
     UlogLog log;
     std::string perr;
@@ -35,7 +35,7 @@ int32_t ulogLoad(const char *path, const char *, void **dataset, char *err, uint
         psWriteErr(err, errCap, perr);
         return 1;
     }
-    PsDataset *ds = psBuildDataset(log.channels, perr);
+    PsDataset *ds = psBuildDataset(log.channels, perr, host);
     if (!ds)
     {
         psWriteErr(err, errCap, perr);

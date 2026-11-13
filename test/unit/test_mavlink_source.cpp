@@ -1,4 +1,5 @@
 #include "ps_plugin_api.h"
+#include "app/plugin_host/HostApi.h"
 
 #include <QCoreApplication>
 #include <QUdpSocket>
@@ -55,7 +56,7 @@ int main(int argc, char **argv)
     PsSourceSink ps{&sink, onBatch, onEvent};
     void *h = nullptr;
     char err[256] = {0};
-    assert(d->source->open("{\"port\":14555,\"bind\":\"127.0.0.1\"}", &ps, &h, err, sizeof(err)) == 0);
+    assert(d->source->open("{\"port\":14555,\"bind\":\"127.0.0.1\"}", &ps, ps_host_api(), &h, err, sizeof(err)) == 0);
 
     QByteArray f;
     f.append(char(0xFD)).append(char(16)).append(char(0)).append(char(0)).append(char(0));

@@ -1,5 +1,7 @@
 #include "loader/LoaderRegistry.h"
 
+#include "app/plugin_host/HostApi.h"
+
 #include "ps_plugin_api.h"
 #include "app/plugin_host/PluginRuntime.h"
 #include "ps_kernel.h"
@@ -142,7 +144,7 @@ bool LoaderRegistry::registerDescriptor(const PsPluginDescriptor *desc, const QS
     }
     p.load = [v](const QString &path, const QString &opts, PsDataset **ds,
                  char *err, unsigned int cap) {
-        return v->load(path.toUtf8().constData(), opts.toUtf8().constData(),
+        return v->load(path.toUtf8().constData(), opts.toUtf8().constData(), ps_host_api(),
                        reinterpret_cast<void **>(ds), err, cap);
     };
     m_plugins.append(p);

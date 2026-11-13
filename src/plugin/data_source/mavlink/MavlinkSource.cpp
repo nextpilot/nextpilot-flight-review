@@ -225,7 +225,7 @@ void parse(MavState *st)
     }
 }
 
-int32_t openSource(const char *config, const PsSourceSink *sink, void **handle,
+int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi *host, void **handle,
                    char *err, uint32_t errCap)
 {
     if (!handle || !sink || !sink->channel_batch)

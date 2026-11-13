@@ -1,6 +1,7 @@
 #include "source/SourceRegistry.h"
 
 #include "app/plugin_host/PluginRuntime.h"
+#include "app/plugin_host/HostApi.h"
 
 #include <QBuffer>
 #include <QJsonDocument>
@@ -64,7 +65,7 @@ bool SourceRegistry::registerDescriptor(const PsPluginDescriptor *desc, const QS
     p.defaultConfig = [v] { return readJson(v->default_config_json); };
     p.open = [v](const QString &config, const PsSourceSink *sink, void **handle, QString *err) {
         char e[1024] = {0};
-        const int rc = v->open(config.toUtf8().constData(), sink, handle, e, sizeof(e));
+        const int rc = v->open(config.toUtf8().constData(), sink, ps_host_api(), handle, e, sizeof(e));
         if (rc != 0 && err)
             *err = QString::fromUtf8(e[0] ? e : "open failed");
         return rc;

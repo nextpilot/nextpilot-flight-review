@@ -576,7 +576,7 @@ QString findDatabase(const QString &configured)
     return {};
 }
 
-int32_t openSource(const char *config, const PsSourceSink *sink, void **handle,
+int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi *, void **handle,
                    char *err, uint32_t errCap)
 {
     if (!handle || !sink || !sink->channel_batch)

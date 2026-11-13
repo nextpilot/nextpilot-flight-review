@@ -7,7 +7,7 @@ use std::os::raw::c_char;
 use std::sync::OnceLock;
 
 /// 与 `ps_kernel.h` 的 `PS_ABI_VERSION` 必须一致；CI 有 golden 校验。
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -29,7 +29,7 @@ pub extern "C" fn ps_kernel_version() -> *const c_char {
 /// 0 = 通过。非 0 为具体失败码：1 版本、2 NDF、3 算子、4 对齐。
 #[no_mangle]
 pub extern "C" fn ps_abi_selftest() -> i32 {
-    if ABI_VERSION != 1 {
+    if ABI_VERSION != 2 {
         return 1;
     }
     let mut s = ps_ndf::Series::new("selftest");
@@ -359,6 +359,143 @@ pub unsafe extern "C" fn ps_dataset_free(ds: *mut PsDataset) {
 #[no_mangle]
 pub extern "C" fn ps_dataset_new() -> *mut PsDataset {
     Box::into_raw(Box::new(PsDataset::new()))
+}
+
+// ===== P3：缓存与实时流机制 =====
+
+fn c_path(path: *const c_char) -> Result<std::path::PathBuf, String> {
+    if path.is_null() {
+        return Err("路径为空".into());
+    }
+    let s = unsafe { CStr::from_ptr(path) }.to_str().map_err(|_| "路径不是 UTF-8".to_string())?;
+    Ok(std::path::PathBuf::from(s))
+}
+
+fn c_name(ptr: *const c_char) -> String {
+    if ptr.is_null() {
+        return String::new();
+    }
+    unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
+}
+
+/// 把数据集按源文件指纹写入 `path`。0 成功；1 参数错误；2 IO/格式错误。
+#[no_mangle]
+pub unsafe extern "C" fn ps_cache_save_dataset(
+    ds: *const PsDataset,
+    path: *const c_char,
+    source_size: i64,
+    source_mtime: i64,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 1;
+    }
+    let p = match c_path(path) {
+        Ok(p) => p,
+        Err(e) => { write_err(err, err_cap, &e); return 1; }
+    };
+    match ps_cache::save_dataset(&p, &(*ds).data, source_size, source_mtime) {
+        Ok(()) => 0,
+        Err(e) => { write_err(err, err_cap, &e); 2 }
+    }
+}
+
+/// 读回缓存。0 命中；1 不存在/指纹过期；2 文件损坏或参数错误。
+#[no_mangle]
+pub unsafe extern "C" fn ps_cache_load_dataset(
+    path: *const c_char,
+    source_size: i64,
+    source_mtime: i64,
+    out: *mut *mut PsDataset,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if out.is_null() {
+        write_err(err, err_cap, "输出指针为空");
+        return 2;
+    }
+    *out = std::ptr::null_mut();
+    let p = match c_path(path) {
+        Ok(p) => p,
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    match ps_cache::load_dataset(&p, source_size, source_mtime) {
+        Ok(None) => 1,
+        Ok(Some(data)) => {
+            let mut ds = PsDataset::new();
+            ds.data = data;
+            ds.rebuild_infos();
+            *out = Box::into_raw(Box::new(ds));
+            0
+        }
+        Err(e) => { write_err(err, err_cap, &e); 2 }
+    }
+}
+
+/// 实时流：固定容量、按通道追加。0 全收；1 容量不足截断；2 参数错误。
+#[no_mangle]
+pub extern "C" fn ps_stream_new(capacity: u32) -> *mut ps_stream::Stream {
+    Box::into_raw(Box::new(ps_stream::Stream::new(capacity as usize)))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_stream_free(stream: *mut ps_stream::Stream) {
+    if !stream.is_null() {
+        drop(Box::from_raw(stream));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_stream_push(
+    stream: *mut ps_stream::Stream,
+    name: *const c_char,
+    unit: *const c_char,
+    time: *const f64,
+    value: *const f64,
+    count: u32,
+) -> i32 {
+    if stream.is_null() || name.is_null() || (count > 0 && (time.is_null() || value.is_null())) {
+        return 2;
+    }
+    let n = count as usize;
+    let t = std::slice::from_raw_parts(time, n);
+    let v = std::slice::from_raw_parts(value, n);
+    (*stream).push(&c_name(name), &c_name(unit), t, v)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_stream_channel_count(stream: *const ps_stream::Stream) -> u32 {
+    if stream.is_null() { 0 } else { (*stream).channel_count() as u32 }
+}
+
+/// 返回的视图与 PsChannelInfo 同布局；指针指向流内部，下一次追加/释放后失效。
+#[no_mangle]
+pub unsafe extern "C" fn ps_stream_channel(
+    stream: *const ps_stream::Stream,
+    index: u32,
+) -> *const PsChannelInfo {
+    if stream.is_null() { return std::ptr::null(); }
+    (*stream).channel(index as usize).map_or(std::ptr::null(), |v| v as *const _ as *const PsChannelInfo)
+}
+
+/// 对某条流通道做视口 LOD；返回写入的三元组数。
+#[no_mangle]
+pub unsafe extern "C" fn ps_stream_lod(
+    stream: *const ps_stream::Stream,
+    name: *const c_char,
+    t0: f64,
+    t1: f64,
+    px: u32,
+    out: *mut f64,
+    cap_triples: u32,
+) -> u32 {
+    if stream.is_null() || out.is_null() || cap_triples == 0 {
+        return 0;
+    }
+    let out = std::slice::from_raw_parts_mut(out, cap_triples as usize * 3);
+    (*stream).lod_into(&c_name(name), t0, t1, px as usize, out) as u32
 }
 
 /// 往数据集追加一条通道。name/unit 为 UTF-8；time/value 由内核复制。

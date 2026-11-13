@@ -1,4 +1,5 @@
 #include "ps_plugin_api.h"
+#include "app/plugin_host/HostApi.h"
 
 #include <QCoreApplication>
 #include <QTcpServer>
@@ -124,7 +125,7 @@ int main(int argc, char **argv)
     char err[256] = {0};
     const std::string cfg = std::string("{\"host\":\"127.0.0.1\",\"port\":14601,\"timeout_ms\":1000")
                             + ",\"database\":\"" + TEST_OEM7_DB + "\"}";
-    assert(d->source->open(cfg.c_str(), &ps, &h, err, sizeof(err)) == 0);
+    assert(d->source->open(cfg.c_str(), &ps, ps_host_api(), &h, err, sizeof(err)) == 0);
     QTcpSocket *peer = nullptr;
     assert(server.waitForNewConnection(1000));
     peer = server.nextPendingConnection();
