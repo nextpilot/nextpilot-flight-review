@@ -752,6 +752,13 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
         {
             name->setText(text.trimmed());
             row->setProperty("srcName", text.trimmed());
+            SourceData *src = sourceById(sourceIdForRow(row));
+            if (src)
+            {
+                src->alias = text.trimmed();
+                for (auto *c : findChildren<CanvasWidget *>())
+                    c->renameSource(src->path, src->alias);
+            }
             log(QStringLiteral("重命名数据源：%1").arg(text.trimmed()));
         }
     }
@@ -955,7 +962,7 @@ void MainWindow::switchSource(int id)
     m_srcParams = src->params;
     m_srcMsgs = src->msgs;
     for (auto *c : findChildren<CanvasWidget *>())
-        c->setInputSource(src->id, src->path);
+        c->setInputSource(src->id, src->path, src->alias);
     renderSourceData();
 }
 
@@ -1452,6 +1459,7 @@ void MainWindow::saveLayoutTo(const QString &path)
         QJsonObject so;
         so[QStringLiteral("path")] = src.path;
         so[QStringLiteral("name")] = src.name;
+        so[QStringLiteral("alias")] = src.alias;
         sources.append(so);
     }
     root[QStringLiteral("sources")] = sources;
@@ -1502,6 +1510,13 @@ void MainWindow::importLayoutFrom(const QString &path)
         }
         if (!loaded)
             loadFile(path);
+        const QString alias = v.toObject().value(QStringLiteral("alias")).toString();
+        if (!alias.isEmpty())
+        {
+            for (SourceData &src : m_sources)
+                if (src.path == path)
+                    src.alias = alias;
+        }
     }
 
     // 清空页签时屏蔽 currentChanged：末尾的 ＋ 触发 newPage 会和删除循环互踢
@@ -1638,6 +1653,10 @@ bool MainWindow::loadFile(const QString &path)
     for (const SourceData &old : m_sources)
         src.id = qMax(src.id, old.id + 1);
     src.name = fi.fileName();
+    src.alias = fi.completeBaseName();
+    for (const SourceData &old : m_sources)
+        if (old.alias == src.alias)
+            src.alias += QStringLiteral(" #%1").arg(src.id + 1);
     src.path = fi.absoluteFilePath();
     src.fmt = fmt_tag;
     src.ds = ds;

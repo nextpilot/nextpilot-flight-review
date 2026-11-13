@@ -22,6 +22,7 @@ struct SourceData
 {
     int id = -1;
     QString name;
+    QString alias;             // 图例前缀，默认文件名，可重命名
     QString path;
     QString fmt;
     PsDataset *ds = nullptr;

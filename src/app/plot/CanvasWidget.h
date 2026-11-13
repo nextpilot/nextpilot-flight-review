@@ -26,8 +26,9 @@ public:
     // 用内核通道替换当前所有曲线；传空则只清空。
     void setChannels(const QVector<const PsChannelInfo *> &channels);
     void addChannel(const PsChannelInfo *channel);   // 字段树拖入时追加一条曲线
-    void setInputSource(int id, const QString &path); // 当前拖拽/双击来自哪个数据源
+    void setInputSource(int id, const QString &path, const QString &alias = QString()); // 当前拖拽来源
     void removeChannelsFromSource(const QString &path);
+    void renameSource(const QString &path, const QString &alias);
     void clearChannels();
     void removeChannel(int index);
     void toggleChannel(int index);
@@ -61,7 +62,8 @@ protected:
 private:
     struct Series
     {
-        QString name;
+        QString name;              // 原始通道名（查数据用）
+        QString label;             // 图例显示名：源别名 · 通道名
         QString unit;
         int srcId = -1;            // 运行期数据源 id
         QString srcPath;           // 布局持久化用：源文件路径
@@ -105,4 +107,5 @@ private:
     int m_legendHit = -1;
     int m_inputSrcId = -1;
     QString m_inputSrcPath;
+    QString m_inputSrcAlias;
 };

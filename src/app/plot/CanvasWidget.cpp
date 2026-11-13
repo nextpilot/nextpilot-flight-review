@@ -62,6 +62,7 @@ void CanvasWidget::addDemoCurves()
     {
         Series s;
         s.name = QString::fromLatin1(d.name);
+        s.label = s.name;
         s.unit = QString::fromLatin1(d.unit);
         s.color = kPalette[idx++ % 6];
         s.tOwn.reserve(n);
@@ -107,6 +108,8 @@ void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
             continue;
         Series s;
         s.name = QString::fromUtf8(ch->name);
+        s.label = m_inputSrcAlias.isEmpty() ? s.name
+                                            : m_inputSrcAlias + QStringLiteral(" · ") + s.name;
         s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
         s.color = kPalette[idx++ % 6];
         s.t = ch->time;
@@ -118,10 +121,19 @@ void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
     resetView();
 }
 
-void CanvasWidget::setInputSource(int id, const QString &path)
+void CanvasWidget::setInputSource(int id, const QString &path, const QString &alias)
 {
     m_inputSrcId = id;
     m_inputSrcPath = path;
+    m_inputSrcAlias = alias;
+}
+
+void CanvasWidget::renameSource(const QString &path, const QString &alias)
+{
+    for (Series &s : m_series)
+        if (s.srcPath == path)
+            s.label = alias + QStringLiteral(" · ") + s.name;
+    update();
 }
 
 void CanvasWidget::removeChannelsFromSource(const QString &path)
@@ -146,6 +158,8 @@ void CanvasWidget::addChannel(const PsChannelInfo *ch)
     }
     Series s;
     s.name = QString::fromUtf8(ch->name);
+    s.label = m_inputSrcAlias.isEmpty() ? s.name
+                                        : m_inputSrcAlias + QStringLiteral(" · ") + s.name;
     s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
     s.srcId = m_inputSrcId;
     s.srcPath = m_inputSrcPath;
@@ -347,7 +361,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         for (int i = 0; i < m_series.size(); ++i)
         {
             const Series &s = m_series.at(i);
-            const QString lbl = s.unit.isEmpty() ? s.name : QStringLiteral("%1 [%2]").arg(s.name, s.unit);
+            const QString lbl = s.unit.isEmpty() ? s.label : QStringLiteral("%1 [%2]").arg(s.label, s.unit);
             const double w = 19 + fm.horizontalAdvance(lbl) + 12;
             m_legendRects.append(QRectF(lx - 2, ly - 12, w, 18));
             p.setPen(QPen(s.color, 1.2));
@@ -468,7 +482,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         const int idx = seriesAt(event->position());
         Series &s = m_series[idx];
         QMenu menu(this);
-        QAction *head = menu.addAction(s.name);
+        QAction *head = menu.addAction(s.label);
         head->setEnabled(false);
         menu.addSeparator();
         QAction *vis = menu.addAction(s.visible ? QStringLiteral("隐藏曲线") : QStringLiteral("显示曲线"));
@@ -574,6 +588,7 @@ QJsonObject CanvasWidget::saveState() const
     {
         QJsonObject so;
         so[QStringLiteral("name")] = s.name;
+        so[QStringLiteral("label")] = s.label;
         so[QStringLiteral("unit")] = s.unit;
         so[QStringLiteral("srcPath")] = s.srcPath;
         so[QStringLiteral("color")] = s.color.name();
@@ -601,6 +616,7 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
             continue;
         Series s;
         s.name = name;
+        s.label = so.value(QStringLiteral("label")).toString(name);
         s.unit = so.value(QStringLiteral("unit")).toString(QString::fromUtf8(ch->unit ? ch->unit : ""));
         s.color = QColor(so.value(QStringLiteral("color")).toString());
         if (!s.color.isValid())
