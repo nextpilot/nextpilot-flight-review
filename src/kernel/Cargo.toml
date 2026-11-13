@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "ps-abi",
     "ps-ndf",
-    "ps-parse",
     "ps-ops",
     "ps-script",
     "ps-align",
@@ -18,7 +17,6 @@ authors = ["NextPilot"]
 [workspace.dependencies]
 ps-abi = { path = "ps-abi" }
 ps-ndf = { path = "ps-ndf" }
-ps-parse = { path = "ps-parse" }
 ps-ops = { path = "ps-ops" }
 ps-script = { path = "ps-script" }
 ps-align = { path = "ps-align" }

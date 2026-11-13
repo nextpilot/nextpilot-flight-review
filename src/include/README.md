@@ -10,4 +10,5 @@
 - `params_json` 由插件负责解析 P/Q、PARM 等参数表。
 - UI 面：`PsUiVtable` 只给 `.ui` 路径和 JSON 回调（`get_data / on_event / on_tick`），禁止返回 `QWidget*`；由 app 的 `DialogEngine` 加载。
 - 外部插件：`.so` 必须导出 `ps_plugin_entry()`，包目录放 `manifest.json`、`.ui` 与资源；`ps-runtime` 负责扫描、预检、`dlopen`、ABI 校验、重复 id 去重。
-- 插件只通过 `ps_kernel.h` 的 C ABI 写数据集，不链 `ps-datastore` 内部实现。
+- 插件只通过 `ps_kernel.h` 的通用 C ABI 写数据集（`ps_dataset_new / ps_dataset_add_channel`），不链 `ps-datastore` 内部实现，也不要求内核认识自己的文件格式。
+- probe / parse / schema / params 由插件实现；内核只保留数据模型、filter、quat、LOD 等通用算子。

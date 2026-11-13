@@ -3,8 +3,6 @@
 #include <QImage>
 #include <QPainter>
 #include <QDebug>
-#include <QFile>
-#include <QTextStream>
 #include <random>
 #include <vector>
 
@@ -15,31 +13,6 @@
 
 static const int NCH = 20;
 static const int NPT = 8000;
-
-static QString makeCsv(const QString &path)
-{
-    std::mt19937 rng(42);
-    std::normal_distribution<double> noise(0.0, 0.35);
-    QFile f(path);
-    f.open(QIODevice::WriteOnly | QIODevice::Text);
-    QTextStream ts(&f);
-    ts << "time_ms";
-    for (int c = 0; c < NCH; ++c)
-        ts << ",ch" << c << "[u" << c << "]";
-    ts << "\n";
-    for (int i = 0; i < NPT; ++i)
-    {
-        ts << (i * 10);
-        for (int c = 0; c < NCH; ++c)
-        {
-            const double t = i / 100.0;
-            const double amp = 1.0 + 0.1 * c;
-            ts << ',' << QString::number(amp * std::sin(2 * M_PI * (0.2 + 0.03 * c) * t) + noise(rng), 'f', 4);
-        }
-        ts << "\n";
-    }
-    return path;
-}
 
 static double benchWidget(QWidget *w, int frames, const std::function<void()> &before = {})
 {
@@ -69,14 +42,26 @@ int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
 
-    const QString csv = makeCsv(QStringLiteral("canvas_spike_data20.csv"));
-
-    PsDataset *ds = nullptr;
+    // 直接走通用 dataset API，格式解析属于插件，基准不依赖 CSV。
+    PsDataset *ds = ps_dataset_new();
+    std::mt19937 rng(42);
+    std::normal_distribution<double> noise(0.0, 0.35);
     char err[256] = {0};
-    if (ps_csv_load(csv.toUtf8().constData(), &ds, err, sizeof(err)) != 0)
+    for (int c = 0; c < NCH; ++c)
     {
-        qCritical() << "load failed" << err;
-        return 1;
+        std::vector<double> t(NPT), v(NPT);
+        for (int i = 0; i < NPT; ++i)
+        {
+            t[i] = i / 100.0;
+            const double amp = 1.0 + 0.1 * c;
+            v[i] = amp * std::sin(2 * M_PI * (0.2 + 0.03 * c) * t[i]) + noise(rng);
+        }
+        const std::string name = "ch" + std::to_string(c);
+        if (ps_dataset_add_channel(ds, name.c_str(), "", t.data(), v.data(), NPT, err, sizeof(err)) != 0)
+        {
+            qCritical() << "add failed" << err;
+            return 1;
+        }
     }
     const uint32_t nch = ps_dataset_channel_count(ds);
 

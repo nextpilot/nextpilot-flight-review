@@ -1,6 +1,8 @@
 #include "ps_plugin_api.h"
 
 #include "ps_kernel.h"
+#include "CsvParser.h"
+#include "PsLoaderCommon.h"
 
 #include <QByteArray>
 #include <QJsonArray>
@@ -110,36 +112,59 @@ QJsonObject schema()
 
 QJsonObject probe(const QString &path, const QJsonObject &opts)
 {
-    char err[256] = {0};
-    QByteArray buf(1 << 16, '\0');
+    CsvProbe p;
+    std::string err;
     const QString delim = opts.value(QStringLiteral("delimiter")).toString();
     char force = 0;
     if (delim != QLatin1String("auto") && !delim.isEmpty())
         force = delim.at(0).toLatin1();
-    const int32_t n = ps_csv_probe(path.toUtf8().constData(), force, buf.data(),
-                                   static_cast<uint32_t>(buf.size()), err, sizeof(err));
-    if (n < 0)
+    if (!psCsvProbeFile(path.toUtf8().constData(), force, p, err))
     {
         QJsonObject e;
-        e[QStringLiteral("error")] = QString::fromUtf8(err);
+        e[QStringLiteral("error")] = QString::fromStdString(err);
         return e;
     }
-    QJsonObject out = QJsonDocument::fromJson(QByteArray(buf.constData(), n)).object();
+    QJsonObject out;
+    out[QStringLiteral("delimiter")] = QString(QChar(p.delimiter));
+    out[QStringLiteral("delimiter_ambiguous")] = p.ambiguous;
+    out[QStringLiteral("has_header")] = p.hasHeader;
+    QJsonArray cols;
+    for (const CsvColumn &c : p.columns)
+    {
+        QJsonObject o;
+        o[QStringLiteral("name")] = QString::fromStdString(c.name);
+        o[QStringLiteral("kind")] = QString::fromStdString(c.kind);
+        cols.append(o);
+    }
+    out[QStringLiteral("columns")] = cols;
+    QJsonArray rows;
+    for (const auto &row : p.preview)
+    {
+        QJsonArray r;
+        for (const auto &cell : row)
+            r.append(QString::fromStdString(cell));
+        rows.append(r);
+    }
+    out[QStringLiteral("preview")] = rows;
+    if (p.suggestedTime >= 0)
+        out[QStringLiteral("suggested_time")] = p.suggestedTime;
+    QJsonArray warnings;
+    for (const auto &w : p.warnings)
+        warnings.append(QString::fromStdString(w));
+    out[QStringLiteral("warnings")] = warnings;
     out[QStringLiteral("_opts")] = opts;
     return out;
 }
 
 QByteArray defaultOptions(const QString &path)
 {
-    QJsonObject o;
     QJsonObject opts;
     opts[QStringLiteral("delimiter")] = QStringLiteral("auto");
     const QJsonObject p = probe(path, opts);
     if (p.contains(QStringLiteral("error")))
         return {};
-
-    const QString delim = p.value(QStringLiteral("delimiter")).toString();
-    o[QStringLiteral("delimiter")] = delim.isEmpty() ? QStringLiteral(",") : delim.left(1);
+    QJsonObject o;
+    o[QStringLiteral("delimiter")] = p.value(QStringLiteral("delimiter")).toString();
     o[QStringLiteral("has_header")] = p.value(QStringLiteral("has_header")).toBool(true);
     o[QStringLiteral("skip_rows")] = 0;
     QJsonObject t;
@@ -158,9 +183,10 @@ QByteArray defaultOptions(const QString &path)
 
 int32_t writeJson(const QByteArray &json, char *out, uint32_t cap)
 {
-    if (!out || json.isEmpty() || static_cast<uint32_t>(json.size()) > cap)
+    if (!out || json.isEmpty() || static_cast<uint32_t>(json.size()) >= cap)
         return -1;
     memcpy(out, json.constData(), static_cast<size_t>(json.size()));
+    out[json.size()] = '\0';
     return static_cast<int32_t>(json.size());
 }
 
@@ -184,8 +210,58 @@ int32_t csvDefaultOptions(const char *path, char *out, uint32_t cap)
 int32_t csvLoad(const char *path, const char *optsJson, void **dataset,
                 char *err, uint32_t errCap)
 {
-    return ps_csv_load_opts(path, optsJson ? optsJson : "", reinterpret_cast<PsDataset **>(dataset),
-                            err, errCap);
+    const QJsonObject opts = QJsonDocument::fromJson(QByteArray(optsJson ? optsJson : "")).object();
+    CsvOptions o;
+    const QString delim = opts.value(QStringLiteral("delimiter")).toString();
+    if (!delim.isEmpty())
+        o.delimiter = delim.at(0).toLatin1();
+    o.hasHeader = opts.value(QStringLiteral("has_header")).toBool(true);
+    o.skipRows = opts.value(QStringLiteral("skip_rows")).toInt(0);
+    const QJsonObject time = opts.value(QStringLiteral("time")).toObject();
+    const QString mode = time.value(QStringLiteral("mode")).toString(QStringLiteral("row"));
+    if (mode == QLatin1String("column"))
+    {
+        o.timeMode = 1;
+        o.timeIndex = time.value(QStringLiteral("index")).toInt(0);
+    }
+    else if (mode == QLatin1String("combined"))
+    {
+        o.timeMode = 2;
+        o.dateIndex = time.value(QStringLiteral("date")).toInt(0);
+        o.clockIndex = time.value(QStringLiteral("time")).toInt(1);
+    }
+
+    CsvTable table;
+    std::string perr;
+    if (!psCsvParseFile(path, o, table, perr))
+    {
+        psWriteErr(err, errCap, perr);
+        return 1;
+    }
+    if (table.columns.size() < 2)
+    {
+        psWriteErr(err, errCap, "没有可画的数值列");
+        return 2;
+    }
+    std::vector<PsChannelData> channels;
+    const auto &timeCol = table.columns[0];
+    for (size_t i = 1; i < table.columns.size(); ++i)
+    {
+        PsChannelData c;
+        c.name = table.headers[i];
+        c.unit = psUnitFromHeader(c.name);
+        c.t = timeCol;
+        c.v = table.columns[i];
+        channels.push_back(std::move(c));
+    }
+    PsDataset *ds = psBuildDataset(channels, perr);
+    if (!ds)
+    {
+        psWriteErr(err, errCap, perr);
+        return 3;
+    }
+    *dataset = ds;
+    return 0;
 }
 
 const PsLoaderVtable kCsvLoader = {

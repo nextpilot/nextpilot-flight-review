@@ -87,9 +87,6 @@ int main(int argc, char **argv)
     SA::applyRibbonTheme(&win, ribbon, SARibbonTheme::RibbonThemeDark);
 
     // 画布：真实 CSV 走内核
-    PsDataset *ds = nullptr;
-    char err[256] = {0};
-    const QString csv = QString::fromLocal8Bit(argv[1]);
     QSplitter *sp = new QSplitter(Qt::Vertical, &win);
     QVector<CanvasWidget *> canvases;
     for (int i = 0; i < 3; ++i)
@@ -99,21 +96,7 @@ int main(int argc, char **argv)
         sp->addWidget(c);
         canvases.append(c);
     }
-    if (!csv.isEmpty() && ps_csv_load(csv.toUtf8().constData(), &ds, err, sizeof(err)) == 0)
-    {
-        for (int i = 0; i < 3; ++i)
-        {
-            const PsChannelInfo *ch = ps_dataset_channel(ds, quint32(i));
-            if (!ch)
-                break;
-            canvases[i]->setChannels({ch});
-            canvases[i]->setTitle(QString::fromUtf8(ch->name));
-        }
-    }
-    else
-    {
-        qWarning() << "csv load failed:" << err;
-    }
+    // 数据加载已下沉插件；这个 spike 只验证 Ribbon，不再直接读 CSV。
     win.setCentralWidget(sp);
     win.statusBar()->showMessage(QStringLiteral("SARibbon %1.%2.%3 · Qt %4")
                                      .arg(SA_RIBBON_BAR_VERSION_MAJ)

@@ -1,23 +1,48 @@
 #include "ps_plugin_api.h"
 
-#include "ps_kernel.h"
+#include "UlogParser.h"
 
-#include <cstring>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QString>
 
 namespace {
 
 int32_t ulogParams(const char *path, char *out, uint32_t cap)
 {
-    char err[256] = {0};
-    const int32_t rc = ps_ulog_params(path, out, cap, err, sizeof(err));
-    if (rc != 0)
+    UlogLog log;
+    std::string err;
+    if (!psParseUlog(path, log, err))
         return -1;
-    return static_cast<int32_t>(std::strlen(out));
+    QJsonArray arr;
+    for (const auto &p : log.params)
+    {
+        QJsonObject o;
+        o[QStringLiteral("name")] = QString::fromStdString(p.first);
+        o[QStringLiteral("value")] = QString::fromStdString(p.second);
+        arr.append(o);
+    }
+    return psWriteJson(QJsonDocument(arr).toJson(QJsonDocument::Compact), out, cap);
 }
 
 int32_t ulogLoad(const char *path, const char *, void **dataset, char *err, uint32_t errCap)
 {
-    return ps_ulog_load(path, reinterpret_cast<PsDataset **>(dataset), err, errCap);
+    UlogLog log;
+    std::string perr;
+    if (!psParseUlog(path, log, perr))
+    {
+        psWriteErr(err, errCap, perr);
+        return 1;
+    }
+    PsDataset *ds = psBuildDataset(log.channels, perr);
+    if (!ds)
+    {
+        psWriteErr(err, errCap, perr);
+        return 2;
+    }
+    *dataset = ds;
+    return 0;
 }
 
 const PsLoaderVtable kUlogLoader = {

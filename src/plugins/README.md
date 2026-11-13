@@ -10,6 +10,7 @@ src/plugins/
     apbin/   -> ps_data_loader_apbin   ps_plugin_entry_data_loader_apbin
     asc/     -> ps_data_loader_asc     ps_plugin_entry_data_loader_asc
     blf/     -> ps_data_loader_blf     ps_plugin_entry_data_loader_blf
+    common/  -> ps_loader_common       # 通用 dataset 构建 / CAN 帧 → 通道
   data_source/   # 实时源：MAVLink / ROS / OEM7
   parser/        # 消息解析：DBC / MAVLink / RTCM
   toolbox/       # 算子 / 分析工具
@@ -18,6 +19,8 @@ src/plugins/
 
 - 描述符必须声明 `family` 与 `capabilities`；`LoaderRegistry` 只收 `PS_FAMILY_DATA_LOADER`，其他 family 由各自 catalog 管理。
 - 数据面只走 `src/include/ps_plugin_api.h` 的 C 契约：`schema_json / probe_json / default_options / params_json / load`。
+- **格式解析属于插件**：每个 loader 自带 `*Parser.{h,cpp}`，只通过 `ps_dataset_new / ps_dataset_add_channel` 写内核；`ps_kernel.h` 不再提供 `ps_csv_load / ps_ulog_load / ...` 这类格式 API，内核也不依赖 zlib。
+- `common/` 只放跨 loader 复用的机械层（`psBuildDataset`、文件/JSON/错误 helper、CAN 帧模型），不放任何单格式解析。
 - `extensions` 由插件声明，app 不再按格式写 `if (suffix == ...)`。
 - 插件不 include `src/app`，也不持有宿主 UI；格式专属 `.ui` 随插件目录分发，由 app 的 `DialogEngine` 加载。
 - 外部 `.so` + `manifest.json` 的发现、预检、`dlopen`、ABI 校验由 `src/runtime` 负责；重复 id 只保留第一个。

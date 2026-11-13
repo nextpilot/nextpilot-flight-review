@@ -1,12 +1,32 @@
 #include "ps_plugin_api.h"
 
-#include "ps_kernel.h"
+#include "BlfParser.h"
 
 namespace {
 
 int32_t blfLoad(const char *path, const char *, void **dataset, char *err, uint32_t errCap)
 {
-    return ps_blf_load(path, reinterpret_cast<PsDataset **>(dataset), err, errCap);
+    BlfLog log;
+    std::string perr;
+    if (!psParseBlfFile(path, log, perr))
+    {
+        psWriteErr(err, errCap, perr);
+        return 1;
+    }
+    auto channels = psCanFramesToChannels(log.frames);
+    if (channels.empty())
+    {
+        psWriteErr(err, errCap, "BLF 里没有变化的 CAN 字节（可能全是常量帧）");
+        return 2;
+    }
+    PsDataset *ds = psBuildDataset(channels, perr);
+    if (!ds)
+    {
+        psWriteErr(err, errCap, perr);
+        return 3;
+    }
+    *dataset = ds;
+    return 0;
 }
 
 const PsLoaderVtable kBlfLoader = {

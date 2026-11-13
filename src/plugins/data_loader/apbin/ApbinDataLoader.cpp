@@ -1,23 +1,53 @@
 #include "ps_plugin_api.h"
 
-#include "ps_kernel.h"
+#include "ApbinParser.h"
 
-#include <cstring>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QString>
 
 namespace {
 
 int32_t apbinParams(const char *path, char *out, uint32_t cap)
 {
-    char err[256] = {0};
-    const int32_t rc = ps_apbin_params(path, out, cap, err, sizeof(err));
-    if (rc != 0)
+    ApbinLog log;
+    std::string err;
+    if (!psParseApbin(path, log, err))
         return -1;
-    return static_cast<int32_t>(std::strlen(out));
+    QJsonArray arr;
+    for (const auto &p : log.params)
+    {
+        QJsonObject o;
+        o[QStringLiteral("name")] = QString::fromStdString(p.first);
+        o[QStringLiteral("value")] = QString::fromStdString(p.second);
+        arr.append(o);
+    }
+    return psWriteJson(QJsonDocument(arr).toJson(QJsonDocument::Compact), out, cap);
 }
 
 int32_t apbinLoad(const char *path, const char *, void **dataset, char *err, uint32_t errCap)
 {
-    return ps_apbin_load(path, reinterpret_cast<PsDataset **>(dataset), err, errCap);
+    ApbinLog log;
+    std::string perr;
+    if (!psParseApbin(path, log, perr))
+    {
+        psWriteErr(err, errCap, perr);
+        return 1;
+    }
+    if (log.channels.empty())
+    {
+        psWriteErr(err, errCap, "没有可画的数值通道");
+        return 2;
+    }
+    PsDataset *ds = psBuildDataset(log.channels, perr);
+    if (!ds)
+    {
+        psWriteErr(err, errCap, perr);
+        return 3;
+    }
+    *dataset = ds;
+    return 0;
 }
 
 const PsLoaderVtable kApbinLoader = {

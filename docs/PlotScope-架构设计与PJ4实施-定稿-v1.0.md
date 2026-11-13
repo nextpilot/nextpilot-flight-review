@@ -460,7 +460,7 @@ int32_t            ps_abi_selftest(void);
 
 **封装块归宿主**：插件只 push 行，宿主 `flushPending` 时按 `Chunk<8192>` 封块提交。
 
-**宿主面已实现（M0，已在 `ps_kernel.h` 里）**：`ps_csv_load`、`ps_dataset_channel_count`、`ps_dataset_channel`、`ps_dataset_free`、`ps_lod_minmax`。上面 5 个插件面函数随第一个 Loader 在 M1 落。
+**宿主面已实现（M1，`ps_kernel.h` 只留通用 API）**：`ps_dataset_new / add_channel / channel_count / channel / free`、`ps_preview_filter / apply_filter / apply_quat_rpy / remove_channel`、`ps_lod_minmax`。格式解析与 probe 全部下沉到插件，内核不再认识 CSV/ULog/APBin/ASC/BLF。
 
 **四种后端**
 
@@ -520,7 +520,6 @@ plotscope/
 │   │   ├── ps-abi/                # D9 的 5 个函数 + PsBytes/PsBatchOut + abiVersion + selftest
 │   │   │   └── include/ps_kernel.h # 唯一对 C++ 暴露的头文件
 │   │   ├── ps-ndf/                # NDF 列存、Arrow IPC、mmap、LOD 桶
-│   │   ├── ps-parse/              # Loader 侧解析：ULog / DFLog / CAN / MDF4 / GNSS
 │   │   ├── ps-ops/                # 向量算子（add/mul/filter/quat…）+ Lua userdata 元表
 │   │   ├── ps-script/             # Lua 5.4 宿主：沙箱、指令预算、内存上限、热重载
 │   │   ├── ps-align/              # 多源时间对齐（就近/线性/零阶保持）
@@ -587,16 +586,26 @@ ps_plugin_<family>_<id> # 插件库：src/plugins/<family>/<id>/，输出到 bin
 **M0 已落地（2026-11-12，仓库 main `fceab7b`）**
 
 - `cmake/Rust.cmake` 改为 cargo 直调：离线机器无网，Corrosion 的 FetchContent 拉不下来；有网时换回 Corrosion 只改这一个文件，对外接口（`ps_kernel` 目标 + `ps_kernel.h`）不变。
-- 内核 6 个 crate 已建：`ps-abi`（`ps_abi_version` / `ps_kernel_version` / `ps_abi_selftest`）、`ps-ndf`（序列 + min/max 抽稀）、`ps-ops`（scale / add / moving_avg）、`ps-align`（最近邻 / 线性）、`ps-parse`（ULog/CSV/BLF/NMEA 嗅探）、`ps-script`（预算占位）；`cargo test` 14 例全绿。
+- 内核 crate：`ps-abi`（`ps_abi_version` / `ps_kernel_version` / `ps_abi_selftest` + 通用 dataset）、`ps-ndf`（序列 + min/max 抽稀）、`ps-ops`（scale / add / moving_avg / filter / quat）、`ps-align`（最近邻 / 线性）、`ps-script`（Lua 预算占位）；`cargo test` 全绿。
 - 主程序：Ribbon 七页签 + 四可停靠区（数据源 / 属性 / 脚本 / 日志）+ 页签式绘图区；自绘画布支持滚轮缩 Y（锚指针）、拖动平移 Y、双击复位、十字光标；状态栏直读 `ps_abi_version()` 与自检结果，证明 C ABI 已打通。
-- 数据面已开：`ps_csv_load` / `ps_dataset_channel_count` / `ps_dataset_channel` / `ps_dataset_free` / `ps_lod_minmax`；`PsChannelInfo` 的 `time/value` 指针直指内核内存（UI 零拷贝，数据集释放后失效）。`ps-parse` 的 CSV 解析支持 `, ; \t` 三种分隔符与 ns/us/ms/s 时间单位识别，坏单元格记 NaN 不整份报废。
+- 数据面：`ps_dataset_new / add_channel / channel_count / channel / free` / `ps_lod_minmax`；`PsChannelInfo` 的 `time/value` 指针直指内核内存（UI 零拷贝，数据集释放后失效）。CSV 的探测/解析已移到 `plugins/data_loader/csv`，支持 `, ; \t` 与 ns/us/ms/s。
 - 降采样落到 Rust：UI 每次重绘按像素宽度调 `ps_lod_minmax`，只拿 ≤px 个 `(x,min,max)` 三元组；3000 点 CSV 画到三格（每格一个通道，避免混量纲压成直线）。
 - 内核单测 19 例（`cargo test`），`ctest` 2/2 通过（ABI 冒烟 + cargo）。
-- **ULog 已接**（2026-11-12 晚）：`ps-parse::ulog` 按 PX4 `ulog_file_format` 实现（16 字节头 + 消息流，`F/A/D/L/B/P/Q/M/I` 类型），命名与展平规则对齐 PlotJuggler `data_load_ulog`——`timestamp` 与 `_padding*` 不产出曲线、嵌套结构用 `.`、数组下标补两位 `.00`、`char[N]` 当字符串不当数值、同 topic 有 `multi_id>0` 时全部实例加 `.NN` 后缀。新增数据面函数 `ps_ulog_load`；UI 按后缀分流，通道按 topic 分组挂树，双击出图。实测：自造 `test/fixture/demo_flight.ulg`（250 Hz / 12 s / 4 topic）→ 13 通道 × 3000 点、解析 10 ms；PX4 官方 900 KB 样例 → **1351 通道 / 1812 行 / 解析 16.9 ms**。
-- **CAN 双格式（ASC / BLF）已接**（2026-11-13）：`ps-parse::can` 统一帧模型，`asc.rs` 解析 Vector 文本导出（经典帧 / 扩展帧 `x` 后缀 / `CANFD` 行 / `base hex|dec`），`blf.rs` 解析二进制（`LOGG` 头 + `LOBJ` 对象流 + `LOG_CONTAINER` zlib 解压，对象跨容器时留半截续接）。BLF 无公开规范，字段偏移按 python-can `io/blf.py`（源于 vector_blf）逐项对照。
+- **ULog 已接**（2026-11-12 晚，现为插件侧 `UlogParser`）：按 PX4 `ulog_file_format` 实现（16 字节头 + 消息流，`F/A/D/L/B/P/Q/M/I` 类型），命名与展平规则对齐 PlotJuggler `data_load_ulog`——`timestamp` 与 `_padding*` 不产出曲线、嵌套结构用 `.`、数组下标补两位 `.00`、`char[N]` 当字符串不当数值、同 topic 有 `multi_id>0` 时全部实例加 `.NN` 后缀。解析在插件内完成；UI 按后缀分流，通道按 topic 分组挂树，双击出图。实测：自造 `test/fixture/demo_flight.ulg`（250 Hz / 12 s / 4 topic）→ 13 通道 × 3000 点、解析 10 ms；PX4 官方 900 KB 样例 → **1351 通道 / 1812 行 / 解析 16.9 ms**。
+- **CAN 双格式（ASC / BLF）已接**（2026-11-13，现为插件侧 `AscParser` / `BlfParser` + `common/CanFrames`）：统一帧模型；ASC 解析经典帧 / 扩展帧 `x` 后缀 / `CANFD` 行 / `base hex|dec`；BLF 解析 `LOGG` 头 + `LOBJ` 对象流 + `LOG_CONTAINER` zlib 解压，对象跨容器时留半截续接。BLF 无公开规范，字段偏移按 python-can `io/blf.py`（源于 vector_blf）逐项对照。
 - CAN 出通道**不猜物理量**：没有 DBC 就不知道哪几个字节拼成一个信号，硬猜的曲线是假的。只给两类可验证量——`CAN<总线>.<ID>.bN`（报文第 N 字节原始值，恒定字节直接丢弃，否则 500 个 ID × 8 字节会把通道树撑成几千行）与 `CAN<总线>.<ID>.period`（同 ID 相邻帧间隔 ms，看周期抖动最直接）。DBC 解码归 M2 协议编辑器（D13）。
-- **对拍证据**：用 python-can 4.6.1 的 `ASCWriter`/`BLFWriter` 把同一批 3020 帧写成 `test/fixture/demo_can.asc`（190 KB）与 `demo_can.blf`（19.5 KB），两种格式各自解析后**逐通道逐点相同**（`ps-parse/tests/can_formats.rs`），帧数/每 ID 帧数也与 python-can `LogReader` 完全一致；解析耗时 ASC 0.9 ms、BLF 0.7 ms。
+- **对拍证据**：用 python-can 4.6.1 的 `ASCWriter`/`BLFWriter` 把同一批 3020 帧写成 `test/fixture/demo_can.asc`（190 KB）与 `demo_can.blf`（19.5 KB），两种格式各自解析后**逐通道逐点相同**（C++ 插件测试），帧数/每 ID 帧数也与 python-can `LogReader` 完全一致；解析耗时 ASC 0.9 ms、BLF 0.7 ms。
 - 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、NMEA/DFLog、DBC 解码、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
+
+**M1 插件自解析（2026-11-13，当前架构）**
+
+- 内核只保留通用数据模型与算子：`ps_dataset_new / add_channel / channel_count / channel / free / apply_filter / preview_filter / apply_quat_rpy / remove_channel / lod_minmax`。`ps_kernel.h` 中的 `ps_csv_* / ps_ulog_* / ps_apbin_* / ps_asc_load / ps_blf_load` 已删除，`src/kernel/ps-parse` 已移出 workspace。
+- 每个 loader 插件自带 probe / parse / schema：`data_loader/common` 只做通用 dataset 构建与文件/JSON helper；格式细节不进内核。
+- CSV：`CsvParser.{h,cpp}` 在插件内完成分隔符探测、表头/列类型、时间列建议、9 行预览、`row/column/combined` 三种时间模式、非单调时间排序；`CsvDataLoader.cpp` 只把解析结果交给 `psBuildDataset`。
+- APBin：`ApbinParser.{h,cpp}` 在插件内实现 DataFlash `A3 95` / FMT 自描述 / FMTU 单位倍率 / UNIT / MULT / PARM，通道名 `MSG.#N.Field`，参数表由插件输出 JSON。
+- ULog：`UlogParser.{h,cpp}` 在插件内实现 `F/A/D` + `P/Q`，展平/多实例/字符串跳过规则不变；`demo_flight.ulg` 仍为 13 通道。
+- ASC / BLF：各自 `*Parser.{h,cpp}`，共用 `common/CanFrames` 的帧→通道规则（只保留变化字节 + `period`）；BLF 的 zlib 容器由插件自己解压，内核不链 zlib。
+- 测试：`ctest` 6/6；`plugin_file_formats` 覆盖 ULog 13 通道、APBin 通道+PARAM、ASC/BLF 各 10 通道；新增 `test/fixture/demo_apbin.bin` 作为可复现夹具。
 
 **Ribbon / Dock spike（2026-11-12 实测）**
 

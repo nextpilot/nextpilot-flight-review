@@ -1,0 +1,98 @@
+#include "PsLoaderCommon.h"
+
+#include <algorithm>
+#include <cstring>
+#include <fstream>
+
+void psWriteErr(char *err, uint32_t cap, const std::string &msg)
+{
+    if (!err || cap == 0)
+        return;
+    const size_t n = std::min<size_t>(msg.size(), cap - 1);
+    std::memcpy(err, msg.data(), n);
+    err[n] = '\0';
+}
+
+int32_t psWriteJson(const QByteArray &json, char *out, uint32_t cap)
+{
+    if (!out || cap == 0 || static_cast<uint32_t>(json.size()) >= cap)
+        return -1;
+    std::memcpy(out, json.constData(), static_cast<size_t>(json.size()));
+    out[json.size()] = '\0';
+    return static_cast<int32_t>(json.size());
+}
+
+int32_t psWriteText(const std::string &text, char *out, uint32_t cap)
+{
+    if (!out || cap == 0 || static_cast<uint32_t>(text.size()) >= cap)
+        return -1;
+    std::memcpy(out, text.data(), text.size());
+    out[text.size()] = '\0';
+    return static_cast<int32_t>(text.size());
+}
+
+bool psReadFile(const char *path, std::vector<uint8_t> &buf, std::string &err)
+{
+    if (!path)
+    {
+        err = "路径为空";
+        return false;
+    }
+    std::ifstream f(path, std::ios::binary);
+    if (!f)
+    {
+        err = "读取失败：" + std::string(path);
+        return false;
+    }
+    buf.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    return true;
+}
+
+bool psReadTextFile(const char *path, std::string &text, std::string &err)
+{
+    std::vector<uint8_t> buf;
+    if (!psReadFile(path, buf, err))
+        return false;
+    text.assign(reinterpret_cast<const char *>(buf.data()), buf.size());
+    return true;
+}
+
+std::string psUnitFromHeader(const std::string &header)
+{
+    const size_t lb = header.find('[');
+    const size_t rb = lb == std::string::npos ? std::string::npos : header.find(']', lb);
+    if (lb != std::string::npos && rb != std::string::npos)
+        return header.substr(lb + 1, rb - lb - 1);
+    const size_t lp = header.find('(');
+    const size_t rp = lp == std::string::npos ? std::string::npos : header.find(')', lp);
+    if (lp != std::string::npos && rp != std::string::npos)
+        return header.substr(lp + 1, rp - lp - 1);
+    return {};
+}
+
+PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err)
+{
+    PsDataset *ds = ps_dataset_new();
+    if (!ds)
+    {
+        err = "数据集分配失败";
+        return nullptr;
+    }
+    char e[256] = {0};
+    for (const PsChannelData &c : channels)
+    {
+        if (c.name.empty())
+            continue;
+        const int32_t rc = ps_dataset_add_channel(ds, c.name.c_str(), c.unit.c_str(),
+                                                  c.t.data(), c.v.data(),
+                                                  static_cast<uint32_t>(std::min(c.t.size(), c.v.size())),
+                                                  e, sizeof(e));
+        if (rc != 0)
+        {
+            err = c.name + "：" + e;
+            ps_dataset_free(ds);
+            return nullptr;
+        }
+    }
+    return ds;
+}
