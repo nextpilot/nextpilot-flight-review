@@ -3,18 +3,15 @@
 #include "ps_kernel.h"
 
 #include <QCryptographicHash>
-#include <QDataStream>
+#include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QSaveFile>
 #include <QStandardPaths>
 #include <QVector>
 
 namespace {
 
-constexpr quint32 kParamsMagic = 0x50535031u; // PSP1
-constexpr quint32 kParamsVersion = 1u;
 constexpr quint64 kMaxCacheBytes = 4ull * 1024 * 1024 * 1024;
 
 } // namespace
@@ -112,25 +109,15 @@ QString DatasetCache::loadParams(const QString &sourcePath, const QString &loade
     if (!source.exists() || !source.isFile())
         return {};
     const QString path = paramsCachePath(sourcePath, loaderId, opts);
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly))
-        return {};
-    QDataStream in(&f);
-    in.setByteOrder(QDataStream::LittleEndian);
-    in.setVersion(QDataStream::Qt_6_0);
-    quint32 magic = 0, version = 0;
-    qint64 size = 0, mtime = 0;
-    QString json;
-    in >> magic >> version >> size >> mtime >> json;
-    if (in.status() != QDataStream::Ok || magic != kParamsMagic || version != kParamsVersion ||
-        size != source.size() || mtime != source.lastModified().toMSecsSinceEpoch() ||
-        json.isEmpty() || json.size() > 4 * 1024 * 1024)
-    {
-        f.close();
-        QFile::remove(path);
-        return {};
-    }
-    return json;
+    QByteArray buf(4 * 1024 * 1024 + 1, '\0');
+    char err[256] = {0};
+    const int32_t rc = ps_cache_load_params(path.toUtf8().constData(), source.size(),
+                                            source.lastModified().toMSecsSinceEpoch(), buf.data(),
+                                            static_cast<uint32_t>(buf.size()), err, sizeof(err));
+    if (rc == 0)
+        return QString::fromUtf8(buf.constData());
+    QFile::remove(path);
+    return {};
 }
 
 bool DatasetCache::saveParams(const QString &sourcePath, const QString &loaderId,
@@ -143,20 +130,10 @@ bool DatasetCache::saveParams(const QString &sourcePath, const QString &loaderId
         return false;
     if (!QDir().mkpath(cacheDir()))
         return false;
-    QSaveFile f(paramsCachePath(sourcePath, loaderId, opts));
-    if (!f.open(QIODevice::WriteOnly))
-        return false;
-    QDataStream out(&f);
-    out.setByteOrder(QDataStream::LittleEndian);
-    out.setVersion(QDataStream::Qt_6_0);
-    out << kParamsMagic << kParamsVersion << qint64(source.size())
-        << qint64(source.lastModified().toMSecsSinceEpoch()) << json;
-    if (out.status() != QDataStream::Ok || !f.commit())
-    {
-        f.cancelWriting();
-        return false;
-    }
-    return true;
+    char err[256] = {0};
+    return ps_cache_save_params(paramsCachePath(sourcePath, loaderId, opts).toUtf8().constData(),
+                                json.toUtf8().constData(), source.size(),
+                                source.lastModified().toMSecsSinceEpoch(), err, sizeof(err)) == 0;
 }
 
 void DatasetCache::clear()

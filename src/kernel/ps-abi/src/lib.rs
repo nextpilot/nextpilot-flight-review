@@ -434,6 +434,66 @@ pub unsafe extern "C" fn ps_cache_load_dataset(
     }
 }
 
+/// 参数 JSON 缓存。0 成功；1 参数错误；2 IO 错误。
+#[no_mangle]
+pub unsafe extern "C" fn ps_cache_save_params(
+    path: *const c_char,
+    json: *const c_char,
+    source_size: i64,
+    source_mtime: i64,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if json.is_null() {
+        write_err(err, err_cap, "参数 JSON 为空");
+        return 1;
+    }
+    let p = match c_path(path) {
+        Ok(p) => p,
+        Err(e) => { write_err(err, err_cap, &e); return 1; }
+    };
+    let text = c_name(json);
+    match ps_cache::save_params(&p, &text, source_size, source_mtime) {
+        Ok(()) => 0,
+        Err(e) => { write_err(err, err_cap, &e); 2 }
+    }
+}
+
+/// 读参数缓存。0 命中；1 不存在/指纹过期；2 损坏或参数错误。
+#[no_mangle]
+pub unsafe extern "C" fn ps_cache_load_params(
+    path: *const c_char,
+    source_size: i64,
+    source_mtime: i64,
+    out: *mut c_char,
+    cap: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if out.is_null() || cap == 0 {
+        write_err(err, err_cap, "输出缓冲区为空");
+        return 2;
+    }
+    let p = match c_path(path) {
+        Ok(p) => p,
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    match ps_cache::load_params(&p, source_size, source_mtime) {
+        Ok(None) => 1,
+        Ok(Some(text)) => {
+            if text.len() >= cap as usize {
+                write_err(err, err_cap, "参数超过输出缓冲区");
+                return 2;
+            }
+            let bytes = text.as_bytes();
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), out as *mut u8, bytes.len());
+            *out.add(bytes.len()) = 0;
+            0
+        }
+        Err(e) => { write_err(err, err_cap, &e); 2 }
+    }
+}
+
 /// 实时流：固定容量、按通道追加。0 全收；1 容量不足截断；2 参数错误。
 #[no_mangle]
 pub extern "C" fn ps_stream_new(capacity: u32) -> *mut ps_stream::Stream {
@@ -473,7 +533,7 @@ pub unsafe extern "C" fn ps_stream_channel_count(stream: *const ps_stream::Strea
 /// 返回的视图与 PsChannelInfo 同布局；指针指向流内部，下一次追加/释放后失效。
 #[no_mangle]
 pub unsafe extern "C" fn ps_stream_channel(
-    stream: *const ps_stream::Stream,
+    stream: *mut ps_stream::Stream,
     index: u32,
 ) -> *const PsChannelInfo {
     if stream.is_null() { return std::ptr::null(); }
@@ -483,7 +543,7 @@ pub unsafe extern "C" fn ps_stream_channel(
 /// 对某条流通道做视口 LOD；返回写入的三元组数。
 #[no_mangle]
 pub unsafe extern "C" fn ps_stream_lod(
-    stream: *const ps_stream::Stream,
+    stream: *mut ps_stream::Stream,
     name: *const c_char,
     t0: f64,
     t1: f64,

@@ -1,0 +1,9 @@
+{
+  "id": "data_loader_rustcsv",
+  "name": "CSV (Rust)",
+  "version": "0.1.0",
+  "sdk": "4",
+  "family": "data_loader",
+  "kind": "file",
+  "entry": "ps_plugin_entry"
+}

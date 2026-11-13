@@ -30,4 +30,4 @@ src/plugin/
 - app 不出现 `delimiter / has_header / suggested_time` 这类格式键；只认识 `fields / source / initial_from_probe / ui.preview` 这些通用 UI 描述。
 - 外部 `.so` + `manifest.json` 的发现、预检、`dlopen`、ABI 校验由 `src/app/plugin_host` 负责；重复 id 只保留第一个。
 - 有 `PS_CAP_CACHE` 的文件加载器，解析结果由 `src/app/cache/DatasetCache` 调 `ps_cache_save_dataset` 落盘；源文件 size/mtime 变化或插件版本变化自动失效。
-- `sdk/rust` 只镜像 C 布局；`data_loader/rustcsv` 是真实 Rust I/O 样板，证明插件可用 Rust 解析/读写文件而不复制第二份 kernel。
+- `sdk/rust` 只镜像 C 布局；`data_loader/rustcsv` 是真实 Rust I/O 样板（`.pscsv`），构建后安装到 app 的 `plugins/data_loader_rustcsv/`，证明插件可用 Rust 解析/读写文件而不复制第二份 kernel。

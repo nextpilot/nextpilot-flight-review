@@ -94,16 +94,24 @@ find_program(CARGO_EXECUTABLE NAMES cargo HINTS "$ENV{HOME}/.cargo/bin" /usr/loc
 if(CARGO_EXECUTABLE)
   set(RUST_PLUGIN_DIR ${CMAKE_BINARY_DIR}/rust-plugin)
   set(RUST_PLUGIN_SO ${RUST_PLUGIN_DIR}/libps_data_loader_rustcsv.so)
+  set(RUST_APP_PLUGIN_DIR ${CMAKE_BINARY_DIR}/src/app/plugins/data_loader_rustcsv)
   add_custom_command(OUTPUT ${RUST_PLUGIN_SO}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${RUST_PLUGIN_DIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${RUST_PLUGIN_DIR} ${RUST_APP_PLUGIN_DIR}
     COMMAND ${CARGO_EXECUTABLE} build --manifest-path
             ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/rustcsv/Cargo.toml --release
             --target-dir ${CMAKE_BINARY_DIR}/rust-target
     COMMAND ${CMAKE_COMMAND} -E copy
             ${CMAKE_BINARY_DIR}/rust-target/release/libps_data_loader_rustcsv.so ${RUST_PLUGIN_SO}
+    COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_BINARY_DIR}/rust-target/release/libps_data_loader_rustcsv.so
+            ${RUST_APP_PLUGIN_DIR}/libps_data_loader_rustcsv.so
+    COMMAND ${CMAKE_COMMAND} -E copy
+            ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/rustcsv/manifest.json
+            ${RUST_APP_PLUGIN_DIR}/manifest.json
     DEPENDS ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/rustcsv/src/lib.rs
             ${PROJECT_SOURCE_DIR}/src/plugin/sdk/rust/src/lib.rs
-    COMMENT "Building Rust data_loader sample")
+            ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/rustcsv/manifest.json
+    COMMENT "Building/installing Rust data_loader sample")
   add_custom_target(ps_data_loader_rustcsv ALL DEPENDS ${RUST_PLUGIN_SO})
 
   add_executable(test_rust_plugin unit/test_rust_plugin.cpp)

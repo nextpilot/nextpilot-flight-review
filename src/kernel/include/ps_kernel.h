@@ -101,6 +101,15 @@ int32_t ps_cache_load_dataset(const char *path,
                               int64_t source_size, int64_t source_mtime,
                               PsDataset **out, char *err, uint32_t err_cap);
 
+/* 参数 JSON 缓存：同样按源文件指纹校验；0 成功/命中，1 过期，2 损坏。 */
+int32_t ps_cache_save_params(const char *path, const char *json,
+                             int64_t source_size, int64_t source_mtime,
+                             char *err, uint32_t err_cap);
+int32_t ps_cache_load_params(const char *path,
+                             int64_t source_size, int64_t source_mtime,
+                             char *out, uint32_t cap,
+                             char *err, uint32_t err_cap);
+
 /* ---- 实时流：固定容量缓冲 + 通道视图 + 视口 LOD ---- */
 
 typedef struct PsStream PsStream;  /* 不透明句柄，ps_stream_free 释放 */
@@ -113,11 +122,11 @@ int32_t ps_stream_push(PsStream *stream, const char *name, const char *unit,
                        const double *time, const double *value, uint32_t count);
 
 uint32_t             ps_stream_channel_count(const PsStream *stream);
-/* 与 PsChannelInfo 同布局；指针指向流内部，下一次追加/释放后失效。 */
-const PsChannelInfo *ps_stream_channel(const PsStream *stream, uint32_t index);
+/* 与 PsChannelInfo 同布局；会刷新环形缓冲的连续视图，下一次刷新/释放后失效。 */
+const PsChannelInfo *ps_stream_channel(PsStream *stream, uint32_t index);
 
 /* 对流通道做视口 LOD；返回三元组数。 */
-uint32_t ps_stream_lod(const PsStream *stream, const char *name,
+uint32_t ps_stream_lod(PsStream *stream, const char *name,
                        double t0, double t1, uint32_t px,
                        double *out_xyz, uint32_t cap_triples);
 

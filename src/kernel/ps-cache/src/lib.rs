@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 const MAGIC: u32 = 0x5053_4331; // PSC1
 const VERSION: u32 = 1;
+const PARAMS_MAGIC: u32 = 0x5053_5031; // PSP1
 const MAX_CHANNELS: u32 = 65_536;
 const MAX_POINTS: u32 = 50_000_000;
 
@@ -86,6 +87,51 @@ pub fn save_dataset(
     })
 }
 
+
+/// 参数 JSON 缓存：与数据集缓存同一套指纹/原子写，避免 app 再维护 QDataStream。
+pub fn save_params(path: &Path, json: &str, source_size: i64, source_mtime: i64) -> Result<(), String> {
+    if json.len() > 4 * 1024 * 1024 {
+        return Err("参数 JSON 超过 4 MiB".into());
+    }
+    let tmp = temp_path(path);
+    {
+        let f = File::create(&tmp).map_err(|e| e.to_string())?;
+        let mut w = BufWriter::new(f);
+        write_u32(&mut w, PARAMS_MAGIC)?;
+        write_u32(&mut w, VERSION)?;
+        write_i64(&mut w, source_size)?;
+        write_i64(&mut w, source_mtime)?;
+        write_u32(&mut w, json.len() as u32)?;
+        w.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+        w.flush().map_err(|e| e.to_string())?;
+    }
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
+pub fn load_params(path: &Path, expected_size: i64, expected_mtime: i64) -> Result<Option<String>, String> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let f = File::open(path).map_err(|e| e.to_string())?;
+    let mut r = BufReader::new(f);
+    if read_u32(&mut r)? != PARAMS_MAGIC || read_u32(&mut r)? != VERSION {
+        return Ok(None);
+    }
+    if read_i64(&mut r)? != expected_size || read_i64(&mut r)? != expected_mtime {
+        return Ok(None);
+    }
+    let len = read_u32(&mut r)? as usize;
+    if len == 0 || len > 4 * 1024 * 1024 {
+        return Ok(None);
+    }
+    let mut buf = vec![0u8; len];
+    r.read_exact(&mut buf).map_err(|e| e.to_string())?;
+    Ok(Some(String::from_utf8_lossy(&buf).into_owned()))
+}
+
 /// 返回 `Ok(None)` 表示缓存过期/不存在；`Err` 表示文件损坏。
 pub fn load_dataset(
     path: &Path,
@@ -161,6 +207,11 @@ mod tests {
         assert_eq!(hit.channels[0].name, "roll");
         assert_eq!(hit.channels[0].v, vec![1.0, 2.0]);
         assert!(load_dataset(&path, 13, 34).unwrap().is_none());
+
+        let ppath = dir.join("x.psparams");
+        save_params(&ppath, "{\"a\":1}", 12, 34).unwrap();
+        assert_eq!(load_params(&ppath, 12, 34).unwrap().unwrap(), "{\"a\":1}");
+        assert!(load_params(&ppath, 13, 34).unwrap().is_none());
         let _ = fs::remove_dir_all(&dir);
     }
 }

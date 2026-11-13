@@ -43,7 +43,7 @@ ps-abi ──> ps-ndf
 | `ps-ndf` | `Dataset`、`Series`、通道查找/增删、LOD、精度推断 | JSON、C 指针、Qt |
 | `ps-ops` | 过滤器、四元数转 RPY、时间对齐 | 数据集生命周期、UI |
 | `ps-cache` | 数据集二进制格式、原子写、源文件 size/mtime 指纹校验 | 缓存目录、key 拼接、何时失效 |
-| `ps-stream` | 固定容量通道缓冲、通道视图、流上视口 LOD | 连接协议、启停、落盘 |
+| `ps-stream` | 固定容量环形缓冲、连续通道视图、视口 LOD | 连接协议、启停、落盘、增量 LOD 缓存 |
 | `ps-abi` | C 结构、指针/长度、错误码、panic 隔离、`ps_abi_selftest` | 通道数组本身、格式解析 |
 
 ## 对外 ABI
