@@ -1,5 +1,8 @@
 //! 向量算子：全部成批、整块处理，禁止逐点进 Lua（见 D5 / §5.1）。
-//! 这里只放 M0 需要的三个：scale / add / moving_avg，其余在 M1 按需补。
+//! 这里只放 M0 需要的三个：scale / add / moving_avg；M1 过滤器在 filters。
+
+pub mod filters;
+pub mod quat;
 
 pub fn scale(x: &[f32], k: f32) -> Vec<f32> {
     x.iter().map(|v| *v * k).collect()

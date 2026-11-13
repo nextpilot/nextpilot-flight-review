@@ -12,6 +12,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
+#include <QMenu>
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -55,6 +56,7 @@
 
 #include "plot/CanvasWidget.h"
 #include "ps_kernel.h"
+#include "transform/TransformDialog.h"
 
 #include "SARibbonBar.h"
 #include "SARibbonCategory.h"
@@ -548,6 +550,68 @@ void MainWindow::createDocks()
     });
     m_srcTree->setRootIsDecorated(true);
     m_srcTree->setStyleSheet(QStringLiteral("QTreeWidget{border:0;background:#0d1117;font-size:12px;}"));
+    m_srcTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_srcTree, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        auto *item = m_srcTree->itemAt(pos);
+        if (!item || item->childCount() > 0)
+            return;
+        const QString name = item->data(0, Qt::UserRole + 1).toString();
+        if (name.isEmpty())
+            return;
+        SourceData *src = sourceById(m_activeSource);
+        if (!src || !src->ds)
+            return;
+        QMenu menu(this);
+        menu.setAttribute(Qt::WA_StyledBackground, true);
+        menu.setStyleSheet(QStringLiteral(
+            "QMenu{background:#161b20;color:#c9d1d9;border:1px solid #2d3841;padding:4px;}"
+            "QMenu::item{padding:5px 24px 5px 20px;font-size:12px;color:#c9d1d9;}"
+            "QMenu::item:selected{background:#1f2a33;color:#f2b134;}"));
+        QAction *add = menu.addAction(QStringLiteral("添加变换…"));
+        QAction *draw = menu.addAction(QStringLiteral("画到当前画布"));
+        QAction *del = src->derived.contains(name) ? menu.addAction(QStringLiteral("删除派生通道")) : nullptr;
+        QAction *chosen = menu.exec(m_srcTree->viewport()->mapToGlobal(pos));
+        if (chosen == draw)
+        {
+            const qulonglong ptr = item->data(0, Qt::UserRole).value<qulonglong>();
+            if (auto *c = currentCanvas(); c && ptr)
+                c->addChannel(reinterpret_cast<const PsChannelInfo *>(ptr));
+            return;
+        }
+        if (chosen == del && del)
+        {
+            if (ps_dataset_remove_channel(src->ds, name.toUtf8().constData()) == 0)
+            {
+                for (int i = src->recipes.size() - 1; i >= 0; --i)
+                {
+                    const TransformRecipe &r = src->recipes[i];
+                    const bool match = r.kind == QLatin1String("quat")
+                                           ? name.startsWith(r.output + QLatin1Char('.'))
+                                           : r.output == name;
+                    if (match)
+                        src->recipes.removeAt(i);
+                }
+                src->derived.removeAll(name);
+                for (auto *c : findChildren<CanvasWidget *>())
+                    c->removeChannel(name);
+                refreshActiveSource();
+                log(QStringLiteral("删除派生通道：%1").arg(name));
+            }
+            return;
+        }
+        if (chosen != add)
+            return;
+        addTransformFor(name);
+    });
+    auto *transformKey = new QShortcut(QKeySequence(QStringLiteral("Ctrl+T")), this);
+    connect(transformKey, &QShortcut::activated, this, [this] {
+        auto *item = m_srcTree ? m_srcTree->currentItem() : nullptr;
+        if (!item || item->childCount() > 0)
+            return;
+        const QString name = item->data(0, Qt::UserRole + 1).toString();
+        if (!name.isEmpty())
+            addTransformFor(name);
+    });
     m_srcStack->addWidget(m_srcTree);
 
     m_paramTable = new QTableWidget(0, 2, m_srcStack);
@@ -846,13 +910,33 @@ void MainWindow::renderSourceData()
         return;
     }
 
-    const bool is_tree = m_srcFmt == QStringLiteral("ULog");
+    const bool is_tree = m_srcFmt == QStringLiteral("ULog")
+                      || m_srcFmt == QStringLiteral("ArduPilot · BIN")
+                      || m_srcFmt.startsWith(QStringLiteral("ASC"))
+                      || m_srcFmt.startsWith(QStringLiteral("BLF"));
     QMap<QString, QTreeWidgetItem *> groups;
+    SourceData *active = sourceById(m_activeSource);
+    QTreeWidgetItem *derivedGroup = nullptr;
     for (const PsChannelInfo *ch : m_srcChannels)
     {
         const QString name = QString::fromUtf8(ch->name);
         QString group;
         QString leaf = name;
+        const bool derived = active && active->derived.contains(name);
+        if (derived)
+        {
+            if (!derivedGroup)
+            {
+                derivedGroup = new QTreeWidgetItem(m_srcTree, {QStringLiteral("派生通道")});
+                derivedGroup->setForeground(0, QColor(QStringLiteral("#f2b134")));
+            }
+            auto *item = new QTreeWidgetItem(derivedGroup, {name.mid(name.lastIndexOf(QLatin1Char('.')) + 1)});
+            item->setToolTip(0, name);
+            item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+            item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
+            item->setData(0, Qt::UserRole + 1, name);
+            continue;
+        }
         if (is_tree)
         {
             const int dot = name.lastIndexOf(QLatin1Char('.'));
@@ -885,6 +969,8 @@ void MainWindow::renderSourceData()
         g->setExpanded(few_groups && is_tree);
     if (is_tree && !few_groups && !groups.isEmpty())
         groups.first()->setExpanded(true);
+    if (derivedGroup)
+        derivedGroup->setExpanded(true);
 
     m_srcTabs->setTabText(0, QStringLiteral("字段 %1").arg(n));
     m_srcTabs->setTabText(1, QStringLiteral("参数 %1").arg(m_srcParams.size()));
@@ -963,6 +1049,70 @@ void MainWindow::switchSource(int id)
     m_srcMsgs = src->msgs;
     for (auto *c : findChildren<CanvasWidget *>())
         c->setInputSource(src->id, src->path, src->alias);
+    renderSourceData();
+}
+
+void MainWindow::addTransformFor(const QString &channel)
+{
+    SourceData *src = sourceById(m_activeSource);
+    if (!src || !src->ds)
+        return;
+    TransformDialog dlg(src->ds, src->channels, src->alias.isEmpty() ? src->name : src->alias, channel, this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    for (const QString &n : dlg.addedNames())
+        if (!src->derived.contains(n))
+            src->derived.append(n);
+    TransformRecipe r;
+    r.kind = dlg.kind();
+    r.input = dlg.inputName();
+    r.filter = dlg.filterId();
+    r.params = dlg.params();
+    r.output = dlg.outputName();
+    r.quat[0] = dlg.w();
+    r.quat[1] = dlg.x();
+    r.quat[2] = dlg.y();
+    r.quat[3] = dlg.z();
+    r.degrees = dlg.degrees();
+    r.unwrap = dlg.unwrap();
+    src->recipes.append(r);
+    refreshActiveSource();
+
+    QVector<const PsChannelInfo *> out;
+    for (const PsChannelInfo *ch : src->channels)
+        if (dlg.addedNames().contains(QString::fromUtf8(ch->name)))
+            out.append(ch);
+    if (out.isEmpty())
+        return;
+    bool replaced = false;
+    if (!dlg.inputName().isEmpty())
+        for (auto *c : findChildren<CanvasWidget *>())
+            replaced = c->replaceChannel(dlg.inputName(), out.first()) || replaced;
+    if (!replaced)
+        for (const PsChannelInfo *ch : out)
+            if (auto *c = currentCanvas())
+                c->addChannel(ch);
+    log(QStringLiteral("变换完成：%1").arg(dlg.addedNames().join(QStringLiteral(", "))));
+}
+
+void MainWindow::reloadChannels(SourceData *src)
+{
+    if (!src || !src->ds)
+        return;
+    src->channels.clear();
+    const uint32_t n = ps_dataset_channel_count(src->ds);
+    for (uint32_t i = 0; i < n; ++i)
+        if (const PsChannelInfo *ch = ps_dataset_channel(src->ds, i))
+            src->channels.append(ch);
+}
+
+void MainWindow::refreshActiveSource()
+{
+    SourceData *src = sourceById(m_activeSource);
+    if (!src || !src->ds)
+        return;
+    reloadChannels(src);
+    m_srcChannels = src->channels;
     renderSourceData();
 }
 
@@ -1464,6 +1614,32 @@ void MainWindow::saveLayoutTo(const QString &path)
     }
     root[QStringLiteral("sources")] = sources;
 
+    QJsonArray transforms;
+    for (const SourceData &src : m_sources)
+    {
+        for (const TransformRecipe &r : src.recipes)
+        {
+            QJsonObject o;
+            o[QStringLiteral("source")] = src.path;
+            o[QStringLiteral("kind")] = r.kind;
+            o[QStringLiteral("input")] = r.input;
+            o[QStringLiteral("filter")] = r.filter;
+            o[QStringLiteral("params")] = r.params;
+            o[QStringLiteral("output")] = r.output;
+            o[QStringLiteral("degrees")] = r.degrees;
+            o[QStringLiteral("unwrap")] = r.unwrap;
+            if (r.kind == QLatin1String("quat"))
+            {
+                QJsonArray q;
+                for (const QString &s : r.quat)
+                    q.append(s);
+                o[QStringLiteral("quat")] = q;
+            }
+            transforms.append(o);
+        }
+    }
+    root[QStringLiteral("transforms")] = transforms;
+
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
@@ -1518,6 +1694,58 @@ void MainWindow::importLayoutFrom(const QString &path)
                     src.alias = alias;
         }
     }
+
+    // 重放变换配方；派生通道先写回，buildPage 才能按名字找到
+    for (const QJsonValue &v : root.value(QStringLiteral("transforms")).toArray())
+    {
+        const QJsonObject o = v.toObject();
+        SourceData *src = nullptr;
+        for (SourceData &s : m_sources)
+            if (s.path == o.value(QStringLiteral("source")).toString())
+                src = &s;
+        if (!src || !src->ds)
+            continue;
+        TransformRecipe r;
+        r.kind = o.value(QStringLiteral("kind")).toString();
+        r.input = o.value(QStringLiteral("input")).toString();
+        r.filter = o.value(QStringLiteral("filter")).toString();
+        r.params = o.value(QStringLiteral("params")).toObject();
+        r.output = o.value(QStringLiteral("output")).toString();
+        r.degrees = o.value(QStringLiteral("degrees")).toBool(true);
+        r.unwrap = o.value(QStringLiteral("unwrap")).toBool(true);
+        const QJsonArray q = o.value(QStringLiteral("quat")).toArray();
+        for (int i = 0; i < 4 && i < q.size(); ++i)
+            r.quat[i] = q.at(i).toString();
+        char err[512] = {0};
+        int rc = 0;
+        if (r.kind == QLatin1String("quat"))
+            rc = ps_dataset_apply_quat_rpy(src->ds, r.quat[0].toUtf8().constData(), r.quat[1].toUtf8().constData(),
+                                           r.quat[2].toUtf8().constData(), r.quat[3].toUtf8().constData(),
+                                           r.output.toUtf8().constData(), r.degrees ? 1 : 0, r.unwrap ? 1 : 0,
+                                           err, sizeof err);
+        else
+            rc = ps_dataset_apply_filter(
+                src->ds, r.input.toUtf8().constData(), r.filter.toUtf8().constData(),
+                QJsonDocument(r.params).toJson(QJsonDocument::Compact).constData(),
+                r.output.toUtf8().constData(), err, sizeof err);
+        if (rc != 0)
+        {
+            log(QStringLiteral("重放变换失败：%1（%2）").arg(r.output, QString::fromUtf8(err)));
+            continue;
+        }
+        src->recipes.append(r);
+        const QStringList names = r.kind == QLatin1String("quat")
+                                      ? QStringList{r.output + QStringLiteral(".roll"),
+                                                    r.output + QStringLiteral(".pitch"),
+                                                    r.output + QStringLiteral(".yaw")}
+                                      : QStringList{r.output};
+        for (const QString &n : names)
+            if (!src->derived.contains(n))
+                src->derived.append(n);
+        reloadChannels(src);
+    }
+    if (!m_sources.isEmpty())
+        refreshActiveSource();
 
     // 清空页签时屏蔽 currentChanged：末尾的 ＋ 触发 newPage 会和删除循环互踢
     m_pages->blockSignals(true);

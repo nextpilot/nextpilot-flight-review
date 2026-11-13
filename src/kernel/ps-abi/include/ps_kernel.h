@@ -75,6 +75,21 @@ uint32_t             ps_dataset_channel_count(const PsDataset *ds);
 const PsChannelInfo *ps_dataset_channel(const PsDataset *ds, uint32_t index);
 void                 ps_dataset_free(PsDataset *ds);
 
+/* 绘图前变换：结果作为普通通道写回同一 PsDataset。
+ * ps_dataset_apply_filter：input 为通道名，filter_id 为 PJ4 内置算子，
+ * params_json 为对象；output 为空时自动 `<input>.<filter_id>`。
+ * 返回 0 成功；非 0 见 err。 */
+int32_t              ps_dataset_apply_filter(PsDataset *ds, const char *input, const char *filter_id,
+                                             const char *params_json, const char *output,
+                                             char *err, uint32_t err_cap);
+/* 四元数 w/x/y/z → `<out_topic>.roll/.pitch/.yaw` 三条通道，要求同点数同时间戳。 */
+int32_t              ps_dataset_apply_quat_rpy(PsDataset *ds, const char *w, const char *x,
+                                               const char *y, const char *z, const char *out_topic,
+                                               uint8_t degrees, uint8_t unwrap,
+                                               char *err, uint32_t err_cap);
+/* 删除通道（包括派生通道）。 */
+int32_t              ps_dataset_remove_channel(PsDataset *ds, const char *name);
+
 /* 视口抽稀（铁律：降采样在 Rust 侧完成）。out 按 (x, min, max) 三元组排列，
  * 返回实际写入的三元组个数，上限 min(px, cap_triples)。 */
 uint32_t ps_lod_minmax(const double *t, const double *v, uint32_t n,

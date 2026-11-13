@@ -175,6 +175,42 @@ void CanvasWidget::addChannel(const PsChannelInfo *ch)
     emit activated(m_title);
 }
 
+void CanvasWidget::removeChannel(const QString &name)
+{
+    for (int i = m_series.size() - 1; i >= 0; --i)
+    {
+        if (m_series[i].name == name && (m_inputSrcId < 0 || m_series[i].srcId == m_inputSrcId))
+            m_series.removeAt(i);
+    }
+    m_autoY = true;
+    resetView();
+    update();
+}
+
+bool CanvasWidget::replaceChannel(const QString &oldName, const PsChannelInfo *ch)
+{
+    if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
+        return false;
+    for (Series &s : m_series)
+    {
+        if (s.name != oldName || (m_inputSrcId >= 0 && s.srcId != m_inputSrcId))
+            continue;
+        s.name = QString::fromUtf8(ch->name);
+        s.label = m_inputSrcAlias.isEmpty() ? s.name : m_inputSrcAlias + QStringLiteral(" · ") + s.name;
+        s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
+        s.t = ch->time;
+        s.v = ch->value;
+        s.n = ch->point_count;
+        m_kernelBacked = true;
+        m_autoY = true;
+        resetView();
+        update();
+        emit activated(m_title);
+        return true;
+    }
+    return false;
+}
+
 void CanvasWidget::dragEnterEvent(QDragEnterEvent *event)
 {
     if (event->mimeData()->hasFormat(QStringLiteral("application/x-plotscope-channel")))

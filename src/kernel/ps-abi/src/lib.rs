@@ -371,6 +371,187 @@ pub unsafe extern "C" fn ps_blf_load(
     can_load(path, out, err, err_cap, ps_parse::blf::parse_file)
 }
 
+/// 在数据集里追加一条派生通道；同名拒绝。
+fn add_channel(ds: &mut Dataset, name: &str, unit: &str, t: Vec<f64>, v: Vec<f64>) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("输出通道名为空".into());
+    }
+    if ds.channels.iter().any(|c| c.name.to_string_lossy() == name) {
+        return Err(format!("通道已存在：{name}"));
+    }
+    ds.channels.push(Channel {
+        name: CString::new(name).map_err(|_| "通道名含 NUL")?,
+        unit: CString::new(unit).unwrap_or_default(),
+        t,
+        v,
+    });
+    ds.rebuild_infos();
+    Ok(())
+}
+
+fn require_name<'a>(ptr: *const c_char, what: &str) -> Result<&'a str, String> {
+    if ptr.is_null() {
+        return Err(format!("{what}为空"));
+    }
+    unsafe { CStr::from_ptr(ptr).to_str().map_err(|_| format!("{what}不是合法 UTF-8")) }
+}
+
+/// 对一条通道应用 PJ4 过滤器，结果作为普通通道写回数据集。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_apply_filter(
+    ds: *mut Dataset,
+    input: *const c_char,
+    filter_id: *const c_char,
+    params_json: *const c_char,
+    output: *const c_char,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        return 1;
+    }
+    let input = match require_name(input, "输入通道") {
+        Ok(s) => s,
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let filter_id = match require_name(filter_id, "过滤器") {
+        Ok(s) => s,
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let params = if params_json.is_null() {
+        serde_json::Value::Object(Default::default())
+    } else {
+        let text = match CStr::from_ptr(params_json).to_str() {
+            Ok(s) => s,
+            Err(_) => { write_err(err, err_cap, "参数不是合法 UTF-8"); return 2; }
+        };
+        if text.trim().is_empty() { serde_json::Value::Object(Default::default()) }
+        else {
+            match serde_json::from_str(text) {
+                Ok(v) => v,
+                Err(e) => { write_err(err, err_cap, &format!("参数 JSON：{e}")); return 5; }
+            }
+        }
+    };
+    let d = &mut *ds;
+    let Some(idx) = d.channels.iter().position(|c| c.name.to_string_lossy() == input) else {
+        write_err(err, err_cap, &format!("找不到输入通道：{input}"));
+        return 3;
+    };
+    let t = d.channels[idx].t.clone();
+    let v = d.channels[idx].v.clone();
+    let unit = d.channels[idx].unit.to_string_lossy().to_string();
+    let out_name = match require_name(output, "输出通道") {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        Ok(_) => format!("{input}.{filter_id}"),
+        Err(_) => format!("{input}.{filter_id}"),
+    };
+    let (ot, ov) = match ps_ops::filters::apply(filter_id, &t, &v, &params) {
+        Ok(x) => x,
+        Err(e) => { write_err(err, err_cap, &e); return 5; }
+    };
+    match add_channel(d, &out_name, &unit, ot, ov) {
+        Ok(()) => 0,
+        Err(e) => { write_err(err, err_cap, &e); return 4; }
+    }
+}
+
+/// 四元数 w/x/y/z → `out_topic.roll,pitch,yaw` 三条普通通道。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
+    ds: *mut Dataset,
+    w: *const c_char,
+    x: *const c_char,
+    y: *const c_char,
+    z: *const c_char,
+    out_topic: *const c_char,
+    degrees: u8,
+    unwrap: u8,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        return 1;
+    }
+    let names = [("w", w), ("x", x), ("y", y), ("z", z)];
+    let mut channels = Vec::new();
+    let d = &*ds;
+    for (label, ptr) in names {
+        let name = match require_name(ptr, label) {
+            Ok(s) => s,
+            Err(e) => { write_err(err, err_cap, &e); return 2; }
+        };
+        let Some(idx) = d.channels.iter().position(|c| c.name.to_string_lossy() == name) else {
+            write_err(err, err_cap, &format!("找不到四元数通道：{name}"));
+            return 3;
+        };
+        channels.push(idx);
+    }
+    let len = d.channels[channels[0]].t.len();
+    if channels.iter().any(|i| d.channels[*i].t.len() != len) {
+        write_err(err, err_cap, "四元数四个通道点数不一致");
+        return 5;
+    }
+    let times: Vec<f64> = d.channels[channels[0]].t.clone();
+    for i in &channels[1..] {
+        if d.channels[*i].t.iter().zip(&times).any(|(a, b)| (a - b).abs() > 1e-6) {
+            write_err(err, err_cap, "四元数四个通道时间戳不一致");
+            return 5;
+        }
+    }
+    let wv = d.channels[channels[0]].v.clone();
+    let xv = d.channels[channels[1]].v.clone();
+    let yv = d.channels[channels[2]].v.clone();
+    let zv = d.channels[channels[3]].v.clone();
+    let (r, p, yaw) = match ps_ops::quat::to_rpy(&wv, &xv, &yv, &zv, degrees != 0, unwrap != 0) {
+        Ok(x) => x,
+        Err(e) => { write_err(err, err_cap, &e); return 5; }
+    };
+    let topic = match require_name(out_topic, "输出主题") {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        _ => "rpy".to_string(),
+    };
+    let unit = if degrees != 0 { "deg" } else { "rad" };
+    let names = [format!("{topic}.roll"), format!("{topic}.pitch"), format!("{topic}.yaw")];
+    for name in &names {
+        if d.channels.iter().any(|c| c.name.to_string_lossy() == *name) {
+            write_err(err, err_cap, &format!("通道已存在：{name}"));
+            return 4;
+        }
+    }
+    let d = &mut *ds;
+    for (name, vals) in [
+        (format!("{topic}.roll"), r),
+        (format!("{topic}.pitch"), p),
+        (format!("{topic}.yaw"), yaw),
+    ] {
+        if let Err(e) = add_channel(d, &name, unit, times.clone(), vals) {
+            write_err(err, err_cap, &e);
+            return 4;
+        }
+    }
+    0
+}
+
+/// 删除派生通道；原始通道也可删，由 UI 自己约束。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_remove_channel(ds: *mut Dataset, name: *const c_char) -> i32 {
+    if ds.is_null() {
+        return 1;
+    }
+    let name = match require_name(name, "通道") {
+        Ok(s) => s,
+        Err(_) => return 2,
+    };
+    let d = &mut *ds;
+    let Some(idx) = d.channels.iter().position(|c| c.name.to_string_lossy() == name) else {
+        return 3;
+    };
+    d.channels.remove(idx);
+    d.rebuild_infos();
+    0
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_channel_count(ds: *const Dataset) -> u32 {
     if ds.is_null() {

@@ -17,6 +17,19 @@ class QListWidget;
 class QVBoxLayout;
 class QLineEdit;
 
+// 变换配方：写入 .psl，重启/导入时按序重放
+struct TransformRecipe
+{
+    QString kind;             // filter / quat
+    QString input;
+    QString filter;
+    QJsonObject params;
+    QString output;           // filter 输出名 / quat 输出主题
+    QString quat[4];
+    bool degrees = true;
+    bool unwrap = true;
+};
+
 // 一个数据源：各自持有内核数据集，切源不释放，删除源才释放
 struct SourceData
 {
@@ -29,6 +42,8 @@ struct SourceData
     QVector<const PsChannelInfo *> channels;
     QVector<QPair<QString, QString>> params;
     QVector<QStringList> msgs;
+    QStringList derived;       // 本源由变换产生的通道名，右键才允许删除
+    QVector<TransformRecipe> recipes;
     QWidget *row = nullptr;
 };
 
@@ -65,6 +80,9 @@ private:
     void removeSourceRow(QWidget *row);
     void activateSource(QWidget *row);   // 每个源各自一份字段/参数/消息视图
     void renderSourceData();
+    void refreshActiveSource();          // 变换写回后重建通道指针与字段树
+    void reloadChannels(SourceData *src);
+    void addTransformFor(const QString &channel);
     void setupCanvas(CanvasWidget *c);
     void addCanvasToPage();
     void removeCanvas(CanvasWidget *c);

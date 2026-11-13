@@ -107,7 +107,7 @@ public:
 | `binary_filter` | 阈值二值化 | `binary_op`, `binary_a`, `binary_b`, `binary_tol` |
 | `time_since_previous` | 相邻样本 Δt | — |
 
-四元数不在 PJ4 内置目录里，而是官方 Quaternion 插件：4 输入（w,x,y,z）→ 一个分组 topic `rpy:roll,pitch,yaw`。我们按同样语义单独实现，不做三条独立通道；支持 degree、unwrap、pitch ±π/2 截断。
+四元数不在 PJ4 内置目录里，而是官方 Quaternion 插件：4 输入（w,x,y,z）→ 一个分组 topic `rpy:roll,pitch,yaw`。当前数据模型是扁平日通道，先实现为 `rpy.roll/.pitch/.yaw` 三条通道；支持 degree、unwrap、pitch ±π/2 截断。
 
 语义细节按 PJ `resources/filters/builtin_filters.luau`：
 - moving_average 不足窗口时用当前值补齐，除以完整窗口；可选按缓冲跨度居中时间戳。
@@ -202,3 +202,12 @@ public:
 - 脚本引擎：`pj_scripting/src/luau_engine.cpp`、`python_engine.cpp`
 - 布局与曲线描述：`pj_plotting/core/include/pj_plotting/PlotXml.h`、`pj_runtime/include/pj_runtime/CurveDescriptor.h`
 - 插件与市场：`pj_marketplace/`、`plotjuggler_sdk`
+
+
+## 实现进度（2026-11-13）
+
+- 内核：`ps-ops/src/filters.rs` 12 算子；`quat.rs` 4→3；`ps-abi` 新增 `ps_dataset_apply_filter`、`ps_dataset_apply_quat_rpy`、`ps_dataset_remove_channel`。
+- UI：`TransformDialog` 双页签；字段树右键「添加变换… / 画到当前画布 / 删除派生通道」；`Ctrl+T`；产物进「派生通道」分组。
+- 验证：`ctest` 2/2（含 CSV → MA(2) → 四元数闭环），AP 真实样本手测滤器与四元数。
+- 已做：配方写 `.psl` `transforms[]`，导入时按源路径重放；删除派生通道同步移除配方。
+- 未做：before/after 预览、变换链编辑、12 算子逐项 golden。

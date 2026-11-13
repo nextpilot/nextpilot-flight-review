@@ -26,6 +26,8 @@ public:
     // 用内核通道替换当前所有曲线；传空则只清空。
     void setChannels(const QVector<const PsChannelInfo *> &channels);
     void addChannel(const PsChannelInfo *channel);   // 字段树拖入时追加一条曲线
+    bool replaceChannel(const QString &oldName, const PsChannelInfo *channel); // 变换 Apply：替换并继承颜色
+    void removeChannel(const QString &name);
     void setInputSource(int id, const QString &path, const QString &alias = QString()); // 当前拖拽来源
     void removeChannelsFromSource(const QString &path);
     void renameSource(const QString &path, const QString &alias);
