@@ -1,6 +1,6 @@
 #include "source/SourceRegistry.h"
 
-#include "runtime/PluginRuntime.h"
+#include "app/plugin_host/PluginRuntime.h"
 
 #include <QBuffer>
 #include <QJsonDocument>

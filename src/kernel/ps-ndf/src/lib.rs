@@ -74,18 +74,89 @@ impl Series {
     }
 }
 
+/// 数据集：一组具名通道。PS-NDF 是内核唯一的数据模型，
+/// `ps-abi` 只负责把这里的 Series 映射成 C 结构，不再自己持有通道数组。
+#[derive(Debug, Clone, Default)]
+pub struct Dataset {
+    pub channels: Vec<Series>,
+}
+
+impl Dataset {
+    pub fn new() -> Self {
+        Self { channels: Vec::new() }
+    }
+
+    pub fn len(&self) -> usize {
+        self.channels.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.channels.is_empty()
+    }
+
+    pub fn channel(&self, index: usize) -> Option<&Series> {
+        self.channels.get(index)
+    }
+
+    /// 按名字找通道；返回索引与通道引用。
+    pub fn find(&self, name: &str) -> Option<(usize, &Series)> {
+        self.channels.iter().enumerate().find(|(_, c)| c.name == name)
+    }
+
+    /// 追加通道；名字重复或为空返回错误。
+    pub fn add_channel(&mut self, series: Series) -> Result<(), String> {
+        if series.name.is_empty() {
+            return Err("输出通道名为空".into());
+        }
+        if self.channels.iter().any(|c| c.name == series.name) {
+            return Err(format!("通道已存在：{}", series.name));
+        }
+        self.channels.push(series);
+        Ok(())
+    }
+
+    /// 删除通道；返回是否删除成功。
+    pub fn remove_channel(&mut self, name: &str) -> bool {
+        if let Some((idx, _)) = self.find(name) {
+            self.channels.remove(idx);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// 视口 LOD：把 [t0,t1] 内样本按像素分桶，每桶输出 (中点时间, min, max)。
 /// 降采样必须在 Rust 侧完成（§11 铁律 3），UI 只拿 ≤px 个三元组去画。
 pub fn lod_minmax(t: &[f64], v: &[f64], t0: f64, t1: f64, px: usize) -> Vec<(f64, f64, f64)> {
-    let px = px.max(1);
-    if t.is_empty() || v.is_empty() || !(t1 > t0) {
-        return Vec::new();
+    let mut out = vec![0.0f64; px.max(1) * 3];
+    let n = lod_minmax_into(t, v, t0, t1, px, &mut out);
+    out[..n * 3]
+        .chunks_exact(3)
+        .map(|c| (c[0], c[1], c[2]))
+        .collect()
+}
+
+/// 视口 LOD 的零分配版本：把 `(x,min,max)` 写进调用方缓冲区，返回写入的三元组数。
+/// 一次批量调用可以并行处理多个通道，避免每通道一次 FFI + 一次 Vec 分配。
+pub fn lod_minmax_into(
+    t: &[f64],
+    v: &[f64],
+    t0: f64,
+    t1: f64,
+    px: usize,
+    out: &mut [f64],
+) -> usize {
+    let cap = out.len() / 3;
+    if cap == 0 || t.is_empty() || v.is_empty() || !(t1 > t0) {
+        return 0;
     }
+    let px = px.max(1).min(cap);
     let n = t.len().min(v.len());
     let start = t.partition_point(|x| *x < t0);
     let span = t1 - t0;
 
-    let mut out: Vec<(f64, f64, f64)> = Vec::with_capacity(px);
+    let mut count = 0usize;
     let mut cur_bucket = usize::MAX;
     for i in start..n {
         let ti = t[i];
@@ -96,16 +167,25 @@ pub fn lod_minmax(t: &[f64], v: &[f64], t0: f64, t1: f64, px: usize) -> Vec<(f64
         let b = if b < 0.0 { 0 } else { (b as usize).min(px - 1) };
         let val = v[i];
         if b != cur_bucket {
+            // 只有“新桶且已经写满”才停；已写满的最后一个桶还要继续收 min/max。
+            if count >= cap {
+                break;
+            }
             cur_bucket = b;
-            out.push((t0 + span * (b as f64 + 0.5) / px as f64, val, val));
-        } else if let Some(last) = out.last_mut() {
+            let base = count * 3;
+            out[base] = t0 + span * (b as f64 + 0.5) / px as f64;
+            out[base + 1] = val;
+            out[base + 2] = val;
+            count += 1;
+        } else if count > 0 {
+            let base = (count - 1) * 3;
             if val.is_finite() {
-                last.1 = last.1.min(val);
-                last.2 = last.2.max(val);
+                out[base + 1] = out[base + 1].min(val);
+                out[base + 2] = out[base + 2].max(val);
             }
         }
     }
-    out
+    count
 }
 
 /// 通道精度推断：用于 D11（f32/f64/kEnum/kString）的最小实现。
@@ -151,6 +231,17 @@ mod tests {
     }
 
     #[test]
+    fn lod_into_reuses_caller_buffer() {
+        let t = [0.0, 1.0, 2.0];
+        let v = [0.0, 3.0, -1.0];
+        let mut out = [0.0; 9];
+        let n = lod_minmax_into(&t, &v, 0.0, 2.0, 3, &mut out);
+        assert_eq!(n, 3);
+        assert_eq!(out[1], 0.0);
+        assert_eq!(out[7], -1.0);
+    }
+
+    #[test]
     fn lod_empty_when_range_invalid() {
         assert!(lod_minmax(&[0.0], &[1.0], 1.0, 0.0, 10).is_empty());
     }
@@ -164,5 +255,18 @@ mod tests {
         let p = s.downsample(4);
         assert_eq!(p.len(), 2);
         assert!((p[0].1 - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn dataset_adds_and_finds_channels() {
+        let mut ds = Dataset::new();
+        let mut s = Series::new("att.roll");
+        s.push(0.0, 1.0);
+        ds.add_channel(s).unwrap();
+        assert_eq!(ds.len(), 1);
+        assert_eq!(ds.find("att.roll").unwrap().0, 0);
+        assert!(ds.add_channel(Series::new("att.roll")).is_err());
+        assert!(ds.remove_channel("att.roll"));
+        assert!(ds.is_empty());
     }
 }

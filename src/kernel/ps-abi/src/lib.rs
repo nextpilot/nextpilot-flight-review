@@ -45,14 +45,14 @@ pub extern "C" fn ps_abi_selftest() -> i32 {
     }
     let t = [0.0f64, 2.0];
     let v = [0.0f64, 100.0];
-    let got = ps_align::linear(&t, &v, &[1.0]);
+    let got = ps_ops::align::linear(&t, &v, &[1.0]);
     if (got[0] - 50.0).abs() > 1e-9 {
         return 4;
     }
     0
 }
 
-// ===== 数据面（M0）：CSV → 数据集，LOD 在 Rust 侧算，UI 只拿三元组 =====
+// ===== 数据面：这里只做 C ABI 封装，数据模型在 ps-ndf =====
 
 use std::ffi::CStr;
 
@@ -66,32 +66,30 @@ pub struct PsChannelInfo {
     pub value: *const f64,
 }
 
-struct Channel {
-    name: CString,
-    unit: CString,
-    t: Vec<f64>,
-    v: Vec<f64>,
-}
-
-/// 不透明数据集：C 侧只持有指针。
-pub struct Dataset {
-    channels: Vec<Channel>,
+/// C 侧看到的不透明数据集。真正的通道数组由 `ps_ndf::Dataset` 持有；
+/// 这里只缓存 C 视图和 CString 名，避免每次取通道都重新分配。
+pub struct PsDataset {
+    data: ps_ndf::Dataset,
     infos: Vec<PsChannelInfo>,
+    names: Vec<CString>,
+    units: Vec<CString>,
 }
 
-impl Dataset {
+impl PsDataset {
+    fn new() -> Self {
+        Self { data: ps_ndf::Dataset::new(), infos: Vec::new(), names: Vec::new(), units: Vec::new() }
+    }
+
     fn rebuild_infos(&mut self) {
-        self.infos = self
-            .channels
-            .iter()
-            .map(|c| PsChannelInfo {
-                name: c.name.as_ptr(),
-                unit: c.unit.as_ptr(),
-                point_count: c.t.len().min(c.v.len()) as u32,
-                time: c.t.as_ptr(),
-                value: c.v.as_ptr(),
-            })
-            .collect();
+        self.names = self.data.channels.iter().map(|c| CString::new(c.name.as_str()).unwrap_or_default()).collect();
+        self.units = self.data.channels.iter().map(|c| CString::new(c.unit.as_str()).unwrap_or_default()).collect();
+        self.infos = self.data.channels.iter().enumerate().map(|(i, c)| PsChannelInfo {
+            name: self.names[i].as_ptr(),
+            unit: self.units[i].as_ptr(),
+            point_count: c.t.len().min(c.v.len()) as u32,
+            time: c.t.as_ptr(),
+            value: c.v.as_ptr(),
+        }).collect();
     }
 }
 
@@ -106,20 +104,9 @@ unsafe fn write_err(err: *mut c_char, cap: u32, msg: &str) {
 }
 
 /// 在数据集里追加一条派生通道；同名拒绝。
-fn add_channel(ds: &mut Dataset, name: &str, unit: &str, t: Vec<f64>, v: Vec<f64>) -> Result<(), String> {
-    if name.is_empty() {
-        return Err("输出通道名为空".into());
-    }
-    if ds.channels.iter().any(|c| c.name.to_string_lossy() == name) {
-        return Err(format!("通道已存在：{name}"));
-    }
-    ds.channels.push(Channel {
-        name: CString::new(name).map_err(|_| "通道名含 NUL")?,
-        unit: CString::new(unit).unwrap_or_default(),
-        t,
-        v,
-    });
-    ds.rebuild_infos();
+fn add_channel(d: &mut PsDataset, name: &str, unit: &str, t: Vec<f64>, v: Vec<f64>) -> Result<(), String> {
+    d.data.add_channel(ps_ndf::Series { name: name.to_string(), unit: unit.to_string(), t, v })?;
+    d.rebuild_infos();
     Ok(())
 }
 
@@ -133,7 +120,7 @@ fn require_name<'a>(ptr: *const c_char, what: &str) -> Result<&'a str, String> {
 /// 对一条通道应用 PJ4 过滤器，结果作为普通通道写回数据集。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_apply_filter(
-    ds: *mut Dataset,
+    ds: *mut PsDataset,
     input: *const c_char,
     filter_id: *const c_char,
     params_json: *const c_char,
@@ -168,13 +155,13 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
         }
     };
     let d = &mut *ds;
-    let Some(idx) = d.channels.iter().position(|c| c.name.to_string_lossy() == input) else {
+    let Some((idx, _)) = d.data.find(&input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
-    let t = d.channels[idx].t.clone();
-    let v = d.channels[idx].v.clone();
-    let unit = d.channels[idx].unit.to_string_lossy().to_string();
+    let t = d.data.channels[idx].t.clone();
+    let v = d.data.channels[idx].v.clone();
+    let unit = d.data.channels[idx].unit.clone();
     let out_name = match require_name(output, "输出通道") {
         Ok(s) if !s.is_empty() => s.to_string(),
         Ok(_) => format!("{input}.{filter_id}"),
@@ -194,7 +181,7 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
 /// 返回 0 成功；6 缓冲区不足（out_n 仍给出实际长度）；其余同 apply_filter。
 #[no_mangle]
 pub unsafe extern "C" fn ps_preview_filter(
-    ds: *const Dataset,
+    ds: *const PsDataset,
     input: *const c_char,
     filter_id: *const c_char,
     params_json: *const c_char,
@@ -232,7 +219,7 @@ pub unsafe extern "C" fn ps_preview_filter(
         }
     };
     let d = &*ds;
-    let Some(ch) = d.channels.iter().find(|c| c.name.to_string_lossy() == input) else {
+    let Some((_, ch)) = d.data.find(&input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
@@ -253,7 +240,7 @@ pub unsafe extern "C" fn ps_preview_filter(
 /// 四元数 w/x/y/z → `out_topic.roll,pitch,yaw` 三条普通通道。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
-    ds: *mut Dataset,
+    ds: *mut PsDataset,
     w: *const c_char,
     x: *const c_char,
     y: *const c_char,
@@ -275,28 +262,28 @@ pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
             Ok(s) => s,
             Err(e) => { write_err(err, err_cap, &e); return 2; }
         };
-        let Some(idx) = d.channels.iter().position(|c| c.name.to_string_lossy() == name) else {
+        let Some((idx, _)) = d.data.find(&name) else {
             write_err(err, err_cap, &format!("找不到四元数通道：{name}"));
             return 3;
         };
         channels.push(idx);
     }
-    let len = d.channels[channels[0]].t.len();
-    if channels.iter().any(|i| d.channels[*i].t.len() != len) {
+    let len = d.data.channels[channels[0]].t.len();
+    if channels.iter().any(|i| d.data.channels[*i].t.len() != len) {
         write_err(err, err_cap, "四元数四个通道点数不一致");
         return 5;
     }
-    let times: Vec<f64> = d.channels[channels[0]].t.clone();
+    let times: Vec<f64> = d.data.channels[channels[0]].t.clone();
     for i in &channels[1..] {
-        if d.channels[*i].t.iter().zip(&times).any(|(a, b)| (a - b).abs() > 1e-6) {
+        if d.data.channels[*i].t.iter().zip(&times).any(|(a, b)| (a - b).abs() > 1e-6) {
             write_err(err, err_cap, "四元数四个通道时间戳不一致");
             return 5;
         }
     }
-    let wv = d.channels[channels[0]].v.clone();
-    let xv = d.channels[channels[1]].v.clone();
-    let yv = d.channels[channels[2]].v.clone();
-    let zv = d.channels[channels[3]].v.clone();
+    let wv = d.data.channels[channels[0]].v.clone();
+    let xv = d.data.channels[channels[1]].v.clone();
+    let yv = d.data.channels[channels[2]].v.clone();
+    let zv = d.data.channels[channels[3]].v.clone();
     let (r, p, yaw) = match ps_ops::quat::to_rpy(&wv, &xv, &yv, &zv, degrees != 0, unwrap != 0) {
         Ok(x) => x,
         Err(e) => { write_err(err, err_cap, &e); return 5; }
@@ -308,7 +295,7 @@ pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
     let unit = if degrees != 0 { "deg" } else { "rad" };
     let names = [format!("{topic}.roll"), format!("{topic}.pitch"), format!("{topic}.yaw")];
     for name in &names {
-        if d.channels.iter().any(|c| c.name.to_string_lossy() == *name) {
+        if d.data.find(name).is_some() {
             write_err(err, err_cap, &format!("通道已存在：{name}"));
             return 4;
         }
@@ -329,7 +316,7 @@ pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
 
 /// 删除派生通道；原始通道也可删，由 UI 自己约束。
 #[no_mangle]
-pub unsafe extern "C" fn ps_dataset_remove_channel(ds: *mut Dataset, name: *const c_char) -> i32 {
+pub unsafe extern "C" fn ps_dataset_remove_channel(ds: *mut PsDataset, name: *const c_char) -> i32 {
     if ds.is_null() {
         return 1;
     }
@@ -338,16 +325,15 @@ pub unsafe extern "C" fn ps_dataset_remove_channel(ds: *mut Dataset, name: *cons
         Err(_) => return 2,
     };
     let d = &mut *ds;
-    let Some(idx) = d.channels.iter().position(|c| c.name.to_string_lossy() == name) else {
+    if !d.data.remove_channel(&name) {
         return 3;
-    };
-    d.channels.remove(idx);
+    }
     d.rebuild_infos();
     0
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ps_dataset_channel_count(ds: *const Dataset) -> u32 {
+pub unsafe extern "C" fn ps_dataset_channel_count(ds: *const PsDataset) -> u32 {
     if ds.is_null() {
         return 0;
     }
@@ -355,7 +341,7 @@ pub unsafe extern "C" fn ps_dataset_channel_count(ds: *const Dataset) -> u32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ps_dataset_channel(ds: *const Dataset, index: u32) -> *const PsChannelInfo {
+pub unsafe extern "C" fn ps_dataset_channel(ds: *const PsDataset, index: u32) -> *const PsChannelInfo {
     if ds.is_null() {
         return std::ptr::null();
     }
@@ -363,7 +349,7 @@ pub unsafe extern "C" fn ps_dataset_channel(ds: *const Dataset, index: u32) -> *
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ps_dataset_free(ds: *mut Dataset) {
+pub unsafe extern "C" fn ps_dataset_free(ds: *mut PsDataset) {
     if !ds.is_null() {
         drop(Box::from_raw(ds));
     }
@@ -371,15 +357,15 @@ pub unsafe extern "C" fn ps_dataset_free(ds: *mut Dataset) {
 
 /// 新建空数据集。缓存层用它把磁盘上的通道数组还原成数据集，不重新解析源文件。
 #[no_mangle]
-pub extern "C" fn ps_dataset_new() -> *mut Dataset {
-    Box::into_raw(Box::new(Dataset { channels: Vec::new(), infos: Vec::new() }))
+pub extern "C" fn ps_dataset_new() -> *mut PsDataset {
+    Box::into_raw(Box::new(PsDataset::new()))
 }
 
 /// 往数据集追加一条通道。name/unit 为 UTF-8；time/value 由内核复制。
 /// 返回 0 成功；1 数据集为空；2 名称非法；3 数组为空但点数非 0；4 内存不足。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_add_channel(
-    ds: *mut Dataset,
+    ds: *mut PsDataset,
     name: *const c_char,
     unit: *const c_char,
     time: *const f64,
@@ -411,7 +397,12 @@ pub unsafe extern "C" fn ps_dataset_add_channel(
     let v = if n == 0 { Vec::new() } else { std::slice::from_raw_parts(value, n).to_vec() };
     match (CString::new(name), CString::new(unit)) {
         (Ok(name), Ok(unit)) => {
-            (*ds).channels.push(Channel { name, unit, t, v });
+            (*ds).data.channels.push(ps_ndf::Series {
+                name: name.to_string_lossy().into_owned(),
+                unit: unit.to_string_lossy().into_owned(),
+                t,
+                v,
+            });
             (*ds).rebuild_infos();
             0
         }
@@ -447,6 +438,106 @@ pub unsafe extern "C" fn ps_lod_minmax(
         *out.add(i * 3 + 2) = hi;
     }
     take as u32
+}
+
+
+/// 批量视口抽稀：一次 FFI 处理多个通道，通道数足够多时用 std::thread 并行。
+/// 每个通道的 `(x,min,max)` 写入 `out + c*out_stride`，实际个数写 `out_counts[c]`。
+#[no_mangle]
+pub unsafe extern "C" fn ps_lod_minmax_many(
+    time: *const *const f64,
+    value: *const *const f64,
+    count: *const u32,
+    channels: u32,
+    t0: f64,
+    t1: f64,
+    px: u32,
+    out: *mut f64,
+    out_stride: u32,
+    out_counts: *mut u32,
+) -> u32 {
+    if time.is_null() || value.is_null() || count.is_null() || out.is_null()
+        || out_counts.is_null() || out_stride < 3
+    {
+        return 0;
+    }
+    let n = channels as usize;
+    if n == 0 {
+        return 0;
+    }
+    let stride = out_stride as usize;
+
+    unsafe fn fill(
+        time: *const *const f64,
+        value: *const *const f64,
+        count: *const u32,
+        c: usize,
+        t0: f64,
+        t1: f64,
+        px: u32,
+        out: *mut f64,
+        out_counts: *mut u32,
+        stride: usize,
+    ) {
+        let tp = *time.add(c);
+        let vp = *value.add(c);
+        let np = *count.add(c);
+        if tp.is_null() || vp.is_null() || np == 0 {
+            *out_counts.add(c) = 0;
+            return;
+        }
+        let out_slice = std::slice::from_raw_parts_mut(out.add(c * stride), stride);
+        let got = ps_ndf::lod_minmax_into(
+            std::slice::from_raw_parts(tp, np as usize),
+            std::slice::from_raw_parts(vp, np as usize),
+            t0,
+            t1,
+            px as usize,
+            out_slice,
+        );
+        *out_counts.add(c) = got as u32;
+    }
+
+    // 少量通道不值得起线程；200 通道这种场景才并行。
+    let workers = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(1)
+        .min(n);
+    if n < 8 || workers <= 1 {
+        for c in 0..n {
+            fill(time, value, count, c, t0, t1, px, out, out_counts, stride);
+        }
+        return channels;
+    }
+
+    let time_addr = time as usize;
+    let value_addr = value as usize;
+    let count_addr = count as usize;
+    let out_addr = out as usize;
+    let counts_addr = out_counts as usize;
+    let chunk = (n + workers - 1) / workers;
+    std::thread::scope(|scope| {
+        for w in 0..workers {
+            let start = w * chunk;
+            let end = (start + chunk).min(n);
+            if start >= end {
+                break;
+            }
+            scope.spawn(move || {
+                let time = time_addr as *const *const f64;
+                let value = value_addr as *const *const f64;
+                let count = count_addr as *const u32;
+                let out = out_addr as *mut f64;
+                let out_counts = counts_addr as *mut u32;
+                for c in start..end {
+                    unsafe {
+                        fill(time, value, count, c, t0, t1, px, out, out_counts, stride);
+                    }
+                }
+            });
+        }
+    });
+    channels
 }
 
 #[cfg(test)]

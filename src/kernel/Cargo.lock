@@ -27,15 +27,10 @@ dependencies = [
 name = "ps-abi"
 version = "0.1.0"
 dependencies = [
- "ps-align",
  "ps-ndf",
  "ps-ops",
  "serde_json",
 ]
-
-[[package]]
-name = "ps-align"
-version = "0.1.0"
 
 [[package]]
 name = "ps-ndf"
@@ -46,13 +41,6 @@ name = "ps-ops"
 version = "0.1.0"
 dependencies = [
  "serde_json",
-]
-
-[[package]]
-name = "ps-script"
-version = "0.1.0"
-dependencies = [
- "ps-ndf",
 ]
 
 [[package]]

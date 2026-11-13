@@ -104,6 +104,22 @@ int main()
         ps_dataset_free(ds);
         return 11;
     }
+    {
+        const double t2[4] = {0.0, 0.5, 1.0, 1.5};
+        const double v2[4] = {3.0, -2.0, 4.0, 0.0};
+        const double *ts[2] = {t, t2};
+        const double *vs[2] = {roll, v2};
+        const uint32_t ns[2] = {2, 4};
+        double lod[2 * 4 * 3] = {0};
+        uint32_t got[2] = {0, 0};
+        if (ps_lod_minmax_many(ts, vs, ns, 2, 0.0, 1.5, 4, lod, 12, got) != 2 ||
+            got[0] == 0 || got[1] == 0)
+        {
+            std::fprintf(stderr, "batch lod failed: got=%u,%u\n", got[0], got[1]);
+            ps_dataset_free(ds);
+            return 12;
+        }
+    }
     ps_dataset_free(ds);
     std::printf("abi=%u version=%s selftest=ok transform=ok\n", ps_abi_version(), ver);
     return 0;

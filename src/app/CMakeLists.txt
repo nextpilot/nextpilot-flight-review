@@ -37,10 +37,10 @@ add_executable(plotscope_app
 target_include_directories(plotscope_app PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/include
+  ${PROJECT_SOURCE_DIR}/src/plugin/include
 )
 target_link_libraries(plotscope_app PRIVATE
-  Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_runtime ps_dataset_cache
+  Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_plugin_host ps_cache
   ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf
   ps_data_source_sim ps_data_source_mavlink ps_data_source_oem7
 )
@@ -77,5 +77,5 @@ if(WIN32)
 endif()
 add_custom_command(TARGET plotscope_app POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          ${PROJECT_SOURCE_DIR}/src/plugins/data_source/oem7/oem7_database.json
+          ${PROJECT_SOURCE_DIR}/src/plugin/data_source/oem7/oem7_database.json
           $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json)

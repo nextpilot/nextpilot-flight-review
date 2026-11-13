@@ -1,7 +1,7 @@
 #include "shell/MainWindow.h"
 #include "loader/DialogEngine.h"
 #include "loader/LoaderOptionsDialog.h"
-#include "datastore/DatasetCache.h"
+#include "app/cache/DatasetCache.h"
 #include "loader/LoaderRegistry.h"
 #include "source/LiveStream.h"
 #include "source/SourceConfigDialog.h"

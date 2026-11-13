@@ -1,4 +1,4 @@
-#include "runtime/PluginRuntime.h"
+#include "app/plugin_host/PluginRuntime.h"
 
 #include <cassert>
 #include <cstring>

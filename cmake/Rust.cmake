@@ -32,7 +32,7 @@ function(ps_import_kernel target)
 
   add_library(${target} INTERFACE)
   add_dependencies(${target} ps_kernel_cargo)
-  target_include_directories(${target} INTERFACE "${kernel_dir}/ps-abi/include")
+  target_include_directories(${target} INTERFACE "${kernel_dir}/include")
   target_link_libraries(${target} INTERFACE "${kernel_lib}")
   if(WIN32)
     # Rust 标准库在 Windows 上的系统依赖（rustc --print native-static-libs），静态链进 C++ 可执行文件时必须显式带上。

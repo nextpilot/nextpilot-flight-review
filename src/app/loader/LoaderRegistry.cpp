@@ -1,7 +1,7 @@
 #include "loader/LoaderRegistry.h"
 
 #include "ps_plugin_api.h"
-#include "runtime/PluginRuntime.h"
+#include "app/plugin_host/PluginRuntime.h"
 #include "ps_kernel.h"
 
 #include <QDir>

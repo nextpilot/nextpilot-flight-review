@@ -18,6 +18,7 @@
 #include <QSettings>
 #include <QColorDialog>
 #include <QJsonArray>
+#include <QMap>
 
 #include <algorithm>
 #include <cmath>
@@ -963,33 +964,62 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     p.setRenderHint(QPainter::Antialiasing, false);  // 曲线统一关 AA，整段开一次而不是每条切一次
     m_hitPaths.clear();
     m_hitOwner.clear();
+    // 同源通道共享 offset，按 offset 分组批量抽稀；同组一次 FFI，内核在通道多时并行。
+    QMap<double, QVector<int>> lodGroups;
     for (int si = 0; si < m_series.size(); ++si)
     {
         const Series &s = m_series.at(si);
-        if (!s.visible || s.count() < 2)
-            continue;
-        QVector<double> buf(static_cast<int>(px) * 3);
-        const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(),
-                                          m_t0 + s.offsetSec, m_t1 + s.offsetSec,
-                                          px, buf.data(), px);
-        if (got < 1)
-            continue;
+        if (s.visible && s.count() >= 2)
+            lodGroups[s.offsetSec].append(si);
+    }
 
-        const auto toX = [&](double t) { return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0); };
-        const auto toY = [&](double v) { return plot.bottom() - plot.height() * (v - m_yMin) / (m_yMax - m_yMin); };
+    const auto toX = [&](double t) { return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0); };
+    const auto toY = [&](double v) { return plot.bottom() - plot.height() * (v - m_yMin) / (m_yMax - m_yMin); };
 
-        // 单屏只画中线：包络带留给"缩到很近、一像素含大量样本"的场景（M1）
-        // 折线一律关 AA 用 drawPolyline：QPainterPath + AA 描边在 Qt 6.2 上是毫米级的
-        // 灾难（20 条 × 1500 段实测 365 ms/帧，同样数据 drawPolyline 只要 1~2 ms）。
-        QPolygonF poly;
-        poly.reserve(static_cast<int>(got));
-        for (uint32_t i = 0; i < got; ++i)
-            poly.append(QPointF(toX(buf[i * 3] - s.offsetSec),
-                                toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0)));
-        p.setPen(QPen(s.color, s.width));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
-        p.drawPolyline(poly);
-        m_hitPaths.append(poly);
-        m_hitOwner.append(si);
+    for (auto git = lodGroups.constBegin(); git != lodGroups.constEnd(); ++git)
+    {
+        const QVector<int> &ids = git.value();
+        const double off = git.key();
+        const int count = ids.size();
+        const uint32_t stride = px * 3;
+        QVector<const double *> times(count);
+        QVector<const double *> values(count);
+        QVector<uint32_t> points(count);
+        QVector<uint32_t> got(count);
+        for (int k = 0; k < count; ++k)
+        {
+            const Series &s = m_series.at(ids.at(k));
+            times[k] = s.time();
+            values[k] = s.value();
+            points[k] = s.count();
+        }
+        QVector<double> lod(static_cast<int>(stride) * count);
+        ps_lod_minmax_many(times.constData(), values.constData(), points.constData(),
+                           static_cast<uint32_t>(count), m_t0 + off, m_t1 + off, px,
+                           lod.data(), stride, got.data());
+
+        for (int k = 0; k < count; ++k)
+        {
+            const int si = ids.at(k);
+            const Series &s = m_series.at(si);
+            const uint32_t n = got.at(k);
+            if (n < 1)
+                continue;
+            const double *buf = lod.constData() + static_cast<int>(stride) * k;
+
+            // 单屏只画中线：包络带留给"缩到很近、一像素含大量样本"的场景（M1）
+            // 折线一律关 AA 用 drawPolyline：QPainterPath + AA 描边在 Qt 6.2 上是毫米级的
+            // 灾难（20 条 × 1500 段实测 365 ms/帧，同样数据 drawPolyline 只要 1~2 ms）。
+            QPolygonF poly;
+            poly.reserve(static_cast<int>(n));
+            for (uint32_t i = 0; i < n; ++i)
+                poly.append(QPointF(toX(buf[i * 3] - s.offsetSec),
+                                    toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0)));
+            p.setPen(QPen(s.color, s.width));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
+            p.drawPolyline(poly);
+            m_hitPaths.append(poly);
+            m_hitOwner.append(si);
+        }
     }
     p.restore();
     p.setRenderHint(QPainter::Antialiasing, true);
