@@ -29,11 +29,14 @@ int main(int argc, char **argv)
     // 命令行带文件时直接加载：plotscope_app flight.csv / layout.psl
     if (argc > 1)
     {
-        const QString arg = QString::fromLocal8Bit(argv[1]);
-        if (arg.endsWith(QStringLiteral(".psl"), Qt::CaseInsensitive))
-            win.importLayoutFrom(arg);
-        else
-            win.loadFile(arg);
+        for (int i = 1; i < argc; ++i)
+        {
+            const QString arg = QString::fromLocal8Bit(argv[i]);
+            if (arg.endsWith(QStringLiteral(".psl"), Qt::CaseInsensitive))
+                win.importLayoutFrom(arg);
+            else
+                win.loadFile(arg);
+        }
     }
     else if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
                  .value(QStringLiteral("restoreLayout"), false).toBool())

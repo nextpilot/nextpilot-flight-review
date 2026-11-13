@@ -26,6 +26,8 @@ public:
     // 用内核通道替换当前所有曲线；传空则只清空。
     void setChannels(const QVector<const PsChannelInfo *> &channels);
     void addChannel(const PsChannelInfo *channel);   // 字段树拖入时追加一条曲线
+    void setInputSource(int id, const QString &path); // 当前拖拽/双击来自哪个数据源
+    void removeChannelsFromSource(const QString &path);
     void clearChannels();
     void removeChannel(int index);
     void toggleChannel(int index);
@@ -61,6 +63,8 @@ private:
     {
         QString name;
         QString unit;
+        int srcId = -1;            // 运行期数据源 id
+        QString srcPath;           // 布局持久化用：源文件路径
         QColor color;
         const double *t = nullptr; // 内核内存（或 demo 自有内存）
         const double *v = nullptr;
@@ -99,4 +103,6 @@ private:
     QVector<QPolygonF> m_hitPaths;   // 最近一帧的曲线折线，用于右键命中
     QVector<int> m_hitOwner;         // m_hitPaths 对应的 series 下标
     int m_legendHit = -1;
+    int m_inputSrcId = -1;
+    QString m_inputSrcPath;
 };

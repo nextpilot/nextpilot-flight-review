@@ -118,6 +118,23 @@ void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
     resetView();
 }
 
+void CanvasWidget::setInputSource(int id, const QString &path)
+{
+    m_inputSrcId = id;
+    m_inputSrcPath = path;
+}
+
+void CanvasWidget::removeChannelsFromSource(const QString &path)
+{
+    for (int i = m_series.size() - 1; i >= 0; --i)
+    {
+        if (m_series.at(i).srcPath == path)
+            m_series.remove(i);
+    }
+    m_kernelBacked = !m_series.isEmpty();
+    update();
+}
+
 void CanvasWidget::addChannel(const PsChannelInfo *ch)
 {
     if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
@@ -130,6 +147,8 @@ void CanvasWidget::addChannel(const PsChannelInfo *ch)
     Series s;
     s.name = QString::fromUtf8(ch->name);
     s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
+    s.srcId = m_inputSrcId;
+    s.srcPath = m_inputSrcPath;
     s.color = kPalette[m_series.size() % 6];
     s.t = ch->time;
     s.v = ch->value;
@@ -556,6 +575,7 @@ QJsonObject CanvasWidget::saveState() const
         QJsonObject so;
         so[QStringLiteral("name")] = s.name;
         so[QStringLiteral("unit")] = s.unit;
+        so[QStringLiteral("srcPath")] = s.srcPath;
         so[QStringLiteral("color")] = s.color.name();
         so[QStringLiteral("width")] = s.width;
         so[QStringLiteral("visible")] = s.visible;
@@ -574,7 +594,9 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
     {
         const QJsonObject so = v.toObject();
         const QString name = so.value(QStringLiteral("name")).toString();
-        const PsChannelInfo *ch = pool.value(name, nullptr);
+        const QString srcPath = so.value(QStringLiteral("srcPath")).toString();
+        const PsChannelInfo *ch = pool.value(srcPath + QLatin1Char('|') + name,
+                                            pool.value(name, nullptr));
         if (!ch)
             continue;
         Series s;
@@ -588,6 +610,7 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
         s.t = ch->time;
         s.v = ch->value;
         s.n = ch->point_count;
+        s.srcPath = srcPath;
         m_series.append(s);
     }
     m_t0 = o.value(QStringLiteral("t0")).toDouble(m_t0);

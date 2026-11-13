@@ -16,6 +16,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSettings>
+#include <QShortcut>
 #include <QStandardPaths>
 #include <QDir>
 #include <QFile>
@@ -132,6 +133,17 @@ MainWindow::MainWindow(QWidget *parent)
             .arg(ps_abi_selftest() == 0 ? QStringLiteral("通过") : QStringLiteral("失败"));
     m_kernelInfo = kernelInfo;
     statusBar()->showMessage(kernelInfo);
+
+    // PJ 习惯：Ctrl+S 存当前布局，Ctrl+Shift+O 打开布局
+    auto *saveSc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+S")), this);
+    connect(saveSc, &QShortcut::activated, this, [this] { saveLayoutTo(defaultLayoutPath()); });
+    auto *openSc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+O")), this);
+    connect(openSc, &QShortcut::activated, this, [this] {
+        const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
+            QStringLiteral("PlotScope 布局 (*.psl)"));
+        if (!f.isEmpty())
+            importLayoutFrom(f);
+    });
 
     log(QStringLiteral("启动完成：%1").arg(kernelInfo));
 }
@@ -754,21 +766,39 @@ void MainWindow::removeSourceRow(QWidget *row)
     if (!row || !m_srcRows)
         return;
     const QString name = row->property("srcName").toString();
-    if (row->property("backed").toBool())
+    const int id = sourceIdForRow(row);
+    SourceData *src = sourceById(id);
+    if (src)
     {
+        const QString path = src->path;
         for (auto *c : findChildren<CanvasWidget *>())
-            if (c->kernelBacked())
-                c->clearChannels();
-        if (m_dataset)
+            c->removeChannelsFromSource(path);
+        if (src->ds)
+            ps_dataset_free(src->ds);
+        if (m_activeSource == id)
         {
-            ps_dataset_free(m_dataset);
-            m_dataset = nullptr;
+            m_activeSource = -1;
+            m_viewBacked = false;
+            m_srcChannels.clear();
+            m_srcParams.clear();
+            m_srcMsgs.clear();
         }
-        m_srcChannels.clear();
-        m_srcParams.clear();
-        m_srcMsgs.clear();
-        m_viewBacked = false;
+        int idx = -1;
+        for (int i = 0; i < m_sources.size(); ++i)
+            if (m_sources.at(i).id == id)
+                idx = i;
+        if (idx >= 0)
+            m_sources.removeAt(idx);
         renderSourceData();
+        // 删掉当前源后落到剩下的第一个可绘源
+        for (const SourceData &other : m_sources)
+        {
+            if (other.ds && other.row)
+            {
+                activateSource(other.row);
+                break;
+            }
+        }
     }
     m_srcRows->removeWidget(row);
     row->deleteLater();
@@ -900,6 +930,35 @@ void MainWindow::renderSourceData()
     }
 }
 
+int MainWindow::sourceIdForRow(QWidget *row) const
+{
+    return row ? row->property("srcId").toInt() : -1;
+}
+
+SourceData *MainWindow::sourceById(int id)
+{
+    for (SourceData &src : m_sources)
+        if (src.id == id)
+            return &src;
+    return nullptr;
+}
+
+void MainWindow::switchSource(int id)
+{
+    SourceData *src = sourceById(id);
+    if (!src || !src->ds)
+        return;
+    m_activeSource = id;
+    m_viewBacked = true;
+    m_srcFmt = src->fmt;
+    m_srcChannels = src->channels;
+    m_srcParams = src->params;
+    m_srcMsgs = src->msgs;
+    for (auto *c : findChildren<CanvasWidget *>())
+        c->setInputSource(src->id, src->path);
+    renderSourceData();
+}
+
 void MainWindow::activateSource(QWidget *row)
 {
     if (!row || !m_srcRows)
@@ -917,15 +976,23 @@ void MainWindow::activateSource(QWidget *row)
             w->style()->polish(w);
         }
     }
-    m_viewBacked = row->property("backed").toBool();
+    if (row->property("backed").toBool() && sourceById(sourceIdForRow(row)))
+    {
+        switchSource(sourceIdForRow(row));
+        return;
+    }
+    m_viewBacked = false;
+    m_srcChannels.clear();
+    m_srcParams.clear();
+    m_srcMsgs.clear();
     renderSourceData();
 }
 
-void MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
-                              const QString &path)
+QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
+                              const QString &path, int srcId)
 {
     if (!m_srcRows)
-        return;
+        return nullptr;
     QWidget *rowsHost = m_srcRows->parentWidget();
     auto *row = new QWidget(rowsHost);
     row->setFixedHeight(40);
@@ -936,6 +1003,7 @@ void MainWindow::addSourceRow(const QString &name, const QString &meta, const QS
     row->setProperty("srcPath", path);
     row->setProperty("srcMeta", meta);
     row->setProperty("srcName", name);
+    row->setProperty("srcId", srcId);
     row->installEventFilter(this);
     row->setStyleSheet(QStringLiteral(
         "QWidget{background:transparent;border-left:2px solid transparent;border-bottom:1px solid #171f26;}"
@@ -992,9 +1060,13 @@ void MainWindow::addSourceRow(const QString &name, const QString &meta, const QS
     });
 
     m_srcRows->addWidget(row);
+    for (SourceData &src : m_sources)
+        if (src.id == srcId)
+            src.row = row;
     refreshSrcCount();
     if (backed)
         activateSource(row);
+    return row;
 }
 
 void MainWindow::refreshSrcCount()
@@ -1315,8 +1387,16 @@ QWidget *MainWindow::buildPage(const QJsonObject &o)
         auto *c = new CanvasWidget(m_pages);
         c->clearChannels();
         QHash<QString, const PsChannelInfo *> pool;
-        for (const PsChannelInfo *ch : m_srcChannels)
-            pool.insert(QString::fromUtf8(ch->name), ch);
+        for (const SourceData &src : m_sources)
+        {
+            for (const PsChannelInfo *ch : src.channels)
+            {
+                const QString name = QString::fromUtf8(ch->name);
+                pool.insert(src.path + QLatin1Char('|') + name, ch);
+                if (!pool.contains(name))
+                    pool.insert(name, ch);
+            }
+        }
         c->restoreState(o, pool);
         setupCanvas(c);
         return c;
@@ -1363,21 +1443,16 @@ void MainWindow::saveLayoutTo(const QString &path)
     root[QStringLiteral("titles")] = titles;
 
     // 数据源与布局一起保存：重启后先重新加载日志，再回填画布通道
-    // 内核目前只持有一个 PsDataset：只随附最后一个已加载源，避免重启后重放多个源造成悬垂
+    // 数据源与布局一起保存：重启后按顺序重载全部源，再回填画布通道
     QJsonArray sources;
-    if (m_srcRows)
+    for (const SourceData &src : m_sources)
     {
-        for (int i = 0; i < m_srcRows->count(); ++i)
-        {
-            QWidget *row = m_srcRows->itemAt(i) ? m_srcRows->itemAt(i)->widget() : nullptr;
-            const QString srcPath = row ? row->property("srcPath").toString() : QString();
-            if (srcPath.isEmpty())
-                continue;
-            QJsonObject so;
-            so[QStringLiteral("path")] = srcPath;
-            so[QStringLiteral("name")] = row->property("srcName").toString();
-            sources = QJsonArray{so};
-        }
+        if (src.path.isEmpty())
+            continue;
+        QJsonObject so;
+        so[QStringLiteral("path")] = src.path;
+        so[QStringLiteral("name")] = src.name;
+        sources.append(so);
     }
     root[QStringLiteral("sources")] = sources;
 
@@ -1452,6 +1527,9 @@ void MainWindow::importLayoutFrom(const QString &path)
     const QByteArray docks = QByteArray::fromBase64(root.value(QStringLiteral("docks")).toString().toLatin1());
     if (!docks.isEmpty())
         restoreState(docks);
+
+    if (m_activeSource >= 0)
+        switchSource(m_activeSource);
 
     const int cur = root.value(QStringLiteral("current")).toInt(0);
     if (cur >= 0 && cur < m_pages->count() - 1)
@@ -1550,28 +1628,22 @@ bool MainWindow::loadFile(const QString &path)
         return false;
     }
 
-    // 先清空画布，再释放旧数据集——画布持有通道指针，顺序反了就是悬垂指针
-    for (auto *c : findChildren<CanvasWidget *>())
-    {
-        if (c->kernelBacked())
-            c->clearChannels();
-    }
-    if (m_dataset)
-        ps_dataset_free(m_dataset);
-    m_dataset = ds;
 
     const uint32_t n = ps_dataset_channel_count(ds);
     const QString fmt_tag = is_ulog ? QStringLiteral("ULog")
                           : is_asc  ? QStringLiteral("ASC · CAN")
                           : is_blf  ? QStringLiteral("BLF · CAN")
                                     : QStringLiteral("CSV");
-    m_srcChannels.clear();
-    m_srcParams.clear();
-    m_srcMsgs.clear();
-    m_srcFmt = fmt_tag;
+    SourceData src;
+    for (const SourceData &old : m_sources)
+        src.id = qMax(src.id, old.id + 1);
+    src.name = fi.fileName();
+    src.path = fi.absoluteFilePath();
+    src.fmt = fmt_tag;
+    src.ds = ds;
     for (uint32_t i = 0; i < n; ++i)
         if (const PsChannelInfo *ch = ps_dataset_channel(ds, i))
-            m_srcChannels.append(ch);
+            src.channels.append(ch);
 
     // 参数：ULog 走 ps_ulog_params（P/Q 消息），其它格式暂无参数表
     if (fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0)
@@ -1587,7 +1659,7 @@ bool MainWindow::loadFile(const QString &path)
             for (const QJsonValue &v : QJsonDocument::fromJson(buf).array())
             {
                 const QJsonObject o = v.toObject();
-                m_srcParams.append({o.value(QStringLiteral("name")).toString(),
+                src.params.append({o.value(QStringLiteral("name")).toString(),
                                     o.value(QStringLiteral("value")).toString()});
             }
         }
@@ -1601,7 +1673,7 @@ bool MainWindow::loadFile(const QString &path)
     if (is_tree)
     {
         QMap<QString, QVector<const PsChannelInfo *>> byTopic;
-        for (const PsChannelInfo *ch : m_srcChannels)
+        for (const PsChannelInfo *ch : src.channels)
         {
             const QString name = QString::fromUtf8(ch->name);
             const int dot = name.lastIndexOf(QLatin1Char('.'));
@@ -1619,16 +1691,18 @@ bool MainWindow::loadFile(const QString &path)
                     hz = QStringLiteral("%1 Hz").arg((ch->point_count - 1) / span, 0, 'f',
                                                      (ch->point_count - 1) / span >= 10 ? 0 : 1);
             }
-            m_srcMsgs.append({it.key(), hz, QString::number(it.value().size())});
+            src.msgs.append({it.key(), hz, QString::number(it.value().size())});
         }
     }
 
-    m_viewBacked = true;
-    renderSourceData();
+    m_sources.append(src);
+    addSourceRow(src.name, QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true, src.path,
+                 src.id);
 
     // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线
     const QVector<CanvasWidget *> canvases = pageCanvases();
-    for (int i = 0; i < canvases.size() && i < m_srcChannels.size(); ++i)
+    const bool firstSource = m_sources.size() == 1;
+    for (int i = 0; firstSource && i < canvases.size() && i < m_srcChannels.size(); ++i)
     {
         canvases[i]->setChannels({m_srcChannels[i]});
         canvases[i]->setTitle(QStringLiteral("%1 · %2").arg(fi.completeBaseName(), QString::fromUtf8(m_srcChannels[i]->name)));
@@ -1642,8 +1716,7 @@ bool MainWindow::loadFile(const QString &path)
                 .arg(fi.fileName(), fmt_tag).arg(n).arg(first->point_count)
                 .arg(t1 - t0, 0, 'f', 2));
     }
-    addSourceRow(fi.fileName(), QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true,
-                 fi.absoluteFilePath());
+
     statusBar()->showMessage(QStringLiteral("%1 · %2 通道 · %3 点").arg(fi.fileName()).arg(n)
                              .arg(ps_dataset_channel(ds, 0) ? ps_dataset_channel(ds, 0)->point_count : 0));
     return true;

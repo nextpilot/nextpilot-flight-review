@@ -17,6 +17,20 @@ class QListWidget;
 class QVBoxLayout;
 class QLineEdit;
 
+// 一个数据源：各自持有内核数据集，切源不释放，删除源才释放
+struct SourceData
+{
+    int id = -1;
+    QString name;
+    QString path;
+    QString fmt;
+    PsDataset *ds = nullptr;
+    QVector<const PsChannelInfo *> channels;
+    QVector<QPair<QString, QString>> params;
+    QVector<QStringList> msgs;
+    QWidget *row = nullptr;
+};
+
 // 主窗口骨架（对应 §8 / D14）：
 //   Ribbon（顶部任务页签） + 四个可停靠区（数据源 / 属性 / 脚本 / 日志） + 固定绘图区（页签=页）
 class MainWindow : public QMainWindow
@@ -44,8 +58,8 @@ private:
     void createPages();
     void log(const QString &text);
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
-    void addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed = false,
-                      const QString &path = QString());
+    QWidget *addSourceRow(const QString &name, const QString &meta, const QString &dotColor,
+                          bool backed = false, const QString &path = QString(), int srcId = -1);
     void showSourceMenu(QWidget *row, const QPoint &globalPos);
     void removeSourceRow(QWidget *row);
     void activateSource(QWidget *row);   // 每个源各自一份字段/参数/消息视图
@@ -56,6 +70,9 @@ private:
     void openSettings();
     QJsonObject pageState(QWidget *page) const;
     QWidget *buildPage(const QJsonObject &o);
+    int sourceIdForRow(QWidget *row) const;
+    SourceData *sourceById(int id);
+    void switchSource(int id);
     void refreshSrcCount();
     void applySrcFilter();
     void newPage();
@@ -80,5 +97,6 @@ private:
     QLabel *m_selLabel = nullptr;
     QLabel *m_runLabel = nullptr;
     QPlainTextEdit *m_script = nullptr;
-    PsDataset *m_dataset = nullptr;
+    QVector<SourceData> m_sources;
+    int m_activeSource = -1;
 };
