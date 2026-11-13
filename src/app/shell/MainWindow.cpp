@@ -4,6 +4,8 @@
 #include <QAction>
 #include <QDockWidget>
 #include <QHBoxLayout>
+#include <QGridLayout>
+#include <QSpinBox>
 #include <QToolButton>
 #include <QFileDialog>
 #include <QTimer>
@@ -292,21 +294,104 @@ public:
     QSize minimumSizeHint() const override { return sizeHint(); }
 };
 
+// Visual Studio 式自动隐藏页签：收成一条竖直窄条，标题竖排，点一下展开
+class DockAutoHideTab : public QWidget
+{
+public:
+    using Handler = std::function<void()>;
+
+    DockAutoHideTab(QWidget *parent, const QString &title, Qt::DockWidgetArea area, Handler handler)
+        : QWidget(parent), m_title(title), m_handler(std::move(handler))
+    {
+        setCursor(Qt::PointingHandCursor);
+        setMouseTracking(true);
+        setToolTip(QStringLiteral("展开 %1").arg(title));
+        setArea(area);
+    }
+
+    void setArea(Qt::DockWidgetArea area)
+    {
+        m_area = area;
+        const int h = std::clamp(48 + int(m_title.size()) * 13, 96, 200);
+        if (area == Qt::LeftDockWidgetArea || area == Qt::RightDockWidgetArea)
+            setFixedSize(26, h);
+        else
+            setFixedSize(h, 26);
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const QRectF r = rect().adjusted(0.5, 0.5, -0.5, -0.5);
+        p.setBrush(m_hover ? QColor("#1f2a33") : QColor("#161b20"));
+        p.setPen(QPen(m_hover ? QColor("#f2b134") : QColor("#2d3841"), 1));
+        p.drawRoundedRect(r, 2, 2);
+
+        p.setPen(QColor("#f2b134"));
+        QFont arrow = font();
+        arrow.setPixelSize(12);
+        p.setFont(arrow);
+        const QString mark = (m_area == Qt::LeftDockWidgetArea) ? QStringLiteral("›")
+                            : (m_area == Qt::RightDockWidgetArea) ? QStringLiteral("‹")
+                            : (m_area == Qt::TopDockWidgetArea) ? QStringLiteral("▼") : QStringLiteral("▲");
+        if (m_area == Qt::LeftDockWidgetArea || m_area == Qt::RightDockWidgetArea)
+            p.drawText(QRectF(0, 2, width(), 16), Qt::AlignCenter, mark);
+        else
+            p.drawText(QRectF(2, 0, 16, height()), Qt::AlignCenter, mark);
+
+        QFont f = font();
+        f.setPixelSize(11);
+        p.setFont(f);
+        p.setPen(QColor("#c9d1d9"));
+        p.save();
+        if (m_area == Qt::LeftDockWidgetArea || m_area == Qt::RightDockWidgetArea)
+        {
+            p.translate(width() / 2.0, height() / 2.0);
+            p.rotate(m_area == Qt::LeftDockWidgetArea ? 90 : -90);
+            p.drawText(QRectF(-height() / 2.0 + 10, -width() / 2.0, height() - 16, width()),
+                       Qt::AlignCenter, m_title);
+        }
+        else
+        {
+            p.drawText(QRectF(18, 0, width() - 22, height()), Qt::AlignCenter, m_title);
+        }
+        p.restore();
+    }
+
+    void enterEvent(QEnterEvent *) override { m_hover = true; update(); }
+    void leaveEvent(QEvent *) override { m_hover = false; update(); }
+    void mouseReleaseEvent(QMouseEvent *e) override
+    {
+        if (e->button() == Qt::LeftButton && rect().contains(e->position().toPoint()) && m_handler)
+            m_handler();
+    }
+
+private:
+    QString m_title;
+    Handler m_handler;
+    Qt::DockWidgetArea m_area = Qt::RightDockWidgetArea;
+    bool m_hover = false;
+};
+
 namespace {
 
-QHash<QDockWidget *, QToolButton *> g_dockMinHandles;
+QHash<QDockWidget *, QWidget *> g_dockMinHandles;
 
-void positionDockHandle(QDockWidget *dock, QToolButton *btn, MainWindow *win, int index = 0, int total = 1)
+void positionDockHandle(QDockWidget *dock, QWidget *btn, MainWindow *win, int index = 0, int total = 1)
 {
     if (!dock || !btn || !win)
         return;
     const QRect cg = win->centralWidget()->geometry();
     const Qt::DockWidgetArea area = win->dockWidgetArea(dock);
-    const int W = 16, H = 56, GAP = 6;
+    const int W = 26, GAP = 6;
+    const int H = qMax(96, btn->height());
     if (area == Qt::LeftDockWidgetArea || area == Qt::RightDockWidgetArea)
     {
-        btn->setFixedSize(W, H);
-        btn->setText(area == Qt::LeftDockWidgetArea ? QStringLiteral("›") : QStringLiteral("‹"));
+        if (auto *tab = dynamic_cast<DockAutoHideTab *>(btn))
+            tab->setArea(area);
         const int x = area == Qt::LeftDockWidgetArea ? cg.left() + 2 : cg.right() - W - 2;
         const int block = total * H + (total - 1) * GAP;
         const int y = cg.center().y() - block / 2 + index * (H + GAP);
@@ -314,8 +399,8 @@ void positionDockHandle(QDockWidget *dock, QToolButton *btn, MainWindow *win, in
     }
     else
     {
-        btn->setFixedSize(H, W);
-        btn->setText(area == Qt::BottomDockWidgetArea ? QStringLiteral("▲") : QStringLiteral("▼"));
+        if (auto *tab = dynamic_cast<DockAutoHideTab *>(btn))
+            tab->setArea(area);
         const int y = area == Qt::TopDockWidgetArea ? cg.top() + 2 : cg.bottom() - W - 2;
         const int block = total * H + (total - 1) * GAP;
         const int x = cg.center().x() - block / 2 + index * (H + GAP);
@@ -346,26 +431,23 @@ void collapseDock(QDockWidget *dock, MainWindow *win)
 {
     if (!dock || !win)
         return;
-    QToolButton *btn = g_dockMinHandles.value(dock);
+    QWidget *btn = g_dockMinHandles.value(dock);
     if (!btn)
     {
-        btn = new QToolButton(win);
-        btn->setCursor(Qt::PointingHandCursor);
-        btn->setToolTip(QStringLiteral("展开 %1").arg(dock->windowTitle()));
-        btn->setStyleSheet(QStringLiteral(
-            "QToolButton{background:#161b20;color:#c9d1d9;border:1px solid #2d3841;"
-            "border-radius:2px;padding:0;font-size:13px;}"
-            "QToolButton:hover{color:#f2b134;border-color:#f2b134;background:#1b232a;}"));
-        QObject::connect(btn, &QToolButton::clicked, dock, [dock, btn] {
-            dock->show();
-            dock->raise();
-            btn->hide();
-        });
-        QObject::connect(dock, &QDockWidget::visibilityChanged, btn, [btn](bool visible) {
+        auto *tab = new DockAutoHideTab(win, dock->windowTitle(), win->dockWidgetArea(dock),
+            [dock, win] {
+                dock->show();
+                dock->raise();
+                if (auto *h = g_dockMinHandles.value(dock))
+                    h->hide();
+                repositionDockHandles(win);
+            });
+        QObject::connect(dock, &QDockWidget::visibilityChanged, tab, [tab](bool visible) {
             if (visible)
-                btn->hide();
+                tab->hide();
         });
-        g_dockMinHandles.insert(dock, btn);
+        g_dockMinHandles.insert(dock, tab);
+        btn = tab;
     }
     dock->hide();
     btn->show();
@@ -385,6 +467,88 @@ void dockToArea(QDockWidget *dock, MainWindow *win, Qt::DockWidgetArea area)
     dock->raise();
     if (auto *btn = g_dockMinHandles.value(dock))
         btn->hide();
+}
+
+// 页内 m×n 网格：QSplitter 只能做 n×1 / 1×n，这里补真正的二维布局
+class PlotGrid : public QWidget
+{
+public:
+    explicit PlotGrid(QWidget *parent = nullptr) : QWidget(parent), m_grid(new QGridLayout(this))
+    {
+        m_grid->setContentsMargins(0, 0, 0, 0);
+        m_grid->setSpacing(4);
+    }
+
+    void setShape(int rows, int cols)
+    {
+        m_rows = std::clamp(rows, 1, 8);
+        m_cols = std::clamp(cols, 1, 8);
+        while (m_canvases.size() > m_rows * m_cols)
+            ++m_rows;
+        relayout();
+    }
+
+    void addCanvas(CanvasWidget *c)
+    {
+        if (!c || m_canvases.contains(c))
+            return;
+        c->setParent(this);
+        c->show();
+        m_canvases.append(c);
+        while (m_canvases.size() > m_rows * m_cols)
+            ++m_rows;
+        relayout();
+    }
+
+    void removeCanvas(CanvasWidget *c)
+    {
+        if (!c)
+            return;
+        m_canvases.removeOne(c);
+        m_grid->removeWidget(c);
+        relayout();
+    }
+
+    QVector<CanvasWidget *> canvases() const { return m_canvases; }
+    int rows() const { return m_rows; }
+    int cols() const { return m_cols; }
+
+private:
+    void relayout()
+    {
+        while (QLayoutItem *item = m_grid->takeAt(0))
+            delete item;
+        for (int i = 0; i < m_canvases.size(); ++i)
+            m_grid->addWidget(m_canvases.at(i), i / m_cols, i % m_cols);
+        for (int r = 0; r < 8; ++r)
+            m_grid->setRowStretch(r, r < m_rows ? 1 : 0);
+        for (int c = 0; c < 8; ++c)
+            m_grid->setColumnStretch(c, c < m_cols ? 1 : 0);
+    }
+
+    QGridLayout *m_grid = nullptr;
+    QVector<CanvasWidget *> m_canvases;
+    int m_rows = 1;
+    int m_cols = 1;
+};
+
+void collectPageCanvases(QWidget *root, QVector<CanvasWidget *> &out)
+{
+    if (!root)
+        return;
+    if (auto *c = dynamic_cast<CanvasWidget *>(root))
+    {
+        out.append(c);
+        return;
+    }
+    if (auto *g = dynamic_cast<PlotGrid *>(root))
+    {
+        out += g->canvases();
+        return;
+    }
+    const auto kids = root->findChildren<CanvasWidget *>();
+    for (CanvasWidget *c : kids)
+        out.append(c);
 }
 
 } // namespace
@@ -591,16 +755,44 @@ QWidget *MainWindow::createRibbon()
         srcGallery->setMaximumWidth(600);
         srcGallery->setCurrentViewGroup(srcGroup);
 
-        auto *pRun = cat->addPanel(QStringLiteral("传输"));
-        addLarge(pRun, QStringLiteral("全部开始"), [this] {
-            m_srcCount->setText(QStringLiteral("3 源 · 运行中"));
-            m_srcCount->setStyleSheet(QStringLiteral("color:#7ee787;font-size:10px;background:transparent;"));
-            log(QStringLiteral("所有数据源开始"));
+        auto *pQuick = cat->addPanel(QStringLiteral("工作区"));
+        addLarge(pQuick, QStringLiteral("快速打开"), [this] {
+            const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("快速打开"), {},
+                QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+            for (const QString &f : fs)
+                loadFile(f);
         }, this);
-        addSmall(pRun, QStringLiteral("全部暂停"), [this] {
-            m_srcCount->setText(QStringLiteral("3 源 · 已暂停"));
-            m_srcCount->setStyleSheet(QStringLiteral("color:#ffb454;font-size:10px;background:transparent;"));
-            log(QStringLiteral("所有数据源暂停"));
+        addSmall(pQuick, QStringLiteral("最近"), [this] {
+            QMenu menu(this);
+            QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+            const QStringList recent = st.value(QStringLiteral("recentFiles")).toStringList();
+            if (recent.isEmpty())
+            {
+                QAction *empty = menu.addAction(QStringLiteral("暂无最近文件"));
+                empty->setEnabled(false);
+            }
+            for (const QString &path : recent)
+            {
+                QAction *a = menu.addAction(QFileInfo(path).fileName());
+                a->setToolTip(path);
+                connect(a, &QAction::triggered, this, [this, path] { loadFile(path); });
+            }
+            menu.exec(QCursor::pos());
+        }, this);
+        addSmall(pQuick, QStringLiteral("导出快照"), [this] { exportActiveCsv(); }, this);
+        addSmall(pQuick, QStringLiteral("重载"), [this] {
+            SourceData *src = sourceById(m_activeSource);
+            if (!src || src->path.isEmpty())
+            {
+                log(QStringLiteral("当前源没有可重载的文件"));
+                return;
+            }
+            // 先摘掉旧行/数据集，再按同一路径重新解析，避免出现重复源
+            const QString path = src->path;
+            QWidget *row = src->row;
+            if (row)
+                removeSourceRow(row);
+            loadFile(path, false);
         }, this);
     }
 
@@ -659,10 +851,94 @@ QWidget *MainWindow::createRibbon()
         auto *pPage = cat->addPanel(QStringLiteral("页"));
         addLarge(pPage, QStringLiteral("新建页"), [this] { newPage(); }, this);
         addLarge(pPage, QStringLiteral("添加画布"), [this] { addCanvasToPage(); }, this);
+
+        // 页内布局：MATLAB subplot / PJ 的 m×n
+        auto *pGrid = cat->addPanel(QStringLiteral("布局"));
+        auto *gridBox = new QWidget(this);
+        auto *gridLay = new QHBoxLayout(gridBox);
+        gridLay->setContentsMargins(2, 0, 2, 0);
+        gridLay->setSpacing(2);
+        auto *rowsSpin = new QSpinBox(gridBox);
+        rowsSpin->setRange(1, 8);
+        rowsSpin->setValue(2);
+        rowsSpin->setPrefix(QStringLiteral("行 "));
+        rowsSpin->setFixedWidth(58);
+        auto *colsSpin = new QSpinBox(gridBox);
+        colsSpin->setRange(1, 8);
+        colsSpin->setValue(1);
+        colsSpin->setPrefix(QStringLiteral("列 "));
+        colsSpin->setFixedWidth(58);
+        auto *applyGrid = new QToolButton(gridBox);
+        applyGrid->setText(QStringLiteral("应用"));
+        applyGrid->setToolTip(QStringLiteral("按行×列重排当前页画布"));
+        applyGrid->setCursor(Qt::PointingHandCursor);
+        applyGrid->setStyleSheet(QStringLiteral(
+            "QToolButton{background:#1b232b;border:1px solid #2d3841;color:#c9d1d9;font-size:11px;padding:3px 8px;}"
+            "QToolButton:hover{border-color:#f2b134;color:#f2b134;}"));
+        gridLay->addWidget(rowsSpin);
+        gridLay->addWidget(colsSpin);
+        gridLay->addWidget(applyGrid);
+        connect(applyGrid, &QToolButton::clicked, this, [this, rowsSpin, colsSpin] {
+            applyCanvasGrid(rowsSpin->value(), colsSpin->value());
+        });
+        pGrid->addWidget(gridBox, SARibbonPanelItem::Large);
+
         auto *pView = cat->addPanel(QStringLiteral("视图"));
-        addSmall(pView, QStringLiteral("自动 Y"), [this] { log(QStringLiteral("自动 Y：按可见曲线量程重算")); }, this);
-        addSmall(pView, QStringLiteral("游标"), [this] { log(QStringLiteral("十字光标已启用")); }, this);
-        addSmall(pView, QStringLiteral("复位视图"), [this] { log(QStringLiteral("双击画布也可复位")); }, this);
+        auto *aGrid = new QAction(QStringLiteral("网格"), this);
+        auto *aBox = new QAction(QStringLiteral("边框"), this);
+        auto *aLegend = new QAction(QStringLiteral("图例"), this);
+        auto *aRubber = new QAction(QStringLiteral("框选"), this);
+        for (QAction *a : {aGrid, aBox, aLegend, aRubber})
+        {
+            a->setCheckable(true);
+            a->setToolTip(a->text());
+            pView->addSmallAction(a);
+        }
+        const QVector<CanvasWidget *> initial = pageCanvases();
+        if (!initial.isEmpty())
+        {
+            aGrid->setChecked(initial.first()->gridVisible());
+            aBox->setChecked(initial.first()->boxVisible());
+            aLegend->setChecked(initial.first()->legendVisible());
+            aRubber->setChecked(initial.first()->rubberZoomEnabled());
+        }
+        connect(aGrid, &QAction::toggled, this, [this](bool on) {
+            for (CanvasWidget *c : pageCanvases()) c->setGridVisible(on);
+        });
+        connect(aBox, &QAction::toggled, this, [this](bool on) {
+            for (CanvasWidget *c : pageCanvases()) c->setBoxVisible(on);
+        });
+        connect(aLegend, &QAction::toggled, this, [this](bool on) {
+            for (CanvasWidget *c : pageCanvases()) c->setLegendVisible(on);
+        });
+        connect(aRubber, &QAction::toggled, this, [this](bool on) {
+            for (CanvasWidget *c : pageCanvases()) c->setRubberZoomEnabled(on);
+        });
+        connect(m_pages, &QTabWidget::currentChanged, this,
+                [this, aGrid, aBox, aLegend, aRubber](int) {
+            const QVector<CanvasWidget *> cs = pageCanvases();
+            const bool has = !cs.isEmpty();
+            for (QAction *a : {aGrid, aBox, aLegend, aRubber})
+                a->setEnabled(has);
+            if (!has)
+                return;
+            aGrid->setChecked(cs.first()->gridVisible());
+            aBox->setChecked(cs.first()->boxVisible());
+            aLegend->setChecked(cs.first()->legendVisible());
+            aRubber->setChecked(cs.first()->rubberZoomEnabled());
+        });
+        addSmall(pView, QStringLiteral("放大"), [this] {
+            for (CanvasWidget *c : pageCanvases()) c->zoomBy(0.8);
+        }, this);
+        addSmall(pView, QStringLiteral("缩小"), [this] {
+            for (CanvasWidget *c : pageCanvases()) c->zoomBy(1.25);
+        }, this);
+        addSmall(pView, QStringLiteral("自动 Y"), [this] {
+            for (CanvasWidget *c : pageCanvases()) c->requestAutoY();
+        }, this);
+        addSmall(pView, QStringLiteral("复位"), [this] {
+            for (CanvasWidget *c : pageCanvases()) c->requestAutoY();
+        }, this);
     }
 
     // 脚本
@@ -863,40 +1139,33 @@ void MainWindow::createDocks()
     auto *runBtn = mkTiny(QStringLiteral("play"), QStringLiteral("全部开始"));
     auto *pauseBtn = mkTiny(QStringLiteral("pause"), QStringLiteral("全部暂停"));
     auto *dockMenuBtn = new QToolButton(srcBar);
-    dockMenuBtn->setText(QStringLiteral("⋯"));
+    dockMenuBtn->setText(QStringLiteral("▾"));
     dockMenuBtn->setToolTip(QStringLiteral("停靠 / 收起"));
     dockMenuBtn->setCursor(Qt::PointingHandCursor);
-    dockMenuBtn->setFixedSize(22, 22);
+    dockMenuBtn->setFixedSize(30, 26);
     dockMenuBtn->setStyleSheet(QStringLiteral(
-        "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;font-size:13px;}"
-        "QToolButton:hover{background:#222b33;color:#f2b134;}"));
+        "QToolButton{background:#1b232b;border:1px solid #2d3841;border-radius:2px;color:#c9d1d9;"
+        "padding:0 0 2px 0;font-size:15px;font-weight:600;}"
+        "QToolButton:hover{background:#222b33;border-color:#f2b134;color:#f2b134;}"));
     auto *dockMenu = new QMenu(dockMenuBtn);
     QAction *toLeft = dockMenu->addAction(QStringLiteral("停靠到左侧"));
     QAction *toRight = dockMenu->addAction(QStringLiteral("停靠到右侧"));
     QAction *toBottom = dockMenu->addAction(QStringLiteral("停靠到底部"));
     dockMenu->addSeparator();
-    QAction *collapse = dockMenu->addAction(QStringLiteral("最小化 / 收起"));
-    QAction *floatAct = dockMenu->addAction(QStringLiteral("浮动"));
+    QAction *collapse = dockMenu->addAction(QStringLiteral("自动隐藏（最小化）"));
+    QAction *floatAct = dockMenu->addAction(QStringLiteral("浮动 / 取消浮动"));
+    dockMenu->addSeparator();
+    QAction *closeAct = dockMenu->addAction(QStringLiteral("关闭面板"));
     QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::LeftDockWidgetArea); });
     QObject::connect(toRight, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::RightDockWidgetArea); });
     QObject::connect(toBottom, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::BottomDockWidgetArea); });
     QObject::connect(collapse, &QAction::triggered, this, [this, srcDock] { collapseDock(srcDock, this); });
     QObject::connect(floatAct, &QAction::triggered, srcDock, [srcDock] { srcDock->setFloating(!srcDock->isFloating()); });
+    QObject::connect(closeAct, &QAction::triggered, srcDock, &QDockWidget::close);
     QObject::connect(dockMenuBtn, &QToolButton::clicked, dockMenu, [dockMenu, dockMenuBtn] {
         dockMenu->exec(dockMenuBtn->mapToGlobal(QPoint(0, dockMenuBtn->height())));
     });
     barLay->addWidget(dockMenuBtn);
-    auto *barClose = new QToolButton(srcBar);
-    barClose->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
-    barClose->setIconSize(QSize(13, 13));
-    barClose->setToolTip(QStringLiteral("关闭面板"));
-    barClose->setCursor(Qt::PointingHandCursor);
-    barClose->setFixedSize(22, 22);
-    barClose->setStyleSheet(QStringLiteral(
-        "QToolButton{background:transparent;border:0;color:#5d6c77;padding:0;}"
-        "QToolButton:hover{color:#f85149;background:#222b33;}"));
-    QObject::connect(barClose, &QToolButton::clicked, srcDock, &QDockWidget::close);
-    barLay->addWidget(barClose);
     srcDock->setTitleBarWidget(srcBar);
 
     auto *srcHost = new QWidget(srcDock);
@@ -1170,35 +1439,50 @@ void darkenDocks(MainWindow *w)
         lay->addWidget(title);
         lay->addStretch();
 
-        auto mkBtn = [&](const QString &text, const QString &tip, const char *hover) {
-            auto *b = new QToolButton(bar);
-            b->setText(text);
-            b->setToolTip(tip);
-            b->setCursor(Qt::PointingHandCursor);
-            b->setFixedSize(24, 24);
-            b->setStyleSheet(QStringLiteral(
-                "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;font-size:12px;}")
-                + QStringLiteral("QToolButton:hover{color:%1;background:#222b33;}").arg(QString::fromLatin1(hover)));
-            lay->addWidget(b);
-            return b;
-        };
-        auto *leftBtn = mkBtn(QStringLiteral("左"), QStringLiteral("停靠到左侧"), "#f2b134");
-        auto *rightBtn = mkBtn(QStringLiteral("右"), QStringLiteral("停靠到右侧"), "#f2b134");
-        auto *minBtn = mkBtn(QStringLiteral("—"), QStringLiteral("最小化 / 收起"), "#4ea1ff");
-        QObject::connect(leftBtn, &QToolButton::clicked, w, [w, d] { dockToArea(d, w, Qt::LeftDockWidgetArea); });
-        QObject::connect(rightBtn, &QToolButton::clicked, w, [w, d] { dockToArea(d, w, Qt::RightDockWidgetArea); });
+        // 最小化：像 VS 的“自动隐藏”图钉，一键收成侧边竖条
+        auto *minBtn = new QToolButton(bar);
+        minBtn->setText(QStringLiteral("—"));
+        minBtn->setToolTip(QStringLiteral("自动隐藏 / 收起为侧边页签"));
+        minBtn->setCursor(Qt::PointingHandCursor);
+        minBtn->setFixedSize(26, 26);
+        minBtn->setStyleSheet(QStringLiteral(
+            "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;font-size:14px;}"
+            "QToolButton:hover{color:#4ea1ff;background:#222b33;}"));
         QObject::connect(minBtn, &QToolButton::clicked, w, [w, d] { collapseDock(d, w); });
+        lay->addWidget(minBtn);
 
-        auto *close = new QToolButton(bar);
-        close->setIcon(QIcon(QStringLiteral(":/icons/close.svg")));
-        close->setIconSize(QSize(13, 13));
-        close->setCursor(Qt::PointingHandCursor);
-        close->setFixedSize(22, 22);
-        close->setStyleSheet(QStringLiteral(
-            "QToolButton{background:transparent;border:0;color:#5d6c77;padding:0;}"
-            "QToolButton:hover{color:#f85149;background:#222b33;}"));
-        QObject::connect(close, &QToolButton::clicked, d, &QDockWidget::close);
-        lay->addWidget(close);
+        // 所有停靠/浮靠/关闭集中到一个菜单，避免标题栏塞满小按钮
+        auto *menuBtn = new QToolButton(bar);
+        menuBtn->setText(QStringLiteral("▾"));
+        menuBtn->setToolTip(QStringLiteral("停靠 / 自动隐藏 / 浮动 / 关闭"));
+        menuBtn->setCursor(Qt::PointingHandCursor);
+        menuBtn->setPopupMode(QToolButton::InstantPopup);
+        menuBtn->setFixedSize(28, 26);
+        menuBtn->setStyleSheet(QStringLiteral(
+            "QToolButton{background:#1b232b;border:1px solid #2d3841;border-radius:2px;color:#c9d1d9;"
+            "padding:0 0 2px 0;font-size:15px;font-weight:600;}"
+            "QToolButton:hover{border-color:#f2b134;color:#f2b134;background:#222b33;}"));
+        auto *menu = new QMenu(menuBtn);
+        QAction *left = menu->addAction(QStringLiteral("停靠到左侧"));
+        QAction *right = menu->addAction(QStringLiteral("停靠到右侧"));
+        QAction *bottom = menu->addAction(QStringLiteral("停靠到底部"));
+        menu->addSeparator();
+        QAction *autoHide = menu->addAction(QStringLiteral("自动隐藏（最小化）"));
+        QAction *floatAct = menu->addAction(QStringLiteral("浮动 / 取消浮动"));
+        menu->addSeparator();
+        QAction *close = menu->addAction(QStringLiteral("关闭面板"));
+        QObject::connect(left, &QAction::triggered, w, [w, d] { dockToArea(d, w, Qt::LeftDockWidgetArea); });
+        QObject::connect(right, &QAction::triggered, w, [w, d] { dockToArea(d, w, Qt::RightDockWidgetArea); });
+        QObject::connect(bottom, &QAction::triggered, w, [w, d] { dockToArea(d, w, Qt::BottomDockWidgetArea); });
+        QObject::connect(autoHide, &QAction::triggered, w, [w, d] { collapseDock(d, w); });
+        QObject::connect(floatAct, &QAction::triggered, d, [d] { d->setFloating(!d->isFloating()); });
+        QObject::connect(close, &QAction::triggered, d, &QDockWidget::close);
+        menuBtn->setMenu(menu);
+        lay->addWidget(menuBtn);
+        bar->setContextMenuPolicy(Qt::CustomContextMenu);
+        QObject::connect(bar, &QWidget::customContextMenuRequested, bar, [bar, menu](const QPoint &pos) {
+            menu->exec(bar->mapToGlobal(pos));
+        });
 
         d->setTitleBarWidget(bar);
     }
@@ -2036,13 +2320,16 @@ void MainWindow::setupCanvas(CanvasWidget *c)
     });
     // 同页 X 轴联动：任一画布缩放或平移，其余画布跟着走
     connect(c, &CanvasWidget::timeRangeChanged, this, [this, c](double t0, double t1) {
-        if (auto *sp = qobject_cast<QSplitter *>(c->parentWidget()))
-        {
-            for (int i = 0; i < sp->count(); ++i)
-                if (auto *o = qobject_cast<CanvasWidget *>(sp->widget(i)))
-                    if (o != c)
-                        o->setTimeRange(t0, t1);
-        }
+        QWidget *page = c;
+        while (page && page->parentWidget() != m_pages)
+            page = page->parentWidget();
+        if (!page)
+            return;
+        QVector<CanvasWidget *> peers;
+        collectPageCanvases(page, peers);
+        for (CanvasWidget *o : peers)
+            if (o != c)
+                o->setTimeRange(t0, t1);
     });
     connect(c, &CanvasWidget::addRequested, this, [this] { addCanvasToPage(); });
     connect(c, &CanvasWidget::addChannelRequested, this, [this, c] {
@@ -2069,6 +2356,41 @@ void MainWindow::setupCanvas(CanvasWidget *c)
     connect(c, &CanvasWidget::removeRequested, this, [this, c] { removeCanvas(c); });
 }
 
+void MainWindow::applyCanvasGrid(int rows, int cols)
+{
+    QWidget *page = m_pages ? m_pages->currentWidget() : nullptr;
+    if (!page || dynamic_cast<QLabel *>(page))
+    {
+        log(QStringLiteral("当前页不是绘图页"));
+        return;
+    }
+    QVector<CanvasWidget *> canvases;
+    collectPageCanvases(page, canvases);
+    if (canvases.isEmpty())
+    {
+        log(QStringLiteral("当前页没有画布"));
+        return;
+    }
+    if (auto *g = dynamic_cast<PlotGrid *>(page))
+    {
+        g->setShape(rows, cols);
+        log(QStringLiteral("页内布局：%1 × %2").arg(g->rows()).arg(g->cols()));
+        return;
+    }
+
+    const int idx = m_pages->currentIndex();
+    const QString tabText = m_pages->tabText(idx);
+    auto *grid = new PlotGrid(m_pages);
+    grid->setShape(rows, cols);
+    for (CanvasWidget *c : canvases)
+        grid->addCanvas(c);
+    m_pages->removeTab(idx);
+    m_pages->insertTab(idx, grid, tabText);
+    m_pages->setCurrentIndex(idx);
+    page->deleteLater();
+    log(QStringLiteral("页内布局：%1 × %2").arg(grid->rows()).arg(grid->cols()));
+}
+
 void MainWindow::addCanvasToPage()
 {
     QWidget *page = m_pages->currentWidget();
@@ -2085,7 +2407,14 @@ void MainWindow::addCanvasToPage()
     c->setTitle(QStringLiteral("新画布 · plot"));
     setupCanvas(c);
 
-    if (auto *sp = qobject_cast<QSplitter *>(page))
+    if (auto *g = dynamic_cast<PlotGrid *>(page))
+    {
+        g->addCanvas(c);
+        const auto peers = g->canvases();
+        if (!peers.isEmpty())
+            c->setTimeRange(peers.first()->t0(), peers.first()->t1());
+    }
+    else if (auto *sp = qobject_cast<QSplitter *>(page))
     {
         QList<int> sizes = sp->sizes();
         int total = 0;
@@ -2146,6 +2475,20 @@ QJsonObject MainWindow::pageState(QWidget *page) const
         o = c->saveState();
         o[QStringLiteral("type")] = QStringLiteral("canvas");
     }
+    else if (auto *g = dynamic_cast<PlotGrid *>(page))
+    {
+        o[QStringLiteral("type")] = QStringLiteral("grid");
+        o[QStringLiteral("rows")] = g->rows();
+        o[QStringLiteral("cols")] = g->cols();
+        QJsonArray kids;
+        for (CanvasWidget *c : g->canvases())
+        {
+            QJsonObject co = c->saveState();
+            co[QStringLiteral("type")] = QStringLiteral("canvas");
+            kids.append(co);
+        }
+        o[QStringLiteral("children")] = kids;
+    }
     else if (auto *sp = qobject_cast<QSplitter *>(page))
     {
         o[QStringLiteral("type")] = QStringLiteral("splitter");
@@ -2188,6 +2531,15 @@ QWidget *MainWindow::buildPage(const QJsonObject &o)
         c->restoreState(o, pool);
         setupCanvas(c);
         return c;
+    }
+    if (type == QLatin1String("grid"))
+    {
+        auto *g = new PlotGrid(m_pages);
+        g->setShape(o.value(QStringLiteral("rows")).toInt(1), o.value(QStringLiteral("cols")).toInt(1));
+        for (const QJsonValue &v : o.value(QStringLiteral("children")).toArray())
+            if (auto *c = qobject_cast<CanvasWidget *>(buildPage(v.toObject())))
+                g->addCanvas(c);
+        return g;
     }
     if (type == QLatin1String("splitter"))
     {
@@ -2448,22 +2800,8 @@ void MainWindow::openSettings()
 QVector<CanvasWidget *> MainWindow::pageCanvases() const
 {
     QVector<CanvasWidget *> out;
-    if (!m_pages)
-        return out;
-    QWidget *page = m_pages->currentWidget();
-    if (auto *c = qobject_cast<CanvasWidget *>(page))
-    {
-        out.append(c);
-        return out;
-    }
-    if (auto *sp = qobject_cast<QSplitter *>(page))
-    {
-        for (int i = 0; i < sp->count(); ++i)
-        {
-            if (auto *c = qobject_cast<CanvasWidget *>(sp->widget(i)))
-                out.append(c);
-        }
-    }
+    if (m_pages)
+        collectPageCanvases(m_pages->currentWidget(), out);
     return out;
 }
 
@@ -2641,7 +2979,61 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
 
     statusBar()->showMessage(QStringLiteral("%1 · %2 通道 · %3 点").arg(fi.fileName()).arg(n)
                              .arg(ps_dataset_channel(ds, 0) ? ps_dataset_channel(ds, 0)->point_count : 0));
+    QSettings recentStore(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    QStringList recent = recentStore.value(QStringLiteral("recentFiles")).toStringList();
+    recent.removeAll(fi.absoluteFilePath());
+    recent.prepend(fi.absoluteFilePath());
+    while (recent.size() > 12)
+        recent.removeLast();
+    recentStore.setValue(QStringLiteral("recentFiles"), recent);
     return true;
+}
+
+void MainWindow::exportActiveCsv()
+{
+    SourceData *src = sourceById(m_activeSource);
+    if (!src || !src->ds)
+    {
+        log(QStringLiteral("没有可导出的数据源"));
+        return;
+    }
+    const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出数据快照"),
+        QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+            .filePath(src->alias + QStringLiteral("-snapshot.csv")),
+        QStringLiteral("CSV (*.csv)"));
+    if (f.isEmpty())
+        return;
+    QFile out(f);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        QMessageBox::warning(this, QStringLiteral("导出失败"), out.errorString());
+        return;
+    }
+    QTextStream ts(&out);
+    ts.setEncoding(QStringConverter::Utf8);
+    auto esc = [](const QString &v) {
+        QString s = v;
+        s.replace(QLatin1Char('"'), QStringLiteral("\""));
+        return s.contains(QLatin1Char(',')) || s.contains(QLatin1Char('"')) || s.contains(QLatin1Char('\n'))
+            ? QStringLiteral("\"%1\"").arg(s) : s;
+    };
+    ts << "time,channel,value,unit\n";
+    qulonglong rows = 0;
+    for (const PsChannelInfo *ch : src->channels)
+    {
+        if (!ch)
+            continue;
+        const QString name = esc(QString::fromUtf8(ch->name));
+        const QString unit = esc(QString::fromUtf8(ch->unit ? ch->unit : ""));
+        for (uint32_t i = 0; i < ch->point_count; ++i)
+        {
+            ts << QString::number(ch->time[i], 'g', 17) << ',' << name << ','
+               << QString::number(ch->value[i], 'g', 17) << ',' << unit << '\n';
+            ++rows;
+        }
+    }
+    out.close();
+    log(QStringLiteral("已导出数据快照：%1（%2 行）").arg(f).arg(rows));
 }
 
 void MainWindow::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows)

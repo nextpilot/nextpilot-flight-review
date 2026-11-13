@@ -349,34 +349,40 @@ void CanvasWidget::paintEvent(QPaintEvent *)
                             : QStringLiteral("%1 通道 · 抽稀在 Rust 侧完成").arg(m_series.size());
     p.drawText(QPointF(14 + titleWidth + 14, 21), sub);
 
-    if (m_showGrid)
-    {
-    // 网格 + Y 刻度
+    // 刻度与网格分开：grid off 保留坐标读数，只去掉网格线（MATLAB 习惯）
     const int yTicks = 5;
     for (int i = 0; i <= yTicks; ++i)
     {
         const double y = plot.top() + plot.height() * i / yTicks;
-        p.setPen(QPen(colorGrid(), 1));
-        p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+        if (m_showGrid)
+        {
+            p.setPen(QPen(colorGrid(), 1));
+            p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+        }
         const double val = m_yMax - (m_yMax - m_yMin) * i / yTicks;
         p.setPen(colorText());
         const QString lbl = QString::number(val, 'g', 4);
         p.drawText(QPointF(plot.left() - 8 - fm.horizontalAdvance(lbl), y + fm.ascent() / 2 - 1), lbl);
     }
 
-    // X 刻度（秒）
     const int xTicks = 6;
     for (int i = 0; i <= xTicks; ++i)
     {
         const double x = plot.left() + plot.width() * i / xTicks;
         const double t = m_t0 + (m_t1 - m_t0) * i / xTicks;
-        p.setPen(QPen(colorGrid(), 1));
-        p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        if (m_showGrid)
+        {
+            p.setPen(QPen(colorGrid(), 1));
+            p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        }
         p.setPen(colorText());
         const QString lbl = QString::number(t, 'f', t >= 100 ? 0 : 2);
         p.drawText(QPointF(x - fm.horizontalAdvance(lbl) / 2, plot.bottom() + fm.ascent() + 6), lbl);
     }
-
+    if (m_showBox)
+    {
+        p.setPen(QPen(colorGrid(), 1));
+        p.drawRect(plot);
     }
 
     // 曲线：每像素一个 min/max 桶，画"包络带 + 中线"
@@ -457,6 +463,14 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         p.drawRoundedRect(box, 3, 3);
         p.setPen(colorText());
         p.drawText(box.adjusted(7, 0, -7, 0), Qt::AlignVCenter | Qt::AlignLeft, tip);
+    }
+
+    if (m_rubbering && m_rubberRect.isValid())
+    {
+        p.setPen(QPen(QColor(78, 161, 255, 220), 1, Qt::DashLine));
+        p.setBrush(QColor(78, 161, 255, 40));
+        p.drawRect(m_rubberRect);
+        p.setBrush(Qt::NoBrush);
     }
 }
 
@@ -628,6 +642,15 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
             emit removeRequested();
         return;
     }
+    if (event->button() == Qt::LeftButton && m_rubberZoom && plotRect().contains(event->position()))
+    {
+        m_rubbering = true;
+        m_rubberStart = event->position();
+        m_rubberRect = QRectF(m_rubberStart, m_rubberStart);
+        emit activated(m_title);
+        update();
+        return;
+    }
     if (event->button() == Qt::LeftButton)
     {
         m_dragging = true;
@@ -648,6 +671,8 @@ QJsonObject CanvasWidget::saveState() const
     o[QStringLiteral("autoY")] = m_autoY;
     o[QStringLiteral("legend")] = m_showLegend;
     o[QStringLiteral("grid")] = m_showGrid;
+    o[QStringLiteral("box")] = m_showBox;
+    o[QStringLiteral("rubberZoom")] = m_rubberZoom;
     QJsonArray arr;
     for (const Series &s : m_series)
     {
@@ -703,6 +728,8 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
     m_autoY = o.value(QStringLiteral("autoY")).toBool(m_autoY);
     m_showLegend = o.value(QStringLiteral("legend")).toBool(true);
     m_showGrid = o.value(QStringLiteral("grid")).toBool(true);
+    m_showBox = o.value(QStringLiteral("box")).toBool(true);
+    m_rubberZoom = o.value(QStringLiteral("rubberZoom")).toBool(false);
     m_kernelBacked = !m_series.isEmpty();
     update();
 }
@@ -713,6 +740,44 @@ void CanvasWidget::setTimeRange(double t0, double t1)
         return;
     m_t0 = t0;
     m_t1 = t1;
+    update();
+}
+
+void CanvasWidget::setGridVisible(bool on)
+{
+    m_showGrid = on;
+    update();
+}
+
+void CanvasWidget::setLegendVisible(bool on)
+{
+    m_showLegend = on;
+    update();
+}
+
+void CanvasWidget::setBoxVisible(bool on)
+{
+    m_showBox = on;
+    update();
+}
+
+void CanvasWidget::setRubberZoomEnabled(bool on)
+{
+    m_rubberZoom = on;
+    m_rubbering = false;
+    m_rubberRect = QRectF();
+    update();
+}
+
+void CanvasWidget::zoomBy(double factor)
+{
+    if (!(factor > 0.0))
+        return;
+    const double center = 0.5 * (m_t0 + m_t1);
+    const double half = 0.5 * (m_t1 - m_t0) * factor;
+    m_t0 = center - half;
+    m_t1 = center + half;
+    emit timeRangeChanged(m_t0, m_t1);
     update();
 }
 
@@ -745,6 +810,12 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
 {
     m_cursor = event->position();
     m_hover = true;
+    if (m_rubbering)
+    {
+        m_rubberRect = QRectF(m_rubberStart, event->position()).normalized();
+        update();
+        return;
+    }
     if (m_dragging)
     {
         const QRectF plot = plotRect();
@@ -767,6 +838,29 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
 
 void CanvasWidget::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_rubbering)
+    {
+        m_rubbering = false;
+        QRectF r = m_rubberRect.intersected(plotRect());
+        if (r.width() > 6 && r.height() > 6)
+        {
+            const QRectF plot = plotRect();
+            const double t0 = m_t0 + (m_t1 - m_t0) * (r.left() - plot.left()) / plot.width();
+            const double t1 = m_t0 + (m_t1 - m_t0) * (r.right() - plot.left()) / plot.width();
+            const double span = m_yMax - m_yMin;
+            const double topVal = m_yMax - span * (r.top() - plot.top()) / plot.height();
+            const double bottomVal = m_yMax - span * (r.bottom() - plot.top()) / plot.height();
+            m_yMax = topVal;
+            m_yMin = bottomVal;
+            m_t0 = std::min(t0, t1);
+            m_t1 = std::max(t0, t1);
+            m_autoY = false;
+            emit timeRangeChanged(m_t0, m_t1);
+        }
+        m_rubberRect = QRectF();
+        update();
+        return;
+    }
     m_dragging = false;
     QWidget::mouseReleaseEvent(event);
 }

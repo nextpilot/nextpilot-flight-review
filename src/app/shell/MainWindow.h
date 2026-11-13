@@ -92,6 +92,8 @@ private:
     void setupCanvas(CanvasWidget *c);
     void addCanvasToPage();
     void removeCanvas(CanvasWidget *c);
+    void applyCanvasGrid(int rows, int cols);
+    void exportActiveCsv();
     void openSettings();
     QJsonObject pageState(QWidget *page) const;
     QWidget *buildPage(const QJsonObject &o);

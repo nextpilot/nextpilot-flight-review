@@ -42,6 +42,15 @@ public:
     bool kernelBacked() const { return m_kernelBacked; }  // 数据指针属于内核数据集
     void setTimeRange(double t0, double t1);             // 同页 X 轴联动时被动设置
     void requestAutoY();                                  // 按可见曲线量程重算 Y
+    void setGridVisible(bool on);
+    void setLegendVisible(bool on);
+    void setBoxVisible(bool on);
+    void setRubberZoomEnabled(bool on);
+    void zoomBy(double factor);                          // 1.25 放大，0.8 缩小
+    bool gridVisible() const { return m_showGrid; }
+    bool legendVisible() const { return m_showLegend; }
+    bool boxVisible() const { return m_showBox; }
+    bool rubberZoomEnabled() const { return m_rubberZoom; }
     QJsonObject saveState() const;                        // 布局/曲线快照
     void restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool);
     double t0() const { return m_t0; }
@@ -103,6 +112,11 @@ private:
     bool m_autoY = true;
     bool m_showLegend = true;
     bool m_showGrid = true;
+    bool m_showBox = true;
+    bool m_rubberZoom = false;
+    bool m_rubbering = false;
+    QPointF m_rubberStart;
+    QRectF m_rubberRect;
     bool m_kernelBacked = false;
     bool m_dragging = false;
     bool m_hover = false;
