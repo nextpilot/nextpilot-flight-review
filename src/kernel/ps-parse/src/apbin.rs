@@ -328,7 +328,7 @@ pub fn parse_bytes(buf: &[u8]) -> Result<ApLog, String> {
         let f = &fmt.fields[fi];
         let mut name = fmt.name.clone();
         if b.has_instance {
-            name.push_str(&format!("#{instance}."));
+            name.push_str(&format!(".#{instance}."));
         } else {
             name.push('.');
         }
@@ -413,6 +413,7 @@ mod tests {
         let log = parse_file(Path::new(&path)).unwrap();
         assert!(log.channels.len() > 50, "channels={}", log.channels.len());
         assert!(log.point_rows > 1000);
+        assert!(log.channels.iter().any(|c| c.name == "ARSP.#0.Airspeed"), "多实例命名应为 MSG.#N.Field");
         eprintln!("channels={} rows={} params={} msgs={}", log.channels.len(), log.point_rows, log.params.len(), log.messages.len());
 
     }
