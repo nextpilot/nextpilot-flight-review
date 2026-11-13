@@ -18,10 +18,12 @@ struct LoaderPlugin
     bool tree = false;              // 是否有 topic/ID 层级
     bool hasParams = false;         // 是否有 P/Q、PARM 参数表
     QJsonObject schema;             // 空对象 = 无选项，直接加载
+    QString uiDialog;               // 插件自带 .ui 绝对路径，空 = 用通用 schema 对话框
 
     std::function<QJsonObject(const QString &path, const QJsonObject &opts)> probe;
     std::function<QString(const QString &path)> defaultOptions;
     std::function<QString(const QString &path)> paramsJson;
+    std::function<QString(const QString &widget)> uiData;
     std::function<int(const QString &path, const QString &opts, PsDataset **ds,
                       char *err, unsigned int errCap)> load;
 };

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DemoDialog</class>
+ <widget class="QWidget" name="DemoDialog">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>360</width><height>150</height></rect>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="label">
+     <property name="text"><string>Demo 插件自定义界面（来自插件目录 dialog.ui）</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLineEdit" name="noteEdit">
+     <property name="text"><string>demo note</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,14 @@
+{
+  "id": "demo",
+  "name": "Demo",
+  "version": "1.0.0",
+  "sdk": "1.0",
+  "kind": "file",
+  "entry": "ps_plugin_entry",
+  "library": "demo_plugin.so",
+  "ui": {
+    "dialog": null,
+    "panels": [],
+    "ribbon": null
+  }
+}

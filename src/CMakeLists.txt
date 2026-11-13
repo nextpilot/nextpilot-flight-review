@@ -4,6 +4,9 @@ ps_import_kernel(ps_kernel)
 # 必须先处理 3dparty：app 链接 SARibbonBar
 add_subdirectory(3rdparty)
 
+# 插件装载层不依赖 Qt，GUI 关掉也能编
+add_subdirectory(runtime)
+
 if(PS_BUILD_GUI)
   find_package(Qt6 QUIET COMPONENTS Widgets Svg)
   if(Qt6_FOUND)

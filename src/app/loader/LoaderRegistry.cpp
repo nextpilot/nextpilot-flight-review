@@ -1,8 +1,10 @@
 #include "loader/LoaderRegistry.h"
 
 #include "plugin_sdk/ps_plugin_api.h"
+#include "runtime/PluginRuntime.h"
 #include "ps_kernel.h"
 
+#include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -83,16 +85,20 @@ LoaderRegistry::LoaderRegistry()
     registerDescriptor(ps_plugin_entry_csv());
 }
 
-void LoaderRegistry::registerDescriptor(const PsPluginDescriptor *desc)
+bool LoaderRegistry::registerDescriptor(const PsPluginDescriptor *desc, const QString &packageDir)
 {
     if (!desc || desc->abi_version != PS_PLUGIN_ABI_VERSION || !desc->loader)
-        return;
+        return false;
     const PsLoaderVtable *v = desc->loader;
     if (v->abi_version != PS_PLUGIN_ABI_VERSION || !v->id || !v->load)
-        return;
+        return false;
+
+    const QString id = QString::fromUtf8(v->id);
+    if (findById(id))
+        return false;
 
     LoaderPlugin p;
-    p.id = QString::fromUtf8(v->id);
+    p.id = id;
     p.label = QString::fromUtf8(v->label ? v->label : v->id);
     p.filter = QString::fromUtf8(v->filter ? v->filter : "* (*)");
     p.formatTag = QString::fromUtf8(v->format_tag ? v->format_tag : v->label);
@@ -108,12 +114,49 @@ void LoaderRegistry::registerDescriptor(const PsPluginDescriptor *desc)
     p.paramsJson = [v](const QString &path) {
         return readParams(v, path);
     };
+    if (desc->ui && desc->ui->dialog_ui && !packageDir.isEmpty())
+    {
+        const PsUiVtable *u = desc->ui;
+        p.uiDialog = QDir(packageDir).absoluteFilePath(QString::fromUtf8(u->dialog_ui));
+        if (u->get_data)
+        {
+            p.uiData = [u](const QString &widget) {
+                QByteArray out(64 * 1024, '\0');
+                const int32_t n = u->get_data(widget.toUtf8().constData(), out.data(),
+                                              static_cast<uint32_t>(out.size()));
+                if (n <= 0)
+                    return QString();
+                return QString::fromUtf8(out.constData(), n);
+            };
+        }
+    }
     p.load = [v](const QString &path, const QString &opts, PsDataset **ds,
                  char *err, unsigned int cap) {
         return v->load(path.toUtf8().constData(), opts.toUtf8().constData(),
                        reinterpret_cast<void **>(ds), err, cap);
     };
     m_plugins.append(p);
+    return true;
+}
+
+QStringList LoaderRegistry::scanPlugins(const QStringList &dirs)
+{
+    PluginRuntime &rt = PluginRuntime::instance();
+    QStringList errors;
+    for (const QString &dir : dirs)
+        rt.scanDirectory(dir.toStdString());
+
+    for (const PsLoadedPlugin &p : rt.plugins())
+    {
+        if (registerDescriptor(p.descriptor, QString::fromStdString(p.packageDir)))
+            continue;
+        const QString id = QString::fromUtf8(p.descriptor->loader->id);
+        if (!findById(id))
+            errors << QStringLiteral("%1：注册失败").arg(QString::fromStdString(p.library));
+    }
+    for (const std::string &e : rt.errors())
+        errors << QString::fromStdString(e);
+    return errors;
 }
 
 const LoaderPlugin *LoaderRegistry::findBySuffix(const QString &suffix) const

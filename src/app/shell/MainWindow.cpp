@@ -1,4 +1,5 @@
 #include "shell/MainWindow.h"
+#include "loader/DialogEngine.h"
 #include "loader/LoaderOptionsDialog.h"
 #include "loader/LoaderRegistry.h"
 
@@ -3093,7 +3094,20 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
     }
     const bool is_tree = plugin->tree;
     QString opts;
-    if (!plugin->schema.isEmpty())
+    if (!plugin->uiDialog.isEmpty())
+    {
+        // 插件自带 .ui：通用引擎加载，app 不认识任何控件
+        if (interactive)
+        {
+            PluginDialogEngine dlg(*plugin, path, this);
+            if (dlg.exec() != QDialog::Accepted)
+                return false;
+            opts = dlg.optionsJson();
+        }
+        else if (plugin->defaultOptions)
+            opts = plugin->defaultOptions(path);
+    }
+    else if (!plugin->schema.isEmpty())
     {
         // 交互打开：schema 渲染选项；恢复布局：按加载器默认探测静默加载
         if (interactive)

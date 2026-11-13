@@ -10,6 +10,8 @@ add_executable(plotscope_app
   loader/LoaderRegistry.cpp
   loader/LoaderOptionsDialog.h
   loader/LoaderOptionsDialog.cpp
+  loader/DialogEngine.h
+  loader/DialogEngine.cpp
   shell/Theme.h
   shell/Theme.cpp
   transform/TransformDialog.h
@@ -26,9 +28,21 @@ target_include_directories(plotscope_app PRIVATE
   ${PROJECT_SOURCE_DIR}/src
 )
 target_link_libraries(plotscope_app PRIVATE
-  Qt6::Widgets Qt6::Svg ps_kernel
+  Qt6::Widgets Qt6::Svg ps_kernel ps_runtime
   ps_loader_csv ps_loader_ulog ps_loader_apbin ps_loader_asc ps_loader_blf
 )
+# 外部插件靠宿主导出 ps_* 符号
+set_target_properties(plotscope_app PROPERTIES ENABLE_EXPORTS ON)
+
+# 插件 .ui 由通用 DialogEngine 加载；缺失时降级为提示，不阻断构建
+find_package(Qt6 QUIET COMPONENTS UiTools)
+if(Qt6UiTools_FOUND)
+  target_link_libraries(plotscope_app PRIVATE Qt6::UiTools)
+  target_compile_definitions(plotscope_app PRIVATE PS_HAVE_UITOOLS=1)
+else()
+  target_compile_definitions(plotscope_app PRIVATE PS_HAVE_UITOOLS=0)
+  message(WARNING "未找到 Qt6 UiTools，插件自带 .ui 将不可用")
+endif()
 
 if(PS_ENABLE_LUA)
   find_package(Lua 5.4)

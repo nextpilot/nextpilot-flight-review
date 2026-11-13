@@ -79,7 +79,7 @@
 └───────────────────────────────┬───────────────────────────────────┘
                       PsHostApi + 插件 .ui（批量传递）
 ┌───────────────────────────────┴───────────────────────────────────┐
-│                    ps-runtime（Rust）                              │
+│                    ps-runtime（C++ 装载层）                         │
 │ 插件目录 / manifest / dlopen / ABI 校验 / 会话 / 源管理 / 写入口      │
 └───────────────────────────────┬───────────────────────────────────┘
                       C ABI（只传批量数据）
@@ -427,10 +427,12 @@ plugins/<id>/
 
 **当前落地（M1 第一步）**
 
-- `src/plugin_sdk/ps_plugin_api.h`：`PsPluginDescriptor` + `PsLoaderVtable`，纯 C、零 Qt 依赖。
+- `src/plugin_sdk/ps_plugin_api.h`：`PsPluginDescriptor` + `PsLoaderVtable` + `PsUiVtable`，纯 C、零 Qt 依赖。
 - `src/plugin/{csv,ulog,apbin,asc,blf}/`：五个文件加载器全部是独立插件；schema/probe/default/params/load 全在插件内，app 不再有格式专属代码。
-- `LoaderRegistry::registerDescriptor()`：app 唯一入口，只做 ABI 版本校验和 JSON 缓冲区桥接。
-- `test/unit/test_plugin_csv.cpp` / `test_plugin_file_formats.cpp`：直接走插件入口验证 schema、参数表与数据集加载。
+- `src/runtime/PluginRuntime.cpp`：递归扫描 `*.so`，子进程预检隔离坏插件，`dlopen` + `ps_plugin_entry` + ABI 校验；坏插件只记错误，不拖死宿主。
+- `src/app/loader/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按插件 `dialog_ui` 加载 `.ui`，取值走 `get_data` JSON；app 不 include 任何插件 UI 头文件。
+- `LoaderRegistry::registerDescriptor()` / `scanPlugins()`：app 唯一注册入口，只做 ABI 校验与 JSON 桥接。
+- `test/unit/test_plugin_csv.cpp` / `test_plugin_file_formats.cpp` / `test_plugin_runtime.cpp`：覆盖内置插件、外部 `.so`、非法 ABI 拒绝与插件 `.ui`。
 
 **C ABI（数据面 8 函数；插件面 5 函数）**
 

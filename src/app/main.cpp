@@ -1,8 +1,11 @@
 // PlotScope 入口。Qt Widgets 单线程 UI（D1 / D1b / D1c），数据面全部走 ps-abi。
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QSettings>
+#include <QStandardPaths>
 
+#include "loader/LoaderRegistry.h"
 #include "shell/Theme.h"
 
 #include "ps_kernel.h"
@@ -22,6 +25,16 @@ int main(int argc, char **argv)
     {
         qFatal("ps-abi 版本不匹配：kernel=%u host=%u", ps_abi_version(), PS_ABI_VERSION);
     }
+
+    // 外部插件：安装目录 + 用户目录 + 环境变量，app 不认具体格式
+    QStringList pluginDirs;
+    pluginDirs << QCoreApplication::applicationDirPath() + QStringLiteral("/plugins");
+    pluginDirs << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/plugins");
+    const QString envPath = qEnvironmentVariable("PLOTSCOPE_PLUGIN_PATH");
+    if (!envPath.isEmpty())
+        pluginDirs << envPath.split(QDir::listSeparator(), Qt::SkipEmptyParts);
+    for (const QString &e : LoaderRegistry::instance().scanPlugins(pluginDirs))
+        qWarning("[plugin] %s", qPrintable(e));
 
     MainWindow win;
     win.show();
