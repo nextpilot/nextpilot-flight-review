@@ -16,6 +16,7 @@ class QStackedWidget;
 class QListWidget;
 class QVBoxLayout;
 class QLineEdit;
+class QAction;
 
 // 变换配方：写入 .psl，重启/导入时按序重放
 struct TransformRecipe
@@ -82,6 +83,7 @@ private:
     void removeSourceRow(QWidget *row);
     void activateSource(QWidget *row);   // 每个源各自一份字段/参数/消息视图
     void renderSourceData();
+    void updateStatusChips();
     void refreshActiveSource();          // 变换写回后重建通道指针与字段树
     void reloadChannels(SourceData *src);
     void addTransformFor(const QString &channel);
@@ -127,4 +129,6 @@ private:
     QPlainTextEdit *m_script = nullptr;
     QVector<SourceData> m_sources;
     int m_activeSource = -1;
+    QAction *m_chipSource = nullptr;
+    QAction *m_chipLod = nullptr;
 };

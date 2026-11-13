@@ -1126,14 +1126,16 @@ QWidget *MainWindow::createRibbon()
         addSmall(p, QStringLiteral("日志"), [toggle] { toggle("dock.log"); }, this);
     }
 
-    // 右侧芯片位（原型里的 qchip）：状态摘要不做成按钮也得看得见，先用只读 action 占位
+    // 右侧芯片位：只读状态摘要，跟随实际数据源刷新
     auto *rg = ribbon->rightButtonGroup();
-    for (const QString &t : {QStringLiteral("CSV · 3000×5"), QStringLiteral("LOD: Rust")})
+    m_chipSource = new QAction(QStringLiteral("无数据"), this);
+    m_chipLod = new QAction(QStringLiteral("LOD: Rust"), this);
+    for (QAction *a : {m_chipSource, m_chipLod})
     {
-        auto *a = new QAction(t, this);
         a->setEnabled(false);
         rg->addAction(a);
     }
+    updateStatusChips();
 
     // 自绘 SVG 图标：没有图标时 SARibbon 会在按钮左侧留空方块，观感直接崩
     {
@@ -1857,8 +1859,28 @@ void MainWindow::removeSourceRow(QWidget *row)
     log(QStringLiteral("移除数据源：%1").arg(name));
 }
 
+void MainWindow::updateStatusChips()
+{
+    if (!m_chipSource)
+        return;
+    int channels = 0;
+    for (const SourceData &s : m_sources)
+        channels += s.channels.size();
+    if (m_sources.isEmpty())
+        m_chipSource->setText(QStringLiteral("无数据"));
+    else if (m_sources.size() == 1)
+        m_chipSource->setText(QStringLiteral("%1 · %2 通道")
+                                  .arg(m_sources.first().fmt)
+                                  .arg(channels));
+    else
+        m_chipSource->setText(QStringLiteral("%1 源 · %2 通道")
+                                  .arg(m_sources.size())
+                                  .arg(channels));
+}
+
 void MainWindow::renderSourceData()
 {
+    updateStatusChips();
     if (!m_srcTree || !m_srcTabs)
         return;
     m_srcTree->clear();
