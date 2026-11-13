@@ -195,9 +195,9 @@ QWidget *MainWindow::createRibbon()
         auto *cat = ribbon->addCategoryPage(QStringLiteral("文件"));
         auto *pLayout = cat->addPanel(QStringLiteral("文件"));
         addLarge(pLayout, QStringLiteral("打开文件"), [this] {
-            const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("打开文件"), {},
+            const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("打开文件"), {},
                 QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-            if (!f.isEmpty())
+            for (const QString &f : fs)
                 loadFile(f);
         }, this);
         addLarge(pLayout, QStringLiteral("导入布局"), [this] {
@@ -237,9 +237,9 @@ QWidget *MainWindow::createRibbon()
         auto *cat = ribbon->addCategoryPage(QStringLiteral("数据"));
         auto *pSrc = cat->addPanel(QStringLiteral("来源"));
         addLarge(pSrc, QStringLiteral("打开数据源"), [this] {
-            const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("打开数据源"), {},
+            const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("打开数据源"), {},
                 QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-            if (!f.isEmpty())
+            for (const QString &f : fs)
                 loadFile(f);
         }, this);
         auto *pRun = cat->addPanel(QStringLiteral("传输"));
@@ -466,9 +466,9 @@ void MainWindow::createDocks()
     };
     auto *addSrcBtn = mkTiny(QStringLiteral("newpage"), QStringLiteral("添加数据源"));
     QObject::connect(addSrcBtn, &QToolButton::clicked, this, [this] {
-        const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("添加数据源"), {},
+        const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("添加数据源"), {},
             QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-        if (!f.isEmpty())
+        for (const QString &f : fs)
             loadFile(f);
     });
     auto *runBtn = mkTiny(QStringLiteral("play"), QStringLiteral("全部开始"));
@@ -783,6 +783,37 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
     QAction *reload = menu.addAction(QStringLiteral("重新加载"));
     reload->setEnabled(!path.isEmpty());
     QAction *rename = menu.addAction(QStringLiteral("重命名"));
+
+    SourceData *src = sourceById(sourceIdForRow(row));
+    QMenu *timeMenu = menu.addMenu(QStringLiteral("时间对齐"));
+    timeMenu->setEnabled(backed && src && src->ds);
+    QAction *offsetInfo = timeMenu->addAction(
+        QStringLiteral("偏移 %1 s").arg(src ? src->offsetSec : 0.0, 0, 'f', 3));
+    offsetInfo->setEnabled(false);
+    timeMenu->addSeparator();
+    QAction *alignStart = timeMenu->addAction(QStringLiteral("对齐起点"));
+    QAction *alignCenter = timeMenu->addAction(QStringLiteral("对齐中心"));
+    QAction *alignEnd = timeMenu->addAction(QStringLiteral("对齐终点"));
+    QAction *base = timeMenu->addAction(QStringLiteral("设为时间基准"));
+    timeMenu->addSeparator();
+    QAction *resetOffset = timeMenu->addAction(QStringLiteral("重置偏移"));
+
+    QMenu *cmpMenu = menu.addMenu(QStringLiteral("对比同名通道"));
+    bool hasOther = false;
+    for (SourceData &o : m_sources)
+    {
+        if (!src || o.id == src->id || !o.ds)
+            continue;
+        hasOther = true;
+        QMenu *sub = cmpMenu->addMenu(o.alias.isEmpty() ? o.name : o.alias);
+        QAction *all = sub->addAction(QStringLiteral("叠加全部同名"));
+        all->setProperty("cmpAll", true);
+        all->setProperty("cmpOther", o.id);
+        QAction *one = sub->addAction(QStringLiteral("选择通道…"));
+        one->setProperty("cmpAll", false);
+        one->setProperty("cmpOther", o.id);
+    }
+    cmpMenu->setEnabled(hasOther);
     menu.addSeparator();
     QAction *del = menu.addAction(QStringLiteral("移除数据源"));
 
@@ -833,6 +864,24 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
             }
             log(QStringLiteral("重命名数据源：%1").arg(text.trimmed()));
         }
+    }
+    else if (chosen == alignStart || chosen == alignCenter || chosen == alignEnd)
+    {
+        alignSource(src, chosen == alignStart ? 0 : (chosen == alignEnd ? 2 : 1));
+    }
+    else if (chosen == base)
+    {
+        setSourceBase(src);
+    }
+    else if (chosen == resetOffset)
+    {
+        setSourceOffset(src, 0.0, true);
+        log(QStringLiteral("重置时间偏移：%1").arg(src ? src->alias : QString()));
+    }
+    else if (chosen && chosen->property("cmpOther").isValid())
+    {
+        SourceData *other = sourceById(chosen->property("cmpOther").toInt());
+        compareSources(src, other, chosen->property("cmpAll").toBool(), QString());
     }
     else if (chosen == del)
     {
@@ -1044,6 +1093,126 @@ SourceData *MainWindow::sourceById(int id)
     return nullptr;
 }
 
+namespace {
+bool sourceTimeRange(const SourceData *s, double &t0, double &t1)
+{
+    bool init = false;
+    for (const PsChannelInfo *ch : s->channels)
+    {
+        if (!ch || ch->point_count < 2 || !ch->time)
+            continue;
+        const double a = ch->time[0];
+        const double b = ch->time[ch->point_count - 1];
+        if (!init) { t0 = a; t1 = b; init = true; }
+        else { t0 = std::min(t0, a); t1 = std::max(t1, b); }
+    }
+    return init;
+}
+} // namespace
+
+void MainWindow::setSourceOffset(SourceData *src, double offsetSec, bool refit)
+{
+    if (!src)
+        return;
+    src->offsetSec = offsetSec;
+    for (auto *c : findChildren<CanvasWidget *>())
+        c->setSourceOffset(src->path, offsetSec, refit);
+    if (auto *row = src->row)
+        row->setToolTip(QStringLiteral("%1 · 显示偏移 %2 s").arg(src->alias).arg(offsetSec, 0, 'f', 3));
+}
+
+void MainWindow::alignSource(SourceData *src, int mode)
+{
+    if (!src)
+        return;
+    double a0 = 0, a1 = 0;
+    if (!sourceTimeRange(src, a0, a1))
+        return;
+    bool init = false;
+    double gs = 0, ge = 0;
+    for (const SourceData &o : m_sources)
+    {
+        if (o.id == src->id)
+            continue;
+        double b0 = 0, b1 = 0;
+        if (!sourceTimeRange(&o, b0, b1))
+            continue;
+        const double ds = b0 - o.offsetSec;
+        const double de = b1 - o.offsetSec;
+        if (!init) { gs = ds; ge = de; init = true; }
+        else { gs = std::min(gs, ds); ge = std::max(ge, de); }
+    }
+    if (!init)
+        return;
+    const double target = mode == 0 ? gs : (mode == 2 ? ge : (gs + ge) / 2.0);
+    const double center = (a0 + a1) / 2.0;
+    const double off = mode == 0 ? a0 - target : (mode == 2 ? a1 - target : center - target);
+    setSourceOffset(src, off, true);
+    log(QStringLiteral("对齐 %1：%2，偏移 %3 s")
+            .arg(src->alias, mode == 0 ? QStringLiteral("起点")
+                                       : (mode == 2 ? QStringLiteral("终点") : QStringLiteral("中心")))
+            .arg(off, 0, 'f', 3));
+}
+
+void MainWindow::setSourceBase(SourceData *src)
+{
+    double a0 = 0, a1 = 0;
+    if (!src || !sourceTimeRange(src, a0, a1))
+        return;
+    setSourceOffset(src, a0, true);
+    log(QStringLiteral("时间基准：%1，起点归零").arg(src->alias));
+}
+
+void MainWindow::compareSources(SourceData *src, SourceData *other, bool all, const QString &pick)
+{
+    if (!src || !other || !currentCanvas())
+        return;
+    QStringList common;
+    for (const PsChannelInfo *a : src->channels)
+    {
+        if (!a || a->point_count < 2)
+            continue;
+        const QString n = QString::fromUtf8(a->name);
+        for (const PsChannelInfo *b : other->channels)
+            if (b && b->point_count > 1 && n == QString::fromUtf8(b->name))
+            { common.append(n); break; }
+    }
+    common.sort();
+    if (common.isEmpty())
+    {
+        log(QStringLiteral("%1 与 %2 没有同名通道").arg(src->alias, other->alias));
+        return;
+    }
+    QStringList names = all ? common : QStringList{pick};
+    if (!all)
+    {
+        bool ok = false;
+        const QString n = QInputDialog::getItem(this, QStringLiteral("对比同名通道"),
+                                                QStringLiteral("%1 ↔ %2").arg(src->alias, other->alias),
+                                                common, qMax(0, common.indexOf(pick)), false, &ok);
+        if (!ok || n.isEmpty())
+            return;
+        names = {n};
+    }
+    auto *c = currentCanvas();
+    int added = 0;
+    for (const QString &n : names)
+    {
+        const PsChannelInfo *a = nullptr;
+        const PsChannelInfo *b = nullptr;
+        for (const PsChannelInfo *x : src->channels)
+            if (x && n == QString::fromUtf8(x->name)) { a = x; break; }
+        for (const PsChannelInfo *x : other->channels)
+            if (x && n == QString::fromUtf8(x->name)) { b = x; break; }
+        if (!a || !b)
+            continue;
+        c->addChannelEx(a, src->id, src->path, src->alias, src->offsetSec);
+        c->addChannelEx(b, other->id, other->path, other->alias, other->offsetSec);
+        added += 2;
+    }
+    log(QStringLiteral("对比 %1 ↔ %2：%3 条曲线").arg(src->alias, other->alias).arg(added));
+}
+
 void MainWindow::switchSource(int id)
 {
     SourceData *src = sourceById(id);
@@ -1056,7 +1225,7 @@ void MainWindow::switchSource(int id)
     m_srcParams = src->params;
     m_srcMsgs = src->msgs;
     for (auto *c : findChildren<CanvasWidget *>())
-        c->setInputSource(src->id, src->path, src->alias);
+        c->setInputSource(src->id, src->path, src->alias, src->offsetSec);
     renderSourceData();
 }
 
@@ -1316,7 +1485,7 @@ void MainWindow::newPage()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
-            .value(QStringLiteral("restoreLayout"), false).toBool())
+            .value(QStringLiteral("restoreLayout"), true).toBool())
         saveLayoutTo(defaultLayoutPath());
     QMainWindow::closeEvent(event);
 }
@@ -1618,6 +1787,7 @@ void MainWindow::saveLayoutTo(const QString &path)
         so[QStringLiteral("path")] = src.path;
         so[QStringLiteral("name")] = src.name;
         so[QStringLiteral("alias")] = src.alias;
+        so[QStringLiteral("offset")] = src.offsetSec;
         sources.append(so);
     }
     root[QStringLiteral("sources")] = sources;
@@ -1701,6 +1871,10 @@ void MainWindow::importLayoutFrom(const QString &path)
                 if (src.path == path)
                     src.alias = alias;
         }
+        const double offset = v.toObject().value(QStringLiteral("offset")).toDouble(0.0);
+        for (SourceData &src : m_sources)
+            if (src.path == path)
+                setSourceOffset(&src, offset, false);
     }
 
     // 重放变换配方；派生通道先写回，buildPage 才能按名字找到
@@ -1797,7 +1971,7 @@ void MainWindow::openSettings()
     dlg.setWindowTitle(QStringLiteral("设置"));
     auto *lay = new QVBoxLayout(&dlg);
     auto *restore = new QCheckBox(QStringLiteral("启动时恢复上次布局"), &dlg);
-    restore->setChecked(st.value(QStringLiteral("restoreLayout"), false).toBool());
+    restore->setChecked(st.value(QStringLiteral("restoreLayout"), true).toBool());
     auto *grid = new QCheckBox(QStringLiteral("新建画布默认显示网格"), &dlg);
     grid->setChecked(st.value(QStringLiteral("gridDefault"), true).toBool());
     auto *legend = new QCheckBox(QStringLiteral("新建画布默认显示图例"), &dlg);
@@ -1988,6 +2162,7 @@ bool MainWindow::loadFile(const QString &path)
             pick = m_srcChannels;
         for (int i = 0; i < canvases.size() && i < pick.size(); ++i)
         {
+            canvases[i]->setInputSource(src.id, src.path, src.alias, src.offsetSec);
             canvases[i]->setChannels({pick[i]});
             canvases[i]->setTitle(QStringLiteral("%1 · %2")
                                   .arg(fi.completeBaseName(), QString::fromUtf8(pick[i]->name)));

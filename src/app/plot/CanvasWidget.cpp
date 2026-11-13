@@ -112,6 +112,9 @@ void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
                                             : m_inputSrcAlias + QStringLiteral(" · ") + s.name;
         s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
         s.color = kPalette[idx++ % 6];
+        s.srcId = m_inputSrcId;
+        s.srcPath = m_inputSrcPath;
+        s.offsetSec = m_inputOffset;
         s.t = ch->time;
         s.v = ch->value;
         s.n = ch->point_count;
@@ -121,11 +124,12 @@ void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
     resetView();
 }
 
-void CanvasWidget::setInputSource(int id, const QString &path, const QString &alias)
+void CanvasWidget::setInputSource(int id, const QString &path, const QString &alias, double offsetSec)
 {
     m_inputSrcId = id;
     m_inputSrcPath = path;
     m_inputSrcAlias = alias;
+    m_inputOffset = offsetSec;
 }
 
 void CanvasWidget::renameSource(const QString &path, const QString &alias)
@@ -149,6 +153,12 @@ void CanvasWidget::removeChannelsFromSource(const QString &path)
 
 void CanvasWidget::addChannel(const PsChannelInfo *ch)
 {
+    addChannelEx(ch, m_inputSrcId, m_inputSrcPath, m_inputSrcAlias, m_inputOffset);
+}
+
+void CanvasWidget::addChannelEx(const PsChannelInfo *ch, int srcId, const QString &path,
+                                const QString &alias, double offsetSec)
+{
     if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
         return;
     for (const Series &s : m_series)
@@ -158,11 +168,11 @@ void CanvasWidget::addChannel(const PsChannelInfo *ch)
     }
     Series s;
     s.name = QString::fromUtf8(ch->name);
-    s.label = m_inputSrcAlias.isEmpty() ? s.name
-                                        : m_inputSrcAlias + QStringLiteral(" · ") + s.name;
+    s.label = alias.isEmpty() ? s.name : alias + QStringLiteral(" · ") + s.name;
     s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
-    s.srcId = m_inputSrcId;
-    s.srcPath = m_inputSrcPath;
+    s.srcId = srcId;
+    s.srcPath = path;
+    s.offsetSec = offsetSec;
     s.color = kPalette[m_series.size() % 6];
     s.t = ch->time;
     s.v = ch->value;
@@ -237,15 +247,29 @@ QRectF CanvasWidget::plotRect() const
 
 void CanvasWidget::ensureTimeRange()
 {
-    if (m_series.isEmpty())
-        return;
-    const Series &first = m_series.first();
-    if (first.count() < 2)
-        return;
-    m_t0 = first.time()[0];
-    m_t1 = first.time()[first.count() - 1];
+    bool init = false;
+    for (const Series &s : m_series)
+    {
+        if (s.count() < 2)
+            continue;
+        const double a = s.time()[0] - s.offsetSec;
+        const double b = s.time()[s.count() - 1] - s.offsetSec;
+        if (!init) { m_t0 = a; m_t1 = b; init = true; }
+        else { m_t0 = std::min(m_t0, a); m_t1 = std::max(m_t1, b); }
+    }
     if (!(m_t1 > m_t0))
         m_t1 = m_t0 + 1.0;
+}
+
+void CanvasWidget::setSourceOffset(const QString &path, double offsetSec, bool refit)
+{
+    int hit = 0;
+    for (Series &s : m_series)
+        if (s.srcPath == path)
+        { s.offsetSec = offsetSec; ++hit; }
+    if (refit)
+        resetView();
+    repaint();
 }
 
 void CanvasWidget::resetView()
@@ -263,7 +287,9 @@ void CanvasWidget::resetView()
             if (s.count() < 2)
                 continue;
             QVector<double> buf(256 * 3);
-            const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(), m_t0, m_t1, 256, buf.data(), 256);
+            const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(),
+                                              m_t0 + s.offsetSec, m_t1 + s.offsetSec,
+                                              256, buf.data(), 256);
             for (uint32_t i = 0; i < got; ++i)
             {
                 const double mn = buf[i * 3 + 1];
@@ -366,7 +392,9 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         if (!s.visible || s.count() < 2)
             continue;
         QVector<double> buf(static_cast<int>(px) * 3);
-        const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(), m_t0, m_t1, px, buf.data(), px);
+        const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(),
+                                          m_t0 + s.offsetSec, m_t1 + s.offsetSec,
+                                          px, buf.data(), px);
         if (got < 1)
             continue;
 
@@ -379,7 +407,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         QPolygonF poly;
         poly.reserve(static_cast<int>(got));
         for (uint32_t i = 0; i < got; ++i)
-            poly.append(QPointF(toX(buf[i * 3]), toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0)));
+            poly.append(QPointF(toX(buf[i * 3] - s.offsetSec),
+                                toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0)));
         p.setPen(QPen(s.color, s.width));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
         p.drawPolyline(poly);
         m_hitPaths.append(poly);
@@ -630,6 +659,7 @@ QJsonObject CanvasWidget::saveState() const
         so[QStringLiteral("color")] = s.color.name();
         so[QStringLiteral("width")] = s.width;
         so[QStringLiteral("visible")] = s.visible;
+        so[QStringLiteral("offset")] = s.offsetSec;
         arr.append(so);
     }
     o[QStringLiteral("series")] = arr;
@@ -659,6 +689,7 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
             s.color = kPalette[m_series.size() % 6];
         s.width = so.value(QStringLiteral("width")).toInt(1);
         s.visible = so.value(QStringLiteral("visible")).toBool(true);
+        s.offsetSec = so.value(QStringLiteral("offset")).toDouble(0.0);
         s.t = ch->time;
         s.v = ch->value;
         s.n = ch->point_count;

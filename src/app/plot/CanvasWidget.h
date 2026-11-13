@@ -26,9 +26,13 @@ public:
     // 用内核通道替换当前所有曲线；传空则只清空。
     void setChannels(const QVector<const PsChannelInfo *> &channels);
     void addChannel(const PsChannelInfo *channel);   // 字段树拖入时追加一条曲线
+    void addChannelEx(const PsChannelInfo *channel, int srcId, const QString &path,
+                      const QString &alias, double offsetSec);  // 指定来源（多源对比）
     bool replaceChannel(const QString &oldName, const PsChannelInfo *channel); // 变换 Apply：替换并继承颜色
     void removeChannel(const QString &name);
-    void setInputSource(int id, const QString &path, const QString &alias = QString()); // 当前拖拽来源
+    void setInputSource(int id, const QString &path, const QString &alias = QString(),
+                        double offsetSec = 0.0); // 当前拖拽来源
+    void setSourceOffset(const QString &path, double offsetSec, bool refit = false);
     void removeChannelsFromSource(const QString &path);
     void renameSource(const QString &path, const QString &alias);
     void clearChannels();
@@ -70,6 +74,7 @@ private:
         int srcId = -1;            // 运行期数据源 id
         QString srcPath;           // 布局持久化用：源文件路径
         QColor color;
+        double offsetSec = 0.0;    // 显示时间 = 原始时间 - offset
         const double *t = nullptr; // 内核内存（或 demo 自有内存）
         const double *v = nullptr;
         quint32 n = 0;
@@ -110,4 +115,5 @@ private:
     int m_inputSrcId = -1;
     QString m_inputSrcPath;
     QString m_inputSrcAlias;
+    double m_inputOffset = 0.0;
 };

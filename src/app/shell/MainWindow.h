@@ -38,6 +38,7 @@ struct SourceData
     QString alias;             // 图例前缀，默认文件名，可重命名
     QString path;
     QString fmt;
+    double offsetSec = 0.0;    // 显示时间 = 原始时间 - offset；多源对齐用
     PsDataset *ds = nullptr;
     QVector<const PsChannelInfo *> channels;
     QVector<QPair<QString, QString>> params;
@@ -83,6 +84,10 @@ private:
     void refreshActiveSource();          // 变换写回后重建通道指针与字段树
     void reloadChannels(SourceData *src);
     void addTransformFor(const QString &channel);
+    void setSourceOffset(SourceData *src, double offsetSec, bool refit);
+    void alignSource(SourceData *src, int mode);          // 0 起点 / 1 中心 / 2 终点
+    void setSourceBase(SourceData *src);
+    void compareSources(SourceData *src, SourceData *other, bool all, const QString &pick);
     void setupCanvas(CanvasWidget *c);
     void addCanvasToPage();
     void removeCanvas(CanvasWidget *c);
