@@ -1742,9 +1742,21 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
     }
     cmpMenu->setEnabled(hasOther);
     menu.addSeparator();
+    QAction *info = menu.addAction(QStringLiteral("数据源信息"));
     QAction *del = menu.addAction(QStringLiteral("移除数据源"));
+    QAction *delAll = menu.addAction(QStringLiteral("移除全部数据源"));
 
     QAction *chosen = menu.exec(globalPos);
+    if (chosen == delAll)
+    {
+        QList<QWidget *> rows;
+        for (int i = 0; i < m_srcRows->count(); ++i)
+            if (QWidget *row = m_srcRows->itemAt(i)->widget())
+                rows.append(row);
+        for (QWidget *row : rows)
+            removeSourceRow(row);
+        return;
+    }
     if (chosen == toggle)
     {
         QList<QLabel *> labels = row->findChildren<QLabel *>();
@@ -1767,6 +1779,27 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
     {
         log(QStringLiteral("重新加载：%1").arg(path));
         loadFile(path);
+    }
+    else if (chosen == info)
+    {
+        if (!src)
+            return;
+        const int channels = src->live
+            ? (src->liveSession ? src->liveSession->channels().size() : 0)
+            : (src->ds ? static_cast<int>(ps_dataset_channel_count(src->ds)) : 0);
+        const int points = src->live
+            ? (src->liveSession ? src->liveSession->totalSamples() : 0)
+            : (src->ds && ps_dataset_channel(src->ds, 0)
+                   ? static_cast<int>(ps_dataset_channel(src->ds, 0)->point_count) : 0);
+        QStringList lines;
+        lines << QStringLiteral("名称：%1").arg(src->alias.isEmpty() ? src->name : src->alias)
+              << QStringLiteral("类型：%1").arg(src->live ? QStringLiteral("实时源") : src->fmt)
+              << QStringLiteral("路径：%1").arg(src->path.isEmpty() ? src->config : src->path)
+              << QStringLiteral("通道：%1").arg(channels)
+              << QStringLiteral("首通道点数：%1").arg(points)
+              << QStringLiteral("参数：%1 · 消息：%2").arg(src->params.size()).arg(src->msgs.size())
+              << QStringLiteral("时间偏移：%1 s").arg(src->offsetSec, 0, 'f', 3);
+        QMessageBox::information(this, QStringLiteral("数据源信息"), lines.join(QLatin1Char('\n')));
     }
     else if (chosen == rename)
     {

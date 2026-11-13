@@ -21,8 +21,14 @@ PlotScope 是一个面向无人机、嵌入式与车辆研发的桌面日志分�
 | ArduPilot DataFlash `.bin` | 按 `ATT.Roll` 等消息/字段展开，读取 FMTU 单位与 PARM 参数 |
 | Vector CAN `.asc` / `.blf` | 无 DBC 时输出报文字节原始值与周期，不做物理量猜测 |
 | CSV / TSV / TXT | 自动探测分隔符、表头和时间列；支持行号、指定时间列、日期+时间列合并 |
+| MCAP `.mcap` | JSON channel，支持未压缩 / zstd / lz4 chunk；录制文件可直接回放 |
 
 加载器由 schema 驱动，新增格式不需要在 app 里单独写对话框。
+
+### 实时源与录制
+- MAVLink UDP（绑定地址/端口/sysid）、NovAtel OEM7 TCP·串口、内置仿真源；原始流回放按 PSRAW1 或旧裸字节兼容。
+- 每个实时源由独立 `LiveSession` 持有环形缓冲与 UI 刷新；录制交给独立 `StreamRecorder`，不在 `data_input` 或会话里落盘。
+- 录制格式三选一：MCAP（解析后通道）、RAW（PSRAW1 原始字节）、CSV（解码通道）；有界队列 + 后台写线程，磁盘慢时丢批并计数。
 
 ### 绘图
 - 图型画廊覆盖时间序列、XY、散点、柱状、直方图、频谱 FFT、3D 轨迹、地平仪、罗盘、表盘；新建图页会沿用当前画布的可见通道。
@@ -51,8 +57,9 @@ PlotScope 是一个面向无人机、嵌入式与车辆研发的桌面日志分�
 
 - 3D 曲面、GPS 地图尚未实现；3D 轨迹是轻量正交投影，不是完整 3D 引擎。
 - 脚本输出不写回 `.psl`，重启后不会恢复。
-- MAVLink、ROS1/ROS2、MCAP、MDF4、GNSS 原始解析、实时流与实时记录未接入。
-- 插件目前是宿主内注册，外部 `.json` manifest + 动态库 ABI 尚未实现。
+- MAVLink tlog 原生解析、MDF4、Parquet、NMEA/UBX、MQTT/ZMQ/ROS2/WebSocket/LSL 尚未接入。
+- MCAP writer 只写最小结构（无 chunk/summary/索引）；标准 reader 可读，大文件索引性能未验证。
+- OEM7 的宿主 RAW 录制尚未把 database schema_blob 写进文件头，回放需在配置里给 database 路径。
 - `.psl` 仍是 JSON v1，未迁移到 PJ4 的 XML 工作区格式。
 
 ## 构建

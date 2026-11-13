@@ -644,15 +644,15 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 
 
 
-| 里程碑 | 内容 | 工期 |
-|---|---|---|
-| **M0-0** | 选型 spike：JKQTPlotter vs Qwt，20 通道 × 8k 点 @60fps，单帧 ≤8 ms | **0.5 天（已完成：自绘 7.2 ms 达标；JKQ 13.1 ms，见 §12）** |
-| **M0** | 骨架：按 §12 目录落地、CMake + Rust 内核接通、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 |
-| **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） |
-| **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 |
-| **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 |
-| **M4** | 协议编辑器（Loader 的 options 子窗口：位域/CRC/联动）+ 模板编译 | 3 周 |
-| **M5** | 仪表页、布局 `.psl`、导出 | 2 周 |
+| 里程碑 | 内容 | 工期 | 状态（2026-11-13） |
+|---|---|---|---|
+| **M0-0** | 选型 spike：JKQTPlotter vs Qwt，20 通道 × 8k 点 @60fps，单帧 ≤8 ms | **0.5 天** | **已完成**：自绘 7.2 ms；JKQ 13.1 ms |
+| **M0** | 骨架：按 §12 目录落地、CMake + Rust 内核接通、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 | **已完成** |
+| **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） | **基本完成**：ULog/DFLog/ASC/BLF、MAVLink UDP/raw 回放、缓存、外部插件 manifest/ABI 已落地；MAVLink tlog 原生解析与 CAN DBC 解码未做 |
+| **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 | **部分完成**：12 算子、四元数、Lua 5.4 脚本、OEM7 TCP/串口已落地；MDF4/NMEA/UBX、自绘滚动面板未做 |
+| **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 | **部分完成**：MCAP 加载/录制、多画布、时间对齐已落地；rosbag2、多轴、视频同步未做 |
+| **M4** | 协议编辑器（Loader 的 options 子窗口：位域/CRC/联动）+ 模板编译 | 3 周 | **未开始** |
+| **M5** | 仪表页、布局 `.psl`、导出 | 2 周 | **主体完成**：图型仪表、`.psl`、PNG/CSV 导出已落地；独立仪表页编排未做 |
 
 **页面/面板形态**：单窗口多页（页签挂在绘图区顶部，只跨绘图区宽度），每页一棵切分树；停靠面板可浮动；页数不做硬限制，按内存策略回收。
 
@@ -866,10 +866,15 @@ public:
 4. CSV schema 覆盖分隔符、表头、跳行、`time.mode=row|column|combined` 及时间列选择。
 5. 删除 `src/app/shell/CsvLoaderDialog.*`。
 
+已补（2026-11-13 复核）：
+1. 外部插件 `.json` manifest 发现 + 动态库 ABI 已落地（`PluginRuntime` / `ps_plugin_host`，DemoPlugin 回归），`PS_PLUGIN_ABI_VERSION=6`。
+2. MAVLink UDP 实时流、OEM7 TCP/串口、Sim internal 已接入；MCAP 文件加载已落地；实时记录已落地（CSV/MCAP/RAW）。
+3. 实时环形缓冲由 kernel `PsStream` 承担，`LiveSession` 每通道 262144。
+
 未完成：
-1. 外部插件 `.json` manifest 发现 + 动态库 ABI；当前只是宿主进程内注册。
-2. MAVLink tlog/实时流、ROS1/ROS2、MCAP、MDF4、GNSS 原始解析。
-3. 实时记录（UDP/串口原始流落盘）与环形缓冲。
+1. 多 parse 共享同一 transport 的运行时（当前只启动入口 parser；`dataInputJson()` 已生成但未消费）。
+2. MAVLink tlog 原生解析、ROS1/ROS2、MDF4、NMEA/UBX 原始解析。
+3. RAW 录制对 OEM7 尚未把 `database` schema_blob 写进宿主 raw 头；回放需配置 database 路径。
 
 #### 14.3.6 UI / 画布本轮补齐
 
@@ -888,10 +893,15 @@ public:
 - XY 以首条通道为 X、其余为 Y；直方图按首条通道分桶；FFT 对首条通道做 512 点 DFT；仪表类按通道名/末值取数；3D 轨迹用正交投影。
 - 图型随 `.psl` 保存（`mode` / `modeTag`）。
 
+已落地（2026-11-13 复核）：
+- MCAP 文件加载（`McapReader` + `data_load_mcap`，含 zstd/lz4 chunk）；MCAP 录制（`StreamRecorder` + 最小 `McapWriter`，无 chunk/summary，标准 Python `mcap` reader 可读）。
+- MAVLink UDP、OEM7 TCP/串口、Sim internal 实时源；CSV/MCAP/RAW 三种统一录制；Record 下拉框由 `DataInputDialog` 渲染。
+- 插件 SDK：loader/source 共用 `DataInputPlugin`，外部 `.json` manifest + 动态库 ABI 已落地。
+
 未落地：
-- MCAP、Parquet、ROS2、JSON/CBOR/MessagePack。
-- MQTT/UDP/WebSocket/LSL 实时流与真正的暂停/继续。
-- 插件 SDK：loader/streamer/parser 三类，动态库 ABI。当前仍是宿主内 `LoaderRegistry`。
+- Parquet、ROS2、JSON/CBOR/MessagePack、MDF4。
+- MQTT/ZMQ/WebSocket/LSL/Foxglove/PJ Bridge/WebRTC。
+- 插件市场、streamer/parser 两类独立 SDK 扩展。
 - 3D 曲面、GPS 地图、GPU 渲染与百万点基准。
 
 ---
@@ -925,6 +935,22 @@ public:
 - 已做：Filter Editor before/after 预览（`ps_preview_filter` 只读 ABI，不写数据集）。
 - 未做：变换链可视化编排（派生通道可继续作为输入，`.psl` 按序重放）。
 - 提交：`5475215`（P0 内核/ABI/对话框/配方）、`bf10624`（12 算子 golden + 样式收口）、`43fa0c8`（预览）。
+
+### 14.7 2026-11-13 实时录制收口与计划复核
+
+已落地：
+- `StreamRecorder` 独立于 `LiveSession`：有界队列（4096 批 / 32 MiB）、后台写线程、磁盘慢时整批丢弃并计数；默认目录 `QStandardPaths::AppDataLocation/recordings`，不可写回退 `/tmp/plotscope-recordings`。
+- 三种格式：CSV（`time,channel,value`）、MCAP（每采样点 JSON，`plotscope/value` schema 标记）、RAW（PSRAW1 原始字节）。
+- `PsSourceSink` 增加可选 `raw_batch`，ABI 6；MAVLink/OEM7 raw 字节优先交宿主，未接宿主时保留插件自带 `raw_path`。
+- `DataInputDialog` 录制格式下拉框；`MainWindow` 按 `__record_format` 启动；配置 JSON 传入 raw header。
+- `data_load_mcap` 按 `schema.name == plotscope/value` 还原单值通道，普通 MCAP 的 `{"value":x}` 不再被误判。
+- 测试：`ctest` 14/14；新增 `test_stream_recorder`；标准 Python `mcap` reader 可读录制文件。
+- 提交：`6f56ca9 feat(app): 实时数据流统一录制 StreamRecorder（CSV/MCAP/RAW）`。
+
+仍未完成：
+- 多 parse 运行时；OEM7 raw 的 schema_blob；`LiveSession` 的暂停/继续只影响 UI 刷新，不暂停插件轮询。
+- GUI 冒烟未做（云主机无桌面会话）；raw 回放端到端未实测。
+- MCAP writer 无 chunk/summary/索引，标准工具可读但大文件索引性能未验证。
 ---
 
 ## 附录 A：必须守住的不变量（摘 11 条）
