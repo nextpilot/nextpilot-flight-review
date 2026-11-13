@@ -642,12 +642,12 @@ QWidget *MainWindow::createRibbon()
     // 收缩：右下角 chevron + 双击页签，都能把面板收起只留页签行
     ribbon->showMinimumModeButton(true);
     ribbon->setTabDoubleClickToMinimumMode(true);
-    ribbon->setPanelTitleHeight(12);
+    ribbon->setPanelTitleHeight(14);
     // 分组标题：vendored 布局把标题画在面板底边内，category 高度必须把它算进去
     ribbon->setEnableShowPanelTitle(true);
     ribbon->setPanelToolButtonIconSize(QSize(18, 18), QSize(26, 26));
     ribbon->setPanelSpacing(3);
-    ribbon->setCategoryHeight(70, true); // 图标 23 + 内边距 + 分组标题 12
+    ribbon->setCategoryHeight(78, true); // 图标 23 + 内边距 + 分组标题 14，留出基线余量
 
     // 大按钮同样只留图标：分组标题已说明用途，图标下再叠一行字就是原型里最挤的部分
     auto addLarge = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
