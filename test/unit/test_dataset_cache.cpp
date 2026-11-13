@@ -40,11 +40,17 @@ int main()
     assert(ch->value[1] == 20.0);
     ps_dataset_free(hit);
 
-    // 源文件变化 => 缓存失效
+    const QString params = QStringLiteral("[{\"name\":\"TEST\",\"value\":\"42\"}]");
+    assert(DatasetCache::saveParams(source, "data_loader_csv", "", params));
+    assert(DatasetCache::loadParams(source, "data_loader_csv", "") == params);
+    assert(DatasetCache::loadParams(source, "data_loader_csv", "{\"x\":1}").isEmpty());
+
+    // 源文件变化 => 数据集和参数缓存同时失效
     assert(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
     f.write("source-v2-longer");
     f.close();
     assert(DatasetCache::load(source, "data_loader_csv", "") == nullptr);
+    assert(DatasetCache::loadParams(source, "data_loader_csv", "").isEmpty());
 
     DatasetCache::clear();
     std::cout << "dataset cache ok\n";

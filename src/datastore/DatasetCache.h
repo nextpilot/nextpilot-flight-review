@@ -19,5 +19,10 @@ public:
     static bool save(const QString &sourcePath, const QString &loaderId, const QString &opts,
                      const PsDataset *ds);
 
+    // 参数表与数据面同 key，单独小文件；源文件 size/mtime 变化同样失效。
+    static QString loadParams(const QString &sourcePath, const QString &loaderId, const QString &opts);
+    static bool saveParams(const QString &sourcePath, const QString &loaderId, const QString &opts,
+                           const QString &json);
+
     static void clear();
 };

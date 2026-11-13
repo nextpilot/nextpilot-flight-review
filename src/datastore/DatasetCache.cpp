@@ -15,6 +15,8 @@ namespace {
 
 constexpr quint32 kMagic = 0x50534331u; // PSC1
 constexpr quint32 kVersion = 1u;
+constexpr quint32 kParamsMagic = 0x50535031u; // PSP1
+constexpr quint32 kParamsVersion = 1u;
 constexpr quint64 kMaxCacheBytes = 4ull * 1024 * 1024 * 1024;
 constexpr quint32 kMaxPoints = 50'000'000u;
 
@@ -29,14 +31,27 @@ QString DatasetCache::cacheDir()
     return QDir(base).filePath(QStringLiteral("datasets"));
 }
 
-QString DatasetCache::cachePath(const QString &sourcePath, const QString &loaderId,
-                                const QString &opts)
+namespace {
+
+QString keyHash(const QString &sourcePath, const QString &loaderId, const QString &opts)
 {
     const QString key = QDir::cleanPath(QFileInfo(sourcePath).absoluteFilePath()) + QLatin1Char('|') +
                         loaderId + QLatin1Char('|') + opts;
-    const QString hash =
-        QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex());
-    return QDir(cacheDir()).filePath(hash + QStringLiteral(".pscache"));
+    return QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
+QString paramsCachePath(const QString &sourcePath, const QString &loaderId, const QString &opts)
+{
+    return QDir(DatasetCache::cacheDir()).filePath(keyHash(sourcePath, loaderId, opts) +
+                                                  QStringLiteral(".psparams"));
+}
+
+} // namespace
+
+QString DatasetCache::cachePath(const QString &sourcePath, const QString &loaderId,
+                                const QString &opts)
+{
+    return QDir(cacheDir()).filePath(keyHash(sourcePath, loaderId, opts) + QStringLiteral(".pscache"));
 }
 
 PsDataset *DatasetCache::load(const QString &sourcePath, const QString &loaderId,
@@ -154,7 +169,8 @@ bool DatasetCache::save(const QString &sourcePath, const QString &loaderId, cons
 
     // 简单容量上限：超过 4 GiB 从最旧的开始删。
     QDir dir(cacheDir());
-    QFileInfoList files = dir.entryInfoList({QStringLiteral("*.pscache")}, QDir::Files, QDir::Time);
+    QFileInfoList files = dir.entryInfoList({QStringLiteral("*.pscache"), QStringLiteral("*.psparams")},
+                                           QDir::Files, QDir::Time);
     quint64 total = 0;
     for (const QFileInfo &fi : files)
         total += quint64(fi.size());
@@ -162,6 +178,60 @@ bool DatasetCache::save(const QString &sourcePath, const QString &loaderId, cons
     {
         total -= quint64(files[i].size());
         QFile::remove(files[i].absoluteFilePath());
+    }
+    return true;
+}
+
+QString DatasetCache::loadParams(const QString &sourcePath, const QString &loaderId,
+                                 const QString &opts)
+{
+    const QFileInfo source(sourcePath);
+    if (!source.exists() || !source.isFile())
+        return {};
+    const QString path = paramsCachePath(sourcePath, loaderId, opts);
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    QDataStream in(&f);
+    in.setByteOrder(QDataStream::LittleEndian);
+    in.setVersion(QDataStream::Qt_6_0);
+    quint32 magic = 0, version = 0;
+    qint64 size = 0, mtime = 0;
+    QString json;
+    in >> magic >> version >> size >> mtime >> json;
+    if (in.status() != QDataStream::Ok || magic != kParamsMagic || version != kParamsVersion ||
+        size != source.size() || mtime != source.lastModified().toMSecsSinceEpoch() ||
+        json.isEmpty() || json.size() > 4 * 1024 * 1024)
+    {
+        f.close();
+        QFile::remove(path);
+        return {};
+    }
+    return json;
+}
+
+bool DatasetCache::saveParams(const QString &sourcePath, const QString &loaderId,
+                              const QString &opts, const QString &json)
+{
+    if (json.isEmpty() || json.size() > 4 * 1024 * 1024)
+        return false;
+    const QFileInfo source(sourcePath);
+    if (!source.exists() || !source.isFile())
+        return false;
+    if (!QDir().mkpath(cacheDir()))
+        return false;
+    QSaveFile f(paramsCachePath(sourcePath, loaderId, opts));
+    if (!f.open(QIODevice::WriteOnly))
+        return false;
+    QDataStream out(&f);
+    out.setByteOrder(QDataStream::LittleEndian);
+    out.setVersion(QDataStream::Qt_6_0);
+    out << kParamsMagic << kParamsVersion << qint64(source.size())
+        << qint64(source.lastModified().toMSecsSinceEpoch()) << json;
+    if (out.status() != QDataStream::Ok || !f.commit())
+    {
+        f.cancelWriting();
+        return false;
     }
     return true;
 }

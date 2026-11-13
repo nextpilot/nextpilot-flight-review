@@ -3166,22 +3166,31 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
         if (const PsChannelInfo *ch = ps_dataset_channel(ds, i))
             src.channels.append(ch);
 
-    // 参数：由插件提供 JSON，app 不认格式
+    // 参数：由插件提供 JSON，app 不认格式；可缓存时与数据集同 key 落盘。
     if (plugin->hasParams && plugin->paramsJson)
     {
-        const QString json = plugin->paramsJson(src.path);
+        QString json;
+        if (plugin->cacheable)
+            json = DatasetCache::loadParams(src.path, plugin->cacheNamespace, opts);
+        const bool fromCache = !json.isEmpty();
+        if (!fromCache)
+            json = plugin->paramsJson(src.path);
         if (json.isEmpty())
         {
             log(QStringLiteral("参数表读取失败：%1").arg(plugin->id));
         }
         else
         {
+            if (!fromCache && plugin->cacheable)
+                DatasetCache::saveParams(src.path, plugin->cacheNamespace, opts, json);
             for (const QJsonValue &v : QJsonDocument::fromJson(json.toUtf8()).array())
             {
                 const QJsonObject o = v.toObject();
                 src.params.append({o.value(QStringLiteral("name")).toString(),
                                     o.value(QStringLiteral("value")).toString()});
             }
+            if (fromCache)
+                log(QStringLiteral("参数缓存命中：%1").arg(fi.fileName()));
         }
     }
 
