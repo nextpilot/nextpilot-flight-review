@@ -4,7 +4,7 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-pub const PS_PLUGIN_ABI_VERSION: u32 = 5;
+pub const PS_PLUGIN_ABI_VERSION: u32 = 6;
 pub const PS_HOST_API_VERSION: u32 = 1;
 pub const PS_FAMILY_DATA_LOADER: u32 = 1;
 pub const PS_FAMILY_DATA_SOURCE: u32 = 2;
@@ -109,6 +109,16 @@ pub struct PsSourceSink {
         unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, *const f64, *const f64, u32) -> i32,
     >,
     pub event: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> i32>,
+    pub raw_batch: Option<
+        unsafe extern "C" fn(
+            *mut c_void,
+            *const c_char,
+            *const c_char,
+            i64,
+            *const u8,
+            u32,
+        ) -> i32,
+    >,
 }
 
 pub type OpenFn = unsafe extern "C" fn(

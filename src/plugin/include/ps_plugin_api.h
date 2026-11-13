@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define PS_PLUGIN_ABI_VERSION 5u
+#define PS_PLUGIN_ABI_VERSION 6u
 #define PS_HOST_API_VERSION 1u
 #define PS_DATA_INPUT_PROTOCOL_VERSION 3u
 
@@ -86,6 +86,9 @@ typedef struct PsSourceSink {
     int32_t (*channel_batch)(void *ctx, const char *name, const char *unit,
                              const double *time_s, const double *value, uint32_t count);
     int32_t (*event)(void *ctx, const char *topic, const char *payload_json);
+    /* 可选：插件把原始字节交给宿主统一录制。topic/encoding 用于回放路由。 */
+    int32_t (*raw_batch)(void *ctx, const char *topic, const char *encoding,
+                         int64_t timestamp_ns, const uint8_t *data, uint32_t size);
 } PsSourceSink;
 
 /* ---- 统一数据输入 ABI（PJ4 形状，PlotScope 宿主服务） --------------------

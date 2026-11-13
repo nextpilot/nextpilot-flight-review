@@ -127,7 +127,9 @@ private:
     QListWidget *m_parserList = nullptr;
     QVBoxLayout *m_parserLayout = nullptr;
 
+    QWidget *m_recordRow = nullptr;
     QCheckBox *m_record = nullptr;
+    QComboBox *m_recordFormat = nullptr;
     QLabel *m_summary = nullptr;
     QTableWidget *m_preview = nullptr;
     QLabel *m_warn = nullptr;

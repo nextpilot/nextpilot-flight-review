@@ -2,14 +2,15 @@
 
 #include "ps_plugin_api.h"
 #include "ps_kernel.h"
+#include "live/record/StreamRecorder.h"
 
-#include <QFile>
 #include <QString>
-#include <QTextStream>
 #include <QVector>
 
-// 实时源实例的宿主侧缓冲与记录器。缓冲本身由 kernel 的 ps-stream 持有，
-// app 只负责启停、UI 刷新和落盘策略。
+#include <memory>
+
+// 实时源实例的宿主侧缓冲与分发。本身不做文件存储，
+// 录制交给独立的 StreamRecorder，便于 CSV / MCAP / RAW 统一。
 class LiveSession
 {
 public:
@@ -26,12 +27,15 @@ public:
     QVector<const PsChannelInfo *> channels() const;
     const PsSourceSink *sink() const { return &m_sink; }
 
-    bool startRecording(QString *path, QString *err);
+    bool startRecording(StreamRecorder::Format format, const QString &configJson,
+                        QString *path, QString *err);
     void stopRecording();
-    bool recording() const { return m_record.isOpen(); }
+    bool recording() const { return m_recorder && m_recorder->recording(); }
     QString recordPath() const { return m_recordPath; }
+    qint64 droppedBatches() const { return m_recorder ? m_recorder->droppedBatches() : 0; }
 
     int totalSamples() const { return m_totalSamples; }
+    qint64 rawBytes() const { return m_rawBytes; }
     bool overflow() const { return m_overflow; }
     bool changed() const { return m_changed; }
     void clearChanged() { m_changed = false; }
@@ -40,19 +44,20 @@ public:
 private:
     static int32_t onChannel(void *ctx, const char *name, const char *unit,
                              const double *time_s, const double *value, uint32_t count);
+    static int32_t onRaw(void *ctx, const char *topic, const char *encoding,
+                         int64_t timestamp_ns, const uint8_t *data, uint32_t size);
     static int32_t onEvent(void *ctx, const char *topic, const char *payload_json);
     const PsChannelInfo *channelByName(const QString &name) const;
-    void appendRecord(const PsChannelInfo &ch, uint32_t from, uint32_t count);
 
     QString m_pluginId;
     QString m_label;
     PsStream *m_stream = nullptr;
     PsSourceSink m_sink{};
-    QFile m_record;
-    QTextStream m_out;
+    std::unique_ptr<StreamRecorder> m_recorder;
     QString m_recordPath;
     QString m_lastEvent;
     int m_totalSamples = 0;
+    qint64 m_rawBytes = 0;
     bool m_overflow = false;
     bool m_changed = false;
 };

@@ -42,15 +42,23 @@ void addSample(const QString &name, double t, double v,
 }
 
 void flattenJson(const QJsonValue &value, const QString &topic, const QString &path, double t,
-                 QHash<QString, int> &index, std::vector<PsChannelData> &channels)
+                 QHash<QString, int> &index, std::vector<PsChannelData> &channels,
+                 bool plainValue)
 {
     const QString full = path.isEmpty() ? topic : (topic.isEmpty() ? path : topic + "/" + path);
     if (value.isObject())
     {
         const QJsonObject obj = value.toObject();
+        // PlotScope StreamRecorder 写的单值消息：{"value": x}，topic 就是通道名。
+        if (plainValue && path.isEmpty() && !topic.isEmpty() && obj.size() == 1 &&
+            obj.contains(QStringLiteral("value")))
+        {
+            flattenJson(obj.value(QStringLiteral("value")), topic, QString(), t, index, channels, false);
+            return;
+        }
         for (auto it = obj.begin(); it != obj.end(); ++it)
             flattenJson(it.value(), topic, path.isEmpty() ? it.key() : path + "/" + it.key(),
-                        t, index, channels);
+                        t, index, channels, false);
         return;
     }
     if (value.isArray())
@@ -59,7 +67,7 @@ void flattenJson(const QJsonValue &value, const QString &topic, const QString &p
         for (int i = 0; i < arr.size(); ++i)
             flattenJson(arr.at(i), topic,
                         path.isEmpty() ? QString::number(i) : path + "/" + QString::number(i),
-                        t, index, channels);
+                        t, index, channels, false);
         return;
     }
     if (value.isDouble())
@@ -152,8 +160,15 @@ public:
                 first = false;
             }
             const double t = static_cast<double>(static_cast<int64_t>(message.log_time) - base) / 1e9;
+            bool plainValue = false;
+            if (ch->second.schema_id)
+            {
+                auto schema = reader.schemas().find(ch->second.schema_id);
+                plainValue = schema != reader.schemas().end() && schema->second.name == "plotscope/value";
+            }
             flattenJson(doc.isObject() ? QJsonValue(doc.object()) : QJsonValue(doc.array()),
-                        QString::fromStdString(ch->second.topic), QString(), t, index, channels);
+                        QString::fromStdString(ch->second.topic), QString(), t, index, channels,
+                        plainValue);
             ++decoded;
         }
         if (!re.empty())

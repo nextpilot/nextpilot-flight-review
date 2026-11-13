@@ -404,9 +404,25 @@ void DataInputDialog::initUi()
 
     if (m_sourceMode && m_recordable)
     {
-        m_record = new QCheckBox(QStringLiteral("连接后记录到 CSV（host 侧记录解码通道）"));
+        m_recordRow = new QWidget;
+        auto *recordLayout = new QHBoxLayout(m_recordRow);
+        recordLayout->setContentsMargins(0, 0, 0, 0);
+        recordLayout->setSpacing(8);
+        m_record = new QCheckBox(QStringLiteral("连接后记录"));
         m_record->setChecked(m_initial.value(QStringLiteral("__record")).toBool());
-        root->addWidget(m_record);
+        m_recordFormat = new QComboBox;
+        m_recordFormat->addItem(QStringLiteral("MCAP（解析后）"), QStringLiteral("mcap"));
+        m_recordFormat->addItem(QStringLiteral("RAW（原始字节）"), QStringLiteral("raw"));
+        m_recordFormat->addItem(QStringLiteral("CSV（解码通道）"), QStringLiteral("csv"));
+        const QString format = m_initial.value(QStringLiteral("__record_format")).toString(
+            QStringLiteral("mcap"));
+        const int formatIndex = m_recordFormat->findData(format);
+        m_recordFormat->setCurrentIndex(formatIndex >= 0 ? formatIndex : 0);
+        m_recordFormat->setEnabled(m_record->isChecked());
+        connect(m_record, &QCheckBox::toggled, m_recordFormat, &QWidget::setEnabled);
+        recordLayout->addWidget(m_record);
+        recordLayout->addWidget(m_recordFormat, 1);
+        root->addWidget(m_recordRow);
     }
 
     updateParserVisibility();
@@ -929,7 +945,8 @@ void DataInputDialog::updateParserVisibility()
                            m_parserList->item(i)->checkState() == Qt::Checked))
                 recordable = recordable || m_panes[i].recordable;
         }
-        m_record->setVisible(recordable);
+        if (m_recordRow)
+            m_recordRow->setVisible(recordable);
     }
 }
 
@@ -1104,7 +1121,11 @@ QString DataInputDialog::optionsJson() const
         for (auto it = transport.constBegin(); it != transport.constEnd(); ++it)
             o.insert(it.key(), it.value());
         if (m_record)
+        {
             o.insert(QStringLiteral("__record"), m_record->isChecked());
+            if (m_recordFormat)
+                o.insert(QStringLiteral("__record_format"), m_recordFormat->currentData().toString());
+        }
     }
     return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
 }
@@ -1159,7 +1180,11 @@ QString DataInputDialog::dataInputJson() const
     root.insert(QStringLiteral("transport"), t);
     root.insert(QStringLiteral("parsers"), parsers);
     if (m_record)
+    {
         root.insert(QStringLiteral("record"), m_record->isChecked());
+        if (m_recordFormat)
+            root.insert(QStringLiteral("record_format"), m_recordFormat->currentData().toString());
+    }
     return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact));
 }
 

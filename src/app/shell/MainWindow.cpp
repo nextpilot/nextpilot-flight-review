@@ -2205,13 +2205,16 @@ void MainWindow::connectLiveSource(const QString &pluginId)
     if (dlg.selectedParserCount() > 1)
         log(QStringLiteral("多解析器配置已保存；当前连接仅启动 %1").arg(sp->label));
     const QString config = dlg.configJson();
+    const QJsonObject liveConfig = QJsonDocument::fromJson(config.toUtf8()).object();
 
     auto session = std::make_shared<LiveSession>(sp->id, sp->label);
-    if (QJsonDocument::fromJson(config.toUtf8()).object().value(QStringLiteral("__record")).toBool())
+    if (liveConfig.value(QStringLiteral("__record")).toBool())
     {
         QString path, err;
-        if (session->startRecording(&path, &err))
-            log(QStringLiteral("实时记录：%1").arg(path));
+        const auto format = StreamRecorder::parseFormat(
+            liveConfig.value(QStringLiteral("__record_format")).toString());
+        if (session->startRecording(format, config, &path, &err))
+            log(QStringLiteral("实时记录（%1）：%2").arg(StreamRecorder::formatLabel(format), path));
         else
             QMessageBox::warning(this, QStringLiteral("记录"), err);
     }
@@ -2277,6 +2280,7 @@ void MainWindow::configureLiveSource(SourceData *src)
     if (dlg.exec() != QDialog::Accepted)
         return;
     const QString config = dlg.configJson();
+    const QJsonObject liveConfig = QJsonDocument::fromJson(config.toUtf8()).object();
 
     closeLiveSource(src);
     for (auto *c : findChildren<CanvasWidget *>())
@@ -2289,11 +2293,13 @@ void MainWindow::configureLiveSource(SourceData *src)
     if (src->id == m_activeSource)
         m_srcChannels.clear();
 
-    if (QJsonDocument::fromJson(config.toUtf8()).object().value(QStringLiteral("__record")).toBool())
+    if (liveConfig.value(QStringLiteral("__record")).toBool())
     {
         QString path, err;
-        if (src->liveSession->startRecording(&path, &err))
-            log(QStringLiteral("实时记录：%1").arg(path));
+        const auto format = StreamRecorder::parseFormat(
+            liveConfig.value(QStringLiteral("__record_format")).toString());
+        if (src->liveSession->startRecording(format, config, &path, &err))
+            log(QStringLiteral("实时记录（%1）：%2").arg(StreamRecorder::formatLabel(format), path));
         else
             QMessageBox::warning(this, QStringLiteral("记录"), err);
     }

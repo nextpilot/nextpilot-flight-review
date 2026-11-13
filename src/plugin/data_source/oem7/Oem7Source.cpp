@@ -287,7 +287,16 @@ double nowSeconds(const OemState *st)
 
 void recordRaw(OemState *st, const QByteArray &in)
 {
-    if (!st->rawWriter.isOpen() || st->rawDropped || in.isEmpty())
+    if (in.isEmpty())
+        return;
+    if (st->sink.raw_batch)
+    {
+        st->sink.raw_batch(st->sink.ctx, "oem7", "oem7", nowNs(),
+                           reinterpret_cast<const uint8_t *>(in.constData()),
+                           static_cast<uint32_t>(in.size()));
+        return;
+    }
+    if (!st->rawWriter.isOpen() || st->rawDropped)
         return;
     ps::capture::Record record;
     record.timestamp_ns = nowNs();

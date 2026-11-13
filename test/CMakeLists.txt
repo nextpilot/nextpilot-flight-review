@@ -54,6 +54,17 @@ if(TARGET ps_data_load_mcap)
   add_test(NAME mcap_loader COMMAND test_mcap_loader)
 endif()
 
+if(TARGET ps_live AND TARGET ps_data_load_mcap)
+  add_executable(test_stream_recorder unit/test_stream_recorder.cpp)
+  target_include_directories(test_stream_recorder PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/plugin/include
+    ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/common
+    ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/mcap)
+  target_link_libraries(test_stream_recorder PRIVATE ps_live ps_data_load_mcap)
+  add_test(NAME stream_recorder COMMAND test_stream_recorder)
+endif()
+
 if(TARGET ps_data_source_mavlink)
   find_package(Qt6 REQUIRED COMPONENTS Network)
   add_executable(test_mavlink_source unit/test_mavlink_source.cpp)

@@ -1,22 +1,6 @@
 #include "live/LiveSession.h"
 
-#include <QDateTime>
-#include <QDir>
-#include <QFileInfo>
-#include <QStandardPaths>
-
-#include <cmath>
-
-namespace {
-
-QString csvField(QString s)
-{
-    s.replace(QLatin1Char(','), QLatin1Char('_'));
-    s.replace(QLatin1Char('\n'), QLatin1Char('_'));
-    return s;
-}
-
-} // namespace
+#include <utility>
 
 LiveSession::LiveSession(QString pluginId, QString label)
     : m_pluginId(std::move(pluginId)), m_label(std::move(label)),
@@ -62,6 +46,11 @@ int32_t LiveSession::onChannel(void *ctx, const char *name, const char *unit,
     auto *self = static_cast<LiveSession *>(ctx);
     if (!self || !name || !name[0] || !time_s || !value || count == 0)
         return 1;
+
+    // 录制直接收原始批次，不依赖 ring 里是否还保留这段数据。
+    if (self->m_recorder)
+        self->m_recorder->writeChannelBatch(name, unit ? unit : "", time_s, value, count);
+
     const QString channelName = QString::fromUtf8(name);
     const PsChannelInfo *beforeInfo = self->channelByName(channelName);
     const uint32_t before = beforeInfo ? beforeInfo->point_count : 0;
@@ -71,14 +60,22 @@ int32_t LiveSession::onChannel(void *ctx, const char *name, const char *unit,
     const uint32_t appended = after - before;
     self->m_totalSamples += static_cast<int>(appended);
     if (appended > 0)
-    {
         self->m_changed = true;
-        if (self->m_record.isOpen())
-            self->appendRecord(*afterInfo, before, appended);
-    }
     if (rc != 0 || appended < count)
         self->m_overflow = true;
     return rc;
+}
+
+int32_t LiveSession::onRaw(void *ctx, const char *topic, const char *encoding,
+                           int64_t timestamp_ns, const uint8_t *data, uint32_t size)
+{
+    auto *self = static_cast<LiveSession *>(ctx);
+    if (!self || !topic)
+        return 1;
+    self->m_rawBytes += static_cast<qint64>(size);
+    if (self->m_recorder)
+        self->m_recorder->writeRaw(topic, encoding ? encoding : "raw", timestamp_ns, data, size);
+    return 0;
 }
 
 int32_t LiveSession::onEvent(void *ctx, const char *topic, const char *payload_json)
@@ -92,38 +89,18 @@ int32_t LiveSession::onEvent(void *ctx, const char *topic, const char *payload_j
     return 0;
 }
 
-void LiveSession::appendRecord(const PsChannelInfo &ch, uint32_t from, uint32_t count)
-{
-    for (uint32_t i = from; i < from + count && i < ch.point_count; ++i)
-        m_out << QString::number(ch.time[i], 'g', 10) << ',' << csvField(QString::fromUtf8(ch.name))
-              << ',' << QString::number(ch.value[i], 'g', 10) << '\n';
-}
-
-bool LiveSession::startRecording(QString *path, QString *err)
+bool LiveSession::startRecording(StreamRecorder::Format format, const QString &configJson,
+                                 QString *path, QString *err)
 {
     stopRecording();
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
-                        QStringLiteral("/recordings");
-    if (!QDir().mkpath(dir))
-    {
-        if (err)
-            *err = QStringLiteral("无法创建记录目录：%1").arg(dir);
+    auto recorder = std::make_unique<StreamRecorder>();
+    QString recordPath;
+    if (!recorder->start(format, m_pluginId, m_label, configJson, &recordPath, err))
         return false;
-    }
-    const QString base = QStringLiteral("%1-%2.csv")
-                             .arg(csvField(m_pluginId),
-                                  QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
-    m_recordPath = QDir(dir).filePath(base);
-    m_record.setFileName(m_recordPath);
-    if (!m_record.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
-    {
-        if (err)
-            *err = QStringLiteral("无法创建记录文件：%1").arg(m_recordPath);
-        m_recordPath.clear();
-        return false;
-    }
-    m_out.setDevice(&m_record);
-    m_out << "time,channel,value\n";
+    m_recorder = std::move(recorder);
+    m_recordPath = recordPath;
+    if (format == StreamRecorder::Format::Raw)
+        m_sink.raw_batch = &LiveSession::onRaw;
     if (path)
         *path = m_recordPath;
     return true;
@@ -131,8 +108,11 @@ bool LiveSession::startRecording(QString *path, QString *err)
 
 void LiveSession::stopRecording()
 {
-    if (!m_record.isOpen())
-        return;
-    m_out.flush();
-    m_record.close();
+    m_sink.raw_batch = nullptr;
+    if (m_recorder)
+    {
+        m_recorder->stop();
+        m_recorder.reset();
+    }
+    m_recordPath.clear();
 }

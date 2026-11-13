@@ -423,7 +423,13 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
         QByteArray dgram;
         dgram.resize(static_cast<int>(st->socket->pendingDatagramSize()));
         st->socket->readDatagram(dgram.data(), dgram.size());
-        if (st->rawWriter.isOpen() && !st->rawDropped)
+        if (st->sink.raw_batch)
+        {
+            st->sink.raw_batch(st->sink.ctx, "mavlink", "mavlink", nowNs(),
+                               reinterpret_cast<const uint8_t *>(dgram.constData()),
+                               static_cast<uint32_t>(dgram.size()));
+        }
+        else if (st->rawWriter.isOpen() && !st->rawDropped)
         {
             ps::capture::Record record;
             record.timestamp_ns = nowNs();

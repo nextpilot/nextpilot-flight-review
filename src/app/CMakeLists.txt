@@ -3,6 +3,23 @@ find_package(Qt6 REQUIRED COMPONENTS Network)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
+# 实时会话与录制不依赖 Widgets，单独成库，便于测试。
+add_library(ps_live STATIC
+  live/LiveSession.h
+  live/LiveSession.cpp
+  live/record/StreamRecorder.h
+  live/record/StreamRecorder.cpp
+  live/record/McapWriter.h
+  live/record/McapWriter.cpp
+)
+target_include_directories(ps_live PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/src/plugin/include
+  ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/common
+)
+target_link_libraries(ps_live PUBLIC Qt6::Core ps_kernel ps_loader_common)
+
 add_executable(plotscope_app
   main.cpp
   shell/MainWindow.h
@@ -14,8 +31,6 @@ add_executable(plotscope_app
   data_input/DataInputDialog.cpp
   plugin_host/DialogEngine.h
   plugin_host/DialogEngine.cpp
-  live/LiveSession.h
-  live/LiveSession.cpp
   device/DeviceDebugDialog.h
   device/DeviceDebugDialog.cpp
   shell/Theme.h
@@ -35,7 +50,7 @@ target_include_directories(plotscope_app PRIVATE
   ${PROJECT_SOURCE_DIR}/src/plugin/include
 )
 target_link_libraries(plotscope_app PRIVATE
-  Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_plugin_host ps_cache
+  Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_plugin_host ps_cache ps_live
   ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_load_mcap
   ps_data_source_sim ps_data_source_mavlink ps_data_source_oem7
 )
