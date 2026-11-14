@@ -5,6 +5,8 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "protocol/ProtocolDocument.h"
+
 class QPlainTextEdit;
 class QTableWidget;
 class QLineEdit;
@@ -78,6 +80,8 @@ private:
     bool m_seqMode = false;
     int m_seqCurrentVariant = -1;
     QJsonArray m_seqVariantData;
+    ps::protocol::ProtocolDocument m_doc;
+    bool m_docValid = false;
     QLineEdit *m_name = nullptr;
     QComboBox *m_frameKind = nullptr;
     QSpinBox *m_frameSize = nullptr;

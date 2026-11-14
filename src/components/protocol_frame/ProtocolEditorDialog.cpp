@@ -896,10 +896,10 @@ void ProtocolEditorDialog::rebuildJsonFromDesign()
         o.remove(QStringLiteral("variants"));
     }
 
-    ps::protocol::ProtocolDocument model;
     std::string modelErr;
-    if (ps::protocol::parseDocument(o, model, modelErr))
-        o = ps::protocol::toJson(model);
+    m_docValid = ps::protocol::parseDocument(o, m_doc, modelErr);
+    if (m_docValid)
+        o = ps::protocol::toJson(m_doc);
     m_syncing = true;
     m_json->setPlainText(QJsonDocument(o).toJson(QJsonDocument::Indented));
     m_syncing = false;
@@ -1051,6 +1051,51 @@ void ProtocolEditorDialog::rebuildLua()
     m_lua->setPlainText(lines.join(QLatin1Char('\n')));
 }
 
+
+namespace {
+
+uint64_t readRaw(const QByteArray &frame, int off, int bytes, bool be)
+{
+    uint64_t v = 0;
+    for (int i = 0; i < bytes; ++i)
+    {
+        const uint8_t b = static_cast<uint8_t>(frame.at(off + (be ? bytes - 1 - i : i)));
+        if (be)
+            v = (v << 8) | b;
+        else
+            v |= static_cast<uint64_t>(b) << (8 * i);
+    }
+    return v;
+}
+
+double readTyped(const QByteArray &frame, int off, const ps::protocol::TypeInfo &ti, bool be)
+{
+    const int bytes = static_cast<int>(ti.size);
+    if (ti.type == ps::protocol::FType::F32 && bytes == 4)
+    {
+        const uint32_t bits = static_cast<uint32_t>(readRaw(frame, off, 4, be));
+        float f = 0.0f;
+        std::memcpy(&f, &bits, sizeof(f));
+        return static_cast<double>(f);
+    }
+    if (ti.type == ps::protocol::FType::F64 && bytes == 8)
+    {
+        const uint64_t bits = readRaw(frame, off, 8, be);
+        double d = 0.0;
+        std::memcpy(&d, &bits, sizeof(d));
+        return d;
+    }
+    const uint64_t raw = readRaw(frame, off, bytes, be);
+    if (ti.sign && bytes < 8)
+    {
+        const uint64_t sign = 1ull << (bytes * 8 - 1);
+        return static_cast<double>(static_cast<int64_t>((raw ^ sign) - sign));
+    }
+    return static_cast<double>(raw);
+}
+
+} // namespace
+
 void ProtocolEditorDialog::tryFrame()
 {
     const QJsonObject t = currentTemplate();
@@ -1068,39 +1113,65 @@ void ProtocolEditorDialog::tryFrame()
         return;
     }
 
-    if (t.contains(QStringLiteral("segments")))
+    ps::protocol::ProtocolDocument doc;
+    std::string parseErr;
+    if (!ps::protocol::parseDocument(t, doc, parseErr))
+    {
+        m_result->setText(QStringLiteral("协议模型无效：%1").arg(QString::fromStdString(parseErr)));
+        return;
+    }
+    if (!doc.segments.empty())
     {
         QStringList lines;
+        ps::protocol::EvalCtx ctx;
         int offset = 0;
-        for (const QJsonValue &vv : t.value(QStringLiteral("segments")).toArray())
+        for (const auto &seg : doc.segments)
         {
-            const QJsonObject seg = vv.toObject();
-            const bool literal = seg.value(QStringLiteral("size")).isDouble();
-            const double n = literal ? seg.value(QStringLiteral("size")).toDouble() : 1.0;
-            const QString type = seg.value(QStringLiteral("type")).toString(QStringLiteral("u8"));
-            int es = 1;
-            if (type.contains(QStringLiteral("16"))) es = 2;
-            else if (type.contains(QStringLiteral("32")) || type.contains(QStringLiteral("f32"))) es = 4;
-            else if (type.contains(QStringLiteral("64")) || type.contains(QStringLiteral("f64"))) es = 8;
-            if (!literal)
+            double n = 0;
+            std::string evalErr;
+            if (!ps::protocol::evalExpr(seg.sizeExpr, ctx, n, evalErr))
             {
-                lines << QStringLiteral("%1 @ %2  变长(%3)")
-                             .arg(seg.value(QStringLiteral("name")).toString())
+                lines << QStringLiteral("%1 @ %2  长度求值失败：%3")
+                             .arg(QString::fromStdString(seg.name))
                              .arg(offset)
-                             .arg(seg.value(QStringLiteral("size")).toString());
+                             .arg(QString::fromStdString(evalErr));
                 break;
             }
             const int count = static_cast<int>(n);
-            const int bytes = count * es;
-            QString raw;
-            if (offset + bytes <= frame.size())
-                raw = QString::fromLatin1(frame.mid(offset, std::min(bytes, 8)).toHex(' ').toUpper());
-            lines << QStringLiteral("%1 @ %2  %3 元素 / %4 B  %5")
-                         .arg(seg.value(QStringLiteral("name")).toString())
-                         .arg(offset)
-                         .arg(count)
-                         .arg(bytes)
-                         .arg(raw);
+            const int bytes = count * static_cast<int>(seg.type.size);
+            if (count < 0 || bytes < 0 || offset + bytes > frame.size())
+            {
+                lines << QStringLiteral("%1 @ %2  需要 %3 B，帧剩余 %4 B")
+                             .arg(QString::fromStdString(seg.name))
+                             .arg(offset)
+                             .arg(bytes)
+                             .arg(frame.size() - offset);
+                break;
+            }
+            if (seg.type.type == ps::protocol::FType::STR)
+            {
+                ctx.strings[seg.name] = std::string(frame.mid(offset, count).constData());
+                ctx.values[seg.name] = {static_cast<double>(count)};
+                lines << QStringLiteral("%1 @ %2  str / %3 B  %4")
+                             .arg(QString::fromStdString(seg.name))
+                             .arg(offset)
+                             .arg(bytes)
+                             .arg(QString::fromUtf8(frame.mid(offset, std::min(count, 32))));
+            }
+            else
+            {
+                std::vector<double> vals;
+                for (int i = 0; i < count; ++i)
+                    vals.push_back(readTyped(frame, offset + i * static_cast<int>(seg.type.size), seg.type, seg.bigEndian));
+                ctx.values[seg.name] = vals;
+                QString raw = QString::fromLatin1(frame.mid(offset, std::min(bytes, 8)).toHex(' ').toUpper());
+                lines << QStringLiteral("%1 @ %2  %3 元素 / %4 B  %5")
+                             .arg(QString::fromStdString(seg.name))
+                             .arg(offset)
+                             .arg(count)
+                             .arg(bytes)
+                             .arg(raw);
+            }
             offset += bytes;
         }
         m_result->setText(lines.join(QStringLiteral("\n")));
@@ -1544,10 +1615,10 @@ void ProtocolEditorDialog::refreshSeqFromJson()
     QJsonObject o = currentTemplate();
     if (o.isEmpty() || !o.contains(QStringLiteral("segments")))
         return;
-    ps::protocol::ProtocolDocument model;
     std::string modelErr;
-    if (ps::protocol::parseDocument(o, model, modelErr))
-        o = ps::protocol::toJson(model);
+    m_docValid = ps::protocol::parseDocument(o, m_doc, modelErr);
+    if (m_docValid)
+        o = ps::protocol::toJson(m_doc);
     m_syncing = true;
     m_seqName->setText(o.value(QStringLiteral("name")).toString());
     m_seqDesc->setText(o.value(QStringLiteral("description")).toString());
@@ -1709,10 +1780,10 @@ void ProtocolEditorDialog::rebuildSeqJson()
         o.insert(QStringLiteral("series"), series);
     }
 
-    ps::protocol::ProtocolDocument model;
     std::string modelErr;
-    if (ps::protocol::parseDocument(o, model, modelErr))
-        o = ps::protocol::toJson(model);
+    m_docValid = ps::protocol::parseDocument(o, m_doc, modelErr);
+    if (m_docValid)
+        o = ps::protocol::toJson(m_doc);
     m_syncing = true;
     m_json->setPlainText(QJsonDocument(o).toJson(QJsonDocument::Indented));
     m_syncing = false;
