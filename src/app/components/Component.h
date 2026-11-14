@@ -41,6 +41,7 @@ struct RibbonPanel
 {
     QString title;
     QVector<RibbonItem> items;
+    QString widget; // 宿主内建控件 ID：sourceGallery / plotGallery / layoutPicker / viewToggles
 };
 
 struct RibbonContribution

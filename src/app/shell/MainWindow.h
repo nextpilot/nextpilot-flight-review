@@ -10,6 +10,9 @@
 
 struct PsDataset;
 struct PsChannelInfo;
+class SARibbonBar;
+class SARibbonPanel;
+
 class LiveSession;
 class CanvasWidget;
 class QSplitter;
@@ -98,6 +101,7 @@ private:
     QWidget *createRibbon();
     void registerCommands();
     void createPlotPage(const QString &kind);
+    void buildRibbonWidget(SARibbonPanel *panel, const QString &id, SARibbonBar *ribbon);
     void createDocks();
     void createPages();
     void log(const QString &text);

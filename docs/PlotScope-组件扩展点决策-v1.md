@@ -57,7 +57,7 @@
 
 1. 命令 ID 化：文件、数据、绘图、脚本、视图入口先从 `MainWindow` lambda 迁到 `CommandRegistry`。**已完成基础入口**；数据页“来源”仍由插件列表动态生成。
 2. 简单页迁移：文件、数据、脚本、视图改为 Ribbon 贡献。**已完成 文件 / 脚本 / 视图**（`ShellComponent`，多面板）；数据页因含来源画廊暂留宿主。
-3. 绘图页单独做宿主 `plotGallery`，再声明挂载。**未完成**。
+3. 绘图页单独做宿主 `plotGallery`，再声明挂载。**已完成**：`plotGallery / layoutPicker / viewToggles` 均为宿主内建控件，由 `ShellComponent` 声明挂载。
 4. Dock 改为 `DockContribution`，宿主统一建容器。**未完成**。
 5. 删除 `MainWindow` 中剩余的 `addCategoryPage` / `addDockWidget` 硬编码。**部分**：文件/脚本/协议/视图页已由贡献生成，数据/绘图页仍手写。
 6. 内置组件与外部插件统一从 manifest 构建 `ContributionIndex`。**未完成**：当前仍手写 `addRibbon/addAction`，Ribbon 页已支持多面板与命令 ID。
@@ -66,6 +66,7 @@
 
 - `ComponentRegistry`、`CustomProtocolComponent`、`PluginComponent`、`ShellComponent` 已存在。
 - 文件、脚本、视图页由 `ShellComponent` 贡献；协议页由 `CustomProtocolComponent` 贡献。
-- 数据页、绘图页仍写死在 `MainWindow`，全部 Dock 也仍写死。
+- 数据页的来源画廊（`sourceGallery`）与绘图页画廊/布局/显示控件也已由 `ShellComponent` 声明挂载；具体控件仍由宿主构建。
+- 全部 Dock 仍写死。
 - `ProtocolDocument` 类型与顺序段编辑器已统一消费该模型。
 - 本文件只记录决策与顺序，不代表组件扩展点重构已完成。

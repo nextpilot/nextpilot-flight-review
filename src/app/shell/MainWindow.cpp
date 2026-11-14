@@ -1432,100 +1432,23 @@ void MainWindow::registerCommands()
     });
 }
 
-QWidget *MainWindow::createRibbon()
+void MainWindow::buildRibbonWidget(SARibbonPanel *panel, const QString &id, SARibbonBar *ribbon)
 {
-    // Ribbon 结构层交给 SARibbon（MIT，vendored 在 src/3dparty/saribbon）：
-    // 页签溢出、键盘导航、面板布局都是它的事；我们只负责配色与命令。
-    auto *ribbon = new SARibbonBar(this);
-    ribbon->setRibbonStyle(SARibbonBar::RibbonStyleLooseSingleRow);
-    // 有 Ribbon 就不要再留一条同名 QMenuBar，两排"文件/数据/绘图"并排是最刺眼的不协调
-    if (auto *mb = menuBar())
-        mb->hide();
-    ribbon->setTitleVisible(false);       // 窗口标题在 titlebar，不占 ribbon 高度
-    // 标题带直接压成 0：留 30px 空行只会把页签往下推，组标题也被挤掉
-    ribbon->setTitleBarHeight(0, true);
-    ribbon->setTabBarHeight(26);
-    // 收缩：右下角 chevron + 双击页签，都能把面板收起只留页签行
-    ribbon->showMinimumModeButton(true);
-    ribbon->setTabDoubleClickToMinimumMode(true);
-    ribbon->setPanelTitleHeight(14);
-    // 分组标题：vendored 布局把标题画在面板底边内，category 高度必须把它算进去
-    ribbon->setEnableShowPanelTitle(true);
-    ribbon->setPanelToolButtonIconSize(QSize(18, 18), QSize(26, 26));
-    ribbon->setPanelSpacing(3);
-    ribbon->setCategoryHeight(78, true); // 图标 23 + 内边距 + 分组标题 14，留出基线余量
-
-    // 大按钮同样只留图标：分组标题已说明用途，图标下再叠一行字就是原型里最挤的部分
-    auto addLarge = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(text, ctx); // 先用全名建 action：图标按 text 查表
-        a->setToolTip(text);
-        a->setProperty("rbIconOnly", true); // Ribbon 以图标为主：文字只留 tooltip
-        QObject::connect(a, &QAction::triggered, ctx, fn);
-        panel->addLargeAction(a);
-    };
-    // 小按钮：只有 1~2 个字才显示文字，其余只留图标 + tooltip（图标 16px 撑得住）
-    auto addSmall = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
+    auto addSmall = [](SARibbonPanel *p, const QString &text, std::function<void()> fn, QObject *ctx) {
         auto *a = new QAction(text, ctx);
         a->setToolTip(text);
         a->setProperty("rbIconOnly", true);
         QObject::connect(a, &QAction::triggered, ctx, fn);
-        panel->addSmallAction(a);
+        p->addSmallAction(a);
+    };
+    auto run = [this](const QString &cmd, const QString &arg = QString()) {
+        return [this, cmd, arg] { m_commands.invoke(cmd, ps::commands::CommandContext{this, arg}); };
     };
 
-    auto run = [this](const QString &id, const QString &arg = QString()) {
-        return [this, id, arg] { m_commands.invoke(id, ps::commands::CommandContext{this, arg}); };
-    };
-
-    // 组件贡献的菜单页：一个页面可拆多个面板；页内动作只写命令 ID。
-    auto renderPage = [&](const QString &title, int order = 1000) -> bool {
-        bool any = false;
-        SARibbonCategory *cat = nullptr;
-        for (const auto &page : m_components.ribbon())
-        {
-            if (page.page != title || page.order > order)
-                continue;
-            if (!cat)
-            {
-                cat = ribbon->addCategoryPage(title);
-                any = true;
-            }
-            const QVector<ps::components::RibbonPanel> panels =
-                page.panels.isEmpty() ? QVector<ps::components::RibbonPanel>{
-                    ps::components::RibbonPanel{page.panel, page.items}} : page.panels;
-            for (const auto &panelSpec : panels)
-            {
-                auto *panel = cat->addPanel(panelSpec.title);
-                for (const auto &item : panelSpec.items)
-                {
-                    auto fn = [this, action = item.action, arg = item.arg] {
-                        if (!m_commands.invoke(action, ps::commands::CommandContext{this, arg}))
-                            m_components.invoke(action, ps::components::ActionContext{this});
-                    };
-                    if (item.large)
-                        addLarge(panel, item.label, fn, this);
-                    else
-                        addSmall(panel, item.label, fn, this);
-                }
-            }
-        }
-        return any;
-    };
-
-    // 文件
-    renderPage(QStringLiteral("文件"));
-
-    // 数据：常用操作在左，来源选择在右；来源库压成一行，弹窗按文件/实时分组
+    if (id == QLatin1String("sourceGallery"))
     {
-        auto *cat = ribbon->addCategoryPage(QStringLiteral("数据"));
-
-        auto *pQuick = cat->addPanel(QStringLiteral("常用"));
-        addLarge(pQuick, QStringLiteral("快速打开"), run(QStringLiteral("data.quickOpen")), this);
-        addSmall(pQuick, QStringLiteral("最近"), run(QStringLiteral("data.recent")), this);
-        addSmall(pQuick, QStringLiteral("导出快照"), run(QStringLiteral("data.exportSnapshot")), this);
-        addSmall(pQuick, QStringLiteral("重载"), run(QStringLiteral("data.reload")), this);
-
-        auto *pSrc = cat->addPanel(QStringLiteral("来源"));
-        auto *srcGallery = pSrc->addGallery(true);
+        
+        auto *srcGallery = panel->addGallery(true);
         QList<QAction *> fileActs;
         QList<QAction *> streamActs;
         auto addSource = [&](const QString &kind, const QString &label, const QString &filter,
@@ -1580,15 +1503,15 @@ QWidget *MainWindow::createRibbon()
             more->hide();
         if (firstGroup)
             srcGallery->setCurrentViewGroup(firstGroup);
-        pSrc->setMaximumWidth(380);
-        if (auto *t = pSrc->titleLabel())
+        panel->setMaximumWidth(380);
+        if (auto *t = panel->titleLabel())
             t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         auto *srcMenu = new PlotMenuPopup(this);
         if (!fileActs.isEmpty())
             srcMenu->addGroup(QStringLiteral("日志文件"), fileActs);
         if (!streamActs.isEmpty())
             srcMenu->addGroup(QStringLiteral("实时源"), streamActs);
-        addSmall(pSrc, QStringLiteral("\u25be"), [this, ribbon, srcGallery, srcMenu] {
+        addSmall(panel, QStringLiteral("\u25be"), [this, ribbon, srcGallery, srcMenu] {
             srcMenu->adjustSize();
             const QPoint anchor = srcGallery->mapToGlobal(QPoint(0, 0));
             const int y = ribbon->mapToGlobal(QPoint(0, ribbon->height())).y() + 8;
@@ -1596,21 +1519,12 @@ QWidget *MainWindow::createRibbon()
             srcMenu->move(x, y);
             srcMenu->show();
         }, this);
+        return;
     }
-
-    // 绘图：页/布局/视图等常用操作在左，图表样式库在右；图表库一行展示，弹窗按曲线/地图/仪表分组
+    if (id == QLatin1String("layoutPicker"))
     {
-        auto *cat = ribbon->addCategoryPage(QStringLiteral("绘图"));
-
-        auto *pPage = cat->addPanel(QStringLiteral("页面"));
-        addLarge(pPage, QStringLiteral("新建页"), run(QStringLiteral("page.new")), this);
-        addLarge(pPage, QStringLiteral("添加画布"), run(QStringLiteral("page.addCanvas")), this);
-        addLarge(pPage, QStringLiteral("向右拆分"), run(QStringLiteral("page.splitHorizontal")), this);
-        addLarge(pPage, QStringLiteral("向下拆分"), run(QStringLiteral("page.splitVertical")), this);
-
-        // 页内布局：MATLAB subplot / PJ 的 m×n
-        auto *pGrid = cat->addPanel(QStringLiteral("画布布局"));
-        auto *layoutBtn = new QToolButton(pGrid);
+        
+        auto *layoutBtn = new QToolButton(panel);
         layoutBtn->setText(QStringLiteral("2×1  \u25be"));
         layoutBtn->setToolTip(QStringLiteral("悬停选择行×列，点击重排当前页画布"));
         layoutBtn->setPopupMode(QToolButton::InstantPopup);
@@ -1630,9 +1544,12 @@ QWidget *MainWindow::createRibbon()
                               ps::commands::CommandContext{this, QStringLiteral("%1,%2").arg(r).arg(c)});
             layoutMenu->close();
         };
-        pGrid->addWidget(layoutBtn, SARibbonPanelItem::Large);
-
-        auto *pView = cat->addPanel(QStringLiteral("显示"));
+        panel->addWidget(layoutBtn, SARibbonPanelItem::Large);
+        return;
+    }
+    if (id == QLatin1String("viewToggles"))
+    {
+        
         auto *aGrid = new QAction(QStringLiteral("网格"), this);
         auto *aBox = new QAction(QStringLiteral("边框"), this);
         auto *aLegend = new QAction(QStringLiteral("图例"), this);
@@ -1653,7 +1570,7 @@ QWidget *MainWindow::createRibbon()
             {aLegend, QStringLiteral("legend")}, {aRubber, QStringLiteral("ruler")},
             {aZoomIn, QStringLiteral("zoom_in")}, {aZoomOut, QStringLiteral("zoom_out")},
             {aAutoY, QStringLiteral("autoy")}, {aReset, QStringLiteral("reset")}};
-        auto *viewBox = new QWidget(pView);
+        auto *viewBox = new QWidget(panel);
         auto *viewRow = new QHBoxLayout(viewBox);
         viewRow->setContentsMargins(0, 0, 0, 0);
         viewRow->setSpacing(4);
@@ -1688,7 +1605,7 @@ QWidget *MainWindow::createRibbon()
         viewRow->addWidget(sep);
         viewRow->addWidget(makeViewGrid(4));
         viewBox->setFixedSize(2 * 26 + 9 + 2 * 26, 2 * 26);
-        pView->addWidget(viewBox, SARibbonPanelItem::Large);
+        panel->addWidget(viewBox, SARibbonPanelItem::Large);
         const QVector<CanvasWidget *> initial = pageCanvases();
         if (!initial.isEmpty())
         {
@@ -1734,13 +1651,16 @@ QWidget *MainWindow::createRibbon()
         connect(aReset, &QAction::triggered, this, [this] {
             for (CanvasWidget *c : pageCanvases()) c->requestAutoY();
         });
-
-        auto *pType = cat->addPanel(QStringLiteral("图表类型"));
-        pType->setExpanding(false);
-        pType->setMaximumWidth(400);
-        if (auto *t = pType->titleLabel())
+        return;
+    }
+    if (id == QLatin1String("plotGallery"))
+    {
+        
+        panel->setExpanding(false);
+        panel->setMaximumWidth(400);
+        if (auto *t = panel->titleLabel())
             t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        auto *plotGallery = pType->addGallery(true);
+        auto *plotGallery = panel->addGallery(true);
         QList<QAction *> curveActs, mapActs, gaugeActs;
         QHash<QString, QAction *> plotActByKind;
         auto addPlot = [&](const QString &kind, const QString &label, const QString &tip,
@@ -1804,7 +1724,7 @@ QWidget *MainWindow::createRibbon()
         plotMenu->addGroup(QStringLiteral("曲线"), curveActs);
         plotMenu->addGroup(QStringLiteral("地图 / 3D"), mapActs);
         plotMenu->addGroup(QStringLiteral("仪表"), gaugeActs);
-        addSmall(pType, QStringLiteral("\u25be"), [this, ribbon, plotGallery, plotMenu] {
+        addSmall(panel, QStringLiteral("\u25be"), [this, ribbon, plotGallery, plotMenu] {
             plotMenu->adjustSize();
             const QPoint anchor = plotGallery->mapToGlobal(QPoint(0, 0));
             const int y = ribbon->mapToGlobal(QPoint(0, ribbon->height())).y() + 8;
@@ -1812,8 +1732,102 @@ QWidget *MainWindow::createRibbon()
             plotMenu->move(x, y);
             plotMenu->show();
         }, this);
-
+        return;
     }
+}
+
+QWidget *MainWindow::createRibbon()
+{
+    // Ribbon 结构层交给 SARibbon（MIT，vendored 在 src/3dparty/saribbon）：
+    // 页签溢出、键盘导航、面板布局都是它的事；我们只负责配色与命令。
+    auto *ribbon = new SARibbonBar(this);
+    ribbon->setRibbonStyle(SARibbonBar::RibbonStyleLooseSingleRow);
+    // 有 Ribbon 就不要再留一条同名 QMenuBar，两排"文件/数据/绘图"并排是最刺眼的不协调
+    if (auto *mb = menuBar())
+        mb->hide();
+    ribbon->setTitleVisible(false);       // 窗口标题在 titlebar，不占 ribbon 高度
+    // 标题带直接压成 0：留 30px 空行只会把页签往下推，组标题也被挤掉
+    ribbon->setTitleBarHeight(0, true);
+    ribbon->setTabBarHeight(26);
+    // 收缩：右下角 chevron + 双击页签，都能把面板收起只留页签行
+    ribbon->showMinimumModeButton(true);
+    ribbon->setTabDoubleClickToMinimumMode(true);
+    ribbon->setPanelTitleHeight(14);
+    // 分组标题：vendored 布局把标题画在面板底边内，category 高度必须把它算进去
+    ribbon->setEnableShowPanelTitle(true);
+    ribbon->setPanelToolButtonIconSize(QSize(18, 18), QSize(26, 26));
+    ribbon->setPanelSpacing(3);
+    ribbon->setCategoryHeight(78, true); // 图标 23 + 内边距 + 分组标题 14，留出基线余量
+
+    // 大按钮同样只留图标：分组标题已说明用途，图标下再叠一行字就是原型里最挤的部分
+    auto addLarge = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
+        auto *a = new QAction(text, ctx); // 先用全名建 action：图标按 text 查表
+        a->setToolTip(text);
+        a->setProperty("rbIconOnly", true); // Ribbon 以图标为主：文字只留 tooltip
+        QObject::connect(a, &QAction::triggered, ctx, fn);
+        panel->addLargeAction(a);
+    };
+    // 小按钮：只有 1~2 个字才显示文字，其余只留图标 + tooltip（图标 16px 撑得住）
+    auto addSmall = [](SARibbonPanel *panel, const QString &text, std::function<void()> fn, QObject *ctx) {
+        auto *a = new QAction(text, ctx);
+        a->setToolTip(text);
+        a->setProperty("rbIconOnly", true);
+        QObject::connect(a, &QAction::triggered, ctx, fn);
+        panel->addSmallAction(a);
+    };
+
+    auto run = [this](const QString &id, const QString &arg = QString()) {
+        return [this, id, arg] { m_commands.invoke(id, ps::commands::CommandContext{this, arg}); };
+    };
+
+    // 组件贡献的菜单页：一个页面可拆多个面板；页内动作只写命令 ID。
+    auto renderPage = [&](const QString &title, int order = 1000) -> bool {
+        bool any = false;
+        SARibbonCategory *cat = nullptr;
+        for (const auto &page : m_components.ribbon())
+        {
+            if (page.page != title || page.order > order)
+                continue;
+            if (!cat)
+            {
+                cat = ribbon->addCategoryPage(title);
+                any = true;
+            }
+            const QVector<ps::components::RibbonPanel> panels =
+                page.panels.isEmpty() ? QVector<ps::components::RibbonPanel>{
+                    ps::components::RibbonPanel{page.panel, page.items}} : page.panels;
+            for (const auto &panelSpec : panels)
+            {
+                auto *panel = cat->addPanel(panelSpec.title);
+                if (!panelSpec.widget.isEmpty())
+                {
+                    buildRibbonWidget(panel, panelSpec.widget, ribbon);
+                    continue;
+                }
+                for (const auto &item : panelSpec.items)
+                {
+                    auto fn = [this, action = item.action, arg = item.arg] {
+                        if (!m_commands.invoke(action, ps::commands::CommandContext{this, arg}))
+                            m_components.invoke(action, ps::components::ActionContext{this});
+                    };
+                    if (item.large)
+                        addLarge(panel, item.label, fn, this);
+                    else
+                        addSmall(panel, item.label, fn, this);
+                }
+            }
+        }
+        return any;
+    };
+
+    // 文件
+    renderPage(QStringLiteral("文件"));
+
+    // 数据
+    renderPage(QStringLiteral("数据"));
+
+    // 绘图
+    renderPage(QStringLiteral("绘图"));
 
     // 脚本
     renderPage(QStringLiteral("脚本"));
@@ -1826,7 +1840,8 @@ QWidget *MainWindow::createRibbon()
 
     for (const auto &page : m_components.ribbon())
     {
-        const QStringList known = {QStringLiteral("文件"), QStringLiteral("脚本"),
+        const QStringList known = {QStringLiteral("文件"), QStringLiteral("数据"),
+                                   QStringLiteral("绘图"), QStringLiteral("脚本"),
                                    QStringLiteral("协议"), QStringLiteral("视图")};
         if (!known.contains(page.page))
             renderPage(page.page);
