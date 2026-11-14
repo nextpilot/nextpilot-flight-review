@@ -970,6 +970,7 @@ public:
 - M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 插件原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
 - M1 CAN：ASC/BLF 加载器新增可选 `dbc` 配置，按 `BO_`/`SG_` 解码为 `CAN<bus>.<message>.<signal>`；留空仍导原始字节。CMake 公共库加 `Dbc.cpp`，测试覆盖 `CAN2.MSG_A.byte0`。
+- M2 GNSS：新增 `data_loader_nmea`，解析 GGA/RMC 为 `nmea.gga.*` / `nmea.rmc.*`，时间归零到首样本；扩展 `.nmea/.txt`。UBX 仍未做。
 - RAW：OEM7 `database.json` 写入 PSRAW1 `schema_blob`。
 - 测试：`ctest` 15/15，新增 `test_script_engine`（`ps.input`、`ps.input(5)` 报错、`step` 聚合）。
 - 启动：`QT_QPA_PLATFORM=offscreen` 运行 8 秒存活；Xvfb 下真实 xcb 窗口启动并截图，非交互冒烟。

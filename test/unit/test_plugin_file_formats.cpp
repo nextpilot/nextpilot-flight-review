@@ -12,6 +12,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ulog(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_apbin(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_asc(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_blf(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_nmea(void);
 
 namespace {
 
@@ -84,6 +85,8 @@ int main()
     if (!loadAndCheck(ps_plugin_entry_data_loader_asc(), fix + "/demo_can.asc", 10))
         return 1;
     if (!loadAndCheck(ps_plugin_entry_data_loader_blf(), fix + "/demo_can.blf", 10))
+        return 1;
+    if (!loadAndCheck(ps_plugin_entry_data_loader_nmea(), fix + "/demo.nmea", 7))
         return 1;
 
     // DBC 模式：0x1A0 的两个字节解成命名信号，而不是 b0..b7 原始字节。
