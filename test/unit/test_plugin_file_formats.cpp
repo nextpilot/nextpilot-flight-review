@@ -125,6 +125,12 @@ int main()
     if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_variable.frames",
                           "{\"protocol\":\"" + fix + "/demo_variable.psproto\"}", 2))
         return 1;
+    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_family.frames",
+                          "{\"protocol\":\"" + fix + "/demo_family.psproto\"}", 2))
+        return 1;
+    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_generic.frames",
+                          "{\"protocol\":\"" + fix + "/demo_generic.psproto\"}", 2))
+        return 1;
 
     // DBC 模式：0x1A0 的两个字节解成命名信号，而不是 b0..b7 原始字节。
     const std::string dbcPath = "/tmp/plotscope-test-can.dbc";

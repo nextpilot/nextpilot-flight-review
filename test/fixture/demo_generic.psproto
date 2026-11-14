@@ -1,0 +1,55 @@
+{
+ "name": "generic_variable",
+ "frame_size": 32,
+ "sync": [
+  {
+   "offset": 1,
+   "value": 170
+  },
+  {
+   "offset": 2,
+   "value": 85
+  }
+ ],
+ "length": {
+  "byte": 3,
+  "bytes": 2,
+  "endian": "big",
+  "includes_header": true,
+  "field": "len"
+ },
+ "fields": [
+  {
+   "name": "len",
+   "byte": 3,
+   "bits": 16,
+   "hidden": true
+  },
+  {
+   "name": "status",
+   "byte": 5,
+   "bits": 8,
+   "equals": 2
+  },
+  {
+   "name": "value",
+   "byte": 6,
+   "bits": 16,
+   "scale": 0.1,
+   "unit": "V"
+  },
+  {
+   "name": "crc",
+   "byte": 18,
+   "bits": 16,
+   "hidden": true,
+   "check": {
+    "type": "crc16",
+    "from": 0,
+    "to": 17,
+    "poly": 4129,
+    "init": 65535
+   }
+  }
+ ]
+}

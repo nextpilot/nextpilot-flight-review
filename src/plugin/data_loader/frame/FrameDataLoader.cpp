@@ -17,6 +17,15 @@
 
 namespace {
 
+struct CrcCheck
+{
+    bool enabled = false;
+    uint32_t from = 0;
+    uint32_t to = 0;
+    uint16_t poly = 0x1021;
+    uint16_t init = 0xFFFF;
+};
+
 struct Field
 {
     std::string name;
@@ -29,6 +38,20 @@ struct Field
     double scale = 1.0;
     double offset = 0.0;
     bool isTime = false;
+    bool hidden = false;
+    bool hasEquals = false;
+    uint64_t equalsValue = 0;
+    bool hasMin = false;
+    bool hasMax = false;
+    double minValue = 0.0;
+    double maxValue = 0.0;
+    CrcCheck check;
+};
+
+struct SyncByte
+{
+    uint32_t offset = 0;
+    uint8_t value = 0;
 };
 
 struct LengthSpec
@@ -38,17 +61,31 @@ struct LengthSpec
     uint32_t bytes = 2;
     bool bigEndian = false;
     bool includesHeader = true;
+    std::string fieldName;
+};
+
+struct Variant
+{
+    uint32_t id = 0;
+    std::string name;
+    std::vector<Field> fields;
 };
 
 struct Template
 {
     uint32_t frameSize = 0;   // 固定帧长；变长帧时为上限
     LengthSpec length;
-    std::vector<uint8_t> sync;
+    std::vector<SyncByte> sync;
+    uint32_t syncSpan = 0;
     std::vector<Field> fields;
     int crcOffset = -1;       // -1 = 不校验
     uint16_t crcPoly = 0x1021;
     uint16_t crcInit = 0xFFFF;
+    bool hasVariants = false;
+    uint32_t msgIdByte = 0;
+    uint32_t msgIdBit = 0;
+    uint32_t msgIdBits = 8;
+    std::vector<Variant> variants;
 };
 
 uint16_t crc16(const uint8_t *data, size_t n, uint16_t poly, uint16_t init)
@@ -62,6 +99,54 @@ uint16_t crc16(const uint8_t *data, size_t n, uint16_t poly, uint16_t init)
                                  : static_cast<uint16_t>(crc << 1);
     }
     return crc;
+}
+
+
+bool parseFieldObject(const QJsonObject &f, Field &fd, std::string &err)
+{
+    fd.name = f.value(QStringLiteral("name")).toString().toStdString();
+    if (fd.name.empty())
+        return true;
+    fd.unit = f.value(QStringLiteral("unit")).toString().toStdString();
+    fd.byte = static_cast<uint32_t>(f.value(QStringLiteral("byte")).toInt());
+    fd.bit = static_cast<uint32_t>(f.value(QStringLiteral("bit")).toInt());
+    fd.bits = static_cast<uint32_t>(f.value(QStringLiteral("bits")).toInt(8));
+    fd.signedInt = f.value(QStringLiteral("signed")).toBool(false);
+    fd.floatVal = f.value(QStringLiteral("float")).toBool(false);
+    fd.scale = f.value(QStringLiteral("scale")).toDouble(1.0);
+    fd.offset = f.value(QStringLiteral("offset")).toDouble(0.0);
+    fd.isTime = f.value(QStringLiteral("time")).toBool(false);
+    fd.hidden = f.value(QStringLiteral("hidden")).toBool(false);
+    if (f.contains(QStringLiteral("equals")))
+    {
+        fd.hasEquals = true;
+        fd.equalsValue = static_cast<uint64_t>(f.value(QStringLiteral("equals")).toDouble());
+    }
+    if (f.contains(QStringLiteral("min")))
+    {
+        fd.hasMin = true;
+        fd.minValue = f.value(QStringLiteral("min")).toDouble();
+    }
+    if (f.contains(QStringLiteral("max")))
+    {
+        fd.hasMax = true;
+        fd.maxValue = f.value(QStringLiteral("max")).toDouble();
+    }
+    const QJsonObject chk = f.value(QStringLiteral("check")).toObject();
+    if (!chk.isEmpty() && chk.value(QStringLiteral("type")).toString() == QLatin1String("crc16"))
+    {
+        fd.check.enabled = true;
+        fd.check.from = static_cast<uint32_t>(chk.value(QStringLiteral("from")).toInt());
+        fd.check.to = static_cast<uint32_t>(chk.value(QStringLiteral("to")).toInt());
+        fd.check.poly = static_cast<uint16_t>(chk.value(QStringLiteral("poly")).toInt(0x1021));
+        fd.check.init = static_cast<uint16_t>(chk.value(QStringLiteral("init")).toInt(0xFFFF));
+    }
+    if (fd.bits == 0 || fd.bits > 64)
+    {
+        err = "字段位宽非法";
+        return false;
+    }
+    return true;
 }
 
 bool parseTemplate(const QByteArray &json, Template &t, std::string &err)
@@ -80,6 +165,7 @@ bool parseTemplate(const QByteArray &json, Template &t, std::string &err)
     {
         t.length.enabled = true;
         t.length.byte = static_cast<uint32_t>(lj.value(QStringLiteral("byte")).toInt(2));
+        t.length.fieldName = lj.value(QStringLiteral("field")).toString().toStdString();
         t.length.bytes = static_cast<uint32_t>(lj.value(QStringLiteral("bytes")).toInt(2));
         t.length.bigEndian = lj.value(QStringLiteral("endian")).toString() == QLatin1String("big");
         t.length.includesHeader = lj.value(QStringLiteral("includes_header")).toBool(true);
@@ -101,8 +187,25 @@ bool parseTemplate(const QByteArray &json, Template &t, std::string &err)
     }
     if (t.length.enabled && !t.frameSize)
         t.frameSize = 4096;
+    int syncIndex = 0;
     for (const QJsonValue &v : o.value(QStringLiteral("sync")).toArray())
-        t.sync.push_back(static_cast<uint8_t>(v.toInt()));
+    {
+        SyncByte sb;
+        if (v.isObject())
+        {
+            const QJsonObject so = v.toObject();
+            sb.offset = static_cast<uint32_t>(so.value(QStringLiteral("offset")).toInt(syncIndex));
+            sb.value = static_cast<uint8_t>(so.value(QStringLiteral("value")).toInt());
+        }
+        else
+        {
+            sb.offset = static_cast<uint32_t>(syncIndex);
+            sb.value = static_cast<uint8_t>(v.toInt());
+        }
+        t.sync.push_back(sb);
+        t.syncSpan = std::max(t.syncSpan, sb.offset + 1);
+        ++syncIndex;
+    }
     const QJsonObject crc = o.value(QStringLiteral("crc16_ccitt")).toObject();
     if (!crc.isEmpty())
     {
@@ -112,31 +215,83 @@ bool parseTemplate(const QByteArray &json, Template &t, std::string &err)
     }
     for (const QJsonValue &v : o.value(QStringLiteral("fields")).toArray())
     {
-        const QJsonObject f = v.toObject();
         Field fd;
-        fd.name = f.value(QStringLiteral("name")).toString().toStdString();
-        if (fd.name.empty())
-            continue;
-        fd.unit = f.value(QStringLiteral("unit")).toString().toStdString();
-        fd.byte = static_cast<uint32_t>(f.value(QStringLiteral("byte")).toInt());
-        fd.bit = static_cast<uint32_t>(f.value(QStringLiteral("bit")).toInt());
-        fd.bits = static_cast<uint32_t>(f.value(QStringLiteral("bits")).toInt(8));
-        fd.signedInt = f.value(QStringLiteral("signed")).toBool(false);
-        fd.floatVal = f.value(QStringLiteral("float")).toBool(false);
-        fd.scale = f.value(QStringLiteral("scale")).toDouble(1.0);
-        fd.offset = f.value(QStringLiteral("offset")).toDouble(0.0);
-        fd.isTime = f.value(QStringLiteral("time")).toBool(false);
-        if (fd.bits == 0 || fd.bits > 64)
+        if (!parseFieldObject(v.toObject(), fd, err))
+            return false;
+        if (!fd.name.empty())
+            t.fields.push_back(fd);
+    }
+    const QJsonObject mid = o.value(QStringLiteral("msgid")).toObject();
+    if (!mid.isEmpty())
+    {
+        t.hasVariants = true;
+        t.msgIdByte = static_cast<uint32_t>(mid.value(QStringLiteral("byte")).toInt());
+        t.msgIdBit = static_cast<uint32_t>(mid.value(QStringLiteral("bit")).toInt());
+        t.msgIdBits = static_cast<uint32_t>(mid.value(QStringLiteral("bits")).toInt(8));
+        const QString fieldName = mid.value(QStringLiteral("field")).toString();
+        if (!fieldName.isEmpty())
         {
-            err = "字段位宽非法";
+            bool found = false;
+            for (const Field &fd : t.fields)
+                if (fd.name == fieldName.toStdString())
+                {
+                    t.msgIdByte = fd.byte;
+                    t.msgIdBit = fd.bit;
+                    t.msgIdBits = fd.bits;
+                    found = true;
+                    break;
+                }
+            if (!found)
+            {
+                err = "msgid.field 未找到";
+                return false;
+            }
+        }
+        for (const QJsonValue &vv : o.value(QStringLiteral("variants")).toArray())
+        {
+            const QJsonObject vo = vv.toObject();
+            Variant var;
+            var.id = static_cast<uint32_t>(vo.value(QStringLiteral("id")).toInt());
+            var.name = vo.value(QStringLiteral("name")).toString().toStdString();
+            var.fields = t.fields;
+            for (const QJsonValue &fv : vo.value(QStringLiteral("fields")).toArray())
+            {
+                Field fd;
+                if (!parseFieldObject(fv.toObject(), fd, err))
+                    return false;
+                if (!fd.name.empty())
+                    var.fields.push_back(fd);
+            }
+            t.variants.push_back(std::move(var));
+        }
+        if (t.variants.empty())
+        {
+            err = "variants 为空";
             return false;
         }
-        t.fields.push_back(fd);
     }
-    if (t.fields.empty())
+    if (t.fields.empty() && t.variants.empty())
     {
         err = "fields 为空";
         return false;
+    }
+    if (t.length.enabled && !t.length.fieldName.empty())
+    {
+        bool found = false;
+        for (const Field &fd : t.fields)
+        {
+            if (fd.name == t.length.fieldName)
+            {
+                t.length.byte = fd.byte;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            err = "length.field 未找到";
+            return false;
+        }
     }
     return true;
 }
@@ -217,14 +372,14 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
     std::map<std::string, std::vector<std::pair<double, double>>> acc;
     double frameIndex = 0;
     uint64_t rejected = 0;
-    for (size_t off = 0; off + std::max<size_t>(2, tpl.sync.size()) <= static_cast<size_t>(bytes.size());)
+    for (size_t off = 0; off + std::max<size_t>(2, tpl.syncSpan ? tpl.syncSpan : 1) <= static_cast<size_t>(bytes.size());)
     {
         if (!tpl.length.enabled && off + static_cast<size_t>(tpl.frameSize) > static_cast<size_t>(bytes.size()))
             break;
         const uint8_t *frame = reinterpret_cast<const uint8_t *>(bytes.constData()) + off;
         bool match = true;
-        for (size_t i = 0; i < tpl.sync.size(); ++i)
-            if (frame[i] != tpl.sync[i]) { match = false; break; }
+        for (const SyncByte &sb : tpl.sync)
+            if (frame[sb.offset] != sb.value) { match = false; break; }
         if (!match)
         {
             ++off;
@@ -261,10 +416,68 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
                 continue;
             }
         }
-        double t = frameIndex;
-        for (const Field &fd : tpl.fields)
+        const std::vector<Field> *fields = &tpl.fields;
+        const Variant *variant = nullptr;
+        if (tpl.hasVariants)
+        {
+            const uint64_t msgId = readBits(frame, tpl.msgIdByte * 8 + tpl.msgIdBit, tpl.msgIdBits);
+            for (const Variant &v : tpl.variants)
+                if (v.id == msgId)
+                {
+                    variant = &v;
+                    break;
+                }
+            if (!variant)
+            {
+                ++rejected;
+                ++off;
+                continue;
+            }
+            fields = &variant->fields;
+        }
+        bool valid = true;
+        for (const Field &fd : *fields)
         {
             if (fd.byte + (fd.bits + 7) / 8 > frameLen)
+                continue;
+            const uint64_t raw = readBits(frame, fd.byte * 8 + fd.bit, fd.bits);
+            if (fd.hasEquals && raw != fd.equalsValue)
+            {
+                valid = false;
+                break;
+            }
+            const double v = fieldValue(frame, fd);
+            if ((fd.hasMin && v < fd.minValue) || (fd.hasMax && v > fd.maxValue))
+            {
+                valid = false;
+                break;
+            }
+            if (fd.check.enabled)
+            {
+                if (fd.check.from >= frameLen || fd.check.to >= frameLen || fd.check.to < fd.check.from)
+                {
+                    valid = false;
+                    break;
+                }
+                const uint16_t want = crc16(frame + fd.check.from, fd.check.to - fd.check.from + 1,
+                                           fd.check.poly, fd.check.init);
+                if (raw != want)
+                {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        if (!valid)
+        {
+            ++rejected;
+            ++off;
+            continue;
+        }
+        double t = frameIndex;
+        for (const Field &fd : *fields)
+        {
+            if (fd.byte + (fd.bits + 7) / 8 > frameLen || fd.hidden)
                 continue;
             const double v = fieldValue(frame, fd);
             if (fd.isTime)
@@ -286,6 +499,10 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
     {
         PsChannelData ch;
         ch.name = "frame." + kv.first;
+        for (const auto &var : tpl.variants)
+            for (const Field &fd : var.fields)
+                if (fd.name == kv.first && !var.name.empty())
+                    ch.name = "frame." + var.name + "." + kv.first;
         for (const Field &fd : tpl.fields)
             if (fd.name == kv.first)
                 ch.unit = fd.unit;
