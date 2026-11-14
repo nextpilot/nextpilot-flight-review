@@ -18,6 +18,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_json(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_binary(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_mdf4(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_frame(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_rosbag2(void);
 
 namespace {
 
@@ -118,6 +119,8 @@ int main()
         return 1;
     if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo.frames",
                           "{\"protocol\":\"" + fix + "/demo.psproto\"}", 2))
+        return 1;
+    if (!loadAndCheck(ps_plugin_entry_data_loader_rosbag2(), fix + "/demo_rosbag2.db3", 2))
         return 1;
 
     // DBC 模式：0x1A0 的两个字节解成命名信号，而不是 b0..b7 原始字节。
