@@ -120,6 +120,22 @@ int main()
     if (!loadAndCheck(ps_plugin_entry_data_loader_mdf4(), fix + "/demo.mf4", 2))
         return 1;
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+    {
+        const PsPluginDescriptor *fd = ps_custom_protocol_loader();
+        if (!fd->protocol || std::strcmp(fd->protocol->kind, "sequential") != 0)
+        {
+            std::fprintf(stderr, "custom protocol vtable missing\n");
+            return 1;
+        }
+        char err[256] = {};
+        if (fd->protocol->validate("{bad json", err, sizeof(err)) <= 0)
+        {
+            std::fprintf(stderr, "custom protocol validate did not reject invalid json\n");
+            return 1;
+        }
+    }
+#endif
     if (!loadOptsAndCheck(ps_custom_protocol_loader(), fix + "/demo.frames",
                           "{\"protocol\":\"" + fix + "/demo.psproto\"}", 2))
         return 1;

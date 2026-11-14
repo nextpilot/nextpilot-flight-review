@@ -47,7 +47,7 @@ QString nextProtocolPath()
 
 ComponentManifest CustomProtocolComponent::manifest() const
 {
-    return {QStringLiteral("protocol.frame"), QStringLiteral("顺序帧协议"),
+    return {QStringLiteral("protocol.custom"), QStringLiteral("自定义协议"),
             QStringLiteral("1.0"), {QStringLiteral("loader"), QStringLiteral("protocol"),
                                     QStringLiteral("ribbon"), QStringLiteral("editor")}};
 }

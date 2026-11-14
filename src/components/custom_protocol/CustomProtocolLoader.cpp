@@ -2,6 +2,8 @@
 #include "LegacyFileInput.hpp"
 #include "PsLoaderCommon.h"
 #include "SequentialCodec.hpp"
+#include "protocol/ProtocolDocument.h"
+#include "protocol/ProtocolSpec.h"
 
 #include <QFile>
 #include <QJsonArray>
@@ -823,11 +825,11 @@ int32_t frameSchema(char *out, uint32_t cap)
 
 const PsLoaderVtable kFrameLoader = {
     PS_PLUGIN_ABI_VERSION,
-    "data_loader_frame",
-    "帧协议模板",
+    "data_loader_custom_protocol",
+    "自定义协议",
     "原始帧 (*.bin *.raw *.frames);;全部 (*)",
     ".frames,.bin,.raw",
-    "帧协议模板",
+    "自定义协议",
     0,
     1,
     {0, 0, 0, 0, 0, 0},
@@ -840,19 +842,66 @@ const PsLoaderVtable kFrameLoader = {
 
 const PsDataInputVtable *frameInputVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kFrameLoader>>(R"({"id":"data_loader_frame","name":"帧协议模板","version":"1.0.0","sdk":"1.0","kind":"file"})");
+    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kFrameLoader>>(R"({"id":"data_loader_custom_protocol","name":"自定义协议","version":"1.0.0","sdk":"1.0","kind":"file"})");
     return &vt;
 }
 
+
+int32_t protocolValidate(const char *json, char *err, uint32_t cap)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json ? json : ""));
+    if (!doc.isObject())
+    {
+        if (err && cap)
+            std::snprintf(err, cap, "协议 JSON 不是对象");
+        return 1;
+    }
+    const QStringList issues = ps::protocol::validate(doc.object());
+    if (!issues.isEmpty())
+    {
+        if (err && cap)
+            std::snprintf(err, cap, "%s", issues.join(QStringLiteral("\n")).toUtf8().constData());
+        return issues.size();
+    }
+    return 0;
+}
+
+int32_t protocolNormalize(const char *json, char *out, uint32_t cap)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(QByteArray(json ? json : ""));
+    if (!doc.isObject())
+        return -1;
+    ps::protocol::ProtocolDocument model;
+    std::string err;
+    if (!ps::protocol::parseDocument(doc.object(), model, err))
+        return -2;
+    const QByteArray text = QJsonDocument(ps::protocol::toJson(model)).toJson(QJsonDocument::Indented);
+    if (static_cast<uint32_t>(text.size()) >= cap)
+        return -3;
+    std::memcpy(out, text.constData(), static_cast<size_t>(text.size()));
+    out[text.size()] = ' ';
+    return static_cast<int32_t>(text.size());
+}
+
+const PsProtocolVtable kFrameProtocol = {
+    PS_PLUGIN_ABI_VERSION,
+    "sequential",
+    "顺序段协议",
+    nullptr,
+    protocolValidate,
+    protocolNormalize,
+};
+
 const PsPluginDescriptor kFrameLoaderDescriptor = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"data_loader_frame","name":"帧协议模板","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","component":"protocol.frame"})",
+    R"({"id":"data_loader_custom_protocol","name":"自定义协议","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","component":"protocol.frame"})",
     PS_FAMILY_DATA_INPUT,
     PS_CAP_FILE | PS_CAP_CACHE,
     &kFrameLoader,
     nullptr,
     nullptr,
     frameInputVtable(),
+    &kFrameProtocol,
 };
 
 } // namespace
