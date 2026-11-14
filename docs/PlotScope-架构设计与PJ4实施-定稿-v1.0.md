@@ -961,7 +961,7 @@ public:
 仍未完成：
 - 多 parser 运行时：入口插件独占 transport，其余 parser 以 `transport=external` 打开，宿主把 `raw_batch` 扇出；通道名加 `fanout.<parserId>.` 前缀。
 - GUI 交互冒烟未做；仅 `QT_QPA_PLATFORM=offscreen` 启动存活验证；raw 回放端到端未实测。
-- MCAP writer 无 chunk/summary/索引，标准工具可读但大文件索引性能未验证。
+- MCAP writer 已按 1 MiB 聚合 Chunk，summary 重复 Schema/Channel 并写 ChunkIndex + SummaryOffset。
 
 ### 14.8 2026-11-14 P2/P3 收尾
 
@@ -970,6 +970,7 @@ public:
 - CSV：当前源导出带 `source` 列与源别名。
 - P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码与参数随 `.psl` 保存；`init(params)` 接收参数表单；预览/应用分两步。
 - 多 parser：`PsDataInputVtable` / `PsDataSourceVtable` 尾部增加 `feed_raw`；MAVLink/OEM7 支持 `transport=external` 只解析不建连接；`MainWindow::openLiveInput()` 负责扇出与句柄回收。
+- M3：`McapWriter` 增加 1 MiB Chunk 聚合、ChunkIndex、SummaryOffset 与 summary Schema/Channel 副本；`McapReader` 原有 Chunk 解析路径直接复用。
 - M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 插件原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
 - M1 CAN：ASC/BLF 加载器新增可选 `dbc` 配置，按 `BO_`/`SG_` 解码为 `CAN<bus>.<message>.<signal>`；留空仍导原始字节。CMake 公共库加 `Dbc.cpp`，测试覆盖 `CAN2.MSG_A.byte0`。

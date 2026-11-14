@@ -11,7 +11,11 @@ constexpr uint8_t kOpFooter = 0x02;
 constexpr uint8_t kOpSchema = 0x03;
 constexpr uint8_t kOpChannel = 0x04;
 constexpr uint8_t kOpMessage = 0x05;
+constexpr uint8_t kOpChunk = 0x06;
+constexpr uint8_t kOpChunkIndex = 0x08;
+constexpr uint8_t kOpSummaryOffset = 0x0E;
 constexpr uint8_t kOpDataEnd = 0x0F;
+constexpr uint64_t kChunkTarget = 1024ull * 1024ull;
 
 } // namespace
 
@@ -48,6 +52,13 @@ void McapWriter::putString(std::vector<uint8_t> &out, const std::string &s)
     out.insert(out.end(), s.begin(), s.end());
 }
 
+uint64_t McapWriter::tellp() const
+{
+    if (!file_) return 0;
+    const auto pos = const_cast<std::ofstream &>(file_).tellp();
+    return pos < 0 ? 0 : static_cast<uint64_t>(pos);
+}
+
 void McapWriter::writeRecord(uint8_t op, const std::vector<uint8_t> &body)
 {
     if (!file_)
@@ -76,6 +87,12 @@ bool McapWriter::open(const std::string &path, const std::string &profile, std::
 
     channels_.clear();
     sequences_.clear();
+    channelInfo_.clear();
+    chunkRecords_.clear();
+    chunkIndexes_.clear();
+    chunkStartTime_ = 0;
+    chunkEndTime_ = 0;
+    chunkHasMessage_ = false;
     next_channel_ = 1;
     failed_ = false;
 
@@ -112,6 +129,7 @@ uint16_t McapWriter::channelId(const std::string &topic, const std::string &enco
     const uint16_t id = next_channel_++;
     channels_.emplace(key, id);
     sequences_[id] = 0;
+    channelInfo_[id] = {topic, encoding};
 
     std::vector<uint8_t> body;
     putU16(body, id);
@@ -139,13 +157,9 @@ bool McapWriter::writeJson(const std::string &topic, uint64_t log_time_ns,
         return false;
     }
 
-    std::vector<uint8_t> body;
-    putU16(body, id);
-    putU32(body, sequences_[id]++);
-    putU64(body, log_time_ns);
-    putU64(body, log_time_ns);
-    body.insert(body.end(), json.begin(), json.end());
-    writeRecord(kOpMessage, body);
+    appendMessageRecord(id, sequences_[id]++, log_time_ns,
+                        reinterpret_cast<const uint8_t *>(json.data()),
+                        static_cast<uint32_t>(json.size()));
     if (!file_)
     {
         failed_ = true;
@@ -177,14 +191,7 @@ bool McapWriter::writeRaw(const std::string &topic, const std::string &encoding,
         return false;
     }
 
-    std::vector<uint8_t> body;
-    putU16(body, id);
-    putU32(body, sequences_[id]++);
-    putU64(body, log_time_ns);
-    putU64(body, log_time_ns);
-    if (size)
-        body.insert(body.end(), data, data + size);
-    writeRecord(kOpMessage, body);
+    appendMessageRecord(id, sequences_[id]++, log_time_ns, data, size);
     if (!file_)
     {
         failed_ = true;
@@ -194,18 +201,134 @@ bool McapWriter::writeRaw(const std::string &topic, const std::string &encoding,
     return true;
 }
 
+void McapWriter::appendMessageRecord(uint16_t channelId, uint32_t sequence,
+                                     uint64_t logTime, const uint8_t *data, uint32_t size)
+{
+    std::vector<uint8_t> body;
+    putU16(body, channelId);
+    putU32(body, sequence);
+    putU64(body, logTime);
+    putU64(body, logTime);
+    if (size && data)
+        body.insert(body.end(), data, data + size);
+
+    const uint64_t total = 1 + 8 + body.size();
+    chunkRecords_.push_back(kOpMessage);
+    putU64(chunkRecords_, body.size());
+    chunkRecords_.insert(chunkRecords_.end(), body.begin(), body.end());
+    if (!chunkHasMessage_)
+    {
+        chunkStartTime_ = logTime;
+        chunkHasMessage_ = true;
+    }
+    chunkEndTime_ = logTime;
+    if (chunkRecords_.size() >= kChunkTarget)
+        flushChunk();
+}
+
+void McapWriter::flushChunk()
+{
+    if (chunkRecords_.empty() || !file_)
+        return;
+    const uint64_t startOffset = tellp();
+    std::vector<uint8_t> body;
+    putU64(body, chunkStartTime_);
+    putU64(body, chunkEndTime_);
+    putU64(body, chunkRecords_.size());
+    putU32(body, 0);            // crc，未启用
+    putString(body, "");        // compression
+    putU64(body, chunkRecords_.size());
+    body.insert(body.end(), chunkRecords_.begin(), chunkRecords_.end());
+    const uint64_t recordsLength = chunkRecords_.size();
+    writeRecord(kOpChunk, body);
+    if (!file_)
+    {
+        failed_ = true;
+        chunkRecords_.clear();
+        return;
+    }
+    ChunkIndex idx;
+    idx.startTime = chunkStartTime_;
+    idx.endTime = chunkEndTime_;
+    idx.startOffset = startOffset;
+    idx.endOffset = tellp();
+    idx.recordsLength = recordsLength;
+    chunkIndexes_.push_back(idx);
+    chunkRecords_.clear();
+    chunkHasMessage_ = false;
+}
+
 bool McapWriter::close(std::string &err)
 {
     err.clear();
     if (!file_.is_open())
         return true;
 
+    flushChunk();
     std::vector<uint8_t> dataEnd(4, 0); // data section crc = 0，表示未启用
     writeRecord(kOpDataEnd, dataEnd);
+    if (!file_)
+    {
+        failed_ = true;
+        err = "写 MCAP DataEnd 失败";
+        file_.close();
+        return false;
+    }
+
+    const uint64_t summaryStart = tellp();
+    std::vector<uint8_t> summarySchema;
+    putU16(summarySchema, schema_id_);
+    putString(summarySchema, "plotscope/value");
+    putString(summarySchema, "jsonschema");
+    putString(summarySchema, "{}");
+    const uint64_t schemaStart = tellp();
+    writeRecord(kOpSchema, summarySchema);
+    const uint64_t schemaLen = tellp() - schemaStart;
+
+    const uint64_t channelStart = tellp();
+    for (const auto &it : channelInfo_)
+    {
+        std::vector<uint8_t> ch;
+        putU16(ch, it.first);
+        putU16(ch, schema_id_);
+        putString(ch, it.second.first);
+        putString(ch, it.second.second);
+        putU32(ch, 0);
+        writeRecord(kOpChannel, ch);
+    }
+    const uint64_t channelLen = tellp() - channelStart;
+
+    const uint64_t indexStart = tellp();
+    for (const ChunkIndex &idx : chunkIndexes_)
+    {
+        std::vector<uint8_t> ci;
+        putU64(ci, idx.startTime);
+        putU64(ci, idx.endTime);
+        putU64(ci, idx.startOffset);
+        putU64(ci, idx.endOffset);
+        putU64(ci, 0); // message_index_offset
+        putU64(ci, 0); // message_index_length
+        putString(ci, "");
+        putU64(ci, idx.recordsLength);
+        writeRecord(kOpChunkIndex, ci);
+    }
+    const uint64_t indexLen = tellp() - indexStart;
+
+    const uint64_t summaryOffsetStart = tellp();
+    auto writeOffset = [this](uint8_t opcode, uint64_t start, uint64_t length) {
+        std::vector<uint8_t> so;
+        so.push_back(opcode);
+        putU64(so, start);
+        putU64(so, length);
+        writeRecord(kOpSummaryOffset, so);
+    };
+    writeOffset(kOpSchema, schemaStart, schemaLen);
+    writeOffset(kOpChannel, channelStart, channelLen);
+    writeOffset(kOpChunkIndex, indexStart, indexLen);
 
     std::vector<uint8_t> footer;
-    putU64(footer, 0); // summary_start，无 summary
-    putU64(footer, 0); // summary_offset_start
+    putU64(footer, summaryStart);
+    putU64(footer, summaryOffsetStart);
     putU32(footer, 0); // summary_crc
     writeRecord(kOpFooter, footer);
     file_.write(kMagic, sizeof(kMagic));
