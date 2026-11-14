@@ -132,6 +132,8 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
 {
     if (!desc || desc->abi_version != PS_PLUGIN_ABI_VERSION)
         return false;
+    if (!m_descriptors.contains(desc))
+        m_descriptors.push_back(desc);
 
     if (desc->family == PS_FAMILY_DATA_LOADER)
     {

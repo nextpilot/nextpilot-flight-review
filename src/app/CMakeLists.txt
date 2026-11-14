@@ -30,6 +30,7 @@ add_executable(plotscope_app
   data_input/DataInputDialog.h
   data_input/DataInputDialog.cpp
   components/Component.cpp
+  components/PluginComponent.cpp
   ${PROJECT_SOURCE_DIR}/src/components/protocol_frame/FrameComponent.cpp
   ${PROJECT_SOURCE_DIR}/src/components/protocol_frame/ProtocolEditorDialog.cpp
   video/VideoSyncWidget.cpp

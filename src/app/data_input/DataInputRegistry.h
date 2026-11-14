@@ -20,6 +20,7 @@ public:
 
     const QVector<DataInputPlugin> &filePlugins() const { return m_filePlugins; }
     const QVector<DataInputPlugin> &streamPlugins() const { return m_streamPlugins; }
+    const QVector<const PsPluginDescriptor *> &descriptors() const { return m_descriptors; }
 
     bool registerDescriptor(const PsPluginDescriptor *desc, const QString &packageDir = QString());
 
@@ -31,4 +32,5 @@ private:
 
     QVector<DataInputPlugin> m_filePlugins;
     QVector<DataInputPlugin> m_streamPlugins;
+    QVector<const PsPluginDescriptor *> m_descriptors;
 };

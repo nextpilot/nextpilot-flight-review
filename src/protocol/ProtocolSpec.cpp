@@ -11,6 +11,38 @@
 namespace ps::protocol
 {
 
+QStringList typeNames()
+{
+    return {QStringLiteral("u8"), QStringLiteral("i8"), QStringLiteral("u16"), QStringLiteral("i16"),
+            QStringLiteral("u32"), QStringLiteral("i32"), QStringLiteral("u64"), QStringLiteral("i64"),
+            QStringLiteral("f32"), QStringLiteral("f64"), QStringLiteral("bool"),
+            QStringLiteral("bcd"), QStringLiteral("str"), QStringLiteral("string"),
+            QStringLiteral("ascii"), QStringLiteral("char")};
+}
+
+bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
+{
+    std::string t = raw;
+    std::transform(t.begin(), t.end(), t.begin(), ::tolower);
+    if (t == "u8" || t == "uint8" || t == "byte") { ti = {FType::U8, 1, false, false, false}; return true; }
+    if (t == "i8" || t == "int8") { ti = {FType::I8, 1, true, false, false}; return true; }
+    if (t == "u16" || t == "uint16") { ti = {FType::U16, 2, false, false, false}; return true; }
+    if (t == "i16" || t == "int16") { ti = {FType::I16, 2, true, false, false}; return true; }
+    if (t == "u32" || t == "uint32") { ti = {FType::U32, 4, false, false, false}; return true; }
+    if (t == "i32" || t == "int32") { ti = {FType::I32, 4, true, false, false}; return true; }
+    if (t == "u64" || t == "uint64") { ti = {FType::U64, 8, false, false, false}; return true; }
+    if (t == "i64" || t == "int64") { ti = {FType::I64, 8, true, false, false}; return true; }
+    if (t == "f32" || t == "float" || t == "float32") { ti = {FType::F32, 4, true, true, false}; return true; }
+    if (t == "f64" || t == "double" || t == "float64") { ti = {FType::F64, 8, true, true, false}; return true; }
+    if (t == "bool" || t == "boolean") { ti = {FType::BOOL, 1, false, false, false}; return true; }
+    if (t == "bcd") { ti = {FType::BCD, 1, false, false, true}; return true; }
+    if (t == "str" || t == "string" || t == "ascii" || t == "char")
+    { ti = {FType::STR, 1, false, false, false}; return true; }
+    err = "未知类型: " + raw;
+    return false;
+}
+
+
 int typeBytes(const QString &type)
 {
     const QString t = type.toLower();
@@ -91,12 +123,7 @@ QStringList validate(const QJsonObject &o)
                  seg.value(QStringLiteral("size")).toString().trimmed().isEmpty())
             errs << QStringLiteral("%1 的 size 必须是正整数或表达式").arg(name);
         const QString type = seg.value(QStringLiteral("type")).toString().toLower();
-        const QStringList types = {QStringLiteral("u8"), QStringLiteral("i8"), QStringLiteral("u16"),
-            QStringLiteral("i16"), QStringLiteral("u32"), QStringLiteral("i32"), QStringLiteral("u64"),
-            QStringLiteral("i64"), QStringLiteral("f32"), QStringLiteral("f64"), QStringLiteral("bool"),
-            QStringLiteral("bcd"), QStringLiteral("str"), QStringLiteral("string"),
-            QStringLiteral("ascii"), QStringLiteral("char")};
-        if (!types.contains(type))
+        if (!typeNames().contains(type))
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
         const QString role = seg.value(QStringLiteral("role")).toString();
         if (!role.isEmpty())

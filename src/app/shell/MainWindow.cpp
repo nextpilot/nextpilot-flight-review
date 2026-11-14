@@ -5,7 +5,9 @@
 #include "app/cache/DatasetCache.h"
 #include "data_input/DataInputRegistry.h"
 #include "components/Component.h"
+#include "components/PluginComponent.h"
 #include "components/protocol_frame/FrameComponent.h"
+#include "ps_plugin_api.h"
 #include "live/LiveSession.h"
 #include "device/DeviceDebugDialog.h"
 #include "data_input/DataInputRegistry.h"
@@ -1261,6 +1263,11 @@ MainWindow::MainWindow(QWidget *parent)
         return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     };
     frameComponent.contribute(m_components, hostServices);
+    for (const PsPluginDescriptor *desc : DataInputRegistry::instance().descriptors())
+    {
+        ps::components::PluginComponent plugin(desc);
+        plugin.contribute(m_components, hostServices);
+    }
 
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
     m_pages = new QTabWidget(this);

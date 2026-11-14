@@ -21,23 +21,14 @@
 #include <vector>
 
 #include "ProtocolSpec.h"
+#include "ProtocolDocument.h"
 
 namespace {
 
+using namespace ps::protocol;
+
+
 /* ---------------- 表达式 ---------------- */
-
-struct Expr;
-using ExprPtr = std::shared_ptr<Expr>;
-
-struct Expr
-{
-    enum Kind { Num, Ref, Bin, Un, Fn } kind = Num;
-    double num = 0.0;
-    std::string name;
-    std::string fn;
-    int op = 0;
-    ExprPtr a, b, c;
-};
 
 struct EvalCtx
 {
@@ -405,39 +396,6 @@ ExprPtr jsonExpr(const QJsonValue &v, std::string &err)
 
 /* ---------------- 模板 ---------------- */
 
-enum class FType { U8, I8, U16, I16, U32, I32, U64, I64, F32, F64, BOOL, BCD, STR };
-
-struct TypeInfo
-{
-    FType type = FType::U8;
-    uint32_t size = 1;
-    bool sign = false;
-    bool fp = false;
-    bool bcd = false;
-};
-
-bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
-{
-    std::string t = raw;
-    std::transform(t.begin(), t.end(), t.begin(), ::tolower);
-    if (t == "u8" || t == "uint8" || t == "byte") { ti = {FType::U8, 1, false, false, false}; return true; }
-    if (t == "i8" || t == "int8") { ti = {FType::I8, 1, true, false, false}; return true; }
-    if (t == "u16" || t == "uint16") { ti = {FType::U16, 2, false, false, false}; return true; }
-    if (t == "i16" || t == "int16") { ti = {FType::I16, 2, true, false, false}; return true; }
-    if (t == "u32" || t == "uint32") { ti = {FType::U32, 4, false, false, false}; return true; }
-    if (t == "i32" || t == "int32") { ti = {FType::I32, 4, true, false, false}; return true; }
-    if (t == "u64" || t == "uint64") { ti = {FType::U64, 8, false, false, false}; return true; }
-    if (t == "i64" || t == "int64") { ti = {FType::I64, 8, true, false, false}; return true; }
-    if (t == "f32" || t == "float" || t == "float32") { ti = {FType::F32, 4, true, true, false}; return true; }
-    if (t == "f64" || t == "double" || t == "float64") { ti = {FType::F64, 8, true, true, false}; return true; }
-    if (t == "bool" || t == "boolean") { ti = {FType::BOOL, 1, false, false, false}; return true; }
-    if (t == "bcd") { ti = {FType::BCD, 1, false, false, true}; return true; }
-    if (t == "str" || t == "string" || t == "ascii" || t == "char")
-    { ti = {FType::STR, 1, false, false, false}; return true; }
-    err = "未知类型: " + raw;
-    return false;
-}
-
 inline std::string numberKey(double v)
 {
     std::ostringstream os;
@@ -446,82 +404,6 @@ inline std::string numberKey(double v)
 }
 
 inline std::string stringKey(const std::string &v) { return "s:" + v; }
-
-struct CheckSpec
-{
-    std::string op = "eq";
-    ExprPtr rhs;
-    ExprPtr rhs2;
-    ExprPtr rhs3;
-    std::vector<double> values;
-    std::vector<std::string> over;
-    std::string scope = "element";
-    uint32_t poly = 0;
-    uint32_t init = 0;
-    uint32_t xorout = 0;
-    bool refin = false;
-    bool refout = false;
-    int width = 0;
-};
-
-struct CountSpec
-{
-    bool enabled = false;
-    std::vector<std::string> fields;
-    std::string unit = "elements";
-    ExprPtr expr;
-};
-
-struct SegSpec
-{
-    std::string name;
-    std::string role = "data";
-    std::string unit;
-    std::string prefix;
-    TypeInfo type;
-    ExprPtr sizeExpr;
-    double scale = 1.0;
-    double offset = 0.0;
-    bool bigEndian = false;
-    bool hidden = false;
-    bool plot = true;
-    bool hasValue = false;
-    ExprPtr valueExpr;
-    std::vector<CheckSpec> checks;
-    CountSpec counts;
-    bool fromVariant = false;
-};
-
-struct VariantSpec
-{
-    std::vector<std::string> keys;
-    std::string name;
-    std::vector<SegSpec> segments;
-};
-
-struct SeriesSpec
-{
-    bool enabled = false;
-    ExprPtr selector;
-    std::string payload;
-    std::string fallback = "reject";
-    std::vector<VariantSpec> variants;
-};
-
-struct TemplateSpec
-{
-    std::string name;
-    std::string endian = "little";
-    uint32_t maxsize = 4096;
-    std::vector<SegSpec> segments;
-    SeriesSpec series;
-    bool hasTimestamp = false;
-    ExprPtr timestampExpr;
-    std::string timestampUnit = "s";
-    std::string timestampOrigin = "first_frame";
-    bool timestampRaw = false;
-    std::string timestampFallback = "reject";
-};
 
 bool parseChecks(const QJsonArray &arr, std::vector<CheckSpec> &out, std::string &err)
 {
@@ -676,8 +558,11 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     return true;
 }
 
-bool parseTemplate(const QJsonObject &root, TemplateSpec &t, std::string &err)
+bool parseTemplate(const QJsonObject &root, ProtocolDocument &t, std::string &err)
 {
+    t.version = root.value(QStringLiteral("version")).toString(QStringLiteral("1")).toStdString();
+    t.description = root.value(QStringLiteral("description")).toString().toStdString();
+    t.layout = root.value(QStringLiteral("layout")).toString(QStringLiteral("sequential")).toStdString();
     t.name = root.value(QStringLiteral("name")).toString(QStringLiteral("frame")).toStdString();
     t.endian = root.value(QStringLiteral("endian")).toString(QStringLiteral("little")).toStdString();
     t.maxsize = static_cast<uint32_t>(root.value(QStringLiteral("maxsize")).toInt(4096));
@@ -1096,7 +981,7 @@ int32_t decodeSequentialFrames(const QByteArray &bytes, const QByteArray &json,
         psWriteErr(err, errCap, "协议校验失败: " + issues.join(QStringLiteral("；")).toStdString());
         return 2;
     }
-    TemplateSpec tpl;
+    ProtocolDocument tpl;
     std::string e;
     if (!parseTemplate(root, tpl, e))
     {
