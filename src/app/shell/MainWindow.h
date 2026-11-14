@@ -9,6 +9,7 @@ struct PsDataset;
 struct PsChannelInfo;
 class LiveSession;
 class CanvasWidget;
+class QSplitter;
 class QLabel;
 class QPlainTextEdit;
 class QComboBox;
@@ -86,12 +87,16 @@ protected:
 
 private:
     CanvasWidget *currentCanvas() const;
+    QWidget *pageForCanvas(CanvasWidget *c) const;
     QVector<CanvasWidget *> pageCanvases() const;
     QWidget *createRibbon();
     void createDocks();
     void createPages();
     void log(const QString &text);
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
+    void refreshPropTree(CanvasWidget *active = nullptr);
+    void showAxesProps(CanvasWidget *c);
+    void showSeriesProps(CanvasWidget *c, int index);
     QWidget *addSourceRow(const QString &name, const QString &meta, const QString &dotColor,
                           bool backed = false, const QString &path = QString(), int srcId = -1);
     void showSourceMenu(QWidget *row, const QPoint &globalPos);
@@ -120,6 +125,8 @@ private:
     void removeCanvas(CanvasWidget *c);
     void applyCanvasGrid(int rows, int cols);
     void splitCanvas(CanvasWidget *target, Qt::Orientation orientation);
+    void toggleCanvasMaximize(CanvasWidget *c);
+    void restoreCanvasMaximize();
     void exportActiveCsv();
     void openSettings();
     QJsonObject pageState(QWidget *page) const;
@@ -151,6 +158,8 @@ private:
     QTableWidget *m_msgTable = nullptr;
     QVBoxLayout *m_srcRows = nullptr;
     QTableWidget *m_propTable = nullptr;
+    QTreeWidget *m_propTree = nullptr;
+    bool m_propTreeBuilding = false;
     QLabel *m_selLabel = nullptr;
     QLabel *m_runLabel = nullptr;
     QPlainTextEdit *m_script = nullptr;
@@ -162,4 +171,7 @@ private:
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;
     QAction *m_chipLod = nullptr;
+    CanvasWidget *m_maxedCanvas = nullptr;
+    QVector<QWidget *> m_maxedHidden;
+    QVector<QPair<QSplitter *, QList<int>>> m_maxedSizes;
 };

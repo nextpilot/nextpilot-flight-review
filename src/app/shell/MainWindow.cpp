@@ -688,9 +688,17 @@ void collectPageCanvases(QWidget *root, QVector<CanvasWidget *> &out)
         out += g->canvases();
         return;
     }
-    const auto kids = root->findChildren<CanvasWidget *>();
-    for (CanvasWidget *c : kids)
-        out.append(c);
+    // 按 splitter 子控件顺序递归，保证“第一个画布”就是屏幕左上角那块，
+    // 而不是 findChildren 的先序/逆序结果。
+    if (auto *sp = qobject_cast<QSplitter *>(root))
+    {
+        for (int i = 0; i < sp->count(); ++i)
+            collectPageCanvases(sp->widget(i), out);
+        return;
+    }
+    const auto kids = root->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget *w : kids)
+        collectPageCanvases(w, out);
 }
 
 
@@ -772,6 +780,7 @@ MainWindow::MainWindow(QWidget *parent)
     createDocks();
     darkenDocks(this);
     createPages();
+    refreshPropTree(currentCanvas());
 
     // 内核连通性：状态栏直接读 ABI，证明 C ABI 已经打通
     const QString kernelInfo =
@@ -1587,20 +1596,50 @@ void MainWindow::createDocks()
     // 右：属性面板（命中什么对象就显示什么属性）
     auto *propDock = new QDockWidget(QStringLiteral("属性面板"), this);
     propDock->setObjectName(QStringLiteral("dock.prop"));
+    propDock->setMinimumHeight(340);
     auto *propHost = new QWidget(propDock);
     auto *propLay = new QVBoxLayout(propHost);
     propLay->setContentsMargins(0, 0, 0, 0);
     m_selLabel = new QLabel(QStringLiteral("当前对象：画布"), propHost);
     m_selLabel->setContentsMargins(8, 6, 8, 6);
     m_selLabel->setStyleSheet(QStringLiteral("color:#4ea1ff;"));
-    m_propTable = new QTableWidget(0, 2, propHost);
+    auto *propSplit = new QSplitter(Qt::Vertical, propHost);
+    propSplit->setHandleWidth(4);
+    m_propTree = new QTreeWidget(propSplit);
+    m_propTree->setHeaderHidden(true);
+    m_propTree->setColumnCount(1);
+    m_propTree->setRootIsDecorated(true);
+    m_propTree->setIndentation(13);
+    m_propTree->setUniformRowHeights(true);
+    m_propTree->setStyleSheet(QStringLiteral(
+        "QTreeWidget{border:0;background:#0d1117;font-size:12px;}"
+        "QTreeWidget::item{height:20px;color:#c9d1d9;}"
+        "QTreeWidget::item:selected{background:#1f2a33;color:#f2b134;}"));
+    m_propTable = new QTableWidget(0, 2, propSplit);
     m_propTable->setHorizontalHeaderLabels({QStringLiteral("属性"), QStringLiteral("值")});
     m_propTable->horizontalHeader()->setStretchLastSection(true);
     m_propTable->verticalHeader()->setVisible(false);
     m_propTable->setShowGrid(false);
     compactValueTable(m_propTable);
+    propSplit->addWidget(m_propTree);
+    propSplit->addWidget(m_propTable);
+    propSplit->setSizes({152, 320});
     propLay->addWidget(m_selLabel);
-    propLay->addWidget(m_propTable, 1);
+    propLay->addWidget(propSplit, 1);
+    connect(m_propTree, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem *it, QTreeWidgetItem *) {
+        if (m_propTreeBuilding || !it)
+            return;
+        const int kind = it->data(0, Qt::UserRole).toInt();
+        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(
+            it->data(0, Qt::UserRole + 1).value<quintptr>());
+        if (!c)
+            return;
+        if (kind == 1)
+            showAxesProps(c);
+        else if (kind == 2)
+            showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
+    });
     propDock->setWidget(propHost);
     addDockWidget(Qt::RightDockWidgetArea, propDock);
     setPropRows(QStringLiteral("画布"),
@@ -1697,6 +1736,7 @@ void MainWindow::createDocks()
     scriptLay->addLayout(runBtnRow);
     scriptDock->setWidget(scriptHost);
     addDockWidget(Qt::RightDockWidgetArea, scriptDock);
+    resizeDocks({propDock, scriptDock}, {470, 330}, Qt::Vertical);
     connect(runScriptBtn, &QPushButton::clicked, this, [this] { runScript(false); });
     connect(applyScriptBtn, &QPushButton::clicked, this, [this] { runScript(true); });
 
@@ -2939,6 +2979,7 @@ void MainWindow::newPage()
     const int plusIdx = m_pages->count() - 1;
     m_pages->insertTab(plusIdx, c, QStringLiteral("新页"));
     m_pages->setCurrentWidget(c);
+    refreshPropTree(c);
     log(QStringLiteral("新建页"));
 }
 
@@ -3054,6 +3095,9 @@ void MainWindow::createPages()
     m_pages->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
     m_pages->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
     connect(m_pages, &QTabWidget::currentChanged, this, [this](int i) {
+        if (m_maxedCanvas)
+            restoreCanvasMaximize();
+        refreshPropTree(currentCanvas());
         if (i >= 0 && i == m_pages->count() - 1 && m_pages->tabText(i) == QStringLiteral("＋"))
             newPage();
     });
@@ -3062,20 +3106,12 @@ void MainWindow::createPages()
 
 void MainWindow::setupCanvas(CanvasWidget *c)
 {
-    connect(c, &CanvasWidget::activated, this, [this, c](const QString &t) {
-        setPropRows(t, {{QStringLiteral("类型"), QStringLiteral("画布")},
-                        {QStringLiteral("时间窗"), QStringLiteral("%1 ~ %2 s")
-                                                  .arg(c->t0(), 0, 'f', 2)
-                                                  .arg(c->t1(), 0, 'f', 2)},
-                        {QStringLiteral("数据来源"), c->kernelBacked() ? QStringLiteral("数据集（内核内存）")
-                                                                      : QStringLiteral("演示合成数据")},
-                        {QStringLiteral("Y 轴"), QStringLiteral("线性 · Ctrl+滚轮缩 / 拖动平移 / 右键复位")}});
+    connect(c, &CanvasWidget::activated, this, [this, c](const QString &) {
+        refreshPropTree(c);
     });
     // 同页 X 轴联动：任一画布缩放或平移，其余画布跟着走
     connect(c, &CanvasWidget::timeRangeChanged, this, [this, c](double t0, double t1) {
-        QWidget *page = c;
-        while (page && page->parentWidget() != m_pages)
-            page = page->parentWidget();
+        QWidget *page = pageForCanvas(c);
         if (!page)
             return;
         QVector<CanvasWidget *> peers;
@@ -3109,6 +3145,7 @@ void MainWindow::setupCanvas(CanvasWidget *c)
             log(QStringLiteral("添加曲线：%1").arg(pick));
         }
     });
+    connect(c, &CanvasWidget::maximizeRequested, this, [this, c] { toggleCanvasMaximize(c); });
     connect(c, &CanvasWidget::removeRequested, this, [this, c] { removeCanvas(c); });
 }
 
@@ -3136,6 +3173,63 @@ void MainWindow::applyCanvasGrid(int rows, int cols)
     m_pages->setCurrentIndex(idx);
     page->deleteLater();
     log(QStringLiteral("页内布局：%1 × %2（可继续拆分）").arg(rows).arg(cols));
+}
+
+void MainWindow::toggleCanvasMaximize(CanvasWidget *c)
+{
+    if (m_maxedCanvas == c)
+    {
+        restoreCanvasMaximize();
+        return;
+    }
+    if (m_maxedCanvas)
+        restoreCanvasMaximize();
+    if (!c || !m_pages || !m_pages->isAncestorOf(c))
+        return;
+
+    QWidget *page = pageForCanvas(c);
+    if (!page)
+        return;
+
+    // 逐级隐藏同级兄弟：画布填满当前页，不脱离原有 splitter 树。
+    QWidget *child = c;
+    while (child && child != page)
+    {
+        QSplitter *sp = qobject_cast<QSplitter *>(child->parentWidget());
+        if (!sp)
+            break;
+        m_maxedSizes.append({sp, sp->sizes()});
+        for (int i = 0; i < sp->count(); ++i)
+        {
+            QWidget *w = sp->widget(i);
+            if (w && w != child && !w->isHidden())
+            {
+                w->hide();
+                m_maxedHidden.append(w);
+            }
+        }
+        child = sp;
+    }
+    m_maxedCanvas = c;
+    c->setMaximizedState(true);
+    log(QStringLiteral("最大化画布：%1").arg(c->title()));
+}
+
+void MainWindow::restoreCanvasMaximize()
+{
+    if (!m_maxedCanvas)
+        return;
+    CanvasWidget *c = m_maxedCanvas;
+    m_maxedCanvas = nullptr;
+    for (QWidget *w : m_maxedHidden)
+        if (w)
+            w->show();
+    for (const auto &p : m_maxedSizes)
+        if (p.first)
+            p.first->setSizes(p.second);
+    m_maxedHidden.clear();
+    m_maxedSizes.clear();
+    c->setMaximizedState(false);
 }
 
 void MainWindow::splitCanvas(CanvasWidget *target, Qt::Orientation orientation)
@@ -3213,6 +3307,7 @@ void MainWindow::splitCanvas(CanvasWidget *target, Qt::Orientation orientation)
     }
     log(QStringLiteral("拆分画布：%1").arg(orientation == Qt::Horizontal ? QStringLiteral("左右")
                                                                           : QStringLiteral("上下")));
+    refreshPropTree(c);
 }
 
 void MainWindow::addCanvasToPage()
@@ -3235,6 +3330,8 @@ void MainWindow::addCanvasToPage()
 
 void MainWindow::removeCanvas(CanvasWidget *c)
 {
+    if (m_maxedCanvas == c)
+        restoreCanvasMaximize();
     if (!c)
         return;
     if (auto *sp = qobject_cast<QSplitter *>(c->parentWidget()))
@@ -3246,6 +3343,7 @@ void MainWindow::removeCanvas(CanvasWidget *c)
         }
         c->deleteLater();
         log(QStringLiteral("删除画布"));
+        refreshPropTree(currentCanvas());
         return;
     }
     log(QStringLiteral("页内至少保留一个画布"));
@@ -3852,6 +3950,19 @@ void MainWindow::openSettings()
     log(QStringLiteral("设置已保存"));
 }
 
+QWidget *MainWindow::pageForCanvas(CanvasWidget *c) const
+{
+    if (!m_pages || !c)
+        return nullptr;
+    for (int i = 0; i < m_pages->count(); ++i)
+    {
+        QWidget *w = m_pages->widget(i);
+        if (w && (w == c || w->isAncestorOf(c)))
+            return w;
+    }
+    return nullptr;
+}
+
 QVector<CanvasWidget *> MainWindow::pageCanvases() const
 {
     QVector<CanvasWidget *> out;
@@ -4109,6 +4220,142 @@ void MainWindow::exportActiveCsv()
     out.close();
     log(QStringLiteral("已导出数据快照：%1（%2 行）").arg(f).arg(rows)
         + (sampleCap > 0 ? QStringLiteral("；采样上限 %1 点/通道").arg(sampleCap) : QString()));
+}
+
+static QString plotModeLabel(int mode)
+{
+    static const char *names[] = {"时间序列 (TimeSeries)", "XY (Xy)", "散点 (Scatter)",
+                                  "柱状 (BarChart)", "直方图 (Histogram)", "频谱 (Spectrum)",
+                                  "地平仪 (Horizon)", "罗盘 (Compass)", "表盘 (Gauge)",
+                                  "3D 轨迹 (Traj3D)", "GPS 地图 (GpsMap)", "3D 曲面 (Surface3D)"};
+    if (mode < 0 || mode >= int(sizeof(names) / sizeof(names[0])))
+        return QStringLiteral("未知");
+    return QString::fromUtf8(names[mode]);
+}
+
+void MainWindow::refreshPropTree(CanvasWidget *active)
+{
+    if (!m_propTree)
+        return;
+    QWidget *page = active ? pageForCanvas(active)
+                           : (m_pages ? m_pages->currentWidget() : nullptr);
+    if (!page || !m_pages || page == m_pages->widget(m_pages->count() - 1))
+        return;
+
+    m_propTreeBuilding = true;
+    m_propTree->clear();
+
+    const QString pageTitle = m_pages->tabText(m_pages->indexOf(page));
+    auto *root = new QTreeWidgetItem(m_propTree);
+    root->setText(0, pageTitle);
+    root->setIcon(0, QIcon(QStringLiteral(":/icons/panel.svg")));
+    root->setFlags(root->flags() & ~Qt::ItemIsSelectable);
+    root->setExpanded(true);
+
+    QVector<CanvasWidget *> canvases;
+    collectPageCanvases(page, canvases);
+    QTreeWidgetItem *selected = nullptr;
+    for (CanvasWidget *c : canvases)
+    {
+        auto *axes = new QTreeWidgetItem(root);
+        axes->setText(0, c->title());
+        axes->setIcon(0, QIcon(QStringLiteral(":/icons/prop.svg")));
+        axes->setData(0, Qt::UserRole, 1);
+        axes->setData(0, Qt::UserRole + 1, QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(c)));
+        axes->setExpanded(active ? (c == active) : (c == canvases.first()));
+
+        const QJsonObject st = c->saveState();
+        const QJsonArray arr = st.value(QStringLiteral("series")).toArray();
+        for (int i = 0; i < arr.size(); ++i)
+        {
+            const QJsonObject so = arr.at(i).toObject();
+            const QString label = so.value(QStringLiteral("label")).toString(
+                so.value(QStringLiteral("name")).toString());
+            const int axis = so.value(QStringLiteral("axis")).toInt(0);
+            auto *line = new QTreeWidgetItem(axes);
+            line->setText(0, QStringLiteral("%1%2").arg(label, axis == 1 ? QStringLiteral("  → 右轴") : QString()));
+            line->setData(0, Qt::UserRole, 2);
+            line->setData(0, Qt::UserRole + 1, QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(c)));
+            line->setData(0, Qt::UserRole + 2, i);
+            QPixmap sw(10, 10);
+            sw.fill(QColor(so.value(QStringLiteral("color")).toString()));
+            line->setIcon(0, QIcon(sw));
+        }
+        if (c == active || (!active && !selected))
+            selected = axes;
+    }
+    m_propTreeBuilding = false;
+
+    if (selected)
+    {
+        m_propTree->setCurrentItem(selected);
+        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(
+            selected->data(0, Qt::UserRole + 1).value<quintptr>());
+        if (c)
+            showAxesProps(c);
+    }
+}
+
+void MainWindow::showAxesProps(CanvasWidget *c)
+{
+    if (!c)
+        return;
+    const QJsonObject st = c->saveState();
+    const QJsonArray arr = st.value(QStringLiteral("series")).toArray();
+    int right = 0;
+    for (const QJsonValue &v : arr)
+        if (v.toObject().value(QStringLiteral("axis")).toInt(0) == 1)
+            ++right;
+    const bool autoY = st.value(QStringLiteral("autoY")).toBool(true);
+    const QString y1 = autoY ? QStringLiteral("自动量程")
+                             : QStringLiteral("%1 ~ %2").arg(st.value(QStringLiteral("yMin")).toDouble(), 0, 'f', 3)
+                                                       .arg(st.value(QStringLiteral("yMax")).toDouble(), 0, 'f', 3);
+    const QString y2 = right > 0
+        ? QStringLiteral("%1 ~ %2").arg(st.value(QStringLiteral("y2Min")).toDouble(), 0, 'f', 3)
+                                    .arg(st.value(QStringLiteral("y2Max")).toDouble(), 0, 'f', 3)
+        : QStringLiteral("未启用");
+    setPropRows(QStringLiteral("坐标轴 · %1").arg(c->title()),
+                {{QStringLiteral("类型"), QStringLiteral("坐标轴 (Axes)")},
+                 {QStringLiteral("绘图模式"), plotModeLabel(st.value(QStringLiteral("mode")).toInt())},
+                 {QStringLiteral("时间轴"), QStringLiteral("%1 ~ %2 s")
+                                               .arg(st.value(QStringLiteral("t0")).toDouble(), 0, 'f', 2)
+                                               .arg(st.value(QStringLiteral("t1")).toDouble(), 0, 'f', 2)},
+                 {QStringLiteral("左 Y 轴"), y1},
+                 {QStringLiteral("右 Y 轴"), y2},
+                 {QStringLiteral("曲线"), QStringLiteral("%1 条（右轴 %2）").arg(arr.size()).arg(right)},
+                 {QStringLiteral("网格"), st.value(QStringLiteral("grid")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("图例"), st.value(QStringLiteral("legend")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("边框"), st.value(QStringLiteral("box")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")}});
+}
+
+void MainWindow::showSeriesProps(CanvasWidget *c, int index)
+{
+    if (!c)
+        return;
+    const QJsonObject st = c->saveState();
+    const QJsonArray arr = st.value(QStringLiteral("series")).toArray();
+    if (index < 0 || index >= arr.size())
+        return;
+    const QJsonObject so = arr.at(index).toObject();
+    setPropRows(QStringLiteral("曲线 · %1").arg(so.value(QStringLiteral("label")).toString(
+                                               so.value(QStringLiteral("name")).toString())),
+                {{QStringLiteral("类型"), QStringLiteral("曲线 (Line)")},
+                 {QStringLiteral("名称"), so.value(QStringLiteral("name")).toString()},
+                 {QStringLiteral("图例"), so.value(QStringLiteral("label")).toString()},
+                 {QStringLiteral("单位"), so.value(QStringLiteral("unit")).toString().isEmpty()
+                                               ? QStringLiteral("—")
+                                               : so.value(QStringLiteral("unit")).toString()},
+                 {QStringLiteral("颜色"), so.value(QStringLiteral("color")).toString()},
+                 {QStringLiteral("线宽"), QStringLiteral("%1 px").arg(so.value(QStringLiteral("width")).toInt(1))},
+                 {QStringLiteral("绑定轴"), so.value(QStringLiteral("axis")).toInt(0) == 1 ? QStringLiteral("右 Y 轴")
+                                                                                          : QStringLiteral("左 Y 轴")},
+                 {QStringLiteral("可见"), so.value(QStringLiteral("visible")).toBool(true) ? QStringLiteral("是")
+                                                                                         : QStringLiteral("否")},
+                 {QStringLiteral("点数"), QString::number(so.value(QStringLiteral("points")).toInt())},
+                 {QStringLiteral("时间偏移"), QStringLiteral("%1 s").arg(so.value(QStringLiteral("offset")).toDouble(), 0, 'f', 3)},
+                 {QStringLiteral("来源"), so.value(QStringLiteral("srcPath")).toString().isEmpty()
+                                               ? QStringLiteral("演示 / 脚本生成")
+                                               : so.value(QStringLiteral("srcPath")).toString()}});
 }
 
 void MainWindow::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows)

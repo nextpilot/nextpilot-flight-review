@@ -168,6 +168,8 @@ void CanvasWidget::buildHoverBar()
            [this] { emit splitRequested(0); });
     addBtn(QStringLiteral(":/icons/split_v.svg"), QStringLiteral("上下拆分"),
            [this] { emit splitRequested(1); });
+    m_maxBtn = addBtn(QStringLiteral(":/icons/maximize.svg"), QStringLiteral("最大化本画布"),
+                      [this] { emit maximizeRequested(); });
     m_dragBtn = addBtn(QStringLiteral(":/icons/cursor.svg"), QStringLiteral("拖拽：按住移到同页其他画布完成重排"),
                        [] {});
     m_dragBtn->installEventFilter(this);
@@ -261,6 +263,16 @@ void CanvasWidget::setTitle(const QString &title)
 {
     m_title = title;
     update();
+}
+
+void CanvasWidget::setMaximizedState(bool on)
+{
+    m_maximized = on;
+    if (!m_maxBtn)
+        return;
+    m_maxBtn->setIcon(QIcon(on ? QStringLiteral(":/icons/restore.svg")
+                              : QStringLiteral(":/icons/maximize.svg")));
+    m_maxBtn->setToolTip(on ? QStringLiteral("还原画布") : QStringLiteral("最大化本画布"));
 }
 
 void CanvasWidget::clearChannels()
@@ -2020,6 +2032,7 @@ QJsonObject CanvasWidget::saveState() const
         so[QStringLiteral("axis")] = s.axis;
         so[QStringLiteral("visible")] = s.visible;
         so[QStringLiteral("offset")] = s.offsetSec;
+        so[QStringLiteral("points")] = int(s.count());
         arr.append(so);
     }
     o[QStringLiteral("series")] = arr;

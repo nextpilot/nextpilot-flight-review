@@ -37,5 +37,7 @@
     <file alias="zoom_out.svg">icons/zoom_out.svg</file>
     <file alias="split_h.svg">icons/split_h.svg</file>
     <file alias="split_v.svg">icons/split_v.svg</file>
+    <file alias="maximize.svg">icons/maximize.svg</file>
+    <file alias="restore.svg">icons/restore.svg</file>
   </qresource>
 </RCC>

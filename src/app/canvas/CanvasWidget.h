@@ -78,6 +78,7 @@ public:
     double t0() const { return m_t0; }
     double t1() const { return m_t1; }
     void setPlayhead(double t);
+    void setMaximizedState(bool on);                // 主窗切换后同步按钮图标/提示
     void clearPlayhead();
 
 signals:
@@ -87,6 +88,7 @@ signals:
     void addChannelRequested();                     // 右键“添加曲线…”：由主窗选通道
     void removeRequested();                         // 右键“删除画布”
     void splitRequested(int orientation);           // 0=左右拆分 1=上下拆分
+    void maximizeRequested();                       // 最大化 / 还原本画布
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -186,6 +188,8 @@ private:
     bool m_hover = false;
     QWidget *m_hoverBar = nullptr;
     QToolButton *m_dragBtn = nullptr;
+    QToolButton *m_maxBtn = nullptr;
+    bool m_maximized = false;
     bool m_reordering = false;
     bool m_titleDrag = false;
     QPointF m_titleDragStart;
