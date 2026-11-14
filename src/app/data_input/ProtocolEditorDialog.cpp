@@ -199,29 +199,32 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
 
     auto *seriesBox = new QGroupBox(QStringLiteral("系列协议"), m_seqPage);
     auto *seriesLayout = new QVBoxLayout(seriesBox);
-    auto *seriesTop = new QHBoxLayout;
     m_seqSeries = new QCheckBox(QStringLiteral("启用"), seriesBox);
-    m_seqSelector = new QLineEdit(seriesBox);
+    seriesLayout->addWidget(m_seqSeries);
+    auto *seriesBody = new QWidget(seriesBox);
+    auto *bodyLayout = new QVBoxLayout(seriesBody);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    auto *seriesTop = new QHBoxLayout;
+    m_seqSelector = new QLineEdit(seriesBody);
     m_seqSelector->setPlaceholderText(QStringLiteral("selector，如 msgid & 0x7F"));
-    m_seqPayload = new QLineEdit(seriesBox);
+    m_seqPayload = new QLineEdit(seriesBody);
     m_seqPayload->setPlaceholderText(QStringLiteral("payload 段名"));
-    m_seqFallback = new QComboBox(seriesBox);
+    m_seqFallback = new QComboBox(seriesBody);
     m_seqFallback->addItems({QStringLiteral("reject"), QStringLiteral("raw")});
-    seriesTop->addWidget(m_seqSeries);
-    seriesTop->addWidget(new QLabel(QStringLiteral("selector"), seriesBox));
+    seriesTop->addWidget(new QLabel(QStringLiteral("selector"), seriesBody));
     seriesTop->addWidget(m_seqSelector, 1);
-    seriesTop->addWidget(new QLabel(QStringLiteral("payload"), seriesBox));
+    seriesTop->addWidget(new QLabel(QStringLiteral("payload"), seriesBody));
     seriesTop->addWidget(m_seqPayload);
-    seriesTop->addWidget(new QLabel(QStringLiteral("fallback"), seriesBox));
+    seriesTop->addWidget(new QLabel(QStringLiteral("fallback"), seriesBody));
     seriesTop->addWidget(m_seqFallback);
-    seriesLayout->addLayout(seriesTop);
+    bodyLayout->addLayout(seriesTop);
 
     auto *varTop = new QHBoxLayout;
-    auto *varAdd = new QPushButton(QStringLiteral("+ 变体"), seriesBox);
-    auto *varDel = new QPushButton(QStringLiteral("− 变体"), seriesBox);
+    auto *varAdd = new QPushButton(QStringLiteral("+ 变体"), seriesBody);
+    auto *varDel = new QPushButton(QStringLiteral("− 变体"), seriesBody);
     varAdd->setMaximumWidth(84);
     varDel->setMaximumWidth(84);
-    m_seqVariants = new QTableWidget(0, 2, seriesBox);
+    m_seqVariants = new QTableWidget(0, 2, seriesBody);
     m_seqVariants->setHorizontalHeaderLabels({QStringLiteral("取值"), QStringLiteral("变体名")});
     m_seqVariants->setMinimumWidth(230);
     m_seqVariants->setMaximumWidth(260);
@@ -230,11 +233,11 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
     varTop->addWidget(varAdd);
     varTop->addWidget(varDel);
     varTop->addWidget(m_seqVariants);
-    varTop->addWidget(new QLabel(QStringLiteral("变体段"), seriesBox));
+    varTop->addWidget(new QLabel(QStringLiteral("变体段"), seriesBody));
     varTop->addStretch(1);
-    seriesLayout->addLayout(varTop);
+    bodyLayout->addLayout(varTop);
 
-    m_seqVarFields = new ReorderTable(0, 4, seriesBox);
+    m_seqVarFields = new ReorderTable(0, 4, seriesBody);
     m_seqVarFields->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("长度"),
                                                QStringLiteral("类型"), QStringLiteral("取值 / 校验")});
     m_seqVarFields->horizontalHeader()->setStretchLastSection(true);
@@ -258,7 +261,14 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
         }
     };
     m_seqVarFields->setMinimumHeight(140);
-    seriesLayout->addWidget(m_seqVarFields, 1);
+    bodyLayout->addWidget(m_seqVarFields, 1);
+    seriesLayout->addWidget(seriesBody, 1);
+    auto syncSeriesBody = [=](bool on) {
+        seriesBody->setVisible(on);
+        seriesBox->setMaximumHeight(on ? QWIDGETSIZE_MAX : 72);
+    };
+    connect(m_seqSeries, &QCheckBox::toggled, this, syncSeriesBody);
+    syncSeriesBody(m_seqSeries->isChecked());
     seqLayout->addWidget(seriesBox, 1);
 
     m_seqPreview = new QLabel(m_seqPage);
