@@ -765,6 +765,8 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
     resize(1440, 880);
 
+    // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
+    m_pages = new QTabWidget(this);
 
     setMenuWidget(createRibbon());
     createDocks();
@@ -2992,7 +2994,8 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 
 void MainWindow::createPages()
 {
-    m_pages = new QTabWidget(this);
+    if (!m_pages)
+        m_pages = new QTabWidget(this);
     m_pages->setDocumentMode(true);
     m_pages->setTabsClosable(true);
     m_pages->tabBar()->setExpanding(false);
