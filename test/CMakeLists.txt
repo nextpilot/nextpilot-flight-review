@@ -91,6 +91,15 @@ if(TARGET ps_data_source_sim)
   add_test(NAME data_source COMMAND test_data_source)
 endif()
 
+if(TARGET ps_protocol)
+  add_executable(test_protocol_document unit/test_protocol_document.cpp)
+  target_include_directories(test_protocol_document PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  target_compile_definitions(test_protocol_document PRIVATE
+    PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/test/fixture")
+  target_link_libraries(test_protocol_document PRIVATE ps_protocol Qt6::Core)
+  add_test(NAME protocol_document COMMAND test_protocol_document)
+endif()
+
 if(TARGET ps_plugin_host)
   add_library(ps_demo_plugin MODULE external_plugin/DemoPlugin.cpp)
   target_include_directories(ps_demo_plugin PRIVATE ${PROJECT_SOURCE_DIR}/src

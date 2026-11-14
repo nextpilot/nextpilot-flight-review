@@ -65,6 +65,7 @@ struct SegmentDef
     std::string name;
     std::string role = "data";
     std::string unit;
+    std::string description;
     std::string prefix;
     TypeInfo type;
     ExprPtr sizeExpr;
@@ -156,5 +157,11 @@ bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &er
 
 /// 解析协议 JSON 为唯一类型化文档；失败返回 false 并写 err。
 bool parseDocument(const QJsonObject &root, ProtocolDocument &doc, std::string &err);
+
+/// 把类型化文档写回协议 JSON；用于编辑器和保存的唯一序列化入口。
+QJsonObject toJson(const ProtocolDocument &doc);
+
+/// 表达式文本化，供编辑器表格显示和 JSON 回写。
+std::string exprText(const ExprPtr &e);
 
 } // namespace ps::protocol

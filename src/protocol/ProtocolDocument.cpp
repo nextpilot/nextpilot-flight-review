@@ -473,6 +473,7 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     seg.hidden = o.value(QStringLiteral("hidden")).toBool(false);
     seg.plot = o.value(QStringLiteral("plot")).toBool(true);
     seg.unit = o.value(QStringLiteral("unit")).toString().toStdString();
+    seg.description = o.value(QStringLiteral("description")).toString().toStdString();
     if (o.contains(QStringLiteral("value")))
     {
         seg.hasValue = true;
@@ -599,5 +600,240 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
 }
 
 /* ---------------- 解码与校验 ---------------- */
+
+
+static std::string numText(double v)
+{
+    if (v == static_cast<double>(static_cast<int64_t>(v)))
+    {
+        std::ostringstream os;
+        os << static_cast<int64_t>(v);
+        return os.str();
+    }
+    std::ostringstream os;
+    os << std::setprecision(17) << v;
+    return os.str();
+}
+
+std::string exprText(const ExprPtr &e)
+{
+    if (!e)
+        return "0";
+    switch (e->kind)
+    {
+    case Expr::Num:
+        return numText(e->num);
+    case Expr::Ref:
+        return e->b ? e->name + "[" + exprText(e->b) + "]" : e->name;
+    case Expr::Un:
+        return "-" + exprText(e->a);
+    case Expr::Bin:
+    {
+        std::string op(1, static_cast<char>(e->op));
+        return "(" + exprText(e->a) + " " + op + " " + exprText(e->b) + ")";
+    }
+    case Expr::Fn:
+    {
+        std::string s = e->fn + "(" + exprText(e->a);
+        if (e->b)
+            s += ", " + exprText(e->b);
+        if (e->c)
+            s += ", " + exprText(e->c);
+        return s + ")";
+    }
+    }
+    return "0";
+}
+
+static QJsonValue exprJson(const ExprPtr &e)
+{
+    if (!e)
+        return QJsonValue();
+    if (e->kind == Expr::Num)
+        return QJsonValue(e->num);
+    return QJsonValue(QString::fromStdString(exprText(e)));
+}
+
+static QString typeName(const TypeInfo &ti)
+{
+    switch (ti.type)
+    {
+    case FType::U8: return "u8";
+    case FType::I8: return "i8";
+    case FType::U16: return "u16";
+    case FType::I16: return "i16";
+    case FType::U32: return "u32";
+    case FType::I32: return "i32";
+    case FType::U64: return "u64";
+    case FType::I64: return "i64";
+    case FType::F32: return "f32";
+    case FType::F64: return "f64";
+    case FType::BOOL: return "bool";
+    case FType::BCD: return "bcd";
+    case FType::STR: return "str";
+    }
+    return "u8";
+}
+
+static QJsonObject checkJson(const CheckSpec &c)
+{
+    QJsonObject o;
+    o["op"] = QString::fromStdString(c.op);
+    if (c.scope != "element")
+        o["scope"] = QString::fromStdString(c.scope);
+    const bool seq = (c.op == "crc8" || c.op == "crc16" || c.op == "crc32" || c.op == "sum8" ||
+                      c.op == "sum16" || c.op == "xor8" || c.op == "parity");
+    if (seq)
+    {
+        QJsonArray over;
+        for (const auto &r : c.over)
+            over.append(QString::fromStdString(r));
+        o["over"] = over;
+        o["poly"] = QStringLiteral("0x%1").arg(c.poly, 0, 16);
+        o["init"] = QStringLiteral("0x%1").arg(c.init, 0, 16);
+        if (c.xorout)
+            o["xorout"] = QStringLiteral("0x%1").arg(c.xorout, 0, 16);
+        if (c.refin)
+            o["refin"] = true;
+        if (c.refout)
+            o["refout"] = true;
+    }
+    else if (c.op == "range")
+    {
+        o["min"] = exprJson(c.rhs);
+        o["max"] = exprJson(c.rhs2);
+    }
+    else if (c.op == "mask")
+    {
+        o["and"] = exprJson(c.rhs);
+        o["eq"] = exprJson(c.rhs2);
+    }
+    else if (c.op == "in")
+    {
+        QJsonArray values;
+        for (double v : c.values)
+            values.append(v);
+        o["values"] = values;
+    }
+    else if (c.rhs)
+    {
+        o["value"] = exprJson(c.rhs);
+    }
+    return o;
+}
+
+static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &doc)
+{
+    QJsonObject o;
+    o["name"] = QString::fromStdString(seg.name);
+    o["size"] = exprJson(seg.sizeExpr);
+    o["type"] = typeName(seg.type);
+    const bool docBig = (doc.endian == "big" || doc.endian == "be");
+    if (seg.bigEndian != docBig)
+        o["endian"] = seg.bigEndian ? "big" : "little";
+    if (seg.role != "data")
+        o["role"] = QString::fromStdString(seg.role);
+    if (seg.scale != 1.0)
+        o["scale"] = seg.scale;
+    if (seg.offset != 0.0)
+        o["offset"] = seg.offset;
+    if (!seg.unit.empty())
+        o["unit"] = QString::fromStdString(seg.unit);
+    if (!seg.description.empty())
+        o["description"] = QString::fromStdString(seg.description);
+    if (seg.hidden)
+        o["hidden"] = true;
+    if (!seg.plot)
+        o["plot"] = false;
+    if (seg.hasValue && seg.valueExpr)
+        o["value"] = exprJson(seg.valueExpr);
+    if (!seg.checks.empty())
+    {
+        QJsonArray checks;
+        for (const auto &c : seg.checks)
+            checks.append(checkJson(c));
+        o["checks"] = checks;
+    }
+    if (seg.counts.enabled)
+    {
+        QJsonObject c;
+        QJsonArray fields;
+        for (const auto &f : seg.counts.fields)
+            fields.append(QString::fromStdString(f));
+        c["fields"] = fields;
+        c["unit"] = QString::fromStdString(seg.counts.unit);
+        if (seg.counts.expr)
+            c["expr"] = exprJson(seg.counts.expr);
+        o["counts"] = c;
+    }
+    return o;
+}
+
+QJsonObject toJson(const ProtocolDocument &doc)
+{
+    QJsonObject root;
+    root["version"] = QString::fromStdString(doc.version);
+    root["name"] = QString::fromStdString(doc.name);
+    if (!doc.description.empty())
+        root["description"] = QString::fromStdString(doc.description);
+    root["layout"] = QString::fromStdString(doc.layout);
+    root["endian"] = QString::fromStdString(doc.endian);
+    root["maxsize"] = static_cast<int>(doc.maxsize);
+
+    if (doc.hasTimestamp && doc.timestampExpr)
+    {
+        QJsonObject t;
+        t["expr"] = exprJson(doc.timestampExpr);
+        if (doc.timestampUnit != "s")
+            t["unit"] = QString::fromStdString(doc.timestampUnit);
+        if (doc.timestampOrigin != "first_frame")
+            t["origin"] = QString::fromStdString(doc.timestampOrigin);
+        if (doc.timestampRaw)
+            t["raw"] = true;
+        if (doc.timestampFallback != "reject")
+            t["fallback"] = QString::fromStdString(doc.timestampFallback);
+        root["timestamp"] = t;
+    }
+
+    QJsonArray segs;
+    for (const auto &seg : doc.segments)
+        segs.append(segmentJson(seg, doc));
+    root["segments"] = segs;
+
+    if (doc.series.enabled && doc.series.selector)
+    {
+        QJsonObject s;
+        s["selector"] = exprJson(doc.series.selector);
+        s["payload"] = QString::fromStdString(doc.series.payload);
+        if (doc.series.fallback != "reject")
+            s["fallback"] = QString::fromStdString(doc.series.fallback);
+        QJsonArray variants;
+        for (const auto &v : doc.series.variants)
+        {
+            QJsonObject vo;
+            vo["name"] = QString::fromStdString(v.name);
+            QJsonArray values;
+            for (const auto &k : v.keys)
+            {
+                if (k.rfind("s:", 0) == 0)
+                    values.append(QString::fromStdString(k.substr(2)));
+                else if (k.rfind("n:", 0) == 0)
+                    values.append(QString::fromStdString(k.substr(2)).toDouble());
+            }
+            if (values.size() == 1)
+                vo["value"] = values.first();
+            else if (!values.isEmpty())
+                vo["values"] = values;
+            QJsonArray vsegs;
+            for (const auto &seg : v.segments)
+                vsegs.append(segmentJson(seg, doc));
+            vo["segments"] = vsegs;
+            variants.append(vo);
+        }
+        s["variants"] = variants;
+        root["series"] = s;
+    }
+    return root;
+}
 
 } // namespace ps::protocol

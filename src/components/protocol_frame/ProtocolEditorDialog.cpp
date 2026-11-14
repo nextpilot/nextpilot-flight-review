@@ -896,6 +896,10 @@ void ProtocolEditorDialog::rebuildJsonFromDesign()
         o.remove(QStringLiteral("variants"));
     }
 
+    ps::protocol::ProtocolDocument model;
+    std::string modelErr;
+    if (ps::protocol::parseDocument(o, model, modelErr))
+        o = ps::protocol::toJson(model);
     m_syncing = true;
     m_json->setPlainText(QJsonDocument(o).toJson(QJsonDocument::Indented));
     m_syncing = false;
@@ -1200,7 +1204,13 @@ void ProtocolEditorDialog::save()
         QMessageBox::warning(this, QStringLiteral("保存"), QStringLiteral("无法写入模板文件"));
         return;
     }
-    f.write(m_json->toPlainText().toUtf8());
+    const QJsonObject raw = currentTemplate();
+    QJsonObject out = raw;
+    ps::protocol::ProtocolDocument doc;
+    std::string modelErr;
+    if (ps::protocol::parseDocument(raw, doc, modelErr))
+        out = ps::protocol::toJson(doc);
+    f.write(QJsonDocument(out).toJson(QJsonDocument::Indented));
     accept();
 }
 
@@ -1531,9 +1541,13 @@ void ProtocolEditorDialog::addSeqRow(QTableWidget *t)
 
 void ProtocolEditorDialog::refreshSeqFromJson()
 {
-    const QJsonObject o = currentTemplate();
+    QJsonObject o = currentTemplate();
     if (o.isEmpty() || !o.contains(QStringLiteral("segments")))
         return;
+    ps::protocol::ProtocolDocument model;
+    std::string modelErr;
+    if (ps::protocol::parseDocument(o, model, modelErr))
+        o = ps::protocol::toJson(model);
     m_syncing = true;
     m_seqName->setText(o.value(QStringLiteral("name")).toString());
     m_seqDesc->setText(o.value(QStringLiteral("description")).toString());
@@ -1695,6 +1709,10 @@ void ProtocolEditorDialog::rebuildSeqJson()
         o.insert(QStringLiteral("series"), series);
     }
 
+    ps::protocol::ProtocolDocument model;
+    std::string modelErr;
+    if (ps::protocol::parseDocument(o, model, modelErr))
+        o = ps::protocol::toJson(model);
     m_syncing = true;
     m_json->setPlainText(QJsonDocument(o).toJson(QJsonDocument::Indented));
     m_syncing = false;
