@@ -1,5 +1,5 @@
-#include "ps_plugin_api.h"
-#include "app/plugin_host/HostApi.h"
+#include "ps_extension_api.h"
+#include "host/extension/HostApi.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -18,7 +18,7 @@
 #include <thread>
 #include <vector>
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_oem7(void);
+extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_oem7(void);
 
 struct Sink
 {
@@ -114,7 +114,7 @@ static std::vector<unsigned char> bestPosBinary(bool shortHeader = false)
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
-    const auto *d = ps_plugin_entry_data_source_oem7();
+    const auto *d = ps_extension_entry_data_source_oem7();
     assert(d && d->family == PS_FAMILY_DATA_INPUT && d->data_input);
     const PsDataInputVtable *v = d->data_input;
     void *probe = v->create();

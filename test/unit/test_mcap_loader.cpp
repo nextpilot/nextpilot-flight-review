@@ -1,6 +1,6 @@
-#include "ps_plugin_api.h"
+#include "ps_extension_api.h"
 #include "ps_kernel.h"
-#include "app/plugin_host/HostApi.h"
+#include "host/extension/HostApi.h"
 
 #include <cassert>
 #include <cstdint>
@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_data_load_mcap(void);
+extern "C" const PsExtensionDescriptor *ps_extension_entry_data_load_mcap(void);
 
 namespace {
 
@@ -121,8 +121,8 @@ const PsChannelInfo *findChannel(PsDataset *ds, const char *name)
 
 int main()
 {
-    const PsPluginDescriptor *desc = ps_plugin_entry_data_load_mcap();
-    assert(desc && desc->abi_version == PS_PLUGIN_ABI_VERSION);
+    const PsExtensionDescriptor *desc = ps_extension_entry_data_load_mcap();
+    assert(desc && desc->abi_version == PS_EXTENSION_ABI_VERSION);
     assert(desc->family == PS_FAMILY_DATA_INPUT);
     const PsDataInputVtable *vt = desc->data_input;
     assert(vt && vt->import_file);

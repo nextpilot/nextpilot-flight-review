@@ -1,5 +1,5 @@
-# ps_kernel：把 src/kernel 的 Rust 静态库接进 CMake。
-# 约定（D16）：src/kernel 是 Cargo workspace 根，ps-abi 产出 staticlib + 唯一对外头文件。
+# ps_kernel：把 src/base/kernel 的 Rust 静态库接进 CMake。
+# 约定（D16）：src/base/kernel 是 Cargo workspace 根，ps-abi 产出 staticlib + 唯一对外头文件。
 # 有网可用 Corrosion（CPS_USE_CORROSION），离线环境走 cargo 直调，两条路等价。
 function(ps_import_kernel target)
   find_program(PS_CARGO NAMES cargo HINTS "$ENV{HOME}/.cargo/bin" "$ENV{USERPROFILE}/.cargo/bin")
@@ -8,7 +8,7 @@ function(ps_import_kernel target)
     message(FATAL_ERROR "找不到 cargo：内核是 Rust 写的，请先安装 rustup 或设置 -DPS_CARGO=<path>")
   endif()
 
-  set(kernel_dir "${PROJECT_SOURCE_DIR}/src/kernel")
+  set(kernel_dir "${PROJECT_SOURCE_DIR}/src/base/kernel")
   set(profile release)
 
   if(WIN32)

@@ -79,7 +79,7 @@ zlib/zstd/lz4 缺失时由 CMake 自动从 Gitee 镜像拉源码静态构建，�
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ctest --test-dir build --output-on-failure
-./build/src/app/plotscope_app
+./build/src/base/plotscope_app
 ```
 
 只构建 Rust 内核、不构建 GUI：
@@ -92,9 +92,9 @@ cmake --build build -j
 ## 目录
 
 ```text
-src/app/        Qt 6 主程序：Ribbon、Dock、画布、变换、加载器
-src/kernel/     Rust 内核，产出 C ABI（ps_kernel.h）
-src/3rdparty/   锁版本三方库（SARibbon 等）
+src/base/         底座：入口、宿主扩展层、UI、资源、Rust 内核
+src/extensions/   builtin 业务组件 + dynamic 外部扩展
+src/3rdparty/     锁版本三方库（SARibbon 等）
 docs/          设计文档、PJ 对齐笔记、原型与截图
 ```
 

@@ -1,55 +1,42 @@
 # src 目录
 
-`src` 只按“职责”分目录，不按语言分。Rust 目前只出现在 kernel，但 kernel 的身份不是“Rust 目录”，而是“与 Qt 无关的抽象业务逻辑”。
+`src` 按职责分层：`base` 是 PlotScope 底座，只提供 API、框架与宿主能力，不含具体业务；`extensions` 承载具体业务能力。
 
 ```text
 src/
-  app/          Qt 实现 + 宿主基础设施
-    shell/      主窗口、Ribbon、Dock
-    canvas/     画布、坐标轴、图例
-    loader/     loader 注册与通用选项/对话框
-    source/     实时源注册与配置/调试
-    transform/  变换对话框
-    script/     Lua 绑定
-    plugin_host/ 插件发现、装载、ABI 校验、生命周期
-    cache/       缓存 key/目录/失效策略；数据落盘调 kernel 的 ps-cache
+  base/                       底座：内核、宿主扩展层、UI、资源
+    main.cpp                  入口；只认扩展注册表，不 include 具体组件
+    host/
+      extension/              扩展契约、注册表、动态装载、宿主 API
+      services/
+        cache/                数据集缓存
+        live/                 实时会话与录制
+    kernel/                   与 Qt 无关的抽象逻辑（Rust，ps_kernel.h）
+    ui/                       Shell、画布、数据输入、脚本、变换、视频
+    resources/                图标资源、Lua 脚本
 
-  kernel/       与 Qt 无关的抽象业务逻辑（当前 Rust 实现）
-    include/    ps_kernel.h，唯一对外 C ABI
-    ps-ndf/     数据模型：Dataset / Series / LOD / 精度
-    ps-ops/     通用算子：filter / quat / align
-    ps-cache/   数据集二进制缓存机制（原子写、指纹校验）
-    ps-stream/  实时流缓冲机制（固定容量、通道视图、流上 LOD）
-    ps-abi/     C ABI 门面：只做指针、错误码、panic 隔离
+  extensions/
+    builtin/                  随包发布的业务组件
+      gnss/                   NMEA / UBX / OEM7 数据源
+      custom_protocol/        自定义协议加载、编辑、编解码；protocol/ 为其协议模型
+    dynamic/                  外部动态扩展（.so / .dll）
+      api/                    ps_extension_api.h，扩展 ABI
+      sdk/                    C++ / Rust 扩展 SDK
+      data_loader/            CSV / ULog / APBin / ASC / BLF / MCAP 等
+      data_source/            仿真 / MAVLink
 
-  plugin/       插件（官方随包发布）
-    include/    ps_plugin_api.h，插件契约（ABI 4 + 宿主函数表）
-    sdk/rust/   Rust 插件 SDK（C 布局镜像，不依赖 kernel）
-    data_loader/rustcsv/  Rust 真实 I/O 样板
-    data_loader/ CSV / ULog / APBin / ASC / BLF
-    data_source/ 仿真 / MAVLink / OEM7
-
-  scripts/      用户可改的 Lua 脚本与算子 schema
-  3rdparty/     第三方源码
+  3rdparty/                   第三方源码
 ```
 
 ## 归属规则
 
 | 东西 | 放哪 | 判据 |
 |---|---|---|
-| 数据模型、通用算子、LOD | `kernel/` | 要遍历/变换/降采样，且不碰 Qt、不做 I/O |
-| 插件发现、ABI 校验、装载 | `app/plugin_host/` | 管宿主生命周期，不负责计算 |
-| 缓存 key/目录/失效策略 | `app/cache/` | 策略归 app；落盘机制在 kernel `ps-cache` |
-| 文件/协议解析、配置 schema | `plugin/` | 决定数据从哪来 |
-| 窗口、Ribbon、Dock、对话框 | `app/` | 只在屏幕上存在 |
-| 用户 Lua 脚本 | `scripts/` | 可热改、可重载，不编进二进制 |
+| 数据模型、通用算子、LOD、缓存/流机制 | `base/kernel/` | 不碰 Qt、不做 I/O |
+| 扩展契约、注册表、动态装载、宿主 API | `base/host/extension/` | 只做宿主生命周期与能力暴露 |
+| 缓存策略、实时会话与录制 | `base/host/services/` | 宿主侧服务，不是业务格式 |
+| 窗口、Ribbon、Dock、对话框 | `base/ui/` | 只在屏幕上存在 |
+| 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |
+| 用户 Lua 脚本与图标 | `base/resources/` | 运行期资源，不进 host 头文件 |
 
-`kernel` 不允许出现 `QWidget`、文件路径、TCP/UDP、CSV/OEM7 字段名。`app` 不允许绕过 `ps_kernel.h` 直接碰 kernel 内部类型。
-
-## Rust 的位置
-
-Rust 不是某一层的身份，而是实现手段：
-
-- `kernel/` 里的 Rust 负责共享数据模型、批量算子、LOD；
-- `plugin/` 里的 Rust 负责格式解析、协议、I/O，但只能通过 `ps_plugin_api.h` 和宿主函数写数据；
-- 插件不得静态链接第二份 kernel，避免两套 allocator 和两套数据模型。
+内置组件与外部动态扩展统一通过 `ExtensionRegistry::addExtension()` 注册；内置组件自己静态注册，外部 `.so` 由 `ExtensionRuntime` 装载后交给 `DynamicExtension` 适配。

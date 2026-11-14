@@ -73,7 +73,7 @@ private:
 
 } // namespace
 
-PS_DATA_INPUT_PLUGIN(DemoInput, R"({"id":"demo_input","name":"Demo Input","version":"1.0.0","file_extensions":[".demo"]})")
+PS_DATA_INPUT_EXTENSION(DemoInput, R"({"id":"demo_input","name":"Demo Input","version":"1.0.0","file_extensions":[".demo"]})")
 
 int main()
 {

@@ -1,4 +1,4 @@
-#include "protocol/ProtocolDocument.h"
+#include "ProtocolDocument.h"
 
 #include <QFile>
 #include <QJsonDocument>

@@ -1,4 +1,4 @@
-#include "app/commands/CommandRegistry.h"
+#include "host/extension/CommandRegistry.h"
 
 #include <QCoreApplication>
 #include <cstdio>

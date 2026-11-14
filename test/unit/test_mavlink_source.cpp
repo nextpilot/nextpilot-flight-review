@@ -1,5 +1,5 @@
-#include "ps_plugin_api.h"
-#include "app/plugin_host/HostApi.h"
+#include "ps_extension_api.h"
+#include "host/extension/HostApi.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -18,7 +18,7 @@
 #include <string>
 #include <thread>
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_mavlink(void);
+extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_mavlink(void);
 
 struct Sink
 {
@@ -57,7 +57,7 @@ static void putU64(QByteArray &b, uint64_t v)
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
-    const auto *d = ps_plugin_entry_data_source_mavlink();
+    const auto *d = ps_extension_entry_data_source_mavlink();
     assert(d && d->family == PS_FAMILY_DATA_INPUT && d->data_input);
     const PsDataInputVtable *v = d->data_input;
     void *probe = v->create();

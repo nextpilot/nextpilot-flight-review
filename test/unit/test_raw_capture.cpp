@@ -13,7 +13,7 @@ int main()
 
     ps::capture::Header header;
     header.source_id = "test_source";
-    header.plugin_id = "test_plugin";
+    header.extension_id = "test_extension";
     header.config_json = R"({"port":14550})";
     header.schema_blob = "schema-bytes";
     header.created_at_ns = 123456789;

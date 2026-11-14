@@ -1,5 +1,5 @@
-#include "ps_plugin_api.h"
-#include "app/plugin_host/HostApi.h"
+#include "ps_extension_api.h"
+#include "host/extension/HostApi.h"
 
 #include <cassert>
 #include <chrono>
@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_sim(void);
+extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_sim(void);
 
 struct SinkState
 {
@@ -39,8 +39,8 @@ static int32_t onEvent(void *, const char *, const char *)
 
 int main()
 {
-    const PsPluginDescriptor *d = ps_plugin_entry_data_source_sim();
-    assert(d && d->abi_version == PS_PLUGIN_ABI_VERSION);
+    const PsExtensionDescriptor *d = ps_extension_entry_data_source_sim();
+    assert(d && d->abi_version == PS_EXTENSION_ABI_VERSION);
     assert(d->family == PS_FAMILY_DATA_INPUT && d->data_input);
     const PsDataInputVtable *v = d->data_input;
     assert(v->protocol_version == PS_DATA_INPUT_PROTOCOL_VERSION);
