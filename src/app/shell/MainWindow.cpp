@@ -15,6 +15,12 @@
 #include <QSpinBox>
 #include <QComboBox>
 #include <QToolButton>
+#include <QButtonGroup>
+#include <QScrollArea>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
 #include <QFileDialog>
 #include <QTimer>
 #include <QFileInfo>
@@ -90,6 +96,53 @@ void compactValueTable(QTableWidget *t)
     f.setPixelSize(12);
     t->setFont(f);
 }
+
+// 数据源 Dock 接收文件拖拽：把 .ulg/.mf4/.csv 等直接拖到左侧数据源区域
+class FileDropHost : public QWidget
+{
+public:
+    std::function<void(const QStringList &)> onFiles;
+
+    explicit FileDropHost(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        setAcceptDrops(true);
+    }
+
+protected:
+    static QStringList localFiles(const QMimeData *mime)
+    {
+        QStringList files;
+        if (!mime || !mime->hasUrls())
+            return files;
+        for (const QUrl &url : mime->urls())
+            if (url.isLocalFile())
+                files << url.toLocalFile();
+        return files;
+    }
+
+    void dragEnterEvent(QDragEnterEvent *e) override
+    {
+        if (!localFiles(e->mimeData()).isEmpty())
+            e->acceptProposedAction();
+    }
+
+    void dragMoveEvent(QDragMoveEvent *e) override
+    {
+        if (!localFiles(e->mimeData()).isEmpty())
+            e->acceptProposedAction();
+    }
+
+    void dropEvent(QDropEvent *e) override
+    {
+        const QStringList files = localFiles(e->mimeData());
+        if (files.isEmpty())
+            return;
+        e->acceptProposedAction();
+        if (onFiles)
+            onFiles(files);
+    }
+};
 
 QPixmap plotThumb(const QString &kind)
 {
@@ -1401,46 +1454,111 @@ void MainWindow::createDocks()
     barLay->addWidget(dockMenuBtn);
     srcDock->setTitleBarWidget(srcBar);
 
-    auto *srcHost = new QWidget(srcDock);
+    auto *srcHost = new FileDropHost(srcDock);
+    srcHost->onFiles = [this](const QStringList &files) {
+        for (const QString &f : files)
+            loadFile(f);
+    };
     auto *srcLay = new QVBoxLayout(srcHost);
     srcLay->setContentsMargins(0, 2, 0, 0);
     srcLay->setSpacing(0);
 
-    // 源列表：每条=状态点 + 名称 + 速率/条目 + 配置
-    auto *rowsHost = new QWidget(srcHost);
+    // 上段：源列表（可折叠，最高 124px），每条=状态点 + 名称 + 速率/条目 + 配置
+    auto *srcListWrap = new QWidget(srcHost);
+    auto *listLay = new QVBoxLayout(srcListWrap);
+    listLay->setContentsMargins(0, 0, 0, 0);
+    listLay->setSpacing(0);
+    auto *listHead = new QWidget(srcListWrap);
+    listHead->setFixedHeight(22);
+    listHead->setStyleSheet(QStringLiteral("background:#11171c;border-bottom:1px solid #232b33;"));
+    auto *headLay = new QHBoxLayout(listHead);
+    headLay->setContentsMargins(8, 0, 4, 0);
+    headLay->setSpacing(4);
+    auto *headCap = new QLabel(QStringLiteral("已加载源"), listHead);
+    headCap->setStyleSheet(QStringLiteral("color:#6e7d88;font-size:10px;background:transparent;"));
+    headLay->addWidget(headCap);
+    headLay->addStretch();
+    m_srcListToggle = new QToolButton(listHead);
+    m_srcListToggle->setText(QStringLiteral("▾"));
+    m_srcListToggle->setToolTip(QStringLiteral("收起 / 展开源列表"));
+    m_srcListToggle->setCursor(Qt::PointingHandCursor);
+    m_srcListToggle->setFixedSize(18, 18);
+    m_srcListToggle->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;color:#6e7d88;font-size:11px;padding:0;}"
+        "QToolButton:hover{color:#c9d1d9;}"));
+    headLay->addWidget(m_srcListToggle);
+    listLay->addWidget(listHead);
+
+    auto *rowsHost = new QWidget(srcListWrap);
     m_srcRows = new QVBoxLayout(rowsHost);
     m_srcRows->setContentsMargins(0, 0, 0, 0);
     m_srcRows->setSpacing(0);
-    // 不再预置假源；列表只显示真实加载的文件与已连接 source。
-    srcLay->addWidget(rowsHost);
+    m_srcListScroll = new QScrollArea(srcListWrap);
+    m_srcListScroll->setWidget(rowsHost);
+    m_srcListScroll->setWidgetResizable(true);
+    m_srcListScroll->setFrameShape(QFrame::NoFrame);
+    m_srcListScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_srcListScroll->setMaximumHeight(124);
+    m_srcListScroll->setStyleSheet(QStringLiteral("QScrollArea{background:transparent;border:0;}"));
+    listLay->addWidget(m_srcListScroll);
+    srcLay->addWidget(srcListWrap);
+    connect(m_srcListToggle, &QToolButton::clicked, this, [this] {
+        const bool hide = m_srcListScroll->isVisible();
+        m_srcListScroll->setVisible(!hide);
+        m_srcListToggle->setText(hide ? QStringLiteral("▸") : QStringLiteral("▾"));
+    });
 
-    // 搜索：字段树/参数表/消息表共用，按当前页签生效
+    // 中段：字段/参数/消息 过滤 chip（QTabBar 保留为状态模型，不显示）
+    m_srcTabs = new QTabBar(srcHost);
+    m_srcTabs->addTab(QStringLiteral("字段 0"));
+    m_srcTabs->addTab(QStringLiteral("参数 0"));
+    m_srcTabs->addTab(QStringLiteral("消息 0"));
+    m_srcTabs->hide();
+    auto *chipHost = new QWidget(srcHost);
+    chipHost->setStyleSheet(QStringLiteral("background:#0f151a;border-bottom:1px solid #232b33;"));
+    auto *chipLay = new QHBoxLayout(chipHost);
+    chipLay->setContentsMargins(8, 5, 8, 5);
+    chipLay->setSpacing(4);
+    auto *chipGroup = new QButtonGroup(chipHost);
+    chipGroup->setExclusive(true);
+    for (int i = 0; i < 3; ++i)
+    {
+        auto *chip = new QToolButton(chipHost);
+        chip->setCheckable(true);
+        chip->setChecked(i == 0);
+        chip->setText(m_srcTabs->tabText(i));
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        chip->setFixedHeight(22);
+        chip->setStyleSheet(QStringLiteral(
+            "QToolButton{background:#161d23;border:1px solid #2a343d;border-radius:9px;"
+            "color:#8494a0;font-size:11px;padding:0 7px;}"
+            "QToolButton:hover{color:#c9d1d9;border-color:#3d4a55;}"
+            "QToolButton:checked{background:#2a2416;border-color:#6b5320;color:#f2b134;}"
+            "QToolButton:disabled{color:#4a545e;border-color:#232b33;background:transparent;}"
+            "QToolButton:disabled:checked{color:#5d6c77;border-color:#2a343d;background:#161d23;}"));
+        chipGroup->addButton(chip, i);
+        chipLay->addWidget(chip, 1);
+        m_srcChips.append(chip);
+        connect(chip, &QToolButton::clicked, this, [this, i] { m_srcTabs->setCurrentIndex(i); });
+    }
+    srcLay->addWidget(chipHost);
+    connect(m_srcTabs, &QTabBar::currentChanged, this, [this] {
+        applySrcFilter();
+        syncSrcChips();
+    });
+
+    // 搜索：字段树/参数表/消息表共用，按当前 chip 生效
     m_srcFilter = new QLineEdit(srcHost);
     m_srcFilter->setPlaceholderText(QStringLiteral("搜索字段 / 参数 / 消息"));
     m_srcFilter->setClearButtonEnabled(true);
-    m_srcFilter->setFixedHeight(28);
+    m_srcFilter->setFixedHeight(26);
     m_srcFilter->setStyleSheet(QStringLiteral(
-        "QLineEdit{background:#0f151a;border:0;border-top:1px solid #232b33;border-bottom:1px solid #232b33;"
+        "QLineEdit{background:#0f151a;border:0;border-bottom:1px solid #232b33;"
         "color:#c9d1d9;font-size:11px;padding:0 8px;}"
         "QLineEdit:focus{border-bottom:1px solid #f2b134;}"));
     srcLay->addWidget(m_srcFilter);
     connect(m_srcFilter, &QLineEdit::textChanged, this, [this] { applySrcFilter(); });
-
-    // 三页签：字段 / 参数 / 消息
-    m_srcTabs = new QTabBar(srcHost);
-    m_srcTabs->setExpanding(false);
-    m_srcTabs->setDrawBase(false);
-    m_srcTabs->addTab(QStringLiteral("字段 0"));
-    m_srcTabs->addTab(QStringLiteral("参数 0"));
-    m_srcTabs->addTab(QStringLiteral("消息 0"));
-    m_srcTabs->setStyleSheet(QStringLiteral(
-        "QTabBar{background:#161b20;border-bottom:1px solid #232b33;}"
-        "QTabBar::tab{background:transparent;color:#5d6c77;font-size:12px;padding:6px 14px;"
-        "border:0;border-bottom:2px solid transparent;}"
-        "QTabBar::tab:hover{color:#c8d2da;}"
-        "QTabBar::tab:selected{color:#f2b134;border-bottom:2px solid #f2b134;}"));
-    srcLay->addWidget(m_srcTabs);
-    connect(m_srcTabs, &QTabBar::currentChanged, this, [this] { applySrcFilter(); });
 
     m_srcStack = new QStackedWidget(srcHost);
 
@@ -1563,8 +1681,84 @@ void MainWindow::createDocks()
     compactValueTable(m_msgTable);
     m_srcStack->addWidget(m_msgTable);
 
+    // 空态：没有再摆三个 0，直接给打开日志 / 连接实时源 / 最近文件
+    m_srcEmpty = new QWidget(m_srcStack);
+    auto *emptyLay = new QVBoxLayout(m_srcEmpty);
+    emptyLay->setContentsMargins(14, 16, 14, 16);
+    emptyLay->setSpacing(6);
+    auto *emptyTitle = new QLabel(QStringLiteral("还没有数据源"), m_srcEmpty);
+    emptyTitle->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:13px;font-weight:600;background:transparent;"));
+    emptyTitle->setAlignment(Qt::AlignCenter);
+    auto *emptyHint = new QLabel(QStringLiteral("打开飞行日志，或连接一个实时源开始分析"), m_srcEmpty);
+    emptyHint->setStyleSheet(QStringLiteral("color:#6e7d88;font-size:10px;background:transparent;"));
+    emptyHint->setAlignment(Qt::AlignCenter);
+    emptyHint->setWordWrap(true);
+    emptyLay->addWidget(emptyTitle);
+    emptyLay->addWidget(emptyHint);
+    emptyLay->addSpacing(6);
+    auto mkEmptyBtn = [&](const QString &text) {
+        auto *b = new QPushButton(text, m_srcEmpty);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setFixedHeight(28);
+        b->setStyleSheet(QStringLiteral(
+            "QPushButton{background:#1b232b;border:1px solid #2d3841;border-radius:2px;"
+            "color:#c9d1d9;font-size:11px;text-align:center;}"
+            "QPushButton:hover{background:#222b33;border-color:#f2b134;color:#f2b134;}"));
+        emptyLay->addWidget(b);
+        return b;
+    };
+    auto *openBtn = mkEmptyBtn(QStringLiteral("打开日志"));
+    auto *liveBtn = mkEmptyBtn(QStringLiteral("连接实时源"));
+    auto *recentBtn = mkEmptyBtn(QStringLiteral("最近文件"));
+    emptyLay->addStretch();
+    connect(openBtn, &QPushButton::clicked, this, [this] {
+        QStringList filters;
+        for (const DataInputPlugin &lp : DataInputRegistry::instance().filePlugins())
+            if (!lp.filter.isEmpty())
+                filters << lp.filter;
+        filters << QStringLiteral("全部 (*)");
+        const QStringList fs = QFileDialog::getOpenFileNames(
+            this, QStringLiteral("打开飞行日志"), {}, filters.join(QStringLiteral(";;")));
+        for (const QString &f : fs)
+            loadFile(f);
+    });
+    connect(liveBtn, &QPushButton::clicked, this, [this, liveBtn] {
+        QMenu menu(this);
+        for (const DataInputPlugin &sp : DataInputRegistry::instance().streamPlugins())
+        {
+            QAction *a = menu.addAction(sp.label);
+            connect(a, &QAction::triggered, this, [this, id = sp.id] { connectLiveSource(id); });
+        }
+        if (menu.isEmpty())
+            menu.addAction(QStringLiteral("没有可用的实时源插件"))->setEnabled(false);
+        menu.exec(liveBtn->mapToGlobal(QPoint(0, liveBtn->height())));
+    });
+    connect(recentBtn, &QPushButton::clicked, this, [this, recentBtn] {
+        QMenu menu(this);
+        QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+        const QStringList recent = st.value(QStringLiteral("recentFiles")).toStringList();
+        for (const QString &path : recent)
+        {
+            QAction *a = menu.addAction(QFileInfo(path).fileName());
+            a->setToolTip(path);
+            connect(a, &QAction::triggered, this, [this, path] { loadFile(path); });
+        }
+        if (menu.isEmpty())
+            menu.addAction(QStringLiteral("暂无最近文件"))->setEnabled(false);
+        menu.exec(recentBtn->mapToGlobal(QPoint(0, recentBtn->height())));
+    });
+    m_srcStack->addWidget(m_srcEmpty);
+    m_srcStack->setCurrentWidget(m_srcEmpty);
+
     connect(m_srcTabs, &QTabBar::currentChanged, m_srcStack, &QStackedWidget::setCurrentIndex);
     srcLay->addWidget(m_srcStack, 1);
+
+    // 底部状态条：通道 / 时长 / 速率
+    m_srcStatus = new QLabel(QStringLiteral("—"), srcHost);
+    m_srcStatus->setFixedHeight(20);
+    m_srcStatus->setStyleSheet(QStringLiteral(
+        "background:#0b1015;border-top:1px solid #232b33;color:#6e7d88;font-size:10px;padding:0 8px;"));
+    srcLay->addWidget(m_srcStatus);
 
     // 双击通道 → 画到当前页第一格（后续换成字段拖拽，见 §8.10）
     connect(m_srcTree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
@@ -1750,6 +1944,7 @@ void MainWindow::createDocks()
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
 
     resizeDocks({logDock}, {96}, Qt::Vertical);
+    refreshSrcCount();
 }
 
 // dock 标题栏在部分平台/主题下会画成浅灰，QSS 与 palette 都压不住：
@@ -1942,6 +2137,7 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
         {
             name->setText(text.trimmed());
             row->setProperty("srcName", text.trimmed());
+            showSourceProps(row);
             SourceData *src = sourceById(sourceIdForRow(row));
             if (src)
             {
@@ -2019,6 +2215,8 @@ void MainWindow::removeSourceRow(QWidget *row)
     m_srcRows->removeWidget(row);
     row->deleteLater();
     refreshSrcCount();
+    if (m_sources.isEmpty() && m_propTree)
+        refreshPropTree(currentCanvas());
     log(QStringLiteral("移除数据源：%1").arg(name));
 }
 
@@ -2050,6 +2248,20 @@ void MainWindow::renderSourceData()
         return;
     m_srcTree->clear();
     const int n = m_viewBacked ? m_srcChannels.size() : 0;
+    syncSrcChips();
+    updateSrcStatus();
+
+    if (m_sources.isEmpty() && m_srcEmpty)
+    {
+        m_srcTabs->setTabText(0, QStringLiteral("字段 0"));
+        m_srcTabs->setTabText(1, QStringLiteral("参数 0"));
+        m_srcTabs->setTabText(2, QStringLiteral("消息 0"));
+        syncSrcChips();
+        m_srcStack->setCurrentWidget(m_srcEmpty);
+        return;
+    }
+    if (m_srcStack && m_srcEmpty && m_srcStack->currentWidget() == m_srcEmpty)
+        m_srcStack->setCurrentIndex(m_srcTabs->currentIndex());
 
     if (!m_viewBacked)
     {
@@ -2142,6 +2354,7 @@ void MainWindow::renderSourceData()
     m_srcTabs->setTabText(0, QStringLiteral("字段 %1").arg(n));
     m_srcTabs->setTabText(1, QStringLiteral("参数 %1").arg(m_srcParams.size()));
     m_srcTabs->setTabText(2, QStringLiteral("消息 %1").arg(m_srcMsgs.size()));
+    syncSrcChips();
 
     m_paramTable->setRowCount(m_srcParams.size());
     for (int i = 0; i < m_srcParams.size(); ++i)
@@ -2781,6 +2994,7 @@ void MainWindow::activateSource(QWidget *row)
     if (row->property("backed").toBool() && sourceById(sourceIdForRow(row)))
     {
         switchSource(sourceIdForRow(row));
+        showSourceProps(row);
         return;
     }
     m_viewBacked = false;
@@ -2788,6 +3002,7 @@ void MainWindow::activateSource(QWidget *row)
     m_srcParams.clear();
     m_srcMsgs.clear();
     renderSourceData();
+    showSourceProps(row);
 }
 
 QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
@@ -2920,6 +3135,157 @@ void MainWindow::refreshSrcCount()
     }
     m_srcCount->setText(QStringLiteral("%1 源 · %2 已连接").arg(total).arg(connected));
     m_srcCount->setStyleSheet(QStringLiteral("color:#8494a0;font-size:10px;background:transparent;"));
+    const bool empty = total == 0;
+    if (m_srcListScroll && m_srcListToggle)
+    {
+        const bool show = !empty && m_srcListToggle->text() != QStringLiteral("▸");
+        m_srcListScroll->setVisible(show);
+        if (m_srcListScroll->parentWidget())
+            m_srcListScroll->parentWidget()->setVisible(!empty);
+    }
+    if (m_srcStack && m_srcEmpty)
+    {
+        if (empty)
+            m_srcStack->setCurrentWidget(m_srcEmpty);
+        else if (m_srcStack->currentWidget() == m_srcEmpty && m_srcTabs)
+            m_srcStack->setCurrentIndex(m_srcTabs->currentIndex());
+    }
+    syncSrcChips();
+    updateSrcStatus();
+}
+
+void MainWindow::syncSrcChips()
+{
+    if (!m_srcTabs || m_srcChips.isEmpty())
+        return;
+    for (int i = 0; i < m_srcChips.size() && i < m_srcTabs->count(); ++i)
+    {
+        auto *chip = m_srcChips[i];
+        chip->setText(m_srcTabs->tabText(i));
+        chip->setChecked(m_srcTabs->currentIndex() == i);
+        chip->setEnabled(!m_sources.isEmpty());
+    }
+}
+
+void MainWindow::updateSrcStatus()
+{
+    if (!m_srcStatus)
+        return;
+    const SourceData *src = sourceById(m_activeSource);
+    if (!src)
+    {
+        m_srcStatus->setText(QStringLiteral("—"));
+        return;
+    }
+    const int channels = src->live
+        ? (src->liveSession ? src->liveSession->channels().size() : 0)
+        : src->channels.size();
+    qint64 points = 0;
+    double duration = 0.0;
+    double rate = 0.0;
+    if (src->live)
+    {
+        points = src->liveSession ? src->liveSession->totalSamples() : 0;
+    }
+    else
+    {
+        for (const PsChannelInfo *ch : src->channels)
+            points += ch->point_count;
+    }
+    const QVector<const PsChannelInfo *> view =
+        src->live ? (src->liveSession ? src->liveSession->channels() : QVector<const PsChannelInfo *>())
+                  : src->channels;
+    if (!view.isEmpty() && view.first()->point_count > 1)
+    {
+        const PsChannelInfo *ch = view.first();
+        duration = ch->time[ch->point_count - 1] - ch->time[0];
+        if (duration > 0.0)
+            rate = (ch->point_count - 1) / duration;
+    }
+    QString rateText = src->live ? QStringLiteral("实时") : QStringLiteral("—");
+    if (rate > 0.0)
+        rateText = rate >= 1000.0 ? QStringLiteral("%1 kHz").arg(rate / 1000.0, 0, 'f', 1)
+                                  : QStringLiteral("%1 Hz").arg(rate, 0, 'f', rate >= 10.0 ? 0 : 1);
+    m_srcStatus->setText(QStringLiteral("通道 %1 · %2 点 · 时长 %3 s · %4")
+                             .arg(channels)
+                             .arg(points)
+                             .arg(duration, 0, 'f', 2)
+                             .arg(rateText));
+    m_srcStatus->setToolTip(m_srcStatus->text());
+}
+
+void MainWindow::showSourceProps(QWidget *row)
+{
+    if (!row || !m_propTable)
+        return;
+    SourceData *src = sourceById(sourceIdForRow(row));
+    if (!src)
+        return;
+    const QString name = src->alias.isEmpty() ? src->name : src->alias;
+    int channels = src->live
+        ? (src->liveSession ? src->liveSession->channels().size() : 0)
+        : src->channels.size();
+    qint64 points = 0;
+    double duration = 0.0;
+    double rate = 0.0;
+    if (src->live)
+    {
+        points = src->liveSession ? src->liveSession->totalSamples() : 0;
+    }
+    else
+    {
+        for (const PsChannelInfo *ch : src->channels)
+            points += ch->point_count;
+    }
+    const QVector<const PsChannelInfo *> view =
+        src->live ? (src->liveSession ? src->liveSession->channels() : QVector<const PsChannelInfo *>())
+                  : src->channels;
+    if (!view.isEmpty() && view.first()->point_count > 1)
+    {
+        const PsChannelInfo *ch = view.first();
+        duration = ch->time[ch->point_count - 1] - ch->time[0];
+        if (duration > 0.0)
+            rate = (ch->point_count - 1) / duration;
+    }
+    const QString state = row->property("srcMeta").toString();
+    const QFileInfo fi(src->path);
+    QVector<QPair<QString, QString>> rows;
+    rows.append({QStringLiteral("类型"), src->live ? QStringLiteral("实时源") : src->fmt});
+    rows.append({QStringLiteral("名称"), name});
+    rows.append({QStringLiteral("状态"), state.isEmpty() ? QStringLiteral("—") : state});
+    rows.append({QStringLiteral("位置"), src->path.isEmpty() ? src->config : src->path});
+    if (src->live)
+        rows.append({QStringLiteral("插件"), src->sourceId});
+    rows.append({QStringLiteral("通道"), QString::number(channels)});
+    rows.append({QStringLiteral("参数"), QString::number(src->params.size())});
+    rows.append({QStringLiteral("消息"), QString::number(src->msgs.size())});
+    rows.append({QStringLiteral("采样点"), QString::number(points)});
+    if (duration > 0.0)
+    {
+        rows.append({QStringLiteral("时长"), QStringLiteral("%1 s").arg(duration, 0, 'f', 2)});
+        rows.append({QStringLiteral("速率"),
+                     rate >= 1000.0 ? QStringLiteral("%1 kHz").arg(rate / 1000.0, 0, 'f', 1)
+                                    : QStringLiteral("%1 Hz").arg(rate, 0, 'f', rate >= 10.0 ? 0 : 1)});
+    }
+    rows.append({QStringLiteral("时间偏移"), QStringLiteral("%1 s").arg(src->offsetSec, 0, 'f', 3)});
+    if (fi.exists() && fi.size() > 0)
+        rows.append({QStringLiteral("文件大小"),
+                     QStringLiteral("%1 MB").arg(fi.size() / 1024.0 / 1024.0, 0, 'f', 2)});
+    if (src->live)
+        rows.append({QStringLiteral("录制"),
+                     src->liveSession && src->liveSession->recording()
+                         ? QStringLiteral("进行中 · %1").arg(src->liveSession->recordPath())
+                         : QStringLiteral("未录制")});
+    m_propTreeBuilding = true;
+    if (m_propTree)
+    {
+        m_propTree->setCurrentItem(nullptr);
+        m_propTree->clearSelection();
+    }
+    m_propTreeBuilding = false;
+    setPropRows(QStringLiteral("数据源 · %1").arg(name), rows);
+    if (m_propTable->rowCount() > 0 && m_propTable->item(0, 1))
+        m_propTable->item(0, 1)->setToolTip(rows.first().second);
 }
 
 void MainWindow::applySrcFilter()
@@ -4374,6 +4740,7 @@ void MainWindow::setPropRows(const QString &object, const QVector<QPair<QString,
         auto *v = new QTableWidgetItem(rows[i].second);
         // 属性表当前只做只读展示，避免看起来能改、改完却不生效。
         v->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        v->setToolTip(rows[i].second);
         v->setForeground(QColor(QStringLiteral("#d5dde5")));
         m_propTable->setItem(i, 0, k);
         m_propTable->setItem(i, 1, v);

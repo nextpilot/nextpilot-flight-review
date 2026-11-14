@@ -23,6 +23,8 @@ class QVBoxLayout;
 class QLineEdit;
 class QAction;
 class QTimer;
+class QScrollArea;
+class QToolButton;
 
 // 变换配方：写入 .psl，重启/导入时按序重放
 struct TransformRecipe
@@ -136,6 +138,9 @@ private:
     void switchSource(int id);
     void refreshSrcCount();
     void applySrcFilter();
+    void syncSrcChips();
+    void updateSrcStatus();
+    void showSourceProps(QWidget *row);
     void newPage();
 
     QTabWidget *m_pages = nullptr;
@@ -157,6 +162,11 @@ private:
     QTableWidget *m_paramTable = nullptr;
     QTableWidget *m_msgTable = nullptr;
     QVBoxLayout *m_srcRows = nullptr;
+    QScrollArea *m_srcListScroll = nullptr;
+    QWidget *m_srcEmpty = nullptr;
+    QToolButton *m_srcListToggle = nullptr;
+    QLabel *m_srcStatus = nullptr;
+    QVector<QToolButton *> m_srcChips;
     QTableWidget *m_propTable = nullptr;
     QTreeWidget *m_propTree = nullptr;
     bool m_propTreeBuilding = false;
