@@ -22,6 +22,10 @@ public:
     explicit ProtocolEditorDialog(const QString &path, QWidget *parent = nullptr);
 
     QString templatePath() const { return m_path; }
+    static QString blankJsonText();
+    static QStringList validateFile(const QString &path);
+    QStringList validateDocument() const;
+    void runValidation();
 
 private:
     void setupFieldTable(QTableWidget *t);

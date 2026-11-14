@@ -103,12 +103,15 @@
 | `f64` | 8 |
 | `bool` | 1 |
 | `bcd` | 由 `size` 决定，按 BCD 解码 |
+| `str` / `string` / `ascii` / `char` | 1 字符 1 字节，按 ASCII 字节拼接 |
+
+`str` 的 `size` 是字符个数，例如 NMEA 的 `msgid` 写 `"size": 5, "type": "str"`。字符串段只参与 `selector`、`over` 字节拼接和固定值比较，不生成数值绘图通道。
 
 `payload` 用 `u8` 数组表达，不另设 `bytes` 类型。
 
 ## 5. 表达式
 
-`size`、`value`、`checks`、`timestamp`、`series.selector` 共用一套表达式引擎。
+`size`、`value`、`checks`、`timestamp` 的数值部分共用一套表达式引擎；`series.selector` 可以是数值表达式，也可以直接引用一个 `str` 段（如 NMEA 的 `msgid`），字符串不做算术。
 
 语法：
 
@@ -246,10 +249,10 @@ CRC 参数：`poly/init/refin/refout/xorout`。
 
 | 键 | 说明 |
 |---|---|
-| `selector` | 表达式，结果是整数，选择变体 |
+| `selector` | 数值表达式（结果为整数），或直接引用 `str` 段 |
 | `payload` | 公共段中的 payload 段名 |
 | `fallback` | `reject` 或 `raw` |
-| `variants[].value/values` | 选择值 |
+| `variants[].value/values` | 选择值；数值协议的变体用数字，NMEA 这类字符串协议用 `"GPGGA"` / `"GPRMC"` |
 | `variants[].name` | 变体名，用于通道前缀 |
 | `variants[].segments` | 变体字段，替换 payload |
 
@@ -261,6 +264,12 @@ CRC 参数：`poly/init/refin/refout/xorout`。
 - 无 series 时，payload 始终按原始数组画。
 - 通道名：`frame.<变体名>.<字段>`。
 - 只支持一层系列。
+- `selector` 直接引用 `str` 段时，按完整字符串比较，例如：
+  ```json
+  "selector": "msgid",
+  "variants": [{"value": "GPGGA", "name": "gga", "segments": []},
+               {"value": "GPRMC", "name": "rmc", "segments": []}]
+  ```
 
 ## 11. 绘图
 
@@ -292,18 +301,30 @@ CRC 参数：`poly/init/refin/refout/xorout`。
 
 ## 13. 编辑器
 
+协议文件 `.psproto` 归 app 所有，加载插件只执行协议。Ribbon 提供三个入口：
+
+- **新建协议**：在 app config `protocols/` 下生成带时间戳的 `new-yyyyMMdd-HHmmss.psproto`，写入空白顺序协议并打开。
+- **打开编辑**：选择已有 `.psproto`，进入同一编辑器。
+- **校验协议**：不打开对话框，直接做结构校验，结果用信息框/详情展示。
+
+编辑器内“校验”按钮与保存前检查共用一套规则。
+
 - 顶部：协议名、描述、`maxsize`、字节序、时间戳表达式与单位。
 - 段表四列：字段 / 长度 / 类型 / 取值校验。
 - “长度”是元素个数，可填表达式；“类型”是元素类型。
 - “取值校验”支持省略 `eq`，多条用 `;`；序列算子写 `crc8(sync1:payload)`。
 - 段表下方统一维护角色：按名称识别 `sync` / `length` / `payload` / `checksum`，其余为 `data`。
-- 系列区：启用开关、`selector` 表达式、`payload` 段、`fallback`、变体列表与变体段表。
+- 系列区：启用开关、`selector`（数值表达式或 `str` 段名）、`payload` 段、`fallback`、变体列表与变体段表；变体取值支持数字或字符串。
 - 变体段表同样是“字段 / 长度 / 类型 / 取值校验”四列，可直接编辑。
+- 类型列接受 `u8…f64 / bool / bcd / str` 等协议类型；`str` 的“长度”是字符数。
+- `sync` 可以有多个，`length / payload / checksum` 各自只能有一个。
 - “试算”按字面长度逐段显示偏移和原始字节；遇到表达式长度时提示变长并停止。
 - JSON 页可直接手改并回灌；Lua 页由当前段表实时生成。
 - 协议页是 `layout:"sequential"` 的主编辑入口，旧设计页/系列页在该模式下隐藏。
 
-![顺序段协议编辑器](screenshots/PlotScope-Protocol-Sequential.png)
+![空白协议编辑器](screenshots/PlotScope-Protocol-Editor-Blank.png)
+
+![NMEA 字符串 selector 协议](screenshots/PlotScope-Protocol-NMEA.png)
 
 ## 14. 兼容
 

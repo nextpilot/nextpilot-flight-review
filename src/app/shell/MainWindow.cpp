@@ -1773,27 +1773,65 @@ QWidget *MainWindow::createRibbon()
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("协议"));
         auto *p = cat->addPanel(QStringLiteral("编辑器"));
-        addLarge(p, QStringLiteral("协议编辑器"), [this] {
+        addLarge(p, QStringLiteral("新建协议"), [this] {
             QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
                      QStringLiteral("/protocols"));
             dir.mkpath(QStringLiteral("."));
-            const QString path = dir.filePath(QStringLiteral("untitled.psproto"));
+            QString path;
+            const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+            for (int i = 0; i < 1000; ++i)
+            {
+                path = dir.filePath(i == 0 ? QStringLiteral("new-%1.psproto").arg(stamp)
+                                           : QStringLiteral("new-%1-%2.psproto").arg(stamp).arg(i));
+                if (!QFileInfo::exists(path))
+                    break;
+            }
+            QFile f(path);
+            if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            {
+                QMessageBox::warning(this, QStringLiteral("新建协议"),
+                                     QStringLiteral("无法写入：%1").arg(path));
+                return;
+            }
+            f.write(ProtocolEditorDialog::blankJsonText().toUtf8());
+            f.close();
             ProtocolEditorDialog dlg(path, this);
             if (dlg.exec() == QDialog::Accepted)
-                log(QStringLiteral("协议模板已保存：%1").arg(dlg.templatePath()));
+                log(QStringLiteral("协议已创建：%1").arg(dlg.templatePath()));
         }, this);
-        addSmall(p, QStringLiteral("打开模板"), [this] {
-            const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("打开协议模板"),
-                QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
-                    QStringLiteral("/protocols"),
-                QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)"));
+        addSmall(p, QStringLiteral("打开编辑"), [this] {
+            QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
+                     QStringLiteral("/protocols"));
+            const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("打开协议"),
+                dir.path(), QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)"));
             if (path.isEmpty())
                 return;
             ProtocolEditorDialog dlg(path, this);
             if (dlg.exec() == QDialog::Accepted)
-                log(QStringLiteral("协议模板已保存：%1").arg(dlg.templatePath()));
+                log(QStringLiteral("协议已保存：%1").arg(dlg.templatePath()));
         }, this);
-        addSmall(p, QStringLiteral("校验"), [this] { log(QStringLiteral("校验模板：字段偏移/位域越界检查（M1）")); }, this);
+        addSmall(p, QStringLiteral("校验协议"), [this] {
+            QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
+                     QStringLiteral("/protocols"));
+            const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("校验协议"),
+                dir.path(), QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)"));
+            if (path.isEmpty())
+                return;
+            const QStringList errs = ProtocolEditorDialog::validateFile(path);
+            if (errs.isEmpty())
+            {
+                QMessageBox::information(this, QStringLiteral("协议校验"),
+                                         QStringLiteral("校验通过：%1").arg(QFileInfo(path).fileName()));
+                log(QStringLiteral("协议校验通过：%1").arg(path));
+                return;
+            }
+            QMessageBox box(QMessageBox::Warning, QStringLiteral("协议校验"),
+                            QStringLiteral("发现 %1 项问题").arg(errs.size()),
+                            QMessageBox::Ok, this);
+            box.setDetailedText(errs.join(QStringLiteral("\n")));
+            box.exec();
+            log(QStringLiteral("协议校验失败：%1 项 %2").arg(errs.size()).arg(path));
+        }, this);
     }
 
     // 视图

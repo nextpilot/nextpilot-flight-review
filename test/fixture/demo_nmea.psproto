@@ -1,0 +1,79 @@
+{
+  "name": "demo_nmea",
+  "description": "NMEA \u5b57\u7b26\u4e32 msgid \u7cfb\u5217\u9009\u62e9",
+  "layout": "sequential",
+  "endian": "little",
+  "maxsize": 64,
+  "segments": [
+    {
+      "name": "dollar",
+      "size": 1,
+      "type": "u8",
+      "role": "sync",
+      "value": 36
+    },
+    {
+      "name": "msgid",
+      "size": 5,
+      "type": "str"
+    },
+    {
+      "name": "comma",
+      "size": 1,
+      "type": "u8",
+      "value": 44
+    },
+    {
+      "name": "payload",
+      "size": 4,
+      "type": "u8",
+      "role": "payload"
+    }
+  ],
+  "series": {
+    "selector": "msgid",
+    "payload": "payload",
+    "fallback": "reject",
+    "variants": [
+      {
+        "value": "GPGGA",
+        "name": "gga",
+        "segments": [
+          {
+            "name": "alt",
+            "size": 1,
+            "type": "u16",
+            "scale": 0.1,
+            "unit": "m"
+          },
+          {
+            "name": "hdop",
+            "size": 1,
+            "type": "u16",
+            "scale": 0.1
+          }
+        ]
+      },
+      {
+        "value": "GPRMC",
+        "name": "rmc",
+        "segments": [
+          {
+            "name": "speed",
+            "size": 1,
+            "type": "u16",
+            "scale": 0.1,
+            "unit": "kn"
+          },
+          {
+            "name": "course",
+            "size": 1,
+            "type": "u16",
+            "scale": 0.1,
+            "unit": "deg"
+          }
+        ]
+      }
+    ]
+  }
+}

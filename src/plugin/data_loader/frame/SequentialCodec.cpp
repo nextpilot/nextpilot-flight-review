@@ -8,6 +8,8 @@
 #include <QString>
 
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 #include <cstdlib>
 #include <cmath>
 #include <cstdint>
@@ -38,6 +40,7 @@ struct Expr
 struct EvalCtx
 {
     std::map<std::string, std::vector<double>> values;
+    std::map<std::string, std::string> strings;
 
     bool get(const std::string &n, int index, double &out, std::string &err) const
     {
@@ -400,7 +403,7 @@ ExprPtr jsonExpr(const QJsonValue &v, std::string &err)
 
 /* ---------------- 模板 ---------------- */
 
-enum class FType { U8, I8, U16, I16, U32, I32, U64, I64, F32, F64, BOOL, BCD };
+enum class FType { U8, I8, U16, I16, U32, I32, U64, I64, F32, F64, BOOL, BCD, STR };
 
 struct TypeInfo
 {
@@ -427,9 +430,20 @@ bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
     if (t == "f64" || t == "double" || t == "float64") { ti = {FType::F64, 8, true, true, false}; return true; }
     if (t == "bool" || t == "boolean") { ti = {FType::BOOL, 1, false, false, false}; return true; }
     if (t == "bcd") { ti = {FType::BCD, 1, false, false, true}; return true; }
+    if (t == "str" || t == "string" || t == "ascii" || t == "char")
+    { ti = {FType::STR, 1, false, false, false}; return true; }
     err = "未知类型: " + raw;
     return false;
 }
+
+inline std::string numberKey(double v)
+{
+    std::ostringstream os;
+    os << std::setprecision(17) << v;
+    return "n:" + os.str();
+}
+
+inline std::string stringKey(const std::string &v) { return "s:" + v; }
 
 struct CheckSpec
 {
@@ -478,7 +492,7 @@ struct SegSpec
 
 struct VariantSpec
 {
-    std::vector<double> values;
+    std::vector<std::string> keys;
     std::string name;
     std::vector<SegSpec> segments;
 };
@@ -709,9 +723,14 @@ bool parseTemplate(const QJsonObject &root, TemplateSpec &t, std::string &err)
             VariantSpec var;
             var.name = vo.value(QStringLiteral("name")).toString().toStdString();
             if (vo.contains(QStringLiteral("value")))
-                var.values.push_back(vo.value(QStringLiteral("value")).toDouble());
+            {
+                const QJsonValue &v = vo.value(QStringLiteral("value"));
+                var.keys.push_back(v.isString() ? stringKey(v.toString().toStdString())
+                                                : numberKey(v.toDouble()));
+            }
             for (const QJsonValue &iv : vo.value(QStringLiteral("values")).toArray())
-                var.values.push_back(iv.toDouble());
+                var.keys.push_back(iv.isString() ? stringKey(iv.toString().toStdString())
+                                                 : numberKey(iv.toDouble()));
             for (const QJsonValue &fv : vo.value(QStringLiteral("segments")).toArray())
             {
                 SegSpec seg;
@@ -721,7 +740,7 @@ bool parseTemplate(const QJsonObject &root, TemplateSpec &t, std::string &err)
                 seg.prefix = var.name + ".";
                 var.segments.push_back(std::move(seg));
             }
-            if (var.values.empty())
+            if (var.keys.empty())
             {
                 err = "variant " + var.name + " 缺少 value/values";
                 return false;
@@ -760,6 +779,7 @@ double readElem(const uint8_t *p, const TypeInfo &ti, bool be)
     switch (ti.type)
     {
     case FType::U8: return double(p[0]);
+    case FType::STR: return double(p[0]);
     case FType::I8: return double(static_cast<int8_t>(p[0]));
     case FType::U16: return double(readUInt(p, 2, be));
     case FType::I16:
@@ -1035,18 +1055,13 @@ bool checkFrame(const std::vector<RtSeg> &fields, const std::map<std::string, Rt
     return true;
 }
 
-bool matchVariant(const SeriesSpec &series, double selector,
+bool matchVariant(const SeriesSpec &series, const std::string &selectorKey,
                   const VariantSpec *&variant, std::string &err)
 {
     variant = nullptr;
-    if (selector != std::trunc(selector))
-    {
-        err = "series.selector 不是整数";
-        return false;
-    }
     for (const VariantSpec &v : series.variants)
-        for (double id : v.values)
-            if (id == selector)
+        for (const std::string &id : v.keys)
+            if (id == selectorKey)
             {
                 variant = &v;
                 return true;
@@ -1164,6 +1179,14 @@ int32_t decodeSequentialFrames(const QByteArray &bytes, const QByteArray &json,
                                      : readElem(ep, seg.type, seg.bigEndian));
             }
             rawCtx.values[seg.name] = rt.raw;
+            if (seg.type.type == FType::STR)
+            {
+                std::string txt;
+                for (uint32_t i = 0; i < nbytes; ++i)
+                    txt.push_back(static_cast<char>(p[i]));
+                rawCtx.strings[seg.name] = txt;
+                physCtx.strings[seg.name] = txt;
+            }
             for (double v : rt.raw)
                 rt.phys.push_back(v * seg.scale + seg.offset);
             std::vector<double> pv;
@@ -1193,11 +1216,27 @@ int32_t decodeSequentialFrames(const QByteArray &bytes, const QByteArray &json,
             }
             else
             {
-                double sel = 0;
-                if (!evalExpr(tpl.series.selector, rawCtx, sel, e))
-                    ok = false;
+                std::string selKey;
+                if (tpl.series.selector->kind == Expr::Ref && !tpl.series.selector->b &&
+                    rawCtx.strings.count(tpl.series.selector->name))
+                {
+                    selKey = stringKey(rawCtx.strings[tpl.series.selector->name]);
+                }
+                else
+                {
+                    double sel = 0;
+                    if (!evalExpr(tpl.series.selector, rawCtx, sel, e))
+                        ok = false;
+                    else if (sel != std::trunc(sel))
+                    {
+                        e = "series.selector 不是整数";
+                        ok = false;
+                    }
+                    else
+                        selKey = numberKey(sel);
+                }
                 const VariantSpec *var = nullptr;
-                if (ok && !matchVariant(tpl.series, sel, var, e))
+                if (ok && !matchVariant(tpl.series, selKey, var, e))
                     ok = false;
                 if (ok && var)
                 {
@@ -1390,6 +1429,8 @@ int32_t decodeSequentialFrames(const QByteArray &bytes, const QByteArray &json,
             const SegSpec &seg = *rt.spec;
             const bool isPayload = seg.role == "payload";
             const bool skipRole = seg.role == "sync" || seg.role == "length" || seg.role == "checksum";
+            if (seg.type.type == FType::STR)
+                continue;
             if (seg.hidden || !seg.plot || skipRole || seg.hasValue)
                 continue;
             if (isPayload && tpl.series.enabled && variantHit)
