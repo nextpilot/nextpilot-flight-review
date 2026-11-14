@@ -133,6 +133,7 @@ void CanvasWidget::buildHoverBar()
         "QWidget#canvasHoverBar{background:transparent;border:0;}"
         "QToolButton{background:transparent;border:0;padding:0;}"
         "QToolButton:hover{background:#26313a;border-radius:2px;}"
+        "QToolButton:checked{background:#33414d;border-radius:2px;}"
         "QToolButton[danger=true]:hover{background:#3a2427;}"));
     auto *lay = new QHBoxLayout(m_hoverBar);
     lay->setContentsMargins(0, 0, 0, 0);
@@ -174,6 +175,18 @@ void CanvasWidget::buildHoverBar()
                        [] {});
     m_dragBtn->installEventFilter(this);
     m_dragBtn->setCursor(Qt::OpenHandCursor);
+    m_abBtn = addBtn(QStringLiteral(":/icons/ruler.svg"),
+                     QStringLiteral("双游标测量：点两下设置 A/B，拖动游标看 Δt/Δy"),
+                     [] {}, QColor(QStringLiteral("#f2b134")));
+    m_abBtn->setCheckable(true);
+    QObject::connect(m_abBtn, &QToolButton::toggled, this, [this](bool on) {
+        m_abEnabled = on;
+        m_abDrag = 0;
+        if (!on)
+            m_abHasA = m_abHasB = false;
+        setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
+        update();
+    });
     auto *sep = new QWidget(m_hoverBar);
     sep->setFixedWidth(4);
     lay->addWidget(sep);
@@ -1551,59 +1564,152 @@ void CanvasWidget::paintEvent(QPaintEvent *)
 
     }
 
-    // 十字光标
-    if (m_abEnabled && m_abHasA)
+    // 双游标测量：两条竖线 + 区间带，逐曲线给出 Δt / Δy / 斜率
+    if (m_abEnabled)
     {
         const auto xOf = [&](double t) { return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0); };
-        p.setPen(QPen(QColor("#f2b134"), 1, Qt::DashLine));
-        p.drawLine(QPointF(xOf(m_abA), plot.top()), QPointF(xOf(m_abA), plot.bottom()));
-        p.setPen(QColor("#f2b134"));
-        p.drawText(QPointF(xOf(m_abA) + 4, plot.top() + fm.ascent() + 2), QStringLiteral("A"));
-        if (m_abHasB)
+        if (!m_abHasA)
         {
-            p.setPen(QPen(QColor("#58a6ff"), 1, Qt::DashLine));
-            p.drawLine(QPointF(xOf(m_abB), plot.top()), QPointF(xOf(m_abB), plot.bottom()));
-            p.setPen(QColor("#58a6ff"));
-            p.drawText(QPointF(xOf(m_abB) + 4, plot.top() + fm.ascent() + 2), QStringLiteral("B"));
-
-            const double dt = m_abB - m_abA;
-            QStringList rows;
-            for (const Series &sr : m_series)
-            {
-                if (!sr.visible)
-                    continue;
-                bool oa = false, ob = false;
-                const double va = sampleAt(sr, m_abA, &oa);
-                const double vb = sampleAt(sr, m_abB, &ob);
-                const QString lbl = fm.elidedText(sr.label, Qt::ElideMiddle, 132);
-                const QString dy = (oa && ob) ? QString::number(vb - va, 'g', 6) : QStringLiteral("--");
-                const QString k = (oa && ob && qAbs(dt) > 1e-12)
-                                      ? QString::number((vb - va) / dt, 'g', 5) + QStringLiteral("/s")
-                                      : QStringLiteral("--");
-                rows << QStringLiteral("%1  Δy %2   k %3").arg(lbl, -10).arg(dy, -9).arg(k);
-                if (rows.size() >= 6)
-                    break;
-            }
-            const int lineH = fm.height() + 2;
-            const int boxH = 42 + rows.size() * lineH + 6;
-            QRectF box(plot.left() + 10, plot.bottom() - boxH - 8, 300, boxH);
+            const QString hint = QStringLiteral("点击图表设置游标 A，再点一下设置 B");
+            const QRectF hr(plot.left() + 10, plot.top() + 4, 250, 18);
             p.setPen(Qt::NoPen);
-            p.setBrush(QColor(22, 27, 34, 238));
-            p.drawRoundedRect(box, 3, 3);
+            p.setBrush(QColor(22, 27, 34, 210));
+            p.drawRoundedRect(hr, 3, 3);
             p.setPen(QColor("#f2b134"));
-            p.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
-                       Qt::AlignVCenter | Qt::AlignLeft,
-                       QStringLiteral("A→B  Δt = %1 s").arg(dt, 0, 'f', 4));
-            p.setPen(QColor("#8b949e"));
-            p.drawLine(QPointF(box.left() + 7, box.top() + 21),
-                       QPointF(box.right() - 7, box.top() + 21));
-            int yy = int(box.top()) + 23;
-            for (int i = 0; i < rows.size(); ++i)
+            p.drawText(hr.adjusted(8, 0, -8, 0), Qt::AlignVCenter | Qt::AlignLeft, hint);
+        }
+        else
+        {
+            const double xa = xOf(m_abA);
+            const double xb = m_abHasB ? xOf(m_abB) : xa;
+            if (m_abHasB)
             {
-                p.setPen(i < m_series.size() ? m_series.at(i).color : colorText());
-                p.drawText(QRectF(box.left() + 8, yy, box.width() - 16, lineH),
-                           Qt::AlignVCenter | Qt::AlignLeft, rows.at(i));
-                yy += lineH;
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(242, 177, 52, 24));
+                p.drawRect(QRectF(QPointF(qMin(xa, xb), plot.top()),
+                                  QPointF(qMax(xa, xb), plot.bottom())));
+
+                const double dt = m_abB - m_abA;
+                const QString dtText = QStringLiteral("ΔX %1 s").arg(dt, 0, 'f', 4);
+                const int tw = fm.horizontalAdvance(dtText) + 20;
+                QRectF badge(QPointF((xa + xb) * 0.5 - tw * 0.5, plot.top() + 5), QSizeF(tw, 20));
+                if (badge.left() < plot.left() + 4)
+                    badge.moveLeft(plot.left() + 4);
+                if (badge.right() > plot.right() - 4)
+                    badge.moveRight(plot.right() - 4);
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(242, 177, 52, 235));
+                p.drawRoundedRect(badge, 3, 3);
+                p.setPen(QColor("#1b1f24"));
+                p.drawText(badge, Qt::AlignCenter, dtText);
+            }
+
+            p.setPen(QPen(QColor("#f2b134"), 1.4, Qt::DashLine));
+            p.drawLine(QPointF(xa, plot.top()), QPointF(xa, plot.bottom()));
+            p.setBrush(QColor("#f2b134"));
+            p.drawEllipse(QPointF(xa, plot.top() + 1), 3, 3);
+            p.setPen(QColor("#f2b134"));
+            {
+                const QString al = QStringLiteral("A  %1 s").arg(m_abA, 0, 'f', 3);
+                QRectF ar(xa + 4, plot.top() + 26, fm.horizontalAdvance(al) + 10, fm.height() + 2);
+                if (ar.right() > plot.right() - 4)
+                    ar.moveRight(xa - 4);
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(22, 27, 34, 220));
+                p.drawRoundedRect(ar, 2, 2);
+                p.setPen(QColor("#f2b134"));
+                p.drawText(ar, Qt::AlignCenter, al);
+            }
+
+            if (m_abHasB)
+            {
+                const double xb = xOf(m_abB);
+                p.setPen(QPen(QColor("#58a6ff"), 1.4, Qt::DashLine));
+                p.drawLine(QPointF(xb, plot.top()), QPointF(xb, plot.bottom()));
+                p.setBrush(QColor("#58a6ff"));
+                p.drawEllipse(QPointF(xb, plot.top() + 1), 3, 3);
+                p.setPen(QColor("#58a6ff"));
+                {
+                    const QString bl = QStringLiteral("B  %1 s").arg(m_abB, 0, 'f', 3);
+                    QRectF br(xb + 4, plot.top() + 26, fm.horizontalAdvance(bl) + 10, fm.height() + 2);
+                    if (br.right() > plot.right() - 4)
+                        br.moveRight(xb - 4);
+                    p.setPen(Qt::NoPen);
+                    p.setBrush(QColor(22, 27, 34, 220));
+                    p.drawRoundedRect(br, 2, 2);
+                    p.setPen(QColor("#58a6ff"));
+                    p.drawText(br, Qt::AlignCenter, bl);
+                }
+
+                // 取第一条可见曲线，画出两点之间的直角三角形，Δy 一眼可见。
+                for (const Series &sr : m_series)
+                {
+                    if (!sr.visible)
+                        continue;
+                    bool oa = false, ob = false;
+                    const double va = sampleAt(sr, m_abA, &oa);
+                    const double vb = sampleAt(sr, m_abB, &ob);
+                    if (!oa || !ob)
+                        break;
+                    const double lo = sr.axis == 1 ? m_y2Min : m_yMin;
+                    const double hi = sr.axis == 1 ? m_y2Max : m_yMax;
+                    const auto yOf = [&](double v) {
+                        return plot.bottom() - plot.height() * (v - lo) / (hi - lo);
+                    };
+                    const QPointF pa(xa, yOf(va));
+                    const QPointF pb(xb, yOf(vb));
+                    p.setPen(QPen(QColor(242, 177, 52, 150), 1, Qt::DashLine));
+                    p.drawLine(pa, QPointF(xb, pa.y()));
+                    p.drawLine(QPointF(xb, pa.y()), pb);
+                    p.drawLine(pa, pb);
+                    p.setPen(QColor("#f2b134"));
+                    const QString dyl = QStringLiteral("Δy %1").arg(vb - va, 0, 'g', 5);
+                    p.drawText(QPointF(xb + 4, (pa.y() + pb.y()) * 0.5), dyl);
+                    break;
+                }
+
+                const double dt = m_abB - m_abA;
+                QStringList rows;
+                QList<QColor> colors;
+                for (const Series &sr : m_series)
+                {
+                    if (!sr.visible)
+                        continue;
+                    bool oa = false, ob = false;
+                    const double va = sampleAt(sr, m_abA, &oa);
+                    const double vb = sampleAt(sr, m_abB, &ob);
+                    const QString lbl = fm.elidedText(sr.label, Qt::ElideMiddle, 118);
+                    const QString unit = sr.unit.isEmpty() ? QString() : QStringLiteral(" ") + sr.unit;
+                    const QString dy = (oa && ob) ? QString::number(vb - va, 'g', 6) : QStringLiteral("--");
+                    const QString k = (oa && ob && qAbs(dt) > 1e-12)
+                                          ? QString::number((vb - va) / dt, 'g', 5) + QStringLiteral("/s")
+                                          : QStringLiteral("--");
+                    rows << QStringLiteral("%1  Δy %2%3   k %4").arg(lbl, -12).arg(dy, -8).arg(unit, k);
+                    colors << sr.color;
+                    if (rows.size() >= 6)
+                        break;
+                }
+                const int lineH = fm.height() + 2;
+                const int boxH = 40 + rows.size() * lineH + 6;
+                QRectF box(plot.left() + 10, plot.bottom() - boxH - 8, 320, boxH);
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(22, 27, 34, 238));
+                p.drawRoundedRect(box, 3, 3);
+                p.setPen(QColor("#f2b134"));
+                p.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
+                           Qt::AlignVCenter | Qt::AlignLeft,
+                           QStringLiteral("A→B  Δx = %1 s（时间轴）").arg(dt, 0, 'f', 4));
+                p.setPen(QColor("#8b949e"));
+                p.drawLine(QPointF(box.left() + 7, box.top() + 21),
+                           QPointF(box.right() - 7, box.top() + 21));
+                int yy = int(box.top()) + 22;
+                for (int i = 0; i < rows.size(); ++i)
+                {
+                    p.setPen(colors.value(i, colorText()));
+                    p.drawText(QRectF(box.left() + 8, yy, box.width() - 16, lineH),
+                               Qt::AlignVCenter | Qt::AlignLeft, rows.at(i));
+                    yy += lineH;
+                }
             }
         }
     }
@@ -2058,9 +2164,12 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         else if (chosen == ab)
         {
             m_abEnabled = ab->isChecked();
+            if (m_abBtn)
+                m_abBtn->setChecked(m_abEnabled);
             if (!m_abEnabled)
             {
                 m_abHasA = m_abHasB = false;
+                m_abDrag = 0;
             }
             update();
         }
@@ -2079,6 +2188,19 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton && m_abEnabled && plotRect().contains(event->position()))
     {
         const QRectF plot = plotRect();
+        const auto xOf = [&](double t) { return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0); };
+        if (m_abHasA && qAbs(event->position().x() - xOf(m_abA)) <= 7)
+        {
+            m_abDrag = 1;
+            setCursor(Qt::SizeHorCursor);
+            return;
+        }
+        if (m_abHasB && qAbs(event->position().x() - xOf(m_abB)) <= 7)
+        {
+            m_abDrag = 2;
+            setCursor(Qt::SizeHorCursor);
+            return;
+        }
         const double t = m_t0 + (m_t1 - m_t0) * (event->position().x() - plot.left()) / plot.width();
         if (!m_abHasA || m_abHasB)
         {
@@ -2287,6 +2409,18 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
         }
         return;
     }
+    if (m_abDrag && (event->buttons() & Qt::LeftButton) && plotRect().contains(event->position()))
+    {
+        const QRectF plot = plotRect();
+        const double t = m_t0 + (m_t1 - m_t0) * (event->position().x() - plot.left()) / plot.width();
+        const double tc = qBound(m_t0, t, m_t1);
+        if (m_abDrag == 1)
+            m_abA = tc;
+        else
+            m_abB = tc;
+        update();
+        return;
+    }
     if (m_hoverBar && !m_hoverBar->isVisible() && !m_reordering)
     {
         positionHoverBar();
@@ -2326,6 +2460,13 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
 
 void CanvasWidget::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_abDrag)
+    {
+        m_abDrag = 0;
+        unsetCursor();
+        update();
+        return;
+    }
     if (m_titleDrag)
     {
         m_titleDrag = false;

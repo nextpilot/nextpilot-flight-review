@@ -24,6 +24,7 @@
     <file alias="prop.svg">icons/prop.svg</file>
     <file alias="reset.svg">icons/reset.svg</file>
     <file alias="run.svg">icons/run.svg</file>
+    <file alias="ruler.svg">icons/ruler.svg</file>
     <file alias="screenshot.svg">icons/screenshot.svg</file>
     <file alias="script.svg">icons/script.svg</file>
     <file alias="settings.svg">icons/settings.svg</file>

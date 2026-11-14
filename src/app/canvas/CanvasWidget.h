@@ -180,6 +180,7 @@ private:
     bool m_abEnabled = false;      // A/B 游标测量
     bool m_abHasA = false;
     bool m_abHasB = false;
+    int m_abDrag = 0;              // 1=A 2=B，拖动游标
     double m_abA = 0.0;
     double m_abB = 0.0;
     bool m_hasPlayhead = false;
@@ -194,6 +195,7 @@ private:
     QWidget *m_hoverBar = nullptr;
     QToolButton *m_dragBtn = nullptr;
     QToolButton *m_maxBtn = nullptr;
+    QToolButton *m_abBtn = nullptr;
     bool m_maximized = false;
     bool m_reordering = false;
     bool m_titleDrag = false;
