@@ -210,7 +210,9 @@ struct RibbonItem
 
 ## 后续组件
 
-### GNSS 组件
+### GNSS 组件（已落地首版）
+
+`src/components/gnss` 现在是单一 target `ps_gnss`，已迁入 NMEA/UBX/OEM7，删除目录后 app 仍可构建。
 
 ```text
 src/components/gnss/
@@ -224,7 +226,7 @@ src/components/gnss/
   ui/           卫星星空图、SNR、定位质量
 ```
 
-贡献 data source / protocol / ribbon / dock。一个目录、一个 target `ps_gnss`。
+当前贡献 `data_source`（NMEA/UBX/OEM7）；后续补 protocol / ribbon / dock。一个目录、一个 target `ps_gnss`。
 
 ### 飞控日志组件
 

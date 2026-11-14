@@ -6,6 +6,9 @@
 #include "data_input/DataInputRegistry.h"
 #include "components/Component.h"
 #include "components/ShellComponent.h"
+#ifdef PS_HAVE_GNSS
+#include "components/gnss/GnssComponent.h"
+#endif
 #include "components/BuiltinDataSources.h"
 #include "components/PluginComponent.h"
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
@@ -1270,6 +1273,10 @@ MainWindow::MainWindow(QWidget *parent)
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
     ps::components::CustomProtocolComponent customProtocol;
     customProtocol.contribute(m_components, hostServices);
+#endif
+#ifdef PS_HAVE_GNSS
+    ps::components::GnssComponent gnssComponent;
+    gnssComponent.contribute(m_components, hostServices);
 #endif
     ps::components::BuiltinDataSourcesComponent builtinSources;
     builtinSources.contribute(m_components, hostServices);

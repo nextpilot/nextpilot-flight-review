@@ -34,7 +34,10 @@ if(TARGET ps_data_loader_ulog AND TARGET ps_data_loader_apbin AND TARGET ps_data
   target_compile_definitions(test_plugin_file_formats PRIVATE
     PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/test/fixture")
   target_link_libraries(test_plugin_file_formats PRIVATE ps_plugin_host
-    ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_loader_nmea ps_data_loader_ubx ps_data_loader_json ps_data_loader_binary ps_data_loader_mdf4 ps_data_loader_rosbag2 ps_kernel)
+    ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_loader_json ps_data_loader_binary ps_data_loader_mdf4 ps_data_loader_rosbag2 ps_kernel)
+  if(TARGET ps_gnss)
+    target_link_libraries(test_plugin_file_formats PRIVATE ps_gnss)
+  endif()
   if(TARGET ps_custom_protocol)
     target_link_libraries(test_plugin_file_formats PRIVATE ps_custom_protocol)
     target_compile_definitions(test_plugin_file_formats PRIVATE PS_HAVE_CUSTOM_PROTOCOL=1)
@@ -77,13 +80,13 @@ if(TARGET ps_data_source_mavlink)
   add_test(NAME mavlink_source COMMAND test_mavlink_source)
 endif()
 
-if(TARGET ps_data_source_oem7)
+if(TARGET ps_gnss)
   find_package(Qt6 REQUIRED COMPONENTS Network)
   add_executable(test_oem7_source unit/test_oem7_source.cpp)
   target_include_directories(test_oem7_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/plugin/include)
-  target_link_libraries(test_oem7_source PRIVATE ps_data_source_oem7 ps_plugin_host ps_kernel Qt6::Network)
+  target_link_libraries(test_oem7_source PRIVATE ps_gnss ps_plugin_host ps_kernel Qt6::Network)
   target_compile_definitions(test_oem7_source PRIVATE
-    TEST_OEM7_DB="${CMAKE_SOURCE_DIR}/src/plugin/data_source/oem7/oem7_database.json")
+    TEST_OEM7_DB="${CMAKE_SOURCE_DIR}/src/components/gnss/oem7_database.json")
   add_test(NAME oem7_source COMMAND test_oem7_source)
 endif()
 

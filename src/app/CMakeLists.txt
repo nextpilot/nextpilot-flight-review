@@ -61,12 +61,16 @@ target_include_directories(plotscope_app PRIVATE
 )
 target_link_libraries(plotscope_app PRIVATE
   Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_protocol ps_plugin_host ps_cache ps_live
-  ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_load_mcap ps_data_loader_nmea ps_data_loader_ubx ps_data_loader_json ps_data_loader_binary ps_data_loader_mdf4 ps_data_loader_rosbag2
-  ps_data_source_sim ps_data_source_mavlink ps_data_source_oem7
+  ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_load_mcap ps_data_loader_json ps_data_loader_binary ps_data_loader_mdf4 ps_data_loader_rosbag2
+  ps_data_source_sim ps_data_source_mavlink
 )
 if(TARGET ps_custom_protocol)
   target_link_libraries(plotscope_app PRIVATE ps_custom_protocol)
   target_compile_definitions(plotscope_app PRIVATE PS_HAVE_CUSTOM_PROTOCOL=1)
+endif()
+if(TARGET ps_gnss)
+  target_link_libraries(plotscope_app PRIVATE ps_gnss)
+  target_compile_definitions(plotscope_app PRIVATE PS_HAVE_GNSS=1)
 endif()
 # 外部插件靠宿主导出 ps_* 符号
 set_target_properties(plotscope_app PROPERTIES ENABLE_EXPORTS ON)
@@ -103,7 +107,9 @@ ps_set_warnings(plotscope_app)
 if(WIN32)
   set_target_properties(plotscope_app PROPERTIES WIN32_EXECUTABLE ON)
 endif()
-add_custom_command(TARGET plotscope_app POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          ${PROJECT_SOURCE_DIR}/src/plugin/data_source/oem7/oem7_database.json
-          $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json)
+if(TARGET ps_gnss)
+  add_custom_command(TARGET plotscope_app POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${PROJECT_SOURCE_DIR}/src/components/gnss/oem7_database.json
+            $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json)
+endif()
