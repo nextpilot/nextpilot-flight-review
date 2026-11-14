@@ -141,6 +141,9 @@ private:
     void syncSrcChips();
     void updateSrcStatus();
     void showSourceProps(QWidget *row);
+    void addTimeMarker(double t, const QString &label, bool prompt);
+    void removeTimeMarker(double t);
+    void applyTimeMarkers();
     void newPage();
 
     QTabWidget *m_pages = nullptr;
@@ -167,6 +170,7 @@ private:
     QToolButton *m_srcListToggle = nullptr;
     QLabel *m_srcStatus = nullptr;
     QVector<QToolButton *> m_srcChips;
+    QVector<QPair<double, QString>> m_timeMarkers;
     QTableWidget *m_propTable = nullptr;
     QTreeWidget *m_propTree = nullptr;
     bool m_propTreeBuilding = false;

@@ -1307,6 +1307,12 @@ void CanvasWidget::clearPlayhead()
     update();
 }
 
+void CanvasWidget::setTimeMarkers(const QVector<QPair<double, QString>> &markers)
+{
+    m_timeMarkers = markers;
+    update();
+}
+
 void CanvasWidget::paintEvent(QPaintEvent *)
 {
     // 实时源的 PsChannelInfo 指针稳定，point_count 可能已增长；绘制前同步并跟随 X 轴。
@@ -1672,6 +1678,64 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         }
     }
 
+    // 时间标签：所有页共用一组；视窗内画竖线+顶部标签，视窗外在左右边缘给最近标签提示。
+    m_markerRects.clear();
+    if (!m_timeMarkers.isEmpty())
+    {
+        int lane = 0;
+        double nearestLeft = -1e300;
+        double nearestRight = 1e300;
+        for (const auto &mk : m_timeMarkers)
+        {
+            const double t = mk.first;
+            const double x = plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0);
+            if (x < plot.left())
+            {
+                nearestLeft = qMax(nearestLeft, t);
+                continue;
+            }
+            if (x > plot.right())
+            {
+                nearestRight = qMin(nearestRight, t);
+                continue;
+            }
+            const QString label = mk.second.trimmed().isEmpty() ? formatTime(t) : mk.second;
+            const QString text = fm.elidedText(QStringLiteral("%1  %2").arg(label, formatTime(t)),
+                                               Qt::ElideRight, 180);
+            p.setPen(QPen(QColor(242, 177, 52, 150), 1, Qt::DashLine));
+            p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+            const int tw = fm.horizontalAdvance(text) + 10;
+            QRectF chip(x + 3, plot.top() + 2 + (lane % 3) * 17, tw, 16);
+            if (chip.right() > plot.right())
+                chip.moveLeft(x - 3 - tw);
+            if (chip.left() < plot.left())
+                chip.moveLeft(plot.left() + 3);
+            p.setPen(QPen(QColor(122, 94, 34), 1));
+            p.setBrush(QColor(38, 31, 15, 235));
+            p.drawRoundedRect(chip, 2, 2);
+            p.setPen(QColor(242, 177, 52));
+            p.drawText(chip.adjusted(5, 0, -5, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
+            m_markerRects.append({t, chip});
+            ++lane;
+        }
+        const auto edgeChip = [&](double t, bool left) {
+            if (t < -1e299 || t > 1e299)
+                return;
+            const QString label = formatTime(t);
+            const int tw = fm.horizontalAdvance(label) + 24;
+            QRectF chip(left ? QRectF(plot.left() + 2, plot.bottom() - 19, tw, 16)
+                             : QRectF(plot.right() - tw - 2, plot.bottom() - 19, tw, 16));
+            p.setPen(QPen(QColor(122, 94, 34), 1));
+            p.setBrush(QColor(30, 25, 13, 220));
+            p.drawRoundedRect(chip, 2, 2);
+            p.setPen(QColor(200, 150, 55));
+            p.drawText(chip, Qt::AlignCenter, left ? QStringLiteral("◂ ") + label : label + QStringLiteral(" ▸"));
+            m_markerRects.append({t, chip});
+        };
+        edgeChip(nearestLeft, true);
+        edgeChip(nearestRight, false);
+    }
+
     if (m_rubbering && m_rubberRect.isValid())
     {
         p.setPen(QPen(QColor(78, 161, 255, 220), 1, Qt::DashLine));
@@ -1837,6 +1901,21 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         emit activated(m_title);
         return;
     }
+    if (event->button() == Qt::LeftButton)
+    {
+        for (const auto &hit : m_markerRects)
+        {
+            if (!hit.second.contains(event->position()))
+                continue;
+            const double t = hit.first;
+            const double span = qMax(1e-6, m_t1 - m_t0);
+            m_t0 = t - span / 2.0;
+            m_t1 = t + span / 2.0;
+            emit timeRangeChanged(m_t0, m_t1);
+            update();
+            return;
+        }
+    }
     if (event->button() == Qt::RightButton && legend >= 0)
     {
         QMenu menu(this);
@@ -1902,6 +1981,34 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::RightButton)
     {
         QMenu menu(this);
+        const QRectF plot = plotRect();
+        const double mt = plot.contains(event->position())
+            ? m_t0 + (m_t1 - m_t0) * (event->position().x() - plot.left()) / qMax(1.0, plot.width())
+            : (m_t0 + m_t1) / 2.0;
+        double markerHit = 0.0;
+        bool markerHitFound = false;
+        for (const auto &hit : m_markerRects)
+            if (hit.second.contains(event->position()))
+            {
+                markerHit = hit.first;
+                markerHitFound = true;
+                break;
+            }
+        QAction *addMarker = menu.addAction(
+            QStringLiteral("在 %1 添加时间标签…").arg(formatTime(mt)));
+        QAction *delMarker = nullptr;
+        if (markerHitFound)
+        {
+            QString label = formatTime(markerHit);
+            for (const auto &mk : m_timeMarkers)
+                if (qAbs(mk.first - markerHit) < 1e-6)
+                {
+                    label = mk.second.trimmed().isEmpty() ? label : mk.second;
+                    break;
+                }
+            delMarker = menu.addAction(QStringLiteral("删除标签「%1」").arg(label));
+        }
+        menu.addSeparator();
         QAction *addCurve = menu.addAction(QStringLiteral("添加曲线…"));
         menu.addSeparator();
         QAction *reset = menu.addAction(QStringLiteral("重置缩放"));
@@ -1924,7 +2031,11 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         menu.addSeparator();
         QAction *del = menu.addAction(QStringLiteral("删除此画布"));
         QAction *chosen = menu.exec(event->globalPosition().toPoint());
-        if (chosen == addCurve)
+        if (chosen == addMarker)
+            emit markerRequested(mt);
+        else if (chosen == delMarker)
+            emit markerRemoveRequested(markerHit);
+        else if (chosen == addCurve)
             emit addChannelRequested();
         else if (chosen == reset)
         {

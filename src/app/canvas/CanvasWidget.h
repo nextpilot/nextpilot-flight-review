@@ -80,6 +80,7 @@ public:
     void setPlayhead(double t);
     void setMaximizedState(bool on);                // 主窗切换后同步按钮图标/提示
     void clearPlayhead();
+    void setTimeMarkers(const QVector<QPair<double, QString>> &markers);
 
 signals:
     void activated(const QString &title);
@@ -89,6 +90,8 @@ signals:
     void removeRequested();                         // 右键“删除画布”
     void splitRequested(int orientation);           // 0=左右拆分 1=上下拆分
     void maximizeRequested();                       // 最大化 / 还原本画布
+    void markerRequested(double t);                 // 右键：在指针处添加时间标签
+    void markerRemoveRequested(double t);           // 右键：删除此处标签
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -158,6 +161,8 @@ private:
     QString m_title;
     QString m_timeFormat = QStringLiteral("relative");
     QVector<Series> m_series;
+    QVector<QPair<double, QString>> m_timeMarkers;
+    QVector<QPair<double, QRectF>> m_markerRects;
     double m_t0 = 0.0;
     double m_t1 = 30.0;
     double m_yMin = -1.6;
