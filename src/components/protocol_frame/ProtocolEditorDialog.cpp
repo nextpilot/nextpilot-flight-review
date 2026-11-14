@@ -1,4 +1,5 @@
 #include "ProtocolEditorDialog.h"
+#include "protocol/ProtocolDocument.h"
 #include "protocol/ProtocolSpec.h"
 
 #include <QCheckBox>
@@ -1401,12 +1402,23 @@ QStringList ProtocolEditorDialog::validateFile(const QString &path)
     const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &pe);
     if (pe.error != QJsonParseError::NoError || !doc.isObject())
         return {QStringLiteral("JSON 解析失败：%1").arg(pe.errorString())};
-    return ps::protocol::validate(doc.object());
+    QStringList errs = ps::protocol::validate(doc.object());
+    ps::protocol::ProtocolDocument model;
+    std::string modelErr;
+    if (!ps::protocol::parseDocument(doc.object(), model, modelErr))
+        errs << QStringLiteral("协议模型：%1").arg(QString::fromStdString(modelErr));
+    return errs;
 }
 
 QStringList ProtocolEditorDialog::validateDocument() const
 {
-    return ps::protocol::validate(currentTemplate());
+    const QJsonObject obj = currentTemplate();
+    QStringList errs = ps::protocol::validate(obj);
+    ps::protocol::ProtocolDocument model;
+    std::string modelErr;
+    if (!ps::protocol::parseDocument(obj, model, modelErr))
+        errs << QStringLiteral("协议模型：%1").arg(QString::fromStdString(modelErr));
+    return errs;
 }
 
 void ProtocolEditorDialog::runValidation()

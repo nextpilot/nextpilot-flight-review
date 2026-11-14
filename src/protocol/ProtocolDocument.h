@@ -1,6 +1,9 @@
 #pragma once
 
+#include <QJsonObject>
+
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -115,5 +118,43 @@ struct ProtocolDocument
     bool timestampRaw = false;
     std::string timestampFallback = "reject";
 };
+
+struct EvalCtx
+{
+    std::map<std::string, std::vector<double>> values;
+    std::map<std::string, std::string> strings;
+
+    bool get(const std::string &n, int index, double &out, std::string &err) const
+    {
+        auto it = values.find(n);
+        if (it == values.end())
+        {
+            err = "表达式引用未知字段: " + n;
+            return false;
+        }
+        if (index < 0)
+        {
+            if (it->second.size() != 1)
+            {
+                err = "字段 " + n + " 是数组，需要下标";
+                return false;
+            }
+            out = it->second[0];
+            return true;
+        }
+        if (index >= static_cast<int>(it->second.size()))
+        {
+            err = "字段 " + n + " 下标越界";
+            return false;
+        }
+        out = it->second[static_cast<size_t>(index)];
+        return true;
+    }
+};
+
+bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &err);
+
+/// 解析协议 JSON 为唯一类型化文档；失败返回 false 并写 err。
+bool parseDocument(const QJsonObject &root, ProtocolDocument &doc, std::string &err);
 
 } // namespace ps::protocol
