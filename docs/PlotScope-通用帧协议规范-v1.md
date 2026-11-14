@@ -105,7 +105,7 @@
 | `bcd` | 由 `size` 决定，按 BCD 解码 |
 | `str` / `string` / `ascii` / `char` | 1 字符 1 字节，按 ASCII 字节拼接 |
 
-`str` 的 `size` 是字符个数，例如 NMEA 的 `msgid` 写 `"size": 5, "type": "str"`。字符串段只参与 `selector`、`over` 字节拼接和固定值比较，不生成数值绘图通道。
+`str` 的 `size` 是字符个数，例如 NMEA 的 `msgid` 写 `"size": 5, "type": "str"`。字符串段只参与 `selector` 与 `over` 字节拼接，不生成数值绘图通道。
 
 `payload` 用 `u8` 数组表达，不另设 `bytes` 类型。
 
