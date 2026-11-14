@@ -1356,15 +1356,11 @@ QWidget *MainWindow::createRibbon()
         if (firstGroup)
             srcGallery->setCurrentViewGroup(firstGroup);
         auto *moreSrc = new QToolButton(pSrc);
-        moreSrc->setText(QStringLiteral("更多"));
-        moreSrc->setToolTip(QStringLiteral("按日志文件 / 实时源分组选择"));
-        moreSrc->setPopupMode(QToolButton::InstantPopup);
-        auto *srcMenu = new QMenu(moreSrc);
-        if (!fileActs.isEmpty())
-            srcMenu->addMenu(QStringLiteral("日志文件"))->addActions(fileActs);
-        if (!streamActs.isEmpty())
-            srcMenu->addMenu(QStringLiteral("实时源"))->addActions(streamActs);
-        moreSrc->setMenu(srcMenu);
+        moreSrc->setText(QStringLiteral("全部来源"));
+        moreSrc->setToolTip(QStringLiteral("展开按日志文件 / 实时源分组的图库"));
+        connect(moreSrc, &QToolButton::clicked, srcGallery, [srcGallery] {
+            srcGallery->showMoreDetail();
+        });
         pSrc->addWidget(moreSrc, SARibbonPanelItem::Small);
     }
 
@@ -1561,14 +1557,11 @@ QWidget *MainWindow::createRibbon()
         plotGallery->setMaximumWidth(330);
         plotGallery->setCurrentViewGroup(curveGroup);
         auto *morePlot = new QToolButton(pType);
-        morePlot->setText(QStringLiteral("全部"));
-        morePlot->setToolTip(QStringLiteral("按曲线 / 地图 / 仪表分组选择"));
-        morePlot->setPopupMode(QToolButton::InstantPopup);
-        auto *plotMenu = new QMenu(morePlot);
-        plotMenu->addMenu(QStringLiteral("曲线"))->addActions(curveActs);
-        plotMenu->addMenu(QStringLiteral("地图 / 3D"))->addActions(mapActs);
-        plotMenu->addMenu(QStringLiteral("仪表"))->addActions(gaugeActs);
-        morePlot->setMenu(plotMenu);
+        morePlot->setText(QStringLiteral("全部图型"));
+        morePlot->setToolTip(QStringLiteral("展开按曲线 / 地图 / 仪表分组的图库"));
+        connect(morePlot, &QToolButton::clicked, plotGallery, [plotGallery] {
+            plotGallery->showMoreDetail();
+        });
         pType->addWidget(morePlot, SARibbonPanelItem::Small);
 
     }
