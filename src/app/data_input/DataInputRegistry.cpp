@@ -23,6 +23,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_nmea(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ubx(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_json(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_binary(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_mdf4(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_load_mcap(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_sim(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_source_mavlink(void);
@@ -116,6 +117,7 @@ DataInputRegistry::DataInputRegistry()
     registerDescriptor(ps_plugin_entry_data_loader_ubx());
     registerDescriptor(ps_plugin_entry_data_loader_json());
     registerDescriptor(ps_plugin_entry_data_loader_binary());
+    registerDescriptor(ps_plugin_entry_data_loader_mdf4());
     registerDescriptor(ps_plugin_entry_data_loader_csv());
     registerDescriptor(ps_plugin_entry_data_load_mcap());
     registerDescriptor(ps_plugin_entry_data_source_sim());

@@ -34,7 +34,7 @@ if(TARGET ps_data_loader_ulog AND TARGET ps_data_loader_apbin AND TARGET ps_data
   target_compile_definitions(test_plugin_file_formats PRIVATE
     PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/test/fixture")
   target_link_libraries(test_plugin_file_formats PRIVATE ps_plugin_host
-    ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_loader_nmea ps_data_loader_ubx ps_data_loader_json ps_data_loader_binary ps_kernel)
+    ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_loader_nmea ps_data_loader_ubx ps_data_loader_json ps_data_loader_binary ps_data_loader_mdf4 ps_kernel)
   add_test(NAME plugin_file_formats COMMAND test_plugin_file_formats)
 endif()
 
