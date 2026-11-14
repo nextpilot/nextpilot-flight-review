@@ -1258,47 +1258,11 @@ QWidget *MainWindow::createRibbon()
         }, this);
     }
 
-    // 数据
+    // 数据：常用操作在左，来源选择在右；来源库压成一行，弹窗按文件/实时分组
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("数据"));
-        auto *pSrc = cat->addPanel(QStringLiteral("来源"));
-        auto *srcGallery = pSrc->addGallery(true);
-        QList<QAction *> srcActs;
-        auto addSource = [&](const QString &kind, const QString &label, const QString &filter) {
-            auto *a = new QAction(QIcon(sourceThumb(kind)), label, this);
-            a->setToolTip(QStringLiteral("选择 %1 文件（可多选）").arg(label));
-            connect(a, &QAction::triggered, this, [this, label, filter] {
-                const QStringList fs = QFileDialog::getOpenFileNames(this, label, {}, filter);
-                for (const QString &f : fs)
-                    loadFile(f);
-            });
-            srcActs.append(a);
-        };
-        // 文件入口来自 loader catalog，来源入口来自 source catalog；Ribbon 不写死格式。
-        for (const DataInputPlugin &lp : DataInputRegistry::instance().filePlugins())
-        {
-            const QString kind = lp.id.section(QLatin1Char('_'), -1);
-            addSource(kind, lp.label, lp.filter.isEmpty() ? QStringLiteral("全部 (*)") : lp.filter);
-        }
-        for (const DataInputPlugin &sp : DataInputRegistry::instance().streamPlugins())
-        {
-            auto *a = new QAction(QIcon(sourceThumb(sp.kind)), sp.label, this);
-            a->setToolTip(QStringLiteral("连接 %1（%2）").arg(sp.label, sp.transport));
-            connect(a, &QAction::triggered, this, [this, id = sp.id] { connectLiveSource(id); });
-            srcActs.append(a);
-        }
-        auto *srcGroup = srcGallery->addCategoryActions(QStringLiteral("数据源类型"), srcActs);
-        srcGroup->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
-        srcGroup->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-        srcGroup->setIconSize(QSize(62, 30));
-        srcGroup->setGridMinimumWidth(72);
-        srcGroup->setGridMaximumWidth(88);
-        srcGallery->setSingleRowMode(true);
-        srcGallery->setMinimumWidth(760);
-        srcGallery->setMaximumWidth(760);
-        srcGallery->setCurrentViewGroup(srcGroup);
 
-        auto *pQuick = cat->addPanel(QStringLiteral("工作区"));
+        auto *pQuick = cat->addPanel(QStringLiteral("常用"));
         addLarge(pQuick, QStringLiteral("快速打开"), [this] {
             const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("快速打开"), {},
                 QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
@@ -1330,98 +1294,83 @@ QWidget *MainWindow::createRibbon()
                 log(QStringLiteral("当前源没有可重载的文件"));
                 return;
             }
-            // 先摘掉旧行/数据集，再按同一路径重新解析，避免出现重复源
             const QString path = src->path;
             QWidget *row = src->row;
             if (row)
                 removeSourceRow(row);
             loadFile(path, false);
         }, this);
+
+        auto *pSrc = cat->addPanel(QStringLiteral("来源"));
+        auto *srcGallery = pSrc->addGallery(true);
+        QList<QAction *> fileActs;
+        QList<QAction *> streamActs;
+        auto addSource = [&](const QString &kind, const QString &label, const QString &filter,
+                             QList<QAction *> &dest) {
+            auto *a = new QAction(QIcon(sourceThumb(kind)), label, this);
+            a->setToolTip(QStringLiteral("选择 %1 文件（可多选）").arg(label));
+            connect(a, &QAction::triggered, this, [this, label, filter] {
+                const QStringList fs = QFileDialog::getOpenFileNames(this, label, {}, filter);
+                for (const QString &f : fs)
+                    loadFile(f);
+            });
+            dest.append(a);
+        };
+        for (const DataInputPlugin &lp : DataInputRegistry::instance().filePlugins())
+        {
+            const QString kind = lp.id.section(QLatin1Char('_'), -1);
+            addSource(kind, lp.label, lp.filter.isEmpty() ? QStringLiteral("全部 (*)") : lp.filter, fileActs);
+        }
+        for (const DataInputPlugin &sp : DataInputRegistry::instance().streamPlugins())
+        {
+            auto *a = new QAction(QIcon(sourceThumb(sp.kind)), sp.label, this);
+            a->setToolTip(QStringLiteral("连接 %1（%2）").arg(sp.label, sp.transport));
+            connect(a, &QAction::triggered, this, [this, id = sp.id] { connectLiveSource(id); });
+            streamActs.append(a);
+        }
+        auto styleGroup = [](SARibbonGalleryGroup *g) {
+            if (!g)
+                return;
+            g->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
+            g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+            g->setIconSize(QSize(58, 28));
+            g->setGridMinimumWidth(68);
+            g->setGridMaximumWidth(84);
+        };
+        SARibbonGalleryGroup *firstGroup = nullptr;
+        if (!fileActs.isEmpty())
+        {
+            firstGroup = srcGallery->addCategoryActions(QStringLiteral("日志文件"), fileActs);
+            styleGroup(firstGroup);
+        }
+        if (!streamActs.isEmpty())
+        {
+            auto *g = srcGallery->addCategoryActions(QStringLiteral("实时源"), streamActs);
+            styleGroup(g);
+            if (!firstGroup)
+                firstGroup = g;
+        }
+        srcGallery->setSingleRowMode(true);
+        srcGallery->setMinimumWidth(200);
+        srcGallery->setMaximumWidth(300);
+        if (firstGroup)
+            srcGallery->setCurrentViewGroup(firstGroup);
+        auto *moreSrc = new QToolButton(pSrc);
+        moreSrc->setText(QStringLiteral("更多"));
+        moreSrc->setToolTip(QStringLiteral("按日志文件 / 实时源分组选择"));
+        moreSrc->setPopupMode(QToolButton::InstantPopup);
+        auto *srcMenu = new QMenu(moreSrc);
+        if (!fileActs.isEmpty())
+            srcMenu->addMenu(QStringLiteral("日志文件"))->addActions(fileActs);
+        if (!streamActs.isEmpty())
+            srcMenu->addMenu(QStringLiteral("实时源"))->addActions(streamActs);
+        moreSrc->setMenu(srcMenu);
+        pSrc->addWidget(moreSrc, SARibbonPanelItem::Small);
     }
 
-    // 绘图 + 仪表合并：像 Office/MATLAB 的图表样式库，缩略图直接表达图型
+    // 绘图：页/布局/视图等常用操作在左，图表样式库在右；图表库一行展示，弹窗按曲线/地图/仪表分组
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("绘图"));
-        auto *pType = cat->addPanel(QStringLiteral("图表"));
-        auto *plotGallery = pType->addGallery(true);
-        QList<QAction *> plotActs;
-        auto addPlot = [&](const QString &kind, const QString &label, const QString &tip) {
-            auto *a = new QAction(QIcon(plotThumb(kind)), label, this);
-            a->setToolTip(tip);
-            connect(a, &QAction::triggered, this, [this, kind, label] {
-                if (kind == QLatin1String("timeseries"))
-                {
-                    newPage();
-                    if (auto *c = currentCanvas())
-                    {
-                        c->setTitle(QStringLiteral("%1 · 选择通道").arg(label));
-                        log(QStringLiteral("新建图页：%1").arg(label));
-                    }
-                }
-                else
-                {
-                    auto *c = new CanvasWidget(this);
-                    c->clearChannels();
-                    c->setTitle(label);
-                    CanvasWidget::PlotMode mode = CanvasWidget::Xy;
-                    if (kind == QLatin1String("scatter")) mode = CanvasWidget::Scatter;
-                    else if (kind == QLatin1String("bar")) mode = CanvasWidget::BarChart;
-                    else if (kind == QLatin1String("histogram")) mode = CanvasWidget::Histogram;
-                    else if (kind == QLatin1String("fft")) mode = CanvasWidget::Spectrum;
-                    else if (kind == QLatin1String("horizon")) mode = CanvasWidget::Horizon;
-                    else if (kind == QLatin1String("compass")) mode = CanvasWidget::Compass;
-                    else if (kind == QLatin1String("gauge")) mode = CanvasWidget::Gauge;
-                    else if (kind == QLatin1String("traj3d")) mode = CanvasWidget::Traj3D;
-                    else if (kind == QLatin1String("map")) mode = CanvasWidget::GpsMap;
-                    else if (kind == QLatin1String("surface3d")) mode = CanvasWidget::Surface3D;
-                    c->setPlotMode(mode, kind);
-                    CanvasWidget *seed = nullptr;
-                    int best = 0;
-                    for (CanvasWidget *w : findChildren<CanvasWidget *>())
-                    {
-                        if (w == c)
-                            continue;
-                        const int n = w->sampleSeries().size();
-                        if (n > best)
-                        {
-                            best = n;
-                            seed = w;
-                        }
-                    }
-                    if (seed)
-                        for (const CanvasWidget::SampleSeries &s : seed->sampleSeries())
-                            c->addGeneratedSeries(s.name, s.time, s.value);
-                    setupCanvas(c);
-                    const int plusIdx = m_pages->count() - 1;
-                    m_pages->insertTab(plusIdx, c, label);
-                    m_pages->setCurrentWidget(c);
-                    log(QStringLiteral("新建图页：%1").arg(label));
-                }
-            });
-            plotActs.append(a);
-        };
-        addPlot(QStringLiteral("timeseries"), QStringLiteral("时间序列"), QStringLiteral("时间轴曲线，当前已实现"));
-        addPlot(QStringLiteral("xy"), QStringLiteral("XY 曲线"), QStringLiteral("X-Y 双通道曲线"));
-        addPlot(QStringLiteral("scatter"), QStringLiteral("散点图"), QStringLiteral("二维散点"));
-        addPlot(QStringLiteral("bar"), QStringLiteral("柱状图"), QStringLiteral("离散量柱状对比"));
-        addPlot(QStringLiteral("histogram"), QStringLiteral("直方图"), QStringLiteral("样本分布"));
-        addPlot(QStringLiteral("fft"), QStringLiteral("频谱 FFT"), QStringLiteral("幅值频谱"));
-        addPlot(QStringLiteral("traj3d"), QStringLiteral("3D 轨迹"), QStringLiteral("三维空间轨迹"));
-        addPlot(QStringLiteral("map"), QStringLiteral("GPS 地图"), QStringLiteral("经纬度轨迹与网格"));
-        addPlot(QStringLiteral("surface3d"), QStringLiteral("3D 曲面"), QStringLiteral("三维曲面 / 频谱"));
-        addPlot(QStringLiteral("horizon"), QStringLiteral("地平仪"), QStringLiteral("姿态地平仪"));
-        addPlot(QStringLiteral("compass"), QStringLiteral("罗盘"), QStringLiteral("航向罗盘"));
-        addPlot(QStringLiteral("gauge"), QStringLiteral("表盘"), QStringLiteral("单值仪表盘"));
-        auto *plotGroup = plotGallery->addCategoryActions(QStringLiteral("图表类型"), plotActs);
-        plotGroup->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
-        plotGroup->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-        plotGroup->setIconSize(QSize(66, 32));
-        plotGroup->setGridMinimumWidth(74);
-        plotGroup->setGridMaximumWidth(94);
-        plotGallery->setSingleRowMode(true);
-        plotGallery->setMinimumWidth(860);
-        plotGallery->setMaximumWidth(860);
-        plotGallery->setCurrentViewGroup(plotGroup);
 
         auto *pPage = cat->addPanel(QStringLiteral("页"));
         addLarge(pPage, QStringLiteral("新建页"), [this] { newPage(); }, this);
@@ -1522,6 +1471,106 @@ QWidget *MainWindow::createRibbon()
         addSmall(pView, QStringLiteral("复位"), [this] {
             for (CanvasWidget *c : pageCanvases()) c->requestAutoY();
         }, this);
+
+        auto *pType = cat->addPanel(QStringLiteral("图表"));
+        auto *plotGallery = pType->addGallery(true);
+        QList<QAction *> curveActs, mapActs, gaugeActs;
+        auto addPlot = [&](const QString &kind, const QString &label, const QString &tip,
+                           QList<QAction *> &dest) {
+            auto *a = new QAction(QIcon(plotThumb(kind)), label, this);
+            a->setToolTip(tip);
+            connect(a, &QAction::triggered, this, [this, kind, label] {
+                if (kind == QLatin1String("timeseries"))
+                {
+                    newPage();
+                    if (auto *c = currentCanvas())
+                    {
+                        c->setTitle(QStringLiteral("%1 · 选择通道").arg(label));
+                        log(QStringLiteral("新建图页：%1").arg(label));
+                    }
+                }
+                else
+                {
+                    auto *c = new CanvasWidget(this);
+                    c->clearChannels();
+                    c->setTitle(label);
+                    CanvasWidget::PlotMode mode = CanvasWidget::Xy;
+                    if (kind == QLatin1String("scatter")) mode = CanvasWidget::Scatter;
+                    else if (kind == QLatin1String("bar")) mode = CanvasWidget::BarChart;
+                    else if (kind == QLatin1String("histogram")) mode = CanvasWidget::Histogram;
+                    else if (kind == QLatin1String("fft")) mode = CanvasWidget::Spectrum;
+                    else if (kind == QLatin1String("horizon")) mode = CanvasWidget::Horizon;
+                    else if (kind == QLatin1String("compass")) mode = CanvasWidget::Compass;
+                    else if (kind == QLatin1String("gauge")) mode = CanvasWidget::Gauge;
+                    else if (kind == QLatin1String("traj3d")) mode = CanvasWidget::Traj3D;
+                    else if (kind == QLatin1String("map")) mode = CanvasWidget::GpsMap;
+                    else if (kind == QLatin1String("surface3d")) mode = CanvasWidget::Surface3D;
+                    c->setPlotMode(mode, kind);
+                    CanvasWidget *seed = nullptr;
+                    int best = 0;
+                    for (CanvasWidget *w : findChildren<CanvasWidget *>())
+                    {
+                        if (w == c)
+                            continue;
+                        const int n = w->sampleSeries().size();
+                        if (n > best)
+                        {
+                            best = n;
+                            seed = w;
+                        }
+                    }
+                    if (seed)
+                        for (const CanvasWidget::SampleSeries &s : seed->sampleSeries())
+                            c->addGeneratedSeries(s.name, s.time, s.value);
+                    setupCanvas(c);
+                    const int plusIdx = m_pages->count() - 1;
+                    m_pages->insertTab(plusIdx, c, label);
+                    m_pages->setCurrentWidget(c);
+                    log(QStringLiteral("新建图页：%1").arg(label));
+                }
+            });
+            dest.append(a);
+        };
+        addPlot(QStringLiteral("timeseries"), QStringLiteral("时间序列"), QStringLiteral("时间轴曲线，当前已实现"), curveActs);
+        addPlot(QStringLiteral("xy"), QStringLiteral("XY 曲线"), QStringLiteral("X-Y 双通道曲线"), curveActs);
+        addPlot(QStringLiteral("scatter"), QStringLiteral("散点图"), QStringLiteral("二维散点"), curveActs);
+        addPlot(QStringLiteral("bar"), QStringLiteral("柱状图"), QStringLiteral("离散量柱状对比"), curveActs);
+        addPlot(QStringLiteral("histogram"), QStringLiteral("直方图"), QStringLiteral("样本分布"), curveActs);
+        addPlot(QStringLiteral("fft"), QStringLiteral("频谱 FFT"), QStringLiteral("幅值频谱"), curveActs);
+        addPlot(QStringLiteral("traj3d"), QStringLiteral("3D 轨迹"), QStringLiteral("三维空间轨迹"), mapActs);
+        addPlot(QStringLiteral("map"), QStringLiteral("GPS 地图"), QStringLiteral("经纬度轨迹与网格"), mapActs);
+        addPlot(QStringLiteral("surface3d"), QStringLiteral("3D 曲面"), QStringLiteral("三维曲面 / 频谱"), mapActs);
+        addPlot(QStringLiteral("horizon"), QStringLiteral("地平仪"), QStringLiteral("姿态地平仪"), gaugeActs);
+        addPlot(QStringLiteral("compass"), QStringLiteral("罗盘"), QStringLiteral("航向罗盘"), gaugeActs);
+        addPlot(QStringLiteral("gauge"), QStringLiteral("表盘"), QStringLiteral("单值仪表盘"), gaugeActs);
+        auto stylePlotGroup = [](SARibbonGalleryGroup *g) {
+            g->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
+            g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+            g->setIconSize(QSize(62, 30));
+            g->setGridMinimumWidth(70);
+            g->setGridMaximumWidth(90);
+        };
+        auto *curveGroup = plotGallery->addCategoryActions(QStringLiteral("曲线"), curveActs);
+        stylePlotGroup(curveGroup);
+        auto *mapGroup = plotGallery->addCategoryActions(QStringLiteral("地图 / 3D"), mapActs);
+        stylePlotGroup(mapGroup);
+        auto *gaugeGroup = plotGallery->addCategoryActions(QStringLiteral("仪表"), gaugeActs);
+        stylePlotGroup(gaugeGroup);
+        plotGallery->setSingleRowMode(true);
+        plotGallery->setMinimumWidth(210);
+        plotGallery->setMaximumWidth(330);
+        plotGallery->setCurrentViewGroup(curveGroup);
+        auto *morePlot = new QToolButton(pType);
+        morePlot->setText(QStringLiteral("全部"));
+        morePlot->setToolTip(QStringLiteral("按曲线 / 地图 / 仪表分组选择"));
+        morePlot->setPopupMode(QToolButton::InstantPopup);
+        auto *plotMenu = new QMenu(morePlot);
+        plotMenu->addMenu(QStringLiteral("曲线"))->addActions(curveActs);
+        plotMenu->addMenu(QStringLiteral("地图 / 3D"))->addActions(mapActs);
+        plotMenu->addMenu(QStringLiteral("仪表"))->addActions(gaugeActs);
+        morePlot->setMenu(plotMenu);
+        pType->addWidget(morePlot, SARibbonPanelItem::Small);
+
     }
 
     // 脚本
