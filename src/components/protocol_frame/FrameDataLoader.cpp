@@ -844,9 +844,9 @@ const PsDataInputVtable *frameInputVtable()
     return &vt;
 }
 
-const PsPluginDescriptor kFramePlugin = {
+const PsPluginDescriptor kFrameLoaderDescriptor = {
     PS_PLUGIN_ABI_VERSION,
-    R"({"id":"data_loader_frame","name":"帧协议模板","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","entry":"ps_plugin_entry_data_loader_frame"})",
+    R"({"id":"data_loader_frame","name":"帧协议模板","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","component":"protocol.frame"})",
     PS_FAMILY_DATA_INPUT,
     PS_CAP_FILE | PS_CAP_CACHE,
     &kFrameLoader,
@@ -857,7 +857,7 @@ const PsPluginDescriptor kFramePlugin = {
 
 } // namespace
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_frame(void)
+extern "C" const PsPluginDescriptor *ps_component_frame_loader(void)
 {
-    return &kFramePlugin;
+    return &kFrameLoaderDescriptor;
 }

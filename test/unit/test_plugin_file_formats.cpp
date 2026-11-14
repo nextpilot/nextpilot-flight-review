@@ -17,7 +17,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ubx(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_json(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_binary(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_mdf4(void);
-extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_frame(void);
+extern "C" const PsPluginDescriptor *ps_component_frame_loader(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_rosbag2(void);
 
 namespace {
@@ -117,24 +117,24 @@ int main()
         return 1;
     if (!loadAndCheck(ps_plugin_entry_data_loader_mdf4(), fix + "/demo.mf4", 2))
         return 1;
-    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo.frames",
+    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo.frames",
                           "{\"protocol\":\"" + fix + "/demo.psproto\"}", 2))
         return 1;
     if (!loadAndCheck(ps_plugin_entry_data_loader_rosbag2(), fix + "/demo_rosbag2.db3", 2))
         return 1;
-    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_variable.frames",
+    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_variable.frames",
                           "{\"protocol\":\"" + fix + "/demo_variable.psproto\"}", 2))
         return 1;
-    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_family.frames",
+    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_family.frames",
                           "{\"protocol\":\"" + fix + "/demo_family.psproto\"}", 2))
         return 1;
-    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_sequential.frames",
+    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_sequential.frames",
                           "{\"protocol\":\"" + fix + "/demo_sequential.psproto\"}", 5))
         return 1;
-    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_nmea.frames",
+    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_nmea.frames",
                           "{\"protocol\":\"" + fix + "/demo_nmea.psproto\"}", 4))
         return 1;
-    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_generic.frames",
+    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_generic.frames",
                           "{\"protocol\":\"" + fix + "/demo_generic.psproto\"}", 2))
         return 1;
 

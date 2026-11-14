@@ -14,7 +14,7 @@
 #include <QMessageBox>
 #include <QStandardPaths>
 
-extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_frame(void);
+extern "C" const PsPluginDescriptor *ps_component_frame_loader(void);
 
 namespace ps::components
 {
@@ -54,7 +54,7 @@ ComponentManifest FrameComponent::manifest() const
 
 void FrameComponent::contribute(Registry &registry, const HostServices &host)
 {
-    registry.addLoader(ps_plugin_entry_data_loader_frame());
+    registry.addLoader(ps_component_frame_loader());
 
     ProtocolContribution protocol;
     protocol.kind = QStringLiteral("sequential");

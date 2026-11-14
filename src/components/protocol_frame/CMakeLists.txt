@@ -1,0 +1,10 @@
+add_library(ps_protocol_frame STATIC
+  FrameDataLoader.cpp
+  SequentialCodec.cpp
+)
+target_include_directories(ps_protocol_frame PRIVATE
+  ${PROJECT_SOURCE_DIR}/src/plugin/include
+  ${PROJECT_SOURCE_DIR}/src/plugin/sdk/cpp
+  ${PROJECT_SOURCE_DIR}/src/plugin/data_loader/common
+)
+target_link_libraries(ps_protocol_frame PRIVATE ps_loader_common ps_protocol)
