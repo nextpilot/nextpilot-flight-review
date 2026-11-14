@@ -3401,10 +3401,19 @@ void MainWindow::runScript(bool apply)
 
     if (apply)
     {
+        int idx = 0;
         for (const ScriptOutput &o : r.outputs)
         {
-            canvas->addGeneratedSeries(o.name, o.time, o.value);
-            log(QStringLiteral("Lua 应用：%1（%2 点）").arg(o.name).arg(o.value.size()));
+            const QString source = idx < bound.size() ? bound[idx].name : QString();
+            ++idx;
+            if (!source.isEmpty() && canvas->replaceGeneratedSeries(source, o.name, o.time, o.value))
+                log(QStringLiteral("Lua 应用：%1 → %2（继承颜色，%3 点）")
+                        .arg(source, o.name).arg(o.value.size()));
+            else
+            {
+                canvas->addGeneratedSeries(o.name, o.time, o.value);
+                log(QStringLiteral("Lua 应用：%1（%2 点）").arg(o.name).arg(o.value.size()));
+            }
         }
     }
     else

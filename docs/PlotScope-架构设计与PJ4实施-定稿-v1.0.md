@@ -864,8 +864,8 @@ public:
 - 语法错误包含行号，面板自动选中出错行；源码与绑定写入 `.psl` 的 `script` 对象，导入时恢复。
 - 输出追加到当前工作区画布；已修复 `ps.plot` 与全局 `out` 重复输出（改用 `lua_next` 判断空表，`lua_rawlen` 对字符串键表恒为 0）。
 - 已做：参数表单（名称 + 数值）传入 `init(params)`，随 `.psl` 的 `script.params` 保存。
-- 已做：预览/应用分两步。预览输出 `preview/<name>` 叠加在原曲线旁（before/after），再次预览先清旧预览；“应用”提交正式输出名。原始曲线不删除，保持非破坏性。
-- 未做：Apply 替换来源曲线并继承颜色（当前为非破坏性追加）、Luau 适配、Python。
+- 已做：预览/应用分两步。预览输出 `preview/<name>` 叠加在原曲线旁（before/after），再次预览先清旧预览；“应用”按输入绑定顺序替换来源曲线、继承原颜色与单位，原始通道仍在字段树里，可重新拖回。
+- 未做：Luau 适配、Python。
 
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
@@ -968,7 +968,7 @@ public:
 已落地：
 - 设置：时间轴格式、CSV 导出采样上限、派生重算上限；画布设置保存后即时刷新。
 - CSV：当前源导出带 `source` 列与源别名。
-- P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码与参数随 `.psl` 保存；`init(params)` 接收参数表单；预览/应用分两步。
+- P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码与参数随 `.psl` 保存；`init(params)` 接收参数表单；预览/应用分两步；Apply 替换来源曲线并继承颜色。
 - 多 parser：`PsDataInputVtable` / `PsDataSourceVtable` 尾部增加 `feed_raw`；MAVLink/OEM7 支持 `transport=external` 只解析不建连接；`MainWindow::openLiveInput()` 负责扇出与句柄回收。
 - M3：`McapWriter` 增加 1 MiB Chunk 聚合、ChunkIndex、SummaryOffset 与 summary Schema/Channel 副本；`McapReader` 原有 Chunk 解析路径直接复用。
 - P4：新增 `data_loader_binary`，按扩展名解析 CBOR（`.cbor`）与 MessagePack（`.msgpack/.mpk`），数值字段扁平为 `cbor.*` / `msgpack.*`，支持数组批量记录与连续多条记录。

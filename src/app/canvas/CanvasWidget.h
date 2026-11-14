@@ -48,6 +48,8 @@ public:
     QVector<SampleSeries> sampleSeries() const;
     void addGeneratedSeries(const QString &name, const QVector<double> &time,
                             const QVector<double> &value);
+    bool replaceGeneratedSeries(const QString &oldLabel, const QString &name,
+                                const QVector<double> &time, const QVector<double> &value);
     void removeGeneratedSeries(const QString &name);
     void removeChannel(int index);
     void toggleChannel(int index);

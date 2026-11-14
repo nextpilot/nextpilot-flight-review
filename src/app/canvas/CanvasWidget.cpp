@@ -205,6 +205,36 @@ void CanvasWidget::addGeneratedSeries(const QString &name, const QVector<double>
     emit activated(m_title);
 }
 
+bool CanvasWidget::replaceGeneratedSeries(const QString &oldLabel, const QString &name,
+                                          const QVector<double> &time, const QVector<double> &value)
+{
+    if (time.isEmpty() || value.isEmpty() || time.size() != value.size())
+        return false;
+    for (int i = m_series.size() - 1; i >= 0; --i)
+        if (m_series.at(i).name == name && !m_series.at(i).t)
+            m_series.removeAt(i);
+    for (Series &s : m_series)
+    {
+        if (s.label != oldLabel && s.name != oldLabel)
+            continue;
+        // 只接管显示值：颜色/单位/来源路径保持原样。
+        s.name = name;
+        s.label = name;
+        s.tOwn = time;
+        s.vOwn = value;
+        s.t = nullptr;
+        s.v = nullptr;
+        s.n = 0;
+        m_kernelBacked = false;
+        m_autoY = true;
+        resetView();
+        update();
+        emit activated(m_title);
+        return true;
+    }
+    return false;
+}
+
 void CanvasWidget::removeGeneratedSeries(const QString &name)
 {
     for (int i = m_series.size() - 1; i >= 0; --i)
