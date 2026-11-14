@@ -58,6 +58,8 @@ public:
     void setTimeRange(double t0, double t1);             // 同页 X 轴联动时被动设置
     void reloadDisplaySettings();                         // 设置页保存后刷新时间格式
     void requestAutoY();                                  // 按可见曲线量程重算 Y
+    void setFollowLive(bool on, double windowSec = 30.0); // 实时滚动：窗口跟随最新样本
+    void followLatest() { if (m_followLive) resetView(); }
     void setGridVisible(bool on);
     void setLegendVisible(bool on);
     void setBoxVisible(bool on);
@@ -147,6 +149,8 @@ private:
     bool m_showGrid = true;
     bool m_showBox = true;
     bool m_rubberZoom = false;
+    bool m_followLive = false;
+    double m_liveWindow = 30.0;
     bool m_rubbering = false;
     bool m_abEnabled = false;      // A/B 游标测量
     bool m_abHasA = false;

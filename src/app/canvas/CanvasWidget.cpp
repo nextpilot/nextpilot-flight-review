@@ -366,6 +366,17 @@ QRectF CanvasWidget::plotRect() const
     return QRectF(rect()).adjusted(62, 30, -16, -26);
 }
 
+void CanvasWidget::setFollowLive(bool on, double windowSec)
+{
+    m_followLive = on;
+    m_liveWindow = qMax(0.5, windowSec);
+    if (on)
+    {
+        m_autoY = true;
+        resetView();
+    }
+}
+
 void CanvasWidget::ensureTimeRange()
 {
     bool init = false;
@@ -377,6 +388,19 @@ void CanvasWidget::ensureTimeRange()
         const double b = s.time()[s.count() - 1] - s.offsetSec;
         if (!init) { m_t0 = a; m_t1 = b; init = true; }
         else { m_t0 = std::min(m_t0, a); m_t1 = std::max(m_t1, b); }
+    }
+    if (m_followLive && init)
+    {
+        double latest = m_t1;
+        for (const Series &s : m_series)
+        {
+            if (s.count() == 0)
+                continue;
+            latest = std::max(latest, s.time()[s.count() - 1] - s.offsetSec);
+        }
+        m_t1 = latest;
+        m_t0 = latest - m_liveWindow;
+        return;
     }
     if (!(m_t1 > m_t0))
         m_t1 = m_t0 + 1.0;
@@ -1350,6 +1374,8 @@ int CanvasWidget::seriesAt(const QPointF &pos) const
 
 void CanvasWidget::wheelEvent(QWheelEvent *event)
 {
+    m_followLive = false;
+    {
     const QRectF plot = plotRect();
     if (!plot.contains(event->position()))
         return;
@@ -1378,6 +1404,7 @@ void CanvasWidget::wheelEvent(QWheelEvent *event)
     m_autoY = false;
     update();
     event->accept();
+    }
 }
 
 void CanvasWidget::mousePressEvent(QMouseEvent *event)
@@ -1715,6 +1742,8 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
         const QRectF plot = plotRect();
         const double dx = event->position().x() - m_lastPos.x();
         const double dy = event->position().y() - m_lastPos.y();
+        if (dx != 0.0)
+            m_followLive = false;
         const double tShift = -dx * (m_t1 - m_t0) / plot.width();
         m_t0 += tShift;
         m_t1 += tShift;

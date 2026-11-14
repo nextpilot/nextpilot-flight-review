@@ -2513,7 +2513,10 @@ void MainWindow::refreshLiveSource(SourceData *src)
             m_srcChannels = src->channels;
             renderSourceData();
             if (CanvasWidget *c = currentCanvas())
+            {
+                c->followLatest();
                 c->notifyActivated();
+            }
             for (auto *c : findChildren<CanvasWidget *>())
                 c->update();
         }
@@ -2565,6 +2568,7 @@ void MainWindow::refreshLiveSource(SourceData *src)
             for (const PsChannelInfo *ch : first)
                 currentCanvas()->addChannel(ch);
             currentCanvas()->setTitle(src->alias);
+            currentCanvas()->setFollowLive(true, 30.0);
             src->plotted = true;
         }
     }
