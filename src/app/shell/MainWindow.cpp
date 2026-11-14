@@ -1572,6 +1572,8 @@ QWidget *MainWindow::createRibbon()
         auto *pType = cat->addPanel(QStringLiteral("图表类型"));
         pType->setExpanding(false);
         pType->setMaximumWidth(240);
+        if (auto *t = pType->titleLabel())
+            t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         auto *plotGallery = pType->addGallery(true);
         QList<QAction *> curveActs, mapActs, gaugeActs;
         QHash<QString, QAction *> plotActByKind;
