@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+#include "ProtocolSpec.h"
+
 namespace {
 
 /* ---------------- 表达式 ---------------- */
@@ -1086,6 +1088,12 @@ int32_t decodeSequentialFrames(const QByteArray &bytes, const QByteArray &json,
     if (perr.error != QJsonParseError::NoError)
     {
         psWriteErr(err, errCap, "协议 JSON 解析失败: " + perr.errorString().toStdString());
+        return 2;
+    }
+    const QStringList issues = ps::protocol::validate(root);
+    if (!issues.isEmpty())
+    {
+        psWriteErr(err, errCap, "协议校验失败: " + issues.join(QStringLiteral("；")).toStdString());
         return 2;
     }
     TemplateSpec tpl;

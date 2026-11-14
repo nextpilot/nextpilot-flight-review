@@ -29,7 +29,9 @@ add_executable(plotscope_app
   data_input/DataInputRegistry.cpp
   data_input/DataInputDialog.h
   data_input/DataInputDialog.cpp
-  data_input/ProtocolEditorDialog.cpp
+  components/Component.cpp
+  ${PROJECT_SOURCE_DIR}/src/components/protocol_frame/FrameComponent.cpp
+  ${PROJECT_SOURCE_DIR}/src/components/protocol_frame/ProtocolEditorDialog.cpp
   video/VideoSyncWidget.cpp
   plugin_host/DialogEngine.h
   plugin_host/DialogEngine.cpp
@@ -52,7 +54,7 @@ target_include_directories(plotscope_app PRIVATE
   ${PROJECT_SOURCE_DIR}/src/plugin/include
 )
 target_link_libraries(plotscope_app PRIVATE
-  Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_plugin_host ps_cache ps_live
+  Qt6::Widgets Qt6::Network Qt6::Svg ps_kernel ps_protocol ps_plugin_host ps_cache ps_live
   ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_load_mcap ps_data_loader_nmea ps_data_loader_ubx ps_data_loader_json ps_data_loader_binary ps_data_loader_mdf4 ps_data_loader_frame ps_data_loader_rosbag2
   ps_data_source_sim ps_data_source_mavlink ps_data_source_oem7
 )

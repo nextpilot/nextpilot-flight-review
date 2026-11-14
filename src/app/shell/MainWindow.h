@@ -3,6 +3,8 @@
 #include <QMainWindow>
 #include <QJsonObject>
 
+#include "app/components/Component.h"
+
 #include <memory>
 
 struct PsDataset;
@@ -173,6 +175,7 @@ private:
     QTableWidget *m_msgTable = nullptr;
     QVBoxLayout *m_srcRows = nullptr;
     QScrollArea *m_srcListScroll = nullptr;
+    ps::components::Registry m_components;
     QWidget *m_srcEmpty = nullptr;
     QToolButton *m_srcListToggle = nullptr;
     QLabel *m_srcStatus = nullptr;

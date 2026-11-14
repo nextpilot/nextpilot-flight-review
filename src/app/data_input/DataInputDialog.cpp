@@ -1,7 +1,7 @@
 #include "data_input/DataInputDialog.h"
 
 #include "data_input/DataInputPlugin.h"
-#include "data_input/ProtocolEditorDialog.h"
+#include "components/protocol_frame/ProtocolEditorDialog.h"
 
 #include <QCheckBox>
 #include <QComboBox>

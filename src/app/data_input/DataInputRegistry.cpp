@@ -120,7 +120,6 @@ DataInputRegistry::DataInputRegistry()
     registerDescriptor(ps_plugin_entry_data_loader_json());
     registerDescriptor(ps_plugin_entry_data_loader_binary());
     registerDescriptor(ps_plugin_entry_data_loader_mdf4());
-    registerDescriptor(ps_plugin_entry_data_loader_frame());
     registerDescriptor(ps_plugin_entry_data_loader_rosbag2());
     registerDescriptor(ps_plugin_entry_data_loader_csv());
     registerDescriptor(ps_plugin_entry_data_load_mcap());

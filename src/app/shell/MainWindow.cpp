@@ -4,7 +4,8 @@
 #include "data_input/DataInputDialog.h"
 #include "app/cache/DatasetCache.h"
 #include "data_input/DataInputRegistry.h"
-#include "data_input/ProtocolEditorDialog.h"
+#include "components/Component.h"
+#include "components/protocol_frame/FrameComponent.h"
 #include "live/LiveSession.h"
 #include "device/DeviceDebugDialog.h"
 #include "data_input/DataInputRegistry.h"
@@ -1252,6 +1253,15 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
     resize(1440, 880);
 
+    ps::components::FrameComponent frameComponent;
+    ps::components::HostServices hostServices;
+    hostServices.window = [this] { return static_cast<QWidget *>(this); };
+    hostServices.log = [this](const QString &text) { log(text); };
+    hostServices.configDir = [] {
+        return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    };
+    frameComponent.contribute(m_components, hostServices);
+
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
     m_pages = new QTabWidget(this);
 
@@ -1769,69 +1779,21 @@ QWidget *MainWindow::createRibbon()
         addSmall(p, QStringLiteral("格式化"), [this] { log(QStringLiteral("脚本格式化（stylua 规则，M2 接）")); }, this);
     }
 
-    // 协议
+    // 组件贡献的菜单页
+    for (const auto &page : m_components.ribbon())
     {
-        auto *cat = ribbon->addCategoryPage(QStringLiteral("协议"));
-        auto *p = cat->addPanel(QStringLiteral("编辑器"));
-        addLarge(p, QStringLiteral("新建协议"), [this] {
-            QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
-                     QStringLiteral("/protocols"));
-            dir.mkpath(QStringLiteral("."));
-            QString path;
-            const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
-            for (int i = 0; i < 1000; ++i)
-            {
-                path = dir.filePath(i == 0 ? QStringLiteral("new-%1.psproto").arg(stamp)
-                                           : QStringLiteral("new-%1-%2.psproto").arg(stamp).arg(i));
-                if (!QFileInfo::exists(path))
-                    break;
-            }
-            QFile f(path);
-            if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
-            {
-                QMessageBox::warning(this, QStringLiteral("新建协议"),
-                                     QStringLiteral("无法写入：%1").arg(path));
-                return;
-            }
-            f.write(ProtocolEditorDialog::blankJsonText().toUtf8());
-            f.close();
-            ProtocolEditorDialog dlg(path, this);
-            if (dlg.exec() == QDialog::Accepted)
-                log(QStringLiteral("协议已创建：%1").arg(dlg.templatePath()));
-        }, this);
-        addSmall(p, QStringLiteral("打开编辑"), [this] {
-            QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
-                     QStringLiteral("/protocols"));
-            const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("打开协议"),
-                dir.path(), QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)"));
-            if (path.isEmpty())
-                return;
-            ProtocolEditorDialog dlg(path, this);
-            if (dlg.exec() == QDialog::Accepted)
-                log(QStringLiteral("协议已保存：%1").arg(dlg.templatePath()));
-        }, this);
-        addSmall(p, QStringLiteral("校验协议"), [this] {
-            QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
-                     QStringLiteral("/protocols"));
-            const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("校验协议"),
-                dir.path(), QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)"));
-            if (path.isEmpty())
-                return;
-            const QStringList errs = ProtocolEditorDialog::validateFile(path);
-            if (errs.isEmpty())
-            {
-                QMessageBox::information(this, QStringLiteral("协议校验"),
-                                         QStringLiteral("校验通过：%1").arg(QFileInfo(path).fileName()));
-                log(QStringLiteral("协议校验通过：%1").arg(path));
-                return;
-            }
-            QMessageBox box(QMessageBox::Warning, QStringLiteral("协议校验"),
-                            QStringLiteral("发现 %1 项问题").arg(errs.size()),
-                            QMessageBox::Ok, this);
-            box.setDetailedText(errs.join(QStringLiteral("\n")));
-            box.exec();
-            log(QStringLiteral("协议校验失败：%1 项 %2").arg(errs.size()).arg(path));
-        }, this);
+        auto *cat = ribbon->addCategoryPage(page.page);
+        auto *panel = cat->addPanel(page.panel);
+        for (const auto &item : page.items)
+        {
+            auto fn = [this, action = item.action] {
+                m_components.invoke(action, ps::components::ActionContext{this});
+            };
+            if (item.large)
+                addLarge(panel, item.label, fn, this);
+            else
+                addSmall(panel, item.label, fn, this);
+        }
     }
 
     // 视图
