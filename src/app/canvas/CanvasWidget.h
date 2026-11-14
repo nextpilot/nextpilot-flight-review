@@ -38,6 +38,12 @@ public:
     void addChannelEx(const PsChannelInfo *channel, int srcId, const QString &path,
                       const QString &alias, double offsetSec);  // 指定来源（多源对比）
     bool replaceChannel(const QString &oldName, const PsChannelInfo *channel); // 变换 Apply：替换并继承颜色
+    QJsonObject seriesState(int index) const;             // 单条曲线属性快照
+    bool patchSeries(int index, const QJsonObject &patch); // 改颜色/线宽/线型/轴/可见/时间偏移
+    bool setSeriesChannel(int index, const PsChannelInfo *channel, int srcId,
+                          const QString &srcPath, const QString &alias, double offsetSec);
+    bool setSeriesSamples(int index, const QVector<double> &time, const QVector<double> &value,
+                          const QString &label);          // 变换/脚本输出写回该曲线
     void removeChannel(const QString &name);
     void setInputSource(int id, const QString &path, const QString &alias = QString(),
                         double offsetSec = 0.0); // 当前拖拽来源
@@ -65,6 +71,11 @@ public:
     void setGridVisible(bool on);
     void setLegendVisible(bool on);
     void setBoxVisible(bool on);
+    void setFlipY(bool on);
+    bool flipY() const { return m_flipY; }
+    void setAxisLabels(const QString &xLabel, const QString &yLabel);
+    QString xLabel() const { return m_xLabel; }
+    QString yLabel() const { return m_yLabel; }
     void setRubberZoomEnabled(bool on);
     void exportPng();                                   // 当前画布渲染结果另存
     void exportCsv();                                   // 当前可见时间窗内的长表 CSV
@@ -124,6 +135,7 @@ private:
         bool visible = true;
         int width = 1;
         int axis = 0;              // 0=左轴，1=右轴
+        int lineStyle = 0;         // 0=实线，1=虚线，2=点线，3=点划线
 
         QVector<double> tOwn;      // demo 数据所有权
         QVector<double> vOwn;
@@ -173,6 +185,9 @@ private:
     bool m_showLegend = true;
     bool m_showGrid = true;
     bool m_showBox = true;
+    bool m_flipY = false;
+    QString m_xLabel;
+    QString m_yLabel;
     bool m_rubberZoom = false;
     bool m_followLive = false;
     double m_liveWindow = 30.0;

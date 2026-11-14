@@ -32,6 +32,18 @@
 #include "ps_kernel.h"
 
 namespace {
+
+Qt::PenStyle penStyleFor(int style)
+{
+    switch (style)
+    {
+    case 1: return Qt::DashLine;
+    case 2: return Qt::DotLine;
+    case 3: return Qt::DashDotLine;
+    default: return Qt::SolidLine;
+    }
+}
+
 constexpr double kPi = 3.14159265358979323846;
 
 QColor colorBg()   { return QColor("#10161c"); }
@@ -481,6 +493,106 @@ void CanvasWidget::removeChannel(const QString &name)
     update();
 }
 
+QJsonObject CanvasWidget::seriesState(int index) const
+{
+    QJsonObject o;
+    if (index < 0 || index >= m_series.size())
+        return o;
+    const Series &s = m_series[index];
+    o[QStringLiteral("name")] = s.name;
+    o[QStringLiteral("label")] = s.label;
+    o[QStringLiteral("unit")] = s.unit;
+    o[QStringLiteral("srcId")] = s.srcId;
+    o[QStringLiteral("srcPath")] = s.srcPath;
+    o[QStringLiteral("color")] = s.color.name();
+    o[QStringLiteral("width")] = s.width;
+    o[QStringLiteral("style")] = s.lineStyle;
+    o[QStringLiteral("axis")] = s.axis;
+    o[QStringLiteral("visible")] = s.visible;
+    o[QStringLiteral("offset")] = s.offsetSec;
+    o[QStringLiteral("points")] = int(s.count());
+    return o;
+}
+
+bool CanvasWidget::patchSeries(int index, const QJsonObject &patch)
+{
+    if (index < 0 || index >= m_series.size())
+        return false;
+    Series &s = m_series[index];
+    if (patch.contains(QStringLiteral("label")))
+        s.label = patch.value(QStringLiteral("label")).toString(s.label);
+    if (patch.contains(QStringLiteral("color")))
+    {
+        const QColor c(patch.value(QStringLiteral("color")).toString());
+        if (c.isValid())
+            s.color = c;
+    }
+    if (patch.contains(QStringLiteral("width")))
+        s.width = std::clamp(patch.value(QStringLiteral("width")).toInt(s.width), 1, 6);
+    if (patch.contains(QStringLiteral("style")))
+        s.lineStyle = std::clamp(patch.value(QStringLiteral("style")).toInt(s.lineStyle), 0, 3);
+    if (patch.contains(QStringLiteral("axis")))
+        s.axis = patch.value(QStringLiteral("axis")).toInt(s.axis) == 1 ? 1 : 0;
+    if (patch.contains(QStringLiteral("visible")))
+        s.visible = patch.value(QStringLiteral("visible")).toBool(s.visible);
+    if (patch.contains(QStringLiteral("offset")))
+        s.offsetSec = patch.value(QStringLiteral("offset")).toDouble(s.offsetSec);
+    m_autoY = true;
+    resetView();
+    update();
+    emit activated(m_title);
+    return true;
+}
+
+bool CanvasWidget::setSeriesChannel(int index, const PsChannelInfo *ch, int srcId,
+                                    const QString &srcPath, const QString &alias, double offsetSec)
+{
+    if (index < 0 || index >= m_series.size() || !ch || ch->point_count < 2 ||
+        !ch->time || !ch->value)
+        return false;
+    Series &s = m_series[index];
+    s.name = QString::fromUtf8(ch->name);
+    s.label = alias.isEmpty() ? s.name : alias + QStringLiteral(" · ") + s.name;
+    s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
+    s.srcId = srcId;
+    s.srcPath = srcPath;
+    s.offsetSec = offsetSec;
+    s.t = ch->time;
+    s.v = ch->value;
+    s.n = ch->point_count;
+    s.tOwn.clear();
+    s.vOwn.clear();
+    m_kernelBacked = true;
+    m_autoY = true;
+    resetView();
+    update();
+    emit activated(m_title);
+    return true;
+}
+
+bool CanvasWidget::setSeriesSamples(int index, const QVector<double> &time,
+                                    const QVector<double> &value, const QString &label)
+{
+    if (index < 0 || index >= m_series.size() || time.isEmpty() ||
+        time.size() != value.size())
+        return false;
+    Series &s = m_series[index];
+    s.tOwn = time;
+    s.vOwn = value;
+    s.t = nullptr;
+    s.v = nullptr;
+    s.n = 0;
+    if (!label.isEmpty())
+        s.label = label;
+    s.offsetSec = 0.0;
+    m_kernelBacked = false;
+    m_autoY = true;
+    resetView();
+    update();
+    emit activated(m_title);
+    return true;
+}
+
 bool CanvasWidget::replaceChannel(const QString &oldName, const PsChannelInfo *ch)
 {
     if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
@@ -542,7 +654,9 @@ int CanvasWidget::seriesAxisCount() const
 
 QRectF CanvasWidget::plotRect() const
 {
-    return QRectF(rect()).adjusted(62, 30, hasRightAxis() ? -60 : -16, -26);
+    return QRectF(rect()).adjusted(m_yLabel.isEmpty() ? 62 : 78, 30,
+                                   hasRightAxis() ? -60 : -16,
+                                   m_xLabel.isEmpty() ? -26 : -42);
 }
 
 void CanvasWidget::setFollowLive(bool on, double windowSec)
@@ -1399,6 +1513,19 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         return;
     }
 
+    p.setPen(colorText());
+    if (!m_xLabel.isEmpty())
+        p.drawText(QPointF(plot.center().x() - fm.horizontalAdvance(m_xLabel) / 2,
+                           plot.bottom() + fm.ascent() + 22), m_xLabel);
+    if (!m_yLabel.isEmpty())
+    {
+        p.save();
+        p.translate(12, plot.center().y());
+        p.rotate(-90);
+        p.drawText(QPointF(-fm.horizontalAdvance(m_yLabel) / 2, fm.ascent() / 2), m_yLabel);
+        p.restore();
+    }
+
     // 空画布：只留网格和边框，不画无数据支撑的假刻度。
     if (m_series.isEmpty())
     {
@@ -1434,7 +1561,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
             p.setPen(QPen(colorGrid(), 1));
             p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
         }
-        const double val = m_yMax - (m_yMax - m_yMin) * i / yTicks;
+        const double val = m_flipY ? m_yMin + (m_yMax - m_yMin) * i / yTicks
+                                   : m_yMax - (m_yMax - m_yMin) * i / yTicks;
         p.setPen(colorText());
         const QString lbl = QString::number(val, 'g', 4);
         p.drawText(QPointF(plot.left() - 8 - fm.horizontalAdvance(lbl), y + fm.ascent() / 2 - 1), lbl);
@@ -1444,7 +1572,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         for (int i = 0; i <= yTicks; ++i)
         {
             const double y = plot.top() + plot.height() * i / yTicks;
-            const double val = m_y2Max - (m_y2Max - m_y2Min) * i / yTicks;
+            const double val = m_flipY ? m_y2Min + (m_y2Max - m_y2Min) * i / yTicks
+                                       : m_y2Max - (m_y2Max - m_y2Min) * i / yTicks;
             p.setPen(colorText());
             const QString lbl = QString::number(val, 'g', 4);
             p.drawText(QPointF(plot.right() + 8, y + fm.ascent() / 2 - 1), lbl);
@@ -1470,7 +1599,6 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         p.setPen(QPen(colorGrid(), 1));
         p.drawRect(plot);
     }
-
     // 曲线：每像素一个 min/max 桶，画"包络带 + 中线"
     const uint32_t px = static_cast<uint32_t>(std::max(1.0, plot.width()));
     p.save();
@@ -1491,7 +1619,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     const auto toY = [&](double v, int axis) {
         const double lo = axis == 1 ? m_y2Min : m_yMin;
         const double hi = axis == 1 ? m_y2Max : m_yMax;
-        return plot.bottom() - plot.height() * (v - lo) / (hi - lo);
+        return m_flipY ? plot.top() + plot.height() * (v - lo) / (hi - lo)
+                       : plot.bottom() - plot.height() * (v - lo) / (hi - lo);
     };
 
     for (auto git = lodGroups.constBegin(); git != lodGroups.constEnd(); ++git)
@@ -1533,7 +1662,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
             for (uint32_t i = 0; i < n; ++i)
                 poly.append(QPointF(toX(buf[i * 3] - s.offsetSec),
                                     toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0, s.axis)));
-            p.setPen(QPen(s.color, s.width));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
+            p.setPen(QPen(s.color, s.width, penStyleFor(s.lineStyle)));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
             p.drawPolyline(poly);
             m_hitPaths.append(poly);
             m_hitOwner.append(si);
@@ -2249,6 +2378,9 @@ QJsonObject CanvasWidget::saveState() const
     o[QStringLiteral("legend")] = m_showLegend;
     o[QStringLiteral("grid")] = m_showGrid;
     o[QStringLiteral("box")] = m_showBox;
+    o[QStringLiteral("flipY")] = m_flipY;
+    o[QStringLiteral("xlabel")] = m_xLabel;
+    o[QStringLiteral("ylabel")] = m_yLabel;
     o[QStringLiteral("rubberZoom")] = m_rubberZoom;
     o[QStringLiteral("mode")] = int(m_mode);
     o[QStringLiteral("modeTag")] = m_modeTag;
@@ -2263,6 +2395,7 @@ QJsonObject CanvasWidget::saveState() const
         so[QStringLiteral("color")] = s.color.name();
         so[QStringLiteral("width")] = s.width;
         so[QStringLiteral("axis")] = s.axis;
+        so[QStringLiteral("style")] = s.lineStyle;
         so[QStringLiteral("visible")] = s.visible;
         so[QStringLiteral("offset")] = s.offsetSec;
         so[QStringLiteral("points")] = int(s.count());
@@ -2297,6 +2430,7 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
             s.color = kPalette[m_series.size() % 6];
         s.width = so.value(QStringLiteral("width")).toInt(1);
         s.axis = so.value(QStringLiteral("axis")).toInt(0);
+        s.lineStyle = so.value(QStringLiteral("style")).toInt(0);
         s.visible = so.value(QStringLiteral("visible")).toBool(true);
         s.offsetSec = so.value(QStringLiteral("offset")).toDouble(0.0);
         s.t = ch->time;
@@ -2318,6 +2452,9 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
     m_showLegend = o.value(QStringLiteral("legend")).toBool(true);
     m_showGrid = o.value(QStringLiteral("grid")).toBool(true);
     m_showBox = o.value(QStringLiteral("box")).toBool(true);
+    m_flipY = o.value(QStringLiteral("flipY")).toBool(false);
+    m_xLabel = o.value(QStringLiteral("xlabel")).toString();
+    m_yLabel = o.value(QStringLiteral("ylabel")).toString();
     m_rubberZoom = o.value(QStringLiteral("rubberZoom")).toBool(false);
     m_kernelBacked = !m_series.isEmpty();
     update();
@@ -2329,6 +2466,19 @@ void CanvasWidget::setTimeRange(double t0, double t1)
         return;
     m_t0 = t0;
     m_t1 = t1;
+    update();
+}
+
+void CanvasWidget::setFlipY(bool on)
+{
+    m_flipY = on;
+    update();
+}
+
+void CanvasWidget::setAxisLabels(const QString &xLabel, const QString &yLabel)
+{
+    m_xLabel = xLabel;
+    m_yLabel = yLabel;
     update();
 }
 

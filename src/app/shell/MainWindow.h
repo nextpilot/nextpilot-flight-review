@@ -100,6 +100,8 @@ private:
     void refreshPropTree(CanvasWidget *active = nullptr);
     void showAxesProps(CanvasWidget *c);
     void showSeriesProps(CanvasWidget *c, int index);
+    void editSeriesProps(CanvasWidget *c, int index);
+    void editAxesProps(CanvasWidget *c);
     QWidget *addSourceRow(const QString &name, const QString &meta, const QString &dotColor,
                           bool backed = false, const QString &path = QString(), int srcId = -1);
     void showSourceMenu(QWidget *row, const QPoint &globalPos);
@@ -177,6 +179,10 @@ private:
     QVector<QToolButton *> m_srcChips;
     QVector<QPair<double, QString>> m_timeMarkers;
     QTableWidget *m_propTable = nullptr;
+    QToolButton *m_propEditBtn = nullptr;
+    CanvasWidget *m_propCanvas = nullptr;
+    int m_propSeriesIndex = -1;
+    int m_propKind = 0;          // 1=坐标轴，2=曲线
     QTreeWidget *m_propTree = nullptr;
     bool m_propTreeBuilding = false;
     QLabel *m_selLabel = nullptr;
