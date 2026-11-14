@@ -3109,15 +3109,15 @@ void MainWindow::setupCanvas(CanvasWidget *c)
     connect(c, &CanvasWidget::activated, this, [this, c](const QString &) {
         refreshPropTree(c);
     });
-    // 同页 X 轴联动：任一画布缩放或平移，其余画布跟着走
+    // 时间序列 X 轴联动：缩放/平移同步到所有页的时间序列画布。
     connect(c, &CanvasWidget::timeRangeChanged, this, [this, c](double t0, double t1) {
-        QWidget *page = pageForCanvas(c);
-        if (!page)
+        if (c->plotMode() != CanvasWidget::TimeSeries)
             return;
         QVector<CanvasWidget *> peers;
-        collectPageCanvases(page, peers);
+        for (int i = 0; i < m_pages->count(); ++i)
+            collectPageCanvases(m_pages->widget(i), peers);
         for (CanvasWidget *o : peers)
-            if (o != c)
+            if (o != c && o->plotMode() == CanvasWidget::TimeSeries)
                 o->setTimeRange(t0, t1);
     });
     connect(c, &CanvasWidget::addRequested, this, [this] { addCanvasToPage(); });
@@ -3186,6 +3186,7 @@ void MainWindow::toggleCanvasMaximize(CanvasWidget *c)
         restoreCanvasMaximize();
     if (!c || !m_pages || !m_pages->isAncestorOf(c))
         return;
+    m_sizeBeforeMax = size();
 
     QWidget *page = pageForCanvas(c);
     if (!page)
@@ -3230,6 +3231,9 @@ void MainWindow::restoreCanvasMaximize()
     m_maxedHidden.clear();
     m_maxedSizes.clear();
     c->setMaximizedState(false);
+    // 隐藏/显示画布会触发 QMainWindow 重算 sizeHint，恢复时把窗口尺寸拉回去。
+    const QSize sz = m_sizeBeforeMax;
+    QTimer::singleShot(0, this, [this, sz] { if (sz.isValid()) resize(sz); });
 }
 
 void MainWindow::splitCanvas(CanvasWidget *target, Qt::Orientation orientation)
@@ -4368,6 +4372,8 @@ void MainWindow::setPropRows(const QString &object, const QVector<QPair<QString,
         k->setFlags(Qt::ItemIsEnabled);
         k->setForeground(QColor(QStringLiteral("#9aa7b2")));
         auto *v = new QTableWidgetItem(rows[i].second);
+        // 属性表当前只做只读展示，避免看起来能改、改完却不生效。
+        v->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
         v->setForeground(QColor(QStringLiteral("#d5dde5")));
         m_propTable->setItem(i, 0, k);
         m_propTable->setItem(i, 1, v);

@@ -174,4 +174,5 @@ private:
     CanvasWidget *m_maxedCanvas = nullptr;
     QVector<QWidget *> m_maxedHidden;
     QVector<QPair<QSplitter *, QList<int>>> m_maxedSizes;
+    QSize m_sizeBeforeMax;
 };
