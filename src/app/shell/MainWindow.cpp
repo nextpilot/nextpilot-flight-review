@@ -1422,6 +1422,8 @@ QWidget *MainWindow::createRibbon()
             srcGallery->setCurrentViewGroup(firstGroup);
         addSmall(pSrc, QStringLiteral("\u25be"), [srcGallery] {
             srcGallery->showMoreDetail();
+            if (auto *vp = srcGallery->findChild<SARibbonGalleryViewport *>())
+                vp->resize(vp->width(), std::max(vp->heightHintForWidth(vp->width()), 300));
         }, this);
     }
 
@@ -1524,10 +1526,12 @@ QWidget *MainWindow::createRibbon()
         auto *pType = cat->addPanel(QStringLiteral("图表"));
         auto *plotGallery = pType->addGallery(true);
         QList<QAction *> curveActs, mapActs, gaugeActs;
+        QHash<QString, QAction *> plotActByKind;
         auto addPlot = [&](const QString &kind, const QString &label, const QString &tip,
                            QList<QAction *> &dest) {
             auto *a = new QAction(QIcon(plotThumb(kind)), label, this);
             a->setToolTip(tip);
+            plotActByKind.insert(kind, a);
             connect(a, &QAction::triggered, this, [this, kind, label] {
                 if (kind == QLatin1String("timeseries"))
                 {
@@ -1599,6 +1603,12 @@ QWidget *MainWindow::createRibbon()
             g->setGridMinimumWidth(60);
             g->setGridMaximumWidth(76);
         };
+        QList<QAction *> commonActs;
+        for (const char *k : {"timeseries", "xy", "scatter", "traj3d", "map", "horizon"})
+            if (auto *a = plotActByKind.value(QString::fromLatin1(k)))
+                commonActs.append(a);
+        auto *commonGroup = plotGallery->addCategoryActions(QStringLiteral("常用"), commonActs);
+        stylePlotGroup(commonGroup);
         auto *curveGroup = plotGallery->addCategoryActions(QStringLiteral("曲线"), curveActs);
         stylePlotGroup(curveGroup);
         auto *mapGroup = plotGallery->addCategoryActions(QStringLiteral("地图 / 3D"), mapActs);
@@ -1608,9 +1618,11 @@ QWidget *MainWindow::createRibbon()
         plotGallery->setSingleRowMode(true);
         plotGallery->setMinimumWidth(190);
         plotGallery->setMaximumWidth(220);
-        plotGallery->setCurrentViewGroup(curveGroup);
+        plotGallery->setCurrentViewGroup(commonGroup);
         addSmall(pType, QStringLiteral("\u25be"), [plotGallery] {
             plotGallery->showMoreDetail();
+            if (auto *vp = plotGallery->findChild<SARibbonGalleryViewport *>())
+                vp->resize(vp->width(), std::max(vp->heightHintForWidth(vp->width()), 380));
         }, this);
 
     }
