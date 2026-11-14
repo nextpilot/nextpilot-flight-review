@@ -1,5 +1,6 @@
 <RCC>
   <qresource prefix="/icons">
+    <file alias="arrow_more.svg">icons/arrow_more.svg</file>
     <file alias="autoy.svg">icons/autoy.svg</file>
     <file alias="compass.svg">icons/compass.svg</file>
     <file alias="cursor.svg">icons/cursor.svg</file>

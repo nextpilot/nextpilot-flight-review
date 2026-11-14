@@ -33,6 +33,8 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QMenu>
+#include <QWidgetAction>
+#include <QMouseEvent>
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -73,7 +75,6 @@ static void execDockMenu(QToolButton *btn, QMenu *menu);
 #include <QStackedWidget>
 #include <QLineEdit>
 #include <QEvent>
-#include <QMouseEvent>
 #include <QDrag>
 #include <QMimeData>
 #include <QDropEvent>
@@ -948,6 +949,70 @@ void dockToArea(QDockWidget *dock, MainWindow *win, Qt::DockWidgetArea area)
     dock->raise();
 }
 
+
+// Word 插入表格式布局选择：悬停框选 m×n，点击即应用
+class LayoutPickGrid : public QWidget
+{
+public:
+    explicit LayoutPickGrid(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setMouseTracking(true);
+        setFixedSize(8 * kStep + 2 * kPad, 8 * kStep + 2 * kPad);
+    }
+
+    std::function<void(int, int)> onPick;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter pr(this);
+        pr.fillRect(rect(), QColor(27, 35, 43));
+        for (int r = 1; r <= 8; ++r)
+        {
+            for (int c = 1; c <= 8; ++c)
+            {
+                const QRect cell(kPad + (c - 1) * kStep, kPad + (r - 1) * kStep, 16, 16);
+                const bool on = r <= m_rows && c <= m_cols;
+                pr.fillRect(cell, on ? QColor(242, 177, 52) : QColor(45, 56, 65));
+                pr.setPen(on ? QColor(255, 214, 125) : QColor(70, 84, 96));
+                pr.drawRect(cell.adjusted(0, 0, -1, -1));
+            }
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent *e) override
+    {
+        const int c = std::clamp((e->pos().x() - kPad) / kStep + 1, 0, 8);
+        const int r = std::clamp((e->pos().y() - kPad) / kStep + 1, 0, 8);
+        if (r != m_rows || c != m_cols)
+        {
+            m_rows = r;
+            m_cols = c;
+            update();
+        }
+    }
+
+    void leaveEvent(QEvent *) override
+    {
+        m_rows = m_cols = 0;
+        update();
+    }
+
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        if (e->button() != Qt::LeftButton || m_rows < 1 || m_cols < 1)
+            return;
+        if (onPick)
+            onPick(m_rows, m_cols);
+    }
+
+private:
+    static constexpr int kPad = 4;
+    static constexpr int kStep = 18;
+    int m_rows = 0;
+    int m_cols = 0;
+};
+
 // 页内 m×n 网格：QSplitter 只能做 n×1 / 1×n，这里补真正的二维布局
 class PlotGrid : public QWidget
 {
@@ -1332,10 +1397,10 @@ QWidget *MainWindow::createRibbon()
             if (!g)
                 return;
             g->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
-            g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-            g->setIconSize(QSize(58, 28));
-            g->setGridMinimumWidth(68);
-            g->setGridMaximumWidth(84);
+            g->setDisplayRow(SARibbonGalleryGroup::DisplayTwoRow);
+            g->setIconSize(QSize(52, 26));
+            g->setGridMinimumWidth(60);
+            g->setGridMaximumWidth(76);
         };
         SARibbonGalleryGroup *firstGroup = nullptr;
         if (!fileActs.isEmpty())
@@ -1351,17 +1416,13 @@ QWidget *MainWindow::createRibbon()
                 firstGroup = g;
         }
         srcGallery->setSingleRowMode(true);
-        srcGallery->setMinimumWidth(200);
-        srcGallery->setMaximumWidth(300);
+        srcGallery->setMinimumWidth(190);
+        srcGallery->setMaximumWidth(220);
         if (firstGroup)
             srcGallery->setCurrentViewGroup(firstGroup);
-        auto *moreSrc = new QToolButton(pSrc);
-        moreSrc->setText(QStringLiteral("全部来源"));
-        moreSrc->setToolTip(QStringLiteral("展开按日志文件 / 实时源分组的图库"));
-        connect(moreSrc, &QToolButton::clicked, srcGallery, [srcGallery] {
+        addSmall(pSrc, QStringLiteral("\u25be"), [srcGallery] {
             srcGallery->showMoreDetail();
-        });
-        pSrc->addWidget(moreSrc, SARibbonPanelItem::Small);
+        }, this);
     }
 
     // 绘图：页/布局/视图等常用操作在左，图表样式库在右；图表库一行展示，弹窗按曲线/地图/仪表分组
@@ -1382,34 +1443,26 @@ QWidget *MainWindow::createRibbon()
 
         // 页内布局：MATLAB subplot / PJ 的 m×n
         auto *pGrid = cat->addPanel(QStringLiteral("布局"));
-        auto *gridBox = new QWidget(this);
-        auto *gridLay = new QHBoxLayout(gridBox);
-        gridLay->setContentsMargins(2, 0, 2, 0);
-        gridLay->setSpacing(2);
-        auto *rowsSpin = new QSpinBox(gridBox);
-        rowsSpin->setRange(1, 8);
-        rowsSpin->setValue(2);
-        rowsSpin->setPrefix(QStringLiteral("行 "));
-        rowsSpin->setFixedWidth(58);
-        auto *colsSpin = new QSpinBox(gridBox);
-        colsSpin->setRange(1, 8);
-        colsSpin->setValue(1);
-        colsSpin->setPrefix(QStringLiteral("列 "));
-        colsSpin->setFixedWidth(58);
-        auto *applyGrid = new QToolButton(gridBox);
-        applyGrid->setText(QStringLiteral("应用"));
-        applyGrid->setToolTip(QStringLiteral("按行×列重排当前页画布"));
-        applyGrid->setCursor(Qt::PointingHandCursor);
-        applyGrid->setStyleSheet(QStringLiteral(
-            "QToolButton{background:#1b232b;border:1px solid #2d3841;color:#c9d1d9;font-size:11px;padding:3px 8px;}"
+        auto *layoutBtn = new QToolButton(pGrid);
+        layoutBtn->setText(QStringLiteral("2×1  \u25be"));
+        layoutBtn->setToolTip(QStringLiteral("悬停选择行×列，点击重排当前页画布"));
+        layoutBtn->setPopupMode(QToolButton::InstantPopup);
+        layoutBtn->setCursor(Qt::PointingHandCursor);
+        layoutBtn->setStyleSheet(QStringLiteral(
+            "QToolButton{background:#1b232b;border:1px solid #2d3841;color:#c9d1d9;font-size:11px;padding:4px 8px;}"
             "QToolButton:hover{border-color:#f2b134;color:#f2b134;}"));
-        gridLay->addWidget(rowsSpin);
-        gridLay->addWidget(colsSpin);
-        gridLay->addWidget(applyGrid);
-        connect(applyGrid, &QToolButton::clicked, this, [this, rowsSpin, colsSpin] {
-            applyCanvasGrid(rowsSpin->value(), colsSpin->value());
-        });
-        pGrid->addWidget(gridBox, SARibbonPanelItem::Large);
+        auto *layoutMenu = new QMenu(layoutBtn);
+        auto *pick = new LayoutPickGrid(layoutMenu);
+        auto *wa = new QWidgetAction(layoutMenu);
+        wa->setDefaultWidget(pick);
+        layoutMenu->addAction(wa);
+        layoutBtn->setMenu(layoutMenu);
+        pick->onPick = [this, layoutBtn, layoutMenu](int r, int c) {
+            layoutBtn->setText(QStringLiteral("%1×%2  \u25be").arg(r).arg(c));
+            applyCanvasGrid(r, c);
+            layoutMenu->close();
+        };
+        pGrid->addWidget(layoutBtn, SARibbonPanelItem::Large);
 
         auto *pView = cat->addPanel(QStringLiteral("视图"));
         auto *aGrid = new QAction(QStringLiteral("网格"), this);
@@ -1541,10 +1594,10 @@ QWidget *MainWindow::createRibbon()
         addPlot(QStringLiteral("gauge"), QStringLiteral("表盘"), QStringLiteral("单值仪表盘"), gaugeActs);
         auto stylePlotGroup = [](SARibbonGalleryGroup *g) {
             g->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
-            g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-            g->setIconSize(QSize(62, 30));
-            g->setGridMinimumWidth(70);
-            g->setGridMaximumWidth(90);
+            g->setDisplayRow(SARibbonGalleryGroup::DisplayTwoRow);
+            g->setIconSize(QSize(52, 26));
+            g->setGridMinimumWidth(60);
+            g->setGridMaximumWidth(76);
         };
         auto *curveGroup = plotGallery->addCategoryActions(QStringLiteral("曲线"), curveActs);
         stylePlotGroup(curveGroup);
@@ -1553,16 +1606,12 @@ QWidget *MainWindow::createRibbon()
         auto *gaugeGroup = plotGallery->addCategoryActions(QStringLiteral("仪表"), gaugeActs);
         stylePlotGroup(gaugeGroup);
         plotGallery->setSingleRowMode(true);
-        plotGallery->setMinimumWidth(210);
-        plotGallery->setMaximumWidth(330);
+        plotGallery->setMinimumWidth(190);
+        plotGallery->setMaximumWidth(220);
         plotGallery->setCurrentViewGroup(curveGroup);
-        auto *morePlot = new QToolButton(pType);
-        morePlot->setText(QStringLiteral("全部图型"));
-        morePlot->setToolTip(QStringLiteral("展开按曲线 / 地图 / 仪表分组的图库"));
-        connect(morePlot, &QToolButton::clicked, plotGallery, [plotGallery] {
+        addSmall(pType, QStringLiteral("\u25be"), [plotGallery] {
             plotGallery->showMoreDetail();
-        });
-        pType->addWidget(morePlot, SARibbonPanelItem::Small);
+        }, this);
 
     }
 
@@ -1656,6 +1705,7 @@ QWidget *MainWindow::createRibbon()
             {QStringLiteral("导出快照"), QStringLiteral("export_data")},
             {QStringLiteral("重载"), QStringLiteral("reset")},
             {QStringLiteral("复位"), QStringLiteral("reset")},
+            {QStringLiteral("\u25be"), QStringLiteral("arrow_more")},
         };
         // QAction 的 parent 是 this（不是 ribbon），按 ribbon 找会一个都拿不到
         for (auto *a : findChildren<QAction *>())
