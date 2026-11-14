@@ -995,7 +995,7 @@ QWidget *MainWindow::createRibbon()
                     else if (kind == QLatin1String("gauge")) mode = CanvasWidget::Gauge;
                     else if (kind == QLatin1String("traj3d")) mode = CanvasWidget::Traj3D;
                     else if (kind == QLatin1String("map")) mode = CanvasWidget::GpsMap;
-                    else if (kind == QLatin1String("surface3d")) mode = CanvasWidget::Xy;
+                    else if (kind == QLatin1String("surface3d")) mode = CanvasWidget::Surface3D;
                     c->setPlotMode(mode, kind);
                     CanvasWidget *seed = nullptr;
                     int best = 0;

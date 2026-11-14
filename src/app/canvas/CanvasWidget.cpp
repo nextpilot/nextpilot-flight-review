@@ -976,6 +976,74 @@ void CanvasWidget::paintGpsMap(QPainter &p, const QRectF &plot, const QFontMetri
                QStringLiteral("%1 点 · %2 / %3").arg(pts.size()).arg(latS->label, lonS->label));
 }
 
+void CanvasWidget::paintSurface3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    QVector<int> ids;
+    double lo = 0, hi = 0;
+    bool init = false;
+    for (int i = 0; i < m_series.size(); ++i)
+    {
+        const Series &s = m_series.at(i);
+        if (!s.visible || s.count() < 2)
+            continue;
+        ids.append(i);
+        for (quint32 k = 0; k < s.count(); ++k)
+        {
+            const double v = s.value()[k];
+            if (!std::isfinite(v))
+                continue;
+            if (!init) { lo = hi = v; init = true; }
+            else { lo = std::min(lo, v); hi = std::max(hi, v); }
+        }
+    }
+    if (ids.isEmpty() || !init)
+    {
+        p.setPen(colorDim());
+        p.drawText(plot, Qt::AlignCenter, QStringLiteral("3D 曲面需要多条可见曲线\n按序列堆叠成瀑布"));
+        return;
+    }
+    const double pad = (hi - lo) * 0.1 + 1e-6;
+    lo -= pad;
+    hi += pad;
+    const double w = plot.width() * 0.74;
+    const double h = plot.height() * 0.6;
+    const double zStep = qMin(10.0, plot.height() * 0.4 / qMax(1, ids.size()));
+    const double x0 = plot.left() + 6;
+    const double yBase = plot.bottom() - 8;
+    const int n = ids.size();
+
+    p.setPen(QPen(colorGrid(), 1));
+    p.drawLine(QPointF(x0, yBase), QPointF(x0 + w, yBase));
+    p.drawLine(QPointF(x0, yBase), QPointF(x0, yBase - h));
+    p.drawLine(QPointF(x0, yBase), QPointF(x0 + n * zStep * 0.5, yBase + n * zStep * 0.5));
+
+    for (int k = n - 1; k >= 0; --k)
+    {
+        const Series &s = m_series.at(ids.at(k));
+        const double z = (n - 1 - k) * zStep;
+        QPolygonF poly;
+        const quint32 cnt = s.count();
+        const quint32 step = qMax<quint32>(1, cnt / 400);
+        for (quint32 i = 0; i < cnt; i += step)
+        {
+            const double t = (s.time()[i] - s.offsetSec - m_t0) / std::max(1e-12, m_t1 - m_t0);
+            const double v = s.value()[i];
+            if (!std::isfinite(v) || t < 0 || t > 1)
+                continue;
+            poly.append(QPointF(x0 + w * t + z * 0.5,
+                                yBase - h * (v - lo) / (hi - lo) + z * 0.5));
+        }
+        if (poly.size() < 2)
+            continue;
+        QColor c = s.color;
+        c.setAlpha(90 + 165 * (k + 1) / n);
+        p.setPen(QPen(c, 1.2));
+        p.drawPolyline(poly);
+    }
+    p.setPen(colorText());
+    p.drawText(QPointF(x0, yBase - h - 6), QStringLiteral("3D 瀑布 · %1 条").arg(n));
+}
+
 void CanvasWidget::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     QVector<const Series *> vis;
@@ -1070,6 +1138,7 @@ void CanvasWidget::paintSpecial(QPainter &p, const QRectF &plot, const QFontMetr
     case Gauge: paintGauge(p, plot, fm); break;
     case Traj3D: paintTraj3D(p, plot, fm); break;
     case GpsMap: paintGpsMap(p, plot, fm); break;
+    case Surface3D: paintSurface3D(p, plot, fm); break;
     default: break;
     }
     p.restore();
@@ -1755,7 +1824,7 @@ QJsonObject CanvasWidget::saveState() const
 void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool)
 {
     m_title = o.value(QStringLiteral("title")).toString(m_title);
-    m_mode = PlotMode(std::clamp(o.value(QStringLiteral("mode")).toInt(0), 0, int(GpsMap)));
+    m_mode = PlotMode(std::clamp(o.value(QStringLiteral("mode")).toInt(0), 0, int(Surface3D)));
     m_modeTag = o.value(QStringLiteral("modeTag")).toString();
     m_series.clear();
     const QJsonArray arr = o.value(QStringLiteral("series")).toArray();

@@ -19,7 +19,7 @@ class CanvasWidget : public QWidget
     Q_OBJECT
 
 public:
-    enum PlotMode { TimeSeries, Xy, Scatter, BarChart, Histogram, Spectrum, Horizon, Compass, Gauge, Traj3D, GpsMap };
+    enum PlotMode { TimeSeries, Xy, Scatter, BarChart, Histogram, Spectrum, Horizon, Compass, Gauge, Traj3D, GpsMap, Surface3D };
     explicit CanvasWidget(QWidget *parent = nullptr);
 
     void setPlotMode(PlotMode mode, const QString &tag = QString());
@@ -140,6 +140,7 @@ private:
     void paintGauge(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
     void paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
     void paintGpsMap(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void paintSurface3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
     double lastValue(const QString &namePart, bool *ok) const;
 
     QString m_title;
