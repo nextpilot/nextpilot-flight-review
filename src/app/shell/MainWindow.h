@@ -75,7 +75,7 @@ public:
     bool loadFile(const QString &path, bool interactive = true);
     void importLayoutFrom(const QString &path);
     void saveLayoutTo(const QString &path);
-    void runScript();
+    void runScript(bool apply = false);
     QString defaultLayoutPath() const;
 
 protected:
@@ -153,6 +153,8 @@ private:
     QPlainTextEdit *m_script = nullptr;
     QComboBox *m_scriptInputs[4] = {nullptr, nullptr, nullptr, nullptr};
     QTableWidget *m_scriptParams = nullptr;
+    CanvasWidget *m_scriptPreviewCanvas = nullptr;
+    QStringList m_scriptPreviewNames;
     QVector<SourceData> m_sources;
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;

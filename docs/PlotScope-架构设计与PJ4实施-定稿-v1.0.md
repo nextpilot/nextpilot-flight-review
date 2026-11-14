@@ -864,7 +864,8 @@ public:
 - 语法错误包含行号，面板自动选中出错行；源码与绑定写入 `.psl` 的 `script` 对象，导入时恢复。
 - 输出追加到当前工作区画布；已修复 `ps.plot` 与全局 `out` 重复输出（改用 `lua_next` 判断空表，`lua_rawlen` 对字符串键表恒为 0）。
 - 已做：参数表单（名称 + 数值）传入 `init(params)`，随 `.psl` 的 `script.params` 保存。
-- 未做：before/after 预览与 Apply 替换、Luau 适配、Python。
+- 已做：预览/应用分两步。预览输出 `preview/<name>` 叠加在原曲线旁（before/after），再次预览先清旧预览；“应用”提交正式输出名。原始曲线不删除，保持非破坏性。
+- 未做：Apply 替换来源曲线并继承颜色（当前为非破坏性追加）、Luau 适配、Python。
 
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 

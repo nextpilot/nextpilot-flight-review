@@ -205,6 +205,15 @@ void CanvasWidget::addGeneratedSeries(const QString &name, const QVector<double>
     emit activated(m_title);
 }
 
+void CanvasWidget::removeGeneratedSeries(const QString &name)
+{
+    for (int i = m_series.size() - 1; i >= 0; --i)
+        if (m_series.at(i).name == name && !m_series.at(i).t)
+            m_series.removeAt(i);
+    update();
+    emit activated(m_title);
+}
+
 void CanvasWidget::setInputSource(int id, const QString &path, const QString &alias, double offsetSec)
 {
     m_inputSrcId = id;

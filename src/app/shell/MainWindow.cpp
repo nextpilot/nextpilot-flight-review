@@ -1614,12 +1614,17 @@ void MainWindow::createDocks()
             m_scriptParams->removeRow(row);
     });
 
-    auto *runScriptBtn = new QPushButton(QStringLiteral("运行"), scriptHost);
+    auto *runBtnRow = new QHBoxLayout;
+    auto *runScriptBtn = new QPushButton(QStringLiteral("预览"), scriptHost);
+    auto *applyScriptBtn = new QPushButton(QStringLiteral("应用"), scriptHost);
+    runBtnRow->addWidget(runScriptBtn);
+    runBtnRow->addWidget(applyScriptBtn);
     scriptLay->addWidget(m_script, 1);
-    scriptLay->addWidget(runScriptBtn);
+    scriptLay->addLayout(runBtnRow);
     scriptDock->setWidget(scriptHost);
     addDockWidget(Qt::RightDockWidgetArea, scriptDock);
-    connect(runScriptBtn, &QPushButton::clicked, this, &MainWindow::runScript);
+    connect(runScriptBtn, &QPushButton::clicked, this, [this] { runScript(false); });
+    connect(applyScriptBtn, &QPushButton::clicked, this, [this] { runScript(true); });
 
     // 底部：日志
     auto *logDock = new QDockWidget(QStringLiteral("日志"), this);
@@ -3176,7 +3181,7 @@ QWidget *MainWindow::buildPage(const QJsonObject &o)
     return new QLabel(o.value(QStringLiteral("text")).toString(), m_pages);
 }
 
-void MainWindow::runScript()
+void MainWindow::runScript(bool apply)
 {
     QDockWidget *scriptDock = findChild<QDockWidget *>(QStringLiteral("dock.script"));
     CanvasWidget *canvas = nullptr;
@@ -3274,12 +3279,33 @@ void MainWindow::runScript()
         }
         return;
     }
-    for (const ScriptOutput &o : r.outputs)
+    if (m_scriptPreviewCanvas)
+        for (const QString &name : m_scriptPreviewNames)
+            m_scriptPreviewCanvas->removeGeneratedSeries(name);
+    m_scriptPreviewCanvas = canvas;
+    m_scriptPreviewNames.clear();
+
+    if (apply)
     {
-        canvas->addGeneratedSeries(o.name, o.time, o.value);
-        log(QStringLiteral("Lua 输出：%1（%2 点）").arg(o.name).arg(o.value.size()));
+        for (const ScriptOutput &o : r.outputs)
+        {
+            canvas->addGeneratedSeries(o.name, o.time, o.value);
+            log(QStringLiteral("Lua 应用：%1（%2 点）").arg(o.name).arg(o.value.size()));
+        }
     }
-    log(QStringLiteral("Lua 5.4 执行完成：%1 条输出").arg(r.outputs.size()));
+    else
+    {
+        for (const ScriptOutput &o : r.outputs)
+        {
+            const QString name = QStringLiteral("preview/%1").arg(o.name);
+            canvas->addGeneratedSeries(name, o.time, o.value);
+            m_scriptPreviewNames.append(name);
+            log(QStringLiteral("Lua 预览：%1（%2 点）").arg(name).arg(o.value.size()));
+        }
+    }
+    log(QStringLiteral("Lua 5.4 %1：%2 条输出")
+            .arg(apply ? QStringLiteral("应用完成") : QStringLiteral("预览完成"))
+            .arg(r.outputs.size()));
 }
 
 void MainWindow::saveLayoutTo(const QString &path)
@@ -3576,7 +3602,7 @@ void MainWindow::importLayoutFrom(const QString &path)
             }
         }
         if (!m_script->toPlainText().trimmed().isEmpty())
-            runScript();
+            runScript(false);
     }
 
     QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
