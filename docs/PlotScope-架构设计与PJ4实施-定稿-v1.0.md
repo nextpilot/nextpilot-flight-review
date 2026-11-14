@@ -971,6 +971,7 @@ public:
 - P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码与参数随 `.psl` 保存；`init(params)` 接收参数表单；预览/应用分两步。
 - 多 parser：`PsDataInputVtable` / `PsDataSourceVtable` 尾部增加 `feed_raw`；MAVLink/OEM7 支持 `transport=external` 只解析不建连接；`MainWindow::openLiveInput()` 负责扇出与句柄回收。
 - M3：`McapWriter` 增加 1 MiB Chunk 聚合、ChunkIndex、SummaryOffset 与 summary Schema/Channel 副本；`McapReader` 原有 Chunk 解析路径直接复用。
+- P4：新增 `data_loader_binary`，按扩展名解析 CBOR（`.cbor`）与 MessagePack（`.msgpack/.mpk`），数值字段扁平为 `cbor.*` / `msgpack.*`，支持数组批量记录与连续多条记录。
 - M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 插件原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
 - M1 CAN：ASC/BLF 加载器新增可选 `dbc` 配置，按 `BO_`/`SG_` 解码为 `CAN<bus>.<message>.<signal>`；留空仍导原始字节。CMake 公共库加 `Dbc.cpp`，测试覆盖 `CAN2.MSG_A.byte0`。

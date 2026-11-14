@@ -15,6 +15,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_blf(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_nmea(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ubx(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_json(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_binary(void);
 
 namespace {
 
@@ -31,7 +32,6 @@ bool loadAndCheck(const PsPluginDescriptor *d, const std::string &path, uint32_t
     }
     PsDataset *ds = static_cast<PsDataset *>(raw);
     const uint32_t n = ps_dataset_channel_count(ds);
-
     ps_dataset_free(ds);
     if (n < minCh)
     {
@@ -93,6 +93,10 @@ int main()
     if (!loadAndCheck(ps_plugin_entry_data_loader_ubx(), fix + "/demo.ubx", 10))
         return 1;
     if (!loadAndCheck(ps_plugin_entry_data_loader_json(), fix + "/demo.jsonl", 3))
+        return 1;
+    if (!loadAndCheck(ps_plugin_entry_data_loader_binary(), fix + "/demo.cbor", 4))
+        return 1;
+    if (!loadAndCheck(ps_plugin_entry_data_loader_binary(), fix + "/demo.msgpack", 4))
         return 1;
 
     // DBC 模式：0x1A0 的两个字节解成命名信号，而不是 b0..b7 原始字节。
