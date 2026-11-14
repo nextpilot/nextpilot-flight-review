@@ -970,13 +970,13 @@ public:
         auto *lab = new QLabel(title, this);
         lab->setStyleSheet(QStringLiteral("color:#8b949e;font-size:11px;padding:2px 3px;"));
         m_root->addWidget(lab);
-        auto *row = new QHBoxLayout;
-        row->setContentsMargins(0, 0, 0, 0);
-        row->setSpacing(3);
-        for (QAction *a : acts)
+        auto *grid = new QGridLayout;
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setSpacing(3);
+        for (int i = 0; i < acts.size(); ++i)
         {
             auto *b = new QToolButton(this);
-            b->setDefaultAction(a);
+            b->setDefaultAction(acts.at(i));
             b->setToolButtonStyle(Qt::ToolButtonIconOnly);
             b->setAutoRaise(true);
             b->setIconSize(QSize(64, 36));
@@ -984,11 +984,12 @@ public:
             b->setStyleSheet(QStringLiteral(
                 "QToolButton{background:transparent;border:0;padding:0;}"
                 "QToolButton:hover{background:#2d3841;}"));
-            connect(a, &QAction::triggered, this, &QWidget::hide);
-            row->addWidget(b);
+            connect(acts.at(i), &QAction::triggered, this, &QWidget::hide);
+            grid->addWidget(b, i / 6, i % 6);
         }
-        row->addStretch();
-        m_root->addLayout(row);
+        for (int c = 0; c < 6; ++c)
+            grid->setColumnStretch(c, 0);
+        m_root->addLayout(grid);
     }
 
 private:
@@ -1440,11 +1441,11 @@ QWidget *MainWindow::createRibbon()
         auto styleGroup = [](SARibbonGalleryGroup *g) {
             if (!g)
                 return;
-            g->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
-            g->setDisplayRow(SARibbonGalleryGroup::DisplayTwoRow);
-            g->setIconSize(QSize(52, 26));
-            g->setGridMinimumWidth(60);
-            g->setGridMaximumWidth(76);
+            g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
+            g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+            g->setIconSize(QSize(64, 36));
+            g->setGridMinimumWidth(68);
+            g->setGridMaximumWidth(74);
         };
         SARibbonGalleryGroup *firstGroup = nullptr;
         if (!fileActs.isEmpty())
@@ -1460,14 +1461,27 @@ QWidget *MainWindow::createRibbon()
                 firstGroup = g;
         }
         srcGallery->setSingleRowMode(true);
-        srcGallery->setMinimumWidth(190);
-        srcGallery->setMaximumWidth(220);
+        srcGallery->setMinimumWidth(280);
+        srcGallery->setMaximumWidth(320);
+        if (auto *more = srcGallery->findChild<QToolButton *>(QStringLiteral("SARibbonGalleryButtonMore")))
+            more->hide();
         if (firstGroup)
             srcGallery->setCurrentViewGroup(firstGroup);
-        addSmall(pSrc, QStringLiteral("\u25be"), [srcGallery] {
-            srcGallery->showMoreDetail();
-            if (auto *vp = srcGallery->findChild<SARibbonGalleryViewport *>())
-                vp->resize(vp->width(), std::max(vp->heightHintForWidth(vp->width()), 300));
+        pSrc->setMaximumWidth(380);
+        if (auto *t = pSrc->titleLabel())
+            t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        auto *srcMenu = new PlotMenuPopup(this);
+        if (!fileActs.isEmpty())
+            srcMenu->addGroup(QStringLiteral("日志文件"), fileActs);
+        if (!streamActs.isEmpty())
+            srcMenu->addGroup(QStringLiteral("实时源"), streamActs);
+        addSmall(pSrc, QStringLiteral("\u25be"), [this, ribbon, srcGallery, srcMenu] {
+            srcMenu->adjustSize();
+            const QPoint anchor = srcGallery->mapToGlobal(QPoint(0, 0));
+            const int y = ribbon->mapToGlobal(QPoint(0, ribbon->height())).y() + 8;
+            const int x = qBound(8, anchor.x(), screen()->availableGeometry().right() - srcMenu->width() - 8);
+            srcMenu->move(x, y);
+            srcMenu->show();
         }, this);
     }
 
