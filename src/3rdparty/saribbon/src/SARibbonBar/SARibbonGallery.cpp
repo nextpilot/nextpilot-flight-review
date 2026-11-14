@@ -772,7 +772,18 @@ void SARibbonGallery::showMoreDetail()
     if (Q_UNLIKELY(!d_ptr->mPopupWidget))
         return;
 
-    const QPoint start = mapToGlobal(QPoint(0, 0));
+    // 下拉锚在整个 Ribbon 下方，不覆盖 Ribbon；下方空间不足时再翻到上方
+    QRect anchor(mapToGlobal(QPoint(0, 0)), size());
+    int ribbonBottom = anchor.bottom();
+    QWidget* ancestor = this;
+    while (ancestor->parentWidget()) {
+        ancestor = ancestor->parentWidget();
+        if (QByteArray(ancestor->metaObject()->className()).contains("SARibbonBar")) {
+            ribbonBottom = ancestor->mapToGlobal(QPoint(0, ancestor->height())).y();
+            break;
+        }
+    }
+    QPoint start = QPoint(anchor.left(), ribbonBottom + 2);
     const QScreen* scr = QGuiApplication::screenAt(start);
     if (!scr)  // 罕见情况：跨屏拖动后原屏幕消失
         scr = QGuiApplication::primaryScreen();
@@ -787,17 +798,26 @@ void SARibbonGallery::showMoreDetail()
     w = qMin(w, avail.right() - start.x() + 1);
     w = qMax(w, 1);  // 保险：至少 1 px
 
-    /* ---- 计算期望高度 ---- */
+    /* ---- 计算期望高度：按完整内容布局算，避免只显示前两组 ---- */
     int h = d_ptr->mPopupWidget->heightHintForWidth(w);
-
-    /* ---- 高度不超过屏幕底部 ---- */
-    int maxH = avail.bottom() - start.y() + 1;
-    if (h > maxH) {
-        h = maxH;
+    if (QWidget* content = d_ptr->mPopupWidget->widget()) {
+        h = qMax(h, content->sizeHint().height() + 4);
     }
 
-    d_ptr->mPopupWidget->setGeometry(start.x(), start.y(), w, h);
+    /* ---- 下方放不下时翻到上方 ---- */
+    if (start.y() + h > avail.bottom() + 1) {
+        const int above = anchor.top() - avail.top() - 4;
+        if (above > 120) {
+            h = qMin(h, above);
+            start.setY(anchor.top() - 4 - h);
+        } else {
+            start.setY(qMax(avail.top(), avail.bottom() + 1 - h));
+        }
+    }
+
+    d_ptr->mPopupWidget->setGeometry(start.x(), start.y(), w, qMax(h, 360));
     d_ptr->mPopupWidget->show();
+    d_ptr->mPopupWidget->setMinimumHeight(qMax(h, 360));
 }
 
 /**

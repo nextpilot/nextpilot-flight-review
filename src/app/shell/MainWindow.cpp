@@ -1431,7 +1431,7 @@ QWidget *MainWindow::createRibbon()
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("绘图"));
 
-        auto *pPage = cat->addPanel(QStringLiteral("页"));
+        auto *pPage = cat->addPanel(QStringLiteral("页面"));
         addLarge(pPage, QStringLiteral("新建页"), [this] { newPage(); }, this);
         addLarge(pPage, QStringLiteral("添加画布"), [this] { addCanvasToPage(); }, this);
         addLarge(pPage, QStringLiteral("向右拆分"), [this] {
@@ -1444,7 +1444,7 @@ QWidget *MainWindow::createRibbon()
         }, this);
 
         // 页内布局：MATLAB subplot / PJ 的 m×n
-        auto *pGrid = cat->addPanel(QStringLiteral("布局"));
+        auto *pGrid = cat->addPanel(QStringLiteral("画布布局"));
         auto *layoutBtn = new QToolButton(pGrid);
         layoutBtn->setText(QStringLiteral("2×1  \u25be"));
         layoutBtn->setToolTip(QStringLiteral("悬停选择行×列，点击重排当前页画布"));
@@ -1466,7 +1466,7 @@ QWidget *MainWindow::createRibbon()
         };
         pGrid->addWidget(layoutBtn, SARibbonPanelItem::Large);
 
-        auto *pView = cat->addPanel(QStringLiteral("视图"));
+        auto *pView = cat->addPanel(QStringLiteral("显示"));
         auto *aGrid = new QAction(QStringLiteral("网格"), this);
         auto *aBox = new QAction(QStringLiteral("边框"), this);
         auto *aLegend = new QAction(QStringLiteral("图例"), this);
@@ -1488,26 +1488,40 @@ QWidget *MainWindow::createRibbon()
             {aZoomIn, QStringLiteral("zoom_in")}, {aZoomOut, QStringLiteral("zoom_out")},
             {aAutoY, QStringLiteral("autoy")}, {aReset, QStringLiteral("reset")}};
         auto *viewBox = new QWidget(pView);
-        auto *viewGrid = new QGridLayout(viewBox);
-        viewGrid->setContentsMargins(0, 0, 0, 0);
-        viewGrid->setSpacing(2);
-        for (int i = 0; i < viewActs.size(); ++i)
-        {
-            QAction *a = viewActs.at(i).first;
-            a->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(viewActs.at(i).second)));
-            auto *b = new QToolButton(viewBox);
-            b->setDefaultAction(a);
-            b->setToolButtonStyle(Qt::ToolButtonIconOnly);
-            b->setAutoRaise(true);
-            b->setIconSize(QSize(16, 16));
-            b->setStyleSheet(QStringLiteral(
-                "QToolButton{background:transparent;border:0;padding:0;}"
-                "QToolButton:hover{background:#2d3841;}"
-                "QToolButton:checked{background:#3a4a58;}"));
-            b->setFixedSize(24, 24);
-            viewGrid->addWidget(b, i / 4, i % 4);
-        }
-        viewBox->setFixedSize(4 * 26, 2 * 26);
+        auto *viewRow = new QHBoxLayout(viewBox);
+        viewRow->setContentsMargins(0, 0, 0, 0);
+        viewRow->setSpacing(4);
+        auto makeViewGrid = [&](int first) {
+            auto *box = new QWidget(viewBox);
+            auto *grid = new QGridLayout(box);
+            grid->setContentsMargins(0, 0, 0, 0);
+            grid->setSpacing(2);
+            for (int i = 0; i < 4; ++i)
+            {
+                QAction *a = viewActs.at(first + i).first;
+                a->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(viewActs.at(first + i).second)));
+                auto *b = new QToolButton(box);
+                b->setDefaultAction(a);
+                b->setToolButtonStyle(Qt::ToolButtonIconOnly);
+                b->setAutoRaise(true);
+                b->setIconSize(QSize(16, 16));
+                b->setStyleSheet(QStringLiteral(
+                    "QToolButton{background:transparent;border:0;padding:0;}"
+                    "QToolButton:hover{background:#2d3841;}"
+                    "QToolButton:checked{background:#3a4a58;}"));
+                b->setFixedSize(24, 24);
+                grid->addWidget(b, i / 2, i % 2);
+            }
+            box->setFixedSize(2 * 26, 2 * 26);
+            return box;
+        };
+        viewRow->addWidget(makeViewGrid(0));
+        auto *sep = new QFrame(viewBox);
+        sep->setFrameShape(QFrame::VLine);
+        sep->setStyleSheet(QStringLiteral("color:#3a4650;"));
+        viewRow->addWidget(sep);
+        viewRow->addWidget(makeViewGrid(4));
+        viewBox->setFixedSize(2 * 26 + 9 + 2 * 26, 2 * 26);
         pView->addWidget(viewBox, SARibbonPanelItem::Large);
         const QVector<CanvasWidget *> initial = pageCanvases();
         if (!initial.isEmpty())
@@ -1555,7 +1569,9 @@ QWidget *MainWindow::createRibbon()
             for (CanvasWidget *c : pageCanvases()) c->requestAutoY();
         });
 
-        auto *pType = cat->addPanel(QStringLiteral("图表"));
+        auto *pType = cat->addPanel(QStringLiteral("图表类型"));
+        pType->setExpanding(false);
+        pType->setMaximumWidth(240);
         auto *plotGallery = pType->addGallery(true);
         QList<QAction *> curveActs, mapActs, gaugeActs;
         QHash<QString, QAction *> plotActByKind;
@@ -1635,12 +1651,19 @@ QWidget *MainWindow::createRibbon()
             g->setGridMinimumWidth(60);
             g->setGridMaximumWidth(76);
         };
+        auto stylePlotCommon = [](SARibbonGalleryGroup *g) {
+            g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
+            g->setDisplayRow(SARibbonGalleryGroup::DisplayTwoRow);
+            g->setIconSize(QSize(52, 30));
+            g->setGridMinimumWidth(56);
+            g->setGridMaximumWidth(62);
+        };
         QList<QAction *> commonActs;
         for (const char *k : {"timeseries", "xy", "scatter", "traj3d", "map", "horizon"})
             if (auto *a = plotActByKind.value(QString::fromLatin1(k)))
                 commonActs.append(a);
         auto *commonGroup = plotGallery->addCategoryActions(QStringLiteral("常用"), commonActs);
-        stylePlotGroup(commonGroup);
+        stylePlotCommon(commonGroup);
         auto *curveGroup = plotGallery->addCategoryActions(QStringLiteral("曲线"), curveActs);
         stylePlotGroup(curveGroup);
         auto *mapGroup = plotGallery->addCategoryActions(QStringLiteral("地图 / 3D"), mapActs);
@@ -1658,8 +1681,6 @@ QWidget *MainWindow::createRibbon()
         }
         addSmall(pType, QStringLiteral("\u25be"), [plotGallery] {
             plotGallery->showMoreDetail();
-            if (auto *vp = plotGallery->findChild<SARibbonGalleryViewport *>())
-                vp->resize(vp->width(), std::max(vp->heightHintForWidth(vp->width()), 380));
         }, this);
 
     }
