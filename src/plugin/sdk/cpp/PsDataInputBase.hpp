@@ -117,6 +117,15 @@ public:
         return false;
     }
 
+    /* 可选：共享 transport 模式。宿主把原始字节喂进来，插件只解析并写 sink。 */
+    virtual bool feedRaw(std::string_view topic, std::string_view encoding, int64_t timestamp_ns,
+                         const uint8_t *data, uint32_t size, PsError *err)
+    {
+        (void)topic; (void)encoding; (void)timestamp_ns; (void)data; (void)size;
+        fillError(err, 1, "feed_raw is not supported");
+        return false;
+    }
+
 protected:
     const PsDataInputServices &services() const { return services_; }
     const PsHostApi *host() const { return services_.host; }
@@ -391,6 +400,31 @@ struct VtableBuilder
     }
 
     template <typename T>
+    static int32_t feedRawT(void *ctx, const char *topic, const char *encoding, int64_t ts,
+                            const uint8_t *data, uint32_t size, char *err, uint32_t errCap) noexcept
+    {
+        try {
+            auto *self = static_cast<T *>(ctx);
+            PsError e{};
+            if (!self->feedRaw(topic ? topic : "", encoding ? encoding : "", ts, data, size, &e)) {
+                if (err && errCap) {
+                    const size_t n = std::min<size_t>(sizeof(e.message) - 1, errCap - 1);
+                    std::memcpy(err, e.message, n);
+                    err[n] = '\0';
+                }
+                return e.code ? e.code : 1;
+            }
+            return 0;
+        } catch (const std::exception &ex) {
+            if (err && errCap) std::snprintf(err, errCap, "%s", ex.what());
+            return 1;
+        } catch (...) {
+            if (err && errCap) std::snprintf(err, errCap, "unknown exception in feed_raw");
+            return 1;
+        }
+    }
+
+    template <typename T>
     static PsDataInputVtable make(const char *manifest)
     {
         return PsDataInputVtable{
@@ -415,6 +449,7 @@ struct VtableBuilder
             &seekT<T>,
             &statusJsonT<T>,
             &importFileT<T>,
+            &feedRawT<T>,
         };
     }
 };

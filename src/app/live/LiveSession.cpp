@@ -73,6 +73,8 @@ int32_t LiveSession::onRaw(void *ctx, const char *topic, const char *encoding,
     if (!self || !topic)
         return 1;
     self->m_rawBytes += static_cast<qint64>(size);
+    if (self->m_rawTap)
+        self->m_rawTap(topic, encoding ? encoding : "raw", timestamp_ns, data, size);
     if (self->m_recorder)
         self->m_recorder->writeRaw(topic, encoding ? encoding : "raw", timestamp_ns, data, size);
     return 0;
@@ -89,6 +91,14 @@ int32_t LiveSession::onEvent(void *ctx, const char *topic, const char *payload_j
     return 0;
 }
 
+void LiveSession::setRawTap(RawTap tap)
+{
+    m_rawTap = std::move(tap);
+    m_sink.raw_batch = m_rawTap || (m_recorder && m_recorder->recording())
+                           ? &LiveSession::onRaw
+                           : nullptr;
+}
+
 bool LiveSession::startRecording(StreamRecorder::Format format, const QString &configJson,
                                  QString *path, QString *err)
 {
@@ -99,7 +109,7 @@ bool LiveSession::startRecording(StreamRecorder::Format format, const QString &c
         return false;
     m_recorder = std::move(recorder);
     m_recordPath = recordPath;
-    if (format == StreamRecorder::Format::Raw)
+    if (format == StreamRecorder::Format::Raw || m_rawTap)
         m_sink.raw_batch = &LiveSession::onRaw;
     if (path)
         *path = m_recordPath;
@@ -108,7 +118,7 @@ bool LiveSession::startRecording(StreamRecorder::Format format, const QString &c
 
 void LiveSession::stopRecording()
 {
-    m_sink.raw_batch = nullptr;
+    m_sink.raw_batch = m_rawTap ? &LiveSession::onRaw : nullptr;
     if (m_recorder)
     {
         m_recorder->stop();

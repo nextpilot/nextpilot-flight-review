@@ -120,6 +120,24 @@ int main(int argc, char **argv)
         assert(raw.read(6) == QByteArrayLiteral("PSRAW1"));
     }
 
+    // 共享 transport：external 模式不碰 socket，只吃宿主喂进来的字节。
+    const size_t extBase = sink.data["mav.att.roll"].size();
+    void *eh = v->create();
+    assert(eh);
+    assert(v->bind(eh, services, &perr));
+    QJsonObject extObj{{QStringLiteral("transport"), QStringLiteral("external")}};
+    const QByteArray extBytes = QJsonDocument(extObj).toJson(QJsonDocument::Compact);
+    PsStringView esv{extBytes.constData(), static_cast<uint32_t>(extBytes.size())};
+    assert(v->load_config(eh, esv, &perr));
+    assert(v->start(eh, &perr));
+    char feedErr[128] = {0};
+    assert(v->feed_raw(eh, "mavlink", "mavlink", 0,
+                       reinterpret_cast<const uint8_t *>(f.constData()),
+                       static_cast<uint32_t>(f.size()), feedErr, sizeof(feedErr)) == 0);
+    assert(sink.data["mav.att.roll"].size() == extBase + 1);
+    v->stop(eh);
+    v->destroy(eh);
+
     // 原始文件由同一个 MAVLink 插件回放，不依赖新 loader 插件。
     void *rh = v->create();
     assert(rh);

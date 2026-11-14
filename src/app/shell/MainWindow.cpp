@@ -626,6 +626,35 @@ private:
     int m_cols = 1;
 };
 
+// 共享 transport 解析器：原始字节由主插件扇出，通道名加解析器前缀避免撞名。
+struct FanoutParser
+{
+    QString id;
+    void *handle = nullptr;
+    LiveSession *session = nullptr;
+    QString prefix;
+    PsSourceSink sink{};
+};
+
+int32_t fanoutChannel(void *ctx, const char *name, const char *unit,
+                      const double *time_s, const double *value, uint32_t count)
+{
+    auto *ep = static_cast<FanoutParser *>(ctx);
+    if (!ep || !ep->session || !name)
+        return 1;
+    const QByteArray full = ep->prefix.toUtf8() + '.' + QByteArray(name);
+    return ep->session->sink()->channel_batch(ep->session, full.constData(), unit,
+                                              time_s, value, count);
+}
+
+int32_t fanoutEvent(void *ctx, const char *topic, const char *payload)
+{
+    auto *ep = static_cast<FanoutParser *>(ctx);
+    if (!ep || !ep->session)
+        return 1;
+    return ep->session->sink()->event(ep->session, topic, payload);
+}
+
 void collectPageCanvases(QWidget *root, QVector<CanvasWidget *> &out)
 {
     if (!root)
@@ -2248,49 +2277,137 @@ void MainWindow::connectLiveSource(const QString &pluginId)
     DataInputDialog dlg(parsers, sp->id, QString(), this);
     if (dlg.exec() != QDialog::Accepted)
         return;
-    if (dlg.selectedParserCount() > 1)
-        log(QStringLiteral("多解析器配置已保存；当前连接仅启动 %1").arg(sp->label));
-    const QString config = dlg.configJson();
-    const QJsonObject liveConfig = QJsonDocument::fromJson(config.toUtf8()).object();
-
-    auto session = std::make_shared<LiveSession>(sp->id, sp->label);
-    if (liveConfig.value(QStringLiteral("__record")).toBool())
-    {
-        QString path, err;
-        const auto format = StreamRecorder::parseFormat(
-            liveConfig.value(QStringLiteral("__record_format")).toString());
-        if (session->startRecording(format, config, &path, &err))
-            log(QStringLiteral("实时记录（%1）：%2").arg(StreamRecorder::formatLabel(format), path));
-        else
-            QMessageBox::warning(this, QStringLiteral("记录"), err);
-    }
-
-    void *handle = nullptr;
-    QString err;
-    if (sp->open(config, session->sink(), &handle, &err) != 0)
-    {
-        QMessageBox::warning(this, QStringLiteral("连接失败"),
-                             QStringLiteral("%1\n%2").arg(sp->label, err));
-        return;
-    }
+    QStringList ids = dlg.selectedParserIds();
+    if (ids.isEmpty())
+        ids << dlg.primaryParserId();
 
     SourceData src;
     for (const SourceData &old : m_sources)
         src.id = qMax(src.id, old.id + 1);
-    src.name = QStringLiteral("%1 · 实时").arg(sp->label);
-    src.alias = QStringLiteral("%1_%2").arg(sp->kind).arg(src.id + 1);
-    src.fmt = sp->label;
-    src.path = QStringLiteral("live://%1/%2").arg(sp->id).arg(src.id);
-    src.live = true;
-    src.sourceId = sp->id;
-    src.config = config;
-    src.handle = handle;
-    src.liveSession = session;
+    QString note, err;
+    if (!openLiveInput(ids, dlg.configJson(), src, &note, &err))
+    {
+        QMessageBox::warning(this, QStringLiteral("连接失败"), err);
+        return;
+    }
     m_sources.append(src);
-
     addSourceRow(src.name, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"), true,
                  src.path, src.id);
-    log(QStringLiteral("实时源已连接：%1（%2）").arg(sp->label, sp->transport));
+    if (note.isEmpty())
+        log(QStringLiteral("实时源已连接：%1").arg(src.fmt));
+    else
+        log(QStringLiteral("实时源已连接：%1；共享 transport 解析器：%2").arg(src.fmt, note));
+}
+
+bool MainWindow::openLiveInput(const QStringList &ids, const QString &config, SourceData &dst,
+                               QString *fanoutNote, QString *err)
+{
+    QStringList selected = ids;
+    if (selected.isEmpty())
+    {
+        if (err) *err = QStringLiteral("没有选择解析器");
+        return false;
+    }
+    const DataInputPlugin *primary = DataInputRegistry::instance().findSourceById(selected.value(0));
+    if (!primary)
+    {
+        if (err) *err = QStringLiteral("入口解析器未注册：%1").arg(selected.value(0));
+        return false;
+    }
+    const QJsonObject liveConfig = QJsonDocument::fromJson(config.toUtf8()).object();
+    auto session = std::make_shared<LiveSession>(primary->id, primary->label);
+    if (liveConfig.value(QStringLiteral("__record")).toBool())
+    {
+        QString path, re;
+        const auto format = StreamRecorder::parseFormat(
+            liveConfig.value(QStringLiteral("__record_format")).toString());
+        if (session->startRecording(format, config, &path, &re))
+            log(QStringLiteral("实时记录（%1）：%2").arg(StreamRecorder::formatLabel(format), path));
+        else
+            QMessageBox::warning(this, QStringLiteral("记录"), re);
+    }
+
+    QVector<std::shared_ptr<FanoutParser>> extra;
+    QStringList extraIds;
+    for (int i = 1; i < selected.size(); ++i)
+    {
+        const DataInputPlugin *p = DataInputRegistry::instance().findSourceById(selected[i]);
+        if (!p || !p->feed)
+        {
+            log(QStringLiteral("解析器 %1 不支持共享 transport，已跳过").arg(selected.value(i)));
+            continue;
+        }
+        QJsonObject sub = liveConfig;
+        sub.insert(QStringLiteral("transport"), QStringLiteral("external"));
+        sub.remove(QStringLiteral("filepath"));
+        sub.remove(QStringLiteral("raw_path"));
+        sub.remove(QStringLiteral("__replay_path"));
+        QString re;
+        void *handle = nullptr;
+        auto ep = std::make_shared<FanoutParser>();
+        ep->id = p->id;
+        ep->session = session.get();
+        ep->prefix = QStringLiteral("fanout.%1").arg(p->id);
+        ep->sink.ctx = ep.get();
+        ep->sink.channel_batch = &fanoutChannel;
+        ep->sink.event = &fanoutEvent;
+        if (p->open(QString::fromUtf8(QJsonDocument(sub).toJson(QJsonDocument::Compact)),
+                    &ep->sink, &handle, &re) != 0)
+        {
+            log(QStringLiteral("解析器 %1 启动失败：%2").arg(p->label, re));
+            continue;
+        }
+        ep->handle = handle;
+        extra.append(ep);
+        extraIds << p->id;
+    }
+
+    if (!extra.isEmpty())
+    {
+        QVector<FanoutParser *> eps;
+        for (const auto &ep : extra)
+            eps.append(ep.get());
+        session->setRawTap([eps](const char *topic, const char *encoding, int64_t ts,
+                                 const uint8_t *data, uint32_t size) {
+            for (FanoutParser *ep : eps)
+            {
+                const DataInputPlugin *p = DataInputRegistry::instance().findSourceById(ep->id);
+                QString re;
+                if (p && p->feed)
+                    p->feed(ep->handle, QString::fromUtf8(topic), QString::fromUtf8(encoding),
+                            ts, QByteArray(reinterpret_cast<const char *>(data), static_cast<int>(size)),
+                            &re);
+            }
+        });
+    }
+
+    void *handle = nullptr;
+    QString re;
+    if (primary->open(config, session->sink(), &handle, &re) != 0)
+    {
+        for (const auto &ep : extra)
+            if (const DataInputPlugin *p = DataInputRegistry::instance().findSourceById(ep->id))
+                if (ep->handle)
+                    p->close(ep->handle);
+        if (err) *err = QStringLiteral("%1\n%2").arg(primary->label, re);
+        return false;
+    }
+
+    dst.name = QStringLiteral("%1 · 实时").arg(primary->label);
+    dst.alias = QStringLiteral("%1_%2").arg(primary->kind).arg(dst.id + 1);
+    dst.fmt = primary->label;
+    dst.path = QStringLiteral("live://%1/%2").arg(primary->id).arg(dst.id);
+    dst.live = true;
+    dst.sourceId = primary->id;
+    dst.config = config;
+    dst.handle = handle;
+    dst.liveSession = session;
+    dst.fanout.clear();
+    for (const auto &ep : extra)
+        dst.fanout.append({ep->id, ep->handle});
+    if (fanoutNote)
+        *fanoutNote = extraIds.join(QStringLiteral(" | "));
+    return true;
 }
 
 void MainWindow::openSourceDebug(SourceData *src)
@@ -2325,42 +2442,35 @@ void MainWindow::configureLiveSource(SourceData *src)
     DataInputDialog dlg(parsers, sp->id, src->config, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
-    const QString config = dlg.configJson();
-    const QJsonObject liveConfig = QJsonDocument::fromJson(config.toUtf8()).object();
+    QStringList ids = dlg.selectedParserIds();
+    if (ids.isEmpty())
+        ids << dlg.primaryParserId();
 
     closeLiveSource(src);
     for (auto *c : findChildren<CanvasWidget *>())
         c->removeChannelsFromSource(src->path);
-    src->liveSession = std::make_shared<LiveSession>(sp->id, sp->label);
-    src->config = config;
-    src->handle = nullptr;
+    src->liveSession.reset();
     src->channels.clear();
+    src->channels.squeeze();
+    src->fanout.clear();
     src->plotted = false;
     if (src->id == m_activeSource)
         m_srcChannels.clear();
 
-    if (liveConfig.value(QStringLiteral("__record")).toBool())
-    {
-        QString path, err;
-        const auto format = StreamRecorder::parseFormat(
-            liveConfig.value(QStringLiteral("__record_format")).toString());
-        if (src->liveSession->startRecording(format, config, &path, &err))
-            log(QStringLiteral("实时记录（%1）：%2").arg(StreamRecorder::formatLabel(format), path));
-        else
-            QMessageBox::warning(this, QStringLiteral("记录"), err);
-    }
-    QString err;
-    if (sp->open(config, src->liveSession->sink(), &src->handle, &err) != 0)
+    QString note, err;
+    if (!openLiveInput(ids, dlg.configJson(), *src, &note, &err))
     {
         src->handle = nullptr;
         updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
-        QMessageBox::warning(this, QStringLiteral("连接失败"),
-                             QStringLiteral("%1\n%2").arg(sp->label, err));
+        QMessageBox::warning(this, QStringLiteral("连接失败"), err);
         return;
     }
     updateSourceMeta(src->row, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"));
     renderSourceData();
-    log(QStringLiteral("实时源已重连：%1").arg(sp->label));
+    if (note.isEmpty())
+        log(QStringLiteral("实时源已重连：%1").arg(src->fmt));
+    else
+        log(QStringLiteral("实时源已重连：%1；共享 transport 解析器：%2").arg(src->fmt, note));
 }
 
 void MainWindow::pollLiveSources()
@@ -2448,7 +2558,6 @@ void MainWindow::refreshLiveSource(SourceData *src)
         }
         if (!first.isEmpty())
         {
-            // 已有别的曲线时不混轴：实时源单独开一页，避免 demo 的 30s 轴把实时数据压扁。
             if (currentCanvas()->hasData())
                 newPage();
             if (CanvasWidget *c = currentCanvas())
@@ -2469,6 +2578,11 @@ void MainWindow::closeLiveSource(SourceData *src)
     if (src->handle && sp)
         sp->close(src->handle);
     src->handle = nullptr;
+    for (const auto &f : src->fanout)
+        if (const DataInputPlugin *p = DataInputRegistry::instance().findSourceById(f.first))
+            if (f.second)
+                p->close(f.second);
+    src->fanout.clear();
     if (src->liveSession)
         src->liveSession->stopRecording();
     updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));

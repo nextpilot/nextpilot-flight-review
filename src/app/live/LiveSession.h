@@ -7,6 +7,7 @@
 #include <QString>
 #include <QVector>
 
+#include <functional>
 #include <memory>
 
 // 实时源实例的宿主侧缓冲与分发。本身不做文件存储，
@@ -27,6 +28,10 @@ public:
     QVector<const PsChannelInfo *> channels() const;
     const PsSourceSink *sink() const { return &m_sink; }
 
+    using RawTap = std::function<void(const char *topic, const char *encoding,
+                                      int64_t timestampNs, const uint8_t *data, uint32_t size)>;
+    // 共享 transport：把主插件收到的原始字节扇出给外部解析器。
+    void setRawTap(RawTap tap);
     bool startRecording(StreamRecorder::Format format, const QString &configJson,
                         QString *path, QString *err);
     void stopRecording();
@@ -54,6 +59,7 @@ private:
     PsStream *m_stream = nullptr;
     PsSourceSink m_sink{};
     std::unique_ptr<StreamRecorder> m_recorder;
+    RawTap m_rawTap;
     QString m_recordPath;
     QString m_lastEvent;
     int m_totalSamples = 0;

@@ -81,6 +81,7 @@ struct MavState
     bool replayFinished = false;
     bool rawDropped = false;
     bool replayStarted = false;
+    bool external = false;
     std::string rawError;
     std::unique_ptr<QUdpSocket> socket;
     QElapsedTimer clock;
@@ -330,6 +331,13 @@ int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi
             return 4;
         }
     }
+    if (cfg.value(QStringLiteral("transport")).toString() == QLatin1String("external"))
+    {
+        st->external = true;
+        st->clock.start();
+        *handle = st;
+        return 0;
+    }
     st->socket = std::make_unique<QUdpSocket>();
     const quint16 port = static_cast<quint16>(qBound(1, cfg.value(QStringLiteral("port")).toInt(14550), 65535));
     const QString bind = cfg.value(QStringLiteral("bind")).toString(QStringLiteral("0.0.0.0"));
@@ -356,6 +364,8 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
     auto *st = static_cast<MavState *>(handle);
     if (!st)
         return 1;
+    if (st->external)
+        return 0;
     if (st->replayMode)
     {
         if (st->replayFinished)
@@ -473,6 +483,31 @@ int32_t closeSource(void *handle)
             st->legacyReplayFile.close();
     }
     delete st;
+    return 0;
+}
+
+int32_t feedSource(void *handle, const char *topic, const char *encoding, int64_t timestamp_ns,
+                   const uint8_t *data, uint32_t size, char *err, uint32_t errCap)
+{
+    (void)topic; (void)encoding; (void)timestamp_ns;
+    auto *st = static_cast<MavState *>(handle);
+    if (!st || !st->external)
+        return 0;
+    if (size && !data)
+        return 1;
+    if (size)
+        st->rx.append(reinterpret_cast<const char *>(data), static_cast<int>(size));
+    ++st->packets;
+    parse(st);
+    flush(st);
+    if (st->rx.size() > 4 * 1024 * 1024)
+    {
+        st->rx.clear();
+        ++st->dropped;
+        if (err && errCap)
+            std::snprintf(err, errCap, "MAVLink rx 溢出");
+        return 1;
+    }
     return 0;
 }
 
@@ -597,6 +632,17 @@ public:
         if (n < 0)
             return false;
         out.assign(b, static_cast<size_t>(n));
+        return true;
+    }
+
+    bool feedRaw(std::string_view topic, std::string_view encoding, int64_t ts,
+                 const uint8_t *data, uint32_t size, PsError *err) override
+    {
+        char e[256] = {0};
+        if (feedSource(handle_, topic.data(), encoding.data(), ts, data, size, e, sizeof(e)) != 0) {
+            ps::fillError(err, 5, e[0] ? e : "MAVLink feed 失败");
+            return false;
+        }
         return true;
     }
 

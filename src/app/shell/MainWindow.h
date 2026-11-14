@@ -60,6 +60,7 @@ struct SourceData
     QString config;
     void *handle = nullptr;
     std::shared_ptr<LiveSession> liveSession;
+    QVector<QPair<QString, void *>> fanout; // 共享 transport 下的外部解析器句柄
 };
 
 // 主窗口骨架（对应 §8 / D14）：
@@ -102,6 +103,8 @@ private:
     void reloadChannels(SourceData *src);
     void addTransformFor(const QString &channel);
     void connectLiveSource(const QString &pluginId);
+    bool openLiveInput(const QStringList &ids, const QString &config, SourceData &dst,
+                       QString *fanoutNote, QString *err);
     void configureLiveSource(SourceData *src);
     void openSourceDebug(SourceData *src);
     void pollLiveSources();

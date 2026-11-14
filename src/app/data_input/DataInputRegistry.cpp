@@ -407,6 +407,17 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
                     return QString::fromUtf8(pe.message[0] ? pe.message : "send failed");
                 return QString::fromUtf8(out.data ? out.data : "{}", static_cast<int>(out.size));
             };
+        if (v->feed_raw)
+            p.feed = [v](void *handle, const QString &topic, const QString &encoding,
+                         qint64 ts, const QByteArray &data, QString *err) {
+                char e[256] = {0};
+                const int rc = v->feed_raw(handle, topic.toUtf8().constData(),
+                                           encoding.toUtf8().constData(), ts,
+                                           reinterpret_cast<const uint8_t *>(data.constData()),
+                                           static_cast<uint32_t>(data.size()), e, sizeof(e));
+                if (rc != 0 && err) *err = QString::fromUtf8(e[0] ? e : "feed failed");
+                return rc;
+            };
         m_streamPlugins.append(p);
         return true;
     }
@@ -459,6 +470,17 @@ bool DataInputRegistry::registerDescriptor(const PsPluginDescriptor *desc, const
                 return readJson([v, handle, command](char *o, uint32_t c) {
                     return v->send_command(handle, command.toUtf8().constData(), o, c);
                 });
+            };
+        if (v->feed_raw)
+            p.feed = [v](void *handle, const QString &topic, const QString &encoding,
+                         qint64 ts, const QByteArray &data, QString *err) {
+                char e[256] = {0};
+                const int rc = v->feed_raw(handle, topic.toUtf8().constData(),
+                                           encoding.toUtf8().constData(), ts,
+                                           reinterpret_cast<const uint8_t *>(data.constData()),
+                                           static_cast<uint32_t>(data.size()), e, sizeof(e));
+                if (rc != 0 && err) *err = QString::fromUtf8(e[0] ? e : "feed failed");
+                return rc;
             };
         m_streamPlugins.append(p);
         return true;

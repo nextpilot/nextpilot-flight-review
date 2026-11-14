@@ -174,6 +174,10 @@ typedef struct PsDataInputVtable {
     /* 有限文件导入：成功返回 0 并交出一个 PsDataset*；失败写 err。 */
     int32_t (*import_file)(void *ctx, const char *path, const char *opts_json,
                            void **dataset, char *err, uint32_t err_cap);
+    /* 外部 transport 模式：宿主把共享 transport 的原始字节喂进来，插件只解析。 */
+    int32_t (*feed_raw)(void *ctx, const char *topic, const char *encoding,
+                        int64_t timestamp_ns, const uint8_t *data, uint32_t size,
+                        char *err, uint32_t err_cap);
 } PsDataInputVtable;
 
 
@@ -198,6 +202,10 @@ typedef struct PsDataSourceVtable {
     /* 可选。向设备发送一条调试/控制命令；返回 >0 为 out 的 JSON 字节数，<0 失败。
      * 具体命令语法由插件决定，宿主只做通用调试控制台。 */
     int32_t (*send_command)(void *handle, const char *command, char *out, uint32_t cap);
+    /* 外部 transport 模式：宿主把共享 transport 的原始字节喂进来，插件只解析。 */
+    int32_t (*feed_raw)(void *handle, const char *topic, const char *encoding,
+                        int64_t timestamp_ns, const uint8_t *data, uint32_t size,
+                        char *err, uint32_t err_cap);
 } PsDataSourceVtable;
 
 /* 插件 UI：只交 .ui 文件和 JSON，绝不返回 QWidget*。

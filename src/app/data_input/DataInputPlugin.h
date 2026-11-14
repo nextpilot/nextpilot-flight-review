@@ -4,6 +4,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QByteArray>
 #include <QStringList>
 
 #include <cstdint>
@@ -58,4 +59,6 @@ struct DataInputPlugin
     std::function<void(void *handle)> close;
     std::function<QString(void *handle)> status;
     std::function<QString(void *handle, const QString &command)> send; // 可选：设备调试命令
+    std::function<int(void *handle, const QString &topic, const QString &encoding,
+                      qint64 timestampNs, const QByteArray &data, QString *err)> feed; // 可选：共享 transport 喂字节
 };
