@@ -58,6 +58,7 @@ struct SourceData
 
     // 实时源：ds 为空，通道视图由 LiveSession 持有；handle 归插件所有。
     bool live = false;
+    bool paused = false;       // 仅实时源：暂停轮询
     bool plotted = false;
     QString sourceId;
     QString config;
@@ -141,6 +142,7 @@ private:
     void syncSrcChips();
     void updateSrcStatus();
     void showSourceProps(QWidget *row);
+    void setSourcePaused(SourceData *src, bool paused);
     void addTimeMarker(double t, const QString &label, bool prompt);
     void removeTimeMarker(double t);
     void applyTimeMarkers();
@@ -154,7 +156,6 @@ private:
     QLabel *m_srcCount = nullptr;          // “0 源 · 0 已连接”
     QTimer *m_liveTimer = nullptr;
     qint64 m_liveUiMs = 0;
-    bool m_livePaused = false;
     bool m_viewBacked = false;            // 当前选中的数据源是否持有内核数据集
     QString m_srcFmt;                     // 当前源的格式标签（ULog/CSV/...）
     QVector<const PsChannelInfo *> m_srcChannels;

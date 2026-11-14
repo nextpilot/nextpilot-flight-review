@@ -1426,8 +1426,6 @@ void MainWindow::createDocks()
         for (const QString &f : fs)
             loadFile(f);
     });
-    auto *runBtn = mkTiny(QStringLiteral("play"), QStringLiteral("全部开始"));
-    auto *pauseBtn = mkTiny(QStringLiteral("pause"), QStringLiteral("全部暂停"));
     auto *dockMenuBtn = new QToolButton(srcBar);
     dockMenuBtn->setText(QStringLiteral("▾"));
     dockMenuBtn->setToolTip(QStringLiteral("停靠 / 收起"));
@@ -1823,17 +1821,6 @@ void MainWindow::createDocks()
     srcDock->setWidget(srcHost);
     addDockWidget(Qt::LeftDockWidgetArea, srcDock);
 
-    connect(runBtn, &QToolButton::clicked, this, [this] {
-        m_livePaused = false;
-        updateStatusChips();
-        log(QStringLiteral("实时源继续"));
-    });
-    connect(pauseBtn, &QToolButton::clicked, this, [this] {
-        m_livePaused = true;
-        updateStatusChips();
-        log(QStringLiteral("实时源暂停"));
-    });
-
     // 右：属性面板（命中什么对象就显示什么属性）
     auto *propDock = new QDockWidget(QStringLiteral("属性面板"), this);
     propDock->setObjectName(QStringLiteral("dock.prop"));
@@ -1844,29 +1831,35 @@ void MainWindow::createDocks()
     m_selLabel = new QLabel(QStringLiteral("当前对象：画布"), propHost);
     m_selLabel->setContentsMargins(8, 6, 8, 6);
     m_selLabel->setStyleSheet(QStringLiteral("color:#4ea1ff;"));
-    auto *propSplit = new QSplitter(Qt::Vertical, propHost);
-    propSplit->setHandleWidth(4);
-    m_propTree = new QTreeWidget(propSplit);
-    m_propTree->setHeaderHidden(true);
-    m_propTree->setColumnCount(1);
-    m_propTree->setRootIsDecorated(true);
-    m_propTree->setIndentation(13);
-    m_propTree->setUniformRowHeights(true);
-    m_propTree->setStyleSheet(QStringLiteral(
-        "QTreeWidget{border:0;background:#0d1117;font-size:12px;}"
-        "QTreeWidget::item{height:20px;color:#c9d1d9;}"
-        "QTreeWidget::item:selected{background:#1f2a33;color:#f2b134;}"));
-    m_propTable = new QTableWidget(0, 2, propSplit);
+    m_propTable = new QTableWidget(0, 2, propHost);
     m_propTable->setHorizontalHeaderLabels({QStringLiteral("属性"), QStringLiteral("值")});
     m_propTable->horizontalHeader()->setStretchLastSection(true);
     m_propTable->verticalHeader()->setVisible(false);
     m_propTable->setShowGrid(false);
     compactValueTable(m_propTable);
-    propSplit->addWidget(m_propTree);
-    propSplit->addWidget(m_propTable);
-    propSplit->setSizes({152, 320});
     propLay->addWidget(m_selLabel);
-    propLay->addWidget(propSplit, 1);
+    propLay->addWidget(m_propTable, 1);
+
+    // 顶右：对象树独立 Dock（属性面板只保留属性表）
+    auto *treeDock = new QDockWidget(QStringLiteral("对象树"), this);
+    treeDock->setObjectName(QStringLiteral("dock.tree"));
+    treeDock->setMinimumHeight(180);
+    auto *treeHost = new QWidget(treeDock);
+    auto *treeLay = new QVBoxLayout(treeHost);
+    treeLay->setContentsMargins(0, 0, 0, 0);
+    m_propTree = new QTreeWidget(treeHost);
+    m_propTree->setHeaderHidden(true);
+    m_propTree->setColumnCount(1);
+    m_propTree->setRootIsDecorated(true);
+    m_propTree->setIndentation(13);
+    m_propTree->setUniformRowHeights(true);
+    m_propTree->setMinimumHeight(150);
+    m_propTree->setStyleSheet(QStringLiteral(
+        "QTreeWidget{border:0;background:#0d1117;font-size:12px;}"
+        "QTreeWidget::item{height:20px;color:#c9d1d9;}"
+        "QTreeWidget::item:selected{background:#1f2a33;color:#f2b134;}"));
+    treeLay->addWidget(m_propTree);
+    treeDock->setWidget(treeHost);
     connect(m_propTree, &QTreeWidget::currentItemChanged, this,
             [this](QTreeWidgetItem *it, QTreeWidgetItem *) {
         if (m_propTreeBuilding || !it)
@@ -1883,6 +1876,8 @@ void MainWindow::createDocks()
     });
     propDock->setWidget(propHost);
     addDockWidget(Qt::RightDockWidgetArea, propDock);
+    addDockWidget(Qt::RightDockWidgetArea, treeDock);
+    splitDockWidget(propDock, treeDock, Qt::Vertical);
     setPropRows(QStringLiteral("画布"),
                 {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")},
                  {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
@@ -2073,9 +2068,12 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
     const QString path = row->property("srcPath").toString();
 
     QMenu menu(this);
-    QAction *toggle = menu.addAction(backed ? QStringLiteral("暂停数据源")
-                                            : QStringLiteral("开始数据源"));
-    toggle->setEnabled(backed);
+    SourceData *pauseSrc = sourceById(sourceIdForRow(row));
+    const bool live = pauseSrc && pauseSrc->live;
+    QAction *toggle = menu.addAction(live
+        ? (pauseSrc->paused ? QStringLiteral("继续数据源") : QStringLiteral("暂停数据源"))
+        : QStringLiteral("开始数据源"));
+    toggle->setEnabled(live);
     QAction *reload = menu.addAction(QStringLiteral("重新加载"));
     reload->setEnabled(!path.isEmpty());
     QAction *rename = menu.addAction(QStringLiteral("重命名"));
@@ -2128,21 +2126,8 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
     }
     if (chosen == toggle)
     {
-        QList<QLabel *> labels = row->findChildren<QLabel *>();
-        QLabel *meta = labels.value(2, nullptr);
-        if (!meta)
-            return;
-        const QString cur = meta->text();
-        if (cur.contains(QStringLiteral("已暂停")))
-        {
-            meta->setText(row->property("srcMeta").toString());
-            log(QStringLiteral("开始数据源：%1").arg(row->property("srcName").toString()));
-        }
-        else
-        {
-            meta->setText(QStringLiteral("已暂停 · %1").arg(cur.section(QStringLiteral("·"), 1).trimmed()));
-            log(QStringLiteral("暂停数据源：%1").arg(row->property("srcName").toString()));
-        }
+        if (SourceData *src = sourceById(sourceIdForRow(row)))
+            setSourcePaused(src, !src->paused);
     }
     else if (chosen == reload)
     {
@@ -2283,8 +2268,13 @@ void MainWindow::updateStatusChips()
         channels += s.channels.size();
     if (m_sources.isEmpty())
         m_chipSource->setText(QStringLiteral("无数据"));
-    else if (m_livePaused)
-        m_chipSource->setText(QStringLiteral("%1 源 · 已暂停").arg(m_sources.size()));
+    else if (std::any_of(m_sources.cbegin(), m_sources.cend(),
+                         [](const SourceData &s) { return s.live && s.paused; }))
+    {
+        const int paused = int(std::count_if(m_sources.cbegin(), m_sources.cend(),
+                                             [](const SourceData &s) { return s.live && s.paused; }));
+        m_chipSource->setText(QStringLiteral("%1 源 · %2 暂停").arg(m_sources.size()).arg(paused));
+    }
     else if (m_sources.size() == 1)
         m_chipSource->setText(QStringLiteral("%1 · %2 通道")
                                   .arg(m_sources.first().fmt)
@@ -2875,11 +2865,9 @@ void MainWindow::configureLiveSource(SourceData *src)
 
 void MainWindow::pollLiveSources()
 {
-    if (m_livePaused)
-        return;
     for (SourceData &src : m_sources)
     {
-        if (!src.live || !src.handle || !src.liveSession)
+        if (!src.live || src.paused || !src.handle || !src.liveSession)
             continue;
         const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(src.sourceId);
         if (!sp)
@@ -3167,6 +3155,29 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
     colLay->addWidget(metaLb);
     lay->addWidget(col, 1);
 
+    const SourceData *rowSrc = sourceById(srcId);
+    const bool isLive = rowSrc && rowSrc->live;
+
+    // 实时源才给运行控制；文件源没有“暂停/继续”的概念。
+    auto *pauseBtn = new QToolButton(row);
+    pauseBtn->setObjectName(QStringLiteral("srcPause"));
+    pauseBtn->setIcon(QIcon(rowSrc && rowSrc->paused ? QStringLiteral(":/icons/play.svg")
+                                                      : QStringLiteral(":/icons/pause.svg")));
+    pauseBtn->setIconSize(QSize(14, 14));
+    pauseBtn->setToolTip(rowSrc && rowSrc->paused ? QStringLiteral("继续该实时源")
+                                                   : QStringLiteral("暂停该实时源"));
+    pauseBtn->setCursor(Qt::PointingHandCursor);
+    pauseBtn->setFixedSize(20, 20);
+    pauseBtn->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;padding:0;}"
+        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
+    pauseBtn->setVisible(isLive);
+    lay->addWidget(pauseBtn);
+    connect(pauseBtn, &QToolButton::clicked, this, [this, srcId] {
+        if (SourceData *src = sourceById(srcId))
+            setSourcePaused(src, !src->paused);
+    });
+
     auto *dbg = new QToolButton(row);
     dbg->setIcon(QIcon(QStringLiteral(":/icons/script.svg")));
     dbg->setIconSize(QSize(14, 14));
@@ -3177,10 +3188,10 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
         "QToolButton{background:transparent;border:0;padding:0;}"
         "QToolButton:hover{background:#222b33;border-radius:2px;}"));
     bool hasDebug = false;
-    if (const SourceData *src = sourceById(srcId))
+    if (rowSrc)
     {
-        const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
-        hasDebug = src->live && sp && sp->send;
+        const DataInputPlugin *sp = DataInputRegistry::instance().findSourceById(rowSrc->sourceId);
+        hasDebug = isLive && sp && sp->send;
     }
     dbg->setVisible(hasDebug);
     lay->addWidget(dbg);
@@ -3487,6 +3498,29 @@ void MainWindow::updateSrcStatus()
                              .arg(duration, 0, 'f', 2)
                              .arg(rateText));
     m_srcStatus->setToolTip(m_srcStatus->text());
+}
+
+void MainWindow::setSourcePaused(SourceData *src, bool paused)
+{
+    if (!src || !src->live)
+        return;
+    src->paused = paused;
+    if (src->row)
+    {
+        if (QLabel *meta = src->row->findChild<QLabel *>(QStringLiteral("srcMeta")))
+        {
+            const QString base = src->row->property("srcMeta").toString();
+            meta->setText(paused ? QStringLiteral("已暂停 · %1").arg(base) : base);
+        }
+        if (QToolButton *btn = src->row->findChild<QToolButton *>(QStringLiteral("srcPause")))
+        {
+            btn->setIcon(QIcon(paused ? QStringLiteral(":/icons/play.svg")
+                                      : QStringLiteral(":/icons/pause.svg")));
+            btn->setToolTip(paused ? QStringLiteral("继续该实时源") : QStringLiteral("暂停该实时源"));
+        }
+    }
+    updateStatusChips();
+    log(QStringLiteral("%1实时源：%2").arg(paused ? QStringLiteral("暂停") : QStringLiteral("继续"), src->name));
 }
 
 void MainWindow::showSourceProps(QWidget *row)
