@@ -20,6 +20,11 @@
 #include <QColorDialog>
 #include <QJsonArray>
 #include <QMap>
+#include <QToolButton>
+#include <QHBoxLayout>
+#include <QSplitter>
+#include <QCursor>
+#include <QEnterEvent>
 
 #include <algorithm>
 #include <cmath>
@@ -50,6 +55,7 @@ CanvasWidget::CanvasWidget(QWidget *parent)
     m_showGrid = st.value(QStringLiteral("gridDefault"), true).toBool();
     m_showLegend = st.value(QStringLiteral("legendDefault"), true).toBool();
     m_timeFormat = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
+    buildHoverBar();
     addDemoCurves();
 }
 
@@ -117,6 +123,138 @@ void CanvasWidget::addDemoCurves()
     }
     m_autoY = true;
     resetView();
+}
+
+void CanvasWidget::buildHoverBar()
+{
+    m_hoverBar = new QWidget(this);
+    m_hoverBar->setObjectName(QStringLiteral("canvasHoverBar"));
+    m_hoverBar->setStyleSheet(QStringLiteral(
+        "QWidget#canvasHoverBar{background:#202a33;border:1px solid #46545f;border-radius:4px;}"
+        "QToolButton{background:transparent;border:0;padding:0;}"
+        "QToolButton:hover{background:#2a343d;border-radius:3px;}"
+        "QToolButton[danger=true]:hover{background:#3a2427;}"));
+    auto *lay = new QHBoxLayout(m_hoverBar);
+    lay->setContentsMargins(4, 4, 4, 4);
+    lay->setSpacing(1);
+
+    auto addBtn = [&](const QString &icon, const QString &tip, std::function<void()> fn,
+                      const QColor &tint = QColor(QStringLiteral("#c8d2da"))) {
+        auto *b = new QToolButton(m_hoverBar);
+        // 资源图标偏暗，按目标色重着色，浮动条在深色画布上才看得清。
+        QPixmap src = QIcon(icon).pixmap(32, 32);
+        QPixmap out(src.size());
+        out.fill(Qt::transparent);
+        QPainter ip(&out);
+        ip.drawPixmap(0, 0, src);
+        ip.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        ip.fillRect(out.rect(), tint);
+        ip.end();
+        b->setIcon(QIcon(out));
+        b->setIconSize(QSize(18, 18));
+        b->setToolTip(tip);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setFixedSize(26, 26);
+        b->setStyleSheet(QStringLiteral(
+            "QToolButton{background:transparent;border:0;padding:0;}"
+            "QToolButton:hover{background:#2a343d;border-radius:3px;}"));
+        QObject::connect(b, &QToolButton::clicked, m_hoverBar, fn);
+        lay->addWidget(b);
+        return b;
+    };
+    addBtn(QStringLiteral(":/icons/plus.svg"), QStringLiteral("新增画布（当前页末尾）"),
+           [this] { emit addRequested(); });
+    addBtn(QStringLiteral(":/icons/split_h.svg"), QStringLiteral("左右拆分"),
+           [this] { emit splitRequested(0); });
+    addBtn(QStringLiteral(":/icons/split_v.svg"), QStringLiteral("上下拆分"),
+           [this] { emit splitRequested(1); });
+    m_dragBtn = addBtn(QStringLiteral(":/icons/cursor.svg"), QStringLiteral("拖拽：按住移到同页其他画布完成重排"),
+                       [] {});
+    m_dragBtn->installEventFilter(this);
+    m_dragBtn->setCursor(Qt::OpenHandCursor);
+    auto *sep = new QWidget(m_hoverBar);
+    sep->setFixedWidth(6);
+    lay->addWidget(sep);
+    auto *del = addBtn(QStringLiteral(":/icons/trash.svg"), QStringLiteral("删除本画布"),
+                       [this] { emit removeRequested(); }, QColor(QStringLiteral("#f28b82")));
+    del->setProperty("danger", true);
+    m_hoverBar->installEventFilter(this);
+    for (auto *b : m_hoverBar->findChildren<QToolButton *>())
+        b->installEventFilter(this);
+    m_hoverBar->hide();
+    positionHoverBar();
+}
+
+void CanvasWidget::positionHoverBar()
+{
+    if (!m_hoverBar)
+        return;
+    m_hoverBar->adjustSize();
+    const int w = m_hoverBar->sizeHint().width();
+    m_hoverBar->move(std::max(6, width() - w - 8), 6);
+    m_hoverBar->raise();
+}
+
+void CanvasWidget::reorderByCursor(const QPoint &globalPos)
+{
+    auto *sp = qobject_cast<QSplitter *>(parentWidget());
+    if (!sp || sp->count() < 2)
+        return;
+    for (int i = 0; i < sp->count(); ++i)
+    {
+        QWidget *w = sp->widget(i);
+        if (!w || w == this)
+            continue;
+        const QRect g(w->mapToGlobal(QPoint(0, 0)), w->size());
+        if (g.contains(globalPos))
+        {
+            sp->insertWidget(i, this);
+            break;
+        }
+    }
+}
+
+void CanvasWidget::enterEvent(QEnterEvent *event)
+{
+    if (m_hoverBar)
+    {
+        positionHoverBar();
+        m_hoverBar->show();
+        m_hoverBar->raise();
+        update();
+    }
+    QWidget::enterEvent(event);
+}
+
+void CanvasWidget::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    positionHoverBar();
+}
+
+bool CanvasWidget::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_dragBtn)
+    {
+        if (event->type() == QEvent::MouseButtonPress)
+        {
+            m_reordering = true;
+            m_dragBtn->setCursor(Qt::ClosedHandCursor);
+            return true;
+        }
+        if (event->type() == QEvent::MouseMove && m_reordering)
+        {
+            reorderByCursor(QCursor::pos());
+            return true;
+        }
+        if (event->type() == QEvent::MouseButtonRelease)
+        {
+            m_reordering = false;
+            m_dragBtn->setCursor(Qt::OpenHandCursor);
+            return true;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void CanvasWidget::setTitle(const QString &title)
@@ -1192,8 +1330,11 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     f.setBold(true);
     p.setFont(f);
     p.setPen(colorText());
-    const int titleWidth = p.fontMetrics().horizontalAdvance(m_title);
-    p.drawText(QPointF(14, 21), m_title);
+    const int rightLimit = (m_hoverBar && m_hoverBar->isVisible()) ? m_hoverBar->x() - 8 : width() - 10;
+    const QString title = p.fontMetrics().elidedText(m_title, Qt::ElideRight,
+                                                     std::max(40, rightLimit - 14));
+    const int titleWidth = p.fontMetrics().horizontalAdvance(title);
+    p.drawText(QPointF(14, 21), title);
 
     f.setBold(false);
     f.setPixelSize(11);
@@ -1203,7 +1344,10 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     const QString sub = m_series.isEmpty()
                             ? QStringLiteral("空画布 · 拖字段到这里，或「文件 → 打开文件」")
                             : QStringLiteral("%1 通道 · 抽稀在 Rust 侧完成").arg(m_series.size());
-    p.drawText(QPointF(14 + titleWidth + 14, 21), sub);
+    const int subX = 14 + titleWidth + 14;
+    if (subX < rightLimit)
+        p.drawText(QPointF(subX, 21),
+                   fm.elidedText(sub, Qt::ElideRight, rightLimit - subX));
 
     if (m_hasPlayhead)
     {
@@ -1221,6 +1365,31 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     if (m_mode != TimeSeries)
     {
         paintSpecial(p, plot, fm);
+        return;
+    }
+
+    // 空画布：只留网格和边框，不画无数据支撑的假刻度。
+    if (m_series.isEmpty())
+    {
+        if (m_showGrid)
+        {
+            p.setPen(QPen(colorGrid(), 1));
+            for (int i = 1; i < 5; ++i)
+            {
+                const double y = plot.top() + plot.height() * i / 5.0;
+                p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+            }
+            for (int i = 1; i < 6; ++i)
+            {
+                const double x = plot.left() + plot.width() * i / 6.0;
+                p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+            }
+        }
+        if (m_showBox)
+        {
+            p.setPen(QPen(colorGrid(), 1));
+            p.drawRect(plot);
+        }
         return;
     }
 
@@ -1636,6 +1805,16 @@ void CanvasWidget::wheelEvent(QWheelEvent *event)
 
 void CanvasWidget::mousePressEvent(QMouseEvent *event)
 {
+    // 标题栏按住可拖动重排，和悬浮菜单的抓手等价，符合 PJ 的拖画布习惯。
+    if (event->button() == Qt::LeftButton && event->position().y() < 30)
+    {
+        m_titleDrag = true;
+        m_titleDragStart = event->position();
+        if (m_hoverBar)
+            m_hoverBar->hide();
+        update();
+        return;
+    }
     int legend = -1;
     for (int i = 0; i < m_legendRects.size(); ++i)
         if (m_legendRects.at(i).contains(event->position()))
@@ -1974,6 +2153,23 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
 {
     m_cursor = event->position();
     m_hover = true;
+    if (m_titleDrag && (event->buttons() & Qt::LeftButton))
+    {
+        if ((event->position() - m_titleDragStart).manhattanLength() > 6)
+        {
+            m_reordering = true;
+            setCursor(Qt::ClosedHandCursor);
+            reorderByCursor(event->globalPosition().toPoint());
+        }
+        return;
+    }
+    if (m_hoverBar && !m_hoverBar->isVisible() && !m_reordering)
+    {
+        positionHoverBar();
+        m_hoverBar->show();
+        m_hoverBar->raise();
+        update();
+    }
     if (m_rubbering)
     {
         m_rubberRect = QRectF(m_rubberStart, event->position()).normalized();
@@ -2006,6 +2202,13 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
 
 void CanvasWidget::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_titleDrag)
+    {
+        m_titleDrag = false;
+        m_reordering = false;
+        unsetCursor();
+        return;
+    }
     if (m_rubbering)
     {
         m_rubbering = false;
@@ -2043,6 +2246,15 @@ void CanvasWidget::mouseDoubleClickEvent(QMouseEvent *event)
 void CanvasWidget::leaveEvent(QEvent *event)
 {
     m_hover = false;
+    if (m_hoverBar && !m_reordering)
+    {
+        const QPoint local = mapFromGlobal(QCursor::pos());
+        if (!m_hoverBar->geometry().contains(local))
+        {
+            m_hoverBar->hide();
+            update();
+        }
+    }
     update();
     QWidget::leaveEvent(event);
 }
