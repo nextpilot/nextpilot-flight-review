@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define PS_PLUGIN_ABI_VERSION 6u
+#define PS_PLUGIN_ABI_VERSION 7u
 #define PS_HOST_API_VERSION 1u
 #define PS_DATA_INPUT_PROTOCOL_VERSION 3u
 
@@ -43,6 +43,11 @@ extern "C" {
 #define PS_CAP_RECORD    (1u << 7)
 #define PS_CAP_COMMAND   (1u << 8)   /* 支持向设备发送调试/控制命令 */
 #define PS_CAP_REPLAY    (1u << 9)   /* 同一插件可用 __replay_path 回放原始文件 */
+#define PS_CAP_PROTOCOL  (1u << 10)  /* 注册帧协议 kind/schema/validate */
+#define PS_CAP_RIBBON    (1u << 11)  /* 通过 ui->ribbon_json 贡献菜单 */
+#define PS_CAP_OP        (1u << 12)  /* 注册通用算子 */
+#define PS_CAP_CURVE     (1u << 13)  /* 注册曲线能力 */
+#define PS_CAP_PANEL     (1u << 14)  /* 注册面板 */
 
 /* 宿主函数表：插件不再直接链接 kernel，也不靠 exe 导出 ps_dataset_* 符号。
  * 插件用 host->dataset_new/add_channel 构造数据集；数据集所有权仍归宿主。
@@ -222,6 +227,18 @@ typedef struct PsUiVtable {
     int32_t (*on_tick)(const char *state_json, char *out, uint32_t cap);
 } PsUiVtable;
 
+/* 协议扩展：插件可同时注册 loader 与 protocol；编辑器 schema 交给宿主渲染。 */
+typedef struct PsProtocolVtable {
+    uint32_t abi_version;
+    const char *kind;          /* 协议 kind，例如 sequential 或自定义 */
+    const char *label;
+    const char *schema_json;   /* 编辑器 schema；可为 NULL */
+    /* 校验协议 JSON：返回 0 通过，>0 错误条数；err 写换行分隔的错误。 */
+    int32_t (*validate)(const char *json, char *err, uint32_t cap);
+    /* 规范化协议 JSON：返回输出字节数，<0 失败；可选。 */
+    int32_t (*normalize)(const char *json, char *out, uint32_t cap);
+} PsProtocolVtable;
+
 typedef struct PsPluginDescriptor {
     uint32_t abi_version;      /* 必须等于 PS_PLUGIN_ABI_VERSION */
     const char *manifest_json; /* 编译期内嵌，不读外部 JSON */
@@ -231,6 +248,7 @@ typedef struct PsPluginDescriptor {
     const PsUiVtable *ui;           /* 可选；无自定义 UI 时为 NULL */
     const PsDataSourceVtable *source; /* data_source 家族使用，其他家族可为 NULL */
     const PsDataInputVtable *data_input; /* PS_FAMILY_DATA_INPUT 使用，过渡期可为 NULL */
+    const PsProtocolVtable *protocol;    /* 可选：同一插件可额外贡献协议 */
 } PsPluginDescriptor;
 
 typedef const PsPluginDescriptor *(*PsPluginEntryFn)(void);

@@ -13,6 +13,7 @@ class PluginComponent : public IComponent
 public:
     explicit PluginComponent(const PsPluginDescriptor *descriptor) : m_descriptor(descriptor) {}
 
+    ComponentManifest manifest() const override;
     void contribute(Registry &registry, const HostServices &host) override;
 
 private:

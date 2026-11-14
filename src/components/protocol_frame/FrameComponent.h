@@ -8,6 +8,7 @@ namespace ps::components
 class FrameComponent : public IComponent
 {
 public:
+    ComponentManifest manifest() const override;
     void contribute(Registry &registry, const HostServices &host) override;
 };
 

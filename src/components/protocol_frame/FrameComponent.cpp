@@ -45,6 +45,13 @@ QString nextProtocolPath()
 
 } // namespace
 
+ComponentManifest FrameComponent::manifest() const
+{
+    return {QStringLiteral("protocol.frame"), QStringLiteral("顺序帧协议"),
+            QStringLiteral("1.0"), {QStringLiteral("loader"), QStringLiteral("protocol"),
+                                    QStringLiteral("ribbon"), QStringLiteral("editor")}};
+}
+
 void FrameComponent::contribute(Registry &registry, const HostServices &host)
 {
     registry.addLoader(ps_plugin_entry_data_loader_frame());

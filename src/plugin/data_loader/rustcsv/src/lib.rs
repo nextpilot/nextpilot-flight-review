@@ -254,6 +254,7 @@ static PLUGIN: PsPluginDescriptor = PsPluginDescriptor {
     ui: std::ptr::null(),
     source: std::ptr::null(),
     data_input: std::ptr::null(),
+    protocol: std::ptr::null(),
 };
 
 #[no_mangle]

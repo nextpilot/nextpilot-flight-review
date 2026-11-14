@@ -14,6 +14,14 @@ struct PsPluginDescriptor;
 namespace ps::components
 {
 
+struct ComponentManifest
+{
+    QString id;
+    QString name;
+    QString version;
+    QStringList capabilities;
+};
+
 struct HostServices
 {
     std::function<QWidget *()> window;
@@ -44,6 +52,7 @@ struct ProtocolContribution
 {
     QString kind;
     QString label;
+    QJsonObject schema;
     std::function<QStringList(const QJsonObject &)> validate;
     std::function<QString()> blank;
     std::function<QDialog *(const QString &, QWidget *)> createEditor;
@@ -71,6 +80,7 @@ class IComponent
 {
 public:
     virtual ~IComponent() = default;
+    virtual ComponentManifest manifest() const = 0;
     virtual void contribute(Registry &registry, const HostServices &host) = 0;
 };
 

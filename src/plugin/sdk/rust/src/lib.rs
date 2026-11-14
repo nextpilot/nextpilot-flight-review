@@ -4,7 +4,7 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-pub const PS_PLUGIN_ABI_VERSION: u32 = 6;
+pub const PS_PLUGIN_ABI_VERSION: u32 = 7;
 pub const PS_HOST_API_VERSION: u32 = 1;
 pub const PS_FAMILY_DATA_LOADER: u32 = 1;
 pub const PS_FAMILY_DATA_SOURCE: u32 = 2;
@@ -159,6 +159,17 @@ pub struct PsPluginDescriptor {
     pub ui: *const PsUiVtable,
     pub source: *const PsDataSourceVtable,
     pub data_input: *const c_void,
+    pub protocol: *const PsProtocolVtable,
+}
+
+#[repr(C)]
+pub struct PsProtocolVtable {
+    pub abi_version: u32,
+    pub kind: *const c_char,
+    pub label: *const c_char,
+    pub schema_json: *const c_char,
+    pub validate: Option<unsafe extern "C" fn(*const c_char, *mut c_char, u32) -> i32>,
+    pub normalize: Option<unsafe extern "C" fn(*const c_char, *mut c_char, u32) -> i32>,
 }
 
 pub type PsPluginEntryFn = unsafe extern "C" fn() -> *const PsPluginDescriptor;
