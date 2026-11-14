@@ -361,9 +361,25 @@ void CanvasWidget::dropEvent(QDropEvent *event)
     event->acceptProposedAction();
 }
 
+bool CanvasWidget::hasRightAxis() const
+{
+    for (const Series &s : m_series)
+        if (s.axis == 1)
+            return true;
+    return false;
+}
+
+int CanvasWidget::seriesAxisCount() const
+{
+    int n = 0;
+    for (const Series &s : m_series)
+        n += (s.axis == 1 ? 1 : 0);
+    return n;
+}
+
 QRectF CanvasWidget::plotRect() const
 {
-    return QRectF(rect()).adjusted(62, 30, -16, -26);
+    return QRectF(rect()).adjusted(62, 30, hasRightAxis() ? -60 : -16, -26);
 }
 
 void CanvasWidget::setFollowLive(bool on, double windowSec)
@@ -424,13 +440,14 @@ void CanvasWidget::resetView()
     // 自动 Y：整段数据的 min/max（LOD 在 Rust 侧算，这里只要 256 个桶）
     if (m_autoY && !m_series.isEmpty())
     {
-        bool init = false;
-        double lo = 0.0;
-        double hi = 0.0;
+        bool init[2] = {false, false};
+        double lo[2] = {0.0, 0.0};
+        double hi[2] = {0.0, 0.0};
         for (const Series &s : m_series)
         {
             if (s.count() < 2)
                 continue;
+            const int ax = s.axis == 1 ? 1 : 0;
             QVector<double> buf(256 * 3);
             const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(),
                                               m_t0 + s.offsetSec, m_t1 + s.offsetSec,
@@ -441,24 +458,34 @@ void CanvasWidget::resetView()
                 const double mx = buf[i * 3 + 2];
                 if (!std::isfinite(mn) || !std::isfinite(mx))
                     continue;
-                if (!init)
+                if (!init[ax])
                 {
-                    lo = mn;
-                    hi = mx;
-                    init = true;
+                    lo[ax] = mn;
+                    hi[ax] = mx;
+                    init[ax] = true;
                 }
                 else
                 {
-                    lo = std::min(lo, mn);
-                    hi = std::max(hi, mx);
+                    lo[ax] = std::min(lo[ax], mn);
+                    hi[ax] = std::max(hi[ax], mx);
                 }
             }
         }
-        if (init)
+        for (int ax = 0; ax < 2; ++ax)
         {
-            const double pad = (hi - lo) * 0.12 + 1e-6;
-            m_yMin = lo - pad;
-            m_yMax = hi + pad;
+            if (!init[ax])
+                continue;
+            const double pad = (hi[ax] - lo[ax]) * 0.12 + 1e-6;
+            if (ax == 0)
+            {
+                m_yMin = lo[0] - pad;
+                m_yMax = hi[0] + pad;
+            }
+            else
+            {
+                m_y2Min = lo[1] - pad;
+                m_y2Max = hi[1] + pad;
+            }
         }
     }
     update();
@@ -1030,6 +1057,17 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         const QString lbl = QString::number(val, 'g', 4);
         p.drawText(QPointF(plot.left() - 8 - fm.horizontalAdvance(lbl), y + fm.ascent() / 2 - 1), lbl);
     }
+    if (hasRightAxis())
+    {
+        for (int i = 0; i <= yTicks; ++i)
+        {
+            const double y = plot.top() + plot.height() * i / yTicks;
+            const double val = m_y2Max - (m_y2Max - m_y2Min) * i / yTicks;
+            p.setPen(colorText());
+            const QString lbl = QString::number(val, 'g', 4);
+            p.drawText(QPointF(plot.right() + 8, y + fm.ascent() / 2 - 1), lbl);
+        }
+    }
 
     const int xTicks = 6;
     for (int i = 0; i <= xTicks; ++i)
@@ -1068,7 +1106,11 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     }
 
     const auto toX = [&](double t) { return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0); };
-    const auto toY = [&](double v) { return plot.bottom() - plot.height() * (v - m_yMin) / (m_yMax - m_yMin); };
+    const auto toY = [&](double v, int axis) {
+        const double lo = axis == 1 ? m_y2Min : m_yMin;
+        const double hi = axis == 1 ? m_y2Max : m_yMax;
+        return plot.bottom() - plot.height() * (v - lo) / (hi - lo);
+    };
 
     for (auto git = lodGroups.constBegin(); git != lodGroups.constEnd(); ++git)
     {
@@ -1108,7 +1150,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
             poly.reserve(static_cast<int>(n));
             for (uint32_t i = 0; i < n; ++i)
                 poly.append(QPointF(toX(buf[i * 3] - s.offsetSec),
-                                    toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0)));
+                                    toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0, s.axis)));
             p.setPen(QPen(s.color, s.width));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
             p.drawPolyline(poly);
             m_hitPaths.append(poly);
@@ -1127,7 +1169,8 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         for (int i = 0; i < m_series.size(); ++i)
         {
             const Series &s = m_series.at(i);
-            const QString lbl = s.unit.isEmpty() ? s.label : QStringLiteral("%1 [%2]").arg(s.label, s.unit);
+            const QString lbl0 = s.unit.isEmpty() ? s.label : QStringLiteral("%1 [%2]").arg(s.label, s.unit);
+            const QString lbl = s.axis == 1 ? lbl0 + QStringLiteral(" →右") : lbl0;
             const double w = 19 + fm.horizontalAdvance(lbl) + 12;
             m_legendRects.append(QRectF(lx - 2, ly - 12, w, 18));
             p.setPen(QPen(s.color, 1.2));
@@ -1391,6 +1434,8 @@ void CanvasWidget::wheelEvent(QWheelEvent *event)
         const double anchor = m_yMax - (m_yMax - m_yMin) * (pos.y() - plot.top()) / plot.height();
         m_yMin = anchor + (m_yMin - anchor) * factor;
         m_yMax = anchor + (m_yMax - anchor) * factor;
+        m_y2Min = anchor + (m_y2Min - anchor) * factor;
+        m_y2Max = anchor + (m_y2Max - anchor) * factor;
     }
     else
     {
@@ -1444,6 +1489,8 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         QPixmap swatch(12, 12);
         swatch.fill(s.color);
         QAction *color = menu.addAction(QIcon(swatch), QStringLiteral("修改颜色…"));
+        QAction *axisToggle = menu.addAction(s.axis == 1 ? QStringLiteral("绑定左轴")
+                                                         : QStringLiteral("绑定右轴"));
         QMenu *widths = menu.addMenu(QStringLiteral("线宽"));
         QAction *w1 = widths->addAction(QStringLiteral("1 px"));
         QAction *w2 = widths->addAction(QStringLiteral("2 px"));
@@ -1456,6 +1503,11 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         QAction *chosen = menu.exec(event->globalPosition().toPoint());
         if (chosen == vis)
             toggleChannel(idx);
+        else if (chosen == axisToggle)
+        {
+            s.axis = s.axis == 1 ? 0 : 1;
+            resetView();
+        }
         else if (chosen == color)
         {
             const QColor c = QColorDialog::getColor(s.color, this, QStringLiteral("曲线颜色"));
@@ -1585,6 +1637,8 @@ QJsonObject CanvasWidget::saveState() const
     o[QStringLiteral("t1")] = m_t1;
     o[QStringLiteral("yMin")] = m_yMin;
     o[QStringLiteral("yMax")] = m_yMax;
+    o[QStringLiteral("y2Min")] = m_y2Min;
+    o[QStringLiteral("y2Max")] = m_y2Max;
     o[QStringLiteral("autoY")] = m_autoY;
     o[QStringLiteral("legend")] = m_showLegend;
     o[QStringLiteral("grid")] = m_showGrid;
@@ -1602,6 +1656,7 @@ QJsonObject CanvasWidget::saveState() const
         so[QStringLiteral("srcPath")] = s.srcPath;
         so[QStringLiteral("color")] = s.color.name();
         so[QStringLiteral("width")] = s.width;
+        so[QStringLiteral("axis")] = s.axis;
         so[QStringLiteral("visible")] = s.visible;
         so[QStringLiteral("offset")] = s.offsetSec;
         arr.append(so);
@@ -1634,6 +1689,7 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
         if (!s.color.isValid())
             s.color = kPalette[m_series.size() % 6];
         s.width = so.value(QStringLiteral("width")).toInt(1);
+        s.axis = so.value(QStringLiteral("axis")).toInt(0);
         s.visible = so.value(QStringLiteral("visible")).toBool(true);
         s.offsetSec = so.value(QStringLiteral("offset")).toDouble(0.0);
         s.t = ch->time;
@@ -1646,6 +1702,8 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
     m_t1 = o.value(QStringLiteral("t1")).toDouble(m_t1);
     m_yMin = o.value(QStringLiteral("yMin")).toDouble(m_yMin);
     m_yMax = o.value(QStringLiteral("yMax")).toDouble(m_yMax);
+    m_y2Min = o.value(QStringLiteral("y2Min")).toDouble(m_y2Min);
+    m_y2Max = o.value(QStringLiteral("y2Max")).toDouble(m_y2Max);
     m_autoY = o.value(QStringLiteral("autoY")).toBool(m_autoY);
     m_showLegend = o.value(QStringLiteral("legend")).toBool(true);
     m_showGrid = o.value(QStringLiteral("grid")).toBool(true);
@@ -1750,6 +1808,8 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
         const double yShift = -dy * (m_yMax - m_yMin) / plot.height();
         m_yMin += yShift;
         m_yMax += yShift;
+        m_y2Min += yShift;
+        m_y2Max += yShift;
         m_lastPos = event->position();
         m_autoY = false;
         if (dx != 0.0)

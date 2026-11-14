@@ -111,6 +111,8 @@ private:
         quint32 n = 0;
         bool visible = true;
         int width = 1;
+        int axis = 0;              // 0=左轴，1=右轴
+
         QVector<double> tOwn;      // demo 数据所有权
         QVector<double> vOwn;
 
@@ -125,6 +127,8 @@ private:
     QString formatTime(double t) const;
     void resetView();
     void ensureTimeRange();
+    bool hasRightAxis() const;
+    int seriesAxisCount() const;
     void addDemoCurves();
     void paintSpecial(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
     void paintXy(QPainter &p, const QRectF &plot, const QFontMetrics &fm, bool scatter);
@@ -144,6 +148,8 @@ private:
     double m_t1 = 30.0;
     double m_yMin = -1.6;
     double m_yMax = 1.6;
+    double m_y2Min = -1.6;
+    double m_y2Max = 1.6;
     bool m_autoY = true;
     bool m_showLegend = true;
     bool m_showGrid = true;
