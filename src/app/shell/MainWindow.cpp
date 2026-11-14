@@ -1471,12 +1471,44 @@ QWidget *MainWindow::createRibbon()
         auto *aBox = new QAction(QStringLiteral("边框"), this);
         auto *aLegend = new QAction(QStringLiteral("图例"), this);
         auto *aRubber = new QAction(QStringLiteral("框选"), this);
+        auto *aZoomIn = new QAction(QStringLiteral("放大"), this);
+        auto *aZoomOut = new QAction(QStringLiteral("缩小"), this);
+        auto *aAutoY = new QAction(QStringLiteral("自动 Y"), this);
+        auto *aReset = new QAction(QStringLiteral("复位"), this);
         for (QAction *a : {aGrid, aBox, aLegend, aRubber})
         {
             a->setCheckable(true);
             a->setToolTip(a->text());
-            pView->addSmallAction(a);
         }
+        for (QAction *a : {aZoomIn, aZoomOut, aAutoY, aReset})
+            a->setToolTip(a->text());
+        const QVector<QPair<QAction *, QString>> viewActs = {
+            {aGrid, QStringLiteral("grid")}, {aBox, QStringLiteral("box")},
+            {aLegend, QStringLiteral("legend")}, {aRubber, QStringLiteral("ruler")},
+            {aZoomIn, QStringLiteral("zoom_in")}, {aZoomOut, QStringLiteral("zoom_out")},
+            {aAutoY, QStringLiteral("autoy")}, {aReset, QStringLiteral("reset")}};
+        auto *viewBox = new QWidget(pView);
+        auto *viewGrid = new QGridLayout(viewBox);
+        viewGrid->setContentsMargins(0, 0, 0, 0);
+        viewGrid->setSpacing(2);
+        for (int i = 0; i < viewActs.size(); ++i)
+        {
+            QAction *a = viewActs.at(i).first;
+            a->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(viewActs.at(i).second)));
+            auto *b = new QToolButton(viewBox);
+            b->setDefaultAction(a);
+            b->setToolButtonStyle(Qt::ToolButtonIconOnly);
+            b->setAutoRaise(true);
+            b->setIconSize(QSize(16, 16));
+            b->setStyleSheet(QStringLiteral(
+                "QToolButton{background:transparent;border:0;padding:0;}"
+                "QToolButton:hover{background:#2d3841;}"
+                "QToolButton:checked{background:#3a4a58;}"));
+            b->setFixedSize(24, 24);
+            viewGrid->addWidget(b, i / 4, i % 4);
+        }
+        viewBox->setFixedSize(4 * 26, 2 * 26);
+        pView->addWidget(viewBox, SARibbonPanelItem::Large);
         const QVector<CanvasWidget *> initial = pageCanvases();
         if (!initial.isEmpty())
         {
@@ -1510,18 +1542,18 @@ QWidget *MainWindow::createRibbon()
             aLegend->setChecked(cs.first()->legendVisible());
             aRubber->setChecked(cs.first()->rubberZoomEnabled());
         });
-        addSmall(pView, QStringLiteral("放大"), [this] {
+        connect(aZoomIn, &QAction::triggered, this, [this] {
             for (CanvasWidget *c : pageCanvases()) c->zoomBy(0.8);
-        }, this);
-        addSmall(pView, QStringLiteral("缩小"), [this] {
+        });
+        connect(aZoomOut, &QAction::triggered, this, [this] {
             for (CanvasWidget *c : pageCanvases()) c->zoomBy(1.25);
-        }, this);
-        addSmall(pView, QStringLiteral("自动 Y"), [this] {
+        });
+        connect(aAutoY, &QAction::triggered, this, [this] {
             for (CanvasWidget *c : pageCanvases()) c->requestAutoY();
-        }, this);
-        addSmall(pView, QStringLiteral("复位"), [this] {
+        });
+        connect(aReset, &QAction::triggered, this, [this] {
             for (CanvasWidget *c : pageCanvases()) c->requestAutoY();
-        }, this);
+        });
 
         auto *pType = cat->addPanel(QStringLiteral("图表"));
         auto *plotGallery = pType->addGallery(true);
@@ -1619,6 +1651,11 @@ QWidget *MainWindow::createRibbon()
         plotGallery->setMinimumWidth(190);
         plotGallery->setMaximumWidth(220);
         plotGallery->setCurrentViewGroup(commonGroup);
+        if (auto *vp = plotGallery->findChild<SARibbonGalleryViewport *>())
+        {
+            vp->removeWidget(commonGroup);
+            commonGroup->setParent(plotGallery);
+        }
         addSmall(pType, QStringLiteral("\u25be"), [plotGallery] {
             plotGallery->showMoreDetail();
             if (auto *vp = plotGallery->findChild<SARibbonGalleryViewport *>())
