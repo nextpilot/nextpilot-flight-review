@@ -791,7 +791,13 @@ void SARibbonGallery::showMoreDetail()
 
     int w = width();
     if (d_ptr->mCurrentViewportGroup)
-        w = d_ptr->mCurrentViewportGroup->width();
+        w = qMax(w, d_ptr->mCurrentViewportGroup->width());
+    // MATLAB 式下拉按最宽的一组内容展开，而不是跟着 Ribbon 里的小图库宽度
+    if (QWidget* content = d_ptr->mPopupWidget->widget())
+        w = qMax(w, content->sizeHint().width());
+    for (SARibbonGalleryGroup* g : d_ptr->mPopupWidget->galleryGroupList()) {
+        w = qMax(w, g->sizeHint().width());
+    }
     w += style()->pixelMetric(QStyle::PM_ScrollBarExtent);
 
     /* ---- 宽度不超过屏幕右边缘 ---- */
@@ -800,9 +806,11 @@ void SARibbonGallery::showMoreDetail()
 
     /* ---- 计算期望高度：按完整内容布局算，避免只显示前两组 ---- */
     int h = d_ptr->mPopupWidget->heightHintForWidth(w);
-    if (QWidget* content = d_ptr->mPopupWidget->widget()) {
-        h = qMax(h, content->sizeHint().height() + 4);
+    int sumH = 0;
+    for (SARibbonGalleryGroup* g : d_ptr->mPopupWidget->galleryGroupList()) {
+        sumH += g->sizeHint().height() + 24;
     }
+    h = qMax(h, sumH + 8);
 
     /* ---- 下方放不下时翻到上方 ---- */
     if (start.y() + h > avail.bottom() + 1) {
@@ -815,9 +823,8 @@ void SARibbonGallery::showMoreDetail()
         }
     }
 
-    d_ptr->mPopupWidget->setGeometry(start.x(), start.y(), w, qMax(h, 360));
+    d_ptr->mPopupWidget->setGeometry(start.x(), start.y(), w, h);
     d_ptr->mPopupWidget->show();
-    d_ptr->mPopupWidget->setMinimumHeight(qMax(h, 360));
 }
 
 /**

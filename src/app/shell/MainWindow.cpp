@@ -14,6 +14,7 @@
 #include <cstring>
 #include <algorithm>
 #include <QDockWidget>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QSpinBox>
@@ -951,6 +952,49 @@ void dockToArea(QDockWidget *dock, MainWindow *win, Qt::DockWidgetArea area)
 
 
 // Word 插入表格式布局选择：悬停框选 m×n，点击即应用
+class PlotMenuPopup : public QFrame
+{
+public:
+    explicit PlotMenuPopup(QWidget *parent) : QFrame(parent, Qt::Popup)
+    {
+        setObjectName(QStringLiteral("plotMenuPopup"));
+        setStyleSheet(QStringLiteral(
+            "QFrame#plotMenuPopup{background:#1b232b;border:1px solid #3a4650;}"));
+        m_root = new QVBoxLayout(this);
+        m_root->setContentsMargins(8, 6, 8, 8);
+        m_root->setSpacing(4);
+    }
+
+    void addGroup(const QString &title, const QList<QAction *> &acts)
+    {
+        auto *lab = new QLabel(title, this);
+        lab->setStyleSheet(QStringLiteral("color:#8b949e;font-size:11px;padding:2px 3px;"));
+        m_root->addWidget(lab);
+        auto *row = new QHBoxLayout;
+        row->setContentsMargins(0, 0, 0, 0);
+        row->setSpacing(3);
+        for (QAction *a : acts)
+        {
+            auto *b = new QToolButton(this);
+            b->setDefaultAction(a);
+            b->setToolButtonStyle(Qt::ToolButtonIconOnly);
+            b->setAutoRaise(true);
+            b->setIconSize(QSize(64, 36));
+            b->setFixedSize(70, 44);
+            b->setStyleSheet(QStringLiteral(
+                "QToolButton{background:transparent;border:0;padding:0;}"
+                "QToolButton:hover{background:#2d3841;}"));
+            connect(a, &QAction::triggered, this, &QWidget::hide);
+            row->addWidget(b);
+        }
+        row->addStretch();
+        m_root->addLayout(row);
+    }
+
+private:
+    QVBoxLayout *m_root;
+};
+
 class LayoutPickGrid : public QWidget
 {
 public:
@@ -1647,11 +1691,11 @@ QWidget *MainWindow::createRibbon()
         addPlot(QStringLiteral("compass"), QStringLiteral("罗盘"), QStringLiteral("航向罗盘"), gaugeActs);
         addPlot(QStringLiteral("gauge"), QStringLiteral("表盘"), QStringLiteral("单值仪表盘"), gaugeActs);
         auto stylePlotGroup = [](SARibbonGalleryGroup *g) {
-            g->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
-            g->setDisplayRow(SARibbonGalleryGroup::DisplayTwoRow);
-            g->setIconSize(QSize(52, 26));
-            g->setGridMinimumWidth(60);
-            g->setGridMaximumWidth(76);
+            g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
+            g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+            g->setIconSize(QSize(64, 36));
+            g->setGridMinimumWidth(70);
+            g->setGridMaximumWidth(78);
         };
         auto stylePlotCommon = [](SARibbonGalleryGroup *g) {
             g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
@@ -1673,6 +1717,8 @@ QWidget *MainWindow::createRibbon()
         auto *gaugeGroup = plotGallery->addCategoryActions(QStringLiteral("仪表"), gaugeActs);
         stylePlotGroup(gaugeGroup);
         plotGallery->setSingleRowMode(true);
+        if (auto *more = plotGallery->findChild<QToolButton *>(QStringLiteral("SARibbonGalleryButtonMore")))
+            more->hide();
         plotGallery->setMinimumWidth(190);
         plotGallery->setMaximumWidth(220);
         plotGallery->setCurrentViewGroup(commonGroup);
@@ -1681,8 +1727,17 @@ QWidget *MainWindow::createRibbon()
             vp->removeWidget(commonGroup);
             commonGroup->setParent(plotGallery);
         }
-        addSmall(pType, QStringLiteral("\u25be"), [plotGallery] {
-            plotGallery->showMoreDetail();
+        auto *plotMenu = new PlotMenuPopup(this);
+        plotMenu->addGroup(QStringLiteral("曲线"), curveActs);
+        plotMenu->addGroup(QStringLiteral("地图 / 3D"), mapActs);
+        plotMenu->addGroup(QStringLiteral("仪表"), gaugeActs);
+        addSmall(pType, QStringLiteral("\u25be"), [this, ribbon, plotGallery, plotMenu] {
+            plotMenu->adjustSize();
+            const QPoint anchor = plotGallery->mapToGlobal(QPoint(0, 0));
+            const int y = ribbon->mapToGlobal(QPoint(0, ribbon->height())).y() + 8;
+            const int x = qBound(8, anchor.x(), screen()->availableGeometry().right() - plotMenu->width() - 8);
+            plotMenu->move(x, y);
+            plotMenu->show();
         }, this);
 
     }
