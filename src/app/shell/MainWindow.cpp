@@ -1406,6 +1406,16 @@ void MainWindow::registerCommands()
             splitCanvas(c, Qt::Vertical);
     });
 
+    m_commands.add(QStringLiteral("page.grid"), [this](const Ctx &ctx) {
+        const QStringList parts = ctx.arg.split(QLatin1Char(','));
+        if (parts.size() == 2)
+            applyCanvasGrid(parts.at(0).toInt(), parts.at(1).toInt());
+    });
+
+    m_commands.add(QStringLiteral("plot.new"), [this](const Ctx &ctx) {
+        createPlotPage(ctx.arg);
+    });
+
     m_commands.add(QStringLiteral("script.run"), [this](const Ctx &) {
         log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）：out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)"));
     });
@@ -1592,7 +1602,8 @@ QWidget *MainWindow::createRibbon()
         layoutBtn->setMenu(layoutMenu);
         pick->onPick = [this, layoutBtn, layoutMenu](int r, int c) {
             layoutBtn->setText(QStringLiteral("%1×%2  \u25be").arg(r).arg(c));
-            applyCanvasGrid(r, c);
+            m_commands.invoke(QStringLiteral("page.grid"),
+                              ps::commands::CommandContext{this, QStringLiteral("%1,%2").arg(r).arg(c)});
             layoutMenu->close();
         };
         pGrid->addWidget(layoutBtn, SARibbonPanelItem::Large);
@@ -1713,56 +1724,7 @@ QWidget *MainWindow::createRibbon()
             auto *a = new QAction(QIcon(plotThumb(kind)), label, this);
             a->setToolTip(tip);
             plotActByKind.insert(kind, a);
-            connect(a, &QAction::triggered, this, [this, kind, label] {
-                if (kind == QLatin1String("timeseries"))
-                {
-                    newPage();
-                    if (auto *c = currentCanvas())
-                    {
-                        c->setTitle(QStringLiteral("%1 · 选择通道").arg(label));
-                        log(QStringLiteral("新建图页：%1").arg(label));
-                    }
-                }
-                else
-                {
-                    auto *c = new CanvasWidget(this);
-                    c->clearChannels();
-                    c->setTitle(label);
-                    CanvasWidget::PlotMode mode = CanvasWidget::Xy;
-                    if (kind == QLatin1String("scatter")) mode = CanvasWidget::Scatter;
-                    else if (kind == QLatin1String("bar")) mode = CanvasWidget::BarChart;
-                    else if (kind == QLatin1String("histogram")) mode = CanvasWidget::Histogram;
-                    else if (kind == QLatin1String("fft")) mode = CanvasWidget::Spectrum;
-                    else if (kind == QLatin1String("horizon")) mode = CanvasWidget::Horizon;
-                    else if (kind == QLatin1String("compass")) mode = CanvasWidget::Compass;
-                    else if (kind == QLatin1String("gauge")) mode = CanvasWidget::Gauge;
-                    else if (kind == QLatin1String("traj3d")) mode = CanvasWidget::Traj3D;
-                    else if (kind == QLatin1String("map")) mode = CanvasWidget::GpsMap;
-                    else if (kind == QLatin1String("surface3d")) mode = CanvasWidget::Surface3D;
-                    c->setPlotMode(mode, kind);
-                    CanvasWidget *seed = nullptr;
-                    int best = 0;
-                    for (CanvasWidget *w : findChildren<CanvasWidget *>())
-                    {
-                        if (w == c)
-                            continue;
-                        const int n = w->sampleSeries().size();
-                        if (n > best)
-                        {
-                            best = n;
-                            seed = w;
-                        }
-                    }
-                    if (seed)
-                        for (const CanvasWidget::SampleSeries &s : seed->sampleSeries())
-                            c->addGeneratedSeries(s.name, s.time, s.value);
-                    setupCanvas(c);
-                    const int plusIdx = m_pages->count() - 1;
-                    m_pages->insertTab(plusIdx, c, label);
-                    m_pages->setCurrentWidget(c);
-                    log(QStringLiteral("新建图页：%1").arg(label));
-                }
-            });
+            connect(a, &QAction::triggered, this, run(QStringLiteral("plot.new"), kind));
             dest.append(a);
         };
         addPlot(QStringLiteral("timeseries"), QStringLiteral("时间序列"), QStringLiteral("时间轴曲线，当前已实现"), curveActs);
@@ -1845,7 +1807,8 @@ QWidget *MainWindow::createRibbon()
         for (const auto &item : page.items)
         {
             auto fn = [this, action = item.action] {
-                m_components.invoke(action, ps::components::ActionContext{this});
+                if (!m_commands.invoke(action, ps::commands::CommandContext{this}))
+                    m_components.invoke(action, ps::components::ActionContext{this});
             };
             if (item.large)
                 addLarge(panel, item.label, fn, this);
@@ -4840,6 +4803,76 @@ void MainWindow::splitCanvas(CanvasWidget *target, Qt::Orientation orientation)
     log(QStringLiteral("拆分画布：%1").arg(orientation == Qt::Horizontal ? QStringLiteral("左右")
                                                                           : QStringLiteral("上下")));
     refreshPropTree(c);
+}
+
+void MainWindow::createPlotPage(const QString &kind)
+{
+    struct PlotKind
+    {
+        const char *kind;
+        const char *label;
+        CanvasWidget::PlotMode mode;
+    };
+    static const PlotKind kinds[] = {
+        {"timeseries", "时间序列", CanvasWidget::TimeSeries},
+        {"xy", "XY 曲线", CanvasWidget::Xy},
+        {"scatter", "散点图", CanvasWidget::Scatter},
+        {"bar", "柱状图", CanvasWidget::BarChart},
+        {"histogram", "直方图", CanvasWidget::Histogram},
+        {"fft", "频谱 FFT", CanvasWidget::Spectrum},
+        {"traj3d", "3D 轨迹", CanvasWidget::Traj3D},
+        {"map", "GPS 地图", CanvasWidget::GpsMap},
+        {"surface3d", "3D 曲面", CanvasWidget::Surface3D},
+        {"horizon", "地平仪", CanvasWidget::Horizon},
+        {"compass", "罗盘", CanvasWidget::Compass},
+        {"gauge", "表盘", CanvasWidget::Gauge},
+    };
+    const PlotKind *spec = nullptr;
+    for (const PlotKind &k : kinds)
+        if (kind == QLatin1String(k.kind))
+            spec = &k;
+    if (!spec)
+    {
+        log(QStringLiteral("未知图型：%1").arg(kind));
+        return;
+    }
+    const QString label = QString::fromUtf8(spec->label);
+    if (spec->mode == CanvasWidget::TimeSeries)
+    {
+        newPage();
+        if (auto *c = currentCanvas())
+        {
+            c->setTitle(QStringLiteral("%1 · 选择通道").arg(label));
+            log(QStringLiteral("新建图页：%1").arg(label));
+        }
+        return;
+    }
+
+    auto *c = new CanvasWidget(this);
+    c->clearChannels();
+    c->setTitle(label);
+    c->setPlotMode(spec->mode, kind);
+    CanvasWidget *seed = nullptr;
+    int best = 0;
+    for (CanvasWidget *w : findChildren<CanvasWidget *>())
+    {
+        if (w == c)
+            continue;
+        const int n = w->sampleSeries().size();
+        if (n > best)
+        {
+            best = n;
+            seed = w;
+        }
+    }
+    if (seed)
+        for (const CanvasWidget::SampleSeries &s : seed->sampleSeries())
+            c->addGeneratedSeries(s.name, s.time, s.value);
+    setupCanvas(c);
+    const int plusIdx = m_pages->count() - 1;
+    m_pages->insertTab(plusIdx, c, label);
+    m_pages->setCurrentWidget(c);
+    log(QStringLiteral("新建图页：%1").arg(label));
 }
 
 void MainWindow::addCanvasToPage()

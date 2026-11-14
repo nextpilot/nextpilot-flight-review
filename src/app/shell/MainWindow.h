@@ -97,6 +97,7 @@ private:
     QVector<CanvasWidget *> pageCanvases() const;
     QWidget *createRibbon();
     void registerCommands();
+    void createPlotPage(const QString &kind);
     void createDocks();
     void createPages();
     void log(const QString &text);
