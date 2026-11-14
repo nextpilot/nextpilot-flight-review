@@ -1,7 +1,7 @@
-#include "FrameComponent.h"
+#include "CustomProtocolComponent.h"
 
 #include "ProtocolEditorDialog.h"
-#include "app/data_input/DataInputRegistry.h"
+#include "app/components/ProtocolEditorService.h"
 #include "protocol/ProtocolSpec.h"
 #include "ps_plugin_api.h"
 
@@ -14,7 +14,7 @@
 #include <QMessageBox>
 #include <QStandardPaths>
 
-extern "C" const PsPluginDescriptor *ps_component_frame_loader(void);
+extern "C" const PsPluginDescriptor *ps_custom_protocol_loader(void);
 
 namespace ps::components
 {
@@ -45,16 +45,16 @@ QString nextProtocolPath()
 
 } // namespace
 
-ComponentManifest FrameComponent::manifest() const
+ComponentManifest CustomProtocolComponent::manifest() const
 {
     return {QStringLiteral("protocol.frame"), QStringLiteral("顺序帧协议"),
             QStringLiteral("1.0"), {QStringLiteral("loader"), QStringLiteral("protocol"),
                                     QStringLiteral("ribbon"), QStringLiteral("editor")}};
 }
 
-void FrameComponent::contribute(Registry &registry, const HostServices &host)
+void CustomProtocolComponent::contribute(Registry &registry, const HostServices &host)
 {
-    registry.addLoader(ps_component_frame_loader());
+    registry.addLoader(ps_custom_protocol_loader());
 
     ProtocolContribution protocol;
     protocol.kind = QStringLiteral("sequential");
@@ -65,6 +65,9 @@ void FrameComponent::contribute(Registry &registry, const HostServices &host)
         return new ProtocolEditorDialog(path, parent);
     };
     registry.addProtocol(protocol);
+    ps::components::setProtocolEditorFactory([](const QString &path, QWidget *parent) -> QDialog * {
+        return new ProtocolEditorDialog(path, parent);
+    });
 
     registry.addRibbon(RibbonContribution{
         QStringLiteral("协议"), QStringLiteral("编辑器"),

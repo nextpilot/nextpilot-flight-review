@@ -64,7 +64,7 @@
 
 ## 当前状态
 
-- `ComponentRegistry`、`FrameComponent`、`PluginComponent` 已存在，但只是协议页试点。
+- `ComponentRegistry`、`CustomProtocolComponent`、`PluginComponent` 已存在，但只是协议页试点。
 - 文件、数据、绘图、脚本、视图五页与全部 Dock 仍写死在 `MainWindow`。
 - `ProtocolDocument` 类型已抽出，`SequentialCodec` 已使用；编辑器尚未改为消费该模型。
 - 本文件只记录决策与顺序，不代表组件扩展点重构已完成。

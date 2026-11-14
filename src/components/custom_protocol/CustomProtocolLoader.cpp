@@ -857,7 +857,7 @@ const PsPluginDescriptor kFrameLoaderDescriptor = {
 
 } // namespace
 
-extern "C" const PsPluginDescriptor *ps_component_frame_loader(void)
+extern "C" const PsPluginDescriptor *ps_custom_protocol_loader(void)
 {
     return &kFrameLoaderDescriptor;
 }

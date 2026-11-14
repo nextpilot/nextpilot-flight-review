@@ -1,7 +1,7 @@
 #include "data_input/DataInputDialog.h"
 
 #include "data_input/DataInputPlugin.h"
-#include "components/protocol_frame/ProtocolEditorDialog.h"
+#include "app/components/ProtocolEditorService.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -540,9 +540,16 @@ QWidget *DataInputDialog::createEditor(const QJsonObject &f, const QJsonValue &v
                                              QStringLiteral("先选择一个 .psproto 模板文件"));
                     return;
                 }
-                ProtocolEditorDialog dlg(path, this);
-                if (dlg.exec() == QDialog::Accepted)
-                    line->setText(dlg.templatePath());
+                QDialog *dlg = ps::components::createProtocolEditor(path, this);
+                if (!dlg)
+                {
+                    QMessageBox::information(this, QStringLiteral("协议模板"),
+                                             QStringLiteral("未安装自定义协议组件"));
+                    return;
+                }
+                if (dlg->exec() == QDialog::Accepted)
+                    line->setText(path);
+                delete dlg;
             });
         connect(browse, &QPushButton::clicked, this, [this, line, f] {
             const QString filter = f.value(QStringLiteral("filter")).toString(m_fileFilter);

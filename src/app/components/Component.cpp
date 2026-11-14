@@ -1,6 +1,5 @@
 #include "Component.h"
 
-#include "app/data_input/DataInputRegistry.h"
 #include "ps_plugin_api.h"
 
 namespace ps::components
@@ -23,8 +22,8 @@ void Registry::addAction(const QString &id, std::function<void(const ActionConte
 
 void Registry::addLoader(const PsPluginDescriptor *descriptor)
 {
-    if (descriptor)
-        DataInputRegistry::instance().registerDescriptor(descriptor);
+    if (descriptor && !m_loaders.contains(descriptor))
+        m_loaders.push_back(descriptor);
 }
 
 const ProtocolContribution *Registry::protocol(const QString &kind) const

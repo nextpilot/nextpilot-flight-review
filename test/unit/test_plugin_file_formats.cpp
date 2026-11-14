@@ -17,7 +17,9 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ubx(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_json(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_binary(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_mdf4(void);
-extern "C" const PsPluginDescriptor *ps_component_frame_loader(void);
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+extern "C" const PsPluginDescriptor *ps_custom_protocol_loader(void);
+#endif
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_rosbag2(void);
 
 namespace {
@@ -117,26 +119,38 @@ int main()
         return 1;
     if (!loadAndCheck(ps_plugin_entry_data_loader_mdf4(), fix + "/demo.mf4", 2))
         return 1;
-    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo.frames",
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+    if (!loadOptsAndCheck(ps_custom_protocol_loader(), fix + "/demo.frames",
                           "{\"protocol\":\"" + fix + "/demo.psproto\"}", 2))
         return 1;
+#endif
     if (!loadAndCheck(ps_plugin_entry_data_loader_rosbag2(), fix + "/demo_rosbag2.db3", 2))
         return 1;
-    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_variable.frames",
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+    if (!loadOptsAndCheck(ps_custom_protocol_loader(), fix + "/demo_variable.frames",
                           "{\"protocol\":\"" + fix + "/demo_variable.psproto\"}", 2))
         return 1;
-    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_family.frames",
+#endif
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+    if (!loadOptsAndCheck(ps_custom_protocol_loader(), fix + "/demo_family.frames",
                           "{\"protocol\":\"" + fix + "/demo_family.psproto\"}", 2))
         return 1;
-    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_sequential.frames",
+#endif
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+    if (!loadOptsAndCheck(ps_custom_protocol_loader(), fix + "/demo_sequential.frames",
                           "{\"protocol\":\"" + fix + "/demo_sequential.psproto\"}", 5))
         return 1;
-    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_nmea.frames",
+#endif
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+    if (!loadOptsAndCheck(ps_custom_protocol_loader(), fix + "/demo_nmea.frames",
                           "{\"protocol\":\"" + fix + "/demo_nmea.psproto\"}", 4))
         return 1;
-    if (!loadOptsAndCheck(ps_component_frame_loader(), fix + "/demo_generic.frames",
+#endif
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+    if (!loadOptsAndCheck(ps_custom_protocol_loader(), fix + "/demo_generic.frames",
                           "{\"protocol\":\"" + fix + "/demo_generic.psproto\"}", 2))
         return 1;
+#endif
 
     // DBC 模式：0x1A0 的两个字节解成命名信号，而不是 b0..b7 原始字节。
     const std::string dbcPath = "/tmp/plotscope-test-can.dbc";

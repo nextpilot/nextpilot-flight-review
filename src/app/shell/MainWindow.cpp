@@ -6,7 +6,9 @@
 #include "data_input/DataInputRegistry.h"
 #include "components/Component.h"
 #include "components/PluginComponent.h"
-#include "components/protocol_frame/FrameComponent.h"
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+#include "components/custom_protocol/CustomProtocolComponent.h"
+#endif
 #include "ps_plugin_api.h"
 #include "live/LiveSession.h"
 #include "device/DeviceDebugDialog.h"
@@ -1255,14 +1257,20 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
     resize(1440, 880);
 
-    ps::components::FrameComponent frameComponent;
     ps::components::HostServices hostServices;
     hostServices.window = [this] { return static_cast<QWidget *>(this); };
     hostServices.log = [this](const QString &text) { log(text); };
     hostServices.configDir = [] {
         return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     };
-    frameComponent.contribute(m_components, hostServices);
+#ifdef PS_HAVE_CUSTOM_PROTOCOL
+    ps::components::CustomProtocolComponent customProtocol;
+    customProtocol.contribute(m_components, hostServices);
+#endif
+    for (const PsPluginDescriptor *desc : m_components.loaders())
+    {
+        DataInputRegistry::instance().registerDescriptor(desc);
+    }
     for (const PsPluginDescriptor *desc : DataInputRegistry::instance().descriptors())
     {
         ps::components::PluginComponent plugin(desc);

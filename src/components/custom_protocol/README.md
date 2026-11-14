@@ -1,13 +1,13 @@
-# protocol_frame 组件
+# 自定义协议组件
 
 本目录是 app 内置的“顺序帧协议”组件，协议编辑器、协议结构校验、codec、dataloader 放在同一个边界内。
 
 ## 组成
 
 - `ProtocolEditorDialog.*`：内置 Qt 编辑器，只编辑顺序段协议。
-- `FrameComponent.*`：向 `ComponentRegistry` 注册协议、Ribbon 入口、动作和 loader。
+- `CustomProtocolComponent.*`：向 `ComponentRegistry` 注册协议、Ribbon 入口、动作和 loader。
 - `SequentialCodec.*`：把协议 JSON 解释为帧通道。
-- `FrameDataLoader.cpp`：文件 loader 与插件入口。
+- `CustomProtocolLoader.cpp`：文件 loader 与组件注册入口。
 
 ## 约束
 

@@ -68,11 +68,13 @@ public:
 
     const ProtocolContribution *protocol(const QString &kind) const;
     const QVector<RibbonContribution> &ribbon() const { return m_ribbon; }
+    const QVector<const PsPluginDescriptor *> &loaders() const { return m_loaders; }
     bool invoke(const QString &action, const ActionContext &ctx) const;
 
 private:
     QVector<ProtocolContribution> m_protocols;
     QVector<RibbonContribution> m_ribbon;
+    QVector<const PsPluginDescriptor *> m_loaders;
     QVector<QPair<QString, std::function<void(const ActionContext &)>>> m_actions;
 };
 
