@@ -649,10 +649,10 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 | **M0-0** | 选型 spike：JKQTPlotter vs Qwt，20 通道 × 8k 点 @60fps，单帧 ≤8 ms | **0.5 天** | **已完成**：自绘 7.2 ms；JKQ 13.1 ms |
 | **M0** | 骨架：按 §12 目录落地、CMake + Rust 内核接通、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 | **已完成** |
 | **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） | **基本完成**：ULog/DFLog/ASC/BLF、MAVLink UDP/raw/`.tlog` 回放、缓存、外部插件 manifest/ABI 已落地；ASC/BLF 支持可选 DBC 信号解码 |
-| **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 | **部分完成**：12 算子、四元数、Lua 5.4 脚本、OEM7 TCP/串口已落地；MDF4/NMEA/UBX、自绘滚动面板未做 |
+| **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 | **部分完成**：12 算子、四元数、Lua 5.4、OEM7、NMEA/UBX 已落地；MDF4、自绘滚动面板未做 |
 | **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 | **部分完成**：MCAP 加载/录制、多画布、时间对齐已落地；rosbag2、多轴、视频同步未做 |
 | **M4** | 协议编辑器（Loader 的 options 子窗口：位域/CRC/联动）+ 模板编译 | 3 周 | **未开始** |
-| **M5** | 仪表页、布局 `.psl`、导出 | 2 周 | **主体完成**：图型仪表、`.psl`、PNG/CSV 导出已落地；独立仪表页编排未做 |
+| **M5** | 仪表页、布局 `.psl`、导出 | 2 周 | **完成**：图型仪表、独立仪表页（地平仪/罗盘/表盘）、`.psl`、PNG/CSV 导出 |
 
 **页面/面板形态**：单窗口多页（页签挂在绘图区顶部，只跨绘图区宽度），每页一棵切分树；停靠面板可浮动；页数不做硬限制，按内存策略回收。
 
@@ -908,7 +908,7 @@ public:
 - 插件 SDK：loader/source 共用 `DataInputPlugin`，外部 `.json` manifest + 动态库 ABI 已落地。
 
 未落地：
-- Parquet、ROS2、JSON/CBOR/MessagePack、MDF4。
+- Parquet、ROS2、CBOR/MessagePack、MDF4；通用 JSON/JSONL 已由 `data_loader_json` 支持。
 - MQTT/ZMQ/WebSocket/LSL/Foxglove/PJ Bridge/WebRTC。
 - 插件市场、streamer/parser 两类独立 SDK 扩展。
 - 3D 曲面、GPS 地图、GPU 渲染与百万点基准。
@@ -971,6 +971,8 @@ public:
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
 - M1 CAN：ASC/BLF 加载器新增可选 `dbc` 配置，按 `BO_`/`SG_` 解码为 `CAN<bus>.<message>.<signal>`；留空仍导原始字节。CMake 公共库加 `Dbc.cpp`，测试覆盖 `CAN2.MSG_A.byte0`。
 - M2 GNSS：新增 `data_loader_nmea`（GGA/RMC → `nmea.gga.*`/`nmea.rmc.*`）与 `data_loader_ubx`（NAV-PVT/NAV-POSLLH → `ubx.*`）；时间均归零到首样本，扩展 `.nmea/.txt/.ubx`。MDF4 仍未做。
+- M5：仪表大屏从占位改为三画布（Horizon/Compass/Gauge），接线与普通画布一致；截图 `docs/screenshots/PlotScope-Instrument-Gauge.png`。
+- P4：新增 `data_loader_json`，支持 JSON 数组/对象、JSONL/NDJSON、长表 `{time,channel,value}`，数值字段扁平为 `json.*`；CBOR/MessagePack 仍未做。
 - RAW：OEM7 `database.json` 写入 PSRAW1 `schema_blob`。
 - 测试：`ctest` 15/15，新增 `test_script_engine`（`ps.input`、`ps.input(5)` 报错、`step` 聚合）。
 - 启动：`QT_QPA_PLATFORM=offscreen` 运行 8 秒存活；Xvfb 下真实 xcb 窗口启动并截图，非交互冒烟。

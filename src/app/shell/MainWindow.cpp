@@ -2820,8 +2820,20 @@ void MainWindow::createPages()
     // 页 2：单 plot
     m_pages->addTab(makeCanvas(QStringLiteral("车辆总线 · plot")), QStringLiteral("车辆总线"));
 
-    m_pages->addTab(new QLabel(QStringLiteral("页 4 · 仪表大屏：地平仪 / 罗盘 / 表盘（M1）"), this),
-                    QStringLiteral("仪表大屏"));
+    // 页 4：仪表大屏，三块独立画布分别走地平仪 / 罗盘 / 表盘模式。
+    auto *dash = new QSplitter(Qt::Horizontal, this);
+    dash->setHandleWidth(6);
+    auto *horizon = makeCanvas(QStringLiteral("地平仪 · attitude"));
+    horizon->setPlotMode(CanvasWidget::Horizon, QStringLiteral("horizon"));
+    auto *compass = makeCanvas(QStringLiteral("罗盘 · heading"));
+    compass->setPlotMode(CanvasWidget::Compass, QStringLiteral("compass"));
+    auto *gauge = makeCanvas(QStringLiteral("表盘 · value"));
+    gauge->setPlotMode(CanvasWidget::Gauge, QStringLiteral("gauge"));
+    dash->addWidget(horizon);
+    dash->addWidget(compass);
+    dash->addWidget(gauge);
+    dash->setSizes({420, 320, 320});
+    m_pages->addTab(dash, QStringLiteral("仪表大屏"));
 
     connect(m_pages, &QTabWidget::tabCloseRequested, this, [this](int idx) {
         if (m_pages->count() > 2 && !m_pages->tabText(idx).isEmpty())
