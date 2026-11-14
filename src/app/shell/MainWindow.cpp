@@ -1986,8 +1986,10 @@ QWidget *MainWindow::createRibbon()
     )"));
     return ribbon;
 }
-void MainWindow::createDocks()
+QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
 {
+    if (id == QLatin1String("dock.src"))
+    {
     // 左：数据源（对齐原型 d-src）：源列表 → 字段/参数/消息 三页签 → 内容
     auto *srcDock = new QDockWidget(QStringLiteral("数据源"), this);
     srcDock->setObjectName(QStringLiteral("dock.src"));
@@ -2437,8 +2439,10 @@ void MainWindow::createDocks()
         }
     });
     srcDock->setWidget(srcHost);
-    addDockWidget(Qt::LeftDockWidgetArea, srcDock);
-
+    return srcDock;
+    }
+    if (id == QLatin1String("dock.prop"))
+    {
     // 右：属性面板（命中什么对象就显示什么属性）
     auto *propDock = new QDockWidget(QStringLiteral("属性面板"), this);
     propDock->setObjectName(QStringLiteral("dock.prop"));
@@ -2489,7 +2493,14 @@ void MainWindow::createDocks()
     });
     propLay->addWidget(propHead);
     propLay->addWidget(m_propTable, 1);
-
+    propDock->setWidget(propHost);
+    setPropRows(QStringLiteral("画布"),
+                {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")},
+                 {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
+    return propDock;
+    }
+    if (id == QLatin1String("dock.tree"))
+    {
     // 顶右：对象树独立 Dock（属性面板只保留属性表）
     auto *treeDock = new QDockWidget(QStringLiteral("对象树"), this);
     treeDock->setObjectName(QStringLiteral("dock.tree"));
@@ -2539,21 +2550,15 @@ void MainWindow::createDocks()
         else if (kind == 2)
             showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
     });
-    propDock->setWidget(propHost);
-    addDockWidget(Qt::RightDockWidgetArea, propDock);
-    addDockWidget(Qt::RightDockWidgetArea, treeDock);
-    splitDockWidget(propDock, treeDock, Qt::Vertical);
-    setPropRows(QStringLiteral("画布"),
-                {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")},
-                 {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
-
+    return treeDock;
+    }
+    if (id == QLatin1String("dock.video"))
+    {
     // 右侧：视频同步（ffmpeg 抽帧；默认隐藏）
     auto *videoDock = new QDockWidget(QStringLiteral("视频同步"), this);
     videoDock->setObjectName(QStringLiteral("dock.video"));
     auto *video = new VideoSyncWidget(videoDock);
     videoDock->setWidget(video);
-    addDockWidget(Qt::RightDockWidgetArea, videoDock);
-    videoDock->hide();
     connect(video, &VideoSyncWidget::timeChanged, this, [this](double t) {
         for (CanvasWidget *c : findChildren<CanvasWidget *>())
         {
@@ -2566,7 +2571,10 @@ void MainWindow::createDocks()
             }
         }
     });
-
+    return videoDock;
+    }
+    if (id == QLatin1String("dock.script"))
+    {
     // 右下：脚本
     auto *scriptDock = new QDockWidget(QStringLiteral("脚本 · Lua 5.4"), this);
     scriptDock->setObjectName(QStringLiteral("dock.script"));
@@ -2636,11 +2644,12 @@ void MainWindow::createDocks()
     scriptLay->addWidget(m_script, 1);
     scriptLay->addLayout(runBtnRow);
     scriptDock->setWidget(scriptHost);
-    addDockWidget(Qt::RightDockWidgetArea, scriptDock);
-    resizeDocks({propDock, scriptDock}, {470, 330}, Qt::Vertical);
     connect(runScriptBtn, &QPushButton::clicked, this, [this] { runScript(false); });
     connect(applyScriptBtn, &QPushButton::clicked, this, [this] { runScript(true); });
-
+    return scriptDock;
+    }
+    if (id == QLatin1String("dock.log"))
+    {
     // 底部：日志
     auto *logDock = new QDockWidget(QStringLiteral("日志"), this);
     logDock->setObjectName(QStringLiteral("dock.log"));
@@ -2648,9 +2657,43 @@ void MainWindow::createDocks()
     m_logView->setReadOnly(true);
     m_logView->setMaximumBlockCount(2000);
     logDock->setWidget(m_logView);
-    addDockWidget(Qt::BottomDockWidgetArea, logDock);
+    return logDock;
+    }
+    Q_UNUSED(parent);
+    return nullptr;
+}
 
-    resizeDocks({logDock}, {96}, Qt::Vertical);
+void MainWindow::createDocks()
+{
+    auto docks = m_components.docks();
+    std::sort(docks.begin(), docks.end(),
+              [](const ps::components::DockContribution &a, const ps::components::DockContribution &b) {
+                  return a.order < b.order;
+              });
+    for (const auto &spec : docks)
+    {
+        QDockWidget *dock = spec.create ? qobject_cast<QDockWidget *>(spec.create(this))
+                                        : buildDockWidget(spec.id, this);
+        if (!dock)
+            continue;
+        if (!spec.id.isEmpty())
+            dock->setObjectName(spec.id);
+        if (!spec.title.isEmpty())
+            dock->setWindowTitle(spec.title);
+        addDockWidget(spec.area, dock);
+        dock->setVisible(spec.visible);
+    }
+
+    QDockWidget *propDock = findChild<QDockWidget *>(QStringLiteral("dock.prop"));
+    QDockWidget *treeDock = findChild<QDockWidget *>(QStringLiteral("dock.tree"));
+    QDockWidget *scriptDock = findChild<QDockWidget *>(QStringLiteral("dock.script"));
+    QDockWidget *logDock = findChild<QDockWidget *>(QStringLiteral("dock.log"));
+    if (propDock && treeDock)
+        splitDockWidget(propDock, treeDock, Qt::Vertical);
+    if (propDock && scriptDock)
+        resizeDocks({propDock, scriptDock}, {470, 330}, Qt::Vertical);
+    if (logDock)
+        resizeDocks({logDock}, {96}, Qt::Vertical);
     refreshSrcCount();
 }
 

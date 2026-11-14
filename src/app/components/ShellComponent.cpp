@@ -13,6 +13,20 @@ ComponentManifest ShellComponent::manifest() const
 
 void ShellComponent::contribute(Registry &registry, const HostServices &)
 {
+
+    registry.addDock(DockContribution{QStringLiteral("dock.src"), QStringLiteral("数据源"),
+                                      Qt::LeftDockWidgetArea, true, 0, nullptr});
+    registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
+                                      Qt::RightDockWidgetArea, true, 1, nullptr});
+    registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
+                                      Qt::RightDockWidgetArea, true, 2, nullptr});
+    registry.addDock(DockContribution{QStringLiteral("dock.video"), QStringLiteral("视频同步"),
+                                      Qt::RightDockWidgetArea, false, 3, nullptr});
+    registry.addDock(DockContribution{QStringLiteral("dock.script"), QStringLiteral("脚本 · Lua 5.4"),
+                                      Qt::RightDockWidgetArea, true, 4, nullptr});
+    registry.addDock(DockContribution{QStringLiteral("dock.log"), QStringLiteral("日志"),
+                                      Qt::BottomDockWidgetArea, true, 5, nullptr});
+
     registry.addRibbon(RibbonContribution{QStringLiteral("文件"), {}, {},
         {{QStringLiteral("文件"),
              {{QStringLiteral("file.open"), QStringLiteral("打开文件"), {}, true},

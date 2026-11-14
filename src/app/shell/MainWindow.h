@@ -103,6 +103,7 @@ private:
     void createPlotPage(const QString &kind);
     void buildRibbonWidget(SARibbonPanel *panel, const QString &id, SARibbonBar *ribbon);
     void createDocks();
+    QDockWidget *buildDockWidget(const QString &id, QWidget *parent);
     void createPages();
     void log(const QString &text);
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);

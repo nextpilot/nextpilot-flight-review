@@ -20,6 +20,11 @@ void Registry::addAction(const QString &id, std::function<void(const ActionConte
     m_actions.push_back({id, std::move(handler)});
 }
 
+void Registry::addDock(const DockContribution &dock)
+{
+    m_docks.push_back(dock);
+}
+
 void Registry::addLoader(const PsPluginDescriptor *descriptor)
 {
     if (descriptor && !m_loaders.contains(descriptor))

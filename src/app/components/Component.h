@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QJsonObject>
+#include <Qt>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -53,6 +54,16 @@ struct RibbonContribution
     int order = 1000;
 };
 
+struct DockContribution
+{
+    QString id;
+    QString title;
+    Qt::DockWidgetArea area = Qt::LeftDockWidgetArea;
+    bool visible = true;
+    int order = 0;
+    std::function<QWidget *(QWidget *parent)> create; // 为空时由宿主按 id 构建内置面板
+};
+
 struct ActionContext
 {
     QWidget *parent = nullptr;
@@ -75,16 +86,19 @@ public:
     void addRibbon(const RibbonContribution &ribbon);
     void addAction(const QString &id, std::function<void(const ActionContext &)> handler);
     void addLoader(const PsPluginDescriptor *descriptor);
+    void addDock(const DockContribution &dock);
 
     const ProtocolContribution *protocol(const QString &kind) const;
     const QVector<RibbonContribution> &ribbon() const { return m_ribbon; }
     const QVector<const PsPluginDescriptor *> &loaders() const { return m_loaders; }
+    const QVector<DockContribution> &docks() const { return m_docks; }
     bool invoke(const QString &action, const ActionContext &ctx) const;
 
 private:
     QVector<ProtocolContribution> m_protocols;
     QVector<RibbonContribution> m_ribbon;
     QVector<const PsPluginDescriptor *> m_loaders;
+    QVector<DockContribution> m_docks;
     QVector<QPair<QString, std::function<void(const ActionContext &)>>> m_actions;
 };
 
