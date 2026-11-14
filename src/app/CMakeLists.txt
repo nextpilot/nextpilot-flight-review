@@ -35,6 +35,7 @@ add_executable(plotscope_app
   commands/CommandRegistry.cpp
   components/Component.cpp
   components/PluginComponent.cpp
+  components/ShellComponent.cpp
   video/VideoSyncWidget.cpp
   plugin_host/DialogEngine.h
   plugin_host/DialogEngine.cpp

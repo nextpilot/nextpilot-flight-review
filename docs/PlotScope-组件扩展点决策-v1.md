@@ -55,16 +55,17 @@
 
 ### 第二阶段：组件扩展点重构
 
-1. 命令 ID 化：文件、数据、绘图、脚本、视图入口先从 `MainWindow` lambda 迁到 `CommandRegistry`。
-2. 简单页迁移：文件、数据、脚本、视图改为 `component.json` 的 Ribbon 贡献。
-3. 绘图页单独做宿主 `plotGallery`，再声明挂载。
-4. Dock 改为 `DockContribution`，宿主统一建容器。
-5. 删除 `MainWindow` 中剩余的 `addCategoryPage` / `addDockWidget` 硬编码。
-6. 内置组件与外部插件统一从 manifest 构建 `ContributionIndex`。
+1. 命令 ID 化：文件、数据、绘图、脚本、视图入口先从 `MainWindow` lambda 迁到 `CommandRegistry`。**已完成基础入口**；数据页“来源”仍由插件列表动态生成。
+2. 简单页迁移：文件、数据、脚本、视图改为 Ribbon 贡献。**已完成 文件 / 脚本 / 视图**（`ShellComponent`，多面板）；数据页因含来源画廊暂留宿主。
+3. 绘图页单独做宿主 `plotGallery`，再声明挂载。**未完成**。
+4. Dock 改为 `DockContribution`，宿主统一建容器。**未完成**。
+5. 删除 `MainWindow` 中剩余的 `addCategoryPage` / `addDockWidget` 硬编码。**部分**：文件/脚本/协议/视图页已由贡献生成，数据/绘图页仍手写。
+6. 内置组件与外部插件统一从 manifest 构建 `ContributionIndex`。**未完成**：当前仍手写 `addRibbon/addAction`，Ribbon 页已支持多面板与命令 ID。
 
 ## 当前状态
 
-- `ComponentRegistry`、`CustomProtocolComponent`、`PluginComponent` 已存在，但只是协议页试点。
-- 文件、数据、绘图、脚本、视图五页与全部 Dock 仍写死在 `MainWindow`。
-- `ProtocolDocument` 类型已抽出，`SequentialCodec` 已使用；编辑器尚未改为消费该模型。
+- `ComponentRegistry`、`CustomProtocolComponent`、`PluginComponent`、`ShellComponent` 已存在。
+- 文件、脚本、视图页由 `ShellComponent` 贡献；协议页由 `CustomProtocolComponent` 贡献。
+- 数据页、绘图页仍写死在 `MainWindow`，全部 Dock 也仍写死。
+- `ProtocolDocument` 类型与顺序段编辑器已统一消费该模型。
 - 本文件只记录决策与顺序，不代表组件扩展点重构已完成。

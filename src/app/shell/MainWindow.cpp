@@ -5,6 +5,7 @@
 #include "app/cache/DatasetCache.h"
 #include "data_input/DataInputRegistry.h"
 #include "components/Component.h"
+#include "components/ShellComponent.h"
 #include "components/PluginComponent.h"
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
 #include "components/custom_protocol/CustomProtocolComponent.h"
@@ -1263,6 +1264,8 @@ MainWindow::MainWindow(QWidget *parent)
     hostServices.configDir = [] {
         return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     };
+    ps::components::ShellComponent shellComponent;
+    shellComponent.contribute(m_components, hostServices);
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
     ps::components::CustomProtocolComponent customProtocol;
     customProtocol.contribute(m_components, hostServices);
@@ -1473,22 +1476,43 @@ QWidget *MainWindow::createRibbon()
         return [this, id, arg] { m_commands.invoke(id, ps::commands::CommandContext{this, arg}); };
     };
 
+    // 组件贡献的菜单页：一个页面可拆多个面板；页内动作只写命令 ID。
+    auto renderPage = [&](const QString &title, int order = 1000) -> bool {
+        bool any = false;
+        SARibbonCategory *cat = nullptr;
+        for (const auto &page : m_components.ribbon())
+        {
+            if (page.page != title || page.order > order)
+                continue;
+            if (!cat)
+            {
+                cat = ribbon->addCategoryPage(title);
+                any = true;
+            }
+            const QVector<ps::components::RibbonPanel> panels =
+                page.panels.isEmpty() ? QVector<ps::components::RibbonPanel>{
+                    ps::components::RibbonPanel{page.panel, page.items}} : page.panels;
+            for (const auto &panelSpec : panels)
+            {
+                auto *panel = cat->addPanel(panelSpec.title);
+                for (const auto &item : panelSpec.items)
+                {
+                    auto fn = [this, action = item.action, arg = item.arg] {
+                        if (!m_commands.invoke(action, ps::commands::CommandContext{this, arg}))
+                            m_components.invoke(action, ps::components::ActionContext{this});
+                    };
+                    if (item.large)
+                        addLarge(panel, item.label, fn, this);
+                    else
+                        addSmall(panel, item.label, fn, this);
+                }
+            }
+        }
+        return any;
+    };
+
     // 文件
-    {
-        auto *cat = ribbon->addCategoryPage(QStringLiteral("文件"));
-        auto *pLayout = cat->addPanel(QStringLiteral("文件"));
-        addLarge(pLayout, QStringLiteral("打开文件"), run(QStringLiteral("file.open")), this);
-        addLarge(pLayout, QStringLiteral("导入布局"), run(QStringLiteral("file.importLayout")), this);
-        addLarge(pLayout, QStringLiteral("设置"), run(QStringLiteral("file.settings")), this);
-
-        auto *pExport = cat->addPanel(QStringLiteral("导出"));
-        addLarge(pExport, QStringLiteral("保存布局"), run(QStringLiteral("file.saveLayout")), this);
-        addSmall(pExport, QStringLiteral("导出设置"), run(QStringLiteral("file.exportSettings")), this);
-        addSmall(pExport, QStringLiteral("导出数据"), run(QStringLiteral("file.exportData")), this);
-
-        auto *pShot = cat->addPanel(QStringLiteral("截图"));
-        addLarge(pShot, QStringLiteral("截图当前页"), run(QStringLiteral("file.screenshot")), this);
-    }
+    renderPage(QStringLiteral("文件"));
 
     // 数据：常用操作在左，来源选择在右；来源库压成一行，弹窗按文件/实时分组
     {
@@ -1792,40 +1816,20 @@ QWidget *MainWindow::createRibbon()
     }
 
     // 脚本
-    {
-        auto *cat = ribbon->addCategoryPage(QStringLiteral("脚本"));
-        auto *p = cat->addPanel(QStringLiteral("Lua"));
-        addLarge(p, QStringLiteral("运行"), run(QStringLiteral("script.run")), this);
-        addSmall(p, QStringLiteral("格式化"), run(QStringLiteral("script.format")), this);
-    }
+    renderPage(QStringLiteral("脚本"));
 
-    // 组件贡献的菜单页
-    for (const auto &page : m_components.ribbon())
-    {
-        auto *cat = ribbon->addCategoryPage(page.page);
-        auto *panel = cat->addPanel(page.panel);
-        for (const auto &item : page.items)
-        {
-            auto fn = [this, action = item.action] {
-                if (!m_commands.invoke(action, ps::commands::CommandContext{this}))
-                    m_components.invoke(action, ps::components::ActionContext{this});
-            };
-            if (item.large)
-                addLarge(panel, item.label, fn, this);
-            else
-                addSmall(panel, item.label, fn, this);
-        }
-    }
+    // 组件贡献的协议页（其它未知页最后补）
+    renderPage(QStringLiteral("协议"));
 
     // 视图
+    renderPage(QStringLiteral("视图"));
+
+    for (const auto &page : m_components.ribbon())
     {
-        auto *cat = ribbon->addCategoryPage(QStringLiteral("视图"));
-        auto *p = cat->addPanel(QStringLiteral("面板"));
-        addLarge(p, QStringLiteral("数据源"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.src")), this);
-        addSmall(p, QStringLiteral("属性"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.prop")), this);
-        addSmall(p, QStringLiteral("脚本"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.script")), this);
-        addSmall(p, QStringLiteral("日志"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.log")), this);
-        addSmall(p, QStringLiteral("视频"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.video")), this);
+        const QStringList known = {QStringLiteral("文件"), QStringLiteral("脚本"),
+                                   QStringLiteral("协议"), QStringLiteral("视图")};
+        if (!known.contains(page.page))
+            renderPage(page.page);
     }
 
     // 右侧芯片位：只读状态摘要，跟随实际数据源刷新

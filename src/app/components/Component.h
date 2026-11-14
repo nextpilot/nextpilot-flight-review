@@ -33,7 +33,14 @@ struct RibbonItem
 {
     QString action;
     QString label;
+    QString arg;
     bool large = true;
+};
+
+struct RibbonPanel
+{
+    QString title;
+    QVector<RibbonItem> items;
 };
 
 struct RibbonContribution
@@ -41,6 +48,8 @@ struct RibbonContribution
     QString page;
     QString panel;
     QVector<RibbonItem> items;
+    QVector<RibbonPanel> panels;
+    int order = 1000;
 };
 
 struct ActionContext
