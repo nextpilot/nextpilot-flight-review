@@ -13,7 +13,7 @@ static SCHEMA: &str = r#"{"id":"data_loader_rustcsv","title":"加载 CSV（Rust�
 {"key":"skip_rows","type":"int","label":"跳过开头行","default":0,"min":0,"max":1000}]}"#;
 
 static DEFAULTS: &str = r#"{"delimiter":"auto","has_header":true,"skip_rows":0}"#;
-static MANIFEST: &str = r#"{"id":"data_loader_rustcsv","name":"CSV (Rust)","version":"0.1.0","sdk":"4","family":"data_loader","kind":"file","entry":"ps_extension_entry_data_loader_rustcsv"}"#;
+static MANIFEST: &[u8] = b"{\"id\":\"data_loader_rustcsv\",\"name\":\"CSV (Rust)\",\"version\":\"0.1.0\",\"sdk\":\"4\",\"family\":\"data_loader\",\"kind\":\"file\",\"entry\":\"ps_extension_entry_data_loader_rustcsv\"}\0";
 
 fn cstr(s: &str) -> CString {
     CString::new(s).unwrap_or_default()

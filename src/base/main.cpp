@@ -3,8 +3,12 @@
 #include <QDir>
 #include <QFile>
 #include <QSettings>
+#include <QStringList>
+
+#include <cstdio>
 #include <QStandardPaths>
 
+#include "host/extension/Component.h"
 #include "host/extension/DataInputRegistry.h"
 #include "shell/Theme.h"
 
@@ -29,12 +33,26 @@ int main(int argc, char **argv)
     // 动态扩展：安装目录 + 用户目录 + 环境变量，app 不认具体格式
     QStringList extensionDirs;
     extensionDirs << QCoreApplication::applicationDirPath() + QStringLiteral("/extensions");
+    extensionDirs << QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/plotscope/extensions");
     extensionDirs << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/extensions");
     const QString envPath = qEnvironmentVariable("PLOTSCOPE_EXTENSION_PATH");
     if (!envPath.isEmpty())
         extensionDirs << envPath.split(QDir::listSeparator(), Qt::SkipEmptyParts);
     for (const QString &e : DataInputRegistry::instance().scanExtensions(extensionDirs))
         qWarning("[data_input] %s", qPrintable(e));
+
+    if (QCoreApplication::arguments().contains(QStringLiteral("--list-extensions")))
+    {
+        const auto &entries = ps::components::ExtensionRegistry::instance().extensions();
+        for (const auto &entry : entries)
+        {
+            const auto &d = entry.descriptor;
+            printf("%s\t%s\t%s\t%s\n", qPrintable(d.id),
+                   d.type == ps::components::ExtensionType::Builtin ? "builtin" : "dynamic",
+                   qPrintable(d.version), qPrintable(d.libraryPath));
+        }
+        return 0;
+    }
 
     MainWindow win;
     win.show();

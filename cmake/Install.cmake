@@ -4,8 +4,6 @@ install(DIRECTORY "${PROJECT_SOURCE_DIR}/src/base/resources/scripts/"
         DESTINATION share/plotscope/scripts
         PATTERN "*.lua" 
         PATTERN "*.yaml")
-install(DIRECTORY "${PS_EXTENSION_DIR}/"
-        DESTINATION lib/plotscope/extensions
-        PATTERN "CMakeLists.txt" EXCLUDE
-        PATTERN "*.cpp" EXCLUDE
-        PATTERN "*.h" EXCLUDE)
+install(DIRECTORY "${PS_EXTENSION_OUTPUT_DIR}/"
+        DESTINATION bin/extensions
+        OPTIONAL)

@@ -159,7 +159,7 @@ if(CARGO_EXECUTABLE)
   endif()
   set(RUST_EXTENSION_DIR ${CMAKE_BINARY_DIR}/rust-extension)
   set(RUST_EXTENSION_SO ${RUST_EXTENSION_DIR}/${RUST_EXTENSION_NAME})
-  set(RUST_APP_EXTENSION_DIR ${CMAKE_BINARY_DIR}/src/base/ui/extensions/data_loader_rustcsv)
+  set(RUST_APP_EXTENSION_DIR ${PS_EXTENSION_OUTPUT_DIR}/data_loader_rustcsv)
   add_custom_command(OUTPUT ${RUST_EXTENSION_SO}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${RUST_EXTENSION_DIR} ${RUST_APP_EXTENSION_DIR}
     COMMAND ${CARGO_EXECUTABLE} build --manifest-path
