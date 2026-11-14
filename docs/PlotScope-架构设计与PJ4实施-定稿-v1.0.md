@@ -651,7 +651,7 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 | **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） | **基本完成**：ULog/DFLog/ASC/BLF、MAVLink UDP/raw/`.tlog` 回放、缓存、外部插件 manifest/ABI 已落地；ASC/BLF 支持可选 DBC 信号解码 |
 | **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 | **部分完成**：12 算子、四元数、Lua 5.4、OEM7、NMEA/UBX 已落地；MDF4、自绘滚动面板未做 |
 | **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 | **部分完成**：MCAP 加载/录制、多画布、时间对齐、rosbag2 `.db3`、双 Y 轴、视频同步已落地 |
-| **M4** | 协议编辑器（Loader 的 options 子窗口：位域/CRC/联动）+ 模板编译 | 3 周 | **基础落地**：`.psproto` 固定帧/位域/CRC16 + 模板编辑器（JSON/字段表/hex 试算） |
+| **M4** | 协议编辑器（Loader 的 options 子窗口：位域/CRC/联动）+ 模板编译 | 3 周 | **部分完成**：`.psproto` 固定/变长帧、位域、CRC16、模板编辑器、字段-JSON/hex 联动已落地；模板热编译未做 |
 | **M5** | 仪表页、布局 `.psl`、导出 | 2 周 | **完成**：图型仪表、独立仪表页（地平仪/罗盘/表盘）、`.psl`、PNG/CSV 导出 |
 
 **页面/面板形态**：单窗口多页（页签挂在绘图区顶部，只跨绘图区宽度），每页一棵切分树；停靠面板可浮动；页数不做硬限制，按内存策略回收。
@@ -977,6 +977,8 @@ public:
 - M3：新增 `data_loader_rosbag2` 直读 `.db3`（SQLite topics/messages + CDR），支持 Float64/Float32/Int32/Int64/Bool/String/Imu/Twist/PoseStamped/Odometry/NavSatFix/Header；未识别类型只出 `payload_bytes`。rosbag2 目录也可加载。
 - P4：GpsMap 图型：经纬度网格、轨迹连线、起终点标记，无在线瓦片依赖。
 - P4：Surface3D 图型：多序列按 Z 轴堆叠的瀑布曲面，替代原 XY 占位。
+- M4：`data_loader_frame` 支持固定帧与变长帧（`length` 偏移/字节数/端序/是否含头）；`ProtocolEditorDialog` 点击字段定位 JSON 与 hex 字节。
+- P4：新增 `data_loader_rosbag2`（`.db3` 常见消息）。
 - P4：新增 `data_loader_binary`，按扩展名解析 CBOR（`.cbor`）与 MessagePack（`.msgpack/.mpk`），数值字段扁平为 `cbor.*` / `msgpack.*`，支持数组批量记录与连续多条记录。
 - M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 插件原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
