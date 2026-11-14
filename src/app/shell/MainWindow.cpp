@@ -1426,7 +1426,7 @@ void MainWindow::createDocks()
     m_srcTabs->addTab(QStringLiteral("消息 0"));
     m_srcTabs->setStyleSheet(QStringLiteral(
         "QTabBar{background:#161b20;border-bottom:1px solid #232b33;}"
-        "QTabBar::tab{background:transparent;color:#5d6c77;font-size:11px;padding:5px 12px;"
+        "QTabBar::tab{background:transparent;color:#5d6c77;font-size:12px;padding:6px 14px;"
         "border:0;border-bottom:2px solid transparent;}"
         "QTabBar::tab:hover{color:#c8d2da;}"
         "QTabBar::tab:selected{color:#f2b134;border-bottom:2px solid #f2b134;}"));
@@ -1709,7 +1709,7 @@ void MainWindow::createDocks()
     logDock->setWidget(m_logView);
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
 
-    resizeDocks({logDock}, {150}, Qt::Vertical);
+    resizeDocks({logDock}, {96}, Qt::Vertical);
 }
 
 // dock 标题栏在部分平台/主题下会画成浅灰，QSS 与 palette 都压不住：
@@ -3013,13 +3013,19 @@ void MainWindow::createPages()
     auto *page1 = new QSplitter(Qt::Vertical, this);
     page1->setHandleWidth(6);
     page1->addWidget(makeCanvas(QStringLiteral("姿态角 · plot")));
-    page1->addWidget(makeCanvas(QStringLiteral("振动 · plot")));
-    page1->addWidget(makeCanvas(QStringLiteral("总线 · plot")));
+    auto *vib = makeCanvas(QStringLiteral("振动 · plot"));
+    vib->clearChannels();
+    page1->addWidget(vib);
+    auto *bus = makeCanvas(QStringLiteral("总线 · plot"));
+    bus->clearChannels();
+    page1->addWidget(bus);
     page1->setSizes({300, 220, 220});
     m_pages->addTab(page1, QStringLiteral("姿态与振动"));
 
     // 页 2：单 plot
-    m_pages->addTab(makeCanvas(QStringLiteral("车辆总线 · plot")), QStringLiteral("车辆总线"));
+    auto *busPage = makeCanvas(QStringLiteral("车辆总线 · plot"));
+    busPage->clearChannels();
+    m_pages->addTab(busPage, QStringLiteral("车辆总线"));
 
     // 页 4：仪表大屏，三块独立画布分别走地平仪 / 罗盘 / 表盘模式。
     auto *dash = new QSplitter(Qt::Horizontal, this);
@@ -3734,7 +3740,12 @@ void MainWindow::importLayoutFrom(const QString &path)
         restoreGeometry(geo);
     const QByteArray docks = QByteArray::fromBase64(root.value(QStringLiteral("docks")).toString().toLatin1());
     if (!docks.isEmpty())
+    {
         restoreState(docks);
+        // 旧布局常把日志区拉到 150+，空白挤占画布；恢复后统一收到 96。
+        if (auto *logDock = findChild<QDockWidget *>(QStringLiteral("dock.log")))
+            resizeDocks({logDock}, {96}, Qt::Vertical);
+    }
 
     if (m_activeSource >= 0)
         switchSource(m_activeSource);

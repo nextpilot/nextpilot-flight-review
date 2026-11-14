@@ -1880,6 +1880,9 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
         s.srcPath = srcPath;
         m_series.append(s);
     }
+    // 布局里的通道在当前数据源已不存在时，清掉旧标题，避免“run1 · roll”空画布误导。
+    if (m_series.isEmpty() && !arr.isEmpty())
+        m_title = QStringLiteral("空画布 · 拖入通道");
     m_t0 = o.value(QStringLiteral("t0")).toDouble(m_t0);
     m_t1 = o.value(QStringLiteral("t1")).toDouble(m_t1);
     m_yMin = o.value(QStringLiteral("yMin")).toDouble(m_yMin);
