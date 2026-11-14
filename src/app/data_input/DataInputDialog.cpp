@@ -1,6 +1,7 @@
 #include "data_input/DataInputDialog.h"
 
 #include "data_input/DataInputPlugin.h"
+#include "data_input/ProtocolEditorDialog.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -17,6 +18,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -517,12 +519,31 @@ QWidget *DataInputDialog::createEditor(const QJsonObject &f, const QJsonValue &v
         auto *browse = new QPushButton(QStringLiteral("浏览…"), row);
         h->addWidget(line, 1);
         h->addWidget(browse);
+        QPushButton *edit = nullptr;
+        if (key == QLatin1String("protocol"))
+        {
+            edit = new QPushButton(QStringLiteral("编辑…"), row);
+            h->addWidget(edit);
+        }
         if (m_fixedPath && key == QLatin1String("filepath"))
         {
             line->setText(m_path);
             line->setReadOnly(true);
             browse->setVisible(false);
         }
+        if (edit)
+            connect(edit, &QPushButton::clicked, this, [this, line] {
+                const QString path = line->text().trimmed();
+                if (path.isEmpty())
+                {
+                    QMessageBox::information(this, QStringLiteral("协议模板"),
+                                             QStringLiteral("先选择一个 .psproto 模板文件"));
+                    return;
+                }
+                ProtocolEditorDialog dlg(path, this);
+                if (dlg.exec() == QDialog::Accepted)
+                    line->setText(dlg.templatePath());
+            });
         connect(browse, &QPushButton::clicked, this, [this, line, f] {
             const QString filter = f.value(QStringLiteral("filter")).toString(m_fileFilter);
             const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择文件"),

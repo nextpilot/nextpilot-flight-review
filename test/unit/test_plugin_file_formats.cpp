@@ -17,6 +17,7 @@ extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_ubx(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_json(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_binary(void);
 extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_mdf4(void);
+extern "C" const PsPluginDescriptor *ps_plugin_entry_data_loader_frame(void);
 
 namespace {
 
@@ -41,6 +42,19 @@ bool loadAndCheck(const PsPluginDescriptor *d, const std::string &path, uint32_t
         return false;
     }
     return true;
+}
+
+bool loadOptsAndCheck(const PsPluginDescriptor *d, const std::string &path,
+                      const std::string &opts, uint32_t minCh)
+{
+    void *raw = nullptr;
+    char err[256] = {0};
+    const int32_t rc = d->loader->load(path.c_str(), opts.c_str(), ps_host_api(), &raw, err, sizeof(err));
+    if (rc != 0) { std::cerr << "load failed: " << err << "\n"; return false; }
+    PsDataset *ds = static_cast<PsDataset *>(raw);
+    const uint32_t n = ps_dataset_channel_count(ds);
+    ps_dataset_free(ds);
+    return n >= minCh;
 }
 
 bool loadDbcAndCheck(const PsPluginDescriptor *d, const std::string &path, const std::string &dbc,
@@ -101,6 +115,9 @@ int main()
     if (!loadAndCheck(ps_plugin_entry_data_loader_binary(), fix + "/demo.msgpack", 4))
         return 1;
     if (!loadAndCheck(ps_plugin_entry_data_loader_mdf4(), fix + "/demo.mf4", 2))
+        return 1;
+    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo.frames",
+                          "{\"protocol\":\"" + fix + "/demo.psproto\"}", 2))
         return 1;
 
     // DBC 模式：0x1A0 的两个字节解成命名信号，而不是 b0..b7 原始字节。

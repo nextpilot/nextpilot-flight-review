@@ -1,0 +1,26 @@
+{
+ "frame_size": 14,
+ "sync": [
+  170,
+  85
+ ],
+ "crc16_ccitt": {
+  "offset": 12
+ },
+ "fields": [
+  {
+   "name": "roll",
+   "byte": 2,
+   "bits": 16,
+   "signed": true,
+   "scale": 0.01,
+   "unit": "rad"
+  },
+  {
+   "name": "temp",
+   "byte": 4,
+   "bits": 8,
+   "unit": "C"
+  }
+ ]
+}
