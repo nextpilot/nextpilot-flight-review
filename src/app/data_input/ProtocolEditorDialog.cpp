@@ -257,6 +257,7 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
             rebuildSeqJson();
         }
     };
+    m_seqVarFields->setMinimumHeight(140);
     seriesLayout->addWidget(m_seqVarFields, 1);
     seqLayout->addWidget(seriesBox, 1);
 
