@@ -1,6 +1,7 @@
 #include "ps_plugin_api.h"
 #include "LegacyFileInput.hpp"
 #include "PsLoaderCommon.h"
+#include "SequentialCodec.hpp"
 
 #include <QFile>
 #include <QJsonArray>
@@ -64,6 +65,23 @@ struct LengthSpec
     std::string fieldName;
 };
 
+struct SeqField
+{
+    std::string name;
+    std::string type;
+    std::string lenRef;       // 空 = 固定 len
+    uint32_t len = 1;
+    bool hasValue = false;
+    uint64_t value = 0;
+    bool hasCheck = false;
+    std::string checkAlgo;    // crc8 / crc16
+    std::vector<std::string> checkRefs;
+    bool hidden = false;
+    uint32_t offset = 0;
+    uint32_t size = 0;
+    bool bigEndian = false;
+};
+
 struct Variant
 {
     uint32_t id = 0;
@@ -86,6 +104,8 @@ struct Template
     uint32_t msgIdBit = 0;
     uint32_t msgIdBits = 8;
     std::vector<Variant> variants;
+    bool sequential = false;
+    std::vector<SeqField> seq;
 };
 
 uint16_t crc16(const uint8_t *data, size_t n, uint16_t poly, uint16_t init)
@@ -101,6 +121,102 @@ uint16_t crc16(const uint8_t *data, size_t n, uint16_t poly, uint16_t init)
     return crc;
 }
 
+
+uint8_t crc8(const uint8_t *data, size_t n)
+{
+    uint8_t crc = 0x00;
+    for (size_t i = 0; i < n; ++i)
+    {
+        crc ^= data[i];
+        for (int b = 0; b < 8; ++b)
+            crc = (crc & 0x80) ? static_cast<uint8_t>((crc << 1) ^ 0x07)
+                               : static_cast<uint8_t>(crc << 1);
+    }
+    return crc;
+}
+
+uint64_t readUInt(const uint8_t *p, uint32_t n, bool bigEndian)
+{
+    uint64_t v = 0;
+    if (bigEndian)
+        for (uint32_t i = 0; i < n; ++i) v = (v << 8) | p[i];
+    else
+        for (uint32_t i = 0; i < n; ++i) v |= uint64_t(p[i]) << (8 * i);
+    return v;
+}
+
+bool parseSeqFields(const QJsonArray &arr, Template &t, std::string &err)
+{
+    for (const QJsonValue &vv : arr)
+    {
+        const QJsonObject o = vv.toObject();
+        SeqField f;
+        f.name = o.value(QStringLiteral("name")).toString().toStdString();
+        if (f.name.empty())
+            continue;
+        f.type = o.value(QStringLiteral("type")).toString("uint8").toLower().toStdString();
+        f.bigEndian = f.type.size() > 2 && f.type.substr(f.type.size() - 2) == "be";
+        const QJsonValue lenv = o.value(QStringLiteral("len"));
+        if (lenv.isString())
+            f.lenRef = lenv.toString().toStdString();
+        else
+            f.len = static_cast<uint32_t>(lenv.toInt(1));
+        f.hidden = o.value(QStringLiteral("hidden")).toBool(false);
+        const QJsonValue val = o.value(QStringLiteral("value"));
+        if (!val.isUndefined() && !val.isNull() && !val.isObject() && !val.isArray())
+        {
+            f.hasValue = true;
+            if (val.isString())
+            {
+                QString vs = val.toString();
+                f.value = vs.startsWith(QLatin1String("0x"), Qt::CaseInsensitive)
+                              ? static_cast<uint64_t>(vs.toULongLong(nullptr, 16))
+                              : static_cast<uint64_t>(vs.toDouble());
+            }
+            else
+                f.value = static_cast<uint64_t>(val.toDouble());
+        }
+        const QString chk = o.value(QStringLiteral("check")).toString();
+        if (!chk.isEmpty())
+        {
+            const int lp = chk.indexOf(QLatin1Char('('));
+            const int rp = chk.lastIndexOf(QLatin1Char(')'));
+            if (lp <= 0 || rp <= lp)
+            {
+                err = "check 表达式非法";
+                return false;
+            }
+            f.checkAlgo = chk.left(lp).trimmed().toLower().toStdString();
+            const QString args = chk.mid(lp + 1, rp - lp - 1).trimmed();
+            if (f.checkAlgo == "eq")
+            {
+                f.hasValue = true;
+                f.value = args.startsWith(QLatin1String("0x"), Qt::CaseInsensitive)
+                              ? static_cast<uint64_t>(args.toULongLong(nullptr, 16))
+                              : static_cast<uint64_t>(args.toDouble());
+            }
+            else
+            {
+                f.hasCheck = true;
+                for (const QString &ref : args.split(QLatin1Char(','), Qt::SkipEmptyParts))
+                    f.checkRefs.push_back(ref.trimmed().toStdString());
+                if (f.checkRefs.empty())
+                {
+                    err = "check 引用为空";
+                    return false;
+                }
+            }
+        }
+        t.seq.push_back(f);
+    }
+    if (t.seq.empty())
+    {
+        err = "顺序字段为空";
+        return false;
+    }
+    t.frameSize = 4096;
+    return true;
+}
 
 bool parseFieldObject(const QJsonObject &f, Field &fd, std::string &err)
 {
@@ -159,6 +275,11 @@ bool parseTemplate(const QByteArray &json, Template &t, std::string &err)
         return false;
     }
     const QJsonObject o = doc.object();
+    if (o.value(QStringLiteral("layout")).toString() == QLatin1String("sequential"))
+    {
+        t.sequential = true;
+        return parseSeqFields(o.value(QStringLiteral("fields")).toArray(), t, err);
+    }
     t.frameSize = static_cast<uint32_t>(o.value(QStringLiteral("frame_size")).toInt());
     const QJsonObject lj = o.value(QStringLiteral("length")).toObject();
     if (!lj.isEmpty())
@@ -336,6 +457,169 @@ double fieldValue(const uint8_t *frame, const Field &f)
     return v * f.scale + f.offset;
 }
 
+double seqValue(uint64_t raw, const std::string &type)
+{
+    std::string base = type;
+    if (base.size() > 2 && (base.substr(base.size() - 2) == "le" || base.substr(base.size() - 2) == "be"))
+        base = base.substr(0, base.size() - 2);
+    if (base == "float32" || base == "float")
+    {
+        float v = 0.0f;
+        uint32_t bits = static_cast<uint32_t>(raw);
+        std::memcpy(&v, &bits, sizeof(v));
+        return v;
+    }
+    if (base == "float64" || base == "double")
+    {
+        double v = 0.0;
+        std::memcpy(&v, &raw, sizeof(v));
+        return v;
+    }
+    if (base == "int8") return static_cast<double>(static_cast<int8_t>(raw));
+    if (base == "int16") return static_cast<double>(static_cast<int16_t>(raw));
+    if (base == "int32") return static_cast<double>(static_cast<int32_t>(raw));
+    if (base == "int64") return static_cast<double>(static_cast<int64_t>(raw));
+    return static_cast<double>(raw);
+}
+
+int32_t loadSequential(const QByteArray &bytes, Template &t, const PsHostApi *host, void **dataset,
+                       char *err, uint32_t errCap)
+{
+    std::map<std::string, std::vector<std::pair<double, double>>> acc;
+    double frameIndex = 0;
+    uint64_t rejected = 0;
+    const uint8_t *base = reinterpret_cast<const uint8_t *>(bytes.constData());
+    const size_t total = static_cast<size_t>(bytes.size());
+
+    for (size_t off = 0; off + 1 <= total;)
+    {
+        uint32_t byteOff = 0;
+        bool ok = true;
+        std::map<std::string, uint64_t> vals;
+        std::map<std::string, std::pair<uint32_t, uint32_t>> spans;
+        for (const SeqField &f : t.seq)
+        {
+            uint32_t n = f.len;
+            if (!f.lenRef.empty())
+            {
+                auto it = vals.find(f.lenRef);
+                if (it == vals.end() || it->second == 0 || it->second > 4096)
+                {
+                    ok = false;
+                    break;
+                }
+                n = static_cast<uint32_t>(it->second);
+            }
+            if (n == 0 || n > 4096 || off + byteOff + n > total)
+            {
+                ok = false;
+                break;
+            }
+            const uint64_t raw = readUInt(base + off + byteOff, n, f.bigEndian);
+            if (f.hasValue && raw != f.value)
+            {
+                ok = false;
+                break;
+            }
+            if (f.hasCheck)
+            {
+                uint32_t from = 0xFFFFFFFFu, to = 0;
+                bool refsOk = true;
+                for (const std::string &ref : f.checkRefs)
+                {
+                    auto it = spans.find(ref);
+                    if (it == spans.end())
+                    {
+                        refsOk = false;
+                        break;
+                    }
+                    from = std::min(from, it->second.first);
+                    to = std::max(to, it->second.first + it->second.second - 1);
+                }
+                if (!refsOk || from > to || off + to >= total)
+                {
+                    ok = false;
+                    break;
+                }
+                uint64_t got = 0;
+                if (f.checkAlgo == "crc8")
+                    got = crc8(base + off + from, to - from + 1);
+                else if (f.checkAlgo == "crc16")
+                    got = crc16(base + off + from, to - from + 1, 0x1021, 0xFFFF);
+                else if (f.checkAlgo == "sum" || f.checkAlgo == "xor")
+                {
+                    for (uint32_t i = from; i <= to; ++i)
+                    {
+                        if (f.checkAlgo == "sum")
+                            got += base[off + i];
+                        else
+                            got ^= base[off + i];
+                    }
+                }
+                else
+                {
+                    ok = false;
+                    break;
+                }
+                if (raw != static_cast<uint64_t>(got))
+                {
+                    ok = false;
+                    break;
+                }
+            }
+            vals[f.name] = raw;
+            spans[f.name] = {byteOff, n};
+            byteOff += n;
+        }
+        if (!ok || byteOff == 0)
+        {
+            ++rejected;
+            ++off;
+            continue;
+        }
+
+        double time = frameIndex;
+        for (const SeqField &f : t.seq)
+        {
+            if (f.hidden || f.hasValue || f.hasCheck || !f.lenRef.empty())
+                continue;
+            if (f.size > 8)
+                continue;
+            acc[f.name].push_back({time, seqValue(vals[f.name], f.type)});
+        }
+        ++frameIndex;
+        off += byteOff;
+    }
+
+    if (acc.empty())
+    {
+        psWriteErr(err, errCap, rejected ? "所有帧校验失败" : "没有匹配的帧");
+        return 3;
+    }
+
+    std::vector<PsChannelData> data;
+    for (auto &kv : acc)
+    {
+        PsChannelData ch;
+        ch.name = "frame." + kv.first;
+        for (const auto &p : kv.second)
+        {
+            ch.t.push_back(p.first);
+            ch.v.push_back(p.second);
+        }
+        data.push_back(std::move(ch));
+    }
+    std::string derr;
+    PsDataset *ds = psBuildDataset(data, derr, host);
+    if (!ds)
+    {
+        psWriteErr(err, errCap, derr);
+        return 4;
+    }
+    *dataset = ds;
+    return 0;
+}
+
 int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host, void **dataset,
                   char *err, uint32_t errCap)
 {
@@ -353,13 +637,7 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
         psWriteErr(err, errCap, "无法打开协议模板");
         return 1;
     }
-    Template tpl;
-    std::string perr;
-    if (!parseTemplate(pf.readAll(), tpl, perr))
-    {
-        psWriteErr(err, errCap, perr);
-        return 2;
-    }
+    const QByteArray protoJson = pf.readAll();
 
     QFile f(QString::fromUtf8(path));
     if (!f.open(QIODevice::ReadOnly))
@@ -368,6 +646,16 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
         return 1;
     }
     const QByteArray bytes = f.readAll();
+    if (looksSequentialProtocol(protoJson))
+        return decodeSequentialFrames(bytes, protoJson, host, dataset, err, errCap);
+
+    Template tpl;
+    std::string perr;
+    if (!parseTemplate(protoJson, tpl, perr))
+    {
+        psWriteErr(err, errCap, perr);
+        return 2;
+    }
 
     std::map<std::string, std::vector<std::pair<double, double>>> acc;
     double frameIndex = 0;

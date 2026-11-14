@@ -82,10 +82,114 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
     : QDialog(parent), m_path(path)
 {
     setWindowTitle(QStringLiteral("协议模板编辑器"));
-    resize(940, 760);
+    resize(1060, 900);
 
     auto *root = new QVBoxLayout(this);
     m_tabs = new QTabWidget(this);
+
+    /* ---- 顺序段协议页：字段 / 长度 / 类型 / 取值校验 ---- */
+    m_seqPage = new QWidget(m_tabs);
+    auto *seqLayout = new QVBoxLayout(m_seqPage);
+    auto *seqHead = new QGroupBox(QStringLiteral("协议"), m_seqPage);
+    auto *seqForm = new QFormLayout(seqHead);
+    m_seqName = new QLineEdit(seqHead);
+    m_seqDesc = new QLineEdit(seqHead);
+    m_seqMaxsize = new QSpinBox(seqHead);
+    m_seqMaxsize->setRange(2, 65535);
+    m_seqMaxsize->setValue(4096);
+    m_seqEndian = new QComboBox(seqHead);
+    m_seqEndian->addItems({QStringLiteral("little"), QStringLiteral("big")});
+    m_seqTimestamp = new QLineEdit(seqHead);
+    m_seqTimestamp->setPlaceholderText(QStringLiteral("如 day*24*3600 + sec + ms/1000"));
+    m_seqTsUnit = new QComboBox(seqHead);
+    m_seqTsUnit->addItems({QStringLiteral("s"), QStringLiteral("ms"), QStringLiteral("us")});
+    auto *tsRow = new QHBoxLayout;
+    tsRow->addWidget(m_seqTimestamp, 1);
+    tsRow->addWidget(new QLabel(QStringLiteral("单位"), seqHead));
+    tsRow->addWidget(m_seqTsUnit);
+    seqForm->addRow(QStringLiteral("名称"), m_seqName);
+    seqForm->addRow(QStringLiteral("描述"), m_seqDesc);
+    seqForm->addRow(QStringLiteral("最大帧长"), m_seqMaxsize);
+    seqForm->addRow(QStringLiteral("字节序"), m_seqEndian);
+    seqForm->addRow(QStringLiteral("时间戳表达式"), tsRow);
+    seqLayout->addWidget(seqHead);
+
+    auto *seqBar = new QHBoxLayout;
+    auto *seqAdd = new QPushButton(QStringLiteral("+ 段"), m_seqPage);
+    auto *seqDel = new QPushButton(QStringLiteral("− 段"), m_seqPage);
+    auto *seqUp = new QPushButton(QStringLiteral("↑"), m_seqPage);
+    auto *seqDown = new QPushButton(QStringLiteral("↓"), m_seqPage);
+    auto *seqHint = new QLabel(QStringLiteral("长度=元素个数，类型=元素类型；校验省略算子即等于，多条用 ; 分隔"), m_seqPage);
+    seqHint->setStyleSheet(QStringLiteral("color:#8b949e;"));
+    seqBar->addWidget(seqAdd);
+    seqBar->addWidget(seqDel);
+    seqBar->addWidget(seqUp);
+    seqBar->addWidget(seqDown);
+    seqBar->addWidget(seqHint, 1);
+    seqLayout->addLayout(seqBar);
+
+    m_seqFields = new QTableWidget(0, 4, m_seqPage);
+    m_seqFields->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("长度"),
+                                            QStringLiteral("类型"), QStringLiteral("取值 / 校验")});
+    m_seqFields->horizontalHeader()->setStretchLastSection(true);
+    m_seqFields->setColumnWidth(0, 150);
+    m_seqFields->setColumnWidth(1, 110);
+    m_seqFields->setColumnWidth(2, 100);
+    m_seqFields->setSelectionBehavior(QAbstractItemView::SelectRows);
+    seqLayout->addWidget(m_seqFields, 2);
+
+    auto *seriesBox = new QGroupBox(QStringLiteral("系列协议"), m_seqPage);
+    auto *seriesLayout = new QVBoxLayout(seriesBox);
+    auto *seriesTop = new QHBoxLayout;
+    m_seqSeries = new QCheckBox(QStringLiteral("启用"), seriesBox);
+    m_seqSelector = new QLineEdit(seriesBox);
+    m_seqSelector->setPlaceholderText(QStringLiteral("selector，如 msgid & 0x7F"));
+    m_seqPayload = new QLineEdit(seriesBox);
+    m_seqPayload->setPlaceholderText(QStringLiteral("payload 段名"));
+    m_seqFallback = new QComboBox(seriesBox);
+    m_seqFallback->addItems({QStringLiteral("reject"), QStringLiteral("raw")});
+    seriesTop->addWidget(m_seqSeries);
+    seriesTop->addWidget(new QLabel(QStringLiteral("selector"), seriesBox));
+    seriesTop->addWidget(m_seqSelector, 1);
+    seriesTop->addWidget(new QLabel(QStringLiteral("payload"), seriesBox));
+    seriesTop->addWidget(m_seqPayload);
+    seriesTop->addWidget(new QLabel(QStringLiteral("fallback"), seriesBox));
+    seriesTop->addWidget(m_seqFallback);
+    seriesLayout->addLayout(seriesTop);
+
+    auto *varTop = new QHBoxLayout;
+    auto *varAdd = new QPushButton(QStringLiteral("+ 变体"), seriesBox);
+    auto *varDel = new QPushButton(QStringLiteral("− 变体"), seriesBox);
+    varAdd->setMaximumWidth(84);
+    varDel->setMaximumWidth(84);
+    m_seqVariants = new QTableWidget(0, 2, seriesBox);
+    m_seqVariants->setHorizontalHeaderLabels({QStringLiteral("取值"), QStringLiteral("变体名")});
+    m_seqVariants->setMinimumWidth(230);
+    m_seqVariants->setMaximumWidth(260);
+    m_seqVariants->setMinimumHeight(110);
+    m_seqVariants->setMaximumHeight(110);
+    varTop->addWidget(varAdd);
+    varTop->addWidget(varDel);
+    varTop->addWidget(m_seqVariants);
+    varTop->addWidget(new QLabel(QStringLiteral("变体段"), seriesBox));
+    varTop->addStretch(1);
+    seriesLayout->addLayout(varTop);
+
+    m_seqVarFields = new QTableWidget(0, 4, seriesBox);
+    m_seqVarFields->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("长度"),
+                                               QStringLiteral("类型"), QStringLiteral("取值 / 校验")});
+    m_seqVarFields->horizontalHeader()->setStretchLastSection(true);
+    m_seqVarFields->setColumnWidth(0, 150);
+    m_seqVarFields->setColumnWidth(1, 110);
+    m_seqVarFields->setColumnWidth(2, 100);
+    seriesLayout->addWidget(m_seqVarFields, 1);
+    seqLayout->addWidget(seriesBox, 1);
+
+    m_seqPreview = new QLabel(m_seqPage);
+    m_seqPreview->setWordWrap(true);
+    m_seqPreview->setStyleSheet(QStringLiteral("color:#8b949e;"));
+    seqLayout->addWidget(m_seqPreview);
+    m_tabs->addTab(m_seqPage, QStringLiteral("协议"));
 
     auto *design = new QWidget(m_tabs);
     auto *dv = new QVBoxLayout(design);
@@ -214,6 +318,19 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
     else
         m_json->setPlainText(QStringLiteral("{\n  \"name\": \"新协议\",\n  \"frame_size\": 0,\n  \"sync\": [],\n  \"fields\": []\n}"));
     refreshDesignFromJson();
+    const QJsonObject initDoc = currentTemplate();
+    m_seqMode = initDoc.contains(QStringLiteral("segments"));
+    if (m_seqMode)
+    {
+        m_tabs->setTabVisible(1, false);
+        m_tabs->setTabVisible(2, false);
+        m_tabs->setCurrentIndex(0);
+        refreshSeqFromJson();
+    }
+    else
+    {
+        m_tabs->setTabVisible(0, false);
+    }
 
     connect(m_name, &QLineEdit::textEdited, this, [this] { rebuildJsonFromDesign(); });
     connect(m_frameKind, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
@@ -312,9 +429,110 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
     connect(addVarField, &QPushButton::clicked, this, [this] { addVariantField(); });
 
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int) {
-        if (m_tabs->currentWidget() != m_json)
+        if (m_tabs->currentWidget() == m_json)
+            return;
+        if (m_seqMode)
+            refreshSeqFromJson();
+        else
             refreshDesignFromJson();
     });
+    connect(m_seqName, &QLineEdit::textEdited, this, [this] { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqDesc, &QLineEdit::textEdited, this, [this] { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqMaxsize, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int) { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqEndian, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqTimestamp, &QLineEdit::textEdited, this, [this] { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqTsUnit, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqFields, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *) {
+        if (!m_syncing)
+            rebuildSeqJson();
+    });
+    connect(seqAdd, &QPushButton::clicked, this, [this] {
+        addSeqRow(m_seqFields);
+        rebuildSeqJson();
+    });
+    connect(seqDel, &QPushButton::clicked, this, [this] {
+        const int r = m_seqFields->currentRow();
+        if (r >= 0)
+        {
+            m_seqFields->removeRow(r);
+            rebuildSeqJson();
+        }
+    });
+    connect(seqUp, &QPushButton::clicked, this, [this] {
+        const int r = m_seqFields->currentRow();
+        if (r > 0)
+        {
+            for (int c = 0; c < m_seqFields->columnCount(); ++c)
+            {
+                QTableWidgetItem *a = m_seqFields->takeItem(r, c);
+                QTableWidgetItem *b = m_seqFields->takeItem(r - 1, c);
+                m_seqFields->setItem(r - 1, c, a);
+                m_seqFields->setItem(r, c, b);
+            }
+            m_seqFields->setCurrentCell(r - 1, 0);
+            rebuildSeqJson();
+        }
+    });
+    connect(seqDown, &QPushButton::clicked, this, [this] {
+        const int r = m_seqFields->currentRow();
+        if (r >= 0 && r + 1 < m_seqFields->rowCount())
+        {
+            for (int c = 0; c < m_seqFields->columnCount(); ++c)
+            {
+                QTableWidgetItem *a = m_seqFields->takeItem(r, c);
+                QTableWidgetItem *b = m_seqFields->takeItem(r + 1, c);
+                m_seqFields->setItem(r + 1, c, a);
+                m_seqFields->setItem(r, c, b);
+            }
+            m_seqFields->setCurrentCell(r + 1, 0);
+            rebuildSeqJson();
+        }
+    });
+    connect(m_seqSeries, &QCheckBox::toggled, this, [this](bool) {
+        if (!m_syncing)
+            rebuildSeqJson();
+    });
+    connect(m_seqSelector, &QLineEdit::textEdited, this, [this] { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqPayload, &QLineEdit::textEdited, this, [this] { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqFallback, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { if (!m_syncing) rebuildSeqJson(); });
+    connect(m_seqVariants, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *) {
+        if (!m_syncing)
+            rebuildSeqJson();
+    });
+    connect(m_seqVariants, &QTableWidget::currentCellChanged, this, [this](int row, int, int, int) {
+        if (!m_syncing)
+            loadSeqVariant(row);
+    });
+    connect(varAdd, &QPushButton::clicked, this, [this] {
+        storeSeqVariantFields();
+        QJsonObject var;
+        var.insert(QStringLiteral("value"), 1);
+        var.insert(QStringLiteral("name"), QStringLiteral("var%1").arg(m_seqVariantData.size() + 1));
+        var.insert(QStringLiteral("segments"), QJsonArray());
+        m_seqVariantData.append(var);
+        loadSeqVariant(m_seqVariantData.size() - 1);
+        rebuildSeqJson();
+    });
+    connect(varDel, &QPushButton::clicked, this, [this] {
+        const int r = m_seqVariants->currentRow();
+        if (r < 0)
+            return;
+        m_seqVariantData.removeAt(r);
+        m_seqCurrentVariant = -1;
+        loadSeqVariant(std::min(r, static_cast<int>(m_seqVariantData.size()) - 1));
+        rebuildSeqJson();
+    });
+    connect(m_seqVarFields, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *) {
+        if (m_syncing)
+            return;
+        storeSeqVariantFields();
+        rebuildSeqJson();
+    });
+
     connect(tryBtn, &QPushButton::clicked, this, [this] { tryFrame(); });
     connect(bb, &QDialogButtonBox::accepted, this, [this] { save(); });
     connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -628,6 +846,69 @@ void ProtocolEditorDialog::rebuildLua()
         m_lua->setPlainText(QStringLiteral("-- JSON 无效，无法生成 Lua 描述"));
         return;
     }
+    if (o.contains(QStringLiteral("segments")))
+    {
+        QStringList lines;
+        lines << QStringLiteral("-- PlotScope 顺序帧协议描述（由协议页生成）");
+        lines << QStringLiteral("return {");
+        lines << QStringLiteral("  version = 1,");
+        lines << QStringLiteral("  name = %1,").arg(luaQuote(o.value(QStringLiteral("name")).toString()));
+        lines << QStringLiteral("  layout = \"sequential\",");
+        lines << QStringLiteral("  endian = %1,").arg(luaQuote(o.value(QStringLiteral("endian")).toString()));
+        lines << QStringLiteral("  maxsize = %1,").arg(o.value(QStringLiteral("maxsize")).toInt(4096));
+        const QJsonObject ts = o.value(QStringLiteral("timestamp")).toObject();
+        if (!ts.isEmpty())
+            lines << QStringLiteral("  timestamp = { expr = %1, unit = %2 },")
+                         .arg(luaQuote(ts.value(QStringLiteral("expr")).toString()),
+                              luaQuote(ts.value(QStringLiteral("unit")).toString(QStringLiteral("s"))));
+        auto segmentsLua = [](const QJsonArray &segs, const QString &indent) {
+            QStringList out;
+            for (const QJsonValue &sv : segs)
+            {
+                const QJsonObject f = sv.toObject();
+                QString line = indent + QStringLiteral("{ name = %1, size = %2, type = %3")
+                                   .arg(luaQuote(f.value(QStringLiteral("name")).toString()),
+                                        f.value(QStringLiteral("size")).isString()
+                                            ? luaQuote(f.value(QStringLiteral("size")).toString())
+                                            : QString::number(f.value(QStringLiteral("size")).toInt(1)),
+                                        luaQuote(f.value(QStringLiteral("type")).toString(QStringLiteral("u8"))));
+                if (!f.value(QStringLiteral("role")).toString().isEmpty())
+                    line += QStringLiteral(", role = %1").arg(luaQuote(f.value(QStringLiteral("role")).toString()));
+                if (f.contains(QStringLiteral("value")))
+                    line += QStringLiteral(", value = %1").arg(f.value(QStringLiteral("value")).toDouble());
+                line += QStringLiteral(" },");
+                out << line;
+            }
+            return out;
+        };
+        lines << QStringLiteral("  segments = {");
+        lines += segmentsLua(o.value(QStringLiteral("segments")).toArray(), QStringLiteral("    "));
+        lines << QStringLiteral("  },");
+        const QJsonObject series = o.value(QStringLiteral("series")).toObject();
+        if (!series.isEmpty())
+        {
+            lines << QStringLiteral("  series = {");
+            lines << QStringLiteral("    selector = %1,").arg(luaQuote(series.value(QStringLiteral("selector")).toString()));
+            lines << QStringLiteral("    payload = %1,").arg(luaQuote(series.value(QStringLiteral("payload")).toString()));
+            lines << QStringLiteral("    fallback = %1,").arg(luaQuote(series.value(QStringLiteral("fallback")).toString(QStringLiteral("reject"))));
+            lines << QStringLiteral("    variants = {");
+            for (const QJsonValue &vv : series.value(QStringLiteral("variants")).toArray())
+            {
+                const QJsonObject var = vv.toObject();
+                lines << QStringLiteral("      { value = %1, name = %2, segments = {")
+                             .arg(QString::number(var.value(QStringLiteral("value")).toInt()),
+                                  luaQuote(var.value(QStringLiteral("name")).toString()));
+                lines += segmentsLua(var.value(QStringLiteral("segments")).toArray(), QStringLiteral("        "));
+                lines << QStringLiteral("      } },");
+            }
+            lines << QStringLiteral("    }");
+            lines << QStringLiteral("  }");
+        }
+        lines << QStringLiteral("}");
+        m_lua->setPlainText(lines.join(QLatin1Char('\n')));
+        return;
+    }
+
     auto fieldLines = [](const QJsonArray &fields) {
         QStringList out;
         for (const QJsonValue &v : fields)
@@ -718,6 +999,46 @@ void ProtocolEditorDialog::tryFrame()
         m_result->setText(QStringLiteral("填入样例帧 hex"));
         return;
     }
+
+    if (t.contains(QStringLiteral("segments")))
+    {
+        QStringList lines;
+        int offset = 0;
+        for (const QJsonValue &vv : t.value(QStringLiteral("segments")).toArray())
+        {
+            const QJsonObject seg = vv.toObject();
+            const bool literal = seg.value(QStringLiteral("size")).isDouble();
+            const double n = literal ? seg.value(QStringLiteral("size")).toDouble() : 1.0;
+            const QString type = seg.value(QStringLiteral("type")).toString(QStringLiteral("u8"));
+            int es = 1;
+            if (type.contains(QStringLiteral("16"))) es = 2;
+            else if (type.contains(QStringLiteral("32")) || type.contains(QStringLiteral("f32"))) es = 4;
+            else if (type.contains(QStringLiteral("64")) || type.contains(QStringLiteral("f64"))) es = 8;
+            if (!literal)
+            {
+                lines << QStringLiteral("%1 @ %2  变长(%3)")
+                             .arg(seg.value(QStringLiteral("name")).toString())
+                             .arg(offset)
+                             .arg(seg.value(QStringLiteral("size")).toString());
+                break;
+            }
+            const int count = static_cast<int>(n);
+            const int bytes = count * es;
+            QString raw;
+            if (offset + bytes <= frame.size())
+                raw = QString::fromLatin1(frame.mid(offset, std::min(bytes, 8)).toHex(' ').toUpper());
+            lines << QStringLiteral("%1 @ %2  %3 元素 / %4 B  %5")
+                         .arg(seg.value(QStringLiteral("name")).toString())
+                         .arg(offset)
+                         .arg(count)
+                         .arg(bytes)
+                         .arg(raw);
+            offset += bytes;
+        }
+        m_result->setText(lines.join(QStringLiteral("\n")));
+        return;
+    }
+
     QStringList out;
     for (const QJsonValue &vv : t.value(QStringLiteral("sync")).toArray())
     {
@@ -790,7 +1111,12 @@ void ProtocolEditorDialog::tryFrame()
 void ProtocolEditorDialog::save()
 {
     if (m_tabs->currentWidget() != m_json)
-        rebuildJsonFromDesign();
+    {
+        if (m_seqMode)
+            rebuildSeqJson();
+        else
+            rebuildJsonFromDesign();
+    }
     QFile f(m_path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
@@ -809,4 +1135,391 @@ void ProtocolEditorDialog::saveAs()
         return;
     m_path = f;
     save();
+}
+
+/* ---------------- 顺序段协议页 ---------------- */
+
+namespace {
+
+QString valText(const QJsonValue &v)
+{
+    if (v.isString())
+        return v.toString();
+    if (v.isDouble())
+    {
+        const double d = v.toDouble();
+        if (d == std::trunc(d) && std::fabs(d) <= 255)
+            return QStringLiteral("0x%1").arg(static_cast<int>(d), 2, 16, QLatin1Char('0')).toUpper();
+        return QString::number(d, 'g', 12);
+    }
+    return QString();
+}
+
+QString checksText(const QJsonObject &seg)
+{
+    QStringList parts;
+    if (seg.contains(QStringLiteral("value")))
+        parts << valText(seg.value(QStringLiteral("value")));
+    for (const QJsonValue &cv : seg.value(QStringLiteral("checks")).toArray())
+    {
+        const QJsonObject c = cv.toObject();
+        const QString op = c.value(QStringLiteral("op")).toString(QStringLiteral("eq"));
+        auto arg = [&](const QString &key) { return valText(c.value(key)); };
+        if (op == QLatin1String("eq"))
+            parts << arg(QStringLiteral("value"));
+        else if (op == QLatin1String("range"))
+            parts << QStringLiteral("range(%1,%2)").arg(arg(QStringLiteral("min")), arg(QStringLiteral("max")));
+        else if (op == QLatin1String("mask"))
+            parts << QStringLiteral("mask(%1,%2)").arg(arg(QStringLiteral("and")), arg(QStringLiteral("eq")));
+        else if (op == QLatin1String("in"))
+        {
+            QStringList vs;
+            for (const QJsonValue &v : c.value(QStringLiteral("values")).toArray())
+                vs << valText(v);
+            parts << QStringLiteral("in(%1)").arg(vs.join(QLatin1Char(',')));
+        }
+        else if (op == QLatin1String("crc8") || op == QLatin1String("crc16") || op == QLatin1String("crc32") ||
+                 op == QLatin1String("sum8") || op == QLatin1String("sum16") || op == QLatin1String("xor8"))
+        {
+            QStringList over;
+            for (const QJsonValue &v : c.value(QStringLiteral("over")).toArray())
+                over << v.toString();
+            parts << QStringLiteral("%1(%2)").arg(op, over.join(QLatin1Char(',')));
+        }
+        else
+            parts << QStringLiteral("%1(%2)").arg(op, arg(QStringLiteral("expr")));
+    }
+    return parts.join(QStringLiteral("; "));
+}
+
+double numValue(const QString &s, bool *ok)
+{
+    return s.trimmed().toDouble(ok);
+}
+
+QJsonObject parseChecksText(const QString &text, bool *ok)
+{
+    QJsonObject seg;
+    QJsonArray checks;
+    bool sawEq = false;
+    for (const QString &raw : text.split(QLatin1Char(';'), Qt::SkipEmptyParts))
+    {
+        const QString tok = raw.trimmed();
+        if (tok.isEmpty())
+            continue;
+        QRegularExpression re(QStringLiteral("^([A-Za-z0-9_]+)\\s*\\((.*)\\)$"));
+        const QRegularExpressionMatch m = re.match(tok);
+        QString op = QStringLiteral("eq");
+        QStringList args;
+        if (m.hasMatch())
+        {
+            op = m.captured(1);
+            args = m.captured(2).split(QLatin1Char(','));
+        }
+        else
+        {
+            args << tok;
+        }
+        for (QString &a : args)
+            a = a.trimmed();
+
+        QJsonObject c;
+        c.insert(QStringLiteral("op"), op);
+        if (op == QLatin1String("eq"))
+        {
+            if (sawEq) { *ok = false; return {}; }
+            sawEq = true;
+            if (args.size() != 1) { *ok = false; return {}; }
+            bool isNum = false;
+            const double d = numValue(args[0], &isNum);
+            seg.insert(QStringLiteral("value"), isNum ? QJsonValue(d) : QJsonValue(args[0]));
+        }
+        else if (op == QLatin1String("in"))
+        {
+            QJsonArray vals;
+            for (const QString &a : args)
+            {
+                bool isNum = false;
+                vals.append(numValue(a, &isNum));
+            }
+            c.insert(QStringLiteral("values"), vals);
+            checks.append(c);
+        }
+        else if (op == QLatin1String("range") || op == QLatin1String("mask"))
+        {
+            if (args.size() != 2) { *ok = false; return {}; }
+            c.insert(op == QLatin1String("range") ? QStringLiteral("min") : QStringLiteral("and"), args[0]);
+            c.insert(op == QLatin1String("range") ? QStringLiteral("max") : QStringLiteral("eq"), args[1]);
+            checks.append(c);
+        }
+        else if (op == QLatin1String("crc8") || op == QLatin1String("crc16") || op == QLatin1String("crc32") ||
+                 op == QLatin1String("sum8") || op == QLatin1String("sum16") || op == QLatin1String("xor8"))
+        {
+            QJsonArray over;
+            for (const QString &a : args)
+                if (!a.isEmpty())
+                    over.append(a);
+            c.insert(QStringLiteral("over"), over);
+            checks.append(c);
+        }
+        else
+        {
+            if (args.size() != 1) { *ok = false; return {}; }
+            c.insert(QStringLiteral("expr"), args[0]);
+            checks.append(c);
+        }
+    }
+    seg.insert(QStringLiteral("checks"), checks);
+    return seg;
+}
+
+} // namespace
+
+void ProtocolEditorDialog::setupSeqTables()
+{
+}
+
+void ProtocolEditorDialog::populateSeqTable(QTableWidget *t, const QJsonArray &segments)
+{
+    t->setRowCount(0);
+    for (const QJsonValue &vv : segments)
+    {
+        const QJsonObject seg = vv.toObject();
+        const int r = t->rowCount();
+        t->insertRow(r);
+        QTableWidgetItem *nameItem = new QTableWidgetItem(seg.value(QStringLiteral("name")).toString());
+        QJsonObject extra = seg;
+        extra.remove(QStringLiteral("name"));
+        extra.remove(QStringLiteral("size"));
+        extra.remove(QStringLiteral("type"));
+        extra.remove(QStringLiteral("value"));
+        extra.remove(QStringLiteral("checks"));
+        nameItem->setData(Qt::UserRole, QJsonDocument(extra).toJson(QJsonDocument::Compact));
+        t->setItem(r, 0, nameItem);
+        const QJsonValue sz = seg.value(QStringLiteral("size"));
+        t->setItem(r, 1, new QTableWidgetItem(sz.isString() ? sz.toString() : QString::number(sz.toInt(1))));
+        t->setItem(r, 2, new QTableWidgetItem(seg.value(QStringLiteral("type")).toString(QStringLiteral("u8"))));
+        t->setItem(r, 3, new QTableWidgetItem(checksText(seg)));
+    }
+}
+
+QJsonArray ProtocolEditorDialog::seqTableToJson(QTableWidget *t) const
+{
+    QJsonArray arr;
+    for (int r = 0; r < t->rowCount(); ++r)
+    {
+        QTableWidgetItem *nameItem = t->item(r, 0);
+        const QString name = nameItem ? nameItem->text().trimmed() : QString();
+        if (name.isEmpty())
+            continue;
+        QJsonObject seg;
+        if (nameItem)
+        {
+            const QJsonDocument d = QJsonDocument::fromJson(nameItem->data(Qt::UserRole).toByteArray());
+            if (d.isObject())
+                seg = d.object();
+        }
+        seg.insert(QStringLiteral("name"), name);
+        const QString sz = t->item(r, 1) ? t->item(r, 1)->text().trimmed() : QStringLiteral("1");
+        bool isNum = false;
+        const double n = sz.toDouble(&isNum);
+        seg.insert(QStringLiteral("size"), isNum ? QJsonValue(n) : QJsonValue(sz));
+        seg.insert(QStringLiteral("type"), t->item(r, 2) ? t->item(r, 2)->text().trimmed() : QStringLiteral("u8"));
+        bool ok = true;
+        QJsonObject parsed = parseChecksText(t->item(r, 3) ? t->item(r, 3)->text() : QString(), &ok);
+        if (!ok)
+            parsed = QJsonObject();
+        for (auto it = parsed.begin(); it != parsed.end(); ++it)
+            seg.insert(it.key(), it.value());
+        if (!seg.contains(QStringLiteral("role")))
+        {
+            if (name.compare(QLatin1String("payload"), Qt::CaseInsensitive) == 0)
+                seg.insert(QStringLiteral("role"), QStringLiteral("payload"));
+            else if (name.compare(QLatin1String("length"), Qt::CaseInsensitive) == 0)
+                seg.insert(QStringLiteral("role"), QStringLiteral("length"));
+            else if (name.startsWith(QLatin1String("sync"), Qt::CaseInsensitive))
+                seg.insert(QStringLiteral("role"), QStringLiteral("sync"));
+            else if (name.contains(QLatin1String("crc"), Qt::CaseInsensitive))
+                seg.insert(QStringLiteral("role"), QStringLiteral("checksum"));
+        }
+        arr.append(seg);
+    }
+    return arr;
+}
+
+void ProtocolEditorDialog::addSeqRow(QTableWidget *t)
+{
+    const int r = t->rowCount();
+    t->insertRow(r);
+    t->setItem(r, 0, new QTableWidgetItem(QStringLiteral("field%1").arg(r + 1)));
+    t->setItem(r, 1, new QTableWidgetItem(QStringLiteral("1")));
+    t->setItem(r, 2, new QTableWidgetItem(QStringLiteral("u8")));
+    t->setItem(r, 3, new QTableWidgetItem(QString()));
+    t->setCurrentCell(r, 0);
+}
+
+void ProtocolEditorDialog::refreshSeqFromJson()
+{
+    const QJsonObject o = currentTemplate();
+    if (o.isEmpty() || !o.contains(QStringLiteral("segments")))
+        return;
+    m_syncing = true;
+    m_seqName->setText(o.value(QStringLiteral("name")).toString());
+    m_seqDesc->setText(o.value(QStringLiteral("description")).toString());
+    m_seqMaxsize->setValue(o.value(QStringLiteral("maxsize")).toInt(4096));
+    m_seqEndian->setCurrentText(o.value(QStringLiteral("endian")).toString(QStringLiteral("little")));
+    const QJsonValue tv = o.value(QStringLiteral("timestamp"));
+    m_seqTsExtra = tv.toObject();
+    const QString texpr = tv.isObject() ? tv.toObject().value(QStringLiteral("expr")).toString() : tv.toString();
+    m_seqTimestamp->setText(texpr);
+    m_seqTsUnit->setCurrentText(tv.isObject() ? tv.toObject().value(QStringLiteral("unit")).toString(QStringLiteral("s"))
+                                              : QStringLiteral("s"));
+    populateSeqTable(m_seqFields, o.value(QStringLiteral("segments")).toArray());
+
+    const QJsonObject series = o.value(QStringLiteral("series")).toObject();
+    m_seqSeries->setChecked(!series.isEmpty());
+    m_seqSelector->setText(series.value(QStringLiteral("selector")).toString());
+    m_seqPayload->setText(series.value(QStringLiteral("payload")).toString());
+    m_seqFallback->setCurrentText(series.value(QStringLiteral("fallback")).toString(QStringLiteral("reject")));
+    m_seqVariantData = series.value(QStringLiteral("variants")).toArray();
+    m_seqCurrentVariant = -1;
+    m_seqVariants->setRowCount(0);
+    for (const QJsonValue &vv : m_seqVariantData)
+    {
+        const QJsonObject var = vv.toObject();
+        const int r = m_seqVariants->rowCount();
+        m_seqVariants->insertRow(r);
+        QString valueText;
+        if (var.contains(QStringLiteral("values")))
+        {
+            QStringList vals;
+            for (const QJsonValue &x : var.value(QStringLiteral("values")).toArray())
+                vals << QString::number(x.toInt());
+            valueText = vals.join(QStringLiteral(","));
+        }
+        else
+            valueText = QString::number(var.value(QStringLiteral("value")).toInt());
+        m_seqVariants->setItem(r, 0, new QTableWidgetItem(valueText));
+        m_seqVariants->setItem(r, 1, new QTableWidgetItem(var.value(QStringLiteral("name")).toString()));
+    }
+    m_syncing = false;
+    loadSeqVariant(m_seqVariantData.isEmpty() ? -1 : 0);
+    updateSeqPreview();
+    m_result->setText(QStringLiteral("顺序协议：%1 个段，%2 个变体")
+                          .arg(m_seqFields->rowCount()).arg(m_seqVariantData.size()));
+    rebuildLua();
+}
+
+void ProtocolEditorDialog::storeSeqVariantFields()
+{
+    if (m_seqCurrentVariant < 0 || m_seqCurrentVariant >= m_seqVariantData.size())
+        return;
+    QJsonObject var = m_seqVariantData.at(m_seqCurrentVariant).toObject();
+    var.insert(QStringLiteral("segments"), seqTableToJson(m_seqVarFields));
+    m_seqVariantData.replace(m_seqCurrentVariant, var);
+}
+
+void ProtocolEditorDialog::loadSeqVariant(int row)
+{
+    storeSeqVariantFields();
+    if (row < 0 || row >= m_seqVariantData.size())
+    {
+        m_seqCurrentVariant = -1;
+        m_seqVarFields->setRowCount(0);
+        return;
+    }
+    m_seqCurrentVariant = row;
+    m_syncing = true;
+    populateSeqTable(m_seqVarFields, m_seqVariantData.at(row).toObject().value(QStringLiteral("segments")).toArray());
+    m_syncing = false;
+}
+
+void ProtocolEditorDialog::updateSeqPreview()
+{
+    int literalBytes = 0;
+    bool unknown = false;
+    for (int r = 0; r < m_seqFields->rowCount(); ++r)
+    {
+        bool ok = false;
+        const double n = m_seqFields->item(r, 1) ? m_seqFields->item(r, 1)->text().toDouble(&ok) : 0;
+        const QString type = m_seqFields->item(r, 2) ? m_seqFields->item(r, 2)->text().toLower() : QStringLiteral("u8");
+        int es = 1;
+        if (type.contains(QStringLiteral("16"))) es = 2;
+        else if (type.contains(QStringLiteral("32")) || type.contains(QStringLiteral("f32"))) es = 4;
+        else if (type.contains(QStringLiteral("64")) || type.contains(QStringLiteral("f64"))) es = 8;
+        if (ok) literalBytes += static_cast<int>(n) * es;
+        else unknown = true;
+    }
+    m_seqPreview->setText(QStringLiteral("%1 个段，固定部分约 %2 字节%3；偏移由长度累加推导")
+                              .arg(m_seqFields->rowCount())
+                              .arg(literalBytes)
+                              .arg(unknown ? QStringLiteral("（含表达式长度）") : QString()));
+}
+
+void ProtocolEditorDialog::rebuildSeqJson()
+{
+    if (m_syncing)
+        return;
+    storeSeqVariantFields();
+    QJsonObject o;
+    o.insert(QStringLiteral("version"), 1);
+    o.insert(QStringLiteral("name"), m_seqName->text().trimmed());
+    o.insert(QStringLiteral("description"), m_seqDesc->text());
+    o.insert(QStringLiteral("layout"), QStringLiteral("sequential"));
+    o.insert(QStringLiteral("endian"), m_seqEndian->currentText());
+    o.insert(QStringLiteral("maxsize"), m_seqMaxsize->value());
+    o.insert(QStringLiteral("segments"), seqTableToJson(m_seqFields));
+
+    if (!m_seqTimestamp->text().trimmed().isEmpty())
+    {
+        QJsonObject ts = m_seqTsExtra;
+        ts.insert(QStringLiteral("expr"), m_seqTimestamp->text().trimmed());
+        ts.insert(QStringLiteral("unit"), m_seqTsUnit->currentText());
+        if (!ts.contains(QStringLiteral("origin")))
+            ts.insert(QStringLiteral("origin"), QStringLiteral("first_frame"));
+        if (!ts.contains(QStringLiteral("fallback")))
+            ts.insert(QStringLiteral("fallback"), QStringLiteral("reject"));
+        o.insert(QStringLiteral("timestamp"), ts);
+    }
+
+    if (m_seqSeries->isChecked())
+    {
+        QJsonObject series;
+        series.insert(QStringLiteral("selector"), m_seqSelector->text().trimmed());
+        series.insert(QStringLiteral("payload"), m_seqPayload->text().trimmed());
+        series.insert(QStringLiteral("fallback"), m_seqFallback->currentText());
+        QJsonArray variants;
+        for (int r = 0; r < m_seqVariants->rowCount(); ++r)
+        {
+            QJsonObject var = r < m_seqVariantData.size() ? m_seqVariantData.at(r).toObject() : QJsonObject();
+            var.insert(QStringLiteral("name"), m_seqVariants->item(r, 1) ? m_seqVariants->item(r, 1)->text() : QString());
+            QStringList vals = (m_seqVariants->item(r, 0) ? m_seqVariants->item(r, 0)->text() : QString())
+                                   .split(QLatin1Char(','), Qt::SkipEmptyParts);
+            bool ok = false;
+            if (vals.size() == 1)
+            {
+                var.remove(QStringLiteral("values"));
+                var.insert(QStringLiteral("value"), vals[0].trimmed().toInt(&ok));
+            }
+            else
+            {
+                var.remove(QStringLiteral("value"));
+                QJsonArray varr;
+                for (const QString &v : vals)
+                    varr.append(v.trimmed().toInt());
+                var.insert(QStringLiteral("values"), varr);
+            }
+            if (!var.contains(QStringLiteral("segments")))
+                var.insert(QStringLiteral("segments"), QJsonArray());
+            variants.append(var);
+        }
+        series.insert(QStringLiteral("variants"), variants);
+        o.insert(QStringLiteral("series"), series);
+    }
+
+    m_syncing = true;
+    m_json->setPlainText(QJsonDocument(o).toJson(QJsonDocument::Indented));
+    m_syncing = false;
+    updateSeqPreview();
+    rebuildLua();
 }

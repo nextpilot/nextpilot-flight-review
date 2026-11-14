@@ -1,0 +1,118 @@
+{
+  "name": "demo_seq",
+  "description": "顺序段、元素个数、CRC 区间、timestamp、系列协议",
+  "layout": "sequential",
+  "endian": "little",
+  "maxsize": 64,
+  "timestamp": {
+    "expr": "time_s",
+    "unit": "s",
+    "origin": "first_frame"
+  },
+  "segments": [
+    {
+      "name": "sync1",
+      "size": 1,
+      "type": "u8",
+      "role": "sync",
+      "value": 170
+    },
+    {
+      "name": "sync2",
+      "size": 1,
+      "type": "u8",
+      "role": "sync",
+      "value": 85
+    },
+    {
+      "name": "seq",
+      "size": 1,
+      "type": "u8"
+    },
+    {
+      "name": "msgid",
+      "size": 1,
+      "type": "u16"
+    },
+    {
+      "name": "length",
+      "size": 1,
+      "type": "u16",
+      "role": "length",
+      "counts": {
+        "fields": [
+          "payload"
+        ],
+        "unit": "bytes"
+      }
+    },
+    {
+      "name": "time_s",
+      "size": 1,
+      "type": "u32"
+    },
+    {
+      "name": "payload",
+      "size": "length",
+      "type": "u8",
+      "role": "payload"
+    },
+    {
+      "name": "crc",
+      "size": 1,
+      "type": "u8",
+      "role": "checksum",
+      "checks": [
+        {
+          "op": "crc8",
+          "over": [
+            "sync1:payload"
+          ]
+        }
+      ]
+    }
+  ],
+  "series": {
+    "selector": "msgid",
+    "payload": "payload",
+    "fallback": "reject",
+    "variants": [
+      {
+        "value": 1,
+        "name": "att",
+        "segments": [
+          {
+            "name": "roll",
+            "size": 1,
+            "type": "i16",
+            "scale": 0.01,
+            "unit": "rad"
+          },
+          {
+            "name": "pitch",
+            "size": 1,
+            "type": "i16",
+            "scale": 0.01,
+            "unit": "rad"
+          }
+        ]
+      },
+      {
+        "values": [
+          2,
+          3
+        ],
+        "name": "env",
+        "segments": [
+          {
+            "name": "temp",
+            "size": 1,
+            "type": "i16",
+            "scale": 0.1,
+            "unit": "C"
+          }
+        ]
+      }
+    ]
+  }
+}

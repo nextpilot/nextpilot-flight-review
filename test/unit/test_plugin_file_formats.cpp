@@ -128,6 +128,9 @@ int main()
     if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_family.frames",
                           "{\"protocol\":\"" + fix + "/demo_family.psproto\"}", 2))
         return 1;
+    if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_sequential.frames",
+                          "{\"protocol\":\"" + fix + "/demo_sequential.psproto\"}", 5))
+        return 1;
     if (!loadOptsAndCheck(ps_plugin_entry_data_loader_frame(), fix + "/demo_generic.frames",
                           "{\"protocol\":\"" + fix + "/demo_generic.psproto\"}", 2))
         return 1;

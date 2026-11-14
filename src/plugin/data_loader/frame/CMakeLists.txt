@@ -1,5 +1,6 @@
 add_library(ps_data_loader_frame STATIC
   FrameDataLoader.cpp
+  SequentialCodec.cpp
 )
 target_include_directories(ps_data_loader_frame PRIVATE
   ${PROJECT_SOURCE_DIR}/src/plugin/include
