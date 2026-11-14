@@ -31,9 +31,19 @@ struct Field
     bool isTime = false;
 };
 
+struct LengthSpec
+{
+    bool enabled = false;
+    uint32_t byte = 0;
+    uint32_t bytes = 2;
+    bool bigEndian = false;
+    bool includesHeader = true;
+};
+
 struct Template
 {
-    uint32_t frameSize = 0;
+    uint32_t frameSize = 0;   // 固定帧长；变长帧时为上限
+    LengthSpec length;
     std::vector<uint8_t> sync;
     std::vector<Field> fields;
     int crcOffset = -1;       // -1 = 不校验
@@ -65,11 +75,32 @@ bool parseTemplate(const QByteArray &json, Template &t, std::string &err)
     }
     const QJsonObject o = doc.object();
     t.frameSize = static_cast<uint32_t>(o.value(QStringLiteral("frame_size")).toInt());
-    if (!t.frameSize || t.frameSize > 4096)
+    const QJsonObject lj = o.value(QStringLiteral("length")).toObject();
+    if (!lj.isEmpty())
     {
-        err = "frame_size 缺失或超出 1..4096";
+        t.length.enabled = true;
+        t.length.byte = static_cast<uint32_t>(lj.value(QStringLiteral("byte")).toInt(2));
+        t.length.bytes = static_cast<uint32_t>(lj.value(QStringLiteral("bytes")).toInt(2));
+        t.length.bigEndian = lj.value(QStringLiteral("endian")).toString() == QLatin1String("big");
+        t.length.includesHeader = lj.value(QStringLiteral("includes_header")).toBool(true);
+        if (t.length.bytes < 1 || t.length.bytes > 4 || t.length.byte + t.length.bytes > 4096)
+        {
+            err = "length 字段非法";
+            return false;
+        }
+    }
+    if (t.frameSize > 4096)
+    {
+        err = "frame_size 超出 4096";
         return false;
     }
+    if (!t.frameSize && !t.length.enabled)
+    {
+        err = "固定帧需要 frame_size，变长帧需要 length";
+        return false;
+    }
+    if (t.length.enabled && !t.frameSize)
+        t.frameSize = 4096;
     for (const QJsonValue &v : o.value(QStringLiteral("sync")).toArray())
         t.sync.push_back(static_cast<uint8_t>(v.toInt()));
     const QJsonObject crc = o.value(QStringLiteral("crc16_ccitt")).toObject();
@@ -186,8 +217,10 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
     std::map<std::string, std::vector<std::pair<double, double>>> acc;
     double frameIndex = 0;
     uint64_t rejected = 0;
-    for (size_t off = 0; off + tpl.frameSize <= static_cast<size_t>(bytes.size());)
+    for (size_t off = 0; off + std::max<size_t>(2, tpl.sync.size()) <= static_cast<size_t>(bytes.size());)
     {
+        if (!tpl.length.enabled && off + static_cast<size_t>(tpl.frameSize) > static_cast<size_t>(bytes.size()))
+            break;
         const uint8_t *frame = reinterpret_cast<const uint8_t *>(bytes.constData()) + off;
         bool match = true;
         for (size_t i = 0; i < tpl.sync.size(); ++i)
@@ -197,7 +230,26 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
             ++off;
             continue;
         }
-        if (tpl.crcOffset >= 0 && static_cast<uint32_t>(tpl.crcOffset) + 2 <= tpl.frameSize)
+        uint32_t frameLen = tpl.frameSize;
+        if (tpl.length.enabled)
+        {
+            if (off + tpl.length.byte + tpl.length.bytes > static_cast<size_t>(bytes.size()))
+                break;
+            uint32_t raw = 0;
+            const uint8_t *lp = frame + tpl.length.byte;
+            if (tpl.length.bigEndian)
+                for (uint32_t i = 0; i < tpl.length.bytes; ++i) raw = (raw << 8) | lp[i];
+            else
+                for (uint32_t i = 0; i < tpl.length.bytes; ++i) raw |= uint32_t(lp[i]) << (8 * i);
+            frameLen = tpl.length.includesHeader ? raw : raw + tpl.length.byte + tpl.length.bytes;
+            if (!frameLen || frameLen > tpl.frameSize || off + frameLen > static_cast<size_t>(bytes.size()))
+            {
+                ++rejected;
+                ++off;
+                continue;
+            }
+        }
+        if (tpl.crcOffset >= 0 && static_cast<uint32_t>(tpl.crcOffset) + 2 <= frameLen)
         {
             const uint16_t want = crc16(frame, tpl.crcOffset, tpl.crcPoly, tpl.crcInit);
             uint16_t got;
@@ -212,7 +264,7 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
         double t = frameIndex;
         for (const Field &fd : tpl.fields)
         {
-            if (fd.byte + (fd.bits + 7) / 8 > tpl.frameSize)
+            if (fd.byte + (fd.bits + 7) / 8 > frameLen)
                 continue;
             const double v = fieldValue(frame, fd);
             if (fd.isTime)
@@ -221,7 +273,7 @@ int32_t loadFrame(const char *path, const char *optsJson, const PsHostApi *host,
                 acc[fd.name].push_back({t, v});
         }
         ++frameIndex;
-        off += tpl.frameSize;
+        off += frameLen;
     }
     if (acc.empty())
     {
