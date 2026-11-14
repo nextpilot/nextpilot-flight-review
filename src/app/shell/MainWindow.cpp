@@ -1615,7 +1615,7 @@ QWidget *MainWindow::createRibbon()
 
         auto *pType = cat->addPanel(QStringLiteral("图表类型"));
         pType->setExpanding(false);
-        pType->setMaximumWidth(240);
+        pType->setMaximumWidth(400);
         if (auto *t = pType->titleLabel())
             t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         auto *plotGallery = pType->addGallery(true);
@@ -1699,13 +1699,13 @@ QWidget *MainWindow::createRibbon()
         };
         auto stylePlotCommon = [](SARibbonGalleryGroup *g) {
             g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
-            g->setDisplayRow(SARibbonGalleryGroup::DisplayTwoRow);
-            g->setIconSize(QSize(52, 30));
-            g->setGridMinimumWidth(56);
-            g->setGridMaximumWidth(62);
+            g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+            g->setIconSize(QSize(64, 36));
+            g->setGridMinimumWidth(68);
+            g->setGridMaximumWidth(74);
         };
         QList<QAction *> commonActs;
-        for (const char *k : {"timeseries", "xy", "scatter", "traj3d", "map", "horizon"})
+        for (const char *k : {"timeseries", "xy", "scatter", "traj3d", "map"})
             if (auto *a = plotActByKind.value(QString::fromLatin1(k)))
                 commonActs.append(a);
         auto *commonGroup = plotGallery->addCategoryActions(QStringLiteral("常用"), commonActs);
@@ -1719,8 +1719,8 @@ QWidget *MainWindow::createRibbon()
         plotGallery->setSingleRowMode(true);
         if (auto *more = plotGallery->findChild<QToolButton *>(QStringLiteral("SARibbonGalleryButtonMore")))
             more->hide();
-        plotGallery->setMinimumWidth(190);
-        plotGallery->setMaximumWidth(220);
+        plotGallery->setMinimumWidth(330);
+        plotGallery->setMaximumWidth(370);
         plotGallery->setCurrentViewGroup(commonGroup);
         if (auto *vp = plotGallery->findChild<SARibbonGalleryViewport *>())
         {
