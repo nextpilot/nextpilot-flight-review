@@ -143,6 +143,10 @@ private:
     void updateSrcStatus();
     void showSourceProps(QWidget *row);
     void setSourcePaused(SourceData *src, bool paused);
+public:
+    void toggleDockMax(QDockWidget *dock);
+    void restoreDockMax();
+private:
     void addTimeMarker(double t, const QString &label, bool prompt);
     void removeTimeMarker(double t);
     void applyTimeMarkers();
@@ -188,6 +192,9 @@ private:
     QAction *m_chipLod = nullptr;
     CanvasWidget *m_maxedCanvas = nullptr;
     QVector<QWidget *> m_maxedHidden;
+    QDockWidget *m_maxDock = nullptr;
+    QWidget *m_maxDockCentral = nullptr;
+    QList<QDockWidget *> m_maxDockHidden;
     QVector<QPair<QSplitter *, QList<int>>> m_maxedSizes;
     QSize m_sizeBeforeMax;
 };

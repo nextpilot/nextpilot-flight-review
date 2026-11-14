@@ -61,6 +61,10 @@
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QToolBar>
+
+static QString dockIconResource(const QDockWidget *d);
+static void execDockMenu(QToolButton *btn, QMenu *menu);
+
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QPlainTextEdit>
@@ -1398,6 +1402,11 @@ void MainWindow::createDocks()
     auto *barLay = new QHBoxLayout(srcBar);
     barLay->setContentsMargins(10, 0, 6, 0);
     barLay->setSpacing(6);
+    auto *barIcon = new QLabel(srcBar);
+    barIcon->setPixmap(QIcon(dockIconResource(srcDock)).pixmap(14, 14));
+    barIcon->setStyleSheet(QStringLiteral("background:transparent;"));
+    barIcon->setFixedSize(16, 16);
+    barLay->addWidget(barIcon);
     auto *barTitle = new QLabel(QStringLiteral("数据源"), srcBar);
     barTitle->setStyleSheet(QStringLiteral(
         "color:#e6edf3;font-size:13px;font-weight:600;background:transparent;"));
@@ -1428,7 +1437,7 @@ void MainWindow::createDocks()
     });
     auto *dockMenuBtn = new QToolButton(srcBar);
     dockMenuBtn->setText(QStringLiteral("▾"));
-    dockMenuBtn->setToolTip(QStringLiteral("停靠 / 收起"));
+    dockMenuBtn->setToolTip(QStringLiteral("最大化 / 最小化 / 浮动 / 关闭"));
     dockMenuBtn->setCursor(Qt::PointingHandCursor);
     dockMenuBtn->setFixedSize(30, 26);
     dockMenuBtn->setStyleSheet(QStringLiteral(
@@ -1436,22 +1445,34 @@ void MainWindow::createDocks()
         "padding:0 0 2px 0;font-size:15px;font-weight:600;}"
         "QToolButton:hover{background:#222b33;border-color:#f2b134;color:#f2b134;}"));
     auto *dockMenu = new QMenu(dockMenuBtn);
+    QAction *maxDock = dockMenu->addAction(QStringLiteral("最大化 / 还原"));
     QAction *toLeft = dockMenu->addAction(QStringLiteral("停靠到左侧"));
     QAction *toRight = dockMenu->addAction(QStringLiteral("停靠到右侧"));
     QAction *toBottom = dockMenu->addAction(QStringLiteral("停靠到底部"));
     dockMenu->addSeparator();
-    QAction *collapse = dockMenu->addAction(QStringLiteral("自动隐藏（最小化）"));
+    QAction *collapse = dockMenu->addAction(QStringLiteral("最小化（自动隐藏）"));
     QAction *floatAct = dockMenu->addAction(QStringLiteral("浮动 / 取消浮动"));
     dockMenu->addSeparator();
     QAction *closeAct = dockMenu->addAction(QStringLiteral("关闭面板"));
-    QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::LeftDockWidgetArea); });
+    QObject::connect(maxDock, &QAction::triggered, this, [this, srcDock] { toggleDockMax(srcDock); });
+    QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { restoreDockMax(); dockToArea(srcDock, this, Qt::LeftDockWidgetArea); });
     QObject::connect(toRight, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::RightDockWidgetArea); });
     QObject::connect(toBottom, &QAction::triggered, this, [this, srcDock] { dockToArea(srcDock, this, Qt::BottomDockWidgetArea); });
-    QObject::connect(collapse, &QAction::triggered, this, [this, srcDock] { collapseDock(srcDock, this); });
-    QObject::connect(floatAct, &QAction::triggered, srcDock, [srcDock] { srcDock->setFloating(!srcDock->isFloating()); });
-    QObject::connect(closeAct, &QAction::triggered, srcDock, &QDockWidget::close);
+    QObject::connect(collapse, &QAction::triggered, this, [this, srcDock] {
+        restoreDockMax();
+        collapseDock(srcDock, this);
+    });
+    QObject::connect(floatAct, &QAction::triggered, this, [this, srcDock] {
+        restoreDockMax();
+        srcDock->setFloating(!srcDock->isFloating());
+    });
+    QObject::connect(closeAct, &QAction::triggered, this, [this, srcDock] {
+        restoreDockMax();
+        srcDock->close();
+    });
+    dockMenuBtn->setPopupMode(QToolButton::InstantPopup);
     QObject::connect(dockMenuBtn, &QToolButton::clicked, dockMenuBtn, [dockMenu, dockMenuBtn] {
-        dockMenu->exec(dockMenuBtn->mapToGlobal(QPoint(0, dockMenuBtn->height())));
+        execDockMenu(dockMenuBtn, dockMenu);
     });
     barLay->addWidget(dockMenuBtn);
     srcDock->setTitleBarWidget(srcBar);
@@ -1989,6 +2010,79 @@ void MainWindow::createDocks()
     refreshSrcCount();
 }
 
+void MainWindow::toggleDockMax(QDockWidget *dock)
+{
+    if (!dock)
+        return;
+    if (m_maxDock == dock)
+    {
+        restoreDockMax();
+        return;
+    }
+    restoreDockMax();
+    if (dock->isFloating())
+    {
+        const Qt::DockWidgetArea area = dockWidgetArea(dock);
+        dock->setFloating(false);
+        addDockWidget(area, dock);
+    }
+    m_maxDockCentral = centralWidget();
+    if (m_maxDockCentral)
+        m_maxDockCentral->hide();
+    m_maxDockHidden.clear();
+    for (QDockWidget *o : findChildren<QDockWidget *>())
+        if (o != dock && o->isVisible())
+        {
+            m_maxDockHidden.append(o);
+            o->hide();
+        }
+    dock->show();
+    dock->raise();
+    m_maxDock = dock;
+    log(QStringLiteral("最大化面板：%1").arg(dock->windowTitle()));
+}
+
+void MainWindow::restoreDockMax()
+{
+    if (!m_maxDock)
+        return;
+    for (QDockWidget *o : m_maxDockHidden)
+        if (o)
+            o->show();
+    m_maxDockHidden.clear();
+    if (m_maxDockCentral)
+        m_maxDockCentral->show();
+    m_maxDock = nullptr;
+}
+
+static QString dockIconResource(const QDockWidget *d)
+{
+    const QString name = d->objectName();
+    if (name == QLatin1String("dock.prop")) return QStringLiteral(":/icons/prop.svg");
+    if (name == QLatin1String("dock.tree")) return QStringLiteral(":/icons/panel.svg");
+    if (name == QLatin1String("dock.script")) return QStringLiteral(":/icons/script.svg");
+    if (name == QLatin1String("dock.log")) return QStringLiteral(":/icons/log.svg");
+    if (name == QLatin1String("dock.video")) return QStringLiteral(":/icons/box.svg");
+    if (name == QLatin1String("dock.src")) return QStringLiteral(":/icons/datasource.svg");
+    return QStringLiteral(":/icons/panel.svg");
+}
+
+// 出现在窗口最右缘的 ▾ 菜单必须左对齐弹出，否则菜单会跑到屏幕外。
+static void execDockMenu(QToolButton *btn, QMenu *menu)
+{
+    const QPoint below = btn->mapToGlobal(QPoint(btn->width(), btn->height()));
+    const QPoint topLeft = btn->mapToGlobal(QPoint(0, 0));
+    const int w = menu->sizeHint().width();
+    const int h = menu->sizeHint().height();
+    QRect avail = btn->screen() ? btn->screen()->availableGeometry()
+                                : QRect(0, 0, 1920, 1080);
+    QPoint pos(below.x() - w, below.y());
+    pos.setX(qMax(avail.left() + 4, qMin(pos.x(), avail.right() - w - 4)));
+    if (pos.y() + h > avail.bottom())
+        pos.setY(topLeft.y() - h);
+    menu->exec(pos);
+}
+
 // dock 标题栏在部分平台/主题下会画成浅灰，QSS 与 palette 都压不住：
 // 直接换成自绘的深色标题条（26px，和原型 dock-h 一致），顺带把关闭按钮收进来
 void darkenDocks(MainWindow *w)
@@ -2005,51 +2099,58 @@ void darkenDocks(MainWindow *w)
         lay->setContentsMargins(10, 0, 6, 0);
         lay->setSpacing(4);
 
+        auto *icon = new QLabel(bar);
+        icon->setPixmap(QIcon(dockIconResource(d)).pixmap(14, 14));
+        icon->setStyleSheet(QStringLiteral("background:transparent;"));
+        icon->setFixedSize(16, 16);
+        lay->addWidget(icon);
+
         auto *title = new QLabel(d->windowTitle(), bar);
         title->setStyleSheet(QStringLiteral(
             "color:#e6edf3;font-size:13px;font-weight:600;background:transparent;"));
         lay->addWidget(title);
         lay->addStretch();
 
-        // 最小化：像 VS 的“自动隐藏”图钉，一键收成侧边竖条
-        auto *minBtn = new QToolButton(bar);
-        minBtn->setText(QStringLiteral("–"));
-        minBtn->setToolTip(QStringLiteral("自动隐藏 / 收起为侧边页签"));
-        minBtn->setCursor(Qt::PointingHandCursor);
-        minBtn->setFixedSize(30, 26);
-        minBtn->setStyleSheet(QStringLiteral(
-            "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;font-size:14px;}"
-            "QToolButton:hover{color:#4ea1ff;background:#222b33;}"));
-        QObject::connect(minBtn, &QToolButton::clicked, w, [w, d] { collapseDock(d, w); });
-        lay->addWidget(minBtn);
-
         // 所有停靠/浮靠/关闭集中到一个菜单，避免标题栏塞满小按钮
         auto *menuBtn = new QToolButton(bar);
-        menuBtn->setText(QStringLiteral("⋮"));
-        menuBtn->setToolTip(QStringLiteral("停靠 / 自动隐藏 / 浮动 / 关闭"));
+        menuBtn->setText(QStringLiteral("▾"));
+        menuBtn->setToolTip(QStringLiteral("最大化 / 最小化 / 浮动 / 关闭"));
         menuBtn->setCursor(Qt::PointingHandCursor);
-        menuBtn->setPopupMode(QToolButton::InstantPopup);
         menuBtn->setFixedSize(32, 26);
         menuBtn->setStyleSheet(QStringLiteral(
             "QToolButton{background:#1b232b;border:1px solid #2d3841;border-radius:2px;color:#c9d1d9;"
             "padding:0;font-size:17px;font-weight:700;}"
             "QToolButton:hover{border-color:#f2b134;color:#f2b134;background:#222b33;}"));
         auto *menu = new QMenu(menuBtn);
+        QAction *maximize = menu->addAction(QStringLiteral("最大化 / 还原"));
         QAction *left = menu->addAction(QStringLiteral("停靠到左侧"));
         QAction *right = menu->addAction(QStringLiteral("停靠到右侧"));
         QAction *bottom = menu->addAction(QStringLiteral("停靠到底部"));
         menu->addSeparator();
-        QAction *autoHide = menu->addAction(QStringLiteral("自动隐藏（最小化）"));
+        QAction *autoHide = menu->addAction(QStringLiteral("最小化（自动隐藏）"));
         QAction *floatAct = menu->addAction(QStringLiteral("浮动 / 取消浮动"));
         menu->addSeparator();
         QAction *close = menu->addAction(QStringLiteral("关闭面板"));
         QObject::connect(left, &QAction::triggered, w, [w, d] { dockToArea(d, w, Qt::LeftDockWidgetArea); });
         QObject::connect(right, &QAction::triggered, w, [w, d] { dockToArea(d, w, Qt::RightDockWidgetArea); });
         QObject::connect(bottom, &QAction::triggered, w, [w, d] { dockToArea(d, w, Qt::BottomDockWidgetArea); });
-        QObject::connect(autoHide, &QAction::triggered, w, [w, d] { collapseDock(d, w); });
-        QObject::connect(floatAct, &QAction::triggered, d, [d] { d->setFloating(!d->isFloating()); });
-        QObject::connect(close, &QAction::triggered, d, &QDockWidget::close);
+        QObject::connect(maximize, &QAction::triggered, w, [w, d] { w->toggleDockMax(d); });
+        QObject::connect(autoHide, &QAction::triggered, w, [w, d] {
+            w->restoreDockMax();
+            collapseDock(d, w);
+        });
+        QObject::connect(floatAct, &QAction::triggered, w, [w, d] {
+            w->restoreDockMax();
+            d->setFloating(!d->isFloating());
+        });
+        QObject::connect(close, &QAction::triggered, w, [w, d] {
+            w->restoreDockMax();
+            d->close();
+        });
         menuBtn->setMenu(menu);
+        QObject::connect(menuBtn, &QToolButton::clicked, menuBtn, [menuBtn, menu] {
+            execDockMenu(menuBtn, menu);
+        });
         lay->addWidget(menuBtn);
         bar->setContextMenuPolicy(Qt::CustomContextMenu);
         QObject::connect(bar, &QWidget::customContextMenuRequested, bar, [bar, menu](const QPoint &pos) {
@@ -3258,6 +3359,18 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
         SourceData *sp = sourceById(srcId);
         if (!sp)
             return;
+        // 参数是源的静态配置，放在最上面；数量少时直接展开。
+        if (!sp->params.isEmpty())
+        {
+            auto *pg = new QTreeWidgetItem(panel, {QStringLiteral("参数 %1").arg(sp->params.size())});
+            pg->setForeground(0, QColor(QStringLiteral("#6e7d88")));
+            for (const auto &pr : sp->params)
+            {
+                auto *item = new QTreeWidgetItem(pg, {QStringLiteral("%1 = %2").arg(pr.first, pr.second)});
+                item->setToolTip(0, QStringLiteral("%1 = %2").arg(pr.first, pr.second));
+            }
+            pg->setExpanded(sp->params.size() <= 8);
+        }
         if (!sp->msgs.isEmpty())
         {
             const bool textLog = sp->msgs.first().value(1) == QStringLiteral("—");
@@ -3290,6 +3403,7 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
                     item->setData(0, Qt::UserRole + 4, m.value(0));
                 }
             }
+            mg->setExpanded(sp->msgs.size() <= 6);
         }
         QMap<QString, QTreeWidgetItem *> groups;
         for (const PsChannelInfo *ch : sp->channels)
@@ -3330,16 +3444,6 @@ QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, cons
         for (QTreeWidgetItemIterator it(panel); *it; ++it)
             ++rows;
         panel->setFixedHeight(qMin(420, qMax(160, rows * 18 + 6)));
-        if (!sp->params.isEmpty())
-        {
-            auto *pg = new QTreeWidgetItem(panel, {QStringLiteral("参数 %1").arg(sp->params.size())});
-            pg->setForeground(0, QColor(QStringLiteral("#6e7d88")));
-            for (const auto &pr : sp->params)
-            {
-                auto *item = new QTreeWidgetItem(pg, {QStringLiteral("%1 = %2").arg(pr.first, pr.second)});
-                item->setToolTip(0, QStringLiteral("%1 = %2").arg(pr.first, pr.second));
-            }
-        }
     };
     connect(expander, &QToolButton::clicked, this, [this, row, panel, expander, rebuildPanel] {
         if (panel->isVisible())
