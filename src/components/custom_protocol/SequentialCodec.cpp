@@ -363,6 +363,270 @@ bool looksSequentialProtocol(const QByteArray &json)
     return root.contains(QStringLiteral("segments"));
 }
 
+namespace
+{
+
+QString numList(const std::vector<double> &v)
+{
+    QStringList out;
+    const int n = std::min<int>(static_cast<int>(v.size()), 12);
+    for (int i = 0; i < n; ++i)
+        out << QString::number(v[static_cast<size_t>(i)], 'g', 8);
+    if (static_cast<int>(v.size()) > n)
+        out << QStringLiteral("…");
+    return out.join(QStringLiteral(", "));
+}
+
+} // namespace
+
+SequentialFramePreview previewSequentialFrame(const QByteArray &frame,
+                                              const ProtocolDocument &tpl)
+{
+    SequentialFramePreview res;
+    const uint8_t *data = reinterpret_cast<const uint8_t *>(frame.constData());
+    const size_t total = static_cast<size_t>(frame.size());
+    if (total == 0)
+    {
+        res.error = QStringLiteral("样例帧为空");
+        return res;
+    }
+
+    EvalCtx rawCtx, physCtx;
+    std::vector<RtSeg> fields;
+    std::map<std::string, RtSeg *> byName;
+    std::map<std::string, std::pair<uint32_t, uint32_t>> pseudo;
+    std::vector<std::string> order;
+    for (const SegSpec &s : tpl.segments)
+        order.push_back(s.name);
+
+    uint32_t pos = 0;
+    bool payloadSeen = false;
+    uint32_t payloadOff = 0, payloadBytes = 0, payloadCount = 0;
+    std::string e;
+
+    for (const SegSpec &seg : tpl.segments)
+    {
+        uint32_t count = 0, nbytes = 0;
+        if (!evalSize(seg, rawCtx, count, nbytes, e))
+        {
+            res.error = QString::fromStdString(e);
+            return res;
+        }
+        if (static_cast<uint64_t>(pos) + nbytes > total)
+        {
+            res.error = QStringLiteral("段 %1 超出帧长度：需要 %2 B，剩余 %3 B")
+                            .arg(QString::fromStdString(seg.name))
+                            .arg(nbytes)
+                            .arg(total - pos);
+            return res;
+        }
+        RtSeg rt;
+        rt.spec = &seg;
+        rt.offset = pos;
+        rt.bytes = nbytes;
+        rt.count = count;
+        const uint8_t *p = data + pos;
+
+        if (!tpl.series.enabled || seg.role != "payload")
+        {
+            for (uint32_t i = 0; i < count; ++i)
+                rt.raw.push_back(seg.type.bcd && seg.type.size > 1
+                                     ? double(readUInt(p + static_cast<size_t>(i) * seg.type.size,
+                                                       seg.type.size, seg.bigEndian))
+                                     : readElem(p + static_cast<size_t>(i) * seg.type.size,
+                                                seg.type, seg.bigEndian));
+            for (double v : rt.raw)
+                rt.phys.push_back(v * seg.scale + seg.offset);
+            rawCtx.values[seg.name] = rt.raw;
+            physCtx.values[seg.name] = rt.phys;
+            if (seg.type.type == FType::STR)
+            {
+                std::string txt;
+                for (uint32_t i = 0; i < nbytes; ++i)
+                    txt.push_back(static_cast<char>(p[i]));
+                rawCtx.strings[seg.name] = txt;
+                physCtx.strings[seg.name] = txt;
+            }
+            fields.push_back(std::move(rt));
+        }
+
+        if (tpl.series.enabled && seg.role == "payload")
+        {
+            payloadSeen = true;
+            payloadOff = pos;
+            payloadBytes = nbytes;
+            payloadCount = count;
+            std::vector<double> pv;
+            for (uint32_t i = 0; i < nbytes; ++i)
+                pv.push_back(p[i]);
+            rawCtx.values["payload"] = pv;
+            physCtx.values["payload"] = pv;
+            pseudo["payload"] = {payloadOff, nbytes};
+        }
+        else if (seg.role == "payload")
+        {
+            payloadSeen = true;
+            payloadOff = pos;
+            payloadBytes = nbytes;
+            payloadCount = count;
+        }
+        pos += nbytes;
+    }
+
+    if (tpl.series.enabled)
+    {
+        if (!payloadSeen)
+        {
+            res.error = QStringLiteral("series.payload 未找到");
+            return res;
+        }
+        std::string selKey;
+        if (tpl.series.selector && tpl.series.selector->kind == Expr::Ref &&
+            !tpl.series.selector->b && rawCtx.strings.count(tpl.series.selector->name))
+        {
+            selKey = stringKey(rawCtx.strings[tpl.series.selector->name]);
+        }
+        else
+        {
+            double sel = 0;
+            if (!tpl.series.selector || !evalExpr(tpl.series.selector, rawCtx, sel, e))
+            {
+                res.error = QString::fromStdString(e.empty() ? "series.selector 缺失" : e);
+                return res;
+            }
+            if (sel != std::trunc(sel))
+            {
+                res.error = QStringLiteral("series.selector 不是整数");
+                return res;
+            }
+            selKey = numberKey(sel);
+        }
+        const VariantSpec *var = nullptr;
+        matchVariant(tpl.series, selKey, var, e);
+        if (!var)
+        {
+            if (tpl.series.fallback == "reject")
+            {
+                res.error = QStringLiteral("series 未命中：%1").arg(QString::fromStdString(selKey));
+                return res;
+            }
+        }
+        else
+        {
+            res.lines << QStringLiteral("变体：%1").arg(QString::fromStdString(var->name));
+            uint32_t vpos = payloadOff;
+            EvalCtx vctx = rawCtx;
+            for (const SegSpec &seg : var->segments)
+            {
+                uint32_t count = 0, nbytes = 0;
+                if (!evalSize(seg, vctx, count, nbytes, e))
+                {
+                    res.error = QString::fromStdString(e);
+                    return res;
+                }
+                if (vpos + nbytes > total)
+                {
+                    res.error = QStringLiteral("变体段 %1 超出帧长度").arg(QString::fromStdString(seg.name));
+                    return res;
+                }
+                RtSeg rt;
+                rt.spec = &seg;
+                rt.offset = vpos;
+                rt.bytes = nbytes;
+                rt.count = count;
+                const uint8_t *p = data + vpos;
+                for (uint32_t i = 0; i < count; ++i)
+                    rt.raw.push_back(seg.type.bcd && seg.type.size > 1
+                                         ? double(readUInt(p + static_cast<size_t>(i) * seg.type.size,
+                                                           seg.type.size, seg.bigEndian))
+                                         : readElem(p + static_cast<size_t>(i) * seg.type.size,
+                                                    seg.type, seg.bigEndian));
+                for (double v : rt.raw)
+                    rt.phys.push_back(v * seg.scale + seg.offset);
+                vctx.values[seg.name] = rt.raw;
+                physCtx.values[seg.name] = rt.phys;
+                fields.push_back(std::move(rt));
+                vpos += nbytes;
+            }
+            if (vpos != payloadOff + payloadBytes)
+            {
+                res.error = QStringLiteral("变体段总字节数 %1 != payload %2")
+                                .arg(vpos - payloadOff)
+                                .arg(payloadBytes);
+                return res;
+            }
+        }
+    }
+
+    std::sort(fields.begin(), fields.end(),
+              [](const RtSeg &a, const RtSeg &b) { return a.offset < b.offset; });
+    for (RtSeg &rt : fields)
+        byName[rt.spec->name] = &rt;
+
+    if (!checkFrame(fields, byName, pseudo, order, data, rawCtx, e))
+    {
+        res.error = QString::fromStdString(e);
+        for (const RtSeg &rt : fields)
+            res.lines << QStringLiteral("%1 @ %2  %3 B")
+                             .arg(QString::fromStdString(rt.spec->name))
+                             .arg(rt.offset)
+                             .arg(rt.bytes);
+        return res;
+    }
+
+    res.ok = true;
+    res.lines << QStringLiteral("帧 %1 B · %2").arg(frame.size()).arg(QString::fromStdString(tpl.name));
+    for (const RtSeg &rt : fields)
+    {
+        const SegSpec &seg = *rt.spec;
+        if (seg.type.type == FType::STR)
+        {
+            QString text = QString::fromStdString(rawCtx.strings[seg.name]);
+            res.lines << QStringLiteral("%1 @ %2  str %3 B  \"%4\"")
+                             .arg(QString::fromStdString(seg.name))
+                             .arg(rt.offset)
+                             .arg(rt.bytes)
+                             .arg(text);
+        }
+        else
+        {
+            QString line = QStringLiteral("%1 @ %2  %3 × %4 = %5 B  raw=[%6]")
+                               .arg(QString::fromStdString(seg.name))
+                               .arg(rt.offset)
+                               .arg(rt.count)
+                               .arg(seg.type.size)
+                               .arg(rt.bytes)
+                               .arg(numList(rt.raw));
+            if (seg.scale != 1.0 || seg.offset != 0.0)
+                line += QStringLiteral("  phys=[%1]").arg(numList(rt.phys));
+            if (!seg.unit.empty())
+                line += QStringLiteral(" %1").arg(QString::fromStdString(seg.unit));
+            res.lines << line;
+        }
+    }
+
+    if (tpl.hasTimestamp && tpl.timestampExpr)
+    {
+        double ts = 0;
+        const EvalCtx &ctx = tpl.timestampRaw ? rawCtx : physCtx;
+        if (evalExpr(tpl.timestampExpr, ctx, ts, e))
+        {
+            if (tpl.timestampUnit == "ms")
+                ts /= 1000.0;
+            else if (tpl.timestampUnit == "us")
+                ts /= 1000000.0;
+            res.lines << QStringLiteral("timestamp：%1 s").arg(QString::number(ts, 'f', 6));
+        }
+        else
+        {
+            res.lines << QStringLiteral("timestamp 求值失败：%1")
+                             .arg(QString::fromStdString(e));
+        }
+    }
+    return res;
+}
+
+
 int32_t decodeSequentialFrames(const QByteArray &bytes, const QByteArray &json,
                                const PsHostApi *host, void **dataset,
                                char *err, uint32_t errCap)

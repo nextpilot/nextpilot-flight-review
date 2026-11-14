@@ -1,4 +1,5 @@
 #include "ProtocolEditorDialog.h"
+#include "SequentialCodec.hpp"
 #include "protocol/ProtocolDocument.h"
 #include "protocol/ProtocolSpec.h"
 
@@ -1122,58 +1123,14 @@ void ProtocolEditorDialog::tryFrame()
     }
     if (!doc.segments.empty())
     {
-        QStringList lines;
-        ps::protocol::EvalCtx ctx;
-        int offset = 0;
-        for (const auto &seg : doc.segments)
+        const SequentialFramePreview p = previewSequentialFrame(frame, doc);
+        if (p.ok)
         {
-            double n = 0;
-            std::string evalErr;
-            if (!ps::protocol::evalExpr(seg.sizeExpr, ctx, n, evalErr))
-            {
-                lines << QStringLiteral("%1 @ %2  长度求值失败：%3")
-                             .arg(QString::fromStdString(seg.name))
-                             .arg(offset)
-                             .arg(QString::fromStdString(evalErr));
-                break;
-            }
-            const int count = static_cast<int>(n);
-            const int bytes = count * static_cast<int>(seg.type.size);
-            if (count < 0 || bytes < 0 || offset + bytes > frame.size())
-            {
-                lines << QStringLiteral("%1 @ %2  需要 %3 B，帧剩余 %4 B")
-                             .arg(QString::fromStdString(seg.name))
-                             .arg(offset)
-                             .arg(bytes)
-                             .arg(frame.size() - offset);
-                break;
-            }
-            if (seg.type.type == ps::protocol::FType::STR)
-            {
-                ctx.strings[seg.name] = std::string(frame.mid(offset, count).constData());
-                ctx.values[seg.name] = {static_cast<double>(count)};
-                lines << QStringLiteral("%1 @ %2  str / %3 B  %4")
-                             .arg(QString::fromStdString(seg.name))
-                             .arg(offset)
-                             .arg(bytes)
-                             .arg(QString::fromUtf8(frame.mid(offset, std::min(count, 32))));
-            }
-            else
-            {
-                std::vector<double> vals;
-                for (int i = 0; i < count; ++i)
-                    vals.push_back(readTyped(frame, offset + i * static_cast<int>(seg.type.size), seg.type, seg.bigEndian));
-                ctx.values[seg.name] = vals;
-                QString raw = QString::fromLatin1(frame.mid(offset, std::min(bytes, 8)).toHex(' ').toUpper());
-                lines << QStringLiteral("%1 @ %2  %3 元素 / %4 B  %5")
-                             .arg(QString::fromStdString(seg.name))
-                             .arg(offset)
-                             .arg(count)
-                             .arg(bytes)
-                             .arg(raw);
-            }
-            offset += bytes;
+            m_result->setText(p.lines.join(QStringLiteral("\n")));
+            return;
         }
+        QStringList lines = p.lines;
+        lines.prepend(QStringLiteral("解码失败：%1").arg(p.error));
         m_result->setText(lines.join(QStringLiteral("\n")));
         return;
     }

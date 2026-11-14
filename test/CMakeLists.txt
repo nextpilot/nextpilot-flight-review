@@ -208,3 +208,8 @@ if(TARGET Qt6::Widgets)
   add_test(NAME video_sync COMMAND test_video_sync)
   set_tests_properties(video_sync PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
+
+add_executable(test_command_registry unit/test_command_registry.cpp ${PROJECT_SOURCE_DIR}/src/app/commands/CommandRegistry.cpp)
+target_include_directories(test_command_registry PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(test_command_registry PRIVATE Qt6::Core)
+add_test(NAME command_registry COMMAND test_command_registry)

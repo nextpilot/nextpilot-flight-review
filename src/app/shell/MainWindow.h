@@ -4,6 +4,7 @@
 #include <QJsonObject>
 
 #include "app/components/Component.h"
+#include "app/commands/CommandRegistry.h"
 
 #include <memory>
 
@@ -95,6 +96,7 @@ private:
     QWidget *pageForCanvas(CanvasWidget *c) const;
     QVector<CanvasWidget *> pageCanvases() const;
     QWidget *createRibbon();
+    void registerCommands();
     void createDocks();
     void createPages();
     void log(const QString &text);
@@ -176,6 +178,7 @@ private:
     QVBoxLayout *m_srcRows = nullptr;
     QScrollArea *m_srcListScroll = nullptr;
     ps::components::Registry m_components;
+    ps::commands::CommandRegistry m_commands;
     QWidget *m_srcEmpty = nullptr;
     QToolButton *m_srcListToggle = nullptr;
     QLabel *m_srcStatus = nullptr;

@@ -1277,6 +1277,8 @@ MainWindow::MainWindow(QWidget *parent)
         plugin.contribute(m_components, hostServices);
     }
 
+    registerCommands();
+
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
     m_pages = new QTabWidget(this);
 
@@ -1312,6 +1314,109 @@ MainWindow::MainWindow(QWidget *parent)
     m_liveTimer->start();
 
     log(QStringLiteral("启动完成：%1").arg(kernelInfo));
+}
+
+void MainWindow::registerCommands()
+{
+    using Ctx = ps::commands::CommandContext;
+
+    m_commands.add(QStringLiteral("file.open"), [this](const Ctx &) {
+        const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("打开文件"), {},
+            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+        for (const QString &f : fs)
+            loadFile(f);
+    });
+    m_commands.add(QStringLiteral("file.importLayout"), [this](const Ctx &) {
+        const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
+            QStringLiteral("PlotScope 布局 (*.psl)"));
+        if (!f.isEmpty())
+            importLayoutFrom(f);
+    });
+    m_commands.add(QStringLiteral("file.settings"), [this](const Ctx &) { openSettings(); });
+    m_commands.add(QStringLiteral("file.saveLayout"), [this](const Ctx &) {
+        const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出布局"), {},
+            QStringLiteral("PlotScope 布局 (*.psl)"));
+        if (!f.isEmpty())
+            saveLayoutTo(f);
+    });
+    m_commands.add(QStringLiteral("file.exportSettings"), [this](const Ctx &) {
+        log(QStringLiteral("导出设置：M1 接 YAML"));
+    });
+    m_commands.add(QStringLiteral("file.exportData"), [this](const Ctx &) {
+        log(QStringLiteral("导出数据：M1 接 CSV/NDF"));
+    });
+    m_commands.add(QStringLiteral("file.screenshot"), [this](const Ctx &) {
+        QWidget *page = m_pages ? m_pages->currentWidget() : nullptr;
+        if (!page)
+            return;
+        const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("截图另存为"), {},
+            QStringLiteral("PNG (*.png)"));
+        if (f.isEmpty())
+            return;
+        if (page->grab().save(f))
+            log(QStringLiteral("已截图：%1").arg(f));
+    });
+
+    m_commands.add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
+        const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("快速打开"), {},
+            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+        for (const QString &f : fs)
+            loadFile(f);
+    });
+    m_commands.add(QStringLiteral("data.recent"), [this](const Ctx &) {
+        QMenu menu(this);
+        QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+        const QStringList recent = st.value(QStringLiteral("recentFiles")).toStringList();
+        if (recent.isEmpty())
+        {
+            QAction *empty = menu.addAction(QStringLiteral("暂无最近文件"));
+            empty->setEnabled(false);
+        }
+        for (const QString &path : recent)
+        {
+            QAction *a = menu.addAction(QFileInfo(path).fileName());
+            a->setToolTip(path);
+            connect(a, &QAction::triggered, this, [this, path] { loadFile(path); });
+        }
+        menu.exec(QCursor::pos());
+    });
+    m_commands.add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
+    m_commands.add(QStringLiteral("data.reload"), [this](const Ctx &) {
+        SourceData *src = sourceById(m_activeSource);
+        if (!src || src->path.isEmpty())
+        {
+            log(QStringLiteral("当前源没有可重载的文件"));
+            return;
+        }
+        const QString path = src->path;
+        QWidget *row = src->row;
+        if (row)
+            removeSourceRow(row);
+        loadFile(path, false);
+    });
+
+    m_commands.add(QStringLiteral("page.new"), [this](const Ctx &) { newPage(); });
+    m_commands.add(QStringLiteral("page.addCanvas"), [this](const Ctx &) { addCanvasToPage(); });
+    m_commands.add(QStringLiteral("page.splitHorizontal"), [this](const Ctx &) {
+        if (auto *c = currentCanvas())
+            splitCanvas(c, Qt::Horizontal);
+    });
+    m_commands.add(QStringLiteral("page.splitVertical"), [this](const Ctx &) {
+        if (auto *c = currentCanvas())
+            splitCanvas(c, Qt::Vertical);
+    });
+
+    m_commands.add(QStringLiteral("script.run"), [this](const Ctx &) {
+        log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）：out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)"));
+    });
+    m_commands.add(QStringLiteral("script.format"), [this](const Ctx &) {
+        log(QStringLiteral("脚本格式化（stylua 规则，M2 接）"));
+    });
+
+    m_commands.add(QStringLiteral("view.toggleDock"), [this](const Ctx &ctx) {
+        if (auto *d = findChild<QDockWidget *>(ctx.arg))
+            d->setVisible(!d->isVisible());
+    });
 }
 
 QWidget *MainWindow::createRibbon()
@@ -1354,46 +1459,25 @@ QWidget *MainWindow::createRibbon()
         panel->addSmallAction(a);
     };
 
+    auto run = [this](const QString &id, const QString &arg = QString()) {
+        return [this, id, arg] { m_commands.invoke(id, ps::commands::CommandContext{this, arg}); };
+    };
+
     // 文件
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("文件"));
         auto *pLayout = cat->addPanel(QStringLiteral("文件"));
-        addLarge(pLayout, QStringLiteral("打开文件"), [this] {
-            const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("打开文件"), {},
-                QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-            for (const QString &f : fs)
-                loadFile(f);
-        }, this);
-        addLarge(pLayout, QStringLiteral("导入布局"), [this] {
-            const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
-                QStringLiteral("PlotScope 布局 (*.psl)"));
-            if (!f.isEmpty())
-                importLayoutFrom(f);
-        }, this);
-        addLarge(pLayout, QStringLiteral("设置"), [this] { openSettings(); }, this);
+        addLarge(pLayout, QStringLiteral("打开文件"), run(QStringLiteral("file.open")), this);
+        addLarge(pLayout, QStringLiteral("导入布局"), run(QStringLiteral("file.importLayout")), this);
+        addLarge(pLayout, QStringLiteral("设置"), run(QStringLiteral("file.settings")), this);
 
         auto *pExport = cat->addPanel(QStringLiteral("导出"));
-        addLarge(pExport, QStringLiteral("保存布局"), [this] {
-            const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出布局"), {},
-                QStringLiteral("PlotScope 布局 (*.psl)"));
-            if (!f.isEmpty())
-                saveLayoutTo(f);
-        }, this);
-        addSmall(pExport, QStringLiteral("导出设置"), [this] { log(QStringLiteral("导出设置：M1 接 YAML")); }, this);
-        addSmall(pExport, QStringLiteral("导出数据"), [this] { log(QStringLiteral("导出数据：M1 接 CSV/NDF")); }, this);
+        addLarge(pExport, QStringLiteral("保存布局"), run(QStringLiteral("file.saveLayout")), this);
+        addSmall(pExport, QStringLiteral("导出设置"), run(QStringLiteral("file.exportSettings")), this);
+        addSmall(pExport, QStringLiteral("导出数据"), run(QStringLiteral("file.exportData")), this);
 
         auto *pShot = cat->addPanel(QStringLiteral("截图"));
-        addLarge(pShot, QStringLiteral("截图当前页"), [this] {
-            QWidget *page = m_pages ? m_pages->currentWidget() : nullptr;
-            if (!page)
-                return;
-            const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("截图另存为"), {},
-                QStringLiteral("PNG (*.png)"));
-            if (f.isEmpty())
-                return;
-            if (page->grab().save(f))
-                log(QStringLiteral("已截图：%1").arg(f));
-        }, this);
+        addLarge(pShot, QStringLiteral("截图当前页"), run(QStringLiteral("file.screenshot")), this);
     }
 
     // 数据：常用操作在左，来源选择在右；来源库压成一行，弹窗按文件/实时分组
@@ -1401,43 +1485,10 @@ QWidget *MainWindow::createRibbon()
         auto *cat = ribbon->addCategoryPage(QStringLiteral("数据"));
 
         auto *pQuick = cat->addPanel(QStringLiteral("常用"));
-        addLarge(pQuick, QStringLiteral("快速打开"), [this] {
-            const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("快速打开"), {},
-                QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-            for (const QString &f : fs)
-                loadFile(f);
-        }, this);
-        addSmall(pQuick, QStringLiteral("最近"), [this] {
-            QMenu menu(this);
-            QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-            const QStringList recent = st.value(QStringLiteral("recentFiles")).toStringList();
-            if (recent.isEmpty())
-            {
-                QAction *empty = menu.addAction(QStringLiteral("暂无最近文件"));
-                empty->setEnabled(false);
-            }
-            for (const QString &path : recent)
-            {
-                QAction *a = menu.addAction(QFileInfo(path).fileName());
-                a->setToolTip(path);
-                connect(a, &QAction::triggered, this, [this, path] { loadFile(path); });
-            }
-            menu.exec(QCursor::pos());
-        }, this);
-        addSmall(pQuick, QStringLiteral("导出快照"), [this] { exportActiveCsv(); }, this);
-        addSmall(pQuick, QStringLiteral("重载"), [this] {
-            SourceData *src = sourceById(m_activeSource);
-            if (!src || src->path.isEmpty())
-            {
-                log(QStringLiteral("当前源没有可重载的文件"));
-                return;
-            }
-            const QString path = src->path;
-            QWidget *row = src->row;
-            if (row)
-                removeSourceRow(row);
-            loadFile(path, false);
-        }, this);
+        addLarge(pQuick, QStringLiteral("快速打开"), run(QStringLiteral("data.quickOpen")), this);
+        addSmall(pQuick, QStringLiteral("最近"), run(QStringLiteral("data.recent")), this);
+        addSmall(pQuick, QStringLiteral("导出快照"), run(QStringLiteral("data.exportSnapshot")), this);
+        addSmall(pQuick, QStringLiteral("重载"), run(QStringLiteral("data.reload")), this);
 
         auto *pSrc = cat->addPanel(QStringLiteral("来源"));
         auto *srcGallery = pSrc->addGallery(true);
@@ -1518,16 +1569,10 @@ QWidget *MainWindow::createRibbon()
         auto *cat = ribbon->addCategoryPage(QStringLiteral("绘图"));
 
         auto *pPage = cat->addPanel(QStringLiteral("页面"));
-        addLarge(pPage, QStringLiteral("新建页"), [this] { newPage(); }, this);
-        addLarge(pPage, QStringLiteral("添加画布"), [this] { addCanvasToPage(); }, this);
-        addLarge(pPage, QStringLiteral("向右拆分"), [this] {
-            if (auto *c = currentCanvas())
-                splitCanvas(c, Qt::Horizontal);
-        }, this);
-        addLarge(pPage, QStringLiteral("向下拆分"), [this] {
-            if (auto *c = currentCanvas())
-                splitCanvas(c, Qt::Vertical);
-        }, this);
+        addLarge(pPage, QStringLiteral("新建页"), run(QStringLiteral("page.new")), this);
+        addLarge(pPage, QStringLiteral("添加画布"), run(QStringLiteral("page.addCanvas")), this);
+        addLarge(pPage, QStringLiteral("向右拆分"), run(QStringLiteral("page.splitHorizontal")), this);
+        addLarge(pPage, QStringLiteral("向下拆分"), run(QStringLiteral("page.splitVertical")), this);
 
         // 页内布局：MATLAB subplot / PJ 的 m×n
         auto *pGrid = cat->addPanel(QStringLiteral("画布布局"));
@@ -1788,10 +1833,8 @@ QWidget *MainWindow::createRibbon()
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("脚本"));
         auto *p = cat->addPanel(QStringLiteral("Lua"));
-        addLarge(p, QStringLiteral("运行"), [this] {
-            log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）：out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)"));
-        }, this);
-        addSmall(p, QStringLiteral("格式化"), [this] { log(QStringLiteral("脚本格式化（stylua 规则，M2 接）")); }, this);
+        addLarge(p, QStringLiteral("运行"), run(QStringLiteral("script.run")), this);
+        addSmall(p, QStringLiteral("格式化"), run(QStringLiteral("script.format")), this);
     }
 
     // 组件贡献的菜单页
@@ -1815,15 +1858,11 @@ QWidget *MainWindow::createRibbon()
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("视图"));
         auto *p = cat->addPanel(QStringLiteral("面板"));
-        auto toggle = [this](const char *obj) {
-            if (auto *d = findChild<QDockWidget *>(QString::fromLatin1(obj)))
-                d->setVisible(!d->isVisible());
-        };
-        addLarge(p, QStringLiteral("数据源"), [toggle] { toggle("dock.src"); }, this);
-        addSmall(p, QStringLiteral("属性"), [toggle] { toggle("dock.prop"); }, this);
-        addSmall(p, QStringLiteral("脚本"), [toggle] { toggle("dock.script"); }, this);
-        addSmall(p, QStringLiteral("日志"), [toggle] { toggle("dock.log"); }, this);
-        addSmall(p, QStringLiteral("视频"), [toggle] { toggle("dock.video"); }, this);
+        addLarge(p, QStringLiteral("数据源"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.src")), this);
+        addSmall(p, QStringLiteral("属性"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.prop")), this);
+        addSmall(p, QStringLiteral("脚本"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.script")), this);
+        addSmall(p, QStringLiteral("日志"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.log")), this);
+        addSmall(p, QStringLiteral("视频"), run(QStringLiteral("view.toggleDock"), QStringLiteral("dock.video")), this);
     }
 
     // 右侧芯片位：只读状态摘要，跟随实际数据源刷新

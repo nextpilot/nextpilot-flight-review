@@ -31,6 +31,8 @@ add_executable(plotscope_app
   data_input/DataInputDialog.cpp
   components/ProtocolEditorService.h
   components/ProtocolEditorService.cpp
+  commands/CommandRegistry.h
+  commands/CommandRegistry.cpp
   components/Component.cpp
   components/PluginComponent.cpp
   video/VideoSyncWidget.cpp
