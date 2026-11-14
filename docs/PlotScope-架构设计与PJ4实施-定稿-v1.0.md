@@ -650,7 +650,7 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 | **M0** | 骨架：按 §12 目录落地、CMake + Rust 内核接通、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 | **已完成** |
 | **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） | **基本完成**：ULog/DFLog/ASC/BLF、MAVLink UDP/raw/`.tlog` 回放、缓存、外部插件 manifest/ABI 已落地；ASC/BLF 支持可选 DBC 信号解码 |
 | **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 | **部分完成**：12 算子、四元数、Lua 5.4、OEM7、NMEA/UBX 已落地；MDF4、自绘滚动面板未做 |
-| **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 | **部分完成**：MCAP 加载/录制、多画布、时间对齐、rosbag2 `.db3` 常见消息、左/右双 Y 轴已落地；视频同步未做 |
+| **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 | **部分完成**：MCAP 加载/录制、多画布、时间对齐、rosbag2 `.db3`、双 Y 轴、视频同步已落地 |
 | **M4** | 协议编辑器（Loader 的 options 子窗口：位域/CRC/联动）+ 模板编译 | 3 周 | **基础落地**：`.psproto` 固定帧/位域/CRC16 + 模板编辑器（JSON/字段表/hex 试算） |
 | **M5** | 仪表页、布局 `.psl`、导出 | 2 周 | **完成**：图型仪表、独立仪表页（地平仪/罗盘/表盘）、`.psl`、PNG/CSV 导出 |
 
@@ -972,6 +972,7 @@ public:
 - P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码与参数随 `.psl` 保存；`init(params)` 接收参数表单；预览/应用分两步；Apply 替换来源曲线并继承颜色；Python 3 脚本入口（`# python` 标记，JSON 管道）。
 - 多 parser：`PsDataInputVtable` / `PsDataSourceVtable` 尾部增加 `feed_raw`；MAVLink/OEM7 支持 `transport=external` 只解析不建连接；`MainWindow::openLiveInput()` 负责扇出与句柄回收。
 - M3：`McapWriter` 增加 1 MiB Chunk 聚合、ChunkIndex、SummaryOffset 与 summary Schema/Channel 副本；`McapReader` 原有 Chunk 解析路径直接复用。
+- M3：视频同步面板：ffmpeg 抽帧（10 fps/640px）到临时目录，播放/拖动时向所有画布推送 playhead，时间序列页自动滚动窗口；支持时间偏移。
 - M3：CanvasWidget 支持曲线绑定右轴（右键「绑定右轴」），左右轴独立量程/刻度，布局持久化；Ctrl+滚轮与纵向平移同步作用于双轴。
 - M3：新增 `data_loader_rosbag2` 直读 `.db3`（SQLite topics/messages + CDR），支持 Float64/Float32/Int32/Int64/Bool/String/Imu/Twist/PoseStamped/Odometry/NavSatFix/Header；未识别类型只出 `payload_bytes`。rosbag2 目录也可加载。
 - P4：GpsMap 图型：经纬度网格、轨迹连线、起终点标记，无在线瓦片依赖。

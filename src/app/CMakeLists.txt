@@ -30,6 +30,7 @@ add_executable(plotscope_app
   data_input/DataInputDialog.h
   data_input/DataInputDialog.cpp
   data_input/ProtocolEditorDialog.cpp
+  video/VideoSyncWidget.cpp
   plugin_host/DialogEngine.h
   plugin_host/DialogEngine.cpp
   device/DeviceDebugDialog.h

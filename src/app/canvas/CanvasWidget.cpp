@@ -1144,6 +1144,19 @@ void CanvasWidget::paintSpecial(QPainter &p, const QRectF &plot, const QFontMetr
     p.restore();
 }
 
+void CanvasWidget::setPlayhead(double t)
+{
+    m_hasPlayhead = true;
+    m_playhead = t;
+    update();
+}
+
+void CanvasWidget::clearPlayhead()
+{
+    m_hasPlayhead = false;
+    update();
+}
+
 void CanvasWidget::paintEvent(QPaintEvent *)
 {
     // 实时源的 PsChannelInfo 指针稳定，point_count 可能已增长；绘制前同步并跟随 X 轴。
@@ -1191,6 +1204,19 @@ void CanvasWidget::paintEvent(QPaintEvent *)
                             ? QStringLiteral("空画布 · 拖字段到这里，或「文件 → 打开文件」")
                             : QStringLiteral("%1 通道 · 抽稀在 Rust 侧完成").arg(m_series.size());
     p.drawText(QPointF(14 + titleWidth + 14, 21), sub);
+
+    if (m_hasPlayhead)
+    {
+        const double x = plot.left() + plot.width() * (m_playhead - m_t0) / (m_t1 - m_t0);
+        if (x >= plot.left() && x <= plot.right())
+        {
+            p.setPen(QPen(QColor("#ffb454"), 1, Qt::DashLine));
+            p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+            p.setPen(QColor("#ffb454"));
+            p.drawText(QPointF(std::min(x + 4, plot.right() - 40), plot.top() + fm.ascent() + 2),
+                       QStringLiteral("视频"));
+        }
+    }
 
     if (m_mode != TimeSeries)
     {

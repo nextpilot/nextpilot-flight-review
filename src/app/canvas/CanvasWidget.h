@@ -75,6 +75,8 @@ public:
     void restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool);
     double t0() const { return m_t0; }
     double t1() const { return m_t1; }
+    void setPlayhead(double t);
+    void clearPlayhead();
 
 signals:
     void activated(const QString &title);
@@ -165,6 +167,8 @@ private:
     bool m_abHasB = false;
     double m_abA = 0.0;
     double m_abB = 0.0;
+    bool m_hasPlayhead = false;
+    double m_playhead = 0.0;
     QPointF m_rubberStart;
     QRectF m_rubberRect;
     bool m_kernelBacked = false;

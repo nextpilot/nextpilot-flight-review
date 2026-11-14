@@ -1,4 +1,5 @@
 #include "shell/MainWindow.h"
+#include "video/VideoSyncWidget.h"
 #include "plugin_host/DialogEngine.h"
 #include "data_input/DataInputDialog.h"
 #include "app/cache/DatasetCache.h"
@@ -1179,6 +1180,7 @@ QWidget *MainWindow::createRibbon()
         addSmall(p, QStringLiteral("属性"), [toggle] { toggle("dock.prop"); }, this);
         addSmall(p, QStringLiteral("脚本"), [toggle] { toggle("dock.script"); }, this);
         addSmall(p, QStringLiteral("日志"), [toggle] { toggle("dock.log"); }, this);
+        addSmall(p, QStringLiteral("视频"), [toggle] { toggle("dock.video"); }, this);
     }
 
     // 右侧芯片位：只读状态摘要，跟随实际数据源刷新
@@ -1222,6 +1224,7 @@ QWidget *MainWindow::createRibbon()
             {QStringLiteral("属性"), QStringLiteral("prop")},
             {QStringLiteral("脚本"), QStringLiteral("script")},
             {QStringLiteral("日志"), QStringLiteral("log")},
+            {QStringLiteral("视频"), QStringLiteral("play")},
             {QStringLiteral("网格"), QStringLiteral("grid")},
             {QStringLiteral("边框"), QStringLiteral("box")},
             {QStringLiteral("图例"), QStringLiteral("legend")},
@@ -1601,6 +1604,26 @@ void MainWindow::createDocks()
     setPropRows(QStringLiteral("画布"),
                 {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")},
                  {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
+
+    // 右侧：视频同步（ffmpeg 抽帧；默认隐藏）
+    auto *videoDock = new QDockWidget(QStringLiteral("视频同步"), this);
+    videoDock->setObjectName(QStringLiteral("dock.video"));
+    auto *video = new VideoSyncWidget(videoDock);
+    videoDock->setWidget(video);
+    addDockWidget(Qt::RightDockWidgetArea, videoDock);
+    videoDock->hide();
+    connect(video, &VideoSyncWidget::timeChanged, this, [this](double t) {
+        for (CanvasWidget *c : findChildren<CanvasWidget *>())
+        {
+            c->setPlayhead(t);
+            if (c->plotMode() == CanvasWidget::TimeSeries)
+            {
+                const double span = std::max(0.5, c->t1() - c->t0());
+                if (t < c->t0() || t > c->t1())
+                    c->setTimeRange(t - span * 0.8, t + span * 0.2);
+            }
+        }
+    });
 
     // 右下：脚本
     auto *scriptDock = new QDockWidget(QStringLiteral("脚本 · Lua 5.4"), this);
