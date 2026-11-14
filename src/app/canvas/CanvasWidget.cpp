@@ -44,6 +44,43 @@ Qt::PenStyle penStyleFor(int style)
     }
 }
 
+void drawMarker(QPainter &p, const QPointF &pt, int marker, double size, const QColor &color)
+{
+    p.setPen(QPen(color, 1));
+    p.setBrush(Qt::NoBrush);
+    const double h = size * 0.5;
+    switch (marker)
+    {
+    case 1: p.drawEllipse(pt, h, h); break;
+    case 2: p.drawRect(QRectF(pt.x() - h, pt.y() - h, size, size)); break;
+    case 3:
+    {
+        QPolygonF poly;
+        poly << QPointF(pt.x(), pt.y() - h) << QPointF(pt.x() + h, pt.y())
+             << QPointF(pt.x(), pt.y() + h) << QPointF(pt.x() - h, pt.y());
+        p.drawPolygon(poly);
+        break;
+    }
+    case 4:
+    {
+        QPolygonF poly;
+        poly << QPointF(pt.x(), pt.y() - h) << QPointF(pt.x() + h, pt.y() + h)
+             << QPointF(pt.x() - h, pt.y() + h);
+        p.drawPolygon(poly);
+        break;
+    }
+    case 5:
+        p.drawLine(QPointF(pt.x() - h, pt.y()), QPointF(pt.x() + h, pt.y()));
+        p.drawLine(QPointF(pt.x(), pt.y() - h), QPointF(pt.x(), pt.y() + h));
+        break;
+    case 6:
+        p.drawLine(QPointF(pt.x() - h, pt.y() - h), QPointF(pt.x() + h, pt.y() + h));
+        p.drawLine(QPointF(pt.x() - h, pt.y() + h), QPointF(pt.x() + h, pt.y() - h));
+        break;
+    default: break;
+    }
+}
+
 constexpr double kPi = 3.14159265358979323846;
 
 QColor colorBg()   { return QColor("#10161c"); }
@@ -507,6 +544,8 @@ QJsonObject CanvasWidget::seriesState(int index) const
     o[QStringLiteral("color")] = s.color.name();
     o[QStringLiteral("width")] = s.width;
     o[QStringLiteral("style")] = s.lineStyle;
+    o[QStringLiteral("marker")] = s.marker;
+    o[QStringLiteral("markerSize")] = s.markerSize;
     o[QStringLiteral("axis")] = s.axis;
     o[QStringLiteral("visible")] = s.visible;
     o[QStringLiteral("offset")] = s.offsetSec;
@@ -531,6 +570,10 @@ bool CanvasWidget::patchSeries(int index, const QJsonObject &patch)
         s.width = std::clamp(patch.value(QStringLiteral("width")).toInt(s.width), 1, 6);
     if (patch.contains(QStringLiteral("style")))
         s.lineStyle = std::clamp(patch.value(QStringLiteral("style")).toInt(s.lineStyle), 0, 3);
+    if (patch.contains(QStringLiteral("marker")))
+        s.marker = std::clamp(patch.value(QStringLiteral("marker")).toInt(s.marker), 0, 6);
+    if (patch.contains(QStringLiteral("markerSize")))
+        s.markerSize = std::clamp(patch.value(QStringLiteral("markerSize")).toInt(s.markerSize), 1, 12);
     if (patch.contains(QStringLiteral("axis")))
         s.axis = patch.value(QStringLiteral("axis")).toInt(s.axis) == 1 ? 1 : 0;
     if (patch.contains(QStringLiteral("visible")))
@@ -1482,7 +1525,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     p.drawText(QPointF(14, 21), title);
 
     f.setBold(false);
-    f.setPixelSize(11);
+    f.setPixelSize(m_axisFontSize);
     p.setFont(f);
     const QFontMetrics fm(p.font());
     p.setPen(colorDim());
@@ -1513,7 +1556,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         return;
     }
 
-    p.setPen(colorText());
+    p.setPen(axisInk());
     if (!m_xLabel.isEmpty())
         p.drawText(QPointF(plot.center().x() - fm.horizontalAdvance(m_xLabel) / 2,
                            plot.bottom() + fm.ascent() + 22), m_xLabel);
@@ -1529,7 +1572,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     // 空画布：只留网格和边框，不画无数据支撑的假刻度。
     if (m_series.isEmpty())
     {
-        if (m_showGrid)
+        if (m_gridY)
         {
             p.setPen(QPen(colorGrid(), 1));
             for (int i = 1; i < 5; ++i)
@@ -1537,6 +1580,10 @@ void CanvasWidget::paintEvent(QPaintEvent *)
                 const double y = plot.top() + plot.height() * i / 5.0;
                 p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
             }
+        }
+        if (m_gridX)
+        {
+            p.setPen(QPen(colorGrid(), 1));
             for (int i = 1; i < 6; ++i)
             {
                 const double x = plot.left() + plot.width() * i / 6.0;
@@ -1545,7 +1592,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
         }
         if (m_showBox)
         {
-            p.setPen(QPen(colorGrid(), 1));
+            p.setPen(QPen(axisInk(), m_axisLineWidth));
             p.drawRect(plot);
         }
         return;
@@ -1556,14 +1603,14 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     for (int i = 0; i <= yTicks; ++i)
     {
         const double y = plot.top() + plot.height() * i / yTicks;
-        if (m_showGrid)
+        if (m_gridY)
         {
             p.setPen(QPen(colorGrid(), 1));
             p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
         }
         const double val = m_flipY ? m_yMin + (m_yMax - m_yMin) * i / yTicks
                                    : m_yMax - (m_yMax - m_yMin) * i / yTicks;
-        p.setPen(colorText());
+        p.setPen(axisInk());
         const QString lbl = QString::number(val, 'g', 4);
         p.drawText(QPointF(plot.left() - 8 - fm.horizontalAdvance(lbl), y + fm.ascent() / 2 - 1), lbl);
     }
@@ -1574,7 +1621,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
             const double y = plot.top() + plot.height() * i / yTicks;
             const double val = m_flipY ? m_y2Min + (m_y2Max - m_y2Min) * i / yTicks
                                        : m_y2Max - (m_y2Max - m_y2Min) * i / yTicks;
-            p.setPen(colorText());
+            p.setPen(axisInk());
             const QString lbl = QString::number(val, 'g', 4);
             p.drawText(QPointF(plot.right() + 8, y + fm.ascent() / 2 - 1), lbl);
         }
@@ -1585,18 +1632,32 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     {
         const double x = plot.left() + plot.width() * i / xTicks;
         const double t = m_t0 + (m_t1 - m_t0) * i / xTicks;
-        if (m_showGrid)
+        if (m_gridX)
         {
             p.setPen(QPen(colorGrid(), 1));
             p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
         }
-        p.setPen(colorText());
+        p.setPen(axisInk());
         const QString lbl = formatTime(t);
         p.drawText(QPointF(x - fm.horizontalAdvance(lbl) / 2, plot.bottom() + fm.ascent() + 6), lbl);
     }
+    if (m_minorGrid)
+    {
+        p.setPen(QPen(colorGrid(), 1, Qt::DotLine));
+        for (int i = 0; i < yTicks; ++i)
+        {
+            const double y = plot.top() + plot.height() * (2 * i + 1) / (2.0 * yTicks);
+            p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+        }
+        for (int i = 0; i < xTicks; ++i)
+        {
+            const double x = plot.left() + plot.width() * (2 * i + 1) / (2.0 * xTicks);
+            p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        }
+    }
     if (m_showBox)
     {
-        p.setPen(QPen(colorGrid(), 1));
+        p.setPen(QPen(axisInk(), m_axisLineWidth));
         p.drawRect(plot);
     }
     // 曲线：每像素一个 min/max 桶，画"包络带 + 中线"
@@ -1664,6 +1725,15 @@ void CanvasWidget::paintEvent(QPaintEvent *)
                                     toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0, s.axis)));
             p.setPen(QPen(s.color, s.width, penStyleFor(s.lineStyle)));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
             p.drawPolyline(poly);
+            if (s.marker > 0 && s.count() <= 4000)
+            {
+                p.setRenderHint(QPainter::Antialiasing, true);
+                for (quint32 i = 0; i < s.count(); ++i)
+                    drawMarker(p, QPointF(toX(s.time()[i] - s.offsetSec),
+                                          toY(s.value()[i], s.axis)),
+                               s.marker, s.markerSize, s.color);
+                p.setRenderHint(QPainter::Antialiasing, false);
+            }
             m_hitPaths.append(poly);
             m_hitOwner.append(si);
         }
@@ -1674,9 +1744,20 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     if (m_showLegend)
     {
         // 图例（带单位）：点击切换显隐，右键删除
-        double lx = plot.left() + 6;
-        const double ly = plot.top() + 14;
         m_legendRects.clear();
+        double totalW = 0.0;
+        for (const Series &s : m_series)
+        {
+            const QString lbl0 = s.unit.isEmpty() ? s.label : QStringLiteral("%1 [%2]").arg(s.label, s.unit);
+            const QString lbl = s.axis == 1 ? lbl0 + QStringLiteral(" →右") : lbl0;
+            totalW += 19 + fm.horizontalAdvance(lbl) + 20;
+        }
+        double lx = (m_legendPos == 1 || m_legendPos == 3)
+                        ? std::max(plot.left() + 6.0, plot.right() - totalW - 10)
+                        : plot.left() + 6;
+        const double ly = (m_legendPos == 2 || m_legendPos == 3)
+                              ? plot.bottom() - 8
+                              : plot.top() + 14;
         for (int i = 0; i < m_series.size(); ++i)
         {
             const Series &s = m_series.at(i);
@@ -1684,7 +1765,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
             const QString lbl = s.axis == 1 ? lbl0 + QStringLiteral(" →右") : lbl0;
             const double w = 19 + fm.horizontalAdvance(lbl) + 12;
             m_legendRects.append(QRectF(lx - 2, ly - 12, w, 18));
-            p.setPen(QPen(s.color, 1.2));
+            p.setPen(QPen(s.color, 1.2, penStyleFor(s.lineStyle)));
             p.drawLine(QPointF(lx, ly - 4), QPointF(lx + 14, ly - 4));
             p.setPen(s.visible ? colorText() : colorDim());
             p.drawText(QPointF(lx + 19, ly), lbl);
@@ -2377,6 +2458,14 @@ QJsonObject CanvasWidget::saveState() const
     o[QStringLiteral("autoY")] = m_autoY;
     o[QStringLiteral("legend")] = m_showLegend;
     o[QStringLiteral("grid")] = m_showGrid;
+    o[QStringLiteral("gridX")] = m_gridX;
+    o[QStringLiteral("gridY")] = m_gridY;
+    o[QStringLiteral("minorGrid")] = m_minorGrid;
+    o[QStringLiteral("legendPos")] = m_legendPos;
+    o[QStringLiteral("axisFontSize")] = m_axisFontSize;
+    o[QStringLiteral("axisLineWidth")] = m_axisLineWidth;
+    o[QStringLiteral("axisColor")] = m_axisColor.isValid()
+        ? m_axisColor.name(QColor::HexArgb) : QString();
     o[QStringLiteral("box")] = m_showBox;
     o[QStringLiteral("flipY")] = m_flipY;
     o[QStringLiteral("xlabel")] = m_xLabel;
@@ -2396,6 +2485,8 @@ QJsonObject CanvasWidget::saveState() const
         so[QStringLiteral("width")] = s.width;
         so[QStringLiteral("axis")] = s.axis;
         so[QStringLiteral("style")] = s.lineStyle;
+        so[QStringLiteral("marker")] = s.marker;
+        so[QStringLiteral("markerSize")] = s.markerSize;
         so[QStringLiteral("visible")] = s.visible;
         so[QStringLiteral("offset")] = s.offsetSec;
         so[QStringLiteral("points")] = int(s.count());
@@ -2431,6 +2522,8 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
         s.width = so.value(QStringLiteral("width")).toInt(1);
         s.axis = so.value(QStringLiteral("axis")).toInt(0);
         s.lineStyle = so.value(QStringLiteral("style")).toInt(0);
+        s.marker = so.value(QStringLiteral("marker")).toInt(0);
+        s.markerSize = so.value(QStringLiteral("markerSize")).toInt(5);
         s.visible = so.value(QStringLiteral("visible")).toBool(true);
         s.offsetSec = so.value(QStringLiteral("offset")).toDouble(0.0);
         s.t = ch->time;
@@ -2451,6 +2544,13 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
     m_autoY = o.value(QStringLiteral("autoY")).toBool(m_autoY);
     m_showLegend = o.value(QStringLiteral("legend")).toBool(true);
     m_showGrid = o.value(QStringLiteral("grid")).toBool(true);
+    m_gridX = o.value(QStringLiteral("gridX")).toBool(m_showGrid);
+    m_gridY = o.value(QStringLiteral("gridY")).toBool(m_showGrid);
+    m_minorGrid = o.value(QStringLiteral("minorGrid")).toBool(false);
+    m_legendPos = o.value(QStringLiteral("legendPos")).toInt(0);
+    m_axisFontSize = o.value(QStringLiteral("axisFontSize")).toInt(11);
+    m_axisLineWidth = o.value(QStringLiteral("axisLineWidth")).toInt(1);
+    m_axisColor = QColor(o.value(QStringLiteral("axisColor")).toString());
     m_showBox = o.value(QStringLiteral("box")).toBool(true);
     m_flipY = o.value(QStringLiteral("flipY")).toBool(false);
     m_xLabel = o.value(QStringLiteral("xlabel")).toString();
@@ -2485,7 +2585,47 @@ void CanvasWidget::setAxisLabels(const QString &xLabel, const QString &yLabel)
 void CanvasWidget::setGridVisible(bool on)
 {
     m_showGrid = on;
+    m_gridX = on;
+    m_gridY = on;
     update();
+}
+
+void CanvasWidget::setGridAxes(bool xGrid, bool yGrid, bool minorGrid)
+{
+    m_gridX = xGrid;
+    m_gridY = yGrid;
+    m_minorGrid = minorGrid;
+    m_showGrid = xGrid || yGrid;
+    update();
+}
+
+void CanvasWidget::setLegendPosition(int pos)
+{
+    m_legendPos = std::clamp(pos, 0, 3);
+    update();
+}
+
+void CanvasWidget::setAxisFontSize(int px)
+{
+    m_axisFontSize = std::clamp(px, 7, 20);
+    update();
+}
+
+void CanvasWidget::setAxisLineWidth(int px)
+{
+    m_axisLineWidth = std::clamp(px, 1, 4);
+    update();
+}
+
+void CanvasWidget::setAxisColor(const QColor &c)
+{
+    m_axisColor = c;
+    update();
+}
+
+QColor CanvasWidget::axisInk() const
+{
+    return m_axisColor.isValid() ? m_axisColor : colorText();
 }
 
 void CanvasWidget::setLegendVisible(bool on)

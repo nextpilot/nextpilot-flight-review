@@ -69,6 +69,22 @@ public:
     void setFollowLive(bool on, double windowSec = 30.0); // 实时滚动：窗口跟随最新样本
     void followLatest() { if (m_followLive) resetView(); }
     void setGridVisible(bool on);
+    void setGridAxes(bool xGrid, bool yGrid, bool minorGrid);
+    bool xGrid() const { return m_gridX; }
+    bool yGrid() const { return m_gridY; }
+    bool minorGrid() const { return m_minorGrid; }
+    void setLegendPosition(int pos);
+    int legendPosition() const { return m_legendPos; }
+    void setAxisFontSize(int px);
+    int axisFontSize() const { return m_axisFontSize; }
+    void setAxisLineWidth(int px);
+    int axisLineWidth() const { return m_axisLineWidth; }
+    void setAxisColor(const QColor &c);
+    QColor axisColor() const { return m_axisColor; }
+
+private:
+    QColor axisInk() const;
+public:
     void setLegendVisible(bool on);
     void setBoxVisible(bool on);
     void setFlipY(bool on);
@@ -136,6 +152,8 @@ private:
         int width = 1;
         int axis = 0;              // 0=左轴，1=右轴
         int lineStyle = 0;         // 0=实线，1=虚线，2=点线，3=点划线
+        int marker = 0;            // 0=无，1=圆，2=方，3=菱形，4=三角，5=十字，6=叉
+        int markerSize = 5;
 
         QVector<double> tOwn;      // demo 数据所有权
         QVector<double> vOwn;
@@ -184,6 +202,13 @@ private:
     bool m_autoY = true;
     bool m_showLegend = true;
     bool m_showGrid = true;
+    bool m_gridX = true;
+    bool m_gridY = true;
+    bool m_minorGrid = false;
+    int m_legendPos = 0;         // 0=左上，1=右上，2=左下，3=右下
+    int m_axisFontSize = 11;
+    int m_axisLineWidth = 1;
+    QColor m_axisColor;          // 无效时跟随主题
     bool m_showBox = true;
     bool m_flipY = false;
     QString m_xLabel;

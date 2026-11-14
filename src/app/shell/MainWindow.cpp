@@ -404,6 +404,21 @@ public:
         m_style->addItem(QStringLiteral("点划线"), 3);
         m_style->setCurrentIndex(m_style->findData(st.value(QStringLiteral("style")).toInt(0)));
         curveForm->addRow(QStringLiteral("线型"), m_style);
+        m_marker = new QComboBox(curvePage);
+        m_marker->addItem(QStringLiteral("无"), 0);
+        m_marker->addItem(QStringLiteral("圆点"), 1);
+        m_marker->addItem(QStringLiteral("方块"), 2);
+        m_marker->addItem(QStringLiteral("菱形"), 3);
+        m_marker->addItem(QStringLiteral("三角"), 4);
+        m_marker->addItem(QStringLiteral("十字"), 5);
+        m_marker->addItem(QStringLiteral("叉号"), 6);
+        m_marker->setCurrentIndex(m_marker->findData(st.value(QStringLiteral("marker")).toInt(0)));
+        curveForm->addRow(QStringLiteral("标记"), m_marker);
+        m_markerSize = new QSpinBox(curvePage);
+        m_markerSize->setRange(1, 12);
+        m_markerSize->setSuffix(QStringLiteral(" px"));
+        m_markerSize->setValue(st.value(QStringLiteral("markerSize")).toInt(5));
+        curveForm->addRow(QStringLiteral("标记大小"), m_markerSize);
         m_axis = new QComboBox(curvePage);
         m_axis->addItem(QStringLiteral("左 Y 轴"), 0);
         m_axis->addItem(QStringLiteral("右 Y 轴"), 1);
@@ -487,6 +502,8 @@ public:
         o[QStringLiteral("color")] = m_color.name();
         o[QStringLiteral("width")] = m_width->value();
         o[QStringLiteral("style")] = m_style->currentData().toInt();
+        o[QStringLiteral("marker")] = m_marker->currentData().toInt();
+        o[QStringLiteral("markerSize")] = m_markerSize->value();
         o[QStringLiteral("axis")] = m_axis->currentData().toInt();
         o[QStringLiteral("visible")] = m_visible->isChecked();
         o[QStringLiteral("offset")] = m_offset->value();
@@ -519,6 +536,8 @@ private:
     QPushButton *m_colorBtn = nullptr;
     QSpinBox *m_width = nullptr;
     QComboBox *m_style = nullptr;
+    QComboBox *m_marker = nullptr;
+    QSpinBox *m_markerSize = nullptr;
     QComboBox *m_axis = nullptr;
     QCheckBox *m_visible = nullptr;
     QDoubleSpinBox *m_offset = nullptr;
@@ -534,49 +553,114 @@ public:
     AxesEditDialog(const QJsonObject &st, QWidget *parent = nullptr) : QDialog(parent)
     {
         setWindowTitle(QStringLiteral("画布属性"));
-        resize(400, 300);
-        auto *form = new QFormLayout(this);
+        resize(440, 500);
+        m_axisColor = QColor(st.value(QStringLiteral("axisColor")).toString());
+        auto *root = new QVBoxLayout(this);
+        auto *form = new QFormLayout;
+
         m_title = new QLineEdit(st.value(QStringLiteral("title")).toString(), this);
-        form->addRow(QStringLiteral("标题"), m_title);
+        form->addRow(QStringLiteral("标题 Title"), m_title);
         m_xLabel = new QLineEdit(st.value(QStringLiteral("xlabel")).toString(), this);
-        m_xLabel->setPlaceholderText(QStringLiteral("时间 (s)"));
-        form->addRow(QStringLiteral("X 轴标签"), m_xLabel);
+        m_xLabel->setPlaceholderText(QStringLiteral("time / s"));
+        form->addRow(QStringLiteral("X 轴标签 XLabel"), m_xLabel);
         m_yLabel = new QLineEdit(st.value(QStringLiteral("ylabel")).toString(), this);
-        m_yLabel->setPlaceholderText(QStringLiteral("数值"));
-        form->addRow(QStringLiteral("Y 轴标签"), m_yLabel);
-        m_grid = new QCheckBox(QStringLiteral("显示网格"), this);
-        m_grid->setChecked(st.value(QStringLiteral("grid")).toBool(true));
-        form->addRow(QStringLiteral("Grid"), m_grid);
+        m_yLabel->setPlaceholderText(QStringLiteral("value"));
+        form->addRow(QStringLiteral("Y 轴标签 YLabel"), m_yLabel);
+
+        m_gridX = new QCheckBox(QStringLiteral("X 方向网格"), this);
+        m_gridX->setChecked(st.value(QStringLiteral("gridX")).toBool(st.value(QStringLiteral("grid")).toBool(true)));
+        form->addRow(QStringLiteral("XGrid"), m_gridX);
+        m_gridY = new QCheckBox(QStringLiteral("Y 方向网格"), this);
+        m_gridY->setChecked(st.value(QStringLiteral("gridY")).toBool(st.value(QStringLiteral("grid")).toBool(true)));
+        form->addRow(QStringLiteral("YGrid"), m_gridY);
+        m_minorGrid = new QCheckBox(QStringLiteral("次网格（虚线）"), this);
+        m_minorGrid->setChecked(st.value(QStringLiteral("minorGrid")).toBool(false));
+        form->addRow(QStringLiteral("MinorGrid"), m_minorGrid);
         m_box = new QCheckBox(QStringLiteral("显示边框"), this);
         m_box->setChecked(st.value(QStringLiteral("box")).toBool(true));
         form->addRow(QStringLiteral("Box"), m_box);
-        m_flipY = new QCheckBox(QStringLiteral("Y 轴翻转（上正下负 → 上负下正）"), this);
+        m_flipY = new QCheckBox(QStringLiteral("翻转 Y 轴方向"), this);
         m_flipY->setChecked(st.value(QStringLiteral("flipY")).toBool(false));
-        form->addRow(QStringLiteral("FlipY"), m_flipY);
+        form->addRow(QStringLiteral("YDir / FlipY"), m_flipY);
         m_legend = new QCheckBox(QStringLiteral("显示图例"), this);
         m_legend->setChecked(st.value(QStringLiteral("legend")).toBool(true));
         form->addRow(QStringLiteral("Legend"), m_legend);
+        m_legendPos = new QComboBox(this);
+        m_legendPos->addItem(QStringLiteral("左上"), 0);
+        m_legendPos->addItem(QStringLiteral("右上"), 1);
+        m_legendPos->addItem(QStringLiteral("左下"), 2);
+        m_legendPos->addItem(QStringLiteral("右下"), 3);
+        m_legendPos->setCurrentIndex(st.value(QStringLiteral("legendPos")).toInt(0));
+        form->addRow(QStringLiteral("图例位置"), m_legendPos);
+
+        m_fontSize = new QSpinBox(this);
+        m_fontSize->setRange(7, 20);
+        m_fontSize->setSuffix(QStringLiteral(" px"));
+        m_fontSize->setValue(st.value(QStringLiteral("axisFontSize")).toInt(11));
+        form->addRow(QStringLiteral("FontSize"), m_fontSize);
+        m_lineWidth = new QSpinBox(this);
+        m_lineWidth->setRange(1, 4);
+        m_lineWidth->setSuffix(QStringLiteral(" px"));
+        m_lineWidth->setValue(st.value(QStringLiteral("axisLineWidth")).toInt(1));
+        form->addRow(QStringLiteral("轴线宽 LineWidth"), m_lineWidth);
+        m_colorBtn = new QPushButton(this);
+        m_colorBtn->setFixedHeight(24);
+        setColorButton();
+        connect(m_colorBtn, &QPushButton::clicked, this, [this] {
+            const QColor c = QColorDialog::getColor(m_axisColor.isValid() ? m_axisColor : QColor("#8b949e"),
+                                                    this, QStringLiteral("坐标轴颜色"));
+            if (c.isValid())
+            {
+                m_axisColor = c;
+                setColorButton();
+            }
+        });
+        form->addRow(QStringLiteral("轴线颜色"), m_colorBtn);
+
+        root->addLayout(form);
         auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
         connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
         connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
-        form->addRow(bb);
+        root->addWidget(bb);
     }
     QString title() const { return m_title->text().trimmed(); }
     QString xLabel() const { return m_xLabel->text().trimmed(); }
     QString yLabel() const { return m_yLabel->text().trimmed(); }
-    bool grid() const { return m_grid->isChecked(); }
+    bool gridX() const { return m_gridX->isChecked(); }
+    bool gridY() const { return m_gridY->isChecked(); }
+    bool minorGrid() const { return m_minorGrid->isChecked(); }
     bool box() const { return m_box->isChecked(); }
     bool flipY() const { return m_flipY->isChecked(); }
     bool legend() const { return m_legend->isChecked(); }
+    int legendPosition() const { return m_legendPos->currentData().toInt(); }
+    int fontSize() const { return m_fontSize->value(); }
+    int lineWidth() const { return m_lineWidth->value(); }
+    QColor axisColorValue() const { return m_axisColor; }
 
 private:
+    void setColorButton()
+    {
+        m_colorBtn->setText(m_axisColor.isValid() ? m_axisColor.name() : QStringLiteral("跟随主题"));
+        if (m_axisColor.isValid())
+            m_colorBtn->setStyleSheet(QStringLiteral(
+                "QPushButton{background:%1;color:#0d1117;border:1px solid #3a4854;border-radius:2px;"
+                "font-weight:600;}QPushButton:hover{border-color:#f2b134;}").arg(m_axisColor.name()));
+    }
+
     QLineEdit *m_title = nullptr;
     QLineEdit *m_xLabel = nullptr;
     QLineEdit *m_yLabel = nullptr;
-    QCheckBox *m_grid = nullptr;
+    QCheckBox *m_gridX = nullptr;
+    QCheckBox *m_gridY = nullptr;
+    QCheckBox *m_minorGrid = nullptr;
     QCheckBox *m_box = nullptr;
     QCheckBox *m_flipY = nullptr;
     QCheckBox *m_legend = nullptr;
+    QComboBox *m_legendPos = nullptr;
+    QSpinBox *m_fontSize = nullptr;
+    QSpinBox *m_lineWidth = nullptr;
+    QPushButton *m_colorBtn = nullptr;
+    QColor m_axisColor;
 };
 
 } // namespace
@@ -2136,6 +2220,21 @@ void MainWindow::createDocks()
     treeDock->setWidget(treeHost);
     connect(m_propTree, &QTreeWidget::currentItemChanged, this,
             [this](QTreeWidgetItem *it, QTreeWidgetItem *) {
+        if (m_propTreeBuilding || !it)
+            return;
+        const int kind = it->data(0, Qt::UserRole).toInt();
+        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(
+            it->data(0, Qt::UserRole + 1).value<quintptr>());
+        if (!c)
+            return;
+        if (kind == 1)
+            showAxesProps(c);
+        else if (kind == 2)
+            showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
+    });
+    // 同一行重复点击时 currentItemChanged 不会再发；补 itemClicked 保证属性始终跟随。
+    connect(m_propTree, &QTreeWidget::itemClicked, this,
+            [this](QTreeWidgetItem *it, int) {
         if (m_propTreeBuilding || !it)
             return;
         const int kind = it->data(0, Qt::UserRole).toInt();
@@ -5482,10 +5581,20 @@ void MainWindow::showAxesProps(CanvasWidget *c)
                  {QStringLiteral("左 Y 轴"), y1},
                  {QStringLiteral("右 Y 轴"), y2},
                  {QStringLiteral("曲线"), QStringLiteral("%1 条（右轴 %2）").arg(arr.size()).arg(right)},
-                 {QStringLiteral("网格"), st.value(QStringLiteral("grid")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("X 网格"), st.value(QStringLiteral("gridX")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("Y 网格"), st.value(QStringLiteral("gridY")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("次网格"), st.value(QStringLiteral("minorGrid")).toBool(false) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
                  {QStringLiteral("图例"), st.value(QStringLiteral("legend")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("图例位置"), QStringList{QStringLiteral("左上"), QStringLiteral("右上"),
+                                                          QStringLiteral("左下"), QStringLiteral("右下")}
+                                                     .value(st.value(QStringLiteral("legendPos")).toInt(0))},
                  {QStringLiteral("边框"), st.value(QStringLiteral("box")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
-                 {QStringLiteral("FlipY"), st.value(QStringLiteral("flipY")).toBool(false) ? QStringLiteral("是") : QStringLiteral("否")}});
+                 {QStringLiteral("FlipY"), st.value(QStringLiteral("flipY")).toBool(false) ? QStringLiteral("是") : QStringLiteral("否")},
+                 {QStringLiteral("坐标轴字号"), QStringLiteral("%1 px").arg(st.value(QStringLiteral("axisFontSize")).toInt(11))},
+                 {QStringLiteral("坐标轴线宽"), QStringLiteral("%1 px").arg(st.value(QStringLiteral("axisLineWidth")).toInt(1))},
+                 {QStringLiteral("坐标轴颜色"), st.value(QStringLiteral("axisColor")).toString().isEmpty()
+                                                   ? QStringLiteral("跟随主题")
+                                                   : st.value(QStringLiteral("axisColor")).toString()}});
     m_propCanvas = c;
     m_propSeriesIndex = -1;
     m_propKind = 1;
@@ -5502,10 +5611,14 @@ void MainWindow::editAxesProps(CanvasWidget *c)
         return;
     c->setTitle(dlg.title());
     c->setAxisLabels(dlg.xLabel(), dlg.yLabel());
-    c->setGridVisible(dlg.grid());
+    c->setGridAxes(dlg.gridX(), dlg.gridY(), dlg.minorGrid());
     c->setBoxVisible(dlg.box());
     c->setLegendVisible(dlg.legend());
+    c->setLegendPosition(dlg.legendPosition());
     c->setFlipY(dlg.flipY());
+    c->setAxisFontSize(dlg.fontSize());
+    c->setAxisLineWidth(dlg.lineWidth());
+    c->setAxisColor(dlg.axisColorValue());
     showAxesProps(c);
 }
 
@@ -5531,6 +5644,11 @@ void MainWindow::showSeriesProps(CanvasWidget *c, int index)
                  {QStringLiteral("线型"), QStringList{QStringLiteral("实线"), QStringLiteral("虚线"),
                                                     QStringLiteral("点线"), QStringLiteral("点划线")}
                                                .value(so.value(QStringLiteral("style")).toInt(0))},
+                 {QStringLiteral("标记"), QStringList{QStringLiteral("无"), QStringLiteral("圆点"), QStringLiteral("方块"),
+                                                        QStringLiteral("菱形"), QStringLiteral("三角"), QStringLiteral("十字"),
+                                                        QStringLiteral("叉号")}
+                                                   .value(so.value(QStringLiteral("marker")).toInt(0))},
+                 {QStringLiteral("标记大小"), QStringLiteral("%1 px").arg(so.value(QStringLiteral("markerSize")).toInt(5))},
                  {QStringLiteral("绑定轴"), so.value(QStringLiteral("axis")).toInt(0) == 1 ? QStringLiteral("右 Y 轴")
                                                                                           : QStringLiteral("左 Y 轴")},
                  {QStringLiteral("可见"), so.value(QStringLiteral("visible")).toBool(true) ? QStringLiteral("是")
