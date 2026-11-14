@@ -45,6 +45,18 @@ int main()
     assert(step.outputs.first().value.size() == 3);
     assert(std::abs(step.outputs.first().value[2] - 12.0) < 1e-9);
 
+    const ScriptResult py = ScriptEngine::run(
+        QStringLiteral("# python\n"
+                       "import json,sys\n"
+                       "d=json.load(sys.stdin)\n"
+                       "v=d['inputs'][0]['value']\n"
+                       "t=d['inputs'][0]['time']\n"
+                       "json.dump({'outputs':[{'name':'py_sum','time':t,'value':[x*2 for x in v]}]},sys.stdout)\n"),
+        inputs);
+    assert(py.ok);
+    assert(py.outputs.size() == 1);
+    assert(std::abs(py.outputs.first().value[2] - 6.0) < 1e-9);
+
     const ScriptResult bad = ScriptEngine::run(QStringLiteral("ps.input(5)"), inputs);
     assert(!bad.ok);
     assert(bad.error.contains(QStringLiteral("1..4")));

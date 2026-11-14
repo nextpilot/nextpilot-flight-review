@@ -1,7 +1,14 @@
 #include "script/ScriptEngine.h"
 
 #include <cmath>
+#include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMap>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QTemporaryFile>
 #include <cstdlib>
 #include <cstring>
 
@@ -14,6 +21,95 @@ extern "C" {
 #endif
 
 namespace {
+
+ScriptResult runPython(const QString &source, const QVector<ScriptSeries> &inputs,
+                       const QMap<QString, double> &params)
+{
+    ScriptResult r;
+    const QString py = QStandardPaths::findExecutable(QStringLiteral("python3"));
+    if (py.isEmpty())
+    {
+        r.error = QStringLiteral("未找到 python3");
+        return r;
+    }
+    QTemporaryFile script(QDir::tempPath() + QStringLiteral("/plotscope-XXXXXX.py"));
+    if (!script.open())
+    {
+        r.error = QStringLiteral("无法创建临时脚本");
+        return r;
+    }
+    script.write(source.toUtf8());
+    script.close();
+
+    QJsonArray inArr;
+    for (const ScriptSeries &s : inputs)
+    {
+        QJsonObject o;
+        o[QStringLiteral("name")] = s.name;
+        QJsonArray t, v;
+        for (double x : s.time) t.append(x);
+        for (double x : s.value) v.append(x);
+        o[QStringLiteral("time")] = t;
+        o[QStringLiteral("value")] = v;
+        inArr.append(o);
+    }
+    QJsonObject root;
+    root[QStringLiteral("inputs")] = inArr;
+    QJsonObject p;
+    for (auto it = params.begin(); it != params.end(); ++it)
+        p[it.key()] = it.value();
+    root[QStringLiteral("params")] = p;
+    const QByteArray payload = QJsonDocument(root).toJson(QJsonDocument::Compact);
+
+    QProcess proc;
+    proc.setProgram(py);
+    proc.setArguments({script.fileName()});
+    proc.start();
+    if (!proc.waitForStarted(5000))
+    {
+        r.error = QStringLiteral("Python 启动失败");
+        return r;
+    }
+    proc.write(payload);
+    proc.closeWriteChannel();
+    if (!proc.waitForFinished(15000))
+    {
+        proc.kill();
+        r.error = QStringLiteral("Python 执行超时");
+        return r;
+    }
+    const QString stderrText = QString::fromUtf8(proc.readAllStandardError());
+    if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
+    {
+        r.error = stderrText.trimmed().isEmpty()
+                      ? QStringLiteral("Python 退出码 %1").arg(proc.exitCode())
+                      : stderrText.trimmed();
+        return r;
+    }
+    const QJsonDocument out = QJsonDocument::fromJson(proc.readAllStandardOutput());
+    if (!out.isObject())
+    {
+        r.error = QStringLiteral("Python 输出不是 JSON 对象");
+        return r;
+    }
+    for (const QJsonValue &v : out.object().value(QStringLiteral("outputs")).toArray())
+    {
+        const QJsonObject o = v.toObject();
+        ScriptOutput so;
+        so.name = o.value(QStringLiteral("name")).toString();
+        for (const QJsonValue &x : o.value(QStringLiteral("time")).toArray())
+            so.time.append(x.toDouble());
+        for (const QJsonValue &x : o.value(QStringLiteral("value")).toArray())
+            so.value.append(x.toDouble());
+        if (!so.name.isEmpty() && !so.time.isEmpty() && so.time.size() == so.value.size())
+            r.outputs.append(so);
+    }
+    r.ok = !r.outputs.isEmpty();
+    if (!r.ok)
+        r.error = QStringLiteral("Python 没有返回有效 outputs");
+    return r;
+}
+
 #ifdef PS_HAVE_LUA
 struct LuaMem
 {
@@ -349,9 +445,17 @@ QVector<double> timeFor(const QVector<ScriptSeries> &inputs, int len)
 } // namespace
 
 ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries> &inputs,
-                               const QMap<QString, double> &params)
+                               const QMap<QString, double> &params, const QString &language)
 {
     ScriptResult r;
+    const QString lang = language.isEmpty()
+                             ? (source.trimmed().startsWith(QStringLiteral("# python")) ||
+                                        source.trimmed().startsWith(QStringLiteral("#!python"))
+                                    ? QStringLiteral("python")
+                                    : QStringLiteral("lua"))
+                             : language.toLower();
+    if (lang == QLatin1String("python"))
+        return runPython(source, inputs, params);
 #ifndef PS_HAVE_LUA
     Q_UNUSED(source)
     Q_UNUSED(inputs)
