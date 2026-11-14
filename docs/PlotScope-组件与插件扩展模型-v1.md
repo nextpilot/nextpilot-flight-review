@@ -14,7 +14,7 @@
 内部与外部都向 `Registry` 注册贡献：
 
 - `addLoader`：数据文件 loader descriptor
-- `addSource`：实时数据源 descriptor（待补）
+- `addDataSource`：完整数据来源 descriptor（文件 / 串口 / TCP / UDP 统一）
 - `addProtocol`：协议 vtable
 - `addRibbon`：Ribbon 页 / 面板 / 条目
 - `addDock`：Dock 面板
@@ -52,7 +52,34 @@ void contribute(Registry &registry, const HostServices &host) override
 }
 ```
 
-### 第二层：控件创建
+### DataSource 统一模型
+
+PJ4 中 `data_loader` 与 `data_streamer` 共用 `DataSourcePluginBase`，文件与实时流由 capabilities / manifest 声明，不拆两个基类。PlotScope 对齐这一模型：
+
+```cpp
+struct DataSourceSpec
+{
+    QString id;                          // gnss.nmea
+    QString label;                       // NMEA
+    QVector<TransportKind> transports;   // File / Serial / Tcp / Udp
+    MessageParserSpec parser;            // 解析器
+    QStringList extensions;              // 文件过滤
+};
+```
+
+宿主只保留一个注册表：
+
+```cpp
+void addDataSource(const DataSourceSpec &source);
+const QVector<DataSourceSpec> &dataSources() const;
+```
+
+- 文件打开与设备连接只是按 `transports` 过滤，不再走 loader/source 两套入口。
+- `MessageParser` 与 `DataSource` 解耦，NMEA parser 可被文件源、串口源、TCP 源复用。
+- 运行实例统一叫 `DataSourceSession`：文件是一次有限会话，串口是持续会话。
+- 旧 ABI 的 `PS_FAMILY_DATA_LOADER` / `PS_FAMILY_DATA_SOURCE` 仅作兼容，app 层不再暴露。
+
+## 第二层：控件创建
 
 | 类型 | 内部组件 | 外部插件 |
 |---|---|---|
@@ -190,7 +217,7 @@ src/components/gnss/
   ui/           卫星星空图、SNR、定位质量
 ```
 
-贡献 loader / source / protocol / ribbon / dock。一个目录、一个 target `ps_gnss`。
+贡献 data source / protocol / ribbon / dock。一个目录、一个 target `ps_gnss`。
 
 ### 飞控日志组件
 
@@ -203,7 +230,7 @@ src/components/flightlog/
   ui/
 ```
 
-贡献 loader / source / ribbon / dock。一个目录、一个 target `ps_flightlog`。
+贡献 data source / ribbon / dock。一个目录、一个 target `ps_flightlog`。
 
 CSV、MCAP、ROS bag、MDF4 不并入，仍留在通用 loader。
 
