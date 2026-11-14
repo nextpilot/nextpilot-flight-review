@@ -1,0 +1,13 @@
+{
+  "name": "demo_flight",
+  "frame_size": 24,
+  "sync": [170, 85],
+  "crc16_ccitt": {"offset": 22, "poly": 4129, "init": 65535},
+  "fields": [
+    {"name": "time", "byte": 0, "bit": 0, "bits": 32, "signed": false, "scale": 0.001, "offset": 0, "unit": "s", "time": true},
+    {"name": "roll", "byte": 4, "bit": 0, "bits": 16, "signed": true, "scale": 0.01, "offset": 0, "unit": "deg"},
+    {"name": "pitch", "byte": 6, "bit": 0, "bits": 16, "signed": true, "scale": 0.01, "offset": 0, "unit": "deg"},
+    {"name": "yaw", "byte": 8, "bit": 0, "bits": 16, "signed": true, "scale": 0.01, "offset": 0, "unit": "deg"},
+    {"name": "alt", "byte": 10, "bit": 0, "bits": 32, "signed": true, "scale": 0.01, "offset": 0, "unit": "m"}
+  ]
+}

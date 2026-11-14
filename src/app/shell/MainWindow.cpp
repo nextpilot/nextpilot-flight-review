@@ -4,6 +4,7 @@
 #include "data_input/DataInputDialog.h"
 #include "app/cache/DatasetCache.h"
 #include "data_input/DataInputRegistry.h"
+#include "data_input/ProtocolEditorDialog.h"
 #include "live/LiveSession.h"
 #include "device/DeviceDebugDialog.h"
 #include "data_input/DataInputRegistry.h"
@@ -31,6 +32,8 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QHeaderView>
+#include <QDir>
+#include <QStandardPaths>
 #include <QLabel>
 #include <QMessageBox>
 #include <QMenu>
@@ -1770,10 +1773,26 @@ QWidget *MainWindow::createRibbon()
     {
         auto *cat = ribbon->addCategoryPage(QStringLiteral("协议"));
         auto *p = cat->addPanel(QStringLiteral("编辑器"));
-        addLarge(p, QStringLiteral("新建 Loader"), [this] {
-            log(QStringLiteral("新建 Loader：打开附属编辑器（QDialog，D13）"));
+        addLarge(p, QStringLiteral("协议编辑器"), [this] {
+            QDir dir(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
+                     QStringLiteral("/protocols"));
+            dir.mkpath(QStringLiteral("."));
+            const QString path = dir.filePath(QStringLiteral("untitled.psproto"));
+            ProtocolEditorDialog dlg(path, this);
+            if (dlg.exec() == QDialog::Accepted)
+                log(QStringLiteral("协议模板已保存：%1").arg(dlg.templatePath()));
         }, this);
-        addSmall(p, QStringLiteral("帧模板 YAML"), [this] { log(QStringLiteral("帧模板：YAML 热编译（D6）")); }, this);
+        addSmall(p, QStringLiteral("打开模板"), [this] {
+            const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("打开协议模板"),
+                QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
+                    QStringLiteral("/protocols"),
+                QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)"));
+            if (path.isEmpty())
+                return;
+            ProtocolEditorDialog dlg(path, this);
+            if (dlg.exec() == QDialog::Accepted)
+                log(QStringLiteral("协议模板已保存：%1").arg(dlg.templatePath()));
+        }, this);
         addSmall(p, QStringLiteral("校验"), [this] { log(QStringLiteral("校验模板：字段偏移/位域越界检查（M1）")); }, this);
     }
 

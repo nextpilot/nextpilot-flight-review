@@ -2,6 +2,9 @@
 
 #include <QDialogButtonBox>
 #include <QFile>
+#include <QFileDialog>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -12,11 +15,14 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QShortcut>
+#include <QSpinBox>
+#include <QTabWidget>
 #include <QTableWidget>
-#include <QTextCursor>
-#include <QTextDocument>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cstdint>
 
 namespace {
@@ -48,26 +54,88 @@ uint64_t readBits(const QByteArray &frame, uint32_t bitOffset, uint32_t bits)
     return v;
 }
 
+QString luaQuote(const QString &s)
+{
+    QString out = s;
+    out.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+    out.replace(QLatin1Char('"'), QStringLiteral("\\\""));
+    return QStringLiteral("\"%1\"").arg(out);
+}
+
+bool boolText(const QString &s)
+{
+    return s == QLatin1String("1") || s.compare(QLatin1String("true"), Qt::CaseInsensitive) == 0;
+}
+
 } // namespace
 
 ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
     : QDialog(parent), m_path(path)
 {
     setWindowTitle(QStringLiteral("协议模板编辑器"));
-    resize(760, 560);
+    resize(900, 700);
 
     auto *root = new QVBoxLayout(this);
-    m_json = new QPlainTextEdit(this);
-    m_json->setPlaceholderText(QStringLiteral("{\"frame_size\":14,\"sync\":[170,85],...}"));
-    root->addWidget(m_json, 1);
+    m_tabs = new QTabWidget(this);
 
-    m_fields = new QTableWidget(0, 6, this);
+    // ---- 设计页 ----
+    auto *design = new QWidget(m_tabs);
+    auto *dv = new QVBoxLayout(design);
+    auto *headerBox = new QGroupBox(QStringLiteral("帧结构"), design);
+    auto *form = new QFormLayout(headerBox);
+    m_name = new QLineEdit(headerBox);
+    m_name->setPlaceholderText(QStringLiteral("例如 demo_flight"));
+    m_frameSize = new QSpinBox(headerBox);
+    m_frameSize->setRange(0, 4096);
+    m_sync = new QLineEdit(headerBox);
+    m_sync->setPlaceholderText(QStringLiteral("AA 55"));
+    m_crcOffset = new QSpinBox(headerBox);
+    m_crcOffset->setRange(-1, 4095);
+    m_crcOffset->setSpecialValueText(QStringLiteral("无"));
+    m_crcPoly = new QLineEdit(QStringLiteral("0x1021"), headerBox);
+    m_crcInit = new QLineEdit(QStringLiteral("0xFFFF"), headerBox);
+    form->addRow(QStringLiteral("协议名称"), m_name);
+    form->addRow(QStringLiteral("帧长（字节）"), m_frameSize);
+    form->addRow(QStringLiteral("同步字"), m_sync);
+    form->addRow(QStringLiteral("CRC 起始字节"), m_crcOffset);
+    form->addRow(QStringLiteral("CRC 多项式"), m_crcPoly);
+    form->addRow(QStringLiteral("CRC 初值"), m_crcInit);
+    dv->addWidget(headerBox);
+
+    auto *fieldBar = new QHBoxLayout;
+    auto *addBtn = new QPushButton(QStringLiteral("+ 字段"), design);
+    auto *delBtn = new QPushButton(QStringLiteral("− 字段"), design);
+    auto *hint = new QLabel(QStringLiteral("位宽 1–64；系数/偏移在界面上直接换算"), design);
+    hint->setStyleSheet(QStringLiteral("color:#8b949e;"));
+    fieldBar->addWidget(addBtn);
+    fieldBar->addWidget(delBtn);
+    fieldBar->addWidget(hint, 1);
+    dv->addLayout(fieldBar);
+
+    m_fields = new QTableWidget(0, 10, design);
     m_fields->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("字节"),
                                          QStringLiteral("起始位"), QStringLiteral("位宽"),
-                                         QStringLiteral("有符号"), QStringLiteral("换算")});
+                                         QStringLiteral("有符号"), QStringLiteral("浮点"),
+                                         QStringLiteral("系数"), QStringLiteral("偏移"),
+                                         QStringLiteral("单位"), QStringLiteral("时间")});
     m_fields->horizontalHeader()->setStretchLastSection(true);
-    m_fields->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    root->addWidget(m_fields, 1);
+    m_fields->setAlternatingRowColors(true);
+    for (int i = 0; i < 10; ++i)
+        m_fields->setColumnWidth(i, i == 0 ? 160 : (i <= 3 ? 58 : (i <= 7 ? 62 : 60)));
+    dv->addWidget(m_fields, 1);
+    m_tabs->addTab(design, QStringLiteral("设计"));
+
+    // ---- JSON 页 ----
+    m_json = new QPlainTextEdit(m_tabs);
+    m_json->setPlaceholderText(QStringLiteral("{\"frame_size\":14,\"sync\":[170,85],...}"));
+    m_tabs->addTab(m_json, QStringLiteral("JSON"));
+
+    // ---- Lua 页 ----
+    m_lua = new QPlainTextEdit(m_tabs);
+    m_lua->setReadOnly(true);
+    m_tabs->addTab(m_lua, QStringLiteral("Lua"));
+
+    root->addWidget(m_tabs, 1);
 
     auto *row = new QHBoxLayout;
     m_hex = new QLineEdit(this);
@@ -82,88 +150,219 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
     root->addWidget(m_result);
 
     auto *bb = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Close, this);
+    bb->button(QDialogButtonBox::Save)->setText(QStringLiteral("保存"));
+    bb->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    auto *saveAsBtn = new QPushButton(QStringLiteral("另存为"), this);
+    bb->addButton(saveAsBtn, QDialogButtonBox::ActionRole);
     root->addWidget(bb);
 
     QFile f(m_path);
     if (f.open(QIODevice::ReadOnly))
         m_json->setPlainText(QString::fromUtf8(f.readAll()));
     else
-        m_json->setPlainText(QStringLiteral("{\n  \"frame_size\": 0,\n  \"sync\": [],\n  \"fields\": []\n}"));
+        m_json->setPlainText(QStringLiteral("{\n  \"name\": \"新协议\",\n  \"frame_size\": 0,\n  \"sync\": [],\n  \"fields\": []\n}"));
+    refreshDesignFromJson();
 
-    connect(m_json, &QPlainTextEdit::textChanged, this, [this] { reloadTable(); });
-    connect(m_fields, &QTableWidget::cellClicked, this, [this](int row, int) {
-        const QString name = m_fields->item(row, 0) ? m_fields->item(row, 0)->text() : QString();
-        if (name.isEmpty())
-            return;
-        const QJsonDocument doc = QJsonDocument::fromJson(m_json->toPlainText().toUtf8());
-        for (const QJsonValue &v : doc.object().value(QStringLiteral("fields")).toArray())
+    connect(m_name, &QLineEdit::textEdited, this, [this] { rebuildJsonFromDesign(); });
+    connect(m_frameSize, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int) { rebuildJsonFromDesign(); });
+    connect(m_sync, &QLineEdit::textEdited, this, [this] { rebuildJsonFromDesign(); });
+    connect(m_crcOffset, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [this](int) { rebuildJsonFromDesign(); });
+    connect(m_crcPoly, &QLineEdit::textEdited, this, [this] { rebuildJsonFromDesign(); });
+    connect(m_crcInit, &QLineEdit::textEdited, this, [this] { rebuildJsonFromDesign(); });
+    connect(m_fields, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *) {
+        rebuildJsonFromDesign();
+    });
+    connect(addBtn, &QPushButton::clicked, this, [this] {
+        m_fields->insertRow(m_fields->rowCount());
+        const int r = m_fields->rowCount() - 1;
+        m_fields->setItem(r, 0, new QTableWidgetItem(QStringLiteral("field%1").arg(r + 1)));
+        m_fields->setItem(r, 1, new QTableWidgetItem(QString::number(std::max(0, m_frameSize->value() - 2))));
+        m_fields->setItem(r, 2, new QTableWidgetItem(QStringLiteral("0")));
+        m_fields->setItem(r, 3, new QTableWidgetItem(QStringLiteral("16")));
+        m_fields->setItem(r, 4, new QTableWidgetItem(QStringLiteral("0")));
+        m_fields->setItem(r, 5, new QTableWidgetItem(QStringLiteral("0")));
+        m_fields->setItem(r, 6, new QTableWidgetItem(QStringLiteral("1")));
+        m_fields->setItem(r, 7, new QTableWidgetItem(QStringLiteral("0")));
+        m_fields->setItem(r, 8, new QTableWidgetItem(QString()));
+        m_fields->setItem(r, 9, new QTableWidgetItem(QStringLiteral("0")));
+        rebuildJsonFromDesign();
+    });
+    connect(delBtn, &QPushButton::clicked, this, [this] {
+        const int r = m_fields->currentRow();
+        if (r >= 0)
         {
-            const QJsonObject f = v.toObject();
-            if (f.value(QStringLiteral("name")).toString() != name)
-                continue;
-            const int byte = f.value(QStringLiteral("byte")).toInt();
-            const int bit = f.value(QStringLiteral("bit")).toInt();
-            const int bits = f.value(QStringLiteral("bits")).toInt(8);
-            m_result->setText(QStringLiteral("%1 · 字节 %2 · 位 %3..%4 · 位宽 %5")
-                                  .arg(name).arg(byte).arg(bit).arg(bit + bits - 1).arg(bits));
-            // JSON 中定位字段名，hex 中定位起始字节，做最小联动
-            const QString needle = QStringLiteral("\"%1\"").arg(name);
-            QTextCursor c = m_json->document()->find(needle);
-            if (!c.isNull())
-            {
-                m_json->setTextCursor(c);
-                m_json->centerCursor();
-            }
-            if (!m_hex->text().isEmpty())
-            {
-                int digits = 0;
-                for (int i = 0; i < m_hex->text().size() && digits < byte * 2; ++i)
-                    if (m_hex->text().at(i).isLetterOrNumber())
-                        ++digits;
-                m_hex->setCursorPosition(std::min(digits, int(m_hex->text().size())));
-            }
-            break;
+            m_fields->removeRow(r);
+            rebuildJsonFromDesign();
         }
+    });
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int) {
+        if (m_tabs->currentWidget() == m_json)
+            m_json->setFocus();
+        else
+            refreshDesignFromJson();
     });
     connect(tryBtn, &QPushButton::clicked, this, [this] { tryFrame(); });
     connect(bb, &QDialogButtonBox::accepted, this, [this] { save(); });
     connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    reloadTable();
+    connect(saveAsBtn, &QPushButton::clicked, this, [this] { saveAs(); });
+    auto *saveKey = new QShortcut(QKeySequence::Save, this);
+    connect(saveKey, &QShortcut::activated, this, [this] { save(); });
 }
 
-void ProtocolEditorDialog::reloadTable()
+QJsonObject ProtocolEditorDialog::currentTemplate() const
 {
-    m_fields->setRowCount(0);
     const QJsonDocument doc = QJsonDocument::fromJson(m_json->toPlainText().toUtf8());
-    if (!doc.isObject())
+    return doc.isObject() ? doc.object() : QJsonObject();
+}
+
+void ProtocolEditorDialog::refreshDesignFromJson()
+{
+    const QJsonObject o = currentTemplate();
+    if (o.isEmpty())
         return;
-    const QJsonArray fields = doc.object().value(QStringLiteral("fields")).toArray();
+    m_syncing = true;
+    m_name->setText(o.value(QStringLiteral("name")).toString());
+    m_frameSize->setValue(o.value(QStringLiteral("frame_size")).toInt());
+    QStringList syncParts;
+    for (const QJsonValue &v : o.value(QStringLiteral("sync")).toArray())
+        syncParts << QStringLiteral("%1").arg(v.toInt(), 2, 16, QLatin1Char('0')).toUpper();
+    m_sync->setText(syncParts.join(QLatin1Char(' ')));
+    const QJsonObject crc = o.value(QStringLiteral("crc16_ccitt")).toObject();
+    m_crcOffset->setValue(crc.value(QStringLiteral("offset")).toInt(-1));
+    m_crcPoly->setText(QString::number(crc.value(QStringLiteral("poly")).toInt(0x1021), 16).prepend(QStringLiteral("0x")).toUpper());
+    m_crcInit->setText(QString::number(crc.value(QStringLiteral("init")).toInt(0xFFFF), 16).prepend(QStringLiteral("0x")).toUpper());
+
+    const QJsonArray fields = o.value(QStringLiteral("fields")).toArray();
     m_fields->setRowCount(fields.size());
     for (int i = 0; i < fields.size(); ++i)
     {
-        const QJsonObject o = fields.at(i).toObject();
-        m_fields->setItem(i, 0, new QTableWidgetItem(o.value(QStringLiteral("name")).toString()));
-        m_fields->setItem(i, 1, new QTableWidgetItem(QString::number(o.value(QStringLiteral("byte")).toInt())));
-        m_fields->setItem(i, 2, new QTableWidgetItem(QString::number(o.value(QStringLiteral("bit")).toInt())));
-        m_fields->setItem(i, 3, new QTableWidgetItem(QString::number(o.value(QStringLiteral("bits")).toInt(8))));
-        m_fields->setItem(i, 4, new QTableWidgetItem(o.value(QStringLiteral("signed")).toBool() ? "1" : "0"));
-        m_fields->setItem(i, 5, new QTableWidgetItem(
-                                 QStringLiteral("×%1 +%2 %3")
-                                     .arg(o.value(QStringLiteral("scale")).toDouble(1.0))
-                                     .arg(o.value(QStringLiteral("offset")).toDouble(0.0))
-                                     .arg(o.value(QStringLiteral("unit")).toString())));
+        const QJsonObject f = fields.at(i).toObject();
+        m_fields->setItem(i, 0, new QTableWidgetItem(f.value(QStringLiteral("name")).toString()));
+        m_fields->setItem(i, 1, new QTableWidgetItem(QString::number(f.value(QStringLiteral("byte")).toInt())));
+        m_fields->setItem(i, 2, new QTableWidgetItem(QString::number(f.value(QStringLiteral("bit")).toInt())));
+        m_fields->setItem(i, 3, new QTableWidgetItem(QString::number(f.value(QStringLiteral("bits")).toInt(8))));
+        m_fields->setItem(i, 4, new QTableWidgetItem(f.value(QStringLiteral("signed")).toBool() ? QStringLiteral("1") : QStringLiteral("0")));
+        m_fields->setItem(i, 5, new QTableWidgetItem(f.value(QStringLiteral("float")).toBool() ? QStringLiteral("1") : QStringLiteral("0")));
+        m_fields->setItem(i, 6, new QTableWidgetItem(QString::number(f.value(QStringLiteral("scale")).toDouble(1.0))));
+        m_fields->setItem(i, 7, new QTableWidgetItem(QString::number(f.value(QStringLiteral("offset")).toDouble(0.0))));
+        m_fields->setItem(i, 8, new QTableWidgetItem(f.value(QStringLiteral("unit")).toString()));
+        m_fields->setItem(i, 9, new QTableWidgetItem(f.value(QStringLiteral("time")).toBool() ? QStringLiteral("1") : QStringLiteral("0")));
     }
+    m_syncing = false;
+    rebuildLua();
+    m_result->setText(QStringLiteral("已加载：%1 个字段").arg(fields.size()));
+}
+
+void ProtocolEditorDialog::rebuildJsonFromDesign()
+{
+    if (m_syncing)
+        return;
+    QJsonObject o = currentTemplate();
+    if (o.isEmpty())
+        o = QJsonObject();
+    o.insert(QStringLiteral("name"), m_name->text().trimmed());
+    o.insert(QStringLiteral("frame_size"), m_frameSize->value());
+
+    QJsonArray sync;
+    const QString syncText = m_sync->text();
+    QString cleaned;
+    for (const QChar &c : syncText)
+        if (c.isLetterOrNumber())
+            cleaned.append(c);
+    for (int i = 0; i + 1 < cleaned.size(); i += 2)
+        sync.append(cleaned.mid(i, 2).toInt(nullptr, 16));
+    o.insert(QStringLiteral("sync"), sync);
+
+    if (m_crcOffset->value() >= 0)
+    {
+        QJsonObject crc;
+        bool ok = false;
+        const uint poly = m_crcPoly->text().toUInt(&ok, 0);
+        const uint init = m_crcInit->text().toUInt(&ok, 0);
+        crc.insert(QStringLiteral("offset"), m_crcOffset->value());
+        crc.insert(QStringLiteral("poly"), ok ? static_cast<int>(poly) : 0x1021);
+        crc.insert(QStringLiteral("init"), ok ? static_cast<int>(init) : 0xFFFF);
+        o.insert(QStringLiteral("crc16_ccitt"), crc);
+    }
+    else
+        o.remove(QStringLiteral("crc16_ccitt"));
+
+    QJsonArray fields;
+    for (int r = 0; r < m_fields->rowCount(); ++r)
+    {
+        auto cell = [this, r](int c) {
+            QTableWidgetItem *it = m_fields->item(r, c);
+            return it ? it->text().trimmed() : QString();
+        };
+        QJsonObject f;
+        f.insert(QStringLiteral("name"), cell(0));
+        if (cell(0).isEmpty())
+            continue;
+        f.insert(QStringLiteral("byte"), cell(1).toInt());
+        f.insert(QStringLiteral("bit"), cell(2).toInt());
+        f.insert(QStringLiteral("bits"), std::clamp(cell(3).toInt(), 1, 64));
+        f.insert(QStringLiteral("signed"), boolText(cell(4)));
+        f.insert(QStringLiteral("float"), boolText(cell(5)));
+        f.insert(QStringLiteral("scale"), cell(6).isEmpty() ? 1.0 : cell(6).toDouble());
+        f.insert(QStringLiteral("offset"), cell(7).toDouble());
+        f.insert(QStringLiteral("unit"), cell(8));
+        f.insert(QStringLiteral("time"), boolText(cell(9)));
+        fields.append(f);
+    }
+    o.insert(QStringLiteral("fields"), fields);
+
+    m_syncing = true;
+    m_json->setPlainText(QJsonDocument(o).toJson(QJsonDocument::Indented));
+    m_syncing = false;
+    rebuildLua();
+}
+
+void ProtocolEditorDialog::rebuildLua()
+{
+    const QJsonObject o = currentTemplate();
+    if (o.isEmpty())
+    {
+        m_lua->setPlainText(QStringLiteral("-- JSON 无效，无法生成 Lua 描述"));
+        return;
+    }
+    QStringList lines;
+    lines << QStringLiteral("-- PlotScope 协议描述（由设计页生成）");
+    lines << QStringLiteral("return {");
+    lines << QStringLiteral("  name = %1,").arg(luaQuote(o.value(QStringLiteral("name")).toString()));
+    lines << QStringLiteral("  frame_size = %1,").arg(o.value(QStringLiteral("frame_size")).toInt());
+    QStringList sync;
+    for (const QJsonValue &v : o.value(QStringLiteral("sync")).toArray())
+        sync << QStringLiteral("0x%1").arg(v.toInt(), 2, 16, QLatin1Char('0')).toUpper();
+    lines << QStringLiteral("  sync = {%1},").arg(sync.join(QStringLiteral(", ")));
+    lines << QStringLiteral("  fields = {");
+    for (const QJsonValue &v : o.value(QStringLiteral("fields")).toArray())
+    {
+        const QJsonObject f = v.toObject();
+        lines << QStringLiteral("    { name = %1, byte = %2, bit = %3, bits = %4, signed = %5, scale = %6, offset = %7, unit = %8 },")
+                     .arg(luaQuote(f.value(QStringLiteral("name")).toString()))
+                     .arg(f.value(QStringLiteral("byte")).toInt())
+                     .arg(f.value(QStringLiteral("bit")).toInt())
+                     .arg(f.value(QStringLiteral("bits")).toInt(8))
+                     .arg(f.value(QStringLiteral("signed")).toBool() ? QStringLiteral("true") : QStringLiteral("false"))
+                     .arg(f.value(QStringLiteral("scale")).toDouble(1.0))
+                     .arg(f.value(QStringLiteral("offset")).toDouble(0.0))
+                     .arg(luaQuote(f.value(QStringLiteral("unit")).toString()));
+    }
+    lines << QStringLiteral("  }");
+    lines << QStringLiteral("}");
+    m_lua->setPlainText(lines.join(QLatin1Char('\n')));
 }
 
 void ProtocolEditorDialog::tryFrame()
 {
-    const QJsonDocument doc = QJsonDocument::fromJson(m_json->toPlainText().toUtf8());
-    if (!doc.isObject())
+    const QJsonObject t = currentTemplate();
+    if (t.isEmpty())
     {
         m_result->setText(QStringLiteral("模板 JSON 无效"));
         return;
     }
-    const QJsonObject t = doc.object();
     const int frameSize = t.value(QStringLiteral("frame_size")).toInt();
     QString hex = m_hex->text();
     hex.remove(QRegularExpression(QStringLiteral("[^0-9A-Fa-f]")));
@@ -211,6 +410,8 @@ void ProtocolEditorDialog::tryFrame()
 
 void ProtocolEditorDialog::save()
 {
+    if (m_tabs->currentWidget() != m_json)
+        rebuildJsonFromDesign();
     QFile f(m_path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
@@ -219,4 +420,14 @@ void ProtocolEditorDialog::save()
     }
     f.write(m_json->toPlainText().toUtf8());
     accept();
+}
+
+void ProtocolEditorDialog::saveAs()
+{
+    const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("另存协议模板"), m_path,
+        QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)"));
+    if (f.isEmpty())
+        return;
+    m_path = f;
+    save();
 }
