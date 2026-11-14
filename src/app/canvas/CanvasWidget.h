@@ -9,6 +9,8 @@
 #include <QVector>
 #include <QWidget>
 
+class QToolButton;
+
 struct PsChannelInfo;
 
 // 一块画布（一页里的一个 plot 格）。
@@ -94,6 +96,9 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
+    void enterEvent(QEnterEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
 
@@ -143,6 +148,9 @@ private:
     void paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
     void paintGpsMap(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
     void paintSurface3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm);
+    void buildHoverBar();
+    void positionHoverBar();
+    void reorderByCursor(const QPoint &globalPos);
     double lastValue(const QString &namePart, bool *ok) const;
 
     QString m_title;
@@ -176,6 +184,11 @@ private:
     QString m_modeTag;
     bool m_dragging = false;
     bool m_hover = false;
+    QWidget *m_hoverBar = nullptr;
+    QToolButton *m_dragBtn = nullptr;
+    bool m_reordering = false;
+    bool m_titleDrag = false;
+    QPointF m_titleDragStart;
     QPointF m_lastPos;
     QPointF m_cursor;
     QVector<QRectF> m_legendRects;   // 图例命中区，随 paint 重算

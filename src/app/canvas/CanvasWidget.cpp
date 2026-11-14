@@ -130,13 +130,13 @@ void CanvasWidget::buildHoverBar()
     m_hoverBar = new QWidget(this);
     m_hoverBar->setObjectName(QStringLiteral("canvasHoverBar"));
     m_hoverBar->setStyleSheet(QStringLiteral(
-        "QWidget#canvasHoverBar{background:#202a33;border:1px solid #46545f;border-radius:4px;}"
+        "QWidget#canvasHoverBar{background:transparent;border:0;}"
         "QToolButton{background:transparent;border:0;padding:0;}"
-        "QToolButton:hover{background:#2a343d;border-radius:3px;}"
+        "QToolButton:hover{background:#26313a;border-radius:2px;}"
         "QToolButton[danger=true]:hover{background:#3a2427;}"));
     auto *lay = new QHBoxLayout(m_hoverBar);
-    lay->setContentsMargins(4, 4, 4, 4);
-    lay->setSpacing(1);
+    lay->setContentsMargins(0, 0, 0, 0);
+    lay->setSpacing(2);
 
     auto addBtn = [&](const QString &icon, const QString &tip, std::function<void()> fn,
                       const QColor &tint = QColor(QStringLiteral("#c8d2da"))) {
@@ -151,13 +151,13 @@ void CanvasWidget::buildHoverBar()
         ip.fillRect(out.rect(), tint);
         ip.end();
         b->setIcon(QIcon(out));
-        b->setIconSize(QSize(18, 18));
+        b->setIconSize(QSize(14, 14));
         b->setToolTip(tip);
         b->setCursor(Qt::PointingHandCursor);
-        b->setFixedSize(26, 26);
+        b->setFixedSize(20, 20);
         b->setStyleSheet(QStringLiteral(
             "QToolButton{background:transparent;border:0;padding:0;}"
-            "QToolButton:hover{background:#2a343d;border-radius:3px;}"));
+            "QToolButton:hover{background:#26313a;border-radius:2px;}"));
         QObject::connect(b, &QToolButton::clicked, m_hoverBar, fn);
         lay->addWidget(b);
         return b;
@@ -173,7 +173,7 @@ void CanvasWidget::buildHoverBar()
     m_dragBtn->installEventFilter(this);
     m_dragBtn->setCursor(Qt::OpenHandCursor);
     auto *sep = new QWidget(m_hoverBar);
-    sep->setFixedWidth(6);
+    sep->setFixedWidth(4);
     lay->addWidget(sep);
     auto *del = addBtn(QStringLiteral(":/icons/trash.svg"), QStringLiteral("删除本画布"),
                        [this] { emit removeRequested(); }, QColor(QStringLiteral("#f28b82")));
@@ -191,7 +191,7 @@ void CanvasWidget::positionHoverBar()
         return;
     m_hoverBar->adjustSize();
     const int w = m_hoverBar->sizeHint().width();
-    m_hoverBar->move(std::max(6, width() - w - 8), 6);
+    m_hoverBar->move(std::max(6, width() - w - 8), 3);
     m_hoverBar->raise();
 }
 
