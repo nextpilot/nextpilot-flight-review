@@ -1,11 +1,30 @@
 #include "ps_plugin_api.h"
 #include "LegacyFileInput.hpp"
+#include "Dbc.h"
 
 #include "AscParser.h"
 
 namespace {
 
-int32_t ascLoad(const char *path, const char *, const PsHostApi *host, void **dataset, char *err, uint32_t errCap)
+const char *kCanSchema = R"({"title":"ASC · CAN","fields":[{"key":"dbc","type":"file","label":"DBC 文件（可选，留空导原始字节）","default":""}]})";
+
+int32_t canSchema(char *out, uint32_t cap)
+{
+    if (!out || cap == 0)
+        return -1;
+    std::snprintf(out, cap, "%s", kCanSchema);
+    return 0;
+}
+
+int32_t canDefaults(const char *, char *out, uint32_t cap)
+{
+    if (!out || cap == 0)
+        return -1;
+    std::snprintf(out, cap, "{}");
+    return 0;
+}
+
+int32_t ascLoad(const char *path, const char *opts, const PsHostApi *host, void **dataset, char *err, uint32_t errCap)
 {
     AscLog log;
     std::string perr;
@@ -14,7 +33,28 @@ int32_t ascLoad(const char *path, const char *, const PsHostApi *host, void **da
         psWriteErr(err, errCap, perr);
         return 1;
     }
-    auto channels = psCanFramesToChannels(log.frames);
+    const std::string dbcPath = psResolveDbcOption(opts, path);
+    std::vector<PsChannelData> channels;
+    if (!dbcPath.empty())
+    {
+        DbcDatabase db;
+        std::string dberr;
+        if (!db.load(dbcPath, dberr))
+        {
+            psWriteErr(err, errCap, dberr);
+            return 4;
+        }
+        channels = psCanFramesToDbcChannels(log.frames, db);
+        if (channels.empty())
+        {
+            psWriteErr(err, errCap, "DBC 未匹配到任何 CAN 帧");
+            return 5;
+        }
+    }
+    else
+    {
+        channels = psCanFramesToChannels(log.frames);
+    }
     if (channels.empty())
     {
         psWriteErr(err, errCap, "ASC 里没有变化的 CAN 字节（可能全是常量帧）");
@@ -40,9 +80,9 @@ const PsLoaderVtable kAscLoader = {
     1,
     0,
     {0, 0, 0, 0, 0, 0},
+    canSchema,
     nullptr,
-    nullptr,
-    nullptr,
+    canDefaults,
     nullptr,
     ascLoad,
 };

@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -37,6 +38,34 @@ bool loadAndCheck(const PsPluginDescriptor *d, const std::string &path, uint32_t
     return true;
 }
 
+bool loadDbcAndCheck(const PsPluginDescriptor *d, const std::string &path, const std::string &dbc,
+                     const std::string &channel)
+{
+    assert(d && d->loader);
+    void *raw = nullptr;
+    char err[256] = {0};
+    const std::string opts = "{\"dbc\":\"" + dbc + "\"}";
+    const int32_t rc = d->loader->load(path.c_str(), opts.c_str(), ps_host_api(), &raw, err, sizeof(err));
+    if (rc != 0)
+    {
+        std::cerr << d->loader->id << " dbc load failed: " << err << "\n";
+        return false;
+    }
+    PsDataset *ds = static_cast<PsDataset *>(raw);
+    bool found = false;
+    for (uint32_t i = 0; i < ps_dataset_channel_count(ds); ++i)
+    {
+        const PsChannelInfo *c = ps_dataset_channel(ds, i);
+        if (c && channel == c->name)
+        {
+            found = true;
+            break;
+        }
+    }
+    ps_dataset_free(ds);
+    return found;
+}
+
 } // namespace
 
 int main()
@@ -55,6 +84,18 @@ int main()
     if (!loadAndCheck(ps_plugin_entry_data_loader_asc(), fix + "/demo_can.asc", 10))
         return 1;
     if (!loadAndCheck(ps_plugin_entry_data_loader_blf(), fix + "/demo_can.blf", 10))
+        return 1;
+
+    // DBC 模式：0x1A0 的两个字节解成命名信号，而不是 b0..b7 原始字节。
+    const std::string dbcPath = "/tmp/plotscope-test-can.dbc";
+    {
+        std::ofstream dbc(dbcPath);
+        dbc << "BO_ 416 MSG_A: 8 Vector__XXX\n"
+            << " SG_ byte0 : 0|8@1+ (1,0) [0|255] \"\" Vector__XXX\n"
+            << " SG_ temp : 8|8@1+ (1,-40) [0|200] \"C\" Vector__XXX\n";
+    }
+    if (!loadDbcAndCheck(ps_plugin_entry_data_loader_asc(), fix + "/demo_can.asc", dbcPath,
+                         "CAN2.MSG_A.byte0"))
         return 1;
 
     char params[256 * 1024] = {0};

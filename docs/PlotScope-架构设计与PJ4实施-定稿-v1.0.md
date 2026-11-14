@@ -648,7 +648,7 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 |---|---|---|---|
 | **M0-0** | 选型 spike：JKQTPlotter vs Qwt，20 通道 × 8k 点 @60fps，单帧 ≤8 ms | **0.5 天** | **已完成**：自绘 7.2 ms；JKQ 13.1 ms |
 | **M0** | 骨架：按 §12 目录落地、CMake + Rust 内核接通、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 | **已完成** |
-| **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） | **基本完成**：ULog/DFLog/ASC/BLF、MAVLink UDP/raw/`.tlog` 回放、缓存、外部插件 manifest/ABI 已落地；CAN DBC 解码未做 |
+| **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） | **基本完成**：ULog/DFLog/ASC/BLF、MAVLink UDP/raw/`.tlog` 回放、缓存、外部插件 manifest/ABI 已落地；ASC/BLF 支持可选 DBC 信号解码 |
 | **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 | **部分完成**：12 算子、四元数、Lua 5.4 脚本、OEM7 TCP/串口已落地；MDF4/NMEA/UBX、自绘滚动面板未做 |
 | **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 | **部分完成**：MCAP 加载/录制、多画布、时间对齐已落地；rosbag2、多轴、视频同步未做 |
 | **M4** | 协议编辑器（Loader 的 options 子窗口：位域/CRC/联动）+ 模板编译 | 3 周 | **未开始** |
@@ -969,6 +969,7 @@ public:
 - P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码随 `.psl` 保存。
 - M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 插件原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
+- M1 CAN：ASC/BLF 加载器新增可选 `dbc` 配置，按 `BO_`/`SG_` 解码为 `CAN<bus>.<message>.<signal>`；留空仍导原始字节。CMake 公共库加 `Dbc.cpp`，测试覆盖 `CAN2.MSG_A.byte0`。
 - RAW：OEM7 `database.json` 写入 PSRAW1 `schema_blob`。
 - 测试：`ctest` 15/15，新增 `test_script_engine`（`ps.input`、`ps.input(5)` 报错、`step` 聚合）。
 - 启动：`QT_QPA_PLATFORM=offscreen` 运行 8 秒存活；Xvfb 下真实 xcb 窗口启动并截图，非交互冒烟。
