@@ -34,15 +34,16 @@ int main()
 
     const ScriptResult step = ScriptEngine::run(
         QStringLiteral("local acc = 0\n"
-                       "function init(params) acc = 0 end\n"
+                       "local k = 1\n"
+                       "function init(params) acc = 0 k = params.k or 1 end\n"
                        "function reset() acc = 0 end\n"
-                       "function step(t, v1, v2) acc = acc + v1 return {sum = acc} end\n"),
-        inputs);
+                       "function step(t, v1, v2) acc = acc + v1 * k return {sum = acc} end\n"),
+        inputs, {{QStringLiteral("k"), 2.0}});
     assert(step.ok);
     assert(step.outputs.size() == 1);
     assert(step.outputs.first().name == "sum");
     assert(step.outputs.first().value.size() == 3);
-    assert(std::abs(step.outputs.first().value[2] - 6.0) < 1e-9);
+    assert(std::abs(step.outputs.first().value[2] - 12.0) < 1e-9);
 
     const ScriptResult bad = ScriptEngine::run(QStringLiteral("ps.input(5)"), inputs);
     assert(!bad.ok);

@@ -863,7 +863,8 @@ public:
 - 脚本面板增加 1–4 输入绑定下拉；运行时按绑定顺序映射为 `v1..v4`，未绑定则回退当前画布全部曲线。
 - 语法错误包含行号，面板自动选中出错行；源码与绑定写入 `.psl` 的 `script` 对象，导入时恢复。
 - 输出追加到当前工作区画布；已修复 `ps.plot` 与全局 `out` 重复输出（改用 `lua_next` 判断空表，`lua_rawlen` 对字符串键表恒为 0）。
-- 未做：参数表单、before/after 预览与 Apply 替换、Luau 适配、Python。
+- 已做：参数表单（名称 + 数值）传入 `init(params)`，随 `.psl` 的 `script.params` 保存。
+- 未做：before/after 预览与 Apply 替换、Luau 适配、Python。
 
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
@@ -966,7 +967,7 @@ public:
 已落地：
 - 设置：时间轴格式、CSV 导出采样上限、派生重算上限；画布设置保存后即时刷新。
 - CSV：当前源导出带 `source` 列与源别名。
-- P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码随 `.psl` 保存。
+- P3：Lua 1–4 输入绑定、`init/reset/step`、错误行定位、源码与参数随 `.psl` 保存；`init(params)` 接收参数表单。
 - M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 插件原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
 - M1 CAN：ASC/BLF 加载器新增可选 `dbc` 配置，按 `BO_`/`SG_` 解码为 `CAN<bus>.<message>.<signal>`；留空仍导原始字节。CMake 公共库加 `Dbc.cpp`，测试覆盖 `CAN2.MSG_A.byte0`。

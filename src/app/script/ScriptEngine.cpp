@@ -226,7 +226,8 @@ void clearDangerous(lua_State *L)
 
 QVector<double> timeFor(const QVector<ScriptSeries> &inputs, int len);
 
-ScriptResult runStepMode(lua_State *L, const QVector<ScriptSeries> &inputs)
+ScriptResult runStepMode(lua_State *L, const QVector<ScriptSeries> &inputs,
+                         const QMap<QString, double> &params)
 {
     ScriptResult r;
     auto fail = [&](const char *where) {
@@ -239,7 +240,13 @@ ScriptResult runStepMode(lua_State *L, const QVector<ScriptSeries> &inputs)
     lua_getglobal(L, "init");
     if (lua_isfunction(L, -1))
     {
-        lua_newtable(L);
+        lua_newtable(L); // init(params)
+        for (auto it = params.begin(); it != params.end(); ++it)
+        {
+            lua_pushstring(L, it.key().toUtf8().constData());
+            lua_pushnumber(L, it.value());
+            lua_settable(L, -3);
+        }
         if (lua_pcall(L, 1, 0, 0) != LUA_OK)
             return fail("init");
     }
@@ -341,7 +348,8 @@ QVector<double> timeFor(const QVector<ScriptSeries> &inputs, int len)
 #endif
 } // namespace
 
-ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries> &inputs)
+ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries> &inputs,
+                               const QMap<QString, double> &params)
 {
     ScriptResult r;
 #ifndef PS_HAVE_LUA
@@ -414,7 +422,7 @@ ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries
     lua_pop(L, 1);
     if (stepMode)
     {
-        const ScriptResult sr = runStepMode(L, inputs);
+        const ScriptResult sr = runStepMode(L, inputs, params);
         lua_close(L);
         return sr;
     }

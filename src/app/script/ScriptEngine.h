@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QMap>
 #include <QString>
 #include <QVector>
 
@@ -29,5 +30,6 @@ class ScriptEngine
 {
 public:
     // 失败时 outputs 为空，error 带行号与原因；不抛异常。
-    static ScriptResult run(const QString &source, const QVector<ScriptSeries> &inputs);
+    static ScriptResult run(const QString &source, const QVector<ScriptSeries> &inputs,
+                            const QMap<QString, double> &params = QMap<QString, double>());
 };

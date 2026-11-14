@@ -1582,6 +1582,38 @@ void MainWindow::createDocks()
         m_scriptInputs[i] = cb;
     }
     scriptLay->addLayout(bindRow);
+
+    // init(params)：两列表单，名称 + 数值。
+    auto *paramHead = new QHBoxLayout;
+    paramHead->addWidget(new QLabel(QStringLiteral("参数"), scriptHost));
+    auto *addParam = new QToolButton(scriptHost);
+    addParam->setText(QStringLiteral("+"));
+    addParam->setToolTip(QStringLiteral("添加参数"));
+    auto *delParam = new QToolButton(scriptHost);
+    delParam->setText(QStringLiteral("-"));
+    delParam->setToolTip(QStringLiteral("删除选中参数"));
+    paramHead->addStretch(1);
+    paramHead->addWidget(addParam);
+    paramHead->addWidget(delParam);
+    scriptLay->addLayout(paramHead);
+    m_scriptParams = new QTableWidget(0, 2, scriptHost);
+    m_scriptParams->setHorizontalHeaderLabels({QStringLiteral("名称"), QStringLiteral("值")});
+    m_scriptParams->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    m_scriptParams->verticalHeader()->setVisible(false);
+    m_scriptParams->setMaximumHeight(110);
+    scriptLay->addWidget(m_scriptParams);
+    connect(addParam, &QToolButton::clicked, this, [this] {
+        const int row = m_scriptParams->rowCount();
+        m_scriptParams->insertRow(row);
+        m_scriptParams->setItem(row, 1, new QTableWidgetItem(QStringLiteral("0")));
+        m_scriptParams->editItem(m_scriptParams->item(row, 0));
+    });
+    connect(delParam, &QToolButton::clicked, this, [this] {
+        const int row = m_scriptParams->currentRow();
+        if (row >= 0)
+            m_scriptParams->removeRow(row);
+    });
+
     auto *runScriptBtn = new QPushButton(QStringLiteral("运行"), scriptHost);
     scriptLay->addWidget(m_script, 1);
     scriptLay->addWidget(runScriptBtn);
@@ -3202,7 +3234,25 @@ void MainWindow::runScript()
         bound = inputs;
     log(QStringLiteral("脚本输入：%1").arg(
         boundNames.isEmpty() ? names.join(QStringLiteral(" | ")) : boundNames.join(QStringLiteral(" | "))));
-    const ScriptResult r = ScriptEngine::run(m_script->toPlainText(), bound);
+    QMap<QString, double> params;
+    if (m_scriptParams)
+    {
+        for (int row = 0; row < m_scriptParams->rowCount(); ++row)
+        {
+            const QString key = m_scriptParams->item(row, 0)
+                                    ? m_scriptParams->item(row, 0)->text().trimmed()
+                                    : QString();
+            if (key.isEmpty())
+                continue;
+            bool ok = false;
+            const double v = m_scriptParams->item(row, 1)
+                                 ? m_scriptParams->item(row, 1)->text().toDouble(&ok)
+                                 : 0.0;
+            if (ok)
+                params.insert(key, v);
+        }
+    }
+    const ScriptResult r = ScriptEngine::run(m_script->toPlainText(), bound, params);
     if (!r.ok)
     {
         log(QStringLiteral("脚本失败：%1").arg(r.error));
@@ -3303,6 +3353,25 @@ void MainWindow::saveLayoutTo(const QString &path)
     for (QComboBox *cb : m_scriptInputs)
         binds.append(cb ? cb->currentData().toString() : QString());
     script[QStringLiteral("inputs")] = binds;
+    QJsonObject paramObj;
+    if (m_scriptParams)
+    {
+        for (int row = 0; row < m_scriptParams->rowCount(); ++row)
+        {
+            const QString key = m_scriptParams->item(row, 0)
+                                    ? m_scriptParams->item(row, 0)->text().trimmed()
+                                    : QString();
+            if (key.isEmpty())
+                continue;
+            bool ok = false;
+            const double v = m_scriptParams->item(row, 1)
+                                 ? m_scriptParams->item(row, 1)->text().toDouble(&ok)
+                                 : 0.0;
+            if (ok)
+                paramObj[key] = v;
+        }
+    }
+    script[QStringLiteral("params")] = paramObj;
     root[QStringLiteral("script")] = script;
 
     QFile f(path);
@@ -3492,6 +3561,19 @@ void MainWindow::importLayoutFrom(const QString &path)
             if (!name.isEmpty())
                 cb->addItem(name, name);
             cb->setCurrentIndex(name.isEmpty() ? 0 : 1);
+        }
+        const QJsonObject paramObj = script.value(QStringLiteral("params")).toObject();
+        if (m_scriptParams)
+        {
+            m_scriptParams->setRowCount(0);
+            for (auto it = paramObj.begin(); it != paramObj.end(); ++it)
+            {
+                const int row = m_scriptParams->rowCount();
+                m_scriptParams->insertRow(row);
+                m_scriptParams->setItem(row, 0, new QTableWidgetItem(it.key()));
+                m_scriptParams->setItem(row, 1, new QTableWidgetItem(
+                    QString::number(it.value().toDouble(), 'g', 10)));
+            }
         }
         if (!m_script->toPlainText().trimmed().isEmpty())
             runScript();

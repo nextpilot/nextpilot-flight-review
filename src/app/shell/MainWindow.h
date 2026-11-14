@@ -152,6 +152,7 @@ private:
     QLabel *m_runLabel = nullptr;
     QPlainTextEdit *m_script = nullptr;
     QComboBox *m_scriptInputs[4] = {nullptr, nullptr, nullptr, nullptr};
+    QTableWidget *m_scriptParams = nullptr;
     QVector<SourceData> m_sources;
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;
