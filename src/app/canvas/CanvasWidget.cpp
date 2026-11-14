@@ -890,6 +890,92 @@ void CanvasWidget::paintGauge(QPainter &p, const QRectF &plot, const QFontMetric
                Qt::AlignCenter, QStringLiteral("%1 ~ %2").arg(lo, 0, 'g', 3).arg(hi, 0, 'g', 3));
 }
 
+void CanvasWidget::paintGpsMap(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+{
+    const Series *latS = nullptr;
+    const Series *lonS = nullptr;
+    for (const Series &s : m_series)
+    {
+        if (!s.visible || s.count() < 2)
+            continue;
+        const QString n = s.name.toLower();
+        if (!latS && (n.contains(QStringLiteral("latitude")) || n.endsWith(QStringLiteral("lat")) ||
+                      n.contains(QStringLiteral(".lat"))
+                      || n.contains(QStringLiteral("lat_"))))
+            latS = &s;
+        if (!lonS && (n.contains(QStringLiteral("longitude")) || n.contains(QStringLiteral("lng")) ||
+                      n.contains(QStringLiteral("lon"))))
+            lonS = &s;
+    }
+    if (!latS || !lonS)
+    {
+        p.setPen(colorDim());
+        p.drawText(plot, Qt::AlignCenter, QStringLiteral("GPS 地图需要同时拖入纬度与经度通道\n（名称含 lat / lon）"));
+        return;
+    }
+
+    QVector<QPointF> pts;
+    const quint32 n = qMin(latS->count(), lonS->count());
+    for (quint32 i = 0; i < n; ++i)
+    {
+        const double lat = latS->value()[i];
+        const double lon = lonS->value()[i];
+        if (!std::isfinite(lat) || !std::isfinite(lon) || qAbs(lat) > 90.0 || qAbs(lon) > 180.0)
+            continue;
+        pts.append(QPointF(lon, lat));
+    }
+    if (pts.isEmpty())
+    {
+        p.setPen(colorDim());
+        p.drawText(plot, Qt::AlignCenter, QStringLiteral("经纬度通道没有有效数据"));
+        return;
+    }
+
+    double minLon = pts.first().x(), maxLon = minLon;
+    double minLat = pts.first().y(), maxLat = minLat;
+    for (const QPointF &q : pts)
+    {
+        minLon = std::min(minLon, q.x());
+        maxLon = std::max(maxLon, q.x());
+        minLat = std::min(minLat, q.y());
+        maxLat = std::max(maxLat, q.y());
+    }
+    const double padLon = std::max((maxLon - minLon) * 0.08, 1e-5);
+    const double padLat = std::max((maxLat - minLat) * 0.08, 1e-5);
+    minLon -= padLon; maxLon += padLon;
+    minLat -= padLat; maxLat += padLat;
+    const auto xOf = [&](double lon) { return plot.left() + plot.width() * (lon - minLon) / (maxLon - minLon); };
+    const auto yOf = [&](double lat) { return plot.bottom() - plot.height() * (lat - minLat) / (maxLat - minLat); };
+
+    p.setPen(QPen(colorGrid(), 1));
+    for (int i = 0; i <= 4; ++i)
+    {
+        const double x = plot.left() + plot.width() * i / 4.0;
+        const double y = plot.top() + plot.height() * i / 4.0;
+        p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+        p.setPen(colorText());
+        p.drawText(QPointF(x + 3, plot.bottom() - 4),
+                   QString::number(minLon + (maxLon - minLon) * i / 4.0, 'f', 5));
+        p.drawText(QPointF(plot.left() + 3, y - 3),
+                   QString::number(maxLat - (maxLat - minLat) * i / 4.0, 'f', 5));
+        p.setPen(QPen(colorGrid(), 1));
+    }
+    p.setPen(QPen(QColor("#4ea1ff"), 1.6));
+    QPolygonF poly;
+    for (const QPointF &q : pts)
+        poly.append(QPointF(xOf(q.x()), yOf(q.y())));
+    p.drawPolyline(poly);
+    p.setBrush(QColor("#7ee787"));
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(QPointF(xOf(pts.first().x()), yOf(pts.first().y())), 4, 4);
+    p.setBrush(QColor("#ff7b72"));
+    p.drawEllipse(QPointF(xOf(pts.last().x()), yOf(pts.last().y())), 4, 4);
+    p.setPen(colorDim());
+    p.drawText(QPointF(plot.left() + 6, plot.top() + fm.ascent() + 2),
+               QStringLiteral("%1 点 · %2 / %3").arg(pts.size()).arg(latS->label, lonS->label));
+}
+
 void CanvasWidget::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     QVector<const Series *> vis;
@@ -983,6 +1069,7 @@ void CanvasWidget::paintSpecial(QPainter &p, const QRectF &plot, const QFontMetr
     case Compass: paintCompass(p, plot, fm); break;
     case Gauge: paintGauge(p, plot, fm); break;
     case Traj3D: paintTraj3D(p, plot, fm); break;
+    case GpsMap: paintGpsMap(p, plot, fm); break;
     default: break;
     }
     p.restore();
@@ -1668,7 +1755,7 @@ QJsonObject CanvasWidget::saveState() const
 void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool)
 {
     m_title = o.value(QStringLiteral("title")).toString(m_title);
-    m_mode = PlotMode(std::clamp(o.value(QStringLiteral("mode")).toInt(0), 0, int(Gauge)));
+    m_mode = PlotMode(std::clamp(o.value(QStringLiteral("mode")).toInt(0), 0, int(GpsMap)));
     m_modeTag = o.value(QStringLiteral("modeTag")).toString();
     m_series.clear();
     const QJsonArray arr = o.value(QStringLiteral("series")).toArray();

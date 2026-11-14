@@ -138,6 +138,24 @@ QPixmap plotThumb(const QString &kind)
             p.drawEllipse(QPointF(x, y), 1.5, 1.5);
         }
     }
+    else if (kind == QLatin1String("map"))
+    {
+        p.setPen(QPen(QColor("#26313a"), 1));
+        for (int i = 1; i < 4; ++i)
+        {
+            p.drawLine(QPointF(r.left() + r.width() * i / 4.0, r.top()),
+                       QPointF(r.left() + r.width() * i / 4.0, r.bottom()));
+            p.drawLine(QPointF(r.left(), r.top() + r.height() * i / 4.0),
+                       QPointF(r.right(), r.top() + r.height() * i / 4.0));
+        }
+        QPainterPath path;
+        path.moveTo(r.left() + 6, r.bottom() - 4);
+        path.cubicTo(r.left() + 20, r.top() + 2, r.left() + 34, r.bottom() - 6, r.right() - 4, r.top() + 6);
+        p.setPen(QPen(QColor("#4ea1ff"), 1.5));
+        p.drawPath(path);
+        p.setBrush(QColor("#ff7b72"));
+        p.drawEllipse(QPointF(r.right() - 4, r.top() + 6), 2.2, 2.2);
+    }
     else if (kind == QLatin1String("bar"))
     {
         for (int i = 0; i < 5; ++i)
@@ -976,6 +994,7 @@ QWidget *MainWindow::createRibbon()
                     else if (kind == QLatin1String("compass")) mode = CanvasWidget::Compass;
                     else if (kind == QLatin1String("gauge")) mode = CanvasWidget::Gauge;
                     else if (kind == QLatin1String("traj3d")) mode = CanvasWidget::Traj3D;
+                    else if (kind == QLatin1String("map")) mode = CanvasWidget::GpsMap;
                     else if (kind == QLatin1String("surface3d")) mode = CanvasWidget::Xy;
                     c->setPlotMode(mode, kind);
                     CanvasWidget *seed = nullptr;
@@ -1010,6 +1029,7 @@ QWidget *MainWindow::createRibbon()
         addPlot(QStringLiteral("histogram"), QStringLiteral("直方图"), QStringLiteral("样本分布"));
         addPlot(QStringLiteral("fft"), QStringLiteral("频谱 FFT"), QStringLiteral("幅值频谱"));
         addPlot(QStringLiteral("traj3d"), QStringLiteral("3D 轨迹"), QStringLiteral("三维空间轨迹"));
+        addPlot(QStringLiteral("map"), QStringLiteral("GPS 地图"), QStringLiteral("经纬度轨迹与网格"));
         addPlot(QStringLiteral("surface3d"), QStringLiteral("3D 曲面"), QStringLiteral("三维曲面 / 频谱"));
         addPlot(QStringLiteral("horizon"), QStringLiteral("地平仪"), QStringLiteral("姿态地平仪"));
         addPlot(QStringLiteral("compass"), QStringLiteral("罗盘"), QStringLiteral("航向罗盘"));

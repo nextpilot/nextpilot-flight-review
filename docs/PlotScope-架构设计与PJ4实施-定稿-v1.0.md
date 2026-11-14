@@ -974,6 +974,7 @@ public:
 - M3：`McapWriter` 增加 1 MiB Chunk 聚合、ChunkIndex、SummaryOffset 与 summary Schema/Channel 副本；`McapReader` 原有 Chunk 解析路径直接复用。
 - M3：CanvasWidget 支持曲线绑定右轴（右键「绑定右轴」），左右轴独立量程/刻度，布局持久化；Ctrl+滚轮与纵向平移同步作用于双轴。
 - M3：新增 `data_loader_rosbag2` 直读 `.db3`（SQLite topics/messages + CDR），支持 Float64/Float32/Int32/Int64/Bool/String/Imu/Twist/PoseStamped/Odometry/NavSatFix/Header；未识别类型只出 `payload_bytes`。rosbag2 目录也可加载。
+- P4：GpsMap 图型：经纬度网格、轨迹连线、起终点标记，无在线瓦片依赖。
 - P4：新增 `data_loader_binary`，按扩展名解析 CBOR（`.cbor`）与 MessagePack（`.msgpack/.mpk`），数值字段扁平为 `cbor.*` / `msgpack.*`，支持数组批量记录与连续多条记录。
 - M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 插件原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
