@@ -79,6 +79,13 @@ const QVector<DataSourceSpec> &dataSources() const;
 - 运行实例统一叫 `DataSourceSession`：文件是一次有限会话，串口是持续会话。
 - 旧 ABI 的 `PS_FAMILY_DATA_LOADER` / `PS_FAMILY_DATA_SOURCE` 仅作兼容，app 层不再暴露。
 
+当前落地：
+
+- `Registry` 只有 `addDataSource / dataSources()`，`addLoader` 已删除；
+- `DataInputRegistry` 构造函数不再写死任何 `ps_plugin_entry_*`；
+- 过渡组件 `BuiltinDataSourcesComponent` 集中登记现有内建入口，后续由 GNSS / FlightLog 组件接管；
+- `MainWindow` 只遍历 `m_components.dataSources()` 注册。
+
 ## 第二层：控件创建
 
 | 类型 | 内部组件 | 外部插件 |

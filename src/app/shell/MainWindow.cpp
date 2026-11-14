@@ -6,6 +6,7 @@
 #include "data_input/DataInputRegistry.h"
 #include "components/Component.h"
 #include "components/ShellComponent.h"
+#include "components/BuiltinDataSources.h"
 #include "components/PluginComponent.h"
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
 #include "components/custom_protocol/CustomProtocolComponent.h"
@@ -1270,13 +1271,13 @@ MainWindow::MainWindow(QWidget *parent)
     ps::components::CustomProtocolComponent customProtocol;
     customProtocol.contribute(m_components, hostServices);
 #endif
-    for (const PsPluginDescriptor *desc : m_components.loaders())
+    ps::components::BuiltinDataSourcesComponent builtinSources;
+    builtinSources.contribute(m_components, hostServices);
+    for (const ps::components::DataSourceSpec &source : m_components.dataSources())
+        DataInputRegistry::instance().registerDescriptor(source.descriptor);
+    for (const ps::components::DataSourceSpec &source : m_components.dataSources())
     {
-        DataInputRegistry::instance().registerDescriptor(desc);
-    }
-    for (const PsPluginDescriptor *desc : DataInputRegistry::instance().descriptors())
-    {
-        ps::components::PluginComponent plugin(desc);
+        ps::components::PluginComponent plugin(source.descriptor);
         plugin.contribute(m_components, hostServices);
     }
 

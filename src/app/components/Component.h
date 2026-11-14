@@ -54,6 +54,14 @@ struct RibbonContribution
     int order = 1000;
 };
 
+struct DataSourceSpec
+{
+    const PsPluginDescriptor *descriptor = nullptr;
+    QString id;
+    QString label;
+    QStringList transports; // file / serial / tcp / udp / replay
+};
+
 struct DockContribution
 {
     QString id;
@@ -85,19 +93,19 @@ public:
     void addProtocol(const ProtocolContribution &protocol);
     void addRibbon(const RibbonContribution &ribbon);
     void addAction(const QString &id, std::function<void(const ActionContext &)> handler);
-    void addLoader(const PsPluginDescriptor *descriptor);
+    void addDataSource(const DataSourceSpec &source);
     void addDock(const DockContribution &dock);
 
     const ProtocolContribution *protocol(const QString &kind) const;
     const QVector<RibbonContribution> &ribbon() const { return m_ribbon; }
-    const QVector<const PsPluginDescriptor *> &loaders() const { return m_loaders; }
+    const QVector<DataSourceSpec> &dataSources() const { return m_dataSources; }
     const QVector<DockContribution> &docks() const { return m_docks; }
     bool invoke(const QString &action, const ActionContext &ctx) const;
 
 private:
     QVector<ProtocolContribution> m_protocols;
     QVector<RibbonContribution> m_ribbon;
-    QVector<const PsPluginDescriptor *> m_loaders;
+    QVector<DataSourceSpec> m_dataSources;
     QVector<DockContribution> m_docks;
     QVector<QPair<QString, std::function<void(const ActionContext &)>>> m_actions;
 };

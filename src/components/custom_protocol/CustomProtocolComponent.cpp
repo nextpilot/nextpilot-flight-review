@@ -54,7 +54,12 @@ ComponentManifest CustomProtocolComponent::manifest() const
 
 void CustomProtocolComponent::contribute(Registry &registry, const HostServices &host)
 {
-    registry.addLoader(ps_custom_protocol_loader());
+    DataSourceSpec customSource;
+    customSource.descriptor = ps_custom_protocol_loader();
+    customSource.id = QStringLiteral("data_loader_custom_protocol");
+    customSource.label = QStringLiteral("自定义协议");
+    customSource.transports = {QStringLiteral("file")};
+    registry.addDataSource(customSource);
 
     ProtocolContribution protocol;
     protocol.kind = QStringLiteral("sequential");

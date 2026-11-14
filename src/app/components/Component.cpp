@@ -25,10 +25,14 @@ void Registry::addDock(const DockContribution &dock)
     m_docks.push_back(dock);
 }
 
-void Registry::addLoader(const PsPluginDescriptor *descriptor)
+void Registry::addDataSource(const DataSourceSpec &source)
 {
-    if (descriptor && !m_loaders.contains(descriptor))
-        m_loaders.push_back(descriptor);
+    if (!source.descriptor)
+        return;
+    for (const DataSourceSpec &existing : m_dataSources)
+        if (existing.descriptor == source.descriptor)
+            return;
+    m_dataSources.push_back(source);
 }
 
 const ProtocolContribution *Registry::protocol(const QString &kind) const
