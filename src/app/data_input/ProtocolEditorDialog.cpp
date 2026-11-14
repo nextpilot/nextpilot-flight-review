@@ -13,6 +13,8 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QTextCursor>
+#include <QTextDocument>
 #include <QVBoxLayout>
 
 #include <cstdint>
@@ -89,6 +91,40 @@ ProtocolEditorDialog::ProtocolEditorDialog(const QString &path, QWidget *parent)
         m_json->setPlainText(QStringLiteral("{\n  \"frame_size\": 0,\n  \"sync\": [],\n  \"fields\": []\n}"));
 
     connect(m_json, &QPlainTextEdit::textChanged, this, [this] { reloadTable(); });
+    connect(m_fields, &QTableWidget::cellClicked, this, [this](int row, int) {
+        const QString name = m_fields->item(row, 0) ? m_fields->item(row, 0)->text() : QString();
+        if (name.isEmpty())
+            return;
+        const QJsonDocument doc = QJsonDocument::fromJson(m_json->toPlainText().toUtf8());
+        for (const QJsonValue &v : doc.object().value(QStringLiteral("fields")).toArray())
+        {
+            const QJsonObject f = v.toObject();
+            if (f.value(QStringLiteral("name")).toString() != name)
+                continue;
+            const int byte = f.value(QStringLiteral("byte")).toInt();
+            const int bit = f.value(QStringLiteral("bit")).toInt();
+            const int bits = f.value(QStringLiteral("bits")).toInt(8);
+            m_result->setText(QStringLiteral("%1 · 字节 %2 · 位 %3..%4 · 位宽 %5")
+                                  .arg(name).arg(byte).arg(bit).arg(bit + bits - 1).arg(bits));
+            // JSON 中定位字段名，hex 中定位起始字节，做最小联动
+            const QString needle = QStringLiteral("\"%1\"").arg(name);
+            QTextCursor c = m_json->document()->find(needle);
+            if (!c.isNull())
+            {
+                m_json->setTextCursor(c);
+                m_json->centerCursor();
+            }
+            if (!m_hex->text().isEmpty())
+            {
+                int digits = 0;
+                for (int i = 0; i < m_hex->text().size() && digits < byte * 2; ++i)
+                    if (m_hex->text().at(i).isLetterOrNumber())
+                        ++digits;
+                m_hex->setCursorPosition(std::min(digits, int(m_hex->text().size())));
+            }
+            break;
+        }
+    });
     connect(tryBtn, &QPushButton::clicked, this, [this] { tryFrame(); });
     connect(bb, &QDialogButtonBox::accepted, this, [this] { save(); });
     connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
