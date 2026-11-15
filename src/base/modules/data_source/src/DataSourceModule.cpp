@@ -58,7 +58,11 @@ void registerDataSourceContributions(Registry &registry)
 {
     registry.addDock(DockContribution{QStringLiteral("dock.src"), QStringLiteral("数据源"),
                                       Qt::LeftDockWidgetArea, true, 0,
-                                      QStringLiteral(":/icons/datasource.svg"), nullptr});
+                                      QStringLiteral(":/icons/datasource.svg"),
+                                      [](QWidget *parent) -> QWidget * {
+                                          auto *mw = qobject_cast<MainWindow *>(parent);
+                                          return mw ? mw->createDataSourceDock(parent, QStringLiteral(":/icons/datasource.svg")) : nullptr;
+                                      }});
 
     registry.addRibbon(RibbonContribution{QStringLiteral("数据"), {}, {},
         {{QStringLiteral("常用"),

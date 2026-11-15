@@ -1824,14 +1824,6 @@ QWidget *MainWindow::createRibbon()
     )"));
     return ribbon;
 }
-QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent, const QString &icon)
-{
-    if (id == QLatin1String("dock.src"))
-        return createDataSourceDock(parent, icon);
-
-    Q_UNUSED(parent);
-    return nullptr;
-}
 
 void MainWindow::createDocks()
 {
@@ -1849,8 +1841,6 @@ void MainWindow::createDocks()
             dock = new QDockWidget(spec.title, this);
             dock->setWidget(created);
         }
-        if (!dock)
-            dock = buildDockWidget(spec.id, this, spec.icon);
         if (!dock)
             continue;
         if (!spec.id.isEmpty())
