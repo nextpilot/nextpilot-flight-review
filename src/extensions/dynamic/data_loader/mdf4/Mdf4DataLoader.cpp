@@ -71,6 +71,58 @@ std::string readText(const std::vector<uint8_t> &file, uint64_t off)
     return s;
 }
 
+struct Conversion
+{
+    uint8_t type = 0;
+    std::vector<double> params;
+
+    double apply(double x) const
+    {
+        switch (type)
+        {
+        case 0: // linear: a * x + b
+            if (params.size() >= 2)
+                return params[0] * x + params[1];
+            break;
+        case 1: // rational: (P1*x^2 + P2*x + P3) / (P4*x^2 + P5*x + P6)
+            if (params.size() >= 6)
+            {
+                const double den = params[3] * x * x + params[4] * x + params[5];
+                if (std::fabs(den) > 1e-300)
+                    return (params[0] * x * x + params[1] * x + params[2]) / den;
+                return 0;
+            }
+            break;
+        case 2: // polynomial: P1*x^2 + P2*x + P3
+            if (params.size() >= 3)
+                return params[0] * x * x + params[1] * x + params[2];
+            break;
+        default:
+            break;
+        }
+        return x;
+    }
+};
+
+bool readConversion(const std::vector<uint8_t> &file, uint64_t off, Conversion &conversion)
+{
+    Block cc;
+    if (!off || !readBlock(file, off, cc) || cc.id != "##CC" || cc.body.size() < 24)
+        return false;
+    conversion.type = cc.body[0];
+    const uint16_t valueCount = static_cast<uint16_t>(cc.body[6]) |
+                                (static_cast<uint16_t>(cc.body[7]) << 8);
+    if (cc.body.size() < 24 + static_cast<size_t>(valueCount) * 8)
+        return false;
+    for (uint16_t i = 0; i < valueCount; ++i)
+    {
+        double v = 0;
+        std::memcpy(&v, cc.body.data() + 24 + i * 8, sizeof(v));
+        conversion.params.push_back(v);
+    }
+    return true;
+}
+
 struct Channel
 {
     std::string name;
@@ -80,7 +132,7 @@ struct Channel
     uint32_t bitCount = 0;
     uint8_t type = 0;       // 0 unsigned / 2 signed / 4 float
     uint8_t channelType = 0;
-    int64_t conversion = 0;
+    Conversion conversion;
 };
 
 bool inflatePayload(const std::vector<uint8_t> &in, std::vector<uint8_t> &out)
@@ -232,7 +284,10 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
                 ch.bitOffset = bitOffset % 8;
                 ch.bitCount = cn.body.size() >= 12 ? u32(cn.body.data() + 8) : 0;
                 ch.name = readText(file, cn.links[2]);
-                ch.unit = readText(file, cn.links[5]);
+                if (cn.links.size() > 6)
+                    ch.unit = readText(file, cn.links[6]);
+                if (cn.links.size() > 4)
+                    readConversion(file, cn.links[4], ch.conversion);
                 if (ch.name.empty())
                     ch.name = QStringLiteral("ch%1").arg(chans.size() + 1).toStdString();
                 if (ch.bitCount)
@@ -262,11 +317,12 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
             for (size_t i = 0; i < cycles; ++i)
             {
                 const uint8_t *rec = dataBody->data() + i * recordSize + recordIdSize;
-                const double t = hasMaster ? readValue(rec, master) : static_cast<double>(i);
+                const double t = hasMaster ? master.conversion.apply(readValue(rec, master))
+                                           : static_cast<double>(i);
                 for (const Channel &ch : chans)
                 {
                     const std::string name = group.empty() ? ch.name : group + "." + ch.name;
-                    acc[name].push_back({t, readValue(rec, ch)});
+                    acc[name].push_back({t, ch.conversion.apply(readValue(rec, ch))});
                     if (!ch.unit.empty())
                         units[name] = ch.unit;
                 }

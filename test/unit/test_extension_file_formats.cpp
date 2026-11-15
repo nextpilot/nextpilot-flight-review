@@ -3,6 +3,7 @@
 #include "host/extension/HostApi.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -45,6 +46,33 @@ bool loadAndCheck(const PsExtensionDescriptor *d, const std::string &path, uint3
         return false;
     }
     return true;
+}
+
+bool checkMdf4Value(const PsExtensionDescriptor *d, const std::string &path, size_t index, double expected)
+{
+    void *raw = nullptr;
+    char err[256] = {0};
+    const int32_t rc = d->loader->load(path.c_str(), "", ps_host_api(), &raw, err, sizeof(err));
+    if (rc != 0)
+    {
+        std::cerr << "mdf4 conversion load failed: " << err << "\n";
+        return false;
+    }
+    PsDataset *ds = static_cast<PsDataset *>(raw);
+    bool found = false;
+    for (uint32_t i = 0; i < ps_dataset_channel_count(ds); ++i)
+    {
+        const PsChannelInfo *ch = ps_dataset_channel(ds, i);
+        if (!ch || !ch->name || std::strcmp(ch->name, "mdf4.roll") != 0)
+            continue;
+        found = ch->point_count > index && std::fabs(ch->value[index] - expected) < 1e-9 &&
+                ch->unit && std::strcmp(ch->unit, "rad") == 0;
+        break;
+    }
+    ps_dataset_free(ds);
+    if (!found)
+        std::cerr << "mdf4 conversion mismatch (" << path << ")\n";
+    return found;
 }
 
 bool loadOptsAndCheck(const PsExtensionDescriptor *d, const std::string &path,
@@ -120,6 +148,12 @@ int main()
     if (!loadAndCheck(ps_extension_entry_data_loader_mdf4(), fix + "/demo.mf4", 2))
         return 1;
     if (!loadAndCheck(ps_extension_entry_data_loader_mdf4(), fix + "/demo_compressed.mf4", 2))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_linear.mf4", 0, -0.5))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_rational.mf4", 0, -0.5))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_polynomial.mf4", 1, 0.003942649342761085))
         return 1;
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
