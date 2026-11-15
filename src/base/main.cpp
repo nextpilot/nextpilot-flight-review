@@ -13,12 +13,9 @@
 #include "host/extension/ExtensionHost.h"
 #include "host/extension/ExtensionRuntime.h"
 #include "shell/Theme.h"
-#include "shell/AppWindow.h"
-
-#include <QMainWindow>
-#include <memory>
 
 #include "ps_kernel.h"
+#include "shell/MainWindow.h"
 
 int main(int argc, char **argv)
 {
@@ -64,37 +61,28 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    std::unique_ptr<QMainWindow> window(
-        ps::components::ExtensionRegistry::instance().createMainWindow());
-    if (!window)
-    {
-        window.reset(new QMainWindow);
-        window->setWindowTitle(QStringLiteral("PlotScope"));
-        window->resize(900, 600);
-    }
-    IAppWindow *appWindow = dynamic_cast<IAppWindow *>(window.get());
+    MainWindow win;
+    win.show();
 
     // 命令行带文件时直接加载：plotscope_app flight.csv / layout.psl
-    if (appWindow && argc > 1)
+    if (argc > 1)
     {
         for (int i = 1; i < argc; ++i)
         {
             const QString arg = QString::fromLocal8Bit(argv[i]);
             if (arg.endsWith(QStringLiteral(".psl"), Qt::CaseInsensitive))
-                appWindow->openLayout(arg);
+                win.importLayoutFrom(arg);
             else
-                appWindow->openFile(arg);
+                win.loadFile(arg);
         }
     }
-    else if (appWindow &&
-             QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+    else if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
                  .value(QStringLiteral("restoreLayout"), false).toBool())
     {
-        const QString last = appWindow->defaultLayoutPath();
+        const QString last = win.defaultLayoutPath();
         if (QFile::exists(last))
-            appWindow->openLayout(last);
+            win.importLayoutFrom(last);
     }
 
-    window->show();
     return app.exec();
 }

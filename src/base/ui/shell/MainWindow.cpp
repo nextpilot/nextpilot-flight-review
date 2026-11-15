@@ -1,4 +1,4 @@
-#include "MainWindow.h"
+#include "shell/MainWindow.h"
 #include "ui/extension_dialog/DialogEngine.h"
 #include "data_input/DataInputDialog.h"
 #include "host/services/cache/DatasetCache.h"
@@ -1243,12 +1243,6 @@ protected:
 private:
     QString m_full;
 };
-
-QWidget *MainWindow::widget() { return this; }
-
-void MainWindow::openFile(const QString &path) { loadFile(path); }
-
-void MainWindow::openLayout(const QString &path) { importLayoutFrom(path); }
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
