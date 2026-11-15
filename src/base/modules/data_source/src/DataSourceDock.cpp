@@ -4,6 +4,10 @@
 #include "host/extension/DataInputEntry.h"
 #include "host/extension/DataInputRegistry.h"
 #include "ps_kernel.h"
+#include "host/services/live/LiveSession.h"
+#include <QMap>
+#include <QMessageBox>
+#include <QTreeWidgetItemIterator>
 #include <QAbstractItemView>
 
 #include <QButtonGroup>
@@ -49,6 +53,22 @@ void compactValueTable(QTableWidget *t)
     t->setSelectionBehavior(QAbstractItemView::SelectRows);
     t->setSelectionMode(QAbstractItemView::SingleSelection);
 }
+
+
+// 源行名称按可用宽度省略中部，避免把右侧操作图标挤出去
+class ElideLabel : public QLabel
+{
+public:
+    ElideLabel(const QString &full, QWidget *parent) : QLabel(full, parent), m_full(full) {}
+protected:
+    void resizeEvent(QResizeEvent *e) override
+    {
+        QLabel::resizeEvent(e);
+        setText(fontMetrics().elidedText(m_full, Qt::ElideMiddle, width()));
+    }
+private:
+    QString m_full;
+};
 
 // 字段树拖拽：Item 里存的是内核通道指针，默认 QTreeWidget 的 MIME 带不过去，自己塞一条
 class ChannelTree : public QTreeWidget
@@ -487,6 +507,395 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     outer->setContentsMargins(0, 0, 0, 0);
     outer->setSpacing(0);
     outer->addWidget(srcHost);
+}
+
+QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
+                              const QString &path, int srcId)
+{
+    if (!m_srcRows)
+        return nullptr;
+    QWidget *rowsHost = m_srcRows->parentWidget();
+    auto *row = new QWidget(rowsHost);
+    row->setFixedHeight(40);
+    row->setProperty("active", false);
+    row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
+    row->setProperty("srcRow", true);
+    row->setProperty("backed", backed);
+    row->setProperty("srcPath", path);
+    row->setProperty("srcMeta", meta);
+    row->setProperty("srcName", name);
+    row->setProperty("srcId", srcId);
+    m_ctx.installRowEventFilter(row);
+    row->setStyleSheet(QStringLiteral(
+        "QWidget{background:transparent;border-left:2px solid transparent;border-bottom:1px solid #171f26;}"
+        "QWidget[active=true]{background:#1a2127;border-left-color:#f2b134;}"
+        "QWidget:hover{background:#1d242a;}"));
+    auto *lay = new QHBoxLayout(row);
+    lay->setContentsMargins(2, 2, 6, 2);
+    lay->setSpacing(4);
+
+    auto *expander = new QToolButton(row);
+    expander->setObjectName(QStringLiteral("srcExpand"));
+    expander->setText(QStringLiteral("▸"));
+    expander->setToolTip(QStringLiteral("展开数据列"));
+    expander->setCursor(Qt::PointingHandCursor);
+    expander->setFixedSize(18, 26);
+    expander->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;color:#6e7d88;font-size:11px;padding:0;}"
+        "QToolButton:hover{color:#f2b134;}"));
+    lay->addWidget(expander);
+
+    auto *dot = new QLabel(row);
+    dot->setObjectName(QStringLiteral("srcDot"));
+    dot->setAttribute(Qt::WA_TransparentForMouseEvents);
+    dot->setFixedSize(6, 6);
+    dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
+    lay->addWidget(dot);
+
+    auto *col = new QWidget(row);
+    col->setAttribute(Qt::WA_TransparentForMouseEvents);
+    col->setStyleSheet(QStringLiteral("background:transparent;"));
+    auto *colLay = new QVBoxLayout(col);
+    colLay->setContentsMargins(0, 0, 0, 0);
+    colLay->setSpacing(0);
+    auto *nameLb = new ElideLabel(name, col);
+    nameLb->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:12px;background:transparent;"));
+    auto *metaLb = new QLabel(meta, col);
+    metaLb->setObjectName(QStringLiteral("srcMeta"));
+    metaLb->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:10px;background:transparent;"));
+    colLay->addWidget(nameLb);
+    colLay->addWidget(metaLb);
+    lay->addWidget(col, 1);
+
+    const ps::data_source::SourceData *rowSrc = m_ctx.sourceById(srcId);
+    const bool isLive = rowSrc && rowSrc->live;
+
+    // 实时源才给运行控制；文件源没有“暂停/继续”的概念。
+    auto *pauseBtn = new QToolButton(row);
+    pauseBtn->setObjectName(QStringLiteral("srcPause"));
+    pauseBtn->setIcon(QIcon(rowSrc && rowSrc->paused ? QStringLiteral(":/icons/play.svg")
+                                                      : QStringLiteral(":/icons/pause.svg")));
+    pauseBtn->setIconSize(QSize(14, 14));
+    pauseBtn->setToolTip(rowSrc && rowSrc->paused ? QStringLiteral("继续该实时源")
+                                                   : QStringLiteral("暂停该实时源"));
+    pauseBtn->setCursor(Qt::PointingHandCursor);
+    pauseBtn->setFixedSize(20, 20);
+    pauseBtn->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;padding:0;}"
+        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
+    pauseBtn->setVisible(isLive);
+    lay->addWidget(pauseBtn);
+    connect(pauseBtn, &QToolButton::clicked, this, [this, srcId] {
+        if (ps::data_source::SourceData *src = m_ctx.sourceById(srcId))
+            m_ctx.setSourcePaused(src, !src->paused);
+    });
+
+    auto *dbg = new QToolButton(row);
+    dbg->setIcon(QIcon(QStringLiteral(":/icons/script.svg")));
+    dbg->setIconSize(QSize(14, 14));
+    dbg->setToolTip(QStringLiteral("调试终端"));
+    dbg->setCursor(Qt::PointingHandCursor);
+    dbg->setFixedSize(22, 22);
+    dbg->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;padding:0;}"
+        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
+    bool hasDebug = false;
+    if (rowSrc)
+    {
+        const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(rowSrc->sourceId);
+        hasDebug = isLive && sp && sp->send;
+    }
+    dbg->setVisible(hasDebug);
+    lay->addWidget(dbg);
+    connect(dbg, &QToolButton::clicked, this, [this, srcId] {
+        ps::data_source::SourceData *src = m_ctx.sourceById(srcId);
+        if (src)
+            m_ctx.openSourceDebug(src);
+    });
+
+    auto *cfg = new QToolButton(row);
+    cfg->setIcon(QIcon(QStringLiteral(":/icons/settings.svg")));
+    cfg->setIconSize(QSize(14, 14));
+    cfg->setToolTip(QStringLiteral("配置数据源"));
+    cfg->setCursor(Qt::PointingHandCursor);
+    cfg->setFixedSize(22, 22);
+    cfg->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;padding:0;}"
+        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
+    lay->addWidget(cfg);
+    connect(cfg, &QToolButton::clicked, this, [this, srcId] {
+        ps::data_source::SourceData *src = m_ctx.sourceById(srcId);
+        if (src && src->live)
+            m_ctx.configureLiveSource(src);
+        else
+            QMessageBox::information(this, QStringLiteral("配置"),
+                QStringLiteral("文件源使用打开时的选项；实时源可重连修改参数。"));
+    });
+
+    auto *del = new QToolButton(row);
+    del->setIcon(QIcon(QStringLiteral(":/icons/trash.svg")));
+    del->setIconSize(QSize(14, 14));
+    del->setToolTip(QStringLiteral("移除该数据源"));
+    del->setCursor(Qt::PointingHandCursor);
+    del->setFixedSize(20, 20);
+    del->setStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;color:#4a545d;padding:0;}"
+        "QToolButton:hover{color:#f85149;background:#222b33;}"));
+    lay->addWidget(del);
+    connect(del, &QToolButton::clicked, this, [this, row] {
+        m_ctx.removeSourceRow(row);
+    });
+
+    m_srcRows->addWidget(row);
+    auto *panel = new ChannelTree(rowsHost);
+    panel->setObjectName(QStringLiteral("srcPanel_%1").arg(srcId));
+    panel->setProperty("srcPanel", true);
+    panel->setHeaderHidden(true);
+    panel->setRootIsDecorated(true);
+    panel->setIndentation(14);
+    panel->setDragEnabled(true);
+    panel->setDragDropMode(QAbstractItemView::DragOnly);
+    panel->setDefaultDropAction(Qt::CopyAction);
+    panel->setFixedHeight(220);
+    panel->setStyleSheet(QStringLiteral(
+        "QTreeWidget{border:0;border-left:1px solid #232b33;background:#0b1014;"
+        "font-size:11px;padding-left:6px;}"
+        "QTreeWidget::item{height:18px;color:#9aa7b2;}"
+        "QTreeWidget::item:hover{background:#151d24;color:#c9d1d9;}"
+        "QTreeWidget::item:selected{background:#1c252d;color:#f2b134;}"));
+    panel->hide();
+    m_srcRows->addWidget(panel);
+    const auto rebuildPanel = [this, panel, srcId] {
+        panel->clear();
+        ps::data_source::SourceData *sp = m_ctx.sourceById(srcId);
+        if (!sp)
+            return;
+        // 参数是源的静态配置，放在最上面；数量少时直接展开。
+        if (!sp->params.isEmpty())
+        {
+            auto *pg = new QTreeWidgetItem(panel, {QStringLiteral("参数 %1").arg(sp->params.size())});
+            pg->setForeground(0, QColor(QStringLiteral("#6e7d88")));
+            for (const auto &pr : sp->params)
+            {
+                auto *item = new QTreeWidgetItem(pg, {QStringLiteral("%1 = %2").arg(pr.first, pr.second)});
+                item->setToolTip(0, QStringLiteral("%1 = %2").arg(pr.first, pr.second));
+            }
+            pg->setExpanded(sp->params.size() <= 8);
+        }
+        if (!sp->msgs.isEmpty())
+        {
+            const bool textLog = sp->msgs.first().value(1) == QStringLiteral("—");
+            const QString groupTitle = textLog
+                ? QStringLiteral("消息 %1").arg(sp->msgs.size())
+                : QStringLiteral("话题 %1").arg(sp->msgs.size());
+            auto *mg = new QTreeWidgetItem(panel, {groupTitle});
+            mg->setForeground(0, QColor(QStringLiteral("#6e7d88")));
+            for (const QStringList &m : sp->msgs)
+            {
+                bool ok = false;
+                const double mt = m.value(3).toDouble(&ok);
+                QString text;
+                if (textLog)
+                {
+                    text = QStringLiteral("%1  ·  %2 s").arg(m.value(0), m.value(3));
+                    ok = true;
+                }
+                else
+                {
+                    text = QStringLiteral("%1  ·  %2  ·  %3 字段")
+                               .arg(m.value(0), m.value(1), m.value(2));
+                    ok = false;
+                }
+                auto *item = new QTreeWidgetItem(mg, {text});
+                item->setToolTip(0, text);
+                if (ok)
+                {
+                    item->setData(0, Qt::UserRole + 3, mt);
+                    item->setData(0, Qt::UserRole + 4, m.value(0));
+                }
+            }
+            mg->setExpanded(sp->msgs.size() <= 6);
+        }
+        QMap<QString, QTreeWidgetItem *> groups;
+        for (const PsChannelInfo *ch : sp->channels)
+        {
+            const QString full = QString::fromUtf8(ch->name);
+            const int dot = full.lastIndexOf(QLatin1Char('.'));
+            const QString group = dot > 0 ? full.left(dot) : QString();
+            const QString leaf = dot > 0 ? full.mid(dot + 1) : full;
+            QTreeWidgetItem *parent = nullptr;
+            if (!group.isEmpty())
+            {
+                auto it = groups.find(group);
+                if (it == groups.end())
+                {
+                    auto *g = new QTreeWidgetItem(panel, {group});
+                    g->setForeground(0, QColor(QStringLiteral("#6e7d88")));
+                    it = groups.insert(group, g);
+                }
+                parent = it.value();
+            }
+            auto *item = parent ? new QTreeWidgetItem(parent, {leaf})
+                                : new QTreeWidgetItem(panel, {leaf});
+            QString tip = full;
+            if (ch->unit && *ch->unit)
+                tip += QStringLiteral(" [%1]").arg(QString::fromUtf8(ch->unit));
+            item->setToolTip(0, tip);
+            item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+            item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(
+                                                          reinterpret_cast<qulonglong>(ch)));
+            item->setData(0, Qt::UserRole + 1, full);
+            item->setData(0, Qt::UserRole + 2, srcId);
+        }
+        for (auto *g : groups)
+            g->setExpanded(groups.size() <= 10);
+        if (groups.size() > 10 && !groups.isEmpty())
+            groups.first()->setExpanded(true);
+        int rows = 0;
+        for (QTreeWidgetItemIterator it(panel); *it; ++it)
+            ++rows;
+        panel->setFixedHeight(qMin(420, qMax(160, rows * 18 + 6)));
+    };
+    connect(expander, &QToolButton::clicked, this, [this, row, panel, expander, rebuildPanel] {
+        if (panel->isVisible())
+        {
+            panel->hide();
+            expander->setText(QStringLiteral("▸"));
+            return;
+        }
+        rebuildPanel();
+        panel->show();
+        expander->setText(QStringLiteral("▾"));
+        m_ctx.activateSource(row);
+        // 同一时间只展开一个源，数据列就紧贴在源下面。
+        QWidget *host = m_srcRows ? m_srcRows->parentWidget() : nullptr;
+        if (host)
+            for (auto *other : host->findChildren<ChannelTree *>())
+                if (other != panel && other->property("srcPanel").toBool())
+                {
+                    other->hide();
+                    const int oi = m_srcRows->indexOf(other);
+                    if (oi > 0)
+                        if (QWidget *orow = m_srcRows->itemAt(oi - 1)->widget())
+                            if (auto *ob = orow->findChild<QToolButton *>(QStringLiteral("srcExpand")))
+                                ob->setText(QStringLiteral("▸"));
+                }
+    });
+    panel->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(panel, &QTreeWidget::customContextMenuRequested, this, [this, panel](const QPoint &pos) {
+        auto *item = panel->itemAt(pos);
+        if (!item)
+            return;
+        const QVariant mtv = item->data(0, Qt::UserRole + 3);
+        if (!mtv.isValid())
+            return;
+        const double t = mtv.toDouble();
+        const QString label = item->data(0, Qt::UserRole + 4).toString();
+        QMenu menu(this);
+        QAction *add = menu.addAction(
+            QStringLiteral("在 %1 s 添加标签「%2」").arg(t, 0, 'f', 2).arg(label));
+        if (menu.exec(panel->viewport()->mapToGlobal(pos)) == add)
+            m_ctx.addTimeMarker(t, label, false);
+    });
+    connect(panel, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
+        if (!item || item->childCount() > 0)
+            return;
+        const qulonglong ptr = item->data(0, Qt::UserRole).value<qulonglong>();
+        if (!ptr)
+            return;
+        m_ctx.addChannel(reinterpret_cast<const PsChannelInfo *>(ptr));
+        m_ctx.log(QStringLiteral("双击加曲线：%1").arg(item->text(0)));
+    });
+    m_ctx.bindSourceRow(srcId, row);
+    refreshSrcCount();
+    if (backed)
+        m_ctx.activateSource(row);
+    return row;
+}
+
+
+void DataSourceDock::refreshSrcCount()
+{
+    if (!m_srcCount || !m_srcRows)
+        return;
+    int total = 0;
+    int connected = 0;
+    for (int i = 0; i < m_srcRows->count(); ++i)
+    {
+        QWidget *row = m_srcRows->itemAt(i) ? m_srcRows->itemAt(i)->widget() : nullptr;
+        if (!row || row->property("srcPanel").toBool())
+            continue;
+        ++total;
+        if (row->property("connected").toBool())
+            ++connected;
+    }
+    m_srcCount->setText(QStringLiteral("%1 源 · %2 已连接").arg(total).arg(connected));
+    m_srcCount->setStyleSheet(QStringLiteral("color:#8494a0;font-size:10px;background:transparent;"));
+    const bool empty = total == 0;
+    if (m_srcListScroll && m_srcListToggle)
+    {
+        const bool show = !empty && m_srcListToggle->text() != QStringLiteral("▸");
+        m_srcListScroll->setVisible(show);
+        if (m_srcListScroll->parentWidget())
+            m_srcListScroll->parentWidget()->setVisible(!empty);
+    }
+    if (m_srcStack && m_srcEmpty)
+    {
+        m_srcStack->setVisible(empty);
+        if (empty)
+            m_srcStack->setCurrentWidget(m_srcEmpty);
+        else if (m_srcStack->currentWidget() == m_srcEmpty && m_srcTabs)
+            m_srcStack->setCurrentIndex(m_srcTabs->currentIndex());
+    }
+    syncSrcChips();
+    updateSrcStatus();
+}
+
+void DataSourceDock::updateSrcStatus()
+{
+    if (!m_srcStatus)
+        return;
+    const ps::data_source::SourceData *src = m_ctx.sourceById(m_ctx.activeSourceId());
+    if (!src)
+    {
+        m_srcStatus->setText(QStringLiteral("—"));
+        return;
+    }
+    const int channels = src->live
+        ? (src->liveSession ? src->liveSession->channels().size() : 0)
+        : src->channels.size();
+    qint64 points = 0;
+    double duration = 0.0;
+    double rate = 0.0;
+    if (src->live)
+    {
+        points = src->liveSession ? src->liveSession->totalSamples() : 0;
+    }
+    else
+    {
+        for (const PsChannelInfo *ch : src->channels)
+            points += ch->point_count;
+    }
+    const QVector<const PsChannelInfo *> view =
+        src->live ? (src->liveSession ? src->liveSession->channels() : QVector<const PsChannelInfo *>())
+                  : src->channels;
+    if (!view.isEmpty() && view.first()->point_count > 1)
+    {
+        const PsChannelInfo *ch = view.first();
+        duration = ch->time[ch->point_count - 1] - ch->time[0];
+        if (duration > 0.0)
+            rate = (ch->point_count - 1) / duration;
+    }
+    QString rateText = src->live ? QStringLiteral("实时") : QStringLiteral("—");
+    if (rate > 0.0)
+        rateText = rate >= 1000.0 ? QStringLiteral("%1 kHz").arg(rate / 1000.0, 0, 'f', 1)
+                                  : QStringLiteral("%1 Hz").arg(rate, 0, 'f', rate >= 10.0 ? 0 : 1);
+    m_srcStatus->setText(QStringLiteral("通道 %1 · %2 点 · 时长 %3 s · %4")
+                             .arg(channels)
+                             .arg(points)
+                             .arg(duration, 0, 'f', 2)
+                             .arg(rateText));
+    m_srcStatus->setToolTip(m_srcStatus->text());
 }
 
 void DataSourceDock::syncSrcChips()

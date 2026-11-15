@@ -42,9 +42,23 @@ public:
         std::function<bool()> hasSources;
         std::function<void(const QString &)> removeChannel;
         std::function<QVector<QStringList>()> sourceMsgs;
+        std::function<void(SourceData *, bool)> setSourcePaused;
+        std::function<void(SourceData *)> openSourceDebug;
+        std::function<void(SourceData *)> configureLiveSource;
+        std::function<void(QWidget *)> removeSourceRow;
+        std::function<void(QWidget *)> activateSource;
+        std::function<void(QWidget *)> installRowEventFilter;
+        std::function<void(int, QWidget *)> bindSourceRow;
     };
 
     explicit DataSourceDock(Context context, QWidget *parent = nullptr);
+
+    QWidget *addSourceRow(const QString &name, const QString &meta, const QString &dotColor,
+                          bool backed, const QString &path, int srcId);
+    void refreshSrcCount();
+    void updateSrcStatus();
+    void syncSrcChips();
+    void applySrcFilter();
 
     Context m_ctx;
     QLabel *m_srcCount = nullptr;
@@ -60,10 +74,6 @@ public:
     QTableWidget *m_msgTable = nullptr;
     QWidget *m_srcEmpty = nullptr;
     QVector<QToolButton *> m_srcChips;
-
-private:
-    void syncSrcChips();
-    void applySrcFilter();
 };
 
 } // namespace ps::data_source

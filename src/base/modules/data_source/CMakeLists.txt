@@ -15,4 +15,4 @@ target_include_directories(ps_base_data_source PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/ui
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
 )
-target_link_libraries(ps_base_data_source PUBLIC ps_host Qt6::Widgets)
+target_link_libraries(ps_base_data_source PUBLIC ps_host ps_live Qt6::Widgets)
