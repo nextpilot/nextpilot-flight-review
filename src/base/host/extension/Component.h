@@ -3,7 +3,7 @@
 #include <QJsonObject>
 #include <QVariantMap>
 
-#include "../../ui/script/ScriptService.h"
+#include "../../modules/runtime/include/ScriptService.h"
 #include <Qt>
 #include <QString>
 #include <QStringList>

@@ -195,7 +195,7 @@ if(LUA_FOUND)
     unit/test_script_engine.cpp
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/script/ScriptEngine.cpp)
   target_include_directories(test_script_engine PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/base/ui
+    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/script
     ${LUA_INCLUDE_DIR})
   target_compile_definitions(test_script_engine PRIVATE PS_HAVE_LUA=1)
@@ -207,7 +207,7 @@ find_package(Qt6 QUIET COMPONENTS Widgets)
 if(TARGET Qt6::Widgets)
   add_executable(test_video_sync unit/test_video_sync.cpp ${PROJECT_SOURCE_DIR}/src/extensions/builtin/video/VideoSyncWidget.cpp)
   set_target_properties(test_video_sync PROPERTIES AUTOMOC ON)
-  target_include_directories(test_video_sync PRIVATE ${PROJECT_SOURCE_DIR}/src/base/ui
+  target_include_directories(test_video_sync PRIVATE ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/video)
   target_link_libraries(test_video_sync PRIVATE Qt6::Widgets)
   add_test(NAME video_sync COMMAND test_video_sync)

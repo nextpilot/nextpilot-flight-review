@@ -1,6 +1,6 @@
-#include "shell/MainWindow.h"
-#include "ui/extension_dialog/DialogEngine.h"
-#include "data_input/DataInputDialog.h"
+#include "MainWindow.h"
+#include "DialogEngine.h"
+#include "DataInputDialog.h"
 #include "host/services/cache/DatasetCache.h"
 #include "host/extension/DataInputRegistry.h"
 #include "host/extension/Component.h"
@@ -86,10 +86,10 @@ static void execDockMenu(QToolButton *btn, QMenu *menu);
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "canvas/CanvasWidget.h"
-#include "script/ScriptService.h"
+#include "CanvasWidget.h"
+#include "ScriptService.h"
 #include "ps_kernel.h"
-#include "shell/TransformDialogInterface.h"
+#include "TransformDialogInterface.h"
 
 namespace {
 

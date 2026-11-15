@@ -1,4 +1,4 @@
-#include "data_input/DataInputDialog.h"
+#include "DataInputDialog.h"
 
 #include "host/extension/DataInputEntry.h"
 

@@ -12,10 +12,10 @@
 #include "host/extension/DataInputRegistry.h"
 #include "host/extension/ExtensionHost.h"
 #include "host/extension/ExtensionRuntime.h"
-#include "shell/Theme.h"
+#include "Theme.h"
 
 #include "ps_kernel.h"
-#include "shell/MainWindow.h"
+#include "MainWindow.h"
 
 int main(int argc, char **argv)
 {

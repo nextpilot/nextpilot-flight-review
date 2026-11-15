@@ -1,18 +1,22 @@
 # src 目录
 
-`src` 按职责分层：`base` 是 PlotScope 底座，只提供 API、框架与宿主能力，不含具体业务；`extensions` 承载具体业务能力。
+`src` 按功能模块组织：`base` 是最小 app + 最小绘图 app；`extensions` 在其上叠加行业/设备业务。
 
 ```text
 src/
-  base/                       底座：内核、宿主扩展层、UI、资源
-    main.cpp                  入口；只认扩展注册表，不 include 具体组件
+  base/                       最小 app + 最小绘图 app
+    main.cpp                  入口；组装 shell 与内置模块
     host/
       extension/              扩展契约、注册表、动态装载、宿主 API
       services/
         cache/                数据集缓存
         live/                 实时会话与录制
     kernel/                   与 Qt 无关的抽象逻辑（Rust，ps_kernel.h）
-    ui/                       Shell、主题、通用数据输入/扩展对话框、基础画布、脚本面板
+    modules/
+      runtime/                脚本/扩展运行契约
+      shell/                  MainWindow、Ribbon/Dock 容器、主题、扩展对话框
+      data_source/            数据源 Dock、数据输入对话框、数据 Ribbon
+      plot/                   CanvasWidget、绘图 Ribbon、页面/图型
     resources/                图标资源、Lua 脚本
 
   extensions/
@@ -40,7 +44,9 @@ src/
 | 数据模型、通用算子、LOD、缓存/流机制 | `base/kernel/` | 不碰 Qt、不做 I/O |
 | 扩展契约、注册表、动态装载、宿主 API | `base/host/extension/` | 只做宿主生命周期与能力暴露 |
 | 缓存策略、实时会话与录制 | `base/host/services/` | 宿主侧服务，不是业务格式 |
-| 窗口、Ribbon、Dock、通用对话框、基础画布 | `base/ui/` | 宿主骨架与通用 UI，不认识具体业务 |
+| 主窗口、Ribbon/Dock 容器、主题 | `base/modules/shell/` | app 骨架，只做组装 |
+| 数据源 Dock、输入对话框、数据 Ribbon | `base/modules/data_source/` | 数据进入与源管理 |
+| 画布、绘图 Ribbon、页面/图型 | `base/modules/plot/` | 绘图工作区 |
 | 设备调试、视频同步、数据变换、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |
 | 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |
 | 用户 Lua 脚本与图标 | `base/resources/` | 运行期资源，不进 host 头文件 |

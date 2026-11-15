@@ -1,4 +1,4 @@
-#include "canvas/CanvasWidget.h"
+#include "CanvasWidget.h"
 
 #include <QMouseEvent>
 #include <QPainter>

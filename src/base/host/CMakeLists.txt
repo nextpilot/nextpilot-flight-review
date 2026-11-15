@@ -12,6 +12,7 @@ target_include_directories(ps_host PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/base
   ${PROJECT_SOURCE_DIR}/src/base/host
+  ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
 )
 

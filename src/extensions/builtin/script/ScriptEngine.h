@@ -1,6 +1,6 @@
 #pragma once
 
-#include "script/ScriptService.h"
+#include "ScriptService.h"
 
 // 脚本只做编排：输入当前画布已有序列，输出新的派生序列。
 // language 为空时按源码首行判断：`# python` / `#!python` 走 Python 3，其余走 Lua 5.4。

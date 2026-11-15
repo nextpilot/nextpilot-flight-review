@@ -2,7 +2,7 @@
 
 #include <QDialog>
 
-#include "shell/TransformDialogInterface.h"
+#include "TransformDialogInterface.h"
 #include <QHash>
 #include <QJsonObject>
 #include <QStringList>

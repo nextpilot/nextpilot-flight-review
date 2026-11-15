@@ -1,5 +1,8 @@
 #include "ShellComponent.h"
 
+#include "DataSourceModule.h"
+#include "PlotModule.h"
+
 #include <QString>
 
 namespace ps::components
@@ -28,8 +31,7 @@ ComponentManifest ShellComponent::manifest() const
 void ShellComponent::contribute(Registry &registry, const HostContext &)
 {
 
-    registry.addDock(DockContribution{QStringLiteral("dock.src"), QStringLiteral("数据源"),
-                                      Qt::LeftDockWidgetArea, true, 0, nullptr});
+    registerDataSourceContributions(registry);
     registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
                                       Qt::RightDockWidgetArea, true, 1, nullptr});
     registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
@@ -53,25 +55,7 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
         0});
 
 
-    registry.addRibbon(RibbonContribution{QStringLiteral("数据"), {}, {},
-        {{QStringLiteral("常用"),
-             {{QStringLiteral("data.quickOpen"), QStringLiteral("快速打开"), {}, true},
-              {QStringLiteral("data.recent"), QStringLiteral("最近"), {}, false},
-              {QStringLiteral("data.exportSnapshot"), QStringLiteral("导出快照"), {}, false},
-              {QStringLiteral("data.reload"), QStringLiteral("重载"), {}, false}}},
-         {QStringLiteral("来源"), {}, QStringLiteral("sourceGallery")}},
-        1});
-
-    registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
-        {{QStringLiteral("页面"),
-             {{QStringLiteral("page.new"), QStringLiteral("新建页"), {}, true},
-              {QStringLiteral("page.addCanvas"), QStringLiteral("添加画布"), {}, true},
-              {QStringLiteral("page.splitHorizontal"), QStringLiteral("向右拆分"), {}, true},
-              {QStringLiteral("page.splitVertical"), QStringLiteral("向下拆分"), {}, true}}},
-         {QStringLiteral("画布布局"), {}, QStringLiteral("layoutPicker")},
-         {QStringLiteral("显示"), {}, QStringLiteral("viewToggles")},
-         {QStringLiteral("图表类型"), {}, QStringLiteral("plotGallery")}},
-        2});
+    registerPlotContributions(registry);
 
     registry.addRibbon(RibbonContribution{QStringLiteral("视图"), {}, {},
         {{QStringLiteral("面板"),
