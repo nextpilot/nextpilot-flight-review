@@ -2,6 +2,31 @@
 
 namespace ps::components
 {
+namespace
+{
+struct DataSourceRegistrar
+{
+    DataSourceRegistrar()
+    {
+        ExtensionRegistry::instance().addExtension(
+            ExtensionDescriptor{QStringLiteral("data.source"), QStringLiteral("数据源"),
+                                QStringLiteral("1.0"), ExtensionType::Builtin},
+            [] { return std::make_unique<DataSourceComponent>(); });
+    }
+};
+static DataSourceRegistrar g_dataSourceRegistrar;
+} // namespace
+
+ComponentManifest DataSourceComponent::manifest() const
+{
+    return {QStringLiteral("data.source"), QStringLiteral("数据源"), QStringLiteral("1.0"),
+            {QStringLiteral("datasource"), QStringLiteral("dock")}};
+}
+
+void DataSourceComponent::contribute(Registry &registry, const HostContext &)
+{
+    registerDataSourceContributions(registry);
+}
 
 void registerDataSourceContributions(Registry &registry)
 {

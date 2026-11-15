@@ -1,8 +1,5 @@
 #include "ShellComponent.h"
 
-#include "DataSourceModule.h"
-#include "PlotModule.h"
-
 #include <QString>
 
 namespace ps::components
@@ -31,7 +28,6 @@ ComponentManifest ShellComponent::manifest() const
 void ShellComponent::contribute(Registry &registry, const HostContext &)
 {
 
-    registerDataSourceContributions(registry);
     registry.addDock(DockContribution{QStringLiteral("dock.log"), QStringLiteral("日志"),
                                       Qt::BottomDockWidgetArea, true, 5, nullptr});
 
@@ -48,8 +44,6 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
              {{QStringLiteral("file.screenshot"), QStringLiteral("截图当前页"), {}, true}}}},
         0});
 
-
-    registerPlotContributions(registry);
 
     registry.addRibbon(RibbonContribution{QStringLiteral("视图"), {}, {},
         {{QStringLiteral("面板"),

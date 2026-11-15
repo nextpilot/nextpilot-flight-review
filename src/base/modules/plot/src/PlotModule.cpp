@@ -2,6 +2,31 @@
 
 namespace ps::components
 {
+namespace
+{
+struct PlotRegistrar
+{
+    PlotRegistrar()
+    {
+        ExtensionRegistry::instance().addExtension(
+            ExtensionDescriptor{QStringLiteral("plot.core"), QStringLiteral("绘图"),
+                                QStringLiteral("1.0"), ExtensionType::Builtin},
+            [] { return std::make_unique<PlotComponent>(); });
+    }
+};
+static PlotRegistrar g_plotRegistrar;
+} // namespace
+
+ComponentManifest PlotComponent::manifest() const
+{
+    return {QStringLiteral("plot.core"), QStringLiteral("绘图"), QStringLiteral("1.0"),
+            {QStringLiteral("plot"), QStringLiteral("dock")}};
+}
+
+void PlotComponent::contribute(Registry &registry, const HostContext &)
+{
+    registerPlotContributions(registry);
+}
 
 void registerPlotContributions(Registry &registry)
 {
