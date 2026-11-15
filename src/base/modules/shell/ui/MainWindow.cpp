@@ -1075,24 +1075,10 @@ MainWindow::MainWindow(QWidget *parent)
     hostContext.configDir = [] {
         return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     };
-    hostContext.setPlayhead = [this](double t) {
-        for (CanvasWidget *c : findChildren<CanvasWidget *>())
-        {
-            c->setPlayhead(t);
-            if (c->plotMode() == CanvasWidget::TimeSeries)
-            {
-                const double span = std::max(0.5, c->t1() - c->t0());
-                if (t < c->t0() || t > c->t1())
-                    c->setTimeRange(t - span * 0.8, t + span * 0.2);
-            }
-        }
-    };
+    hostContext.setPlayhead = [this](double t) { applyPlayhead(t); };
     m_extensions.activate(hostContext);
     for (const QString &error : m_extensions.errors())
         qWarning("[extension] %s", qPrintable(error));
-    for (const ps::components::DataSourceSpec &source : m_extensions.registry().dataSources())
-        DataSourceRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
-
     registerCommands();
 
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
@@ -1173,65 +1159,8 @@ void MainWindow::registerCommands()
             log(QStringLiteral("已截图：%1").arg(f));
     });
 
-    m_commands.add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
-        const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("快速打开"), {},
-            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-        for (const QString &f : fs)
-            loadFile(f);
-    });
-    m_commands.add(QStringLiteral("data.recent"), [this](const Ctx &) {
-        QMenu menu(this);
-        QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-        const QStringList recent = st.value(QStringLiteral("recentFiles")).toStringList();
-        if (recent.isEmpty())
-        {
-            QAction *empty = menu.addAction(QStringLiteral("暂无最近文件"));
-            empty->setEnabled(false);
-        }
-        for (const QString &path : recent)
-        {
-            QAction *a = menu.addAction(QFileInfo(path).fileName());
-            a->setToolTip(path);
-            connect(a, &QAction::triggered, this, [this, path] { loadFile(path); });
-        }
-        menu.exec(QCursor::pos());
-    });
-    m_commands.add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
-    m_commands.add(QStringLiteral("data.reload"), [this](const Ctx &) {
-        ps::data_source::SourceData *src = sourceById(m_activeSource);
-        if (!src || src->path.isEmpty())
-        {
-            log(QStringLiteral("当前源没有可重载的文件"));
-            return;
-        }
-        const QString path = src->path;
-        QWidget *row = src->row;
-        if (row)
-            removeSourceRow(row);
-        loadFile(path, false);
-    });
-
-    m_commands.add(QStringLiteral("page.new"), [this](const Ctx &) { newPage(); });
-    m_commands.add(QStringLiteral("page.addCanvas"), [this](const Ctx &) { addCanvasToPage(); });
-    m_commands.add(QStringLiteral("page.splitHorizontal"), [this](const Ctx &) {
-        if (auto *c = currentCanvas())
-            splitCanvas(c, Qt::Horizontal);
-    });
-    m_commands.add(QStringLiteral("page.splitVertical"), [this](const Ctx &) {
-        if (auto *c = currentCanvas())
-            splitCanvas(c, Qt::Vertical);
-    });
-
-    m_commands.add(QStringLiteral("page.grid"), [this](const Ctx &ctx) {
-        const QStringList parts = ctx.arg.split(QLatin1Char(','));
-        if (parts.size() == 2)
-            applyCanvasGrid(parts.at(0).toInt(), parts.at(1).toInt());
-    });
-
-    m_commands.add(QStringLiteral("plot.new"), [this](const Ctx &ctx) {
-        createPlotPage(ctx.arg);
-    });
-
+    registerDataCommands();
+    registerPlotCommands();
     m_commands.add(QStringLiteral("script.run"), [this](const Ctx &) {
         log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）：out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)"));
     });
@@ -1648,8 +1577,13 @@ QWidget *MainWindow::createRibbon()
     // 组件贡献的协议页（其它未知页最后补）
     renderPage(QStringLiteral("协议"));
 
-    // 视图
-    renderPage(QStringLiteral("视图"));
+    // 视图：按 Dock 贡献表生成，shell 不写死任何 dock id
+    if (SARibbonCategory *viewCat = ribbon->addCategoryPage(QStringLiteral("视图")))
+    {
+        auto *panel = viewCat->addPanel(QStringLiteral("面板"));
+        for (const auto &dock : m_extensions.registry().docks())
+            addSmall(panel, dock.title, run(QStringLiteral("view.toggleDock"), dock.id), this);
+    }
 
     for (const auto &page : m_extensions.registry().ribbon())
     {

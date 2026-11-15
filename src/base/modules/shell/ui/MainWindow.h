@@ -74,6 +74,9 @@ private:
     QVector<CanvasWidget *> pageCanvases() const;
     QWidget *createRibbon();
     void registerCommands();
+    void registerDataCommands();
+    void registerPlotCommands();
+    void applyPlayhead(double t);
     void createPlotPage(const QString &kind);
     void buildRibbonWidget(SARibbonPanel *panel, const QString &id, SARibbonBar *ribbon);
     void createDocks();

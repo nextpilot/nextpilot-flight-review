@@ -94,6 +94,8 @@ ComponentManifest DataSourceComponent::manifest() const
 
 void DataSourceComponent::contribute(Registry &registry, const HostContext &)
 {
+    for (const DataSourceSpec &source : registry.dataSources())
+        DataSourceRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
     registerDataSourceContributions(registry);
 }
 
@@ -945,3 +947,46 @@ void MainWindow::closeLiveSource(SourceData *src) { m_dataSourceDock->closeLiveS
 
 
 
+
+void MainWindow::registerDataCommands()
+{
+    using Ctx = ps::commands::CommandContext;
+    m_commands.add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
+        const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("快速打开"), {},
+            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+        for (const QString &f : fs)
+            loadFile(f);
+    });
+    m_commands.add(QStringLiteral("data.recent"), [this](const Ctx &) {
+        QMenu menu(this);
+        QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+        const QStringList recent = st.value(QStringLiteral("recentFiles")).toStringList();
+        if (recent.isEmpty())
+        {
+            QAction *empty = menu.addAction(QStringLiteral("暂无最近文件"));
+            empty->setEnabled(false);
+        }
+        for (const QString &path : recent)
+        {
+            QAction *a = menu.addAction(QFileInfo(path).fileName());
+            a->setToolTip(path);
+            connect(a, &QAction::triggered, this, [this, path] { loadFile(path); });
+        }
+        menu.exec(QCursor::pos());
+    });
+    m_commands.add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
+    m_commands.add(QStringLiteral("data.reload"), [this](const Ctx &) {
+        ps::data_source::SourceData *src = sourceById(m_activeSource);
+        if (!src || src->path.isEmpty())
+        {
+            log(QStringLiteral("当前源没有可重载的文件"));
+            return;
+        }
+        const QString path = src->path;
+        QWidget *row = src->row;
+        if (row)
+            removeSourceRow(row);
+        loadFile(path, false);
+    });
+
+}

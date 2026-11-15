@@ -60,13 +60,7 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
         0});
 
 
-    registry.addRibbon(RibbonContribution{QStringLiteral("视图"), {}, {},
-        {{QStringLiteral("面板"),
-             {{QStringLiteral("view.toggleDock"), QStringLiteral("数据源"), QStringLiteral("dock.src"), true},
-              {QStringLiteral("view.toggleDock"), QStringLiteral("属性"), QStringLiteral("dock.prop"), false},
-              {QStringLiteral("view.toggleDock"), QStringLiteral("脚本"), QStringLiteral("dock.script"), false},
-              {QStringLiteral("view.toggleDock"), QStringLiteral("日志"), QStringLiteral("dock.log"), false}}}},
-        5});
+
 }
 
 } // namespace ps::components

@@ -635,3 +635,43 @@ CanvasWidget *MainWindow::currentCanvas() const
 
 
 
+
+void MainWindow::registerPlotCommands()
+{
+    using Ctx = ps::commands::CommandContext;
+    m_commands.add(QStringLiteral("page.new"), [this](const Ctx &) { newPage(); });
+    m_commands.add(QStringLiteral("page.addCanvas"), [this](const Ctx &) { addCanvasToPage(); });
+    m_commands.add(QStringLiteral("page.splitHorizontal"), [this](const Ctx &) {
+        if (auto *c = currentCanvas())
+            splitCanvas(c, Qt::Horizontal);
+    });
+    m_commands.add(QStringLiteral("page.splitVertical"), [this](const Ctx &) {
+        if (auto *c = currentCanvas())
+            splitCanvas(c, Qt::Vertical);
+    });
+
+    m_commands.add(QStringLiteral("page.grid"), [this](const Ctx &ctx) {
+        const QStringList parts = ctx.arg.split(QLatin1Char(','));
+        if (parts.size() == 2)
+            applyCanvasGrid(parts.at(0).toInt(), parts.at(1).toInt());
+    });
+
+    m_commands.add(QStringLiteral("plot.new"), [this](const Ctx &ctx) {
+        createPlotPage(ctx.arg);
+    });
+
+}
+
+void MainWindow::applyPlayhead(double t)
+{
+    for (CanvasWidget *c : findChildren<CanvasWidget *>())
+    {
+        c->setPlayhead(t);
+        if (c->plotMode() == CanvasWidget::TimeSeries)
+        {
+            const double span = std::max(0.5, c->t1() - c->t0());
+            if (t < c->t0() || t > c->t1())
+                c->setTimeRange(t - span * 0.8, t + span * 0.2);
+        }
+    }
+}
