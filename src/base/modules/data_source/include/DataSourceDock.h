@@ -53,6 +53,10 @@ public:
 
     explicit DataSourceDock(Context context, QWidget *parent = nullptr);
 
+    void renderSourceData(const QVector<const PsChannelInfo *> &channels,
+                          const QVector<QPair<QString, QString>> &params,
+                          const QVector<QStringList> &msgs,
+                          const QString &fmt, bool backed, int activeId);
     QWidget *addSourceRow(const QString &name, const QString &meta, const QString &dotColor,
                           bool backed, const QString &path, int srcId);
     void refreshSrcCount();

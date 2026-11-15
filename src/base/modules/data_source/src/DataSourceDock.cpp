@@ -509,6 +509,177 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     outer->addWidget(srcHost);
 }
 
+void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &channels,
+                                      const QVector<QPair<QString, QString>> &params,
+                                      const QVector<QStringList> &msgs,
+                                      const QString &fmt, bool backed, int activeId)
+{
+    if (!m_srcTree || !m_srcTabs)
+        return;
+    m_srcTree->clear();
+    const int n = backed ? channels.size() : 0;
+    syncSrcChips();
+    updateSrcStatus();
+
+    if (!(m_ctx.hasSources ? m_ctx.hasSources() : true) && m_srcEmpty)
+    {
+        m_srcTabs->setTabText(0, QStringLiteral("字段 0"));
+        m_srcTabs->setTabText(1, QStringLiteral("参数 0"));
+        m_srcTabs->setTabText(2, QStringLiteral("消息 0"));
+        syncSrcChips();
+        m_srcStack->setCurrentWidget(m_srcEmpty);
+        return;
+    }
+    if (m_srcStack && m_srcEmpty && m_srcStack->currentWidget() == m_srcEmpty)
+        m_srcStack->setCurrentIndex(m_srcTabs->currentIndex());
+
+    if (!backed)
+    {
+        auto *it = new QTreeWidgetItem(m_srcTree, {QStringLiteral("该数据源暂未提供字段")});
+        it->setFlags(Qt::NoItemFlags);
+        m_srcTabs->setTabText(0, QStringLiteral("字段 0"));
+        m_srcTabs->setTabText(1, QStringLiteral("参数 0"));
+        m_srcTabs->setTabText(2, QStringLiteral("消息 0"));
+
+        m_paramTable->setRowCount(1);
+        auto *pk = new QTableWidgetItem(QStringLiteral("—"));
+        auto *pv = new QTableWidgetItem(QStringLiteral("该数据源未接入，没有参数表"));
+        pk->setFlags(Qt::ItemIsEnabled);
+        pv->setFlags(Qt::ItemIsEnabled);
+        m_paramTable->setItem(0, 0, pk);
+        m_paramTable->setItem(0, 1, pv);
+
+        m_msgTable->setRowCount(1);
+        for (int c = 0; c < 4; ++c)
+        {
+            auto *mi = new QTableWidgetItem(c == 0 ? QStringLiteral("—") : QString());
+            mi->setFlags(Qt::ItemIsEnabled);
+            m_msgTable->setItem(0, c, mi);
+        }
+        return;
+    }
+
+    const bool is_tree = fmt == QStringLiteral("ULog")
+                      || fmt == QStringLiteral("ArduPilot · BIN")
+                      || fmt.startsWith(QStringLiteral("ASC"))
+                      || fmt.startsWith(QStringLiteral("BLF"));
+    QMap<QString, QTreeWidgetItem *> groups;
+    ps::data_source::SourceData *active = m_ctx.sourceById(activeId);
+    QTreeWidgetItem *derivedGroup = nullptr;
+    for (const PsChannelInfo *ch : channels)
+    {
+        const QString name = QString::fromUtf8(ch->name);
+        QString group;
+        QString leaf = name;
+        const bool derived = active && active->derived.contains(name);
+        if (derived)
+        {
+            if (!derivedGroup)
+            {
+                derivedGroup = new QTreeWidgetItem(m_srcTree, {QStringLiteral("派生通道")});
+                derivedGroup->setForeground(0, QColor(QStringLiteral("#f2b134")));
+            }
+            auto *item = new QTreeWidgetItem(derivedGroup, {name.mid(name.lastIndexOf(QLatin1Char('.')) + 1)});
+            item->setToolTip(0, name);
+            item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+            item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
+            item->setData(0, Qt::UserRole + 1, name);
+            continue;
+        }
+        if (is_tree)
+        {
+            const int dot = name.lastIndexOf(QLatin1Char('.'));
+            if (dot > 0)
+            {
+                group = name.left(dot);
+                leaf = name.mid(dot + 1);
+            }
+        }
+        QTreeWidgetItem *parent = nullptr;
+        if (!group.isEmpty())
+        {
+            auto it = groups.find(group);
+            if (it == groups.end())
+            {
+                auto *g = new QTreeWidgetItem(m_srcTree, {group});
+                it = groups.insert(group, g);
+            }
+            parent = it.value();
+        }
+        QTreeWidgetItem *item = parent ? new QTreeWidgetItem(parent, {leaf})
+                                       : new QTreeWidgetItem(m_srcTree, {leaf});
+        item->setToolTip(0, name);
+        item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+        item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
+        item->setData(0, Qt::UserRole + 1, name);
+    }
+    const bool few_groups = groups.size() <= 8;
+    for (auto *g : groups)
+        g->setExpanded(few_groups && is_tree);
+    if (is_tree && !few_groups && !groups.isEmpty())
+        groups.first()->setExpanded(true);
+    if (derivedGroup)
+        derivedGroup->setExpanded(true);
+
+    m_srcTabs->setTabText(0, QStringLiteral("字段 %1").arg(n));
+    m_srcTabs->setTabText(1, QStringLiteral("参数 %1").arg(params.size()));
+    m_srcTabs->setTabText(2, QStringLiteral("消息 %1").arg(msgs.size()));
+    syncSrcChips();
+
+    m_paramTable->setRowCount(params.size());
+    for (int i = 0; i < params.size(); ++i)
+    {
+        auto *k = new QTableWidgetItem(params[i].first);
+        auto *v = new QTableWidgetItem(params[i].second);
+        k->setFlags(Qt::ItemIsEnabled);
+        v->setFlags(Qt::ItemIsEnabled);
+        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
+        v->setForeground(QColor(QStringLiteral("#d5dde5")));
+        m_paramTable->setItem(i, 0, k);
+        m_paramTable->setItem(i, 1, v);
+    }
+    if (params.isEmpty())
+    {
+        m_paramTable->setRowCount(1);
+        auto *k = new QTableWidgetItem(QStringLiteral("—"));
+        auto *v = new QTableWidgetItem(QStringLiteral("%1 未提供参数表（仅 ULog 带 P/Q 参数消息）").arg(fmt));
+        k->setFlags(Qt::ItemIsEnabled);
+        v->setFlags(Qt::ItemIsEnabled);
+        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
+        v->setForeground(QColor(QStringLiteral("#d5dde5")));
+        m_paramTable->setItem(0, 0, k);
+        m_paramTable->setItem(0, 1, v);
+    }
+
+    m_msgTable->setRowCount(msgs.size());
+    for (int i = 0; i < msgs.size(); ++i)
+    {
+        for (int c = 0; c < 4; ++c)
+        {
+            auto *mi = new QTableWidgetItem(msgs[i].value(c));
+            mi->setFlags(Qt::ItemIsEnabled);
+            mi->setForeground(QColor(c == 0 ? QStringLiteral("#d5dde5") : QStringLiteral("#9aa7b2")));
+            if (c > 0)
+                mi->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            m_msgTable->setItem(i, c, mi);
+        }
+    }
+    if (msgs.isEmpty())
+    {
+        m_msgTable->setRowCount(1);
+        for (int c = 0; c < 4; ++c)
+        {
+            auto *mi = new QTableWidgetItem(QStringLiteral("—"));
+            mi->setFlags(Qt::ItemIsEnabled);
+            mi->setForeground(QColor(c == 0 ? QStringLiteral("#d5dde5") : QStringLiteral("#9aa7b2")));
+            if (c > 0)
+                mi->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            m_msgTable->setItem(0, c, mi);
+        }
+    }
+}
+
+
 QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
                               const QString &path, int srcId)
 {
