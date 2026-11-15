@@ -85,7 +85,7 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
         srcDock->setProperty("psIcon", icon);
 
     // 标题栏：标题 + 汇总 + 全局起停 + 关闭，全部放一行，正文从源列表直接开始（不再叠第二行头部）
-    auto *srcBar = new QWidget(srcDock);
+    auto *srcBar = createDockTitleBar(srcDock);
     srcBar->setStyleSheet(QStringLiteral(
         "background:#26303a;border-bottom:1px solid #3a4854;"));
     auto *barLay = new QHBoxLayout(srcBar);
@@ -144,12 +144,11 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
     dockMenu->addSeparator();
     QAction *closeAct = dockMenu->addAction(QStringLiteral("关闭面板"));
     QObject::connect(maxDock, &QAction::triggered, this, [this, srcDock] { toggleDockMax(srcDock); });
-    QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { restoreDockMax(); (srcDock->setFloating(false), addDockWidget(Qt::LeftDockWidgetArea, srcDock), srcDock->show()); });
-    QObject::connect(toRight, &QAction::triggered, this, [this, srcDock] { (srcDock->setFloating(false), addDockWidget(Qt::RightDockWidgetArea, srcDock), srcDock->show()); });
-    QObject::connect(toBottom, &QAction::triggered, this, [this, srcDock] { (srcDock->setFloating(false), addDockWidget(Qt::BottomDockWidgetArea, srcDock), srcDock->show()); });
+    QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { restoreDockMax(); dockWidgetToArea(srcDock, Qt::LeftDockWidgetArea); });
+    QObject::connect(toRight, &QAction::triggered, this, [this, srcDock] { dockWidgetToArea(srcDock, Qt::RightDockWidgetArea); });
+    QObject::connect(toBottom, &QAction::triggered, this, [this, srcDock] { dockWidgetToArea(srcDock, Qt::BottomDockWidgetArea); });
     QObject::connect(collapse, &QAction::triggered, this, [this, srcDock] {
-        restoreDockMax();
-        srcDock->hide();
+        collapseDockWidget(srcDock);
     });
     QObject::connect(floatAct, &QAction::triggered, this, [this, srcDock] {
         restoreDockMax();
@@ -160,8 +159,8 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
         srcDock->close();
     });
     dockMenuBtn->setPopupMode(QToolButton::InstantPopup);
-    QObject::connect(dockMenuBtn, &QToolButton::clicked, dockMenuBtn, [dockMenu, dockMenuBtn] {
-        dockMenu->popup(dockMenuBtn->mapToGlobal(QPoint(0, dockMenuBtn->height())));
+    QObject::connect(dockMenuBtn, &QToolButton::clicked, dockMenuBtn, [this, dockMenu, dockMenuBtn] {
+        showDockMenu(dockMenuBtn, dockMenu);
     });
     barLay->addWidget(dockMenuBtn);
     srcDock->setTitleBarWidget(srcBar);

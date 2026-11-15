@@ -3655,3 +3655,26 @@ void MainWindow::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *ta
     connect(m_propTree, &QTreeWidget::itemClicked, this, [pick](QTreeWidgetItem *it, int) { pick(it); });
     setPropRows(QStringLiteral("画布"), {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")}, {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
 }
+
+
+QWidget *MainWindow::createDockTitleBar(QDockWidget *dock)
+{
+    return new DockTitleBar(this, dock);
+}
+
+void MainWindow::dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area)
+{
+    restoreDockMax();
+    dockToArea(dock, this, area);
+}
+
+void MainWindow::collapseDockWidget(QDockWidget *dock)
+{
+    restoreDockMax();
+    collapseDock(dock, this);
+}
+
+void MainWindow::showDockMenu(QToolButton *btn, QMenu *menu)
+{
+    execDockMenu(btn, menu);
+}

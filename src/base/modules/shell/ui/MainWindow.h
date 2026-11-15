@@ -58,6 +58,10 @@ public:
     void bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params);
     void bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree);
     QDockWidget *createDataSourceDock(QWidget *parent, const QString &icon);
+    QWidget *createDockTitleBar(QDockWidget *dock);
+    void dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area);
+    void collapseDockWidget(QDockWidget *dock);
+    void showDockMenu(QToolButton *btn, QMenu *menu);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
