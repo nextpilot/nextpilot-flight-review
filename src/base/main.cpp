@@ -9,7 +9,7 @@
 #include <QStandardPaths>
 
 #include "host/extension/Component.h"
-#include "host/extension/DataInputRegistry.h"
+#include "DataInputRegistry.h"
 #include "host/extension/ExtensionHost.h"
 #include "host/extension/ExtensionRuntime.h"
 #include "Theme.h"

@@ -1,8 +1,8 @@
 #include "DataSourceDock.h"
 
 #include "SourceModel.h"
-#include "host/extension/DataInputEntry.h"
-#include "host/extension/DataInputRegistry.h"
+#include "DataInputEntry.h"
+#include "DataInputRegistry.h"
 #include "ps_kernel.h"
 #include "host/services/live/LiveSession.h"
 #include <QMap>

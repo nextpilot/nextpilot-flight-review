@@ -1,6 +1,6 @@
 #pragma once
 
-#include "host/extension/DataInputEntry.h"
+#include "DataInputEntry.h"
 
 #include <QStringList>
 

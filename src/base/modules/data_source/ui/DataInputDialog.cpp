@@ -1,6 +1,6 @@
 #include "DataInputDialog.h"
 
-#include "host/extension/DataInputEntry.h"
+#include "DataInputEntry.h"
 
 #include <QCheckBox>
 #include <QComboBox>

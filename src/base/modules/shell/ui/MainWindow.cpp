@@ -2,10 +2,10 @@
 #include "DialogEngine.h"
 #include "DataInputDialog.h"
 #include "host/services/cache/DatasetCache.h"
-#include "host/extension/DataInputRegistry.h"
+#include "DataInputRegistry.h"
 #include "host/extension/Component.h"
 #include "host/services/live/LiveSession.h"
-#include "host/extension/DataInputRegistry.h"
+#include "DataInputRegistry.h"
 
 #include <QAction>
 #include <QtEndian>

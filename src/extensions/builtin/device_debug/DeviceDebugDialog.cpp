@@ -1,6 +1,6 @@
 #include "DeviceDebugDialog.h"
 
-#include "host/extension/DataInputEntry.h"
+#include "DataInputEntry.h"
 
 #include <QComboBox>
 #include <QDateTime>

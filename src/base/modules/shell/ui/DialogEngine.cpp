@@ -1,6 +1,6 @@
 #include "DialogEngine.h"
 
-#include "host/extension/DataInputEntry.h"
+#include "DataInputEntry.h"
 
 #include <QApplication>
 #include <QLabel>

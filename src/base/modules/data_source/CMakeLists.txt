@@ -1,6 +1,9 @@
 add_library(ps_base_data_source OBJECT
   include/DataSourceModule.h
   include/SourceModel.h
+  include/DataInputEntry.h
+  include/DataInputRegistry.h
+  src/DataInputRegistry.cpp
   src/DataSourceModule.cpp
   include/DataSourceDock.h
   src/DataSourceDock.cpp

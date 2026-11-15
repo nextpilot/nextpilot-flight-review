@@ -2,7 +2,7 @@
 
 #include "DeviceDebugDialog.h"
 
-#include "host/extension/DataInputRegistry.h"
+#include "DataInputRegistry.h"
 
 #include <QVariantMap>
 
