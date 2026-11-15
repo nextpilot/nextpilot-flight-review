@@ -1,3 +1,4 @@
+#include "host/extension/DynamicExtension.h"
 #include "host/extension/ExtensionRuntime.h"
 
 #include <cassert>
@@ -26,6 +27,21 @@ int main()
     {
         std::cerr << "demo extensions=" << good << "\n";
         return 1;
+    }
+
+    for (const LoadedExtension &p : rt.loadedExtensions())
+    {
+        if (std::strcmp(p.descriptor->loader->id, "data_loader_demo") != 0)
+            continue;
+        ps::components::Registry registry;
+        ps::components::HostContext host;
+        ps::components::DynamicExtension extension(p.descriptor);
+        extension.contribute(registry, host);
+        assert(registry.ribbon().size() == 1);
+        const auto &ribbon = registry.ribbon().first();
+        assert(ribbon.page == QStringLiteral("数据"));
+        assert(ribbon.items.size() == 1);
+        assert(ribbon.items.first().action == QStringLiteral("demo.hello"));
     }
     if (rt.errors().empty())
     {

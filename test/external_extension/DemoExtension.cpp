@@ -23,6 +23,18 @@ int32_t demoGetData(const char *, char *out, uint32_t cap)
     return static_cast<int32_t>(n);
 }
 
+int32_t demoOnEvent(const char *, const char *, char *out, uint32_t cap)
+{
+    const char *json = R"({"ok":true,"message":"demo ribbon"})";
+    const uint32_t n = static_cast<uint32_t>(std::strlen(json));
+    if (n >= cap)
+        return -1;
+    std::memcpy(out, json, n + 1);
+    return static_cast<int32_t>(n);
+}
+
+const char *kDemoRibbon = R"({"page":"数据","panel":"Demo 扩展","items":[{"action":"demo.hello","label":"Demo 命令","large":true}]})";
+
 const PsLoaderVtable kDemoLoader = {
     PS_EXTENSION_ABI_VERSION,
     "data_loader_demo",
@@ -44,9 +56,9 @@ const PsUiVtable kDemoUi = {
     PS_EXTENSION_ABI_VERSION,
     "dialog.ui",
     nullptr,
-    nullptr,
+    kDemoRibbon,
     demoGetData,
-    nullptr,
+    demoOnEvent,
     nullptr,
 };
 

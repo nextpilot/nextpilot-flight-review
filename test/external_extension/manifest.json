@@ -14,6 +14,6 @@
   "ui": {
     "dialog": "dialog.ui",
     "panels": [],
-    "ribbon": null
+    "ribbon": {"page":"数据","panel":"Demo 扩展","items":[{"action":"demo.hello","label":"Demo 命令","large":true}]}
   }
 }
