@@ -12,11 +12,12 @@ src/
         cache/                数据集缓存
         live/                 实时会话与录制
     kernel/                   与 Qt 无关的抽象逻辑（Rust，ps_kernel.h）
-    ui/                       Shell、主题、通用数据输入/扩展对话框、基础画布、脚本面板
+    ui/                       主题、窗口接口、通用数据输入/扩展对话框、基础画布、脚本/变换契约
     resources/                图标资源、Lua 脚本
 
   extensions/
     builtin/                  随包发布的业务组件
+      workbench/              主窗口与 Ribbon/Dock 编排
       data_sources/           内建文件/实时源聚合
       gnss/                   NMEA / UBX / OEM7 数据源
       custom_protocol/        自定义协议加载、编辑、编解码；protocol/ 为其协议模型
@@ -40,7 +41,8 @@ src/
 | 数据模型、通用算子、LOD、缓存/流机制 | `base/kernel/` | 不碰 Qt、不做 I/O |
 | 扩展契约、注册表、动态装载、宿主 API | `base/host/extension/` | 只做宿主生命周期与能力暴露 |
 | 缓存策略、实时会话与录制 | `base/host/services/` | 宿主侧服务，不是业务格式 |
-| 窗口、Ribbon、Dock、通用对话框、基础画布 | `base/ui/` | 宿主骨架与通用 UI，不认识具体业务 |
+| 主题、窗口接口、通用对话框、基础画布 | `base/ui/` | 宿主骨架与通用 UI，不认识具体业务 |
+| 主窗口、Ribbon/Dock 编排 | `extensions/builtin/workbench/` | PlotScope 的业务工作台 |
 | 设备调试、视频同步、数据变换、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |
 | 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |
 | 用户 Lua 脚本与图标 | `base/resources/` | 运行期资源，不进 host 头文件 |
@@ -55,4 +57,4 @@ src/
 cmake -S . -B build -DPS_BUILD_GNSS=OFF -DPS_BUILD_CUSTOM_PROTOCOL=OFF
 ```
 
-`base` 不 include 任何组件头文件；组件通过注册表注入 Ribbon、Dock、DataSource、对话框和脚本运行器。业务 UI 以 `DialogContribution` / `DockContribution` / `ScriptRunnerContribution` 注入，base 只按 id 创建，不认识具体类型。
+`base` 不 include 任何组件头文件；`main.cpp` 通过 `ExtensionRegistry::createMainWindow()` 取窗口，主窗口由 `workbench` 组件注册。其余业务 UI 以 `DialogContribution` / `DockContribution` / `ScriptRunnerContribution` 注入，base 只按 id 创建，不认识具体类型。

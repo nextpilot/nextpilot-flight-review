@@ -90,6 +90,11 @@ bool Registry::invoke(const QString &action, const ActionContext &ctx) const
     return false;
 }
 
+QMainWindow *ExtensionRegistry::createMainWindow(QWidget *parent) const
+{
+    return m_windowFactory ? m_windowFactory(parent) : nullptr;
+}
+
 ExtensionRegistry &ExtensionRegistry::instance()
 {
     static ExtensionRegistry registry;

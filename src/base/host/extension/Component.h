@@ -14,6 +14,7 @@
 
 class QDialog;
 class QWidget;
+class QMainWindow;
 struct PsExtensionDescriptor;
 
 namespace ps::components
@@ -178,9 +179,14 @@ public:
     bool addExtension(const ExtensionDescriptor &descriptor, ExtensionFactory factory);
     const QVector<ExtensionEntry> &extensions() const { return m_extensions; }
 
+    using WindowFactory = std::function<QMainWindow *(QWidget *parent)>;
+    void setMainWindowFactory(WindowFactory factory) { m_windowFactory = std::move(factory); }
+    QMainWindow *createMainWindow(QWidget *parent = nullptr) const;
+
 private:
     ExtensionRegistry() = default;
     QVector<ExtensionEntry> m_extensions;
+    WindowFactory m_windowFactory;
 };
 
 } // namespace ps::components

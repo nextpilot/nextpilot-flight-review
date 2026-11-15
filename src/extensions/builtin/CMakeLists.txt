@@ -1,4 +1,5 @@
 # 内置业务组件：只在这里聚合，base 不认识具体组件和格式。
+add_subdirectory(workbench)
 add_subdirectory(data_sources)
 add_subdirectory(video)
 add_subdirectory(device_debug)
@@ -18,6 +19,7 @@ endif()
 # 组件对象通过 INTERFACE_SOURCES 进入宿主，保证静态注册器不被裁掉。
 add_library(ps_builtin_components INTERFACE)
 target_sources(ps_builtin_components INTERFACE
+  $<TARGET_OBJECTS:ps_builtin_workbench_component>
   $<TARGET_OBJECTS:ps_builtin_data_sources_component>
   $<TARGET_OBJECTS:ps_builtin_video_component>
   $<TARGET_OBJECTS:ps_builtin_device_debug_component>
@@ -25,6 +27,7 @@ target_sources(ps_builtin_components INTERFACE
   $<TARGET_OBJECTS:ps_builtin_script_component>
 )
 target_link_libraries(ps_builtin_components INTERFACE
+  ps_builtin_workbench_component
   ps_builtin_data_sources_component
   ps_builtin_video_component
   ps_builtin_device_debug_component

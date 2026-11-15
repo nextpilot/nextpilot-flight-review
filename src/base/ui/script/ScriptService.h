@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMap>
+#include <functional>
 #include <QString>
 #include <QVector>
 

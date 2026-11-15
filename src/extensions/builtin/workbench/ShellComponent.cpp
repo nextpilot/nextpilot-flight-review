@@ -1,5 +1,7 @@
 #include "ShellComponent.h"
 
+#include "MainWindow.h"
+
 #include <QString>
 
 namespace ps::components
@@ -14,6 +16,8 @@ struct ShellRegistrar
             ExtensionDescriptor{QStringLiteral("shell.core"), QStringLiteral("内置工作区"),
                                 QStringLiteral("1.0"), ExtensionType::Builtin},
             [] { return std::make_unique<ShellComponent>(); });
+        ExtensionRegistry::instance().setMainWindowFactory(
+            [](QWidget *parent) { return new MainWindow(parent); });
     }
 };
 static ShellRegistrar g_shellRegistrar;

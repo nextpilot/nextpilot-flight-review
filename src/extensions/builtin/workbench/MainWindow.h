@@ -5,6 +5,7 @@
 
 #include "host/extension/Component.h"
 #include "host/extension/ExtensionHost.h"
+#include "shell/AppWindow.h"
 #include "host/extension/CommandRegistry.h"
 
 #include <memory>
@@ -76,19 +77,23 @@ struct SourceData
 
 // 主窗口骨架（对应 §8 / D14）：
 //   Ribbon（顶部任务页签） + 四个可停靠区（数据源 / 属性 / 脚本 / 日志） + 固定绘图区（页签=页）
-class MainWindow : public QMainWindow
+class MainWindow : public QMainWindow, public IAppWindow
 {
     Q_OBJECT
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
+    QWidget *widget() override;
+    void openFile(const QString &path) override;
+    void openLayout(const QString &path) override;
+    QString defaultLayoutPath() const override;
+
     // 打开一份 CSV（内核解析），把前 3 个通道画到当前页画布
     bool loadFile(const QString &path, bool interactive = true);
     void importLayoutFrom(const QString &path);
     void saveLayoutTo(const QString &path);
     void runScript(bool apply = false);
-    QString defaultLayoutPath() const;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
