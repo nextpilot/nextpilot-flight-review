@@ -6,7 +6,7 @@
 #include "ps_kernel.h"
 #include "LiveSession.h"
 #include "DatasetCache.h"
-#include "DialogEngine.h"
+#include "UiDialogEngine.h"
 #include "DataSourceDialog.h"
 #include "record/StreamRecorder.h"
 #include <QJsonDocument>
@@ -627,7 +627,7 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
         // 扩展自带 .ui：通用引擎加载，app 不认识任何控件
         if (interactive)
         {
-            ExtensionDialogEngine dlg(*entry, path, this);
+            UiDialogEngine dlg(UiDialogSpec{entry->label, entry->uiDialog, entry->uiData}, path, this);
             if (dlg.exec() != QDialog::Accepted)
                 return false;
             opts = dlg.optionsJson();

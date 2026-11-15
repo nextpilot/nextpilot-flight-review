@@ -48,7 +48,7 @@ endif()
 if(TARGET ps_live)
   add_executable(test_raw_capture unit/test_raw_capture.cpp)
   target_include_directories(test_raw_capture PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/application/modules/data_source/services/live)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/services/live)
   target_link_libraries(test_raw_capture PRIVATE ps_live)
   add_test(NAME raw_capture COMMAND test_raw_capture)
 endif()

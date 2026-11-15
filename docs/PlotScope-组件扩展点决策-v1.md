@@ -8,7 +8,7 @@
 
 采用 VSCode 式“核心外壳 + 贡献点”模型，但不引入完整扩展宿主。
 
-- 核心外壳由 app 拥有：`MainWindow`、Ribbon 容器、Dock 容器、DialogEngine。
+- 核心外壳由 app 拥有：`MainWindow`、Ribbon 容器、Dock 容器、UiDialogEngine。
 - 功能入口由组件/扩展通过 manifest 贡献，内置组件与外部扩展共用同一份 contribution schema。
 - 组件与扩展本质同模型，区别只在加载方式：
   - 内置组件随 app 编译，启动即加载，可直接使用 C++/Qt；

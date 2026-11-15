@@ -1,6 +1,4 @@
-#include "DialogEngine.h"
-
-#include "DataSourceEntry.h"
+#include "UiDialogEngine.h"
 
 #include <QApplication>
 #include <QLabel>
@@ -12,19 +10,19 @@
 #include <QUiLoader>
 #endif
 
-ExtensionDialogEngine::ExtensionDialogEngine(const DataSourceEntry &entry, const QString &path, QWidget *parent)
+UiDialogEngine::UiDialogEngine(const UiDialogSpec &spec, const QString &path, QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(entry.label);
+    setWindowTitle(spec.title);
 
 #if PS_HAVE_UITOOLS
     Q_UNUSED(path);
     QUiLoader loader;
-    QFile f(entry.uiDialog);
+    QFile f(spec.uiPath);
     if (!f.open(QIODevice::ReadOnly))
     {
         auto *lay = new QVBoxLayout(this);
-        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 打不开：%1").arg(entry.uiDialog), this));
+        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 打不开：%1").arg(spec.uiPath), this));
         return;
     }
     QWidget *w = loader.load(&f, this);
@@ -32,7 +30,7 @@ ExtensionDialogEngine::ExtensionDialogEngine(const DataSourceEntry &entry, const
     if (!w)
     {
         auto *lay = new QVBoxLayout(this);
-        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 加载失败：%1").arg(entry.uiDialog), this));
+        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 加载失败：%1").arg(spec.uiPath), this));
         return;
     }
 
@@ -61,17 +59,17 @@ ExtensionDialogEngine::ExtensionDialogEngine(const DataSourceEntry &entry, const
         box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
         lay->addWidget(box);
     }
-    const DataSourceEntry *p = &entry;
+    const UiDialogSpec *p = &spec;
     connect(box, &QDialogButtonBox::accepted, this, [this, p] {
-        if (p->uiData)
-            m_options = p->uiData(QString());
+        if (p->data)
+            m_options = p->data(QString());
         if (m_options.isEmpty())
             m_options = QStringLiteral("{}");
         accept();
     });
     connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);
 #else
-    Q_UNUSED(entry);
+    Q_UNUSED(spec);
     Q_UNUSED(path);
     auto *lay = new QVBoxLayout(this);
     lay->addWidget(new QLabel(QStringLiteral("当前构建缺少 Qt6 UiTools，扩展 .ui 无法加载"), this));

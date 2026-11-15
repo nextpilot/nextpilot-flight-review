@@ -75,7 +75,7 @@
 ```
 ┌──────────────────────── Qt 6 Widgets（C++）────────────────────────┐
 │ 主窗口 / 停靠 / 通道树 / 属性面板 / hex 编辑器 / 表格 / 图表画布 / 仪表页 │
-│ ExtensionCatalog / ContributionRegistry / DialogEngine / PanelEngine    │
+│ ExtensionCatalog / ContributionRegistry / UiDialogEngine / PanelEngine    │
 └───────────────────────────────┬───────────────────────────────────┘
                       PsHostApi + 扩展 .ui（批量传递）
 ┌───────────────────────────────┴───────────────────────────────────┐
@@ -122,7 +122,7 @@
 **扩展 UI 归属（新增硬约束）**
 
 - 任何格式专属的 Dialog / Ribbon / Dock / Panel 类，都放在 `extensions/<id>/`，app 不存放、不 include。
-- app 只提供通用 `DialogEngine` / `PanelEngine`，负责加载扩展 `.ui`、绑定 `widget_data`、tick、事件、accept/reject。
+- app 只提供通用 `UiDialogEngine` / `PanelEngine`，负责加载扩展 `.ui`、绑定 `widget_data`、tick、事件、accept/reject。
 - 扩展不返回 `QWidget*`，只交 `.ui` 资源 + JSON 协议；外部扩展因此不需要和宿主 Qt ABI 完全一致。
 - 通用 schema 对话框是 app 的框架能力，不是某个 loader 的 UI；CSV 的 schema 由扩展声明，布局由 app 统一渲染。
 
@@ -430,7 +430,7 @@ extensions/<id>/
 - `src/include/ps_extension_api.h`：`PsExtensionDescriptor` + `PsLoaderVtable` + `PsUiVtable`，声明 `family / capabilities / extensions`，纯 C、零 Qt 依赖。
 - `src/extensions/dynamic/data_loader/{csv,ulog,apbin,asc,blf}/`：目录、target、入口、manifest id 统一为 `data_loader_<id>`；schema/probe/default/params/load 全在扩展内，app 不再有格式专属代码。
 - `src/runtime/ExtensionRuntime.cpp`：递归扫描 `*.so`，子进程预检隔离坏扩展，`dlopen` + `ps_extension_entry` + ABI 校验；重复 id 只保留第一个，坏扩展只记错误，不拖死宿主。
-- `src/application/modules/data_source/ui/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按扩展 `uiDialog` 加载 `.ui`，取值走 `uiData` JSON；app 不 include 任何扩展 UI 头文件。
+- `src/application/shell/UiDialogEngine.cpp`：通用 `QUiLoader` 引擎，按扩展 `uiDialog` 加载 `.ui`，取值走 `uiData` JSON；app 不 include 任何扩展 UI 头文件。
 - `LoaderRegistry::registerDescriptor()` / `scanExtensions()`：app 唯一注册入口，只收 `PS_FAMILY_DATA_LOADER`；扩展名由扩展 `extensions` 声明，不再写 app 分支。
 - `src/datastore/DatasetCache.cpp`：解析结果磁盘缓存，键为源文件 + `loader@version` + 选项；校验 size/mtime，命中直接 `ps_dataset_new/add_channel` 还原，不重新 probe/parse。
 - `tests/unit/test_extension_csv.cpp` / `test_extension_file_formats.cpp` / `test_extension_runtime.cpp` / `test_dataset_cache.cpp`：覆盖内置扩展、外部 `.so`、非法 ABI、重复 id 与缓存失效。
@@ -871,7 +871,7 @@ public:
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
 已落地：
-1. `src/application/modules/data_source/include/DataSourceEntry.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderExtension` / `SourceExtension` 别名。
+1. `src/application/modules/datasource/include/datasource/DataSourceEntry.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderExtension` / `SourceExtension` 别名。
 2. `LoaderRegistry` 注册 ULog、ArduPilot DataFlash、ASC、BLF、CSV；按后缀匹配，`loadFile()` 不再按扩展名写 `if/else`。
 3. `DataSourceDialog` 完全由 schema 渲染：`enum/bool/int`、`visible_if`、动态列（`source=columns` + `column_filter`）、探测预览表、警告；新增格式只需注册 schema，不再在 app 里加对话框。
 4. CSV schema 覆盖分隔符、表头、跳行、`time.mode=row|column|combined` 及时间列选择。

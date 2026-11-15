@@ -72,7 +72,7 @@ ps-abi ──> ps-ndf
 - 扩展 manifest、dlopen、ABI 版本检查（在 `src/application/modules/runtime`）；
 - Qt、QWidget、Ribbon、Dock；
 - 实时 TCP/UDP 连接、设备命令；
-- 缓存 key 计算、缓存目录选择、何时删除（在 `application/modules/data_source/services/cache`）。
+- 缓存 key 计算、缓存目录选择、何时删除（在 `application/modules/datasource/services/cache`）。
 
 判断方法：**要遍历、变换、派生、缓冲、降采样数据 -> kernel；数据从哪来 -> extension；只在屏幕上存在 -> application/shell。**
 

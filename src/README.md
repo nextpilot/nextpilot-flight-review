@@ -10,7 +10,13 @@ src/
     shell/                    MainWindow、Ribbon/Dock 容器、主题、全局设置
     modules/
       runtime/                扩展契约、注册表、动态装载、脚本运行、ModuleBridge
-      data_source/            SourceModel、DataSourceDock、DataSourceDialog、数据 Ribbon
+      datasource/            数据源模块
+        include/datasource/   数据源对外 API 与扩展契约
+        manager/            模块注册、DataSourceSession、命令、Registry
+        dock/                 DataSourceDock
+        dialog/               DataSourceDialog
+        ribbon/               数据 Ribbon
+        services/             cache、live
       plotting/              绘图模块
         include/plotting/     PlottingModule.h，模块对外 API
         manager/              PlottingComponent、PlottingSession、命令、设置
@@ -42,9 +48,9 @@ src/
 |---|---|---|
 | 数据模型、通用算子、LOD、缓存/流机制 | `application/kernel/` | 不碰 Qt、不做 I/O |
 | 扩展 ABI、注册表、动态装载、宿主 API、模块桥 | `application/modules/runtime/` | 只做生命周期、契约与跨模块中立接口 |
-| 缓存策略、实时会话与录制 | `application/modules/data_source/services/` | 宿主侧服务，不是业务格式 |
+| 缓存策略、实时会话与录制 | `application/modules/datasource/services/` | 宿主侧服务，不是业务格式 |
 | 主窗口、Ribbon/Dock 容器、主题 | `application/shell/` | app 骨架，只做组装 |
-| 数据源 Dock、输入对话框、数据 Ribbon | `application/modules/data_source/` | 数据进入与源管理 |
+| 数据源 Dock、输入对话框、数据 Ribbon | `application/modules/datasource/` | 数据进入与源管理 |
 | 画布、绘图 Ribbon、页面/图型 | `application/modules/plotting/` | 绘图工作区 |
 | 设备调试、视频同步、数据变换、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |
 | 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |

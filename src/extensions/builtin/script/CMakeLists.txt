@@ -10,7 +10,7 @@ target_include_directories(ps_builtin_script_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src/application
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/shell
-  ${PROJECT_SOURCE_DIR}/src/application/modules/data_source/include
+  ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
   ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/canvas
 )

@@ -5,6 +5,8 @@ add_library(ps_application_shell OBJECT
   ShellComponent.cpp
   SettingsDialog.h
   SettingsDialog.cpp
+  UiDialogEngine.h
+  UiDialogEngine.cpp
   Theme.h
   Theme.cpp
 )

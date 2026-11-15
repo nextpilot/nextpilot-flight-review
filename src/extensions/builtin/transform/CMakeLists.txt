@@ -8,6 +8,6 @@ set_target_properties(ps_builtin_transform_component PROPERTIES AUTOMOC ON)
 target_include_directories(ps_builtin_transform_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
-  ${PROJECT_SOURCE_DIR}/src/application/modules/data_source/include
+  ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
 )
 target_link_libraries(ps_builtin_transform_component PUBLIC ps_host ps_kernel Qt6::Widgets)

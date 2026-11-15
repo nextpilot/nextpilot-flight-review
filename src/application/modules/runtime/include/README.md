@@ -11,7 +11,7 @@
 - `schema_json` 同时承载扩展自己的选项 UI 描述：`fields` 为表单，`ui.preview` 声明探测列/预览行/摘要，`initial_from_probe` 声明探测结果如何回填字段；app 只按这份描述渲染，不认识 `delimiter / has_header` 等格式键。
 - `extensions` 由扩展声明，app 不再按格式 ID 写扩展名分支。
 - `params_json` 由扩展负责解析 P/Q、PARM 等参数表。
-- UI 面：`PsUiVtable` 只给 `.ui` 路径和 JSON 回调（`get_data / on_event / on_tick`），禁止返回 `QWidget*`；由 app 的 `DialogEngine` 加载。
+- UI 面：`PsUiVtable` 只给 `.ui` 路径和 JSON 回调（`get_data / on_event / on_tick`），禁止返回 `QWidget*`；由 app 的 `UiDialogEngine` 加载。
 - 外部扩展：`.so` 必须导出 `ps_extension_entry()`，包目录放 `manifest.json`、`.ui` 与资源；`ps-runtime` 负责扫描、预检、`dlopen`、ABI 校验、重复 id 去重。
 - 扩展只通过 `PsHostApi` 的 `dataset_new / dataset_add_channel / dataset_free` 写数据集，不链 `ps_kernel`，也不要求内核认识自己的文件格式。
 - probe / parse / schema / params 由扩展实现；内核只保留数据模型、filter、quat、LOD 等通用算子。

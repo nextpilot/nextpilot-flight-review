@@ -1,2 +1,2 @@
-add_subdirectory(data_source)
+add_subdirectory(datasource)
 add_subdirectory(plotting)

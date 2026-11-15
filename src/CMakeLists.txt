@@ -9,12 +9,12 @@ if(PS_BUILD_GUI)
   if(Qt6_FOUND)
     # 底座：宿主扩展层与宿主服务
     add_subdirectory(application/modules/runtime)
-    add_subdirectory(application/modules/data_source/services/cache)
+    add_subdirectory(application/modules/datasource/services/cache)
 
     # 动态扩展公共设施
     add_subdirectory(extensions/dynamic/data_loader/common)
 
-    add_subdirectory(application/modules/data_source/services/live)
+    add_subdirectory(application/modules/datasource/services/live)
 
     # 动态扩展：内置数据加载器与数据源
     add_subdirectory(extensions/dynamic/data_loader/csv)
