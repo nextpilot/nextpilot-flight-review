@@ -8,7 +8,8 @@ add_library(ps_application_plotting OBJECT
   manager/PlottingSettings.cpp
   tabs/PlottingTabs.h
   tabs/PlottingTabs.cpp
-  tabs/PlottingGrid.h
+  tabs/PlottingLayout.h
+  tabs/PlottingLayout.cpp
   canvas/PlottingCanvas.h
   canvas/PlottingCanvas.cpp
   ribbon/PlottingRibbon.h

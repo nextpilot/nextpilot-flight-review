@@ -14,7 +14,7 @@ src/
       plotting/              绘图模块
         include/plotting/     PlottingModule.h，模块对外 API
         manager/              PlottingComponent、PlottingSession、命令、设置
-        tabs/                 PlottingTabs、PlottingGrid，页签与页内布局
+        tabs/                 PlottingTabs、PlottingLayout，页签与页内布局
         canvas/               PlottingCanvas，单画布
         ribbon/               绘图 Ribbon、画廊、布局选择器
     resources/                图标资源、Lua 脚本

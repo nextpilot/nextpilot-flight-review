@@ -10,7 +10,7 @@ class PlottingCanvas;
 namespace ps::plotting
 {
 
-// 绘图工作区：页签=绘图页，页内是画布树。
+// 绘图工作区：页签=绘图页，页内由 PlottingLayout 承载画布树。
 // 画布创建由外部注入，本类负责默认页、画布联动和页内交互。
 class PlottingTabs : public QTabWidget
 {

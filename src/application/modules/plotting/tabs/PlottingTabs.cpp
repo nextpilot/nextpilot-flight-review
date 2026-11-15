@@ -1,31 +1,12 @@
 #include "PlottingTabs.h"
 
 #include "PlottingCanvas.h"
+#include "PlottingLayout.h"
 
-#include <QSplitter>
 #include <QTabBar>
 
 #include <utility>
 
-namespace
-{
-void collectCanvases(QWidget *root, QVector<PlottingCanvas *> &out)
-{
-    if (!root)
-        return;
-    if (auto *c = qobject_cast<PlottingCanvas *>(root))
-        out.append(c);
-    if (auto *sp = qobject_cast<QSplitter *>(root))
-    {
-        for (int i = 0; i < sp->count(); ++i)
-            collectCanvases(sp->widget(i), out);
-        return;
-    }
-    for (QObject *child : root->children())
-        if (auto *w = qobject_cast<QWidget *>(child))
-            collectCanvases(w, out);
-}
-} // namespace
 
 namespace ps::plotting
 {
@@ -75,36 +56,36 @@ void PlottingTabs::attachCanvas(PlottingCanvas *c)
 
 void PlottingTabs::createDefaultPages()
 {
-    // 页 1：三 plot 竖排（QSplitter 树，D15）
-    auto *page1 = new QSplitter(Qt::Vertical, this);
-    page1->setHandleWidth(6);
-    page1->addWidget(makeCanvas(QStringLiteral("姿态角 · plot"), page1));
+    // 页 1：三 plot 竖排（PlottingLayout，D15）
+    auto *page1 = new PlottingLayout(Qt::Vertical, this);
+    page1->addCanvas(makeCanvas(QStringLiteral("姿态角 · plot"), page1));
     auto *vib = makeCanvas(QStringLiteral("振动 · plot"), page1);
     vib->clearChannels();
-    page1->addWidget(vib);
+    page1->addCanvas(vib);
     auto *bus = makeCanvas(QStringLiteral("总线 · plot"), page1);
     bus->clearChannels();
-    page1->addWidget(bus);
+    page1->addCanvas(bus);
     page1->setSizes({300, 220, 220});
     addTab(page1, QStringLiteral("姿态与振动"));
 
     // 页 2：单 plot
-    auto *busPage = makeCanvas(QStringLiteral("车辆总线 · plot"), this);
+    auto *busLayout = new PlottingLayout(Qt::Vertical, this);
+    auto *busPage = makeCanvas(QStringLiteral("车辆总线 · plot"), busLayout);
     busPage->clearChannels();
-    addTab(busPage, QStringLiteral("车辆总线"));
+    busLayout->addCanvas(busPage);
+    addTab(busLayout, QStringLiteral("车辆总线"));
 
     // 页 3：仪表大屏，三块独立画布分别走地平仪 / 罗盘 / 表盘模式
-    auto *dash = new QSplitter(Qt::Horizontal, this);
-    dash->setHandleWidth(6);
+    auto *dash = new PlottingLayout(Qt::Horizontal, this);
     auto *horizon = makeCanvas(QStringLiteral("地平仪 · attitude"), dash);
     horizon->setPlotMode(PlottingCanvas::Horizon, QStringLiteral("horizon"));
     auto *compass = makeCanvas(QStringLiteral("罗盘 · heading"), dash);
     compass->setPlotMode(PlottingCanvas::Compass, QStringLiteral("compass"));
     auto *gauge = makeCanvas(QStringLiteral("表盘 · value"), dash);
     gauge->setPlotMode(PlottingCanvas::Gauge, QStringLiteral("gauge"));
-    dash->addWidget(horizon);
-    dash->addWidget(compass);
-    dash->addWidget(gauge);
+    dash->addCanvas(horizon);
+    dash->addCanvas(compass);
+    dash->addCanvas(gauge);
     dash->setSizes({420, 320, 320});
     addTab(dash, QStringLiteral("仪表大屏"));
 
@@ -124,8 +105,7 @@ void PlottingTabs::setTimeMarkers(const QVector<QPair<double, QString>> &markers
     m_markers = markers;
     for (int i = 0; i < count(); ++i)
     {
-        QVector<PlottingCanvas *> canvases;
-        collectCanvases(widget(i), canvases);
+        QVector<PlottingCanvas *> canvases = PlottingLayout::collectCanvases(widget(i));
         for (PlottingCanvas *c : canvases)
             c->setTimeMarkers(m_markers);
     }
@@ -133,16 +113,14 @@ void PlottingTabs::setTimeMarkers(const QVector<QPair<double, QString>> &markers
 
 QVector<PlottingCanvas *> PlottingTabs::pageCanvases() const
 {
-    QVector<PlottingCanvas *> out;
-    collectCanvases(currentWidget(), out);
-    return out;
+    return PlottingLayout::collectCanvases(currentWidget());
 }
 
 QVector<PlottingCanvas *> PlottingTabs::allCanvases() const
 {
     QVector<PlottingCanvas *> out;
     for (int i = 0; i < count(); ++i)
-        collectCanvases(widget(i), out);
+        out += PlottingLayout::collectCanvases(widget(i));
     return out;
 }
 
