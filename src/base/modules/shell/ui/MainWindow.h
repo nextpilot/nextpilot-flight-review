@@ -54,6 +54,7 @@ public:
     void saveLayoutTo(const QString &path);
     void runScript(bool apply = false);
     QString defaultLayoutPath() const;
+    void attachLogView(QPlainTextEdit *view);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

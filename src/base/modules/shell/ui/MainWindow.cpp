@@ -2406,19 +2406,6 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent, con
     connect(applyScriptBtn, &QPushButton::clicked, this, [this] { runScript(true); });
     return scriptDock;
     }
-    if (id == QLatin1String("dock.log"))
-    {
-    // 底部：日志
-    auto *logDock = new QDockWidget(QStringLiteral("日志"), this);
-    logDock->setObjectName(QStringLiteral("dock.log"));
-    if (!icon.isEmpty())
-        logDock->setProperty("psIcon", icon);
-    m_logView = new QPlainTextEdit(logDock);
-    m_logView->setReadOnly(true);
-    m_logView->setMaximumBlockCount(2000);
-    logDock->setWidget(m_logView);
-    return logDock;
-    }
     Q_UNUSED(parent);
     return nullptr;
 }
@@ -4630,4 +4617,14 @@ void MainWindow::log(const QString &text)
     const QString ts = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
     m_logView->appendPlainText(QStringLiteral("[%1] %2").arg(ts, text));
     statusBar()->showMessage(text, 4000);
+}
+
+void MainWindow::attachLogView(QPlainTextEdit *view)
+{
+    m_logView = view;
+    if (m_logView)
+    {
+        m_logView->setReadOnly(true);
+        m_logView->setMaximumBlockCount(2000);
+    }
 }
