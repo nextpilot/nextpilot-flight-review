@@ -12,13 +12,6 @@ target_include_directories(ps_base_shell PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/base
   ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
-  ${PROJECT_SOURCE_DIR}/src/base/modules/data_source/include
-  ${PROJECT_SOURCE_DIR}/src/base/modules/data_source/ui
-  ${PROJECT_SOURCE_DIR}/src/base/modules/data_source/services/cache
-  ${PROJECT_SOURCE_DIR}/src/base/modules/data_source/services/live
-  ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
-  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/include
-  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/ui
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
 )
 target_link_libraries(ps_base_shell PUBLIC

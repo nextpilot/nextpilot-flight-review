@@ -6,8 +6,7 @@
 #include "Component.h"
 #include "ExtensionHost.h"
 #include "CommandRegistry.h"
-#include "SourceModel.h"
-
+namespace ps::data_source { struct SourceData; struct TransformRecipe; struct SourceStore; }
 using ps::data_source::SourceData;
 using ps::data_source::TransformRecipe;
 
@@ -77,6 +76,9 @@ private:
     void registerDataCommands();
     void registerPlotCommands();
     void applyPlayhead(double t);
+    void clearParseCache();
+    void initSourceRuntime();
+    void reloadCanvasSettings();
     void createPlotPage(const QString &kind);
     void buildRibbonWidget(SARibbonPanel *panel, const QString &id, SARibbonBar *ribbon);
     void createDocks();
@@ -131,6 +133,12 @@ private:
     void showSourceProps(QWidget *row);
     void setSourcePaused(SourceData *src, bool paused);
 public:
+    ~MainWindow();
+    void openPath(const QString &path);
+    void connectSource(const QString &id);
+    void setCanvasViewFlag(int flag, bool on);
+    void canvasZoom(double factor);
+    void canvasAutoY();
     void toggleDockMax(QDockWidget *dock);
     void restoreDockMax();
 private:
@@ -181,7 +189,7 @@ private:
     QTableWidget *m_scriptParams = nullptr;
     CanvasWidget *m_scriptPreviewCanvas = nullptr;
     QStringList m_scriptPreviewNames;
-    ps::data_source::SourceStore m_sourceStore;
+    ps::data_source::SourceStore *m_sourceStore = nullptr;
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;
     QAction *m_chipLod = nullptr;

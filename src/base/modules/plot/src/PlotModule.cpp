@@ -2,11 +2,16 @@
 #include "MainWindow.h"
 #include "CanvasWidget.h"
 #include "PlotGrid.h"
+#include "SourceModel.h"
 #include "PlotWorkspace.h"
 #include <QGridLayout>
 #include <QSplitter>
 #include <QTimer>
 #include "ps_kernel.h"
+#include <QAction>
+#include "SARibbonPanel.h"
+#include "SARibbonGallery.h"
+#include "SARibbonGalleryGroup.h"
 #include <QInputDialog>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
@@ -75,7 +80,31 @@ void registerPlotContributions(Registry &registry)
               {QStringLiteral("page.splitHorizontal"), QStringLiteral("向右拆分"), {}, true},
               {QStringLiteral("page.splitVertical"), QStringLiteral("向下拆分"), {}, true}}},
          {QStringLiteral("画布布局"), {}, QStringLiteral("layoutPicker")},
-         {QStringLiteral("显示"), {}, QStringLiteral("viewToggles")},
+         {QStringLiteral("显示"), {}, QStringLiteral("viewToggles"),
+             [](QWidget *p) {
+                 auto *panel = static_cast<SARibbonPanel *>(p);
+                 auto *mw = qobject_cast<MainWindow *>(panel->window());
+                 auto add = [&](const QString &text, int flag) {
+                     auto *a = new QAction(text, panel);
+                     a->setCheckable(true);
+                     QObject::connect(a, &QAction::toggled, mw, [mw, flag](bool on) { mw->setCanvasViewFlag(flag, on); });
+                     panel->addSmallAction(a);
+                 };
+                 add(QStringLiteral("网格"), 0);
+                 add(QStringLiteral("边框"), 1);
+                 add(QStringLiteral("图例"), 2);
+                 add(QStringLiteral("框选"), 3);
+                 panel->addSeparator();
+                 auto *zin = new QAction(QStringLiteral("放大"), panel);
+                 QObject::connect(zin, &QAction::triggered, mw, [mw] { mw->canvasZoom(0.8); });
+                 panel->addSmallAction(zin);
+                 auto *zout = new QAction(QStringLiteral("缩小"), panel);
+                 QObject::connect(zout, &QAction::triggered, mw, [mw] { mw->canvasZoom(1.25); });
+                 panel->addSmallAction(zout);
+                 auto *autoY = new QAction(QStringLiteral("自适应"), panel);
+                 QObject::connect(autoY, &QAction::triggered, mw, [mw] { mw->canvasAutoY(); });
+                 panel->addSmallAction(autoY);
+             }},
          {QStringLiteral("图表类型"), {}, QStringLiteral("plotGallery")}},
         2});
 }
@@ -460,7 +489,7 @@ QWidget *MainWindow::buildPage(const QJsonObject &o)
         auto *c = new CanvasWidget(m_pages);
         c->clearChannels();
         QHash<QString, const PsChannelInfo *> pool;
-        for (const ps::data_source::SourceData &src : m_sourceStore.items())
+        for (const ps::data_source::SourceData &src : m_sourceStore->items())
         {
             for (const PsChannelInfo *ch : src.channels)
             {
@@ -1120,7 +1149,7 @@ void MainWindow::editSeriesProps(CanvasWidget *c, int index)
     ps::data_source::SourceData *src = nullptr;
     const int sid = st.value(QStringLiteral("srcId")).toInt(-1);
     const QString path = st.value(QStringLiteral("srcPath")).toString();
-    for (ps::data_source::SourceData &sd : m_sourceStore.items())
+    for (ps::data_source::SourceData &sd : m_sourceStore->items())
         if (sd.id == sid || (!path.isEmpty() && sd.path == path))
         {
             src = &sd;
@@ -1271,3 +1300,226 @@ static QString plotModeLabel(int mode)
         return QStringLiteral("未知");
     return QString::fromUtf8(names[mode]);
 }
+
+void MainWindow::setCanvasViewFlag(int flag, bool on)
+{
+    for (CanvasWidget *c : pageCanvases())
+    {
+        if (flag == 0) c->setGridVisible(on);
+        else if (flag == 1) c->setBoxVisible(on);
+        else if (flag == 2) c->setLegendVisible(on);
+        else if (flag == 3) c->setRubberZoomEnabled(on);
+    }
+}
+void MainWindow::canvasZoom(double factor) { for (CanvasWidget *c : pageCanvases()) c->zoomBy(factor); }
+void MainWindow::canvasAutoY() { for (CanvasWidget *c : pageCanvases()) c->requestAutoY(); }
+
+QJsonObject MainWindow::pageState(QWidget *page) const
+{
+    QJsonObject o;
+    if (auto *c = qobject_cast<CanvasWidget *>(page))
+    {
+        o = c->saveState();
+        o[QStringLiteral("type")] = QStringLiteral("canvas");
+    }
+    else if (auto *g = dynamic_cast<PlotGrid *>(page))
+    {
+        o[QStringLiteral("type")] = QStringLiteral("grid");
+        o[QStringLiteral("rows")] = g->rows();
+        o[QStringLiteral("cols")] = g->cols();
+        QJsonArray kids;
+        for (CanvasWidget *c : g->canvases())
+        {
+            QJsonObject co = c->saveState();
+            co[QStringLiteral("type")] = QStringLiteral("canvas");
+            kids.append(co);
+        }
+        o[QStringLiteral("children")] = kids;
+    }
+    else if (auto *sp = qobject_cast<QSplitter *>(page))
+    {
+        o[QStringLiteral("type")] = QStringLiteral("splitter");
+        o[QStringLiteral("vertical")] = sp->orientation() == Qt::Vertical;
+        QJsonArray sizes;
+        for (int v : sp->sizes())
+            sizes.append(v);
+        o[QStringLiteral("sizes")] = sizes;
+        QJsonArray kids;
+        for (int i = 0; i < sp->count(); ++i)
+            kids.append(pageState(sp->widget(i)));
+        o[QStringLiteral("children")] = kids;
+    }
+    else if (auto *lb = qobject_cast<QLabel *>(page))
+    {
+        o[QStringLiteral("type")] = QStringLiteral("label");
+        o[QStringLiteral("text")] = lb->text();
+    }
+    return o;
+}
+
+
+void MainWindow::runScript(bool apply)
+{
+    QDockWidget *scriptDock = findChild<QDockWidget *>(QStringLiteral("dock.script"));
+    CanvasWidget *canvas = nullptr;
+    QVector<ScriptSeries> inputs;
+    QVector<CanvasWidget *> candidates = pageCanvases();
+    if (candidates.isEmpty())
+        candidates = findChildren<CanvasWidget *>();
+    for (CanvasWidget *c : candidates)
+    {
+        const auto samples = c->sampleSeries();
+        if (samples.isEmpty() || (canvas && inputs.size() >= samples.size()))
+            continue;
+        canvas = c;
+        inputs.clear();
+        for (const CanvasWidget::SampleSeries &s : samples)
+            inputs.append({s.name, s.time, s.value});
+    }
+    if (!canvas)
+    {
+        log(QStringLiteral("脚本：当前页没有可见曲线"));
+        return;
+    }
+    QStringList names;
+    for (const ScriptSeries &s : inputs)
+        names.append(s.name);
+    for (QComboBox *cb : m_scriptInputs)
+    {
+        if (!cb)
+            continue;
+        const QString keep = cb->currentData().toString();
+        cb->clear();
+        cb->addItem(QStringLiteral("（未绑定）"), QString());
+        for (const QString &name : names)
+            cb->addItem(name, name);
+        cb->setCurrentIndex(qMax(0, cb->findData(keep)));
+    }
+
+    QVector<ScriptSeries> bound;
+    QStringList boundNames;
+    for (QComboBox *cb : m_scriptInputs)
+    {
+        const QString name = cb ? cb->currentData().toString() : QString();
+        if (name.isEmpty())
+            continue;
+        for (const ScriptSeries &s : inputs)
+        {
+            if (s.name != name)
+                continue;
+            bound.append(s);
+            boundNames.append(QStringLiteral("v%1=%2").arg(bound.size()).arg(name));
+            break;
+        }
+    }
+    if (bound.isEmpty())
+        bound = inputs;
+    log(QStringLiteral("脚本输入：%1").arg(
+        boundNames.isEmpty() ? names.join(QStringLiteral(" | ")) : boundNames.join(QStringLiteral(" | "))));
+    QMap<QString, double> params;
+    if (m_scriptParams)
+    {
+        for (int row = 0; row < m_scriptParams->rowCount(); ++row)
+        {
+            const QString key = m_scriptParams->item(row, 0)
+                                    ? m_scriptParams->item(row, 0)->text().trimmed()
+                                    : QString();
+            if (key.isEmpty())
+                continue;
+            bool ok = false;
+            const double v = m_scriptParams->item(row, 1)
+                                 ? m_scriptParams->item(row, 1)->text().toDouble(&ok)
+                                 : 0.0;
+            if (ok)
+                params.insert(key, v);
+        }
+    }
+    const ScriptResult r = m_extensions.registry().runScript(m_script->toPlainText(), bound, params);
+    if (!r.ok)
+    {
+        log(QStringLiteral("脚本失败：%1").arg(r.error));
+        const QRegularExpression re(QStringLiteral(":(\\d+):"));
+        const auto match = re.match(r.error);
+        if (match.hasMatch())
+        {
+            const int line = match.captured(1).toInt();
+            QTextCursor cur = m_script->textCursor();
+            cur.movePosition(QTextCursor::Start);
+            cur.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, qMax(0, line - 1));
+            cur.select(QTextCursor::LineUnderCursor);
+            m_script->setTextCursor(cur);
+        }
+        if (scriptDock)
+        {
+            scriptDock->show();
+            scriptDock->raise();
+        }
+        return;
+    }
+    if (m_scriptPreviewCanvas)
+        for (const QString &name : m_scriptPreviewNames)
+            m_scriptPreviewCanvas->removeGeneratedSeries(name);
+    m_scriptPreviewCanvas = canvas;
+    m_scriptPreviewNames.clear();
+
+    if (apply)
+    {
+        int idx = 0;
+        for (const ScriptOutput &o : r.outputs)
+        {
+            const QString source = idx < bound.size() ? bound[idx].name : QString();
+            ++idx;
+            if (!source.isEmpty() && canvas->replaceGeneratedSeries(source, o.name, o.time, o.value))
+                log(QStringLiteral("Lua 应用：%1 → %2（继承颜色，%3 点）")
+                        .arg(source, o.name).arg(o.value.size()));
+            else
+            {
+                canvas->addGeneratedSeries(o.name, o.time, o.value);
+                log(QStringLiteral("Lua 应用：%1（%2 点）").arg(o.name).arg(o.value.size()));
+            }
+        }
+    }
+    else
+    {
+        for (const ScriptOutput &o : r.outputs)
+        {
+            const QString name = QStringLiteral("preview/%1").arg(o.name);
+            canvas->addGeneratedSeries(name, o.time, o.value);
+            m_scriptPreviewNames.append(name);
+            log(QStringLiteral("Lua 预览：%1（%2 点）").arg(name).arg(o.value.size()));
+        }
+    }
+    log(QStringLiteral("Lua 5.4 %1：%2 条输出")
+            .arg(apply ? QStringLiteral("应用完成") : QStringLiteral("预览完成"))
+            .arg(r.outputs.size()));
+}
+
+
+
+void MainWindow::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree)
+{
+    m_selLabel = sel; m_propEditBtn = edit; m_propTable = table; m_propTree = tree;
+    connect(m_propEditBtn, &QToolButton::clicked, this, [this] {
+        if (!m_propCanvas) return;
+        if (m_propKind == 2 && m_propSeriesIndex >= 0) editSeriesProps(m_propCanvas, m_propSeriesIndex);
+        else if (m_propKind == 1) editAxesProps(m_propCanvas);
+    });
+    connect(m_propTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
+        if (!m_propCanvas) return;
+        if (m_propKind == 2 && m_propSeriesIndex >= 0) editSeriesProps(m_propCanvas, m_propSeriesIndex);
+        else if (m_propKind == 1) editAxesProps(m_propCanvas);
+    });
+    auto pick = [this](QTreeWidgetItem *it) {
+        if (m_propTreeBuilding || !it) return;
+        const int kind = it->data(0, Qt::UserRole).toInt();
+        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(it->data(0, Qt::UserRole + 1).value<quintptr>());
+        if (!c) return;
+        if (kind == 1) showAxesProps(c); else if (kind == 2) showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
+    };
+    connect(m_propTree, &QTreeWidget::currentItemChanged, this, [pick](QTreeWidgetItem *it, QTreeWidgetItem *) { pick(it); });
+    connect(m_propTree, &QTreeWidget::itemClicked, this, [pick](QTreeWidgetItem *it, int) { pick(it); });
+    setPropRows(QStringLiteral("画布"), {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")}, {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
+}
+
+
+void MainWindow::reloadCanvasSettings() { for (CanvasWidget *c : findChildren<CanvasWidget *>()) c->reloadDisplaySettings(); }

@@ -4,12 +4,18 @@
 #include "CanvasWidget.h"
 #include "ps_kernel.h"
 #include "DataSourceEntry.h"
+#include "SourceModel.h"
 #include "TransformDialogInterface.h"
 #include <QtEndian>
 #include "DataSourceRegistry.h"
 #include "LiveSession.h"
+#include "DatasetCache.h"
 
 #include <QAction>
+#include "SARibbonPanel.h"
+#include "SARibbonGallery.h"
+#include "SARibbonGalleryGroup.h"
+#include "SARibbonGalleryItem.h"
 #include <QComboBox>
 #include <QFileDialog>
 #include <QMenu>
@@ -115,7 +121,39 @@ void registerDataSourceContributions(Registry &registry)
               {QStringLiteral("data.recent"), QStringLiteral("最近"), {}, false},
               {QStringLiteral("data.exportSnapshot"), QStringLiteral("导出快照"), {}, false},
               {QStringLiteral("data.reload"), QStringLiteral("重载"), {}, false}}},
-         {QStringLiteral("来源"), {}, QStringLiteral("sourceGallery")}},
+         {QStringLiteral("来源"), {}, QStringLiteral("sourceGallery"),
+             [](QWidget *p) {
+                 auto *panel = static_cast<SARibbonPanel *>(p);
+                 auto *mw = qobject_cast<MainWindow *>(panel->window());
+                 auto *gal = panel->addGallery(true);
+                 QList<QAction *> files, streams;
+                 for (const DataSourceEntry &e : DataSourceRegistry::instance().fileEntries())
+                 {
+                     auto *a = new QAction(e.label, panel);
+                     QObject::connect(a, &QAction::triggered, mw, [mw, e] {
+                         const QStringList fs = QFileDialog::getOpenFileNames(mw, e.label, {}, e.filter.isEmpty() ? QStringLiteral("全部 (*)") : e.filter);
+                         for (const QString &f : fs) mw->openPath(f);
+                     });
+                     files.append(a);
+                 }
+                 for (const DataSourceEntry &e : DataSourceRegistry::instance().streamEntries())
+                 {
+                     auto *a = new QAction(e.label, panel);
+                     QObject::connect(a, &QAction::triggered, mw, [mw, id = e.id] { mw->connectSource(id); });
+                     streams.append(a);
+                 }
+                 auto add = [&](const QString &name, const QList<QAction *> &acts) {
+                     auto *g = gal->addGalleryGroup();
+                     g->setGalleryGroupStyle(SARibbonGalleryGroup::IconWithText);
+                     g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+                     for (QAction *a : acts) g->addItem(new SARibbonGalleryItem(a));
+                     Q_UNUSED(name);
+                 };
+                 add(QStringLiteral("日志文件"), files);
+                 add(QStringLiteral("实时源"), streams);
+                 gal->setSingleRowMode(true);
+                 panel->setMaximumWidth(380);
+             }}},
         1});
 }
 
@@ -236,8 +274,8 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
                 addTimeMarker(t, topic, prompt);
             },
             [this](const QString &text) { log(text); },
-            [this] { return !m_sourceStore.items().isEmpty(); },
-            [this]() -> QVector<SourceData> & { return m_sourceStore.items(); },
+            [this] { return !m_sourceStore->items().isEmpty(); },
+            [this]() -> QVector<SourceData> & { return m_sourceStore->items(); },
             [this](const QString &name) {
                 for (auto *c : findChildren<CanvasWidget *>())
                     c->removeChannel(name);
@@ -250,7 +288,7 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
             [this](QWidget *row) { activateSource(row); },
             [this](QWidget *row) { row->installEventFilter(this); },
             [this](int id, QWidget *row) {
-                for (SourceData &src : m_sourceStore.items())
+                for (SourceData &src : m_sourceStore->items())
                     if (src.id == id)
                         src.row = row;
             },
@@ -413,24 +451,24 @@ void MainWindow::updateStatusChips()
     if (!m_chipSource)
         return;
     int channels = 0;
-    for (const ps::data_source::SourceData &s : m_sourceStore.items())
+    for (const ps::data_source::SourceData &s : m_sourceStore->items())
         channels += s.channels.size();
-    if (m_sourceStore.items().isEmpty())
+    if (m_sourceStore->items().isEmpty())
         m_chipSource->setText(QStringLiteral("无数据"));
-    else if (std::any_of(m_sourceStore.items().cbegin(), m_sourceStore.items().cend(),
+    else if (std::any_of(m_sourceStore->items().cbegin(), m_sourceStore->items().cend(),
                          [](const ps::data_source::SourceData &s) { return s.live && s.paused; }))
     {
-        const int paused = int(std::count_if(m_sourceStore.items().cbegin(), m_sourceStore.items().cend(),
+        const int paused = int(std::count_if(m_sourceStore->items().cbegin(), m_sourceStore->items().cend(),
                                              [](const ps::data_source::SourceData &s) { return s.live && s.paused; }));
-        m_chipSource->setText(QStringLiteral("%1 源 · %2 暂停").arg(m_sourceStore.items().size()).arg(paused));
+        m_chipSource->setText(QStringLiteral("%1 源 · %2 暂停").arg(m_sourceStore->items().size()).arg(paused));
     }
-    else if (m_sourceStore.items().size() == 1)
+    else if (m_sourceStore->items().size() == 1)
         m_chipSource->setText(QStringLiteral("%1 · %2 通道")
-                                  .arg(m_sourceStore.items().first().fmt)
+                                  .arg(m_sourceStore->items().first().fmt)
                                   .arg(channels));
     else
         m_chipSource->setText(QStringLiteral("%1 源 · %2 通道")
-                                  .arg(m_sourceStore.items().size())
+                                  .arg(m_sourceStore->items().size())
                                   .arg(channels));
 }
 
@@ -448,7 +486,7 @@ int MainWindow::sourceIdForRow(QWidget *row) const
 
 ps::data_source::SourceData *MainWindow::sourceById(int id)
 {
-    return m_sourceStore.byId(id);
+    return m_sourceStore->byId(id);
 }
 
 namespace {
@@ -536,7 +574,7 @@ void MainWindow::alignSource(ps::data_source::SourceData *src, int mode)
         return;
     bool init = false;
     double gs = 0, ge = 0;
-    for (const ps::data_source::SourceData &o : m_sourceStore.items())
+    for (const ps::data_source::SourceData &o : m_sourceStore->items())
     {
         if (o.id == src->id)
             continue;
@@ -566,10 +604,10 @@ void MainWindow::setSourceBase(ps::data_source::SourceData *src)
     if (!src || !sourceTimeRange(src, a0, a1))
         return;
     // 基准源的起点为 0，其余源用同一基准换算（PJ globalTimeReference 语义）
-    for (ps::data_source::SourceData &s : m_sourceStore.items())
+    for (ps::data_source::SourceData &s : m_sourceStore->items())
         setSourceOffset(&s, a0, false);
     for (auto *c : findChildren<CanvasWidget *>())
-        for (const ps::data_source::SourceData &s : m_sourceStore.items())
+        for (const ps::data_source::SourceData &s : m_sourceStore->items())
             c->setSourceOffset(s.path, a0, true);
     log(QStringLiteral("时间基准：%1，起点归零，其余源同步换算").arg(src->alias));
 }
@@ -990,3 +1028,348 @@ void MainWindow::registerDataCommands()
     });
 
 }
+
+void MainWindow::openPath(const QString &path) { loadFile(path, true); }
+void MainWindow::connectSource(const QString &id) { connectLiveSource(id); }
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    for (ps::data_source::SourceData &src : m_sourceStore->items())
+        closeLiveSource(&src);
+    if (m_liveTimer)
+        m_liveTimer->stop();
+    if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+            .value(QStringLiteral("restoreLayout"), true).toBool())
+        saveLayoutTo(defaultLayoutPath());
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::saveLayoutTo(const QString &path)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QJsonObject root;
+    root[QStringLiteral("app")] = QStringLiteral("PlotScope");
+    root[QStringLiteral("version")] = 1;
+    root[QStringLiteral("geometry")] = QString::fromLatin1(saveGeometry().toBase64());
+    root[QStringLiteral("docks")] = QString::fromLatin1(saveState().toBase64());
+    root[QStringLiteral("current")] = m_pages->currentIndex();
+
+    QJsonArray pages;
+    QJsonArray titles;
+    const int last = m_pages->count() - 1;
+    for (int i = 0; i < m_pages->count(); ++i)
+    {
+        if (i == last && m_pages->tabText(i) == QStringLiteral("＋"))
+            continue;
+        pages.append(pageState(m_pages->widget(i)));
+        titles.append(m_pages->tabText(i));
+    }
+    root[QStringLiteral("pages")] = pages;
+    root[QStringLiteral("titles")] = titles;
+    QJsonArray markers;
+    for (const auto &mk : m_timeMarkers)
+    {
+        QJsonObject mo;
+        mo[QStringLiteral("t")] = mk.first;
+        mo[QStringLiteral("label")] = mk.second;
+        markers.append(mo);
+    }
+    root[QStringLiteral("markers")] = markers;
+
+    // 数据源与布局一起保存：重启后先重新加载日志，再回填画布通道
+    // 数据源与布局一起保存：重启后按顺序重载全部源，再回填画布通道
+    QJsonArray sources;
+    for (const ps::data_source::SourceData &src : m_sourceStore->items())
+    {
+        if (src.path.isEmpty() || src.live)
+            continue;
+        QJsonObject so;
+        so[QStringLiteral("path")] = src.path;
+        so[QStringLiteral("name")] = src.name;
+        so[QStringLiteral("alias")] = src.alias;
+        so[QStringLiteral("offset")] = src.offsetSec;
+        sources.append(so);
+    }
+    root[QStringLiteral("sources")] = sources;
+
+    QJsonArray transforms;
+    for (const ps::data_source::SourceData &src : m_sourceStore->items())
+    {
+        for (const ps::data_source::TransformRecipe &r : src.recipes)
+        {
+            QJsonObject o;
+            o[QStringLiteral("source")] = src.path;
+            o[QStringLiteral("kind")] = r.kind;
+            o[QStringLiteral("input")] = r.input;
+            o[QStringLiteral("filter")] = r.filter;
+            o[QStringLiteral("params")] = r.params;
+            o[QStringLiteral("output")] = r.output;
+            o[QStringLiteral("degrees")] = r.degrees;
+            o[QStringLiteral("unwrap")] = r.unwrap;
+            if (r.kind == QLatin1String("quat"))
+            {
+                QJsonArray q;
+                for (const QString &s : r.quat)
+                    q.append(s);
+                o[QStringLiteral("quat")] = q;
+            }
+            transforms.append(o);
+        }
+    }
+    root[QStringLiteral("transforms")] = transforms;
+
+    QJsonObject script;
+    script[QStringLiteral("source")] = m_script ? m_script->toPlainText() : QString();
+    QJsonArray binds;
+    for (QComboBox *cb : m_scriptInputs)
+        binds.append(cb ? cb->currentData().toString() : QString());
+    script[QStringLiteral("inputs")] = binds;
+    QJsonObject paramObj;
+    if (m_scriptParams)
+    {
+        for (int row = 0; row < m_scriptParams->rowCount(); ++row)
+        {
+            const QString key = m_scriptParams->item(row, 0)
+                                    ? m_scriptParams->item(row, 0)->text().trimmed()
+                                    : QString();
+            if (key.isEmpty())
+                continue;
+            bool ok = false;
+            const double v = m_scriptParams->item(row, 1)
+                                 ? m_scriptParams->item(row, 1)->text().toDouble(&ok)
+                                 : 0.0;
+            if (ok)
+                paramObj[key] = v;
+        }
+    }
+    script[QStringLiteral("params")] = paramObj;
+    root[QStringLiteral("script")] = script;
+
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    {
+        log(QStringLiteral("保存布局失败：%1").arg(f.errorString()));
+        return;
+    }
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    f.close();
+    QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
+    log(QStringLiteral("已保存布局：%1").arg(path));
+}
+
+void MainWindow::importLayoutFrom(const QString &path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+    {
+        log(QStringLiteral("导入布局失败：%1").arg(f.errorString()));
+        return;
+    }
+    const QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
+    f.close();
+    if (root.value(QStringLiteral("app")).toString() != QLatin1String("PlotScope"))
+    {
+        log(QStringLiteral("不是 PlotScope 布局文件"));
+        return;
+    }
+
+    // 先恢复数据源，buildPage 才能按通道名取到内核指针
+    for (const QJsonValue &v : root.value(QStringLiteral("sources")).toArray())
+    {
+        const QString path = v.toObject().value(QStringLiteral("path")).toString();
+        if (path.isEmpty() || !QFile::exists(path))
+            continue;
+        bool loaded = false;
+        for (int i = 0; m_srcRows && i < m_srcRows->count(); ++i)
+        {
+            QWidget *row = m_srcRows->itemAt(i) ? m_srcRows->itemAt(i)->widget() : nullptr;
+            if (row && row->property("srcPath").toString() == path)
+            {
+                loaded = true;
+                break;
+            }
+        }
+        if (!loaded)
+            loadFile(path, false);
+        const QString alias = v.toObject().value(QStringLiteral("alias")).toString();
+        if (!alias.isEmpty())
+        {
+            for (ps::data_source::SourceData &src : m_sourceStore->items())
+                if (src.path == path)
+                    src.alias = alias;
+        }
+        const double offset = v.toObject().value(QStringLiteral("offset")).toDouble(0.0);
+        for (ps::data_source::SourceData &src : m_sourceStore->items())
+            if (src.path == path)
+                setSourceOffset(&src, offset, false);
+    }
+
+    // 重放变换配方；派生通道先写回，buildPage 才能按名字找到
+    for (const QJsonValue &v : root.value(QStringLiteral("transforms")).toArray())
+    {
+        const QJsonObject o = v.toObject();
+        ps::data_source::SourceData *src = nullptr;
+        for (ps::data_source::SourceData &s : m_sourceStore->items())
+            if (s.path == o.value(QStringLiteral("source")).toString())
+                src = &s;
+        if (!src || !src->ds)
+            continue;
+        TransformRecipe r;
+        r.kind = o.value(QStringLiteral("kind")).toString();
+        r.input = o.value(QStringLiteral("input")).toString();
+        r.filter = o.value(QStringLiteral("filter")).toString();
+        r.params = o.value(QStringLiteral("params")).toObject();
+        r.output = o.value(QStringLiteral("output")).toString();
+        r.degrees = o.value(QStringLiteral("degrees")).toBool(true);
+        r.unwrap = o.value(QStringLiteral("unwrap")).toBool(true);
+        const QJsonArray q = o.value(QStringLiteral("quat")).toArray();
+        for (int i = 0; i < 4 && i < q.size(); ++i)
+            r.quat[i] = q.at(i).toString();
+        const int derivedCap = QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+                                   .value(QStringLiteral("derivedMaxPoints"), 2000000).toInt();
+        if (derivedCap > 0)
+        {
+            QStringList ins = r.kind == QLatin1String("quat")
+                                  ? QStringList{r.quat[0], r.quat[1], r.quat[2], r.quat[3]}
+                                  : QStringList{r.input};
+            uint32_t worst = 0;
+            for (const QString &name : ins)
+            {
+                const uint32_t count = ps_dataset_channel_count(src->ds);
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const PsChannelInfo *ch = ps_dataset_channel(src->ds, i);
+                    if (ch && name == QString::fromUtf8(ch->name))
+                    {
+                        worst = qMax(worst, ch->point_count);
+                        break;
+                    }
+                }
+            }
+            if (worst > static_cast<uint32_t>(derivedCap))
+            {
+                log(QStringLiteral("重放变换跳过：%1（%2 点 > 上限 %3）")
+                        .arg(r.output).arg(worst).arg(derivedCap));
+                continue;
+            }
+        }
+        char err[512] = {0};
+        int rc = 0;
+        if (r.kind == QLatin1String("quat"))
+            rc = ps_dataset_apply_quat_rpy(src->ds, r.quat[0].toUtf8().constData(), r.quat[1].toUtf8().constData(),
+                                           r.quat[2].toUtf8().constData(), r.quat[3].toUtf8().constData(),
+                                           r.output.toUtf8().constData(), r.degrees ? 1 : 0, r.unwrap ? 1 : 0,
+                                           err, sizeof err);
+        else
+            rc = ps_dataset_apply_filter(
+                src->ds, r.input.toUtf8().constData(), r.filter.toUtf8().constData(),
+                QJsonDocument(r.params).toJson(QJsonDocument::Compact).constData(),
+                r.output.toUtf8().constData(), err, sizeof err);
+        if (rc != 0)
+        {
+            log(QStringLiteral("重放变换失败：%1（%2）").arg(r.output, QString::fromUtf8(err)));
+            continue;
+        }
+        src->recipes.append(r);
+        const QStringList names = r.kind == QLatin1String("quat")
+                                      ? QStringList{r.output + QStringLiteral(".roll"),
+                                                    r.output + QStringLiteral(".pitch"),
+                                                    r.output + QStringLiteral(".yaw")}
+                                      : QStringList{r.output};
+        for (const QString &n : names)
+            if (!src->derived.contains(n))
+                src->derived.append(n);
+        reloadChannels(src);
+    }
+    if (!m_sourceStore->items().isEmpty())
+        refreshActiveSource();
+
+    // 清空页签时屏蔽 currentChanged：末尾的 ＋ 触发 newPage 会和删除循环互踢
+    m_pages->blockSignals(true);
+    while (m_pages->count() > 0)
+        m_pages->removeTab(0);
+    m_pages->blockSignals(false);
+
+    const QJsonArray pages = root.value(QStringLiteral("pages")).toArray();
+    const QJsonArray titles = root.value(QStringLiteral("titles")).toArray();
+    for (int i = 0; i < pages.size(); ++i)
+        m_pages->addTab(buildPage(pages[i].toObject()),
+                        titles.at(i).toString(QStringLiteral("页 %1").arg(i + 1)));
+
+    const int plusIdx = m_pages->count();
+    m_pages->addTab(new QWidget(m_pages), QStringLiteral("＋"));
+    m_pages->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
+    m_pages->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
+
+    const QByteArray geo = QByteArray::fromBase64(root.value(QStringLiteral("geometry")).toString().toLatin1());
+    if (!geo.isEmpty())
+        restoreGeometry(geo);
+    const QByteArray docks = QByteArray::fromBase64(root.value(QStringLiteral("docks")).toString().toLatin1());
+    if (!docks.isEmpty())
+    {
+        restoreState(docks);
+        // 旧布局常把日志区拉到 150+，空白挤占画布；恢复后统一收到 96。
+        if (auto *logDock = findChild<QDockWidget *>(QStringLiteral("dock.log")))
+            resizeDocks({logDock}, {96}, Qt::Vertical);
+    }
+
+    if (m_activeSource >= 0)
+        switchSource(m_activeSource);
+
+    m_timeMarkers.clear();
+    for (const QJsonValue &v : root.value(QStringLiteral("markers")).toArray())
+    {
+        const QJsonObject mo = v.toObject();
+        m_timeMarkers.append({mo.value(QStringLiteral("t")).toDouble(),
+                              mo.value(QStringLiteral("label")).toString()});
+    }
+    applyTimeMarkers();
+
+    const int cur = root.value(QStringLiteral("current")).toInt(0);
+    if (cur >= 0 && cur < m_pages->count() - 1)
+        m_pages->setCurrentIndex(cur);
+
+    const QJsonObject script = root.value(QStringLiteral("script")).toObject();
+    if (!script.isEmpty())
+    {
+        if (m_script)
+            m_script->setPlainText(script.value(QStringLiteral("source")).toString());
+        const QJsonArray binds = script.value(QStringLiteral("inputs")).toArray();
+        for (int i = 0; i < 4; ++i)
+        {
+            QComboBox *cb = m_scriptInputs[i];
+            if (!cb)
+                continue;
+            cb->clear();
+            cb->addItem(QStringLiteral("（未绑定）"), QString());
+            const QString name = binds.at(i).toString();
+            if (!name.isEmpty())
+                cb->addItem(name, name);
+            cb->setCurrentIndex(name.isEmpty() ? 0 : 1);
+        }
+        const QJsonObject paramObj = script.value(QStringLiteral("params")).toObject();
+        if (m_scriptParams)
+        {
+            m_scriptParams->setRowCount(0);
+            for (auto it = paramObj.begin(); it != paramObj.end(); ++it)
+            {
+                const int row = m_scriptParams->rowCount();
+                m_scriptParams->insertRow(row);
+                m_scriptParams->setItem(row, 0, new QTableWidgetItem(it.key()));
+                m_scriptParams->setItem(row, 1, new QTableWidgetItem(
+                    QString::number(it.value().toDouble(), 'g', 10)));
+            }
+        }
+        if (!m_script->toPlainText().trimmed().isEmpty())
+            runScript(false);
+    }
+
+    QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
+    log(QStringLiteral("已导入布局：%1").arg(path));
+}
+
+void MainWindow::clearParseCache() { DatasetCache::clear(); }
+
+void MainWindow::initSourceRuntime() { if (!m_sourceStore) m_sourceStore = new ps::data_source::SourceStore; }
+
+MainWindow::~MainWindow() { delete m_sourceStore; m_sourceStore = nullptr; }
