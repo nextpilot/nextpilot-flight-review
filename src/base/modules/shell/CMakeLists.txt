@@ -21,8 +21,6 @@ target_include_directories(ps_base_shell PRIVATE
 target_link_libraries(ps_base_shell PUBLIC
   ps_host
   ps_kernel
-  ps_cache
-  ps_live
   ps_base_data_source
   ps_base_plot
   Qt6::Widgets
