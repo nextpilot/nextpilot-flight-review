@@ -1,16 +1,16 @@
 #pragma once
-/* 过渡适配：把旧 PsLoaderVtable 包成统一 DataInput vtable。
+/* 过渡适配：把旧 PsLoaderVtable 包成统一 DataSource vtable。
  * 文件解析仍在原 loader 内，宿主只看到 PS_INPUT_FILE 能力。 */
 
 #include "ps_extension_api.h"
-#include "PsDataInputBase.hpp"
+#include "PsDataSourceBase.hpp"
 
 #include <cstdio>
 #include <cstring>
 #include <string>
 
 template <const PsLoaderVtable *V>
-class LegacyFileInput final : public ps::DataInputBase
+class LegacyFileInput final : public ps::DataSourceBase
 {
 public:
     LegacyFileInput()

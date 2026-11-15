@@ -17,7 +17,7 @@ src/extensions/dynamic/
   data_source/   # 实时源：MAVLink / 仿真
 ```
 
-- 描述符必须声明 `family` 与 `capabilities`；`DataSourceRegistry` 只收 `PS_FAMILY_DATA_LOADER / DATA_SOURCE / DATA_INPUT`。
+- 描述符必须声明 `family` 与 `capabilities`；`DataSourceRegistry` 只收 `PS_FAMILY_DATA_LOADER / LIVE_SOURCE / DATA_SOURCE`。
 - 数据面只走 `src/extensions/dynamic/api/ps_extension_api.h` 的 C 契约：`schema_json / probe_json / default_options / params_json / load`。
 - 扩展不得直接链接 `ps_kernel`。`load/open` 会收到 `const PsHostApi*`，只能通过 `dataset_new / dataset_add_channel / dataset_free` 写数据集；跨 Windows/Linux 同一套宿主表语义。
 - **格式解析属于扩展**：每个 loader 自带 `*Parser.{h,cpp}`，只通过宿主函数表写内核。

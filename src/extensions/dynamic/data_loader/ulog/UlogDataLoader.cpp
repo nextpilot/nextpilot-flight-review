@@ -63,16 +63,16 @@ const PsLoaderVtable kUlogLoader = {
     ulogLoad,
 };
 
-const PsDataInputVtable *ulogInputVtable()
+const PsDataSourceVtable *ulogInputVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kUlogLoader>>(R"({"id":"data_loader_ulog","name":"ULog","version":"1.0.0","sdk":"1.0","kind":"file"})");
+    static const PsDataSourceVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kUlogLoader>>(R"({"id":"data_loader_ulog","name":"ULog","version":"1.0.0","sdk":"1.0","kind":"file"})");
     return &vt;
 }
 
 const PsExtensionDescriptor kUlogExtension = {
     PS_EXTENSION_ABI_VERSION,
-    R"({"id":"data_loader_ulog","name":"ULog","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","entry":"ps_extension_entry_data_loader_ulog"})",
-    PS_FAMILY_DATA_INPUT,
+    R"({"id":"data_loader_ulog","name":"ULog","version":"1.0.0","sdk":"1.0","family":"data_source","kind":"file","entry":"ps_extension_entry_data_loader_ulog"})",
+    PS_FAMILY_DATA_SOURCE,
     PS_CAP_FILE | PS_CAP_PARAMS | PS_CAP_CACHE,
     &kUlogLoader,
     nullptr,

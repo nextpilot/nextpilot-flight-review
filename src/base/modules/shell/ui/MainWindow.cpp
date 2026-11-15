@@ -1203,17 +1203,12 @@ void MainWindow::createDocks()
         dock->setVisible(spec.visible);
     }
 
-    QDockWidget *propDock = findChild<QDockWidget *>(QStringLiteral("dock.prop"));
-    QDockWidget *treeDock = findChild<QDockWidget *>(QStringLiteral("dock.tree"));
-    QDockWidget *scriptDock = findChild<QDockWidget *>(QStringLiteral("dock.script"));
     QDockWidget *logDock = findChild<QDockWidget *>(QStringLiteral("dock.log"));
-    if (propDock && treeDock)
-        splitDockWidget(propDock, treeDock, Qt::Vertical);
-    if (propDock && scriptDock)
-        resizeDocks({propDock, scriptDock}, {470, 330}, Qt::Vertical);
     if (logDock)
         resizeDocks({logDock}, {96}, Qt::Vertical);
-    refreshSrcCount();
+    for (const auto &spec : m_extensions.registry().docks())
+        if (spec.layout)
+            spec.layout(this);
 }
 
 void MainWindow::toggleDockMax(QDockWidget *dock)

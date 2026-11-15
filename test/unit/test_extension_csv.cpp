@@ -15,7 +15,7 @@ int main()
 {
     const PsExtensionDescriptor *desc = ps_extension_entry_data_loader_csv();
     assert(desc && desc->abi_version == PS_EXTENSION_ABI_VERSION);
-    assert(desc->family == PS_FAMILY_DATA_INPUT);
+    assert(desc->family == PS_FAMILY_DATA_SOURCE);
     assert(desc->capabilities & PS_CAP_CACHE);
     assert(desc->loader && std::strcmp(desc->loader->id, "data_loader_csv") == 0);
     assert(std::strcmp(desc->loader->extensions, ".csv,.tsv,.txt") == 0);
@@ -54,11 +54,11 @@ int main()
     ps_dataset_free(ds);
 
     // 统一 ABI 的 import_file 路径：宿主只看 PS_INPUT_FILE，不再分 loader 族。
-    const PsDataInputVtable *vt = desc->data_input;
+    const PsDataSourceVtable *vt = desc->data_source;
     assert(vt && vt->import_file);
     void *ctx = vt->create();
     assert(ctx);
-    PsDataInputServices services{};
+    PsDataSourceServices services{};
     services.abi_version = PS_HOST_API_VERSION;
     services.host = ps_host_api();
     PsError pe{};

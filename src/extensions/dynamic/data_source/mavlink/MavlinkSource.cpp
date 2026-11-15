@@ -1,5 +1,5 @@
 #include "ps_extension_api.h"
-#include "PsDataInputBase.hpp"
+#include "PsDataSourceBase.hpp"
 #include "PsCaptureFormat.h"
 
 #include <QByteArray>
@@ -541,7 +541,7 @@ int32_t defaults(char *out, uint32_t cap) { return writeJson(kDefaults, out, cap
 
 } // namespace
 
-class MavInput final : public ps::DataInputBase
+class MavInput final : public ps::DataSourceBase
 {
 public:
     uint64_t capabilities() const override
@@ -653,9 +653,9 @@ private:
 };
 
 namespace {
-const PsDataInputVtable *mavVtable()
+const PsDataSourceVtable *mavVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<MavInput>(R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_input","file_extensions":[".mav",".bin",".dat",".log",".tlog"]})");
+    static const PsDataSourceVtable vt = ps::VtableBuilder::make<MavInput>(R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_source","file_extensions":[".mav",".bin",".dat",".log",".tlog"]})");
     return &vt;
 }
 } // namespace
@@ -665,8 +665,8 @@ extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_mavlink()
 {
     static const PsExtensionDescriptor desc = {
         PS_EXTENSION_ABI_VERSION,
-        R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_input","file_extensions":[".mav",".bin",".dat",".log",".tlog"]})",
-        PS_FAMILY_DATA_INPUT,
+        R"({"id":"data_source_mavlink","name":"MAVLink 遥测","version":"1.0.0","kind":"telemetry","transport":"udp","family":"data_source","file_extensions":[".mav",".bin",".dat",".log",".tlog"]})",
+        PS_FAMILY_DATA_SOURCE,
         0,
         nullptr,
         nullptr,

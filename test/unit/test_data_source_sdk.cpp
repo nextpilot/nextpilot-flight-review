@@ -1,11 +1,11 @@
-#include "PsDataInputBase.hpp"
+#include "PsDataSourceBase.hpp"
 
 #include <cassert>
 #include <cstring>
 
 namespace {
 
-class DemoInput final : public ps::DataInputBase
+class DemoInput final : public ps::DataSourceBase
 {
 public:
     uint64_t capabilities() const override
@@ -73,21 +73,21 @@ private:
 
 } // namespace
 
-PS_DATA_INPUT_EXTENSION(DemoInput, R"({"id":"demo_input","name":"Demo Input","version":"1.0.0","file_extensions":[".demo"]})")
+PS_DATA_SOURCE_EXTENSION(DemoInput, R"({"id":"demo_input","name":"Demo Input","version":"1.0.0","file_extensions":[".demo"]})")
 
 int main()
 {
-    const PsDataInputVtable *vt = ps_get_data_input_vtable();
+    const PsDataSourceVtable *vt = ps_get_data_source_vtable();
     assert(vt);
-    assert(vt->protocol_version == PS_DATA_INPUT_PROTOCOL_VERSION);
-    assert(vt->struct_size == sizeof(PsDataInputVtable));
+    assert(vt->protocol_version == PS_DATA_SOURCE_PROTOCOL_VERSION);
+    assert(vt->struct_size == sizeof(PsDataSourceVtable));
     assert(vt->manifest_json && std::strstr(vt->manifest_json, "demo_input"));
 
     void *ctx = vt->create();
     assert(ctx);
     assert(vt->capabilities(ctx) == (PS_INPUT_FILE | PS_INPUT_STREAM | PS_INPUT_DIALOG | PS_INPUT_COMMAND));
 
-    PsDataInputServices services{};
+    PsDataSourceServices services{};
     services.abi_version = PS_HOST_API_VERSION;
     PsError err{};
     assert(vt->bind(ctx, services, &err));

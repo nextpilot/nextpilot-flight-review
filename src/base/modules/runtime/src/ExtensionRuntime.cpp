@@ -96,7 +96,7 @@ const char *descriptorId(const PsExtensionDescriptor *d)
 bool descriptorOk(const PsExtensionDescriptor *d)
 {
     if (!d || d->abi_version != PS_EXTENSION_ABI_VERSION || !d->manifest_json ||
-        d->family < PS_FAMILY_DATA_LOADER || d->family > PS_FAMILY_DATA_INPUT)
+        d->family < PS_FAMILY_DATA_LOADER || d->family > PS_FAMILY_DATA_SOURCE)
         return false;
     if (d->ui && d->ui->abi_version != PS_EXTENSION_ABI_VERSION)
         return false;
@@ -105,16 +105,16 @@ bool descriptorOk(const PsExtensionDescriptor *d)
         return d->loader && d->loader->abi_version == PS_EXTENSION_ABI_VERSION && d->loader->id &&
                d->loader->id[0] && d->loader->load;
     }
-    if (d->family == PS_FAMILY_DATA_SOURCE)
+    if (d->family == PS_FAMILY_LIVE_SOURCE)
     {
         return d->source && d->source->abi_version == PS_EXTENSION_ABI_VERSION && d->source->id &&
                d->source->id[0] && d->source->open && d->source->poll && d->source->close;
     }
-    if (d->family == PS_FAMILY_DATA_INPUT)
+    if (d->family == PS_FAMILY_DATA_SOURCE)
     {
-        const PsDataInputVtable *v = d->data_input;
-        return v && v->protocol_version == PS_DATA_INPUT_PROTOCOL_VERSION &&
-               v->struct_size >= sizeof(PsDataInputVtable) && v->create && v->destroy &&
+        const PsDataSourceVtable *v = d->data_source;
+        return v && v->protocol_version == PS_DATA_SOURCE_PROTOCOL_VERSION &&
+               v->struct_size >= sizeof(PsDataSourceVtable) && v->create && v->destroy &&
                v->capabilities && v->start && v->stop && v->poll && v->current_state;
     }
     return d->capabilities != 0;

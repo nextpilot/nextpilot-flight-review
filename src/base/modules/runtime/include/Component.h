@@ -81,6 +81,7 @@ struct DockContribution
     QString icon; // 资源路径，空时由宿主给默认图标
     // 返回 QDockWidget 或内容控件；为空表示该贡献不可构造。
     std::function<QWidget *(QWidget *parent)> create;
+    std::function<void(QWidget *parent)> layout; // 所有 Dock 创建完成后调用，模块自己排布
 };
 
 // 通用业务对话框：宿主只按 id 创建，不认识具体对话框类型。

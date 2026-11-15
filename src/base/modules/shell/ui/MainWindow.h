@@ -17,7 +17,6 @@ struct PsChannelInfo;
 class SARibbonBar;
 class SARibbonPanel;
 
-class LiveSession;
 class CanvasWidget;
 namespace ps::plot { class PlotWorkspace; }
 namespace ps::data_source { class DataSourceDock; }
@@ -61,6 +60,7 @@ public:
     void dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area);
     void collapseDockWidget(QDockWidget *dock);
     void showDockMenu(QToolButton *btn, QMenu *menu);
+    void refreshSourceCount();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

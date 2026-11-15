@@ -87,16 +87,16 @@ const PsLoaderVtable kBlfLoader = {
     blfLoad,
 };
 
-const PsDataInputVtable *blfInputVtable()
+const PsDataSourceVtable *blfInputVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kBlfLoader>>(R"({"id":"data_loader_blf","name":"BLF","version":"1.0.0","sdk":"1.0","kind":"file"})");
+    static const PsDataSourceVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kBlfLoader>>(R"({"id":"data_loader_blf","name":"BLF","version":"1.0.0","sdk":"1.0","kind":"file"})");
     return &vt;
 }
 
 const PsExtensionDescriptor kBlfExtension = {
     PS_EXTENSION_ABI_VERSION,
-    R"({"id":"data_loader_blf","name":"BLF","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","entry":"ps_extension_entry_data_loader_blf"})",
-    PS_FAMILY_DATA_INPUT,
+    R"({"id":"data_loader_blf","name":"BLF","version":"1.0.0","sdk":"1.0","family":"data_source","kind":"file","entry":"ps_extension_entry_data_loader_blf"})",
+    PS_FAMILY_DATA_SOURCE,
     PS_CAP_FILE | PS_CAP_CACHE,
     &kBlfLoader,
     nullptr,

@@ -123,8 +123,8 @@ int main()
 {
     const PsExtensionDescriptor *desc = ps_extension_entry_data_load_mcap();
     assert(desc && desc->abi_version == PS_EXTENSION_ABI_VERSION);
-    assert(desc->family == PS_FAMILY_DATA_INPUT);
-    const PsDataInputVtable *vt = desc->data_input;
+    assert(desc->family == PS_FAMILY_DATA_SOURCE);
+    const PsDataSourceVtable *vt = desc->data_source;
     assert(vt && vt->import_file);
 
     const auto path = std::filesystem::temp_directory_path() / "ps_mcap_loader_test.mcap";
@@ -132,7 +132,7 @@ int main()
 
     void *ctx = vt->create();
     assert(ctx);
-    PsDataInputServices services{};
+    PsDataSourceServices services{};
     services.abi_version = PS_HOST_API_VERSION;
     services.host = ps_host_api();
     PsError pe{};

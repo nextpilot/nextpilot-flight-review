@@ -355,16 +355,16 @@ const PsLoaderVtable kRosbag2Loader = {
     loadRosbag2,
 };
 
-const PsDataInputVtable *rosbag2InputVtable()
+const PsDataSourceVtable *rosbag2InputVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kRosbag2Loader>>(R"({"id":"data_loader_rosbag2","name":"ROS2 bag","version":"1.0.0","sdk":"1.0","kind":"file"})");
+    static const PsDataSourceVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kRosbag2Loader>>(R"({"id":"data_loader_rosbag2","name":"ROS2 bag","version":"1.0.0","sdk":"1.0","kind":"file"})");
     return &vt;
 }
 
 const PsExtensionDescriptor kRosbag2Extension = {
     PS_EXTENSION_ABI_VERSION,
-    R"({"id":"data_loader_rosbag2","name":"ROS2 bag","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","entry":"ps_extension_entry_data_loader_rosbag2"})",
-    PS_FAMILY_DATA_INPUT,
+    R"({"id":"data_loader_rosbag2","name":"ROS2 bag","version":"1.0.0","sdk":"1.0","family":"data_source","kind":"file","entry":"ps_extension_entry_data_loader_rosbag2"})",
+    PS_FAMILY_DATA_SOURCE,
     PS_CAP_FILE | PS_CAP_CACHE,
     &kRosbag2Loader,
     nullptr,

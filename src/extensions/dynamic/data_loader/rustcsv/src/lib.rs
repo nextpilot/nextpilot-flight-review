@@ -253,7 +253,7 @@ static EXTENSION: PsExtensionDescriptor = PsExtensionDescriptor {
     loader: &LOADER,
     ui: std::ptr::null(),
     source: std::ptr::null(),
-    data_input: std::ptr::null(),
+    data_source: std::ptr::null(),
     protocol: std::ptr::null(),
 };
 

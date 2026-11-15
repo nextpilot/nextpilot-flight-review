@@ -7,11 +7,11 @@ use std::os::raw::c_char;
 pub const PS_EXTENSION_ABI_VERSION: u32 = 7;
 pub const PS_HOST_API_VERSION: u32 = 1;
 pub const PS_FAMILY_DATA_LOADER: u32 = 1;
-pub const PS_FAMILY_DATA_SOURCE: u32 = 2;
+pub const PS_FAMILY_LIVE_SOURCE: u32 = 2;
 pub const PS_FAMILY_PARSER: u32 = 3;
 pub const PS_FAMILY_TOOLBOX: u32 = 4;
 pub const PS_FAMILY_PANEL: u32 = 5;
-pub const PS_FAMILY_DATA_INPUT: u32 = 6;
+pub const PS_FAMILY_DATA_SOURCE: u32 = 6;
 
 pub const PS_CAP_FILE: u32 = 1 << 0;
 pub const PS_CAP_PROBE: u32 = 1 << 1;
@@ -158,7 +158,7 @@ pub struct PsExtensionDescriptor {
     pub loader: *const PsLoaderVtable,
     pub ui: *const PsUiVtable,
     pub source: *const PsDataSourceVtable,
-    pub data_input: *const c_void,
+    pub data_source: *const c_void,
     pub protocol: *const PsProtocolVtable,
 }
 

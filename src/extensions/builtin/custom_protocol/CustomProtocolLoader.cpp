@@ -840,9 +840,9 @@ const PsLoaderVtable kFrameLoader = {
     loadFrame,
 };
 
-const PsDataInputVtable *frameInputVtable()
+const PsDataSourceVtable *frameInputVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kFrameLoader>>(R"({"id":"data_loader_custom_protocol","name":"自定义协议","version":"1.0.0","sdk":"1.0","kind":"file"})");
+    static const PsDataSourceVtable vt = ps::VtableBuilder::make<LegacyFileInput<&kFrameLoader>>(R"({"id":"data_loader_custom_protocol","name":"自定义协议","version":"1.0.0","sdk":"1.0","kind":"file"})");
     return &vt;
 }
 
@@ -894,8 +894,8 @@ const PsProtocolVtable kFrameProtocol = {
 
 const PsExtensionDescriptor kFrameLoaderDescriptor = {
     PS_EXTENSION_ABI_VERSION,
-    R"({"id":"data_loader_custom_protocol","name":"自定义协议","version":"1.0.0","sdk":"1.0","family":"data_input","kind":"file","component":"protocol.frame"})",
-    PS_FAMILY_DATA_INPUT,
+    R"({"id":"data_loader_custom_protocol","name":"自定义协议","version":"1.0.0","sdk":"1.0","family":"data_source","kind":"file","component":"protocol.frame"})",
+    PS_FAMILY_DATA_SOURCE,
     PS_CAP_FILE | PS_CAP_CACHE,
     &kFrameLoader,
     nullptr,

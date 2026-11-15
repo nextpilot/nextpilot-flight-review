@@ -20,7 +20,7 @@ class QTableWidget;
 class QVBoxLayout;
 class QWidget;
 
-// 数据输入统一配置框：DataInput = Transport + Parser(s) + Options。
+// 数据输入统一配置框：DataSource = Transport + Parser(s) + Options。
 //   Transport 由 APP 按 supported/defaultURI 渲染，扩展只声明支持哪些、默认值；
 //   Parser 由扩展 schema 提供字段，可多选，每个 parser 展示自己的配置。
 class DataSourceDialog : public QDialog
@@ -34,7 +34,7 @@ public:
     // 兼容旧 DataSourceEntry::open 的单 parser 扁平配置。
     QString optionsJson() const;
     QString configJson() const { return optionsJson(); }
-    // 新的 DataInput 模型：transport 对象 + parsers 数组。
+    // 新的 DataSource 模型：transport 对象 + parsers 数组。
     QString dataInputJson() const;
 
     QString primaryParserId() const;

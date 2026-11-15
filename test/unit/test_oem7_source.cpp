@@ -115,8 +115,8 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     const auto *d = ps_extension_entry_data_source_oem7();
-    assert(d && d->family == PS_FAMILY_DATA_INPUT && d->data_input);
-    const PsDataInputVtable *v = d->data_input;
+    assert(d && d->family == PS_FAMILY_DATA_SOURCE && d->data_source);
+    const PsDataSourceVtable *v = d->data_source;
     void *probe = v->create();
     assert(probe);
     const uint64_t caps = v->capabilities(probe);
@@ -136,7 +136,7 @@ int main(int argc, char **argv)
     PsSourceSink ps{&sink, onBatch, onEvent};
     void *h = v->create();
     assert(h);
-    PsDataInputServices services{};
+    PsDataSourceServices services{};
     services.abi_version = PS_HOST_API_VERSION;
     services.host = ps_host_api();
     services.sink = &ps;

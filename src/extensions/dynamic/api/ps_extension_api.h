@@ -14,7 +14,7 @@ extern "C" {
 
 #define PS_EXTENSION_ABI_VERSION 7u
 #define PS_HOST_API_VERSION 1u
-#define PS_DATA_INPUT_PROTOCOL_VERSION 3u
+#define PS_DATA_SOURCE_PROTOCOL_VERSION 3u
 
 #if defined(_WIN32)
 #define PS_EXTENSION_EXPORT __declspec(dllexport)
@@ -26,11 +26,11 @@ extern "C" {
 
 /* 扩展 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
-#define PS_FAMILY_DATA_SOURCE 2u   /* 实时源：MAVLink/ROS/OEM7/串口 */
+#define PS_FAMILY_LIVE_SOURCE 2u   /* 实时源：MAVLink/ROS/OEM7/串口 */
 #define PS_FAMILY_PARSER      3u   /* 消息解析：DBC/MAVLink/RTCM */
 #define PS_FAMILY_TOOLBOX     4u   /* 算子/分析工具 */
 #define PS_FAMILY_PANEL        5u   /* 面板/可视化扩展 */
-#define PS_FAMILY_DATA_INPUT   6u   /* 统一数据输入：文件/流同一族，替代 loader + source */
+#define PS_FAMILY_DATA_SOURCE 6u   /* 统一数据源：文件/流同一族，替代 loader + live source */
 
 /* 能力位：宿主据此决定显示哪些入口、是否写缓存。 */
 #define PS_CAP_FILE      (1u << 0)
@@ -139,15 +139,15 @@ typedef struct PsInputDialog {
 } PsInputDialog;
 
 /* 宿主服务在 bind() 一次性注入。sink/host 生命周期覆盖整个实例。 */
-typedef struct PsDataInputServices {
+typedef struct PsDataSourceServices {
     uint32_t abi_version;
     const PsHostApi *host;
     const PsSourceSink *sink;
-} PsDataInputServices;
+} PsDataSourceServices;
 
-typedef struct PsDataInputVtable {
-    uint32_t protocol_version;   /* = PS_DATA_INPUT_PROTOCOL_VERSION */
-    uint32_t struct_size;        /* = sizeof(PsDataInputVtable) */
+typedef struct PsDataSourceVtable {
+    uint32_t protocol_version;   /* = PS_DATA_SOURCE_PROTOCOL_VERSION */
+    uint32_t struct_size;        /* = sizeof(PsDataSourceVtable) */
 
     void *(*create)(void);       /* 扩展内 new，返回 opaque ctx */
     void (*destroy)(void *ctx);  /* 扩展内 delete，与 create 配对 */
@@ -156,7 +156,7 @@ typedef struct PsDataInputVtable {
 
     uint64_t (*capabilities)(void *ctx);
 
-    bool (*bind)(void *ctx, PsDataInputServices services, PsError *err);
+    bool (*bind)(void *ctx, PsDataSourceServices services, PsError *err);
 
     bool (*save_config)(void *ctx, PsStringView *out_json, PsError *err);
     bool (*load_config)(void *ctx, PsStringView config_json, PsError *err);
@@ -183,12 +183,12 @@ typedef struct PsDataInputVtable {
     int32_t (*feed_raw)(void *ctx, const char *topic, const char *encoding,
                         int64_t timestamp_ns, const uint8_t *data, uint32_t size,
                         char *err, uint32_t err_cap);
-} PsDataInputVtable;
+} PsDataSourceVtable;
 
 
 /* 实时源：不返回 QWidget*，不持有宿主 UI。config 用 JSON，status 用 JSON。
  * open 成功后 handle 归扩展所有，close 必须释放；poll 在宿主 UI 线程调用。 */
-typedef struct PsDataSourceVtable {
+typedef struct PsLiveSourceVtable {
     uint32_t abi_version;
     const char *id;
     const char *label;
@@ -211,7 +211,7 @@ typedef struct PsDataSourceVtable {
     int32_t (*feed_raw)(void *handle, const char *topic, const char *encoding,
                         int64_t timestamp_ns, const uint8_t *data, uint32_t size,
                         char *err, uint32_t err_cap);
-} PsDataSourceVtable;
+} PsLiveSourceVtable;
 
 /* 扩展 UI：只交 .ui 文件和 JSON，绝不返回 QWidget*。
  * dialog_ui 相对扩展包目录；panels_json/ribbon_json 为贡献声明，可为 NULL。 */
@@ -246,8 +246,8 @@ typedef struct PsExtensionDescriptor {
     uint32_t capabilities;     /* PS_CAP_* 位或 */
     const PsLoaderVtable *loader;   /* data_loader 家族使用，其他家族可为 NULL */
     const PsUiVtable *ui;           /* 可选；无自定义 UI 时为 NULL */
-    const PsDataSourceVtable *source; /* data_source 家族使用，其他家族可为 NULL */
-    const PsDataInputVtable *data_input; /* PS_FAMILY_DATA_INPUT 使用，过渡期可为 NULL */
+    const PsLiveSourceVtable *source; /* data_source 家族使用，其他家族可为 NULL */
+    const PsDataSourceVtable *data_source; /* PS_FAMILY_DATA_SOURCE 使用，过渡期可为 NULL */
     const PsProtocolVtable *protocol;    /* 可选：同一扩展可额外贡献协议 */
 } PsExtensionDescriptor;
 

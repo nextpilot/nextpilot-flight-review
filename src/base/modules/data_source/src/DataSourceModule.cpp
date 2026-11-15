@@ -112,7 +112,14 @@ void registerDataSourceContributions(Registry &registry)
                                       QStringLiteral(":/icons/datasource.svg"),
                                       [](QWidget *parent) -> QWidget * {
                                           auto *mw = qobject_cast<MainWindow *>(parent);
-                                          return mw ? mw->createDataSourceDock(parent, QStringLiteral(":/icons/datasource.svg")) : nullptr;
+                                          auto *d = mw ? mw->createDataSourceDock(parent, QStringLiteral(":/icons/datasource.svg")) : nullptr;
+                                          if (mw) mw->refreshSourceCount();
+                                          return d;
+                                      },
+                                      [](QWidget *parent) {
+                                          auto *mw = qobject_cast<MainWindow *>(parent);
+                                          auto *dock = mw ? mw->findChild<QDockWidget *>(QStringLiteral("dock.src")) : nullptr;
+                                          if (dock) mw->resizeDocks({dock}, {470}, Qt::Vertical);
                                       }});
 
     registry.addRibbon(RibbonContribution{QStringLiteral("数据"), {}, {},
@@ -1373,3 +1380,5 @@ void MainWindow::clearParseCache() { DatasetCache::clear(); }
 void MainWindow::initSourceRuntime() { if (!m_sourceStore) m_sourceStore = new ps::data_source::SourceStore; }
 
 MainWindow::~MainWindow() { delete m_sourceStore; m_sourceStore = nullptr; }
+
+void MainWindow::refreshSourceCount() { refreshSrcCount(); }

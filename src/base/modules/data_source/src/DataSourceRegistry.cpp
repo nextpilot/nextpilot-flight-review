@@ -177,11 +177,11 @@ bool DataSourceRegistry::registerDescriptor(const PsExtensionDescriptor *desc, c
         return true;
     }
 
-    if (desc->family == PS_FAMILY_DATA_INPUT)
+    if (desc->family == PS_FAMILY_DATA_SOURCE)
     {
-        const PsDataInputVtable *v = desc->data_input;
-        if (!v || v->protocol_version != PS_DATA_INPUT_PROTOCOL_VERSION ||
-            v->struct_size < sizeof(PsDataInputVtable) || !v->create || !v->destroy ||
+        const PsDataSourceVtable *v = desc->data_source;
+        if (!v || v->protocol_version != PS_DATA_SOURCE_PROTOCOL_VERSION ||
+            v->struct_size < sizeof(PsDataSourceVtable) || !v->create || !v->destroy ||
             !v->capabilities || !v->start || !v->stop || !v->poll || !v->current_state)
             return false;
 
@@ -209,7 +209,7 @@ bool DataSourceRegistry::registerDescriptor(const PsExtensionDescriptor *desc, c
                 p.id = QString::fromUtf8(legacy->id);
                 p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
                 p.cacheNamespace = p.id + QLatin1Char('@') + p.version;
-                p.family = QStringLiteral("data_input");
+                p.family = QStringLiteral("data_source");
                 p.label = QString::fromUtf8(legacy->label);
                 p.filter = QString::fromUtf8(legacy->filter);
                 for (const QString &e : QString::fromUtf8(legacy->extensions).split(QLatin1Char(','), Qt::SkipEmptyParts))
@@ -223,7 +223,7 @@ bool DataSourceRegistry::registerDescriptor(const PsExtensionDescriptor *desc, c
                 p.id = manifestId;
                 p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
                 p.cacheNamespace = p.id + QLatin1Char('@') + p.version;
-                p.family = QStringLiteral("data_input");
+                p.family = QStringLiteral("data_source");
                 p.label = manifest.value(QStringLiteral("name")).toString(manifestId);
                 QStringList exts;
                 for (const QJsonValue &e : manifest.value(QStringLiteral("file_extensions")).toArray())
@@ -290,7 +290,7 @@ bool DataSourceRegistry::registerDescriptor(const PsExtensionDescriptor *desc, c
             p.load = [v](const QString &path, const QString &opts, PsDataset **ds,
                          char *err, unsigned int errCap) {
                 PsError pe{};
-                PsDataInputServices services{};
+                PsDataSourceServices services{};
                 services.abi_version = PS_HOST_API_VERSION;
                 services.host = ps_host_api();
                 void *ctx = v->create();
@@ -344,7 +344,7 @@ bool DataSourceRegistry::registerDescriptor(const PsExtensionDescriptor *desc, c
                 if (err) *err = QStringLiteral("create 失败");
                 return 1;
             }
-            PsDataInputServices services{};
+            PsDataSourceServices services{};
             services.abi_version = PS_HOST_API_VERSION;
             services.host = ps_host_api();
             services.sink = sink;
@@ -424,9 +424,9 @@ bool DataSourceRegistry::registerDescriptor(const PsExtensionDescriptor *desc, c
         return true;
     }
 
-    if (desc->family == PS_FAMILY_DATA_SOURCE)
+    if (desc->family == PS_FAMILY_LIVE_SOURCE)
     {
-        const PsDataSourceVtable *v = desc->source;
+        const PsLiveSourceVtable *v = desc->source;
         if (!v || v->abi_version != PS_EXTENSION_ABI_VERSION || !v->id || !v->id[0] || !v->open ||
             !v->poll || !v->close)
             return false;
@@ -509,8 +509,8 @@ QStringList DataSourceRegistry::registerLoadedExtensions()
         if (!p.descriptor)
             continue;
         if (p.descriptor->family != PS_FAMILY_DATA_LOADER &&
-            p.descriptor->family != PS_FAMILY_DATA_SOURCE &&
-            p.descriptor->family != PS_FAMILY_DATA_INPUT)
+            p.descriptor->family != PS_FAMILY_LIVE_SOURCE &&
+            p.descriptor->family != PS_FAMILY_DATA_SOURCE)
             continue;
         if (!registerDescriptor(p.descriptor, QString::fromStdString(p.packageDir)))
             errors << QStringLiteral("%1：数据输入扩展注册失败").arg(QString::fromStdString(p.library));

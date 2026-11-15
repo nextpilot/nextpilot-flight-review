@@ -1,5 +1,5 @@
 #include "ps_extension_api.h"
-#include "PsDataInputBase.hpp"
+#include "PsDataSourceBase.hpp"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -28,7 +28,7 @@ const char *kSchema = R"({
 
 const char *kDefaults = R"({"transport":"internal","rate_hz":50,"channels":3,"duration_s":0})";
 
-class SimInput final : public ps::DataInputBase
+class SimInput final : public ps::DataSourceBase
 {
 public:
     uint64_t capabilities() const override
@@ -169,9 +169,9 @@ private:
 } // namespace
 
 namespace {
-const PsDataInputVtable *simVtable()
+const PsDataSourceVtable *simVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<SimInput>(R"({"id":"data_source_sim","name":"实时仿真源","version":"1.0.0","kind":"sim","transport":"internal","family":"data_input"})");
+    static const PsDataSourceVtable vt = ps::VtableBuilder::make<SimInput>(R"({"id":"data_source_sim","name":"实时仿真源","version":"1.0.0","kind":"sim","transport":"internal","family":"data_source"})");
     return &vt;
 }
 } // namespace
@@ -181,8 +181,8 @@ extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_sim()
 {
     static const PsExtensionDescriptor desc = {
         PS_EXTENSION_ABI_VERSION,
-        R"({"id":"data_source_sim","name":"实时仿真源","version":"1.0.0","kind":"sim","transport":"internal","family":"data_input"})",
-        PS_FAMILY_DATA_INPUT,
+        R"({"id":"data_source_sim","name":"实时仿真源","version":"1.0.0","kind":"sim","transport":"internal","family":"data_source"})",
+        PS_FAMILY_DATA_SOURCE,
         0,
         nullptr,
         nullptr,

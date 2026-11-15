@@ -41,10 +41,10 @@ int main()
 {
     const PsExtensionDescriptor *d = ps_extension_entry_data_source_sim();
     assert(d && d->abi_version == PS_EXTENSION_ABI_VERSION);
-    assert(d->family == PS_FAMILY_DATA_INPUT && d->data_input);
-    const PsDataInputVtable *v = d->data_input;
-    assert(v->protocol_version == PS_DATA_INPUT_PROTOCOL_VERSION);
-    assert(v->struct_size >= sizeof(PsDataInputVtable));
+    assert(d->family == PS_FAMILY_DATA_SOURCE && d->data_source);
+    const PsDataSourceVtable *v = d->data_source;
+    assert(v->protocol_version == PS_DATA_SOURCE_PROTOCOL_VERSION);
+    assert(v->struct_size >= sizeof(PsDataSourceVtable));
 
     void *probe = v->create();
     assert(probe);
@@ -58,7 +58,7 @@ int main()
     PsSourceSink sink{&state, onBatch, onEvent};
     void *handle = v->create();
     assert(handle);
-    PsDataInputServices services{};
+    PsDataSourceServices services{};
     services.abi_version = PS_HOST_API_VERSION;
     services.host = ps_host_api();
     services.sink = &sink;

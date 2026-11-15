@@ -12,7 +12,6 @@ target_include_directories(ps_base_shell PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/base
   ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
-  ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
 )
 target_link_libraries(ps_base_shell PUBLIC
   ps_host

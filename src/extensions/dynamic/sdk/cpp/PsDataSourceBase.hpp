@@ -3,8 +3,8 @@
  * 不改 ps_extension_api.h 的布局，不引入 Qt / kernel 依赖。
  *
  * 用法：
- *   class MySource final : public ps::DataInputBase { ... };
- *   PS_DATA_INPUT_EXTENSION(MySource, R"({"id":"my_source",...})")
+ *   class MySource final : public ps::DataSourceBase { ... };
+ *   PS_DATA_SOURCE_EXTENSION(MySource, R"({"id":"my_source",...})")
  */
 
 #include "ps_extension_api.h"
@@ -40,10 +40,10 @@ inline std::string_view stringViewOf(PsStringView v) noexcept
     return v.data ? std::string_view(v.data, v.size) : std::string_view{};
 }
 
-class DataInputBase
+class DataSourceBase
 {
 public:
-    virtual ~DataInputBase() = default;
+    virtual ~DataSourceBase() = default;
 
     /* 必须实现：能力位决定宿主把它放进文件列表还是流列表。 */
     virtual uint64_t capabilities() const = 0;
@@ -127,14 +127,14 @@ public:
     }
 
 protected:
-    const PsDataInputServices &services() const { return services_; }
+    const PsDataSourceServices &services() const { return services_; }
     const PsHostApi *host() const { return services_.host; }
     const PsSourceSink *sink() const { return services_.sink; }
 
 private:
     friend struct VtableBuilder;
 
-    bool bindImpl(PsDataInputServices services, PsError *err)
+    bool bindImpl(PsDataSourceServices services, PsError *err)
     {
         services_ = services;
         return onBind(err);
@@ -146,7 +146,7 @@ private:
         return true;
     }
 
-    PsDataInputServices services_{};
+    PsDataSourceServices services_{};
     std::string save_buf_;
     std::string command_buf_;
 };
@@ -180,7 +180,7 @@ struct VtableBuilder
     }
 
     template <typename T>
-    static bool bindT(void *ctx, PsDataInputServices services, PsError *err) noexcept
+    static bool bindT(void *ctx, PsDataSourceServices services, PsError *err) noexcept
     {
         try {
             return static_cast<T *>(ctx)->bindImpl(services, err);
@@ -425,11 +425,11 @@ struct VtableBuilder
     }
 
     template <typename T>
-    static PsDataInputVtable make(const char *manifest)
+    static PsDataSourceVtable make(const char *manifest)
     {
-        return PsDataInputVtable{
-            PS_DATA_INPUT_PROTOCOL_VERSION,
-            sizeof(PsDataInputVtable),
+        return PsDataSourceVtable{
+            PS_DATA_SOURCE_PROTOCOL_VERSION,
+            sizeof(PsDataSourceVtable),
             &createT<T>,
             &destroyT<T>,
             manifest,
@@ -457,9 +457,9 @@ struct VtableBuilder
 } // namespace ps
 
 /* 在扩展 .cpp 末尾使用。 */
-#define PS_DATA_INPUT_EXTENSION(ClassName, manifest)                                      \
-    extern "C" const PsDataInputVtable *ps_get_data_input_vtable()                     \
+#define PS_DATA_SOURCE_EXTENSION(ClassName, manifest)                                      \
+    extern "C" const PsDataSourceVtable *ps_get_data_source_vtable()                     \
     {                                                                                   \
-        static const PsDataInputVtable vt = ::ps::VtableBuilder::make<ClassName>(manifest); \
+        static const PsDataSourceVtable vt = ::ps::VtableBuilder::make<ClassName>(manifest); \
         return &vt;                                                                     \
     }

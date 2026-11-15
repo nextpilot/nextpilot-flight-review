@@ -1,5 +1,5 @@
 #include "McapReader.h"
-#include "PsDataInputBase.hpp"
+#include "PsDataSourceBase.hpp"
 #include "PsLoaderCommon.h"
 
 #include <QByteArray>
@@ -17,7 +17,7 @@
 
 namespace {
 
-const char *kManifest = R"({"id":"data_load_mcap","name":"MCAP 记录","version":"1.0.0","kind":"record","family":"data_input","file_extensions":[".mcap"]})";
+const char *kManifest = R"({"id":"data_load_mcap","name":"MCAP 记录","version":"1.0.0","kind":"record","family":"data_source","file_extensions":[".mcap"]})";
 const char *kSchema = R"({
   "title":"MCAP 记录",
   "fields":[
@@ -91,7 +91,7 @@ void flattenJson(const QJsonValue &value, const QString &topic, const QString &p
     }
 }
 
-class McapInput final : public ps::DataInputBase
+class McapInput final : public ps::DataSourceBase
 {
 public:
     uint64_t capabilities() const override { return PS_INPUT_FILE | PS_INPUT_DIALOG; }
@@ -213,9 +213,9 @@ public:
     }
 };
 
-const PsDataInputVtable *mcapVtable()
+const PsDataSourceVtable *mcapVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<McapInput>(kManifest);
+    static const PsDataSourceVtable vt = ps::VtableBuilder::make<McapInput>(kManifest);
     return &vt;
 }
 
@@ -226,7 +226,7 @@ extern "C" const PsExtensionDescriptor *ps_extension_entry_data_load_mcap()
     static const PsExtensionDescriptor desc = {
         PS_EXTENSION_ABI_VERSION,
         kManifest,
-        PS_FAMILY_DATA_INPUT,
+        PS_FAMILY_DATA_SOURCE,
         0,
         nullptr,
         nullptr,

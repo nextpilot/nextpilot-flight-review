@@ -1,5 +1,5 @@
 #include "ps_extension_api.h"
-#include "PsDataInputBase.hpp"
+#include "PsDataSourceBase.hpp"
 #include "PsCaptureFormat.h"
 
 #include <QByteArray>
@@ -1184,7 +1184,7 @@ int32_t defaults(char *out, uint32_t cap) { return writeJson(kDefaults, out, cap
 
 } // namespace
 
-class OemInput final : public ps::DataInputBase
+class OemInput final : public ps::DataSourceBase
 {
 public:
     uint64_t capabilities() const override
@@ -1315,9 +1315,9 @@ private:
 };
 
 namespace {
-const PsDataInputVtable *oemVtable()
+const PsDataSourceVtable *oemVtable()
 {
-    static const PsDataInputVtable vt = ps::VtableBuilder::make<OemInput>(R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","kind":"gnss","transport":"tcp","family":"data_input","file_extensions":[".bin",".gps",".log",".dat",".psraw",".raw"]})");
+    static const PsDataSourceVtable vt = ps::VtableBuilder::make<OemInput>(R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","kind":"gnss","transport":"tcp","family":"data_source","file_extensions":[".bin",".gps",".log",".dat",".psraw",".raw"]})");
     return &vt;
 }
 } // namespace
@@ -1327,8 +1327,8 @@ extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_oem7()
 {
     static const PsExtensionDescriptor desc = {
         PS_EXTENSION_ABI_VERSION,
-        R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","kind":"gnss","transport":"tcp","family":"data_input","file_extensions":[".bin",".gps",".log",".dat",".psraw",".raw"]})",
-        PS_FAMILY_DATA_INPUT,
+        R"({"id":"data_source_oem7","name":"NovAtel OEM7","version":"1.0.0","kind":"gnss","transport":"tcp","family":"data_source","file_extensions":[".bin",".gps",".log",".dat",".psraw",".raw"]})",
+        PS_FAMILY_DATA_SOURCE,
         0,
         nullptr,
         nullptr,
