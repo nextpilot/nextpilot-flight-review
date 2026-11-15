@@ -1,3 +1,4 @@
+#include "MainWindow.h"
 #include "ShellComponent.h"
 
 #include <QString>
@@ -30,7 +31,7 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
 
     registry.addDock(DockContribution{QStringLiteral("dock.log"), QStringLiteral("日志"),
                                       Qt::BottomDockWidgetArea, true, 5,
-                                      QStringLiteral(":/icons/log.svg"), nullptr});
+                                      QStringLiteral(":/icons/log.svg"), [](QWidget *p){ auto *w=qobject_cast<MainWindow*>(p); return w?w->createDock(QStringLiteral("dock.log"), p):nullptr; }});
 
     registry.addRibbon(RibbonContribution{QStringLiteral("文件"), {}, {},
         {{QStringLiteral("文件"),

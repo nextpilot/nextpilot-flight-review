@@ -1,3 +1,4 @@
+#include "MainWindow.h"
 #include "PlotModule.h"
 
 namespace ps::components
@@ -31,10 +32,11 @@ void PlotComponent::contribute(Registry &registry, const HostContext &)
 void registerPlotContributions(Registry &registry)
 {
     registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
-                                      Qt::RightDockWidgetArea, true, 1, nullptr});
+                                      Qt::RightDockWidgetArea, true, 1,
+                                      QStringLiteral(":/icons/prop.svg"), [](QWidget *p){ auto *w=qobject_cast<MainWindow*>(p); return w?w->createDock(QStringLiteral("dock.prop"), p):nullptr; }});
     registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
                                       Qt::RightDockWidgetArea, true, 2,
-                                      QStringLiteral(":/icons/prop.svg"), nullptr});
+                                      QStringLiteral(":/icons/panel.svg"), [](QWidget *p){ auto *w=qobject_cast<MainWindow*>(p); return w?w->createDock(QStringLiteral("dock.tree"), p):nullptr; }});
     registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
         {{QStringLiteral("页面"),
              {{QStringLiteral("page.new"), QStringLiteral("新建页"), {}, true},

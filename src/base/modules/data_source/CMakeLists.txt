@@ -13,6 +13,11 @@ add_library(ps_base_data_source OBJECT
 )
 set_target_properties(ps_base_data_source PROPERTIES AUTOMOC ON)
 target_include_directories(ps_base_data_source PUBLIC
+  ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/base/modules/data_source/include
+  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/include
+  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/ui
+  ${PROJECT_SOURCE_DIR}/src/base/modules/shell/ui
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/base
   ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -20,6 +25,7 @@ target_include_directories(ps_base_data_source PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/services/live
   ${CMAKE_CURRENT_SOURCE_DIR}/services/cache
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
+
 )
 target_link_libraries(ps_base_data_source PUBLIC ps_host ps_live Qt6::Widgets)
 

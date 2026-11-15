@@ -1,3 +1,4 @@
+#include "MainWindow.h"
 #include "DataSourceModule.h"
 
 namespace ps::components
@@ -32,7 +33,7 @@ void registerDataSourceContributions(Registry &registry)
 {
     registry.addDock(DockContribution{QStringLiteral("dock.src"), QStringLiteral("数据源"),
                                       Qt::LeftDockWidgetArea, true, 0,
-                                      QStringLiteral(":/icons/datasource.svg"), nullptr});
+                                      QStringLiteral(":/icons/datasource.svg"), [](QWidget *p){ auto *w=qobject_cast<MainWindow*>(p); return w?w->createDock(QStringLiteral("dock.src"), p):nullptr; }});
 
     registry.addRibbon(RibbonContribution{QStringLiteral("数据"), {}, {},
         {{QStringLiteral("常用"),
