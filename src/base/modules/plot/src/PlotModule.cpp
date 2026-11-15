@@ -8,6 +8,19 @@
 #include <QTimer>
 #include "ps_kernel.h"
 #include <QInputDialog>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QCheckBox>
+#include <QFormLayout>
+#include <QPushButton>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QComboBox>
+#include <QColorDialog>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QMessageBox>
+static QString plotModeLabel(int mode);
 #include <QStandardPaths>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -674,4 +687,587 @@ void MainWindow::applyPlayhead(double t)
                 c->setTimeRange(t - span * 0.8, t + span * 0.2);
         }
     }
+}
+
+class SeriesEditDialog : public QDialog
+{
+public:
+    SeriesEditDialog(const QJsonObject &st, const QVector<const PsChannelInfo *> &channels,
+                     const QString &alias, QWidget *parent = nullptr)
+        : QDialog(parent), m_channels(channels), m_alias(alias)
+    {
+        setWindowTitle(QStringLiteral("曲线属性"));
+        resize(430, 340);
+        m_color = QColor(st.value(QStringLiteral("color")).toString());
+        if (!m_color.isValid())
+            m_color = QColor(QStringLiteral("#4ea1ff"));
+
+        auto *root = new QVBoxLayout(this);
+        auto *tabs = new QTabWidget(this);
+
+        // 曲线：线型 / 颜色 / 线宽 / 轴 / 可见
+        auto *curvePage = new QWidget(tabs);
+        auto *curveForm = new QFormLayout(curvePage);
+        m_label = new QLineEdit(st.value(QStringLiteral("label")).toString(), curvePage);
+        curveForm->addRow(QStringLiteral("图例"), m_label);
+        m_colorBtn = new QPushButton(curvePage);
+        m_colorBtn->setFixedHeight(24);
+        setColorButton();
+        connect(m_colorBtn, &QPushButton::clicked, this, [this] {
+            const QColor c = QColorDialog::getColor(m_color, this, QStringLiteral("曲线颜色"));
+            if (c.isValid())
+            {
+                m_color = c;
+                setColorButton();
+            }
+        });
+        curveForm->addRow(QStringLiteral("颜色"), m_colorBtn);
+        m_width = new QSpinBox(curvePage);
+        m_width->setRange(1, 6);
+        m_width->setSuffix(QStringLiteral(" px"));
+        m_width->setValue(st.value(QStringLiteral("width")).toInt(1));
+        curveForm->addRow(QStringLiteral("线宽"), m_width);
+        m_style = new QComboBox(curvePage);
+        m_style->addItem(QStringLiteral("实线"), 0);
+        m_style->addItem(QStringLiteral("虚线"), 1);
+        m_style->addItem(QStringLiteral("点线"), 2);
+        m_style->addItem(QStringLiteral("点划线"), 3);
+        m_style->setCurrentIndex(m_style->findData(st.value(QStringLiteral("style")).toInt(0)));
+        curveForm->addRow(QStringLiteral("线型"), m_style);
+        m_marker = new QComboBox(curvePage);
+        m_marker->addItem(QStringLiteral("无"), 0);
+        m_marker->addItem(QStringLiteral("圆点"), 1);
+        m_marker->addItem(QStringLiteral("方块"), 2);
+        m_marker->addItem(QStringLiteral("菱形"), 3);
+        m_marker->addItem(QStringLiteral("三角"), 4);
+        m_marker->addItem(QStringLiteral("十字"), 5);
+        m_marker->addItem(QStringLiteral("叉号"), 6);
+        m_marker->setCurrentIndex(m_marker->findData(st.value(QStringLiteral("marker")).toInt(0)));
+        curveForm->addRow(QStringLiteral("标记"), m_marker);
+        m_markerSize = new QSpinBox(curvePage);
+        m_markerSize->setRange(1, 12);
+        m_markerSize->setSuffix(QStringLiteral(" px"));
+        m_markerSize->setValue(st.value(QStringLiteral("markerSize")).toInt(5));
+        curveForm->addRow(QStringLiteral("标记大小"), m_markerSize);
+        m_axis = new QComboBox(curvePage);
+        m_axis->addItem(QStringLiteral("左 Y 轴"), 0);
+        m_axis->addItem(QStringLiteral("右 Y 轴"), 1);
+        m_axis->setCurrentIndex(st.value(QStringLiteral("axis")).toInt(0) == 1 ? 1 : 0);
+        curveForm->addRow(QStringLiteral("绑定轴"), m_axis);
+        m_visible = new QCheckBox(QStringLiteral("显示该曲线"), curvePage);
+        m_visible->setChecked(st.value(QStringLiteral("visible")).toBool(true));
+        curveForm->addRow(QStringLiteral("可见"), m_visible);
+        tabs->addTab(curvePage, QStringLiteral("曲线"));
+
+        // X 轴：时间偏移
+        auto *xPage = new QWidget(tabs);
+        auto *xForm = new QFormLayout(xPage);
+        m_offset = new QDoubleSpinBox(xPage);
+        m_offset->setRange(-1e6, 1e6);
+        m_offset->setDecimals(6);
+        m_offset->setSuffix(QStringLiteral(" s"));
+        m_offset->setValue(st.value(QStringLiteral("offset")).toDouble(0));
+        xForm->addRow(QStringLiteral("时间偏移"), m_offset);
+        auto *xNote = new QLabel(QStringLiteral("显示时间 = 原始时间 − 偏移；只改显示，不改原始数据。"), xPage);
+        xNote->setWordWrap(true);
+        xNote->setStyleSheet(QStringLiteral("color:#8494a0;"));
+        xForm->addRow(xNote);
+        tabs->addTab(xPage, QStringLiteral("X 轴"));
+
+        // Y 轴：换数据列 / 算子 / 脚本
+        auto *yPage = new QWidget(tabs);
+        auto *yForm = new QFormLayout(yPage);
+        m_column = new QComboBox(yPage);
+        const QString curName = st.value(QStringLiteral("name")).toString();
+        for (const PsChannelInfo *ch : m_channels)
+            if (ch)
+                m_column->addItem(QString::fromUtf8(ch->name),
+                                  QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
+        const int ci = m_column->findText(curName);
+        if (ci >= 0)
+            m_column->setCurrentIndex(ci);
+        yForm->addRow(QStringLiteral("数据列"), m_column);
+        m_transform = new QComboBox(yPage);
+        m_transform->addItem(QStringLiteral("原值（无变换）"), 0);
+        m_transform->addItem(QStringLiteral("微分 dv/dt"), 1);
+        m_transform->addItem(QStringLiteral("梯形积分"), 2);
+        m_transform->addItem(QStringLiteral("滑动平均"), 3);
+        m_transform->addItem(QStringLiteral("绝对值"), 4);
+        m_transform->addItem(QStringLiteral("归一化 0–1"), 5);
+        m_transform->addItem(QStringLiteral("Lua 脚本"), 6);
+        yForm->addRow(QStringLiteral("变换"), m_transform);
+        m_window = new QSpinBox(yPage);
+        m_window->setRange(2, 500);
+        m_window->setValue(5);
+        yForm->addRow(QStringLiteral("窗口"), m_window);
+        m_script = new QPlainTextEdit(yPage);
+        m_script->setPlaceholderText(QStringLiteral("out = ps.movingAvg(ps.input(1), 5)"));
+        m_script->setPlainText(QStringLiteral("out = ps.movingAvg(ps.input(1), 5)"));
+        m_script->setFixedHeight(78);
+        yForm->addRow(QStringLiteral("脚本"), m_script);
+        auto *yNote = new QLabel(QStringLiteral("算子/脚本会把结果写成派生曲线；脚本输入为 ps.input(1)，输出到 out。"), yPage);
+        yNote->setWordWrap(true);
+        yNote->setStyleSheet(QStringLiteral("color:#8494a0;"));
+        yForm->addRow(yNote);
+        connect(m_transform, &QComboBox::currentIndexChanged, this, [this] {
+            const int id = m_transform->currentData().toInt();
+            m_window->setEnabled(id == 3);
+            m_script->setEnabled(id == 6);
+        });
+        m_window->setEnabled(false);
+        m_script->setEnabled(false);
+        tabs->addTab(yPage, QStringLiteral("Y 轴"));
+
+        root->addWidget(tabs);
+        auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        root->addWidget(bb);
+    }
+
+    QJsonObject patch() const
+    {
+        QJsonObject o;
+        o[QStringLiteral("label")] = m_label->text().trimmed();
+        o[QStringLiteral("color")] = m_color.name();
+        o[QStringLiteral("width")] = m_width->value();
+        o[QStringLiteral("style")] = m_style->currentData().toInt();
+        o[QStringLiteral("marker")] = m_marker->currentData().toInt();
+        o[QStringLiteral("markerSize")] = m_markerSize->value();
+        o[QStringLiteral("axis")] = m_axis->currentData().toInt();
+        o[QStringLiteral("visible")] = m_visible->isChecked();
+        o[QStringLiteral("offset")] = m_offset->value();
+        return o;
+    }
+    int transformId() const { return m_transform->currentData().toInt(); }
+    int windowSize() const { return m_window->value(); }
+    QString scriptText() const { return m_script->toPlainText(); }
+    const PsChannelInfo *channel() const
+    {
+        const QVariant v = m_column->currentData();
+        return v.isValid() ? reinterpret_cast<const PsChannelInfo *>(v.toULongLong()) : nullptr;
+    }
+    QString channelName() const { return m_column->currentText(); }
+    QString alias() const { return m_alias; }
+
+private:
+    void setColorButton()
+    {
+        m_colorBtn->setText(m_color.name());
+        m_colorBtn->setStyleSheet(QStringLiteral(
+            "QPushButton{background:%1;color:#0d1117;border:1px solid #3a4854;border-radius:2px;"
+            "font-weight:600;}QPushButton:hover{border-color:#f2b134;}").arg(m_color.name()));
+    }
+
+    QVector<const PsChannelInfo *> m_channels;
+    QString m_alias;
+    QColor m_color;
+    QLineEdit *m_label = nullptr;
+    QPushButton *m_colorBtn = nullptr;
+    QSpinBox *m_width = nullptr;
+    QComboBox *m_style = nullptr;
+    QComboBox *m_marker = nullptr;
+    QSpinBox *m_markerSize = nullptr;
+    QComboBox *m_axis = nullptr;
+    QCheckBox *m_visible = nullptr;
+    QDoubleSpinBox *m_offset = nullptr;
+    QComboBox *m_column = nullptr;
+    QComboBox *m_transform = nullptr;
+    QSpinBox *m_window = nullptr;
+    QPlainTextEdit *m_script = nullptr;
+};
+
+class AxesEditDialog : public QDialog
+{
+public:
+    AxesEditDialog(const QJsonObject &st, QWidget *parent = nullptr) : QDialog(parent)
+    {
+        setWindowTitle(QStringLiteral("画布属性"));
+        resize(440, 500);
+        m_axisColor = QColor(st.value(QStringLiteral("axisColor")).toString());
+        auto *root = new QVBoxLayout(this);
+        auto *form = new QFormLayout;
+
+        m_title = new QLineEdit(st.value(QStringLiteral("title")).toString(), this);
+        form->addRow(QStringLiteral("标题 Title"), m_title);
+        m_xLabel = new QLineEdit(st.value(QStringLiteral("xlabel")).toString(), this);
+        m_xLabel->setPlaceholderText(QStringLiteral("time / s"));
+        form->addRow(QStringLiteral("X 轴标签 XLabel"), m_xLabel);
+        m_yLabel = new QLineEdit(st.value(QStringLiteral("ylabel")).toString(), this);
+        m_yLabel->setPlaceholderText(QStringLiteral("value"));
+        form->addRow(QStringLiteral("Y 轴标签 YLabel"), m_yLabel);
+
+        m_gridX = new QCheckBox(QStringLiteral("X 方向网格"), this);
+        m_gridX->setChecked(st.value(QStringLiteral("gridX")).toBool(st.value(QStringLiteral("grid")).toBool(true)));
+        form->addRow(QStringLiteral("XGrid"), m_gridX);
+        m_gridY = new QCheckBox(QStringLiteral("Y 方向网格"), this);
+        m_gridY->setChecked(st.value(QStringLiteral("gridY")).toBool(st.value(QStringLiteral("grid")).toBool(true)));
+        form->addRow(QStringLiteral("YGrid"), m_gridY);
+        m_minorGrid = new QCheckBox(QStringLiteral("次网格（虚线）"), this);
+        m_minorGrid->setChecked(st.value(QStringLiteral("minorGrid")).toBool(false));
+        form->addRow(QStringLiteral("MinorGrid"), m_minorGrid);
+        m_box = new QCheckBox(QStringLiteral("显示边框"), this);
+        m_box->setChecked(st.value(QStringLiteral("box")).toBool(true));
+        form->addRow(QStringLiteral("Box"), m_box);
+        m_flipY = new QCheckBox(QStringLiteral("翻转 Y 轴方向"), this);
+        m_flipY->setChecked(st.value(QStringLiteral("flipY")).toBool(false));
+        form->addRow(QStringLiteral("YDir / FlipY"), m_flipY);
+        m_legend = new QCheckBox(QStringLiteral("显示图例"), this);
+        m_legend->setChecked(st.value(QStringLiteral("legend")).toBool(true));
+        form->addRow(QStringLiteral("Legend"), m_legend);
+        m_legendPos = new QComboBox(this);
+        m_legendPos->addItem(QStringLiteral("左上"), 0);
+        m_legendPos->addItem(QStringLiteral("右上"), 1);
+        m_legendPos->addItem(QStringLiteral("左下"), 2);
+        m_legendPos->addItem(QStringLiteral("右下"), 3);
+        m_legendPos->setCurrentIndex(st.value(QStringLiteral("legendPos")).toInt(0));
+        form->addRow(QStringLiteral("图例位置"), m_legendPos);
+
+        m_fontSize = new QSpinBox(this);
+        m_fontSize->setRange(7, 20);
+        m_fontSize->setSuffix(QStringLiteral(" px"));
+        m_fontSize->setValue(st.value(QStringLiteral("axisFontSize")).toInt(11));
+        form->addRow(QStringLiteral("FontSize"), m_fontSize);
+        m_lineWidth = new QSpinBox(this);
+        m_lineWidth->setRange(1, 4);
+        m_lineWidth->setSuffix(QStringLiteral(" px"));
+        m_lineWidth->setValue(st.value(QStringLiteral("axisLineWidth")).toInt(1));
+        form->addRow(QStringLiteral("轴线宽 LineWidth"), m_lineWidth);
+        m_colorBtn = new QPushButton(this);
+        m_colorBtn->setFixedHeight(24);
+        setColorButton();
+        connect(m_colorBtn, &QPushButton::clicked, this, [this] {
+            const QColor c = QColorDialog::getColor(m_axisColor.isValid() ? m_axisColor : QColor("#8b949e"),
+                                                    this, QStringLiteral("坐标轴颜色"));
+            if (c.isValid())
+            {
+                m_axisColor = c;
+                setColorButton();
+            }
+        });
+        form->addRow(QStringLiteral("轴线颜色"), m_colorBtn);
+
+        root->addLayout(form);
+        auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        root->addWidget(bb);
+    }
+    QString title() const { return m_title->text().trimmed(); }
+    QString xLabel() const { return m_xLabel->text().trimmed(); }
+    QString yLabel() const { return m_yLabel->text().trimmed(); }
+    bool gridX() const { return m_gridX->isChecked(); }
+    bool gridY() const { return m_gridY->isChecked(); }
+    bool minorGrid() const { return m_minorGrid->isChecked(); }
+    bool box() const { return m_box->isChecked(); }
+    bool flipY() const { return m_flipY->isChecked(); }
+    bool legend() const { return m_legend->isChecked(); }
+    int legendPosition() const { return m_legendPos->currentData().toInt(); }
+    int fontSize() const { return m_fontSize->value(); }
+    int lineWidth() const { return m_lineWidth->value(); }
+    QColor axisColorValue() const { return m_axisColor; }
+
+private:
+    void setColorButton()
+    {
+        m_colorBtn->setText(m_axisColor.isValid() ? m_axisColor.name() : QStringLiteral("跟随主题"));
+        if (m_axisColor.isValid())
+            m_colorBtn->setStyleSheet(QStringLiteral(
+                "QPushButton{background:%1;color:#0d1117;border:1px solid #3a4854;border-radius:2px;"
+                "font-weight:600;}QPushButton:hover{border-color:#f2b134;}").arg(m_axisColor.name()));
+    }
+
+    QLineEdit *m_title = nullptr;
+    QLineEdit *m_xLabel = nullptr;
+    QLineEdit *m_yLabel = nullptr;
+    QCheckBox *m_gridX = nullptr;
+    QCheckBox *m_gridY = nullptr;
+    QCheckBox *m_minorGrid = nullptr;
+    QCheckBox *m_box = nullptr;
+    QCheckBox *m_flipY = nullptr;
+    QCheckBox *m_legend = nullptr;
+    QComboBox *m_legendPos = nullptr;
+    QSpinBox *m_fontSize = nullptr;
+    QSpinBox *m_lineWidth = nullptr;
+    QPushButton *m_colorBtn = nullptr;
+    QColor m_axisColor;
+};
+void MainWindow::showAxesProps(CanvasWidget *c)
+{
+    if (!c)
+        return;
+    const QJsonObject st = c->saveState();
+    const QJsonArray arr = st.value(QStringLiteral("series")).toArray();
+    int right = 0;
+    for (const QJsonValue &v : arr)
+        if (v.toObject().value(QStringLiteral("axis")).toInt(0) == 1)
+            ++right;
+    const bool autoY = st.value(QStringLiteral("autoY")).toBool(true);
+    const QString y1 = autoY ? QStringLiteral("自动量程")
+                             : QStringLiteral("%1 ~ %2").arg(st.value(QStringLiteral("yMin")).toDouble(), 0, 'f', 3)
+                                                       .arg(st.value(QStringLiteral("yMax")).toDouble(), 0, 'f', 3);
+    const QString y2 = right > 0
+        ? QStringLiteral("%1 ~ %2").arg(st.value(QStringLiteral("y2Min")).toDouble(), 0, 'f', 3)
+                                    .arg(st.value(QStringLiteral("y2Max")).toDouble(), 0, 'f', 3)
+        : QStringLiteral("未启用");
+    setPropRows(QStringLiteral("坐标轴 · %1").arg(c->title()),
+                {{QStringLiteral("类型"), QStringLiteral("坐标轴 (Axes)")},
+                 {QStringLiteral("绘图模式"), plotModeLabel(st.value(QStringLiteral("mode")).toInt())},
+                 {QStringLiteral("时间轴"), QStringLiteral("%1 ~ %2 s")
+                                               .arg(st.value(QStringLiteral("t0")).toDouble(), 0, 'f', 2)
+                                               .arg(st.value(QStringLiteral("t1")).toDouble(), 0, 'f', 2)},
+                 {QStringLiteral("X 轴标签"), st.value(QStringLiteral("xlabel")).toString().isEmpty()
+                                                   ? QStringLiteral("—")
+                                                   : st.value(QStringLiteral("xlabel")).toString()},
+                 {QStringLiteral("Y 轴标签"), st.value(QStringLiteral("ylabel")).toString().isEmpty()
+                                                   ? QStringLiteral("—")
+                                                   : st.value(QStringLiteral("ylabel")).toString()},
+                 {QStringLiteral("左 Y 轴"), y1},
+                 {QStringLiteral("右 Y 轴"), y2},
+                 {QStringLiteral("曲线"), QStringLiteral("%1 条（右轴 %2）").arg(arr.size()).arg(right)},
+                 {QStringLiteral("X 网格"), st.value(QStringLiteral("gridX")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("Y 网格"), st.value(QStringLiteral("gridY")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("次网格"), st.value(QStringLiteral("minorGrid")).toBool(false) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("图例"), st.value(QStringLiteral("legend")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("图例位置"), QStringList{QStringLiteral("左上"), QStringLiteral("右上"),
+                                                          QStringLiteral("左下"), QStringLiteral("右下")}
+                                                     .value(st.value(QStringLiteral("legendPos")).toInt(0))},
+                 {QStringLiteral("边框"), st.value(QStringLiteral("box")).toBool(true) ? QStringLiteral("显示") : QStringLiteral("隐藏")},
+                 {QStringLiteral("FlipY"), st.value(QStringLiteral("flipY")).toBool(false) ? QStringLiteral("是") : QStringLiteral("否")},
+                 {QStringLiteral("坐标轴字号"), QStringLiteral("%1 px").arg(st.value(QStringLiteral("axisFontSize")).toInt(11))},
+                 {QStringLiteral("坐标轴线宽"), QStringLiteral("%1 px").arg(st.value(QStringLiteral("axisLineWidth")).toInt(1))},
+                 {QStringLiteral("坐标轴颜色"), st.value(QStringLiteral("axisColor")).toString().isEmpty()
+                                                   ? QStringLiteral("跟随主题")
+                                                   : st.value(QStringLiteral("axisColor")).toString()}});
+    m_propCanvas = c;
+    m_propSeriesIndex = -1;
+    m_propKind = 1;
+    if (m_propEditBtn)
+        m_propEditBtn->setEnabled(true);
+}
+
+void MainWindow::editAxesProps(CanvasWidget *c)
+{
+    if (!c)
+        return;
+    AxesEditDialog dlg(c->saveState(), this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    c->setTitle(dlg.title());
+    c->setAxisLabels(dlg.xLabel(), dlg.yLabel());
+    c->setGridAxes(dlg.gridX(), dlg.gridY(), dlg.minorGrid());
+    c->setBoxVisible(dlg.box());
+    c->setLegendVisible(dlg.legend());
+    c->setLegendPosition(dlg.legendPosition());
+    c->setFlipY(dlg.flipY());
+    c->setAxisFontSize(dlg.fontSize());
+    c->setAxisLineWidth(dlg.lineWidth());
+    c->setAxisColor(dlg.axisColorValue());
+    showAxesProps(c);
+}
+
+void MainWindow::showSeriesProps(CanvasWidget *c, int index)
+{
+    if (!c)
+        return;
+    const QJsonObject st = c->saveState();
+    const QJsonArray arr = st.value(QStringLiteral("series")).toArray();
+    if (index < 0 || index >= arr.size())
+        return;
+    const QJsonObject so = arr.at(index).toObject();
+    setPropRows(QStringLiteral("曲线 · %1").arg(so.value(QStringLiteral("label")).toString(
+                                               so.value(QStringLiteral("name")).toString())),
+                {{QStringLiteral("类型"), QStringLiteral("曲线 (Line)")},
+                 {QStringLiteral("名称"), so.value(QStringLiteral("name")).toString()},
+                 {QStringLiteral("图例"), so.value(QStringLiteral("label")).toString()},
+                 {QStringLiteral("单位"), so.value(QStringLiteral("unit")).toString().isEmpty()
+                                               ? QStringLiteral("—")
+                                               : so.value(QStringLiteral("unit")).toString()},
+                 {QStringLiteral("颜色"), so.value(QStringLiteral("color")).toString()},
+                 {QStringLiteral("线宽"), QStringLiteral("%1 px").arg(so.value(QStringLiteral("width")).toInt(1))},
+                 {QStringLiteral("线型"), QStringList{QStringLiteral("实线"), QStringLiteral("虚线"),
+                                                    QStringLiteral("点线"), QStringLiteral("点划线")}
+                                               .value(so.value(QStringLiteral("style")).toInt(0))},
+                 {QStringLiteral("标记"), QStringList{QStringLiteral("无"), QStringLiteral("圆点"), QStringLiteral("方块"),
+                                                        QStringLiteral("菱形"), QStringLiteral("三角"), QStringLiteral("十字"),
+                                                        QStringLiteral("叉号")}
+                                                   .value(so.value(QStringLiteral("marker")).toInt(0))},
+                 {QStringLiteral("标记大小"), QStringLiteral("%1 px").arg(so.value(QStringLiteral("markerSize")).toInt(5))},
+                 {QStringLiteral("绑定轴"), so.value(QStringLiteral("axis")).toInt(0) == 1 ? QStringLiteral("右 Y 轴")
+                                                                                          : QStringLiteral("左 Y 轴")},
+                 {QStringLiteral("可见"), so.value(QStringLiteral("visible")).toBool(true) ? QStringLiteral("是")
+                                                                                         : QStringLiteral("否")},
+                 {QStringLiteral("点数"), QString::number(so.value(QStringLiteral("points")).toInt())},
+                 {QStringLiteral("时间偏移"), QStringLiteral("%1 s").arg(so.value(QStringLiteral("offset")).toDouble(), 0, 'f', 3)},
+                 {QStringLiteral("来源"), so.value(QStringLiteral("srcPath")).toString().isEmpty()
+                                               ? QStringLiteral("演示 / 脚本生成")
+                                               : so.value(QStringLiteral("srcPath")).toString()}});
+    m_propCanvas = c;
+    m_propSeriesIndex = index;
+    m_propKind = 2;
+    if (m_propEditBtn)
+        m_propEditBtn->setEnabled(true);
+}
+
+void MainWindow::editSeriesProps(CanvasWidget *c, int index)
+{
+    if (!c || index < 0)
+        return;
+    const QJsonObject st = c->seriesState(index);
+    if (st.isEmpty())
+        return;
+
+    ps::data_source::SourceData *src = nullptr;
+    const int sid = st.value(QStringLiteral("srcId")).toInt(-1);
+    const QString path = st.value(QStringLiteral("srcPath")).toString();
+    for (ps::data_source::SourceData &sd : m_sourceStore.items())
+        if (sd.id == sid || (!path.isEmpty() && sd.path == path))
+        {
+            src = &sd;
+            break;
+        }
+    QVector<const PsChannelInfo *> channels;
+    QString alias;
+    if (src)
+    {
+        channels = src->channels;
+        alias = src->alias.isEmpty() ? src->name : src->alias;
+    }
+
+    SeriesEditDialog dlg(st, channels, alias, this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    QJsonObject patch = dlg.patch();
+    const int op = dlg.transformId();
+    const PsChannelInfo *ch = dlg.channel();
+    const double off = patch.value(QStringLiteral("offset")).toDouble();
+    const QString oldName = st.value(QStringLiteral("name")).toString();
+
+    if (op != 0 && ch)
+    {
+        const quint32 n = ch->point_count;
+        if (n < 2 || !ch->time || !ch->value)
+            return;
+        QVector<double> tt(n), vv(n);
+        for (quint32 i = 0; i < n; ++i)
+        {
+            tt[i] = ch->time[i] - off;
+            vv[i] = ch->value[i];
+        }
+        QString suffix;
+        switch (op)
+        {
+        case 1:
+            suffix = QStringLiteral("微分");
+            for (quint32 i = n - 1; i > 0; --i)
+            {
+                const double dt = ch->time[i] - ch->time[i - 1];
+                vv[i] = dt > 1e-12 ? (ch->value[i] - ch->value[i - 1]) / dt : 0.0;
+            }
+            vv[0] = 0.0;
+            break;
+        case 2:
+        {
+            suffix = QStringLiteral("积分");
+            double acc = 0.0;
+            vv[0] = 0.0;
+            for (quint32 i = 1; i < n; ++i)
+            {
+                const double dt = ch->time[i] - ch->time[i - 1];
+                acc += (ch->value[i] + ch->value[i - 1]) * 0.5 * dt;
+                vv[i] = acc;
+            }
+            break;
+        }
+        case 3:
+        {
+            suffix = QStringLiteral("滑动平均");
+            const int w = dlg.windowSize();
+            QVector<double> out(n);
+            double sum = 0.0;
+            for (quint32 i = 0; i < n; ++i)
+            {
+                sum += vv[i];
+                if (int(i) >= w)
+                    sum -= vv[i - w];
+                out[i] = sum / qMin<int>(int(i) + 1, w);
+            }
+            vv = out;
+            break;
+        }
+        case 4:
+            suffix = QStringLiteral("绝对值");
+            for (quint32 i = 0; i < n; ++i)
+                vv[i] = std::fabs(vv[i]);
+            break;
+        case 5:
+        {
+            suffix = QStringLiteral("归一化");
+            double lo = 1e300, hi = -1e300;
+            for (double v : vv)
+            {
+                lo = std::min(lo, v);
+                hi = std::max(hi, v);
+            }
+            const double span = hi - lo;
+            for (quint32 i = 0; i < n; ++i)
+                vv[i] = span > 1e-12 ? (vv[i] - lo) / span : 0.0;
+            break;
+        }
+        case 6:
+        {
+            suffix = QStringLiteral("脚本");
+            ScriptSeries in;
+            in.name = dlg.channelName();
+            in.time = tt;
+            in.value = vv;
+            const ScriptResult r = m_extensions.registry().runScript(dlg.scriptText(), {in});
+            if (!r.ok || r.outputs.isEmpty())
+            {
+                QMessageBox::warning(this, QStringLiteral("脚本错误"), r.error.isEmpty()
+                    ? QStringLiteral("脚本没有输出") : r.error);
+                return;
+            }
+            const ScriptOutput &out = r.outputs.first();
+            QString label = patch.value(QStringLiteral("label")).toString();
+            if (!label.endsWith(QStringLiteral("· 脚本")))
+                label += QStringLiteral(" · 脚本");
+            patch[QStringLiteral("label")] = label;
+            patch[QStringLiteral("offset")] = 0.0;
+            c->setSeriesSamples(index, out.time, out.value, label);
+            c->patchSeries(index, patch);
+            showSeriesProps(c, index);
+            log(QStringLiteral("曲线脚本变换：%1").arg(label));
+            return;
+        }
+        }
+        QString label = patch.value(QStringLiteral("label")).toString();
+        if (!label.endsWith(QStringLiteral("· ") + suffix))
+            label += QStringLiteral(" · ") + suffix;
+        patch[QStringLiteral("label")] = label;
+        patch[QStringLiteral("offset")] = 0.0;
+        c->setSeriesSamples(index, tt, vv, label);
+        c->patchSeries(index, patch);
+        showSeriesProps(c, index);
+        log(QStringLiteral("曲线变换：%1").arg(label));
+        return;
+    }
+
+    if (ch && dlg.channelName() != oldName)
+        c->setSeriesChannel(index, ch, sid, src ? src->path : path,
+                            src ? (src->alias.isEmpty() ? src->name : src->alias) : alias, off);
+    c->patchSeries(index, patch);
+    showSeriesProps(c, index);
+}
+
+
+
+
+static QString plotModeLabel(int mode)
+{
+    static const char *names[] = {"时间序列", "XY", "散点", "地图", "仪表", "罗盘", "频谱"};
+    if (mode < 0 || mode >= int(sizeof(names)/sizeof(names[0])))
+        return QStringLiteral("未知");
+    return QString::fromUtf8(names[mode]);
 }
