@@ -6,6 +6,10 @@
 #include "host/extension/Component.h"
 #include "host/extension/ExtensionHost.h"
 #include "host/extension/CommandRegistry.h"
+#include "SourceModel.h"
+
+using ps::data_source::SourceData;
+using ps::data_source::TransformRecipe;
 
 #include <memory>
 
@@ -16,6 +20,7 @@ class SARibbonPanel;
 
 class LiveSession;
 class CanvasWidget;
+namespace ps::plot { class PlotWorkspace; }
 class QSplitter;
 class QLabel;
 class QPlainTextEdit;
@@ -32,47 +37,6 @@ class QAction;
 class QTimer;
 class QScrollArea;
 class QToolButton;
-
-// 变换配方：写入 .psl，重启/导入时按序重放
-struct TransformRecipe
-{
-    QString kind;             // filter / quat
-    QString input;
-    QString filter;
-    QJsonObject params;
-    QString output;           // filter 输出名 / quat 输出主题
-    QString quat[4];
-    bool degrees = true;
-    bool unwrap = true;
-};
-
-// 一个数据源：各自持有内核数据集，切源不释放，删除源才释放
-struct SourceData
-{
-    int id = -1;
-    QString name;
-    QString alias;             // 图例前缀，默认文件名，可重命名
-    QString path;
-    QString fmt;
-    double offsetSec = 0.0;    // 显示时间 = 原始时间 - offset；多源对齐用
-    PsDataset *ds = nullptr;
-    QVector<const PsChannelInfo *> channels;
-    QVector<QPair<QString, QString>> params;
-    QVector<QStringList> msgs;
-    QStringList derived;       // 本源由变换产生的通道名，右键才允许删除
-    QVector<TransformRecipe> recipes;
-    QWidget *row = nullptr;
-
-    // 实时源：ds 为空，通道视图由 LiveSession 持有；handle 归扩展所有。
-    bool live = false;
-    bool paused = false;       // 仅实时源：暂停轮询
-    bool plotted = false;
-    QString sourceId;
-    QString config;
-    void *handle = nullptr;
-    std::shared_ptr<LiveSession> liveSession;
-    QVector<QPair<QString, void *>> fanout; // 共享 transport 下的外部解析器句柄
-};
 
 // 主窗口骨架（对应 §8 / D14）：
 //   Ribbon（顶部任务页签） + 四个可停靠区（数据源 / 属性 / 脚本 / 日志） + 固定绘图区（页签=页）
@@ -136,7 +100,6 @@ private:
     void alignSource(SourceData *src, int mode);          // 0 起点 / 1 中心 / 2 终点
     void setSourceBase(SourceData *src);
     void compareSources(SourceData *src, SourceData *other, bool all, const QString &pick);
-    void setupCanvas(CanvasWidget *c);
     void addCanvasToPage();
     void removeCanvas(CanvasWidget *c);
     void applyCanvasGrid(int rows, int cols);
@@ -166,6 +129,7 @@ private:
     void newPage();
 
     QTabWidget *m_pages = nullptr;
+    ps::plot::PlotWorkspace *m_plotWorkspace = nullptr;
     QPlainTextEdit *m_logView = nullptr;
     QTreeWidget *m_srcTree = nullptr;      // 字段页：通道树（按 topic 分组）
     QTabBar *m_srcTabs = nullptr;          // 字段 / 参数 / 消息

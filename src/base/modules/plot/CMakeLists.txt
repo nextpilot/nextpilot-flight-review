@@ -1,6 +1,8 @@
 add_library(ps_base_plot OBJECT
   include/PlotModule.h
   src/PlotModule.cpp
+  include/PlotWorkspace.h
+  src/PlotWorkspace.cpp
   ui/CanvasWidget.h
   ui/CanvasWidget.cpp
 )

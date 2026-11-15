@@ -15,8 +15,8 @@ src/
     modules/
       runtime/                脚本/扩展运行契约
       shell/                  MainWindow、Ribbon/Dock 容器、主题、扩展对话框
-      data_source/            数据源 Dock、数据输入对话框、数据 Ribbon
-      plot/                   CanvasWidget、绘图 Ribbon、页面/图型
+      data_source/            源模型、数据源 Dock、数据输入对话框、数据 Ribbon
+      plot/                   PlotWorkspace、CanvasWidget、绘图 Ribbon、页面/图型
     resources/                图标资源、Lua 脚本
 
   extensions/
