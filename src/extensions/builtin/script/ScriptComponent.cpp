@@ -1,4 +1,3 @@
-#include "MainWindow.h"
 #include "ScriptComponent.h"
 
 #include "ScriptEngine.h"
@@ -30,7 +29,7 @@ void ScriptComponent::contribute(Registry &registry, const HostContext &)
 {
     registry.addDock(DockContribution{QStringLiteral("dock.script"), QStringLiteral("脚本 · Lua 5.4"),
                                       Qt::RightDockWidgetArea, true, 4,
-                                      QStringLiteral(":/icons/script.svg"), [](QWidget *p){ auto *w=qobject_cast<MainWindow*>(p); return w?w->createDock(QStringLiteral("dock.script"), p):nullptr; }});
+                                      QStringLiteral(":/icons/script.svg"), nullptr});
     registry.addRibbon(RibbonContribution{
         QStringLiteral("脚本"), {}, {},
         {{QStringLiteral("Lua"),

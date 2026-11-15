@@ -1935,7 +1935,7 @@ QWidget *MainWindow::createRibbon()
     )"));
     return ribbon;
 }
-QWidget *MainWindow::createDock(const QString &id, QWidget *parent, const QString &icon)
+QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent, const QString &icon)
 {
     if (id == QLatin1String("dock.src"))
     {
@@ -2212,6 +2212,7 @@ QWidget *MainWindow::createDock(const QString &id, QWidget *parent, const QStrin
     m_srcChips = panel->m_srcChips;
     srcDock->setWidget(panel);
     return srcDock;
+    return srcDock;
     }
     if (id == QLatin1String("dock.prop"))
     {
@@ -2438,6 +2439,8 @@ void MainWindow::createDocks()
             dock = new QDockWidget(spec.title, this);
             dock->setWidget(created);
         }
+        if (!dock)
+            dock = buildDockWidget(spec.id, this, spec.icon);
         if (!dock)
             continue;
         if (!spec.id.isEmpty())
