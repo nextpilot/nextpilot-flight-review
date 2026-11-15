@@ -22,7 +22,6 @@ target_link_libraries(plotscope_app PRIVATE
   ps_base_shell
   ps_base_plot
   ps_base_data_source
-  ps_builtin_data_sources_component
   Qt6::Widgets Qt6::Network Qt6::Svg
   ps_host ps_kernel ps_cache ps_live
 )

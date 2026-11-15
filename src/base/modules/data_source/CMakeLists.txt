@@ -23,4 +23,3 @@ target_include_directories(ps_base_data_source PUBLIC
 )
 target_link_libraries(ps_base_data_source PUBLIC ps_host ps_live Qt6::Widgets)
 
-add_subdirectory(builtin)
