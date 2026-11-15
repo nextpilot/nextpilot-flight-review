@@ -2177,6 +2177,19 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
                 currentCanvas()->setFollowLive(true, 30.0);
                 src->plotted = true;
             },
+            [this](SourceData *src) {
+                m_activeSource = src->id;
+                m_viewBacked = true;
+                m_srcFmt = src->fmt;
+                m_srcChannels = src->channels;
+                m_srcParams = src->params;
+                m_srcMsgs = src->msgs;
+                for (auto *c : findChildren<CanvasWidget *>())
+                    c->setInputSource(src->id, src->path, src->alias, src->offsetSec);
+                renderSourceData();
+            },
+            [this](QWidget *row) { showSourceProps(row); },
+            [this] { updateStatusChips(); },
 
         },
         this);
@@ -2818,21 +2831,7 @@ void MainWindow::compareSources(ps::data_source::SourceData *src, ps::data_sourc
     log(QStringLiteral("对比 %1 ↔ %2：%3 条曲线").arg(src->alias, other->alias).arg(added));
 }
 
-void MainWindow::switchSource(int id)
-{
-    ps::data_source::SourceData *src = sourceById(id);
-    if (!src || (!src->ds && !src->live))
-        return;
-    m_activeSource = id;
-    m_viewBacked = true;
-    m_srcFmt = src->fmt;
-    m_srcChannels = src->channels;
-    m_srcParams = src->params;
-    m_srcMsgs = src->msgs;
-    for (auto *c : findChildren<CanvasWidget *>())
-        c->setInputSource(src->id, src->path, src->alias, src->offsetSec);
-    renderSourceData();
-}
+
 
 
 
@@ -2944,66 +2943,11 @@ void MainWindow::addTransformFor(const QString &channel)
     log(QStringLiteral("变换完成：%1").arg(result.addedNames.join(QStringLiteral(", "))));
 }
 
-void MainWindow::reloadChannels(ps::data_source::SourceData *src)
-{
-    if (!src)
-        return;
-    src->channels.clear();
-    if (src->live && src->liveSession)
-    {
-        src->channels = src->liveSession->channels();
-        return;
-    }
-    if (!src->ds)
-        return;
-    const uint32_t n = ps_dataset_channel_count(src->ds);
-    for (uint32_t i = 0; i < n; ++i)
-        if (const PsChannelInfo *ch = ps_dataset_channel(src->ds, i))
-            src->channels.append(ch);
-}
 
-void MainWindow::refreshActiveSource()
-{
-    ps::data_source::SourceData *src = sourceById(m_activeSource);
-    if (!src || (!src->ds && !src->live))
-        return;
-    reloadChannels(src);
-    m_srcChannels = src->channels;
-    renderSourceData();
-}
 
-void MainWindow::activateSource(QWidget *row)
-{
-    if (!row || !m_srcRows)
-        return;
-    for (int i = 0; i < m_srcRows->count(); ++i)
-    {
-        QWidget *w = m_srcRows->itemAt(i) ? m_srcRows->itemAt(i)->widget() : nullptr;
-        if (!w)
-            continue;
-        if (w->property("srcPanel").toBool())
-            continue;
-        const bool on = (w == row);
-        if (w->property("active").toBool() != on)
-        {
-            w->setProperty("active", on);
-            w->style()->unpolish(w);
-            w->style()->polish(w);
-        }
-    }
-    if (row->property("backed").toBool() && sourceById(sourceIdForRow(row)))
-    {
-        switchSource(sourceIdForRow(row));
-        showSourceProps(row);
-        return;
-    }
-    m_viewBacked = false;
-    m_srcChannels.clear();
-    m_srcParams.clear();
-    m_srcMsgs.clear();
-    renderSourceData();
-    showSourceProps(row);
-}
+
+
+
 
 QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
                               const QString &path, int srcId)
@@ -3026,30 +2970,16 @@ void MainWindow::updateSrcStatus()
     m_dataSourceDock->updateSrcStatus();
 }
 
-void MainWindow::setSourcePaused(ps::data_source::SourceData *src, bool paused)
-{
-    if (!src || !src->live)
-        return;
-    src->paused = paused;
-    if (src->row)
-    {
-        if (QLabel *meta = src->row->findChild<QLabel *>(QStringLiteral("srcMeta")))
-        {
-            const QString base = src->row->property("srcMeta").toString();
-            meta->setText(paused ? QStringLiteral("已暂停 · %1").arg(base) : base);
-        }
-        if (QToolButton *btn = src->row->findChild<QToolButton *>(QStringLiteral("srcPause")))
-        {
-            btn->setIcon(QIcon(paused ? QStringLiteral(":/icons/play.svg")
-                                      : QStringLiteral(":/icons/pause.svg")));
-            btn->setToolTip(paused ? QStringLiteral("继续该实时源") : QStringLiteral("暂停该实时源"));
-        }
-    }
-    updateStatusChips();
-    log(QStringLiteral("%1实时源：%2").arg(paused ? QStringLiteral("暂停") : QStringLiteral("继续"), src->name));
-}
 
 
+
+
+void MainWindow::switchSource(int id) { m_dataSourceDock->switchSource(id); }
+void MainWindow::reloadChannels(SourceData *src) { m_dataSourceDock->reloadChannels(src); }
+void MainWindow::refreshActiveSource() { m_dataSourceDock->refreshActiveSource(); }
+void MainWindow::activateSource(QWidget *row) { m_dataSourceDock->activateSource(row); }
+void MainWindow::setSourcePaused(SourceData *src, bool paused) { m_dataSourceDock->setSourcePaused(src, paused); }
+void MainWindow::exportActiveCsv() { m_dataSourceDock->exportActiveCsv(); }
 
 void MainWindow::showSourceProps(QWidget *row)
 {
@@ -4320,60 +4250,7 @@ void MainWindow::pollLiveSources() { m_dataSourceDock->pollLiveSources(); }
 void MainWindow::refreshLiveSource(SourceData *src) { m_dataSourceDock->refreshLiveSource(src); }
 void MainWindow::closeLiveSource(SourceData *src) { m_dataSourceDock->closeLiveSource(src); }
 
-void MainWindow::exportActiveCsv()
-{
-    ps::data_source::SourceData *src = sourceById(m_activeSource);
-    if (!src || !src->ds)
-    {
-        log(QStringLiteral("没有可导出的数据源"));
-        return;
-    }
-    const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出数据快照"),
-        QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-            .filePath(src->alias + QStringLiteral("-snapshot.csv")),
-        QStringLiteral("CSV (*.csv)"));
-    if (f.isEmpty())
-        return;
-    QFile out(f);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
-    {
-        QMessageBox::warning(this, QStringLiteral("导出失败"), out.errorString());
-        return;
-    }
-    QTextStream ts(&out);
-    ts.setEncoding(QStringConverter::Utf8);
-    auto esc = [](const QString &v) {
-        QString s = v;
-        s.replace(QLatin1Char('"'), QStringLiteral("\"\""));
-        return s.contains(QLatin1Char(',')) || s.contains(QLatin1Char('"')) || s.contains(QLatin1Char('\n'))
-            ? QStringLiteral("\"%1\"").arg(s) : s;
-    };
-    const int sampleCap = QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
-                              .value(QStringLiteral("exportSampleLimit"), 0).toInt();
-    ts << "time,source,channel,value,unit\n";
-    qulonglong rows = 0;
-    const QString alias = esc(src->alias);
-    for (const PsChannelInfo *ch : src->channels)
-    {
-        if (!ch)
-            continue;
-        const QString name = esc(QString::fromUtf8(ch->name));
-        const QString unit = esc(QString::fromUtf8(ch->unit ? ch->unit : ""));
-        const uint32_t step = sampleCap > 0 && ch->point_count > static_cast<uint32_t>(sampleCap)
-                                  ? (ch->point_count + static_cast<uint32_t>(sampleCap) - 1) /
-                                        static_cast<uint32_t>(sampleCap)
-                                  : 1;
-        for (uint32_t i = 0; i < ch->point_count; i += step)
-        {
-            ts << QString::number(ch->time[i], 'g', 17) << ',' << alias << ',' << name << ','
-               << QString::number(ch->value[i], 'g', 17) << ',' << unit << '\n';
-            ++rows;
-        }
-    }
-    out.close();
-    log(QStringLiteral("已导出数据快照：%1（%2 行）").arg(f).arg(rows)
-        + (sampleCap > 0 ? QStringLiteral("；采样上限 %1 点/通道").arg(sampleCap) : QString()));
-}
+
 
 static QString plotModeLabel(int mode)
 {

@@ -66,6 +66,9 @@ public:
         std::function<void(const QString &)> recordRecent;
         std::function<void(const QString &)> statusMessage;
         std::function<void(SourceData *)> liveSourceChanged;
+        std::function<void(SourceData *)> applySourceView;
+        std::function<void(QWidget *)> showSourceProps;
+        std::function<void()> refreshStatusChip;
     };
 
     explicit DataSourceDock(Context context, QWidget *parent = nullptr);
@@ -79,6 +82,12 @@ public:
     void refreshLiveSource(SourceData *src);
     void closeLiveSource(SourceData *src);
     void updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor);
+    void switchSource(int id);
+    void reloadChannels(SourceData *src);
+    void refreshActiveSource();
+    void activateSource(QWidget *row);
+    void setSourcePaused(SourceData *src, bool paused);
+    void exportActiveCsv();
     void showSourceMenu(QWidget *row, const QPoint &globalPos);
     void removeSourceRow(QWidget *row);
     void renderSourceData(const QVector<const PsChannelInfo *> &channels,
