@@ -70,18 +70,23 @@ int main(int argc, char **argv)
         for (int i = 1; i < argc; ++i)
         {
             const QString arg = QString::fromLocal8Bit(argv[i]);
+            ps::commands::CommandContext ctx;
+            ctx.arg = arg;
             if (arg.endsWith(QStringLiteral(".psl"), Qt::CaseInsensitive))
-                win.importLayoutFrom(arg);
+                win.commands().invoke(QStringLiteral("layout.import"), ctx);
             else
-                win.loadFile(arg);
+                win.commands().invoke(QStringLiteral("data.openPath"), ctx);
         }
     }
     else if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
                  .value(QStringLiteral("restoreLayout"), false).toBool())
     {
         const QString last = win.defaultLayoutPath();
-        if (QFile::exists(last))
-            win.importLayoutFrom(last);
+        if (QFile::exists(last)) {
+            ps::commands::CommandContext ctx;
+            ctx.arg = last;
+            win.commands().invoke(QStringLiteral("layout.import"), ctx);
+        }
     }
 
     return app.exec();

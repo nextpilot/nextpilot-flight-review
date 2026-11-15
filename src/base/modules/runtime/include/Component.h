@@ -116,11 +116,13 @@ public:
     void addDock(const DockContribution &dock);
     void addDialog(const DialogContribution &dialog);
     void addScriptRunner(const ScriptRunnerContribution &runner);
+    void addWindowHook(std::function<void(QWidget *)> hook) { m_windowHooks.append(std::move(hook)); }
 
     const ProtocolContribution *protocol(const QString &kind) const;
     const QVector<RibbonContribution> &ribbon() const { return m_ribbon; }
     const QVector<DataSourceSpec> &dataSources() const { return m_dataSources; }
     const QVector<DockContribution> &docks() const { return m_docks; }
+    const QVector<std::function<void(QWidget *)>> &windowHooks() const { return m_windowHooks; }
     bool invoke(const QString &action, const ActionContext &ctx) const;
     QDialog *createDialog(const QString &id, const QVariantMap &args, QWidget *parent) const;
     ScriptResult runScript(const QString &source, const QVector<ScriptSeries> &inputs,
@@ -135,6 +137,7 @@ private:
     QVector<DialogContribution> m_dialogs;
     ScriptRunnerContribution m_scriptRunner;
     QVector<QPair<QString, std::function<void(const ActionContext &)>>> m_actions;
+    QVector<std::function<void(QWidget *)>> m_windowHooks;
 };
 
 class IComponent

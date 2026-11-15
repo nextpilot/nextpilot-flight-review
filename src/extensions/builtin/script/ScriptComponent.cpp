@@ -1,5 +1,6 @@
 #include "ScriptComponent.h"
 #include "MainWindow.h"
+#include "PlotModule.h"
 
 #include <QComboBox>
 #include <QDockWidget>
@@ -114,9 +115,17 @@ void ScriptComponent::contribute(Registry &registry, const HostContext &)
                                           lay->addWidget(script, 1);
                                           lay->addLayout(runRow);
                                           dock->setWidget(host);
-                                          QObject::connect(preview, &QPushButton::clicked, main, [main] { main->runScript(false); });
-                                          QObject::connect(apply, &QPushButton::clicked, main, [main] { main->runScript(true); });
-                                          main->bindScriptPanel(script, inputs, params);
+                                          QObject::connect(preview, &QPushButton::clicked, main, [main] {
+                                              ps::commands::CommandContext c;
+                                              c.arg = QStringLiteral("false");
+                                              main->commands().invoke(QStringLiteral("script.run"), c);
+                                          });
+                                          QObject::connect(apply, &QPushButton::clicked, main, [main] {
+                                              ps::commands::CommandContext c;
+                                              c.arg = QStringLiteral("true");
+                                              main->commands().invoke(QStringLiteral("script.run"), c);
+                                          });
+                                          ps::plot::bindScriptPanel(main, script, inputs, params);
                                           return dock;
                                       }});
     registry.addRibbon(RibbonContribution{

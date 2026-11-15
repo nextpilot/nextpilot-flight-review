@@ -1,4 +1,5 @@
 #include "DataSourceModule.h"
+#include "PlotModule.h"
 #include "MainWindow.h"
 #include "DataSourceDock.h"
 #include "CanvasWidget.h"
@@ -7,6 +8,8 @@
 #include "SourceModel.h"
 #include "TransformDialogInterface.h"
 #include <QtEndian>
+using ps::data_source::SourceData;
+using ps::data_source::TransformRecipe;
 #include "DataSourceRegistry.h"
 #include "LiveSession.h"
 #include "DatasetCache.h"
@@ -51,8 +54,117 @@
 #include <QTabBar>
 #include <QTableWidget>
 #include <QToolButton>
+#include <QTabWidget>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+
+
+class MainWindow;
+class DataSourceController : public QWidget
+{
+public:
+    explicit DataSourceController(MainWindow *mw);
+    ~DataSourceController() override;
+
+    QDockWidget *createDataSourceDock(QWidget *parent, const QString &icon);
+    void registerDataCommands();
+    bool loadFile(const QString &path, bool interactive = true);
+    void openPath(const QString &path);
+    void connectLiveSource(const QString &extensionId);
+    void connectSource(const QString &id);
+    void closeSources();
+    void addTimeMarkerForward(double t, const QString &label, bool prompt);
+    void addTimeMarker(double t, const QString &label, bool prompt);
+    void removeTimeMarker(double t);
+    void onClose();
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void pollLiveSources();
+    void clearParseCache();
+    void saveLayoutTo(const QString &path);
+    void importLayoutFrom(const QString &path);
+    void refreshCount();
+    ps::data_source::SourceData *sourceById(int id);
+    int activeSourceId() const { return m_activeSource; }
+    QVector<ps::data_source::SourceData> &sources();
+    ps::data_source::SourceStore *store() { return m_sourceStore; }
+    const QVector<const PsChannelInfo *> &channels() const { return m_srcChannels; }
+    QVector<QPair<double, QString>> &timeMarkers() { return m_timeMarkers; }
+    void refreshActiveSource();
+    void reloadChannels(ps::data_source::SourceData *src);
+    void activateSource(QWidget *row);
+    void switchSource(int id);
+    void setSourcePaused(ps::data_source::SourceData *src, bool paused);
+    void exportActiveCsv();
+    void showSourceProps(QWidget *row);
+
+    void showSourceMenu(QWidget *row, const QPoint &globalPos);
+    void removeSourceRow(QWidget *row);
+    void updateStatusChips();
+    void renderSourceData();
+    int sourceIdForRow(QWidget *row) const;
+    void setSourceOffset(ps::data_source::SourceData *src, double offsetSec, bool refit);
+    void alignSource(ps::data_source::SourceData *src, int mode);
+    void setSourceBase(ps::data_source::SourceData *src);
+    void compareSources(ps::data_source::SourceData *src, ps::data_source::SourceData *other,
+                        bool all, const QString &pick);
+    void openSourceDebug(ps::data_source::SourceData *src);
+    void updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor);
+    void addTransformFor(const QString &channel);
+    QWidget *addSourceRow(const QString &name, const QString &meta, const QString &dotColor,
+                          bool backed, const QString &path, int srcId);
+    void refreshSrcCount();
+    void syncSrcChips();
+    void updateSrcStatus();
+    void applySrcFilter();
+    bool openLiveInput(const QStringList &ids, const QString &config, ps::data_source::SourceData &dst,
+                       QString *fanoutNote, QString *err);
+    void configureLiveSource(ps::data_source::SourceData *src);
+    void refreshLiveSource(ps::data_source::SourceData *src);
+    void closeLiveSource(ps::data_source::SourceData *src);
+
+private:
+    void log(const QString &text);
+    QWidget *createDockTitleBar(QDockWidget *dock);
+    void dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area);
+    void collapseDockWidget(QDockWidget *dock);
+    void toggleDockMax(QDockWidget *dock);
+    void restoreDockMax();
+    void showDockMenu(QToolButton *btn, QMenu *menu);
+    void refreshPropTree(CanvasWidget *c = nullptr);
+    void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
+    CanvasWidget *currentCanvas() const;
+    void newPageForward();
+    QVector<CanvasWidget *> pageCanvasesForward() const;
+
+    MainWindow *m_mw = nullptr;
+    ps::data_source::DataSourceDock *m_dataSourceDock = nullptr;
+    QTreeWidget *m_srcTree = nullptr;
+    QTabBar *m_srcTabs = nullptr;
+    QStackedWidget *m_srcStack = nullptr;
+    QLabel *m_srcCount = nullptr;
+    QTimer *m_liveTimer = nullptr;
+    qint64 m_liveUiMs = 0;
+    bool m_viewBacked = false;
+    QString m_srcFmt;
+    QVector<const PsChannelInfo *> m_srcChannels;
+    QVector<QPair<QString, QString>> m_srcParams;
+    QVector<QStringList> m_srcMsgs;
+    QLineEdit *m_srcFilter = nullptr;
+    QTableWidget *m_paramTable = nullptr;
+    QTableWidget *m_msgTable = nullptr;
+    QVBoxLayout *m_srcRows = nullptr;
+    QScrollArea *m_srcListScroll = nullptr;
+    QWidget *m_srcEmpty = nullptr;
+    QToolButton *m_srcListToggle = nullptr;
+    QLabel *m_srcStatus = nullptr;
+    QVector<QToolButton *> m_srcChips;
+    QVector<QPair<double, QString>> m_timeMarkers;
+    ps::data_source::SourceStore *m_sourceStore = nullptr;
+    int m_activeSource = -1;
+    QAction *m_chipSource = nullptr;
+    QAction *m_chipLod = nullptr;
+    bool m_propTreeBuilding = false;
+};
 
 class ChannelTree : public QTreeWidget
 {
@@ -98,11 +210,28 @@ ComponentManifest DataSourceComponent::manifest() const
             {QStringLiteral("datasource"), QStringLiteral("dock")}};
 }
 
+static DataSourceController *dataController(MainWindow *mw)
+{
+    auto *existing = mw->findChild<QObject *>(QStringLiteral("ps.dataSourceController"));
+    if (existing)
+        return static_cast<DataSourceController *>(existing);
+    auto *c = new DataSourceController(mw);
+    c->setObjectName(QStringLiteral("ps.dataSourceController"));
+    return c;
+}
+
+ps::data_source::SourceStore *dataSourceStore(MainWindow *mw) { return dataController(mw)->store(); }
+void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt) { dataController(mw)->addTimeMarker(t, label, prompt); }
+void removeDataSourceTimeMarker(MainWindow *mw, double t) { dataController(mw)->removeTimeMarker(t); }
+const QVector<const PsChannelInfo *> &dataSourceChannels(MainWindow *mw) { return dataController(mw)->channels(); }
+QVector<QPair<double, QString>> &dataSourceTimeMarkers(MainWindow *mw) { return dataController(mw)->timeMarkers(); }
+
 void DataSourceComponent::contribute(Registry &registry, const HostContext &)
 {
     for (const DataSourceSpec &source : registry.dataSources())
         DataSourceRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
     registerDataSourceContributions(registry);
+    registry.addWindowHook([](QWidget *w) { dataController(qobject_cast<MainWindow *>(w)); });
 }
 
 void registerDataSourceContributions(Registry &registry)
@@ -112,9 +241,7 @@ void registerDataSourceContributions(Registry &registry)
                                       QStringLiteral(":/icons/datasource.svg"),
                                       [](QWidget *parent) -> QWidget * {
                                           auto *mw = qobject_cast<MainWindow *>(parent);
-                                          auto *d = mw ? mw->createDataSourceDock(parent, QStringLiteral(":/icons/datasource.svg")) : nullptr;
-                                          if (mw) mw->refreshSourceCount();
-                                          return d;
+                                          return mw ? dataController(mw)->createDataSourceDock(parent, QStringLiteral(":/icons/datasource.svg")) : nullptr;
                                       },
                                       [](QWidget *parent) {
                                           auto *mw = qobject_cast<MainWindow *>(parent);
@@ -139,14 +266,14 @@ void registerDataSourceContributions(Registry &registry)
                      auto *a = new QAction(e.label, panel);
                      QObject::connect(a, &QAction::triggered, mw, [mw, e] {
                          const QStringList fs = QFileDialog::getOpenFileNames(mw, e.label, {}, e.filter.isEmpty() ? QStringLiteral("全部 (*)") : e.filter);
-                         for (const QString &f : fs) mw->openPath(f);
+                         for (const QString &f : fs) dataController(mw)->openPath(f);
                      });
                      files.append(a);
                  }
                  for (const DataSourceEntry &e : DataSourceRegistry::instance().streamEntries())
                  {
                      auto *a = new QAction(e.label, panel);
-                     QObject::connect(a, &QAction::triggered, mw, [mw, id = e.id] { mw->connectSource(id); });
+                     QObject::connect(a, &QAction::triggered, mw, [mw, id = e.id] { dataController(mw)->connectSource(id); });
                      streams.append(a);
                  }
                  auto add = [&](const QString &name, const QList<QAction *> &acts) {
@@ -166,7 +293,41 @@ void registerDataSourceContributions(Registry &registry)
 
 } // namespace ps::components
 
-QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &icon)
+DataSourceController::DataSourceController(MainWindow *mw) : QWidget(mw), m_mw(mw)
+{
+    m_sourceStore = new ps::data_source::SourceStore;
+    m_mw->installEventFilter(this);
+    m_liveTimer = new QTimer(m_mw);
+    m_liveTimer->setInterval(30);
+    connect(m_liveTimer, &QTimer::timeout, this, &DataSourceController::pollLiveSources);
+    m_liveTimer->start();
+    registerDataCommands();
+}
+
+DataSourceController::~DataSourceController()
+{
+    delete m_sourceStore;
+    m_sourceStore = nullptr;
+}
+
+void DataSourceController::log(const QString &text) { m_mw->appendLog(text); }
+void DataSourceController::newPageForward() { ps::plot::newPage(m_mw); }
+QVector<CanvasWidget *> DataSourceController::pageCanvasesForward() const { return ps::plot::pageCanvases(m_mw); }
+void DataSourceController::addTimeMarkerForward(double t, const QString &l, bool p) { addTimeMarker(t,l,p); }
+QWidget *DataSourceController::createDockTitleBar(QDockWidget *d) { return m_mw->createDockTitleBar(d); }
+void DataSourceController::dockWidgetToArea(QDockWidget *d, Qt::DockWidgetArea a) { m_mw->dockWidgetToArea(d, a); }
+void DataSourceController::collapseDockWidget(QDockWidget *d) { m_mw->collapseDockWidget(d); }
+void DataSourceController::toggleDockMax(QDockWidget *d) { m_mw->toggleDockMax(d); }
+void DataSourceController::restoreDockMax() { m_mw->restoreDockMax(); }
+void DataSourceController::showDockMenu(QToolButton *b, QMenu *m) { m_mw->showDockMenu(b, m); }
+void DataSourceController::refreshPropTree(CanvasWidget *c) { ps::plot::refreshPropTree(m_mw, c); }
+void DataSourceController::setPropRows(const QString &o, const QVector<QPair<QString, QString>> &r) { ps::plot::setPropRows(m_mw, o, r); }
+void DataSourceController::newPageForward();
+CanvasWidget *DataSourceController::currentCanvas() const { return ps::plot::currentCanvas(m_mw); }
+QVector<ps::data_source::SourceData> &DataSourceController::sources() { return m_sourceStore->items(); }
+void DataSourceController::closeSources() { if (m_liveTimer) m_liveTimer->stop(); }
+
+QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const QString &icon)
 {
     // 左：数据源（对齐原型 d-src）：源列表 → 字段/参数/消息 三页签 → 内容
     auto *srcDock = new QDockWidget(QStringLiteral("数据源"), this);
@@ -278,7 +439,7 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
             [this] { refreshActiveSource(); },
             [this](const QString &name) { addTransformFor(name); },
             [this](double t, const QString &topic, bool prompt) {
-                addTimeMarker(t, topic, prompt);
+                addTimeMarkerForward(t, topic, prompt);
             },
             [this](const QString &text) { log(text); },
             [this] { return !m_sourceStore->items().isEmpty(); },
@@ -341,7 +502,7 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
                         if (hi - lo > 1e-9) pick.append(ch);
                     }
                     if (pick.isEmpty()) pick = src.channels;
-                    const QVector<CanvasWidget *> canvases = pageCanvases();
+                    const QVector<CanvasWidget *> canvases = pageCanvasesForward();
                     for (int i = 0; i < canvases.size() && i < pick.size(); ++i)
                     {
                         canvases[i]->setInputSource(src.id, src.path, src.alias, src.offsetSec);
@@ -359,7 +520,7 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
                 while (recent.size() > 12) recent.removeLast();
                 recentStore.setValue(QStringLiteral("recentFiles"), recent);
             },
-            [this](const QString &msg) { statusBar()->showMessage(msg); },
+            [this](const QString &msg) { m_mw->statusBar()->showMessage(msg); },
             [this](SourceData *src) {
                 if (!src || src->id != m_activeSource) return;
                 const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -399,7 +560,7 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
                     }
                 }
                 if (first.isEmpty()) return;
-                if (currentCanvas()->hasData()) newPage();
+                if (currentCanvas()->hasData()) newPageForward();
                 if (CanvasWidget *c = currentCanvas())
                     c->setInputSource(src->id, src->path, src->alias, src->offsetSec);
                 for (const PsChannelInfo *ch : first) currentCanvas()->addChannel(ch);
@@ -443,18 +604,22 @@ QDockWidget *MainWindow::createDataSourceDock(QWidget *parent, const QString &ic
     return srcDock;
     
 }
-void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
+void DataSourceController::showSourceMenu(QWidget *row, const QPoint &globalPos)
 {
     m_dataSourceDock->showSourceMenu(row, globalPos);
 }
 
-void MainWindow::removeSourceRow(QWidget *row)
+void DataSourceController::removeSourceRow(QWidget *row)
 {
     m_dataSourceDock->removeSourceRow(row);
 }
 
-void MainWindow::updateStatusChips()
+void DataSourceController::updateStatusChips()
 {
+    if (!m_chipSource)
+        m_chipSource = m_mw->findChild<QAction *>(QStringLiteral("ps.chip.source"));
+    if (!m_chipLod)
+        m_chipLod = m_mw->findChild<QAction *>(QStringLiteral("ps.chip.lod"));
     if (!m_chipSource)
         return;
     int channels = 0;
@@ -479,19 +644,19 @@ void MainWindow::updateStatusChips()
                                   .arg(channels));
 }
 
-void MainWindow::renderSourceData()
+void DataSourceController::renderSourceData()
 {
     updateStatusChips();
     m_dataSourceDock->renderSourceData(m_srcChannels, m_srcParams, m_srcMsgs,
                                       m_srcFmt, m_viewBacked, m_activeSource);
 }
 
-int MainWindow::sourceIdForRow(QWidget *row) const
+int DataSourceController::sourceIdForRow(QWidget *row) const
 {
     return row ? row->property("srcId").toInt() : -1;
 }
 
-ps::data_source::SourceData *MainWindow::sourceById(int id)
+ps::data_source::SourceData *DataSourceController::sourceById(int id)
 {
     return m_sourceStore->byId(id);
 }
@@ -561,7 +726,7 @@ bool sourceTimeRange(const ps::data_source::SourceData *s, double &t0, double &t
 }
 } // namespace
 
-void MainWindow::setSourceOffset(ps::data_source::SourceData *src, double offsetSec, bool refit)
+void DataSourceController::setSourceOffset(ps::data_source::SourceData *src, double offsetSec, bool refit)
 {
     if (!src)
         return;
@@ -572,7 +737,7 @@ void MainWindow::setSourceOffset(ps::data_source::SourceData *src, double offset
         row->setToolTip(QStringLiteral("%1 · 显示偏移 %2 s").arg(src->alias).arg(offsetSec, 0, 'f', 3));
 }
 
-void MainWindow::alignSource(ps::data_source::SourceData *src, int mode)
+void DataSourceController::alignSource(ps::data_source::SourceData *src, int mode)
 {
     if (!src)
         return;
@@ -605,7 +770,7 @@ void MainWindow::alignSource(ps::data_source::SourceData *src, int mode)
             .arg(off, 0, 'f', 3));
 }
 
-void MainWindow::setSourceBase(ps::data_source::SourceData *src)
+void DataSourceController::setSourceBase(ps::data_source::SourceData *src)
 {
     double a0 = 0, a1 = 0;
     if (!src || !sourceTimeRange(src, a0, a1))
@@ -619,7 +784,7 @@ void MainWindow::setSourceBase(ps::data_source::SourceData *src)
     log(QStringLiteral("时间基准：%1，起点归零，其余源同步换算").arg(src->alias));
 }
 
-void MainWindow::compareSources(ps::data_source::SourceData *src, ps::data_source::SourceData *other, bool all, const QString &pick)
+void DataSourceController::compareSources(ps::data_source::SourceData *src, ps::data_source::SourceData *other, bool all, const QString &pick)
 {
     if (!src || !other || !currentCanvas())
         return;
@@ -675,7 +840,7 @@ void MainWindow::compareSources(ps::data_source::SourceData *src, ps::data_sourc
 
 
 
-void MainWindow::openSourceDebug(ps::data_source::SourceData *src)
+void DataSourceController::openSourceDebug(ps::data_source::SourceData *src)
 {
     if (!src || !src->live)
         return;
@@ -691,7 +856,7 @@ void MainWindow::openSourceDebug(ps::data_source::SourceData *src)
     args.insert(QStringLiteral("name"), src->name);
     args.insert(QStringLiteral("handle"),
                 QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(src->handle)));
-    QDialog *dlg = m_extensions.registry().createDialog(QStringLiteral("dialog.device_debug"),
+    QDialog *dlg = m_mw->extensions().registry().createDialog(QStringLiteral("dialog.device_debug"),
                                                        args, this);
     if (!dlg)
         return;
@@ -707,7 +872,7 @@ void MainWindow::openSourceDebug(ps::data_source::SourceData *src)
 
 
 
-void MainWindow::updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor)
+void DataSourceController::updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor)
 {
     if (!row)
         return;
@@ -719,7 +884,7 @@ void MainWindow::updateSourceMeta(QWidget *row, const QString &meta, const QStri
     refreshSrcCount();
 }
 
-void MainWindow::addTransformFor(const QString &channel)
+void DataSourceController::addTransformFor(const QString &channel)
 {
     ps::data_source::SourceData *src = sourceById(m_activeSource);
     if (!src || !src->ds)
@@ -733,7 +898,7 @@ void MainWindow::addTransformFor(const QString &channel)
     args.insert(QStringLiteral("channels"), channels);
     args.insert(QStringLiteral("sourceName"), src->alias.isEmpty() ? src->name : src->alias);
     args.insert(QStringLiteral("preselect"), channel);
-    QDialog *dlg = m_extensions.registry().createDialog(QStringLiteral("dialog.transform"), args, this);
+    QDialog *dlg = m_mw->extensions().registry().createDialog(QStringLiteral("dialog.transform"), args, this);
     if (!dlg)
         return;
     const bool accepted = dlg->exec() == QDialog::Accepted;
@@ -787,23 +952,23 @@ void MainWindow::addTransformFor(const QString &channel)
 
 
 
-QWidget *MainWindow::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
+QWidget *DataSourceController::addSourceRow(const QString &name, const QString &meta, const QString &dotColor, bool backed,
                               const QString &path, int srcId)
 {
     return m_dataSourceDock->addSourceRow(name, meta, dotColor, backed, path, srcId);
 }
 
-void MainWindow::refreshSrcCount()
+void DataSourceController::refreshSrcCount()
 {
     m_dataSourceDock->refreshSrcCount();
 }
 
-void MainWindow::syncSrcChips()
+void DataSourceController::syncSrcChips()
 {
     m_dataSourceDock->syncSrcChips();
 }
 
-void MainWindow::updateSrcStatus()
+void DataSourceController::updateSrcStatus()
 {
     m_dataSourceDock->updateSrcStatus();
 }
@@ -812,16 +977,16 @@ void MainWindow::updateSrcStatus()
 
 
 
-void MainWindow::switchSource(int id) { m_dataSourceDock->switchSource(id); }
-void MainWindow::reloadChannels(SourceData *src) { m_dataSourceDock->reloadChannels(src); }
-void MainWindow::refreshActiveSource() { m_dataSourceDock->refreshActiveSource(); }
-void MainWindow::activateSource(QWidget *row) { m_dataSourceDock->activateSource(row); }
-void MainWindow::setSourcePaused(SourceData *src, bool paused) { m_dataSourceDock->setSourcePaused(src, paused); }
-void MainWindow::exportActiveCsv() { m_dataSourceDock->exportActiveCsv(); }
+void DataSourceController::switchSource(int id) { m_dataSourceDock->switchSource(id); }
+void DataSourceController::reloadChannels(SourceData *src) { m_dataSourceDock->reloadChannels(src); }
+void DataSourceController::refreshActiveSource() { m_dataSourceDock->refreshActiveSource(); }
+void DataSourceController::activateSource(QWidget *row) { m_dataSourceDock->activateSource(row); }
+void DataSourceController::setSourcePaused(SourceData *src, bool paused) { m_dataSourceDock->setSourcePaused(src, paused); }
+void DataSourceController::exportActiveCsv() { m_dataSourceDock->exportActiveCsv(); }
 
-void MainWindow::showSourceProps(QWidget *row)
+void DataSourceController::showSourceProps(QWidget *row)
 {
-    if (!row || !m_propTable)
+    if (!row || !ps::plot::propTable(m_mw))
         return;
     ps::data_source::SourceData *src = sourceById(sourceIdForRow(row));
     if (!src)
@@ -882,18 +1047,18 @@ void MainWindow::showSourceProps(QWidget *row)
                          ? QStringLiteral("进行中 · %1").arg(src->liveSession->recordPath())
                          : QStringLiteral("未录制")});
     m_propTreeBuilding = true;
-    if (m_propTree)
+    if (ps::plot::propTree(m_mw))
     {
-        m_propTree->setCurrentItem(nullptr);
-        m_propTree->clearSelection();
+        ps::plot::propTree(m_mw)->setCurrentItem(nullptr);
+        ps::plot::propTree(m_mw)->clearSelection();
     }
     m_propTreeBuilding = false;
     setPropRows(QStringLiteral("数据源 · %1").arg(name), rows);
-    if (m_propTable->rowCount() > 0 && m_propTable->item(0, 1))
-        m_propTable->item(0, 1)->setToolTip(rows.first().second);
+    if (ps::plot::propTable(m_mw)->rowCount() > 0 && ps::plot::propTable(m_mw)->item(0, 1))
+        ps::plot::propTable(m_mw)->item(0, 1)->setToolTip(rows.first().second);
 }
 
-void MainWindow::applySrcFilter()
+void DataSourceController::applySrcFilter()
 {
     if (!m_srcFilter || !m_srcTabs)
         return;
@@ -965,26 +1130,26 @@ void MainWindow::applySrcFilter()
     }
 }
 
-bool MainWindow::loadFile(const QString &path, bool interactive)
+bool DataSourceController::loadFile(const QString &path, bool interactive)
 {
     return m_dataSourceDock->loadFile(path, interactive);
 }
 
-void MainWindow::connectLiveSource(const QString &extensionId)
+void DataSourceController::connectLiveSource(const QString &extensionId)
 {
     m_dataSourceDock->connectLiveSource(extensionId);
 }
 
-bool MainWindow::openLiveInput(const QStringList &ids, const QString &config, SourceData &dst,
+bool DataSourceController::openLiveInput(const QStringList &ids, const QString &config, SourceData &dst,
                                QString *fanoutNote, QString *err)
 {
     return m_dataSourceDock->openLiveInput(ids, config, dst, fanoutNote, err);
 }
 
-void MainWindow::configureLiveSource(SourceData *src) { m_dataSourceDock->configureLiveSource(src); }
-void MainWindow::pollLiveSources() { m_dataSourceDock->pollLiveSources(); }
-void MainWindow::refreshLiveSource(SourceData *src) { m_dataSourceDock->refreshLiveSource(src); }
-void MainWindow::closeLiveSource(SourceData *src) { m_dataSourceDock->closeLiveSource(src); }
+void DataSourceController::configureLiveSource(SourceData *src) { m_dataSourceDock->configureLiveSource(src); }
+void DataSourceController::pollLiveSources() { m_dataSourceDock->pollLiveSources(); }
+void DataSourceController::refreshLiveSource(SourceData *src) { m_dataSourceDock->refreshLiveSource(src); }
+void DataSourceController::closeLiveSource(SourceData *src) { m_dataSourceDock->closeLiveSource(src); }
 
 
 
@@ -993,16 +1158,21 @@ void MainWindow::closeLiveSource(SourceData *src) { m_dataSourceDock->closeLiveS
 
 
 
-void MainWindow::registerDataCommands()
+void DataSourceController::registerDataCommands()
 {
+    m_mw->commands().add(QStringLiteral("app.beforeClose"), [this](const auto &) { onClose(); });
+    m_mw->commands().add(QStringLiteral("data.openPath"), [this](const auto &ctx) { if (!ctx.arg.isEmpty()) openPath(ctx.arg); });
+    m_mw->commands().add(QStringLiteral("data.clearCache"), [this](const auto &) { clearParseCache(); log(QStringLiteral("解析缓存已清空")); });
+    m_mw->commands().add(QStringLiteral("layout.save"), [this](const auto &) { saveLayoutTo(m_mw->defaultLayoutPath()); });
+
     using Ctx = ps::commands::CommandContext;
-    m_commands.add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
+    m_mw->commands().add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
         const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("快速打开"), {},
             QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
         for (const QString &f : fs)
             loadFile(f);
     });
-    m_commands.add(QStringLiteral("data.recent"), [this](const Ctx &) {
+    m_mw->commands().add(QStringLiteral("data.recent"), [this](const Ctx &) {
         QMenu menu(this);
         QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
         const QStringList recent = st.value(QStringLiteral("recentFiles")).toStringList();
@@ -1019,8 +1189,8 @@ void MainWindow::registerDataCommands()
         }
         menu.exec(QCursor::pos());
     });
-    m_commands.add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
-    m_commands.add(QStringLiteral("data.reload"), [this](const Ctx &) {
+    m_mw->commands().add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
+    m_mw->commands().add(QStringLiteral("data.reload"), [this](const Ctx &) {
         ps::data_source::SourceData *src = sourceById(m_activeSource);
         if (!src || src->path.isEmpty())
         {
@@ -1036,10 +1206,24 @@ void MainWindow::registerDataCommands()
 
 }
 
-void MainWindow::openPath(const QString &path) { loadFile(path, true); }
-void MainWindow::connectSource(const QString &id) { connectLiveSource(id); }
+void DataSourceController::openPath(const QString &path) { loadFile(path, true); }
+void DataSourceController::connectSource(const QString &id) { connectLiveSource(id); }
 
-void MainWindow::closeEvent(QCloseEvent *event)
+bool DataSourceController::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::MouseButtonRelease && watched->property("srcRow").toBool())
+    {
+        auto *me = static_cast<QMouseEvent *>(event);
+        QWidget *row = qobject_cast<QWidget *>(watched);
+        activateSource(row);
+        if (me->button() == Qt::RightButton)
+            showSourceMenu(row, me->globalPosition().toPoint());
+        return false;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void DataSourceController::onClose()
 {
     for (ps::data_source::SourceData &src : m_sourceStore->items())
         closeLiveSource(&src);
@@ -1047,29 +1231,28 @@ void MainWindow::closeEvent(QCloseEvent *event)
         m_liveTimer->stop();
     if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
             .value(QStringLiteral("restoreLayout"), true).toBool())
-        saveLayoutTo(defaultLayoutPath());
-    QMainWindow::closeEvent(event);
+        saveLayoutTo(m_mw->defaultLayoutPath());
 }
 
-void MainWindow::saveLayoutTo(const QString &path)
+void DataSourceController::saveLayoutTo(const QString &path)
 {
     QDir().mkpath(QFileInfo(path).absolutePath());
     QJsonObject root;
     root[QStringLiteral("app")] = QStringLiteral("PlotScope");
     root[QStringLiteral("version")] = 1;
     root[QStringLiteral("geometry")] = QString::fromLatin1(saveGeometry().toBase64());
-    root[QStringLiteral("docks")] = QString::fromLatin1(saveState().toBase64());
-    root[QStringLiteral("current")] = m_pages->currentIndex();
+    root[QStringLiteral("docks")] = QString::fromLatin1(m_mw->saveState().toBase64());
+    root[QStringLiteral("current")] = m_mw->pages()->currentIndex();
 
     QJsonArray pages;
     QJsonArray titles;
-    const int last = m_pages->count() - 1;
-    for (int i = 0; i < m_pages->count(); ++i)
+    const int last = m_mw->pages()->count() - 1;
+    for (int i = 0; i < m_mw->pages()->count(); ++i)
     {
-        if (i == last && m_pages->tabText(i) == QStringLiteral("＋"))
+        if (i == last && m_mw->pages()->tabText(i) == QStringLiteral("＋"))
             continue;
-        pages.append(pageState(m_pages->widget(i)));
-        titles.append(m_pages->tabText(i));
+        pages.append(ps::plot::pageState(m_mw, m_mw->pages()->widget(i)));
+        titles.append(m_mw->pages()->tabText(i));
     }
     root[QStringLiteral("pages")] = pages;
     root[QStringLiteral("titles")] = titles;
@@ -1126,24 +1309,25 @@ void MainWindow::saveLayoutTo(const QString &path)
     root[QStringLiteral("transforms")] = transforms;
 
     QJsonObject script;
-    script[QStringLiteral("source")] = m_script ? m_script->toPlainText() : QString();
+    script[QStringLiteral("source")] = ps::plot::scriptEditor(m_mw) ? ps::plot::scriptEditor(m_mw)->toPlainText() : QString();
     QJsonArray binds;
-    for (QComboBox *cb : m_scriptInputs)
-        binds.append(cb ? cb->currentData().toString() : QString());
+    QComboBox **inputs = ps::plot::scriptInputs(m_mw);
+    for (int i = 0; i < 4; ++i)
+        binds.append(inputs[i] ? inputs[i]->currentData().toString() : QString());
     script[QStringLiteral("inputs")] = binds;
     QJsonObject paramObj;
-    if (m_scriptParams)
+    if (ps::plot::scriptParams(m_mw))
     {
-        for (int row = 0; row < m_scriptParams->rowCount(); ++row)
+        for (int row = 0; row < ps::plot::scriptParams(m_mw)->rowCount(); ++row)
         {
-            const QString key = m_scriptParams->item(row, 0)
-                                    ? m_scriptParams->item(row, 0)->text().trimmed()
+            const QString key = ps::plot::scriptParams(m_mw)->item(row, 0)
+                                    ? ps::plot::scriptParams(m_mw)->item(row, 0)->text().trimmed()
                                     : QString();
             if (key.isEmpty())
                 continue;
             bool ok = false;
-            const double v = m_scriptParams->item(row, 1)
-                                 ? m_scriptParams->item(row, 1)->text().toDouble(&ok)
+            const double v = ps::plot::scriptParams(m_mw)->item(row, 1)
+                                 ? ps::plot::scriptParams(m_mw)->item(row, 1)->text().toDouble(&ok)
                                  : 0.0;
             if (ok)
                 paramObj[key] = v;
@@ -1164,7 +1348,7 @@ void MainWindow::saveLayoutTo(const QString &path)
     log(QStringLiteral("已保存布局：%1").arg(path));
 }
 
-void MainWindow::importLayoutFrom(const QString &path)
+void DataSourceController::importLayoutFrom(const QString &path)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
@@ -1292,21 +1476,21 @@ void MainWindow::importLayoutFrom(const QString &path)
         refreshActiveSource();
 
     // 清空页签时屏蔽 currentChanged：末尾的 ＋ 触发 newPage 会和删除循环互踢
-    m_pages->blockSignals(true);
-    while (m_pages->count() > 0)
-        m_pages->removeTab(0);
-    m_pages->blockSignals(false);
+    m_mw->pages()->blockSignals(true);
+    while (m_mw->pages()->count() > 0)
+        m_mw->pages()->removeTab(0);
+    m_mw->pages()->blockSignals(false);
 
     const QJsonArray pages = root.value(QStringLiteral("pages")).toArray();
     const QJsonArray titles = root.value(QStringLiteral("titles")).toArray();
     for (int i = 0; i < pages.size(); ++i)
-        m_pages->addTab(buildPage(pages[i].toObject()),
+        m_mw->pages()->addTab(ps::plot::buildPage(m_mw, pages[i].toObject()),
                         titles.at(i).toString(QStringLiteral("页 %1").arg(i + 1)));
 
-    const int plusIdx = m_pages->count();
-    m_pages->addTab(new QWidget(m_pages), QStringLiteral("＋"));
-    m_pages->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
-    m_pages->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
+    const int plusIdx = m_mw->pages()->count();
+    m_mw->pages()->addTab(new QWidget(m_mw->pages()), QStringLiteral("＋"));
+    m_mw->pages()->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
+    m_mw->pages()->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
 
     const QByteArray geo = QByteArray::fromBase64(root.value(QStringLiteral("geometry")).toString().toLatin1());
     if (!geo.isEmpty())
@@ -1314,10 +1498,10 @@ void MainWindow::importLayoutFrom(const QString &path)
     const QByteArray docks = QByteArray::fromBase64(root.value(QStringLiteral("docks")).toString().toLatin1());
     if (!docks.isEmpty())
     {
-        restoreState(docks);
+        m_mw->restoreState(docks);
         // 旧布局常把日志区拉到 150+，空白挤占画布；恢复后统一收到 96。
         if (auto *logDock = findChild<QDockWidget *>(QStringLiteral("dock.log")))
-            resizeDocks({logDock}, {96}, Qt::Vertical);
+            m_mw->resizeDocks({logDock}, {96}, Qt::Vertical);
     }
 
     if (m_activeSource >= 0)
@@ -1330,21 +1514,21 @@ void MainWindow::importLayoutFrom(const QString &path)
         m_timeMarkers.append({mo.value(QStringLiteral("t")).toDouble(),
                               mo.value(QStringLiteral("label")).toString()});
     }
-    applyTimeMarkers();
+    ps::plot::applyTimeMarkers(m_mw);
 
     const int cur = root.value(QStringLiteral("current")).toInt(0);
-    if (cur >= 0 && cur < m_pages->count() - 1)
-        m_pages->setCurrentIndex(cur);
+    if (cur >= 0 && cur < m_mw->pages()->count() - 1)
+        m_mw->pages()->setCurrentIndex(cur);
 
     const QJsonObject script = root.value(QStringLiteral("script")).toObject();
     if (!script.isEmpty())
     {
-        if (m_script)
-            m_script->setPlainText(script.value(QStringLiteral("source")).toString());
+        if (ps::plot::scriptEditor(m_mw))
+            ps::plot::scriptEditor(m_mw)->setPlainText(script.value(QStringLiteral("source")).toString());
         const QJsonArray binds = script.value(QStringLiteral("inputs")).toArray();
         for (int i = 0; i < 4; ++i)
         {
-            QComboBox *cb = m_scriptInputs[i];
+            QComboBox *cb = ps::plot::scriptInputs(m_mw)[i];
             if (!cb)
                 continue;
             cb->clear();
@@ -1355,30 +1539,77 @@ void MainWindow::importLayoutFrom(const QString &path)
             cb->setCurrentIndex(name.isEmpty() ? 0 : 1);
         }
         const QJsonObject paramObj = script.value(QStringLiteral("params")).toObject();
-        if (m_scriptParams)
+        if (ps::plot::scriptParams(m_mw))
         {
-            m_scriptParams->setRowCount(0);
+            ps::plot::scriptParams(m_mw)->setRowCount(0);
             for (auto it = paramObj.begin(); it != paramObj.end(); ++it)
             {
-                const int row = m_scriptParams->rowCount();
-                m_scriptParams->insertRow(row);
-                m_scriptParams->setItem(row, 0, new QTableWidgetItem(it.key()));
-                m_scriptParams->setItem(row, 1, new QTableWidgetItem(
+                const int row = ps::plot::scriptParams(m_mw)->rowCount();
+                ps::plot::scriptParams(m_mw)->insertRow(row);
+                ps::plot::scriptParams(m_mw)->setItem(row, 0, new QTableWidgetItem(it.key()));
+                ps::plot::scriptParams(m_mw)->setItem(row, 1, new QTableWidgetItem(
                     QString::number(it.value().toDouble(), 'g', 10)));
             }
         }
-        if (!m_script->toPlainText().trimmed().isEmpty())
-            runScript(false);
+        if (!ps::plot::scriptEditor(m_mw)->toPlainText().trimmed().isEmpty())
+            ps::plot::runScript(m_mw, false);
     }
 
     QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
     log(QStringLiteral("已导入布局：%1").arg(path));
 }
 
-void MainWindow::clearParseCache() { DatasetCache::clear(); }
+void DataSourceController::clearParseCache() { DatasetCache::clear(); }
 
-void MainWindow::initSourceRuntime() { if (!m_sourceStore) m_sourceStore = new ps::data_source::SourceStore; }
 
-MainWindow::~MainWindow() { delete m_sourceStore; m_sourceStore = nullptr; }
 
-void MainWindow::refreshSourceCount() { refreshSrcCount(); }
+
+void DataSourceController::addTimeMarker(double t, const QString &label, bool prompt)
+{
+    QString text = label.trimmed();
+    if (prompt)
+    {
+        bool ok = false;
+        QString def = text.isEmpty() ? QStringLiteral("标签") : text;
+        text = QInputDialog::getText(this, QStringLiteral("添加时间标签"),
+                                     QStringLiteral("时间 %1 s\n标签").arg(t, 0, 'f', 2),
+                                     QLineEdit::Normal, def, &ok);
+        if (!ok)
+            return;
+        text = text.trimmed();
+        if (text.isEmpty())
+            text = def;
+    }
+    if (text.isEmpty())
+        text = QStringLiteral("%1 s").arg(t, 0, 'f', 2);
+    for (auto &mk : m_timeMarkers)
+        if (qAbs(mk.first - t) < 1e-4)
+        {
+            mk.second = text;
+            ps::plot::applyTimeMarkers(m_mw);
+            m_mw->appendLog(QStringLiteral("更新时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
+            return;
+        }
+    m_timeMarkers.append({t, text});
+    std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
+              [](const QPair<double, QString> &a, const QPair<double, QString> &b) {
+                  return a.first < b.first;
+              });
+    ps::plot::applyTimeMarkers(m_mw);
+    log(QStringLiteral("添加时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
+}
+
+void DataSourceController::removeTimeMarker(double t)
+{
+    for (int i = 0; i < m_timeMarkers.size(); ++i)
+    {
+        if (qAbs(m_timeMarkers.at(i).first - t) < 1e-4)
+        {
+            const QString label = m_timeMarkers.at(i).second;
+            m_timeMarkers.removeAt(i);
+            ps::plot::applyTimeMarkers(m_mw);
+            m_mw->appendLog(QStringLiteral("删除时间标签：%1").arg(label));
+            return;
+        }
+    }
+}

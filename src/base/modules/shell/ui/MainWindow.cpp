@@ -682,6 +682,8 @@ private:
     QString m_full;
 };
 
+MainWindow::~MainWindow() = default;
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -694,21 +696,25 @@ MainWindow::MainWindow(QWidget *parent)
     hostContext.configDir = [] {
         return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     };
-    hostContext.setPlayhead = [this](double t) { applyPlayhead(t); };
+    hostContext.setPlayhead = [this](double t) {
+        ps::commands::CommandContext ctx;
+        ctx.arg = QString::number(t);
+        m_commands.invoke(QStringLiteral("plot.setPlayhead"), ctx);
+    };
     m_extensions.activate(hostContext);
-    initSourceRuntime();
     for (const QString &error : m_extensions.errors())
         qWarning("[extension] %s", qPrintable(error));
     registerCommands();
 
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
     m_pages = new QTabWidget(this);
+    for (const auto &hook : m_extensions.registry().windowHooks())
+        hook(this);
 
     setMenuWidget(createRibbon());
     createDocks();
     darkenDocks(this);
-    createPages();
-    refreshPropTree(currentCanvas());
+    m_commands.invoke(QStringLiteral("plot.refreshTree"), {});
 
     // 内核连通性：状态栏直接读 ABI，证明 C ABI 已经打通
     const QString kernelInfo =
@@ -721,19 +727,19 @@ MainWindow::MainWindow(QWidget *parent)
 
     // PJ 习惯：Ctrl+S 存当前布局，Ctrl+Shift+O 打开布局
     auto *saveSc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+S")), this);
-    connect(saveSc, &QShortcut::activated, this, [this] { saveLayoutTo(defaultLayoutPath()); });
+    connect(saveSc, &QShortcut::activated, this, [this] {
+        m_commands.invoke(QStringLiteral("layout.save"), {});
+    });
     auto *openSc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+O")), this);
     connect(openSc, &QShortcut::activated, this, [this] {
         const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
             QStringLiteral("PlotScope 布局 (*.psl)"));
-        if (!f.isEmpty())
-            importLayoutFrom(f);
+        if (!f.isEmpty()) {
+            ps::commands::CommandContext ctx;
+            ctx.arg = f;
+            m_commands.invoke(QStringLiteral("layout.import"), ctx);
+        }
     });
-
-    m_liveTimer = new QTimer(this);
-    m_liveTimer->setInterval(30);
-    connect(m_liveTimer, &QTimer::timeout, this, &MainWindow::pollLiveSources);
-    m_liveTimer->start();
 
     log(QStringLiteral("启动完成：%1").arg(kernelInfo));
 }
@@ -745,21 +751,30 @@ void MainWindow::registerCommands()
     m_commands.add(QStringLiteral("file.open"), [this](const Ctx &) {
         const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("打开文件"), {},
             QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-        for (const QString &f : fs)
-            loadFile(f);
+        for (const QString &f : fs) {
+            ps::commands::CommandContext ctx;
+            ctx.arg = f;
+            m_commands.invoke(QStringLiteral("data.openPath"), ctx);
+        }
     });
     m_commands.add(QStringLiteral("file.importLayout"), [this](const Ctx &) {
         const QString f = QFileDialog::getOpenFileName(this, QStringLiteral("导入布局"), {},
             QStringLiteral("PlotScope 布局 (*.psl)"));
-        if (!f.isEmpty())
-            importLayoutFrom(f);
+        if (!f.isEmpty()) {
+            ps::commands::CommandContext ctx;
+            ctx.arg = f;
+            m_commands.invoke(QStringLiteral("layout.import"), ctx);
+        }
     });
     m_commands.add(QStringLiteral("file.settings"), [this](const Ctx &) { openSettings(); });
     m_commands.add(QStringLiteral("file.saveLayout"), [this](const Ctx &) {
         const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出布局"), {},
             QStringLiteral("PlotScope 布局 (*.psl)"));
-        if (!f.isEmpty())
-            saveLayoutTo(f);
+        if (!f.isEmpty()) {
+            ps::commands::CommandContext ctx;
+            ctx.arg = f;
+            m_commands.invoke(QStringLiteral("layout.save"), ctx);
+        }
     });
     m_commands.add(QStringLiteral("file.exportSettings"), [this](const Ctx &) {
         log(QStringLiteral("导出设置：M1 接 YAML"));
@@ -779,11 +794,6 @@ void MainWindow::registerCommands()
             log(QStringLiteral("已截图：%1").arg(f));
     });
 
-    registerDataCommands();
-    registerPlotCommands();
-    m_commands.add(QStringLiteral("script.run"), [this](const Ctx &) {
-        log(QStringLiteral("Lua 5.4 逐块执行（10 ms/块）：out = ps.movingAvg(ps.derivative(ps.ch(\"att.roll\")), 5)"));
-    });
     m_commands.add(QStringLiteral("script.format"), [this](const Ctx &) {
         log(QStringLiteral("脚本格式化（stylua 规则，M2 接）"));
     });
@@ -1039,14 +1049,15 @@ QWidget *MainWindow::createRibbon()
 
     // 右侧芯片位：只读状态摘要，跟随实际数据源刷新
     auto *rg = ribbon->rightButtonGroup();
-    m_chipSource = new QAction(QStringLiteral("无数据"), this);
-    m_chipLod = new QAction(QStringLiteral("LOD: Rust"), this);
-    for (QAction *a : {m_chipSource, m_chipLod})
+    auto *chipSource = new QAction(QStringLiteral("无数据"), this);
+    chipSource->setObjectName(QStringLiteral("ps.chip.source"));
+    auto *chipLod = new QAction(QStringLiteral("LOD: Rust"), this);
+    chipLod->setObjectName(QStringLiteral("ps.chip.lod"));
+    for (QAction *a : {chipSource, chipLod})
     {
         a->setEnabled(false);
         rg->addAction(a);
     }
-    updateStatusChips();
 
     // 自绘 SVG 图标：没有图标时 SARibbon 会在按钮左侧留空方块，观感直接崩
     {
@@ -1380,58 +1391,6 @@ void darkenDocks(MainWindow *w)
 
 
 
-void MainWindow::addTimeMarker(double t, const QString &label, bool prompt)
-{
-    QString text = label.trimmed();
-    if (prompt)
-    {
-        bool ok = false;
-        QString def = text.isEmpty() ? QStringLiteral("标签") : text;
-        text = QInputDialog::getText(this, QStringLiteral("添加时间标签"),
-                                     QStringLiteral("时间 %1 s\n标签").arg(t, 0, 'f', 2),
-                                     QLineEdit::Normal, def, &ok);
-        if (!ok)
-            return;
-        text = text.trimmed();
-        if (text.isEmpty())
-            text = def;
-    }
-    if (text.isEmpty())
-        text = QStringLiteral("%1 s").arg(t, 0, 'f', 2);
-    for (auto &mk : m_timeMarkers)
-        if (qAbs(mk.first - t) < 1e-4)
-        {
-            mk.second = text;
-            applyTimeMarkers();
-            log(QStringLiteral("更新时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
-            return;
-        }
-    m_timeMarkers.append({t, text});
-    std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
-              [](const QPair<double, QString> &a, const QPair<double, QString> &b) {
-                  return a.first < b.first;
-              });
-    applyTimeMarkers();
-    log(QStringLiteral("添加时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
-}
-
-void MainWindow::removeTimeMarker(double t)
-{
-    for (int i = 0; i < m_timeMarkers.size(); ++i)
-    {
-        if (qAbs(m_timeMarkers.at(i).first - t) < 1e-4)
-        {
-            const QString label = m_timeMarkers.at(i).second;
-            m_timeMarkers.removeAt(i);
-            applyTimeMarkers();
-            log(QStringLiteral("删除时间标签：%1").arg(label));
-            return;
-        }
-    }
-}
-
-
-
 void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
@@ -1439,18 +1398,14 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 }
 
 
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    m_commands.invoke(QStringLiteral("app.beforeClose"), {});
+    QMainWindow::closeEvent(event);
+}
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
-    // 数据源行：点行切换该源自己的字段/参数/消息
-    if (event->type() == QEvent::MouseButtonRelease && watched->property("srcRow").toBool())
-    {
-        auto *me = static_cast<QMouseEvent *>(event);
-        QWidget *row = qobject_cast<QWidget *>(watched);
-        activateSource(row);
-        if (me->button() == Qt::RightButton)
-            showSourceMenu(row, me->globalPosition().toPoint());
-        return false;
-    }
     // Ribbon 按钮的自定义 tooltip：开着它会在鼠标下方盖住分组标题，改走状态栏
     if (event->type() == QEvent::Enter || event->type() == QEvent::Leave)
     {
@@ -1535,8 +1490,7 @@ void MainWindow::openSettings()
     auto *clearCache = new QPushButton(QStringLiteral("清空解析缓存"), &dlg);
     lay->addWidget(clearCache);
     connect(clearCache, &QPushButton::clicked, this, [this] {
-        clearParseCache();
-        log(QStringLiteral("解析缓存已清空"));
+        m_commands.invoke(QStringLiteral("data.clearCache"), {});
     });
     auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -1550,7 +1504,7 @@ void MainWindow::openSettings()
     st.setValue(QStringLiteral("timeFormat"), timeFmt->currentData().toString());
     st.setValue(QStringLiteral("exportSampleLimit"), exportCap->value());
     st.setValue(QStringLiteral("derivedMaxPoints"), derivedCap->value());
-    reloadCanvasSettings();
+    m_commands.invoke(QStringLiteral("plot.reloadSettings"), {});
     log(QStringLiteral("设置已保存"));
 }
 
@@ -1561,29 +1515,6 @@ void MainWindow::openSettings()
 
 
 
-void MainWindow::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows)
-{
-    m_propCanvas = nullptr;
-    m_propSeriesIndex = -1;
-    m_propKind = 0;
-    if (m_propEditBtn)
-        m_propEditBtn->setEnabled(false);
-    m_selLabel->setText(QStringLiteral("当前对象：%1").arg(object));
-    m_propTable->setRowCount(rows.size());
-    for (int i = 0; i < rows.size(); ++i)
-    {
-        auto *k = new QTableWidgetItem(rows[i].first);
-        k->setFlags(Qt::ItemIsEnabled);
-        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
-        auto *v = new QTableWidgetItem(rows[i].second);
-        // 属性表当前只做只读展示，避免看起来能改、改完却不生效。
-        v->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-        v->setToolTip(rows[i].second);
-        v->setForeground(QColor(QStringLiteral("#d5dde5")));
-        m_propTable->setItem(i, 0, k);
-        m_propTable->setItem(i, 1, v);
-    }
-}
 
 void MainWindow::log(const QString &text)
 {
@@ -1604,19 +1535,6 @@ void MainWindow::attachLogView(QPlainTextEdit *view)
     }
 }
 
-void MainWindow::bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params)
-{
-    m_script = script;
-    for (int i = 0; i < 4; ++i)
-        m_scriptInputs[i] = inputs[i];
-    m_scriptParams = params;
-}
-
-
-QWidget *MainWindow::createDockTitleBar(QDockWidget *dock)
-{
-    return new DockTitleBar(this, dock);
-}
 
 void MainWindow::dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area)
 {
@@ -1638,3 +1556,8 @@ void MainWindow::showDockMenu(QToolButton *btn, QMenu *menu)
 
 
 
+
+QWidget *MainWindow::createDockTitleBar(QDockWidget *dock)
+{
+    return new DockTitleBar(this, dock);
+}

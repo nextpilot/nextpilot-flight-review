@@ -13,7 +13,6 @@ add_executable(plotscope_app
 target_include_directories(plotscope_app PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/modules/shell/ui
-  ${CMAKE_CURRENT_SOURCE_DIR}/host
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
 )
