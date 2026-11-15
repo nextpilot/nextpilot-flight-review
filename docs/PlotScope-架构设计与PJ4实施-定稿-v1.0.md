@@ -28,7 +28,7 @@
 | D13 | 协议编辑器定位 | **自定义 Loader 的附属编辑器**（子窗口 / `QDialog`，对应 PJ4 dialog vtable、PJ3 `optionsWidget()`）；**不设顶层标签页**，生命周期随 Loader |
 | D14 | 工作区分区 | **四可停靠区（数据源/属性面板/脚本/日志）+ 固定绘图区 + 固定带**；绘图区不可停靠 |
 | D15 | 页 | 一页 = 一棵 `QSplitter` 树（plot 与仪表混排），页签是页列表；每页独立时间窗，默认不联动 |
-| D16 | 工程结构 | `cmake/` `src/{app,kernel,extension,function,3dparty}` `tool/` `test/`；C++ 与 Rust 都在 `src` 下按语言分目录，`src/base/kernel` 是 Cargo workspace 根；`app` 只依赖 `ps-abi` 一个头文件 |
+| D16 | 工程结构 | `cmake/` `src/{app,kernel,extension,function,3dparty}` `tools/` `tests/`；C++ 与 Rust 都在 `src` 下按语言分目录，`src/base/kernel` 是 Cargo workspace 根；`app` 只依赖 `ps-abi` 一个头文件 |
 
 ---
 
@@ -433,7 +433,7 @@ extensions/<id>/
 - `src/base/modules/data_source/ui/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按扩展 `uiDialog` 加载 `.ui`，取值走 `uiData` JSON；app 不 include 任何扩展 UI 头文件。
 - `LoaderRegistry::registerDescriptor()` / `scanExtensions()`：app 唯一注册入口，只收 `PS_FAMILY_DATA_LOADER`；扩展名由扩展 `extensions` 声明，不再写 app 分支。
 - `src/datastore/DatasetCache.cpp`：解析结果磁盘缓存，键为源文件 + `loader@version` + 选项；校验 size/mtime，命中直接 `ps_dataset_new/add_channel` 还原，不重新 probe/parse。
-- `test/unit/test_extension_csv.cpp` / `test_extension_file_formats.cpp` / `test_extension_runtime.cpp` / `test_dataset_cache.cpp`：覆盖内置扩展、外部 `.so`、非法 ABI、重复 id 与缓存失效。
+- `tests/unit/test_extension_csv.cpp` / `test_extension_file_formats.cpp` / `test_extension_runtime.cpp` / `test_dataset_cache.cpp`：覆盖内置扩展、外部 `.so`、非法 ABI、重复 id 与缓存失效。
 
 **C ABI（数据面 8 函数；扩展面 5 函数）**
 
@@ -546,13 +546,13 @@ plotscope/
 │       └── lua-5.4/               # 脚本引擎（保持原样，不打补丁）
 │                                  # 其余依赖走 FetchContent，不进仓
 │
-├── tool/                          # ★ 开发/发布工具，全部命令行
+├── tools/                          # ★ 开发/发布工具，全部命令行
 │   ├── ps-extension-check/           # Qt-free 子进程：dlopen 准入检查（照 PJ4 的思路）
 │   ├── ps-bench/                  # 帧时间/吞吐基线，输出机器可读结果
 │   ├── ps-pack/                   # 打包：windeployqt + 签名 + 生成 checksum
 │   └── ps-icon/                   # 资源与图标生成（SVG → ico/png 多尺寸）
 │
-└── test/                          # ★ 五类，别混在 src 里
+└── tests/                          # ★ 五类，别混在 src 里
     ├── unit/                      # C++ 单测（Qt Test）：拆分树、属性模型、页签、撤销
     ├── kernel/                    # cargo test：解析器对拍、算子数值、对齐边界
     ├── golden/                    # 样例 → 期望产物（哈希清单 + 小样本，二进制库单独放）
@@ -569,7 +569,7 @@ plotscope/
 | `src/extensions/dynamic` 是**官方扩展**（随包发），第三方扩展源码不进仓 | 官方与第三方混住，会让"扩展准入检查"这条安全边界失效 |
 | `src/3dparty` 只放锁版本/打补丁的库 | 什么都往里塞，仓库三年后 2 GB，clone 一次十分钟 |
 | `src/function` 只放 `.lua` 与算子 schema，不放 C++ | Lua 脚本要能热重载、能被用户改，和二进制解耦才能做到 |
-| `test/` 五类分目录，`golden` 用哈希清单 | 二进制样例堆进 git，仓库体积按周膨胀 |
+| `tests/` 五类分目录，`golden` 用哈希清单 | 二进制样例堆进 git，仓库体积按周膨胀 |
 | `docs/` 放设计文档与单文件原型，与控制台代码同仓 | 文档离代码越远越快过期；单文件 HTML 保证 clone 下来双击就能评审，不依赖本地服务 |
 
 **CMake 目标（4 个，不多）**
@@ -591,10 +591,10 @@ ps_extension_<family>_<id> # 扩展库：src/extensions/dynamic/<family>/<id>/�
 - 数据面：`ps_dataset_new / add_channel / channel_count / channel / free` / `ps_lod_minmax`；`PsChannelInfo` 的 `time/value` 指针直指内核内存（UI 零拷贝，数据集释放后失效）。CSV 的探测/解析已移到 `extensions/data_loader/csv`，支持 `, ; \t` 与 ns/us/ms/s。
 - 降采样落到 Rust：UI 每次重绘按像素宽度调 `ps_lod_minmax`，只拿 ≤px 个 `(x,min,max)` 三元组；3000 点 CSV 画到三格（每格一个通道，避免混量纲压成直线）。
 - 内核单测 19 例（`cargo test`），`ctest` 2/2 通过（ABI 冒烟 + cargo）。
-- **ULog 已接**（2026-11-12 晚，现为扩展侧 `UlogParser`）：按 PX4 `ulog_file_format` 实现（16 字节头 + 消息流，`F/A/D/L/B/P/Q/M/I` 类型），命名与展平规则对齐 PlotJuggler `data_load_ulog`——`timestamp` 与 `_padding*` 不产出曲线、嵌套结构用 `.`、数组下标补两位 `.00`、`char[N]` 当字符串不当数值、同 topic 有 `multi_id>0` 时全部实例加 `.NN` 后缀。解析在扩展内完成；UI 按后缀分流，通道按 topic 分组挂树，双击出图。实测：自造 `test/fixture/demo_flight.ulg`（250 Hz / 12 s / 4 topic）→ 13 通道 × 3000 点、解析 10 ms；PX4 官方 900 KB 样例 → **1351 通道 / 1812 行 / 解析 16.9 ms**。
+- **ULog 已接**（2026-11-12 晚，现为扩展侧 `UlogParser`）：按 PX4 `ulog_file_format` 实现（16 字节头 + 消息流，`F/A/D/L/B/P/Q/M/I` 类型），命名与展平规则对齐 PlotJuggler `data_load_ulog`——`timestamp` 与 `_padding*` 不产出曲线、嵌套结构用 `.`、数组下标补两位 `.00`、`char[N]` 当字符串不当数值、同 topic 有 `multi_id>0` 时全部实例加 `.NN` 后缀。解析在扩展内完成；UI 按后缀分流，通道按 topic 分组挂树，双击出图。实测：自造 `tests/fixture/demo_flight.ulg`（250 Hz / 12 s / 4 topic）→ 13 通道 × 3000 点、解析 10 ms；PX4 官方 900 KB 样例 → **1351 通道 / 1812 行 / 解析 16.9 ms**。
 - **CAN 双格式（ASC / BLF）已接**（2026-11-13，现为扩展侧 `AscParser` / `BlfParser` + `common/CanFrames`）：统一帧模型；ASC 解析经典帧 / 扩展帧 `x` 后缀 / `CANFD` 行 / `base hex|dec`；BLF 解析 `LOGG` 头 + `LOBJ` 对象流 + `LOG_CONTAINER` zlib 解压，对象跨容器时留半截续接。BLF 无公开规范，字段偏移按 python-can `io/blf.py`（源于 vector_blf）逐项对照。
 - CAN 出通道**不猜物理量**：没有 DBC 就不知道哪几个字节拼成一个信号，硬猜的曲线是假的。只给两类可验证量——`CAN<总线>.<ID>.bN`（报文第 N 字节原始值，恒定字节直接丢弃，否则 500 个 ID × 8 字节会把通道树撑成几千行）与 `CAN<总线>.<ID>.period`（同 ID 相邻帧间隔 ms，看周期抖动最直接）。DBC 解码归 M2 协议编辑器（D13）。
-- **对拍证据**：用 python-can 4.6.1 的 `ASCWriter`/`BLFWriter` 把同一批 3020 帧写成 `test/fixture/demo_can.asc`（190 KB）与 `demo_can.blf`（19.5 KB），两种格式各自解析后**逐通道逐点相同**（C++ 扩展测试），帧数/每 ID 帧数也与 python-can `LogReader` 完全一致；解析耗时 ASC 0.9 ms、BLF 0.7 ms。
+- **对拍证据**：用 python-can 4.6.1 的 `ASCWriter`/`BLFWriter` 把同一批 3020 帧写成 `tests/fixture/demo_can.asc`（190 KB）与 `demo_can.blf`（19.5 KB），两种格式各自解析后**逐通道逐点相同**（C++ 扩展测试），帧数/每 ID 帧数也与 python-can `LogReader` 完全一致；解析耗时 ASC 0.9 ms、BLF 0.7 ms。
 - 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、NMEA/DFLog、DBC 解码、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
 
 **M1 扩展自解析（2026-11-13，当前架构）**
@@ -607,7 +607,7 @@ ps_extension_<family>_<id> # 扩展库：src/extensions/dynamic/<family>/<id>/�
 - ASC / BLF：各自 `*Parser.{h,cpp}`，共用 `common/CanFrames` 的帧→通道规则（只保留变化字节 + `period`）；BLF 的 zlib 容器由扩展自己解压，内核不链 zlib。
 - loader 选项 UI 的归属：`schema_json.fields` + `ui.preview` + `initial_from_probe` 由扩展提供，app 的 `DataSourceDialog` 只做通用渲染；app 源码不再出现 `delimiter / has_header / suggested_time`，新增格式不需要在 app 里加对话框。
 - 数据源与 loader 共用 `DataSourceDialog`：`transport` 只声明 `{"supported":[...],"default":"udp://127.0.0.1:1223"}`，通信页由 app 按 transport 固定字段渲染（`file → filepath`、`udp → bind/port`、`tcp → host/port/timeout_ms`、`serial/uart → serial_port/baud`、`internal` 无字段），扩展不再提供 transport 字段；解析参数由扩展 `schema.parser.fields`（loader 用 `schema.fields`）提供，app 不解释具体解析字段；parse 可多选，每个 parse 展示自己的配置，只有一个 parse 或一种 transport 时不渲染对应选择器。
-- 测试：`ctest` 6/6；`extension_file_formats` 覆盖 ULog 13 通道、APBin 通道+PARAM、ASC/BLF 各 10 通道；新增 `test/fixture/demo_apbin.bin` 作为可复现夹具。
+- 测试：`ctest` 6/6；`extension_file_formats` 覆盖 ULog 13 通道、APBin 通道+PARAM、ASC/BLF 各 10 通道；新增 `tests/fixture/demo_apbin.bin` 作为可复现夹具。
 
 **Ribbon / Dock spike（2026-11-12 实测）**
 
@@ -619,7 +619,7 @@ ps_extension_<family>_<id> # 扩展库：src/extensions/dynamic/<family>/<id>/�
 
 **M0-0 画布 spike（2026-11-12 实测，改判 D3）**
 
-环境：Qt 6.2.4、4 vCPU 云主机、软件光栅、`QT_QPA_PLATFORM=offscreen` 下 `QWidget::render`；数据 20 通道 × 8000 点，视口 1500×900，预热 3 帧后取 30 帧均值。JKQTPlotter 5.0.0（HEAD `9e9f0af`）静态编译接入。可复跑脚本：`test/perf/canvas_spike/`。
+环境：Qt 6.2.4、4 vCPU 云主机、软件光栅、`QT_QPA_PLATFORM=offscreen` 下 `QWidget::render`；数据 20 通道 × 8000 点，视口 1500×900，预热 3 帧后取 30 帧均值。JKQTPlotter 5.0.0（HEAD `9e9f0af`）静态编译接入。可复跑脚本：`tests/perf/canvas_spike/`。
 
 | 方案 | 单帧 |
 |---|---|
@@ -812,7 +812,7 @@ public:
 4. 输出作为普通派生通道进树（每源一个“派生”分组）、进画布、可编辑/移除。
 5. Apply 替换来源曲线并继承颜色；不保留 ghost。
 6. `.psl` v2 保存派生 recipes，导入重建。
-7. 测试：`test/transform_golden.cpp`，逐算子比对首/末/数量与关键点；四元数用已知姿态（0/90/45°）验证。
+7. 测试：`tests/transform_golden.cpp`，逐算子比对首/末/数量与关键点；四元数用已知姿态（0/90/45°）验证。
 
 验收：
 - `attitude.roll` 加 MA(100) 后输出替换原曲线，颜色不变；重新拖原始通道可对比。
