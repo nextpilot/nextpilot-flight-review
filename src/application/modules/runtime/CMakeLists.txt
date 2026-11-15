@@ -1,10 +1,9 @@
 add_library(ps_host STATIC
   src/Component.cpp
   src/DynamicExtension.cpp
-  src/ExtensionHost.cpp
   src/ExtensionRuntime.cpp
   src/HostApi.cpp
-  src/CommandRegistry.cpp
+  src/DynamicExtensionRegistry.cpp
 )
 target_include_directories(ps_host PUBLIC
   ${PROJECT_SOURCE_DIR}/src

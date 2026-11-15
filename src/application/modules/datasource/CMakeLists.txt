@@ -1,4 +1,4 @@
-add_library(ps_application_data_source OBJECT
+add_library(ps_application_datasource OBJECT
   include/datasource/DataSourceModule.h
   include/datasource/SourceModel.h
   include/datasource/DataSourceEntry.h
@@ -15,8 +15,8 @@ add_library(ps_application_data_source OBJECT
   dialog/DataSourceDialog.h
   dialog/DataSourceDialog.cpp
 )
-set_target_properties(ps_application_data_source PROPERTIES AUTOMOC ON)
-target_include_directories(ps_application_data_source PUBLIC
+set_target_properties(ps_application_datasource PROPERTIES AUTOMOC ON)
+target_include_directories(ps_application_datasource PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
@@ -29,4 +29,4 @@ target_include_directories(ps_application_data_source PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/services/cache
   ${PROJECT_SOURCE_DIR}/src/application/shell
 )
-target_link_libraries(ps_application_data_source PUBLIC ps_host ps_live ps_cache Qt6::Widgets SARibbonBar::SARibbonBar)
+target_link_libraries(ps_application_datasource PUBLIC ps_host ps_live ps_cache Qt6::Widgets SARibbonBar::SARibbonBar)

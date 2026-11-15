@@ -1,6 +1,10 @@
 add_library(ps_application_shell OBJECT
   MainWindow.h
   MainWindow.cpp
+  CommandRegistry.h
+  CommandRegistry.cpp
+  ExtensionHost.h
+  ExtensionHost.cpp
   ShellComponent.h
   ShellComponent.cpp
   SettingsDialog.h

@@ -10,7 +10,7 @@
 
 #include "Component.h"
 #include "DataSourceRegistry.h"
-#include "ExtensionHost.h"
+#include "DynamicExtensionRegistry.h"
 #include "ExtensionRuntime.h"
 #include "Theme.h"
 

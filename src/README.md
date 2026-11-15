@@ -7,7 +7,7 @@ src/
   application/                最小 app + 最小绘图 app
     main.cpp                  入口；组装 shell 与内置模块
     kernel/                   与 Qt 无关的抽象逻辑（Rust，ps_kernel.h）
-    shell/                    MainWindow、Ribbon/Dock 容器、主题、全局设置
+    shell/                    MainWindow、Ribbon/Dock 容器、命令总线、组件宿主、主题、全局设置
     modules/
       runtime/                扩展契约、注册表、动态装载、脚本运行、ModuleBridge
       datasource/            数据源模块
@@ -49,7 +49,7 @@ src/
 | 数据模型、通用算子、LOD、缓存/流机制 | `application/kernel/` | 不碰 Qt、不做 I/O |
 | 扩展 ABI、注册表、动态装载、宿主 API、模块桥 | `application/modules/runtime/` | 只做生命周期、契约与跨模块中立接口 |
 | 缓存策略、实时会话与录制 | `application/modules/datasource/services/` | 宿主侧服务，不是业务格式 |
-| 主窗口、Ribbon/Dock 容器、主题 | `application/shell/` | app 骨架，只做组装 |
+| 主窗口、Ribbon/Dock 容器、命令总线、组件宿主、主题 | `application/shell/` | app 骨架，只做组装与宿主生命周期 |
 | 数据源 Dock、输入对话框、数据 Ribbon | `application/modules/datasource/` | 数据进入与源管理 |
 | 画布、绘图 Ribbon、页面/图型 | `application/modules/plotting/` | 绘图工作区 |
 | 设备调试、视频同步、数据变换、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |

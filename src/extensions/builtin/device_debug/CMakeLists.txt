@@ -9,4 +9,4 @@ target_include_directories(ps_builtin_device_debug_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
 )
-target_link_libraries(ps_builtin_device_debug_component PUBLIC ps_host ps_application_data_source Qt6::Widgets)
+target_link_libraries(ps_builtin_device_debug_component PUBLIC ps_host ps_application_datasource Qt6::Widgets)

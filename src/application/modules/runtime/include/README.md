@@ -16,4 +16,6 @@
 - 扩展只通过 `PsHostApi` 的 `dataset_new / dataset_add_channel / dataset_free` 写数据集，不链 `ps_kernel`，也不要求内核认识自己的文件格式。
 - probe / parse / schema / params 由扩展实现；内核只保留数据模型、filter、quat、LOD 等通用算子。
 
+- 宿主侧的 `CommandRegistry` / `ExtensionHost` 已上移到 `application/shell`；本目录只保留扩展契约、动态装载、ABI 与跨模块桥。
+
 - 全局设置：模块通过 `Registry::addSettings()` 贡献 `SettingsContribution{id,title,icon,order,create,apply}`；`application/shell/SettingsDialog` 统一收集并按页展示。
