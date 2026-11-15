@@ -1,6 +1,7 @@
 add_library(ps_host STATIC
   extension/Component.cpp
   extension/DynamicExtension.cpp
+  extension/ExtensionHost.cpp
   extension/ExtensionRuntime.cpp
   extension/HostApi.cpp
   extension/DataInputRegistry.cpp

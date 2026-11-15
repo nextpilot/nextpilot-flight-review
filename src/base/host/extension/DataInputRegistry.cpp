@@ -125,17 +125,6 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
     if (!m_descriptors.contains(desc))
         m_descriptors.push_back(desc);
 
-    if (!packageDir.isEmpty())
-    {
-        ps::components::ExtensionRegistry::instance().addExtension(
-            ps::components::ExtensionDescriptor{extensionId(desc), extensionName(desc),
-                                                manifestVersion(desc),
-                                                ps::components::ExtensionType::Dynamic, packageDir,
-                                                QString::fromUtf8(desc->manifest_json ? desc->manifest_json : ""),
-                                                desc->abi_version, desc},
-            [desc] { return std::make_unique<ps::components::DynamicExtension>(desc); });
-    }
-
     if (desc->family == PS_FAMILY_DATA_LOADER)
     {
         const PsLoaderVtable *v = desc->loader;
@@ -506,10 +495,15 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
 QStringList DataInputRegistry::scanExtensions(const QStringList &dirs)
 {
     ExtensionRuntime &rt = ExtensionRuntime::instance();
-    QStringList errors;
     for (const QString &dir : dirs)
         rt.scanDirectory(dir.toStdString());
+    return registerLoadedExtensions();
+}
 
+QStringList DataInputRegistry::registerLoadedExtensions()
+{
+    ExtensionRuntime &rt = ExtensionRuntime::instance();
+    QStringList errors;
     for (const LoadedExtension &p : rt.loadedExtensions())
     {
         if (!p.descriptor)

@@ -10,6 +10,8 @@
 
 #include "host/extension/Component.h"
 #include "host/extension/DataInputRegistry.h"
+#include "host/extension/ExtensionHost.h"
+#include "host/extension/ExtensionRuntime.h"
 #include "shell/Theme.h"
 
 #include "ps_kernel.h"
@@ -38,8 +40,13 @@ int main(int argc, char **argv)
     const QString envPath = qEnvironmentVariable("PLOTSCOPE_EXTENSION_PATH");
     if (!envPath.isEmpty())
         extensionDirs << envPath.split(QDir::listSeparator(), Qt::SkipEmptyParts);
-    for (const QString &e : DataInputRegistry::instance().scanExtensions(extensionDirs))
-        qWarning("[data_input] %s", qPrintable(e));
+    ExtensionRuntime &runtime = ExtensionRuntime::instance();
+    for (const QString &dir : extensionDirs)
+        runtime.scanDirectory(dir.toStdString());
+    QStringList extensionErrors = DataInputRegistry::instance().registerLoadedExtensions();
+    extensionErrors += ps::components::registerDynamicExtensions();
+    for (const QString &e : extensionErrors)
+        qWarning("[extension] %s", qPrintable(e));
 
     if (QCoreApplication::arguments().contains(QStringLiteral("--list-extensions")))
     {

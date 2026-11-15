@@ -4,6 +4,7 @@
 #include <QJsonObject>
 
 #include "host/extension/Component.h"
+#include "host/extension/ExtensionHost.h"
 #include "host/extension/CommandRegistry.h"
 
 #include <memory>
@@ -183,7 +184,7 @@ private:
     QTableWidget *m_msgTable = nullptr;
     QVBoxLayout *m_srcRows = nullptr;
     QScrollArea *m_srcListScroll = nullptr;
-    ps::components::Registry m_components;
+    ps::components::ExtensionHost m_extensions;
     ps::commands::CommandRegistry m_commands;
     QWidget *m_srcEmpty = nullptr;
     QToolButton *m_srcListToggle = nullptr;

@@ -25,8 +25,6 @@ add_executable(plotscope_app
   ui/video/VideoSyncWidget.cpp
   host/extension/ShellComponent.h
   host/extension/ShellComponent.cpp
-  host/extension/BuiltinDataSources.h
-  host/extension/BuiltinDataSources.cpp
   resources/resource/icons.qrc
 )
 
@@ -41,16 +39,10 @@ target_include_directories(plotscope_app PRIVATE
 target_link_libraries(plotscope_app PRIVATE
   Qt6::Widgets Qt6::Network Qt6::Svg
   ps_host ps_kernel ps_cache ps_live
-  ps_data_loader_csv ps_data_loader_ulog ps_data_loader_apbin ps_data_loader_asc ps_data_loader_blf ps_data_load_mcap ps_data_loader_json ps_data_loader_binary ps_data_loader_mdf4 ps_data_loader_rosbag2
-  ps_data_source_sim ps_data_source_mavlink
 )
 
-if(TARGET ps_custom_protocol_component)
-  target_link_libraries(plotscope_app PRIVATE ps_custom_protocol_component ps_custom_protocol)
-  target_link_libraries(plotscope_app PRIVATE ps_protocol)
-endif()
-if(TARGET ps_gnss_component)
-  target_link_libraries(plotscope_app PRIVATE ps_gnss_component ps_gnss)
+if(TARGET ps_builtin_components)
+  target_link_libraries(plotscope_app PRIVATE ps_builtin_components)
 endif()
 
 # 外部扩展靠宿主导出 ps_* 符号
@@ -85,10 +77,4 @@ ps_set_warnings(plotscope_app)
 
 if(WIN32)
   set_target_properties(plotscope_app PROPERTIES WIN32_EXECUTABLE ON)
-endif()
-if(TARGET ps_gnss)
-  add_custom_command(TARGET plotscope_app POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json
-            $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json)
 endif()

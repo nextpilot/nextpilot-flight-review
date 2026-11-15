@@ -5,8 +5,6 @@
 #include "host/services/cache/DatasetCache.h"
 #include "host/extension/DataInputRegistry.h"
 #include "host/extension/Component.h"
-#include "host/extension/ShellComponent.h"
-#include "host/extension/BuiltinDataSources.h"
 #include "host/services/live/LiveSession.h"
 #include "device/DeviceDebugDialog.h"
 #include "host/extension/DataInputRegistry.h"
@@ -1260,14 +1258,10 @@ MainWindow::MainWindow(QWidget *parent)
     hostContext.configDir = [] {
         return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     };
-    for (const ps::components::ExtensionEntry &entry :
-         ps::components::ExtensionRegistry::instance().extensions())
-    {
-        std::unique_ptr<ps::components::IComponent> component = entry.factory();
-        if (component)
-            component->contribute(m_components, hostContext);
-    }
-    for (const ps::components::DataSourceSpec &source : m_components.dataSources())
+    m_extensions.activate(hostContext);
+    for (const QString &error : m_extensions.errors())
+        qWarning("[extension] %s", qPrintable(error));
+    for (const ps::components::DataSourceSpec &source : m_extensions.registry().dataSources())
         DataInputRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
 
     registerCommands();
@@ -1774,7 +1768,7 @@ QWidget *MainWindow::createRibbon()
     auto renderPage = [&](const QString &title, int order = 1000) -> bool {
         bool any = false;
         SARibbonCategory *cat = nullptr;
-        for (const auto &page : m_components.ribbon())
+        for (const auto &page : m_extensions.registry().ribbon())
         {
             if (page.page != title || page.order > order)
                 continue;
@@ -1798,7 +1792,7 @@ QWidget *MainWindow::createRibbon()
                 {
                     auto fn = [this, action = item.action, arg = item.arg] {
                         if (!m_commands.invoke(action, ps::commands::CommandContext{this, arg}))
-                            m_components.invoke(action, ps::components::ActionContext{this});
+                            m_extensions.registry().invoke(action, ps::components::ActionContext{this});
                     };
                     if (item.large)
                         addLarge(panel, item.label, fn, this);
@@ -1828,7 +1822,7 @@ QWidget *MainWindow::createRibbon()
     // 视图
     renderPage(QStringLiteral("视图"));
 
-    for (const auto &page : m_components.ribbon())
+    for (const auto &page : m_extensions.registry().ribbon())
     {
         const QStringList known = {QStringLiteral("文件"), QStringLiteral("数据"),
                                    QStringLiteral("绘图"), QStringLiteral("脚本"),
@@ -2655,7 +2649,7 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
 
 void MainWindow::createDocks()
 {
-    auto docks = m_components.docks();
+    auto docks = m_extensions.registry().docks();
     std::sort(docks.begin(), docks.end(),
               [](const ps::components::DockContribution &a, const ps::components::DockContribution &b) {
                   return a.order < b.order;

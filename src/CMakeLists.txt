@@ -29,17 +29,19 @@ if(PS_BUILD_GUI)
     add_subdirectory(extensions/dynamic/data_loader/rosbag2)
     add_subdirectory(extensions/dynamic/data_source)
 
-    # 内置扩展：业务组件（可按需关闭）
-    if(PS_BUILD_CUSTOM_PROTOCOL AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extensions/builtin/custom_protocol/CMakeLists.txt)
-      add_subdirectory(extensions/builtin/custom_protocol/protocol)
-      add_subdirectory(extensions/builtin/custom_protocol)
-    endif()
-    if(PS_BUILD_GNSS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extensions/builtin/gnss/CMakeLists.txt)
-      add_subdirectory(extensions/builtin/gnss)
-    endif()
+    # 内置扩展：业务组件在 extensions/builtin 聚合，base 只链接聚合 target
+    add_subdirectory(extensions/builtin)
 
     # 底座 UI 与入口
     add_subdirectory(base)
+
+    # 组件运行期资源部署：业务数据不写进 base。
+    if(TARGET ps_gnss AND TARGET plotscope_app)
+      add_custom_command(TARGET plotscope_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json
+                $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json)
+    endif()
   else()
     message(WARNING "未找到 Qt6 Widgets，只构建内核（-DPS_BUILD_GUI=OFF 可静默）")
   endif()

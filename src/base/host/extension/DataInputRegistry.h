@@ -32,6 +32,9 @@ public:
     // 外部扩展目录只扫描一次；loader/source 由 family 分派。
     QStringList scanExtensions(const QStringList &dirs);
 
+    // 只注册 ExtensionRuntime 已装载的数据输入扩展；组件注册由 ExtensionHost 负责。
+    QStringList registerLoadedExtensions();
+
 private:
     DataInputRegistry();
 
