@@ -48,7 +48,9 @@ bool loadAndCheck(const PsExtensionDescriptor *d, const std::string &path, uint3
     return true;
 }
 
-bool checkMdf4Value(const PsExtensionDescriptor *d, const std::string &path, size_t index, double expected)
+bool checkMdf4Value(const PsExtensionDescriptor *d, const std::string &path,
+                    const char *channel, size_t index, double expected,
+                    const char *unit = "rad")
 {
     void *raw = nullptr;
     char err[256] = {0};
@@ -63,16 +65,60 @@ bool checkMdf4Value(const PsExtensionDescriptor *d, const std::string &path, siz
     for (uint32_t i = 0; i < ps_dataset_channel_count(ds); ++i)
     {
         const PsChannelInfo *ch = ps_dataset_channel(ds, i);
-        if (!ch || !ch->name || std::strcmp(ch->name, "mdf4.roll") != 0)
+        if (!ch || !ch->name || std::strcmp(ch->name, channel) != 0)
             continue;
         found = ch->point_count > index && std::fabs(ch->value[index] - expected) < 1e-9 &&
-                ch->unit && std::strcmp(ch->unit, "rad") == 0;
+                (!unit || (ch->unit && std::strcmp(ch->unit, unit) == 0));
         break;
     }
     ps_dataset_free(ds);
     if (!found)
-        std::cerr << "mdf4 conversion mismatch (" << path << ")\n";
+    {
+        std::cerr << "mdf4 conversion mismatch (" << path << "): " << channel
+                  << "[" << index << "] expected " << expected << "\n";
+        for (uint32_t i = 0; i < ps_dataset_channel_count(ds); ++i)
+        {
+            const PsChannelInfo *ch = ps_dataset_channel(ds, i);
+            std::cerr << "  ch " << i << " " << (ch && ch->name ? ch->name : "?")
+                      << " pts=" << (ch ? ch->point_count : 0) << "\n";
+        }
+    }
     return found;
+}
+
+bool checkMdf4Points(const PsExtensionDescriptor *d, const std::string &path, uint32_t expected,
+                     uint32_t expectedChannels = 0)
+{
+    void *raw = nullptr;
+    char err[256] = {0};
+    const int32_t rc = d->loader->load(path.c_str(), "", ps_host_api(), &raw, err, sizeof(err));
+    if (rc != 0)
+    {
+        std::cerr << "mdf4 load failed: " << err << " (" << path << ")\n";
+        return false;
+    }
+    PsDataset *ds = static_cast<PsDataset *>(raw);
+    bool ok = true;
+    if (expectedChannels && ps_dataset_channel_count(ds) != expectedChannels)
+    {
+        std::cerr << "mdf4 channels " << ps_dataset_channel_count(ds) << " != "
+                  << expectedChannels << " (" << path << ")\n";
+        ok = false;
+    }
+    for (uint32_t i = 0; ok && i < ps_dataset_channel_count(ds); ++i)
+    {
+        const PsChannelInfo *ch = ps_dataset_channel(ds, i);
+        if (!ch || ch->point_count != expected)
+        {
+            std::cerr << "mdf4 points mismatch: "
+                      << (ch && ch->name ? ch->name : "?") << " "
+                      << (ch ? ch->point_count : 0) << " != " << expected << "\n";
+            ok = false;
+            break;
+        }
+    }
+    ps_dataset_free(ds);
+    return ok;
 }
 
 bool loadOptsAndCheck(const PsExtensionDescriptor *d, const std::string &path,
@@ -149,11 +195,25 @@ int main()
         return 1;
     if (!loadAndCheck(ps_extension_entry_data_loader_mdf4(), fix + "/demo_compressed.mf4", 2))
         return 1;
-    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_linear.mf4", 0, -0.5))
+    if (!checkMdf4Points(ps_extension_entry_data_loader_mdf4(), fix + "/demo_multiblock.mf4", 100))
         return 1;
-    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_rational.mf4", 0, -0.5))
+    if (!checkMdf4Points(ps_extension_entry_data_loader_mdf4(), fix + "/demo_transposed.mf4", 100))
         return 1;
-    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_polynomial.mf4", 1, 0.003942649342761085))
+    if (!checkMdf4Points(ps_extension_entry_data_loader_mdf4(), fix + "/demo_multi_cg.mf4", 2, 2))
+        return 1;
+    if (!checkMdf4Points(ps_extension_entry_data_loader_mdf4(), fix + "/demo_multi_dg.mf4", 2, 2))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_linear.mf4", "mdf4.roll", 0, -0.5))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_rational.mf4", "mdf4.roll", 0, -0.5))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_polynomial.mf4", "mdf4.roll", 1, 0.003942649342761085))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_multi_cg.mf4", "mdf4.grpA.sigA", 1, 3, nullptr))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_multi_dg.mf4", "mdf4.g1.sig", 1, 2, nullptr))
+        return 1;
+    if (!checkMdf4Value(ps_extension_entry_data_loader_mdf4(), fix + "/demo_multi_dg.mf4", "mdf4.g2.sig", 1, 20, nullptr))
         return 1;
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
 #ifdef PS_HAVE_CUSTOM_PROTOCOL

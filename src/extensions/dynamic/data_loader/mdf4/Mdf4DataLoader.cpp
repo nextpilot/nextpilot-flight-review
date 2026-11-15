@@ -39,6 +39,13 @@ uint32_t u32(const uint8_t *p)
     return v;
 }
 
+uint16_t u16(const uint8_t *p)
+{
+    uint16_t v;
+    std::memcpy(&v, p, 2);
+    return v;
+}
+
 bool readBlock(const std::vector<uint8_t> &file, uint64_t off, Block &b)
 {
     if (off + 24 > file.size())
@@ -135,7 +142,7 @@ struct Channel
     Conversion conversion;
 };
 
-bool inflatePayload(const std::vector<uint8_t> &in, std::vector<uint8_t> &out)
+bool inflatePayload(const std::vector<uint8_t> &in, std::vector<uint8_t> &out, size_t expected)
 {
     if (in.empty())
         return false;
@@ -145,7 +152,7 @@ bool inflatePayload(const std::vector<uint8_t> &in, std::vector<uint8_t> &out)
     zs.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(in.data()));
     zs.avail_in = static_cast<uInt>(in.size());
     out.clear();
-    out.resize(1u << 20);
+    out.resize(qMax<size_t>(expected, 1u << 20));
     int rc = Z_OK;
     while (rc == Z_OK)
     {
@@ -160,6 +167,34 @@ bool inflatePayload(const std::vector<uint8_t> &in, std::vector<uint8_t> &out)
     if (rc != Z_STREAM_END)
         return false;
     out.resize(produced);
+    return true;
+}
+
+bool unzipBlock(const Block &dz, std::vector<uint8_t> &out)
+{
+    if (dz.body.size() < 28)
+        return false;
+    const uint8_t zipType = dz.body[4];
+    const uint32_t param = u32(dz.body.data() + 8);
+    const uint64_t originalSize = u64(dz.body.data() + 12);
+    const uint64_t zipSize = u64(dz.body.data() + 20);
+    if (originalSize > (64ull << 20) || zipSize > dz.body.size() - 28)
+        return false;
+    const std::vector<uint8_t> compressed(dz.body.begin() + 28, dz.body.begin() + 28 + zipSize);
+    if (!inflatePayload(compressed, out, static_cast<size_t>(originalSize)))
+        return false;
+    if (zipType == 1 && param > 0)
+    {
+        const size_t cols = param;
+        const size_t lines = out.size() / cols;
+        if (cols == 0 || lines * cols != out.size())
+            return false;
+        std::vector<uint8_t> transposed(out.size());
+        for (size_t r = 0; r < lines; ++r)
+            for (size_t c = 0; c < cols; ++c)
+                transposed[r * cols + c] = out[c * lines + r];
+        out.swap(transposed);
+    }
     return true;
 }
 
@@ -229,50 +264,56 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
 
     std::map<std::string, std::vector<std::pair<double, double>>> acc;
     std::map<std::string, std::string> units;
-    for (uint64_t dgOff = firstDg; dgOff; )
+    std::map<std::string, int> nameCount;
+
+    struct GroupData
+    {
+        uint16_t recordId = 0;
+        uint64_t cycles = 0;
+        uint64_t written = 0;
+        std::string name;
+        std::vector<Channel> channels;
+        std::vector<std::string> keys;
+        Channel master;
+        bool hasMaster = false;
+        uint32_t maxByte = 0;
+        int dgIndex = 0;
+        int cgIndex = 0;
+    };
+
+    int dgIndex = 0;
+    for (uint64_t dgOff = firstDg; dgOff; ++dgIndex)
     {
         Block dg;
         if (!readBlock(file, dgOff, dg) || dg.id != "##DG" || dg.links.size() < 3)
             break;
         const uint64_t nextDg = dg.links[0];
         const uint64_t firstCg = dg.links[1];
-        const uint64_t dtOff = dg.links[2];
-        uint8_t recordIdSize = dg.body.empty() ? 0 : dg.body[0];
+        const uint64_t firstDt = dg.links[2];
+        const uint64_t firstDl = dg.links.size() > 3 ? dg.links[3] : 0;
+        const uint8_t recordIdSize = dg.body.empty() ? 0 : dg.body[0];
 
-        for (uint64_t cgOff = firstCg; cgOff; )
+        std::vector<GroupData> groups;
+        int cgIndex = 0;
+        for (uint64_t cgOff = firstCg; cgOff; ++cgIndex)
         {
-            Block cg, dt;
+            Block cg;
             if (!readBlock(file, cgOff, cg) || cg.id != "##CG" || cg.links.size() < 2)
                 break;
             const uint64_t nextCg = cg.links[0];
             const uint64_t firstCn = cg.links[1];
-            if (!readBlock(file, dtOff, dt) || (dt.id != "##DT" && dt.id != "##DZ"))
-            {
-                cgOff = nextCg;
-                continue;
-            }
-            std::vector<uint8_t> rawData;
-            const std::vector<uint8_t> *dataBody = &dt.body;
-            if (dt.id == "##DZ")
-            {
-                if (!inflatePayload(dt.body, rawData))
-                {
-                    cgOff = nextCg;
-                    continue;
-                }
-                dataBody = &rawData;
-            }
-            const uint64_t cycles = cg.body.size() >= 16 ? u64(cg.body.data() + 8) : 0;
-            const std::string group = cg.links.size() > 3 ? readText(file, cg.links[3]) : std::string();
 
-            std::vector<Channel> chans;
-            Channel master;
-            bool hasMaster = false;
-            int maxByte = 0;
+            GroupData g;
+            g.dgIndex = dgIndex;
+            g.cgIndex = cgIndex;
+            g.recordId = cg.body.size() >= 2 ? u16(cg.body.data()) : 0;
+            g.cycles = cg.body.size() >= 16 ? u64(cg.body.data() + 8) : 0;
+            g.name = cg.links.size() > 3 ? readText(file, cg.links[3]) : std::string();
+
             for (uint64_t cnOff = firstCn; cnOff; )
             {
                 Block cn;
-                if (!readBlock(file, cnOff, cn) || cn.id != "##CN" || cn.links.size() < 6)
+                if (!readBlock(file, cnOff, cn) || cn.id != "##CN" || cn.links.size() < 5)
                     break;
                 const uint64_t nextCn = cn.links[0];
                 Channel ch;
@@ -289,46 +330,125 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
                 if (cn.links.size() > 4)
                     readConversion(file, cn.links[4], ch.conversion);
                 if (ch.name.empty())
-                    ch.name = QStringLiteral("ch%1").arg(chans.size() + 1).toStdString();
+                    ch.name = QStringLiteral("ch%1").arg(g.channels.size() + 1).toStdString();
                 if (ch.bitCount)
-                    maxByte = qMax(maxByte, static_cast<int>(ch.byteOffset + (ch.bitCount + 7) / 8));
-                if (ch.channelType == 2 && !hasMaster)
+                    g.maxByte = qMax(g.maxByte, ch.byteOffset + (ch.bitOffset + ch.bitCount + 7) / 8);
+                if (ch.channelType == 2 && !g.hasMaster)
                 {
-                    master = ch;
-                    hasMaster = true;
+                    g.master = ch;
+                    g.hasMaster = true;
                 }
                 else
-                    chans.push_back(ch);
+                    g.channels.push_back(ch);
                 cnOff = nextCn;
             }
-            if (chans.empty() || !cycles)
-            {
-                cgOff = nextCg;
-                continue;
-            }
 
-            const size_t recordSize = static_cast<size_t>(recordIdSize) + maxByte;
-            if (!recordSize || dataBody->size() < cycles * recordSize)
-            {
-                cgOff = nextCg;
-                continue;
-            }
-
-            for (size_t i = 0; i < cycles; ++i)
-            {
-                const uint8_t *rec = dataBody->data() + i * recordSize + recordIdSize;
-                const double t = hasMaster ? master.conversion.apply(readValue(rec, master))
-                                           : static_cast<double>(i);
-                for (const Channel &ch : chans)
-                {
-                    const std::string name = group.empty() ? ch.name : group + "." + ch.name;
-                    acc[name].push_back({t, ch.conversion.apply(readValue(rec, ch))});
-                    if (!ch.unit.empty())
-                        units[name] = ch.unit;
-                }
-            }
+            if (!g.channels.empty() && g.cycles)
+                groups.push_back(std::move(g));
             cgOff = nextCg;
         }
+
+        for (GroupData &g : groups)
+        {
+            for (const Channel &ch : g.channels)
+            {
+                const std::string base = g.name.empty() ? ch.name : g.name + "." + ch.name;
+                const int count = ++nameCount[base];
+                g.keys.push_back(count == 1 ? base : base + "#" + std::to_string(count));
+            }
+        }
+
+        auto emitRecord = [&](GroupData &g, const uint8_t *rec) {
+            if (g.written >= g.cycles)
+                return;
+            const double t = g.hasMaster ? g.master.conversion.apply(readValue(rec, g.master))
+                                         : static_cast<double>(g.written);
+            for (size_t k = 0; k < g.channels.size(); ++k)
+            {
+                const Channel &ch = g.channels[k];
+                const std::string &key = g.keys[k];
+                acc[key].push_back({t, ch.conversion.apply(readValue(rec, ch))});
+                if (!ch.unit.empty())
+                    units[key] = ch.unit;
+            }
+            ++g.written;
+        };
+
+        auto readRecordId = [&](const uint8_t *p) -> uint64_t {
+            switch (recordIdSize)
+            {
+            case 1: return *p;
+            case 2: return u16(p);
+            case 4: return u32(p);
+            case 8: return u64(p);
+            default: return 0;
+            }
+        };
+
+        auto processBlock = [&](uint64_t dataOff) {
+            Block data;
+            if (!dataOff || !readBlock(file, dataOff, data) || (data.id != "##DT" && data.id != "##DZ"))
+                return;
+            std::vector<uint8_t> inflated;
+            const std::vector<uint8_t> *body = &data.body;
+            if (data.id == "##DZ")
+            {
+                if (!unzipBlock(data, inflated))
+                    return;
+                body = &inflated;
+            }
+
+            size_t pos = 0;
+            while (pos < body->size())
+            {
+                const uint8_t *rec = body->data() + pos;
+                uint64_t id = 0;
+                if (recordIdSize)
+                {
+                    if (pos + recordIdSize > body->size())
+                        break;
+                    id = readRecordId(rec);
+                }
+                GroupData *g = nullptr;
+                if (recordIdSize)
+                {
+                    for (GroupData &candidate : groups)
+                    {
+                        if (candidate.recordId == id)
+                        {
+                            g = &candidate;
+                            break;
+                        }
+                    }
+                }
+                else if (groups.size() == 1)
+                    g = &groups[0];
+                if (!g)
+                    break;
+
+                const size_t recordSize = static_cast<size_t>(recordIdSize) + g->maxByte;
+                if (!recordSize || pos + recordSize > body->size())
+                    break;
+                emitRecord(*g, rec + recordIdSize);
+                pos += recordSize;
+            }
+        };
+
+        if (firstDl)
+        {
+            for (uint64_t dlOff = firstDl; dlOff; )
+            {
+                Block dl;
+                if (!readBlock(file, dlOff, dl) || dl.id != "##DL" || dl.links.empty())
+                    break;
+                for (size_t i = 1; i < dl.links.size(); ++i)
+                    processBlock(dl.links[i]);
+                dlOff = dl.links[0];
+            }
+        }
+        else
+            processBlock(firstDt);
+
         dgOff = nextDg;
     }
     if (acc.empty())
