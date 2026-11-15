@@ -29,7 +29,8 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
 {
 
     registry.addDock(DockContribution{QStringLiteral("dock.log"), QStringLiteral("日志"),
-                                      Qt::BottomDockWidgetArea, true, 5, nullptr});
+                                      Qt::BottomDockWidgetArea, true, 5,
+                                      QStringLiteral(":/icons/log.svg"), nullptr});
 
     registry.addRibbon(RibbonContribution{QStringLiteral("文件"), {}, {},
         {{QStringLiteral("文件"),

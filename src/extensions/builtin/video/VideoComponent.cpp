@@ -37,7 +37,7 @@ void VideoComponent::contribute(Registry &registry, const HostContext &host)
 
     registry.addDock(DockContribution{
         QStringLiteral("dock.video"), QStringLiteral("视频同步"),
-        Qt::RightDockWidgetArea, false, 3,
+        Qt::RightDockWidgetArea, false, 3, QStringLiteral(":/icons/box.svg"),
         [host](QWidget *parent) -> QWidget * {
             auto *dock = new QDockWidget(QStringLiteral("视频同步"), parent);
             dock->setObjectName(QStringLiteral("dock.video"));

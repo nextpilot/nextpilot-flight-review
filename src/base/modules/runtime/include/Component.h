@@ -77,6 +77,7 @@ struct DockContribution
     Qt::DockWidgetArea area = Qt::LeftDockWidgetArea;
     bool visible = true;
     int order = 0;
+    QString icon; // 资源路径，空时由宿主给默认图标
     // 返回 QDockWidget 或内容控件；为空时由宿主按 id 构建内置面板。
     std::function<QWidget *(QWidget *parent)> create;
 };

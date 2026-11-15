@@ -1935,13 +1935,15 @@ QWidget *MainWindow::createRibbon()
     )"));
     return ribbon;
 }
-QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
+QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent, const QString &icon)
 {
     if (id == QLatin1String("dock.src"))
     {
     // 左：数据源（对齐原型 d-src）：源列表 → 字段/参数/消息 三页签 → 内容
     auto *srcDock = new QDockWidget(QStringLiteral("数据源"), this);
     srcDock->setObjectName(QStringLiteral("dock.src"));
+    if (!icon.isEmpty())
+        srcDock->setProperty("psIcon", icon);
 
     // 标题栏：标题 + 汇总 + 全局起停 + 关闭，全部放一行，正文从源列表直接开始（不再叠第二行头部）
     auto *srcBar = new DockTitleBar(this, srcDock);
@@ -2217,6 +2219,8 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
     // 右：属性面板（命中什么对象就显示什么属性）
     auto *propDock = new QDockWidget(QStringLiteral("属性面板"), this);
     propDock->setObjectName(QStringLiteral("dock.prop"));
+    if (!icon.isEmpty())
+        propDock->setProperty("psIcon", icon);
     propDock->setMinimumHeight(340);
     auto *propHost = new QWidget(propDock);
     auto *propLay = new QVBoxLayout(propHost);
@@ -2275,6 +2279,8 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
     // 顶右：对象树独立 Dock（属性面板只保留属性表）
     auto *treeDock = new QDockWidget(QStringLiteral("对象树"), this);
     treeDock->setObjectName(QStringLiteral("dock.tree"));
+    if (!icon.isEmpty())
+        treeDock->setProperty("psIcon", icon);
     treeDock->setMinimumHeight(180);
     auto *treeHost = new QWidget(treeDock);
     auto *treeLay = new QVBoxLayout(treeHost);
@@ -2328,6 +2334,8 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
     // 右下：脚本
     auto *scriptDock = new QDockWidget(QStringLiteral("脚本 · Lua 5.4"), this);
     scriptDock->setObjectName(QStringLiteral("dock.script"));
+    if (!icon.isEmpty())
+        scriptDock->setProperty("psIcon", icon);
     auto *scriptHost = new QWidget(scriptDock);
     auto *scriptLay = new QVBoxLayout(scriptHost);
     scriptLay->setContentsMargins(0, 0, 0, 0);
@@ -2403,6 +2411,8 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
     // 底部：日志
     auto *logDock = new QDockWidget(QStringLiteral("日志"), this);
     logDock->setObjectName(QStringLiteral("dock.log"));
+    if (!icon.isEmpty())
+        logDock->setProperty("psIcon", icon);
     m_logView = new QPlainTextEdit(logDock);
     m_logView->setReadOnly(true);
     m_logView->setMaximumBlockCount(2000);
@@ -2430,7 +2440,7 @@ void MainWindow::createDocks()
             dock->setWidget(created);
         }
         if (!dock)
-            dock = buildDockWidget(spec.id, this);
+            dock = buildDockWidget(spec.id, this, spec.icon);
         if (!dock)
             continue;
         if (!spec.id.isEmpty())
@@ -2501,14 +2511,8 @@ void MainWindow::restoreDockMax()
 
 static QString dockIconResource(const QDockWidget *d)
 {
-    const QString name = d->objectName();
-    if (name == QLatin1String("dock.prop")) return QStringLiteral(":/icons/prop.svg");
-    if (name == QLatin1String("dock.tree")) return QStringLiteral(":/icons/panel.svg");
-    if (name == QLatin1String("dock.script")) return QStringLiteral(":/icons/script.svg");
-    if (name == QLatin1String("dock.log")) return QStringLiteral(":/icons/log.svg");
-    if (name == QLatin1String("dock.video")) return QStringLiteral(":/icons/box.svg");
-    if (name == QLatin1String("dock.src")) return QStringLiteral(":/icons/datasource.svg");
-    return QStringLiteral(":/icons/panel.svg");
+    const QString icon = d->property("psIcon").toString();
+    return icon.isEmpty() ? QStringLiteral(":/icons/panel.svg") : icon;
 }
 
 // 出现在窗口最右缘的 ▾ 菜单必须左对齐弹出，否则菜单会跑到屏幕外。
