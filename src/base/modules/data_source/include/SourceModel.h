@@ -58,4 +58,28 @@ struct SourceData
     QVector<QPair<QString, void *>> fanout; // 共享 transport 下的外部解析器句柄
 };
 
+// 数据源模型仓库：源生命周期与 id 分配都在数据源模块内，主窗口只做编排。
+class SourceStore
+{
+public:
+    QVector<SourceData> &items() { return m_items; }
+    const QVector<SourceData> &items() const { return m_items; }
+    SourceData *byId(int id)
+    {
+        for (SourceData &src : m_items)
+            if (src.id == id)
+                return &src;
+        return nullptr;
+    }
+    int nextId() const
+    {
+        int id = 0;
+        for (const SourceData &src : m_items)
+            id = qMax(id, src.id + 1);
+        return id;
+    }
+private:
+    QVector<SourceData> m_items;
+};
+
 } // namespace ps::data_source

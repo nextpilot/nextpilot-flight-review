@@ -171,7 +171,7 @@ private:
     QTableWidget *m_scriptParams = nullptr;
     CanvasWidget *m_scriptPreviewCanvas = nullptr;
     QStringList m_scriptPreviewNames;
-    QVector<SourceData> m_sources;
+    ps::data_source::SourceStore m_sourceStore;
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;
     QAction *m_chipLod = nullptr;

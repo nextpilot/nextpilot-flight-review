@@ -2051,7 +2051,7 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
                 addTimeMarker(t, topic, prompt);
             },
             [this](const QString &text) { log(text); },
-            [this] { return !m_sources.isEmpty(); },
+            [this] { return !m_sourceStore.items().isEmpty(); },
             [this](const QString &name) {
                 for (auto *c : findChildren<CanvasWidget *>())
                     c->removeChannel(name);
@@ -2064,7 +2064,7 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
             [this](QWidget *row) { activateSource(row); },
             [this](QWidget *row) { row->installEventFilter(this); },
             [this](int id, QWidget *row) {
-                for (SourceData &src : m_sources)
+                for (SourceData &src : m_sourceStore.items())
                     if (src.id == id)
                         src.row = row;
             },
@@ -2516,7 +2516,7 @@ void MainWindow::showSourceMenu(QWidget *row, const QPoint &globalPos)
 
     QMenu *cmpMenu = menu.addMenu(QStringLiteral("对比同名通道"));
     bool hasOther = false;
-    for (ps::data_source::SourceData &o : m_sources)
+    for (ps::data_source::SourceData &o : m_sourceStore.items())
     {
         if (!src || o.id == src->id || !o.ds)
             continue;
@@ -2650,14 +2650,14 @@ void MainWindow::removeSourceRow(QWidget *row)
             m_srcMsgs.clear();
         }
         int idx = -1;
-        for (int i = 0; i < m_sources.size(); ++i)
-            if (m_sources.at(i).id == id)
+        for (int i = 0; i < m_sourceStore.items().size(); ++i)
+            if (m_sourceStore.items().at(i).id == id)
                 idx = i;
         if (idx >= 0)
-            m_sources.removeAt(idx);
+            m_sourceStore.items().removeAt(idx);
         renderSourceData();
         // 删掉当前源后落到剩下的第一个可绘源
-        for (const ps::data_source::SourceData &other : m_sources)
+        for (const ps::data_source::SourceData &other : m_sourceStore.items())
         {
             if (other.ds && other.row)
             {
@@ -2676,7 +2676,7 @@ void MainWindow::removeSourceRow(QWidget *row)
     m_srcRows->removeWidget(row);
     row->deleteLater();
     refreshSrcCount();
-    if (m_sources.isEmpty() && m_propTree)
+    if (m_sourceStore.items().isEmpty() && m_propTree)
         refreshPropTree(currentCanvas());
     log(QStringLiteral("移除数据源：%1").arg(name));
 }
@@ -2686,24 +2686,24 @@ void MainWindow::updateStatusChips()
     if (!m_chipSource)
         return;
     int channels = 0;
-    for (const ps::data_source::SourceData &s : m_sources)
+    for (const ps::data_source::SourceData &s : m_sourceStore.items())
         channels += s.channels.size();
-    if (m_sources.isEmpty())
+    if (m_sourceStore.items().isEmpty())
         m_chipSource->setText(QStringLiteral("无数据"));
-    else if (std::any_of(m_sources.cbegin(), m_sources.cend(),
+    else if (std::any_of(m_sourceStore.items().cbegin(), m_sourceStore.items().cend(),
                          [](const ps::data_source::SourceData &s) { return s.live && s.paused; }))
     {
-        const int paused = int(std::count_if(m_sources.cbegin(), m_sources.cend(),
+        const int paused = int(std::count_if(m_sourceStore.items().cbegin(), m_sourceStore.items().cend(),
                                              [](const ps::data_source::SourceData &s) { return s.live && s.paused; }));
-        m_chipSource->setText(QStringLiteral("%1 源 · %2 暂停").arg(m_sources.size()).arg(paused));
+        m_chipSource->setText(QStringLiteral("%1 源 · %2 暂停").arg(m_sourceStore.items().size()).arg(paused));
     }
-    else if (m_sources.size() == 1)
+    else if (m_sourceStore.items().size() == 1)
         m_chipSource->setText(QStringLiteral("%1 · %2 通道")
-                                  .arg(m_sources.first().fmt)
+                                  .arg(m_sourceStore.items().first().fmt)
                                   .arg(channels));
     else
         m_chipSource->setText(QStringLiteral("%1 源 · %2 通道")
-                                  .arg(m_sources.size())
+                                  .arg(m_sourceStore.items().size())
                                   .arg(channels));
 }
 
@@ -2721,10 +2721,7 @@ int MainWindow::sourceIdForRow(QWidget *row) const
 
 ps::data_source::SourceData *MainWindow::sourceById(int id)
 {
-    for (ps::data_source::SourceData &src : m_sources)
-        if (src.id == id)
-            return &src;
-    return nullptr;
+    return m_sourceStore.byId(id);
 }
 
 namespace {
@@ -2812,7 +2809,7 @@ void MainWindow::alignSource(ps::data_source::SourceData *src, int mode)
         return;
     bool init = false;
     double gs = 0, ge = 0;
-    for (const ps::data_source::SourceData &o : m_sources)
+    for (const ps::data_source::SourceData &o : m_sourceStore.items())
     {
         if (o.id == src->id)
             continue;
@@ -2842,10 +2839,10 @@ void MainWindow::setSourceBase(ps::data_source::SourceData *src)
     if (!src || !sourceTimeRange(src, a0, a1))
         return;
     // 基准源的起点为 0，其余源用同一基准换算（PJ globalTimeReference 语义）
-    for (ps::data_source::SourceData &s : m_sources)
+    for (ps::data_source::SourceData &s : m_sourceStore.items())
         setSourceOffset(&s, a0, false);
     for (auto *c : findChildren<CanvasWidget *>())
-        for (const ps::data_source::SourceData &s : m_sources)
+        for (const ps::data_source::SourceData &s : m_sourceStore.items())
             c->setSourceOffset(s.path, a0, true);
     log(QStringLiteral("时间基准：%1，起点归零，其余源同步换算").arg(src->alias));
 }
@@ -2933,7 +2930,7 @@ void MainWindow::connectLiveSource(const QString &extensionId)
         ids << dlg.primaryParserId();
 
     SourceData src;
-    for (const ps::data_source::SourceData &old : m_sources)
+    for (const ps::data_source::SourceData &old : m_sourceStore.items())
         src.id = qMax(src.id, old.id + 1);
     QString note, err;
     if (!openLiveInput(ids, dlg.configJson(), src, &note, &err))
@@ -2941,7 +2938,7 @@ void MainWindow::connectLiveSource(const QString &extensionId)
         QMessageBox::warning(this, QStringLiteral("连接失败"), err);
         return;
     }
-    m_sources.append(src);
+    m_sourceStore.items().append(src);
     addSourceRow(src.name, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"), true,
                  src.path, src.id);
     if (note.isEmpty())
@@ -3129,7 +3126,7 @@ void MainWindow::configureLiveSource(ps::data_source::SourceData *src)
 
 void MainWindow::pollLiveSources()
 {
-    for (ps::data_source::SourceData &src : m_sources)
+    for (ps::data_source::SourceData &src : m_sourceStore.items())
     {
         if (!src.live || src.paused || !src.handle || !src.liveSession)
             continue;
@@ -3649,7 +3646,7 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    for (ps::data_source::SourceData &src : m_sources)
+    for (ps::data_source::SourceData &src : m_sourceStore.items())
         closeLiveSource(&src);
     if (m_liveTimer)
         m_liveTimer->stop();
@@ -4086,7 +4083,7 @@ QWidget *MainWindow::buildPage(const QJsonObject &o)
         auto *c = new CanvasWidget(m_pages);
         c->clearChannels();
         QHash<QString, const PsChannelInfo *> pool;
-        for (const ps::data_source::SourceData &src : m_sources)
+        for (const ps::data_source::SourceData &src : m_sourceStore.items())
         {
             for (const PsChannelInfo *ch : src.channels)
             {
@@ -4298,7 +4295,7 @@ void MainWindow::saveLayoutTo(const QString &path)
     // 数据源与布局一起保存：重启后先重新加载日志，再回填画布通道
     // 数据源与布局一起保存：重启后按顺序重载全部源，再回填画布通道
     QJsonArray sources;
-    for (const ps::data_source::SourceData &src : m_sources)
+    for (const ps::data_source::SourceData &src : m_sourceStore.items())
     {
         if (src.path.isEmpty() || src.live)
             continue;
@@ -4312,7 +4309,7 @@ void MainWindow::saveLayoutTo(const QString &path)
     root[QStringLiteral("sources")] = sources;
 
     QJsonArray transforms;
-    for (const ps::data_source::SourceData &src : m_sources)
+    for (const ps::data_source::SourceData &src : m_sourceStore.items())
     {
         for (const ps::data_source::TransformRecipe &r : src.recipes)
         {
@@ -4413,12 +4410,12 @@ void MainWindow::importLayoutFrom(const QString &path)
         const QString alias = v.toObject().value(QStringLiteral("alias")).toString();
         if (!alias.isEmpty())
         {
-            for (ps::data_source::SourceData &src : m_sources)
+            for (ps::data_source::SourceData &src : m_sourceStore.items())
                 if (src.path == path)
                     src.alias = alias;
         }
         const double offset = v.toObject().value(QStringLiteral("offset")).toDouble(0.0);
-        for (ps::data_source::SourceData &src : m_sources)
+        for (ps::data_source::SourceData &src : m_sourceStore.items())
             if (src.path == path)
                 setSourceOffset(&src, offset, false);
     }
@@ -4428,7 +4425,7 @@ void MainWindow::importLayoutFrom(const QString &path)
     {
         const QJsonObject o = v.toObject();
         ps::data_source::SourceData *src = nullptr;
-        for (ps::data_source::SourceData &s : m_sources)
+        for (ps::data_source::SourceData &s : m_sourceStore.items())
             if (s.path == o.value(QStringLiteral("source")).toString())
                 src = &s;
         if (!src || !src->ds)
@@ -4500,7 +4497,7 @@ void MainWindow::importLayoutFrom(const QString &path)
                 src->derived.append(n);
         reloadChannels(src);
     }
-    if (!m_sources.isEmpty())
+    if (!m_sourceStore.items().isEmpty())
         refreshActiveSource();
 
     // 清空页签时屏蔽 currentChanged：末尾的 ＋ 触发 newPage 会和删除循环互踢
@@ -4738,11 +4735,11 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
     const uint32_t n = ps_dataset_channel_count(ds);
     const QString fmt_tag = entry->formatTag;
     SourceData src;
-    for (const ps::data_source::SourceData &old : m_sources)
+    for (const ps::data_source::SourceData &old : m_sourceStore.items())
         src.id = qMax(src.id, old.id + 1);
     src.name = fi.fileName();
     src.alias = fi.completeBaseName();
-    for (const ps::data_source::SourceData &old : m_sources)
+    for (const ps::data_source::SourceData &old : m_sourceStore.items())
         if (old.alias == src.alias)
             src.alias += QStringLiteral(" #%1").arg(src.id + 1);
     src.path = fi.absoluteFilePath();
@@ -4814,14 +4811,14 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
         }
     }
 
-    m_sources.append(src);
+    m_sourceStore.items().append(src);
     addSourceRow(src.name, QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true, src.path,
                  src.id);
 
     // 一格里一个通道：混量纲（deg / rpm / V）塞一条 Y 轴会把小信号压成直线。
     // 自动挑前几路"有变化"的通道：DataFlash 按字母序首段常是 RC 输入全 0。
     const QVector<CanvasWidget *> canvases = pageCanvases();
-    const bool firstSource = m_sources.size() == 1;
+    const bool firstSource = m_sourceStore.items().size() == 1;
     if (firstSource)
     {
         QVector<const PsChannelInfo *> pick;
@@ -5128,7 +5125,7 @@ void MainWindow::editSeriesProps(CanvasWidget *c, int index)
     ps::data_source::SourceData *src = nullptr;
     const int sid = st.value(QStringLiteral("srcId")).toInt(-1);
     const QString path = st.value(QStringLiteral("srcPath")).toString();
-    for (ps::data_source::SourceData &sd : m_sources)
+    for (ps::data_source::SourceData &sd : m_sourceStore.items())
         if (sd.id == sid || (!path.isEmpty() && sd.path == path))
         {
             src = &sd;
