@@ -1,4 +1,12 @@
 #include "PlotModule.h"
+#include "MainWindow.h"
+#include <QDockWidget>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QTableWidget>
+#include <QToolButton>
+#include <QTreeWidget>
+#include <QVBoxLayout>
 
 namespace ps::components
 {

@@ -2214,121 +2214,6 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent, con
     return srcDock;
     return srcDock;
     }
-    if (id == QLatin1String("dock.prop"))
-    {
-    // 右：属性面板（命中什么对象就显示什么属性）
-    auto *propDock = new QDockWidget(QStringLiteral("属性面板"), this);
-    propDock->setObjectName(QStringLiteral("dock.prop"));
-    if (!icon.isEmpty())
-        propDock->setProperty("psIcon", icon);
-    propDock->setMinimumHeight(340);
-    auto *propHost = new QWidget(propDock);
-    auto *propLay = new QVBoxLayout(propHost);
-    propLay->setContentsMargins(0, 0, 0, 0);
-    auto *propHead = new QWidget(propHost);
-    auto *propHeadLay = new QHBoxLayout(propHead);
-    propHeadLay->setContentsMargins(8, 4, 6, 4);
-    propHeadLay->setSpacing(6);
-    m_selLabel = new QLabel(QStringLiteral("当前对象：画布"), propHead);
-    m_selLabel->setStyleSheet(QStringLiteral("color:#4ea1ff;"));
-    m_propEditBtn = new QToolButton(propHead);
-    m_propEditBtn->setIcon(QIcon(QStringLiteral(":/icons/settings.svg")));
-    m_propEditBtn->setIconSize(QSize(14, 14));
-    m_propEditBtn->setText(QStringLiteral("编辑"));
-    m_propEditBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    m_propEditBtn->setCursor(Qt::PointingHandCursor);
-    m_propEditBtn->setToolTip(QStringLiteral("编辑当前曲线属性"));
-    m_propEditBtn->setStyleSheet(QStringLiteral(
-        "QToolButton{background:#1b232b;border:1px solid #2d3841;border-radius:2px;color:#c9d1d9;"
-        "padding:1px 6px;}QToolButton:hover{border-color:#f2b134;color:#f2b134;}"));
-    m_propEditBtn->setEnabled(false);
-    propHeadLay->addWidget(m_selLabel, 1);
-    propHeadLay->addWidget(m_propEditBtn);
-    m_propTable = new QTableWidget(0, 2, propHost);
-    m_propTable->setHorizontalHeaderLabels({QStringLiteral("属性"), QStringLiteral("值")});
-    m_propTable->horizontalHeader()->setStretchLastSection(true);
-    m_propTable->verticalHeader()->setVisible(false);
-    m_propTable->setShowGrid(false);
-    compactValueTable(m_propTable);
-    connect(m_propEditBtn, &QToolButton::clicked, this, [this] {
-        if (!m_propCanvas)
-            return;
-        if (m_propKind == 2 && m_propSeriesIndex >= 0)
-            editSeriesProps(m_propCanvas, m_propSeriesIndex);
-        else if (m_propKind == 1)
-            editAxesProps(m_propCanvas);
-    });
-    connect(m_propTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
-        if (!m_propCanvas)
-            return;
-        if (m_propKind == 2 && m_propSeriesIndex >= 0)
-            editSeriesProps(m_propCanvas, m_propSeriesIndex);
-        else if (m_propKind == 1)
-            editAxesProps(m_propCanvas);
-    });
-    propLay->addWidget(propHead);
-    propLay->addWidget(m_propTable, 1);
-    propDock->setWidget(propHost);
-    setPropRows(QStringLiteral("画布"),
-                {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")},
-                 {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
-    return propDock;
-    }
-    if (id == QLatin1String("dock.tree"))
-    {
-    // 顶右：对象树独立 Dock（属性面板只保留属性表）
-    auto *treeDock = new QDockWidget(QStringLiteral("对象树"), this);
-    treeDock->setObjectName(QStringLiteral("dock.tree"));
-    if (!icon.isEmpty())
-        treeDock->setProperty("psIcon", icon);
-    treeDock->setMinimumHeight(180);
-    auto *treeHost = new QWidget(treeDock);
-    auto *treeLay = new QVBoxLayout(treeHost);
-    treeLay->setContentsMargins(0, 0, 0, 0);
-    m_propTree = new QTreeWidget(treeHost);
-    m_propTree->setHeaderHidden(true);
-    m_propTree->setColumnCount(1);
-    m_propTree->setRootIsDecorated(true);
-    m_propTree->setIndentation(13);
-    m_propTree->setUniformRowHeights(true);
-    m_propTree->setMinimumHeight(150);
-    m_propTree->setStyleSheet(QStringLiteral(
-        "QTreeWidget{border:0;background:#0d1117;font-size:12px;}"
-        "QTreeWidget::item{height:20px;color:#c9d1d9;}"
-        "QTreeWidget::item:selected{background:#1f2a33;color:#f2b134;}"));
-    treeLay->addWidget(m_propTree);
-    treeDock->setWidget(treeHost);
-    connect(m_propTree, &QTreeWidget::currentItemChanged, this,
-            [this](QTreeWidgetItem *it, QTreeWidgetItem *) {
-        if (m_propTreeBuilding || !it)
-            return;
-        const int kind = it->data(0, Qt::UserRole).toInt();
-        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(
-            it->data(0, Qt::UserRole + 1).value<quintptr>());
-        if (!c)
-            return;
-        if (kind == 1)
-            showAxesProps(c);
-        else if (kind == 2)
-            showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
-    });
-    // 同一行重复点击时 currentItemChanged 不会再发；补 itemClicked 保证属性始终跟随。
-    connect(m_propTree, &QTreeWidget::itemClicked, this,
-            [this](QTreeWidgetItem *it, int) {
-        if (m_propTreeBuilding || !it)
-            return;
-        const int kind = it->data(0, Qt::UserRole).toInt();
-        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(
-            it->data(0, Qt::UserRole + 1).value<quintptr>());
-        if (!c)
-            return;
-        if (kind == 1)
-            showAxesProps(c);
-        else if (kind == 2)
-            showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
-    });
-    return treeDock;
-    }
     Q_UNUSED(parent);
     return nullptr;
 }
@@ -4558,4 +4443,29 @@ void MainWindow::bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4], Q
     for (int i = 0; i < 4; ++i)
         m_scriptInputs[i] = inputs[i];
     m_scriptParams = params;
+}
+
+void MainWindow::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree)
+{
+    m_selLabel = sel; m_propEditBtn = edit; m_propTable = table; m_propTree = tree;
+    connect(m_propEditBtn, &QToolButton::clicked, this, [this] {
+        if (!m_propCanvas) return;
+        if (m_propKind == 2 && m_propSeriesIndex >= 0) editSeriesProps(m_propCanvas, m_propSeriesIndex);
+        else if (m_propKind == 1) editAxesProps(m_propCanvas);
+    });
+    connect(m_propTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
+        if (!m_propCanvas) return;
+        if (m_propKind == 2 && m_propSeriesIndex >= 0) editSeriesProps(m_propCanvas, m_propSeriesIndex);
+        else if (m_propKind == 1) editAxesProps(m_propCanvas);
+    });
+    auto pick = [this](QTreeWidgetItem *it) {
+        if (m_propTreeBuilding || !it) return;
+        const int kind = it->data(0, Qt::UserRole).toInt();
+        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(it->data(0, Qt::UserRole + 1).value<quintptr>());
+        if (!c) return;
+        if (kind == 1) showAxesProps(c); else if (kind == 2) showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
+    };
+    connect(m_propTree, &QTreeWidget::currentItemChanged, this, [pick](QTreeWidgetItem *it, QTreeWidgetItem *) { pick(it); });
+    connect(m_propTree, &QTreeWidget::itemClicked, this, [pick](QTreeWidgetItem *it, int) { pick(it); });
+    setPropRows(QStringLiteral("画布"), {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")}, {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
 }
