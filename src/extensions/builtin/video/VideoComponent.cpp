@@ -29,12 +29,6 @@ ComponentManifest VideoComponent::manifest() const
 
 void VideoComponent::contribute(Registry &registry, const HostContext &host)
 {
-    registry.addRibbon(RibbonContribution{
-        QStringLiteral("视图"), {}, {},
-        {{QStringLiteral("面板"),
-          {{QStringLiteral("view.toggleDock"), QStringLiteral("视频"),
-            QStringLiteral("dock.video"), false}}}}});
-
     registry.addDock(DockContribution{
         QStringLiteral("dock.video"), QStringLiteral("视频同步"),
         Qt::RightDockWidgetArea, false, 3, QStringLiteral(":/icons/box.svg"),

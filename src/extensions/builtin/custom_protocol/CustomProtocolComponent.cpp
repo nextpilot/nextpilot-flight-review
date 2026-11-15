@@ -86,9 +86,10 @@ void CustomProtocolComponent::contribute(Registry &registry, const HostContext &
 
     registry.addRibbon(RibbonContribution{
         QStringLiteral("协议"), QStringLiteral("编辑器"),
-        {{QStringLiteral("protocol.new"), QStringLiteral("新建协议"), {}, true},
-         {QStringLiteral("protocol.open"), QStringLiteral("打开编辑"), {}, false},
-         {QStringLiteral("protocol.validate"), QStringLiteral("校验协议"), {}, false}}});
+        {{QStringLiteral("protocol.new"), QStringLiteral("新建协议"), {}, true, QStringLiteral("newpage")},
+         {QStringLiteral("protocol.open"), QStringLiteral("打开编辑"), {}, false, QStringLiteral("open")},
+         {QStringLiteral("protocol.validate"), QStringLiteral("校验协议"), {}, false, QStringLiteral("validate")}}, {},
+        4});
 
     auto window = [host]() { return host.window ? host.window() : nullptr; };
     auto log = [host](const QString &text) {

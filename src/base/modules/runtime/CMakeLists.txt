@@ -10,7 +10,6 @@ target_include_directories(ps_host PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/base
   ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
 )
 target_link_libraries(ps_host PUBLIC Qt6::Core ps_kernel ${CMAKE_DL_LIBS})
 ps_set_warnings(ps_host)

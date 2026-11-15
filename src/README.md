@@ -6,14 +6,9 @@
 src/
   base/                       最小 app + 最小绘图 app
     main.cpp                  入口；组装 shell 与内置模块
-    host/
-      extension/              扩展契约、注册表、动态装载、宿主 API
-      services/
-        cache/                数据集缓存
-        live/                 实时会话与录制
     kernel/                   与 Qt 无关的抽象逻辑（Rust，ps_kernel.h）
     modules/
-      runtime/                脚本/扩展运行契约
+      runtime/                扩展契约、注册表、动态装载、脚本运行、ModuleBridge
       shell/                  MainWindow、Ribbon/Dock 容器、主题、扩展对话框
       data_source/            SourceModel、DataSourceDock、DataSourceDialog、数据 Ribbon
       plot/                   PlotWorkspace、CanvasWidget、绘图 Ribbon、页面/图型
@@ -29,7 +24,6 @@ src/
       transform/              绘图前数据变换
       script/                 Lua/Python 脚本引擎
     dynamic/                  外部动态扩展（.so / .dll）
-      api/                    ps_extension_api.h，扩展 ABI
       sdk/                    C++ / Rust 扩展 SDK
       data_loader/            CSV / ULog / APBin / ASC / BLF / MCAP 等
       data_source/            仿真 / MAVLink
@@ -42,7 +36,7 @@ src/
 | 东西 | 放哪 | 判据 |
 |---|---|---|
 | 数据模型、通用算子、LOD、缓存/流机制 | `base/kernel/` | 不碰 Qt、不做 I/O |
-| 扩展契约、注册表、动态装载、宿主 API | `base/modules/runtime/` | 只做宿主生命周期与能力暴露 |
+| 扩展 ABI、注册表、动态装载、宿主 API、模块桥 | `base/modules/runtime/` | 只做生命周期、契约与跨模块中立接口 |
 | 缓存策略、实时会话与录制 | `base/modules/data_source/services/` | 宿主侧服务，不是业务格式 |
 | 主窗口、Ribbon/Dock 容器、主题 | `base/modules/shell/` | app 骨架，只做组装 |
 | 数据源 Dock、输入对话框、数据 Ribbon | `base/modules/data_source/` | 数据进入与源管理 |
@@ -50,6 +44,8 @@ src/
 | 设备调试、视频同步、数据变换、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |
 | 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |
 | 用户 Lua 脚本与图标 | `base/resources/` | 运行期资源，不进 host 头文件 |
+
+`ps_extension_api.h` 位于 `base/modules/runtime/include/`，扩展与宿主都只依赖这一份 ABI 头；`ModuleBridge.h` 是 modules 之间唯一的中立调用面。
 
 内置组件与外部动态扩展统一通过 `ExtensionRegistry::addExtension()` 注册；内置组件自己静态注册，外部 `.so` 由 `ExtensionRuntime` 装载后交给 `DynamicExtension` 适配。
 

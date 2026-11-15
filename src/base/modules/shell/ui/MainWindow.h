@@ -55,9 +55,7 @@ protected:
 private:
     QWidget *createRibbon();
     void registerCommands();
-    void buildRibbonWidget(SARibbonPanel *panel, const QString &id, SARibbonBar *ribbon);
     void createDocks();
-    void openSettings();
     void log(const QString &text);
 
     QTabWidget *m_pages = nullptr;

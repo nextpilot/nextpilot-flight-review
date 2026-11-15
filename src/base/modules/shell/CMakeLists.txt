@@ -5,7 +5,6 @@ add_library(ps_base_shell OBJECT
   ui/ShellComponent.cpp
   ui/Theme.h
   ui/Theme.cpp
-  ui/TransformDialogInterface.h
 )
 set_target_properties(ps_base_shell PROPERTIES AUTOMOC ON)
 target_include_directories(ps_base_shell PRIVATE

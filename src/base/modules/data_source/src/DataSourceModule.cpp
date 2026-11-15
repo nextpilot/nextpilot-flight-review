@@ -1,8 +1,7 @@
 #include "DataSourceModule.h"
-#include "PlotModule.h"
+#include "ModuleBridge.h"
 #include "MainWindow.h"
 #include "DataSourceDock.h"
-#include "CanvasWidget.h"
 #include "ps_kernel.h"
 #include "DataSourceEntry.h"
 #include "SourceModel.h"
@@ -23,6 +22,7 @@ using ps::data_source::TransformRecipe;
 #include <QFileDialog>
 #include <QMenu>
 #include <QSettings>
+#include <QHash>
 #include <QStatusBar>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -231,7 +231,18 @@ void DataSourceComponent::contribute(Registry &registry, const HostContext &)
     for (const DataSourceSpec &source : registry.dataSources())
         DataSourceRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
     registerDataSourceContributions(registry);
-    registry.addWindowHook([](QWidget *w) { dataController(qobject_cast<MainWindow *>(w)); });
+    registry.addWindowHook([](QWidget *w) {
+        auto *mw = qobject_cast<MainWindow *>(w);
+        if (!mw)
+            return;
+        dataController(mw);
+        ps::bridge::setSourceViewsProvider(mw, [](MainWindow *m) {
+            QVector<ps::bridge::SourceView> out;
+            for (const SourceData &src : dataController(m)->store()->items())
+                out.append(ps::bridge::SourceView{src.id, src.path, src.name, src.alias, src.channels});
+            return out;
+        });
+    });
 }
 
 void registerDataSourceContributions(Registry &registry)
@@ -251,11 +262,11 @@ void registerDataSourceContributions(Registry &registry)
 
     registry.addRibbon(RibbonContribution{QStringLiteral("数据"), {}, {},
         {{QStringLiteral("常用"),
-             {{QStringLiteral("data.quickOpen"), QStringLiteral("快速打开"), {}, true},
-              {QStringLiteral("data.recent"), QStringLiteral("最近"), {}, false},
-              {QStringLiteral("data.exportSnapshot"), QStringLiteral("导出快照"), {}, false},
-              {QStringLiteral("data.reload"), QStringLiteral("重载"), {}, false}}},
-         {QStringLiteral("来源"), {}, QStringLiteral("sourceGallery"),
+             {{QStringLiteral("data.quickOpen"), QStringLiteral("快速打开"), {}, true, QStringLiteral("open")},
+              {QStringLiteral("data.recent"), QStringLiteral("最近"), {}, false, QStringLiteral("import")},
+              {QStringLiteral("data.exportSnapshot"), QStringLiteral("导出快照"), {}, false, QStringLiteral("export_data")},
+              {QStringLiteral("data.reload"), QStringLiteral("重载"), {}, false, QStringLiteral("reset")}}},
+         {QStringLiteral("来源"), {},
              [](QWidget *p) {
                  auto *panel = static_cast<SARibbonPanel *>(p);
                  auto *mw = qobject_cast<MainWindow *>(panel->window());
@@ -311,8 +322,8 @@ DataSourceController::~DataSourceController()
 }
 
 void DataSourceController::log(const QString &text) { m_mw->appendLog(text); }
-void DataSourceController::newPageForward() { ps::plot::newPage(m_mw); }
-QVector<CanvasWidget *> DataSourceController::pageCanvasesForward() const { return ps::plot::pageCanvases(m_mw); }
+void DataSourceController::newPageForward() { ps::bridge::newPage(m_mw); }
+QVector<CanvasWidget *> DataSourceController::pageCanvasesForward() const { return ps::bridge::pageCanvases(m_mw); }
 void DataSourceController::addTimeMarkerForward(double t, const QString &l, bool p) { addTimeMarker(t,l,p); }
 QWidget *DataSourceController::createDockTitleBar(QDockWidget *d) { return m_mw->createDockTitleBar(d); }
 void DataSourceController::dockWidgetToArea(QDockWidget *d, Qt::DockWidgetArea a) { m_mw->dockWidgetToArea(d, a); }
@@ -320,10 +331,10 @@ void DataSourceController::collapseDockWidget(QDockWidget *d) { m_mw->collapseDo
 void DataSourceController::toggleDockMax(QDockWidget *d) { m_mw->toggleDockMax(d); }
 void DataSourceController::restoreDockMax() { m_mw->restoreDockMax(); }
 void DataSourceController::showDockMenu(QToolButton *b, QMenu *m) { m_mw->showDockMenu(b, m); }
-void DataSourceController::refreshPropTree(CanvasWidget *c) { ps::plot::refreshPropTree(m_mw, c); }
-void DataSourceController::setPropRows(const QString &o, const QVector<QPair<QString, QString>> &r) { ps::plot::setPropRows(m_mw, o, r); }
+void DataSourceController::refreshPropTree(CanvasWidget *c) { ps::bridge::refreshPropTree(m_mw, c); }
+void DataSourceController::setPropRows(const QString &o, const QVector<QPair<QString, QString>> &r) { ps::bridge::setPropRows(m_mw, o, r); }
 void DataSourceController::newPageForward();
-CanvasWidget *DataSourceController::currentCanvas() const { return ps::plot::currentCanvas(m_mw); }
+CanvasWidget *DataSourceController::currentCanvas() const { return ps::bridge::currentCanvas(m_mw); }
 QVector<ps::data_source::SourceData> &DataSourceController::sources() { return m_sourceStore->items(); }
 void DataSourceController::closeSources() { if (m_liveTimer) m_liveTimer->stop(); }
 
@@ -425,13 +436,13 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
             [this](const QString &id) { connectLiveSource(id); },
             [this](const PsChannelInfo *ch) {
                 if (auto *c = currentCanvas(); c && ch)
-                    c->addChannel(ch);
+                    ps::bridge::canvasAddChannel(c, ch);
             },
             [this](const PsChannelInfo *ch) {
                 if (auto *c = currentCanvas(); c && ch)
                 {
-                    c->setChannels({ch});
-                    c->setTitle(QString::fromUtf8(ch->name));
+                    ps::bridge::canvasSetChannels(c, {ch});
+                    ps::bridge::canvasSetTitle(c, QString::fromUtf8(ch->name));
                 }
             },
             [this](int id) { return sourceById(id); },
@@ -445,8 +456,8 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
             [this] { return !m_sourceStore->items().isEmpty(); },
             [this]() -> QVector<SourceData> & { return m_sourceStore->items(); },
             [this](const QString &name) {
-                for (auto *c : findChildren<CanvasWidget *>())
-                    c->removeChannel(name);
+                for (auto *c : ps::bridge::allCanvases(m_mw))
+                    ps::bridge::canvasRemoveChannel(c, name);
             },
             [this] { return m_srcMsgs; },
             [this](SourceData *src, bool paused) { setSourcePaused(src, paused); },
@@ -463,8 +474,8 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
             [this](const QString &path) { loadFile(path); },
             [this](SourceData *src, const QString &name) {
                 src->alias = name;
-                for (auto *c : findChildren<CanvasWidget *>())
-                    c->renameSource(src->path, name);
+                for (auto *c : ps::bridge::allCanvases(m_mw))
+                    ps::bridge::canvasRenameSource(c, src->path, name);
             },
             [this](SourceData *src, int mode) { alignSource(src, mode); },
             [this](SourceData *src) { setSourceBase(src); },
@@ -474,8 +485,8 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
             },
             [this](SourceData *src) { closeLiveSource(src); },
             [this](const QString &path) {
-                for (auto *c : findChildren<CanvasWidget *>())
-                    c->removeChannelsFromSource(path);
+                for (auto *c : ps::bridge::allCanvases(m_mw))
+                    ps::bridge::canvasRemoveChannelsFromSource(c, path);
             },
             [this](int id) { m_activeSource = id; },
             [this] {
@@ -505,9 +516,9 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
                     const QVector<CanvasWidget *> canvases = pageCanvasesForward();
                     for (int i = 0; i < canvases.size() && i < pick.size(); ++i)
                     {
-                        canvases[i]->setInputSource(src.id, src.path, src.alias, src.offsetSec);
-                        canvases[i]->setChannels({pick[i]});
-                        canvases[i]->setTitle(QStringLiteral("%1 · %2")
+                        ps::bridge::canvasSetInputSource(canvases[i], src.id, src.path, src.alias, src.offsetSec);
+                        ps::bridge::canvasSetChannels(canvases[i], {pick[i]});
+                        ps::bridge::canvasSetTitle(canvases[i], QStringLiteral("%1 · %2")
                                               .arg(src.alias, QString::fromUtf8(pick[i]->name)));
                     }
                 }
@@ -530,10 +541,10 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
                 renderSourceData();
                 if (CanvasWidget *c = currentCanvas())
                 {
-                    c->followLatest();
-                    c->notifyActivated();
+                    ps::bridge::canvasFollowLatest(c);
+                    ps::bridge::canvasNotifyActivated(c);
                 }
-                for (auto *c : findChildren<CanvasWidget *>()) c->update();
+                for (auto *c : ps::bridge::allCanvases(m_mw)) ps::bridge::canvasUpdate(c);
                 if (src->plotted || !currentCanvas()) return;
                 QVector<const PsChannelInfo *> first;
                 auto continuous = [](const PsChannelInfo *ch) {
@@ -560,12 +571,12 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
                     }
                 }
                 if (first.isEmpty()) return;
-                if (currentCanvas()->hasData()) newPageForward();
+                if (ps::bridge::canvasHasData(currentCanvas())) newPageForward();
                 if (CanvasWidget *c = currentCanvas())
-                    c->setInputSource(src->id, src->path, src->alias, src->offsetSec);
-                for (const PsChannelInfo *ch : first) currentCanvas()->addChannel(ch);
-                currentCanvas()->setTitle(src->alias);
-                currentCanvas()->setFollowLive(true, 30.0);
+                    ps::bridge::canvasSetInputSource(c, src->id, src->path, src->alias, src->offsetSec);
+                for (const PsChannelInfo *ch : first) ps::bridge::canvasAddChannel(currentCanvas(), ch);
+                ps::bridge::canvasSetTitle(currentCanvas(), src->alias);
+                ps::bridge::canvasSetFollowLive(currentCanvas(), true, 30.0);
                 src->plotted = true;
             },
             [this](SourceData *src) {
@@ -575,8 +586,8 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
                 m_srcChannels = src->channels;
                 m_srcParams = src->params;
                 m_srcMsgs = src->msgs;
-                for (auto *c : findChildren<CanvasWidget *>())
-                    c->setInputSource(src->id, src->path, src->alias, src->offsetSec);
+                for (auto *c : ps::bridge::allCanvases(m_mw))
+                    ps::bridge::canvasSetInputSource(c, src->id, src->path, src->alias, src->offsetSec);
                 renderSourceData();
             },
             [this](QWidget *row) { showSourceProps(row); },
@@ -731,8 +742,8 @@ void DataSourceController::setSourceOffset(ps::data_source::SourceData *src, dou
     if (!src)
         return;
     src->offsetSec = offsetSec;
-    for (auto *c : findChildren<CanvasWidget *>())
-        c->setSourceOffset(src->path, offsetSec, refit);
+    for (auto *c : ps::bridge::allCanvases(m_mw))
+        ps::bridge::canvasSetSourceOffset(c, src->path, offsetSec, refit);
     if (auto *row = src->row)
         row->setToolTip(QStringLiteral("%1 · 显示偏移 %2 s").arg(src->alias).arg(offsetSec, 0, 'f', 3));
 }
@@ -778,9 +789,9 @@ void DataSourceController::setSourceBase(ps::data_source::SourceData *src)
     // 基准源的起点为 0，其余源用同一基准换算（PJ globalTimeReference 语义）
     for (ps::data_source::SourceData &s : m_sourceStore->items())
         setSourceOffset(&s, a0, false);
-    for (auto *c : findChildren<CanvasWidget *>())
+    for (auto *c : ps::bridge::allCanvases(m_mw))
         for (const ps::data_source::SourceData &s : m_sourceStore->items())
-            c->setSourceOffset(s.path, a0, true);
+            ps::bridge::canvasSetSourceOffset(c, s.path, a0, true);
     log(QStringLiteral("时间基准：%1，起点归零，其余源同步换算").arg(src->alias));
 }
 
@@ -827,8 +838,8 @@ void DataSourceController::compareSources(ps::data_source::SourceData *src, ps::
             if (x && n == QString::fromUtf8(x->name)) { b = x; break; }
         if (!a || !b)
             continue;
-        c->addChannelEx(a, src->id, src->path, src->alias, src->offsetSec);
-        c->addChannelEx(b, other->id, other->path, other->alias, other->offsetSec);
+        ps::bridge::canvasAddChannelEx(c, a, src->id, src->path, src->alias, src->offsetSec);
+        ps::bridge::canvasAddChannelEx(c, b, other->id, other->path, other->alias, other->offsetSec);
         added += 2;
     }
     log(QStringLiteral("对比 %1 ↔ %2：%3 条曲线").arg(src->alias, other->alias).arg(added));
@@ -937,12 +948,12 @@ void DataSourceController::addTransformFor(const QString &channel)
         return;
     bool replaced = false;
     if (!result.inputName.isEmpty())
-        for (auto *c : findChildren<CanvasWidget *>())
-            replaced = c->replaceChannel(result.inputName, out.first()) || replaced;
+        for (auto *c : ps::bridge::allCanvases(m_mw))
+            replaced = ps::bridge::canvasReplaceChannel(c, result.inputName, out.first()) || replaced;
     if (!replaced)
         for (const PsChannelInfo *ch : out)
             if (auto *c = currentCanvas())
-                c->addChannel(ch);
+                ps::bridge::canvasAddChannel(c, ch);
     log(QStringLiteral("变换完成：%1").arg(result.addedNames.join(QStringLiteral(", "))));
 }
 
@@ -986,7 +997,7 @@ void DataSourceController::exportActiveCsv() { m_dataSourceDock->exportActiveCsv
 
 void DataSourceController::showSourceProps(QWidget *row)
 {
-    if (!row || !ps::plot::propTable(m_mw))
+    if (!row || !ps::bridge::propTable(m_mw))
         return;
     ps::data_source::SourceData *src = sourceById(sourceIdForRow(row));
     if (!src)
@@ -1047,15 +1058,15 @@ void DataSourceController::showSourceProps(QWidget *row)
                          ? QStringLiteral("进行中 · %1").arg(src->liveSession->recordPath())
                          : QStringLiteral("未录制")});
     m_propTreeBuilding = true;
-    if (ps::plot::propTree(m_mw))
+    if (ps::bridge::propTree(m_mw))
     {
-        ps::plot::propTree(m_mw)->setCurrentItem(nullptr);
-        ps::plot::propTree(m_mw)->clearSelection();
+        ps::bridge::propTree(m_mw)->setCurrentItem(nullptr);
+        ps::bridge::propTree(m_mw)->clearSelection();
     }
     m_propTreeBuilding = false;
     setPropRows(QStringLiteral("数据源 · %1").arg(name), rows);
-    if (ps::plot::propTable(m_mw)->rowCount() > 0 && ps::plot::propTable(m_mw)->item(0, 1))
-        ps::plot::propTable(m_mw)->item(0, 1)->setToolTip(rows.first().second);
+    if (ps::bridge::propTable(m_mw)->rowCount() > 0 && ps::bridge::propTable(m_mw)->item(0, 1))
+        ps::bridge::propTable(m_mw)->item(0, 1)->setToolTip(rows.first().second);
 }
 
 void DataSourceController::applySrcFilter()
@@ -1251,7 +1262,7 @@ void DataSourceController::saveLayoutTo(const QString &path)
     {
         if (i == last && m_mw->pages()->tabText(i) == QStringLiteral("＋"))
             continue;
-        pages.append(ps::plot::pageState(m_mw, m_mw->pages()->widget(i)));
+        pages.append(ps::bridge::pageState(m_mw, m_mw->pages()->widget(i)));
         titles.append(m_mw->pages()->tabText(i));
     }
     root[QStringLiteral("pages")] = pages;
@@ -1309,25 +1320,25 @@ void DataSourceController::saveLayoutTo(const QString &path)
     root[QStringLiteral("transforms")] = transforms;
 
     QJsonObject script;
-    script[QStringLiteral("source")] = ps::plot::scriptEditor(m_mw) ? ps::plot::scriptEditor(m_mw)->toPlainText() : QString();
+    script[QStringLiteral("source")] = ps::bridge::scriptEditor(m_mw) ? ps::bridge::scriptEditor(m_mw)->toPlainText() : QString();
     QJsonArray binds;
-    QComboBox **inputs = ps::plot::scriptInputs(m_mw);
+    QComboBox **inputs = ps::bridge::scriptInputs(m_mw);
     for (int i = 0; i < 4; ++i)
         binds.append(inputs[i] ? inputs[i]->currentData().toString() : QString());
     script[QStringLiteral("inputs")] = binds;
     QJsonObject paramObj;
-    if (ps::plot::scriptParams(m_mw))
+    if (ps::bridge::scriptParams(m_mw))
     {
-        for (int row = 0; row < ps::plot::scriptParams(m_mw)->rowCount(); ++row)
+        for (int row = 0; row < ps::bridge::scriptParams(m_mw)->rowCount(); ++row)
         {
-            const QString key = ps::plot::scriptParams(m_mw)->item(row, 0)
-                                    ? ps::plot::scriptParams(m_mw)->item(row, 0)->text().trimmed()
+            const QString key = ps::bridge::scriptParams(m_mw)->item(row, 0)
+                                    ? ps::bridge::scriptParams(m_mw)->item(row, 0)->text().trimmed()
                                     : QString();
             if (key.isEmpty())
                 continue;
             bool ok = false;
-            const double v = ps::plot::scriptParams(m_mw)->item(row, 1)
-                                 ? ps::plot::scriptParams(m_mw)->item(row, 1)->text().toDouble(&ok)
+            const double v = ps::bridge::scriptParams(m_mw)->item(row, 1)
+                                 ? ps::bridge::scriptParams(m_mw)->item(row, 1)->text().toDouble(&ok)
                                  : 0.0;
             if (ok)
                 paramObj[key] = v;
@@ -1484,7 +1495,7 @@ void DataSourceController::importLayoutFrom(const QString &path)
     const QJsonArray pages = root.value(QStringLiteral("pages")).toArray();
     const QJsonArray titles = root.value(QStringLiteral("titles")).toArray();
     for (int i = 0; i < pages.size(); ++i)
-        m_mw->pages()->addTab(ps::plot::buildPage(m_mw, pages[i].toObject()),
+        m_mw->pages()->addTab(ps::bridge::buildPage(m_mw, pages[i].toObject()),
                         titles.at(i).toString(QStringLiteral("页 %1").arg(i + 1)));
 
     const int plusIdx = m_mw->pages()->count();
@@ -1514,7 +1525,7 @@ void DataSourceController::importLayoutFrom(const QString &path)
         m_timeMarkers.append({mo.value(QStringLiteral("t")).toDouble(),
                               mo.value(QStringLiteral("label")).toString()});
     }
-    ps::plot::applyTimeMarkers(m_mw);
+    ps::bridge::applyTimeMarkers(m_mw);
 
     const int cur = root.value(QStringLiteral("current")).toInt(0);
     if (cur >= 0 && cur < m_mw->pages()->count() - 1)
@@ -1523,12 +1534,12 @@ void DataSourceController::importLayoutFrom(const QString &path)
     const QJsonObject script = root.value(QStringLiteral("script")).toObject();
     if (!script.isEmpty())
     {
-        if (ps::plot::scriptEditor(m_mw))
-            ps::plot::scriptEditor(m_mw)->setPlainText(script.value(QStringLiteral("source")).toString());
+        if (ps::bridge::scriptEditor(m_mw))
+            ps::bridge::scriptEditor(m_mw)->setPlainText(script.value(QStringLiteral("source")).toString());
         const QJsonArray binds = script.value(QStringLiteral("inputs")).toArray();
         for (int i = 0; i < 4; ++i)
         {
-            QComboBox *cb = ps::plot::scriptInputs(m_mw)[i];
+            QComboBox *cb = ps::bridge::scriptInputs(m_mw)[i];
             if (!cb)
                 continue;
             cb->clear();
@@ -1539,20 +1550,20 @@ void DataSourceController::importLayoutFrom(const QString &path)
             cb->setCurrentIndex(name.isEmpty() ? 0 : 1);
         }
         const QJsonObject paramObj = script.value(QStringLiteral("params")).toObject();
-        if (ps::plot::scriptParams(m_mw))
+        if (ps::bridge::scriptParams(m_mw))
         {
-            ps::plot::scriptParams(m_mw)->setRowCount(0);
+            ps::bridge::scriptParams(m_mw)->setRowCount(0);
             for (auto it = paramObj.begin(); it != paramObj.end(); ++it)
             {
-                const int row = ps::plot::scriptParams(m_mw)->rowCount();
-                ps::plot::scriptParams(m_mw)->insertRow(row);
-                ps::plot::scriptParams(m_mw)->setItem(row, 0, new QTableWidgetItem(it.key()));
-                ps::plot::scriptParams(m_mw)->setItem(row, 1, new QTableWidgetItem(
+                const int row = ps::bridge::scriptParams(m_mw)->rowCount();
+                ps::bridge::scriptParams(m_mw)->insertRow(row);
+                ps::bridge::scriptParams(m_mw)->setItem(row, 0, new QTableWidgetItem(it.key()));
+                ps::bridge::scriptParams(m_mw)->setItem(row, 1, new QTableWidgetItem(
                     QString::number(it.value().toDouble(), 'g', 10)));
             }
         }
-        if (!ps::plot::scriptEditor(m_mw)->toPlainText().trimmed().isEmpty())
-            ps::plot::runScript(m_mw, false);
+        if (!ps::bridge::scriptEditor(m_mw)->toPlainText().trimmed().isEmpty())
+            ps::bridge::runScript(m_mw, false);
     }
 
     QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
@@ -1586,7 +1597,7 @@ void DataSourceController::addTimeMarker(double t, const QString &label, bool pr
         if (qAbs(mk.first - t) < 1e-4)
         {
             mk.second = text;
-            ps::plot::applyTimeMarkers(m_mw);
+            ps::bridge::applyTimeMarkers(m_mw);
             m_mw->appendLog(QStringLiteral("更新时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
             return;
         }
@@ -1595,7 +1606,7 @@ void DataSourceController::addTimeMarker(double t, const QString &label, bool pr
               [](const QPair<double, QString> &a, const QPair<double, QString> &b) {
                   return a.first < b.first;
               });
-    ps::plot::applyTimeMarkers(m_mw);
+    ps::bridge::applyTimeMarkers(m_mw);
     log(QStringLiteral("添加时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
 }
 
@@ -1607,9 +1618,53 @@ void DataSourceController::removeTimeMarker(double t)
         {
             const QString label = m_timeMarkers.at(i).second;
             m_timeMarkers.removeAt(i);
-            ps::plot::applyTimeMarkers(m_mw);
+            ps::bridge::applyTimeMarkers(m_mw);
             m_mw->appendLog(QStringLiteral("删除时间标签：%1").arg(label));
             return;
         }
     }
 }
+
+namespace ps::bridge
+{
+namespace
+{
+QHash<MainWindow *, SourceViewsProvider> &providers()
+{
+    static QHash<MainWindow *, SourceViewsProvider> p;
+    return p;
+}
+} // namespace
+
+void setSourceViewsProvider(MainWindow *mw, SourceViewsProvider provider)
+{
+    if (!mw)
+        return;
+    if (provider)
+        providers().insert(mw, std::move(provider));
+    else
+        providers().remove(mw);
+}
+
+QVector<SourceView> sourceViews(MainWindow *mw)
+{
+    const auto it = providers().constFind(mw);
+    return it == providers().constEnd() ? QVector<SourceView>{} : it.value()(mw);
+}
+QVector<const PsChannelInfo *> sourceChannels(MainWindow *mw)
+{
+    return ps::components::dataSourceChannels(mw);
+}
+QVector<QPair<double, QString>> timeMarkers(MainWindow *mw)
+{
+    return ps::components::dataSourceTimeMarkers(mw);
+}
+void addTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt)
+{
+    ps::components::addDataSourceTimeMarker(mw, t, label, prompt);
+}
+void removeTimeMarker(MainWindow *mw, double t)
+{
+    ps::components::removeDataSourceTimeMarker(mw, t);
+}
+} // namespace ps::bridge

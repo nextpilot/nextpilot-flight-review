@@ -14,7 +14,7 @@ target_include_directories(plotscope_app PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/modules/shell/ui
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
+  ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
 )
 
 target_link_libraries(plotscope_app PRIVATE

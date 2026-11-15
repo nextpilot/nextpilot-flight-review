@@ -4,7 +4,6 @@
 
 ```text
 src/extensions/dynamic/
-  api/            ps_extension_api.h：扩展唯一契约（ABI + PsHostApi）
   sdk/            C++ / Rust 扩展 SDK（C 布局镜像，不依赖 kernel）
   data_loader/
     rustcsv/ -> ps_data_loader_rustcsv  ps_extension_entry（Rust cdylib 样板）
@@ -18,7 +17,7 @@ src/extensions/dynamic/
 ```
 
 - 描述符必须声明 `family` 与 `capabilities`；`DataSourceRegistry` 只收 `PS_FAMILY_DATA_LOADER / LIVE_SOURCE / DATA_SOURCE`。
-- 数据面只走 `src/extensions/dynamic/api/ps_extension_api.h` 的 C 契约：`schema_json / probe_json / default_options / params_json / load`。
+- 数据面只走 `src/base/modules/runtime/include/ps_extension_api.h` 的 C 契约：`schema_json / probe_json / default_options / params_json / load`。
 - 扩展不得直接链接 `ps_kernel`。`load/open` 会收到 `const PsHostApi*`，只能通过 `dataset_new / dataset_add_channel / dataset_free` 写数据集；跨 Windows/Linux 同一套宿主表语义。
 - **格式解析属于扩展**：每个 loader 自带 `*Parser.{h,cpp}`，只通过宿主函数表写内核。
 - `common/` 只放跨 loader 复用的机械层（`psBuildDataset`、文件/JSON/错误 helper、CAN 帧模型），不放任何单格式解析。

@@ -1,5 +1,7 @@
 # ps_extension_api
 
+位于本目录的 `ps_extension_api.h` 是扩展与宿主之间唯一的公共契约。
+
 扩展与宿主之间唯一的公共契约，纯 C，不依赖 Qt，也不 include `src/app` 或内核内部类型。
 
 - `ps_extension_api.h`：`PsExtensionDescriptor`、`PsLoaderVtable`、`PsUiVtable`、family/capabilities、ABI 版本。

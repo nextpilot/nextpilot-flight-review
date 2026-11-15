@@ -15,12 +15,11 @@ set_target_properties(ps_base_data_source PROPERTIES AUTOMOC ON)
 target_include_directories(ps_base_data_source PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/base
+  ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/services/live
   ${PROJECT_SOURCE_DIR}/src/base/modules/shell/ui
-  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/include
-  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/services/cache
 )
 target_link_libraries(ps_base_data_source PUBLIC ps_host ps_live Qt6::Widgets SARibbonBar::SARibbonBar)

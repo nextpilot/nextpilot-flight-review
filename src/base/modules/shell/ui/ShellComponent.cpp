@@ -48,15 +48,15 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
 
     registry.addRibbon(RibbonContribution{QStringLiteral("文件"), {}, {},
         {{QStringLiteral("文件"),
-             {{QStringLiteral("file.open"), QStringLiteral("打开文件"), {}, true},
-              {QStringLiteral("file.importLayout"), QStringLiteral("导入布局"), {}, true},
-              {QStringLiteral("file.settings"), QStringLiteral("设置"), {}, true}}},
+             {{QStringLiteral("file.open"), QStringLiteral("打开文件"), {}, true, QStringLiteral("open")},
+              {QStringLiteral("file.importLayout"), QStringLiteral("导入布局"), {}, true, QStringLiteral("import")},
+              {QStringLiteral("file.settings"), QStringLiteral("设置"), {}, true, QStringLiteral("settings")}}},
          {QStringLiteral("导出"),
-             {{QStringLiteral("file.saveLayout"), QStringLiteral("保存布局"), {}, true},
-              {QStringLiteral("file.exportSettings"), QStringLiteral("导出设置"), {}, false},
-              {QStringLiteral("file.exportData"), QStringLiteral("导出数据"), {}, false}}},
+             {{QStringLiteral("file.saveLayout"), QStringLiteral("保存布局"), {}, true, QStringLiteral("export")},
+              {QStringLiteral("file.exportSettings"), QStringLiteral("导出设置"), {}, false, QStringLiteral("export_cfg")},
+              {QStringLiteral("file.exportData"), QStringLiteral("导出数据"), {}, false, QStringLiteral("export_data")}}},
          {QStringLiteral("截图"),
-             {{QStringLiteral("file.screenshot"), QStringLiteral("截图当前页"), {}, true}}}},
+             {{QStringLiteral("file.screenshot"), QStringLiteral("截图当前页"), {}, true, QStringLiteral("screenshot")}}}},
         0});
 
 

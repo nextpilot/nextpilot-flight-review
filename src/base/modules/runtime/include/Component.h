@@ -43,13 +43,13 @@ struct RibbonItem
     QString label;
     QString arg;
     bool large = true;
+    QString icon; // 资源名，不带 :/icons/ 前缀
 };
 
 struct RibbonPanel
 {
     QString title;
     QVector<RibbonItem> items;
-    QString widget; // 宿主内建控件 ID：sourceGallery / plotGallery / layoutPicker / viewToggles
     std::function<void(QWidget *)> build; // 模块自建面板；参数是 SARibbonPanel*
 };
 

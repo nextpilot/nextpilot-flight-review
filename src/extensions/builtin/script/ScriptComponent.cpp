@@ -39,7 +39,7 @@ ComponentManifest ScriptComponent::manifest() const
             {QStringLiteral("script")}};
 }
 
-void ScriptComponent::contribute(Registry &registry, const HostContext &)
+void ScriptComponent::contribute(Registry &registry, const HostContext &host)
 {
     registry.addDock(DockContribution{QStringLiteral("dock.script"), QStringLiteral("脚本 · Lua 5.4"),
                                       Qt::RightDockWidgetArea, true, 4,
@@ -131,9 +131,12 @@ void ScriptComponent::contribute(Registry &registry, const HostContext &)
     registry.addRibbon(RibbonContribution{
         QStringLiteral("脚本"), {}, {},
         {{QStringLiteral("Lua"),
-          {{QStringLiteral("script.run"), QStringLiteral("运行"), {}, true},
-           {QStringLiteral("script.format"), QStringLiteral("格式化"), {}, false}}}},
+          {{QStringLiteral("script.run"), QStringLiteral("运行"), {}, true, QStringLiteral("run")},
+           {QStringLiteral("script.format"), QStringLiteral("格式化"), {}, false, QStringLiteral("format")}}}},
         3});
+    registry.addAction(QStringLiteral("script.format"), [host](const ActionContext &) {
+        if (host.log) host.log(QStringLiteral("脚本格式化（stylua 规则，M2 接）"));
+    });
     registry.addScriptRunner(ScriptRunnerContribution{
         [](const QString &source, const QVector<ScriptSeries> &inputs,
            const QMap<QString, double> &params, const QString &language) {

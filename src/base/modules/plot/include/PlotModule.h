@@ -46,6 +46,7 @@ void applyPlayhead(MainWindow *mw, double t);
 QJsonObject pageState(MainWindow *mw, QWidget *page);
 QWidget *buildPage(MainWindow *mw, const QJsonObject &o);
 void applyTimeMarkers(MainWindow *mw);
+void openSettings(MainWindow *mw);
 void removeSourceFromCanvases(MainWindow *mw, const QString &sourcePath);
 void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &channels);
 void setPropRows(MainWindow *mw, const QString &object, const QVector<QPair<QString, QString>> &rows);
