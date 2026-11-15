@@ -21,6 +21,7 @@ class SARibbonPanel;
 class LiveSession;
 class CanvasWidget;
 namespace ps::plot { class PlotWorkspace; }
+namespace ps::data_source { class DataSourceDock; }
 class QSplitter;
 class QLabel;
 class QPlainTextEdit;
@@ -130,6 +131,7 @@ private:
 
     QTabWidget *m_pages = nullptr;
     ps::plot::PlotWorkspace *m_plotWorkspace = nullptr;
+    ps::data_source::DataSourceDock *m_dataSourceDock = nullptr;
     QPlainTextEdit *m_logView = nullptr;
     QTreeWidget *m_srcTree = nullptr;      // 字段页：通道树（按 topic 分组）
     QTabBar *m_srcTabs = nullptr;          // 字段 / 参数 / 消息
