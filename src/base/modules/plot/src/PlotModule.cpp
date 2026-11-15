@@ -551,3 +551,87 @@ void MainWindow::refreshPropTree(CanvasWidget *active)
     }
 }
 
+
+void MainWindow::applyTimeMarkers()
+{
+    if (m_plotWorkspace)
+        m_plotWorkspace->setTimeMarkers(m_timeMarkers);
+}
+
+
+void MainWindow::newPage()
+{
+    auto *c = new CanvasWidget(this);
+    c->clearChannels();
+    c->setTitle(QStringLiteral("新页 · 画布"));
+    m_plotWorkspace->attachCanvas(c);
+    const int plusIdx = m_pages->count() - 1;
+    m_pages->insertTab(plusIdx, c, QStringLiteral("新页"));
+    m_pages->setCurrentWidget(c);
+    refreshPropTree(c);
+    log(QStringLiteral("新建页"));
+}
+
+void MainWindow::restoreCanvasMaximize()
+{
+    if (!m_maxedCanvas)
+        return;
+    CanvasWidget *c = m_maxedCanvas;
+    m_maxedCanvas = nullptr;
+    for (QWidget *w : m_maxedHidden)
+        if (w)
+            w->show();
+    for (const auto &p : m_maxedSizes)
+        if (p.first)
+            p.first->setSizes(p.second);
+    m_maxedHidden.clear();
+    m_maxedSizes.clear();
+    c->setMaximizedState(false);
+    // 隐藏/显示画布会触发 QMainWindow 重算 sizeHint，恢复时把窗口尺寸拉回去。
+    const QSize sz = m_sizeBeforeMax;
+    QTimer::singleShot(0, this, [this, sz] { if (sz.isValid()) resize(sz); });
+}
+
+
+
+
+
+QWidget *MainWindow::pageForCanvas(CanvasWidget *c) const
+{
+    if (!m_pages || !c)
+        return nullptr;
+    for (int i = 0; i < m_pages->count(); ++i)
+    {
+        QWidget *w = m_pages->widget(i);
+        if (w && (w == c || w->isAncestorOf(c)))
+            return w;
+    }
+    return nullptr;
+}
+
+QVector<CanvasWidget *> MainWindow::pageCanvases() const
+{
+    QVector<CanvasWidget *> out;
+    if (m_pages)
+        collectPageCanvases(m_pages->currentWidget(), out);
+    return out;
+}
+
+CanvasWidget *MainWindow::currentCanvas() const
+{
+    return pageCanvases().value(0, nullptr);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
