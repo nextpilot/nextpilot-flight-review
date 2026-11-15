@@ -1,14 +1,14 @@
 add_library(ps_base_data_source OBJECT
   include/DataSourceModule.h
   include/SourceModel.h
-  include/DataInputEntry.h
-  include/DataInputRegistry.h
-  src/DataInputRegistry.cpp
+  include/DataSourceEntry.h
+  include/DataSourceRegistry.h
+  src/DataSourceRegistry.cpp
   src/DataSourceModule.cpp
   include/DataSourceDock.h
   src/DataSourceDock.cpp
-  ui/DataInputDialog.h
-  ui/DataInputDialog.cpp
+  ui/DataSourceDialog.h
+  ui/DataSourceDialog.cpp
   ui/DialogEngine.cpp
 )
 set_target_properties(ps_base_data_source PROPERTIES AUTOMOC ON)

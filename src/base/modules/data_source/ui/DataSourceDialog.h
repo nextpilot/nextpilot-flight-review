@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DataInputEntry.h"
+#include "DataSourceEntry.h"
 
 #include <QDialog>
 #include <QHash>
@@ -23,15 +23,15 @@ class QWidget;
 // 数据输入统一配置框：DataInput = Transport + Parser(s) + Options。
 //   Transport 由 APP 按 supported/defaultURI 渲染，扩展只声明支持哪些、默认值；
 //   Parser 由扩展 schema 提供字段，可多选，每个 parser 展示自己的配置。
-class DataInputDialog : public QDialog
+class DataSourceDialog : public QDialog
 {
     Q_OBJECT
 public:
-    DataInputDialog(const DataInputEntry &entry, const QString &path, QWidget *parent = nullptr);
-    DataInputDialog(const QVector<DataInputEntry> &parsers, const QString &preferredId,
+    DataSourceDialog(const DataSourceEntry &entry, const QString &path, QWidget *parent = nullptr);
+    DataSourceDialog(const QVector<DataSourceEntry> &parsers, const QString &preferredId,
                     const QString &initialConfig = QString(), QWidget *parent = nullptr);
 
-    // 兼容旧 DataInputEntry::open 的单 parser 扁平配置。
+    // 兼容旧 DataSourceEntry::open 的单 parser 扁平配置。
     QString optionsJson() const;
     QString configJson() const { return optionsJson(); }
     // 新的 DataInput 模型：transport 对象 + parsers 数组。

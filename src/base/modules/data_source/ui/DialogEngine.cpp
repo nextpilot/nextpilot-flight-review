@@ -1,6 +1,6 @@
 #include "DialogEngine.h"
 
-#include "DataInputEntry.h"
+#include "DataSourceEntry.h"
 
 #include <QApplication>
 #include <QLabel>
@@ -12,7 +12,7 @@
 #include <QUiLoader>
 #endif
 
-ExtensionDialogEngine::ExtensionDialogEngine(const DataInputEntry &entry, const QString &path, QWidget *parent)
+ExtensionDialogEngine::ExtensionDialogEngine(const DataSourceEntry &entry, const QString &path, QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle(entry.label);
@@ -61,7 +61,7 @@ ExtensionDialogEngine::ExtensionDialogEngine(const DataInputEntry &entry, const 
         box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
         lay->addWidget(box);
     }
-    const DataInputEntry *p = &entry;
+    const DataSourceEntry *p = &entry;
     connect(box, &QDialogButtonBox::accepted, this, [this, p] {
         if (p->uiData)
             m_options = p->uiData(QString());

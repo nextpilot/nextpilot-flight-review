@@ -605,8 +605,8 @@ ps_extension_<family>_<id> # 扩展库：src/extensions/dynamic/<family>/<id>/�
 - APBin：`ApbinParser.{h,cpp}` 在扩展内实现 DataFlash `A3 95` / FMT 自描述 / FMTU 单位倍率 / UNIT / MULT / PARM，通道名 `MSG.#N.Field`，参数表由扩展输出 JSON。
 - ULog：`UlogParser.{h,cpp}` 在扩展内实现 `F/A/D` + `P/Q`，展平/多实例/字符串跳过规则不变；`demo_flight.ulg` 仍为 13 通道。
 - ASC / BLF：各自 `*Parser.{h,cpp}`，共用 `common/CanFrames` 的帧→通道规则（只保留变化字节 + `period`）；BLF 的 zlib 容器由扩展自己解压，内核不链 zlib。
-- loader 选项 UI 的归属：`schema_json.fields` + `ui.preview` + `initial_from_probe` 由扩展提供，app 的 `DataInputDialog` 只做通用渲染；app 源码不再出现 `delimiter / has_header / suggested_time`，新增格式不需要在 app 里加对话框。
-- 数据源与 loader 共用 `DataInputDialog`：`transport` 只声明 `{"supported":[...],"default":"udp://127.0.0.1:1223"}`，通信页由 app 按 transport 固定字段渲染（`file → filepath`、`udp → bind/port`、`tcp → host/port/timeout_ms`、`serial/uart → serial_port/baud`、`internal` 无字段），扩展不再提供 transport 字段；解析参数由扩展 `schema.parser.fields`（loader 用 `schema.fields`）提供，app 不解释具体解析字段；parse 可多选，每个 parse 展示自己的配置，只有一个 parse 或一种 transport 时不渲染对应选择器。
+- loader 选项 UI 的归属：`schema_json.fields` + `ui.preview` + `initial_from_probe` 由扩展提供，app 的 `DataSourceDialog` 只做通用渲染；app 源码不再出现 `delimiter / has_header / suggested_time`，新增格式不需要在 app 里加对话框。
+- 数据源与 loader 共用 `DataSourceDialog`：`transport` 只声明 `{"supported":[...],"default":"udp://127.0.0.1:1223"}`，通信页由 app 按 transport 固定字段渲染（`file → filepath`、`udp → bind/port`、`tcp → host/port/timeout_ms`、`serial/uart → serial_port/baud`、`internal` 无字段），扩展不再提供 transport 字段；解析参数由扩展 `schema.parser.fields`（loader 用 `schema.fields`）提供，app 不解释具体解析字段；parse 可多选，每个 parse 展示自己的配置，只有一个 parse 或一种 transport 时不渲染对应选择器。
 - 测试：`ctest` 6/6；`extension_file_formats` 覆盖 ULog 13 通道、APBin 通道+PARAM、ASC/BLF 各 10 通道；新增 `test/fixture/demo_apbin.bin` 作为可复现夹具。
 
 **Ribbon / Dock spike（2026-11-12 实测）**
@@ -871,9 +871,9 @@ public:
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
 已落地：
-1. `src/base/modules/data_source/include/DataInputEntry.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderExtension` / `SourceExtension` 别名。
+1. `src/base/modules/data_source/include/DataSourceEntry.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderExtension` / `SourceExtension` 别名。
 2. `LoaderRegistry` 注册 ULog、ArduPilot DataFlash、ASC、BLF、CSV；按后缀匹配，`loadFile()` 不再按扩展名写 `if/else`。
-3. `DataInputDialog` 完全由 schema 渲染：`enum/bool/int`、`visible_if`、动态列（`source=columns` + `column_filter`）、探测预览表、警告；新增格式只需注册 schema，不再在 app 里加对话框。
+3. `DataSourceDialog` 完全由 schema 渲染：`enum/bool/int`、`visible_if`、动态列（`source=columns` + `column_filter`）、探测预览表、警告；新增格式只需注册 schema，不再在 app 里加对话框。
 4. CSV schema 覆盖分隔符、表头、跳行、`time.mode=row|column|combined` 及时间列选择。
 5. 删除 `src/base/modules/shell/ui/CsvLoaderDialog.*`。
 
@@ -907,8 +907,8 @@ public:
 
 已落地（2026-11-13 复核）：
 - MCAP 文件加载（`McapReader` + `data_load_mcap`，含 zstd/lz4 chunk）；MCAP 录制（`StreamRecorder` + 最小 `McapWriter`，无 chunk/summary，标准 Python `mcap` reader 可读）。
-- MAVLink UDP、OEM7 TCP/串口、Sim internal 实时源；CSV/MCAP/RAW 三种统一录制；Record 下拉框由 `DataInputDialog` 渲染。
-- 扩展 SDK：loader/source 共用 `DataInputExtension`，外部 `.json` manifest + 动态库 ABI 已落地。
+- MAVLink UDP、OEM7 TCP/串口、Sim internal 实时源；CSV/MCAP/RAW 三种统一录制；Record 下拉框由 `DataSourceDialog` 渲染。
+- 扩展 SDK：loader/source 共用 `DataSourceExtension`，外部 `.json` manifest + 动态库 ABI 已落地。
 
 未落地：
 - Parquet、ROS2、CBOR/MessagePack、MDF4；通用 JSON/JSONL 已由 `data_loader_json` 支持。
@@ -954,7 +954,7 @@ public:
 - `StreamRecorder` 独立于 `LiveSession`：有界队列（4096 批 / 32 MiB）、后台写线程、磁盘慢时整批丢弃并计数；默认目录 `QStandardPaths::AppDataLocation/recordings`，不可写回退 `/tmp/plotscope-recordings`。
 - 三种格式：CSV（`time,channel,value`）、MCAP（每采样点 JSON，`plotscope/value` schema 标记）、RAW（PSRAW1 原始字节）。
 - `PsSourceSink` 增加可选 `raw_batch`，ABI 6；MAVLink/OEM7 raw 字节优先交宿主，未接宿主时保留扩展自带 `raw_path`。
-- `DataInputDialog` 录制格式下拉框；`MainWindow` 按 `__record_format` 启动；配置 JSON 传入 raw header。
+- `DataSourceDialog` 录制格式下拉框；`MainWindow` 按 `__record_format` 启动；配置 JSON 传入 raw header。
 - `data_load_mcap` 按 `schema.name == plotscope/value` 还原单值通道，普通 MCAP 的 `{"value":x}` 不再被误判。
 - 测试：`ctest` 14/14；新增 `test_stream_recorder`；标准 Python `mcap` reader 可读录制文件。
 - 提交：`6f56ca9 feat(app): 实时数据流统一录制 StreamRecorder（CSV/MCAP/RAW）`。

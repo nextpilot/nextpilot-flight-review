@@ -20,8 +20,8 @@ class QWidget;
 // capabilities 这些公共元数据；差异只留在各自的回调组：
 //   loader 组：probe / defaultOptions / paramsJson / load
 //   source 组：defaultConfig / open / poll / close / status / send
-// 调用侧统一使用 DataInputEntry；通过 family / 回调组区分 loader 与 source。
-struct DataInputEntry
+// 调用侧统一使用 DataSourceEntry；通过 family / 回调组区分 loader 与 source。
+struct DataSourceEntry
 {
     // ---- 公共元数据 ----
     QString id;

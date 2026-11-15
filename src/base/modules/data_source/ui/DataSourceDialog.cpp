@@ -1,6 +1,6 @@
-#include "DataInputDialog.h"
+#include "DataSourceDialog.h"
 
-#include "DataInputEntry.h"
+#include "DataSourceEntry.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -118,7 +118,7 @@ QJsonValue valueForField(const QJsonObject &field, const QJsonObject &initial,
 
 } // namespace
 
-DataInputDialog::DataInputDialog(const DataInputEntry &entry, const QString &path, QWidget *parent)
+DataSourceDialog::DataSourceDialog(const DataSourceEntry &entry, const QString &path, QWidget *parent)
     : QDialog(parent), m_sourceMode(false), m_path(path), m_fixedPath(true)
 {
     m_title = entry.schema.value(QStringLiteral("title")).toString(entry.label);
@@ -153,7 +153,7 @@ DataInputDialog::DataInputDialog(const DataInputEntry &entry, const QString &pat
     refreshProbe(true);
 }
 
-DataInputDialog::DataInputDialog(const QVector<DataInputEntry> &parsers, const QString &preferredId,
+DataSourceDialog::DataSourceDialog(const QVector<DataSourceEntry> &parsers, const QString &preferredId,
                                  const QString &initialConfig, QWidget *parent)
     : QDialog(parent), m_sourceMode(true)
 {
@@ -163,7 +163,7 @@ DataInputDialog::DataInputDialog(const QVector<DataInputEntry> &parsers, const Q
 
     const QJsonArray initialParsers = m_initial.value(QStringLiteral("parsers")).toArray();
 
-    for (const DataInputEntry &entry : parsers)
+    for (const DataSourceEntry &entry : parsers)
     {
         ParserPane pane;
         pane.id = entry.id;
@@ -271,7 +271,7 @@ DataInputDialog::DataInputDialog(const QVector<DataInputEntry> &parsers, const Q
     initUi();
 }
 
-void DataInputDialog::applyTransportDefaultUri(const QString &uri)
+void DataSourceDialog::applyTransportDefaultUri(const QString &uri)
 {
     if (uri.isEmpty())
         return;
@@ -308,7 +308,7 @@ void DataInputDialog::applyTransportDefaultUri(const QString &uri)
     }
 }
 
-void DataInputDialog::initUi()
+void DataSourceDialog::initUi()
 {
     setWindowTitle(m_sourceMode ? QStringLiteral("连接 · 数据输入")
                                 : QStringLiteral("加载 · %1").arg(m_title));
@@ -463,7 +463,7 @@ void DataInputDialog::initUi()
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
 
-QWidget *DataInputDialog::createEditor(const QJsonObject &f, const QJsonValue &value,
+QWidget *DataSourceDialog::createEditor(const QJsonObject &f, const QJsonValue &value,
                                        QHash<QString, QWidget *> &editors, QFormLayout *form,
                                        const std::function<QDialog *(const QString &, QWidget *)> &editFn)
 {
@@ -581,14 +581,14 @@ QWidget *DataInputDialog::createEditor(const QJsonObject &f, const QJsonValue &v
     return editor;
 }
 
-QString DataInputDialog::currentTransportType() const
+QString DataSourceDialog::currentTransportType() const
 {
     if (m_transport)
         return normalizeTransport(m_transport->currentData().toString());
     return m_defaultTransport;
 }
 
-void DataInputDialog::collectTransportValues()
+void DataSourceDialog::collectTransportValues()
 {
     for (auto it = m_transportEditors.constBegin(); it != m_transportEditors.constEnd(); ++it)
     {
@@ -606,7 +606,7 @@ void DataInputDialog::collectTransportValues()
     }
 }
 
-void DataInputDialog::buildTransportFields()
+void DataSourceDialog::buildTransportFields()
 {
     if (!m_transportForm)
         return;
@@ -711,14 +711,14 @@ void DataInputDialog::buildTransportFields()
     }
 }
 
-bool DataInputDialog::parserSupportsTransport(const ParserPane &pane, const QString &transport) const
+bool DataSourceDialog::parserSupportsTransport(const ParserPane &pane, const QString &transport) const
 {
     if (pane.transports.isEmpty())
         return true;
     return pane.transports.contains(transport);
 }
 
-void DataInputDialog::buildParserPanes()
+void DataSourceDialog::buildParserPanes()
 {
     QSignalBlocker listBlock(m_parserList);
     m_parserList->clear();
@@ -851,7 +851,7 @@ void DataInputDialog::buildParserPanes()
     }
 }
 
-void DataInputDialog::rebuildParserSelection()
+void DataSourceDialog::rebuildParserSelection()
 {
     if (!m_parserList || m_panes.size() <= 1)
         return;
@@ -904,7 +904,7 @@ void DataInputDialog::rebuildParserSelection()
     updateParserVisibility();
 }
 
-void DataInputDialog::updateTransportAvailability()
+void DataSourceDialog::updateTransportAvailability()
 {
     if (!m_parserList || m_panes.size() <= 1)
         return;
@@ -949,7 +949,7 @@ void DataInputDialog::updateTransportAvailability()
     updateParserVisibility();
 }
 
-void DataInputDialog::updateParserVisibility()
+void DataSourceDialog::updateParserVisibility()
 {
     const bool multi = m_sourceMode && m_panes.size() > 1;
     int selected = 0;
@@ -982,12 +982,12 @@ void DataInputDialog::updateParserVisibility()
     }
 }
 
-QComboBox *DataInputDialog::comboFor(const ParserPane &pane, const QString &key) const
+QComboBox *DataSourceDialog::comboFor(const ParserPane &pane, const QString &key) const
 {
     return qobject_cast<QComboBox *>(pane.editors.value(key, nullptr));
 }
 
-QVariant DataInputDialog::currentValue(const ParserPane &pane, const QString &key) const
+QVariant DataSourceDialog::currentValue(const ParserPane &pane, const QString &key) const
 {
     QWidget *w = pane.editors.value(key, nullptr);
     if (auto *cb = qobject_cast<QCheckBox *>(w))
@@ -1003,7 +1003,7 @@ QVariant DataInputDialog::currentValue(const ParserPane &pane, const QString &ke
     return {};
 }
 
-void DataInputDialog::setCurrentValue(ParserPane &pane, const QString &key, const QVariant &value)
+void DataSourceDialog::setCurrentValue(ParserPane &pane, const QString &key, const QVariant &value)
 {
     QWidget *w = pane.editors.value(key, nullptr);
     if (!w)
@@ -1029,7 +1029,7 @@ void DataInputDialog::setCurrentValue(ParserPane &pane, const QString &key, cons
         line->setText(value.toString());
 }
 
-QJsonObject DataInputDialog::parserOptions(const ParserPane &pane) const
+QJsonObject DataSourceDialog::parserOptions(const ParserPane &pane) const
 {
     QJsonObject o;
     for (const Field &f : pane.fields)
@@ -1062,7 +1062,7 @@ QJsonObject DataInputDialog::parserOptions(const ParserPane &pane) const
     return o;
 }
 
-const DataInputDialog::ParserPane *DataInputDialog::primaryPane() const
+const DataSourceDialog::ParserPane *DataSourceDialog::primaryPane() const
 {
     const QStringList ids = selectedParserIds();
     const QString id = ids.contains(m_preferredId) ? m_preferredId
@@ -1075,7 +1075,7 @@ const DataInputDialog::ParserPane *DataInputDialog::primaryPane() const
     return m_panes.isEmpty() ? nullptr : &m_panes.first();
 }
 
-DataInputDialog::ParserPane *DataInputDialog::primaryPane()
+DataSourceDialog::ParserPane *DataSourceDialog::primaryPane()
 {
     const QStringList ids = selectedParserIds();
     const QString id = ids.contains(m_preferredId) ? m_preferredId
@@ -1088,7 +1088,7 @@ DataInputDialog::ParserPane *DataInputDialog::primaryPane()
     return m_panes.isEmpty() ? nullptr : &m_panes.first();
 }
 
-QStringList DataInputDialog::selectedParserIds() const
+QStringList DataSourceDialog::selectedParserIds() const
 {
     QStringList ids;
     if (m_sourceMode && m_panes.size() > 1 && m_parserList)
@@ -1105,18 +1105,18 @@ QStringList DataInputDialog::selectedParserIds() const
     return ids;
 }
 
-int DataInputDialog::selectedParserCount() const
+int DataSourceDialog::selectedParserCount() const
 {
     return selectedParserIds().size();
 }
 
-QString DataInputDialog::primaryParserId() const
+QString DataSourceDialog::primaryParserId() const
 {
     const auto *pane = primaryPane();
     return pane ? pane->id : QString();
 }
 
-QJsonObject DataInputDialog::transportOptions() const
+QJsonObject DataSourceDialog::transportOptions() const
 {
     QJsonObject o;
     for (auto it = m_transportEditors.constBegin(); it != m_transportEditors.constEnd(); ++it)
@@ -1138,13 +1138,13 @@ QJsonObject DataInputDialog::transportOptions() const
     return o;
 }
 
-QJsonObject DataInputDialog::currentPrimaryOptions() const
+QJsonObject DataSourceDialog::currentPrimaryOptions() const
 {
     const auto *pane = primaryPane();
     return pane ? parserOptions(*pane) : QJsonObject{};
 }
 
-QString DataInputDialog::optionsJson() const
+QString DataSourceDialog::optionsJson() const
 {
     QJsonObject o = currentPrimaryOptions();
     if (m_sourceMode)
@@ -1162,7 +1162,7 @@ QString DataInputDialog::optionsJson() const
     return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
 }
 
-QString DataInputDialog::dataInputJson() const
+QString DataSourceDialog::dataInputJson() const
 {
     QJsonObject t;
     t.insert(QStringLiteral("type"), currentTransportType());
@@ -1220,7 +1220,7 @@ QString DataInputDialog::dataInputJson() const
     return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact));
 }
 
-void DataInputDialog::applyInitialFromProbe(ParserPane &pane)
+void DataSourceDialog::applyInitialFromProbe(ParserPane &pane)
 {
     for (const Field &f : pane.fields)
     {
@@ -1239,7 +1239,7 @@ void DataInputDialog::applyInitialFromProbe(ParserPane &pane)
     }
 }
 
-void DataInputDialog::populateChoices(ParserPane &pane)
+void DataSourceDialog::populateChoices(ParserPane &pane)
 {
     for (const Field &f : pane.fields)
     {
@@ -1276,7 +1276,7 @@ void DataInputDialog::populateChoices(ParserPane &pane)
     }
 }
 
-void DataInputDialog::refreshProbe(bool initial)
+void DataSourceDialog::refreshProbe(bool initial)
 {
     if (m_panes.isEmpty())
         return;
@@ -1314,7 +1314,7 @@ void DataInputDialog::refreshProbe(bool initial)
     m_updating = false;
 }
 
-void DataInputDialog::updateVisibility(ParserPane &pane)
+void DataSourceDialog::updateVisibility(ParserPane &pane)
 {
     for (const Field &f : pane.fields)
     {
@@ -1330,7 +1330,7 @@ void DataInputDialog::updateVisibility(ParserPane &pane)
     }
 }
 
-void DataInputDialog::fillPreview()
+void DataSourceDialog::fillPreview()
 {
     if (m_panes.isEmpty())
         return;

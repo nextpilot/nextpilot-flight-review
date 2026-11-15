@@ -1,6 +1,6 @@
 #include "DeviceDebugDialog.h"
 
-#include "DataInputEntry.h"
+#include "DataSourceEntry.h"
 
 #include <QComboBox>
 #include <QDateTime>
@@ -36,7 +36,7 @@ QString pickString(const QJsonObject &debug, const QJsonObject &schema, const QS
 
 } // namespace
 
-DeviceDebugDialog::DeviceDebugDialog(const DataInputEntry &source, const QString &instanceName,
+DeviceDebugDialog::DeviceDebugDialog(const DataSourceEntry &source, const QString &instanceName,
                                      std::function<QString()> statusFn,
                                      std::function<QString(const QString &)> sendFn,
                                      QWidget *parent)

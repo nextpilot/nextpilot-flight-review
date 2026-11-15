@@ -82,7 +82,7 @@ const QVector<DataSourceSpec> &dataSources() const;
 当前落地：
 
 - `Registry` 只有 `addDataSource / dataSources()`，`addLoader` 已删除；
-- `DataInputRegistry` 构造函数不再写死任何 `ps_extension_entry_*`；
+- `DataSourceRegistry` 构造函数不再写死任何 `ps_extension_entry_*`；
 - 过渡组件 `BuiltinDataSourcesComponent` 集中登记现有内建入口，后续由 GNSS / FlightLog 组件接管；
 - `MainWindow` 只遍历 `m_components.dataSources()` 注册。
 

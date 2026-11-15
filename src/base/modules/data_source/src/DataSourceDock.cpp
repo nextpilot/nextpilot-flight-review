@@ -1,13 +1,13 @@
 #include "DataSourceDock.h"
 
 #include "SourceModel.h"
-#include "DataInputEntry.h"
-#include "DataInputRegistry.h"
+#include "DataSourceEntry.h"
+#include "DataSourceRegistry.h"
 #include "ps_kernel.h"
 #include "LiveSession.h"
 #include "DatasetCache.h"
 #include "DialogEngine.h"
-#include "DataInputDialog.h"
+#include "DataSourceDialog.h"
 #include "record/StreamRecorder.h"
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -457,7 +457,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     emptyLay->addStretch();
     connect(openBtn, &QPushButton::clicked, this, [this] {
         QStringList filters;
-        for (const DataInputEntry &lp : DataInputRegistry::instance().fileEntries())
+        for (const DataSourceEntry &lp : DataSourceRegistry::instance().fileEntries())
             if (!lp.filter.isEmpty())
                 filters << lp.filter;
         filters << QStringLiteral("全部 (*)");
@@ -468,7 +468,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     });
     connect(liveBtn, &QPushButton::clicked, this, [this, liveBtn] {
         QMenu menu(this);
-        for (const DataInputEntry &sp : DataInputRegistry::instance().streamEntries())
+        for (const DataSourceEntry &sp : DataSourceRegistry::instance().streamEntries())
         {
             QAction *a = menu.addAction(sp.label);
             connect(a, &QAction::triggered, this, [this, id = sp.id] { m_ctx.connectLiveSource(id); });
@@ -613,7 +613,7 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
     PsDataset *ds = nullptr;
     const QFileInfo fi(path);
     // 加载器由 registry 提供：app 不再按扩展名写 if/else，也不再为每个格式写对话框
-    const DataInputEntry *entry = DataInputRegistry::instance().findFileBySuffix(fi.suffix());
+    const DataSourceEntry *entry = DataSourceRegistry::instance().findFileBySuffix(fi.suffix());
     if (!entry || !entry->load)
     {
         QMessageBox::warning(this, QStringLiteral("加载失败"),
@@ -640,7 +640,7 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
         // 交互打开：schema 渲染选项；恢复布局：按加载器默认探测静默加载
         if (interactive)
         {
-            DataInputDialog dlg(*entry, path, this);
+            DataSourceDialog dlg(*entry, path, this);
             if (dlg.exec() != QDialog::Accepted)
                 return false;
             opts = dlg.optionsJson();
@@ -763,14 +763,14 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
 }
 void DataSourceDock::connectLiveSource(const QString &extensionId)
 {
-    const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(extensionId);
+    const DataSourceEntry *sp = DataSourceRegistry::instance().findSourceById(extensionId);
     if (!sp)
     {
         m_ctx.log(QStringLiteral("实时源未注册：%1").arg(extensionId));
         return;
     }
-    const auto parsers = DataInputRegistry::instance().streamEntries();
-    DataInputDialog dlg(parsers, sp->id, QString(), this);
+    const auto parsers = DataSourceRegistry::instance().streamEntries();
+    DataSourceDialog dlg(parsers, sp->id, QString(), this);
     if (dlg.exec() != QDialog::Accepted)
         return;
     QStringList ids = dlg.selectedParserIds();
@@ -804,7 +804,7 @@ bool DataSourceDock::openLiveInput(const QStringList &ids, const QString &config
         if (err) *err = QStringLiteral("没有选择解析器");
         return false;
     }
-    const DataInputEntry *primary = DataInputRegistry::instance().findSourceById(selected.value(0));
+    const DataSourceEntry *primary = DataSourceRegistry::instance().findSourceById(selected.value(0));
     if (!primary)
     {
         if (err) *err = QStringLiteral("入口解析器未注册：%1").arg(selected.value(0));
@@ -827,7 +827,7 @@ bool DataSourceDock::openLiveInput(const QStringList &ids, const QString &config
     QStringList extraIds;
     for (int i = 1; i < selected.size(); ++i)
     {
-        const DataInputEntry *p = DataInputRegistry::instance().findSourceById(selected[i]);
+        const DataSourceEntry *p = DataSourceRegistry::instance().findSourceById(selected[i]);
         if (!p || !p->feed)
         {
             m_ctx.log(QStringLiteral("解析器 %1 不支持共享 transport，已跳过").arg(selected.value(i)));
@@ -867,7 +867,7 @@ bool DataSourceDock::openLiveInput(const QStringList &ids, const QString &config
                                  const uint8_t *data, uint32_t size) {
             for (FanoutParser *ep : eps)
             {
-                const DataInputEntry *p = DataInputRegistry::instance().findSourceById(ep->id);
+                const DataSourceEntry *p = DataSourceRegistry::instance().findSourceById(ep->id);
                 QString re;
                 if (p && p->feed)
                     p->feed(ep->handle, QString::fromUtf8(topic), QString::fromUtf8(encoding),
@@ -882,7 +882,7 @@ bool DataSourceDock::openLiveInput(const QStringList &ids, const QString &config
     if (primary->open(config, session->sink(), &handle, &re) != 0)
     {
         for (const auto &ep : extra)
-            if (const DataInputEntry *p = DataInputRegistry::instance().findSourceById(ep->id))
+            if (const DataSourceEntry *p = DataSourceRegistry::instance().findSourceById(ep->id))
                 if (ep->handle)
                     p->close(ep->handle);
         if (err) *err = QStringLiteral("%1\n%2").arg(primary->label, re);
@@ -909,11 +909,11 @@ void DataSourceDock::configureLiveSource(ps::data_source::SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+    const DataSourceEntry *sp = DataSourceRegistry::instance().findSourceById(src->sourceId);
     if (!sp)
         return;
-    const auto parsers = DataInputRegistry::instance().streamEntries();
-    DataInputDialog dlg(parsers, sp->id, src->config, this);
+    const auto parsers = DataSourceRegistry::instance().streamEntries();
+    DataSourceDialog dlg(parsers, sp->id, src->config, this);
     if (dlg.exec() != QDialog::Accepted)
         return;
     QStringList ids = dlg.selectedParserIds();
@@ -951,7 +951,7 @@ void DataSourceDock::pollLiveSources()
     {
         if (!src.live || src.paused || !src.handle || !src.liveSession)
             continue;
-        const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(src.sourceId);
+        const DataSourceEntry *sp = DataSourceRegistry::instance().findSourceById(src.sourceId);
         if (!sp)
             continue;
         QString err;
@@ -984,12 +984,12 @@ void DataSourceDock::closeLiveSource(ps::data_source::SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+    const DataSourceEntry *sp = DataSourceRegistry::instance().findSourceById(src->sourceId);
     if (src->handle && sp)
         sp->close(src->handle);
     src->handle = nullptr;
     for (const auto &f : src->fanout)
-        if (const DataInputEntry *p = DataInputRegistry::instance().findSourceById(f.first))
+        if (const DataSourceEntry *p = DataSourceRegistry::instance().findSourceById(f.first))
             if (f.second)
                 p->close(f.second);
     src->fanout.clear();
@@ -1599,7 +1599,7 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     bool hasDebug = false;
     if (rowSrc)
     {
-        const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(rowSrc->sourceId);
+        const DataSourceEntry *sp = DataSourceRegistry::instance().findSourceById(rowSrc->sourceId);
         hasDebug = isLive && sp && sp->send;
     }
     dbg->setVisible(hasDebug);

@@ -9,7 +9,7 @@
 #include <QStandardPaths>
 
 #include "Component.h"
-#include "DataInputRegistry.h"
+#include "DataSourceRegistry.h"
 #include "ExtensionHost.h"
 #include "ExtensionRuntime.h"
 #include "Theme.h"
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
     ExtensionRuntime &runtime = ExtensionRuntime::instance();
     for (const QString &dir : extensionDirs)
         runtime.scanDirectory(dir.toStdString());
-    QStringList extensionErrors = DataInputRegistry::instance().registerLoadedExtensions();
+    QStringList extensionErrors = DataSourceRegistry::instance().registerLoadedExtensions();
     extensionErrors += ps::components::registerDynamicExtensions();
     for (const QString &e : extensionErrors)
         qWarning("[extension] %s", qPrintable(e));

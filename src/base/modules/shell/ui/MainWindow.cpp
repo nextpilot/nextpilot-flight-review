@@ -1,11 +1,11 @@
 #include "MainWindow.h"
 #include "DialogEngine.h"
-#include "DataInputDialog.h"
+#include "DataSourceDialog.h"
 #include "DatasetCache.h"
-#include "DataInputRegistry.h"
+#include "DataSourceRegistry.h"
 #include "Component.h"
 #include "LiveSession.h"
-#include "DataInputRegistry.h"
+#include "DataSourceRegistry.h"
 
 #include <QAction>
 #include <QtEndian>
@@ -1227,7 +1227,7 @@ MainWindow::MainWindow(QWidget *parent)
     for (const QString &error : m_extensions.errors())
         qWarning("[extension] %s", qPrintable(error));
     for (const ps::components::DataSourceSpec &source : m_extensions.registry().dataSources())
-        DataInputRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
+        DataSourceRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
 
     registerCommands();
 
@@ -1411,12 +1411,12 @@ void MainWindow::buildRibbonWidget(SARibbonPanel *panel, const QString &id, SARi
             });
             dest.append(a);
         };
-        for (const DataInputEntry &lp : DataInputRegistry::instance().fileEntries())
+        for (const DataSourceEntry &lp : DataSourceRegistry::instance().fileEntries())
         {
             const QString kind = lp.id.section(QLatin1Char('_'), -1);
             addSource(kind, lp.label, lp.filter.isEmpty() ? QStringLiteral("全部 (*)") : lp.filter, fileActs);
         }
-        for (const DataInputEntry &sp : DataInputRegistry::instance().streamEntries())
+        for (const DataSourceEntry &sp : DataSourceRegistry::instance().streamEntries())
         {
             auto *a = new QAction(QIcon(sourceThumb(sp.kind)), sp.label, this);
             a->setToolTip(QStringLiteral("连接 %1（%2）").arg(sp.label, sp.transport));
@@ -2841,7 +2841,7 @@ void MainWindow::openSourceDebug(ps::data_source::SourceData *src)
 {
     if (!src || !src->live)
         return;
-    const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+    const DataSourceEntry *sp = DataSourceRegistry::instance().findSourceById(src->sourceId);
     if (!sp || !sp->send)
     {
         QMessageBox::information(this, QStringLiteral("调试"),

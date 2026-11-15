@@ -13,7 +13,7 @@ class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
-struct DataInputEntry;
+struct DataSourceEntry;
 
 // 通用设备调试终端：扩展只提供 debug schema + status/send 回调。
 //   schema.debug.commands: 预置命令 [{label, command}]
@@ -24,7 +24,7 @@ class DeviceDebugDialog : public QDialog
 {
     Q_OBJECT
 public:
-    DeviceDebugDialog(const DataInputEntry &source, const QString &instanceName,
+    DeviceDebugDialog(const DataSourceEntry &source, const QString &instanceName,
                       std::function<QString()> statusFn,
                       std::function<QString(const QString &)> sendFn,
                       QWidget *parent = nullptr);

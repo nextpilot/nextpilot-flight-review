@@ -2,7 +2,7 @@
 
 #include "DeviceDebugDialog.h"
 
-#include "DataInputRegistry.h"
+#include "DataSourceRegistry.h"
 
 #include <QVariantMap>
 
@@ -38,7 +38,7 @@ void DeviceDebugComponent::contribute(Registry &registry, const HostContext &)
             const QString name = args.value(QStringLiteral("name")).toString();
             void *handle = reinterpret_cast<void *>(
                 args.value(QStringLiteral("handle")).value<quintptr>());
-            const DataInputEntry *source = DataInputRegistry::instance().findSourceById(sourceId);
+            const DataSourceEntry *source = DataSourceRegistry::instance().findSourceById(sourceId);
             if (!source || !source->send)
                 return nullptr;
             return new DeviceDebugDialog(

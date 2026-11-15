@@ -1,4 +1,4 @@
-#include "DataInputRegistry.h"
+#include "DataSourceRegistry.h"
 
 #include "HostApi.h"
 #include "ExtensionRuntime.h"
@@ -109,15 +109,15 @@ QString extensionName(const PsExtensionDescriptor *desc)
 
 } // namespace
 
-DataInputRegistry &DataInputRegistry::instance()
+DataSourceRegistry &DataSourceRegistry::instance()
 {
-    static DataInputRegistry r;
+    static DataSourceRegistry r;
     return r;
 }
 
-DataInputRegistry::DataInputRegistry() = default;
+DataSourceRegistry::DataSourceRegistry() = default;
 
-bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, const QString &packageDir,
+bool DataSourceRegistry::registerDescriptor(const PsExtensionDescriptor *desc, const QString &packageDir,
                                            const std::function<QDialog *(const QString &, QWidget *)> &editor)
 {
     if (!desc || desc->abi_version != PS_EXTENSION_ABI_VERSION)
@@ -134,7 +134,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
         if (findFileById(id))
             return false;
 
-        DataInputEntry p;
+        DataSourceEntry p;
         p.edit = editor;
         p.id = id;
         p.version = manifestVersion(desc);
@@ -202,7 +202,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
             if (legacy ? !legacy->load || findFileById(QString::fromUtf8(legacy->id))
                        : manifestId.isEmpty() || findFileById(manifestId))
                 return false;
-            DataInputEntry p;
+            DataSourceEntry p;
         p.edit = editor;
             if (legacy)
             {
@@ -319,7 +319,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
         if (id.isEmpty() || findSourceById(id))
             return false;
 
-        DataInputEntry p;
+        DataSourceEntry p;
         p.edit = editor;
         p.id = id;
         p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
@@ -434,7 +434,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
         if (findSourceById(id))
             return false;
 
-        DataInputEntry p;
+        DataSourceEntry p;
         p.edit = editor;
         p.id = id;
         p.version = manifestVersion(desc);
@@ -492,7 +492,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
     return false;
 }
 
-QStringList DataInputRegistry::scanExtensions(const QStringList &dirs)
+QStringList DataSourceRegistry::scanExtensions(const QStringList &dirs)
 {
     ExtensionRuntime &rt = ExtensionRuntime::instance();
     for (const QString &dir : dirs)
@@ -500,7 +500,7 @@ QStringList DataInputRegistry::scanExtensions(const QStringList &dirs)
     return registerLoadedExtensions();
 }
 
-QStringList DataInputRegistry::registerLoadedExtensions()
+QStringList DataSourceRegistry::registerLoadedExtensions()
 {
     ExtensionRuntime &rt = ExtensionRuntime::instance();
     QStringList errors;
@@ -520,30 +520,30 @@ QStringList DataInputRegistry::registerLoadedExtensions()
     return errors;
 }
 
-const DataInputEntry *DataInputRegistry::findFileBySuffix(const QString &suffix) const
+const DataSourceEntry *DataSourceRegistry::findFileBySuffix(const QString &suffix) const
 {
     const QString dot = suffix.startsWith('.') ? suffix.toLower() : QStringLiteral(".") + suffix.toLower();
-    for (const DataInputEntry &p : m_fileEntries)
+    for (const DataSourceEntry &p : m_fileEntries)
         if (p.extensions.contains(dot, Qt::CaseInsensitive))
             return &p;
     // 未知扩展名兜底给 CSV；解析失败由扩展报错。
-    for (const DataInputEntry &p : m_fileEntries)
+    for (const DataSourceEntry &p : m_fileEntries)
         if (p.id == QLatin1String("data_loader_csv"))
             return &p;
     return nullptr;
 }
 
-const DataInputEntry *DataInputRegistry::findFileById(const QString &id) const
+const DataSourceEntry *DataSourceRegistry::findFileById(const QString &id) const
 {
-    for (const DataInputEntry &p : m_fileEntries)
+    for (const DataSourceEntry &p : m_fileEntries)
         if (p.id == id)
             return &p;
     return nullptr;
 }
 
-const DataInputEntry *DataInputRegistry::findSourceById(const QString &id) const
+const DataSourceEntry *DataSourceRegistry::findSourceById(const QString &id) const
 {
-    for (const DataInputEntry &p : m_streamEntries)
+    for (const DataSourceEntry &p : m_streamEntries)
         if (p.id == id)
             return &p;
     return nullptr;
