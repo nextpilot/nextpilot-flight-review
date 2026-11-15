@@ -1,4 +1,4 @@
-#include "script/ScriptEngine.h"
+#include "ScriptEngine.h"
 
 #include <cmath>
 #include <QDir>

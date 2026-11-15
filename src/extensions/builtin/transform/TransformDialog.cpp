@@ -159,6 +159,24 @@ private:
 };
 
 
+TransformDialogResult TransformDialog::transformResult() const
+{
+    TransformDialogResult r;
+    r.addedNames = m_added;
+    r.inputName = m_inputName;
+    r.kind = m_kind;
+    r.filterId = m_filterId;
+    r.params = m_params;
+    r.outputName = m_outputName;
+    r.quat[0] = m_quat[0];
+    r.quat[1] = m_quat[1];
+    r.quat[2] = m_quat[2];
+    r.quat[3] = m_quat[3];
+    r.degrees = m_degreesOn;
+    r.unwrap = m_unwrapOn;
+    return r;
+}
+
 TransformDialog::TransformDialog(PsDataset *ds, const QVector<const PsChannelInfo *> &channels,
                                  const QString &sourceName, const QString &preselect, QWidget *parent)
     : QDialog(parent)

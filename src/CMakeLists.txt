@@ -37,10 +37,11 @@ if(PS_BUILD_GUI)
 
     # 组件运行期资源部署：业务数据不写进 base。
     if(TARGET ps_gnss AND TARGET plotscope_app)
-      add_custom_command(TARGET plotscope_app POST_BUILD
+      add_custom_target(ps_deploy_gnss_db ALL
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json
-                $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json)
+                $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json
+        DEPENDS plotscope_app)
     endif()
   else()
     message(WARNING "未找到 Qt6 Widgets，只构建内核（-DPS_BUILD_GUI=OFF 可静默）")

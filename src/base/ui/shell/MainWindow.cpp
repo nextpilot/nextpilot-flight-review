@@ -1,12 +1,10 @@
 #include "shell/MainWindow.h"
-#include "video/VideoSyncWidget.h"
 #include "ui/extension_dialog/DialogEngine.h"
 #include "data_input/DataInputDialog.h"
 #include "host/services/cache/DatasetCache.h"
 #include "host/extension/DataInputRegistry.h"
 #include "host/extension/Component.h"
 #include "host/services/live/LiveSession.h"
-#include "device/DeviceDebugDialog.h"
 #include "host/extension/DataInputRegistry.h"
 
 #include <QAction>
@@ -89,9 +87,9 @@ static void execDockMenu(QToolButton *btn, QMenu *menu);
 #include <QJsonObject>
 
 #include "canvas/CanvasWidget.h"
-#include "script/ScriptEngine.h"
+#include "script/ScriptService.h"
 #include "ps_kernel.h"
-#include "transform/TransformDialog.h"
+#include "shell/TransformDialogInterface.h"
 
 namespace {
 
@@ -1257,6 +1255,18 @@ MainWindow::MainWindow(QWidget *parent)
     hostContext.log = [this](const QString &text) { log(text); };
     hostContext.configDir = [] {
         return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    };
+    hostContext.setPlayhead = [this](double t) {
+        for (CanvasWidget *c : findChildren<CanvasWidget *>())
+        {
+            c->setPlayhead(t);
+            if (c->plotMode() == CanvasWidget::TimeSeries)
+            {
+                const double span = std::max(0.5, c->t1() - c->t0());
+                if (t < c->t0() || t > c->t1())
+                    c->setTimeRange(t - span * 0.8, t + span * 0.2);
+            }
+        }
     };
     m_extensions.activate(hostContext);
     for (const QString &error : m_extensions.errors())
@@ -2536,27 +2546,6 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
     });
     return treeDock;
     }
-    if (id == QLatin1String("dock.video"))
-    {
-    // 右侧：视频同步（ffmpeg 抽帧；默认隐藏）
-    auto *videoDock = new QDockWidget(QStringLiteral("视频同步"), this);
-    videoDock->setObjectName(QStringLiteral("dock.video"));
-    auto *video = new VideoSyncWidget(videoDock);
-    videoDock->setWidget(video);
-    connect(video, &VideoSyncWidget::timeChanged, this, [this](double t) {
-        for (CanvasWidget *c : findChildren<CanvasWidget *>())
-        {
-            c->setPlayhead(t);
-            if (c->plotMode() == CanvasWidget::TimeSeries)
-            {
-                const double span = std::max(0.5, c->t1() - c->t0());
-                if (t < c->t0() || t > c->t1())
-                    c->setTimeRange(t - span * 0.8, t + span * 0.2);
-            }
-        }
-    });
-    return videoDock;
-    }
     if (id == QLatin1String("dock.script"))
     {
     // 右下：脚本
@@ -2656,8 +2645,15 @@ void MainWindow::createDocks()
               });
     for (const auto &spec : docks)
     {
-        QDockWidget *dock = spec.create ? qobject_cast<QDockWidget *>(spec.create(this))
-                                        : buildDockWidget(spec.id, this);
+        QWidget *created = spec.create ? spec.create(this) : nullptr;
+        QDockWidget *dock = qobject_cast<QDockWidget *>(created);
+        if (!dock && created)
+        {
+            dock = new QDockWidget(spec.title, this);
+            dock->setWidget(created);
+        }
+        if (!dock)
+            dock = buildDockWidget(spec.id, this);
         if (!dock)
             continue;
         if (!spec.id.isEmpty())
@@ -3583,14 +3579,17 @@ void MainWindow::openSourceDebug(SourceData *src)
                                  QStringLiteral("该实时源未提供命令通道。"));
         return;
     }
-    DeviceDebugDialog dlg(*sp, src->name,
-                          [sp, src] { return src->handle ? sp->status(src->handle) : QString(); },
-                          [sp, src](const QString &cmd) {
-                              return src->handle ? sp->send(src->handle, cmd)
-                                                 : QStringLiteral("{\"ok\":false,\"error\":\"未连接\"}");
-                          },
-                          this);
-    dlg.exec();
+    QVariantMap args;
+    args.insert(QStringLiteral("sourceId"), sp->id);
+    args.insert(QStringLiteral("name"), src->name);
+    args.insert(QStringLiteral("handle"),
+                QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(src->handle)));
+    QDialog *dlg = m_extensions.registry().createDialog(QStringLiteral("dialog.device_debug"),
+                                                       args, this);
+    if (!dlg)
+        return;
+    dlg->exec();
+    delete dlg;
 }
 
 void MainWindow::configureLiveSource(SourceData *src)
@@ -3770,42 +3769,61 @@ void MainWindow::addTransformFor(const QString &channel)
     SourceData *src = sourceById(m_activeSource);
     if (!src || !src->ds)
         return;
-    TransformDialog dlg(src->ds, src->channels, src->alias.isEmpty() ? src->name : src->alias, channel, this);
-    if (dlg.exec() != QDialog::Accepted)
+    QVariantMap args;
+    args.insert(QStringLiteral("dataset"),
+                QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(src->ds)));
+    QVariantList channels;
+    for (const PsChannelInfo *ch : src->channels)
+        channels.append(QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(ch)));
+    args.insert(QStringLiteral("channels"), channels);
+    args.insert(QStringLiteral("sourceName"), src->alias.isEmpty() ? src->name : src->alias);
+    args.insert(QStringLiteral("preselect"), channel);
+    QDialog *dlg = m_extensions.registry().createDialog(QStringLiteral("dialog.transform"), args, this);
+    if (!dlg)
         return;
-    for (const QString &n : dlg.addedNames())
+    const bool accepted = dlg->exec() == QDialog::Accepted;
+    auto *transform = dynamic_cast<ITransformDialog *>(dlg);
+    if (!accepted || !transform)
+    {
+        delete dlg;
+        return;
+    }
+    const TransformDialogResult result = transform->transformResult();
+    delete dlg;
+
+    for (const QString &n : result.addedNames)
         if (!src->derived.contains(n))
             src->derived.append(n);
     TransformRecipe r;
-    r.kind = dlg.kind();
-    r.input = dlg.inputName();
-    r.filter = dlg.filterId();
-    r.params = dlg.params();
-    r.output = dlg.outputName();
-    r.quat[0] = dlg.w();
-    r.quat[1] = dlg.x();
-    r.quat[2] = dlg.y();
-    r.quat[3] = dlg.z();
-    r.degrees = dlg.degrees();
-    r.unwrap = dlg.unwrap();
+    r.kind = result.kind;
+    r.input = result.inputName;
+    r.filter = result.filterId;
+    r.params = result.params;
+    r.output = result.outputName;
+    r.quat[0] = result.quat[0];
+    r.quat[1] = result.quat[1];
+    r.quat[2] = result.quat[2];
+    r.quat[3] = result.quat[3];
+    r.degrees = result.degrees;
+    r.unwrap = result.unwrap;
     src->recipes.append(r);
     refreshActiveSource();
 
     QVector<const PsChannelInfo *> out;
     for (const PsChannelInfo *ch : src->channels)
-        if (dlg.addedNames().contains(QString::fromUtf8(ch->name)))
+        if (result.addedNames.contains(QString::fromUtf8(ch->name)))
             out.append(ch);
     if (out.isEmpty())
         return;
     bool replaced = false;
-    if (!dlg.inputName().isEmpty())
+    if (!result.inputName.isEmpty())
         for (auto *c : findChildren<CanvasWidget *>())
-            replaced = c->replaceChannel(dlg.inputName(), out.first()) || replaced;
+            replaced = c->replaceChannel(result.inputName, out.first()) || replaced;
     if (!replaced)
         for (const PsChannelInfo *ch : out)
             if (auto *c = currentCanvas())
                 c->addChannel(ch);
-    log(QStringLiteral("变换完成：%1").arg(dlg.addedNames().join(QStringLiteral(", "))));
+    log(QStringLiteral("变换完成：%1").arg(result.addedNames.join(QStringLiteral(", "))));
 }
 
 void MainWindow::reloadChannels(SourceData *src)
@@ -5140,7 +5158,7 @@ void MainWindow::runScript(bool apply)
                 params.insert(key, v);
         }
     }
-    const ScriptResult r = ScriptEngine::run(m_script->toPlainText(), bound, params);
+    const ScriptResult r = m_extensions.registry().runScript(m_script->toPlainText(), bound, params);
     if (!r.ok)
     {
         log(QStringLiteral("脚本失败：%1").arg(r.error));
@@ -6167,7 +6185,7 @@ void MainWindow::editSeriesProps(CanvasWidget *c, int index)
             in.name = dlg.channelName();
             in.time = tt;
             in.value = vv;
-            const ScriptResult r = ScriptEngine::run(dlg.scriptText(), {in});
+            const ScriptResult r = m_extensions.registry().runScript(dlg.scriptText(), {in});
             if (!r.ok || r.outputs.isEmpty())
             {
                 QMessageBox::warning(this, QStringLiteral("脚本错误"), r.error.isEmpty()

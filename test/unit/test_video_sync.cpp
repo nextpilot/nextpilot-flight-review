@@ -1,4 +1,4 @@
-#include "video/VideoSyncWidget.h"
+#include "VideoSyncWidget.h"
 
 #include <QApplication>
 #include <QDir>

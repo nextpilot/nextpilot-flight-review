@@ -34,8 +34,6 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
                                       Qt::RightDockWidgetArea, true, 1, nullptr});
     registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
                                       Qt::RightDockWidgetArea, true, 2, nullptr});
-    registry.addDock(DockContribution{QStringLiteral("dock.video"), QStringLiteral("视频同步"),
-                                      Qt::RightDockWidgetArea, false, 3, nullptr});
     registry.addDock(DockContribution{QStringLiteral("dock.script"), QStringLiteral("脚本 · Lua 5.4"),
                                       Qt::RightDockWidgetArea, true, 4, nullptr});
     registry.addDock(DockContribution{QStringLiteral("dock.log"), QStringLiteral("日志"),
@@ -75,19 +73,12 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
          {QStringLiteral("图表类型"), {}, QStringLiteral("plotGallery")}},
         2});
 
-    registry.addRibbon(RibbonContribution{QStringLiteral("脚本"), {}, {},
-        {{QStringLiteral("Lua"),
-             {{QStringLiteral("script.run"), QStringLiteral("运行"), {}, true},
-              {QStringLiteral("script.format"), QStringLiteral("格式化"), {}, false}}}},
-        3});
-
     registry.addRibbon(RibbonContribution{QStringLiteral("视图"), {}, {},
         {{QStringLiteral("面板"),
              {{QStringLiteral("view.toggleDock"), QStringLiteral("数据源"), QStringLiteral("dock.src"), true},
               {QStringLiteral("view.toggleDock"), QStringLiteral("属性"), QStringLiteral("dock.prop"), false},
               {QStringLiteral("view.toggleDock"), QStringLiteral("脚本"), QStringLiteral("dock.script"), false},
-              {QStringLiteral("view.toggleDock"), QStringLiteral("日志"), QStringLiteral("dock.log"), false},
-              {QStringLiteral("view.toggleDock"), QStringLiteral("视频"), QStringLiteral("dock.video"), false}}}},
+              {QStringLiteral("view.toggleDock"), QStringLiteral("日志"), QStringLiteral("dock.log"), false}}}},
         5});
 }
 

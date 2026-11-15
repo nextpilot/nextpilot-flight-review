@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QDialog>
+
+#include "shell/TransformDialogInterface.h"
 #include <QHash>
 #include <QJsonObject>
 #include <QStringList>
@@ -19,7 +21,7 @@ class PreviewPlot;
 
 // 绘图前变换：单通道 PJ4 过滤器 / 四元数 4→3。
 // 只负责调内核 ABI 写回通道，刷新数据树由 MainWindow 做。
-class TransformDialog : public QDialog
+class TransformDialog : public QDialog, public ITransformDialog
 {
     Q_OBJECT
 
@@ -40,6 +42,7 @@ public:
     QString z() const { return m_quat[3]; }
     bool degrees() const { return m_degreesOn; }
     bool unwrap() const { return m_unwrapOn; }
+    TransformDialogResult transformResult() const override;
 
 private:
     QWidget *buildFilterPage();

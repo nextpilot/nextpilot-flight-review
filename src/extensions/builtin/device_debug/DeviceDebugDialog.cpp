@@ -1,4 +1,4 @@
-#include "device/DeviceDebugDialog.h"
+#include "DeviceDebugDialog.h"
 
 #include "host/extension/DataInputEntry.h"
 

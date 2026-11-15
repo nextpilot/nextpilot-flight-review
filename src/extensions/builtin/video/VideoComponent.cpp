@@ -1,0 +1,53 @@
+#include "VideoComponent.h"
+
+#include "VideoSyncWidget.h"
+
+#include <QDockWidget>
+
+namespace ps::components
+{
+namespace
+{
+struct VideoRegistrar
+{
+    VideoRegistrar()
+    {
+        ExtensionRegistry::instance().addExtension(
+            ExtensionDescriptor{QStringLiteral("video.sync"), QStringLiteral("视频同步"),
+                                QStringLiteral("1.0"), ExtensionType::Builtin},
+            [] { return std::make_unique<VideoComponent>(); });
+    }
+};
+static VideoRegistrar g_videoRegistrar;
+} // namespace
+
+ComponentManifest VideoComponent::manifest() const
+{
+    return {QStringLiteral("video.sync"), QStringLiteral("视频同步"), QStringLiteral("1.0"),
+            {QStringLiteral("dock")}};
+}
+
+void VideoComponent::contribute(Registry &registry, const HostContext &host)
+{
+    registry.addRibbon(RibbonContribution{
+        QStringLiteral("视图"), {}, {},
+        {{QStringLiteral("面板"),
+          {{QStringLiteral("view.toggleDock"), QStringLiteral("视频"),
+            QStringLiteral("dock.video"), false}}}}});
+
+    registry.addDock(DockContribution{
+        QStringLiteral("dock.video"), QStringLiteral("视频同步"),
+        Qt::RightDockWidgetArea, false, 3,
+        [host](QWidget *parent) -> QWidget * {
+            auto *dock = new QDockWidget(QStringLiteral("视频同步"), parent);
+            dock->setObjectName(QStringLiteral("dock.video"));
+            auto *video = new VideoSyncWidget(dock);
+            dock->setWidget(video);
+            if (host.setPlayhead)
+                QObject::connect(video, &VideoSyncWidget::timeChanged, dock,
+                                 [setPlayhead = host.setPlayhead](double t) { setPlayhead(t); });
+            return dock;
+        }});
+}
+
+} // namespace ps::components

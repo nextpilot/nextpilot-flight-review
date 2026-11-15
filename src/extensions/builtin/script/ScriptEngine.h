@@ -1,31 +1,9 @@
 #pragma once
 
-#include <QMap>
-#include <QString>
-#include <QVector>
+#include "script/ScriptService.h"
 
 // 脚本只做编排：输入当前画布已有序列，输出新的派生序列。
 // language 为空时按源码首行判断：`# python` / `#!python` 走 Python 3，其余走 Lua 5.4。
-struct ScriptSeries
-{
-    QString name;
-    QVector<double> time;
-    QVector<double> value;
-};
-
-struct ScriptOutput
-{
-    QString name;
-    QVector<double> time;
-    QVector<double> value;
-};
-
-struct ScriptResult
-{
-    bool ok = false;
-    QString error;
-    QVector<ScriptOutput> outputs;
-};
 
 class ScriptEngine
 {
