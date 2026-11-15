@@ -18,6 +18,9 @@ target_include_directories(ps_base_data_source PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/services/live
+  ${PROJECT_SOURCE_DIR}/src/base/modules/shell/ui
+  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/include
+  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/services/cache
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
 )
