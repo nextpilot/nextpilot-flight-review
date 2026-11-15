@@ -40,6 +40,7 @@ public:
         std::function<void(double, const QString &, bool)> addTimeMarker;
         std::function<void(const QString &)> log;
         std::function<bool()> hasSources;
+        std::function<QVector<SourceData> &()> sources;
         std::function<void(const QString &)> removeChannel;
         std::function<QVector<QStringList>()> sourceMsgs;
         std::function<void(SourceData *, bool)> setSourcePaused;
@@ -49,10 +50,37 @@ public:
         std::function<void(QWidget *)> activateSource;
         std::function<void(QWidget *)> installRowEventFilter;
         std::function<void(int, QWidget *)> bindSourceRow;
+        std::function<void(const QString &)> reloadFile;
+        std::function<void(SourceData *, const QString &)> renameSource;
+        std::function<void(SourceData *, int)> alignSource;
+        std::function<void(SourceData *)> setSourceBase;
+        std::function<void(SourceData *, double, bool)> setSourceOffset;
+        std::function<void(SourceData *, SourceData *, bool, const QString &)> compareSources;
+        std::function<void(SourceData *)> closeLiveSource;
+        std::function<void(const QString &)> removeSourceFromCanvases;
+        std::function<void(int)> setActiveSource;
+        std::function<void()> clearSourceView;
+        std::function<void()> refreshSourceView;
+        std::function<void()> refreshPropTree;
+        std::function<void(SourceData &, bool)> sourceLoaded;
+        std::function<void(const QString &)> recordRecent;
+        std::function<void(const QString &)> statusMessage;
+        std::function<void(SourceData *)> liveSourceChanged;
     };
 
     explicit DataSourceDock(Context context, QWidget *parent = nullptr);
 
+    bool loadFile(const QString &path, bool interactive = true);
+    void connectLiveSource(const QString &extensionId);
+    bool openLiveInput(const QStringList &ids, const QString &config, SourceData &dst,
+                       QString *fanoutNote, QString *err);
+    void configureLiveSource(SourceData *src);
+    void pollLiveSources();
+    void refreshLiveSource(SourceData *src);
+    void closeLiveSource(SourceData *src);
+    void updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor);
+    void showSourceMenu(QWidget *row, const QPoint &globalPos);
+    void removeSourceRow(QWidget *row);
     void renderSourceData(const QVector<const PsChannelInfo *> &channels,
                           const QVector<QPair<QString, QString>> &params,
                           const QVector<QStringList> &msgs,

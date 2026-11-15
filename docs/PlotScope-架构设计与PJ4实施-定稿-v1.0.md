@@ -430,7 +430,7 @@ extensions/<id>/
 - `src/include/ps_extension_api.h`：`PsExtensionDescriptor` + `PsLoaderVtable` + `PsUiVtable`，声明 `family / capabilities / extensions`，纯 C、零 Qt 依赖。
 - `src/extensions/dynamic/data_loader/{csv,ulog,apbin,asc,blf}/`：目录、target、入口、manifest id 统一为 `data_loader_<id>`；schema/probe/default/params/load 全在扩展内，app 不再有格式专属代码。
 - `src/runtime/ExtensionRuntime.cpp`：递归扫描 `*.so`，子进程预检隔离坏扩展，`dlopen` + `ps_extension_entry` + ABI 校验；重复 id 只保留第一个，坏扩展只记错误，不拖死宿主。
-- `src/base/host/extension/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按扩展 `uiDialog` 加载 `.ui`，取值走 `uiData` JSON；app 不 include 任何扩展 UI 头文件。
+- `src/base/modules/data_source/ui/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按扩展 `uiDialog` 加载 `.ui`，取值走 `uiData` JSON；app 不 include 任何扩展 UI 头文件。
 - `LoaderRegistry::registerDescriptor()` / `scanExtensions()`：app 唯一注册入口，只收 `PS_FAMILY_DATA_LOADER`；扩展名由扩展 `extensions` 声明，不再写 app 分支。
 - `src/datastore/DatasetCache.cpp`：解析结果磁盘缓存，键为源文件 + `loader@version` + 选项；校验 size/mtime，命中直接 `ps_dataset_new/add_channel` 还原，不重新 probe/parse。
 - `test/unit/test_extension_csv.cpp` / `test_extension_file_formats.cpp` / `test_extension_runtime.cpp` / `test_dataset_cache.cpp`：覆盖内置扩展、外部 `.so`、非法 ABI、重复 id 与缓存失效。
@@ -613,7 +613,7 @@ ps_extension_<family>_<id> # 扩展库：src/extensions/dynamic/<family>/<id>/�
 
 - Ribbon：SARibbon 2.9.6 跑通（MIT、Qt 6.2.4、静态库单 target、24 MB 源码）。实测七页签 + 分组 + 右侧 qchip 位（`rightButtonGroup`）都可用；展开高度 **97 px**、折叠 **28 px**（原型 74 / 32 px）。静态库需 `Q_INIT_RESOURCE(SARibbonResource)`；观感偏 Office，要贴原型必须重写 QSS + 自绘图标。
 - Dock：`QDockWidget` 直接够用（四区 + 浮动 + `tabifyDockWidget` + `saveState/restoreState`），零第三方许可义务；Qt-ADS（LGPL-2.1）留作 M1 升级项；KDDockWidgets 含 GPL，排除。
-- 取舍：Ribbon 承认"多 23 px 换键盘导航/溢出折叠/无障碍"；QSS 压缩目标 ≤84 px。达不到就退回自绘（现有 `QTabBar + QToolBar` 骨架已在 `src/base/ui/shell`）。
+- 取舍：Ribbon 承认"多 23 px 换键盘导航/溢出折叠/无障碍"；QSS 压缩目标 ≤84 px。达不到就退回自绘（现有 `QTabBar + QToolBar` 骨架已在 `src/base/modules/shell/ui`）。
 
 **已实装（2026-11-12 晚）**：SARibbon 2.9.6 源码裁到 3.3 MB（去掉 `docs/`、`example/`、`pyqt6/`、`pyside6/`、`sip/`、`tools/`、`tests/`）放进 `src/3dparty/saribbon`，`src/3dparty/CMakeLists.txt` 里强制 `SARIBBON_BUILD_STATIC_LIBS=ON` / `SARIBBON_BUILD_EXAMPLES=OFF` / `SARIBBON_USE_FRAMELESS_LIB=OFF`（frameless 要 QWindowKit 子模块，内网拿不到），`add_subdirectory(... EXCLUDE_FROM_ALL)`，app 链 `SARibbonBar::SARibbonBar`。`MainWindow::createRibbon()` 从自绘 `QTabBar + QStackedWidget(QToolBar)` 换成 `SARibbonBar`：7 页签 / 文件页三组（布局·导出·截图）/ 右侧状态 action。`RibbonStyleLooseSingleRow` + tab 22 px + panel 标题 10 px → **84 px**（原型 74 px，目标 ≤84 达成；同参数下 CompactTwoRow 94 px、CompactSingleRow 62 px 但组标题会挤压换行）。**已知缺口**：单行模式下每个按钮左侧留图标位，没图标就是空方块——必须补一套自绘 SVG 图标（约 22 个），否则观感不成立。
 
@@ -806,7 +806,7 @@ public:
 
 #### 14.3.1 P0 变换内核 + 派生曲线（已完成）
 任务：
-1. 新建 `src/base/ui/transform/`：`Processor.h`、`Catalogue.{h,cpp}`、`SisoFilters.cpp`、`QuatToRpy.cpp`、`DerivedSeries.{h,cpp}`。
+1. 新建 `src/extensions/builtin/transform/`：`Processor.h`、`Catalogue.{h,cpp}`、`SisoFilters.cpp`、`QuatToRpy.cpp`、`DerivedSeries.{h,cpp}`。
 2. 实现 12 个 SISO + 四元数 4→3，参数用 JSON 描述，目录可查询。
 3. 字段树右键“添加变换…”；面板式编辑器：输入通道、算子、参数表单、预览（before 虚线 + after 实线）、Apply。
 4. 输出作为普通派生通道进树（每源一个“派生”分组）、进画布、可编辑/移除。
@@ -871,11 +871,11 @@ public:
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
 已落地：
-1. `src/base/host/extension/DataInputExtension.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderExtension` / `SourceExtension` 别名。
+1. `src/base/modules/data_source/include/DataInputEntry.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderExtension` / `SourceExtension` 别名。
 2. `LoaderRegistry` 注册 ULog、ArduPilot DataFlash、ASC、BLF、CSV；按后缀匹配，`loadFile()` 不再按扩展名写 `if/else`。
 3. `DataInputDialog` 完全由 schema 渲染：`enum/bool/int`、`visible_if`、动态列（`source=columns` + `column_filter`）、探测预览表、警告；新增格式只需注册 schema，不再在 app 里加对话框。
 4. CSV schema 覆盖分隔符、表头、跳行、`time.mode=row|column|combined` 及时间列选择。
-5. 删除 `src/base/ui/shell/CsvLoaderDialog.*`。
+5. 删除 `src/base/modules/shell/ui/CsvLoaderDialog.*`。
 
 已补（2026-11-13 复核）：
 1. 外部扩展 `.json` manifest 发现 + 动态库 ABI 已落地（`ExtensionRuntime` / `ps_extension_host`，DemoExtension 回归），`PS_EXTENSION_ABI_VERSION=6`。

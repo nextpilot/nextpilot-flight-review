@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PsCaptureFormat.h"
-#include "live/record/McapWriter.h"
+#include "record/McapWriter.h"
 
 #include <QString>
 

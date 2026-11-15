@@ -8,10 +8,10 @@
 #include <cstdio>
 #include <QStandardPaths>
 
-#include "host/extension/Component.h"
+#include "Component.h"
 #include "DataInputRegistry.h"
-#include "host/extension/ExtensionHost.h"
-#include "host/extension/ExtensionRuntime.h"
+#include "ExtensionHost.h"
+#include "ExtensionRuntime.h"
 #include "Theme.h"
 
 #include "ps_kernel.h"

@@ -5,6 +5,10 @@ namespace ps::components
 
 void registerPlotContributions(Registry &registry)
 {
+    registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
+                                      Qt::RightDockWidgetArea, true, 1, nullptr});
+    registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
+                                      Qt::RightDockWidgetArea, true, 2, nullptr});
     registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
         {{QStringLiteral("页面"),
              {{QStringLiteral("page.new"), QStringLiteral("新建页"), {}, true},

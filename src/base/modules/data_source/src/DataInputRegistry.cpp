@@ -1,9 +1,9 @@
 #include "DataInputRegistry.h"
 
-#include "host/extension/HostApi.h"
-#include "host/extension/ExtensionRuntime.h"
-#include "host/extension/Component.h"
-#include "host/extension/DynamicExtension.h"
+#include "HostApi.h"
+#include "ExtensionRuntime.h"
+#include "Component.h"
+#include "DynamicExtension.h"
 #include "ps_kernel.h"
 #include "ps_extension_api.h"
 

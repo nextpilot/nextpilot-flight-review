@@ -1,4 +1,4 @@
-#include "host/extension/HostApi.h"
+#include "HostApi.h"
 
 #include "ps_kernel.h"
 

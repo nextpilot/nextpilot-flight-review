@@ -32,12 +32,6 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
 {
 
     registerDataSourceContributions(registry);
-    registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
-                                      Qt::RightDockWidgetArea, true, 1, nullptr});
-    registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
-                                      Qt::RightDockWidgetArea, true, 2, nullptr});
-    registry.addDock(DockContribution{QStringLiteral("dock.script"), QStringLiteral("脚本 · Lua 5.4"),
-                                      Qt::RightDockWidgetArea, true, 4, nullptr});
     registry.addDock(DockContribution{QStringLiteral("dock.log"), QStringLiteral("日志"),
                                       Qt::BottomDockWidgetArea, true, 5, nullptr});
 

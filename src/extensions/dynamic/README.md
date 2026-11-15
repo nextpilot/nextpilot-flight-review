@@ -23,9 +23,9 @@ src/extensions/dynamic/
 - **格式解析属于扩展**：每个 loader 自带 `*Parser.{h,cpp}`，只通过宿主函数表写内核。
 - `common/` 只放跨 loader 复用的机械层（`psBuildDataset`、文件/JSON/错误 helper、CAN 帧模型），不放任何单格式解析。
 - `extensions` 由扩展声明，base 不再按格式写 `if (suffix == ...)`。
-- 扩展不 include `src/base/ui`，也不持有宿主 UI。简单选项页放在 `schema_json.fields + ui.preview`，由 base 的 `DataInputDialog` 按 schema 渲染；需要复杂自定义界面时，`.ui` 随扩展目录分发，由 `DialogEngine` 加载。
+- 扩展不 include `src/base/modules/shell/ui`，也不持有宿主 UI。简单选项页放在 `schema_json.fields + ui.preview`，由 base 的 `DataInputDialog` 按 schema 渲染；需要复杂自定义界面时，`.ui` 随扩展目录分发，由 `DialogEngine` 加载。
 - base 不出现 `delimiter / has_header / suggested_time` 这类格式键；只认识 `fields / source / initial_from_probe / ui.preview` 这些通用 UI 描述。
 - data_source 的 `schema.transport` 只声明 `supported` 与 `default`；`file/udp/tcp/serial|uart/internal` 的具体字段由 base 固定渲染。
-- 外部 `.so` + `manifest.json` 的发现、预检、`dlopen`、ABI 校验由 `base/host/extension/ExtensionRuntime` 负责；通过校验后经 `ExtensionRegistry::addExtension()` 注册为 `DynamicExtension`，重复 id 只保留第一个。
-- 有 `PS_CAP_CACHE` 的文件加载器，解析结果由 `base/host/services/cache/DatasetCache` 调 `ps_cache_save_dataset` 落盘；源文件 size/mtime 变化或扩展版本变化自动失效。
+- 外部 `.so` + `manifest.json` 的发现、预检、`dlopen`、ABI 校验由 `base/modules/runtime/ExtensionRuntime` 负责；通过校验后经 `ExtensionRegistry::addExtension()` 注册为 `DynamicExtension`，重复 id 只保留第一个。
+- 有 `PS_CAP_CACHE` 的文件加载器，解析结果由 `base/modules/data_source/services/cache/DatasetCache` 调 `ps_cache_save_dataset` 落盘；源文件 size/mtime 变化或扩展版本变化自动失效。
 - `sdk/rust` 只镜像 C 布局；`data_loader/rustcsv` 是真实 Rust I/O 样板（`.pscsv`），构建后安装到 `extensions/data_loader_rustcsv/`。

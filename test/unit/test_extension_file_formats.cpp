@@ -1,6 +1,6 @@
 #include "ps_extension_api.h"
 #include "ps_kernel.h"
-#include "host/extension/HostApi.h"
+#include "HostApi.h"
 
 #include <cassert>
 #include <cmath>

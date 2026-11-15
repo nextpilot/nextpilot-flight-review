@@ -9,8 +9,8 @@ add_library(ps_live STATIC
 target_include_directories(ps_live PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/base
-  ${PROJECT_SOURCE_DIR}/src/base/host
-  ${PROJECT_SOURCE_DIR}/src/base/host/services
+  ${PROJECT_SOURCE_DIR}/src/base
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/api
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
 )

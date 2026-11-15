@@ -1,6 +1,6 @@
 #pragma once
 
-#include "host/extension/Component.h"
+#include "Component.h"
 
 namespace ps::components
 {

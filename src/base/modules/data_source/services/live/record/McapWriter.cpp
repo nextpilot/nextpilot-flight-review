@@ -1,4 +1,4 @@
-#include "live/record/McapWriter.h"
+#include "record/McapWriter.h"
 
 #include <cstring>
 #include <vector>

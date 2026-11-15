@@ -1,4 +1,4 @@
-#include "live/record/StreamRecorder.h"
+#include "record/StreamRecorder.h"
 
 #include <QDateTime>
 #include <QDir>

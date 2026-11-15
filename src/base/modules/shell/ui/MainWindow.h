@@ -3,9 +3,9 @@
 #include <QMainWindow>
 #include <QJsonObject>
 
-#include "host/extension/Component.h"
-#include "host/extension/ExtensionHost.h"
-#include "host/extension/CommandRegistry.h"
+#include "Component.h"
+#include "ExtensionHost.h"
+#include "CommandRegistry.h"
 #include "SourceModel.h"
 
 using ps::data_source::SourceData;

@@ -1,5 +1,5 @@
-#include "host/extension/HostApi.h"
-#include "host/extension/ExtensionRuntime.h"
+#include "HostApi.h"
+#include "ExtensionRuntime.h"
 #include "ps_kernel.h"
 
 #include <cassert>

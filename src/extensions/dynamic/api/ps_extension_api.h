@@ -1,6 +1,6 @@
 #pragma once
 /* PlotScope 扩展 SDK：数据面 + UI 面契约。纯 C，不依赖 Qt，不依赖内核内部类型。
- * base 与 extensions 只共同依赖本头；扩展不 include src/base/ui。
+ * base 与 extensions 只共同依赖本头；扩展不 include 宿主 UI。
  *
  * UI 面只给 .ui 路径和 JSON 回调：扩展提供 .ui + JSON，宿主加载，不返回 QWidget*。
  */

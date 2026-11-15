@@ -1,4 +1,4 @@
-#include "host/extension/ExtensionRuntime.h"
+#include "ExtensionRuntime.h"
 
 #include <algorithm>
 #include <filesystem>

@@ -42,8 +42,8 @@ src/
 | 东西 | 放哪 | 判据 |
 |---|---|---|
 | 数据模型、通用算子、LOD、缓存/流机制 | `base/kernel/` | 不碰 Qt、不做 I/O |
-| 扩展契约、注册表、动态装载、宿主 API | `base/host/extension/` | 只做宿主生命周期与能力暴露 |
-| 缓存策略、实时会话与录制 | `base/host/services/` | 宿主侧服务，不是业务格式 |
+| 扩展契约、注册表、动态装载、宿主 API | `base/modules/runtime/` | 只做宿主生命周期与能力暴露 |
+| 缓存策略、实时会话与录制 | `base/modules/data_source/services/` | 宿主侧服务，不是业务格式 |
 | 主窗口、Ribbon/Dock 容器、主题 | `base/modules/shell/` | app 骨架，只做组装 |
 | 数据源 Dock、输入对话框、数据 Ribbon | `base/modules/data_source/` | 数据进入与源管理 |
 | 画布、绘图 Ribbon、页面/图型 | `base/modules/plot/` | 绘图工作区 |

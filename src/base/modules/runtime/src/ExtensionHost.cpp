@@ -1,7 +1,7 @@
-#include "host/extension/ExtensionHost.h"
+#include "ExtensionHost.h"
 
-#include "host/extension/DynamicExtension.h"
-#include "host/extension/ExtensionRuntime.h"
+#include "DynamicExtension.h"
+#include "ExtensionRuntime.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>

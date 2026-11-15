@@ -27,6 +27,8 @@ ComponentManifest ScriptComponent::manifest() const
 
 void ScriptComponent::contribute(Registry &registry, const HostContext &)
 {
+    registry.addDock(DockContribution{QStringLiteral("dock.script"), QStringLiteral("脚本 · Lua 5.4"),
+                                      Qt::RightDockWidgetArea, true, 4, nullptr});
     registry.addRibbon(RibbonContribution{
         QStringLiteral("脚本"), {}, {},
         {{QStringLiteral("Lua"),

@@ -6,10 +6,10 @@ set_target_properties(ps_builtin_data_sources_component PROPERTIES AUTOMOC ON)
 target_include_directories(ps_builtin_data_sources_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/base
-  ${PROJECT_SOURCE_DIR}/src/base/host/extension
 )
 target_link_libraries(ps_builtin_data_sources_component PUBLIC
   ps_host
+  ps_kernel
   ps_data_loader_csv
   ps_data_loader_ulog
   ps_data_loader_apbin

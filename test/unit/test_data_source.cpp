@@ -1,5 +1,5 @@
 #include "ps_extension_api.h"
-#include "host/extension/HostApi.h"
+#include "HostApi.h"
 
 #include <cassert>
 #include <chrono>

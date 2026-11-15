@@ -4,9 +4,23 @@
 #include "DataInputEntry.h"
 #include "DataInputRegistry.h"
 #include "ps_kernel.h"
-#include "host/services/live/LiveSession.h"
+#include "LiveSession.h"
+#include "DatasetCache.h"
+#include "DialogEngine.h"
+#include "DataInputDialog.h"
+#include "record/StreamRecorder.h"
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QDateTime>
+#include <QFile>
+#include <QDir>
+#include <QStandardPaths>
+#include <QTextStream>
+#include <QtEndian>
 #include <QMap>
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QTreeWidgetItemIterator>
 #include <QAbstractItemView>
 
@@ -508,6 +522,677 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     outer->setSpacing(0);
     outer->addWidget(srcHost);
 }
+
+namespace {
+struct FanoutParser
+{
+    QString id;
+    void *handle = nullptr;
+    LiveSession *session = nullptr;
+    QString prefix;
+    PsSourceSink sink{};
+};
+
+int32_t fanoutChannel(void *ctx, const char *name, const char *unit,
+                      const double *time_s, const double *value, uint32_t count)
+{
+    auto *ep = static_cast<FanoutParser *>(ctx);
+    if (!ep || !ep->session || !name)
+        return 1;
+    const QByteArray full = ep->prefix.toUtf8() + '.' + QByteArray(name);
+    return ep->session->sink()->channel_batch(ep->session, full.constData(), unit,
+                                              time_s, value, count);
+}
+
+int32_t fanoutEvent(void *ctx, const char *topic, const char *payload)
+{
+    auto *ep = static_cast<FanoutParser *>(ctx);
+    if (!ep || !ep->session)
+        return 1;
+    return ep->session->sink()->event(ep->session, topic, payload);
+}
+
+QVector<QStringList> ulogLogMessages(const QString &path, double base)
+{
+    QVector<QStringList> out;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return out;
+    const QByteArray buf = f.readAll();
+    if (buf.size() < 24 || std::memcmp(buf.constData(), "ULog", 4) != 0) return out;
+    int pos = 16;
+    while (pos + 3 <= buf.size())
+    {
+        const quint16 size = qFromLittleEndian<quint16>(buf.constData() + pos);
+        const char ty = buf.at(pos + 2);
+        const int body = pos + 3;
+        if (body + size > buf.size()) break;
+        const char *p = buf.constData() + body;
+        if (ty == 'L' && size >= 9)
+        {
+            const quint64 ts = qFromLittleEndian<quint64>(p + 1);
+            QByteArray text(p + 9, size - 9);
+            const int nul = text.indexOf('\0');
+            if (nul >= 0) text.truncate(nul);
+            const double t = ts / 1e6 - base;
+            if (t >= -0.5)
+                out.append({QString::fromUtf8(text), QStringLiteral("—"), QStringLiteral("0"),
+                            QString::number(qMax(0.0, t), 'f', 3)});
+        }
+        else if (ty == 'C' && size >= 11)
+        {
+            const quint64 ts = qFromLittleEndian<quint64>(p + 3);
+            QByteArray text(p + 11, size - 11);
+            const int nul = text.indexOf('\0');
+            if (nul >= 0) text.truncate(nul);
+            const double t = ts / 1e6 - base;
+            if (t >= -0.5)
+                out.append({QString::fromUtf8(text), QStringLiteral("—"), QStringLiteral("0"),
+                            QString::number(qMax(0.0, t), 'f', 3)});
+        }
+        pos = body + size;
+    }
+    return out;
+}
+} // namespace
+
+void DataSourceDock::updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor)
+{
+    if (!row)
+        return;
+    row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
+    if (auto *label = row->findChild<QLabel *>(QStringLiteral("srcMeta")))
+        label->setText(meta);
+    if (auto *dot = row->findChild<QLabel *>(QStringLiteral("srcDot")))
+        dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
+    refreshSrcCount();
+}
+
+bool DataSourceDock::loadFile(const QString &path, bool interactive)
+{
+    char err[256] = {0};
+    PsDataset *ds = nullptr;
+    const QFileInfo fi(path);
+    // 加载器由 registry 提供：app 不再按扩展名写 if/else，也不再为每个格式写对话框
+    const DataInputEntry *entry = DataInputRegistry::instance().findFileBySuffix(fi.suffix());
+    if (!entry || !entry->load)
+    {
+        QMessageBox::warning(this, QStringLiteral("加载失败"),
+                             QStringLiteral("没有匹配的加载器：%1").arg(fi.fileName()));
+        return false;
+    }
+    const bool is_tree = entry->tree;
+    QString opts;
+    if (!entry->uiDialog.isEmpty())
+    {
+        // 扩展自带 .ui：通用引擎加载，app 不认识任何控件
+        if (interactive)
+        {
+            ExtensionDialogEngine dlg(*entry, path, this);
+            if (dlg.exec() != QDialog::Accepted)
+                return false;
+            opts = dlg.optionsJson();
+        }
+        else if (entry->defaultOptions)
+            opts = entry->defaultOptions(path);
+    }
+    else if (!entry->schema.isEmpty())
+    {
+        // 交互打开：schema 渲染选项；恢复布局：按加载器默认探测静默加载
+        if (interactive)
+        {
+            DataInputDialog dlg(*entry, path, this);
+            if (dlg.exec() != QDialog::Accepted)
+                return false;
+            opts = dlg.optionsJson();
+        }
+        else if (entry->defaultOptions)
+            opts = entry->defaultOptions(path);
+    }
+    // 解析缓存：同文件 + 同 loader + 同选项二次打开直接还原，不再 probe/parse。
+    if (entry->cacheable)
+        ds = DatasetCache::load(path, entry->cacheNamespace, opts);
+    if (ds)
+    {
+        m_ctx.log(QStringLiteral("解析缓存命中：%1").arg(fi.fileName()));
+    }
+    else
+    {
+        const int32_t rc = entry->load(path, opts, &ds, err, sizeof(err));
+        if (rc != 0)
+        {
+            const QString msg = QString::fromUtf8(err);
+            m_ctx.log(QStringLiteral("加载失败：%1").arg(msg));
+            QMessageBox::warning(this, QStringLiteral("加载失败"), msg);
+            return false;
+        }
+        if (entry->cacheable)
+            DatasetCache::save(path, entry->cacheNamespace, opts, ds);
+    }
+
+
+    const uint32_t n = ps_dataset_channel_count(ds);
+    const QString fmt_tag = entry->formatTag;
+    const int oldCount = m_ctx.sources().size();
+    SourceData src;
+    for (const ps::data_source::SourceData &old : m_ctx.sources())
+        src.id = qMax(src.id, old.id + 1);
+    src.name = fi.fileName();
+    src.alias = fi.completeBaseName();
+    for (const ps::data_source::SourceData &old : m_ctx.sources())
+        if (old.alias == src.alias)
+            src.alias += QStringLiteral(" #%1").arg(src.id + 1);
+    src.path = fi.absoluteFilePath();
+    src.fmt = fmt_tag;
+    src.ds = ds;
+    for (uint32_t i = 0; i < n; ++i)
+        if (const PsChannelInfo *ch = ps_dataset_channel(ds, i))
+            src.channels.append(ch);
+    QVector<QStringList> logMsgs;
+    if (fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0 && !src.channels.isEmpty())
+        logMsgs = ulogLogMessages(src.path, src.channels.first()->time[0]);
+
+    // 参数：由扩展提供 JSON，app 不认格式；可缓存时与数据集同 key 落盘。
+    if (entry->hasParams && entry->paramsJson)
+    {
+        QString json;
+        if (entry->cacheable)
+            json = DatasetCache::loadParams(src.path, entry->cacheNamespace, opts);
+        const bool fromCache = !json.isEmpty();
+        if (!fromCache)
+            json = entry->paramsJson(src.path);
+        if (json.isEmpty())
+        {
+            m_ctx.log(QStringLiteral("参数表读取失败：%1").arg(entry->id));
+        }
+        else
+        {
+            if (!fromCache && entry->cacheable)
+                DatasetCache::saveParams(src.path, entry->cacheNamespace, opts, json);
+            for (const QJsonValue &v : QJsonDocument::fromJson(json.toUtf8()).array())
+            {
+                const QJsonObject o = v.toObject();
+                src.params.append({o.value(QStringLiteral("name")).toString(),
+                                    o.value(QStringLiteral("value")).toString()});
+            }
+            if (fromCache)
+                m_ctx.log(QStringLiteral("参数缓存命中：%1").arg(fi.fileName()));
+        }
+    }
+
+    // 消息：ULog 文本日志优先（带真实事件时间）；没有时按 topic 聚合。
+    if (!logMsgs.isEmpty())
+        src.msgs = logMsgs;
+    else if (is_tree)
+    {
+        QMap<QString, QVector<const PsChannelInfo *>> byTopic;
+        for (const PsChannelInfo *ch : src.channels)
+        {
+            const QString name = QString::fromUtf8(ch->name);
+            const int dot = name.lastIndexOf(QLatin1Char('.'));
+            if (dot > 0)
+                byTopic[name.left(dot)].append(ch);
+        }
+        for (auto it = byTopic.constBegin(); it != byTopic.constEnd(); ++it)
+        {
+            QString hz = QStringLiteral("—");
+            const PsChannelInfo *ch = it.value().isEmpty() ? nullptr : it.value().first();
+            if (ch && ch->point_count > 1)
+            {
+                const double span = ch->time[ch->point_count - 1] - ch->time[0];
+                if (span > 0)
+                    hz = QStringLiteral("%1 Hz").arg((ch->point_count - 1) / span, 0, 'f',
+                                                     (ch->point_count - 1) / span >= 10 ? 0 : 1);
+            }
+            const QString firstTime = (ch && ch->point_count > 0)
+                ? QString::number(ch->time[0], 'f', 3)
+                : QStringLiteral("—");
+            src.msgs.append({it.key(), hz, QString::number(it.value().size()), firstTime});
+        }
+    }
+
+    m_ctx.sources().append(src);
+    addSourceRow(src.name, QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true, src.path,
+                 src.id);
+
+    const bool firstSource = oldCount == 0;
+    m_ctx.sourceLoaded(src, firstSource);
+
+    m_ctx.statusMessage(QStringLiteral("%1 · %2 通道").arg(fi.fileName()).arg(n));
+    m_ctx.recordRecent(fi.absoluteFilePath());
+
+}
+void DataSourceDock::connectLiveSource(const QString &extensionId)
+{
+    const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(extensionId);
+    if (!sp)
+    {
+        m_ctx.log(QStringLiteral("实时源未注册：%1").arg(extensionId));
+        return;
+    }
+    const auto parsers = DataInputRegistry::instance().streamEntries();
+    DataInputDialog dlg(parsers, sp->id, QString(), this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    QStringList ids = dlg.selectedParserIds();
+    if (ids.isEmpty())
+        ids << dlg.primaryParserId();
+
+    const int oldCount = m_ctx.sources().size();
+    SourceData src;
+    for (const ps::data_source::SourceData &old : m_ctx.sources())
+        src.id = qMax(src.id, old.id + 1);
+    QString note, err;
+    if (!openLiveInput(ids, dlg.configJson(), src, &note, &err))
+    {
+        QMessageBox::warning(this, QStringLiteral("连接失败"), err);
+        return;
+    }
+    m_ctx.sources().append(src);
+    addSourceRow(src.name, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"), true,
+                 src.path, src.id);
+    if (note.isEmpty())
+        m_ctx.log(QStringLiteral("实时源已连接：%1").arg(src.fmt));
+    else
+        m_ctx.log(QStringLiteral("实时源已连接：%1；共享 transport 解析器：%2").arg(src.fmt, note));
+}
+bool DataSourceDock::openLiveInput(const QStringList &ids, const QString &config, ps::data_source::SourceData &dst,
+                               QString *fanoutNote, QString *err)
+{
+    QStringList selected = ids;
+    if (selected.isEmpty())
+    {
+        if (err) *err = QStringLiteral("没有选择解析器");
+        return false;
+    }
+    const DataInputEntry *primary = DataInputRegistry::instance().findSourceById(selected.value(0));
+    if (!primary)
+    {
+        if (err) *err = QStringLiteral("入口解析器未注册：%1").arg(selected.value(0));
+        return false;
+    }
+    const QJsonObject liveConfig = QJsonDocument::fromJson(config.toUtf8()).object();
+    auto session = std::make_shared<LiveSession>(primary->id, primary->label);
+    if (liveConfig.value(QStringLiteral("__record")).toBool())
+    {
+        QString path, re;
+        const auto format = StreamRecorder::parseFormat(
+            liveConfig.value(QStringLiteral("__record_format")).toString());
+        if (session->startRecording(format, config, &path, &re))
+            m_ctx.log(QStringLiteral("实时记录（%1）：%2").arg(StreamRecorder::formatLabel(format), path));
+        else
+            QMessageBox::warning(this, QStringLiteral("记录"), re);
+    }
+
+    QVector<std::shared_ptr<FanoutParser>> extra;
+    QStringList extraIds;
+    for (int i = 1; i < selected.size(); ++i)
+    {
+        const DataInputEntry *p = DataInputRegistry::instance().findSourceById(selected[i]);
+        if (!p || !p->feed)
+        {
+            m_ctx.log(QStringLiteral("解析器 %1 不支持共享 transport，已跳过").arg(selected.value(i)));
+            continue;
+        }
+        QJsonObject sub = liveConfig;
+        sub.insert(QStringLiteral("transport"), QStringLiteral("external"));
+        sub.remove(QStringLiteral("filepath"));
+        sub.remove(QStringLiteral("raw_path"));
+        sub.remove(QStringLiteral("__replay_path"));
+        QString re;
+        void *handle = nullptr;
+        auto ep = std::make_shared<FanoutParser>();
+        ep->id = p->id;
+        ep->session = session.get();
+        ep->prefix = QStringLiteral("fanout.%1").arg(p->id);
+        ep->sink.ctx = ep.get();
+        ep->sink.channel_batch = &fanoutChannel;
+        ep->sink.event = &fanoutEvent;
+        if (p->open(QString::fromUtf8(QJsonDocument(sub).toJson(QJsonDocument::Compact)),
+                    &ep->sink, &handle, &re) != 0)
+        {
+            m_ctx.log(QStringLiteral("解析器 %1 启动失败：%2").arg(p->label, re));
+            continue;
+        }
+        ep->handle = handle;
+        extra.append(ep);
+        extraIds << p->id;
+    }
+
+    if (!extra.isEmpty())
+    {
+        QVector<FanoutParser *> eps;
+        for (const auto &ep : extra)
+            eps.append(ep.get());
+        session->setRawTap([eps](const char *topic, const char *encoding, int64_t ts,
+                                 const uint8_t *data, uint32_t size) {
+            for (FanoutParser *ep : eps)
+            {
+                const DataInputEntry *p = DataInputRegistry::instance().findSourceById(ep->id);
+                QString re;
+                if (p && p->feed)
+                    p->feed(ep->handle, QString::fromUtf8(topic), QString::fromUtf8(encoding),
+                            ts, QByteArray(reinterpret_cast<const char *>(data), static_cast<int>(size)),
+                            &re);
+            }
+        });
+    }
+
+    void *handle = nullptr;
+    QString re;
+    if (primary->open(config, session->sink(), &handle, &re) != 0)
+    {
+        for (const auto &ep : extra)
+            if (const DataInputEntry *p = DataInputRegistry::instance().findSourceById(ep->id))
+                if (ep->handle)
+                    p->close(ep->handle);
+        if (err) *err = QStringLiteral("%1\n%2").arg(primary->label, re);
+        return false;
+    }
+
+    dst.name = QStringLiteral("%1 · 实时").arg(primary->label);
+    dst.alias = QStringLiteral("%1_%2").arg(primary->kind).arg(dst.id + 1);
+    dst.fmt = primary->label;
+    dst.path = QStringLiteral("live://%1/%2").arg(primary->id).arg(dst.id);
+    dst.live = true;
+    dst.sourceId = primary->id;
+    dst.config = config;
+    dst.handle = handle;
+    dst.liveSession = session;
+    dst.fanout.clear();
+    for (const auto &ep : extra)
+        dst.fanout.append({ep->id, ep->handle});
+    if (fanoutNote)
+        *fanoutNote = extraIds.join(QStringLiteral(" | "));
+    return true;
+}
+void DataSourceDock::configureLiveSource(ps::data_source::SourceData *src)
+{
+    if (!src || !src->live)
+        return;
+    const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+    if (!sp)
+        return;
+    const auto parsers = DataInputRegistry::instance().streamEntries();
+    DataInputDialog dlg(parsers, sp->id, src->config, this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    QStringList ids = dlg.selectedParserIds();
+    if (ids.isEmpty())
+        ids << dlg.primaryParserId();
+
+    closeLiveSource(src);
+    m_ctx.removeSourceFromCanvases(src->path);
+    src->liveSession.reset();
+    src->channels.clear();
+    src->channels.squeeze();
+    src->fanout.clear();
+    src->plotted = false;
+    if (src->id == m_ctx.activeSourceId())
+        m_ctx.clearSourceView();
+
+    QString note, err;
+    if (!openLiveInput(ids, dlg.configJson(), *src, &note, &err))
+    {
+        src->handle = nullptr;
+        updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
+        QMessageBox::warning(this, QStringLiteral("连接失败"), err);
+        return;
+    }
+    updateSourceMeta(src->row, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"));
+    m_ctx.refreshSourceView();
+    if (note.isEmpty())
+        m_ctx.log(QStringLiteral("实时源已重连：%1").arg(src->fmt));
+    else
+        m_ctx.log(QStringLiteral("实时源已重连：%1；共享 transport 解析器：%2").arg(src->fmt, note));
+}
+void DataSourceDock::pollLiveSources()
+{
+    for (ps::data_source::SourceData &src : m_ctx.sources())
+    {
+        if (!src.live || src.paused || !src.handle || !src.liveSession)
+            continue;
+        const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(src.sourceId);
+        if (!sp)
+            continue;
+        QString err;
+        if (sp->poll(src.handle, 0, &err) != 0)
+        {
+            m_ctx.log(QStringLiteral("实时源 poll 失败：%1 %2").arg(sp->label, err));
+            closeLiveSource(&src);
+            continue;
+        }
+        if (src.liveSession->changed())
+            refreshLiveSource(&src);
+    }
+}
+void DataSourceDock::refreshLiveSource(ps::data_source::SourceData *src)
+{
+    if (!src || !src->liveSession)
+        return;
+    src->liveSession->clearChanged();
+    src->channels = src->liveSession->channels();
+    if (src->liveSession->overflow())
+        return;
+    updateSourceMeta(src->row, QStringLiteral("运行中 · %1 通道 · %2 点")
+                                  .arg(src->channels.size())
+                                  .arg(src->channels.isEmpty() ? 0 : src->channels.first()->point_count),
+                     QStringLiteral("#39c5cf"));
+    m_ctx.liveSourceChanged(src);
+
+}
+void DataSourceDock::closeLiveSource(ps::data_source::SourceData *src)
+{
+    if (!src || !src->live)
+        return;
+    const DataInputEntry *sp = DataInputRegistry::instance().findSourceById(src->sourceId);
+    if (src->handle && sp)
+        sp->close(src->handle);
+    src->handle = nullptr;
+    for (const auto &f : src->fanout)
+        if (const DataInputEntry *p = DataInputRegistry::instance().findSourceById(f.first))
+            if (f.second)
+                p->close(f.second);
+    src->fanout.clear();
+    if (src->liveSession)
+        src->liveSession->stopRecording();
+    updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
+    refreshSrcCount();
+}
+
+void DataSourceDock::showSourceMenu(QWidget *row, const QPoint &globalPos)
+{
+    if (!row)
+        return;
+    const bool backed = row->property("backed").toBool();
+    const QString path = row->property("srcPath").toString();
+
+    QMenu menu(this);
+    ps::data_source::SourceData *pauseSrc = m_ctx.sourceById((row ? row->property("srcId").toInt() : -1));
+    const bool live = pauseSrc && pauseSrc->live;
+    QAction *toggle = menu.addAction(live
+        ? (pauseSrc->paused ? QStringLiteral("继续数据源") : QStringLiteral("暂停数据源"))
+        : QStringLiteral("开始数据源"));
+    toggle->setEnabled(live);
+    QAction *reload = menu.addAction(QStringLiteral("重新加载"));
+    reload->setEnabled(!path.isEmpty());
+    QAction *rename = menu.addAction(QStringLiteral("重命名"));
+
+    ps::data_source::SourceData *src = m_ctx.sourceById((row ? row->property("srcId").toInt() : -1));
+    QMenu *timeMenu = menu.addMenu(QStringLiteral("时间对齐"));
+    timeMenu->setEnabled(backed && src && src->ds);
+    QAction *offsetInfo = timeMenu->addAction(
+        QStringLiteral("偏移 %1 s").arg(src ? src->offsetSec : 0.0, 0, 'f', 3));
+    offsetInfo->setEnabled(false);
+    timeMenu->addSeparator();
+    QAction *alignStart = timeMenu->addAction(QStringLiteral("对齐起点"));
+    QAction *alignCenter = timeMenu->addAction(QStringLiteral("对齐中心"));
+    QAction *alignEnd = timeMenu->addAction(QStringLiteral("对齐终点"));
+    QAction *base = timeMenu->addAction(QStringLiteral("设为时间基准"));
+    timeMenu->addSeparator();
+    QAction *resetOffset = timeMenu->addAction(QStringLiteral("重置偏移"));
+
+    QMenu *cmpMenu = menu.addMenu(QStringLiteral("对比同名通道"));
+    bool hasOther = false;
+    for (ps::data_source::SourceData &o : m_ctx.sources())
+    {
+        if (!src || o.id == src->id || !o.ds)
+            continue;
+        hasOther = true;
+        QMenu *sub = cmpMenu->addMenu(o.alias.isEmpty() ? o.name : o.alias);
+        QAction *all = sub->addAction(QStringLiteral("叠加全部同名"));
+        all->setProperty("cmpAll", true);
+        all->setProperty("cmpOther", o.id);
+        QAction *one = sub->addAction(QStringLiteral("选择通道…"));
+        one->setProperty("cmpAll", false);
+        one->setProperty("cmpOther", o.id);
+    }
+    cmpMenu->setEnabled(hasOther);
+    menu.addSeparator();
+    QAction *info = menu.addAction(QStringLiteral("数据源信息"));
+    QAction *del = menu.addAction(QStringLiteral("移除数据源"));
+    QAction *delAll = menu.addAction(QStringLiteral("移除全部数据源"));
+
+    QAction *chosen = menu.exec(globalPos);
+    if (chosen == delAll)
+    {
+        QList<QWidget *> rows;
+        for (int i = 0; i < m_srcRows->count(); ++i)
+            if (QWidget *row = m_srcRows->itemAt(i)->widget())
+                rows.append(row);
+        for (QWidget *row : rows)
+            removeSourceRow(row);
+        return;
+    }
+    if (chosen == toggle)
+    {
+        if (ps::data_source::SourceData *src = m_ctx.sourceById((row ? row->property("srcId").toInt() : -1)))
+            m_ctx.setSourcePaused(src, !src->paused);
+    }
+    else if (chosen == reload)
+    {
+        m_ctx.log(QStringLiteral("重新加载：%1").arg(path));
+        m_ctx.reloadFile(path);
+    }
+    else if (chosen == info)
+    {
+        if (!src)
+            return;
+        const int channels = src->live
+            ? (src->liveSession ? src->liveSession->channels().size() : 0)
+            : (src->ds ? static_cast<int>(ps_dataset_channel_count(src->ds)) : 0);
+        const int points = src->live
+            ? (src->liveSession ? src->liveSession->totalSamples() : 0)
+            : (src->ds && ps_dataset_channel(src->ds, 0)
+                   ? static_cast<int>(ps_dataset_channel(src->ds, 0)->point_count) : 0);
+        QStringList lines;
+        lines << QStringLiteral("名称：%1").arg(src->alias.isEmpty() ? src->name : src->alias)
+              << QStringLiteral("类型：%1").arg(src->live ? QStringLiteral("实时源") : src->fmt)
+              << QStringLiteral("路径：%1").arg(src->path.isEmpty() ? src->config : src->path)
+              << QStringLiteral("通道：%1").arg(channels)
+              << QStringLiteral("首通道点数：%1").arg(points)
+              << QStringLiteral("参数：%1 · 消息：%2").arg(src->params.size()).arg(src->msgs.size())
+              << QStringLiteral("时间偏移：%1 s").arg(src->offsetSec, 0, 'f', 3);
+        QMessageBox::information(this, QStringLiteral("数据源信息"), lines.join(QLatin1Char('\n')));
+    }
+    else if (chosen == rename)
+    {
+        QList<QLabel *> labels = row->findChildren<QLabel *>();
+        QLabel *name = labels.value(1, nullptr);
+        if (!name)
+            return;
+        bool ok = false;
+        const QString text = QInputDialog::getText(this, QStringLiteral("重命名数据源"),
+                                                   QStringLiteral("名称"), QLineEdit::Normal,
+                                                   name->text(), &ok);
+        if (ok && !text.trimmed().isEmpty())
+        {
+            name->setText(text.trimmed());
+            row->setProperty("srcName", text.trimmed());
+            m_ctx.refreshPropTree();
+            ps::data_source::SourceData *src = m_ctx.sourceById((row ? row->property("srcId").toInt() : -1));
+            if (src)
+            {
+                src->alias = text.trimmed();
+                m_ctx.renameSource(src, text.trimmed());
+            }
+            m_ctx.log(QStringLiteral("重命名数据源：%1").arg(text.trimmed()));
+        }
+    }
+    else if (chosen == alignStart || chosen == alignCenter || chosen == alignEnd)
+    {
+        m_ctx.alignSource(src, chosen == alignStart ? 0 : (chosen == alignEnd ? 2 : 1));
+    }
+    else if (chosen == base)
+    {
+        m_ctx.setSourceBase(src);
+    }
+    else if (chosen == resetOffset)
+    {
+        m_ctx.setSourceOffset(src, 0.0, true);
+        m_ctx.log(QStringLiteral("重置时间偏移：%1").arg(src ? src->alias : QString()));
+    }
+    else if (chosen && chosen->property("cmpOther").isValid())
+    {
+        ps::data_source::SourceData *other = m_ctx.sourceById(chosen->property("cmpOther").toInt());
+        m_ctx.compareSources(src, other, chosen->property("cmpAll").toBool(), QString());
+    }
+    else if (chosen == del)
+    {
+        removeSourceRow(row);
+    }
+}
+
+void DataSourceDock::removeSourceRow(QWidget *row)
+{
+    if (!row || !m_srcRows)
+        return;
+    const QString name = row->property("srcName").toString();
+    const int id = (row ? row->property("srcId").toInt() : -1);
+    ps::data_source::SourceData *src = m_ctx.sourceById(id);
+    if (src)
+    {
+        const QString path = src->path;
+        m_ctx.removeSourceFromCanvases(path);
+        m_ctx.closeLiveSource(src);
+        if (src->ds)
+            ps_dataset_free(src->ds);
+        if (m_ctx.activeSourceId() == id)
+        {
+            m_ctx.setActiveSource(-1);
+            m_ctx.clearSourceView();
+        }
+        int idx = -1;
+        for (int i = 0; i < m_ctx.sources().size(); ++i)
+            if (m_ctx.sources().at(i).id == id)
+                idx = i;
+        if (idx >= 0)
+            m_ctx.sources().removeAt(idx);
+        m_ctx.refreshSourceView();
+        // 删掉当前源后落到剩下的第一个可绘源
+        for (const ps::data_source::SourceData &other : m_ctx.sources())
+        {
+            if (other.ds && other.row)
+            {
+                m_ctx.activateSource(other.row);
+                break;
+            }
+        }
+    }
+    if (QWidget *host = m_srcRows->parentWidget())
+        if (auto *panel = host->findChild<ChannelTree *>(
+                QStringLiteral("srcPanel_%1").arg(id)))
+        {
+            m_srcRows->removeWidget(panel);
+            panel->deleteLater();
+        }
+    m_srcRows->removeWidget(row);
+    row->deleteLater();
+    refreshSrcCount();
+    if (m_ctx.sources().isEmpty())
+        m_ctx.refreshPropTree();
+    m_ctx.log(QStringLiteral("移除数据源：%1").arg(name));
+}
+
 
 void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &channels,
                                       const QVector<QPair<QString, QString>> &params,

@@ -2,7 +2,7 @@
 
 #include "ps_extension_api.h"
 #include "ps_kernel.h"
-#include "live/record/StreamRecorder.h"
+#include "record/StreamRecorder.h"
 
 #include <QString>
 #include <QVector>
