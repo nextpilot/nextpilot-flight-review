@@ -11,7 +11,12 @@ src/
       runtime/                扩展契约、注册表、动态装载、脚本运行、ModuleBridge
       shell/                  MainWindow、Ribbon/Dock 容器、主题、扩展对话框
       data_source/            SourceModel、DataSourceDock、DataSourceDialog、数据 Ribbon
-      plot/                   PlotWorkspace、CanvasWidget、绘图 Ribbon、页面/图型
+      plotting/              绘图模块
+        include/plotting/     PlottingModule.h，模块对外 API
+        manager/              PlottingComponent、PlottingSession、命令、设置
+        tabs/                 PlottingTabs、PlottingGrid，页签与页内布局
+        canvas/               PlottingCanvas，单画布
+        ribbon/               绘图 Ribbon、画廊、布局选择器
     resources/                图标资源、Lua 脚本
 
   extensions/
@@ -40,7 +45,7 @@ src/
 | 缓存策略、实时会话与录制 | `base/modules/data_source/services/` | 宿主侧服务，不是业务格式 |
 | 主窗口、Ribbon/Dock 容器、主题 | `base/modules/shell/` | app 骨架，只做组装 |
 | 数据源 Dock、输入对话框、数据 Ribbon | `base/modules/data_source/` | 数据进入与源管理 |
-| 画布、绘图 Ribbon、页面/图型 | `base/modules/plot/` | 绘图工作区 |
+| 画布、绘图 Ribbon、页面/图型 | `base/modules/plotting/` | 绘图工作区 |
 | 设备调试、视频同步、数据变换、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |
 | 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |
 | 用户 Lua 脚本与图标 | `base/resources/` | 运行期资源，不进 host 头文件 |

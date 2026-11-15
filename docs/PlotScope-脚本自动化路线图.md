@@ -30,7 +30,7 @@
 
 ### 3.1 对象句柄，不暴露 QWidget
 
-脚本拿到的是稳定句柄，不直接持有 `CanvasWidget*` / `SourceData*`：
+脚本拿到的是稳定句柄，不直接持有 `PlottingCanvas*` / `SourceData*`：
 
 ```lua
 local src = ps.app.source("demo_flight.ulg")      -- source handle

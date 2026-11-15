@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "ps_kernel.h"
-#include "canvas/CanvasWidget.h"
+#include "PlottingCanvas.h"
 #include "jkqtplotter/jkqtplotter.h"
 #include "jkqtplotter/graphs/jkqtplines.h"
 
@@ -70,12 +70,12 @@ int main(int argc, char **argv)
     for (uint32_t i = 0; i < nch; ++i)
         chans.append(ps_dataset_channel(ds, i));
 
-    CanvasWidget canvas;
+    PlottingCanvas canvas;
     canvas.setTitle(QStringLiteral("spike-ours"));
     canvas.setChannels(chans);
     const double ourMs = benchWidget(&canvas, 30);
 
-    CanvasWidget canvas;
+    PlottingCanvas canvas;
     canvas.setTitle(QStringLiteral("spike-ours"));
     canvas.setChannels(chans);
     const double ourMs = benchWidget(&canvas, 30);
@@ -131,12 +131,12 @@ int main(int argc, char **argv)
                                  .arg(w).arg(t.elapsed() / double(frames), 0, 'f', 2);
     }
 
-    CanvasWidget empty;
+    PlottingCanvas empty;
     empty.setTitle(QStringLiteral("spike-empty"));
     const double emptyMs = benchWidget(&empty, 30);
 
     // 单通道版本：区分"每通道固定开销"与"通道数放大"
-    CanvasWidget one;
+    PlottingCanvas one;
     one.setTitle(QStringLiteral("spike-1ch"));
     one.setChannels({chans[0]});
     const double oneMs = benchWidget(&one, 30);

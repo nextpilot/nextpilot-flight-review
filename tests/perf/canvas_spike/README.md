@@ -2,7 +2,7 @@
 
 对比三条路，同一批数据、同一视口、同一台机器：
 
-1. `CanvasWidget`（自绘）：内核 Rust `ps_lod_minmax` 抽到 1500 桶，UI 侧 `drawPolyline`；
+1. `PlottingCanvas`（自绘）：内核 Rust `ps_lod_minmax` 抽到 1500 桶，UI 侧 `drawPolyline`；
 2. `JKQTPlotter`：原始点全量交给库（16 万点/帧）；
 3. `JKQTPlotter`：只喂抽稀后的 1500 点/通道。
 

@@ -1,6 +1,6 @@
-#include "PlotWorkspace.h"
+#include "PlottingTabs.h"
 
-#include "CanvasWidget.h"
+#include "PlottingCanvas.h"
 
 #include <QSplitter>
 #include <QTabBar>
@@ -9,11 +9,11 @@
 
 namespace
 {
-void collectCanvases(QWidget *root, QVector<CanvasWidget *> &out)
+void collectCanvases(QWidget *root, QVector<PlottingCanvas *> &out)
 {
     if (!root)
         return;
-    if (auto *c = qobject_cast<CanvasWidget *>(root))
+    if (auto *c = qobject_cast<PlottingCanvas *>(root))
         out.append(c);
     if (auto *sp = qobject_cast<QSplitter *>(root))
     {
@@ -27,10 +27,10 @@ void collectCanvases(QWidget *root, QVector<CanvasWidget *> &out)
 }
 } // namespace
 
-namespace ps::plot
+namespace ps::plotting
 {
 
-PlotWorkspace::PlotWorkspace(CanvasFactory factory, QWidget *parent)
+PlottingTabs::PlottingTabs(CanvasFactory factory, QWidget *parent)
     : QTabWidget(parent), m_factory(std::move(factory))
 {
     setDocumentMode(true);
@@ -39,7 +39,7 @@ PlotWorkspace::PlotWorkspace(CanvasFactory factory, QWidget *parent)
     tabBar()->setObjectName(QStringLiteral("pageTabs"));
 }
 
-CanvasWidget *PlotWorkspace::makeCanvas(const QString &title, QWidget *parent)
+PlottingCanvas *PlottingTabs::makeCanvas(const QString &title, QWidget *parent)
 {
     auto *c = m_factory(parent);
     c->setTitle(title);
@@ -47,33 +47,33 @@ CanvasWidget *PlotWorkspace::makeCanvas(const QString &title, QWidget *parent)
     return c;
 }
 
-void PlotWorkspace::attachCanvas(CanvasWidget *c)
+void PlottingTabs::attachCanvas(PlottingCanvas *c)
 {
-    connect(c, &CanvasWidget::activated, this, [this, c](const QString &) {
+    connect(c, &PlottingCanvas::activated, this, [this, c](const QString &) {
         emit canvasActivated(c);
     });
-    connect(c, &CanvasWidget::timeRangeChanged, this, [this, c](double t0, double t1) {
-        if (c->plotMode() != CanvasWidget::TimeSeries)
+    connect(c, &PlottingCanvas::timeRangeChanged, this, [this, c](double t0, double t1) {
+        if (c->plotMode() != PlottingCanvas::TimeSeries)
             return;
-        for (CanvasWidget *o : allCanvases())
-            if (o != c && o->plotMode() == CanvasWidget::TimeSeries)
+        for (PlottingCanvas *o : allCanvases())
+            if (o != c && o->plotMode() == PlottingCanvas::TimeSeries)
                 o->setTimeRange(t0, t1);
     });
-    connect(c, &CanvasWidget::addRequested, this, [this, c] { emit canvasAddRequested(c); });
-    connect(c, &CanvasWidget::splitRequested, this,
+    connect(c, &PlottingCanvas::addRequested, this, [this, c] { emit canvasAddRequested(c); });
+    connect(c, &PlottingCanvas::splitRequested, this,
             [this, c](int orientation) { emit canvasSplitRequested(c, orientation); });
-    connect(c, &CanvasWidget::addChannelRequested, this,
+    connect(c, &PlottingCanvas::addChannelRequested, this,
             [this, c] { emit addChannelRequested(c); });
-    connect(c, &CanvasWidget::maximizeRequested, this,
+    connect(c, &PlottingCanvas::maximizeRequested, this,
             [this, c] { emit canvasMaximizeRequested(c); });
-    connect(c, &CanvasWidget::markerRequested, this, [this](double t) { emit markerRequested(t); });
-    connect(c, &CanvasWidget::markerRemoveRequested, this,
+    connect(c, &PlottingCanvas::markerRequested, this, [this](double t) { emit markerRequested(t); });
+    connect(c, &PlottingCanvas::markerRemoveRequested, this,
             [this](double t) { emit markerRemoveRequested(t); });
-    connect(c, &CanvasWidget::removeRequested, this, [this, c] { emit canvasRemoveRequested(c); });
+    connect(c, &PlottingCanvas::removeRequested, this, [this, c] { emit canvasRemoveRequested(c); });
     c->setTimeMarkers(m_markers);
 }
 
-void PlotWorkspace::createDefaultPages()
+void PlottingTabs::createDefaultPages()
 {
     // 页 1：三 plot 竖排（QSplitter 树，D15）
     auto *page1 = new QSplitter(Qt::Vertical, this);
@@ -97,11 +97,11 @@ void PlotWorkspace::createDefaultPages()
     auto *dash = new QSplitter(Qt::Horizontal, this);
     dash->setHandleWidth(6);
     auto *horizon = makeCanvas(QStringLiteral("地平仪 · attitude"), dash);
-    horizon->setPlotMode(CanvasWidget::Horizon, QStringLiteral("horizon"));
+    horizon->setPlotMode(PlottingCanvas::Horizon, QStringLiteral("horizon"));
     auto *compass = makeCanvas(QStringLiteral("罗盘 · heading"), dash);
-    compass->setPlotMode(CanvasWidget::Compass, QStringLiteral("compass"));
+    compass->setPlotMode(PlottingCanvas::Compass, QStringLiteral("compass"));
     auto *gauge = makeCanvas(QStringLiteral("表盘 · value"), dash);
-    gauge->setPlotMode(CanvasWidget::Gauge, QStringLiteral("gauge"));
+    gauge->setPlotMode(PlottingCanvas::Gauge, QStringLiteral("gauge"));
     dash->addWidget(horizon);
     dash->addWidget(compass);
     dash->addWidget(gauge);
@@ -111,7 +111,7 @@ void PlotWorkspace::createDefaultPages()
     appendPlusTab();
 }
 
-void PlotWorkspace::appendPlusTab()
+void PlottingTabs::appendPlusTab()
 {
     const int idx = count();
     addTab(new QWidget(this), QStringLiteral("＋"));
@@ -119,36 +119,36 @@ void PlotWorkspace::appendPlusTab()
     tabBar()->setTabButton(idx, QTabBar::RightSide, nullptr);
 }
 
-void PlotWorkspace::setTimeMarkers(const QVector<QPair<double, QString>> &markers)
+void PlottingTabs::setTimeMarkers(const QVector<QPair<double, QString>> &markers)
 {
     m_markers = markers;
     for (int i = 0; i < count(); ++i)
     {
-        QVector<CanvasWidget *> canvases;
+        QVector<PlottingCanvas *> canvases;
         collectCanvases(widget(i), canvases);
-        for (CanvasWidget *c : canvases)
+        for (PlottingCanvas *c : canvases)
             c->setTimeMarkers(m_markers);
     }
 }
 
-QVector<CanvasWidget *> PlotWorkspace::pageCanvases() const
+QVector<PlottingCanvas *> PlottingTabs::pageCanvases() const
 {
-    QVector<CanvasWidget *> out;
+    QVector<PlottingCanvas *> out;
     collectCanvases(currentWidget(), out);
     return out;
 }
 
-QVector<CanvasWidget *> PlotWorkspace::allCanvases() const
+QVector<PlottingCanvas *> PlottingTabs::allCanvases() const
 {
-    QVector<CanvasWidget *> out;
+    QVector<PlottingCanvas *> out;
     for (int i = 0; i < count(); ++i)
         collectCanvases(widget(i), out);
     return out;
 }
 
-CanvasWidget *PlotWorkspace::currentCanvas() const
+PlottingCanvas *PlottingTabs::currentCanvas() const
 {
     return pageCanvases().value(0, nullptr);
 }
 
-} // namespace ps::plot
+} // namespace ps::plotting

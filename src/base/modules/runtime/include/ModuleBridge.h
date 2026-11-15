@@ -6,7 +6,7 @@
 #include <functional>
 
 class MainWindow;
-class CanvasWidget;
+class PlottingCanvas;
 class QWidget;
 class QPlainTextEdit;
 class QComboBox;
@@ -35,13 +35,13 @@ QVector<QPair<double, QString>> timeMarkers(MainWindow *mw);
 void addTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
 void removeTimeMarker(MainWindow *mw, double t);
 
-// 绘图模块向数据源模块暴露的操作，避免 data_source 反向 include plot。
+// 绘图模块向数据源模块暴露的操作，避免 data_source 反向 include plotting。
 void newPage(MainWindow *mw);
-QVector<CanvasWidget *> pageCanvases(MainWindow *mw);
-CanvasWidget *currentCanvas(MainWindow *mw);
+QVector<PlottingCanvas *> pageCanvases(MainWindow *mw);
+PlottingCanvas *currentCanvas(MainWindow *mw);
 QJsonObject pageState(MainWindow *mw, QWidget *page);
 QWidget *buildPage(MainWindow *mw, const QJsonObject &o);
-void refreshPropTree(MainWindow *mw, CanvasWidget *active = nullptr);
+void refreshPropTree(MainWindow *mw, PlottingCanvas *active = nullptr);
 void applyTimeMarkers(MainWindow *mw);
 void runScript(MainWindow *mw, bool apply = false);
 void setPropRows(MainWindow *mw, const QString &object,
@@ -51,23 +51,23 @@ QPlainTextEdit *scriptEditor(MainWindow *mw);
 QComboBox **scriptInputs(MainWindow *mw);
 QTableWidget *scriptParams(MainWindow *mw);
 QTreeWidget *propTree(MainWindow *mw);
-QVector<CanvasWidget *> allCanvases(MainWindow *mw);
-void canvasAddChannel(CanvasWidget *c, const PsChannelInfo *ch);
-void canvasAddChannelEx(CanvasWidget *c, const PsChannelInfo *ch, int srcId,
+QVector<PlottingCanvas *> allCanvases(MainWindow *mw);
+void canvasAddChannel(PlottingCanvas *c, const PsChannelInfo *ch);
+void canvasAddChannelEx(PlottingCanvas *c, const PsChannelInfo *ch, int srcId,
                        const QString &path, const QString &alias, double offsetSec);
-bool canvasReplaceChannel(CanvasWidget *c, const QString &oldName, const PsChannelInfo *ch);
-void canvasSetChannels(CanvasWidget *c, const QVector<const PsChannelInfo *> &channels);
-void canvasSetTitle(CanvasWidget *c, const QString &title);
-void canvasSetInputSource(CanvasWidget *c, int id, const QString &path,
+bool canvasReplaceChannel(PlottingCanvas *c, const QString &oldName, const PsChannelInfo *ch);
+void canvasSetChannels(PlottingCanvas *c, const QVector<const PsChannelInfo *> &channels);
+void canvasSetTitle(PlottingCanvas *c, const QString &title);
+void canvasSetInputSource(PlottingCanvas *c, int id, const QString &path,
                           const QString &alias = QString(), double offsetSec = 0.0);
-void canvasSetSourceOffset(CanvasWidget *c, const QString &path, double offsetSec, bool refit);
-void canvasRemoveChannel(CanvasWidget *c, const QString &name);
-void canvasRemoveChannelsFromSource(CanvasWidget *c, const QString &path);
-void canvasRenameSource(CanvasWidget *c, const QString &path, const QString &alias);
-void canvasFollowLatest(CanvasWidget *c);
-void canvasNotifyActivated(CanvasWidget *c);
-void canvasUpdate(CanvasWidget *c);
-bool canvasHasData(CanvasWidget *c);
-void canvasSetFollowLive(CanvasWidget *c, bool on, double windowSec);
+void canvasSetSourceOffset(PlottingCanvas *c, const QString &path, double offsetSec, bool refit);
+void canvasRemoveChannel(PlottingCanvas *c, const QString &name);
+void canvasRemoveChannelsFromSource(PlottingCanvas *c, const QString &path);
+void canvasRenameSource(PlottingCanvas *c, const QString &path, const QString &alias);
+void canvasFollowLatest(PlottingCanvas *c);
+void canvasNotifyActivated(PlottingCanvas *c);
+void canvasUpdate(PlottingCanvas *c);
+bool canvasHasData(PlottingCanvas *c);
+void canvasSetFollowLive(PlottingCanvas *c, bool on, double windowSec);
 
 } // namespace ps::bridge

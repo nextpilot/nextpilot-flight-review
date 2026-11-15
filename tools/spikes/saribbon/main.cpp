@@ -17,7 +17,7 @@
 #include "SARibbonGlobal.h"
 
 #include "ps_kernel.h"
-#include "canvas/CanvasWidget.h"
+#include "PlottingCanvas.h"
 
 static QAction *act(QObject *owner, const QString &text)
 {
@@ -88,10 +88,10 @@ int main(int argc, char **argv)
 
     // 画布：真实 CSV 走内核
     QSplitter *sp = new QSplitter(Qt::Vertical, &win);
-    QVector<CanvasWidget *> canvases;
+    QVector<PlottingCanvas *> canvases;
     for (int i = 0; i < 3; ++i)
     {
-        auto *c = new CanvasWidget(sp);
+        auto *c = new PlottingCanvas(sp);
         c->setTitle(QStringLiteral("空画布"));
         sp->addWidget(c);
         canvases.append(c);

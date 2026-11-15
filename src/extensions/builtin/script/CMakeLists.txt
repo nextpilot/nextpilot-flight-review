@@ -11,8 +11,8 @@ target_include_directories(ps_builtin_script_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/base/modules/shell/ui
   ${PROJECT_SOURCE_DIR}/src/base/modules/data_source/include
-  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/include
-  ${PROJECT_SOURCE_DIR}/src/base/modules/plot/ui
+  ${PROJECT_SOURCE_DIR}/src/base/modules/plotting/include
+  ${PROJECT_SOURCE_DIR}/src/base/modules/plotting/canvas
 )
 target_link_libraries(ps_builtin_script_component PUBLIC ps_host Qt6::Widgets)
 if(PS_ENABLE_LUA)

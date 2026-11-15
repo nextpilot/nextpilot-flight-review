@@ -130,11 +130,11 @@ private:
     void toggleDockMax(QDockWidget *dock);
     void restoreDockMax();
     void showDockMenu(QToolButton *btn, QMenu *menu);
-    void refreshPropTree(CanvasWidget *c = nullptr);
+    void refreshPropTree(PlottingCanvas *c = nullptr);
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
-    CanvasWidget *currentCanvas() const;
+    PlottingCanvas *currentCanvas() const;
     void newPageForward();
-    QVector<CanvasWidget *> pageCanvasesForward() const;
+    QVector<PlottingCanvas *> pageCanvasesForward() const;
 
     MainWindow *m_mw = nullptr;
     ps::data_source::DataSourceDock *m_dataSourceDock = nullptr;
@@ -323,7 +323,7 @@ DataSourceController::~DataSourceController()
 
 void DataSourceController::log(const QString &text) { m_mw->appendLog(text); }
 void DataSourceController::newPageForward() { ps::bridge::newPage(m_mw); }
-QVector<CanvasWidget *> DataSourceController::pageCanvasesForward() const { return ps::bridge::pageCanvases(m_mw); }
+QVector<PlottingCanvas *> DataSourceController::pageCanvasesForward() const { return ps::bridge::pageCanvases(m_mw); }
 void DataSourceController::addTimeMarkerForward(double t, const QString &l, bool p) { addTimeMarker(t,l,p); }
 QWidget *DataSourceController::createDockTitleBar(QDockWidget *d) { return m_mw->createDockTitleBar(d); }
 void DataSourceController::dockWidgetToArea(QDockWidget *d, Qt::DockWidgetArea a) { m_mw->dockWidgetToArea(d, a); }
@@ -331,10 +331,10 @@ void DataSourceController::collapseDockWidget(QDockWidget *d) { m_mw->collapseDo
 void DataSourceController::toggleDockMax(QDockWidget *d) { m_mw->toggleDockMax(d); }
 void DataSourceController::restoreDockMax() { m_mw->restoreDockMax(); }
 void DataSourceController::showDockMenu(QToolButton *b, QMenu *m) { m_mw->showDockMenu(b, m); }
-void DataSourceController::refreshPropTree(CanvasWidget *c) { ps::bridge::refreshPropTree(m_mw, c); }
+void DataSourceController::refreshPropTree(PlottingCanvas *c) { ps::bridge::refreshPropTree(m_mw, c); }
 void DataSourceController::setPropRows(const QString &o, const QVector<QPair<QString, QString>> &r) { ps::bridge::setPropRows(m_mw, o, r); }
 void DataSourceController::newPageForward();
-CanvasWidget *DataSourceController::currentCanvas() const { return ps::bridge::currentCanvas(m_mw); }
+PlottingCanvas *DataSourceController::currentCanvas() const { return ps::bridge::currentCanvas(m_mw); }
 QVector<ps::data_source::SourceData> &DataSourceController::sources() { return m_sourceStore->items(); }
 void DataSourceController::closeSources() { if (m_liveTimer) m_liveTimer->stop(); }
 
@@ -513,7 +513,7 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
                         if (hi - lo > 1e-9) pick.append(ch);
                     }
                     if (pick.isEmpty()) pick = src.channels;
-                    const QVector<CanvasWidget *> canvases = pageCanvasesForward();
+                    const QVector<PlottingCanvas *> canvases = pageCanvasesForward();
                     for (int i = 0; i < canvases.size() && i < pick.size(); ++i)
                     {
                         ps::bridge::canvasSetInputSource(canvases[i], src.id, src.path, src.alias, src.offsetSec);
@@ -539,7 +539,7 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
                 m_liveUiMs = now;
                 m_srcChannels = src->channels;
                 renderSourceData();
-                if (CanvasWidget *c = currentCanvas())
+                if (PlottingCanvas *c = currentCanvas())
                 {
                     ps::bridge::canvasFollowLatest(c);
                     ps::bridge::canvasNotifyActivated(c);
@@ -572,7 +572,7 @@ QDockWidget *DataSourceController::createDataSourceDock(QWidget *parent, const Q
                 }
                 if (first.isEmpty()) return;
                 if (ps::bridge::canvasHasData(currentCanvas())) newPageForward();
-                if (CanvasWidget *c = currentCanvas())
+                if (PlottingCanvas *c = currentCanvas())
                     ps::bridge::canvasSetInputSource(c, src->id, src->path, src->alias, src->offsetSec);
                 for (const PsChannelInfo *ch : first) ps::bridge::canvasAddChannel(currentCanvas(), ch);
                 ps::bridge::canvasSetTitle(currentCanvas(), src->alias);

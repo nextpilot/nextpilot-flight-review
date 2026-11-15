@@ -5,7 +5,7 @@
 #include <QVector>
 
 class MainWindow;
-class CanvasWidget;
+class PlottingCanvas;
 class QWidget;
 class QPlainTextEdit;
 class QComboBox;
@@ -19,9 +19,9 @@ namespace ps::components
 {
 
 // 绘图模块：注册“绘图”Ribbon页；画布与页面实现留在本模块。
-void registerPlotContributions(Registry &registry);
+void registerPlottingContributions(Registry &registry);
 
-class PlotComponent : public IComponent
+class PlottingComponent : public IComponent
 {
 public:
     ComponentManifest manifest() const override;
@@ -30,12 +30,12 @@ public:
 
 } // namespace ps::components
 
-namespace ps::plot
+namespace ps::plotting
 {
 void createPages(MainWindow *mw);
-void refreshPropTree(MainWindow *mw, CanvasWidget *active = nullptr);
-CanvasWidget *currentCanvas(MainWindow *mw);
-QVector<CanvasWidget *> pageCanvases(MainWindow *mw);
+void refreshPropTree(MainWindow *mw, PlottingCanvas *active = nullptr);
+PlottingCanvas *currentCanvas(MainWindow *mw);
+QVector<PlottingCanvas *> pageCanvases(MainWindow *mw);
 void newPage(MainWindow *mw);
 void setCanvasViewFlag(MainWindow *mw, int flag, bool on);
 void canvasZoom(MainWindow *mw, double factor);

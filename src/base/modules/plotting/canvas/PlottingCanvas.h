@@ -16,13 +16,13 @@ struct PsChannelInfo;
 // 一块画布（一页里的一个 plot 格）。
 // 曲线数据来自内核（PsChannelInfo 指针，不拷贝）；视口抽稀调用 ps_lod_minmax，
 // 只把 ≤px 个 (x,min,max) 三元组拿到 UI 侧画——对应 §11 铁律 3。
-class CanvasWidget : public QWidget
+class PlottingCanvas : public QWidget
 {
     Q_OBJECT
 
 public:
     enum PlotMode { TimeSeries, Xy, Scatter, BarChart, Histogram, Spectrum, Horizon, Compass, Gauge, Traj3D, GpsMap, Surface3D };
-    explicit CanvasWidget(QWidget *parent = nullptr);
+    explicit PlottingCanvas(QWidget *parent = nullptr);
 
     void setPlotMode(PlotMode mode, const QString &tag = QString());
     PlotMode plotMode() const { return m_mode; }

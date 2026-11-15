@@ -5,14 +5,14 @@
 #include <QVector>
 #include <algorithm>
 
-class CanvasWidget;
+class PlottingCanvas;
 
-namespace ps::plot { class PlotWorkspace; }
+namespace ps::plotting { class PlottingTabs; }
 
-class PlotGrid : public QWidget
+class PlottingGrid : public QWidget
 {
 public:
-    explicit PlotGrid(QWidget *parent = nullptr) : QWidget(parent), m_grid(new QGridLayout(this))
+    explicit PlottingGrid(QWidget *parent = nullptr) : QWidget(parent), m_grid(new QGridLayout(this))
     {
         m_grid->setContentsMargins(0, 0, 0, 0);
         m_grid->setSpacing(4);
@@ -27,7 +27,7 @@ public:
         relayout();
     }
 
-    void addCanvas(CanvasWidget *c)
+    void addCanvas(PlottingCanvas *c)
     {
         if (!c || m_canvases.contains(c))
             return;
@@ -39,7 +39,7 @@ public:
         relayout();
     }
 
-    void removeCanvas(CanvasWidget *c)
+    void removeCanvas(PlottingCanvas *c)
     {
         if (!c)
             return;
@@ -48,7 +48,7 @@ public:
         relayout();
     }
 
-    QVector<CanvasWidget *> canvases() const { return m_canvases; }
+    QVector<PlottingCanvas *> canvases() const { return m_canvases; }
     int rows() const { return m_rows; }
     int cols() const { return m_cols; }
 
@@ -66,11 +66,11 @@ private:
     }
 
     QGridLayout *m_grid = nullptr;
-    QVector<CanvasWidget *> m_canvases;
+    QVector<PlottingCanvas *> m_canvases;
     int m_rows = 1;
     int m_cols = 1;
 };
 
 
-void collectPageCanvases(QWidget *root, QVector<CanvasWidget *> &out);
-QWidget *buildGridSplitter(const QVector<CanvasWidget *> &canvases, int rows, int cols, QWidget *parent);
+void collectPageCanvases(QWidget *root, QVector<PlottingCanvas *> &out);
+QWidget *buildGridSplitter(const QVector<PlottingCanvas *> &canvases, int rows, int cols, QWidget *parent);

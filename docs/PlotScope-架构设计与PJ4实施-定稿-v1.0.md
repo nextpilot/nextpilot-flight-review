@@ -719,7 +719,7 @@ transform::Processor (C++ v1)
 DerivedSeries
   recipe + owned samples + dirty/lazy recompute
         │
-CanvasWidget::Series
+PlottingCanvas::Series
   raw | derived，ghost 样式，图例显示 “源 · 通道 → 变换”
 ```
 
@@ -900,7 +900,7 @@ public:
 #### 14.3.7 P4 图型 / 数据源 / 扩展 / 渲染
 
 已落地（本轮）：
-- `CanvasWidget::PlotMode`：时间序列、XY、散点、柱状、直方图、频谱 FFT、3D 轨迹、地平仪、罗盘、表盘。
+- `PlottingCanvas::PlotMode`：时间序列、XY、散点、柱状、直方图、频谱 FFT、3D 轨迹、地平仪、罗盘、表盘。
 - 绘图 Ribbon 画廊 11 个入口全部落到真实画布，不再建 `QLabel` 占位页；新图页沿用当前画布可见通道。
 - XY 以首条通道为 X、其余为 Y；直方图按首条通道分桶；FFT 对首条通道做 512 点 DFT；仪表类按通道名/末值取数；3D 轨迹用正交投影。
 - 图型随 `.psl` 保存（`mode` / `modeTag`）。
@@ -973,7 +973,7 @@ public:
 - 多 parser：`PsDataInputVtable` / `PsDataSourceVtable` 尾部增加 `feed_raw`；MAVLink/OEM7 支持 `transport=external` 只解析不建连接；`MainWindow::openLiveInput()` 负责扇出与句柄回收。
 - M3：`McapWriter` 增加 1 MiB Chunk 聚合、ChunkIndex、SummaryOffset 与 summary Schema/Channel 副本；`McapReader` 原有 Chunk 解析路径直接复用。
 - M3：视频同步面板：ffmpeg 抽帧（10 fps/640px）到临时目录，播放/拖动时向所有画布推送 playhead，时间序列页自动滚动窗口；支持时间偏移。
-- M3：CanvasWidget 支持曲线绑定右轴（右键「绑定右轴」），左右轴独立量程/刻度，布局持久化；Ctrl+滚轮与纵向平移同步作用于双轴。
+- M3：PlottingCanvas 支持曲线绑定右轴（右键「绑定右轴」），左右轴独立量程/刻度，布局持久化；Ctrl+滚轮与纵向平移同步作用于双轴。
 - M3：新增 `data_loader_rosbag2` 直读 `.db3`（SQLite topics/messages + CDR），支持 Float64/Float32/Int32/Int64/Bool/String/Imu/Twist/PoseStamped/Odometry/NavSatFix/Header；未识别类型只出 `payload_bytes`。rosbag2 目录也可加载。
 - P4：GpsMap 图型：经纬度网格、轨迹连线、起终点标记，无在线瓦片依赖。
 - P4：Surface3D 图型：多序列按 Z 轴堆叠的瀑布曲面，替代原 XY 占位。

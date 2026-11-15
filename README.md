@@ -102,8 +102,8 @@ extensions（业务固件） → modules（外设 / 通用能力） → shell（
 | 层 | 负责 | 明确禁止 |
 |---|---|---|
 | `extensions` | 具体业务：格式加载器、仿真/MAVLink、GNSS/飞控/汽车业务、协议、设备调试、视频、派生/滤波、Lua 脚本 | 被 `modules` 或 `shell` 反向 include / link |
-| `modules` | 通用能力：`data_source` 数据源抽象与生命周期、`plot` 画布/页面/轴/曲线、Dock/Ribbon 贡献 | include `extensions`；把业务类型写进通用层 |
-| `shell` | 最小通用 App：`MainWindow`、页签容器、Ribbon/Dock 骨架、日志、命令注册 | include 或 link `data_source` / `plot` / `extensions`；持有数据源、画布、业务状态 |
+| `modules` | 通用能力：`data_source` 数据源抽象与生命周期、`plotting` 画布/页面/轴/曲线、Dock/Ribbon 贡献 | include `extensions`；把业务类型写进通用层 |
+| `shell` | 最小通用 App：`MainWindow`、页签容器、Ribbon/Dock 骨架、日志、命令注册 | include 或 link `data_source` / `plotting` / `extensions`；持有数据源、画布、业务状态 |
 
 硬性约束：
 
@@ -117,7 +117,7 @@ extensions（业务固件） → modules（外设 / 通用能力） → shell（
 src/base/modules/shell/        核心板：入口、MainWindow、Ribbon/Dock 骨架、日志
 src/base/modules/runtime/      组件注册、扩展生命周期、通用贡献接口
 src/base/modules/data_source/  数据源抽象、加载器注册、实时源、缓存、数据源 Dock
-src/base/modules/plot/         画布、绘图页、轴/曲线、属性面板、脚本画布
+src/base/modules/plotting/     画布、绘图页、轴/曲线、属性面板、脚本画布
 src/base/kernel/               Rust 内核（解析、缓存、流、ABI）
 src/extensions/builtin/        内置业务固件
 src/extensions/dynamic/        外部扩展与各格式加载器

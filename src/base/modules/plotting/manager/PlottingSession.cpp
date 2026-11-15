@@ -1,627 +1,72 @@
-#include "PlotModule.h"
+#include "PlottingSession.h"
 #include "MainWindow.h"
-#include "CanvasWidget.h"
-#include "PlotGrid.h"
 #include "ModuleBridge.h"
-#include "PlotWorkspace.h"
-#include <QGridLayout>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPixmap>
-#include <QFrame>
-#include <QMenu>
-#include <QWidgetAction>
-#include <QMouseEvent>
-#include <QToolButton>
-#include <cmath>
-#include <algorithm>
-#include "SARibbonBar.h"
-#include <QSplitter>
-#include <QTimer>
-#include "ps_kernel.h"
-#include <QAction>
-#include <QHeaderView>
-#include "SARibbonPanel.h"
-#include "SARibbonGallery.h"
-#include "SARibbonGalleryGroup.h"
-#include <QInputDialog>
-#include <QSpinBox>
-#include <QDoubleSpinBox>
+#include "PlottingCanvas.h"
+#include "PlottingGrid.h"
+#include "PlottingTabs.h"
+
+#include <QAbstractItemView>
 #include <QCheckBox>
-#include <QFormLayout>
-#include <QPushButton>
-#include <QDialog>
-#include <QSettings>
-#include <QDialogButtonBox>
-#include <QComboBox>
+#include <QColor>
 #include <QColorDialog>
-#include <QLineEdit>
-#include <QPlainTextEdit>
-#include <QMessageBox>
-
-class PlotController;
-PlotController *plotController(MainWindow *mw);
-
-class PlotController : public QWidget
-{
-public:
-    explicit PlotController(MainWindow *mw);
-    ~PlotController() override;
-    void createPages();
-    void refreshPropTree(CanvasWidget *active = nullptr);
-    CanvasWidget *currentCanvas() const;
-    QWidget *pageForCanvas(CanvasWidget *c) const;
-    QVector<CanvasWidget *> pageCanvases() const;
-    void setCanvasViewFlag(int flag, bool on);
-    void canvasZoom(double factor);
-    void canvasAutoY();
-    void runScript(bool apply = false);
-    void bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params);
-    QTableWidget *propTable() const { return m_propTable; }
-    QPlainTextEdit *scriptEditor() const { return m_script; }
-    QComboBox **scriptInputs() { return m_scriptInputs; }
-    QTableWidget *scriptParams() const { return m_scriptParams; }
-    QTreeWidget *propTree() const { return m_propTree; }
-    void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
-    void bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree);
-    QJsonObject pageState(QWidget *page) const;
-    QWidget *buildPage(const QJsonObject &o);
-    QWidget *createPropPanel(bool tree);
-    void applyTimeMarkers();
-    void removeSourceFromCanvases(const QString &sourcePath);
-    void addChannels(const QVector<const PsChannelInfo *> &channels);
-    void newPage();
-    void reloadCanvasSettings();
-    void createPlotPage(const QString &kind);
-    void registerPlotCommands();
-    void applyPlayhead(double t);
-    void addCanvasToPage();
-    void removeCanvas(CanvasWidget *c);
-    void applyCanvasGrid(int rows, int cols);
-    void splitCanvas(CanvasWidget *target, Qt::Orientation orientation);
-    void toggleCanvasMaximize(CanvasWidget *c);
-    void restoreCanvasMaximize();
-    void showAxesProps(CanvasWidget *c);
-    void showSeriesProps(CanvasWidget *c, int index);
-    void editSeriesProps(CanvasWidget *c, int index);
-    void editAxesProps(CanvasWidget *c);
-    void log(const QString &text);
-
-private:
-    MainWindow *m_mw = nullptr;
-    ps::plot::PlotWorkspace *m_plotWorkspace = nullptr;
-    QTableWidget *m_propTable = nullptr;
-    QToolButton *m_propEditBtn = nullptr;
-    CanvasWidget *m_propCanvas = nullptr;
-    int m_propSeriesIndex = -1;
-    int m_propKind = 0;
-    QTreeWidget *m_propTree = nullptr;
-    bool m_propTreeBuilding = false;
-    QLabel *m_selLabel = nullptr;
-    QLabel *m_runLabel = nullptr;
-    QPlainTextEdit *m_script = nullptr;
-    QComboBox *m_scriptInputs[4] = {nullptr, nullptr, nullptr, nullptr};
-    QTableWidget *m_scriptParams = nullptr;
-    CanvasWidget *m_scriptPreviewCanvas = nullptr;
-    QStringList m_scriptPreviewNames;
-    CanvasWidget *m_maxedCanvas = nullptr;
-    QVector<QWidget *> m_maxedHidden;
-    QDockWidget *m_maxDock = nullptr;
-    QWidget *m_maxDockCentral = nullptr;
-    QList<QDockWidget *> m_maxDockHidden;
-    QVector<QPair<QSplitter *, QList<int>>> m_maxedSizes;
-    QSize m_sizeBeforeMax;
-};
-
-static QString plotModeLabel(int mode);
-#include <QStandardPaths>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDockWidget>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QIcon>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonObject>
-#include <QTabBar>
-#include <QDockWidget>
-#include <QHBoxLayout>
+#include <QJsonValue>
 #include <QLabel>
+#include <QLineEdit>
+#include <QList>
+#include <QMainWindow>
+#include <QMap>
+#include <QMessageBox>
+#include <QObject>
+#include <QPair>
+#include <QPixmap>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QRegularExpression>
+#include <QSettings>
+#include <QSize>
+#include <QSpinBox>
+#include <QSplitter>
+#include <QString>
+#include <QStringList>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTableWidget>
+#include <QTableWidgetItem>
+#include <QTextCursor>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QVariant>
 #include <QVBoxLayout>
+#include <QVector>
+#include <QWidget>
+#include "ps_kernel.h"
 
-namespace
-{
-QPixmap plotThumb(const QString &kind)
-{
-    QPixmap pm(76, 38);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing, true);
-    p.setPen(QPen(QColor("#2d3841"), 1));
-    p.setBrush(QColor("#0b0f13"));
-    p.drawRoundedRect(QRectF(0.5, 0.5, 75, 37), 3, 3);
-    const QRectF r(7, 6, 62, 26);
-    p.setPen(QPen(QColor("#26313a"), 1));
-    p.drawLine(r.bottomLeft(), r.bottomRight());
-    p.drawLine(r.bottomLeft(), r.topLeft());
+static QString plotModeLabel(int mode);
 
-    if (kind == QLatin1String("timeseries"))
-    {
-        QPainterPath path;
-        for (int i = 0; i <= 40; ++i)
-        {
-            const double x = r.left() + r.width() * i / 40.0;
-            const double y = r.center().y() - std::sin(i * 0.28) * 8.0;
-            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
-        }
-        p.setPen(QPen(QColor("#4ea1ff"), 1.6));
-        p.drawPath(path);
-    }
-    else if (kind == QLatin1String("xy"))
-    {
-        for (int i = 0; i < 9; ++i)
-        {
-            const double x = r.left() + 6 + (i * 13) % 50;
-            const double y = r.bottom() - 3 - (i * 7) % 20;
-            p.setPen(QPen(QColor("#ffb454"), 1));
-            p.setBrush(QColor("#ffb454"));
-            p.drawEllipse(QPointF(x, y), 1.8, 1.8);
-        }
-    }
-    else if (kind == QLatin1String("scatter"))
-    {
-        for (int i = 0; i < 14; ++i)
-        {
-            const double x = r.left() + 5 + (i * 17) % 52;
-            const double y = r.bottom() - 2 - (i * 11) % 21;
-            p.setPen(Qt::NoPen);
-            p.setBrush(i % 3 ? QColor("#7ee787") : QColor("#ffb454"));
-            p.drawEllipse(QPointF(x, y), 1.5, 1.5);
-        }
-    }
-    else if (kind == QLatin1String("map"))
-    {
-        p.setPen(QPen(QColor("#26313a"), 1));
-        for (int i = 1; i < 4; ++i)
-        {
-            p.drawLine(QPointF(r.left() + r.width() * i / 4.0, r.top()),
-                       QPointF(r.left() + r.width() * i / 4.0, r.bottom()));
-            p.drawLine(QPointF(r.left(), r.top() + r.height() * i / 4.0),
-                       QPointF(r.right(), r.top() + r.height() * i / 4.0));
-        }
-        QPainterPath path;
-        path.moveTo(r.left() + 6, r.bottom() - 4);
-        path.cubicTo(r.left() + 20, r.top() + 2, r.left() + 34, r.bottom() - 6, r.right() - 4, r.top() + 6);
-        p.setPen(QPen(QColor("#4ea1ff"), 1.5));
-        p.drawPath(path);
-        p.setBrush(QColor("#ff7b72"));
-        p.drawEllipse(QPointF(r.right() - 4, r.top() + 6), 2.2, 2.2);
-    }
-    else if (kind == QLatin1String("bar"))
-    {
-        for (int i = 0; i < 5; ++i)
-        {
-            const double h = 4 + (i * 7) % 19;
-            p.setPen(Qt::NoPen);
-            p.setBrush(QColor("#7ee787"));
-            p.drawRect(QRectF(r.left() + 5 + i * 11, r.bottom() - h, 6, h));
-        }
-    }
-    else if (kind == QLatin1String("histogram"))
-    {
-        for (int i = 0; i < 7; ++i)
-        {
-            const double h = 3 + (i * 5 + i * i) % 21;
-            p.setPen(Qt::NoPen);
-            p.setBrush(QColor("#d2a8ff"));
-            p.drawRect(QRectF(r.left() + 4 + i * 8, r.bottom() - h, 6, h));
-        }
-    }
-    else if (kind == QLatin1String("fft"))
-    {
-        QPainterPath path;
-        for (int i = 0; i <= 32; ++i)
-        {
-            const double x = r.left() + r.width() * i / 32.0;
-            const double env = std::exp(-i * 0.12);
-            const double y = r.bottom() - 2 - std::fabs(std::sin(i * 0.55)) * 18.0 * env;
-            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
-        }
-        p.setPen(QPen(QColor("#39c5cf"), 1.4));
-        p.drawPath(path);
-    }
-    else if (kind == QLatin1String("traj3d"))
-    {
-        p.setPen(QPen(QColor("#26313a"), 1));
-        p.drawLine(QPointF(12, 28), QPointF(32, 21));
-        p.drawLine(QPointF(32, 21), QPointF(58, 27));
-        p.drawLine(QPointF(58, 27), QPointF(58, 9));
-        p.drawLine(QPointF(58, 9), QPointF(36, 8));
-        p.drawLine(QPointF(36, 8), QPointF(12, 14));
-        p.drawLine(QPointF(12, 14), QPointF(12, 28));
-        QPainterPath path;
-        path.moveTo(14, 25);
-        path.cubicTo(24, 8, 40, 12, 54, 20);
-        p.setPen(QPen(QColor("#f2b134"), 1.6));
-        p.drawPath(path);
-    }
-    else if (kind == QLatin1String("surface3d"))
-    {
-        p.setPen(QPen(QColor("#2a3b48"), 1));
-        for (int i = 0; i < 6; ++i)
-        {
-            p.drawLine(QPointF(12 + i * 9, 25), QPointF(22 + i * 9, 31));
-            p.drawLine(QPointF(12 + i * 9, 25), QPointF(34 + i * 9, 9));
-        }
-        QPainterPath path;
-        path.moveTo(12, 22);
-        path.cubicTo(26, 8, 44, 27, 64, 13);
-        p.setPen(QPen(QColor("#39c5cf"), 1.4));
-        p.drawPath(path);
-    }
-    else if (kind == QLatin1String("horizon"))
-    {
-        p.setPen(QPen(QColor("#4a5a68"), 1));
-        p.setBrush(QColor("#2b3a4a"));
-        p.drawEllipse(QPointF(38, 19), 14, 14);
-        p.setBrush(QColor("#3a2f22"));
-        p.drawChord(QRectF(24, 5, 28, 28), 180 * 16, 180 * 16);
-        p.setPen(QPen(QColor("#f2b134"), 1.4));
-        p.drawLine(QPointF(25, 19), QPointF(51, 19));
-        p.drawLine(QPointF(38, 17), QPointF(38, 21));
-        p.drawLine(QPointF(31, 19), QPointF(45, 19));
-    }
-    else if (kind == QLatin1String("compass"))
-    {
-        p.setPen(QPen(QColor("#4a5a68"), 1));
-        p.drawEllipse(QPointF(38, 19), 13, 13);
-        p.drawText(QRectF(35, 5, 8, 8), Qt::AlignCenter, QStringLiteral("N"));
-        p.setPen(QPen(QColor("#ff7b72"), 1.8));
-        p.drawLine(QPointF(38, 19), QPointF(43, 10));
-        p.setPen(QPen(QColor("#c9d1d9"), 1));
-        p.drawLine(QPointF(38, 19), QPointF(34, 27));
-    }
-    else if (kind == QLatin1String("gauge"))
-    {
-        p.setPen(QPen(QColor("#4a5a68"), 1.2));
-        p.drawArc(QRectF(18, 7, 40, 34), 200 * 16, -220 * 16);
-        p.setPen(QPen(QColor("#f2b134"), 1.6));
-        p.drawLine(QPointF(38, 23), QPointF(51, 13));
-        p.setBrush(QColor("#f2b134"));
-        p.drawEllipse(QPointF(38, 23), 2, 2);
-    }
-    return pm;
-}
-
-class PlotMenuPopup : public QFrame
-{
-public:
-    explicit PlotMenuPopup(QWidget *parent) : QFrame(parent, Qt::Popup)
-    {
-        setObjectName(QStringLiteral("plotMenuPopup"));
-        setStyleSheet(QStringLiteral(
-            "QFrame#plotMenuPopup{background:#1b232b;border:1px solid #3a4650;}"));
-        m_root = new QVBoxLayout(this);
-        m_root->setContentsMargins(8, 6, 8, 8);
-        m_root->setSpacing(4);
-    }
-
-    void addGroup(const QString &title, const QList<QAction *> &acts)
-    {
-        auto *lab = new QLabel(title, this);
-        lab->setStyleSheet(QStringLiteral("color:#8b949e;font-size:11px;padding:2px 3px;"));
-        m_root->addWidget(lab);
-        auto *grid = new QGridLayout;
-        grid->setContentsMargins(0, 0, 0, 0);
-        grid->setSpacing(3);
-        for (int i = 0; i < acts.size(); ++i)
-        {
-            auto *b = new QToolButton(this);
-            b->setDefaultAction(acts.at(i));
-            b->setToolButtonStyle(Qt::ToolButtonIconOnly);
-            b->setAutoRaise(true);
-            b->setIconSize(QSize(64, 36));
-            b->setFixedSize(70, 44);
-            b->setStyleSheet(QStringLiteral(
-                "QToolButton{background:transparent;border:0;padding:0;}"
-                "QToolButton:hover{background:#2d3841;}"));
-            connect(acts.at(i), &QAction::triggered, this, &QWidget::hide);
-            grid->addWidget(b, i / 6, i % 6);
-        }
-        for (int c = 0; c < 6; ++c)
-            grid->setColumnStretch(c, 0);
-        m_root->addLayout(grid);
-    }
-
-private:
-    QVBoxLayout *m_root;
-};
-
-class LayoutPickGrid : public QWidget
-{
-public:
-    explicit LayoutPickGrid(QWidget *parent = nullptr) : QWidget(parent)
-    {
-        setMouseTracking(true);
-        setFixedSize(8 * kStep + 2 * kPad, 8 * kStep + 2 * kPad);
-    }
-
-    std::function<void(int, int)> onPick;
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter pr(this);
-        pr.fillRect(rect(), QColor(27, 35, 43));
-        for (int r = 1; r <= 8; ++r)
-        {
-            for (int c = 1; c <= 8; ++c)
-            {
-                const QRect cell(kPad + (c - 1) * kStep, kPad + (r - 1) * kStep, 16, 16);
-                const bool on = r <= m_rows && c <= m_cols;
-                pr.fillRect(cell, on ? QColor(242, 177, 52) : QColor(45, 56, 65));
-                pr.setPen(on ? QColor(255, 214, 125) : QColor(70, 84, 96));
-                pr.drawRect(cell.adjusted(0, 0, -1, -1));
-            }
-        }
-    }
-
-    void mouseMoveEvent(QMouseEvent *e) override
-    {
-        const int c = std::clamp((e->pos().x() - kPad) / kStep + 1, 0, 8);
-        const int r = std::clamp((e->pos().y() - kPad) / kStep + 1, 0, 8);
-        if (r != m_rows || c != m_cols)
-        {
-            m_rows = r;
-            m_cols = c;
-            update();
-        }
-    }
-
-    void leaveEvent(QEvent *) override
-    {
-        m_rows = m_cols = 0;
-        update();
-    }
-
-    void mousePressEvent(QMouseEvent *e) override
-    {
-        if (e->button() != Qt::LeftButton || m_rows < 1 || m_cols < 1)
-            return;
-        if (onPick)
-            onPick(m_rows, m_cols);
-    }
-
-private:
-    static constexpr int kPad = 4;
-    static constexpr int kStep = 18;
-    int m_rows = 0;
-    int m_cols = 0;
-};
-
-
-static void buildLayoutPicker(QWidget *p)
-{
-    auto *panel = static_cast<SARibbonPanel *>(p);
-    auto *mw = qobject_cast<MainWindow *>(panel->window());
-    if (!mw)
-        return;
-    auto *layoutBtn = new QToolButton(panel);
-    layoutBtn->setText(QStringLiteral("2×1  ▾"));
-    layoutBtn->setToolTip(QStringLiteral("悬停选择行×列，点击重排当前页画布"));
-    layoutBtn->setPopupMode(QToolButton::InstantPopup);
-    layoutBtn->setCursor(Qt::PointingHandCursor);
-    layoutBtn->setStyleSheet(QStringLiteral(
-        "QToolButton{background:#1b232b;border:1px solid #2d3841;color:#c9d1d9;font-size:11px;padding:4px 8px;}"
-        "QToolButton:hover{border-color:#f2b134;color:#f2b134;}"));
-    auto *layoutMenu = new QMenu(layoutBtn);
-    auto *pick = new LayoutPickGrid(layoutMenu);
-    auto *wa = new QWidgetAction(layoutMenu);
-    wa->setDefaultWidget(pick);
-    layoutMenu->addAction(wa);
-    layoutBtn->setMenu(layoutMenu);
-    pick->onPick = [mw, layoutBtn, layoutMenu](int r, int c) {
-        layoutBtn->setText(QStringLiteral("%1×%2  ▾").arg(r).arg(c));
-        mw->commands().invoke(QStringLiteral("page.grid"),
-                              ps::commands::CommandContext{mw, QStringLiteral("%1,%2").arg(r).arg(c)});
-        layoutMenu->close();
-    };
-    panel->addWidget(layoutBtn, SARibbonPanelItem::Large);
-}
-
-static void buildPlotGallery(QWidget *p)
-{
-    auto *panel = static_cast<SARibbonPanel *>(p);
-    auto *mw = qobject_cast<MainWindow *>(panel->window());
-    if (!mw)
-        return;
-    auto *ribbon = panel->ribbonBar();
-    auto addSmall = [](SARibbonPanel *pn, const QString &text, std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(text, ctx);
-        a->setToolTip(text);
-        a->setProperty("rbIconOnly", true);
-        QObject::connect(a, &QAction::triggered, ctx, fn);
-        pn->addSmallAction(a);
-    };
-    auto run = [mw](const QString &cmd, const QString &arg = QString()) {
-        return [mw, cmd, arg] { mw->commands().invoke(cmd, ps::commands::CommandContext{mw, arg}); };
-    };
-    panel->setExpanding(false);
-    panel->setMaximumWidth(400);
-    if (auto *t = panel->titleLabel())
-        t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    auto *plotGallery = panel->addGallery(true);
-    QList<QAction *> curveActs, mapActs, gaugeActs;
-    QHash<QString, QAction *> plotActByKind;
-    auto addPlot = [&](const QString &kind, const QString &label, const QString &tip,
-                       QList<QAction *> &dest) {
-        auto *a = new QAction(QIcon(plotThumb(kind)), label, panel);
-        a->setToolTip(tip);
-        plotActByKind.insert(kind, a);
-        QObject::connect(a, &QAction::triggered, mw, run(QStringLiteral("plot.new"), kind));
-        dest.append(a);
-    };
-    addPlot(QStringLiteral("timeseries"), QStringLiteral("时间序列"), QStringLiteral("时间轴曲线，当前已实现"), curveActs);
-    addPlot(QStringLiteral("xy"), QStringLiteral("XY 曲线"), QStringLiteral("X-Y 双通道曲线"), curveActs);
-    addPlot(QStringLiteral("scatter"), QStringLiteral("散点图"), QStringLiteral("二维散点"), curveActs);
-    addPlot(QStringLiteral("bar"), QStringLiteral("柱状图"), QStringLiteral("离散量柱状对比"), curveActs);
-    addPlot(QStringLiteral("histogram"), QStringLiteral("直方图"), QStringLiteral("样本分布"), curveActs);
-    addPlot(QStringLiteral("fft"), QStringLiteral("频谱 FFT"), QStringLiteral("幅值频谱"), curveActs);
-    addPlot(QStringLiteral("traj3d"), QStringLiteral("3D 轨迹"), QStringLiteral("三维空间轨迹"), mapActs);
-    addPlot(QStringLiteral("map"), QStringLiteral("GPS 地图"), QStringLiteral("经纬度轨迹与网格"), mapActs);
-    addPlot(QStringLiteral("surface3d"), QStringLiteral("3D 曲面"), QStringLiteral("三维曲面 / 频谱"), mapActs);
-    addPlot(QStringLiteral("horizon"), QStringLiteral("地平仪"), QStringLiteral("姿态地平仪"), gaugeActs);
-    addPlot(QStringLiteral("compass"), QStringLiteral("罗盘"), QStringLiteral("航向罗盘"), gaugeActs);
-    addPlot(QStringLiteral("gauge"), QStringLiteral("表盘"), QStringLiteral("单值仪表盘"), gaugeActs);
-    auto stylePlotGroup = [](SARibbonGalleryGroup *g) {
-        g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
-        g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-        g->setIconSize(QSize(64, 36));
-        g->setGridMinimumWidth(70);
-        g->setGridMaximumWidth(78);
-    };
-    auto stylePlotCommon = [](SARibbonGalleryGroup *g) {
-        g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
-        g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-        g->setIconSize(QSize(64, 36));
-        g->setGridMinimumWidth(68);
-        g->setGridMaximumWidth(74);
-    };
-    QList<QAction *> commonActs;
-    for (const char *k : {"timeseries", "xy", "scatter", "traj3d", "map"})
-        if (auto *a = plotActByKind.value(QString::fromLatin1(k)))
-            commonActs.append(a);
-    auto *commonGroup = plotGallery->addCategoryActions(QStringLiteral("常用"), commonActs);
-    stylePlotCommon(commonGroup);
-    auto *curveGroup = plotGallery->addCategoryActions(QStringLiteral("曲线"), curveActs);
-    stylePlotGroup(curveGroup);
-    auto *mapGroup = plotGallery->addCategoryActions(QStringLiteral("地图 / 3D"), mapActs);
-    stylePlotGroup(mapGroup);
-    auto *gaugeGroup = plotGallery->addCategoryActions(QStringLiteral("仪表"), gaugeActs);
-    stylePlotGroup(gaugeGroup);
-    plotGallery->setSingleRowMode(true);
-    if (auto *more = plotGallery->findChild<QToolButton *>(QStringLiteral("SARibbonGalleryButtonMore")))
-        more->hide();
-    plotGallery->setMinimumWidth(330);
-    plotGallery->setMaximumWidth(370);
-    plotGallery->setCurrentViewGroup(commonGroup);
-    if (auto *vp = plotGallery->findChild<SARibbonGalleryViewport *>())
-    {
-        vp->removeWidget(commonGroup);
-        commonGroup->setParent(plotGallery);
-    }
-    auto *plotMenu = new PlotMenuPopup(mw);
-    plotMenu->addGroup(QStringLiteral("曲线"), curveActs);
-    plotMenu->addGroup(QStringLiteral("地图 / 3D"), mapActs);
-    plotMenu->addGroup(QStringLiteral("仪表"), gaugeActs);
-    addSmall(panel, QStringLiteral("▾"), [mw, ribbon, plotGallery, plotMenu] {
-        plotMenu->adjustSize();
-        const QPoint anchor = plotGallery->mapToGlobal(QPoint(0, 0));
-        const int y = ribbon->mapToGlobal(QPoint(0, ribbon->height())).y() + 8;
-        const int x = qBound(8, anchor.x(), mw->screen()->availableGeometry().right() - plotMenu->width() - 8);
-        plotMenu->move(x, y);
-        plotMenu->show();
-    }, mw);
-}
-
-} // namespace
-
-namespace ps::components
-{
-namespace
-{
-struct PlotRegistrar
-{
-    PlotRegistrar()
-    {
-        ExtensionRegistry::instance().addExtension(
-            ExtensionDescriptor{QStringLiteral("plot.core"), QStringLiteral("绘图"),
-                                QStringLiteral("1.0"), ExtensionType::Builtin},
-            [] { return std::make_unique<PlotComponent>(); });
-    }
-};
-static PlotRegistrar g_plotRegistrar;
-} // namespace
-
-ComponentManifest PlotComponent::manifest() const
-{
-    return {QStringLiteral("plot.core"), QStringLiteral("绘图"), QStringLiteral("1.0"),
-            {QStringLiteral("plot"), QStringLiteral("dock")}};
-}
-
-void PlotComponent::contribute(Registry &registry, const HostContext &)
-{
-    registerPlotContributions(registry);
-    registry.addWindowHook([](QWidget *w) {
-        auto *mw = qobject_cast<MainWindow *>(w);
-        if (!mw)
-            return;
-        ps::plot::createPages(mw);
-        mw->commands().add(QStringLiteral("file.settings"),
-                           [mw](const ps::commands::CommandContext &) { ps::plot::openSettings(mw); });
-    });
-}
-
-void registerPlotContributions(Registry &registry)
-{
-    registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
-                                      Qt::RightDockWidgetArea, true, 1, nullptr,
-                                      [](QWidget *p) {
-                                          auto *mw = qobject_cast<MainWindow *>(p);
-                                          return mw ? plotController(mw)->createPropPanel(false) : nullptr;
-                                      }});
-    registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
-                                      Qt::RightDockWidgetArea, true, 2,
-                                      QStringLiteral(":/icons/prop.svg"),
-                                      [](QWidget *p) {
-                                          auto *mw = qobject_cast<MainWindow *>(p);
-                                          return mw ? plotController(mw)->createPropPanel(true) : nullptr;
-                                      }});
-    registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
-        {{QStringLiteral("页面"),
-             {{QStringLiteral("page.new"), QStringLiteral("新建页"), {}, true, QStringLiteral("newpage")},
-              {QStringLiteral("page.addCanvas"), QStringLiteral("添加画布"), {}, true, QStringLiteral("plus")},
-              {QStringLiteral("page.splitHorizontal"), QStringLiteral("向右拆分"), {}, true, QStringLiteral("split_h")},
-              {QStringLiteral("page.splitVertical"), QStringLiteral("向下拆分"), {}, true, QStringLiteral("split_v")}}},
-         {QStringLiteral("画布布局"), {}, buildLayoutPicker},
-         {QStringLiteral("显示"), {},
-             [](QWidget *p) {
-                 auto *panel = static_cast<SARibbonPanel *>(p);
-                 auto *mw = qobject_cast<MainWindow *>(panel->window());
-                 auto add = [&](const QString &text, int flag) {
-                     auto *a = new QAction(text, panel);
-                     a->setCheckable(true);
-                     QObject::connect(a, &QAction::toggled, mw, [mw, flag](bool on) { ps::plot::setCanvasViewFlag(mw, flag, on); });
-                     panel->addSmallAction(a);
-                 };
-                 add(QStringLiteral("网格"), 0);
-                 add(QStringLiteral("边框"), 1);
-                 add(QStringLiteral("图例"), 2);
-                 add(QStringLiteral("框选"), 3);
-                 panel->addSeparator();
-                 auto *zin = new QAction(QStringLiteral("放大"), panel);
-                 QObject::connect(zin, &QAction::triggered, mw, [mw] { ps::plot::canvasZoom(mw, 0.8); });
-                 panel->addSmallAction(zin);
-                 auto *zout = new QAction(QStringLiteral("缩小"), panel);
-                 QObject::connect(zout, &QAction::triggered, mw, [mw] { ps::plot::canvasZoom(mw, 1.25); });
-                 panel->addSmallAction(zout);
-                 auto *autoY = new QAction(QStringLiteral("自适应"), panel);
-                 QObject::connect(autoY, &QAction::triggered, mw, [mw] { ps::plot::canvasAutoY(mw); });
-                 panel->addSmallAction(autoY);
-             }},
-         {QStringLiteral("图表类型"), {}, buildPlotGallery}},
-        2});
-}
-
-} // namespace ps::components
-
-void collectPageCanvases(QWidget *root, QVector<CanvasWidget *> &out)
+void collectPageCanvases(QWidget *root, QVector<PlottingCanvas *> &out)
 {
     if (!root)
         return;
-    if (auto *c = dynamic_cast<CanvasWidget *>(root))
+    if (auto *c = dynamic_cast<PlottingCanvas *>(root))
     {
         out.append(c);
         return;
     }
-    if (auto *g = dynamic_cast<PlotGrid *>(root))
+    if (auto *g = dynamic_cast<PlottingGrid *>(root))
     {
         out += g->canvases();
         return;
@@ -640,7 +85,7 @@ void collectPageCanvases(QWidget *root, QVector<CanvasWidget *> &out)
 }
 
 
-QWidget *buildGridSplitter(const QVector<CanvasWidget *> &canvases, int rows, int cols, QWidget *parent)
+QWidget *buildGridSplitter(const QVector<PlottingCanvas *> &canvases, int rows, int cols, QWidget *parent)
 {
     rows = std::clamp(rows, 1, 8);
     cols = std::clamp(cols, 1, 8);
@@ -666,44 +111,45 @@ QWidget *buildGridSplitter(const QVector<CanvasWidget *> &canvases, int rows, in
 }
 
 
-void PlotController::removeSourceFromCanvases(const QString &sourcePath)
+
+void PlottingSession::removeSourceFromCanvases(const QString &sourcePath)
 {
-    for (CanvasWidget *c : pageCanvases())
+    for (PlottingCanvas *c : pageCanvases())
         c->removeChannelsFromSource(sourcePath);
 }
 
-void PlotController::addChannels(const QVector<const PsChannelInfo *> &channels)
+void PlottingSession::addChannels(const QVector<const PsChannelInfo *> &channels)
 {
-    for (CanvasWidget *c : pageCanvases())
+    for (PlottingCanvas *c : pageCanvases())
         for (const PsChannelInfo *ch : channels)
             c->addChannel(ch);
 }
 
-PlotController::PlotController(MainWindow *mw) : QWidget(mw), m_mw(mw)
+PlottingSession::PlottingSession(MainWindow *mw) : QWidget(mw), m_mw(mw)
 {
-    registerPlotCommands();
+    registerCommands();
 }
-PlotController::~PlotController() = default;
-void PlotController::log(const QString &text) { m_mw->appendLog(text); }
+PlottingSession::~PlottingSession() = default;
+void PlottingSession::log(const QString &text) { m_mw->appendLog(text); }
 
-void PlotController::createPages()
+void PlottingSession::createPages()
 {
-    m_plotWorkspace = new ps::plot::PlotWorkspace(
-        [](QWidget *parent) { return new CanvasWidget(parent); }, this);
+    m_plotWorkspace = new ps::plotting::PlottingTabs(
+        [](QWidget *parent) { return new PlottingCanvas(parent); }, this);
     m_mw->setPageHost(m_plotWorkspace);
     m_plotWorkspace->createDefaultPages();
     m_plotWorkspace->setTimeMarkers(ps::bridge::timeMarkers(m_mw));
 
-    connect(m_plotWorkspace, &ps::plot::PlotWorkspace::canvasActivated, this,
-            [this](CanvasWidget *c) { refreshPropTree(c); });
-    connect(m_plotWorkspace, &ps::plot::PlotWorkspace::canvasAddRequested, this,
-            [this](CanvasWidget *) { addCanvasToPage(); });
-    connect(m_plotWorkspace, &ps::plot::PlotWorkspace::canvasSplitRequested, this,
-            [this](CanvasWidget *c, int orientation) {
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasActivated, this,
+            [this](PlottingCanvas *c) { refreshPropTree(c); });
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasAddRequested, this,
+            [this](PlottingCanvas *) { addCanvasToPage(); });
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasSplitRequested, this,
+            [this](PlottingCanvas *c, int orientation) {
                 splitCanvas(c, orientation == 0 ? Qt::Horizontal : Qt::Vertical);
             });
-    connect(m_plotWorkspace, &ps::plot::PlotWorkspace::addChannelRequested, this,
-            [this](CanvasWidget *c) {
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::addChannelRequested, this,
+            [this](PlottingCanvas *c) {
                 if (ps::bridge::sourceChannels(m_mw).isEmpty())
                 {
                     log(QStringLiteral("先加载数据文件，再添加曲线"));
@@ -724,14 +170,14 @@ void PlotController::createPages()
                     log(QStringLiteral("添加曲线：%1").arg(pick));
                 }
             });
-    connect(m_plotWorkspace, &ps::plot::PlotWorkspace::canvasMaximizeRequested, this,
-            [this](CanvasWidget *c) { toggleCanvasMaximize(c); });
-    connect(m_plotWorkspace, &ps::plot::PlotWorkspace::markerRequested, this,
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasMaximizeRequested, this,
+            [this](PlottingCanvas *c) { toggleCanvasMaximize(c); });
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRequested, this,
             [this](double t) { ps::bridge::addTimeMarker(m_mw, t, QString(), true); });
-    connect(m_plotWorkspace, &ps::plot::PlotWorkspace::markerRemoveRequested, this,
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRemoveRequested, this,
             [this](double t) { ps::bridge::removeTimeMarker(m_mw, t); });
-    connect(m_plotWorkspace, &ps::plot::PlotWorkspace::canvasRemoveRequested, this,
-            [this](CanvasWidget *c) { removeCanvas(c); });
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasRemoveRequested, this,
+            [this](PlottingCanvas *c) { removeCanvas(c); });
 
     connect(m_mw->pages(), &QTabWidget::tabCloseRequested, this, [this](int idx) {
         if (m_mw->pages()->count() > 2 && !m_mw->pages()->tabText(idx).isEmpty())
@@ -747,7 +193,7 @@ void PlotController::createPages()
     });
 }
 
-void PlotController::applyCanvasGrid(int rows, int cols)
+void PlottingSession::applyCanvasGrid(int rows, int cols)
 {
     QWidget *page = m_mw->pages() ? m_mw->pages()->currentWidget() : nullptr;
     if (!page || dynamic_cast<QLabel *>(page))
@@ -755,7 +201,7 @@ void PlotController::applyCanvasGrid(int rows, int cols)
         log(QStringLiteral("当前页不是绘图页"));
         return;
     }
-    QVector<CanvasWidget *> canvases;
+    QVector<PlottingCanvas *> canvases;
     collectPageCanvases(page, canvases);
     if (canvases.isEmpty())
     {
@@ -773,7 +219,7 @@ void PlotController::applyCanvasGrid(int rows, int cols)
     log(QStringLiteral("页内布局：%1 × %2（可继续拆分）").arg(rows).arg(cols));
 }
 
-void PlotController::toggleCanvasMaximize(CanvasWidget *c)
+void PlottingSession::toggleCanvasMaximize(PlottingCanvas *c)
 {
     if (m_maxedCanvas == c)
     {
@@ -814,7 +260,7 @@ void PlotController::toggleCanvasMaximize(CanvasWidget *c)
     log(QStringLiteral("最大化画布：%1").arg(c->title()));
 }
 
-void PlotController::splitCanvas(CanvasWidget *target, Qt::Orientation orientation)
+void PlottingSession::splitCanvas(PlottingCanvas *target, Qt::Orientation orientation)
 {
     QWidget *page = m_mw->pages() ? m_mw->pages()->currentWidget() : nullptr;
     if (!page || !target)
@@ -823,13 +269,13 @@ void PlotController::splitCanvas(CanvasWidget *target, Qt::Orientation orientati
         return;
 
     // 网格只是“一次摆好”的快捷方式；拆分前先变成 splitter 树，之后就能任意再分
-    if (dynamic_cast<PlotGrid *>(page) || !target->parentWidget() ||
+    if (dynamic_cast<PlottingGrid *>(page) || !target->parentWidget() ||
         (target->parentWidget() != page && !qobject_cast<QSplitter *>(target->parentWidget())))
     {
-        QVector<CanvasWidget *> canvases;
+        QVector<PlottingCanvas *> canvases;
         collectPageCanvases(page, canvases);
-        const int rows = dynamic_cast<PlotGrid *>(page) ? dynamic_cast<PlotGrid *>(page)->rows() : 1;
-        const int cols = dynamic_cast<PlotGrid *>(page) ? dynamic_cast<PlotGrid *>(page)->cols() : 1;
+        const int rows = dynamic_cast<PlottingGrid *>(page) ? dynamic_cast<PlottingGrid *>(page)->rows() : 1;
+        const int cols = dynamic_cast<PlottingGrid *>(page) ? dynamic_cast<PlottingGrid *>(page)->cols() : 1;
         const int idx = m_mw->pages()->currentIndex();
         const QString tabText = m_mw->pages()->tabText(idx);
         auto *root = buildGridSplitter(canvases, rows, cols, m_mw->pages());
@@ -840,13 +286,13 @@ void PlotController::splitCanvas(CanvasWidget *target, Qt::Orientation orientati
         page = root;
     }
 
-    auto *c = new CanvasWidget(m_mw->pages());
+    auto *c = new PlottingCanvas(m_mw->pages());
     c->clearChannels();
     c->setTitle(QStringLiteral("新画布 · plot"));
     c->setTimeRange(target->t0(), target->t1());
     m_plotWorkspace->attachCanvas(c);
 
-    if (target->parentWidget() == page && qobject_cast<CanvasWidget *>(page) == target)
+    if (target->parentWidget() == page && qobject_cast<PlottingCanvas *>(page) == target)
     {
         auto *sp = new QSplitter(orientation, m_mw->pages());
         sp->setHandleWidth(5);
@@ -892,27 +338,27 @@ void PlotController::splitCanvas(CanvasWidget *target, Qt::Orientation orientati
     refreshPropTree(c);
 }
 
-void PlotController::createPlotPage(const QString &kind)
+void PlottingSession::createPlotPage(const QString &kind)
 {
     struct PlotKind
     {
         const char *kind;
         const char *label;
-        CanvasWidget::PlotMode mode;
+        PlottingCanvas::PlotMode mode;
     };
     static const PlotKind kinds[] = {
-        {"timeseries", "时间序列", CanvasWidget::TimeSeries},
-        {"xy", "XY 曲线", CanvasWidget::Xy},
-        {"scatter", "散点图", CanvasWidget::Scatter},
-        {"bar", "柱状图", CanvasWidget::BarChart},
-        {"histogram", "直方图", CanvasWidget::Histogram},
-        {"fft", "频谱 FFT", CanvasWidget::Spectrum},
-        {"traj3d", "3D 轨迹", CanvasWidget::Traj3D},
-        {"map", "GPS 地图", CanvasWidget::GpsMap},
-        {"surface3d", "3D 曲面", CanvasWidget::Surface3D},
-        {"horizon", "地平仪", CanvasWidget::Horizon},
-        {"compass", "罗盘", CanvasWidget::Compass},
-        {"gauge", "表盘", CanvasWidget::Gauge},
+        {"timeseries", "时间序列", PlottingCanvas::TimeSeries},
+        {"xy", "XY 曲线", PlottingCanvas::Xy},
+        {"scatter", "散点图", PlottingCanvas::Scatter},
+        {"bar", "柱状图", PlottingCanvas::BarChart},
+        {"histogram", "直方图", PlottingCanvas::Histogram},
+        {"fft", "频谱 FFT", PlottingCanvas::Spectrum},
+        {"traj3d", "3D 轨迹", PlottingCanvas::Traj3D},
+        {"map", "GPS 地图", PlottingCanvas::GpsMap},
+        {"surface3d", "3D 曲面", PlottingCanvas::Surface3D},
+        {"horizon", "地平仪", PlottingCanvas::Horizon},
+        {"compass", "罗盘", PlottingCanvas::Compass},
+        {"gauge", "表盘", PlottingCanvas::Gauge},
     };
     const PlotKind *spec = nullptr;
     for (const PlotKind &k : kinds)
@@ -924,7 +370,7 @@ void PlotController::createPlotPage(const QString &kind)
         return;
     }
     const QString label = QString::fromUtf8(spec->label);
-    if (spec->mode == CanvasWidget::TimeSeries)
+    if (spec->mode == PlottingCanvas::TimeSeries)
     {
         newPage();
         if (auto *c = currentCanvas())
@@ -935,13 +381,13 @@ void PlotController::createPlotPage(const QString &kind)
         return;
     }
 
-    auto *c = new CanvasWidget(this);
+    auto *c = new PlottingCanvas(this);
     c->clearChannels();
     c->setTitle(label);
     c->setPlotMode(spec->mode, kind);
-    CanvasWidget *seed = nullptr;
+    PlottingCanvas *seed = nullptr;
     int best = 0;
-    for (CanvasWidget *w : findChildren<CanvasWidget *>())
+    for (PlottingCanvas *w : findChildren<PlottingCanvas *>())
     {
         if (w == c)
             continue;
@@ -953,7 +399,7 @@ void PlotController::createPlotPage(const QString &kind)
         }
     }
     if (seed)
-        for (const CanvasWidget::SampleSeries &s : seed->sampleSeries())
+        for (const PlottingCanvas::SampleSeries &s : seed->sampleSeries())
             c->addGeneratedSeries(s.name, s.time, s.value);
     m_plotWorkspace->attachCanvas(c);
     const int plusIdx = m_mw->pages()->count() - 1;
@@ -962,7 +408,7 @@ void PlotController::createPlotPage(const QString &kind)
     log(QStringLiteral("新建图页：%1").arg(label));
 }
 
-void PlotController::addCanvasToPage()
+void PlottingSession::addCanvasToPage()
 {
     QWidget *page = m_mw->pages()->currentWidget();
     if (qobject_cast<QLabel *>(page))
@@ -971,7 +417,7 @@ void PlotController::addCanvasToPage()
         return;
     }
 
-    CanvasWidget *target = currentCanvas();
+    PlottingCanvas *target = currentCanvas();
     if (!target)
         target = pageCanvases().value(0, nullptr);
     if (target)
@@ -980,7 +426,7 @@ void PlotController::addCanvasToPage()
         log(QStringLiteral("当前页没有可拆分的画布"));
 }
 
-void PlotController::removeCanvas(CanvasWidget *c)
+void PlottingSession::removeCanvas(PlottingCanvas *c)
 {
     if (m_maxedCanvas == c)
         restoreCanvasMaximize();
@@ -1001,12 +447,12 @@ void PlotController::removeCanvas(CanvasWidget *c)
     log(QStringLiteral("页内至少保留一个画布"));
 }
 
-QWidget *PlotController::buildPage(const QJsonObject &o)
+QWidget *PlottingSession::buildPage(const QJsonObject &o)
 {
     const QString type = o.value(QStringLiteral("type")).toString();
     if (type == QLatin1String("canvas"))
     {
-        auto *c = new CanvasWidget(m_mw->pages());
+        auto *c = new PlottingCanvas(m_mw->pages());
         c->clearChannels();
         QHash<QString, const PsChannelInfo *> pool;
         for (const ps::bridge::SourceView &src : ps::bridge::sourceViews(m_mw))
@@ -1025,10 +471,10 @@ QWidget *PlotController::buildPage(const QJsonObject &o)
     }
     if (type == QLatin1String("grid"))
     {
-        auto *g = new PlotGrid(m_mw->pages());
+        auto *g = new PlottingGrid(m_mw->pages());
         g->setShape(o.value(QStringLiteral("rows")).toInt(1), o.value(QStringLiteral("cols")).toInt(1));
         for (const QJsonValue &v : o.value(QStringLiteral("children")).toArray())
-            if (auto *c = qobject_cast<CanvasWidget *>(buildPage(v.toObject())))
+            if (auto *c = qobject_cast<PlottingCanvas *>(buildPage(v.toObject())))
                 g->addCanvas(c);
         return g;
     }
@@ -1050,7 +496,7 @@ QWidget *PlotController::buildPage(const QJsonObject &o)
     return new QLabel(o.value(QStringLiteral("text")).toString(), m_mw->pages());
 }
 
-void PlotController::refreshPropTree(CanvasWidget *active)
+void PlottingSession::refreshPropTree(PlottingCanvas *active)
 {
     if (!m_propTree)
         return;
@@ -1069,10 +515,10 @@ void PlotController::refreshPropTree(CanvasWidget *active)
     root->setFlags(root->flags() & ~Qt::ItemIsSelectable);
     root->setExpanded(true);
 
-    QVector<CanvasWidget *> canvases;
+    QVector<PlottingCanvas *> canvases;
     collectPageCanvases(page, canvases);
     QTreeWidgetItem *selected = nullptr;
-    for (CanvasWidget *c : canvases)
+    for (PlottingCanvas *c : canvases)
     {
         auto *axes = new QTreeWidgetItem(root);
         axes->setText(0, c->title());
@@ -1106,7 +552,7 @@ void PlotController::refreshPropTree(CanvasWidget *active)
     if (selected)
     {
         m_propTree->setCurrentItem(selected);
-        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(
+        PlottingCanvas *c = reinterpret_cast<PlottingCanvas *>(
             selected->data(0, Qt::UserRole + 1).value<quintptr>());
         if (c)
             showAxesProps(c);
@@ -1114,16 +560,16 @@ void PlotController::refreshPropTree(CanvasWidget *active)
 }
 
 
-void PlotController::applyTimeMarkers()
+void PlottingSession::applyTimeMarkers()
 {
     if (m_plotWorkspace)
         m_plotWorkspace->setTimeMarkers(ps::bridge::timeMarkers(m_mw));
 }
 
 
-void PlotController::newPage()
+void PlottingSession::newPage()
 {
-    auto *c = new CanvasWidget(this);
+    auto *c = new PlottingCanvas(this);
     c->clearChannels();
     c->setTitle(QStringLiteral("新页 · 画布"));
     m_plotWorkspace->attachCanvas(c);
@@ -1134,11 +580,11 @@ void PlotController::newPage()
     log(QStringLiteral("新建页"));
 }
 
-void PlotController::restoreCanvasMaximize()
+void PlottingSession::restoreCanvasMaximize()
 {
     if (!m_maxedCanvas)
         return;
-    CanvasWidget *c = m_maxedCanvas;
+    PlottingCanvas *c = m_maxedCanvas;
     m_maxedCanvas = nullptr;
     for (QWidget *w : m_maxedHidden)
         if (w)
@@ -1158,7 +604,7 @@ void PlotController::restoreCanvasMaximize()
 
 
 
-QWidget *PlotController::pageForCanvas(CanvasWidget *c) const
+QWidget *PlottingSession::pageForCanvas(PlottingCanvas *c) const
 {
     if (!m_mw->pages() || !c)
         return nullptr;
@@ -1171,15 +617,15 @@ QWidget *PlotController::pageForCanvas(CanvasWidget *c) const
     return nullptr;
 }
 
-QVector<CanvasWidget *> PlotController::pageCanvases() const
+QVector<PlottingCanvas *> PlottingSession::pageCanvases() const
 {
-    QVector<CanvasWidget *> out;
+    QVector<PlottingCanvas *> out;
     if (m_mw->pages())
         collectPageCanvases(m_mw->pages()->currentWidget(), out);
     return out;
 }
 
-CanvasWidget *PlotController::currentCanvas() const
+PlottingCanvas *PlottingSession::currentCanvas() const
 {
     return pageCanvases().value(0, nullptr);
 }
@@ -1198,43 +644,13 @@ CanvasWidget *PlotController::currentCanvas() const
 
 
 
-void PlotController::registerPlotCommands()
+
+void PlottingSession::applyPlayhead(double t)
 {
-    m_mw->commands().add(QStringLiteral("plot.refreshTree"), [this](const auto &) { refreshPropTree(currentCanvas()); });
-    m_mw->commands().add(QStringLiteral("script.run"), [this](const auto &ctx) { runScript(ctx.arg == QStringLiteral("true")); });
-    m_mw->commands().add(QStringLiteral("plot.setPlayhead"), [this](const auto &ctx) { applyPlayhead(ctx.arg.toDouble()); });
-    m_mw->commands().add(QStringLiteral("plot.reloadSettings"), [this](const auto &) { reloadCanvasSettings(); });
-
-    using Ctx = ps::commands::CommandContext;
-    m_mw->commands().add(QStringLiteral("page.new"), [this](const Ctx &) { newPage(); });
-    m_mw->commands().add(QStringLiteral("page.addCanvas"), [this](const Ctx &) { addCanvasToPage(); });
-    m_mw->commands().add(QStringLiteral("page.splitHorizontal"), [this](const Ctx &) {
-        if (auto *c = currentCanvas())
-            splitCanvas(c, Qt::Horizontal);
-    });
-    m_mw->commands().add(QStringLiteral("page.splitVertical"), [this](const Ctx &) {
-        if (auto *c = currentCanvas())
-            splitCanvas(c, Qt::Vertical);
-    });
-
-    m_mw->commands().add(QStringLiteral("page.grid"), [this](const Ctx &ctx) {
-        const QStringList parts = ctx.arg.split(QLatin1Char(','));
-        if (parts.size() == 2)
-            applyCanvasGrid(parts.at(0).toInt(), parts.at(1).toInt());
-    });
-
-    m_mw->commands().add(QStringLiteral("plot.new"), [this](const Ctx &ctx) {
-        createPlotPage(ctx.arg);
-    });
-
-}
-
-void PlotController::applyPlayhead(double t)
-{
-    for (CanvasWidget *c : findChildren<CanvasWidget *>())
+    for (PlottingCanvas *c : findChildren<PlottingCanvas *>())
     {
         c->setPlayhead(t);
-        if (c->plotMode() == CanvasWidget::TimeSeries)
+        if (c->plotMode() == PlottingCanvas::TimeSeries)
         {
             const double span = std::max(0.5, c->t1() - c->t0());
             if (t < c->t0() || t > c->t1())
@@ -1546,7 +962,7 @@ private:
     QPushButton *m_colorBtn = nullptr;
     QColor m_axisColor;
 };
-void PlotController::showAxesProps(CanvasWidget *c)
+void PlottingSession::showAxesProps(PlottingCanvas *c)
 {
     if (!c)
         return;
@@ -1600,7 +1016,7 @@ void PlotController::showAxesProps(CanvasWidget *c)
         m_propEditBtn->setEnabled(true);
 }
 
-void PlotController::editAxesProps(CanvasWidget *c)
+void PlottingSession::editAxesProps(PlottingCanvas *c)
 {
     if (!c)
         return;
@@ -1620,7 +1036,7 @@ void PlotController::editAxesProps(CanvasWidget *c)
     showAxesProps(c);
 }
 
-void PlotController::showSeriesProps(CanvasWidget *c, int index)
+void PlottingSession::showSeriesProps(PlottingCanvas *c, int index)
 {
     if (!c)
         return;
@@ -1663,7 +1079,7 @@ void PlotController::showSeriesProps(CanvasWidget *c, int index)
         m_propEditBtn->setEnabled(true);
 }
 
-void PlotController::editSeriesProps(CanvasWidget *c, int index)
+void PlottingSession::editSeriesProps(PlottingCanvas *c, int index)
 {
     if (!c || index < 0)
         return;
@@ -1816,65 +1232,6 @@ void PlotController::editSeriesProps(CanvasWidget *c, int index)
 
 
 
-namespace ps::plot
-{
-void openSettings(MainWindow *mw)
-{
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-    QDialog dlg(mw);
-    dlg.setWindowTitle(QStringLiteral("设置"));
-    auto *lay = new QVBoxLayout(&dlg);
-    auto *restore = new QCheckBox(QStringLiteral("启动时恢复上次布局"), &dlg);
-    restore->setChecked(st.value(QStringLiteral("restoreLayout"), true).toBool());
-    auto *grid = new QCheckBox(QStringLiteral("新建画布默认显示网格"), &dlg);
-    grid->setChecked(st.value(QStringLiteral("gridDefault"), true).toBool());
-    auto *legend = new QCheckBox(QStringLiteral("新建画布默认显示图例"), &dlg);
-    legend->setChecked(st.value(QStringLiteral("legendDefault"), true).toBool());
-    auto *timeFmt = new QComboBox(&dlg);
-    timeFmt->addItem(QStringLiteral("相对秒"), QStringLiteral("relative"));
-    timeFmt->addItem(QStringLiteral("时分秒"), QStringLiteral("clock"));
-    timeFmt->addItem(QStringLiteral("UTC（Unix 秒时间戳）"), QStringLiteral("utc"));
-    const QString savedFmt = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
-    timeFmt->setCurrentIndex(qMax(0, timeFmt->findData(savedFmt)));
-    auto *exportCap = new QSpinBox(&dlg);
-    exportCap->setRange(0, 100000000);
-    exportCap->setSingleStep(1000);
-    exportCap->setSuffix(QStringLiteral(" 点/通道（0=不限）"));
-    exportCap->setValue(st.value(QStringLiteral("exportSampleLimit"), 0).toInt());
-    auto *derivedCap = new QSpinBox(&dlg);
-    derivedCap->setRange(0, 100000000);
-    derivedCap->setSingleStep(100000);
-    derivedCap->setSuffix(QStringLiteral(" 点（0=不限）"));
-    derivedCap->setValue(st.value(QStringLiteral("derivedMaxPoints"), 2000000).toInt());
-    auto *form = new QFormLayout;
-    form->addRow(QStringLiteral("时间轴格式"), timeFmt);
-    form->addRow(QStringLiteral("CSV 导出采样上限"), exportCap);
-    form->addRow(QStringLiteral("派生通道重算上限"), derivedCap);
-    lay->addWidget(restore);
-    lay->addWidget(grid);
-    lay->addWidget(legend);
-    lay->addLayout(form);
-    auto *clearCache = new QPushButton(QStringLiteral("清空解析缓存"), &dlg);
-    lay->addWidget(clearCache);
-    QObject::connect(clearCache, &QPushButton::clicked, &dlg, [mw] {
-        mw->commands().invoke(QStringLiteral("data.clearCache"), {});
-    });
-    auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    QObject::connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    QObject::connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    lay->addWidget(bb);
-    if (dlg.exec() != QDialog::Accepted)
-        return;
-    st.setValue(QStringLiteral("restoreLayout"), restore->isChecked());
-    st.setValue(QStringLiteral("gridDefault"), grid->isChecked());
-    st.setValue(QStringLiteral("legendDefault"), legend->isChecked());
-    st.setValue(QStringLiteral("timeFormat"), timeFmt->currentData().toString());
-    st.setValue(QStringLiteral("exportSampleLimit"), exportCap->value());
-    st.setValue(QStringLiteral("derivedMaxPoints"), derivedCap->value());
-    mw->commands().invoke(QStringLiteral("plot.reloadSettings"), {});
-}
-
-}
 
 static QString plotModeLabel(int mode)
 {
@@ -1884,9 +1241,9 @@ static QString plotModeLabel(int mode)
     return QString::fromUtf8(names[mode]);
 }
 
-void PlotController::setCanvasViewFlag(int flag, bool on)
+void PlottingSession::setCanvasViewFlag(int flag, bool on)
 {
-    for (CanvasWidget *c : pageCanvases())
+    for (PlottingCanvas *c : pageCanvases())
     {
         if (flag == 0) c->setGridVisible(on);
         else if (flag == 1) c->setBoxVisible(on);
@@ -1894,24 +1251,24 @@ void PlotController::setCanvasViewFlag(int flag, bool on)
         else if (flag == 3) c->setRubberZoomEnabled(on);
     }
 }
-void PlotController::canvasZoom(double factor) { for (CanvasWidget *c : pageCanvases()) c->zoomBy(factor); }
-void PlotController::canvasAutoY() { for (CanvasWidget *c : pageCanvases()) c->requestAutoY(); }
+void PlottingSession::canvasZoom(double factor) { for (PlottingCanvas *c : pageCanvases()) c->zoomBy(factor); }
+void PlottingSession::canvasAutoY() { for (PlottingCanvas *c : pageCanvases()) c->requestAutoY(); }
 
-QJsonObject PlotController::pageState(QWidget *page) const
+QJsonObject PlottingSession::pageState(QWidget *page) const
 {
     QJsonObject o;
-    if (auto *c = qobject_cast<CanvasWidget *>(page))
+    if (auto *c = qobject_cast<PlottingCanvas *>(page))
     {
         o = c->saveState();
         o[QStringLiteral("type")] = QStringLiteral("canvas");
     }
-    else if (auto *g = dynamic_cast<PlotGrid *>(page))
+    else if (auto *g = dynamic_cast<PlottingGrid *>(page))
     {
         o[QStringLiteral("type")] = QStringLiteral("grid");
         o[QStringLiteral("rows")] = g->rows();
         o[QStringLiteral("cols")] = g->cols();
         QJsonArray kids;
-        for (CanvasWidget *c : g->canvases())
+        for (PlottingCanvas *c : g->canvases())
         {
             QJsonObject co = c->saveState();
             co[QStringLiteral("type")] = QStringLiteral("canvas");
@@ -1941,22 +1298,22 @@ QJsonObject PlotController::pageState(QWidget *page) const
 }
 
 
-void PlotController::runScript(bool apply)
+void PlottingSession::runScript(bool apply)
 {
     QDockWidget *scriptDock = findChild<QDockWidget *>(QStringLiteral("dock.script"));
-    CanvasWidget *canvas = nullptr;
+    PlottingCanvas *canvas = nullptr;
     QVector<ScriptSeries> inputs;
-    QVector<CanvasWidget *> candidates = pageCanvases();
+    QVector<PlottingCanvas *> candidates = pageCanvases();
     if (candidates.isEmpty())
-        candidates = findChildren<CanvasWidget *>();
-    for (CanvasWidget *c : candidates)
+        candidates = findChildren<PlottingCanvas *>();
+    for (PlottingCanvas *c : candidates)
     {
         const auto samples = c->sampleSeries();
         if (samples.isEmpty() || (canvas && inputs.size() >= samples.size()))
             continue;
         canvas = c;
         inputs.clear();
-        for (const CanvasWidget::SampleSeries &s : samples)
+        for (const PlottingCanvas::SampleSeries &s : samples)
             inputs.append({s.name, s.time, s.value});
     }
     if (!canvas)
@@ -2079,7 +1436,7 @@ void PlotController::runScript(bool apply)
 
 
 
-void PlotController::bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params)
+void PlottingSession::bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params)
 {
     m_script = script;
     for (int i = 0; i < 4; ++i)
@@ -2088,7 +1445,7 @@ void PlotController::bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4
 }
 
 
-void PlotController::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows)
+void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows)
 {
     m_propCanvas = nullptr;
     m_propSeriesIndex = -1;
@@ -2116,7 +1473,7 @@ void PlotController::setPropRows(const QString &object, const QVector<QPair<QStr
 }
 
 
-QWidget *PlotController::createPropPanel(bool tree)
+QWidget *PlottingSession::createPropPanel(bool tree)
 {
     QWidget *w = new QWidget(m_mw);
     auto *lay = new QVBoxLayout(w);
@@ -2153,7 +1510,7 @@ QWidget *PlotController::createPropPanel(bool tree)
     return w;
 }
 
-void PlotController::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree)
+void PlottingSession::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree)
 {
     if (sel) m_selLabel = sel;
     if (edit) m_propEditBtn = edit;
@@ -2174,7 +1531,7 @@ void PlotController::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget
     auto pick = [this](QTreeWidgetItem *it) {
         if (m_propTreeBuilding || !it) return;
         const int kind = it->data(0, Qt::UserRole).toInt();
-        CanvasWidget *c = reinterpret_cast<CanvasWidget *>(it->data(0, Qt::UserRole + 1).value<quintptr>());
+        PlottingCanvas *c = reinterpret_cast<PlottingCanvas *>(it->data(0, Qt::UserRole + 1).value<quintptr>());
         if (!c) return;
         if (kind == 1) showAxesProps(c); else if (kind == 2) showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
     };
@@ -2187,97 +1544,15 @@ void PlotController::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget
 }
 
 
-void PlotController::reloadCanvasSettings() { for (CanvasWidget *c : findChildren<CanvasWidget *>()) c->reloadDisplaySettings(); }
+void PlottingSession::reloadCanvasSettings() { for (PlottingCanvas *c : findChildren<PlottingCanvas *>()) c->reloadDisplaySettings(); }
 
-PlotController *plotController(MainWindow *mw)
+
+PlottingSession *plottingSession(MainWindow *mw)
 {
-    auto *existing = mw->findChild<QObject *>(QStringLiteral("ps.plotController"));
+    auto *existing = mw->findChild<QObject *>(QStringLiteral("ps.plottingSession"));
     if (existing)
-        return static_cast<PlotController *>(existing);
-    auto *c = new PlotController(mw);
-    c->setObjectName(QStringLiteral("ps.plotController"));
+        return static_cast<PlottingSession *>(existing);
+    auto *c = new PlottingSession(mw);
+    c->setObjectName(QStringLiteral("ps.plottingSession"));
     return c;
 }
-
-namespace ps::plot
-{
-void createPages(MainWindow *mw) { plotController(mw)->createPages(); }
-void refreshPropTree(MainWindow *mw, CanvasWidget *c) { plotController(mw)->refreshPropTree(c); }
-CanvasWidget *currentCanvas(MainWindow *mw) { return plotController(mw)->currentCanvas(); }
-QVector<CanvasWidget *> pageCanvases(MainWindow *mw) { return plotController(mw)->pageCanvases(); }
-void newPage(MainWindow *mw) { plotController(mw)->newPage(); }
-void setCanvasViewFlag(MainWindow *mw, int f, bool on) { plotController(mw)->setCanvasViewFlag(f, on); }
-void canvasZoom(MainWindow *mw, double f) { plotController(mw)->canvasZoom(f); }
-void canvasAutoY(MainWindow *mw) { plotController(mw)->canvasAutoY(); }
-void runScript(MainWindow *mw, bool a) { plotController(mw)->runScript(a); }
-void reloadCanvasSettings(MainWindow *mw) { plotController(mw)->reloadCanvasSettings(); }
-void applyPlayhead(MainWindow *mw, double t) { plotController(mw)->applyPlayhead(t); }
-QJsonObject pageState(MainWindow *mw, QWidget *p) { return plotController(mw)->pageState(p); }
-QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return plotController(mw)->buildPage(o); }
-void applyTimeMarkers(MainWindow *mw) { plotController(mw)->applyTimeMarkers(); }
-void removeSourceFromCanvases(MainWindow *mw, const QString &p) { plotController(mw)->removeSourceFromCanvases(p); }
-void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &c) { plotController(mw)->addChannels(c); }
-void setPropRows(MainWindow *mw, const QString &o, const QVector<QPair<QString, QString>> &r) { plotController(mw)->setPropRows(o, r); }
-QTableWidget *propTable(MainWindow *mw) { return plotController(mw)->propTable(); }
-QPlainTextEdit *scriptEditor(MainWindow *mw) { return plotController(mw)->scriptEditor(); }
-QComboBox **scriptInputs(MainWindow *mw) { return plotController(mw)->scriptInputs(); }
-QTableWidget *scriptParams(MainWindow *mw) { return plotController(mw)->scriptParams(); }
-QTreeWidget *propTree(MainWindow *mw) { return plotController(mw)->propTree(); }
-void bindScriptPanel(MainWindow *mw, QPlainTextEdit *s, QComboBox *i[4], QTableWidget *p) { plotController(mw)->bindScriptPanel(s, i, p); }
-void bindPlotPanels(MainWindow *mw, QLabel *s, QToolButton *e, QTableWidget *t, QTreeWidget *tr) { plotController(mw)->bindPlotPanels(s, e, t, tr); }
-}
-
-namespace ps::bridge
-{
-void newPage(MainWindow *mw) { ps::plot::newPage(mw); }
-QVector<CanvasWidget *> pageCanvases(MainWindow *mw) { return ps::plot::pageCanvases(mw); }
-CanvasWidget *currentCanvas(MainWindow *mw) { return ps::plot::currentCanvas(mw); }
-QJsonObject pageState(MainWindow *mw, QWidget *page) { return ps::plot::pageState(mw, page); }
-QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return ps::plot::buildPage(mw, o); }
-void refreshPropTree(MainWindow *mw, CanvasWidget *active) { ps::plot::refreshPropTree(mw, active); }
-void applyTimeMarkers(MainWindow *mw) { ps::plot::applyTimeMarkers(mw); }
-void runScript(MainWindow *mw, bool apply) { ps::plot::runScript(mw, apply); }
-void setPropRows(MainWindow *mw, const QString &object,
-                 const QVector<QPair<QString, QString>> &rows) { ps::plot::setPropRows(mw, object, rows); }
-QTableWidget *propTable(MainWindow *mw) { return ps::plot::propTable(mw); }
-QPlainTextEdit *scriptEditor(MainWindow *mw) { return ps::plot::scriptEditor(mw); }
-QComboBox **scriptInputs(MainWindow *mw) { return ps::plot::scriptInputs(mw); }
-QTableWidget *scriptParams(MainWindow *mw) { return ps::plot::scriptParams(mw); }
-QTreeWidget *propTree(MainWindow *mw) { return ps::plot::propTree(mw); }
-QVector<CanvasWidget *> allCanvases(MainWindow *mw)
-{
-    QVector<CanvasWidget *> out;
-    if (!mw || !mw->pages())
-        return out;
-    for (int i = 0; i < mw->pages()->count(); ++i)
-        if (QWidget *page = mw->pages()->widget(i))
-            for (CanvasWidget *c : page->findChildren<CanvasWidget *>())
-                out.append(c);
-    return out;
-}
-void canvasAddChannel(CanvasWidget *c, const PsChannelInfo *ch) { if (c) c->addChannel(ch); }
-void canvasAddChannelEx(CanvasWidget *c, const PsChannelInfo *ch, int srcId,
-                        const QString &path, const QString &alias, double offsetSec)
-{ if (c) c->addChannelEx(ch, srcId, path, alias, offsetSec); }
-bool canvasReplaceChannel(CanvasWidget *c, const QString &oldName, const PsChannelInfo *ch)
-{ return c && c->replaceChannel(oldName, ch); }
-void canvasSetChannels(CanvasWidget *c, const QVector<const PsChannelInfo *> &channels)
-{ if (c) c->setChannels(channels); }
-void canvasSetTitle(CanvasWidget *c, const QString &title) { if (c) c->setTitle(title); }
-void canvasSetInputSource(CanvasWidget *c, int id, const QString &path,
-                          const QString &alias, double offsetSec)
-{ if (c) c->setInputSource(id, path, alias, offsetSec); }
-void canvasSetSourceOffset(CanvasWidget *c, const QString &path, double offsetSec, bool refit)
-{ if (c) c->setSourceOffset(path, offsetSec, refit); }
-void canvasRemoveChannel(CanvasWidget *c, const QString &name) { if (c) c->removeChannel(name); }
-void canvasRemoveChannelsFromSource(CanvasWidget *c, const QString &path)
-{ if (c) c->removeChannelsFromSource(path); }
-void canvasRenameSource(CanvasWidget *c, const QString &path, const QString &alias)
-{ if (c) c->renameSource(path, alias); }
-void canvasFollowLatest(CanvasWidget *c) { if (c) c->followLatest(); }
-void canvasNotifyActivated(CanvasWidget *c) { if (c) c->notifyActivated(); }
-void canvasUpdate(CanvasWidget *c) { if (c) c->update(); }
-bool canvasHasData(CanvasWidget *c) { return c && c->hasData(); }
-void canvasSetFollowLive(CanvasWidget *c, bool on, double windowSec)
-{ if (c) c->setFollowLive(on, windowSec); }
-} // namespace ps::bridge

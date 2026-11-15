@@ -1,6 +1,6 @@
 #include "ScriptComponent.h"
 #include "MainWindow.h"
-#include "PlotModule.h"
+#include "plotting/PlottingModule.h"
 
 #include <QComboBox>
 #include <QDockWidget>
@@ -125,7 +125,7 @@ void ScriptComponent::contribute(Registry &registry, const HostContext &host)
                                               c.arg = QStringLiteral("true");
                                               main->commands().invoke(QStringLiteral("script.run"), c);
                                           });
-                                          ps::plot::bindScriptPanel(main, script, inputs, params);
+                                          ps::plotting::bindScriptPanel(main, script, inputs, params);
                                           return dock;
                                       }});
     registry.addRibbon(RibbonContribution{

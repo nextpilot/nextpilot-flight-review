@@ -1,4 +1,4 @@
-#include "CanvasWidget.h"
+#include "PlottingCanvas.h"
 
 #include <QMouseEvent>
 #include <QPainter>
@@ -92,7 +92,7 @@ const QColor kPalette[] = {QColor("#4ea1ff"), QColor("#ffb454"), QColor("#7ee787
                            QColor("#d2a8ff"), QColor("#ff7b72"), QColor("#39c5cf")};
 }
 
-CanvasWidget::CanvasWidget(QWidget *parent)
+PlottingCanvas::PlottingCanvas(QWidget *parent)
     : QWidget(parent)
 {
     setMinimumSize(240, 140);
@@ -108,14 +108,14 @@ CanvasWidget::CanvasWidget(QWidget *parent)
     addDemoCurves();
 }
 
-void CanvasWidget::reloadDisplaySettings()
+void PlottingCanvas::reloadDisplaySettings()
 {
     const QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
     m_timeFormat = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
     update();
 }
 
-QString CanvasWidget::formatTime(double t) const
+QString PlottingCanvas::formatTime(double t) const
 {
     if (m_timeFormat == QLatin1String("clock"))
     {
@@ -137,7 +137,7 @@ QString CanvasWidget::formatTime(double t) const
     return QString::number(t, 'f', t >= 100 ? 0 : 2);
 }
 
-void CanvasWidget::addDemoCurves()
+void PlottingCanvas::addDemoCurves()
 {
     static int counter = 0;
     const int seed = ++counter;
@@ -174,7 +174,7 @@ void CanvasWidget::addDemoCurves()
     resetView();
 }
 
-void CanvasWidget::buildHoverBar()
+void PlottingCanvas::buildHoverBar()
 {
     m_hoverBar = new QWidget(this);
     m_hoverBar->setObjectName(QStringLiteral("canvasHoverBar"));
@@ -249,7 +249,7 @@ void CanvasWidget::buildHoverBar()
     positionHoverBar();
 }
 
-void CanvasWidget::positionHoverBar()
+void PlottingCanvas::positionHoverBar()
 {
     if (!m_hoverBar)
         return;
@@ -259,7 +259,7 @@ void CanvasWidget::positionHoverBar()
     m_hoverBar->raise();
 }
 
-void CanvasWidget::reorderByCursor(const QPoint &globalPos)
+void PlottingCanvas::reorderByCursor(const QPoint &globalPos)
 {
     auto *sp = qobject_cast<QSplitter *>(parentWidget());
     if (!sp || sp->count() < 2)
@@ -278,7 +278,7 @@ void CanvasWidget::reorderByCursor(const QPoint &globalPos)
     }
 }
 
-void CanvasWidget::enterEvent(QEnterEvent *event)
+void PlottingCanvas::enterEvent(QEnterEvent *event)
 {
     if (m_hoverBar)
     {
@@ -290,13 +290,13 @@ void CanvasWidget::enterEvent(QEnterEvent *event)
     QWidget::enterEvent(event);
 }
 
-void CanvasWidget::resizeEvent(QResizeEvent *event)
+void PlottingCanvas::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     positionHoverBar();
 }
 
-bool CanvasWidget::eventFilter(QObject *watched, QEvent *event)
+bool PlottingCanvas::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == m_dragBtn)
     {
@@ -321,13 +321,13 @@ bool CanvasWidget::eventFilter(QObject *watched, QEvent *event)
     return QWidget::eventFilter(watched, event);
 }
 
-void CanvasWidget::setTitle(const QString &title)
+void PlottingCanvas::setTitle(const QString &title)
 {
     m_title = title;
     update();
 }
 
-void CanvasWidget::setMaximizedState(bool on)
+void PlottingCanvas::setMaximizedState(bool on)
 {
     m_maximized = on;
     if (!m_maxBtn)
@@ -337,7 +337,7 @@ void CanvasWidget::setMaximizedState(bool on)
     m_maxBtn->setToolTip(on ? QStringLiteral("还原画布") : QStringLiteral("最大化本画布"));
 }
 
-void CanvasWidget::clearChannels()
+void PlottingCanvas::clearChannels()
 {
     m_series.clear();
     m_kernelBacked = false;
@@ -347,7 +347,7 @@ void CanvasWidget::clearChannels()
     resetView();
 }
 
-void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
+void PlottingCanvas::setChannels(const QVector<const PsChannelInfo *> &channels)
 {
     m_series.clear();
     m_kernelBacked = true;
@@ -374,7 +374,7 @@ void CanvasWidget::setChannels(const QVector<const PsChannelInfo *> &channels)
     resetView();
 }
 
-QVector<CanvasWidget::SampleSeries> CanvasWidget::sampleSeries() const
+QVector<PlottingCanvas::SampleSeries> PlottingCanvas::sampleSeries() const
 {
     QVector<SampleSeries> out;
     for (const Series &s : m_series)
@@ -395,7 +395,7 @@ QVector<CanvasWidget::SampleSeries> CanvasWidget::sampleSeries() const
     return out;
 }
 
-void CanvasWidget::addGeneratedSeries(const QString &name, const QVector<double> &time,
+void PlottingCanvas::addGeneratedSeries(const QString &name, const QVector<double> &time,
                                       const QVector<double> &value)
 {
     if (time.isEmpty() || value.isEmpty() || time.size() != value.size())
@@ -417,7 +417,7 @@ void CanvasWidget::addGeneratedSeries(const QString &name, const QVector<double>
     emit activated(m_title);
 }
 
-bool CanvasWidget::replaceGeneratedSeries(const QString &oldLabel, const QString &name,
+bool PlottingCanvas::replaceGeneratedSeries(const QString &oldLabel, const QString &name,
                                           const QVector<double> &time, const QVector<double> &value)
 {
     if (time.isEmpty() || value.isEmpty() || time.size() != value.size())
@@ -447,7 +447,7 @@ bool CanvasWidget::replaceGeneratedSeries(const QString &oldLabel, const QString
     return false;
 }
 
-void CanvasWidget::removeGeneratedSeries(const QString &name)
+void PlottingCanvas::removeGeneratedSeries(const QString &name)
 {
     for (int i = m_series.size() - 1; i >= 0; --i)
         if (m_series.at(i).name == name && !m_series.at(i).t)
@@ -456,7 +456,7 @@ void CanvasWidget::removeGeneratedSeries(const QString &name)
     emit activated(m_title);
 }
 
-void CanvasWidget::setInputSource(int id, const QString &path, const QString &alias, double offsetSec)
+void PlottingCanvas::setInputSource(int id, const QString &path, const QString &alias, double offsetSec)
 {
     m_inputSrcId = id;
     m_inputSrcPath = path;
@@ -464,7 +464,7 @@ void CanvasWidget::setInputSource(int id, const QString &path, const QString &al
     m_inputOffset = offsetSec;
 }
 
-void CanvasWidget::renameSource(const QString &path, const QString &alias)
+void PlottingCanvas::renameSource(const QString &path, const QString &alias)
 {
     for (Series &s : m_series)
         if (s.srcPath == path)
@@ -472,7 +472,7 @@ void CanvasWidget::renameSource(const QString &path, const QString &alias)
     update();
 }
 
-void CanvasWidget::removeChannelsFromSource(const QString &path)
+void PlottingCanvas::removeChannelsFromSource(const QString &path)
 {
     for (int i = m_series.size() - 1; i >= 0; --i)
     {
@@ -483,12 +483,12 @@ void CanvasWidget::removeChannelsFromSource(const QString &path)
     update();
 }
 
-void CanvasWidget::addChannel(const PsChannelInfo *ch)
+void PlottingCanvas::addChannel(const PsChannelInfo *ch)
 {
     addChannelEx(ch, m_inputSrcId, m_inputSrcPath, m_inputSrcAlias, m_inputOffset);
 }
 
-void CanvasWidget::addChannelEx(const PsChannelInfo *ch, int srcId, const QString &path,
+void PlottingCanvas::addChannelEx(const PsChannelInfo *ch, int srcId, const QString &path,
                                 const QString &alias, double offsetSec)
 {
     if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
@@ -518,7 +518,7 @@ void CanvasWidget::addChannelEx(const PsChannelInfo *ch, int srcId, const QStrin
     emit activated(m_title);
 }
 
-void CanvasWidget::removeChannel(const QString &name)
+void PlottingCanvas::removeChannel(const QString &name)
 {
     for (int i = m_series.size() - 1; i >= 0; --i)
     {
@@ -530,7 +530,7 @@ void CanvasWidget::removeChannel(const QString &name)
     update();
 }
 
-QJsonObject CanvasWidget::seriesState(int index) const
+QJsonObject PlottingCanvas::seriesState(int index) const
 {
     QJsonObject o;
     if (index < 0 || index >= m_series.size())
@@ -553,7 +553,7 @@ QJsonObject CanvasWidget::seriesState(int index) const
     return o;
 }
 
-bool CanvasWidget::patchSeries(int index, const QJsonObject &patch)
+bool PlottingCanvas::patchSeries(int index, const QJsonObject &patch)
 {
     if (index < 0 || index >= m_series.size())
         return false;
@@ -587,7 +587,7 @@ bool CanvasWidget::patchSeries(int index, const QJsonObject &patch)
     return true;
 }
 
-bool CanvasWidget::setSeriesChannel(int index, const PsChannelInfo *ch, int srcId,
+bool PlottingCanvas::setSeriesChannel(int index, const PsChannelInfo *ch, int srcId,
                                     const QString &srcPath, const QString &alias, double offsetSec)
 {
     if (index < 0 || index >= m_series.size() || !ch || ch->point_count < 2 ||
@@ -613,7 +613,7 @@ bool CanvasWidget::setSeriesChannel(int index, const PsChannelInfo *ch, int srcI
     return true;
 }
 
-bool CanvasWidget::setSeriesSamples(int index, const QVector<double> &time,
+bool PlottingCanvas::setSeriesSamples(int index, const QVector<double> &time,
                                     const QVector<double> &value, const QString &label)
 {
     if (index < 0 || index >= m_series.size() || time.isEmpty() ||
@@ -636,7 +636,7 @@ bool CanvasWidget::setSeriesSamples(int index, const QVector<double> &time,
     return true;
 }
 
-bool CanvasWidget::replaceChannel(const QString &oldName, const PsChannelInfo *ch)
+bool PlottingCanvas::replaceChannel(const QString &oldName, const PsChannelInfo *ch)
 {
     if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
         return false;
@@ -660,13 +660,13 @@ bool CanvasWidget::replaceChannel(const QString &oldName, const PsChannelInfo *c
     return false;
 }
 
-void CanvasWidget::dragEnterEvent(QDragEnterEvent *event)
+void PlottingCanvas::dragEnterEvent(QDragEnterEvent *event)
 {
     if (event->mimeData()->hasFormat(QStringLiteral("application/x-plotscope-channel")))
         event->acceptProposedAction();
 }
 
-void CanvasWidget::dropEvent(QDropEvent *event)
+void PlottingCanvas::dropEvent(QDropEvent *event)
 {
     const QByteArray raw = event->mimeData()->data(QStringLiteral("application/x-plotscope-channel"));
     if (raw.isEmpty())
@@ -679,7 +679,7 @@ void CanvasWidget::dropEvent(QDropEvent *event)
     event->acceptProposedAction();
 }
 
-bool CanvasWidget::hasRightAxis() const
+bool PlottingCanvas::hasRightAxis() const
 {
     for (const Series &s : m_series)
         if (s.axis == 1)
@@ -687,7 +687,7 @@ bool CanvasWidget::hasRightAxis() const
     return false;
 }
 
-int CanvasWidget::seriesAxisCount() const
+int PlottingCanvas::seriesAxisCount() const
 {
     int n = 0;
     for (const Series &s : m_series)
@@ -695,14 +695,14 @@ int CanvasWidget::seriesAxisCount() const
     return n;
 }
 
-QRectF CanvasWidget::plotRect() const
+QRectF PlottingCanvas::plotRect() const
 {
     return QRectF(rect()).adjusted(m_yLabel.isEmpty() ? 62 : 78, 30,
                                    hasRightAxis() ? -60 : -16,
                                    m_xLabel.isEmpty() ? -26 : -42);
 }
 
-void CanvasWidget::setFollowLive(bool on, double windowSec)
+void PlottingCanvas::setFollowLive(bool on, double windowSec)
 {
     m_followLive = on;
     m_liveWindow = qMax(0.5, windowSec);
@@ -713,7 +713,7 @@ void CanvasWidget::setFollowLive(bool on, double windowSec)
     }
 }
 
-void CanvasWidget::ensureTimeRange()
+void PlottingCanvas::ensureTimeRange()
 {
     bool init = false;
     for (const Series &s : m_series)
@@ -742,7 +742,7 @@ void CanvasWidget::ensureTimeRange()
         m_t1 = m_t0 + 1.0;
 }
 
-void CanvasWidget::setSourceOffset(const QString &path, double offsetSec, bool refit)
+void PlottingCanvas::setSourceOffset(const QString &path, double offsetSec, bool refit)
 {
     int hit = 0;
     for (Series &s : m_series)
@@ -753,7 +753,7 @@ void CanvasWidget::setSourceOffset(const QString &path, double offsetSec, bool r
     repaint();
 }
 
-void CanvasWidget::resetView()
+void PlottingCanvas::resetView()
 {
     ensureTimeRange();
 
@@ -812,7 +812,7 @@ void CanvasWidget::resetView()
 }
 
 
-void CanvasWidget::setPlotMode(PlotMode mode, const QString &tag)
+void PlottingCanvas::setPlotMode(PlotMode mode, const QString &tag)
 {
     m_mode = mode;
     m_modeTag = tag;
@@ -821,7 +821,7 @@ void CanvasWidget::setPlotMode(PlotMode mode, const QString &tag)
     update();
 }
 
-double CanvasWidget::lastValue(const QString &namePart, bool *ok) const
+double PlottingCanvas::lastValue(const QString &namePart, bool *ok) const
 {
     if (ok)
         *ok = false;
@@ -860,7 +860,7 @@ double CanvasWidget::lastValue(const QString &namePart, bool *ok) const
     return 0.0;
 }
 
-void CanvasWidget::paintXy(QPainter &p, const QRectF &plot, const QFontMetrics &fm, bool scatter)
+void PlottingCanvas::paintXy(QPainter &p, const QRectF &plot, const QFontMetrics &fm, bool scatter)
 {
     QVector<const Series *> vis;
     for (const Series &s : m_series)
@@ -987,7 +987,7 @@ void CanvasWidget::paintXy(QPainter &p, const QRectF &plot, const QFontMetrics &
     p.restore();
 }
 
-void CanvasWidget::paintBar(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintBar(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     QVector<const Series *> vis;
     for (const Series &s : m_series)
@@ -1033,7 +1033,7 @@ void CanvasWidget::paintBar(QPainter &p, const QRectF &plot, const QFontMetrics 
     p.restore();
 }
 
-void CanvasWidget::paintHistogram(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintHistogram(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     const Series *s = nullptr;
     for (const Series &x : m_series)
@@ -1072,7 +1072,7 @@ void CanvasWidget::paintHistogram(QPainter &p, const QRectF &plot, const QFontMe
     p.restore();
 }
 
-void CanvasWidget::paintSpectrum(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintSpectrum(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     const Series *s = nullptr;
     for (const Series &x : m_series)
@@ -1123,7 +1123,7 @@ void CanvasWidget::paintSpectrum(QPainter &p, const QRectF &plot, const QFontMet
     p.restore();
 }
 
-void CanvasWidget::paintHorizon(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintHorizon(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     bool okr = false, okp = false;
     const double roll = lastValue(QStringLiteral("roll"), &okr);
@@ -1150,7 +1150,7 @@ void CanvasWidget::paintHorizon(QPainter &p, const QRectF &plot, const QFontMetr
                                    .arg(r, 0, 'f', 1).arg(pt, 0, 'f', 1));
 }
 
-void CanvasWidget::paintCompass(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintCompass(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     bool ok = false;
     const double hdg = lastValue(QStringLiteral("yaw"), &ok);
@@ -1173,7 +1173,7 @@ void CanvasWidget::paintCompass(QPainter &p, const QRectF &plot, const QFontMetr
                Qt::AlignCenter, QStringLiteral("HDG %1°").arg(h, 0, 'f', 1));
 }
 
-void CanvasWidget::paintGauge(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintGauge(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     bool ok = false;
     const double v = lastValue(QString(), &ok);
@@ -1210,7 +1210,7 @@ void CanvasWidget::paintGauge(QPainter &p, const QRectF &plot, const QFontMetric
                Qt::AlignCenter, QStringLiteral("%1 ~ %2").arg(lo, 0, 'g', 3).arg(hi, 0, 'g', 3));
 }
 
-void CanvasWidget::paintGpsMap(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintGpsMap(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     const Series *latS = nullptr;
     const Series *lonS = nullptr;
@@ -1296,7 +1296,7 @@ void CanvasWidget::paintGpsMap(QPainter &p, const QRectF &plot, const QFontMetri
                QStringLiteral("%1 点 · %2 / %3").arg(pts.size()).arg(latS->label, lonS->label));
 }
 
-void CanvasWidget::paintSurface3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintSurface3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     QVector<int> ids;
     double lo = 0, hi = 0;
@@ -1364,7 +1364,7 @@ void CanvasWidget::paintSurface3D(QPainter &p, const QRectF &plot, const QFontMe
     p.drawText(QPointF(x0, yBase - h - 6), QStringLiteral("3D 瀑布 · %1 条").arg(n));
 }
 
-void CanvasWidget::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     QVector<const Series *> vis;
     for (const Series &s : m_series)
@@ -1442,7 +1442,7 @@ void CanvasWidget::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMetri
                    .arg(ax->label, ay->label, az ? az->label : QStringLiteral("-")));
 }
 
-void CanvasWidget::paintSpecial(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
+void PlottingCanvas::paintSpecial(QPainter &p, const QRectF &plot, const QFontMetrics &fm)
 {
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
@@ -1464,26 +1464,26 @@ void CanvasWidget::paintSpecial(QPainter &p, const QRectF &plot, const QFontMetr
     p.restore();
 }
 
-void CanvasWidget::setPlayhead(double t)
+void PlottingCanvas::setPlayhead(double t)
 {
     m_hasPlayhead = true;
     m_playhead = t;
     update();
 }
 
-void CanvasWidget::clearPlayhead()
+void PlottingCanvas::clearPlayhead()
 {
     m_hasPlayhead = false;
     update();
 }
 
-void CanvasWidget::setTimeMarkers(const QVector<QPair<double, QString>> &markers)
+void PlottingCanvas::setTimeMarkers(const QVector<QPair<double, QString>> &markers)
 {
     m_timeMarkers = markers;
     update();
 }
 
-void CanvasWidget::paintEvent(QPaintEvent *)
+void PlottingCanvas::paintEvent(QPaintEvent *)
 {
     // 实时源的 PsChannelInfo 指针稳定，point_count 可能已增长；绘制前同步并跟随 X 轴。
     bool liveGrew = false;
@@ -2061,7 +2061,7 @@ void CanvasWidget::paintEvent(QPaintEvent *)
     }
 }
 
-void CanvasWidget::exportPng()
+void PlottingCanvas::exportPng()
 {
     const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出画布 PNG"), {},
                                                    QStringLiteral("PNG (*.png)"));
@@ -2072,7 +2072,7 @@ void CanvasWidget::exportPng()
     QMessageBox::warning(this, QStringLiteral("导出失败"), QStringLiteral("无法写入 %1").arg(f));
 }
 
-void CanvasWidget::exportCsv()
+void PlottingCanvas::exportCsv()
 {
     const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出画布 CSV"), {},
                                                    QStringLiteral("CSV (*.csv)"));
@@ -2103,7 +2103,7 @@ void CanvasWidget::exportCsv()
         QMessageBox::warning(this, QStringLiteral("导出失败"), QStringLiteral("无法写入 %1").arg(f));
 }
 
-double CanvasWidget::sampleAt(const Series &s, double displayT, bool *ok) const
+double PlottingCanvas::sampleAt(const Series &s, double displayT, bool *ok) const
 {
     if (ok)
         *ok = false;
@@ -2133,7 +2133,7 @@ double CanvasWidget::sampleAt(const Series &s, double displayT, bool *ok) const
     return v;
 }
 
-int CanvasWidget::seriesAt(const QPointF &pos) const
+int PlottingCanvas::seriesAt(const QPointF &pos) const
 {
     const double lim = 20.0;
     for (int i = 0; i < m_hitPaths.size(); ++i)
@@ -2158,7 +2158,7 @@ int CanvasWidget::seriesAt(const QPointF &pos) const
     return -1;
 }
 
-void CanvasWidget::wheelEvent(QWheelEvent *event)
+void PlottingCanvas::wheelEvent(QWheelEvent *event)
 {
     m_followLive = false;
     {
@@ -2195,7 +2195,7 @@ void CanvasWidget::wheelEvent(QWheelEvent *event)
     }
 }
 
-void CanvasWidget::mousePressEvent(QMouseEvent *event)
+void PlottingCanvas::mousePressEvent(QMouseEvent *event)
 {
     // 标题栏按住可拖动重排，和悬浮菜单的抓手等价，符合 PJ 的拖画布习惯。
     if (event->button() == Qt::LeftButton && event->position().y() < 30)
@@ -2445,7 +2445,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
     QWidget::mousePressEvent(event);
 }
 
-QJsonObject CanvasWidget::saveState() const
+QJsonObject PlottingCanvas::saveState() const
 {
     QJsonObject o;
     o[QStringLiteral("title")] = m_title;
@@ -2496,7 +2496,7 @@ QJsonObject CanvasWidget::saveState() const
     return o;
 }
 
-void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool)
+void PlottingCanvas::restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool)
 {
     m_title = o.value(QStringLiteral("title")).toString(m_title);
     m_mode = PlotMode(std::clamp(o.value(QStringLiteral("mode")).toInt(0), 0, int(Surface3D)));
@@ -2560,7 +2560,7 @@ void CanvasWidget::restoreState(const QJsonObject &o, const QHash<QString, const
     update();
 }
 
-void CanvasWidget::setTimeRange(double t0, double t1)
+void PlottingCanvas::setTimeRange(double t0, double t1)
 {
     if (t1 <= t0)
         return;
@@ -2569,20 +2569,20 @@ void CanvasWidget::setTimeRange(double t0, double t1)
     update();
 }
 
-void CanvasWidget::setFlipY(bool on)
+void PlottingCanvas::setFlipY(bool on)
 {
     m_flipY = on;
     update();
 }
 
-void CanvasWidget::setAxisLabels(const QString &xLabel, const QString &yLabel)
+void PlottingCanvas::setAxisLabels(const QString &xLabel, const QString &yLabel)
 {
     m_xLabel = xLabel;
     m_yLabel = yLabel;
     update();
 }
 
-void CanvasWidget::setGridVisible(bool on)
+void PlottingCanvas::setGridVisible(bool on)
 {
     m_showGrid = on;
     m_gridX = on;
@@ -2590,7 +2590,7 @@ void CanvasWidget::setGridVisible(bool on)
     update();
 }
 
-void CanvasWidget::setGridAxes(bool xGrid, bool yGrid, bool minorGrid)
+void PlottingCanvas::setGridAxes(bool xGrid, bool yGrid, bool minorGrid)
 {
     m_gridX = xGrid;
     m_gridY = yGrid;
@@ -2599,48 +2599,48 @@ void CanvasWidget::setGridAxes(bool xGrid, bool yGrid, bool minorGrid)
     update();
 }
 
-void CanvasWidget::setLegendPosition(int pos)
+void PlottingCanvas::setLegendPosition(int pos)
 {
     m_legendPos = std::clamp(pos, 0, 3);
     update();
 }
 
-void CanvasWidget::setAxisFontSize(int px)
+void PlottingCanvas::setAxisFontSize(int px)
 {
     m_axisFontSize = std::clamp(px, 7, 20);
     update();
 }
 
-void CanvasWidget::setAxisLineWidth(int px)
+void PlottingCanvas::setAxisLineWidth(int px)
 {
     m_axisLineWidth = std::clamp(px, 1, 4);
     update();
 }
 
-void CanvasWidget::setAxisColor(const QColor &c)
+void PlottingCanvas::setAxisColor(const QColor &c)
 {
     m_axisColor = c;
     update();
 }
 
-QColor CanvasWidget::axisInk() const
+QColor PlottingCanvas::axisInk() const
 {
     return m_axisColor.isValid() ? m_axisColor : colorText();
 }
 
-void CanvasWidget::setLegendVisible(bool on)
+void PlottingCanvas::setLegendVisible(bool on)
 {
     m_showLegend = on;
     update();
 }
 
-void CanvasWidget::setBoxVisible(bool on)
+void PlottingCanvas::setBoxVisible(bool on)
 {
     m_showBox = on;
     update();
 }
 
-void CanvasWidget::setRubberZoomEnabled(bool on)
+void PlottingCanvas::setRubberZoomEnabled(bool on)
 {
     m_rubberZoom = on;
     m_rubbering = false;
@@ -2648,7 +2648,7 @@ void CanvasWidget::setRubberZoomEnabled(bool on)
     update();
 }
 
-void CanvasWidget::zoomBy(double factor)
+void PlottingCanvas::zoomBy(double factor)
 {
     if (!(factor > 0.0))
         return;
@@ -2660,14 +2660,14 @@ void CanvasWidget::zoomBy(double factor)
     update();
 }
 
-void CanvasWidget::requestAutoY()
+void PlottingCanvas::requestAutoY()
 {
     m_autoY = true;
     resetView();
     update();
 }
 
-void CanvasWidget::toggleChannel(int index)
+void PlottingCanvas::toggleChannel(int index)
 {
     if (index < 0 || index >= m_series.size())
         return;
@@ -2675,7 +2675,7 @@ void CanvasWidget::toggleChannel(int index)
     update();
 }
 
-void CanvasWidget::removeChannel(int index)
+void PlottingCanvas::removeChannel(int index)
 {
     if (index < 0 || index >= m_series.size())
         return;
@@ -2685,7 +2685,7 @@ void CanvasWidget::removeChannel(int index)
     emit activated(m_title);
 }
 
-void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
+void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
 {
     m_cursor = event->position();
     m_hover = true;
@@ -2748,7 +2748,7 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
     QWidget::mouseMoveEvent(event);
 }
 
-void CanvasWidget::mouseReleaseEvent(QMouseEvent *event)
+void PlottingCanvas::mouseReleaseEvent(QMouseEvent *event)
 {
     if (m_abDrag)
     {
@@ -2791,14 +2791,14 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *event)
     QWidget::mouseReleaseEvent(event);
 }
 
-void CanvasWidget::mouseDoubleClickEvent(QMouseEvent *event)
+void PlottingCanvas::mouseDoubleClickEvent(QMouseEvent *event)
 {
     m_autoY = true;
     resetView();
     QWidget::mouseDoubleClickEvent(event);
 }
 
-void CanvasWidget::leaveEvent(QEvent *event)
+void PlottingCanvas::leaveEvent(QEvent *event)
 {
     m_hover = false;
     if (m_hoverBar && !m_reordering)

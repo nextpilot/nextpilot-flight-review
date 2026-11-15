@@ -19,7 +19,7 @@ target_include_directories(plotscope_app PRIVATE
 
 target_link_libraries(plotscope_app PRIVATE
   ps_base_shell
-  ps_base_plot
+  ps_base_plotting
   ps_base_data_source
   Qt6::Widgets Qt6::Network Qt6::Svg
   ps_host ps_kernel ps_cache ps_live

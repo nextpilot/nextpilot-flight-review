@@ -1,0 +1,181 @@
+#include "plotting/PlottingModule.h"
+#include "MainWindow.h"
+#include "PlottingSession.h"
+#include "PlottingCanvas.h"
+#include "PlottingRibbon.h"
+
+#include <QAction>
+#include <QWidget>
+#include "SARibbonPanel.h"
+
+namespace ps::components
+{
+namespace
+{
+struct PlotRegistrar
+{
+    PlotRegistrar()
+    {
+        ExtensionRegistry::instance().addExtension(
+            ExtensionDescriptor{QStringLiteral("plot.core"), QStringLiteral("绘图"),
+                                QStringLiteral("1.0"), ExtensionType::Builtin},
+            [] { return std::make_unique<PlottingComponent>(); });
+    }
+};
+static PlotRegistrar g_plottingRegistrar;
+} // namespace
+
+ComponentManifest PlottingComponent::manifest() const
+{
+    return {QStringLiteral("plot.core"), QStringLiteral("绘图"), QStringLiteral("1.0"),
+            {QStringLiteral("plot"), QStringLiteral("dock")}};
+}
+
+void PlottingComponent::contribute(Registry &registry, const HostContext &)
+{
+    registerPlottingContributions(registry);
+    registry.addWindowHook([](QWidget *w) {
+        auto *mw = qobject_cast<MainWindow *>(w);
+        if (!mw)
+            return;
+        ps::plotting::createPages(mw);
+        mw->commands().add(QStringLiteral("file.settings"),
+                           [mw](const ps::commands::CommandContext &) { ps::plotting::openSettings(mw); });
+    });
+}
+
+void registerPlottingContributions(Registry &registry)
+{
+    registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
+                                      Qt::RightDockWidgetArea, true, 1, nullptr,
+                                      [](QWidget *p) {
+                                          auto *mw = qobject_cast<MainWindow *>(p);
+                                          return mw ? plottingSession(mw)->createPropPanel(false) : nullptr;
+                                      }});
+    registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
+                                      Qt::RightDockWidgetArea, true, 2,
+                                      QStringLiteral(":/icons/prop.svg"),
+                                      [](QWidget *p) {
+                                          auto *mw = qobject_cast<MainWindow *>(p);
+                                          return mw ? plottingSession(mw)->createPropPanel(true) : nullptr;
+                                      }});
+    registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
+        {{QStringLiteral("页面"),
+             {{QStringLiteral("page.new"), QStringLiteral("新建页"), {}, true, QStringLiteral("newpage")},
+              {QStringLiteral("page.addCanvas"), QStringLiteral("添加画布"), {}, true, QStringLiteral("plus")},
+              {QStringLiteral("page.splitHorizontal"), QStringLiteral("向右拆分"), {}, true, QStringLiteral("split_h")},
+              {QStringLiteral("page.splitVertical"), QStringLiteral("向下拆分"), {}, true, QStringLiteral("split_v")}}},
+         {QStringLiteral("画布布局"), {}, ps::plotting::buildLayoutPicker},
+         {QStringLiteral("显示"), {},
+             [](QWidget *p) {
+                 auto *panel = static_cast<SARibbonPanel *>(p);
+                 auto *mw = qobject_cast<MainWindow *>(panel->window());
+                 auto add = [&](const QString &text, int flag) {
+                     auto *a = new QAction(text, panel);
+                     a->setCheckable(true);
+                     QObject::connect(a, &QAction::toggled, mw, [mw, flag](bool on) { ps::plotting::setCanvasViewFlag(mw, flag, on); });
+                     panel->addSmallAction(a);
+                 };
+                 add(QStringLiteral("网格"), 0);
+                 add(QStringLiteral("边框"), 1);
+                 add(QStringLiteral("图例"), 2);
+                 add(QStringLiteral("框选"), 3);
+                 panel->addSeparator();
+                 auto *zin = new QAction(QStringLiteral("放大"), panel);
+                 QObject::connect(zin, &QAction::triggered, mw, [mw] { ps::plotting::canvasZoom(mw, 0.8); });
+                 panel->addSmallAction(zin);
+                 auto *zout = new QAction(QStringLiteral("缩小"), panel);
+                 QObject::connect(zout, &QAction::triggered, mw, [mw] { ps::plotting::canvasZoom(mw, 1.25); });
+                 panel->addSmallAction(zout);
+                 auto *autoY = new QAction(QStringLiteral("自适应"), panel);
+                 QObject::connect(autoY, &QAction::triggered, mw, [mw] { ps::plotting::canvasAutoY(mw); });
+                 panel->addSmallAction(autoY);
+             }},
+         {QStringLiteral("图表类型"), {}, ps::plotting::buildPlotGallery}},
+        2});
+}
+
+} // namespace ps::components
+
+namespace ps::plotting
+{
+void createPages(MainWindow *mw) { plottingSession(mw)->createPages(); }
+void refreshPropTree(MainWindow *mw, PlottingCanvas *c) { plottingSession(mw)->refreshPropTree(c); }
+PlottingCanvas *currentCanvas(MainWindow *mw) { return plottingSession(mw)->currentCanvas(); }
+QVector<PlottingCanvas *> pageCanvases(MainWindow *mw) { return plottingSession(mw)->pageCanvases(); }
+void newPage(MainWindow *mw) { plottingSession(mw)->newPage(); }
+void setCanvasViewFlag(MainWindow *mw, int f, bool on) { plottingSession(mw)->setCanvasViewFlag(f, on); }
+void canvasZoom(MainWindow *mw, double f) { plottingSession(mw)->canvasZoom(f); }
+void canvasAutoY(MainWindow *mw) { plottingSession(mw)->canvasAutoY(); }
+void runScript(MainWindow *mw, bool a) { plottingSession(mw)->runScript(a); }
+void reloadCanvasSettings(MainWindow *mw) { plottingSession(mw)->reloadCanvasSettings(); }
+void applyPlayhead(MainWindow *mw, double t) { plottingSession(mw)->applyPlayhead(t); }
+QJsonObject pageState(MainWindow *mw, QWidget *p) { return plottingSession(mw)->pageState(p); }
+QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return plottingSession(mw)->buildPage(o); }
+void applyTimeMarkers(MainWindow *mw) { plottingSession(mw)->applyTimeMarkers(); }
+void removeSourceFromCanvases(MainWindow *mw, const QString &p) { plottingSession(mw)->removeSourceFromCanvases(p); }
+void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &c) { plottingSession(mw)->addChannels(c); }
+void setPropRows(MainWindow *mw, const QString &o, const QVector<QPair<QString, QString>> &r) { plottingSession(mw)->setPropRows(o, r); }
+QTableWidget *propTable(MainWindow *mw) { return plottingSession(mw)->propTable(); }
+QPlainTextEdit *scriptEditor(MainWindow *mw) { return plottingSession(mw)->scriptEditor(); }
+QComboBox **scriptInputs(MainWindow *mw) { return plottingSession(mw)->scriptInputs(); }
+QTableWidget *scriptParams(MainWindow *mw) { return plottingSession(mw)->scriptParams(); }
+QTreeWidget *propTree(MainWindow *mw) { return plottingSession(mw)->propTree(); }
+void bindScriptPanel(MainWindow *mw, QPlainTextEdit *s, QComboBox *i[4], QTableWidget *p) { plottingSession(mw)->bindScriptPanel(s, i, p); }
+void bindPlotPanels(MainWindow *mw, QLabel *s, QToolButton *e, QTableWidget *t, QTreeWidget *tr) { plottingSession(mw)->bindPlotPanels(s, e, t, tr); }
+}
+
+namespace ps::bridge
+{
+void newPage(MainWindow *mw) { ps::plotting::newPage(mw); }
+QVector<PlottingCanvas *> pageCanvases(MainWindow *mw) { return ps::plotting::pageCanvases(mw); }
+PlottingCanvas *currentCanvas(MainWindow *mw) { return ps::plotting::currentCanvas(mw); }
+QJsonObject pageState(MainWindow *mw, QWidget *page) { return ps::plotting::pageState(mw, page); }
+QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return ps::plotting::buildPage(mw, o); }
+void refreshPropTree(MainWindow *mw, PlottingCanvas *active) { ps::plotting::refreshPropTree(mw, active); }
+void applyTimeMarkers(MainWindow *mw) { ps::plotting::applyTimeMarkers(mw); }
+void runScript(MainWindow *mw, bool apply) { ps::plotting::runScript(mw, apply); }
+void setPropRows(MainWindow *mw, const QString &object,
+                 const QVector<QPair<QString, QString>> &rows) { ps::plotting::setPropRows(mw, object, rows); }
+QTableWidget *propTable(MainWindow *mw) { return ps::plotting::propTable(mw); }
+QPlainTextEdit *scriptEditor(MainWindow *mw) { return ps::plotting::scriptEditor(mw); }
+QComboBox **scriptInputs(MainWindow *mw) { return ps::plotting::scriptInputs(mw); }
+QTableWidget *scriptParams(MainWindow *mw) { return ps::plotting::scriptParams(mw); }
+QTreeWidget *propTree(MainWindow *mw) { return ps::plotting::propTree(mw); }
+QVector<PlottingCanvas *> allCanvases(MainWindow *mw)
+{
+    QVector<PlottingCanvas *> out;
+    if (!mw || !mw->pages())
+        return out;
+    for (int i = 0; i < mw->pages()->count(); ++i)
+        if (QWidget *page = mw->pages()->widget(i))
+            for (PlottingCanvas *c : page->findChildren<PlottingCanvas *>())
+                out.append(c);
+    return out;
+}
+void canvasAddChannel(PlottingCanvas *c, const PsChannelInfo *ch) { if (c) c->addChannel(ch); }
+void canvasAddChannelEx(PlottingCanvas *c, const PsChannelInfo *ch, int srcId,
+                        const QString &path, const QString &alias, double offsetSec)
+{ if (c) c->addChannelEx(ch, srcId, path, alias, offsetSec); }
+bool canvasReplaceChannel(PlottingCanvas *c, const QString &oldName, const PsChannelInfo *ch)
+{ return c && c->replaceChannel(oldName, ch); }
+void canvasSetChannels(PlottingCanvas *c, const QVector<const PsChannelInfo *> &channels)
+{ if (c) c->setChannels(channels); }
+void canvasSetTitle(PlottingCanvas *c, const QString &title) { if (c) c->setTitle(title); }
+void canvasSetInputSource(PlottingCanvas *c, int id, const QString &path,
+                          const QString &alias, double offsetSec)
+{ if (c) c->setInputSource(id, path, alias, offsetSec); }
+void canvasSetSourceOffset(PlottingCanvas *c, const QString &path, double offsetSec, bool refit)
+{ if (c) c->setSourceOffset(path, offsetSec, refit); }
+void canvasRemoveChannel(PlottingCanvas *c, const QString &name) { if (c) c->removeChannel(name); }
+void canvasRemoveChannelsFromSource(PlottingCanvas *c, const QString &path)
+{ if (c) c->removeChannelsFromSource(path); }
+void canvasRenameSource(PlottingCanvas *c, const QString &path, const QString &alias)
+{ if (c) c->renameSource(path, alias); }
+void canvasFollowLatest(PlottingCanvas *c) { if (c) c->followLatest(); }
+void canvasNotifyActivated(PlottingCanvas *c) { if (c) c->notifyActivated(); }
+void canvasUpdate(PlottingCanvas *c) { if (c) c->update(); }
+bool canvasHasData(PlottingCanvas *c) { return c && c->hasData(); }
+void canvasSetFollowLive(PlottingCanvas *c, bool on, double windowSec)
+{ if (c) c->setFollowLive(on, windowSec); }
+} // namespace ps::bridge
