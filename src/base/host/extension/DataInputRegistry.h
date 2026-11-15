@@ -24,7 +24,7 @@ public:
 
     bool registerDescriptor(const PsExtensionDescriptor *desc, const QString &packageDir = QString());
 
-    // 外部插件目录只扫描一次；loader/source 由 family 分派。
+    // 外部扩展目录只扫描一次；loader/source 由 family 分派。
     QStringList scanExtensions(const QStringList &dirs);
 
 private:

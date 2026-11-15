@@ -48,12 +48,10 @@ target_link_libraries(plotscope_app PRIVATE
 
 if(TARGET ps_custom_protocol_component)
   target_link_libraries(plotscope_app PRIVATE ps_custom_protocol_component ps_custom_protocol)
-  target_compile_definitions(plotscope_app PRIVATE PS_HAVE_CUSTOM_PROTOCOL=1)
   target_link_libraries(plotscope_app PRIVATE ps_protocol)
 endif()
 if(TARGET ps_gnss_component)
   target_link_libraries(plotscope_app PRIVATE ps_gnss_component ps_gnss)
-  target_compile_definitions(plotscope_app PRIVATE PS_HAVE_GNSS=1)
 endif()
 
 # 外部扩展靠宿主导出 ps_* 符号

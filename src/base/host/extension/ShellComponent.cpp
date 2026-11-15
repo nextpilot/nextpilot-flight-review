@@ -25,7 +25,7 @@ ComponentManifest ShellComponent::manifest() const
             {QStringLiteral("ribbon")}};
 }
 
-void ShellComponent::contribute(Registry &registry, const HostServices &)
+void ShellComponent::contribute(Registry &registry, const HostContext &)
 {
 
     registry.addDock(DockContribution{QStringLiteral("dock.src"), QStringLiteral("数据源"),

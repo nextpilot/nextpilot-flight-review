@@ -1,5 +1,5 @@
 #pragma once
-/* PlotScope C++ 插件 SDK：只做 C++ class -> C vtable 的边界转换。
+/* PlotScope C++ 扩展 SDK：只做 C++ class -> C vtable 的边界转换。
  * 不改 ps_extension_api.h 的布局，不引入 Qt / kernel 依赖。
  *
  * 用法：
@@ -73,7 +73,7 @@ public:
         return true;
     }
 
-    /* 可选：有限文件导入。文件插件实现它；流插件不实现。 */
+    /* 可选：有限文件导入。文件扩展实现它；流扩展不实现。 */
     virtual bool importFile(std::string_view path, std::string_view opts, void **dataset, PsError *err)
     {
         (void)path;
@@ -117,7 +117,7 @@ public:
         return false;
     }
 
-    /* 可选：共享 transport 模式。宿主把原始字节喂进来，插件只解析并写 sink。 */
+    /* 可选：共享 transport 模式。宿主把原始字节喂进来，扩展只解析并写 sink。 */
     virtual bool feedRaw(std::string_view topic, std::string_view encoding, int64_t timestamp_ns,
                          const uint8_t *data, uint32_t size, PsError *err)
     {
@@ -456,7 +456,7 @@ struct VtableBuilder
 
 } // namespace ps
 
-/* 在插件 .cpp 末尾使用。 */
+/* 在扩展 .cpp 末尾使用。 */
 #define PS_DATA_INPUT_EXTENSION(ClassName, manifest)                                      \
     extern "C" const PsDataInputVtable *ps_get_data_input_vtable()                     \
     {                                                                                   \

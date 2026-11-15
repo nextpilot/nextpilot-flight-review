@@ -17,7 +17,7 @@
 #include <vector>
 
 // 实时流落盘器。只负责录制策略、队列和格式写入，不参与 transport/parser。
-// 队列有界；磁盘慢时丢批并计数，不阻塞插件回调。
+// 队列有界；磁盘慢时丢批并计数，不阻塞扩展回调。
 class StreamRecorder
 {
 public:

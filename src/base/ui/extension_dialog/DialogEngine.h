@@ -5,7 +5,7 @@
 
 struct DataInputEntry;
 
-// 通用插件对话框：加载插件目录里的 .ui，不包含任何格式专属控件。
+// 通用扩展对话框：加载扩展目录里的 .ui，不包含任何格式专属控件。
 class ExtensionDialogEngine : public QDialog
 {
     Q_OBJECT

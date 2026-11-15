@@ -120,7 +120,7 @@ bool descriptorOk(const PsExtensionDescriptor *d)
     return d->capabilities != 0;
 }
 
-// 子进程预检：插件静态初始化或入口崩溃时，宿主只丢一个插件，不跟着死。
+// 子进程预检：扩展静态初始化或入口崩溃时，宿主只丢一个扩展，不跟着死。
 // 返回 0 通过；1 dlopen 失败；2 缺入口；3 描述符非法；4 子进程异常退出。
 int preflight(const char *path)
 {
@@ -253,7 +253,7 @@ void ExtensionRuntime::scanDirectory(const std::string &dir)
         const std::string id(descriptorId(d));
         if (ids.count(id))
         {
-            m_errors.push_back(path + "：重复插件 id " + id + "，已跳过");
+            m_errors.push_back(path + "：重复扩展 id " + id + "，已跳过");
             closeLibrary(h);
             continue;
         }

@@ -234,8 +234,8 @@ DataInputDialog::DataInputDialog(const QVector<DataInputEntry> &parsers, const Q
             m_defaultTransport = m_transports.value(0);
         if (!m_defaultUri.contains(QLatin1String("://")))
             m_defaultUri.clear();
-        // 当前连接入口已经确定了一个 parse 插件，transport 以它声明的集合为准；
-        // 其余 parse 只能在同一 transport 上追加，避免生成无法由入口插件消费的配置。
+        // 当前连接入口已经确定了一个 parse 扩展，transport 以它声明的集合为准；
+        // 其余 parse 只能在同一 transport 上追加，避免生成无法由入口扩展消费的配置。
         m_transports = pref->transports;
     }
 

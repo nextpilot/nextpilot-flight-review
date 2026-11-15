@@ -1,8 +1,8 @@
 #pragma once
-/* PlotScope 插件 SDK：数据面 + UI 面契约。纯 C，不依赖 Qt，不依赖内核内部类型。
+/* PlotScope 扩展 SDK：数据面 + UI 面契约。纯 C，不依赖 Qt，不依赖内核内部类型。
  * base 与 extensions 只共同依赖本头；扩展不 include src/base/ui。
  *
- * UI 面只给 .ui 路径和 JSON 回调：插件提供 .ui + JSON，宿主加载，不返回 QWidget*。
+ * UI 面只给 .ui 路径和 JSON 回调：扩展提供 .ui + JSON，宿主加载，不返回 QWidget*。
  */
 
 #include <stdbool.h>
@@ -24,7 +24,7 @@ extern "C" {
 #define PS_EXTENSION_EXPORT
 #endif
 
-/* 插件 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
+/* 扩展 family：入口第一层分类，app 按 family 分派到不同 catalog。 */
 #define PS_FAMILY_DATA_LOADER 1u   /* 文件/日志入口：probe + load */
 #define PS_FAMILY_DATA_SOURCE 2u   /* 实时源：MAVLink/ROS/OEM7/串口 */
 #define PS_FAMILY_PARSER      3u   /* 消息解析：DBC/MAVLink/RTCM */
@@ -42,19 +42,19 @@ extern "C" {
 #define PS_CAP_STREAM    (1u << 6)
 #define PS_CAP_RECORD    (1u << 7)
 #define PS_CAP_COMMAND   (1u << 8)   /* 支持向设备发送调试/控制命令 */
-#define PS_CAP_REPLAY    (1u << 9)   /* 同一插件可用 __replay_path 回放原始文件 */
+#define PS_CAP_REPLAY    (1u << 9)   /* 同一扩展可用 __replay_path 回放原始文件 */
 #define PS_CAP_PROTOCOL  (1u << 10)  /* 注册帧协议 kind/schema/validate */
 #define PS_CAP_RIBBON    (1u << 11)  /* 通过 ui->ribbon_json 贡献菜单 */
 #define PS_CAP_OP        (1u << 12)  /* 注册通用算子 */
 #define PS_CAP_CURVE     (1u << 13)  /* 注册曲线能力 */
 #define PS_CAP_PANEL     (1u << 14)  /* 注册面板 */
 
-/* 宿主函数表：插件不再直接链接 kernel，也不靠 exe 导出 ps_dataset_* 符号。
- * 插件用 host->dataset_new/add_channel 构造数据集；数据集所有权仍归宿主。
+/* 宿主函数表：扩展不再直接链接 kernel，也不靠 exe 导出 ps_dataset_* 符号。
+ * 扩展用 host->dataset_new/add_channel 构造数据集；数据集所有权仍归宿主。
  * 这张表由宿主在 load/open 时传入，跨 Windows/Linux 同一套语义。 */
 typedef struct PsHostApi {
     uint32_t abi_version;       /* 必须等于 PS_HOST_API_VERSION */
-    uint32_t kernel_abi_version;/* 当前 kernel ABI 版本，供插件诊断 */
+    uint32_t kernel_abi_version;/* 当前 kernel ABI 版本，供扩展诊断 */
     void *(*dataset_new)(void);
     int32_t (*dataset_add_channel)(void *dataset, const char *name, const char *unit,
                                    const double *time_s, const double *value, uint32_t count,
@@ -84,32 +84,32 @@ typedef struct PsLoaderVtable {
                     void **dataset, char *err, uint32_t err_cap);
 } PsLoaderVtable;
 
-/* 实时源向宿主写数据的唯一通道：插件按批提交，宿主负责追加到实时通道。
- * 返回非 0 表示宿主拒绝该批（例如缓冲区已满）；插件可停止本次 poll。 */
+/* 实时源向宿主写数据的唯一通道：扩展按批提交，宿主负责追加到实时通道。
+ * 返回非 0 表示宿主拒绝该批（例如缓冲区已满）；扩展可停止本次 poll。 */
 typedef struct PsSourceSink {
     void *ctx;
     int32_t (*channel_batch)(void *ctx, const char *name, const char *unit,
                              const double *time_s, const double *value, uint32_t count);
     int32_t (*event)(void *ctx, const char *topic, const char *payload_json);
-    /* 可选：插件把原始字节交给宿主统一录制。topic/encoding 用于回放路由。 */
+    /* 可选：扩展把原始字节交给宿主统一录制。topic/encoding 用于回放路由。 */
     int32_t (*raw_batch)(void *ctx, const char *topic, const char *encoding,
                          int64_t timestamp_ns, const uint8_t *data, uint32_t size);
 } PsSourceSink;
 
 /* ---- 统一数据输入 ABI（PJ4 形状，PlotScope 宿主服务） --------------------
- * 一个 DataSource 插件族：文件/流是 capabilities，不是两个 family。
- * 插件内部可用 C++ class；跨边界只暴露本结构 + opaque ctx。
+ * 一个 DataSource 扩展族：文件/流是 capabilities，不是两个 family。
+ * 扩展内部可用 C++ class；跨边界只暴露本结构 + opaque ctx。
  * 所有槽位必须 noexcept；失败写 PsError，不让异常穿过 ABI。
  */
 
 #define PS_INPUT_FILE        (1u << 0)  /* 有限文件导入 */
 #define PS_INPUT_STREAM      (1u << 1)  /* 长连接流 */
-#define PS_INPUT_DIRECT      (1u << 2)  /* 插件自己解码并写 sink */
-#define PS_INPUT_DELEGATED   (1u << 3)  /* 插件只把原始字节交给宿主 parser */
+#define PS_INPUT_DIRECT      (1u << 2)  /* 扩展自己解码并写 sink */
+#define PS_INPUT_DELEGATED   (1u << 3)  /* 扩展只把原始字节交给宿主 parser */
 #define PS_INPUT_PAUSE       (1u << 4)  /* pause/resume 可用 */
 #define PS_INPUT_DIALOG      (1u << 5)  /* get_dialog 返回配置界面 */
 #define PS_INPUT_COMMAND     (1u << 6)  /* send_command 可用 */
-#define PS_INPUT_REPLAY      (1u << 7)  /* 同一插件可回放自己录制的原始文件 */
+#define PS_INPUT_REPLAY      (1u << 7)  /* 同一扩展可回放自己录制的原始文件 */
 #define PS_INPUT_RECORD      (1u << 8)  /* 支持把原始字节落盘 */
 #define PS_INPUT_SEEK        (1u << 9)  /* 文件模式支持 seek */
 
@@ -131,7 +131,7 @@ typedef struct PsStringView {
     uint32_t size;
 } PsStringView;
 
-/* 插件自带 UI：要么给 .ui 路径，要么给 schema JSON；都归插件所有。 */
+/* 扩展自带 UI：要么给 .ui 路径，要么给 schema JSON；都归扩展所有。 */
 typedef struct PsInputDialog {
     const char *ui_path;
     const char *schema_json;
@@ -149,8 +149,8 @@ typedef struct PsDataInputVtable {
     uint32_t protocol_version;   /* = PS_DATA_INPUT_PROTOCOL_VERSION */
     uint32_t struct_size;        /* = sizeof(PsDataInputVtable) */
 
-    void *(*create)(void);       /* 插件内 new，返回 opaque ctx */
-    void (*destroy)(void *ctx);  /* 插件内 delete，与 create 配对 */
+    void *(*create)(void);       /* 扩展内 new，返回 opaque ctx */
+    void (*destroy)(void *ctx);  /* 扩展内 delete，与 create 配对 */
 
     const char *manifest_json;   /* 编译期常量；id/name/version/file_extensions */
 
@@ -179,7 +179,7 @@ typedef struct PsDataInputVtable {
     /* 有限文件导入：成功返回 0 并交出一个 PsDataset*；失败写 err。 */
     int32_t (*import_file)(void *ctx, const char *path, const char *opts_json,
                            void **dataset, char *err, uint32_t err_cap);
-    /* 外部 transport 模式：宿主把共享 transport 的原始字节喂进来，插件只解析。 */
+    /* 外部 transport 模式：宿主把共享 transport 的原始字节喂进来，扩展只解析。 */
     int32_t (*feed_raw)(void *ctx, const char *topic, const char *encoding,
                         int64_t timestamp_ns, const uint8_t *data, uint32_t size,
                         char *err, uint32_t err_cap);
@@ -187,7 +187,7 @@ typedef struct PsDataInputVtable {
 
 
 /* 实时源：不返回 QWidget*，不持有宿主 UI。config 用 JSON，status 用 JSON。
- * open 成功后 handle 归插件所有，close 必须释放；poll 在宿主 UI 线程调用。 */
+ * open 成功后 handle 归扩展所有，close 必须释放；poll 在宿主 UI 线程调用。 */
 typedef struct PsDataSourceVtable {
     uint32_t abi_version;
     const char *id;
@@ -205,16 +205,16 @@ typedef struct PsDataSourceVtable {
     int32_t (*close)(void *handle);
     int32_t (*status_json)(void *handle, char *out, uint32_t cap);
     /* 可选。向设备发送一条调试/控制命令；返回 >0 为 out 的 JSON 字节数，<0 失败。
-     * 具体命令语法由插件决定，宿主只做通用调试控制台。 */
+     * 具体命令语法由扩展决定，宿主只做通用调试控制台。 */
     int32_t (*send_command)(void *handle, const char *command, char *out, uint32_t cap);
-    /* 外部 transport 模式：宿主把共享 transport 的原始字节喂进来，插件只解析。 */
+    /* 外部 transport 模式：宿主把共享 transport 的原始字节喂进来，扩展只解析。 */
     int32_t (*feed_raw)(void *handle, const char *topic, const char *encoding,
                         int64_t timestamp_ns, const uint8_t *data, uint32_t size,
                         char *err, uint32_t err_cap);
 } PsDataSourceVtable;
 
-/* 插件 UI：只交 .ui 文件和 JSON，绝不返回 QWidget*。
- * dialog_ui 相对插件包目录；panels_json/ribbon_json 为贡献声明，可为 NULL。 */
+/* 扩展 UI：只交 .ui 文件和 JSON，绝不返回 QWidget*。
+ * dialog_ui 相对扩展包目录；panels_json/ribbon_json 为贡献声明，可为 NULL。 */
 typedef struct PsUiVtable {
     uint32_t abi_version;
     const char *dialog_ui;
@@ -227,7 +227,7 @@ typedef struct PsUiVtable {
     int32_t (*on_tick)(const char *state_json, char *out, uint32_t cap);
 } PsUiVtable;
 
-/* 协议扩展：插件可同时注册 loader 与 protocol；编辑器 schema 交给宿主渲染。 */
+/* 协议扩展：扩展可同时注册 loader 与 protocol；编辑器 schema 交给宿主渲染。 */
 typedef struct PsProtocolVtable {
     uint32_t abi_version;
     const char *kind;          /* 协议 kind，例如 sequential 或自定义 */
@@ -248,7 +248,7 @@ typedef struct PsExtensionDescriptor {
     const PsUiVtable *ui;           /* 可选；无自定义 UI 时为 NULL */
     const PsDataSourceVtable *source; /* data_source 家族使用，其他家族可为 NULL */
     const PsDataInputVtable *data_input; /* PS_FAMILY_DATA_INPUT 使用，过渡期可为 NULL */
-    const PsProtocolVtable *protocol;    /* 可选：同一插件可额外贡献协议 */
+    const PsProtocolVtable *protocol;    /* 可选：同一扩展可额外贡献协议 */
 } PsExtensionDescriptor;
 
 typedef const PsExtensionDescriptor *(*PsExtensionEntryFn)(void);

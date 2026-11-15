@@ -10,12 +10,12 @@ Kernel 是**同进程、无 Qt、无格式知识**的共享数据平面。它不
 2. 怎么算 —— 过滤、四元数、时间对齐、视口 LOD；
 3. 数据怎么留 —— 通用二进制缓存、实时流缓冲、流上的 LOD。
 
-它**不负责**：CSV/ULog/OEM7 等格式解析、协议连接、插件发现、ABI 校验、界面绘制、缓存 key/失效策略。格式与连接属于 extension；key/策略与 UI 属于 app。
+它**不负责**：CSV/ULog/OEM7 等格式解析、协议连接、扩展发现、ABI 校验、界面绘制、缓存 key/失效策略。格式与连接属于 extension；key/策略与 UI 属于 base。
 
 ## 一屏结构
 
 ```text
-src/kernel/
+src/base/kernel/
   Cargo.toml              workspace：ps-abi / ps-ndf / ps-ops / ps-cache / ps-stream
   include/ps_kernel.h     唯一对外 C ABI；app 只能 include 这一个头
   ps-ndf/                 数据模型：Dataset / Series / 精度 / LOD 算法
@@ -69,18 +69,18 @@ ps-abi ──> ps-ndf
 ## 什么不许进 kernel
 
 - CSV/ULog/APBin/BLF/OEM7 解析；
-- 插件 manifest、dlopen、ABI 版本检查（在 `src/app/extension_host`）；
+- 扩展 manifest、dlopen、ABI 版本检查（在 `src/base/host/extension`）；
 - Qt、QWidget、Ribbon、Dock；
 - 实时 TCP/UDP 连接、设备命令；
-- 缓存 key 计算、缓存目录选择、何时删除（在 `app/cache`）。
+- 缓存 key 计算、缓存目录选择、何时删除（在 `base/host/services/cache`）。
 
-判断方法：**要遍历、变换、派生、缓冲、降采样数据 -> kernel；数据从哪来 -> extension；只在屏幕上存在 -> app。**
+判断方法：**要遍历、变换、派生、缓冲、降采样数据 -> kernel；数据从哪来 -> extension；只在屏幕上存在 -> base/ui。**
 
 ## 构建与测试
 
 ```bash
-cargo test --manifest-path src/kernel/Cargo.toml
-cargo build --manifest-path src/kernel/Cargo.toml -p ps-abi --release
+cargo test --manifest-path src/base/kernel/Cargo.toml
+cargo build --manifest-path src/base/kernel/Cargo.toml -p ps-abi --release
 ```
 
-CMake 通过 `cmake/Rust.cmake` 的 `ps_import_kernel()` 链接 `target/release/libps_abi.a`，头文件目录为 `src/kernel/include`。
+CMake 通过 `cmake/Rust.cmake` 的 `ps_import_kernel()` 链接 `target/release/libps_abi.a`，头文件目录为 `src/base/kernel/include`。

@@ -71,12 +71,12 @@ ComponentManifest DynamicExtension::manifest() const
     return m;
 }
 
-void DynamicExtension::contribute(Registry &registry, const HostServices &host)
+void DynamicExtension::contribute(Registry &registry, const HostContext &host)
 {
     if (!m_descriptor || m_descriptor->abi_version != PS_EXTENSION_ABI_VERSION)
     {
         if (host.log)
-            host.log(QStringLiteral("插件组件 ABI 不匹配，跳过 UI 贡献"));
+            host.log(QStringLiteral("扩展组件 ABI 不匹配，跳过 UI 贡献"));
         return;
     }
     const PsProtocolVtable *protocol = m_descriptor->protocol;

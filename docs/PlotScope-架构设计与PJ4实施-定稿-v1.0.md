@@ -21,14 +21,14 @@
 | D6 | 协议模板 | YAML/JSON 帧模板 → Rust 侧热编译为状态机 |
 | D7 | 停靠 | **`QDockWidget`**（Qt 内建，零第三方许可义务，四区/浮动/tabify/saveState 够用）；Qt-ADS（LGPL-2.1）作升级项，M1 交互评审不够"跟手"再换，换的成本只在 `DockHost` 一层；KDDockWidgets（商业 + GPL）排除 |
 | D8 | 缺省构建 | **CMake + Corrosion**（KDAB），Rust crate 随 CMake 一起编 |
-| D9 | 插件 ABI | `ps_plugin_entry()` 返回 `PsPluginDescriptor`：编译期内嵌 manifest + 可选 `PsLoaderVtable` / `PsUiVtable`；loader 数据面 `schema_json/probe_json/default_options/params_json/load` 五函数；`abiVersion` + `ps_abi_selftest()`；四种后端 builtin/dylib/wasm/sidecar |
+| D9 | 扩展 ABI | `ps_extension_entry()` 返回 `PsExtensionDescriptor`：编译期内嵌 manifest + 可选 `PsLoaderVtable` / `PsUiVtable`；loader 数据面 `schema_json/probe_json/default_options/params_json/load` 五函数；`abiVersion` + `ps_abi_selftest()`；四种后端 builtin/dylib/wasm/sidecar |
 | D10 | 布局持久化 | `.psl`（JSON，可分享可进 git）+ `.psc-workspace`（项目级）；`semantic`/`view` 分块；幽灵曲线；键序固定、原子写；撤销走命令模式 |
 | D11 | 类型系统 | f32/f64 为主 + `kEnum`（i32 码 + 字典）+ `kString`（sidecar）；布尔并入 `kEnum`(0/1) |
 | D12 | 许可红线 | 主程序与内核 **BSD-3** 兼容；引入第三方必须逐条核对许可（Qwt License 1.0 待核，未核前只用 JKQTPlotter） |
 | D13 | 协议编辑器定位 | **自定义 Loader 的附属编辑器**（子窗口 / `QDialog`，对应 PJ4 dialog vtable、PJ3 `optionsWidget()`）；**不设顶层标签页**，生命周期随 Loader |
 | D14 | 工作区分区 | **四可停靠区（数据源/属性面板/脚本/日志）+ 固定绘图区 + 固定带**；绘图区不可停靠 |
 | D15 | 页 | 一页 = 一棵 `QSplitter` 树（plot 与仪表混排），页签是页列表；每页独立时间窗，默认不联动 |
-| D16 | 工程结构 | `cmake/` `src/{app,kernel,plugin,function,3dparty}` `tool/` `test/`；C++ 与 Rust 都在 `src` 下按语言分目录，`src/kernel` 是 Cargo workspace 根；`app` 只依赖 `ps-abi` 一个头文件 |
+| D16 | 工程结构 | `cmake/` `src/{app,kernel,extension,function,3dparty}` `tool/` `test/`；C++ 与 Rust 都在 `src` 下按语言分目录，`src/base/kernel` 是 Cargo workspace 根；`app` 只依赖 `ps-abi` 一个头文件 |
 
 ---
 
@@ -57,7 +57,7 @@
 
 ### 1.3 与 PlotJuggler 4.1.0 的关系（实测结论）
 
-- PJ4 的加载器全部移出核心，改为 **Marketplace + `pj-official-plugins`** 分发；核心只留薄壳。
+- PJ4 的加载器全部移出核心，改为 **Marketplace + `pj-official-extensions`** 分发；核心只留薄壳。
 - PJ4 主干：CSV / ULog / MCAP / Parquet / **MF4(+DBC)** / **BLF(+DBC)** / **candump(+DBC)** / PLY·PCD / MP4 / LeRobot；流 UDP·MQTT·ZMQ·ROS2·Foxglove·PJ-Bridge·WebRTC·LSL；解析 JSON·Protobuf·ROS1/2·Arrow·Influx·DataTamer。
 - **PJ4 的四处空白，即我们的差异化**：①无 ArduPilot DFLog 加载器 ②无 GNSS 原始解析（NMEA/OEM7/UBX/RTCM）③无 Vector ASC（只有 BLF）④无 SEGGER RTT / SystemView。
 - 策略：**对齐主干 + 补空白，不整抄清单。**
@@ -75,12 +75,12 @@
 ```
 ┌──────────────────────── Qt 6 Widgets（C++）────────────────────────┐
 │ 主窗口 / 停靠 / 通道树 / 属性面板 / hex 编辑器 / 表格 / 图表画布 / 仪表页 │
-│ PluginCatalog / ContributionRegistry / DialogEngine / PanelEngine    │
+│ ExtensionCatalog / ContributionRegistry / DialogEngine / PanelEngine    │
 └───────────────────────────────┬───────────────────────────────────┘
-                      PsHostApi + 插件 .ui（批量传递）
+                      PsHostApi + 扩展 .ui（批量传递）
 ┌───────────────────────────────┴───────────────────────────────────┐
 │                    ps-runtime（C++ 装载层）                         │
-│ 插件目录 / manifest / dlopen / ABI 校验 / 会话 / 源管理 / 写入口      │
+│ 扩展目录 / manifest / dlopen / ABI 校验 / 会话 / 源管理 / 写入口      │
 └───────────────────────────────┬───────────────────────────────────┘
                       C ABI（只传批量数据）
 ┌───────────────────────────────┴───────────────────────────────────┐
@@ -96,11 +96,11 @@
 |---|---|---|
 | `ps-base` | 公共类型、ID、错误码、`PsBytes`、ABI 版本 | 不碰存储、不碰 Qt |
 | `ps-datastore` | 数据集、Topic/Chunk/Column、写入、查询、LOD、对齐、算子、派生 | 不认识 `.csv`/`.ulg`/OEM7 |
-| `ps-runtime` | 插件发现、manifest、`dlopen`、ABI 校验、会话、源管理、`PsHostApi` | 不画界面、不解析具体格式 |
+| `ps-runtime` | 扩展发现、manifest、`dlopen`、ABI 校验、会话、源管理、`PsHostApi` | 不画界面、不解析具体格式 |
 | `ps-format` | 官方解析器：CSV/ULog/APBin/ASC/BLF/… | 不持有 UI、不建窗口 |
-| `app` + `plugins` | Qt 壳、ContributionRegistry、Dialog/Panel 引擎；插件只提供数据入口与 `.ui` | app 不 include 插件 UI；插件不 include app 内部 |
+| `app` + `extensions` | Qt 壳、ContributionRegistry、Dialog/Panel 引擎；扩展只提供数据入口与 `.ui` | app 不 include 扩展 UI；扩展不 include app 内部 |
 
-**归属判定三问**：① 要遍历/变换数据 → **ps-datastore**；② 决定数据从哪来 → **ps-format 或 plugins**；③ 只在屏幕上存在 → **app + 插件 `.ui`**。
+**归属判定三问**：① 要遍历/变换数据 → **ps-datastore**；② 决定数据从哪来 → **ps-format 或 extensions**；③ 只在屏幕上存在 → **app + 扩展 `.ui`**。
 
 **边界四条铁律**
 1. 跨 C ABI 只传批量（`{指针, 长度, 采样数, 通道数}`），绝不为单点调用。
@@ -112,19 +112,19 @@
 
 | 功能 | 归属 | 判据 |
 |---|---|---|
-| 插件加载、ABI 校验、`selftest` | **ps-runtime** | 管数据流不管界面 |
-| 协议模板编译（YAML→状态机） | **ps-format / 插件** | 产物是解码器，不是存储 |
+| 扩展加载、ABI 校验、`selftest` | **ps-runtime** | 管数据流不管界面 |
+| 协议模板编译（YAML→状态机） | **ps-format / 扩展** | 产物是解码器，不是存储 |
 | 协议编辑器本体（字段树/hex/联动/CRC 试算） | Qt（宿主提供通用控件） | 纯交互绘制；帧结构由 Loader 声明 |
 | 单位换算（factor/offset） | **ps-datastore / ps-format** | 改变数值 → 影响降采样正确性 |
 | 图表画布（轴/图例/游标/框选） | Qt | 数据由 Rust 给切片 |
 | 仪表页（地平仪/罗盘/表盘） | Qt | `QPainter` + `QPropertyAnimation` |
 
-**插件 UI 归属（新增硬约束）**
+**扩展 UI 归属（新增硬约束）**
 
-- 任何格式专属的 Dialog / Ribbon / Dock / Panel 类，都放在 `plugins/<id>/`，app 不存放、不 include。
-- app 只提供通用 `DialogEngine` / `PanelEngine`，负责加载插件 `.ui`、绑定 `widget_data`、tick、事件、accept/reject。
-- 插件不返回 `QWidget*`，只交 `.ui` 资源 + JSON 协议；外部插件因此不需要和宿主 Qt ABI 完全一致。
-- 通用 schema 对话框是 app 的框架能力，不是某个 loader 的 UI；CSV 的 schema 由插件声明，布局由 app 统一渲染。
+- 任何格式专属的 Dialog / Ribbon / Dock / Panel 类，都放在 `extensions/<id>/`，app 不存放、不 include。
+- app 只提供通用 `DialogEngine` / `PanelEngine`，负责加载扩展 `.ui`、绑定 `widget_data`、tick、事件、accept/reject。
+- 扩展不返回 `QWidget*`，只交 `.ui` 资源 + JSON 协议；外部扩展因此不需要和宿主 Qt ABI 完全一致。
+- 通用 schema 对话框是 app 的框架能力，不是某个 loader 的 UI；CSV 的 schema 由扩展声明，布局由 app 统一渲染。
 
 ---
 
@@ -263,7 +263,7 @@ out.name, out.unit = 'acc_norm', 'm/s^2'
 | **B 绘图区** | 页（Page）容器：一页 = 一棵切分树，叶子是 plot 或仪表 | **否**（主体固定居中，吃掉剩余空间） | 否 |
 | **C 属性面板** | 同一个面板，按**点中的对象**换内容：曲线 / 坐标轴 / 画布 / 仪表 / 页 / 参数 / 消息 / 数据源 | 左、右、底、浮动 | 否 |
 | **D 脚本** | Lua 脚本行 + 派生通道列表 + 执行日志 | 左、右、底、浮动 | 是（第二实例可只留表达式） |
-| **E 日志诊断** | 加载日志、插件告警、丢弃计数、帧时间 | 左、右、底、浮动 | 是 |
+| **E 日志诊断** | 加载日志、扩展告警、丢弃计数、帧时间 | 左、右、底、浮动 | 是 |
 | **F 固定带** | 顶部：**Ribbon**（六个任务页签 + 传输控制）+ 页签栏；底部：状态栏（吞吐/延迟/内存/22 ms 预算条） | 否 | — |
 
 ### 8.1 为什么绘图区不可停靠
@@ -397,7 +397,7 @@ Ribbon 的价值不是好看，是**把命令按任务分组、一屏全露**：
 
 | 项 | 结论 |
 |---|---|
-| 归属 | 属 Loader 插件，随 Loader 注册/销毁；**不做顶层标签页** |
+| 归属 | 属 Loader 扩展，随 Loader 注册/销毁；**不做顶层标签页** |
 | 入口 | ①加载向导里"新建/编辑协议" ②数据源列表每行的 ⚙ ③菜单 加载 → 编辑协议 |
 | 形态 | `QDialog` + `Qt::Tool` 子窗口：独立标题栏与关闭，不参与主工作区布局持久化 |
 | 宿主提供 | 字段树 / hex 视图 / 三向联动 / 位域标尺 / CRC 试算 / 模板编译（Rust 热编译）这套通用控件 |
@@ -412,34 +412,34 @@ Ribbon 的价值不是好看，是**把命令按任务分组、一屏全露**：
 
 ---
 
-## 10. 插件与 ABI
+## 10. 扩展与 ABI
 
-**插件不是“loader 的子类型”，而是一组 family：DataSource / Parser / Toolbox / Panel。** 每个插件包自带 `manifest.json`、数据 vtable、可选 UI vtable 和 `.ui` 资源；`ps-runtime` 负责发现和加载，app 只负责渲染。
+**扩展不是“loader 的子类型”，而是一组 family：DataSource / Parser / Toolbox / Panel。** 每个扩展包自带 `manifest.json`、数据 vtable、可选 UI vtable 和 `.ui` 资源；`ps-runtime` 负责发现和加载，app 只负责渲染。
 
 ```text
-plugins/<id>/
+extensions/<id>/
 ├── manifest.json
 ├── lib<id>.so
-├── <id>_open.ui          # 可选：插件自己的对话框
+├── <id>_open.ui          # 可选：扩展自己的对话框
 ├── <id>_status.ui        # 可选：长生命周期面板
 └── ribbon.json           # 可选：声明式命令
 ```
 
 **当前落地（M1 第一步）**
 
-- `src/include/ps_plugin_api.h`：`PsPluginDescriptor` + `PsLoaderVtable` + `PsUiVtable`，声明 `family / capabilities / extensions`，纯 C、零 Qt 依赖。
-- `src/plugins/data_loader/{csv,ulog,apbin,asc,blf}/`：目录、target、入口、manifest id 统一为 `data_loader_<id>`；schema/probe/default/params/load 全在插件内，app 不再有格式专属代码。
-- `src/runtime/PluginRuntime.cpp`：递归扫描 `*.so`，子进程预检隔离坏插件，`dlopen` + `ps_plugin_entry` + ABI 校验；重复 id 只保留第一个，坏插件只记错误，不拖死宿主。
-- `src/app/plugin_host/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按插件 `uiDialog` 加载 `.ui`，取值走 `uiData` JSON；app 不 include 任何插件 UI 头文件。
-- `LoaderRegistry::registerDescriptor()` / `scanPlugins()`：app 唯一注册入口，只收 `PS_FAMILY_DATA_LOADER`；扩展名由插件 `extensions` 声明，不再写 app 分支。
+- `src/include/ps_extension_api.h`：`PsExtensionDescriptor` + `PsLoaderVtable` + `PsUiVtable`，声明 `family / capabilities / extensions`，纯 C、零 Qt 依赖。
+- `src/extensions/dynamic/data_loader/{csv,ulog,apbin,asc,blf}/`：目录、target、入口、manifest id 统一为 `data_loader_<id>`；schema/probe/default/params/load 全在扩展内，app 不再有格式专属代码。
+- `src/runtime/ExtensionRuntime.cpp`：递归扫描 `*.so`，子进程预检隔离坏扩展，`dlopen` + `ps_extension_entry` + ABI 校验；重复 id 只保留第一个，坏扩展只记错误，不拖死宿主。
+- `src/base/host/extension/DialogEngine.cpp`：通用 `QUiLoader` 引擎，按扩展 `uiDialog` 加载 `.ui`，取值走 `uiData` JSON；app 不 include 任何扩展 UI 头文件。
+- `LoaderRegistry::registerDescriptor()` / `scanExtensions()`：app 唯一注册入口，只收 `PS_FAMILY_DATA_LOADER`；扩展名由扩展 `extensions` 声明，不再写 app 分支。
 - `src/datastore/DatasetCache.cpp`：解析结果磁盘缓存，键为源文件 + `loader@version` + 选项；校验 size/mtime，命中直接 `ps_dataset_new/add_channel` 还原，不重新 probe/parse。
-- `test/unit/test_plugin_csv.cpp` / `test_plugin_file_formats.cpp` / `test_plugin_runtime.cpp` / `test_dataset_cache.cpp`：覆盖内置插件、外部 `.so`、非法 ABI、重复 id 与缓存失效。
+- `test/unit/test_extension_csv.cpp` / `test_extension_file_formats.cpp` / `test_extension_runtime.cpp` / `test_dataset_cache.cpp`：覆盖内置扩展、外部 `.so`、非法 ABI、重复 id 与缓存失效。
 
-**C ABI（数据面 8 函数；插件面 5 函数）**
+**C ABI（数据面 8 函数；扩展面 5 函数）**
 
 ```c
 uint32_t           ps_abi_version(void);
-const PsPluginInfo* ps_plugin_info(void);            // 清单（编译期内嵌）
+const PsExtensionInfo* ps_extension_info(void);            // 清单（编译期内嵌）
 int32_t            ps_probe(const uint8_t* head, size_t n);
 int32_t            ps_open(const char* cfg_json, PsSink sink);
 int32_t            ps_decode(PsCtx* ctx, const uint8_t* buf, size_t n, PsBatchOut* out);
@@ -447,7 +447,7 @@ void               ps_close(PsCtx* ctx);
 int32_t            ps_abi_selftest(void);
 ```
 
-- `PsBatchOut`：**host 预分配**，插件零拷贝写回；失败时**插件保留所有权、host 不释放**（成功才转移）。
+- `PsBatchOut`：**host 预分配**，扩展零拷贝写回；失败时**扩展保留所有权、host 不释放**（成功才转移）。
 - 结构体带 `abiVersion` + `reserved[8]`，为后续扩展留位。
 
 **三种写入粒度（照 PJ4，缺一不可）**
@@ -458,9 +458,9 @@ int32_t            ps_abi_selftest(void);
 | `append_bound_record`（预绑定 handle） | 热路径，免查表 |
 | **`append_arrow_stream`** | 列式批量（CSV/Parquet/ULog），零拷贝整批进 |
 
-**封装块归宿主**：插件只 push 行，宿主 `flushPending` 时按 `Chunk<8192>` 封块提交。
+**封装块归宿主**：扩展只 push 行，宿主 `flushPending` 时按 `Chunk<8192>` 封块提交。
 
-**宿主面已实现（M1，`ps_kernel.h` 只留通用 API）**：`ps_dataset_new / add_channel / channel_count / channel / free`、`ps_preview_filter / apply_filter / apply_quat_rpy / remove_channel`、`ps_lod_minmax`。格式解析与 probe 全部下沉到插件，内核不再认识 CSV/ULog/APBin/ASC/BLF。
+**宿主面已实现（M1，`ps_kernel.h` 只留通用 API）**：`ps_dataset_new / add_channel / channel_count / channel / free`、`ps_preview_filter / apply_filter / apply_quat_rpy / remove_channel`、`ps_lod_minmax`。格式解析与 probe 全部下沉到扩展，内核不再认识 CSV/ULog/APBin/ASC/BLF。
 
 **四种后端**
 
@@ -473,13 +473,13 @@ int32_t            ps_abi_selftest(void);
 
 **准入与分发（三条硬要求）**
 
-1. `plugin check` **必须在子进程里 `dlopen`**——坏 `.so` 一加载就 `abort`，否则主程序/CI 被拖死。
-2. 插件清单**编译期内嵌进二进制**，不用外部 JSON（杜绝不同步、被手改）。
+1. `extension check` **必须在子进程里 `dlopen`**——坏 `.so` 一加载就 `abort`，否则主程序/CI 被拖死。
+2. 扩展清单**编译期内嵌进二进制**，不用外部 JSON（杜绝不同步、被手改）。
 3. 闸门分两级：**`abiVersion` 挡不兼容**、**`minSdkVersion` 挡"缺能力"**；宿主版本号不参与 gate。
 
-**双引擎 lockstep**：流式暂停时写入切副引擎、恢复切回；`ensure_topic/field` 两侧用**同一 id** 重放，保证插件缓存的 handle 切换后仍有效（对应"冻结视图 ≠ 停止采集"）。
+**双引擎 lockstep**：流式暂停时写入切副引擎、恢复切回；`ensure_topic/field` 两侧用**同一 id** 重放，保证扩展缓存的 handle 切换后仍有效（对应"冻结视图 ≠ 停止采集"）。
 
-**坏值策略**：解码层严格（插件解码错必须定位）；存储层宽松（装不进列类型 → 存 null + 每字段每 host 告警一次，不整份报废）。
+**坏值策略**：解码层严格（扩展解码错必须定位）；存储层宽松（装不进列类型 → 存 null + 每字段每 host 告警一次，不整份报废）。
 
 ---
 
@@ -512,7 +512,7 @@ plotscope/
 │   ├── FindJKQTPlotter.cmake      # 上游没有官方 CMake 包，得自己找
 │   ├── Warnings.cmake             # /W4 + -Wall -Wextra，内核头文件降级为 system
 │   ├── Version.cmake              # 版本号单一来源，生成 version.h
-│   └── Install.cmake              # 安装布局：bin / plugins / function / share
+│   └── Install.cmake              # 安装布局：bin / extensions / function / share
 │
 ├── src/
 │   ├── kernel/                    # ★ Rust 内核源码：Cargo workspace 根（不是编译产物）
@@ -534,7 +534,7 @@ plotscope/
 │   │   ├── panels/                # 数据源树、属性面板（QObject 选中 → 属性模型）
 │   │   ├── proto/                 # 协议编辑器：Loader 的 options 子窗口（帧模板/位域/CRC）
 │   │   └── bridge/                # 只调 ps-abi 的封装层 + QObject 信号适配
-│   ├── plugin/                    # ★ 官方 Loader 插件（C ABI 动态库，产品代码而非示例）
+│   ├── extension/                    # ★ 官方 Loader 扩展（C ABI 动态库，产品代码而非示例）
 │   │   ├── builtin_ulog/          # 每个家族一个目录：源码 + manifest.json + 测试样例
 │   │   └── …
 │   ├── function/                  # ★ Lua 脚本与算子 schema（随安装包分发）
@@ -547,7 +547,7 @@ plotscope/
 │                                  # 其余依赖走 FetchContent，不进仓
 │
 ├── tool/                          # ★ 开发/发布工具，全部命令行
-│   ├── ps-plugin-check/           # Qt-free 子进程：dlopen 准入检查（照 PJ4 的思路）
+│   ├── ps-extension-check/           # Qt-free 子进程：dlopen 准入检查（照 PJ4 的思路）
 │   ├── ps-bench/                  # 帧时间/吞吐基线，输出机器可读结果
 │   ├── ps-pack/                   # 打包：windeployqt + 签名 + 生成 checksum
 │   └── ps-icon/                   # 资源与图标生成（SVG → ico/png 多尺寸）
@@ -564,9 +564,9 @@ plotscope/
 
 | 规则 | 后果如果不遵守 |
 |---|---|
-| C++ 与 Rust 都放 `src/`，**按语言分目录**（`app`/`plugin` vs `kernel`），不设两个顶层代码根 | 两套"代码根"让新人分不清产品入口在哪；`src/kernel/` 当 Cargo workspace 根完全合法，代价只是 `target/` 落在 `src/kernel/target`、CI 缓存路径跟着改 |
-| `src/app` 只允许 `#include "ps_kernel.h"`，不得 include 内核内部头 | 一旦 C++ 直接依赖 Rust 内部类型，C ABI 就白设计了，未来换内核实现等于重写 UI |
-| `src/plugins` 是**官方插件**（随包发），第三方插件源码不进仓 | 官方与第三方混住，会让"插件准入检查"这条安全边界失效 |
+| C++ 与 Rust 都放 `src/`，**按语言分目录**（`app`/`extension` vs `kernel`），不设两个顶层代码根 | 两套"代码根"让新人分不清产品入口在哪；`src/base/kernel/` 当 Cargo workspace 根完全合法，代价只是 `target/` 落在 `src/base/kernel/target`、CI 缓存路径跟着改 |
+| `src/base` 只允许 `#include "ps_kernel.h"`，不得 include 内核内部头 | 一旦 C++ 直接依赖 Rust 内部类型，C ABI 就白设计了，未来换内核实现等于重写 UI |
+| `src/extensions/dynamic` 是**官方扩展**（随包发），第三方扩展源码不进仓 | 官方与第三方混住，会让"扩展准入检查"这条安全边界失效 |
 | `src/3dparty` 只放锁版本/打补丁的库 | 什么都往里塞，仓库三年后 2 GB，clone 一次十分钟 |
 | `src/function` 只放 `.lua` 与算子 schema，不放 C++ | Lua 脚本要能热重载、能被用户改，和二进制解耦才能做到 |
 | `test/` 五类分目录，`golden` 用哈希清单 | 二进制样例堆进 git，仓库体积按周膨胀 |
@@ -575,45 +575,45 @@ plotscope/
 **CMake 目标（4 个，不多）**
 
 ```cmake
-plotscope_app        # 可执行：main.cpp + src/app/**（瘦壳，不含业务实现）
+plotscope_app        # 可执行：main.cpp + src/base/**（瘦壳，不含业务实现）
 plotscope_core       # 静态库：pages/plot/inst/panels/proto，app 链接它
-ps_kernel            # Rust staticlib 目标（src/kernel/ps-abi，Corrosion 或 cargo 导入）
-ps_plugin_<family>_<id> # 插件库：src/plugins/<family>/<id>/，输出到 bin/plugins
+ps_kernel            # Rust staticlib 目标（src/base/kernel/ps-abi，Corrosion 或 cargo 导入）
+ps_extension_<family>_<id> # 扩展库：src/extensions/dynamic/<family>/<id>/，输出到 bin/extensions
 ```
 
-选项：`PS_BUILD_TESTS`（默认 ON）、`PS_ENABLE_LUA`（默认 ON，关掉则只留内置算子）、`PS_USE_QWT_FALLBACK`（M0-0 对照组）、`PS_PLUGIN_DIR`（默认 `bin/plugins`）。
+选项：`PS_BUILD_TESTS`（默认 ON）、`PS_ENABLE_LUA`（默认 ON，关掉则只留内置算子）、`PS_USE_QWT_FALLBACK`（M0-0 对照组）、`PS_EXTENSION_DIR`（默认 `bin/extensions`）。
 
 **M0 已落地（2026-11-12，仓库 main `fceab7b`）**
 
 - `cmake/Rust.cmake` 改为 cargo 直调：离线机器无网，Corrosion 的 FetchContent 拉不下来；有网时换回 Corrosion 只改这一个文件，对外接口（`ps_kernel` 目标 + `ps_kernel.h`）不变。
 - 内核 crate：`ps-abi`（`ps_abi_version` / `ps_kernel_version` / `ps_abi_selftest` + 通用 dataset）、`ps-ndf`（序列 + min/max 抽稀）、`ps-ops`（scale / add / moving_avg / filter / quat）、`ps-align`（最近邻 / 线性）、`ps-script`（Lua 预算占位）；`cargo test` 全绿。
 - 主程序：Ribbon 七页签 + 四可停靠区（数据源 / 属性 / 脚本 / 日志）+ 页签式绘图区；自绘画布支持滚轮缩 Y（锚指针）、拖动平移 Y、双击复位、十字光标；状态栏直读 `ps_abi_version()` 与自检结果，证明 C ABI 已打通。
-- 数据面：`ps_dataset_new / add_channel / channel_count / channel / free` / `ps_lod_minmax`；`PsChannelInfo` 的 `time/value` 指针直指内核内存（UI 零拷贝，数据集释放后失效）。CSV 的探测/解析已移到 `plugins/data_loader/csv`，支持 `, ; \t` 与 ns/us/ms/s。
+- 数据面：`ps_dataset_new / add_channel / channel_count / channel / free` / `ps_lod_minmax`；`PsChannelInfo` 的 `time/value` 指针直指内核内存（UI 零拷贝，数据集释放后失效）。CSV 的探测/解析已移到 `extensions/data_loader/csv`，支持 `, ; \t` 与 ns/us/ms/s。
 - 降采样落到 Rust：UI 每次重绘按像素宽度调 `ps_lod_minmax`，只拿 ≤px 个 `(x,min,max)` 三元组；3000 点 CSV 画到三格（每格一个通道，避免混量纲压成直线）。
 - 内核单测 19 例（`cargo test`），`ctest` 2/2 通过（ABI 冒烟 + cargo）。
-- **ULog 已接**（2026-11-12 晚，现为插件侧 `UlogParser`）：按 PX4 `ulog_file_format` 实现（16 字节头 + 消息流，`F/A/D/L/B/P/Q/M/I` 类型），命名与展平规则对齐 PlotJuggler `data_load_ulog`——`timestamp` 与 `_padding*` 不产出曲线、嵌套结构用 `.`、数组下标补两位 `.00`、`char[N]` 当字符串不当数值、同 topic 有 `multi_id>0` 时全部实例加 `.NN` 后缀。解析在插件内完成；UI 按后缀分流，通道按 topic 分组挂树，双击出图。实测：自造 `test/fixture/demo_flight.ulg`（250 Hz / 12 s / 4 topic）→ 13 通道 × 3000 点、解析 10 ms；PX4 官方 900 KB 样例 → **1351 通道 / 1812 行 / 解析 16.9 ms**。
-- **CAN 双格式（ASC / BLF）已接**（2026-11-13，现为插件侧 `AscParser` / `BlfParser` + `common/CanFrames`）：统一帧模型；ASC 解析经典帧 / 扩展帧 `x` 后缀 / `CANFD` 行 / `base hex|dec`；BLF 解析 `LOGG` 头 + `LOBJ` 对象流 + `LOG_CONTAINER` zlib 解压，对象跨容器时留半截续接。BLF 无公开规范，字段偏移按 python-can `io/blf.py`（源于 vector_blf）逐项对照。
+- **ULog 已接**（2026-11-12 晚，现为扩展侧 `UlogParser`）：按 PX4 `ulog_file_format` 实现（16 字节头 + 消息流，`F/A/D/L/B/P/Q/M/I` 类型），命名与展平规则对齐 PlotJuggler `data_load_ulog`——`timestamp` 与 `_padding*` 不产出曲线、嵌套结构用 `.`、数组下标补两位 `.00`、`char[N]` 当字符串不当数值、同 topic 有 `multi_id>0` 时全部实例加 `.NN` 后缀。解析在扩展内完成；UI 按后缀分流，通道按 topic 分组挂树，双击出图。实测：自造 `test/fixture/demo_flight.ulg`（250 Hz / 12 s / 4 topic）→ 13 通道 × 3000 点、解析 10 ms；PX4 官方 900 KB 样例 → **1351 通道 / 1812 行 / 解析 16.9 ms**。
+- **CAN 双格式（ASC / BLF）已接**（2026-11-13，现为扩展侧 `AscParser` / `BlfParser` + `common/CanFrames`）：统一帧模型；ASC 解析经典帧 / 扩展帧 `x` 后缀 / `CANFD` 行 / `base hex|dec`；BLF 解析 `LOGG` 头 + `LOBJ` 对象流 + `LOG_CONTAINER` zlib 解压，对象跨容器时留半截续接。BLF 无公开规范，字段偏移按 python-can `io/blf.py`（源于 vector_blf）逐项对照。
 - CAN 出通道**不猜物理量**：没有 DBC 就不知道哪几个字节拼成一个信号，硬猜的曲线是假的。只给两类可验证量——`CAN<总线>.<ID>.bN`（报文第 N 字节原始值，恒定字节直接丢弃，否则 500 个 ID × 8 字节会把通道树撑成几千行）与 `CAN<总线>.<ID>.period`（同 ID 相邻帧间隔 ms，看周期抖动最直接）。DBC 解码归 M2 协议编辑器（D13）。
-- **对拍证据**：用 python-can 4.6.1 的 `ASCWriter`/`BLFWriter` 把同一批 3020 帧写成 `test/fixture/demo_can.asc`（190 KB）与 `demo_can.blf`（19.5 KB），两种格式各自解析后**逐通道逐点相同**（C++ 插件测试），帧数/每 ID 帧数也与 python-can `LogReader` 完全一致；解析耗时 ASC 0.9 ms、BLF 0.7 ms。
+- **对拍证据**：用 python-can 4.6.1 的 `ASCWriter`/`BLFWriter` 把同一批 3020 帧写成 `test/fixture/demo_can.asc`（190 KB）与 `demo_can.blf`（19.5 KB），两种格式各自解析后**逐通道逐点相同**（C++ 扩展测试），帧数/每 ID 帧数也与 python-can `LogReader` 完全一致；解析耗时 ASC 0.9 ms、BLF 0.7 ms。
 - 未接：JKQTPlotter（可选后端，未进构建）、Lua 5.4、NMEA/DFLog、DBC 解码、NDF 落盘、多 Y 轴、仪表自绘、`.psl`。
 
-**M1 插件自解析（2026-11-13，当前架构）**
+**M1 扩展自解析（2026-11-13，当前架构）**
 
-- 内核只保留通用数据模型与算子：`ps_dataset_new / add_channel / channel_count / channel / free / apply_filter / preview_filter / apply_quat_rpy / remove_channel / lod_minmax`。`ps_kernel.h` 中的 `ps_csv_* / ps_ulog_* / ps_apbin_* / ps_asc_load / ps_blf_load` 已删除，`src/kernel/ps-parse` 已移出 workspace。
-- 每个 loader 插件自带 probe / parse / schema：`data_loader/common` 只做通用 dataset 构建与文件/JSON helper；格式细节不进内核。
-- CSV：`CsvParser.{h,cpp}` 在插件内完成分隔符探测、表头/列类型、时间列建议、9 行预览、`row/column/combined` 三种时间模式、非单调时间排序；`CsvDataLoader.cpp` 只把解析结果交给 `psBuildDataset`。
-- APBin：`ApbinParser.{h,cpp}` 在插件内实现 DataFlash `A3 95` / FMT 自描述 / FMTU 单位倍率 / UNIT / MULT / PARM，通道名 `MSG.#N.Field`，参数表由插件输出 JSON。
-- ULog：`UlogParser.{h,cpp}` 在插件内实现 `F/A/D` + `P/Q`，展平/多实例/字符串跳过规则不变；`demo_flight.ulg` 仍为 13 通道。
-- ASC / BLF：各自 `*Parser.{h,cpp}`，共用 `common/CanFrames` 的帧→通道规则（只保留变化字节 + `period`）；BLF 的 zlib 容器由插件自己解压，内核不链 zlib。
-- loader 选项 UI 的归属：`schema_json.fields` + `ui.preview` + `initial_from_probe` 由插件提供，app 的 `DataInputDialog` 只做通用渲染；app 源码不再出现 `delimiter / has_header / suggested_time`，新增格式不需要在 app 里加对话框。
-- 数据源与 loader 共用 `DataInputDialog`：`transport` 只声明 `{"supported":[...],"default":"udp://127.0.0.1:1223"}`，通信页由 app 按 transport 固定字段渲染（`file → filepath`、`udp → bind/port`、`tcp → host/port/timeout_ms`、`serial/uart → serial_port/baud`、`internal` 无字段），插件不再提供 transport 字段；解析参数由插件 `schema.parser.fields`（loader 用 `schema.fields`）提供，app 不解释具体解析字段；parse 可多选，每个 parse 展示自己的配置，只有一个 parse 或一种 transport 时不渲染对应选择器。
-- 测试：`ctest` 6/6；`plugin_file_formats` 覆盖 ULog 13 通道、APBin 通道+PARAM、ASC/BLF 各 10 通道；新增 `test/fixture/demo_apbin.bin` 作为可复现夹具。
+- 内核只保留通用数据模型与算子：`ps_dataset_new / add_channel / channel_count / channel / free / apply_filter / preview_filter / apply_quat_rpy / remove_channel / lod_minmax`。`ps_kernel.h` 中的 `ps_csv_* / ps_ulog_* / ps_apbin_* / ps_asc_load / ps_blf_load` 已删除，`src/base/kernel/ps-parse` 已移出 workspace。
+- 每个 loader 扩展自带 probe / parse / schema：`data_loader/common` 只做通用 dataset 构建与文件/JSON helper；格式细节不进内核。
+- CSV：`CsvParser.{h,cpp}` 在扩展内完成分隔符探测、表头/列类型、时间列建议、9 行预览、`row/column/combined` 三种时间模式、非单调时间排序；`CsvDataLoader.cpp` 只把解析结果交给 `psBuildDataset`。
+- APBin：`ApbinParser.{h,cpp}` 在扩展内实现 DataFlash `A3 95` / FMT 自描述 / FMTU 单位倍率 / UNIT / MULT / PARM，通道名 `MSG.#N.Field`，参数表由扩展输出 JSON。
+- ULog：`UlogParser.{h,cpp}` 在扩展内实现 `F/A/D` + `P/Q`，展平/多实例/字符串跳过规则不变；`demo_flight.ulg` 仍为 13 通道。
+- ASC / BLF：各自 `*Parser.{h,cpp}`，共用 `common/CanFrames` 的帧→通道规则（只保留变化字节 + `period`）；BLF 的 zlib 容器由扩展自己解压，内核不链 zlib。
+- loader 选项 UI 的归属：`schema_json.fields` + `ui.preview` + `initial_from_probe` 由扩展提供，app 的 `DataInputDialog` 只做通用渲染；app 源码不再出现 `delimiter / has_header / suggested_time`，新增格式不需要在 app 里加对话框。
+- 数据源与 loader 共用 `DataInputDialog`：`transport` 只声明 `{"supported":[...],"default":"udp://127.0.0.1:1223"}`，通信页由 app 按 transport 固定字段渲染（`file → filepath`、`udp → bind/port`、`tcp → host/port/timeout_ms`、`serial/uart → serial_port/baud`、`internal` 无字段），扩展不再提供 transport 字段；解析参数由扩展 `schema.parser.fields`（loader 用 `schema.fields`）提供，app 不解释具体解析字段；parse 可多选，每个 parse 展示自己的配置，只有一个 parse 或一种 transport 时不渲染对应选择器。
+- 测试：`ctest` 6/6；`extension_file_formats` 覆盖 ULog 13 通道、APBin 通道+PARAM、ASC/BLF 各 10 通道；新增 `test/fixture/demo_apbin.bin` 作为可复现夹具。
 
 **Ribbon / Dock spike（2026-11-12 实测）**
 
 - Ribbon：SARibbon 2.9.6 跑通（MIT、Qt 6.2.4、静态库单 target、24 MB 源码）。实测七页签 + 分组 + 右侧 qchip 位（`rightButtonGroup`）都可用；展开高度 **97 px**、折叠 **28 px**（原型 74 / 32 px）。静态库需 `Q_INIT_RESOURCE(SARibbonResource)`；观感偏 Office，要贴原型必须重写 QSS + 自绘图标。
 - Dock：`QDockWidget` 直接够用（四区 + 浮动 + `tabifyDockWidget` + `saveState/restoreState`），零第三方许可义务；Qt-ADS（LGPL-2.1）留作 M1 升级项；KDDockWidgets 含 GPL，排除。
-- 取舍：Ribbon 承认"多 23 px 换键盘导航/溢出折叠/无障碍"；QSS 压缩目标 ≤84 px。达不到就退回自绘（现有 `QTabBar + QToolBar` 骨架已在 `src/app/shell`）。
+- 取舍：Ribbon 承认"多 23 px 换键盘导航/溢出折叠/无障碍"；QSS 压缩目标 ≤84 px。达不到就退回自绘（现有 `QTabBar + QToolBar` 骨架已在 `src/base/ui/shell`）。
 
 **已实装（2026-11-12 晚）**：SARibbon 2.9.6 源码裁到 3.3 MB（去掉 `docs/`、`example/`、`pyqt6/`、`pyside6/`、`sip/`、`tools/`、`tests/`）放进 `src/3dparty/saribbon`，`src/3dparty/CMakeLists.txt` 里强制 `SARIBBON_BUILD_STATIC_LIBS=ON` / `SARIBBON_BUILD_EXAMPLES=OFF` / `SARIBBON_USE_FRAMELESS_LIB=OFF`（frameless 要 QWindowKit 子模块，内网拿不到），`add_subdirectory(... EXCLUDE_FROM_ALL)`，app 链 `SARibbonBar::SARibbonBar`。`MainWindow::createRibbon()` 从自绘 `QTabBar + QStackedWidget(QToolBar)` 换成 `SARibbonBar`：7 页签 / 文件页三组（布局·导出·截图）/ 右侧状态 action。`RibbonStyleLooseSingleRow` + tab 22 px + panel 标题 10 px → **84 px**（原型 74 px，目标 ≤84 达成；同参数下 CompactTwoRow 94 px、CompactSingleRow 62 px 但组标题会挤压换行）。**已知缺口**：单行模式下每个按钮左侧留图标位，没图标就是空方块——必须补一套自绘 SVG 图标（约 22 个），否则观感不成立。
 
@@ -636,7 +636,7 @@ ps_plugin_<family>_<id> # 插件库：src/plugins/<family>/<id>/，输出到 bin
 
 ```
 bin/PlotScope.exe
-bin/plugins/*.dll          # 官方插件
+bin/extensions/*.dll          # 官方扩展
 function/*.lua             # 可热改
 share/psc/{ops,icons}/     # schema 与资源
 docs/                      # 只放许可与第三方声明（原型与设计文档不进安装包）
@@ -648,7 +648,7 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 |---|---|---|---|
 | **M0-0** | 选型 spike：JKQTPlotter vs Qwt，20 通道 × 8k 点 @60fps，单帧 ≤8 ms | **0.5 天** | **已完成**：自绘 7.2 ms；JKQ 13.1 ms |
 | **M0** | 骨架：按 §12 目录落地、CMake + Rust 内核接通、窗口/停靠/页签、CSV 加载、NDF、单画布 | 3 周 | **已完成** |
-| **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；插件 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） | **基本完成**：ULog/DFLog/ASC/BLF、MAVLink UDP/raw/`.tlog` 回放、缓存、外部插件 manifest/ABI 已落地；ASC/BLF 支持可选 DBC 信号解码 |
+| **M1** | ULog + DFLog + CAN 家族 + MAVLink；缓存层；扩展 ABI + 脚手架 | **3.5 周**（CAN 进则 6.5） | **基本完成**：ULog/DFLog/ASC/BLF、MAVLink UDP/raw/`.tlog` 回放、缓存、外部扩展 manifest/ABI 已落地；ASC/BLF 支持可选 DBC 信号解码 |
 | **M2** | 派生通道增量算子、脚本、MDF4、GNSS 解析、实时滚动面板自绘 | 4 周 | **部分完成**：12 算子、四元数、Lua 5.4、OEM7、NMEA/UBX 已落地；MDF4、自绘滚动面板未做 |
 | **M3** | MCAP/rosbag2、多画布/多轴、时间对齐、视频同步 | 4 周 | **部分完成**：MCAP 加载/录制、多画布、时间对齐、rosbag2 `.db3`、双 Y 轴、视频同步已落地 |
 | **M4** | 协议编辑器（Loader 的 options 子窗口：位域/CRC/联动）+ 模板编译 | 3 周 | **部分完成**：`.psproto` 固定/变长帧、位域、CRC16、模板编辑器、字段-JSON/hex 联动已落地；模板热编译未做 |
@@ -700,7 +700,7 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 主要缺口：
 - 没有任何数据变换/派生曲线。
 - 多源只有“同时打开”，没有时间对齐、同名通道配对对比。
-- 时间游标/读数、CSV 导出、脚本、实时源、插件机制缺失。
+- 时间游标/读数、CSV 导出、脚本、实时源、扩展机制缺失。
 
 ---
 
@@ -782,7 +782,7 @@ public:
 | `binary_filter` | 阈值二值化 | `binary_op`, `binary_a`, `binary_b`, `binary_tol` |
 | `time_since_previous` | 相邻样本 Δt | — |
 
-四元数不在 PJ4 内置目录里，而是官方 Quaternion 插件：4 输入（w,x,y,z）→ 一个分组 topic `rpy:roll,pitch,yaw`。当前数据模型是扁平日通道，先实现为 `rpy.roll/.pitch/.yaw` 三条通道；支持 degree、unwrap、pitch ±π/2 截断。
+四元数不在 PJ4 内置目录里，而是官方 Quaternion 扩展：4 输入（w,x,y,z）→ 一个分组 topic `rpy:roll,pitch,yaw`。当前数据模型是扁平日通道，先实现为 `rpy.roll/.pitch/.yaw` 三条通道；支持 degree、unwrap、pitch ±π/2 截断。
 
 语义细节按 PJ `resources/filters/builtin_filters.luau`：
 - moving_average 不足窗口时用当前值补齐，除以完整窗口；可选按缓冲跨度居中时间戳。
@@ -806,7 +806,7 @@ public:
 
 #### 14.3.1 P0 变换内核 + 派生曲线（已完成）
 任务：
-1. 新建 `src/app/transform/`：`Processor.h`、`Catalogue.{h,cpp}`、`SisoFilters.cpp`、`QuatToRpy.cpp`、`DerivedSeries.{h,cpp}`。
+1. 新建 `src/base/ui/transform/`：`Processor.h`、`Catalogue.{h,cpp}`、`SisoFilters.cpp`、`QuatToRpy.cpp`、`DerivedSeries.{h,cpp}`。
 2. 实现 12 个 SISO + 四元数 4→3，参数用 JSON 描述，目录可查询。
 3. 字段树右键“添加变换…”；面板式编辑器：输入通道、算子、参数表单、预览（before 虚线 + after 实线）、Apply。
 4. 输出作为普通派生通道进树（每源一个“派生”分组）、进画布、可编辑/移除。
@@ -871,14 +871,14 @@ public:
 #### 14.3.5 M1 加载器 schema 化（宿主内注册已完成，外部 ABI 未做）
 
 已落地：
-1. `src/app/data_input/DataInputPlugin.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderPlugin` / `SourcePlugin` 别名。
+1. `src/base/host/extension/DataInputExtension.h` 定义统一数据输入描述：公共字段 `id/version/label/schema/capabilities`，loader 侧 `filter/formatTag/tree/hasParams/probe/defaultOptions/load`，source 侧 `kind/transport/open/poll/close`；不再保留 `LoaderExtension` / `SourceExtension` 别名。
 2. `LoaderRegistry` 注册 ULog、ArduPilot DataFlash、ASC、BLF、CSV；按后缀匹配，`loadFile()` 不再按扩展名写 `if/else`。
 3. `DataInputDialog` 完全由 schema 渲染：`enum/bool/int`、`visible_if`、动态列（`source=columns` + `column_filter`）、探测预览表、警告；新增格式只需注册 schema，不再在 app 里加对话框。
 4. CSV schema 覆盖分隔符、表头、跳行、`time.mode=row|column|combined` 及时间列选择。
-5. 删除 `src/app/shell/CsvLoaderDialog.*`。
+5. 删除 `src/base/ui/shell/CsvLoaderDialog.*`。
 
 已补（2026-11-13 复核）：
-1. 外部插件 `.json` manifest 发现 + 动态库 ABI 已落地（`PluginRuntime` / `ps_plugin_host`，DemoPlugin 回归），`PS_PLUGIN_ABI_VERSION=6`。
+1. 外部扩展 `.json` manifest 发现 + 动态库 ABI 已落地（`ExtensionRuntime` / `ps_extension_host`，DemoExtension 回归），`PS_EXTENSION_ABI_VERSION=6`。
 2. MAVLink UDP 实时流、OEM7 TCP/串口、Sim internal 已接入；MCAP 文件加载已落地；实时记录已落地（CSV/MCAP/RAW）。
 3. 实时环形缓冲由 kernel `PsStream` 承担，`LiveSession` 每通道 262144。
 4. OEM7 RAW 录制时，`StreamRecorder` 从配置 `database` 读取协议库字节写入 PSRAW1 `schema_blob`；回放不再依赖外部 database 路径。
@@ -897,7 +897,7 @@ public:
 5. **Ribbon 图标优先**：大/小按钮只留图标 + tooltip；新增网格、边框、图例、框选、放大/缩小、左右/上下拆分图标。
 6. **Dock**：标题栏可拖动浮动，拖到主窗口边缘吸附停靠；双击切换浮动；`—` 收成 26px 竖排页签，点击恢复。仍是 Qt 原生 `QDockWidget` 四区，未做 VS 式拖拽引导框/面板分组。
 
-#### 14.3.7 P4 图型 / 数据源 / 插件 / 渲染
+#### 14.3.7 P4 图型 / 数据源 / 扩展 / 渲染
 
 已落地（本轮）：
 - `CanvasWidget::PlotMode`：时间序列、XY、散点、柱状、直方图、频谱 FFT、3D 轨迹、地平仪、罗盘、表盘。
@@ -908,12 +908,12 @@ public:
 已落地（2026-11-13 复核）：
 - MCAP 文件加载（`McapReader` + `data_load_mcap`，含 zstd/lz4 chunk）；MCAP 录制（`StreamRecorder` + 最小 `McapWriter`，无 chunk/summary，标准 Python `mcap` reader 可读）。
 - MAVLink UDP、OEM7 TCP/串口、Sim internal 实时源；CSV/MCAP/RAW 三种统一录制；Record 下拉框由 `DataInputDialog` 渲染。
-- 插件 SDK：loader/source 共用 `DataInputPlugin`，外部 `.json` manifest + 动态库 ABI 已落地。
+- 扩展 SDK：loader/source 共用 `DataInputExtension`，外部 `.json` manifest + 动态库 ABI 已落地。
 
 未落地：
 - Parquet、ROS2、CBOR/MessagePack、MDF4；通用 JSON/JSONL 已由 `data_loader_json` 支持。
 - MQTT/ZMQ/WebSocket/LSL/Foxglove/PJ Bridge/WebRTC。
-- 插件市场、streamer/parser 两类独立 SDK 扩展。
+- 扩展市场、streamer/parser 两类独立 SDK 扩展。
 - 3D 曲面、GPS 地图、GPU 渲染与百万点基准。
 
 ---
@@ -934,7 +934,7 @@ public:
 - 多源合并/时间偏移：`pj_datastore/include/pj_datastore/merge_result.hpp`、`pj_runtime/include/pj_runtime/SessionManager.h`
 - 脚本引擎：`pj_scripting/src/luau_engine.cpp`、`python_engine.cpp`
 - 布局与曲线描述：`pj_plotting/core/include/pj_plotting/PlotXml.h`、`pj_runtime/include/pj_runtime/CurveDescriptor.h`
-- 插件与市场：`pj_marketplace/`、`plotjuggler_sdk`
+- 扩展与市场：`pj_marketplace/`、`plotjuggler_sdk`
 
 
 ### 14.6 实现进度（2026-11-13）
@@ -953,14 +953,14 @@ public:
 已落地：
 - `StreamRecorder` 独立于 `LiveSession`：有界队列（4096 批 / 32 MiB）、后台写线程、磁盘慢时整批丢弃并计数；默认目录 `QStandardPaths::AppDataLocation/recordings`，不可写回退 `/tmp/plotscope-recordings`。
 - 三种格式：CSV（`time,channel,value`）、MCAP（每采样点 JSON，`plotscope/value` schema 标记）、RAW（PSRAW1 原始字节）。
-- `PsSourceSink` 增加可选 `raw_batch`，ABI 6；MAVLink/OEM7 raw 字节优先交宿主，未接宿主时保留插件自带 `raw_path`。
+- `PsSourceSink` 增加可选 `raw_batch`，ABI 6；MAVLink/OEM7 raw 字节优先交宿主，未接宿主时保留扩展自带 `raw_path`。
 - `DataInputDialog` 录制格式下拉框；`MainWindow` 按 `__record_format` 启动；配置 JSON 传入 raw header。
 - `data_load_mcap` 按 `schema.name == plotscope/value` 还原单值通道，普通 MCAP 的 `{"value":x}` 不再被误判。
 - 测试：`ctest` 14/14；新增 `test_stream_recorder`；标准 Python `mcap` reader 可读录制文件。
 - 提交：`6f56ca9 feat(app): 实时数据流统一录制 StreamRecorder（CSV/MCAP/RAW）`。
 
 仍未完成：
-- 多 parser 运行时：入口插件独占 transport，其余 parser 以 `transport=external` 打开，宿主把 `raw_batch` 扇出；通道名加 `fanout.<parserId>.` 前缀。
+- 多 parser 运行时：入口扩展独占 transport，其余 parser 以 `transport=external` 打开，宿主把 `raw_batch` 扇出；通道名加 `fanout.<parserId>.` 前缀。
 - GUI 交互冒烟未做；仅 `QT_QPA_PLATFORM=offscreen` 启动存活验证；raw 回放端到端未实测。
 - MCAP writer 已按 1 MiB 聚合 Chunk，summary 重复 Schema/Channel 并写 ChunkIndex + SummaryOffset。
 
@@ -980,7 +980,7 @@ public:
 - M4：`data_loader_frame` 支持固定帧与变长帧（`length` 偏移/字节数/端序/是否含头）；`ProtocolEditorDialog` 点击字段定位 JSON 与 hex 字节。
 - P4：新增 `data_loader_rosbag2`（`.db3` 常见消息）。
 - P4：新增 `data_loader_binary`，按扩展名解析 CBOR（`.cbor`）与 MessagePack（`.msgpack/.mpk`），数值字段扁平为 `cbor.*` / `msgpack.*`，支持数组批量记录与连续多条记录。
-- M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 插件原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
+- M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 扩展原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
 - 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
 - M1 CAN：ASC/BLF 加载器新增可选 `dbc` 配置，按 `BO_`/`SG_` 解码为 `CAN<bus>.<message>.<signal>`；留空仍导原始字节。CMake 公共库加 `Dbc.cpp`，测试覆盖 `CAN2.MSG_A.byte0`。
 - M2 GNSS：新增 `data_loader_nmea`（GGA/RMC → `nmea.gga.*`/`nmea.rmc.*`）与 `data_loader_ubx`（NAV-PVT/NAV-POSLLH → `ubx.*`）；时间均归零到首样本，扩展 `.nmea/.txt/.ubx`。MDF4 仍未做。
@@ -1003,7 +1003,7 @@ public:
 7. 内核头文件不得出现任何 Qt 类型。
 8. 布局文件缺通道时保留"幽灵曲线"，不静默删除。
 9. 缓存指纹不匹配时必须**完整重解析**，不得部分复用。
-10. 插件加载失败必须可归因（ABI/SDK/平台/清单四类之一）。
+10. 扩展加载失败必须可归因（ABI/SDK/平台/清单四类之一）。
 11. 任何 UI 线程调用内核接口都必须是非阻塞的。
 
 ## 附录 B：术语

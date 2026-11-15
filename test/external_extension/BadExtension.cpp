@@ -1,4 +1,4 @@
-// 故意损坏的插件：入口存在但 ABI 版本非法。宿主必须丢弃它而不是崩溃。
+// 故意损坏的扩展：入口存在但 ABI 版本非法。宿主必须丢弃它而不是崩溃。
 #include "ps_extension_api.h"
 
 #include <cstdint>

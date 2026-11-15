@@ -3,14 +3,14 @@
 > 合并：原《功能对齐矩阵》+《PJ4 源码核对笔记》。前 9 章是能力矩阵与路线，第 10 章是源码事实与对矩阵的修正依据。
 
 口径：
-- PJ3 = `facontidavide/PlotJuggler` 3.9.3 核心 + 同仓库插件 + `PlotJuggler` 组织下的官方插件仓库。
-- PJ4 = 当前 main 核心 + `pj-official-plugins` 官方插件。
-- “对齐”不是插件数量相同，而是同一工作流可完成、同一输入结果一致、同一布局可恢复。
+- PJ3 = `facontidavide/PlotJuggler` 3.9.3 核心 + 同仓库扩展 + `PlotJuggler` 组织下的官方扩展仓库。
+- PJ4 = 当前 main 核心 + `pj-official-extensions` 官方扩展。
+- “对齐”不是扩展数量相同，而是同一工作流可完成、同一输入结果一致、同一布局可恢复。
 - 目标取 PJ3 与 PJ4 的**并集**：PJ4 丢掉的 PJ3 能力也要补，不能拿“PJ4 还没做完”当理由。
 
 状态：✅ 已有；⚠️ 部分/需验证；❌ 没有。
 
-> 2026-11-13 复核：下表已按当前代码回填。实时源（MAVLink UDP / OEM7 TCP·串口 / Sim internal）、MCAP 加载与录制、CSV/MCAP/PSRAW1 统一录制、外部插件 ABI 已落地；仍缺 MQTT/ZMQ/ROS2、MDF4、Parquet、视频同步等。
+> 2026-11-13 复核：下表已按当前代码回填。实时源（MAVLink UDP / OEM7 TCP·串口 / Sim internal）、MCAP 加载与录制、CSV/MCAP/PSRAW1 统一录制、外部扩展 ABI 已落地；仍缺 MQTT/ZMQ/ROS2、MDF4、Parquet、视频同步等。
 >
 > 2026-11-14 追加：P2 设置三项与 CSV 源别名已落地；P3 增加 1–4 输入绑定、`init/reset/step`、错误行定位、源码随 `.psl` 保存；OEM7 RAW 写 `schema_blob`。`ctest` 15/15。
 
@@ -23,7 +23,7 @@
 | MCAP | ✅ | ✅ | ✅ `data_load_mcap`：JSON channel、zstd/lz4 chunk；录制由 `StreamRecorder` 写最小 MCAP | B |
 | Parquet | ✅ | ✅ | ❌ | B |
 | MF4/MDF | ❌ | ✅ | ❌ | B |
-| BLF / candump | ⚠️ CAN 插件 | ✅ | ✅ ASC / ✅ BLF，DBC 解码待确认 | B |
+| BLF / candump | ⚠️ CAN 扩展 | ✅ | ✅ ASC / ✅ BLF，DBC 解码待确认 | B |
 | LeRobot | ❌ | ✅ | ❌ | C |
 | MP4 | ⚠️ 仅视频查看 | ✅ 作为数据源 | ❌ | C |
 | 3D（PLY/PCD） | ❌ | ✅ | ❌ | C |
@@ -63,11 +63,11 @@
 |---|---|---|---|---|
 | Transform Editor | ✅ | ✅ | ✅ 单通道滤波 + 四元数对话框、before/after 预览；链式编排 UI 未做 | A |
 | 12 个内置过滤器 | ✅ | ✅ | ✅ 内核 12 算子批处理 + 参数 UI；12 算子 golden 已覆盖 | A |
-| 四元数 → RPY | ✅ 插件 | ✅ 插件（单 topic 三列） | ✅ 4→3，三条扁平通道 `rpy.roll/.pitch/.yaw`；尚无单 topic 三列 | A |
+| 四元数 → RPY | ✅ 扩展 | ✅ 扩展（单 topic 三列） | ✅ 4→3，三条扁平通道 `rpy.roll/.pitch/.yaw`；尚无单 topic 三列 | A |
 | 自定义函数编辑器（多输入、预览、应用、存布局） | ✅ Lua | ✅ Luau | ⚠️ Lua 5.4 面板可运行、输出到画布；缺 1–4 输入绑定、源码入 `.psl`、错误行号 | B（A 后第一项） |
 | 过滤器输出作为普通通道 | ⚠️ 派生序列 | ✅ datastore topic | ✅ 写回同一 `PsDataset`，进「派生通道」组 | A |
 | 配方进布局、可移植 | ✅ XML | ✅ 内嵌源码 | ✅ `.psl` `transforms[]`，导入按序重放 | A |
-| FFT | ✅ 插件 | ✅ 插件 | ✅ 画布 FFT 图型（512 点 DFT） | — |
+| FFT | ✅ 扩展 | ✅ 扩展 | ✅ 画布 FFT 图型（512 点 DFT） | — |
 
 自定义函数编辑器不照搬 PJ 的界面，但必须保留同等能力：
 - 1–4 个输入通道 + 若干标量参数；输出单值或分组多列（如 roll/pitch/yaw）。
@@ -112,14 +112,14 @@
 | 布局保存/恢复 | ✅ | ✅ | ✅ | — |
 | 保存多源 offset/顺序 | ❌ | ✅ | ✅ `.psl` 保存每源 offset/别名 | — |
 | 保存变换配方 | ✅ | ✅ | ✅ `.psl` `transforms[]` | — |
-| CSV 数据导出 | ❌ 核心 | ✅ 插件 | ✅ 当前源快照 + 画布可见时间窗长表 | — |
-| Parquet 导出 | ❌ | ✅ 插件 | ❌ | B |
+| CSV 数据导出 | ❌ 核心 | ✅ 扩展 | ✅ 当前源快照 + 画布可见时间窗长表 | — |
+| Parquet 导出 | ❌ | ✅ 扩展 | ❌ | B |
 | PNG 导出 | ✅ 全部页签 | ⚠️ CLI/MCP | ✅ 单画布 | — |
 | 状态视图（字符串/枚举/布尔） | ❌ | ✅ | ❌ | B |
-| 2D 图像/视频/深度 | ✅ 视频插件 | ✅ 核心 | ❌ | C |
+| 2D 图像/视频/深度 | ✅ 视频扩展 | ✅ 核心 | ❌ | C |
 | 3D / TF / 点云 | ❌ | ✅ | ❌ | C |
-| 插件 SDK | ✅ C++ | ✅ C ABI | ❌ | C |
-| 插件市场 | ❌ | ✅ | ❌ | C |
+| 扩展 SDK | ✅ C++ | ✅ C ABI | ❌ | C |
+| 扩展市场 | ❌ | ✅ | ❌ | C |
 | MCP / AI 控制 | ❌ | ✅ | ❌ | C |
 | PJ3 生态 GPS/罗盘/直方图/仪表 | ⚠️ 第三方 | ⚠️ 仅 widget 仪表 | ❌ | 按场景 |
 
@@ -137,7 +137,7 @@
 MCAP、Parquet、MF4、BLF/candump 的 DBC 解码、JSON/Protobuf 解析、XY 图、状态视图、plot 级样式、Parquet 导出。
 
 ### C. 平台能力
-MQTT/ZMQ/UDP/LSL/ROS2/Foxglove/PJ Bridge/WebRTC、MCAP 录制、Luau/Python、插件 SDK 与市场、2D/3D、GPU/列式存储、MCP。
+MQTT/ZMQ/UDP/LSL/ROS2/Foxglove/PJ Bridge/WebRTC、MCAP 录制、Luau/Python、扩展 SDK 与市场、2D/3D、GPU/列式存储、MCP。
 
 ### D. 超越 PJ 的部分
 - 飞控语义：PX4 ULog 与 ArduPilot DataFlash 的参数/消息/飞行模式/估计器新息结构化视图。
@@ -160,14 +160,14 @@ MQTT/ZMQ/UDP/LSL/ROS2/Foxglove/PJ Bridge/WebRTC、MCAP 录制、Luau/Python、�
 ## 10. PJ4 源码核对（事实基线）
 
 **用途**：修正此前“对照 PJ”清单里凭 README / PJ3 文档得出的错误，作为 PlotScope 补全计划的依据。
-**核对对象**：`facontidavide/PlotJuggler` main（PJ4）、`PlotJuggler/pj-official-plugins` main。
+**核对对象**：`facontidavide/PlotJuggler` main（PJ4）、`PlotJuggler/pj-official-extensions` main。
 
 ### 10.1 PJ4 的真实分层
 
 ```
 pj_base（SDK C ABI）
 pj_datastore：列式时序存储 + 派生 DAG + 数据处理器底座
-pj_runtime：会话、目录、回放、源对齐、派生服务、插件宿主
+pj_runtime：会话、目录、回放、源对齐、派生服务、扩展宿主
 pj_scripting：Luau / Python 脚本与内置过滤器
 pj_plotting：Qwt + QRhi 绘图画布、曲线编辑、Filter Editor
 pj_app：MainWindow 外壳、布局 XML、数据树、时间轴
@@ -177,9 +177,9 @@ pj_scene2D / pj_scene3D：图像、视频、点云、TF、机器人模型
 
 关键点：**派生序列不是 UI 侧数组，而是 datastore 里的普通 topic**。过滤器作为 eager `IncrementalEngine` 节点运行，输出成新 topic，绘图、导出、布局都按普通序列处理。
 
-### 10.2 数据源：官方插件真实清单
+### 10.2 数据源：官方扩展真实清单
 
-文件加载器（`pj-official-plugins/data_load_*`）：
+文件加载器（`pj-official-extensions/data_load_*`）：
 - CSV、ULog、MCAP、Parquet、MF4/MDF、BLF、candump、LeRobot、MP4、3D 模型。
 - **没有 ROS1 bag**，**没有 ArduPilot .bin**。
 - CAN DBC 解码在 candump / BLF / MF4 三个 loader 里共用 `pj_can_dbc`。
@@ -194,7 +194,7 @@ pj_scene2D / pj_scene3D：图像、视频、点云、TF、机器人模型
 
 工具箱（`toolbox_*`）：
 - Transform Editor、Quaternion、FFT、Data Exporter、Anomaly Detector、Mosaico、Assistant Agent。
-- 说明：四元数、FFT、CSV/Parquet 导出都是**插件**，不是核心内置。
+- 说明：四元数、FFT、CSV/Parquet 导出都是**扩展**，不是核心内置。
 
 ### 10.3 过滤器：12 个内置，Luau 实现
 
@@ -213,14 +213,14 @@ pj_scene2D / pj_scene3D：图像、视频、点云、TF、机器人模型
 
 **没有低通/Butterworth 内置**；PJ4 要靠自定义脚本做。也没有通用重采样。
 
-### 10.4 四元数：官方 Quaternion 插件
+### 10.4 四元数：官方 Quaternion 扩展
 
 `toolbox_quaternion/quaternion_to_rpy.hpp`：
 - 输入顺序 `{x,y,z,w}`，但 UI 输入绑定顺序是 `w,x,y,z`，脚本里 `value=w, v1=x, v2=y, v3=z`。
 - 先归一化；roll/pitch/yaw 用标准公式；pitch 做 ±π/2 截断。
 - 支持角度制、unwrap（连续角展开）。
 - 输出是**一个 topic，三列 roll/pitch/yaw**（grouped output `topic:roll,pitch,yaw`），不是三条独立 topic。
-- 底层仍走 `pj.data_processors.v1` 的 transform API，脚本由插件生成。
+- 底层仍走 `pj.data_processors.v1` 的 transform API，脚本由扩展生成。
 
 ### 10.5 Filter Editor 的真实行为
 
@@ -253,7 +253,7 @@ pj_scene2D / pj_scene3D：图像、视频、点云、TF、机器人模型
 - 布局 `.pj4.xml`：曲线用稳定 `topic+field` 路径，X 范围存绝对纳秒，过滤器配方内嵌源码，源路径/offset/timeline 顺序/流配置都保存。
 - 状态视图 `StateTransitions`：字符串/整数/布尔序列显示为状态色带，不是曲线。
 - 2D viewer：图像/视频/深度图随游标同步；3D：TF、点云、栅格、URDF、marker。
-- 插件体系：市场四类 loader / parser / streamer / toolbox，另有独立 widget 插件族；支持市场安装、ZIP 本地安装、启用/禁用/卸载；SDK 是 C ABI。
+- 扩展体系：市场四类 loader / parser / streamer / toolbox，另有独立 widget 扩展族；支持市场安装、ZIP 本地安装、启用/禁用/卸载；SDK 是 C ABI。
 
 ### 10.8 原清单逐条修正
 
@@ -265,17 +265,17 @@ pj_scene2D / pj_scene3D：图像、视频、点云、TF、机器人模型
 | CBOR/BSON/MessagePack | 当前不支持 |
 | MQTT/WebSocket/ZeroMQ/UDP/LSL | 有 MQTT/ZMQ/UDP/LSL/ROS2/WebRTC/Foxglove；无通用 WS |
 | CAN DBC | 有，随 candump/BLF/MF4 |
-| 四元数转 RPY 是内置算子 | 是官方 toolbox 插件，输出单 topic 三列 |
+| 四元数转 RPY 是内置算子 | 是官方 toolbox 扩展，输出单 topic 三列 |
 | 低通/Butterworth | PJ4 没有内置 |
 | Lua 多输入 | 实际是 Luau；Python 可选 |
-| 直方图/GPS/姿态仪 | PJ4 核心和官方插件都没有；属 PJ3 生态，不能算缺口 |
-| ULog/JSON 导出 | 官方导出插件只有 CSV/Parquet |
+| 直方图/GPS/姿态仪 | PJ4 核心和官方扩展都没有；属 PJ3 生态，不能算缺口 |
+| ULog/JSON 导出 | 官方导出扩展只有 CSV/Parquet |
 | OpenGL 后端 | 是 QRhi GPU 画布，多后端；OpenGL 只是其一 |
 | 每曲线线宽 | PJ4 是 plot 级样式/线宽 |
 | 区间测量 | PJ4 没有专门测量工具；有的是 tracker 读数 |
 | 单画布导出 PNG | PJ4 核心无此 UI（有 CLI/MCP 截图），不能算 PJ 能力 |
 
-仍然成立的缺口：实时流与录制、插件 SDK/市场、时间轴对齐/合并、过滤器、Custom Topics、XY 图、页签复制/全屏、GPU 画布、状态视图、2D/3D 同步、布局保存变换、数据集搜索/重载/替换。
+仍然成立的缺口：实时流与录制、扩展 SDK/市场、时间轴对齐/合并、过滤器、Custom Topics、XY 图、页签复制/全屏、GPU 画布、状态视图、2D/3D 同步、布局保存变换、数据集搜索/重载/替换。
 
 ### 10.9 对 PlotScope 计划的修正
 
@@ -294,27 +294,27 @@ pj_scene2D / pj_scene3D：图像、视频、点云、TF、机器人模型
 - `pj_plotting/CLAUDE.md`、`FilterEditorPanel.h`、`FilteredCurveAdapter.h`、`CurveTracker.h`、`PlotWidget.cpp`、`PlotDocker.cpp`
 - `pj_app/CLAUDE.md`、`CurveListPanel.h`、`SourceTimelineController.h`、`LayoutXml.h`
 - `pj_marketplace/README.md`
-- `pj-official-plugins`: `data_load_*`、`data_stream_*`、`parser_*`、`toolbox_quaternion`、`toolbox_transform_editor`、`toolbox_fft`、`toolbox_data_exporter`
+- `pj-official-extensions`: `data_load_*`、`data_stream_*`、`parser_*`、`toolbox_quaternion`、`toolbox_transform_editor`、`toolbox_fft`、`toolbox_data_exporter`
 
 
 ### 10.11 PJ3→PJ4 迁移欠账（官方自述）
 
-PJ4 是平台级重写：SDK 换 C ABI、插件全部重制、数据层换列式存储。官方插件仓库的 `PORTING_PLAN.md` 就是逐插件对比 PJ3 的欠账表：
+PJ4 是平台级重写：SDK 换 C ABI、扩展全部重制、数据层换列式存储。官方扩展仓库的 `PORTING_PLAN.md` 就是逐扩展对比 PJ3 的欠账表：
 
-- 统计：12 个移植插件，**46 项逐插件缺口 + 11 项横切缺口**；其中 CRITICAL 3、HIGH 16、MEDIUM 17、LOW 10。
+- 统计：12 个移植扩展，**46 项逐扩展缺口 + 11 项横切缺口**；其中 CRITICAL 3、HIGH 16、MEDIUM 17、LOW 10。
 - 3 个 CRITICAL 已修：MQTT TLS 证书、Protobuf 内嵌时间戳、PJ Bridge 的 u16/u32 线格式。
 - 大多数 HIGH 已补：CSV 日期格式帮助、Parquet 时区/排序、Protobuf 枚举/字符串字段、JSON 的 CBOR/BSON/MessagePack、Foxglove 断线重连、PJ Bridge 心跳等。
-- **仍未收尾的**：ULog 的参数/Info/日志三页对话框——数据已写成 `_parameters` / `_info` / `_log` topic，但宿主没有状态面板 UI；部分流插件的暂停/恢复、主题列表刷新、错误弹窗仍靠宿主补。
+- **仍未收尾的**：ULog 的参数/Info/日志三页对话框——数据已写成 `_parameters` / `_info` / `_log` topic，但宿主没有状态面板 UI；部分流扩展的暂停/恢复、主题列表刷新、错误弹窗仍靠宿主补。
 
-PJ3 有、PJ4 官方插件里直接没有的：
+PJ3 有、PJ4 官方扩展里直接没有的：
 - **StatePublisherCSV / StatePublisherZMQ**：向机器人回写状态/指令。PJ4 明确“不能向机器人发布”。
-- **ZCM** 插件。
+- **ZCM** 扩展。
 - **通用 WebSocket 流**：PJ4 只剩 Foxglove Bridge 和 PJ Bridge 两种协议专用的 WS。
 - **Lua Editor**：被 `toolbox_transform_editor` 的自定义函数/脚本编辑器替代，形态变了，不是原样保留。
 - **ROS1 传输链路**：PJ4 的 `parser_ros` 仍认 `ros1msg` schema，但没有 ROS1 流/连接器；PJ3 的 ParserROS + 通用 WS 组合没了。
 - **VideoViewer**：被核心 2D viewer（图像/视频/深度）取代，能力是增强不是丢失。
 
 所以：
-- **“PJ4 没来得及完善 PJ3 功能”在插件生态、发布链路、旧格式兼容上是真的**，官方迁移表就是证据。
+- **“PJ4 没来得及完善 PJ3 功能”在扩展生态、发布链路、旧格式兼容上是真的**，官方迁移表就是证据。
 - **但不是整体倒退**：核心新增了数据处理器、源时间轴、页签复制/全屏、2D/3D、GPU 画布、市场、录制、MCP，这些 PJ3 没有。
 - 对我们最有用的结论：**PJ3 当“成熟分析交互”的参考，PJ4 当“架构与数据模型”的参考**。像直方图、GPS、姿态仪这些 PJ3 第三方生态功能，不能拿 PJ4 当缺口标准；而发布、ZCM、通用 WS、ULog 参数页这类，确实是 PJ4 的欠账，我们可以按需做，但不必为了“对标 PJ4”而做。

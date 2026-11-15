@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-/* 插件侧解析结果的通用数据结构：解析器只管产出通道，不碰宿主 UI。 */
+/* 扩展侧解析结果的通用数据结构：解析器只管产出通道，不碰宿主 UI。 */
 struct PsChannelData
 {
     std::string name;
@@ -18,7 +18,7 @@ struct PsChannelData
     std::vector<double> v;
 };
 
-/* 把通道列表交给内核通用 dataset API，插件不直接构造 PsDataset。 */
+/* 把通道列表交给内核通用 dataset API，扩展不直接构造 PsDataset。 */
 PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err,
                           const PsHostApi *host);
 

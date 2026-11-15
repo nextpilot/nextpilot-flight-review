@@ -320,7 +320,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
             return true;
         }
 
-        // 流 / 回放插件进数据源列表。
+        // 流 / 回放扩展进数据源列表。
         if (!(caps & (PS_INPUT_STREAM | PS_INPUT_REPLAY)))
             return false;
         const QString id = manifest.value(QStringLiteral("id")).toString();
@@ -514,7 +514,7 @@ QStringList DataInputRegistry::scanExtensions(const QStringList &dirs)
             p.descriptor->family != PS_FAMILY_DATA_INPUT)
             continue;
         if (!registerDescriptor(p.descriptor, QString::fromStdString(p.packageDir)))
-            errors << QStringLiteral("%1：数据输入插件注册失败").arg(QString::fromStdString(p.library));
+            errors << QStringLiteral("%1：数据输入扩展注册失败").arg(QString::fromStdString(p.library));
     }
     for (const std::string &e : rt.errors())
         errors << QString::fromStdString(e);
@@ -527,7 +527,7 @@ const DataInputEntry *DataInputRegistry::findFileBySuffix(const QString &suffix)
     for (const DataInputEntry &p : m_fileEntries)
         if (p.extensions.contains(dot, Qt::CaseInsensitive))
             return &p;
-    // 未知扩展名兜底给 CSV；解析失败由插件报错。
+    // 未知扩展名兜底给 CSV；解析失败由扩展报错。
     for (const DataInputEntry &p : m_fileEntries)
         if (p.id == QLatin1String("data_loader_csv"))
             return &p;

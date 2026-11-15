@@ -37,6 +37,6 @@ struct CsvTable
     std::vector<std::vector<double>> columns; // [0] 是秒
 };
 
-/* CSV 插件的探测与解析都在插件内完成。 */
+/* CSV 扩展的探测与解析都在扩展内完成。 */
 bool psCsvProbeFile(const char *path, char forcedDelimiter, CsvProbe &out, std::string &err);
 bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std::string &err);

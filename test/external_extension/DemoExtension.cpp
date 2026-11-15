@@ -1,4 +1,4 @@
-// 外部插件样例：只导出 ps_extension_entry，不链接内核，也不碰 Qt。
+// 外部扩展样例：只导出 ps_extension_entry，不链接内核，也不碰 Qt。
 #include "ps_extension_api.h"
 
 #include <cstdint>
@@ -9,7 +9,7 @@ namespace {
 
 int32_t demoLoad(const char *, const char *, const PsHostApi *, void **, char *err, uint32_t cap)
 {
-    std::snprintf(err, cap, "demo 插件只验证装载，不提供数据");
+    std::snprintf(err, cap, "demo 扩展只验证装载，不提供数据");
     return -1;
 }
 

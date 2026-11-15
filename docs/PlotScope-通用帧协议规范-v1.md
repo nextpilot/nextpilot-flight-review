@@ -301,7 +301,7 @@ CRC 参数：`poly/init/refin/refout/xorout`。
 
 ## 13. 编辑器
 
-协议文件 `.psproto` 归 app 所有，加载插件只执行协议。Ribbon 提供三个入口：
+协议文件 `.psproto` 归 app 所有，加载扩展只执行协议。Ribbon 提供三个入口：
 
 - **新建协议**：在 app config `protocols/` 下生成带时间戳的 `new-yyyyMMdd-HHmmss.psproto`，写入空白顺序协议并打开。
 - **打开编辑**：选择已有 `.psproto`，进入同一编辑器。

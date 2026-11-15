@@ -216,7 +216,7 @@ int main(int argc, char **argv)
         assert(magic == QByteArrayLiteral("PSRAW1"));
     }
 
-    // OEM7 原始字节回放：同一个 OEM7 插件，filepath 模式；
+    // OEM7 原始字节回放：同一个 OEM7 扩展，filepath 模式；
     // database 已嵌入 raw 头，这里故意不再传 database。
     void *rh = v->create();
     assert(rh);

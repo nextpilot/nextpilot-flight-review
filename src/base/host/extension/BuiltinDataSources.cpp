@@ -47,7 +47,7 @@ ComponentManifest BuiltinDataSourcesComponent::manifest() const
             {QStringLiteral("data_source")}};
 }
 
-void BuiltinDataSourcesComponent::contribute(Registry &registry, const HostServices &)
+void BuiltinDataSourcesComponent::contribute(Registry &registry, const HostContext &)
 {
     registry.addDataSource(source(ps_extension_entry_data_loader_csv(), {QStringLiteral("file")}));
     registry.addDataSource(source(ps_extension_entry_data_loader_ulog(), {QStringLiteral("file")}));

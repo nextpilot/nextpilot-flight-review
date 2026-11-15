@@ -42,7 +42,7 @@ int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
 
-    // 直接走通用 dataset API，格式解析属于插件，基准不依赖 CSV。
+    // 直接走通用 dataset API，格式解析属于扩展，基准不依赖 CSV。
     PsDataset *ds = ps_dataset_new();
     std::mt19937 rng(42);
     std::normal_distribution<double> noise(0.0, 0.35);

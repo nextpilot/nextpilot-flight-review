@@ -1,5 +1,5 @@
-//! PlotScope 插件 ABI 的 Rust 镜像。
-//! 只描述 `ps_extension_api.h` 的 C 布局；不依赖 ps-ndf / ps-abi，插件不会静态链接第二份 kernel。
+//! PlotScope 扩展 ABI 的 Rust 镜像。
+//! 只描述 `ps_extension_api.h` 的 C 布局；不依赖 ps-ndf / ps-abi，扩展不会静态链接第二份 kernel。
 
 use std::ffi::c_void;
 use std::os::raw::c_char;

@@ -9,7 +9,7 @@ class CustomProtocolComponent : public IComponent
 {
 public:
     ComponentManifest manifest() const override;
-    void contribute(Registry &registry, const HostServices &host) override;
+    void contribute(Registry &registry, const HostContext &host) override;
 };
 
 } // namespace ps::components

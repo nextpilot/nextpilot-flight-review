@@ -24,7 +24,7 @@ ExtensionDialogEngine::ExtensionDialogEngine(const DataInputEntry &entry, const 
     if (!f.open(QIODevice::ReadOnly))
     {
         auto *lay = new QVBoxLayout(this);
-        lay->addWidget(new QLabel(QStringLiteral("插件 UI 打不开：%1").arg(entry.uiDialog), this));
+        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 打不开：%1").arg(entry.uiDialog), this));
         return;
     }
     QWidget *w = loader.load(&f, this);
@@ -32,7 +32,7 @@ ExtensionDialogEngine::ExtensionDialogEngine(const DataInputEntry &entry, const 
     if (!w)
     {
         auto *lay = new QVBoxLayout(this);
-        lay->addWidget(new QLabel(QStringLiteral("插件 UI 加载失败：%1").arg(entry.uiDialog), this));
+        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 加载失败：%1").arg(entry.uiDialog), this));
         return;
     }
 
@@ -74,6 +74,6 @@ ExtensionDialogEngine::ExtensionDialogEngine(const DataInputEntry &entry, const 
     Q_UNUSED(entry);
     Q_UNUSED(path);
     auto *lay = new QVBoxLayout(this);
-    lay->addWidget(new QLabel(QStringLiteral("当前构建缺少 Qt6 UiTools，插件 .ui 无法加载"), this));
+    lay->addWidget(new QLabel(QStringLiteral("当前构建缺少 Qt6 UiTools，扩展 .ui 无法加载"), this));
 #endif
 }

@@ -138,7 +138,7 @@ int main(int argc, char **argv)
     v->stop(eh);
     v->destroy(eh);
 
-    // 原始文件由同一个 MAVLink 插件回放，不依赖新 loader 插件。
+    // 原始文件由同一个 MAVLink 扩展回放，不依赖新 loader 扩展。
     void *rh = v->create();
     assert(rh);
     assert(v->bind(rh, services, &perr));
@@ -153,7 +153,7 @@ int main(int argc, char **argv)
     v->stop(rh);
     v->destroy(rh);
 
-    // .tlog：8 字节时间戳 + MAVLink 帧，同一个插件原生回放。
+    // .tlog：8 字节时间戳 + MAVLink 帧，同一个扩展原生回放。
     const QString tlogPath = rawDir.filePath(QStringLiteral("sample.tlog"));
     {
         QFile tlog(tlogPath);

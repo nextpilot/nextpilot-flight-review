@@ -24,8 +24,10 @@ struct ComponentManifest
     QStringList capabilities;
 };
 
-struct HostServices
+struct HostContext
 {
+    // 宿主注入给组件的运行时上下文（窗口 / 日志 / 配置目录）。
+    // 与 HostApi 区分：HostApi 是扩展回调宿主的 C ABI 函数表。
     std::function<QWidget *()> window;
     std::function<void(const QString &)> log;
     std::function<QString()> configDir;
@@ -116,7 +118,7 @@ class IComponent
 public:
     virtual ~IComponent() = default;
     virtual ComponentManifest manifest() const = 0;
-    virtual void contribute(Registry &registry, const HostServices &host) = 0;
+    virtual void contribute(Registry &registry, const HostContext &host) = 0;
 };
 
 enum class ExtensionType

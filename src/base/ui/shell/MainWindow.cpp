@@ -1126,7 +1126,7 @@ private:
     int m_cols = 1;
 };
 
-// 共享 transport 解析器：原始字节由主插件扇出，通道名加解析器前缀避免撞名。
+// 共享 transport 解析器：原始字节由主扩展扇出，通道名加解析器前缀避免撞名。
 struct FanoutParser
 {
     QString id;
@@ -1254,10 +1254,10 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
     resize(1440, 880);
 
-    ps::components::HostServices hostServices;
-    hostServices.window = [this] { return static_cast<QWidget *>(this); };
-    hostServices.log = [this](const QString &text) { log(text); };
-    hostServices.configDir = [] {
+    ps::components::HostContext hostContext;
+    hostContext.window = [this] { return static_cast<QWidget *>(this); };
+    hostContext.log = [this](const QString &text) { log(text); };
+    hostContext.configDir = [] {
         return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     };
     for (const ps::components::ExtensionEntry &entry :
@@ -1265,7 +1265,7 @@ MainWindow::MainWindow(QWidget *parent)
     {
         std::unique_ptr<ps::components::IComponent> component = entry.factory();
         if (component)
-            component->contribute(m_components, hostServices);
+            component->contribute(m_components, hostContext);
     }
     for (const ps::components::DataSourceSpec &source : m_components.dataSources())
         DataInputRegistry::instance().registerDescriptor(source.descriptor);
@@ -2382,7 +2382,7 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent)
             connect(a, &QAction::triggered, this, [this, id = sp.id] { connectLiveSource(id); });
         }
         if (menu.isEmpty())
-            menu.addAction(QStringLiteral("没有可用的实时源插件"))->setEnabled(false);
+            menu.addAction(QStringLiteral("没有可用的实时源扩展"))->setEnabled(false);
         menu.exec(liveBtn->mapToGlobal(QPoint(0, liveBtn->height())));
     });
     connect(recentBtn, &QPushButton::clicked, this, [this, recentBtn] {
@@ -4345,7 +4345,7 @@ void MainWindow::showSourceProps(QWidget *row)
     rows.append({QStringLiteral("状态"), state.isEmpty() ? QStringLiteral("—") : state});
     rows.append({QStringLiteral("位置"), src->path.isEmpty() ? src->config : src->path});
     if (src->live)
-        rows.append({QStringLiteral("插件"), src->sourceId});
+        rows.append({QStringLiteral("扩展"), src->sourceId});
     rows.append({QStringLiteral("通道"), QString::number(channels)});
     rows.append({QStringLiteral("参数"), QString::number(src->params.size())});
     rows.append({QStringLiteral("消息"), QString::number(src->msgs.size())});
@@ -5632,7 +5632,7 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
     QString opts;
     if (!entry->uiDialog.isEmpty())
     {
-        // 插件自带 .ui：通用引擎加载，app 不认识任何控件
+        // 扩展自带 .ui：通用引擎加载，app 不认识任何控件
         if (interactive)
         {
             ExtensionDialogEngine dlg(*entry, path, this);
@@ -5698,7 +5698,7 @@ bool MainWindow::loadFile(const QString &path, bool interactive)
     if (fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0 && !src.channels.isEmpty())
         logMsgs = ulogLogMessages(src.path, src.channels.first()->time[0]);
 
-    // 参数：由插件提供 JSON，app 不认格式；可缓存时与数据集同 key 落盘。
+    // 参数：由扩展提供 JSON，app 不认格式；可缓存时与数据集同 key 落盘。
     if (entry->hasParams && entry->paramsJson)
     {
         QString json;

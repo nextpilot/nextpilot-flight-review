@@ -1,9 +1,9 @@
-# PlotScope 组件与插件扩展模型 v1
+# PlotScope 组件与扩展扩展模型 v1
 
 ## 一句话
 
 - **内部组件：宿主给 C++ API，组件直接调用，自己造控件。**
-- **外部插件：插件给 JSON manifest，app 解析，app 造控件。**
+- **外部扩展：扩展给 JSON manifest，app 解析，app 造控件。**
 
 内部组件没有 JSON manifest；`ComponentManifest` 只是 C++ 结构体，用于展示和依赖检查，不参与解析。
 
@@ -37,7 +37,7 @@ void contribute(Registry &registry, const HostServices &host) override
 }
 ```
 
-外部插件写法：
+外部扩展写法：
 
 ```json
 {
@@ -54,7 +54,7 @@ void contribute(Registry &registry, const HostServices &host) override
 
 ### DataSource 统一模型
 
-PJ4 中 `data_loader` 与 `data_streamer` 共用 `DataSourcePluginBase`，文件与实时流由 capabilities / manifest 声明，不拆两个基类。PlotScope 对齐这一模型：
+PJ4 中 `data_loader` 与 `data_streamer` 共用 `DataSourceExtensionBase`，文件与实时流由 capabilities / manifest 声明，不拆两个基类。PlotScope 对齐这一模型：
 
 ```cpp
 struct DataSourceSpec
@@ -82,13 +82,13 @@ const QVector<DataSourceSpec> &dataSources() const;
 当前落地：
 
 - `Registry` 只有 `addDataSource / dataSources()`，`addLoader` 已删除；
-- `DataInputRegistry` 构造函数不再写死任何 `ps_plugin_entry_*`；
+- `DataInputRegistry` 构造函数不再写死任何 `ps_extension_entry_*`；
 - 过渡组件 `BuiltinDataSourcesComponent` 集中登记现有内建入口，后续由 GNSS / FlightLog 组件接管；
 - `MainWindow` 只遍历 `m_components.dataSources()` 注册。
 
 ## 第二层：控件创建
 
-| 类型 | 内部组件 | 外部插件 |
+| 类型 | 内部组件 | 外部扩展 |
 |---|---|---|
 | 菜单结构 | 声明 | 声明 |
 | 复杂控件 | 组件自己 `new` | app 按白名单创建 |
@@ -135,7 +135,7 @@ struct DockContribution
 
 - `create` 非空：内部组件自己返回 `QDockWidget*`，宿主统一 `addDockWidget`、设置 `objectName`、可见性。
 - `create` 为空：宿主按 `id` 构建内置面板，如 `dock.src`、`dock.prop`、`dock.tree`、`dock.video`、`dock.script`、`dock.log`。
-- 外部插件不填 `create`，只声明 `widget` 类型。
+- 外部扩展不填 `create`，只声明 `widget` 类型。
 
 内置 Dock 当前由 `ShellComponent` 声明：
 
@@ -182,7 +182,7 @@ struct RibbonItem
 - 简单按钮走 `items`，宿主创建 `QAction` 并查 `CommandRegistry`。
 - 复杂控件走 `RibbonPanel.widget`，宿主按 ID 构建，如 `sourceGallery / plotGallery / layoutPicker / viewToggles`。
 - 内部组件需要自定义复杂控件时，可后续扩展 `widgetFactory`，由组件返回 `QWidget*`。
-- 外部插件只允许声明白名单 `widget` 类型。
+- 外部扩展只允许声明白名单 `widget` 类型。
 
 ## 安全与性能
 
@@ -200,22 +200,22 @@ struct RibbonItem
 - 有编译期类型检查；
 - 字符串命令 ID 需要启动时校验，拼错写日志。
 
-外部插件：
+外部扩展：
 
 - JSON 必须过 schema；
 - `widget` 必须白名单；
 - `action` 必须已在 `CommandRegistry` 注册；
 - 不执行 manifest 中的脚本、不加载任意类名、不允许任意 `.so` 路径；
-- 插件崩溃不能带崩 app，UI 创建和销毁由宿主兜底。
+- 扩展崩溃不能带崩 app，UI 创建和销毁由宿主兜底。
 
 ## 后续组件
 
 ### GNSS 组件（已落地首版）
 
-`src/components/gnss` 现在是单一 target `ps_gnss`，已迁入 NMEA/UBX/OEM7，删除目录后 app 仍可构建。
+`src/extensions/builtin/gnss` 现在是单一 target `ps_gnss`，已迁入 NMEA/UBX/OEM7，删除目录后 app 仍可构建。
 
 ```text
-src/components/gnss/
+src/extensions/builtin/gnss/
   loaders/nmea
   loaders/ubx
   loaders/novatel
@@ -231,7 +231,7 @@ src/components/gnss/
 ### 飞控日志组件
 
 ```text
-src/components/flightlog/
+src/extensions/builtin/flightlog/
   loaders/ulog
   loaders/apbin
   sources/mavlink
@@ -245,7 +245,7 @@ CSV、MCAP、ROS bag、MDF4 不并入，仍留在通用 loader。
 
 ## 验收
 
-- 删除 `src/components/gnss` 或 `src/components/flightlog` 后，app 仍可构建运行，只缺对应功能。
+- 删除 `src/extensions/builtin/gnss` 或 `src/extensions/builtin/flightlog` 后，app 仍可构建运行，只缺对应功能。
 - 内部组件不出现 `MainWindow*` 参数。
-- 外部插件 manifest 缺字段、未知命令、未知 widget 时，启动日志报错且不影响其他页面。
+- 外部扩展 manifest 缺字段、未知命令、未知 widget 时，启动日志报错且不影响其他页面。
 - 内置 Ribbon 六页、六个 Dock 均由贡献生成，`MainWindow` 不再直接 `new QAction` / `new QDockWidget` 业务面板。

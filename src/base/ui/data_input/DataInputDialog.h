@@ -21,8 +21,8 @@ class QVBoxLayout;
 class QWidget;
 
 // 数据输入统一配置框：DataInput = Transport + Parser(s) + Options。
-//   Transport 由 APP 按 supported/defaultURI 渲染，插件只声明支持哪些、默认值；
-//   Parser 由插件 schema 提供字段，可多选，每个 parser 展示自己的配置。
+//   Transport 由 APP 按 supported/defaultURI 渲染，扩展只声明支持哪些、默认值；
+//   Parser 由扩展 schema 提供字段，可多选，每个 parser 展示自己的配置。
 class DataInputDialog : public QDialog
 {
     Q_OBJECT

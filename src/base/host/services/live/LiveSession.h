@@ -30,7 +30,7 @@ public:
 
     using RawTap = std::function<void(const char *topic, const char *encoding,
                                       int64_t timestampNs, const uint8_t *data, uint32_t size)>;
-    // 共享 transport：把主插件收到的原始字节扇出给外部解析器。
+    // 共享 transport：把主扩展收到的原始字节扇出给外部解析器。
     void setRawTap(RawTap tap);
     bool startRecording(StreamRecorder::Format format, const QString &configJson,
                         QString *path, QString *err);

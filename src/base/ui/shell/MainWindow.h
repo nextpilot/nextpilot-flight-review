@@ -62,7 +62,7 @@ struct SourceData
     QVector<TransformRecipe> recipes;
     QWidget *row = nullptr;
 
-    // 实时源：ds 为空，通道视图由 LiveSession 持有；handle 归插件所有。
+    // 实时源：ds 为空，通道视图由 LiveSession 持有；handle 归扩展所有。
     bool live = false;
     bool paused = false;       // 仅实时源：暂停轮询
     bool plotted = false;

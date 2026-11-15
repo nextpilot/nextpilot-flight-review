@@ -36,7 +36,7 @@ typedef struct PsChannelInfo {
     const double *value;
 } PsChannelInfo;
 
-/* ---- 数据集只由插件/缓存通过通用构造 API 生成 ---- */
+/* ---- 数据集只由扩展/缓存通过通用构造 API 生成 ---- */
 
 uint32_t             ps_dataset_channel_count(const PsDataset *ds);
 const PsChannelInfo *ps_dataset_channel(const PsDataset *ds, uint32_t index);
