@@ -2,6 +2,8 @@
 #include "LegacyFileInput.hpp"
 #include "PsLoaderCommon.h"
 
+#include <zlib.h>
+
 #include <QFile>
 #include <QString>
 
@@ -74,41 +76,72 @@ struct Channel
     std::string name;
     std::string unit;
     uint32_t byteOffset = 0;
+    uint32_t bitOffset = 0;
     uint32_t bitCount = 0;
     uint8_t type = 0;       // 0 unsigned / 2 signed / 4 float
     uint8_t channelType = 0;
     int64_t conversion = 0;
 };
 
+bool inflatePayload(const std::vector<uint8_t> &in, std::vector<uint8_t> &out)
+{
+    if (in.empty())
+        return false;
+    z_stream zs{};
+    if (inflateInit(&zs) != Z_OK)
+        return false;
+    zs.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(in.data()));
+    zs.avail_in = static_cast<uInt>(in.size());
+    out.clear();
+    out.resize(1u << 20);
+    int rc = Z_OK;
+    while (rc == Z_OK)
+    {
+        if (zs.total_out >= out.size())
+            out.resize(out.size() * 2);
+        zs.next_out = reinterpret_cast<Bytef *>(out.data() + zs.total_out);
+        zs.avail_out = static_cast<uInt>(out.size() - zs.total_out);
+        rc = inflate(&zs, Z_NO_FLUSH);
+    }
+    const size_t produced = zs.total_out;
+    inflateEnd(&zs);
+    if (rc != Z_STREAM_END)
+        return false;
+    out.resize(produced);
+    return true;
+}
+
 double readValue(const uint8_t *rec, const Channel &ch)
 {
     const uint8_t *p = rec + ch.byteOffset;
     const uint32_t n = ch.bitCount;
+    if (n == 0 || n > 64)
+        return 0;
     if (ch.type == 4)
     {
+        if (ch.bitOffset != 0)
+            return 0;
         if (n == 32) { float f; std::memcpy(&f, p, 4); return f; }
         if (n == 64) { double d; std::memcpy(&d, p, 8); return d; }
+        return 0;
     }
+
+    uint64_t raw = 0;
+    const uint32_t bytes = (ch.bitOffset + n + 7) / 8;
+    if (bytes > 8)
+        return 0;
+    std::memcpy(&raw, p, bytes);
+    raw >>= ch.bitOffset;
+    if (n < 64)
+        raw &= (uint64_t(1) << n) - 1;
+
     if (ch.type == 2)
     {
-        switch (n)
-        {
-        case 8: return static_cast<int8_t>(*p);
-        case 16: { int16_t v; std::memcpy(&v, p, 2); return v; }
-        case 32: { int32_t v; std::memcpy(&v, p, 4); return v; }
-        case 64: { int64_t v; std::memcpy(&v, p, 8); return static_cast<double>(v); }
-        default: break;
-        }
+        if (n < 64 && (raw & (uint64_t(1) << (n - 1))))
+            raw |= ~((uint64_t(1) << n) - 1);
+        return static_cast<double>(static_cast<int64_t>(raw));
     }
-    switch (n)
-    {
-    case 8: return *p;
-    case 16: { uint16_t v; std::memcpy(&v, p, 2); return v; }
-    case 32: { uint32_t v; std::memcpy(&v, p, 4); return v; }
-    case 64: { uint64_t v; std::memcpy(&v, p, 8); return static_cast<double>(v); }
-    default: break;
-    }
-    return 0;
+    return static_cast<double>(raw);
 }
 
 int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **dataset,
@@ -161,12 +194,24 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
                 break;
             const uint64_t nextCg = cg.links[0];
             const uint64_t firstCn = cg.links[1];
-            if (!readBlock(file, dtOff, dt) || dt.id != "##DT")
+            if (!readBlock(file, dtOff, dt) || (dt.id != "##DT" && dt.id != "##DZ"))
             {
                 cgOff = nextCg;
                 continue;
             }
+            std::vector<uint8_t> rawData;
+            const std::vector<uint8_t> *dataBody = &dt.body;
+            if (dt.id == "##DZ")
+            {
+                if (!inflatePayload(dt.body, rawData))
+                {
+                    cgOff = nextCg;
+                    continue;
+                }
+                dataBody = &rawData;
+            }
             const uint64_t cycles = cg.body.size() >= 16 ? u64(cg.body.data() + 8) : 0;
+            const std::string group = cg.links.size() > 3 ? readText(file, cg.links[3]) : std::string();
 
             std::vector<Channel> chans;
             Channel master;
@@ -184,6 +229,7 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
                 const uint32_t bitOffset = cn.body.size() > 3 ? cn.body[3] : 0;
                 ch.byteOffset = cn.body.size() >= 8 ? u32(cn.body.data() + 4) : 0;
                 ch.byteOffset += bitOffset / 8;
+                ch.bitOffset = bitOffset % 8;
                 ch.bitCount = cn.body.size() >= 12 ? u32(cn.body.data() + 8) : 0;
                 ch.name = readText(file, cn.links[2]);
                 ch.unit = readText(file, cn.links[5]);
@@ -207,7 +253,7 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
             }
 
             const size_t recordSize = static_cast<size_t>(recordIdSize) + maxByte;
-            if (!recordSize || dt.body.size() < cycles * recordSize)
+            if (!recordSize || dataBody->size() < cycles * recordSize)
             {
                 cgOff = nextCg;
                 continue;
@@ -215,13 +261,14 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
 
             for (size_t i = 0; i < cycles; ++i)
             {
-                const uint8_t *rec = dt.body.data() + i * recordSize + recordIdSize;
+                const uint8_t *rec = dataBody->data() + i * recordSize + recordIdSize;
                 const double t = hasMaster ? readValue(rec, master) : static_cast<double>(i);
                 for (const Channel &ch : chans)
                 {
-                    acc[ch.name].push_back({t, readValue(rec, ch)});
+                    const std::string name = group.empty() ? ch.name : group + "." + ch.name;
+                    acc[name].push_back({t, readValue(rec, ch)});
                     if (!ch.unit.empty())
-                        units[ch.name] = ch.unit;
+                        units[name] = ch.unit;
                 }
             }
             cgOff = nextCg;

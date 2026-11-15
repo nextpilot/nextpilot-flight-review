@@ -22,6 +22,8 @@ PlotScope 是一个面向无人机、嵌入式与车辆研发的桌面日志分�
 | Vector CAN `.asc` / `.blf` | 无 DBC 时输出报文字节原始值与周期，不做物理量猜测 |
 | CSV / TSV / TXT | 自动探测分隔符、表头和时间列；支持行号、指定时间列、日期+时间列合并 |
 | MCAP `.mcap` | JSON channel，支持未压缩 / zstd / lz4 chunk；录制文件可直接回放 |
+| MDF4 `.mf4` / `.mdf4` | 读取通道组与主时间轴，支持 `##DT` 原始块与 `##DZ` zlib 压缩块 |
+| NMEA / UBX | GNSS 组件按语句/消息展开通道，时间归零到首样本 |
 
 加载器由 schema 驱动，新增格式不需要在 app 里单独写对话框。
 
@@ -57,7 +59,7 @@ PlotScope 是一个面向无人机、嵌入式与车辆研发的桌面日志分�
 
 - 3D 曲面、GPS 地图尚未实现；3D 轨迹是轻量正交投影，不是完整 3D 引擎。
 - 脚本输出不写回 `.psl`，重启后不会恢复。
-- MAVLink tlog 原生解析、MDF4、Parquet、NMEA/UBX、MQTT/ZMQ/ROS2/WebSocket/LSL 尚未接入。
+- MAVLink tlog 原生解析、Parquet、MQTT/ZMQ/ROS2/WebSocket/LSL 尚未接入。
 - MCAP writer 只写最小结构（无 chunk/summary/索引）；标准 reader 可读，大文件索引性能未验证。
 - OEM7 的宿主 RAW 录制尚未把 database schema_blob 写进文件头，回放需在配置里给 database 路径。
 - `.psl` 仍是 JSON v1，未迁移到 PJ4 的 XML 工作区格式。

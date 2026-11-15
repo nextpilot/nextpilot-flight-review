@@ -119,6 +119,8 @@ int main()
         return 1;
     if (!loadAndCheck(ps_extension_entry_data_loader_mdf4(), fix + "/demo.mf4", 2))
         return 1;
+    if (!loadAndCheck(ps_extension_entry_data_loader_mdf4(), fix + "/demo_compressed.mf4", 2))
+        return 1;
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
 #ifdef PS_HAVE_CUSTOM_PROTOCOL
     {
