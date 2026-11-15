@@ -55,6 +55,7 @@ public:
     void runScript(bool apply = false);
     QString defaultLayoutPath() const;
     void attachLogView(QPlainTextEdit *view);
+    void bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

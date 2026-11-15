@@ -2329,83 +2329,6 @@ QDockWidget *MainWindow::buildDockWidget(const QString &id, QWidget *parent, con
     });
     return treeDock;
     }
-    if (id == QLatin1String("dock.script"))
-    {
-    // 右下：脚本
-    auto *scriptDock = new QDockWidget(QStringLiteral("脚本 · Lua 5.4"), this);
-    scriptDock->setObjectName(QStringLiteral("dock.script"));
-    if (!icon.isEmpty())
-        scriptDock->setProperty("psIcon", icon);
-    auto *scriptHost = new QWidget(scriptDock);
-    auto *scriptLay = new QVBoxLayout(scriptHost);
-    scriptLay->setContentsMargins(0, 0, 0, 0);
-    m_script = new QPlainTextEdit(scriptHost);
-    QFont scriptFont(QStringLiteral("monospace"));
-    scriptFont.setStyleHint(QFont::Monospace);
-    scriptFont.setPixelSize(12);
-    m_script->setFont(scriptFont);
-    m_script->setTabStopDistance(28);
-    m_script->setPlainText(QStringLiteral(
-        "-- 绑定面板可选 1–4 个输入，v1..v4 或 ps.input(n)\n"
-        "rate = ps.derivative(ps.input(1), ps.time())\n"
-        "out = ps.movingAvg(rate, 5)\n"
-        "ps.plot(\"roll_rate\", out)\n"));
-    auto *bindRow = new QHBoxLayout;
-    bindRow->addWidget(new QLabel(QStringLiteral("绑定"), scriptHost));
-    for (int i = 0; i < 4; ++i)
-    {
-        auto *cb = new QComboBox(scriptHost);
-        cb->addItem(QStringLiteral("（未绑定）"), QString());
-        cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        cb->setMinimumContentsLength(8);
-        bindRow->addWidget(cb, 1);
-        m_scriptInputs[i] = cb;
-    }
-    scriptLay->addLayout(bindRow);
-
-    // init(params)：两列表单，名称 + 数值。
-    auto *paramHead = new QHBoxLayout;
-    paramHead->addWidget(new QLabel(QStringLiteral("参数"), scriptHost));
-    auto *addParam = new QToolButton(scriptHost);
-    addParam->setText(QStringLiteral("+"));
-    addParam->setToolTip(QStringLiteral("添加参数"));
-    auto *delParam = new QToolButton(scriptHost);
-    delParam->setText(QStringLiteral("-"));
-    delParam->setToolTip(QStringLiteral("删除选中参数"));
-    paramHead->addStretch(1);
-    paramHead->addWidget(addParam);
-    paramHead->addWidget(delParam);
-    scriptLay->addLayout(paramHead);
-    m_scriptParams = new QTableWidget(0, 2, scriptHost);
-    m_scriptParams->setHorizontalHeaderLabels({QStringLiteral("名称"), QStringLiteral("值")});
-    m_scriptParams->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    m_scriptParams->verticalHeader()->setVisible(false);
-    m_scriptParams->setMaximumHeight(110);
-    scriptLay->addWidget(m_scriptParams);
-    connect(addParam, &QToolButton::clicked, this, [this] {
-        const int row = m_scriptParams->rowCount();
-        m_scriptParams->insertRow(row);
-        m_scriptParams->setItem(row, 1, new QTableWidgetItem(QStringLiteral("0")));
-        m_scriptParams->editItem(m_scriptParams->item(row, 0));
-    });
-    connect(delParam, &QToolButton::clicked, this, [this] {
-        const int row = m_scriptParams->currentRow();
-        if (row >= 0)
-            m_scriptParams->removeRow(row);
-    });
-
-    auto *runBtnRow = new QHBoxLayout;
-    auto *runScriptBtn = new QPushButton(QStringLiteral("预览"), scriptHost);
-    auto *applyScriptBtn = new QPushButton(QStringLiteral("应用"), scriptHost);
-    runBtnRow->addWidget(runScriptBtn);
-    runBtnRow->addWidget(applyScriptBtn);
-    scriptLay->addWidget(m_script, 1);
-    scriptLay->addLayout(runBtnRow);
-    scriptDock->setWidget(scriptHost);
-    connect(runScriptBtn, &QPushButton::clicked, this, [this] { runScript(false); });
-    connect(applyScriptBtn, &QPushButton::clicked, this, [this] { runScript(true); });
-    return scriptDock;
-    }
     Q_UNUSED(parent);
     return nullptr;
 }
@@ -4627,4 +4550,12 @@ void MainWindow::attachLogView(QPlainTextEdit *view)
         m_logView->setReadOnly(true);
         m_logView->setMaximumBlockCount(2000);
     }
+}
+
+void MainWindow::bindScriptPanel(QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params)
+{
+    m_script = script;
+    for (int i = 0; i < 4; ++i)
+        m_scriptInputs[i] = inputs[i];
+    m_scriptParams = params;
 }
