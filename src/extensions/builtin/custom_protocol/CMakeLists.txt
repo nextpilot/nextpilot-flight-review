@@ -9,7 +9,7 @@ target_include_directories(ps_custom_protocol PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/protocol
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
 )
@@ -26,6 +26,6 @@ target_include_directories(ps_custom_protocol_component PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/protocol
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/base
+  ${PROJECT_SOURCE_DIR}/src/application
 )
 target_link_libraries(ps_custom_protocol_component PUBLIC ps_custom_protocol ps_protocol ps_host)

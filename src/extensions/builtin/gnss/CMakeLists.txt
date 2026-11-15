@@ -9,7 +9,7 @@ add_library(ps_gnss STATIC
 set_target_properties(ps_gnss PROPERTIES AUTOMOC ON)
 target_include_directories(ps_gnss PUBLIC
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
 )
@@ -25,6 +25,6 @@ add_library(ps_gnss_component OBJECT GnssComponent.cpp)
 set_target_properties(ps_gnss_component PROPERTIES AUTOMOC ON)
 target_include_directories(ps_gnss_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/base
+  ${PROJECT_SOURCE_DIR}/src/application
 )
 target_link_libraries(ps_gnss_component PUBLIC ps_gnss ps_host)

@@ -8,13 +8,13 @@ if(PS_BUILD_GUI)
   find_package(Qt6 QUIET COMPONENTS Widgets Network Svg)
   if(Qt6_FOUND)
     # 底座：宿主扩展层与宿主服务
-    add_subdirectory(base/modules/runtime)
-    add_subdirectory(base/modules/data_source/services/cache)
+    add_subdirectory(application/modules/runtime)
+    add_subdirectory(application/modules/data_source/services/cache)
 
     # 动态扩展公共设施
     add_subdirectory(extensions/dynamic/data_loader/common)
 
-    add_subdirectory(base/modules/data_source/services/live)
+    add_subdirectory(application/modules/data_source/services/live)
 
     # 动态扩展：内置数据加载器与数据源
     add_subdirectory(extensions/dynamic/data_loader/csv)
@@ -33,7 +33,7 @@ if(PS_BUILD_GUI)
     add_subdirectory(extensions/builtin)
 
     # 底座 UI 与入口
-    add_subdirectory(base)
+    add_subdirectory(application)
 
     # 组件运行期资源部署：业务数据不写进 base。
     if(TARGET ps_gnss AND TARGET plotscope_app)

@@ -12,7 +12,7 @@ find_package(JKQTPlotter6 REQUIRED)
 find_package(Threads REQUIRED)
 
 get_filename_component(REPO "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
-add_executable(ps_canvas_spike bench.cpp ${REPO}/src/base/modules/plotting/canvas/PlottingCanvas.cpp)
-target_include_directories(ps_canvas_spike PRIVATE ${REPO}/src/base/modules/plotting/canvas ${REPO}/src/base/kernel/include)
+add_executable(ps_canvas_spike bench.cpp ${REPO}/src/application/modules/plotting/canvas/PlottingCanvas.cpp)
+target_include_directories(ps_canvas_spike PRIVATE ${REPO}/src/application/modules/plotting/canvas ${REPO}/src/application/kernel/include)
 target_link_libraries(ps_canvas_spike PRIVATE JKQTPlotter6::JKQTPlotter6 Qt6::Widgets
-  ${REPO}/src/base/kernel/target/release/libps_abi.a Threads::Threads ${CMAKE_DL_LIBS})
+  ${REPO}/src/application/kernel/target/release/libps_abi.a Threads::Threads ${CMAKE_DL_LIBS})

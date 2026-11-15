@@ -6,7 +6,7 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp/PsDataSourceBase.
   add_executable(test_data_source_sdk unit/test_data_source_sdk.cpp)
   set_target_properties(test_data_source_sdk PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   target_include_directories(test_data_source_sdk PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
     ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp)
   add_test(NAME data_source_sdk COMMAND test_data_source_sdk)
 endif()
@@ -14,7 +14,7 @@ endif()
 if(TARGET ps_data_loader_csv)
   add_executable(test_extension_csv unit/test_extension_csv.cpp)
   target_include_directories(test_extension_csv PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_link_libraries(test_extension_csv PRIVATE ps_data_loader_csv ps_kernel ps_host)
   add_test(NAME extension_csv COMMAND test_extension_csv)
 endif()
@@ -22,7 +22,7 @@ endif()
 if(TARGET ps_cache)
   add_executable(test_dataset_cache unit/test_dataset_cache.cpp)
   target_include_directories(test_dataset_cache PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_link_libraries(test_dataset_cache PRIVATE ps_cache ps_kernel)
   add_test(NAME dataset_cache COMMAND test_dataset_cache)
 endif()
@@ -30,7 +30,7 @@ endif()
 if(TARGET ps_data_loader_ulog AND TARGET ps_data_loader_apbin AND TARGET ps_data_loader_asc AND TARGET ps_data_loader_blf)
   add_executable(test_extension_file_formats unit/test_extension_file_formats.cpp)
   target_include_directories(test_extension_file_formats PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_compile_definitions(test_extension_file_formats PRIVATE
     PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixture")
   target_link_libraries(test_extension_file_formats PRIVATE ps_host
@@ -48,7 +48,7 @@ endif()
 if(TARGET ps_live)
   add_executable(test_raw_capture unit/test_raw_capture.cpp)
   target_include_directories(test_raw_capture PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/base/modules/data_source/services/live)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/data_source/services/live)
   target_link_libraries(test_raw_capture PRIVATE ps_live)
   add_test(NAME raw_capture COMMAND test_raw_capture)
 endif()
@@ -56,7 +56,7 @@ endif()
 if(TARGET ps_data_load_mcap)
   add_executable(test_mcap_loader unit/test_mcap_loader.cpp)
   target_include_directories(test_mcap_loader PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_link_libraries(test_mcap_loader PRIVATE ps_data_load_mcap ps_host ps_kernel)
   add_test(NAME mcap_loader COMMAND test_mcap_loader)
 endif()
@@ -65,7 +65,7 @@ if(TARGET ps_live AND TARGET ps_data_load_mcap)
   add_executable(test_stream_recorder unit/test_stream_recorder.cpp)
   target_include_directories(test_stream_recorder PRIVATE
     ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
     ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
     ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/mcap)
   target_link_libraries(test_stream_recorder PRIVATE ps_live ps_data_load_mcap)
@@ -75,7 +75,7 @@ endif()
 if(TARGET ps_data_source_mavlink)
   find_package(Qt6 REQUIRED COMPONENTS Network)
   add_executable(test_mavlink_source unit/test_mavlink_source.cpp)
-  target_include_directories(test_mavlink_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+  target_include_directories(test_mavlink_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_link_libraries(test_mavlink_source PRIVATE ps_data_source_mavlink ps_host ps_kernel Qt6::Network)
   add_test(NAME mavlink_source COMMAND test_mavlink_source)
 endif()
@@ -83,7 +83,7 @@ endif()
 if(TARGET ps_gnss)
   find_package(Qt6 REQUIRED COMPONENTS Network)
   add_executable(test_oem7_source unit/test_oem7_source.cpp)
-  target_include_directories(test_oem7_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+  target_include_directories(test_oem7_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_link_libraries(test_oem7_source PRIVATE ps_gnss ps_host ps_kernel Qt6::Network)
   target_compile_definitions(test_oem7_source PRIVATE
     TEST_OEM7_DB="${CMAKE_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json")
@@ -93,7 +93,7 @@ endif()
 if(TARGET ps_data_source_sim)
   add_executable(test_data_source unit/test_data_source.cpp)
   target_include_directories(test_data_source PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_link_libraries(test_data_source PRIVATE ps_data_source_sim ps_host ps_kernel)
   add_test(NAME data_source COMMAND test_data_source)
 endif()
@@ -110,7 +110,7 @@ endif()
 if(TARGET ps_host)
   add_library(ps_demo_extension MODULE external_extension/DemoExtension.cpp)
   target_include_directories(ps_demo_extension PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   add_custom_command(TARGET ps_demo_extension POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${PROJECT_SOURCE_DIR}/tests/external_extension/manifest.json
@@ -123,7 +123,7 @@ if(TARGET ps_host)
 
   add_library(ps_bad_extension MODULE external_extension/BadExtension.cpp)
   target_include_directories(ps_bad_extension PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   set_target_properties(ps_bad_extension PROPERTIES
     PREFIX "" OUTPUT_NAME "bad_extension"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/extensions")
@@ -131,7 +131,7 @@ if(TARGET ps_host)
 
   add_executable(test_extension_runtime unit/test_extension_runtime.cpp)
   target_include_directories(test_extension_runtime PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_compile_definitions(test_extension_runtime PRIVATE
     PS_EXTENSION_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}/extensions")
   target_link_libraries(test_extension_runtime PRIVATE ps_host)
@@ -145,8 +145,8 @@ endif()
 
 if(PS_CARGO)
   add_test(NAME kernel_cargo_test
-           COMMAND "${PS_CARGO}" test --manifest-path "${PROJECT_SOURCE_DIR}/src/base/kernel/Cargo.toml"
-           WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/src/base/kernel")
+           COMMAND "${PS_CARGO}" test --manifest-path "${PROJECT_SOURCE_DIR}/src/application/kernel/Cargo.toml"
+           WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/src/application/kernel")
 endif()
 
 # P2 Rust SDK 样板：cdylib 只依赖宿主函数表，不链接第二份 kernel。
@@ -181,7 +181,7 @@ if(CARGO_EXECUTABLE)
 
   add_executable(test_rust_extension unit/test_rust_extension.cpp)
   target_include_directories(test_rust_extension PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include ${PROJECT_SOURCE_DIR}/src/base/kernel/include)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include ${PROJECT_SOURCE_DIR}/src/application/kernel/include)
   target_compile_definitions(test_rust_extension PRIVATE PS_RUST_EXTENSION_DIR="${RUST_EXTENSION_DIR}")
   target_link_libraries(test_rust_extension PRIVATE ps_host ps_kernel)
   ps_set_warnings(test_rust_extension)
@@ -195,7 +195,7 @@ if(LUA_FOUND)
     unit/test_script_engine.cpp
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/script/ScriptEngine.cpp)
   target_include_directories(test_script_engine PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/script
     ${LUA_INCLUDE_DIR})
   target_compile_definitions(test_script_engine PRIVATE PS_HAVE_LUA=1)
@@ -207,15 +207,15 @@ find_package(Qt6 QUIET COMPONENTS Widgets)
 if(TARGET Qt6::Widgets)
   add_executable(test_video_sync unit/test_video_sync.cpp ${PROJECT_SOURCE_DIR}/src/extensions/builtin/video/VideoSyncWidget.cpp)
   set_target_properties(test_video_sync PROPERTIES AUTOMOC ON)
-  target_include_directories(test_video_sync PRIVATE ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
+  target_include_directories(test_video_sync PRIVATE ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/video)
   target_link_libraries(test_video_sync PRIVATE Qt6::Widgets)
   add_test(NAME video_sync COMMAND test_video_sync)
   set_tests_properties(video_sync PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
-add_executable(test_command_registry unit/test_command_registry.cpp ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/src/CommandRegistry.cpp)
+add_executable(test_command_registry unit/test_command_registry.cpp ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/src/CommandRegistry.cpp)
 target_include_directories(test_command_registry PRIVATE ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/base ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include)
+  ${PROJECT_SOURCE_DIR}/src/application ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
 target_link_libraries(test_command_registry PRIVATE Qt6::Core)
 add_test(NAME command_registry COMMAND test_command_registry)

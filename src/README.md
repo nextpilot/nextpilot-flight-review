@@ -1,15 +1,15 @@
 # src 目录
 
-`src` 按功能模块组织：`base` 是最小 app + 最小绘图 app；`extensions` 在其上叠加行业/设备业务。
+`src` 按功能模块组织：`application` 是最小 app + 最小绘图 app；`extensions` 在其上叠加行业/设备业务。
 
 ```text
 src/
-  base/                       最小 app + 最小绘图 app
+  application/                最小 app + 最小绘图 app
     main.cpp                  入口；组装 shell 与内置模块
     kernel/                   与 Qt 无关的抽象逻辑（Rust，ps_kernel.h）
+    shell/                    MainWindow、Ribbon/Dock 容器、主题、全局设置
     modules/
       runtime/                扩展契约、注册表、动态装载、脚本运行、ModuleBridge
-      shell/                  MainWindow、Ribbon/Dock 容器、主题、扩展对话框
       data_source/            SourceModel、DataSourceDock、DataSourceDialog、数据 Ribbon
       plotting/              绘图模块
         include/plotting/     PlottingModule.h，模块对外 API
@@ -40,17 +40,17 @@ src/
 
 | 东西 | 放哪 | 判据 |
 |---|---|---|
-| 数据模型、通用算子、LOD、缓存/流机制 | `base/kernel/` | 不碰 Qt、不做 I/O |
-| 扩展 ABI、注册表、动态装载、宿主 API、模块桥 | `base/modules/runtime/` | 只做生命周期、契约与跨模块中立接口 |
-| 缓存策略、实时会话与录制 | `base/modules/data_source/services/` | 宿主侧服务，不是业务格式 |
-| 主窗口、Ribbon/Dock 容器、主题 | `base/modules/shell/` | app 骨架，只做组装 |
-| 数据源 Dock、输入对话框、数据 Ribbon | `base/modules/data_source/` | 数据进入与源管理 |
-| 画布、绘图 Ribbon、页面/图型 | `base/modules/plotting/` | 绘图工作区 |
+| 数据模型、通用算子、LOD、缓存/流机制 | `application/kernel/` | 不碰 Qt、不做 I/O |
+| 扩展 ABI、注册表、动态装载、宿主 API、模块桥 | `application/modules/runtime/` | 只做生命周期、契约与跨模块中立接口 |
+| 缓存策略、实时会话与录制 | `application/modules/data_source/services/` | 宿主侧服务，不是业务格式 |
+| 主窗口、Ribbon/Dock 容器、主题 | `application/shell/` | app 骨架，只做组装 |
+| 数据源 Dock、输入对话框、数据 Ribbon | `application/modules/data_source/` | 数据进入与源管理 |
+| 画布、绘图 Ribbon、页面/图型 | `application/modules/plotting/` | 绘图工作区 |
 | 设备调试、视频同步、数据变换、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |
 | 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |
-| 用户 Lua 脚本与图标 | `base/resources/` | 运行期资源，不进 host 头文件 |
+| 用户 Lua 脚本与图标 | `application/resources/` | 运行期资源，不进 host 头文件 |
 
-`ps_extension_api.h` 位于 `base/modules/runtime/include/`，扩展与宿主都只依赖这一份 ABI 头；`ModuleBridge.h` 是 modules 之间唯一的中立调用面。
+`ps_extension_api.h` 位于 `application/modules/runtime/include/`，扩展与宿主都只依赖这一份 ABI 头；`ModuleBridge.h` 是 modules 之间唯一的中立调用面。
 
 内置组件与外部动态扩展统一通过 `ExtensionRegistry::addExtension()` 注册；内置组件自己静态注册，外部 `.so` 由 `ExtensionRuntime` 装载后交给 `DynamicExtension` 适配。
 

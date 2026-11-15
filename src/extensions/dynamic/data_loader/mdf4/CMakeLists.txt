@@ -2,7 +2,7 @@ add_library(ps_data_loader_mdf4 STATIC
   Mdf4DataLoader.cpp
 )
 target_include_directories(ps_data_loader_mdf4 PRIVATE
-  ${PROJECT_SOURCE_DIR}/src/base/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
 )
