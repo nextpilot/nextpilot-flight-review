@@ -1,8 +1,22 @@
 add_library(ps_application_shell OBJECT
   MainWindow.h
   MainWindow.cpp
-  CommandRegistry.h
-  CommandRegistry.cpp
+  AppSession.h
+  AppSession.cpp
+  ShellFeedback.h
+  ShellFeedback.cpp
+  DockManager.h
+  DockManager.cpp
+  RibbonManager.h
+  RibbonManager.cpp
+  SettingsManager.h
+  SettingsManager.cpp
+  DiagnosticsDialog.h
+  DiagnosticsDialog.cpp
+  ShellCommands.h
+  ShellCommands.cpp
+  CommandManager.h
+  CommandManager.cpp
   ExtensionHost.h
   ExtensionHost.cpp
   ShellComponent.h

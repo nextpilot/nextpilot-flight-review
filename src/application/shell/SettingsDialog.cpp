@@ -1,5 +1,6 @@
 #include "SettingsDialog.h"
 #include "MainWindow.h"
+#include "SettingsManager.h"
 
 #include <QCheckBox>
 #include <QDialogButtonBox>
@@ -27,8 +28,7 @@ QWidget *buildGeneralPage(QCheckBox **restoreLayout)
     auto *group = new QGroupBox(QStringLiteral("启动"), page);
     auto *form = new QFormLayout(group);
     auto *restore = new QCheckBox(QStringLiteral("启动时恢复上次布局"), group);
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-    restore->setChecked(st.value(QStringLiteral("restoreLayout"), true).toBool());
+    restore->setChecked(SettingsManager::instance().restoreLayout());
     form->addRow(restore);
     lay->addWidget(group);
     lay->addWidget(new QLabel(QStringLiteral("设置会写入 NextPilot / PlotScope。"), page));
@@ -59,8 +59,7 @@ SettingsDialog::SettingsDialog(MainWindow *mw)
     addPage(QStringLiteral("通用"), QStringLiteral(":/icons/settings.svg"), general, [restore] {
         if (restore)
         {
-            QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-            st.setValue(QStringLiteral("restoreLayout"), restore->isChecked());
+            SettingsManager::instance().setRestoreLayout(restore->isChecked());
         }
     });
 

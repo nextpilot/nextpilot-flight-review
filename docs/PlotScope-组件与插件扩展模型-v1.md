@@ -179,7 +179,7 @@ struct RibbonItem
 };
 ```
 
-- 简单按钮走 `items`，宿主创建 `QAction` 并查 `CommandRegistry`。
+- 简单按钮走 `items`，宿主创建 `QAction` 并查 `CommandManager`。
 - 复杂控件走 `RibbonPanel.widget`，宿主按 ID 构建，如 `sourceGallery / plotGallery / layoutPicker / viewToggles`。
 - 内部组件需要自定义复杂控件时，可后续扩展 `widgetFactory`，由组件返回 `QWidget*`。
 - 外部扩展只允许声明白名单 `widget` 类型。
@@ -204,7 +204,7 @@ struct RibbonItem
 
 - JSON 必须过 schema；
 - `widget` 必须白名单；
-- `action` 必须已在 `CommandRegistry` 注册；
+- `action` 必须已在 `CommandManager` 注册；
 - 不执行 manifest 中的脚本、不加载任意类名、不允许任意 `.so` 路径；
 - 扩展崩溃不能带崩 app，UI 创建和销毁由宿主兜底。
 

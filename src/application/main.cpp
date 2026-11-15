@@ -13,6 +13,7 @@
 #include "DynamicExtensionRegistry.h"
 #include "ExtensionRuntime.h"
 #include "Theme.h"
+#include "SettingsManager.h"
 
 #include "ps_kernel.h"
 #include "MainWindow.h"
@@ -22,6 +23,7 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("PlotScope"));
     QApplication::setOrganizationName(QStringLiteral("NextPilot"));
+    QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
 
     // 全局主题：样式表 + 深色 palette 一次装好，所有窗口共用
     theme::applyTo(app);
@@ -78,8 +80,7 @@ int main(int argc, char **argv)
                 win.commands().invoke(QStringLiteral("data.openPath"), ctx);
         }
     }
-    else if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
-                 .value(QStringLiteral("restoreLayout"), false).toBool())
+    else if (SettingsManager::instance().restoreLayout())
     {
         const QString last = win.defaultLayoutPath();
         if (QFile::exists(last)) {

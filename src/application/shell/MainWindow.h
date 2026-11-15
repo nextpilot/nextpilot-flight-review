@@ -8,7 +8,11 @@
 
 #include "Component.h"
 #include "ExtensionHost.h"
-#include "CommandRegistry.h"
+#include "CommandManager.h"
+#include "AppSession.h"
+#include "ShellFeedback.h"
+#include "DockManager.h"
+#include "RibbonManager.h"
 
 class QDockWidget;
 class QTabWidget;
@@ -36,8 +40,9 @@ public:
     void toggleDockMax(QDockWidget *dock);
     void restoreDockMax();
 
-    ps::commands::CommandRegistry &commands() { return m_commands; }
+    ps::commands::CommandManager &commands() { return m_commands; }
     ps::components::ExtensionHost &extensions() { return m_extensions; }
+    AppSession &session() { return m_session; }
     QTabWidget *pages() const { return m_pages; }
     void setPageHost(QTabWidget *p) {
         m_pages = p;
@@ -46,6 +51,7 @@ public:
     }
     void appendLog(const QString &text) { log(text); }
     QString kernelInfo() const { return m_kernelInfo; }
+    void refreshTitle();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -53,17 +59,15 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
-    QWidget *createRibbon();
-    void registerCommands();
-    void createDocks();
     void log(const QString &text);
 
     QTabWidget *m_pages = nullptr;
-    QDockWidget *m_maxDock = nullptr;
-    QWidget *m_maxDockCentral = nullptr;
-    QList<QDockWidget *> m_maxDockHidden;
     QPlainTextEdit *m_logView = nullptr;
     QString m_kernelInfo;
     ps::components::ExtensionHost m_extensions;
-    ps::commands::CommandRegistry m_commands;
+    ps::commands::CommandManager m_commands;
+    AppSession m_session;
+    ShellFeedback m_feedback;
+    DockManager m_docks;
+    RibbonManager m_ribbon;
 };

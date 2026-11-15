@@ -973,7 +973,7 @@ void DataSourceSession::onClose()
     if (m_liveTimer)
         m_liveTimer->stop();
     if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
-            .value(QStringLiteral("restoreLayout"), true).toBool())
+            .value(QStringLiteral("restoreLayout"), false).toBool())
         saveLayoutTo(m_mw->defaultLayoutPath());
 }
 

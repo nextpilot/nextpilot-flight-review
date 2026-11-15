@@ -1,4 +1,4 @@
-#include "CommandRegistry.h"
+#include "CommandManager.h"
 
 #include <QCoreApplication>
 #include <cstdio>
@@ -6,7 +6,7 @@
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
-    ps::commands::CommandRegistry registry;
+    ps::commands::CommandManager registry;
 
     QString seen;
     registry.add(QStringLiteral("demo.run"), [&seen](const ps::commands::CommandContext &ctx) {

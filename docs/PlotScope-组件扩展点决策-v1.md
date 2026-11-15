@@ -55,7 +55,7 @@
 
 ### 第二阶段：组件扩展点重构
 
-1. 命令 ID 化：文件、数据、绘图、脚本、视图入口先从 `MainWindow` lambda 迁到 `CommandRegistry`。**已完成基础入口**；数据页“来源”仍由扩展列表动态生成。
+1. 命令 ID 化：文件、数据、绘图、脚本、视图入口先从 `MainWindow` lambda 迁到 `CommandManager`。**已完成基础入口**；数据页“来源”仍由扩展列表动态生成。
 2. 简单页迁移：文件、数据、脚本、视图改为 Ribbon 贡献。**已完成 文件 / 脚本 / 视图**（`ShellComponent`，多面板）；数据页因含来源画廊暂留宿主。
 3. 绘图页单独做宿主 `plotGallery`，再声明挂载。**已完成**：`plotGallery / layoutPicker / viewToggles` 均为宿主内建控件，由 `ShellComponent` 声明挂载。
 4. Dock 改为 `DockContribution`，宿主统一建容器。**已完成**：`ShellComponent` 声明六个内置 Dock，`createDocks()` 按 order 遍历贡献。
