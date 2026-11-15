@@ -1,7 +1,6 @@
 #include "CustomProtocolComponent.h"
 
 #include "ProtocolEditorDialog.h"
-#include "ProtocolEditorService.h"
 #include "protocol/ProtocolSpec.h"
 #include "ps_extension_api.h"
 
@@ -70,6 +69,9 @@ void CustomProtocolComponent::contribute(Registry &registry, const HostContext &
     customSource.id = QStringLiteral("data_loader_custom_protocol");
     customSource.label = QStringLiteral("自定义协议");
     customSource.transports = {QStringLiteral("file")};
+    customSource.editor = [](const QString &path, QWidget *parent) -> QDialog * {
+        return new ProtocolEditorDialog(path, parent);
+    };
     registry.addDataSource(customSource);
 
     ProtocolContribution protocol;
@@ -81,9 +83,6 @@ void CustomProtocolComponent::contribute(Registry &registry, const HostContext &
         return new ProtocolEditorDialog(path, parent);
     };
     registry.addProtocol(protocol);
-    ps::components::setProtocolEditorFactory([](const QString &path, QWidget *parent) -> QDialog * {
-        return new ProtocolEditorDialog(path, parent);
-    });
 
     registry.addRibbon(RibbonContribution{
         QStringLiteral("协议"), QStringLiteral("编辑器"),

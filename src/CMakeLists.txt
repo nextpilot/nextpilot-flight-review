@@ -29,12 +29,12 @@ if(PS_BUILD_GUI)
     add_subdirectory(extensions/dynamic/data_loader/rosbag2)
     add_subdirectory(extensions/dynamic/data_source)
 
-    # 内置扩展：业务组件
-    add_subdirectory(extensions/builtin/custom_protocol/protocol)
-    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extensions/builtin/custom_protocol/CMakeLists.txt)
+    # 内置扩展：业务组件（可按需关闭）
+    if(PS_BUILD_CUSTOM_PROTOCOL AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extensions/builtin/custom_protocol/CMakeLists.txt)
+      add_subdirectory(extensions/builtin/custom_protocol/protocol)
       add_subdirectory(extensions/builtin/custom_protocol)
     endif()
-    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extensions/builtin/gnss/CMakeLists.txt)
+    if(PS_BUILD_GNSS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extensions/builtin/gnss/CMakeLists.txt)
       add_subdirectory(extensions/builtin/gnss)
     endif()
 

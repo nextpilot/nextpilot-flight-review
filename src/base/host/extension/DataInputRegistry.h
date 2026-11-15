@@ -3,9 +3,13 @@
 #include "host/extension/DataInputEntry.h"
 
 #include <QStringList>
+
+#include <functional>
 #include <QVector>
 
 struct PsExtensionDescriptor;
+class QDialog;
+class QWidget;
 
 // 数据输入宿主 catalog：文件与流同一个扫描入口。
 // 对外保留 findFileBySuffix / findSourceById 两个查询，内部不再分两个 Registry。
@@ -22,7 +26,8 @@ public:
     const QVector<DataInputEntry> &streamEntries() const { return m_streamEntries; }
     const QVector<const PsExtensionDescriptor *> &descriptors() const { return m_descriptors; }
 
-    bool registerDescriptor(const PsExtensionDescriptor *desc, const QString &packageDir = QString());
+    bool registerDescriptor(const PsExtensionDescriptor *desc, const QString &packageDir = QString(),
+                            const std::function<QDialog *(const QString &, QWidget *)> &editor = {});
 
     // 外部扩展目录只扫描一次；loader/source 由 family 分派。
     QStringList scanExtensions(const QStringList &dirs);

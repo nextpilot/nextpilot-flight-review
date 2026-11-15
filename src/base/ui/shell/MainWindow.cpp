@@ -1268,7 +1268,7 @@ MainWindow::MainWindow(QWidget *parent)
             component->contribute(m_components, hostContext);
     }
     for (const ps::components::DataSourceSpec &source : m_components.dataSources())
-        DataInputRegistry::instance().registerDescriptor(source.descriptor);
+        DataInputRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
 
     registerCommands();
 

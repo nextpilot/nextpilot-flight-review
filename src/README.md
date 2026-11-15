@@ -40,3 +40,13 @@ src/
 | 用户 Lua 脚本与图标 | `base/resources/` | 运行期资源，不进 host 头文件 |
 
 内置组件与外部动态扩展统一通过 `ExtensionRegistry::addExtension()` 注册；内置组件自己静态注册，外部 `.so` 由 `ExtensionRuntime` 装载后交给 `DynamicExtension` 适配。
+
+## 组件可裁剪
+
+内置业务组件默认构建，可按需关闭：
+
+```bash
+cmake -S . -B build -DPS_BUILD_GNSS=OFF -DPS_BUILD_CUSTOM_PROTOCOL=OFF
+```
+
+`base` 不 include 任何组件头文件；组件通过注册表注入 Ribbon、Dock、DataSource 和配置编辑器，关闭后宿主仍可构建启动。

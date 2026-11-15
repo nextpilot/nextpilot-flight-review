@@ -63,6 +63,7 @@ struct DataSourceSpec
     QString id;
     QString label;
     QStringList transports; // file / serial / tcp / udp / replay
+    std::function<QDialog *(const QString &path, QWidget *parent)> editor; // 可选配置编辑器
 };
 
 struct DockContribution

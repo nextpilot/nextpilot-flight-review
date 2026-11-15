@@ -65,6 +65,7 @@ private:
         bool probeAvailable = false;
         QString fileFilter;
         std::function<QJsonObject(const QString &, const QJsonObject &)> probeFn;
+        std::function<QDialog *(const QString &, QWidget *)> editFn;
         QGroupBox *box = nullptr;
         QFormLayout *form = nullptr;
         QHash<QString, QWidget *> editors;
@@ -91,7 +92,8 @@ private:
     QVariant currentValue(const ParserPane &pane, const QString &key) const;
     QComboBox *comboFor(const ParserPane &pane, const QString &key) const;
     QWidget *createEditor(const QJsonObject &f, const QJsonValue &value,
-                          QHash<QString, QWidget *> &editors, QFormLayout *form);
+                          QHash<QString, QWidget *> &editors, QFormLayout *form,
+                          const std::function<QDialog *(const QString &, QWidget *)> &editFn = {});
     void applyTransportDefaultUri(const QString &uri);
     QString currentTransportType() const;
     bool parserSupportsTransport(const ParserPane &pane, const QString &transport) const;

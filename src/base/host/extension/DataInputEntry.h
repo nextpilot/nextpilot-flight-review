@@ -11,6 +11,8 @@
 #include <functional>
 
 struct PsDataset;
+class QDialog;
+class QWidget;
 
 // 数据输入扩展的统一宿主描述。
 //
@@ -38,6 +40,8 @@ struct DataInputEntry
     bool hasParams = false;         // 是否有 P/Q、PARM 参数表
     bool cacheable = false;         // 是否允许写解析缓存
     QString uiDialog;               // 扩展自带 .ui 绝对路径，空 = 用通用 schema 对话框
+    // 组件自带的配置编辑器；base UI 只调用，不 include 组件头。
+    std::function<QDialog *(const QString &path, QWidget *parent)> edit;
 
     std::function<QJsonObject(const QString &path, const QJsonObject &opts)> probe;
     std::function<QString(const QString &path)> defaultOptions;

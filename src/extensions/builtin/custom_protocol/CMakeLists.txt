@@ -2,8 +2,6 @@ add_library(ps_custom_protocol STATIC
   CustomProtocolLoader.cpp
   ProtocolEditorDialog.cpp
   ProtocolEditorDialog.h
-  ProtocolEditorService.cpp
-  ProtocolEditorService.h
   SequentialCodec.cpp
 )
 set_target_properties(ps_custom_protocol PROPERTIES AUTOMOC ON)

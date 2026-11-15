@@ -1,5 +1,4 @@
 #include "data_input/DataInputDialog.h"
-#include "ProtocolEditorService.h"
 
 #include "host/extension/DataInputEntry.h"
 
@@ -140,6 +139,7 @@ DataInputDialog::DataInputDialog(const DataInputEntry &entry, const QString &pat
     pane.probeAvailable = static_cast<bool>(entry.probe);
     pane.fileFilter = entry.filter;
     pane.probeFn = entry.probe;
+    pane.editFn = entry.edit;
     m_panes.append(pane);
 
     m_transports = QStringList{QStringLiteral("file")};
@@ -175,6 +175,7 @@ DataInputDialog::DataInputDialog(const QVector<DataInputEntry> &parsers, const Q
                             .object();
         pane.recordable = entry.recordable;
         pane.replayable = entry.replayable;
+        pane.editFn = entry.edit;
         pane.fileFilter = entry.replayExtensions.isEmpty()
                               ? QStringLiteral("全部 (*)")
                               : QStringLiteral("原始流 (%1);;全部 (*)").arg(entry.replayExtensions);
@@ -463,7 +464,8 @@ void DataInputDialog::initUi()
 }
 
 QWidget *DataInputDialog::createEditor(const QJsonObject &f, const QJsonValue &value,
-                                       QHash<QString, QWidget *> &editors, QFormLayout *form)
+                                       QHash<QString, QWidget *> &editors, QFormLayout *form,
+                                       const std::function<QDialog *(const QString &, QWidget *)> &editFn)
 {
     const QString key = f.value(QStringLiteral("key")).toString();
     const QString type = f.value(QStringLiteral("type")).toString(QStringLiteral("string"));
@@ -532,7 +534,8 @@ QWidget *DataInputDialog::createEditor(const QJsonObject &f, const QJsonValue &v
             browse->setVisible(false);
         }
         if (edit)
-            connect(edit, &QPushButton::clicked, this, [this, line] {
+        {
+            connect(edit, &QPushButton::clicked, this, [this, line, editFn] {
                 const QString path = line->text().trimmed();
                 if (path.isEmpty())
                 {
@@ -540,7 +543,7 @@ QWidget *DataInputDialog::createEditor(const QJsonObject &f, const QJsonValue &v
                                              QStringLiteral("先选择一个 .psproto 模板文件"));
                     return;
                 }
-                QDialog *dlg = ps::components::createProtocolEditor(path, this);
+                QDialog *dlg = editFn ? editFn(path, this) : nullptr;
                 if (!dlg)
                 {
                     QMessageBox::information(this, QStringLiteral("协议模板"),
@@ -551,6 +554,7 @@ QWidget *DataInputDialog::createEditor(const QJsonObject &f, const QJsonValue &v
                     line->setText(path);
                 delete dlg;
             });
+        }
         connect(browse, &QPushButton::clicked, this, [this, line, f] {
             const QString filter = f.value(QStringLiteral("filter")).toString(m_fileFilter);
             const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择文件"),
@@ -703,7 +707,7 @@ void DataInputDialog::buildTransportFields()
     {
         const QJsonObject f = fv.toObject();
         createEditor(f, valueForField(f, m_initial, m_transportDefaults, m_transportValues),
-                     m_transportEditors, m_transportForm);
+                     m_transportEditors, m_transportForm, {});
     }
 }
 
@@ -748,7 +752,7 @@ void DataInputDialog::buildParserPanes()
             field.type = f.value(QStringLiteral("type")).toString(QStringLiteral("string"));
             field.spec = f;
             field.editor = createEditor(f, valueForField(f, pane.initial, pane.defaults, {}),
-                                        pane.editors, pane.form);
+                                        pane.editors, pane.form, pane.editFn);
             if (!field.editor)
                 continue;
             field.label = qobject_cast<QLabel *>(pane.form->labelForField(field.editor));

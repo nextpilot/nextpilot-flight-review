@@ -117,7 +117,8 @@ DataInputRegistry &DataInputRegistry::instance()
 
 DataInputRegistry::DataInputRegistry() = default;
 
-bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, const QString &packageDir)
+bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, const QString &packageDir,
+                                           const std::function<QDialog *(const QString &, QWidget *)> &editor)
 {
     if (!desc || desc->abi_version != PS_EXTENSION_ABI_VERSION)
         return false;
@@ -145,6 +146,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
             return false;
 
         DataInputEntry p;
+        p.edit = editor;
         p.id = id;
         p.version = manifestVersion(desc);
         p.cacheNamespace = id + QLatin1Char('@') + p.version;
@@ -212,6 +214,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
                        : manifestId.isEmpty() || findFileById(manifestId))
                 return false;
             DataInputEntry p;
+        p.edit = editor;
             if (legacy)
             {
                 p.id = QString::fromUtf8(legacy->id);
@@ -328,6 +331,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
             return false;
 
         DataInputEntry p;
+        p.edit = editor;
         p.id = id;
         p.version = manifest.value(QStringLiteral("version")).toString(QStringLiteral("0"));
         p.label = manifest.value(QStringLiteral("name")).toString(id);
@@ -442,6 +446,7 @@ bool DataInputRegistry::registerDescriptor(const PsExtensionDescriptor *desc, co
             return false;
 
         DataInputEntry p;
+        p.edit = editor;
         p.id = id;
         p.version = manifestVersion(desc);
         p.label = QString::fromUtf8(v->label ? v->label : v->id);
