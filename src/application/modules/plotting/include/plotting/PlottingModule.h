@@ -38,6 +38,7 @@ void newPage(MainWindow *mw);
 void setCanvasViewFlag(MainWindow *mw, int flag, bool on);
 void canvasZoom(MainWindow *mw, double factor);
 void canvasAutoY(MainWindow *mw);
+void canvasTool(MainWindow *mw, int tool);
 void reloadCanvasSettings(MainWindow *mw);
 void applyPlayhead(MainWindow *mw, double t);
 QJsonObject pageState(MainWindow *mw, QWidget *page);

@@ -3,6 +3,8 @@
 #include "PlottingCanvas.h"
 #include "PlottingLayout.h"
 
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QTabBar>
 
 #include <utility>
@@ -18,6 +20,24 @@ PlottingTabs::PlottingTabs(CanvasFactory factory, QWidget *parent)
     setTabsClosable(true);
     tabBar()->setExpanding(false);
     tabBar()->setObjectName(QStringLiteral("pageTabs"));
+    tabBar()->setUsesScrollButtons(true);
+    tabBar()->setElideMode(Qt::ElideRight);
+    // 双击页签改名：最后一个「＋」是新建按钮，不参与
+    connect(tabBar(), &QTabBar::tabBarDoubleClicked, this, [this](int idx) {
+        if (idx < 0 || idx >= count() - 1)
+            return;
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, QStringLiteral("重命名页签"),
+                                                   QStringLiteral("页名"), QLineEdit::Normal,
+                                                   tabText(idx), &ok);
+        if (!ok)
+            return;
+        const QString trimmed = name.trimmed();
+        if (trimmed.isEmpty() || trimmed == tabText(idx))
+            return;
+        setTabText(idx, trimmed);
+        emit pageRenamed(idx, trimmed);
+    });
 }
 
 PlottingCanvas *PlottingTabs::makeCanvas(const QString &title, QWidget *parent)

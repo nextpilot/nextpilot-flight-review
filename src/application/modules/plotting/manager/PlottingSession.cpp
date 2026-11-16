@@ -331,10 +331,27 @@ void PlottingSession::addCanvasToPage()
     PlottingCanvas *target = currentCanvas();
     if (!target)
         target = pageCanvases().value(0, nullptr);
-    if (target)
-        splitCanvas(target, Qt::Vertical);
-    else
+    if (!target)
+    {
         log(QStringLiteral("当前页没有可拆分的画布"));
+        return;
+    }
+
+    // 添加：往当前页追加一个画布，保持原网格列数整体重排；拆分才动当前画布
+    if (auto *layout = dynamic_cast<PlottingLayout *>(page))
+    {
+        auto *c = new PlottingCanvas(m_mw->pages());
+        c->clearChannels();
+        c->setTitle(QStringLiteral("新画布 · plot"));
+        c->setTimeRange(target->t0(), target->t1());
+        m_plotWorkspace->attachCanvas(c);
+        layout->addCanvas(c);
+        layout->setGrid(layout->gridRows(), layout->gridCols());
+        refreshPropTree(c);
+        log(QStringLiteral("添加画布"));
+        return;
+    }
+    splitCanvas(target, Qt::Vertical);
 }
 
 void PlottingSession::removeCanvas(PlottingCanvas *c)
@@ -1060,6 +1077,7 @@ void PlottingSession::setCanvasViewFlag(int flag, bool on)
     }
 }
 void PlottingSession::canvasZoom(double factor) { for (PlottingCanvas *c : pageCanvases()) c->zoomBy(factor); }
+void PlottingSession::setCanvasTool(int tool) { for (PlottingCanvas *c : pageCanvases()) c->setTool(tool); }
 void PlottingSession::canvasAutoY() { for (PlottingCanvas *c : pageCanvases()) c->requestAutoY(); }
 
 QJsonObject PlottingSession::pageState(QWidget *page) const

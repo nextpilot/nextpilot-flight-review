@@ -35,6 +35,7 @@ signals:
     void addChannelRequested(PlottingCanvas *canvas);
     void canvasMaximizeRequested(PlottingCanvas *canvas);
     void canvasRemoveRequested(PlottingCanvas *canvas);
+    void pageRenamed(int index, const QString &title);
     void markerRequested(double t);
     void markerRemoveRequested(double t);
 

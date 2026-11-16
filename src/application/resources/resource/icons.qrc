@@ -4,6 +4,7 @@
     <file alias="autoy.svg">icons/autoy.svg</file>
     <file alias="compass.svg">icons/compass.svg</file>
     <file alias="cursor.svg">icons/cursor.svg</file>
+    <file alias="hand.svg">icons/hand.svg</file>
     <file alias="datasource.svg">icons/datasource.svg</file>
     <file alias="export.svg">icons/export.svg</file>
     <file alias="export_cfg.svg">icons/export_cfg.svg</file>

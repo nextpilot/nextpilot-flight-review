@@ -7,6 +7,7 @@
 #include <QPointF>
 #include <QString>
 #include <QVector>
+#include <QCursor>
 #include <QWidget>
 
 class QToolButton;
@@ -93,6 +94,10 @@ public:
     QString xLabel() const { return m_xLabel; }
     QString yLabel() const { return m_yLabel; }
     void setRubberZoomEnabled(bool on);
+    // 鼠标工具：0=平移(手) 1=放大(镜) 2=缩小(镜)。选中后指针在画布上自动变形状，直接拖拽操作
+    enum Tool { PanTool = 0, ZoomInTool = 1, ZoomOutTool = 2 };
+    void setTool(int tool);
+    int tool() const { return m_tool; }
     void exportPng();                                   // 当前画布渲染结果另存
     void exportCsv();                                   // 当前可见时间窗内的长表 CSV
     void zoomBy(double factor);                          // 1.25 放大，0.8 缩小
@@ -214,6 +219,7 @@ private:
     QString m_xLabel;
     QString m_yLabel;
     bool m_rubberZoom = false;
+    int m_tool = PanTool;
     bool m_followLive = false;
     double m_liveWindow = 30.0;
     bool m_rubbering = false;
@@ -225,6 +231,7 @@ private:
     double m_abB = 0.0;
     bool m_hasPlayhead = false;
     double m_playhead = 0.0;
+    QCursor toolCursor() const;
     QPointF m_rubberStart;
     QRectF m_rubberRect;
     bool m_kernelBacked = false;

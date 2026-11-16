@@ -2,6 +2,7 @@
 #include "MainWindow.h"
 #include "RibbonGallery.h"
 #include "ThemeManager.h"
+#include "plotting/PlottingModule.h"
 #include <QAction>
 #include <QFrame>
 #include <QGridLayout>
@@ -13,6 +14,7 @@
 #include <QPainterPath>
 #include <QPixmap>
 #include <QToolButton>
+#include <QActionGroup>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
@@ -325,6 +327,109 @@ void buildLayoutPicker(QWidget *p)
         popup->move(x, y);
         popup->show();
     });
+}
+
+namespace
+{
+QIcon ribIcon(const QString &name)
+{
+    return QIcon(QStringLiteral(":/icons/%1.svg").arg(name));
+}
+} // namespace
+
+// 页面：新建页大按钮 + 添加/删除/左右/上下四个小按钮两行排，都作用于当前画布
+void buildPagePanel(QWidget *p)
+{
+    auto *panel = static_cast<SARibbonPanel *>(p);
+    auto *mw = qobject_cast<MainWindow *>(panel->window());
+    if (!mw)
+        return;
+    panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
+
+    auto *newPage = new QAction(ribIcon(QStringLiteral("newpage")), QStringLiteral("新建页"), panel);
+    newPage->setToolTip(QStringLiteral("新建一个绘图页签"));
+    QObject::connect(newPage, &QAction::triggered, mw, [mw] {
+        mw->commands().invoke(QStringLiteral("page.new"), ps::commands::CommandContext{mw, {}});
+    });
+    panel->addLargeAction(newPage);
+
+    auto small = [&](const QString &text, const QString &iconName, const QString &cmd,
+                     const QString &tip) {
+        auto *a = new QAction(ribIcon(iconName), text, panel);
+        a->setToolTip(tip);
+        QObject::connect(a, &QAction::triggered, mw, [mw, cmd] {
+            mw->commands().invoke(cmd, ps::commands::CommandContext{mw, {}});
+        });
+        panel->addSmallAction(a);
+    };
+    small(QStringLiteral("添加"), QStringLiteral("plus"), QStringLiteral("page.addCanvas"),
+          QStringLiteral("在当前画布下方拆出新画布"));
+    small(QStringLiteral("删除"), QStringLiteral("trash"), QStringLiteral("page.removeCanvas"),
+          QStringLiteral("删除当前画布"));
+    small(QStringLiteral("左右"), QStringLiteral("split_h"), QStringLiteral("page.splitHorizontal"),
+          QStringLiteral("在当前画布右侧拆出新画布"));
+    small(QStringLiteral("上下"), QStringLiteral("split_v"), QStringLiteral("page.splitVertical"),
+          QStringLiteral("在当前画布下方拆出新画布"));
+}
+
+// 显示：网格/边框/图例开关，两行排
+void buildDisplayPanel(QWidget *p)
+{
+    auto *panel = static_cast<SARibbonPanel *>(p);
+    auto *mw = qobject_cast<MainWindow *>(panel->window());
+    if (!mw)
+        return;
+    panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
+    auto add = [&](const QString &text, const QString &iconName, int flag) {
+        auto *a = new QAction(ribIcon(iconName), text, panel);
+        a->setCheckable(true);
+        a->setToolTip(text);
+        QObject::connect(a, &QAction::toggled, mw,
+                         [mw, flag](bool on) { ps::plotting::setCanvasViewFlag(mw, flag, on); });
+        panel->addSmallAction(a);
+    };
+    add(QStringLiteral("网格"), QStringLiteral("grid"), 0);
+    add(QStringLiteral("边框"), QStringLiteral("box"), 1);
+    add(QStringLiteral("图例"), QStringLiteral("legend"), 2);
+}
+
+// 画布操作：放大/缩小/移动/自适应，两行排；放大缩小移动切换鼠标工具
+void buildPanelsToolbar(QWidget *p)
+{
+    auto *panel = static_cast<SARibbonPanel *>(p);
+    auto *mw = qobject_cast<MainWindow *>(panel->window());
+    if (!mw)
+        return;
+    panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
+
+    auto *group = new QActionGroup(panel);
+    group->setExclusive(true);
+    auto toolAction = [&](const QString &text, const QString &iconName, int tool, const QString &tip) {
+        auto *a = new QAction(ribIcon(iconName), text, panel);
+        a->setCheckable(true);
+        a->setToolTip(tip);
+        group->addAction(a);
+        QObject::connect(a, &QAction::toggled, mw, [mw, tool](bool on) {
+            if (on)
+                mw->commands().invoke(QStringLiteral("page.tool"),
+                                      ps::commands::CommandContext{mw, QString::number(tool)});
+        });
+        panel->addSmallAction(a);
+        return a;
+    };
+    auto *pan = toolAction(QStringLiteral("移动"), QStringLiteral("hand"), 0,
+                           QStringLiteral("手型指针：按住左键拖动平移画布"));
+    toolAction(QStringLiteral("放大"), QStringLiteral("zoom_in"), 1,
+               QStringLiteral("放大镜指针：框选放大，滚轮缩放"));
+    toolAction(QStringLiteral("缩小"), QStringLiteral("zoom_out"), 2,
+               QStringLiteral("缩小镜指针：框选缩小"));
+    pan->setChecked(true);
+
+    auto *fit = new QAction(ribIcon(QStringLiteral("autoy")), QStringLiteral("自适应"), panel);
+    fit->setToolTip(QStringLiteral("纵轴自适应到数据范围"));
+    QObject::connect(fit, &QAction::triggered, mw,
+                     [mw] { ps::plotting::canvasAutoY(mw); });
+    panel->addSmallAction(fit);
 }
 
 void buildPlotGallery(QWidget *p)

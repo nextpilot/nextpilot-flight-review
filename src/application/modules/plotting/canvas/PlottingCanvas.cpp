@@ -2425,7 +2425,8 @@ void PlottingCanvas::mousePressEvent(QMouseEvent *event)
         update();
         return;
     }
-    if (event->button() == Qt::LeftButton && m_rubberZoom && plotRect().contains(event->position()))
+    if (event->button() == Qt::LeftButton && plotRect().contains(event->position())
+        && (m_rubberZoom || m_tool != PanTool))
     {
         m_rubbering = true;
         m_rubberStart = event->position();
@@ -2638,6 +2639,31 @@ void PlottingCanvas::setBoxVisible(bool on)
     update();
 }
 
+QCursor PlottingCanvas::toolCursor() const
+{
+    if (m_tool == ZoomInTool || m_tool == ZoomOutTool)
+    {
+        const QIcon ico(QStringLiteral(":/icons/%1.svg")
+                            .arg(m_tool == ZoomInTool ? QStringLiteral("zoom_in") : QStringLiteral("zoom_out")));
+        const QPixmap pm = ico.pixmap(22, 22);
+        return QCursor(pm, 11, 11);
+    }
+    return QCursor(Qt::OpenHandCursor);
+}
+
+void PlottingCanvas::setTool(int tool)
+{
+    m_tool = tool;
+    m_rubbering = false;
+    m_rubberRect = QRectF();
+    m_dragging = false;
+    if (m_hover && plotRect().contains(m_cursor))
+        setCursor(toolCursor());
+    else
+        unsetCursor();
+    update();
+}
+
 void PlottingCanvas::setRubberZoomEnabled(bool on)
 {
     m_rubberZoom = on;
@@ -2687,6 +2713,14 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
 {
     m_cursor = event->position();
     m_hover = true;
+    // 指针形状跟着工具走：放大镜/缩小镜/手，提示这里可以直接拖拽操作
+    if (!(event->buttons() & Qt::LeftButton) && !m_titleDrag && !m_abDrag)
+    {
+        if (plotRect().contains(m_cursor))
+            setCursor(toolCursor());
+        else
+            unsetCursor();
+    }
     if (m_titleDrag && (event->buttons() & Qt::LeftButton))
     {
         if ((event->position() - m_titleDragStart).manhattanLength() > 6)
@@ -2724,6 +2758,7 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
     }
     if (m_dragging)
     {
+        setCursor(Qt::ClosedHandCursor);
         const QRectF plot = plotRect();
         const double dx = event->position().x() - m_lastPos.x();
         const double dy = event->position().y() - m_lastPos.y();
@@ -2769,15 +2804,20 @@ void PlottingCanvas::mouseReleaseEvent(QMouseEvent *event)
         if (r.width() > 6 && r.height() > 6)
         {
             const QRectF plot = plotRect();
-            const double t0 = m_t0 + (m_t1 - m_t0) * (r.left() - plot.left()) / plot.width();
-            const double t1 = m_t0 + (m_t1 - m_t0) * (r.right() - plot.left()) / plot.width();
+            // 放大镜：框内放大到满格；缩小镜：框内缩小，反向放大视野
+            const double fx = m_tool == ZoomOutTool ? plot.width() / r.width() : 1.0;
+            const double fy = m_tool == ZoomOutTool ? plot.height() / r.height() : 1.0;
+            const double tcx = m_t0 + (m_t1 - m_t0) * (r.center().x() - plot.left()) / plot.width();
+            const double tSpan = (m_t1 - m_t0)
+                                 * (m_tool == ZoomOutTool ? fx
+                                    : r.width() / plot.width());
             const double span = m_yMax - m_yMin;
-            const double topVal = m_yMax - span * (r.top() - plot.top()) / plot.height();
-            const double bottomVal = m_yMax - span * (r.bottom() - plot.top()) / plot.height();
-            m_yMax = topVal;
-            m_yMin = bottomVal;
-            m_t0 = std::min(t0, t1);
-            m_t1 = std::max(t0, t1);
+            const double ycy = m_yMax - span * (r.center().y() - plot.top()) / plot.height();
+            const double ySpan = span * (m_tool == ZoomOutTool ? fy : r.height() / plot.height());
+            m_t0 = tcx - tSpan / 2.0;
+            m_t1 = tcx + tSpan / 2.0;
+            m_yMin = ycy - ySpan / 2.0;
+            m_yMax = ycy + ySpan / 2.0;
             m_autoY = false;
             emit timeRangeChanged(m_t0, m_t1);
         }

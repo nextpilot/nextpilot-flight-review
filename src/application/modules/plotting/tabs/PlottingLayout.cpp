@@ -101,6 +101,8 @@ void PlottingLayout::setGrid(int rows, int cols)
     QVector<PlottingCanvas *> leaves = canvases();
     while (leaves.size() > rows * cols && rows < 8)
         ++rows;
+    m_rows = rows;
+    m_cols = cols;
     clearChildren();
     for (int r = 0; r < rows; ++r)
     {

@@ -22,6 +22,12 @@ void PlottingSession::registerCommands()
     m_mw->commands().add(QStringLiteral("page.new"), [this](const Ctx &) { newPage(); });
     dirty(QStringLiteral("page.addCanvas"), QStringLiteral("新增画布"));
     m_mw->commands().add(QStringLiteral("page.addCanvas"), [this](const Ctx &) { addCanvasToPage(); });
+    dirty(QStringLiteral("page.removeCanvas"), QStringLiteral("删除画布"));
+    m_mw->commands().add(QStringLiteral("page.removeCanvas"), [this](const Ctx &) {
+        removeCanvas(currentCanvas());
+    });
+    dirty(QStringLiteral("page.tool"), QStringLiteral("画布工具"));
+    m_mw->commands().add(QStringLiteral("page.tool"), [this](const Ctx &ctx) { setCanvasTool(ctx.arg.toInt()); });
     dirty(QStringLiteral("page.splitHorizontal"), QStringLiteral("水平拆分"));
     m_mw->commands().add(QStringLiteral("page.splitHorizontal"), [this](const Ctx &) {
         if (auto *c = currentCanvas())

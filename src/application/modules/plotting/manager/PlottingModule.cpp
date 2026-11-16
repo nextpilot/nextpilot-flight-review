@@ -70,40 +70,10 @@ void registerPlottingContributions(Registry &registry)
                                           return mw ? plottingSession(mw)->createPropPanel(true) : nullptr;
                                       }});
     registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
-        {{QStringLiteral("页面"),
-             {{QStringLiteral("page.new"), QStringLiteral("新建页"), {}, true, QStringLiteral("newpage")},
-              {QStringLiteral("page.addCanvas"), QStringLiteral("添加画布"), {}, true, QStringLiteral("plus")},
-              {QStringLiteral("page.splitHorizontal"), QStringLiteral("向右拆分"), {}, true, QStringLiteral("split_h")},
-              {QStringLiteral("page.splitVertical"), QStringLiteral("向下拆分"), {}, true, QStringLiteral("split_v")}}},
+        {{QStringLiteral("页面"), {}, ps::plotting::buildPagePanel},
          {QStringLiteral("画布布局"), {}, ps::plotting::buildLayoutPicker},
-         {QStringLiteral("显示"), {},
-             [](QWidget *p) {
-                 auto *panel = static_cast<SARibbonPanel *>(p);
-                 auto *mw = qobject_cast<MainWindow *>(panel->window());
-                 auto icon = [](const QString &name) {
-                     return QIcon(QStringLiteral(":/icons/%1.svg").arg(name));
-                 };
-                 auto add = [&](const QString &text, const QString &iconName, int flag) {
-                     auto *a = new QAction(icon(iconName), text, panel);
-                     a->setCheckable(true);
-                     QObject::connect(a, &QAction::toggled, mw, [mw, flag](bool on) { ps::plotting::setCanvasViewFlag(mw, flag, on); });
-                     panel->addSmallAction(a);
-                 };
-                 add(QStringLiteral("网格"), QStringLiteral("grid"), 0);
-                 add(QStringLiteral("边框"), QStringLiteral("box"), 1);
-                 add(QStringLiteral("图例"), QStringLiteral("legend"), 2);
-                 add(QStringLiteral("框选"), QStringLiteral("cursor"), 3);
-                 panel->addSeparator();
-                 auto *zin = new QAction(icon(QStringLiteral("zoom_in")), QStringLiteral("放大"), panel);
-                 QObject::connect(zin, &QAction::triggered, mw, [mw] { ps::plotting::canvasZoom(mw, 0.8); });
-                 panel->addSmallAction(zin);
-                 auto *zout = new QAction(icon(QStringLiteral("zoom_out")), QStringLiteral("缩小"), panel);
-                 QObject::connect(zout, &QAction::triggered, mw, [mw] { ps::plotting::canvasZoom(mw, 1.25); });
-                 panel->addSmallAction(zout);
-                 auto *autoY = new QAction(icon(QStringLiteral("autoy")), QStringLiteral("自适应"), panel);
-                 QObject::connect(autoY, &QAction::triggered, mw, [mw] { ps::plotting::canvasAutoY(mw); });
-                 panel->addSmallAction(autoY);
-             }},
+         {QStringLiteral("显示"), {}, ps::plotting::buildDisplayPanel},
+         {QStringLiteral("画布操作"), {}, ps::plotting::buildPanelsToolbar},
          {QStringLiteral("图表类型"), {}, ps::plotting::buildPlotGallery}},
         2});
 }
@@ -119,6 +89,7 @@ QVector<PlottingCanvas *> pageCanvases(MainWindow *mw) { return plottingSession(
 void newPage(MainWindow *mw) { plottingSession(mw)->newPage(); }
 void setCanvasViewFlag(MainWindow *mw, int f, bool on) { plottingSession(mw)->setCanvasViewFlag(f, on); }
 void canvasZoom(MainWindow *mw, double f) { plottingSession(mw)->canvasZoom(f); }
+void canvasTool(MainWindow *mw, int tool) { plottingSession(mw)->setCanvasTool(tool); }
 void canvasAutoY(MainWindow *mw) { plottingSession(mw)->canvasAutoY(); }
 void reloadCanvasSettings(MainWindow *mw) { plottingSession(mw)->reloadCanvasSettings(); }
 void applyPlayhead(MainWindow *mw, double t) { plottingSession(mw)->applyPlayhead(t); }

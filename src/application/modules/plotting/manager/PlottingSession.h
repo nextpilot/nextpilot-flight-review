@@ -33,6 +33,7 @@ public:
     QVector<PlottingCanvas *> pageCanvases() const;
     void setCanvasViewFlag(int flag, bool on);
     void canvasZoom(double factor);
+    void setCanvasTool(int tool);   // 0=平移 1=放大 2=缩小，作用于当前页全部画布
     void canvasAutoY();
     QTableWidget *propTable() const { return m_propTable; }
     QTreeWidget *propTree() const { return m_propTree; }

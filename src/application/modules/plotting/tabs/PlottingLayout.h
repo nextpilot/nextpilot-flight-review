@@ -24,11 +24,16 @@ public:
     void addCanvas(PlottingCanvas *canvas);
     void removeCanvas(PlottingCanvas *canvas);
     void setGrid(int rows, int cols);
+    int gridRows() const { return m_rows; }
+    int gridCols() const { return m_cols; }
     void split(PlottingCanvas *target, Qt::Orientation orientation,
                PlottingCanvas *canvas);
 
 private:
     void clearChildren();
+
+    int m_rows = 1;
+    int m_cols = 1;
 };
 
 } // namespace ps::plotting
