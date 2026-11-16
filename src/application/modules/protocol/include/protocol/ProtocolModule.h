@@ -5,7 +5,7 @@
 namespace ps::components
 {
 
-class CustomProtocolComponent : public IComponent
+class ProtocolModule : public IComponent
 {
 public:
     ComponentManifest manifest() const override;

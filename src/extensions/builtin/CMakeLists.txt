@@ -6,11 +6,6 @@ add_subdirectory(device_debug)
 add_subdirectory(transform)
 add_subdirectory(script)
 
-if(PS_BUILD_CUSTOM_PROTOCOL AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/custom_protocol/CMakeLists.txt)
-  add_subdirectory(custom_protocol/protocol)
-  add_subdirectory(custom_protocol)
-endif()
-
 if(PS_BUILD_GNSS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gnss/CMakeLists.txt)
   add_subdirectory(gnss)
 endif()
@@ -32,10 +27,6 @@ target_link_libraries(ps_builtin_components INTERFACE
   ps_builtin_transform_component
   ps_builtin_script_component
 )
-if(TARGET ps_custom_protocol_component)
-  target_sources(ps_builtin_components INTERFACE $<TARGET_OBJECTS:ps_custom_protocol_component>)
-  target_link_libraries(ps_builtin_components INTERFACE ps_custom_protocol_component)
-endif()
 if(TARGET ps_gnss_component)
   target_sources(ps_builtin_components INTERFACE $<TARGET_OBJECTS:ps_gnss_component>)
   target_link_libraries(ps_builtin_components INTERFACE ps_gnss_component)

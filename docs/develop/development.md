@@ -16,7 +16,8 @@ extensions（具体业务） → modules（通用能力） → shell（最小宿
 | `src/application/modules/runtime` | 组件注册、扩展生命周期、通用贡献接口、动态扩展扫描/ABI | 具体业务格式 |
 | `src/application/modules/datasource` | 数据源抽象、加载器注册、实时源、缓存、数据源 Dock | 画布、绘图页 |
 | `src/application/modules/plotting` | 画布、绘图页/切分、轴/曲线、属性面板、脚本画布 | 具体文件格式解析 |
-| `src/extensions/builtin` | 内置业务组件：GNSS、协议、设备调试、变换、视频、脚本 | 被 shell/modules 反向 include |
+| `src/application/modules/protocol` | 协议 schema/文档、协议编辑器、codec、自定义协议 loader | 画布、数据源会话状态 |
+| `src/extensions/builtin` | 内置业务组件：GNSS、设备调试、变换、视频、脚本 | 被 shell/modules 反向 include |
 | `src/extensions/dynamic` | 动态扩展：各格式加载器、MAVLink/仿真数据源、SDK | 同上 |
 
 ## 目录定位
@@ -25,6 +26,7 @@ extensions（具体业务） → modules（通用能力） → shell（最小宿
 
 - 数据源生命周期、加载器接口、数据源 Dock：`modules/datasource/{manager,dock,dialog,ribbon,services}`
 - 画布、绘图页、切分布局、绘图 Ribbon：`modules/plotting/{canvas,tabs,manager,ribbon}`
+- 协议文档、编辑器、codec、协议 loader：`modules/protocol/{protocol,dialog,codec,manager,include}`
 - 组件/扩展协议、Registry、HostServices：`modules/runtime`
 - 只和宿主有关：`shell`
 - 具体协议/行业逻辑：`extensions`

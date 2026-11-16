@@ -1,4 +1,4 @@
-#include "CustomProtocolComponent.h"
+#include "protocol/ProtocolModule.h"
 
 #include "ProtocolEditorDialog.h"
 #include "protocol/ProtocolSpec.h"
@@ -19,17 +19,17 @@ namespace ps::components
 {
 namespace
 {
-struct CustomProtocolRegistrar
+struct ProtocolModuleRegistrar
 {
-    CustomProtocolRegistrar()
+    ProtocolModuleRegistrar()
     {
         ExtensionRegistry::instance().addExtension(
             ExtensionDescriptor{QStringLiteral("protocol.custom"), QStringLiteral("自定义协议"),
                                 QStringLiteral("1.0"), ExtensionType::Builtin},
-            [] { return std::make_unique<CustomProtocolComponent>(); });
+            [] { return std::make_unique<ProtocolModule>(); });
     }
 };
-static CustomProtocolRegistrar g_customProtocolRegistrar;
+static ProtocolModuleRegistrar g_protocolModuleRegistrar;
 
 QString protocolDir()
 {
@@ -55,14 +55,14 @@ QString nextProtocolPath()
 
 } // namespace
 
-ComponentManifest CustomProtocolComponent::manifest() const
+ComponentManifest ProtocolModule::manifest() const
 {
     return {QStringLiteral("protocol.custom"), QStringLiteral("自定义协议"),
             QStringLiteral("1.0"), {QStringLiteral("loader"), QStringLiteral("protocol"),
                                     QStringLiteral("ribbon"), QStringLiteral("editor")}};
 }
 
-void CustomProtocolComponent::contribute(Registry &registry, HostContext &host)
+void ProtocolModule::contribute(Registry &registry, HostContext &host)
 {
     DataSourceSpec customSource;
     customSource.descriptor = ps_custom_protocol_loader();

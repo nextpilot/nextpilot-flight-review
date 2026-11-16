@@ -16,6 +16,7 @@ target_include_directories(plotscope_app PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/shell
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/modules/protocol/include
 )
 
 target_link_libraries(plotscope_app PRIVATE
@@ -25,6 +26,10 @@ target_link_libraries(plotscope_app PRIVATE
   Qt6::Widgets Qt6::Network Qt6::Svg
   ps_host ps_kernel ps_cache ps_live
 )
+
+if(TARGET ps_application_protocol)
+  target_link_libraries(plotscope_app PRIVATE ps_application_protocol)
+endif()
 
 if(TARGET ps_builtin_components)
   target_link_libraries(plotscope_app PRIVATE ps_builtin_components)
