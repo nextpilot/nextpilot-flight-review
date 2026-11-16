@@ -29,7 +29,7 @@ QString extensionText(const QVector<ExtensionManager::ExtensionInfo> &extensions
         const auto &d = entry.descriptor;
         out << d.id << "  " << d.name << "  " << d.version << "  "
             << (d.type == ps::components::ExtensionType::Builtin ? "builtin" : "dynamic")
-            << "  " << (entry.active ? "active" : "inactive") << '\n';
+            << "  " << (entry.enabled ? (entry.active ? "active" : "inactive") : "disabled") << '\n';
         if (!entry.error.isEmpty())
             out << "  " << entry.error << '\n';
     }

@@ -9,7 +9,7 @@ ExtensionHost::~ExtensionHost()
     deactivate();
 }
 
-void ExtensionHost::activate(const HostContext &context)
+void ExtensionHost::activate(const HostContext &context, const QStringList &disabledIds)
 {
     if (!m_components.empty())
         return;
@@ -18,6 +18,8 @@ void ExtensionHost::activate(const HostContext &context)
     m_activeIds.clear();
     for (const ExtensionEntry &entry : ExtensionRegistry::instance().extensions())
     {
+        if (disabledIds.contains(entry.descriptor.id))
+            continue;
         std::unique_ptr<IComponent> component = entry.factory();
         if (!component)
         {

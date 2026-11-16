@@ -41,6 +41,7 @@ void ShellComponent::contribute(Registry &registry, const HostContext &)
             {}},
         RibbonPanel{QStringLiteral("导出"),
             {RibbonItem{QStringLiteral("file.saveLayout"), {}, {}, true, {}},
+             RibbonItem{QStringLiteral("file.exportSettings"), {}, {}, false, {}},
              RibbonItem{QStringLiteral("file.exportData"), {}, {}, false, {}}},
             {}},
         RibbonPanel{QStringLiteral("截图"),

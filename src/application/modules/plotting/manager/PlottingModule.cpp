@@ -6,6 +6,7 @@
 #include "PlottingSettings.h"
 
 #include <QAction>
+#include <QIcon>
 #include <QWidget>
 #include "SARibbonPanel.h"
 
@@ -76,24 +77,27 @@ void registerPlottingContributions(Registry &registry)
              [](QWidget *p) {
                  auto *panel = static_cast<SARibbonPanel *>(p);
                  auto *mw = qobject_cast<MainWindow *>(panel->window());
-                 auto add = [&](const QString &text, int flag) {
-                     auto *a = new QAction(text, panel);
+                 auto icon = [](const QString &name) {
+                     return QIcon(QStringLiteral(":/icons/%1.svg").arg(name));
+                 };
+                 auto add = [&](const QString &text, const QString &iconName, int flag) {
+                     auto *a = new QAction(icon(iconName), text, panel);
                      a->setCheckable(true);
                      QObject::connect(a, &QAction::toggled, mw, [mw, flag](bool on) { ps::plotting::setCanvasViewFlag(mw, flag, on); });
                      panel->addSmallAction(a);
                  };
-                 add(QStringLiteral("网格"), 0);
-                 add(QStringLiteral("边框"), 1);
-                 add(QStringLiteral("图例"), 2);
-                 add(QStringLiteral("框选"), 3);
+                 add(QStringLiteral("网格"), QStringLiteral("grid"), 0);
+                 add(QStringLiteral("边框"), QStringLiteral("box"), 1);
+                 add(QStringLiteral("图例"), QStringLiteral("legend"), 2);
+                 add(QStringLiteral("框选"), QStringLiteral("cursor"), 3);
                  panel->addSeparator();
-                 auto *zin = new QAction(QStringLiteral("放大"), panel);
+                 auto *zin = new QAction(icon(QStringLiteral("zoom_in")), QStringLiteral("放大"), panel);
                  QObject::connect(zin, &QAction::triggered, mw, [mw] { ps::plotting::canvasZoom(mw, 0.8); });
                  panel->addSmallAction(zin);
-                 auto *zout = new QAction(QStringLiteral("缩小"), panel);
+                 auto *zout = new QAction(icon(QStringLiteral("zoom_out")), QStringLiteral("缩小"), panel);
                  QObject::connect(zout, &QAction::triggered, mw, [mw] { ps::plotting::canvasZoom(mw, 1.25); });
                  panel->addSmallAction(zout);
-                 auto *autoY = new QAction(QStringLiteral("自适应"), panel);
+                 auto *autoY = new QAction(icon(QStringLiteral("autoy")), QStringLiteral("自适应"), panel);
                  QObject::connect(autoY, &QAction::triggered, mw, [mw] { ps::plotting::canvasAutoY(mw); });
                  panel->addSmallAction(autoY);
              }},

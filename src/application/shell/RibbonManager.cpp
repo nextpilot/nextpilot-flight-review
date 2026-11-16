@@ -4,7 +4,6 @@
 #include "Component.h"
 
 #include <QAction>
-#include <QHash>
 #include <QIcon>
 #include <QMainWindow>
 #include <QMenuBar>
@@ -182,60 +181,6 @@ QWidget *RibbonManager::create()
     {
         a->setEnabled(false);
         rg->addAction(a);
-    }
-
-    // 自绘 SVG 图标：没有图标时 SARibbon 会在按钮左侧留空方块，观感直接崩
-    {
-        static const QHash<QString, QString> kIcon = {
-            {QStringLiteral("打开文件"), QStringLiteral("open")},
-            {QStringLiteral("导入布局"), QStringLiteral("import")},
-            {QStringLiteral("设置"), QStringLiteral("settings")},
-            {QStringLiteral("保存布局"), QStringLiteral("export")},
-            {QStringLiteral("导出布局"), QStringLiteral("export")},
-            {QStringLiteral("导出设置"), QStringLiteral("export_cfg")},
-            {QStringLiteral("导出数据"), QStringLiteral("export_data")},
-            {QStringLiteral("截图当前页"), QStringLiteral("screenshot")},
-            {QStringLiteral("打开数据源"), QStringLiteral("datasource")},
-            {QStringLiteral("全部开始"), QStringLiteral("play")},
-            {QStringLiteral("全部暂停"), QStringLiteral("pause")},
-            {QStringLiteral("自动 Y"), QStringLiteral("autoy")},
-            {QStringLiteral("游标"), QStringLiteral("cursor")},
-            {QStringLiteral("复位视图"), QStringLiteral("reset")},
-            {QStringLiteral("新建 Loader"), QStringLiteral("loader")},
-            {QStringLiteral("帧模板 YAML"), QStringLiteral("yaml")},
-            {QStringLiteral("校验"), QStringLiteral("validate")},
-            {QStringLiteral("数据源"), QStringLiteral("datasource")},
-            {QStringLiteral("属性"), QStringLiteral("prop")},
-            {QStringLiteral("脚本"), QStringLiteral("script")},
-            {QStringLiteral("日志"), QStringLiteral("log")},
-            {QStringLiteral("视频"), QStringLiteral("play")},
-            {QStringLiteral("网格"), QStringLiteral("grid")},
-            {QStringLiteral("边框"), QStringLiteral("box")},
-            {QStringLiteral("图例"), QStringLiteral("legend")},
-            {QStringLiteral("框选"), QStringLiteral("cursor")},
-            {QStringLiteral("放大"), QStringLiteral("zoom_in")},
-            {QStringLiteral("缩小"), QStringLiteral("zoom_out")},
-            {QStringLiteral("最近"), QStringLiteral("import")},
-            {QStringLiteral("导出快照"), QStringLiteral("export_data")},
-            {QStringLiteral("重载"), QStringLiteral("reset")},
-            {QStringLiteral("复位"), QStringLiteral("reset")},
-            {QStringLiteral("\u25be"), QStringLiteral("arrow_more")},
-        };
-        // QAction 的 parent 是 this（不是 ribbon），按 ribbon 找会一个都拿不到
-        for (auto *a : m_window->findChildren<QAction *>())
-        {
-            // 命令动作的文案/图标由 CommandSpec 提供，不再按中文标签二次映射。
-            if (a->property("rbCommandId").isValid())
-                continue;
-            const auto it = kIcon.find(a->text());
-            if (it != kIcon.end())
-            {
-                a->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(it.value())));
-                if (a->property("rbIconOnly").toBool())
-                    a->setText(QString());
-
-            }
-        }
     }
 
     if (auto *ab = ribbon->applicationButton())

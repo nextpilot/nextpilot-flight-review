@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QSettings>
+#include <QJsonObject>
 #include <QVariant>
 
 namespace ps::commands
@@ -24,6 +25,8 @@ public:
     void setValue(const QString &key, const QVariant &value);
     void remove(const QString &key);
     void sync();
+    QJsonObject toJson() const;
+    bool exportTo(const QString &path) const;
     void openDialog(MainWindow *parent);
     void registerCommand(ps::commands::CommandManager &commands, MainWindow *parent);
 

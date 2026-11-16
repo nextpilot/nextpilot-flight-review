@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QGridLayout>
 #include <QHash>
+#include <QIcon>
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
@@ -328,7 +329,7 @@ void buildPlotGallery(QWidget *p)
         return;
     auto *ribbon = panel->ribbonBar();
     auto addSmall = [](SARibbonPanel *pn, const QString &text, std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(text, ctx);
+        auto *a = new QAction(QIcon(QStringLiteral(":/icons/arrow_more.svg")), text, ctx);
         a->setToolTip(text);
         a->setProperty("rbIconOnly", true);
         QObject::connect(a, &QAction::triggered, ctx, fn);

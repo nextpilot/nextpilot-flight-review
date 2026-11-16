@@ -20,6 +20,7 @@ public:
     {
         ps::components::ExtensionDescriptor descriptor;
         bool active = false;
+        bool enabled = true;
         QString error;
     };
 
@@ -37,6 +38,9 @@ public:
     QStringList errors() const;
     QVector<ExtensionInfo> extensions() const;
     bool isActive(const QString &id) const;
+    bool isEnabled(const QString &id) const;
+    void setEnabled(const QString &id, bool enabled);
+    QStringList disabledIds() const;
 
 private:
     std::unique_ptr<ps::components::ExtensionHost> m_host;

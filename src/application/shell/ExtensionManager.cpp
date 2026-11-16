@@ -2,6 +2,7 @@
 
 #include "ExtensionHost.h"
 #include "ExtensionRuntime.h"
+#include "SettingsManager.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -37,7 +38,7 @@ void ExtensionManager::scanStandardLocations()
 
 void ExtensionManager::activate(const ps::components::HostContext &context)
 {
-    m_host->activate(context);
+    m_host->activate(context, disabledIds());
 }
 
 void ExtensionManager::deactivate()
@@ -66,11 +67,13 @@ QStringList ExtensionManager::errors() const
 QVector<ExtensionManager::ExtensionInfo> ExtensionManager::extensions() const
 {
     QVector<ExtensionInfo> result;
+    const QStringList disabled = disabledIds();
     for (const auto &entry : ps::components::ExtensionRegistry::instance().extensions())
     {
         ExtensionInfo info;
         info.descriptor = entry.descriptor;
         info.active = m_host->activeIds().contains(entry.descriptor.id);
+        info.enabled = !disabled.contains(entry.descriptor.id);
         for (const QString &error : m_host->errors())
         {
             if (error.startsWith(entry.descriptor.id + QStringLiteral("：")))
@@ -88,4 +91,25 @@ QVector<ExtensionManager::ExtensionInfo> ExtensionManager::extensions() const
 bool ExtensionManager::isActive(const QString &id) const
 {
     return m_host->activeIds().contains(id);
+}
+
+QStringList ExtensionManager::disabledIds() const
+{
+    return SettingsManager::instance()
+        .value(QStringLiteral("extensions.disabled")).toStringList();
+}
+
+bool ExtensionManager::isEnabled(const QString &id) const
+{
+    return !disabledIds().contains(id);
+}
+
+void ExtensionManager::setEnabled(const QString &id, bool enabled)
+{
+    QStringList disabled = disabledIds();
+    if (enabled)
+        disabled.removeAll(id);
+    else if (!disabled.contains(id))
+        disabled.append(id);
+    SettingsManager::instance().setValue(QStringLiteral("extensions.disabled"), disabled);
 }

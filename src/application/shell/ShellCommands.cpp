@@ -2,6 +2,7 @@
 
 #include "MainWindow.h"
 #include "DiagnosticsDialog.h"
+#include "SettingsManager.h"
 
 #include "Component.h"
 
@@ -36,6 +37,7 @@ void registerCommands(MainWindow &win)
     describe(QStringLiteral("file.open"), QStringLiteral("打开文件"), QStringLiteral("open"), QStringLiteral("Ctrl+O"));
     describe(QStringLiteral("file.importLayout"), QStringLiteral("导入布局"), QStringLiteral("import"), {});
     describe(QStringLiteral("file.saveLayout"), QStringLiteral("另存布局"), QStringLiteral("export"), QStringLiteral("Ctrl+Shift+S"));
+    describe(QStringLiteral("file.exportSettings"), QStringLiteral("导出设置"), QStringLiteral("export_cfg"), {});
     describe(QStringLiteral("file.exportData"), QStringLiteral("导出数据"), QStringLiteral("export"), {});
     describe(QStringLiteral("file.screenshot"), QStringLiteral("截图"), QStringLiteral("screenshot"), {});
     describe(QStringLiteral("layout.save"), QStringLiteral("保存布局"), QStringLiteral("export"), QStringLiteral("Ctrl+S"));
@@ -68,6 +70,16 @@ void registerCommands(MainWindow &win)
             ctx.arg = f;
             win.commands().invoke(QStringLiteral("layout.save"), ctx);
         }
+    });
+    win.commands().add(QStringLiteral("file.exportSettings"), [&win](const Ctx &) {
+        const QString f = QFileDialog::getSaveFileName(&win, QStringLiteral("导出设置"), {},
+            QStringLiteral("JSON (*.json)"));
+        if (f.isEmpty())
+            return;
+        if (SettingsManager::instance().exportTo(f))
+            win.logs().info(QStringLiteral("已导出设置：%1").arg(f));
+        else
+            win.logs().warn(QStringLiteral("导出设置失败：%1").arg(f));
     });
     win.commands().add(QStringLiteral("file.exportData"), [&win](const Ctx &) {
         win.commands().invoke(QStringLiteral("data.exportSnapshot"), {});

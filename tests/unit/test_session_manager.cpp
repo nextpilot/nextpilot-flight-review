@@ -4,6 +4,10 @@
 #include <QApplication>
 #include <QMainWindow>
 #include <QStandardPaths>
+#include <QTemporaryDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <cstdio>
 
 int main(int argc, char **argv)
@@ -34,9 +38,21 @@ int main(int argc, char **argv)
     if (settings.value(QStringLiteral("windowGeometry")).toByteArray().isEmpty())
         return 1;
 
+    QTemporaryDir dir;
+    settings.setValue(QStringLiteral("test.key"), QStringLiteral("value"));
+    if (!settings.exportTo(dir.filePath(QStringLiteral("settings.json"))))
+        return 1;
+    QFile file(dir.filePath(QStringLiteral("settings.json")));
+    if (!file.open(QIODevice::ReadOnly))
+        return 1;
+    const QJsonObject json = QJsonDocument::fromJson(file.readAll()).object();
+    if (json.value(QStringLiteral("test.key")).toString() != QLatin1String("value"))
+        return 1;
+
     settings.remove(QStringLiteral("lastLayout"));
     settings.remove(QStringLiteral("windowGeometry"));
     settings.remove(QStringLiteral("windowState"));
+    settings.remove(QStringLiteral("test.key"));
     std::printf("session manager ok\n");
     return 0;
 }
