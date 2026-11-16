@@ -12,6 +12,18 @@
 
 ## Linux / 云主机
 
+系统 Qt 直接可用时（Ubuntu 22.04 的 `qt6-base-dev` / `qt6-tools-dev` / `libqt6svg6-dev` / `qt6-l10n-tools`，加系统 zlib/zstd/lz4），走 `linux` 预设，不需要 `deps/`：
+
+```bash
+cmake --preset linux            # Debug，产物 build/
+cmake --build --preset linux-debug
+ctest --preset linux            # 自动设 QT_QPA_PLATFORM=offscreen
+```
+
+`linux` 预设会把 `~/.cargo/bin` 加进 `PATH`，rustup 装的 cargo 不用手工 export。Release 用 `linux-release` 预设（产物 `build-release/`）。
+
+没有系统 Qt 时需要自建依赖：
+
 ```bash
 tools/bootstrap-deps.sh   # 下载 Qt 6.2.4 + 编译 Lua 5.4.4 到 deps/
 tools/build-local.sh      # 只用 deps/ 的 Qt/Lua 构建并跑 ctest

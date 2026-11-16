@@ -11,6 +11,26 @@
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "D:/program/Qt/6.12.0/msvc2022_64"
       }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux x64 Debug（系统 Qt 6.2.4 + GCC）",
+      "description": "Ubuntu 22.04 云主机：apt 安装的 Qt 6.2.4、系统 zlib/zstd/lz4、rustup 的 cargo 在 ~/.cargo/bin。CMAKE_BUILD_TYPE=Debug，产物在 build/",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux x64 Release（系统 Qt 6.2.4 + GCC）",
+      "description": "与 linux 同环境，CMAKE_BUILD_TYPE=Release，产物在 build-release/，避免和 Debug 共用一次配置",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -25,6 +45,50 @@
       "displayName": "MSVC 2022 Release",
       "configurePreset": "msvc",
       "configuration": "Release"
+    },
+    {
+      "name": "linux-debug",
+      "displayName": "Linux Debug（-j2）",
+      "configurePreset": "linux",
+      "jobs": 2,
+      "environment": {
+        "PATH": "$penv{HOME}/.cargo/bin:$penv{PATH}"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux Release（-j2）",
+      "configurePreset": "linux-release",
+      "jobs": 2,
+      "environment": {
+        "PATH": "$penv{HOME}/.cargo/bin:$penv{PATH}"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux",
+      "displayName": "Linux ctest（offscreen）",
+      "configurePreset": "linux",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "QT_QPA_PLATFORM": "offscreen",
+        "PATH": "$penv{HOME}/.cargo/bin:$penv{PATH}"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux ctest Release（offscreen）",
+      "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "QT_QPA_PLATFORM": "offscreen",
+        "PATH": "$penv{HOME}/.cargo/bin:$penv{PATH}"
+      }
     }
   ]
 }
