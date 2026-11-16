@@ -52,14 +52,9 @@
 #include <QStringList>
 #include <QTabBar>
 #include <QTabWidget>
-#include <QTableWidget>
-#include <QTableWidgetItem>
 #include <QTextCursor>
 #include <QTimer>
 #include <QToolButton>
-#include <QStyledItemDelegate>
-#include <QTreeWidget>
-#include <QTreeWidgetItem>
 #include <QVariant>
 #include <QVBoxLayout>
 #include <QVector>
@@ -1291,23 +1286,6 @@ QJsonObject PlottingSession::pageState(QWidget *page) const
 }
 
 
-namespace
-{
-// 属性/值两列文字按主题实时取色：键列弱化、值列正文色
-class ThemePropDelegate : public QStyledItemDelegate
-{
-public:
-    using QStyledItemDelegate::QStyledItemDelegate;
-protected:
-    void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
-    {
-        QStyledItemDelegate::initStyleOption(option, index);
-        Q_UNUSED(index)
-        option->palette.setColor(QPalette::Text, ThemeManager::color(QStringLiteral("text")));
-    }
-};
-} // namespace
-
 void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
                                   const QStringList &editable, int kind)
 {
@@ -1493,103 +1471,8 @@ bool PlottingSession::applyPropEdit(const QString &key, const QString &text)
 
 bool PlottingSession::eventFilter(QObject *obj, QEvent *ev)
 {
-    if (obj == m_selLabel && m_selLabel && ev->type() == QEvent::Resize)
-    {
-        const int w = m_selLabel->width();
-        const QString shown = w > 0 ? QFontMetrics(m_selLabel->font()).elidedText(m_selText, Qt::ElideRight, w)
-                                    : m_selText;
-        if (m_selLabel->text() != shown)
-            m_selLabel->setText(shown);
-    }
     return QWidget::eventFilter(obj, ev);
 }
-
-QWidget *PlottingSession::createPropPanel(bool tree)
-{
-    QWidget *w = new QWidget(m_mw);
-    auto *lay = new QVBoxLayout(w);
-    lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(0);
-    if (tree)
-    {
-        m_propTree = new QTreeWidget(w);
-        m_propTree->setHeaderLabels({QStringLiteral("对象"), QStringLiteral("值")});
-        m_propTree->setAlternatingRowColors(true);
-        lay->addWidget(m_propTree);
-        bindPlotPanels(nullptr, nullptr, nullptr, m_propTree);
-    }
-    else
-    {
-        auto *head = new QWidget(w);
-        auto *hl = new QHBoxLayout(head);
-        hl->setContentsMargins(8, 4, 8, 4);
-        m_selLabel = new QLabel(QStringLiteral("未选择"), head);
-        // 对象名可能很长（含路径），标签不能反过来把面板最小宽度顶死：
-        // 宽度策略设为 Ignored，按当前宽度省略显示，完整内容放 tooltip。
-        m_selLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        m_selLabel->setMinimumWidth(0);
-        m_selLabel->installEventFilter(this);
-        hl->addWidget(m_selLabel, 1);
-        lay->addWidget(head);
-        m_propTable = new QTableWidget(0, 2, w);
-        m_propTable->setHorizontalHeaderLabels({QStringLiteral("属性"), QStringLiteral("值")});
-        m_propTable->horizontalHeader()->setStretchLastSection(true);
-        m_propTable->verticalHeader()->hide();
-        m_propTable->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed |
-                                     QAbstractItemView::SelectedClicked);
-        m_propTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-        m_propTable->setItemDelegate(new ThemePropDelegate(m_propTable));
-        lay->addWidget(m_propTable, 1);
-        bindPlotPanels(m_selLabel, nullptr, m_propTable, nullptr);
-    }
-    return w;
-}
-
-void PlottingSession::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree)
-{
-    Q_UNUSED(edit) // 面板已全内联编辑，不再有“编辑”按钮；保留参数供外部绑定旧接口
-    if (sel) m_selLabel = sel;
-    if (table) m_propTable = table;
-    if (tree) m_propTree = tree;
-    if (m_propTable)
-    connect(m_propTable, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *it) {
-        if (m_propUpdating || !it || it->column() != 1)
-            return;
-        auto *key = m_propTable->item(it->row(), 0);
-        if (!key)
-            return;
-        // 提交编辑时编辑器仍持有该 item，直接重建表格会踩到野指针；
-        // 等事件循环回过身再应用，同时也避免重入刷新。
-        const QString k = key->text();
-        const QString v = it->text();
-        QTimer::singleShot(0, this, [this, k, v] { applyPropEdit(k, v); });
-    });
-    if (m_propTable)
-    connect(m_propTable, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
-        if (!m_propCanvas || m_propKind != 2 || m_propSeriesIndex < 0)
-            return;
-        // 可写单元格双击进内联编辑；只读行（名称/单位/来源…）打开曲线设置，
-        // 换数据列与变换这类内联覆盖不到的入口仍在那里。
-        auto *v = m_propTable->item(row, 1);
-        if (v && v->flags().testFlag(Qt::ItemIsEditable))
-            return;
-        editSeriesProps(m_propCanvas, m_propSeriesIndex);
-    });
-    auto pick = [this](QTreeWidgetItem *it) {
-        if (m_propTreeBuilding || !it) return;
-        const int kind = it->data(0, Qt::UserRole).toInt();
-        PlottingCanvas *c = reinterpret_cast<PlottingCanvas *>(it->data(0, Qt::UserRole + 1).value<quintptr>());
-        if (!c) return;
-        if (kind == 1) showAxesProps(c); else if (kind == 2) showSeriesProps(c, it->data(0, Qt::UserRole + 2).toInt());
-    };
-    if (m_propTree)
-    {
-        connect(m_propTree, &QTreeWidget::currentItemChanged, this, [pick](QTreeWidgetItem *it, QTreeWidgetItem *) { pick(it); });
-        connect(m_propTree, &QTreeWidget::itemClicked, this, [pick](QTreeWidgetItem *it, int) { pick(it); });
-    }
-    setPropRows(QStringLiteral("画布"), {{QStringLiteral("提示"), QStringLiteral("选中绘图页签后显示属性")}, {QStringLiteral("Y 轴"), QStringLiteral("线性 · 滚轮缩放 / 拖动平移 / 双击复位")}});
-}
-
 
 void PlottingSession::reloadCanvasSettings() { for (PlottingCanvas *c : findChildren<PlottingCanvas *>()) c->reloadDisplaySettings(); }
 

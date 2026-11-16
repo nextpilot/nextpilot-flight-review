@@ -85,10 +85,6 @@ QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return plottingSessio
 void applyTimeMarkers(MainWindow *mw) { plottingSession(mw)->applyTimeMarkers(); }
 void removeSourceFromCanvases(MainWindow *mw, const QString &p) { plottingSession(mw)->removeSourceFromCanvases(p); }
 void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &c) { plottingSession(mw)->addChannels(c); }
-void setPropRows(MainWindow *mw, const QString &o, const QVector<QPair<QString, QString>> &r) { plottingSession(mw)->setPropRows(o, r); }
-QTableWidget *propTable(MainWindow *mw) { return plottingSession(mw)->propTable(); }
-QTreeWidget *propTree(MainWindow *mw) { return plottingSession(mw)->propTree(); }
-void bindPlotPanels(MainWindow *mw, QLabel *s, QToolButton *e, QTableWidget *t, QTreeWidget *tr) { plottingSession(mw)->bindPlotPanels(s, e, t, tr); }
 }
 
 namespace ps::bridge
@@ -100,10 +96,6 @@ QJsonObject pageState(MainWindow *mw, QWidget *page) { return ps::plotting::page
 QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return ps::plotting::buildPage(mw, o); }
 void refreshPropTree(MainWindow *mw, PlottingCanvas *active) { ps::plotting::refreshPropTree(mw, active); }
 void applyTimeMarkers(MainWindow *mw) { ps::plotting::applyTimeMarkers(mw); }
-void setPropRows(MainWindow *mw, const QString &object,
-                 const QVector<QPair<QString, QString>> &rows) { ps::plotting::setPropRows(mw, object, rows); }
-QTableWidget *propTable(MainWindow *mw) { return ps::plotting::propTable(mw); }
-QTreeWidget *propTree(MainWindow *mw) { return ps::plotting::propTree(mw); }
 QVector<PlottingCanvas *> allCanvases(MainWindow *mw)
 {
     QVector<PlottingCanvas *> out;

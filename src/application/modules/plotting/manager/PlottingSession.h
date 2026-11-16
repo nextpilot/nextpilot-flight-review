@@ -17,9 +17,6 @@ class PlottingCanvas;
 class QDockWidget;
 class QLabel;
 class QSplitter;
-class QTableWidget;
-class QToolButton;
-class QTreeWidget;
 struct PsChannelInfo;
 
 class PlottingSession : public QWidget
@@ -36,17 +33,13 @@ public:
     void canvasZoom(double factor);
     void setCanvasTool(int tool);   // -1=无工具 0=平移 1=放大 2=缩小，作用于当前页全部画布
     void canvasAutoY();
-    QTableWidget *propTable() const { return m_propTable; }
-    QTreeWidget *propTree() const { return m_propTree; }
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
                      const QStringList &editable = QStringList(), int kind = 0);
-    void bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree);
     PlottingCanvas *makeBlankCanvas();
     static bool canvasHasData(PlottingCanvas *c);
     QJsonObject pageState(QWidget *page) const;
     QWidget *buildPage(const QJsonObject &o);
     QWidget *buildNode(const QJsonObject &o, bool top);
-    QWidget *createPropPanel(bool tree);
     void applyTimeMarkers();
     void removeSourceFromCanvases(const QString &sourcePath);
     void addChannels(const QVector<const PsChannelInfo *> &channels);
@@ -74,15 +67,9 @@ public:
 private:
     MainWindow *m_mw = nullptr;
     ps::plotting::PlottingTabs *m_plotWorkspace = nullptr;
-    QTableWidget *m_propTable = nullptr;
     PlottingCanvas *m_propCanvas = nullptr;
     int m_propSeriesIndex = -1;
     int m_propKind = 0;
-    QTreeWidget *m_propTree = nullptr;
-    bool m_propTreeBuilding = false;
-    bool m_propUpdating = false;
-    QLabel *m_selLabel = nullptr;
-    QString m_selText;   // 完整对象名，按标签宽度省略显示
     QLabel *m_runLabel = nullptr;
     PlottingCanvas *m_maxedCanvas = nullptr;
     QVector<QWidget *> m_maxedHidden;

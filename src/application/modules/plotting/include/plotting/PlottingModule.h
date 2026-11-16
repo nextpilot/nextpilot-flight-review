@@ -46,8 +46,4 @@ QWidget *buildPage(MainWindow *mw, const QJsonObject &o);
 void applyTimeMarkers(MainWindow *mw);
 void removeSourceFromCanvases(MainWindow *mw, const QString &sourcePath);
 void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &channels);
-void setPropRows(MainWindow *mw, const QString &object, const QVector<QPair<QString, QString>> &rows);
-QTableWidget *propTable(MainWindow *mw);
-QTreeWidget *propTree(MainWindow *mw);
-void bindPlotPanels(MainWindow *mw, QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree);
 }

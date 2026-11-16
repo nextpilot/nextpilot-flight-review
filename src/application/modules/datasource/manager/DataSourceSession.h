@@ -97,7 +97,6 @@ public:
 private:
     void log(const QString &text);
     void refreshPropTree(PlottingCanvas *c = nullptr);
-    void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
     PlottingCanvas *currentCanvas() const;
     void newPageForward();
     QVector<PlottingCanvas *> pageCanvasesForward() const;
@@ -127,7 +126,6 @@ private:
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;
     QAction *m_chipLod = nullptr;
-    bool m_propTreeBuilding = false;
 };
 
 

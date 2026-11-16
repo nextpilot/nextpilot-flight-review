@@ -48,10 +48,6 @@ QJsonObject pageState(MainWindow *mw, QWidget *page);
 QWidget *buildPage(MainWindow *mw, const QJsonObject &o);
 void refreshPropTree(MainWindow *mw, PlottingCanvas *active = nullptr);
 void applyTimeMarkers(MainWindow *mw);
-void setPropRows(MainWindow *mw, const QString &object,
-                 const QVector<QPair<QString, QString>> &rows);
-QTableWidget *propTable(MainWindow *mw);
-QTreeWidget *propTree(MainWindow *mw);
 QVector<PlottingCanvas *> allCanvases(MainWindow *mw);
 void canvasAddChannel(PlottingCanvas *c, const PsChannelInfo *ch);
 void canvasAddChannelEx(PlottingCanvas *c, const PsChannelInfo *ch, int srcId,

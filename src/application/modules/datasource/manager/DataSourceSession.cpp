@@ -111,7 +111,6 @@ void DataSourceSession::newPageForward() { ps::bridge::newPage(m_mw); }
 QVector<PlottingCanvas *> DataSourceSession::pageCanvasesForward() const { return ps::bridge::pageCanvases(m_mw); }
 void DataSourceSession::addTimeMarkerForward(double t, const QString &l, bool p) { addTimeMarker(t,l,p); }
 void DataSourceSession::refreshPropTree(PlottingCanvas *c) { ps::bridge::refreshPropTree(m_mw, c); }
-void DataSourceSession::setPropRows(const QString &o, const QVector<QPair<QString, QString>> &r) { ps::bridge::setPropRows(m_mw, o, r); }
 PlottingCanvas *DataSourceSession::currentCanvas() const { return ps::bridge::currentCanvas(m_mw); }
 QVector<ps::data_source::SourceData> &DataSourceSession::sources() { return m_sourceStore->items(); }
 void DataSourceSession::closeSources() { if (m_liveTimer) m_liveTimer->stop(); }
