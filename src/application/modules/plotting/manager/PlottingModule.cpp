@@ -71,7 +71,7 @@ void registerPlottingContributions(Registry &registry)
                                       }});
     registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
         {{QStringLiteral("页面"), {}, ps::plotting::buildPagePanel},
-         {QStringLiteral("画布布局"), {}, ps::plotting::buildLayoutPicker},
+         {QStringLiteral("布局"), {}, ps::plotting::buildLayoutPicker},
          {QStringLiteral("显示"), {}, ps::plotting::buildDisplayPanel},
          {QStringLiteral("画布操作"), {}, ps::plotting::buildPanelsToolbar},
          {QStringLiteral("图表类型"), {}, ps::plotting::buildPlotGallery}},

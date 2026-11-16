@@ -63,6 +63,7 @@
 #include "ps_kernel.h"
 
 using ps::plotting::PlottingLayout;
+using ps::plotting::PlottingPage;
 
 static QString plotModeLabel(int mode);
 
@@ -161,20 +162,49 @@ void PlottingSession::applyCanvasGrid(int rows, int cols)
         return;
     }
 
-    auto *layout = dynamic_cast<PlottingLayout *>(page);
+    auto *layout = PlottingLayout::layoutOf(page);
     if (!layout)
     {
-        // 兼容旧的单画布/裸 QSplitter 页，先统一成 PlottingLayout。
+        // 兼容旧的单画布/裸 QSplitter 页，先统一成可滚动的页容器。
         const int idx = m_mw->pages()->currentIndex();
         const QString tabText = m_mw->pages()->tabText(idx);
         m_mw->pages()->removeTab(idx);
-        layout = new PlottingLayout(Qt::Vertical, m_mw->pages());
+        auto *host = new PlottingPage(m_mw->pages());
+        layout = host->layout();
         layout->addWidget(page);
-        m_mw->pages()->insertTab(idx, layout, tabText);
+        m_mw->pages()->insertTab(idx, host, tabText);
         m_mw->pages()->setCurrentIndex(idx);
     }
-    layout->setGrid(rows, cols);
-    log(QStringLiteral("页内布局：%1 × %2（可继续拆分）").arg(rows).arg(cols));
+    // m×n：先删空白画布，再按「列数固定、行数只增不减到 m」补格；
+    // 空出来的格子补真空白画布，谁都能往里拖通道。
+    QVector<PlottingCanvas *> all = layout->canvases();
+    QVector<PlottingCanvas *> keep;
+    for (PlottingCanvas *c : all)
+        if (canvasHasData(c))
+            keep.append(c);
+    if (keep.isEmpty())
+        keep.append(all.first());  // 整页都没数据时留一个，别把页清空
+
+    for (PlottingCanvas *c : all)
+    {
+        if (keep.contains(c))
+            continue;
+        if (m_maxedCanvas == c)
+            restoreCanvasMaximize();
+        c->setParent(nullptr);
+        c->deleteLater();
+    }
+
+    const int c = qBound(1, cols, 8);
+    const int minRows = qBound(1, rows, 8);
+    const int totalRows = qMax(minRows, (keep.size() + c - 1) / c);
+    const int cells = totalRows * c;
+    while (keep.size() < cells)
+        keep.append(makeBlankCanvas());
+
+    layout->setCanvases(keep);
+    layout->setGrid(minRows, c);
+    log(QStringLiteral("页内布局：%1 × %2（画布 %3）").arg(totalRows).arg(c).arg(keep.size()));
 }
 
 void PlottingSession::toggleCanvasMaximize(PlottingCanvas *c)
@@ -224,18 +254,19 @@ void PlottingSession::splitCanvas(PlottingCanvas *target, Qt::Orientation orient
     if (!page || !target || dynamic_cast<QLabel *>(page))
         return;
 
-    auto *layout = dynamic_cast<PlottingLayout *>(page);
+    auto *layout = PlottingLayout::layoutOf(page);
     if (!layout)
     {
         // 兼容旧页：把原来的画布/splitter 整棵挂到一个 PlottingLayout 下，结构不丢。
         const int idx = m_mw->pages()->currentIndex();
         const QString tabText = m_mw->pages()->tabText(idx);
         m_mw->pages()->removeTab(idx);
-        layout = new PlottingLayout(Qt::Vertical, m_mw->pages());
+        auto *host = new PlottingPage(m_mw->pages());
+        layout = host->layout();
         layout->addWidget(page);
-        m_mw->pages()->insertTab(idx, layout, tabText);
+        m_mw->pages()->insertTab(idx, host, tabText);
         m_mw->pages()->setCurrentIndex(idx);
-        page = layout;
+        page = host;
     }
 
     auto *c = new PlottingCanvas(m_mw->pages());
@@ -243,6 +274,35 @@ void PlottingSession::splitCanvas(PlottingCanvas *target, Qt::Orientation orient
     c->setTitle(QStringLiteral("新画布 · plot"));
     c->setTimeRange(target->t0(), target->t1());
     m_plotWorkspace->attachCanvas(c);
+    if (layout->isGridMode())
+    {
+        // 网格里拆分：只把目标格子包成嵌套 splitter，其他格子尺寸不动
+        QSplitter *row = qobject_cast<QSplitter *>(target->parentWidget());
+        if (!row)
+            return;
+        const int at = row->indexOf(target);
+        QList<int> sizes = row->sizes();
+        auto *nested = new PlottingLayout(orientation, row);
+        row->insertWidget(at, nested);
+        nested->addCanvas(target);
+        nested->addCanvas(c);
+        if (!sizes.isEmpty())
+        {
+            // 其他格子尺寸原样保留，只有被拆分这一格内部对半分
+            const int cell = sizes.value(at, 1);
+            row->setSizes(sizes);
+            QTimer::singleShot(0, nested, [nested, cell] {
+                nested->setSizes({cell / 2, cell / 2});
+            });
+        }
+        layout->clearGridMode();
+        log(QStringLiteral("网格内拆分：%1").arg(orientation == Qt::Horizontal ? QStringLiteral("左右")
+                                                                            : QStringLiteral("上下")));
+        refreshPropTree(c);
+        return;
+    }
+    // 手动合并/拆分就不再保持 m×n 整格，之后添加删除只动相关那一格
+    layout->clearGridMode();
     layout->split(target, orientation, c);
     log(QStringLiteral("拆分画布：%1").arg(orientation == Qt::Horizontal ? QStringLiteral("左右")
                                                                           : QStringLiteral("上下")));
@@ -292,7 +352,8 @@ void PlottingSession::createPlotPage(const QString &kind)
         return;
     }
 
-    auto *layout = new PlottingLayout(Qt::Vertical, this);
+    auto *host = new PlottingPage(m_mw->pages());
+    auto *layout = host->layout();
     auto *c = new PlottingCanvas(layout);
     c->clearChannels();
     c->setTitle(label);
@@ -316,9 +377,23 @@ void PlottingSession::createPlotPage(const QString &kind)
             c->addGeneratedSeries(s.name, s.time, s.value);
     m_plotWorkspace->attachCanvas(c);
     const int plusIdx = m_mw->pages()->count() - 1;
-    m_mw->pages()->insertTab(plusIdx, layout, label);
-    m_mw->pages()->setCurrentWidget(layout);
+    m_mw->pages()->insertTab(plusIdx, host, label);
+    m_mw->pages()->setCurrentWidget(host);
     log(QStringLiteral("新建图页：%1").arg(label));
+}
+
+PlottingCanvas *PlottingSession::makeBlankCanvas()
+{
+    auto *c = new PlottingCanvas(m_mw->pages());
+    c->clearChannels();
+    c->setTitle(QStringLiteral("空白画布"));
+    m_plotWorkspace->attachCanvas(c);
+    return c;
+}
+
+bool PlottingSession::canvasHasData(PlottingCanvas *c)
+{
+    return c && c->saveState().value(QStringLiteral("series")).toArray().size() > 0;
 }
 
 void PlottingSession::addCanvasToPage()
@@ -339,21 +414,34 @@ void PlottingSession::addCanvasToPage()
         return;
     }
 
-    // 添加：往当前页追加一个画布，保持原网格列数整体重排；拆分才动当前画布
-    if (auto *layout = dynamic_cast<PlottingLayout *>(page))
+    // 添加：整格网格里追加一格；已经手动合并拆分过的页只拆当前画布，不动其他画布
+    auto *layout = PlottingLayout::layoutOf(page);
+    if (layout && !layout->isGridMode())
+    {
+        splitCanvas(target, Qt::Vertical);
+        return;
+    }
+    if (layout)
     {
         auto *c = new PlottingCanvas(m_mw->pages());
         c->clearChannels();
         c->setTitle(QStringLiteral("新画布 · plot"));
         c->setTimeRange(target->t0(), target->t1());
         m_plotWorkspace->attachCanvas(c);
-        layout->addCanvas(c);
-        layout->setGrid(layout->gridRows(), layout->gridCols());
+
+        QVector<PlottingCanvas *> ordered = layout->canvases();
+        ordered.append(c);
+        const int cols = layout->gridCols();
+        const int minRows = layout->minRows();
+        const int totalRows = qMax(minRows, (ordered.size() + cols - 1) / cols);
+        while (ordered.size() < totalRows * cols)
+            ordered.append(makeBlankCanvas());
+        layout->setCanvases(ordered);
+        layout->setGrid(minRows, cols);
         refreshPropTree(c);
         log(QStringLiteral("添加画布"));
         return;
     }
-    splitCanvas(target, Qt::Vertical);
 }
 
 void PlottingSession::removeCanvas(PlottingCanvas *c)
@@ -374,10 +462,65 @@ void PlottingSession::removeCanvas(PlottingCanvas *c)
         return;
     }
 
-    QWidget *holder = c->parentWidget();
-    if (auto *layout = dynamic_cast<PlottingLayout *>(page))
+    auto *layout = PlottingLayout::layoutOf(page);
+    if (layout && layout->isGridMode())
     {
-        layout->removeCanvas(c);
+        // 网格模式：原位补一块空白画布，其他画布位置不动；
+        // 只有末尾整行都空着才收行，且行数不低于设定值。
+        const int cols = layout->gridCols();
+        const int minRows = layout->minRows();
+        QVector<PlottingCanvas *> ordered = layout->canvases();
+        const int at = ordered.indexOf(c);
+        if (at < 0)
+            return;
+        ordered.removeAt(at);
+        ordered.insert(qMin(at, ordered.size()), makeBlankCanvas());
+
+        while (ordered.size() > minRows * cols && ordered.size() % cols == 0)
+        {
+            const int lastRow = ordered.size() - cols;
+            bool allBlank = true;
+            for (int i = lastRow; i < ordered.size(); ++i)
+                if (canvasHasData(ordered[i]))
+                    allBlank = false;
+            if (!allBlank)
+                break;
+            for (int i = 0; i < cols; ++i)
+                ordered.takeLast()->deleteLater();
+        }
+        layout->setCanvases(ordered);
+        layout->setGrid(minRows, cols);
+        c->deleteLater();
+        refreshPropTree(currentCanvas());
+        log(QStringLiteral("删除画布"));
+        return;
+    }
+
+    QWidget *holder = c->parentWidget();
+    if (layout)
+    {
+        // splitter 模式：其余画布尺寸原样保留，删掉的空间并入相邻一格
+        if (auto *sp = qobject_cast<QSplitter *>(holder))
+        {
+            const int at = sp->indexOf(c);
+            QList<int> sizes = sp->sizes();
+            layout->removeCanvas(c);
+            if (at >= 0)
+            {
+                const int freed = sizes.value(at, 0);
+                sizes.removeAt(at);
+                if (!sizes.isEmpty())
+                {
+                    const int mergeTo = qBound(0, at > 0 ? at - 1 : 0, sizes.size() - 1);
+                    sizes[mergeTo] += freed;
+                    sp->setSizes(sizes);
+                }
+            }
+        }
+        else
+        {
+            layout->removeCanvas(c);
+        }
     }
     else if (qobject_cast<QSplitter *>(holder))
     {
@@ -390,7 +533,7 @@ void PlottingSession::removeCanvas(PlottingCanvas *c)
         return;
     }
 
-    // 自下而上收掉变空的 splitter，否则页面会留下空白行/空白列
+    // 自下而上收掉变空的 splitter，合并回相邻画布；其他分支的尺寸不动
     while (holder && holder != page)
     {
         QSplitter *sp = qobject_cast<QSplitter *>(holder);
@@ -407,7 +550,9 @@ void PlottingSession::removeCanvas(PlottingCanvas *c)
     refreshPropTree(currentCanvas());
 }
 
-QWidget *PlottingSession::buildPage(const QJsonObject &o)
+QWidget *PlottingSession::buildPage(const QJsonObject &o) { return buildNode(o, true); }
+
+QWidget *PlottingSession::buildNode(const QJsonObject &o, bool top)
 {
     const QString type = o.value(QStringLiteral("type")).toString();
     if (type == QLatin1String("canvas"))
@@ -433,24 +578,29 @@ QWidget *PlottingSession::buildPage(const QJsonObject &o)
     {
         QVector<PlottingCanvas *> canvases;
         for (const QJsonValue &v : o.value(QStringLiteral("children")).toArray())
-            if (auto *c = qobject_cast<PlottingCanvas *>(buildPage(v.toObject())))
+            if (auto *c = qobject_cast<PlottingCanvas *>(buildNode(v.toObject(), false)))
                 canvases.append(c);
-        return PlottingLayout::fromGrid(canvases, o.value(QStringLiteral("rows")).toInt(1),
-                                        o.value(QStringLiteral("cols")).toInt(1), m_mw->pages());
+        auto *host = top ? new PlottingPage(m_mw->pages()) : nullptr;
+        auto *layout = host ? host->layout() : new PlottingLayout(Qt::Vertical, m_mw->pages());
+        for (PlottingCanvas *c : canvases)
+            layout->addCanvas(c);
+        layout->setGrid(o.value(QStringLiteral("rows")).toInt(1), o.value(QStringLiteral("cols")).toInt(1));
+        return host ? static_cast<QWidget *>(host) : static_cast<QWidget *>(layout);
     }
     if (type == QLatin1String("splitter") || type == QLatin1String("layout"))
     {
-        auto *layout = new PlottingLayout(
-            o.value(QStringLiteral("vertical")).toBool(true) ? Qt::Vertical : Qt::Horizontal,
-            m_mw->pages());
+        const Qt::Orientation ori =
+            o.value(QStringLiteral("vertical")).toBool(true) ? Qt::Vertical : Qt::Horizontal;
+        auto *host = (top && ori == Qt::Vertical) ? new PlottingPage(m_mw->pages()) : nullptr;
+        auto *layout = host ? host->layout() : new PlottingLayout(ori, m_mw->pages());
         for (const QJsonValue &v : o.value(QStringLiteral("children")).toArray())
-            layout->addWidget(buildPage(v.toObject()));
+            layout->addWidget(buildNode(v.toObject(), false));
         QList<int> sizes;
         for (const QJsonValue &v : o.value(QStringLiteral("sizes")).toArray())
             sizes.append(v.toInt());
         if (!sizes.isEmpty())
             layout->setSizes(sizes);
-        return layout;
+        return host ? static_cast<QWidget *>(host) : static_cast<QWidget *>(layout);
     }
     return new QLabel(o.value(QStringLiteral("text")).toString(), m_mw->pages());
 }
@@ -527,15 +677,16 @@ void PlottingSession::applyTimeMarkers()
 
 void PlottingSession::newPage()
 {
-    auto *layout = new PlottingLayout(Qt::Vertical, this);
+    auto *host = new PlottingPage(m_mw->pages());
+    auto *layout = host->layout();
     auto *c = new PlottingCanvas(layout);
     c->clearChannels();
     c->setTitle(QStringLiteral("新页 · 画布"));
     layout->addCanvas(c);
     m_plotWorkspace->attachCanvas(c);
     const int plusIdx = m_mw->pages()->count() - 1;
-    m_mw->pages()->insertTab(plusIdx, layout, QStringLiteral("新页"));
-    m_mw->pages()->setCurrentWidget(layout);
+    m_mw->pages()->insertTab(plusIdx, host, QStringLiteral("新页"));
+    m_mw->pages()->setCurrentWidget(host);
     refreshPropTree(c);
     log(QStringLiteral("新建页"));
 }
@@ -1087,6 +1238,8 @@ void PlottingSession::canvasAutoY() { for (PlottingCanvas *c : pageCanvases()) c
 QJsonObject PlottingSession::pageState(QWidget *page) const
 {
     QJsonObject o;
+    if (auto *host = dynamic_cast<PlottingPage *>(page))
+        page = host->layout();
     if (auto *c = qobject_cast<PlottingCanvas *>(page))
     {
         o = c->saveState();

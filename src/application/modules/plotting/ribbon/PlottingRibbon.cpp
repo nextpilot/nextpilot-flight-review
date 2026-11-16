@@ -26,6 +26,14 @@
 
 namespace ps::plotting
 {
+namespace
+{
+QIcon ribIcon(const QString &name)
+{
+    return QIcon(QStringLiteral(":/icons/%1.svg").arg(name));
+}
+} // namespace
+
 QPixmap plotThumb(const QString &kind)
 {
     QPixmap pm(76, 38);
@@ -305,6 +313,7 @@ void buildLayoutPicker(QWidget *p)
     if (!mw)
         return;
 
+    panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
     // 用 ribbon 原生大按钮：尺寸由 SARibbonPanel 统一分配，不会压到面板分组标题
     auto *act = new QAction(layoutThumb(2, 1), QStringLiteral("2×1"), panel);
     act->setToolTip(QStringLiteral("点击选择行×列，重排当前页画布"));
@@ -318,6 +327,25 @@ void buildLayoutPicker(QWidget *p)
                               ps::commands::CommandContext{mw, QStringLiteral("%1,%2").arg(r).arg(c)});
         popup->hide();
     };
+    // 五个布局按钮同一组：m×n 选择器 + 添加/删除/左右/上下（都作用于当前页画布）
+    auto small = [&](const QString &text, const QString &iconName, const QString &cmd,
+                     const QString &tip) {
+        auto *a = new QAction(ribIcon(iconName), text, panel);
+        a->setToolTip(tip);
+        QObject::connect(a, &QAction::triggered, mw, [mw, cmd] {
+            mw->commands().invoke(cmd, ps::commands::CommandContext{mw, {}});
+        });
+        panel->addSmallAction(a);
+    };
+    small(QStringLiteral("添加"), QStringLiteral("plus"), QStringLiteral("page.addCanvas"),
+          QStringLiteral("往当前页追加一个画布"));
+    small(QStringLiteral("删除"), QStringLiteral("trash"), QStringLiteral("page.removeCanvas"),
+          QStringLiteral("删除当前画布"));
+    small(QStringLiteral("左右"), QStringLiteral("split_h"), QStringLiteral("page.splitHorizontal"),
+          QStringLiteral("在当前画布右侧拆出新画布"));
+    small(QStringLiteral("上下"), QStringLiteral("split_v"), QStringLiteral("page.splitVertical"),
+          QStringLiteral("在当前画布下方拆出新画布"));
+
     QObject::connect(act, &QAction::triggered, mw, [mw, panel, popup] {
         popup->adjustSize();
         const QRect avail = mw->screen()->availableGeometry();
@@ -331,15 +359,7 @@ void buildLayoutPicker(QWidget *p)
     });
 }
 
-namespace
-{
-QIcon ribIcon(const QString &name)
-{
-    return QIcon(QStringLiteral(":/icons/%1.svg").arg(name));
-}
-} // namespace
-
-// 页面：新建页大按钮 + 添加/删除/左右/上下四个小按钮两行排，都作用于当前画布
+// 页面：只管页签，新建页
 void buildPagePanel(QWidget *p)
 {
     auto *panel = static_cast<SARibbonPanel *>(p);
@@ -354,24 +374,6 @@ void buildPagePanel(QWidget *p)
         mw->commands().invoke(QStringLiteral("page.new"), ps::commands::CommandContext{mw, {}});
     });
     panel->addLargeAction(newPage);
-
-    auto small = [&](const QString &text, const QString &iconName, const QString &cmd,
-                     const QString &tip) {
-        auto *a = new QAction(ribIcon(iconName), text, panel);
-        a->setToolTip(tip);
-        QObject::connect(a, &QAction::triggered, mw, [mw, cmd] {
-            mw->commands().invoke(cmd, ps::commands::CommandContext{mw, {}});
-        });
-        panel->addSmallAction(a);
-    };
-    small(QStringLiteral("添加"), QStringLiteral("plus"), QStringLiteral("page.addCanvas"),
-          QStringLiteral("在当前画布下方拆出新画布"));
-    small(QStringLiteral("删除"), QStringLiteral("trash"), QStringLiteral("page.removeCanvas"),
-          QStringLiteral("删除当前画布"));
-    small(QStringLiteral("左右"), QStringLiteral("split_h"), QStringLiteral("page.splitHorizontal"),
-          QStringLiteral("在当前画布右侧拆出新画布"));
-    small(QStringLiteral("上下"), QStringLiteral("split_v"), QStringLiteral("page.splitVertical"),
-          QStringLiteral("在当前画布下方拆出新画布"));
 }
 
 // 显示：网格/边框/图例开关，两行排

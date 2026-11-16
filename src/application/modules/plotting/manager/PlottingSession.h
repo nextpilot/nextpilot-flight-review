@@ -40,8 +40,11 @@ public:
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
                      const QStringList &editable = QStringList(), int kind = 0);
     void bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree);
+    PlottingCanvas *makeBlankCanvas();
+    static bool canvasHasData(PlottingCanvas *c);
     QJsonObject pageState(QWidget *page) const;
     QWidget *buildPage(const QJsonObject &o);
+    QWidget *buildNode(const QJsonObject &o, bool top);
     QWidget *createPropPanel(bool tree);
     void applyTimeMarkers();
     void removeSourceFromCanvases(const QString &sourcePath);

@@ -77,23 +77,25 @@ void PlottingTabs::attachCanvas(PlottingCanvas *c)
 void PlottingTabs::createDefaultPages()
 {
     // 页 1：三 plot 竖排（PlottingLayout，D15）
-    auto *page1 = new PlottingLayout(Qt::Vertical, this);
-    page1->addCanvas(makeCanvas(QStringLiteral("姿态角 · plot"), page1));
-    auto *vib = makeCanvas(QStringLiteral("振动 · plot"), page1);
+    auto *page1 = new PlottingPage(this);
+    auto *layout1 = page1->layout();
+    layout1->addCanvas(makeCanvas(QStringLiteral("姿态角 · plot"), layout1));
+    auto *vib = makeCanvas(QStringLiteral("振动 · plot"), layout1);
     vib->clearChannels();
-    page1->addCanvas(vib);
-    auto *bus = makeCanvas(QStringLiteral("总线 · plot"), page1);
+    layout1->addCanvas(vib);
+    auto *bus = makeCanvas(QStringLiteral("总线 · plot"), layout1);
     bus->clearChannels();
-    page1->addCanvas(bus);
-    page1->setSizes({300, 220, 220});
+    layout1->addCanvas(bus);
+    layout1->setSizes({300, 220, 220});
     addTab(page1, QStringLiteral("姿态与振动"));
 
     // 页 2：单 plot
-    auto *busLayout = new PlottingLayout(Qt::Vertical, this);
-    auto *busPage = makeCanvas(QStringLiteral("车辆总线 · plot"), busLayout);
-    busPage->clearChannels();
-    busLayout->addCanvas(busPage);
-    addTab(busLayout, QStringLiteral("车辆总线"));
+    auto *busPage = new PlottingPage(this);
+    auto *busLayout = busPage->layout();
+    auto *busCanvas = makeCanvas(QStringLiteral("车辆总线 · plot"), busLayout);
+    busCanvas->clearChannels();
+    busLayout->addCanvas(busCanvas);
+    addTab(busPage, QStringLiteral("车辆总线"));
 
     // 页 3：仪表大屏，三块独立画布分别走地平仪 / 罗盘 / 表盘模式
     auto *dash = new PlottingLayout(Qt::Horizontal, this);
