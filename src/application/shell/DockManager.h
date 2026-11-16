@@ -35,6 +35,7 @@ public:
     void darkenExisting();    // ADS 自带标题栏样式，保留空实现给启动流程
     void repositionHandles(); // 自动隐藏侧栏由 ADS 负责
     void setCentralContent(QWidget *content);
+    void applyTheme();
 
     ads::CDockWidget *byId(const QString &id) const;
     void toggleById(const QString &id);

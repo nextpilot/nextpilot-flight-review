@@ -38,8 +38,8 @@ QIcon loaderIcon(const DataSourceEntry &e)
         {"csv", "file_csv.svg"},     {"tsv", "file_csv.svg"},    {"binary", "file_binary.svg"}};
     for (const Rule &r : rules)
         if (key.contains(QLatin1String(r.needle)))
-            return QIcon(QStringLiteral(":/icons/") + QLatin1String(r.alias));
-    return QIcon(QStringLiteral(":/icons/loader.svg"));
+            return ThemeManager::icon(QStringLiteral(":/icons/") + QLatin1String(r.alias));
+    return ThemeManager::icon(QStringLiteral(":/icons/loader.svg"));
 }
 } // namespace
 

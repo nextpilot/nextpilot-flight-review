@@ -61,6 +61,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setMenuWidget(m_ribbon.create());
     m_docks.createFromRegistry(m_extensions.registry());
+    m_docks.applyTheme();
     m_docks.darkenExisting();
     if (auto *view = findChild<QPlainTextEdit *>(QStringLiteral("dock.log.view")))
         m_logs.setLogView(view);
@@ -97,6 +98,7 @@ void MainWindow::refreshTitle()
 void MainWindow::applyTheme()
 {
     m_ribbon.applyTheme();
+    m_docks.applyTheme();
     ThemeManager::refreshWidgetStyles(this);
     update();
 }

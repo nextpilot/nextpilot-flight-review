@@ -2,6 +2,9 @@
 #include "SettingsManager.h"
 
 #include <QApplication>
+#include <QIcon>
+#include <QPainter>
+#include <QPixmap>
 #include <QColor>
 #include <QPalette>
 #include <QStyleFactory>
@@ -313,6 +316,30 @@ QColor ThemeManager::adaptColor(const QColor &color)
     QColor out(mapped(color.name()));
     out.setAlpha(color.alpha());
     return out;
+}
+
+QIcon ThemeManager::icon(const QString &path)
+{
+    if (g_dark)
+        return QIcon(path);
+    QPixmap pm = QIcon(path).pixmap(64, 64);
+    QPainter p(&pm);
+    p.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    p.fillRect(pm.rect(), color(QStringLiteral("text")));
+    p.end();
+    // 线稿 SVG 多为半透明描边，浅色底上会被冲淡，抬一档不透明度
+    QImage img = pm.toImage().convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < img.height(); ++y)
+    {
+        auto *line = reinterpret_cast<QRgb *>(img.scanLine(y));
+        for (int x = 0; x < img.width(); ++x)
+        {
+            const int a = qAlpha(line[x]);
+            if (a > 0)
+                line[x] = qRgba(qRed(line[x]), qGreen(line[x]), qBlue(line[x]), qMin(255, a * 3));
+        }
+    }
+    return QIcon(QPixmap::fromImage(img));
 }
 
 QString ThemeManager::mapStyleSheet(const QString &darkStyle)

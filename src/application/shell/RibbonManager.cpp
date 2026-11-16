@@ -134,7 +134,7 @@ QWidget *RibbonManager::create()
         {
             const QString path = iconName.startsWith(QLatin1String(":/"))
                                      ? iconName : QStringLiteral(":/icons/%1.svg").arg(iconName);
-            a->setIcon(QIcon(path));
+            a->setIcon(ThemeManager::icon(path));
             a->setText(QString());
         }
         a->setProperty("rbCommandId", id);

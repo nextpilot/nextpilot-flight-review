@@ -113,7 +113,7 @@ void SettingsDialog::addPage(const QString &title, const QString &icon, QWidget 
         return;
     auto *item = new QListWidgetItem(title, m_list);
     if (!icon.isEmpty())
-        item->setIcon(QIcon(icon));
+        item->setIcon(ThemeManager::icon(icon));
     m_stack->addWidget(page);
     if (apply)
         m_appliers.append(std::move(apply));

@@ -30,7 +30,7 @@ namespace
 {
 QIcon ribIcon(const QString &name)
 {
-    return QIcon(QStringLiteral(":/icons/%1.svg").arg(name));
+    return ThemeManager::icon(QStringLiteral(":/icons/%1.svg").arg(name));
 }
 } // namespace
 

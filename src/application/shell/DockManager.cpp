@@ -1,6 +1,7 @@
 #include "DockManager.h"
 #include "CommandManager.h"
 #include "Component.h"
+#include "ThemeManager.h"
 #include "../../3rdparty/ads/src/DockManager.h"
 #include "../../3rdparty/ads/src/DockWidget.h"
 #include "../../3rdparty/ads/src/DockAreaWidget.h"
@@ -108,7 +109,7 @@ void DockManager::createFromRegistry(const ps::components::Registry &registry)
                                  ? spec.icon
                                  : created->property("psIcon").toString();
         if (!icon.isEmpty())
-            dock->setIcon(QIcon(icon));
+            dock->setIcon(ThemeManager::icon(icon));
         dock->setWidget(content);
         dock->setFeature(ads::CDockWidget::DockWidgetClosable, true);
         dock->setFeature(ads::CDockWidget::DockWidgetMovable, true);
@@ -133,6 +134,14 @@ void DockManager::createFromRegistry(const ps::components::Registry &registry)
         if (spec.layout)
             spec.layout(m_window);
     }
+}
+
+void DockManager::applyTheme()
+{
+    if (m_dock)
+        m_dock->setColorSchemeMode(ThemeManager::isDark()
+                                       ? ads::CDockManager::ColorSchemeMode::Dark
+                                       : ads::CDockManager::ColorSchemeMode::Light);
 }
 
 void DockManager::darkenExisting() {}
