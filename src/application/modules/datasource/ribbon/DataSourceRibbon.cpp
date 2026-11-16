@@ -18,6 +18,7 @@
 #include <QActionGroup>
 #include <QTimer>
 #include <QHash>
+#include <QMenu>
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QSettings>
@@ -100,6 +101,7 @@ void buildAnalysisGallery(QWidget *parent)
     };
 
     auto recentCallback = std::make_shared<std::function<void(const QString &)>>();
+    auto favoriteCallback = std::make_shared<std::function<void(const QString &)>>();
     auto makeAction = [&](const ps::data_source::AnalysisEntry &entry, bool allGroup) {
         auto *action = new QAction(entry.title, panel);
         action->setToolTip(entry.description.isEmpty() ? entry.title : entry.description);
@@ -111,6 +113,7 @@ void buildAnalysisGallery(QWidget *parent)
             action->setIcon(ThemeManager::icon(path));
         }
         action->setProperty("analysisFormats", entry.formats);
+        action->setProperty("analysisId", entry.id);
         action->setProperty("analysisInGroup", false);
         action->setProperty("analysisAllGroup", allGroup);
         if (entry.create)
@@ -214,7 +217,95 @@ void buildAnalysisGallery(QWidget *parent)
     if (!recentIds->isEmpty())
         recentGroup->removeActionItem(recentPlaceholder);
 
-    auto refresh = [session, group, allGroup, placeholder, entries, allEntries, recentActions]() {
+    auto favoriteSettings = std::make_shared<QSettings>(
+        QSettings::defaultFormat(), QSettings::UserScope,
+        QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    auto favoriteIds = std::make_shared<QStringList>(
+        favoriteSettings->value(QStringLiteral("analysis.favorites")).toStringList());
+    auto favoriteActions = std::make_shared<QHash<QString, QAction *>>();
+    auto *favoritePlaceholder = new QAction(QStringLiteral("尚无收藏的分析应用"), panel);
+    favoritePlaceholder->setEnabled(false);
+    auto *favoriteGroup = gallery->addCategoryActions(QStringLiteral("收藏"), {favoritePlaceholder});
+    styleGroup(favoriteGroup);
+
+    *favoriteCallback = [favoriteIds, favoriteActions, favoriteGroup, favoritePlaceholder,
+                         entryById, makeAction, favoriteSettings](const QString &id) {
+        if (id.isEmpty())
+            return;
+        if (favoriteIds->contains(id))
+        {
+            favoriteIds->removeAll(id);
+        }
+        else
+        {
+            favoriteIds->append(id);
+        }
+        favoriteSettings->setValue(QStringLiteral("analysis.favorites"), *favoriteIds);
+
+        for (QAction *action : *favoriteActions)
+        {
+            if (favoriteGroup->actionGroup()->actions().contains(action))
+                favoriteGroup->removeActionItem(action);
+        }
+        for (const QString &favoriteId : *favoriteIds)
+        {
+            const ps::data_source::AnalysisEntry *entry = entryById(favoriteId);
+            if (!entry)
+                continue;
+            QAction *action = favoriteActions->value(favoriteId);
+            if (!action)
+            {
+                action = makeAction(*entry, false);
+                favoriteActions->insert(favoriteId, action);
+            }
+            if (!favoriteGroup->actionGroup()->actions().contains(action))
+                favoriteGroup->addActionItem(action);
+        }
+        if (favoriteIds->isEmpty())
+            favoriteGroup->addActionItem(favoritePlaceholder);
+        else
+            favoriteGroup->removeActionItem(favoritePlaceholder);
+    };
+    for (const QString &favoriteId : *favoriteIds)
+    {
+        const ps::data_source::AnalysisEntry *entry = entryById(favoriteId);
+        if (!entry)
+            continue;
+        QAction *action = makeAction(*entry, false);
+        favoriteActions->insert(favoriteId, action);
+        favoriteGroup->addActionItem(action);
+    }
+    if (!favoriteIds->isEmpty())
+        favoriteGroup->removeActionItem(favoritePlaceholder);
+
+    auto installFavoriteMenu = [favoriteCallback, favoriteIds](SARibbonGalleryGroup *g) {
+        g->setContextMenuPolicy(Qt::CustomContextMenu);
+        QObject::connect(g, &QWidget::customContextMenuRequested, g,
+                         [g, favoriteCallback, favoriteIds](const QPoint &pos) {
+                             const QModelIndex index = g->indexAt(pos);
+                             if (!index.isValid())
+                                 return;
+                             auto *item = g->groupModel()->at(index.row());
+                             if (!item)
+                                 return;
+                             auto *itemAction = item->action();
+                             const QString id = itemAction ? itemAction->property("analysisId").toString() : QString();
+                             if (id.isEmpty())
+                                 return;
+                             QMenu menu(g);
+                             auto *toggle = menu.addAction(favoriteIds->contains(id)
+                                                                ? QStringLiteral("取消收藏")
+                                                                : QStringLiteral("收藏到分析应用库"));
+                             if (menu.exec(g->viewport()->mapToGlobal(pos)) == toggle && *favoriteCallback)
+                                 (*favoriteCallback)(id);
+                         });
+    };
+    installFavoriteMenu(group);
+    installFavoriteMenu(allGroup);
+    installFavoriteMenu(recentGroup);
+    installFavoriteMenu(favoriteGroup);
+
+    auto refresh = [session, group, allGroup, placeholder, entries, allEntries, recentActions, favoriteActions]() {
         auto *source = session->sourceById(session->activeSourceId());
         const QString format = source ? source->fmt : QString();
         bool any = false;
@@ -242,6 +333,12 @@ void buildAnalysisGallery(QWidget *parent)
                                formats.contains(format, Qt::CaseInsensitive));
         }
         for (QAction *action : *recentActions)
+        {
+            const QStringList formats = action->property("analysisFormats").toStringList();
+            action->setEnabled(!formats.isEmpty() &&
+                               formats.contains(format, Qt::CaseInsensitive));
+        }
+        for (QAction *action : *favoriteActions)
         {
             const QStringList formats = action->property("analysisFormats").toStringList();
             action->setEnabled(!formats.isEmpty() &&
