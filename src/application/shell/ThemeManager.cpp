@@ -203,6 +203,10 @@ QString mapped(const QString &text)
     QString out = text;
     for (const Alias &a : kAliases)
         out.replace(QLatin1String(a.dark), QLatin1String(a.light));
+    // QSS 里引用的图标是给深色底画的，浅色主题换深墨变体
+    out.replace(QStringLiteral(":/icons/arrow_more.svg"), QStringLiteral(":/icons/arrow_more_ink.svg"));
+    out.replace(QStringLiteral(":/icons/close_small.svg"), QStringLiteral(":/icons/close_small_ink.svg"));
+    out.replace(QStringLiteral(":/icons/check.svg"), QStringLiteral(":/icons/check_ink.svg"));
     return out;
 }
 

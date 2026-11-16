@@ -93,6 +93,9 @@ SettingsDialog::SettingsDialog(MainWindow *mw)
     }
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    buttons->button(QDialogButtonBox::Apply)->setText(QStringLiteral("应用"));
     root->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::accepted, this, [this] {
         applyAll();

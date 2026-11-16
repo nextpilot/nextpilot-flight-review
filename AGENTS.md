@@ -148,11 +148,60 @@ shell 只做最小宿主和管理内核：
 当前无已知例外。新增债务必须先修复，不要往本清单里加。
 
 
-## 12. 提交前检查
+## 12. UI 与主题硬约束
+
+本项目的 UI 以 VS / VS Code、PlotJuggler 为基准，深浅两套主题必须同时成立。以下为评审红线，新增/修改 UI 一律照此检查。
+
+### 12.1 颜色
+
+- UI 代码禁止出现十六进制颜色字面量；颜色只能来自 `ThemeManager::color(token)`、`ThemeManager::styleSheet()` 或 `ThemeManager::mapStyleSheet()`。
+- 运行时创建的内联样式必须当场 `mapStyleSheet`，不能依赖启动时 `refreshWidgetStyles` 事后扫描；否则用户后加的数据源、后开的对话框在浅色主题下仍是深色样式。
+- 数据语义色（曲线系列、通道色、状态点、告警色）集中定义在 `ThemeManager`（`seriesColor` / `adaptColor` / token），不得散落在业务代码里各写一套。
+- 禁止用“浅灰 = 次要/禁用”糊弄对比度：正文用 `text`，次要信息用 `textDim`，禁用才用 `textMuted`；属性表的键列和值列必须同色可读，靠列宽/字重区分层级。
+
+### 12.2 背景与遮挡
+
+- QSS 禁止给 `QWidget` 通配背景；背景只允许给顶层容器（`QMainWindow`、`QDialog`）和明确命名的面板。子控件默认透明，否则 QLabel 会在 ADS 标签、选中行上盖出白块/色块。
+- 不得用固定像素宽高把内容挤出可视区；dock 面板缩到 200px 宽时，文本必须省略（`ElideLabel`、`minimumWidth(0)`、`QSizePolicy::Ignored`），右侧操作按钮必须完整可见。
+- 浮动工具条、覆盖层只覆盖自己的画布区域，不得侵入相邻画布或 dock。
+
+### 12.3 图标与资源
+
+- 代码里的 `QIcon` 一律走 `ThemeManager::icon(path)`；不要在业务里直接 `QIcon(":/icons/*.svg")`。
+- QSS 内 `image:url(:/icons/*.svg)` 引用的图标，必须同时提供“深底版”和“浅底 ink 版”，并在 `ThemeManager::mapped()` 里注册浅色替换；否则浅色主题下箭头、关闭叉、勾选标记会消失。
+- 新增图标统一 16×16 线稿、1.3px 描边，放 `src/application/resources/resource/icons/` 并登记 `icons.qrc`。
+
+### 12.4 控件状态
+
+- 每个可交互控件必须定义 normal / hover / pressed / focus / selected / disabled 六态；禁止只做 normal。
+- hover 背景不得用与容器同色的硬编码值；必须走主题 token。
+- 选中态文字与底色必须成对定义（如 `selection` + `text`），禁止只改背景不改文字。
+
+### 12.5 第三方控件
+
+- 优先使用 SARibbon / ADS 自带能力（RibbonGallery、Category、Dock 标签、停靠布局），不得自造替代控件。
+- 修正第三方内部配色时，只用最小必要选择器（如 `QLabel#dockWidgetTabLabel`）和 palette，不整块重写其 tab/按钮 QSS。
+- 主题切换必须实时生效：颜色不能只在构造时计算一次；树/表用 delegate 或 token 动态取色。
+
+### 12.6 文案
+
+- 所有用户可见按钮、菜单、对话框标题使用中文；`QDialogButtonBox` 的标准按钮必须显式 `setText`，禁止出现裸 `OK` / `Cancel` / `Close` / `Apply`。
+- 占位提示、空状态文案要与控件实际行为一致，不写未实现的能力。
+
+### 12.7 验收
+
+- 深浅两套主题各截全窗 + 局部；逐个 hover 关键控件（Ribbon 按钮、数据源行、属性行、画布浮动条、dock 标签）。
+- 窄窗口（约 200px dock 宽）检查文本省略与按钮裁切。
+- 主题切换后不重启再截一次，确认无残留硬编码色。
+- `ctest` 全过，改 UI 必须做 GUI 冒烟。
+
+## 13. 提交前检查
 
 - 新增 include 不跨越本文件的依赖矩阵。
 - shell 没有新增业务命令、业务状态、业务面板或具体格式分支。
 - 内置扩展没有新增 `MainWindow*` / shell 私有头依赖。
 - 动态扩展没有新增 Qt Widgets 或 `QWidget*` 跨边界。
+- UI 没有新增十六进制颜色、直接 `QIcon(":/icons/...")` 或给 `QWidget` 通配背景。
+- 改 UI 已做深浅双主题 + 关键控件 hover + 窄宽度截图检查。
 - 新模块/扩展有对应测试；改 UI 做 GUI 冒烟；`ctest` 全过。
 - 文档归位正确：成熟指南在 `docs/develop/`，方案/决策在 `docs/roadmap/`。

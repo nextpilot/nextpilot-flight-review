@@ -1,7 +1,10 @@
 <RCC>
   <qresource prefix="/icons">
     <file alias="arrow_more.svg">icons/arrow_more.svg</file>
+    <file alias="arrow_more_ink.svg">icons/arrow_more_ink.svg</file>
     <file alias="autoy.svg">icons/autoy.svg</file>
+    <file alias="check.svg">icons/check.svg</file>
+    <file alias="check_ink.svg">icons/check_ink.svg</file>
     <file alias="compass.svg">icons/compass.svg</file>
     <file alias="cursor.svg">icons/cursor.svg</file>
     <file alias="hand.svg">icons/hand.svg</file>
@@ -35,6 +38,7 @@
     <file alias="play.svg">icons/play.svg</file>
     <file alias="close.svg">icons/close.svg</file>
     <file alias="close_small.svg">icons/close_small.svg</file>
+    <file alias="close_small_ink.svg">icons/close_small_ink.svg</file>
     <file alias="prop.svg">icons/prop.svg</file>
     <file alias="reset.svg">icons/reset.svg</file>
     <file alias="run.svg">icons/run.svg</file>

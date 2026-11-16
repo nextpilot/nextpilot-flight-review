@@ -905,6 +905,8 @@ public:
 
         root->addWidget(tabs);
         auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        bb->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
+        bb->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
         connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
         connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
         root->addWidget(bb);

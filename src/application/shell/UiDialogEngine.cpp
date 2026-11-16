@@ -10,6 +10,7 @@
 
 #if PS_HAVE_UITOOLS
 #include <QDialogButtonBox>
+#include <QPushButton>
 #include <QFile>
 #include <QUiLoader>
 #endif
@@ -62,6 +63,8 @@ UiDialogEngine::UiDialogEngine(const UiDialogSpec &spec, const QString &path, QW
     if (!box)
     {
         box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        box->button(QDialogButtonBox::Ok)->setText(QStringLiteral("确定"));
+        box->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
         lay->addWidget(box);
     }
     connect(box, &QDialogButtonBox::accepted, this, [this, w] {

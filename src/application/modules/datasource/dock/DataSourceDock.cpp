@@ -1609,8 +1609,10 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     nameLb->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     nameLb->setStyleSheet(ThemeManager::mapStyleSheet(
         QStringLiteral("color:#c9d1d9;font-size:12px;background:transparent;")));
-    auto *metaLb = new QLabel(meta, col);
+    auto *metaLb = new ElideLabel(meta, col);
     metaLb->setObjectName(QStringLiteral("srcMeta"));
+    metaLb->setMinimumWidth(0);
+    metaLb->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     metaLb->setStyleSheet(ThemeManager::mapStyleSheet(
         QStringLiteral("color:#5d6c77;font-size:10px;background:transparent;")));
     colLay->addWidget(nameLb);

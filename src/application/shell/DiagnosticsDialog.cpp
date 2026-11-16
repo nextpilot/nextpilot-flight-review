@@ -131,6 +131,7 @@ DiagnosticsDialog::DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
     root->addWidget(tabs, 1);
 
     auto *dialogButtons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    dialogButtons->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
     auto *copy = dialogButtons->addButton(QStringLiteral("复制信息"), QDialogButtonBox::ActionRole);
     root->addWidget(dialogButtons);
 
