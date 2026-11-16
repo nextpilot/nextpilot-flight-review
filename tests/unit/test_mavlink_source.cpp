@@ -108,8 +108,8 @@ int main(int argc, char **argv)
         v->poll(h, &perr);
     }
     assert(!sink.data.empty());
-    assert(sink.data.count("mav.att.roll") == 1);
-    const auto &roll = sink.data["mav.att.roll"];
+    assert(sink.data.count("mav.attitude.roll") == 1);
+    const auto &roll = sink.data["mav.attitude.roll"];
     assert(roll.size() == 1);
     assert(std::fabs(roll[0].second - 5.729578) < 0.01);
     const size_t liveCount = roll.size();
@@ -123,7 +123,7 @@ int main(int argc, char **argv)
     }
 
     // 共享 transport：external 模式不碰 socket，只吃宿主喂进来的字节。
-    const size_t extBase = sink.data["mav.att.roll"].size();
+    const size_t extBase = sink.data["mav.attitude.roll"].size();
     void *eh = v->create();
     assert(eh);
     assert(v->bind(eh, services, &perr));
@@ -136,7 +136,7 @@ int main(int argc, char **argv)
     assert(v->feed_raw(eh, "mavlink", "mavlink", 0,
                        reinterpret_cast<const uint8_t *>(f.constData()),
                        static_cast<uint32_t>(f.size()), feedErr, sizeof(feedErr)) == 0);
-    assert(sink.data["mav.att.roll"].size() == extBase + 1);
+    assert(sink.data["mav.attitude.roll"].size() == extBase + 1);
     v->stop(eh);
     v->destroy(eh);
 
@@ -149,9 +149,9 @@ int main(int argc, char **argv)
     PsStringView rsv{replayBytes.constData(), static_cast<uint32_t>(replayBytes.size())};
     assert(v->load_config(rh, rsv, &perr));
     assert(v->start(rh, &perr));
-    for (int i = 0; i < 5 && sink.data["mav.att.roll"].size() <= liveCount; ++i)
+    for (int i = 0; i < 5 && sink.data["mav.attitude.roll"].size() <= liveCount; ++i)
         v->poll(rh, &perr);
-    assert(sink.data["mav.att.roll"].size() > liveCount);
+    assert(sink.data["mav.attitude.roll"].size() > liveCount);
     v->stop(rh);
     v->destroy(rh);
 
@@ -166,7 +166,7 @@ int main(int argc, char **argv)
         tlog.write(rec);
         tlog.close();
     }
-    const size_t tlogBase = sink.data["mav.att.roll"].size();
+    const size_t tlogBase = sink.data["mav.attitude.roll"].size();
     void *th = v->create();
     assert(th);
     assert(v->bind(th, services, &perr));
@@ -175,9 +175,9 @@ int main(int argc, char **argv)
     PsStringView tsv{tlogBytes.constData(), static_cast<uint32_t>(tlogBytes.size())};
     assert(v->load_config(th, tsv, &perr));
     assert(v->start(th, &perr));
-    for (int i = 0; i < 5 && sink.data["mav.att.roll"].size() <= tlogBase; ++i)
+    for (int i = 0; i < 5 && sink.data["mav.attitude.roll"].size() <= tlogBase; ++i)
         v->poll(th, &perr);
-    assert(sink.data["mav.att.roll"].size() > tlogBase);
+    assert(sink.data["mav.attitude.roll"].size() > tlogBase);
     v->stop(th);
     v->destroy(th);
 

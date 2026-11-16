@@ -168,6 +168,12 @@ UnitScale scaleFor(const QString &unit)
     if (unit == QLatin1String("degE7")) return {1e-7, QStringLiteral("deg")};
     if (unit == QLatin1String("degE5")) return {1e-5, QStringLiteral("deg")};
     if (unit == QLatin1String("cdeg")) return {1e-2, QStringLiteral("deg")};
+    if (unit == QLatin1String("rad")) return {57.29577951308232, QStringLiteral("deg")};
+    if (unit == QLatin1String("rad/s")) return {57.29577951308232, QStringLiteral("deg/s")};
+    if (unit == QLatin1String("mrad")) return {0.05729577951308232, QStringLiteral("deg")};
+    if (unit == QLatin1String("mrad/s")) return {0.05729577951308232, QStringLiteral("deg/s")};
+    if (unit == QLatin1String("d%")) return {0.1, QStringLiteral("%")};
+    if (unit == QLatin1String("c%")) return {0.01, QStringLiteral("%")};
     if (unit == QLatin1String("mm")) return {1e-3, QStringLiteral("m")};
     if (unit == QLatin1String("cm")) return {1e-2, QStringLiteral("m")};
     if (unit == QLatin1String("dm")) return {1e-1, QStringLiteral("m")};
@@ -242,6 +248,11 @@ void appendHeaderFields(PsDecodedFrame &out, const mavlink::mavlink_message_t &m
     add(QStringLiteral("seq"), QVariant::fromValue<quint64>(msg.seq));
     add(QStringLiteral("msgid"), QVariant::fromValue<quint64>(msg.msgid));
     add(QStringLiteral("len"), QVariant::fromValue<quint64>(msg.len));
+    if (msg.magic != 0xFE) {
+        add(QStringLiteral("incompat_flags"), QVariant::fromValue<quint64>(msg.incompat_flags));
+        add(QStringLiteral("compat_flags"), QVariant::fromValue<quint64>(msg.compat_flags));
+    }
+    add(QStringLiteral("crc"), QVariant::fromValue<quint64>(msg.checksum));
 }
 
 void appendPayloadFields(PsDecodedFrame &out, const mavlink::mavlink_message_t &msg,
@@ -253,8 +264,11 @@ void appendPayloadFields(PsDecodedFrame &out, const mavlink::mavlink_message_t &
             continue;
 
         if (field.type == QLatin1String("char") && field.arrayLength > 0) {
+            const int available = qMin(field.arrayLength, msg.len - field.wireOffset);
+            if (available <= 0)
+                continue;
             QString text;
-            for (int i = 0; i < field.arrayLength; ++i) {
+            for (int i = 0; i < available; ++i) {
                 const char c = static_cast<char>(payload[field.wireOffset + i]);
                 if (c == '\0')
                     break;
@@ -263,10 +277,10 @@ void appendPayloadFields(PsDecodedFrame &out, const mavlink::mavlink_message_t &
             PsDecodedField decoded;
             decoded.name = field.name;
             decoded.raw = QByteArray(reinterpret_cast<const char *>(payload + field.wireOffset),
-                                     field.arrayLength);
+                                     available);
             decoded.value = text;
             decoded.offset = payloadStart + field.wireOffset;
-            decoded.size = field.arrayLength;
+            decoded.size = available;
             out.fields.append(decoded);
             continue;
         }
@@ -275,6 +289,8 @@ void appendPayloadFields(PsDecodedFrame &out, const mavlink::mavlink_message_t &
         const int count = qMax(1, field.arrayLength);
         for (int index = 0; index < count; ++index) {
             const int offset = field.wireOffset + index * typeSize(field.type);
+            if (offset + typeSize(field.type) > msg.len)
+                continue;
             PsDecodedField decoded;
             decoded.name = field.arrayLength > 0
                                ? QStringLiteral("%1[%2]").arg(field.name).arg(index)
@@ -325,18 +341,28 @@ bool MavlinkMessageParser::parse(const QByteArray &data, PsDecodedFrame &out) co
     if (start < 0)
         return false;
 
+    // 同一 parser 可能被多个帧复用；先清掉半帧状态，避免上一帧残留。
+    m_rx = mavlink::mavlink_message_t{};
+    m_status = mavlink::mavlink_status_t{};
     mavlink::mavlink_message_t message{};
     mavlink::mavlink_status_t outputStatus{};
     int end = -1;
+    bool checksumOk = false;
     for (int i = start; i < data.size(); ++i) {
         const uint8_t result = mavlink::mavlink_frame_char_buffer(
             &m_rx, &m_status, static_cast<uint8_t>(data.at(i)), &message, &outputStatus);
         if (result == mavlink::MAVLINK_FRAMING_OK) {
             end = i;
+            checksumOk = true;
             break;
         }
-        if (result == mavlink::MAVLINK_FRAMING_BAD_CRC)
-            return false;
+        // 坏 CRC / 坏签名也要把完整帧交给检查面板，不能直接丢弃。
+        if (result == mavlink::MAVLINK_FRAMING_BAD_CRC ||
+            result == mavlink::MAVLINK_FRAMING_BAD_SIGNATURE) {
+            end = i;
+            checksumOk = false;
+            break;
+        }
         if (i - start > MAVLINK_MAX_PACKET_LEN + 8)
             break;
     }
@@ -350,7 +376,7 @@ bool MavlinkMessageParser::parse(const QByteArray &data, PsDecodedFrame &out) co
                         ? spec->name
                         : QStringLiteral("MSG_%1").arg(message.msgid);
     out.rawBytes = data.mid(start, end - start + 1);
-    out.checksumOk = true;
+    out.checksumOk = checksumOk;
     out.unknown = spec == nullptr;
     out.fields.clear();
     appendHeaderFields(out, message);

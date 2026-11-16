@@ -92,6 +92,13 @@ if(TARGET ps_data_source_mavlink)
   target_include_directories(test_mavlink_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
   target_link_libraries(test_mavlink_source PRIVATE ps_data_source_mavlink ps_host ps_kernel ps_mavlink Qt6::Network)
   add_test(NAME mavlink_source COMMAND test_mavlink_source)
+
+  add_executable(test_tlog_loader unit/test_tlog_loader.cpp)
+  target_include_directories(test_tlog_loader PRIVATE ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+  target_link_libraries(test_tlog_loader PRIVATE ps_data_loader_tlog ps_autopilot
+    ps_host ps_kernel ps_mavlink Qt6::Core)
+  add_test(NAME tlog_loader COMMAND test_tlog_loader)
 endif()
 
 if(TARGET ps_gnss)

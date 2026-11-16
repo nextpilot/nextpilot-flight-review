@@ -48,6 +48,16 @@ int main()
     assert(field("type").toInt() == 2);
     assert(field("sysid").toInt() == 1);
 
+    // 坏 CRC 帧仍需保留完整帧，供协议检查面板定位问题。
+    QByteArray badFrame = frame;
+    badFrame[badFrame.size() - 1] = static_cast<char>(
+        static_cast<uint8_t>(badFrame.at(badFrame.size() - 1)) ^ 0xff);
+    PsDecodedFrame badDecoded;
+    assert(parser.parse(badFrame, badDecoded));
+    assert(!badDecoded.checksumOk);
+    assert(!badDecoded.rawBytes.isEmpty());
+    assert(badDecoded.frameName == "HEARTBEAT");
+
 
     // ATT_POS_MOCAP: 验证 wire offset、数组展开和单位换算。
     mavlink::mavlink_message_t mocap{};

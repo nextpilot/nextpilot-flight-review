@@ -9,6 +9,7 @@ struct PsExtensionDescriptor;
 
 extern "C" const PsExtensionDescriptor *ps_extension_entry_data_loader_ulog(void);
 extern "C" const PsExtensionDescriptor *ps_extension_entry_data_loader_apbin(void);
+extern "C" const PsExtensionDescriptor *ps_extension_entry_data_loader_tlog(void);
 extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_sim(void);
 extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_mavlink(void);
 
@@ -55,6 +56,9 @@ void AutopilotComponent::contribute(Registry &registry, HostContext &)
                                   QStringLiteral("data_loader_apbin"),
                                   QStringLiteral("ArduPilot DataFlash"),
                                   {QStringLiteral("file")}));
+    registry.addDataSource(source(ps_extension_entry_data_loader_tlog(),
+                                  QStringLiteral("data_loader_tlog"),
+                                  QStringLiteral("MAVLink tlog"), {QStringLiteral("file")}));
     registry.addDataSource(source(ps_extension_entry_data_source_sim(),
                                   QStringLiteral("data_source_sim"),
                                   QStringLiteral("飞控仿真源"),
@@ -62,8 +66,7 @@ void AutopilotComponent::contribute(Registry &registry, HostContext &)
     registry.addDataSource(source(ps_extension_entry_data_source_mavlink(),
                                   QStringLiteral("data_source_mavlink"),
                                   QStringLiteral("MAVLink 遥测"),
-                                  {QStringLiteral("file"), QStringLiteral("serial"),
-                                   QStringLiteral("tcp"), QStringLiteral("udp")}));
+                                  {QStringLiteral("file"), QStringLiteral("udp")}));
 
     MessageParserSpec mavlink;
     mavlink.id = QStringLiteral("autopilot.mavlink");

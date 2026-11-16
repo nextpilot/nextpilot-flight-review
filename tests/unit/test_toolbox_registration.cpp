@@ -60,6 +60,7 @@ int main()
 
     const QStringList autopilot = {QStringLiteral("data_loader_ulog"),
                                    QStringLiteral("data_loader_apbin"),
+                                   QStringLiteral("data_loader_tlog"),
                                    QStringLiteral("data_source_sim"),
                                    QStringLiteral("data_source_mavlink")};
     expect(dataSourceIds(QStringLiteral("autopilot.core")), autopilot, "autopilot");

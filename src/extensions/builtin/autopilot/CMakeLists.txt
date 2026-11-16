@@ -1,16 +1,20 @@
 add_subdirectory(datasources/ulog)
 add_subdirectory(datasources/apbin)
 add_subdirectory(datasources/mavlink)
+add_subdirectory(datasources/tlog)
 add_subdirectory(datasources/sim)
 
 add_library(ps_autopilot STATIC
   MavlinkMessageParser.cpp
   MavlinkMessageParser.h
+  MavlinkChannelCollector.cpp
+  MavlinkChannelCollector.h
 )
 target_include_directories(ps_autopilot PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
+  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
 )
 target_link_libraries(ps_autopilot PUBLIC
   Qt6::Core
@@ -32,6 +36,7 @@ target_link_libraries(ps_autopilot_component PUBLIC
   ps_host
   ps_data_loader_ulog
   ps_data_loader_apbin
+  ps_data_loader_tlog
   ps_data_source_sim
   ps_data_source_mavlink
 )

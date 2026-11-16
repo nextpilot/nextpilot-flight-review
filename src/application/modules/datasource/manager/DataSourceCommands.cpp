@@ -1,6 +1,8 @@
 #include "DataSourceSession.h"
 #include "SessionManager.h"
 
+#include "datasource/DataSourceRegistry.h"
+
 #include "MainWindow.h"
 #include "SourceModel.h"
 
@@ -26,8 +28,13 @@ void DataSourceSession::registerDataCommands()
 
     m_mw->commands().add(QStringLiteral("app.beforeClose"), [this](const auto &) { onClose(); });
     m_mw->commands().add(QStringLiteral("file.open"), [this](const auto &) {
+        QStringList filters;
+        for (const DataSourceEntry &entry : DataSourceRegistry::instance().fileEntries())
+            if (!entry.filter.isEmpty())
+                filters.append(entry.filter);
+        filters.append(QStringLiteral("全部 (*)"));
         const QStringList fs = QFileDialog::getOpenFileNames(m_mw, QStringLiteral("打开文件"), {},
-            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+                                                             filters.join(QStringLiteral(";;")));
         for (const QString &f : fs)
             loadFile(f);
     });
@@ -45,8 +52,13 @@ void DataSourceSession::registerDataCommands()
 
     using Ctx = ps::commands::CommandContext;
     m_mw->commands().add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
+        QStringList filters;
+        for (const DataSourceEntry &entry : DataSourceRegistry::instance().fileEntries())
+            if (!entry.filter.isEmpty())
+                filters.append(entry.filter);
+        filters.append(QStringLiteral("全部 (*)"));
         const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("快速打开"), {},
-            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+                                                             filters.join(QStringLiteral(";;")));
         for (const QString &f : fs)
             loadFile(f);
     });

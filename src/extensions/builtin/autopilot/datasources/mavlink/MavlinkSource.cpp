@@ -1,6 +1,7 @@
 #include "ps_extension_api.h"
 #include "PsDataSourceBase.hpp"
 #include "PsCaptureFormat.h"
+#include "MavlinkChannelCollector.h"
 #include "MavlinkMessageParser.h"
 
 #include <QByteArray>
@@ -38,7 +39,7 @@ int32_t writeJson(const char *json, char *out, uint32_t cap)
 
 const char *kSchema = R"JSON({
   "title":"MAVLink 遥测源",
-  "transport":{"supported":["udp","file"],"default":"udp://127.0.0.1:1223"},
+  "transport":{"supported":["udp","file"],"default":"udp://127.0.0.1:14550"},
   "parser":{
     "label":"解析参数",
     "fields":[
@@ -64,10 +65,7 @@ struct MavState
     std::unique_ptr<QUdpSocket> socket;
     QElapsedTimer clock;
     QByteArray rx;
-    QHash<QString, QVector<double>> times;
-    QHash<QString, QVector<double>> values;
-    QHash<QString, QString> units;
-    QStringList order;
+    MavlinkChannelCollector collector;
     uint64_t packets = 0;
     uint64_t frames = 0;
     uint64_t dropped = 0;
@@ -75,6 +73,8 @@ struct MavState
     int lastSysid = 0;
     double replay_t = 0.0;
     int64_t replayBaseNs = 0;
+    uint64_t legacyBaseUs = 0;
+    bool legacyStarted = false;
 };
 
 int64_t nowNs()
@@ -83,42 +83,23 @@ int64_t nowNs()
     return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 }
 
+uint64_t readLe64(const QByteArray &bytes)
+{
+    uint64_t value = 0;
+    for (int i = 0; i < 8; ++i)
+        value |= static_cast<uint64_t>(static_cast<uint8_t>(bytes.at(i))) << (8 * i);
+    return value;
+}
+
 double nowSeconds(const MavState *st)
 {
     return st->replayMode ? st->replay_t : st->clock.elapsed() / 1000.0;
 }
 
-void addSample(MavState *st, const QString &name, const QString &unit, double t, double v)
-{
-    if (!st->times.contains(name))
-        st->order.append(name);
-    st->times[name].append(t);
-    st->values[name].append(v);
-    if (!st->units.contains(name))
-        st->units.insert(name, unit);
-}
-
 void flush(MavState *st)
 {
-    if (st->times.isEmpty())
-        return;
-    for (const QString &name : st->order)
-    {
-        const QVector<double> &t = st->times.value(name);
-        const QVector<double> &v = st->values.value(name);
-        const uint32_t n = static_cast<uint32_t>(qMin(t.size(), v.size()));
-        if (n == 0)
-            continue;
-        st->sink.channel_batch(st->sink.ctx, name.toUtf8().constData(),
-                               st->units.value(name).toUtf8().constData(),
-                               t.constData(), v.constData(), n);
-    }
-    st->order.clear();
-    st->times.clear();
-    st->values.clear();
+    st->collector.flush(&st->sink);
 }
-
-constexpr double kRadToDeg = 57.29577951308232;
 
 PsDecodedField findField(const PsDecodedFrame &frame, const QString &name)
 {
@@ -137,91 +118,14 @@ double findNumber(const PsDecodedFrame &frame, const QString &name, double fallb
     return ok ? value : fallback;
 }
 
-double findDegrees(const PsDecodedFrame &frame, const QString &name)
-{
-    const PsDecodedField field = findField(frame, name);
-    bool ok = false;
-    double value = field.value.toDouble(&ok);
-    if (!ok)
-        return 0.0;
-    if (field.unit == QLatin1String("rad") || field.unit == QLatin1String("rad/s"))
-        value *= kRadToDeg;
-    return value;
-}
-
-double messageTime(const PsDecodedFrame &frame, double fallback)
-{
-    for (const QString &name : {QStringLiteral("time_usec"), QStringLiteral("time_boot_ms"),
-                                QStringLiteral("time_ms"), QStringLiteral("time")}) {
-        const double value = findNumber(frame, name, -1.0);
-        if (value >= 0.0)
-            return value;
-    }
-    return fallback;
-}
-
-void addDecodedSamples(MavState *st, const PsDecodedFrame &frame, double fallback)
+void addDecodedSamples(MavState *st, const PsDecodedFrame &frame, double time)
 {
     const int sysid = static_cast<int>(findNumber(frame, QStringLiteral("sysid")));
     if (st->sysid && sysid != st->sysid)
         return;
-
-    if (frame.frameName == QLatin1String("HEARTBEAT")) {
+    if (sysid)
         st->lastSysid = sysid;
-        return;
-    }
-
-    const double t = messageTime(frame, fallback);
-    if (frame.frameName == QLatin1String("ATTITUDE")) {
-        addSample(st, QStringLiteral("mav.att.roll"), QStringLiteral("deg"), t,
-                  findDegrees(frame, QStringLiteral("roll")));
-        addSample(st, QStringLiteral("mav.att.pitch"), QStringLiteral("deg"), t,
-                  findDegrees(frame, QStringLiteral("pitch")));
-        addSample(st, QStringLiteral("mav.att.yaw"), QStringLiteral("deg"), t,
-                  findDegrees(frame, QStringLiteral("yaw")));
-        addSample(st, QStringLiteral("mav.att.roll_rate"), QStringLiteral("deg/s"), t,
-                  findDegrees(frame, QStringLiteral("rollspeed")));
-        addSample(st, QStringLiteral("mav.att.pitch_rate"), QStringLiteral("deg/s"), t,
-                  findDegrees(frame, QStringLiteral("pitchspeed")));
-        addSample(st, QStringLiteral("mav.att.yaw_rate"), QStringLiteral("deg/s"), t,
-                  findDegrees(frame, QStringLiteral("yawspeed")));
-        return;
-    }
-
-    if (frame.frameName == QLatin1String("VFR_HUD")) {
-        addSample(st, QStringLiteral("mav.vfr.airspeed"), QStringLiteral("m/s"), fallback,
-                  findNumber(frame, QStringLiteral("airspeed")));
-        addSample(st, QStringLiteral("mav.vfr.groundspeed"), QStringLiteral("m/s"), fallback,
-                  findNumber(frame, QStringLiteral("groundspeed")));
-        addSample(st, QStringLiteral("mav.vfr.heading"), QStringLiteral("deg"), fallback,
-                  findNumber(frame, QStringLiteral("heading")));
-        addSample(st, QStringLiteral("mav.vfr.throttle"), QStringLiteral("%"), fallback,
-                  findNumber(frame, QStringLiteral("throttle")));
-        addSample(st, QStringLiteral("mav.vfr.alt"), QStringLiteral("m"), fallback,
-                  findNumber(frame, QStringLiteral("alt")));
-        addSample(st, QStringLiteral("mav.vfr.climb"), QStringLiteral("m/s"), fallback,
-                  findNumber(frame, QStringLiteral("climb")));
-        return;
-    }
-
-    if (frame.frameName == QLatin1String("GLOBAL_POSITION_INT")) {
-        addSample(st, QStringLiteral("mav.gps.lat"), QStringLiteral("deg"), t,
-                  findNumber(frame, QStringLiteral("lat")));
-        addSample(st, QStringLiteral("mav.gps.lon"), QStringLiteral("deg"), t,
-                  findNumber(frame, QStringLiteral("lon")));
-        addSample(st, QStringLiteral("mav.gps.alt"), QStringLiteral("m"), t,
-                  findNumber(frame, QStringLiteral("alt")));
-        addSample(st, QStringLiteral("mav.gps.rel_alt"), QStringLiteral("m"), t,
-                  findNumber(frame, QStringLiteral("relative_alt")));
-        addSample(st, QStringLiteral("mav.gps.vx"), QStringLiteral("m/s"), t,
-                  findNumber(frame, QStringLiteral("vx")));
-        addSample(st, QStringLiteral("mav.gps.vy"), QStringLiteral("m/s"), t,
-                  findNumber(frame, QStringLiteral("vy")));
-        addSample(st, QStringLiteral("mav.gps.vz"), QStringLiteral("m/s"), t,
-                  findNumber(frame, QStringLiteral("vz")));
-        addSample(st, QStringLiteral("mav.gps.hdg"), QStringLiteral("deg"), t,
-                  findNumber(frame, QStringLiteral("hdg")));
-    }
+    st->collector.addFrame(frame, time);
 }
 
 void parse(MavState *st)
@@ -242,6 +146,16 @@ void parse(MavState *st)
         {
             st->rx.clear();
             return;
+        }
+        if (st->legacyReplay && at >= 8)
+        {
+            const uint64_t timestampUs = readLe64(st->rx.mid(at - 8, 8));
+            if (!st->legacyStarted)
+            {
+                st->legacyBaseUs = timestampUs;
+                st->legacyStarted = true;
+            }
+            st->replay_t = static_cast<double>(timestampUs - st->legacyBaseUs) / 1e6;
         }
         if (at > 0)
             st->rx.remove(0, at);
