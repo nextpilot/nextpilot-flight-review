@@ -28,6 +28,8 @@ add_library(ps_application_datasource OBJECT
   ribbon/DataSourceRibbon.cpp
   dock/DataSourceDock.h
   dock/DataSourceDock.cpp
+  dock/ProtocolInspectorDock.h
+  dock/ProtocolInspectorDock.cpp
   dialog/DataSourceDialog.h
   dialog/DataSourceDialog.cpp
   dialog/TransformDialog.h

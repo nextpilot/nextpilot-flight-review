@@ -1,5 +1,7 @@
 #include "AutopilotComponent.h"
+#include "ApbinMessageParser.h"
 #include "MavlinkMessageParser.h"
+#include "UlogMessageParser.h"
 #include "datasource/MessageParserRegistry.h"
 
 #include <memory>
@@ -81,6 +83,28 @@ void AutopilotComponent::contribute(Registry &registry, HostContext &)
     mavlink.capabilities = {QStringLiteral("full-protocol"), QStringLiteral("field-units"),
                             QStringLiteral("field-enums")};
     MessageParserRegistry::instance().add(std::move(mavlink));
+
+    MessageParserSpec ulog;
+    ulog.id = QStringLiteral("autopilot.ulog");
+    ulog.protocolId = QStringLiteral("ulog");
+    ulog.displayName = QStringLiteral("ULog");
+    ulog.priority = 30;
+    ulog.fileExtensions = {QStringLiteral(".ulg")};
+    ulog.sniff = [](const QByteArray &data) { return UlogMessageParser().sniff(data); };
+    ulog.factory = [] { return std::make_unique<UlogMessageParser>(); };
+    ulog.capabilities = {QStringLiteral("frame-table"), QStringLiteral("field-values")};
+    MessageParserRegistry::instance().add(std::move(ulog));
+
+    MessageParserSpec apbin;
+    apbin.id = QStringLiteral("autopilot.apbin");
+    apbin.protocolId = QStringLiteral("apbin");
+    apbin.displayName = QStringLiteral("ArduPilot DataFlash");
+    apbin.priority = 30;
+    apbin.fileExtensions = {QStringLiteral(".bin"), QStringLiteral(".apbin")};
+    apbin.sniff = [](const QByteArray &data) { return ApbinMessageParser().sniff(data); };
+    apbin.factory = [] { return std::make_unique<ApbinMessageParser>(); };
+    apbin.capabilities = {QStringLiteral("frame-table"), QStringLiteral("field-values")};
+    MessageParserRegistry::instance().add(std::move(apbin));
 }
 
 } // namespace ps::components

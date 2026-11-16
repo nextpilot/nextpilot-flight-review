@@ -99,6 +99,18 @@ if(TARGET ps_data_source_mavlink)
   target_link_libraries(test_tlog_loader PRIVATE ps_data_loader_tlog ps_autopilot
     ps_host ps_kernel ps_mavlink Qt6::Core)
   add_test(NAME tlog_loader COMMAND test_tlog_loader)
+
+  add_executable(test_autopilot_message_parsers unit/test_autopilot_message_parsers.cpp)
+  target_include_directories(test_autopilot_message_parsers PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/autopilot
+    ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+  target_compile_definitions(test_autopilot_message_parsers PRIVATE
+    PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixture")
+  target_link_libraries(test_autopilot_message_parsers PRIVATE ps_autopilot Qt6::Core)
+  add_test(NAME autopilot_message_parsers COMMAND test_autopilot_message_parsers)
 endif()
 
 if(TARGET ps_gnss)

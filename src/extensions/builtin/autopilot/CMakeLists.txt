@@ -9,6 +9,10 @@ add_library(ps_autopilot STATIC
   MavlinkMessageParser.h
   MavlinkChannelCollector.cpp
   MavlinkChannelCollector.h
+  UlogMessageParser.cpp
+  UlogMessageParser.h
+  ApbinMessageParser.cpp
+  ApbinMessageParser.h
 )
 target_include_directories(ps_autopilot PUBLIC
   ${PROJECT_SOURCE_DIR}/src

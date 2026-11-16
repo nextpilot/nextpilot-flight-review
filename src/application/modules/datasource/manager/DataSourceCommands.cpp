@@ -38,6 +38,9 @@ void DataSourceSession::registerDataCommands()
         for (const QString &f : fs)
             loadFile(f);
     });
+    m_mw->commands().add(QStringLiteral("protocol.inspect"), [this](const auto &) {
+        m_mw->docks().toggleById(QStringLiteral("dock.protocol"));
+    });
     m_mw->commands().add(QStringLiteral("file.exportData"), [this](const auto &) { exportActiveCsv(); });
     m_mw->commands().add(QStringLiteral("data.openPath"), [this](const auto &ctx) { if (!ctx.arg.isEmpty()) openPath(ctx.arg); });
     m_mw->commands().add(QStringLiteral("data.clearCache"), [this](const auto &) { clearParseCache(); log(QStringLiteral("解析缓存已清空")); });

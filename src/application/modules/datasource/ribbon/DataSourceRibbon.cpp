@@ -3,6 +3,7 @@
 
 #include "DataSourceEntry.h"
 #include "DataSourceRegistry.h"
+#include "ProtocolInspectorDock.h"
 #include "DataSourceSession.h"
 #include "MainWindow.h"
 #include "SARibbonGallery.h"
@@ -60,6 +61,14 @@ void registerDataSourceContributions(Registry &registry)
                                           if (dock) mw->resizeDocks({dock}, {470}, Qt::Vertical);
                                       }});
 
+    registry.addDock(DockContribution{QStringLiteral("dock.protocol"), QStringLiteral("协议检查"),
+                                      Qt::BottomDockWidgetArea, false, 100,
+                                      QStringLiteral(":/icons/datasource.svg"),
+                                      [](QWidget *parent) -> QWidget * {
+                                          return new ProtocolInspectorDock(parent);
+                                      },
+                                      nullptr});
+
     registry.addRibbon(RibbonContribution{QStringLiteral("数据"), {}, {},
         {{QStringLiteral("常用"),
              {{QStringLiteral("data.quickOpen"), QStringLiteral("快速打开"), {}, true, QStringLiteral("open")},
@@ -113,7 +122,12 @@ void registerDataSourceContributions(Registry &registry)
                  styleGroup(streams);
                  gallery->setCurrentViewGroup(common);
                  panel->setMaximumWidth(420);
-             }}},
+             }},
+         {QStringLiteral("调试"),
+          {{QStringLiteral("protocol.inspect"), QStringLiteral("协议检查"), {}, false,
+            QStringLiteral("datasource")}},
+          {}},
+        },
         1});
 }
 

@@ -64,6 +64,15 @@ int main()
                                    QStringLiteral("data_source_sim"),
                                    QStringLiteral("data_source_mavlink")};
     expect(dataSourceIds(QStringLiteral("autopilot.core")), autopilot, "autopilot");
+    for (const QString &protocol : {QStringLiteral("mavlink"), QStringLiteral("ulog"),
+                                    QStringLiteral("apbin")})
+    {
+        if (!MessageParserRegistry::instance().protocolIds().contains(protocol))
+        {
+            std::cerr << "missing autopilot parser: " << protocol.toStdString() << "\n";
+            assert(false);
+        }
+    }
 
     const QStringList automotive = {QStringLiteral("data_loader_asc"),
                                     QStringLiteral("data_loader_blf"),
