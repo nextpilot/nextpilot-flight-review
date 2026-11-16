@@ -28,7 +28,7 @@ target_include_directories(ps_application_protocol PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/dialog
   ${CMAKE_CURRENT_SOURCE_DIR}/codec
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp
-  ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
+  ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/loader
 )
 target_link_libraries(ps_application_protocol PUBLIC
   ps_host

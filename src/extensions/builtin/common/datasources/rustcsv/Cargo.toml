@@ -9,5 +9,5 @@ name = "ps_data_loader_rustcsv"
 crate-type = ["cdylib"]
 
 [dependencies]
-ps-extension-sdk = { path = "../../sdk/rust" }
+ps-extension-sdk = { path = "../../../../dynamic/sdk/rust" }
 serde_json = "1.0"

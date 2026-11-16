@@ -17,8 +17,8 @@ extensions（具体业务） → modules（通用能力） → shell（最小宿
 | `src/application/modules/datasource` | 数据源抽象、加载器注册、实时源、缓存、数据源 Dock | 画布、绘图页 |
 | `src/application/modules/plotting` | 画布、绘图页/切分、轴/曲线、属性面板、脚本画布 | 具体文件格式解析 |
 | `src/application/modules/protocol` | 协议 schema/文档、协议编辑器、codec、自定义协议 loader | 画布、数据源会话状态 |
-| `src/extensions/builtin` | 内置业务组件：GNSS、设备调试、变换、视频、脚本 | 被 shell/modules 反向 include |
-| `src/extensions/dynamic` | 动态扩展：各格式加载器、MAVLink/仿真数据源、SDK | 同上 |
+| `src/extensions/builtin` | 飞控/GNSS/汽车/机器人四领域工具箱、`common`、设备调试、变换、视频、脚本 | 被 shell/modules 反向 include |
+| `src/extensions/dynamic` | 动态扩展 SDK（C++/Rust），只服务第三方扩展 | 承载官方/通用格式加载器 |
 
 ## 目录定位
 
@@ -69,7 +69,7 @@ mw.commands().add(QStringLiteral("data.openPath"), [mw](const CommandContext &ct
 
 新增格式加载器时：
 
-1. 在 `src/extensions/dynamic/data_loader/<format>` 实现 loader。
+1. 领域格式在 `src/extensions/builtin/<domain>/datasources/<format>` 实现，通用格式在 `src/extensions/builtin/common/datasources` 实现。
 2. 用 `DataSourceRegistry` 注册格式、扩展名、探测函数和加载函数。
 3. 不修改 `DataSourceDock` 的对话框分支；加载器由 schema 驱动。
 4. 在 `tests/` 补格式夹具和解析断言。

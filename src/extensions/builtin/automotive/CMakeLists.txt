@@ -1,3 +1,4 @@
+add_subdirectory(datasources/can)
 add_subdirectory(datasources/asc)
 add_subdirectory(datasources/blf)
 add_subdirectory(datasources/mdf4)

@@ -27,8 +27,8 @@ C++ 侧只通过 `ps_kernel.h` 调 Rust，不 include Rust 内部头。`ps-abi` 
 | `src/application/modules/datasource` | 数据源注册、加载器入口、实时源、缓存、数据源 UI |
 | `src/application/modules/plotting` | 画布、绘图页、切分布局、属性面板、绘图 UI |
 | `src/application/kernel` | Rust NDF、LOD、算子、对齐、C ABI |
-| `src/extensions/builtin` | 内置 C++ 组件，随 app 编译 |
-| `src/extensions/dynamic` | 动态扩展，运行时扫描、ABI 校验 |
+| `src/extensions/builtin` | 四领域工具箱、通用 loader/CSV/JSON/binary，随 app 编译 |
+| `src/extensions/dynamic` | 动态扩展 SDK，运行时扫描、ABI 校验 |
 | `src/application/resources` | 图标、脚本、运行时资源 |
 
 完整依赖矩阵和禁止项以 `AGENTS.md` 为准。
@@ -70,7 +70,7 @@ shell 只负责顺序和容器；业务页签、画布、数据源面板由模�
 
 | 要加的东西 | 位置 |
 |---|---|
-| 文件格式、协议、设备调试 | `src/extensions/builtin` 或 `src/extensions/dynamic` |
+| 文件格式、协议、设备调试 | `src/extensions/builtin/<domain>/datasources` 或 `builtin/common/datasources` |
 | 数据源生命周期、加载器注册、数据源 Dock | `modules/datasource` |
 | 画布、坐标轴、曲线、绘图页、绘图 Ribbon | `modules/plotting` |
 | 组件契约、Registry、动态扩展 ABI | `modules/runtime` |

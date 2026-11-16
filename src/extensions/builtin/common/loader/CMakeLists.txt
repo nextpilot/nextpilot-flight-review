@@ -1,4 +1,4 @@
-add_library(ps_loader_common STATIC PsLoaderCommon.cpp CanFrames.cpp Dbc.cpp)
+add_library(ps_loader_common STATIC PsLoaderCommon.cpp)
 
 target_include_directories(ps_loader_common PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}

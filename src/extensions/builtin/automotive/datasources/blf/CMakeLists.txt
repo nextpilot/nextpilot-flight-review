@@ -8,4 +8,4 @@ target_include_directories(ps_data_loader_blf PRIVATE
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
 )
 
-target_link_libraries(ps_data_loader_blf PRIVATE ps_loader_common ps_zlib)
+target_link_libraries(ps_data_loader_blf PRIVATE ps_can_common ps_zlib)

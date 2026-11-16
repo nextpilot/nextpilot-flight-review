@@ -14,15 +14,10 @@ if(PS_BUILD_GUI)
     # 停靠窗口：ADS 共享库（LGPL-2.1 vendor）
     add_subdirectory(3rdparty/ads)
 
-    # 动态扩展公共设施
-    add_subdirectory(extensions/dynamic/data_loader/common)
+    # 通用机械层：loader 公共代码与 CSV/JSON/binary
+    add_subdirectory(extensions/builtin/common)
 
     add_subdirectory(application/modules/datasource/services/live)
-
-    # 动态扩展：插件 SDK、通用格式与第三方加载器
-    add_subdirectory(extensions/dynamic/data_loader/csv)
-    add_subdirectory(extensions/dynamic/data_loader/json)
-    add_subdirectory(extensions/dynamic/data_loader/binary)
 
     # 内置扩展：业务组件在 extensions/builtin 聚合，base 只链接聚合 target
     add_subdirectory(extensions/builtin)

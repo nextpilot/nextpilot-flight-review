@@ -1,6 +1,6 @@
 # 扩展 toolbox 化与 autopilot 方案
 
-> 状态：四领域工具箱已拆（`autopilot.core` / `gnss.core` / `automotive.core` / `robotics.core`），ULog/apbin/MAVLink/sim、ASC/BLF/MDF4、rosbag2/MCAP 源码已迁入对应工具箱，通用 `data_sources` 只保留 CSV/JSON/binary 注册；领域分析与报告、`ProtocolInspector` 未实施。`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`；`NmeaMessageParser`/`UbxMessageParser` 也已按描述库解字段，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`。MAVLink C++11 生成物、`MavlinkMessageParser`、metadata sidecar、组件注册和测试已落地；`MavlinkSource` 已改为统一 parser 解码，旧 `switch (msgid)` 已删除；`ProtocolInspector` 尚未接入。ULog/apbin/ROS parser 和工具箱分析/报告未实施。
+> 状态：四领域工具箱已拆（`autopilot.core` / `gnss.core` / `automotive.core` / `robotics.core`），ULog/apbin/MAVLink/sim、ASC/BLF/MDF4、rosbag2/MCAP 源码已迁入对应工具箱；通用 loader 与 CSV/JSON/binary/rustcsv 在 `builtin/common`，CAN/DBC 在 `builtin/automotive/datasources/can`；`extensions/dynamic` 只保留 SDK；领域分析与报告、`ProtocolInspector` 未实施。`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`；`NmeaMessageParser`/`UbxMessageParser` 也已按描述库解字段，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`。MAVLink C++11 生成物、`MavlinkMessageParser`、metadata sidecar、组件注册和测试已落地；`MavlinkSource` 已改为统一 parser 解码，旧 `switch (msgid)` 已删除；`ProtocolInspector` 尚未接入。ULog/apbin/ROS parser 和工具箱分析/报告未实施。
 > 日期：2026-11-16
 
 ## 1. 目标
@@ -38,12 +38,15 @@ src/application/modules/datasource/    # 既有模块，新增 parser 子目录
 └── services/                          # 既有 cache / live
 
 src/extensions/
-├── common/                         # 共享机械层，不属于任何业务域
-│   ├── loader/                     # PsLoaderCommon、dataset 构建 helper
-│   └── datasources/
-│       └── csv/                    # CsvDataLoader
 ├── sdk/                            # 第三方 C++ / Rust SDK
 ├── builtin/
+│   ├── common/                     # 共享机械层，不属于任何业务域
+│   │   ├── loader/                 # PsLoaderCommon、dataset 构建 helper
+│   │   └── datasources/
+│   │       ├── csv/                # CsvDataLoader
+│   │       ├── json/               # JsonDataLoader
+│   │       ├── binary/             # BinaryDataLoader
+│   │       └── rustcsv/            # Rust cdylib 样板
 │   ├── autopilot/
 │   │   ├── AutopilotToolbox.cpp/.h
 │   │   ├── include/autopilot/      # 对外公开接口
@@ -103,7 +106,7 @@ src/extensions/
 ```text
 autopilot / gnss / automotive / robotics
         ├──> modules（datasource / plotting 公开头）
-        └──> common（loader / CSV）
+        └──> builtin/common（loader / CSV）
 
 common -> platform
 ```
@@ -119,15 +122,15 @@ common -> platform
 | tlog | `autopilot/datasources/tlog` | MAVLink 回放，补成 `data_loader` |
 | MAVLink | `autopilot/datasources/mavlink` | 实时源和 tlog 共用描述驱动解码与 ProtocolInspector |
 | sim | `autopilot/datasources/sim` | 飞控仿真源，用于开发和测试 |
-| CSV | `common/datasources/csv` | 通用表格，不归飞控 |
+| CSV | `builtin/common/datasources/csv` | 通用表格，不归飞控 |
 | NMEA / UBX / OEM7 | `gnss/datasources` | 描述驱动，OEM7 用 EDIE `database.json`，禁止硬解码 |
-| ASC / BLF / MDF4 | `automotive/datasources` | 汽车域建好后迁入 |
+| ASC / BLF / MDF4 | `automotive/datasources` | 已迁入，CAN/DBC 共享 `ps_can_common` |
 | rosbag2（mcap / sqlite3） | `robotics/datasources/rosbag2` | topic + schema 驱动解码 |
 | rosbag1（.bag） | `robotics/datasources/rosbag1` | 老版本 bag，复用 ros1msg 描述 |
 | 独立 MCAP | `robotics/datasources/mcap` | 读通道 schema 记录，不假设是 ROS |
 | DDS 在线源 | `robotics/datasources/dds` | 第一阶段只做发现 + 订阅，不做写回 |
-| JSON / binary | `builtin/datasources` | 通用格式，非核心 |
-| rustcsv | `plugins/` 或独立仓库 | 第三方 Rust 样板，不进核心 |
+| JSON / binary | `builtin/common/datasources` | 通用格式，非核心 |
+| rustcsv | `builtin/common/datasources/rustcsv` | Rust 动态库样板，不参与核心注册 |
 
 CSV 的特殊约束：
 
@@ -522,8 +525,8 @@ RobotMeta
 | `data_loader/ulog`、`apbin` | `builtin/autopilot/datasources` |
 | `data_source/mavlink` | `builtin/autopilot/datasources/mavlink` |
 | `data_source/sim` | `builtin/autopilot/datasources/sim` |
-| `data_loader/csv` | `extensions/common/datasources/csv` |
-| `data_loader/common` | `extensions/common/loader` |
+| `data_loader/csv` | `extensions/builtin/common/datasources/csv` |
+| `data_loader/common` | `extensions/builtin/common/loader` |
 | `sdk/cpp`、`sdk/rust` | `extensions/sdk` |
 | `data_loader/asc`、`blf`、`mdf4` | 先留 `builtin/datasources`，`automotive` 建好后迁入 |
 | `data_loader/mcap`、`rosbag2` | `builtin/robotics/datasources` |
@@ -535,7 +538,7 @@ RobotMeta
 
 ### P0：共享层先落地
 
-- 建 `extensions/common`，迁 `ps_loader_common` 和 CSV。
+- 建 `extensions/builtin/common`，迁 `ps_loader_common` 和 CSV，并把 CAN/DBC 归入 `builtin/automotive/datasources/can`。
 - 建 `extensions/sdk`，迁 C++ / Rust SDK。
 - 更新 GNSS、custom_protocol 对 `dynamic/sdk`、`dynamic/common` 的 include。
 - 保持 target 名不变，先保证编译和测试通过。

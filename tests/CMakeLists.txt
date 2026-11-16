@@ -72,7 +72,7 @@ if(TARGET ps_live AND TARGET ps_data_load_mcap)
   target_include_directories(test_stream_recorder PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
-    ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
+    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/loader
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/robotics/datasources/mcap)
   target_link_libraries(test_stream_recorder PRIVATE ps_live ps_data_load_mcap)
   add_test(NAME stream_recorder COMMAND test_stream_recorder)
@@ -227,7 +227,7 @@ if(CARGO_EXECUTABLE)
   add_custom_command(OUTPUT ${RUST_EXTENSION_SO}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${RUST_EXTENSION_DIR} ${RUST_APP_EXTENSION_DIR}
     COMMAND ${CARGO_EXECUTABLE} build --manifest-path
-            ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/rustcsv/Cargo.toml --release
+            ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/datasources/rustcsv/Cargo.toml --release
             --target-dir ${CMAKE_BINARY_DIR}/rust-target
     COMMAND ${CMAKE_COMMAND} -E copy
             ${CMAKE_BINARY_DIR}/rust-target/release/${RUST_EXTENSION_NAME} ${RUST_EXTENSION_SO}
@@ -235,11 +235,11 @@ if(CARGO_EXECUTABLE)
             ${CMAKE_BINARY_DIR}/rust-target/release/${RUST_EXTENSION_NAME}
             ${RUST_APP_EXTENSION_DIR}/${RUST_EXTENSION_NAME}
     COMMAND ${CMAKE_COMMAND} -E copy
-            ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/rustcsv/manifest.json
+            ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/datasources/rustcsv/manifest.json
             ${RUST_APP_EXTENSION_DIR}/manifest.json
-    DEPENDS ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/rustcsv/src/lib.rs
+    DEPENDS ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/datasources/rustcsv/src/lib.rs
             ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/rust/src/lib.rs
-            ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/rustcsv/manifest.json
+            ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/datasources/rustcsv/manifest.json
     COMMENT "Building/installing Rust data_loader sample")
   add_custom_target(ps_data_loader_rustcsv ALL DEPENDS ${RUST_EXTENSION_SO})
 

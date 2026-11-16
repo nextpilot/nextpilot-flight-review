@@ -28,8 +28,8 @@ shell（最小宿主）
 | `src/application/modules/plotting` | 绘图能力 | 画布、绘图页/切分、坐标轴、曲线、属性面板、绘图 Ribbon、`plot.*`/`page.*` 命令 | 具体文件格式解析、数据源生命周期 |
 | `src/application/modules/protocol` | 协议能力 | 协议 schema/文档模型、协议编辑器、codec、自定义协议 loader、`protocol.*` 命令与 Ribbon | 画布、数据源会话状态、具体业务格式分支 |
 | `src/application/kernel` | Rust 内核 | NDF、LOD、算子、对齐、C ABI | Qt、Widgets、宿主业务 |
-| `src/extensions/builtin` | 内置业务 | 飞控、GNSS、汽车、机器人四个领域工具箱，以及通用数据源、设备调试、变换、视频、脚本等 C++ 组件 | 反向被 shell/modules include；直接依赖 shell |
-| `src/extensions/dynamic` | 动态扩展 | 插件 SDK、通用 CSV/JSON/binary 加载器、Rust 样板等非领域核心件 | 承载飞控/GNSS/汽车/机器人官方领域格式；依赖 shell/modules 私有头；跨 C ABI 返回 `QWidget*` |
+| `src/extensions/builtin` | 内置业务 | 飞控、GNSS、汽车、机器人四个领域工具箱，`common` 共享 loader/CSV，以及通用数据源、设备调试、变换、视频、脚本等 C++ 组件 | 反向被 shell/modules include；直接依赖 shell |
+| `src/extensions/dynamic` | 动态扩展 | 只保留 C++/Rust 扩展 SDK，服务第三方动态插件 | 承载官方/通用格式加载器；依赖 shell/modules 私有头；跨 C ABI 返回 `QWidget*` |
 | `src/application/main.cpp` | 组装层 | 创建 `QApplication`、扫描扩展、创建 `MainWindow`、处理命令行 | 业务逻辑、格式分支、业务 UI |
 
 ## 3. 允许的依赖
@@ -42,7 +42,7 @@ shell（最小宿主）
 | `modules/plotting` | `shell` 的宿主接口、`modules/runtime`、`ps_kernel` 的 C ABI | `modules/datasource` 私有头；格式解析 |
 | `modules/protocol` | `shell` 的宿主接口、`modules/runtime`、`ps_kernel` 的 C ABI、`ps_loader_common`（加载器公共代码）、Qt | `modules/datasource`/`plotting` 私有头；画布与绘图状态 |
 | `extensions/builtin` | `modules/runtime`、modules 的公开头、`ps_kernel` 的 C ABI、Qt | `shell` 的 `MainWindow` 或 shell 私有头 |
-| `extensions/dynamic` | 公开 SDK、`ps_extension.h`、`ps_kernel.h`、C ABI | shell/modules 私有头、Qt Widgets、C++ 对象跨边界 |
+| `extensions/dynamic` | 只提供公开 SDK、`ps_extension.h`、`ps_kernel.h`、C ABI | shell/modules 私有头、Qt Widgets、C++ 对象跨边界、官方格式加载器 |
 
 跨业务模块只走 `modules/runtime/include/ModuleBridge.h` 的公开函数和数据，不直接 include 对方模块。
 
@@ -85,7 +85,7 @@ shell 只做最小宿主和管理内核：
 |---|---|---|---|
 | `autopilot` | `autopilot.core` | ULog、apbin、MAVLink、仿真源 | `autopilot.mavlink` |
 | `gnss` | `gnss.core` | NMEA、UBX、NovAtel OEM7 | `gnss.nmea`、`gnss.ubx`、`gnss.oem7` |
-| `automotive` | `automotive.core` | ASC、BLF、MDF4 | 暂无 |
+| `automotive` | `automotive.core` | ASC、BLF、MDF4、CAN/DBC | 暂无 |
 | `robotics` | `robotics.core` | ROS 2 bag、MCAP | 暂无 |
 
 边界：
@@ -93,7 +93,7 @@ shell 只做最小宿主和管理内核：
 - 领域格式只由对应工具箱注册；`data_sources` 只保留 CSV、JSON、binary 这类通用格式。
 - 工具箱之间不互相 include 私有头；共享能力走 `modules` 公开接口或 `common`。
 - 工具箱只注册自己的数据源和 parser，不维护第二份 `MessageParserRegistry`。
-- `extensions/dynamic` 不承载官方内建格式；迁移期源码可以暂留，但注册必须归领域工具箱。
+- `extensions/dynamic` 只保留 SDK，不承载官方/通用格式；领域格式在 `builtin/<domain>/datasources`，通用格式在 `builtin/common/datasources`。
 
 ### 动态扩展
 
