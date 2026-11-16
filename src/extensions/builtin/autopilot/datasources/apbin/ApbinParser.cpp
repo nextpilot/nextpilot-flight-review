@@ -1,4 +1,5 @@
 #include "ApbinParser.h"
+#include "PsLoaderCommon.h"
 
 #include <algorithm>
 #include <array>
@@ -201,6 +202,7 @@ std::map<uint8_t, Format> collectFormats(const std::vector<uint8_t> &buf)
     size_t pos = 0;
     while (pos + 3 <= buf.size())
     {
+        psLoaderProgress(25 + pos * 70 / std::max<size_t>(1, buf.size()), 100);
         if (buf[pos] != kHead1 || buf[pos + 1] != kHead2)
         {
             ++pos;
@@ -232,6 +234,7 @@ void collectUnits(const std::vector<uint8_t> &buf, std::map<uint8_t, Format> &fo
     size_t pos = 0;
     while (pos + 3 <= buf.size())
     {
+        psLoaderProgress(25 + pos * 70 / std::max<size_t>(1, buf.size()), 100);
         if (buf[pos] != kHead1 || buf[pos + 1] != kHead2)
         {
             ++pos;
@@ -311,7 +314,9 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
         err = "不是 ArduPilot DataFlash .bin（缺少 A3 95 头）";
         return false;
     }
+    psLoaderProgress(10, 100);
     auto formats = collectFormats(buf);
+    psLoaderProgress(18, 100);
     if (formats.empty())
     {
         err = "没有找到 FMT 格式定义";
@@ -321,12 +326,14 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
     std::map<uint8_t, std::string> unitNames;
     std::map<uint8_t, double> mults;
     collectUnits(buf, formats, fmtu, unitNames, mults);
+    psLoaderProgress(25, 100);
 
     std::map<std::tuple<uint8_t, uint8_t, size_t>, Builder> builders;
     std::vector<std::pair<std::string, std::string>> params;
     size_t pos = 0;
     while (pos + 3 <= buf.size())
     {
+        psLoaderProgress(25 + pos * 70 / std::max<size_t>(1, buf.size()), 100);
         if (buf[pos] != kHead1 || buf[pos + 1] != kHead2)
         {
             ++pos;

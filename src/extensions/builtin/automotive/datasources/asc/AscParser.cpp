@@ -1,4 +1,5 @@
 #include "AscParser.h"
+#include "PsLoaderCommon.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -64,6 +65,8 @@ bool psParseAscFile(const char *path, AscLog &log, std::string &err)
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         line = trim(line);
+        if (!text.empty())
+            psLoaderProgress(10 + start * 90 / text.size(), 100);
         if (nl == std::string::npos)
             start = text.size() + 1;
         else

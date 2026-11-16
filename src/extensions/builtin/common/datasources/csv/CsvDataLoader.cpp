@@ -253,6 +253,7 @@ int32_t csvDefaultOptions(const char *path, char *out, uint32_t cap)
 int32_t csvLoad(const char *path, const char *optsJson, const PsHostApi *host, void **dataset,
                 char *err, uint32_t errCap)
 {
+    psLoaderSetHost(host);
     const QJsonObject opts = QJsonDocument::fromJson(QByteArray(optsJson ? optsJson : "")).object();
     CsvOptions o;
     const QString delim = opts.value(QStringLiteral("delimiter")).toString();

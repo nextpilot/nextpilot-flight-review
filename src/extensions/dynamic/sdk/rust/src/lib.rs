@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 pub const PS_EXTENSION_ABI_VERSION: u32 = 7;
-pub const PS_HOST_API_VERSION: u32 = 1;
+pub const PS_HOST_API_VERSION: u32 = 2;
 pub const PS_FAMILY_DATA_LOADER: u32 = 1;
 pub const PS_FAMILY_LIVE_SOURCE: u32 = 2;
 pub const PS_FAMILY_PARSER: u32 = 3;
@@ -55,6 +55,7 @@ pub struct PsHostApi {
     pub dataset_new: Option<DatasetNewFn>,
     pub dataset_add_channel: Option<DatasetAddChannelFn>,
     pub dataset_free: Option<DatasetFreeFn>,
+    pub progress: Option<unsafe extern "C" fn(u64, u64)>,
 }
 
 pub type SchemaJsonFn = unsafe extern "C" fn(out: *mut c_char, cap: u32) -> i32;

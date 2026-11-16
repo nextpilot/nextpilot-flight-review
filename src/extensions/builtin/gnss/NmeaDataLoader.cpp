@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QStringList>
+#include <filesystem>
 
 #include <QString>
 #include <algorithm>
@@ -158,9 +159,12 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
     std::map<std::string, Channel> acc;
     double lastT = 0, dayOffset = 0;
     bool first = true;
+    const auto fileSize = static_cast<uint64_t>(std::filesystem::file_size(path));
     std::string line;
     while (std::getline(in, line))
     {
+        const auto at = static_cast<uint64_t>(in.tellg());
+        psLoaderProgress(10 + at * 90 / std::max<uint64_t>(1, fileSize), 100);
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         if (line.size() < 7 || line[0] != '$')

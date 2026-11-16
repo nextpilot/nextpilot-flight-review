@@ -1,4 +1,5 @@
 #include "UlogParser.h"
+#include "PsLoaderCommon.h"
 
 #include <algorithm>
 #include <array>
@@ -339,6 +340,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
 
     while (pos + 3 <= buf.size())
     {
+        psLoaderProgress(10 + pos * 90 / std::max<size_t>(1, buf.size()), 100);
         uint16_t size = 0;
         if (!u16At(buf, pos, size))
             break;

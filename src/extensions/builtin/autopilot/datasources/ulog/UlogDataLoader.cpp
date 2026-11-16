@@ -29,6 +29,7 @@ int32_t ulogParams(const char *path, char *out, uint32_t cap)
 
 int32_t ulogLoad(const char *path, const char *, const PsHostApi *host, void **dataset, char *err, uint32_t errCap)
 {
+    psLoaderSetHost(host);
     UlogLog log;
     std::string perr;
     if (!psParseUlog(path, log, perr))

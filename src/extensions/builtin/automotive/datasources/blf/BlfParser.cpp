@@ -1,4 +1,5 @@
 #include "BlfParser.h"
+#include "PsLoaderCommon.h"
 
 #include <algorithm>
 #include <cstring>

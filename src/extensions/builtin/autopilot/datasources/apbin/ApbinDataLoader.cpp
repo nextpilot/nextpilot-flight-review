@@ -29,6 +29,7 @@ int32_t apbinParams(const char *path, char *out, uint32_t cap)
 
 int32_t apbinLoad(const char *path, const char *, const PsHostApi *host, void **dataset, char *err, uint32_t errCap)
 {
+    psLoaderSetHost(host);
     ApbinLog log;
     std::string perr;
     if (!psParseApbin(path, log, perr))

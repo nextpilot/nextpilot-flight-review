@@ -56,6 +56,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
     size_t pos = 0;
     while (pos + 8 <= buf.size())
     {
+        psLoaderProgress(10 + pos * 90 / std::max<size_t>(1, buf.size()), 100);
         if (buf[pos] != 0xB5 || buf[pos + 1] != 0x62)
         {
             ++pos;
@@ -101,6 +102,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
 int32_t ubxLoad(const char *path, const char *, const PsHostApi *host, void **dataset, char *err,
                 uint32_t errCap)
 {
+    psLoaderSetHost(host);
     std::vector<Channel> channels;
     std::string perr;
     if (!parseFile(path, channels, perr))

@@ -1,5 +1,29 @@
 #include "PsLoaderCommon.h"
 
+namespace {
+thread_local const PsHostApi *t_host = nullptr;
+thread_local uint32_t t_lastPct = 0xFFFFFFFFu;
+} // namespace
+
+void psLoaderSetHost(const PsHostApi *host)
+{
+    t_host = host;
+    t_lastPct = 0xFFFFFFFFu;
+}
+
+void psLoaderProgress(uint64_t done, uint64_t total)
+{
+    if (!t_host || !t_host->progress || total == 0)
+        return;
+    uint32_t pct = static_cast<uint32_t>(done * 100 / total);
+    if (pct > 100)
+        pct = 100;
+    if (pct == t_lastPct)
+        return;
+    t_lastPct = pct;
+    t_host->progress(done, total);
+}
+
 #include <algorithm>
 #include <cstring>
 #include <fstream>
@@ -38,13 +62,39 @@ bool psReadFile(const char *path, std::vector<uint8_t> &buf, std::string &err)
         err = "路径为空";
         return false;
     }
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f)
     {
         err = "读取失败：" + std::string(path);
         return false;
     }
-    buf.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    const std::streamoff size = f.tellg();
+    if (size < 0)
+    {
+        err = "读取失败：" + std::string(path);
+        return false;
+    }
+    f.seekg(0, std::ios::beg);
+    buf.resize(static_cast<size_t>(size));
+    size_t done = 0;
+    constexpr size_t kChunk = 1u << 20;
+    while (done < buf.size())
+    {
+        const size_t n = std::min(kChunk, buf.size() - done);
+        f.read(reinterpret_cast<char *>(buf.data() + done), static_cast<std::streamsize>(n));
+        const size_t got = static_cast<size_t>(f.gcount());
+        done += got;
+        psLoaderProgress(done * 10 / std::max<size_t>(1, buf.size()), 100);
+        if (got < n)
+            break;
+    }
+    if (!f && !f.eof())
+    {
+        err = "读取失败：" + std::string(path);
+        return false;
+    }
+    buf.resize(done);
+    psLoaderProgress(10, 100);
     return true;
 }
 

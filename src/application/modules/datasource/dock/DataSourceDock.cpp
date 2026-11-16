@@ -7,6 +7,7 @@
 #include "LiveSession.h"
 #include "DatasetCache.h"
 #include "UiDialogEngine.h"
+#include "HostApi.h"
 
 #include "DataSourceDialog.h"
 #include "record/StreamRecorder.h"
@@ -42,10 +43,13 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QProgressDialog>
+#include <QTimer>
 #include <QFutureWatcher>
 #include <QPushButton>
 #include <QStyle>
 #include <QtConcurrent/QtConcurrentRun>
+
+#include <atomic>
 #include <QScrollArea>
 #include "SettingsManager.h"
 #include <QShortcut>
@@ -718,29 +722,57 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
     }
     else
     {
-        // 解析放后台线程，主线程只跑不确定进度条；loader ABI 暂不回报百分比。
+        // 解析放后台线程；loader 在解析循环里通过 host->progress 上报真实进度。
         struct LoadOutcome { int rc = -1; PsDataset *ds = nullptr; QString err; };
-        auto job = [entry, path, opts]() {
+        struct ProgressState {
+            std::atomic<uint64_t> done{0};
+            std::atomic<uint64_t> total{0};
+        };
+        auto state = std::make_shared<ProgressState>();
+        auto job = [entry, path, opts, state]() {
             LoadOutcome out;
             char e[256] = {0};
+            ps_host_progress_begin(state.get(), [](void *ctx, uint64_t done, uint64_t total) {
+                auto *st = static_cast<ProgressState *>(ctx);
+                st->done.store(done, std::memory_order_relaxed);
+                st->total.store(total, std::memory_order_relaxed);
+            });
             out.rc = entry->load(path, opts, &out.ds, e, sizeof(e));
+            ps_host_progress_end();
             out.err = QString::fromUtf8(e);
             return out;
         };
-        QFutureWatcher<LoadOutcome> watcher;
-        QProgressDialog progress(QStringLiteral("正在解析 %1（%2 MB）…")
+        const QString baseText = QStringLiteral("正在解析 %1（%2 MB）…")
                                      .arg(fi.fileName())
-                                     .arg(fi.size() / 1048576.0, 0, 'f', fi.size() >= 1048576 ? 1 : 0),
-                                 QString(), 0, 0, this);
+                                     .arg(fi.size() / 1048576.0, 0, 'f', fi.size() >= 1048576 ? 1 : 0);
+        QFutureWatcher<LoadOutcome> watcher;
+        QProgressDialog progress(baseText, QString(), 0, 0, this);
         progress.setMinimumWidth(420);
         progress.setWindowTitle(QStringLiteral("加载数据源"));
         progress.setWindowModality(Qt::ApplicationModal);
         progress.setCancelButton(nullptr);
         progress.setMinimumDuration(0);
+        progress.setAutoClose(false);
+        progress.setAutoReset(false);
+        QTimer tick;
+        tick.setInterval(80);
+        connect(&tick, &QTimer::timeout, &progress, [&] {
+            const uint64_t total = state->total.load(std::memory_order_relaxed);
+            if (!total)
+                return;
+            const uint64_t done = state->done.load(std::memory_order_relaxed);
+            const int pct = static_cast<int>(qMin<uint64_t>(100, done * 100 / total));
+            if (progress.maximum() != 100)
+                progress.setRange(0, 100);
+            progress.setValue(pct);
+            progress.setLabelText(QStringLiteral("%1 %2%").arg(baseText).arg(pct));
+        });
         connect(&watcher, &QFutureWatcher<LoadOutcome>::finished, &progress, &QProgressDialog::accept);
+        tick.start();
         watcher.setFuture(QtConcurrent::run(job));
         if (!watcher.isFinished())
             progress.exec();
+        tick.stop();
         watcher.waitForFinished();
         const LoadOutcome out = watcher.result();
         if (out.rc != 0)

@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 #define PS_EXTENSION_ABI_VERSION 7u
-#define PS_HOST_API_VERSION 1u
+#define PS_HOST_API_VERSION 2u
 #define PS_DATA_SOURCE_PROTOCOL_VERSION 3u
 
 #if defined(_WIN32)
@@ -60,6 +60,9 @@ typedef struct PsHostApi {
                                    const double *time_s, const double *value, uint32_t count,
                                    char *err, uint32_t err_cap);
     void (*dataset_free)(void *dataset);
+    /* 可选：解析进度。done/total 均为字节、行或记录数；total=0 表示不确定。
+     * 宿主在 load 调用期间提供线程局部回调，扩展在解析循环中调用即可。 */
+    void (*progress)(uint64_t done, uint64_t total);
 } PsHostApi;
 
 /* Loader 数据面。所有 JSON 返回：>=0 为写入字节数；<0 失败。

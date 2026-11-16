@@ -26,6 +26,7 @@ int32_t canDefaults(const char *, char *out, uint32_t cap)
 
 int32_t ascLoad(const char *path, const char *opts, const PsHostApi *host, void **dataset, char *err, uint32_t errCap)
 {
+    psLoaderSetHost(host);
     AscLog log;
     std::string perr;
     if (!psParseAscFile(path, log, perr))

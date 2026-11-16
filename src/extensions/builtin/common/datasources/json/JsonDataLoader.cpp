@@ -50,8 +50,10 @@ void flatten(const QString &prefix, const QJsonObject &obj, double t, std::map<s
 bool parseObjects(const QJsonArray &arr, std::map<std::string, Channel> &out, std::string &err)
 {
     double index = 0;
+    int row = 0;
     for (const QJsonValue &v : arr)
     {
+        psLoaderProgress(10 + static_cast<uint64_t>(++row) * 85 / std::max<qsizetype>(1, arr.size()), 100);
         if (!v.isObject())
             continue;
         const QJsonObject o = v.toObject();
@@ -138,6 +140,7 @@ bool loadFile(const std::string &path, std::map<std::string, Channel> &out, std:
 int32_t jsonLoad(const char *path, const char *, const PsHostApi *host, void **dataset, char *err,
                  uint32_t errCap)
 {
+    psLoaderSetHost(host);
     std::map<std::string, Channel> acc;
     std::string perr;
     if (!loadFile(path, acc, perr))

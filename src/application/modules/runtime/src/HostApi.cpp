@@ -4,6 +4,15 @@
 
 namespace {
 
+thread_local void *t_progress_ctx = nullptr;
+thread_local PsHostProgressFn t_progress_fn = nullptr;
+
+void host_progress(uint64_t done, uint64_t total)
+{
+    if (t_progress_fn)
+        t_progress_fn(t_progress_ctx, done, total);
+}
+
 extern "C" void *host_dataset_new(void)
 {
     return ps_dataset_new();
@@ -28,6 +37,7 @@ const PsHostApi kHostApi = {
     &host_dataset_new,
     &host_dataset_add_channel,
     &host_dataset_free,
+    &host_progress,
 };
 
 } // namespace
@@ -35,4 +45,16 @@ const PsHostApi kHostApi = {
 extern "C" const PsHostApi *ps_host_api(void)
 {
     return &kHostApi;
+}
+
+extern "C" void ps_host_progress_begin(void *ctx, PsHostProgressFn fn)
+{
+    t_progress_ctx = ctx;
+    t_progress_fn = fn;
+}
+
+extern "C" void ps_host_progress_end(void)
+{
+    t_progress_ctx = nullptr;
+    t_progress_fn = nullptr;
 }

@@ -22,6 +22,11 @@ struct PsChannelData
 PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err,
                           const PsHostApi *host);
 
+/* 解析进度：load 入口先绑定 host，解析器在循环里按 done/total 上报。
+ * 宿主未挂进度接收器时为空操作；同一百分比只发一次。 */
+void psLoaderSetHost(const PsHostApi *host);
+void psLoaderProgress(uint64_t done, uint64_t total);
+
 void psWriteErr(char *err, uint32_t cap, const std::string &msg);
 int32_t psWriteJson(const QByteArray &json, char *out, uint32_t cap);
 int32_t psWriteText(const std::string &text, char *out, uint32_t cap);

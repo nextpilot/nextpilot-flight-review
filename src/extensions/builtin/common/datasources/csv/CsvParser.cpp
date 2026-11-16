@@ -371,6 +371,7 @@ bool psCsvProbeFile(const char *path, char forcedDelimiter, CsvProbe &out, std::
     std::string text;
     if (!psReadTextFile(path, text, err))
         return false;
+    psLoaderProgress(10, 100);
     if (text.size() >= 3 && text[0] == '\xEF' && text[1] == '\xBB' && text[2] == '\xBF')
         text.erase(0, 3);
     const std::vector<std::string> lines = nonEmptyLines(text);
@@ -473,10 +474,12 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
     std::string text;
     if (!psReadTextFile(path, text, err))
         return false;
+    psLoaderProgress(10, 100);
     if (text.size() >= 3 && text[0] == '\xEF' && text[1] == '\xBB' && text[2] == '\xBF')
         text.erase(0, 3);
 
     std::vector<std::string> lines = nonEmptyLines(text);
+    psLoaderProgress(12, 100);
     if (opt.skipRows > 0)
     {
         const size_t skip = std::min<size_t>(static_cast<size_t>(opt.skipRows), lines.size());
@@ -499,7 +502,10 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
 
     std::vector<std::vector<std::string>> raw;
     for (size_t i = dataStart; i < lines.size(); ++i)
+    {
         raw.push_back(splitLine(lines[i], opt.delimiter));
+        psLoaderProgress(12 + (i - dataStart + 1) * 33 / std::max<size_t>(1, lines.size() - dataStart), 100);
+    }
     if (headers.empty())
     {
         size_t maxCols = 0;
@@ -511,16 +517,21 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
     const size_t nCols = headers.size();
 
     std::vector<std::vector<std::string>> kept;
-    for (const auto &row : raw)
-        if (row.size() == nCols)
-            kept.push_back(row);
+    for (size_t i = 0; i < raw.size(); ++i)
+    {
+        if (raw[i].size() == nCols)
+            kept.push_back(raw[i]);
+        psLoaderProgress(45 + (i + 1) * 10 / std::max<size_t>(1, raw.size()), 100);
+    }
     if (kept.empty())
     {
         err = "没有一条数据行可用";
         return false;
     }
 
+    psLoaderProgress(55, 100);
     TimeBuild tb = buildTime(kept, headers, opt);
+    psLoaderProgress(65, 100);
     std::vector<const std::vector<std::string> *> rowsOk;
     std::vector<double> tOk;
     for (size_t i = 0; i < kept.size(); ++i)
@@ -530,6 +541,7 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
             rowsOk.push_back(&kept[i]);
             tOk.push_back(tb.t[i]);
         }
+        psLoaderProgress(65 + (i + 1) * 10 / std::max<size_t>(1, kept.size()), 100);
     }
     if (rowsOk.empty())
     {
@@ -537,6 +549,7 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
         return false;
     }
 
+    psLoaderProgress(78, 100);
     std::vector<size_t> idx(tOk.size());
     for (size_t i = 0; i < idx.size(); ++i)
         idx[i] = i;
@@ -558,6 +571,7 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
     out.headers.push_back(tb.name);
     std::vector<double> tOut;
     tOut.reserve(idx.size());
+    size_t outDone = 0;
     for (size_t i : idx)
         tOut.push_back(tOk[i]);
     out.columns.push_back(std::move(tOut));
@@ -571,6 +585,7 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
             v.push_back(parseNumber((*rowsOk[i])[c]));
         out.headers.push_back(headers[c]);
         out.columns.push_back(std::move(v));
+        psLoaderProgress(80 + static_cast<uint64_t>(c + 1) * 20 / std::max<size_t>(1, nCols), 100);
     }
     return true;
 }
