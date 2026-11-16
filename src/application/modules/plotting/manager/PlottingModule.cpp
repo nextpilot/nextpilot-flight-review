@@ -56,19 +56,6 @@ void registerPlottingContributions(Registry &registry)
             return mw ? new PlottingSettingsPage(mw) : nullptr;
         },
         [](QWidget *page) { static_cast<PlottingSettingsPage *>(page)->apply(); }});
-    registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
-                                      Qt::RightDockWidgetArea, true, 1, nullptr,
-                                      [](QWidget *p) {
-                                          auto *mw = qobject_cast<MainWindow *>(p);
-                                          return mw ? plottingSession(mw)->createPropPanel(false) : nullptr;
-                                      }});
-    registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
-                                      Qt::RightDockWidgetArea, true, 2,
-                                      QStringLiteral(":/icons/prop.svg"),
-                                      [](QWidget *p) {
-                                          auto *mw = qobject_cast<MainWindow *>(p);
-                                          return mw ? plottingSession(mw)->createPropPanel(true) : nullptr;
-                                      }});
     registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
         {{QStringLiteral("页面"), {}, ps::plotting::buildPagePanel},
          {QStringLiteral("布局"), {}, ps::plotting::buildLayoutPicker},

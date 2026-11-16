@@ -805,8 +805,26 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
     }
 
     m_ctx.sources().append(src);
-    addSourceRow(src.name, QStringLiteral("已加载 · %1 通道").arg(n), QStringLiteral("#7ee787"), true, src.path,
-                 src.id);
+    qint64 totalPoints = 0;
+    for (const PsChannelInfo *ch : src.channels)
+        totalPoints += ch->point_count;
+    double span = 0.0;
+    if (!src.channels.isEmpty() && src.channels.first()->point_count > 1)
+    {
+        const PsChannelInfo *ch = src.channels.first();
+        span = ch->time[ch->point_count - 1] - ch->time[0];
+    }
+    const QString shortMeta = QStringLiteral("%1 通道").arg(n);
+    const QString fullMeta = QStringLiteral("%1 通道 · %2 点 · %3 s")
+                                 .arg(n)
+                                 .arg(totalPoints)
+                                 .arg(span, 0, 'f', 1);
+    QWidget *srcRow = addSourceRow(src.name, shortMeta, QStringLiteral("#7ee787"), true, src.path, src.id);
+    if (srcRow)
+    {
+        srcRow->setProperty("srcFullMeta", fullMeta);
+        srcRow->setToolTip(fullMeta);
+    }
 
     const bool firstSource = oldCount == 0;
     m_ctx.sourceLoaded(src, firstSource);
@@ -1580,13 +1598,14 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
 
     auto *expander = new QToolButton(row);
     expander->setObjectName(QStringLiteral("srcExpand"));
-    expander->setText(QStringLiteral("▸"));
+    expander->setIcon(ThemeManager::icon(QStringLiteral(":/icons/chevron_right.svg")));
+    expander->setIconSize(QSize(14, 14));
     expander->setToolTip(QStringLiteral("展开数据列"));
     expander->setCursor(Qt::PointingHandCursor);
-    expander->setFixedSize(18, 26);
+    expander->setFixedSize(22, 26);
     expander->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
-        "QToolButton{background:transparent;border:0;color:#6e7d88;font-size:11px;padding:0;}"
-        "QToolButton:hover{color:#f2b134;}")));
+        "QToolButton{background:transparent;border:0;padding:0;}"
+        "QToolButton:hover{background:#1b232a;border-radius:2px;}")));
     lay->addWidget(expander);
 
     auto *dot = new QLabel(row);
@@ -1816,12 +1835,12 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
         if (panel->isVisible())
         {
             panel->hide();
-            expander->setText(QStringLiteral("▸"));
+            expander->setIcon(ThemeManager::icon(QStringLiteral(":/icons/chevron_right.svg")));
             return;
         }
         rebuildPanel();
         panel->show();
-        expander->setText(QStringLiteral("▾"));
+        expander->setIcon(ThemeManager::icon(QStringLiteral(":/icons/chevron_down.svg")));
         m_ctx.activateSource(row);
         // 同一时间只展开一个源，数据列就紧贴在源下面。
         QWidget *host = m_srcRows ? m_srcRows->parentWidget() : nullptr;
@@ -1834,7 +1853,7 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
                     if (oi > 0)
                         if (QWidget *orow = m_srcRows->itemAt(oi - 1)->widget())
                             if (auto *ob = orow->findChild<QToolButton *>(QStringLiteral("srcExpand")))
-                                ob->setText(QStringLiteral("▸"));
+                                ob->setIcon(ThemeManager::icon(QStringLiteral(":/icons/chevron_right.svg")));
                 }
     });
     panel->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -1916,46 +1935,40 @@ void DataSourceDock::updateSrcStatus()
     if (!host)
         return;
     const ps::data_source::SourceData *src = m_ctx.sourceById(m_ctx.activeSourceId());
-    QString stats;
-    if (src)
-    {
-        const int channels = src->live
-            ? (src->liveSession ? src->liveSession->channels().size() : 0)
-            : src->channels.size();
+    // 每个源独立算统计：行内只放通道数 + 采样率，完整数据放 tooltip
+    auto statsFor = [this](int srcId, const QString &fallback) {
+        QString shortText = fallback;
+        QString fullText;
+        const ps::data_source::SourceData *s = m_ctx.sourceById(srcId);
+        if (!s)
+            return QPair<QString, QString>(shortText, fullText);
+        const int channels = s->live
+            ? (s->liveSession ? s->liveSession->channels().size() : 0)
+            : s->channels.size();
+        if (channels <= 0)
+            return QPair<QString, QString>(shortText, fullText);
         qint64 points = 0;
         double duration = 0.0;
-        double rate = 0.0;
-        if (src->live)
-        {
-            points = src->liveSession ? src->liveSession->totalSamples() : 0;
-        }
+        if (s->live)
+            points = s->liveSession ? s->liveSession->totalSamples() : 0;
         else
-        {
-            for (const PsChannelInfo *ch : src->channels)
+            for (const PsChannelInfo *ch : s->channels)
                 points += ch->point_count;
-        }
         const QVector<const PsChannelInfo *> view =
-            src->live ? (src->liveSession ? src->liveSession->channels() : QVector<const PsChannelInfo *>())
-                      : src->channels;
+            s->live ? (s->liveSession ? s->liveSession->channels() : QVector<const PsChannelInfo *>())
+                    : s->channels;
         if (!view.isEmpty() && view.first()->point_count > 1)
         {
             const PsChannelInfo *ch = view.first();
             duration = ch->time[ch->point_count - 1] - ch->time[0];
-            if (duration > 0.0)
-                rate = (ch->point_count - 1) / duration;
         }
-        QString rateText = src->live ? QStringLiteral("实时") : QStringLiteral("—");
-        if (rate > 0.0)
-            rateText = rate >= 1000.0 ? QStringLiteral("%1 kHz").arg(rate / 1000.0, 0, 'f', 1)
-                                      : QStringLiteral("%1 Hz").arg(rate, 0, 'f', rate >= 10.0 ? 0 : 1);
-        // 压缩成一行塞进数据源行：6 通道 · 18000 点 · 2999.0 s · 1.0 Hz
-        stats = QStringLiteral("%1 通道 · %2 点 · %3 s · %4")
-                    .arg(channels)
-                    .arg(points)
-                    .arg(duration, 0, 'f', 1)
-                    .arg(rateText);
-    }
-    // 统计挂在当前数据源那一行上，底部不再单独占一条状态栏。
+        shortText = QStringLiteral("%1 通道").arg(channels);
+        fullText = QStringLiteral("%1 通道 · %2 点 · %3 s")
+                       .arg(channels)
+                       .arg(points)
+                       .arg(duration, 0, 'f', 1);
+        return QPair<QString, QString>(shortText, fullText);
+    };
     for (QWidget *row : host->findChildren<QWidget *>())
     {
         if (!row->property("srcRow").toBool())
@@ -1963,11 +1976,11 @@ void DataSourceDock::updateSrcStatus()
         auto *meta = row->findChild<QLabel *>(QStringLiteral("srcMeta"));
         if (!meta)
             continue;
-        const bool active = src && row->property("srcId").isValid() &&
-                            row->property("srcId").toInt() == src->id;
-        const QString text = (active && !stats.isEmpty()) ? stats : row->property("srcMeta").toString();
-        meta->setText(text);
-        meta->setToolTip(text);
+        const QPair<QString, QString> texts =
+            statsFor(row->property("srcId").toInt(), row->property("srcMeta").toString());
+        meta->setText(texts.first);
+        const QString full = row->property("srcFullMeta").toString();
+        row->setToolTip(full.isEmpty() ? (texts.second.isEmpty() ? texts.first : texts.second) : full);
     }
 }
 

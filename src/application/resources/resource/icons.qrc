@@ -4,6 +4,10 @@
     <file alias="arrow_more_ink.svg">icons/arrow_more_ink.svg</file>
     <file alias="autoy.svg">icons/autoy.svg</file>
     <file alias="check.svg">icons/check.svg</file>
+    <file alias="chevron_down.svg">icons/chevron_down.svg</file>
+    <file alias="chevron_down_ink.svg">icons/chevron_down_ink.svg</file>
+    <file alias="chevron_right.svg">icons/chevron_right.svg</file>
+    <file alias="chevron_right_ink.svg">icons/chevron_right_ink.svg</file>
     <file alias="check_ink.svg">icons/check_ink.svg</file>
     <file alias="compass.svg">icons/compass.svg</file>
     <file alias="cursor.svg">icons/cursor.svg</file>

@@ -9,6 +9,7 @@
 #include "LogManager.h"
 #include "DockManager.h"
 #include "RibbonManager.h"
+#include "PropertyManager.h"
 
 class QTabWidget;
 
@@ -32,6 +33,7 @@ public:
             m_docks.setCentralContent(p);
     }
     LogManager &logs() { return m_logs; }
+    ps::shell::PropertyManager &properties() { return m_props; }
     QString kernelInfo() const { return m_kernelInfo; }
     void refreshTitle();
     void applyTheme();
@@ -51,5 +53,6 @@ private:
     SessionManager m_session;
     LogManager m_logs;
     DockManager m_docks;
+    ps::shell::PropertyManager m_props;
     RibbonManager m_ribbon;
 };

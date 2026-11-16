@@ -16,6 +16,8 @@
 
 #include "ps_kernel.h"
 
+#include "../../3rdparty/ads/src/DockWidget.h"
+
 #include "SARibbonToolButton.h"
 
 
@@ -24,7 +26,7 @@
 MainWindow::~MainWindow() = default;
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), m_logs(this), m_docks(this),
+    : QMainWindow(parent), m_logs(this), m_docks(this), m_props(this),
       m_ribbon(this, &m_commands, &m_extensions.registry(), this)
 {
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
@@ -61,6 +63,14 @@ MainWindow::MainWindow(QWidget *parent)
 
     setMenuWidget(m_ribbon.create());
     m_docks.createFromRegistry(m_extensions.registry());
+    // 没有任何模块注册节点时，属性面板和对象树在窗口显示前就收起来。
+    if (!m_props.hasNodes())
+    {
+        if (auto *dock = m_docks.byId(QStringLiteral("dock.prop")))
+            dock->toggleView(false);
+        if (auto *dock = m_docks.byId(QStringLiteral("dock.tree")))
+            dock->toggleView(false);
+    }
     m_docks.applyTheme();
     m_docks.darkenExisting();
     if (auto *view = findChild<QPlainTextEdit *>(QStringLiteral("dock.log.view")))

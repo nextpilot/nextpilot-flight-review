@@ -1,6 +1,7 @@
 #include "PlottingSession.h"
 #include "MainWindow.h"
 #include "ModuleBridge.h"
+#include "PropertyManager.h"
 #include "PlottingCanvas.h"
 #include "PlottingLayout.h"
 #include "PlottingTabs.h"
@@ -618,33 +619,33 @@ QWidget *PlottingSession::buildNode(const QJsonObject &o, bool top)
 
 void PlottingSession::refreshPropTree(PlottingCanvas *active)
 {
-    if (!m_propTree)
-        return;
     QWidget *page = active ? pageForCanvas(active)
                            : (m_mw->pages() ? m_mw->pages()->currentWidget() : nullptr);
     if (!page || !m_mw->pages() || page == m_mw->pages()->widget(m_mw->pages()->count() - 1))
         return;
 
-    m_propTreeBuilding = true;
-    m_propTree->clear();
-
+    auto &pm = m_mw->properties();
+    pm.registerNode(ps::shell::PropertyNode{QStringLiteral("plot"), QString(), QStringLiteral("绘图"),
+                                            QStringLiteral(":/icons/panel.svg"), {}, {}});
+    pm.clearChildren(QStringLiteral("plot"));
     const QString pageTitle = m_mw->pages()->tabText(m_mw->pages()->indexOf(page));
-    auto *root = new QTreeWidgetItem(m_propTree);
-    root->setText(0, pageTitle);
-    root->setIcon(0, ThemeManager::icon(QStringLiteral(":/icons/panel.svg")));
-    root->setFlags(root->flags() & ~Qt::ItemIsSelectable);
-    root->setExpanded(true);
+    pm.registerNode(ps::shell::PropertyNode{QStringLiteral("plot.page"), QStringLiteral("plot"), pageTitle,
+                                            QStringLiteral(":/icons/panel.svg"), {}, {}});
 
     QVector<PlottingCanvas *> canvases = PlottingLayout::collectCanvases(page);
-    QTreeWidgetItem *selected = nullptr;
+    PlottingCanvas *selected = active ? active : canvases.value(0);
     for (PlottingCanvas *c : canvases)
     {
-        auto *axes = new QTreeWidgetItem(root);
-        axes->setText(0, c->title());
-        axes->setIcon(0, ThemeManager::icon(QStringLiteral(":/icons/prop.svg")));
-        axes->setData(0, Qt::UserRole, 1);
-        axes->setData(0, Qt::UserRole + 1, QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(c)));
-        axes->setExpanded(active ? (c == active) : (c == canvases.first()));
+        const QString id = canvasNodeId(c);
+        pm.registerNode(ps::shell::PropertyNode{
+            id, QStringLiteral("plot.page"), c->title(), QStringLiteral(":/icons/prop.svg"),
+            [this, c] { return axesContent(c); },
+            [this, c](const QString &key, const QString &text) {
+                m_propCanvas = c;
+                m_propSeriesIndex = -1;
+                m_propKind = 1;
+                applyPropEdit(key, text);
+            }});
 
         const QJsonObject st = c->saveState();
         const QJsonArray arr = st.value(QStringLiteral("series")).toArray();
@@ -654,30 +655,27 @@ void PlottingSession::refreshPropTree(PlottingCanvas *active)
             const QString label = so.value(QStringLiteral("label")).toString(
                 so.value(QStringLiteral("name")).toString());
             const int axis = so.value(QStringLiteral("axis")).toInt(0);
-            auto *line = new QTreeWidgetItem(axes);
-            line->setText(0, QStringLiteral("%1%2").arg(label, axis == 1 ? QStringLiteral("  → 右轴") : QString()));
-            line->setData(0, Qt::UserRole, 2);
-            line->setData(0, Qt::UserRole + 1, QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(c)));
-            line->setData(0, Qt::UserRole + 2, i);
-            QPixmap sw(10, 10);
-            sw.fill(QColor(so.value(QStringLiteral("color")).toString()));
-            line->setIcon(0, QIcon(sw));
+            const QString sid = QStringLiteral("%1.series.%2").arg(id).arg(i);
+            const QString text = QStringLiteral("%1%2").arg(label, axis == 1 ? QStringLiteral("  → 右轴") : QString());
+            pm.registerNode(ps::shell::PropertyNode{
+                sid, id, text, QStringLiteral(":/icons/prop.svg"),
+                [this, c, i] { return seriesContent(c, i); },
+                [this, c, i](const QString &key, const QString &value) {
+                    m_propCanvas = c;
+                    m_propSeriesIndex = i;
+                    m_propKind = 2;
+                    applyPropEdit(key, value);
+                }});
         }
-        if (c == active || (!active && !selected))
-            selected = axes;
     }
-    m_propTreeBuilding = false;
-
     if (selected)
-    {
-        m_propTree->setCurrentItem(selected);
-        PlottingCanvas *c = reinterpret_cast<PlottingCanvas *>(
-            selected->data(0, Qt::UserRole + 1).value<quintptr>());
-        if (c)
-            showAxesProps(c);
-    }
+        pm.selectNode(canvasNodeId(selected));
 }
 
+QString PlottingSession::canvasNodeId(PlottingCanvas *c) const
+{
+    return QStringLiteral("plot.canvas.%1").arg(reinterpret_cast<quintptr>(c));
+}
 
 void PlottingSession::applyTimeMarkers()
 {
@@ -1313,197 +1311,25 @@ protected:
 void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
                                   const QStringList &editable, int kind)
 {
-    m_propCanvas = nullptr;
-    m_propSeriesIndex = -1;
-    m_propKind = 0;
-    if (m_selLabel)
-    {
-        m_selText = QStringLiteral("当前对象：%1").arg(object);
-        m_selLabel->setToolTip(m_selText);
-        m_selLabel->setText(m_selLabel->width() > 0
-                                ? QFontMetrics(m_selLabel->font())
-                                      .elidedText(m_selText, Qt::ElideRight, m_selLabel->width())
-                                : m_selText);
-    }
-    if (!m_propTable)
-        return;
-    // 程序填充行本身也会触发 itemChanged，这里整体屏蔽，避免把回填当成用户编辑。
-    const QSignalBlocker blocker(m_propTable);
-    m_propUpdating = true;
-    m_propTable->setRowCount(rows.size());
-    // 属性值按类型给控件：开关给复选框、数值给可输入下拉、颜色给色块、枚举给下拉。
-    auto push = [this](const QString &key, const QString &value) {
-        // 控件还在发信号，直接重建行会踩野指针，等事件循环回头再写回画布。
-        QTimer::singleShot(0, this, [this, key, value] { applyPropEdit(key, value); });
-    };
-    auto centered = [](QWidget *inner, QWidget *parent) {
-        auto *w = new QWidget(parent);
-        w->setStyleSheet(QStringLiteral("QWidget{background:transparent;}"));
-        auto *l = new QHBoxLayout(w);
-        l->setContentsMargins(4, 0, 4, 0);
-        l->addWidget(inner);
-        l->addStretch(1);
-        return w;
-    };
-    auto leadingNumber = [](const QString &t, int fallback) {
-        const QRegularExpressionMatch m = QRegularExpression(QStringLiteral("[-+]?\\d+")).match(t);
-        bool ok = false;
-        const int v = m.hasMatch() ? m.captured(0).toInt(&ok) : 0;
-        return (m.hasMatch() && ok) ? v : fallback;
-    };
-    auto numberCombo = [&, push, leadingNumber](const QString &key, const QString &text, int fallback) {
-        QStringList presets;
-        if (key == QStringLiteral("坐标轴字号"))
-            presets = {QStringLiteral("9"),  QStringLiteral("10"), QStringLiteral("11"), QStringLiteral("12"),
-                       QStringLiteral("13"), QStringLiteral("14"), QStringLiteral("16"), QStringLiteral("18")};
-        else if (key == QStringLiteral("标记大小"))
-            presets = {QStringLiteral("3"), QStringLiteral("4"), QStringLiteral("5"), QStringLiteral("6"),
-                       QStringLiteral("8"), QStringLiteral("10")};
-        else
-            presets = {QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("3"), QStringLiteral("4")};
-        auto *cb = new QComboBox(m_propTable);
-        cb->setEditable(true);
-        cb->setInsertPolicy(QComboBox::NoInsert);
-        cb->addItems(presets);
-        cb->setCurrentText(QString::number(leadingNumber(text, fallback)));
-        connect(cb->lineEdit(), &QLineEdit::editingFinished, this, [this, key, cb, push] { push(key, cb->currentText()); });
-        connect(cb, QOverload<int>::of(&QComboBox::activated), this,
-                [this, key, cb, push](int) { push(key, cb->currentText()); });
-        return cb;
-    };
-    auto enumCombo = [&, push](const QString &key, const QString &text) {
-        QStringList options;
-        if (key == QStringLiteral("图例位置"))
-            options = {QStringLiteral("左上"), QStringLiteral("右上"), QStringLiteral("左下"), QStringLiteral("右下")};
-        else if (key == QStringLiteral("线型"))
-            options = {QStringLiteral("实线"), QStringLiteral("虚线"), QStringLiteral("点线"), QStringLiteral("点划线")};
-        else if (key == QStringLiteral("标记"))
-            options = {QStringLiteral("无"), QStringLiteral("圆点"), QStringLiteral("方块"), QStringLiteral("菱形"),
-                       QStringLiteral("三角"), QStringLiteral("十字"), QStringLiteral("叉号")};
-        else
-            options = {QStringLiteral("左 Y 轴"), QStringLiteral("右 Y 轴")};
-        auto *cb = new QComboBox(m_propTable);
-        cb->addItems(options);
-        if (cb->currentText() != text)
-            cb->setCurrentText(text);
-        connect(cb, QOverload<int>::of(&QComboBox::activated), this,
-                [this, key, cb, push](int) { push(key, cb->currentText()); });
-        return cb;
-    };
-    auto colorButton = [&, push](const QString &key, const QString &text) {
-        auto *btn = new QToolButton(m_propTable);
-        btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        btn->setStyleSheet(QStringLiteral(
-            "QToolButton{color:#d5dde5;background:transparent;border:1px solid #2d3841;"
-            "border-radius:2px;padding:0 6px;}QToolButton:hover{border-color:#f2b134;}"));
-        btn->setCursor(Qt::PointingHandCursor);
-        const bool themed = text.isEmpty() || text.contains(QStringLiteral("跟随"));
-        QColor c = themed ? QColor(QStringLiteral("#3a4854")) : QColor(text);
-        auto swatch = [](const QColor &col) {
-            QPixmap pm(14, 14);
-            pm.fill(col.isValid() ? col : QColor(QStringLiteral("#8b98a5")));
-            return QIcon(pm);
-        };
-        btn->setIcon(swatch(c));
-        btn->setText(themed ? QStringLiteral("跟随主题") : c.name());
-        connect(btn, &QToolButton::clicked, this, [this, key, btn, swatch, push] {
-            const QColor old = QColor(btn->text());
-            const QColor sel = QColorDialog::getColor(old.isValid() ? old : Qt::white, this, QStringLiteral("选择颜色"));
-            if (sel.isValid())
-                push(key, sel.name());
-        });
-        if (key == QStringLiteral("坐标轴颜色"))
-        {
-            // 轴色可以回到“跟随主题”，放右键菜单里，避免和按钮文字挤在一起。
-            btn->setContextMenuPolicy(Qt::CustomContextMenu);
-            connect(btn, &QToolButton::customContextMenuRequested, this, [this, key, btn, push](const QPoint &p) {
-                QMenu menu(btn);
-                auto *reset = menu.addAction(QStringLiteral("跟随主题"));
-                if (menu.exec(btn->mapToGlobal(p)) == reset)
-                    push(key, QStringLiteral("跟随主题"));
-            });
-            btn->setToolTip(QStringLiteral("点击选择颜色，右键恢复跟随主题"));
-        }
-        return btn;
-    };
-
-    for (int i = 0; i < rows.size(); ++i)
-    {
-        const QString key = rows[i].first;
-        const QString text = rows[i].second;
-        const bool canEdit = editable.contains(key);
-        auto *k = new QTableWidgetItem(key);
-        k->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-        m_propTable->setItem(i, 0, k);
-
-        auto *v = new QTableWidgetItem(text);
-        v->setFlags(canEdit ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable)
-                            : Qt::ItemIsEnabled);
-
-        QWidget *editor = nullptr;
-        if (canEdit)
-        {
-            if (key == QStringLiteral("X 网格") || key == QStringLiteral("Y 网格") || key == QStringLiteral("次网格") ||
-                key == QStringLiteral("边框") || key == QStringLiteral("FlipY") || key == QStringLiteral("可见") ||
-                (kind == 1 && key == QStringLiteral("图例")))
-            {
-                auto *box = new QCheckBox(m_propTable);
-                box->setChecked(text.contains(QStringLiteral("显示")) || text.contains(QStringLiteral("是")) ||
-                                text == QStringLiteral("true"));
-                connect(box, &QCheckBox::toggled, this, [this, key, push](bool on) {
-                    push(key, on ? QStringLiteral("显示") : QStringLiteral("隐藏"));
-                });
-                editor = centered(box, m_propTable);
-            }
-            else if (key == QStringLiteral("坐标轴字号") || key == QStringLiteral("坐标轴线宽") ||
-                     key == QStringLiteral("线宽") || key == QStringLiteral("标记大小"))
-            {
-                editor = numberCombo(key, text, key == QStringLiteral("坐标轴字号") ? 11 : 1);
-            }
-            else if (key == QStringLiteral("图例位置") || key == QStringLiteral("线型") ||
-                     key == QStringLiteral("标记") || key == QStringLiteral("绑定轴"))
-            {
-                editor = enumCombo(key, text);
-            }
-            else if (key == QStringLiteral("坐标轴颜色") || key == QStringLiteral("颜色"))
-            {
-                editor = colorButton(key, text);
-            }
-            else if (key == QStringLiteral("时间偏移"))
-            {
-                auto *sp = new QDoubleSpinBox(m_propTable);
-                sp->setDecimals(3);
-                sp->setRange(-1e6, 1e6);
-                sp->setSuffix(QStringLiteral(" s"));
-                sp->setValue(text.split(QLatin1Char(' ')).first().toDouble());
-                connect(sp, &QDoubleSpinBox::editingFinished, this,
-                        [this, key, sp, push] { push(key, QString::number(sp->value(), 'f', 3)); });
-                editor = sp;
-            }
-        }
-
-        if (editor)
-        {
-            v->setFlags(Qt::ItemIsEnabled);
-            // 单元格控件背景透明，留着文本会透出来叠字
-            v->setText(QString());
-            v->setToolTip(text);
-            m_propTable->setItem(i, 1, v);
-            m_propTable->setCellWidget(i, 1, editor);
-        }
-        else
-        {
-            // 纯文本属性仍走内联编辑
-            v->setFlags(canEdit ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable)
-                                : (Qt::ItemIsEnabled | Qt::ItemIsSelectable));
-            v->setToolTip(canEdit ? QStringLiteral("双击编辑，回车立即生效") : text);
-            m_propTable->setItem(i, 1, v);
-            m_propTable->removeCellWidget(i, 1);
-        }
-    }
-    m_propUpdating = false;
+    ps::shell::PropertyContent content;
+    content.title = object;
+    content.rows = rows;
+    content.editable = editable;
+    content.kind = kind;
+    m_mw->properties().showContent(content);
 }
 
+ps::shell::PropertyContent PlottingSession::axesContent(PlottingCanvas *c)
+{
+    showAxesProps(c);
+    return m_mw->properties().currentContent();
+}
+
+ps::shell::PropertyContent PlottingSession::seriesContent(PlottingCanvas *c, int index)
+{
+    showSeriesProps(c, index);
+    return m_mw->properties().currentContent();
+}
 
 namespace
 {

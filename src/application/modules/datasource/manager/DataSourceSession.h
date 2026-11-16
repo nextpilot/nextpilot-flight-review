@@ -23,6 +23,7 @@ class QToolButton;
 class QMenu;
 class PlottingCanvas;
 struct PsChannelInfo;
+namespace ps::shell { struct PropertyContent; }
 namespace ps::data_source { class DataSourceDock; struct SourceData; struct SourceStore; }
 
 class DataSourceSession : public QWidget
@@ -63,6 +64,10 @@ public:
     void setSourcePaused(ps::data_source::SourceData *src, bool paused);
     void exportActiveCsv();
     void showSourceProps(QWidget *row);
+    ps::shell::PropertyContent sourceContent(int srcId);
+    ps::shell::PropertyContent channelContent(int srcId, int index);
+    void applySourceProp(int srcId, const QString &key, const QString &text);
+    void refreshPropertyNodes();
 
     void showSourceMenu(QWidget *row, const QPoint &globalPos);
     void removeSourceRow(QWidget *row);

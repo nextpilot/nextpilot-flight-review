@@ -118,11 +118,8 @@ void DockManager::createFromRegistry(const ps::components::Registry &registry)
         const int key = static_cast<int>(spec.area);
         if (lastArea.contains(key))
         {
-            // 同侧第二块：右侧向下堆叠，其余并成标签
-            if (spec.area == Qt::RightDockWidgetArea)
-                area = m_dock->addDockWidget(ads::BottomDockWidgetArea, dock, lastArea.value(key));
-            else
-                area = m_dock->addDockWidget(ads::CenterDockWidgetArea, dock, lastArea.value(key));
+            // 同侧第二块：全部并成标签，右侧不再向下堆叠
+            area = m_dock->addDockWidgetTabToArea(dock, lastArea.value(key));
         }
         else
         {

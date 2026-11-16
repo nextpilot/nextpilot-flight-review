@@ -11,6 +11,7 @@
 #include <Qt>
 
 class MainWindow;
+namespace ps::shell { struct PropertyContent; }
 namespace ps::plotting { class PlottingTabs; }
 class PlottingCanvas;
 class QDockWidget;
@@ -64,6 +65,9 @@ public:
     void showSeriesProps(PlottingCanvas *c, int index);
     void editSeriesProps(PlottingCanvas *c, int index);
     bool applyPropEdit(const QString &key, const QString &text);
+    ps::shell::PropertyContent axesContent(PlottingCanvas *c);
+    ps::shell::PropertyContent seriesContent(PlottingCanvas *c, int index);
+    QString canvasNodeId(PlottingCanvas *c) const;
     void log(const QString &text);
     bool eventFilter(QObject *obj, QEvent *ev) override;
 

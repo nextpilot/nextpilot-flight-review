@@ -1,5 +1,7 @@
 #include "ShellComponent.h"
 #include "LogManager.h"
+#include "MainWindow.h"
+#include "PropertyManager.h"
 
 #include <QString>
 
@@ -29,6 +31,19 @@ ComponentManifest ShellComponent::manifest() const
 void ShellComponent::contribute(Registry &registry, HostContext &)
 {
     registry.addDock(LogManager::dockContribution());
+    // 属性面板/对象树由 shell 统一提供；没有模块注册节点时保持隐藏。
+    registry.addDock(DockContribution{QStringLiteral("dock.prop"), QStringLiteral("属性面板"),
+                                      Qt::RightDockWidgetArea, true, 1, QStringLiteral(":/icons/prop.svg"),
+                                      [](QWidget *p) {
+                                          auto *mw = qobject_cast<MainWindow *>(p);
+                                          return mw ? mw->properties().createPanelView() : nullptr;
+                                      }});
+    registry.addDock(DockContribution{QStringLiteral("dock.tree"), QStringLiteral("对象树"),
+                                      Qt::RightDockWidgetArea, true, 2, QStringLiteral(":/icons/prop.svg"),
+                                      [](QWidget *p) {
+                                          auto *mw = qobject_cast<MainWindow *>(p);
+                                          return mw ? mw->properties().createTreeView() : nullptr;
+                                      }});
 
     RibbonContribution filePage;
     filePage.page = QStringLiteral("文件");

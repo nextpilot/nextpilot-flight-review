@@ -2,6 +2,7 @@
 #include "DataSourceSession.h"
 #include "ModuleBridge.h"
 #include "MainWindow.h"
+#include "PropertyManager.h"
 #include "ThemeManager.h"
 #include "DataSourceDock.h"
 #include "ps_kernel.h"
@@ -339,6 +340,7 @@ void DataSourceSession::renderSourceData()
     updateStatusChips();
     m_dataSourceDock->renderSourceData(m_srcChannels, m_srcParams, m_srcMsgs,
                                       m_srcFmt, m_viewBacked, m_activeSource);
+    refreshPropertyNodes();
 }
 
 int DataSourceSession::sourceIdForRow(QWidget *row) const
@@ -667,44 +669,40 @@ void DataSourceSession::activateSource(QWidget *row) { m_dataSourceDock->activat
 void DataSourceSession::setSourcePaused(SourceData *src, bool paused) { m_dataSourceDock->setSourcePaused(src, paused); }
 void DataSourceSession::exportActiveCsv() { m_dataSourceDock->exportActiveCsv(); }
 
-void DataSourceSession::showSourceProps(QWidget *row)
+namespace
 {
-    if (!row || !ps::bridge::propTable(m_mw))
-        return;
-    ps::data_source::SourceData *src = sourceById(sourceIdForRow(row));
+QString sourceNodeId(int id) { return QStringLiteral("src.%1").arg(id); }
+QString channelNodeId(int id, int index) { return QStringLiteral("src.%1.ch.%2").arg(id).arg(index); }
+} // namespace
+
+ps::shell::PropertyContent DataSourceSession::sourceContent(int srcId)
+{
+    ps::shell::PropertyContent content;
+    ps::data_source::SourceData *src = sourceById(srcId);
     if (!src)
-        return;
+        return content;
+    content.title = QStringLiteral("数据源 · %1").arg(src->alias.isEmpty() ? src->name : src->alias);
     const QString name = src->alias.isEmpty() ? src->name : src->alias;
     int channels = src->live
         ? (src->liveSession ? src->liveSession->channels().size() : 0)
         : src->channels.size();
     qint64 points = 0;
     double duration = 0.0;
-    double rate = 0.0;
     if (src->live)
-    {
         points = src->liveSession ? src->liveSession->totalSamples() : 0;
-    }
     else
-    {
         for (const PsChannelInfo *ch : src->channels)
             points += ch->point_count;
-    }
-    const QVector<const PsChannelInfo *> view =
-        src->live ? (src->liveSession ? src->liveSession->channels() : QVector<const PsChannelInfo *>())
-                  : src->channels;
-    if (!view.isEmpty() && view.first()->point_count > 1)
+    if (!src->channels.isEmpty() && src->channels.first()->point_count > 1)
     {
-        const PsChannelInfo *ch = view.first();
+        const PsChannelInfo *ch = src->channels.first();
         duration = ch->time[ch->point_count - 1] - ch->time[0];
-        if (duration > 0.0)
-            rate = (ch->point_count - 1) / duration;
     }
-    const QString state = row->property("srcMeta").toString();
+    const QString state = src->row ? src->row->property("srcMeta").toString() : QString();
     const QFileInfo fi(src->path);
     QVector<QPair<QString, QString>> rows;
     rows.append({QStringLiteral("类型"), src->live ? QStringLiteral("实时源") : src->fmt});
-    rows.append({QStringLiteral("名称"), name});
+    rows.append({QStringLiteral("别名"), name});
     rows.append({QStringLiteral("状态"), state.isEmpty() ? QStringLiteral("—") : state});
     rows.append({QStringLiteral("位置"), src->path.isEmpty() ? src->config : src->path});
     if (src->live)
@@ -714,12 +712,7 @@ void DataSourceSession::showSourceProps(QWidget *row)
     rows.append({QStringLiteral("消息"), QString::number(src->msgs.size())});
     rows.append({QStringLiteral("采样点"), QString::number(points)});
     if (duration > 0.0)
-    {
         rows.append({QStringLiteral("时长"), QStringLiteral("%1 s").arg(duration, 0, 'f', 2)});
-        rows.append({QStringLiteral("速率"),
-                     rate >= 1000.0 ? QStringLiteral("%1 kHz").arg(rate / 1000.0, 0, 'f', 1)
-                                    : QStringLiteral("%1 Hz").arg(rate, 0, 'f', rate >= 10.0 ? 0 : 1)});
-    }
     rows.append({QStringLiteral("时间偏移"), QStringLiteral("%1 s").arg(src->offsetSec, 0, 'f', 3)});
     if (fi.exists() && fi.size() > 0)
         rows.append({QStringLiteral("文件大小"),
@@ -729,16 +722,106 @@ void DataSourceSession::showSourceProps(QWidget *row)
                      src->liveSession && src->liveSession->recording()
                          ? QStringLiteral("进行中 · %1").arg(src->liveSession->recordPath())
                          : QStringLiteral("未录制")});
-    m_propTreeBuilding = true;
-    if (ps::bridge::propTree(m_mw))
+    content.rows = rows;
+    content.editable = {QStringLiteral("别名"), QStringLiteral("时间偏移")};
+    return content;
+}
+
+ps::shell::PropertyContent DataSourceSession::channelContent(int srcId, int index)
+{
+    ps::shell::PropertyContent content;
+    ps::data_source::SourceData *src = sourceById(srcId);
+    if (!src || index < 0)
+        return content;
+    const QVector<const PsChannelInfo *> view =
+        src->live ? (src->liveSession ? src->liveSession->channels() : QVector<const PsChannelInfo *>())
+                  : src->channels;
+    if (index >= view.size())
+        return content;
+    const PsChannelInfo *ch = view[index];
+    if (!ch)
+        return content;
+    content.title = QStringLiteral("通道 · %1").arg(QString::fromUtf8(ch->name ? ch->name : ""));
+    double duration = 0.0;
+    if (ch->point_count > 1)
+        duration = ch->time[ch->point_count - 1] - ch->time[0];
+    QVector<QPair<QString, QString>> rows;
+    rows.append({QStringLiteral("来源"), src->alias.isEmpty() ? src->name : src->alias});
+    rows.append({QStringLiteral("名称"), QString::fromUtf8(ch->name ? ch->name : "")});
+    if (ch->unit && *ch->unit)
+        rows.append({QStringLiteral("单位"), QString::fromUtf8(ch->unit)});
+    rows.append({QStringLiteral("采样点"), QString::number(ch->point_count)});
+    if (duration > 0.0)
+        rows.append({QStringLiteral("时长"), QStringLiteral("%1 s").arg(duration, 0, 'f', 2)});
+    rows.append({QStringLiteral("速率"),
+                 duration > 0.0
+                     ? QStringLiteral("%1 Hz").arg((ch->point_count - 1) / duration, 0, 'f',
+                                                   (ch->point_count - 1) / duration >= 10 ? 0 : 1)
+                     : QStringLiteral("—")});
+    content.rows = rows;
+    return content;
+}
+
+void DataSourceSession::showSourceProps(QWidget *row)
+{
+    const int id = sourceIdForRow(row);
+    auto &pm = m_mw->properties();
+    if (pm.hasNode(sourceNodeId(id)))
+        pm.selectNode(sourceNodeId(id));
+    else
+        pm.showContent(sourceContent(id));
+}
+
+void DataSourceSession::applySourceProp(int srcId, const QString &key, const QString &text)
+{
+    ps::data_source::SourceData *src = sourceById(srcId);
+    if (!src)
+        return;
+    if (key == QStringLiteral("别名"))
     {
-        ps::bridge::propTree(m_mw)->setCurrentItem(nullptr);
-        ps::bridge::propTree(m_mw)->clearSelection();
+        const QString alias = text.trimmed();
+        if (alias.isEmpty())
+            return;
+        src->alias = alias;
+        for (auto *c : ps::bridge::allCanvases(m_mw))
+            ps::bridge::canvasRenameSource(c, src->path, alias);
     }
-    m_propTreeBuilding = false;
-    setPropRows(QStringLiteral("数据源 · %1").arg(name), rows);
-    if (ps::bridge::propTable(m_mw)->rowCount() > 0 && ps::bridge::propTable(m_mw)->item(0, 1))
-        ps::bridge::propTable(m_mw)->item(0, 1)->setToolTip(rows.first().second);
+    else if (key == QStringLiteral("时间偏移"))
+    {
+        bool ok = false;
+        const double off = text.split(QLatin1Char(' ')).first().toDouble(&ok);
+        if (ok)
+            setSourceOffset(src, off, true);
+    }
+    refreshPropertyNodes();
+}
+
+void DataSourceSession::refreshPropertyNodes()
+{
+    auto &pm = m_mw->properties();
+    pm.registerNode(ps::shell::PropertyNode{QStringLiteral("src"), QString(), QStringLiteral("数据源"),
+                                            QStringLiteral(":/icons/panel.svg"), {}, {}});
+    pm.clearChildren(QStringLiteral("src"));
+    for (const ps::data_source::SourceData &src : m_sourceStore->items())
+    {
+        const int id = src.id;
+        const QString name = src.alias.isEmpty() ? src.name : src.alias;
+        pm.registerNode(ps::shell::PropertyNode{
+            sourceNodeId(id), QStringLiteral("src"), name, QStringLiteral(":/icons/panel.svg"),
+            [this, id] { return sourceContent(id); },
+            [this, id](const QString &key, const QString &text) { applySourceProp(id, key, text); }});
+        const QVector<const PsChannelInfo *> view =
+            src.live ? (src.liveSession ? src.liveSession->channels() : QVector<const PsChannelInfo *>())
+                     : src.channels;
+        for (int i = 0; i < view.size(); ++i)
+        {
+            const PsChannelInfo *ch = view[i];
+            const QString label = QString::fromUtf8(ch && ch->name ? ch->name : "");
+            pm.registerNode(ps::shell::PropertyNode{channelNodeId(id, i), sourceNodeId(id), label,
+                                                    QStringLiteral(":/icons/panel.svg"),
+                                                    [this, id, i] { return channelContent(id, i); }, {}});
+        }
+    }
 }
 
 void DataSourceSession::applySrcFilter()

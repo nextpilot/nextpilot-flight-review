@@ -32,6 +32,8 @@ add_library(ps_application_shell OBJECT
   UiDialogEngine.cpp
   ThemeManager.h
   ThemeManager.cpp
+  PropertyManager.h
+  PropertyManager.cpp
 )
 set_target_properties(ps_application_shell PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_shell PUBLIC

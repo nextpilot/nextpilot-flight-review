@@ -56,6 +56,7 @@ QMainWindow::separator:hover { background:#2d3841; }
 QDockWidget { border:1px solid #1b232a; titlebar-close-icon:none; }
 QDockWidget::title { background:#161b20; color:#8494a0; padding:5px 8px; border-bottom:1px solid #232b33; }
 QLabel#dockWidgetTabLabel { background:transparent; color:#c9d1d9; }
+QLabel#dockWidgetTabLabel:disabled { color:#c9d1d9; }
 
 /* ---- 工具条 / 按钮 ---- */
 QToolBar { background:#161b20; border:0; spacing:2px; padding:3px 6px; }
@@ -207,6 +208,8 @@ QString mapped(const QString &text)
     out.replace(QStringLiteral(":/icons/arrow_more.svg"), QStringLiteral(":/icons/arrow_more_ink.svg"));
     out.replace(QStringLiteral(":/icons/close_small.svg"), QStringLiteral(":/icons/close_small_ink.svg"));
     out.replace(QStringLiteral(":/icons/check.svg"), QStringLiteral(":/icons/check_ink.svg"));
+    out.replace(QStringLiteral(":/icons/chevron_right.svg"), QStringLiteral(":/icons/chevron_right_ink.svg"));
+    out.replace(QStringLiteral(":/icons/chevron_down.svg"), QStringLiteral(":/icons/chevron_down_ink.svg"));
     return out;
 }
 
@@ -225,7 +228,8 @@ QPalette palette()
     p.setColor(QPalette::Text, fg);
     p.setColor(QPalette::Button, bar);
     p.setColor(QPalette::ButtonText, fg);
-    p.setColor(QPalette::Light, bar);
+    // ADS 非活动标签文字取 palette(light)，这里给可读的次级文字色。
+    p.setColor(QPalette::Light, tokenColor("#6e7d88", "#8b949e"));
     p.setColor(QPalette::Midlight, bar);
     p.setColor(QPalette::Mid, tokenColor("#232b33", "#d5dce3"));
     p.setColor(QPalette::Dark, bg);
