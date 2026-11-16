@@ -2,7 +2,6 @@
 
 #include <QDialog>
 
-#include <QHash>
 #include <QJsonObject>
 #include <QStringList>
 #include <QVector>
@@ -25,11 +24,9 @@ struct TransformDialogResult
 
 class QComboBox;
 class QLineEdit;
-class QStackedWidget;
 class QCheckBox;
-class QDoubleSpinBox;
-class QSpinBox;
 class QTimer;
+class FilterParamEditor;
 class PreviewPlot;
 
 // 数据源侧派生通道：单通道滤波器 / 四元数 4→3。
@@ -60,11 +57,9 @@ public:
 private:
     QWidget *buildFilterPage();
     QWidget *buildQuatPage();
-    QWidget *buildParamsPage(const QString &id);
     void onFilterChanged(int index);
     void apply();
     void refreshOutputName();
-    QJsonObject currentParams(const QString &id) const;
     void updatePreview();
 
     PsDataset *m_ds = nullptr;
@@ -83,16 +78,10 @@ private:
     QComboBox *m_filter = nullptr;
     QComboBox *m_input = nullptr;
     QLineEdit *m_output = nullptr;
-    QStackedWidget *m_paramStack = nullptr;
+    FilterParamEditor *m_paramEditor = nullptr;
     bool m_autoOutput = true;
     PreviewPlot *m_preview = nullptr;
     QTimer *m_previewTimer = nullptr;
-
-    // 单通道参数控件，键为 <filter>.<param>
-    QHash<QString, QDoubleSpinBox *> m_doubles;
-    QHash<QString, QSpinBox *> m_ints;
-    QHash<QString, QCheckBox *> m_checks;
-    QHash<QString, QComboBox *> m_combos;
 
     QComboBox *m_qw = nullptr;
     QComboBox *m_qx = nullptr;

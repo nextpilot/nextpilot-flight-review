@@ -45,4 +45,4 @@ target_include_directories(ps_application_datasource PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/services/cache
   ${PROJECT_SOURCE_DIR}/src/application/shell
 )
-target_link_libraries(ps_application_datasource PUBLIC ps_datasource_protocol ps_host ps_kernel ps_live ps_cache Qt6::Widgets SARibbonBar::SARibbonBar)
+target_link_libraries(ps_application_datasource PUBLIC ps_datasource_protocol ps_host ps_kernel ps_filter_ui ps_live ps_cache Qt6::Widgets SARibbonBar::SARibbonBar)

@@ -8,6 +8,12 @@ add_executable(test_abi unit/test_abi.cpp)
 target_link_libraries(test_abi PRIVATE ps_kernel)
 add_test(NAME abi_selftest COMMAND test_abi)
 
+add_executable(test_filter_catalog unit/test_filter_catalog.cpp)
+target_include_directories(test_filter_catalog PRIVATE
+  ${PROJECT_SOURCE_DIR}/src/application/modules/filter/include)
+target_link_libraries(test_filter_catalog PRIVATE ps_kernel)
+add_test(NAME filter_catalog COMMAND test_filter_catalog)
+
 if(EXISTS ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp/PsDataSourceBase.hpp)
   add_executable(test_data_source_sdk unit/test_data_source_sdk.cpp)
   set_target_properties(test_data_source_sdk PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)

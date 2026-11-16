@@ -23,6 +23,7 @@
 #include <QIcon>
 #include <QInputDialog>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QLabel>
@@ -43,6 +44,7 @@
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QSplitter>
 #include <QTimer>
 #include <QString>
@@ -62,6 +64,8 @@
 #include <QVector>
 #include <QWidget>
 #include "ps_kernel.h"
+#include "filter/FilterCatalog.h"
+#include "filter/FilterParamEditor.h"
 
 using ps::plotting::PlottingLayout;
 using ps::plotting::PlottingPage;
@@ -873,34 +877,63 @@ public:
             m_column->setCurrentIndex(ci);
         yForm->addRow(QStringLiteral("数据列"), m_column);
         m_transform = new QComboBox(yPage);
-        m_transform->addItem(QStringLiteral("原值（无变换）"), 0);
-        m_transform->addItem(QStringLiteral("微分 dv/dt"), 1);
-        m_transform->addItem(QStringLiteral("梯形积分"), 2);
-        m_transform->addItem(QStringLiteral("滑动平均"), 3);
-        m_transform->addItem(QStringLiteral("绝对值"), 4);
-        m_transform->addItem(QStringLiteral("归一化 0–1"), 5);
-        m_transform->addItem(QStringLiteral("Lua 脚本"), 6);
+        m_transform->addItem(QStringLiteral("原值（无变换）"), QString());
+        std::size_t filterCount = 0;
+        const ps::filter::Def *defs = ps::filter::catalog(&filterCount);
+        for (std::size_t i = 0; i < filterCount; ++i)
+        {
+            if (QString::fromUtf8(defs[i].id) == QLatin1String("none"))
+                continue;
+            m_transform->addItem(QString::fromUtf8(defs[i].label), QString::fromUtf8(defs[i].id));
+        }
+        m_transform->addItem(QStringLiteral("Lua 脚本"), QStringLiteral("lua"));
         yForm->addRow(QStringLiteral("变换"), m_transform);
-        m_window = new QSpinBox(yPage);
-        m_window->setRange(2, 500);
-        m_window->setValue(5);
-        yForm->addRow(QStringLiteral("窗口"), m_window);
-        m_script = new QPlainTextEdit(yPage);
+
+        m_transformStack = new QStackedWidget(yPage);
+        auto *nonePage = new QWidget(m_transformStack);
+        auto *noneForm = new QFormLayout(nonePage);
+        auto *noneTip = new QLabel(QStringLiteral("原值不应用算子；选择算子后在这里设置参数。"), nonePage);
+        noneTip->setWordWrap(true);
+        noneTip->setStyleSheet(QStringLiteral("color:#8494a0;"));
+        noneForm->addRow(noneTip);
+        m_transformStack->addWidget(nonePage);
+
+        m_paramEditor = new FilterParamEditor(m_transformStack);
+        m_paramEditor->setFilter(QStringLiteral("moving_average"));
+        m_transformStack->addWidget(m_paramEditor);
+
+        auto *scriptPage = new QWidget(m_transformStack);
+        auto *scriptForm = new QFormLayout(scriptPage);
+        scriptForm->setContentsMargins(0, 0, 0, 0);
+        m_script = new QPlainTextEdit(scriptPage);
         m_script->setPlaceholderText(QStringLiteral("out = ps.movingAvg(ps.input(1), 5)"));
         m_script->setPlainText(QStringLiteral("out = ps.movingAvg(ps.input(1), 5)"));
         m_script->setFixedHeight(78);
-        yForm->addRow(QStringLiteral("脚本"), m_script);
+        scriptForm->addRow(QStringLiteral("脚本"), m_script);
+        m_transformStack->addWidget(scriptPage);
+
+        yForm->addRow(QStringLiteral("参数 / 脚本"), m_transformStack);
         auto *yNote = new QLabel(QStringLiteral("算子/脚本会把结果写成派生曲线；脚本输入为 ps.input(1)，输出到 out。"), yPage);
         yNote->setWordWrap(true);
         yNote->setStyleSheet(QStringLiteral("color:#8494a0;"));
         yForm->addRow(yNote);
         connect(m_transform, &QComboBox::currentIndexChanged, this, [this] {
-            const int id = m_transform->currentData().toInt();
-            m_window->setEnabled(id == 3);
-            m_script->setEnabled(id == 6);
+            const QString id = m_transform->currentData().toString();
+            if (id == QLatin1String("lua"))
+            {
+                m_transformStack->setCurrentIndex(2);
+            }
+            else if (id.isEmpty())
+            {
+                m_transformStack->setCurrentIndex(0);
+            }
+            else
+            {
+                m_paramEditor->setFilter(id);
+                m_transformStack->setCurrentIndex(1);
+            }
         });
-        m_window->setEnabled(false);
-        m_script->setEnabled(false);
+        m_transformStack->setCurrentIndex(0);
         tabs->addTab(yPage, QStringLiteral("Y 轴"));
 
         root->addWidget(tabs);
@@ -926,8 +959,18 @@ public:
         o[QStringLiteral("offset")] = m_offset->value();
         return o;
     }
-    int transformId() const { return m_transform->currentData().toInt(); }
-    int windowSize() const { return m_window->value(); }
+    QString transformId() const { return m_transform->currentData().toString(); }
+    QString transformLabel() const
+    {
+        const QString id = transformId();
+        if (id.isEmpty())
+            return QStringLiteral("原值");
+        if (id == QLatin1String("lua"))
+            return QStringLiteral("脚本");
+        const ps::filter::Def *def = ps::filter::find(id.toUtf8().constData());
+        return def ? QString::fromUtf8(def->short_label) : m_transform->currentText();
+    }
+    QJsonObject transformParams() const { return m_paramEditor->params(); }
     QString scriptText() const { return m_script->toPlainText(); }
     const PsChannelInfo *channel() const
     {
@@ -960,7 +1003,8 @@ private:
     QDoubleSpinBox *m_offset = nullptr;
     QComboBox *m_column = nullptr;
     QComboBox *m_transform = nullptr;
-    QSpinBox *m_window = nullptr;
+    QStackedWidget *m_transformStack = nullptr;
+    FilterParamEditor *m_paramEditor = nullptr;
     QPlainTextEdit *m_script = nullptr;
 };
 
@@ -1097,12 +1141,12 @@ void PlottingSession::editSeriesProps(PlottingCanvas *c, int index)
         return;
 
     QJsonObject patch = dlg.patch();
-    const int op = dlg.transformId();
+    const QString op = dlg.transformId();
     const PsChannelInfo *ch = dlg.channel();
     const double off = patch.value(QStringLiteral("offset")).toDouble();
     const QString oldName = st.value(QStringLiteral("name")).toString();
 
-    if (op != 0 && ch)
+    if (!op.isEmpty() && ch)
     {
         const quint32 n = ch->point_count;
         if (n < 2 || !ch->time || !ch->value)
@@ -1113,69 +1157,9 @@ void PlottingSession::editSeriesProps(PlottingCanvas *c, int index)
             tt[i] = ch->time[i] - off;
             vv[i] = ch->value[i];
         }
-        QString suffix;
-        switch (op)
+
+        if (op == QLatin1String("lua"))
         {
-        case 1:
-            suffix = QStringLiteral("微分");
-            for (quint32 i = n - 1; i > 0; --i)
-            {
-                const double dt = ch->time[i] - ch->time[i - 1];
-                vv[i] = dt > 1e-12 ? (ch->value[i] - ch->value[i - 1]) / dt : 0.0;
-            }
-            vv[0] = 0.0;
-            break;
-        case 2:
-        {
-            suffix = QStringLiteral("积分");
-            double acc = 0.0;
-            vv[0] = 0.0;
-            for (quint32 i = 1; i < n; ++i)
-            {
-                const double dt = ch->time[i] - ch->time[i - 1];
-                acc += (ch->value[i] + ch->value[i - 1]) * 0.5 * dt;
-                vv[i] = acc;
-            }
-            break;
-        }
-        case 3:
-        {
-            suffix = QStringLiteral("滑动平均");
-            const int w = dlg.windowSize();
-            QVector<double> out(n);
-            double sum = 0.0;
-            for (quint32 i = 0; i < n; ++i)
-            {
-                sum += vv[i];
-                if (int(i) >= w)
-                    sum -= vv[i - w];
-                out[i] = sum / qMin<int>(int(i) + 1, w);
-            }
-            vv = out;
-            break;
-        }
-        case 4:
-            suffix = QStringLiteral("绝对值");
-            for (quint32 i = 0; i < n; ++i)
-                vv[i] = std::fabs(vv[i]);
-            break;
-        case 5:
-        {
-            suffix = QStringLiteral("归一化");
-            double lo = 1e300, hi = -1e300;
-            for (double v : vv)
-            {
-                lo = std::min(lo, v);
-                hi = std::max(hi, v);
-            }
-            const double span = hi - lo;
-            for (quint32 i = 0; i < n; ++i)
-                vv[i] = span > 1e-12 ? (vv[i] - lo) / span : 0.0;
-            break;
-        }
-        case 6:
-        {
-            suffix = QStringLiteral("脚本");
             ScriptSeries in;
             in.name = dlg.channelName();
             in.time = tt;
@@ -1199,7 +1183,27 @@ void PlottingSession::editSeriesProps(PlottingCanvas *c, int index)
             log(QStringLiteral("曲线脚本变换：%1").arg(label));
             return;
         }
+
+        QVector<double> ot(n), ov(n);
+        uint32_t got = 0;
+        char err[256] = {0};
+        const QJsonObject params = dlg.transformParams();
+        const QByteArray json = QJsonDocument(params).toJson(QJsonDocument::Compact);
+        const int rc = ps_filter_apply_series(op.toUtf8().constData(), json.constData(),
+                                              tt.constData(), vv.constData(), n,
+                                              ot.data(), ov.data(), n, &got, err, sizeof err);
+        if (rc != 0 && rc != 6)
+        {
+            QMessageBox::warning(this, QStringLiteral("变换失败"), QString::fromUtf8(err));
+            return;
         }
+        if (got == 0)
+            return;
+        tt.resize(got);
+        vv = ov;
+        vv.resize(got);
+
+        const QString suffix = dlg.transformLabel();
         QString label = patch.value(QStringLiteral("label")).toString();
         if (!label.endsWith(QStringLiteral("· ") + suffix))
             label += QStringLiteral(" · ") + suffix;

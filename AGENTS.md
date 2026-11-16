@@ -26,6 +26,7 @@ shell（最小宿主）
 | `src/application/modules/runtime` | 宿主契约 | `Registry`、`IComponent`、`HostContext`、动态扩展扫描/ABI、跨模块 bridge | 具体业务格式、业务 Dock/画布、业务命令实现 |
 | `src/application/modules/datasource` | 数据源能力 | 数据源注册、加载器入口、实时源、缓存、数据源 Dock/对话框、`data.*` 命令 | 画布、绘图页、属性面板、绘图状态 |
 | `src/application/modules/plotting` | 绘图能力 | 画布、绘图页/切分、坐标轴、曲线、属性面板、绘图 Ribbon、`plot.*`/`page.*` 命令 | 具体文件格式解析、数据源生命周期 |
+| `src/application/modules/filter` | 共享滤波 UI | 算子目录、参数表单、与内核 filter id 对应的元数据 | 具体数据源/绘图状态、格式解析 |
 | `src/application/modules/protocol` | 协议能力 | 协议 schema/文档模型、协议编辑器、codec、自定义协议 loader、`protocol.*` 命令与 Ribbon | 画布、数据源会话状态、具体业务格式分支 |
 | `src/application/kernel` | Rust 内核 | NDF、LOD、算子、对齐、C ABI | Qt、Widgets、宿主业务 |
 | `src/extensions/builtin` | 内置业务 | 飞控、GNSS、汽车、机器人四个领域工具箱，`common` 共享 loader/CSV，以及通用数据源、设备调试、脚本等 C++ 组件；数据变换 UI 属 datasource 模块 | 反向被 shell/modules include；直接依赖 shell |
@@ -38,8 +39,9 @@ shell（最小宿主）
 |---|---|---|
 | `shell` | `modules/runtime`、`ps_kernel` 的 C ABI、Qt、SARibbon | `datasource`、`plotting`、`extensions/builtin`、具体业务格式 |
 | `modules/runtime` | `ps_kernel` 的 C ABI、Qt Core | 具体业务模块、shell 的 `MainWindow` |
-| `modules/datasource` | `shell` 的宿主接口、`modules/runtime`、`ps_kernel` 的 C ABI、cache/live | `modules/plotting` 私有头；绘图状态 |
-| `modules/plotting` | `shell` 的宿主接口、`modules/runtime`、`ps_kernel` 的 C ABI | `modules/datasource` 私有头；格式解析 |
+| `modules/datasource` | `shell` 的宿主接口、`modules/runtime`、`modules/filter`、`ps_kernel` 的 C ABI、cache/live | `modules/plotting` 私有头；绘图状态 |
+| `modules/plotting` | `shell` 的宿主接口、`modules/runtime`、`modules/filter`、`ps_kernel` 的 C ABI | `modules/datasource` 私有头；格式解析 |
+| `modules/filter` | Qt Widgets、`modules/runtime` 的公开类型 | 具体数据源/绘图状态、shell 私有头 |
 | `modules/protocol` | `shell` 的宿主接口、`modules/runtime`、`ps_kernel` 的 C ABI、`ps_loader_common`（加载器公共代码）、Qt | `modules/datasource`/`plotting` 私有头；画布与绘图状态 |
 | `extensions/builtin` | `modules/runtime`、modules 的公开头、`ps_kernel` 的 C ABI、Qt | `shell` 的 `MainWindow` 或 shell 私有头 |
 | `extensions/dynamic` | 只提供公开 SDK、`ps_extension.h`、`ps_kernel.h`、C ABI | shell/modules 私有头、Qt Widgets、C++ 对象跨边界、官方格式加载器 |

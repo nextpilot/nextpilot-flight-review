@@ -1,12 +1,13 @@
 #include "TransformDialog.h"
 #include "SettingsManager.h"
+#include "filter/FilterCatalog.h"
+#include "filter/FilterParamEditor.h"
 
 #include "ps_kernel.h"
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
-#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,18 +19,10 @@
 #include <QPainterPath>
 #include <QTimer>
 #include <QPushButton>
-#include <QSpinBox>
-#include <QStackedWidget>
 #include <QTabWidget>
 #include <QVBoxLayout>
 
 namespace {
-struct FilterDef
-{
-    const char *id;
-    const char *label;
-};
-
 uint32_t channelPoints(PsDataset *ds, const QString &name)
 {
     const uint32_t n = ps_dataset_channel_count(ds);
@@ -40,39 +33,6 @@ uint32_t channelPoints(PsDataset *ds, const QString &name)
             return ch->point_count;
     }
     return 0;
-}
-
-const FilterDef kFilters[] = {
-    {"none", "直通（无变化）"},
-    {"absolute", "绝对值 |y|"},
-    {"scale", "比例 + 偏移 + 时间平移"},
-    {"derivative", "微分 dv/dt"},
-    {"integral", "梯形积分"},
-    {"moving_average", "滑动平均"},
-    {"moving_rms", "滑动 RMS"},
-    {"moving_variance", "滑动方差 / 标准差"},
-    {"outlier_removal", "剔除单点尖峰"},
-    {"samples_counter", "窗口内样本数"},
-    {"binary_filter", "阈值二值化"},
-    {"time_since_previous", "相邻样本 Δt"},
-};
-
-QDoubleSpinBox *dspin(double lo, double hi, double val, int decimals = 4)
-{
-    auto *s = new QDoubleSpinBox;
-    s->setRange(lo, hi);
-    s->setDecimals(decimals);
-    s->setValue(val);
-    s->setSingleStep(1.0);
-    return s;
-}
-
-QSpinBox *ispin(int lo, int hi, int val)
-{
-    auto *s = new QSpinBox;
-    s->setRange(lo, hi);
-    s->setValue(val);
-    return s;
 }
 
 } // namespace
@@ -228,15 +188,15 @@ QWidget *TransformDialog::buildFilterPage()
     form->addRow(QStringLiteral("输入通道"), m_input);
 
     m_filter = new QComboBox;
-    for (const auto &f : kFilters)
-        m_filter->addItem(QString::fromUtf8(f.label), QString::fromUtf8(f.id));
+    std::size_t filterCount = 0;
+    const ps::filter::Def *defs = ps::filter::catalog(&filterCount);
+    for (std::size_t i = 0; i < filterCount; ++i)
+        m_filter->addItem(QString::fromUtf8(defs[i].label), QString::fromUtf8(defs[i].id));
     form->addRow(QStringLiteral("算子"), m_filter);
 
-    m_paramStack = new QStackedWidget;
-    m_paramStack->setFixedHeight(118);
-    for (const auto &f : kFilters)
-        m_paramStack->addWidget(buildParamsPage(QString::fromUtf8(f.id)));
-    form->addRow(QStringLiteral("参数"), m_paramStack);
+    m_paramEditor = new FilterParamEditor;
+    m_paramEditor->setMinimumHeight(96);
+    form->addRow(QStringLiteral("参数"), m_paramEditor);
 
     m_output = new QLineEdit;
     form->addRow(QStringLiteral("输出通道"), m_output);
@@ -254,94 +214,12 @@ QWidget *TransformDialog::buildFilterPage()
     m_previewTimer->setSingleShot(true);
     m_previewTimer->setInterval(120);
     connect(m_previewTimer, &QTimer::timeout, this, &TransformDialog::updatePreview);
-    for (QDoubleSpinBox *b : std::as_const(m_doubles))
-        connect(b, &QDoubleSpinBox::valueChanged, m_previewTimer, qOverload<>(&QTimer::start));
-    for (QSpinBox *b : std::as_const(m_ints))
-        connect(b, &QSpinBox::valueChanged, m_previewTimer, qOverload<>(&QTimer::start));
-    for (QCheckBox *b : std::as_const(m_checks))
-        connect(b, &QCheckBox::toggled, m_previewTimer, qOverload<>(&QTimer::start));
-    for (QComboBox *b : std::as_const(m_combos))
-        connect(b, &QComboBox::currentIndexChanged, m_previewTimer, qOverload<>(&QTimer::start));
+    connect(m_paramEditor, &FilterParamEditor::changed, m_previewTimer, qOverload<>(&QTimer::start));
     connect(m_input, &QComboBox::currentTextChanged, m_previewTimer, qOverload<>(&QTimer::start));
     connect(m_filter, &QComboBox::currentIndexChanged, m_previewTimer, qOverload<>(&QTimer::start));
 
     onFilterChanged(0);
     updatePreview();
-    return w;
-}
-
-QWidget *TransformDialog::buildParamsPage(const QString &id)
-{
-    auto *w = new QWidget;
-    auto *form = new QFormLayout(w);
-    form->setContentsMargins(0, 0, 0, 0);
-    form->setSpacing(6);
-    auto addD = [&](const QString &key, const QString &label, double lo, double hi, double val, int dec = 4) {
-        auto *s = dspin(lo, hi, val, dec);
-        m_doubles.insert(id + QLatin1Char('.') + key, s);
-        form->addRow(label, s);
-    };
-    auto addI = [&](const QString &key, const QString &label, int lo, int hi, int val) {
-        auto *s = ispin(lo, hi, val);
-        m_ints.insert(id + QLatin1Char('.') + key, s);
-        form->addRow(label, s);
-    };
-    auto addB = [&](const QString &key, const QString &label, bool val) {
-        auto *s = new QCheckBox(label);
-        s->setChecked(val);
-        m_checks.insert(id + QLatin1Char('.') + key, s);
-        form->addRow(QString(), s);
-    };
-
-    if (id == QLatin1String("scale"))
-    {
-        addD("value_scale", QStringLiteral("比例"), -1e12, 1e12, 1.0, 6);
-        addD("value_offset", QStringLiteral("偏移"), -1e12, 1e12, 0.0, 6);
-        addD("time_offset_sec", QStringLiteral("时间平移 (s)"), -1e9, 1e9, 0.0, 6);
-    }
-    else if (id == QLatin1String("derivative") || id == QLatin1String("integral"))
-    {
-        addB("use_custom_dt", QStringLiteral("固定 Δt"), false);
-        addD("custom_dt", QStringLiteral("Δt (s)"), 1e-9, 1e9, 1.0, 6);
-    }
-    else if (id == QLatin1String("moving_average"))
-    {
-        addI("window", QStringLiteral("窗口"), 1, 1000000, 100);
-        addB("compensate_time_offset", QStringLiteral("时间戳居中"), false);
-    }
-    else if (id == QLatin1String("moving_rms"))
-        addI("window", QStringLiteral("窗口"), 1, 1000000, 100);
-    else if (id == QLatin1String("moving_variance"))
-    {
-        addI("window", QStringLiteral("窗口"), 1, 1000000, 100);
-        addB("std_dev", QStringLiteral("输出标准差"), false);
-    }
-    else if (id == QLatin1String("outlier_removal"))
-        addD("outlier_factor", QStringLiteral("倍数阈值"), 0.0, 1e12, 100.0, 3);
-    else if (id == QLatin1String("samples_counter"))
-        addD("samples_ms", QStringLiteral("窗口 (ms)"), 0.0, 1e9, 1000.0, 3);
-    else if (id == QLatin1String("binary_filter"))
-    {
-        auto *op = new QComboBox;
-        op->addItem(QStringLiteral("== a"), 0);
-        op->addItem(QStringLiteral("< a"), 1);
-        op->addItem(QStringLiteral("<= a"), 2);
-        op->addItem(QStringLiteral("> a"), 3);
-        op->addItem(QStringLiteral(">= a"), 4);
-        op->addItem(QStringLiteral("in [a,b]"), 5);
-        op->setCurrentIndex(3);
-        m_combos.insert(id + QStringLiteral(".binary_op"), op);
-        form->addRow(QStringLiteral("比较"), op);
-        addD("binary_a", QStringLiteral("阈值 a"), -1e12, 1e12, 0.0, 6);
-        addD("binary_b", QStringLiteral("阈值 b"), -1e12, 1e12, 0.0, 6);
-        addD("binary_tol", QStringLiteral("== 容差"), 0.0, 1e9, 1e-9, 9);
-    }
-    else
-    {
-        auto *tip = new QLabel(QStringLiteral("该算子无参数"));
-        tip->setStyleSheet(QStringLiteral("color:#8494a0;"));
-        form->addRow(tip);
-    }
     return w;
 }
 
@@ -396,11 +274,11 @@ QWidget *TransformDialog::buildQuatPage()
     return w;
 }
 
-void TransformDialog::onFilterChanged(int index)
+void TransformDialog::onFilterChanged(int)
 {
-    if (!m_filter || !m_paramStack)
+    if (!m_filter || !m_paramEditor)
         return;
-    m_paramStack->setCurrentIndex(index);
+    m_paramEditor->setFilter(m_filter->currentData().toString());
     refreshOutputName();
 }
 
@@ -411,25 +289,6 @@ void TransformDialog::refreshOutputName()
     if (m_input->currentText().isEmpty())
         return;
     m_output->setText(m_input->currentText() + QLatin1Char('.') + m_filter->currentData().toString());
-}
-
-QJsonObject TransformDialog::currentParams(const QString &id) const
-{
-    QJsonObject p;
-    const QString prefix = id + QLatin1Char('.');
-    for (auto it = m_doubles.constBegin(); it != m_doubles.constEnd(); ++it)
-        if (it.key().startsWith(prefix))
-            p.insert(it.key().mid(prefix.size()), it.value()->value());
-    for (auto it = m_ints.constBegin(); it != m_ints.constEnd(); ++it)
-        if (it.key().startsWith(prefix))
-            p.insert(it.key().mid(prefix.size()), it.value()->value());
-    for (auto it = m_checks.constBegin(); it != m_checks.constEnd(); ++it)
-        if (it.key().startsWith(prefix))
-            p.insert(it.key().mid(prefix.size()), it.value()->isChecked());
-    for (auto it = m_combos.constBegin(); it != m_combos.constEnd(); ++it)
-        if (it.key().startsWith(prefix))
-            p.insert(it.key().mid(prefix.size()), it.value()->currentData().toInt());
-    return p;
 }
 
 void TransformDialog::updatePreview()
@@ -451,7 +310,7 @@ void TransformDialog::updatePreview()
     std::copy(ch->value, ch->value + n, in_v.begin());
 
     const QString id = m_filter->currentData().toString();
-    const QByteArray json = QJsonDocument(currentParams(id)).toJson(QJsonDocument::Compact);
+    const QByteArray json = QJsonDocument(m_paramEditor->params()).toJson(QJsonDocument::Compact);
     char err[256] = {0};
     uint32_t got = 0;
     const int rc = ps_preview_filter(m_ds, name.toUtf8().constData(), id.toUtf8().constData(),
@@ -535,7 +394,7 @@ void TransformDialog::apply()
     const QString id = m_filter->currentData().toString();
     m_inputName = m_input->currentText();
     const QString out = m_output->text().trimmed();
-    const QJsonObject p = currentParams(id);
+    const QJsonObject p = m_paramEditor->params();
     const QByteArray json = QJsonDocument(p).toJson(QJsonDocument::Compact);
     const int rc = ps_dataset_apply_filter(m_ds, m_input->currentText().toUtf8().constData(),
                                            id.toUtf8().constData(), json.constData(),

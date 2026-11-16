@@ -30,4 +30,4 @@ target_include_directories(ps_application_plotting PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/ribbon
   ${PROJECT_SOURCE_DIR}/src/application/shell
 )
-target_link_libraries(ps_application_plotting PUBLIC ps_host ps_kernel Qt6::Widgets SARibbonBar::SARibbonBar)
+target_link_libraries(ps_application_plotting PUBLIC ps_host ps_kernel ps_filter_ui Qt6::Widgets SARibbonBar::SARibbonBar)

@@ -1,4 +1,4 @@
-//! 12 个 PJ4 内置过滤器，批处理版本。
+//! 13 个 PJ4 内置过滤器（含 normalize），批处理版本。
 //! 语义对齐 `pj4/resources/filters/builtin_filters.luau`；`suppressed` 行不产出。
 
 use serde_json::Value;
@@ -32,6 +32,23 @@ pub fn apply(id: &str, t: &[f64], v: &[f64], p: &Value) -> Result<(Vec<f64>, Vec
         "absolute" => {
             ot.extend_from_slice(&t[..n]);
             ov.extend(v[..n].iter().map(|x| x.abs()));
+        }
+        "normalize" => {
+            ot.extend_from_slice(&t[..n]);
+            if n == 0 {
+                // 空输入直接返回空序列
+            } else {
+                let mut lo = v[0];
+                let mut hi = v[0];
+                for &x in &v[..n] {
+                    lo = lo.min(x);
+                    hi = hi.max(x);
+                }
+                let span = hi - lo;
+                for &x in &v[..n] {
+                    ov.push(if span > 1e-12 { (x - lo) / span } else { 0.0 });
+                }
+            }
         }
         "scale" => {
             let k = num(p, "value_scale", 1.0);
@@ -256,6 +273,16 @@ mod tests {
         assert_eq!(bin, vec![0.0, 1.0, 1.0, 0.0]);
         let (_, dts) = apply("time_since_previous", &t, &v, &json!({})).unwrap();
         assert_eq!(dts, vec![1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn normalize_to_unit_range() {
+        let t = [0.0, 1.0, 2.0];
+        let v = [-2.0, 0.0, 2.0];
+        let (_, y) = apply("normalize", &t, &v, &json!({})).unwrap();
+        assert_eq!(y, vec![0.0, 0.5, 1.0]);
+        let (_, flat) = apply("normalize", &t, &[3.0, 3.0, 3.0], &json!({})).unwrap();
+        assert_eq!(flat, vec![0.0, 0.0, 0.0]);
     }
 
     #[test]

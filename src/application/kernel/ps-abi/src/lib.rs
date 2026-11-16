@@ -237,6 +237,64 @@ pub unsafe extern "C" fn ps_preview_filter(
     0
 }
 
+/// 对任意内存序列应用 PJ4 过滤器，结果写入调用方缓冲区。
+/// 返回 0 成功；6 缓冲区不足（out_n 仍给出实际长度）；其余同 apply_filter。
+/// 供 plotting 曲线级 filter 与 datasource 预览共用同一套算子实现。
+#[no_mangle]
+pub unsafe extern "C" fn ps_filter_apply_series(
+    filter_id: *const c_char,
+    params_json: *const c_char,
+    t: *const f64,
+    v: *const f64,
+    n: u32,
+    out_t: *mut f64,
+    out_v: *mut f64,
+    cap: u32,
+    out_n: *mut u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if out_t.is_null() || out_v.is_null() || out_n.is_null() {
+        return 1;
+    }
+    if n > 0 && (t.is_null() || v.is_null()) {
+        return 1;
+    }
+    let filter_id = match require_name(filter_id, "过滤器") {
+        Ok(s) => s,
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let params = if params_json.is_null() {
+        serde_json::Value::Object(Default::default())
+    } else {
+        let text = match CStr::from_ptr(params_json).to_str() {
+            Ok(s) => s,
+            Err(_) => { write_err(err, err_cap, "参数不是合法 UTF-8"); return 2; }
+        };
+        if text.trim().is_empty() { serde_json::Value::Object(Default::default()) }
+        else {
+            match serde_json::from_str(text) {
+                Ok(v) => v,
+                Err(e) => { write_err(err, err_cap, &format!("参数 JSON：{e}")); return 5; }
+            }
+        }
+    };
+    let tv: &[f64] = if n == 0 { &[] } else { std::slice::from_raw_parts(t, n as usize) };
+    let vv: &[f64] = if n == 0 { &[] } else { std::slice::from_raw_parts(v, n as usize) };
+    let (ot, ov) = match ps_ops::filters::apply(filter_id, tv, vv, &params) {
+        Ok(x) => x,
+        Err(e) => { write_err(err, err_cap, &e); return 5; }
+    };
+    let out_len = ot.len().min(cap as usize);
+    *out_n = ot.len() as u32;
+    for i in 0..out_len {
+        *out_t.add(i) = ot[i];
+        *out_v.add(i) = ov[i];
+    }
+    if out_len < ot.len() { return 6; }
+    0
+}
+
 /// 四元数 w/x/y/z → `out_topic.roll,pitch,yaw` 三条普通通道。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(

@@ -60,6 +60,12 @@ int32_t              ps_dataset_apply_filter(PsDataset *ds, const char *input, c
 int32_t              ps_preview_filter(const PsDataset *ds, const char *input, const char *filter_id,
                                        const char *params_json, double *out_t, double *out_v,
                                        uint32_t cap, uint32_t *out_n, char *err, uint32_t err_cap);
+/* 曲线级滤波：直接对内存序列应用同一套算子，不改数据集。
+ * 返回 0 成功；6 缓冲区不足（out_n 仍为实际长度）。 */
+int32_t              ps_filter_apply_series(const char *filter_id, const char *params_json,
+                                            const double *t, const double *v, uint32_t n,
+                                            double *out_t, double *out_v, uint32_t cap,
+                                            uint32_t *out_n, char *err, uint32_t err_cap);
 /* 四元数 w/x/y/z → `<out_topic>.roll/.pitch/.yaw` 三条通道，要求同点数同时间戳。 */
 int32_t              ps_dataset_apply_quat_rpy(PsDataset *ds, const char *w, const char *x,
                                                const char *y, const char *z, const char *out_topic,

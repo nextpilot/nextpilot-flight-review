@@ -783,6 +783,9 @@ public:
 | `samples_counter` | 窗口内样本数 | `samples_ms` |
 | `binary_filter` | 阈值二值化 | `binary_op`, `binary_a`, `binary_b`, `binary_tol` |
 | `time_since_previous` | 相邻样本 Δt | — |
+| `normalize` | 归一化 0–1 | — |
+
+算子目录唯一来源：`src/application/modules/filter/include/filter/FilterCatalog.h`；datasource 派生通道与 plotting 曲线 filter 共用该目录，求值统一走内核 `ps_filter_apply_series` / `ps_preview_filter`，UI 不自带算子分支。
 
 四元数不在 PJ4 内置目录里，而是官方 Quaternion 扩展：4 输入（w,x,y,z）→ 一个分组 topic `rpy:roll,pitch,yaw`。当前数据模型是扁平日通道，先实现为 `rpy.roll/.pitch/.yaw` 三条通道；支持 degree、unwrap、pitch ±π/2 截断。
 
@@ -941,11 +944,11 @@ public:
 
 ### 14.6 实现进度（2026-11-13）
 
-- 内核：`ps-ops/src/filters.rs` 12 算子；`quat.rs` 4→3；`ps-abi` 新增 `ps_dataset_apply_filter`、`ps_dataset_apply_quat_rpy`、`ps_dataset_remove_channel`。
+- 内核：`ps-ops/src/filters.rs` 13 算子（含 `normalize`）；`quat.rs` 4→3；`ps-abi` 新增 `ps_dataset_apply_filter`、`ps_dataset_apply_quat_rpy`、`ps_dataset_remove_channel`。
 - UI：`TransformDialog` 双页签；字段树右键「添加变换… / 画到当前画布 / 删除派生通道」；`Ctrl+T`；产物进「派生通道」分组。
 - 验证：`ctest` 2/2（含 CSV → MA(2) → 四元数闭环），AP 真实样本手测滤器与四元数。
 - 已做：配方写 `.psl` `transforms[]`，导入时按源路径重放；删除派生通道同步移除配方。
-- 已做：12 算子 golden（none/absolute/scale/MA/RMS/方差/计数/二值化/Δt）+ 四元数 degrees/unwrap/零模长测试。
+- 已做：13 算子 golden（none/absolute/scale/MA/RMS/方差/计数/二值化/Δt）+ 四元数 degrees/unwrap/零模长测试。
 - 已做：Filter Editor before/after 预览（`ps_preview_filter` 只读 ABI，不写数据集）。
 - 未做：变换链可视化编排（派生通道可继续作为输入，`.psl` 按序重放）。
 - 提交：`5475215`（P0 内核/ABI/对话框/配方）、`bf10624`（12 算子 golden + 样式收口）、`43fa0c8`（预览）。
