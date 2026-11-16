@@ -43,15 +43,10 @@ bool isHeaderField(const QString &name)
 
 bool parseFile(const std::string &path, std::vector<Channel> &channels, std::string &err)
 {
-    std::ifstream in(path, std::ios::binary);
-    if (!in)
-    {
-        err = "无法打开 UBX 文件：" + path;
-        return false;
-    }
-
     UbxMessageParser parser;
-    std::vector<uint8_t> buf((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<uint8_t> buf;
+    if (!psReadFile(path.c_str(), buf, err))
+        return false;
     std::map<std::string, Channel> acc;
     size_t pos = 0;
     while (pos + 8 <= buf.size())

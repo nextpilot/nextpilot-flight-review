@@ -119,6 +119,7 @@ public:
             return false;
         }
         *dataset = nullptr;
+        psLoaderSetHost(host());
 
         ps::mcap::Reader reader;
         std::string re;

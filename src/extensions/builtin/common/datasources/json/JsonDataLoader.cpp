@@ -94,13 +94,10 @@ bool parseObjects(const QJsonArray &arr, std::map<std::string, Channel> &out, st
 
 bool loadFile(const std::string &path, std::map<std::string, Channel> &out, std::string &err)
 {
-    QFile f(QString::fromStdString(path));
-    if (!f.open(QIODevice::ReadOnly))
-    {
-        err = "无法打开 JSON 文件：" + path;
+    std::string text;
+    if (!psReadTextFile(path.c_str(), text, err))
         return false;
-    }
-    const QByteArray bytes = f.readAll();
+    const QByteArray bytes = QByteArray::fromStdString(text);
     QJsonParseError pe{};
     const QJsonDocument doc = QJsonDocument::fromJson(bytes, &pe);
     if (pe.error == QJsonParseError::NoError)

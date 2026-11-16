@@ -94,7 +94,8 @@ bool psReadFile(const char *path, std::vector<uint8_t> &buf, std::string &err)
         return false;
     }
     buf.resize(done);
-    psLoaderProgress(10, 100);
+    if (!buf.empty())
+        psLoaderProgress(10, 100);
     return true;
 }
 

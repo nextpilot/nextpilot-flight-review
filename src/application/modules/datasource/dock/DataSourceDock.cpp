@@ -60,7 +60,6 @@
 #include <QDebug>
 #include <QPainter>
 #include <QStyledItemDelegate>
-#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QUrl>
@@ -761,7 +760,8 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
             if (!total)
                 return;
             const uint64_t done = state->done.load(std::memory_order_relaxed);
-            const int pct = static_cast<int>(qMin<uint64_t>(100, done * 100 / total));
+            const int pct = qMax(progress.value(),
+                                 static_cast<int>(qMin<uint64_t>(100, done * 100 / total)));
             if (progress.maximum() != 100)
                 progress.setRange(0, 100);
             progress.setValue(pct);

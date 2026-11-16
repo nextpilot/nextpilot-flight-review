@@ -163,8 +163,9 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
     std::string line;
     while (std::getline(in, line))
     {
-        const auto at = static_cast<uint64_t>(in.tellg());
-        psLoaderProgress(10 + at * 90 / std::max<uint64_t>(1, fileSize), 100);
+        const std::streampos at = in.tellg();
+        if (at >= 0)
+            psLoaderProgress(10 + static_cast<uint64_t>(at) * 90 / std::max<uint64_t>(1, fileSize), 100);
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         if (line.size() < 7 || line[0] != '$')
