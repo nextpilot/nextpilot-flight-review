@@ -1,7 +1,7 @@
 # 画布交互重构：书签、A/B 与轴区手势
 
 - 状态：已实施（2026-11-16）
-- 相关代码：`src/application/modules/plotting/canvas/PlottingCanvas.*`、`PlottingTabs.*`、`PlottingSession.*`、`src/application/modules/datasource/manager/DataSourceSession.*`、`src/application/modules/runtime/include/ModuleBridge.h`
+- 相关代码：`src/application/modules/plotting/canvas/PlottingCanvas.*`、`PlottingTabs.*`、`PlottingSession.*`、`src/application/modules/datasource/manager/DataSourceSession.*`、`src/application/modules/runtime/include/ModuleBridge.h`、`src/application/modules/runtime/include/TimeBookmark.h`
 - 目标：左键保留选择/书签/测量；中键平移；右键单击菜单、右键拖动框选；支持单 X/单 Y 轴缩放与平移。
 
 ## 输入映射
@@ -50,7 +50,9 @@
 - 支持多个，属于数据源/会话，同页画布共享。
 - `Shift+左键` 或右键菜单添加；同时间点不重复创建。
 - 左键单击选中并跳转；拖动移动；`Delete` 删除选中；右键菜单也可删除。
-- 当前存储仍按时间值索引；后续增加稳定 id，避免拖动后时间碰撞。
+- 存储使用稳定 `id`：`ps::TimeBookmark { id, t, label }`；拖动只改 `t`，选中、删除、移动都按 `id`。
+- 保存到布局的 `markers` 数组包含 `id` / `t` / `label`；旧布局没有 `id` 时加载自动补 UUID，并保留原时间与标签。
+- 移动书签不再按目标时间合并，允许两个书签同时间共存；同时间的新增仍更新已有书签，避免误建重复。
 
 ## A/B 测量
 
@@ -97,6 +99,7 @@
 - [x] 右键单击弹菜单；右键拖动框选，拖动过程中不弹菜单。
 - [x] 右键框选放大/缩小；反向大框自适应；轴区框选只改对应轴。
 - [x] 时间书签可多个、可拖动、可选中删除；跳转正确。
+- [x] 时间书签使用稳定 id；同时间书签可独立选中/删除；布局保存/加载保留 id，旧数据自动补 id。
 - [x] `Ctrl+左键` 直接出现 A/B；A/B 生成后可直接拖动；`Esc` 清除。
 - [x] 中键拖动平移；滚轮 X 缩放；`Ctrl+滚轮` Y 缩放；轴区单轴生效。
 - [x] 空格+左键可平移；方向键/`Ctrl+0` 可用。
@@ -105,5 +108,5 @@
 ## 边界
 
 - 左键不做框选缩放，避免和选择、书签拖动、测量冲突。
-- 时间书签稳定 id 与重命名不在本轮强制范围；先保证拖动/删除行为。
+- 时间书签重命名 UI 未增加；当前右键只有删除，名称来自添加时的输入。
 - 同页光标联动、读值固定、A/B 吸附等建议项暂不进入本轮。

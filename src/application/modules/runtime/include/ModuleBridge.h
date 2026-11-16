@@ -6,6 +6,8 @@
 #include <QVector>
 #include <functional>
 
+#include "TimeBookmark.h"
+
 class MainWindow;
 class PlottingCanvas;
 class QWidget;
@@ -32,10 +34,10 @@ using SourceViewsProvider = std::function<QVector<SourceView>(MainWindow *)>;
 void setSourceViewsProvider(MainWindow *mw, SourceViewsProvider provider);
 QVector<SourceView> sourceViews(MainWindow *mw);
 QVector<const PsChannelInfo *> sourceChannels(MainWindow *mw);
-QVector<QPair<double, QString>> timeMarkers(MainWindow *mw);
+QVector<ps::TimeBookmark> timeMarkers(MainWindow *mw);
 void addTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
-void removeTimeMarker(MainWindow *mw, double t);
-void moveTimeMarker(MainWindow *mw, double from, double to);
+void removeTimeMarker(MainWindow *mw, const QString &id);
+void moveTimeMarker(MainWindow *mw, const QString &id, double to);
 
 // 绘图模块向数据源模块暴露的操作，避免 data_source 反向 include plotting。
 void newPage(MainWindow *mw);

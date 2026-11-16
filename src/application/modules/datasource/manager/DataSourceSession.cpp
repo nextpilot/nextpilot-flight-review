@@ -28,6 +28,7 @@ using ps::data_source::TransformRecipe;
 #include <QHash>
 #include <QStatusBar>
 #include <QInputDialog>
+#include <QUuid>
 #include <QMessageBox>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -903,8 +904,9 @@ void DataSourceSession::saveLayoutTo(const QString &path)
     for (const auto &mk : m_timeMarkers)
     {
         QJsonObject mo;
-        mo[QStringLiteral("t")] = mk.first;
-        mo[QStringLiteral("label")] = mk.second;
+        mo[QStringLiteral("id")] = mk.id;
+        mo[QStringLiteral("t")] = mk.t;
+        mo[QStringLiteral("label")] = mk.label;
         markers.append(mo);
     }
     root[QStringLiteral("markers")] = markers;
@@ -1125,9 +1127,14 @@ void DataSourceSession::importLayoutFrom(const QString &path)
     for (const QJsonValue &v : root.value(QStringLiteral("markers")).toArray())
     {
         const QJsonObject mo = v.toObject();
-        m_timeMarkers.append({mo.value(QStringLiteral("t")).toDouble(),
+        QString id = mo.value(QStringLiteral("id")).toString();
+        if (id.isEmpty())
+            id = QStringLiteral("bm-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+        m_timeMarkers.append({id, mo.value(QStringLiteral("t")).toDouble(),
                               mo.value(QStringLiteral("label")).toString()});
     }
+    std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
+              [](const ps::TimeBookmark &a, const ps::TimeBookmark &b) { return a.t < b.t; });
     ps::bridge::applyTimeMarkers(m_mw);
 
     const int cur = root.value(QStringLiteral("current")).toInt(0);
@@ -1162,64 +1169,50 @@ void DataSourceSession::addTimeMarker(double t, const QString &label, bool promp
     if (text.isEmpty())
         text = QStringLiteral("%1 s").arg(t, 0, 'f', 2);
     for (auto &mk : m_timeMarkers)
-        if (qAbs(mk.first - t) < 1e-4)
+        if (qAbs(mk.t - t) < 1e-4)
         {
-            mk.second = text;
+            mk.label = text;
             ps::bridge::applyTimeMarkers(m_mw);
             m_mw->logs().info(QStringLiteral("更新时间书签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
             return;
         }
-    m_timeMarkers.append({t, text});
+    m_timeMarkers.append({QStringLiteral("bm-") + QUuid::createUuid().toString(QUuid::WithoutBraces),
+                          t, text});
     std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
-              [](const QPair<double, QString> &a, const QPair<double, QString> &b) {
-                  return a.first < b.first;
-              });
+              [](const ps::TimeBookmark &a, const ps::TimeBookmark &b) { return a.t < b.t; });
     ps::bridge::applyTimeMarkers(m_mw);
     log(QStringLiteral("添加时间书签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
 }
 
-void DataSourceSession::removeTimeMarker(double t)
+void DataSourceSession::removeTimeMarker(const QString &id)
 {
     for (int i = 0; i < m_timeMarkers.size(); ++i)
     {
-        if (qAbs(m_timeMarkers.at(i).first - t) < 1e-4)
-        {
-            const QString label = m_timeMarkers.at(i).second;
-            m_timeMarkers.removeAt(i);
-            ps::bridge::applyTimeMarkers(m_mw);
-            m_mw->logs().info(QStringLiteral("删除时间书签：%1").arg(label));
-            return;
-        }
+        if (m_timeMarkers.at(i).id != id)
+            continue;
+        const QString label = m_timeMarkers.at(i).label;
+        m_timeMarkers.removeAt(i);
+        ps::bridge::applyTimeMarkers(m_mw);
+        m_mw->logs().info(QStringLiteral("删除时间书签：%1").arg(label));
+        return;
     }
 }
 
-void DataSourceSession::moveTimeMarker(double from, double to)
+void DataSourceSession::moveTimeMarker(const QString &id, double to)
 {
     int index = -1;
     for (int i = 0; i < m_timeMarkers.size(); ++i)
-        if (qAbs(m_timeMarkers.at(i).first - from) < 1e-4)
+        if (m_timeMarkers.at(i).id == id)
         {
             index = i;
             break;
         }
-    if (index < 0 || qAbs(to - from) < 1e-4)
+    if (index < 0 || qAbs(to - m_timeMarkers.at(index).t) < 1e-4)
         return;
-    const QString label = m_timeMarkers.at(index).second;
-    for (int i = m_timeMarkers.size() - 1; i >= 0; --i)
-    {
-        if (i == index || qAbs(m_timeMarkers.at(i).first - to) >= 1e-4)
-            continue;
-        m_timeMarkers.removeAt(i);
-        if (i < index)
-            --index;
-    }
-    m_timeMarkers[index].first = to;
+    const QString label = m_timeMarkers.at(index).label;
+    m_timeMarkers[index].t = to;
     std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
-              [](const QPair<double, QString> &a, const QPair<double, QString> &b) {
-                  return a.first < b.first;
-              });
+              [](const ps::TimeBookmark &a, const ps::TimeBookmark &b) { return a.t < b.t; });
     ps::bridge::applyTimeMarkers(m_mw);
     m_mw->logs().info(QStringLiteral("移动时间书签：%1 @ %2 s").arg(label).arg(to, 0, 'f', 3));
 }
-
-

@@ -10,6 +10,7 @@
 #include <QCursor>
 #include <QPoint>
 #include <QWidget>
+#include "TimeBookmark.h"
 
 class QToolButton;
 class QKeyEvent;
@@ -120,7 +121,7 @@ public:
     void setPlayhead(double t);
     void setMaximizedState(bool on);                // 主窗切换后同步按钮图标/提示
     void clearPlayhead();
-    void setTimeMarkers(const QVector<QPair<double, QString>> &markers);
+    void setTimeMarkers(const QVector<ps::TimeBookmark> &markers);
 
 signals:
     void activated(const QString &title);
@@ -132,8 +133,8 @@ signals:
     void splitRequested(int orientation);           // 0=左右拆分 1=上下拆分
     void maximizeRequested();                       // 最大化 / 还原本画布
     void markerRequested(double t);                 // 右键：在指针处添加时间书签
-    void markerRemoveRequested(double t);           // 右键：删除此处书签
-    void markerMoveRequested(double from, double to); // 拖动书签后提交
+    void markerRemoveRequested(const QString &id);   // 右键：删除书签
+    void markerMoveRequested(const QString &id, double to); // 拖动书签后提交
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -225,8 +226,8 @@ private:
     QString m_title;
     QString m_timeFormat = QStringLiteral("relative");
     QVector<Series> m_series;
-    QVector<QPair<double, QString>> m_timeMarkers;
-    QVector<QPair<double, QRectF>> m_markerRects;
+    QVector<ps::TimeBookmark> m_timeMarkers;
+    QVector<QPair<QString, QRectF>> m_markerRects;
     int m_selectedSeries = -1;
     double m_t0 = 0.0;
     double m_t1 = 30.0;
@@ -280,10 +281,10 @@ private:
     int m_rightMarkerIndex = -1;
     AxisZone m_rightAxis = NoAxis;
     int m_bookmarkDragIndex = -1;
-    double m_bookmarkDragFrom = 0.0;
+    QString m_bookmarkDragId;
     bool m_bookmarkDragActive = false;
     bool m_hasSelectedBookmark = false;
-    double m_selectedBookmarkTime = 0.0;
+    QString m_selectedBookmarkId;
     QPointF m_bookmarkDragStart;
     bool m_hover = false;
     QWidget *m_hoverBar = nullptr;

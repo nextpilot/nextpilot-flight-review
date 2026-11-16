@@ -132,9 +132,9 @@ void PlottingSession::createPages()
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRequested, this,
             [this](double t) { ps::bridge::addTimeMarker(m_mw, t, QString(), true); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRemoveRequested, this,
-            [this](double t) { ps::bridge::removeTimeMarker(m_mw, t); });
+            [this](const QString &id) { ps::bridge::removeTimeMarker(m_mw, id); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerMoveRequested, this,
-            [this](double from, double to) { ps::bridge::moveTimeMarker(m_mw, from, to); });
+            [this](const QString &id, double to) { ps::bridge::moveTimeMarker(m_mw, id, to); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasRemoveRequested, this,
             [this](PlottingCanvas *c) { removeCanvas(c); });
 

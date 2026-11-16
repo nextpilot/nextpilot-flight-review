@@ -71,9 +71,9 @@ void PlottingTabs::attachCanvas(PlottingCanvas *c)
             [this, c](int index) { emit seriesSelected(c, index); });
     connect(c, &PlottingCanvas::markerRequested, this, [this](double t) { emit markerRequested(t); });
     connect(c, &PlottingCanvas::markerRemoveRequested, this,
-            [this](double t) { emit markerRemoveRequested(t); });
+            [this](const QString &id) { emit markerRemoveRequested(id); });
     connect(c, &PlottingCanvas::markerMoveRequested, this,
-            [this](double from, double to) { emit markerMoveRequested(from, to); });
+            [this](const QString &id, double to) { emit markerMoveRequested(id, to); });
     connect(c, &PlottingCanvas::removeRequested, this, [this, c] { emit canvasRemoveRequested(c); });
     c->setTimeMarkers(m_markers);
 }
@@ -126,7 +126,7 @@ void PlottingTabs::appendPlusTab()
     tabBar()->setTabButton(idx, QTabBar::RightSide, nullptr);
 }
 
-void PlottingTabs::setTimeMarkers(const QVector<QPair<double, QString>> &markers)
+void PlottingTabs::setTimeMarkers(const QVector<ps::TimeBookmark> &markers)
 {
     m_markers = markers;
     for (int i = 0; i < count(); ++i)

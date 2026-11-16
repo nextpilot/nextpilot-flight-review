@@ -47,10 +47,10 @@ DataSourceSession *dataSourceSession(MainWindow *mw)
 
 ps::data_source::SourceStore *dataSourceStore(MainWindow *mw) { return dataSourceSession(mw)->store(); }
 void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt) { dataSourceSession(mw)->addTimeMarker(t, label, prompt); }
-void removeDataSourceTimeMarker(MainWindow *mw, double t) { dataSourceSession(mw)->removeTimeMarker(t); }
-void moveDataSourceTimeMarker(MainWindow *mw, double from, double to) { dataSourceSession(mw)->moveTimeMarker(from, to); }
+void removeDataSourceTimeMarker(MainWindow *mw, const QString &id) { dataSourceSession(mw)->removeTimeMarker(id); }
+void moveDataSourceTimeMarker(MainWindow *mw, const QString &id, double to) { dataSourceSession(mw)->moveTimeMarker(id, to); }
 const QVector<const PsChannelInfo *> &dataSourceChannels(MainWindow *mw) { return dataSourceSession(mw)->channels(); }
-QVector<QPair<double, QString>> &dataSourceTimeMarkers(MainWindow *mw) { return dataSourceSession(mw)->timeMarkers(); }
+QVector<ps::TimeBookmark> &dataSourceTimeMarkers(MainWindow *mw) { return dataSourceSession(mw)->timeMarkers(); }
 
 void DataSourceComponent::contribute(Registry &registry, HostContext &)
 {
@@ -105,7 +105,7 @@ QVector<const PsChannelInfo *> sourceChannels(MainWindow *mw)
 {
     return ps::components::dataSourceChannels(mw);
 }
-QVector<QPair<double, QString>> timeMarkers(MainWindow *mw)
+QVector<ps::TimeBookmark> timeMarkers(MainWindow *mw)
 {
     return ps::components::dataSourceTimeMarkers(mw);
 }
@@ -113,12 +113,12 @@ void addTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt)
 {
     ps::components::addDataSourceTimeMarker(mw, t, label, prompt);
 }
-void removeTimeMarker(MainWindow *mw, double t)
+void removeTimeMarker(MainWindow *mw, const QString &id)
 {
-    ps::components::removeDataSourceTimeMarker(mw, t);
+    ps::components::removeDataSourceTimeMarker(mw, id);
 }
-void moveTimeMarker(MainWindow *mw, double from, double to)
+void moveTimeMarker(MainWindow *mw, const QString &id, double to)
 {
-    ps::components::moveDataSourceTimeMarker(mw, from, to);
+    ps::components::moveDataSourceTimeMarker(mw, id, to);
 }
 } // namespace ps::bridge

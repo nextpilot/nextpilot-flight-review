@@ -4,6 +4,7 @@
 #include <QVector>
 
 #include <functional>
+#include "TimeBookmark.h"
 
 class PlottingCanvas;
 
@@ -24,7 +25,7 @@ public:
     void createDefaultPages();
     void appendPlusTab();
     void attachCanvas(PlottingCanvas *canvas);
-    void setTimeMarkers(const QVector<QPair<double, QString>> &markers);
+    void setTimeMarkers(const QVector<ps::TimeBookmark> &markers);
 
     PlottingCanvas *currentCanvas() const;
 
@@ -38,8 +39,8 @@ signals:
     void canvasRemoveRequested(PlottingCanvas *canvas);
     void pageRenamed(int index, const QString &title);
     void markerRequested(double t);
-    void markerRemoveRequested(double t);
-    void markerMoveRequested(double from, double to);
+    void markerRemoveRequested(const QString &id);
+    void markerMoveRequested(const QString &id, double to);
 
 private:
     PlottingCanvas *makeCanvas(const QString &title, QWidget *parent);
@@ -47,7 +48,7 @@ private:
     QVector<PlottingCanvas *> allCanvases() const;
 
     CanvasFactory m_factory;
-    QVector<QPair<double, QString>> m_markers;
+    QVector<ps::TimeBookmark> m_markers;
 };
 
 } // namespace ps::plotting

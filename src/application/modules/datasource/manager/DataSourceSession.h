@@ -6,6 +6,7 @@
 #include <QPair>
 #include <QPoint>
 #include <QAction>
+#include "TimeBookmark.h"
 
 class MainWindow;
 class QDockWidget;
@@ -39,8 +40,8 @@ public:
     void closeSources();
     void addTimeMarkerForward(double t, const QString &label, bool prompt);
     void addTimeMarker(double t, const QString &label, bool prompt);
-    void removeTimeMarker(double t);
-    void moveTimeMarker(double from, double to);
+    void removeTimeMarker(const QString &id);
+    void moveTimeMarker(const QString &id, double to);
     void onClose();
     bool eventFilter(QObject *watched, QEvent *event) override;
     void pollLiveSources();
@@ -53,7 +54,7 @@ public:
     QVector<ps::data_source::SourceData> &sources();
     ps::data_source::SourceStore *store() { return m_sourceStore; }
     const QVector<const PsChannelInfo *> &channels() const { return m_srcChannels; }
-    QVector<QPair<double, QString>> &timeMarkers() { return m_timeMarkers; }
+    QVector<ps::TimeBookmark> &timeMarkers() { return m_timeMarkers; }
     void refreshActiveSource();
     void reloadChannels(ps::data_source::SourceData *src);
     void activateSource(QWidget *row);
@@ -116,7 +117,7 @@ private:
     QWidget *m_srcEmpty = nullptr;
     QToolButton *m_srcListToggle = nullptr;
     QVector<QToolButton *> m_srcChips;
-    QVector<QPair<double, QString>> m_timeMarkers;
+    QVector<ps::TimeBookmark> m_timeMarkers;
     ps::data_source::SourceStore *m_sourceStore = nullptr;
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;

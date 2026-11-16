@@ -86,6 +86,11 @@ static void rightClick(QWidget *w, const QPointF &pos)
     mouse(w, QEvent::MouseButtonRelease, pos, Qt::RightButton, Qt::NoButton);
 }
 
+static ps::TimeBookmark bm(const QString &id, double t, const QString &label)
+{
+    return ps::TimeBookmark{id, t, label};
+}
+
 static void makeCanvas(PlottingCanvas &c)
 {
     c.resize(900, 600);
@@ -194,31 +199,54 @@ int main(int argc, char **argv)
 
     // 书签拖动。
     reset(c);
-    c.setTimeMarkers({{5.0, QStringLiteral("b")}});
+    c.setTimeMarkers({bm(QStringLiteral("b1"), 5.0, QStringLiteral("b"))});
     QPixmap pm(c.size());
     c.render(&pm);
-    double movedFrom = -1.0;
+    QString movedId;
     double movedTo = -1.0;
-    QObject::connect(&c, &PlottingCanvas::markerMoveRequested, [&](double f, double t) {
-        movedFrom = f;
+    QObject::connect(&c, &PlottingCanvas::markerMoveRequested, [&](const QString &id, double t) {
+        movedId = id;
         movedTo = t;
     });
     const QPointF marker(plot.left() + plot.width() * 0.5 + 8, plot.top() + 10);
     mouse(&c, QEvent::MouseButtonPress, marker, Qt::LeftButton, Qt::LeftButton);
     mouse(&c, QEvent::MouseMove, marker + QPointF(50, 0), Qt::NoButton, Qt::LeftButton);
     mouse(&c, QEvent::MouseButtonRelease, marker + QPointF(50, 0), Qt::LeftButton, Qt::NoButton);
-    check(movedFrom == 5.0 && movedTo > 5.0, "bookmark drag emits move");
+    check(movedId == QStringLiteral("b1") && movedTo > 5.0, "bookmark drag emits move");
 
     // 书签选中后 Delete。
     reset(c);
-    c.setTimeMarkers({{5.0, QStringLiteral("b")}});
+    c.setTimeMarkers({bm(QStringLiteral("b1"), 5.0, QStringLiteral("b"))});
     c.render(&pm);
-    double removed = -1.0;
-    QObject::connect(&c, &PlottingCanvas::markerRemoveRequested, [&](double t) { removed = t; });
+    QString removed;
+    QObject::connect(&c, &PlottingCanvas::markerRemoveRequested, [&](const QString &id) { removed = id; });
     mouse(&c, QEvent::MouseButtonPress, marker, Qt::LeftButton, Qt::LeftButton);
     mouse(&c, QEvent::MouseButtonRelease, marker, Qt::LeftButton, Qt::NoButton);
     key(&c, Qt::Key_Delete);
-    check(removed == 5.0, "delete selected bookmark");
+    check(removed == QStringLiteral("b1"), "delete selected bookmark");
+
+    // 同一时间两个书签：选中/删除仍按 id，不按时间碰撞。
+    reset(c);
+    c.setTimeMarkers({bm(QStringLiteral("a1"), 5.0, QStringLiteral("a")),
+                      bm(QStringLiteral("b1"), 5.0, QStringLiteral("b"))});
+    c.render(&pm);
+    removed.clear();
+    mouse(&c, QEvent::MouseButtonPress, marker, Qt::LeftButton, Qt::LeftButton);
+    mouse(&c, QEvent::MouseButtonRelease, marker, Qt::LeftButton, Qt::NoButton);
+    key(&c, Qt::Key_Delete);
+    check(removed == QStringLiteral("a1"), "same-time bookmarks delete by id");
+
+    // 外部刷新只改 t：选中仍跟随 id。
+    reset(c);
+    c.setTimeMarkers({bm(QStringLiteral("b1"), 5.0, QStringLiteral("b"))});
+    c.render(&pm);
+    mouse(&c, QEvent::MouseButtonPress, marker, Qt::LeftButton, Qt::LeftButton);
+    mouse(&c, QEvent::MouseButtonRelease, marker, Qt::LeftButton, Qt::NoButton);
+    c.setTimeMarkers({bm(QStringLiteral("b1"), 7.0, QStringLiteral("b"))});
+    c.render(&pm);
+    removed.clear();
+    key(&c, Qt::Key_Delete);
+    check(removed == QStringLiteral("b1"), "selection survives time change");
 
     // Ctrl+左键直接生成 A/B，Esc 清除。
     reset(c);
@@ -244,7 +272,8 @@ int main(int argc, char **argv)
     wheel(&c, center, 240);
     key(&c, Qt::Key_0, Qt::ControlModifier);
     check(qAbs((c.t1() - c.t0()) - 10.0) < 1e-4, "ctrl+0 resets view");
-    c.setTimeMarkers({{2.0, QStringLiteral("a")}, {8.0, QStringLiteral("b")}});
+    c.setTimeMarkers({bm(QStringLiteral("a1"), 2.0, QStringLiteral("a")),
+                         bm(QStringLiteral("b1"), 8.0, QStringLiteral("b"))});
     key(&c, Qt::Key_BracketRight);
     check(qAbs((c.t0() + c.t1()) * 0.5 - 8.0) < 1e-4, "bracket right jumps bookmark");
     key(&c, Qt::Key_BracketLeft);
@@ -261,13 +290,13 @@ int main(int argc, char **argv)
 
     // 右键单击书签：菜单删除书签。
     reset(c);
-    c.setTimeMarkers({{5.0, QStringLiteral("b")}});
+    c.setTimeMarkers({bm(QStringLiteral("b1"), 5.0, QStringLiteral("b"))});
     c.render(&pm);
-    removed = -1.0;
+    removed.clear();
     chooseMenuAction(QStringLiteral("删除书签"));
     rightClick(&c, marker);
     check(menuMiss.isEmpty(), "bookmark menu opened");
-    check(qAbs(removed - 5.0) < 1e-4, "bookmark menu deletes");
+    check(removed == QStringLiteral("b1"), "bookmark menu deletes");
 
     // 右键单击曲线：菜单隐藏曲线。
     reset(c);

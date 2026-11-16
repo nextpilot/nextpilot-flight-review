@@ -1477,17 +1477,20 @@ void PlottingCanvas::clearPlayhead()
     update();
 }
 
-void PlottingCanvas::setTimeMarkers(const QVector<QPair<double, QString>> &markers)
+void PlottingCanvas::setTimeMarkers(const QVector<ps::TimeBookmark> &markers)
 {
     m_timeMarkers = markers;
     if (m_hasSelectedBookmark)
     {
         bool found = false;
         for (const auto &mk : m_timeMarkers)
-            if (qAbs(mk.first - m_selectedBookmarkTime) < 1e-6)
+            if (mk.id == m_selectedBookmarkId)
                 found = true;
         if (!found)
+        {
             m_hasSelectedBookmark = false;
+            m_selectedBookmarkId.clear();
+        }
     }
     update();
 }
@@ -2011,21 +2014,31 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         int lane = 0;
         double nearestLeft = -1e300;
         double nearestRight = 1e300;
+        QString nearestLeftId;
+        QString nearestRightId;
         for (const auto &mk : m_timeMarkers)
         {
-            const double t = mk.first;
+            const double t = mk.t;
             const double x = plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0);
             if (x < plot.left())
             {
-                nearestLeft = qMax(nearestLeft, t);
+                if (t > nearestLeft)
+                {
+                    nearestLeft = t;
+                    nearestLeftId = mk.id;
+                }
                 continue;
             }
             if (x > plot.right())
             {
-                nearestRight = qMin(nearestRight, t);
+                if (t < nearestRight)
+                {
+                    nearestRight = t;
+                    nearestRightId = mk.id;
+                }
                 continue;
             }
-            const QString label = mk.second.trimmed().isEmpty() ? formatTime(t) : mk.second;
+            const QString label = mk.label.trimmed().isEmpty() ? formatTime(t) : mk.label;
             const QString text = fm.elidedText(QStringLiteral("%1  %2").arg(label, formatTime(t)),
                                                Qt::ElideRight, 180);
             p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("accent"), 150), 1, Qt::DashLine));
@@ -2036,8 +2049,7 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
                 chip.moveLeft(x - 3 - tw);
             if (chip.left() < plot.left())
                 chip.moveLeft(plot.left() + 3);
-            const bool selected = m_hasSelectedBookmark
-                                  && qAbs(t - m_selectedBookmarkTime) < 1e-6;
+            const bool selected = m_hasSelectedBookmark && mk.id == m_selectedBookmarkId;
             p.setPen(QPen(ThemeManager::color(QStringLiteral("border")), selected ? 2 : 1));
             p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), selected ? 255 : 235));
             p.drawRoundedRect(chip, 2, 2);
@@ -2048,11 +2060,11 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
             }
             p.setPen(ThemeManager::color(QStringLiteral("accent")));
             p.drawText(chip.adjusted(5, 0, -5, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
-            m_markerRects.append({t, chip});
+            m_markerRects.append({mk.id, chip});
             ++lane;
         }
-        const auto edgeChip = [&](double t, bool left) {
-            if (t < -1e299 || t > 1e299)
+        const auto edgeChip = [&](const QString &id, double t, bool left) {
+            if (t < -1e299 || t > 1e299 || id.isEmpty())
                 return;
             const QString label = formatTime(t);
             const int tw = fm.horizontalAdvance(label) + 24;
@@ -2063,10 +2075,10 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
             p.drawRoundedRect(chip, 2, 2);
             p.setPen(ThemeManager::alphaColor(QStringLiteral("accent"), 200));
             p.drawText(chip, Qt::AlignCenter, left ? QStringLiteral("◂ ") + label : label + QStringLiteral(" ▸"));
-            m_markerRects.append({t, chip});
+            m_markerRects.append({id, chip});
         };
-        edgeChip(nearestLeft, true);
-        edgeChip(nearestRight, false);
+        edgeChip(nearestLeftId, nearestLeft, true);
+        edgeChip(nearestRightId, nearestRight, false);
     }
 
     if (m_rubbering && m_rubberRect.isValid())
@@ -2215,7 +2227,7 @@ int PlottingCanvas::markerAt(const QPointF &pos) const
         if (!hit.second.contains(pos))
             continue;
         for (int i = 0; i < m_timeMarkers.size(); ++i)
-            if (qAbs(m_timeMarkers.at(i).first - hit.first) < 1e-6)
+            if (m_timeMarkers.at(i).id == hit.first)
                 return i;
     }
     return -1;
@@ -2226,13 +2238,14 @@ void PlottingCanvas::selectBookmark(int index)
     if (index < 0 || index >= m_timeMarkers.size())
         return;
     m_hasSelectedBookmark = true;
-    m_selectedBookmarkTime = m_timeMarkers.at(index).first;
+    m_selectedBookmarkId = m_timeMarkers.at(index).id;
     update();
 }
 
 void PlottingCanvas::clearBookmarkSelection()
 {
     m_hasSelectedBookmark = false;
+    m_selectedBookmarkId.clear();
     update();
 }
 
@@ -2241,7 +2254,7 @@ void PlottingCanvas::jumpToBookmark(int index)
     if (index < 0 || index >= m_timeMarkers.size())
         return;
     const double span = qMax(1e-6, m_t1 - m_t0);
-    const double t = m_timeMarkers.at(index).first;
+    const double t = m_timeMarkers.at(index).t;
     m_t0 = t - span / 2.0;
     m_t1 = t + span / 2.0;
     selectBookmark(index);
@@ -2520,9 +2533,9 @@ void PlottingCanvas::showCanvasMenu(double t, int markerIndex, AxisZone zone,
     QAction *delMarker = nullptr;
     if (markerIndex >= 0 && markerIndex < m_timeMarkers.size())
     {
-        QString label = m_timeMarkers.at(markerIndex).second.trimmed();
+        QString label = m_timeMarkers.at(markerIndex).label.trimmed();
         if (label.isEmpty())
-            label = formatTime(m_timeMarkers.at(markerIndex).first);
+            label = formatTime(m_timeMarkers.at(markerIndex).t);
         delMarker = menu.addAction(QStringLiteral("删除书签「%1」").arg(label));
     }
     menu.addSeparator();
@@ -2559,7 +2572,7 @@ void PlottingCanvas::showCanvasMenu(double t, int markerIndex, AxisZone zone,
     if (chosen == addMarker)
         emit markerRequested(t);
     else if (delMarker && chosen == delMarker)
-        emit markerRemoveRequested(m_timeMarkers.at(markerIndex).first);
+        emit markerRemoveRequested(m_timeMarkers.at(markerIndex).id);
     else if (chosen == addCurve)
         emit addChannelRequested();
     else if (chosen == reset)
@@ -2805,7 +2818,7 @@ void PlottingCanvas::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton && marker >= 0 && !m_spacePan)
     {
         m_bookmarkDragIndex = marker;
-        m_bookmarkDragFrom = m_timeMarkers.at(marker).first;
+        m_bookmarkDragId = m_timeMarkers.at(marker).id;
         m_bookmarkDragStart = event->position();
         m_bookmarkDragActive = false;
         selectBookmark(marker);
@@ -3173,8 +3186,7 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
             m_bookmarkDragActive = true;
         if (m_bookmarkDragActive)
         {
-            m_timeMarkers[m_bookmarkDragIndex].first = timeAtX(event->position().x());
-            m_selectedBookmarkTime = m_timeMarkers.at(m_bookmarkDragIndex).first;
+            m_timeMarkers[m_bookmarkDragIndex].t = timeAtX(event->position().x());
             setCursor(Qt::ClosedHandCursor);
             update();
             return;
@@ -3321,13 +3333,14 @@ void PlottingCanvas::mouseReleaseEvent(QMouseEvent *event)
     if (m_bookmarkDragIndex >= 0)
     {
         const int index = m_bookmarkDragIndex;
-        const double from = m_bookmarkDragFrom;
+        const QString id = m_bookmarkDragId;
         const bool moved = m_bookmarkDragActive;
         m_bookmarkDragIndex = -1;
+        m_bookmarkDragId.clear();
         m_bookmarkDragActive = false;
         unsetCursor();
         if (moved && index < m_timeMarkers.size())
-            emit markerMoveRequested(from, m_timeMarkers.at(index).first);
+            emit markerMoveRequested(id, m_timeMarkers.at(index).t);
         else
             jumpToBookmark(index);
         update();
@@ -3406,7 +3419,7 @@ void PlottingCanvas::keyPressEvent(QKeyEvent *event)
     {
         if (m_hasSelectedBookmark)
         {
-            emit markerRemoveRequested(m_selectedBookmarkTime);
+            emit markerRemoveRequested(m_selectedBookmarkId);
             clearBookmarkSelection();
             event->accept();
             return;
@@ -3477,7 +3490,7 @@ void PlottingCanvas::keyPressEvent(QKeyEvent *event)
         int next = -1;
         for (int i = 0; i < m_timeMarkers.size(); ++i)
         {
-            const double t = m_timeMarkers.at(i).first;
+            const double t = m_timeMarkers.at(i).t;
             if (t < tc - 1e-9)
                 prev = i;
             else if (t > tc + 1e-9)
