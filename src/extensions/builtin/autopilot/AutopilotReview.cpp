@@ -295,7 +295,8 @@ void report(MainWindow *mw)
                              QStringLiteral("报告已生成：\n%1").arg(filePath));
 }
 
-QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo *> &channels)
+QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo *> &channels,
+                             MainWindow *mw)
 {
     auto *table = new QTableWidget(parent);
     table->setColumnCount(7);
@@ -345,13 +346,35 @@ QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo 
             QString::number(min, 'g', 7), QString::number(max, 'g', 7),
             QString::number(mean, 'g', 7), QString::number(last, 'g', 7)};
         for (int col = 0; col < cells.size(); ++col)
-            table->setItem(row, col, new QTableWidgetItem(cells[col]));
+        {
+            auto *item = new QTableWidgetItem(cells[col]);
+            if (col == 0)
+            {
+                item->setData(Qt::UserRole, QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(channel)));
+                item->setToolTip(QStringLiteral("双击添加到当前画布"));
+            }
+            table->setItem(row, col, item);
+        }
+    }
+    if (mw)
+    {
+        QObject::connect(table, &QTableWidget::cellDoubleClicked, mw, [mw, table](int row, int) {
+            const auto *item = table->item(row, 0);
+            if (!item)
+                return;
+            const auto channel = reinterpret_cast<const PsChannelInfo *>(
+                item->data(Qt::UserRole).value<quintptr>());
+            if (!channel)
+                return;
+            if (auto *canvas = ps::bridge::currentCanvas(mw))
+                ps::bridge::canvasAddChannel(canvas, channel);
+        });
     }
     return table;
 }
 
 QWidget *makeSectionPage(QWidget *parent, const QVector<const PsChannelInfo *> &channels,
-                         const QString &emptyText)
+                        const QString &emptyText, MainWindow *mw)
 {
     auto *page = new QWidget(parent);
     auto *layout = new QVBoxLayout(page);
@@ -364,7 +387,7 @@ QWidget *makeSectionPage(QWidget *parent, const QVector<const PsChannelInfo *> &
     }
     else
     {
-        layout->addWidget(makeStatsTable(page, channels));
+        layout->addWidget(makeStatsTable(page, channels, mw));
     }
     return page;
 }
@@ -428,7 +451,7 @@ QWidget *buildFlightReviewApp(QWidget *parent, const QString &path)
 
     auto *tabs = new QTabWidget(root);
     layout->addWidget(tabs, 1);
-    tabs->addTab(makeSectionPage(tabs, channels, QStringLiteral("没有通道")),
+    tabs->addTab(makeSectionPage(tabs, channels, QStringLiteral("没有通道"), mw),
                  QStringLiteral("概览"));
 
     struct Section
@@ -454,7 +477,7 @@ QWidget *buildFlightReviewApp(QWidget *parent, const QString &path)
         }
         tabs->addTab(makeSectionPage(tabs, selected,
                                      QStringLiteral("没有匹配的“%1”通道")
-                                         .arg(QString::fromUtf8(section.title))),
+                                         .arg(QString::fromUtf8(section.title)), mw),
                      QString::fromUtf8(section.title));
     }
 
