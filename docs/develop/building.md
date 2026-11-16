@@ -12,21 +12,26 @@
 
 ## Linux / 云主机
 
-系统 Qt 直接可用时（Ubuntu 22.04 的 `qt6-base-dev` / `qt6-tools-dev` / `libqt6svg6-dev` / `qt6-l10n-tools`，加系统 zlib/zstd/lz4），走 `linux` 预设，不需要 `deps/`：
+Qt 与 Lua 固定在仓库 `deps/`（`.gitignore` 已排除），不依赖系统包 —— 云主机的 apt 包会被环境快照回滚，`deps/` 随仓库目录留存。首次：
 
 ```bash
-cmake --preset linux            # Debug，产物 build/
+tools/bootstrap-deps.sh          # Qt 6.2.4 + Lua 5.4.4 到 deps/
+cmake --preset linux             # Debug，产物 build/
 cmake --build --preset linux-debug
-ctest --preset linux            # 自动设 QT_QPA_PLATFORM=offscreen
+ctest --preset linux             # 自动设 QT_QPA_PLATFORM=offscreen
 ```
 
-`linux` 预设会把 `~/.cargo/bin` 加进 `PATH`，rustup 装的 cargo 不用手工 export。Release 用 `linux-release` 预设（产物 `build-release/`）。
+`linux` 预设以 `deps/Qt/6.2.4/gcc_64` 作为 `CMAKE_PREFIX_PATH`、`deps/lua` 作为 Lua 静态库，build/test 预设带上 `~/.cargo/bin`，rustup 的 cargo 不用手工 export。Release 用 `linux-release` 预设（产物 `build-release/`）。`deps/` 不完整时预设会直接报找不到 Qt6，先跑 `bootstrap-deps.sh`。
 
-没有系统 Qt 时需要自建依赖：
+系统 Qt（`qt6-base-dev` / `qt6-tools-dev` / `libqt6svg6-dev` / `qt6-l10n-tools`）也能用普通 `cmake -S . -B build` 配起来，但不要把它当云主机上的持久方案。
+
+手动构建：
 
 ```bash
-tools/bootstrap-deps.sh   # 下载 Qt 6.2.4 + 编译 Lua 5.4.4 到 deps/
-tools/build-local.sh      # 只用 deps/ 的 Qt/Lua 构建并跑 ctest
+cmake -S . -B build -DCMAKE_PREFIX_PATH="$PWD/deps/Qt/6.2.4/gcc_64"
+cmake --build build -j4
+LD_LIBRARY_PATH="$PWD/deps/Qt/6.2.4/gcc_64/lib" ctest --test-dir build --output-on-failure
+./build/src/application/plotscope_app
 ```
 
 手动构建：

@@ -14,22 +14,28 @@
     },
     {
       "name": "linux",
-      "displayName": "Linux x64 Debug（系统 Qt 6.2.4 + GCC）",
-      "description": "Ubuntu 22.04 云主机：apt 安装的 Qt 6.2.4、系统 zlib/zstd/lz4、rustup 的 cargo 在 ~/.cargo/bin。CMAKE_BUILD_TYPE=Debug，产物在 build/",
+      "displayName": "Linux x64 Debug（deps/ Qt 6.2.4 + GCC）",
+      "description": "云主机：qtbase/qtsvg/qttools/icu 与 Lua 5.4.4 固定在仓库 deps/（不进 git，容器快照回滚不影响），系统提供 zlib/zstd/lz4，cargo 在 ~/.cargo/bin。先跑 tools/bootstrap-deps.sh",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/deps/Qt/6.2.4/gcc_64",
+        "LUA_LIBRARY": "${sourceDir}/deps/lua/lib/liblua.a",
+        "LUA_INCLUDE_DIR": "${sourceDir}/deps/lua/include"
       }
     },
     {
       "name": "linux-release",
-      "displayName": "Linux x64 Release（系统 Qt 6.2.4 + GCC）",
+      "displayName": "Linux x64 Release（deps/ Qt 6.2.4 + GCC）",
       "description": "与 linux 同环境，CMAKE_BUILD_TYPE=Release，产物在 build-release/，避免和 Debug 共用一次配置",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build-release",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/deps/Qt/6.2.4/gcc_64",
+        "LUA_LIBRARY": "${sourceDir}/deps/lua/lib/liblua.a",
+        "LUA_INCLUDE_DIR": "${sourceDir}/deps/lua/include"
       }
     }
   ],
