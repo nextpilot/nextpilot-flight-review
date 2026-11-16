@@ -808,7 +808,7 @@ public:
 
 #### 14.3.1 P0 变换内核 + 派生曲线（已完成）
 任务：
-1. 新建 `src/extensions/builtin/transform/`：`Processor.h`、`Catalogue.{h,cpp}`、`SisoFilters.cpp`、`QuatToRpy.cpp`、`DerivedSeries.{h,cpp}`。
+1. 数据源侧派生通道：`src/application/modules/datasource/dialog/TransformDialog.{h,cpp}`，内核侧 `Processor`/`Catalogue`/`SisoFilters`/`QuatToRpy`/`DerivedSeries`。
 2. 实现 12 个 SISO + 四元数 4→3，参数用 JSON 描述，目录可查询。
 3. 字段树右键“添加变换…”；面板式编辑器：输入通道、算子、参数表单、预览（before 虚线 + after 实线）、Apply。
 4. 输出作为普通派生通道进树（每源一个“派生”分组）、进画布、可编辑/移除。

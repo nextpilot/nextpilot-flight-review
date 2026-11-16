@@ -17,7 +17,7 @@ extensions（具体业务） → modules（通用能力） → shell（最小宿
 | `src/application/modules/datasource` | 数据源抽象、加载器注册、实时源、缓存、数据源 Dock | 画布、绘图页 |
 | `src/application/modules/plotting` | 画布、绘图页/切分、轴/曲线、属性面板、脚本画布 | 具体文件格式解析 |
 | `src/application/modules/protocol` | 协议 schema/文档、协议编辑器、codec、自定义协议 loader | 画布、数据源会话状态 |
-| `src/extensions/builtin` | 飞控/GNSS/汽车/机器人四领域工具箱、`common`、设备调试、变换、视频、脚本 | 被 shell/modules 反向 include |
+| `src/extensions/builtin` | 飞控/GNSS/汽车/机器人四领域工具箱、`common`、设备调试、脚本；数据变换属 datasource 模块 | 被 shell/modules 反向 include |
 | `src/extensions/dynamic` | 动态扩展 SDK（C++/Rust），只服务第三方扩展 | 承载官方/通用格式加载器 |
 
 ## 目录定位

@@ -2,7 +2,6 @@
 
 #include <QDialog>
 
-#include "TransformDialogInterface.h"
 #include <QHash>
 #include <QJsonObject>
 #include <QStringList>
@@ -10,6 +9,20 @@
 
 struct PsDataset;
 struct PsChannelInfo;
+
+struct TransformDialogResult
+{
+    QStringList addedNames;
+    QString inputName;
+    QString kind;
+    QString filterId;
+    QJsonObject params;
+    QString outputName;
+    QString quat[4];
+    bool degrees = true;
+    bool unwrap = true;
+};
+
 class QComboBox;
 class QLineEdit;
 class QStackedWidget;
@@ -19,9 +32,9 @@ class QSpinBox;
 class QTimer;
 class PreviewPlot;
 
-// 绘图前变换：单通道 PJ4 过滤器 / 四元数 4→3。
-// 只负责调内核 ABI 写回通道，刷新数据树由 MainWindow 做。
-class TransformDialog : public QDialog, public ITransformDialog
+// 数据源侧派生通道：单通道滤波器 / 四元数 4→3。
+// 应用时调用内核写回 PsDataset，DataSourceSession 记录 recipe 并刷新数据树。
+class TransformDialog : public QDialog
 {
     Q_OBJECT
 
@@ -42,7 +55,7 @@ public:
     QString z() const { return m_quat[3]; }
     bool degrees() const { return m_degreesOn; }
     bool unwrap() const { return m_unwrapOn; }
-    TransformDialogResult transformResult() const override;
+    TransformDialogResult transformResult() const;
 
 private:
     QWidget *buildFilterPage();

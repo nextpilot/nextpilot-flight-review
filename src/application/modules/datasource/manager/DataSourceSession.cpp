@@ -7,7 +7,7 @@
 #include "ps_kernel.h"
 #include "DataSourceEntry.h"
 #include "SourceModel.h"
-#include "TransformDialogInterface.h"
+#include "TransformDialog.h"
 #include <QtEndian>
 using ps::data_source::SourceData;
 using ps::data_source::TransformRecipe;
@@ -578,26 +578,19 @@ void DataSourceSession::addTransformFor(const QString &channel)
     ps::data_source::SourceData *src = sourceById(m_activeSource);
     if (!src || !src->ds)
         return;
-    QVariantMap args;
-    args.insert(QStringLiteral("dataset"),
-                QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(src->ds)));
-    QVariantList channels;
+    QVector<const PsChannelInfo *> channels;
     for (const PsChannelInfo *ch : src->channels)
-        channels.append(QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(ch)));
-    args.insert(QStringLiteral("channels"), channels);
-    args.insert(QStringLiteral("sourceName"), src->alias.isEmpty() ? src->name : src->alias);
-    args.insert(QStringLiteral("preselect"), channel);
-    QDialog *dlg = m_mw->extensions().registry().createDialog(QStringLiteral("dialog.transform"), args, this);
-    if (!dlg)
-        return;
+        channels.append(ch);
+    auto *dlg = new TransformDialog(src->ds, channels,
+                                    src->alias.isEmpty() ? src->name : src->alias,
+                                    channel, this);
     const bool accepted = dlg->exec() == QDialog::Accepted;
-    auto *transform = dynamic_cast<ITransformDialog *>(dlg);
-    if (!accepted || !transform)
+    if (!accepted)
     {
         delete dlg;
         return;
     }
-    const TransformDialogResult result = transform->transformResult();
+    const TransformDialogResult result = dlg->transformResult();
     delete dlg;
 
     for (const QString &n : result.addedNames)
