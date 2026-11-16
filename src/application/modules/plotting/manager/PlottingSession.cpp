@@ -1,10 +1,10 @@
 #include "PlottingSession.h"
 #include "MainWindow.h"
-#include "ThemeManager.h"
 #include "ModuleBridge.h"
 #include "PlottingCanvas.h"
 #include "PlottingLayout.h"
 #include "PlottingTabs.h"
+#include "ThemeManager.h"
 
 #include <QAbstractItemView>
 #include <QCheckBox>
@@ -54,6 +54,7 @@
 #include <QTextCursor>
 #include <QTimer>
 #include <QToolButton>
+#include <QStyledItemDelegate>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVariant>
@@ -1286,6 +1287,23 @@ QJsonObject PlottingSession::pageState(QWidget *page) const
 }
 
 
+namespace
+{
+// 属性/值两列文字按主题实时取色：键列弱化、值列正文色
+class ThemePropDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+protected:
+    void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->palette.setColor(QPalette::Text, ThemeManager::color(
+            index.column() == 0 ? QStringLiteral("textDim") : QStringLiteral("text")));
+    }
+};
+} // namespace
+
 void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
                                   const QStringList &editable, int kind)
 {
@@ -1410,11 +1428,11 @@ void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QSt
         const bool canEdit = editable.contains(key);
         auto *k = new QTableWidgetItem(key);
         k->setFlags(Qt::ItemIsEnabled);
-        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
         m_propTable->setItem(i, 0, k);
 
         auto *v = new QTableWidgetItem(text);
-        v->setForeground(canEdit ? QColor(QStringLiteral("#eaf2fb")) : QColor(QStringLiteral("#d5dde5")));
+        v->setFlags(canEdit ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable)
+                            : Qt::ItemIsEnabled);
 
         QWidget *editor = nullptr;
         if (canEdit)
@@ -1688,6 +1706,7 @@ QWidget *PlottingSession::createPropPanel(bool tree)
         m_propTable->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed |
                                      QAbstractItemView::SelectedClicked);
         m_propTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+        m_propTable->setItemDelegate(new ThemePropDelegate(m_propTable));
         lay->addWidget(m_propTable, 1);
         bindPlotPanels(m_selLabel, nullptr, m_propTable, nullptr);
     }

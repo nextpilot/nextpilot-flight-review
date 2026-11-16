@@ -7,7 +7,7 @@
 #include "LiveSession.h"
 #include "DatasetCache.h"
 #include "UiDialogEngine.h"
-#include "ThemeManager.h"
+
 #include "DataSourceDialog.h"
 #include "record/StreamRecorder.h"
 #include <QJsonDocument>
@@ -37,6 +37,8 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+
+#include "ThemeManager.h"
 #include <QMenu>
 #include <QMimeData>
 #include <QPushButton>
@@ -113,6 +115,28 @@ protected:
         drag->setMimeData(mime);
         drag->exec(Qt::CopyAction);
     }
+};
+
+// 参数/消息表：列文字颜色按主题实时取，避免浅色主题里写死的浅灰看不清
+class ThemeTableDelegate : public QStyledItemDelegate
+{
+public:
+    explicit ThemeTableDelegate(int textColumn, QObject *parent = nullptr)
+        : QStyledItemDelegate(parent), m_textColumn(textColumn)
+    {
+    }
+
+    void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->palette.setColor(QPalette::Text,
+                                 ThemeManager::color(index.column() == m_textColumn
+                                                         ? QStringLiteral("text")
+                                                         : QStringLiteral("textDim")));
+    }
+
+private:
+    int m_textColumn;
 };
 
 // 通道树按 item 前景色画文字：QSS 的 ::item 规则会接管绘制、忽略 setForeground，
@@ -318,11 +342,13 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     m_srcFilter = new QLineEdit(srcHost);
     m_srcFilter->setPlaceholderText(QStringLiteral("搜索字段 / 参数 / 消息"));
     m_srcFilter->setClearButtonEnabled(true);
-    m_srcFilter->setFixedHeight(26);
-    m_srcFilter->setStyleSheet(QStringLiteral(
-        "QLineEdit{background:#0f151a;border:0;border-bottom:1px solid #232b33;"
-        "color:#c9d1d9;font-size:11px;padding:0 8px;}"
-        "QLineEdit:focus{border-bottom:1px solid #f2b134;}"));
+    m_srcFilter->setFixedHeight(30);
+    m_srcFilter->addAction(ThemeManager::icon(QStringLiteral(":/icons/search.svg")),
+                           QLineEdit::LeadingPosition);
+    m_srcFilter->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
+        "QLineEdit{background:#0f151a;border:1px solid #232b33;border-radius:2px;"
+        "color:#c9d1d9;font-size:11.5px;padding:2px 8px;}"
+        "QLineEdit:focus{border-color:#f2b134;}")));
     srcLay->addWidget(m_srcFilter);
     connect(m_srcFilter, &QLineEdit::textChanged, this, [this] { applySrcFilter(); });
 
@@ -429,6 +455,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     m_paramTable->setShowGrid(false);
     m_paramTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     compactValueTable(m_paramTable);
+    m_paramTable->setItemDelegate(new ThemeTableDelegate(1, m_paramTable));
     m_srcStack->addWidget(m_paramTable);
 
     m_msgTable = new QTableWidget(0, 4, m_srcStack);
@@ -444,6 +471,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     m_msgTable->setColumnWidth(2, 36);
     m_msgTable->setColumnWidth(3, 64);
     m_msgTable->setShowGrid(false);
+    m_msgTable->setItemDelegate(new ThemeTableDelegate(0, m_msgTable));
     m_msgTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_msgTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_msgTable->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -1453,7 +1481,7 @@ void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &chan
             if (!derivedGroup)
             {
                 derivedGroup = new QTreeWidgetItem(m_srcTree, {QStringLiteral("派生通道")});
-                derivedGroup->setForeground(0, QColor(QStringLiteral("#f2b134")));
+                derivedGroup->setForeground(0, ThemeManager::color(QStringLiteral("accent")));
             }
             auto *item = new QTreeWidgetItem(derivedGroup, {name.mid(name.lastIndexOf(QLatin1Char('.')) + 1)});
             item->setToolTip(0, name);
@@ -1509,8 +1537,6 @@ void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &chan
         auto *v = new QTableWidgetItem(params[i].second);
         k->setFlags(Qt::ItemIsEnabled);
         v->setFlags(Qt::ItemIsEnabled);
-        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
-        v->setForeground(QColor(QStringLiteral("#d5dde5")));
         m_paramTable->setItem(i, 0, k);
         m_paramTable->setItem(i, 1, v);
     }
@@ -1521,8 +1547,6 @@ void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &chan
         auto *v = new QTableWidgetItem(QStringLiteral("%1 未提供参数表（仅 ULog 带 P/Q 参数消息）").arg(fmt));
         k->setFlags(Qt::ItemIsEnabled);
         v->setFlags(Qt::ItemIsEnabled);
-        k->setForeground(QColor(QStringLiteral("#9aa7b2")));
-        v->setForeground(QColor(QStringLiteral("#d5dde5")));
         m_paramTable->setItem(0, 0, k);
         m_paramTable->setItem(0, 1, v);
     }
@@ -1534,8 +1558,7 @@ void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &chan
         {
             auto *mi = new QTableWidgetItem(msgs[i].value(c));
             mi->setFlags(Qt::ItemIsEnabled);
-            mi->setForeground(QColor(c == 0 ? QStringLiteral("#d5dde5") : QStringLiteral("#9aa7b2")));
-            if (c > 0)
+                if (c > 0)
                 mi->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
             m_msgTable->setItem(i, c, mi);
         }
@@ -1547,8 +1570,7 @@ void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &chan
         {
             auto *mi = new QTableWidgetItem(QStringLiteral("—"));
             mi->setFlags(Qt::ItemIsEnabled);
-            mi->setForeground(QColor(c == 0 ? QStringLiteral("#d5dde5") : QStringLiteral("#9aa7b2")));
-            if (c > 0)
+                if (c > 0)
                 mi->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
             m_msgTable->setItem(0, c, mi);
         }
@@ -1725,7 +1747,7 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
         if (!sp->params.isEmpty())
         {
             auto *pg = new QTreeWidgetItem(panel, {QStringLiteral("参数 %1").arg(sp->params.size())});
-            pg->setForeground(0, QColor(QStringLiteral("#6e7d88")));
+            pg->setForeground(0, ThemeManager::color(QStringLiteral("textDim")));
             for (const auto &pr : sp->params)
             {
                 auto *item = new QTreeWidgetItem(pg, {QStringLiteral("%1 = %2").arg(pr.first, pr.second)});
@@ -1740,7 +1762,7 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
                 ? QStringLiteral("消息 %1").arg(sp->msgs.size())
                 : QStringLiteral("话题 %1").arg(sp->msgs.size());
             auto *mg = new QTreeWidgetItem(panel, {groupTitle});
-            mg->setForeground(0, QColor(QStringLiteral("#6e7d88")));
+            mg->setForeground(0, ThemeManager::color(QStringLiteral("textDim")));
             for (const QStringList &m : sp->msgs)
             {
                 bool ok = false;
@@ -1781,7 +1803,7 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
                 if (it == groups.end())
                 {
                     auto *g = new QTreeWidgetItem(panel, {group});
-                    g->setForeground(0, QColor(QStringLiteral("#6e7d88")));
+                    g->setForeground(0, ThemeManager::color(QStringLiteral("textDim")));
                     it = groups.insert(group, g);
                 }
                 parent = it.value();

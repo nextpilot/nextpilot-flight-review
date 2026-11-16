@@ -41,6 +41,7 @@
     <file alias="ruler.svg">icons/ruler.svg</file>
     <file alias="screenshot.svg">icons/screenshot.svg</file>
     <file alias="script.svg">icons/script.svg</file>
+    <file alias="search.svg">icons/search.svg</file>
     <file alias="settings.svg">icons/settings.svg</file>
     <file alias="trash.svg">icons/trash.svg</file>
     <file alias="validate.svg">icons/validate.svg</file>

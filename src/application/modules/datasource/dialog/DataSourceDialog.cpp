@@ -388,7 +388,7 @@ void DataSourceDialog::initUi()
     parserBoxLayout->setSpacing(6);
 
     m_parserTitle = new QLabel(QStringLiteral("解析协议"));
-    m_parserTitle->setStyleSheet(QStringLiteral("color:#8b949e;padding-left:8px;"));
+    m_parserTitle->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral("color:#8b949e;padding-left:8px;")));
     parserBoxLayout->addWidget(m_parserTitle);
 
     m_parserList = new QListWidget;
@@ -432,7 +432,7 @@ void DataSourceDialog::initUi()
     updateParserVisibility();
 
     m_summary = new QLabel;
-    m_summary->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:11.5px;"));
+    m_summary->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral("color:#c9d1d9;font-size:11.5px;")));
     root->addWidget(m_summary);
 
     m_preview = new QTableWidget;
