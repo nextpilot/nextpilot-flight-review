@@ -631,7 +631,7 @@ bool parseGeneric(OemState *st, const QString &logName, const QStringList &head,
 }
 
 // 参考 NovAtel EDIE 的 OEM7 ASCII header：日志名+端口+序号+...; 身体字段以逗号分隔。
-// 这里只抽取调试/分析最常用的位置、速度、姿态字段，原始行通过 event 交给宿主。
+// 字段名和值全部来自 database.json，不在代码里按日志名分支。
 void parseNovatelLine(OemState *st, const QString &line)
 {
     const int semi = line.indexOf(QLatin1Char(';'));
@@ -655,72 +655,13 @@ void parseNovatelLine(OemState *st, const QString &line)
     if (st->dbLoaded && parseGeneric(st, name, head, body, t))
         return;
 
-    if (name == QStringLiteral("BESTPOS") && body.size() >= 6)
-    {
-        double lat = 0, lon = 0, hgt = 0, und = 0;
-        if (parseDouble(body.at(2), &lat) && parseDouble(body.at(3), &lon))
-        {
-            addSample(st, QStringLiteral("oem7.bestpos.lat"), QStringLiteral("deg"), t, lat);
-            addSample(st, QStringLiteral("oem7.bestpos.lon"), QStringLiteral("deg"), t, lon);
-            if (parseDouble(body.at(4), &hgt))
-                addSample(st, QStringLiteral("oem7.bestpos.height"), QStringLiteral("m"), t, hgt);
-            if (parseDouble(body.at(5), &und))
-                addSample(st, QStringLiteral("oem7.bestpos.undulation"), QStringLiteral("m"), t, und);
-        }
-    }
-    else if (name == QStringLiteral("INSPVA") && body.size() >= 11)
-    {
-        double v = 0;
-        if (parseDouble(body.at(2), &v)) addSample(st, QStringLiteral("oem7.inspva.lat"), QStringLiteral("deg"), t, v);
-        if (parseDouble(body.at(3), &v)) addSample(st, QStringLiteral("oem7.inspva.lon"), QStringLiteral("deg"), t, v);
-        if (parseDouble(body.at(4), &v)) addSample(st, QStringLiteral("oem7.inspva.height"), QStringLiteral("m"), t, v);
-        if (parseDouble(body.at(9), &v)) addSample(st, QStringLiteral("oem7.inspva.roll"), QStringLiteral("deg"), t, v);
-        if (parseDouble(body.at(10), &v)) addSample(st, QStringLiteral("oem7.inspva.pitch"), QStringLiteral("deg"), t, v);
-        if (body.size() > 11 && parseDouble(body.at(11), &v)) addSample(st, QStringLiteral("oem7.inspva.azimuth"), QStringLiteral("deg"), t, v);
-    }
-    else if (name == QStringLiteral("BESTATT") && body.size() >= 6)
-    {
-        double v = 0;
-        if (parseDouble(body.at(2), &v)) addSample(st, QStringLiteral("oem7.bestatt.roll"), QStringLiteral("deg"), t, v);
-        if (parseDouble(body.at(3), &v)) addSample(st, QStringLiteral("oem7.bestatt.pitch"), QStringLiteral("deg"), t, v);
-        if (parseDouble(body.at(4), &v)) addSample(st, QStringLiteral("oem7.bestatt.yaw"), QStringLiteral("deg"), t, v);
-    }
-    else if (name == QStringLiteral("BESTVEL") && body.size() >= 4)
-    {
-        double v = 0;
-        if (parseDouble(body.at(2), &v)) addSample(st, QStringLiteral("oem7.bestvel.hor_speed"), QStringLiteral("m/s"), t, v);
-        if (parseDouble(body.at(3), &v)) addSample(st, QStringLiteral("oem7.bestvel.ver_speed"), QStringLiteral("m/s"), t, v);
-    }
-    else if (st->sink.event && st->sink.ctx)
+    if (st->sink.event && st->sink.ctx)
     {
         const QByteArray payload = QJsonDocument(QJsonObject{{QStringLiteral("log"), name},
                                                              {QStringLiteral("line"), line}})
                                        .toJson(QJsonDocument::Compact);
         st->sink.event(st->sink.ctx, "oem7.raw", payload.constData());
         ++st->events;
-    }
-}
-
-void parseNmeaLine(OemState *st, const QString &line)
-{
-    const int star = line.indexOf(QLatin1Char('*'));
-    const QString core = star >= 0 ? line.left(star) : line;
-    const QStringList f = core.split(QLatin1Char(','));
-    if (f.size() < 3)
-        return;
-    const double t = nowSeconds(st);
-    if (f.at(0).endsWith(QStringLiteral("GGA")) && f.size() >= 10)
-    {
-        double lat = 0, lon = 0, alt = 0;
-        bool ok = false;
-        lat = f.at(2).toDouble(&ok);
-        if (ok && f.at(3) == QStringLiteral("S")) lat = -lat;
-        lon = f.at(4).toDouble(&ok);
-        if (ok && f.at(5) == QStringLiteral("W")) lon = -lon;
-        if (lat != 0) addSample(st, QStringLiteral("oem7.nmea.lat"), QStringLiteral("deg"), t, lat);
-        if (lon != 0) addSample(st, QStringLiteral("oem7.nmea.lon"), QStringLiteral("deg"), t, lon);
-        if (parseDouble(f.at(9), &alt)) addSample(st, QStringLiteral("oem7.nmea.alt"), QStringLiteral("m"), t, alt);
-        if (parseDouble(f.at(7), &alt)) addSample(st, QStringLiteral("oem7.nmea.sats"), QStringLiteral("count"), t, alt);
     }
 }
 
@@ -743,8 +684,6 @@ void parseLines(OemState *st)
         st->lastRx = line.left(240);
         if (line.startsWith(QLatin1Char('#')) || line.startsWith(QLatin1Char('<')))
             parseNovatelLine(st, line);
-        else if (line.startsWith(QLatin1Char('$')))
-            parseNmeaLine(st, line);
         else if (st->sink.event)
         {
             const QByteArray payload = QJsonDocument(QJsonObject{{QStringLiteral("line"), line}})

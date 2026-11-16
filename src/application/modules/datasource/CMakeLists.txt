@@ -1,9 +1,24 @@
+add_library(ps_datasource_protocol STATIC
+  parser/MessageParserRegistry.cpp
+  parser/ProtocolCatalog.cpp
+  parser/FrameDecoder.cpp
+)
+target_include_directories(ps_datasource_protocol PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/datasource
+)
+target_link_libraries(ps_datasource_protocol PUBLIC Qt6::Core)
+
 add_library(ps_application_datasource OBJECT
   include/datasource/DataSourceModule.h
   include/datasource/SourceModel.h
   include/datasource/DataSourceEntry.h
   include/datasource/DataSourceRegistry.h
   include/datasource/TransformDialogInterface.h
+  include/datasource/IMessageParser.h
+  include/datasource/MessageParserSpec.h
+  include/datasource/MessageParserRegistry.h
+  include/datasource/DecodedFrame.h
   manager/DataSourceRegistry.cpp
   manager/DataSourceModule.cpp
   manager/DataSourceSession.h
@@ -29,4 +44,4 @@ target_include_directories(ps_application_datasource PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/services/cache
   ${PROJECT_SOURCE_DIR}/src/application/shell
 )
-target_link_libraries(ps_application_datasource PUBLIC ps_host ps_live ps_cache Qt6::Widgets SARibbonBar::SARibbonBar)
+target_link_libraries(ps_application_datasource PUBLIC ps_datasource_protocol ps_host ps_live ps_cache Qt6::Widgets SARibbonBar::SARibbonBar)

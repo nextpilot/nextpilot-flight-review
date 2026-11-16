@@ -94,6 +94,34 @@ if(TARGET ps_gnss)
   target_compile_definitions(test_oem7_source PRIVATE
     TEST_OEM7_DB="${CMAKE_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json")
   add_test(NAME oem7_source COMMAND test_oem7_source)
+
+  add_executable(test_nmea_message_parser unit/test_nmea_message_parser.cpp)
+  target_include_directories(test_nmea_message_parser PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss)
+  target_link_libraries(test_nmea_message_parser PRIVATE ps_gnss Qt6::Core)
+  add_test(NAME nmea_message_parser COMMAND test_nmea_message_parser)
+
+  add_executable(test_ubx_message_parser unit/test_ubx_message_parser.cpp)
+  target_include_directories(test_ubx_message_parser PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss)
+  target_link_libraries(test_ubx_message_parser PRIVATE ps_gnss Qt6::Core)
+  add_test(NAME ubx_message_parser COMMAND test_ubx_message_parser)
+
+  add_executable(test_oem7_message_parser unit/test_oem7_message_parser.cpp)
+  target_include_directories(test_oem7_message_parser PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss)
+  target_link_libraries(test_oem7_message_parser PRIVATE ps_gnss Qt6::Core)
+  target_compile_definitions(test_oem7_message_parser PRIVATE
+    TEST_OEM7_DB="${CMAKE_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json")
+  add_test(NAME oem7_message_parser COMMAND test_oem7_message_parser)
+
+  add_executable(test_frame_decoder unit/test_frame_decoder.cpp)
+  target_include_directories(test_frame_decoder PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss)
+  target_link_libraries(test_frame_decoder PRIVATE ps_gnss Qt6::Core)
+  target_compile_definitions(test_frame_decoder PRIVATE
+    TEST_OEM7_DB="${CMAKE_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json")
+  add_test(NAME frame_decoder COMMAND test_frame_decoder)
 endif()
 
 if(TARGET ps_data_source_sim)
@@ -251,6 +279,10 @@ target_link_libraries(test_settings_manager PRIVATE Qt6::Widgets)
 set_target_properties(test_settings_manager PROPERTIES AUTOMOC ON)
 add_test(NAME settings_manager COMMAND test_settings_manager)
 set_tests_properties(settings_manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(test_message_parser_registry unit/test_message_parser_registry.cpp)
+target_link_libraries(test_message_parser_registry PRIVATE ps_datasource_protocol Qt6::Core)
+add_test(NAME message_parser_registry COMMAND test_message_parser_registry)
 
 if(TARGET ps_application_shell AND TARGET ps_application_plotting AND TARGET ps_application_datasource)
   add_executable(test_layout_restore unit/test_layout_restore.cpp)

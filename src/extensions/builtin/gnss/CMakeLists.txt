@@ -4,6 +4,9 @@ find_package(Qt6 REQUIRED COMPONENTS Network)
 add_library(ps_gnss STATIC
   NmeaDataLoader.cpp
   UbxDataLoader.cpp
+  NmeaMessageParser.cpp
+  UbxMessageParser.cpp
+  Oem7MessageParser.cpp
   Oem7Source.cpp
 )
 set_target_properties(ps_gnss PROPERTIES AUTOMOC ON)
@@ -18,6 +21,7 @@ target_link_libraries(ps_gnss PUBLIC
   Qt6::Network
   ps_loader_common
   ps_live
+  ps_datasource_protocol
 )
 
 # 组件注册对象：OBJECT 库保证静态初始化一定进入宿主
