@@ -12,6 +12,7 @@ using ps::components::HostContext;
 #include <QLabel>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QDesktopServices>
@@ -294,6 +295,80 @@ void report(MainWindow *mw)
                              QStringLiteral("报告已生成：\n%1").arg(filePath));
 }
 
+QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo *> &channels)
+{
+    auto *table = new QTableWidget(parent);
+    table->setColumnCount(7);
+    table->setHorizontalHeaderLabels({QStringLiteral("通道"), QStringLiteral("单位"),
+                                      QStringLiteral("点数"), QStringLiteral("最小"),
+                                      QStringLiteral("最大"), QStringLiteral("均值"),
+                                      QStringLiteral("末值")});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->verticalHeader()->setVisible(false);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setAlternatingRowColors(true);
+    table->setRowCount(static_cast<int>(channels.size()));
+
+    for (int row = 0; row < channels.size(); ++row)
+    {
+        const PsChannelInfo *channel = channels[row];
+        const QString name = QString::fromUtf8(channel->name);
+        const QString unit = channel->unit ? QString::fromUtf8(channel->unit) : QString();
+        double min = 0.0;
+        double max = 0.0;
+        double mean = 0.0;
+        double last = 0.0;
+        uint32_t valid = 0;
+        double sum = 0.0;
+        if (channel->point_count > 0)
+        {
+            min = std::numeric_limits<double>::infinity();
+            max = -std::numeric_limits<double>::infinity();
+            for (uint32_t i = 0; i < channel->point_count; ++i)
+            {
+                const double value = channel->value[i];
+                if (!std::isfinite(value))
+                    continue;
+                min = std::min(min, value);
+                max = std::max(max, value);
+                sum += value;
+                ++valid;
+            }
+            last = channel->value[channel->point_count - 1];
+            mean = valid ? sum / valid : 0.0;
+            if (valid == 0)
+                min = max = 0.0;
+        }
+        const QStringList cells = {
+            name, unit, QString::number(channel->point_count),
+            QString::number(min, 'g', 7), QString::number(max, 'g', 7),
+            QString::number(mean, 'g', 7), QString::number(last, 'g', 7)};
+        for (int col = 0; col < cells.size(); ++col)
+            table->setItem(row, col, new QTableWidgetItem(cells[col]));
+    }
+    return table;
+}
+
+QWidget *makeSectionPage(QWidget *parent, const QVector<const PsChannelInfo *> &channels,
+                         const QString &emptyText)
+{
+    auto *page = new QWidget(parent);
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    if (channels.isEmpty())
+    {
+        auto *empty = new QLabel(emptyText, page);
+        empty->setAlignment(Qt::AlignCenter);
+        layout->addWidget(empty);
+    }
+    else
+    {
+        layout->addWidget(makeStatsTable(page, channels));
+    }
+    return page;
+}
+
 QWidget *buildFlightReviewApp(QWidget *parent, const QString &path)
 {
     auto *mw = qobject_cast<MainWindow *>(parent ? parent->window() : nullptr);
@@ -346,61 +421,42 @@ QWidget *buildFlightReviewApp(QWidget *parent, const QString &path)
     summary->setWordWrap(true);
     layout->addWidget(summary);
 
-    auto *table = new QTableWidget(root);
-    table->setColumnCount(7);
-    table->setHorizontalHeaderLabels({QStringLiteral("通道"), QStringLiteral("单位"),
-                                      QStringLiteral("点数"), QStringLiteral("最小"),
-                                      QStringLiteral("最大"), QStringLiteral("均值"),
-                                      QStringLiteral("末值")});
-    table->horizontalHeader()->setStretchLastSection(true);
-    table->verticalHeader()->setVisible(false);
-    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    table->setAlternatingRowColors(true);
-
-    QVector<const PsChannelInfo *> sorted;
+    QVector<const PsChannelInfo *> channels;
     for (const PsChannelInfo *channel : view.channels)
         if (channel && channel->name)
-            sorted.append(channel);
-    table->setRowCount(sorted.size());
-    for (int row = 0; row < sorted.size(); ++row)
+            channels.append(channel);
+
+    auto *tabs = new QTabWidget(root);
+    layout->addWidget(tabs, 1);
+    tabs->addTab(makeSectionPage(tabs, channels, QStringLiteral("没有通道")),
+                 QStringLiteral("概览"));
+
+    struct Section
     {
-        const PsChannelInfo *channel = sorted[row];
-        const QString name = QString::fromUtf8(channel->name);
-        const QString unit = channel->unit ? QString::fromUtf8(channel->unit) : QString();
-        double min = 0.0;
-        double max = 0.0;
-        double mean = 0.0;
-        double last = 0.0;
-        uint32_t valid = 0;
-        double sum = 0.0;
-        if (channel->point_count > 0)
+        const char *title;
+        QStringList tokens;
+    };
+    const Section sections[] = {
+        {"姿态", {"attitude", "roll", "pitch", "yaw"}},
+        {"位置", {"position", "local_position", "global_position", "alt", "vx", "vy", "vz",
+                  "lat", "lon"}},
+        {"电源", {"battery", "power", "voltage", "current", "remaining"}},
+        {"GPS", {"gps", "sat", "eph", "epv", "hdop", "fix", "nsat"}},
+    };
+    for (const Section &section : sections)
+    {
+        QVector<const PsChannelInfo *> selected;
+        for (const PsChannelInfo *channel : channels)
         {
-            min = std::numeric_limits<double>::infinity();
-            max = -std::numeric_limits<double>::infinity();
-            for (uint32_t i = 0; i < channel->point_count; ++i)
-            {
-                const double value = channel->value[i];
-                if (!std::isfinite(value))
-                    continue;
-                min = std::min(min, value);
-                max = std::max(max, value);
-                sum += value;
-                ++valid;
-            }
-            last = channel->value[channel->point_count - 1];
-            mean = valid ? sum / valid : 0.0;
-            if (valid == 0)
-                min = max = 0.0;
+            const QString name = QString::fromUtf8(channel->name);
+            if (anyToken(name, section.tokens))
+                selected.append(channel);
         }
-        const QStringList cells = {
-            name, unit, QString::number(channel->point_count),
-            QString::number(min, 'g', 7), QString::number(max, 'g', 7),
-            QString::number(mean, 'g', 7), QString::number(last, 'g', 7)};
-        for (int col = 0; col < cells.size(); ++col)
-            table->setItem(row, col, new QTableWidgetItem(cells[col]));
+        tabs->addTab(makeSectionPage(tabs, selected,
+                                     QStringLiteral("没有匹配的“%1”通道")
+                                         .arg(QString::fromUtf8(section.title))),
+                     QString::fromUtf8(section.title));
     }
-    layout->addWidget(table, 1);
 
     auto *buttons = new QHBoxLayout();
     auto *curves = new QPushButton(QStringLiteral("创建默认曲线"), root);
