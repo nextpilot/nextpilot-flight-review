@@ -338,19 +338,49 @@ void PlottingSession::removeCanvas(PlottingCanvas *c)
         restoreCanvasMaximize();
     if (!c)
         return;
-    if (auto *sp = qobject_cast<QSplitter *>(c->parentWidget()))
+
+    QWidget *page = pageForCanvas(c);
+    if (!page)
+        return;
+    // 判据是「整页剩余画布 ≥1」，不是「所在 splitter 还有别的子项」：
+    // 网格布局最后一行只有一个画布时，它的父行 splitter 只有它，但它仍然该能删
+    if (PlottingLayout::collectCanvases(page).size() <= 1)
     {
-        if (sp->count() <= 1)
-        {
-            log(QStringLiteral("页内至少保留一个画布"));
-            return;
-        }
-        c->deleteLater();
-        log(QStringLiteral("删除画布"));
-        refreshPropTree(currentCanvas());
+        log(QStringLiteral("页内至少保留一个画布"));
         return;
     }
-    log(QStringLiteral("页内至少保留一个画布"));
+
+    QWidget *holder = c->parentWidget();
+    if (auto *layout = dynamic_cast<PlottingLayout *>(page))
+    {
+        layout->removeCanvas(c);
+    }
+    else if (qobject_cast<QSplitter *>(holder))
+    {
+        // deleteLater 之前必须先脱开父级，QSplitter::count() 才会立刻反映删除
+        c->setParent(nullptr);
+    }
+    else
+    {
+        log(QStringLiteral("该画布不在可编辑的布局内"));
+        return;
+    }
+
+    // 自下而上收掉变空的 splitter，否则页面会留下空白行/空白列
+    while (holder && holder != page)
+    {
+        QSplitter *sp = qobject_cast<QSplitter *>(holder);
+        if (!sp || sp->count() > 0)
+            break;
+        QWidget *parentOfHolder = sp->parentWidget();
+        sp->setParent(nullptr);
+        sp->deleteLater();
+        holder = parentOfHolder;
+    }
+
+    c->deleteLater();
+    log(QStringLiteral("删除画布"));
+    refreshPropTree(currentCanvas());
 }
 
 QWidget *PlottingSession::buildPage(const QJsonObject &o)

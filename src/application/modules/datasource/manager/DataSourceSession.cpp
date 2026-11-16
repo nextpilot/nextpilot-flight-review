@@ -2,6 +2,7 @@
 #include "DataSourceSession.h"
 #include "ModuleBridge.h"
 #include "MainWindow.h"
+#include "ThemeManager.h"
 #include "DataSourceDock.h"
 #include "ps_kernel.h"
 #include "DataSourceEntry.h"
@@ -164,11 +165,13 @@ QDockWidget *DataSourceSession::createDataSourceDock(QWidget *parent, const QStr
     dockMenuBtn->setText(QStringLiteral("▾"));
     dockMenuBtn->setToolTip(QStringLiteral("最大化 / 最小化 / 浮动 / 关闭"));
     dockMenuBtn->setCursor(Qt::PointingHandCursor);
-    dockMenuBtn->setFixedSize(30, 26);
-    dockMenuBtn->setStyleSheet(QStringLiteral(
-        "QToolButton{background:#1b232b;border:1px solid #2d3841;border-radius:2px;color:#c9d1d9;"
-        "padding:0 0 2px 0;font-size:15px;font-weight:600;}"
-        "QToolButton:hover{background:#222b33;border-color:#f2b134;color:#f2b134;}"));
+    dockMenuBtn->setFocusPolicy(Qt::NoFocus);
+    dockMenuBtn->setFixedSize(22, 22);
+    // 不设 popupMode / setMenu：QToolButton 有菜单时会额外画一个菜单三角，标题栏就会变成两个三角
+    dockMenuBtn->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
+        "QToolButton{background:transparent;border:0;color:#8494a0;padding:0 0 2px 0;"
+        "font-size:15px;font-weight:600;}"
+        "QToolButton:hover{background:#1b232b;border-radius:2px;color:#f2b134;}")));
     auto *dockMenu = new QMenu(dockMenuBtn);
     QAction *maxDock = dockMenu->addAction(QStringLiteral("最大化 / 还原"));
     QAction *toLeft = dockMenu->addAction(QStringLiteral("停靠到左侧"));
@@ -194,7 +197,6 @@ QDockWidget *DataSourceSession::createDataSourceDock(QWidget *parent, const QStr
         m_mw->docks().restoreMax();
         srcDock->close();
     });
-    dockMenuBtn->setPopupMode(QToolButton::InstantPopup);
     QObject::connect(dockMenuBtn, &QToolButton::clicked, dockMenuBtn, [this, dockMenu, dockMenuBtn] {
         m_mw->docks().showMenu(dockMenuBtn, dockMenu);
     });

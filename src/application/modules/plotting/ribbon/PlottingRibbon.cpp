@@ -2,18 +2,17 @@
 #include "MainWindow.h"
 #include "ThemeManager.h"
 #include <QAction>
+#include <QFrame>
 #include <QGridLayout>
 #include <QHash>
 #include <QIcon>
 #include <QLabel>
-#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
 #include <QToolButton>
 #include <QVBoxLayout>
-#include <QWidgetAction>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -293,33 +292,84 @@ private:
 };
 
 
+// 行×列缩略图：线框 + 分隔线，和 ribbon 其他线性图标风格一致
+QPixmap layoutThumb(int rows, int cols)
+{
+    QPixmap pm(32, 32);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, false);
+    const QColor line = ThemeManager::adaptColor(QColor("#f2b134"));
+    const QRectF area(3.5, 5.5, 25, 21);
+    p.setPen(QPen(line, 1.2));
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(area);
+    p.setPen(QPen(line, 1.0));
+    for (int r = 1; r < rows; ++r)
+    {
+        const qreal y = area.top() + area.height() * r / rows;
+        p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y));
+    }
+    for (int c = 1; c < cols; ++c)
+    {
+        const qreal x = area.left() + area.width() * c / cols;
+        p.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()));
+    }
+    return pm;
+}
+
+// 布局选择弹层：独立 QFrame(Popup)。不再走 QToolButton::setMenu，
+// 按钮上就不会再被 Qt 画出第二个菜单箭头
+class LayoutPopup : public QFrame
+{
+public:
+    explicit LayoutPopup(QWidget *parent) : QFrame(parent, Qt::Popup)
+    {
+        setObjectName(QStringLiteral("layoutPopup"));
+        setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
+            "QFrame#layoutPopup{background:#1b232b;border:1px solid #3a4650;}")));
+        auto *lay = new QVBoxLayout(this);
+        lay->setContentsMargins(6, 6, 6, 6);
+        m_pick = new LayoutPickGrid(this);
+        lay->addWidget(m_pick);
+    }
+    LayoutPickGrid *pick() const { return m_pick; }
+
+private:
+    LayoutPickGrid *m_pick = nullptr;
+};
+
 void buildLayoutPicker(QWidget *p)
 {
     auto *panel = static_cast<SARibbonPanel *>(p);
     auto *mw = qobject_cast<MainWindow *>(panel->window());
     if (!mw)
         return;
-    auto *layoutBtn = new QToolButton(panel);
-    layoutBtn->setText(QStringLiteral("2×1  ▾"));
-    layoutBtn->setToolTip(QStringLiteral("悬停选择行×列，点击重排当前页画布"));
-    layoutBtn->setPopupMode(QToolButton::InstantPopup);
-    layoutBtn->setCursor(Qt::PointingHandCursor);
-    layoutBtn->setStyleSheet(QStringLiteral(
-        "QToolButton{background:#1b232b;border:1px solid #2d3841;color:#c9d1d9;font-size:11px;padding:4px 8px;}"
-        "QToolButton:hover{border-color:#f2b134;color:#f2b134;}"));
-    auto *layoutMenu = new QMenu(layoutBtn);
-    auto *pick = new LayoutPickGrid(layoutMenu);
-    auto *wa = new QWidgetAction(layoutMenu);
-    wa->setDefaultWidget(pick);
-    layoutMenu->addAction(wa);
-    layoutBtn->setMenu(layoutMenu);
-    pick->onPick = [mw, layoutBtn, layoutMenu](int r, int c) {
-        layoutBtn->setText(QStringLiteral("%1×%2  ▾").arg(r).arg(c));
+
+    // 用 ribbon 原生大按钮：尺寸由 SARibbonPanel 统一分配，不会压到面板分组标题
+    auto *act = new QAction(layoutThumb(2, 1), QStringLiteral("2×1"), panel);
+    act->setToolTip(QStringLiteral("点击选择行×列，重排当前页画布"));
+    panel->addLargeAction(act);
+
+    auto *popup = new LayoutPopup(mw);
+    popup->pick()->onPick = [mw, act, popup](int r, int c) {
+        act->setIcon(layoutThumb(r, c));
+        act->setText(QStringLiteral("%1×%2").arg(r).arg(c));
         mw->commands().invoke(QStringLiteral("page.grid"),
                               ps::commands::CommandContext{mw, QStringLiteral("%1,%2").arg(r).arg(c)});
-        layoutMenu->close();
+        popup->hide();
     };
-    panel->addWidget(layoutBtn, SARibbonPanelItem::Large);
+    QObject::connect(act, &QAction::triggered, mw, [mw, panel, popup] {
+        popup->adjustSize();
+        const QRect avail = mw->screen()->availableGeometry();
+        const QPoint anchor = panel->mapToGlobal(QPoint(0, panel->height()));
+        int x = qBound(avail.left() + 8, anchor.x(), avail.right() - popup->width() - 8);
+        int y = anchor.y() + 6;
+        if (y + popup->height() > avail.bottom())
+            y = anchor.y() - popup->height() - 6;
+        popup->move(x, y);
+        popup->show();
+    });
 }
 
 void buildPlotGallery(QWidget *p)
@@ -329,8 +379,10 @@ void buildPlotGallery(QWidget *p)
     if (!mw)
         return;
     auto *ribbon = panel->ribbonBar();
-    auto addSmall = [](SARibbonPanel *pn, const QString &text, std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(QIcon(QStringLiteral(":/icons/arrow_more.svg")), text, ctx);
+    auto addSmall = [](SARibbonPanel *pn, const QString &icon, const QString &text,
+                       std::function<void()> fn, QObject *ctx) {
+        auto *a = new QAction(icon.isEmpty() ? QIcon() : QIcon(QStringLiteral(":/icons/%1.svg").arg(icon)),
+                              text, ctx);
         a->setToolTip(text);
         a->setProperty("rbIconOnly", true);
         QObject::connect(a, &QAction::triggered, ctx, fn);
@@ -393,8 +445,11 @@ void buildPlotGallery(QWidget *p)
     auto *gaugeGroup = plotGallery->addCategoryActions(QStringLiteral("仪表"), gaugeActs);
     stylePlotGroup(gaugeGroup);
     plotGallery->setSingleRowMode(true);
-    if (auto *more = plotGallery->findChild<QToolButton *>(QStringLiteral("SARibbonGalleryButtonMore")))
-        more->hide();
+    // 图库自带上/下翻页和“更多”几个小三角，和面板自己的下拉入口重复，
+    // 全部隐藏，只留一个入口，避免出现并排两个三角
+    for (auto *b : plotGallery->findChildren<QToolButton *>())
+        if (b->objectName().startsWith(QLatin1String("SARibbonGalleryButton")))
+            b->hide();
     plotGallery->setMinimumWidth(330);
     plotGallery->setMaximumWidth(370);
     plotGallery->setCurrentViewGroup(commonGroup);
@@ -407,7 +462,9 @@ void buildPlotGallery(QWidget *p)
     plotMenu->addGroup(QStringLiteral("曲线"), curveActs);
     plotMenu->addGroup(QStringLiteral("地图 / 3D"), mapActs);
     plotMenu->addGroup(QStringLiteral("仪表"), gaugeActs);
-    addSmall(panel, QStringLiteral("▾"), [mw, ribbon, plotGallery, plotMenu] {
+    // 下拉入口用纯文字“▾”，和数据源标题栏 / CSV 下拉保持同一种三角；
+    // 不要再给这个 action 配箭头图标，否则图标+文字会并排出现两个三角
+    addSmall(panel, QString(), QStringLiteral("▾"), [mw, ribbon, plotGallery, plotMenu] {
         plotMenu->adjustSize();
         const QPoint anchor = plotGallery->mapToGlobal(QPoint(0, 0));
         const int y = ribbon->mapToGlobal(QPoint(0, ribbon->height())).y() + 8;

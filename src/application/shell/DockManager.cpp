@@ -1,5 +1,6 @@
 #include "DockManager.h"
 #include "CommandManager.h"
+#include "ThemeManager.h"
 
 #include "Component.h"
 
@@ -342,11 +343,13 @@ void DockManager::darkenExisting()
         menuBtn->setText(QStringLiteral("▾"));
         menuBtn->setToolTip(QStringLiteral("最大化 / 最小化 / 浮动 / 关闭"));
         menuBtn->setCursor(Qt::PointingHandCursor);
-        menuBtn->setFixedSize(32, 26);
-        menuBtn->setStyleSheet(QStringLiteral(
-            "QToolButton{background:#1b232b;border:1px solid #2d3841;border-radius:2px;color:#c9d1d9;"
-            "padding:0;font-size:17px;font-weight:700;}"
-            "QToolButton:hover{border-color:#f2b134;color:#f2b134;background:#222b33;}"));
+        menuBtn->setFocusPolicy(Qt::NoFocus);
+        menuBtn->setFixedSize(22, 22);
+        // 不吃 setMenu（否则 Qt 会再画一个菜单三角），也不画方框，只留一个悬浮高亮
+        menuBtn->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
+            "QToolButton{background:transparent;border:0;color:#8494a0;padding:0 0 2px 0;"
+            "font-size:15px;font-weight:600;}"
+            "QToolButton:hover{background:#1b232b;border-radius:2px;color:#f2b134;}")));
         auto *menu = new QMenu(menuBtn);
         QAction *maximize = menu->addAction(QStringLiteral("最大化 / 还原"));
         QAction *left = menu->addAction(QStringLiteral("停靠到左侧"));
@@ -370,7 +373,6 @@ void DockManager::darkenExisting()
             restoreMax();
             dock->close();
         });
-        menuBtn->setMenu(menu);
         QObject::connect(menuBtn, &QToolButton::clicked, menuBtn, [menuBtn, menu] { showDockMenu(menuBtn, menu); });
         lay->addWidget(menuBtn);
         bar->setContextMenuPolicy(Qt::CustomContextMenu);
