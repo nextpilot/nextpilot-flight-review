@@ -568,10 +568,13 @@ void DataSourceSession::updateSourceMeta(QWidget *row, const QString &meta, cons
     if (!row)
         return;
     row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
+    row->setProperty("srcState", dotColor == QStringLiteral("#4a545d") ? QStringLiteral("off")
+                                   : dotColor == QStringLiteral("#39c5cf") ? QStringLiteral("live")
+                                                                           : QStringLiteral("ok"));
+    row->style()->unpolish(row);
+    row->style()->polish(row);
     if (auto *label = row->findChild<QLabel *>(QStringLiteral("srcMeta")))
         label->setText(meta);
-    if (auto *dot = row->findChild<QLabel *>(QStringLiteral("srcDot")))
-        dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
     refreshSrcCount();
 }
 

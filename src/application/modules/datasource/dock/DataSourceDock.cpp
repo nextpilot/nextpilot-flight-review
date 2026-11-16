@@ -41,7 +41,11 @@
 #include "ThemeManager.h"
 #include <QMenu>
 #include <QMimeData>
+#include <QProgressDialog>
+#include <QFutureWatcher>
 #include <QPushButton>
+#include <QStyle>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QScrollArea>
 #include "SettingsManager.h"
 #include <QShortcut>
@@ -654,16 +658,19 @@ void DataSourceDock::updateSourceMeta(QWidget *row, const QString &meta, const Q
     if (!row)
         return;
     row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
+    const QString state = dotColor == QStringLiteral("#4a545d") ? QStringLiteral("off")
+                        : dotColor == QStringLiteral("#39c5cf") ? QStringLiteral("live")
+                                                                 : QStringLiteral("loaded");
+    row->setProperty("srcState", state);
+    row->style()->unpolish(row);
+    row->style()->polish(row);
     if (auto *label = row->findChild<QLabel *>(QStringLiteral("srcMeta")))
         label->setText(meta);
-    if (auto *dot = row->findChild<QLabel *>(QStringLiteral("srcDot")))
-        dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
     refreshSrcCount();
 }
 
 bool DataSourceDock::loadFile(const QString &path, bool interactive)
 {
-    char err[256] = {0};
     PsDataset *ds = nullptr;
     const QFileInfo fi(path);
     // 加载器由 registry 提供：app 不再按扩展名写 if/else，也不再为每个格式写对话框
@@ -711,14 +718,38 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
     }
     else
     {
-        const int32_t rc = entry->load(path, opts, &ds, err, sizeof(err));
-        if (rc != 0)
+        // 解析放后台线程，主线程只跑不确定进度条；loader ABI 暂不回报百分比。
+        struct LoadOutcome { int rc = -1; PsDataset *ds = nullptr; QString err; };
+        auto job = [entry, path, opts]() {
+            LoadOutcome out;
+            char e[256] = {0};
+            out.rc = entry->load(path, opts, &out.ds, e, sizeof(e));
+            out.err = QString::fromUtf8(e);
+            return out;
+        };
+        QFutureWatcher<LoadOutcome> watcher;
+        QProgressDialog progress(QStringLiteral("正在解析 %1（%2 MB）…")
+                                     .arg(fi.fileName())
+                                     .arg(fi.size() / 1048576.0, 0, 'f', fi.size() >= 1048576 ? 1 : 0),
+                                 QString(), 0, 0, this);
+        progress.setMinimumWidth(420);
+        progress.setWindowTitle(QStringLiteral("加载数据源"));
+        progress.setWindowModality(Qt::ApplicationModal);
+        progress.setCancelButton(nullptr);
+        progress.setMinimumDuration(0);
+        connect(&watcher, &QFutureWatcher<LoadOutcome>::finished, &progress, &QProgressDialog::accept);
+        watcher.setFuture(QtConcurrent::run(job));
+        if (!watcher.isFinished())
+            progress.exec();
+        watcher.waitForFinished();
+        const LoadOutcome out = watcher.result();
+        if (out.rc != 0)
         {
-            const QString msg = QString::fromUtf8(err);
-            m_ctx.log(QStringLiteral("加载失败：%1").arg(msg));
-            QMessageBox::warning(this, QStringLiteral("加载失败"), msg);
+            m_ctx.log(QStringLiteral("加载失败：%1").arg(out.err));
+            QMessageBox::warning(this, QStringLiteral("加载失败"), out.err);
             return false;
         }
+        ds = out.ds;
         if (entry->cacheable)
             DatasetCache::save(path, entry->cacheNamespace, opts, ds);
     }
@@ -1581,6 +1612,10 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     row->setFixedHeight(40);
     row->setProperty("active", false);
     row->setProperty("connected", dotColor != QStringLiteral("#4a545d"));
+    const QString state = dotColor == QStringLiteral("#4a545d") ? QStringLiteral("off")
+                        : dotColor == QStringLiteral("#39c5cf") ? QStringLiteral("live")
+                                                                 : QStringLiteral("loaded");
+    row->setProperty("srcState", state);
     row->setProperty("srcRow", true);
     row->setProperty("backed", backed);
     row->setProperty("srcPath", path);
@@ -1590,6 +1625,9 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     m_ctx.installRowEventFilter(row);
     row->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QWidget{background:transparent;border-left:2px solid transparent;border-bottom:1px solid #171f26;}"
+        "QWidget[srcState=\"loaded\"]{background:rgba(126,231,135,0.10);}"
+        "QWidget[srcState=\"live\"]{background:rgba(57,197,207,0.14);}"
+        "QWidget[srcState=\"off\"]{background:rgba(110,125,136,0.14);}"
         "QWidget[active=true]{background:#1a2127;border-left-color:#f2b134;}"
         "QWidget:hover{background:#1d242a;}")));
     auto *lay = new QHBoxLayout(row);
@@ -1607,13 +1645,6 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
         "QToolButton{background:transparent;border:0;padding:0;}"
         "QToolButton:hover{background:#1b232a;border-radius:2px;}")));
     lay->addWidget(expander);
-
-    auto *dot = new QLabel(row);
-    dot->setObjectName(QStringLiteral("srcDot"));
-    dot->setAttribute(Qt::WA_TransparentForMouseEvents);
-    dot->setFixedSize(6, 6);
-    dot->setStyleSheet(QStringLiteral("background:%1;border-radius:3px;").arg(dotColor));
-    lay->addWidget(dot);
 
     auto *col = new QWidget(row);
     col->setAttribute(Qt::WA_TransparentForMouseEvents);

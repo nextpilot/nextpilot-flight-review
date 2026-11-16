@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Network)
+find_package(Qt6 REQUIRED COMPONENTS Network Concurrent)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
