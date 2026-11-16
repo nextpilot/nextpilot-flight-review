@@ -8,9 +8,11 @@
 #include <QString>
 #include <QVector>
 #include <QCursor>
+#include <QPoint>
 #include <QWidget>
 
 class QToolButton;
+class QKeyEvent;
 
 struct PsChannelInfo;
 
@@ -116,14 +118,16 @@ public:
 
 signals:
     void activated(const QString &title);
+    void seriesSelected(int index);
     void timeRangeChanged(double t0, double t1);   // 用户缩放/拖动 X 后发出，供同页画布联动
     void addRequested();                            // 右键“添加画布”
     void addChannelRequested();                     // 右键“添加曲线…”：由主窗选通道
     void removeRequested();                         // 右键“删除画布”
     void splitRequested(int orientation);           // 0=左右拆分 1=上下拆分
     void maximizeRequested();                       // 最大化 / 还原本画布
-    void markerRequested(double t);                 // 右键：在指针处添加时间标签
-    void markerRemoveRequested(double t);           // 右键：删除此处标签
+    void markerRequested(double t);                 // 右键：在指针处添加时间书签
+    void markerRemoveRequested(double t);           // 右键：删除此处书签
+    void markerMoveRequested(double from, double to); // 拖动书签后提交
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -132,6 +136,8 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
     void leaveEvent(QEvent *event) override;
     void enterEvent(QEnterEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -168,8 +174,25 @@ private:
         quint32 count() const { return t ? n : static_cast<quint32>(qMin(tOwn.size(), vOwn.size())); }
     };
 
+    enum AxisZone { NoAxis = 0, XAxis, YAxisLeft, YAxisRight };
+    enum RightHit { RightBlank = 0, RightLegend, RightSeries, RightMarker, RightAxis, RightAb };
     QRectF plotRect() const;
+    AxisZone axisZoneAt(const QPointF &pos) const;
+    double timeAtX(double x) const;
     int seriesAt(const QPointF &pos) const;
+    int markerAt(const QPointF &pos) const;
+    void jumpToBookmark(int index);
+    void selectBookmark(int index);
+    void clearBookmarkSelection();
+    void createMeasurementAt(double t);
+    void clearMeasurement();
+    void resetXAxis();
+    void resetYAxis();
+    void applyBoxZoom(const QRectF &r, AxisZone zone, const QPointF &start, const QPointF &end);
+    void showLegendMenu(int index, const QPoint &globalPos);
+    void showSeriesMenu(int index, const QPoint &globalPos);
+    void showCanvasMenu(double t, int markerIndex, AxisZone zone, const QPoint &globalPos);
+    void showAxisMenu(AxisZone zone, const QPoint &globalPos);
     double sampleAt(const Series &s, double displayT, bool *ok) const;          // 右键命中哪条曲线
     QString formatTime(double t) const;
     void resetView();
@@ -198,6 +221,7 @@ private:
     QVector<Series> m_series;
     QVector<QPair<double, QString>> m_timeMarkers;
     QVector<QPair<double, QRectF>> m_markerRects;
+    int m_selectedSeries = -1;
     double m_t0 = 0.0;
     double m_t1 = 30.0;
     double m_yMin = -1.6;
@@ -223,7 +247,7 @@ private:
     bool m_followLive = false;
     double m_liveWindow = 30.0;
     bool m_rubbering = false;
-    bool m_abEnabled = false;      // A/B 游标测量
+    bool m_abEnabled = false;      // A/B 游标测量：true=线可见且可编辑
     bool m_abHasA = false;
     bool m_abHasB = false;
     int m_abDrag = 0;              // 1=A 2=B，拖动游标
@@ -234,10 +258,27 @@ private:
     QCursor toolCursor() const;
     QPointF m_rubberStart;
     QRectF m_rubberRect;
+    AxisZone m_dragAxis = NoAxis;
     bool m_kernelBacked = false;
     PlotMode m_mode = TimeSeries;
     QString m_modeTag;
     bool m_dragging = false;
+    bool m_spacePan = false;
+    bool m_rightPressed = false;
+    bool m_rightBoxing = false;
+    bool m_rightCanBox = false;
+    QPointF m_rightStart;
+    QRectF m_rightRect;
+    RightHit m_rightHit = RightBlank;
+    int m_rightHitIndex = -1;
+    int m_rightMarkerIndex = -1;
+    AxisZone m_rightAxis = NoAxis;
+    int m_bookmarkDragIndex = -1;
+    double m_bookmarkDragFrom = 0.0;
+    bool m_bookmarkDragActive = false;
+    bool m_hasSelectedBookmark = false;
+    double m_selectedBookmarkTime = 0.0;
+    QPointF m_bookmarkDragStart;
     bool m_hover = false;
     QWidget *m_hoverBar = nullptr;
     QToolButton *m_dragBtn = nullptr;

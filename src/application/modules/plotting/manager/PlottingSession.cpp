@@ -127,10 +127,14 @@ void PlottingSession::createPages()
             });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasMaximizeRequested, this,
             [this](PlottingCanvas *c) { toggleCanvasMaximize(c); });
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::seriesSelected, this,
+            [this](PlottingCanvas *c, int index) { showSeriesProps(c, index); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRequested, this,
             [this](double t) { ps::bridge::addTimeMarker(m_mw, t, QString(), true); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRemoveRequested, this,
             [this](double t) { ps::bridge::removeTimeMarker(m_mw, t); });
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerMoveRequested, this,
+            [this](double from, double to) { ps::bridge::moveTimeMarker(m_mw, from, to); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasRemoveRequested, this,
             [this](PlottingCanvas *c) { removeCanvas(c); });
 

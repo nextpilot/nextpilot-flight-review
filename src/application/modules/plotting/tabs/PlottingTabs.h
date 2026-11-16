@@ -30,6 +30,7 @@ public:
 
 signals:
     void canvasActivated(PlottingCanvas *canvas);
+    void seriesSelected(PlottingCanvas *canvas, int index);
     void canvasAddRequested(PlottingCanvas *canvas);
     void canvasSplitRequested(PlottingCanvas *canvas, int orientation);
     void addChannelRequested(PlottingCanvas *canvas);
@@ -38,6 +39,7 @@ signals:
     void pageRenamed(int index, const QString &title);
     void markerRequested(double t);
     void markerRemoveRequested(double t);
+    void markerMoveRequested(double from, double to);
 
 private:
     PlottingCanvas *makeCanvas(const QString &title, QWidget *parent);

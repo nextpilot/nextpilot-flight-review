@@ -9,6 +9,7 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QApplication>
+#include <QKeyEvent>
 #include <QClipboard>
 #include <QFileDialog>
 #include <QMenu>
@@ -96,6 +97,7 @@ PlottingCanvas::PlottingCanvas(QWidget *parent)
     setMinimumSize(240, 140);
     setMouseTracking(true);
     setAcceptDrops(true);
+    setFocusPolicy(Qt::StrongFocus);
     m_title = QStringLiteral("未命名画布");
     m_kernelBacked = false;
     const auto &st = SettingsManager::instance();
@@ -1478,6 +1480,15 @@ void PlottingCanvas::clearPlayhead()
 void PlottingCanvas::setTimeMarkers(const QVector<QPair<double, QString>> &markers)
 {
     m_timeMarkers = markers;
+    if (m_hasSelectedBookmark)
+    {
+        bool found = false;
+        for (const auto &mk : m_timeMarkers)
+            if (qAbs(mk.first - m_selectedBookmarkTime) < 1e-6)
+                found = true;
+        if (!found)
+            m_hasSelectedBookmark = false;
+    }
     update();
 }
 
@@ -1721,7 +1732,8 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
             for (uint32_t i = 0; i < n; ++i)
                 poly.append(QPointF(toX(buf[i * 3] - s.offsetSec),
                                     toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0, s.axis)));
-            p.setPen(QPen(s.color, s.width, penStyleFor(s.lineStyle)));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
+            p.setPen(QPen(s.color, s.width + (si == m_selectedSeries ? 2 : 0),
+                          penStyleFor(s.lineStyle)));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
             p.drawPolyline(poly);
             if (s.marker > 0 && s.count() <= 4000)
             {
@@ -1992,7 +2004,7 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         }
     }
 
-    // 时间标签：所有页共用一组；视窗内画竖线+顶部标签，视窗外在左右边缘给最近标签提示。
+    // 时间书签：所有页共用一组；视窗内画竖线+顶部书签，视窗外在左右边缘给最近书签提示。
     m_markerRects.clear();
     if (!m_timeMarkers.isEmpty())
     {
@@ -2024,9 +2036,16 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
                 chip.moveLeft(x - 3 - tw);
             if (chip.left() < plot.left())
                 chip.moveLeft(plot.left() + 3);
-            p.setPen(QPen(ThemeManager::color(QStringLiteral("border")), 1));
-            p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 235));
+            const bool selected = m_hasSelectedBookmark
+                                  && qAbs(t - m_selectedBookmarkTime) < 1e-6;
+            p.setPen(QPen(ThemeManager::color(QStringLiteral("border")), selected ? 2 : 1));
+            p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), selected ? 255 : 235));
             p.drawRoundedRect(chip, 2, 2);
+            if (selected)
+            {
+                p.setPen(QPen(ThemeManager::color(QStringLiteral("accent")), 1));
+                p.drawRoundedRect(chip.adjusted(1, 1, -1, -1), 2, 2);
+            }
             p.setPen(ThemeManager::color(QStringLiteral("accent")));
             p.drawText(chip.adjusted(5, 0, -5, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
             m_markerRects.append({t, chip});
@@ -2055,6 +2074,14 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("accent"), 220), 1, Qt::DashLine));
         p.setBrush(ThemeManager::alphaColor(QStringLiteral("accent"), 40));
         p.drawRect(m_rubberRect);
+        p.setBrush(Qt::NoBrush);
+    }
+
+    if (m_rightBoxing && m_rightRect.isValid())
+    {
+        p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("accent"), 230), 1, Qt::DashLine));
+        p.setBrush(ThemeManager::alphaColor(QStringLiteral("accent"), 45));
+        p.drawRect(m_rightRect);
         p.setBrush(Qt::NoBrush);
     }
 }
@@ -2156,46 +2183,562 @@ int PlottingCanvas::seriesAt(const QPointF &pos) const
     return -1;
 }
 
+PlottingCanvas::AxisZone PlottingCanvas::axisZoneAt(const QPointF &pos) const
+{
+    const QRectF plot = plotRect();
+    if (plot.contains(pos))
+        return NoAxis;
+    if (pos.x() >= plot.left() && pos.x() <= plot.right()
+        && pos.y() > plot.bottom() && pos.y() <= rect().bottom() + 1)
+        return XAxis;
+    if (pos.y() >= plot.top() && pos.y() <= plot.bottom())
+    {
+        if (pos.x() >= rect().left() && pos.x() < plot.left())
+            return YAxisLeft;
+        if (hasRightAxis() && pos.x() > plot.right() && pos.x() <= rect().right())
+            return YAxisRight;
+    }
+    return NoAxis;
+}
+
+double PlottingCanvas::timeAtX(double x) const
+{
+    const QRectF plot = plotRect();
+    const double t = m_t0 + (m_t1 - m_t0) * (x - plot.left()) / qMax(1.0, plot.width());
+    return qBound(m_t0, t, m_t1);
+}
+
+int PlottingCanvas::markerAt(const QPointF &pos) const
+{
+    for (const auto &hit : m_markerRects)
+    {
+        if (!hit.second.contains(pos))
+            continue;
+        for (int i = 0; i < m_timeMarkers.size(); ++i)
+            if (qAbs(m_timeMarkers.at(i).first - hit.first) < 1e-6)
+                return i;
+    }
+    return -1;
+}
+
+void PlottingCanvas::selectBookmark(int index)
+{
+    if (index < 0 || index >= m_timeMarkers.size())
+        return;
+    m_hasSelectedBookmark = true;
+    m_selectedBookmarkTime = m_timeMarkers.at(index).first;
+    update();
+}
+
+void PlottingCanvas::clearBookmarkSelection()
+{
+    m_hasSelectedBookmark = false;
+    update();
+}
+
+void PlottingCanvas::jumpToBookmark(int index)
+{
+    if (index < 0 || index >= m_timeMarkers.size())
+        return;
+    const double span = qMax(1e-6, m_t1 - m_t0);
+    const double t = m_timeMarkers.at(index).first;
+    m_t0 = t - span / 2.0;
+    m_t1 = t + span / 2.0;
+    selectBookmark(index);
+    emit timeRangeChanged(m_t0, m_t1);
+    update();
+}
+
+void PlottingCanvas::createMeasurementAt(double t)
+{
+    const double span = qMax(1e-6, m_t1 - m_t0);
+    const double gap = span * 0.1;
+    double a = t - gap / 2.0;
+    double b = t + gap / 2.0;
+    if (a < m_t0)
+    {
+        a = m_t0;
+        b = qMin(m_t1, a + gap);
+    }
+    if (b > m_t1)
+    {
+        b = m_t1;
+        a = qMax(m_t0, b - gap);
+    }
+    m_abA = a;
+    m_abB = b;
+    m_abEnabled = true;
+    m_abHasA = true;
+    m_abHasB = true;
+    m_abDrag = 0;
+    if (m_abBtn)
+        m_abBtn->setChecked(true);
+    update();
+}
+
+void PlottingCanvas::clearMeasurement()
+{
+    m_abEnabled = false;
+    m_abHasA = false;
+    m_abHasB = false;
+    m_abDrag = 0;
+    if (m_abBtn)
+        m_abBtn->setChecked(false);
+    update();
+}
+
+void PlottingCanvas::resetXAxis()
+{
+    ensureTimeRange();
+    emit timeRangeChanged(m_t0, m_t1);
+    update();
+}
+
+void PlottingCanvas::resetYAxis()
+{
+    if (m_series.isEmpty())
+        return;
+    bool init[2] = {false, false};
+    double lo[2] = {0.0, 0.0};
+    double hi[2] = {0.0, 0.0};
+    for (const Series &s : m_series)
+    {
+        if (s.count() < 2)
+            continue;
+        const int ax = s.axis == 1 ? 1 : 0;
+        QVector<double> buf(256 * 3);
+        const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(),
+                                          m_t0 + s.offsetSec, m_t1 + s.offsetSec,
+                                          256, buf.data(), 256);
+        for (uint32_t i = 0; i < got; ++i)
+        {
+            const double mn = buf[i * 3 + 1];
+            const double mx = buf[i * 3 + 2];
+            if (!std::isfinite(mn) || !std::isfinite(mx))
+                continue;
+            if (!init[ax])
+            {
+                lo[ax] = mn;
+                hi[ax] = mx;
+                init[ax] = true;
+            }
+            else
+            {
+                lo[ax] = std::min(lo[ax], mn);
+                hi[ax] = std::max(hi[ax], mx);
+            }
+        }
+    }
+    for (int ax = 0; ax < 2; ++ax)
+    {
+        if (!init[ax])
+            continue;
+        const double pad = (hi[ax] - lo[ax]) * 0.12 + 1e-6;
+        if (ax == 0)
+        {
+            m_yMin = lo[0] - pad;
+            m_yMax = hi[0] + pad;
+        }
+        else
+        {
+            m_y2Min = lo[1] - pad;
+            m_y2Max = hi[1] + pad;
+        }
+    }
+    m_autoY = true;
+    update();
+}
+
+void PlottingCanvas::applyBoxZoom(const QRectF &r, AxisZone zone, const QPointF &start,
+                                  const QPointF &end)
+{
+    const QRectF plot = plotRect();
+    const QRectF rr = r.normalized();
+    const bool xOnly = zone == XAxis;
+    const bool yOnly = zone == YAxisLeft || zone == YAxisRight;
+    const double x0 = qMax(plot.left(), qMin(rr.left(), plot.right()));
+    const double x1 = qMax(plot.left(), qMin(rr.right(), plot.right()));
+    const double y0 = qMax(plot.top(), qMin(rr.top(), plot.bottom()));
+    const double y1 = qMax(plot.top(), qMin(rr.bottom(), plot.bottom()));
+    if (xOnly && x1 - x0 <= 6.0)
+        return;
+    if (yOnly && y1 - y0 <= 6.0)
+        return;
+    if (!xOnly && !yOnly && (x1 - x0 <= 6.0 || y1 - y0 <= 6.0))
+        return;
+
+    const bool revX = end.x() < start.x();
+    const bool revY = end.y() < start.y();
+    m_followLive = false;
+
+    if (xOnly)
+    {
+        if (revX && x1 - x0 > plot.width() * 0.7)
+        {
+            resetXAxis();
+            return;
+        }
+        const double tcx = timeAtX((x0 + x1) * 0.5);
+        const double factor = revX ? plot.width() / (x1 - x0) : (x1 - x0) / plot.width();
+        const double tSpan = (m_t1 - m_t0) * factor;
+        m_t0 = tcx - tSpan / 2.0;
+        m_t1 = tcx + tSpan / 2.0;
+        emit timeRangeChanged(m_t0, m_t1);
+        update();
+        return;
+    }
+
+    if (yOnly)
+    {
+        if (revY && y1 - y0 > plot.height() * 0.7)
+        {
+            resetYAxis();
+            return;
+        }
+        const double cy = (y0 + y1) * 0.5;
+        const double ycy = m_yMax - (m_yMax - m_yMin) * (cy - plot.top()) / plot.height();
+        const double factor = revY ? plot.height() / (y1 - y0) : (y1 - y0) / plot.height();
+        const double ySpan = (m_yMax - m_yMin) * factor;
+        m_yMin = ycy - ySpan / 2.0;
+        m_yMax = ycy + ySpan / 2.0;
+        if (hasRightAxis())
+        {
+            const double y2cy = m_y2Max - (m_y2Max - m_y2Min) * (cy - plot.top()) / plot.height();
+            const double y2Span = (m_y2Max - m_y2Min) * factor;
+            m_y2Min = y2cy - y2Span / 2.0;
+            m_y2Max = y2cy + y2Span / 2.0;
+        }
+        m_autoY = false;
+        update();
+        return;
+    }
+
+    if (revX && revY && (x1 - x0) * (y1 - y0) > plot.width() * plot.height() * 0.7)
+    {
+        m_autoY = true;
+        resetView();
+        update();
+        return;
+    }
+
+    const bool out = revX && revY;
+    const double tcx = timeAtX((x0 + x1) * 0.5);
+    const double tFactor = out ? plot.width() / (x1 - x0) : (x1 - x0) / plot.width();
+    const double tSpan = (m_t1 - m_t0) * tFactor;
+    m_t0 = tcx - tSpan / 2.0;
+    m_t1 = tcx + tSpan / 2.0;
+
+    const double cy = (y0 + y1) * 0.5;
+    const double ycy = m_yMax - (m_yMax - m_yMin) * (cy - plot.top()) / plot.height();
+    const double yFactor = out ? plot.height() / (y1 - y0) : (y1 - y0) / plot.height();
+    const double ySpan = (m_yMax - m_yMin) * yFactor;
+    m_yMin = ycy - ySpan / 2.0;
+    m_yMax = ycy + ySpan / 2.0;
+    if (hasRightAxis())
+    {
+        const double y2cy = m_y2Max - (m_y2Max - m_y2Min) * (cy - plot.top()) / plot.height();
+        const double y2Span = (m_y2Max - m_y2Min) * yFactor;
+        m_y2Min = y2cy - y2Span / 2.0;
+        m_y2Max = y2cy + y2Span / 2.0;
+    }
+    m_autoY = false;
+    emit timeRangeChanged(m_t0, m_t1);
+    update();
+}
+
+void PlottingCanvas::showLegendMenu(int index, const QPoint &globalPos)
+{
+    if (index < 0 || index >= m_series.size())
+        return;
+    QMenu menu(this);
+    QAction *hide = menu.addAction(m_series.at(index).visible ? QStringLiteral("隐藏曲线")
+                                                               : QStringLiteral("显示曲线"));
+    QAction *del = menu.addAction(QStringLiteral("删除曲线"));
+    QAction *chosen = menu.exec(globalPos);
+    if (chosen == hide)
+        toggleChannel(index);
+    else if (chosen == del)
+        removeChannel(index);
+}
+
+void PlottingCanvas::showSeriesMenu(int index, const QPoint &globalPos)
+{
+    if (index < 0 || index >= m_series.size())
+        return;
+    Series &s = m_series[index];
+    QMenu menu(this);
+    QAction *head = menu.addAction(s.label);
+    head->setEnabled(false);
+    menu.addSeparator();
+    QAction *vis = menu.addAction(s.visible ? QStringLiteral("隐藏曲线") : QStringLiteral("显示曲线"));
+    QPixmap swatch(12, 12);
+    swatch.fill(s.color);
+    QAction *color = menu.addAction(QIcon(swatch), QStringLiteral("修改颜色…"));
+    QAction *axisToggle = menu.addAction(s.axis == 1 ? QStringLiteral("绑定左轴")
+                                                     : QStringLiteral("绑定右轴"));
+    QMenu *widths = menu.addMenu(QStringLiteral("线宽"));
+    QAction *w1 = widths->addAction(QStringLiteral("1 px"));
+    QAction *w2 = widths->addAction(QStringLiteral("2 px"));
+    QAction *w3 = widths->addAction(QStringLiteral("3 px"));
+    for (QAction *a : {w1, w2, w3})
+        a->setCheckable(true);
+    (s.width == 1 ? w1 : (s.width == 2 ? w2 : w3))->setChecked(true);
+    menu.addSeparator();
+    QAction *del = menu.addAction(QStringLiteral("删除曲线"));
+    QAction *chosen = menu.exec(globalPos);
+    if (chosen == vis)
+        toggleChannel(index);
+    else if (chosen == axisToggle)
+    {
+        s.axis = s.axis == 1 ? 0 : 1;
+        resetView();
+    }
+    else if (chosen == color)
+    {
+        const QColor c = QColorDialog::getColor(s.color, this, QStringLiteral("曲线颜色"));
+        if (c.isValid())
+        {
+            s.color = c;
+            update();
+        }
+    }
+    else if (chosen == w1 || chosen == w2 || chosen == w3)
+    {
+        s.width = chosen == w1 ? 1 : (chosen == w2 ? 2 : 3);
+        update();
+    }
+    else if (chosen == del)
+        removeChannel(index);
+}
+
+void PlottingCanvas::showCanvasMenu(double t, int markerIndex, AxisZone zone,
+                                    const QPoint &globalPos)
+{
+    QMenu menu(this);
+    QAction *addMarker = menu.addAction(
+        QStringLiteral("在 %1 添加时间书签…").arg(formatTime(t)));
+    QAction *delMarker = nullptr;
+    if (markerIndex >= 0 && markerIndex < m_timeMarkers.size())
+    {
+        QString label = m_timeMarkers.at(markerIndex).second.trimmed();
+        if (label.isEmpty())
+            label = formatTime(m_timeMarkers.at(markerIndex).first);
+        delMarker = menu.addAction(QStringLiteral("删除书签「%1」").arg(label));
+    }
+    menu.addSeparator();
+    QAction *addCurve = menu.addAction(QStringLiteral("添加曲线…"));
+    menu.addSeparator();
+    QAction *reset = menu.addAction(QStringLiteral("重置缩放"));
+    QAction *fit = menu.addAction(QStringLiteral("自适应 Y"));
+    QAction *axisReset = nullptr;
+    if (zone == XAxis)
+        axisReset = menu.addAction(QStringLiteral("重置 X 轴"));
+    else if (zone == YAxisLeft || zone == YAxisRight)
+        axisReset = menu.addAction(QStringLiteral("自适应 Y 轴"));
+    menu.addSeparator();
+    QAction *legend = menu.addAction(QStringLiteral("显示图例"));
+    legend->setCheckable(true);
+    legend->setChecked(m_showLegend);
+    QAction *grid = menu.addAction(QStringLiteral("显示网格"));
+    grid->setCheckable(true);
+    grid->setChecked(m_showGrid);
+    QAction *ab = menu.addAction(QStringLiteral("A/B 游标测量（Δt/Δy）"));
+    ab->setCheckable(true);
+    ab->setChecked(m_abEnabled);
+    QAction *clearAb = nullptr;
+    if (m_abEnabled || m_abHasA)
+        clearAb = menu.addAction(QStringLiteral("清除 A/B 测量"));
+    menu.addSeparator();
+    QAction *splitH = menu.addAction(QStringLiteral("向右拆分画布"));
+    QAction *splitV = menu.addAction(QStringLiteral("向下拆分画布"));
+    QAction *png = menu.addAction(QStringLiteral("导出 PNG…"));
+    QAction *csv = menu.addAction(QStringLiteral("导出当前画布 CSV…"));
+    menu.addSeparator();
+    QAction *del = menu.addAction(QStringLiteral("删除此画布"));
+    QAction *chosen = menu.exec(globalPos);
+    if (chosen == addMarker)
+        emit markerRequested(t);
+    else if (delMarker && chosen == delMarker)
+        emit markerRemoveRequested(m_timeMarkers.at(markerIndex).first);
+    else if (chosen == addCurve)
+        emit addChannelRequested();
+    else if (chosen == reset)
+    {
+        m_autoY = true;
+        resetView();
+        update();
+    }
+    else if (chosen == fit)
+        requestAutoY();
+    else if (axisReset && chosen == axisReset)
+    {
+        if (zone == XAxis)
+            resetXAxis();
+        else
+            resetYAxis();
+    }
+    else if (chosen == legend)
+    {
+        m_showLegend = legend->isChecked();
+        update();
+    }
+    else if (chosen == grid)
+    {
+        m_showGrid = grid->isChecked();
+        update();
+    }
+    else if (chosen == ab)
+    {
+        if (ab->isChecked())
+            m_abEnabled = true;
+        else
+            clearMeasurement();
+        if (m_abBtn)
+            m_abBtn->setChecked(m_abEnabled);
+        update();
+    }
+    else if (clearAb && chosen == clearAb)
+        clearMeasurement();
+    else if (chosen == splitH)
+        emit splitRequested(0);
+    else if (chosen == splitV)
+        emit splitRequested(1);
+    else if (chosen == png)
+        exportPng();
+    else if (chosen == csv)
+        exportCsv();
+    else if (chosen == del)
+        emit removeRequested();
+}
+
+void PlottingCanvas::showAxisMenu(AxisZone zone, const QPoint &globalPos)
+{
+    QMenu menu(this);
+    QAction *reset = menu.addAction(zone == XAxis ? QStringLiteral("重置 X 轴")
+                                                  : QStringLiteral("自适应 Y 轴"));
+    QAction *resetAll = menu.addAction(QStringLiteral("重置整个视图"));
+    menu.addSeparator();
+    QAction *addMarker = menu.addAction(QStringLiteral("添加时间书签…"));
+    QAction *chosen = menu.exec(globalPos);
+    if (chosen == reset)
+    {
+        if (zone == XAxis)
+            resetXAxis();
+        else
+            resetYAxis();
+    }
+    else if (chosen == resetAll)
+    {
+        m_autoY = true;
+        resetView();
+        update();
+    }
+    else if (chosen == addMarker)
+    {
+        const QRectF plot = plotRect();
+        emit markerRequested(timeAtX((plot.left() + plot.right()) * 0.5));
+    }
+}
+
+
 void PlottingCanvas::wheelEvent(QWheelEvent *event)
 {
     m_followLive = false;
-    {
     const QRectF plot = plotRect();
-    if (!plot.contains(event->position()))
+    const AxisZone zone = axisZoneAt(event->position());
+    if (zone == NoAxis && !plot.contains(event->position()))
         return;
     const int steps = event->angleDelta().y();
     if (steps == 0)
         return;
 
-    // PJ 习惯：滚轮缩时间轴，Ctrl+滚轮缩 Y 轴，锚点都在指针处
     const double factor = std::pow(0.85, steps / 120.0);
     const QPointF pos = event->position();
-    if (event->modifiers() & Qt::ControlModifier)
+    const bool ctrl = event->modifiers() & Qt::ControlModifier;
+    const bool zoomY = zone == YAxisLeft || zone == YAxisRight
+                       || (zone == NoAxis && ctrl);
+    if (zoomY)
     {
-        const double anchor = m_yMax - (m_yMax - m_yMin) * (pos.y() - plot.top()) / plot.height();
+        const double y = qBound(plot.top(), pos.y(), plot.bottom());
+        const double anchor = m_yMax - (m_yMax - m_yMin) * (y - plot.top()) / plot.height();
         m_yMin = anchor + (m_yMin - anchor) * factor;
         m_yMax = anchor + (m_yMax - anchor) * factor;
-        m_y2Min = anchor + (m_y2Min - anchor) * factor;
-        m_y2Max = anchor + (m_y2Max - anchor) * factor;
+        if (hasRightAxis())
+        {
+            m_y2Min = anchor + (m_y2Min - anchor) * factor;
+            m_y2Max = anchor + (m_y2Max - anchor) * factor;
+        }
+        m_autoY = false;
     }
     else
     {
-        const double tc = m_t0 + (m_t1 - m_t0) * (pos.x() - plot.left()) / plot.width();
+        const double x = qBound(plot.left(), pos.x(), plot.right());
+        const double tc = timeAtX(x);
         const double span = std::clamp((m_t1 - m_t0) * factor, 1e-6, 1e9);
         const double ratio = span / std::max(1e-12, m_t1 - m_t0);
         m_t0 = tc - (tc - m_t0) * ratio;
         m_t1 = m_t0 + span;
         emit timeRangeChanged(m_t0, m_t1);
     }
-    m_autoY = false;
     update();
     event->accept();
-    }
 }
 
 void PlottingCanvas::mousePressEvent(QMouseEvent *event)
 {
-    // 标题栏按住可拖动重排，和悬浮菜单的抓手等价，符合 PJ 的拖画布习惯。
+    setFocus();
+    const QRectF plot = plotRect();
+
+    // 右键只记录命中，菜单和框选都等到 release 再决定。
+    if (event->button() == Qt::RightButton)
+    {
+        m_rightPressed = true;
+        m_rightBoxing = false;
+        m_rightStart = event->position();
+        m_rightRect = QRectF(m_rightStart, m_rightStart);
+        m_rightHit = RightBlank;
+        m_rightHitIndex = -1;
+        m_rightMarkerIndex = markerAt(event->position());
+        m_rightAxis = axisZoneAt(event->position());
+        int legend = -1;
+        for (int i = 0; i < m_legendRects.size(); ++i)
+            if (m_legendRects.at(i).contains(event->position()))
+                legend = i;
+        bool abHit = false;
+        if (m_abEnabled && plot.contains(event->position()))
+        {
+            const auto xOf = [&](double t) {
+                return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0);
+            };
+            abHit = (m_abHasA && qAbs(event->position().x() - xOf(m_abA)) <= 10)
+                    || (m_abHasB && qAbs(event->position().x() - xOf(m_abB)) <= 10);
+        }
+        if (m_rightMarkerIndex >= 0)
+            m_rightHit = RightMarker;
+        else if (abHit)
+            m_rightHit = RightAb;
+        else
+        {
+            const int series = seriesAt(event->position());
+            if (series >= 0)
+            {
+                m_rightHit = RightSeries;
+                m_rightHitIndex = series;
+            }
+            else if (legend >= 0)
+            {
+                m_rightHit = RightLegend;
+                m_rightHitIndex = legend;
+            }
+            else if (m_rightAxis != NoAxis)
+                m_rightHit = RightAxis;
+        }
+        m_rightCanBox = m_rightHit != RightLegend
+                        && (plot.contains(event->position()) || m_rightAxis != NoAxis);
+        return;
+    }
+
+    // 标题栏按住可拖动重排。
     if (event->button() == Qt::LeftButton && event->position().y() < 30)
     {
         m_titleDrag = true;
@@ -2205,227 +2748,93 @@ void PlottingCanvas::mousePressEvent(QMouseEvent *event)
         update();
         return;
     }
+
+    // 中键、空格+左键：统一进入平移；轴区只平移对应轴。
+    if (event->button() == Qt::MiddleButton
+        || (event->button() == Qt::LeftButton && m_spacePan))
+    {
+        const AxisZone zone = axisZoneAt(event->position());
+        if (plot.contains(event->position()) || zone != NoAxis)
+        {
+            m_dragging = true;
+            m_dragAxis = zone;
+            m_lastPos = event->position();
+            setCursor(Qt::ClosedHandCursor);
+            emit activated(m_title);
+            return;
+        }
+    }
+
     int legend = -1;
     for (int i = 0; i < m_legendRects.size(); ++i)
         if (m_legendRects.at(i).contains(event->position()))
             legend = i;
     if (event->button() == Qt::LeftButton && legend >= 0)
     {
-        toggleChannel(legend);
+        m_selectedSeries = legend;
+        emit seriesSelected(legend);
+        emit activated(m_title);
+        update();
+        return;
+    }
+
+    const int marker = markerAt(event->position());
+
+    // Shift+左键：时间书签。命中已有书签则选中，不重复添加。
+    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ShiftModifier)
+        && plot.contains(event->position()) && !m_spacePan)
+    {
+        if (marker >= 0)
+            selectBookmark(marker);
+        else
+            emit markerRequested(timeAtX(event->position().x()));
         emit activated(m_title);
         return;
     }
-    if (event->button() == Qt::LeftButton)
+
+    // Ctrl+左键：直接生成一组 A/B。
+    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)
+        && plot.contains(event->position()) && !m_spacePan)
     {
-        for (const auto &hit : m_markerRects)
-        {
-            if (!hit.second.contains(event->position()))
-                continue;
-            const double t = hit.first;
-            const double span = qMax(1e-6, m_t1 - m_t0);
-            m_t0 = t - span / 2.0;
-            m_t1 = t + span / 2.0;
-            emit timeRangeChanged(m_t0, m_t1);
-            update();
-            return;
-        }
-    }
-    if (event->button() == Qt::RightButton && legend >= 0)
-    {
-        QMenu menu(this);
-        QAction *hide = menu.addAction(m_series.at(legend).visible ? QStringLiteral("隐藏曲线")
-                                                                   : QStringLiteral("显示曲线"));
-        QAction *del = menu.addAction(QStringLiteral("删除曲线"));
-        QAction *chosen = menu.exec(event->globalPosition().toPoint());
-        if (chosen == hide)
-            toggleChannel(legend);
-        else if (chosen == del)
-            removeChannel(legend);
+        createMeasurementAt(timeAtX(event->position().x()));
+        emit activated(m_title);
         return;
     }
-    if (event->button() == Qt::RightButton && seriesAt(event->position()) >= 0)
+
+    // 左键按住时间书签：选中，移动由 mouseMoveEvent 处理。
+    if (event->button() == Qt::LeftButton && marker >= 0 && !m_spacePan)
     {
-        const int idx = seriesAt(event->position());
-        Series &s = m_series[idx];
-        QMenu menu(this);
-        QAction *head = menu.addAction(s.label);
-        head->setEnabled(false);
-        menu.addSeparator();
-        QAction *vis = menu.addAction(s.visible ? QStringLiteral("隐藏曲线") : QStringLiteral("显示曲线"));
-        QPixmap swatch(12, 12);
-        swatch.fill(s.color);
-        QAction *color = menu.addAction(QIcon(swatch), QStringLiteral("修改颜色…"));
-        QAction *axisToggle = menu.addAction(s.axis == 1 ? QStringLiteral("绑定左轴")
-                                                         : QStringLiteral("绑定右轴"));
-        QMenu *widths = menu.addMenu(QStringLiteral("线宽"));
-        QAction *w1 = widths->addAction(QStringLiteral("1 px"));
-        QAction *w2 = widths->addAction(QStringLiteral("2 px"));
-        QAction *w3 = widths->addAction(QStringLiteral("3 px"));
-        for (QAction *a : {w1, w2, w3})
-            a->setCheckable(true);
-        (s.width == 1 ? w1 : (s.width == 2 ? w2 : w3))->setChecked(true);
-        menu.addSeparator();
-        QAction *del = menu.addAction(QStringLiteral("删除曲线"));
-        QAction *chosen = menu.exec(event->globalPosition().toPoint());
-        if (chosen == vis)
-            toggleChannel(idx);
-        else if (chosen == axisToggle)
-        {
-            s.axis = s.axis == 1 ? 0 : 1;
-            resetView();
-        }
-        else if (chosen == color)
-        {
-            const QColor c = QColorDialog::getColor(s.color, this, QStringLiteral("曲线颜色"));
-            if (c.isValid())
-            {
-                s.color = c;
-                update();
-            }
-        }
-        else if (chosen == w1 || chosen == w2 || chosen == w3)
-        {
-            s.width = chosen == w1 ? 1 : (chosen == w2 ? 2 : 3);
-            update();
-        }
-        else if (chosen == del)
-            removeChannel(idx);
+        m_bookmarkDragIndex = marker;
+        m_bookmarkDragFrom = m_timeMarkers.at(marker).first;
+        m_bookmarkDragStart = event->position();
+        m_bookmarkDragActive = false;
+        selectBookmark(marker);
+        setCursor(Qt::ClosedHandCursor);
+        emit activated(m_title);
         return;
     }
-    if (event->button() == Qt::RightButton)
+
+    // A/B 线可见时，左键命中线即进入拖动，不需要再按 Ctrl。
+    if (event->button() == Qt::LeftButton && m_abEnabled && plot.contains(event->position()))
     {
-        QMenu menu(this);
-        const QRectF plot = plotRect();
-        const double mt = plot.contains(event->position())
-            ? m_t0 + (m_t1 - m_t0) * (event->position().x() - plot.left()) / qMax(1.0, plot.width())
-            : (m_t0 + m_t1) / 2.0;
-        double markerHit = 0.0;
-        bool markerHitFound = false;
-        for (const auto &hit : m_markerRects)
-            if (hit.second.contains(event->position()))
-            {
-                markerHit = hit.first;
-                markerHitFound = true;
-                break;
-            }
-        QAction *addMarker = menu.addAction(
-            QStringLiteral("在 %1 添加时间标签…").arg(formatTime(mt)));
-        QAction *delMarker = nullptr;
-        if (markerHitFound)
-        {
-            QString label = formatTime(markerHit);
-            for (const auto &mk : m_timeMarkers)
-                if (qAbs(mk.first - markerHit) < 1e-6)
-                {
-                    label = mk.second.trimmed().isEmpty() ? label : mk.second;
-                    break;
-                }
-            delMarker = menu.addAction(QStringLiteral("删除标签「%1」").arg(label));
-        }
-        menu.addSeparator();
-        QAction *addCurve = menu.addAction(QStringLiteral("添加曲线…"));
-        menu.addSeparator();
-        QAction *reset = menu.addAction(QStringLiteral("重置缩放"));
-        QAction *fit = menu.addAction(QStringLiteral("自适应 Y"));
-        menu.addSeparator();
-        QAction *legend = menu.addAction(QStringLiteral("显示图例"));
-        legend->setCheckable(true);
-        legend->setChecked(m_showLegend);
-        QAction *grid = menu.addAction(QStringLiteral("显示网格"));
-        grid->setCheckable(true);
-        grid->setChecked(m_showGrid);
-        QAction *ab = menu.addAction(QStringLiteral("A/B 游标测量（Δt/Δy）"));
-        ab->setCheckable(true);
-        ab->setChecked(m_abEnabled);
-        menu.addSeparator();
-        QAction *splitH = menu.addAction(QStringLiteral("向右拆分画布"));
-        QAction *splitV = menu.addAction(QStringLiteral("向下拆分画布"));
-        QAction *png = menu.addAction(QStringLiteral("导出 PNG…"));
-        QAction *csv = menu.addAction(QStringLiteral("导出当前画布 CSV…"));
-        menu.addSeparator();
-        QAction *del = menu.addAction(QStringLiteral("删除此画布"));
-        QAction *chosen = menu.exec(event->globalPosition().toPoint());
-        if (chosen == addMarker)
-            emit markerRequested(mt);
-        else if (chosen == delMarker)
-            emit markerRemoveRequested(markerHit);
-        else if (chosen == addCurve)
-            emit addChannelRequested();
-        else if (chosen == reset)
-        {
-            m_autoY = true;
-            resetView();
-            update();
-        }
-        else if (chosen == fit)
-            requestAutoY();
-        else if (chosen == legend)
-        {
-            m_showLegend = legend->isChecked();
-            update();
-        }
-        else if (chosen == grid)
-        {
-            m_showGrid = grid->isChecked();
-            update();
-        }
-        else if (chosen == ab)
-        {
-            m_abEnabled = ab->isChecked();
-            if (m_abBtn)
-                m_abBtn->setChecked(m_abEnabled);
-            if (!m_abEnabled)
-            {
-                m_abHasA = m_abHasB = false;
-                m_abDrag = 0;
-            }
-            update();
-        }
-        else if (chosen == splitH)
-            emit splitRequested(0);
-        else if (chosen == splitV)
-            emit splitRequested(1);
-        else if (chosen == png)
-            exportPng();
-        else if (chosen == csv)
-            exportCsv();
-        else if (chosen == del)
-            emit removeRequested();
-        return;
-    }
-    if (event->button() == Qt::LeftButton && m_abEnabled && plotRect().contains(event->position()))
-    {
-        const QRectF plot = plotRect();
-        const auto xOf = [&](double t) { return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0); };
-        if (m_abHasA && qAbs(event->position().x() - xOf(m_abA)) <= 7)
+        const auto xOf = [&](double t) {
+            return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0);
+        };
+        if (m_abHasA && qAbs(event->position().x() - xOf(m_abA)) <= 10)
         {
             m_abDrag = 1;
             setCursor(Qt::SizeHorCursor);
             return;
         }
-        if (m_abHasB && qAbs(event->position().x() - xOf(m_abB)) <= 7)
+        if (m_abHasB && qAbs(event->position().x() - xOf(m_abB)) <= 10)
         {
             m_abDrag = 2;
             setCursor(Qt::SizeHorCursor);
             return;
         }
-        const double t = m_t0 + (m_t1 - m_t0) * (event->position().x() - plot.left()) / plot.width();
-        if (!m_abHasA || m_abHasB)
-        {
-            m_abA = t;
-            m_abHasA = true;
-            m_abHasB = false;
-        }
-        else
-        {
-            m_abB = t;
-            m_abHasB = true;
-        }
-        emit activated(m_title);
-        update();
-        return;
     }
-    if (event->button() == Qt::LeftButton && plotRect().contains(event->position())
+
+    if (event->button() == Qt::LeftButton && plot.contains(event->position())
         && (m_rubberZoom || m_tool == ZoomInTool || m_tool == ZoomOutTool))
     {
         m_rubbering = true;
@@ -2435,10 +2844,28 @@ void PlottingCanvas::mousePressEvent(QMouseEvent *event)
         update();
         return;
     }
+
     if (event->button() == Qt::LeftButton && m_tool == PanTool)
     {
         m_dragging = true;
+        m_dragAxis = axisZoneAt(event->position());
         m_lastPos = event->position();
+        setCursor(Qt::ClosedHandCursor);
+        emit activated(m_title);
+        return;
+    }
+
+    if (event->button() == Qt::LeftButton)
+    {
+        if (plot.contains(event->position()))
+        {
+            clearBookmarkSelection();
+            const int series = seriesAt(event->position());
+            m_selectedSeries = series;
+            if (series >= 0)
+                emit seriesSelected(series);
+            update();
+        }
         emit activated(m_title);
     }
     QWidget::mousePressEvent(event);
@@ -2706,6 +3133,10 @@ void PlottingCanvas::removeChannel(int index)
     if (index < 0 || index >= m_series.size())
         return;
     m_series.removeAt(index);
+    if (m_selectedSeries == index)
+        m_selectedSeries = -1;
+    else if (m_selectedSeries > index)
+        --m_selectedSeries;
     resetView();
     update();
     emit activated(m_title);
@@ -2715,14 +3146,53 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
 {
     m_cursor = event->position();
     m_hover = true;
-    // 指针形状跟着工具走：放大镜/缩小镜/手，提示这里可以直接拖拽操作
-    if (!(event->buttons() & Qt::LeftButton) && !m_titleDrag && !m_abDrag)
+
+    // 右键拖动：超过阈值才进入框选，未拖动前不弹菜单。
+    if (m_rightPressed && (event->buttons() & Qt::RightButton) && m_rightCanBox)
     {
-        if (plotRect().contains(m_cursor))
-            setCursor(toolCursor());
-        else
-            unsetCursor();
+        if (!m_rightBoxing
+            && (event->position() - m_rightStart).manhattanLength()
+                   > QApplication::startDragDistance())
+            m_rightBoxing = true;
+        if (m_rightBoxing)
+        {
+            m_rightRect = QRectF(m_rightStart, event->position()).normalized();
+            setCursor(Qt::CrossCursor);
+            update();
+            return;
+        }
     }
+
+    // 书签拖动：小距离保持“单击跳转”，超过阈值才移动。
+    if (m_bookmarkDragIndex >= 0 && (event->buttons() & Qt::LeftButton)
+        && m_bookmarkDragIndex < m_timeMarkers.size())
+    {
+        if (!m_bookmarkDragActive
+            && (event->position() - m_bookmarkDragStart).manhattanLength()
+                   > QApplication::startDragDistance())
+            m_bookmarkDragActive = true;
+        if (m_bookmarkDragActive)
+        {
+            m_timeMarkers[m_bookmarkDragIndex].first = timeAtX(event->position().x());
+            m_selectedBookmarkTime = m_timeMarkers.at(m_bookmarkDragIndex).first;
+            setCursor(Qt::ClosedHandCursor);
+            update();
+            return;
+        }
+    }
+
+    // A/B 线拖动。
+    if (m_abDrag && (event->buttons() & Qt::LeftButton) && plotRect().contains(event->position()))
+    {
+        const double tc = timeAtX(event->position().x());
+        if (m_abDrag == 1)
+            m_abA = tc;
+        else
+            m_abB = tc;
+        update();
+        return;
+    }
+
     if (m_titleDrag && (event->buttons() & Qt::LeftButton))
     {
         if ((event->position() - m_titleDragStart).manhattanLength() > 6)
@@ -2733,18 +3203,38 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
         }
         return;
     }
-    if (m_abDrag && (event->buttons() & Qt::LeftButton) && plotRect().contains(event->position()))
+
+    if (!(event->buttons() & Qt::LeftButton) && !m_titleDrag && !m_abDrag
+        && !m_bookmarkDragActive)
     {
         const QRectF plot = plotRect();
-        const double t = m_t0 + (m_t1 - m_t0) * (event->position().x() - plot.left()) / plot.width();
-        const double tc = qBound(m_t0, t, m_t1);
-        if (m_abDrag == 1)
-            m_abA = tc;
+        const AxisZone zone = axisZoneAt(m_cursor);
+        if (zone == XAxis)
+            setCursor(Qt::SizeHorCursor);
+        else if (zone == YAxisLeft || zone == YAxisRight)
+            setCursor(Qt::SizeVerCursor);
+        else if (plot.contains(m_cursor))
+        {
+            if (m_spacePan)
+                setCursor(Qt::OpenHandCursor);
+            else if (m_abEnabled)
+            {
+                const auto xOf = [&](double t) {
+                    return plot.left() + plot.width() * (t - m_t0) / (m_t1 - m_t0);
+                };
+                if ((m_abHasA && qAbs(m_cursor.x() - xOf(m_abA)) <= 10)
+                    || (m_abHasB && qAbs(m_cursor.x() - xOf(m_abB)) <= 10))
+                    setCursor(Qt::SizeHorCursor);
+                else
+                    setCursor(toolCursor());
+            }
+            else
+                setCursor(toolCursor());
+        }
         else
-            m_abB = tc;
-        update();
-        return;
+            unsetCursor();
     }
+
     if (m_hoverBar && !m_hoverBar->isVisible() && !m_reordering)
     {
         positionHoverBar();
@@ -2764,20 +3254,28 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
         const QRectF plot = plotRect();
         const double dx = event->position().x() - m_lastPos.x();
         const double dy = event->position().y() - m_lastPos.y();
-        if (dx != 0.0)
+        if (dx != 0.0 || dy != 0.0)
             m_followLive = false;
-        // 内容跟手：手向左(dx<0) => 时间窗右移 => 曲线左移。
-        const double tShift = -dx * (m_t1 - m_t0) / plot.width();
-        m_t0 += tShift;
-        m_t1 += tShift;
-        const double yShift = -dy * (m_yMax - m_yMin) / plot.height();
-        m_yMin += yShift;
-        m_yMax += yShift;
-        m_y2Min += yShift;
-        m_y2Max += yShift;
+        const bool doX = m_dragAxis != YAxisLeft && m_dragAxis != YAxisRight;
+        const bool doY = m_dragAxis != XAxis;
+        if (doX && dx != 0.0)
+        {
+            const double tShift = -dx * (m_t1 - m_t0) / qMax(1.0, plot.width());
+            m_t0 += tShift;
+            m_t1 += tShift;
+        }
+        if (doY && dy != 0.0)
+        {
+            const double yShift = -dy * (m_yMax - m_yMin) / qMax(1.0, plot.height());
+            m_yMin += yShift;
+            m_yMax += yShift;
+            m_y2Min += yShift;
+            m_y2Max += yShift;
+        }
         m_lastPos = event->position();
-        m_autoY = false;
-        if (dx != 0.0)
+        if (doX || doY)
+            m_autoY = false;
+        if (doX && dx != 0.0)
             emit timeRangeChanged(m_t0, m_t1);
     }
     update();
@@ -2786,6 +3284,32 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
 
 void PlottingCanvas::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::RightButton && m_rightPressed)
+    {
+        const bool boxed = m_rightBoxing;
+        const QRectF box = m_rightRect;
+        const QPoint globalPos = event->globalPosition().toPoint();
+        m_rightPressed = false;
+        m_rightBoxing = false;
+        if (boxed)
+        {
+            m_rightRect = QRectF();
+            applyBoxZoom(box, m_rightAxis, m_rightStart, event->position());
+            update();
+            return;
+        }
+        if (m_rightHit == RightLegend)
+            showLegendMenu(m_rightHitIndex, globalPos);
+        else if (m_rightHit == RightSeries)
+            showSeriesMenu(m_rightHitIndex, globalPos);
+        else if (m_rightHit == RightAxis)
+            showAxisMenu(m_rightAxis, globalPos);
+        else
+            showCanvasMenu(timeAtX(m_rightStart.x()), m_rightMarkerIndex, m_rightAxis, globalPos);
+        update();
+        return;
+    }
+
     if (m_abDrag)
     {
         m_abDrag = 0;
@@ -2793,6 +3317,23 @@ void PlottingCanvas::mouseReleaseEvent(QMouseEvent *event)
         update();
         return;
     }
+
+    if (m_bookmarkDragIndex >= 0)
+    {
+        const int index = m_bookmarkDragIndex;
+        const double from = m_bookmarkDragFrom;
+        const bool moved = m_bookmarkDragActive;
+        m_bookmarkDragIndex = -1;
+        m_bookmarkDragActive = false;
+        unsetCursor();
+        if (moved && index < m_timeMarkers.size())
+            emit markerMoveRequested(from, m_timeMarkers.at(index).first);
+        else
+            jumpToBookmark(index);
+        update();
+        return;
+    }
+
     if (m_titleDrag)
     {
         m_titleDrag = false;
@@ -2812,8 +3353,7 @@ void PlottingCanvas::mouseReleaseEvent(QMouseEvent *event)
             const double fy = m_tool == ZoomOutTool ? plot.height() / r.height() : 1.0;
             const double tcx = m_t0 + (m_t1 - m_t0) * (r.center().x() - plot.left()) / plot.width();
             const double tSpan = (m_t1 - m_t0)
-                                 * (m_tool == ZoomOutTool ? fx
-                                    : r.width() / plot.width());
+                                 * (m_tool == ZoomOutTool ? fx : r.width() / plot.width());
             const double span = m_yMax - m_yMin;
             const double ycy = m_yMax - span * (r.center().y() - plot.top()) / plot.height();
             const double ySpan = span * (m_tool == ZoomOutTool ? fy : r.height() / plot.height());
@@ -2829,14 +3369,147 @@ void PlottingCanvas::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
     m_dragging = false;
+    m_dragAxis = NoAxis;
+    unsetCursor();
+    update();
     QWidget::mouseReleaseEvent(event);
 }
 
 void PlottingCanvas::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    m_autoY = true;
-    resetView();
+    if (event->button() == Qt::LeftButton)
+    {
+        const AxisZone zone = axisZoneAt(event->position());
+        if (zone == XAxis)
+        {
+            resetXAxis();
+            return;
+        }
+        if (zone == YAxisLeft || zone == YAxisRight)
+        {
+            resetYAxis();
+            return;
+        }
+        if (plotRect().contains(event->position()))
+        {
+            m_autoY = true;
+            resetView();
+            return;
+        }
+    }
     QWidget::mouseDoubleClickEvent(event);
+}
+
+void PlottingCanvas::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace)
+    {
+        if (m_hasSelectedBookmark)
+        {
+            emit markerRemoveRequested(m_selectedBookmarkTime);
+            clearBookmarkSelection();
+            event->accept();
+            return;
+        }
+    }
+    if (event->key() == Qt::Key_Escape)
+    {
+        if (m_rightBoxing || m_rightPressed)
+        {
+            m_rightPressed = false;
+            m_rightBoxing = false;
+            m_rightRect = QRectF();
+            update();
+        }
+        else if (m_abEnabled || m_abHasA)
+            clearMeasurement();
+        else if (m_hasSelectedBookmark)
+            clearBookmarkSelection();
+        else if (m_tool != NoTool)
+            setTool(NoTool);
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Space)
+    {
+        m_spacePan = true;
+        if (plotRect().contains(m_cursor))
+            setCursor(Qt::OpenHandCursor);
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_0 && (event->modifiers() & Qt::ControlModifier))
+    {
+        m_autoY = true;
+        resetView();
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Plus || event->key() == Qt::Key_Equal)
+    {
+        zoomBy(0.8);
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Minus)
+    {
+        zoomBy(1.25);
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right)
+    {
+        const double span = m_t1 - m_t0;
+        const double step = span * (event->modifiers() & Qt::ShiftModifier ? 0.02 : 0.1);
+        const double dir = event->key() == Qt::Key_Left ? -1.0 : 1.0;
+        m_t0 += dir * step;
+        m_t1 += dir * step;
+        m_followLive = false;
+        emit timeRangeChanged(m_t0, m_t1);
+        update();
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_BracketLeft || event->key() == Qt::Key_BracketRight)
+    {
+        const double tc = (m_t0 + m_t1) * 0.5;
+        int prev = -1;
+        int next = -1;
+        for (int i = 0; i < m_timeMarkers.size(); ++i)
+        {
+            const double t = m_timeMarkers.at(i).first;
+            if (t < tc - 1e-9)
+                prev = i;
+            else if (t > tc + 1e-9)
+            {
+                next = i;
+                break;
+            }
+        }
+        const bool forward = event->key() == Qt::Key_BracketRight;
+        if (forward)
+            jumpToBookmark(next >= 0 ? next : (m_timeMarkers.isEmpty() ? -1 : 0));
+        else
+            jumpToBookmark(prev >= 0 ? prev : (m_timeMarkers.isEmpty() ? -1 : m_timeMarkers.size() - 1));
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
+}
+
+void PlottingCanvas::keyReleaseEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Space)
+    {
+        m_spacePan = false;
+        if (plotRect().contains(m_cursor))
+            setCursor(toolCursor());
+        else
+            unsetCursor();
+        event->accept();
+        return;
+    }
+    QWidget::keyReleaseEvent(event);
 }
 
 void PlottingCanvas::leaveEvent(QEvent *event)

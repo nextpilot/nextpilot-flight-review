@@ -40,6 +40,7 @@ public:
     void addTimeMarkerForward(double t, const QString &label, bool prompt);
     void addTimeMarker(double t, const QString &label, bool prompt);
     void removeTimeMarker(double t);
+    void moveTimeMarker(double from, double to);
     void onClose();
     bool eventFilter(QObject *watched, QEvent *event) override;
     void pollLiveSources();

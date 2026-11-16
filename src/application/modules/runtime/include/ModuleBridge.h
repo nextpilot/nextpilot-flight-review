@@ -35,6 +35,7 @@ QVector<const PsChannelInfo *> sourceChannels(MainWindow *mw);
 QVector<QPair<double, QString>> timeMarkers(MainWindow *mw);
 void addTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
 void removeTimeMarker(MainWindow *mw, double t);
+void moveTimeMarker(MainWindow *mw, double from, double to);
 
 // 绘图模块向数据源模块暴露的操作，避免 data_source 反向 include plotting。
 void newPage(MainWindow *mw);

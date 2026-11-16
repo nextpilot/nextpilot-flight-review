@@ -461,7 +461,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
             return;
         QMenu menu(this);
         QAction *add = menu.addAction(
-            QStringLiteral("在 %1 s 添加标签「%2」").arg(t, 0, 'f', 2).arg(topicItem->text()));
+            QStringLiteral("在 %1 s 添加时间书签「%2」").arg(t, 0, 'f', 2).arg(topicItem->text()));
         if (menu.exec(m_msgTable->viewport()->mapToGlobal(pos)) == add)
             m_ctx.addTimeMarker(t, topicItem->text(), false);
     });
@@ -477,7 +477,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
         const QString topic = m_ctx.sourceMsgs().at(row).value(0);
         QMenu menu(this);
         QAction *add = menu.addAction(
-            QStringLiteral("在 %1 s 添加标签「%2」").arg(t, 0, 'f', 3).arg(topic));
+            QStringLiteral("在 %1 s 添加时间书签「%2」").arg(t, 0, 'f', 3).arg(topic));
         QAction *chosen = menu.exec(m_msgTable->viewport()->mapToGlobal(pos));
         if (chosen == add)
             m_ctx.addTimeMarker(t, topic, false);
@@ -1844,7 +1844,7 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
         const QString label = item->data(0, Qt::UserRole + 4).toString();
         QMenu menu(this);
         QAction *add = menu.addAction(
-            QStringLiteral("在 %1 s 添加标签「%2」").arg(t, 0, 'f', 2).arg(label));
+            QStringLiteral("在 %1 s 添加时间书签「%2」").arg(t, 0, 'f', 2).arg(label));
         if (menu.exec(panel->viewport()->mapToGlobal(pos)) == add)
             m_ctx.addTimeMarker(t, label, false);
     });

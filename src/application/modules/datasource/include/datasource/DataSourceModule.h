@@ -14,6 +14,7 @@ const QVector<const PsChannelInfo *> &dataSourceChannels(MainWindow *mw);
 QVector<QPair<double, QString>> &dataSourceTimeMarkers(MainWindow *mw);
 void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
 void removeDataSourceTimeMarker(MainWindow *mw, double t);
+void moveDataSourceTimeMarker(MainWindow *mw, double from, double to);
 }
 
 namespace ps::components

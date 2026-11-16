@@ -48,6 +48,7 @@ DataSourceSession *dataSourceSession(MainWindow *mw)
 ps::data_source::SourceStore *dataSourceStore(MainWindow *mw) { return dataSourceSession(mw)->store(); }
 void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt) { dataSourceSession(mw)->addTimeMarker(t, label, prompt); }
 void removeDataSourceTimeMarker(MainWindow *mw, double t) { dataSourceSession(mw)->removeTimeMarker(t); }
+void moveDataSourceTimeMarker(MainWindow *mw, double from, double to) { dataSourceSession(mw)->moveTimeMarker(from, to); }
 const QVector<const PsChannelInfo *> &dataSourceChannels(MainWindow *mw) { return dataSourceSession(mw)->channels(); }
 QVector<QPair<double, QString>> &dataSourceTimeMarkers(MainWindow *mw) { return dataSourceSession(mw)->timeMarkers(); }
 
@@ -115,5 +116,9 @@ void addTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt)
 void removeTimeMarker(MainWindow *mw, double t)
 {
     ps::components::removeDataSourceTimeMarker(mw, t);
+}
+void moveTimeMarker(MainWindow *mw, double from, double to)
+{
+    ps::components::moveDataSourceTimeMarker(mw, from, to);
 }
 } // namespace ps::bridge

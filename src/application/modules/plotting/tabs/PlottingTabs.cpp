@@ -67,9 +67,13 @@ void PlottingTabs::attachCanvas(PlottingCanvas *c)
             [this, c] { emit addChannelRequested(c); });
     connect(c, &PlottingCanvas::maximizeRequested, this,
             [this, c] { emit canvasMaximizeRequested(c); });
+    connect(c, &PlottingCanvas::seriesSelected, this,
+            [this, c](int index) { emit seriesSelected(c, index); });
     connect(c, &PlottingCanvas::markerRequested, this, [this](double t) { emit markerRequested(t); });
     connect(c, &PlottingCanvas::markerRemoveRequested, this,
             [this](double t) { emit markerRemoveRequested(t); });
+    connect(c, &PlottingCanvas::markerMoveRequested, this,
+            [this](double from, double to) { emit markerMoveRequested(from, to); });
     connect(c, &PlottingCanvas::removeRequested, this, [this, c] { emit canvasRemoveRequested(c); });
     c->setTimeMarkers(m_markers);
 }

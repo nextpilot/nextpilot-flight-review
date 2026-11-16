@@ -5,6 +5,7 @@
 | 文档 | 状态 | 内容 |
 |---|---|---|
 | [主题与浅色模式](theme.md) | 已实施（实现记录） | 深/浅主题 token、Ribbon/画布/Dock 配色、验收与截图 |
+| [画布交互重构](canvas-interaction.md) | 已实施（2026-11-16） | 左键选择/书签/测量、中键平移、右键菜单/框选、轴区缩放 |
 | [设置层：强类型 key 与变更通知](settings.md) | 已实施（2026-11-16） | 实施记录与关键决策；使用指南见 [`../develop/settings.md`](../develop/settings.md) |
 | [扩展 toolbox 化与 autopilot 方案](toolbox-architecture.md) | 讨论中，未实施 | 四业务工具箱、`datasources` 目录、GNSS/MAVLink 描述驱动与协议调试、dynamic 清理、飞控 review 与报告边界 |
 | [脚本自动化](script-automation.md) | 规划中，暂不实施 | 脚本从派生计算升级为对象模型 + 命令总线 + 事务 |

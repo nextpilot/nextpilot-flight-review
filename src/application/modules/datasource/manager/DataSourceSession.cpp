@@ -1240,9 +1240,9 @@ void DataSourceSession::addTimeMarker(double t, const QString &label, bool promp
     if (prompt)
     {
         bool ok = false;
-        QString def = text.isEmpty() ? QStringLiteral("标签") : text;
-        text = QInputDialog::getText(this, QStringLiteral("添加时间标签"),
-                                     QStringLiteral("时间 %1 s\n标签").arg(t, 0, 'f', 2),
+        QString def = text.isEmpty() ? QStringLiteral("书签") : text;
+        text = QInputDialog::getText(this, QStringLiteral("添加时间书签"),
+                                     QStringLiteral("时间 %1 s\n书签").arg(t, 0, 'f', 2),
                                      QLineEdit::Normal, def, &ok);
         if (!ok)
             return;
@@ -1257,7 +1257,7 @@ void DataSourceSession::addTimeMarker(double t, const QString &label, bool promp
         {
             mk.second = text;
             ps::bridge::applyTimeMarkers(m_mw);
-            m_mw->logs().info(QStringLiteral("更新时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
+            m_mw->logs().info(QStringLiteral("更新时间书签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
             return;
         }
     m_timeMarkers.append({t, text});
@@ -1266,7 +1266,7 @@ void DataSourceSession::addTimeMarker(double t, const QString &label, bool promp
                   return a.first < b.first;
               });
     ps::bridge::applyTimeMarkers(m_mw);
-    log(QStringLiteral("添加时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
+    log(QStringLiteral("添加时间书签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
 }
 
 void DataSourceSession::removeTimeMarker(double t)
@@ -1278,10 +1278,39 @@ void DataSourceSession::removeTimeMarker(double t)
             const QString label = m_timeMarkers.at(i).second;
             m_timeMarkers.removeAt(i);
             ps::bridge::applyTimeMarkers(m_mw);
-            m_mw->logs().info(QStringLiteral("删除时间标签：%1").arg(label));
+            m_mw->logs().info(QStringLiteral("删除时间书签：%1").arg(label));
             return;
         }
     }
+}
+
+void DataSourceSession::moveTimeMarker(double from, double to)
+{
+    int index = -1;
+    for (int i = 0; i < m_timeMarkers.size(); ++i)
+        if (qAbs(m_timeMarkers.at(i).first - from) < 1e-4)
+        {
+            index = i;
+            break;
+        }
+    if (index < 0 || qAbs(to - from) < 1e-4)
+        return;
+    const QString label = m_timeMarkers.at(index).second;
+    for (int i = m_timeMarkers.size() - 1; i >= 0; --i)
+    {
+        if (i == index || qAbs(m_timeMarkers.at(i).first - to) >= 1e-4)
+            continue;
+        m_timeMarkers.removeAt(i);
+        if (i < index)
+            --index;
+    }
+    m_timeMarkers[index].first = to;
+    std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
+              [](const QPair<double, QString> &a, const QPair<double, QString> &b) {
+                  return a.first < b.first;
+              });
+    ps::bridge::applyTimeMarkers(m_mw);
+    m_mw->logs().info(QStringLiteral("移动时间书签：%1 @ %2 s").arg(label).arg(to, 0, 'f', 3));
 }
 
 
