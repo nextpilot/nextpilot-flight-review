@@ -1,4 +1,4 @@
-#include "Theme.h"
+#include "ThemeManager.h"
 
 #include <QApplication>
 #include <QColor>
@@ -9,7 +9,9 @@
 //   #0d1117 bg0   #161b20 panel   #1a2127 panel2   #232b33 line
 //   #2d3841 line2 #c9d1d9 tx      #8494a0 tx2      #5d6c77 tx3
 //   #f2b134 amber #7ee787 ok      #f85149 bad
-const char *theme::kStyle = R"(
+namespace
+{
+const char *kStyle = R"(
 QWidget { background:#0d1117; color:#c9d1d9; font-size:12px; }
 QDialog { background:#0f1419; }
 QMainWindow::separator { background:#0f1419; width:1px; height:1px; }
@@ -123,11 +125,17 @@ QMenu::item:selected { background:#1b232a; color:#f2b134; }
 QMessageBox { background:#0f1419; }
 QMessageBox QLabel { color:#c9d1d9; }
 )";
+} // namespace
 
-void theme::applyTo(QApplication &app)
+QString ThemeManager::styleSheet()
+{
+    return QString::fromLatin1(kStyle);
+}
+
+void ThemeManager::applyTo(QApplication &app)
 {
     app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
-    app.setStyleSheet(QString::fromLatin1(kStyle));
+    app.setStyleSheet(styleSheet());
 
     QPalette p;
     const QColor bg(QStringLiteral("#0d1117"));

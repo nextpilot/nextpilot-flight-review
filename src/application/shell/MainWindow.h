@@ -9,7 +9,7 @@
 #include "Component.h"
 #include "ExtensionManager.h"
 #include "CommandManager.h"
-#include "AppSession.h"
+#include "SessionManager.h"
 #include "LogManager.h"
 #include "DockManager.h"
 #include "RibbonManager.h"
@@ -41,7 +41,7 @@ public:
     ps::commands::CommandManager &commands() { return m_commands; }
     ExtensionManager &extensions() { return m_extensions; }
     DockManager &docks() { return m_docks; }
-    AppSession &session() { return m_session; }
+    SessionManager &session() { return m_session; }
     QTabWidget *pages() const { return m_pages; }
     void setPageHost(QTabWidget *p) {
         m_pages = p;
@@ -64,7 +64,7 @@ private:
     QString m_kernelInfo;
     ExtensionManager m_extensions;
     ps::commands::CommandManager m_commands;
-    AppSession m_session;
+    SessionManager m_session;
     LogManager m_logs;
     DockManager m_docks;
     RibbonManager m_ribbon;

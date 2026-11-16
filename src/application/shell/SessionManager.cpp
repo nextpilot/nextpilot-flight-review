@@ -1,4 +1,4 @@
-#include "AppSession.h"
+#include "SessionManager.h"
 #include "CommandManager.h"
 
 #include "CommandManager.h"
@@ -7,12 +7,12 @@
 #include <QMainWindow>
 #include <QSettings>
 
-AppSession::AppSession()
+SessionManager::SessionManager()
 {
     load();
 }
 
-void AppSession::load()
+void SessionManager::load()
 {
     QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
     m_layoutPath = st.value(QStringLiteral("lastLayout")).toString();
@@ -24,7 +24,7 @@ void AppSession::load()
     }
 }
 
-void AppSession::restoreWindow(QMainWindow *window)
+void SessionManager::restoreWindow(QMainWindow *window)
 {
     if (!window)
         return;
@@ -37,7 +37,7 @@ void AppSession::restoreWindow(QMainWindow *window)
         window->restoreState(state);
 }
 
-void AppSession::saveWindow(const QMainWindow *window)
+void SessionManager::saveWindow(const QMainWindow *window)
 {
     if (!window)
         return;
@@ -46,29 +46,29 @@ void AppSession::saveWindow(const QMainWindow *window)
     st.setValue(QStringLiteral("windowState"), window->saveState());
 }
 
-void AppSession::setLayoutPath(const QString &path)
+void SessionManager::setLayoutPath(const QString &path)
 {
     m_layoutPath = path;
     QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
     st.setValue(QStringLiteral("lastLayout"), path);
 }
 
-void AppSession::markDirty()
+void SessionManager::markDirty()
 {
     m_dirty = true;
 }
 
-void AppSession::markClean()
+void SessionManager::markClean()
 {
     m_dirty = false;
 }
 
-QStringList AppSession::recentFiles() const
+QStringList SessionManager::recentFiles() const
 {
     return m_recentFiles;
 }
 
-void AppSession::addRecentFile(const QString &path)
+void SessionManager::addRecentFile(const QString &path)
 {
     if (path.isEmpty())
         return;
@@ -80,14 +80,14 @@ void AppSession::addRecentFile(const QString &path)
     st.setValue(QStringLiteral("recentFiles"), m_recentFiles);
 }
 
-void AppSession::clearRecentFiles()
+void SessionManager::clearRecentFiles()
 {
     m_recentFiles.clear();
     QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
     st.remove(QStringLiteral("recentFiles"));
 }
 
-void AppSession::bindCommandState(ps::commands::CommandManager &commands, std::function<void()> refreshTitle)
+void SessionManager::bindCommandState(ps::commands::CommandManager &commands, std::function<void()> refreshTitle)
 {
     commands.setInvokeHook([this, refreshTitle = std::move(refreshTitle)](const QString &id) {
         if (id == QLatin1String("layout.save") || id == QLatin1String("layout.import"))

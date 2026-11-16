@@ -1,8 +1,8 @@
 add_library(ps_application_shell OBJECT
   MainWindow.h
   MainWindow.cpp
-  AppSession.h
-  AppSession.cpp
+  SessionManager.h
+  SessionManager.cpp
   LogManager.h
   LogManager.cpp
   DockManager.h
@@ -27,8 +27,8 @@ add_library(ps_application_shell OBJECT
   SettingsDialog.cpp
   UiDialogEngine.h
   UiDialogEngine.cpp
-  Theme.h
-  Theme.cpp
+  ThemeManager.h
+  ThemeManager.cpp
 )
 set_target_properties(ps_application_shell PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_shell PUBLIC

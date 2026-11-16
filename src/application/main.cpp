@@ -12,7 +12,7 @@
 #include "DataSourceRegistry.h"
 #include "DynamicExtensionRegistry.h"
 #include "ExtensionRuntime.h"
-#include "Theme.h"
+#include "ThemeManager.h"
 #include "SettingsManager.h"
 
 #include "ps_kernel.h"
@@ -26,7 +26,7 @@ int main(int argc, char **argv)
     QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
 
     // 全局主题：样式表 + 深色 palette 一次装好，所有窗口共用
-    theme::applyTo(app);
+    ThemeManager::applyTo(app);
 
     // 版本闸门：宿主只认自己声明的 ABI，不匹配直接拒启（D9）
     if (ps_abi_version() != PS_ABI_VERSION)

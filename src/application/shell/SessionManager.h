@@ -5,10 +5,6 @@
 
 #include <functional>
 
-#include <functional>
-
-namespace ps::commands { class CommandManager; }
-
 class QMainWindow;
 
 namespace ps::commands
@@ -16,12 +12,12 @@ namespace ps::commands
 class CommandManager;
 }
 
-// 应用级会话：窗口几何、最近文件、布局路径和未保存状态。
+// 会话管理：窗口几何、最近文件、布局路径和未保存状态。
 // 不承载数据源、绘图等业务状态。
-class AppSession
+class SessionManager
 {
 public:
-    AppSession();
+    SessionManager();
 
     void restoreWindow(QMainWindow *window);
     void saveWindow(const QMainWindow *window);
