@@ -38,7 +38,7 @@ public:
     QTableWidget *propTable() const { return m_propTable; }
     QTreeWidget *propTree() const { return m_propTree; }
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
-                     const QStringList &editable = QStringList());
+                     const QStringList &editable = QStringList(), int kind = 0);
     void bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree);
     QJsonObject pageState(QWidget *page) const;
     QWidget *buildPage(const QJsonObject &o);

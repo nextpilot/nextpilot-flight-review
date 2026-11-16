@@ -68,6 +68,7 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
 }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color:#f2b134; }
 QComboBox::drop-down { border:0; width:16px; }
+QComboBox::down-arrow { image:url(:/icons/arrow_more.svg); width:10px; height:10px; }
 QComboBox QAbstractItemView { background:#0f1419; color:#c9d1d9; border:1px solid #2d3841; selection-background-color:#1b232a; }
 QCheckBox { color:#c9d1d9; font-size:11.5px; spacing:6px; }
 QCheckBox::indicator { width:12px; height:12px; border:1px solid #2d3841; background:#0b0f13; }

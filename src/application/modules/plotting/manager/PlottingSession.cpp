@@ -29,6 +29,8 @@
 #include <QLineEdit>
 #include <QList>
 #include <QMainWindow>
+#include <QMenu>
+#include <QAction>
 #include <QMap>
 #include <QMessageBox>
 #include <QObject>
@@ -854,7 +856,8 @@ void PlottingSession::showAxesProps(PlottingCanvas *c)
                  QStringLiteral("X 网格"), QStringLiteral("Y 网格"), QStringLiteral("次网格"),
                  QStringLiteral("图例"), QStringLiteral("图例位置"), QStringLiteral("边框"),
                  QStringLiteral("FlipY"), QStringLiteral("坐标轴字号"),
-                 QStringLiteral("坐标轴线宽"), QStringLiteral("坐标轴颜色")});
+                 QStringLiteral("坐标轴线宽"), QStringLiteral("坐标轴颜色")},
+                1);
     m_propCanvas = c;
     m_propSeriesIndex = -1;
     m_propKind = 1;
@@ -898,7 +901,8 @@ void PlottingSession::showSeriesProps(PlottingCanvas *c, int index)
                                                : so.value(QStringLiteral("srcPath")).toString()}},
                 {QStringLiteral("图例"), QStringLiteral("颜色"), QStringLiteral("线宽"),
                  QStringLiteral("线型"), QStringLiteral("标记"), QStringLiteral("标记大小"),
-                 QStringLiteral("绑定轴"), QStringLiteral("可见"), QStringLiteral("时间偏移")});
+                 QStringLiteral("绑定轴"), QStringLiteral("可见"), QStringLiteral("时间偏移")},
+                2);
     m_propCanvas = c;
     m_propSeriesIndex = index;
     m_propKind = 2;
@@ -1124,7 +1128,7 @@ QJsonObject PlottingSession::pageState(QWidget *page) const
 
 
 void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
-                                  const QStringList &editable)
+                                  const QStringList &editable, int kind)
 {
     m_propCanvas = nullptr;
     m_propSeriesIndex = -1;
@@ -1144,20 +1148,175 @@ void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QSt
     const QSignalBlocker blocker(m_propTable);
     m_propUpdating = true;
     m_propTable->setRowCount(rows.size());
+    // 属性值按类型给控件：开关给复选框、数值给可输入下拉、颜色给色块、枚举给下拉。
+    auto push = [this](const QString &key, const QString &value) {
+        // 控件还在发信号，直接重建行会踩野指针，等事件循环回头再写回画布。
+        QTimer::singleShot(0, this, [this, key, value] { applyPropEdit(key, value); });
+    };
+    auto centered = [](QWidget *inner, QWidget *parent) {
+        auto *w = new QWidget(parent);
+        w->setStyleSheet(QStringLiteral("QWidget{background:transparent;}"));
+        auto *l = new QHBoxLayout(w);
+        l->setContentsMargins(4, 0, 4, 0);
+        l->addWidget(inner);
+        l->addStretch(1);
+        return w;
+    };
+    auto leadingNumber = [](const QString &t, int fallback) {
+        const QRegularExpressionMatch m = QRegularExpression(QStringLiteral("[-+]?\\d+")).match(t);
+        bool ok = false;
+        const int v = m.hasMatch() ? m.captured(0).toInt(&ok) : 0;
+        return (m.hasMatch() && ok) ? v : fallback;
+    };
+    auto numberCombo = [&, push, leadingNumber](const QString &key, const QString &text, int fallback) {
+        QStringList presets;
+        if (key == QStringLiteral("坐标轴字号"))
+            presets = {QStringLiteral("9"),  QStringLiteral("10"), QStringLiteral("11"), QStringLiteral("12"),
+                       QStringLiteral("13"), QStringLiteral("14"), QStringLiteral("16"), QStringLiteral("18")};
+        else if (key == QStringLiteral("标记大小"))
+            presets = {QStringLiteral("3"), QStringLiteral("4"), QStringLiteral("5"), QStringLiteral("6"),
+                       QStringLiteral("8"), QStringLiteral("10")};
+        else
+            presets = {QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("3"), QStringLiteral("4")};
+        auto *cb = new QComboBox(m_propTable);
+        cb->setEditable(true);
+        cb->setInsertPolicy(QComboBox::NoInsert);
+        cb->addItems(presets);
+        cb->setCurrentText(QString::number(leadingNumber(text, fallback)));
+        connect(cb->lineEdit(), &QLineEdit::editingFinished, this, [this, key, cb, push] { push(key, cb->currentText()); });
+        connect(cb, QOverload<int>::of(&QComboBox::activated), this,
+                [this, key, cb, push](int) { push(key, cb->currentText()); });
+        return cb;
+    };
+    auto enumCombo = [&, push](const QString &key, const QString &text) {
+        QStringList options;
+        if (key == QStringLiteral("图例位置"))
+            options = {QStringLiteral("左上"), QStringLiteral("右上"), QStringLiteral("左下"), QStringLiteral("右下")};
+        else if (key == QStringLiteral("线型"))
+            options = {QStringLiteral("实线"), QStringLiteral("虚线"), QStringLiteral("点线"), QStringLiteral("点划线")};
+        else if (key == QStringLiteral("标记"))
+            options = {QStringLiteral("无"), QStringLiteral("圆点"), QStringLiteral("方块"), QStringLiteral("菱形"),
+                       QStringLiteral("三角"), QStringLiteral("十字"), QStringLiteral("叉号")};
+        else
+            options = {QStringLiteral("左 Y 轴"), QStringLiteral("右 Y 轴")};
+        auto *cb = new QComboBox(m_propTable);
+        cb->addItems(options);
+        if (cb->currentText() != text)
+            cb->setCurrentText(text);
+        connect(cb, QOverload<int>::of(&QComboBox::activated), this,
+                [this, key, cb, push](int) { push(key, cb->currentText()); });
+        return cb;
+    };
+    auto colorButton = [&, push](const QString &key, const QString &text) {
+        auto *btn = new QToolButton(m_propTable);
+        btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        btn->setStyleSheet(QStringLiteral(
+            "QToolButton{color:#d5dde5;background:transparent;border:1px solid #2d3841;"
+            "border-radius:2px;padding:0 6px;}QToolButton:hover{border-color:#f2b134;}"));
+        btn->setCursor(Qt::PointingHandCursor);
+        const bool themed = text.isEmpty() || text.contains(QStringLiteral("跟随"));
+        QColor c = themed ? QColor(QStringLiteral("#3a4854")) : QColor(text);
+        auto swatch = [](const QColor &col) {
+            QPixmap pm(14, 14);
+            pm.fill(col.isValid() ? col : QColor(QStringLiteral("#8b98a5")));
+            return QIcon(pm);
+        };
+        btn->setIcon(swatch(c));
+        btn->setText(themed ? QStringLiteral("跟随主题") : c.name());
+        connect(btn, &QToolButton::clicked, this, [this, key, btn, swatch, push] {
+            const QColor old = QColor(btn->text());
+            const QColor sel = QColorDialog::getColor(old.isValid() ? old : Qt::white, this, QStringLiteral("选择颜色"));
+            if (sel.isValid())
+                push(key, sel.name());
+        });
+        if (key == QStringLiteral("坐标轴颜色"))
+        {
+            // 轴色可以回到“跟随主题”，放右键菜单里，避免和按钮文字挤在一起。
+            btn->setContextMenuPolicy(Qt::CustomContextMenu);
+            connect(btn, &QToolButton::customContextMenuRequested, this, [this, key, btn, push](const QPoint &p) {
+                QMenu menu(btn);
+                auto *reset = menu.addAction(QStringLiteral("跟随主题"));
+                if (menu.exec(btn->mapToGlobal(p)) == reset)
+                    push(key, QStringLiteral("跟随主题"));
+            });
+            btn->setToolTip(QStringLiteral("点击选择颜色，右键恢复跟随主题"));
+        }
+        return btn;
+    };
+
     for (int i = 0; i < rows.size(); ++i)
     {
-        const bool canEdit = editable.contains(rows[i].first);
-        auto *k = new QTableWidgetItem(rows[i].first);
+        const QString key = rows[i].first;
+        const QString text = rows[i].second;
+        const bool canEdit = editable.contains(key);
+        auto *k = new QTableWidgetItem(key);
         k->setFlags(Qt::ItemIsEnabled);
         k->setForeground(QColor(QStringLiteral("#9aa7b2")));
-        auto *v = new QTableWidgetItem(rows[i].second);
-        // 可写属性直接编辑、回车即生效；只读属性仍只是展示。
-        v->setFlags(canEdit ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable)
-                            : (Qt::ItemIsEnabled | Qt::ItemIsSelectable));
-        v->setToolTip(canEdit ? QStringLiteral("双击编辑，回车立即生效") : rows[i].second);
-        v->setForeground(canEdit ? QColor(QStringLiteral("#eaf2fb")) : QColor(QStringLiteral("#d5dde5")));
         m_propTable->setItem(i, 0, k);
-        m_propTable->setItem(i, 1, v);
+
+        auto *v = new QTableWidgetItem(text);
+        v->setForeground(canEdit ? QColor(QStringLiteral("#eaf2fb")) : QColor(QStringLiteral("#d5dde5")));
+
+        QWidget *editor = nullptr;
+        if (canEdit)
+        {
+            if (key == QStringLiteral("X 网格") || key == QStringLiteral("Y 网格") || key == QStringLiteral("次网格") ||
+                key == QStringLiteral("边框") || key == QStringLiteral("FlipY") || key == QStringLiteral("可见") ||
+                (kind == 1 && key == QStringLiteral("图例")))
+            {
+                auto *box = new QCheckBox(m_propTable);
+                box->setChecked(text.contains(QStringLiteral("显示")) || text.contains(QStringLiteral("是")) ||
+                                text == QStringLiteral("true"));
+                connect(box, &QCheckBox::toggled, this, [this, key, push](bool on) {
+                    push(key, on ? QStringLiteral("显示") : QStringLiteral("隐藏"));
+                });
+                editor = centered(box, m_propTable);
+            }
+            else if (key == QStringLiteral("坐标轴字号") || key == QStringLiteral("坐标轴线宽") ||
+                     key == QStringLiteral("线宽") || key == QStringLiteral("标记大小"))
+            {
+                editor = numberCombo(key, text, key == QStringLiteral("坐标轴字号") ? 11 : 1);
+            }
+            else if (key == QStringLiteral("图例位置") || key == QStringLiteral("线型") ||
+                     key == QStringLiteral("标记") || key == QStringLiteral("绑定轴"))
+            {
+                editor = enumCombo(key, text);
+            }
+            else if (key == QStringLiteral("坐标轴颜色") || key == QStringLiteral("颜色"))
+            {
+                editor = colorButton(key, text);
+            }
+            else if (key == QStringLiteral("时间偏移"))
+            {
+                auto *sp = new QDoubleSpinBox(m_propTable);
+                sp->setDecimals(3);
+                sp->setRange(-1e6, 1e6);
+                sp->setSuffix(QStringLiteral(" s"));
+                sp->setValue(text.split(QLatin1Char(' ')).first().toDouble());
+                connect(sp, &QDoubleSpinBox::editingFinished, this,
+                        [this, key, sp, push] { push(key, QString::number(sp->value(), 'f', 3)); });
+                editor = sp;
+            }
+        }
+
+        if (editor)
+        {
+            v->setFlags(Qt::ItemIsEnabled);
+            // 单元格控件背景透明，留着文本会透出来叠字
+            v->setText(QString());
+            v->setToolTip(text);
+            m_propTable->setItem(i, 1, v);
+            m_propTable->setCellWidget(i, 1, editor);
+        }
+        else
+        {
+            // 纯文本属性仍走内联编辑
+            v->setFlags(canEdit ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable)
+                                : (Qt::ItemIsEnabled | Qt::ItemIsSelectable));
+            v->setToolTip(canEdit ? QStringLiteral("双击编辑，回车立即生效") : text);
+            m_propTable->setItem(i, 1, v);
+            m_propTable->removeCellWidget(i, 1);
+        }
     }
     m_propUpdating = false;
 }
