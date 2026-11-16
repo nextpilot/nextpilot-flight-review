@@ -8,6 +8,7 @@
 #include "DataSourceEntry.h"
 #include "SourceModel.h"
 #include "TransformDialog.h"
+#include "DeviceDebugDialog.h"
 #include <QtEndian>
 using ps::data_source::SourceData;
 using ps::data_source::TransformRecipe;
@@ -540,15 +541,15 @@ void DataSourceSession::openSourceDebug(ps::data_source::SourceData *src)
                                  QStringLiteral("该实时源未提供命令通道。"));
         return;
     }
-    QVariantMap args;
-    args.insert(QStringLiteral("sourceId"), sp->id);
-    args.insert(QStringLiteral("name"), src->name);
-    args.insert(QStringLiteral("handle"),
-                QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(src->handle)));
-    QDialog *dlg = m_mw->extensions().registry().createDialog(QStringLiteral("dialog.device_debug"),
-                                                       args, this);
-    if (!dlg)
-        return;
+    void *handle = src->handle;
+    auto *dlg = new DeviceDebugDialog(
+        *sp, src->name,
+        [sp, handle] { return handle ? sp->status(handle) : QString(); },
+        [sp, handle](const QString &cmd) {
+            return handle ? sp->send(handle, cmd)
+                          : QStringLiteral("{\"ok\":false,\"error\":\"未连接\"}");
+        },
+        this);
     dlg->exec();
     delete dlg;
 }

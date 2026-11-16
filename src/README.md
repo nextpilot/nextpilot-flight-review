@@ -31,8 +31,6 @@ src/
       gnss/                   NMEA / UBX / OEM7 数据源
       custom_protocol/        自定义协议加载、编辑、编解码；protocol/ 为其协议模型
       video/                  视频同步面板
-      device_debug/           源设备调试终端
-      transform/              绘图前数据变换
       script/                 Lua/Python 脚本引擎
     dynamic/                  外部动态扩展（.so / .dll）
       sdk/                    C++ / Rust 扩展 SDK
@@ -52,7 +50,8 @@ src/
 | 主窗口、Ribbon/Dock 容器、命令总线、组件宿主、主题 | `application/shell/` | app 骨架，只做组装与宿主生命周期 |
 | 数据源 Dock、输入对话框、数据 Ribbon | `application/modules/datasource/` | 数据进入与源管理 |
 | 画布、绘图 Ribbon、页面/图型 | `application/modules/plotting/` | 绘图工作区 |
-| 设备调试、视频同步、数据变换、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |
+| 视频同步、脚本引擎 | `extensions/builtin/` | 有业务语义或外部工具依赖 |
+| 设备调试终端、数据变换 | `application/modules/datasource/` | 数据源能力，不由扩展承载 |
 | 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |
 | 用户 Lua 脚本与图标 | `application/resources/` | 运行期资源，不进 host 头文件 |
 

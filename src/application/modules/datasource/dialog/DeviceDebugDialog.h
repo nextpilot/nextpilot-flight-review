@@ -15,7 +15,7 @@ class QPlainTextEdit;
 class QPushButton;
 struct DataSourceEntry;
 
-// 通用设备调试终端：扩展只提供 debug schema + status/send 回调。
+// 通用设备调试终端：数据源通过 debug schema + status/send 回调接入。
 //   schema.debug.commands: 预置命令 [{label, command}]
 //   schema.debug.status:   状态字段 [{key, label, type?, suffix?, true?, false?}]
 //   schema.debug.hint:     顶部说明

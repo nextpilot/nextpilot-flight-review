@@ -71,7 +71,8 @@ shell 只负责顺序和容器；业务页签、画布、数据源面板由模�
 
 | 要加的东西 | 位置 |
 |---|---|
-| 文件格式、协议、设备调试 | `src/extensions/builtin/<domain>/datasources` 或 `builtin/common/datasources` |
+| 文件格式、协议 | `src/extensions/builtin/<domain>/datasources` 或 `builtin/common/datasources` |
+| 设备调试终端 | `src/application/modules/datasource/dialog` |
 | 数据源生命周期、加载器注册、数据源 Dock | `modules/datasource` |
 | 画布、坐标轴、曲线、绘图页、绘图 Ribbon | `modules/plotting` |
 | 组件契约、Registry、动态扩展 ABI | `modules/runtime` |

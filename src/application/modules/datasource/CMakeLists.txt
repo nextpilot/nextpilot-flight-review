@@ -30,6 +30,8 @@ add_library(ps_application_datasource OBJECT
   dialog/DataSourceDialog.cpp
   dialog/TransformDialog.h
   dialog/TransformDialog.cpp
+  dialog/DeviceDebugDialog.h
+  dialog/DeviceDebugDialog.cpp
 )
 set_target_properties(ps_application_datasource PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_datasource PUBLIC

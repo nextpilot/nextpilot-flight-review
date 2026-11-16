@@ -24,12 +24,12 @@ shell（最小宿主）
 |---|---|---|---|
 | `src/application/shell` | 宿主 | `MainWindow`、页签容器、Ribbon/Dock 管理器、命令、会话、日志、设置、主题入口、扩展管理、`UiDialogEngine` | 数据源、画布、绘图页、具体文件格式、业务状态、业务命令实现 |
 | `src/application/modules/runtime` | 宿主契约 | `Registry`、`IComponent`、`HostContext`、动态扩展扫描/ABI、跨模块 bridge | 具体业务格式、业务 Dock/画布、业务命令实现 |
-| `src/application/modules/datasource` | 数据源能力 | 数据源注册、加载器入口、实时源、缓存、数据源 Dock/对话框、`data.*` 命令 | 画布、绘图页、属性面板、绘图状态 |
+| `src/application/modules/datasource` | 数据源能力 | 数据源注册、加载器入口、实时源、缓存、数据源 Dock/对话框、数据变换与设备调试终端、`data.*` 命令 | 画布、绘图页、属性面板、绘图状态 |
 | `src/application/modules/plotting` | 绘图能力 | 画布、绘图页/切分、坐标轴、曲线、属性面板、绘图 Ribbon、`plot.*`/`page.*` 命令 | 具体文件格式解析、数据源生命周期 |
 | `src/application/shared/filter` | 共享 UI 库 | 算子目录、参数表单、与内核 filter id 对应的元数据 | 具体数据源/绘图状态、格式解析；业务命令 |
 | `src/application/modules/protocol` | 协议能力 | 协议 schema/文档模型、协议编辑器、codec、自定义协议 loader、`protocol.*` 命令与 Ribbon | 画布、数据源会话状态、具体业务格式分支 |
 | `src/application/kernel` | Rust 内核 | NDF、LOD、算子、对齐、C ABI | Qt、Widgets、宿主业务 |
-| `src/extensions/builtin` | 内置业务 | 飞控、GNSS、汽车、机器人四个领域工具箱，`common` 共享 loader/CSV，以及通用数据源、设备调试、脚本等 C++ 组件；数据变换 UI 属 datasource 模块 | 反向被 shell/modules include；直接依赖 shell |
+| `src/extensions/builtin` | 内置业务 | 飞控、GNSS、汽车、机器人四个领域工具箱，`common` 共享 loader/CSV，以及通用数据源、脚本等 C++ 组件；数据变换与设备调试 UI 属 datasource 模块 | 反向被 shell/modules include；直接依赖 shell |
 | `src/extensions/dynamic` | 动态扩展 | 只保留 C++/Rust 扩展 SDK，服务第三方动态插件 | 承载官方/通用格式加载器；依赖 shell/modules 私有头；跨 C ABI 返回 `QWidget*` |
 | `src/application/main.cpp` | 组装层 | 创建 `QApplication`、扫描扩展、创建 `MainWindow`、处理命令行 | 业务逻辑、格式分支、业务 UI |
 
