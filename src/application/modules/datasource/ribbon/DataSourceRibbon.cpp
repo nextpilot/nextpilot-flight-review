@@ -101,6 +101,9 @@ void registerDataSourceContributions(Registry &registry)
                      g->setGridMinimumWidth(64);
                      g->setGridMaximumWidth(72);
                      g->setSpacing(1);
+                     QFont f = g->font();
+                     f.setPixelSize(10);
+                     g->setFont(f);
                  };
                  auto *common = gallery->addCategoryActions(QStringLiteral("常用"), fileActs.mid(0, 4));
                  auto *formats = gallery->addCategoryActions(QStringLiteral("文件格式"), fileActs);

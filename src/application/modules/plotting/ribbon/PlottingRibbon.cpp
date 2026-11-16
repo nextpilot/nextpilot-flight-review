@@ -36,14 +36,14 @@ QIcon ribIcon(const QString &name)
 
 QPixmap plotThumb(const QString &kind)
 {
-    QPixmap pm(76, 38);
+    QPixmap pm(76, 76);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(QPen(ThemeManager::adaptColor(QColor("#2d3841")), 1));
     p.setBrush(ThemeManager::adaptColor(QColor("#0b0f13")));
-    p.drawRoundedRect(QRectF(0.5, 0.5, 75, 37), 3, 3);
-    const QRectF r(7, 6, 62, 26);
+    p.drawRoundedRect(QRectF(0.5, 0.5, 75, 75), 3, 3);
+    const QRectF r(8, 14, 60, 48);
     p.setPen(QPen(ThemeManager::adaptColor(QColor("#26313a")), 1));
     p.drawLine(r.bottomLeft(), r.bottomRight());
     p.drawLine(r.bottomLeft(), r.topLeft());
