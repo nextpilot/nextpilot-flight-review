@@ -168,6 +168,9 @@ if(TARGET ps_builtin_components)
   )
   target_link_libraries(test_toolbox_registration PRIVATE
     ps_autopilot_component
+    ps_application_shell
+    ps_application_plotting
+    ps_application_datasource
     ps_automotive_component
     ps_robotics_component
     ps_common_datasources_component

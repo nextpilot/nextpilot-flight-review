@@ -1,4 +1,5 @@
 #include "AutopilotComponent.h"
+#include "AutopilotReview.h"
 #include "ApbinMessageParser.h"
 #include "MavlinkMessageParser.h"
 #include "UlogMessageParser.h"
@@ -49,7 +50,7 @@ ComponentManifest AutopilotComponent::manifest() const
             {QStringLiteral("data_source")}};
 }
 
-void AutopilotComponent::contribute(Registry &registry, HostContext &)
+void AutopilotComponent::contribute(Registry &registry, HostContext &host)
 {
     registry.addDataSource(source(ps_extension_entry_data_loader_ulog(),
                                   QStringLiteral("data_loader_ulog"),
@@ -105,6 +106,8 @@ void AutopilotComponent::contribute(Registry &registry, HostContext &)
     apbin.factory = [] { return std::make_unique<ApbinMessageParser>(); };
     apbin.capabilities = {QStringLiteral("frame-table"), QStringLiteral("field-values")};
     MessageParserRegistry::instance().add(std::move(apbin));
+
+    registerAutopilotReview(registry, host);
 }
 
 } // namespace ps::components
