@@ -1,6 +1,6 @@
 # 扩展 toolbox 化与 autopilot 方案
 
-> 状态：方案讨论中；`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`；MAVLink/ULog/apbin/ROS parser 和工具箱迁移未实施。
+> 状态：方案讨论中；`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`。MAVLink C++11 生成物、`MavlinkMessageParser`、metadata sidecar、组件注册和测试已落地；`MavlinkSource` 旧 `switch (msgid)` 与 `ProtocolInspector` 尚未迁移。ULog/apbin/ROS parser 和工具箱迁移未实施。
 > 日期：2026-11-16
 
 ## 1. 目标
@@ -357,7 +357,7 @@ builtin/gnss/
 ```text
 builtin/autopilot/
 ├── protocols/
-│   └── mavlink_database.json    # 由 common.xml / ardupilotmega.xml / px4.xml 转换
+│   └── mavlink_metadata.json    # 由 pymavlink dialect 导出单位/枚举/字段偏移
 ├── protocol/
 │   └── parsers/
 │       ├── MavlinkMessageParser.cpp
@@ -372,13 +372,13 @@ builtin/autopilot/
 
 #### MAVLink
 
-- 以 MAVLink 官方 XML 为准，转换成统一的 `mavlink_database.json`；保存 dialect、消息名、msgid、字段顺序、类型、数组、枚举、单位、CRC extra。
-- 默认合并 `common.xml`、`ardupilotmega.xml`、`px4.xml`；新增 dialect 只换 XML/JSON，不改 parser。
-- `MavlinkMessageParser` 处理 MAVLink 1 / 2 头、扩展字段、签名帧和 CRC extra；`FrameDecoder` 按描述解 payload。
+- 以 MAVLink 官方 `mavgen.py` 生成物为准，vendor 到 `src/3rdparty/mavlink/generated`；方言使用 `ardupilotmega`（已包含 common/standard/minimal）。生成脚本 `tools/mavlink-gen.sh` 固定 `--lang=C++11 --wire-protocol=2.0`，构建不跑 Python。
+- `mavlink_metadata.json` 由 `tools/mavlink-metadata.py` 从 pymavlink dialect 导出，补 C++ 类没有的运行时字段信息：wire offset、字段顺序、数组长度、单位、枚举和枚举项。
+- `MavlinkMessageParser` 使用 C++11 生成物的 `mavlink_frame_char_buffer`，framing 状态（`mavlink_message_t` / `mavlink_status_t`）由 parser 实例私有，多源并存不共享 channel/status；字段按 metadata 的 wire offset 全量解出，不使用手写 `switch (msgid)`。
 - 实时源和 tlog 回放都只输出原始 MAVLink 帧，解码统一走 `MavlinkMessageParser`。
 - `key` 按 dialect + msgid；同 msgid 在不同 dialect 下字段不同，不能只按数字查表。
-- 现有 `MavlinkSource.cpp` 的 `decodePayload` 和 `switch (msgid)` 必须删除；不再只解 `ATTITUDE` 等少数消息。
-- **全协议解析**：`mavlink_database.json` 里定义的所有 msgid 都按描述解码全部字段，不做白名单、不抽样；数组、扩展字段、枚举、单位都要展开。
+- 现有 `MavlinkSource.cpp` 的 `decodePayload` 和 `switch (msgid)` 待迁移到统一 parser；不再只解 `ATTITUDE` 等少数消息。
+- **全协议解析**：`MESSAGE_ENTRIES` / `mavlink_metadata.json` 里定义的所有 msgid 都按描述解码全部字段，不做白名单、不抽样；数组、扩展字段、枚举、单位都要展开。
 - 库里没有的 msgid、dialect 或字段定义，标记 `unknown` 并保留原始帧；不伪造字段、不静默丢弃。
 - 调试面板显示完整字段：`sysid / compid / msgid / seq / 消息名 / 长度 / CRC / 签名状态`，以及 payload 的每个字段和值。
 - 未知 msgid、未知 dialect、字段截断、数组越界都保留原始帧。

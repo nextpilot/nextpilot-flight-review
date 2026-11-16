@@ -49,6 +49,14 @@ if(PS_BUILD_GUI)
                 $<TARGET_FILE_DIR:plotscope_app>/ubx_database.json
         DEPENDS plotscope_app)
     endif()
+
+    if(TARGET ps_mavlink AND TARGET plotscope_app)
+      add_custom_target(ps_deploy_mavlink_metadata ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${PROJECT_SOURCE_DIR}/src/3rdparty/mavlink/generated/mavlink_metadata.json
+                $<TARGET_FILE_DIR:plotscope_app>/mavlink_metadata.json
+        DEPENDS plotscope_app)
+    endif()
   else()
     message(WARNING "未找到 Qt6 Widgets，只构建内核（-DPS_BUILD_GUI=OFF 可静默）")
   endif()

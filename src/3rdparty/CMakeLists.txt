@@ -8,3 +8,6 @@ set(BUILD_TESTS               OFF CACHE BOOL "" FORCE)
 set(SARIBBON_USE_FRAMELESS_LIB OFF CACHE BOOL "" FORCE)
 set(SARIBBON_INSTALL_IN_CURRENT_DIR OFF CACHE BOOL "" FORCE)
 add_subdirectory(saribbon EXCLUDE_FROM_ALL)
+
+# MAVLink —— 官方生成的 C 头，header-only（MIT exception）
+add_subdirectory(mavlink)

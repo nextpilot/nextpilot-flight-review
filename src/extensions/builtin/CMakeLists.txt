@@ -5,6 +5,7 @@ add_subdirectory(video)
 add_subdirectory(device_debug)
 add_subdirectory(transform)
 add_subdirectory(script)
+add_subdirectory(autopilot)
 
 if(PS_BUILD_GNSS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gnss/CMakeLists.txt)
   add_subdirectory(gnss)
@@ -19,6 +20,7 @@ target_sources(ps_builtin_components INTERFACE
   $<TARGET_OBJECTS:ps_builtin_device_debug_component>
   $<TARGET_OBJECTS:ps_builtin_transform_component>
   $<TARGET_OBJECTS:ps_builtin_script_component>
+  $<TARGET_OBJECTS:ps_autopilot_component>
 )
 target_link_libraries(ps_builtin_components INTERFACE
   ps_builtin_data_sources_component
@@ -26,6 +28,8 @@ target_link_libraries(ps_builtin_components INTERFACE
   ps_builtin_device_debug_component
   ps_builtin_transform_component
   ps_builtin_script_component
+  ps_autopilot_component
+  ps_autopilot
 )
 if(TARGET ps_gnss_component)
   target_sources(ps_builtin_components INTERFACE $<TARGET_OBJECTS:ps_gnss_component>)

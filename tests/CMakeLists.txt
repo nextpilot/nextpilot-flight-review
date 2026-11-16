@@ -124,6 +124,14 @@ if(TARGET ps_gnss)
   add_test(NAME frame_decoder COMMAND test_frame_decoder)
 endif()
 
+if(TARGET ps_autopilot)
+  add_executable(test_mavlink_message_parser unit/test_mavlink_message_parser.cpp)
+  target_include_directories(test_mavlink_message_parser PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/autopilot)
+  target_link_libraries(test_mavlink_message_parser PRIVATE ps_autopilot ps_mavlink Qt6::Core)
+  add_test(NAME mavlink_message_parser COMMAND test_mavlink_message_parser)
+endif()
+
 if(TARGET ps_data_source_sim)
   add_executable(test_data_source unit/test_data_source.cpp)
   target_include_directories(test_data_source PRIVATE ${PROJECT_SOURCE_DIR}/src
