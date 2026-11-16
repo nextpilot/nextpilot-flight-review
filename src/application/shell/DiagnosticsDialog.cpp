@@ -1,5 +1,6 @@
 #include "DiagnosticsDialog.h"
 #include "ShellPaths.h"
+#include "ThemeManager.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -98,7 +99,7 @@ DiagnosticsDialog::DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
     }
     extLay->addWidget(extList, 1);
     auto *hint = new QLabel(QStringLiteral("扩展启停写入配置，重启 PlotScope 后生效。"), extPage);
-    hint->setStyleSheet(QStringLiteral("color:#8494a0;"));
+    hint->setStyleSheet(QStringLiteral("color:%1;").arg(ThemeManager::color(QStringLiteral("textDim")).name()));
     extLay->addWidget(hint);
     auto *restart = new QPushButton(QStringLiteral("重启应用"), extPage);
     extLay->addWidget(restart, 0, Qt::AlignRight);

@@ -1,4 +1,5 @@
 #include "DataSourceDialog.h"
+#include "ThemeManager.h"
 
 #include "DataSourceEntry.h"
 
@@ -317,9 +318,9 @@ void DataSourceDialog::initUi()
     setAttribute(Qt::WA_StyledBackground, true);
     setAutoFillBackground(true);
     QPalette pal = palette();
-    pal.setColor(QPalette::Window, QColor(QStringLiteral("#0d1117")));
+    pal.setColor(QPalette::Window, ThemeManager::color(QStringLiteral("dialog")));
     setPalette(pal);
-    setStyleSheet(QStringLiteral(
+    setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QDialog{background:#0d1117;color:#c9d1d9;}"
         "QLabel{color:#c9d1d9;}"
         "QGroupBox{background:#0d1117;border:1px solid #30363d;margin-top:8px;padding-top:6px;}"
@@ -335,7 +336,7 @@ void DataSourceDialog::initUi()
         "QHeaderView::section{background:#161b22;color:#8b949e;border:0;border-right:1px solid #21262d;"
         "padding:3px 5px;font-size:11px;}"
         "QPushButton{background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:4px 18px;border-radius:2px;}"
-        "QPushButton:hover{background:#30363d;}"));
+        "QPushButton:hover{background:#30363d;}")));
     setMinimumSize(460, 340);
     resize(m_sourceMode ? 540 : 980, m_sourceMode ? 480 : 540);
 

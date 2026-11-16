@@ -1,8 +1,10 @@
 #include "SettingsDialog.h"
 #include "MainWindow.h"
 #include "SettingsManager.h"
+#include "ThemeManager.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -20,19 +22,29 @@ using ps::components::SettingsContribution;
 
 namespace
 {
-QWidget *buildGeneralPage(QCheckBox **restoreLayout)
+QWidget *buildGeneralPage(QCheckBox **restoreLayout, QComboBox **theme)
 {
     auto *page = new QWidget;
     auto *lay = new QVBoxLayout(page);
-    auto *group = new QGroupBox(QStringLiteral("启动"), page);
+    auto *group = new QGroupBox(QStringLiteral("外观"), page);
     auto *form = new QFormLayout(group);
-    auto *restore = new QCheckBox(QStringLiteral("启动时恢复上次布局"), group);
-    restore->setChecked(SettingsManager::instance().restoreLayout());
-    form->addRow(restore);
+    auto *themeBox = new QComboBox(group);
+    themeBox->addItem(QStringLiteral("深色"));
+    themeBox->addItem(QStringLiteral("浅色"));
+    themeBox->setCurrentIndex(ThemeManager::isDark() ? 0 : 1);
+    form->addRow(QStringLiteral("主题"), themeBox);
     lay->addWidget(group);
+
+    auto *startup = new QGroupBox(QStringLiteral("启动"), page);
+    auto *startupForm = new QFormLayout(startup);
+    auto *restore = new QCheckBox(QStringLiteral("启动时恢复上次布局"), startup);
+    restore->setChecked(SettingsManager::instance().restoreLayout());
+    startupForm->addRow(restore);
+    lay->addWidget(startup);
     lay->addWidget(new QLabel(QStringLiteral("设置会写入 NextPilot / PlotScope。"), page));
     lay->addStretch(1);
     *restoreLayout = restore;
+    *theme = themeBox;
     return page;
 }
 } // namespace
@@ -54,12 +66,18 @@ SettingsDialog::SettingsDialog(MainWindow *mw)
     root->addLayout(body, 1);
 
     QCheckBox *restore = nullptr;
-    QWidget *general = buildGeneralPage(&restore);
-    addPage(QStringLiteral("通用"), QStringLiteral(":/icons/settings.svg"), general, [restore] {
-        if (restore)
+    QComboBox *theme = nullptr;
+    QWidget *general = buildGeneralPage(&restore, &theme);
+    addPage(QStringLiteral("通用"), QStringLiteral(":/icons/settings.svg"), general, [this, restore, theme] {
+        if (theme)
         {
-            SettingsManager::instance().setRestoreLayout(restore->isChecked());
+            ThemeManager::setMode(theme->currentIndex() == 0 ? ThemeManager::Mode::Dark : ThemeManager::Mode::Light);
+            m_mw->applyTheme();
+            SettingsManager::instance().setValue(QStringLiteral("theme"), ThemeManager::name());
+            SettingsManager::instance().sync();
         }
+        if (restore)
+            SettingsManager::instance().setRestoreLayout(restore->isChecked());
     });
 
     QVector<SettingsContribution> pages = mw->extensions().registry().settings();

@@ -1,5 +1,6 @@
 #include "PlottingSession.h"
 #include "MainWindow.h"
+#include "ThemeManager.h"
 #include "ModuleBridge.h"
 #include "PlottingCanvas.h"
 #include "PlottingLayout.h"
@@ -572,7 +573,7 @@ public:
         resize(430, 340);
         m_color = QColor(st.value(QStringLiteral("color")).toString());
         if (!m_color.isValid())
-            m_color = QColor(QStringLiteral("#4ea1ff"));
+            m_color = ThemeManager::seriesColor(0);
 
         auto *root = new QVBoxLayout(this);
         auto *tabs = new QTabWidget(this);
@@ -726,9 +727,9 @@ private:
     void setColorButton()
     {
         m_colorBtn->setText(m_color.name());
-        m_colorBtn->setStyleSheet(QStringLiteral(
+        m_colorBtn->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
             "QPushButton{background:%1;color:#0d1117;border:1px solid #3a4854;border-radius:2px;"
-            "font-weight:600;}QPushButton:hover{border-color:#f2b134;}").arg(m_color.name()));
+            "font-weight:600;}QPushButton:hover{border-color:#f2b134;}").arg(m_color.name())));
     }
 
     QVector<const PsChannelInfo *> m_channels;
@@ -809,7 +810,7 @@ public:
         m_colorBtn->setFixedHeight(24);
         setColorButton();
         connect(m_colorBtn, &QPushButton::clicked, this, [this] {
-            const QColor c = QColorDialog::getColor(m_axisColor.isValid() ? m_axisColor : QColor("#8b949e"),
+            const QColor c = QColorDialog::getColor(m_axisColor.isValid() ? m_axisColor : ThemeManager::adaptColor(QColor("#8b949e")),
                                                     this, QStringLiteral("坐标轴颜色"));
             if (c.isValid())
             {
@@ -844,9 +845,9 @@ private:
     {
         m_colorBtn->setText(m_axisColor.isValid() ? m_axisColor.name() : QStringLiteral("跟随主题"));
         if (m_axisColor.isValid())
-            m_colorBtn->setStyleSheet(QStringLiteral(
+            m_colorBtn->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
                 "QPushButton{background:%1;color:#0d1117;border:1px solid #3a4854;border-radius:2px;"
-                "font-weight:600;}QPushButton:hover{border-color:#f2b134;}").arg(m_axisColor.name()));
+                "font-weight:600;}QPushButton:hover{border-color:#f2b134;}").arg(m_axisColor.name())));
     }
 
     QLineEdit *m_title = nullptr;

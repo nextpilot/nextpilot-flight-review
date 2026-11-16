@@ -34,6 +34,7 @@ public:
     LogManager &logs() { return m_logs; }
     QString kernelInfo() const { return m_kernelInfo; }
     void refreshTitle();
+    void applyTheme();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

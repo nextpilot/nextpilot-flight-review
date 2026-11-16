@@ -1,14 +1,27 @@
 #pragma once
 
-class QApplication;
-class QString;
+#include <QColor>
+#include <QString>
 
-// 全局主题：一套 token + 一段 QSS + 深色 palette。
-// 所有窗口（主窗、CSV 对话框、消息框）都只认这一份，避免逐窗口写 QSS 造成风格漂移。
-// 颜色取自 design/prototype/PlotScope-工作区原型.html 的变量表。
+class QApplication;
+class QWidget;
+
+// 全局主题 token + QSS。模块只取 token，不再各自维护深色十六进制表。
 class ThemeManager
 {
 public:
+    enum class Mode { Dark, Light };
+
     static void applyTo(QApplication &app);
+    static void setMode(Mode mode, QApplication *app = nullptr);
+    static Mode mode();
+    static bool isDark();
+    static QString name();
     static QString styleSheet();
+    static QColor color(const QString &token);
+    static QColor alphaColor(const QString &token, int alpha);
+    static QColor seriesColor(int index);
+    static QColor adaptColor(const QColor &color);
+    static QString mapStyleSheet(const QString &darkStyle);
+    static void refreshWidgetStyles(QWidget *root = nullptr);
 };

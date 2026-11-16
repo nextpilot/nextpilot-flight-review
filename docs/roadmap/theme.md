@@ -1,68 +1,89 @@
 # 主题与浅色模式
 
-- 状态：计划中，未实施
-- 目标版本：下一轮专题
-- 相关代码：`src/application/shell/ThemeManager.*`、`src/application/modules/plotting/canvas/PlottingCanvas.cpp`、`src/application/modules/datasource/dock/DataSourceDock.cpp`
+- 状态：已实施（2026-11-16）
+- 相关代码：`src/application/shell/ThemeManager.*`、`SettingsDialog.cpp`、`MainWindow.*`、`RibbonManager.*`、`src/application/modules/plotting/canvas/PlottingCanvas.cpp`、`src/application/modules/plotting/ribbon/PlottingRibbon.cpp`、`src/application/modules/datasource/dock/DataSourceDock.cpp`
+- 截图：`../screenshots/PlotScope-Theme-Dark.png`、`../screenshots/PlotScope-Theme-Light.png`
 
-## 现状
+## 结果
 
-当前只有深色界面。`ThemeManager` 管 shell 的 QSS、调色板和 Ribbon 主题，但主题没有覆盖到所有绘图/数据源控件：
+默认仍是原有深色界面；设置 → 通用 → 外观可切到浅色，切换立即生效，选择写入 `NextPilot/PlotScope` 的 `theme`，重启后保持。
 
-- `PlottingCanvas` 里 `colorBg()`、`colorGrid()`、`colorText()`、`colorDim()` 以及大量 `QColor("#...")` 是硬编码深色。
-- `DataSourceDock` 的树、工具条、空态、状态条有几十处硬编码 `#0d1117`、`#161b20`、`#c9d1d9`。
-- 右侧属性面板、对象树、日志 Dock、部分对话框也有自己的深色样式。
-
-实验结果：只切换 shell QSS 会出现“白壳 + 黑画布 + 黑数据源面板”的半浅半深界面，不能作为可用主题。该实现已回退，不保留半成品。
-
-## 方案
-
-### 1. 建立主题 token
-
-在 `ThemeManager` 里定义一套语义 token，而不是让模块各自写十六进制颜色：
-
-| token | 用途 |
+| 区域 | 改动 |
 |---|---|
-| `bg` | 主背景 |
-| `panel` | 面板/工具条背景 |
-| `panelAlt` | 交替行、悬停 |
-| `border` | 分隔线、边框 |
-| `text` | 主文字 |
-| `textDim` | 次级文字 |
-| `accent` | 选中、游标、强调 |
-| `grid` | 画布网格 |
-| `series[6]` | 曲线默认色板 |
+| 全局 QSS / palette | `ThemeManager` 建立深/浅两套语义 token，统一生成样式表与 palette |
+| 设置页 | 通用页增加“外观：深色/浅色”，Apply/OK 时刷新主题并 `sync()` |
+| Ribbon | `RibbonManager::applyTheme()` 深色用 `RibbonThemeDark`，浅色用 `RibbonThemeOffice2021Blue`，再叠加 token 映射后的自定义 QSS |
+| 画布 | 背景、网格、文字、次文字取 token；曲线色板取 `seriesColor()`；游标、测量框、提示框颜色改用 `color()` / `alphaColor()` |
+| 数据源 Dock | 启动时统一转换局部深色 QSS；运行中新加的数据源行在创建后刷新样式 |
+| 扩展/其他对话框 | 使用宿主 palette；模块自有 QSS 通过 `mapStyleSheet()` 或 `refreshWidgetStyles()` 跟随主题 |
 
-提供 `ThemeManager::color(token)` 和 `ThemeManager::seriesColor(index)`，模块不再直接写固定色值。
+## Token
 
-### 2. 模块改造
+`ThemeManager::color(token)` 返回当前主题颜色，`alphaColor(token, alpha)` 返回带透明度颜色，`seriesColor(index)` 返回曲线色板。
 
-- `PlottingCanvas`：背景、网格、坐标轴、文字、游标、选择框、提示框全部走 token；曲线默认色板走 `series`。
-- `DataSourceDock`：树、工具条、按钮、空态、状态条样式由 token 生成，删除硬编码 QSS。
-- 属性面板、对象树、日志 Dock、设置/关于对话框：统一用 shell 提供的全局 QSS 和 palette，不再各自覆盖。
-- Ribbon：深色/浅色分别使用对应的 SARibbon 内置主题 + token 生成的 QSS。
+| token | Dark | Light |
+|---|---|---|
+| `bg` | `#0d1117` | `#f4f6f8` |
+| `dialog` | `#0f1419` | `#ffffff` |
+| `panel` | `#161b20` | `#ffffff` |
+| `panelAlt` | `#1a2127` | `#eef1f4` |
+| `input` | `#0b0f13` | `#ffffff` |
+| `border` | `#232b33` | `#d5dce3` |
+| `line` | `#2d3841` | `#b9c4cf` |
+| `text` | `#c9d1d9` | `#1f2933` |
+| `textDim` | `#8494a0` | `#5b6875` |
+| `textMuted` | `#6e7681` | `#64748b` |
+| `accent` | `#f2b134` | `#b45309` |
+| `hover` | `#1b232a` | `#e8edf2` |
+| `selection` | `#1a2127` | `#dbeafe` |
+| `canvasBg` | `#10161c` | `#ffffff` |
+| `grid` | `#1c2430` | `#dfe5ea` |
+| `status` | `#161b20` | `#ffffff` |
+| `danger` | `#f28b82` | `#c62828` |
+| `success` | `#7ee787` | `#1b7f3a` |
+| `info` | `#39c5cf` | `#0e7490` |
 
-### 3. 切换与持久化
+默认曲线色板：
 
-- 设置 → 通用 → 外观，提供“深色 / 浅色”下拉。
-- 切换后立即刷新全局 QSS、palette、Ribbon 和已打开的画布/Dock，不要求重启。
-- 选择写入 `NextPilot/PlotScope` 的 `theme` 键；启动时读取。
+- Dark：`#4ea1ff #ffb454 #7ee787 #d2a8ff #ff7b72 #39c5cf`
+- Light：`#1f6feb #b26a00 #1b7f3a #7b3fbf #c62828 #0e7490`
 
-### 4. 验收
+## 切换链路
 
-- 浅色下主界面没有仍为深色的画布、面板、Dock 或对话框。
-- 曲线、网格、游标、图例在浅色背景上可读；6 条默认曲线颜色可区分。
-- 深/浅切换后不重启，已打开画布立即更新。
-- 重启后保持上次选择。
-- `ctest` 全过；GUI 冒烟覆盖 CSV 6 通道和空数据源两种状态。
+1. 启动：`ThemeManager::applyTo()` 读取 `theme`，默认 `dark`，装好全局 QSS 与 palette。
+2. 窗口构造末尾：`ThemeManager::refreshWidgetStyles(this)` 把启动前已经创建的局部深色 QSS 转成当前主题。
+3. 设置页 Apply/OK：`ThemeManager::setMode()` → `MainWindow::applyTheme()` → `RibbonManager::applyTheme()` + 全局样式刷新，并写 `theme` 后 `sync()`。
+4. 运行中新控件：创建后调用 `ThemeManager::refreshWidgetStyles(widget)`；数据源行已按此处理。
 
-## 非目标
+`refreshWidgetStyles` 把控件原始深色 QSS 存在 `psDarkStyle`，切回深色时恢复原样；Ribbon 标了 `psThemeManaged`，避免被二次转换。
 
-- 不做高对比度、护眼、跟随系统自动切换等额外主题模式。
-- 不为单个扩展提供独立换肤 API；扩展使用宿主 token。
-- 不把主题做成插件。
+## 验收
 
-## 风险
+- [x] 浅色下主界面、Ribbon、画布、数据源 Dock、属性/对象树、日志区均为浅色。
+- [x] 深色默认外观保持不变。
+- [x] 设置页切浅色后不重启立即生效，`theme=light` 已写入配置。
+- [x] 以 `theme=light` 启动，重启保持浅色。
+- [x] 浅色下加载 `tests/fixture/demo_flight.csv`，6 通道正常绘制、曲线可读。
+- [x] 浅色下空数据源正常显示。
+- [x] `ctest` 19/19 通过。
 
-- 画布绘制里颜色和图表语义耦合较多，改 token 时容易漏掉右键菜单、选择框、提示框等临时绘制路径。
-- 数据源 Dock 的 QSS 分散在多个控件创建函数里，需要逐处替换并做浅色截图核对。
-- SARibbon 自带主题与自定义 QSS 可能冲突，需要固定一套覆盖顺序。
+验证命令：
+
+```bash
+cmake --build build -j4
+LD_LIBRARY_PATH="$PWD/deps/Qt/6.2.4/gcc_64/lib" ctest --test-dir build --output-on-failure
+```
+
+浅色启动配置：
+
+```ini
+[General]
+theme=light
+restoreLayout=false
+```
+
+## 边界
+
+- 不做跟随系统、高对比度、护眼等额外主题模式。
+- 主题不拆成插件；扩展使用宿主 token / 宿主 QSS。
+- 模块里已有的深色局部 QSS 保留为深色基线，由 `ThemeManager` 统一映射；新增代码应优先直接取 token，不要新增固定深色值。

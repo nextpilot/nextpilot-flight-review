@@ -1,5 +1,6 @@
 #include "PlottingRibbon.h"
 #include "MainWindow.h"
+#include "ThemeManager.h"
 #include <QAction>
 #include <QGridLayout>
 #include <QHash>
@@ -29,11 +30,11 @@ QPixmap plotThumb(const QString &kind)
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setPen(QPen(QColor("#2d3841"), 1));
-    p.setBrush(QColor("#0b0f13"));
+    p.setPen(QPen(ThemeManager::adaptColor(QColor("#2d3841")), 1));
+    p.setBrush(ThemeManager::adaptColor(QColor("#0b0f13")));
     p.drawRoundedRect(QRectF(0.5, 0.5, 75, 37), 3, 3);
     const QRectF r(7, 6, 62, 26);
-    p.setPen(QPen(QColor("#26313a"), 1));
+    p.setPen(QPen(ThemeManager::adaptColor(QColor("#26313a")), 1));
     p.drawLine(r.bottomLeft(), r.bottomRight());
     p.drawLine(r.bottomLeft(), r.topLeft());
 
@@ -46,7 +47,7 @@ QPixmap plotThumb(const QString &kind)
             const double y = r.center().y() - std::sin(i * 0.28) * 8.0;
             if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
         }
-        p.setPen(QPen(QColor("#4ea1ff"), 1.6));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#4ea1ff")), 1.6));
         p.drawPath(path);
     }
     else if (kind == QLatin1String("xy"))
@@ -55,8 +56,8 @@ QPixmap plotThumb(const QString &kind)
         {
             const double x = r.left() + 6 + (i * 13) % 50;
             const double y = r.bottom() - 3 - (i * 7) % 20;
-            p.setPen(QPen(QColor("#ffb454"), 1));
-            p.setBrush(QColor("#ffb454"));
+            p.setPen(QPen(ThemeManager::adaptColor(QColor("#ffb454")), 1));
+            p.setBrush(ThemeManager::adaptColor(QColor("#ffb454")));
             p.drawEllipse(QPointF(x, y), 1.8, 1.8);
         }
     }
@@ -67,13 +68,13 @@ QPixmap plotThumb(const QString &kind)
             const double x = r.left() + 5 + (i * 17) % 52;
             const double y = r.bottom() - 2 - (i * 11) % 21;
             p.setPen(Qt::NoPen);
-            p.setBrush(i % 3 ? QColor("#7ee787") : QColor("#ffb454"));
+            p.setBrush(i % 3 ? ThemeManager::adaptColor(QColor("#7ee787")) : ThemeManager::adaptColor(QColor("#ffb454")));
             p.drawEllipse(QPointF(x, y), 1.5, 1.5);
         }
     }
     else if (kind == QLatin1String("map"))
     {
-        p.setPen(QPen(QColor("#26313a"), 1));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#26313a")), 1));
         for (int i = 1; i < 4; ++i)
         {
             p.drawLine(QPointF(r.left() + r.width() * i / 4.0, r.top()),
@@ -84,9 +85,9 @@ QPixmap plotThumb(const QString &kind)
         QPainterPath path;
         path.moveTo(r.left() + 6, r.bottom() - 4);
         path.cubicTo(r.left() + 20, r.top() + 2, r.left() + 34, r.bottom() - 6, r.right() - 4, r.top() + 6);
-        p.setPen(QPen(QColor("#4ea1ff"), 1.5));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#4ea1ff")), 1.5));
         p.drawPath(path);
-        p.setBrush(QColor("#ff7b72"));
+        p.setBrush(ThemeManager::adaptColor(QColor("#ff7b72")));
         p.drawEllipse(QPointF(r.right() - 4, r.top() + 6), 2.2, 2.2);
     }
     else if (kind == QLatin1String("bar"))
@@ -95,7 +96,7 @@ QPixmap plotThumb(const QString &kind)
         {
             const double h = 4 + (i * 7) % 19;
             p.setPen(Qt::NoPen);
-            p.setBrush(QColor("#7ee787"));
+            p.setBrush(ThemeManager::adaptColor(QColor("#7ee787")));
             p.drawRect(QRectF(r.left() + 5 + i * 11, r.bottom() - h, 6, h));
         }
     }
@@ -105,7 +106,7 @@ QPixmap plotThumb(const QString &kind)
         {
             const double h = 3 + (i * 5 + i * i) % 21;
             p.setPen(Qt::NoPen);
-            p.setBrush(QColor("#d2a8ff"));
+            p.setBrush(ThemeManager::adaptColor(QColor("#d2a8ff")));
             p.drawRect(QRectF(r.left() + 4 + i * 8, r.bottom() - h, 6, h));
         }
     }
@@ -119,12 +120,12 @@ QPixmap plotThumb(const QString &kind)
             const double y = r.bottom() - 2 - std::fabs(std::sin(i * 0.55)) * 18.0 * env;
             if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
         }
-        p.setPen(QPen(QColor("#39c5cf"), 1.4));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#39c5cf")), 1.4));
         p.drawPath(path);
     }
     else if (kind == QLatin1String("traj3d"))
     {
-        p.setPen(QPen(QColor("#26313a"), 1));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#26313a")), 1));
         p.drawLine(QPointF(12, 28), QPointF(32, 21));
         p.drawLine(QPointF(32, 21), QPointF(58, 27));
         p.drawLine(QPointF(58, 27), QPointF(58, 9));
@@ -134,12 +135,12 @@ QPixmap plotThumb(const QString &kind)
         QPainterPath path;
         path.moveTo(14, 25);
         path.cubicTo(24, 8, 40, 12, 54, 20);
-        p.setPen(QPen(QColor("#f2b134"), 1.6));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#f2b134")), 1.6));
         p.drawPath(path);
     }
     else if (kind == QLatin1String("surface3d"))
     {
-        p.setPen(QPen(QColor("#2a3b48"), 1));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#2a3b48")), 1));
         for (int i = 0; i < 6; ++i)
         {
             p.drawLine(QPointF(12 + i * 9, 25), QPointF(22 + i * 9, 31));
@@ -148,38 +149,38 @@ QPixmap plotThumb(const QString &kind)
         QPainterPath path;
         path.moveTo(12, 22);
         path.cubicTo(26, 8, 44, 27, 64, 13);
-        p.setPen(QPen(QColor("#39c5cf"), 1.4));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#39c5cf")), 1.4));
         p.drawPath(path);
     }
     else if (kind == QLatin1String("horizon"))
     {
-        p.setPen(QPen(QColor("#4a5a68"), 1));
-        p.setBrush(QColor("#2b3a4a"));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#4a5a68")), 1));
+        p.setBrush(ThemeManager::adaptColor(QColor("#2b3a4a")));
         p.drawEllipse(QPointF(38, 19), 14, 14);
-        p.setBrush(QColor("#3a2f22"));
+        p.setBrush(ThemeManager::adaptColor(QColor("#3a2f22")));
         p.drawChord(QRectF(24, 5, 28, 28), 180 * 16, 180 * 16);
-        p.setPen(QPen(QColor("#f2b134"), 1.4));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#f2b134")), 1.4));
         p.drawLine(QPointF(25, 19), QPointF(51, 19));
         p.drawLine(QPointF(38, 17), QPointF(38, 21));
         p.drawLine(QPointF(31, 19), QPointF(45, 19));
     }
     else if (kind == QLatin1String("compass"))
     {
-        p.setPen(QPen(QColor("#4a5a68"), 1));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#4a5a68")), 1));
         p.drawEllipse(QPointF(38, 19), 13, 13);
         p.drawText(QRectF(35, 5, 8, 8), Qt::AlignCenter, QStringLiteral("N"));
-        p.setPen(QPen(QColor("#ff7b72"), 1.8));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#ff7b72")), 1.8));
         p.drawLine(QPointF(38, 19), QPointF(43, 10));
-        p.setPen(QPen(QColor("#c9d1d9"), 1));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#c9d1d9")), 1));
         p.drawLine(QPointF(38, 19), QPointF(34, 27));
     }
     else if (kind == QLatin1String("gauge"))
     {
-        p.setPen(QPen(QColor("#4a5a68"), 1.2));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#4a5a68")), 1.2));
         p.drawArc(QRectF(18, 7, 40, 34), 200 * 16, -220 * 16);
-        p.setPen(QPen(QColor("#f2b134"), 1.6));
+        p.setPen(QPen(ThemeManager::adaptColor(QColor("#f2b134")), 1.6));
         p.drawLine(QPointF(38, 23), QPointF(51, 13));
-        p.setBrush(QColor("#f2b134"));
+        p.setBrush(ThemeManager::adaptColor(QColor("#f2b134")));
         p.drawEllipse(QPointF(38, 23), 2, 2);
     }
     return pm;
@@ -244,15 +245,15 @@ protected:
     void paintEvent(QPaintEvent *) override
     {
         QPainter pr(this);
-        pr.fillRect(rect(), QColor(27, 35, 43));
+        pr.fillRect(rect(), ThemeManager::color(QStringLiteral("panelAlt")));
         for (int r = 1; r <= 8; ++r)
         {
             for (int c = 1; c <= 8; ++c)
             {
                 const QRect cell(kPad + (c - 1) * kStep, kPad + (r - 1) * kStep, 16, 16);
                 const bool on = r <= m_rows && c <= m_cols;
-                pr.fillRect(cell, on ? QColor(242, 177, 52) : QColor(45, 56, 65));
-                pr.setPen(on ? QColor(255, 214, 125) : QColor(70, 84, 96));
+                pr.fillRect(cell, on ? ThemeManager::color(QStringLiteral("accent")) : ThemeManager::color(QStringLiteral("line")));
+                pr.setPen(on ? ThemeManager::color(QStringLiteral("accent")) : ThemeManager::color(QStringLiteral("textDim")));
                 pr.drawRect(cell.adjusted(0, 0, -1, -1));
             }
         }

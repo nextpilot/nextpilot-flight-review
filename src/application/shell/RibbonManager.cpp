@@ -2,6 +2,7 @@
 
 #include "CommandManager.h"
 #include "Component.h"
+#include "ThemeManager.h"
 
 #include <QAction>
 #include <QIcon>
@@ -28,12 +29,56 @@ RibbonManager::RibbonManager(QMainWindow *window, ps::commands::CommandManager *
 {
 }
 
+void RibbonManager::applyTheme()
+{
+    if (!m_bar)
+        return;
+    Q_INIT_RESOURCE(SARibbonResource);
+    SA::applyRibbonTheme(m_window, m_bar,
+                         ThemeManager::isDark() ? SARibbonTheme::RibbonThemeDark
+                                                : SARibbonTheme::RibbonThemeOffice2021Blue);
+    // 视觉对齐 design/prototype/PlotScope-工作区原型.html 的 ribbon 段：
+    // 扁平、无边框、琥珀色选中，压掉 Office 味的蓝色和内边距
+    const QString custom = QStringLiteral(R"(
+        SARibbonBar { background:#141a1f; border-bottom:1px solid #232b33; }
+        SARibbonCategory { background:#141a1f; border:0; }
+        SARibbonPanel { background:#141a1f; border:0; border-right:1px solid #1b232a; }
+        SARibbonPanelLabel { color:#7d8b96; font-size:10px; background:transparent; padding-bottom:3px; }
+        SARibbonToolButton {
+            background:transparent; border:1px solid transparent; border-radius:0;
+            color:#8494a0; font-size:12px; padding:0; margin:0;
+        }
+        SARibbonToolButton[rbLarge="true"] { min-width:52px; max-width:60px; min-height:48px; max-height:48px; }
+        SARibbonToolButton[rbLarge="false"] { min-height:21px; max-height:22px; padding:2px 8px; }
+        SARibbonToolButton:hover { background:#1b232a; color:#c8d2da; border-color:#222b33; }
+        SARibbonToolButton:pressed { background:#212a31; }
+        SARibbonToolButton:checked { background:#212a31; color:#f2b134; border-color:#222b33; }
+        SARibbonToolButton:disabled { color:#4a545d; }
+        SARibbonToolButton::menu-indicator { image:none; width:0; }
+        SARibbonSeparatorWidget { background:#1b232a; }
+        SARibbonPanelOptionButton { background:transparent; border:0; }
+        SARibbonPanelOptionButton:hover { background:#1b232a; }
+        #objSARibbonTabBar { background:#141a1f; border:0; }
+        #objSARibbonTabBar::tab {
+            background:transparent; color:#5d6c77; font-size:11px;
+            padding:0 11px; margin:0 1px; border:0; border-bottom:2px solid transparent;
+            min-width:0;
+        }
+        #objSARibbonTabBar::tab:hover { color:#c8d2da; background:#1a2127; }
+        #objSARibbonTabBar::tab:selected { color:#f2b134; border-bottom:2px solid #f2b134; }
+        #objSARibbonQuickAccessBar { background:#141a1f; }
+    )");
+    m_bar->setProperty("psThemeManaged", true);
+    m_bar->setStyleSheet(m_bar->styleSheet() + ThemeManager::mapStyleSheet(custom));
+}
+
 QWidget *RibbonManager::create()
 
 {
     // Ribbon 结构层交给 SARibbon（MIT，vendored 在 src/3dparty/saribbon）：
     // 页签溢出、键盘导航、面板布局都是它的事；我们只负责配色与命令。
     auto *ribbon = new SARibbonBar(m_window);
+    m_bar = ribbon;
     ribbon->setRibbonStyle(SARibbonBar::RibbonStyleLooseSingleRow);
     // 有 Ribbon 就不要再留一条同名 QMenuBar，两排"文件/数据/绘图"并排是最刺眼的不协调
     if (auto *mb = m_window->menuBar())
@@ -218,40 +263,7 @@ QWidget *RibbonManager::create()
         b->setProperty("rbLarge", b->buttonType() == SARibbonToolButton::LargeButton);
     }
 
-    // 静态库里资源要显式初始化，否则 dark 主题静默回退浅色 QSS
-    Q_INIT_RESOURCE(SARibbonResource);
-    SA::applyRibbonTheme(m_window, ribbon, SARibbonTheme::RibbonThemeDark);
-    // 视觉对齐 design/prototype/PlotScope-工作区原型.html 的 ribbon 段：
-    // 扁平、无边框、琥珀色选中，压掉 Office 味的蓝色和内边距
-    ribbon->setStyleSheet(ribbon->styleSheet() + QStringLiteral(R"(
-        SARibbonBar { background:#141a1f; border-bottom:1px solid #232b33; }
-        SARibbonCategory { background:#141a1f; border:0; }
-        SARibbonPanel { background:#141a1f; border:0; border-right:1px solid #1b232a; }
-        SARibbonPanelLabel { color:#7d8b96; font-size:10px; background:transparent; padding-bottom:3px; }
-        SARibbonToolButton {
-            background:transparent; border:1px solid transparent; border-radius:0;
-            color:#8494a0; font-size:12px; padding:0; margin:0;
-        }
-        SARibbonToolButton[rbLarge="true"] { min-width:52px; max-width:60px; min-height:48px; max-height:48px; }
-        SARibbonToolButton[rbLarge="false"] { min-height:21px; max-height:22px; padding:2px 8px; }
-        SARibbonToolButton:hover { background:#1b232a; color:#c8d2da; border-color:#222b33; }
-        SARibbonToolButton:pressed { background:#212a31; }
-        SARibbonToolButton:checked { background:#212a31; color:#f2b134; border-color:#222b33; }
-        SARibbonToolButton:disabled { color:#4a545d; }
-        SARibbonToolButton::menu-indicator { image:none; width:0; }
-        SARibbonSeparatorWidget { background:#1b232a; }
-        SARibbonPanelOptionButton { background:transparent; border:0; }
-        SARibbonPanelOptionButton:hover { background:#1b232a; }
-        #objSARibbonTabBar { background:#141a1f; border:0; }
-        #objSARibbonTabBar::tab {
-            background:transparent; color:#5d6c77; font-size:11px;
-            padding:0 11px; margin:0 1px; border:0; border-bottom:2px solid transparent;
-            min-width:0;
-        }
-        #objSARibbonTabBar::tab:hover { color:#c8d2da; background:#1a2127; }
-        #objSARibbonTabBar::tab:selected { color:#f2b134; border-bottom:2px solid #f2b134; }
-        #objSARibbonQuickAccessBar { background:#141a1f; }
-    )"));
+    applyTheme();
     return ribbon;
 }
 

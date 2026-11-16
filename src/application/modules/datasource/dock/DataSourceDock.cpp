@@ -7,6 +7,7 @@
 #include "LiveSession.h"
 #include "DatasetCache.h"
 #include "UiDialogEngine.h"
+#include "ThemeManager.h"
 #include "DataSourceDialog.h"
 #include "record/StreamRecorder.h"
 #include <QJsonDocument>
@@ -1805,6 +1806,7 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     refreshSrcCount();
     if (backed)
         m_ctx.activateSource(row);
+    ThemeManager::refreshWidgetStyles(row);
     return row;
 }
 

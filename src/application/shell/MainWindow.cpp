@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "ShellCommands.h"
 #include "SettingsManager.h"
+#include "ThemeManager.h"
 #include "Component.h"
 
 #include <QCloseEvent>
@@ -79,6 +80,7 @@ MainWindow::MainWindow(QWidget *parent)
     statusBar()->showMessage(kernelInfo);
     m_commands.bindShortcuts(this);
     refreshTitle();
+    ThemeManager::refreshWidgetStyles(this);
 
     log(QStringLiteral("启动完成：%1").arg(kernelInfo));
 }
@@ -87,6 +89,13 @@ void MainWindow::refreshTitle()
 {
     const QString base = QStringLiteral("PlotScope 0.1.0 — 绘图分析");
     setWindowTitle(m_session.isDirty() ? base + QStringLiteral(" *") : base);
+}
+
+void MainWindow::applyTheme()
+{
+    m_ribbon.applyTheme();
+    ThemeManager::refreshWidgetStyles(this);
+    update();
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event)

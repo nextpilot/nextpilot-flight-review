@@ -16,6 +16,7 @@
 #include <QSaveFile>
 #include <QTextStream>
 #include "SettingsManager.h"
+#include "ThemeManager.h"
 #include <QDateTime>
 #include <QColorDialog>
 #include <QJsonArray>
@@ -83,13 +84,10 @@ void drawMarker(QPainter &p, const QPointF &pt, int marker, double size, const Q
 
 constexpr double kPi = 3.14159265358979323846;
 
-QColor colorBg()   { return QColor("#10161c"); }
-QColor colorGrid() { return QColor("#1c2430"); }
-QColor colorText() { return QColor("#8b949e"); }
-QColor colorDim()  { return QColor("#6e7681"); }
-
-const QColor kPalette[] = {QColor("#4ea1ff"), QColor("#ffb454"), QColor("#7ee787"),
-                           QColor("#d2a8ff"), QColor("#ff7b72"), QColor("#39c5cf")};
+QColor colorBg()   { return ThemeManager::color(QStringLiteral("canvasBg")); }
+QColor colorGrid() { return ThemeManager::color(QStringLiteral("grid")); }
+QColor colorText() { return ThemeManager::color(QStringLiteral("textDim")); }
+QColor colorDim()  { return ThemeManager::color(QStringLiteral("textMuted")); }
 }
 
 PlottingCanvas::PlottingCanvas(QWidget *parent)
@@ -157,7 +155,7 @@ void PlottingCanvas::addDemoCurves()
         s.name = QString::fromLatin1(d.name);
         s.label = s.name;
         s.unit = QString::fromLatin1(d.unit);
-        s.color = kPalette[idx++ % 6];
+        s.color = ThemeManager::seriesColor(idx++);
         s.tOwn.reserve(n);
         s.vOwn.reserve(n);
         const double phase = d.phase + seed * 0.9;
@@ -189,7 +187,7 @@ void PlottingCanvas::buildHoverBar()
     lay->setSpacing(2);
 
     auto addBtn = [&](const QString &icon, const QString &tip, std::function<void()> fn,
-                      const QColor &tint = QColor(QStringLiteral("#c8d2da"))) {
+                      const QColor &tint = ThemeManager::color(QStringLiteral("text"))) {
         auto *b = new QToolButton(m_hoverBar);
         // 资源图标偏暗，按目标色重着色，浮动条在深色画布上才看得清。
         QPixmap src = QIcon(icon).pixmap(32, 32);
@@ -226,7 +224,7 @@ void PlottingCanvas::buildHoverBar()
     m_dragBtn->setCursor(Qt::OpenHandCursor);
     m_abBtn = addBtn(QStringLiteral(":/icons/ruler.svg"),
                      QStringLiteral("双游标测量：点两下设置 A/B，拖动游标看 Δt/Δy"),
-                     [] {}, QColor(QStringLiteral("#f2b134")));
+                     [] {}, ThemeManager::color(QStringLiteral("accent")));
     m_abBtn->setCheckable(true);
     QObject::connect(m_abBtn, &QToolButton::toggled, this, [this](bool on) {
         m_abEnabled = on;
@@ -240,7 +238,7 @@ void PlottingCanvas::buildHoverBar()
     sep->setFixedWidth(4);
     lay->addWidget(sep);
     auto *del = addBtn(QStringLiteral(":/icons/trash.svg"), QStringLiteral("删除本画布"),
-                       [this] { emit removeRequested(); }, QColor(QStringLiteral("#f28b82")));
+                       [this] { emit removeRequested(); }, ThemeManager::color(QStringLiteral("danger")));
     del->setProperty("danger", true);
     m_hoverBar->installEventFilter(this);
     for (auto *b : m_hoverBar->findChildren<QToolButton *>())
@@ -361,7 +359,7 @@ void PlottingCanvas::setChannels(const QVector<const PsChannelInfo *> &channels)
         s.label = m_inputSrcAlias.isEmpty() ? s.name
                                             : m_inputSrcAlias + QStringLiteral(" · ") + s.name;
         s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
-        s.color = kPalette[idx++ % 6];
+        s.color = ThemeManager::seriesColor(idx++);
         s.srcId = m_inputSrcId;
         s.srcPath = m_inputSrcPath;
         s.offsetSec = m_inputOffset;
@@ -406,7 +404,7 @@ void PlottingCanvas::addGeneratedSeries(const QString &name, const QVector<doubl
     Series s;
     s.name = name;
     s.label = name;
-    s.color = kPalette[m_series.size() % 6];
+    s.color = ThemeManager::seriesColor(int(m_series.size()));
     s.tOwn = time;
     s.vOwn = value;
     m_series.append(s);
@@ -505,7 +503,7 @@ void PlottingCanvas::addChannelEx(const PsChannelInfo *ch, int srcId, const QStr
     s.srcId = srcId;
     s.srcPath = path;
     s.offsetSec = offsetSec;
-    s.color = kPalette[m_series.size() % 6];
+    s.color = ThemeManager::seriesColor(int(m_series.size()));
     s.info = ch;
     s.t = ch->time;
     s.v = ch->value;
@@ -1135,12 +1133,12 @@ void PlottingCanvas::paintHorizon(QPainter &p, const QRectF &plot, const QFontMe
     p.translate(c);
     p.rotate(-r);
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor("#1b4f72"));
+    p.setBrush(ThemeManager::seriesColor(0));
     p.drawEllipse(QPointF(0, -pt * 2.0), rad, rad);
-    p.setBrush(QColor("#6b4f2a"));
+    p.setBrush(ThemeManager::seriesColor(1));
     p.drawEllipse(QPointF(0, -pt * 2.0 + rad), rad, rad);
     p.restore();
-    p.setPen(QPen(QColor("#f2b134"), 2));
+    p.setPen(QPen(ThemeManager::color(QStringLiteral("accent")), 2));
     p.drawEllipse(c, rad, rad);
     p.drawLine(QPointF(c.x() - rad, c.y()), QPointF(c.x() + rad, c.y()));
     p.drawLine(QPointF(c.x(), c.y() - rad), QPointF(c.x(), c.y() + rad));
@@ -1166,7 +1164,7 @@ void PlottingCanvas::paintCompass(QPainter &p, const QRectF &plot, const QFontMe
                    c + QPointF(std::sin(a) * rad, -std::cos(a) * rad));
     }
     const double a = h * kPi / 180.0;
-    p.setPen(QPen(QColor("#f85149"), 2));
+    p.setPen(QPen(ThemeManager::color(QStringLiteral("danger")), 2));
     p.drawLine(c, c + QPointF(std::sin(a) * rad * 0.75, -std::cos(a) * rad * 0.75));
     p.setPen(colorText());
     p.drawText(QRectF(c.x() - 100, c.y() + rad + 6, 200, fm.height()),
@@ -1198,10 +1196,10 @@ void PlottingCanvas::paintGauge(QPainter &p, const QRectF &plot, const QFontMetr
     p.setPen(QPen(colorGrid(), 2));
     p.drawArc(arc, 225 * 16, -270 * 16);
     const double frac = std::clamp((v - lo) / (hi - lo), 0.0, 1.0);
-    p.setPen(QPen(QColor("#4ea1ff"), 4));
+    p.setPen(QPen(ThemeManager::seriesColor(0), 4));
     p.drawArc(arc, 225 * 16, int(-270.0 * frac * 16));
     const double a = (225.0 - 270.0 * frac) * kPi / 180.0;
-    p.setPen(QPen(QColor("#f2b134"), 2));
+    p.setPen(QPen(ThemeManager::color(QStringLiteral("accent")), 2));
     p.drawLine(c, c + QPointF(std::cos(a) * rad * 0.9, -std::sin(a) * rad * 0.9));
     p.setPen(colorText());
     p.drawText(QRectF(c.x() - 100, c.y() - fm.height() / 2, 200, fm.height()),
@@ -1281,15 +1279,15 @@ void PlottingCanvas::paintGpsMap(QPainter &p, const QRectF &plot, const QFontMet
                    QString::number(maxLat - (maxLat - minLat) * i / 4.0, 'f', 5));
         p.setPen(QPen(colorGrid(), 1));
     }
-    p.setPen(QPen(QColor("#4ea1ff"), 1.6));
+    p.setPen(QPen(ThemeManager::seriesColor(0), 1.6));
     QPolygonF poly;
     for (const QPointF &q : pts)
         poly.append(QPointF(xOf(q.x()), yOf(q.y())));
     p.drawPolyline(poly);
-    p.setBrush(QColor("#7ee787"));
+    p.setBrush(ThemeManager::color(QStringLiteral("success")));
     p.setPen(Qt::NoPen);
     p.drawEllipse(QPointF(xOf(pts.first().x()), yOf(pts.first().y())), 4, 4);
-    p.setBrush(QColor("#ff7b72"));
+    p.setBrush(ThemeManager::color(QStringLiteral("danger")));
     p.drawEllipse(QPointF(xOf(pts.last().x()), yOf(pts.last().y())), 4, 4);
     p.setPen(colorDim());
     p.drawText(QPointF(plot.left() + 6, plot.top() + fm.ascent() + 2),
@@ -1506,7 +1504,7 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
     p.fillRect(rect(), colorBg());
-    p.setPen(QColor("#1f2831"));
+    p.setPen(ThemeManager::color(QStringLiteral("line")));
     p.drawRect(rect().adjusted(0, 0, -1, -1));
 
     const QRectF plot = plotRect();
@@ -1542,9 +1540,9 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         const double x = plot.left() + plot.width() * (m_playhead - m_t0) / (m_t1 - m_t0);
         if (x >= plot.left() && x <= plot.right())
         {
-            p.setPen(QPen(QColor("#ffb454"), 1, Qt::DashLine));
+            p.setPen(QPen(ThemeManager::seriesColor(1), 1, Qt::DashLine));
             p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
-            p.setPen(QColor("#ffb454"));
+            p.setPen(ThemeManager::seriesColor(1));
             p.drawText(QPointF(std::min(x + 4, plot.right() - 40), plot.top() + fm.ascent() + 2),
                        QStringLiteral("视频"));
         }
@@ -1783,9 +1781,9 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
             const QString hint = QStringLiteral("点击图表设置游标 A，再点一下设置 B");
             const QRectF hr(plot.left() + 10, plot.top() + 4, 250, 18);
             p.setPen(Qt::NoPen);
-            p.setBrush(QColor(22, 27, 34, 210));
+            p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 210));
             p.drawRoundedRect(hr, 3, 3);
-            p.setPen(QColor("#f2b134"));
+            p.setPen(ThemeManager::color(QStringLiteral("accent")));
             p.drawText(hr.adjusted(8, 0, -8, 0), Qt::AlignVCenter | Qt::AlignLeft, hint);
         }
         else
@@ -1795,7 +1793,7 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
             if (m_abHasB)
             {
                 p.setPen(Qt::NoPen);
-                p.setBrush(QColor(242, 177, 52, 24));
+                p.setBrush(ThemeManager::alphaColor(QStringLiteral("accent"), 24));
                 p.drawRect(QRectF(QPointF(qMin(xa, xb), plot.top()),
                                   QPointF(qMax(xa, xb), plot.bottom())));
 
@@ -1808,46 +1806,46 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
                 if (badge.right() > plot.right() - 4)
                     badge.moveRight(plot.right() - 4);
                 p.setPen(Qt::NoPen);
-                p.setBrush(QColor(242, 177, 52, 235));
+                p.setBrush(ThemeManager::alphaColor(QStringLiteral("accent"), 235));
                 p.drawRoundedRect(badge, 3, 3);
-                p.setPen(QColor("#1b1f24"));
+                p.setPen(ThemeManager::color(QStringLiteral("bg")));
                 p.drawText(badge, Qt::AlignCenter, dtText);
             }
 
-            p.setPen(QPen(QColor("#f2b134"), 1.4, Qt::DashLine));
+            p.setPen(QPen(ThemeManager::color(QStringLiteral("accent")), 1.4, Qt::DashLine));
             p.drawLine(QPointF(xa, plot.top()), QPointF(xa, plot.bottom()));
-            p.setBrush(QColor("#f2b134"));
+            p.setBrush(ThemeManager::color(QStringLiteral("accent")));
             p.drawEllipse(QPointF(xa, plot.top() + 1), 3, 3);
-            p.setPen(QColor("#f2b134"));
+            p.setPen(ThemeManager::color(QStringLiteral("accent")));
             {
                 const QString al = QStringLiteral("A  %1 s").arg(m_abA, 0, 'f', 3);
                 QRectF ar(xa + 4, plot.top() + 26, fm.horizontalAdvance(al) + 10, fm.height() + 2);
                 if (ar.right() > plot.right() - 4)
                     ar.moveRight(xa - 4);
                 p.setPen(Qt::NoPen);
-                p.setBrush(QColor(22, 27, 34, 220));
+                p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 220));
                 p.drawRoundedRect(ar, 2, 2);
-                p.setPen(QColor("#f2b134"));
+                p.setPen(ThemeManager::color(QStringLiteral("accent")));
                 p.drawText(ar, Qt::AlignCenter, al);
             }
 
             if (m_abHasB)
             {
                 const double xb = xOf(m_abB);
-                p.setPen(QPen(QColor("#58a6ff"), 1.4, Qt::DashLine));
+                p.setPen(QPen(ThemeManager::seriesColor(0), 1.4, Qt::DashLine));
                 p.drawLine(QPointF(xb, plot.top()), QPointF(xb, plot.bottom()));
-                p.setBrush(QColor("#58a6ff"));
+                p.setBrush(ThemeManager::seriesColor(0));
                 p.drawEllipse(QPointF(xb, plot.top() + 1), 3, 3);
-                p.setPen(QColor("#58a6ff"));
+                p.setPen(ThemeManager::seriesColor(0));
                 {
                     const QString bl = QStringLiteral("B  %1 s").arg(m_abB, 0, 'f', 3);
                     QRectF br(xb + 4, plot.top() + 26, fm.horizontalAdvance(bl) + 10, fm.height() + 2);
                     if (br.right() > plot.right() - 4)
                         br.moveRight(xb - 4);
                     p.setPen(Qt::NoPen);
-                    p.setBrush(QColor(22, 27, 34, 220));
+                    p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 220));
                     p.drawRoundedRect(br, 2, 2);
-                    p.setPen(QColor("#58a6ff"));
+                    p.setPen(ThemeManager::seriesColor(0));
                     p.drawText(br, Qt::AlignCenter, bl);
                 }
 
@@ -1868,11 +1866,11 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
                     };
                     const QPointF pa(xa, yOf(va));
                     const QPointF pb(xb, yOf(vb));
-                    p.setPen(QPen(QColor(242, 177, 52, 150), 1, Qt::DashLine));
+                    p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("accent"), 150), 1, Qt::DashLine));
                     p.drawLine(pa, QPointF(xb, pa.y()));
                     p.drawLine(QPointF(xb, pa.y()), pb);
                     p.drawLine(pa, pb);
-                    p.setPen(QColor("#f2b134"));
+                    p.setPen(ThemeManager::color(QStringLiteral("accent")));
                     const QString dyl = QStringLiteral("Δy %1").arg(vb - va, 0, 'g', 5);
                     p.drawText(QPointF(xb + 4, (pa.y() + pb.y()) * 0.5), dyl);
                     break;
@@ -1903,13 +1901,13 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
                 const int boxH = 40 + rows.size() * lineH + 6;
                 QRectF box(plot.left() + 10, plot.bottom() - boxH - 8, 320, boxH);
                 p.setPen(Qt::NoPen);
-                p.setBrush(QColor(22, 27, 34, 238));
+                p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 238));
                 p.drawRoundedRect(box, 3, 3);
-                p.setPen(QColor("#f2b134"));
+                p.setPen(ThemeManager::color(QStringLiteral("accent")));
                 p.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
                            Qt::AlignVCenter | Qt::AlignLeft,
                            QStringLiteral("A→B  Δx = %1 s（时间轴）").arg(dt, 0, 'f', 4));
-                p.setPen(QColor("#8b949e"));
+                p.setPen(ThemeManager::color(QStringLiteral("textDim")));
                 p.drawLine(QPointF(box.left() + 7, box.top() + 21),
                            QPointF(box.right() - 7, box.top() + 21));
                 int yy = int(box.top()) + 22;
@@ -1926,7 +1924,7 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
 
     if (m_hover && plot.contains(m_cursor))
     {
-        p.setPen(QPen(QColor(255, 255, 255, 60), 1, Qt::DashLine));
+        p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("line"), 60), 1, Qt::DashLine));
         p.drawLine(QPointF(m_cursor.x(), plot.top()), QPointF(m_cursor.x(), plot.bottom()));
         p.drawLine(QPointF(plot.left(), m_cursor.y()), QPointF(plot.right(), m_cursor.y()));
 
@@ -1961,14 +1959,14 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         if (box.bottom() > plot.bottom())
             box.moveTop(plot.bottom() - boxH - 4);
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(22, 27, 34, 238));
+        p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 238));
         p.drawRoundedRect(box, 3, 3);
 
-        p.setPen(QColor("#f2b134"));
+        p.setPen(ThemeManager::color(QStringLiteral("accent")));
         p.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
                    Qt::AlignVCenter | Qt::AlignLeft,
                    QStringLiteral("t = %1").arg(formatTime(t)));
-        p.setPen(QColor("#8b949e"));
+        p.setPen(ThemeManager::color(QStringLiteral("textDim")));
         p.drawLine(QPointF(box.left() + 7, box.top() + 21),
                    QPointF(box.right() - 7, box.top() + 21));
 
@@ -2018,7 +2016,7 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
             const QString label = mk.second.trimmed().isEmpty() ? formatTime(t) : mk.second;
             const QString text = fm.elidedText(QStringLiteral("%1  %2").arg(label, formatTime(t)),
                                                Qt::ElideRight, 180);
-            p.setPen(QPen(QColor(242, 177, 52, 150), 1, Qt::DashLine));
+            p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("accent"), 150), 1, Qt::DashLine));
             p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
             const int tw = fm.horizontalAdvance(text) + 10;
             QRectF chip(x + 3, plot.top() + 2 + (lane % 3) * 17, tw, 16);
@@ -2026,10 +2024,10 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
                 chip.moveLeft(x - 3 - tw);
             if (chip.left() < plot.left())
                 chip.moveLeft(plot.left() + 3);
-            p.setPen(QPen(QColor(122, 94, 34), 1));
-            p.setBrush(QColor(38, 31, 15, 235));
+            p.setPen(QPen(ThemeManager::color(QStringLiteral("border")), 1));
+            p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 235));
             p.drawRoundedRect(chip, 2, 2);
-            p.setPen(QColor(242, 177, 52));
+            p.setPen(ThemeManager::color(QStringLiteral("accent")));
             p.drawText(chip.adjusted(5, 0, -5, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
             m_markerRects.append({t, chip});
             ++lane;
@@ -2041,10 +2039,10 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
             const int tw = fm.horizontalAdvance(label) + 24;
             QRectF chip(left ? QRectF(plot.left() + 2, plot.bottom() - 19, tw, 16)
                              : QRectF(plot.right() - tw - 2, plot.bottom() - 19, tw, 16));
-            p.setPen(QPen(QColor(122, 94, 34), 1));
-            p.setBrush(QColor(30, 25, 13, 220));
+            p.setPen(QPen(ThemeManager::color(QStringLiteral("border")), 1));
+            p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 220));
             p.drawRoundedRect(chip, 2, 2);
-            p.setPen(QColor(200, 150, 55));
+            p.setPen(ThemeManager::alphaColor(QStringLiteral("accent"), 200));
             p.drawText(chip, Qt::AlignCenter, left ? QStringLiteral("◂ ") + label : label + QStringLiteral(" ▸"));
             m_markerRects.append({t, chip});
         };
@@ -2054,8 +2052,8 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
 
     if (m_rubbering && m_rubberRect.isValid())
     {
-        p.setPen(QPen(QColor(78, 161, 255, 220), 1, Qt::DashLine));
-        p.setBrush(QColor(78, 161, 255, 40));
+        p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("accent"), 220), 1, Qt::DashLine));
+        p.setBrush(ThemeManager::alphaColor(QStringLiteral("accent"), 40));
         p.drawRect(m_rubberRect);
         p.setBrush(Qt::NoBrush);
     }
@@ -2518,7 +2516,7 @@ void PlottingCanvas::restoreState(const QJsonObject &o, const QHash<QString, con
         s.unit = so.value(QStringLiteral("unit")).toString(QString::fromUtf8(ch->unit ? ch->unit : ""));
         s.color = QColor(so.value(QStringLiteral("color")).toString());
         if (!s.color.isValid())
-            s.color = kPalette[m_series.size() % 6];
+            s.color = ThemeManager::seriesColor(int(m_series.size()));
         s.width = so.value(QStringLiteral("width")).toInt(1);
         s.axis = so.value(QStringLiteral("axis")).toInt(0);
         s.lineStyle = so.value(QStringLiteral("style")).toInt(0);
