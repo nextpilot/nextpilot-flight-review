@@ -7,10 +7,10 @@
 #include <QPair>
 
 #include "Component.h"
-#include "ExtensionHost.h"
+#include "ExtensionManager.h"
 #include "CommandManager.h"
 #include "AppSession.h"
-#include "ShellFeedback.h"
+#include "LogManager.h"
 #include "DockManager.h"
 #include "RibbonManager.h"
 
@@ -41,7 +41,7 @@ public:
     void restoreDockMax();
 
     ps::commands::CommandManager &commands() { return m_commands; }
-    ps::components::ExtensionHost &extensions() { return m_extensions; }
+    ExtensionManager &extensions() { return m_extensions; }
     AppSession &session() { return m_session; }
     QTabWidget *pages() const { return m_pages; }
     void setPageHost(QTabWidget *p) {
@@ -64,10 +64,10 @@ private:
     QTabWidget *m_pages = nullptr;
     QPlainTextEdit *m_logView = nullptr;
     QString m_kernelInfo;
-    ps::components::ExtensionHost m_extensions;
+    ExtensionManager m_extensions;
     ps::commands::CommandManager m_commands;
     AppSession m_session;
-    ShellFeedback m_feedback;
+    LogManager m_logs;
     DockManager m_docks;
     RibbonManager m_ribbon;
 };

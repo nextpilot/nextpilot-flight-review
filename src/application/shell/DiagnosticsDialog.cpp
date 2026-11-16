@@ -1,6 +1,5 @@
 #include "DiagnosticsDialog.h"
 
-#include "Component.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -34,7 +33,7 @@ QString logDir()
     return configDir() + QStringLiteral("/logs");
 }
 
-QString extensionText(const QVector<ps::components::ExtensionEntry> &extensions)
+QString extensionText(const QVector<ExtensionManager::ExtensionInfo> &extensions)
 {
     QString text;
     QTextStream out(&text);
@@ -42,14 +41,17 @@ QString extensionText(const QVector<ps::components::ExtensionEntry> &extensions)
     {
         const auto &d = entry.descriptor;
         out << d.id << "  " << d.name << "  " << d.version << "  "
-            << (d.type == ps::components::ExtensionType::Builtin ? "builtin" : "dynamic") << '\n';
+            << (d.type == ps::components::ExtensionType::Builtin ? "builtin" : "dynamic")
+            << "  " << (entry.active ? "active" : "inactive") << '\n';
+        if (!entry.error.isEmpty())
+            out << "  " << entry.error << '\n';
     }
     return text;
 }
 } // namespace
 
 DiagnosticsDialog::DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
-                                     const QVector<ps::components::ExtensionEntry> &extensions,
+                                     const QVector<ExtensionManager::ExtensionInfo> &extensions,
                                      const QStringList &errors)
     : QDialog(parent)
 {

@@ -5,15 +5,13 @@
 #include <QStringList>
 #include <QVector>
 
-namespace ps::components
-{
-struct ExtensionEntry;
-}
+#include "ExtensionManager.h"
+
 
 class DiagnosticsDialog : public QDialog
 {
 public:
     DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
-                      const QVector<ps::components::ExtensionEntry> &extensions,
+                      const QVector<ExtensionManager::ExtensionInfo> &extensions,
                       const QStringList &errors);
 };

@@ -1,4 +1,4 @@
-#include "ShellFeedback.h"
+#include "LogManager.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -10,7 +10,7 @@
 #include <QStatusBar>
 #include <QTextStream>
 
-ShellFeedback::ShellFeedback(QMainWindow *window)
+LogManager::LogManager(QMainWindow *window)
     : m_window(window)
 {
     QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
@@ -20,13 +20,12 @@ ShellFeedback::ShellFeedback(QMainWindow *window)
     m_logPath = dir + QStringLiteral("/logs/plotscope.log");
 }
 
-void ShellFeedback::attach(QStatusBar *statusBar, QPlainTextEdit *logView)
+void LogManager::setStatusBar(QStatusBar *statusBar)
 {
     m_statusBar = statusBar;
-    setLogView(logView);
 }
 
-void ShellFeedback::setLogView(QPlainTextEdit *logView)
+void LogManager::setLogView(QPlainTextEdit *logView)
 {
     m_logView = logView;
     if (!m_logView)
@@ -35,24 +34,30 @@ void ShellFeedback::setLogView(QPlainTextEdit *logView)
     m_logView->setMaximumBlockCount(2000);
 }
 
-void ShellFeedback::info(const QString &text)
+void LogManager::addSink(Sink sink)
 {
-    write(text);
+    if (sink)
+        m_sinks.append(std::move(sink));
 }
 
-void ShellFeedback::warn(const QString &text)
+void LogManager::info(const QString &text)
 {
-    write(QStringLiteral("警告：%1").arg(text));
+    write(text, Level::Info);
 }
 
-void ShellFeedback::error(const QString &title, const QString &detail)
+void LogManager::warn(const QString &text)
 {
-    write(QStringLiteral("错误：%1").arg(detail));
+    write(QStringLiteral("警告：%1").arg(text), Level::Warning);
+}
+
+void LogManager::error(const QString &title, const QString &detail)
+{
+    write(QStringLiteral("错误：%1").arg(detail), Level::Error);
     if (m_window)
         QMessageBox::critical(m_window, title, detail);
 }
 
-void ShellFeedback::write(const QString &text)
+void LogManager::write(const QString &text, Level level)
 {
     const QString ts = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
     const QString line = QStringLiteral("[%1] %2").arg(ts, text);
@@ -61,13 +66,15 @@ void ShellFeedback::write(const QString &text)
     if (m_statusBar)
         m_statusBar->showMessage(text, 4000);
     appendFile(line);
+    for (const Sink &sink : m_sinks)
+        sink(line, level);
 }
 
-void ShellFeedback::appendFile(const QString &text) const
+void LogManager::appendFile(const QString &line) const
 {
     QFile file(m_logPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
         return;
     QTextStream out(&file);
-    out << text << '\n';
+    out << line << '\n';
 }

@@ -22,11 +22,13 @@ public:
     Registry &registry() { return m_registry; }
     const Registry &registry() const { return m_registry; }
     const QStringList &errors() const { return m_errors; }
+    const QStringList &activeIds() const { return m_activeIds; }
 
 private:
     Registry m_registry;
     std::vector<std::unique_ptr<IComponent>> m_components;
     QStringList m_errors;
+    QStringList m_activeIds;
 };
 
 } // namespace ps::components

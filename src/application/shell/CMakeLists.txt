@@ -3,8 +3,8 @@ add_library(ps_application_shell OBJECT
   MainWindow.cpp
   AppSession.h
   AppSession.cpp
-  ShellFeedback.h
-  ShellFeedback.cpp
+  LogManager.h
+  LogManager.cpp
   DockManager.h
   DockManager.cpp
   RibbonManager.h
@@ -19,6 +19,8 @@ add_library(ps_application_shell OBJECT
   CommandManager.cpp
   ExtensionHost.h
   ExtensionHost.cpp
+  ExtensionManager.h
+  ExtensionManager.cpp
   ShellComponent.h
   ShellComponent.cpp
   SettingsDialog.h

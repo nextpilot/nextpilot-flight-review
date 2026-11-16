@@ -96,7 +96,7 @@ void registerCommands(MainWindow &win)
     });
 
     win.commands().add(QStringLiteral("help.about"), [&win](const Ctx &) {
-        DiagnosticsDialog dlg(&win, win.kernelInfo(), ps::components::ExtensionRegistry::instance().extensions(),
+        DiagnosticsDialog dlg(&win, win.kernelInfo(), win.extensions().extensions(),
                               win.extensions().errors());
         dlg.exec();
     });

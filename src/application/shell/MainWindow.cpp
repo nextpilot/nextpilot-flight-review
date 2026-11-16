@@ -89,7 +89,7 @@
 MainWindow::~MainWindow() = default;
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), m_feedback(this), m_docks(this),
+    : QMainWindow(parent), m_logs(this), m_docks(this),
       m_ribbon(this, &m_commands, &m_extensions.registry(), this)
 {
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
@@ -107,7 +107,6 @@ MainWindow::MainWindow(QWidget *parent)
         m_commands.invoke(QStringLiteral("plot.setPlayhead"), ctx);
     };
     m_extensions.activate(hostContext);
-    m_feedback.attach(statusBar(), nullptr);
     shell::registerCommands(*this);
 
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
@@ -121,9 +120,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_commands.invoke(QStringLiteral("plot.refreshTree"), {});
     m_session.setLayoutPath(defaultLayoutPath());
     m_session.restoreWindow(this);
-    m_feedback.attach(statusBar(), m_logView);
+    m_logs.setStatusBar(statusBar());
+    m_logs.setLogView(m_logView);
     for (const QString &error : m_extensions.errors())
-        m_feedback.warn(error);
+        m_logs.warn(error);
     shell::bindSession(*this);
 
     // 内核连通性：状态栏直接读 ABI，证明 C ABI 已经打通
@@ -215,13 +215,13 @@ QString MainWindow::defaultLayoutPath() const
 
 void MainWindow::log(const QString &text)
 {
-    m_feedback.info(text);
+    m_logs.info(text);
 }
 
 void MainWindow::attachLogView(QPlainTextEdit *view)
 {
     m_logView = view;
-    m_feedback.setLogView(view);
+    m_logs.setLogView(view);
 }
 
 

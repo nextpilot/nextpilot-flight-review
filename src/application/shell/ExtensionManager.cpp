@@ -1,0 +1,74 @@
+#include "ExtensionManager.h"
+
+#include "ExtensionHost.h"
+#include "ExtensionRuntime.h"
+
+namespace
+{
+QString runtimeError(const std::string &error)
+{
+    return QString::fromStdString(error);
+}
+} // namespace
+
+ExtensionManager::ExtensionManager()
+    : m_host(std::make_unique<ps::components::ExtensionHost>())
+{
+}
+
+ExtensionManager::~ExtensionManager() = default;
+
+void ExtensionManager::activate(const ps::components::HostContext &context)
+{
+    m_host->activate(context);
+}
+
+void ExtensionManager::deactivate()
+{
+    m_host->deactivate();
+}
+
+ps::components::Registry &ExtensionManager::registry()
+{
+    return m_host->registry();
+}
+
+const ps::components::Registry &ExtensionManager::registry() const
+{
+    return m_host->registry();
+}
+
+QStringList ExtensionManager::errors() const
+{
+    QStringList result = m_host->errors();
+    for (const auto &error : ExtensionRuntime::instance().errors())
+        result << runtimeError(error);
+    return result;
+}
+
+QVector<ExtensionManager::ExtensionInfo> ExtensionManager::extensions() const
+{
+    QVector<ExtensionInfo> result;
+    for (const auto &entry : ps::components::ExtensionRegistry::instance().extensions())
+    {
+        ExtensionInfo info;
+        info.descriptor = entry.descriptor;
+        info.active = m_host->activeIds().contains(entry.descriptor.id);
+        for (const QString &error : m_host->errors())
+        {
+            if (error.startsWith(entry.descriptor.id + QStringLiteral("：")))
+            {
+                info.error = error;
+                break;
+            }
+        }
+        result.append(info);
+    }
+
+    return result;
+}
+
+bool ExtensionManager::isActive(const QString &id) const
+{
+    return m_host->activeIds().contains(id);
+}
