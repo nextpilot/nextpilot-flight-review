@@ -1,5 +1,6 @@
 #include "Component.h"
 #include "datasource/MessageParserRegistry.h"
+#include "datasource/AnalysisRegistry.h"
 
 #include <QSet>
 #include <QStringList>
@@ -73,7 +74,18 @@ int main()
             assert(false);
         }
     }
-
+    for (const QString &id : {QStringLiteral("autopilot.review.default"),
+                              QStringLiteral("autopilot.review.report")})
+    {
+        bool found = false;
+        for (const auto &entry : ps::data_source::AnalysisRegistry::instance().all())
+            found = found || entry.id == id;
+        if (!found)
+        {
+            std::cerr << "missing analysis entry: " << id.toStdString() << "\n";
+            assert(false);
+        }
+    }
     const QStringList automotive = {QStringLiteral("data_loader_asc"),
                                     QStringLiteral("data_loader_blf"),
                                     QStringLiteral("data_loader_mdf4")};

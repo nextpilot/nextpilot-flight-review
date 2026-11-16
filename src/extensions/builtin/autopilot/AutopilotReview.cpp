@@ -325,15 +325,6 @@ void registerAutopilotReview(Registry &registry, HostContext &host)
             report(mw);
     });
 
-    RibbonContribution ribbon;
-    ribbon.page = QStringLiteral("飞控");
-    ribbon.panel = QStringLiteral("分析");
-    ribbon.order = 300;
-    ribbon.items = {{QStringLiteral("autopilot.review.default"), QStringLiteral("默认曲线"), {}, true,
-                     QStringLiteral("datasource")},
-                    {QStringLiteral("autopilot.review.report"), QStringLiteral("分析报告"), {}, false,
-                     QStringLiteral("export_data")}};
-    registry.addRibbon(ribbon);
 }
 
 } // namespace ps::components
