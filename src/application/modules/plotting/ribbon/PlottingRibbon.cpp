@@ -15,8 +15,8 @@
 #include <QPainterPath>
 #include <QPixmap>
 #include <QToolButton>
-#include <QActionGroup>
 #include <QPalette>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
@@ -404,28 +404,38 @@ void buildPanelsToolbar(QWidget *p)
         return;
     panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
 
-    auto *group = new QActionGroup(panel);
-    group->setExclusive(true);
     auto toolAction = [&](const QString &text, const QString &iconName, int tool, const QString &tip) {
         auto *a = new QAction(ribIcon(iconName), text, panel);
         a->setCheckable(true);
         a->setToolTip(tip);
-        group->addAction(a);
-        QObject::connect(a, &QAction::toggled, mw, [mw, tool](bool on) {
+        a->setProperty("plotTool", true);
+        QObject::connect(a, &QAction::toggled, mw, [mw, tool, a, panel](bool on) {
             if (on)
+            {
+                for (QAction *other : panel->findChildren<QAction *>())
+                    if (other != a && other->property("plotTool").toBool() && other->isChecked())
+                    {
+                        QSignalBlocker blocker(other);
+                        other->setChecked(false);
+                    }
                 mw->commands().invoke(QStringLiteral("page.tool"),
                                       ps::commands::CommandContext{mw, QString::number(tool)});
+            }
+            else
+            {
+                mw->commands().invoke(QStringLiteral("page.tool"),
+                                      ps::commands::CommandContext{mw, QStringLiteral("-1")});
+            }
         });
         panel->addSmallAction(a);
         return a;
     };
-    auto *pan = toolAction(QStringLiteral("移动"), QStringLiteral("hand"), 0,
-                           QStringLiteral("手型指针：按住左键拖动平移画布"));
+    toolAction(QStringLiteral("移动"), QStringLiteral("hand"), 0,
+               QStringLiteral("手型指针：按住左键拖动平移画布"));
     toolAction(QStringLiteral("放大"), QStringLiteral("zoom_in"), 1,
                QStringLiteral("放大镜指针：框选放大，滚轮缩放"));
     toolAction(QStringLiteral("缩小"), QStringLiteral("zoom_out"), 2,
                QStringLiteral("缩小镜指针：框选缩小"));
-    pan->setChecked(true);
 
     auto *fit = new QAction(ribIcon(QStringLiteral("autoy")), QStringLiteral("自适应"), panel);
     fit->setToolTip(QStringLiteral("纵轴自适应到数据范围"));

@@ -94,8 +94,8 @@ public:
     QString xLabel() const { return m_xLabel; }
     QString yLabel() const { return m_yLabel; }
     void setRubberZoomEnabled(bool on);
-    // 鼠标工具：0=平移(手) 1=放大(镜) 2=缩小(镜)。选中后指针在画布上自动变形状，直接拖拽操作
-    enum Tool { PanTool = 0, ZoomInTool = 1, ZoomOutTool = 2 };
+    // 鼠标工具：-1=无工具 0=平移(手) 1=放大(镜) 2=缩小(镜)。按钮可再次点击退出
+    enum Tool { NoTool = -1, PanTool = 0, ZoomInTool = 1, ZoomOutTool = 2 };
     void setTool(int tool);
     int tool() const { return m_tool; }
     void exportPng();                                   // 当前画布渲染结果另存
@@ -219,7 +219,7 @@ private:
     QString m_xLabel;
     QString m_yLabel;
     bool m_rubberZoom = false;
-    int m_tool = PanTool;
+    int m_tool = NoTool;
     bool m_followLive = false;
     double m_liveWindow = 30.0;
     bool m_rubbering = false;

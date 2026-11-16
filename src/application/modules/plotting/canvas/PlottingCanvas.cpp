@@ -2426,7 +2426,7 @@ void PlottingCanvas::mousePressEvent(QMouseEvent *event)
         return;
     }
     if (event->button() == Qt::LeftButton && plotRect().contains(event->position())
-        && (m_rubberZoom || m_tool != PanTool))
+        && (m_rubberZoom || m_tool == ZoomInTool || m_tool == ZoomOutTool))
     {
         m_rubbering = true;
         m_rubberStart = event->position();
@@ -2435,7 +2435,7 @@ void PlottingCanvas::mousePressEvent(QMouseEvent *event)
         update();
         return;
     }
-    if (event->button() == Qt::LeftButton)
+    if (event->button() == Qt::LeftButton && m_tool == PanTool)
     {
         m_dragging = true;
         m_lastPos = event->position();
@@ -2641,6 +2641,8 @@ void PlottingCanvas::setBoxVisible(bool on)
 
 QCursor PlottingCanvas::toolCursor() const
 {
+    if (m_tool == NoTool)
+        return QCursor(Qt::ArrowCursor);
     if (m_tool == ZoomInTool || m_tool == ZoomOutTool)
     {
         const QIcon ico(QStringLiteral(":/icons/%1.svg")
@@ -2764,6 +2766,7 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
         const double dy = event->position().y() - m_lastPos.y();
         if (dx != 0.0)
             m_followLive = false;
+        // 内容跟手：手向左(dx<0) => 时间窗右移 => 曲线左移。
         const double tShift = -dx * (m_t1 - m_t0) / plot.width();
         m_t0 += tShift;
         m_t1 += tShift;
