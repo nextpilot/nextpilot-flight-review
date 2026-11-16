@@ -233,3 +233,21 @@ target_include_directories(test_session_manager PRIVATE ${PROJECT_SOURCE_DIR}/sr
 target_link_libraries(test_session_manager PRIVATE Qt6::Widgets)
 add_test(NAME session_manager COMMAND test_session_manager)
 set_tests_properties(session_manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+if(TARGET ps_application_shell AND TARGET ps_application_plotting AND TARGET ps_application_datasource)
+  add_executable(test_layout_restore unit/test_layout_restore.cpp)
+  target_include_directories(test_layout_restore PRIVATE ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/application
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/shell)
+  target_compile_definitions(test_layout_restore PRIVATE
+    PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixture")
+  target_link_libraries(test_layout_restore PRIVATE
+    ps_application_shell ps_application_plotting ps_application_datasource
+    ps_host ps_kernel ps_cache ps_live Qt6::Widgets Qt6::Network)
+  if(TARGET ps_builtin_components)
+    target_link_libraries(test_layout_restore PRIVATE ps_builtin_components)
+  endif()
+  add_test(NAME layout_restore COMMAND test_layout_restore)
+  set_tests_properties(layout_restore PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()

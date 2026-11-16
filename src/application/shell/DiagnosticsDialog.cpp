@@ -10,6 +10,8 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTabWidget>
@@ -39,7 +41,7 @@ QString extensionText(const QVector<ExtensionManager::ExtensionInfo> &extensions
 
 DiagnosticsDialog::DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
                                      const QVector<ExtensionManager::ExtensionInfo> &extensions,
-                                     const QStringList &errors)
+                                     const QStringList &errors, ExtensionManager *manager)
     : QDialog(parent)
 {
     setWindowTitle(QStringLiteral("关于 PlotScope"));
@@ -72,10 +74,37 @@ DiagnosticsDialog::DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
 
     auto *extPage = new QWidget(tabs);
     auto *extLay = new QVBoxLayout(extPage);
-    auto *extView = new QPlainTextEdit(extensionText(extensions), extPage);
-    extView->setReadOnly(true);
-    extView->setMaximumBlockCount(500);
-    extLay->addWidget(extView);
+    auto *extList = new QListWidget(extPage);
+    extList->setObjectName(QStringLiteral("extension.list"));
+    for (const auto &entry : extensions)
+    {
+        const auto &d = entry.descriptor;
+        QString state = entry.enabled ? (entry.active ? QStringLiteral("已启用") : QStringLiteral("未激活"))
+                                      : QStringLiteral("已禁用");
+        auto *item = new QListWidgetItem(
+            QStringLiteral("%1  %2  %3  %4  %5")
+                .arg(d.id, d.name, d.version,
+                     d.type == ps::components::ExtensionType::Builtin ? QStringLiteral("builtin")
+                                                                     : QStringLiteral("dynamic"),
+                     state),
+            extList);
+        item->setData(Qt::UserRole, d.id);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(entry.enabled ? Qt::Checked : Qt::Unchecked);
+        if (!entry.error.isEmpty())
+            item->setToolTip(entry.error);
+    }
+    extLay->addWidget(extList, 1);
+    auto *hint = new QLabel(QStringLiteral("扩展启停写入配置，重启 PlotScope 后生效。"), extPage);
+    hint->setStyleSheet(QStringLiteral("color:#8494a0;"));
+    extLay->addWidget(hint);
+    if (manager)
+    {
+        connect(extList, &QListWidget::itemChanged, this, [manager](QListWidgetItem *item) {
+            manager->setEnabled(item->data(Qt::UserRole).toString(),
+                                item->checkState() == Qt::Checked);
+        });
+    }
     if (!errors.isEmpty())
     {
         auto *errorView = new QPlainTextEdit(errors.join(QLatin1Char('\n')), extPage);

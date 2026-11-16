@@ -13,5 +13,5 @@ class DiagnosticsDialog : public QDialog
 public:
     DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
                       const QVector<ExtensionManager::ExtensionInfo> &extensions,
-                      const QStringList &errors);
+                      const QStringList &errors, ExtensionManager *manager);
 };

@@ -20,3 +20,5 @@ refs/
 
 # 本地可搬移依赖（Qt/Lua）
 /deps/
+
+!tests/fixture/layout_one_page.psl
