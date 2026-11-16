@@ -149,7 +149,7 @@ if(TARGET ps_builtin_components)
     ps_autopilot_component
     ps_automotive_component
     ps_robotics_component
-    ps_builtin_data_sources_component
+    ps_common_datasources_component
     ps_host
     ps_kernel
     ps_datasource_protocol

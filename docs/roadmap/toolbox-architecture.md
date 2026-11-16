@@ -145,7 +145,7 @@ CSV 的特殊约束：
 - `ps_autopilot` 静态库包含 ULog、apbin、tlog、MAVLink、sim、analysis。
 - `ps_autopilot_component` 只放 `AutopilotToolbox.cpp`，保证静态注册器进入宿主。
 - `AutopilotToolbox::contribute()` 注册 `data_loader_ulog`、`data_loader_apbin`、`data_loader_tlog`、`data_source_mavlink`、`data_source_sim`。
-- `BuiltinDataSources` 删除 ULog、apbin、MAVLink、sim 的注册，保留 CSV、JSON、binary 等通用格式。
+- `CommonDataSourcesComponent` 删除 ULog、apbin、MAVLink、sim 的注册，保留 CSV、JSON、binary 等通用格式。
 - 文件对话框过滤器改为从 `DataSourceRegistry` 生成，删除 `DataSourceSession.cpp`、`DataSourceCommands.cpp` 中的硬编码扩展名。
 - `.tlog` 必须进入 `fileEntries`，不能继续落到 CSV 兜底。
 
@@ -439,7 +439,7 @@ builtin/autopilot/
 - `ps_robotics` 静态库包含 rosbag2、rosbag1、mcap、dds、analysis。
 - `ps_robotics_component` 只放 `RoboticsToolbox.cpp`，保证静态注册器进入宿主。
 - `RoboticsToolbox::contribute()` 注册 `data_loader_rosbag2`、`data_loader_rosbag1`、`data_loader_mcap`、`data_source_dds`。
-- `BuiltinDataSources` 不再注册 MCAP、rosbag2，通用格式只剩 CSV、JSON、binary。
+- `CommonDataSourcesComponent` 不再注册 MCAP、rosbag2，通用格式只剩 CSV、JSON、binary。
 - `.mcap`、`.db3`、`.bag` 必须进入 `fileEntries`，不能落到 CSV 兜底。
 - rosbag2 的目录型存储（`metadata.yaml` + `.db3` / `.mcap`）要按“目录即一个数据源”处理，不能只按单文件后缀匹配。
 
@@ -547,7 +547,7 @@ RobotMeta
 
 - 建 `builtin/autopilot`，迁 ULog、apbin、MAVLink、sim。
 - 抽 `MavlinkLogReader`，新增 `TlogDataLoader`。
-- 改 `AutopilotToolbox` 注册，移除 `BuiltinDataSources` 中对应项。
+- 改 `AutopilotToolbox` 注册，移除 `CommonDataSourcesComponent` 中对应项。
 - 文件过滤器改为注册表生成，补 `.tlog`。
 - 补统一文件入口测试：ULog、apbin、tlog、CSV 都能从 `DataSourceSession` 打开。
 
@@ -585,7 +585,7 @@ RobotMeta
 
 - 建 `builtin/automotive` 骨架，迁 ASC、BLF、MDF4（组件注册已建，源码仍在 dynamic）。
 - 建 `builtin/robotics` 骨架，迁 MCAP、rosbag2，补 rosbag1 和 DDS 注册位（组件注册已建，源码仍在 dynamic）。
-- 补 `RoboticsToolbox::contribute()`，移除 `BuiltinDataSources` 中 MCAP、rosbag2 注册。
+- 补 `RoboticsToolbox::contribute()`，移除 `CommonDataSourcesComponent` 中 MCAP、rosbag2 注册。
 - `Ros2MessageParser` / `Ros1MessageParser` / `McapMessageParser` 接入 `MessageParserRegistry`，先接 ros2msg，再补 idl / protobuf / jsonschema 的原始帧兜底。
 - JSON、binary、rustcsv 移到 `plugins/` 或删除核心构建入口。
 - 删除 `src/extensions/dynamic`，更新 `PS_EXTENSION_DIR`。

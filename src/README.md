@@ -27,7 +27,7 @@ src/
 
   extensions/
     builtin/                  随包发布的业务组件
-      data_sources/           内建文件/实时源聚合
+      common/                通用 loader、CSV/JSON/binary 与通用数据源注册
       gnss/                   NMEA / UBX / OEM7 数据源
       custom_protocol/        自定义协议加载、编辑、编解码；protocol/ 为其协议模型
       video/                  视频同步面板

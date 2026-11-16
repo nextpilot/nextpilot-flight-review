@@ -5,8 +5,8 @@
 namespace ps::components
 {
 
-/// 过渡组件：集中登记内建扩展入口，后续由 GNSS / FlightLog 组件接管各自部分。
-class BuiltinDataSourcesComponent : public IComponent
+/// 通用数据源组件：只登记 CSV、JSON、binary 等跨领域格式，领域格式由各自工具箱注册。
+class CommonDataSourcesComponent : public IComponent
 {
 public:
     ComponentManifest manifest() const override;

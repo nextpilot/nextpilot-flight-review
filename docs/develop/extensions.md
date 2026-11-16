@@ -58,9 +58,9 @@ public:
 | `gnss` | `gnss.core` | `data_loader_nmea`、`data_loader_ubx`、`data_source_oem7`、`gnss.nmea`、`gnss.ubx`、`gnss.oem7` |
 | `automotive` | `automotive.core` | `data_loader_asc`、`data_loader_blf`、`data_loader_mdf4`，CAN/DBC 共享 `ps_can_common` |
 | `robotics` | `robotics.core` | `data_loader_rosbag2`、`data_load_mcap` |
-| `common` | `data.builtin` 的 CSV 部分 | `ps_loader_common`、`data_loader_csv` |
+| `common` | `data.builtin` | 通用 loader、`data_loader_csv`、`data_loader_json`、`data_loader_binary` |
 
-`builtin/data_sources` 只保留 CSV、JSON、binary 这类通用格式的注册，不再登记领域格式。新增领域格式时，放到对应工具箱组件里注册；不要把 `if (suffix == ...)` 写回通用数据源。
+`builtin/common` 只保留 CSV、JSON、binary 这类通用格式的实现与注册，不再登记领域格式。新增领域格式时，放到对应工具箱组件里注册；不要把 `if (suffix == ...)` 写回通用数据源。
 
 工具箱之间不互相 include 私有头；需要共享加载器、数据集构建等机械能力时走 `builtin/common`。工具箱只注册 parser，不自己维护第二份 `MessageParserRegistry`。
 

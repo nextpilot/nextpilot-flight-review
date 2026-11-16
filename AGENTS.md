@@ -92,7 +92,7 @@ shell 只做最小宿主和管理内核：
 
 边界：
 
-- 领域格式只由对应工具箱注册；`data_sources` 只保留 CSV、JSON、binary 这类通用格式。
+- 领域格式只由对应工具箱注册；`builtin/common` 只保留 CSV、JSON、binary 这类通用格式及其注册组件。
 - 工具箱之间不互相 include 私有头；共享能力走 `modules` 公开接口或 `common`。
 - 工具箱只注册自己的数据源和 parser，不维护第二份 `MessageParserRegistry`。
 - `extensions/dynamic` 只保留 SDK，不承载官方/通用格式；领域格式在 `builtin/<domain>/datasources`，通用格式在 `builtin/common/datasources`。
