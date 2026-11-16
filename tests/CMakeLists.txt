@@ -73,7 +73,7 @@ if(TARGET ps_live AND TARGET ps_data_load_mcap)
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
     ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/common
-    ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/data_loader/mcap)
+    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/robotics/datasources/mcap)
   target_link_libraries(test_stream_recorder PRIVATE ps_live ps_data_load_mcap)
   add_test(NAME stream_recorder COMMAND test_stream_recorder)
 endif()
@@ -130,6 +130,28 @@ if(TARGET ps_autopilot)
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/autopilot)
   target_link_libraries(test_mavlink_message_parser PRIVATE ps_autopilot ps_mavlink Qt6::Core)
   add_test(NAME mavlink_message_parser COMMAND test_mavlink_message_parser)
+endif()
+
+if(TARGET ps_builtin_components)
+  add_executable(test_toolbox_registration unit/test_toolbox_registration.cpp)
+  target_include_directories(test_toolbox_registration PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
+  )
+  target_link_libraries(test_toolbox_registration PRIVATE
+    ps_autopilot_component
+    ps_automotive_component
+    ps_robotics_component
+    ps_builtin_data_sources_component
+    ps_host
+    ps_kernel
+    ps_datasource_protocol
+  )
+  if(TARGET ps_gnss_component)
+    target_link_libraries(test_toolbox_registration PRIVATE ps_gnss_component)
+  endif()
+  add_test(NAME toolbox_registration COMMAND test_toolbox_registration)
 endif()
 
 if(TARGET ps_data_source_sim)

@@ -5,7 +5,7 @@
 namespace ps::components
 {
 
-/// 飞控能力包：MAVLink 全协议解析。
+/// 飞控工具箱：飞控日志、MAVLink 遥测和 ULog/apbin 数据源。
 class AutopilotComponent : public IComponent
 {
 public:

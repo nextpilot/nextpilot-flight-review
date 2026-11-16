@@ -1,6 +1,6 @@
 # 扩展 toolbox 化与 autopilot 方案
 
-> 状态：方案讨论中；`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`；`NmeaMessageParser`/`UbxMessageParser` 也已按描述库解字段，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`。MAVLink C++11 生成物、`MavlinkMessageParser`、metadata sidecar、组件注册和测试已落地；`MavlinkSource` 已改为统一 parser 解码，旧 `switch (msgid)` 已删除；`ProtocolInspector` 尚未接入。ULog/apbin/ROS parser 和工具箱迁移未实施。
+> 状态：四领域工具箱已拆（`autopilot.core` / `gnss.core` / `automotive.core` / `robotics.core`），ULog/apbin/MAVLink/sim、ASC/BLF/MDF4、rosbag2/MCAP 源码已迁入对应工具箱，通用 `data_sources` 只保留 CSV/JSON/binary 注册；领域分析与报告、`ProtocolInspector` 未实施。`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`；`NmeaMessageParser`/`UbxMessageParser` 也已按描述库解字段，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`。MAVLink C++11 生成物、`MavlinkMessageParser`、metadata sidecar、组件注册和测试已落地；`MavlinkSource` 已改为统一 parser 解码，旧 `switch (msgid)` 已删除；`ProtocolInspector` 尚未接入。ULog/apbin/ROS parser 和工具箱分析/报告未实施。
 > 日期：2026-11-16
 
 ## 1. 目标
@@ -580,8 +580,8 @@ RobotMeta
 
 ### P5：dynamic 清理与 automotive / robotics 骨架
 
-- 建 `builtin/automotive` 骨架，迁 ASC、BLF、MDF4。
-- 建 `builtin/robotics` 骨架，迁 MCAP、rosbag2，补 rosbag1 和 DDS 注册位。
+- 建 `builtin/automotive` 骨架，迁 ASC、BLF、MDF4（组件注册已建，源码仍在 dynamic）。
+- 建 `builtin/robotics` 骨架，迁 MCAP、rosbag2，补 rosbag1 和 DDS 注册位（组件注册已建，源码仍在 dynamic）。
 - 补 `RoboticsToolbox::contribute()`，移除 `BuiltinDataSources` 中 MCAP、rosbag2 注册。
 - `Ros2MessageParser` / `Ros1MessageParser` / `McapMessageParser` 接入 `MessageParserRegistry`，先接 ros2msg，再补 idl / protobuf / jsonschema 的原始帧兜底。
 - JSON、binary、rustcsv 移到 `plugins/` 或删除核心构建入口。

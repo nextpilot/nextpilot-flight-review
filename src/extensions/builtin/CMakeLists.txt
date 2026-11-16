@@ -7,6 +7,8 @@ add_subdirectory(device_debug)
 add_subdirectory(transform)
 add_subdirectory(script)
 add_subdirectory(autopilot)
+add_subdirectory(automotive)
+add_subdirectory(robotics)
 
 if(PS_BUILD_GNSS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gnss/CMakeLists.txt)
   add_subdirectory(gnss)
@@ -21,6 +23,8 @@ target_sources(ps_builtin_components INTERFACE
   $<TARGET_OBJECTS:ps_builtin_transform_component>
   $<TARGET_OBJECTS:ps_builtin_script_component>
   $<TARGET_OBJECTS:ps_autopilot_component>
+  $<TARGET_OBJECTS:ps_automotive_component>
+  $<TARGET_OBJECTS:ps_robotics_component>
 )
 target_link_libraries(ps_builtin_components INTERFACE
   ps_builtin_data_sources_component
@@ -29,6 +33,8 @@ target_link_libraries(ps_builtin_components INTERFACE
   ps_builtin_script_component
   ps_autopilot_component
   ps_autopilot
+  ps_automotive_component
+  ps_robotics_component
 )
 if(TARGET ps_gnss_component)
   target_sources(ps_builtin_components INTERFACE $<TARGET_OBJECTS:ps_gnss_component>)

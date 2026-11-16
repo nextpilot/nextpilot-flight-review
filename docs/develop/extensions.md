@@ -48,6 +48,21 @@ public:
 - 只依赖 modules 的公开头；跨业务访问走 `ModuleBridge`。
 - 一个扩展目录一个 target；`ps_builtin_components` 聚合，删掉后 app 仍可构建。
 
+## 领域工具箱
+
+内置扩展按业务领域拆成四个工具箱，各自注册本领域的数据源和协议 parser：
+
+| 工具箱 | 组件 id | 注册内容 |
+|---|---|---|
+| `autopilot` | `autopilot.core` | `data_loader_ulog`、`data_loader_apbin`、`data_source_mavlink`、`data_source_sim`、`autopilot.mavlink` |
+| `gnss` | `gnss.core` | `data_loader_nmea`、`data_loader_ubx`、`data_source_oem7`、`gnss.nmea`、`gnss.ubx`、`gnss.oem7` |
+| `automotive` | `automotive.core` | `data_loader_asc`、`data_loader_blf`、`data_loader_mdf4` |
+| `robotics` | `robotics.core` | `data_loader_rosbag2`、`data_load_mcap` |
+
+`builtin/data_sources` 只保留 CSV、JSON、binary 这类通用格式，不再登记领域格式。新增领域格式时，放到对应工具箱组件里注册；不要把 `if (suffix == ...)` 写回通用数据源。
+
+工具箱之间不互相 include 私有头；需要共享加载器、数据集构建等机械能力时走 `extensions/common`。工具箱只注册 parser，不自己维护第二份 `MessageParserRegistry`。
+
 ## 动态扩展
 
 动态库只导出 `PsExtensionDescriptor`，不导出 C++ 类或 Qt 对象：

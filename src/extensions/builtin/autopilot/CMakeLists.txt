@@ -1,3 +1,8 @@
+add_subdirectory(datasources/ulog)
+add_subdirectory(datasources/apbin)
+add_subdirectory(datasources/mavlink)
+add_subdirectory(datasources/sim)
+
 add_library(ps_autopilot STATIC
   MavlinkMessageParser.cpp
   MavlinkMessageParser.h
@@ -22,4 +27,11 @@ target_include_directories(ps_autopilot_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
 )
-target_link_libraries(ps_autopilot_component PUBLIC ps_autopilot ps_host)
+target_link_libraries(ps_autopilot_component PUBLIC
+  ps_autopilot
+  ps_host
+  ps_data_loader_ulog
+  ps_data_loader_apbin
+  ps_data_source_sim
+  ps_data_source_mavlink
+)

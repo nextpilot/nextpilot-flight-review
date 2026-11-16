@@ -19,18 +19,10 @@ if(PS_BUILD_GUI)
 
     add_subdirectory(application/modules/datasource/services/live)
 
-    # 动态扩展：内置数据加载器与数据源
+    # 动态扩展：插件 SDK、通用格式与第三方加载器
     add_subdirectory(extensions/dynamic/data_loader/csv)
-    add_subdirectory(extensions/dynamic/data_loader/ulog)
-    add_subdirectory(extensions/dynamic/data_loader/apbin)
-    add_subdirectory(extensions/dynamic/data_loader/asc)
-    add_subdirectory(extensions/dynamic/data_loader/blf)
-    add_subdirectory(extensions/dynamic/data_loader/mcap)
     add_subdirectory(extensions/dynamic/data_loader/json)
     add_subdirectory(extensions/dynamic/data_loader/binary)
-    add_subdirectory(extensions/dynamic/data_loader/mdf4)
-    add_subdirectory(extensions/dynamic/data_loader/rosbag2)
-    add_subdirectory(extensions/dynamic/data_source)
 
     # 内置扩展：业务组件在 extensions/builtin 聚合，base 只链接聚合 target
     add_subdirectory(extensions/builtin)
