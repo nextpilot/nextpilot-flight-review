@@ -53,6 +53,7 @@ QMainWindow::separator:hover { background:#2d3841; }
 /* ---- 停靠区 ---- */
 QDockWidget { border:1px solid #1b232a; titlebar-close-icon:none; }
 QDockWidget::title { background:#161b20; color:#8494a0; padding:5px 8px; border-bottom:1px solid #232b33; }
+QLabel#dockWidgetTabLabel { background:transparent; color:#c9d1d9; }
 
 /* ---- 工具条 / 按钮 ---- */
 QToolBar { background:#161b20; border:0; spacing:2px; padding:3px 6px; }
@@ -231,7 +232,7 @@ QPalette palette()
     p.setColor(QPalette::Mid, tokenColor("#232b33", "#d5dce3"));
     p.setColor(QPalette::Dark, bg);
     p.setColor(QPalette::Shadow, Qt::black);
-    p.setColor(QPalette::Highlight, amber);
+    p.setColor(QPalette::Highlight, tokenColor("#1f6feb", "#0e639c"));
     p.setColor(QPalette::HighlightedText, tokenColor("#0d1117", "#ffffff"));
     p.setColor(QPalette::Link, amber);
     p.setColor(QPalette::ToolTipBase, bar);

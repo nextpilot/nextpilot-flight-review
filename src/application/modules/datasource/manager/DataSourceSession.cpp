@@ -282,7 +282,6 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
     panel->m_srcCount = m_srcCount;
     m_srcCount = panel->m_srcCount;
     m_srcRows = panel->m_srcRows;
-    m_srcListToggle = panel->m_srcListToggle;
     m_srcListScroll = panel->m_srcListScroll;
     m_srcTabs = panel->m_srcTabs;
     m_srcFilter = panel->m_srcFilter;

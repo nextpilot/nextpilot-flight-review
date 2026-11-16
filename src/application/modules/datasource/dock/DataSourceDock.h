@@ -106,7 +106,6 @@ public:
     Context m_ctx;
     QLabel *m_srcCount = nullptr;
     QVBoxLayout *m_srcRows = nullptr;
-    QToolButton *m_srcListToggle = nullptr;
     QScrollArea *m_srcListScroll = nullptr;
     QTabBar *m_srcTabs = nullptr;
     QLineEdit *m_srcFilter = nullptr;

@@ -255,26 +255,6 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     auto *listLay = new QVBoxLayout(srcListWrap);
     listLay->setContentsMargins(0, 0, 0, 0);
     listLay->setSpacing(0);
-    auto *listHead = new QWidget(srcListWrap);
-    listHead->setFixedHeight(22);
-    listHead->setStyleSheet(QStringLiteral("background:#11171c;border-bottom:1px solid #232b33;"));
-    auto *headLay = new QHBoxLayout(listHead);
-    headLay->setContentsMargins(8, 0, 4, 0);
-    headLay->setSpacing(4);
-    auto *headCap = new QLabel(QStringLiteral("已加载源"), listHead);
-    headCap->setStyleSheet(QStringLiteral("color:#6e7d88;font-size:10px;background:transparent;"));
-    headLay->addWidget(headCap);
-    headLay->addStretch();
-    m_srcListToggle = new QToolButton(listHead);
-    m_srcListToggle->setText(QStringLiteral("▾"));
-    m_srcListToggle->setToolTip(QStringLiteral("收起 / 展开源列表"));
-    m_srcListToggle->setCursor(Qt::PointingHandCursor);
-    m_srcListToggle->setFixedSize(18, 18);
-    m_srcListToggle->setStyleSheet(QStringLiteral(
-        "QToolButton{background:transparent;border:0;color:#6e7d88;font-size:11px;padding:0;}"
-        "QToolButton:hover{color:#c9d1d9;}"));
-    headLay->addWidget(m_srcListToggle);
-    listLay->addWidget(listHead);
 
     auto *rowsHost = new QWidget(srcListWrap);
     m_srcRows = new QVBoxLayout(rowsHost);
@@ -291,11 +271,6 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     m_srcListScroll->setAlignment(Qt::AlignTop);
     listLay->addWidget(m_srcListScroll);
     srcLay->addWidget(srcListWrap, 1);
-    connect(m_srcListToggle, &QToolButton::clicked, this, [this] {
-        const bool hide = m_srcListScroll->isVisible();
-        m_srcListScroll->setVisible(!hide);
-        m_srcListToggle->setText(hide ? QStringLiteral("▸") : QStringLiteral("▾"));
-    });
 
     // 中段：字段/参数/消息 过滤 chip（QTabBar 保留为状态模型，不显示）
     m_srcTabs = new QTabBar(srcHost);
@@ -1906,9 +1881,9 @@ void DataSourceDock::refreshSrcCount()
     m_srcCount->setText(QStringLiteral("%1 源 · %2 已连接").arg(total).arg(connected));
     m_srcCount->setStyleSheet(QStringLiteral("color:#8494a0;font-size:10px;background:transparent;"));
     const bool empty = total == 0;
-    if (m_srcListScroll && m_srcListToggle)
+    if (m_srcListScroll)
     {
-        const bool show = !empty && m_srcListToggle->text() != QStringLiteral("▸");
+        const bool show = !empty;
         m_srcListScroll->setVisible(show);
         if (m_srcListScroll->parentWidget())
             m_srcListScroll->parentWidget()->setVisible(!empty);

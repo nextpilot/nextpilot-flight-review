@@ -116,7 +116,6 @@ private:
     QVBoxLayout *m_srcRows = nullptr;
     QScrollArea *m_srcListScroll = nullptr;
     QWidget *m_srcEmpty = nullptr;
-    QToolButton *m_srcListToggle = nullptr;
     QVector<QToolButton *> m_srcChips;
     QVector<ps::TimeBookmark> m_timeMarkers;
     ps::data_source::SourceStore *m_sourceStore = nullptr;
