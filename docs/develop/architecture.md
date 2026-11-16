@@ -26,7 +26,7 @@ C++ 侧只通过 `ps_kernel.h` 调 Rust，不 include Rust 内部头。`ps-abi` 
 | `src/application/modules/runtime` | 宿主侧通用契约层，不承载业务 |
 | `src/application/modules/datasource` | 数据源注册、加载器入口、实时源、缓存、数据源 UI |
 | `src/application/modules/plotting` | 画布、绘图页、切分布局、属性面板、绘图 UI |
-| `src/application/modules/filter` | 算子目录、共享参数表单，datasource/plotting 共用 |
+| `src/application/shared/filter` | 算子目录、共享参数表单，datasource/plotting 共用 |
 | `src/application/kernel` | Rust NDF、LOD、算子、对齐、C ABI |
 | `src/extensions/builtin` | 四领域工具箱、通用 loader/CSV/JSON/binary，随 app 编译 |
 | `src/extensions/dynamic` | 动态扩展 SDK，运行时扫描、ABI 校验 |

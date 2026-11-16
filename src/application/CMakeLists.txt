@@ -3,6 +3,7 @@ find_package(Qt6 REQUIRED COMPONENTS Network)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
+add_subdirectory(shared)
 add_subdirectory(modules)
 add_subdirectory(shell)
 

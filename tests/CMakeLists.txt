@@ -10,7 +10,7 @@ add_test(NAME abi_selftest COMMAND test_abi)
 
 add_executable(test_filter_catalog unit/test_filter_catalog.cpp)
 target_include_directories(test_filter_catalog PRIVATE
-  ${PROJECT_SOURCE_DIR}/src/application/modules/filter/include)
+  ${PROJECT_SOURCE_DIR}/src/application/shared/filter/include)
 target_link_libraries(test_filter_catalog PRIVATE ps_kernel)
 add_test(NAME filter_catalog COMMAND test_filter_catalog)
 

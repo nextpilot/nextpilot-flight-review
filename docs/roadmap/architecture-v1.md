@@ -785,7 +785,7 @@ public:
 | `time_since_previous` | 相邻样本 Δt | — |
 | `normalize` | 归一化 0–1 | — |
 
-算子目录唯一来源：`src/application/modules/filter/include/filter/FilterCatalog.h`；datasource 派生通道与 plotting 曲线 filter 共用该目录，求值统一走内核 `ps_filter_apply_series` / `ps_preview_filter`，UI 不自带算子分支。
+算子目录唯一来源：`src/application/shared/filter/include/filter/FilterCatalog.h`；datasource 派生通道与 plotting 曲线 filter 共用该目录，求值统一走内核 `ps_filter_apply_series` / `ps_preview_filter`，UI 不自带算子分支。
 
 四元数不在 PJ4 内置目录里，而是官方 Quaternion 扩展：4 输入（w,x,y,z）→ 一个分组 topic `rpy:roll,pitch,yaw`。当前数据模型是扁平日通道，先实现为 `rpy.roll/.pitch/.yaw` 三条通道；支持 degree、unwrap、pitch ±π/2 截断。
 
