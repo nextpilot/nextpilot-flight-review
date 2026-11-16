@@ -8,13 +8,17 @@ src/extensions/dynamic/
   data_loader/
     rustcsv/ -> ps_data_loader_rustcsv  ps_extension_entry（Rust cdylib 样板）
     csv/     -> ps_data_loader_csv     ps_extension_entry_data_loader_csv
-    ulog/    -> ps_data_loader_ulog    ps_extension_entry_data_loader_ulog
-    apbin/   -> ps_data_loader_apbin   ps_extension_entry_data_loader_apbin
-    asc/     -> ps_data_loader_asc     ps_extension_entry_data_loader_asc
-    blf/     -> ps_data_loader_blf     ps_extension_entry_data_loader_blf
+    json/    -> ps_data_loader_json    ps_extension_entry_data_loader_json
+    binary/  -> ps_data_loader_binary  ps_extension_entry_data_loader_binary
     common/  -> ps_loader_common       # 通用 dataset 构建 / CAN 帧 → 通道
-  data_source/   # 实时源：MAVLink / 仿真
 ```
+
+领域格式不在这里：
+
+- 飞控：`builtin/autopilot/datasources`（ULog、apbin、MAVLink、sim）
+- 汽车：`builtin/automotive/datasources`（ASC、BLF、MDF4）
+- 机器人：`builtin/robotics/datasources`（rosbag2、MCAP）
+- 卫导：`builtin/gnss`
 
 - 描述符必须声明 `family` 与 `capabilities`；`DataSourceRegistry` 只收 `PS_FAMILY_DATA_LOADER / LIVE_SOURCE / DATA_SOURCE`。
 - 数据面只走 `src/application/modules/runtime/include/ps_extension_api.h` 的 C 契约：`schema_json / probe_json / default_options / params_json / load`。
