@@ -124,12 +124,8 @@ shell 只做最小宿主和管理内核：
 
 ## 11. 当前已知例外（只减不增）
 
-以下是现存债务，不是新代码的许可。新增代码不得照抄：
+当前无已知例外。新增债务必须先修复，不要往本清单里加。
 
-- `src/extensions/builtin/script/ScriptComponent.cpp` 仍 include `shell/MainWindow.h`；目标改为 `HostContext` 或模块公开接口。
-- `src/application/shell/MainWindow.cpp` 仍通过 `HostContext::setPlayhead` 调用 `plot.setPlayhead`；目标改为通用游标服务。
-- `src/application/modules/runtime/include/Component.h` 的 `HostContext::setPlayhead` 仍是绘图专用字段；目标改为通用游标服务。
-- `src/application/shell/RibbonManager.cpp` 仍写死“无数据”“LOD: Rust”状态芯片，且 datasource 通过 `findChild` 反向更新；目标改为状态芯片贡献。
 
 ## 12. 提交前检查
 

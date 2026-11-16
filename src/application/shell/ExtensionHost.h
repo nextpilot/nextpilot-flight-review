@@ -16,7 +16,7 @@ public:
     ExtensionHost() = default;
     ~ExtensionHost();
 
-    void activate(const HostContext &context, const QStringList &disabledIds = {});
+    void activate(HostContext &context, const QStringList &disabledIds = {});
     void deactivate();
 
     Registry &registry() { return m_registry; }

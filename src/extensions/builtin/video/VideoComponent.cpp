@@ -27,7 +27,7 @@ ComponentManifest VideoComponent::manifest() const
             {QStringLiteral("dock")}};
 }
 
-void VideoComponent::contribute(Registry &registry, const HostContext &host)
+void VideoComponent::contribute(Registry &registry, HostContext &host)
 {
     registry.addDock(DockContribution{
         QStringLiteral("dock.video"), QStringLiteral("视频同步"),

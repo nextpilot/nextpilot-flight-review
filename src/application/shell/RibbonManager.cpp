@@ -174,14 +174,17 @@ QWidget *RibbonManager::create()
                      run(QStringLiteral("view.toggleDock"), dock.id), m_window);
     }
 
-    // 右侧芯片位：只读状态摘要，跟随实际数据源刷新
+    // 右侧芯片位：只读状态摘要，文本由模块贡献，shell 不认识业务状态。
     auto *rg = ribbon->rightButtonGroup();
-    auto *chipSource = new QAction(QStringLiteral("无数据"), m_window);
-    chipSource->setObjectName(QStringLiteral("ps.chip.source"));
-    auto *chipLod = new QAction(QStringLiteral("LOD: Rust"), m_window);
-    chipLod->setObjectName(QStringLiteral("ps.chip.lod"));
-    for (QAction *a : {chipSource, chipLod})
+    auto chips = m_registry->statusChips();
+    std::sort(chips.begin(), chips.end(),
+              [](const ps::components::StatusChipContribution &a, const ps::components::StatusChipContribution &b) {
+                  return a.order != b.order ? a.order < b.order : a.id < b.id;
+              });
+    for (const auto &chip : chips)
     {
+        auto *a = new QAction(chip.text, m_window);
+        a->setObjectName(QStringLiteral("ps.chip.") + chip.id);
         a->setEnabled(false);
         rg->addAction(a);
     }

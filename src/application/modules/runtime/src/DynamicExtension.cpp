@@ -71,7 +71,7 @@ ComponentManifest DynamicExtension::manifest() const
     return m;
 }
 
-void DynamicExtension::contribute(Registry &registry, const HostContext &host)
+void DynamicExtension::contribute(Registry &registry, HostContext &host)
 {
     if (!m_descriptor || m_descriptor->abi_version != PS_EXTENSION_ABI_VERSION)
     {

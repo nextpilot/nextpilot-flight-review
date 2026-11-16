@@ -29,7 +29,7 @@ public:
 
     static void scanStandardLocations();
 
-    void activate(const ps::components::HostContext &context);
+    void activate(ps::components::HostContext &context);
     void deactivate();
 
     ps::components::Registry &registry();

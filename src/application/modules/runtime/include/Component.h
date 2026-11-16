@@ -14,6 +14,9 @@
 
 class QDialog;
 class QWidget;
+class QPlainTextEdit;
+class QComboBox;
+class QTableWidget;
 struct PsExtensionDescriptor;
 
 namespace ps::components
@@ -35,6 +38,8 @@ struct HostContext
     std::function<void(const QString &)> log;
     std::function<QString()> configDir;
     std::function<void(double)> setPlayhead;
+    std::function<bool(const QString &, const QString &)> invoke;
+    std::function<void(QWidget *, QPlainTextEdit *, QComboBox *[4], QTableWidget *)> bindScriptPanel;
 };
 
 struct RibbonItem
@@ -60,6 +65,13 @@ struct RibbonContribution
     QVector<RibbonItem> items;
     QVector<RibbonPanel> panels;
     int order = 1000;
+};
+
+struct StatusChipContribution
+{
+    QString id;
+    QString text;
+    int order = 0;
 };
 
 struct DataSourceSpec
@@ -123,6 +135,7 @@ class Registry
 public:
     void addProtocol(const ProtocolContribution &protocol);
     void addRibbon(const RibbonContribution &ribbon);
+    void addStatusChip(const StatusChipContribution &chip) { m_statusChips.append(chip); }
     void addAction(const QString &id, std::function<void(const ActionContext &)> handler);
     void addDataSource(const DataSourceSpec &source);
     void addDock(const DockContribution &dock);
@@ -133,6 +146,7 @@ public:
 
     const ProtocolContribution *protocol(const QString &kind) const;
     const QVector<RibbonContribution> &ribbon() const { return m_ribbon; }
+    const QVector<StatusChipContribution> &statusChips() const { return m_statusChips; }
     const QVector<DataSourceSpec> &dataSources() const { return m_dataSources; }
     const QVector<DockContribution> &docks() const { return m_docks; }
     const QVector<SettingsContribution> &settings() const { return m_settings; }
@@ -146,6 +160,7 @@ public:
 private:
     QVector<ProtocolContribution> m_protocols;
     QVector<RibbonContribution> m_ribbon;
+    QVector<StatusChipContribution> m_statusChips;
     QVector<DataSourceSpec> m_dataSources;
     QVector<DockContribution> m_docks;
     QVector<DialogContribution> m_dialogs;
@@ -160,7 +175,7 @@ class IComponent
 public:
     virtual ~IComponent() = default;
     virtual ComponentManifest manifest() const = 0;
-    virtual void contribute(Registry &registry, const HostContext &host) = 0;
+    virtual void contribute(Registry &registry, HostContext &host) = 0;
 };
 
 enum class ExtensionType

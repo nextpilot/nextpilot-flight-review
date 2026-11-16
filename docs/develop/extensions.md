@@ -24,7 +24,7 @@ public:
                                         QStringLiteral("dock")}};
     }
 
-    void contribute(Registry &registry, const HostContext &host) override
+    void contribute(Registry &registry, HostContext &host) override
     {
         registry.addDataSource(/* ... */);
         registry.addDock(DockContribution{
@@ -80,13 +80,14 @@ extern "C" PS_EXPORT const PsExtensionDescriptor *ps_extension_entry();
 | `addSettings` | 设置页 |
 | `addAction` | 组件自有 action |
 | `addScriptRunner` | 脚本执行器 |
+| `addStatusChip` | Ribbon 右侧只读状态芯片 |
 | `addWindowHook` | 宿主窗口建立后的模块初始化 |
 
 贡献项由创建者拥有；宿主只遍历和创建容器，不认识具体业务类型。
 
 ## HostContext
 
-`HostContext` 是宿主给组件的窄接口，当前只有：
+`HostContext` 是宿主给组件的窄接口，当前提供：
 
 ```cpp
 struct HostContext
@@ -94,7 +95,10 @@ struct HostContext
     std::function<QWidget *()> window;
     std::function<void(const QString &)> log;
     std::function<QString()> configDir;
-    std::function<void(double)> setPlayhead;
+    std::function<void(double)> setPlayhead;   // 通用时间游标
+    std::function<bool(const QString &, const QString &)> invoke; // 通用命令调用
+    std::function<void(QWidget *, QPlainTextEdit *, QComboBox *[4], QTableWidget *)>
+        bindScriptPanel; // 脚本面板绑定，由 plotting 模块安装
 };
 ```
 
@@ -102,7 +106,8 @@ struct HostContext
 
 - 不把 `MainWindow*`、`QApplication*`、内部容器传进组件。
 - 不在 `HostContext` 里堆业务命令；业务能力走模块公开 API 或 `Registry`。
-- `setPlayhead` 当前是绘图专用字段，属于待收口项（见 `AGENTS.md` 当前例外）；新增字段必须先判断是否真的跨模块通用。
+- `invoke` 只转发通用命令 id；组件自己的业务 action 不让宿主实现。
+- `bindScriptPanel` 是可选服务，未安装时组件必须能正常降级。
 
 ## 生命周期
 

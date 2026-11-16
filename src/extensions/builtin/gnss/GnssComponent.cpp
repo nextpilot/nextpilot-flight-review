@@ -29,7 +29,7 @@ ComponentManifest GnssComponent::manifest() const
             {QStringLiteral("data_source")}};
 }
 
-void GnssComponent::contribute(Registry &registry, const HostContext &)
+void GnssComponent::contribute(Registry &registry, HostContext &)
 {
     DataSourceSpec nmea;
     nmea.descriptor = ps_extension_entry_data_loader_nmea();

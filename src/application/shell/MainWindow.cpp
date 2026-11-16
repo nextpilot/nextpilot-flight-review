@@ -38,7 +38,12 @@ MainWindow::MainWindow(QWidget *parent)
     hostContext.setPlayhead = [this](double t) {
         ps::commands::CommandContext ctx;
         ctx.arg = QString::number(t);
-        m_commands.invoke(QStringLiteral("plot.setPlayhead"), ctx);
+        m_commands.invoke(QStringLiteral("app.playhead"), ctx);
+    };
+    hostContext.invoke = [this](const QString &id, const QString &arg) {
+        ps::commands::CommandContext ctx;
+        ctx.arg = arg;
+        return m_commands.invoke(id, ctx);
     };
     m_extensions.activate(hostContext);
     shell::registerCommands(*this);

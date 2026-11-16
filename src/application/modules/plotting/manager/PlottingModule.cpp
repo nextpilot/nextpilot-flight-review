@@ -6,7 +6,10 @@
 #include "PlottingSettings.h"
 
 #include <QAction>
+#include <QComboBox>
 #include <QIcon>
+#include <QPlainTextEdit>
+#include <QTableWidget>
 #include <QWidget>
 #include "SARibbonPanel.h"
 
@@ -33,9 +36,15 @@ ComponentManifest PlottingComponent::manifest() const
             {QStringLiteral("plot"), QStringLiteral("dock")}};
 }
 
-void PlottingComponent::contribute(Registry &registry, const HostContext &)
+void PlottingComponent::contribute(Registry &registry, HostContext &host)
 {
     registerPlottingContributions(registry);
+    host.bindScriptPanel = [](QWidget *parent, QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params) {
+        auto *mw = qobject_cast<MainWindow *>(parent);
+        if (mw)
+            ps::plotting::bindScriptPanel(mw, script, inputs, params);
+    };
+    registry.addStatusChip(StatusChipContribution{QStringLiteral("lod"), QStringLiteral("LOD: Rust"), 1});
     registry.addWindowHook([](QWidget *w) {
         auto *mw = qobject_cast<MainWindow *>(w);
         if (!mw)

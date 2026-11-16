@@ -1,6 +1,4 @@
 #include "ScriptComponent.h"
-#include "MainWindow.h"
-#include "plotting/PlottingModule.h"
 
 #include <QComboBox>
 #include <QDockWidget>
@@ -39,22 +37,19 @@ ComponentManifest ScriptComponent::manifest() const
             {QStringLiteral("script")}};
 }
 
-void ScriptComponent::contribute(Registry &registry, const HostContext &host)
+void ScriptComponent::contribute(Registry &registry, HostContext &host)
 {
     registry.addDock(DockContribution{QStringLiteral("dock.script"), QStringLiteral("脚本 · Lua 5.4"),
                                       Qt::RightDockWidgetArea, true, 4,
                                       QStringLiteral(":/icons/script.svg"),
-                                      [](QWidget *parent) -> QWidget * {
-                                          auto *main = qobject_cast<MainWindow *>(parent);
-                                          if (!main)
-                                              return nullptr;
+                                      [host](QWidget *parent) -> QWidget * {
                                           auto *dock = new QDockWidget(QStringLiteral("脚本 · Lua 5.4"), parent);
                                           dock->setObjectName(QStringLiteral("dock.script"));
                                           dock->setProperty("psIcon", QStringLiteral(":/icons/script.svg"));
-                                          auto *host = new QWidget(dock);
-                                          auto *lay = new QVBoxLayout(host);
+                                          auto *panel = new QWidget(dock);
+                                          auto *lay = new QVBoxLayout(panel);
                                           lay->setContentsMargins(0, 0, 0, 0);
-                                          auto *script = new QPlainTextEdit(host);
+                                          auto *script = new QPlainTextEdit(panel);
                                           QFont font(QStringLiteral("monospace"));
                                           font.setStyleHint(QFont::Monospace);
                                           font.setPixelSize(12);
@@ -66,11 +61,11 @@ void ScriptComponent::contribute(Registry &registry, const HostContext &host)
                                               "out = ps.movingAvg(rate, 5)\n"
                                               "ps.plot(\"roll_rate\", out)\n"));
                                           auto *bindRow = new QHBoxLayout;
-                                          bindRow->addWidget(new QLabel(QStringLiteral("绑定"), host));
+                                          bindRow->addWidget(new QLabel(QStringLiteral("绑定"), panel));
                                           QComboBox *inputs[4]{};
                                           for (int i = 0; i < 4; ++i)
                                           {
-                                              auto *cb = new QComboBox(host);
+                                              auto *cb = new QComboBox(panel);
                                               cb->addItem(QStringLiteral("（未绑定）"), QString());
                                               cb->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
                                               cb->setMinimumContentsLength(8);
@@ -79,18 +74,18 @@ void ScriptComponent::contribute(Registry &registry, const HostContext &host)
                                           }
                                           lay->addLayout(bindRow);
                                           auto *paramHead = new QHBoxLayout;
-                                          paramHead->addWidget(new QLabel(QStringLiteral("参数"), host));
-                                          auto *addParam = new QToolButton(host);
+                                          paramHead->addWidget(new QLabel(QStringLiteral("参数"), panel));
+                                          auto *addParam = new QToolButton(panel);
                                           addParam->setText(QStringLiteral("+"));
                                           addParam->setToolTip(QStringLiteral("添加参数"));
-                                          auto *delParam = new QToolButton(host);
+                                          auto *delParam = new QToolButton(panel);
                                           delParam->setText(QStringLiteral("-"));
                                           delParam->setToolTip(QStringLiteral("删除选中参数"));
                                           paramHead->addStretch(1);
                                           paramHead->addWidget(addParam);
                                           paramHead->addWidget(delParam);
                                           lay->addLayout(paramHead);
-                                          auto *params = new QTableWidget(0, 2, host);
+                                          auto *params = new QTableWidget(0, 2, panel);
                                           params->setHorizontalHeaderLabels({QStringLiteral("名称"), QStringLiteral("值")});
                                           params->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
                                           params->verticalHeader()->setVisible(false);
@@ -108,24 +103,23 @@ void ScriptComponent::contribute(Registry &registry, const HostContext &host)
                                                   params->removeRow(row);
                                           });
                                           auto *runRow = new QHBoxLayout;
-                                          auto *preview = new QPushButton(QStringLiteral("预览"), host);
-                                          auto *apply = new QPushButton(QStringLiteral("应用"), host);
+                                          auto *preview = new QPushButton(QStringLiteral("预览"), panel);
+                                          auto *apply = new QPushButton(QStringLiteral("应用"), panel);
                                           runRow->addWidget(preview);
                                           runRow->addWidget(apply);
                                           lay->addWidget(script, 1);
                                           lay->addLayout(runRow);
-                                          dock->setWidget(host);
-                                          QObject::connect(preview, &QPushButton::clicked, main, [main] {
-                                              ps::commands::CommandContext c;
-                                              c.arg = QStringLiteral("false");
-                                              main->commands().invoke(QStringLiteral("script.run"), c);
+                                          dock->setWidget(panel);
+                                          QObject::connect(preview, &QPushButton::clicked, dock, [host] {
+                                              if (host.invoke)
+                                                  host.invoke(QStringLiteral("script.run"), QStringLiteral("false"));
                                           });
-                                          QObject::connect(apply, &QPushButton::clicked, main, [main] {
-                                              ps::commands::CommandContext c;
-                                              c.arg = QStringLiteral("true");
-                                              main->commands().invoke(QStringLiteral("script.run"), c);
+                                          QObject::connect(apply, &QPushButton::clicked, dock, [host] {
+                                              if (host.invoke)
+                                                  host.invoke(QStringLiteral("script.run"), QStringLiteral("true"));
                                           });
-                                          ps::plotting::bindScriptPanel(main, script, inputs, params);
+                                          if (host.bindScriptPanel)
+                                              host.bindScriptPanel(parent, script, inputs, params);
                                           return dock;
                                       }});
     registry.addRibbon(RibbonContribution{

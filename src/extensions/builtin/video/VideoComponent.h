@@ -9,7 +9,7 @@ class VideoComponent : public IComponent
 {
 public:
     ComponentManifest manifest() const override;
-    void contribute(Registry &registry, const HostContext &host) override;
+    void contribute(Registry &registry, HostContext &host) override;
 };
 
 } // namespace ps::components

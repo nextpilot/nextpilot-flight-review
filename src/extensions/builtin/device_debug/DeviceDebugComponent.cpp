@@ -29,7 +29,7 @@ ComponentManifest DeviceDebugComponent::manifest() const
             {QStringLiteral("dialog")}};
 }
 
-void DeviceDebugComponent::contribute(Registry &registry, const HostContext &)
+void DeviceDebugComponent::contribute(Registry &registry, HostContext &)
 {
     registry.addDialog(DialogContribution{
         QStringLiteral("dialog.device_debug"),

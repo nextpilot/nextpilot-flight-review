@@ -28,7 +28,7 @@ ComponentManifest TransformComponent::manifest() const
             {QStringLiteral("dialog")}};
 }
 
-void TransformComponent::contribute(Registry &registry, const HostContext &)
+void TransformComponent::contribute(Registry &registry, HostContext &)
 {
     registry.addDialog(DialogContribution{
         QStringLiteral("dialog.transform"),

@@ -62,7 +62,7 @@ ComponentManifest CustomProtocolComponent::manifest() const
                                     QStringLiteral("ribbon"), QStringLiteral("editor")}};
 }
 
-void CustomProtocolComponent::contribute(Registry &registry, const HostContext &host)
+void CustomProtocolComponent::contribute(Registry &registry, HostContext &host)
 {
     DataSourceSpec customSource;
     customSource.descriptor = ps_custom_protocol_loader();

@@ -14,7 +14,7 @@ public:
     explicit DynamicExtension(const PsExtensionDescriptor *descriptor) : m_descriptor(descriptor) {}
 
     ComponentManifest manifest() const override;
-    void contribute(Registry &registry, const HostContext &host) override;
+    void contribute(Registry &registry, HostContext &host) override;
 
 private:
     const PsExtensionDescriptor *m_descriptor = nullptr;

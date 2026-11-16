@@ -26,7 +26,7 @@ ComponentManifest ShellComponent::manifest() const
             {QStringLiteral("ribbon"), QStringLiteral("dock")}};
 }
 
-void ShellComponent::contribute(Registry &registry, const HostContext &)
+void ShellComponent::contribute(Registry &registry, HostContext &)
 {
     registry.addDock(LogManager::dockContribution());
 

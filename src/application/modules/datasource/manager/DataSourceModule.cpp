@@ -51,11 +51,12 @@ void removeDataSourceTimeMarker(MainWindow *mw, double t) { dataSourceSession(mw
 const QVector<const PsChannelInfo *> &dataSourceChannels(MainWindow *mw) { return dataSourceSession(mw)->channels(); }
 QVector<QPair<double, QString>> &dataSourceTimeMarkers(MainWindow *mw) { return dataSourceSession(mw)->timeMarkers(); }
 
-void DataSourceComponent::contribute(Registry &registry, const HostContext &)
+void DataSourceComponent::contribute(Registry &registry, HostContext &)
 {
     for (const DataSourceSpec &source : registry.dataSources())
         DataSourceRegistry::instance().registerDescriptor(source.descriptor, {}, source.editor);
     registerDataSourceContributions(registry);
+    registry.addStatusChip(StatusChipContribution{QStringLiteral("source"), QStringLiteral("无数据"), 0});
     registry.addWindowHook([](QWidget *w) {
         auto *mw = qobject_cast<MainWindow *>(w);
         if (!mw)

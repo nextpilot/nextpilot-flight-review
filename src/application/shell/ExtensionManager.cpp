@@ -36,7 +36,7 @@ void ExtensionManager::scanStandardLocations()
         ExtensionRuntime::instance().scanDirectory(dir.toStdString());
 }
 
-void ExtensionManager::activate(const ps::components::HostContext &context)
+void ExtensionManager::activate(ps::components::HostContext &context)
 {
     m_host->activate(context, disabledIds());
 }

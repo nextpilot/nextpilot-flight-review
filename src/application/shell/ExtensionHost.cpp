@@ -9,7 +9,7 @@ ExtensionHost::~ExtensionHost()
     deactivate();
 }
 
-void ExtensionHost::activate(const HostContext &context, const QStringList &disabledIds)
+void ExtensionHost::activate(HostContext &context, const QStringList &disabledIds)
 {
     if (!m_components.empty())
         return;
