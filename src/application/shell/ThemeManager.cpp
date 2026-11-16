@@ -242,7 +242,7 @@ QPalette palette()
 
 void ThemeManager::applyTo(QApplication &app)
 {
-    const QString saved = SettingsManager::instance().value(QStringLiteral("theme"), QStringLiteral("dark")).toString();
+    const QString saved = SettingsManager::instance().get(ps::settings::kTheme);
     g_dark = saved.compare(QLatin1String("light"), Qt::CaseInsensitive) != 0;
     app.setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
     app.setStyleSheet(styleSheet());

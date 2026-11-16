@@ -95,8 +95,7 @@ bool ExtensionManager::isActive(const QString &id) const
 
 QStringList ExtensionManager::disabledIds() const
 {
-    return SettingsManager::instance()
-        .value(QStringLiteral("extensions.disabled")).toStringList();
+    return SettingsManager::instance().get(ps::settings::kExtensionsDisabled);
 }
 
 bool ExtensionManager::isEnabled(const QString &id) const
@@ -111,6 +110,6 @@ void ExtensionManager::setEnabled(const QString &id, bool enabled)
         disabled.removeAll(id);
     else if (!disabled.contains(id))
         disabled.append(id);
-    SettingsManager::instance().setValue(QStringLiteral("extensions.disabled"), disabled);
+    SettingsManager::instance().set(ps::settings::kExtensionsDisabled, disabled);
     SettingsManager::instance().sync();
 }

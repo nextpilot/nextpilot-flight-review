@@ -1,10 +1,39 @@
 # 设置层：强类型 key 与变更通知
 
-- 状态：规划中，未实施
-- 目标版本：下一轮设置专题
+- 状态：已实施（2026-11-16）
+- 目标版本：设置专题 v1
 - 相关代码：`src/application/shell/SettingsManager.*`、`src/application/shell/SettingsDialog.*`、各模块的 `*Settings.*`
 
-## 现状
+## 实施结果
+
+`SettingsManager` 现在是 `QObject`，提供 `changed(key, oldValue, newValue)` 和按 key 订阅的 `onChanged()`；应用设置 key 集中在 `ps::settings` 的 `SettingsKey<T>` 清单，业务代码不再散写字符串。原始 `value/setValue/remove` 保留给扩展和导出，typed `get/set/remove` 覆盖应用层调用。
+
+### 实际接口
+
+```cpp
+namespace ps::settings {
+inline const SettingsKey<bool> kRestoreLayout{QStringLiteral("restoreLayout"), false};
+inline const SettingsKey<QString> kTheme{QStringLiteral("theme"), QStringLiteral("dark")};
+// ...
+}
+
+auto &st = SettingsManager::instance();
+st.get(ps::settings::kTheme);
+st.set(ps::settings::kTheme, ThemeManager::name());
+st.onChanged(ps::settings::kTheme, this, [](const QString &theme) { /* 刷新 */ });
+```
+
+- 同值写入直接返回，不发信号；`remove` 只在 key 存在时发一次信号，新值为无效 `QVariant`。
+- 类型校验严格：bool 接受 bool 和旧配置里的 `"true"/"false"` 字符串，int 接受整数家族，QString/QStringList/QByteArray 走精确类型；失败 `qWarning` 并回退 key 默认值。
+- `sync()` 会重新读取 `QSettings`，与内存快照比较，只对变化的 key 发 `changed`；`QSettings::status()` 非 `NoError` 时告警。
+- 文件后端用 `QFileSystemWatcher` 监听配置文件和目录，文件被替换后重新挂载；Windows 注册表等非文件后端用 3 秒轮询 `sync()` + 快照比较。自身写入先更新快照，因此监听回环不会产生重复信号。
+- `SettingsDialog` 的主题/恢复布局、`ThemeManager`、`SessionManager`、`ExtensionManager`、`DataSourceSession`、`DataSourceDock`、`PlottingSettings`、`PlottingCanvas` 以及内置 `TransformDialog` 已迁移到 typed key。
+
+### 验证
+
+新增 `tests/unit/test_settings_manager.cpp`，覆盖默认值、类型回退、变更信号、同值去重、remove、手动/文件 watcher 外部变更和导出失败；`test_session_manager` 已改为 typed key，并为直接编译 `SettingsManager.cpp` 的测试目标开启 `AUTOMOC`。
+
+## 原现状
 
 当前 `SettingsManager` 是应用设置的唯一入口，内部持有一个 `QSettings`：
 
@@ -37,7 +66,7 @@ void sync();
 
 目前只有 `restoreLayout()` 做了 bool 包装，其他 key 仍是裸字符串。
 
-## 目标
+## 原目标
 
 把设置层从“QSettings 的薄包装”升级为**可观察、强类型、可枚举的应用设置服务**，同时保持现有 key 名和已存配置兼容。
 
@@ -90,7 +119,7 @@ settings.set(kTheme, QStringLiteral("light"));
 - Windows 注册表后端：不使用文件监听，改为低频轮询 `sync()` + 快照比较，或明确只支持进程内通知。
 - 自身写入要避免触发监听回环：写入时设置抑制标记，或比较新旧值后再决定是否发信号。
 
-## 验收
+## 验收对照
 
 - 设置页修改 `theme` 后，主题、Ribbon、已打开画布立即更新，不重启。
 - 修改 `restoreLayout` 后，关闭流程立即使用新值，不需要重启。
@@ -99,9 +128,9 @@ settings.set(kTheme, QStringLiteral("light"));
 - 类型不匹配的值不会传给业务，使用默认值并记录。
 - 连续写入相同值不触发重复刷新。
 - 外部修改配置文件（文件后端）后，进程能收到 `changed`；不支持的后端有明确说明。
-- `ctest` 覆盖：默认值、类型校验、变更信号、相同值去重、remove、外部变更、写入失败。
+- `ctest` 覆盖：默认值、类型校验、变更信号、相同值去重、remove、外部变更、写入失败。当前 `settings_manager` + `session_manager` 均通过。
 
-## 非目标
+## 非目标（未变）
 
 - 不把 `QSettings` 换成数据库或远程配置中心。
 - 不做每模块独立配置文件；应用设置仍走一个命名空间。

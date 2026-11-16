@@ -231,8 +231,20 @@ target_include_directories(test_session_manager PRIVATE ${PROJECT_SOURCE_DIR}/sr
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/shell)
 target_link_libraries(test_session_manager PRIVATE Qt6::Widgets)
+set_target_properties(test_session_manager PROPERTIES AUTOMOC ON)
 add_test(NAME session_manager COMMAND test_session_manager)
 set_tests_properties(session_manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(test_settings_manager unit/test_settings_manager.cpp
+  ${PROJECT_SOURCE_DIR}/src/application/shell/SettingsManager.cpp)
+target_include_directories(test_settings_manager PRIVATE ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/src/application
+  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/shell)
+target_link_libraries(test_settings_manager PRIVATE Qt6::Widgets)
+set_target_properties(test_settings_manager PROPERTIES AUTOMOC ON)
+add_test(NAME settings_manager COMMAND test_settings_manager)
+set_tests_properties(settings_manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 if(TARGET ps_application_shell AND TARGET ps_application_plotting AND TARGET ps_application_datasource)
   add_executable(test_layout_restore unit/test_layout_restore.cpp)

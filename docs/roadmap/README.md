@@ -5,7 +5,7 @@
 | 文档 | 状态 | 内容 |
 |---|---|---|
 | [主题与浅色模式](theme.md) | 已实施（实现记录） | 深/浅主题 token、Ribbon/画布/Dock 配色、验收与截图 |
-| [设置层：强类型 key 与变更通知](settings.md) | 规划中，未实施 | `SettingsManager` 增加类型约束、变更信号和跨实例同步 |
+| [设置层：强类型 key 与变更通知](settings.md) | 已实施（2026-11-16） | `SettingsManager` 的类型约束、变更信号、文件 watcher/注册表轮询 |
 | [脚本自动化](script-automation.md) | 规划中，暂不实施 | 脚本从派生计算升级为对象模型 + 命令总线 + 事务 |
 | [历史架构基线与决策 v1.0](architecture-v1.md) | 历史记录 | 旧版架构决策、目录基线与实施记录；当前边界以 `AGENTS.md` 为准 |
 | [旧组件/扩展模型 v1](extension-model-v1.md) | 历史记录 | 已被当前 [`../develop/extensions.md`](../develop/extensions.md) 取代的旧模型 |
@@ -14,8 +14,7 @@
 
 ## 当前优先级
 
-1. 设置层收口：强类型 key + 进程内 `changed` 信号，先解决设置修改不刷新。
-2. 脚本自动化 P1：对象句柄与绘图控制，仍走命令总线。
-3. 格式补齐：Parquet、MAVLink tlog 原生解析、更多 MCAP 索引能力。
+1. 脚本自动化 P1：对象句柄与绘图控制，仍走命令总线。
+2. 格式补齐：Parquet、MAVLink tlog 原生解析、更多 MCAP 索引能力。
 
 新的方案先在 `roadmap/` 写清目标、边界、验收和风险，确认后再进 `develop/` 或代码。

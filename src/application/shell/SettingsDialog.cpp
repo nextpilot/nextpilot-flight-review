@@ -73,7 +73,7 @@ SettingsDialog::SettingsDialog(MainWindow *mw)
         {
             ThemeManager::setMode(theme->currentIndex() == 0 ? ThemeManager::Mode::Dark : ThemeManager::Mode::Light);
             m_mw->applyTheme();
-            SettingsManager::instance().setValue(QStringLiteral("theme"), ThemeManager::name());
+            SettingsManager::instance().set(ps::settings::kTheme, ThemeManager::name());
             SettingsManager::instance().sync();
         }
         if (restore)

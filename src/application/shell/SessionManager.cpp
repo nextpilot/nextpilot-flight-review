@@ -18,8 +18,8 @@ QString SessionManager::defaultLayoutPath()
 
 void SessionManager::load()
 {
-    m_layoutPath = SettingsManager::instance().value(QStringLiteral("lastLayout")).toString();
-    const QStringList files = SettingsManager::instance().value(QStringLiteral("recentFiles")).toStringList();
+    m_layoutPath = SettingsManager::instance().get(ps::settings::kLastLayout);
+    const QStringList files = SettingsManager::instance().get(ps::settings::kRecentFiles);
     for (const QString &path : files)
     {
         if (!path.isEmpty() && QFileInfo::exists(path) && !m_recentFiles.contains(path))
@@ -31,7 +31,7 @@ void SessionManager::restoreWindow(QMainWindow *window)
 {
     if (!window)
         return;
-    const QByteArray geometry = SettingsManager::instance().value(QStringLiteral("windowGeometry")).toByteArray();
+    const QByteArray geometry = SettingsManager::instance().get(ps::settings::kWindowGeometry);
     if (!geometry.isEmpty())
         window->restoreGeometry(geometry);
 }
@@ -40,7 +40,7 @@ void SessionManager::restoreWindowState(QMainWindow *window)
 {
     if (!window)
         return;
-    const QByteArray state = SettingsManager::instance().value(QStringLiteral("windowState")).toByteArray();
+    const QByteArray state = SettingsManager::instance().get(ps::settings::kWindowState);
     if (!state.isEmpty())
         window->restoreState(state);
 }
@@ -49,15 +49,15 @@ void SessionManager::saveWindow(const QMainWindow *window)
 {
     if (!window)
         return;
-    SettingsManager::instance().setValue(QStringLiteral("windowGeometry"), window->saveGeometry());
-    SettingsManager::instance().setValue(QStringLiteral("windowState"), window->saveState());
+    SettingsManager::instance().set(ps::settings::kWindowGeometry, window->saveGeometry());
+    SettingsManager::instance().set(ps::settings::kWindowState, window->saveState());
     SettingsManager::instance().sync();
 }
 
 void SessionManager::setLayoutPath(const QString &path)
 {
     m_layoutPath = path;
-    SettingsManager::instance().setValue(QStringLiteral("lastLayout"), path);
+    SettingsManager::instance().set(ps::settings::kLastLayout, path);
 }
 
 void SessionManager::markDirty()
@@ -83,13 +83,13 @@ void SessionManager::addRecentFile(const QString &path)
     m_recentFiles.prepend(path);
     while (m_recentFiles.size() > 12)
         m_recentFiles.removeLast();
-    SettingsManager::instance().setValue(QStringLiteral("recentFiles"), m_recentFiles);
+    SettingsManager::instance().set(ps::settings::kRecentFiles, m_recentFiles);
 }
 
 void SessionManager::clearRecentFiles()
 {
     m_recentFiles.clear();
-    SettingsManager::instance().remove(QStringLiteral("recentFiles"));
+    SettingsManager::instance().remove(ps::settings::kRecentFiles);
 }
 
 void SessionManager::bindCommandState(ps::commands::CommandManager &commands, std::function<void()> refreshTitle)

@@ -960,7 +960,7 @@ void DataSourceSession::onClose()
         closeLiveSource(&src);
     if (m_liveTimer)
         m_liveTimer->stop();
-    if (SettingsManager::instance().value(QStringLiteral("restoreLayout"), false).toBool())
+    if (SettingsManager::instance().get(ps::settings::kRestoreLayout))
     {
         const QString path = m_mw->session().layoutPath();
         saveLayoutTo(path.isEmpty() ? SessionManager::defaultLayoutPath() : path);
@@ -1149,8 +1149,7 @@ void DataSourceSession::importLayoutFrom(const QString &path)
         const QJsonArray q = o.value(QStringLiteral("quat")).toArray();
         for (int i = 0; i < 4 && i < q.size(); ++i)
             r.quat[i] = q.at(i).toString();
-        const int derivedCap = SettingsManager::instance()
-                                   .value(QStringLiteral("derivedMaxPoints"), 2000000).toInt();
+        const int derivedCap = SettingsManager::instance().get(ps::settings::kDerivedMaxPoints);
         if (derivedCap > 0)
         {
             QStringList ins = r.kind == QLatin1String("quat")

@@ -480,7 +480,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     });
     connect(recentBtn, &QPushButton::clicked, this, [this, recentBtn] {
         QMenu menu(this);
-        const QStringList recent = SettingsManager::instance().value(QStringLiteral("recentFiles")).toStringList();
+        const QStringList recent = SettingsManager::instance().get(ps::settings::kRecentFiles);
         for (const QString &path : recent)
         {
             QAction *a = menu.addAction(QFileInfo(path).fileName());
@@ -1114,7 +1114,7 @@ void DataSourceDock::exportActiveCsv()
         return s.contains(QLatin1Char(',')) || s.contains(QLatin1Char('"')) || s.contains(QLatin1Char('\n'))
             ? QStringLiteral("\"%1\"").arg(s) : s;
     };
-    const int sampleCap = SettingsManager::instance().value(QStringLiteral("exportSampleLimit"), 0).toInt();
+    const int sampleCap = SettingsManager::instance().get(ps::settings::kExportSampleLimit);
     ts << "time,source,channel,value,unit\n";
     qulonglong rows = 0;
     const QString alias = esc(src->alias);

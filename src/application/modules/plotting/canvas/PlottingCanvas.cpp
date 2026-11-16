@@ -99,9 +99,9 @@ PlottingCanvas::PlottingCanvas(QWidget *parent)
     m_title = QStringLiteral("未命名画布");
     m_kernelBacked = false;
     const auto &st = SettingsManager::instance();
-    m_showGrid = st.value(QStringLiteral("gridDefault"), true).toBool();
-    m_showLegend = st.value(QStringLiteral("legendDefault"), true).toBool();
-    m_timeFormat = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
+    m_showGrid = st.get(ps::settings::kGridDefault);
+    m_showLegend = st.get(ps::settings::kLegendDefault);
+    m_timeFormat = st.get(ps::settings::kTimeFormat);
     buildHoverBar();
     addDemoCurves();
 }
@@ -109,7 +109,7 @@ PlottingCanvas::PlottingCanvas(QWidget *parent)
 void PlottingCanvas::reloadDisplaySettings()
 {
     const auto &st = SettingsManager::instance();
-    m_timeFormat = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
+    m_timeFormat = st.get(ps::settings::kTimeFormat);
     update();
 }
 

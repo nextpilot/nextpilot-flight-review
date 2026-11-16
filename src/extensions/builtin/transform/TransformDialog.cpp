@@ -1,4 +1,5 @@
 #include "TransformDialog.h"
+#include "SettingsManager.h"
 
 #include "ps_kernel.h"
 
@@ -18,7 +19,6 @@
 #include <QTimer>
 #include <QPushButton>
 #include <QSpinBox>
-#include <QSettings>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -470,8 +470,7 @@ void TransformDialog::apply()
 {
     if (!m_ds)
         return;
-    const int maxPoints = QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
-                              .value(QStringLiteral("derivedMaxPoints"), 2000000).toInt();
+    const int maxPoints = SettingsManager::instance().get(ps::settings::kDerivedMaxPoints);
     if (maxPoints > 0)
     {
         bool quatTab = false;

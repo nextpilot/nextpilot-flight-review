@@ -17,8 +17,8 @@ int main(int argc, char **argv)
     QStandardPaths::setTestModeEnabled(true);
 
     auto &settings = SettingsManager::instance();
-    settings.remove(QStringLiteral("lastLayout"));
-    settings.setValue(QStringLiteral("lastLayout"), QStringLiteral("/tmp/last.psl"));
+    settings.remove(ps::settings::kLastLayout);
+    settings.set(ps::settings::kLastLayout, QStringLiteral("/tmp/last.psl"));
 
     SessionManager session;
     if (session.layoutPath() != QStringLiteral("/tmp/last.psl"))
@@ -36,7 +36,7 @@ int main(int argc, char **argv)
     QMainWindow window;
     window.resize(800, 600);
     session.saveWindow(&window);
-    if (settings.value(QStringLiteral("windowGeometry")).toByteArray().isEmpty())
+    if (settings.get(ps::settings::kWindowGeometry).isEmpty())
         return 1;
 
     QTemporaryDir dir;
@@ -77,9 +77,9 @@ int main(int argc, char **argv)
     if (session.isDirty())
         return 1;
 
-    settings.remove(QStringLiteral("lastLayout"));
-    settings.remove(QStringLiteral("windowGeometry"));
-    settings.remove(QStringLiteral("windowState"));
+    settings.remove(ps::settings::kLastLayout);
+    settings.remove(ps::settings::kWindowGeometry);
+    settings.remove(ps::settings::kWindowState);
     settings.remove(QStringLiteral("test.key"));
     std::printf("session manager ok\n");
     return 0;
