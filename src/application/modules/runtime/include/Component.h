@@ -39,7 +39,6 @@ struct HostContext
     std::function<QString()> configDir;
     std::function<void(double)> setPlayhead;
     std::function<bool(const QString &, const QString &)> invoke;
-    std::function<void(QWidget *, QPlainTextEdit *, QComboBox *[4], QTableWidget *)> bindScriptPanel;
 };
 
 struct RibbonItem

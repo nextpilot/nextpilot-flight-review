@@ -1042,34 +1042,6 @@ void DataSourceSession::saveLayoutTo(const QString &path)
     }
     root[QStringLiteral("transforms")] = transforms;
 
-    QJsonObject script;
-    script[QStringLiteral("source")] = ps::bridge::scriptEditor(m_mw) ? ps::bridge::scriptEditor(m_mw)->toPlainText() : QString();
-    QJsonArray binds;
-    QComboBox **inputs = ps::bridge::scriptInputs(m_mw);
-    for (int i = 0; i < 4; ++i)
-        binds.append(inputs[i] ? inputs[i]->currentData().toString() : QString());
-    script[QStringLiteral("inputs")] = binds;
-    QJsonObject paramObj;
-    if (ps::bridge::scriptParams(m_mw))
-    {
-        for (int row = 0; row < ps::bridge::scriptParams(m_mw)->rowCount(); ++row)
-        {
-            const QString key = ps::bridge::scriptParams(m_mw)->item(row, 0)
-                                    ? ps::bridge::scriptParams(m_mw)->item(row, 0)->text().trimmed()
-                                    : QString();
-            if (key.isEmpty())
-                continue;
-            bool ok = false;
-            const double v = ps::bridge::scriptParams(m_mw)->item(row, 1)
-                                 ? ps::bridge::scriptParams(m_mw)->item(row, 1)->text().toDouble(&ok)
-                                 : 0.0;
-            if (ok)
-                paramObj[key] = v;
-        }
-    }
-    script[QStringLiteral("params")] = paramObj;
-    root[QStringLiteral("script")] = script;
-
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
@@ -1252,41 +1224,6 @@ void DataSourceSession::importLayoutFrom(const QString &path)
     const int cur = root.value(QStringLiteral("current")).toInt(0);
     if (cur >= 0 && cur < m_mw->pages()->count() - 1)
         m_mw->pages()->setCurrentIndex(cur);
-
-    const QJsonObject script = root.value(QStringLiteral("script")).toObject();
-    if (!script.isEmpty())
-    {
-        if (ps::bridge::scriptEditor(m_mw))
-            ps::bridge::scriptEditor(m_mw)->setPlainText(script.value(QStringLiteral("source")).toString());
-        const QJsonArray binds = script.value(QStringLiteral("inputs")).toArray();
-        for (int i = 0; i < 4; ++i)
-        {
-            QComboBox *cb = ps::bridge::scriptInputs(m_mw)[i];
-            if (!cb)
-                continue;
-            cb->clear();
-            cb->addItem(QStringLiteral("（未绑定）"), QString());
-            const QString name = binds.at(i).toString();
-            if (!name.isEmpty())
-                cb->addItem(name, name);
-            cb->setCurrentIndex(name.isEmpty() ? 0 : 1);
-        }
-        const QJsonObject paramObj = script.value(QStringLiteral("params")).toObject();
-        if (ps::bridge::scriptParams(m_mw))
-        {
-            ps::bridge::scriptParams(m_mw)->setRowCount(0);
-            for (auto it = paramObj.begin(); it != paramObj.end(); ++it)
-            {
-                const int row = ps::bridge::scriptParams(m_mw)->rowCount();
-                ps::bridge::scriptParams(m_mw)->insertRow(row);
-                ps::bridge::scriptParams(m_mw)->setItem(row, 0, new QTableWidgetItem(it.key()));
-                ps::bridge::scriptParams(m_mw)->setItem(row, 1, new QTableWidgetItem(
-                    QString::number(it.value().toDouble(), 'g', 10)));
-            }
-        }
-        if (!ps::bridge::scriptEditor(m_mw)->toPlainText().trimmed().isEmpty())
-            ps::bridge::runScript(m_mw, false);
-    }
 
     m_mw->session().setLayoutPath(path);
     log(QStringLiteral("已导入布局：%1").arg(path));

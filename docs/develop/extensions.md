@@ -97,8 +97,6 @@ struct HostContext
     std::function<QString()> configDir;
     std::function<void(double)> setPlayhead;   // 通用时间游标
     std::function<bool(const QString &, const QString &)> invoke; // 通用命令调用
-    std::function<void(QWidget *, QPlainTextEdit *, QComboBox *[4], QTableWidget *)>
-        bindScriptPanel; // 脚本面板绑定，由 plotting 模块安装
 };
 ```
 
@@ -107,7 +105,7 @@ struct HostContext
 - 不把 `MainWindow*`、`QApplication*`、内部容器传进组件。
 - 不在 `HostContext` 里堆业务命令；业务能力走模块公开 API 或 `Registry`。
 - `invoke` 只转发通用命令 id；组件自己的业务 action 不让宿主实现。
-- `bindScriptPanel` 是可选服务，未安装时组件必须能正常降级。
+- 模块专属的 UI 绑定（例如脚本面板）不作为宿主服务提供，由该模块自己的贡献创建。
 
 ## 生命周期
 

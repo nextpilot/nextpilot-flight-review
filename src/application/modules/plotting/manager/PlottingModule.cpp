@@ -6,9 +6,7 @@
 #include "PlottingSettings.h"
 
 #include <QAction>
-#include <QComboBox>
 #include <QIcon>
-#include <QPlainTextEdit>
 #include <QTableWidget>
 #include <QWidget>
 #include "SARibbonPanel.h"
@@ -36,14 +34,9 @@ ComponentManifest PlottingComponent::manifest() const
             {QStringLiteral("plot"), QStringLiteral("dock")}};
 }
 
-void PlottingComponent::contribute(Registry &registry, HostContext &host)
+void PlottingComponent::contribute(Registry &registry, HostContext &)
 {
     registerPlottingContributions(registry);
-    host.bindScriptPanel = [](QWidget *parent, QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params) {
-        auto *mw = qobject_cast<MainWindow *>(parent);
-        if (mw)
-            ps::plotting::bindScriptPanel(mw, script, inputs, params);
-    };
     registry.addStatusChip(StatusChipContribution{QStringLiteral("lod"), QStringLiteral("LOD: Rust"), 1});
     registry.addWindowHook([](QWidget *w) {
         auto *mw = qobject_cast<MainWindow *>(w);
@@ -126,7 +119,6 @@ void newPage(MainWindow *mw) { plottingSession(mw)->newPage(); }
 void setCanvasViewFlag(MainWindow *mw, int f, bool on) { plottingSession(mw)->setCanvasViewFlag(f, on); }
 void canvasZoom(MainWindow *mw, double f) { plottingSession(mw)->canvasZoom(f); }
 void canvasAutoY(MainWindow *mw) { plottingSession(mw)->canvasAutoY(); }
-void runScript(MainWindow *mw, bool a) { plottingSession(mw)->runScript(a); }
 void reloadCanvasSettings(MainWindow *mw) { plottingSession(mw)->reloadCanvasSettings(); }
 void applyPlayhead(MainWindow *mw, double t) { plottingSession(mw)->applyPlayhead(t); }
 QJsonObject pageState(MainWindow *mw, QWidget *p) { return plottingSession(mw)->pageState(p); }
@@ -136,11 +128,7 @@ void removeSourceFromCanvases(MainWindow *mw, const QString &p) { plottingSessio
 void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &c) { plottingSession(mw)->addChannels(c); }
 void setPropRows(MainWindow *mw, const QString &o, const QVector<QPair<QString, QString>> &r) { plottingSession(mw)->setPropRows(o, r); }
 QTableWidget *propTable(MainWindow *mw) { return plottingSession(mw)->propTable(); }
-QPlainTextEdit *scriptEditor(MainWindow *mw) { return plottingSession(mw)->scriptEditor(); }
-QComboBox **scriptInputs(MainWindow *mw) { return plottingSession(mw)->scriptInputs(); }
-QTableWidget *scriptParams(MainWindow *mw) { return plottingSession(mw)->scriptParams(); }
 QTreeWidget *propTree(MainWindow *mw) { return plottingSession(mw)->propTree(); }
-void bindScriptPanel(MainWindow *mw, QPlainTextEdit *s, QComboBox *i[4], QTableWidget *p) { plottingSession(mw)->bindScriptPanel(s, i, p); }
 void bindPlotPanels(MainWindow *mw, QLabel *s, QToolButton *e, QTableWidget *t, QTreeWidget *tr) { plottingSession(mw)->bindPlotPanels(s, e, t, tr); }
 }
 
@@ -153,13 +141,9 @@ QJsonObject pageState(MainWindow *mw, QWidget *page) { return ps::plotting::page
 QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return ps::plotting::buildPage(mw, o); }
 void refreshPropTree(MainWindow *mw, PlottingCanvas *active) { ps::plotting::refreshPropTree(mw, active); }
 void applyTimeMarkers(MainWindow *mw) { ps::plotting::applyTimeMarkers(mw); }
-void runScript(MainWindow *mw, bool apply) { ps::plotting::runScript(mw, apply); }
 void setPropRows(MainWindow *mw, const QString &object,
                  const QVector<QPair<QString, QString>> &rows) { ps::plotting::setPropRows(mw, object, rows); }
 QTableWidget *propTable(MainWindow *mw) { return ps::plotting::propTable(mw); }
-QPlainTextEdit *scriptEditor(MainWindow *mw) { return ps::plotting::scriptEditor(mw); }
-QComboBox **scriptInputs(MainWindow *mw) { return ps::plotting::scriptInputs(mw); }
-QTableWidget *scriptParams(MainWindow *mw) { return ps::plotting::scriptParams(mw); }
 QTreeWidget *propTree(MainWindow *mw) { return ps::plotting::propTree(mw); }
 QVector<PlottingCanvas *> allCanvases(MainWindow *mw)
 {

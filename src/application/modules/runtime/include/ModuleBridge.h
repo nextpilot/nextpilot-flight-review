@@ -43,13 +43,9 @@ QJsonObject pageState(MainWindow *mw, QWidget *page);
 QWidget *buildPage(MainWindow *mw, const QJsonObject &o);
 void refreshPropTree(MainWindow *mw, PlottingCanvas *active = nullptr);
 void applyTimeMarkers(MainWindow *mw);
-void runScript(MainWindow *mw, bool apply = false);
 void setPropRows(MainWindow *mw, const QString &object,
                  const QVector<QPair<QString, QString>> &rows);
 QTableWidget *propTable(MainWindow *mw);
-QPlainTextEdit *scriptEditor(MainWindow *mw);
-QComboBox **scriptInputs(MainWindow *mw);
-QTableWidget *scriptParams(MainWindow *mw);
 QTreeWidget *propTree(MainWindow *mw);
 QVector<PlottingCanvas *> allCanvases(MainWindow *mw);
 void canvasAddChannel(PlottingCanvas *c, const PsChannelInfo *ch);

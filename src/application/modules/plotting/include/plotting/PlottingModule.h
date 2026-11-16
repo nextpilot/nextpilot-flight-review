@@ -7,8 +7,6 @@
 class MainWindow;
 class PlottingCanvas;
 class QWidget;
-class QPlainTextEdit;
-class QComboBox;
 class QTableWidget;
 class QLabel;
 class QToolButton;
@@ -40,7 +38,6 @@ void newPage(MainWindow *mw);
 void setCanvasViewFlag(MainWindow *mw, int flag, bool on);
 void canvasZoom(MainWindow *mw, double factor);
 void canvasAutoY(MainWindow *mw);
-void runScript(MainWindow *mw, bool apply = false);
 void reloadCanvasSettings(MainWindow *mw);
 void applyPlayhead(MainWindow *mw, double t);
 QJsonObject pageState(MainWindow *mw, QWidget *page);
@@ -50,10 +47,6 @@ void removeSourceFromCanvases(MainWindow *mw, const QString &sourcePath);
 void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &channels);
 void setPropRows(MainWindow *mw, const QString &object, const QVector<QPair<QString, QString>> &rows);
 QTableWidget *propTable(MainWindow *mw);
-QPlainTextEdit *scriptEditor(MainWindow *mw);
-QComboBox **scriptInputs(MainWindow *mw);
-QTableWidget *scriptParams(MainWindow *mw);
 QTreeWidget *propTree(MainWindow *mw);
-void bindScriptPanel(MainWindow *mw, QPlainTextEdit *script, QComboBox *inputs[4], QTableWidget *params);
 void bindPlotPanels(MainWindow *mw, QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree);
 }
