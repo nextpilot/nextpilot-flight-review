@@ -14,12 +14,14 @@ add_library(ps_application_datasource OBJECT
   include/datasource/SourceModel.h
   include/datasource/DataSourceEntry.h
   include/datasource/DataSourceRegistry.h
+  include/datasource/ScriptHostBridge.h
   include/datasource/IMessageParser.h
   include/datasource/MessageParserSpec.h
   include/datasource/MessageParserRegistry.h
   include/datasource/DecodedFrame.h
   manager/DataSourceRegistry.cpp
   manager/DataSourceModule.cpp
+  manager/ScriptHostBridge.cpp
   manager/DataSourceSession.h
   manager/DataSourceSession.cpp
   manager/DataSourceCommands.cpp

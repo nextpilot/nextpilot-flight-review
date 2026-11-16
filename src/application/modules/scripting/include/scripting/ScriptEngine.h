@@ -9,7 +9,8 @@ class ScriptEngine
 {
 public:
     // 失败时 outputs 为空，error 带行号与原因；不抛异常。
+    // requireOutput：绘图派生脚本必须产出序列；控制台/自动化脚本允许裸跑。
     static ScriptResult run(const QString &source, const QVector<ScriptSeries> &inputs,
                             const QMap<QString, double> &params = QMap<QString, double>(),
-                            const QString &language = QString());
+                            const QString &language = QString(), bool requireOutput = true);
 };

@@ -1,6 +1,7 @@
 // PlotScope 入口。Qt Widgets 单线程 UI（D1 / D1b / D1c），数据面全部走 ps-abi。
 #include <QApplication>
 #include <QFile>
+#include <QStandardPaths>
 #include <QStringList>
 
 #include <cstdio>
@@ -13,6 +14,12 @@
 
 #include "ps_kernel.h"
 #include "MainWindow.h"
+
+// --run 走无 UI 数据面
+#include "ExtensionHost.h"
+#include "ScriptHostService.h"
+#include "datasource/ScriptHostBridge.h"
+#include "scripting/ScriptEngine.h"
 
 int main(int argc, char **argv)
 {
@@ -46,6 +53,49 @@ int main(int argc, char **argv)
             printf("%s\t%s\t%s\t%s\n", qPrintable(d.id),
                    d.type == ps::components::ExtensionType::Builtin ? "builtin" : "dynamic",
                    qPrintable(d.version), qPrintable(d.libraryPath));
+        }
+        return 0;
+    }
+
+    // --run <script.lua>：无 UI 跑脚本，退出码即结论（CI 入口）
+    const QStringList cliArgs = QCoreApplication::arguments();
+    const int runIndex = cliArgs.indexOf(QStringLiteral("--run"));
+    if (runIndex > 0 && runIndex + 1 < cliArgs.size())
+    {
+        const QString scriptPath = cliArgs.at(runIndex + 1);
+        QFile f(scriptPath);
+        if (!f.open(QIODevice::ReadOnly))
+        {
+            fprintf(stderr, "无法读取脚本：%s\n", qPrintable(scriptPath));
+            return 2;
+        }
+        const QString source = QString::fromUtf8(f.readAll());
+
+        ps::data_source::SourceStore store;
+        ps::data_source::ScriptHostBridge bridge(store);
+        ps::scripting::setHostService(&bridge);
+
+        // CLI 没有 MainWindow，内置组件的 contribute 要自己激活一遍，
+        // 否则加载器注册表是空的，ps.app.load 找不到 csv/ulog 等逻辑。
+        ps::components::HostContext cliCtx;
+        cliCtx.log = [](const QString &text) { fprintf(stderr, "%s\n", qPrintable(text)); };
+        cliCtx.configDir = [] {
+            return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        };
+        ps::components::ExtensionHost cliHost;
+        cliHost.activate(cliCtx);
+        for (const QString &e : cliHost.errors())
+            fprintf(stderr, "[extension] %s\n", qPrintable(e));
+
+        const ScriptResult r =
+            ScriptEngine::run(source, QVector<ScriptSeries>(), QMap<QString, double>(),
+                              QStringLiteral("lua"), false);
+        ps::scripting::setHostService(nullptr);
+        cliHost.deactivate();
+        if (!r.ok)
+        {
+            fprintf(stderr, "%s\n", qPrintable(r.error));
+            return 1;
         }
         return 0;
     }

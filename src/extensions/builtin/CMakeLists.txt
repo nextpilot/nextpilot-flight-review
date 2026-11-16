@@ -17,6 +17,8 @@ add_library(ps_builtin_components INTERFACE)
 target_sources(ps_builtin_components INTERFACE
   $<TARGET_OBJECTS:ps_common_datasources_component>
   $<TARGET_OBJECTS:ps_builtin_script_component>
+  # 脚本引擎已迁入 modules/scripting；过渡期由旧组件透传对象给宿主
+  $<TARGET_OBJECTS:ps_application_scripting>
   $<TARGET_OBJECTS:ps_autopilot_component>
   $<TARGET_OBJECTS:ps_automotive_component>
   $<TARGET_OBJECTS:ps_robotics_component>

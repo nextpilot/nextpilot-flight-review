@@ -1,0 +1,44 @@
+-- S1 只读数据面闭环：load → channels → slice → exportCsv。
+-- 由 ctest 以 `plotscope_app --run <本文件>` 执行，退出码即结论。
+-- 路径由 CMake configure_file 注入，脚本内不做路径拼接猜测。
+local demoPath = "@PS_SMOKE_CSV@"
+local outPath = "@PS_SMOKE_OUT@"
+
+local job, err = ps.app.load(demoPath)
+assert(job, err)
+assert(job:wait(), "load 未完成")
+
+local srcs = ps.app.sources()
+assert(#srcs == 1, "应只有一个数据源，实际 " .. #srcs)
+
+local s = srcs[1]
+assert(s.format == "CSV", "格式应为 CSV，实际 " .. tostring(s.format))
+assert(s.live == false)
+
+local chs = s:channels()
+assert(#chs >= 2, "通道数应 >= 2，实际 " .. #chs)
+
+local c = chs[1]
+assert(c.count > 0)
+assert(c.t1 > c.t0)
+
+local d = c:slice(c.t0, c.t1, 64)
+assert(#d.t == #d.v, "t/v 长度必须一致")
+assert(#d.t > 0)
+assert(d.t[1] >= c.t0 - 1e-9)
+assert(d.t[#d.t] <= c.t1 + 1e-9)
+
+-- 窗口外应为空，而不是报错
+local empty = c:slice(c.t1 + 1e9, c.t1 + 2e9, 8)
+assert(#empty.t == 0, "窗口外应返回空")
+
+-- 按名字取通道与按序号取到的是同一条
+local byName = s:channel(c.name)
+assert(byName and byName.count == c.count)
+
+assert(ps.app.exportCsv(s, outPath, {overwrite = true}), "导出失败")
+
+assert(ps.app.close(s), "关闭失败")
+assert(#ps.app.sources() == 0, "关闭后应为空")
+
+print("app_smoke ok: " .. #chs .. " channels")

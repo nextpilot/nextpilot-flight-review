@@ -39,6 +39,9 @@ struct HostContext
     std::function<QString()> configDir;
     std::function<void(double)> setPlayhead;
     std::function<bool(const QString &, const QString &)> invoke;
+    // 模块注册自己的命令域，不必兜到 MainWindow。handler 只接参数串，
+    // 宿主侧再包成 CommandContext，runtime 不碰 shell 类型。
+    std::function<void(const QString &, std::function<void(const QString &)>)> registerCommand;
 };
 
 struct RibbonItem

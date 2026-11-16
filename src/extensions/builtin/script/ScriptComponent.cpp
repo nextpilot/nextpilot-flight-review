@@ -2,7 +2,7 @@
 
 #include <QString>
 
-#include "ScriptEngine.h"
+#include "scripting/ScriptEngine.h"
 
 namespace ps::components
 {

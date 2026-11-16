@@ -1,4 +1,4 @@
-#include "ScriptEngine.h"
+#include "scripting/ScriptEngine.h"
 
 #include <cassert>
 #include <cmath>

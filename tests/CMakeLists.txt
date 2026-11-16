@@ -1,7 +1,9 @@
 # 测试大量用 assert 驱动（连 bind/load 这类副作用调用都写在断言里），
-# MSVC 多配置下 Release 会定义 NDEBUG 把这些整段编译掉，测试就变成空跑，故测试目标始终保留断言。
+# NDEBUG 会把这些整段编译掉，测试就变成空跑，故测试目标始终保留断言。
 if(MSVC)
   add_compile_options(/UNDEBUG)
+else()
+  add_compile_options(-UNDEBUG)
 endif()
 
 add_executable(test_abi unit/test_abi.cpp)
@@ -261,16 +263,22 @@ endif()
 
 find_package(Lua 5.4 QUIET)
 if(LUA_FOUND)
-  add_executable(test_script_engine
-    unit/test_script_engine.cpp
-    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/script/ScriptEngine.cpp)
+  add_executable(test_script_engine unit/test_script_engine.cpp)
   target_include_directories(test_script_engine PRIVATE
     ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
-    ${PROJECT_SOURCE_DIR}/src/extensions/builtin/script
+    ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
     ${LUA_INCLUDE_DIR})
-  target_compile_definitions(test_script_engine PRIVATE PS_HAVE_LUA=1)
-  target_link_libraries(test_script_engine PRIVATE Qt6::Core ${LUA_LIBRARIES})
+  target_link_libraries(test_script_engine PRIVATE ps_application_scripting Qt6::Core ${LUA_LIBRARIES})
   add_test(NAME script_engine COMMAND test_script_engine)
+
+  # 受限 require：白名单 / 目录穿越 / 环依赖 / 缓存与失败清理
+  add_executable(test_script_library unit/test_script_library.cpp)
+  target_include_directories(test_script_library PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/lua)
+  target_link_libraries(test_script_library PRIVATE ps_application_scripting Qt6::Core ${LUA_LIBRARIES})
+  add_test(NAME script_library COMMAND test_script_library)
 endif()
 
 find_package(Qt6 QUIET COMPONENTS Widgets)
@@ -352,4 +360,30 @@ if(TARGET ps_application_shell AND TARGET ps_application_plotting AND TARGET ps_
   endif()
   add_test(NAME layout_restore COMMAND test_layout_restore)
   set_tests_properties(layout_restore PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
+# S1 只读数据面：用真实可执行文件跑一次脚本闭环，退出码即结论。
+if(TARGET plotscope_app)
+  set(PS_SMOKE_CSV "${PROJECT_SOURCE_DIR}/tests/fixture/demo_flight.csv")
+  set(PS_SMOKE_OUT "${CMAKE_CURRENT_BINARY_DIR}/app_smoke_out.csv")
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/script/app_smoke.lua.in
+                 ${CMAKE_CURRENT_BINARY_DIR}/app_smoke.lua @ONLY)
+  add_test(NAME script_app_cli COMMAND plotscope_app --run ${CMAKE_CURRENT_BINARY_DIR}/app_smoke.lua)
+  set_tests_properties(script_app_cli PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
+if(TARGET plotscope_app)
+  add_executable(test_script_slice_perf unit/test_script_slice_perf.cpp)
+  target_include_directories(test_script_slice_perf PRIVATE ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/application
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include)
+  target_link_libraries(test_script_slice_perf PRIVATE
+    ps_application_shell ps_application_datasource ps_application_plotting
+    ps_host ps_kernel ps_cache ps_live Qt6::Widgets)
+  if(TARGET ps_builtin_components)
+    target_link_libraries(test_script_slice_perf PRIVATE ps_builtin_components)
+  endif()
+  add_test(NAME script_slice_perf COMMAND test_script_slice_perf)
+  set_tests_properties(script_slice_perf PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

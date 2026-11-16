@@ -48,6 +48,10 @@ MainWindow::MainWindow(QWidget *parent)
         ctx.arg = arg;
         return m_commands.invoke(id, ctx);
     };
+    hostContext.registerCommand = [this](const QString &id,
+                                         std::function<void(const QString &)> handler) {
+        m_commands.add(id, [handler](const ps::commands::CommandContext &ctx) { handler(ctx.arg); });
+    };
     m_extensions.activate(hostContext);
     m_session.setDockBridge(
         [this] { return m_docks.saveLayout(); },

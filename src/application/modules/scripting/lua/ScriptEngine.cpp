@@ -1,4 +1,7 @@
-#include "ScriptEngine.h"
+#include "scripting/ScriptEngine.h"
+
+#include "LuaAppApi.h"
+#include "ScriptLibrary.h"
 
 #include <cmath>
 #include <QDir>
@@ -312,12 +315,25 @@ void registerApi(lua_State *L)
 
 void clearDangerous(lua_State *L)
 {
-    const char *names[] = {"os", "io", "package", "debug", "dofile", "loadfile", "require", "collectgarbage"};
+    // require 不在名单里：它由 ScriptLibrary 换成受限版本（只认 scripts/lib）。
+    const char *names[] = {"os", "io", "package", "debug", "dofile", "loadfile", "collectgarbage"};
     for (const char *n : names)
     {
         lua_pushnil(L);
         lua_setglobal(L, n);
     }
+    // 只摘全局不够：luaL_openlibs 把这些表也登记进了 _LOADED，
+    // 不清掉的话 require("os") 会把 os 原样交回来，沙箱形同虚设。
+    lua_getfield(L, LUA_REGISTRYINDEX, LUA_LOADED_TABLE);
+    if (lua_istable(L, -1))
+    {
+        for (const char *n : names)
+        {
+            lua_pushnil(L);
+            lua_setfield(L, -2, n);
+        }
+    }
+    lua_pop(L, 1);
 }
 
 QVector<double> timeFor(const QVector<ScriptSeries> &inputs, int len);
@@ -445,7 +461,8 @@ QVector<double> timeFor(const QVector<ScriptSeries> &inputs, int len)
 } // namespace
 
 ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries> &inputs,
-                               const QMap<QString, double> &params, const QString &language)
+                               const QMap<QString, double> &params, const QString &language,
+                               bool requireOutput)
 {
     ScriptResult r;
     const QString lang = language.isEmpty()
@@ -471,6 +488,7 @@ ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries
     }
     luaL_openlibs(L);
     clearDangerous(L);
+    ps::scripting::ScriptLibrary::install(L);
     lua_sethook(L, instructionHook, LUA_MASKCOUNT, 20000000);
 
     lua_newtable(L); // __ps_inputs
@@ -505,6 +523,7 @@ ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries
     lua_newtable(L);
     lua_setglobal(L, "__ps_out");
     registerApi(L);
+    ps::scripting::installAppApi(L);
 
     const QByteArray code = source.toUtf8();
     if (luaL_loadbufferx(L, code.constData(), static_cast<size_t>(code.size()), "script", "t") != LUA_OK)
@@ -575,7 +594,7 @@ ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries
     lua_pop(L, 1);
     lua_close(L);
 
-    if (r.outputs.isEmpty())
+    if (requireOutput && r.outputs.isEmpty())
     {
         r.error = QStringLiteral("脚本没有输出：请调用 ps.plot(name, values) 或给全局 out 赋值");
         return r;

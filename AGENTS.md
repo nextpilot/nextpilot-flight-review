@@ -28,6 +28,7 @@ shell（最小宿主）
 | `src/application/modules/plotting` | 绘图能力 | 画布、绘图页/切分、坐标轴、曲线、属性面板、绘图 Ribbon、`plot.*`/`page.*` 命令 | 具体文件格式解析、数据源生命周期 |
 | `src/application/shared/filter` | 共享 UI 库 | 算子目录、参数表单、与内核 filter id 对应的元数据 | 具体数据源/绘图状态、格式解析；业务命令 |
 | `src/application/modules/protocol` | 协议能力 | 协议 schema/文档模型、协议编辑器、codec、自定义协议 loader、`protocol.*` 命令与 Ribbon | 画布、数据源会话状态、具体业务格式分支 |
+| `src/application/modules/scripting` | 脚本能力 | 脚本引擎、受限 `require`、控制台 REPL 与元命令、自动化 Job/批处理/录制、事件触发、`script.*` 命令 | 具体文件格式解析、画布与绘图状态；绘图侧曲线变换 |
 | `src/application/kernel` | Rust 内核 | NDF、LOD、算子、对齐、C ABI | Qt、Widgets、宿主业务 |
 | `src/extensions/builtin` | 内置业务 | 飞控、GNSS、汽车、机器人四个领域工具箱，`common` 共享 loader/CSV，以及通用数据源、脚本等 C++ 组件；数据变换与设备调试 UI 属 datasource 模块 | 反向被 shell/modules include；直接依赖 shell |
 | `src/extensions/dynamic` | 动态扩展 | 只保留 C++/Rust 扩展 SDK，服务第三方动态插件 | 承载官方/通用格式加载器；依赖 shell/modules 私有头；跨 C ABI 返回 `QWidget*` |
@@ -43,10 +44,13 @@ shell（最小宿主）
 | `modules/plotting` | `shell` 的宿主接口、`modules/runtime`、`shared/filter`、`ps_kernel` 的 C ABI | `modules/datasource` 私有头；格式解析 |
 | `shared/filter` | Qt Widgets | 具体数据源/绘图状态、业务状态、shell 私有头 |
 | `modules/protocol` | `shell` 的宿主接口、`modules/runtime`、`ps_kernel` 的 C ABI、`ps_loader_common`（加载器公共代码）、Qt | `modules/datasource`/`plotting` 私有头；画布与绘图状态 |
+| `modules/scripting` | `shell` 的宿主接口、`modules/runtime`（含 `ScriptHostService`）、`ps_kernel` 的 C ABI、Qt、Lua 5.4 | `modules/datasource`/`plotting` 私有头；直接持有 `MainWindow`；绘图侧曲线变换 |
 | `extensions/builtin` | `modules/runtime`、modules 的公开头、`ps_kernel` 的 C ABI、Qt | `shell` 的 `MainWindow` 或 shell 私有头 |
 | `extensions/dynamic` | 只提供公开 SDK、`ps_extension.h`、`ps_kernel.h`、C ABI | shell/modules 私有头、Qt Widgets、C++ 对象跨边界、官方格式加载器 |
 
-跨业务模块只走 `modules/runtime/include/ModuleBridge.h` 的公开函数和数据，不直接 include 对方模块。
+跨业务模块只走 `modules/runtime/include/ModuleBridge.h` 的公开函数和数据，或 `modules/runtime` 提供的能力服务（如 `ScriptHostService`），不直接 include 对方模块。
+
+`ScriptHostService` 由 `modules/datasource` 的 `ScriptHostBridge` 实现，`modules/scripting` 只认接口；`--run` 无 UI 入口在 `src/application/main.cpp`，属 shell 侧装配，不属脚本模块。
 
 ## 4. shell 的硬边界
 
@@ -133,6 +137,7 @@ shell 只做最小宿主和管理内核：
 - `ps_application_shell` 不得 link `ps_application_datasource`、`ps_application_plotting`、`ps_builtin_components`。
 - `ps_application_datasource` / `ps_application_plotting` 可以 link shell/runtime/kernel，但不得互相 link。
 - `ps_application_protocol` 只由 `plotscope_app` 链接，不进入 shell 或 datasource/plotting 的依赖；协议 loader 仍通过数据源注册表暴露。
+- `ps_application_scripting` 由 `plotscope_app` 链接；过渡期旧 `ps_builtin_script_component` 只留 runner 槽，引擎对象经 `ps_builtin_components` 透传给宿主，S0.5 摘槽后移除。
 - `ps_builtin_components` 只聚合内置扩展，不进入 shell 的依赖。
 - `plotscope_app` 是唯一组装 target，链接 shell + modules + builtin；动态扩展在运行时加载。
 - 新增 target 必须显式声明 warnings 和 include 边界；shell 也必须纳入 `ps_set_warnings`。
