@@ -4,14 +4,14 @@
 #include "DataSourceRegistry.h"
 #include "DataSourceSession.h"
 #include "MainWindow.h"
+#include "RibbonGallery.h"
 
 #include <QAction>
 #include <QFileDialog>
 #include <QDockWidget>
 #include <QIcon>
-#include <QMenu>
-#include <QToolButton>
 #include <SARibbonPanel.h>
+#include <SARibbonPanelItem.h>
 
 namespace
 {
@@ -70,46 +70,30 @@ void registerDataSourceContributions(Registry &registry)
                      const QStringList fs = QFileDialog::getOpenFileNames(mw, e.label, {}, e.filter.isEmpty() ? QStringLiteral("全部 (*)") : e.filter);
                      for (const QString &f : fs) dataSourceSession(mw)->openPath(f);
                  };
-                 // 面板一行摆不下全部加载器：放前 4 个大按钮（带文件类型图标），
-                 // 其余走右端下拉三角，展开后是全量 loader 列表
-                 int shown = 0;
+                 // 图库：一行摆 4 个常用加载器，框内箭头弹出全量列表，
+                 // 外观和绘图 ribbon 的图表类型图库同一个组件
+                 QList<QAction *> fileActs;
                  for (const DataSourceEntry &e : DataSourceRegistry::instance().fileEntries())
                  {
                      auto *a = new QAction(loaderIcon(e), e.label, panel);
-                     a->setToolTip(e.label);
+                     a->setToolTip(e.label + (e.filter.isEmpty() ? QString() : QStringLiteral("  ") + e.filter));
                      QObject::connect(a, &QAction::triggered, mw, [openFile, e] { openFile(e); });
-                     if (shown++ < 4) panel->addLargeAction(a);
+                     fileActs.append(a);
                  }
-                 auto *more = new QAction(QStringLiteral("▾"), panel);
-                 more->setToolTip(QStringLiteral("更多加载器"));
-                 more->setProperty("rbIconOnly", true);
-                 auto *moreMenu = new QMenu(panel);
-                 QObject::connect(moreMenu, &QMenu::aboutToShow, moreMenu, [moreMenu, mw, openFile] {
-                     moreMenu->clear();
-                     for (const DataSourceEntry &e : DataSourceRegistry::instance().fileEntries())
-                     {
-                         auto *a = moreMenu->addAction(loaderIcon(e), e.label);
-                         QObject::connect(a, &QAction::triggered, mw, [openFile, e] { openFile(e); });
-                     }
-                     const QList<DataSourceEntry> streams = DataSourceRegistry::instance().streamEntries();
-                     if (!streams.isEmpty())
-                     {
-                         auto *sub = moreMenu->addMenu(QStringLiteral("实时源"));
-                         for (const DataSourceEntry &e : streams)
-                         {
-                             auto *a = sub->addAction(loaderIcon(e), e.label);
-                             QObject::connect(a, &QAction::triggered, mw, [mw, id = e.id] { dataSourceSession(mw)->connectSource(id); });
-                         }
-                     }
-                 });
-                 more->setMenu(moreMenu);
-                 panel->addSmallAction(more, QToolButton::InstantPopup);
-                 // 按钮自带一个菜单箭头，会把「▾」变成双三角，隐藏掉
-                 for (auto *b : panel->findChildren<QToolButton *>())
+                 QList<QAction *> streamActs;
+                 for (const DataSourceEntry &e : DataSourceRegistry::instance().streamEntries())
                  {
-                     if (b->defaultAction() == more)
-                         b->setStyleSheet(QStringLiteral("QToolButton::menu-indicator{image:none;width:0px;height:0px;}"));
+                     auto *a = new QAction(loaderIcon(e), e.label, panel);
+                     a->setToolTip(e.label);
+                     QObject::connect(a, &QAction::triggered, mw,
+                                      [mw, id = e.id] { dataSourceSession(mw)->connectSource(id); });
+                     streamActs.append(a);
                  }
+                 auto *gallery = new ps::ui::RibbonGallery(panel);
+                 gallery->setPrimaryActions(fileActs.mid(0, 4));
+                 gallery->addGroup(QStringLiteral("文件格式"), fileActs);
+                 gallery->addGroup(QStringLiteral("实时源"), streamActs);
+                 panel->addWidget(gallery, SARibbonPanelItem::Large);
                  panel->setMaximumWidth(520);
              }}},
         1});

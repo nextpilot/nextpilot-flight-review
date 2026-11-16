@@ -1,5 +1,6 @@
 #include "PlottingRibbon.h"
 #include "MainWindow.h"
+#include "RibbonGallery.h"
 #include "ThemeManager.h"
 #include <QAction>
 #include <QFrame>
@@ -7,7 +8,6 @@
 #include <QHash>
 #include <QIcon>
 #include <QLabel>
-#include <QListView>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -18,8 +18,6 @@
 #include <cmath>
 #include <functional>
 #include "SARibbonBar.h"
-#include "SARibbonGallery.h"
-#include "SARibbonGalleryGroup.h"
 #include "SARibbonPanel.h"
 
 namespace ps::plotting
@@ -186,50 +184,6 @@ QPixmap plotThumb(const QString &kind)
     return pm;
 }
 
-class PlotMenuPopup : public QFrame
-{
-public:
-    explicit PlotMenuPopup(QWidget *parent) : QFrame(parent, Qt::Popup)
-    {
-        setObjectName(QStringLiteral("plotMenuPopup"));
-        setStyleSheet(QStringLiteral(
-            "QFrame#plotMenuPopup{background:#1b232b;border:1px solid #3a4650;}"));
-        m_root = new QVBoxLayout(this);
-        m_root->setContentsMargins(8, 6, 8, 8);
-        m_root->setSpacing(4);
-    }
-
-    void addGroup(const QString &title, const QList<QAction *> &acts)
-    {
-        auto *lab = new QLabel(title, this);
-        lab->setStyleSheet(QStringLiteral("color:#8b949e;font-size:11px;padding:2px 3px;"));
-        m_root->addWidget(lab);
-        auto *grid = new QGridLayout;
-        grid->setContentsMargins(0, 0, 0, 0);
-        grid->setSpacing(3);
-        for (int i = 0; i < acts.size(); ++i)
-        {
-            auto *b = new QToolButton(this);
-            b->setDefaultAction(acts.at(i));
-            b->setToolButtonStyle(Qt::ToolButtonIconOnly);
-            b->setAutoRaise(true);
-            b->setIconSize(QSize(64, 36));
-            b->setFixedSize(70, 44);
-            b->setStyleSheet(QStringLiteral(
-                "QToolButton{background:transparent;border:0;padding:0;}"
-                "QToolButton:hover{background:#2d3841;}"));
-            connect(acts.at(i), &QAction::triggered, this, &QWidget::hide);
-            grid->addWidget(b, i / 6, i % 6);
-        }
-        for (int c = 0; c < 6; ++c)
-            grid->setColumnStretch(c, 0);
-        m_root->addLayout(grid);
-    }
-
-private:
-    QVBoxLayout *m_root;
-};
-
 class LayoutPickGrid : public QWidget
 {
 public:
@@ -379,24 +333,13 @@ void buildPlotGallery(QWidget *p)
     auto *mw = qobject_cast<MainWindow *>(panel->window());
     if (!mw)
         return;
-    auto *ribbon = panel->ribbonBar();
-    auto addSmall = [](SARibbonPanel *pn, const QString &icon, const QString &text,
-                       std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(icon.isEmpty() ? QIcon() : QIcon(QStringLiteral(":/icons/%1.svg").arg(icon)),
-                              text, ctx);
-        a->setToolTip(text);
-        a->setProperty("rbIconOnly", true);
-        QObject::connect(a, &QAction::triggered, ctx, fn);
-        pn->addSmallAction(a);
-    };
-    auto run = [mw](const QString &cmd, const QString &arg = QString()) {
-        return [mw, cmd, arg] { mw->commands().invoke(cmd, ps::commands::CommandContext{mw, arg}); };
-    };
     panel->setExpanding(false);
     panel->setMaximumWidth(400);
     if (auto *t = panel->titleLabel())
         t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    auto *plotGallery = panel->addGallery(true);
+    auto run = [mw](const QString &cmd, const QString &arg = QString()) {
+        return [mw, cmd, arg] { mw->commands().invoke(cmd, ps::commands::CommandContext{mw, arg}); };
+    };
     QList<QAction *> curveActs, mapActs, gaugeActs;
     QHash<QString, QAction *> plotActByKind;
     auto addPlot = [&](const QString &kind, const QString &label, const QString &tip,
@@ -419,60 +362,17 @@ void buildPlotGallery(QWidget *p)
     addPlot(QStringLiteral("horizon"), QStringLiteral("地平仪"), QStringLiteral("姿态地平仪"), gaugeActs);
     addPlot(QStringLiteral("compass"), QStringLiteral("罗盘"), QStringLiteral("航向罗盘"), gaugeActs);
     addPlot(QStringLiteral("gauge"), QStringLiteral("表盘"), QStringLiteral("单值仪表盘"), gaugeActs);
-    auto stylePlotGroup = [](SARibbonGalleryGroup *g) {
-        g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
-        g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-        g->setIconSize(QSize(64, 36));
-        g->setGridMinimumWidth(70);
-        g->setGridMaximumWidth(78);
-    };
-    auto stylePlotCommon = [](SARibbonGalleryGroup *g) {
-        g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
-        g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-        g->setIconSize(QSize(64, 36));
-        g->setGridMinimumWidth(68);
-        g->setGridMaximumWidth(74);
-    };
     QList<QAction *> commonActs;
     for (const char *k : {"timeseries", "xy", "scatter", "traj3d", "map"})
         if (auto *a = plotActByKind.value(QString::fromLatin1(k)))
             commonActs.append(a);
-    auto *commonGroup = plotGallery->addCategoryActions(QStringLiteral("常用"), commonActs);
-    stylePlotCommon(commonGroup);
-    auto *curveGroup = plotGallery->addCategoryActions(QStringLiteral("曲线"), curveActs);
-    stylePlotGroup(curveGroup);
-    auto *mapGroup = plotGallery->addCategoryActions(QStringLiteral("地图 / 3D"), mapActs);
-    stylePlotGroup(mapGroup);
-    auto *gaugeGroup = plotGallery->addCategoryActions(QStringLiteral("仪表"), gaugeActs);
-    stylePlotGroup(gaugeGroup);
-    plotGallery->setSingleRowMode(true);
-    // 图库自带上/下翻页和“更多”几个小三角，和面板自己的下拉入口重复，
-    // 全部隐藏，只留一个入口，避免出现并排两个三角
-    for (auto *b : plotGallery->findChildren<QToolButton *>())
-        if (b->objectName().startsWith(QLatin1String("SARibbonGalleryButton")))
-            b->hide();
-    plotGallery->setMinimumWidth(330);
-    plotGallery->setMaximumWidth(370);
-    plotGallery->setCurrentViewGroup(commonGroup);
-    // 图库组是 QListView，内容比视口高一两个像素就会在缩略图之间露出一条竖条滚动条；
-    // 单行模式用不上它，直接关掉，翻页交给面板自己的下拉入口
-    for (auto *g : plotGallery->findChildren<QListView *>())
-        g->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    auto *plotMenu = new PlotMenuPopup(mw);
-    plotMenu->addGroup(QStringLiteral("曲线"), curveActs);
-    plotMenu->addGroup(QStringLiteral("地图 / 3D"), mapActs);
-    plotMenu->addGroup(QStringLiteral("仪表"), gaugeActs);
-    // 下拉入口用纯文字“▾”，和数据源标题栏 / CSV 下拉保持同一种三角；
-    // 不要再给这个 action 配箭头图标，否则图标+文字会并排出现两个三角
-    addSmall(panel, QString(), QStringLiteral("▾"), [mw, ribbon, plotGallery, plotMenu] {
-        plotMenu->adjustSize();
-        const QPoint anchor = plotGallery->mapToGlobal(QPoint(0, 0));
-        const int y = ribbon->mapToGlobal(QPoint(0, ribbon->height())).y() + 8;
-        const int x = qBound(8, anchor.x(), mw->screen()->availableGeometry().right() - plotMenu->width() - 8);
-        plotMenu->move(x, y);
-        plotMenu->show();
-    }, mw);
+    // 单行图库 + 框内箭头，箭头弹出全部分类；和数据 ribbon 同一种外观
+    auto *gallery = new ps::ui::RibbonGallery(panel);
+    gallery->setPrimaryActions(commonActs);
+    gallery->addGroup(QStringLiteral("曲线"), curveActs);
+    gallery->addGroup(QStringLiteral("地图 / 3D"), mapActs);
+    gallery->addGroup(QStringLiteral("仪表"), gaugeActs);
+    panel->addWidget(gallery, SARibbonPanelItem::Large);
 }
-
 
 } // namespace ps::plotting

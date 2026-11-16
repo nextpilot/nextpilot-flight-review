@@ -28,6 +28,7 @@ extensions（具体业务） → modules（通用能力） → shell（最小宿
 - 画布、绘图页、切分布局、绘图 Ribbon：`modules/plotting/{canvas,tabs,manager,ribbon}`
 - 协议文档、编辑器、codec、协议 loader：`modules/protocol/{protocol,dialog,codec,manager,include}`
 - 组件/扩展协议、Registry、HostServices：`modules/runtime`
+- 跨模块复用的纯 UI 控件（如 `shell/RibbonGallery.h` 图标图库）：`shell`，只依赖 Qt + `ThemeManager`
 - 只和宿主有关：`shell`
 - 具体协议/行业逻辑：`extensions`
 
