@@ -805,12 +805,8 @@ void SARibbonGallery::showMoreDetail()
     w = qMax(w, 1);  // 保险：至少 1 px
 
     /* ---- 计算期望高度：按完整内容布局算，避免只显示前两组 ---- */
+    // QListView 的默认 sizeHint 是 256x192，会把弹窗顶成半屏高；按实际内容高度算
     int h = d_ptr->mPopupWidget->heightHintForWidth(w);
-    int sumH = 0;
-    for (SARibbonGalleryGroup* g : d_ptr->mPopupWidget->galleryGroupList()) {
-        sumH += g->sizeHint().height() + 24;
-    }
-    h = qMax(h, sumH + 8);
 
     /* ---- 下方放不下时翻到上方 ---- */
     if (start.y() + h > avail.bottom() + 1) {

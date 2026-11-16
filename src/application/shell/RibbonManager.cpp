@@ -56,6 +56,19 @@ void RibbonManager::applyTheme()
         SARibbonToolButton:disabled { color:#4a545d; }
         SARibbonToolButton::menu-indicator { image:none; width:0; }
         SARibbonSeparatorWidget { background:#1b232a; }
+        SARibbonGallery { background:#141a1f; border:1px solid #232b33; border-radius:3px; }
+        SARibbonGalleryViewport { background:#1a2127; border:1px solid #232b33; }
+        QWidget#contentWidget { background:#1a2127; }
+        SARibbonGalleryViewport QLabel { color:#7d8b96; font-size:11px; background:transparent; }
+        SARibbonGalleryGroup { background:transparent; border:0; }
+        SARibbonGalleryGroup::item { background:transparent; border:0; }
+        SARibbonGalleryGroup::item:hover { background:#1b232a; border:1px solid #232b33; border-radius:2px; }
+        SARibbonGalleryGroup::item:selected { background:#212a31; border:1px solid #232b33; border-radius:2px; }
+        SARibbonGalleryButton { background:transparent; border:0; border-left:1px solid #232b33;
+            color:#8494a0; font-size:11px; }
+        SARibbonGalleryButton:hover { background:#1b232a; color:#f2b134; }
+        #SARibbonGalleryButtonMore { font-size:12px; color:#c8d2da; padding:0; }
+        SARibbonGalleryButton::menu-indicator { image:none; width:0; }
         SARibbonPanelOptionButton { background:transparent; border:0; }
         SARibbonPanelOptionButton:hover { background:#1b232a; }
         #objSARibbonTabBar { background:#141a1f; border:0; }
