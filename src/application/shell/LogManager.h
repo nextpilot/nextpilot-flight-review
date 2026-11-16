@@ -5,9 +5,16 @@
 
 #include <functional>
 
+namespace ps::components { struct DockContribution; }
+
 class QMainWindow;
 class QPlainTextEdit;
 class QStatusBar;
+
+namespace ps::components
+{
+struct DockContribution;
+}
 
 // 日志管理：统一收发日志，Dock 视图、状态栏、文件都是 sink。
 class LogManager
@@ -23,6 +30,7 @@ public:
     using Sink = std::function<void(const QString &line, Level level)>;
 
     explicit LogManager(QMainWindow *window);
+    static ps::components::DockContribution dockContribution();
 
     void setStatusBar(QStatusBar *statusBar);
     void setLogView(QPlainTextEdit *logView);

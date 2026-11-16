@@ -40,6 +40,7 @@ public:
 
     ps::commands::CommandManager &commands() { return m_commands; }
     ExtensionManager &extensions() { return m_extensions; }
+    DockManager &docks() { return m_docks; }
     AppSession &session() { return m_session; }
     QTabWidget *pages() const { return m_pages; }
     void setPageHost(QTabWidget *p) {

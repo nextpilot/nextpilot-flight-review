@@ -1,4 +1,6 @@
 #include "SettingsManager.h"
+#include "CommandManager.h"
+#include "SettingsDialog.h"
 
 SettingsManager &SettingsManager::instance()
 {
@@ -39,4 +41,18 @@ void SettingsManager::remove(const QString &key)
 void SettingsManager::sync()
 {
     m_settings.sync();
+}
+
+void SettingsManager::registerCommand(ps::commands::CommandManager &commands, MainWindow *parent)
+{
+    commands.registerCommand(
+        ps::commands::CommandSpec{QStringLiteral("file.settings"), QStringLiteral("设置"),
+                                  QStringLiteral("settings"), QStringLiteral("Ctrl+,")},
+        [this, parent](const ps::commands::CommandContext &) { openDialog(parent); });
+}
+
+void SettingsManager::openDialog(MainWindow *parent)
+{
+    SettingsDialog dialog(parent);
+    dialog.exec();
 }

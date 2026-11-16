@@ -1,14 +1,12 @@
 #include "ShellCommands.h"
 
 #include "MainWindow.h"
-#include "SettingsDialog.h"
 #include "DiagnosticsDialog.h"
 
 #include "Component.h"
 
 #include <QAction>
 #include <QCursor>
-#include <QDockWidget>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMenu>
@@ -39,10 +37,8 @@ void registerCommands(MainWindow &win)
     describe(QStringLiteral("file.exportSettings"), QStringLiteral("导出设置"), QStringLiteral("export"), {});
     describe(QStringLiteral("file.exportData"), QStringLiteral("导出数据"), QStringLiteral("export"), {});
     describe(QStringLiteral("file.screenshot"), QStringLiteral("截图"), QStringLiteral("camera"), {});
-    describe(QStringLiteral("file.settings"), QStringLiteral("设置"), QStringLiteral("settings"), QStringLiteral("Ctrl+,"));
     describe(QStringLiteral("layout.save"), QStringLiteral("保存布局"), QStringLiteral("save"), QStringLiteral("Ctrl+S"));
     describe(QStringLiteral("layout.import"), QStringLiteral("打开布局"), QStringLiteral("open"), QStringLiteral("Ctrl+Shift+O"));
-    describe(QStringLiteral("view.toggleDock"), QStringLiteral("显示/隐藏面板"), {}, {}, true);
     describe(QStringLiteral("help.about"), QStringLiteral("关于"), QStringLiteral("settings"), {});
 
     win.commands().add(QStringLiteral("file.open"), [&win](const Ctx &) {
@@ -90,45 +86,12 @@ void registerCommands(MainWindow &win)
             win.appendLog(QStringLiteral("已截图：%1").arg(f));
     });
 
-    win.commands().add(QStringLiteral("file.settings"), [&win](const Ctx &) {
-        SettingsDialog dlg(&win);
-        dlg.exec();
-    });
-
     win.commands().add(QStringLiteral("help.about"), [&win](const Ctx &) {
         DiagnosticsDialog dlg(&win, win.kernelInfo(), win.extensions().extensions(),
                               win.extensions().errors());
         dlg.exec();
     });
 
-    win.commands().add(QStringLiteral("view.toggleDock"), [&win](const Ctx &ctx) {
-        if (auto *d = win.findChild<QDockWidget *>(ctx.arg))
-            d->setVisible(!d->isVisible());
-    });
-}
-
-
-void bindSession(MainWindow &win)
-{
-    win.commands().setInvokeHook([&win](const QString &id) {
-        if (id == QLatin1String("layout.save") || id == QLatin1String("layout.import"))
-        {
-            win.session().markClean();
-            win.refreshTitle();
-            return;
-        }
-        if (id == QLatin1String("plot.refreshTree") || id == QLatin1String("plot.setPlayhead") ||
-            id == QLatin1String("data.recent") || id == QLatin1String("data.quickOpen") ||
-            id == QLatin1String("data.clearCache") || id == QLatin1String("app.beforeClose") ||
-            id.startsWith(QLatin1String("view.")))
-            return;
-        if (id.startsWith(QLatin1String("data.")) || id.startsWith(QLatin1String("plot.")) ||
-            id.startsWith(QLatin1String("page.")))
-        {
-            win.session().markDirty();
-            win.refreshTitle();
-        }
-    });
 }
 
 

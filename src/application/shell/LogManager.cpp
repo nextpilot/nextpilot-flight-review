@@ -1,14 +1,38 @@
 #include "LogManager.h"
+#include "Component.h"
+
+#include "Component.h"
 
 #include <QDateTime>
+#include <QDockWidget>
+#include <QPlainTextEdit>
 #include <QDir>
 #include <QFile>
+#include <QDockWidget>
 #include <QMainWindow>
+#include <QPlainTextEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTextStream>
+
+ps::components::DockContribution LogManager::dockContribution()
+{
+    using namespace ps::components;
+    return DockContribution{QStringLiteral("dock.log"), QStringLiteral("日志"),
+                            Qt::BottomDockWidgetArea, true, 5,
+                            QStringLiteral(":/icons/log.svg"),
+                            [](QWidget *parent) -> QWidget * {
+                                auto *dock = new QDockWidget(QStringLiteral("日志"), parent);
+                                dock->setObjectName(QStringLiteral("dock.log"));
+                                dock->setProperty("psIcon", QStringLiteral(":/icons/log.svg"));
+                                auto *view = new QPlainTextEdit(dock);
+                                view->setObjectName(QStringLiteral("dock.log.view"));
+                                dock->setWidget(view);
+                                return dock;
+                            }};
+}
 
 LogManager::LogManager(QMainWindow *window)
     : m_window(window)

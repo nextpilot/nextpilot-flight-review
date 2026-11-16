@@ -1,4 +1,5 @@
 #include "DockManager.h"
+#include "CommandManager.h"
 
 #include "Component.h"
 
@@ -367,6 +368,20 @@ void DockManager::darkenExisting()
         });
         dock->setTitleBarWidget(bar);
     }
+}
+
+void DockManager::registerCommand(ps::commands::CommandManager &commands)
+{
+    commands.registerCommand(
+        ps::commands::CommandSpec{QStringLiteral("view.toggleDock"), QStringLiteral("显示/隐藏面板"),
+                                  {}, {}, true},
+        [this](const ps::commands::CommandContext &ctx) { toggleById(ctx.arg); });
+}
+
+void DockManager::toggleById(const QString &id)
+{
+    if (auto *dock = m_window->findChild<QDockWidget *>(id))
+        dock->setVisible(!dock->isVisible());
 }
 
 void DockManager::repositionHandles()

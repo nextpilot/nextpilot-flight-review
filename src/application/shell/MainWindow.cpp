@@ -1,5 +1,4 @@
 #include "MainWindow.h"
-#include "SettingsDialog.h"
 #include "ShellCommands.h"
 #include "SettingsManager.h"
 #include "Component.h"
@@ -108,6 +107,8 @@ MainWindow::MainWindow(QWidget *parent)
     };
     m_extensions.activate(hostContext);
     shell::registerCommands(*this);
+    m_docks.registerCommand(m_commands);
+    SettingsManager::instance().registerCommand(m_commands, this);
 
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
     m_pages = new QTabWidget(this);
@@ -125,7 +126,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_logs.setStatusBar(statusBar());
     for (const QString &error : m_extensions.errors())
         m_logs.warn(error);
-    shell::bindSession(*this);
+    m_session.bindCommandState(m_commands, [this] { refreshTitle(); });
 
     // 内核连通性：状态栏直接读 ABI，证明 C ABI 已经打通
     const QString kernelInfo =
