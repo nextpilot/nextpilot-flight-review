@@ -17,8 +17,10 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QTimer>
+#include <QHash>
 #include <QDockWidget>
 #include <QFileDialog>
+#include <QSettings>
 #include <QDockWidget>
 #include <QIcon>
 #include <SARibbonPanel.h>
@@ -97,6 +99,7 @@ void buildAnalysisGallery(QWidget *parent)
         g->setFont(f);
     };
 
+    auto recentCallback = std::make_shared<std::function<void(const QString &)>>();
     auto makeAction = [&](const ps::data_source::AnalysisEntry &entry, bool allGroup) {
         auto *action = new QAction(entry.title, panel);
         action->setToolTip(entry.description.isEmpty() ? entry.title : entry.description);
@@ -123,6 +126,11 @@ void buildAnalysisGallery(QWidget *parent)
             QObject::connect(action, &QAction::triggered, mw,
                              [mw, id = entry.id] { mw->commands().invoke(id, {mw, QString()}); });
         }
+        QObject::connect(action, &QAction::triggered, mw,
+                         [recentCallback, id = entry.id] {
+                             if (*recentCallback)
+                                 (*recentCallback)(id);
+                         });
         return action;
     };
 
@@ -141,9 +149,72 @@ void buildAnalysisGallery(QWidget *parent)
     }
     auto *allGroup = gallery->addCategoryActions(QStringLiteral("全部应用"), allEntries);
     styleGroup(allGroup);
+
+    auto recentSettings = std::make_shared<QSettings>(
+        QSettings::defaultFormat(), QSettings::UserScope,
+        QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    auto recentIds = std::make_shared<QStringList>(
+        recentSettings->value(QStringLiteral("analysis.recent")).toStringList());
+    auto recentActions = std::make_shared<QHash<QString, QAction *>>();
+    auto *recentPlaceholder = new QAction(QStringLiteral("暂无最近使用的分析应用"), panel);
+    recentPlaceholder->setEnabled(false);
+    auto *recentGroup = gallery->addCategoryActions(QStringLiteral("最近使用"), {recentPlaceholder});
+    styleGroup(recentGroup);
     gallery->setCurrentViewGroup(group);
 
-    auto refresh = [session, group, allGroup, placeholder, entries, allEntries]() {
+    auto entryById = [](const QString &id) -> const ps::data_source::AnalysisEntry * {
+        for (const auto &entry : ps::data_source::AnalysisRegistry::instance().all())
+            if (entry.id == id)
+                return &entry;
+        return nullptr;
+    };
+    *recentCallback = [recentIds, recentActions, recentGroup, recentPlaceholder, entryById, makeAction,
+                       recentSettings](const QString &id) mutable {
+        if (id.isEmpty())
+            return;
+        recentIds->removeAll(id);
+        recentIds->prepend(id);
+        while (recentIds->size() > 6)
+            recentIds->removeLast();
+        recentSettings->setValue(QStringLiteral("analysis.recent"), *recentIds);
+
+        for (QAction *action : *recentActions)
+        {
+            if (recentGroup->actionGroup()->actions().contains(action))
+                recentGroup->removeActionItem(action);
+        }
+        for (const QString &recentId : *recentIds)
+        {
+            const ps::data_source::AnalysisEntry *entry = entryById(recentId);
+            if (!entry)
+                continue;
+            QAction *action = recentActions->value(recentId);
+            if (!action)
+            {
+                action = makeAction(*entry, false);
+                recentActions->insert(recentId, action);
+            }
+            if (!recentGroup->actionGroup()->actions().contains(action))
+                recentGroup->addActionItem(action);
+        }
+        if (recentIds->isEmpty())
+            recentGroup->addActionItem(recentPlaceholder);
+        else
+            recentGroup->removeActionItem(recentPlaceholder);
+    };
+    for (const QString &recentId : *recentIds)
+    {
+        const ps::data_source::AnalysisEntry *entry = entryById(recentId);
+        if (!entry)
+            continue;
+        QAction *action = makeAction(*entry, false);
+        recentActions->insert(recentId, action);
+        recentGroup->addActionItem(action);
+    }
+    if (!recentIds->isEmpty())
+        recentGroup->removeActionItem(recentPlaceholder);
+
+    auto refresh = [session, group, allGroup, placeholder, entries, allEntries, recentActions]() {
         auto *source = session->sourceById(session->activeSourceId());
         const QString format = source ? source->fmt : QString();
         bool any = false;
@@ -165,6 +236,12 @@ void buildAnalysisGallery(QWidget *parent)
             any = any || match;
         }
         for (QAction *action : allEntries)
+        {
+            const QStringList formats = action->property("analysisFormats").toStringList();
+            action->setEnabled(!formats.isEmpty() &&
+                               formats.contains(format, Qt::CaseInsensitive));
+        }
+        for (QAction *action : *recentActions)
         {
             const QStringList formats = action->property("analysisFormats").toStringList();
             action->setEnabled(!formats.isEmpty() &&
