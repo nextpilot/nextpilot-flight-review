@@ -1,7 +1,9 @@
 # PlotScope 架构设计与 PJ4 对标实施 · 定稿 v1.0
 
+> 状态：架构决策记录，保留 D1~D16、分层、数据模型和扩展 ABI 的结论。文中目录树与里程碑是 v1.0 基线；当前实际目录、命令和测试以 [`development.md`](development.md)、[`building.md`](building.md) 为准，已实现能力以 [`../manual/`](../manual/README.md) 为准。
+
 > **一句话**：Qt 6 Widgets 壳 + Rust 数据内核（同进程 C ABI），面向飞控 / 嵌入式 / 车辆 / GNSS / 机器人的高性能绘图分析软件。
-> 本文件只放**结论与干货**。推导、被否决的方案、自我更正与源码对照记录在 `PlotScope-架构设计-v1.md`（过程稿，3000 行），需要追溯依据时查那份。
+> 本文件只放架构结论与实施记录。过程稿、被否决方案不保留多份副本。
 > 2026-11-13 合并：原《架构设计-定稿》《对标 PJ4 补全计划》并为一份，架构在前、实施计划为第 14 章。
 
 ---
@@ -505,7 +507,7 @@ int32_t            ps_abi_selftest(void);
 plotscope/
 ├── CMakeLists.txt                 # 只做三件事：设选项、加子目录、install
 ├── docs/                          # ★ 设计文档与可评审原型（随仓走，不进安装包）
-│   ├── PlotScope-架构设计与PJ4实施-定稿-v1.0.md
+│   ├── architecture.md
 │   └── prototype/PlotScope-工作区原型.html
 ├── cmake/                         # 自写 CMake 模块（不用宏库）
 │   ├── Rust.cmake                 # 内核导入：优先 Corrosion，离线退化 cargo 直调（接口一致）
@@ -675,7 +677,7 @@ docs/                      # 只放许可与第三方声明（原型与设计文
 
 ## 14. PJ4 对标补全计划
 
-> 基线：`488fea9`（多数据源 + 源别名图例 + 布局持久化）；修订依据：`docs/PlotScope-PJ4对齐与源码核对-v1.1.md`。v1.0 中“派生数组归 UI、四元数算内置、低通算 PJ 能力”等判断已作废。
+> 基线：`488fea9`（多数据源 + 源别名图例 + 布局持久化）；修订依据：`docs/develop/pj4-alignment.md`。v1.0 中“派生数组归 UI、四元数算内置、低通算 PJ 能力”等判断已作废。
 
 **原则**：
 - UI 保持我们自己的深色工作台，不照搬 PJ 的 Qwt 观感。
@@ -981,7 +983,7 @@ public:
 - P4：新增 `data_loader_rosbag2`（`.db3` 常见消息）。
 - P4：新增 `data_loader_binary`，按扩展名解析 CBOR（`.cbor`）与 MessagePack（`.msgpack/.mpk`），数值字段扁平为 `cbor.*` / `msgpack.*`，支持数组批量记录与连续多条记录。
 - M1：MAVLink `.tlog`（8 字节时间戳 + 帧）已由同一 data_source_mavlink 扩展原生回放，文件扩展名加入 `.tlog`；OEM7 raw 扩展名加入 `.psraw/.raw`。
-- 本机依赖固定到 `deps/`，Xvfb 真实窗口截图 `docs/screenshots/PlotScope-Xvfb-LocalQt.png`。
+- 本机依赖固定到 `deps/`，当前主界面截图 `docs/screenshots/PlotScope-Overview.png`。
 - M1 CAN：ASC/BLF 加载器新增可选 `dbc` 配置，按 `BO_`/`SG_` 解码为 `CAN<bus>.<message>.<signal>`；留空仍导原始字节。CMake 公共库加 `Dbc.cpp`，测试覆盖 `CAN2.MSG_A.byte0`。
 - M2 GNSS：新增 `data_loader_nmea`（GGA/RMC → `nmea.gga.*`/`nmea.rmc.*`）与 `data_loader_ubx`（NAV-PVT/NAV-POSLLH → `ubx.*`）；时间均归零到首样本，扩展 `.nmea/.txt/.ubx`。MDF4 仍未做。
 - M5：仪表大屏从占位改为三画布（Horizon/Compass/Gauge），接线与普通画布一致；截图 `docs/screenshots/PlotScope-Instrument-Gauge.png`。

@@ -322,9 +322,9 @@ CRC 参数：`poly/init/refin/refout/xorout`。
 - JSON 页可直接手改并回灌；Lua 页由当前段表实时生成。
 - 协议页是 `layout:"sequential"` 的主编辑入口，旧设计页/系列页在该模式下隐藏。
 
-![空白协议编辑器](screenshots/PlotScope-Protocol-Editor-Blank.png)
+![空白协议编辑器](../screenshots/PlotScope-Protocol-Editor-Blank.png)
 
-![NMEA 字符串 selector 协议](screenshots/PlotScope-Protocol-NMEA.png)
+![NMEA 字符串 selector 协议](../screenshots/PlotScope-Protocol-NMEA.png)
 
 ## 14. 兼容
 

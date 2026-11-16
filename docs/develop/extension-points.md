@@ -68,6 +68,6 @@
 - 文件、脚本、视图页由 `ShellComponent` 贡献；协议页由 `CustomProtocolComponent` 贡献。
 - 数据页的来源画廊（`sourceGallery`）与绘图页画廊/布局/显示控件也已由 `ShellComponent` 声明挂载；具体控件仍由宿主构建。
 - 内置 Dock 已贡献化，`buildDockWidget(id)` 仅作为宿主内建面板兜底。
-- 内外组件模型见 `PlotScope-组件与扩展扩展模型-v1.md`：内部组件走 C++ API 自建控件，外部扩展走 JSON manifest 由 app 建控件。
+- 内外组件模型见 `extensions.md`：内部组件走 C++ API 自建控件，外部扩展走 JSON manifest 由 app 建控件。
 - `ProtocolDocument` 类型与顺序段编辑器已统一消费该模型。
 - 本文件只记录决策与顺序，不代表组件扩展点重构已完成。
