@@ -361,13 +361,13 @@ QDockWidget *DataSourceSession::createDataSourceDock(QWidget *parent, const QStr
             },
             [this](QWidget *row) { showSourceProps(row); },
             [this] { updateStatusChips(); },
+            [this] { return ps::bridge::plottedChannelColors(m_mw); },
 
         },
         this);
     m_dataSourceDock = panel;
     panel->m_srcCount = m_srcCount;
     m_srcCount = panel->m_srcCount;
-    m_srcStatus = panel->m_srcStatus;
     m_srcRows = panel->m_srcRows;
     m_srcListToggle = panel->m_srcListToggle;
     m_srcListScroll = panel->m_srcListScroll;

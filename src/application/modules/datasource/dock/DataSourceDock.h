@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPair>
 #include <QStringList>
 #include <QVector>
 #include <QWidget>
@@ -69,6 +70,7 @@ public:
         std::function<void(SourceData *)> applySourceView;
         std::function<void(QWidget *)> showSourceProps;
         std::function<void()> refreshStatusChip;
+        std::function<QVector<QPair<QString, QString>>()> plottedChannelColors;
     };
 
     explicit DataSourceDock(Context context, QWidget *parent = nullptr);
@@ -103,7 +105,6 @@ public:
 
     Context m_ctx;
     QLabel *m_srcCount = nullptr;
-    QLabel *m_srcStatus = nullptr;
     QVBoxLayout *m_srcRows = nullptr;
     QToolButton *m_srcListToggle = nullptr;
     QScrollArea *m_srcListScroll = nullptr;

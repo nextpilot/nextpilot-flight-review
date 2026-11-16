@@ -22,6 +22,8 @@
 #include <QMap>
 #include <QMessageBox>
 #include <QInputDialog>
+#include <QBrush>
+#include <QHash>
 #include <QTreeWidgetItemIterator>
 #include <QAbstractItemView>
 
@@ -44,6 +46,11 @@
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTableWidget>
+#include <QApplication>
+#include <QDebug>
+#include <QPainter>
+#include <QStyledItemDelegate>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QUrl>
@@ -106,6 +113,53 @@ protected:
         drag->setMimeData(mime);
         drag->exec(Qt::CopyAction);
     }
+};
+
+// 通道树按 item 前景色画文字：QSS 的 ::item 规则会接管绘制、忽略 setForeground，
+// 这里让样式只画背景/选中态，文字自己按 item brush 画。
+class ChannelColorDelegate : public QStyledItemDelegate
+{
+public:
+    using ColorFn = std::function<QVector<QPair<QString, QString>>()>;
+
+    explicit ChannelColorDelegate(ColorFn colors, QObject *parent)
+        : QStyledItemDelegate(parent), m_colors(std::move(colors))
+    {
+    }
+
+    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &idx) const override
+    {
+        QStyleOptionViewItem o(opt);
+        initStyleOption(&o, idx);
+        const QString text = o.text;
+        QColor c = (o.state & QStyle::State_Selected)
+                       ? o.palette.color(QPalette::HighlightedText)
+                       : o.palette.color(QPalette::Text);
+        // 绘制时现查曲线颜色：绘图是异步的，建树时缓存会拿到空表。
+        const QString full = idx.data(Qt::UserRole + 1).toString();
+        if (!full.isEmpty() && m_colors)
+            for (const QPair<QString, QString> &pp : m_colors())
+                if (pp.first == full && !pp.second.isEmpty())
+                {
+                    c = ThemeManager::adaptColor(QColor(pp.second));
+                    break;
+                }
+        // 让样式只画背景/选中态，文字按最终颜色自己画，避开 QSS ::item 的写死色
+        o.text.clear();
+        QStyle *st = o.widget ? o.widget->style() : QApplication::style();
+        st->drawControl(QStyle::CE_ItemViewItem, &o, p, o.widget);
+        if (text.isEmpty())
+            return;
+        p->save();
+        p->setPen(c);
+        const QRect r = st->subElementRect(QStyle::SE_ItemViewItemText, &o, o.widget);
+        p->drawText(r, Qt::AlignVCenter | Qt::AlignLeft,
+                    o.fontMetrics.elidedText(text, Qt::ElideRight, r.width()));
+        p->restore();
+    }
+
+private:
+    ColorFn m_colors;
 };
 
 // 数据源 Dock 接收文件拖拽
@@ -275,6 +329,10 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     m_srcStack = new QStackedWidget(srcHost);
 
     m_srcTree = new ChannelTree(m_srcStack);
+    m_srcTree->setItemDelegate(new ChannelColorDelegate(
+        [this] { return m_ctx.plottedChannelColors ? m_ctx.plottedChannelColors()
+                                                   : QVector<QPair<QString, QString>>(); },
+        m_srcTree));
     m_srcTree->setHeaderHidden(true);
     m_srcTree->setDragEnabled(true);
     m_srcTree->setDragDropMode(QAbstractItemView::DragOnly);
@@ -499,13 +557,6 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     m_srcStack->hide();
     srcLay->removeWidget(m_srcFilter);
     srcLay->insertWidget(0, m_srcFilter);
-
-    // 底部状态条：通道 / 时长 / 速率
-    m_srcStatus = new QLabel(QStringLiteral("—"), srcHost);
-    m_srcStatus->setFixedHeight(20);
-    m_srcStatus->setStyleSheet(QStringLiteral(
-        "background:#0b1015;border-top:1px solid #232b33;color:#6e7d88;font-size:10px;padding:0 8px;"));
-    srcLay->addWidget(m_srcStatus);
 
     // 双击通道 → 画到当前页第一格（后续换成字段拖拽，见 §8.10）
     connect(m_srcTree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
@@ -1646,6 +1697,10 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     auto *panel = new ChannelTree(rowsHost);
     panel->setObjectName(QStringLiteral("srcPanel_%1").arg(srcId));
     panel->setProperty("srcPanel", true);
+    panel->setItemDelegate(new ChannelColorDelegate(
+        [this] { return m_ctx.plottedChannelColors ? m_ctx.plottedChannelColors()
+                                                   : QVector<QPair<QString, QString>>(); },
+        panel));
     panel->setHeaderHidden(true);
     panel->setRootIsDecorated(true);
     panel->setIndentation(14);
@@ -1656,8 +1711,8 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     panel->setStyleSheet(QStringLiteral(
         "QTreeWidget{border:0;border-left:1px solid #232b33;background:#0b1014;"
         "font-size:11px;padding-left:6px;}"
-        "QTreeWidget::item{height:18px;color:#9aa7b2;}"
-        "QTreeWidget::item:hover{background:#151d24;color:#c9d1d9;}"
+        "QTreeWidget::item{height:18px;}"
+        "QTreeWidget::item:hover{background:#151d24;}"
         "QTreeWidget::item:selected{background:#1c252d;color:#f2b134;}"));
     panel->hide();
     m_srcRows->addWidget(panel);
@@ -1850,49 +1905,65 @@ void DataSourceDock::refreshSrcCount()
 
 void DataSourceDock::updateSrcStatus()
 {
-    if (!m_srcStatus)
+    if (!m_srcRows)
+        return;
+    QWidget *host = m_srcRows->parentWidget();
+    if (!host)
         return;
     const ps::data_source::SourceData *src = m_ctx.sourceById(m_ctx.activeSourceId());
-    if (!src)
+    QString stats;
+    if (src)
     {
-        m_srcStatus->setText(QStringLiteral("—"));
-        return;
+        const int channels = src->live
+            ? (src->liveSession ? src->liveSession->channels().size() : 0)
+            : src->channels.size();
+        qint64 points = 0;
+        double duration = 0.0;
+        double rate = 0.0;
+        if (src->live)
+        {
+            points = src->liveSession ? src->liveSession->totalSamples() : 0;
+        }
+        else
+        {
+            for (const PsChannelInfo *ch : src->channels)
+                points += ch->point_count;
+        }
+        const QVector<const PsChannelInfo *> view =
+            src->live ? (src->liveSession ? src->liveSession->channels() : QVector<const PsChannelInfo *>())
+                      : src->channels;
+        if (!view.isEmpty() && view.first()->point_count > 1)
+        {
+            const PsChannelInfo *ch = view.first();
+            duration = ch->time[ch->point_count - 1] - ch->time[0];
+            if (duration > 0.0)
+                rate = (ch->point_count - 1) / duration;
+        }
+        QString rateText = src->live ? QStringLiteral("实时") : QStringLiteral("—");
+        if (rate > 0.0)
+            rateText = rate >= 1000.0 ? QStringLiteral("%1 kHz").arg(rate / 1000.0, 0, 'f', 1)
+                                      : QStringLiteral("%1 Hz").arg(rate, 0, 'f', rate >= 10.0 ? 0 : 1);
+        // 压缩成一行塞进数据源行：6 通道 · 18000 点 · 2999.0 s · 1.0 Hz
+        stats = QStringLiteral("%1 通道 · %2 点 · %3 s · %4")
+                    .arg(channels)
+                    .arg(points)
+                    .arg(duration, 0, 'f', 1)
+                    .arg(rateText);
     }
-    const int channels = src->live
-        ? (src->liveSession ? src->liveSession->channels().size() : 0)
-        : src->channels.size();
-    qint64 points = 0;
-    double duration = 0.0;
-    double rate = 0.0;
-    if (src->live)
+    // 统计挂在当前数据源那一行上，底部不再单独占一条状态栏。
+    for (QWidget *row : host->findChildren<QWidget *>())
     {
-        points = src->liveSession ? src->liveSession->totalSamples() : 0;
+        if (!row->property("srcRow").toBool())
+            continue;
+        auto *meta = row->findChild<QLabel *>(QStringLiteral("srcMeta"));
+        if (!meta)
+            continue;
+        const bool active = src && row->property("srcId").isValid() &&
+                            row->property("srcId").toInt() == src->id;
+        const QString text = (active && !stats.isEmpty()) ? stats : row->property("srcMeta").toString();
+        meta->setText(text);
+        meta->setToolTip(text);
     }
-    else
-    {
-        for (const PsChannelInfo *ch : src->channels)
-            points += ch->point_count;
-    }
-    const QVector<const PsChannelInfo *> view =
-        src->live ? (src->liveSession ? src->liveSession->channels() : QVector<const PsChannelInfo *>())
-                  : src->channels;
-    if (!view.isEmpty() && view.first()->point_count > 1)
-    {
-        const PsChannelInfo *ch = view.first();
-        duration = ch->time[ch->point_count - 1] - ch->time[0];
-        if (duration > 0.0)
-            rate = (ch->point_count - 1) / duration;
-    }
-    QString rateText = src->live ? QStringLiteral("实时") : QStringLiteral("—");
-    if (rate > 0.0)
-        rateText = rate >= 1000.0 ? QStringLiteral("%1 kHz").arg(rate / 1000.0, 0, 'f', 1)
-                                  : QStringLiteral("%1 Hz").arg(rate, 0, 'f', rate >= 10.0 ? 0 : 1);
-    m_srcStatus->setText(QStringLiteral("通道 %1 · %2 点 · 时长 %3 s · %4")
-                             .arg(channels)
-                             .arg(points)
-                             .arg(duration, 0, 'f', 2)
-                             .arg(rateText));
-    m_srcStatus->setToolTip(m_srcStatus->text());
 }
 
 void DataSourceDock::syncSrcChips()

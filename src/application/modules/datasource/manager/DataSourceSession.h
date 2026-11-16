@@ -114,7 +114,6 @@ private:
     QScrollArea *m_srcListScroll = nullptr;
     QWidget *m_srcEmpty = nullptr;
     QToolButton *m_srcListToggle = nullptr;
-    QLabel *m_srcStatus = nullptr;
     QVector<QToolButton *> m_srcChips;
     QVector<QPair<double, QString>> m_timeMarkers;
     ps::data_source::SourceStore *m_sourceStore = nullptr;

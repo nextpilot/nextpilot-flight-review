@@ -2,6 +2,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QPair>
 #include <QVector>
 #include <functional>
 
@@ -65,5 +66,8 @@ void canvasNotifyActivated(PlottingCanvas *c);
 void canvasUpdate(PlottingCanvas *c);
 bool canvasHasData(PlottingCanvas *c);
 void canvasSetFollowLive(PlottingCanvas *c, bool on, double windowSec);
+
+// 已绘制通道的当前配色（通道全名 → #rrggbb），供数据源树按曲线颜色显示通道名。
+QVector<QPair<QString, QString>> plottedChannelColors(MainWindow *mw);
 
 } // namespace ps::bridge

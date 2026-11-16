@@ -8,6 +8,7 @@
 #include <QAction>
 #include <QIcon>
 #include <QTableWidget>
+#include <QJsonObject>
 #include <QWidget>
 #include "SARibbonPanel.h"
 
@@ -181,4 +182,27 @@ void canvasUpdate(PlottingCanvas *c) { if (c) c->update(); }
 bool canvasHasData(PlottingCanvas *c) { return c && c->hasData(); }
 void canvasSetFollowLive(PlottingCanvas *c, bool on, double windowSec)
 { if (c) c->setFollowLive(on, windowSec); }
+QVector<QPair<QString, QString>> plottedChannelColors(MainWindow *mw)
+{
+    QVector<QPair<QString, QString>> out;
+    if (!mw)
+        return out;
+    for (PlottingCanvas *c : allCanvases(mw))
+        for (int i = 0;; ++i)
+        {
+            const QJsonObject st = c->seriesState(i);
+            if (st.isEmpty())
+                break;
+            const QString name = st.value(QStringLiteral("name")).toString();
+            if (name.isEmpty() || st.value(QStringLiteral("srcPath")).toString().isEmpty())
+                continue;
+            bool dup = false;
+            for (const auto &p : out)
+                if (p.first == name) { dup = true; break; }
+            if (!dup)
+                out.append({name, st.value(QStringLiteral("color")).toString()});
+        }
+    return out;
+}
+
 } // namespace ps::bridge
