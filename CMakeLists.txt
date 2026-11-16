@@ -17,7 +17,11 @@ option(PS_ENABLE_LUA  "启用 Lua 5.4 脚本（M2 接）" ON)
 option(PS_BUILD_GNSS "构建 GNSS 内置组件" ON)
 option(PS_BUILD_CUSTOM_PROTOCOL "构建自定义协议内置组件" ON)
 set(PS_EXTENSION_DIR "${PROJECT_SOURCE_DIR}/src/extensions/dynamic" CACHE PATH "动态扩展源码目录")
-set(PS_EXTENSION_OUTPUT_DIR "${CMAKE_BINARY_DIR}/src/application/extensions" CACHE PATH "开发树扩展产物目录")
+# 产物目录是随目录布局派生的默认值，不写进 cache：否则目录重构后旧 cache 会把扩展继续投到已废弃路径。
+if(NOT DEFINED PS_EXTENSION_OUTPUT_DIR)
+  set(PS_EXTENSION_OUTPUT_DIR "${CMAKE_BINARY_DIR}/src/application/extensions")
+endif()
+set(PS_EXTENSION_OUTPUT_DIR "${PS_EXTENSION_OUTPUT_DIR}" CACHE PATH "开发树扩展产物目录" FORCE)
 
 add_subdirectory(src)
 

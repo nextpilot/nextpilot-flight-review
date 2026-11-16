@@ -32,19 +32,22 @@ int main(int argc, char **argv)
         recorder.stop();
         assert(QFile::exists(path));
 
-        std::ifstream in(path.toStdString());
-        std::string line;
-        bool sawHeader = false;
-        int rows = 0;
-        while (std::getline(in, line))
         {
-            if (line == "time,channel,value")
-                sawHeader = true;
-            else if (!line.empty())
-                ++rows;
+            std::ifstream in(path.toStdString());
+            std::string line;
+            bool sawHeader = false;
+            int rows = 0;
+            while (std::getline(in, line))
+            {
+                if (line == "time,channel,value")
+                    sawHeader = true;
+                else if (!line.empty())
+                    ++rows;
+            }
+            assert(sawHeader);
+            assert(rows == 3);
         }
-        assert(sawHeader);
-        assert(rows == 3);
+        // Windows 上还有打开的句柄时删不掉文件，读完再删。
         std::filesystem::remove(path.toStdString());
     }
 
@@ -60,22 +63,24 @@ int main(int argc, char **argv)
         recorder.stop();
         assert(QFile::exists(path));
 
-        ps::mcap::Reader reader;
-        std::string re;
-        assert(reader.open(path.toStdString(), re));
-
-        ps::mcap::Message msg;
-        int count = 0;
-        while (reader.next(msg, re))
         {
-            const std::string payload(msg.data.begin(), msg.data.end());
-            assert(payload.find("\"value\"") != std::string::npos);
-            ++count;
+            ps::mcap::Reader reader;
+            std::string re;
+            assert(reader.open(path.toStdString(), re));
+
+            ps::mcap::Message msg;
+            int count = 0;
+            while (reader.next(msg, re))
+            {
+                const std::string payload(msg.data.begin(), msg.data.end());
+                assert(payload.find("\"value\"") != std::string::npos);
+                ++count;
+            }
+            assert(count == 2);
+            assert(reader.channels().size() == 1);
+            assert(reader.channels().begin()->second.topic == "sim.roll");
+            assert(reader.channels().begin()->second.message_encoding == "json");
         }
-        assert(count == 2);
-        assert(reader.channels().size() == 1);
-        assert(reader.channels().begin()->second.topic == "sim.roll");
-        assert(reader.channels().begin()->second.message_encoding == "json");
         std::filesystem::remove(path.toStdString());
     }
 
@@ -101,18 +106,20 @@ int main(int argc, char **argv)
         recorder.stop();
         assert(QFile::exists(path));
 
-        std::string err;
-        ps::capture::RawReader reader;
-        assert(reader.open(path.toStdString(), err));
-        assert(reader.recordCount() == 2);
-        assert(reader.header().schema_blob == "{\"schema\":\"oem7\"}");
-        ps::capture::Record record;
-        assert(reader.next(record, err));
-        assert(record.encoding == "mavlink");
-        assert(record.payload.size() == 3 && record.payload[2] == 3);
-        assert(reader.next(record, err));
-        assert(record.timestamp_ns == 200);
-        assert(record.payload.size() == 2 && record.payload[1] == 5);
+        {
+            std::string err;
+            ps::capture::RawReader reader;
+            assert(reader.open(path.toStdString(), err));
+            assert(reader.recordCount() == 2);
+            assert(reader.header().schema_blob == "{\"schema\":\"oem7\"}");
+            ps::capture::Record record;
+            assert(reader.next(record, err));
+            assert(record.encoding == "mavlink");
+            assert(record.payload.size() == 3 && record.payload[2] == 3);
+            assert(reader.next(record, err));
+            assert(record.timestamp_ns == 200);
+            assert(record.payload.size() == 2 && record.payload[1] == 5);
+        }
         std::filesystem::remove(path.toStdString());
         std::filesystem::remove(dbPath.toStdString());
     }

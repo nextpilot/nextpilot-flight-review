@@ -2,9 +2,12 @@
 #include "ps_kernel.h"
 #include "HostApi.h"
 
+#include <QCoreApplication>
+
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -164,8 +167,10 @@ bool loadDbcAndCheck(const PsExtensionDescriptor *d, const std::string &path, co
 
 } // namespace
 
-int main()
+int main(int argc, char **argv)
 {
+    // rosbag2 加载器走 QtSql，进程里必须有 QCoreApplication。
+    QCoreApplication app(argc, argv);
     const std::string fix = PS_FIXTURE_DIR;
 
     assert(ps_extension_entry_data_loader_ulog()->loader->params_json != nullptr);
@@ -265,7 +270,9 @@ int main()
 #endif
 
     // DBC 模式：0x1A0 的两个字节解成命名信号，而不是 b0..b7 原始字节。
-    const std::string dbcPath = "/tmp/plotscope-test-can.dbc";
+    // opts 是手写 JSON，路径必须用正斜杠，否则反斜杠被当成转义。
+    const std::string dbcPath =
+        (std::filesystem::temp_directory_path() / "plotscope-test-can.dbc").generic_string();
     {
         std::ofstream dbc(dbcPath);
         dbc << "BO_ 416 MSG_A: 8 Vector__XXX\n"

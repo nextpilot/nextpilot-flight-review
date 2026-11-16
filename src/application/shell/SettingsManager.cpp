@@ -18,7 +18,10 @@ SettingsManager &SettingsManager::instance()
 }
 
 SettingsManager::SettingsManager()
-    : m_settings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+    // 显式带上 defaultFormat：QSettings(org, app) 在 Windows 上会忽略 defaultFormat 直接落注册表，
+    // 显式传才能让测试或宿主把默认格式改成 IniFormat 生效。
+    : m_settings(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("NextPilot"),
+                 QStringLiteral("PlotScope"))
 {
     snapshot();
     setupWatchers();
@@ -105,8 +108,11 @@ void SettingsManager::syncFromDisk()
 void SettingsManager::setupWatchers()
 {
     const QString fileName = m_settings.fileName();
-    // Windows 注册表后端 fileName() 不是绝对路径；只有文件后端才挂 watcher。
-    if (!fileName.isEmpty() && QDir::isAbsolutePath(fileName))
+    // Windows 注册表后端的 fileName() 形如 \HKEY_CURRENT_USER\Software\...，看着像绝对路径但没有斜杠，
+    // 只有文件后端才挂 watcher，其余后端退回低频轮询。
+    const bool registryPath =
+        fileName.startsWith(QLatin1Char('\\')) && !fileName.contains(QLatin1Char('/'));
+    if (!fileName.isEmpty() && !registryPath && QDir::isAbsolutePath(fileName))
     {
         m_watcher = new QFileSystemWatcher(this);
         m_debounce = new QTimer(this);

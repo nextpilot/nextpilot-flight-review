@@ -18,6 +18,7 @@ int main(int argc, char **argv)
 
     auto &settings = SettingsManager::instance();
     settings.remove(ps::settings::kLastLayout);
+    settings.remove(ps::settings::kRecentFiles);
     settings.set(ps::settings::kLastLayout, QStringLiteral("/tmp/last.psl"));
 
     SessionManager session;

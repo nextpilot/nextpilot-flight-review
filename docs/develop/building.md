@@ -54,6 +54,31 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="D:/pr
 cmake --build build --config Release -j
 ```
 
+### 运行与测试
+
+Qt 只有 DLL 在 `bin` 里，运行程序和跑 `ctest` 前必须把 Qt `bin` 加进 `PATH`，否则测试会以 `0xc0000135`（找不到 DLL）失败：
+
+```powershell
+$env:PATH = "D:/program/Qt/6.12.0/msvc2022_64/bin;" + $env:PATH
+ctest --test-dir build/msvc -C Release --output-on-failure
+```
+
+Debug / Release 两种配置都要过：
+
+```powershell
+cmake --build --preset msvc-debug
+ctest --test-dir build/msvc -C Debug --output-on-failure
+```
+
+测试用 `assert` 驱动，多配置生成器下 Release 会定义 `NDEBUG`；`tests/CMakeLists.txt` 已对 MSVC 统一加 `/UNDEBUG`，保证 Release 跑的是真断言而不是空跑。
+
+### 已知的 Windows 差异
+
+- 设置后端：`QSettings(org, app)` 在 Windows 上会忽略 `setDefaultFormat` 直接落注册表。`SettingsManager` 显式带 `defaultFormat` 构造；注册表后端没有文件可监听，`setupWatchers` 会退回 3s 轮询。
+- 文件删除：Windows 不允许删除仍有打开句柄的文件，读写文件后再 `std::filesystem::remove` 会抛 `filesystem_error`（Linux 无此限制）。
+- 副作用不要写进 `assert`：Release 会把整段编译掉，测试会静默空跑。
+
+
 ## 只构建 Rust 内核
 
 ```bash

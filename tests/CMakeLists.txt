@@ -1,3 +1,9 @@
+# 测试大量用 assert 驱动（连 bind/load 这类副作用调用都写在断言里），
+# MSVC 多配置下 Release 会定义 NDEBUG 把这些整段编译掉，测试就变成空跑，故测试目标始终保留断言。
+if(MSVC)
+  add_compile_options(/UNDEBUG)
+endif()
+
 add_executable(test_abi unit/test_abi.cpp)
 target_link_libraries(test_abi PRIVATE ps_kernel)
 add_test(NAME abi_selftest COMMAND test_abi)

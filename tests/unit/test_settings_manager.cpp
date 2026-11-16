@@ -83,7 +83,9 @@ int main(int argc, char **argv)
     check(settings.get(ps::settings::kTheme) == QStringLiteral("dark"), "remove restores default");
 
     settings.set(ps::settings::kTheme, QStringLiteral("light"));
-    QSettings external(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    // 显式 IniFormat：QSettings(org, app) 在 Windows 上会忽略 defaultFormat 落注册表，写不到临时文件。
+    QSettings external(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("NextPilot"),
+                       QStringLiteral("PlotScope"));
     external.setValue(QStringLiteral("theme"), QStringLiteral("dark"));
     external.sync();
 

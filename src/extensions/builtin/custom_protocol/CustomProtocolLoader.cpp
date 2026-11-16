@@ -879,7 +879,7 @@ int32_t protocolNormalize(const char *json, char *out, uint32_t cap)
     if (static_cast<uint32_t>(text.size()) >= cap)
         return -3;
     std::memcpy(out, text.constData(), static_cast<size_t>(text.size()));
-    out[text.size()] = ' ';
+    out[text.size()] = '\0';
     return static_cast<int32_t>(text.size());
 }
 

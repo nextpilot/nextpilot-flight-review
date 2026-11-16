@@ -1319,7 +1319,7 @@ void DataSourceDock::removeSourceRow(QWidget *row)
         }
     }
     if (QWidget *host = m_srcRows->parentWidget())
-        if (auto *panel = host->findChild<ChannelTree *>(
+        if (auto *panel = host->findChild<QTreeWidget *>(
                 QStringLiteral("srcPanel_%1").arg(id)))
         {
             m_srcRows->removeWidget(panel);
@@ -1766,7 +1766,7 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
         // 同一时间只展开一个源，数据列就紧贴在源下面。
         QWidget *host = m_srcRows ? m_srcRows->parentWidget() : nullptr;
         if (host)
-            for (auto *other : host->findChildren<ChannelTree *>())
+            for (auto *other : host->findChildren<QTreeWidget *>())
                 if (other != panel && other->property("srcPanel").toBool())
                 {
                     other->hide();
@@ -1916,7 +1916,7 @@ void DataSourceDock::applySrcFilter()
     const QString q = m_srcFilter->text().trimmed();
     const int tab = m_srcTabs->currentIndex();
     if (QWidget *host = m_srcRows ? m_srcRows->parentWidget() : nullptr)
-        for (auto *panel : host->findChildren<ChannelTree *>())
+        for (auto *panel : host->findChildren<QTreeWidget *>())
         {
             if (!panel->property("srcPanel").toBool())
                 continue;
