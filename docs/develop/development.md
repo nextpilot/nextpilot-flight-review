@@ -71,7 +71,7 @@ mw.commands().add(QStringLiteral("data.openPath"), [mw](const CommandContext &ct
 3. 不修改 `DataSourceDock` 的对话框分支；加载器由 schema 驱动。
 4. 在 `tests/` 补格式夹具和解析断言。
 
-扩展启停由 `ExtensionManager` 统一管理，禁用列表写配置；启动时跳过。详细接口见 [扩展模型](extensions.md) 与 [扩展点决策](extension-points.md)。
+扩展启停由 `ExtensionManager` 统一管理，禁用列表写配置；启动时跳过。详细接口见 [组件与扩展模型](extensions.md)，历史决策见 [`../roadmap/extension-points.md`](../roadmap/extension-points.md)。
 
 ## 代码风格
 
@@ -86,4 +86,4 @@ mw.commands().add(QStringLiteral("data.openPath"), [mw](const CommandContext &ct
 - `cmake --build build -j4` 通过。
 - `ctest --test-dir build --output-on-failure` 通过。
 - 改 UI 时做一次 GUI 冒烟并确认主界面没有布局/图标回归。
-- 文档：用户可见行为写进 `docs/manual/`，架构变化写进 `docs/develop/`，未实施方案写进 `docs/roadmap/`。
+- 文档：用户可见行为写进 `docs/manual/`；已成熟的开发指南写进 `docs/develop/`；未定稿方案、讨论、决策记录写进 `docs/roadmap/`。仓库级边界先改根目录 `AGENTS.md`。

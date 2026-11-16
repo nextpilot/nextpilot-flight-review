@@ -1,5 +1,7 @@
 # PlotScope 组件扩展点决策 v1
 
+> 历史决策记录，不再作为当前实现依据。当前组件/扩展指南见 [`../develop/extensions.md`](../develop/extensions.md)，硬边界见 [`../../AGENTS.md`](../../AGENTS.md)。
+
 日期：2026-11-14  
 状态：已确认，待实施  
 范围：app 宿主、内置组件、外部扩展、Ribbon/Dock/Dialog 扩展点
@@ -68,6 +70,6 @@
 - 文件、脚本、视图页由 `ShellComponent` 贡献；协议页由 `CustomProtocolComponent` 贡献。
 - 数据页的来源画廊（`sourceGallery`）与绘图页画廊/布局/显示控件也已由 `ShellComponent` 声明挂载；具体控件仍由宿主构建。
 - 内置 Dock 已贡献化，`buildDockWidget(id)` 仅作为宿主内建面板兜底。
-- 内外组件模型见 `extensions.md`：内部组件走 C++ API 自建控件，外部扩展走 JSON manifest 由 app 建控件。
+- 内外组件模型见 `extension-model-v1.md`：内部组件走 C++ API 自建控件，外部扩展走 JSON manifest 由 app 建控件。
 - `ProtocolDocument` 类型与顺序段编辑器已统一消费该模型。
 - 本文件只记录决策与顺序，不代表组件扩展点重构已完成。

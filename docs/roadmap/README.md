@@ -1,16 +1,22 @@
 # 路线图与方案讨论
 
-本目录只放**未实施**或**待讨论**的内容。已实现的行为写进 [`../manual/`](../manual/README.md) 和 [`../develop/`](../develop/README.md)。
+本目录放**未实施方案、讨论稿、决策记录和历史基线**。已实现的能力写进 [`../manual/`](../manual/README.md)，可直接使用的成熟开发指南写进 [`../develop/`](../develop/README.md)。
 
 | 文档 | 状态 | 内容 |
 |---|---|---|
 | [主题与浅色模式](theme.md) | 计划中，未实施 | 深/浅主题 token 化、模块配色、验收口径 |
+| [设置层：强类型 key 与变更通知](settings.md) | 规划中，未实施 | `SettingsManager` 增加类型约束、变更信号和跨实例同步 |
 | [脚本自动化](script-automation.md) | 规划中，暂不实施 | 脚本从派生计算升级为对象模型 + 命令总线 + 事务 |
+| [历史架构基线与决策 v1.0](architecture-v1.md) | 历史记录 | 旧版架构决策、目录基线与实施记录；当前边界以 `AGENTS.md` 为准 |
+| [旧组件/扩展模型 v1](extension-model-v1.md) | 历史记录 | 已被当前 [`../develop/extensions.md`](../develop/extensions.md) 取代的旧模型 |
+| [扩展点决策 v1](extension-points.md) | 历史决策 | 组件扩展点、实施顺序与不做的部分 |
+| [PJ4 对齐与源码核对](pj4-alignment.md) | 参考基线 | PlotJuggler 能力矩阵、源码事实与路线判断 |
 
 ## 当前优先级
 
 1. 浅色主题 token 化：把画布、数据源 Dock、属性/日志面板的硬编码颜色收进主题 token。
-2. 脚本自动化 P1：对象句柄与绘图控制，仍走命令总线。
-3. 格式补齐：Parquet、MAVLink tlog 原生解析、更多 MCAP 索引能力。
+2. 设置层收口：强类型 key + 进程内 `changed` 信号，先解决设置修改不刷新。
+3. 脚本自动化 P1：对象句柄与绘图控制，仍走命令总线。
+4. 格式补齐：Parquet、MAVLink tlog 原生解析、更多 MCAP 索引能力。
 
 新的方案先在 `roadmap/` 写清目标、边界、验收和风险，确认后再进 `develop/` 或代码。

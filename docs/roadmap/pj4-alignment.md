@@ -1,5 +1,7 @@
 # PlotScope PJ4 功能对齐与源码核对 v1.1
 
+> 参考基线与路线判断，不是当前开发指南。当前架构见 [`../develop/architecture.md`](../develop/architecture.md)，硬边界见 [`../../AGENTS.md`](../../AGENTS.md)。
+
 > 合并：原《功能对齐矩阵》+《PJ4 源码核对笔记》。前 9 章是能力矩阵与路线，第 10 章是源码事实与对矩阵的修正依据。
 
 口径：
