@@ -3,6 +3,9 @@
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QWheelEvent>
+#include <QMenu>
+#include <QAction>
+#include <QTimer>
 #include <cmath>
 #include <cstdio>
 
@@ -37,6 +40,50 @@ static void key(QWidget *w, int k, Qt::KeyboardModifiers mods = Qt::NoModifier, 
 {
     QKeyEvent e(type, k, mods);
     QCoreApplication::sendEvent(w, &e);
+}
+
+static QString menuMiss;
+
+static void chooseMenuAction(const QString &textPrefix, int delayMs = 20)
+{
+    menuMiss.clear();
+    QTimer::singleShot(delayMs, [textPrefix]() {
+        QMenu *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+        if (!menu)
+        {
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *m = qobject_cast<QMenu *>(w))
+                    m->close();
+            menuMiss = QStringLiteral("no active menu");
+            return;
+        }
+        QAction *target = nullptr;
+        for (QAction *a : menu->actions())
+        {
+            if (a->text().startsWith(textPrefix))
+            {
+                target = a;
+                break;
+            }
+        }
+        if (!target)
+        {
+            menuMiss = QStringLiteral("action not found: ") + textPrefix;
+            menu->close();
+            return;
+        }
+        menu->setActiveAction(target);
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier);
+        QCoreApplication::sendEvent(menu, &press);
+        QCoreApplication::sendEvent(menu, &release);
+    });
+}
+
+static void rightClick(QWidget *w, const QPointF &pos)
+{
+    mouse(w, QEvent::MouseButtonPress, pos, Qt::RightButton, Qt::RightButton);
+    mouse(w, QEvent::MouseButtonRelease, pos, Qt::RightButton, Qt::NoButton);
 }
 
 static void makeCanvas(PlottingCanvas &c)
@@ -202,6 +249,54 @@ int main(int argc, char **argv)
     check(qAbs((c.t0() + c.t1()) * 0.5 - 8.0) < 1e-4, "bracket right jumps bookmark");
     key(&c, Qt::Key_BracketLeft);
     check(qAbs((c.t0() + c.t1()) * 0.5 - 2.0) < 1e-4, "bracket left jumps bookmark");
+
+    // 右键单击空白：菜单项“添加时间书签”真正发出请求。
+    reset(c);
+    double requested = -1.0;
+    QObject::connect(&c, &PlottingCanvas::markerRequested, [&](double t) { requested = t; });
+    chooseMenuAction(QStringLiteral("在 "));
+    rightClick(&c, center);
+    check(menuMiss.isEmpty(), "blank menu opened");
+    check(qAbs(requested - 5.0) < 0.2, "blank menu adds bookmark");
+
+    // 右键单击书签：菜单删除书签。
+    reset(c);
+    c.setTimeMarkers({{5.0, QStringLiteral("b")}});
+    c.render(&pm);
+    removed = -1.0;
+    chooseMenuAction(QStringLiteral("删除书签"));
+    rightClick(&c, marker);
+    check(menuMiss.isEmpty(), "bookmark menu opened");
+    check(qAbs(removed - 5.0) < 1e-4, "bookmark menu deletes");
+
+    // 右键单击曲线：菜单隐藏曲线。
+    reset(c);
+    const double sy = plot.top() + plot.height()
+                     * (c.yMax() - std::sin(5.0)) / (c.yMax() - c.yMin());
+    const QPointF onCurve(plot.left() + plot.width() * 0.5, sy);
+    chooseMenuAction(QStringLiteral("隐藏曲线"));
+    rightClick(&c, onCurve);
+    check(menuMiss.isEmpty(), "series menu opened");
+    check(!c.seriesState(0).value(QStringLiteral("visible")).toBool(), "series menu hides");
+
+    // 右键单击 X 轴区：菜单重置 X 轴。
+    reset(c);
+    wheel(&c, center, 240);
+    chooseMenuAction(QStringLiteral("重置 X 轴"));
+    rightClick(&c, xAxis);
+    check(menuMiss.isEmpty(), "axis menu opened");
+    check(qAbs((c.t1() - c.t0()) - 10.0) < 1e-4, "axis menu resets X");
+
+    // 右键单击 A/B 线：菜单清除测量。
+    reset(c);
+    mouse(&c, QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton, Qt::ControlModifier);
+    mouse(&c, QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton, Qt::ControlModifier);
+    check(c.measurementEnabled(), "A/B before menu");
+    const double abX = plot.left() + plot.width() * (c.measurementA() - c.t0()) / (c.t1() - c.t0());
+    chooseMenuAction(QStringLiteral("清除 A/B 测量"));
+    rightClick(&c, QPointF(abX, center.y()));
+    check(menuMiss.isEmpty(), "A/B menu opened");
+    check(!c.measurementEnabled(), "A/B menu clears");
 
     if (failures)
         std::fprintf(stderr, "%d checks failed\n", failures);

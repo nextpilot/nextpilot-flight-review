@@ -92,7 +92,7 @@
 
 ## 验收
 
-已通过 `cmake --build build -j4` 与 `ctest` 27/27；新增 `tests/unit/test_plotting_canvas.cpp` 覆盖滚轮/中键/右键框选/书签拖动与删除/A-B/空格平移/键盘跳转。右键菜单因 `QMenu::exec()` 进入嵌套事件循环，不在无头用例内，需在 GUI 环境人工确认。
+已通过 `cmake --build build -j4` 与 `ctest` 27/27；新增 `tests/unit/test_plotting_canvas.cpp` 覆盖滚轮/中键/右键框选/书签拖动与删除/A-B/空格平移/键盘跳转。右键菜单已在无头用例中通过 `QTimer` 进入 `QMenu::exec()` 嵌套事件循环并激活指定菜单项，覆盖空白添加书签、书签删除、曲线隐藏、X 轴重置和 A/B 清除。
 
 - [x] 右键单击弹菜单；右键拖动框选，拖动过程中不弹菜单。
 - [x] 右键框选放大/缩小；反向大框自适应；轴区框选只改对应轴。
