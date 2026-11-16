@@ -13,6 +13,7 @@ void PlottingSession::registerCommands()
     };
     dirty(QStringLiteral("script.run"), QStringLiteral("运行脚本"));
 
+    m_mw->commands().add(QStringLiteral("app.ready"), [this](const auto &) { refreshPropTree(currentCanvas()); });
     m_mw->commands().add(QStringLiteral("plot.refreshTree"), [this](const auto &) { refreshPropTree(currentCanvas()); });
     m_mw->commands().add(QStringLiteral("script.run"), [this](const auto &ctx) { runScript(ctx.arg == QStringLiteral("true")); });
     m_mw->commands().add(QStringLiteral("plot.setPlayhead"), [this](const auto &ctx) { applyPlayhead(ctx.arg.toDouble()); });

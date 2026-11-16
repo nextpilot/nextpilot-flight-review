@@ -26,7 +26,8 @@ ps::components::DockContribution LogManager::dockContribution()
                                 view->setObjectName(QStringLiteral("dock.log.view"));
                                 dock->setWidget(view);
                                 return dock;
-                            }};
+                            },
+                            {}};
 }
 
 LogManager::LogManager(QMainWindow *window)

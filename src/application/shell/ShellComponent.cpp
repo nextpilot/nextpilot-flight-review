@@ -13,7 +13,7 @@ struct ShellRegistrar
     {
         ExtensionRegistry::instance().addExtension(
             ExtensionDescriptor{QStringLiteral("shell.core"), QStringLiteral("内置工作区"),
-                                QStringLiteral("1.0"), ExtensionType::Builtin},
+                                QStringLiteral("1.0"), ExtensionType::Builtin, {}, {}, 0, nullptr},
             [] { return std::make_unique<ShellComponent>(); });
     }
 };

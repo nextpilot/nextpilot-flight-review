@@ -127,11 +127,9 @@ shell 只做最小宿主和管理内核：
 以下是现存债务，不是新代码的许可。新增代码不得照抄：
 
 - `src/extensions/builtin/script/ScriptComponent.cpp` 仍 include `shell/MainWindow.h`；目标改为 `HostContext` 或模块公开接口。
-- `src/application/shell/MainWindow.cpp` 仍调用 `plot.setPlayhead`、`plot.refreshTree`；目标改为通用 `HostServices` / `app.ready`。
-- `src/application/shell/ShellCommands.cpp` 仍调用 `data.openPath`、`data.exportSnapshot`；目标移到 datasource 贡献。
+- `src/application/shell/MainWindow.cpp` 仍通过 `HostContext::setPlayhead` 调用 `plot.setPlayhead`；目标改为通用游标服务。
 - `src/application/modules/runtime/include/Component.h` 的 `HostContext::setPlayhead` 仍是绘图专用字段；目标改为通用游标服务。
 - `src/application/shell/RibbonManager.cpp` 仍写死“无数据”“LOD: Rust”状态芯片，且 datasource 通过 `findChild` 反向更新；目标改为状态芯片贡献。
-- `src/application/shell/CMakeLists.txt` 尚未调用 `ps_set_warnings(ps_application_shell)`；目标补齐统一告警口径。
 
 ## 12. 提交前检查
 

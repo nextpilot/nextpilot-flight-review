@@ -25,6 +25,13 @@ void DataSourceSession::registerDataCommands()
     dirty(QStringLiteral("data.reload"), QStringLiteral("重新加载"));
 
     m_mw->commands().add(QStringLiteral("app.beforeClose"), [this](const auto &) { onClose(); });
+    m_mw->commands().add(QStringLiteral("file.open"), [this](const auto &) {
+        const QStringList fs = QFileDialog::getOpenFileNames(m_mw, QStringLiteral("打开文件"), {},
+            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
+        for (const QString &f : fs)
+            loadFile(f);
+    });
+    m_mw->commands().add(QStringLiteral("file.exportData"), [this](const auto &) { exportActiveCsv(); });
     m_mw->commands().add(QStringLiteral("data.openPath"), [this](const auto &ctx) { if (!ctx.arg.isEmpty()) openPath(ctx.arg); });
     m_mw->commands().add(QStringLiteral("data.clearCache"), [this](const auto &) { clearParseCache(); log(QStringLiteral("解析缓存已清空")); });
     m_mw->commands().add(QStringLiteral("layout.save"), [this](const auto &ctx) {

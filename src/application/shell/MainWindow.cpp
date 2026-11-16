@@ -55,7 +55,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_docks.darkenExisting();
     if (auto *view = findChild<QPlainTextEdit *>(QStringLiteral("dock.log.view")))
         m_logs.setLogView(view);
-    m_commands.invoke(QStringLiteral("plot.refreshTree"), {});
+    m_commands.invoke(QStringLiteral("app.ready"), {});
     if (m_session.layoutPath().isEmpty())
         m_session.setLayoutPath(SessionManager::defaultLayoutPath());
     m_session.restoreWindow(this);

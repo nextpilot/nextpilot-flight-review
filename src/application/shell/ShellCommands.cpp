@@ -23,18 +23,21 @@ void registerCommands(MainWindow &win)
     using Ctx = ps::commands::CommandContext;
 
     auto describe = [&win](const QString &id, const QString &text, const QString &icon,
-                           const QString &shortcut, bool checkable = false, bool enabled = true) {
+                           const QString &shortcut, bool checkable = false, bool enabled = true,
+                           bool dirty = false) {
         ps::commands::CommandSpec spec;
         spec.id = id;
         spec.text = text;
         spec.icon = icon;
         spec.shortcut = shortcut;
         spec.checkable = checkable;
+        spec.sessionDirty = dirty;
         if (!enabled)
             spec.enabled = [](const Ctx &) { return false; };
         win.commands().describe(spec);
     };
-    describe(QStringLiteral("file.open"), QStringLiteral("打开文件"), QStringLiteral("open"), QStringLiteral("Ctrl+O"));
+    describe(QStringLiteral("file.open"), QStringLiteral("打开文件"), QStringLiteral("open"),
+              QStringLiteral("Ctrl+O"), false, true, true);
     describe(QStringLiteral("file.importLayout"), QStringLiteral("导入布局"), QStringLiteral("import"), {});
     describe(QStringLiteral("file.saveLayout"), QStringLiteral("另存布局"), QStringLiteral("export"), QStringLiteral("Ctrl+Shift+S"));
     describe(QStringLiteral("file.exportSettings"), QStringLiteral("导出设置"), QStringLiteral("export_cfg"), {});
@@ -44,15 +47,6 @@ void registerCommands(MainWindow &win)
     describe(QStringLiteral("layout.import"), QStringLiteral("打开布局"), QStringLiteral("open"), QStringLiteral("Ctrl+Shift+O"));
     describe(QStringLiteral("help.about"), QStringLiteral("关于"), QStringLiteral("settings"), {});
 
-    win.commands().add(QStringLiteral("file.open"), [&win](const Ctx &) {
-        const QStringList fs = QFileDialog::getOpenFileNames(&win, QStringLiteral("打开文件"), {},
-            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-        for (const QString &f : fs) {
-            ps::commands::CommandContext ctx;
-            ctx.arg = f;
-            win.commands().invoke(QStringLiteral("data.openPath"), ctx);
-        }
-    });
     win.commands().add(QStringLiteral("file.importLayout"), [&win](const Ctx &) {
         const QString f = QFileDialog::getOpenFileName(&win, QStringLiteral("导入布局"), {},
             QStringLiteral("PlotScope 布局 (*.psl)"));
@@ -80,9 +74,6 @@ void registerCommands(MainWindow &win)
             win.logs().info(QStringLiteral("已导出设置：%1").arg(f));
         else
             win.logs().warn(QStringLiteral("导出设置失败：%1").arg(f));
-    });
-    win.commands().add(QStringLiteral("file.exportData"), [&win](const Ctx &) {
-        win.commands().invoke(QStringLiteral("data.exportSnapshot"), {});
     });
     win.commands().add(QStringLiteral("file.screenshot"), [&win](const Ctx &) {
         QWidget *page = win.pages() ? win.pages()->currentWidget() : nullptr;

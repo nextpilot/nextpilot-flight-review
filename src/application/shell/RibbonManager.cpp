@@ -120,7 +120,7 @@ QWidget *RibbonManager::create()
             }
             const QVector<ps::components::RibbonPanel> panels =
                 page.panels.isEmpty() ? QVector<ps::components::RibbonPanel>{
-                    ps::components::RibbonPanel{page.panel, page.items}} : page.panels;
+                    ps::components::RibbonPanel{page.panel, page.items, {}}} : page.panels;
             for (const auto &panelSpec : panels)
             {
                 auto *panel = cat->addPanel(panelSpec.title);

@@ -6,7 +6,8 @@ void SettingsManager::registerCommand(ps::commands::CommandManager &commands, Ma
 {
     commands.registerCommand(
         ps::commands::CommandSpec{QStringLiteral("file.settings"), QStringLiteral("设置"),
-                                  QStringLiteral("settings"), QStringLiteral("Ctrl+,")},
+                                  QStringLiteral("settings"), QStringLiteral("Ctrl+,"),
+                                  false, {}, {}, false},
         [this, parent](const ps::commands::CommandContext &) { openDialog(parent); });
 }
 

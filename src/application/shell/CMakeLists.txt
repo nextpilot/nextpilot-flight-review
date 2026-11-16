@@ -57,3 +57,5 @@ else()
   target_compile_definitions(ps_application_shell PUBLIC PS_HAVE_UITOOLS=0)
   message(WARNING "未找到 Qt6 UiTools，扩展自带 .ui 将不可用")
 endif()
+
+ps_set_warnings(ps_application_shell)
