@@ -36,14 +36,14 @@ QIcon ribIcon(const QString &name)
 
 QPixmap plotThumb(const QString &kind)
 {
-    QPixmap pm(76, 76);
+    QPixmap pm(96, 56);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(QPen(ThemeManager::adaptColor(QColor("#2d3841")), 1));
     p.setBrush(ThemeManager::adaptColor(QColor("#0b0f13")));
-    p.drawRoundedRect(QRectF(0.5, 0.5, 75, 75), 3, 3);
-    const QRectF r(8, 14, 60, 48);
+    p.drawRoundedRect(QRectF(0.5, 0.5, 95, 55), 3, 3);
+    const QRectF r(9, 9, 78, 38);
     p.setPen(QPen(ThemeManager::adaptColor(QColor("#26313a")), 1));
     p.drawLine(r.bottomLeft(), r.bottomRight());
     p.drawLine(r.bottomLeft(), r.topLeft());
@@ -453,7 +453,7 @@ void buildPlotGallery(QWidget *p)
     if (!mw)
         return;
     panel->setExpanding(false);
-    panel->setMaximumWidth(368);
+    panel->setMaximumWidth(460);
     if (auto *t = panel->titleLabel())
         t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     auto run = [mw](const QString &cmd, const QString &arg = QString()) {

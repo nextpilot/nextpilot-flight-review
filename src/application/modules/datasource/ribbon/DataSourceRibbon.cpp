@@ -98,8 +98,8 @@ void registerDataSourceContributions(Registry &registry)
                  auto styleGroup = [](SARibbonGalleryGroup *g) {
                      g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
                      g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-                     g->setGridMinimumWidth(64);
-                     g->setGridMaximumWidth(72);
+                     g->setGridMinimumWidth(88);
+                     g->setGridMaximumWidth(96);
                      g->setSpacing(1);
                      QFont f = g->font();
                      f.setPixelSize(10);
@@ -112,7 +112,7 @@ void registerDataSourceContributions(Registry &registry)
                  styleGroup(formats);
                  styleGroup(streams);
                  gallery->setCurrentViewGroup(common);
-                 panel->setMaximumWidth(320);
+                 panel->setMaximumWidth(420);
              }}},
         1});
 }
