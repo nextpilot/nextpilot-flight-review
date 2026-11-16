@@ -627,7 +627,7 @@ void PlottingSession::refreshPropTree(PlottingCanvas *active)
     const QString pageTitle = m_mw->pages()->tabText(m_mw->pages()->indexOf(page));
     auto *root = new QTreeWidgetItem(m_propTree);
     root->setText(0, pageTitle);
-    root->setIcon(0, QIcon(QStringLiteral(":/icons/panel.svg")));
+    root->setIcon(0, ThemeManager::icon(QStringLiteral(":/icons/panel.svg")));
     root->setFlags(root->flags() & ~Qt::ItemIsSelectable);
     root->setExpanded(true);
 
@@ -637,7 +637,7 @@ void PlottingSession::refreshPropTree(PlottingCanvas *active)
     {
         auto *axes = new QTreeWidgetItem(root);
         axes->setText(0, c->title());
-        axes->setIcon(0, QIcon(QStringLiteral(":/icons/prop.svg")));
+        axes->setIcon(0, ThemeManager::icon(QStringLiteral(":/icons/prop.svg")));
         axes->setData(0, Qt::UserRole, 1);
         axes->setData(0, Qt::UserRole + 1, QVariant::fromValue<quintptr>(reinterpret_cast<quintptr>(c)));
         axes->setExpanded(active ? (c == active) : (c == canvases.first()));
@@ -1298,8 +1298,8 @@ protected:
     void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
     {
         QStyledItemDelegate::initStyleOption(option, index);
-        option->palette.setColor(QPalette::Text, ThemeManager::color(
-            index.column() == 0 ? QStringLiteral("textDim") : QStringLiteral("text")));
+        Q_UNUSED(index)
+        option->palette.setColor(QPalette::Text, ThemeManager::color(QStringLiteral("text")));
     }
 };
 } // namespace
@@ -1427,7 +1427,7 @@ void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QSt
         const QString text = rows[i].second;
         const bool canEdit = editable.contains(key);
         auto *k = new QTableWidgetItem(key);
-        k->setFlags(Qt::ItemIsEnabled);
+        k->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
         m_propTable->setItem(i, 0, k);
 
         auto *v = new QTableWidgetItem(text);

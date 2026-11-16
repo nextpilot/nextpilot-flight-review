@@ -45,7 +45,9 @@ const Token kTokens[] = {
 };
 
 const char *kDarkStyle = R"(
-QWidget { background:#0d1117; color:#c9d1d9; font-size:12px; }
+/* 背景只给顶层容器，子控件默认透明，避免 QLabel 之类盖出白块 */
+QWidget { color:#c9d1d9; font-size:12px; }
+QMainWindow, QDialog { background:#0d1117; }
 QDialog { background:#0f1419; }
 QMainWindow::separator { background:#0f1419; width:1px; height:1px; }
 QMainWindow::separator:hover { background:#2d3841; }
@@ -140,14 +142,6 @@ QStatusBar { background:#161b20; color:#6e7681; border-top:1px solid #232b33; }
 QStatusBar::item { border:0; }
 SARibbonPanelLabel { background:transparent; color:#7d8b96; font-size:10px; }
 QToolTip { background:#161b20; color:#c9d1d9; border:1px solid #232b33; padding:3px 6px; }
-QMenu { background:#161b20; color:#c9d1d9; border:1px solid #2d3841; padding:4px; }
-QMenu::item { padding:5px 22px 5px 18px; font-size:12px; }
-QMenu::item:selected { background:#1f2a33; }
-QMenu::item:disabled { color:#5d6c77; }
-QMenu::separator { height:1px; background:#232b33; margin:4px 6px; }
-QMenu::indicator { width:10px; height:10px; margin-left:4px; border-radius:5px; }
-QMenu::indicator:checked { background:#f2b134; }
-QMenu::indicator:unchecked { background:transparent; border:1px solid #2d3841; }
 QMenu { background:#161b20; border:1px solid #2d3841; padding:4px; }
 QMenu::item { padding:5px 24px 5px 20px; font-size:12px; color:#c9d1d9; background:#161b20; border-radius:2px; }
 QMenu::item:selected { background:#1f2a33; color:#f2b134; }
@@ -194,7 +188,7 @@ const Alias kAliases[] = {
     {"#e3b341", "#b45309"}, {"#221c0f", "#fef3c7"}, {"#3a2f16", "#d97706"},
     {"#f85149", "#c62828"}, {"#212a31", "#dbeafe"}, {"#1a2127", "#eef1f4"},
     {"#2a3b48", "#cbd5e1"}, {"#4a5a68", "#94a3b8"}, {"#2b3a4a", "#e2e8f0"},
-    {"#3a2f22", "#fef3c7"},
+    {"#3a2f22", "#fef3c7"}, {"#3a2427", "#fee2e2"}, {"#26313a", "#eef1f4"}, {"#33414d", "#c7d2fe"},
 };
 
 QColor tokenColor(const char *dark, const char *light)

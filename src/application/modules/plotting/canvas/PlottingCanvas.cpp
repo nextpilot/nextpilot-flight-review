@@ -180,12 +180,12 @@ void PlottingCanvas::buildHoverBar()
 {
     m_hoverBar = new QWidget(this);
     m_hoverBar->setObjectName(QStringLiteral("canvasHoverBar"));
-    m_hoverBar->setStyleSheet(QStringLiteral(
+    m_hoverBar->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QWidget#canvasHoverBar{background:transparent;border:0;}"
         "QToolButton{background:transparent;border:0;padding:0;}"
         "QToolButton:hover{background:#26313a;border-radius:2px;}"
         "QToolButton:checked{background:#33414d;border-radius:2px;}"
-        "QToolButton[danger=true]:hover{background:#3a2427;}"));
+        "QToolButton[danger=true]:hover{background:#3a2427;}")));
     auto *lay = new QHBoxLayout(m_hoverBar);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(2);
@@ -207,9 +207,9 @@ void PlottingCanvas::buildHoverBar()
         b->setToolTip(tip);
         b->setCursor(Qt::PointingHandCursor);
         b->setFixedSize(20, 20);
-        b->setStyleSheet(QStringLiteral(
+        b->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
             "QToolButton{background:transparent;border:0;padding:0;}"
-            "QToolButton:hover{background:#26313a;border-radius:2px;}"));
+            "QToolButton:hover{background:#26313a;border-radius:2px;}")));
         QObject::connect(b, &QToolButton::clicked, m_hoverBar, fn);
         lay->addWidget(b);
         return b;
@@ -334,8 +334,8 @@ void PlottingCanvas::setMaximizedState(bool on)
     m_maximized = on;
     if (!m_maxBtn)
         return;
-    m_maxBtn->setIcon(QIcon(on ? QStringLiteral(":/icons/restore.svg")
-                              : QStringLiteral(":/icons/maximize.svg")));
+    m_maxBtn->setIcon(ThemeManager::icon(on ? QStringLiteral(":/icons/restore.svg")
+                                          : QStringLiteral(":/icons/maximize.svg")));
     m_maxBtn->setToolTip(on ? QStringLiteral("还原画布") : QStringLiteral("最大化本画布"));
 }
 

@@ -1132,8 +1132,8 @@ void DataSourceDock::setSourcePaused(ps::data_source::SourceData *src, bool paus
         }
         if (QToolButton *btn = src->row->findChild<QToolButton *>(QStringLiteral("srcPause")))
         {
-            btn->setIcon(QIcon(paused ? QStringLiteral(":/icons/play.svg")
-                                      : QStringLiteral(":/icons/pause.svg")));
+            btn->setIcon(ThemeManager::icon(paused ? QStringLiteral(":/icons/play.svg")
+                                                  : QStringLiteral(":/icons/pause.svg")));
             btn->setToolTip(paused ? QStringLiteral("继续该实时源") : QStringLiteral("暂停该实时源"));
         }
     }
@@ -1570,10 +1570,10 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     row->setProperty("srcName", name);
     row->setProperty("srcId", srcId);
     m_ctx.installRowEventFilter(row);
-    row->setStyleSheet(QStringLiteral(
+    row->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QWidget{background:transparent;border-left:2px solid transparent;border-bottom:1px solid #171f26;}"
         "QWidget[active=true]{background:#1a2127;border-left-color:#f2b134;}"
-        "QWidget:hover{background:#1d242a;}"));
+        "QWidget:hover{background:#1d242a;}")));
     auto *lay = new QHBoxLayout(row);
     lay->setContentsMargins(2, 2, 6, 2);
     lay->setSpacing(4);
@@ -1584,9 +1584,9 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     expander->setToolTip(QStringLiteral("展开数据列"));
     expander->setCursor(Qt::PointingHandCursor);
     expander->setFixedSize(18, 26);
-    expander->setStyleSheet(QStringLiteral(
+    expander->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QToolButton{background:transparent;border:0;color:#6e7d88;font-size:11px;padding:0;}"
-        "QToolButton:hover{color:#f2b134;}"));
+        "QToolButton:hover{color:#f2b134;}")));
     lay->addWidget(expander);
 
     auto *dot = new QLabel(row);
@@ -1598,15 +1598,21 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
 
     auto *col = new QWidget(row);
     col->setAttribute(Qt::WA_TransparentForMouseEvents);
+    col->setMinimumWidth(0);
+    col->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     col->setStyleSheet(QStringLiteral("background:transparent;"));
     auto *colLay = new QVBoxLayout(col);
     colLay->setContentsMargins(0, 0, 0, 0);
     colLay->setSpacing(0);
     auto *nameLb = new ElideLabel(name, col);
-    nameLb->setStyleSheet(QStringLiteral("color:#c9d1d9;font-size:12px;background:transparent;"));
+    nameLb->setMinimumWidth(0);
+    nameLb->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    nameLb->setStyleSheet(ThemeManager::mapStyleSheet(
+        QStringLiteral("color:#c9d1d9;font-size:12px;background:transparent;")));
     auto *metaLb = new QLabel(meta, col);
     metaLb->setObjectName(QStringLiteral("srcMeta"));
-    metaLb->setStyleSheet(QStringLiteral("color:#5d6c77;font-size:10px;background:transparent;"));
+    metaLb->setStyleSheet(ThemeManager::mapStyleSheet(
+        QStringLiteral("color:#5d6c77;font-size:10px;background:transparent;")));
     colLay->addWidget(nameLb);
     colLay->addWidget(metaLb);
     lay->addWidget(col, 1);
@@ -1617,16 +1623,16 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     // 实时源才给运行控制；文件源没有“暂停/继续”的概念。
     auto *pauseBtn = new QToolButton(row);
     pauseBtn->setObjectName(QStringLiteral("srcPause"));
-    pauseBtn->setIcon(QIcon(rowSrc && rowSrc->paused ? QStringLiteral(":/icons/play.svg")
+    pauseBtn->setIcon(ThemeManager::icon(rowSrc && rowSrc->paused ? QStringLiteral(":/icons/play.svg")
                                                       : QStringLiteral(":/icons/pause.svg")));
     pauseBtn->setIconSize(QSize(14, 14));
     pauseBtn->setToolTip(rowSrc && rowSrc->paused ? QStringLiteral("继续该实时源")
                                                    : QStringLiteral("暂停该实时源"));
     pauseBtn->setCursor(Qt::PointingHandCursor);
     pauseBtn->setFixedSize(20, 20);
-    pauseBtn->setStyleSheet(QStringLiteral(
+    pauseBtn->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QToolButton{background:transparent;border:0;padding:0;}"
-        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
+        "QToolButton:hover{background:#222b33;border-radius:2px;}")));
     pauseBtn->setVisible(isLive);
     lay->addWidget(pauseBtn);
     connect(pauseBtn, &QToolButton::clicked, this, [this, srcId] {
@@ -1635,14 +1641,14 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     });
 
     auto *dbg = new QToolButton(row);
-    dbg->setIcon(QIcon(QStringLiteral(":/icons/script.svg")));
+    dbg->setIcon(ThemeManager::icon(QStringLiteral(":/icons/script.svg")));
     dbg->setIconSize(QSize(14, 14));
     dbg->setToolTip(QStringLiteral("调试终端"));
     dbg->setCursor(Qt::PointingHandCursor);
     dbg->setFixedSize(22, 22);
-    dbg->setStyleSheet(QStringLiteral(
+    dbg->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QToolButton{background:transparent;border:0;padding:0;}"
-        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
+        "QToolButton:hover{background:#222b33;border-radius:2px;}")));
     bool hasDebug = false;
     if (rowSrc)
     {
@@ -1658,14 +1664,14 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     });
 
     auto *cfg = new QToolButton(row);
-    cfg->setIcon(QIcon(QStringLiteral(":/icons/settings.svg")));
+    cfg->setIcon(ThemeManager::icon(QStringLiteral(":/icons/settings.svg")));
     cfg->setIconSize(QSize(14, 14));
     cfg->setToolTip(QStringLiteral("配置数据源"));
     cfg->setCursor(Qt::PointingHandCursor);
     cfg->setFixedSize(22, 22);
-    cfg->setStyleSheet(QStringLiteral(
+    cfg->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QToolButton{background:transparent;border:0;padding:0;}"
-        "QToolButton:hover{background:#222b33;border-radius:2px;}"));
+        "QToolButton:hover{background:#222b33;border-radius:2px;}")));
     lay->addWidget(cfg);
     connect(cfg, &QToolButton::clicked, this, [this, srcId] {
         ps::data_source::SourceData *src = m_ctx.sourceById(srcId);
@@ -1677,14 +1683,14 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     });
 
     auto *del = new QToolButton(row);
-    del->setIcon(QIcon(QStringLiteral(":/icons/trash.svg")));
+    del->setIcon(ThemeManager::icon(QStringLiteral(":/icons/trash.svg")));
     del->setIconSize(QSize(14, 14));
     del->setToolTip(QStringLiteral("移除该数据源"));
     del->setCursor(Qt::PointingHandCursor);
     del->setFixedSize(20, 20);
-    del->setStyleSheet(QStringLiteral(
+    del->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QToolButton{background:transparent;border:0;color:#4a545d;padding:0;}"
-        "QToolButton:hover{color:#f85149;background:#222b33;}"));
+        "QToolButton:hover{color:#f85149;background:#222b33;}")));
     lay->addWidget(del);
     connect(del, &QToolButton::clicked, this, [this, row] {
         m_ctx.removeSourceRow(row);
@@ -1705,12 +1711,12 @@ QWidget *DataSourceDock::addSourceRow(const QString &name, const QString &meta, 
     panel->setDragDropMode(QAbstractItemView::DragOnly);
     panel->setDefaultDropAction(Qt::CopyAction);
     panel->setFixedHeight(220);
-    panel->setStyleSheet(QStringLiteral(
+    panel->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
         "QTreeWidget{border:0;border-left:1px solid #232b33;background:#0b1014;"
         "font-size:11px;padding-left:6px;}"
         "QTreeWidget::item{height:18px;}"
         "QTreeWidget::item:hover{background:#151d24;}"
-        "QTreeWidget::item:selected{background:#1c252d;color:#f2b134;}"));
+        "QTreeWidget::item:selected{background:#1c252d;color:#f2b134;}")));
     panel->hide();
     m_srcRows->addWidget(panel);
     const auto rebuildPanel = [this, panel, srcId] {
