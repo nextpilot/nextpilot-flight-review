@@ -17,6 +17,7 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QTimer>
+#include <QDockWidget>
 #include <QFileDialog>
 #include <QDockWidget>
 #include <QIcon>
@@ -51,6 +52,28 @@ QIcon loaderIcon(const DataSourceEntry &e)
 
 namespace
 {
+void openAnalysisApp(MainWindow *mw, const ps::data_source::AnalysisEntry &entry,
+                     const QString &path)
+{
+    if (!mw || !entry.create)
+        return;
+    const QString objectName = QStringLiteral("dock.analysis.%1").arg(entry.id);
+    if (auto *existing = mw->findChild<QDockWidget *>(objectName))
+    {
+        existing->show();
+        existing->raise();
+        return;
+    }
+    QWidget *body = entry.create(mw, path);
+    if (!body)
+        return;
+    auto *dock = new QDockWidget(entry.title, mw);
+    dock->setObjectName(objectName);
+    dock->setWidget(body);
+    mw->addDockWidget(Qt::BottomDockWidgetArea, dock);
+    dock->show();
+}
+
 // 分析页是唯一入口：领域工具箱只注册条目，不新增 Ribbon 页。
 // 当前数据源变化时只替换 Gallery 条目，避免每个工具箱占一个页签。
 void buildAnalysisGallery(QWidget *parent)
@@ -87,8 +110,19 @@ void buildAnalysisGallery(QWidget *parent)
         action->setProperty("analysisFormats", entry.formats);
         action->setProperty("analysisInGroup", false);
         action->setProperty("analysisAllGroup", allGroup);
-        QObject::connect(action, &QAction::triggered, mw,
-                         [mw, id = entry.id] { mw->commands().invoke(id, {mw, QString()}); });
+        if (entry.create)
+        {
+            QObject::connect(action, &QAction::triggered, mw,
+                             [mw, session, entry] {
+                                 auto *source = session->sourceById(session->activeSourceId());
+                                 openAnalysisApp(mw, entry, source ? source->path : QString());
+                             });
+        }
+        else
+        {
+            QObject::connect(action, &QAction::triggered, mw,
+                             [mw, id = entry.id] { mw->commands().invoke(id, {mw, QString()}); });
+        }
         return action;
     };
 

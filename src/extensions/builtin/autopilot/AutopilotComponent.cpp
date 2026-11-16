@@ -120,6 +120,19 @@ void AutopilotComponent::contribute(Registry &registry, HostContext &host)
          QStringLiteral("export_data"), QStringLiteral("生成飞控通道统计与基础飞行摘要"),
          {QStringLiteral("飞控")}, analysisFormats});
 
+    ps::data_source::AnalysisEntry app;
+    app.id = QStringLiteral("autopilot.review.app");
+    app.title = QStringLiteral("飞控复盘");
+    app.icon = QStringLiteral("datasource");
+    app.description = QStringLiteral("打开飞控复盘面板，查看通道统计并生成曲线/报告");
+    app.tags = {QStringLiteral("飞控")};
+    app.formats = analysisFormats;
+    app.kind = ps::data_source::AnalysisKind::App;
+    app.create = [](QWidget *parent, const QString &path) {
+        return createFlightReviewApp(parent, path);
+    };
+    ps::data_source::AnalysisRegistry::instance().add(app);
+
     registerAutopilotReview(registry, host);
 }
 

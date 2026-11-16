@@ -86,6 +86,20 @@ int main()
             assert(false);
         }
     }
+    bool foundApp = false;
+    for (const auto &entry : ps::data_source::AnalysisRegistry::instance().all())
+    {
+        if (entry.id == QStringLiteral("autopilot.review.app"))
+        {
+            foundApp = entry.kind == ps::data_source::AnalysisKind::App && entry.create;
+            break;
+        }
+    }
+    if (!foundApp)
+    {
+        std::cerr << "missing analysis app: autopilot.review.app\n";
+        assert(false);
+    }
     const QStringList automotive = {QStringLiteral("data_loader_asc"),
                                     QStringLiteral("data_loader_blf"),
                                     QStringLiteral("data_loader_mdf4")};

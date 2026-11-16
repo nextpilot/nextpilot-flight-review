@@ -7,6 +7,12 @@
 using ps::components::HostContext;
 
 #include <QDateTime>
+#include <QHeaderView>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QTableWidget>
+#include <QVBoxLayout>
 #include <QWidget>
 #include <QDesktopServices>
 #include <QDir>
@@ -288,6 +294,130 @@ void report(MainWindow *mw)
                              QStringLiteral("报告已生成：\n%1").arg(filePath));
 }
 
+QWidget *buildFlightReviewApp(QWidget *parent, const QString &path)
+{
+    auto *mw = qobject_cast<MainWindow *>(parent ? parent->window() : nullptr);
+    auto *root = new QWidget(parent);
+    auto *layout = new QVBoxLayout(root);
+    layout->setContentsMargins(12, 10, 12, 10);
+    layout->setSpacing(10);
+
+    if (!mw)
+    {
+        auto *label = new QLabel(QStringLiteral("无法定位主窗口"), root);
+        layout->addWidget(label);
+        return root;
+    }
+
+    const QVector<ps::bridge::SourceView> views = ps::bridge::sourceViews(mw);
+    ps::bridge::SourceView view;
+    bool found = false;
+    for (const ps::bridge::SourceView &candidate : views)
+    {
+        if (!path.isEmpty() && candidate.path == path)
+        {
+            view = candidate;
+            found = true;
+            break;
+        }
+    }
+    if (!found && !views.isEmpty())
+        view = views.constLast();
+    if (view.channels.isEmpty())
+    {
+        auto *label = new QLabel(QStringLiteral("当前没有可分析的飞控数据源。"), root);
+        layout->addWidget(label);
+        return root;
+    }
+
+    const FlightMeta meta = collectMeta(view);
+    auto *title = new QLabel(QStringLiteral("<b>%1</b>　·　%2")
+                                 .arg(htmlEscape(meta.source), htmlEscape(meta.profile)),
+                             root);
+    title->setTextFormat(Qt::RichText);
+    layout->addWidget(title);
+
+    auto *summary = new QLabel(
+        QStringLiteral("通道 %1 · 时长 %2 s · %3")
+            .arg(meta.channelCount)
+            .arg(meta.duration, 0, 'f', 2)
+            .arg(htmlEscape(meta.path)),
+        root);
+    summary->setWordWrap(true);
+    layout->addWidget(summary);
+
+    auto *table = new QTableWidget(root);
+    table->setColumnCount(7);
+    table->setHorizontalHeaderLabels({QStringLiteral("通道"), QStringLiteral("单位"),
+                                      QStringLiteral("点数"), QStringLiteral("最小"),
+                                      QStringLiteral("最大"), QStringLiteral("均值"),
+                                      QStringLiteral("末值")});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->verticalHeader()->setVisible(false);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setAlternatingRowColors(true);
+
+    QVector<const PsChannelInfo *> sorted;
+    for (const PsChannelInfo *channel : view.channels)
+        if (channel && channel->name)
+            sorted.append(channel);
+    table->setRowCount(sorted.size());
+    for (int row = 0; row < sorted.size(); ++row)
+    {
+        const PsChannelInfo *channel = sorted[row];
+        const QString name = QString::fromUtf8(channel->name);
+        const QString unit = channel->unit ? QString::fromUtf8(channel->unit) : QString();
+        double min = 0.0;
+        double max = 0.0;
+        double mean = 0.0;
+        double last = 0.0;
+        uint32_t valid = 0;
+        double sum = 0.0;
+        if (channel->point_count > 0)
+        {
+            min = std::numeric_limits<double>::infinity();
+            max = -std::numeric_limits<double>::infinity();
+            for (uint32_t i = 0; i < channel->point_count; ++i)
+            {
+                const double value = channel->value[i];
+                if (!std::isfinite(value))
+                    continue;
+                min = std::min(min, value);
+                max = std::max(max, value);
+                sum += value;
+                ++valid;
+            }
+            last = channel->value[channel->point_count - 1];
+            mean = valid ? sum / valid : 0.0;
+            if (valid == 0)
+                min = max = 0.0;
+        }
+        const QStringList cells = {
+            name, unit, QString::number(channel->point_count),
+            QString::number(min, 'g', 7), QString::number(max, 'g', 7),
+            QString::number(mean, 'g', 7), QString::number(last, 'g', 7)};
+        for (int col = 0; col < cells.size(); ++col)
+            table->setItem(row, col, new QTableWidgetItem(cells[col]));
+    }
+    layout->addWidget(table, 1);
+
+    auto *buttons = new QHBoxLayout();
+    auto *curves = new QPushButton(QStringLiteral("创建默认曲线"), root);
+    auto *reportButton = new QPushButton(QStringLiteral("生成分析报告"), root);
+    QObject::connect(curves, &QPushButton::clicked, mw, [mw] {
+        mw->commands().invoke(QStringLiteral("autopilot.review.default"), {mw, QString()});
+    });
+    QObject::connect(reportButton, &QPushButton::clicked, mw, [mw] {
+        mw->commands().invoke(QStringLiteral("autopilot.review.report"), {mw, QString()});
+    });
+    buttons->addWidget(curves);
+    buttons->addWidget(reportButton);
+    buttons->addStretch(1);
+    layout->addLayout(buttons);
+    return root;
+}
+
 void logMessage(const HostContext &host, const QString &text)
 {
     if (host.log)
@@ -298,6 +428,11 @@ void logMessage(const HostContext &host, const QString &text)
 
 namespace ps::components
 {
+
+QWidget *createFlightReviewApp(QWidget *parent, const QString &path)
+{
+    return buildFlightReviewApp(parent, path);
+}
 
 void registerAutopilotReview(Registry &registry, HostContext &host)
 {
