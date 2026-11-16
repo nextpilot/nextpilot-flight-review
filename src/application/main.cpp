@@ -13,6 +13,7 @@
 #include "DynamicExtensionRegistry.h"
 #include "ExtensionRuntime.h"
 #include "ThemeManager.h"
+#include "SessionManager.h"
 #include "SettingsManager.h"
 
 #include "ps_kernel.h"
@@ -67,6 +68,17 @@ int main(int argc, char **argv)
     win.show();
 
     // 命令行带文件时直接加载：plotscope_app flight.csv / layout.psl
+    bool restoreLayout = false;
+    for (int i = 1; i < argc; ++i)
+    {
+        if (QString::fromLocal8Bit(argv[i]).endsWith(QStringLiteral(".psl"), Qt::CaseInsensitive))
+            restoreLayout = true;
+    }
+    if (argc <= 1 && SettingsManager::instance().restoreLayout())
+        restoreLayout = QFile::exists(SessionManager::defaultLayoutPath());
+    if (!restoreLayout)
+        win.session().restoreWindowState(&win);
+
     if (argc > 1)
     {
         for (int i = 1; i < argc; ++i)
@@ -82,7 +94,7 @@ int main(int argc, char **argv)
     }
     else if (SettingsManager::instance().restoreLayout())
     {
-        const QString last = win.defaultLayoutPath();
+        const QString last = SessionManager::defaultLayoutPath();
         if (QFile::exists(last)) {
             ps::commands::CommandContext ctx;
             ctx.arg = last;

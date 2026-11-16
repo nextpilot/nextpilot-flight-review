@@ -53,33 +53,49 @@ QWidget *RibbonManager::create()
     ribbon->setPanelSpacing(3);
     ribbon->setCategoryHeight(78, true); // 图标 23 + 内边距 + 分组标题 14，留出基线余量
 
-    // 大按钮同样只留图标：分组标题已说明用途，图标下再叠一行字就是原型里最挤的部分
-    auto addLarge = [](SARibbonPanel *panel, const QString &text, const QString &icon,
-                       std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(text, ctx);
-        a->setToolTip(text);
-        a->setProperty("rbIconOnly", true);
-        if (!icon.isEmpty())
-        {
-            a->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(icon)));
-            a->setText(QString());
-        }
-        QObject::connect(a, &QAction::triggered, ctx, fn);
-        panel->addLargeAction(a);
+    auto applyState = [this](QAction *action, const QString &id, const QString &arg) {
+        const auto *spec = m_commands->spec(id);
+        if (!spec)
+            return;
+        ps::commands::CommandContext ctx{m_window, arg};
+        action->setCheckable(spec->checkable);
+        if (spec->checkable && spec->checked)
+            action->setChecked(spec->checked(ctx));
+        if (spec->enabled)
+            action->setEnabled(spec->enabled(ctx));
     };
-    // 小按钮：只有 1~2 个字才显示文字，其余只留图标 + tooltip（图标 16px 撑得住）
-    auto addSmall = [](SARibbonPanel *panel, const QString &text, const QString &icon,
-                       std::function<void()> fn, QObject *ctx) {
-        auto *a = new QAction(text, ctx);
-        a->setToolTip(text);
+    auto makeAction = [this, &applyState](SARibbonPanel *panel, bool large, const QString &id,
+                             const QString &text, const QString &icon, const QString &arg,
+                             std::function<void()> fn, QObject *ctx) {
+        const auto *spec = m_commands->spec(id);
+        const QString label = text.isEmpty() && spec ? spec->text : text;
+        const QString iconName = icon.isEmpty() && spec ? spec->icon : icon;
+        auto *a = new QAction(label, ctx);
+        a->setToolTip(label);
         a->setProperty("rbIconOnly", true);
-        if (!icon.isEmpty())
+        if (!iconName.isEmpty())
         {
-            a->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(icon)));
+            const QString path = iconName.startsWith(QLatin1String(":/"))
+                                     ? iconName : QStringLiteral(":/icons/%1.svg").arg(iconName);
+            a->setIcon(QIcon(path));
             a->setText(QString());
         }
+        applyState(a, id, arg);
         QObject::connect(a, &QAction::triggered, ctx, fn);
-        panel->addSmallAction(a);
+        if (large)
+            panel->addLargeAction(a);
+        else
+            panel->addSmallAction(a);
+    };
+    auto addLarge = [&](SARibbonPanel *panel, const QString &id, const QString &text,
+                        const QString &icon, const QString &arg, std::function<void()> fn,
+                        QObject *ctx) {
+        makeAction(panel, true, id, text, icon, arg, std::move(fn), ctx);
+    };
+    auto addSmall = [&](SARibbonPanel *panel, const QString &id, const QString &text,
+                        const QString &icon, const QString &arg, std::function<void()> fn,
+                        QObject *ctx) {
+        makeAction(panel, false, id, text, icon, arg, std::move(fn), ctx);
     };
 
     auto run = [this](const QString &id, const QString &arg = QString()) {
@@ -117,9 +133,9 @@ QWidget *RibbonManager::create()
                             m_registry->invoke(action, ps::components::ActionContext{m_window});
                     };
                     if (item.large)
-                        addLarge(panel, item.label, item.icon, fn, m_window);
+                        addLarge(panel, item.action, item.label, item.icon, item.arg, fn, m_window);
                     else
-                        addSmall(panel, item.label, item.icon, fn, m_window);
+                        addSmall(panel, item.action, item.label, item.icon, item.arg, fn, m_window);
                 }
             }
         }
@@ -151,7 +167,8 @@ QWidget *RibbonManager::create()
     {
         auto *panel = viewCat->addPanel(QStringLiteral("面板"));
         for (const auto &dock : m_registry->docks())
-            addSmall(panel, dock.title, {}, run(QStringLiteral("view.toggleDock"), dock.id), m_window);
+            addSmall(panel, QStringLiteral("view.toggleDock"), dock.title, dock.icon, dock.id,
+                     run(QStringLiteral("view.toggleDock"), dock.id), m_window);
     }
 
     // 右侧芯片位：只读状态摘要，跟随实际数据源刷新

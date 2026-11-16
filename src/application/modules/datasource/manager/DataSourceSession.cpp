@@ -22,7 +22,8 @@ using ps::data_source::TransformRecipe;
 #include <QComboBox>
 #include <QFileDialog>
 #include <QMenu>
-#include <QSettings>
+#include "SettingsManager.h"
+#include "SessionManager.h"
 #include <QHash>
 #include <QStatusBar>
 #include <QInputDialog>
@@ -101,16 +102,10 @@ DataSourceSession::~DataSourceSession()
     m_sourceStore = nullptr;
 }
 
-void DataSourceSession::log(const QString &text) { m_mw->appendLog(text); }
+void DataSourceSession::log(const QString &text) { m_mw->logs().info(text); }
 void DataSourceSession::newPageForward() { ps::bridge::newPage(m_mw); }
 QVector<PlottingCanvas *> DataSourceSession::pageCanvasesForward() const { return ps::bridge::pageCanvases(m_mw); }
 void DataSourceSession::addTimeMarkerForward(double t, const QString &l, bool p) { addTimeMarker(t,l,p); }
-QWidget *DataSourceSession::createDockTitleBar(QDockWidget *d) { return m_mw->createDockTitleBar(d); }
-void DataSourceSession::dockWidgetToArea(QDockWidget *d, Qt::DockWidgetArea a) { m_mw->dockWidgetToArea(d, a); }
-void DataSourceSession::collapseDockWidget(QDockWidget *d) { m_mw->collapseDockWidget(d); }
-void DataSourceSession::toggleDockMax(QDockWidget *d) { m_mw->toggleDockMax(d); }
-void DataSourceSession::restoreDockMax() { m_mw->restoreDockMax(); }
-void DataSourceSession::showDockMenu(QToolButton *b, QMenu *m) { m_mw->showDockMenu(b, m); }
 void DataSourceSession::refreshPropTree(PlottingCanvas *c) { ps::bridge::refreshPropTree(m_mw, c); }
 void DataSourceSession::setPropRows(const QString &o, const QVector<QPair<QString, QString>> &r) { ps::bridge::setPropRows(m_mw, o, r); }
 void DataSourceSession::newPageForward();
@@ -127,7 +122,7 @@ QDockWidget *DataSourceSession::createDataSourceDock(QWidget *parent, const QStr
         srcDock->setProperty("psIcon", icon);
 
     // 标题栏：标题 + 汇总 + 全局起停 + 关闭，全部放一行，正文从源列表直接开始（不再叠第二行头部）
-    auto *srcBar = createDockTitleBar(srcDock);
+    auto *srcBar = m_mw->docks().createTitleBar(srcDock);
     srcBar->setStyleSheet(QStringLiteral(
         "background:#26303a;border-bottom:1px solid #3a4854;"));
     auto *barLay = new QHBoxLayout(srcBar);
@@ -185,24 +180,24 @@ QDockWidget *DataSourceSession::createDataSourceDock(QWidget *parent, const QStr
     QAction *floatAct = dockMenu->addAction(QStringLiteral("浮动 / 取消浮动"));
     dockMenu->addSeparator();
     QAction *closeAct = dockMenu->addAction(QStringLiteral("关闭面板"));
-    QObject::connect(maxDock, &QAction::triggered, this, [this, srcDock] { toggleDockMax(srcDock); });
-    QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { restoreDockMax(); dockWidgetToArea(srcDock, Qt::LeftDockWidgetArea); });
-    QObject::connect(toRight, &QAction::triggered, this, [this, srcDock] { dockWidgetToArea(srcDock, Qt::RightDockWidgetArea); });
-    QObject::connect(toBottom, &QAction::triggered, this, [this, srcDock] { dockWidgetToArea(srcDock, Qt::BottomDockWidgetArea); });
+    QObject::connect(maxDock, &QAction::triggered, this, [this, srcDock] { m_mw->docks().toggleMax(srcDock); });
+    QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { m_mw->docks().restoreMax(); m_mw->docks().toArea(srcDock, Qt::LeftDockWidgetArea); });
+    QObject::connect(toRight, &QAction::triggered, this, [this, srcDock] { m_mw->docks().toArea(srcDock, Qt::RightDockWidgetArea); });
+    QObject::connect(toBottom, &QAction::triggered, this, [this, srcDock] { m_mw->docks().toArea(srcDock, Qt::BottomDockWidgetArea); });
     QObject::connect(collapse, &QAction::triggered, this, [this, srcDock] {
-        collapseDockWidget(srcDock);
+        m_mw->docks().collapse(srcDock);
     });
     QObject::connect(floatAct, &QAction::triggered, this, [this, srcDock] {
-        restoreDockMax();
+        m_mw->docks().restoreMax();
         srcDock->setFloating(!srcDock->isFloating());
     });
     QObject::connect(closeAct, &QAction::triggered, this, [this, srcDock] {
-        restoreDockMax();
+        m_mw->docks().restoreMax();
         srcDock->close();
     });
     dockMenuBtn->setPopupMode(QToolButton::InstantPopup);
     QObject::connect(dockMenuBtn, &QToolButton::clicked, dockMenuBtn, [this, dockMenu, dockMenuBtn] {
-        showDockMenu(dockMenuBtn, dockMenu);
+        m_mw->docks().showMenu(dockMenuBtn, dockMenu);
     });
     barLay->addWidget(dockMenuBtn);
     srcDock->setTitleBarWidget(srcBar);
@@ -303,14 +298,7 @@ QDockWidget *DataSourceSession::createDataSourceDock(QWidget *parent, const QStr
                     }
                 }
             },
-            [this](const QString &path) {
-                QSettings recentStore(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-                QStringList recent = recentStore.value(QStringLiteral("recentFiles")).toStringList();
-                recent.removeAll(path);
-                recent.prepend(path);
-                while (recent.size() > 12) recent.removeLast();
-                recentStore.setValue(QStringLiteral("recentFiles"), recent);
-            },
+            [this](const QString &path) { m_mw->session().addRecentFile(path); },
             [this](const QString &msg) { m_mw->statusBar()->showMessage(msg); },
             [this](SourceData *src) {
                 if (!src || src->id != m_activeSource) return;
@@ -972,9 +960,8 @@ void DataSourceSession::onClose()
         closeLiveSource(&src);
     if (m_liveTimer)
         m_liveTimer->stop();
-    if (QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
-            .value(QStringLiteral("restoreLayout"), false).toBool())
-        saveLayoutTo(m_mw->defaultLayoutPath());
+    if (SettingsManager::instance().value(QStringLiteral("restoreLayout"), false).toBool())
+        saveLayoutTo(SessionManager::defaultLayoutPath());
 }
 
 void DataSourceSession::saveLayoutTo(const QString &path)
@@ -1087,7 +1074,7 @@ void DataSourceSession::saveLayoutTo(const QString &path)
     }
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.close();
-    QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
+    m_mw->session().setLayoutPath(path);
     log(QStringLiteral("已保存布局：%1").arg(path));
 }
 
@@ -1159,7 +1146,7 @@ void DataSourceSession::importLayoutFrom(const QString &path)
         const QJsonArray q = o.value(QStringLiteral("quat")).toArray();
         for (int i = 0; i < 4 && i < q.size(); ++i)
             r.quat[i] = q.at(i).toString();
-        const int derivedCap = QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+        const int derivedCap = SettingsManager::instance()
                                    .value(QStringLiteral("derivedMaxPoints"), 2000000).toInt();
         if (derivedCap > 0)
         {
@@ -1298,7 +1285,7 @@ void DataSourceSession::importLayoutFrom(const QString &path)
             ps::bridge::runScript(m_mw, false);
     }
 
-    QSettings(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")).setValue(QStringLiteral("lastLayout"), path);
+    m_mw->session().setLayoutPath(path);
     log(QStringLiteral("已导入布局：%1").arg(path));
 }
 
@@ -1330,7 +1317,7 @@ void DataSourceSession::addTimeMarker(double t, const QString &label, bool promp
         {
             mk.second = text;
             ps::bridge::applyTimeMarkers(m_mw);
-            m_mw->appendLog(QStringLiteral("更新时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
+            m_mw->logs().info(QStringLiteral("更新时间标签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
             return;
         }
     m_timeMarkers.append({t, text});
@@ -1351,7 +1338,7 @@ void DataSourceSession::removeTimeMarker(double t)
             const QString label = m_timeMarkers.at(i).second;
             m_timeMarkers.removeAt(i);
             ps::bridge::applyTimeMarkers(m_mw);
-            m_mw->appendLog(QStringLiteral("删除时间标签：%1").arg(label));
+            m_mw->logs().info(QStringLiteral("删除时间标签：%1").arg(label));
             return;
         }
     }

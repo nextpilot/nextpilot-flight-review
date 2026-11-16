@@ -1,6 +1,8 @@
 add_library(ps_application_shell OBJECT
   MainWindow.h
   MainWindow.cpp
+  ShellPaths.h
+  ShellPaths.cpp
   SessionManager.h
   SessionManager.cpp
   LogManager.h

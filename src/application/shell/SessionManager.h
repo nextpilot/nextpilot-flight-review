@@ -19,7 +19,10 @@ class SessionManager
 public:
     SessionManager();
 
+    static QString defaultLayoutPath();
+
     void restoreWindow(QMainWindow *window);
+    void restoreWindowState(QMainWindow *window);
     void saveWindow(const QMainWindow *window);
 
     void setLayoutPath(const QString &path);

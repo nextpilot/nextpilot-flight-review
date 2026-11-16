@@ -1,22 +1,25 @@
 #include "SessionManager.h"
 #include "CommandManager.h"
-
-#include "CommandManager.h"
+#include "SettingsManager.h"
+#include "ShellPaths.h"
 
 #include <QFileInfo>
 #include <QMainWindow>
-#include <QSettings>
 
 SessionManager::SessionManager()
 {
     load();
 }
 
+QString SessionManager::defaultLayoutPath()
+{
+    return ShellPaths::defaultLayoutPath();
+}
+
 void SessionManager::load()
 {
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-    m_layoutPath = st.value(QStringLiteral("lastLayout")).toString();
-    const QStringList files = st.value(QStringLiteral("recentFiles")).toStringList();
+    m_layoutPath = SettingsManager::instance().value(QStringLiteral("lastLayout")).toString();
+    const QStringList files = SettingsManager::instance().value(QStringLiteral("recentFiles")).toStringList();
     for (const QString &path : files)
     {
         if (!path.isEmpty() && QFileInfo::exists(path) && !m_recentFiles.contains(path))
@@ -28,11 +31,16 @@ void SessionManager::restoreWindow(QMainWindow *window)
 {
     if (!window)
         return;
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-    const QByteArray geometry = st.value(QStringLiteral("windowGeometry")).toByteArray();
+    const QByteArray geometry = SettingsManager::instance().value(QStringLiteral("windowGeometry")).toByteArray();
     if (!geometry.isEmpty())
         window->restoreGeometry(geometry);
-    const QByteArray state = st.value(QStringLiteral("windowState")).toByteArray();
+}
+
+void SessionManager::restoreWindowState(QMainWindow *window)
+{
+    if (!window)
+        return;
+    const QByteArray state = SettingsManager::instance().value(QStringLiteral("windowState")).toByteArray();
     if (!state.isEmpty())
         window->restoreState(state);
 }
@@ -41,16 +49,15 @@ void SessionManager::saveWindow(const QMainWindow *window)
 {
     if (!window)
         return;
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-    st.setValue(QStringLiteral("windowGeometry"), window->saveGeometry());
-    st.setValue(QStringLiteral("windowState"), window->saveState());
+    SettingsManager::instance().setValue(QStringLiteral("windowGeometry"), window->saveGeometry());
+    SettingsManager::instance().setValue(QStringLiteral("windowState"), window->saveState());
+    SettingsManager::instance().sync();
 }
 
 void SessionManager::setLayoutPath(const QString &path)
 {
     m_layoutPath = path;
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-    st.setValue(QStringLiteral("lastLayout"), path);
+    SettingsManager::instance().setValue(QStringLiteral("lastLayout"), path);
 }
 
 void SessionManager::markDirty()
@@ -76,15 +83,13 @@ void SessionManager::addRecentFile(const QString &path)
     m_recentFiles.prepend(path);
     while (m_recentFiles.size() > 12)
         m_recentFiles.removeLast();
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-    st.setValue(QStringLiteral("recentFiles"), m_recentFiles);
+    SettingsManager::instance().setValue(QStringLiteral("recentFiles"), m_recentFiles);
 }
 
 void SessionManager::clearRecentFiles()
 {
     m_recentFiles.clear();
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-    st.remove(QStringLiteral("recentFiles"));
+    SettingsManager::instance().remove(QStringLiteral("recentFiles"));
 }
 
 void SessionManager::bindCommandState(ps::commands::CommandManager &commands, std::function<void()> refreshTitle)

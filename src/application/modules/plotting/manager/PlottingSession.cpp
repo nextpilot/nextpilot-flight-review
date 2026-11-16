@@ -77,7 +77,7 @@ PlottingSession::PlottingSession(MainWindow *mw) : QWidget(mw), m_mw(mw)
     registerCommands();
 }
 PlottingSession::~PlottingSession() = default;
-void PlottingSession::log(const QString &text) { m_mw->appendLog(text); }
+void PlottingSession::log(const QString &text) { m_mw->logs().info(text); }
 
 void PlottingSession::createPages()
 {

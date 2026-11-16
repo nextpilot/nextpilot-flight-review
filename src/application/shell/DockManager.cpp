@@ -374,8 +374,19 @@ void DockManager::registerCommand(ps::commands::CommandManager &commands)
 {
     commands.registerCommand(
         ps::commands::CommandSpec{QStringLiteral("view.toggleDock"), QStringLiteral("显示/隐藏面板"),
-                                  {}, {}, true},
+                                  {}, {}, true, {}, [this](const ps::commands::CommandContext &ctx) {
+                                      return isVisibleById(ctx.arg);
+                                  }},
         [this](const ps::commands::CommandContext &ctx) { toggleById(ctx.arg); });
+}
+
+bool DockManager::isVisibleById(const QString &id) const
+{
+    if (!m_window)
+        return false;
+    if (auto *dock = m_window->findChild<QDockWidget *>(id))
+        return dock->isVisible();
+    return false;
 }
 
 void DockManager::toggleById(const QString &id)

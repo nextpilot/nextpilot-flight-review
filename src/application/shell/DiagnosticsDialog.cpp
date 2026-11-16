@@ -1,5 +1,5 @@
 #include "DiagnosticsDialog.h"
-
+#include "ShellPaths.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -12,7 +12,6 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QStandardPaths>
 #include <QTabWidget>
 #include <QTextStream>
 #include <QUrl>
@@ -20,18 +19,6 @@
 
 namespace
 {
-QString configDir()
-{
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    if (dir.isEmpty())
-        dir = QDir::homePath() + QStringLiteral("/.plotscope");
-    return dir;
-}
-
-QString logDir()
-{
-    return configDir() + QStringLiteral("/logs");
-}
 
 QString extensionText(const QVector<ExtensionManager::ExtensionInfo> &extensions)
 {
@@ -70,8 +57,8 @@ DiagnosticsDialog::DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
                                                                 ? QStringLiteral("0.1.0")
                                                                 : QCoreApplication::applicationVersion()), group));
     form->addRow(QStringLiteral("内核"), new QLabel(kernelInfo, group));
-    form->addRow(QStringLiteral("配置目录"), new QLabel(configDir(), group));
-    form->addRow(QStringLiteral("日志目录"), new QLabel(logDir(), group));
+    form->addRow(QStringLiteral("配置目录"), new QLabel(ShellPaths::configDir(), group));
+    form->addRow(QStringLiteral("日志目录"), new QLabel(ShellPaths::logDir(), group));
     aboutLay->addWidget(group);
     auto *buttons = new QHBoxLayout;
     auto *openConfig = new QPushButton(QStringLiteral("打开配置目录"), about);
@@ -104,11 +91,11 @@ DiagnosticsDialog::DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
     root->addWidget(dialogButtons);
 
     connect(openConfig, &QPushButton::clicked, this, [] {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(configDir()));
+        QDesktopServices::openUrl(QUrl::fromLocalFile(ShellPaths::configDir()));
     });
     connect(openLog, &QPushButton::clicked, this, [] {
-        QDir().mkpath(logDir());
-        QDesktopServices::openUrl(QUrl::fromLocalFile(logDir()));
+        QDir().mkpath(ShellPaths::logDir());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(ShellPaths::logDir()));
     });
     connect(copy, &QPushButton::clicked, this, [kernelInfo, extensions, errors] {
         QString info = QStringLiteral("PlotScope %1\n%2\n")

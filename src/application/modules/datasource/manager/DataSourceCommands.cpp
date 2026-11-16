@@ -1,4 +1,5 @@
 #include "DataSourceSession.h"
+#include "SessionManager.h"
 
 #include "MainWindow.h"
 #include "SourceModel.h"
@@ -8,14 +9,17 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMenu>
-#include <QSettings>
 
 void DataSourceSession::registerDataCommands()
 {
     m_mw->commands().add(QStringLiteral("app.beforeClose"), [this](const auto &) { onClose(); });
     m_mw->commands().add(QStringLiteral("data.openPath"), [this](const auto &ctx) { if (!ctx.arg.isEmpty()) openPath(ctx.arg); });
     m_mw->commands().add(QStringLiteral("data.clearCache"), [this](const auto &) { clearParseCache(); log(QStringLiteral("解析缓存已清空")); });
-    m_mw->commands().add(QStringLiteral("layout.save"), [this](const auto &) { saveLayoutTo(m_mw->defaultLayoutPath()); });
+    m_mw->commands().add(QStringLiteral("layout.save"), [this](const auto &ctx) { saveLayoutTo(ctx.arg.isEmpty() ? SessionManager::defaultLayoutPath() : ctx.arg); });
+    m_mw->commands().add(QStringLiteral("layout.import"), [this](const auto &ctx) {
+        if (!ctx.arg.isEmpty())
+            importLayoutFrom(ctx.arg);
+    });
 
     using Ctx = ps::commands::CommandContext;
     m_mw->commands().add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
@@ -26,8 +30,7 @@ void DataSourceSession::registerDataCommands()
     });
     m_mw->commands().add(QStringLiteral("data.recent"), [this](const Ctx &) {
         QMenu menu(this);
-        QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
-        const QStringList recent = st.value(QStringLiteral("recentFiles")).toStringList();
+        const QStringList recent = m_mw->session().recentFiles();
         if (recent.isEmpty())
         {
             QAction *empty = menu.addAction(QStringLiteral("暂无最近文件"));

@@ -1,19 +1,14 @@
 #include "LogManager.h"
 #include "Component.h"
-
-#include "Component.h"
+#include "ShellPaths.h"
 
 #include <QDateTime>
 #include <QDockWidget>
 #include <QPlainTextEdit>
 #include <QDir>
 #include <QFile>
-#include <QDockWidget>
 #include <QMainWindow>
-#include <QPlainTextEdit>
 #include <QMessageBox>
-#include <QPlainTextEdit>
-#include <QStandardPaths>
 #include <QStatusBar>
 #include <QTextStream>
 
@@ -37,11 +32,8 @@ ps::components::DockContribution LogManager::dockContribution()
 LogManager::LogManager(QMainWindow *window)
     : m_window(window)
 {
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    if (dir.isEmpty())
-        dir = QDir::homePath() + QStringLiteral("/.plotscope");
-    QDir().mkpath(dir + QStringLiteral("/logs"));
-    m_logPath = dir + QStringLiteral("/logs/plotscope.log");
+    QDir().mkpath(ShellPaths::logDir());
+    m_logPath = ShellPaths::logPath();
 }
 
 void LogManager::setStatusBar(QStatusBar *statusBar)

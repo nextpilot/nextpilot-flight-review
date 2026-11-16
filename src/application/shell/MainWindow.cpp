@@ -8,13 +8,11 @@
 #include <QTreeWidgetItemIterator>
 #include <cstring>
 #include <algorithm>
-#include <QDockWidget>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QSpinBox>
 #include <QComboBox>
-#include <QToolButton>
 #include <QButtonGroup>
 #include <QScrollArea>
 #include <QDragEnterEvent>
@@ -30,13 +28,11 @@
 #include <QStandardPaths>
 #include <QLabel>
 #include <QMessageBox>
-#include <QMenu>
 #include <QWidgetAction>
 #include <QMouseEvent>
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QSettings>
 #include <QShortcut>
 #include <QStandardPaths>
 #include <QDir>
@@ -76,7 +72,6 @@
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QJsonObject>
 
 #include "ps_kernel.h"
 
@@ -121,7 +116,8 @@ MainWindow::MainWindow(QWidget *parent)
     if (auto *view = findChild<QPlainTextEdit *>(QStringLiteral("dock.log.view")))
         m_logs.setLogView(view);
     m_commands.invoke(QStringLiteral("plot.refreshTree"), {});
-    m_session.setLayoutPath(defaultLayoutPath());
+    if (m_session.layoutPath().isEmpty())
+        m_session.setLayoutPath(SessionManager::defaultLayoutPath());
     m_session.restoreWindow(this);
     m_logs.setStatusBar(statusBar());
     for (const QString &error : m_extensions.errors())
@@ -207,45 +203,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 
 
 
-QString MainWindow::defaultLayoutPath() const
-{
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    if (dir.isEmpty())
-        dir = QDir::homePath() + QStringLiteral("/.plotscope");
-    return dir + QStringLiteral("/last.psl");
-}
-
 void MainWindow::log(const QString &text)
 {
     m_logs.info(text);
-}
-
-void MainWindow::toggleDockMax(QDockWidget *dock)
-{
-    m_docks.toggleMax(dock);
-}
-
-void MainWindow::restoreDockMax()
-{
-    m_docks.restoreMax();
-}
-
-void MainWindow::dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area)
-{
-    m_docks.toArea(dock, area);
-}
-
-void MainWindow::collapseDockWidget(QDockWidget *dock)
-{
-    m_docks.collapse(dock);
-}
-
-void MainWindow::showDockMenu(QToolButton *btn, QMenu *menu)
-{
-    m_docks.showMenu(btn, menu);
-}
-
-QWidget *MainWindow::createDockTitleBar(QDockWidget *dock)
-{
-    return m_docks.createTitleBar(dock);
 }

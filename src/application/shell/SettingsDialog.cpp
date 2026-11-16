@@ -11,7 +11,6 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
-#include <QSettings>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 #include <algorithm>

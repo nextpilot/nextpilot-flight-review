@@ -1,12 +1,8 @@
 #pragma once
 
 #include <QMainWindow>
-#include <QJsonObject>
 #include <QString>
-#include <QVector>
-#include <QPair>
 
-#include "Component.h"
 #include "ExtensionManager.h"
 #include "CommandManager.h"
 #include "SessionManager.h"
@@ -14,12 +10,7 @@
 #include "DockManager.h"
 #include "RibbonManager.h"
 
-class QDockWidget;
 class QTabWidget;
-class QToolButton;
-class QMenu;
-class SARibbonBar;
-class SARibbonPanel;
 
 // 主窗口骨架：Ribbon + 可停靠区 + 页签容器。通用能力，不认识数据源/画布业务。
 class MainWindow : public QMainWindow
@@ -29,14 +20,6 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-
-    QString defaultLayoutPath() const;
-    QWidget *createDockTitleBar(QDockWidget *dock);
-    void dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area);
-    void collapseDockWidget(QDockWidget *dock);
-    void showDockMenu(QToolButton *btn, QMenu *menu);
-    void toggleDockMax(QDockWidget *dock);
-    void restoreDockMax();
 
     ps::commands::CommandManager &commands() { return m_commands; }
     ExtensionManager &extensions() { return m_extensions; }
@@ -48,7 +31,7 @@ public:
         if (p)
             setCentralWidget(p);
     }
-    void appendLog(const QString &text) { log(text); }
+    LogManager &logs() { return m_logs; }
     QString kernelInfo() const { return m_kernelInfo; }
     void refreshTitle();
 

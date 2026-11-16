@@ -13,6 +13,7 @@ void ExtensionHost::activate(const HostContext &context)
 {
     if (!m_components.empty())
         return;
+    m_registry = Registry{};
     m_errors.clear();
     m_activeIds.clear();
     for (const ExtensionEntry &entry : ExtensionRegistry::instance().extensions())
@@ -33,6 +34,8 @@ void ExtensionHost::deactivate()
 {
     m_components.clear();
     m_activeIds.clear();
+    m_registry = Registry{};
+    m_errors.clear();
 }
 
 } // namespace ps::components

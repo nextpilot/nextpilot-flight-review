@@ -88,12 +88,6 @@ public:
 
 private:
     void log(const QString &text);
-    QWidget *createDockTitleBar(QDockWidget *dock);
-    void dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area);
-    void collapseDockWidget(QDockWidget *dock);
-    void toggleDockMax(QDockWidget *dock);
-    void restoreDockMax();
-    void showDockMenu(QToolButton *btn, QMenu *menu);
     void refreshPropTree(PlottingCanvas *c = nullptr);
     void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
     PlottingCanvas *currentCanvas() const;

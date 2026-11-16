@@ -37,6 +37,7 @@ public:
     void toggleMax(QDockWidget *dock);
     void restoreMax();
     void toggleById(const QString &id);
+    bool isVisibleById(const QString &id) const;
 
 private:
     QMainWindow *m_window = nullptr;
