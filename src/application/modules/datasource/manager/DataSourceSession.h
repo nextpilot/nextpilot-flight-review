@@ -30,7 +30,7 @@ public:
     explicit DataSourceSession(MainWindow *mw);
     ~DataSourceSession() override;
 
-    QDockWidget *createDataSourceDock(QWidget *parent, const QString &icon);
+    QWidget *createDataSourcePanel(QWidget *parent);
     void registerDataCommands();
     bool loadFile(const QString &path, bool interactive = true);
     void openPath(const QString &path);

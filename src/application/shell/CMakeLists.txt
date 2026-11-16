@@ -47,6 +47,7 @@ target_link_libraries(ps_application_shell PUBLIC
   Qt6::Network
   Qt6::Svg
   SARibbonBar::SARibbonBar
+  ads
 )
 
 find_package(Qt6 QUIET COMPONENTS UiTools)

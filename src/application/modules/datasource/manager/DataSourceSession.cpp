@@ -113,96 +113,8 @@ PlottingCanvas *DataSourceSession::currentCanvas() const { return ps::bridge::cu
 QVector<ps::data_source::SourceData> &DataSourceSession::sources() { return m_sourceStore->items(); }
 void DataSourceSession::closeSources() { if (m_liveTimer) m_liveTimer->stop(); }
 
-QDockWidget *DataSourceSession::createDataSourceDock(QWidget *parent, const QString &icon)
+QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
 {
-    // 左：数据源（对齐原型 d-src）：源列表 → 字段/参数/消息 三页签 → 内容
-    auto *srcDock = new QDockWidget(QStringLiteral("数据源"), this);
-    srcDock->setObjectName(QStringLiteral("dock.src"));
-    if (!icon.isEmpty())
-        srcDock->setProperty("psIcon", icon);
-
-    // 标题栏：标题 + 汇总 + 全局起停 + 关闭，全部放一行，正文从源列表直接开始（不再叠第二行头部）
-    auto *srcBar = m_mw->docks().createTitleBar(srcDock);
-    srcBar->setStyleSheet(QStringLiteral(
-        "background:#26303a;border-bottom:1px solid #3a4854;"));
-    auto *barLay = new QHBoxLayout(srcBar);
-    barLay->setContentsMargins(10, 0, 6, 0);
-    barLay->setSpacing(6);
-    auto *barIcon = new QLabel(srcBar);
-    barIcon->setPixmap(QIcon(srcDock->property("psIcon").toString()).pixmap(14, 14));
-    barIcon->setStyleSheet(QStringLiteral("background:transparent;"));
-    barIcon->setFixedSize(16, 16);
-    barLay->addWidget(barIcon);
-    auto *barTitle = new QLabel(QStringLiteral("数据源"), srcBar);
-    barTitle->setStyleSheet(QStringLiteral(
-        "color:#e6edf3;font-size:13px;font-weight:600;background:transparent;"));
-    barLay->addWidget(barTitle);
-    m_srcCount = new QLabel(QStringLiteral("0 源 · 0 已连接"), srcBar);
-    m_srcCount->setStyleSheet(QStringLiteral("color:#8494a0;font-size:10px;background:transparent;"));
-    barLay->addWidget(m_srcCount);
-    barLay->addStretch();
-    auto mkTiny = [&](const QString &icon, const QString &tip) {
-        auto *b = new QToolButton(srcBar);
-        b->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(icon)));
-        b->setIconSize(QSize(14, 14));
-        b->setToolTip(tip);
-        b->setCursor(Qt::PointingHandCursor);
-        b->setFixedSize(22, 22);
-        b->setStyleSheet(QStringLiteral(
-            "QToolButton{background:transparent;border:0;color:#8494a0;padding:0;}"
-            "QToolButton:hover{background:#222b33;}"));
-        barLay->addWidget(b);
-        return b;
-    };
-    auto *addSrcBtn = mkTiny(QStringLiteral("newpage"), QStringLiteral("添加数据源"));
-    QObject::connect(addSrcBtn, &QToolButton::clicked, this, [this] {
-        const QStringList fs = QFileDialog::getOpenFileNames(this, QStringLiteral("添加数据源"), {},
-            QStringLiteral("飞行日志 (*.ulg *.bin *.csv *.asc *.blf);;全部 (*)"));
-        for (const QString &f : fs)
-            loadFile(f);
-    });
-    auto *dockMenuBtn = new QToolButton(srcBar);
-    dockMenuBtn->setText(QStringLiteral("▾"));
-    dockMenuBtn->setToolTip(QStringLiteral("最大化 / 最小化 / 浮动 / 关闭"));
-    dockMenuBtn->setCursor(Qt::PointingHandCursor);
-    dockMenuBtn->setFocusPolicy(Qt::NoFocus);
-    dockMenuBtn->setFixedSize(22, 22);
-    // 不设 popupMode / setMenu：QToolButton 有菜单时会额外画一个菜单三角，标题栏就会变成两个三角
-    dockMenuBtn->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
-        "QToolButton{background:transparent;border:0;color:#8494a0;padding:0 0 2px 0;"
-        "font-size:15px;font-weight:600;}"
-        "QToolButton:hover{background:#1b232b;border-radius:2px;color:#f2b134;}")));
-    auto *dockMenu = new QMenu(dockMenuBtn);
-    QAction *maxDock = dockMenu->addAction(QStringLiteral("最大化 / 还原"));
-    QAction *toLeft = dockMenu->addAction(QStringLiteral("停靠到左侧"));
-    QAction *toRight = dockMenu->addAction(QStringLiteral("停靠到右侧"));
-    QAction *toBottom = dockMenu->addAction(QStringLiteral("停靠到底部"));
-    dockMenu->addSeparator();
-    QAction *collapse = dockMenu->addAction(QStringLiteral("最小化（自动隐藏）"));
-    QAction *floatAct = dockMenu->addAction(QStringLiteral("浮动 / 取消浮动"));
-    dockMenu->addSeparator();
-    QAction *closeAct = dockMenu->addAction(QStringLiteral("关闭面板"));
-    QObject::connect(maxDock, &QAction::triggered, this, [this, srcDock] { m_mw->docks().toggleMax(srcDock); });
-    QObject::connect(toLeft, &QAction::triggered, this, [this, srcDock] { m_mw->docks().restoreMax(); m_mw->docks().toArea(srcDock, Qt::LeftDockWidgetArea); });
-    QObject::connect(toRight, &QAction::triggered, this, [this, srcDock] { m_mw->docks().toArea(srcDock, Qt::RightDockWidgetArea); });
-    QObject::connect(toBottom, &QAction::triggered, this, [this, srcDock] { m_mw->docks().toArea(srcDock, Qt::BottomDockWidgetArea); });
-    QObject::connect(collapse, &QAction::triggered, this, [this, srcDock] {
-        m_mw->docks().collapse(srcDock);
-    });
-    QObject::connect(floatAct, &QAction::triggered, this, [this, srcDock] {
-        m_mw->docks().restoreMax();
-        srcDock->setFloating(!srcDock->isFloating());
-    });
-    QObject::connect(closeAct, &QAction::triggered, this, [this, srcDock] {
-        m_mw->docks().restoreMax();
-        srcDock->close();
-    });
-    QObject::connect(dockMenuBtn, &QToolButton::clicked, dockMenuBtn, [this, dockMenu, dockMenuBtn] {
-        m_mw->docks().showMenu(dockMenuBtn, dockMenu);
-    });
-    barLay->addWidget(dockMenuBtn);
-    srcDock->setTitleBarWidget(srcBar);
-
     auto *panel = new ps::data_source::DataSourceDock(
         ps::data_source::DataSourceDock::Context{
             [this](const QStringList &files) {
@@ -379,10 +291,7 @@ QDockWidget *DataSourceSession::createDataSourceDock(QWidget *parent, const QStr
     m_msgTable = panel->m_msgTable;
     m_srcEmpty = panel->m_srcEmpty;
     m_srcChips = panel->m_srcChips;
-    srcDock->setWidget(panel);
-    return srcDock;
-    return srcDock;
-    
+    return panel;
 }
 void DataSourceSession::showSourceMenu(QWidget *row, const QPoint &globalPos)
 {
@@ -975,7 +884,7 @@ void DataSourceSession::saveLayoutTo(const QString &path)
     root[QStringLiteral("app")] = QStringLiteral("PlotScope");
     root[QStringLiteral("version")] = 1;
     root[QStringLiteral("geometry")] = QString::fromLatin1(saveGeometry().toBase64());
-    root[QStringLiteral("docks")] = QString::fromLatin1(m_mw->saveState().toBase64());
+    root[QStringLiteral("docks")] = QString::fromLatin1(m_mw->docks().saveLayout().toBase64());
     root[QStringLiteral("current")] = m_mw->pages()->currentIndex();
 
     QJsonArray pages;
@@ -1203,7 +1112,7 @@ void DataSourceSession::importLayoutFrom(const QString &path)
     const QByteArray docks = QByteArray::fromBase64(root.value(QStringLiteral("docks")).toString().toLatin1());
     if (!docks.isEmpty())
     {
-        m_mw->restoreState(docks);
+        m_mw->docks().restoreLayout(docks);
         // 旧布局常把日志区拉到 150+，空白挤占画布；恢复后统一收到 96。
         if (auto *logDock = findChild<QDockWidget *>(QStringLiteral("dock.log")))
             m_mw->resizeDocks({logDock}, {96}, Qt::Vertical);

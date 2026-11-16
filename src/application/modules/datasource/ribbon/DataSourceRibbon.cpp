@@ -52,7 +52,7 @@ void registerDataSourceContributions(Registry &registry)
                                       QStringLiteral(":/icons/datasource.svg"),
                                       [](QWidget *parent) -> QWidget * {
                                           auto *mw = qobject_cast<MainWindow *>(parent);
-                                          return mw ? dataSourceSession(mw)->createDataSourceDock(parent, QStringLiteral(":/icons/datasource.svg")) : nullptr;
+                                          return mw ? dataSourceSession(mw)->createDataSourcePanel(parent) : nullptr;
                                       },
                                       [](QWidget *parent) {
                                           auto *mw = qobject_cast<MainWindow *>(parent);

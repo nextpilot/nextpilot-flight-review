@@ -19,13 +19,9 @@ ps::components::DockContribution LogManager::dockContribution()
                             Qt::BottomDockWidgetArea, true, 5,
                             QStringLiteral(":/icons/log.svg"),
                             [](QWidget *parent) -> QWidget * {
-                                auto *dock = new QDockWidget(QStringLiteral("日志"), parent);
-                                dock->setObjectName(QStringLiteral("dock.log"));
-                                dock->setProperty("psIcon", QStringLiteral(":/icons/log.svg"));
-                                auto *view = new QPlainTextEdit(dock);
+                                auto *view = new QPlainTextEdit(parent);
                                 view->setObjectName(QStringLiteral("dock.log.view"));
-                                dock->setWidget(view);
-                                return dock;
+                                return view;
                             },
                             {}};
 }

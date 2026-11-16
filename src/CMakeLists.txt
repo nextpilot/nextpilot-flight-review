@@ -11,6 +11,9 @@ if(PS_BUILD_GUI)
     add_subdirectory(application/modules/runtime)
     add_subdirectory(application/modules/datasource/services/cache)
 
+    # 停靠窗口：ADS 共享库（LGPL-2.1 vendor）
+    add_subdirectory(3rdparty/ads)
+
     # 动态扩展公共设施
     add_subdirectory(extensions/dynamic/data_loader/common)
 

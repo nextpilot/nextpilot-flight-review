@@ -42,7 +42,10 @@ void SessionManager::restoreWindowState(QMainWindow *window)
         return;
     const QByteArray state = SettingsManager::instance().get(ps::settings::kWindowState);
     if (!state.isEmpty())
-        window->restoreState(state);
+    {
+        if (!m_dockRestore || !m_dockRestore(state))
+            window->restoreState(state);
+    }
 }
 
 void SessionManager::saveWindow(const QMainWindow *window)
@@ -50,8 +53,15 @@ void SessionManager::saveWindow(const QMainWindow *window)
     if (!window)
         return;
     SettingsManager::instance().set(ps::settings::kWindowGeometry, window->saveGeometry());
-    SettingsManager::instance().set(ps::settings::kWindowState, window->saveState());
+    SettingsManager::instance().set(ps::settings::kWindowState,
+                                    m_dockSave ? m_dockSave() : window->saveState());
     SettingsManager::instance().sync();
+}
+
+void SessionManager::setDockBridge(DockSave save, DockRestore restore)
+{
+    m_dockSave = std::move(save);
+    m_dockRestore = std::move(restore);
 }
 
 void SessionManager::setLayoutPath(const QString &path)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 
@@ -17,6 +18,10 @@ class CommandManager;
 class SessionManager
 {
 public:
+    using DockSave = std::function<QByteArray()>;
+    using DockRestore = std::function<bool(const QByteArray &)>;
+    void setDockBridge(DockSave save, DockRestore restore);
+
     SessionManager();
 
     static QString defaultLayoutPath();
@@ -38,6 +43,9 @@ public:
     void clearRecentFiles();
 
 private:
+    DockSave m_dockSave;
+    DockRestore m_dockRestore;
+
     void load();
 
     QString m_layoutPath;

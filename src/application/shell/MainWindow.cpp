@@ -47,6 +47,9 @@ MainWindow::MainWindow(QWidget *parent)
         return m_commands.invoke(id, ctx);
     };
     m_extensions.activate(hostContext);
+    m_session.setDockBridge(
+        [this] { return m_docks.saveLayout(); },
+        [this](const QByteArray &state) { return m_docks.restoreLayout(state); });
     shell::registerCommands(*this);
     m_docks.registerCommand(m_commands);
     SettingsManager::instance().registerCommand(m_commands, this);

@@ -29,7 +29,7 @@ public:
     void setPageHost(QTabWidget *p) {
         m_pages = p;
         if (p)
-            setCentralWidget(p);
+            m_docks.setCentralContent(p);
     }
     LogManager &logs() { return m_logs; }
     QString kernelInfo() const { return m_kernelInfo; }
