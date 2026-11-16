@@ -1,6 +1,6 @@
 # 扩展 toolbox 化与 autopilot 方案
 
-> 状态：方案讨论中；`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 仍是历史样例语义，MAVLink/ULog/apbin/ROS parser 和工具箱迁移未实施。
+> 状态：方案讨论中；`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`；MAVLink/ULog/apbin/ROS parser 和工具箱迁移未实施。
 > 日期：2026-11-16
 
 ## 1. 目标

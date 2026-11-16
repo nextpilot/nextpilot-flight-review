@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "messages": [
+    {
+      "class": 1,
+      "id": 7,
+      "name": "nav_pvt",
+      "timeField": "i_tow",
+      "fields": [
+        {"name": "i_tow", "offset": 0, "type": "u4", "scale": 0.001, "unit": "s"},
+        {"name": "fix_type", "offset": 26, "type": "u1"},
+        {"name": "num_sv", "offset": 29, "type": "u1"},
+        {"name": "longitude", "offset": 30, "type": "i4", "scale": 0.0000001, "unit": "deg"},
+        {"name": "latitude", "offset": 34, "type": "i4", "scale": 0.0000001, "unit": "deg"},
+        {"name": "altitude", "offset": 42, "type": "i4", "scale": 0.001, "unit": "m"},
+        {"name": "vel_n", "offset": 54, "type": "i4", "scale": 0.01, "unit": "m/s"},
+        {"name": "vel_e", "offset": 58, "type": "i4", "scale": 0.01, "unit": "m/s"},
+        {"name": "vel_d", "offset": 62, "type": "i4", "scale": 0.01, "unit": "m/s"},
+        {"name": "heading", "offset": 70, "type": "i4", "scale": 0.00001, "unit": "deg"}
+      ]
+    },
+    {
+      "class": 1,
+      "id": 2,
+      "name": "nav_posllh",
+      "timeField": "i_tow",
+      "fields": [
+        {"name": "i_tow", "offset": 0, "type": "u4", "scale": 0.001, "unit": "s"},
+        {"name": "longitude", "offset": 4, "type": "i4", "scale": 0.0000001, "unit": "deg"},
+        {"name": "latitude", "offset": 8, "type": "i4", "scale": 0.0000001, "unit": "deg"},
+        {"name": "altitude", "offset": 16, "type": "i4", "scale": 0.001, "unit": "m"},
+        {"name": "h_acc", "offset": 20, "type": "u4", "scale": 0.001, "unit": "m"},
+        {"name": "v_acc", "offset": 24, "type": "u4", "scale": 0.001, "unit": "m"}
+      ]
+    },
+    {
+      "class": 1,
+      "id": 18,
+      "name": "nav_velned",
+      "timeField": "i_tow",
+      "fields": [
+        {"name": "i_tow", "offset": 0, "type": "u4", "scale": 0.001, "unit": "s"},
+        {"name": "vel_n", "offset": 4, "type": "i4", "scale": 0.01, "unit": "m/s"},
+        {"name": "vel_e", "offset": 8, "type": "i4", "scale": 0.01, "unit": "m/s"},
+        {"name": "vel_d", "offset": 12, "type": "i4", "scale": 0.01, "unit": "m/s"},
+        {"name": "speed", "offset": 16, "type": "u4", "scale": 0.01, "unit": "m/s"},
+        {"name": "g_speed", "offset": 20, "type": "u4", "scale": 0.01, "unit": "m/s"},
+        {"name": "heading", "offset": 24, "type": "i4", "scale": 0.00001, "unit": "deg"},
+        {"name": "s_acc", "offset": 28, "type": "u4", "scale": 0.01, "unit": "m/s"},
+        {"name": "c_acc", "offset": 32, "type": "u4", "scale": 0.00001, "unit": "deg"}
+      ]
+    },
+    {
+      "class": 1,
+      "id": 34,
+      "name": "nav_timeutc",
+      "timeField": "i_tow",
+      "fields": [
+        {"name": "i_tow", "offset": 0, "type": "u4", "scale": 0.001, "unit": "s"},
+        {"name": "year", "offset": 12, "type": "u2"},
+        {"name": "month", "offset": 14, "type": "u1"},
+        {"name": "day", "offset": 15, "type": "u1"},
+        {"name": "hour", "offset": 16, "type": "u1"},
+        {"name": "minute", "offset": 17, "type": "u1"},
+        {"name": "second", "offset": 18, "type": "u1"}
+      ]
+    }
+  ]
+}

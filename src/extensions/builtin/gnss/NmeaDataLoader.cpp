@@ -2,10 +2,21 @@
 #include "LegacyFileInput.hpp"
 #include "PsLoaderCommon.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QStringList>
+
 #include <QString>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -21,6 +32,22 @@ struct Channel
     std::vector<double> t;
     std::vector<double> v;
 };
+
+struct NmeaFieldDef
+{
+    std::string name;
+    int index = -1;
+    std::string type;
+    int hemiIndex = -1;
+    std::string unit;
+};
+
+struct NmeaSentenceDef
+{
+    std::vector<NmeaFieldDef> fields;
+};
+
+using NmeaDatabase = std::map<std::string, NmeaSentenceDef>;
 
 double dmToDeg(const std::string &dm, const std::string &hemi, bool &ok)
 {
@@ -63,6 +90,62 @@ std::vector<std::string> split(const std::string &s)
     return out;
 }
 
+NmeaDatabase loadNmeaDatabase()
+{
+    NmeaDatabase db;
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+#ifdef PS_GNSS_DB_DIR
+        QStringLiteral(PS_GNSS_DB_DIR) + QStringLiteral("/nmea_database.json"),
+#endif
+        appDir + QStringLiteral("/nmea_database.json"),
+        appDir + QStringLiteral("/../nmea_database.json"),
+        QDir::currentPath() + QStringLiteral("/nmea_database.json"),
+        QDir::currentPath() + QStringLiteral("/../src/extensions/builtin/gnss/nmea_database.json"),
+        QDir::currentPath() + QStringLiteral("/src/extensions/builtin/gnss/nmea_database.json")};
+
+    for (const QString &path : candidates)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        QJsonParseError error;
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+        if (error.error != QJsonParseError::NoError || !document.isObject())
+            continue;
+
+        for (const QJsonValue &value : document.object().value(QStringLiteral("sentences")).toArray())
+        {
+            const QJsonObject object = value.toObject();
+            const std::string key = object.value(QStringLiteral("key")).toString().toStdString();
+            NmeaSentenceDef def;
+            for (const QJsonValue &fieldValue : object.value(QStringLiteral("fields")).toArray())
+            {
+                const QJsonObject field = fieldValue.toObject();
+                NmeaFieldDef fd;
+                fd.name = field.value(QStringLiteral("name")).toString().toStdString();
+                fd.index = field.value(QStringLiteral("index")).toInt(-1);
+                fd.type = field.value(QStringLiteral("type")).toString().toStdString();
+                fd.hemiIndex = field.value(QStringLiteral("hemiIndex")).toInt(-1);
+                fd.unit = field.value(QStringLiteral("unit")).toString().toStdString();
+                if (!fd.name.empty() && fd.index >= 0)
+                    def.fields.push_back(fd);
+            }
+            if (!key.empty() && !def.fields.empty())
+                db[key] = def;
+        }
+        return db;
+    }
+    return db;
+}
+
+std::string lowerCopy(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
 bool parseFile(const std::string &path, std::vector<Channel> &channels, std::string &err)
 {
     std::ifstream in(path);
@@ -71,6 +154,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         err = "无法打开 NMEA 文件：" + path;
         return false;
     }
+    const NmeaDatabase database = loadNmeaDatabase();
     std::map<std::string, Channel> acc;
     double lastT = 0, dayOffset = 0;
     bool first = true;
@@ -85,8 +169,27 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         if (star != std::string::npos)
             line = line.substr(0, star);
         auto f = split(line);
-        const std::string type = f[0].size() >= 6 ? f[0].substr(3, 3) : "";
-        double t = f.size() > 1 ? utcSeconds(f[1]) : 0;
+        if (f.empty())
+            continue;
+
+        std::string key = f[0].size() > 1 ? f[0].substr(1) : "";
+        if (!key.empty() && key[0] != 'P' && key.size() > 3)
+            key = key.substr(key.size() - 3);
+        const auto it = database.find(key);
+        const NmeaSentenceDef *def = it == database.end() ? nullptr : &it->second;
+
+        int timeIndex = 1;
+        if (def)
+            for (const auto &field : def->fields)
+                if (field.type == "time")
+                {
+                    timeIndex = field.index;
+                    break;
+                }
+
+        double t = f.size() > static_cast<size_t>(timeIndex)
+                       ? utcSeconds(f[timeIndex])
+                       : 0;
         if (first)
         {
             lastT = t;
@@ -110,37 +213,49 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
             c.v.push_back(v);
         };
 
-        if (type == "GGA")
+        const std::string prefix = "nmea." + lowerCopy(key);
+        if (def)
         {
-            bool okLat = false, okLon = false;
-            const double lat = f.size() > 2 ? dmToDeg(f[2], f.size() > 3 ? f[3] : "", okLat) : 0;
-            const double lon = f.size() > 4 ? dmToDeg(f[4], f.size() > 5 ? f[5] : "", okLon) : 0;
-            if (okLat)
-                add("nmea.gga.latitude", "deg", lat);
-            if (okLon)
-                add("nmea.gga.longitude", "deg", lon);
-            if (f.size() > 6 && !f[6].empty())
-                add("nmea.gga.fix", "", std::atof(f[6].c_str()));
-            if (f.size() > 7 && !f[7].empty())
-                add("nmea.gga.sats", "", std::atof(f[7].c_str()));
-            if (f.size() > 8 && !f[8].empty())
-                add("nmea.gga.hdop", "", std::atof(f[8].c_str()));
-            if (f.size() > 9 && !f[9].empty())
-                add("nmea.gga.altitude", "m", std::atof(f[9].c_str()));
+            for (const auto &field : def->fields)
+            {
+                if (field.type == "time" || field.type == "date" || field.type == "string")
+                    continue;
+                if (field.index < 0 || static_cast<size_t>(field.index) >= f.size())
+                    continue;
+                if (f[field.index].empty())
+                    continue;
+
+                double value = 0;
+                if (field.type == "dm")
+                {
+                    bool ok = false;
+                    value = dmToDeg(f[field.index],
+                                    field.hemiIndex >= 0 &&
+                                            static_cast<size_t>(field.hemiIndex) < f.size()
+                                        ? f[field.hemiIndex]
+                                        : "",
+                                    ok);
+                    if (!ok)
+                        continue;
+                }
+                else
+                    value = std::atof(f[field.index].c_str());
+                if (std::isfinite(value))
+                    add(prefix + "." + field.name, field.unit, value);
+            }
         }
-        else if (type == "RMC")
+        else
         {
-            bool okLat = false, okLon = false;
-            const double lat = f.size() > 3 ? dmToDeg(f[3], f.size() > 4 ? f[4] : "", okLat) : 0;
-            const double lon = f.size() > 5 ? dmToDeg(f[5], f.size() > 6 ? f[6] : "", okLon) : 0;
-            if (okLat)
-                add("nmea.rmc.latitude", "deg", lat);
-            if (okLon)
-                add("nmea.rmc.longitude", "deg", lon);
-            if (f.size() > 7 && !f[7].empty())
-                add("nmea.rmc.speed_kn", "kn", std::atof(f[7].c_str()));
-            if (f.size() > 8 && !f[8].empty())
-                add("nmea.rmc.course", "deg", std::atof(f[8].c_str()));
+            for (size_t i = 1; i < f.size(); ++i)
+            {
+                if (f[i].empty())
+                    continue;
+                char *end = nullptr;
+                const double value = std::strtod(f[i].c_str(), &end);
+                if (end == f[i].c_str() || *end != '\0' || !std::isfinite(value))
+                    continue;
+                add(prefix + ".field_" + std::to_string(i), "", value);
+            }
         }
     }
     channels.clear();
@@ -148,7 +263,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         channels.push_back(std::move(kv.second));
     if (channels.empty())
     {
-        err = "NMEA 里没有 GGA/RMC 有效语句";
+        err = "NMEA 里没有可解析字段";
         return false;
     }
     return true;

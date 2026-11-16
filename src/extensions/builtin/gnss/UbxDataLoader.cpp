@@ -2,6 +2,15 @@
 #include "LegacyFileInput.hpp"
 #include "PsLoaderCommon.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QStringList>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -21,9 +30,70 @@ struct Channel
     std::vector<double> v;
 };
 
+struct UbxFieldDef
+{
+    std::string name;
+    int offset = -1;
+    std::string type;
+    double scale = 1.0;
+    std::string unit;
+};
+
+struct UbxMessageDef
+{
+    int cls = -1;
+    int id = -1;
+    std::string name;
+    std::string timeField;
+    std::vector<UbxFieldDef> fields;
+};
+
+using UbxDatabase = std::map<int, UbxMessageDef>;
+
 uint16_t u2(const uint8_t *p) { return static_cast<uint16_t>(p[0] | (p[1] << 8)); }
-uint32_t u4(const uint8_t *p) { return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24); }
-int32_t i4(const uint8_t *p) { return static_cast<int32_t>(u4(p)); }
+
+int messageKey(int cls, int id) { return ((cls & 0xFF) << 16) | (id & 0xFFFF); }
+
+bool decodeField(const uint8_t *p, uint32_t len, const UbxFieldDef &field, double &out)
+{
+    if (field.offset < 0 || static_cast<uint32_t>(field.offset) > len)
+        return false;
+    const uint8_t *q = p + field.offset;
+    const uint32_t remain = len - static_cast<uint32_t>(field.offset);
+    if (field.type == "u1" && remain >= 1)
+        out = q[0];
+    else if (field.type == "i1" && remain >= 1)
+        out = static_cast<int8_t>(q[0]);
+    else if (field.type == "u2" && remain >= 2)
+        out = static_cast<uint16_t>(q[0] | (q[1] << 8));
+    else if (field.type == "i2" && remain >= 2)
+        out = static_cast<int16_t>(q[0] | (q[1] << 8));
+    else if (field.type == "u4" && remain >= 4)
+        out = static_cast<uint32_t>(q[0]) | (static_cast<uint32_t>(q[1]) << 8) |
+              (static_cast<uint32_t>(q[2]) << 16) | (static_cast<uint32_t>(q[3]) << 24);
+    else if (field.type == "i4" && remain >= 4)
+    {
+        const uint32_t raw = static_cast<uint32_t>(q[0]) | (static_cast<uint32_t>(q[1]) << 8) |
+                             (static_cast<uint32_t>(q[2]) << 16) | (static_cast<uint32_t>(q[3]) << 24);
+        out = static_cast<int32_t>(raw);
+    }
+    else if (field.type == "f4" && remain >= 4)
+    {
+        float value = 0;
+        std::memcpy(&value, q, sizeof(value));
+        out = value;
+    }
+    else if (field.type == "f8" && remain >= 8)
+    {
+        double value = 0;
+        std::memcpy(&value, q, sizeof(value));
+        out = value;
+    }
+    else
+        return false;
+    out *= field.scale;
+    return true;
+}
 
 void add(std::map<std::string, Channel> &acc, const std::string &name, const std::string &unit,
          double t, double v)
@@ -35,32 +105,59 @@ void add(std::map<std::string, Channel> &acc, const std::string &name, const std
     c.v.push_back(v);
 }
 
-void parsePvt(const uint8_t *p, uint32_t len, std::map<std::string, Channel> &acc)
+UbxDatabase loadUbxDatabase()
 {
-    if (len < 72)
-        return;
-    const double t = u4(p) / 1000.0;
-    add(acc, "ubx.nav_pvt.fix_type", "", t, p[26]);
-    add(acc, "ubx.nav_pvt.num_sv", "", t, p[29]);
-    add(acc, "ubx.nav_pvt.latitude", "deg", t, i4(p + 34) * 1e-7);
-    add(acc, "ubx.nav_pvt.longitude", "deg", t, i4(p + 30) * 1e-7);
-    add(acc, "ubx.nav_pvt.altitude", "m", t, i4(p + 42) / 1000.0);
-    add(acc, "ubx.nav_pvt.vel_n", "m/s", t, i4(p + 54) / 100.0);
-    add(acc, "ubx.nav_pvt.vel_e", "m/s", t, i4(p + 58) / 100.0);
-    add(acc, "ubx.nav_pvt.vel_d", "m/s", t, i4(p + 62) / 100.0);
-    add(acc, "ubx.nav_pvt.heading", "deg", t, i4(p + 70) * 1e-5);
-}
+    UbxDatabase db;
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+#ifdef PS_GNSS_DB_DIR
+        QStringLiteral(PS_GNSS_DB_DIR) + QStringLiteral("/ubx_database.json"),
+#endif
+        appDir + QStringLiteral("/ubx_database.json"),
+        appDir + QStringLiteral("/../ubx_database.json"),
+        QDir::currentPath() + QStringLiteral("/ubx_database.json"),
+        QDir::currentPath() + QStringLiteral("/../src/extensions/builtin/gnss/ubx_database.json"),
+        QDir::currentPath() + QStringLiteral("/src/extensions/builtin/gnss/ubx_database.json")};
 
-void parsePosllh(const uint8_t *p, uint32_t len, std::map<std::string, Channel> &acc)
-{
-    if (len < 28)
-        return;
-    const double t = u4(p) / 1000.0;
-    add(acc, "ubx.nav_posllh.latitude", "deg", t, i4(p + 8) * 1e-7);
-    add(acc, "ubx.nav_posllh.longitude", "deg", t, i4(p + 4) * 1e-7);
-    add(acc, "ubx.nav_posllh.altitude", "m", t, i4(p + 16) / 1000.0);
-    add(acc, "ubx.nav_posllh.h_acc", "m", t, u4(p + 20) / 1000.0);
-    add(acc, "ubx.nav_posllh.v_acc", "m", t, u4(p + 24) / 1000.0);
+    for (const QString &path : candidates)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        QJsonParseError error;
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+        if (error.error != QJsonParseError::NoError || !document.isObject())
+            continue;
+
+        for (const QJsonValue &value : document.object().value(QStringLiteral("messages")).toArray())
+        {
+            const QJsonObject object = value.toObject();
+            UbxMessageDef def;
+            def.cls = object.value(QStringLiteral("class")).toInt(-1);
+            def.id = object.value(QStringLiteral("id")).toInt(-1);
+            def.name = object.value(QStringLiteral("name")).toString().toStdString();
+            def.timeField = object.value(QStringLiteral("timeField")).toString().toStdString();
+            if (def.cls < 0 || def.id < 0 || def.name.empty())
+                continue;
+
+            for (const QJsonValue &fieldValue : object.value(QStringLiteral("fields")).toArray())
+            {
+                const QJsonObject field = fieldValue.toObject();
+                UbxFieldDef fd;
+                fd.name = field.value(QStringLiteral("name")).toString().toStdString();
+                fd.offset = field.value(QStringLiteral("offset")).toInt(-1);
+                fd.type = field.value(QStringLiteral("type")).toString().toStdString();
+                fd.scale = field.value(QStringLiteral("scale")).toDouble(1.0);
+                fd.unit = field.value(QStringLiteral("unit")).toString().toStdString();
+                if (!fd.name.empty() && fd.offset >= 0 && !fd.type.empty())
+                    def.fields.push_back(fd);
+            }
+            if (!def.fields.empty())
+                db[messageKey(def.cls, def.id)] = def;
+        }
+        return db;
+    }
+    return db;
 }
 
 bool parseFile(const std::string &path, std::vector<Channel> &channels, std::string &err)
@@ -71,6 +168,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         err = "无法打开 UBX 文件：" + path;
         return false;
     }
+    const UbxDatabase database = loadUbxDatabase();
     std::vector<uint8_t> buf((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     std::map<std::string, Channel> acc;
     size_t pos = 0;
@@ -86,10 +184,31 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         if (pos + 8 + len > buf.size())
             break;
         const uint8_t *payload = buf.data() + pos + 6;
-        if (cls == 0x01 && id == 0x07)
-            parsePvt(payload, len, acc);
-        else if (cls == 0x01 && id == 0x02)
-            parsePosllh(payload, len, acc);
+
+        const auto it = database.find(messageKey(cls, id));
+        if (it != database.end())
+        {
+            const UbxMessageDef &def = it->second;
+            double stamp = 0;
+            for (const UbxFieldDef &field : def.fields)
+                if (field.name == def.timeField)
+                {
+                    double raw = 0;
+                    if (decodeField(payload, len, field, raw))
+                        stamp = raw;
+                    break;
+                }
+
+            const std::string prefix = "ubx." + def.name;
+            for (const UbxFieldDef &field : def.fields)
+            {
+                if (field.name == def.timeField)
+                    continue;
+                double value = 0;
+                if (decodeField(payload, len, field, value))
+                    add(acc, prefix + "." + field.name, field.unit, stamp, value);
+            }
+        }
         pos += 8 + len;
     }
     channels.clear();
@@ -97,7 +216,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         channels.push_back(std::move(kv.second));
     if (channels.empty())
     {
-        err = "UBX 里没有 NAV-PVT / NAV-POSLLH";
+        err = "UBX 里没有描述库可解字段";
         return false;
     }
     return true;

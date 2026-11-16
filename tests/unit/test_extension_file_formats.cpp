@@ -51,6 +51,33 @@ bool loadAndCheck(const PsExtensionDescriptor *d, const std::string &path, uint3
     return true;
 }
 
+bool hasChannel(const PsExtensionDescriptor *d, const std::string &path, const char *channel)
+{
+    void *raw = nullptr;
+    char err[256] = {0};
+    const int32_t rc = d->loader->load(path.c_str(), "", ps_host_api(), &raw, err, sizeof(err));
+    if (rc != 0)
+    {
+        std::cerr << d->loader->id << " load failed: " << err << "\n";
+        return false;
+    }
+    PsDataset *ds = static_cast<PsDataset *>(raw);
+    bool found = false;
+    for (uint32_t i = 0; i < ps_dataset_channel_count(ds); ++i)
+    {
+        const PsChannelInfo *info = ps_dataset_channel(ds, i);
+        if (info && info->name && std::strcmp(info->name, channel) == 0)
+        {
+            found = true;
+            break;
+        }
+    }
+    ps_dataset_free(ds);
+    if (!found)
+        std::cerr << d->loader->id << " missing channel " << channel << " (" << path << ")\n";
+    return found;
+}
+
 bool checkMdf4Value(const PsExtensionDescriptor *d, const std::string &path,
                     const char *channel, size_t index, double expected,
                     const char *unit = "rad")
@@ -189,6 +216,10 @@ int main(int argc, char **argv)
     if (!loadAndCheck(ps_extension_entry_data_loader_nmea(), fix + "/demo.nmea", 7))
         return 1;
     if (!loadAndCheck(ps_extension_entry_data_loader_ubx(), fix + "/demo.ubx", 10))
+        return 1;
+    if (!hasChannel(ps_extension_entry_data_loader_nmea(), fix + "/demo.nmea", "nmea.gga.latitude"))
+        return 1;
+    if (!hasChannel(ps_extension_entry_data_loader_ubx(), fix + "/demo.ubx", "ubx.nav_pvt.latitude"))
         return 1;
     if (!loadAndCheck(ps_extension_entry_data_loader_json(), fix + "/demo.jsonl", 3))
         return 1;

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "sentences": [
+    {
+      "key": "GGA",
+      "fields": [
+        {"name": "utc", "index": 1, "type": "time"},
+        {"name": "latitude", "index": 2, "type": "dm", "hemiIndex": 3, "unit": "deg"},
+        {"name": "longitude", "index": 4, "type": "dm", "hemiIndex": 5, "unit": "deg"},
+        {"name": "fix_quality", "index": 6, "type": "number"},
+        {"name": "num_sats", "index": 7, "type": "number", "unit": "count"},
+        {"name": "hdop", "index": 8, "type": "number"},
+        {"name": "altitude", "index": 9, "type": "number", "unit": "m"},
+        {"name": "geoid_separation", "index": 11, "type": "number", "unit": "m"}
+      ]
+    },
+    {
+      "key": "RMC",
+      "fields": [
+        {"name": "utc", "index": 1, "type": "time"},
+        {"name": "status", "index": 2, "type": "string"},
+        {"name": "latitude", "index": 3, "type": "dm", "hemiIndex": 4, "unit": "deg"},
+        {"name": "longitude", "index": 5, "type": "dm", "hemiIndex": 6, "unit": "deg"},
+        {"name": "speed_kn", "index": 7, "type": "number", "unit": "kn"},
+        {"name": "course", "index": 8, "type": "number", "unit": "deg"},
+        {"name": "date", "index": 9, "type": "string"},
+        {"name": "mode", "index": 12, "type": "string"}
+      ]
+    },
+    {
+      "key": "GSA",
+      "fields": [
+        {"name": "mode", "index": 1, "type": "string"},
+        {"name": "fix_type", "index": 2, "type": "number"},
+        {"name": "pdop", "index": 15, "type": "number"},
+        {"name": "hdop", "index": 16, "type": "number"},
+        {"name": "vdop", "index": 17, "type": "number"},
+        {"name": "system_id", "index": 18, "type": "number"}
+      ]
+    },
+    {
+      "key": "VTG",
+      "fields": [
+        {"name": "course_true", "index": 1, "type": "number", "unit": "deg"},
+        {"name": "course_mag", "index": 3, "type": "number", "unit": "deg"},
+        {"name": "speed_kn", "index": 5, "type": "number", "unit": "kn"},
+        {"name": "speed_kmh", "index": 7, "type": "number", "unit": "km/h"},
+        {"name": "mode", "index": 9, "type": "string"}
+      ]
+    },
+    {
+      "key": "GLL",
+      "fields": [
+        {"name": "latitude", "index": 1, "type": "dm", "hemiIndex": 2, "unit": "deg"},
+        {"name": "longitude", "index": 3, "type": "dm", "hemiIndex": 4, "unit": "deg"},
+        {"name": "utc", "index": 5, "type": "time"},
+        {"name": "status", "index": 6, "type": "string"},
+        {"name": "mode", "index": 7, "type": "string"}
+      ]
+    },
+    {
+      "key": "ZDA",
+      "fields": [
+        {"name": "utc", "index": 1, "type": "time"},
+        {"name": "day", "index": 2, "type": "number"},
+        {"name": "month", "index": 3, "type": "number"},
+        {"name": "year", "index": 4, "type": "number"},
+        {"name": "local_zone_hours", "index": 5, "type": "number", "unit": "h"},
+        {"name": "local_zone_minutes", "index": 6, "type": "number", "unit": "min"}
+      ]
+    },
+    {
+      "key": "GST",
+      "fields": [
+        {"name": "utc", "index": 1, "type": "time"},
+        {"name": "rms", "index": 2, "type": "number"},
+        {"name": "std_latitude", "index": 3, "type": "number", "unit": "m"},
+        {"name": "std_longitude", "index": 4, "type": "number", "unit": "m"},
+        {"name": "std_altitude", "index": 5, "type": "number", "unit": "m"}
+      ]
+    }
+  ]
+}

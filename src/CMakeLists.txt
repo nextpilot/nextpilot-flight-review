@@ -41,6 +41,12 @@ if(PS_BUILD_GUI)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json
                 $<TARGET_FILE_DIR:plotscope_app>/oem7_database.json
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss/nmea_database.json
+                $<TARGET_FILE_DIR:plotscope_app>/nmea_database.json
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${PROJECT_SOURCE_DIR}/src/extensions/builtin/gnss/ubx_database.json
+                $<TARGET_FILE_DIR:plotscope_app>/ubx_database.json
         DEPENDS plotscope_app)
     endif()
   else()

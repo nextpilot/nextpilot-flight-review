@@ -23,6 +23,9 @@ target_link_libraries(ps_gnss PUBLIC
   ps_live
   ps_datasource_protocol
 )
+target_compile_definitions(ps_gnss PRIVATE
+  PS_GNSS_DB_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
 
 # 组件注册对象：OBJECT 库保证静态初始化一定进入宿主
 add_library(ps_gnss_component OBJECT GnssComponent.cpp)
