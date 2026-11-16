@@ -5,3 +5,8 @@ target_include_directories(ps_mavlink INTERFACE
   ${CMAKE_CURRENT_SOURCE_DIR}/generated/ardupilotmega
   ${CMAKE_CURRENT_SOURCE_DIR}/generated
 )
+
+# 生成的 msgmap.hpp 会 #include <endian.h>，MSVC 没有这个头，补一个 compat 目录
+if (MSVC)
+  target_include_directories(ps_mavlink INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/compat)
+endif()
