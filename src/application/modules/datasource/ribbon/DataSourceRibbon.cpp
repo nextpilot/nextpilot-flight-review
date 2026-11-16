@@ -102,9 +102,14 @@ void registerDataSourceContributions(Registry &registry)
                          }
                      }
                  });
-                 // 下拉三角挂一个即时展开的菜单，一次能列出全部 loader
                  more->setMenu(moreMenu);
                  panel->addSmallAction(more, QToolButton::InstantPopup);
+                 // 按钮自带一个菜单箭头，会把「▾」变成双三角，隐藏掉
+                 for (auto *b : panel->findChildren<QToolButton *>())
+                 {
+                     if (b->defaultAction() == more)
+                         b->setStyleSheet(QStringLiteral("QToolButton::menu-indicator{image:none;width:0px;height:0px;}"));
+                 }
                  panel->setMaximumWidth(520);
              }}},
         1});
