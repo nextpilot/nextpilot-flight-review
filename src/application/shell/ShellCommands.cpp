@@ -73,7 +73,7 @@ void registerCommands(MainWindow &win)
     });
     win.commands().add(QStringLiteral("file.exportSettings"), [&win](const Ctx &) {
         const QString f = QFileDialog::getSaveFileName(&win, QStringLiteral("导出设置"), {},
-            QStringLiteral("JSON (*.json)"));
+            QStringLiteral("JSON (*.json);;YAML (*.yaml *.yml)"));
         if (f.isEmpty())
             return;
         if (SettingsManager::instance().exportTo(f))

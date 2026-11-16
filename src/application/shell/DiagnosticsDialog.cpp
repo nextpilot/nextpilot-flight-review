@@ -13,6 +13,8 @@
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QPlainTextEdit>
+#include <QProcess>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QTextStream>
@@ -98,12 +100,24 @@ DiagnosticsDialog::DiagnosticsDialog(QWidget *parent, const QString &kernelInfo,
     auto *hint = new QLabel(QStringLiteral("扩展启停写入配置，重启 PlotScope 后生效。"), extPage);
     hint->setStyleSheet(QStringLiteral("color:#8494a0;"));
     extLay->addWidget(hint);
+    auto *restart = new QPushButton(QStringLiteral("重启应用"), extPage);
+    extLay->addWidget(restart, 0, Qt::AlignRight);
     if (manager)
     {
         connect(extList, &QListWidget::itemChanged, this, [manager](QListWidgetItem *item) {
             manager->setEnabled(item->data(Qt::UserRole).toString(),
                                 item->checkState() == Qt::Checked);
         });
+        connect(restart, &QPushButton::clicked, this, [this] {
+            if (QMessageBox::question(this, QStringLiteral("重启 PlotScope"),
+                    QStringLiteral("扩展启停将在重启后生效，现在重启？")) != QMessageBox::Yes)
+                return;
+            const QStringList args = QCoreApplication::arguments();
+            if (QProcess::startDetached(args.value(0), args.mid(1)))
+                QCoreApplication::quit();
+        });
+    } else {
+        restart->setEnabled(false);
     }
     if (!errors.isEmpty())
     {

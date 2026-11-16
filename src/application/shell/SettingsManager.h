@@ -26,6 +26,7 @@ public:
     void remove(const QString &key);
     void sync();
     QJsonObject toJson() const;
+    QString toYaml() const;
     bool exportTo(const QString &path) const;
     void openDialog(MainWindow *parent);
     void registerCommand(ps::commands::CommandManager &commands, MainWindow *parent);

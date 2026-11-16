@@ -48,6 +48,14 @@ int main(int argc, char **argv)
     const QJsonObject json = QJsonDocument::fromJson(file.readAll()).object();
     if (json.value(QStringLiteral("test.key")).toString() != QLatin1String("value"))
         return 1;
+    if (!settings.exportTo(dir.filePath(QStringLiteral("settings.yaml"))))
+        return 1;
+    QFile yaml(dir.filePath(QStringLiteral("settings.yaml")));
+    if (!yaml.open(QIODevice::ReadOnly))
+        return 1;
+    const QString y = QString::fromUtf8(yaml.readAll());
+    if (!y.contains(QStringLiteral("test.key: \"value\"")))
+        return 1;
 
     settings.remove(QStringLiteral("lastLayout"));
     settings.remove(QStringLiteral("windowGeometry"));
