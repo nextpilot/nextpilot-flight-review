@@ -16,7 +16,6 @@
 
 class QDockWidget;
 class QTabWidget;
-class QPlainTextEdit;
 class QToolButton;
 class QMenu;
 class SARibbonBar;
@@ -32,7 +31,6 @@ public:
     ~MainWindow();
 
     QString defaultLayoutPath() const;
-    void attachLogView(QPlainTextEdit *view);
     QWidget *createDockTitleBar(QDockWidget *dock);
     void dockWidgetToArea(QDockWidget *dock, Qt::DockWidgetArea area);
     void collapseDockWidget(QDockWidget *dock);
@@ -62,7 +60,6 @@ private:
     void log(const QString &text);
 
     QTabWidget *m_pages = nullptr;
-    QPlainTextEdit *m_logView = nullptr;
     QString m_kernelInfo;
     ExtensionManager m_extensions;
     ps::commands::CommandManager m_commands;

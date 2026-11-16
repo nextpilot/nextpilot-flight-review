@@ -117,11 +117,12 @@ MainWindow::MainWindow(QWidget *parent)
     setMenuWidget(m_ribbon.create());
     m_docks.createFromRegistry(m_extensions.registry());
     m_docks.darkenExisting();
+    if (auto *view = findChild<QPlainTextEdit *>(QStringLiteral("dock.log.view")))
+        m_logs.setLogView(view);
     m_commands.invoke(QStringLiteral("plot.refreshTree"), {});
     m_session.setLayoutPath(defaultLayoutPath());
     m_session.restoreWindow(this);
     m_logs.setStatusBar(statusBar());
-    m_logs.setLogView(m_logView);
     for (const QString &error : m_extensions.errors())
         m_logs.warn(error);
     shell::bindSession(*this);
@@ -217,13 +218,6 @@ void MainWindow::log(const QString &text)
 {
     m_logs.info(text);
 }
-
-void MainWindow::attachLogView(QPlainTextEdit *view)
-{
-    m_logView = view;
-    m_logs.setLogView(view);
-}
-
 
 void MainWindow::toggleDockMax(QDockWidget *dock)
 {
