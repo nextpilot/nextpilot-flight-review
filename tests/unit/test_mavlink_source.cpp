@@ -1,6 +1,13 @@
 #include "ps_extension_api.h"
 #include "HostApi.h"
 
+#ifndef MAVLINK_STX
+#define MAVLINK_STX 253
+#endif
+
+#include "message.hpp"
+#include "common/common.hpp"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -36,18 +43,6 @@ static int32_t onBatch(void *ctx, const char *name, const char *, const double *
 }
 static int32_t onEvent(void *, const char *, const char *) { return 0; }
 
-static void putU32(QByteArray &b, uint32_t v)
-{
-    b.append(char(v & 0xff));
-    b.append(char((v >> 8) & 0xff));
-    b.append(char((v >> 16) & 0xff));
-    b.append(char((v >> 24) & 0xff));
-}
-static void putI16(QByteArray &b, int16_t v)
-{
-    b.append(char(static_cast<uint8_t>(v)));
-    b.append(char(static_cast<uint8_t>(static_cast<uint16_t>(v) >> 8)));
-}
 static void putU64(QByteArray &b, uint64_t v)
 {
     for (int i = 0; i < 8; ++i)
@@ -87,15 +82,22 @@ int main(int argc, char **argv)
     assert(v->load_config(h, sv, &perr));
     assert(v->start(h, &perr));
 
-    QByteArray f;
-    f.append(char(0xFD)).append(char(16)).append(char(0)).append(char(0)).append(char(0));
-    f.append(char(1)).append(char(1)).append(char(30)).append(char(0)).append(char(0));
-    putU32(f, 0);          // time_boot_ms
-    putI16(f, 1000);       // roll 0.1 rad
-    putI16(f, -500);       // pitch
-    putI16(f, 0);          // yaw
-    putI16(f, 0); putI16(f, 0); putI16(f, 0);
-    f.append(char(0)).append(char(0)); // crc（解析器不校验）
+    mavlink::mavlink_message_t message{};
+    mavlink::common::msg::ATTITUDE attitude{};
+    attitude.time_boot_ms = 0;
+    attitude.roll = 0.1f;
+    attitude.pitch = -0.05f;
+    attitude.yaw = 0.0f;
+    attitude.rollspeed = 0.0f;
+    attitude.pitchspeed = 0.0f;
+    attitude.yawspeed = 0.0f;
+    mavlink::MsgMap map(message);
+    attitude.serialize(map);
+    mavlink::mavlink_finalize_message(&message, 1, 1, attitude.MIN_LENGTH, attitude.LENGTH,
+                                      attitude.CRC_EXTRA);
+    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
+    const uint16_t frameLength = mavlink::mavlink_msg_to_send_buffer(buffer, &message);
+    QByteArray f(reinterpret_cast<const char *>(buffer), frameLength);
 
     QUdpSocket tx;
     tx.writeDatagram(f, QHostAddress::LocalHost, 14555);

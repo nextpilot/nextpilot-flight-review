@@ -1,6 +1,7 @@
 #include "ps_extension_api.h"
 #include "PsDataSourceBase.hpp"
 #include "PsCaptureFormat.h"
+#include "MavlinkMessageParser.h"
 
 #include <QByteArray>
 #include <QFile>
@@ -23,29 +24,6 @@ namespace {
 
 constexpr uint8_t kMavlinkV1 = 0xFE;
 constexpr uint8_t kMavlinkV2 = 0xFD;
-
-uint32_t u32(const uint8_t *p)
-{
-    return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
-}
-int16_t i16(const uint8_t *p)
-{
-    return static_cast<int16_t>(uint16_t(p[0]) | (uint16_t(p[1]) << 8));
-}
-uint16_t u16(const uint8_t *p)
-{
-    return static_cast<uint16_t>(uint16_t(p[0]) | (uint16_t(p[1]) << 8));
-}
-int32_t i32(const uint8_t *p)
-{
-    return static_cast<int32_t>(u32(p));
-}
-float f32(const uint8_t *p)
-{
-    float v = 0.0f;
-    std::memcpy(&v, p, sizeof(v));
-    return v;
-}
 
 int32_t writeJson(const char *json, char *out, uint32_t cap)
 {
@@ -140,56 +118,109 @@ void flush(MavState *st)
     st->values.clear();
 }
 
-void decodePayload(MavState *st, uint8_t msgid, const uint8_t *p, int len, int sysid)
+constexpr double kRadToDeg = 57.29577951308232;
+
+PsDecodedField findField(const PsDecodedFrame &frame, const QString &name)
 {
+    for (const PsDecodedField &field : frame.fields) {
+        if (field.name == name)
+            return field;
+    }
+    return {};
+}
+
+double findNumber(const PsDecodedFrame &frame, const QString &name, double fallback = 0.0)
+{
+    const PsDecodedField field = findField(frame, name);
+    bool ok = false;
+    const double value = field.value.toDouble(&ok);
+    return ok ? value : fallback;
+}
+
+double findDegrees(const PsDecodedFrame &frame, const QString &name)
+{
+    const PsDecodedField field = findField(frame, name);
+    bool ok = false;
+    double value = field.value.toDouble(&ok);
+    if (!ok)
+        return 0.0;
+    if (field.unit == QLatin1String("rad") || field.unit == QLatin1String("rad/s"))
+        value *= kRadToDeg;
+    return value;
+}
+
+double messageTime(const PsDecodedFrame &frame, double fallback)
+{
+    for (const QString &name : {QStringLiteral("time_usec"), QStringLiteral("time_boot_ms"),
+                                QStringLiteral("time_ms"), QStringLiteral("time")}) {
+        const double value = findNumber(frame, name, -1.0);
+        if (value >= 0.0)
+            return value;
+    }
+    return fallback;
+}
+
+void addDecodedSamples(MavState *st, const PsDecodedFrame &frame, double fallback)
+{
+    const int sysid = static_cast<int>(findNumber(frame, QStringLiteral("sysid")));
     if (st->sysid && sysid != st->sysid)
         return;
-    const double fallback = nowSeconds(st);
-    switch (msgid)
-    {
-    case 30: // ATTITUDE
-        if (len >= 16)
-        {
-            const double t = u32(p) / 1000.0;
-            addSample(st, QStringLiteral("mav.att.roll"), QStringLiteral("deg"), t, i16(p + 4) * 1e-4 * 57.2957795);
-            addSample(st, QStringLiteral("mav.att.pitch"), QStringLiteral("deg"), t, i16(p + 6) * 1e-4 * 57.2957795);
-            addSample(st, QStringLiteral("mav.att.yaw"), QStringLiteral("deg"), t, i16(p + 8) * 1e-4 * 57.2957795);
-            addSample(st, QStringLiteral("mav.att.roll_rate"), QStringLiteral("deg/s"), t, i16(p + 10) * 1e-3 * 57.2957795);
-            addSample(st, QStringLiteral("mav.att.pitch_rate"), QStringLiteral("deg/s"), t, i16(p + 12) * 1e-3 * 57.2957795);
-            addSample(st, QStringLiteral("mav.att.yaw_rate"), QStringLiteral("deg/s"), t, i16(p + 14) * 1e-3 * 57.2957795);
-        }
-        break;
-    case 74: // VFR_HUD
-        if (len >= 20)
-        {
-            addSample(st, QStringLiteral("mav.vfr.airspeed"), QStringLiteral("m/s"), fallback, f32(p));
-            addSample(st, QStringLiteral("mav.vfr.groundspeed"), QStringLiteral("m/s"), fallback, f32(p + 4));
-            addSample(st, QStringLiteral("mav.vfr.heading"), QStringLiteral("deg"), fallback, i16(p + 8));
-            addSample(st, QStringLiteral("mav.vfr.throttle"), QStringLiteral("%"), fallback, u16(p + 10));
-            addSample(st, QStringLiteral("mav.vfr.alt"), QStringLiteral("m"), fallback, f32(p + 12));
-            addSample(st, QStringLiteral("mav.vfr.climb"), QStringLiteral("m/s"), fallback, f32(p + 16));
-        }
-        break;
-    case 33: // GLOBAL_POSITION_INT
-        if (len >= 28)
-        {
-            const double t = u32(p) / 1000.0;
-            addSample(st, QStringLiteral("mav.gps.lat"), QStringLiteral("deg"), t, i32(p + 4) * 1e-7);
-            addSample(st, QStringLiteral("mav.gps.lon"), QStringLiteral("deg"), t, i32(p + 8) * 1e-7);
-            addSample(st, QStringLiteral("mav.gps.alt"), QStringLiteral("m"), t, i32(p + 12) * 1e-3);
-            addSample(st, QStringLiteral("mav.gps.rel_alt"), QStringLiteral("m"), t, i32(p + 16) * 1e-3);
-            addSample(st, QStringLiteral("mav.gps.vx"), QStringLiteral("m/s"), t, i16(p + 20) * 1e-2);
-            addSample(st, QStringLiteral("mav.gps.vy"), QStringLiteral("m/s"), t, i16(p + 22) * 1e-2);
-            addSample(st, QStringLiteral("mav.gps.vz"), QStringLiteral("m/s"), t, i16(p + 24) * 1e-2);
-            addSample(st, QStringLiteral("mav.gps.hdg"), QStringLiteral("deg"), t, u16(p + 26) * 1e-2);
-        }
-        break;
-    case 0: // HEARTBEAT
-        if (len >= 9)
-            st->lastSysid = sysid;
-        break;
-    default:
-        break;
+
+    if (frame.frameName == QLatin1String("HEARTBEAT")) {
+        st->lastSysid = sysid;
+        return;
+    }
+
+    const double t = messageTime(frame, fallback);
+    if (frame.frameName == QLatin1String("ATTITUDE")) {
+        addSample(st, QStringLiteral("mav.att.roll"), QStringLiteral("deg"), t,
+                  findDegrees(frame, QStringLiteral("roll")));
+        addSample(st, QStringLiteral("mav.att.pitch"), QStringLiteral("deg"), t,
+                  findDegrees(frame, QStringLiteral("pitch")));
+        addSample(st, QStringLiteral("mav.att.yaw"), QStringLiteral("deg"), t,
+                  findDegrees(frame, QStringLiteral("yaw")));
+        addSample(st, QStringLiteral("mav.att.roll_rate"), QStringLiteral("deg/s"), t,
+                  findDegrees(frame, QStringLiteral("rollspeed")));
+        addSample(st, QStringLiteral("mav.att.pitch_rate"), QStringLiteral("deg/s"), t,
+                  findDegrees(frame, QStringLiteral("pitchspeed")));
+        addSample(st, QStringLiteral("mav.att.yaw_rate"), QStringLiteral("deg/s"), t,
+                  findDegrees(frame, QStringLiteral("yawspeed")));
+        return;
+    }
+
+    if (frame.frameName == QLatin1String("VFR_HUD")) {
+        addSample(st, QStringLiteral("mav.vfr.airspeed"), QStringLiteral("m/s"), fallback,
+                  findNumber(frame, QStringLiteral("airspeed")));
+        addSample(st, QStringLiteral("mav.vfr.groundspeed"), QStringLiteral("m/s"), fallback,
+                  findNumber(frame, QStringLiteral("groundspeed")));
+        addSample(st, QStringLiteral("mav.vfr.heading"), QStringLiteral("deg"), fallback,
+                  findNumber(frame, QStringLiteral("heading")));
+        addSample(st, QStringLiteral("mav.vfr.throttle"), QStringLiteral("%"), fallback,
+                  findNumber(frame, QStringLiteral("throttle")));
+        addSample(st, QStringLiteral("mav.vfr.alt"), QStringLiteral("m"), fallback,
+                  findNumber(frame, QStringLiteral("alt")));
+        addSample(st, QStringLiteral("mav.vfr.climb"), QStringLiteral("m/s"), fallback,
+                  findNumber(frame, QStringLiteral("climb")));
+        return;
+    }
+
+    if (frame.frameName == QLatin1String("GLOBAL_POSITION_INT")) {
+        addSample(st, QStringLiteral("mav.gps.lat"), QStringLiteral("deg"), t,
+                  findNumber(frame, QStringLiteral("lat")));
+        addSample(st, QStringLiteral("mav.gps.lon"), QStringLiteral("deg"), t,
+                  findNumber(frame, QStringLiteral("lon")));
+        addSample(st, QStringLiteral("mav.gps.alt"), QStringLiteral("m"), t,
+                  findNumber(frame, QStringLiteral("alt")));
+        addSample(st, QStringLiteral("mav.gps.rel_alt"), QStringLiteral("m"), t,
+                  findNumber(frame, QStringLiteral("relative_alt")));
+        addSample(st, QStringLiteral("mav.gps.vx"), QStringLiteral("m/s"), t,
+                  findNumber(frame, QStringLiteral("vx")));
+        addSample(st, QStringLiteral("mav.gps.vy"), QStringLiteral("m/s"), t,
+                  findNumber(frame, QStringLiteral("vy")));
+        addSample(st, QStringLiteral("mav.gps.vz"), QStringLiteral("m/s"), t,
+                  findNumber(frame, QStringLiteral("vz")));
+        addSample(st, QStringLiteral("mav.gps.hdg"), QStringLiteral("deg"), t,
+                  findNumber(frame, QStringLiteral("hdg")));
     }
 }
 
@@ -222,9 +253,10 @@ void parse(MavState *st)
             const int total = 8 + len;
             if (st->rx.size() < total)
                 return;
-            const uint8_t msgid = static_cast<uint8_t>(st->rx.at(5));
-            const int sysid = static_cast<uint8_t>(st->rx.at(3));
-            decodePayload(st, msgid, reinterpret_cast<const uint8_t *>(st->rx.constData()) + 6, len, sysid);
+            MavlinkMessageParser parser;
+            PsDecodedFrame decoded;
+            if (parser.parse(st->rx.left(total), decoded))
+                addDecodedSamples(st, decoded, nowSeconds(st));
             st->rx.remove(0, total);
             ++st->frames;
         }
@@ -236,12 +268,10 @@ void parse(MavState *st)
             const int total = 12 + len + ((incompat & 0x01) ? 13 : 0);
             if (st->rx.size() < total)
                 return;
-            const uint32_t msgid = uint32_t(uint8_t(st->rx.at(7))) |
-                                   (uint32_t(uint8_t(st->rx.at(8))) << 8) |
-                                   (uint32_t(uint8_t(st->rx.at(9))) << 16);
-            const int sysid = static_cast<uint8_t>(st->rx.at(5));
-            decodePayload(st, static_cast<uint8_t>(msgid & 0xFF),
-                          reinterpret_cast<const uint8_t *>(st->rx.constData()) + 10, len, sysid);
+            MavlinkMessageParser parser;
+            PsDecodedFrame decoded;
+            if (parser.parse(st->rx.left(total), decoded))
+                addDecodedSamples(st, decoded, nowSeconds(st));
             st->rx.remove(0, total);
             ++st->frames;
         }

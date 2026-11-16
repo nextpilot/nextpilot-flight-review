@@ -82,7 +82,7 @@ if(TARGET ps_data_source_mavlink)
   find_package(Qt6 REQUIRED COMPONENTS Network)
   add_executable(test_mavlink_source unit/test_mavlink_source.cpp)
   target_include_directories(test_mavlink_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
-  target_link_libraries(test_mavlink_source PRIVATE ps_data_source_mavlink ps_host ps_kernel Qt6::Network)
+  target_link_libraries(test_mavlink_source PRIVATE ps_data_source_mavlink ps_host ps_kernel ps_mavlink Qt6::Network)
   add_test(NAME mavlink_source COMMAND test_mavlink_source)
 endif()
 
