@@ -453,6 +453,7 @@ void buildPlotGallery(QWidget *p)
     if (!mw)
         return;
     panel->setExpanding(false);
+    panel->setMaximumWidth(368);
     if (auto *t = panel->titleLabel())
         t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     auto run = [mw](const QString &cmd, const QString &arg = QString()) {

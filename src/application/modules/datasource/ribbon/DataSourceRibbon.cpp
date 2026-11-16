@@ -95,10 +95,21 @@ void registerDataSourceContributions(Registry &registry)
                  }
                  auto *gallery = panel->addGallery();
                  gallery->setSingleRowMode(true);
+                 auto styleGroup = [](SARibbonGalleryGroup *g) {
+                     g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
+                     g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+                     g->setGridMinimumWidth(64);
+                     g->setGridMaximumWidth(72);
+                     g->setSpacing(1);
+                 };
                  auto *common = gallery->addCategoryActions(QStringLiteral("常用"), fileActs.mid(0, 4));
-                 gallery->addCategoryActions(QStringLiteral("文件格式"), fileActs);
-                 gallery->addCategoryActions(QStringLiteral("实时源"), streamActs);
+                 auto *formats = gallery->addCategoryActions(QStringLiteral("文件格式"), fileActs);
+                 auto *streams = gallery->addCategoryActions(QStringLiteral("实时源"), streamActs);
+                 styleGroup(common);
+                 styleGroup(formats);
+                 styleGroup(streams);
                  gallery->setCurrentViewGroup(common);
+                 panel->setMaximumWidth(320);
              }}},
         1});
 }
