@@ -59,7 +59,6 @@ public:
     void showAxesProps(PlottingCanvas *c);
     void showSeriesProps(PlottingCanvas *c, int index);
     void editSeriesProps(PlottingCanvas *c, int index);
-    void editAxesProps(PlottingCanvas *c);
     bool applyPropEdit(const QString &key, const QString &text);
     void log(const QString &text);
     bool eventFilter(QObject *obj, QEvent *ev) override;
@@ -68,7 +67,6 @@ private:
     MainWindow *m_mw = nullptr;
     ps::plotting::PlottingTabs *m_plotWorkspace = nullptr;
     QTableWidget *m_propTable = nullptr;
-    QToolButton *m_propEditBtn = nullptr;
     PlottingCanvas *m_propCanvas = nullptr;
     int m_propSeriesIndex = -1;
     int m_propKind = 0;

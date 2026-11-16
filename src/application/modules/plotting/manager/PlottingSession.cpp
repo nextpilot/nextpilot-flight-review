@@ -785,121 +785,6 @@ private:
     QPlainTextEdit *m_script = nullptr;
 };
 
-class AxesEditDialog : public QDialog
-{
-public:
-    AxesEditDialog(const QJsonObject &st, QWidget *parent = nullptr) : QDialog(parent)
-    {
-        setWindowTitle(QStringLiteral("画布属性"));
-        resize(440, 500);
-        m_axisColor = QColor(st.value(QStringLiteral("axisColor")).toString());
-        auto *root = new QVBoxLayout(this);
-        auto *form = new QFormLayout;
-
-        m_title = new QLineEdit(st.value(QStringLiteral("title")).toString(), this);
-        form->addRow(QStringLiteral("标题 Title"), m_title);
-        m_xLabel = new QLineEdit(st.value(QStringLiteral("xlabel")).toString(), this);
-        m_xLabel->setPlaceholderText(QStringLiteral("time / s"));
-        form->addRow(QStringLiteral("X 轴标签 XLabel"), m_xLabel);
-        m_yLabel = new QLineEdit(st.value(QStringLiteral("ylabel")).toString(), this);
-        m_yLabel->setPlaceholderText(QStringLiteral("value"));
-        form->addRow(QStringLiteral("Y 轴标签 YLabel"), m_yLabel);
-
-        m_gridX = new QCheckBox(QStringLiteral("X 方向网格"), this);
-        m_gridX->setChecked(st.value(QStringLiteral("gridX")).toBool(st.value(QStringLiteral("grid")).toBool(true)));
-        form->addRow(QStringLiteral("XGrid"), m_gridX);
-        m_gridY = new QCheckBox(QStringLiteral("Y 方向网格"), this);
-        m_gridY->setChecked(st.value(QStringLiteral("gridY")).toBool(st.value(QStringLiteral("grid")).toBool(true)));
-        form->addRow(QStringLiteral("YGrid"), m_gridY);
-        m_minorGrid = new QCheckBox(QStringLiteral("次网格（虚线）"), this);
-        m_minorGrid->setChecked(st.value(QStringLiteral("minorGrid")).toBool(false));
-        form->addRow(QStringLiteral("MinorGrid"), m_minorGrid);
-        m_box = new QCheckBox(QStringLiteral("显示边框"), this);
-        m_box->setChecked(st.value(QStringLiteral("box")).toBool(true));
-        form->addRow(QStringLiteral("Box"), m_box);
-        m_flipY = new QCheckBox(QStringLiteral("翻转 Y 轴方向"), this);
-        m_flipY->setChecked(st.value(QStringLiteral("flipY")).toBool(false));
-        form->addRow(QStringLiteral("YDir / FlipY"), m_flipY);
-        m_legend = new QCheckBox(QStringLiteral("显示图例"), this);
-        m_legend->setChecked(st.value(QStringLiteral("legend")).toBool(true));
-        form->addRow(QStringLiteral("Legend"), m_legend);
-        m_legendPos = new QComboBox(this);
-        m_legendPos->addItem(QStringLiteral("左上"), 0);
-        m_legendPos->addItem(QStringLiteral("右上"), 1);
-        m_legendPos->addItem(QStringLiteral("左下"), 2);
-        m_legendPos->addItem(QStringLiteral("右下"), 3);
-        m_legendPos->setCurrentIndex(st.value(QStringLiteral("legendPos")).toInt(0));
-        form->addRow(QStringLiteral("图例位置"), m_legendPos);
-
-        m_fontSize = new QSpinBox(this);
-        m_fontSize->setRange(7, 20);
-        m_fontSize->setSuffix(QStringLiteral(" px"));
-        m_fontSize->setValue(st.value(QStringLiteral("axisFontSize")).toInt(11));
-        form->addRow(QStringLiteral("FontSize"), m_fontSize);
-        m_lineWidth = new QSpinBox(this);
-        m_lineWidth->setRange(1, 4);
-        m_lineWidth->setSuffix(QStringLiteral(" px"));
-        m_lineWidth->setValue(st.value(QStringLiteral("axisLineWidth")).toInt(1));
-        form->addRow(QStringLiteral("轴线宽 LineWidth"), m_lineWidth);
-        m_colorBtn = new QPushButton(this);
-        m_colorBtn->setFixedHeight(24);
-        setColorButton();
-        connect(m_colorBtn, &QPushButton::clicked, this, [this] {
-            const QColor c = QColorDialog::getColor(m_axisColor.isValid() ? m_axisColor : ThemeManager::adaptColor(QColor("#8b949e")),
-                                                    this, QStringLiteral("坐标轴颜色"));
-            if (c.isValid())
-            {
-                m_axisColor = c;
-                setColorButton();
-            }
-        });
-        form->addRow(QStringLiteral("轴线颜色"), m_colorBtn);
-
-        root->addLayout(form);
-        auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-        connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
-        connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
-        root->addWidget(bb);
-    }
-    QString title() const { return m_title->text().trimmed(); }
-    QString xLabel() const { return m_xLabel->text().trimmed(); }
-    QString yLabel() const { return m_yLabel->text().trimmed(); }
-    bool gridX() const { return m_gridX->isChecked(); }
-    bool gridY() const { return m_gridY->isChecked(); }
-    bool minorGrid() const { return m_minorGrid->isChecked(); }
-    bool box() const { return m_box->isChecked(); }
-    bool flipY() const { return m_flipY->isChecked(); }
-    bool legend() const { return m_legend->isChecked(); }
-    int legendPosition() const { return m_legendPos->currentData().toInt(); }
-    int fontSize() const { return m_fontSize->value(); }
-    int lineWidth() const { return m_lineWidth->value(); }
-    QColor axisColorValue() const { return m_axisColor; }
-
-private:
-    void setColorButton()
-    {
-        m_colorBtn->setText(m_axisColor.isValid() ? m_axisColor.name() : QStringLiteral("跟随主题"));
-        if (m_axisColor.isValid())
-            m_colorBtn->setStyleSheet(ThemeManager::mapStyleSheet(QStringLiteral(
-                "QPushButton{background:%1;color:#0d1117;border:1px solid #3a4854;border-radius:2px;"
-                "font-weight:600;}QPushButton:hover{border-color:#f2b134;}").arg(m_axisColor.name())));
-    }
-
-    QLineEdit *m_title = nullptr;
-    QLineEdit *m_xLabel = nullptr;
-    QLineEdit *m_yLabel = nullptr;
-    QCheckBox *m_gridX = nullptr;
-    QCheckBox *m_gridY = nullptr;
-    QCheckBox *m_minorGrid = nullptr;
-    QCheckBox *m_box = nullptr;
-    QCheckBox *m_flipY = nullptr;
-    QCheckBox *m_legend = nullptr;
-    QComboBox *m_legendPos = nullptr;
-    QSpinBox *m_fontSize = nullptr;
-    QSpinBox *m_lineWidth = nullptr;
-    QPushButton *m_colorBtn = nullptr;
-    QColor m_axisColor;
-};
 void PlottingSession::showAxesProps(PlottingCanvas *c)
 {
     if (!c)
@@ -956,28 +841,6 @@ void PlottingSession::showAxesProps(PlottingCanvas *c)
     m_propCanvas = c;
     m_propSeriesIndex = -1;
     m_propKind = 1;
-    if (m_propEditBtn)
-        m_propEditBtn->setEnabled(true);
-}
-
-void PlottingSession::editAxesProps(PlottingCanvas *c)
-{
-    if (!c)
-        return;
-    AxesEditDialog dlg(c->saveState(), this);
-    if (dlg.exec() != QDialog::Accepted)
-        return;
-    c->setTitle(dlg.title());
-    c->setAxisLabels(dlg.xLabel(), dlg.yLabel());
-    c->setGridAxes(dlg.gridX(), dlg.gridY(), dlg.minorGrid());
-    c->setBoxVisible(dlg.box());
-    c->setLegendVisible(dlg.legend());
-    c->setLegendPosition(dlg.legendPosition());
-    c->setFlipY(dlg.flipY());
-    c->setAxisFontSize(dlg.fontSize());
-    c->setAxisLineWidth(dlg.lineWidth());
-    c->setAxisColor(dlg.axisColorValue());
-    showAxesProps(c);
 }
 
 void PlottingSession::showSeriesProps(PlottingCanvas *c, int index)
@@ -1022,8 +885,6 @@ void PlottingSession::showSeriesProps(PlottingCanvas *c, int index)
     m_propCanvas = c;
     m_propSeriesIndex = index;
     m_propKind = 2;
-    if (m_propEditBtn)
-        m_propEditBtn->setEnabled(true);
 }
 
 void PlottingSession::editSeriesProps(PlottingCanvas *c, int index)
@@ -1250,8 +1111,6 @@ void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QSt
     m_propCanvas = nullptr;
     m_propSeriesIndex = -1;
     m_propKind = 0;
-    if (m_propEditBtn)
-        m_propEditBtn->setEnabled(false);
     if (m_selLabel)
     {
         m_selText = QStringLiteral("当前对象：%1").arg(object);
@@ -1484,10 +1343,7 @@ QWidget *PlottingSession::createPropPanel(bool tree)
         m_selLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         m_selLabel->setMinimumWidth(0);
         m_selLabel->installEventFilter(this);
-        m_propEditBtn = new QToolButton(head);
-        m_propEditBtn->setText(QStringLiteral("编辑"));
         hl->addWidget(m_selLabel, 1);
-        hl->addWidget(m_propEditBtn);
         lay->addWidget(head);
         m_propTable = new QTableWidget(0, 2, w);
         m_propTable->setHorizontalHeaderLabels({QStringLiteral("属性"), QStringLiteral("值")});
@@ -1497,23 +1353,17 @@ QWidget *PlottingSession::createPropPanel(bool tree)
                                      QAbstractItemView::SelectedClicked);
         m_propTable->setSelectionBehavior(QAbstractItemView::SelectRows);
         lay->addWidget(m_propTable, 1);
-        bindPlotPanels(m_selLabel, m_propEditBtn, m_propTable, nullptr);
+        bindPlotPanels(m_selLabel, nullptr, m_propTable, nullptr);
     }
     return w;
 }
 
 void PlottingSession::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree)
 {
+    Q_UNUSED(edit) // 面板已全内联编辑，不再有“编辑”按钮；保留参数供外部绑定旧接口
     if (sel) m_selLabel = sel;
-    if (edit) m_propEditBtn = edit;
     if (table) m_propTable = table;
     if (tree) m_propTree = tree;
-    if (m_propEditBtn)
-    connect(m_propEditBtn, &QToolButton::clicked, this, [this] {
-        if (!m_propCanvas) return;
-        if (m_propKind == 2 && m_propSeriesIndex >= 0) editSeriesProps(m_propCanvas, m_propSeriesIndex);
-        else if (m_propKind == 1) editAxesProps(m_propCanvas);
-    });
     if (m_propTable)
     connect(m_propTable, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *it) {
         if (m_propUpdating || !it || it->column() != 1)
@@ -1526,6 +1376,17 @@ void PlottingSession::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidge
         const QString k = key->text();
         const QString v = it->text();
         QTimer::singleShot(0, this, [this, k, v] { applyPropEdit(k, v); });
+    });
+    if (m_propTable)
+    connect(m_propTable, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
+        if (!m_propCanvas || m_propKind != 2 || m_propSeriesIndex < 0)
+            return;
+        // 可写单元格双击进内联编辑；只读行（名称/单位/来源…）打开曲线设置，
+        // 换数据列与变换这类内联覆盖不到的入口仍在那里。
+        auto *v = m_propTable->item(row, 1);
+        if (v && v->flags().testFlag(Qt::ItemIsEditable))
+            return;
+        editSeriesProps(m_propCanvas, m_propSeriesIndex);
     });
     auto pick = [this](QTreeWidgetItem *it) {
         if (m_propTreeBuilding || !it) return;
