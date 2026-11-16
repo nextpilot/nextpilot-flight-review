@@ -74,16 +74,7 @@ void buildAnalysisGallery(QWidget *parent)
         g->setFont(f);
     };
 
-    auto *placeholder = new QAction(QStringLiteral("打开数据源后显示分析应用"), panel);
-    placeholder->setEnabled(false);
-    placeholder->setIcon(ThemeManager::icon(QStringLiteral(":/icons/datasource.svg")));
-    auto *group = gallery->addCategoryActions(QStringLiteral("当前数据源"), {placeholder});
-    styleGroup(group);
-    gallery->setCurrentViewGroup(group);
-
-    QVector<QAction *> entries;
-    for (const ps::data_source::AnalysisEntry &entry : ps::data_source::AnalysisRegistry::instance().all())
-    {
+    auto makeAction = [&](const ps::data_source::AnalysisEntry &entry, bool allGroup) {
         auto *action = new QAction(entry.title, panel);
         action->setToolTip(entry.description.isEmpty() ? entry.title : entry.description);
         if (!entry.icon.isEmpty())
@@ -95,12 +86,30 @@ void buildAnalysisGallery(QWidget *parent)
         }
         action->setProperty("analysisFormats", entry.formats);
         action->setProperty("analysisInGroup", false);
+        action->setProperty("analysisAllGroup", allGroup);
         QObject::connect(action, &QAction::triggered, mw,
                          [mw, id = entry.id] { mw->commands().invoke(id, {mw, QString()}); });
-        entries.append(action);
-    }
+        return action;
+    };
 
-    auto refresh = [session, group, placeholder, entries]() {
+    auto *placeholder = new QAction(QStringLiteral("打开数据源后显示分析应用"), panel);
+    placeholder->setEnabled(false);
+    placeholder->setIcon(ThemeManager::icon(QStringLiteral(":/icons/datasource.svg")));
+    auto *group = gallery->addCategoryActions(QStringLiteral("当前数据源"), {placeholder});
+    styleGroup(group);
+
+    QVector<QAction *> entries;
+    QVector<QAction *> allEntries;
+    for (const ps::data_source::AnalysisEntry &entry : ps::data_source::AnalysisRegistry::instance().all())
+    {
+        entries.append(makeAction(entry, false));
+        allEntries.append(makeAction(entry, true));
+    }
+    auto *allGroup = gallery->addCategoryActions(QStringLiteral("全部应用"), allEntries);
+    styleGroup(allGroup);
+    gallery->setCurrentViewGroup(group);
+
+    auto refresh = [session, group, allGroup, placeholder, entries, allEntries]() {
         auto *source = session->sourceById(session->activeSourceId());
         const QString format = source ? source->fmt : QString();
         bool any = false;
@@ -120,6 +129,12 @@ void buildAnalysisGallery(QWidget *parent)
                 action->setProperty("analysisInGroup", false);
             }
             any = any || match;
+        }
+        for (QAction *action : allEntries)
+        {
+            const QStringList formats = action->property("analysisFormats").toStringList();
+            action->setEnabled(!formats.isEmpty() &&
+                               formats.contains(format, Qt::CaseInsensitive));
         }
         if (any)
             group->removeActionItem(placeholder);
