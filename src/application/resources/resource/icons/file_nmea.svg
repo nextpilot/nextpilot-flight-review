@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+  <g fill="none" stroke="#c9d1d9" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M5.5 2.8h12.2l6.8 6.8v18.6H5.5z"/>
+    <path d="M17.4 2.8v6.6h6.7"/>
+  </g>
+  <text x="14.6" y="24.2" font-family="Segoe UI, Microsoft YaHei, Arial" font-size="8" font-weight="700" fill="#2F6FA8" text-anchor="middle">NMEA</text>
+</svg>
