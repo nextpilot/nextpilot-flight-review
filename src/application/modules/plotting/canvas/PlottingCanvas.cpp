@@ -11,6 +11,8 @@
 #include <QApplication>
 #include <QKeyEvent>
 #include <QClipboard>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QFileDialog>
 #include <QMenu>
 #include <QMessageBox>
@@ -1495,6 +1497,69 @@ void PlottingCanvas::setTimeMarkers(const QVector<ps::TimeBookmark> &markers)
     update();
 }
 
+void PlottingCanvas::setLinkedCursor(double t, bool visible)
+{
+    if (m_linkedCursorVisible == visible && qAbs(m_linkedCursorTime - t) < 1e-9)
+        return;
+    m_linkedCursorVisible = visible;
+    m_linkedCursorTime = t;
+    update();
+}
+
+void PlottingCanvas::toggleReadoutPin()
+{
+    if (m_pinnedReadout)
+    {
+        m_pinnedReadout = false;
+        update();
+        return;
+    }
+    const QRectF plot = plotRect();
+    if (!plot.contains(m_cursor))
+        return;
+    m_pinnedReadout = true;
+    m_pinnedCursor = m_cursor;
+    m_pinnedTime = timeAtX(m_cursor.x());
+    update();
+}
+
+double PlottingCanvas::snapTimeToSample(double t, bool force) const
+{
+    const QRectF plot = plotRect();
+    if (plot.width() <= 0.0)
+        return t;
+    const double tol = 8.0 * (m_t1 - m_t0) / plot.width();
+    double best = t;
+    double bestDist = force ? 1e300 : tol;
+    for (const Series &s : m_series)
+    {
+        if (!s.visible || s.count() < 1 || !s.time())
+            continue;
+        const double rawT = t + s.offsetSec;
+        quint32 lo = 0, hi = s.count();
+        while (lo < hi)
+        {
+            const quint32 mid = (lo + hi) / 2;
+            if (s.time()[mid] < rawT)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        for (quint32 idx : {lo, lo > 0 ? lo - 1 : lo})
+        {
+            if (idx >= s.count() || !std::isfinite(s.time()[idx]))
+                continue;
+            const double dt = s.time()[idx] - s.offsetSec;
+            if (qAbs(dt - t) <= bestDist)
+            {
+                bestDist = qAbs(dt - t);
+                best = dt;
+            }
+        }
+    }
+    return best;
+}
+
 void PlottingCanvas::paintEvent(QPaintEvent *)
 {
     // 实时源的 PsChannelInfo 指针稳定，point_count 可能已增长；绘制前同步并跟随 X 轴。
@@ -1937,13 +2002,33 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         }
     }
 
-    if (m_hover && plot.contains(m_cursor))
+    // 同页联动光标：只画时间竖线，不复制读数框。
+    if (m_linkedCursorVisible && (m_t1 > m_t0))
     {
-        p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("line"), 60), 1, Qt::DashLine));
-        p.drawLine(QPointF(m_cursor.x(), plot.top()), QPointF(m_cursor.x(), plot.bottom()));
-        p.drawLine(QPointF(plot.left(), m_cursor.y()), QPointF(plot.right(), m_cursor.y()));
+        const double x = plot.left() + plot.width() * (m_linkedCursorTime - m_t0) / (m_t1 - m_t0);
+        if (plot.left() <= x && x <= plot.right())
+        {
+            p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("accent"), 90), 1, Qt::DashLine));
+            p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        }
+    }
 
-        const double t = m_t0 + (m_t1 - m_t0) * (m_cursor.x() - plot.left()) / plot.width();
+    const bool pinned = m_pinnedReadout;
+    const bool hover = m_hover && plot.contains(m_cursor);
+    if (pinned || hover)
+    {
+        const double t = pinned ? m_pinnedTime
+                                : m_t0 + (m_t1 - m_t0) * (m_cursor.x() - plot.left()) / plot.width();
+        QPointF cursor = pinned ? m_pinnedCursor : m_cursor;
+        if (pinned)
+            cursor.setX(plot.left() + plot.width() * (t - m_t0) / qMax(1e-12, m_t1 - m_t0));
+        cursor.setY(qBound(plot.top() + 1, cursor.y(), plot.bottom() - 1));
+        p.setPen(QPen(ThemeManager::alphaColor(QStringLiteral("line"), 60), 1, Qt::DashLine));
+        if (plot.contains(cursor))
+        {
+            p.drawLine(QPointF(cursor.x(), plot.top()), QPointF(cursor.x(), plot.bottom()));
+            p.drawLine(QPointF(plot.left(), cursor.y()), QPointF(plot.right(), cursor.y()));
+        }
 
         // 逐曲线读数：按显示时间找最近样本，不做插值；源间时间偏移已在此消掉。
         QStringList rows;
@@ -1968,19 +2053,25 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         const int lineH = fm.height() + 2;
         const int boxW = qMin(int(plot.width() - 16), 280);
         const int boxH = 22 + rows.size() * lineH + 6;
-        QRectF box(m_cursor.x() + 12, plot.top() + 8, boxW, boxH);
+        QRectF box(cursor.x() + 12, plot.top() + 8, boxW, boxH);
         if (box.right() > plot.right())
-            box.moveLeft(m_cursor.x() - 12 - boxW);
+            box.moveLeft(cursor.x() - 12 - boxW);
         if (box.bottom() > plot.bottom())
             box.moveTop(plot.bottom() - boxH - 4);
         p.setPen(Qt::NoPen);
-        p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), 238));
+        p.setBrush(ThemeManager::alphaColor(QStringLiteral("panel"), pinned ? 252 : 238));
         p.drawRoundedRect(box, 3, 3);
+        if (pinned)
+        {
+            p.setPen(QPen(ThemeManager::color(QStringLiteral("accent")), 1));
+            p.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
+        }
 
         p.setPen(ThemeManager::color(QStringLiteral("accent")));
         p.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
                    Qt::AlignVCenter | Qt::AlignLeft,
-                   QStringLiteral("t = %1").arg(formatTime(t)));
+                   pinned ? QStringLiteral("固定 t = %1").arg(formatTime(t))
+                          : QStringLiteral("t = %1").arg(formatTime(t)));
         p.setPen(ThemeManager::color(QStringLiteral("textDim")));
         p.drawLine(QPointF(box.left() + 7, box.top() + 21),
                    QPointF(box.right() - 7, box.top() + 21));
@@ -2278,8 +2369,10 @@ void PlottingCanvas::createMeasurementAt(double t)
         b = m_t1;
         a = qMax(m_t0, b - gap);
     }
-    m_abA = a;
-    m_abB = b;
+    const double snappedA = snapTimeToSample(a, true);
+    const double snappedB = snapTimeToSample(b, true);
+    m_abA = snappedA;
+    m_abB = snappedB > snappedA ? snappedB : b;
     m_abEnabled = true;
     m_abHasA = true;
     m_abHasB = true;
@@ -2530,14 +2623,18 @@ void PlottingCanvas::showCanvasMenu(double t, int markerIndex, AxisZone zone,
     QMenu menu(this);
     QAction *addMarker = menu.addAction(
         QStringLiteral("在 %1 添加时间书签…").arg(formatTime(t)));
+    QAction *renameMarker = nullptr;
     QAction *delMarker = nullptr;
     if (markerIndex >= 0 && markerIndex < m_timeMarkers.size())
     {
         QString label = m_timeMarkers.at(markerIndex).label.trimmed();
         if (label.isEmpty())
             label = formatTime(m_timeMarkers.at(markerIndex).t);
+        renameMarker = menu.addAction(QStringLiteral("重命名书签「%1」…").arg(label));
         delMarker = menu.addAction(QStringLiteral("删除书签「%1」").arg(label));
     }
+    QAction *pinReadout = menu.addAction(m_pinnedReadout ? QStringLiteral("取消固定读数")
+                                                         : QStringLiteral("固定读数"));
     menu.addSeparator();
     QAction *addCurve = menu.addAction(QStringLiteral("添加曲线…"));
     menu.addSeparator();
@@ -2571,6 +2668,18 @@ void PlottingCanvas::showCanvasMenu(double t, int markerIndex, AxisZone zone,
     QAction *chosen = menu.exec(globalPos);
     if (chosen == addMarker)
         emit markerRequested(t);
+    else if (renameMarker && chosen == renameMarker)
+    {
+        const QString old = m_timeMarkers.at(markerIndex).label;
+        bool ok = false;
+        const QString label = QInputDialog::getText(this, QStringLiteral("重命名时间书签"),
+                                                    QStringLiteral("书签名称"), QLineEdit::Normal,
+                                                    old, &ok).trimmed();
+        if (ok && !label.isEmpty() && label != old)
+            emit markerRenameRequested(m_timeMarkers.at(markerIndex).id, label);
+    }
+    else if (chosen == pinReadout)
+        toggleReadoutPin();
     else if (delMarker && chosen == delMarker)
         emit markerRemoveRequested(m_timeMarkers.at(markerIndex).id);
     else if (chosen == addCurve)
@@ -2705,6 +2814,8 @@ void PlottingCanvas::mousePressEvent(QMouseEvent *event)
     // 右键只记录命中，菜单和框选都等到 release 再决定。
     if (event->button() == Qt::RightButton)
     {
+        m_cursor = QPointF(event->position().x(),
+                           qBound(plot.top() + 1, event->position().y(), plot.bottom() - 1));
         m_rightPressed = true;
         m_rightBoxing = false;
         m_rightStart = event->position();
@@ -3159,6 +3270,12 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
 {
     m_cursor = event->position();
     m_hover = true;
+    const QRectF hoverPlot = plotRect();
+    if (hoverPlot.contains(m_cursor)
+        && !(event->buttons() & (Qt::LeftButton | Qt::RightButton | Qt::MiddleButton)))
+        emit hoverTimeChanged(timeAtX(m_cursor.x()), true);
+    else
+        emit hoverTimeChanged(0.0, false);
 
     // 右键拖动：超过阈值才进入框选，未拖动前不弹菜单。
     if (m_rightPressed && (event->buttons() & Qt::RightButton) && m_rightCanBox)
@@ -3197,10 +3314,11 @@ void PlottingCanvas::mouseMoveEvent(QMouseEvent *event)
     if (m_abDrag && (event->buttons() & Qt::LeftButton) && plotRect().contains(event->position()))
     {
         const double tc = timeAtX(event->position().x());
+        const double snapped = snapTimeToSample(tc);
         if (m_abDrag == 1)
-            m_abA = tc;
+            m_abA = snapped;
         else
-            m_abB = tc;
+            m_abB = snapped;
         update();
         return;
     }
@@ -3438,8 +3556,19 @@ void PlottingCanvas::keyPressEvent(QKeyEvent *event)
             clearMeasurement();
         else if (m_hasSelectedBookmark)
             clearBookmarkSelection();
+        else if (m_pinnedReadout)
+        {
+            m_pinnedReadout = false;
+            update();
+        }
         else if (m_tool != NoTool)
             setTool(NoTool);
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_P)
+    {
+        toggleReadoutPin();
         event->accept();
         return;
     }
@@ -3528,6 +3657,7 @@ void PlottingCanvas::keyReleaseEvent(QKeyEvent *event)
 void PlottingCanvas::leaveEvent(QEvent *event)
 {
     m_hover = false;
+    emit hoverTimeChanged(0.0, false);
     if (m_hoverBar && !m_reordering)
     {
         const QPoint local = mapFromGlobal(QCursor::pos());

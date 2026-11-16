@@ -41,9 +41,11 @@ signals:
     void markerRequested(double t);
     void markerRemoveRequested(const QString &id);
     void markerMoveRequested(const QString &id, double to);
+    void markerRenameRequested(const QString &id, const QString &label);
 
 private:
     PlottingCanvas *makeCanvas(const QString &title, QWidget *parent);
+    QVector<PlottingCanvas *> pageCanvasesOf(PlottingCanvas *c) const;
     QVector<PlottingCanvas *> pageCanvases() const;
     QVector<PlottingCanvas *> allCanvases() const;
 

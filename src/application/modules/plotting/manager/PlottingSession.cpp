@@ -135,6 +135,8 @@ void PlottingSession::createPages()
             [this](const QString &id) { ps::bridge::removeTimeMarker(m_mw, id); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerMoveRequested, this,
             [this](const QString &id, double to) { ps::bridge::moveTimeMarker(m_mw, id, to); });
+    connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRenameRequested, this,
+            [this](const QString &id, const QString &label) { ps::bridge::renameTimeMarker(m_mw, id, label); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasRemoveRequested, this,
             [this](PlottingCanvas *c) { removeCanvas(c); });
 

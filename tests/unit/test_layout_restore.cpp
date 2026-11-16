@@ -62,6 +62,10 @@ int main(int argc, char **argv)
         || qAbs(ds->timeMarkers().first().t - 20.0) > 1e-6)
         return 1;
 
+    ds->renameTimeMarker(id, QStringLiteral("改名"));
+    if (ds->timeMarkers().first().label != QStringLiteral("改名"))
+        return 1;
+
     QJsonObject legacy = root;
     QJsonArray legacyMarkers = markers;
     QJsonObject legacyMarker = legacyMarkers.first().toObject();

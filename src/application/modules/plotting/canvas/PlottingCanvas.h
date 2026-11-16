@@ -122,6 +122,12 @@ public:
     void setMaximizedState(bool on);                // 主窗切换后同步按钮图标/提示
     void clearPlayhead();
     void setTimeMarkers(const QVector<ps::TimeBookmark> &markers);
+    void setLinkedCursor(double t, bool visible);       // 同页其他画布联动的时间光标
+    bool linkedCursorVisible() const { return m_linkedCursorVisible; }
+    double linkedCursorTime() const { return m_linkedCursorTime; }
+    void toggleReadoutPin();                             // 固定/解除当前读数
+    bool readoutPinned() const { return m_pinnedReadout; }
+    double pinnedReadoutTime() const { return m_pinnedTime; }
 
 signals:
     void activated(const QString &title);
@@ -135,6 +141,8 @@ signals:
     void markerRequested(double t);                 // 右键：在指针处添加时间书签
     void markerRemoveRequested(const QString &id);   // 右键：删除书签
     void markerMoveRequested(const QString &id, double to); // 拖动书签后提交
+    void markerRenameRequested(const QString &id, const QString &label); // 右键：重命名书签
+    void hoverTimeChanged(double t, bool visible);       // 时间轴悬停，同页画布联动
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -193,6 +201,7 @@ private:
     void clearBookmarkSelection();
     void createMeasurementAt(double t);
     void clearMeasurement();
+    double snapTimeToSample(double t, bool force = false) const;
     void resetXAxis();
     void resetYAxis();
     void applyBoxZoom(const QRectF &r, AxisZone zone, const QPointF &start, const QPointF &end);
@@ -287,6 +296,11 @@ private:
     QString m_selectedBookmarkId;
     QPointF m_bookmarkDragStart;
     bool m_hover = false;
+    bool m_pinnedReadout = false;
+    QPointF m_pinnedCursor;
+    double m_pinnedTime = 0.0;
+    bool m_linkedCursorVisible = false;
+    double m_linkedCursorTime = 0.0;
     QWidget *m_hoverBar = nullptr;
     QToolButton *m_dragBtn = nullptr;
     QToolButton *m_maxBtn = nullptr;

@@ -257,6 +257,64 @@ int main(int argc, char **argv)
     key(&c, Qt::Key_Escape);
     check(!c.measurementEnabled(), "esc clears A/B");
 
+    // A/B 吸附采样点：稀疏样本也要落在真实时间戳。
+    c.clearChannels();
+    QVector<double> sparseT{0, 2, 4, 6, 8, 10};
+    QVector<double> sparseV{0, 1, 0, 1, 0, 1};
+    c.addGeneratedSeries(QStringLiteral("sparse"), sparseT, sparseV);
+    c.setTimeRange(0.0, 10.0);
+    c.render(&pm);
+    mouse(&c, QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton, Qt::ControlModifier);
+    mouse(&c, QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton, Qt::ControlModifier);
+    check(qAbs(c.measurementA() - 4.0) < 1e-6, "A snaps to sample");
+    check(qAbs(c.measurementB() - 6.0) < 1e-6, "B snaps to sample");
+    key(&c, Qt::Key_Escape);
+    makeCanvas(c);
+
+    // 同页光标联动：悬停发出时间，被动光标可设置。
+    reset(c);
+    double hoverT = -1.0;
+    bool hoverVisible = false;
+    QObject::connect(&c, &PlottingCanvas::hoverTimeChanged, [&](double t, bool visible) {
+        hoverT = t;
+        hoverVisible = visible;
+    });
+    mouse(&c, QEvent::MouseMove, center, Qt::NoButton, Qt::NoButton);
+    check(hoverVisible && qAbs(hoverT - 5.0) < 0.2, "hover emits linked time");
+    c.setLinkedCursor(3.0, true);
+    check(c.linkedCursorVisible() && qAbs(c.linkedCursorTime() - 3.0) < 1e-9, "linked cursor set");
+    c.setLinkedCursor(3.0, false);
+    check(!c.linkedCursorVisible(), "linked cursor cleared");
+
+    PlottingCanvas other;
+    makeCanvas(other);
+    QObject::connect(&c, &PlottingCanvas::hoverTimeChanged,
+                     &other, &PlottingCanvas::setLinkedCursor);
+    mouse(&c, QEvent::MouseMove, center, Qt::NoButton, Qt::NoButton);
+    check(other.linkedCursorVisible() && qAbs(other.linkedCursorTime() - 5.0) < 0.2,
+          "sibling canvas follows hover");
+
+    // P 固定读数；P/Esc 解除。
+    reset(c);
+    mouse(&c, QEvent::MouseMove, center, Qt::NoButton, Qt::NoButton);
+    key(&c, Qt::Key_P);
+    check(c.readoutPinned() && qAbs(c.pinnedReadoutTime() - 5.0) < 0.2, "P pins readout");
+    key(&c, Qt::Key_P);
+    check(!c.readoutPinned(), "P unpins readout");
+    key(&c, Qt::Key_P);
+    check(c.readoutPinned(), "P re-pins readout");
+    key(&c, Qt::Key_Escape);
+    check(!c.readoutPinned(), "esc unpins readout");
+
+    // 右键菜单固定/取消固定读数。
+    reset(c);
+    chooseMenuAction(QStringLiteral("固定读数"));
+    rightClick(&c, center);
+    check(menuMiss.isEmpty() && c.readoutPinned(), "menu pins readout");
+    chooseMenuAction(QStringLiteral("取消固定读数"));
+    rightClick(&c, center);
+    check(menuMiss.isEmpty() && !c.readoutPinned(), "menu unpins readout");
+
     // 空格+左键平移。
     reset(c);
     mt0 = c.t0();

@@ -38,6 +38,7 @@ QVector<ps::TimeBookmark> timeMarkers(MainWindow *mw);
 void addTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
 void removeTimeMarker(MainWindow *mw, const QString &id);
 void moveTimeMarker(MainWindow *mw, const QString &id, double to);
+void renameTimeMarker(MainWindow *mw, const QString &id, const QString &label);
 
 // 绘图模块向数据源模块暴露的操作，避免 data_source 反向 include plotting。
 void newPage(MainWindow *mw);

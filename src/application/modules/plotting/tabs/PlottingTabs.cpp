@@ -74,6 +74,13 @@ void PlottingTabs::attachCanvas(PlottingCanvas *c)
             [this](const QString &id) { emit markerRemoveRequested(id); });
     connect(c, &PlottingCanvas::markerMoveRequested, this,
             [this](const QString &id, double to) { emit markerMoveRequested(id, to); });
+    connect(c, &PlottingCanvas::markerRenameRequested, this,
+            [this](const QString &id, const QString &label) { emit markerRenameRequested(id, label); });
+    connect(c, &PlottingCanvas::hoverTimeChanged, this, [this, c](double t, bool visible) {
+        for (PlottingCanvas *o : pageCanvasesOf(c))
+            if (o != c)
+                o->setLinkedCursor(t, visible);
+    });
     connect(c, &PlottingCanvas::removeRequested, this, [this, c] { emit canvasRemoveRequested(c); });
     c->setTimeMarkers(m_markers);
 }
@@ -135,6 +142,17 @@ void PlottingTabs::setTimeMarkers(const QVector<ps::TimeBookmark> &markers)
         for (PlottingCanvas *c : canvases)
             c->setTimeMarkers(m_markers);
     }
+}
+
+QVector<PlottingCanvas *> PlottingTabs::pageCanvasesOf(PlottingCanvas *c) const
+{
+    for (int i = 0; i < count(); ++i)
+    {
+        const auto list = PlottingLayout::collectCanvases(widget(i));
+        if (list.contains(c))
+            return list;
+    }
+    return {};
 }
 
 QVector<PlottingCanvas *> PlottingTabs::pageCanvases() const

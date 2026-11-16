@@ -16,6 +16,7 @@ QVector<ps::TimeBookmark> &dataSourceTimeMarkers(MainWindow *mw);
 void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
 void removeDataSourceTimeMarker(MainWindow *mw, const QString &id);
 void moveDataSourceTimeMarker(MainWindow *mw, const QString &id, double to);
+void renameDataSourceTimeMarker(MainWindow *mw, const QString &id, const QString &label);
 }
 
 namespace ps::components

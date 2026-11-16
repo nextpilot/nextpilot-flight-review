@@ -1198,6 +1198,22 @@ void DataSourceSession::removeTimeMarker(const QString &id)
     }
 }
 
+void DataSourceSession::renameTimeMarker(const QString &id, const QString &label)
+{
+    const QString text = label.trimmed();
+    if (text.isEmpty())
+        return;
+    for (auto &mk : m_timeMarkers)
+    {
+        if (mk.id != id)
+            continue;
+        mk.label = text;
+        ps::bridge::applyTimeMarkers(m_mw);
+        m_mw->logs().info(QStringLiteral("重命名时间书签：%1").arg(text));
+        return;
+    }
+}
+
 void DataSourceSession::moveTimeMarker(const QString &id, double to)
 {
     int index = -1;
