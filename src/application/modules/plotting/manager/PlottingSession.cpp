@@ -36,8 +36,10 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSize>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QTimer>
 #include <QString>
 #include <QStringList>
 #include <QTabBar>
@@ -915,6 +917,7 @@ void PlottingSession::showAxesProps(PlottingCanvas *c)
         : QStringLiteral("未启用");
     setPropRows(QStringLiteral("坐标轴 · %1").arg(c->title()),
                 {{QStringLiteral("类型"), QStringLiteral("坐标轴 (Axes)")},
+                 {QStringLiteral("标题"), c->title()},
                  {QStringLiteral("绘图模式"), plotModeLabel(st.value(QStringLiteral("mode")).toInt())},
                  {QStringLiteral("时间轴"), QStringLiteral("%1 ~ %2 s")
                                                .arg(st.value(QStringLiteral("t0")).toDouble(), 0, 'f', 2)
@@ -941,7 +944,12 @@ void PlottingSession::showAxesProps(PlottingCanvas *c)
                  {QStringLiteral("坐标轴线宽"), QStringLiteral("%1 px").arg(st.value(QStringLiteral("axisLineWidth")).toInt(1))},
                  {QStringLiteral("坐标轴颜色"), st.value(QStringLiteral("axisColor")).toString().isEmpty()
                                                    ? QStringLiteral("跟随主题")
-                                                   : st.value(QStringLiteral("axisColor")).toString()}});
+                                                   : st.value(QStringLiteral("axisColor")).toString()}},
+                {QStringLiteral("标题"), QStringLiteral("X 轴标签"), QStringLiteral("Y 轴标签"),
+                 QStringLiteral("X 网格"), QStringLiteral("Y 网格"), QStringLiteral("次网格"),
+                 QStringLiteral("图例"), QStringLiteral("图例位置"), QStringLiteral("边框"),
+                 QStringLiteral("FlipY"), QStringLiteral("坐标轴字号"),
+                 QStringLiteral("坐标轴线宽"), QStringLiteral("坐标轴颜色")});
     m_propCanvas = c;
     m_propSeriesIndex = -1;
     m_propKind = 1;
@@ -1004,7 +1012,10 @@ void PlottingSession::showSeriesProps(PlottingCanvas *c, int index)
                  {QStringLiteral("时间偏移"), QStringLiteral("%1 s").arg(so.value(QStringLiteral("offset")).toDouble(), 0, 'f', 3)},
                  {QStringLiteral("来源"), so.value(QStringLiteral("srcPath")).toString().isEmpty()
                                                ? QStringLiteral("演示 / 脚本生成")
-                                               : so.value(QStringLiteral("srcPath")).toString()}});
+                                               : so.value(QStringLiteral("srcPath")).toString()}},
+                {QStringLiteral("图例"), QStringLiteral("颜色"), QStringLiteral("线宽"),
+                 QStringLiteral("线型"), QStringLiteral("标记"), QStringLiteral("标记大小"),
+                 QStringLiteral("绑定轴"), QStringLiteral("可见"), QStringLiteral("时间偏移")});
     m_propCanvas = c;
     m_propSeriesIndex = index;
     m_propKind = 2;
@@ -1230,7 +1241,8 @@ QJsonObject PlottingSession::pageState(QWidget *page) const
 }
 
 
-void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows)
+void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
+                                  const QStringList &editable)
 {
     m_propCanvas = nullptr;
     m_propSeriesIndex = -1;
@@ -1241,22 +1253,188 @@ void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QSt
         m_selLabel->setText(QStringLiteral("当前对象：%1").arg(object));
     if (!m_propTable)
         return;
+    // 程序填充行本身也会触发 itemChanged，这里整体屏蔽，避免把回填当成用户编辑。
+    const QSignalBlocker blocker(m_propTable);
+    m_propUpdating = true;
     m_propTable->setRowCount(rows.size());
     for (int i = 0; i < rows.size(); ++i)
     {
+        const bool canEdit = editable.contains(rows[i].first);
         auto *k = new QTableWidgetItem(rows[i].first);
         k->setFlags(Qt::ItemIsEnabled);
         k->setForeground(QColor(QStringLiteral("#9aa7b2")));
         auto *v = new QTableWidgetItem(rows[i].second);
-        // 属性表当前只做只读展示，避免看起来能改、改完却不生效。
-        v->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-        v->setToolTip(rows[i].second);
-        v->setForeground(QColor(QStringLiteral("#d5dde5")));
+        // 可写属性直接编辑、回车即生效；只读属性仍只是展示。
+        v->setFlags(canEdit ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable)
+                            : (Qt::ItemIsEnabled | Qt::ItemIsSelectable));
+        v->setToolTip(canEdit ? QStringLiteral("双击编辑，回车立即生效") : rows[i].second);
+        v->setForeground(canEdit ? QColor(QStringLiteral("#eaf2fb")) : QColor(QStringLiteral("#d5dde5")));
         m_propTable->setItem(i, 0, k);
         m_propTable->setItem(i, 1, v);
     }
+    m_propUpdating = false;
 }
 
+
+namespace
+{
+// 属性表里存的是带单位的展示文本（"2 px" / "0.5 s"），编辑时只取前导数字。
+int leadingInt(const QString &text, int fallback)
+{
+    const QRegularExpression re(QStringLiteral("[-+]?\\d+"));
+    const QRegularExpressionMatch m = re.match(text);
+    if (!m.hasMatch())
+        return fallback;
+    bool ok = false;
+    const int v = m.captured(0).toInt(&ok);
+    return ok ? v : fallback;
+}
+
+double leadingDouble(const QString &text, double fallback)
+{
+    const QRegularExpression re(QStringLiteral("[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)"));
+    const QRegularExpressionMatch m = re.match(text);
+    if (!m.hasMatch())
+        return fallback;
+    bool ok = false;
+    const double v = m.captured(0).toDouble(&ok);
+    return ok ? v : fallback;
+}
+
+// 开关类属性接受“显示/是/开/true”与“隐藏/否/关/false”两种写法。
+bool switchOn(const QString &text)
+{
+    return text.contains(QStringLiteral("显示")) || text.contains(QStringLiteral("是")) ||
+           text.contains(QStringLiteral("开")) || text.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0;
+}
+
+int indexOfLabel(const QStringList &labels, const QString &text, int fallback)
+{
+    const int byText = labels.indexOf(text);
+    if (byText >= 0)
+        return byText;
+    return leadingInt(text, fallback);
+}
+} // namespace
+
+bool PlottingSession::applyPropEdit(const QString &key, const QString &text)
+{
+    if (!m_propCanvas)
+        return false;
+    const QString v = text.trimmed();
+    auto reject = [this](const QString &reason) {
+        log(QStringLiteral("属性未生效：%1").arg(reason));
+        if (m_propKind == 2 && m_propCanvas && m_propSeriesIndex >= 0)
+            showSeriesProps(m_propCanvas, m_propSeriesIndex);
+        else if (m_propKind == 1 && m_propCanvas)
+            showAxesProps(m_propCanvas);
+        return false;
+    };
+
+    if (m_propKind == 2)
+    {
+        const QJsonObject st = m_propCanvas->seriesState(m_propSeriesIndex);
+        if (st.isEmpty())
+            return reject(QStringLiteral("曲线已不存在"));
+        QJsonObject patch;
+        if (key == QStringLiteral("图例"))
+            patch[QStringLiteral("label")] = v;
+        else if (key == QStringLiteral("颜色"))
+        {
+            const QColor c(v);
+            if (!c.isValid())
+                return reject(QStringLiteral("颜色需为 #RRGGBB 或颜色名：%1").arg(v));
+            patch[QStringLiteral("color")] = c.name();
+        }
+        else if (key == QStringLiteral("线宽"))
+            patch[QStringLiteral("width")] = leadingInt(v, st.value(QStringLiteral("width")).toInt(1));
+        else if (key == QStringLiteral("线型"))
+            patch[QStringLiteral("style")] =
+                indexOfLabel({QStringLiteral("实线"), QStringLiteral("虚线"), QStringLiteral("点线"),
+                             QStringLiteral("点划线")},
+                            v, st.value(QStringLiteral("style")).toInt(0));
+        else if (key == QStringLiteral("标记"))
+            patch[QStringLiteral("marker")] =
+                indexOfLabel({QStringLiteral("无"), QStringLiteral("圆点"), QStringLiteral("方块"),
+                             QStringLiteral("菱形"), QStringLiteral("三角"), QStringLiteral("十字"),
+                             QStringLiteral("叉号")},
+                            v, st.value(QStringLiteral("marker")).toInt(0));
+        else if (key == QStringLiteral("标记大小"))
+            patch[QStringLiteral("markerSize")] = leadingInt(v, st.value(QStringLiteral("markerSize")).toInt(5));
+        else if (key == QStringLiteral("绑定轴"))
+            patch[QStringLiteral("axis")] = v.contains(QStringLiteral("右")) ? 1 : 0;
+        else if (key == QStringLiteral("可见"))
+            patch[QStringLiteral("visible")] = switchOn(v);
+        else if (key == QStringLiteral("时间偏移"))
+            patch[QStringLiteral("offset")] = leadingDouble(v, st.value(QStringLiteral("offset")).toDouble());
+        else
+            return false;
+        // patchSeries 会发 activated，把属性面板跳回坐标轴；这里是程序化改属性，
+        // 不打断用户当前选中的曲线，所以只屏蔽这次调用的信号。
+        bool ok = false;
+        {
+            const QSignalBlocker blocker(m_propCanvas);
+            ok = m_propCanvas->patchSeries(m_propSeriesIndex, patch);
+        }
+        if (!ok)
+            return reject(QStringLiteral("曲线写入失败"));
+        showSeriesProps(m_propCanvas, m_propSeriesIndex);
+        log(QStringLiteral("曲线属性已更新 · %1 = %2").arg(key, v));
+        return true;
+    }
+
+    if (m_propKind == 1)
+    {
+        const QJsonObject st = m_propCanvas->saveState();
+        const QString xLabel = st.value(QStringLiteral("xlabel")).toString();
+        const QString yLabel = st.value(QStringLiteral("ylabel")).toString();
+        const bool gx = st.value(QStringLiteral("gridX")).toBool(true);
+        const bool gy = st.value(QStringLiteral("gridY")).toBool(true);
+        const bool gm = st.value(QStringLiteral("minorGrid")).toBool(false);
+        if (key == QStringLiteral("标题"))
+            m_propCanvas->setTitle(v);
+        else if (key == QStringLiteral("X 轴标签"))
+            m_propCanvas->setAxisLabels(v, yLabel);
+        else if (key == QStringLiteral("Y 轴标签"))
+            m_propCanvas->setAxisLabels(xLabel, v);
+        else if (key == QStringLiteral("X 网格"))
+            m_propCanvas->setGridAxes(switchOn(v), gy, gm);
+        else if (key == QStringLiteral("Y 网格"))
+            m_propCanvas->setGridAxes(gx, switchOn(v), gm);
+        else if (key == QStringLiteral("次网格"))
+            m_propCanvas->setGridAxes(gx, gy, switchOn(v));
+        else if (key == QStringLiteral("图例"))
+            m_propCanvas->setLegendVisible(switchOn(v));
+        else if (key == QStringLiteral("图例位置"))
+            m_propCanvas->setLegendPosition(
+                indexOfLabel({QStringLiteral("左上"), QStringLiteral("右上"), QStringLiteral("左下"),
+                              QStringLiteral("右下")},
+                             v, st.value(QStringLiteral("legendPos")).toInt(0)));
+        else if (key == QStringLiteral("边框"))
+            m_propCanvas->setBoxVisible(switchOn(v));
+        else if (key == QStringLiteral("FlipY"))
+            m_propCanvas->setFlipY(switchOn(v));
+        else if (key == QStringLiteral("坐标轴字号"))
+            m_propCanvas->setAxisFontSize(leadingInt(v, st.value(QStringLiteral("axisFontSize")).toInt(11)));
+        else if (key == QStringLiteral("坐标轴线宽"))
+            m_propCanvas->setAxisLineWidth(leadingInt(v, st.value(QStringLiteral("axisLineWidth")).toInt(1)));
+        else if (key == QStringLiteral("坐标轴颜色"))
+        {
+            const QColor c(v);
+            if (!v.isEmpty() && !c.isValid() && !v.contains(QStringLiteral("跟随")))
+                return reject(QStringLiteral("颜色需为 #RRGGBB 或颜色名：%1").arg(v));
+            // 留空或“跟随主题”即清空自定义颜色
+            m_propCanvas->setAxisColor(v.isEmpty() || v.contains(QStringLiteral("跟随")) ? QColor() : c);
+        }
+        else
+            return false;
+        showAxesProps(m_propCanvas);
+        log(QStringLiteral("坐标轴属性已更新 · %1 = %2").arg(key, v));
+        return true;
+    }
+
+    return false;
+}
 
 QWidget *PlottingSession::createPropPanel(bool tree)
 {
@@ -1287,7 +1465,8 @@ QWidget *PlottingSession::createPropPanel(bool tree)
         m_propTable->setHorizontalHeaderLabels({QStringLiteral("属性"), QStringLiteral("值")});
         m_propTable->horizontalHeader()->setStretchLastSection(true);
         m_propTable->verticalHeader()->hide();
-        m_propTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        m_propTable->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed |
+                                     QAbstractItemView::SelectedClicked);
         m_propTable->setSelectionBehavior(QAbstractItemView::SelectRows);
         lay->addWidget(m_propTable, 1);
         bindPlotPanels(m_selLabel, m_propEditBtn, m_propTable, nullptr);
@@ -1308,10 +1487,17 @@ void PlottingSession::bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidge
         else if (m_propKind == 1) editAxesProps(m_propCanvas);
     });
     if (m_propTable)
-    connect(m_propTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
-        if (!m_propCanvas) return;
-        if (m_propKind == 2 && m_propSeriesIndex >= 0) editSeriesProps(m_propCanvas, m_propSeriesIndex);
-        else if (m_propKind == 1) editAxesProps(m_propCanvas);
+    connect(m_propTable, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *it) {
+        if (m_propUpdating || !it || it->column() != 1)
+            return;
+        auto *key = m_propTable->item(it->row(), 0);
+        if (!key)
+            return;
+        // 提交编辑时编辑器仍持有该 item，直接重建表格会踩到野指针；
+        // 等事件循环回过身再应用，同时也避免重入刷新。
+        const QString k = key->text();
+        const QString v = it->text();
+        QTimer::singleShot(0, this, [this, k, v] { applyPropEdit(k, v); });
     });
     auto pick = [this](QTreeWidgetItem *it) {
         if (m_propTreeBuilding || !it) return;

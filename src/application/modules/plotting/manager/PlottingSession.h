@@ -36,7 +36,8 @@ public:
     void canvasAutoY();
     QTableWidget *propTable() const { return m_propTable; }
     QTreeWidget *propTree() const { return m_propTree; }
-    void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows);
+    void setPropRows(const QString &object, const QVector<QPair<QString, QString>> &rows,
+                     const QStringList &editable = QStringList());
     void bindPlotPanels(QLabel *sel, QToolButton *edit, QTableWidget *table, QTreeWidget *tree);
     QJsonObject pageState(QWidget *page) const;
     QWidget *buildPage(const QJsonObject &o);
@@ -59,6 +60,7 @@ public:
     void showSeriesProps(PlottingCanvas *c, int index);
     void editSeriesProps(PlottingCanvas *c, int index);
     void editAxesProps(PlottingCanvas *c);
+    bool applyPropEdit(const QString &key, const QString &text);
     void log(const QString &text);
 
 private:
@@ -71,6 +73,7 @@ private:
     int m_propKind = 0;
     QTreeWidget *m_propTree = nullptr;
     bool m_propTreeBuilding = false;
+    bool m_propUpdating = false;
     QLabel *m_selLabel = nullptr;
     QLabel *m_runLabel = nullptr;
     PlottingCanvas *m_maxedCanvas = nullptr;
