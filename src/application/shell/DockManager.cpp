@@ -44,6 +44,9 @@ void DockManager::ensure()
         m_centralContent = m_window->centralWidget();
     // ADS 在构造时按静态 flag 决定是否创建焦点控制器，必须先行设置
     ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting);
+    // 标签不画内联关闭按钮，关闭入口只留 DockArea 右侧的叉（对齐 VS 观感）
+    ads::CDockManager::setConfigFlag(ads::CDockManager::ActiveTabHasCloseButton, false);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::AllTabsHaveCloseButton, false);
     ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaDynamicTabsMenuButtonVisibility);
     ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize);
     ads::CDockManager::setAutoHideConfigFlags(ads::CDockManager::DefaultAutoHideConfig);
