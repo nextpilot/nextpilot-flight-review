@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QIcon>
 #include <QLabel>
+#include <QListView>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -453,11 +454,10 @@ void buildPlotGallery(QWidget *p)
     plotGallery->setMinimumWidth(330);
     plotGallery->setMaximumWidth(370);
     plotGallery->setCurrentViewGroup(commonGroup);
-    if (auto *vp = plotGallery->findChild<SARibbonGalleryViewport *>())
-    {
-        vp->removeWidget(commonGroup);
-        commonGroup->setParent(plotGallery);
-    }
+    // 图库组是 QListView，内容比视口高一两个像素就会在缩略图之间露出一条竖条滚动条；
+    // 单行模式用不上它，直接关掉，翻页交给面板自己的下拉入口
+    for (auto *g : plotGallery->findChildren<QListView *>())
+        g->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto *plotMenu = new PlotMenuPopup(mw);
     plotMenu->addGroup(QStringLiteral("曲线"), curveActs);
     plotMenu->addGroup(QStringLiteral("地图 / 3D"), mapActs);
