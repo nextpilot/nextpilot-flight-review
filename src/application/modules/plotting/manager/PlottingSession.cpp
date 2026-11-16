@@ -14,6 +14,8 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDockWidget>
+#include <QEvent>
+#include <QFontMetrics>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -37,6 +39,7 @@
 #include <QRegularExpression>
 #include <QSize>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTimer>
@@ -1250,7 +1253,14 @@ void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QSt
     if (m_propEditBtn)
         m_propEditBtn->setEnabled(false);
     if (m_selLabel)
-        m_selLabel->setText(QStringLiteral("当前对象：%1").arg(object));
+    {
+        m_selText = QStringLiteral("当前对象：%1").arg(object);
+        m_selLabel->setToolTip(m_selText);
+        m_selLabel->setText(m_selLabel->width() > 0
+                                ? QFontMetrics(m_selLabel->font())
+                                      .elidedText(m_selText, Qt::ElideRight, m_selLabel->width())
+                                : m_selText);
+    }
     if (!m_propTable)
         return;
     // 程序填充行本身也会触发 itemChanged，这里整体屏蔽，避免把回填当成用户编辑。
@@ -1436,6 +1446,19 @@ bool PlottingSession::applyPropEdit(const QString &key, const QString &text)
     return false;
 }
 
+bool PlottingSession::eventFilter(QObject *obj, QEvent *ev)
+{
+    if (obj == m_selLabel && m_selLabel && ev->type() == QEvent::Resize)
+    {
+        const int w = m_selLabel->width();
+        const QString shown = w > 0 ? QFontMetrics(m_selLabel->font()).elidedText(m_selText, Qt::ElideRight, w)
+                                    : m_selText;
+        if (m_selLabel->text() != shown)
+            m_selLabel->setText(shown);
+    }
+    return QWidget::eventFilter(obj, ev);
+}
+
 QWidget *PlottingSession::createPropPanel(bool tree)
 {
     QWidget *w = new QWidget(m_mw);
@@ -1456,6 +1479,11 @@ QWidget *PlottingSession::createPropPanel(bool tree)
         auto *hl = new QHBoxLayout(head);
         hl->setContentsMargins(8, 4, 8, 4);
         m_selLabel = new QLabel(QStringLiteral("未选择"), head);
+        // 对象名可能很长（含路径），标签不能反过来把面板最小宽度顶死：
+        // 宽度策略设为 Ignored，按当前宽度省略显示，完整内容放 tooltip。
+        m_selLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        m_selLabel->setMinimumWidth(0);
+        m_selLabel->installEventFilter(this);
         m_propEditBtn = new QToolButton(head);
         m_propEditBtn->setText(QStringLiteral("编辑"));
         hl->addWidget(m_selLabel, 1);

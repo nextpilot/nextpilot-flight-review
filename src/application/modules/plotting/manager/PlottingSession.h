@@ -62,6 +62,7 @@ public:
     void editAxesProps(PlottingCanvas *c);
     bool applyPropEdit(const QString &key, const QString &text);
     void log(const QString &text);
+    bool eventFilter(QObject *obj, QEvent *ev) override;
 
 private:
     MainWindow *m_mw = nullptr;
@@ -75,6 +76,7 @@ private:
     bool m_propTreeBuilding = false;
     bool m_propUpdating = false;
     QLabel *m_selLabel = nullptr;
+    QString m_selText;   // 完整对象名，按标签宽度省略显示
     QLabel *m_runLabel = nullptr;
     PlottingCanvas *m_maxedCanvas = nullptr;
     QVector<QWidget *> m_maxedHidden;
