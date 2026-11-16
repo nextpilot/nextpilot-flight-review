@@ -1,6 +1,6 @@
 # 扩展 toolbox 化与 autopilot 方案
 
-> 状态：方案讨论中；`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`。MAVLink C++11 生成物、`MavlinkMessageParser`、metadata sidecar、组件注册和测试已落地；`MavlinkSource` 已改为统一 parser 解码，旧 `switch (msgid)` 已删除；`ProtocolInspector` 尚未接入。ULog/apbin/ROS parser 和工具箱迁移未实施。
+> 状态：方案讨论中；`modules/datasource` 的 `MessageParserRegistry`、`ProtocolCatalog`/`FrameDecoder`、GNSS 通用 `NmeaMessageParser`/`UbxMessageParser`/`Oem7MessageParser` 已落地；OEM7 二进制和 ASCII body 都能按 `oem7_database.json` 展开，`Oem7Source` 已移除 `BESTPOS/INSPVA/BESTATT/BESTVEL` 和 GGA 特判。`NmeaDataLoader`/`UbxDataLoader` 已改为读取 `nmea_database.json`/`ubx_database.json`；`NmeaMessageParser`/`UbxMessageParser` 也已按描述库解字段，代码不再分支 `GGA/RMC` 和 `NAV-PVT/NAV-POSLLH`。MAVLink C++11 生成物、`MavlinkMessageParser`、metadata sidecar、组件注册和测试已落地；`MavlinkSource` 已改为统一 parser 解码，旧 `switch (msgid)` 已删除；`ProtocolInspector` 尚未接入。ULog/apbin/ROS parser 和工具箱迁移未实施。
 > 日期：2026-11-16
 
 ## 1. 目标
@@ -311,7 +311,7 @@ builtin/gnss/
 ├── protocols/
 │   ├── oem7_database.json       # 取自 NovAtel EDIE，609 messages / 266 enums / 3 bitmasks
 │   ├── ubx_database.json        # u-blox class/id + payload 字段描述
-│   └── nmea_database.json       # talker/formatter + 逗号字段描述
+│   └── nmea_database.json       # 57 个 formatter + 逗号字段描述（pynmea2 生成）
 ├── protocol/
 │   └── parsers/
 │       ├── Oem7MessageParser.cpp
@@ -341,14 +341,14 @@ builtin/gnss/
 ### 5.5 UBX
 
 - 由 `UbxMessageParser` 处理 `0xB5 0x62 + class + id + length + payload + checksum` 的帧边界；`FrameDecoder` 按描述解 payload。
-- `ubx_database.json` 按 `class + id` 描述 payload 字段，不写 `NAV-PVT`、`NAV-POSLLH` 的专用分支。
+- `ubx_database.json` 按 `class + id` 描述 payload 字段，`UbxMessageParser` 按 offset/scale 解字段，不写 `NAV-PVT`、`NAV-POSLLH` 的专用分支。
 - 未知 class/id 仍显示帧头、长度、checksum 和原始 payload。
 - checksum 错误单独标记，不进入正常通道。
 
 ### 5.6 NMEA
 
 - 由 `NmeaMessageParser` 按 `$` 开头、逗号分隔、`*` checksum 的通用结构解析，不穷举 `GGA`、`RMC`、`GSA`、`GSV`。
-- `nmea_database.json` 按 `talker + formatter` 描述字段名、类型、单位、role；未命中的语句保留原始 token。
+- `nmea_database.json` 由 `tools/nmea-metadata.py` 从 pynmea2 生成，覆盖 57 个标准 formatter；`NmeaMessageParser` 按 formatter 查字段，未命中的语句保留原始 token。
 - 兼容厂商私有语句：没有描述时按原始字段展示，不报错、不丢弃。
 - 时间、经纬度、高度、定位质量等常用字段通过 `role` 映射进通道，不按语句名硬编码。
 

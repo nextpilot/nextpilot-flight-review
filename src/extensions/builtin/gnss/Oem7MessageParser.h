@@ -13,6 +13,8 @@ public:
 
     bool loadDatabase(const QString &path);
 
+    static bool sniffData(const QByteArray &data);
+
     QString protocolId() const override;
     bool sniff(const QByteArray &data) const override;
     bool parse(const QByteArray &data, PsDecodedFrame &out) const override;

@@ -64,7 +64,7 @@ void GnssComponent::contribute(Registry &registry, HostContext &)
     nmeaParser.displayName = QStringLiteral("NMEA");
     nmeaParser.priority = 10;
     nmeaParser.fileExtensions = {QStringLiteral(".nmea"), QStringLiteral(".txt")};
-    nmeaParser.sniff = [](const QByteArray &data) { return NmeaMessageParser().sniff(data); };
+    nmeaParser.sniff = [](const QByteArray &data) { return NmeaMessageParser::sniffData(data); };
     nmeaParser.factory = [] { return std::make_unique<NmeaMessageParser>(); };
     MessageParserRegistry::instance().add(std::move(nmeaParser));
 
@@ -74,7 +74,7 @@ void GnssComponent::contribute(Registry &registry, HostContext &)
     ubxParser.displayName = QStringLiteral("UBX");
     ubxParser.priority = 10;
     ubxParser.fileExtensions = {QStringLiteral(".ubx")};
-    ubxParser.sniff = [](const QByteArray &data) { return UbxMessageParser().sniff(data); };
+    ubxParser.sniff = [](const QByteArray &data) { return UbxMessageParser::sniffData(data); };
     ubxParser.factory = [] { return std::make_unique<UbxMessageParser>(); };
     MessageParserRegistry::instance().add(std::move(ubxParser));
 
@@ -86,7 +86,7 @@ void GnssComponent::contribute(Registry &registry, HostContext &)
     oem7Parser.fileExtensions = {QStringLiteral(".bin"), QStringLiteral(".gps"),
                                 QStringLiteral(".log"), QStringLiteral(".dat"),
                                 QStringLiteral(".psraw"), QStringLiteral(".raw")};
-    oem7Parser.sniff = [](const QByteArray &data) { return Oem7MessageParser().sniff(data); };
+    oem7Parser.sniff = [](const QByteArray &data) { return Oem7MessageParser::sniffData(data); };
     oem7Parser.factory = [] { return std::make_unique<Oem7MessageParser>(); };
     MessageParserRegistry::instance().add(std::move(oem7Parser));
 }

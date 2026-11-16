@@ -11,6 +11,7 @@ struct PsDecodedField
     QVariant raw;
     QVariant value;
     QString unit;
+    QString description;
     QString enumName;
     QString enumLabel;
     int offset = -1;

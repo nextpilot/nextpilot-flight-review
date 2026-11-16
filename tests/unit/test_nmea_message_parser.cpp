@@ -3,6 +3,8 @@
 #include <QByteArray>
 #include <QString>
 
+#include <QtGlobal>
+
 #include <cassert>
 
 namespace
@@ -30,8 +32,10 @@ void testFrame()
     assert(frame.fields.at(0).value.toString() == QStringLiteral("GP"));
     assert(frame.fields.at(1).name == QStringLiteral("sentence"));
     assert(frame.fields.at(1).value.toString() == QStringLiteral("GGA"));
-    assert(frame.fields.at(2).name == QStringLiteral("field_1"));
+    assert(frame.fields.at(2).name == QStringLiteral("utc"));
     assert(frame.fields.at(2).value.toString() == QStringLiteral("123519"));
+    assert(frame.fields.at(3).name == QStringLiteral("latitude"));
+    assert(qAbs(frame.fields.at(3).value.toDouble() - 48.1173) < 0.0001);
     assert(frame.fields.last().name == QStringLiteral("checksum"));
 
     PsDecodedFrame bad;
@@ -40,6 +44,11 @@ void testFrame()
 
     PsDecodedFrame invalid;
     assert(!parser.parse("GPGGA,1*00", invalid));
+
+    PsDecodedFrame unknown;
+    assert(parser.parse("$PGRMZ,100,f*00", unknown));
+    assert(unknown.unknown);
+    assert(unknown.fields.at(2).name == QStringLiteral("field_1"));
 }
 
 void testFirstLine()

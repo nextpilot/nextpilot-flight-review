@@ -87,6 +87,7 @@ bool FrameDecoder::decodeText(const PsMessageDescriptor &descriptor, const QStri
         const PsFieldDescriptor &field = descriptor.fields.at(i);
         PsDecodedField decoded;
         decoded.name = field.name;
+        decoded.description = field.description;
         decoded.raw = tokens.at(i);
         decoded.value = tokens.at(i);
         fields.append(decoded);
@@ -132,6 +133,7 @@ bool FrameDecoder::decode(const PsMessageDescriptor &descriptor, const QByteArra
 
         PsDecodedField decoded;
         decoded.name = field.name;
+        decoded.description = field.description;
         decoded.offset = cursor;
         decoded.size = size;
         decoded.raw = data.mid(cursor, size);

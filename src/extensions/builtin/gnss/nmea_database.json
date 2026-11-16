@@ -1,82 +1,2957 @@
 {
-  "version": 1,
+  "version": 2,
+  "source": "pynmea2 1.19.0",
   "sentences": [
+    {
+      "key": "AAM",
+      "fields": [
+        {
+          "name": "arrival_circ_entered",
+          "index": 1,
+          "type": "string",
+          "label": "Arrival Circle Entered"
+        },
+        {
+          "name": "perp_passed",
+          "index": 2,
+          "type": "string",
+          "label": "Perpendicular Passed"
+        },
+        {
+          "name": "circle_rad",
+          "index": 3,
+          "type": "string",
+          "label": "Circle Radius",
+          "unit": "nm"
+        },
+        {
+          "name": "circle_rad_unit",
+          "index": 4,
+          "type": "string",
+          "label": "Nautical Miles",
+          "unit": "nm"
+        },
+        {
+          "name": "waypoint_id",
+          "index": 5,
+          "type": "string",
+          "label": "Waypoint ID"
+        }
+      ]
+    },
+    {
+      "key": "ALK",
+      "fields": [
+        {
+          "name": "cmd",
+          "index": 1,
+          "type": "string",
+          "label": "Command"
+        },
+        {
+          "name": "data_byte1",
+          "index": 2,
+          "type": "string",
+          "label": "Data Byte 1"
+        },
+        {
+          "name": "data_byte2",
+          "index": 3,
+          "type": "string",
+          "label": "Data Byte 2"
+        },
+        {
+          "name": "data_byte3",
+          "index": 4,
+          "type": "string",
+          "label": "Data Byte 3"
+        },
+        {
+          "name": "data_byte4",
+          "index": 5,
+          "type": "string",
+          "label": "Data Byte 4"
+        },
+        {
+          "name": "data_byte5",
+          "index": 6,
+          "type": "string",
+          "label": "Data Byte 5"
+        },
+        {
+          "name": "data_byte6",
+          "index": 7,
+          "type": "string",
+          "label": "Data Byte 6"
+        },
+        {
+          "name": "data_byte7",
+          "index": 8,
+          "type": "string",
+          "label": "Data Byte 7"
+        },
+        {
+          "name": "data_byte8",
+          "index": 9,
+          "type": "string",
+          "label": "Data Byte 8"
+        },
+        {
+          "name": "data_byte9",
+          "index": 10,
+          "type": "string",
+          "label": "Data Byte 9"
+        }
+      ]
+    },
+    {
+      "key": "ALM",
+      "fields": [
+        {
+          "name": "total_num_msgs",
+          "index": 1,
+          "type": "string",
+          "label": "Total number of messages"
+        },
+        {
+          "name": "msg_num",
+          "index": 2,
+          "type": "string",
+          "label": "Message number"
+        },
+        {
+          "name": "sat_prn_num",
+          "index": 3,
+          "type": "string",
+          "label": "Satellite PRN number"
+        },
+        {
+          "name": "gps_week_num",
+          "index": 4,
+          "type": "string",
+          "label": "GPS week number"
+        },
+        {
+          "name": "sv_health",
+          "index": 5,
+          "type": "string",
+          "label": "SV Health, bits 17-24 of each almanac page"
+        },
+        {
+          "name": "eccentricity",
+          "index": 6,
+          "type": "string",
+          "label": "Eccentricity"
+        },
+        {
+          "name": "alamanac_ref_time",
+          "index": 7,
+          "type": "string",
+          "label": "Almanac Reference Time"
+        },
+        {
+          "name": "inc_angle",
+          "index": 8,
+          "type": "string",
+          "label": "Inclination Angle"
+        },
+        {
+          "name": "rate_right_asc",
+          "index": 9,
+          "type": "string",
+          "label": "Rate of right ascension"
+        },
+        {
+          "name": "root_semi_major_axis",
+          "index": 10,
+          "type": "string",
+          "label": "Root of semi-major axis"
+        },
+        {
+          "name": "arg_perigee",
+          "index": 11,
+          "type": "string",
+          "label": "Argument of perigee"
+        },
+        {
+          "name": "lat_asc_node",
+          "index": 12,
+          "type": "string",
+          "label": "Longitude of ascension node"
+        },
+        {
+          "name": "mean_anom",
+          "index": 13,
+          "type": "string",
+          "label": "Mean anomaly"
+        },
+        {
+          "name": "f0_clock_param",
+          "index": 14,
+          "type": "string",
+          "label": "F0 Clock parameter"
+        },
+        {
+          "name": "f1_clock_param",
+          "index": 15,
+          "type": "string",
+          "label": "F1 Clock parameter"
+        }
+      ]
+    },
+    {
+      "key": "APA",
+      "fields": [
+        {
+          "name": "status_gen",
+          "index": 1,
+          "type": "string",
+          "label": "General Status"
+        },
+        {
+          "name": "status_cycle_lock",
+          "index": 2,
+          "type": "string",
+          "label": "Cycle lock Status"
+        },
+        {
+          "name": "cross_track_err_mag",
+          "index": 3,
+          "type": "string",
+          "label": "Cross Track Error Magnitude",
+          "unit": "deg"
+        },
+        {
+          "name": "dir_steer",
+          "index": 4,
+          "type": "string",
+          "label": "Direction to Steer (L or R)"
+        },
+        {
+          "name": "cross_track_unit",
+          "index": 5,
+          "type": "string",
+          "label": "Cross Track Units (Nautical Miles or KM)",
+          "unit": "deg"
+        },
+        {
+          "name": "arr_circle_entered",
+          "index": 6,
+          "type": "string",
+          "label": "Arrival Circle Entered"
+        },
+        {
+          "name": "perp_passed",
+          "index": 7,
+          "type": "string",
+          "label": "Perpendicular passed at waypoint"
+        },
+        {
+          "name": "bearing_to_dest",
+          "index": 8,
+          "type": "string",
+          "label": "Bearing origin to destination",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_type",
+          "index": 9,
+          "type": "string",
+          "label": "Bearing type",
+          "unit": "deg"
+        },
+        {
+          "name": "dest_waypoint_id",
+          "index": 10,
+          "type": "string",
+          "label": "Destination waypoint ID"
+        }
+      ]
+    },
+    {
+      "key": "APB",
+      "fields": [
+        {
+          "name": "status_gen",
+          "index": 1,
+          "type": "string",
+          "label": "General Status"
+        },
+        {
+          "name": "status_cycle_lock",
+          "index": 2,
+          "type": "string",
+          "label": "Cycle lock Status"
+        },
+        {
+          "name": "cross_track_err_mag",
+          "index": 3,
+          "type": "string",
+          "label": "Cross Track Error Magnitude",
+          "unit": "deg"
+        },
+        {
+          "name": "dir_steer",
+          "index": 4,
+          "type": "string",
+          "label": "Direction to Steer (L or R)"
+        },
+        {
+          "name": "cross_track_unit",
+          "index": 5,
+          "type": "string",
+          "label": "Cross Track Units (Nautical Miles or KM)",
+          "unit": "deg"
+        },
+        {
+          "name": "arr_circle_entered",
+          "index": 6,
+          "type": "string",
+          "label": "Arrival Circle Entered"
+        },
+        {
+          "name": "perp_passed",
+          "index": 7,
+          "type": "string",
+          "label": "Perpendicular passed at waypoint"
+        },
+        {
+          "name": "bearing_to_dest",
+          "index": 8,
+          "type": "string",
+          "label": "Bearing origin to destination",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_type",
+          "index": 9,
+          "type": "string",
+          "label": "Bearing type",
+          "unit": "deg"
+        },
+        {
+          "name": "dest_waypoint_id",
+          "index": 10,
+          "type": "string",
+          "label": "Destination waypoint ID"
+        },
+        {
+          "name": "bearing_pres_dest",
+          "index": 11,
+          "type": "string",
+          "label": "Bearing, present position to dest",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_pres_dest_type",
+          "index": 12,
+          "type": "string",
+          "label": "Bearing to destination, type",
+          "unit": "deg"
+        },
+        {
+          "name": "heading_to_dest",
+          "index": 13,
+          "type": "string",
+          "label": "Heading to steer to destination",
+          "unit": "deg"
+        },
+        {
+          "name": "heading_to_dest_type",
+          "index": 14,
+          "type": "string",
+          "label": "Heading to steer to destination type",
+          "unit": "deg"
+        }
+      ]
+    },
+    {
+      "key": "BEC",
+      "fields": [
+        {
+          "name": "timestamp",
+          "index": 1,
+          "type": "time",
+          "label": "Timestamp"
+        },
+        {
+          "name": "waypoint_lat",
+          "index": 2,
+          "type": "dm",
+          "label": "Waypoint Latitude",
+          "unit": "deg",
+          "hemiIndex": 3
+        },
+        {
+          "name": "waypoint_lat_dir",
+          "index": 3,
+          "type": "string",
+          "label": "Waypoint Latitude direction"
+        },
+        {
+          "name": "waypoint_lon",
+          "index": 4,
+          "type": "dm",
+          "label": "Waypoint Longitude",
+          "unit": "deg",
+          "hemiIndex": 5
+        },
+        {
+          "name": "waypoint_lon_dir",
+          "index": 5,
+          "type": "string",
+          "label": "Waypoint Longitude direction"
+        },
+        {
+          "name": "bearing_true",
+          "index": 6,
+          "type": "string",
+          "label": "Bearing, true",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_true_sym",
+          "index": 7,
+          "type": "string",
+          "label": "Bearing True symbol",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_mag",
+          "index": 8,
+          "type": "string",
+          "label": "Bearing Magnetic",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_mag_sym",
+          "index": 9,
+          "type": "string",
+          "label": "Bearing Magnetic symbol",
+          "unit": "deg"
+        },
+        {
+          "name": "nautical_miles",
+          "index": 10,
+          "type": "string",
+          "label": "Nautical Miles"
+        },
+        {
+          "name": "nautical_miles_sym",
+          "index": 11,
+          "type": "string",
+          "label": "Nautical Miles symbol"
+        },
+        {
+          "name": "waypoint_id",
+          "index": 12,
+          "type": "string",
+          "label": "Waypoint ID"
+        },
+        {
+          "name": "faa_mode",
+          "index": 13,
+          "type": "string",
+          "label": "FAA mode indicator"
+        }
+      ]
+    },
+    {
+      "key": "BOD",
+      "fields": [
+        {
+          "name": "bearing_t",
+          "index": 1,
+          "type": "number",
+          "label": "Bearing True",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_t_type",
+          "index": 2,
+          "type": "string",
+          "label": "Bearing True Type",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_mag",
+          "index": 3,
+          "type": "number",
+          "label": "Bearing Magnetic",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_mag_type",
+          "index": 4,
+          "type": "string",
+          "label": "Bearing Magnetic Type",
+          "unit": "deg"
+        },
+        {
+          "name": "dest",
+          "index": 5,
+          "type": "string",
+          "label": "Destination"
+        },
+        {
+          "name": "start",
+          "index": 6,
+          "type": "string",
+          "label": "Start"
+        }
+      ]
+    },
+    {
+      "key": "BWC",
+      "fields": [
+        {
+          "name": "timestamp",
+          "index": 1,
+          "type": "time",
+          "label": "Timestamp"
+        },
+        {
+          "name": "lat_next",
+          "index": 2,
+          "type": "dm",
+          "label": "Latitude of next Waypoint",
+          "unit": "deg",
+          "hemiIndex": 3
+        },
+        {
+          "name": "lat_next_direction",
+          "index": 3,
+          "type": "string",
+          "label": "Latitude of next Waypoint Direction"
+        },
+        {
+          "name": "lon_next",
+          "index": 4,
+          "type": "dm",
+          "label": "Longitude of next Waypoint",
+          "unit": "deg",
+          "hemiIndex": 5
+        },
+        {
+          "name": "lon_next_direction",
+          "index": 5,
+          "type": "string",
+          "label": "Longitude of next Waypoint Direction"
+        },
+        {
+          "name": "true_track",
+          "index": 6,
+          "type": "string",
+          "label": "True track to waypoint",
+          "unit": "deg"
+        },
+        {
+          "name": "true_track_sym",
+          "index": 7,
+          "type": "string",
+          "label": "True Track Symbol",
+          "unit": "deg"
+        },
+        {
+          "name": "mag_track",
+          "index": 8,
+          "type": "string",
+          "label": "Magnetic track to waypoint",
+          "unit": "deg"
+        },
+        {
+          "name": "mag_sym",
+          "index": 9,
+          "type": "string",
+          "label": "Magnetic Symbol"
+        },
+        {
+          "name": "range_next",
+          "index": 10,
+          "type": "string",
+          "label": "Range to waypoint",
+          "unit": "nm"
+        },
+        {
+          "name": "range_unit",
+          "index": 11,
+          "type": "string",
+          "label": "Unit of range",
+          "unit": "nm"
+        },
+        {
+          "name": "waypoint_name",
+          "index": 12,
+          "type": "string",
+          "label": "Waypoint Name"
+        }
+      ]
+    },
+    {
+      "key": "BWR",
+      "fields": [
+        {
+          "name": "timestamp",
+          "index": 1,
+          "type": "time",
+          "label": "Timestamp"
+        },
+        {
+          "name": "lat_next",
+          "index": 2,
+          "type": "dm",
+          "label": "Latitude of next Waypoint",
+          "unit": "deg",
+          "hemiIndex": 3
+        },
+        {
+          "name": "lat_next_direction",
+          "index": 3,
+          "type": "string",
+          "label": "Latitude of next Waypoint Direction"
+        },
+        {
+          "name": "lon_next",
+          "index": 4,
+          "type": "dm",
+          "label": "Longitude of next Waypoint",
+          "unit": "deg",
+          "hemiIndex": 5
+        },
+        {
+          "name": "lon_next_direction",
+          "index": 5,
+          "type": "string",
+          "label": "Longitude of next Waypoint Direction"
+        },
+        {
+          "name": "true_track",
+          "index": 6,
+          "type": "string",
+          "label": "True track to waypoint",
+          "unit": "deg"
+        },
+        {
+          "name": "true_track_sym",
+          "index": 7,
+          "type": "string",
+          "label": "True Track Symbol",
+          "unit": "deg"
+        },
+        {
+          "name": "mag_track",
+          "index": 8,
+          "type": "string",
+          "label": "Magnetic track to waypoint",
+          "unit": "deg"
+        },
+        {
+          "name": "mag_sym",
+          "index": 9,
+          "type": "string",
+          "label": "Magnetic Symbol"
+        },
+        {
+          "name": "range_next",
+          "index": 10,
+          "type": "string",
+          "label": "Range to waypoint",
+          "unit": "nm"
+        },
+        {
+          "name": "range_unit",
+          "index": 11,
+          "type": "string",
+          "label": "Unit of range",
+          "unit": "nm"
+        },
+        {
+          "name": "waypoint_name",
+          "index": 12,
+          "type": "string",
+          "label": "Waypoint Name"
+        }
+      ]
+    },
+    {
+      "key": "BWW",
+      "fields": [
+        {
+          "name": "bearing_deg_true",
+          "index": 1,
+          "type": "string",
+          "label": "Bearing degrees True",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_deg_true_sym",
+          "index": 2,
+          "type": "string",
+          "label": "Bearing degrees True Symbol",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_deg_mag",
+          "index": 3,
+          "type": "string",
+          "label": "Bearing degrees Magnitude",
+          "unit": "deg"
+        },
+        {
+          "name": "bearing_deg_mag_sym",
+          "index": 4,
+          "type": "string",
+          "label": "Bearing degrees Magnitude Symbol",
+          "unit": "deg"
+        },
+        {
+          "name": "waypoint_id_dest",
+          "index": 5,
+          "type": "string",
+          "label": "Destination Waypoint ID"
+        },
+        {
+          "name": "waypoint_id_orig",
+          "index": 6,
+          "type": "string",
+          "label": "Origin Waypoint ID"
+        }
+      ]
+    },
+    {
+      "key": "DBS",
+      "fields": [
+        {
+          "name": "depth_feet",
+          "index": 1,
+          "type": "number",
+          "label": "Depth below surface, feet"
+        },
+        {
+          "name": "feets",
+          "index": 2,
+          "type": "string",
+          "label": "Feets"
+        },
+        {
+          "name": "depth_meter",
+          "index": 3,
+          "type": "number",
+          "label": "Depth below surface, meters"
+        },
+        {
+          "name": "meters",
+          "index": 4,
+          "type": "string",
+          "label": "Meters"
+        },
+        {
+          "name": "depth_ fathoms",
+          "index": 5,
+          "type": "number",
+          "label": "Depth below surface, fathoms"
+        },
+        {
+          "name": "fathoms",
+          "index": 6,
+          "type": "string",
+          "label": "Fathoms"
+        }
+      ]
+    },
+    {
+      "key": "DBT",
+      "fields": [
+        {
+          "name": "depth_feet",
+          "index": 1,
+          "type": "number",
+          "label": "Depth below surface, feet"
+        },
+        {
+          "name": "unit_feet",
+          "index": 2,
+          "type": "string",
+          "label": "Feet"
+        },
+        {
+          "name": "depth_meters",
+          "index": 3,
+          "type": "number",
+          "label": "Depth below surface, meters"
+        },
+        {
+          "name": "unit_meters",
+          "index": 4,
+          "type": "string",
+          "label": "Meters"
+        },
+        {
+          "name": "depth_fathoms",
+          "index": 5,
+          "type": "number",
+          "label": "Depth below surface, fathoms"
+        },
+        {
+          "name": "unit_fathoms",
+          "index": 6,
+          "type": "string",
+          "label": "fathoms"
+        }
+      ]
+    },
+    {
+      "key": "DPT",
+      "fields": [
+        {
+          "name": "depth",
+          "index": 1,
+          "type": "number",
+          "label": "Water depth, in meters"
+        },
+        {
+          "name": "offset",
+          "index": 2,
+          "type": "number",
+          "label": "Offset from the trasducer, in meters"
+        },
+        {
+          "name": "range",
+          "index": 3,
+          "type": "number",
+          "label": "Maximum range scale in use",
+          "unit": "nm"
+        }
+      ]
+    },
+    {
+      "key": "DTM",
+      "fields": [
+        {
+          "name": "datum",
+          "index": 1,
+          "type": "string",
+          "label": "Local datum"
+        },
+        {
+          "name": "subd_datum",
+          "index": 2,
+          "type": "string",
+          "label": "Subdivision datum"
+        },
+        {
+          "name": "lat",
+          "index": 3,
+          "type": "dm",
+          "label": "Latitude",
+          "unit": "deg",
+          "hemiIndex": 4
+        },
+        {
+          "name": "lat_dir",
+          "index": 4,
+          "type": "string",
+          "label": "Latitude Direction"
+        },
+        {
+          "name": "lon",
+          "index": 5,
+          "type": "dm",
+          "label": "Longitude",
+          "unit": "deg",
+          "hemiIndex": 6
+        },
+        {
+          "name": "lon_dir",
+          "index": 6,
+          "type": "string",
+          "label": "Longitude Direction"
+        },
+        {
+          "name": "altitude",
+          "index": 7,
+          "type": "string",
+          "label": "Signed altitude",
+          "unit": "m"
+        },
+        {
+          "name": "datum_code",
+          "index": 8,
+          "type": "string",
+          "label": "Datum code"
+        }
+      ]
+    },
+    {
+      "key": "GBS",
+      "fields": [
+        {
+          "name": "timestamp",
+          "index": 1,
+          "type": "time",
+          "label": "Timestamp"
+        },
+        {
+          "name": "lat_err",
+          "index": 2,
+          "type": "string",
+          "label": "Expected error in latitude"
+        },
+        {
+          "name": "lon_err",
+          "index": 3,
+          "type": "string",
+          "label": "Expected error in longitude"
+        },
+        {
+          "name": "alt_err",
+          "index": 4,
+          "type": "string",
+          "label": "Expected error in altitude"
+        },
+        {
+          "name": "sat_prn_num_f",
+          "index": 5,
+          "type": "string",
+          "label": "PRN of most likely failed satellite"
+        },
+        {
+          "name": "pro_miss",
+          "index": 6,
+          "type": "number",
+          "label": "Probability of missed detection for most likely failed satellite"
+        },
+        {
+          "name": "est_bias",
+          "index": 7,
+          "type": "string",
+          "label": "Estimate of bias in meters on most likely failed satellite"
+        },
+        {
+          "name": "est_bias_dev",
+          "index": 8,
+          "type": "string",
+          "label": "Standard deviation of bias estimate"
+        }
+      ]
+    },
     {
       "key": "GGA",
       "fields": [
-        {"name": "utc", "index": 1, "type": "time"},
-        {"name": "latitude", "index": 2, "type": "dm", "hemiIndex": 3, "unit": "deg"},
-        {"name": "longitude", "index": 4, "type": "dm", "hemiIndex": 5, "unit": "deg"},
-        {"name": "fix_quality", "index": 6, "type": "number"},
-        {"name": "num_sats", "index": 7, "type": "number", "unit": "count"},
-        {"name": "hdop", "index": 8, "type": "number"},
-        {"name": "altitude", "index": 9, "type": "number", "unit": "m"},
-        {"name": "geoid_separation", "index": 11, "type": "number", "unit": "m"}
-      ]
-    },
-    {
-      "key": "RMC",
-      "fields": [
-        {"name": "utc", "index": 1, "type": "time"},
-        {"name": "status", "index": 2, "type": "string"},
-        {"name": "latitude", "index": 3, "type": "dm", "hemiIndex": 4, "unit": "deg"},
-        {"name": "longitude", "index": 5, "type": "dm", "hemiIndex": 6, "unit": "deg"},
-        {"name": "speed_kn", "index": 7, "type": "number", "unit": "kn"},
-        {"name": "course", "index": 8, "type": "number", "unit": "deg"},
-        {"name": "date", "index": 9, "type": "string"},
-        {"name": "mode", "index": 12, "type": "string"}
-      ]
-    },
-    {
-      "key": "GSA",
-      "fields": [
-        {"name": "mode", "index": 1, "type": "string"},
-        {"name": "fix_type", "index": 2, "type": "number"},
-        {"name": "pdop", "index": 15, "type": "number"},
-        {"name": "hdop", "index": 16, "type": "number"},
-        {"name": "vdop", "index": 17, "type": "number"},
-        {"name": "system_id", "index": 18, "type": "number"}
-      ]
-    },
-    {
-      "key": "VTG",
-      "fields": [
-        {"name": "course_true", "index": 1, "type": "number", "unit": "deg"},
-        {"name": "course_mag", "index": 3, "type": "number", "unit": "deg"},
-        {"name": "speed_kn", "index": 5, "type": "number", "unit": "kn"},
-        {"name": "speed_kmh", "index": 7, "type": "number", "unit": "km/h"},
-        {"name": "mode", "index": 9, "type": "string"}
+        {
+          "name": "utc",
+          "index": 1,
+          "type": "time"
+        },
+        {
+          "name": "latitude",
+          "index": 2,
+          "type": "dm",
+          "hemiIndex": 3,
+          "unit": "deg"
+        },
+        {
+          "name": "longitude",
+          "index": 4,
+          "type": "dm",
+          "hemiIndex": 5,
+          "unit": "deg"
+        },
+        {
+          "name": "fix_quality",
+          "index": 6,
+          "type": "number"
+        },
+        {
+          "name": "num_sats",
+          "index": 7,
+          "type": "number",
+          "unit": "count"
+        },
+        {
+          "name": "hdop",
+          "index": 8,
+          "type": "number"
+        },
+        {
+          "name": "altitude",
+          "index": 9,
+          "type": "number",
+          "unit": "m"
+        },
+        {
+          "name": "geoid_separation",
+          "index": 11,
+          "type": "number",
+          "unit": "m"
+        }
       ]
     },
     {
       "key": "GLL",
       "fields": [
-        {"name": "latitude", "index": 1, "type": "dm", "hemiIndex": 2, "unit": "deg"},
-        {"name": "longitude", "index": 3, "type": "dm", "hemiIndex": 4, "unit": "deg"},
-        {"name": "utc", "index": 5, "type": "time"},
-        {"name": "status", "index": 6, "type": "string"},
-        {"name": "mode", "index": 7, "type": "string"}
+        {
+          "name": "latitude",
+          "index": 1,
+          "type": "dm",
+          "hemiIndex": 2,
+          "unit": "deg"
+        },
+        {
+          "name": "longitude",
+          "index": 3,
+          "type": "dm",
+          "hemiIndex": 4,
+          "unit": "deg"
+        },
+        {
+          "name": "utc",
+          "index": 5,
+          "type": "time"
+        },
+        {
+          "name": "status",
+          "index": 6,
+          "type": "string"
+        },
+        {
+          "name": "mode",
+          "index": 7,
+          "type": "string"
+        }
       ]
     },
     {
-      "key": "ZDA",
+      "key": "GNS",
       "fields": [
-        {"name": "utc", "index": 1, "type": "time"},
-        {"name": "day", "index": 2, "type": "number"},
-        {"name": "month", "index": 3, "type": "number"},
-        {"name": "year", "index": 4, "type": "number"},
-        {"name": "local_zone_hours", "index": 5, "type": "number", "unit": "h"},
-        {"name": "local_zone_minutes", "index": 6, "type": "number", "unit": "min"}
+        {
+          "name": "timestamp",
+          "index": 1,
+          "type": "time",
+          "label": "Timestamp"
+        },
+        {
+          "name": "lat",
+          "index": 2,
+          "type": "dm",
+          "label": "Latitude",
+          "unit": "deg",
+          "hemiIndex": 3
+        },
+        {
+          "name": "lat_dir",
+          "index": 3,
+          "type": "string",
+          "label": "Latitude Direction"
+        },
+        {
+          "name": "lon",
+          "index": 4,
+          "type": "dm",
+          "label": "Longitude",
+          "unit": "deg",
+          "hemiIndex": 5
+        },
+        {
+          "name": "lon_dir",
+          "index": 5,
+          "type": "string",
+          "label": "Longitude Direction"
+        },
+        {
+          "name": "mode_indicator",
+          "index": 6,
+          "type": "string",
+          "label": "Mode indicator"
+        },
+        {
+          "name": "num_sats",
+          "index": 7,
+          "type": "string",
+          "label": "Total number of satelites in use",
+          "unit": "count"
+        },
+        {
+          "name": "hdop",
+          "index": 8,
+          "type": "string",
+          "label": "HDROP",
+          "unit": "ratio"
+        },
+        {
+          "name": "altitude",
+          "index": 9,
+          "type": "string",
+          "label": "Antenna altitude, meters",
+          "unit": "m"
+        },
+        {
+          "name": "geo_sep",
+          "index": 10,
+          "type": "string",
+          "label": "Goeidal separation meters",
+          "unit": "m"
+        },
+        {
+          "name": "age_gps_data",
+          "index": 11,
+          "type": "string",
+          "label": "Age of diferential data"
+        },
+        {
+          "name": "diferential",
+          "index": 12,
+          "type": "string",
+          "label": "Differential reference station ID"
+        }
+      ]
+    },
+    {
+      "key": "GRS",
+      "fields": [
+        {
+          "name": "timestamp",
+          "index": 1,
+          "type": "time",
+          "label": "Timestamp"
+        },
+        {
+          "name": "residuals_mode",
+          "index": 2,
+          "type": "int",
+          "label": "Residuals mode"
+        },
+        {
+          "name": "sv_res_01",
+          "index": 3,
+          "type": "number",
+          "label": "SV 01 Residual (m)"
+        },
+        {
+          "name": "sv_res_02",
+          "index": 4,
+          "type": "number",
+          "label": "SV 02 Residual (m)"
+        },
+        {
+          "name": "sv_res_03",
+          "index": 5,
+          "type": "number",
+          "label": "SV 03 Residual (m)"
+        },
+        {
+          "name": "sv_res_04",
+          "index": 6,
+          "type": "number",
+          "label": "SV 04 Residual (m)"
+        },
+        {
+          "name": "sv_res_05",
+          "index": 7,
+          "type": "number",
+          "label": "SV 05 Residual (m)"
+        },
+        {
+          "name": "sv_res_06",
+          "index": 8,
+          "type": "number",
+          "label": "SV 06 Residual (m)"
+        },
+        {
+          "name": "sv_res_07",
+          "index": 9,
+          "type": "number",
+          "label": "SV 07 Residual (m)"
+        },
+        {
+          "name": "sv_res_08",
+          "index": 10,
+          "type": "number",
+          "label": "SV 08 Residual (m)"
+        },
+        {
+          "name": "sv_res_09",
+          "index": 11,
+          "type": "number",
+          "label": "SV 09 Residual (m)"
+        },
+        {
+          "name": "sv_res_10",
+          "index": 12,
+          "type": "number",
+          "label": "SV 10 Residual (m)"
+        },
+        {
+          "name": "sv_res_11",
+          "index": 13,
+          "type": "number",
+          "label": "SV 11 Residual (m)"
+        },
+        {
+          "name": "sv_res_12",
+          "index": 14,
+          "type": "number",
+          "label": "SV 12 Residual (m)"
+        }
+      ]
+    },
+    {
+      "key": "GSA",
+      "fields": [
+        {
+          "name": "mode",
+          "index": 1,
+          "type": "string"
+        },
+        {
+          "name": "fix_type",
+          "index": 2,
+          "type": "number"
+        },
+        {
+          "name": "pdop",
+          "index": 15,
+          "type": "number"
+        },
+        {
+          "name": "hdop",
+          "index": 16,
+          "type": "number"
+        },
+        {
+          "name": "vdop",
+          "index": 17,
+          "type": "number"
+        },
+        {
+          "name": "system_id",
+          "index": 18,
+          "type": "number"
+        }
       ]
     },
     {
       "key": "GST",
       "fields": [
-        {"name": "utc", "index": 1, "type": "time"},
-        {"name": "rms", "index": 2, "type": "number"},
-        {"name": "std_latitude", "index": 3, "type": "number", "unit": "m"},
-        {"name": "std_longitude", "index": 4, "type": "number", "unit": "m"},
-        {"name": "std_altitude", "index": 5, "type": "number", "unit": "m"}
+        {
+          "name": "utc",
+          "index": 1,
+          "type": "time"
+        },
+        {
+          "name": "rms",
+          "index": 2,
+          "type": "number"
+        },
+        {
+          "name": "std_latitude",
+          "index": 3,
+          "type": "number",
+          "unit": "m"
+        },
+        {
+          "name": "std_longitude",
+          "index": 4,
+          "type": "number",
+          "unit": "m"
+        },
+        {
+          "name": "std_altitude",
+          "index": 5,
+          "type": "number",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "key": "GSV",
+      "fields": [
+        {
+          "name": "num_messages",
+          "index": 1,
+          "type": "string",
+          "label": "Number of messages of type in cycle"
+        },
+        {
+          "name": "msg_num",
+          "index": 2,
+          "type": "string",
+          "label": "Message Number"
+        },
+        {
+          "name": "num_sv_in_view",
+          "index": 3,
+          "type": "string",
+          "label": "Total number of SVs in view",
+          "unit": "count"
+        },
+        {
+          "name": "sv_prn_num_1",
+          "index": 4,
+          "type": "string",
+          "label": "SV PRN number 1"
+        },
+        {
+          "name": "elevation_deg_1",
+          "index": 5,
+          "type": "string",
+          "label": "Elevation in degrees 1",
+          "unit": "deg"
+        },
+        {
+          "name": "azimuth_1",
+          "index": 6,
+          "type": "string",
+          "label": "Azimuth, deg from true north 1",
+          "unit": "deg"
+        },
+        {
+          "name": "snr_1",
+          "index": 7,
+          "type": "string",
+          "label": "SNR 1",
+          "unit": "dBHz"
+        },
+        {
+          "name": "sv_prn_num_2",
+          "index": 8,
+          "type": "string",
+          "label": "SV PRN number 2"
+        },
+        {
+          "name": "elevation_deg_2",
+          "index": 9,
+          "type": "string",
+          "label": "Elevation in degrees 2",
+          "unit": "deg"
+        },
+        {
+          "name": "azimuth_2",
+          "index": 10,
+          "type": "string",
+          "label": "Azimuth, deg from true north 2",
+          "unit": "deg"
+        },
+        {
+          "name": "snr_2",
+          "index": 11,
+          "type": "string",
+          "label": "SNR 2",
+          "unit": "dBHz"
+        },
+        {
+          "name": "sv_prn_num_3",
+          "index": 12,
+          "type": "string",
+          "label": "SV PRN number 3"
+        },
+        {
+          "name": "elevation_deg_3",
+          "index": 13,
+          "type": "string",
+          "label": "Elevation in degrees 3",
+          "unit": "deg"
+        },
+        {
+          "name": "azimuth_3",
+          "index": 14,
+          "type": "string",
+          "label": "Azimuth, deg from true north 3",
+          "unit": "deg"
+        },
+        {
+          "name": "snr_3",
+          "index": 15,
+          "type": "string",
+          "label": "SNR 3",
+          "unit": "dBHz"
+        },
+        {
+          "name": "sv_prn_num_4",
+          "index": 16,
+          "type": "string",
+          "label": "SV PRN number 4"
+        },
+        {
+          "name": "elevation_deg_4",
+          "index": 17,
+          "type": "string",
+          "label": "Elevation in degrees 4",
+          "unit": "deg"
+        },
+        {
+          "name": "azimuth_4",
+          "index": 18,
+          "type": "string",
+          "label": "Azimuth, deg from true north 4",
+          "unit": "deg"
+        },
+        {
+          "name": "snr_4",
+          "index": 19,
+          "type": "string",
+          "label": "SNR 4",
+          "unit": "dBHz"
+        }
+      ]
+    },
+    {
+      "key": "HDG",
+      "fields": [
+        {
+          "name": "heading",
+          "index": 1,
+          "type": "number",
+          "label": "Heading",
+          "unit": "deg"
+        },
+        {
+          "name": "deviation",
+          "index": 2,
+          "type": "number",
+          "label": "Deviation"
+        },
+        {
+          "name": "dev_dir",
+          "index": 3,
+          "type": "string",
+          "label": "Deviation Direction"
+        },
+        {
+          "name": "variation",
+          "index": 4,
+          "type": "number",
+          "label": "Variation"
+        },
+        {
+          "name": "var_dir",
+          "index": 5,
+          "type": "string",
+          "label": "Variation Direction"
+        }
+      ]
+    },
+    {
+      "key": "HDM",
+      "fields": [
+        {
+          "name": "heading",
+          "index": 1,
+          "type": "number",
+          "label": "Heading degrees",
+          "unit": "deg"
+        },
+        {
+          "name": "magnetic",
+          "index": 2,
+          "type": "string",
+          "label": "Magnetic"
+        }
+      ]
+    },
+    {
+      "key": "HDT",
+      "fields": [
+        {
+          "name": "heading",
+          "index": 1,
+          "type": "number",
+          "label": "Heading",
+          "unit": "deg"
+        },
+        {
+          "name": "hdg_true",
+          "index": 2,
+          "type": "string",
+          "label": "True"
+        }
+      ]
+    },
+    {
+      "key": "HSC",
+      "fields": [
+        {
+          "name": "heading_true",
+          "index": 1,
+          "type": "number",
+          "label": "Heading",
+          "unit": "deg"
+        },
+        {
+          "name": "true",
+          "index": 2,
+          "type": "string",
+          "label": "True"
+        },
+        {
+          "name": "heading_magnetic",
+          "index": 3,
+          "type": "number",
+          "label": "Heading Magnetic",
+          "unit": "deg"
+        },
+        {
+          "name": "magnetic",
+          "index": 4,
+          "type": "string",
+          "label": "Magnetic"
+        }
+      ]
+    },
+    {
+      "key": "MDA",
+      "fields": [
+        {
+          "name": "b_pressure_inch",
+          "index": 1,
+          "type": "number",
+          "label": "Barometric pressure, inches of mercury"
+        },
+        {
+          "name": "inches",
+          "index": 2,
+          "type": "string",
+          "label": "Inches"
+        },
+        {
+          "name": "b_pressure_bar",
+          "index": 3,
+          "type": "number",
+          "label": "Barometric pressure, bars"
+        },
+        {
+          "name": "bars",
+          "index": 4,
+          "type": "string",
+          "label": "Bars"
+        },
+        {
+          "name": "air_temp",
+          "index": 5,
+          "type": "number",
+          "label": "Air temperature, degrees C"
+        },
+        {
+          "name": "a_celsius",
+          "index": 6,
+          "type": "string",
+          "label": "Celsius"
+        },
+        {
+          "name": "water_temp",
+          "index": 7,
+          "type": "number",
+          "label": "Water temperature, degrees C"
+        },
+        {
+          "name": "w_celsius",
+          "index": 8,
+          "type": "string",
+          "label": "Celsius"
+        },
+        {
+          "name": "rel_humidity",
+          "index": 9,
+          "type": "number",
+          "label": "Relative humidity, percent"
+        },
+        {
+          "name": "abs_humidity",
+          "index": 10,
+          "type": "number",
+          "label": "Absolute humidity, percent"
+        },
+        {
+          "name": "dew_point",
+          "index": 11,
+          "type": "number",
+          "label": "Dew point, degrees C"
+        },
+        {
+          "name": "d_celsius",
+          "index": 12,
+          "type": "string",
+          "label": "Celsius"
+        },
+        {
+          "name": "direction_true",
+          "index": 13,
+          "type": "number",
+          "label": "Wind direction true"
+        },
+        {
+          "name": "true",
+          "index": 14,
+          "type": "string",
+          "label": "True"
+        },
+        {
+          "name": "direction_magnetic",
+          "index": 15,
+          "type": "number",
+          "label": "Wind direction magnetic"
+        },
+        {
+          "name": "magnetic",
+          "index": 16,
+          "type": "string",
+          "label": "Magnetic"
+        },
+        {
+          "name": "wind_speed_knots",
+          "index": 17,
+          "type": "number",
+          "label": "Wind speed knots",
+          "unit": "kn"
+        },
+        {
+          "name": "knots",
+          "index": 18,
+          "type": "string",
+          "label": "Knots"
+        },
+        {
+          "name": "wind_speed_meters",
+          "index": 19,
+          "type": "number",
+          "label": "Wind speed meters/second",
+          "unit": "kn"
+        },
+        {
+          "name": "meters",
+          "index": 20,
+          "type": "string",
+          "label": "Meters"
+        }
+      ]
+    },
+    {
+      "key": "MTW",
+      "fields": [
+        {
+          "name": "temperature",
+          "index": 1,
+          "type": "number",
+          "label": "Water temperature"
+        },
+        {
+          "name": "units",
+          "index": 2,
+          "type": "string",
+          "label": "Unit of measurement"
+        }
+      ]
+    },
+    {
+      "key": "MWD",
+      "fields": [
+        {
+          "name": "direction_true",
+          "index": 1,
+          "type": "number",
+          "label": "Wind direction true"
+        },
+        {
+          "name": "true",
+          "index": 2,
+          "type": "string",
+          "label": "True"
+        },
+        {
+          "name": "direction_magnetic",
+          "index": 3,
+          "type": "number",
+          "label": "Wind direction magnetic"
+        },
+        {
+          "name": "magnetic",
+          "index": 4,
+          "type": "string",
+          "label": "Magnetic"
+        },
+        {
+          "name": "wind_speed_knots",
+          "index": 5,
+          "type": "number",
+          "label": "Wind speed knots",
+          "unit": "kn"
+        },
+        {
+          "name": "knots",
+          "index": 6,
+          "type": "string",
+          "label": "Knots"
+        },
+        {
+          "name": "wind_speed_meters",
+          "index": 7,
+          "type": "number",
+          "label": "Wind speed meters/second",
+          "unit": "kn"
+        },
+        {
+          "name": "meters",
+          "index": 8,
+          "type": "string",
+          "label": "Wind speed"
+        }
+      ]
+    },
+    {
+      "key": "MWV",
+      "fields": [
+        {
+          "name": "wind_angle",
+          "index": 1,
+          "type": "number",
+          "label": "Wind angle"
+        },
+        {
+          "name": "reference",
+          "index": 2,
+          "type": "string",
+          "label": "Reference"
+        },
+        {
+          "name": "wind_speed",
+          "index": 3,
+          "type": "number",
+          "label": "Wind speed",
+          "unit": "kn"
+        },
+        {
+          "name": "wind_speed_units",
+          "index": 4,
+          "type": "string",
+          "label": "Wind speed units",
+          "unit": "kn"
+        },
+        {
+          "name": "status",
+          "index": 5,
+          "type": "string",
+          "label": "Status"
+        }
+      ]
+    },
+    {
+      "key": "OSD",
+      "fields": [
+        {
+          "name": "heading",
+          "index": 1,
+          "type": "number",
+          "label": "True Heading",
+          "unit": "deg"
+        },
+        {
+          "name": "status",
+          "index": 2,
+          "type": "string",
+          "label": "Status"
+        },
+        {
+          "name": "course",
+          "index": 3,
+          "type": "number",
+          "label": "Vessel Course true degrees",
+          "unit": "deg"
+        },
+        {
+          "name": "course_true",
+          "index": 4,
+          "type": "string",
+          "label": "Course True",
+          "unit": "deg"
+        },
+        {
+          "name": "speed",
+          "index": 5,
+          "type": "number",
+          "label": "Vessel Speed",
+          "unit": "kn"
+        },
+        {
+          "name": "speed_ref",
+          "index": 6,
+          "type": "string",
+          "label": "Speed Reference",
+          "unit": "kn"
+        },
+        {
+          "name": "set",
+          "index": 7,
+          "type": "number",
+          "label": "Vessel Set true degrees"
+        },
+        {
+          "name": "drift",
+          "index": 8,
+          "type": "number",
+          "label": "Vessel Drift(speed)"
+        },
+        {
+          "name": "speed_unit",
+          "index": 9,
+          "type": "string",
+          "label": "Speed Units",
+          "unit": "kn"
+        }
+      ]
+    },
+    {
+      "key": "RMA",
+      "fields": [
+        {
+          "name": "data_status",
+          "index": 1,
+          "type": "string",
+          "label": "Data status"
+        },
+        {
+          "name": "lat",
+          "index": 2,
+          "type": "dm",
+          "label": "Latitude",
+          "unit": "deg",
+          "hemiIndex": 3
+        },
+        {
+          "name": "lat_dir",
+          "index": 3,
+          "type": "string",
+          "label": "Latitude Direction"
+        },
+        {
+          "name": "lon",
+          "index": 4,
+          "type": "dm",
+          "label": "Longitude",
+          "unit": "deg",
+          "hemiIndex": 5
+        },
+        {
+          "name": "lon_dir",
+          "index": 5,
+          "type": "string",
+          "label": "Longitude Direction"
+        },
+        {
+          "name": "not_used_1",
+          "index": 6,
+          "type": "string",
+          "label": "Not Used 1"
+        },
+        {
+          "name": "not_used_2",
+          "index": 7,
+          "type": "string",
+          "label": "Not Used 2"
+        },
+        {
+          "name": "spd_over_grnd",
+          "index": 8,
+          "type": "string",
+          "label": "Speed over ground",
+          "unit": "kn"
+        },
+        {
+          "name": "crse_over_grnd",
+          "index": 9,
+          "type": "string",
+          "label": "Course over ground"
+        },
+        {
+          "name": "variation",
+          "index": 10,
+          "type": "string",
+          "label": "Variation"
+        },
+        {
+          "name": "var_dir",
+          "index": 11,
+          "type": "string",
+          "label": "Variation Direction"
+        }
+      ]
+    },
+    {
+      "key": "RMB",
+      "fields": [
+        {
+          "name": "status",
+          "index": 1,
+          "type": "string",
+          "label": "Status"
+        },
+        {
+          "name": "cross_track_error",
+          "index": 2,
+          "type": "string",
+          "label": "Cross Track Error",
+          "unit": "deg"
+        },
+        {
+          "name": "cte_correction_dir",
+          "index": 3,
+          "type": "string",
+          "label": "Cross Track Error, direction to corrent"
+        },
+        {
+          "name": "origin_waypoint_id",
+          "index": 4,
+          "type": "string",
+          "label": "Origin Waypoint ID"
+        },
+        {
+          "name": "dest_waypoint_id",
+          "index": 5,
+          "type": "string",
+          "label": "Destination Waypoint ID"
+        },
+        {
+          "name": "dest_lat",
+          "index": 6,
+          "type": "string",
+          "label": "Destination Waypoint Latitude"
+        },
+        {
+          "name": "dest_lat_dir",
+          "index": 7,
+          "type": "string",
+          "label": "Destination Waypoint Lat Direction"
+        },
+        {
+          "name": "dest_lon",
+          "index": 8,
+          "type": "string",
+          "label": "Destination Waypoint Longitude"
+        },
+        {
+          "name": "dest_lon_dir",
+          "index": 9,
+          "type": "string",
+          "label": "Destination Waypoint Lon Direction"
+        },
+        {
+          "name": "dest_range",
+          "index": 10,
+          "type": "string",
+          "label": "Range to Destination",
+          "unit": "nm"
+        },
+        {
+          "name": "dest_true_bearing",
+          "index": 11,
+          "type": "string",
+          "label": "True Bearing to Destination",
+          "unit": "deg"
+        },
+        {
+          "name": "dest_velocity",
+          "index": 12,
+          "type": "string",
+          "label": "Velocity Towards Destination"
+        },
+        {
+          "name": "arrival_alarm",
+          "index": 13,
+          "type": "string",
+          "label": "Arrival Alarm"
+        }
+      ]
+    },
+    {
+      "key": "RMC",
+      "fields": [
+        {
+          "name": "utc",
+          "index": 1,
+          "type": "time"
+        },
+        {
+          "name": "status",
+          "index": 2,
+          "type": "string"
+        },
+        {
+          "name": "latitude",
+          "index": 3,
+          "type": "dm",
+          "hemiIndex": 4,
+          "unit": "deg"
+        },
+        {
+          "name": "longitude",
+          "index": 5,
+          "type": "dm",
+          "hemiIndex": 6,
+          "unit": "deg"
+        },
+        {
+          "name": "speed_kn",
+          "index": 7,
+          "type": "number",
+          "unit": "kn"
+        },
+        {
+          "name": "course",
+          "index": 8,
+          "type": "number",
+          "unit": "deg"
+        },
+        {
+          "name": "date",
+          "index": 9,
+          "type": "string"
+        },
+        {
+          "name": "mode",
+          "index": 12,
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "key": "ROT",
+      "fields": [
+        {
+          "name": "rate_of_turn",
+          "index": 1,
+          "type": "string",
+          "label": "Rate of turn"
+        },
+        {
+          "name": "status",
+          "index": 2,
+          "type": "string",
+          "label": "Status"
+        }
+      ]
+    },
+    {
+      "key": "RPM",
+      "fields": [
+        {
+          "name": "source",
+          "index": 1,
+          "type": "string",
+          "label": "Source"
+        },
+        {
+          "name": "engine_no",
+          "index": 2,
+          "type": "int",
+          "label": "Engine or shaft number"
+        },
+        {
+          "name": "speed",
+          "index": 3,
+          "type": "number",
+          "label": "Speed",
+          "unit": "kn"
+        },
+        {
+          "name": "pitch",
+          "index": 4,
+          "type": "string",
+          "label": "Propeller pitch"
+        },
+        {
+          "name": "status",
+          "index": 5,
+          "type": "string",
+          "label": "Status"
+        }
+      ]
+    },
+    {
+      "key": "RSA",
+      "fields": [
+        {
+          "name": "rsa_starboard",
+          "index": 1,
+          "type": "number",
+          "label": "Starboard rudder sensor"
+        },
+        {
+          "name": "rsa_starboard_status",
+          "index": 2,
+          "type": "string",
+          "label": "Starboard rudder sensor status"
+        },
+        {
+          "name": "rsa_port",
+          "index": 3,
+          "type": "number",
+          "label": "Port rudder sensor"
+        },
+        {
+          "name": "rsa_port_status",
+          "index": 4,
+          "type": "string",
+          "label": "Port rudder sensor status"
+        }
+      ]
+    },
+    {
+      "key": "RTE",
+      "fields": [
+        {
+          "name": "num_in_seq",
+          "index": 1,
+          "type": "string",
+          "label": "Number of sentences in sequence"
+        },
+        {
+          "name": "sen_num",
+          "index": 2,
+          "type": "string",
+          "label": "Sentence Number"
+        },
+        {
+          "name": "start_type",
+          "index": 3,
+          "type": "string",
+          "label": "Start Type"
+        },
+        {
+          "name": "active_route_id",
+          "index": 4,
+          "type": "string",
+          "label": "Name or Number of Active Route"
+        }
+      ]
+    },
+    {
+      "key": "STN",
+      "fields": [
+        {
+          "name": "talker_id_num",
+          "index": 1,
+          "type": "string",
+          "label": "Talker ID Number"
+        }
+      ]
+    },
+    {
+      "key": "TLL",
+      "fields": [
+        {
+          "name": "target_number",
+          "index": 1,
+          "type": "int",
+          "label": "Target Number"
+        },
+        {
+          "name": "lat",
+          "index": 2,
+          "type": "dm",
+          "label": "Target Latitude",
+          "unit": "deg",
+          "hemiIndex": 3
+        },
+        {
+          "name": "lat_dir",
+          "index": 3,
+          "type": "string",
+          "label": "Latitude Direction"
+        },
+        {
+          "name": "lon",
+          "index": 4,
+          "type": "dm",
+          "label": "Target Longitude",
+          "unit": "deg",
+          "hemiIndex": 5
+        },
+        {
+          "name": "lon_dir",
+          "index": 5,
+          "type": "string",
+          "label": "Longitude Direction"
+        },
+        {
+          "name": "target_name",
+          "index": 6,
+          "type": "string",
+          "label": "Target Name"
+        },
+        {
+          "name": "timestamp",
+          "index": 7,
+          "type": "time",
+          "label": "Timestamp (UTC)"
+        },
+        {
+          "name": "target_status",
+          "index": 8,
+          "type": "string",
+          "label": "Target Status"
+        },
+        {
+          "name": "reference",
+          "index": 9,
+          "type": "string",
+          "label": "Reference Target"
+        }
+      ]
+    },
+    {
+      "key": "TRF",
+      "fields": [
+        {
+          "name": "timestamp",
+          "index": 1,
+          "type": "time",
+          "label": "Timestamp (UTC)"
+        },
+        {
+          "name": "date",
+          "index": 2,
+          "type": "string",
+          "label": "Date (DD/MM/YY"
+        },
+        {
+          "name": "lat",
+          "index": 3,
+          "type": "dm",
+          "label": "Latitude",
+          "unit": "deg",
+          "hemiIndex": 4
+        },
+        {
+          "name": "lat_dir",
+          "index": 4,
+          "type": "string",
+          "label": "Latitude Direction"
+        },
+        {
+          "name": "lon",
+          "index": 5,
+          "type": "dm",
+          "label": "Longitude",
+          "unit": "deg",
+          "hemiIndex": 6
+        },
+        {
+          "name": "lon_dir",
+          "index": 6,
+          "type": "string",
+          "label": "Longitude Direction"
+        },
+        {
+          "name": "ele_angle",
+          "index": 7,
+          "type": "string",
+          "label": "Elevation Angle"
+        },
+        {
+          "name": "num_iterations",
+          "index": 8,
+          "type": "string",
+          "label": "Number of Iterations"
+        },
+        {
+          "name": "num_doppler_intervals",
+          "index": 9,
+          "type": "string",
+          "label": "Number of Doppler Intervals"
+        },
+        {
+          "name": "update_dist",
+          "index": 10,
+          "type": "string",
+          "label": "Update Distance"
+        },
+        {
+          "name": "sat_id",
+          "index": 11,
+          "type": "string",
+          "label": "Satellite ID"
+        }
+      ]
+    },
+    {
+      "key": "TTM",
+      "fields": [
+        {
+          "name": "target_number",
+          "index": 1,
+          "type": "int",
+          "label": "Target Number"
+        },
+        {
+          "name": "distance",
+          "index": 2,
+          "type": "number",
+          "label": "Target Distance"
+        },
+        {
+          "name": "bearing",
+          "index": 3,
+          "type": "number",
+          "label": "Bearing from Own Ship",
+          "unit": "deg"
+        },
+        {
+          "name": "brg_ref",
+          "index": 4,
+          "type": "string",
+          "label": "Bearing Reference"
+        },
+        {
+          "name": "speed",
+          "index": 5,
+          "type": "number",
+          "label": "Target Speed",
+          "unit": "kn"
+        },
+        {
+          "name": "cog",
+          "index": 6,
+          "type": "number",
+          "label": "Target Course over Ground"
+        },
+        {
+          "name": "cog_unit",
+          "index": 7,
+          "type": "string",
+          "label": "Course Units"
+        },
+        {
+          "name": "dist_cpa",
+          "index": 8,
+          "type": "number",
+          "label": "Distance of CPA"
+        },
+        {
+          "name": "time_cpa",
+          "index": 9,
+          "type": "number",
+          "label": "Time until CPA"
+        },
+        {
+          "name": "dist_unit",
+          "index": 10,
+          "type": "string",
+          "label": "Distance Units"
+        },
+        {
+          "name": "name",
+          "index": 11,
+          "type": "string",
+          "label": "Target Name"
+        },
+        {
+          "name": "status",
+          "index": 12,
+          "type": "string",
+          "label": "Target Status"
+        },
+        {
+          "name": "reference",
+          "index": 13,
+          "type": "string",
+          "label": "Target Reference"
+        },
+        {
+          "name": "timestamp",
+          "index": 14,
+          "type": "time",
+          "label": "Timestamp (UTC)"
+        },
+        {
+          "name": "acquisition",
+          "index": 15,
+          "type": "string",
+          "label": "Acquisition Type"
+        }
+      ]
+    },
+    {
+      "key": "TXT",
+      "fields": [
+        {
+          "name": "num_msg",
+          "index": 1,
+          "type": "string",
+          "label": "Number of Messages"
+        },
+        {
+          "name": "msg_num",
+          "index": 2,
+          "type": "string",
+          "label": "Message Number"
+        },
+        {
+          "name": "msg_type",
+          "index": 3,
+          "type": "string",
+          "label": "Type of Message"
+        },
+        {
+          "name": "text",
+          "index": 4,
+          "type": "string",
+          "label": "Text"
+        }
+      ]
+    },
+    {
+      "key": "VBW",
+      "fields": [
+        {
+          "name": "lon_water_spd",
+          "index": 1,
+          "type": "number",
+          "label": "Longitudinal Water Speed",
+          "unit": "kn"
+        },
+        {
+          "name": "trans_water_spd",
+          "index": 2,
+          "type": "number",
+          "label": "Transverse Water Speed",
+          "unit": "kn"
+        },
+        {
+          "name": "data_validity_water_spd",
+          "index": 3,
+          "type": "string",
+          "label": "Water Speed Data Validity",
+          "unit": "kn"
+        },
+        {
+          "name": "lon_grnd_spd",
+          "index": 4,
+          "type": "number",
+          "label": "Longitudinal Ground Speed",
+          "unit": "kn"
+        },
+        {
+          "name": "trans_grnd_spd",
+          "index": 5,
+          "type": "number",
+          "label": "Transverse Ground Speed",
+          "unit": "kn"
+        },
+        {
+          "name": "data_validity_grnd_spd",
+          "index": 6,
+          "type": "string",
+          "label": "Ground Speed Data Validity",
+          "unit": "kn"
+        }
+      ]
+    },
+    {
+      "key": "VDR",
+      "fields": [
+        {
+          "name": "deg_t",
+          "index": 1,
+          "type": "number",
+          "label": "Degrees True"
+        },
+        {
+          "name": "true",
+          "index": 2,
+          "type": "string",
+          "label": "TRUE"
+        },
+        {
+          "name": "deg_m",
+          "index": 3,
+          "type": "number",
+          "label": "Degrees Magnetic"
+        },
+        {
+          "name": "magnetic",
+          "index": 4,
+          "type": "string",
+          "label": "Magnetic"
+        },
+        {
+          "name": "current",
+          "index": 5,
+          "type": "number",
+          "label": "Speed of Current"
+        },
+        {
+          "name": "unit_kn",
+          "index": 6,
+          "type": "string",
+          "label": "Unit"
+        }
+      ]
+    },
+    {
+      "key": "VHW",
+      "fields": [
+        {
+          "name": "heading_true",
+          "index": 1,
+          "type": "number",
+          "label": "Heading true degrees",
+          "unit": "deg"
+        },
+        {
+          "name": "true",
+          "index": 2,
+          "type": "string",
+          "label": "heading true"
+        },
+        {
+          "name": "heading_magnetic",
+          "index": 3,
+          "type": "number",
+          "label": "Heading Magnetic degrees",
+          "unit": "deg"
+        },
+        {
+          "name": "magnetic",
+          "index": 4,
+          "type": "string",
+          "label": "Magnetic"
+        },
+        {
+          "name": "water_speed_knots",
+          "index": 5,
+          "type": "number",
+          "label": "Water speed knots",
+          "unit": "kn"
+        },
+        {
+          "name": "knots",
+          "index": 6,
+          "type": "string",
+          "label": "Knots"
+        },
+        {
+          "name": "water_speed_km",
+          "index": 7,
+          "type": "number",
+          "label": "Water speed kilometers",
+          "unit": "kn"
+        },
+        {
+          "name": "kilometers",
+          "index": 8,
+          "type": "string",
+          "label": "Kilometers"
+        }
+      ]
+    },
+    {
+      "key": "VLW",
+      "fields": [
+        {
+          "name": "trip_distance",
+          "index": 1,
+          "type": "number",
+          "label": "Water trip distance"
+        },
+        {
+          "name": "trip_distance_miles",
+          "index": 2,
+          "type": "string",
+          "label": "Trip distance nautical miles"
+        },
+        {
+          "name": "trip_distance_reset",
+          "index": 3,
+          "type": "number",
+          "label": "Water trip distance since reset"
+        },
+        {
+          "name": "trip_distance_reset_miles",
+          "index": 4,
+          "type": "string",
+          "label": "Trip distance nautical miles since reset"
+        }
+      ]
+    },
+    {
+      "key": "VPW",
+      "fields": [
+        {
+          "name": "speed_kn",
+          "index": 1,
+          "type": "number",
+          "label": "Speed knots",
+          "unit": "kn"
+        },
+        {
+          "name": "unit_knots",
+          "index": 2,
+          "type": "string",
+          "label": "Unit knots"
+        },
+        {
+          "name": "speed_ms",
+          "index": 3,
+          "type": "number",
+          "label": "Speed m/s",
+          "unit": "kn"
+        },
+        {
+          "name": "unit_ms",
+          "index": 4,
+          "type": "string",
+          "label": "Unit m/s"
+        }
+      ]
+    },
+    {
+      "key": "VTG",
+      "fields": [
+        {
+          "name": "course_true",
+          "index": 1,
+          "type": "number",
+          "unit": "deg"
+        },
+        {
+          "name": "course_mag",
+          "index": 3,
+          "type": "number",
+          "unit": "deg"
+        },
+        {
+          "name": "speed_kn",
+          "index": 5,
+          "type": "number",
+          "unit": "kn"
+        },
+        {
+          "name": "speed_kmh",
+          "index": 7,
+          "type": "number",
+          "unit": "km/h"
+        },
+        {
+          "name": "mode",
+          "index": 9,
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "key": "VWR",
+      "fields": [
+        {
+          "name": "deg_r",
+          "index": 1,
+          "type": "number",
+          "label": "Degrees Rel"
+        },
+        {
+          "name": "l_r",
+          "index": 2,
+          "type": "string",
+          "label": "Left/Right"
+        },
+        {
+          "name": "wind_speed_kn",
+          "index": 3,
+          "type": "number",
+          "label": "Wind speed kn",
+          "unit": "kn"
+        },
+        {
+          "name": "unit_knots",
+          "index": 4,
+          "type": "string",
+          "label": "Knots"
+        },
+        {
+          "name": "wind_speed_ms",
+          "index": 5,
+          "type": "number",
+          "label": "Wind Speed m/s",
+          "unit": "kn"
+        },
+        {
+          "name": "unit_ms",
+          "index": 6,
+          "type": "string",
+          "label": "m/s"
+        },
+        {
+          "name": "wind_speed_km",
+          "index": 7,
+          "type": "number",
+          "label": "Wind Speed Km/h",
+          "unit": "kn"
+        },
+        {
+          "name": "unit_km",
+          "index": 8,
+          "type": "string",
+          "label": "Knots"
+        }
+      ]
+    },
+    {
+      "key": "VWT",
+      "fields": [
+        {
+          "name": "wind_angle_vessel",
+          "index": 1,
+          "type": "number",
+          "label": "Wind angle relative to the vessel"
+        },
+        {
+          "name": "direction",
+          "index": 2,
+          "type": "string",
+          "label": "Direction, L=Left, R=Right, relative to the vessel head"
+        },
+        {
+          "name": "wind_speed_knots",
+          "index": 3,
+          "type": "number",
+          "label": "Wind speed knots",
+          "unit": "kn"
+        },
+        {
+          "name": "knots",
+          "index": 4,
+          "type": "string",
+          "label": "Knots"
+        },
+        {
+          "name": "wind_speed_meters",
+          "index": 5,
+          "type": "number",
+          "label": "Wind speed meters/second",
+          "unit": "kn"
+        },
+        {
+          "name": "meters",
+          "index": 6,
+          "type": "string",
+          "label": "Meters"
+        },
+        {
+          "name": "wind_speed_km",
+          "index": 7,
+          "type": "number",
+          "label": "Wind speed km/h",
+          "unit": "kn"
+        },
+        {
+          "name": "km",
+          "index": 8,
+          "type": "string",
+          "label": "Km"
+        }
+      ]
+    },
+    {
+      "key": "WCV",
+      "fields": [
+        {
+          "name": "velocity",
+          "index": 1,
+          "type": "string",
+          "label": "Velocity"
+        },
+        {
+          "name": "vel_units",
+          "index": 2,
+          "type": "string",
+          "label": "Velocity Units"
+        },
+        {
+          "name": "waypoint_id",
+          "index": 3,
+          "type": "string",
+          "label": "Waypoint ID"
+        }
+      ]
+    },
+    {
+      "key": "WNC",
+      "fields": [
+        {
+          "name": "dist_nautical_miles",
+          "index": 1,
+          "type": "string",
+          "label": "Distance, Nautical Miles"
+        },
+        {
+          "name": "dist_naut_unit",
+          "index": 2,
+          "type": "string",
+          "label": "Distance Nautical Miles Unit"
+        },
+        {
+          "name": "dist_km",
+          "index": 3,
+          "type": "string",
+          "label": "Distance, Kilometers"
+        },
+        {
+          "name": "dist_km_unit",
+          "index": 4,
+          "type": "string",
+          "label": "Distance, Kilometers Unit"
+        },
+        {
+          "name": "waypoint_origin_id",
+          "index": 5,
+          "type": "string",
+          "label": "Origin Waypoint ID"
+        },
+        {
+          "name": "waypoint_dest_id",
+          "index": 6,
+          "type": "string",
+          "label": "Destination Waypoint ID"
+        }
+      ]
+    },
+    {
+      "key": "WPL",
+      "fields": [
+        {
+          "name": "lat",
+          "index": 1,
+          "type": "dm",
+          "label": "Latitude",
+          "unit": "deg",
+          "hemiIndex": 2
+        },
+        {
+          "name": "lat_dir",
+          "index": 2,
+          "type": "string",
+          "label": "Latitude Direction"
+        },
+        {
+          "name": "lon",
+          "index": 3,
+          "type": "dm",
+          "label": "Longitude",
+          "unit": "deg",
+          "hemiIndex": 4
+        },
+        {
+          "name": "lon_dir",
+          "index": 4,
+          "type": "string",
+          "label": "Longitude Direction"
+        },
+        {
+          "name": "waypoint_id",
+          "index": 5,
+          "type": "string",
+          "label": "Waypoint ID"
+        }
+      ]
+    },
+    {
+      "key": "XDR",
+      "fields": [
+        {
+          "name": "type",
+          "index": 1,
+          "type": "string",
+          "label": "Transducer type"
+        },
+        {
+          "name": "value",
+          "index": 2,
+          "type": "string",
+          "label": "Transducer data value"
+        },
+        {
+          "name": "units",
+          "index": 3,
+          "type": "string",
+          "label": "Transducer data units"
+        },
+        {
+          "name": "id",
+          "index": 4,
+          "type": "string",
+          "label": "Transducer ID"
+        }
+      ]
+    },
+    {
+      "key": "XTE",
+      "fields": [
+        {
+          "name": "warning_flag",
+          "index": 1,
+          "type": "string",
+          "label": "General Warning Flag"
+        },
+        {
+          "name": "lock_flag",
+          "index": 2,
+          "type": "string",
+          "label": "Lock flag (Not Used)"
+        },
+        {
+          "name": "cross_track_err_dist",
+          "index": 3,
+          "type": "string",
+          "label": "Cross Track Error Distance",
+          "unit": "deg"
+        },
+        {
+          "name": "correction_dir",
+          "index": 4,
+          "type": "string",
+          "label": "Correction Direction (L or R)"
+        },
+        {
+          "name": "dist_units",
+          "index": 5,
+          "type": "string",
+          "label": "Distance Units"
+        }
+      ]
+    },
+    {
+      "key": "ZDA",
+      "fields": [
+        {
+          "name": "utc",
+          "index": 1,
+          "type": "time"
+        },
+        {
+          "name": "day",
+          "index": 2,
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "index": 3,
+          "type": "number"
+        },
+        {
+          "name": "year",
+          "index": 4,
+          "type": "number"
+        },
+        {
+          "name": "local_zone_hours",
+          "index": 5,
+          "type": "number",
+          "unit": "h"
+        },
+        {
+          "name": "local_zone_minutes",
+          "index": 6,
+          "type": "number",
+          "unit": "min"
+        }
       ]
     }
   ]

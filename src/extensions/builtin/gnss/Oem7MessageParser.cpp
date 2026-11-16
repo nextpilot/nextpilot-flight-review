@@ -111,6 +111,7 @@ bool parseBinary(const QByteArray &data, PsDecodedFrame &out, const ProtocolCata
         if (!descriptor) {
             out.unknown = true;
         } else {
+            out.frameName = descriptor->name;
             QVector<PsDecodedField> bodyFields;
             if (FrameDecoder::decode(*descriptor, frame, headerLength, bodyFields))
                 out.fields.append(bodyFields);
@@ -179,6 +180,7 @@ bool parseAscii(const QByteArray &data, PsDecodedFrame &out, const ProtocolCatal
             if (!descriptor) {
                 out.unknown = true;
             } else {
+                out.frameName = descriptor->name;
                 QVector<PsDecodedField> bodyFields;
                 FrameDecoder::decodeText(*descriptor,
                                          bodyText.split(QLatin1Char(','), Qt::KeepEmptyParts),
@@ -224,7 +226,7 @@ QString Oem7MessageParser::protocolId() const
     return QStringLiteral("oem7");
 }
 
-bool Oem7MessageParser::sniff(const QByteArray &data) const
+bool Oem7MessageParser::sniffData(const QByteArray &data)
 {
     if (data.size() >= 3 && static_cast<unsigned char>(data.at(0)) == 0xAA &&
         static_cast<unsigned char>(data.at(1)) == 0x44 &&
@@ -233,6 +235,11 @@ bool Oem7MessageParser::sniff(const QByteArray &data) const
         return true;
     const QByteArray line = firstLine(data);
     return line.startsWith('#') || line.startsWith('%');
+}
+
+bool Oem7MessageParser::sniff(const QByteArray &data) const
+{
+    return sniffData(data);
 }
 
 bool Oem7MessageParser::parse(const QByteArray &data, PsDecodedFrame &out) const
