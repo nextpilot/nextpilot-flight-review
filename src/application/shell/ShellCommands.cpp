@@ -35,11 +35,10 @@ void registerCommands(MainWindow &win)
     };
     describe(QStringLiteral("file.open"), QStringLiteral("打开文件"), QStringLiteral("open"), QStringLiteral("Ctrl+O"));
     describe(QStringLiteral("file.importLayout"), QStringLiteral("导入布局"), QStringLiteral("import"), {});
-    describe(QStringLiteral("file.saveLayout"), QStringLiteral("另存布局"), QStringLiteral("save"), QStringLiteral("Ctrl+Shift+S"));
-    describe(QStringLiteral("file.exportSettings"), QStringLiteral("导出设置"), QStringLiteral("export"), {}, false, false);
-    describe(QStringLiteral("file.exportData"), QStringLiteral("导出数据"), QStringLiteral("export"), {}, false, false);
-    describe(QStringLiteral("file.screenshot"), QStringLiteral("截图"), QStringLiteral("camera"), {});
-    describe(QStringLiteral("layout.save"), QStringLiteral("保存布局"), QStringLiteral("save"), QStringLiteral("Ctrl+S"));
+    describe(QStringLiteral("file.saveLayout"), QStringLiteral("另存布局"), QStringLiteral("export"), QStringLiteral("Ctrl+Shift+S"));
+    describe(QStringLiteral("file.exportData"), QStringLiteral("导出数据"), QStringLiteral("export"), {});
+    describe(QStringLiteral("file.screenshot"), QStringLiteral("截图"), QStringLiteral("screenshot"), {});
+    describe(QStringLiteral("layout.save"), QStringLiteral("保存布局"), QStringLiteral("export"), QStringLiteral("Ctrl+S"));
     describe(QStringLiteral("layout.import"), QStringLiteral("打开布局"), QStringLiteral("open"), QStringLiteral("Ctrl+Shift+O"));
     describe(QStringLiteral("help.about"), QStringLiteral("关于"), QStringLiteral("settings"), {});
 
@@ -70,11 +69,8 @@ void registerCommands(MainWindow &win)
             win.commands().invoke(QStringLiteral("layout.save"), ctx);
         }
     });
-    win.commands().add(QStringLiteral("file.exportSettings"), [&win](const Ctx &) {
-        win.logs().info(QStringLiteral("导出设置：M1 接 YAML"));
-    });
     win.commands().add(QStringLiteral("file.exportData"), [&win](const Ctx &) {
-        win.logs().info(QStringLiteral("导出数据：M1 接 CSV/NDF"));
+        win.commands().invoke(QStringLiteral("data.exportSnapshot"), {});
     });
     win.commands().add(QStringLiteral("file.screenshot"), [&win](const Ctx &) {
         QWidget *page = win.pages() ? win.pages()->currentWidget() : nullptr;

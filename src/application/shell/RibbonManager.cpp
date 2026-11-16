@@ -68,8 +68,8 @@ QWidget *RibbonManager::create()
                              const QString &text, const QString &icon, const QString &arg,
                              std::function<void()> fn, QObject *ctx) {
         const auto *spec = m_commands->spec(id);
-        const QString label = text.isEmpty() && spec ? spec->text : text;
-        const QString iconName = icon.isEmpty() && spec ? spec->icon : icon;
+        const QString label = !text.isEmpty() ? text : (spec ? spec->text : QString());
+        const QString iconName = !icon.isEmpty() ? icon : (spec ? spec->icon : QString());
         auto *a = new QAction(label, ctx);
         a->setToolTip(label);
         a->setProperty("rbIconOnly", true);
@@ -80,6 +80,7 @@ QWidget *RibbonManager::create()
             a->setIcon(QIcon(path));
             a->setText(QString());
         }
+        a->setProperty("rbCommandId", id);
         applyState(a, id, arg);
         QObject::connect(a, &QAction::triggered, ctx, fn);
         if (large)
@@ -223,6 +224,9 @@ QWidget *RibbonManager::create()
         // QAction 的 parent 是 this（不是 ribbon），按 ribbon 找会一个都拿不到
         for (auto *a : m_window->findChildren<QAction *>())
         {
+            // 命令动作的文案/图标由 CommandSpec 提供，不再按中文标签二次映射。
+            if (a->property("rbCommandId").isValid())
+                continue;
             const auto it = kIcon.find(a->text());
             if (it != kIcon.end())
             {

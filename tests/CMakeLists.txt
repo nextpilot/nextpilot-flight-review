@@ -220,3 +220,16 @@ target_include_directories(test_command_manager PRIVATE ${PROJECT_SOURCE_DIR}/sr
   ${PROJECT_SOURCE_DIR}/src/application/shell)
 target_link_libraries(test_command_manager PRIVATE Qt6::Widgets)
 add_test(NAME command_manager COMMAND test_command_manager)
+
+add_executable(test_session_manager unit/test_session_manager.cpp
+  ${PROJECT_SOURCE_DIR}/src/application/shell/SessionManager.cpp
+  ${PROJECT_SOURCE_DIR}/src/application/shell/SettingsManager.cpp
+  ${PROJECT_SOURCE_DIR}/src/application/shell/ShellPaths.cpp
+  ${PROJECT_SOURCE_DIR}/src/application/shell/CommandManager.cpp)
+target_include_directories(test_session_manager PRIVATE ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/src/application
+  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/shell)
+target_link_libraries(test_session_manager PRIVATE Qt6::Widgets)
+add_test(NAME session_manager COMMAND test_session_manager)
+set_tests_properties(session_manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -13,6 +13,7 @@ add_library(ps_application_shell OBJECT
   RibbonManager.cpp
   SettingsManager.h
   SettingsManager.cpp
+  SettingsCommands.cpp
   DiagnosticsDialog.h
   DiagnosticsDialog.cpp
   ShellCommands.h
