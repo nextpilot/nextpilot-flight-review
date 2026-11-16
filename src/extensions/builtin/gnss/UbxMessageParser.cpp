@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QString>
 #include <QVariant>
+#include <QVariantMap>
 
 #include <cstring>
 
@@ -24,60 +25,275 @@ QString keyFor(int classId, int messageId)
     return QStringLiteral("%1:%2").arg(hexByte(classId), hexByte(messageId));
 }
 
-int typeSize(const QString &type)
+int typeSize(const QString &type, int declared)
 {
-    if (type == QLatin1String("u1") || type == QLatin1String("i1"))
-        return 1;
-    if (type == QLatin1String("u2") || type == QLatin1String("i2"))
-        return 2;
-    if (type == QLatin1String("u4") || type == QLatin1String("i4") ||
-        type == QLatin1String("r4"))
+    if (declared > 0)
+        return declared;
+    if (type == QLatin1String("r4"))
         return 4;
     if (type == QLatin1String("r8"))
         return 8;
+    if (type.startsWith(QLatin1Char('u')) || type.startsWith(QLatin1Char('i'))) {
+        bool ok = false;
+        const int size = type.mid(1).toInt(&ok);
+        return ok ? size : 0;
+    }
     return 0;
 }
 
-bool readNumber(const QByteArray &payload, int offset, const QString &type, double &value)
+bool readUInt(const QByteArray &data, int offset, int size, quint64 &value)
 {
-    const int size = type == QLatin1String("u1") || type == QLatin1String("i1")
-                         ? 1
-                         : (type == QLatin1String("u2") || type == QLatin1String("i2")
-                                ? 2
-                                : (type == QLatin1String("u4") || type == QLatin1String("i4") ||
-                                           type == QLatin1String("r4")
-                                       ? 4
-                                       : (type == QLatin1String("r8") ? 8 : 0)));
-    if (size == 0 || offset < 0 || offset + size > payload.size())
+    if (size < 1 || size > 8 || offset < 0 || offset + size > data.size())
         return false;
+    value = 0;
+    for (int i = 0; i < size; ++i)
+        value |= static_cast<quint64>(static_cast<unsigned char>(data.at(offset + i))) << (8 * i);
+    return true;
+}
 
-    const unsigned char *p = reinterpret_cast<const unsigned char *>(payload.constData()) + offset;
-    if (type == QLatin1String("u1")) {
-        value = *p;
-    } else if (type == QLatin1String("i1")) {
-        value = static_cast<qint8>(*p);
-    } else if (type == QLatin1String("u2")) {
-        value = static_cast<quint16>(p[0] | (p[1] << 8));
-    } else if (type == QLatin1String("i2")) {
-        value = static_cast<qint16>(p[0] | (p[1] << 8));
-    } else if (type == QLatin1String("u4")) {
-        value = static_cast<quint32>(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
-    } else if (type == QLatin1String("i4")) {
-        value = static_cast<qint32>(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
-    } else if (type == QLatin1String("r4")) {
-        const quint32 bits = static_cast<quint32>(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
+bool readValue(const QByteArray &data, int offset, const UbxMessageParser::FieldDef &field,
+               QVariant &value)
+{
+    const QString &type = field.type;
+    const int size = typeSize(type, field.size);
+    if (type == QLatin1String("str")) {
+        const int length = size > 0 ? size : data.size() - offset;
+        if (offset < 0 || offset > data.size() || length <= 0)
+            return false;
+        value = QString::fromUtf8(data.mid(offset, qMin(length, data.size() - offset)));
+        return true;
+    }
+    if (type == QLatin1String("bytes")) {
+        const int length = size > 0 ? size : data.size() - offset;
+        if (offset < 0 || offset > data.size() || length <= 0)
+            return false;
+        value = data.mid(offset, qMin(length, data.size() - offset));
+        return true;
+    }
+    if (type == QLatin1String("r4")) {
+        if (offset < 0 || offset + 4 > data.size())
+            return false;
+        const quint32 bits = static_cast<quint32>(data.at(offset) & 0xFF) |
+                             (static_cast<quint32>(data.at(offset + 1) & 0xFF) << 8) |
+                             (static_cast<quint32>(data.at(offset + 2) & 0xFF) << 16) |
+                             (static_cast<quint32>(data.at(offset + 3) & 0xFF) << 24);
         float number = 0.0f;
         std::memcpy(&number, &bits, sizeof(number));
         value = number;
-    } else if (type == QLatin1String("r8")) {
+        return true;
+    }
+    if (type == QLatin1String("r8")) {
+        if (offset < 0 || offset + 8 > data.size())
+            return false;
         quint64 bits = 0;
         for (int i = 0; i < 8; ++i)
-            bits |= static_cast<quint64>(p[i]) << (8 * i);
+            bits |= static_cast<quint64>(static_cast<unsigned char>(data.at(offset + i))) << (8 * i);
         double number = 0.0;
         std::memcpy(&number, &bits, sizeof(number));
         value = number;
+        return true;
+    }
+
+    if (size < 1 || size > 8 || offset < 0 || offset + size > data.size())
+        return false;
+    quint64 raw = 0;
+    if (!readUInt(data, offset, size, raw))
+        return false;
+
+    const bool signedType = type.startsWith(QLatin1Char('i'));
+    if (signedType) {
+        qint64 signedValue = static_cast<qint64>(raw);
+        if (size < 8) {
+            const quint64 signBit = quint64(1) << (size * 8 - 1);
+            if (raw & signBit)
+                signedValue = static_cast<qint64>(raw | ~((quint64(1) << (size * 8)) - 1));
+        }
+        value = (size <= 4) ? QVariant(static_cast<int>(signedValue))
+                            : QVariant(static_cast<qint64>(signedValue));
+    } else {
+        value = (size <= 4) ? QVariant(static_cast<unsigned int>(raw))
+                            : QVariant(static_cast<quint64>(raw));
     }
     return true;
+}
+
+QString enumLabel(const UbxMessageParser::FieldDef &field, const QVariant &value,
+                  const QMap<QString, QVariant> &values, const QString &prefix)
+{
+    if (field.enumValues.isEmpty())
+        return QString();
+    const QString key = QString::number(value.toLongLong());
+    const QVariant entry = field.enumValues.value(key);
+    if (entry.canConvert<QVariantMap>()) {
+        const QString byKey = prefix + field.enumBy;
+        const QVariant byValue = values.value(byKey);
+        const QVariantMap nested = entry.toMap();
+        return nested.value(QString::number(byValue.toLongLong())).toString();
+    }
+    return entry.toString();
+}
+
+void decodeFields(const QVector<UbxMessageParser::FieldDef> &definitions, const QByteArray &payload,
+                  int base, const QString &prefix, const QString &timeField, PsDecodedFrame &out,
+                  QMap<QString, QVariant> &values)
+{
+    for (const UbxMessageParser::FieldDef &definition : definitions) {
+        const int offset = base + definition.offset;
+        if (definition.type == QLatin1String("group")) {
+            int count = definition.count;
+            if (count < 0 && !definition.countField.isEmpty())
+                count = values.value(prefix + definition.countField).toInt();
+            if (count < 0 && definition.stride > 0)
+                count = (payload.size() + base - offset) / definition.stride;
+            count = qBound(0, count, 4096);
+            for (int i = 0; i < count; ++i) {
+                const QString childPrefix =
+                    prefix + definition.name + QStringLiteral("_%1.").arg(i + 1, 2, 10, QLatin1Char('0'));
+                decodeFields(definition.children, payload, offset + i * definition.stride, childPrefix,
+                             timeField, out, values);
+            }
+            continue;
+        }
+
+        QVariant value;
+        if (definition.type == QLatin1String("bit")) {
+            quint64 raw = 0;
+            if (!readUInt(payload, offset, definition.size, raw))
+                continue;
+            const int width = qBound(1, definition.bitWidth, 63);
+            value = static_cast<quint64>((raw >> definition.bitOffset) & ((quint64(1) << width) - 1));
+        } else if (!readValue(payload, offset, definition, value)) {
+            continue;
+        }
+
+        if (definition.scale != 1.0)
+            value = value.toDouble() * definition.scale;
+
+        PsDecodedField decoded;
+        decoded.name = prefix + definition.name;
+        decoded.raw = payload.mid(offset, qMax(0, typeSize(definition.type, definition.size)));
+        decoded.value = value;
+        decoded.unit = definition.unit;
+        decoded.description = definition.description;
+        decoded.enumName = definition.enumValues.isEmpty() ? QString() : definition.name;
+        decoded.enumLabel = enumLabel(definition, value, values, prefix);
+        decoded.offset = offset + 6;
+        decoded.size = typeSize(definition.type, definition.size);
+        out.fields.append(decoded);
+
+        values.insert(prefix + definition.name, value);
+        if (definition.name == timeField && out.timestamp == 0.0)
+            out.timestamp = value.toDouble();
+    }
+}
+
+bool variantMatches(const UbxMessageParser::VariantRule &rule, const QByteArray &payload)
+{
+    if (!rule.present)
+        return false;
+    if (rule.length >= 0 && payload.size() != rule.length)
+        return false;
+    if (rule.lengthBase >= 0 && rule.lengthCountOffset >= 0 && rule.lengthStride > 0) {
+        quint64 count = 0;
+        if (!readUInt(payload, rule.lengthCountOffset, 1, count))
+            return false;
+        if (payload.size() != rule.lengthBase + static_cast<int>(count) * rule.lengthStride)
+            return false;
+    }
+    if (rule.offset >= 0 && !rule.type.isEmpty()) {
+        quint64 raw = 0;
+        const int size = typeSize(rule.type, 0);
+        if (!readUInt(payload, rule.offset, size, raw))
+            return false;
+        if (rule.equals.isValid() && raw != static_cast<quint64>(rule.equals.toULongLong()))
+            return false;
+        if (rule.notEquals.isValid() && raw == static_cast<quint64>(rule.notEquals.toULongLong()))
+            return false;
+    }
+    return true;
+}
+
+const UbxMessageParser::MessageDef *selectMessage(
+    const QVector<UbxMessageParser::MessageDef> &definitions, const QByteArray &payload)
+{
+    for (const UbxMessageParser::MessageDef &definition : definitions)
+        if (definition.variant.present && variantMatches(definition.variant, payload))
+            return &definition;
+    for (const UbxMessageParser::MessageDef &definition : definitions)
+        if (!definition.variant.present)
+            return &definition;
+    return definitions.isEmpty() ? nullptr : &definitions.first();
+}
+
+QString typeForObject(const QJsonObject &object)
+{
+    return object.value(QStringLiteral("type")).toString();
+}
+
+UbxMessageParser::FieldDef readField(const QJsonObject &object)
+{
+    UbxMessageParser::FieldDef field;
+    field.name = object.value(QStringLiteral("name")).toString();
+    field.type = typeForObject(object);
+    field.unit = object.value(QStringLiteral("unit")).toString();
+    field.description = object.value(QStringLiteral("description")).toString();
+    field.countField = object.value(QStringLiteral("countField")).toString();
+    field.offset = object.value(QStringLiteral("offset")).toInt(0);
+    field.size = object.value(QStringLiteral("size")).toInt(0);
+    field.count = object.value(QStringLiteral("count")).toInt(-1);
+    field.stride = object.value(QStringLiteral("stride")).toInt(0);
+    field.bitOffset = object.value(QStringLiteral("bitOffset")).toInt(-1);
+    field.bitWidth = object.value(QStringLiteral("bitWidth")).toInt(0);
+    field.scale = object.value(QStringLiteral("scale")).toDouble(1.0);
+
+    const QJsonObject enumObject = object.value(QStringLiteral("enum")).toObject();
+    field.enumBy = enumObject.value(QStringLiteral("by")).toString();
+    for (const QString &key : enumObject.value(QStringLiteral("values")).toObject().keys()) {
+        const QJsonValue value = enumObject.value(QStringLiteral("values")).toObject().value(key);
+        if (value.isObject()) {
+            QVariantMap nested;
+            const QJsonObject nestedObject = value.toObject();
+            for (const QString &nestedKey : nestedObject.keys())
+                nested.insert(nestedKey, nestedObject.value(nestedKey).toString());
+            field.enumValues.insert(key, nested);
+        } else {
+            field.enumValues.insert(key, value.toString());
+        }
+    }
+
+    for (const QJsonValue &child : object.value(QStringLiteral("fields")).toArray())
+        field.children.append(readField(child.toObject()));
+    return field;
+}
+
+QVector<UbxMessageParser::FieldDef> readFields(const QJsonArray &array)
+{
+    QVector<UbxMessageParser::FieldDef> fields;
+    for (const QJsonValue &value : array)
+        fields.append(readField(value.toObject()));
+    return fields;
+}
+
+UbxMessageParser::VariantRule readVariant(const QJsonObject &object)
+{
+    UbxMessageParser::VariantRule rule;
+    if (!object.contains(QStringLiteral("variant")))
+        return rule;
+    const QJsonObject variant = object.value(QStringLiteral("variant")).toObject();
+    rule.present = true;
+    rule.offset = variant.value(QStringLiteral("offset")).toInt(-1);
+    rule.type = variant.value(QStringLiteral("type")).toString();
+    rule.length = variant.value(QStringLiteral("length")).toInt(-1);
+    rule.lengthBase = variant.value(QStringLiteral("length_base")).toInt(-1);
+    rule.lengthCountOffset = variant.value(QStringLiteral("length_count_offset")).toInt(-1);
+    rule.lengthStride = variant.value(QStringLiteral("length_stride")).toInt(-1);
+    rule.equals = variant.contains(QStringLiteral("equals"))
+                      ? variant.value(QStringLiteral("equals")).toVariant()
+                      : QVariant();
+    rule.notEquals = variant.contains(QStringLiteral("not_equals"))
+                         ? variant.value(QStringLiteral("not_equals")).toVariant()
+                         : QVariant();
+    return rule;
 }
 
 } // namespace
@@ -99,24 +315,13 @@ UbxMessageParser::UbxMessageParser(const QString &databasePath)
         const int messageId = object.value(QStringLiteral("id")).toInt(-1);
         if (classId < 0 || messageId < 0)
             continue;
-        QVector<FieldDef> fields;
-        for (const QJsonValue &fieldValue : object.value(QStringLiteral("fields")).toArray()) {
-            const QJsonObject fieldObject = fieldValue.toObject();
-            FieldDef field;
-            field.name = fieldObject.value(QStringLiteral("name")).toString();
-            field.type = fieldObject.value(QStringLiteral("type")).toString();
-            field.unit = fieldObject.value(QStringLiteral("unit")).toString();
-            field.description = fieldObject.value(QStringLiteral("description")).toString();
-            field.offset = fieldObject.value(QStringLiteral("offset")).toInt(-1);
-            field.scale = fieldObject.value(QStringLiteral("scale")).toDouble(1.0);
-            if (!field.name.isEmpty() && field.offset >= 0)
-                fields.append(field);
-        }
-        if (!fields.isEmpty()) {
-            m_messages.insert(keyFor(classId, messageId), fields);
-            m_names.insert(keyFor(classId, messageId),
-                           object.value(QStringLiteral("name")).toString());
-        }
+        MessageDef definition;
+        definition.name = object.value(QStringLiteral("name")).toString();
+        definition.timeField = object.value(QStringLiteral("timeField")).toString();
+        definition.fields = readFields(object.value(QStringLiteral("fields")).toArray());
+        definition.variant = readVariant(object);
+        if (!definition.fields.isEmpty())
+            m_messages[keyFor(classId, messageId)].append(definition);
     }
 }
 
@@ -139,7 +344,6 @@ void UbxMessageParser::loadDatabase()
             continue;
         UbxMessageParser parser(path);
         m_messages = parser.m_messages;
-        m_names = parser.m_names;
         if (!m_messages.isEmpty())
             return;
     }
@@ -219,38 +423,27 @@ bool UbxMessageParser::parse(const QByteArray &data, PsDecodedFrame &out) const
     out.fields.append(field);
 
     field.name = QStringLiteral("checksum");
-    field.value = QStringLiteral("%1 %2").arg(hexByte(ckA), hexByte(ckB));
+    field.value = QStringLiteral("%1 %2").arg(hexByte(ckA), hexByte(expectedB));
     field.raw = QStringLiteral("%1 %2").arg(hexByte(expectedA), hexByte(expectedB));
     field.offset = frameLength - 2;
     field.size = 2;
     out.fields.append(field);
 
-    const auto schema = m_messages.constFind(out.frameKey);
-    if (schema == m_messages.constEnd()) {
+    const auto schemas = m_messages.constFind(out.frameKey);
+    if (schemas == m_messages.constEnd()) {
         out.unknown = true;
         return true;
     }
-    out.frameName = m_names.value(out.frameKey, out.frameKey);
 
     const QByteArray payload = frame.mid(6, payloadLength);
-    for (const FieldDef &definition : schema.value()) {
-        double number = 0.0;
-        if (!readNumber(payload, definition.offset, definition.type, number))
-            continue;
-        number *= definition.scale;
-        PsDecodedField decoded;
-        decoded.name = definition.name;
-        decoded.raw = payload.mid(definition.offset, typeSize(definition.type));
-        decoded.value = number;
-        decoded.unit = definition.unit;
-        decoded.description = definition.description;
-        decoded.offset = 6 + definition.offset;
-        decoded.size = typeSize(definition.type);
-        out.fields.append(decoded);
-        if ((definition.name == QLatin1String("i_tow") ||
-             definition.name == QLatin1String("iTOW")) &&
-            out.timestamp == 0.0)
-            out.timestamp = number;
+    const MessageDef *definition = selectMessage(schemas.value(), payload);
+    if (!definition) {
+        out.unknown = true;
+        return true;
     }
+    out.frameName = definition->name;
+
+    QMap<QString, QVariant> values;
+    decodeFields(definition->fields, payload, 0, QString(), definition->timeField, out, values);
     return true;
 }
