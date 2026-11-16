@@ -3116,7 +3116,7 @@ void PlottingCanvas::zoomBy(double factor)
 void PlottingCanvas::requestAutoY()
 {
     m_autoY = true;
-    resetView();
+    resetYAxis();
     update();
 }
 

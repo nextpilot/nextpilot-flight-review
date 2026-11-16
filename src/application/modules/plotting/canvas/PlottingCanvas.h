@@ -110,6 +110,12 @@ public:
     QJsonObject saveState() const;                        // 布局/曲线快照
     void restoreState(const QJsonObject &o, const QHash<QString, const PsChannelInfo *> &pool);
     double t0() const { return m_t0; }
+    QRectF plotArea() const { return plotRect(); }
+    double yMin() const { return m_yMin; }
+    double yMax() const { return m_yMax; }
+    bool measurementEnabled() const { return m_abEnabled; }
+    double measurementA() const { return m_abA; }
+    double measurementB() const { return m_abB; }
     double t1() const { return m_t1; }
     void setPlayhead(double t);
     void setMaximizedState(bool on);                // 主窗切换后同步按钮图标/提示

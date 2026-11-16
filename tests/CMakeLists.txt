@@ -292,6 +292,22 @@ add_executable(test_message_parser_registry unit/test_message_parser_registry.cp
 target_link_libraries(test_message_parser_registry PRIVATE ps_datasource_protocol Qt6::Core)
 add_test(NAME message_parser_registry COMMAND test_message_parser_registry)
 
+if(TARGET ps_application_plotting)
+  add_executable(test_plotting_canvas unit/test_plotting_canvas.cpp
+    ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/canvas/PlottingCanvas.cpp)
+  target_include_directories(test_plotting_canvas PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/application
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/canvas
+    ${PROJECT_SOURCE_DIR}/src/application/shell)
+  target_link_libraries(test_plotting_canvas PRIVATE ps_application_shell
+    ps_kernel Qt6::Widgets Qt6::Network)
+  set_target_properties(test_plotting_canvas PROPERTIES AUTOMOC ON)
+  add_test(NAME plotting_canvas COMMAND test_plotting_canvas)
+  set_tests_properties(plotting_canvas PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 if(TARGET ps_application_shell AND TARGET ps_application_plotting AND TARGET ps_application_datasource)
   add_executable(test_layout_restore unit/test_layout_restore.cpp)
   target_include_directories(test_layout_restore PRIVATE ${PROJECT_SOURCE_DIR}/src
