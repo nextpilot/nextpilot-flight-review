@@ -26,6 +26,8 @@ public:
     ExtensionManager();
     ~ExtensionManager();
 
+    static void scanStandardLocations();
+
     void activate(const ps::components::HostContext &context);
     void deactivate();
 

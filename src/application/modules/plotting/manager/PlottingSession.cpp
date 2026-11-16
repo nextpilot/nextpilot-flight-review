@@ -34,7 +34,6 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QSettings>
 #include <QSize>
 #include <QSpinBox>
 #include <QSplitter>

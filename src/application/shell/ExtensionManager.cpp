@@ -3,6 +3,10 @@
 #include "ExtensionHost.h"
 #include "ExtensionRuntime.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QStandardPaths>
+
 namespace
 {
 QString runtimeError(const std::string &error)
@@ -17,6 +21,19 @@ ExtensionManager::ExtensionManager()
 }
 
 ExtensionManager::~ExtensionManager() = default;
+
+void ExtensionManager::scanStandardLocations()
+{
+    QStringList dirs;
+    dirs << QCoreApplication::applicationDirPath() + QStringLiteral("/extensions");
+    dirs << QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/plotscope/extensions");
+    dirs << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/extensions");
+    const QString envPath = qEnvironmentVariable("PLOTSCOPE_EXTENSION_PATH");
+    if (!envPath.isEmpty())
+        dirs << envPath.split(QDir::listSeparator(), Qt::SkipEmptyParts);
+    for (const QString &dir : dirs)
+        ExtensionRuntime::instance().scanDirectory(dir.toStdString());
+}
 
 void ExtensionManager::activate(const ps::components::HostContext &context)
 {

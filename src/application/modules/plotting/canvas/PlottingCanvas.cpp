@@ -15,7 +15,7 @@
 #include <QMessageBox>
 #include <QSaveFile>
 #include <QTextStream>
-#include <QSettings>
+#include "SettingsManager.h"
 #include <QDateTime>
 #include <QColorDialog>
 #include <QJsonArray>
@@ -100,7 +100,7 @@ PlottingCanvas::PlottingCanvas(QWidget *parent)
     setAcceptDrops(true);
     m_title = QStringLiteral("未命名画布");
     m_kernelBacked = false;
-    const QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    const auto &st = SettingsManager::instance();
     m_showGrid = st.value(QStringLiteral("gridDefault"), true).toBool();
     m_showLegend = st.value(QStringLiteral("legendDefault"), true).toBool();
     m_timeFormat = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
@@ -110,7 +110,7 @@ PlottingCanvas::PlottingCanvas(QWidget *parent)
 
 void PlottingCanvas::reloadDisplaySettings()
 {
-    const QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    const auto &st = SettingsManager::instance();
     m_timeFormat = st.value(QStringLiteral("timeFormat"), QStringLiteral("relative")).toString();
     update();
 }

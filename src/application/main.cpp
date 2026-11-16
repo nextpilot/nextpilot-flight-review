@@ -1,17 +1,13 @@
 // PlotScope 入口。Qt Widgets 单线程 UI（D1 / D1b / D1c），数据面全部走 ps-abi。
 #include <QApplication>
-#include <QDir>
 #include <QFile>
-#include <QSettings>
 #include <QStringList>
 
 #include <cstdio>
-#include <QStandardPaths>
 
 #include "Component.h"
 #include "DataSourceRegistry.h"
 #include "DynamicExtensionRegistry.h"
-#include "ExtensionRuntime.h"
 #include "ThemeManager.h"
 #include "SessionManager.h"
 #include "SettingsManager.h"
@@ -35,17 +31,8 @@ int main(int argc, char **argv)
         qFatal("ps-abi 版本不匹配：kernel=%u host=%u", ps_abi_version(), PS_ABI_VERSION);
     }
 
-    // 动态扩展：安装目录 + 用户目录 + 环境变量，app 不认具体格式
-    QStringList extensionDirs;
-    extensionDirs << QCoreApplication::applicationDirPath() + QStringLiteral("/extensions");
-    extensionDirs << QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/plotscope/extensions");
-    extensionDirs << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/extensions");
-    const QString envPath = qEnvironmentVariable("PLOTSCOPE_EXTENSION_PATH");
-    if (!envPath.isEmpty())
-        extensionDirs << envPath.split(QDir::listSeparator(), Qt::SkipEmptyParts);
-    ExtensionRuntime &runtime = ExtensionRuntime::instance();
-    for (const QString &dir : extensionDirs)
-        runtime.scanDirectory(dir.toStdString());
+    // 动态扩展：目录扫描归 ExtensionManager，注册归各扩展点。
+    ExtensionManager::scanStandardLocations();
     QStringList extensionErrors = DataSourceRegistry::instance().registerLoadedExtensions();
     extensionErrors += ps::components::registerDynamicExtensions();
     for (const QString &e : extensionErrors)

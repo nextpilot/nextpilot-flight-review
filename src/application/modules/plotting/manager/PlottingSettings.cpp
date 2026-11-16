@@ -1,19 +1,19 @@
 #include "PlottingSettings.h"
 #include "MainWindow.h"
+#include "SettingsManager.h"
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QPushButton>
-#include <QSettings>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
 PlottingSettingsPage::PlottingSettingsPage(MainWindow *mw, QWidget *parent)
     : QWidget(parent), m_mw(mw)
 {
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    auto &st = SettingsManager::instance();
 
     auto *lay = new QVBoxLayout(this);
     auto *canvasGroup = new QGroupBox(QStringLiteral("画布"), this);
@@ -64,7 +64,7 @@ PlottingSettingsPage::PlottingSettingsPage(MainWindow *mw, QWidget *parent)
 
 void PlottingSettingsPage::apply()
 {
-    QSettings st(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
+    auto &st = SettingsManager::instance();
     st.setValue(QStringLiteral("gridDefault"), m_grid->isChecked());
     st.setValue(QStringLiteral("legendDefault"), m_legend->isChecked());
     st.setValue(QStringLiteral("timeFormat"), m_timeFormat->currentData().toString());
