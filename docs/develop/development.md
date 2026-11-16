@@ -79,7 +79,7 @@ mw.commands().add(QStringLiteral("data.openPath"), [mw](const CommandContext &ct
 - 注释只写必要约束和原因，不写“这里创建了一个……”这类过程说明。
 - 头文件尽量前向声明，`cpp` 只 include 实际使用的头。
 - 新增公共 API 先考虑是否真的通用；只在一个模块用的接口留在该模块。
-- 路径、配置目录、日志目录统一走 `ShellPaths`；设置统一走 `SettingsManager`，不要在模块里直接 `QSettings`。
+- 路径、配置目录、日志目录统一走 `ShellPaths`；设置统一走 `SettingsManager`，不要在模块里直接 `QSettings`。具体用法见 [`settings.md`](settings.md)。
 
 ## 提交前
 
