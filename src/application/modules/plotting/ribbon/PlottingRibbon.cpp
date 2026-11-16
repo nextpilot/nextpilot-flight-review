@@ -453,7 +453,6 @@ void buildPlotGallery(QWidget *p)
     if (!mw)
         return;
     panel->setExpanding(false);
-    panel->setMaximumWidth(368);
     if (auto *t = panel->titleLabel())
         t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     auto run = [mw](const QString &cmd, const QString &arg = QString()) {
@@ -485,54 +484,13 @@ void buildPlotGallery(QWidget *p)
     for (const char *k : {"timeseries", "xy", "scatter", "traj3d", "map"})
         if (auto *a = plotActByKind.value(QString::fromLatin1(k)))
             commonActs.append(a);
-    // 原生 SARibbonGallery：单行模式只留框内「更多」，弹出分组由控件自己管
     auto *gallery = panel->addGallery();
     gallery->setSingleRowMode(true);
-    // vendor 的「更多」按钮用位图箭头，深色主题下看不见；改成文字 ▾，仍是原生按钮
-    if (auto *more = gallery->findChild<QToolButton *>(QStringLiteral("SARibbonGalleryButtonMore")))
-    {
-        more->setToolButtonStyle(Qt::ToolButtonTextOnly);
-        more->setIcon(QIcon());
-        more->setText(QStringLiteral("▾"));
-    }
-    auto styleGroup = [](SARibbonGalleryGroup *g) {
-        g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
-        g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-        g->setGridMinimumWidth(64);
-        g->setGridMaximumWidth(72);
-        g->setSpacing(1);
-        // vendor 弹窗会给 group 分多余高度，锁死单行高度，避免大片留白
-    };
     auto *common = gallery->addCategoryActions(QStringLiteral("常用"), commonActs);
-    auto *curve = gallery->addCategoryActions(QStringLiteral("曲线"), curveActs);
-    auto *map = gallery->addCategoryActions(QStringLiteral("地图 / 3D"), mapActs);
-    auto *gauge = gallery->addCategoryActions(QStringLiteral("仪表"), gaugeActs);
-    styleGroup(common);
-    styleGroup(curve);
-    styleGroup(map);
-    styleGroup(gauge);
+    gallery->addCategoryActions(QStringLiteral("曲线"), curveActs);
+    gallery->addCategoryActions(QStringLiteral("地图 / 3D"), mapActs);
+    gallery->addCategoryActions(QStringLiteral("仪表"), gaugeActs);
     gallery->setCurrentViewGroup(common);
-    // 弹出 viewport 是独立 Popup 窗口，主题 QSS 传不进去，落一次背景色
-    if (auto *vp = gallery->getPopupViewPort())
-    {
-    vp->setMinimumWidth(490);
-        QPalette pal = vp->palette();
-        pal.setColor(QPalette::Window, ThemeManager::color(QStringLiteral("panelAlt")));
-        pal.setColor(QPalette::Base, ThemeManager::color(QStringLiteral("panelAlt")));
-        vp->setPalette(pal);
-        vp->setAutoFillBackground(true);
-        // vendor 给 contentWidget 单独拷过一份旧 palette，必须同步覆盖，否则弹出层是镂空的
-        if (QWidget *cw = vp->widget())
-        {
-            cw->setPalette(pal);
-            cw->setAutoFillBackground(true);
-        }
-        vp->setAttribute(Qt::WA_StyledBackground, true);
-        vp->setStyleSheet(QStringLiteral(
-            "SARibbonGalleryViewport{background:#1a2127;border:1px solid #232b33;}"
-            "QWidget#contentWidget{background:#1a2127;}"
-            "SARibbonGalleryGroup{background:transparent;border:0;}"));
-    }
 }
 
 } // namespace ps::plotting

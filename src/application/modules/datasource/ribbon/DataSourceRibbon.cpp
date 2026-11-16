@@ -93,52 +93,12 @@ void registerDataSourceContributions(Registry &registry)
                                       [mw, id = e.id] { dataSourceSession(mw)->connectSource(id); });
                      streamActs.append(a);
                  }
-                 // 原生 SARibbonGallery：单行模式只留框内「更多」，弹出分组由控件的 viewport 负责
                  auto *gallery = panel->addGallery();
                  gallery->setSingleRowMode(true);
-                 // vendor 的「更多」按钮用位图箭头，深色主题下看不见；改成文字 ▾，仍是原生按钮
-                 if (auto *more = gallery->findChild<QToolButton *>(QStringLiteral("SARibbonGalleryButtonMore")))
-                 {
-                     more->setToolButtonStyle(Qt::ToolButtonTextOnly);
-                     more->setIcon(QIcon());
-                     more->setText(QStringLiteral("▾"));
-                 }
-                 auto styleGroup = [](SARibbonGalleryGroup *g) {
-                     g->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
-                     g->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
-                     g->setGridMinimumWidth(64);
-                     g->setGridMaximumWidth(72);
-                     g->setSpacing(1);
-                     // vendor 弹窗会给 group 分多余高度，锁死单行高度，避免大片留白
-                 };
                  auto *common = gallery->addCategoryActions(QStringLiteral("常用"), fileActs.mid(0, 4));
-                 auto *formats = gallery->addCategoryActions(QStringLiteral("文件格式"), fileActs);
-                 auto *streams = gallery->addCategoryActions(QStringLiteral("实时源"), streamActs);
-                 styleGroup(common);
-                 styleGroup(formats);
-                 styleGroup(streams);
+                 gallery->addCategoryActions(QStringLiteral("文件格式"), fileActs);
+                 gallery->addCategoryActions(QStringLiteral("实时源"), streamActs);
                  gallery->setCurrentViewGroup(common);
-                 // 弹出 viewport 是独立 Popup 窗口，主题 QSS 传不进去，落一次背景色
-                 if (auto *vp = gallery->getPopupViewPort())
-                 {
-                     vp->setMinimumWidth(780);
-                     QPalette pal = vp->palette();
-                     pal.setColor(QPalette::Window, ThemeManager::color(QStringLiteral("panelAlt")));
-                     pal.setColor(QPalette::Base, ThemeManager::color(QStringLiteral("panelAlt")));
-                     vp->setPalette(pal);
-                     vp->setAutoFillBackground(true);
-                     if (QWidget *cw = vp->widget())
-                     {
-                         cw->setPalette(pal);
-                         cw->setAutoFillBackground(true);
-                     }
-                     vp->setAttribute(Qt::WA_StyledBackground, true);
-                     vp->setStyleSheet(QStringLiteral(
-                         "SARibbonGalleryViewport{background:#1a2127;border:1px solid #232b33;}"
-                         "QWidget#contentWidget{background:#1a2127;}"
-                         "SARibbonGalleryGroup{background:transparent;border:0;}"));
-                 }
-                 panel->setMaximumWidth(320);
              }}},
         1});
 }
