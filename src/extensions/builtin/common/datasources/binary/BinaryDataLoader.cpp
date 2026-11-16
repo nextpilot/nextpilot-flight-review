@@ -332,13 +332,24 @@ void collectSamples(const Value &root, std::vector<Value> &samples)
 int32_t loadBinary(const char *path, const char *, const PsHostApi *host, void **dataset,
                    char *err, uint32_t errCap)
 {
+    psLoaderSetHost(host);
     QFile f(QString::fromUtf8(path));
     if (!f.open(QIODevice::ReadOnly))
     {
         psWriteErr(err, errCap, "无法打开二进制文件");
         return 1;
     }
-    const QByteArray bytes = f.readAll();
+    const uint64_t fileSize = static_cast<uint64_t>(f.size());
+    QByteArray bytes;
+    bytes.reserve(static_cast<int>(fileSize));
+    while (!f.atEnd())
+    {
+        const QByteArray chunk = f.read(1 << 20);
+        if (chunk.isEmpty())
+            break;
+        bytes.append(chunk);
+        psLoaderProgress(static_cast<uint64_t>(bytes.size()) * 10 / std::max<uint64_t>(1, fileSize), 100);
+    }
     if (bytes.isEmpty())
     {
         psWriteErr(err, errCap, "文件为空");
@@ -350,8 +361,11 @@ int32_t loadBinary(const char *path, const char *, const PsHostApi *host, void *
              reinterpret_cast<const uint8_t *>(bytes.constData()) + bytes.size(), true};
 
     std::vector<Value> roots;
+    const uint8_t *parseBegin = r.p;
     while (r.p < r.end && r.ok && roots.size() < 1'000'000)
     {
+        psLoaderProgress(10 + static_cast<uint64_t>(r.p - parseBegin) * 85 /
+                                  std::max<uint64_t>(1, static_cast<uint64_t>(r.end - parseBegin)), 100);
         Value v;
         const bool ok = cbor ? cborItem(r, v, 0) : msgpackItem(r, v, 0);
         if (!ok)

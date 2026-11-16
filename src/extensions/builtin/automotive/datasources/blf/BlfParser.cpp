@@ -155,6 +155,7 @@ bool psParseBlfFile(const char *path, BlfLog &log, std::string &err)
     size_t pos = headerSize;
     while (pos + 16 <= buf.size())
     {
+        psLoaderProgress(10 + pos * 85 / std::max<size_t>(1, buf.size()), 100);
         if (!(buf[pos] == 'L' && buf[pos + 1] == 'O' && buf[pos + 2] == 'B' && buf[pos + 3] == 'J'))
         {
             ++pos;

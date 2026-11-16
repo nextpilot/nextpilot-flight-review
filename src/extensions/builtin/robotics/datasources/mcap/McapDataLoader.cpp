@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QFileInfo>
 #include <QString>
 
 #include <cstdio>
@@ -127,6 +128,7 @@ public:
             return false;
         }
 
+        const uint64_t fileSize = static_cast<uint64_t>(QFileInfo(QString::fromStdString(std::string(path))).size());
         std::vector<PsChannelData> channels;
         QHash<QString, int> index;
         std::set<std::string> unsupported;
@@ -137,6 +139,8 @@ public:
         ps::mcap::Message message;
         while (reader.next(message, re))
         {
+            if (fileSize)
+                psLoaderProgress(std::min<uint64_t>(95, 10 + reader.bytesRead() * 85 / fileSize), 100);
             auto ch = reader.channels().find(message.channel_id);
             if (ch == reader.channels().end())
                 continue;

@@ -253,6 +253,13 @@ int32_t loadRosbag2(const char *path, const char *optsJson, const PsHostApi *hos
         return 2;
     }
 
+    psLoaderSetHost(host);
+    qint64 msgCount = 0;
+    {
+        QSqlQuery cq(db);
+        if (cq.exec(QStringLiteral("SELECT COUNT(*) FROM messages")) && cq.next())
+            msgCount = cq.value(0).toLongLong();
+    }
     QSqlQuery mq(db);
     mq.setForwardOnly(true);
     if (!mq.exec(QStringLiteral("SELECT topic_id,timestamp,data FROM messages ORDER BY timestamp")))
@@ -264,8 +271,12 @@ int32_t loadRosbag2(const char *path, const char *optsJson, const PsHostApi *hos
     }
     double t0 = -1;
     Sink sink;
+    qint64 readCount = 0;
     while (mq.next())
     {
+        ++readCount;
+        if (msgCount > 0)
+            psLoaderProgress(10 + static_cast<uint64_t>(readCount) * 85 / static_cast<uint64_t>(msgCount), 100);
         const int tid = mq.value(0).toInt();
         auto it = topics.find(tid);
         if (it == topics.end())

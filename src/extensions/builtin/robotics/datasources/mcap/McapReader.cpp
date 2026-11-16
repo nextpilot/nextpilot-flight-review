@@ -233,6 +233,12 @@ bool Reader::parseRecord(uint8_t op, const uint8_t *data, size_t size,
     return true;
 }
 
+uint64_t Reader::bytesRead()
+{
+    const std::streampos pos = file_.tellg();
+    return pos < 0 ? 0 : static_cast<uint64_t>(pos);
+}
+
 bool Reader::next(Message &message, std::string &err)
 {
     err.clear();

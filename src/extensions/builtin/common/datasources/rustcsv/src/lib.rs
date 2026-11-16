@@ -27,13 +27,19 @@ unsafe fn c_str(ptr: *const c_char) -> String {
     }
 }
 
-fn parse_rows(text: &str, delim: char) -> Vec<Vec<String>> {
+fn parse_rows(text: &str, delim: char, mut tick: impl FnMut(usize)) -> Vec<Vec<String>> {
     let mut rows = Vec::new();
     let mut row = Vec::new();
     let mut field = String::new();
     let mut quoted = false;
+    let total = text.chars().count().max(1);
+    let mut seen = 0usize;
     let mut chars = text.chars().peekable();
     while let Some(ch) = chars.next() {
+        seen += 1;
+        if seen % 4096 == 0 {
+            tick(seen * 100 / total);
+        }
         if quoted {
             if ch == '"' {
                 if chars.peek() == Some(&'"') {
@@ -103,7 +109,7 @@ unsafe extern "C" fn probe(path: *const c_char, opts: *const c_char, out: *mut c
         "\\t" => '\t',
         s => s.chars().next().unwrap_or(','),
     };
-    let rows = parse_rows(&text, delim);
+    let rows = parse_rows(&text, delim, |_| {});
     let col_count = rows.iter().map(|r| r.len()).max().unwrap_or(0);
     let mut columns = Vec::new();
     for i in 0..col_count {
@@ -155,7 +161,12 @@ unsafe extern "C" fn load(
     };
     let has_header = o.get("has_header").and_then(|v| v.as_bool()).unwrap_or(true);
     let skip = o.get("skip_rows").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-    let rows = parse_rows(&text, delim);
+    let progress = h.progress;
+    let rows = parse_rows(&text, delim, |p| {
+        if let Some(f) = progress {
+            unsafe { f(10 + (p as u64) * 60 / 100, 100) };
+        }
+    });
     if rows.len() <= skip {
         write_err(err, err_cap, "没有数据行");
         return 3;
@@ -225,6 +236,9 @@ unsafe extern "C" fn load(
         }
     }
     *dataset = ds;
+    if let Some(f) = progress {
+        unsafe { f(100, 100) };
+    }
     0
 }
 

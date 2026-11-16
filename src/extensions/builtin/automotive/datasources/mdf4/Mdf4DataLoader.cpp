@@ -234,14 +234,14 @@ double readValue(const uint8_t *rec, const Channel &ch)
 int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **dataset,
                  char *err, uint32_t errCap)
 {
-    QFile f(QString::fromUtf8(path));
-    if (!f.open(QIODevice::ReadOnly))
+    psLoaderSetHost(host);
+    std::vector<uint8_t> file;
+    std::string readErr;
+    if (!psReadFile(path, file, readErr))
     {
-        psWriteErr(err, errCap, "无法打开 MDF4 文件");
+        psWriteErr(err, errCap, readErr);
         return 1;
     }
-    const QByteArray bytes = f.readAll();
-    std::vector<uint8_t> file(bytes.constData(), bytes.constData() + bytes.size());
     if (file.size() < 64 || std::memcmp(file.data(), "MDF     ", 8) != 0 ||
         std::memcmp(file.data() + 8, "4.", 2) != 0)
     {
@@ -386,6 +386,7 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
         };
 
         auto processBlock = [&](uint64_t dataOff) {
+            psLoaderProgress(std::min<uint64_t>(95, 10 + dataOff * 85 / std::max<size_t>(1, file.size())), 100);
             Block data;
             if (!dataOff || !readBlock(file, dataOff, data) || (data.id != "##DT" && data.id != "##DZ"))
                 return;
@@ -401,6 +402,7 @@ int32_t loadMdf4(const char *path, const char *, const PsHostApi *host, void **d
             size_t pos = 0;
             while (pos < body->size())
             {
+                psLoaderProgress(std::min<uint64_t>(95, 10 + (dataOff + pos) * 85 / std::max<size_t>(1, file.size())), 100);
                 const uint8_t *rec = body->data() + pos;
                 uint64_t id = 0;
                 if (recordIdSize)

@@ -38,6 +38,7 @@ class Reader
 public:
     bool open(const std::string &path, std::string &err);
     bool next(Message &message, std::string &err);
+    uint64_t bytesRead();
 
     const std::map<uint16_t, Schema> &schemas() const { return schemas_; }
     const std::map<uint16_t, Channel> &channels() const { return channels_; }
