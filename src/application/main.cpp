@@ -9,7 +9,6 @@
 #include "DataSourceRegistry.h"
 #include "DynamicExtensionRegistry.h"
 #include "ThemeManager.h"
-#include "SessionManager.h"
 #include "SettingsManager.h"
 
 #include "ps_kernel.h"
@@ -62,7 +61,10 @@ int main(int argc, char **argv)
             restoreLayout = true;
     }
     if (argc <= 1 && SettingsManager::instance().restoreLayout())
-        restoreLayout = QFile::exists(SessionManager::defaultLayoutPath());
+    {
+        const QString last = win.session().layoutPath();
+        restoreLayout = !last.isEmpty() && QFile::exists(last);
+    }
     if (!restoreLayout)
         win.session().restoreWindowState(&win);
 
@@ -81,8 +83,8 @@ int main(int argc, char **argv)
     }
     else if (SettingsManager::instance().restoreLayout())
     {
-        const QString last = SessionManager::defaultLayoutPath();
-        if (QFile::exists(last)) {
+        const QString last = win.session().layoutPath();
+        if (!last.isEmpty() && QFile::exists(last)) {
             ps::commands::CommandContext ctx;
             ctx.arg = last;
             win.commands().invoke(QStringLiteral("layout.import"), ctx);

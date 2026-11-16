@@ -112,4 +112,5 @@ void ExtensionManager::setEnabled(const QString &id, bool enabled)
     else if (!disabled.contains(id))
         disabled.append(id);
     SettingsManager::instance().setValue(QStringLiteral("extensions.disabled"), disabled);
+    SettingsManager::instance().sync();
 }

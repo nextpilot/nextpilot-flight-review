@@ -1,8 +1,10 @@
 #include "MainWindow.h"
 
 #include <QApplication>
+#include <QFile>
 #include <QStandardPaths>
 #include <QTabWidget>
+#include <QTemporaryDir>
 #include <cstdio>
 
 int main(int argc, char **argv)
@@ -21,6 +23,14 @@ int main(int argc, char **argv)
     if (window.pages()->tabText(0) != QStringLiteral("恢复页"))
         return 1;
     if (window.session().layoutPath() != path)
+        return 1;
+
+    QTemporaryDir dir;
+    const QString customPath = dir.filePath(QStringLiteral("custom.psl"));
+    window.session().setLayoutPath(customPath);
+    if (!window.commands().invoke(QStringLiteral("layout.save"), {&window, {}}))
+        return 1;
+    if (!QFile::exists(customPath))
         return 1;
 
     std::printf("layout restore ok\n");

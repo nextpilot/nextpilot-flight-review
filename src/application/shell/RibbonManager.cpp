@@ -81,7 +81,10 @@ QWidget *RibbonManager::create()
         }
         a->setProperty("rbCommandId", id);
         applyState(a, id, arg);
-        QObject::connect(a, &QAction::triggered, ctx, fn);
+        QObject::connect(a, &QAction::triggered, ctx, [this, a, id, arg, fn, applyState] {
+            fn();
+            applyState(a, id, arg);
+        });
         if (large)
             panel->addLargeAction(a);
         else

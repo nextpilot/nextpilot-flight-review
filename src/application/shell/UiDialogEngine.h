@@ -24,5 +24,9 @@ public:
     QString optionsJson() const { return m_options; }
 
 private:
+    void collectOptions(QWidget *root);
+
+    UiDialogSpec m_spec;
+    QString m_sourcePath;
     QString m_options;
 };

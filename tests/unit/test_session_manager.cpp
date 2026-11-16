@@ -1,5 +1,6 @@
 #include "SessionManager.h"
 #include "SettingsManager.h"
+#include "CommandManager.h"
 
 #include <QApplication>
 #include <QMainWindow>
@@ -55,6 +56,25 @@ int main(int argc, char **argv)
         return 1;
     const QString y = QString::fromUtf8(yaml.readAll());
     if (!y.contains(QStringLiteral("test.key: \"value\"")))
+        return 1;
+    if (settings.exportTo(dir.path()))
+        return 1;
+
+    ps::commands::CommandManager commands;
+    session.bindCommandState(commands, [] {});
+    session.markClean();
+    ps::commands::CommandSpec dirty;
+    dirty.id = QStringLiteral("test.dirty");
+    dirty.sessionDirty = true;
+    commands.registerCommand(dirty, [](const ps::commands::CommandContext &) {});
+    commands.invoke(QStringLiteral("test.dirty"), {});
+    if (!session.isDirty())
+        return 1;
+
+    session.markClean();
+    commands.add(QStringLiteral("layout.save"), [](const ps::commands::CommandContext &) {});
+    commands.invoke(QStringLiteral("layout.save"), {});
+    if (session.isDirty())
         return 1;
 
     settings.remove(QStringLiteral("lastLayout"));

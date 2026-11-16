@@ -1,8 +1,12 @@
 #include "UiDialogEngine.h"
 
 #include <QApplication>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QWidget>
 
 #if PS_HAVE_UITOOLS
 #include <QDialogButtonBox>
@@ -11,18 +15,19 @@
 #endif
 
 UiDialogEngine::UiDialogEngine(const UiDialogSpec &spec, const QString &path, QWidget *parent)
-    : QDialog(parent)
+    : QDialog(parent), m_spec(spec), m_sourcePath(path)
 {
-    setWindowTitle(spec.title);
+    setWindowTitle(m_spec.title);
+    if (!m_sourcePath.isEmpty())
+        setToolTip(QStringLiteral("数据文件：%1").arg(m_sourcePath));
 
 #if PS_HAVE_UITOOLS
-    Q_UNUSED(path);
     QUiLoader loader;
-    QFile f(spec.uiPath);
+    QFile f(m_spec.uiPath);
     if (!f.open(QIODevice::ReadOnly))
     {
         auto *lay = new QVBoxLayout(this);
-        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 打不开：%1").arg(spec.uiPath), this));
+        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 打不开：%1").arg(m_spec.uiPath), this));
         return;
     }
     QWidget *w = loader.load(&f, this);
@@ -30,7 +35,7 @@ UiDialogEngine::UiDialogEngine(const UiDialogSpec &spec, const QString &path, QW
     if (!w)
     {
         auto *lay = new QVBoxLayout(this);
-        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 加载失败：%1").arg(spec.uiPath), this));
+        lay->addWidget(new QLabel(QStringLiteral("扩展 UI 加载失败：%1").arg(m_spec.uiPath), this));
         return;
     }
 
@@ -59,19 +64,49 @@ UiDialogEngine::UiDialogEngine(const UiDialogSpec &spec, const QString &path, QW
         box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
         lay->addWidget(box);
     }
-    const UiDialogSpec *p = &spec;
-    connect(box, &QDialogButtonBox::accepted, this, [this, p] {
-        if (p->data)
-            m_options = p->data(QString());
+    connect(box, &QDialogButtonBox::accepted, this, [this, w] {
+        collectOptions(w);
         if (m_options.isEmpty())
             m_options = QStringLiteral("{}");
         accept();
     });
     connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);
 #else
-    Q_UNUSED(spec);
-    Q_UNUSED(path);
     auto *lay = new QVBoxLayout(this);
     lay->addWidget(new QLabel(QStringLiteral("当前构建缺少 Qt6 UiTools，扩展 .ui 无法加载"), this));
 #endif
+}
+
+void UiDialogEngine::collectOptions(QWidget *root)
+{
+    QJsonObject out;
+    auto consume = [&out](const QString &name, const QString &raw) {
+        if (raw.isEmpty())
+            return;
+        const QJsonDocument doc = QJsonDocument::fromJson(raw.toUtf8());
+        if (doc.isObject())
+        {
+            const QJsonObject obj = doc.object();
+            for (auto it = obj.begin(); it != obj.end(); ++it)
+                out.insert(it.key(), it.value());
+            return;
+        }
+        out.insert(name.isEmpty() ? QStringLiteral("options") : name, raw);
+    };
+
+    if (root && m_spec.data)
+    {
+        for (QWidget *child : root->findChildren<QWidget *>())
+        {
+            const QString name = child->objectName();
+            if (!name.isEmpty())
+                consume(name, m_spec.data(name));
+        }
+    }
+    if (out.isEmpty() && m_spec.data)
+        consume(QString(), m_spec.data(QString()));
+
+    m_options = out.isEmpty()
+                    ? QStringLiteral("{}")
+                    : QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact));
 }

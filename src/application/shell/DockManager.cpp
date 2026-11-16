@@ -17,6 +17,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QWidget>
+#include <QtAlgorithms>
 
 #include <algorithm>
 #include <functional>
@@ -203,8 +204,6 @@ private:
     bool m_hover = false;
 };
 
-QHash<QDockWidget *, QWidget *> g_handles;
-
 void dockToArea(QDockWidget *dock, QMainWindow *win, Qt::DockWidgetArea area)
 {
     if (!dock || !win)
@@ -271,8 +270,20 @@ DockManager::DockManager(QMainWindow *window)
 {
 }
 
+DockManager::~DockManager()
+{
+    qDeleteAll(m_handles);
+    m_handles.clear();
+}
+
 void DockManager::createFromRegistry(const ps::components::Registry &registry)
 {
+    qDeleteAll(m_handles);
+    m_handles.clear();
+    m_maxDock = nullptr;
+    m_maxCentral = nullptr;
+    m_maxHidden.clear();
+
     auto docks = registry.docks();
     std::sort(docks.begin(), docks.end(),
               [](const ps::components::DockContribution &a, const ps::components::DockContribution &b) {
@@ -376,7 +387,7 @@ void DockManager::registerCommand(ps::commands::CommandManager &commands)
         ps::commands::CommandSpec{QStringLiteral("view.toggleDock"), QStringLiteral("显示/隐藏面板"),
                                   {}, {}, true, {}, [this](const ps::commands::CommandContext &ctx) {
                                       return isVisibleById(ctx.arg);
-                                  }},
+                                  }, true},
         [this](const ps::commands::CommandContext &ctx) { toggleById(ctx.arg); });
 }
 
@@ -400,10 +411,10 @@ void DockManager::repositionHandles()
     if (!m_window)
         return;
     QHash<int, int> totals, seen;
-    for (auto it = g_handles.begin(); it != g_handles.end(); ++it)
+    for (auto it = m_handles.begin(); it != m_handles.end(); ++it)
         if (it.value() && it.value()->isVisible())
             ++totals[static_cast<int>(m_window->dockWidgetArea(it.key()))];
-    for (auto it = g_handles.begin(); it != g_handles.end(); ++it)
+    for (auto it = m_handles.begin(); it != m_handles.end(); ++it)
     {
         if (!it.value() || !it.value()->isVisible())
             continue;
@@ -428,14 +439,14 @@ void DockManager::collapse(QDockWidget *dock)
 {
     if (!dock || !m_window)
         return;
-    QWidget *button = g_handles.value(dock);
+    QWidget *button = m_handles.value(dock);
     if (!button)
     {
         auto *tab = new DockAutoHideTab(m_window, dock->windowTitle(), m_window->dockWidgetArea(dock),
             [this, dock] {
                 dock->show();
                 dock->raise();
-                if (auto *h = g_handles.value(dock))
+                if (auto *h = m_handles.value(dock))
                     h->hide();
                 repositionHandles();
             });
@@ -443,7 +454,7 @@ void DockManager::collapse(QDockWidget *dock)
             if (visible)
                 tab->hide();
         });
-        g_handles.insert(dock, tab);
+        m_handles.insert(dock, tab);
         button = tab;
     }
     dock->hide();

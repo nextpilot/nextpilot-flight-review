@@ -12,10 +12,25 @@
 
 void DataSourceSession::registerDataCommands()
 {
+    auto dirty = [this](const QString &id, const QString &text = QString()) {
+        ps::commands::CommandSpec spec;
+        spec.id = id;
+        spec.text = text;
+        spec.sessionDirty = true;
+        m_mw->commands().describe(spec);
+    };
+    dirty(QStringLiteral("data.openPath"), QStringLiteral("打开数据"));
+    dirty(QStringLiteral("data.quickOpen"), QStringLiteral("快速打开"));
+    dirty(QStringLiteral("data.recent"), QStringLiteral("最近文件"));
+    dirty(QStringLiteral("data.reload"), QStringLiteral("重新加载"));
+
     m_mw->commands().add(QStringLiteral("app.beforeClose"), [this](const auto &) { onClose(); });
     m_mw->commands().add(QStringLiteral("data.openPath"), [this](const auto &ctx) { if (!ctx.arg.isEmpty()) openPath(ctx.arg); });
     m_mw->commands().add(QStringLiteral("data.clearCache"), [this](const auto &) { clearParseCache(); log(QStringLiteral("解析缓存已清空")); });
-    m_mw->commands().add(QStringLiteral("layout.save"), [this](const auto &ctx) { saveLayoutTo(ctx.arg.isEmpty() ? SessionManager::defaultLayoutPath() : ctx.arg); });
+    m_mw->commands().add(QStringLiteral("layout.save"), [this](const auto &ctx) {
+        const QString path = ctx.arg.isEmpty() ? m_mw->session().layoutPath() : ctx.arg;
+        saveLayoutTo(path.isEmpty() ? SessionManager::defaultLayoutPath() : path);
+    });
     m_mw->commands().add(QStringLiteral("layout.import"), [this](const auto &ctx) {
         if (!ctx.arg.isEmpty())
             importLayoutFrom(ctx.arg);

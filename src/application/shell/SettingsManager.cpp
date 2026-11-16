@@ -97,14 +97,18 @@ bool SettingsManager::exportTo(const QString &path) const
 {
     if (path.isEmpty())
         return false;
-    QDir().mkpath(QFileInfo(path).absolutePath());
+    if (!QDir().mkpath(QFileInfo(path).absolutePath()))
+        return false;
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
         return false;
     const QString suffix = QFileInfo(path).suffix().toLower();
-    if (suffix == QLatin1String("yaml") || suffix == QLatin1String("yml"))
-        file.write(toYaml().toUtf8());
-    else
-        file.write(QJsonDocument(toJson()).toJson(QJsonDocument::Indented));
-    return true;
+    const QByteArray data = (suffix == QLatin1String("yaml") || suffix == QLatin1String("yml"))
+                                ? toYaml().toUtf8()
+                                : QJsonDocument(toJson()).toJson(QJsonDocument::Indented);
+    const qint64 written = file.write(data);
+    if (written != data.size() || !file.flush())
+        return false;
+    file.close();
+    return file.error() == QFileDevice::NoError;
 }

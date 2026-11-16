@@ -106,7 +106,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
             return;
         }
         if (answer == QMessageBox::Save &&
-            !m_commands.invoke(QStringLiteral("layout.save"), ps::commands::CommandContext{this, {}}))
+            !m_commands.invoke(QStringLiteral("layout.save"),
+                               ps::commands::CommandContext{this, m_session.layoutPath()}))
         {
             event->ignore();
             return;

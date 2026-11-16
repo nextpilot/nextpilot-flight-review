@@ -961,7 +961,10 @@ void DataSourceSession::onClose()
     if (m_liveTimer)
         m_liveTimer->stop();
     if (SettingsManager::instance().value(QStringLiteral("restoreLayout"), false).toBool())
-        saveLayoutTo(SessionManager::defaultLayoutPath());
+    {
+        const QString path = m_mw->session().layoutPath();
+        saveLayoutTo(path.isEmpty() ? SessionManager::defaultLayoutPath() : path);
+    }
 }
 
 void DataSourceSession::saveLayoutTo(const QString &path)

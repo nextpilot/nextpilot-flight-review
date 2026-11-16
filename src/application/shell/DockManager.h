@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QList>
 #include <QString>
 
@@ -24,6 +25,7 @@ class DockManager
 {
 public:
     explicit DockManager(QMainWindow *window);
+    ~DockManager();
 
     void createFromRegistry(const ps::components::Registry &registry);
     void registerCommand(ps::commands::CommandManager &commands);
@@ -44,4 +46,5 @@ private:
     QDockWidget *m_maxDock = nullptr;
     QWidget *m_maxCentral = nullptr;
     QList<QDockWidget *> m_maxHidden;
+    QHash<QDockWidget *, QWidget *> m_handles;
 };

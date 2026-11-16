@@ -758,7 +758,7 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
 
     m_ctx.statusMessage(QStringLiteral("%1 · %2 通道").arg(fi.fileName()).arg(n));
     m_ctx.recordRecent(fi.absoluteFilePath());
-
+    return true;
 }
 void DataSourceDock::connectLiveSource(const QString &extensionId)
 {

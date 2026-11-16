@@ -26,6 +26,7 @@ struct CommandSpec
     bool checkable = false;
     std::function<bool(const CommandContext &)> enabled;
     std::function<bool(const CommandContext &)> checked;
+    bool sessionDirty = false; // 命令成功后是否需要保存会话/布局
 };
 
 class CommandManager

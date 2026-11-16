@@ -94,7 +94,7 @@ void SessionManager::clearRecentFiles()
 
 void SessionManager::bindCommandState(ps::commands::CommandManager &commands, std::function<void()> refreshTitle)
 {
-    commands.setInvokeHook([this, refreshTitle = std::move(refreshTitle)](const QString &id) {
+    commands.setInvokeHook([this, &commands, refreshTitle = std::move(refreshTitle)](const QString &id) {
         if (id == QLatin1String("layout.save") || id == QLatin1String("layout.import"))
         {
             markClean();
@@ -102,13 +102,8 @@ void SessionManager::bindCommandState(ps::commands::CommandManager &commands, st
                 refreshTitle();
             return;
         }
-        if (id == QLatin1String("plot.refreshTree") || id == QLatin1String("plot.setPlayhead") ||
-            id == QLatin1String("data.recent") || id == QLatin1String("data.quickOpen") ||
-            id == QLatin1String("data.clearCache") || id == QLatin1String("app.beforeClose") ||
-            id.startsWith(QLatin1String("view.")))
-            return;
-        if (id.startsWith(QLatin1String("data.")) || id.startsWith(QLatin1String("plot.")) ||
-            id.startsWith(QLatin1String("page.")))
+        const auto *spec = commands.spec(id);
+        if (spec && spec->sessionDirty)
         {
             markDirty();
             if (refreshTitle)
