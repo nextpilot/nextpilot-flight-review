@@ -42,6 +42,26 @@ static int32_t onBatch(void *ctx, const char *name, const char *, const double *
     return 0;
 }
 static int32_t onEvent(void *, const char *, const char *) { return 0; }
+static int32_t onFrame(void *ctx, const PsFrameBatch *b)
+{
+    auto *s = static_cast<Sink *>(ctx);
+    if (!b || !b->table || !b->time_us)
+        return 0;
+    for (uint32_t c = 0; c < b->columns; ++c)
+    {
+        const PsFrameColumn &col = b->column_data[c];
+        if (!col.name || col.type != PS_VALUE_F64)
+            continue;
+        const double *v = static_cast<const double *>(col.values);
+        if (!v)
+            continue;
+        const std::string key = std::string(b->table) + "." + col.name;
+        auto &d = s->data[key];
+        for (uint32_t r = 0; r < b->rows; ++r)
+            d.emplace_back(b->time_us[r] / 1e6, v[r]);
+    }
+    return 0;
+}
 
 static void putU64(QByteArray &b, uint64_t v)
 {
@@ -63,7 +83,7 @@ int main(int argc, char **argv)
     v->destroy(probe);
 
     Sink sink;
-    PsSourceSink ps{&sink, onBatch, onEvent};
+    PsSourceSink ps{&sink, nullptr, onEvent, nullptr, onFrame};
     void *h = v->create();
     assert(h);
     PsDataSourceServices services{};

@@ -7,8 +7,6 @@ add_subdirectory(datasources/sim)
 add_library(ps_autopilot STATIC
   MavlinkMessageParser.cpp
   MavlinkMessageParser.h
-  MavlinkChannelCollector.cpp
-  MavlinkChannelCollector.h
   UlogMessageParser.cpp
   UlogMessageParser.h
   ApbinMessageParser.cpp

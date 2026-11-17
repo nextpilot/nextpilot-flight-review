@@ -1,7 +1,6 @@
 #include "ps_extension_api.h"
 #include "PsDataSourceBase.hpp"
 #include "PsCaptureFormat.h"
-#include "MavlinkChannelCollector.h"
 #include "MavlinkMessageParser.h"
 
 #include <QByteArray>
@@ -65,7 +64,6 @@ struct MavState
     std::unique_ptr<QUdpSocket> socket;
     QElapsedTimer clock;
     QByteArray rx;
-    MavlinkChannelCollector collector;
     uint64_t packets = 0;
     uint64_t frames = 0;
     uint64_t dropped = 0;
@@ -96,9 +94,36 @@ double nowSeconds(const MavState *st)
     return st->replayMode ? st->replay_t : st->clock.elapsed() / 1000.0;
 }
 
-void flush(MavState *st)
+void pushDecodedFrame(MavState *st, const PsDecodedFrame &frame, double time)
 {
-    st->collector.flush(&st->sink);
+    if (!st->sink.frame_batch || !frame.checksumOk || frame.frameName.isEmpty())
+        return;
+    const QByteArray table = (QStringLiteral("mav.") + frame.frameName.toLower()).toUtf8();
+    const int64_t time_us = static_cast<int64_t>(std::llround(time * 1e6));
+    std::vector<std::string> names;
+    std::vector<std::string> units;
+    std::vector<double> values;
+    for (const PsDecodedField &field : frame.fields)
+    {
+        if (field.offset < 0 || field.name.isEmpty())
+            continue;
+        bool ok = false;
+        const double value = field.value.toDouble(&ok);
+        if (!ok || !std::isfinite(value))
+            continue;
+        names.push_back(field.name.toStdString());
+        units.push_back(field.unit.toStdString());
+        values.push_back(value);
+    }
+    if (values.empty())
+        return;
+    std::vector<PsFrameColumn> cols(values.size());
+    for (size_t i = 0; i < values.size(); ++i)
+        cols[i] = PsFrameColumn{names[i].c_str(), units[i].c_str(), PS_VALUE_F64,
+                                &values[i], nullptr};
+    PsFrameBatch batch{table.constData(), &time_us, nullptr, 1,
+                       static_cast<uint32_t>(cols.size()), cols.data()};
+    st->sink.frame_batch(st->sink.ctx, &batch);
 }
 
 PsDecodedField findField(const PsDecodedFrame &frame, const QString &name)
@@ -125,7 +150,7 @@ void addDecodedSamples(MavState *st, const PsDecodedFrame &frame, double time)
         return;
     if (sysid)
         st->lastSysid = sysid;
-    st->collector.addFrame(frame, time);
+    pushDecodedFrame(st, frame, time);
 }
 
 void parse(MavState *st)
@@ -201,7 +226,7 @@ void parse(MavState *st)
 int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi *host, void **handle,
                    char *err, uint32_t errCap)
 {
-    if (!handle || !sink || !sink->channel_batch)
+    if (!handle || !sink || !sink->frame_batch)
     {
         if (err && errCap)
             std::snprintf(err, errCap, "sink 不完整");
@@ -320,14 +345,12 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
             if (chunk.isEmpty())
             {
                 parse(st);
-                flush(st);
-                st->replayFinished = true;
+                    st->replayFinished = true;
                 return 0;
             }
             st->rx.append(chunk);
             ++st->packets;
             parse(st);
-            flush(st);
             return 0;
         }
 
@@ -345,8 +368,7 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
                     return 1;
                 }
                 parse(st);
-                flush(st);
-                st->replayFinished = true;
+                    st->replayFinished = true;
                 return 0;
             }
             if (record.encoding != "mavlink")
@@ -367,7 +389,6 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
                               static_cast<int>(record.payload.size()));
             ++st->packets;
             parse(st);
-            flush(st);
             budget = record.payload.size() >= budget ? 0 : budget - record.payload.size();
         }
         return 0;
@@ -409,7 +430,6 @@ int32_t pollSource(void *handle, int timeoutMs, char *err, uint32_t errCap)
             ++st->dropped;
         }
     }
-    flush(st);
     return 0;
 }
 
@@ -443,7 +463,6 @@ int32_t feedSource(void *handle, const char *topic, const char *encoding, int64_
         st->rx.append(reinterpret_cast<const char *>(data), static_cast<int>(size));
     ++st->packets;
     parse(st);
-    flush(st);
     if (st->rx.size() > 4 * 1024 * 1024)
     {
         st->rx.clear();
@@ -526,7 +545,7 @@ public:
         if (handle_)
             return true;
         const PsSourceSink *s = sink();
-        if (!s || !s->channel_batch)
+        if (!s || !s->frame_batch)
         {
             ps::fillError(err, 1, "宿主 sink 未绑定");
             return false;

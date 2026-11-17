@@ -55,7 +55,7 @@ static bool hasChannel(PsDataset *ds, const char *name, double time, double valu
         for (uint32_t j = 0; j < channel->point_count; ++j)
         {
             if (std::fabs(channel->time[j] - time) < 1e-6 &&
-                std::fabs(channel->value[j] - value) < 1e-5)
+                std::fabs(ps_channel_value_at(channel, j) - value) < 1e-5)
                 return true;
         }
         return false;

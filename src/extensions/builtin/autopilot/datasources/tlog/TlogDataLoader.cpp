@@ -2,14 +2,19 @@
 #include "LegacyFileInput.hpp"
 #include "PsLoaderCommon.h"
 
-#include "MavlinkChannelCollector.h"
 #include "MavlinkMessageParser.h"
 
 #include <QFile>
 #include <QString>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <map>
+#include <memory>
+#include <string>
 #include <vector>
 
 namespace {
@@ -22,7 +27,39 @@ uint64_t readLe64(const QByteArray &bytes)
     return value;
 }
 
-bool loadTlog(const char *path, MavlinkChannelCollector &collector, std::string &err,
+struct Table
+{
+    std::vector<double> t;
+    std::map<std::string, std::vector<double>> cols;
+    std::map<std::string, std::string> units;
+};
+
+void addFrame(std::map<std::string, Table> &tables, const PsDecodedFrame &decoded, double time)
+{
+    if (!decoded.checksumOk || decoded.frameName.isEmpty())
+        return;
+    const std::string tableName = "mav." + decoded.frameName.toLower().toStdString();
+    Table &table = tables[tableName];
+    table.t.push_back(time);
+    const size_t row = table.t.size();
+    for (const PsDecodedField &field : decoded.fields)
+    {
+        if (field.offset < 0 || field.name.isEmpty())
+            continue;
+        bool ok = false;
+        const double value = field.value.toDouble(&ok);
+        if (!ok || !std::isfinite(value))
+            continue;
+        auto &col = table.cols[field.name.toStdString()];
+        if (table.units.find(field.name.toStdString()) == table.units.end())
+            table.units[field.name.toStdString()] = field.unit.toStdString();
+        while (col.size() + 1 < row)
+            col.push_back(std::numeric_limits<double>::quiet_NaN());
+        col.push_back(value);
+    }
+}
+
+bool loadTlog(const char *path, std::map<std::string, Table> &tables, std::string &err,
               int &frameCount, int &badCount)
 {
     QFile file(QString::fromUtf8(path));
@@ -115,7 +152,7 @@ bool loadTlog(const char *path, MavlinkChannelCollector &collector, std::string 
             baseUs = timestampUs;
             haveBase = true;
         }
-        collector.addFrame(decoded, static_cast<double>(timestampUs - baseUs) / 1e6);
+        addFrame(tables, decoded, static_cast<double>(timestampUs - baseUs) / 1e6);
         ++frameCount;
     }
 
@@ -125,16 +162,16 @@ bool loadTlog(const char *path, MavlinkChannelCollector &collector, std::string 
 int32_t tlogLoad(const char *path, const char *, const PsHostApi *host, void **dataset,
                  char *err, uint32_t errCap)
 {
-    MavlinkChannelCollector collector;
+    std::map<std::string, Table> tables;
     int frameCount = 0;
     int badCount = 0;
     std::string perr;
-    if (!loadTlog(path, collector, perr, frameCount, badCount))
+    if (!loadTlog(path, tables, perr, frameCount, badCount))
     {
         psWriteErr(err, errCap, perr);
         return 1;
     }
-    if (!collector.hasData())
+    if (tables.empty())
     {
         psWriteErr(err, errCap, badCount > 0 ? "tlog 中没有可绘制帧"
                                              : "tlog 中没有 MAVLink 帧");
@@ -142,16 +179,23 @@ int32_t tlogLoad(const char *path, const char *, const PsHostApi *host, void **d
     }
 
     std::vector<PsChannelData> channels;
-    for (const MavlinkChannelData &source : collector.channels())
+    for (auto &kv : tables)
     {
-        if (source.t.empty())
-            continue;
-        PsChannelData channel;
-        channel.name = source.name;
-        channel.unit = source.unit;
-        channel.t = source.t;
-        channel.v = source.v;
-        channels.push_back(std::move(channel));
+        Table &table = kv.second;
+        auto axis = std::make_shared<const std::vector<double>>(table.t);
+        for (auto &ck : table.cols)
+        {
+            auto &values = ck.second;
+            values.resize(table.t.size(), std::numeric_limits<double>::quiet_NaN());
+            PsChannelData channel;
+            channel.name = kv.first + "." + ck.first;
+            channel.table = kv.first;
+            channel.axis = axis;
+            channel.unit = table.units[ck.first];
+            channel.v = std::move(values);
+            channel.value_type = PS_VALUE_F64;
+            channels.push_back(std::move(channel));
+        }
     }
 
     PsDataset *ds = psBuildDataset(channels, perr, host);
