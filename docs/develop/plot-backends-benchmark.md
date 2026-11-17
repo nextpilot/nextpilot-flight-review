@@ -79,7 +79,7 @@
 
 ### 口径辨析：全量输入 vs 预抽稀输入
 
-上面的表是“后端自己处理全量数据”。自绘的优势来自每帧在 `paintEvent` 里调用 `ps_lod_minmax_many`，把每条 10 万/100 万点压到约 2×1280 点再画；这个抽稀本身在计时内，不是预先算好的缓存。Qwt/QCustomPlot/JKQt 的 `setSamples`、`setData`、`addCopiedColumn` 拷贝发生在 setup，计时不含。
+上面的表是“后端自己处理全量数据”。自绘的优势来自每帧在 `paintEvent` 里调用 `ps_lod_minmax_many`，把每条 10 万/100 万点压到约 1280 个 `(t,min,max)` 桶，再按桶中点画折线；这个抽稀本身在计时内，不是预先算好的缓存。Qwt/QCustomPlot/JKQt 的 `setSamples`、`setData`、`addCopiedColumn` 拷贝发生在 setup，计时不含。
 
 为了单独看“纯绘图”成本，加了一组预抽稀输入：所有后端都只拿 2×1280 点/曲线（10 条，共 25.6k 点），数据形状一致。
 
@@ -104,7 +104,7 @@
 
 | 后端 | 初始化/装载 | 每帧绘制 |
 |---|---|---|
-| 自绘画布 | `addGeneratedSeries` 用 `QVector` 隐式共享，通常不深拷贝；内核指针模式直接引用 | 分配 `lod` 缓冲，`ps_lod_minmax_many` 输出约 2×像素列点；再构造 `QPolygonF` 画折线 |
+| 自绘画布 | `addGeneratedSeries` 用 `QVector` 隐式共享，通常不深拷贝；内核指针模式直接引用 | 分配 `lod` 缓冲，`ps_lod_minmax_many` 输出约 1×像素列的 `(t,min,max)` 三元组；再按 `(min+max)/2` 构造 `QPolygonF` 画折线 |
 | QCustomPlot | `setData` 把点深拷贝进 `QVector<QCPGraphData>` | `getLines` 每帧构造 `QVector<QCPGraphData> lineData` 和 `QVector<QPointF> lines`；自适应开启时只处理抽样子集，关闭时是全量 |
 | Qwt | `setSamples` 走 `QwtPointArrayData`，x/y 数组隐式共享 | 默认每帧把可见范围全量点变换成 `QPolygonF`；`FilterPointsAggressive` 在映射前按像素列块保留 first/min/max/last |
 | JKQtPlotter | `addCopiedColumn` 深拷贝两列数据 | 每帧构造完整 `QPolygonF`，再做 `JKQTPSimplifyPolyLines`、`JKQTPClipPolyLines`，中间还会产生新的多边形副本 |
