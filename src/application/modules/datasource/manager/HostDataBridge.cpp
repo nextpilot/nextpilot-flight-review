@@ -16,7 +16,8 @@ namespace ps::data_source
 {
 namespace
 {
-constexpr int kDefaultMaxPoints = 4096;
+// 不传 maxPoints（<= 0）表示按时间窗全量切片；要抽样由调用方显式给上限。
+constexpr int kUnlimitedPoints = 0x7fffffff;
 
 // 通道时间轴是否足以支撑二分查找
 bool monotonic(const PsChannelInfo *ch)
@@ -170,7 +171,7 @@ host::Result HostDataBridge::slice(int sourceId, const QString &channel, double 
         return {};
     }
 
-    const int want = maxPoints > 0 ? maxPoints : kDefaultMaxPoints;
+    const int want = maxPoints > 0 ? maxPoints : kUnlimitedPoints;
     const double lo = std::min(t0, t1);
     const double hi = std::max(t0, t1);
 

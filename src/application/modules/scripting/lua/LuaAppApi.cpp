@@ -48,6 +48,8 @@ void pushSourceRef(lua_State *L, const SourceInfo &s)
     lua_newtable(L);
     lua_pushinteger(L, s.id);
     lua_setfield(L, -2, "__id");
+    lua_pushinteger(L, s.id);
+    lua_setfield(L, -2, "id");
     lua_pushstring(L, s.name.toUtf8().constData());
     lua_setfield(L, -2, "name");
     lua_pushstring(L, s.alias.toUtf8().constData());
@@ -167,6 +169,8 @@ int l_currentSource(lua_State *L)
 
 int srcId(lua_State *L)
 {
+    if (lua_isnumber(L, 1))
+        return static_cast<int>(lua_tointeger(L, 1));
     lua_getfield(L, 1, "__id");
     const int id = static_cast<int>(lua_tointeger(L, -1));
     lua_pop(L, 1);
