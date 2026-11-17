@@ -4,6 +4,7 @@ find_package(Qt6 REQUIRED COMPONENTS Network)
 add_library(ps_gnss STATIC
   NmeaDataLoader.cpp
   UbxDataLoader.cpp
+  Oem7DataLoader.cpp
   NmeaMessageParser.cpp
   UbxMessageParser.cpp
   Oem7MessageParser.cpp

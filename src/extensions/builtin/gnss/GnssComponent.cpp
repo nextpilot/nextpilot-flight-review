@@ -10,6 +10,7 @@ struct PsExtensionDescriptor;
 
 extern "C" const PsExtensionDescriptor *ps_extension_entry_data_loader_nmea(void);
 extern "C" const PsExtensionDescriptor *ps_extension_entry_data_loader_ubx(void);
+extern "C" const PsExtensionDescriptor *ps_extension_entry_data_loader_oem7(void);
 extern "C" const PsExtensionDescriptor *ps_extension_entry_data_source_oem7(void);
 
 namespace ps::components
@@ -50,6 +51,13 @@ void GnssComponent::contribute(Registry &registry, HostContext &)
     ubx.label = QStringLiteral("UBX");
     ubx.transports = {QStringLiteral("file"), QStringLiteral("serial")};
     registry.addDataSource(ubx);
+
+    DataSourceSpec oem7File;
+    oem7File.descriptor = ps_extension_entry_data_loader_oem7();
+    oem7File.id = QStringLiteral("data_loader_oem7");
+    oem7File.label = QStringLiteral("NovAtel OEM7");
+    oem7File.transports = {QStringLiteral("file")};
+    registry.addDataSource(oem7File);
 
     DataSourceSpec oem7;
     oem7.descriptor = ps_extension_entry_data_source_oem7();
