@@ -34,6 +34,17 @@ if(TARGET ps_application_scripting)
     ${PROJECT_SOURCE_DIR}/src)
   target_link_libraries(test_lua_calc PRIVATE ps_application_scripting Qt6::Core)
   add_test(NAME lua_calc COMMAND test_lua_calc)
+
+  add_executable(test_console_panel unit/test_console_panel.cpp)
+  target_include_directories(test_console_panel PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/kernel/include
+    ${PROJECT_SOURCE_DIR}/src/application
+    ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(test_console_panel PRIVATE ps_application_scripting Qt6::Widgets)
+  add_test(NAME console_panel COMMAND test_console_panel)
+  set_tests_properties(console_panel PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 add_executable(test_kernel_analysis unit/test_kernel_analysis.cpp)

@@ -13,6 +13,8 @@ add_library(ps_application_scripting OBJECT
   lua/LuaCalcApi.cpp
   include/scripting/ConsolePanel.h
   lua/ConsolePanel.cpp
+  include/scripting/ScratchPlot.h
+  lua/ScratchPlot.cpp
   include/scripting/ScriptConsole.h
   lua/ScriptConsole.cpp
 )
