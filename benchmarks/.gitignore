@@ -1,0 +1,9 @@
+qwt-6.3.0/
+qwt-build/
+qcustomplot-source/
+qtcharts-everywhere-src-6.2.4/
+qtcharts-build/
+qtcharts-install/
+*.tar.gz
+*.tar.bz2
+*.tar.xz
