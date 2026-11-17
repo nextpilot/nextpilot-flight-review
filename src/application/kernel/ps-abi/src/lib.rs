@@ -191,9 +191,10 @@ fn add_channel(d: &mut PsDataset, name: &str, unit: &str, t: Vec<f64>, v: Vec<f6
 }
 
 /// 按通道全名取序列：先查派生/旧通道，再查 typed 表列。null → NaN。
-fn find_series(d: &PsDataset, name: &str) -> Option<(Vec<f64>, Vec<f64>, String)> {
+fn find_series(d: &PsDataset, name: &str) -> Option<(Vec<f64>, Vec<f64>, String, Vec<bool>)> {
     if let Some((_, ch)) = d.data.find(name) {
-        return Some((ch.t.as_ref().clone(), ch.v.clone(), ch.unit.clone()));
+        return Some((ch.t.as_ref().clone(), ch.v.clone(), ch.unit.clone(),
+                     vec![false; ch.v.len()]));
     }
     for table in &d.typed.tables {
         for col in &table.columns {
@@ -211,7 +212,8 @@ fn find_series(d: &PsDataset, name: &str) -> Option<(Vec<f64>, Vec<f64>, String)
             let v = (0..table.row_count())
                 .map(|i| col.value_as_f64(i).unwrap_or(f64::NAN))
                 .collect();
-            return Some((t, v, col.unit.clone()));
+            let nulls = (0..table.row_count()).map(|i| col.is_null(i)).collect();
+            return Some((t, v, col.unit.clone(), nulls));
         }
     }
     None
@@ -262,7 +264,7 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
         }
     };
     let d = &mut *ds;
-    let Some((t, v, unit)) = find_series(d, &input) else {
+    let Some((t, v, unit, input_nulls)) = find_series(d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
@@ -275,6 +277,24 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
         Ok(x) => x,
         Err(e) => { write_err(err, err_cap, &e); return 5; }
     };
+    let typed_ok = if let Some((table_name, _)) = input.rsplit_once('.') {
+        if let Some(tidx) = d.typed.table_index(table_name) {
+            let out_col = out_name.strip_prefix(&format!("{table_name}.")).unwrap_or(&out_name).to_string();
+            let mut nulls = ps_ndf::typed::NullBits::new(ov.len());
+            for i in 0..ov.len() {
+                if input_nulls.get(i).copied().unwrap_or(false) || ov[i].is_nan() {
+                    nulls.set_null(i, true);
+                }
+            }
+            let col = match ps_ndf::typed::Column::with_nulls(out_col, &unit,
+                ps_ndf::typed::ColumnData::F64(ov.clone()), nulls) {
+                Ok(c) => c,
+                Err(e) => { write_err(err, err_cap, &e); return 4; }
+            };
+            d.typed.tables[tidx].add_column(col).map_err(|e| write_err(err, err_cap, &e)).is_ok()
+        } else { false }
+    } else { false };
+    if typed_ok { return 0; }
     match add_channel(d, &out_name, &unit, ot, ov) {
         Ok(()) => 0,
         Err(e) => { write_err(err, err_cap, &e); return 4; }
@@ -323,7 +343,7 @@ pub unsafe extern "C" fn ps_preview_filter(
         }
     };
     let d = &*ds;
-    let Some((time, values, _)) = find_series(d, &input) else {
+    let Some((time, values, _, _)) = find_series(d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
