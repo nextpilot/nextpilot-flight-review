@@ -404,8 +404,11 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         std::memcpy(&start, buf.data() + 8, 8);
         meta.info.emplace_back("start_timestamp_us", std::to_string(start));
         meta.info.emplace_back("file_version", std::to_string(buf[7]));
+        log.startTimestampUs = start;
+        log.fileVersion = buf[7];
     }
     size_t pos = 16;
+    double lastTimestamp = 0.0;
 
     while (pos + 3 <= buf.size())
     {
@@ -424,8 +427,10 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             std::string text(reinterpret_cast<const char *>(p), size);
             std::string name;
             std::vector<Field> fields;
-            if (splitFormat(text, name, fields))
+            if (splitFormat(text, name, fields)) {
                 formats[name] = std::move(fields);
+                log.formats.push_back(name);
+            }
         }
         else if (ty == 'A')
         {
@@ -437,6 +442,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                 auto fit = formats.find(name);
                 if (fit == formats.end())
                 {
+                    log.missingFormats.push_back(name);
                     pos = body + size;
                     continue;
                 }
@@ -477,6 +483,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                 s.vals.resize(numeric);
                 byTopic[{name, multiId}] = idx;
                 byId[msgId] = idx;
+                log.subscriptions.push_back({msgId, name, multiId});
                 subs.push_back(std::move(s));
             }
         }
@@ -493,6 +500,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                     if (s.tsOff && readPrim(p + 2, size - 2, *s.tsOff, Prim::U64, ts))
                     {
                         s.t.push_back(ts / 1e6);
+                        lastTimestamp = ts / 1e6;
                         size_t k = 0;
                         for (const Leaf &l : s.leaves)
                         {
@@ -514,8 +522,9 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             std::string key, value;
             if (decodeParam(p, size, key, value))
             {
+                auto &target = (ty == 'Q') ? meta.defaultParams : params;
                 bool found = false;
-                for (auto &kv : params)
+                for (auto &kv : target)
                     if (kv.first == key)
                     {
                         kv.second = value;
@@ -523,7 +532,9 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                         break;
                     }
                 if (!found)
-                    params.emplace_back(key, value);
+                    target.emplace_back(key, value);
+                if (ty == 'P' && lastTimestamp > 0)
+                    meta.changedParams.emplace_back(lastTimestamp, std::make_pair(key, value));
             }
         }
         else if (ty == 'I')
@@ -541,6 +552,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             uint64_t ts = 0;
             std::memcpy(&ts, p + 1, 8);
             m.t = static_cast<double>(ts) / 1e6;
+            lastTimestamp = m.t;
             m.text = readCString(p + 9, size - 9);
             meta.messages.push_back(std::move(m));
         }
@@ -552,6 +564,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             uint64_t ts = 0;
             std::memcpy(&ts, p + 3, 8);
             m.t = static_cast<double>(ts) / 1e6;
+            lastTimestamp = m.t;
             m.text = readCString(p + 11, size - 11);
             m.tagged = true;
             meta.messages.push_back(std::move(m));
@@ -566,6 +579,13 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         }
         else if (ty == 'B' && size >= 16)
         {
+            for (int i = 0; i < 8; ++i) { log.compatFlags[i] = p[i]; log.incompatFlags[i] = p[8 + i]; }
+            if (size >= 40)
+                for (int i = 0; i < 3; ++i) {
+                    uint64_t off = 0;
+                    std::memcpy(&off, p + 16 + i * 8, 8);
+                    if (off) log.appendedOffsets.push_back(off);
+                }
             char txt[64];
             std::snprintf(txt, sizeof(txt), "compat=%02x%02x%02x%02x%02x%02x%02x%02x",
                           p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7]);
@@ -573,6 +593,11 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             std::snprintf(txt, sizeof(txt), "incompat=%02x%02x%02x%02x%02x%02x%02x%02x",
                           p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
             meta.info.emplace_back("flags.incompat", txt);
+        }
+        else if (ty == 'S')
+        {
+            log.hasSync = true;
+            ++log.syncCount;
         }
         else if (ty == 'R')
         {
@@ -620,6 +645,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         return false;
     }
     log.params = std::move(params);
+    log.defaultParams = std::move(meta.defaultParams);
     log.info = std::move(meta.info);
     log.messages = std::move(meta.messages);
     log.dropouts = std::move(meta.dropouts);
