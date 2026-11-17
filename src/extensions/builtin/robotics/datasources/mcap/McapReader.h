@@ -28,6 +28,7 @@ struct Channel
 struct Message
 {
     uint16_t channel_id = 0;
+    uint32_t sequence = 0;
     uint64_t log_time = 0;
     uint64_t publish_time = 0;
     std::vector<uint8_t> data;

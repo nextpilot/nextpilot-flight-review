@@ -457,3 +457,9 @@ if(TARGET plotscope_app)
   add_test(NAME script_slice_perf COMMAND test_script_slice_perf)
   set_tests_properties(script_slice_perf PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
+
+add_executable(test_memory_dataset unit/test_memory_dataset.cpp)
+target_include_directories(test_memory_dataset PRIVATE ${PROJECT_SOURCE_DIR}/tests
+  ${PROJECT_SOURCE_DIR}/src/application/kernel/include)
+target_link_libraries(test_memory_dataset PRIVATE ps_kernel)
+add_test(NAME memory_dataset COMMAND test_memory_dataset)

@@ -224,6 +224,7 @@ bool Reader::parseRecord(uint8_t op, const uint8_t *data, size_t size,
         if (!readU16(p, end, message.channel_id) || !readU32(p, end, sequence) ||
             !readU64(p, end, message.log_time) || !readU64(p, end, message.publish_time))
             return fail(err, "MCAP Message 字段不完整");
+        message.sequence = sequence;
         message.data.assign(p, end);
         messages.push_back(std::move(message));
         return true;

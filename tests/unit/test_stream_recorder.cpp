@@ -93,5 +93,21 @@ int main(int argc, char **argv)
         std::filesystem::remove(dbPath.toStdString());
     }
 
+    // MCAP 显式 sequence：导出路径要求保留表内 seq。
+    {
+        const QString path = QDir(QDir::tempPath()).filePath(QStringLiteral("ps_mcap_seq.mcap"));
+        McapWriter writer;
+        std::string err;
+        assert(writer.open(path.toStdString(), "plotscope", err));
+        assert(writer.writeJson("imu", 1000, "{\"v\":1}", err, 7));
+        assert(writer.close(err));
+        ps::mcap::Reader reader;
+        assert(reader.open(path.toStdString(), err));
+        ps::mcap::Message msg;
+        assert(reader.next(msg, err));
+        assert(msg.sequence == 7);
+        std::filesystem::remove(path.toStdString());
+    }
+
     return 0;
 }
