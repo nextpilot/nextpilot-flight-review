@@ -1,6 +1,6 @@
 #include "LuaCalcApi.h"
 
-#include "ScriptHostService.h"
+#include "HostDataService.h"
 #include "ps_kernel.h"
 
 extern "C" {
@@ -16,6 +16,8 @@ extern "C" {
 
 namespace ps::scripting
 {
+using host::Result;
+
 namespace
 {
 
@@ -50,7 +52,7 @@ bool readSeries(lua_State *L, int idx, Series *s, QString *err)
 
     if (isChannelRef(L, idx))
     {
-        HostService *svc = hostService();
+        host::HostDataService *svc = host::hostService();
         if (!svc)
         {
             *err = QStringLiteral("eneedhost: 数据面未注册（控制台外没有数据源）");
@@ -63,7 +65,7 @@ bool readSeries(lua_State *L, int idx, Series *s, QString *err)
         const QString name = QString::fromUtf8(lua_tostring(L, -1));
         lua_pop(L, 1);
 
-        HostService::SeriesView view;
+        host::HostDataService::SeriesView view;
         const Result r = svc->seriesView(id, name, &view);
         if (!r.ok)
         {

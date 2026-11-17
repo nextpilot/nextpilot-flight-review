@@ -3,7 +3,7 @@
 #ifdef PS_HAVE_LUA
 
 
-#include "ScriptHostService.h"
+#include "HostDataService.h"
 
 extern "C" {
 #include <lauxlib.h>
@@ -13,15 +13,22 @@ extern "C" {
 
 namespace ps::scripting
 {
+// 消费的是宿主数据访问契约，这里只是少写前缀
+using host::ChannelInfo;
+using host::JobHandle;
+using host::LiveStatus;
+using host::Result;
+using host::SourceInfo;
+
 namespace
 {
 const char *kSourceMt = "ps.app.source";
 const char *kChannelMt = "ps.app.channel";
 const char *kJobMt = "ps.app.job";
 
-HostService *host(lua_State *L)
+host::HostDataService *host(lua_State *L)
 {
-    HostService *svc = hostService();
+    host::HostDataService *svc = host::hostService();
     if (!svc)
         luaL_error(L, "eneedhost: 脚本数据面未注册");
     return svc;
@@ -107,7 +114,7 @@ int l_sources(lua_State *L)
 // ---- ps.app.source(name|id) ----
 int l_source(lua_State *L)
 {
-    HostService *svc = host(L);
+    host::HostDataService *svc = host(L);
     const QVector<SourceInfo> list = svc->sources();
     SourceInfo hit;
     bool found = false;

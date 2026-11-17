@@ -17,8 +17,8 @@
 
 // --run 走无 UI 数据面
 #include "ExtensionHost.h"
-#include "ScriptHostService.h"
-#include "datasource/ScriptHostBridge.h"
+#include "HostDataService.h"
+#include "datasource/HostDataBridge.h"
 #include "scripting/ScriptEngine.h"
 
 int main(int argc, char **argv)
@@ -72,8 +72,8 @@ int main(int argc, char **argv)
         const QString source = QString::fromUtf8(f.readAll());
 
         ps::data_source::SourceStore store;
-        ps::data_source::ScriptHostBridge bridge(store);
-        ps::scripting::setHostService(&bridge);
+        ps::data_source::HostDataBridge bridge(store);
+        ps::host::setHostService(&bridge);
 
         // CLI 没有 MainWindow，内置组件的 contribute 要自己激活一遍，
         // 否则加载器注册表是空的，ps.app.load 找不到 csv/ulog 等逻辑。
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
         const ScriptResult r =
             ScriptEngine::run(source, QVector<ScriptSeries>(), QMap<QString, double>(),
                               QStringLiteral("lua"), false);
-        ps::scripting::setHostService(nullptr);
+        ps::host::setHostService(nullptr);
         cliHost.deactivate();
         if (!r.ok)
         {

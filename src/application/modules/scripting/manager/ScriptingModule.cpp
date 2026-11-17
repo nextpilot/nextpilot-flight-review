@@ -1,6 +1,6 @@
 #include "scripting/ScriptingModule.h"
 
-#include "ScriptHostService.h"
+#include "HostDataService.h"
 #include "scripting/ConsolePanel.h"
 #include "ScriptLibrary.h"
 
@@ -64,7 +64,7 @@ void ScriptingModule::contribute(Registry &registry, HostContext &host)
             else
                 host.log(QStringLiteral("模块：") + files.join(QStringLiteral(", ")));
             host.log(QStringLiteral("数据面服务：") +
-                     (ps::scripting::hostService() ? QStringLiteral("已注册")
+                     (ps::host::hostService() ? QStringLiteral("已注册")
                                                    : QStringLiteral("未注册（脚本读数据会报 eneedhost）")));
         });
     }

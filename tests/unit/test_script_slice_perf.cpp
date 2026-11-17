@@ -1,6 +1,6 @@
 // S1 性能验收：1000 万点切片的内存与耗时，以及 50 源枚举。
 // 指标来自方案 §8 S1：slice 内存 < 1 MB、< 50 ms；50 源枚举 < 3 s。
-#include "datasource/ScriptHostBridge.h"
+#include "datasource/HostDataBridge.h"
 #include "ps_kernel.h"
 
 #include <cassert>
@@ -41,12 +41,12 @@ int main()
     src.channels.append(ps_dataset_channel(ds, 0));
     store.items().append(src);
 
-    ps::data_source::ScriptHostBridge bridge(store);
+    ps::data_source::HostDataBridge bridge(store);
 
     QVector<double> ot;
     QVector<double> ov;
     const auto t0 = Clock::now();
-    const ps::scripting::Result r = bridge.slice(0, QStringLiteral("x"), 0.0, t[n - 1], 4096, &ot, &ov);
+    const ps::host::Result r = bridge.slice(0, QStringLiteral("x"), 0.0, t[n - 1], 4096, &ot, &ov);
     const double elapsed = msSince(t0);
 
     assert(r.ok);
@@ -69,7 +69,7 @@ int main()
 
     // 通道统计：vMin/vMax 要全扫，1000 万点的代价在这里体现
     const auto tc = Clock::now();
-    const QVector<ps::scripting::ChannelInfo> chans = bridge.channels(0);
+    const QVector<ps::host::ChannelInfo> chans = bridge.channels(0);
     std::printf("channels(10M): %d 通道, %.2f ms\n", static_cast<int>(chans.size()),
                 msSince(tc));
     assert(chans.size() == 1);
@@ -84,9 +84,9 @@ int main()
         s.name = QStringLiteral("src%1").arg(i);
         many.items().append(s);
     }
-    ps::data_source::ScriptHostBridge manyBridge(many);
+    ps::data_source::HostDataBridge manyBridge(many);
     const auto t1 = Clock::now();
-    const QVector<ps::scripting::SourceInfo> list = manyBridge.sources();
+    const QVector<ps::host::SourceInfo> list = manyBridge.sources();
     const double enumMs = msSince(t1);
     std::printf("sources(): %d 源, %.2f ms\n", static_cast<int>(list.size()), enumMs);
     assert(list.size() == 50);

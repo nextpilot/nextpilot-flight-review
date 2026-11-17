@@ -44,13 +44,13 @@ shell（最小宿主）
 | `modules/plotting` | `shell` 的宿主接口、`modules/runtime`、`shared/filter`、`ps_kernel` 的 C ABI | `modules/datasource` 私有头；格式解析 |
 | `shared/filter` | Qt Widgets | 具体数据源/绘图状态、业务状态、shell 私有头 |
 | `modules/protocol` | `shell` 的宿主接口、`modules/runtime`、`ps_kernel` 的 C ABI、`ps_loader_common`（加载器公共代码）、Qt | `modules/datasource`/`plotting` 私有头；画布与绘图状态 |
-| `modules/scripting` | `shell` 的宿主接口、`modules/runtime`（含 `ScriptHostService`）、`ps_kernel` 的 C ABI、Qt、Lua 5.4 | `modules/datasource`/`plotting` 私有头；直接持有 `MainWindow`；绘图侧曲线变换 |
+| `modules/scripting` | `shell` 的宿主接口、`modules/runtime`（含 `HostDataService`）、`ps_kernel` 的 C ABI、Qt、Lua 5.4 | `modules/datasource`/`plotting` 私有头；直接持有 `MainWindow`；绘图侧曲线变换 |
 | `extensions/builtin` | `modules/runtime`、modules 的公开头、`ps_kernel` 的 C ABI、Qt | `shell` 的 `MainWindow` 或 shell 私有头 |
 | `extensions/dynamic` | 只提供公开 SDK、`ps_extension.h`、`ps_kernel.h`、C ABI | shell/modules 私有头、Qt Widgets、C++ 对象跨边界、官方格式加载器 |
 
 跨业务模块只走 `modules/runtime/include/ModuleBridge.h` 的公开函数和数据，或 `modules/runtime` 提供的能力服务（如 `ScriptHostService`），不直接 include 对方模块。
 
-`ScriptHostService` 由 `modules/datasource` 的 `ScriptHostBridge` 实现，`modules/scripting` 只认接口；`--run` 无 UI 入口在 `src/application/main.cpp`，属 shell 侧装配，不属脚本模块。
+`HostDataService` 由 `modules/datasource` 的 `HostDataBridge` 实现，`modules/scripting` 只认接口；`--run` 无 UI 入口在 `src/application/main.cpp`，属 shell 侧装配，不属脚本模块。
 
 ## 4. shell 的硬边界
 

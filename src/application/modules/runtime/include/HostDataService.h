@@ -3,10 +3,11 @@
 #include <QString>
 #include <QVector>
 
-// 脚本子系统消费的数据面契约：datasource/plotting 实现并注册，scripting 只调用。
+// 宿主数据访问契约：datasource/plotting 实现并注册，任何消费者（含脚本）只调用。
+// 这里刻意不带 scripting 字样——实现方不需要知道谁在用它。
 // 约束（见 roadmap/script-automation.md §3.3）：不放 QWidget*，不传 MainWindow*。
 
-namespace ps::scripting
+namespace ps::host
 {
 
 struct Result
@@ -60,10 +61,10 @@ struct LiveStatus
     bool overflow = false;
 };
 
-class HostService
+class HostDataService
 {
 public:
-    virtual ~HostService() = default;
+    virtual ~HostDataService() = default;
 
     // 读
     virtual QVector<SourceInfo> sources() = 0;
@@ -99,7 +100,7 @@ public:
 };
 
 // 全局单例槽：宿主在装配阶段注册，未注册时脚本调用报 eneedhost。
-void setHostService(HostService *service);
-HostService *hostService();
+void setHostService(HostDataService *service);
+HostDataService *hostService();
 
-} // namespace ps::scripting
+} // namespace ps::host

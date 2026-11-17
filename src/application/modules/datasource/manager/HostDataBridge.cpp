@@ -1,4 +1,4 @@
-#include "datasource/ScriptHostBridge.h"
+#include "datasource/HostDataBridge.h"
 
 #include "DataSourceRegistry.h"
 #include "ps_kernel.h"
@@ -26,21 +26,21 @@ bool monotonic(const PsChannelInfo *ch)
     return ch->time[0] <= ch->time[ch->point_count - 1];
 }
 
-scripting::Result missing(const QString &what)
+host::Result missing(const QString &what)
 {
-    return scripting::Result::failure(QStringLiteral("esrcgone"), what);
+    return host::Result::failure(QStringLiteral("esrcgone"), what);
 }
 } // namespace
 
-ScriptHostBridge::ScriptHostBridge(SourceStore &store) : m_store(store) {}
+HostDataBridge::HostDataBridge(SourceStore &store) : m_store(store) {}
 
-QVector<scripting::SourceInfo> ScriptHostBridge::sources()
+QVector<host::SourceInfo> HostDataBridge::sources()
 {
-    QVector<scripting::SourceInfo> out;
+    QVector<host::SourceInfo> out;
     out.reserve(m_store.items().size());
     for (const SourceData &src : m_store.items())
     {
-        scripting::SourceInfo info;
+        host::SourceInfo info;
         info.id = src.id;
         info.name = src.name;
         info.alias = src.alias;
@@ -53,9 +53,9 @@ QVector<scripting::SourceInfo> ScriptHostBridge::sources()
     return out;
 }
 
-QVector<scripting::ChannelInfo> ScriptHostBridge::channels(int sourceId)
+QVector<host::ChannelInfo> HostDataBridge::channels(int sourceId)
 {
-    QVector<scripting::ChannelInfo> out;
+    QVector<host::ChannelInfo> out;
     SourceData *src = m_store.byId(sourceId);
     if (!src || src->live || !src->ds)
         return out;
@@ -67,7 +67,7 @@ QVector<scripting::ChannelInfo> ScriptHostBridge::channels(int sourceId)
         const PsChannelInfo *ch = ps_dataset_channel(src->ds, i);
         if (!ch || !ch->name)
             continue;
-        scripting::ChannelInfo info;
+        host::ChannelInfo info;
         info.name = QString::fromUtf8(ch->name);
         info.unit = ch->unit ? QString::fromUtf8(ch->unit) : QString();
         info.count = ch->point_count;
@@ -90,11 +90,11 @@ QVector<scripting::ChannelInfo> ScriptHostBridge::channels(int sourceId)
     return out;
 }
 
-scripting::Result ScriptHostBridge::seriesView(int sourceId, const QString &channel,
+host::Result HostDataBridge::seriesView(int sourceId, const QString &channel,
                                               SeriesView *out)
 {
     if (!out)
-        return scripting::Result::failure(QStringLiteral("einvalid"), QStringLiteral("输出指针为空"));
+        return host::Result::failure(QStringLiteral("einvalid"), QStringLiteral("输出指针为空"));
 
     SourceData *src = m_store.byId(sourceId);
     if (!src)
@@ -114,21 +114,21 @@ scripting::Result ScriptHostBridge::seriesView(int sourceId, const QString &chan
             return {};
         }
     }
-    return scripting::Result::failure(QStringLiteral("enoent"),
+    return host::Result::failure(QStringLiteral("enoent"),
                                       QStringLiteral("通道不存在：%1").arg(channel));
 }
 
-scripting::Result ScriptHostBridge::slice(int sourceId, const QString &channel, double t0, double t1,
+host::Result HostDataBridge::slice(int sourceId, const QString &channel, double t0, double t1,
                                           int maxPoints, QVector<double> *t, QVector<double> *v)
 {
     if (!t || !v)
-        return scripting::Result::failure(QStringLiteral("einvalid"), QStringLiteral("输出指针为空"));
+        return host::Result::failure(QStringLiteral("einvalid"), QStringLiteral("输出指针为空"));
 
     SourceData *src = m_store.byId(sourceId);
     if (!src)
         return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
     if (src->live)
-        return scripting::Result::failure(QStringLiteral("elive"),
+        return host::Result::failure(QStringLiteral("elive"),
                                          QStringLiteral("实时源没有历史切片"));
     if (!src->ds)
         return missing(QStringLiteral("数据源没有数据集：%1").arg(sourceId));
@@ -145,7 +145,7 @@ scripting::Result ScriptHostBridge::slice(int sourceId, const QString &channel, 
         }
     }
     if (!ch)
-        return scripting::Result::failure(QStringLiteral("enoent"),
+        return host::Result::failure(QStringLiteral("enoent"),
                                          QStringLiteral("通道不存在：%1").arg(channel));
     if (ch->point_count == 0)
     {
@@ -190,9 +190,9 @@ scripting::Result ScriptHostBridge::slice(int sourceId, const QString &channel, 
     return {};
 }
 
-scripting::LiveStatus ScriptHostBridge::liveStatus(int sourceId)
+host::LiveStatus HostDataBridge::liveStatus(int sourceId)
 {
-    scripting::LiveStatus st;
+    host::LiveStatus st;
     const SourceData *src = m_store.byId(sourceId);
     if (!src || !src->live)
         return st;
@@ -201,7 +201,7 @@ scripting::LiveStatus ScriptHostBridge::liveStatus(int sourceId)
     return st;
 }
 
-scripting::JobHandle ScriptHostBridge::loadFile(const QString &path, const QString &loaderOptions)
+host::JobHandle HostDataBridge::loadFile(const QString &path, const QString &loaderOptions)
 {
     const QFileInfo fi(path);
     if (!fi.exists() || !fi.isFile())
@@ -244,7 +244,7 @@ scripting::JobHandle ScriptHostBridge::loadFile(const QString &path, const QStri
     return {src.id};
 }
 
-scripting::Result ScriptHostBridge::closeSource(int sourceId)
+host::Result HostDataBridge::closeSource(int sourceId)
 {
     for (int i = 0; i < m_store.items().size(); ++i)
     {
@@ -260,7 +260,7 @@ scripting::Result ScriptHostBridge::closeSource(int sourceId)
     return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
 }
 
-scripting::JobHandle ScriptHostBridge::reloadSource(int sourceId)
+host::JobHandle HostDataBridge::reloadSource(int sourceId)
 {
     SourceData *src = m_store.byId(sourceId);
     if (!src || src->path.isEmpty())
@@ -287,7 +287,7 @@ scripting::JobHandle ScriptHostBridge::reloadSource(int sourceId)
     return {src->id};
 }
 
-scripting::JobHandle ScriptHostBridge::exportCsv(int sourceId, const QString &path, bool overwrite)
+host::JobHandle HostDataBridge::exportCsv(int sourceId, const QString &path, bool overwrite)
 {
     SourceData *src = m_store.byId(sourceId);
     if (!src || !src->ds)
@@ -352,18 +352,18 @@ scripting::JobHandle ScriptHostBridge::exportCsv(int sourceId, const QString &pa
     return {sourceId};
 }
 
-scripting::JobHandle ScriptHostBridge::connectLive(const QString &, const QString &)
+host::JobHandle HostDataBridge::connectLive(const QString &, const QString &)
 {
     return {};
 }
 
-scripting::Result ScriptHostBridge::disconnectLive(int sourceId)
+host::Result HostDataBridge::disconnectLive(int sourceId)
 {
-    return scripting::Result::failure(QStringLiteral("eunsupported"),
+    return host::Result::failure(QStringLiteral("eunsupported"),
                                       QStringLiteral("S1 不接实时源"));
 }
 
-scripting::Result ScriptHostBridge::setPaused(int sourceId, bool paused)
+host::Result HostDataBridge::setPaused(int sourceId, bool paused)
 {
     SourceData *src = m_store.byId(sourceId);
     if (!src || !src->live)
@@ -372,18 +372,18 @@ scripting::Result ScriptHostBridge::setPaused(int sourceId, bool paused)
     return {};
 }
 
-scripting::Result ScriptHostBridge::startRecording(int sourceId, const QString &, const QString &)
+host::Result HostDataBridge::startRecording(int sourceId, const QString &, const QString &)
 {
     if (!m_store.byId(sourceId))
         return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
-    return scripting::Result::failure(QStringLiteral("eunsupported"), QStringLiteral("S1 不接录制"));
+    return host::Result::failure(QStringLiteral("eunsupported"), QStringLiteral("S1 不接录制"));
 }
 
-scripting::Result ScriptHostBridge::stopRecording(int sourceId)
+host::Result HostDataBridge::stopRecording(int sourceId)
 {
     if (!m_store.byId(sourceId))
         return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
-    return scripting::Result::failure(QStringLiteral("eunsupported"), QStringLiteral("S1 不接录制"));
+    return host::Result::failure(QStringLiteral("eunsupported"), QStringLiteral("S1 不接录制"));
 }
 
 } // namespace ps::data_source

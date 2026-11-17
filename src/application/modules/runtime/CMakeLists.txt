@@ -4,7 +4,7 @@ add_library(ps_host STATIC
   src/ExtensionRuntime.cpp
   src/HostApi.cpp
   src/DynamicExtensionRegistry.cpp
-  src/ScriptHostService.cpp
+  src/HostDataService.cpp
 )
 target_include_directories(ps_host PUBLIC
   ${PROJECT_SOURCE_DIR}/src

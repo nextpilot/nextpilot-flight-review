@@ -286,7 +286,7 @@ L2 放 P2 的理由：控制台有持久 workspace，大部分"看中间变量"�
 
 ```text
 modules/scripting/
-├── include/       ScriptHostService 的消费方接口
+├── include/       HostDataService 的消费方接口
 ├── lua/           Lua 引擎（沙箱/预算/取消/table 桥接/require）——内部目录，不是独立 target
 └── ...
 ```
@@ -295,13 +295,15 @@ modules/scripting/
 
 若将来真出现第二个消费者，**按仓库现约定走 `src/application/shared/lua`，不新建 `modules/lua`**——`shared/filter` 就是这个模式的既有先例（`AGENTS.md §2` 把它列为"共享 UI 库"，`§3` 给它单列一行依赖约束）。现在提前拆只是给自己加依赖矩阵。
 
-### 3.3 数据面契约：`ScriptHostService`
+### 3.3 数据面契约：`HostDataService`
 
-datasource/plotting 各自实现并注册，scripting 只消费（**不放 `QWidget*`，不传 `MainWindow*`**）：
+datasource 实现并注册，任何消费者（含 scripting）只消费（**不放 `QWidget*`，不传 `MainWindow*`**）。
+
+**名字里刻意不带 `Script`**：契约属于宿主层，数据源实现它时不需要知道调用方是脚本、是命令还是别的模块。早先叫 `HostDataService` / `HostDataBridge`，导致 `modules/datasource` 的源码里出现 `scripting::Result` 这类符号，等于数据源反向依赖脚本子系统；现已抽到中立的 `ps::host`，datasource 侧零 `scripting` 引用。
 
 ```cpp
-// modules/runtime/include/ScriptHostService.h
-namespace ps::scripting {
+// modules/runtime/include/HostDataService.h
+namespace ps::host {
 
 struct Result { bool ok; QString code; QString message; };   // code: enoent/eformat/etimeout/ecanceled/...
 
@@ -309,7 +311,7 @@ struct SourceInfo  { int id; QString name, alias, path, format; bool live, pause
 struct ChannelInfo { QString name, unit; quint64 count; double t0, t1, vMin, vMax; };
 struct LiveStatus  { bool connected, recording; QString recordPath; qint64 dropped, samples; bool overflow; };
 
-struct HostService {
+struct HostDataService {
     // A0 读
     virtual QVector<SourceInfo>  sources() = 0;
     virtual QVector<ChannelInfo> channels(int sourceId) = 0;
@@ -327,8 +329,8 @@ struct HostService {
     virtual Result    startRecording(int sourceId, const QString &fmt, const QString &path) = 0;
     virtual Result    stopRecording(int sourceId) = 0;
 };
-void setHostService(HostService *svc);
-HostService *hostService();   // 未注册 → 脚本报 "eneedhost"
+void setHostService(HostDataService *svc);
+HostDataService *hostService();   // 未注册 → 脚本报 "eneedhost"
 }
 ```
 
@@ -537,7 +539,7 @@ ps.gc()
 
 ### 7.1 S1 落地清单
 
-已实现（`LuaAppApi.cpp` + `ScriptHostBridge.cpp`）：
+已实现（`LuaAppApi.cpp` + `HostDataBridge.cpp`）：
 
 | 面 | 函数 | 说明 |
 |---|---|---|
@@ -571,7 +573,7 @@ ABI：`ps_stats_series` / `ps_fft_series` / `ps_psd_series` / `ps_iir_series` / 
 **S2 脚本侧**
 
 - `ScriptConsole`（`include/scripting/ScriptConsole.h` + `lua/ScriptConsole.cpp`）：一个持久 `lua_State`；`eval` 先按 `return <input>` 试表达式、失败按语句；表达式结果写全局 `ans`；`incomplete()` 判续行；`print` 重定向到 `__ps_console_out` 并按 tab 连接；元命令 `:` 前缀（`:help/:clear/:who/:whos/:run/:reload/:clc`）；错误把 `console:N` 改写成 `行 N`。
-- `HostService::SeriesView`（`ScriptHostService.h`）+ `ScriptHostBridge::seriesView`：直接回 `c->time / c->value / c->point_count`，不拷贝不分配；指针随数据集生命周期失效。
+- `HostDataService::SeriesView`（`HostDataService.h`）+ `HostDataBridge::seriesView`：直接回 `c->time / c->value / c->point_count`，不拷贝不分配；指针随数据集生命周期失效。
 - `LuaCalcApi`（9 个入口挂在 `ps` 下）：`stats/rms/fft/psd/filter/decimate/movingAvg/derivative/integral`。通道句柄走 `seriesView` 零拷贝，Lua 数字数组拷贝一次（时间轴取 0..n-1）；返回 `{f=,mag=}` / `{f=,psd=}` / `{t=,v=}`。
 - `ConsolePanel` + `dock.console`：输出区 + 输入行 + 结果表 + scratch 图，终端上下键历史。
   - `ps.table(t, {title=})`：认列式 `{t=,v=}` 与行式 `{{..},..}`，超过 500 行截断。
@@ -596,9 +598,9 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 
 | 片 | 范围 | 验收 | 不做 |
 |---|---|---|---|
-| **S0 引擎搬迁与骨架**（已完成） | Lua 引擎从 `extensions/builtin/script` 搬进 `modules/scripting/lua/`；受限 `require`（§2.4）；`ScriptHostService` 数据面契约；`modules/scripting` 模块 + `script.info` 命令；`HostContext::registerCommand` 让模块不必兜到 MainWindow；AGENTS 同步 | 编译通过；`ctest` **31/31**（含新增 `script_library`）；`require("roll_rate")` 可加载，`require("os")` / `require("../../etc/x")` / `/abs` / `C:/` / `\\` 全拒；环依赖不死循环；失败后哨兵已清 | 不写 `ps.app` API；不删旧扩展与 runner 槽（等 P2）；不动绘图侧；`ps_filter_apply_series` 接入留到 S2 |
+| **S0 引擎搬迁与骨架**（已完成） | Lua 引擎从 `extensions/builtin/script` 搬进 `modules/scripting/lua/`；受限 `require`（§2.4）；`HostDataService` 数据面契约；`modules/scripting` 模块 + `script.info` 命令；`HostContext::registerCommand` 让模块不必兜到 MainWindow；AGENTS 同步 | 编译通过；`ctest` **31/31**（含新增 `script_library`）；`require("roll_rate")` 可加载，`require("os")` / `require("../../etc/x")` / `/abs` / `C:/` / `\\` 全拒；环依赖不死循环；失败后哨兵已清 | 不写 `ps.app` API；不删旧扩展与 runner 槽（等 P2）；不动绘图侧；`ps_filter_apply_series` 接入留到 S2 |
 | **S0.5 死后清理（等 P2 完成后）** | 删 `extensions/builtin/script`；摘 `Registry::addScriptRunner`（`Component.h:143`）、`Registry::runScript`（`Component.h:155` / `Component.cpp:78`）、`ScriptService` 的 runner 声明 | `grep addScriptRunner\|runScript\|m_scriptRunner` 零命中；`ctest` 全绿 | 与 S0 混做（P2 未完成时会被编译打断） |
-| **S1 只读数据面**（已完成） | `sources/source/currentSource/channels/channel/slice/liveStatus`、`load/exportCsv/close` 的 Lua 对象面（`ps.app.source` / `ps.app.channel` / `ps.app.job` 三个 metatable）；`ScriptHostBridge` 落在 `datasource` 模块，`ScriptHostService` 之上只有接口；**`--run <script.lua>` CLI 闭环**（无 UI，自建 `ExtensionHost` 激活内置 loader） | 编译通过；`ctest` **33/33**（新增 `script_library` / `script_app_cli` / `script_slice_perf`）；1000 万点 `slice` 到 4096 点 = **64 KB / 1.8 ms**；`channels()` 对 1000 万点全扫 min/max = 9.1 ms；50 源 `sources()` = 0.00 ms；`plotscope_app --run` 跑通"加载→取通道→切片→导出 CSV"，退出码 0/1/2 | 不做任何副作用（除导出）；`connectLive/record` 返回 `eunsupported`；`reload/glob/report/clearCache` 未暴露；`loadFile` 失败只回 `eload`，不携带 loader 原始错误 |
+| **S1 只读数据面**（已完成） | `sources/source/currentSource/channels/channel/slice/liveStatus`、`load/exportCsv/close` 的 Lua 对象面（`ps.app.source` / `ps.app.channel` / `ps.app.job` 三个 metatable）；`HostDataBridge` 落在 `datasource` 模块，`HostDataService` 之上只有接口；**`--run <script.lua>` CLI 闭环**（无 UI，自建 `ExtensionHost` 激活内置 loader） | 编译通过；`ctest` **33/33**（新增 `script_library` / `script_app_cli` / `script_slice_perf`）；1000 万点 `slice` 到 4096 点 = **64 KB / 1.8 ms**；`channels()` 对 1000 万点全扫 min/max = 9.1 ms；50 源 `sources()` = 0.00 ms；`plotscope_app --run` 跑通"加载→取通道→切片→导出 CSV"，退出码 0/1/2 | 不做任何副作用（除导出）；`connectLive/record` 返回 `eunsupported`；`reload/glob/report/clearCache` 未暴露；`loadFile` 失败只回 `eload`，不携带 loader 原始错误 |
 | **S2 控制台**（完成） | 计算库 Lua API + **内核补齐（P3，已完成）**；**REPL（持久 workspace / 表达式回显 + `ans` / 多行续行 / `ps.gc`）**；元命令 `:` 前缀 7 项（`help/clear/who/whos/run/reload/clc`）；结果面板（表 + scratch 临时图，频率域 x 轴）；L0 错误定位 | 已达成：加载日志后 `ps.stats` / `ps.fft` / `ps.psd` / `ps.filter` / `ps.decimate` 出结果（1024 点 10 Hz 正弦峰值 10 Hz、幅值 1）；`1+2` 回显 `3`；`who/whos` 正确；`:run` 后变量留在 workspace；`:reload` 清缓存；语法错报 `行 N` 且不执行；`ps.plot{ps.fft}` 出频谱临时图、`ps.table` 出表。`test_script_console` 21 条、`test_lua_calc`、`test_console_panel`、`ctest` **39/39** | 未做：Ctrl+C 中断、`ps.promote`（属 S6）、`peaks/correlate/find/align/resample`（缺算子） |
 | **S3 作业模型 + 事件触发** | Job 状态机、串行写队列、`load/close/reload/exportCsv/report/glob`、`wait/onDone/cancel`、操作清单；**事件分发器 + `scripts/on/sourceLoaded.lua` + 四道闸** | 无人值守"加载→导出→汇总→关闭"跑通；取消后 500 ms 内回空闲且无半成品文件；放一路日志进 `sourceLoaded` 自动跑完；死循环脚本被预算掐断且后续触发不受影响 | 不做实时；不做其他事件源 |
 | **S4 实时源与录制** | `connectLive/pause/resume/disconnect`、`record/stopRecord`、状态与丢批查询 | 连接→录制 MCAP 30 s→停止，可被 `mcap_loader` 回放；取消不留半文件 | 不做多源同时录制 |
