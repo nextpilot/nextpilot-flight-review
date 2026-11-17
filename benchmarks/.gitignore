@@ -7,3 +7,7 @@ qtcharts-install/
 *.tar.gz
 *.tar.bz2
 *.tar.xz
+jkqtplotter-source/
+jkqt-build/
+jkqt-install/
+jkqtplotter.tar.gz

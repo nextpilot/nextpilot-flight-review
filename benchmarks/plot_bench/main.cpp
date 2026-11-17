@@ -26,6 +26,10 @@
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QValueAxis>
 #endif
+#ifdef HAVE_JKQT
+#include <jkqtplotter.h>
+#include <jkqtplotter/graphs/jkqtplines.h>
+#endif
 
 struct Dataset
 {
@@ -151,6 +155,33 @@ public:
 };
 #endif
 
+#ifdef HAVE_JKQT
+class JkqtBackend : public Backend
+{
+public:
+    JkqtBackend(const QVector<Dataset> &data, double duration)
+    {
+        auto *plot = new JKQTPlotter;
+        plot->getPlotter()->setUseAntiAliasingForGraphs(false);
+        plot->getPlotter()->setUseAntiAliasingForSystem(false);
+        for (int i = 0; i < data.size(); ++i)
+        {
+            const size_t xCol = plot->getDatastore()->addCopiedColumn(data[i].t, QStringLiteral("x%1").arg(i));
+            const size_t yCol = plot->getDatastore()->addCopiedColumn(data[i].v, QStringLiteral("y%1").arg(i));
+            auto *g = new JKQTPXYLineGraph(plot);
+            g->setXColumn(xCol);
+            g->setYColumn(yCol);
+            g->setSymbolType(JKQTPNoSymbol);
+            g->setColor(QColor::fromHsv((i * 37) % 360, 180, 180));
+            plot->addGraph(g);
+        }
+        plot->setXY(0, duration, -1.4, 1.4);
+        widget = plot;
+    }
+    void redraw() override { static_cast<JKQTPlotter *>(widget)->redrawPlot(); }
+};
+#endif
+
 struct Metrics
 {
     double first = 0;
@@ -217,7 +248,7 @@ int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
     QCommandLineParser parser;
-    parser.addOption({QStringLiteral("lib"), QStringLiteral("self|qcustom|qwt|charts"),
+    parser.addOption({QStringLiteral("lib"), QStringLiteral("self|qcustom|qwt|jkqt|charts"),
                       QStringLiteral("library"), QStringLiteral("self")});
     parser.addOption({QStringLiteral("curves"), QStringLiteral("curve count"), QStringLiteral("value"), QStringLiteral("10")});
     parser.addOption({QStringLiteral("points"), QStringLiteral("points per curve"), QStringLiteral("value"), QStringLiteral("100000")});
@@ -249,6 +280,10 @@ int main(int argc, char **argv)
 #ifdef HAVE_QWT
     else if (lib == QStringLiteral("qwt"))
         backend = std::make_unique<QwtBackend>(data, duration * zoom);
+#endif
+#ifdef HAVE_JKQT
+    else if (lib == QStringLiteral("jkqt"))
+        backend = std::make_unique<JkqtBackend>(data, duration * zoom);
 #endif
 #ifdef HAVE_QTCHARTS
     else if (lib == QStringLiteral("charts"))
