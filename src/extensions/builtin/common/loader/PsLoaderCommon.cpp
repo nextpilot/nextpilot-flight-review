@@ -124,7 +124,7 @@ std::string psUnitFromHeader(const std::string &header)
     return {};
 }
 
-PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err,
+PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err,
                           const PsHostApi *host)
 {
     if (!host || host->abi_version != PS_HOST_API_VERSION)
@@ -147,7 +147,7 @@ PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::strin
             return c.name.substr(prefix.size());
         return c.name;
     };
-    auto addTypedColumn = [&](const PsChannelData &c, uint32_t n) -> int32_t {
+    auto addTypedColumn = [&](PsChannelData &c, uint32_t n) -> int32_t {
         const std::string column = tableColumn(c);
         switch (c.value_type)
         {
@@ -233,7 +233,7 @@ PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::strin
                                                         e, sizeof(e));
         }
     };
-    for (const PsChannelData &c : channels)
+    for (PsChannelData &c : channels)
     {
         if (c.name.empty())
             continue;
@@ -275,6 +275,8 @@ PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::strin
                 host->dataset_free(raw);
                 return nullptr;
             }
+            c.v.clear();
+            c.v.shrink_to_fit();
             continue;
         }
         const int32_t rc = host->dataset_add_channel(raw, c.name.c_str(), c.unit.c_str(),
@@ -287,6 +289,10 @@ PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::strin
             host->dataset_free(raw);
             return nullptr;
         }
+        c.t.clear();
+        c.t.shrink_to_fit();
+        c.v.clear();
+        c.v.shrink_to_fit();
     }
     return ds;
 }

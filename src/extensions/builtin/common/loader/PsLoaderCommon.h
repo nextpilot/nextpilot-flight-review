@@ -23,7 +23,7 @@ struct PsChannelData
 };
 
 /* 把通道列表交给内核通用 dataset API，扩展不直接构造 PsDataset。 */
-PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::string &err,
+PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err,
                           const PsHostApi *host);
 
 /* 解析进度：load 入口先绑定 host，解析器在循环里按 done/total 上报。
