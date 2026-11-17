@@ -73,6 +73,17 @@ public:
                          QVector<double> *t, QVector<double> *v) = 0;
     virtual LiveStatus liveStatus(int sourceId) = 0;
 
+    // 全量序列的只读视图：返回内核内部指针，不拷贝、不分配。
+    // 指针随数据集生命周期失效（关闭/重载/新增通道后不得再用）。
+    // 供计算库直接吃内核内存，避免把千万点搬进 Lua 堆。
+    struct SeriesView
+    {
+        const double *time = nullptr;
+        const double *value = nullptr;
+        quint32 count = 0;
+    };
+    virtual Result seriesView(int sourceId, const QString &channel, SeriesView *out) = 0;
+
     // 作业
     virtual JobHandle loadFile(const QString &path, const QString &loaderOptions) = 0;
     virtual Result closeSource(int sourceId) = 0;

@@ -90,6 +90,34 @@ QVector<scripting::ChannelInfo> ScriptHostBridge::channels(int sourceId)
     return out;
 }
 
+scripting::Result ScriptHostBridge::seriesView(int sourceId, const QString &channel,
+                                              SeriesView *out)
+{
+    if (!out)
+        return scripting::Result::failure(QStringLiteral("einvalid"), QStringLiteral("输出指针为空"));
+
+    SourceData *src = m_store.byId(sourceId);
+    if (!src)
+        return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
+    if (!src->ds)
+        return missing(QStringLiteral("数据源没有数据集：%1").arg(sourceId));
+
+    const uint32_t n = ps_dataset_channel_count(src->ds);
+    for (uint32_t i = 0; i < n; ++i)
+    {
+        const PsChannelInfo *c = ps_dataset_channel(src->ds, i);
+        if (c && c->name && channel == QString::fromUtf8(c->name))
+        {
+            out->time = c->time;
+            out->value = c->value;
+            out->count = c->point_count;
+            return {};
+        }
+    }
+    return scripting::Result::failure(QStringLiteral("enoent"),
+                                      QStringLiteral("通道不存在：%1").arg(channel));
+}
+
 scripting::Result ScriptHostBridge::slice(int sourceId, const QString &channel, double t0, double t1,
                                           int maxPoints, QVector<double> *t, QVector<double> *v)
 {

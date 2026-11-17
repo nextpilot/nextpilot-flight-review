@@ -1,6 +1,7 @@
 #include "scripting/ScriptingModule.h"
 
 #include "ScriptHostService.h"
+#include "scripting/ConsolePanel.h"
 #include "ScriptLibrary.h"
 
 #include <QDir>
@@ -38,8 +39,11 @@ ComponentManifest ScriptingModule::manifest() const
             {QStringLiteral("script")}};
 }
 
-void ScriptingModule::contribute(Registry &, HostContext &host)
+void ScriptingModule::contribute(Registry &registry, HostContext &host)
 {
+    // 控制台是脚本子系统的主入口，挂在底部停靠区
+    registry.addDock(ps::scripting::ConsolePanel::dockContribution());
+
     // 脚本库放配置目录下：<configDir>/scripts/lib，与方案 §2.4 一致。
     if (host.configDir)
         ps::scripting::ScriptLibrary::setRoot(

@@ -20,6 +20,7 @@ public:
     scripting::Result slice(int sourceId, const QString &channel, double t0, double t1,
                             int maxPoints, QVector<double> *t, QVector<double> *v) override;
     scripting::LiveStatus liveStatus(int sourceId) override;
+    scripting::Result seriesView(int sourceId, const QString &channel, SeriesView *out) override;
 
     scripting::JobHandle loadFile(const QString &path, const QString &loaderOptions) override;
     scripting::Result closeSource(int sourceId) override;

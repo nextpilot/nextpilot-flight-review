@@ -9,6 +9,12 @@ add_library(ps_application_scripting OBJECT
   lua/ScriptLibrary.cpp
   lua/LuaAppApi.h
   lua/LuaAppApi.cpp
+  lua/LuaCalcApi.h
+  lua/LuaCalcApi.cpp
+  include/scripting/ConsolePanel.h
+  lua/ConsolePanel.cpp
+  include/scripting/ScriptConsole.h
+  lua/ScriptConsole.cpp
 )
 set_target_properties(ps_application_scripting PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_scripting PUBLIC

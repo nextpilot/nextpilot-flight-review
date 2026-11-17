@@ -2,8 +2,17 @@
 
 #include "ScriptService.h"
 
+struct lua_State;
+
 // 脚本只做编排：输入当前画布已有序列，输出新的派生序列。
 // language 为空时按源码首行判断：`# python` / `#!python` 走 Python 3，其余走 Lua 5.4。
+
+namespace ps::scripting
+{
+// 控制台用：建一个装好沙箱、计算库与数据面的持久 state（未启用 Lua 时返回 nullptr）。
+lua_State *createConsoleState();
+void destroyConsoleState(lua_State *L);
+} // namespace ps::scripting
 
 class ScriptEngine
 {

@@ -1,6 +1,7 @@
 #include "scripting/ScriptEngine.h"
 
 #include "LuaAppApi.h"
+#include "LuaCalcApi.h"
 #include "ScriptLibrary.h"
 
 #include <cmath>
@@ -460,6 +461,46 @@ QVector<double> timeFor(const QVector<ScriptSeries> &inputs, int len)
 #endif
 } // namespace
 
+#ifdef PS_HAVE_LUA
+namespace ps::scripting
+{
+lua_State *createConsoleState()
+{
+    lua_State *L = luaL_newstate();
+    if (!L)
+        return nullptr;
+    luaL_openlibs(L);
+    clearDangerous(L);
+    ps::scripting::ScriptLibrary::install(L);
+    // 控制台没有输入序列，但旧 API 依赖这几个全局，建空表避免取到 nil
+    lua_newtable(L);
+    lua_setglobal(L, "__ps_inputs");
+    lua_newtable(L);
+    lua_setglobal(L, "__ps_v");
+    lua_newtable(L);
+    lua_setglobal(L, "__ps_time");
+    lua_newtable(L);
+    lua_setglobal(L, "__ps_out");
+    registerApi(L);
+    ps::scripting::installAppApi(L);
+    ps::scripting::installCalcApi(L);
+    return L;
+}
+
+void destroyConsoleState(lua_State *L)
+{
+    if (L)
+        lua_close(L);
+}
+} // namespace ps::scripting
+#else
+namespace ps::scripting
+{
+lua_State *createConsoleState() { return nullptr; }
+void destroyConsoleState(lua_State *) {}
+} // namespace ps::scripting
+#endif
+
 ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries> &inputs,
                                const QMap<QString, double> &params, const QString &language,
                                bool requireOutput)
@@ -524,6 +565,7 @@ ScriptResult ScriptEngine::run(const QString &source, const QVector<ScriptSeries
     lua_setglobal(L, "__ps_out");
     registerApi(L);
     ps::scripting::installAppApi(L);
+    ps::scripting::installCalcApi(L);
 
     const QByteArray code = source.toUtf8();
     if (luaL_loadbufferx(L, code.constData(), static_cast<size_t>(code.size()), "script", "t") != LUA_OK)
