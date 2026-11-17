@@ -1,5 +1,5 @@
 #include "SettingsDialog.h"
-#include "MainWindow.h"
+#include "ExtensionManager.h"
 #include "SettingsManager.h"
 #include "ThemeManager.h"
 
@@ -49,8 +49,9 @@ QWidget *buildGeneralPage(QCheckBox **restoreLayout, QComboBox **theme)
 }
 } // namespace
 
-SettingsDialog::SettingsDialog(MainWindow *mw)
-    : QDialog(mw), m_mw(mw)
+SettingsDialog::SettingsDialog(QWidget *parent, ExtensionManager &extensions,
+                                std::function<void()> applyTheme)
+    : QDialog(parent), m_host(parent), m_extensions(extensions), m_applyTheme(std::move(applyTheme))
 {
     setWindowTitle(QStringLiteral("设置"));
     resize(720, 460);
@@ -72,7 +73,8 @@ SettingsDialog::SettingsDialog(MainWindow *mw)
         if (theme)
         {
             ThemeManager::setMode(theme->currentIndex() == 0 ? ThemeManager::Mode::Dark : ThemeManager::Mode::Light);
-            m_mw->applyTheme();
+            if (m_applyTheme)
+                m_applyTheme();
             SettingsManager::instance().set(ps::settings::kTheme, ThemeManager::name());
             SettingsManager::instance().sync();
         }
@@ -80,13 +82,13 @@ SettingsDialog::SettingsDialog(MainWindow *mw)
             SettingsManager::instance().setRestoreLayout(restore->isChecked());
     });
 
-    QVector<SettingsContribution> pages = mw->extensions().registry().settings();
+    QVector<SettingsContribution> pages = m_extensions.registry().settings();
     std::sort(pages.begin(), pages.end(), [](const SettingsContribution &a, const SettingsContribution &b) {
         return a.order != b.order ? a.order < b.order : a.title < b.title;
     });
     for (const SettingsContribution &c : pages)
     {
-        QWidget *page = c.create ? c.create(mw) : nullptr;
+        QWidget *page = c.create ? c.create(m_host) : nullptr;
         if (!page)
             continue;
         addPage(c.title, c.icon, page, [c, page] { if (c.apply) c.apply(page); });

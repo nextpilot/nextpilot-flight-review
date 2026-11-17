@@ -38,6 +38,8 @@ public:
     void applyTheme();
 
     ads::CDockWidget *byId(const QString &id) const;
+    bool showDock(const QString &id, bool activate = false);
+    QWidget *dockWidget(const QString &id) const;
     void toggleById(const QString &id);
     bool isVisibleById(const QString &id) const;
 

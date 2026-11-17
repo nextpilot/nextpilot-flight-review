@@ -1,5 +1,4 @@
 #include "SessionManager.h"
-#include "CommandManager.h"
 #include "SettingsManager.h"
 #include "ShellPaths.h"
 
@@ -100,24 +99,4 @@ void SessionManager::clearRecentFiles()
 {
     m_recentFiles.clear();
     SettingsManager::instance().remove(ps::settings::kRecentFiles);
-}
-
-void SessionManager::bindCommandState(ps::commands::CommandManager &commands, std::function<void()> refreshTitle)
-{
-    commands.setInvokeHook([this, &commands, refreshTitle = std::move(refreshTitle)](const QString &id) {
-        if (id == QLatin1String("layout.save") || id == QLatin1String("layout.import"))
-        {
-            markClean();
-            if (refreshTitle)
-                refreshTitle();
-            return;
-        }
-        const auto *spec = commands.spec(id);
-        if (spec && spec->sessionDirty)
-        {
-            markDirty();
-            if (refreshTitle)
-                refreshTitle();
-        }
-    });
 }

@@ -1,8 +1,6 @@
 #include "PropertyManager.h"
 
-#include "MainWindow.h"
 #include "ThemeManager.h"
-#include "DockManager.h"
 
 #include <QCheckBox>
 #include <QColorDialog>
@@ -23,7 +21,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
-#include "../../3rdparty/ads/src/DockWidget.h"
+#include <utility>
 
 namespace ps::shell
 {
@@ -65,13 +63,14 @@ double leadingDouble(const QString &text, double fallback)
 }
 } // namespace
 
-PropertyManager::PropertyManager(MainWindow *mw) : QObject(mw), m_mw(mw) {}
+PropertyManager::PropertyManager(QWidget *parent, DockShow showDock)
+    : QObject(parent), m_parent(parent), m_showDock(std::move(showDock)) {}
 
 QWidget *PropertyManager::createTreeView()
 {
     if (m_tree)
         return m_tree;
-    auto *w = new QWidget(m_mw);
+    auto *w = new QWidget(m_parent);
     auto *lay = new QVBoxLayout(w);
     lay->setContentsMargins(0, 0, 0, 0);
     m_tree = new QTreeWidget(w);
@@ -94,7 +93,7 @@ QWidget *PropertyManager::createPanelView()
 {
     if (m_table)
         return m_table->parentWidget();
-    auto *w = new QWidget(m_mw);
+    auto *w = new QWidget(m_parent);
     auto *lay = new QVBoxLayout(w);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
@@ -212,24 +211,15 @@ void PropertyManager::buildTree()
 
 void PropertyManager::ensureVisible()
 {
-    if (!hasNodes())
+    if (!m_showDock || !hasNodes())
         return;
     QTimer::singleShot(0, this, [this] {
-        if (!m_mw || !hasNodes())
+        if (!hasNodes() || m_docksShown)
             return;
-        if (m_docksShown)
-            return;
-        auto *prop = m_mw->docks().byId(QStringLiteral("dock.prop"));
-        auto *tree = m_mw->docks().byId(QStringLiteral("dock.tree"));
-        if (!prop && !tree)
-            return;
-        if (prop)
-            prop->toggleView(true);
-        if (tree)
-            tree->toggleView(true);
-        if (prop)
-            prop->setAsCurrentTab();
-        m_docksShown = true;
+        const bool propShown = m_showDock(QStringLiteral("dock.prop"), true);
+        const bool treeShown = m_showDock(QStringLiteral("dock.tree"), false);
+        if (propShown || treeShown)
+            m_docksShown = true;
     });
 }
 

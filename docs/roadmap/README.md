@@ -10,6 +10,7 @@
 | [设置层：强类型 key 与变更通知](settings.md) | 已实施（2026-11-16） | 实施记录与关键决策；使用指南见 [`../develop/settings.md`](../develop/settings.md) |
 | [扩展 toolbox 化与 autopilot 方案](toolbox-architecture.md) | 部分实施：四领域组件与源码已拆，分析与报告未实施 | 四业务工具箱、`datasources` 目录、GNSS/MAVLink 描述驱动与协议调试、dynamic 清理、飞控 review 与报告边界 |
 | [脚本子系统（控制台 + 自动化）](script-automation.md)（[飞书](https://my.feishu.cn/file/PPNObKmVuouL51xBLvNc8nC9nAc)） | 实施中（S2 控制台核心完成） | 独立 `modules/scripting`：控制台（MATLAB 式 REPL / 计算库 / scratch 结果）、自动化（Job / 批处理 / 驱动录制 / 事件触发）；脚本就是普通 `.lua` 文件，`require` 复用，无 schema、无编辑器、无版本机制（git 管）；不接管绘图侧曲线变换 |
+| [Shell 架构解耦方案 v2](shell-architecture-v2.md) | 方案待实施（2026-11-17） | `Core` 管进程级服务、`MainWindow` 只做 Shell；Phase A 先拆 Property/Settings/Session/Log 反向依赖，Phase B 做 Core/Shell 分层，后续再上 Document/Workspace |
 | [历史架构基线与决策 v1.0](architecture-v1.md) | 历史记录 | 旧版架构决策、目录基线与实施记录；当前边界以 `AGENTS.md` 为准 |
 | [旧组件/扩展模型 v1](extension-model-v1.md) | 历史记录 | 已被当前 [`../develop/extensions.md`](../develop/extensions.md) 取代的旧模型 |
 | [扩展点决策 v1](extension-points.md) | 历史决策 | 组件扩展点、实施顺序与不做的部分 |
@@ -17,6 +18,7 @@
 
 ## 当前优先级
 
+0. Core/Shell 架构调整：先拆 Property/Settings/Session/Log 到 `MainWindow` 的反向依赖，再把进程级服务上移到 `Core`，见 [`shell-architecture-v2.md`](shell-architecture-v2.md)。
 1. 扩展 toolbox 化：四业务域、`datasources` 目录、CSV 归 common、dynamic 退出官方格式。
 2. 飞控 autopilot：ULog / apbin / tlog 统一文件入口，默认曲线与报告。
 3. 脚本子系统：控制台（REPL + 计算库 + 临时图）先行，再上自动化（Job + 事件触发 + 批处理 + 录制），最后提升为正式曲线（切片与开工前置见方案 §8）。

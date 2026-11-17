@@ -5,6 +5,8 @@ add_library(ps_application_shell OBJECT
   ShellPaths.cpp
   SessionManager.h
   SessionManager.cpp
+  SessionCommands.h
+  SessionCommands.cpp
   LogManager.h
   LogManager.cpp
   DockManager.h
@@ -13,6 +15,7 @@ add_library(ps_application_shell OBJECT
   RibbonManager.cpp
   SettingsManager.h
   SettingsManager.cpp
+  SettingsCommands.h
   SettingsCommands.cpp
   DiagnosticsDialog.h
   DiagnosticsDialog.cpp

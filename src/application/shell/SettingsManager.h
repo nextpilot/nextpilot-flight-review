@@ -15,12 +15,6 @@
 
 class QFileSystemWatcher;
 class QTimer;
-class MainWindow;
-
-namespace ps::commands
-{
-class CommandManager;
-}
 
 namespace ps::settings
 {
@@ -98,8 +92,6 @@ public:
     QJsonObject toJson() const;
     QString toYaml() const;
     bool exportTo(const QString &path) const;
-    void openDialog(MainWindow *parent);
-    void registerCommand(ps::commands::CommandManager &commands, MainWindow *parent);
 
     QMetaObject::Connection onChanged(const QString &key, QObject *context,
                                       std::function<void(const QVariant &oldValue, const QVariant &newValue)> handler);

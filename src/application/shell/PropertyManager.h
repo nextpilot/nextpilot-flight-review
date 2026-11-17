@@ -9,7 +9,7 @@
 #include <QVector>
 #include <functional>
 
-class MainWindow;
+class QWidget;
 class QLabel;
 class QTableWidget;
 class QTreeWidget;
@@ -17,6 +17,9 @@ class QTreeWidgetItem;
 
 namespace ps::shell
 {
+
+// 属性面板控制 Dock 的唯一入口：返回 false 表示 Dock 不存在。
+using DockShow = std::function<bool(const QString &id, bool activate)>;
 
 // 属性面板要展示的内容：标题 + 键值行 + 可编辑键 + 上下文类型。
 struct PropertyContent
@@ -44,7 +47,7 @@ class PropertyManager : public QObject
     Q_OBJECT
 
 public:
-    explicit PropertyManager(MainWindow *mw);
+    explicit PropertyManager(QWidget *parent, DockShow showDock);
 
     void registerNode(const PropertyNode &node);
     void removeNode(const QString &id);
@@ -68,7 +71,8 @@ private:
     void ensureVisible();
     void pushEdit(const QString &key, const QString &text);
 
-    MainWindow *m_mw = nullptr;
+    QWidget *m_parent = nullptr;
+    DockShow m_showDock;
     QHash<QString, PropertyNode> m_nodes;
     QStringList m_order;
     QHash<QString, QTreeWidgetItem *> m_items;

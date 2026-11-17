@@ -8,11 +8,6 @@
 
 class QMainWindow;
 
-namespace ps::commands
-{
-class CommandManager;
-}
-
 // 会话管理：窗口几何、最近文件、布局路径和未保存状态。
 // 不承载数据源、绘图等业务状态。
 class SessionManager
@@ -39,7 +34,6 @@ public:
 
     QStringList recentFiles() const;
     void addRecentFile(const QString &path);
-    void bindCommandState(ps::commands::CommandManager &commands, std::function<void()> refreshTitle);
     void clearRecentFiles();
 
 private:

@@ -1,4 +1,5 @@
 #include "SessionManager.h"
+#include "SessionCommands.h"
 #include "SettingsManager.h"
 #include "CommandManager.h"
 
@@ -62,7 +63,7 @@ int main(int argc, char **argv)
         return 1;
 
     ps::commands::CommandManager commands;
-    session.bindCommandState(commands, [] {});
+    shell::bindSessionCommandState(commands, session, [] {});
     session.markClean();
     ps::commands::CommandSpec dirty;
     dirty.id = QStringLiteral("test.dirty");

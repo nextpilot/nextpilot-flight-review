@@ -4,7 +4,8 @@
 #include <functional>
 #include <QVector>
 
-class MainWindow;
+class QWidget;
+class ExtensionManager;
 class QListWidget;
 class QStackedWidget;
 
@@ -13,14 +14,16 @@ class QStackedWidget;
 class SettingsDialog : public QDialog
 {
 public:
-    explicit SettingsDialog(MainWindow *mw);
+    SettingsDialog(QWidget *parent, ExtensionManager &extensions, std::function<void()> applyTheme);
 
 private:
     void addPage(const QString &title, const QString &icon, QWidget *page,
                  std::function<void()> apply);
     void applyAll();
 
-    MainWindow *m_mw = nullptr;
+    QWidget *m_host = nullptr;
+    ExtensionManager &m_extensions;
+    std::function<void()> m_applyTheme;
     QListWidget *m_list = nullptr;
     QStackedWidget *m_stack = nullptr;
     QVector<std::function<void()>> m_appliers;

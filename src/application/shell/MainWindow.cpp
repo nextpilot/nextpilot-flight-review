@@ -1,6 +1,8 @@
 #include "MainWindow.h"
 #include "ShellCommands.h"
+#include "SettingsCommands.h"
 #include "SettingsManager.h"
+#include "SessionCommands.h"
 #include "ThemeManager.h"
 #include "Component.h"
 
@@ -26,7 +28,10 @@
 MainWindow::~MainWindow() = default;
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), m_logs(this), m_docks(this), m_props(this),
+    : QMainWindow(parent), m_logs(this), m_docks(this),
+      m_props(this, [this](const QString &id, bool activate) {
+          return m_docks.showDock(id, activate);
+      }),
       m_ribbon(this, &m_commands, &m_extensions.registry(), this)
 {
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
@@ -58,7 +63,7 @@ MainWindow::MainWindow(QWidget *parent)
         [this](const QByteArray &state) { return m_docks.restoreLayout(state); });
     shell::registerCommands(*this);
     m_docks.registerCommand(m_commands);
-    SettingsManager::instance().registerCommand(m_commands, this);
+    shell::registerSettingsCommand(m_commands, this, m_extensions, [this] { applyTheme(); });
 
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
     m_pages = new QTabWidget(this);
@@ -77,7 +82,7 @@ MainWindow::MainWindow(QWidget *parent)
     }
     m_docks.applyTheme();
     m_docks.darkenExisting();
-    if (auto *view = findChild<QPlainTextEdit *>(QStringLiteral("dock.log.view")))
+    if (auto *view = qobject_cast<QPlainTextEdit *>(m_docks.dockWidget(QStringLiteral("dock.log"))))
         m_logs.setLogView(view);
     m_commands.invoke(QStringLiteral("app.ready"), {});
     if (m_session.layoutPath().isEmpty())
@@ -86,7 +91,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_logs.setStatusBar(statusBar());
     for (const QString &error : m_extensions.errors())
         m_logs.warn(error);
-    m_session.bindCommandState(m_commands, [this] { refreshTitle(); });
+    shell::bindSessionCommandState(m_commands, m_session, [this] { refreshTitle(); });
 
     // 内核连通性：状态栏直接读 ABI，证明 C ABI 已经打通
     const QString kernelInfo =

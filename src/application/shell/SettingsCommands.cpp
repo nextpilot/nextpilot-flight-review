@@ -1,18 +1,26 @@
-#include "SettingsManager.h"
+#include "SettingsCommands.h"
+
 #include "CommandManager.h"
+#include "ExtensionManager.h"
 #include "SettingsDialog.h"
 
-void SettingsManager::registerCommand(ps::commands::CommandManager &commands, MainWindow *parent)
+#include <utility>
+
+namespace shell
+{
+
+void registerSettingsCommand(ps::commands::CommandManager &commands, QWidget *parent,
+                             ExtensionManager &extensions, std::function<void()> applyTheme)
 {
     commands.registerCommand(
         ps::commands::CommandSpec{QStringLiteral("file.settings"), QStringLiteral("设置"),
                                   QStringLiteral("settings"), QStringLiteral("Ctrl+,"),
                                   false, {}, {}, false},
-        [this, parent](const ps::commands::CommandContext &) { openDialog(parent); });
+        [parent, &extensions, applyTheme = std::move(applyTheme)](
+            const ps::commands::CommandContext &) {
+            SettingsDialog dialog(parent, extensions, applyTheme);
+            dialog.exec();
+        });
 }
 
-void SettingsManager::openDialog(MainWindow *parent)
-{
-    SettingsDialog dialog(parent);
-    dialog.exec();
-}
+} // namespace shell

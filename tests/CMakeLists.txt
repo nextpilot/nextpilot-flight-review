@@ -215,6 +215,7 @@ if(TARGET ps_builtin_components)
     ps_application_shell
     ps_application_plotting
     ps_application_datasource
+    ps_analysis_registry
     ps_automotive_component
     ps_robotics_component
     ps_common_datasources_component
@@ -367,6 +368,7 @@ add_test(NAME command_manager COMMAND test_command_manager)
 
 add_executable(test_session_manager unit/test_session_manager.cpp
   ${PROJECT_SOURCE_DIR}/src/application/shell/SessionManager.cpp
+  ${PROJECT_SOURCE_DIR}/src/application/shell/SessionCommands.cpp
   ${PROJECT_SOURCE_DIR}/src/application/shell/SettingsManager.cpp
   ${PROJECT_SOURCE_DIR}/src/application/shell/ShellPaths.cpp
   ${PROJECT_SOURCE_DIR}/src/application/shell/CommandManager.cpp)

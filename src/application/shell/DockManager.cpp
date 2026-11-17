@@ -153,6 +153,23 @@ ads::CDockWidget *DockManager::byId(const QString &id) const
     return it == m_dock->dockWidgetsMap().end() ? nullptr : it.value();
 }
 
+bool DockManager::showDock(const QString &id, bool activate)
+{
+    auto *dock = byId(id);
+    if (!dock)
+        return false;
+    dock->toggleView(true);
+    if (activate)
+        dock->setAsCurrentTab();
+    return true;
+}
+
+QWidget *DockManager::dockWidget(const QString &id) const
+{
+    auto *dock = byId(id);
+    return dock ? dock->widget() : nullptr;
+}
+
 bool DockManager::isVisibleById(const QString &id) const
 {
     auto *dock = byId(id);
