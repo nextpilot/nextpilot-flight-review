@@ -795,6 +795,232 @@ pub unsafe extern "C" fn ps_lod_minmax_many(
     channels
 }
 
+/* ---- 分析类算子：stats / fft / psd / iir / decimate ----
+ * 统一约定：结果写进调用方缓冲区，cap 不足返回 6 并回填实际长度。 */
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PsStats {
+    pub count: u32,
+    pub mean: f64,
+    pub std_dev: f64,
+    pub min: f64,
+    pub max: f64,
+    pub rms: f64,
+    pub median: f64,
+}
+
+fn write_len(out_n: *mut u32, len: usize) {
+    if !out_n.is_null() {
+        unsafe { *out_n = len as u32 };
+    }
+}
+
+/// 单通道统计。`with_median` 非 0 时多一次排序。
+#[no_mangle]
+pub unsafe extern "C" fn ps_stats_series(
+    v: *const f64,
+    n: u32,
+    with_median: i32,
+    out: *mut PsStats,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if v.is_null() || out.is_null() {
+        write_err(err, err_cap, "输入或输出为空");
+        return 1;
+    }
+    let data = std::slice::from_raw_parts(v, n as usize);
+    let st = ps_ops::stats::series(data, with_median != 0);
+    *out = PsStats {
+        count: st.count,
+        mean: st.mean,
+        std_dev: st.std_dev,
+        min: st.min,
+        max: st.max,
+        rms: st.rms,
+        median: st.median,
+    };
+    0
+}
+
+/// 单边幅度谱。返回长度 = nfft/2+1（nfft 为补零后的 2 的幂）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_fft_series(
+    v: *const f64,
+    n: u32,
+    fs: f64,
+    window: i32,
+    out_freq: *mut f64,
+    out_mag: *mut f64,
+    cap: u32,
+    out_m: *mut u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if v.is_null() {
+        write_err(err, err_cap, "输入为空");
+        return 1;
+    }
+    if fs <= 0.0 {
+        write_err(err, err_cap, "采样率必须为正");
+        return 2;
+    }
+    let data = std::slice::from_raw_parts(v, n as usize);
+    let (freq, mag) = ps_ops::fft::amplitude(data, fs, ps_ops::fft::Window::from_code(window));
+    write_len(out_m, freq.len());
+    if freq.len() > cap as usize {
+        return 6;
+    }
+    if freq.is_empty() {
+        return 0;
+    }
+    if out_freq.is_null() || out_mag.is_null() {
+        write_err(err, err_cap, "输出缓冲区为空");
+        return 1;
+    }
+    std::ptr::copy_nonoverlapping(freq.as_ptr(), out_freq, freq.len());
+    std::ptr::copy_nonoverlapping(mag.as_ptr(), out_mag, mag.len());
+    0
+}
+
+/// Welch 功率谱密度。`nfft` 为 0 时取 256；`overlap` 常用 0.5。
+#[no_mangle]
+pub unsafe extern "C" fn ps_psd_series(
+    v: *const f64,
+    n: u32,
+    fs: f64,
+    nfft: u32,
+    overlap: f64,
+    window: i32,
+    out_freq: *mut f64,
+    out_psd: *mut f64,
+    cap: u32,
+    out_m: *mut u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if v.is_null() {
+        write_err(err, err_cap, "输入为空");
+        return 1;
+    }
+    if fs <= 0.0 {
+        write_err(err, err_cap, "采样率必须为正");
+        return 2;
+    }
+    let data = std::slice::from_raw_parts(v, n as usize);
+    let (freq, psd) = ps_ops::psd::welch(
+        data,
+        fs,
+        nfft as usize,
+        overlap,
+        ps_ops::fft::Window::from_code(window),
+    );
+    write_len(out_m, freq.len());
+    if freq.len() > cap as usize {
+        return 6;
+    }
+    if freq.is_empty() {
+        return 0;
+    }
+    if out_freq.is_null() || out_psd.is_null() {
+        write_err(err, err_cap, "输出缓冲区为空");
+        return 1;
+    }
+    std::ptr::copy_nonoverlapping(freq.as_ptr(), out_freq, freq.len());
+    std::ptr::copy_nonoverlapping(psd.as_ptr(), out_psd, psd.len());
+    0
+}
+
+/// 巴特沃斯 IIR。kind：0 低通、1 高通、2 带通（带通用 `bandwidth` 定带宽比例）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_iir_series(
+    v: *const f64,
+    n: u32,
+    fs: f64,
+    fc: f64,
+    order: u32,
+    kind: i32,
+    bandwidth: f64,
+    out: *mut f64,
+    cap: u32,
+    out_n: *mut u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if v.is_null() {
+        write_err(err, err_cap, "输入为空");
+        return 1;
+    }
+    if fs <= 0.0 || fc <= 0.0 {
+        write_err(err, err_cap, "采样率与截止频率必须为正");
+        return 2;
+    }
+    let data = std::slice::from_raw_parts(v, n as usize);
+    let y = ps_ops::iir::butterworth(
+        data,
+        fs,
+        fc,
+        order as usize,
+        ps_ops::iir::Kind::from_code(kind),
+        bandwidth,
+    );
+    write_len(out_n, y.len());
+    if y.len() > cap as usize {
+        return 6;
+    }
+    if y.is_empty() {
+        return 0;
+    }
+    if out.is_null() {
+        write_err(err, err_cap, "输出缓冲区为空");
+        return 1;
+    }
+    std::ptr::copy_nonoverlapping(y.as_ptr(), out, y.len());
+    0
+}
+
+/// 抗混叠抽取。时间轴与值同步抽取，长度约 n/factor。
+#[no_mangle]
+pub unsafe extern "C" fn ps_decimate_series(
+    t: *const f64,
+    v: *const f64,
+    n: u32,
+    factor: u32,
+    out_t: *mut f64,
+    out_v: *mut f64,
+    cap: u32,
+    out_n: *mut u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if t.is_null() || v.is_null() {
+        write_err(err, err_cap, "输入为空");
+        return 1;
+    }
+    if factor == 0 {
+        write_err(err, err_cap, "抽取因子必须 >= 1");
+        return 2;
+    }
+    let ts = std::slice::from_raw_parts(t, n as usize);
+    let vs = std::slice::from_raw_parts(v, n as usize);
+    let (ot, ov) = ps_ops::decimate::decimate(ts, vs, factor as usize);
+    write_len(out_n, ot.len());
+    if ot.len() > cap as usize {
+        return 6;
+    }
+    if ot.is_empty() {
+        return 0;
+    }
+    if out_t.is_null() || out_v.is_null() {
+        write_err(err, err_cap, "输出缓冲区为空");
+        return 1;
+    }
+    std::ptr::copy_nonoverlapping(ot.as_ptr(), out_t, ot.len());
+    std::ptr::copy_nonoverlapping(ov.as_ptr(), out_v, ov.len());
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

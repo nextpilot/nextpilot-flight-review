@@ -14,6 +14,31 @@ add_executable(test_filter_catalog unit/test_filter_catalog.cpp)
 target_include_directories(test_filter_catalog PRIVATE
   ${PROJECT_SOURCE_DIR}/src/application/shared/filter/include)
 target_link_libraries(test_filter_catalog PRIVATE ps_kernel)
+if(TARGET ps_application_scripting)
+  add_executable(test_script_console unit/test_script_console.cpp)
+  target_include_directories(test_script_console PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/kernel/include
+    ${PROJECT_SOURCE_DIR}/src/application
+    ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(test_script_console PRIVATE ps_application_scripting Qt6::Core)
+  add_test(NAME script_console COMMAND test_script_console)
+
+  add_executable(test_lua_calc unit/test_lua_calc.cpp)
+  target_include_directories(test_lua_calc PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/kernel/include
+    ${PROJECT_SOURCE_DIR}/src/application
+    ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(test_lua_calc PRIVATE ps_application_scripting Qt6::Core)
+  add_test(NAME lua_calc COMMAND test_lua_calc)
+endif()
+
+add_executable(test_kernel_analysis unit/test_kernel_analysis.cpp)
+target_link_libraries(test_kernel_analysis PRIVATE ps_kernel)
+add_test(NAME kernel_analysis COMMAND test_kernel_analysis)
 add_test(NAME filter_catalog COMMAND test_filter_catalog)
 
 if(EXISTS ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp/PsDataSourceBase.hpp)

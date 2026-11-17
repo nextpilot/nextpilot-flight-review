@@ -36,6 +36,17 @@ typedef struct PsChannelInfo {
     const double *value;
 } PsChannelInfo;
 
+/* 单通道统计结果。NaN/inf 视作缺失点，不计入 count。 */
+typedef struct PsStats {
+    uint32_t count;
+    double   mean;
+    double   std_dev;   /* 总体标准差 */
+    double   min;
+    double   max;
+    double   rms;
+    double   median;    /* 未请求时填 NaN */
+} PsStats;
+
 /* ---- 数据集只由扩展/缓存通过通用构造 API 生成 ---- */
 
 uint32_t             ps_dataset_channel_count(const PsDataset *ds);
@@ -73,6 +84,36 @@ int32_t              ps_dataset_apply_quat_rpy(PsDataset *ds, const char *w, con
                                                char *err, uint32_t err_cap);
 /* 删除通道（包括派生通道）。 */
 int32_t              ps_dataset_remove_channel(PsDataset *ds, const char *name);
+
+/* ---- 分析类算子（S2 计算库的后端）。全部 f64，结果写进调用方缓冲区。
+ * 缓冲不足一律返回 6，且 out_n/out_m 仍回填实际长度，调用方可据此重试。 ---- */
+
+/* 一次遍历出 count/mean/std/min/max/rms；with_median 非 0 时多一次排序。 */
+int32_t ps_stats_series(const double *v, uint32_t n, int32_t with_median,
+                        PsStats *out, char *err, uint32_t err_cap);
+
+/* 单边幅度谱，长度 = nfft/2+1（nfft 为补零后的 2 的幂）。
+ * window：0 矩形、1 Hann、2 Hamming、3 Blackman。 */
+int32_t ps_fft_series(const double *v, uint32_t n, double fs, int32_t window,
+                      double *out_freq, double *out_mag, uint32_t cap, uint32_t *out_m,
+                      char *err, uint32_t err_cap);
+
+/* Welch 功率谱密度。nfft 为 0 时取 256，非 2 的幂会进位；overlap 为 0..1。
+ * 归一化为密度口径（单边乘 2，DC/Nyquist 不乘）。 */
+int32_t ps_psd_series(const double *v, uint32_t n, double fs, uint32_t nfft, double overlap,
+                      int32_t window, double *out_freq, double *out_psd, uint32_t cap,
+                      uint32_t *out_m, char *err, uint32_t err_cap);
+
+/* 巴特沃斯 IIR（二阶节级联）。kind：0 低通、1 高通、2 带通。
+ * 低通/高通：order 取偶数，fc 为截止频率；带通：fc 为中心频率，bandwidth 为带宽比例（0.01..1）。 */
+int32_t ps_iir_series(const double *v, uint32_t n, double fs, double fc, uint32_t order,
+                      int32_t kind, double bandwidth, double *out, uint32_t cap, uint32_t *out_n,
+                      char *err, uint32_t err_cap);
+
+/* 抗混叠抽取：内置低通 FIR + 按 factor 取点，时间轴同步抽取。 */
+int32_t ps_decimate_series(const double *t, const double *v, uint32_t n, uint32_t factor,
+                           double *out_t, double *out_v, uint32_t cap, uint32_t *out_n,
+                           char *err, uint32_t err_cap);
 
 /* 视口抽稀（铁律：降采样在 Rust 侧完成）。out 按 (x, min, max) 三元组排列，
  * 返回实际写入的三元组个数，上限 min(px, cap_triples)。 */
