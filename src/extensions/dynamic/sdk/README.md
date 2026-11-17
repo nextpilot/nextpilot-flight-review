@@ -23,7 +23,7 @@ src/extensions/dynamic/
 
 - 描述符必须声明 `family` 与 `capabilities`；`DataSourceRegistry` 只收 `PS_FAMILY_DATA_LOADER / LIVE_SOURCE / DATA_SOURCE`。
 - 数据面只走 `src/application/modules/runtime/include/ps_extension_api.h` 的 C 契约：`schema_json / probe_json / default_options / params_json / load`。
-- 扩展不得直接链接 `ps_kernel`。`load/open` 会收到 `const PsHostApi*`，只能通过 `dataset_new / dataset_add_channel / dataset_free` 写数据集；跨 Windows/Linux 同一套宿主表语义。
+- 扩展不得直接链接 `ps_kernel`。`load/open` 会收到 `const PsHostApi*`，只能通过 `dataset_new / dataset_add_table_typed / dataset_add_table_column_typed / dataset_append_frame / dataset_free` 写 typed 数据集；跨 Windows/Linux 同一套宿主表语义。
 - 格式解析属于扩展：每个 loader 自带 `*Parser.{h,cpp}`，只通过宿主函数表写内核。
 - 扩展不 include `src/application/shell`，也不持有宿主 UI。简单选项页放在 `schema_json.fields + ui.preview`，由 base 的 `DataSourceDialog` 按 schema 渲染；需要复杂自定义界面时，`.ui` 随扩展目录分发，由 `UiDialogEngine` 加载。
 - base 不出现 `delimiter / has_header / suggested_time` 这类格式键；只认识 `fields / source / initial_from_probe / ui.preview` 这些通用 UI 描述。

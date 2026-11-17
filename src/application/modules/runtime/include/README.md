@@ -13,7 +13,7 @@
 - `params_json` 由扩展负责解析 P/Q、PARM 等参数表。
 - UI 面：`PsUiVtable` 只给 `.ui` 路径和 JSON 回调（`get_data / on_event / on_tick`），禁止返回 `QWidget*`；由 app 的 `UiDialogEngine` 加载。
 - 外部扩展：`.so` 必须导出 `ps_extension_entry()`，包目录放 `manifest.json`、`.ui` 与资源；`ps-runtime` 负责扫描、预检、`dlopen`、ABI 校验、重复 id 去重。
-- 扩展只通过 `PsHostApi` 的 `dataset_new / dataset_add_channel / dataset_free` 写数据集，不链 `ps_kernel`，也不要求内核认识自己的文件格式。
+- 扩展只通过 `PsHostApi` 的 `dataset_new / dataset_add_table_typed / dataset_add_table_column_typed / dataset_append_frame / dataset_free` 写 typed 数据集，不链 `ps_kernel`，也不要求内核认识自己的文件格式。
 - probe / parse / schema / params 由扩展实现；内核只保留数据模型、filter、quat、LOD 等通用算子。
 
 - 宿主侧的 `CommandManager` / `ExtensionHost` 已上移到 `application/shell`；本目录只保留扩展契约、动态装载、ABI 与跨模块桥。
