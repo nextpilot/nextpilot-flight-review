@@ -37,7 +37,7 @@ struct Dataset
     QVector<double> v;
 };
 
-static QVector<Dataset> makeData(int curves, int points, double duration)
+static QVector<Dataset> makeData(int curves, int points, double duration, bool predecimate=false, int columns=1280)
 {
     QVector<Dataset> out(curves);
     for (int c = 0; c < curves; ++c)
@@ -51,6 +51,38 @@ static QVector<Dataset> makeData(int curves, int points, double duration)
             d.t[i] = t;
             d.v[i] = std::sin(t * (0.4 + 0.03 * c) + c) +
                      0.15 * std::sin(t * (7.0 + c)) + 0.02 * c;
+        }
+    }
+    if (predecimate)
+    {
+        for (int c = 0; c < curves; ++c)
+        {
+            Dataset &src = out[c];
+            Dataset dst;
+            const int n = src.t.size();
+            const int buckets = std::max(1, columns);
+            dst.t.reserve(buckets * 2);
+            dst.v.reserve(buckets * 2);
+            for (int b = 0; b < buckets; ++b)
+            {
+                int i0 = int(qint64(b) * n / buckets);
+                int i1 = int(qint64(b + 1) * n / buckets);
+                i0 = std::clamp(i0, 0, n - 1);
+                i1 = std::clamp(std::max(i1, i0 + 1), 1, n);
+                double vmin = src.v[i0], vmax = src.v[i0];
+                for (int i = i0 + 1; i < i1; ++i)
+                {
+                    vmin = std::min(vmin, src.v[i]);
+                    vmax = std::max(vmax, src.v[i]);
+                }
+                const double t0 = src.t[i0];
+                const double t1 = src.t[i1 - 1];
+                dst.t.append(t0);
+                dst.v.append(vmin);
+                dst.t.append(t1);
+                dst.v.append(vmax);
+            }
+            src = dst;
         }
     }
     return out;
@@ -159,7 +191,7 @@ public:
 class JkqtBackend : public Backend
 {
 public:
-    JkqtBackend(const QVector<Dataset> &data, double duration)
+    JkqtBackend(const QVector<Dataset> &data, double duration, bool compress)
     {
         auto *plot = new JKQTPlotter;
         plot->getPlotter()->setUseAntiAliasingForGraphs(false);
@@ -172,6 +204,7 @@ public:
             g->setXColumn(xCol);
             g->setYColumn(yCol);
             g->setSymbolType(JKQTPNoSymbol);
+            g->setUseNonvisibleLineCompression(compress);
             g->setColor(QColor::fromHsv((i * 37) % 360, 180, 180));
             plot->addGraph(g);
         }
@@ -257,6 +290,8 @@ int main(int argc, char **argv)
     parser.addOption({QStringLiteral("height"), QStringLiteral("viewport height"), QStringLiteral("value"), QStringLiteral("720")});
     parser.addOption({QStringLiteral("zoom"), QStringLiteral("visible x fraction (0,1]"), QStringLiteral("value"), QStringLiteral("1")});
     parser.addOption({QStringLiteral("adaptive"), QStringLiteral("qcustom adaptive sampling"), QStringLiteral("value"), QStringLiteral("1")});
+    parser.addOption({QStringLiteral("jkqtCompress"), QStringLiteral("JKQtPlotter line compression"), QStringLiteral("value"), QStringLiteral("1")});
+    parser.addOption({QStringLiteral("predecimate"), QStringLiteral("feed all backends 2 min/max points per pixel column"), QStringLiteral("value"), QStringLiteral("0")});
     parser.process(app);
 
     const int curves = parser.value(QStringLiteral("curves")).toInt();
@@ -268,7 +303,8 @@ int main(int argc, char **argv)
     const QString lib = parser.value(QStringLiteral("lib"));
     const bool adaptive = parser.value(QStringLiteral("adaptive")) != QStringLiteral("0");
     const double duration = 600.0;
-    const auto data = makeData(curves, points, duration);
+    const bool predecimate = parser.value(QStringLiteral("predecimate")) != QStringLiteral("0");
+    const auto data = makeData(curves, points, duration, predecimate, width);
 
     std::unique_ptr<Backend> backend;
     if (lib == QStringLiteral("self"))
@@ -283,7 +319,7 @@ int main(int argc, char **argv)
 #endif
 #ifdef HAVE_JKQT
     else if (lib == QStringLiteral("jkqt"))
-        backend = std::make_unique<JkqtBackend>(data, duration * zoom);
+        backend = std::make_unique<JkqtBackend>(data, duration * zoom, parser.value(QStringLiteral("jkqtCompress")) != QStringLiteral("0"));
 #endif
 #ifdef HAVE_QTCHARTS
     else if (lib == QStringLiteral("charts"))
