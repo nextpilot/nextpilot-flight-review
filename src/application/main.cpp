@@ -87,8 +87,8 @@ int main(int argc, char **argv)
         for (const QString &e : cliHost.errors())
             fprintf(stderr, "[extension] %s\n", qPrintable(e));
 
-        const ScriptResult r =
-            ScriptEngine::run(source, QVector<ScriptSeries>(), QMap<QString, double>(),
+        const ps::scripting::ScriptResult r =
+            ScriptEngine::run(source, QVector<ps::scripting::ScriptSeries>(), QMap<QString, double>(),
                               QStringLiteral("lua"), false);
         ps::host::setHostService(nullptr);
         cliHost.deactivate();

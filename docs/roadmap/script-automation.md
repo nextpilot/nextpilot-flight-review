@@ -599,7 +599,7 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 | 片 | 范围 | 验收 | 不做 |
 |---|---|---|---|
 | **S0 引擎搬迁与骨架**（已完成） | Lua 引擎从 `extensions/builtin/script` 搬进 `modules/scripting/lua/`；受限 `require`（§2.4）；`HostDataService` 数据面契约；`modules/scripting` 模块 + `script.info` 命令；`HostContext::registerCommand` 让模块不必兜到 MainWindow；AGENTS 同步 | 编译通过；`ctest` **31/31**（含新增 `script_library`）；`require("roll_rate")` 可加载，`require("os")` / `require("../../etc/x")` / `/abs` / `C:/` / `\\` 全拒；环依赖不死循环；失败后哨兵已清 | 不写 `ps.app` API；不删旧扩展与 runner 槽（等 P2）；不动绘图侧；`ps_filter_apply_series` 接入留到 S2 |
-| **S0.5 死后清理（等 P2 完成后）** | 删 `extensions/builtin/script`；摘 `Registry::addScriptRunner`（`Component.h:143`）、`Registry::runScript`（`Component.h:155` / `Component.cpp:78`）、`ScriptService` 的 runner 声明 | `grep addScriptRunner\|runScript\|m_scriptRunner` 零命中；`ctest` 全绿 | 与 S0 混做（P2 未完成时会被编译打断） |
+| **S0.5 死后清理**（已完成） | 删 `extensions/builtin/script` 整个目录；摘 `Registry::addScriptRunner` / `runScript` / `m_scriptRunner`；删 `runtime/include/ScriptService.h`，`ScriptSeries/ScriptOutput/ScriptResult` 移入 `scripting/ScriptTypes.h` 属脚本模块自有；绘图侧摘掉曲线变换的 `lua` 项与执行分支 | `grep addScriptRunner\|runScript\|ScriptService\|ScriptRunnerContribution` 零命中；`modules/runtime` 零 `Script` 字样；`ctest` **39/39** | 中立层 `Component.h` 不再 include 脚本类型，所有模块不再间接知道脚本子系统 |
 | **S1 只读数据面**（已完成） | `sources/source/currentSource/channels/channel/slice/liveStatus`、`load/exportCsv/close` 的 Lua 对象面（`ps.app.source` / `ps.app.channel` / `ps.app.job` 三个 metatable）；`HostDataBridge` 落在 `datasource` 模块，`HostDataService` 之上只有接口；**`--run <script.lua>` CLI 闭环**（无 UI，自建 `ExtensionHost` 激活内置 loader） | 编译通过；`ctest` **33/33**（新增 `script_library` / `script_app_cli` / `script_slice_perf`）；1000 万点 `slice` 到 4096 点 = **64 KB / 1.8 ms**；`channels()` 对 1000 万点全扫 min/max = 9.1 ms；50 源 `sources()` = 0.00 ms；`plotscope_app --run` 跑通"加载→取通道→切片→导出 CSV"，退出码 0/1/2 | 不做任何副作用（除导出）；`connectLive/record` 返回 `eunsupported`；`reload/glob/report/clearCache` 未暴露；`loadFile` 失败只回 `eload`，不携带 loader 原始错误 |
 | **S2 控制台**（完成） | 计算库 Lua API + **内核补齐（P3，已完成）**；**REPL（持久 workspace / 表达式回显 + `ans` / 多行续行 / `ps.gc`）**；元命令 `:` 前缀 7 项（`help/clear/who/whos/run/reload/clc`）；结果面板（表 + scratch 临时图，频率域 x 轴）；L0 错误定位 | 已达成：加载日志后 `ps.stats` / `ps.fft` / `ps.psd` / `ps.filter` / `ps.decimate` 出结果（1024 点 10 Hz 正弦峰值 10 Hz、幅值 1）；`1+2` 回显 `3`；`who/whos` 正确；`:run` 后变量留在 workspace；`:reload` 清缓存；语法错报 `行 N` 且不执行；`ps.plot{ps.fft}` 出频谱临时图、`ps.table` 出表。`test_script_console` 21 条、`test_lua_calc`、`test_console_panel`、`ctest` **39/39** | 未做：Ctrl+C 中断、`ps.promote`（属 S6）、`peaks/correlate/find/align/resample`（缺算子） |
 | **S3 作业模型 + 事件触发** | Job 状态机、串行写队列、`load/close/reload/exportCsv/report/glob`、`wait/onDone/cancel`、操作清单；**事件分发器 + `scripts/on/sourceLoaded.lua` + 四道闸** | 无人值守"加载→导出→汇总→关闭"跑通；取消后 500 ms 内回空闲且无半成品文件；放一路日志进 `sourceLoaded` 自动跑完；死循环脚本被预算掐断且后续触发不受影响 | 不做实时；不做其他事件源 |
@@ -608,7 +608,7 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 | **S6 提升为正式曲线（P2）** | canvas 稳定 id、`ps.promote`、快照事务、页面/曲线/轴 | 提升的曲线重开工程仍在；失败回滚页面 JSON 逐字节不变 | 不与 S2–S5 混做 |
 | **S7 子进程断点调试（P2 可选）** | `--debug <script>` 子进程、`mobdebug`/luasocket 接入、VSCode `lua-debug` 与 ZeroBrane 文档 | 断点能停在脚本内并读局部变量；主进程沙箱不变（负向测试仍绿） | 不在 App 里造调试 UI |
 
-依赖：P1 → S0 → S1 → S2 → S3 → { S4, S5 }；S0.5 依赖 P2；S2 依赖 P3；S6、S7 独立立项。
+依赖：P1 → S0 → S1 → S2 → S3 → { S4, S5 }；S2 依赖 P3；S6、S7 独立立项。
 
 排序理由：**控制台（S2）先上**，它不需要 Job、不需要 canvas id、不需要文件白名单，最快验证 `ps.app` 形态；**自动化（S3）紧跟**，因为"人在场调试出来的脚本"要立刻能变成"人不在场跑"，否则两条线永远接不起来。S4/S5 是自动化的两个专用场景，可以并行。
 

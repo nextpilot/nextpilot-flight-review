@@ -3,6 +3,10 @@
 #include <cassert>
 #include <cmath>
 
+using ps::scripting::ScriptResult;
+using ps::scripting::ScriptSeries;
+
+
 static ScriptSeries makeSeries(const QString &name, const QVector<double> &t,
                                const QVector<double> &v)
 {

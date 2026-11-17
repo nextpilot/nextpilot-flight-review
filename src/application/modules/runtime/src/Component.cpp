@@ -43,12 +43,6 @@ void Registry::addSettings(const SettingsContribution &settings)
     m_settings.push_back(settings);
 }
 
-void Registry::addScriptRunner(const ScriptRunnerContribution &runner)
-{
-    if (runner.run)
-        m_scriptRunner = runner;
-}
-
 void Registry::addDataSource(const DataSourceSpec &source)
 {
     if (!source.descriptor)
@@ -73,18 +67,6 @@ QDialog *Registry::createDialog(const QString &id, const QVariantMap &args, QWid
         if (dialog.id == id && dialog.create)
             return dialog.create(args, parent);
     return nullptr;
-}
-
-ScriptResult Registry::runScript(const QString &source, const QVector<ScriptSeries> &inputs,
-                                 const QMap<QString, double> &params, const QString &language) const
-{
-    if (!m_scriptRunner.run)
-    {
-        ScriptResult result;
-        result.error = QStringLiteral("未安装脚本运行组件");
-        return result;
-    }
-    return m_scriptRunner.run(source, inputs, params, language);
 }
 
 bool Registry::invoke(const QString &action, const ActionContext &ctx) const

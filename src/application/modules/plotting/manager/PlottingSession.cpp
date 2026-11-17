@@ -879,7 +879,6 @@ public:
                 continue;
             m_transform->addItem(QString::fromUtf8(defs[i].label), QString::fromUtf8(defs[i].id));
         }
-        m_transform->addItem(QStringLiteral("Lua 脚本"), QStringLiteral("lua"));
         yForm->addRow(QStringLiteral("变换"), m_transform);
 
         m_transformStack = new QStackedWidget(yPage);
@@ -895,28 +894,14 @@ public:
         m_paramEditor->setFilter(QStringLiteral("moving_average"));
         m_transformStack->addWidget(m_paramEditor);
 
-        auto *scriptPage = new QWidget(m_transformStack);
-        auto *scriptForm = new QFormLayout(scriptPage);
-        scriptForm->setContentsMargins(0, 0, 0, 0);
-        m_script = new QPlainTextEdit(scriptPage);
-        m_script->setPlaceholderText(QStringLiteral("out = ps.movingAvg(ps.input(1), 5)"));
-        m_script->setPlainText(QStringLiteral("out = ps.movingAvg(ps.input(1), 5)"));
-        m_script->setFixedHeight(78);
-        scriptForm->addRow(QStringLiteral("脚本"), m_script);
-        m_transformStack->addWidget(scriptPage);
-
-        yForm->addRow(QStringLiteral("参数 / 脚本"), m_transformStack);
-        auto *yNote = new QLabel(QStringLiteral("算子/脚本会把结果写成派生曲线；脚本输入为 ps.input(1)，输出到 out。"), yPage);
+        yForm->addRow(QStringLiteral("参数"), m_transformStack);
+        auto *yNote = new QLabel(QStringLiteral("算子会把结果写成派生曲线。"), yPage);
         yNote->setWordWrap(true);
         yNote->setStyleSheet(QStringLiteral("color:#8494a0;"));
         yForm->addRow(yNote);
         connect(m_transform, &QComboBox::currentIndexChanged, this, [this] {
             const QString id = m_transform->currentData().toString();
-            if (id == QLatin1String("lua"))
-            {
-                m_transformStack->setCurrentIndex(2);
-            }
-            else if (id.isEmpty())
+            if (id.isEmpty())
             {
                 m_transformStack->setCurrentIndex(0);
             }
@@ -958,13 +943,10 @@ public:
         const QString id = transformId();
         if (id.isEmpty())
             return QStringLiteral("原值");
-        if (id == QLatin1String("lua"))
-            return QStringLiteral("脚本");
         const ps::filter::Def *def = ps::filter::find(id.toUtf8().constData());
         return def ? QString::fromUtf8(def->short_label) : m_transform->currentText();
     }
     QJsonObject transformParams() const { return m_paramEditor->params(); }
-    QString scriptText() const { return m_script->toPlainText(); }
     const PsChannelInfo *channel() const
     {
         const QVariant v = m_column->currentData();
@@ -998,7 +980,6 @@ private:
     QComboBox *m_transform = nullptr;
     QStackedWidget *m_transformStack = nullptr;
     FilterParamEditor *m_paramEditor = nullptr;
-    QPlainTextEdit *m_script = nullptr;
 };
 
 void PlottingSession::showAxesProps(PlottingCanvas *c)
@@ -1149,32 +1130,6 @@ void PlottingSession::editSeriesProps(PlottingCanvas *c, int index)
         {
             tt[i] = ch->time[i] - off;
             vv[i] = ch->value[i];
-        }
-
-        if (op == QLatin1String("lua"))
-        {
-            ScriptSeries in;
-            in.name = dlg.channelName();
-            in.time = tt;
-            in.value = vv;
-            const ScriptResult r = m_mw->extensions().registry().runScript(dlg.scriptText(), {in});
-            if (!r.ok || r.outputs.isEmpty())
-            {
-                QMessageBox::warning(this, QStringLiteral("脚本错误"), r.error.isEmpty()
-                    ? QStringLiteral("脚本没有输出") : r.error);
-                return;
-            }
-            const ScriptOutput &out = r.outputs.first();
-            QString label = patch.value(QStringLiteral("label")).toString();
-            if (!label.endsWith(QStringLiteral("· 脚本")))
-                label += QStringLiteral(" · 脚本");
-            patch[QStringLiteral("label")] = label;
-            patch[QStringLiteral("offset")] = 0.0;
-            c->setSeriesSamples(index, out.time, out.value, label);
-            c->patchSeries(index, patch);
-            showSeriesProps(c, index);
-            log(QStringLiteral("曲线脚本变换：%1").arg(label));
-            return;
         }
 
         QVector<double> ot(n), ov(n);

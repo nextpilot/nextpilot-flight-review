@@ -1,9 +1,11 @@
 #pragma once
 
-#include <QMap>
 #include <QString>
 #include <QVector>
 
+namespace ps::scripting
+{
+// 脚本的输入序列与派生输出；属脚本模块自有类型，不放中立层。
 struct ScriptSeries
 {
     QString name;
@@ -24,10 +26,4 @@ struct ScriptResult
     QString error;
     QVector<ScriptOutput> outputs;
 };
-
-struct ScriptRunnerContribution
-{
-    std::function<ScriptResult(const QString &source, const QVector<ScriptSeries> &inputs,
-                               const QMap<QString, double> &params, const QString &language)>
-        run;
-};
+} // namespace ps::scripting

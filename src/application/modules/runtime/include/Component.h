@@ -3,7 +3,6 @@
 #include <QJsonObject>
 #include <QVariantMap>
 
-#include "ScriptService.h"
 #include <Qt>
 #include <QString>
 #include <QStringList>
@@ -143,7 +142,6 @@ public:
     void addDock(const DockContribution &dock);
     void addDialog(const DialogContribution &dialog);
     void addSettings(const SettingsContribution &settings);
-    void addScriptRunner(const ScriptRunnerContribution &runner);
     void addWindowHook(std::function<void(QWidget *)> hook) { m_windowHooks.append(std::move(hook)); }
 
     const ProtocolContribution *protocol(const QString &kind) const;
@@ -155,9 +153,6 @@ public:
     const QVector<std::function<void(QWidget *)>> &windowHooks() const { return m_windowHooks; }
     bool invoke(const QString &action, const ActionContext &ctx) const;
     QDialog *createDialog(const QString &id, const QVariantMap &args, QWidget *parent) const;
-    ScriptResult runScript(const QString &source, const QVector<ScriptSeries> &inputs,
-                           const QMap<QString, double> &params = {},
-                           const QString &language = QString()) const;
 
 private:
     QVector<ProtocolContribution> m_protocols;
@@ -167,7 +162,6 @@ private:
     QVector<DockContribution> m_docks;
     QVector<DialogContribution> m_dialogs;
     QVector<SettingsContribution> m_settings;
-    ScriptRunnerContribution m_scriptRunner;
     QVector<QPair<QString, std::function<void(const ActionContext &)>>> m_actions;
     QVector<std::function<void(QWidget *)>> m_windowHooks;
 };

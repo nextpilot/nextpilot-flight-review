@@ -120,7 +120,7 @@ shell 只做最小宿主和管理内核：
 
 统一走 `Registry`：
 
-- `addProtocol` / `addDataSource` / `addRibbon` / `addDock` / `addDialog` / `addSettings` / `addAction` / `addScriptRunner` / `addWindowHook`
+- `addProtocol` / `addDataSource` / `addRibbon` / `addDock` / `addDialog` / `addSettings` / `addAction` / `addWindowHook`
 - 贡献项由创建它的模块/扩展拥有；宿主只负责遍历和创建容器。
 - 动态扩展的 UI 由宿主按 manifest 创建，扩展不持有宿主控件生命周期。
 
@@ -144,7 +144,7 @@ shell 只做最小宿主和管理内核：
 - `ps_application_shell` 不得 link `ps_application_datasource`、`ps_application_plotting`、`ps_builtin_components`。
 - `ps_application_datasource` / `ps_application_plotting` 可以 link shell/runtime/kernel，但不得互相 link。
 - `ps_application_protocol` 只由 `plotscope_app` 链接，不进入 shell 或 datasource/plotting 的依赖；协议 loader 仍通过数据源注册表暴露。
-- `ps_application_scripting` 由 `plotscope_app` 链接；过渡期旧 `ps_builtin_script_component` 只留 runner 槽，引擎对象经 `ps_builtin_components` 透传给宿主，S0.5 摘槽后移除。
+- `ps_application_scripting` 的对象经 `ps_builtin_components` 的 `INTERFACE_SOURCES` 进宿主，链接依赖一并挂在该聚合 target 上；旧 `ps_builtin_script_component` 与 runner 槽已于 S0.5 移除。
 - `ps_builtin_components` 只聚合内置扩展，不进入 shell 的依赖。
 - `plotscope_app` 是唯一组装 target，链接 shell + modules + builtin；动态扩展在运行时加载。
 - 新增 target 必须显式声明 warnings 和 include 边界；shell 也必须纳入 `ps_set_warnings`。

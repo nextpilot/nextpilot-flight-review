@@ -21,6 +21,11 @@ extern "C" {
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
+
+using ps::scripting::ScriptOutput;
+using ps::scripting::ScriptResult;
+using ps::scripting::ScriptSeries;
+
 }
 #endif
 

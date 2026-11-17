@@ -9,6 +9,10 @@
 #include <cassert>
 #include <cstdio>
 
+using ps::scripting::ScriptResult;
+using ps::scripting::ScriptSeries;
+
+
 namespace
 {
 bool writeFile(const QString &path, const char *text)
