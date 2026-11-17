@@ -96,6 +96,22 @@
 
 > 说明：JKQtPlotter 默认 `useNonvisibleLineCompression=false`，所以默认 1407.8 ms；手动开启后 541.7 ms。预抽稀那组是在开启压缩下测的，仍有 581.7 ms，进一步说明其瓶颈不只在输入点数。
 
+### 各后端的拷贝发生在哪
+
+| 后端 | 初始化/装载 | 每帧绘制 |
+|---|---|---|
+| 自绘画布 | `addGeneratedSeries` 用 `QVector` 隐式共享，通常不深拷贝；内核指针模式直接引用 | 分配 `lod` 缓冲，`ps_lod_minmax_many` 输出约 2×像素列点；再构造 `QPolygonF` 画折线 |
+| QCustomPlot | `setData` 把点深拷贝进 `QVector<QCPGraphData>` | `getLines` 每帧构造 `QVector<QCPGraphData> lineData` 和 `QVector<QPointF> lines`；自适应开启时只处理抽样子集，关闭时是全量 |
+| Qwt | `setSamples` 走 `QwtPointArrayData`，x/y 数组隐式共享 | `QwtPointMapper::toPolygonF` 每帧把可见范围的全量点变换成 `QPolygonF` |
+| JKQtPlotter | `addCopiedColumn` 深拷贝两列数据 | 每帧构造完整 `QPolygonF`，再做 `JKQTPSimplifyPolyLines`、`JKQTPClipPolyLines`，中间还会产生新的多边形副本 |
+
+结论：
+
+- **自绘不是不拷贝**，而是只拷贝“抽稀后的输出”，不每帧复制全量原始点。
+- **Qwt/JKQt 每帧都会把全量点变成绘制用 `QPolygonF`**；JKQt 还会多做简化/裁剪副本，所以更重。
+- **QCustomPlot 自适应模式只处理子集**，但仍有每帧 `lineData`/`lines` 构造开销，因此预抽稀后仍有约 19 ms。
+- 初始化拷贝在本次计时外；每帧构造绘制缓冲在计时内。两者不能混为一谈。
+
 ## 功能对比
 
 | 能力 | 自绘 `PlottingCanvas` | Qwt 6.3 | QCustomPlot 2.1 | Qt Charts 6.2 | ImPlot | KPlotting | KDChart |
