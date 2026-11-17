@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -469,6 +471,21 @@ bool psCsvProbeFile(const char *path, char forcedDelimiter, CsvProbe &out, std::
     return true;
 }
 
+static bool intToken(const std::string &s, int64_t &out)
+{
+    if (s.empty() || s.find('.') != std::string::npos || s.find('e') != std::string::npos ||
+        s.find('E') != std::string::npos)
+        return false;
+    auto r = std::from_chars(s.data(), s.data() + s.size(), out);
+    return r.ec == std::errc() && r.ptr == s.data() + s.size();
+}
+
+static bool boolToken(const std::string &s)
+{
+    return s == "0" || s == "1" || s == "true" || s == "false" ||
+           s == "TRUE" || s == "FALSE";
+}
+
 bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std::string &err)
 {
     std::string text;
@@ -569,6 +586,7 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
 
     out = {};
     out.headers.push_back(tb.name);
+    out.value_types.push_back(PS_VALUE_F64); // 时间轴
     std::vector<double> tOut;
     tOut.reserve(idx.size());
     size_t outDone = 0;
@@ -581,8 +599,32 @@ bool psCsvParseFile(const char *path, const CsvOptions &opt, CsvTable &out, std:
             continue;
         std::vector<double> v;
         v.reserve(idx.size());
+        bool allInt = true, allBool = true, hasValue = false;
+        int64_t imin = INT64_MAX, imax = INT64_MIN;
         for (size_t i : idx)
-            v.push_back(parseNumber((*rowsOk[i])[c]));
+        {
+            const std::string &tok = (*rowsOk[i])[c];
+            v.push_back(parseNumber(tok));
+            if (tok.empty())
+                continue;
+            int64_t iv = 0;
+            if (!intToken(tok, iv))
+                allInt = false;
+            else
+            {
+                hasValue = true;
+                imin = std::min(imin, iv);
+                imax = std::max(imax, iv);
+            }
+            if (!boolToken(tok))
+                allBool = false;
+        }
+        uint32_t vt = PS_VALUE_F64;
+        if (allBool)
+            vt = PS_VALUE_BOOL;
+        else if (allInt && hasValue)
+            vt = (imin >= INT32_MIN && imax <= INT32_MAX) ? PS_VALUE_I32 : PS_VALUE_I64;
+        out.value_types.push_back(vt);
         out.headers.push_back(headers[c]);
         out.columns.push_back(std::move(v));
         psLoaderProgress(80 + static_cast<uint64_t>(c + 1) * 20 / std::max<size_t>(1, nCols), 100);

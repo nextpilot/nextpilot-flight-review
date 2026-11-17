@@ -298,6 +298,8 @@ int32_t csvLoad(const char *path, const char *optsJson, const PsHostApi *host, v
         c.table = "csv";
         c.axis = axis;
         c.v = std::move(table.columns[i]);
+        if (i < table.value_types.size())
+            c.value_type = table.value_types[i];
         channels.push_back(std::move(c));
     }
     PsDataset *ds = psBuildDataset(channels, perr, host);

@@ -35,6 +35,7 @@ struct CsvTable
 {
     std::vector<std::string> headers;         // [0] 是时间轴
     std::vector<std::vector<double>> columns; // [0] 是秒
+    std::vector<uint32_t> value_types;        // 与 columns 对齐，PsValueType
 };
 
 /* CSV 扩展的探测与解析都在扩展内完成。 */
