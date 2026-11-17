@@ -9,6 +9,7 @@ if(PS_BUILD_GUI)
   if(Qt6_FOUND)
     # 底座：宿主扩展层与宿主服务
     add_subdirectory(application/modules/runtime)
+    add_subdirectory(application/runtime)
     add_subdirectory(application/modules/datasource/services/cache)
 
     # 停靠窗口：ADS 共享库（LGPL-2.1 vendor）

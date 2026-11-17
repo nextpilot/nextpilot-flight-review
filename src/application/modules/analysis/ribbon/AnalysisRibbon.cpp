@@ -4,7 +4,7 @@
 #include "SettingsManager.h"
 #include "ThemeManager.h"
 #include "CommandManager.h"
-#include "MainWindow.h"
+#include "ModuleContext.h"
 #include "SARibbonGallery.h"
 #include "SARibbonGalleryGroup.h"
 #include "SARibbonPanel.h"
@@ -20,24 +20,24 @@
 
 namespace
 {
-void openAnalysisApp(MainWindow *mw, const ps::analysis::AnalysisEntry &entry)
+void openAnalysisApp(ps::runtime::ModuleContext *ctx, const ps::analysis::AnalysisEntry &entry)
 {
-    if (!mw || !entry.create)
+    if (!ctx || !entry.create)
         return;
     const QString objectName = QStringLiteral("dock.analysis.%1").arg(entry.id);
-    if (auto *existing = mw->findChild<QDockWidget *>(objectName))
+    if (auto *existing = ctx->window()->findChild<QDockWidget *>(objectName))
     {
         existing->show();
         existing->raise();
         return;
     }
-    QWidget *body = entry.create(mw);
+    QWidget *body = entry.create(ctx->window());
     if (!body)
         return;
-    auto *dock = new QDockWidget(entry.title, mw);
+    auto *dock = new QDockWidget(entry.title, ctx->window());
     dock->setObjectName(objectName);
     dock->setWidget(body);
-    mw->addDockWidget(Qt::BottomDockWidgetArea, dock);
+    ctx->addDockWidget(Qt::BottomDockWidgetArea, dock);
     dock->show();
 }
 
@@ -45,9 +45,10 @@ void openAnalysisApp(MainWindow *mw, const ps::analysis::AnalysisEntry &entry)
 void buildAnalysisGalleryImpl(QWidget *parent)
 {
     auto *panel = static_cast<SARibbonPanel *>(parent);
-    auto *mw = qobject_cast<MainWindow *>(parent ? parent->window() : nullptr);
-    if (!panel || !mw)
+    auto *ctx = ps::runtime::ModuleContext::fromWidget(parent ? parent->window() : nullptr);
+    if (!panel || !ctx)
         return;
+    QWidget *mw = ctx->window();
 
     auto *gallery = panel->addGallery();
     gallery->setSingleRowMode(true);
@@ -82,12 +83,12 @@ void buildAnalysisGalleryImpl(QWidget *parent)
         }
         action->setProperty("analysisId", entry.id);
         if (entry.create)
-            QObject::connect(action, &QAction::triggered, mw,
-                             [mw, entry] { openAnalysisApp(mw, entry); });
+            QObject::connect(action, &QAction::triggered, panel,
+                             [ctx, entry] { openAnalysisApp(ctx, entry); });
         else
-            QObject::connect(action, &QAction::triggered, mw,
-                             [mw, id = entry.id] { mw->commands().invoke(id, {mw, QString()}); });
-        QObject::connect(action, &QAction::triggered, mw,
+            QObject::connect(action, &QAction::triggered, panel,
+                             [ctx, mw, id = entry.id] { ctx->commands().invoke(id, {mw, QString()}); });
+        QObject::connect(action, &QAction::triggered, panel,
                          [recentCallback, id = entry.id] {
                              if (*recentCallback)
                                  (*recentCallback)(id);

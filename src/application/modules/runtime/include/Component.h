@@ -18,6 +18,11 @@ class QComboBox;
 class QTableWidget;
 struct PsExtensionDescriptor;
 
+namespace ps::runtime
+{
+struct ModuleContext;
+}
+
 namespace ps::components
 {
 
@@ -41,6 +46,8 @@ struct HostContext
     // 模块注册自己的命令域，不必兜到 MainWindow。handler 只接参数串，
     // 宿主侧再包成 CommandContext，runtime 不碰 shell 类型。
     std::function<void(const QString &, std::function<void(const QString &)>)> registerCommand;
+    // 模块级入口；窗口钩子只拿上下文，不拿 MainWindow。
+    ps::runtime::ModuleContext *module = nullptr;
 };
 
 struct RibbonItem
@@ -134,6 +141,8 @@ struct ProtocolContribution
 class Registry
 {
 public:
+    using ModuleHook = std::function<void(ps::runtime::ModuleContext &)>;
+
     void addProtocol(const ProtocolContribution &protocol);
     void addRibbon(const RibbonContribution &ribbon);
     void addStatusChip(const StatusChipContribution &chip) { m_statusChips.append(chip); }
@@ -142,7 +151,7 @@ public:
     void addDock(const DockContribution &dock);
     void addDialog(const DialogContribution &dialog);
     void addSettings(const SettingsContribution &settings);
-    void addWindowHook(std::function<void(QWidget *)> hook) { m_windowHooks.append(std::move(hook)); }
+    void addModuleHook(ModuleHook hook) { m_moduleHooks.append(std::move(hook)); }
 
     const ProtocolContribution *protocol(const QString &kind) const;
     const QVector<RibbonContribution> &ribbon() const { return m_ribbon; }
@@ -150,7 +159,7 @@ public:
     const QVector<DataSourceSpec> &dataSources() const { return m_dataSources; }
     const QVector<DockContribution> &docks() const { return m_docks; }
     const QVector<SettingsContribution> &settings() const { return m_settings; }
-    const QVector<std::function<void(QWidget *)>> &windowHooks() const { return m_windowHooks; }
+    const QVector<ModuleHook> &moduleHooks() const { return m_moduleHooks; }
     bool invoke(const QString &action, const ActionContext &ctx) const;
     QDialog *createDialog(const QString &id, const QVariantMap &args, QWidget *parent) const;
 
@@ -163,7 +172,7 @@ private:
     QVector<DialogContribution> m_dialogs;
     QVector<SettingsContribution> m_settings;
     QVector<QPair<QString, std::function<void(const ActionContext &)>>> m_actions;
-    QVector<std::function<void(QWidget *)>> m_windowHooks;
+    QVector<ModuleHook> m_moduleHooks;
 };
 
 class IComponent

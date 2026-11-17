@@ -1,7 +1,10 @@
 #include "DataSourceModule.h"
 #include "DataSourceSession.h"
 #include "ModuleBridge.h"
-#include "MainWindow.h"
+#include "ModuleContext.h"
+#include "LogManager.h"
+#include "SessionManager.h"
+#include "DockManager.h"
 #include "PropertyManager.h"
 #include "ThemeManager.h"
 #include "DataSourceDock.h"
@@ -65,8 +68,6 @@ using ps::data_source::TransformRecipe;
 #include <QVBoxLayout>
 
 
-class MainWindow;
-
 class ChannelTree : public QTreeWidget
 {
 public:
@@ -89,10 +90,11 @@ protected:
     }
 };
 
-DataSourceSession::DataSourceSession(MainWindow *mw) : QWidget(mw), m_mw(mw)
+DataSourceSession::DataSourceSession(ps::runtime::ModuleContext &ctx)
+    : QWidget(ctx.window()), m_ctx(&ctx)
 {
-    m_mw->installEventFilter(this);
-    m_liveTimer = new QTimer(m_mw);
+    m_ctx->installEventFilter(this);
+    m_liveTimer = new QTimer(m_ctx->window());
     m_liveTimer->setInterval(30);
     connect(m_liveTimer, &QTimer::timeout, this, &DataSourceSession::pollLiveSources);
     m_liveTimer->start();
@@ -106,12 +108,12 @@ DataSourceSession::DataSourceSession(MainWindow *mw) : QWidget(mw), m_mw(mw)
 
 DataSourceSession::~DataSourceSession() = default;
 
-void DataSourceSession::log(const QString &text) { m_mw->logs().info(text); }
-void DataSourceSession::newPageForward() { ps::bridge::newPage(m_mw); }
-QVector<PlottingCanvas *> DataSourceSession::pageCanvasesForward() const { return ps::bridge::pageCanvases(m_mw); }
+void DataSourceSession::log(const QString &text) { m_ctx->logs().info(text); }
+void DataSourceSession::newPageForward() { ps::bridge::newPage(m_ctx); }
+QVector<PlottingCanvas *> DataSourceSession::pageCanvasesForward() const { return ps::bridge::pageCanvases(m_ctx); }
 void DataSourceSession::addTimeMarkerForward(double t, const QString &l, bool p) { addTimeMarker(t,l,p); }
-void DataSourceSession::refreshPropTree(PlottingCanvas *c) { ps::bridge::refreshPropTree(m_mw, c); }
-PlottingCanvas *DataSourceSession::currentCanvas() const { return ps::bridge::currentCanvas(m_mw); }
+void DataSourceSession::refreshPropTree(PlottingCanvas *c) { ps::bridge::refreshPropTree(m_ctx, c); }
+PlottingCanvas *DataSourceSession::currentCanvas() const { return ps::bridge::currentCanvas(m_ctx); }
 std::deque<ps::data_source::DataSource> &DataSourceSession::sources() { return m_sources; }
 void DataSourceSession::closeSources() { if (m_liveTimer) m_liveTimer->stop(); }
 
@@ -146,7 +148,7 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
             [this] { return !m_sources.empty(); },
             [this]() -> std::deque<DataSource> & { return m_sources; },
             [this](const QString &name) {
-                for (auto *c : ps::bridge::allCanvases(m_mw))
+                for (auto *c : ps::bridge::allCanvases(m_ctx))
                     ps::bridge::canvasRemoveChannel(c, name);
             },
             [this] { return m_srcMsgs; },
@@ -163,7 +165,7 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
             },
             [this](DataSource *src, const QString &name) {
                 src->config.alias = name;
-                for (auto *c : ps::bridge::allCanvases(m_mw))
+                for (auto *c : ps::bridge::allCanvases(m_ctx))
                     ps::bridge::canvasRenameSource(c, src->config.path, name);
                 persistSourceConfigsSoon();
             },
@@ -175,7 +177,7 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
             },
             [this](DataSource *src) { closeLiveSource(src); },
             [this](const QString &path) {
-                for (auto *c : ps::bridge::allCanvases(m_mw))
+                for (auto *c : ps::bridge::allCanvases(m_ctx))
                     ps::bridge::canvasRemoveChannelsFromSource(c, path);
             },
             [this](int id) { m_activeSource = id; },
@@ -213,8 +215,8 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
                     }
                 }
             },
-            [this](const QString &path) { m_mw->session().addRecentFile(path); },
-            [this](const QString &msg) { m_mw->statusBar()->showMessage(msg); },
+            [this](const QString &path) { m_ctx->session().addRecentFile(path); },
+            [this](const QString &msg) { m_ctx->showStatus(msg); },
             [this](DataSource *src) {
                 if (!src || src->config.id != m_activeSource) return;
                 const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -227,7 +229,7 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
                     ps::bridge::canvasFollowLatest(c);
                     ps::bridge::canvasNotifyActivated(c);
                 }
-                for (auto *c : ps::bridge::allCanvases(m_mw)) ps::bridge::canvasUpdate(c);
+                for (auto *c : ps::bridge::allCanvases(m_ctx)) ps::bridge::canvasUpdate(c);
                 if (src->plotted || !currentCanvas()) return;
                 QVector<const PsChannelInfo *> first;
                 auto continuous = [](const PsChannelInfo *ch) {
@@ -269,13 +271,13 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
                 m_srcChannels = src->channels;
                 m_srcParams = src->params;
                 m_srcMsgs = src->msgs;
-                for (auto *c : ps::bridge::allCanvases(m_mw))
+                for (auto *c : ps::bridge::allCanvases(m_ctx))
                     ps::bridge::canvasSetInputSource(c, src->config.id, src->config.path, src->config.alias, src->config.offsetSec);
                 renderSourceData();
             },
             [this](QWidget *row) { showSourceProps(row); },
             [this] { updateStatusChips(); },
-            [this] { return ps::bridge::plottedChannelColors(m_mw); },
+            [this] { return ps::bridge::plottedChannelColors(m_ctx); },
 
         },
         this);
@@ -308,9 +310,9 @@ void DataSourceSession::removeSourceRow(QWidget *row)
 void DataSourceSession::updateStatusChips()
 {
     if (!m_chipSource)
-        m_chipSource = m_mw->findChild<QAction *>(QStringLiteral("ps.chip.source"));
+        m_chipSource = m_ctx->window()->findChild<QAction *>(QStringLiteral("ps.chip.source"));
     if (!m_chipLod)
-        m_chipLod = m_mw->findChild<QAction *>(QStringLiteral("ps.chip.lod"));
+        m_chipLod = m_ctx->window()->findChild<QAction *>(QStringLiteral("ps.chip.lod"));
     if (!m_chipSource)
         return;
     int channels = 0;
@@ -426,7 +428,7 @@ void DataSourceSession::setSourceOffset(ps::data_source::DataSource *src, double
     if (!src)
         return;
     src->config.offsetSec = offsetSec;
-    for (auto *c : ps::bridge::allCanvases(m_mw))
+    for (auto *c : ps::bridge::allCanvases(m_ctx))
         ps::bridge::canvasSetSourceOffset(c, src->config.path, offsetSec, refit);
     if (auto *row = src->row)
         row->setToolTip(QStringLiteral("%1 · 显示偏移 %2 s").arg(src->config.alias).arg(offsetSec, 0, 'f', 3));
@@ -474,7 +476,7 @@ void DataSourceSession::setSourceBase(ps::data_source::DataSource *src)
     // 基准源的起点为 0，其余源用同一基准换算（PJ globalTimeReference 语义）
     for (ps::data_source::DataSource &s : m_sources)
         setSourceOffset(&s, a0, false);
-    for (auto *c : ps::bridge::allCanvases(m_mw))
+    for (auto *c : ps::bridge::allCanvases(m_ctx))
         for (const ps::data_source::DataSource &s : m_sources)
             ps::bridge::canvasSetSourceOffset(c, s.config.path, a0, true);
     log(QStringLiteral("时间基准：%1，起点归零，其余源同步换算").arg(src->config.alias));
@@ -629,7 +631,7 @@ void DataSourceSession::addTransformFor(const QString &channel)
         return;
     bool replaced = false;
     if (!result.inputName.isEmpty())
-        for (auto *c : ps::bridge::allCanvases(m_mw))
+        for (auto *c : ps::bridge::allCanvases(m_ctx))
             replaced = ps::bridge::canvasReplaceChannel(c, result.inputName, out.first()) || replaced;
     if (!replaced)
         for (const PsChannelInfo *ch : out)
@@ -779,7 +781,7 @@ ps::shell::PropertyContent DataSourceSession::channelContent(int srcId, int inde
 void DataSourceSession::showSourceProps(QWidget *row)
 {
     const int id = sourceIdForRow(row);
-    auto &pm = m_mw->properties();
+    auto &pm = m_ctx->properties();
     if (pm.hasNode(sourceNodeId(id)))
         pm.selectNode(sourceNodeId(id));
     else
@@ -797,7 +799,7 @@ void DataSourceSession::applySourceProp(int srcId, const QString &key, const QSt
         if (alias.isEmpty())
             return;
         src->config.alias = alias;
-        for (auto *c : ps::bridge::allCanvases(m_mw))
+        for (auto *c : ps::bridge::allCanvases(m_ctx))
             ps::bridge::canvasRenameSource(c, src->config.path, alias);
     }
     else if (key == QStringLiteral("时间偏移"))
@@ -812,7 +814,7 @@ void DataSourceSession::applySourceProp(int srcId, const QString &key, const QSt
 
 void DataSourceSession::refreshPropertyNodes()
 {
-    auto &pm = m_mw->properties();
+    auto &pm = m_ctx->properties();
     pm.registerNode(ps::shell::PropertyNode{QStringLiteral("src"), QString(), QStringLiteral("数据源"),
                                             QStringLiteral(":/icons/panel.svg"), {}, {}});
     pm.clearChildren(QStringLiteral("src"));
@@ -1047,7 +1049,7 @@ void DataSourceSession::onClose()
         m_liveTimer->stop();
     if (SettingsManager::instance().get(ps::settings::kRestoreLayout))
     {
-        const QString path = m_mw->session().layoutPath();
+        const QString path = m_ctx->session().layoutPath();
         saveLayoutTo(path.isEmpty() ? SessionManager::defaultLayoutPath() : path);
     }
 }
@@ -1060,18 +1062,18 @@ void DataSourceSession::saveLayoutTo(const QString &path)
     root[QStringLiteral("app")] = QStringLiteral("PlotScope");
     root[QStringLiteral("version")] = 1;
     root[QStringLiteral("geometry")] = QString::fromLatin1(saveGeometry().toBase64());
-    root[QStringLiteral("docks")] = QString::fromLatin1(m_mw->docks().saveLayout().toBase64());
-    root[QStringLiteral("current")] = m_mw->pages()->currentIndex();
+    root[QStringLiteral("docks")] = QString::fromLatin1(m_ctx->docks().saveLayout().toBase64());
+    root[QStringLiteral("current")] = m_ctx->pages()->currentIndex();
 
     QJsonArray pages;
     QJsonArray titles;
-    const int last = m_mw->pages()->count() - 1;
-    for (int i = 0; i < m_mw->pages()->count(); ++i)
+    const int last = m_ctx->pages()->count() - 1;
+    for (int i = 0; i < m_ctx->pages()->count(); ++i)
     {
-        if (i == last && m_mw->pages()->tabText(i) == QStringLiteral("＋"))
+        if (i == last && m_ctx->pages()->tabText(i) == QStringLiteral("＋"))
             continue;
-        pages.append(ps::bridge::pageState(m_mw, m_mw->pages()->widget(i)));
-        titles.append(m_mw->pages()->tabText(i));
+        pages.append(ps::bridge::pageState(m_ctx, m_ctx->pages()->widget(i)));
+        titles.append(m_ctx->pages()->tabText(i));
     }
     root[QStringLiteral("pages")] = pages;
     root[QStringLiteral("titles")] = titles;
@@ -1141,7 +1143,7 @@ void DataSourceSession::saveLayoutTo(const QString &path)
     }
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.close();
-    m_mw->session().setLayoutPath(path);
+    m_ctx->session().setLayoutPath(path);
     log(QStringLiteral("已保存布局：%1").arg(path));
 }
 
@@ -1278,21 +1280,21 @@ void DataSourceSession::importLayoutFrom(const QString &path)
         refreshActiveSource();
 
     // 清空页签时屏蔽 currentChanged：末尾的 ＋ 触发 newPage 会和删除循环互踢
-    m_mw->pages()->blockSignals(true);
-    while (m_mw->pages()->count() > 0)
-        m_mw->pages()->removeTab(0);
-    m_mw->pages()->blockSignals(false);
+    m_ctx->pages()->blockSignals(true);
+    while (m_ctx->pages()->count() > 0)
+        m_ctx->pages()->removeTab(0);
+    m_ctx->pages()->blockSignals(false);
 
     const QJsonArray pages = root.value(QStringLiteral("pages")).toArray();
     const QJsonArray titles = root.value(QStringLiteral("titles")).toArray();
     for (int i = 0; i < pages.size(); ++i)
-        m_mw->pages()->addTab(ps::bridge::buildPage(m_mw, pages[i].toObject()),
+        m_ctx->pages()->addTab(ps::bridge::buildPage(m_ctx, pages[i].toObject()),
                         titles.at(i).toString(QStringLiteral("页 %1").arg(i + 1)));
 
-    const int plusIdx = m_mw->pages()->count();
-    m_mw->pages()->addTab(new QWidget(m_mw->pages()), QStringLiteral("＋"));
-    m_mw->pages()->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
-    m_mw->pages()->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
+    const int plusIdx = m_ctx->pages()->count();
+    m_ctx->pages()->addTab(new QWidget(m_ctx->pages()), QStringLiteral("＋"));
+    m_ctx->pages()->tabBar()->setTabToolTip(plusIdx, QStringLiteral("新建页"));
+    m_ctx->pages()->tabBar()->setTabButton(plusIdx, QTabBar::RightSide, nullptr);
 
     const QByteArray geo = QByteArray::fromBase64(root.value(QStringLiteral("geometry")).toString().toLatin1());
     if (!geo.isEmpty())
@@ -1300,10 +1302,10 @@ void DataSourceSession::importLayoutFrom(const QString &path)
     const QByteArray docks = QByteArray::fromBase64(root.value(QStringLiteral("docks")).toString().toLatin1());
     if (!docks.isEmpty())
     {
-        m_mw->docks().restoreLayout(docks);
+        m_ctx->docks().restoreLayout(docks);
         // 旧布局常把日志区拉到 150+，空白挤占画布；恢复后统一收到 96。
         if (auto *logDock = findChild<QDockWidget *>(QStringLiteral("dock.log")))
-            m_mw->resizeDocks({logDock}, {96}, Qt::Vertical);
+            m_ctx->resizeDocks({logDock}, {96}, Qt::Vertical);
     }
 
     if (m_activeSource >= 0)
@@ -1321,13 +1323,13 @@ void DataSourceSession::importLayoutFrom(const QString &path)
     }
     std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
               [](const ps::TimeBookmark &a, const ps::TimeBookmark &b) { return a.t < b.t; });
-    ps::bridge::applyTimeMarkers(m_mw);
+    ps::bridge::applyTimeMarkers(m_ctx);
 
     const int cur = root.value(QStringLiteral("current")).toInt(0);
-    if (cur >= 0 && cur < m_mw->pages()->count() - 1)
-        m_mw->pages()->setCurrentIndex(cur);
+    if (cur >= 0 && cur < m_ctx->pages()->count() - 1)
+        m_ctx->pages()->setCurrentIndex(cur);
 
-    m_mw->session().setLayoutPath(path);
+    m_ctx->session().setLayoutPath(path);
     log(QStringLiteral("已导入布局：%1").arg(path));
 }
 
@@ -1358,15 +1360,15 @@ void DataSourceSession::addTimeMarker(double t, const QString &label, bool promp
         if (qAbs(mk.t - t) < 1e-4)
         {
             mk.label = text;
-            ps::bridge::applyTimeMarkers(m_mw);
-            m_mw->logs().info(QStringLiteral("更新时间书签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
+            ps::bridge::applyTimeMarkers(m_ctx);
+            m_ctx->logs().info(QStringLiteral("更新时间书签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
             return;
         }
     m_timeMarkers.append({QStringLiteral("bm-") + QUuid::createUuid().toString(QUuid::WithoutBraces),
                           t, text});
     std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
               [](const ps::TimeBookmark &a, const ps::TimeBookmark &b) { return a.t < b.t; });
-    ps::bridge::applyTimeMarkers(m_mw);
+    ps::bridge::applyTimeMarkers(m_ctx);
     log(QStringLiteral("添加时间书签：%1 @ %2 s").arg(text).arg(t, 0, 'f', 3));
 }
 
@@ -1378,8 +1380,8 @@ void DataSourceSession::removeTimeMarker(const QString &id)
             continue;
         const QString label = m_timeMarkers.at(i).label;
         m_timeMarkers.removeAt(i);
-        ps::bridge::applyTimeMarkers(m_mw);
-        m_mw->logs().info(QStringLiteral("删除时间书签：%1").arg(label));
+        ps::bridge::applyTimeMarkers(m_ctx);
+        m_ctx->logs().info(QStringLiteral("删除时间书签：%1").arg(label));
         return;
     }
 }
@@ -1394,8 +1396,8 @@ void DataSourceSession::renameTimeMarker(const QString &id, const QString &label
         if (mk.id != id)
             continue;
         mk.label = text;
-        ps::bridge::applyTimeMarkers(m_mw);
-        m_mw->logs().info(QStringLiteral("重命名时间书签：%1").arg(text));
+        ps::bridge::applyTimeMarkers(m_ctx);
+        m_ctx->logs().info(QStringLiteral("重命名时间书签：%1").arg(text));
         return;
     }
 }
@@ -1415,6 +1417,6 @@ void DataSourceSession::moveTimeMarker(const QString &id, double to)
     m_timeMarkers[index].t = to;
     std::sort(m_timeMarkers.begin(), m_timeMarkers.end(),
               [](const ps::TimeBookmark &a, const ps::TimeBookmark &b) { return a.t < b.t; });
-    ps::bridge::applyTimeMarkers(m_mw);
-    m_mw->logs().info(QStringLiteral("移动时间书签：%1 @ %2 s").arg(label).arg(to, 0, 'f', 3));
+    ps::bridge::applyTimeMarkers(m_ctx);
+    m_ctx->logs().info(QStringLiteral("移动时间书签：%1 @ %2 s").arg(label).arg(to, 0, 'f', 3));
 }

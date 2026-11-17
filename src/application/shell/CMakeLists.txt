@@ -37,6 +37,7 @@ add_library(ps_application_shell OBJECT
   ThemeManager.cpp
   PropertyManager.h
   PropertyManager.cpp
+  ModuleContext.cpp
 )
 set_target_properties(ps_application_shell PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_shell PUBLIC
@@ -47,6 +48,7 @@ target_include_directories(ps_application_shell PUBLIC
 )
 target_link_libraries(ps_application_shell PUBLIC
   ps_host
+  ps_runtime
   ps_kernel
   Qt6::Widgets
   Qt6::Network

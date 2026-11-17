@@ -6,19 +6,19 @@
 #include <QVector>
 #include "TimeBookmark.h"
 
-class MainWindow;
+namespace ps::runtime { struct ModuleContext; }
 struct PsChannelInfo;
 namespace ps::data_source { struct DataSource; }
 namespace ps::components {
-const QVector<const PsChannelInfo *> &dataSourceChannels(MainWindow *mw);
-int dataSourceActiveId(MainWindow *mw);
-QString dataSourceActivePath(MainWindow *mw);
-QString dataSourceActiveFormat(MainWindow *mw);
-QVector<ps::TimeBookmark> &dataSourceTimeMarkers(MainWindow *mw);
-void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
-void removeDataSourceTimeMarker(MainWindow *mw, const QString &id);
-void moveDataSourceTimeMarker(MainWindow *mw, const QString &id, double to);
-void renameDataSourceTimeMarker(MainWindow *mw, const QString &id, const QString &label);
+const QVector<const PsChannelInfo *> &dataSourceChannels(ps::runtime::ModuleContext *ctx);
+int dataSourceActiveId(ps::runtime::ModuleContext *ctx);
+QString dataSourceActivePath(ps::runtime::ModuleContext *ctx);
+QString dataSourceActiveFormat(ps::runtime::ModuleContext *ctx);
+QVector<ps::TimeBookmark> &dataSourceTimeMarkers(ps::runtime::ModuleContext *ctx);
+void addDataSourceTimeMarker(ps::runtime::ModuleContext *ctx, double t, const QString &label, bool prompt);
+void removeDataSourceTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id);
+void moveDataSourceTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id, double to);
+void renameDataSourceTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id, const QString &label);
 }
 
 namespace ps::components

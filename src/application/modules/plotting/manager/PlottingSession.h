@@ -10,7 +10,7 @@
 #include <QWidget>
 #include <Qt>
 
-class MainWindow;
+namespace ps::runtime { struct ModuleContext; }
 namespace ps::shell { struct PropertyContent; }
 namespace ps::plotting { class PlottingTabs; }
 class PlottingCanvas;
@@ -22,7 +22,7 @@ struct PsChannelInfo;
 class PlottingSession : public QWidget
 {
 public:
-    explicit PlottingSession(MainWindow *mw);
+    explicit PlottingSession(ps::runtime::ModuleContext &ctx);
     ~PlottingSession() override;
     void createPages();
     void refreshPropTree(PlottingCanvas *active = nullptr);
@@ -65,7 +65,7 @@ public:
     bool eventFilter(QObject *obj, QEvent *ev) override;
 
 private:
-    MainWindow *m_mw = nullptr;
+    ps::runtime::ModuleContext *m_ctx = nullptr;
     ps::plotting::PlottingTabs *m_plotWorkspace = nullptr;
     PlottingCanvas *m_propCanvas = nullptr;
     int m_propSeriesIndex = -1;
@@ -80,4 +80,4 @@ private:
     QSize m_sizeBeforeMax;
 };
 
-PlottingSession *plottingSession(MainWindow *mw);
+PlottingSession *plottingSession(ps::runtime::ModuleContext &ctx);

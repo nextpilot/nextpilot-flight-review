@@ -1,6 +1,7 @@
 #include "PlottingSession.h"
-#include "MainWindow.h"
+#include "ModuleContext.h"
 #include "ModuleBridge.h"
+#include "LogManager.h"
 #include "PropertyManager.h"
 #include "PlottingCanvas.h"
 #include "PlottingLayout.h"
@@ -101,20 +102,21 @@ void PlottingSession::addChannels(const QVector<const PsChannelInfo *> &channels
             c->addChannel(ch);
 }
 
-PlottingSession::PlottingSession(MainWindow *mw) : QWidget(mw), m_mw(mw)
+PlottingSession::PlottingSession(ps::runtime::ModuleContext &ctx)
+    : QWidget(ctx.window()), m_ctx(&ctx)
 {
     registerCommands();
 }
 PlottingSession::~PlottingSession() = default;
-void PlottingSession::log(const QString &text) { m_mw->logs().info(text); }
+void PlottingSession::log(const QString &text) { m_ctx->logs().info(text); }
 
 void PlottingSession::createPages()
 {
     m_plotWorkspace = new ps::plotting::PlottingTabs(
         [](QWidget *parent) { return new PlottingCanvas(parent); }, this);
-    m_mw->setPageHost(m_plotWorkspace);
+    m_ctx->setPageHost(m_plotWorkspace);
     m_plotWorkspace->createDefaultPages();
-    m_plotWorkspace->setTimeMarkers(ps::bridge::timeMarkers(m_mw));
+    m_plotWorkspace->setTimeMarkers(ps::bridge::timeMarkers(m_ctx));
 
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasActivated, this,
             [this](PlottingCanvas *c) { refreshPropTree(c); });
@@ -126,23 +128,23 @@ void PlottingSession::createPages()
             });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::addChannelRequested, this,
             [this](PlottingCanvas *c) {
-                if (ps::bridge::sourceChannels(m_mw).isEmpty())
+                if (ps::bridge::sourceChannels(m_ctx).isEmpty())
                 {
                     log(QStringLiteral("先加载数据文件，再添加曲线"));
                     return;
                 }
                 QStringList names;
-                for (const PsChannelInfo *ch : ps::bridge::sourceChannels(m_mw))
+                for (const PsChannelInfo *ch : ps::bridge::sourceChannels(m_ctx))
                 {
                     const QString n = QString::fromUtf8(ch->name);
                     names.append(ch->unit ? QStringLiteral("%1 [%2]").arg(n, QString::fromUtf8(ch->unit)) : n);
                 }
                 bool ok = false;
-                const QString pick = QInputDialog::getItem(m_mw, QStringLiteral("添加曲线"),
+                const QString pick = QInputDialog::getItem(m_ctx->window(), QStringLiteral("添加曲线"),
                                                            QStringLiteral("通道"), names, 0, false, &ok);
                 if (ok && !pick.isEmpty())
                 {
-                    c->addChannel(ps::bridge::sourceChannels(m_mw).value(names.indexOf(pick)));
+                    c->addChannel(ps::bridge::sourceChannels(m_ctx).value(names.indexOf(pick)));
                     log(QStringLiteral("添加曲线：%1").arg(pick));
                 }
             });
@@ -151,33 +153,33 @@ void PlottingSession::createPages()
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::seriesSelected, this,
             [this](PlottingCanvas *c, int index) { showSeriesProps(c, index); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRequested, this,
-            [this](double t) { ps::bridge::addTimeMarker(m_mw, t, QString(), true); });
+            [this](double t) { ps::bridge::addTimeMarker(m_ctx, t, QString(), true); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRemoveRequested, this,
-            [this](const QString &id) { ps::bridge::removeTimeMarker(m_mw, id); });
+            [this](const QString &id) { ps::bridge::removeTimeMarker(m_ctx, id); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerMoveRequested, this,
-            [this](const QString &id, double to) { ps::bridge::moveTimeMarker(m_mw, id, to); });
+            [this](const QString &id, double to) { ps::bridge::moveTimeMarker(m_ctx, id, to); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::markerRenameRequested, this,
-            [this](const QString &id, const QString &label) { ps::bridge::renameTimeMarker(m_mw, id, label); });
+            [this](const QString &id, const QString &label) { ps::bridge::renameTimeMarker(m_ctx, id, label); });
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasRemoveRequested, this,
             [this](PlottingCanvas *c) { removeCanvas(c); });
 
-    connect(m_mw->pages(), &QTabWidget::tabCloseRequested, this, [this](int idx) {
-        if (m_mw->pages()->count() > 2 && !m_mw->pages()->tabText(idx).isEmpty())
-            m_mw->pages()->removeTab(idx);
+    connect(m_ctx->pages(), &QTabWidget::tabCloseRequested, this, [this](int idx) {
+        if (m_ctx->pages()->count() > 2 && !m_ctx->pages()->tabText(idx).isEmpty())
+            m_ctx->pages()->removeTab(idx);
     });
 
-    connect(m_mw->pages(), &QTabWidget::currentChanged, this, [this](int i) {
+    connect(m_ctx->pages(), &QTabWidget::currentChanged, this, [this](int i) {
         if (m_maxedCanvas)
             restoreCanvasMaximize();
         refreshPropTree(currentCanvas());
-        if (i >= 0 && i == m_mw->pages()->count() - 1 && m_mw->pages()->tabText(i) == QStringLiteral("＋"))
+        if (i >= 0 && i == m_ctx->pages()->count() - 1 && m_ctx->pages()->tabText(i) == QStringLiteral("＋"))
             newPage();
     });
 }
 
 void PlottingSession::applyCanvasGrid(int rows, int cols)
 {
-    QWidget *page = m_mw->pages() ? m_mw->pages()->currentWidget() : nullptr;
+    QWidget *page = m_ctx->pages() ? m_ctx->pages()->currentWidget() : nullptr;
     if (!page || dynamic_cast<QLabel *>(page))
     {
         log(QStringLiteral("当前页不是绘图页"));
@@ -193,14 +195,14 @@ void PlottingSession::applyCanvasGrid(int rows, int cols)
     if (!layout)
     {
         // 兼容旧的单画布/裸 QSplitter 页，先统一成可滚动的页容器。
-        const int idx = m_mw->pages()->currentIndex();
-        const QString tabText = m_mw->pages()->tabText(idx);
-        m_mw->pages()->removeTab(idx);
-        auto *host = new PlottingPage(m_mw->pages());
+        const int idx = m_ctx->pages()->currentIndex();
+        const QString tabText = m_ctx->pages()->tabText(idx);
+        m_ctx->pages()->removeTab(idx);
+        auto *host = new PlottingPage(m_ctx->pages());
         layout = host->layout();
         layout->addWidget(page);
-        m_mw->pages()->insertTab(idx, host, tabText);
-        m_mw->pages()->setCurrentIndex(idx);
+        m_ctx->pages()->insertTab(idx, host, tabText);
+        m_ctx->pages()->setCurrentIndex(idx);
     }
     // m×n：先删空白画布，再按「列数固定、行数只增不减到 m」补格；
     // 空出来的格子补真空白画布，谁都能往里拖通道。
@@ -243,7 +245,7 @@ void PlottingSession::toggleCanvasMaximize(PlottingCanvas *c)
     }
     if (m_maxedCanvas)
         restoreCanvasMaximize();
-    if (!c || !m_mw->pages() || !m_mw->pages()->isAncestorOf(c))
+    if (!c || !m_ctx->pages() || !m_ctx->pages()->isAncestorOf(c))
         return;
     m_sizeBeforeMax = size();
 
@@ -277,7 +279,7 @@ void PlottingSession::toggleCanvasMaximize(PlottingCanvas *c)
 
 void PlottingSession::splitCanvas(PlottingCanvas *target, Qt::Orientation orientation)
 {
-    QWidget *page = m_mw->pages() ? m_mw->pages()->currentWidget() : nullptr;
+    QWidget *page = m_ctx->pages() ? m_ctx->pages()->currentWidget() : nullptr;
     if (!page || !target || dynamic_cast<QLabel *>(page))
         return;
 
@@ -285,18 +287,18 @@ void PlottingSession::splitCanvas(PlottingCanvas *target, Qt::Orientation orient
     if (!layout)
     {
         // 兼容旧页：把原来的画布/splitter 整棵挂到一个 PlottingLayout 下，结构不丢。
-        const int idx = m_mw->pages()->currentIndex();
-        const QString tabText = m_mw->pages()->tabText(idx);
-        m_mw->pages()->removeTab(idx);
-        auto *host = new PlottingPage(m_mw->pages());
+        const int idx = m_ctx->pages()->currentIndex();
+        const QString tabText = m_ctx->pages()->tabText(idx);
+        m_ctx->pages()->removeTab(idx);
+        auto *host = new PlottingPage(m_ctx->pages());
         layout = host->layout();
         layout->addWidget(page);
-        m_mw->pages()->insertTab(idx, host, tabText);
-        m_mw->pages()->setCurrentIndex(idx);
+        m_ctx->pages()->insertTab(idx, host, tabText);
+        m_ctx->pages()->setCurrentIndex(idx);
         page = host;
     }
 
-    auto *c = new PlottingCanvas(m_mw->pages());
+    auto *c = new PlottingCanvas(m_ctx->pages());
     c->clearChannels();
     c->setTitle(QStringLiteral("新画布 · plot"));
     c->setTimeRange(target->t0(), target->t1());
@@ -379,7 +381,7 @@ void PlottingSession::createPlotPage(const QString &kind)
         return;
     }
 
-    auto *host = new PlottingPage(m_mw->pages());
+    auto *host = new PlottingPage(m_ctx->pages());
     auto *layout = host->layout();
     auto *c = new PlottingCanvas(layout);
     c->clearChannels();
@@ -403,15 +405,15 @@ void PlottingSession::createPlotPage(const QString &kind)
         for (const PlottingCanvas::SampleSeries &s : seed->sampleSeries())
             c->addGeneratedSeries(s.name, s.time, s.value);
     m_plotWorkspace->attachCanvas(c);
-    const int plusIdx = m_mw->pages()->count() - 1;
-    m_mw->pages()->insertTab(plusIdx, host, label);
-    m_mw->pages()->setCurrentWidget(host);
+    const int plusIdx = m_ctx->pages()->count() - 1;
+    m_ctx->pages()->insertTab(plusIdx, host, label);
+    m_ctx->pages()->setCurrentWidget(host);
     log(QStringLiteral("新建图页：%1").arg(label));
 }
 
 PlottingCanvas *PlottingSession::makeBlankCanvas()
 {
-    auto *c = new PlottingCanvas(m_mw->pages());
+    auto *c = new PlottingCanvas(m_ctx->pages());
     c->clearChannels();
     c->setTitle(QStringLiteral("空白画布"));
     m_plotWorkspace->attachCanvas(c);
@@ -425,7 +427,7 @@ bool PlottingSession::canvasHasData(PlottingCanvas *c)
 
 void PlottingSession::addCanvasToPage()
 {
-    QWidget *page = m_mw->pages()->currentWidget();
+    QWidget *page = m_ctx->pages()->currentWidget();
     if (qobject_cast<QLabel *>(page))
     {
         log(QStringLiteral("该页不是绘图页，先切到绘图页再加画布"));
@@ -450,7 +452,7 @@ void PlottingSession::addCanvasToPage()
     }
     if (layout)
     {
-        auto *c = new PlottingCanvas(m_mw->pages());
+        auto *c = new PlottingCanvas(m_ctx->pages());
         c->clearChannels();
         c->setTitle(QStringLiteral("新画布 · plot"));
         c->setTimeRange(target->t0(), target->t1());
@@ -584,10 +586,10 @@ QWidget *PlottingSession::buildNode(const QJsonObject &o, bool top)
     const QString type = o.value(QStringLiteral("type")).toString();
     if (type == QLatin1String("canvas"))
     {
-        auto *c = new PlottingCanvas(m_mw->pages());
+        auto *c = new PlottingCanvas(m_ctx->pages());
         c->clearChannels();
         QHash<QString, const PsChannelInfo *> pool;
-        for (const ps::bridge::SourceView &src : ps::bridge::sourceViews(m_mw))
+        for (const ps::bridge::SourceView &src : ps::bridge::sourceViews(m_ctx))
         {
             for (const PsChannelInfo *ch : src.channels)
             {
@@ -607,8 +609,8 @@ QWidget *PlottingSession::buildNode(const QJsonObject &o, bool top)
         for (const QJsonValue &v : o.value(QStringLiteral("children")).toArray())
             if (auto *c = qobject_cast<PlottingCanvas *>(buildNode(v.toObject(), false)))
                 canvases.append(c);
-        auto *host = top ? new PlottingPage(m_mw->pages()) : nullptr;
-        auto *layout = host ? host->layout() : new PlottingLayout(Qt::Vertical, m_mw->pages());
+        auto *host = top ? new PlottingPage(m_ctx->pages()) : nullptr;
+        auto *layout = host ? host->layout() : new PlottingLayout(Qt::Vertical, m_ctx->pages());
         for (PlottingCanvas *c : canvases)
             layout->addCanvas(c);
         layout->setGrid(o.value(QStringLiteral("rows")).toInt(1), o.value(QStringLiteral("cols")).toInt(1));
@@ -618,8 +620,8 @@ QWidget *PlottingSession::buildNode(const QJsonObject &o, bool top)
     {
         const Qt::Orientation ori =
             o.value(QStringLiteral("vertical")).toBool(true) ? Qt::Vertical : Qt::Horizontal;
-        auto *host = (top && ori == Qt::Vertical) ? new PlottingPage(m_mw->pages()) : nullptr;
-        auto *layout = host ? host->layout() : new PlottingLayout(ori, m_mw->pages());
+        auto *host = (top && ori == Qt::Vertical) ? new PlottingPage(m_ctx->pages()) : nullptr;
+        auto *layout = host ? host->layout() : new PlottingLayout(ori, m_ctx->pages());
         for (const QJsonValue &v : o.value(QStringLiteral("children")).toArray())
             layout->addWidget(buildNode(v.toObject(), false));
         QList<int> sizes;
@@ -629,21 +631,21 @@ QWidget *PlottingSession::buildNode(const QJsonObject &o, bool top)
             layout->setSizes(sizes);
         return host ? static_cast<QWidget *>(host) : static_cast<QWidget *>(layout);
     }
-    return new QLabel(o.value(QStringLiteral("text")).toString(), m_mw->pages());
+    return new QLabel(o.value(QStringLiteral("text")).toString(), m_ctx->pages());
 }
 
 void PlottingSession::refreshPropTree(PlottingCanvas *active)
 {
     QWidget *page = active ? pageForCanvas(active)
-                           : (m_mw->pages() ? m_mw->pages()->currentWidget() : nullptr);
-    if (!page || !m_mw->pages() || page == m_mw->pages()->widget(m_mw->pages()->count() - 1))
+                           : (m_ctx->pages() ? m_ctx->pages()->currentWidget() : nullptr);
+    if (!page || !m_ctx->pages() || page == m_ctx->pages()->widget(m_ctx->pages()->count() - 1))
         return;
 
-    auto &pm = m_mw->properties();
+    auto &pm = m_ctx->properties();
     pm.registerNode(ps::shell::PropertyNode{QStringLiteral("plot"), QString(), QStringLiteral("绘图"),
                                             QStringLiteral(":/icons/panel.svg"), {}, {}});
     pm.clearChildren(QStringLiteral("plot"));
-    const QString pageTitle = m_mw->pages()->tabText(m_mw->pages()->indexOf(page));
+    const QString pageTitle = m_ctx->pages()->tabText(m_ctx->pages()->indexOf(page));
     pm.registerNode(ps::shell::PropertyNode{QStringLiteral("plot.page"), QStringLiteral("plot"), pageTitle,
                                             QStringLiteral(":/icons/panel.svg"), {}, {}});
 
@@ -695,22 +697,22 @@ QString PlottingSession::canvasNodeId(PlottingCanvas *c) const
 void PlottingSession::applyTimeMarkers()
 {
     if (m_plotWorkspace)
-        m_plotWorkspace->setTimeMarkers(ps::bridge::timeMarkers(m_mw));
+        m_plotWorkspace->setTimeMarkers(ps::bridge::timeMarkers(m_ctx));
 }
 
 
 void PlottingSession::newPage()
 {
-    auto *host = new PlottingPage(m_mw->pages());
+    auto *host = new PlottingPage(m_ctx->pages());
     auto *layout = host->layout();
     auto *c = new PlottingCanvas(layout);
     c->clearChannels();
     c->setTitle(QStringLiteral("新页 · 画布"));
     layout->addCanvas(c);
     m_plotWorkspace->attachCanvas(c);
-    const int plusIdx = m_mw->pages()->count() - 1;
-    m_mw->pages()->insertTab(plusIdx, host, QStringLiteral("新页"));
-    m_mw->pages()->setCurrentWidget(host);
+    const int plusIdx = m_ctx->pages()->count() - 1;
+    m_ctx->pages()->insertTab(plusIdx, host, QStringLiteral("新页"));
+    m_ctx->pages()->setCurrentWidget(host);
     refreshPropTree(c);
     log(QStringLiteral("新建页"));
 }
@@ -741,11 +743,11 @@ void PlottingSession::restoreCanvasMaximize()
 
 QWidget *PlottingSession::pageForCanvas(PlottingCanvas *c) const
 {
-    if (!m_mw->pages() || !c)
+    if (!m_ctx->pages() || !c)
         return nullptr;
-    for (int i = 0; i < m_mw->pages()->count(); ++i)
+    for (int i = 0; i < m_ctx->pages()->count(); ++i)
     {
-        QWidget *w = m_mw->pages()->widget(i);
+        QWidget *w = m_ctx->pages()->widget(i);
         if (w && (w == c || w->isAncestorOf(c)))
             return w;
     }
@@ -754,7 +756,7 @@ QWidget *PlottingSession::pageForCanvas(PlottingCanvas *c) const
 
 QVector<PlottingCanvas *> PlottingSession::pageCanvases() const
 {
-    return PlottingLayout::collectCanvases(m_mw->pages() ? m_mw->pages()->currentWidget() : nullptr);
+    return PlottingLayout::collectCanvases(m_ctx->pages() ? m_ctx->pages()->currentWidget() : nullptr);
 }
 
 PlottingCanvas *PlottingSession::currentCanvas() const
@@ -1120,7 +1122,7 @@ void PlottingSession::editSeriesProps(PlottingCanvas *c, int index)
     QString alias;
     const int sid = st.value(QStringLiteral("srcId")).toInt(-1);
     const QString path = st.value(QStringLiteral("srcPath")).toString();
-    for (const ps::bridge::SourceView &src : ps::bridge::sourceViews(m_mw))
+    for (const ps::bridge::SourceView &src : ps::bridge::sourceViews(m_ctx))
         if (src.id == sid || (!path.isEmpty() && src.path == path))
         {
             srcId = src.id;
@@ -1276,19 +1278,19 @@ void PlottingSession::setPropRows(const QString &object, const QVector<QPair<QSt
     content.rows = rows;
     content.editable = editable;
     content.kind = kind;
-    m_mw->properties().showContent(content);
+    m_ctx->properties().showContent(content);
 }
 
 ps::shell::PropertyContent PlottingSession::axesContent(PlottingCanvas *c)
 {
     showAxesProps(c);
-    return m_mw->properties().currentContent();
+    return m_ctx->properties().currentContent();
 }
 
 ps::shell::PropertyContent PlottingSession::seriesContent(PlottingCanvas *c, int index)
 {
     showSeriesProps(c, index);
-    return m_mw->properties().currentContent();
+    return m_ctx->properties().currentContent();
 }
 
 namespace
@@ -1459,12 +1461,12 @@ bool PlottingSession::eventFilter(QObject *obj, QEvent *ev)
 void PlottingSession::reloadCanvasSettings() { for (PlottingCanvas *c : findChildren<PlottingCanvas *>()) c->reloadDisplaySettings(); }
 
 
-PlottingSession *plottingSession(MainWindow *mw)
+PlottingSession *plottingSession(ps::runtime::ModuleContext &ctx)
 {
-    auto *existing = mw->findChild<QObject *>(QStringLiteral("ps.plottingSession"));
+    auto *existing = ctx.window()->findChild<QObject *>(QStringLiteral("ps.plottingSession"));
     if (existing)
         return static_cast<PlottingSession *>(existing);
-    auto *c = new PlottingSession(mw);
+    auto *c = new PlottingSession(ctx);
     c->setObjectName(QStringLiteral("ps.plottingSession"));
     return c;
 }

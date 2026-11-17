@@ -7,7 +7,7 @@
 #include "DataSourceSession.h"
 #include "SettingsManager.h"
 #include "CommandManager.h"
-#include "MainWindow.h"
+#include "ModuleContext.h"
 #include "SARibbonGallery.h"
 #include "SARibbonGalleryGroup.h"
 
@@ -53,13 +53,13 @@ void registerDataSourceContributions(Registry &registry)
                                       Qt::LeftDockWidgetArea, true, 0,
                                       QStringLiteral(":/icons/datasource.svg"),
                                       [](QWidget *parent) -> QWidget * {
-                                          auto *mw = qobject_cast<MainWindow *>(parent);
-                                          return mw ? dataSourceSession(mw)->createDataSourcePanel(parent) : nullptr;
+                                          auto *ctx = ps::runtime::ModuleContext::fromWidget(parent);
+                                          return ctx ? dataSourceSession(*ctx)->createDataSourcePanel(parent) : nullptr;
                                       },
                                       [](QWidget *parent) {
-                                          auto *mw = qobject_cast<MainWindow *>(parent);
-                                          auto *dock = mw ? mw->findChild<QDockWidget *>(QStringLiteral("dock.src")) : nullptr;
-                                          if (dock) mw->resizeDocks({dock}, {470}, Qt::Vertical);
+                                          auto *ctx = ps::runtime::ModuleContext::fromWidget(parent);
+                                          auto *dock = ctx ? ctx->findDock(QStringLiteral("dock.src")) : nullptr;
+                                          if (dock) ctx->resizeDocks({dock}, {470}, Qt::Vertical);
                                       }});
 
     registry.addDock(DockContribution{QStringLiteral("dock.protocol"), QStringLiteral("协议检查"),
@@ -79,10 +79,13 @@ void registerDataSourceContributions(Registry &registry)
          {QStringLiteral("来源"), {},
              [](QWidget *p) {
                  auto *panel = static_cast<SARibbonPanel *>(p);
-                 auto *mw = qobject_cast<MainWindow *>(panel->window());
-                 auto openFile = [mw](const DataSourceEntry &e) {
-                     const QStringList fs = QFileDialog::getOpenFileNames(mw, e.label, {}, e.filter.isEmpty() ? QStringLiteral("全部 (*)") : e.filter);
-                     for (const QString &f : fs) dataSourceSession(mw)->openPath(f);
+                 auto *ctx = ps::runtime::ModuleContext::fromWidget(panel->window());
+                 if (!ctx)
+                     return;
+                 QWidget *mw = ctx->window();
+                 auto openFile = [ctx](const DataSourceEntry &e) {
+                     const QStringList fs = QFileDialog::getOpenFileNames(ctx->window(), e.label, {}, e.filter.isEmpty() ? QStringLiteral("全部 (*)") : e.filter);
+                     for (const QString &f : fs) dataSourceSession(*ctx)->openPath(f);
                  };
                  // 图库：一行摆 4 个常用加载器，框内箭头弹出全量列表，
                  // 外观和绘图 ribbon 的图表类型图库同一个组件
@@ -91,7 +94,7 @@ void registerDataSourceContributions(Registry &registry)
                  {
                      auto *a = new QAction(loaderIcon(e), e.label, panel);
                      a->setToolTip(e.label + (e.filter.isEmpty() ? QString() : QStringLiteral("  ") + e.filter));
-                     QObject::connect(a, &QAction::triggered, mw, [openFile, e] { openFile(e); });
+                     QObject::connect(a, &QAction::triggered, panel, [openFile, e] { openFile(e); });
                      fileActs.append(a);
                  }
                  QList<QAction *> streamActs;
@@ -99,8 +102,8 @@ void registerDataSourceContributions(Registry &registry)
                  {
                      auto *a = new QAction(loaderIcon(e), e.label, panel);
                      a->setToolTip(e.label);
-                     QObject::connect(a, &QAction::triggered, mw,
-                                      [mw, id = e.id] { dataSourceSession(mw)->connectSource(id); });
+                     QObject::connect(a, &QAction::triggered, panel,
+                                      [ctx, id = e.id] { dataSourceSession(*ctx)->connectSource(id); });
                      streamActs.append(a);
                  }
                  auto *gallery = panel->addGallery();

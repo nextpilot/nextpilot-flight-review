@@ -11,7 +11,7 @@
 #include "TimeBookmark.h"
 #include "DataSourceModel.h"
 
-class MainWindow;
+namespace ps::runtime { struct ModuleContext; }
 class QDockWidget;
 class QTreeWidget;
 class QTabBar;
@@ -32,7 +32,7 @@ namespace ps::data_source { class DataSourceDock; struct DataSource; }
 class DataSourceSession : public QWidget
 {
 public:
-    explicit DataSourceSession(MainWindow *mw);
+    explicit DataSourceSession(ps::runtime::ModuleContext &ctx);
     ~DataSourceSession() override;
 
     QWidget *createDataSourcePanel(QWidget *parent);
@@ -108,7 +108,7 @@ private:
     void newPageForward();
     QVector<PlottingCanvas *> pageCanvasesForward() const;
 
-    MainWindow *m_mw = nullptr;
+    ps::runtime::ModuleContext *m_ctx = nullptr;
     ps::data_source::DataSourceDock *m_dataSourceDock = nullptr;
     QTreeWidget *m_srcTree = nullptr;
     QTabBar *m_srcTabs = nullptr;
@@ -138,4 +138,4 @@ private:
 };
 
 
-namespace ps::components { DataSourceSession *dataSourceSession(MainWindow *mw); }
+namespace ps::components { DataSourceSession *dataSourceSession(ps::runtime::ModuleContext &ctx); }

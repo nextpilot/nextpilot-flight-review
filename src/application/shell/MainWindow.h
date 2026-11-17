@@ -10,6 +10,7 @@
 #include "DockManager.h"
 #include "RibbonManager.h"
 #include "PropertyManager.h"
+#include "ModuleContext.h"
 
 class QTabWidget;
 
@@ -55,4 +56,6 @@ private:
     DockManager m_docks;
     ps::shell::PropertyManager m_props;
     RibbonManager m_ribbon;
+    ps::runtime::AppSession m_appSession;
+    ps::runtime::ModuleContext m_moduleContext;
 };

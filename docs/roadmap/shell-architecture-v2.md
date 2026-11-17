@@ -1,10 +1,12 @@
 # Shell 架构解耦方案 v2
 
-> 状态：方案待实施（2026-11-17）
+> 状态：Phase A 已实施；Phase B 及后续由 [PJ4 架构迁移方案](pj4-architecture-migration.md) 接替（2026-11-17）
 >
 > 范围：Phase A 先整理 `src/application/shell` 内部依赖；Phase B 起拆出受控 `Core`，`MainWindow` 只做 Shell。不改业务模块、不迁移扩展、不改命令 ID 和现有 UI 行为。
 >
 > 目标：`MainWindow` 不再同时扮演“窗口壳 + 服务中心”；进程级服务进入 `Core`，窗口级 UI 留在 Shell，文档级状态进入 `Workspace`。Manager 之间不反向依赖具体类型。
+>
+> 本文件保留 Phase A 的断环记录和 v2 讨论，不再作为后续实施目标。原 Phase B 的 `Core / Workspace / ProjectContext` 不采用；后续按 `ps_runtime + ModuleContext + ServiceRegistry` 落地，见新方案。
 >
 > 本文件是实施方案，不直接改变仓库硬约束。实施完成后再同步更新 `AGENTS.md` 和 `docs/develop/architecture.md`。
 

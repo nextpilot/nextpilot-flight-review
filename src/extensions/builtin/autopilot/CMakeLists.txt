@@ -33,6 +33,7 @@ set_target_properties(ps_autopilot_component PROPERTIES AUTOMOC ON)
 target_include_directories(ps_autopilot_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/shell
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/kernel/include

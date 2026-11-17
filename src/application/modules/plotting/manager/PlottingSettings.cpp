@@ -1,5 +1,6 @@
 #include "PlottingSettings.h"
-#include "MainWindow.h"
+#include "ModuleContext.h"
+#include "CommandManager.h"
 #include "SettingsManager.h"
 
 #include <QCheckBox>
@@ -10,8 +11,8 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 
-PlottingSettingsPage::PlottingSettingsPage(MainWindow *mw, QWidget *parent)
-    : QWidget(parent), m_mw(mw)
+PlottingSettingsPage::PlottingSettingsPage(ps::runtime::ModuleContext &ctx, QWidget *parent)
+    : QWidget(parent), m_ctx(&ctx)
 {
     auto &st = SettingsManager::instance();
 
@@ -55,8 +56,8 @@ PlottingSettingsPage::PlottingSettingsPage(MainWindow *mw, QWidget *parent)
 
     auto *clearCache = new QPushButton(QStringLiteral("清空解析缓存"), this);
     connect(clearCache, &QPushButton::clicked, this, [this] {
-        if (m_mw)
-            m_mw->commands().invoke(QStringLiteral("data.clearCache"), {});
+        if (m_ctx)
+            m_ctx->commands().invoke(QStringLiteral("data.clearCache"), {});
     });
     lay->addWidget(clearCache);
     lay->addStretch(1);
@@ -70,6 +71,6 @@ void PlottingSettingsPage::apply()
     st.set(ps::settings::kTimeFormat, m_timeFormat->currentData().toString());
     st.set(ps::settings::kExportSampleLimit, m_exportCap->value());
     st.set(ps::settings::kDerivedMaxPoints, m_derivedCap->value());
-    if (m_mw)
-        m_mw->commands().invoke(QStringLiteral("plot.reloadSettings"), {});
+    if (m_ctx)
+        m_ctx->commands().invoke(QStringLiteral("plot.reloadSettings"), {});
 }

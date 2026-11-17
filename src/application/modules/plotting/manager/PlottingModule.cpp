@@ -1,5 +1,5 @@
 #include "plotting/PlottingModule.h"
-#include "MainWindow.h"
+#include "ModuleContext.h"
 #include "PlottingSession.h"
 #include "PlottingCanvas.h"
 #include "PlottingRibbon.h"
@@ -39,11 +39,8 @@ void PlottingComponent::contribute(Registry &registry, HostContext &)
 {
     registerPlottingContributions(registry);
     registry.addStatusChip(StatusChipContribution{QStringLiteral("lod"), QStringLiteral("LOD: Rust"), 1});
-    registry.addWindowHook([](QWidget *w) {
-        auto *mw = qobject_cast<MainWindow *>(w);
-        if (!mw)
-            return;
-        ps::plotting::createPages(mw);
+    registry.addModuleHook([](ps::runtime::ModuleContext &ctx) {
+        ps::plotting::createPages(&ctx);
     });
 }
 
@@ -52,8 +49,8 @@ void registerPlottingContributions(Registry &registry)
     registry.addSettings(SettingsContribution{
         QStringLiteral("settings.plotting"), QStringLiteral("绘图"), QStringLiteral(":/icons/prop.svg"), 10,
         [](QWidget *host) -> QWidget * {
-            auto *mw = qobject_cast<MainWindow *>(host);
-            return mw ? new PlottingSettingsPage(mw) : nullptr;
+            auto *ctx = ps::runtime::ModuleContext::fromWidget(host);
+            return ctx ? new PlottingSettingsPage(*ctx) : nullptr;
         },
         [](QWidget *page) { static_cast<PlottingSettingsPage *>(page)->apply(); }});
     registry.addRibbon(RibbonContribution{QStringLiteral("绘图"), {}, {},
@@ -69,40 +66,40 @@ void registerPlottingContributions(Registry &registry)
 
 namespace ps::plotting
 {
-void createPages(MainWindow *mw) { plottingSession(mw)->createPages(); }
-void refreshPropTree(MainWindow *mw, PlottingCanvas *c) { plottingSession(mw)->refreshPropTree(c); }
-PlottingCanvas *currentCanvas(MainWindow *mw) { return plottingSession(mw)->currentCanvas(); }
-QVector<PlottingCanvas *> pageCanvases(MainWindow *mw) { return plottingSession(mw)->pageCanvases(); }
-void newPage(MainWindow *mw) { plottingSession(mw)->newPage(); }
-void setCanvasViewFlag(MainWindow *mw, int f, bool on) { plottingSession(mw)->setCanvasViewFlag(f, on); }
-void canvasZoom(MainWindow *mw, double f) { plottingSession(mw)->canvasZoom(f); }
-void canvasTool(MainWindow *mw, int tool) { plottingSession(mw)->setCanvasTool(tool); }
-void canvasAutoY(MainWindow *mw) { plottingSession(mw)->canvasAutoY(); }
-void reloadCanvasSettings(MainWindow *mw) { plottingSession(mw)->reloadCanvasSettings(); }
-void applyPlayhead(MainWindow *mw, double t) { plottingSession(mw)->applyPlayhead(t); }
-QJsonObject pageState(MainWindow *mw, QWidget *p) { return plottingSession(mw)->pageState(p); }
-QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return plottingSession(mw)->buildPage(o); }
-void applyTimeMarkers(MainWindow *mw) { plottingSession(mw)->applyTimeMarkers(); }
-void removeSourceFromCanvases(MainWindow *mw, const QString &p) { plottingSession(mw)->removeSourceFromCanvases(p); }
-void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &c) { plottingSession(mw)->addChannels(c); }
+void createPages(ps::runtime::ModuleContext *ctx) { plottingSession(*ctx)->createPages(); }
+void refreshPropTree(ps::runtime::ModuleContext *ctx, PlottingCanvas *c) { plottingSession(*ctx)->refreshPropTree(c); }
+PlottingCanvas *currentCanvas(ps::runtime::ModuleContext *ctx) { return plottingSession(*ctx)->currentCanvas(); }
+QVector<PlottingCanvas *> pageCanvases(ps::runtime::ModuleContext *ctx) { return plottingSession(*ctx)->pageCanvases(); }
+void newPage(ps::runtime::ModuleContext *ctx) { plottingSession(*ctx)->newPage(); }
+void setCanvasViewFlag(ps::runtime::ModuleContext *ctx, int f, bool on) { plottingSession(*ctx)->setCanvasViewFlag(f, on); }
+void canvasZoom(ps::runtime::ModuleContext *ctx, double f) { plottingSession(*ctx)->canvasZoom(f); }
+void canvasTool(ps::runtime::ModuleContext *ctx, int tool) { plottingSession(*ctx)->setCanvasTool(tool); }
+void canvasAutoY(ps::runtime::ModuleContext *ctx) { plottingSession(*ctx)->canvasAutoY(); }
+void reloadCanvasSettings(ps::runtime::ModuleContext *ctx) { plottingSession(*ctx)->reloadCanvasSettings(); }
+void applyPlayhead(ps::runtime::ModuleContext *ctx, double t) { plottingSession(*ctx)->applyPlayhead(t); }
+QJsonObject pageState(ps::runtime::ModuleContext *ctx, QWidget *p) { return plottingSession(*ctx)->pageState(p); }
+QWidget *buildPage(ps::runtime::ModuleContext *ctx, const QJsonObject &o) { return plottingSession(*ctx)->buildPage(o); }
+void applyTimeMarkers(ps::runtime::ModuleContext *ctx) { plottingSession(*ctx)->applyTimeMarkers(); }
+void removeSourceFromCanvases(ps::runtime::ModuleContext *ctx, const QString &p) { plottingSession(*ctx)->removeSourceFromCanvases(p); }
+void addChannels(ps::runtime::ModuleContext *ctx, const QVector<const PsChannelInfo *> &c) { plottingSession(*ctx)->addChannels(c); }
 }
 
 namespace ps::bridge
 {
-void newPage(MainWindow *mw) { ps::plotting::newPage(mw); }
-QVector<PlottingCanvas *> pageCanvases(MainWindow *mw) { return ps::plotting::pageCanvases(mw); }
-PlottingCanvas *currentCanvas(MainWindow *mw) { return ps::plotting::currentCanvas(mw); }
-QJsonObject pageState(MainWindow *mw, QWidget *page) { return ps::plotting::pageState(mw, page); }
-QWidget *buildPage(MainWindow *mw, const QJsonObject &o) { return ps::plotting::buildPage(mw, o); }
-void refreshPropTree(MainWindow *mw, PlottingCanvas *active) { ps::plotting::refreshPropTree(mw, active); }
-void applyTimeMarkers(MainWindow *mw) { ps::plotting::applyTimeMarkers(mw); }
-QVector<PlottingCanvas *> allCanvases(MainWindow *mw)
+void newPage(ps::runtime::ModuleContext *ctx) { ps::plotting::newPage(ctx); }
+QVector<PlottingCanvas *> pageCanvases(ps::runtime::ModuleContext *ctx) { return ps::plotting::pageCanvases(ctx); }
+PlottingCanvas *currentCanvas(ps::runtime::ModuleContext *ctx) { return ps::plotting::currentCanvas(ctx); }
+QJsonObject pageState(ps::runtime::ModuleContext *ctx, QWidget *page) { return ps::plotting::pageState(ctx, page); }
+QWidget *buildPage(ps::runtime::ModuleContext *ctx, const QJsonObject &o) { return ps::plotting::buildPage(ctx, o); }
+void refreshPropTree(ps::runtime::ModuleContext *ctx, PlottingCanvas *active) { ps::plotting::refreshPropTree(ctx, active); }
+void applyTimeMarkers(ps::runtime::ModuleContext *ctx) { ps::plotting::applyTimeMarkers(ctx); }
+QVector<PlottingCanvas *> allCanvases(ps::runtime::ModuleContext *ctx)
 {
     QVector<PlottingCanvas *> out;
-    if (!mw || !mw->pages())
+    if (!ctx || !ctx->pages())
         return out;
-    for (int i = 0; i < mw->pages()->count(); ++i)
-        if (QWidget *page = mw->pages()->widget(i))
+    for (int i = 0; i < ctx->pages()->count(); ++i)
+        if (QWidget *page = ctx->pages()->widget(i))
             for (PlottingCanvas *c : page->findChildren<PlottingCanvas *>())
                 out.append(c);
     return out;
@@ -132,12 +129,12 @@ void canvasUpdate(PlottingCanvas *c) { if (c) c->update(); }
 bool canvasHasData(PlottingCanvas *c) { return c && c->hasData(); }
 void canvasSetFollowLive(PlottingCanvas *c, bool on, double windowSec)
 { if (c) c->setFollowLive(on, windowSec); }
-QVector<QPair<QString, QString>> plottedChannelColors(MainWindow *mw)
+QVector<QPair<QString, QString>> plottedChannelColors(ps::runtime::ModuleContext *ctx)
 {
     QVector<QPair<QString, QString>> out;
-    if (!mw)
+    if (!ctx)
         return out;
-    for (PlottingCanvas *c : allCanvases(mw))
+    for (PlottingCanvas *c : allCanvases(ctx))
         for (int i = 0;; ++i)
         {
             const QJsonObject st = c->seriesState(i);

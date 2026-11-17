@@ -1,5 +1,6 @@
 #include "PlottingRibbon.h"
-#include "MainWindow.h"
+#include "ModuleContext.h"
+#include "CommandManager.h"
 #include "SARibbonGallery.h"
 #include "SARibbonGalleryGroup.h"
 #include "ThemeManager.h"
@@ -309,9 +310,10 @@ private:
 void buildLayoutPicker(QWidget *p)
 {
     auto *panel = static_cast<SARibbonPanel *>(p);
-    auto *mw = qobject_cast<MainWindow *>(panel->window());
-    if (!mw)
+    auto *ctx = ps::runtime::ModuleContext::fromWidget(panel->window());
+    if (!ctx)
         return;
+    QWidget *mw = ctx->window();
 
     panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
     // 用 ribbon 原生大按钮：尺寸由 SARibbonPanel 统一分配，不会压到面板分组标题
@@ -320,11 +322,11 @@ void buildLayoutPicker(QWidget *p)
     panel->addLargeAction(act);
 
     auto *popup = new LayoutPopup(mw);
-    popup->pick()->onPick = [mw, act, popup](int r, int c) {
+    popup->pick()->onPick = [ctx, mw, act, popup](int r, int c) {
         act->setIcon(layoutThumb(r, c));
         act->setText(QStringLiteral("%1×%2").arg(r).arg(c));
-        mw->commands().invoke(QStringLiteral("page.grid"),
-                              ps::commands::CommandContext{mw, QStringLiteral("%1,%2").arg(r).arg(c)});
+        ctx->commands().invoke(QStringLiteral("page.grid"),
+                               ps::commands::CommandContext{mw, QStringLiteral("%1,%2").arg(r).arg(c)});
         popup->hide();
     };
     // 五个布局按钮同一组：m×n 选择器 + 添加/删除/左右/上下（都作用于当前页画布）
@@ -332,8 +334,8 @@ void buildLayoutPicker(QWidget *p)
                      const QString &tip) {
         auto *a = new QAction(ribIcon(iconName), text, panel);
         a->setToolTip(tip);
-        QObject::connect(a, &QAction::triggered, mw, [mw, cmd] {
-            mw->commands().invoke(cmd, ps::commands::CommandContext{mw, {}});
+        QObject::connect(a, &QAction::triggered, panel, [ctx, mw, cmd] {
+            ctx->commands().invoke(cmd, ps::commands::CommandContext{mw, {}});
         });
         panel->addSmallAction(a);
     };
@@ -346,9 +348,9 @@ void buildLayoutPicker(QWidget *p)
     small(QStringLiteral("上下"), QStringLiteral("split_v"), QStringLiteral("page.splitVertical"),
           QStringLiteral("在当前画布下方拆出新画布"));
 
-    QObject::connect(act, &QAction::triggered, mw, [mw, panel, popup] {
+    QObject::connect(act, &QAction::triggered, panel, [ctx, mw, panel, popup] {
         popup->adjustSize();
-        const QRect avail = mw->screen()->availableGeometry();
+        const QRect avail = ctx->screen()->availableGeometry();
         const QPoint anchor = panel->mapToGlobal(QPoint(0, panel->height()));
         int x = qBound(avail.left() + 8, anchor.x(), avail.right() - popup->width() - 8);
         int y = anchor.y() + 6;
@@ -363,15 +365,16 @@ void buildLayoutPicker(QWidget *p)
 void buildPagePanel(QWidget *p)
 {
     auto *panel = static_cast<SARibbonPanel *>(p);
-    auto *mw = qobject_cast<MainWindow *>(panel->window());
-    if (!mw)
+    auto *ctx = ps::runtime::ModuleContext::fromWidget(panel->window());
+    if (!ctx)
         return;
+    QWidget *mw = ctx->window();
     panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
 
     auto *newPage = new QAction(ribIcon(QStringLiteral("newpage")), QStringLiteral("新建页"), panel);
     newPage->setToolTip(QStringLiteral("新建一个绘图页签"));
-    QObject::connect(newPage, &QAction::triggered, mw, [mw] {
-        mw->commands().invoke(QStringLiteral("page.new"), ps::commands::CommandContext{mw, {}});
+    QObject::connect(newPage, &QAction::triggered, panel, [ctx, mw] {
+        ctx->commands().invoke(QStringLiteral("page.new"), ps::commands::CommandContext{mw, {}});
     });
     panel->addLargeAction(newPage);
 }
@@ -380,16 +383,16 @@ void buildPagePanel(QWidget *p)
 void buildDisplayPanel(QWidget *p)
 {
     auto *panel = static_cast<SARibbonPanel *>(p);
-    auto *mw = qobject_cast<MainWindow *>(panel->window());
-    if (!mw)
+    auto *ctx = ps::runtime::ModuleContext::fromWidget(panel->window());
+    if (!ctx)
         return;
     panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
     auto add = [&](const QString &text, const QString &iconName, int flag) {
         auto *a = new QAction(ribIcon(iconName), text, panel);
         a->setCheckable(true);
         a->setToolTip(text);
-        QObject::connect(a, &QAction::toggled, mw,
-                         [mw, flag](bool on) { ps::plotting::setCanvasViewFlag(mw, flag, on); });
+        QObject::connect(a, &QAction::toggled, panel,
+                         [ctx, flag](bool on) { ps::plotting::setCanvasViewFlag(ctx, flag, on); });
         panel->addSmallAction(a);
     };
     add(QStringLiteral("网格"), QStringLiteral("grid"), 0);
@@ -401,9 +404,10 @@ void buildDisplayPanel(QWidget *p)
 void buildPanelsToolbar(QWidget *p)
 {
     auto *panel = static_cast<SARibbonPanel *>(p);
-    auto *mw = qobject_cast<MainWindow *>(panel->window());
-    if (!mw)
+    auto *ctx = ps::runtime::ModuleContext::fromWidget(panel->window());
+    if (!ctx)
         return;
+    QWidget *mw = ctx->window();
     panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
 
     auto toolAction = [&](const QString &text, const QString &iconName, int tool, const QString &tip) {
@@ -411,7 +415,7 @@ void buildPanelsToolbar(QWidget *p)
         a->setCheckable(true);
         a->setToolTip(tip);
         a->setProperty("plotTool", true);
-        QObject::connect(a, &QAction::toggled, mw, [mw, tool, a, panel](bool on) {
+        QObject::connect(a, &QAction::toggled, panel, [ctx, mw, tool, a, panel](bool on) {
             if (on)
             {
                 for (QAction *other : panel->findChildren<QAction *>())
@@ -420,13 +424,13 @@ void buildPanelsToolbar(QWidget *p)
                         QSignalBlocker blocker(other);
                         other->setChecked(false);
                     }
-                mw->commands().invoke(QStringLiteral("page.tool"),
-                                      ps::commands::CommandContext{mw, QString::number(tool)});
+                ctx->commands().invoke(QStringLiteral("page.tool"),
+                                       ps::commands::CommandContext{mw, QString::number(tool)});
             }
             else
             {
-                mw->commands().invoke(QStringLiteral("page.tool"),
-                                      ps::commands::CommandContext{mw, QStringLiteral("-1")});
+                ctx->commands().invoke(QStringLiteral("page.tool"),
+                                       ps::commands::CommandContext{mw, QStringLiteral("-1")});
             }
         });
         panel->addSmallAction(a);
@@ -441,23 +445,24 @@ void buildPanelsToolbar(QWidget *p)
 
     auto *fit = new QAction(ribIcon(QStringLiteral("autoy")), QStringLiteral("自适应"), panel);
     fit->setToolTip(QStringLiteral("纵轴自适应到数据范围"));
-    QObject::connect(fit, &QAction::triggered, mw,
-                     [mw] { ps::plotting::canvasAutoY(mw); });
+    QObject::connect(fit, &QAction::triggered, panel,
+                     [ctx] { ps::plotting::canvasAutoY(ctx); });
     panel->addSmallAction(fit);
 }
 
 void buildPlotGallery(QWidget *p)
 {
     auto *panel = static_cast<SARibbonPanel *>(p);
-    auto *mw = qobject_cast<MainWindow *>(panel->window());
-    if (!mw)
+    auto *ctx = ps::runtime::ModuleContext::fromWidget(panel->window());
+    if (!ctx)
         return;
+    QWidget *mw = ctx->window();
     panel->setExpanding(false);
     panel->setMaximumWidth(460);
     if (auto *t = panel->titleLabel())
         t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    auto run = [mw](const QString &cmd, const QString &arg = QString()) {
-        return [mw, cmd, arg] { mw->commands().invoke(cmd, ps::commands::CommandContext{mw, arg}); };
+    auto run = [ctx, mw](const QString &cmd, const QString &arg = QString()) {
+        return [ctx, mw, cmd, arg] { ctx->commands().invoke(cmd, ps::commands::CommandContext{mw, arg}); };
     };
     QList<QAction *> curveActs, mapActs, gaugeActs;
     QHash<QString, QAction *> plotActByKind;
@@ -466,7 +471,7 @@ void buildPlotGallery(QWidget *p)
         auto *a = new QAction(QIcon(plotThumb(kind)), label, panel);
         a->setToolTip(tip);
         plotActByKind.insert(kind, a);
-        QObject::connect(a, &QAction::triggered, mw, run(QStringLiteral("plot.new"), kind));
+        QObject::connect(a, &QAction::triggered, panel, run(QStringLiteral("plot.new"), kind));
         dest.append(a);
     };
     addPlot(QStringLiteral("timeseries"), QStringLiteral("时间序列"), QStringLiteral("时间轴曲线，当前已实现"), curveActs);

@@ -1,6 +1,7 @@
 #include "AutopilotReview.h"
 
-#include "MainWindow.h"
+#include "ModuleContext.h"
+#include "CommandManager.h"
 #include "ModuleBridge.h"
 #include "ps_kernel.h"
 
@@ -84,7 +85,7 @@ QString detectProfile(const ps::bridge::SourceView &view, const QString &path)
     return QStringLiteral("Generic");
 }
 
-const ps::bridge::SourceView *activeView(MainWindow *mw)
+const ps::bridge::SourceView *activeView(ps::runtime::ModuleContext *mw)
 {
     const QVector<ps::bridge::SourceView> views = ps::bridge::sourceViews(mw);
     if (views.isEmpty())
@@ -113,7 +114,7 @@ QVector<const PsChannelInfo *> pickGroup(const ps::bridge::SourceView &view,
     return out;
 }
 
-void createDefaultPages(MainWindow *mw, const ps::bridge::SourceView &view)
+void createDefaultPages(ps::runtime::ModuleContext *mw, const ps::bridge::SourceView &view)
 {
     QSet<QString> used;
     struct Group
@@ -278,12 +279,12 @@ QString buildReport(const ps::bridge::SourceView &view, const FlightMeta &meta)
     return html;
 }
 
-void report(MainWindow *mw)
+void report(ps::runtime::ModuleContext *mw)
 {
     const ps::bridge::SourceView *view = activeView(mw);
     if (!view || view->channels.isEmpty())
     {
-        QMessageBox::information(mw, QStringLiteral("飞行分析报告"),
+        QMessageBox::information(mw->window(), QStringLiteral("飞行分析报告"),
                                  QStringLiteral("当前没有可分析的数据源。"));
         return;
     }
@@ -299,7 +300,7 @@ void report(MainWindow *mw)
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
-        QMessageBox::warning(mw, QStringLiteral("飞行分析报告"),
+        QMessageBox::warning(mw->window(), QStringLiteral("飞行分析报告"),
                              QStringLiteral("无法写入报告：%1").arg(filePath));
         return;
     }
@@ -307,12 +308,12 @@ void report(MainWindow *mw)
     stream << buildReport(*view, meta);
     file.close();
     QDesktopServices::openUrl(QUrl::fromLocalFile(filePath));
-    QMessageBox::information(mw, QStringLiteral("飞行分析报告"),
+    QMessageBox::information(mw->window(), QStringLiteral("飞行分析报告"),
                              QStringLiteral("报告已生成：\n%1").arg(filePath));
 }
 
 QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo *> &channels,
-                             MainWindow *mw)
+                             ps::runtime::ModuleContext *mw)
 {
     auto *table = new QTableWidget(parent);
     table->setColumnCount(7);
@@ -374,7 +375,7 @@ QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo 
     }
     if (mw)
     {
-        QObject::connect(table, &QTableWidget::cellDoubleClicked, mw, [mw, table](int row, int) {
+        QObject::connect(table, &QTableWidget::cellDoubleClicked, mw->window(), [mw, table](int row, int) {
             const auto *item = table->item(row, 0);
             if (!item)
                 return;
@@ -390,7 +391,7 @@ QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo 
 }
 
 QWidget *makeSectionPage(QWidget *parent, const QVector<const PsChannelInfo *> &channels,
-                        const QString &emptyText, MainWindow *mw)
+                        const QString &emptyText, ps::runtime::ModuleContext *mw)
 {
     auto *page = new QWidget(parent);
     auto *layout = new QVBoxLayout(page);
@@ -410,7 +411,7 @@ QWidget *makeSectionPage(QWidget *parent, const QVector<const PsChannelInfo *> &
 
 QWidget *buildFlightReviewApp(QWidget *parent, const QString &path)
 {
-    auto *mw = qobject_cast<MainWindow *>(parent ? parent->window() : nullptr);
+    auto *mw = ps::runtime::ModuleContext::fromWidget(parent ? parent->window() : nullptr);
     auto *root = new QWidget(parent);
     auto *layout = new QVBoxLayout(root);
     layout->setContentsMargins(12, 10, 12, 10);
@@ -500,11 +501,11 @@ QWidget *buildFlightReviewApp(QWidget *parent, const QString &path)
     auto *buttons = new QHBoxLayout();
     auto *curves = new QPushButton(QStringLiteral("创建默认曲线"), root);
     auto *reportButton = new QPushButton(QStringLiteral("生成分析报告"), root);
-    QObject::connect(curves, &QPushButton::clicked, mw, [mw] {
-        mw->commands().invoke(QStringLiteral("autopilot.review.default"), {mw, QString()});
+    QObject::connect(curves, &QPushButton::clicked, mw->window(), [mw] {
+        mw->commands().invoke(QStringLiteral("autopilot.review.default"), {mw->window(), QString()});
     });
-    QObject::connect(reportButton, &QPushButton::clicked, mw, [mw] {
-        mw->commands().invoke(QStringLiteral("autopilot.review.report"), {mw, QString()});
+    QObject::connect(reportButton, &QPushButton::clicked, mw->window(), [mw] {
+        mw->commands().invoke(QStringLiteral("autopilot.review.report"), {mw->window(), QString()});
     });
     buttons->addWidget(curves);
     buttons->addWidget(reportButton);
@@ -532,9 +533,9 @@ QWidget *createFlightReviewApp(QWidget *parent, const QString &path)
 void registerAutopilotReview(Registry &registry, HostContext &host)
 {
     registry.addAction(QStringLiteral("autopilot.review.default"), [host](const ActionContext &ctx) {
-        auto *mw = qobject_cast<MainWindow *>(ctx.parent);
+        auto *mw = ps::runtime::ModuleContext::fromWidget(ctx.parent);
         if (!mw && ctx.parent)
-            mw = qobject_cast<MainWindow *>(ctx.parent->window());
+            mw = ps::runtime::ModuleContext::fromWidget(ctx.parent->window());
         if (!mw)
             return;
         const ps::bridge::SourceView *view = activeView(mw);
@@ -548,9 +549,9 @@ void registerAutopilotReview(Registry &registry, HostContext &host)
     });
 
     registry.addAction(QStringLiteral("autopilot.review.report"), [](const ActionContext &ctx) {
-        auto *mw = qobject_cast<MainWindow *>(ctx.parent);
+        auto *mw = ps::runtime::ModuleContext::fromWidget(ctx.parent);
         if (!mw && ctx.parent)
-            mw = qobject_cast<MainWindow *>(ctx.parent->window());
+            mw = ps::runtime::ModuleContext::fromWidget(ctx.parent->window());
         if (mw)
             report(mw);
     });

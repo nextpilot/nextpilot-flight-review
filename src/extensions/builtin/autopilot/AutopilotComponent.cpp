@@ -6,7 +6,7 @@
 #include "datasource/MessageParserRegistry.h"
 #include "analysis/AnalysisRegistry.h"
 #include "DataSourceModule.h"
-#include "MainWindow.h"
+#include "ModuleContext.h"
 
 #include <memory>
 #include <utility>
@@ -114,7 +114,7 @@ void AutopilotComponent::contribute(Registry &registry, HostContext &host)
         QStringLiteral("ULog"), QStringLiteral("ArduPilot · BIN"),
         QStringLiteral("MAVLink · tlog"), QStringLiteral("MAVLink 遥测")};
     auto canOpen = [analysisFormats](QWidget *parent) {
-        auto *mw = qobject_cast<MainWindow *>(parent);
+        auto *mw = ps::runtime::ModuleContext::fromWidget(parent);
         if (!mw)
             return false;
         return analysisFormats.contains(ps::components::dataSourceActiveFormat(mw),
@@ -145,7 +145,7 @@ void AutopilotComponent::contribute(Registry &registry, HostContext &host)
     addEntry(QStringLiteral("autopilot.review.app"), QStringLiteral("飞控复盘"),
              QStringLiteral("datasource"), QStringLiteral("打开飞控复盘面板，查看通道统计并生成曲线/报告"),
              [](QWidget *parent) {
-                 auto *mw = qobject_cast<MainWindow *>(parent);
+                 auto *mw = ps::runtime::ModuleContext::fromWidget(parent);
                  return createFlightReviewApp(parent,
                                              mw ? ps::components::dataSourceActivePath(mw) : QString());
              });

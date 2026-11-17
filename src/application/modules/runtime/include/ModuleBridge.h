@@ -8,7 +8,11 @@
 
 #include "TimeBookmark.h"
 
-class MainWindow;
+namespace ps::runtime
+{
+struct ModuleContext;
+}
+
 class PlottingCanvas;
 class QWidget;
 class QPlainTextEdit;
@@ -30,25 +34,25 @@ struct SourceView
     QVector<const PsChannelInfo *> channels;
 };
 
-using SourceViewsProvider = std::function<QVector<SourceView>(MainWindow *)>;
-void setSourceViewsProvider(MainWindow *mw, SourceViewsProvider provider);
-QVector<SourceView> sourceViews(MainWindow *mw);
-QVector<const PsChannelInfo *> sourceChannels(MainWindow *mw);
-QVector<ps::TimeBookmark> timeMarkers(MainWindow *mw);
-void addTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
-void removeTimeMarker(MainWindow *mw, const QString &id);
-void moveTimeMarker(MainWindow *mw, const QString &id, double to);
-void renameTimeMarker(MainWindow *mw, const QString &id, const QString &label);
+using SourceViewsProvider = std::function<QVector<SourceView>(ps::runtime::ModuleContext *)>;
+void setSourceViewsProvider(ps::runtime::ModuleContext *ctx, SourceViewsProvider provider);
+QVector<SourceView> sourceViews(ps::runtime::ModuleContext *ctx);
+QVector<const PsChannelInfo *> sourceChannels(ps::runtime::ModuleContext *ctx);
+QVector<ps::TimeBookmark> timeMarkers(ps::runtime::ModuleContext *ctx);
+void addTimeMarker(ps::runtime::ModuleContext *ctx, double t, const QString &label, bool prompt);
+void removeTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id);
+void moveTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id, double to);
+void renameTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id, const QString &label);
 
 // 绘图模块向数据源模块暴露的操作，避免 data_source 反向 include plotting。
-void newPage(MainWindow *mw);
-QVector<PlottingCanvas *> pageCanvases(MainWindow *mw);
-PlottingCanvas *currentCanvas(MainWindow *mw);
-QJsonObject pageState(MainWindow *mw, QWidget *page);
-QWidget *buildPage(MainWindow *mw, const QJsonObject &o);
-void refreshPropTree(MainWindow *mw, PlottingCanvas *active = nullptr);
-void applyTimeMarkers(MainWindow *mw);
-QVector<PlottingCanvas *> allCanvases(MainWindow *mw);
+void newPage(ps::runtime::ModuleContext *ctx);
+QVector<PlottingCanvas *> pageCanvases(ps::runtime::ModuleContext *ctx);
+PlottingCanvas *currentCanvas(ps::runtime::ModuleContext *ctx);
+QJsonObject pageState(ps::runtime::ModuleContext *ctx, QWidget *page);
+QWidget *buildPage(ps::runtime::ModuleContext *ctx, const QJsonObject &o);
+void refreshPropTree(ps::runtime::ModuleContext *ctx, PlottingCanvas *active = nullptr);
+void applyTimeMarkers(ps::runtime::ModuleContext *ctx);
+QVector<PlottingCanvas *> allCanvases(ps::runtime::ModuleContext *ctx);
 void canvasAddChannel(PlottingCanvas *c, const PsChannelInfo *ch);
 void canvasAddChannelEx(PlottingCanvas *c, const PsChannelInfo *ch, int srcId,
                        const QString &path, const QString &alias, double offsetSec);
@@ -68,6 +72,6 @@ bool canvasHasData(PlottingCanvas *c);
 void canvasSetFollowLive(PlottingCanvas *c, bool on, double windowSec);
 
 // 已绘制通道的当前配色（通道全名 → #rrggbb），供数据源树按曲线颜色显示通道名。
-QVector<QPair<QString, QString>> plottedChannelColors(MainWindow *mw);
+QVector<QPair<QString, QString>> plottedChannelColors(ps::runtime::ModuleContext *ctx);
 
 } // namespace ps::bridge

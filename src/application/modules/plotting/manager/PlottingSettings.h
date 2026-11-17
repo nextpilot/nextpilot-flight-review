@@ -2,7 +2,7 @@
 
 #include <QWidget>
 
-class MainWindow;
+namespace ps::runtime { struct ModuleContext; }
 class QCheckBox;
 class QComboBox;
 class QSpinBox;
@@ -10,11 +10,11 @@ class QSpinBox;
 class PlottingSettingsPage : public QWidget
 {
 public:
-    explicit PlottingSettingsPage(MainWindow *mw, QWidget *parent = nullptr);
+    explicit PlottingSettingsPage(ps::runtime::ModuleContext &ctx, QWidget *parent = nullptr);
     void apply();
 
 private:
-    MainWindow *m_mw = nullptr;
+    ps::runtime::ModuleContext *m_ctx = nullptr;
     QCheckBox *m_grid = nullptr;
     QCheckBox *m_legend = nullptr;
     QComboBox *m_timeFormat = nullptr;

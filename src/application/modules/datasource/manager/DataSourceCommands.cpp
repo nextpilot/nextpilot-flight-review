@@ -3,7 +3,9 @@
 
 #include "datasource/DataSourceRegistry.h"
 
-#include "MainWindow.h"
+#include "ModuleContext.h"
+#include "CommandManager.h"
+#include "DockManager.h"
 #include "DataSourceModel.h"
 
 #include <QAction>
@@ -19,42 +21,42 @@ void DataSourceSession::registerDataCommands()
         spec.id = id;
         spec.text = text;
         spec.sessionDirty = true;
-        m_mw->commands().describe(spec);
+        m_ctx->commands().describe(spec);
     };
     dirty(QStringLiteral("data.openPath"), QStringLiteral("打开数据"));
     dirty(QStringLiteral("data.quickOpen"), QStringLiteral("快速打开"));
     dirty(QStringLiteral("data.recent"), QStringLiteral("最近文件"));
     dirty(QStringLiteral("data.reload"), QStringLiteral("重新加载"));
 
-    m_mw->commands().add(QStringLiteral("app.beforeClose"), [this](const auto &) { onClose(); });
-    m_mw->commands().add(QStringLiteral("file.open"), [this](const auto &) {
+    m_ctx->commands().add(QStringLiteral("app.beforeClose"), [this](const auto &) { onClose(); });
+    m_ctx->commands().add(QStringLiteral("file.open"), [this](const auto &) {
         QStringList filters;
         for (const DataSourceEntry &entry : DataSourceRegistry::instance().fileEntries())
             if (!entry.filter.isEmpty())
                 filters.append(entry.filter);
         filters.append(QStringLiteral("全部 (*)"));
-        const QStringList fs = QFileDialog::getOpenFileNames(m_mw, QStringLiteral("打开文件"), {},
+        const QStringList fs = QFileDialog::getOpenFileNames(m_ctx->window(), QStringLiteral("打开文件"), {},
                                                              filters.join(QStringLiteral(";;")));
         for (const QString &f : fs)
             loadFile(f);
     });
-    m_mw->commands().add(QStringLiteral("protocol.inspect"), [this](const auto &) {
-        m_mw->docks().toggleById(QStringLiteral("dock.protocol"));
+    m_ctx->commands().add(QStringLiteral("protocol.inspect"), [this](const auto &) {
+        m_ctx->docks().toggleById(QStringLiteral("dock.protocol"));
     });
-    m_mw->commands().add(QStringLiteral("file.exportData"), [this](const auto &) { exportActiveCsv(); });
-    m_mw->commands().add(QStringLiteral("data.openPath"), [this](const auto &ctx) { if (!ctx.arg.isEmpty()) openPath(ctx.arg); });
-    m_mw->commands().add(QStringLiteral("data.clearCache"), [this](const auto &) { clearParseCache(); log(QStringLiteral("解析缓存已清空")); });
-    m_mw->commands().add(QStringLiteral("layout.save"), [this](const auto &ctx) {
-        const QString path = ctx.arg.isEmpty() ? m_mw->session().layoutPath() : ctx.arg;
+    m_ctx->commands().add(QStringLiteral("file.exportData"), [this](const auto &) { exportActiveCsv(); });
+    m_ctx->commands().add(QStringLiteral("data.openPath"), [this](const auto &ctx) { if (!ctx.arg.isEmpty()) openPath(ctx.arg); });
+    m_ctx->commands().add(QStringLiteral("data.clearCache"), [this](const auto &) { clearParseCache(); log(QStringLiteral("解析缓存已清空")); });
+    m_ctx->commands().add(QStringLiteral("layout.save"), [this](const auto &ctx) {
+        const QString path = ctx.arg.isEmpty() ? m_ctx->session().layoutPath() : ctx.arg;
         saveLayoutTo(path.isEmpty() ? SessionManager::defaultLayoutPath() : path);
     });
-    m_mw->commands().add(QStringLiteral("layout.import"), [this](const auto &ctx) {
+    m_ctx->commands().add(QStringLiteral("layout.import"), [this](const auto &ctx) {
         if (!ctx.arg.isEmpty())
             importLayoutFrom(ctx.arg);
     });
 
     using Ctx = ps::commands::CommandContext;
-    m_mw->commands().add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
+    m_ctx->commands().add(QStringLiteral("data.quickOpen"), [this](const Ctx &) {
         QStringList filters;
         for (const DataSourceEntry &entry : DataSourceRegistry::instance().fileEntries())
             if (!entry.filter.isEmpty())
@@ -65,9 +67,9 @@ void DataSourceSession::registerDataCommands()
         for (const QString &f : fs)
             loadFile(f);
     });
-    m_mw->commands().add(QStringLiteral("data.recent"), [this](const Ctx &) {
+    m_ctx->commands().add(QStringLiteral("data.recent"), [this](const Ctx &) {
         QMenu menu(this);
-        const QStringList recent = m_mw->session().recentFiles();
+        const QStringList recent = m_ctx->session().recentFiles();
         if (recent.isEmpty())
         {
             QAction *empty = menu.addAction(QStringLiteral("暂无最近文件"));
@@ -81,8 +83,8 @@ void DataSourceSession::registerDataCommands()
         }
         menu.exec(QCursor::pos());
     });
-    m_mw->commands().add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
-    m_mw->commands().add(QStringLiteral("data.reload"), [this](const Ctx &) {
+    m_ctx->commands().add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
+    m_ctx->commands().add(QStringLiteral("data.reload"), [this](const Ctx &) {
         ps::data_source::DataSource *src = sourceById(m_activeSource);
         if (!src || src->config.path.isEmpty())
         {

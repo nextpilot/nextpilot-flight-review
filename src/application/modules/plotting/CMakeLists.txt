@@ -19,6 +19,7 @@ set_target_properties(ps_application_plotting PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_plotting PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/kernel/include
   ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -30,4 +31,4 @@ target_include_directories(ps_application_plotting PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/ribbon
   ${PROJECT_SOURCE_DIR}/src/application/shell
 )
-target_link_libraries(ps_application_plotting PUBLIC ps_host ps_kernel ps_filter_ui Qt6::Widgets SARibbonBar::SARibbonBar)
+target_link_libraries(ps_application_plotting PUBLIC ps_runtime ps_host ps_kernel ps_filter_ui Qt6::Widgets SARibbonBar::SARibbonBar)

@@ -25,19 +25,25 @@
 
 
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow()
+{
+    ps::runtime::ModuleContext::detach(this);
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_logs(this), m_docks(this),
       m_props(this, [this](const QString &id, bool activate) {
           return m_docks.showDock(id, activate);
       }),
-      m_ribbon(this, &m_commands, &m_extensions.registry(), this)
+      m_ribbon(this, &m_commands, &m_extensions.registry(), this),
+      m_moduleContext(this, m_appSession)
 {
+    ps::runtime::ModuleContext::attach(this, &m_moduleContext);
     setWindowTitle(QStringLiteral("PlotScope 0.1.0 — 绘图分析"));
     resize(1440, 880);
 
     ps::components::HostContext hostContext;
+    hostContext.module = &m_moduleContext;
     hostContext.window = [this] { return static_cast<QWidget *>(this); };
     hostContext.log = [this](const QString &text) { log(text); };
     hostContext.configDir = [] {
@@ -67,8 +73,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Ribbon 构建期就要连页签信号，先建 QTabWidget，避免 connect nullptr 警告。
     m_pages = new QTabWidget(this);
-    for (const auto &hook : m_extensions.registry().windowHooks())
-        hook(this);
+    for (const auto &hook : m_extensions.registry().moduleHooks())
+        hook(m_moduleContext);
 
     setMenuWidget(m_ribbon.create());
     m_docks.createFromRegistry(m_extensions.registry());

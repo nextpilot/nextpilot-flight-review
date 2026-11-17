@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "DataSourceSession.h"
 #include "DataSourceModule.h"
+#include "ModuleContext.h"
 
 #include <QApplication>
 #include <QFile>
@@ -33,7 +34,10 @@ int main(int argc, char **argv)
     QTemporaryDir dir;
     const QString customPath = dir.filePath(QStringLiteral("custom.psl"));
     window.session().setLayoutPath(customPath);
-    auto *ds = ps::components::dataSourceSession(&window);
+    auto *ctx = ps::runtime::ModuleContext::fromWidget(&window);
+    if (!ctx)
+        return 1;
+    auto *ds = ps::components::dataSourceSession(*ctx);
     ds->addTimeMarker(12.5, QStringLiteral("持久化"), false);
     if (!window.commands().invoke(QStringLiteral("layout.save"), {&window, {}}))
         return 1;

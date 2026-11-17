@@ -4,7 +4,7 @@
 #include <QJsonObject>
 #include <QVector>
 
-class MainWindow;
+namespace ps::runtime { struct ModuleContext; }
 class PlottingCanvas;
 class QWidget;
 class QTableWidget;
@@ -30,20 +30,20 @@ public:
 
 namespace ps::plotting
 {
-void createPages(MainWindow *mw);
-void refreshPropTree(MainWindow *mw, PlottingCanvas *active = nullptr);
-PlottingCanvas *currentCanvas(MainWindow *mw);
-QVector<PlottingCanvas *> pageCanvases(MainWindow *mw);
-void newPage(MainWindow *mw);
-void setCanvasViewFlag(MainWindow *mw, int flag, bool on);
-void canvasZoom(MainWindow *mw, double factor);
-void canvasAutoY(MainWindow *mw);
-void canvasTool(MainWindow *mw, int tool);
-void reloadCanvasSettings(MainWindow *mw);
-void applyPlayhead(MainWindow *mw, double t);
-QJsonObject pageState(MainWindow *mw, QWidget *page);
-QWidget *buildPage(MainWindow *mw, const QJsonObject &o);
-void applyTimeMarkers(MainWindow *mw);
-void removeSourceFromCanvases(MainWindow *mw, const QString &sourcePath);
-void addChannels(MainWindow *mw, const QVector<const PsChannelInfo *> &channels);
+void createPages(ps::runtime::ModuleContext *ctx);
+void refreshPropTree(ps::runtime::ModuleContext *ctx, PlottingCanvas *active = nullptr);
+PlottingCanvas *currentCanvas(ps::runtime::ModuleContext *ctx);
+QVector<PlottingCanvas *> pageCanvases(ps::runtime::ModuleContext *ctx);
+void newPage(ps::runtime::ModuleContext *ctx);
+void setCanvasViewFlag(ps::runtime::ModuleContext *ctx, int flag, bool on);
+void canvasZoom(ps::runtime::ModuleContext *ctx, double factor);
+void canvasAutoY(ps::runtime::ModuleContext *ctx);
+void canvasTool(ps::runtime::ModuleContext *ctx, int tool);
+void reloadCanvasSettings(ps::runtime::ModuleContext *ctx);
+void applyPlayhead(ps::runtime::ModuleContext *ctx, double t);
+QJsonObject pageState(ps::runtime::ModuleContext *ctx, QWidget *page);
+QWidget *buildPage(ps::runtime::ModuleContext *ctx, const QJsonObject &o);
+void applyTimeMarkers(ps::runtime::ModuleContext *ctx);
+void removeSourceFromCanvases(ps::runtime::ModuleContext *ctx, const QString &sourcePath);
+void addChannels(ps::runtime::ModuleContext *ctx, const QVector<const PsChannelInfo *> &channels);
 }
