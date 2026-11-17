@@ -67,6 +67,25 @@ extern "C" int32_t host_dataset_append_frame(void *dataset, const char *table,
                                    column_count, err, err_cap);
 }
 
+extern "C" int32_t host_dataset_set_ring_budget(void *dataset, const char *table, uint64_t bytes,
+                                                 char *err, uint32_t err_cap)
+{
+    return ps_dataset_set_ring_budget(static_cast<PsDataset *>(dataset), table, bytes, err, err_cap);
+}
+
+extern "C" uint64_t host_dataset_table_rows(void *dataset, const char *table)
+{
+    return ps_dataset_table_rows(static_cast<PsDataset *>(dataset), table);
+}
+
+extern "C" uint32_t host_dataset_lod_minmax(void *dataset, const char *table, const char *column,
+                                            int64_t t0_us, int64_t t1_us, uint32_t px,
+                                            double *out, uint32_t cap)
+{
+    return ps_dataset_lod_minmax(static_cast<PsDataset *>(dataset), table, column, t0_us, t1_us,
+                                 px, out, cap);
+}
+
 extern "C" void host_dataset_free(void *dataset)
 {
     ps_dataset_free(static_cast<PsDataset *>(dataset));
@@ -84,6 +103,9 @@ const PsHostApi kHostApi = {
     &host_dataset_add_table_typed,
     &host_dataset_add_table_column_typed,
     &host_dataset_append_frame,
+    &host_dataset_set_ring_budget,
+    &host_dataset_table_rows,
+    &host_dataset_lod_minmax,
 };
 
 } // namespace

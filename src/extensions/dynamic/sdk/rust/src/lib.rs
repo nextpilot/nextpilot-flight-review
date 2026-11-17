@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 pub const PS_EXTENSION_ABI_VERSION: u32 = 7;
-pub const PS_HOST_API_VERSION: u32 = 4;
+pub const PS_HOST_API_VERSION: u32 = 5;
 pub const PS_FAMILY_DATA_LOADER: u32 = 1;
 pub const PS_FAMILY_LIVE_SOURCE: u32 = 2;
 pub const PS_FAMILY_PARSER: u32 = 3;
@@ -129,7 +129,32 @@ pub struct PsHostApi {
     pub dataset_add_table_typed: Option<DatasetAddTableTypedFn>,
     pub dataset_add_table_column_typed: Option<DatasetAddTableColumnTypedFn>,
     pub dataset_append_frame: Option<DatasetAppendFrameFn>,
+    pub dataset_set_ring_budget: Option<DatasetSetRingBudgetFn>,
+    pub dataset_table_rows: Option<DatasetTableRowsFn>,
+    pub dataset_lod_minmax: Option<DatasetLodMinMaxFn>,
 }
+
+pub type DatasetSetRingBudgetFn = unsafe extern "C" fn(
+    dataset: *mut c_void,
+    table: *const c_char,
+    bytes: u64,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32;
+
+pub type DatasetTableRowsFn =
+    unsafe extern "C" fn(dataset: *mut c_void, table: *const c_char) -> u64;
+
+pub type DatasetLodMinMaxFn = unsafe extern "C" fn(
+    dataset: *mut c_void,
+    table: *const c_char,
+    column: *const c_char,
+    t0_us: i64,
+    t1_us: i64,
+    px: u32,
+    out: *mut f64,
+    cap: u32,
+) -> u32;
 
 pub type SchemaJsonFn = unsafe extern "C" fn(out: *mut c_char, cap: u32) -> i32;
 pub type ProbeJsonFn =

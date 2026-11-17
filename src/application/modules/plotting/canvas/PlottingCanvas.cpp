@@ -773,7 +773,9 @@ uint32_t PlottingCanvas::kernelLod(const Series &s, double t0, double t1, uint32
     if (s.dataset && !s.table.isEmpty() && !s.column.isEmpty())
         return ps_dataset_lod_minmax(const_cast<PsDataset *>(s.dataset),
                                      s.table.toUtf8().constData(),
-                                     s.column.toUtf8().constData(), t0, t1, px, out, cap);
+                                     s.column.toUtf8().constData(),
+                                     static_cast<int64_t>(std::llround(t0 * 1e6)),
+                                     static_cast<int64_t>(std::llround(t1 * 1e6)), px, out, cap);
     return ps_lod_minmax(s.time(), s.value(), s.count(), t0, t1, px, out, cap);
 }
 

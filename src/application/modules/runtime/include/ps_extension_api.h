@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 #define PS_EXTENSION_ABI_VERSION 7u
-#define PS_HOST_API_VERSION 4u
+#define PS_HOST_API_VERSION 5u
 #define PS_DATA_SOURCE_PROTOCOL_VERSION 3u
 
 #if defined(_WIN32)
@@ -123,6 +123,13 @@ typedef struct PsHostApi {
     int32_t (*dataset_append_frame)(void *dataset, const char *table, const int64_t *time_us,
                                     uint32_t rows, const PsFrameColumn *columns,
                                     uint32_t column_count, char *err, uint32_t err_cap);
+    /* typed 表附加能力：ring 预算、行数、视口 LOD。 */
+    int32_t (*dataset_set_ring_budget)(void *dataset, const char *table, uint64_t bytes,
+                                       char *err, uint32_t err_cap);
+    uint64_t (*dataset_table_rows)(void *dataset, const char *table);
+    uint32_t (*dataset_lod_minmax)(void *dataset, const char *table, const char *column,
+                                   int64_t t0_us, int64_t t1_us, uint32_t px,
+                                   double *out, uint32_t cap);
 } PsHostApi;
 
 /* Loader 数据面。所有 JSON 返回：>=0 为写入字节数；<0 失败。
