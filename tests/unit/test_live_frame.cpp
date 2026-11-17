@@ -53,6 +53,17 @@ int main(int argc, char **argv)
     }
     assert(sawRoll && sawPitch);
 
+    // 同一张表的所有列必须共用一份时间轴，不能把时间轴复制到每列。
+    assert(channels[0]->time == channels[1]->time);
+
+    // typed 视口 LOD 使用 UTC 微秒；2 像素窗口应能覆盖两行。
+    double lod[6] = {0};
+    const uint32_t lod_n = ps_dataset_lod_minmax(session.dataset(), "imu", "roll",
+                                                 1700000000000000LL, 1700000000020000LL, 2,
+                                                 lod, 2);
+    assert(lod_n >= 1);
+    assert(std::abs(lod[0] - 1700000000.0) < 1e-6);
+
     // 空 batch 必须被拒绝。
     PsFrameBatch empty{ "imu", nullptr, nullptr, 0, 2, cols };
     assert(session.sink()->frame_batch(session.sink()->ctx, &empty) != 0);
