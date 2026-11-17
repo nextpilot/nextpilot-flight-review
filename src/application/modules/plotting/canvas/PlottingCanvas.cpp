@@ -1185,17 +1185,20 @@ void PlottingCanvas::paintSpectrum(QPainter &p, const QRectF &plot, const QFontM
         if (x.visible && x.count()) { s = &x; break; }
     if (!s || s->count() < 4)
         return;
-    const int n = std::min(512, int(s->count()));
+    QVector<double> winT, winV;
+    const int n = int(s->readWindow(m_t0, m_t1, winT, winV, 512));
+    if (n < 4)
+        return;
     QVector<double> x(n);
-    const double t0 = s->timeAt(s->count() - n) - s->offsetSec;
-    const double t1 = s->timeAt(s->count() - 1) - s->offsetSec;
+    const double t0 = winT.first();
+    const double t1 = winT.last();
     const double dt = (t1 - t0) / std::max(1, n - 1);
     double mean = 0;
     for (int i = 0; i < n; ++i)
-        mean += s->valueAt(s->count() - n + i);
+        mean += winV.at(i);
     mean /= n;
     for (int i = 0; i < n; ++i)
-        x[i] = s->valueAt(s->count() - n + i) - mean;
+        x[i] = winV.at(i) - mean;
     const int half = n / 2;
     QVector<double> amp(half, 0);
     for (int k = 0; k < half; ++k)

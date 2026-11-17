@@ -16,6 +16,9 @@ enum class DataSourceMode
 // 运行期句柄、Dataset、解析状态不放在这里，避免配置对象变成大杂烩。
 struct DataSourceConfig
 {
+    static constexpr int kSchemaVersion = 1;
+
+    int schemaVersion = kSchemaVersion;
     int id = -1;
     QString name;
     QString alias;             // 图例前缀，默认文件名，可重命名

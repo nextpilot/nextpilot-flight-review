@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <memory>
+#include <cmath>
 #include <map>
 
 namespace {
@@ -150,18 +151,40 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
     };
     auto addTypedColumn = [&](PsChannelData &c, uint32_t n) -> int32_t {
         const std::string column = tableColumn(c);
+        std::vector<uint8_t> packedNulls;
+        if (c.nulls.empty())
+        {
+            for (uint32_t i = 0; i < n; ++i)
+                if (std::isnan(c.v[i]))
+                {
+                    packedNulls.assign((n + 7) / 8, 0);
+                    break;
+                }
+            if (!packedNulls.empty())
+                for (uint32_t i = 0; i < n; ++i)
+                    if (std::isnan(c.v[i]))
+                        packedNulls[i / 8] |= static_cast<uint8_t>(1u << (i % 8));
+        }
+        else
+        {
+            packedNulls.assign((n + 7) / 8, 0);
+            for (uint32_t i = 0; i < n && i / 8 < c.nulls.size(); ++i)
+                if (c.nulls[i / 8] & (1u << (i % 8)))
+                    packedNulls[i / 8] |= static_cast<uint8_t>(1u << (i % 8));
+        }
+        const uint8_t *nullBits = packedNulls.empty() ? nullptr : packedNulls.data();
         switch (c.value_type)
         {
         case PS_VALUE_F64:
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_F64, c.v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_F64, c.v.data(), nullBits, n,
                                                         e, sizeof(e));
         case PS_VALUE_F32:
         {
             std::vector<float> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<float>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_F32, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_F32, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         case PS_VALUE_I64:
@@ -169,7 +192,7 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             std::vector<int64_t> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<int64_t>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_I64, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_I64, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         case PS_VALUE_U64:
@@ -177,7 +200,7 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             std::vector<uint64_t> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<uint64_t>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_U64, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_U64, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         case PS_VALUE_I32:
@@ -185,7 +208,7 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             std::vector<int32_t> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<int32_t>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_I32, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_I32, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         case PS_VALUE_U32:
@@ -193,7 +216,7 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             std::vector<uint32_t> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<uint32_t>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_U32, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_U32, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         case PS_VALUE_I16:
@@ -201,7 +224,7 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             std::vector<int16_t> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<int16_t>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_I16, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_I16, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         case PS_VALUE_U16:
@@ -209,7 +232,7 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             std::vector<uint16_t> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<uint16_t>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_U16, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_U16, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         case PS_VALUE_I8:
@@ -217,7 +240,7 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             std::vector<int8_t> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<int8_t>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_I8, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_I8, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         case PS_VALUE_U8:
@@ -225,12 +248,12 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             std::vector<uint8_t> v(n);
             for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<uint8_t>(c.v[i]);
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_U8, v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_U8, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
         default:
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
-                                                        c.unit.c_str(), PS_VALUE_F64, c.v.data(), nullptr, n,
+                                                        c.unit.c_str(), PS_VALUE_F64, c.v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
     };

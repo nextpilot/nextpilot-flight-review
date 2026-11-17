@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <limits>
 #include <map>
@@ -69,7 +70,21 @@ void addFrame(std::map<std::string, Table> &tables, const PsDecodedFrame &frame)
     if (name.isEmpty() || name.startsWith(QLatin1Char('#')))
         return;
     name.remove(QLatin1Char('#'));
-    const std::string tableName = "oem7." + name.toLower().toStdString();
+    uint32_t definitionCrc = 0;
+    for (const PsDecodedField &field : frame.fields)
+        if (field.name == QStringLiteral("messageDefinitionCrc"))
+        {
+            definitionCrc = field.value.toUInt();
+            break;
+        }
+    // 同一日志名、不同消息定义 CRC 是不同表，避免字段冲突。
+    std::string tableName = "oem7." + name.toLower().toStdString();
+    if (definitionCrc)
+    {
+        char suffix[16];
+        std::snprintf(suffix, sizeof(suffix), ".%08X", static_cast<unsigned>(definitionCrc));
+        tableName += suffix;
+    }
 
     Table &table = tables[tableName];
     const double stamp = frame.timestamp;

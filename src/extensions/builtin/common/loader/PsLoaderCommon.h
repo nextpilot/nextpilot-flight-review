@@ -19,6 +19,7 @@ struct PsChannelData
     std::shared_ptr<const std::vector<double>> axis; /* 同表共享的时间轴 */
     std::vector<double> t;   /* 旧接口兼容；设置了 axis 时不再使用 */
     std::vector<double> v;
+    std::vector<uint8_t> nulls; /* 可选 packed null bitmap；空则由 NaN 推导 */
     uint32_t value_type = PS_VALUE_F64; /* PsValueType；v 会按该类型写入 Dataset */
 };
 

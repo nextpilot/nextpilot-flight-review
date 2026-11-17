@@ -23,10 +23,12 @@ int main()
 
     PsDataset *ds = ps_dataset_new();
     assert(ds);
-    double t[3] = {0.0, 1.0, 2.0};
+    int64_t t[3] = {0, 1000000, 2000000};
     double v[3] = {10.0, 20.0, 30.0};
     char err[128] = {0};
-    assert(ps_dataset_add_channel(ds, "roll", "deg", t, v, 3, err, sizeof(err)) == 0);
+    assert(ps_dataset_add_table_typed(ds, "imu", t, 3, err, sizeof(err)) == 0);
+    assert(ps_dataset_add_table_column_typed(ds, "imu", "roll", "deg", PS_VALUE_F64, v, nullptr, 3,
+                                             err, sizeof(err)) == 0);
     assert(ps_dataset_channel_count(ds) == 1);
 
     assert(DatasetCache::save(source, "data_loader_csv", "", ds));
@@ -36,8 +38,8 @@ int main()
     assert(hit);
     assert(ps_dataset_channel_count(hit) == 1);
     const PsChannelInfo *ch = ps_dataset_channel(hit, 0);
-    assert(ch && std::strcmp(ch->name, "roll") == 0 && ch->point_count == 3);
-    assert(ch->value[1] == 20.0);
+    assert(ch && std::strcmp(ch->name, "imu.roll") == 0 && ch->point_count == 3);
+    assert(ps_channel_value_at(ch, 1) == 20.0);
     ps_dataset_free(hit);
 
     const QString params = QStringLiteral("[{\"name\":\"TEST\",\"value\":\"42\"}]");

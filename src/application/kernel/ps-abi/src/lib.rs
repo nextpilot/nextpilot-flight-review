@@ -562,13 +562,11 @@ pub unsafe extern "C" fn ps_cache_save_dataset(
         Ok(p) => p,
         Err(e) => { write_err(err, err_cap, &e); return 1; }
     };
-    if !(*ds).typed.tables.is_empty() {
-        return match ps_cache::save_typed_dataset(&p, &(*ds).typed, source_size, source_mtime) {
-            Ok(()) => 0,
-            Err(e) => { write_err(err, err_cap, &e); 2 }
-        };
+    if (*ds).typed.tables.is_empty() {
+        write_err(err, err_cap, "数据集没有 typed 表，不能写 PSC1");
+        return 2;
     }
-    match ps_cache::save_dataset(&p, &(*ds).data, source_size, source_mtime) {
+    match ps_cache::save_typed_dataset(&p, &(*ds).typed, source_size, source_mtime) {
         Ok(()) => 0,
         Err(e) => { write_err(err, err_cap, &e); 2 }
     }
@@ -604,17 +602,8 @@ pub unsafe extern "C" fn ps_cache_load_dataset(
         Ok(None) => {}
         Err(e) => { write_err(err, err_cap, &e); return 2; }
     }
-    match ps_cache::load_dataset(&p, source_size, source_mtime) {
-        Ok(None) => 1,
-        Ok(Some(data)) => {
-            let mut ds = PsDataset::new();
-            ds.data = data;
-            ds.rebuild_infos();
-            *out = Box::into_raw(Box::new(ds));
-            0
-        }
-        Err(e) => { write_err(err, err_cap, &e); 2 }
-    }
+    write_err(err, err_cap, "不是 PSC2 缓存");
+    2
 }
 
 /// 参数 JSON 缓存。0 成功；1 参数错误；2 IO 错误。

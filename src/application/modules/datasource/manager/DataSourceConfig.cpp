@@ -8,6 +8,7 @@ namespace ps::data_source
 QJsonObject DataSourceConfig::toJson() const
 {
     QJsonObject o;
+    o[QStringLiteral("schemaVersion")] = kSchemaVersion;
     o[QStringLiteral("id")] = id;
     o[QStringLiteral("name")] = name;
     o[QStringLiteral("alias")] = alias;
@@ -24,6 +25,8 @@ QJsonObject DataSourceConfig::toJson() const
 DataSourceConfig DataSourceConfig::fromJson(const QJsonObject &o)
 {
     DataSourceConfig c;
+    // 只接受不高于当前版本的配置；旧配置缺省按 v1 读。
+    c.schemaVersion = o.value(QStringLiteral("schemaVersion")).toInt(kSchemaVersion);
     c.id = o.value(QStringLiteral("id")).toInt(-1);
     c.name = o.value(QStringLiteral("name")).toString();
     c.alias = o.value(QStringLiteral("alias")).toString();
