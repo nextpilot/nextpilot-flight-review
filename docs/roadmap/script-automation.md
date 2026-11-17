@@ -2,7 +2,7 @@
 
 > 基线：`origin/main @ d057ee9`（2026-11-17）。本文只讨论 `modules/scripting`。
 
-## 0. 本版定调（先看这 14 条）
+## 0. 本版定调（先看这 15 条）
 
 1. **脚本是知识注入通道，不是"自动化工具"**。app 本身无知：它知道怎么加载、怎么画、怎么算 FFT，但不知道"0.3 Hz 的晃动在这个机型上意味着什么"。判断只能来自人，写进脚本，由 app 反复执行。
 2. **三层分工**。`dataset`（数据）→ 脚本 / 工具箱（知识）→ `findings` / `views`（结论与呈现）。**工具箱是出厂知识**（飞控通用判据，加载即出报告），**脚本是演进知识**（团队/机型/场景，可持续补充），app 只是执行器与渲染器。
@@ -17,7 +17,8 @@
 11. **脚本画的图是持久对象，但只活在会话内**。有 id 和名字、可被后续脚本引用、可导出；关闭即失效，重开必须重跑。同名 `ps.view` 幂等覆盖。
 12. **marker 不是独立引擎**，是 `ps.mark / ps.region / ps.claim` 的输出形态，落在 `dataset` 上，任意图可选叠加。不设 PJ4 式的"整段单序列 marker 通道"。
 13. **主入口仍是控制台**（MATLAB command 式 REPL，持久 workspace），自动化由作业与事件驱动；**语言只用 Lua**（Python 现有通道是子进程 + JSON + 15 s 超时，拿不到宿主，只能做外部离线工具）；**不碰绘图侧已有的曲线变换下拉**（`shared/filter` 的 `FilterCatalog` + `ps_filter_apply_series` 归 plotting/datasource）。
-14. **切片**：引擎搬迁 → 只读数据面 → 控制台 → 作业 + 事件 → **算子契约（实时 + 批量）** → **判据原语 + `generated column` 持久化** → 实时录制 → 批处理 →（P2）提升为正式曲线、子进程断点。
+14. **切片**：引擎搬迁 → 只读数据面 → 控制台 → 作业 + 事件 → **算子契约（实时 + 批量）** → **判据原语 + `generated column` 持久化** → 实时录制 / 批处理 / **CLI 前端** →（P2）提升为正式曲线、子进程断点。
+15. **app = 引擎 + 前端，GUI 只是前端之一**。CLI 跑同一条链（加载 → 算子 / 判据 → 视图规格 → 渲染 → 落盘）；前提是引擎不依赖 GUI、`ps.plot` 只产规格、`finding` 可序列化（§2.11）。
 
 ## 1. 现状基线（可核对）
 
@@ -50,6 +51,28 @@
 | 数据层 | `dataset` / channel / `generated_columns` | 加载（自动） | 可读数据视图（含派生列） | 配置跨会话，加载时自动重建 |
 | 知识层 | 脚本文件 / 工具箱规则 | 用户执行，或 `dataset` 绑定后自动执行 | 图 / 表 / `findings` | 脚本与配置跨会话，**产物仅本次会话** |
 | 呈现层 | view / table / finding | 脚本运行 | 画布与报告 | 会话内，重开必须重跑脚本 |
+
+**两种运行模式（同一套能力，不同约束）**
+
+| | 分析（离线） | 调试（实时） |
+|---|---|---|
+| 数据访问 | 整段可随机访问，**能前视** | 逐点到达，只能回看历史窗口 |
+| 脚本形态 | 命令式 + 批量判据 | 纯函数算子 + 增量判据 |
+| 时间预算 | 秒级可接受 | 毫秒级必须 |
+| 产物 | 报告 / 图 / `finding` | 即时曲线 / 告警 |
+| 知识类型 | 工具箱（完整判据、FFT、区间识别） | 告警规则（阈值 / 趋势 / 突变） |
+
+一条硬约束：**实时没有未来数据**。离线能算 FFT、能判断"尖峰后面有没有回落"、能圈出区间起止；实时必须等窗口满才能下结论，天然滞后一个窗口长度。所以同一条判据常被拆成两份——**离线给定论，实时给预警**：
+
+```lua
+-- 离线：扫完整段，边界精确
+ps.claim(src, { t0 = ..., t1 = ..., label = "roll 超限 2.3s" })
+
+-- 实时：滑窗增量，滞后 1 秒给预警
+if ps.exceedDuration(live, "roll", limit, t - 1.0, t) >= 1.0 then ps.alert("roll 超限") end
+```
+
+这不是实现偷懒，是信息论决定：未来数据还没到。
 
 **能力矩阵（脚本能操作到哪一层，原 A–D 边界不变）**
 
@@ -394,6 +417,43 @@ PJ4 **没有第四处**：无控制台、无 REPL、无作业、无事件触发�
 2. **逐样本模型用于整段分析**——PJ4 自己也不这么干：FFT 走 pocketfft native，不走脚本。
 
 `marker_engine.h:1-10` 原文点明了 marker 的独特价值：它才是能表达 FFT / 区间 / 前视的通道（"what the per-sample IncrementalEngine model cannot express"）。本方案把它降级为**输出形态**而非独立引擎，正是为了不让"单序列输入"和"图上标注"这两件事绑死。
+
+### 2.11 引擎与前端分离（GUI == headless）
+
+app = 引擎 + 前端。GUI 只是前端之一，CLI 是第二个。
+
+```
+引擎：加载 / Store / 算子 / 判据 / finding / 视图规格
+  ├─ GUI 前端：MainWindow + Dock + 画布（QWidget）
+  └─ CLI 前端：--run / analyze，渲染到 QImage，产物落盘
+```
+
+三个前提，缺一 CLI 就做不成：
+
+1. **引擎不依赖 GUI**。`--run` 已做到：`main.cpp:20/75/76/93` 自建 `SourceStore` + `HostDataBridge` + `setHostService`，不建 MainWindow。
+2. **`ps.plot` 只产视图规格，渲染可换**。现在落在 `ScratchPlot`（`QWidget` + `paintEvent` + `drawPolyline`），CLI 下没有窗口系统就画不出来。必须拆成：
+
+```
+视图规格（type=plot, series=[...], marks=[...]）   ← 唯一真身，可序列化
+        ↓
+渲染器：QWidget（GUI）/ QImage（CLI，QT_QPA_PLATFORM=offscreen 已可跑）/ SVG
+```
+
+拆开之后，"同名幂等覆盖""可被后续脚本引用""可导出"才有统一载体——规格是数据，渲染只是消费它。
+
+3. **`finding` 可序列化落盘**（`report.md` / `report.json` / `findings.csv`），否则流水线拿不到结果。
+
+CLI 形态：
+
+```bash
+plotscope analyze --data flight.ulg --rules rules/ --out out/ --format md,json,png
+plotscope run --script inspect.lua --data flight.ulg
+plotscope watch --live mavlink://...        # 将来，依赖 S4
+```
+
+依据是 PJ4 的同类原则（`pj_scripting/include/pj_scripting/marker_engine.h:10-14`）：引擎 host-agnostic，同一份引擎同时链进 app 与 SDK-only headless runner，原文 "one engine, GUI == headless"。
+
+实际价值不是"命令行爱好"，而是**流水线**：CI 每次新日志自动体检、服务器批量出报告、外部系统读 JSON。GUI 里点按钮和 CLI 里敲命令跑同一条链。
 
 ## 3. 模块归属与依赖
 
@@ -788,8 +848,9 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 | **S5 批处理** | `ps.app.batch`、失败策略、进度、汇总、续跑 | 10 架次循环，单架次失败继续并汇总；中断后续跑不重复处理 | 不做分布式/多进程 |
 | **S6 提升为正式曲线（P2）** | canvas 稳定 id、`ps.promote`、快照事务、页面/曲线/轴 | 提升的曲线重开工程仍在；失败回滚页面 JSON 逐字节不变 | 不与 S2–S5 混做 |
 | **S7 子进程断点调试（P2 可选）** | `--debug <script>` 子进程、`mobdebug`/luasocket 接入、VSCode `lua-debug` 与 ZeroBrane 文档 | 断点能停在脚本内并读局部变量；主进程沙箱不变（负向测试仍绿） | 不在 App 里造调试 UI |
+| **S8 CLI 前端（headless）** | `ps.view` 规格化 + 渲染器抽象（QWidget / QImage / SVG）；`analyze` / `run` 子命令；`finding` 导出 md / json / csv | `QT_QPA_PLATFORM=offscreen` 下 5 架次出 PNG + `report.md`；同一脚本 GUI 与 CLI 的 `finding` 逐条一致；CI 退出码 0/1 | 不做 `watch`（依赖 S4）；不做交互式 shell |
 
-依赖：P1 → S0 → S1 → S2 → S3 → **S3b** → { S4, S5 }；S2 依赖 P3；S6、S7 独立立项。
+依赖：P1 → S0 → S1 → S2 → S3 → **S3b** → { S4, S5, S8 }；S2 依赖 P3；S6、S7 独立立项。
 
 S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3b 定契约、用回放验证，S4 只负责把源接进来；反过来先做 S4 会为了联调临时造一套算子接口，S3b 再改一遍。
 
@@ -824,6 +885,8 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 | 事件默认关闭 | 未开启时 `scripts/on/` 有文件也不执行；开启后触发一次且只一次 |
 | 事件重入 | 事件脚本里再 `load` 触发同事件 → 被深度上限切断并记 `ererecurse`，App 不冻 |
 | CLI 回归 | `--run tests/scripts/xxx.lua` 返回正确退出码；失败时输出首错位置；CI 里可直接跑 |
+| CLI 产物 | `analyze` 在 `QT_QPA_PLATFORM=offscreen` 下产出 PNG + `report.md`；`finding` 条数与 GUI 运行逐条一致 |
+| 渲染一致 | 同一视图规格分别交给 QWidget 与 QImage 渲染器，序列数、时间范围、标记数一致 |
 
 新增测试进 `tests/unit`（`add_test(NAME scripting_*)`）；改 UI 做 GUI 冒烟（AGENTS §12）。
 
@@ -866,6 +929,8 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 | 13 | `dataset` 配置可绑后处理脚本，加载后自动执行 | 用户裁决；语义是"订阅式重跑"，不是"复原旧产物" |
 | 14 | marker 不作为独立引擎 | 收为 `ps.claim/ps.mark/ps.region` 的输出形态；PJ4 的整段单序列通道不采用 |
 | 15 | `ps.view` 会话内持久、同名幂等覆盖 | 用户裁决"持久"+"关闭必须重跑"共同定义：有 id 可引用，但只在本次会话 |
+| 16 | app = 引擎 + 前端，CLI 是第二个前端 | 用户裁决；PJ4 同原则（`marker_engine.h:10-14`"one engine, GUI == headless"）；`ps.plot` 因此只产规格、渲染可换 |
+| 17 | 离线与实时是两套约束，不是两套能力 | 实时没有未来数据：离线能前视、能 FFT、能圈区间；实时必须等窗口满，滞后一个窗口。同一判据拆成"定论"与"预警"两份 |
 
 ## 12. 剩下的真待定
 
