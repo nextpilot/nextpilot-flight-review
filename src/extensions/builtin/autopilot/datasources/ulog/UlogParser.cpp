@@ -136,6 +136,24 @@ std::string trim(const std::string &s)
     return lb == std::string::npos ? std::string() : s.substr(lb, rb - lb + 1);
 }
 
+bool parseSize(const std::string &s, size_t &out)
+{
+    if (s.empty())
+        return false;
+    size_t v = 0;
+    for (char c : s)
+    {
+        if (c < '0' || c > '9')
+            return false;
+        const size_t d = static_cast<size_t>(c - '0');
+        if (v > (std::numeric_limits<size_t>::max() - d) / 10)
+            return false;
+        v = v * 10 + d;
+    }
+    out = v;
+    return true;
+}
+
 bool splitFormat(const std::string &text, std::string &name, std::vector<Field> &fields)
 {
     const size_t colon = text.find(':');
@@ -166,7 +184,8 @@ bool splitFormat(const std::string &text, std::string &name, std::vector<Field> 
                 const size_t rb = ty.find(']', lb);
                 if (rb == std::string::npos)
                     return false;
-                array = static_cast<size_t>(std::stoul(ty.substr(lb + 1, rb - lb - 1)));
+                if (!parseSize(ty.substr(lb + 1, rb - lb - 1), array))
+                    return false;
                 ty = ty.substr(0, lb);
             }
             if (array == 0)
@@ -177,7 +196,8 @@ bool splitFormat(const std::string &text, std::string &name, std::vector<Field> 
                     const size_t frb = fname.find(']', flb);
                     if (frb == std::string::npos)
                         return false;
-                    array = static_cast<size_t>(std::stoul(fname.substr(flb + 1, frb - flb - 1)));
+                    if (!parseSize(fname.substr(flb + 1, frb - flb - 1), array))
+                        return false;
                     fname = fname.substr(0, flb);
                 }
             }
@@ -413,9 +433,9 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         }
         else if (ty == 'D')
         {
-            uint16_t msgId = 0;
-            if (u16At(std::vector<uint8_t>(p, p + size), 0, msgId))
+            if (size >= 2)
             {
+                const uint16_t msgId = static_cast<uint16_t>(p[0] | (p[1] << 8));
                 auto bit = byId.find(msgId);
                 if (bit != byId.end())
                 {
@@ -459,9 +479,11 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         }
         else if (ty == 'R')
         {
-            uint16_t msgId = 0;
-            if (size >= 2 && u16At(std::vector<uint8_t>(p, p + size), 0, msgId))
+            if (size >= 2)
+            {
+                const uint16_t msgId = static_cast<uint16_t>(p[0] | (p[1] << 8));
                 byId.erase(msgId);
+            }
         }
         pos = body + size;
     }
@@ -498,5 +520,6 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         return false;
     }
     log.params = std::move(params);
+    psLoaderProgress(100, 100);
     return true;
 }

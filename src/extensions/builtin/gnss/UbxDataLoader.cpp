@@ -65,7 +65,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         const QByteArray frame(reinterpret_cast<const char *>(buf.data() + pos),
                                static_cast<int>(8 + len));
         PsDecodedFrame decoded;
-        if (parser.parse(frame, decoded))
+        if (parser.parse(frame, decoded) && decoded.checksumOk)
         {
             const std::string prefix = "ubx." + decoded.frameName.toStdString();
             for (const PsDecodedField &field : decoded.fields)
@@ -79,10 +79,15 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
                 add(acc, prefix + "." + field.name.toStdString(), field.unit.toStdString(),
                     decoded.timestamp, value);
             }
+            pos += 8 + len;
         }
-        pos += 8 + len;
+        else
+        {
+            ++pos;  // 坏 CRC：丢弃当前帧，从 payload 内重新搜帧头
+        }
     }
 
+    psLoaderProgress(100, 100);
     channels.clear();
     for (auto &kv : acc)
         channels.push_back(std::move(kv.second));

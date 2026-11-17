@@ -56,7 +56,8 @@ size_t codeSize(uint8_t c)
     switch (c)
     {
     case 'h': case 'H': case 'c': case 'C': return 2;
-    case 'i': case 'I': case 'f': case 'e': case 'E': case 'L': case 'M': return 4;
+    case 'i': case 'I': case 'f': case 'e': case 'E': case 'L': return 4;
+    case 'M': return 1;
     case 'd': case 'q': case 'Q': return 8;
     case 'n': return 4;
     case 'N': return 16;
@@ -118,12 +119,12 @@ bool parseFormat(const std::vector<uint8_t> &buf, size_t pos, Format &fmt)
     return true;
 }
 
-bool readNum(const std::vector<uint8_t> &pkt, const Field &f, double &out)
+bool readNum(const uint8_t *pkt, size_t pktLen, const Field &f, double &out)
 {
     const size_t end = f.off + f.size;
-    if (end > pkt.size())
+    if (end > pktLen)
         return false;
-    const uint8_t *s = pkt.data() + f.off;
+    const uint8_t *s = pkt + f.off;
     switch (f.code)
     {
     case 'b': out = static_cast<double>(static_cast<int8_t>(s[0])); return true;
@@ -180,12 +181,12 @@ bool readNum(const std::vector<uint8_t> &pkt, const Field &f, double &out)
     }
 }
 
-std::string readString(const std::vector<uint8_t> &pkt, const Field &f)
+std::string readString(const uint8_t *pkt, size_t pktLen, const Field &f)
 {
-    const size_t end = std::min(f.off + f.size, pkt.size());
+    const size_t end = std::min(f.off + f.size, pktLen);
     if (f.off >= end)
         return {};
-    return trimStr(pkt.data() + f.off, end - f.off);
+    return trimStr(pkt + f.off, end - f.off);
 }
 
 int findField(const Format &fmt, const std::string &name)
@@ -202,7 +203,7 @@ std::map<uint8_t, Format> collectFormats(const std::vector<uint8_t> &buf)
     size_t pos = 0;
     while (pos + 3 <= buf.size())
     {
-        psLoaderProgress(25 + pos * 70 / std::max<size_t>(1, buf.size()), 100);
+        psLoaderProgress(10 + pos * 10 / std::max<size_t>(1, buf.size()), 100);
         if (buf[pos] != kHead1 || buf[pos + 1] != kHead2)
         {
             ++pos;
@@ -234,7 +235,7 @@ void collectUnits(const std::vector<uint8_t> &buf, std::map<uint8_t, Format> &fo
     size_t pos = 0;
     while (pos + 3 <= buf.size())
     {
-        psLoaderProgress(25 + pos * 70 / std::max<size_t>(1, buf.size()), 100);
+        psLoaderProgress(20 + pos * 10 / std::max<size_t>(1, buf.size()), 100);
         if (buf[pos] != kHead1 || buf[pos + 1] != kHead2)
         {
             ++pos;
@@ -255,13 +256,13 @@ void collectUnits(const std::vector<uint8_t> &buf, std::map<uint8_t, Format> &fo
         const Format &fmt = it->second;
         if (pos + fmt.length > buf.size())
             break;
-        const std::vector<uint8_t> pkt(buf.begin() + pos, buf.begin() + pos + fmt.length);
-        if (fmt.name == "FMTU" && pkt.size() >= 44)
+        const uint8_t *pkt = buf.data() + pos;
+        if (fmt.name == "FMTU" && fmt.length >= 44)
         {
             const uint8_t target = pkt[11];
             FmtUnits u;
-            std::memcpy(u.units.data(), pkt.data() + 12, 16);
-            std::memcpy(u.mults.data(), pkt.data() + 28, 16);
+            std::memcpy(u.units.data(), pkt + 12, 16);
+            std::memcpy(u.mults.data(), pkt + 28, 16);
             fmtu[target] = u;
             for (size_t i = 0; i < u.units.size(); ++i)
             {
@@ -279,16 +280,16 @@ void collectUnits(const std::vector<uint8_t> &buf, std::map<uint8_t, Format> &fo
             const int iId = findField(fmt, "Id");
             const int iLabel = findField(fmt, "Label");
             double idv = 0;
-            if (iId >= 0 && iLabel >= 0 && readNum(pkt, fmt.fields[iId], idv))
-                unitNames[static_cast<uint8_t>(idv)] = readString(pkt, fmt.fields[iLabel]);
+            if (iId >= 0 && iLabel >= 0 && readNum(pkt, fmt.length, fmt.fields[iId], idv))
+                unitNames[static_cast<uint8_t>(idv)] = readString(pkt, fmt.length, fmt.fields[iLabel]);
         }
         else if (fmt.name == "MULT")
         {
             const int iId = findField(fmt, "Id");
             const int iMult = findField(fmt, "Mult");
             double idv = 0, mult = 0;
-            if (iId >= 0 && iMult >= 0 && readNum(pkt, fmt.fields[iId], idv) &&
-                readNum(pkt, fmt.fields[iMult], mult))
+            if (iId >= 0 && iMult >= 0 && readNum(pkt, fmt.length, fmt.fields[iId], idv) &&
+                readNum(pkt, fmt.length, fmt.fields[iMult], mult))
                 mults[static_cast<uint8_t>(idv)] = mult;
         }
         pos += fmt.length;
@@ -314,9 +315,8 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
         err = "不是 ArduPilot DataFlash .bin（缺少 A3 95 头）";
         return false;
     }
-    psLoaderProgress(10, 100);
     auto formats = collectFormats(buf);
-    psLoaderProgress(18, 100);
+    psLoaderProgress(20, 100);
     if (formats.empty())
     {
         err = "没有找到 FMT 格式定义";
@@ -326,14 +326,14 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
     std::map<uint8_t, std::string> unitNames;
     std::map<uint8_t, double> mults;
     collectUnits(buf, formats, fmtu, unitNames, mults);
-    psLoaderProgress(25, 100);
+    psLoaderProgress(30, 100);
 
     std::map<std::tuple<uint8_t, uint8_t, size_t>, Builder> builders;
     std::vector<std::pair<std::string, std::string>> params;
     size_t pos = 0;
     while (pos + 3 <= buf.size())
     {
-        psLoaderProgress(25 + pos * 70 / std::max<size_t>(1, buf.size()), 100);
+        psLoaderProgress(30 + pos * 65 / std::max<size_t>(1, buf.size()), 100);
         if (buf[pos] != kHead1 || buf[pos + 1] != kHead2)
         {
             ++pos;
@@ -354,16 +354,16 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
         const Format &fmt = it->second;
         if (pos + fmt.length > buf.size())
             break;
-        const std::vector<uint8_t> pkt(buf.begin() + pos, buf.begin() + pos + fmt.length);
+        const uint8_t *pkt = buf.data() + pos;
 
         if (fmt.name == "PARM")
         {
             const int iName = findField(fmt, "Name");
             const int iValue = findField(fmt, "Value");
             double value = 0;
-            if (iName >= 0 && iValue >= 0 && readNum(pkt, fmt.fields[iValue], value))
+            if (iName >= 0 && iValue >= 0 && readNum(pkt, fmt.length, fmt.fields[iValue], value))
             {
-                const std::string name = readString(pkt, fmt.fields[iName]);
+                const std::string name = readString(pkt, fmt.length, fmt.fields[iName]);
                 if (!name.empty())
                     params.emplace_back(name, std::to_string(value));
             }
@@ -382,7 +382,7 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
             continue;
         }
         double tUs = 0;
-        if (!readNum(pkt, fmt.fields[ti], tUs))
+        if (!readNum(pkt, fmt.length, fmt.fields[ti], tUs))
         {
             pos += fmt.length;
             continue;
@@ -392,7 +392,7 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
         if (fmt.instanceIdx)
         {
             double inst = 0;
-            if (readNum(pkt, fmt.fields[*fmt.instanceIdx], inst))
+            if (readNum(pkt, fmt.length, fmt.fields[*fmt.instanceIdx], inst))
                 instance = static_cast<uint8_t>(inst);
         }
 
@@ -404,7 +404,7 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
             if (f.name.empty() || isStringCode(f.code))
                 continue;
             double v = 0;
-            if (!readNum(pkt, f, v))
+            if (!readNum(pkt, fmt.length, f, v))
                 continue;
             Builder &b = builders[{fmt.id, instance, fi}];
             b.hasInstance = fmt.instanceIdx.has_value();
@@ -450,5 +450,6 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
     std::sort(log.channels.begin(), log.channels.end(),
               [](const PsChannelData &a, const PsChannelData &b) { return a.name < b.name; });
     log.params = std::move(params);
+    psLoaderProgress(100, 100);
     return true;
 }

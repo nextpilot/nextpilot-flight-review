@@ -1,26 +1,17 @@
 #include "ps_extension_api.h"
 #include "LegacyFileInput.hpp"
+#include "NmeaMessageParser.h"
 #include "PsLoaderCommon.h"
 
-#include <QCoreApplication>
-#include <QDir>
-#include <QFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonParseError>
-#include <QStringList>
-#include <filesystem>
-
+#include <QByteArray>
 #include <QString>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <map>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -33,112 +24,6 @@ struct Channel
     std::vector<double> t;
     std::vector<double> v;
 };
-
-struct NmeaFieldDef
-{
-    std::string name;
-    int index = -1;
-    std::string type;
-    int hemiIndex = -1;
-    std::string unit;
-};
-
-struct NmeaSentenceDef
-{
-    std::vector<NmeaFieldDef> fields;
-};
-
-using NmeaDatabase = std::map<std::string, NmeaSentenceDef>;
-
-double dmToDeg(const std::string &dm, const std::string &hemi, bool &ok)
-{
-    ok = false;
-    if (dm.empty() || hemi.empty())
-        return 0;
-    double raw = std::atof(dm.c_str());
-    const int deg = static_cast<int>(raw / 100.0);
-    const double min = raw - deg * 100.0;
-    double v = deg + min / 60.0;
-    if (hemi[0] == 'S' || hemi[0] == 'W')
-        v = -v;
-    ok = true;
-    return v;
-}
-
-double utcSeconds(const std::string &hhmmss)
-{
-    if (hhmmss.size() < 6)
-        return 0;
-    return std::atof(hhmmss.substr(0, 2).c_str()) * 3600.0 +
-           std::atof(hhmmss.substr(2, 2).c_str()) * 60.0 + std::atof(hhmmss.substr(4).c_str());
-}
-
-std::vector<std::string> split(const std::string &s)
-{
-    std::vector<std::string> out;
-    std::string cur;
-    for (char c : s)
-    {
-        if (c == ',')
-        {
-            out.push_back(cur);
-            cur.clear();
-        }
-        else
-            cur.push_back(c);
-    }
-    out.push_back(cur);
-    return out;
-}
-
-NmeaDatabase loadNmeaDatabase()
-{
-    NmeaDatabase db;
-    const QString appDir = QCoreApplication::applicationDirPath();
-    const QStringList candidates = {
-#ifdef PS_GNSS_DB_DIR
-        QStringLiteral(PS_GNSS_DB_DIR) + QStringLiteral("/nmea_database.json"),
-#endif
-        appDir + QStringLiteral("/nmea_database.json"),
-        appDir + QStringLiteral("/../nmea_database.json"),
-        QDir::currentPath() + QStringLiteral("/nmea_database.json"),
-        QDir::currentPath() + QStringLiteral("/../src/extensions/builtin/gnss/nmea_database.json"),
-        QDir::currentPath() + QStringLiteral("/src/extensions/builtin/gnss/nmea_database.json")};
-
-    for (const QString &path : candidates)
-    {
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly))
-            continue;
-        QJsonParseError error;
-        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
-        if (error.error != QJsonParseError::NoError || !document.isObject())
-            continue;
-
-        for (const QJsonValue &value : document.object().value(QStringLiteral("sentences")).toArray())
-        {
-            const QJsonObject object = value.toObject();
-            const std::string key = object.value(QStringLiteral("key")).toString().toStdString();
-            NmeaSentenceDef def;
-            for (const QJsonValue &fieldValue : object.value(QStringLiteral("fields")).toArray())
-            {
-                const QJsonObject field = fieldValue.toObject();
-                NmeaFieldDef fd;
-                fd.name = field.value(QStringLiteral("name")).toString().toStdString();
-                fd.index = field.value(QStringLiteral("index")).toInt(-1);
-                fd.type = field.value(QStringLiteral("type")).toString().toStdString();
-                fd.hemiIndex = field.value(QStringLiteral("hemiIndex")).toInt(-1);
-                fd.unit = field.value(QStringLiteral("unit")).toString().toStdString();
-                if (!fd.name.empty() && fd.index >= 0)
-                    def.fields.push_back(fd);
-            }
-            if (!key.empty() && !def.fields.empty())
-                db[key] = def;
-        }
-        return db;
-    }
-    return db;
-}
 
 std::string lowerCopy(std::string value)
 {
@@ -155,11 +40,12 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         err = "无法打开 NMEA 文件：" + path;
         return false;
     }
-    const NmeaDatabase database = loadNmeaDatabase();
+    NmeaMessageParser parser;
     std::map<std::string, Channel> acc;
     double lastT = 0, dayOffset = 0;
     bool first = true;
-    const auto fileSize = static_cast<uint64_t>(std::filesystem::file_size(path));
+    std::error_code sizeEc;
+    const auto fileSize = static_cast<uint64_t>(std::filesystem::file_size(path, sizeEc));
     std::string line;
     while (std::getline(in, line))
     {
@@ -170,31 +56,22 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
             line.pop_back();
         if (line.size() < 7 || line[0] != '$')
             continue;
-        const size_t star = line.find('*');
-        if (star != std::string::npos)
-            line = line.substr(0, star);
-        auto f = split(line);
-        if (f.empty())
+
+        PsDecodedFrame decoded;
+        QByteArray frame(line.data(), static_cast<int>(line.size()));
+        if (!parser.parse(frame, decoded) || !decoded.checksumOk)
             continue;
 
-        std::string key = f[0].size() > 1 ? f[0].substr(1) : "";
-        if (!key.empty() && key[0] != 'P' && key.size() > 3)
-            key = key.substr(key.size() - 3);
-        const auto it = database.find(key);
-        const NmeaSentenceDef *def = it == database.end() ? nullptr : &it->second;
+        QString sentence;
+        for (const PsDecodedField &field : decoded.fields)
+            if (field.name == QStringLiteral("sentence"))
+            {
+                sentence = field.value.toString();
+                break;
+            }
+        const std::string prefix = "nmea." + lowerCopy(sentence.toStdString());
 
-        int timeIndex = 1;
-        if (def)
-            for (const auto &field : def->fields)
-                if (field.type == "time")
-                {
-                    timeIndex = field.index;
-                    break;
-                }
-
-        double t = f.size() > static_cast<size_t>(timeIndex)
-                       ? utcSeconds(f[timeIndex])
-                       : 0;
+        double t = decoded.timestamp;
         if (first)
         {
             lastT = t;
@@ -218,51 +95,21 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
             c.v.push_back(v);
         };
 
-        const std::string prefix = "nmea." + lowerCopy(key);
-        if (def)
+        for (const PsDecodedField &field : decoded.fields)
         {
-            for (const auto &field : def->fields)
-            {
-                if (field.type == "time" || field.type == "date" || field.type == "string")
-                    continue;
-                if (field.index < 0 || static_cast<size_t>(field.index) >= f.size())
-                    continue;
-                if (f[field.index].empty())
-                    continue;
-
-                double value = 0;
-                if (field.type == "dm")
-                {
-                    bool ok = false;
-                    value = dmToDeg(f[field.index],
-                                    field.hemiIndex >= 0 &&
-                                            static_cast<size_t>(field.hemiIndex) < f.size()
-                                        ? f[field.hemiIndex]
-                                        : "",
-                                    ok);
-                    if (!ok)
-                        continue;
-                }
-                else
-                    value = std::atof(f[field.index].c_str());
-                if (std::isfinite(value))
-                    add(prefix + "." + field.name, field.unit, value);
-            }
-        }
-        else
-        {
-            for (size_t i = 1; i < f.size(); ++i)
-            {
-                if (f[i].empty())
-                    continue;
-                char *end = nullptr;
-                const double value = std::strtod(f[i].c_str(), &end);
-                if (end == f[i].c_str() || *end != '\0' || !std::isfinite(value))
-                    continue;
-                add(prefix + ".field_" + std::to_string(i), "", value);
-            }
+            if (field.name == QStringLiteral("talker") || field.name == QStringLiteral("sentence") ||
+                field.name == QStringLiteral("checksum") || field.name == QStringLiteral("time") ||
+                field.name == QStringLiteral("timestamp") || field.name == QStringLiteral("utc") ||
+                field.name == QStringLiteral("date"))
+                continue;
+            bool ok = false;
+            const double value = field.value.toDouble(&ok);
+            if (!ok || !std::isfinite(value))
+                continue;
+            add(prefix + "." + field.name.toStdString(), field.unit.toStdString(), value);
         }
     }
+    psLoaderProgress(100, 100);
     channels.clear();
     for (auto &kv : acc)
         channels.push_back(std::move(kv.second));
@@ -277,6 +124,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
 int32_t nmeaLoad(const char *path, const char *, const PsHostApi *host, void **dataset, char *err,
                  uint32_t errCap)
 {
+    psLoaderSetHost(host);
     std::vector<Channel> channels;
     std::string perr;
     if (!parseFile(path, channels, perr))
