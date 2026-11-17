@@ -9,7 +9,7 @@
 | [画布交互重构](canvas-interaction.md) | 已实施（2026-11-16） | 左键选择/书签/测量、中键平移、右键菜单/框选、轴区缩放、光标联动与固定读数 |
 | [设置层：强类型 key 与变更通知](settings.md) | 已实施（2026-11-16） | 实施记录与关键决策；使用指南见 [`../develop/settings.md`](../develop/settings.md) |
 | [扩展 toolbox 化与 autopilot 方案](toolbox-architecture.md) | 部分实施：四领域组件与源码已拆，分析与报告未实施 | 四业务工具箱、`datasources` 目录、GNSS/MAVLink 描述驱动与协议调试、dynamic 清理、飞控 review 与报告边界 |
-| [脚本子系统（控制台 + 自动化）](script-automation.md)（[飞书](https://my.feishu.cn/file/PPNObKmVuouL51xBLvNc8nC9nAc)） | 实施中（S2 控制台核心完成） | 独立 `modules/scripting`：控制台（MATLAB 式 REPL / 计算库 / scratch 结果）、自动化（Job / 批处理 / 驱动录制 / 事件触发）；脚本就是普通 `.lua` 文件，`require` 复用，无 schema、无编辑器、无版本机制（git 管）；不接管绘图侧曲线变换 |
+| [脚本子系统（知识注入 + 自动化 + 判据）](script-automation.md)（[飞书](https://my.feishu.cn/file/PPNObKmVuouL51xBLvNc8nC9nAc)） | 实施中（S2 完成，S3 / S3b 待开工） | 一个引擎、三组 API 面（数据 / 绘图 / 判据）：脚本是知识注入通道，工具箱是出厂知识；算子 `create/calculate/reset` 同时服务实时推流与批量回放；判据必须多信号 + 状态 + 时序，`finding` 挂 dataset 不挂曲线；三级持久化（配置自动重建、脚本可调、呈现必须重跑）；marker 收为 `ps.claim/mark` 输出形态 |
 | [Shell 架构解耦方案 v2](shell-architecture-v2.md) | 方案待实施（2026-11-17） | `Core` 管进程级服务、`MainWindow` 只做 Shell；Phase A 先拆 Property/Settings/Session/Log 反向依赖，Phase B 做 Core/Shell 分层，后续再上 Document/Workspace |
 | [历史架构基线与决策 v1.0](architecture-v1.md) | 历史记录 | 旧版架构决策、目录基线与实施记录；当前边界以 `AGENTS.md` 为准 |
 | [旧组件/扩展模型 v1](extension-model-v1.md) | 历史记录 | 已被当前 [`../develop/extensions.md`](../develop/extensions.md) 取代的旧模型 |
