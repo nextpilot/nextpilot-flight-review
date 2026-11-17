@@ -41,14 +41,14 @@ int main(int argc, char **argv)
         if (name == QStringLiteral("imu.roll"))
         {
             sawRoll = true;
-            assert(std::abs(ch->value[0] - 1.5) < 1e-9);
-            assert(std::abs(ch->value[1] - 2.5) < 1e-9);
+            assert(std::abs(ps_channel_value_at(ch, 0) - 1.5) < 1e-9);
+            assert(std::abs(ps_channel_value_at(ch, 1) - 2.5) < 1e-9);
         }
         else if (name == QStringLiteral("imu.pitch"))
         {
             sawPitch = true;
-            assert(std::abs(ch->value[0] - 3.0) < 1e-6);
-            assert(std::isnan(ch->value[1]));
+            assert(std::abs(ps_channel_value_at(ch, 0) - 3.0) < 1e-6);
+            assert(std::isnan(ps_channel_value_at(ch, 1)));
         }
     }
     assert(sawRoll && sawPitch);

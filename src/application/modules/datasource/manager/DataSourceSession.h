@@ -98,6 +98,7 @@ public:
     void persistSourceConfigs();
 
 private:
+    void persistSourceConfigsSoon();
     void log(const QString &text);
     void refreshPropTree(PlottingCanvas *c = nullptr);
     PlottingCanvas *currentCanvas() const;
@@ -111,6 +112,7 @@ private:
     QStackedWidget *m_srcStack = nullptr;
     QLabel *m_srcCount = nullptr;
     QTimer *m_liveTimer = nullptr;
+    QTimer *m_configTimer = nullptr;
     qint64 m_liveUiMs = 0;
     bool m_viewBacked = false;
     QString m_srcFmt;

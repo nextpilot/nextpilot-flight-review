@@ -47,14 +47,14 @@ bool appendTypedColumn(const PsFrameColumn &col, uint32_t rows, std::vector<doub
 LiveFrameSink::ChannelView::ChannelView()
     : time(std::make_shared<std::vector<double>>())
 {
-    reserve();
 }
 
 void LiveFrameSink::ChannelView::reserve()
 {
     if (time && time->capacity() < static_cast<size_t>(kReserveRows))
         time->reserve(kReserveRows);
-    value.reserve(kReserveRows);
+    if (!typed)
+        value.reserve(kReserveRows);
 }
 
 void LiveFrameSink::ChannelView::refresh()
@@ -63,7 +63,10 @@ void LiveFrameSink::ChannelView::refresh()
     info.unit = unit.constData();
     info.point_count = static_cast<uint32_t>(time ? time->size() : 0);
     info.time = time ? time->data() : nullptr;
-    info.value = value.data();
+    info.value = typed ? nullptr : (value.empty() ? nullptr : value.data());
+    info.table = typed ? table.constData() : nullptr;
+    info.column = typed ? column.constData() : nullptr;
+    info.generation = 0;
 }
 
 void LiveFrameSink::ChannelView::trimTo(int capacity)
@@ -156,6 +159,7 @@ LiveFrameSink::ChannelView *LiveFrameSink::legacyChannel(const QString &name, co
     auto view = std::make_unique<ChannelView>();
     view->name = name.toUtf8();
     view->unit = unit.toUtf8();
+    view->reserve();
     view->refresh();
     auto *raw = view.get();
     m_legacy[name] = std::move(view);
@@ -183,7 +187,11 @@ LiveFrameSink::TableView *LiveFrameSink::frameTable(const PsFrameBatch *batch, i
         view->time = table->time;
         view->name = table->name + '.' + QByteArray(col.name);
         view->unit = QByteArray(col.unit ? col.unit : "");
+        view->typed = true;
+        view->table = table->name;
+        view->column = QByteArray(col.name);
         view->refresh();
+        view->info.dataset = m_dataset;
         table->columns.push_back(std::move(view));
     }
     table->reserve();
@@ -256,8 +264,6 @@ int32_t LiveFrameSink::onFrameBatch(void *ctx, const PsFrameBatch *batch)
         const PsFrameColumn &col = batch->column_data[i];
         if (!appendTypedColumn(col, batch->rows, rowValues))
             return 3;
-        table->columns[i]->value.insert(table->columns[i]->value.end(),
-                                        rowValues.begin(), rowValues.end());
         if (self->m_recorder)
         {
             const QByteArray full = table->name + '.' + QByteArray(col.name);
@@ -270,6 +276,13 @@ int32_t LiveFrameSink::onFrameBatch(void *ctx, const PsFrameBatch *batch)
     if (static_cast<int>(table->time->size()) > kChannelCapacity)
         self->m_overflow = true;
     table->trimTo(kChannelCapacity);
+    // 内核 ring 可能按字节先裁剪；view 的行数必须跟内核一致，避免 Canvas 摸到已裁掉的行。
+    if (self->m_dataset)
+    {
+        const uint64_t kernelRows = ps_dataset_table_rows(self->m_dataset, batch->table);
+        if (kernelRows < table->time->size())
+            table->trimTo(static_cast<int>(kernelRows));
+    }
     for (auto &c : table->columns)
         c->refresh();
     self->m_totalSamples += static_cast<int>(batch->rows) * static_cast<int>(batch->columns);

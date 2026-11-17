@@ -56,8 +56,11 @@ private:
     {
         QByteArray name;
         QByteArray unit;
+        QByteArray table;
+        QByteArray column;
+        bool typed = false;
         std::shared_ptr<std::vector<double>> time;
-        std::vector<double> value;
+        std::vector<double> value; // 仅旧 channel_batch 兼容；frame_batch 不复制 f64
         PsChannelInfo info{};
 
         ChannelView();

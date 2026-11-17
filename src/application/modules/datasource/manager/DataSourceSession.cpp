@@ -96,6 +96,10 @@ DataSourceSession::DataSourceSession(MainWindow *mw) : QWidget(mw), m_mw(mw)
     m_liveTimer->setInterval(30);
     connect(m_liveTimer, &QTimer::timeout, this, &DataSourceSession::pollLiveSources);
     m_liveTimer->start();
+    m_configTimer = new QTimer(this);
+    m_configTimer->setSingleShot(true);
+    m_configTimer->setInterval(250);
+    connect(m_configTimer, &QTimer::timeout, this, &DataSourceSession::persistSourceConfigs);
     registerDataCommands();
 }
 
@@ -160,6 +164,7 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
                 src->config.alias = name;
                 for (auto *c : ps::bridge::allCanvases(m_mw))
                     ps::bridge::canvasRenameSource(c, src->config.path, name);
+                persistSourceConfigsSoon();
             },
             [this](DataSource *src, int mode) { alignSource(src, mode); },
             [this](DataSource *src) { setSourceBase(src); },
@@ -424,6 +429,7 @@ void DataSourceSession::setSourceOffset(ps::data_source::DataSource *src, double
         ps::bridge::canvasSetSourceOffset(c, src->config.path, offsetSec, refit);
     if (auto *row = src->row)
         row->setToolTip(QStringLiteral("%1 · 显示偏移 %2 s").arg(src->config.alias).arg(offsetSec, 0, 'f', 3));
+    persistSourceConfigsSoon();
 }
 
 void DataSourceSession::alignSource(ps::data_source::DataSource *src, int mode)
@@ -896,6 +902,12 @@ void DataSourceSession::applySrcFilter()
     }
 }
 
+void DataSourceSession::persistSourceConfigsSoon()
+{
+    if (m_configTimer)
+        m_configTimer->start();
+}
+
 void DataSourceSession::persistSourceConfigs()
 {
     QJsonArray arr;
@@ -927,10 +939,22 @@ bool DataSourceSession::openLiveInput(const QStringList &ids, const QString &con
     return ok;
 }
 
-void DataSourceSession::configureLiveSource(DataSource *src) { m_dataSourceDock->configureLiveSource(src); }
+void DataSourceSession::configureLiveSource(DataSource *src)
+{
+    m_dataSourceDock->configureLiveSource(src);
+    persistSourceConfigsSoon();
+}
 void DataSourceSession::pollLiveSources() { m_dataSourceDock->pollLiveSources(); }
-void DataSourceSession::refreshLiveSource(DataSource *src) { m_dataSourceDock->refreshLiveSource(src); }
-void DataSourceSession::closeLiveSource(DataSource *src) { m_dataSourceDock->closeLiveSource(src); }
+void DataSourceSession::refreshLiveSource(DataSource *src)
+{
+    m_dataSourceDock->refreshLiveSource(src);
+    persistSourceConfigsSoon();
+}
+void DataSourceSession::closeLiveSource(DataSource *src)
+{
+    m_dataSourceDock->closeLiveSource(src);
+    persistSourceConfigsSoon();
+}
 
 
 
