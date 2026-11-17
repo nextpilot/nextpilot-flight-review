@@ -1,15 +1,16 @@
 #include "App.h"
 #include "Intent.h"
 #include "DataRepository.h"
+#include "Dataset.h"
 
 #include <QCoreApplication>
 #include <QFile>
 #include <QTextStream>
 #include <QJsonDocument>
+#include <QTemporaryDir>
 
 #include <cassert>
 #include <cstdio>
-#include <QTemporaryDir>
 
 using namespace ng::app;
 using namespace ng::core;
@@ -37,11 +38,13 @@ static Intent loadIntent(const QString &path)
     return i;
 }
 
-static Intent renderIntent(DatasetId id)
+static Intent renderIntent(DatasetId id, const QString &channel)
 {
     Intent i;
     i.op = QStringLiteral("plot.render");
     i.params[QStringLiteral("dataset")] = id;
+    if (!channel.isEmpty())
+        i.params[QStringLiteral("channel")] = channel;
     return i;
 }
 
@@ -58,21 +61,43 @@ int main(int argc, char **argv)
     assert(application.modules().activeIds().size() == 3);
     fprintf(stdout, "[ok] 三个模块按依赖顺序激活\n");
 
-    // 2) 意图执行：CSV 扩展产出 Dataset
+    // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）
     Result<IntentResult> loaded = application.modules().execute(loadIntent(csv));
     assert(loaded);
     const DatasetId id = loaded.value().payload.toInt();
-    assert(application.data().get(id) != nullptr);
-    assert(application.data().get(id)->seriesCount() == 2);
-    fprintf(stdout, "[ok] 意图 data.load 产出 Dataset，2 个通道\n");
+    const Dataset *ds = application.data().get(id);
+    assert(ds != nullptr);
 
-    // 3) 意图执行：plot 模块编译出 PlotSpec
-    Result<IntentResult> rendered = application.modules().execute(renderIntent(id));
+    // 2a) 多表模型：一张表，表内两列 typed 列，共享 3 行时间轴
+    assert(ds->tableCount() == 1);
+    const Table *t = ds->table(0);
+    assert(t->rowCount() == 3);
+    assert(t->columns.size() == 2);
+    assert(t->column(QStringLiteral("roll")) != nullptr);
+    assert(t->column(QStringLiteral("pitch")) != nullptr);
+    assert(t->column(QStringLiteral("roll"))->type == ValueType::F64);
+    // 共享时间轴：UTC 微秒，0/1/2 秒
+    assert(t->timeUs.at(0) == 0);
+    assert(t->timeUs.at(1) == 1000000);
+    assert(t->timeUs.at(2) == 2000000);
+    fprintf(stdout, "[ok] Dataset = 多张二维表；表内列共享 UTC 微秒时间轴（typed 列 + nulls）\n");
+
+    // 2b) 通道投影：table.column -> (秒,值) f64 序列
+    const auto ch = ds->channel(QStringLiteral("demo.roll"));
+    assert(ch.has_value());
+    assert(ch->size() == 3);
+    assert(ch->time.first() == 0.0 && ch->time.last() == 2.0);
+    assert(ch->value.at(1) == 1.5);
+    fprintf(stdout, "[ok] 通道投影 table.column 产出绘图用 (t_sec, value) 序列\n");
+
+    // 3) 意图执行：plot 模块按 table.column 编译出 PlotSpec
+    Result<IntentResult> rendered = application.modules().execute(renderIntent(id, QStringLiteral("demo.pitch")));
     assert(rendered);
     const QVariantMap spec = rendered.value().payload.toMap();
     assert(spec.value(QStringLiteral("type")).toString() == QStringLiteral("timeseries"));
-    assert(spec.value(QStringLiteral("channel")).toString() == QStringLiteral("roll"));
-    fprintf(stdout, "[ok] 意图 plot.render 产出 PlotSpec\n");
+    assert(spec.value(QStringLiteral("column")).toString() == QStringLiteral("pitch"));
+    assert(spec.value(QStringLiteral("valueType")).toString() == QStringLiteral("F64"));
+    fprintf(stdout, "[ok] 意图 plot.render 产出 PlotSpec（含 table/column/valueType）\n");
 
     // 4) 卸载隔离：关掉绘图模块后，CSV 仍能加载，数据不消失
     assert(application.modules().deactivate(QStringLiteral("mod.plot")));
@@ -92,7 +117,7 @@ int main(int argc, char **argv)
     // 6) Job 序列化往返
     Job job;
     job.append(loadIntent(csv));
-    job.append(renderIntent(id));
+    job.append(renderIntent(id, QStringLiteral("demo.roll")));
     Result<void> parseErr;
     Job restored = Job::fromJson(job.toJson(), &parseErr);
     assert(parseErr);

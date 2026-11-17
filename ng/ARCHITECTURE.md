@@ -40,25 +40,51 @@ core/           地基：Dataset/Series、DataRepository、事件、意图定义
 
 ## 3. 统一数据模型（core）
 
+数据模型对齐仓库 kernel（`ps-ndf/src/typed.rs`）的 typed 表模型——**Dataset 是多张二维表的库，不是扁平 Series 列表**：
+
 ```cpp
-struct Series {
+enum class ValueType { F64, F32, I64, U64, I32, U32, I16, U16, I8, U8, Bool, Text };
+
+struct Column {              // 一列（列式存储）
+    QString name, unit;
+    ValueType type;          // 12 种 typed 值，对齐 PsValueType
+    std::vector<QVariant> values;
+    std::vector<bool> nulls; // 每列独立 null 位图
+};
+
+struct Table {               // 一张表 = 一个 topic
     QString name;
-    QString unit;
-    QVector<double> time;   // UTC 秒
-    QVector<double> value;
+    QVector<qint64> timeUs;  // 表级共享时间轴，UTC 微秒（不是列里的 double 秒）
+    QVector<quint64> seq;    // 表内序号，微秒相同时排序
+    QVector<Column> columns; // 表内所有列共享 timeUs
 };
 
-class Dataset {
-    // 拥有若干 Series；不可变快照语义
-    // 时间对齐、派生都产生新 Dataset，不改原对象
+struct ChannelView {         // 绘图视图：把 (table,column) 投影成 (t_sec,value) f64
+    QString table, column, name, unit;
+    ValueType type;
+    QVector<double> time, value;
 };
 
-class DataRepository {   // 数据的唯一所有者
+class Dataset {              // 库：装多张表，表名在库内唯一
+    int addTable(name, QVector<qint64> timeUs);
+    bool addColumn(tableName, Column);
+    const Table* table(QString name) const;
+    std::optional<ChannelView> channel("table.column") const;
+};
+
+class DataRepository {       // 数据的唯一所有者
     DatasetId add(Dataset);
     void remove(DatasetId);
     const Dataset* get(DatasetId) const;
 };
 ```
+
+关键约束（与 kernel 一致）：
+- **时间轴是表级的、UTC 微秒 i64**，表内所有列共享；绘图时才投影成秒。
+- **列是 typed 的**，带独立 null 位图；不是清一色 f64。
+- **Dataset 归 DataRepository 所有**，不归任何模块。模块卸载不删数据。
+- 不可变快照：派生/变换产生新 Dataset，不改原对象。
+- ng 用纯 C++ 值类型表达这套语义，独立于 Rust kernel；未来可平滑接入真实 `PsDataset`。
 
 - **Dataset 归 DataRepository 所有**，不归任何模块。模块卸载不删数据。
 - 数据快照不可变：派生/变换产生新 Dataset，避免多处修改同一份数据。

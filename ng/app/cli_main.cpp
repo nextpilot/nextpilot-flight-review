@@ -78,8 +78,17 @@ int main(int argc, char **argv)
         const DatasetId id = r.value().payload.toInt();
         const Dataset *ds = application.data().get(id);
         fprintf(stdout, "数据集 #%d: %s [%s]\n", id, qPrintable(ds->name()), qPrintable(ds->format()));
-        fprintf(stdout, "通道 (%d): %s\n", ds->seriesCount(), qPrintable(ds->seriesNames().join(QLatin1Char(','))));
-        fprintf(stdout, "时间范围: %.3f .. %.3f\n", ds->timeMin(), ds->timeMax());
+        fprintf(stdout, "表 (%d): %s\n", ds->tableCount(), qPrintable(ds->tableNames().join(QLatin1Char(','))));
+        for (int ti = 0; ti < ds->tableCount(); ++ti)
+        {
+            const Table *t = ds->table(ti);
+            QStringList cols;
+            for (const Column &c : t->columns)
+                cols << QStringLiteral("%1(%2)").arg(c.name, QLatin1String(valueTypeName(c.type)));
+            fprintf(stdout, "  表 %s: %d 行, 列 [%s]\n", qPrintable(t->name), t->rowCount(),
+                    qPrintable(cols.join(QLatin1Char(','))));
+        }
+        fprintf(stdout, "时间范围: %.3f .. %.3f 秒\n", ds->timeMin(), ds->timeMax());
         return 0;
     }
 

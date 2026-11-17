@@ -9,6 +9,7 @@ using namespace ng::host;
 
 // 把 plot.render 意图编译成 PlotSpec。headless 下这就是最终产物（可导出 JSON）；
 // GUI 下渲染器消费同一份 spec。意图层与视图层由此解耦。
+// 数据通过 Dataset 的通道投影访问（table.column），绘图模块不认识任何数据格式。
 class PlotModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
@@ -28,19 +29,32 @@ public:
         if (!ds)
             return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(id));
 
-        const QString channel = intent.params.value(QStringLiteral("channel")).toString();
-        const SeriesData *series = channel.isEmpty() ? ds->series(0) : ds->series(channel);
-        if (!series || series->empty())
-            return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1").arg(channel));
+        // 通道限定符："table.column"；缺省时取全库第一个通道。
+        const QString qualified = intent.params.value(QStringLiteral("channel")).toString();
+        std::optional<ChannelView> view;
+        if (qualified.isEmpty())
+        {
+            const QVector<ChannelView> all = ds->allChannels();
+            if (!all.isEmpty())
+                view = all.first();
+        }
+        else
+        {
+            view = ds->channel(qualified);
+        }
+        if (!view || view->empty())
+            return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1").arg(qualified));
 
-        // PlotSpec：与 GUI 无关的纯描述。
+        // PlotSpec：与 GUI 无关的纯描述。数据来自通道投影（秒/值），类型也带上。
         QVariantMap spec;
         spec[QStringLiteral("type")] = QStringLiteral("timeseries");
-        spec[QStringLiteral("title")] = QStringLiteral("%1 / %2").arg(ds->name(), series->name);
-        spec[QStringLiteral("channel")] = series->name;
-        spec[QStringLiteral("points")] = series->size();
-        spec[QStringLiteral("t0")] = ds->timeMin();
-        spec[QStringLiteral("t1")] = ds->timeMax();
+        spec[QStringLiteral("title")] = QStringLiteral("%1 / %2").arg(ds->name(), view->name);
+        spec[QStringLiteral("table")] = view->table;
+        spec[QStringLiteral("column")] = view->column;
+        spec[QStringLiteral("valueType")] = QString::fromLatin1(valueTypeName(view->type));
+        spec[QStringLiteral("points")] = view->size();
+        spec[QStringLiteral("t0")] = view->time.isEmpty() ? 0.0 : view->time.first();
+        spec[QStringLiteral("t1")] = view->time.isEmpty() ? 0.0 : view->time.last();
 
         IntentResult r;
         r.payload = spec;
