@@ -1791,3 +1791,34 @@ pub unsafe extern "C" fn ps_dataset_read_window(
     }
     n
 }
+
+/// typed 列原始类型，返回 PsValueType；旧通道/不存在返回 -1。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_column_type(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    column: *const c_char,
+) -> i32 {
+    if ds.is_null() || table.is_null() || column.is_null() {
+        return -1;
+    }
+    let ds = &*ds;
+    let tname = CStr::from_ptr(table).to_string_lossy();
+    let cname = CStr::from_ptr(column).to_string_lossy();
+    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return -1; };
+    let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return -1; };
+    match c.value_type() {
+        ps_ndf::typed::ValueType::F64 => 0,
+        ps_ndf::typed::ValueType::F32 => 1,
+        ps_ndf::typed::ValueType::I64 => 2,
+        ps_ndf::typed::ValueType::U64 => 3,
+        ps_ndf::typed::ValueType::I32 => 4,
+        ps_ndf::typed::ValueType::U32 => 5,
+        ps_ndf::typed::ValueType::I16 => 6,
+        ps_ndf::typed::ValueType::U16 => 7,
+        ps_ndf::typed::ValueType::I8 => 8,
+        ps_ndf::typed::ValueType::U8 => 9,
+        ps_ndf::typed::ValueType::Bool => 10,
+        ps_ndf::typed::ValueType::Text => 11,
+    }
+}

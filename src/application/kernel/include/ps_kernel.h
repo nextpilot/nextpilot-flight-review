@@ -137,6 +137,14 @@ int32_t              ps_dataset_value_near(PsDataset *ds, const char *table, con
 uint32_t             ps_dataset_read_window(PsDataset *ds, const char *table, const char *column,
                                             int64_t t0_us, int64_t t1_us,
                                             double *out_time, double *out_value, uint32_t cap);
+/* typed 列原始类型；不存在/旧通道返回 -1。 */
+int32_t              ps_dataset_column_type(PsDataset *ds, const char *table, const char *column);
+static inline const char *ps_value_type_name(int32_t t)
+{
+    static const char *names[] = {"F64", "F32", "I64", "U64", "I32", "U32",
+                                  "I16", "U16", "I8", "U8", "Bool", "Text"};
+    return t >= 0 && t < 12 ? names[t] : "";
+}
 static inline double ps_channel_value_at(const PsChannelInfo *ch, uint32_t i)
 {
     if (!ch)

@@ -756,6 +756,13 @@ ps::shell::PropertyContent DataSourceSession::channelContent(int srcId, int inde
     rows.append({QStringLiteral("名称"), QString::fromUtf8(ch->name ? ch->name : "")});
     if (ch->unit && *ch->unit)
         rows.append({QStringLiteral("单位"), QString::fromUtf8(ch->unit)});
+    if (ch->dataset && ch->table && ch->column)
+    {
+        const int32_t vt = ps_dataset_column_type(
+            const_cast<PsDataset *>(static_cast<const PsDataset *>(ch->dataset)), ch->table, ch->column);
+        if (vt >= 0)
+            rows.append({QStringLiteral("类型"), QString::fromUtf8(ps_value_type_name(vt))});
+    }
     rows.append({QStringLiteral("采样点"), QString::number(ch->point_count)});
     if (duration > 0.0)
         rows.append({QStringLiteral("时长"), QStringLiteral("%1 s").arg(duration, 0, 'f', 2)});

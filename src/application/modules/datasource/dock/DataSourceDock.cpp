@@ -588,6 +588,15 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
 }
 
 namespace {
+QString channelTypeName(const PsChannelInfo *ch)
+{
+    if (!ch || !ch->dataset || !ch->table || !ch->column)
+        return QString();
+    const int32_t vt = ps_dataset_column_type(
+        const_cast<PsDataset *>(static_cast<const PsDataset *>(ch->dataset)), ch->table, ch->column);
+    return vt >= 0 ? QString::fromUtf8(ps_value_type_name(vt)) : QString();
+}
+
 double channelValueAt(const PsChannelInfo *ch, uint32_t i)
 {
     if (!ch)
@@ -1752,7 +1761,9 @@ void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &chan
                 derivedGroup->setForeground(0, ThemeManager::color(QStringLiteral("accent")));
             }
             auto *item = new QTreeWidgetItem(derivedGroup, {name.mid(name.lastIndexOf(QLatin1Char('.')) + 1)});
-            item->setToolTip(0, name);
+            item->setToolTip(0, channelTypeName(ch).isEmpty()
+                                    ? name
+                                    : QStringLiteral("%1 · %2").arg(name, channelTypeName(ch)));
             item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
             item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
             item->setData(0, Qt::UserRole + 1, name);
@@ -1780,7 +1791,9 @@ void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &chan
         }
         QTreeWidgetItem *item = parent ? new QTreeWidgetItem(parent, {leaf})
                                        : new QTreeWidgetItem(m_srcTree, {leaf});
-        item->setToolTip(0, name);
+        item->setToolTip(0, channelTypeName(ch).isEmpty()
+                                ? name
+                                : QStringLiteral("%1 · %2").arg(name, channelTypeName(ch)));
         item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
         item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(reinterpret_cast<qulonglong>(ch)));
         item->setData(0, Qt::UserRole + 1, name);
