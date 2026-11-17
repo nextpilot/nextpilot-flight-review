@@ -1,7 +1,7 @@
 add_library(ps_datasource_protocol STATIC
-  parser/MessageParserRegistry.cpp
-  parser/ProtocolCatalog.cpp
-  parser/FrameDecoder.cpp
+  core/parser/MessageParserRegistry.cpp
+  core/parser/ProtocolCatalog.cpp
+  core/parser/FrameDecoder.cpp
 )
 target_include_directories(ps_datasource_protocol PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -21,28 +21,32 @@ add_library(ps_application_datasource OBJECT
   include/datasource/MessageParserSpec.h
   include/datasource/MessageParserRegistry.h
   include/datasource/DecodedFrame.h
+  core/DataSourceController.h
+  core/DataSourceController.cpp
+  core/DataSourceService.h
+  core/DataSourceService.cpp
   manager/DataSourceRegistry.cpp
   manager/DataSourceConfig.cpp
-  manager/DataSourceModule.cpp
+  widget/session/DataSourceModule.cpp
   manager/HostDataBridge.cpp
-  manager/DataSourceSession.h
-  manager/DataSourceSession.cpp
+  widget/session/DataSourceSession.h
+  widget/session/DataSourceSession.cpp
   manager/OfflineDataSourceDriver.h
   manager/OfflineDataSourceDriver.cpp
   manager/LiveDataSourceDriver.h
   manager/LiveDataSourceDriver.cpp
-  manager/DataSourceCommands.cpp
-  ribbon/DataSourceRibbon.cpp
-  dock/DataSourceDock.h
-  dock/DataSourceDock.cpp
-  dock/ProtocolInspectorDock.h
-  dock/ProtocolInspectorDock.cpp
-  dialog/DataSourceDialog.h
-  dialog/DataSourceDialog.cpp
-  dialog/TransformDialog.h
-  dialog/TransformDialog.cpp
-  dialog/DeviceDebugDialog.h
-  dialog/DeviceDebugDialog.cpp
+  widget/session/DataSourceCommands.cpp
+  widget/ribbon/DataSourceRibbon.cpp
+  widget/dock/DataSourceDock.h
+  widget/dock/DataSourceDock.cpp
+  widget/dock/ProtocolInspectorDock.h
+  widget/dock/ProtocolInspectorDock.cpp
+  widget/dialog/DataSourceDialog.h
+  widget/dialog/DataSourceDialog.cpp
+  widget/dialog/TransformDialog.h
+  widget/dialog/TransformDialog.cpp
+  widget/dialog/DeviceDebugDialog.h
+  widget/dialog/DeviceDebugDialog.cpp
 )
 set_target_properties(ps_application_datasource PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_datasource PUBLIC
@@ -52,9 +56,13 @@ target_include_directories(ps_application_datasource PUBLIC
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/include/datasource
+  ${CMAKE_CURRENT_SOURCE_DIR}/core
+  ${CMAKE_CURRENT_SOURCE_DIR}/core/parser
   ${CMAKE_CURRENT_SOURCE_DIR}/manager
-  ${CMAKE_CURRENT_SOURCE_DIR}/dock
-  ${CMAKE_CURRENT_SOURCE_DIR}/dialog
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/session
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/dock
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/dialog
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/ribbon
   ${CMAKE_CURRENT_SOURCE_DIR}/services/live
   ${CMAKE_CURRENT_SOURCE_DIR}/services/cache
   ${PROJECT_SOURCE_DIR}/src/application/shell

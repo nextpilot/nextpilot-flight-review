@@ -37,6 +37,7 @@ public:
         std::function<void(const PsChannelInfo *)> addChannel;
         std::function<void(const PsChannelInfo *)> setChannel;
         std::function<DataSource *(int)> sourceById;
+        std::function<QWidget *(int)> sourceRow;
         std::function<int()> activeSourceId;
         std::function<void()> refreshActiveSource;
         std::function<void(const QString &)> addTransformFor;

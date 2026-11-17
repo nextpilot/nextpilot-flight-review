@@ -20,7 +20,7 @@ if(PS_MODULE_SCRIPTING)
   list(APPEND PS_MODULE_TARGETS ps_application_scripting)
 endif()
 
-if(PS_MODULE_PROTOCOL AND PS_BUILD_CUSTOM_PROTOCOL)
+if(PS_MODULE_PROTOCOL AND PS_BUILD_CUSTOM_PROTOCOL AND PS_MODULE_DATASOURCE)
   add_subdirectory(protocol)
   list(APPEND PS_MODULE_TARGETS ps_application_protocol)
 endif()

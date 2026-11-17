@@ -3,6 +3,7 @@
 #include <QDebug>
 #include <QObject>
 #include <QMetaType>
+#include "SessionState.h"
 #include "SettingsStore.h"
 #include <QJsonObject>
 #include <QString>
@@ -84,6 +85,8 @@ public:
     {
         remove(key.name);
     }
+
+    ps::runtime::SessionState &sessionState() { return m_session; }
 
     QVariant value(const QString &key, const QVariant &defaultValue = {}) const;
     void setValue(const QString &key, const QVariant &value);
@@ -225,6 +228,7 @@ private:
     }
 
     ps::runtime::SettingsStore m_store;
+    ps::runtime::SessionState m_session;
     QMap<QString, QVariant> m_snapshot;
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer *m_debounce = nullptr;

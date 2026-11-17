@@ -4,14 +4,14 @@ if(PS_BUILTIN_AUTOPILOT AND PS_MODULE_DATASOURCE AND PS_MODULE_ANALYSIS
    AND TARGET ps_common_datasources_component)
   add_subdirectory(autopilot)
 endif()
-if(PS_BUILTIN_AUTOMOTIVE)
+if(PS_BUILTIN_AUTOMOTIVE AND PS_MODULE_DATASOURCE)
   add_subdirectory(automotive)
 endif()
-if(PS_BUILTIN_ROBOTICS)
+if(PS_BUILTIN_ROBOTICS AND PS_MODULE_DATASOURCE)
   add_subdirectory(robotics)
 endif()
 
-if(PS_BUILD_GNSS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gnss/CMakeLists.txt)
+if(PS_BUILD_GNSS AND PS_MODULE_DATASOURCE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gnss/CMakeLists.txt)
   add_subdirectory(gnss)
 endif()
 

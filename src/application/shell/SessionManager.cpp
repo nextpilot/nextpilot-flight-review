@@ -2,28 +2,13 @@
 #include "SettingsManager.h"
 #include "ShellPaths.h"
 
-#include <QFileInfo>
 #include <QMainWindow>
 
-SessionManager::SessionManager()
-{
-    load();
-}
+SessionManager::SessionManager() = default;
 
 QString SessionManager::defaultLayoutPath()
 {
     return ShellPaths::defaultLayoutPath();
-}
-
-void SessionManager::load()
-{
-    m_layoutPath = SettingsManager::instance().get(ps::settings::kLastLayout);
-    const QStringList files = SettingsManager::instance().get(ps::settings::kRecentFiles);
-    for (const QString &path : files)
-    {
-        if (!path.isEmpty() && QFileInfo::exists(path) && !m_recentFiles.contains(path))
-            m_recentFiles.append(path);
-    }
 }
 
 void SessionManager::restoreWindow(QMainWindow *window)
@@ -65,8 +50,12 @@ void SessionManager::setDockBridge(DockSave save, DockRestore restore)
 
 void SessionManager::setLayoutPath(const QString &path)
 {
-    m_layoutPath = path;
-    SettingsManager::instance().set(ps::settings::kLastLayout, path);
+    SettingsManager::instance().sessionState().setLayoutPath(path);
+}
+
+QString SessionManager::layoutPath() const
+{
+    return SettingsManager::instance().sessionState().layoutPath();
 }
 
 void SessionManager::markDirty()
@@ -81,22 +70,15 @@ void SessionManager::markClean()
 
 QStringList SessionManager::recentFiles() const
 {
-    return m_recentFiles;
+    return SettingsManager::instance().sessionState().recentFiles();
 }
 
 void SessionManager::addRecentFile(const QString &path)
 {
-    if (path.isEmpty())
-        return;
-    m_recentFiles.removeAll(path);
-    m_recentFiles.prepend(path);
-    while (m_recentFiles.size() > 12)
-        m_recentFiles.removeLast();
-    SettingsManager::instance().set(ps::settings::kRecentFiles, m_recentFiles);
+    SettingsManager::instance().sessionState().addRecentFile(path);
 }
 
 void SessionManager::clearRecentFiles()
 {
-    m_recentFiles.clear();
-    SettingsManager::instance().remove(ps::settings::kRecentFiles);
+    SettingsManager::instance().sessionState().clearRecentFiles();
 }

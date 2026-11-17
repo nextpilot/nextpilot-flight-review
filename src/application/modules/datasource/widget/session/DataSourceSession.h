@@ -27,7 +27,7 @@ class QMenu;
 class PlottingCanvas;
 struct PsChannelInfo;
 namespace ps::shell { struct PropertyContent; }
-namespace ps::data_source { class DataSourceDock; struct DataSource; }
+namespace ps::data_source { class DataSourceController; class DataSourceService; class DataSourceDock; struct DataSource; }
 
 class DataSourceSession : public QWidget
 {
@@ -55,11 +55,11 @@ public:
     void importLayoutFrom(const QString &path);
     void refreshCount();
     ps::data_source::DataSource *sourceById(int id);
-    int activeSourceId() const { return m_activeSource; }
+    int activeSourceId() const;
     std::deque<ps::data_source::DataSource> &sources();
-    const std::deque<ps::data_source::DataSource> &sources() const { return m_sources; }
-    const QVector<const PsChannelInfo *> &channels() const { return m_srcChannels; }
-    QVector<ps::TimeBookmark> &timeMarkers() { return m_timeMarkers; }
+    const std::deque<ps::data_source::DataSource> &sources() const;
+    const QVector<const PsChannelInfo *> &channels() const;
+    QVector<ps::TimeBookmark> &timeMarkers();
     void refreshActiveSource();
     void reloadChannels(ps::data_source::DataSource *src);
     void activateSource(QWidget *row);
@@ -77,6 +77,7 @@ public:
     void updateStatusChips();
     void renderSourceData();
     int sourceIdForRow(QWidget *row) const;
+    QWidget *sourceRow(int id) const;
     void setSourceOffset(ps::data_source::DataSource *src, double offsetSec, bool refit);
     void alignSource(ps::data_source::DataSource *src, int mode);
     void setSourceBase(ps::data_source::DataSource *src);
@@ -109,6 +110,8 @@ private:
     QVector<PlottingCanvas *> pageCanvasesForward() const;
 
     ps::runtime::ModuleContext *m_ctx = nullptr;
+    ps::data_source::DataSourceController *m_core = nullptr;
+    ps::data_source::DataSourceService *m_service = nullptr;
     ps::data_source::DataSourceDock *m_dataSourceDock = nullptr;
     QTreeWidget *m_srcTree = nullptr;
     QTabBar *m_srcTabs = nullptr;
@@ -120,7 +123,6 @@ private:
     qint64 m_liveUiMs = 0;
     bool m_viewBacked = false;
     QString m_srcFmt;
-    QVector<const PsChannelInfo *> m_srcChannels;
     QVector<QPair<QString, QString>> m_srcParams;
     QVector<QStringList> m_srcMsgs;
     QLineEdit *m_srcFilter = nullptr;
@@ -130,9 +132,6 @@ private:
     QScrollArea *m_srcListScroll = nullptr;
     QWidget *m_srcEmpty = nullptr;
     QVector<QToolButton *> m_srcChips;
-    QVector<ps::TimeBookmark> m_timeMarkers;
-    std::deque<ps::data_source::DataSource> m_sources;
-    int m_activeSource = -1;
     QAction *m_chipSource = nullptr;
     QAction *m_chipLod = nullptr;
 };

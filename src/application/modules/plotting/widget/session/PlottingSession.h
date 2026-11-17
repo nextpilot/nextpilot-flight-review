@@ -12,7 +12,7 @@
 
 namespace ps::runtime { struct ModuleContext; }
 namespace ps::shell { struct PropertyContent; }
-namespace ps::plotting { class PlottingTabs; }
+namespace ps::plotting { class PlottingController; class PlottingService; class PlottingTabs; }
 class PlottingCanvas;
 class QDockWidget;
 class QLabel;
@@ -66,6 +66,8 @@ public:
 
 private:
     ps::runtime::ModuleContext *m_ctx = nullptr;
+    ps::plotting::PlottingController *m_core = nullptr;
+    ps::plotting::PlottingService *m_service = nullptr;
     ps::plotting::PlottingTabs *m_plotWorkspace = nullptr;
     PlottingCanvas *m_propCanvas = nullptr;
     int m_propSeriesIndex = -1;

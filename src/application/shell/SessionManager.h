@@ -26,7 +26,7 @@ public:
     void saveWindow(const QMainWindow *window);
 
     void setLayoutPath(const QString &path);
-    QString layoutPath() const { return m_layoutPath; }
+    QString layoutPath() const;
 
     void markDirty();
     void markClean();
@@ -40,9 +40,5 @@ private:
     DockSave m_dockSave;
     DockRestore m_dockRestore;
 
-    void load();
-
-    QString m_layoutPath;
-    QStringList m_recentFiles;
     bool m_dirty = false;
 };

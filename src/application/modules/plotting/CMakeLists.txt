@@ -1,19 +1,22 @@
 add_library(ps_application_plotting OBJECT
   include/plotting/PlottingModule.h
-  manager/PlottingModule.cpp
-  manager/PlottingSession.h
-  manager/PlottingSession.cpp
-  manager/PlottingCommands.cpp
-  manager/PlottingSettings.h
-  manager/PlottingSettings.cpp
-  tabs/PlottingTabs.h
-  tabs/PlottingTabs.cpp
-  tabs/PlottingLayout.h
-  tabs/PlottingLayout.cpp
-  canvas/PlottingCanvas.h
-  canvas/PlottingCanvas.cpp
-  ribbon/PlottingRibbon.h
-  ribbon/PlottingRibbon.cpp
+  core/PlottingController.h
+  core/PlottingController.cpp
+  core/PlottingService.h
+  widget/session/PlottingModule.cpp
+  widget/session/PlottingSession.h
+  widget/session/PlottingSession.cpp
+  widget/session/PlottingCommands.cpp
+  widget/settings/PlottingSettings.h
+  widget/settings/PlottingSettings.cpp
+  widget/tabs/PlottingTabs.h
+  widget/tabs/PlottingTabs.cpp
+  widget/tabs/PlottingLayout.h
+  widget/tabs/PlottingLayout.cpp
+  widget/canvas/PlottingCanvas.h
+  widget/canvas/PlottingCanvas.cpp
+  widget/ribbon/PlottingRibbon.h
+  widget/ribbon/PlottingRibbon.cpp
 )
 set_target_properties(ps_application_plotting PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_plotting PUBLIC
@@ -25,10 +28,12 @@ target_include_directories(ps_application_plotting PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_include_directories(ps_application_plotting PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/manager
-  ${CMAKE_CURRENT_SOURCE_DIR}/tabs
-  ${CMAKE_CURRENT_SOURCE_DIR}/canvas
-  ${CMAKE_CURRENT_SOURCE_DIR}/ribbon
+  ${CMAKE_CURRENT_SOURCE_DIR}/core
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/session
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/tabs
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/canvas
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/ribbon
+  ${CMAKE_CURRENT_SOURCE_DIR}/widget/settings
   ${PROJECT_SOURCE_DIR}/src/application/shell
 )
 target_link_libraries(ps_application_plotting PUBLIC ps_runtime ps_host ps_kernel ps_filter_ui Qt6::Widgets SARibbonBar::SARibbonBar)

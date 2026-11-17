@@ -85,14 +85,14 @@ void DataSourceSession::registerDataCommands()
     });
     m_ctx->commands().add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
     m_ctx->commands().add(QStringLiteral("data.reload"), [this](const Ctx &) {
-        ps::data_source::DataSource *src = sourceById(m_activeSource);
+        ps::data_source::DataSource *src = sourceById(activeSourceId());
         if (!src || src->config.path.isEmpty())
         {
             log(QStringLiteral("当前源没有可重载的文件"));
             return;
         }
         const QString path = src->config.path;
-        QWidget *row = src->row;
+        QWidget *row = sourceRow(src->config.id);
         if (row)
             removeSourceRow(row);
         loadFile(path, false);

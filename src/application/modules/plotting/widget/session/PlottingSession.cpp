@@ -1,4 +1,6 @@
 #include "PlottingSession.h"
+#include "PlottingController.h"
+#include "PlottingService.h"
 #include "ModuleContext.h"
 #include "ModuleBridge.h"
 #include "LogManager.h"
@@ -31,7 +33,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QList>
-#include <QMainWindow>
 #include <QMenu>
 #include <QAction>
 #include <QMap>
@@ -103,11 +104,22 @@ void PlottingSession::addChannels(const QVector<const PsChannelInfo *> &channels
 }
 
 PlottingSession::PlottingSession(ps::runtime::ModuleContext &ctx)
-    : QWidget(ctx.window()), m_ctx(&ctx)
+    : QWidget(ctx.window()), m_ctx(&ctx), m_core(new ps::plotting::PlottingController()),
+      m_service(new ps::plotting::PlottingService(*m_core))
 {
+    ctx.services().provide(m_core);
+    ctx.services().provide(m_service);
     registerCommands();
 }
-PlottingSession::~PlottingSession() = default;
+PlottingSession::~PlottingSession()
+{
+    m_ctx->services().provide<ps::plotting::PlottingController>(nullptr);
+    m_ctx->services().provide<ps::plotting::PlottingService>(nullptr);
+    delete m_service;
+    m_service = nullptr;
+    delete m_core;
+    m_core = nullptr;
+}
 void PlottingSession::log(const QString &text) { m_ctx->logs().info(text); }
 
 void PlottingSession::createPages()
@@ -116,6 +128,17 @@ void PlottingSession::createPages()
         [](QWidget *parent) { return new PlottingCanvas(parent); }, this);
     m_ctx->setPageHost(m_plotWorkspace);
     m_plotWorkspace->createDefaultPages();
+    m_core->clearPages();
+    for (int i = 0; i < m_ctx->pages()->count(); ++i)
+    {
+        QWidget *page = m_ctx->pages()->widget(i);
+        if (!page || m_ctx->pages()->tabText(i) == QStringLiteral("＋"))
+            continue;
+        const QString id = m_core->addPage(m_ctx->pages()->tabText(i));
+        page->setProperty("ps.pageId", id);
+    }
+    if (QWidget *page = m_ctx->pages()->currentWidget())
+        m_core->setCurrentPage(page->property("ps.pageId").toString());
     m_plotWorkspace->setTimeMarkers(ps::bridge::timeMarkers(m_ctx));
 
     connect(m_plotWorkspace, &ps::plotting::PlottingTabs::canvasActivated, this,
@@ -165,12 +188,18 @@ void PlottingSession::createPages()
 
     connect(m_ctx->pages(), &QTabWidget::tabCloseRequested, this, [this](int idx) {
         if (m_ctx->pages()->count() > 2 && !m_ctx->pages()->tabText(idx).isEmpty())
+        {
+            if (QWidget *page = m_ctx->pages()->widget(idx))
+                m_core->removePage(page->property("ps.pageId").toString());
             m_ctx->pages()->removeTab(idx);
+        }
     });
 
     connect(m_ctx->pages(), &QTabWidget::currentChanged, this, [this](int i) {
         if (m_maxedCanvas)
             restoreCanvasMaximize();
+        if (QWidget *page = m_ctx->pages()->widget(i))
+            m_core->setCurrentPage(page->property("ps.pageId").toString());
         refreshPropTree(currentCanvas());
         if (i >= 0 && i == m_ctx->pages()->count() - 1 && m_ctx->pages()->tabText(i) == QStringLiteral("＋"))
             newPage();
@@ -406,6 +435,8 @@ void PlottingSession::createPlotPage(const QString &kind)
             c->addGeneratedSeries(s.name, s.time, s.value);
     m_plotWorkspace->attachCanvas(c);
     const int plusIdx = m_ctx->pages()->count() - 1;
+    const QString pageId = m_core->insertPage(plusIdx, label);
+    host->setProperty("ps.pageId", pageId);
     m_ctx->pages()->insertTab(plusIdx, host, label);
     m_ctx->pages()->setCurrentWidget(host);
     log(QStringLiteral("新建图页：%1").arg(label));
@@ -711,6 +742,8 @@ void PlottingSession::newPage()
     layout->addCanvas(c);
     m_plotWorkspace->attachCanvas(c);
     const int plusIdx = m_ctx->pages()->count() - 1;
+    const QString pageId = m_core->insertPage(plusIdx, QStringLiteral("新页"));
+    host->setProperty("ps.pageId", pageId);
     m_ctx->pages()->insertTab(plusIdx, host, QStringLiteral("新页"));
     m_ctx->pages()->setCurrentWidget(host);
     refreshPropTree(c);

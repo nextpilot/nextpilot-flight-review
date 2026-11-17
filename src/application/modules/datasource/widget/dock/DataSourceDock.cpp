@@ -1113,11 +1113,11 @@ void DataSourceDock::configureLiveSource(ps::data_source::DataSource *src)
     if (!openLiveInput(ids, dlg.configJson(), *src, &note, &err))
     {
         src->handle = nullptr;
-        updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
+        updateSourceMeta(m_ctx.sourceRow(src->config.id), QStringLiteral("已断开"), QStringLiteral("#4a545d"));
         QMessageBox::warning(this, QStringLiteral("连接失败"), err);
         return;
     }
-    updateSourceMeta(src->row, QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"));
+    updateSourceMeta(m_ctx.sourceRow(src->config.id), QStringLiteral("运行中 · 0 通道"), QStringLiteral("#39c5cf"));
     m_ctx.refreshSourceView();
     if (note.isEmpty())
         m_ctx.log(QStringLiteral("实时源已重连：%1").arg(src->config.fmt));
@@ -1157,7 +1157,7 @@ void DataSourceDock::refreshLiveSource(ps::data_source::DataSource *src)
     src->channels = src->liveSink->channels();
     if (src->liveSink->overflow())
         return;
-    updateSourceMeta(src->row, QStringLiteral("运行中 · %1 通道 · %2 点")
+    updateSourceMeta(m_ctx.sourceRow(src->config.id), QStringLiteral("运行中 · %1 通道 · %2 点")
                                   .arg(src->channels.size())
                                   .arg(src->channels.isEmpty() ? 0 : src->channels.first()->point_count),
                      QStringLiteral("#39c5cf"));
@@ -1186,7 +1186,7 @@ void DataSourceDock::closeLiveSource(ps::data_source::DataSource *src)
         if (src->liveSink)
             src->liveSink->stopRecording();
     }
-    updateSourceMeta(src->row, QStringLiteral("已断开"), QStringLiteral("#4a545d"));
+    updateSourceMeta(m_ctx.sourceRow(src->config.id), QStringLiteral("已断开"), QStringLiteral("#4a545d"));
     refreshSrcCount();
 }
 
@@ -1403,14 +1403,14 @@ void DataSourceDock::setSourcePaused(ps::data_source::DataSource *src, bool paus
     if (!src || !src->isLive())
         return;
     src->paused = paused;
-    if (src->row)
+    if (QWidget *row = m_ctx.sourceRow(src->config.id))
     {
-        if (QLabel *meta = src->row->findChild<QLabel *>(QStringLiteral("srcMeta")))
+        if (QLabel *meta = row->findChild<QLabel *>(QStringLiteral("srcMeta")))
         {
-            const QString base = src->row->property("srcMeta").toString();
+            const QString base = row->property("srcMeta").toString();
             meta->setText(paused ? QStringLiteral("已暂停 · %1").arg(base) : base);
         }
-        if (QToolButton *btn = src->row->findChild<QToolButton *>(QStringLiteral("srcPause")))
+        if (QToolButton *btn = row->findChild<QToolButton *>(QStringLiteral("srcPause")))
         {
             btn->setIcon(ThemeManager::icon(paused ? QStringLiteral(":/icons/play.svg")
                                                   : QStringLiteral(":/icons/pause.svg")));
@@ -1747,9 +1747,10 @@ void DataSourceDock::removeSourceRow(QWidget *row)
         // 删掉当前源后落到剩下的第一个可绘源
         for (const ps::data_source::DataSource &other : m_ctx.sources())
         {
-            if (other.ds && other.row)
+            QWidget *row = m_ctx.sourceRow(other.config.id);
+            if (other.ds && row)
             {
-                m_ctx.activateSource(other.row);
+                m_ctx.activateSource(row);
                 break;
             }
         }

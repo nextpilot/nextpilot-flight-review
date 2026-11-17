@@ -400,12 +400,12 @@ add_test(NAME message_parser_registry COMMAND test_message_parser_registry)
 
 if(TARGET ps_application_plotting)
   add_executable(test_plotting_canvas unit/test_plotting_canvas.cpp
-    ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/canvas/PlottingCanvas.cpp)
+    ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/widget/canvas/PlottingCanvas.cpp)
   target_include_directories(test_plotting_canvas PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/application
     ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
-    ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/canvas
+    ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/widget/canvas
     ${PROJECT_SOURCE_DIR}/src/application/shell)
   target_link_libraries(test_plotting_canvas PRIVATE ps_application_shell
     ps_kernel Qt6::Widgets Qt6::Network)
@@ -463,3 +463,17 @@ target_include_directories(test_memory_dataset PRIVATE ${PROJECT_SOURCE_DIR}/tes
   ${PROJECT_SOURCE_DIR}/src/application/kernel/include)
 target_link_libraries(test_memory_dataset PRIVATE ps_kernel)
 add_test(NAME memory_dataset COMMAND test_memory_dataset)
+
+# 核心控制器：数据源/绘图状态与 UI 解耦后的纯状态回归。
+add_executable(test_controller_state
+  unit/test_controller_state.cpp
+  ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/core/DataSourceController.cpp
+  ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/core/PlottingController.cpp)
+target_include_directories(test_controller_state PRIVATE
+  ${PROJECT_SOURCE_DIR}/src/application
+  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
+  ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/core
+  ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/core)
+target_link_libraries(test_controller_state PRIVATE Qt6::Core Qt6::Widgets)
+add_test(NAME controller_state COMMAND test_controller_state)

@@ -20,7 +20,8 @@ SettingsManager &SettingsManager::instance()
 SettingsManager::SettingsManager()
     // 显式带上 defaultFormat：QSettings(org, app) 在 Windows 上会忽略 defaultFormat 直接落注册表，
     // 显式传才能让测试或宿主把默认格式改成 IniFormat 生效。
-    : m_store(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
+    : m_store(QStringLiteral("NextPilot"), QStringLiteral("PlotScope")),
+      m_session(m_store, ps::settings::kRecentFiles.name, ps::settings::kLastLayout.name)
 {
     snapshot();
     setupWatchers();

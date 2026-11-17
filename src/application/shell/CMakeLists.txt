@@ -23,8 +23,6 @@ add_library(ps_application_shell OBJECT
   ShellCommands.cpp
   CommandManager.h
   CommandManager.cpp
-  ExtensionHost.h
-  ExtensionHost.cpp
   ExtensionManager.h
   ExtensionManager.cpp
   ShellComponent.h

@@ -5,13 +5,13 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Network PrintSupport)
 find_package(Qt6 QUIET COMPONENTS Charts)
 
 set(PS_ROOT ${PROJECT_SOURCE_DIR})
-add_executable(plot_bench main.cpp ${PS_ROOT}/src/application/modules/plotting/canvas/PlottingCanvas.cpp)
+add_executable(plot_bench main.cpp ${PS_ROOT}/src/application/modules/plotting/widget/canvas/PlottingCanvas.cpp)
 set_target_properties(plot_bench PROPERTIES AUTOMOC ON)
 target_include_directories(plot_bench PRIVATE
     ${PS_ROOT}/src
     ${PS_ROOT}/src/application
     ${PS_ROOT}/src/application/modules/runtime/include
-    ${PS_ROOT}/src/application/modules/plotting/canvas
+    ${PS_ROOT}/src/application/modules/plotting/widget/canvas
     ${PS_ROOT}/src/application/shell
     ${PS_ROOT}/benchmarks/qcustomplot-source
     ${PS_ROOT}/benchmarks/qwt-6.3.0/src)

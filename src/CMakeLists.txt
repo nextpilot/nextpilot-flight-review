@@ -16,7 +16,7 @@ if(PS_BUILD_GUI)
     add_subdirectory(3rdparty/ads)
 
     # 通用机械层：loader 公共代码与 CSV/JSON/binary
-    if(PS_BUILTIN_COMMON)
+    if(PS_BUILTIN_COMMON AND PS_MODULE_DATASOURCE)
       add_subdirectory(extensions/builtin/common)
     endif()
 

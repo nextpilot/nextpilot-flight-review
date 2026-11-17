@@ -21,6 +21,7 @@ int main(int argc, char **argv)
     settings.remove(ps::settings::kLastLayout);
     settings.remove(ps::settings::kRecentFiles);
     settings.set(ps::settings::kLastLayout, QStringLiteral("/tmp/last.psl"));
+    settings.sessionState().reload();
 
     SessionManager session;
     if (session.layoutPath() != QStringLiteral("/tmp/last.psl"))

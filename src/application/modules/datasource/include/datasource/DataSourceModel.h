@@ -6,7 +6,6 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
-#include <QWidget>
 
 #include <memory>
 
@@ -46,7 +45,6 @@ struct DataSource
     QVector<QStringList> msgs;
     QStringList derived;       // 本源由变换产生的通道名，右键才允许删除
     QVector<TransformRecipe> recipes;
-    QWidget *row = nullptr;
 
     // 实时运行期：handle 归扩展所有，生命周期由 LiveDataSourceDriver 管。
     bool paused = false;       // 仅实时源：暂停轮询

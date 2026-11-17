@@ -1,6 +1,6 @@
 # PJ4 架构迁移方案
 
-> 状态：部分实施（2026-11-18）。B1 已完成；B4 已完成 SettingsStore/LogService 下沉与模块 CMake option，Session/Command/Extension 尚未归位；B5 已通过 shell/datasource/plotting/autopilot 四个构建矩阵；B2/B3 的 core/widget 拆分待实施。
+> 状态：B1–B4 已实施（2026-11-18）。B2/B3 完成 core/widget 物理拆分，`DataSourceController/Service`、`PlottingController/Service` 注册到 `ServiceRegistry`，core 目录不含 Widgets/主窗口依赖；B4 完成 SettingsStore/LogService/SessionState 下沉、ExtensionHost 下沉 runtime、CommandBus 最小契约和模块/内置 CMake option。B5 默认构建与 `ctest 42/42` 通过；逐模块关闭矩阵已验证 datasource-off、plotting-off，其余组合仍需独立跑完。
 >
 > 范围：把 PlotScope 从“MainWindow 兼做窗口壳和业务服务中心”调整为“shell 只组装、modules 自贡献、extensions 可裁剪、runtime 无 Widgets”的结构。先改依赖和所有权，不改 UI 行为、不改命令 ID、不一次性搬完所有代码。
 >
@@ -453,6 +453,21 @@ rg 'ps_application_(datasource|plotting|analysis|scripting|protocol)' \
 ```
 
 ---
+
+## 8.3 实施结果（2026-11-18）
+
+| 项 | 结果 |
+|---|---|
+| datasource core | `core/DataSourceController`、`DataSourceService`、`core/parser/*`；`DataSourceModel` 不再持有 `QWidget* row`，行控件留在 widget/session |
+| datasource widget | `widget/session|dock|dialog|ribbon`；Session 创建 Controller/Service 并注册，析构清注册 |
+| plotting core | `PlottingController`（页面 ID/标题/状态）、`PlottingService`；不持有 Widget |
+| plotting widget | `widget/session|settings|tabs|canvas|ribbon`；页签创建/关闭/切换同步 Controller |
+| B4 | `runtime/SessionState` 管最近文件/layoutPath；`runtime/ExtensionHost`；`runtime/CommandBus` 契约；shell 只管窗口几何与 UI |
+| 默认构建 | `plotscope_app`、`plot_bench`、测试全部 Built |
+| 测试 | `ctest 42/42` 通过，新增 `controller_state` |
+| 矩阵 | datasource-off、plotting-off 构建通过并 offscreen 启动（exit=124 进入事件循环）；analysis/scripting/protocol/builtin 组合待跑 |
+
+`DataSourceDock` 仍通过 `Context` 回调写数据，只读查询已具备 `DataSourceService`；完全改成“Dock 只依赖 Service”需要继续收敛 Context 回调表，属于后续清理项。
 
 ## 9. 验收
 
