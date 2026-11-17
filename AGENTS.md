@@ -65,6 +65,13 @@ shell 只做最小宿主和管理内核：
 - 不直接持有 `DataSourceSession`、`PlottingSession`、`PlottingCanvas` 或扩展业务对象。
 - `MainWindow` 只做装配和宿主生命周期，不成为业务方法的转发中心。
 
+### 设置与持久化（全局硬约束）
+
+- `SettingsManager` 是唯一设置持久化入口。除 `SettingsManager.cpp` 和专门验证外部写入的测试外，任何 shell/module/extension/UI 代码不得直接 include 或构造 `QSettings`。
+- 新设置项必须先加到 `src/application/shell/SettingsManager.h` 的 `ps::settings` 命名空间，使用强类型 `SettingsKey<T>` 声明 key 和默认值；禁止在业务代码里散写字符串 key、局部默认值或第二套配置格式。
+- 最近文件、布局、窗口状态、分析应用库最近使用/收藏等 UI 状态同样走 `SettingsManager`，不得由 Ribbon/Dock/扩展自行持久化。
+- 新增或修改设置 key 必须同步补 `tests/unit/test_settings_manager.cpp` 的类型、默认值和往返测试。
+
 ## 5. modules 的硬边界
 
 - `datasource` 和 `plotting` 各自拥有自己的状态、命令、Ribbon/Dock 贡献和测试。
