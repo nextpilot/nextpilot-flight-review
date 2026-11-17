@@ -1296,6 +1296,69 @@ void DataSourceDock::reloadSource(ps::data_source::DataSource *src)
     ++src->generation;
     src->ds = out.ds;
     reloadChannels(src);
+
+    // 重载不只换 Dataset：参数表、消息表也按新文件重建，否则 UI 还是旧文件的元数据。
+    const DataSourceEntry *entry = DataSourceRegistry::instance().findSourceById(src->config.extensionId);
+    src->params.clear();
+    if (entry && entry->hasParams && entry->paramsJson)
+    {
+        QString json;
+        if (entry->cacheable)
+            json = DatasetCache::loadParams(src->config.path, entry->cacheNamespace, src->config.configJson);
+        const bool fromCache = !json.isEmpty();
+        if (!fromCache)
+            json = entry->paramsJson(src->config.path);
+        if (!json.isEmpty())
+        {
+            if (!fromCache && entry->cacheable)
+                DatasetCache::saveParams(src->config.path, entry->cacheNamespace,
+                                         src->config.configJson, json);
+            for (const QJsonValue &v : QJsonDocument::fromJson(json.toUtf8()).array())
+            {
+                const QJsonObject o = v.toObject();
+                src->params.append({o.value(QStringLiteral("name")).toString(),
+                                    o.value(QStringLiteral("value")).toString()});
+            }
+        }
+    }
+
+    src->msgs.clear();
+    QVector<QStringList> logMsgs;
+    const QFileInfo fi(src->config.path);
+    if (fi.suffix().compare(QStringLiteral("ulg"), Qt::CaseInsensitive) == 0 && !src->channels.isEmpty())
+        logMsgs = ulogLogMessages(src->config.path, src->channels.first()->time[0]);
+    if (!logMsgs.isEmpty())
+    {
+        src->msgs = logMsgs;
+    }
+    else if (entry && entry->tree)
+    {
+        QMap<QString, QVector<const PsChannelInfo *>> byTopic;
+        for (const PsChannelInfo *ch : src->channels)
+        {
+            const QString name = QString::fromUtf8(ch->name);
+            const int dot = name.lastIndexOf(QLatin1Char('.'));
+            if (dot > 0)
+                byTopic[name.left(dot)].append(ch);
+        }
+        for (auto it = byTopic.constBegin(); it != byTopic.constEnd(); ++it)
+        {
+            QString hz = QStringLiteral("—");
+            const PsChannelInfo *ch = it.value().isEmpty() ? nullptr : it.value().first();
+            if (ch && ch->point_count > 1)
+            {
+                const double span = ch->time[ch->point_count - 1] - ch->time[0];
+                if (span > 0)
+                    hz = QStringLiteral("%1 Hz").arg((ch->point_count - 1) / span, 0, 'f',
+                                                     (ch->point_count - 1) / span >= 10 ? 0 : 1);
+            }
+            const QString firstTime = (ch && ch->point_count > 0)
+                ? QString::number(ch->time[0], 'f', 3)
+                : QStringLiteral("—");
+            src->msgs.append({it.key(), hz, QString::number(it.value().size()), firstTime});
+        }
+    }
+
     if (m_ctx.activeSourceId() == src->config.id)
         m_ctx.applySourceView(src);
     m_ctx.refreshSourceView();
