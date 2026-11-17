@@ -1,4 +1,5 @@
 #include "DataSourceDock.h"
+#include "record/McapWriter.h"
 
 #include "DataSourceModel.h"
 #include "DataSourceEntry.h"
@@ -33,6 +34,9 @@
 #include <QDrag>
 #include <QDropEvent>
 #include <QFileDialog>
+
+#include <cmath>
+#include <cstdio>
 #include <QFileInfo>
 
 #include <limits>
@@ -1425,9 +1429,14 @@ void DataSourceDock::exportActiveCsv()
     const QString f = QFileDialog::getSaveFileName(this, QStringLiteral("导出数据快照"),
         QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
             .filePath(src->config.alias + QStringLiteral("-snapshot.csv")),
-        QStringLiteral("CSV (*.csv)"));
+        QStringLiteral("CSV (*.csv);;MCAP (*.mcap)"));
     if (f.isEmpty())
         return;
+    if (QFileInfo(f).suffix().compare(QStringLiteral("mcap"), Qt::CaseInsensitive) == 0)
+    {
+        exportActiveMcap(f, src);
+        return;
+    }
     QFile out(f);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
     {
@@ -1471,6 +1480,42 @@ void DataSourceDock::exportActiveCsv()
     m_ctx.log(QStringLiteral("已导出数据快照：%1（%2 行）").arg(f).arg(rows)
         + (sampleCap > 0 ? QStringLiteral("；采样上限 %1 点/通道").arg(sampleCap) : QString()));
 }
+void DataSourceDock::exportActiveMcap(const QString &path, ps::data_source::DataSource *src)
+{
+    if (!src || !src->ds)
+    {
+        m_ctx.log(QStringLiteral("没有可导出的数据源"));
+        return;
+    }
+    McapWriter writer;
+    std::string err;
+    if (!writer.open(path.toStdString(), "plotscope", err))
+    {
+        QMessageBox::warning(this, QStringLiteral("导出失败"), QString::fromStdString(err));
+        return;
+    }
+    for (const PsChannelInfo *ch : src->channels)
+    {
+        if (!ch || ch->point_count == 0 || !ch->time)
+            continue;
+        const std::string topic = ch->name;
+        for (uint32_t i = 0; i < ch->point_count; ++i)
+        {
+            const double v = ps_channel_value_at(ch, i);
+            const uint64_t ns = static_cast<uint64_t>(std::llround(ch->time[i] * 1e9));
+            char json[64];
+            std::snprintf(json, sizeof(json), "{\"value\":%.17g}", v);
+            if (!writer.writeJson(topic, ns, json, err))
+            {
+                QMessageBox::warning(this, QStringLiteral("导出失败"), QString::fromStdString(err));
+                return;
+            }
+        }
+    }
+    if (!writer.close(err))
+        QMessageBox::warning(this, QStringLiteral("导出失败"), QString::fromStdString(err));
+}
+
 void DataSourceDock::showSourceMenu(QWidget *row, const QPoint &globalPos)
 {
     if (!row)

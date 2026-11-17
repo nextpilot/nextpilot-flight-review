@@ -92,6 +92,7 @@ public:
     void activateSource(QWidget *row);
     void setSourcePaused(DataSource *src, bool paused);
     void exportActiveCsv();
+    void exportActiveMcap(const QString &path, ps::data_source::DataSource *src);
     void showSourceMenu(QWidget *row, const QPoint &globalPos);
     void removeSourceRow(QWidget *row);
     void renderSourceData(const QVector<const PsChannelInfo *> &channels,
