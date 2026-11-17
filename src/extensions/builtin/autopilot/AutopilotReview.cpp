@@ -32,6 +32,22 @@ using ps::components::HostContext;
 namespace
 {
 
+double channelValueAt(const PsChannelInfo *ch, uint32_t i)
+{
+    if (!ch)
+        return std::numeric_limits<double>::quiet_NaN();
+    if (ch->value)
+        return ch->value[i];
+    if (ch->dataset && ch->table && ch->column)
+    {
+        double t = 0.0, v = std::numeric_limits<double>::quiet_NaN();
+        ps_dataset_value_at(const_cast<PsDataset *>(static_cast<const PsDataset *>(ch->dataset)),
+                            ch->table, ch->column, i, &t, &v);
+        return v;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
 struct FlightMeta
 {
     QString profile;
@@ -212,7 +228,7 @@ QString buildReport(const ps::bridge::SourceView &view, const FlightMeta &meta)
         uint32_t valid = 0;
         for (uint32_t i = 0; i < row.count; ++i)
         {
-            const double value = channel->value[i];
+            const double value = channelValueAt(channel, i);
             if (!std::isfinite(value))
                 continue;
             row.min = std::min(row.min, value);
@@ -220,7 +236,7 @@ QString buildReport(const ps::bridge::SourceView &view, const FlightMeta &meta)
             sum += value;
             ++valid;
         }
-        row.last = channel->value[row.count - 1];
+        row.last = channelValueAt(channel, row.count - 1);
         row.mean = valid ? sum / valid : 0.0;
         if (valid == 0)
             row.min = row.max = 0.0;
@@ -328,7 +344,7 @@ QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo 
             max = -std::numeric_limits<double>::infinity();
             for (uint32_t i = 0; i < channel->point_count; ++i)
             {
-                const double value = channel->value[i];
+                const double value = channelValueAt(channel, i);
                 if (!std::isfinite(value))
                     continue;
                 min = std::min(min, value);
@@ -336,7 +352,7 @@ QTableWidget *makeStatsTable(QWidget *parent, const QVector<const PsChannelInfo 
                 sum += value;
                 ++valid;
             }
-            last = channel->value[channel->point_count - 1];
+            last = channelValueAt(channel, channel->point_count - 1);
             mean = valid ? sum / valid : 0.0;
             if (valid == 0)
                 min = max = 0.0;
