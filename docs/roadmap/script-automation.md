@@ -554,6 +554,28 @@ ps.gc()
 - `channels()` 的 min/max 是 O(n) 全扫。1000 万点单通道 9 ms，50 源 × 4 通道约 1.8 s，仍在 S1 验收内，但通道更多时会线性增长。S2 控制台若要频繁列通道，改走内核缓存的通道统计。
 - `loadFile` 失败只返回 `JobHandle{-1}`，loader 的 `err` 被丢弃，Lua 侧只能报通用 `eload`。S3 接作业模型时把 `Result` 带出来。
 
+### 7.2 P3 / S2 落地清单（已实现）
+
+**P3 内核算子**（`src/application/kernel/ps-ops`，全部 f64）
+
+| 模块 | 算法 | 关键约束 |
+|---|---|---|
+| `stats.rs` | 单遍 count/mean/std/min/max/rms，中位数单独排序 | NaN/inf 当缺失点不计入 count；中位数用 `with_median` 开关（千万点排序 ~1 s） |
+| `fft.rs` | radix-2 迭代 FFT，非 2 的幂补零 | 单边幅度谱按窗归一化，DC 与 Nyquist 不乘 2；窗 Rect/Hann/Hamming/Blackman |
+| `psd.rs` | Welch：分段加窗 + overlap + 逐段平均 | scipy density 口径（单边乘 2、除 `fs·sum(w²)`）；不足一段退化为整段一次估计 |
+| `iir.rs` | 巴特沃斯按二阶节（SOS）级联 | 低/高通用 Audio EQ，带通用中心频率 + bandwidth；奇数阶自动进一位；NaN 点保持上一拍且不推进状态 |
+| `decimate.rs` | 窗函数法线性相位低通 FIR（8·factor+1 抽头、Hamming、截止 0.8×新奈奎斯特）+ 抽取 | 时间轴同步抽取 |
+
+ABI：`ps_stats_series` / `ps_fft_series` / `ps_psd_series` / `ps_iir_series` / `ps_decimate_series`，统一「结果写调用方缓冲区、cap 不足返回 6 并回填长度」，返回码 1 空指针 / 2 参数非法 / 6 缓冲不足。实测：FFT 峰值幅值 2.000、IIR 阻带衰减 74 dB、decimate 混叠残留 < 0.05。
+
+**S2 脚本侧**
+
+- `ScriptConsole`（`include/scripting/ScriptConsole.h` + `lua/ScriptConsole.cpp`）：一个持久 `lua_State`；`eval` 先按 `return <input>` 试表达式、失败按语句；表达式结果写全局 `ans`；`incomplete()` 判续行；`print` 重定向到 `__ps_console_out` 并按 tab 连接；元命令 `:` 前缀（`:help/:clear/:who/:whos/:run/:reload/:clc`）；错误把 `console:N` 改写成 `行 N`。
+- `HostService::SeriesView`（`ScriptHostService.h`）+ `ScriptHostBridge::seriesView`：直接回 `c->time / c->value / c->point_count`，不拷贝不分配；指针随数据集生命周期失效。
+- `LuaCalcApi`（9 个入口挂在 `ps` 下）：`stats/rms/fft/psd/filter/decimate/movingAvg/derivative/integral`。通道句柄走 `seriesView` 零拷贝，Lua 数字数组拷贝一次（时间轴取 0..n-1）；返回 `{f=,mag=}` / `{f=,psd=}` / `{t=,v=}`。
+- `ConsolePanel` + `dock.console`：输出区 + 输入行 + 结果表，`ps.table(t)` 把表推到面板；终端上下键历史。
+- 边界：数组输入一律当等间隔；`ps.fft` 输入点数大时内核补零到 2 的幂（千万点临时 ~256 MB）；往 Lua 堆搬的点数上限 500 万（超限报 `etoolarge`，提示先 decimate）；`ps.stats` 的中位数默认关闭。
+
 ## 8. 开工切片
 
 ### 8.0 开工前置（三条，开工前必须落地）
@@ -562,7 +584,7 @@ ps.gc()
 |---|---|---|---|
 | P1 | **基线对齐到 `2649a98`** | 已执行：`stash → fetch → rebase → stash pop`（README 一处冲突已解）。当前 HEAD `2649a98`，`ps_filter_apply_series` 在 `kernel/include/ps_kernel.h:65-68` 可查，`shared/filter` 就位 | 已完成 |
 | P2 | **`PlottingSession.cpp:1165` 必须先摘掉 lua 项** | `Registry::runScript`（`Component.cpp:78`）的唯一调用方就是这一行（`m_mw->extensions().registry().runScript(dlg.scriptText(), {in})`，`2649a98` 上是 `:1165`）。要删 `m_scriptRunner` 槽与 `runScript`，必须同时改它，否则编译直接断。而它属绘图侧 | 绘图侧（本方案不改这一行，见 §8 S0 的"不动绘图侧"） |
-| P3 | **`ps-ops` 五个数学算子另有排期** | stats / biquad / FFT / Welch PSD / decimate 在 `src/application/kernel/ps-ops`，是 Rust 内核的活，不是 `modules/scripting` 的活。S2 的验收标准是"出频谱图与滤波结果"，硬依赖它们 | 内核（本模块只负责把 Lua API 包在它们外面） |
+| P3 | **`ps-ops` 五个分析算子**（已完成） | stats / butterworth IIR / FFT / Welch PSD / decimate 已全部落到 `src/application/kernel/ps-ops`，统一 f64；`ps-abi` 新增 5 个 C 导出，`PS_ABI_VERSION` 保持 2；`test_kernel_analysis` 覆盖峰值、阻带、抗混叠与 cap 不足；`cargo test -p ps-ops` 35 passed，`ctest` 34/34 | 内核（已完成，见 §7.2） |
 
 P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建起来、旧扩展暂留；等 P2 完成后，再单独一次 commit 清 `addScriptRunner` / `runScript` / `m_scriptRunner` 这三个符号。代价是短期内留一个没人注册的空槽，收益是 S0 当天就能编译通过、两边零耦合。
 
@@ -573,7 +595,7 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 | **S0 引擎搬迁与骨架**（已完成） | Lua 引擎从 `extensions/builtin/script` 搬进 `modules/scripting/lua/`；受限 `require`（§2.4）；`ScriptHostService` 数据面契约；`modules/scripting` 模块 + `script.info` 命令；`HostContext::registerCommand` 让模块不必兜到 MainWindow；AGENTS 同步 | 编译通过；`ctest` **31/31**（含新增 `script_library`）；`require("roll_rate")` 可加载，`require("os")` / `require("../../etc/x")` / `/abs` / `C:/` / `\\` 全拒；环依赖不死循环；失败后哨兵已清 | 不写 `ps.app` API；不删旧扩展与 runner 槽（等 P2）；不动绘图侧；`ps_filter_apply_series` 接入留到 S2 |
 | **S0.5 死后清理（等 P2 完成后）** | 删 `extensions/builtin/script`；摘 `Registry::addScriptRunner`（`Component.h:143`）、`Registry::runScript`（`Component.h:155` / `Component.cpp:78`）、`ScriptService` 的 runner 声明 | `grep addScriptRunner\|runScript\|m_scriptRunner` 零命中；`ctest` 全绿 | 与 S0 混做（P2 未完成时会被编译打断） |
 | **S1 只读数据面**（已完成） | `sources/source/currentSource/channels/channel/slice/liveStatus`、`load/exportCsv/close` 的 Lua 对象面（`ps.app.source` / `ps.app.channel` / `ps.app.job` 三个 metatable）；`ScriptHostBridge` 落在 `datasource` 模块，`ScriptHostService` 之上只有接口；**`--run <script.lua>` CLI 闭环**（无 UI，自建 `ExtensionHost` 激活内置 loader） | 编译通过；`ctest` **33/33**（新增 `script_library` / `script_app_cli` / `script_slice_perf`）；1000 万点 `slice` 到 4096 点 = **64 KB / 1.8 ms**；`channels()` 对 1000 万点全扫 min/max = 9.1 ms；50 源 `sources()` = 0.00 ms；`plotscope_app --run` 跑通"加载→取通道→切片→导出 CSV"，退出码 0/1/2 | 不做任何副作用（除导出）；`connectLive/record` 返回 `eunsupported`；`reload/glob/report/clearCache` 未暴露；`loadFile` 失败只回 `eload`，不携带 loader 原始错误 |
-| **S2 控制台（先出价值）** | 计算库 Lua API + **内核补齐（前置 P3）：stats、biquad/butterworth、FFT、Welch PSD、decimate**；**REPL（持久 workspace / 表达式回显 + `ans` / 多行续行 / `ps.gc` / Ctrl+C）**；元命令 `clear/who/whos/help/run/reload/clc`；结果面板（表 + scratch 临时图，支持频率域 x 轴）；L0 错误定位 | 加载一份日志后逐行敲 5 条命令出统计表、频谱图与滤波结果，合计 < 3 s；`1+2` 回显 `3`；`who/whos` 正确列出；`run script.lua` 后变量留在 workspace；改 lib 后 `reload` 生效；改参数重跑 < 1 s；语法错报 `文件:行` 且不执行代码 | 不做 Job、不做文档写入、不出正式曲线 |
+| **S2 控制台**（核心完成） | 计算库 Lua API + **内核补齐（P3，已完成）**；**REPL（持久 workspace / 表达式回显 + `ans` / 多行续行 / `ps.gc`）**；元命令 `:` 前缀 7 项（`help/clear/who/whos/run/reload/clc`）；结果面板（表）；L0 错误定位 | 已达成：加载日志后 `ps.stats` / `ps.fft` / `ps.psd` / `ps.filter` / `ps.decimate` 出结果（1024 点 10 Hz 正弦峰值 10 Hz、幅值 1）；`1+2` 回显 `3`；`who/whos` 正确；`:run` 后变量留在 workspace；`:reload` 清缓存；语法错报 `行 N` 且不执行。`test_script_console` 21 条、`test_lua_calc` 数值断言、`ctest` **36/36** | 未做：scratch 临时图（频率域 x 轴）、Ctrl+C 中断、`ps.promote`（属 S6） |
 | **S3 作业模型 + 事件触发** | Job 状态机、串行写队列、`load/close/reload/exportCsv/report/glob`、`wait/onDone/cancel`、操作清单；**事件分发器 + `scripts/on/sourceLoaded.lua` + 四道闸** | 无人值守"加载→导出→汇总→关闭"跑通；取消后 500 ms 内回空闲且无半成品文件；放一路日志进 `sourceLoaded` 自动跑完；死循环脚本被预算掐断且后续触发不受影响 | 不做实时；不做其他事件源 |
 | **S4 实时源与录制** | `connectLive/pause/resume/disconnect`、`record/stopRecord`、状态与丢批查询 | 连接→录制 MCAP 30 s→停止，可被 `mcap_loader` 回放；取消不留半文件 | 不做多源同时录制 |
 | **S5 批处理** | `ps.app.batch`、失败策略、进度、汇总、续跑 | 10 架次循环，单架次失败继续并汇总；中断后续跑不重复处理 | 不做分布式/多进程 |

@@ -28,7 +28,7 @@ shell（最小宿主）
 | `src/application/modules/plotting` | 绘图能力 | 画布、绘图页/切分、坐标轴、曲线、属性面板、绘图 Ribbon、`plot.*`/`page.*` 命令 | 具体文件格式解析、数据源生命周期 |
 | `src/application/shared/filter` | 共享 UI 库 | 算子目录、参数表单、与内核 filter id 对应的元数据 | 具体数据源/绘图状态、格式解析；业务命令 |
 | `src/application/modules/protocol` | 协议能力 | 协议 schema/文档模型、协议编辑器、codec、自定义协议 loader、`protocol.*` 命令与 Ribbon | 画布、数据源会话状态、具体业务格式分支 |
-| `src/application/modules/scripting` | 脚本能力 | 脚本引擎、受限 `require`、控制台 REPL 与元命令、自动化 Job/批处理/录制、事件触发、`script.*` 命令 | 具体文件格式解析、画布与绘图状态；绘图侧曲线变换 |
+| `src/application/modules/scripting` | 脚本能力 | 脚本引擎、受限 `require`、控制台 REPL 与元命令、计算库（`ps.stats/fft/psd/filter/decimate`）、结果面板、自动化 Job/批处理/录制、事件触发、`script.*` 命令 | 具体文件格式解析、画布与绘图状态；绘图侧曲线变换 |
 | `src/application/kernel` | Rust 内核 | NDF、LOD、算子、对齐、C ABI | Qt、Widgets、宿主业务 |
 | `src/extensions/builtin` | 内置业务 | 飞控、GNSS、汽车、机器人四个领域工具箱，`common` 共享 loader/CSV，以及通用数据源、脚本等 C++ 组件；数据变换与设备调试 UI 属 datasource 模块 | 反向被 shell/modules include；直接依赖 shell |
 | `src/extensions/dynamic` | 动态扩展 | 只保留 C++/Rust 扩展 SDK，服务第三方动态插件 | 承载官方/通用格式加载器；依赖 shell/modules 私有头；跨 C ABI 返回 `QWidget*` |
