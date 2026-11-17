@@ -292,7 +292,8 @@ class PlotSeries {
 - 已删除 `channel_batch`、HostApi `dataset_add_channel`、旧 loader 单通道写入路径。
 - CAN 原始字节按 `CAN<bus>.<id>` 一张表（`bN/period/dlc` 列），DBC 按 `CAN<bus>.<message>` 一张表，MCAP 按 topic 一张表。
 - 旧扁平 loader 统一降级为“一通道一张单列表”（table=通道名、column=`value`、共享时间轴），后续再按语义拆表。
-- 剩余：`PsChannelInfo.time/value` 彻底删除、PSC1 读取下线、null bitmap 全链路、OEM7 版本拆表、配置 schema 版本、实时/MCAP 导出。
+- 已下线 PSC1；null bitmap 由 loader 按 NaN 生成 packed bits 写入 typed 列；OEM7 同日志名按消息定义 CRC 拆表；配置增加 schemaVersion；频谱按当前视口窗口取数；数据快照支持导出 MCAP。
+- 剩余：`PsChannelInfo.time/value` 彻底删除（内部派生通道/旧测试/录制仍依赖 `ps_dataset_add_channel`）。
 - C++ `MemoryDataset` 与 Rust 跑同一组一致性用例。
 - 更新 `AGENTS.md` 边界与 `docs/develop`。
 
