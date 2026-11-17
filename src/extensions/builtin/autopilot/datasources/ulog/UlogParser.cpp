@@ -422,6 +422,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             break;
         const uint8_t *p = buf.data() + body;
 
+        // F：消息格式定义，告诉后面 D 段每个字节怎么解。
         if (ty == 'F')
         {
             std::string text(reinterpret_cast<const char *>(p), size);
@@ -432,6 +433,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                 log.formats.push_back(name);
             }
         }
+        // A：订阅关系，把 msg_id 绑定到某个格式；找不到 F 就记入 missingFormats。
         else if (ty == 'A')
         {
             if (size >= 3)
@@ -487,6 +489,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                 subs.push_back(std::move(s));
             }
         }
+        // D：数值数据，按 A 的订阅和 F 的字段布局解码，timestamp 取 U64 微秒。
         else if (ty == 'D')
         {
             if (size >= 2)
@@ -517,6 +520,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                 }
             }
         }
+        // P/Q：参数。P 是运行参数，Q 是默认参数；P 本身没有时间戳。
         else if (ty == 'P' || ty == 'Q')
         {
             std::string key, value;
@@ -537,6 +541,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                     meta.changedParams.emplace_back(lastTimestamp, std::make_pair(key, value));
             }
         }
+        // I/M：文件级键值事实，不是 logs；M 是 multi-info，同 key 可多条。
         else if (ty == 'I')
         {
             addInfo(meta.facts, p, size);
@@ -545,6 +550,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         {
             if (size >= 1) addInfo(meta.facts, p + 1, size - 1);
         }
+        // L：普通文本事件，level + timestamp + text。
         else if (ty == 'L' && size >= 9)
         {
             UlogEvent m;
@@ -556,6 +562,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             m.text = readCString(p + 9, size - 9);
             meta.events.push_back(std::move(m));
         }
+        // C：tagged 文本事件，比 L 多一个 tag。
         else if (ty == 'C' && size >= 11)
         {
             UlogEvent m;
