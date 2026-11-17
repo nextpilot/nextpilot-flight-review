@@ -1,24 +1,23 @@
-# 脚本子系统：控制台 + 自动化
+# 脚本子系统：知识注入、自动化与判据
 
-> 基线：`origin/main @ 2649a98`（2026-11-17）。本文只讨论 `modules/scripting`。
+> 基线：`origin/main @ d057ee9`（2026-11-17）。本文只讨论 `modules/scripting`。
 
-## 0. 本版定调（先看这 12 条）
+## 0. 本版定调（先看这 14 条）
 
-1. **两条产品线，一个模块**。
-   - **控制台（Console）**：人在场，MATLAB command 式 REPL，取任意通道随便算、即时看数看图；
-   - **自动化（Automation）**：人不在场，批量加载/导出/录制出文件，且**可被事件触发**。
-   两者共用对象模型、数据面、计算库、引擎；差别只在执行语义与产物归属。
-2. **没有"算子"这个概念**。可复用的逻辑就是一个**普通的 `.lua` 文件**，放 `scripts/lib/`，用 `require` 调。不做文件头 schema、不做参数面板、不做算子注册表、不做版本机制——**版本由 git 管，参数就是函数参数**。这是本版删掉的最大一块：原来"算子"的独特价值是"能被曲线变换下拉选中并生成参数控件"，那个消费方不存在了，算子就退化成普通函数。
-3. **不碰绘图侧的曲线变换**。曲线变换已有独立实现（`shared/filter` 的 `FilterCatalog` + 内核 `ps_filter_apply_series`），归 plotting/datasource，**不属本方案范围**。本模块不接管、不提供下拉项、不写 recipe。
-4. **主入口是控制台**。对标 MATLAB command window：持久 workspace、表达式回显、多行续行、`clear/who/whos/help/run` 元命令。脚本文件不是另一个入口，而是控制台的 `run <file>`。
-5. **自动化能被事件触发**。绑定走 `scripts/on/<event>.lua`（文件即配置）；P1 只做 `sourceLoaded` 一个触发点，其余留扩展口；默认关闭 + 重入保护 + 隔离 + 全局暂停。
-6. **命令表不能当 API**：`data.*` 全部是 `void` lambda（`DataSourceCommands.cpp:35-70`），没有返回值、没有错误、没有进度、不可取消。两条线都必须走**返回 `Result` 的服务方法**。
-7. **只有自动化需要作业模型**。自动化线引入 `Job`（状态/进度/错误/取消），不承诺全局回滚，改为"操作清单 + 补偿动作"；控制台同步执行，只受指令预算约束。
-8. **句柄只需两级**：source / channel（`SourceData.id` 已有，通道名在源内唯一）。canvas 句柄只服务 P2 的"提升为正式曲线"。
-9. **脚本不进 `.psl`**：脚本是独立目录（`ShellPaths/scripts`）里的普通文件，本模块不读不写工程文件。
-10. **现有 stub 全未兑现**：`resources/scripts/batch/resample.lua` 用 `ps.grid/ps.channels/ps.write/ps.resample`，四个函数一个都没注册（`ScriptEngine.cpp:291-311` 只注册了 8 个）。API 面按这类脚本的真实需求定，否则示例是假的。
-11. **语言只用 Lua**。Python 现有通道是"子进程 + JSON 全量序列化 + 15 s 超时"，拿不到宿主，做不了"操作所有数据"。Python 留作外部离线工具（§3.5 有逐项对比）。
-12. **切片**：引擎搬迁与骨架 → 只读数据面 → **控制台（REPL）** → 自动化 Job + 事件触发 → 实时录制 → 批处理 →（P2）提升为正式曲线、子进程断点调试。
+1. **脚本是知识注入通道，不是"自动化工具"**。app 本身无知：它知道怎么加载、怎么画、怎么算 FFT，但不知道"0.3 Hz 的晃动在这个机型上意味着什么"。判断只能来自人，写进脚本，由 app 反复执行。
+2. **三层分工**。`dataset`（数据）→ 脚本 / 工具箱（知识）→ `findings` / `views`（结论与呈现）。**工具箱是出厂知识**（飞控通用判据，加载即出报告），**脚本是演进知识**（团队/机型/场景，可持续补充），app 只是执行器与渲染器。
+3. **一个引擎、三组 API 面**：数据面 `ps.app.*`；绘图面 `ps.plot / ps.table / ps.view / ps.mark`；判据面 `ps.snapshot / ps.segments / ps.window / ps.claim`。不设第三套命名。句柄仍只两级：source / channel（`SourceData.id` 已有，通道名在源内唯一）。
+4. **两套契约**。**纯函数算子**：`create(params) → instance`、`instance:calculate(t, v)`、`instance:reset()`；**命令式自动化**：`ps.app.*`，有副作用，必须走 `Job` 与返回 `Result` 的服务方法。命令表（`data.*` 全是 `void` lambda，`DataSourceCommands.cpp:35-70`）不能当 API。
+5. **算子回归（推翻旧"没有算子"条）**。Y 轴算子既服务实时推流也服务批量回放，因此必须有逐点入口；批量 = 连续调用 `calculate`。但仍**不做"算子抽象"**：没有文件头 schema、没有参数面板、没有注册表、没有版本机制，版本由 git 管、参数就是函数参数。
+6. **判据不是单信号阈值**。知识天然是"多信号 + 状态相关 + 时序"：`AUTO 模式下 |roll| > 15° 才异常，MANUAL 允到 25°`。为此需要三类原语：多通道对齐（离散量 step-hold、连续量插值）、状态分段（`ps.segments`）、历史窗口（`ps.window`）。
+7. **`finding` 挂 `dataset`，不挂曲线**。结论是整个架次的属性（roll + mode + alt 联合判定），图只是观察窗口。PJ4 把 marker 挂在 topic 上，正是本方案不采用的形态。
+8. **三级持久化**。**配置层**：`dataset` 的 `generated_columns` 定义 + 后处理脚本绑定，跨会话自动执行；**知识层**：脚本文件（`ShellPaths/scripts`，不进 `.psl`），跨会话可用但不自动跑；**呈现层**：图 / 表 / `findings`，仅本次会话，必须跑脚本才出来。
+9. **自动执行 ≠ 自动恢复**。`dataset` 配置绑定的后处理脚本在**每次加载后重跑一遍**（订阅式），不复原上一次的产物（不重放历史操作）。
+10. **纯函数的产物可自动重建，命令式的产物必须重跑**。`generated column` 敢在加载时自动执行，因为它是 series → series；脚本产物不敢，因为它会加载文件、改画布、导出硬盘。
+11. **脚本画的图是持久对象，但只活在会话内**。有 id 和名字、可被后续脚本引用、可导出；关闭即失效，重开必须重跑。同名 `ps.view` 幂等覆盖。
+12. **marker 不是独立引擎**，是 `ps.mark / ps.region / ps.claim` 的输出形态，落在 `dataset` 上，任意图可选叠加。不设 PJ4 式的"整段单序列 marker 通道"。
+13. **主入口仍是控制台**（MATLAB command 式 REPL，持久 workspace），自动化由作业与事件驱动；**语言只用 Lua**（Python 现有通道是子进程 + JSON + 15 s 超时，拿不到宿主，只能做外部离线工具）；**不碰绘图侧已有的曲线变换下拉**（`shared/filter` 的 `FilterCatalog` + `ps_filter_apply_series` 归 plotting/datasource）。
+14. **切片**：引擎搬迁 → 只读数据面 → 控制台 → 作业 + 事件 → **算子契约（实时 + 批量）** → **判据原语 + `generated column` 持久化** → 实时录制 → 批处理 →（P2）提升为正式曲线、子进程断点。
 
 ## 1. 现状基线（可核对）
 
@@ -42,10 +41,20 @@
 | 13 | 跨模块只能过 `ModuleBridge`（全 `MainWindow*` 形参） | `modules/runtime/include/ModuleBridge.h` | 新服务面不得再过此路 |
 | 14 | 内置计算函数是 C++ 逐元素算，根本没走 Rust | `l_moving_avg`（`ScriptEngine.cpp:224-242`）从 Lua table `readVector` 逐点取、C++ 循环、再塞回 | 必须改走 `ps_filter_apply_series` 块级入口 |
 
-## 2. 两条产品线
+## 2. 三层与三组 API 面
+
+**三层：谁产生知识、谁消费知识**
+
+| 层 | 主体 | 驱动 | 产物 | 持久性 |
+|---|---|---|---|---|
+| 数据层 | `dataset` / channel / `generated_columns` | 加载（自动） | 可读数据视图（含派生列） | 配置跨会话，加载时自动重建 |
+| 知识层 | 脚本文件 / 工具箱规则 | 用户执行，或 `dataset` 绑定后自动执行 | 图 / 表 / `findings` | 脚本与配置跨会话，**产物仅本次会话** |
+| 呈现层 | view / table / finding | 脚本运行 | 画布与报告 | 会话内，重开必须重跑脚本 |
+
+**能力矩阵（脚本能操作到哪一层，原 A–D 边界不变）**
 
 | 层 | 能力 | P1 | 说明 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **A 控制台** | | | 人在场，同步、可反复 |
 | A0 数据访问 | 源/通道/元信息、按窗切片、多源对齐、交叉取数 | ✅ | 需要 source/channel 句柄 |
 | A1 计算库 | stats / peaks / rms / derivative / integral / movingAvg / filter / resample / **fft / psd** / correlate / find | ✅ | 纯数字，不碰 UI；**全部落 Rust 内核**（§3.6），Lua 只调 |
@@ -55,7 +64,7 @@
 | B0 数据作业 | 加载/关闭/重载、导出 CSV、缓存清理 | ✅ | 全部异步 Job |
 | B1 实时与录制 | 连接/断开、暂停恢复、录制、丢批溢出查询 | ✅ | 同一 Job 模型 |
 | B2 批处理 | 多文件循环、失败策略、汇总、续跑 | ✅ | 自动化的产出形态 |
-| B3 事件触发 | `scripts/on/*.lua` 绑定，P1 只做 `sourceLoaded` | ✅ | 默认关闭，见 §2.5 |
+| B3 事件触发 | `scripts/on/*.lua` 绑定 + `dataset` 配置里的后处理脚本 | ✅ | 默认关闭，见 §2.5 |
 | **C 脚本文件** | `.lua` 普通文件，`require` 复用，git 管版本 | ✅ | 没有 schema、没有注册表、没有参数面板 |
 | **D 禁区** | 直接碰 `QWidget`、写内核 dataset、自由文件 IO、自由 `require` | ❌ | 永久 |
 
@@ -70,7 +79,7 @@
 | 实时与录制 | connect/disconnect、pause/resume、record/stop、丢批查询 | ✅ B1 | 录制错误出参改 `Result` |
 | 导出 | CSV、工程快照 | ✅ B0 | 显式源 + 路径 + 覆盖策略（现在只导活动源） |
 | 批处理 | 多文件循环、失败策略、汇总、续跑 | ✅ B2 | 新写（现在只有假的 `batch/resample.lua`） |
-| 派生通道 | 注册/删除 `quat`/`filter` 派生通道 | P2 | 走 datasource 的变换服务；脚本只调用，不实现算法 |
+| 派生列 | `generated_columns`（`ps.app.derive`） | S3b | 写 `dataset` 配置，加载时按定义重建；不回写原始列 |
 | 绘图对象 | 建页/画布、加删曲线、轴、书签、播放头 | P2 | canvas 稳定 id；书签走服务表（现为 `MainWindow*` 桥） |
 | 协议 | schema 校验、编解码 | 可选 | `protocol.validate` 目前无参数版 |
 | 设置项 | 读写强类型 key | P2 白名单 | `SettingsManager` 已具备，需 key 白名单与校验 |
@@ -108,14 +117,20 @@ end)
 ps.app.report("out/index.md", rows, { title = "11 月架次汇总" })
 ```
 
-**B 门限巡检（找异常，打书签，不产图）**
+**B 门限巡检（多信号判据，结论挂 dataset）**
 
 ```lua
--- inspect_limits.lua：所有架次里找超限片段，直接打时间书签
+-- inspect_limits.lua：AUTO 模式 15°、MANUAL 允许 25°，超限才报
 ps.app.batch(ps.app.glob("data/*.ulg"), function(path)
   local src = ps.app.load(path):result():source()
-  src:channel("attitude.roll"):find(function(v) return math.abs(v) > 45 end,
-    function(t) ps.app.marker(t, "roll>45°") end)
+  for _, seg in ipairs(ps.segments(src, "flight_mode")) do
+    local limit = (seg.value == "MANUAL") and 25 or 15
+    local dur = ps.exceedDuration(src, "roll", limit, seg.t0, seg.t1)
+    if dur >= 1.0 then
+      ps.claim(src, { t0 = seg.t0, t1 = seg.t1, label = "roll 超限",
+                      severity = "warn", evidence = { channels = { "roll", "flight_mode" } } })
+    end
+  end
 end)
 ```
 
@@ -268,6 +283,118 @@ end
 
 L2 放 P2 的理由：控制台有持久 workspace，大部分"看中间变量"的需求直接敲变量名就满足了；真需要单步时再上子进程 + `mobdebug`，不用提前背这个包袱。
 
+### 2.7 算子契约（实时 + 批量，一份代码）
+
+```lua
+-- scripts/lib/ops/derivative.lua
+local Derivative = { id = "derivative", name = "dv/dt" }
+
+function Derivative.create(p)                 -- 状态只放实例
+  return setmetatable({}, Derivative)
+end
+
+function Derivative:calculate(t, v)           -- 推进一个样本，返回 v_out 或 nil
+  if self.prev_t == nil then self.prev_t, self.prev_v = t, v; return nil end
+  local dt = t - self.prev_t
+  local d = (dt ~= 0.0) and (v - self.prev_v) / dt or 0.0
+  self.prev_t, self.prev_v = t, v
+  return d
+end
+
+function Derivative:reset()                   -- seek / 换源 / 重载后从头来
+  self.prev_t, self.prev_v = nil, nil
+end
+```
+
+三条硬约束：
+
+1. **状态只放 `self`**，`calculate` 里不新建 table——每次调用分配会让 GC 吃掉吞吐（实测逐点 22.8 ns/样本的前提就是零分配）。
+2. **必须实现 `reset()`**。IIR、滑动窗口、导数都有跨样本状态；拖时间轴回退、换源、重载后不重置就是脏数据。
+3. **批量不另设接口**：回放 = 连续调 `calculate` N 次，同一份代码服务两种驱动。
+
+驱动与通道：
+
+| 场景 | 驱动 | 通道 |
+|---|---|---|
+| 实时推流 | entry 到达即 `calculate(t,v)` | Lua 逐点 |
+| 回放整段 | 宿主遍历样本 | **内置算子走 Rust 批量**（f64），自定义算子走 Lua |
+| `generated column` | 加载时整段跑一遍 | 同回放 |
+
+实测（本机 Lua 5.4.4，`-O2`，100 万点）：Lua 内 `for` 循环 `c[i]=a[i]+b[i]` **30.23 ns/元素**；逐点跨语言调用 **22.77 ns/次**；C 直接循环 **0.74 ns/元素**。结论：**不把整段遍历交给脚本**。实时 50 Hz 下逐点开销 1.1 μs/秒，无感；1000 万点回放若全走 Lua 是 228 ms，所以内置算子必须保留 Rust 批量通道。
+
+### 2.8 判据：多信号 + 状态 + 时序
+
+单信号阈值是伪判据。典型形态：`AUTO 模式 |roll| > 15° 才算异常，MANUAL 允到 25°`——判据依赖另一条通道的离散状态。
+
+```lua
+for _, seg in ipairs(ps.segments(src, "flight_mode")) do
+  local limit = (seg.value == "MANUAL") and 25 or 15
+  for _, t in ipairs(ps.scan(seg.t0, seg.t1, { step = 0.1 })) do
+    local r = ps.snapshot(src, t, { "roll" }).roll
+    if math.abs(r) > limit then
+      local dur = ps.exceedDuration(src, "roll", limit, t - 1.0, t)
+      if dur >= 1.0 then
+        ps.claim(src, { t0 = t - dur, t1 = t, label = "roll 超限",
+                        severity = "warn", evidence = { channels = { "roll", "flight_mode" } } })
+      end
+    end
+  end
+end
+```
+
+三类原语，缺一不可：
+
+| 原语 | 作用 | 对齐规则 |
+|---|---|---|
+| `ps.snapshot(src, t, names)` | 某时刻多通道值 | 连续量线性插值或最近邻（可配）；**离散量 step-hold**（取 `t` 之前最近值），绝不插值 |
+| `ps.segments(src, ch)` | 状态量分段 `{t0,t1,value}` | 状态变化即切段，是判据的天然边界 |
+| `ps.window / ps.exceedDuration` | 历史窗口与条件聚合 | 「持续 1 秒才报」这类判据的载体 |
+
+**求值点必须显式**：`ps.scan(t0,t1,{step=0.1})` 或 `{on="flight_mode"}`。禁止默认遍历全部样本——1000 万点 × 22.8 ns = 228 ms 起步。
+
+`finding` 挂 `dataset`，不挂曲线：
+
+```cpp
+struct Finding { double t0, t1; QString label; int severity; int sourceId;
+                 QStringList channels; QString condition; };   // evidence 随 channels + condition
+```
+
+### 2.9 三级持久化
+
+| 对象 | 存哪 | 跨会话 | 谁执行 |
+|---|---|---|---|
+| `generated_columns` 定义 | `dataset` 配置 | 自动重建 | 加载时按定义重算（纯函数） |
+| 后处理脚本绑定 | `dataset` 配置 | 自动执行 | 每次加载后跑一遍（订阅式重跑） |
+| 脚本文件 | `ShellPaths/scripts` | 可用 | 用户显式跑，或事件触发 |
+| view / table / finding | 会话内存 | 消失 | 必须跑脚本 |
+
+两条规则：
+
+1. **自动执行 ≠ 自动恢复**。后处理脚本每次按当前数据重跑，不复原上一次的产物。
+2. **幂等**。`ps.view("roll 体检", {...})` 同名覆盖，重复跑不会叠加十张图。
+
+### 2.10 PJ4 对标
+
+据本地 `/home/user/refs/plotjuggler`（PJ4 当前 main）：脚本是 `pj_scripting` 模块，Luau（默认）+ Python 双引擎，**三处落点**（`docs/derived_objects/ARCHITECTURE.md:41-54`，原文 "None can replace another"）：
+
+| PJ4 | kind | 触发 | 产出 | 本方案对应 |
+|---|---|---|---|---|
+| `IncrementalEngine` | transform | 每个 entry 到达 | 每输入一个输出（派生曲线） | **算子**（`calculate`） |
+| `BatchEngine` | markers | commit / refresh / 请求 | 图上标注（事件/区间/值带） | 不设独立通道，收为 `ps.claim / ps.mark` |
+| `OnDemandService` | on_demand | 消费方请求时间 `t` | 该 `t` 的派生对象（点云/体素/图像标注） | **判据求值**（`ps.snapshot` 的多输入按 `t` 求值） |
+
+PJ4 **没有第四处**：无控制台、无 REPL、无作业、无事件触发。它的脚本全是纯函数（不能改 app 状态），所以不存在"命令式"这半。
+
+照抄两条：
+1. `FilterClass` 自描述 + `ParamSpec`（`filter_class.h:57-66`、`:36-51`）——取"参数即数据"的思路（我们不做参数面板）。
+2. `OnDemandService` 的"按 `t` 求值 + 多输入"机制（`RecipeGraph.cpp:145`、`NodeScheduler.cpp:49`、`GridRunner.cpp:305`）——判据的计算模型。
+
+不照抄两条：
+1. **marker 挂 topic**（`pj_datastore/marker_topic_metadata.hpp`）——单序列输入撑不起多信号判据，我们挂 `dataset`。
+2. **逐样本模型用于整段分析**——PJ4 自己也不这么干：FFT 走 pocketfft native，不走脚本。
+
+`marker_engine.h:1-10` 原文点明了 marker 的独特价值：它才是能表达 FFT / 区间 / 前视的通道（"what the per-sample IncrementalEngine model cannot express"）。本方案把它降级为**输出形态**而非独立引擎，正是为了不让"单序列输入"和"图上标注"这两件事绑死。
+
 ## 3. 模块归属与依赖
 
 ### 3.1 新模块 `src/application/modules/scripting`
@@ -335,6 +462,34 @@ HostDataService *hostService();   // 未注册 → 脚本报 "eneedhost"
 ```
 
 与实现一致的两处细节：`Result` 带 `ok = true` 默认与 `static failure(code, message)`；`JobHandle` 带 `bool valid() const { return id >= 0; }`，**`-1` 为无效**——源 id 从 0 起，用 0 当无效值会把第一个源判成失败。访问器叫 `hostService()` 而不是 `host()`，避免与 `HostContext` 撞名。
+
+**配置层与判据层（S3 增补）**
+
+```cpp
+struct DerivedColumnSpec { QString name, expr, paramsJson; };   // "derivative(roll)" / "lowpass(accel,fc=5)"
+struct Segment           { double t0, t1; QVariant value; };    // 离散状态的一段
+struct Finding           { double t0, t1; QString label; int severity;
+                           QStringList channels; QString condition; };   // 挂 dataset
+
+struct SourceInfo { /* … */ QVector<DerivedColumnSpec> derivedColumns;
+                              QStringList postProcessScripts; };
+
+// HostDataService 增补
+virtual Result  addDerivedColumn(int sourceId, const DerivedColumnSpec &spec) = 0;
+virtual Result  runPostProcess(int sourceId) = 0;                 // 加载完成后由宿主调用
+virtual Result  snapshot(int sourceId, double t, const QStringList &names,
+                         QVariantMap &values) = 0;                // 多通道按 t 对齐（离散量 step-hold）
+virtual Result  segments(int sourceId, const QString &ch, QVector<Segment> &segs) = 0;
+virtual Result  addFinding(int sourceId, const Finding &f) = 0;
+virtual QVector<Finding> findings(int sourceId) = 0;
+```
+
+两条语义边界：
+
+- `derivedColumns` 属**数据层**：按定义重算后进数据视图，可被画图、`slice`、后续算子引用；**不写回原始列**，`SourceStore` 的列仍只读。
+- `postProcessScripts` 属**知识层**：每次加载后重跑一遍，产物是 view / table / finding，全部会话内。
+
+`Finding` 放中立层而不是 scripting：plotting 要画 findings，若定义在 scripting，plotting 就得反向依赖脚本子系统，违反 `AGENTS.md §3` 的依赖方向。宿主层持有"结论"这个数据类型，比让两个业务模块互相依赖干净。
 
 ### 3.4 需要同步改的硬约束
 
@@ -491,9 +646,24 @@ ps.correlate(a, b) / ps.find(v, pred)     -- find 返回超限区间 [{t0,t1,vma
 ps.align(srcA, srcB)                      -- 多源时间对齐
 
 -- A2 结果呈现（即时、不落盘）
-ps.show(v, {title=..., color=..., axis=...})   -- 临时图（scratch 视图）
+ps.show(v, {title=..., color=..., axis=...})   -- 匿名临时图（= 不命名的 ps.view）
 ps.table{ stats=..., peaks=..., rms=... }      -- 数值表，可多组并列
 ps.clearResults()
+
+-- A2b 视图（会话内持久，同名覆盖，可被后续脚本引用）
+ps.view("roll 体检", {type="plot", series={"roll","roll_limit"}, marks="findings:roll"})
+ps.view("巡检表", {type="table", rows=...})
+ps.report("out/report.md", findings, {title=...})   -- 交给 ps.app.report 落盘
+
+-- A2c 判据面（多信号 + 状态 + 时序）
+ps.snapshot(src, t, {"roll","flight_mode"})        -- {roll=, flight_mode=}；离散量 step-hold
+ps.segments(src, "flight_mode")                    -- [{t0,t1,value}]
+ps.window(src, "roll", t0, t1)                     -- {t,v}
+ps.exceedDuration(src, "roll", limit, t0, t1)      -- 窗口内超限累计秒数
+ps.scan(t0, t1, {step=0.1}) | {on="flight_mode"}   -- 显式求值点，禁止默认全样本
+ps.claim(src, {t0,t1,label,severity,evidence})     -- 生成 finding，挂 dataset
+ps.mark(src, t, label) / ps.region(src, t0,t1,label)  -- claim 的轻量形式
+ps.findings(src) / ps.clearFindings(src)
 
 -- A3 提升为正式曲线（P2）
 ps.promote(v, canvas, {name=..., color=...})
@@ -505,6 +675,11 @@ ps.app.reload(src) / ps.app.close(src)
 ps.app.exportCsv(src, path, {overwrite=true})
 ps.app.glob("data/*.ulg") / ps.app.report(path, rows, {title=...})
 ps.app.clearCache()
+
+-- B0b 配置层（写 dataset 配置，下次加载自动重建/执行）
+ps.app.derive(src, {name="roll_rate", expr="derivative(roll)"})    -- 加 generated column
+ps.app.postProcess(src, "scripts/on/inspect.lua")                  -- 绑定加载后脚本
+ps.app.clearDerived(src, "roll_rate")
 
 -- B1 实时与录制
 local live = ps.app.connectLive("mavlink", {port="/dev/ttyUSB0"})
@@ -536,6 +711,11 @@ ps.gc()
 | `live:record` | `LiveSession::startRecording(fmt, config, path, err)` | 统一错误码，去掉 `QString*` 出参 |
 | `live:pause` | `setSourcePaused` | 统一到 live 句柄 |
 | `ps.app.batch` | 无 | 新写：串行 + 失败策略 + 汇总 |
+| `ps.snapshot/segments/window` | 无 | 新写；`snapshot` 走内核按 `t` 定位 + 离散量 step-hold；`segments` 扫状态变化点 |
+| `ps.scan` | 无 | 新写；只允许显式 `step` 或 `on`，不给"全样本"默认 |
+| `ps.claim/findings` | 无 | `Finding` 存 `HostDataService`，plotting 直接读，不经 scripting |
+| `ps.view` | `ScratchPlot` + `ps.plot` | 加 id / 名字 / 幂等覆盖；会话内生命周期 |
+| `ps.app.derive/postProcess` | 无 | 写 `dataset` 配置；加载路径按定义重建、按绑定重跑 |
 
 ### 7.1 S1 落地清单
 
@@ -603,12 +783,15 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 | **S1 只读数据面**（已完成） | `sources/source/currentSource/channels/channel/slice/liveStatus`、`load/exportCsv/close` 的 Lua 对象面（`ps.app.source` / `ps.app.channel` / `ps.app.job` 三个 metatable）；`HostDataBridge` 落在 `datasource` 模块，`HostDataService` 之上只有接口；**`--run <script.lua>` CLI 闭环**（无 UI，自建 `ExtensionHost` 激活内置 loader） | 编译通过；`ctest` **33/33**（新增 `script_library` / `script_app_cli` / `script_slice_perf`）；1000 万点 `slice` 到 4096 点 = **64 KB / 1.8 ms**；`channels()` 对 1000 万点全扫 min/max = 9.1 ms；50 源 `sources()` = 0.00 ms；`plotscope_app --run` 跑通"加载→取通道→切片→导出 CSV"，退出码 0/1/2 | 不做任何副作用（除导出）；`connectLive/record` 返回 `eunsupported`；`reload/glob/report/clearCache` 未暴露；`loadFile` 失败只回 `eload`，不携带 loader 原始错误 |
 | **S2 控制台**（完成） | 计算库 Lua API + **内核补齐（P3，已完成）**；**REPL（持久 workspace / 表达式回显 + `ans` / 多行续行 / `ps.gc`）**；元命令 `:` 前缀 7 项（`help/clear/who/whos/run/reload/clc`）；结果面板（表 + scratch 临时图，频率域 x 轴）；L0 错误定位 | 已达成：加载日志后 `ps.stats` / `ps.fft` / `ps.psd` / `ps.filter` / `ps.decimate` 出结果（1024 点 10 Hz 正弦峰值 10 Hz、幅值 1）；`1+2` 回显 `3`；`who/whos` 正确；`:run` 后变量留在 workspace；`:reload` 清缓存；语法错报 `行 N` 且不执行；`ps.plot{ps.fft}` 出频谱临时图、`ps.table` 出表。`test_script_console` 21 条、`test_lua_calc`、`test_console_panel`、`ctest` **39/39** | 未做：Ctrl+C 中断、`ps.promote`（属 S6）、`peaks/correlate/find/align/resample`（缺算子） |
 | **S3 作业模型 + 事件触发** | Job 状态机、串行写队列、`load/close/reload/exportCsv/report/glob`、`wait/onDone/cancel`、操作清单；**事件分发器 + `scripts/on/sourceLoaded.lua` + 四道闸** | 无人值守"加载→导出→汇总→关闭"跑通；取消后 500 ms 内回空闲且无半成品文件；放一路日志进 `sourceLoaded` 自动跑完；死循环脚本被预算掐断且后续触发不受影响 | 不做实时；不做其他事件源 |
+| **S3b 知识与判据** | 算子契约 `create/calculate/reset`（内置算子补 Rust 逐点 ABI，自定义走 Lua）；判据原语 `snapshot/segments/window/exceedDuration/scan/claim`；`Finding` 走 `HostDataService`；`ps.view` 命名 + 幂等覆盖；`dataset` 配置的 `generated_columns` 与 `post_process` 绑定 | 回放 5 架次：`AUTO |roll|>15°` 与 `MANUAL |roll|>25°` 判出不同段；同一脚本换架次直接复用；重开工程后配置自动重建派生列、自动跑后处理脚本出报告；`.psl` 里无脚本文件；同名 `ps.view` 重跑不叠加 | 不做实时推流（S4 接入口）；不做 marker 渲染样式 |
 | **S4 实时源与录制** | `connectLive/pause/resume/disconnect`、`record/stopRecord`、状态与丢批查询 | 连接→录制 MCAP 30 s→停止，可被 `mcap_loader` 回放；取消不留半文件 | 不做多源同时录制 |
 | **S5 批处理** | `ps.app.batch`、失败策略、进度、汇总、续跑 | 10 架次循环，单架次失败继续并汇总；中断后续跑不重复处理 | 不做分布式/多进程 |
 | **S6 提升为正式曲线（P2）** | canvas 稳定 id、`ps.promote`、快照事务、页面/曲线/轴 | 提升的曲线重开工程仍在；失败回滚页面 JSON 逐字节不变 | 不与 S2–S5 混做 |
 | **S7 子进程断点调试（P2 可选）** | `--debug <script>` 子进程、`mobdebug`/luasocket 接入、VSCode `lua-debug` 与 ZeroBrane 文档 | 断点能停在脚本内并读局部变量；主进程沙箱不变（负向测试仍绿） | 不在 App 里造调试 UI |
 
-依赖：P1 → S0 → S1 → S2 → S3 → { S4, S5 }；S2 依赖 P3；S6、S7 独立立项。
+依赖：P1 → S0 → S1 → S2 → S3 → **S3b** → { S4, S5 }；S2 依赖 P3；S6、S7 独立立项。
+
+S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3b 定契约、用回放验证，S4 只负责把源接进来；反过来先做 S4 会为了联调临时造一套算子接口，S3b 再改一遍。
 
 排序理由：**控制台（S2）先上**，它不需要 Job、不需要 canvas id、不需要文件白名单，最快验证 `ps.app` 形态；**自动化（S3）紧跟**，因为"人在场调试出来的脚本"要立刻能变成"人不在场跑"，否则两条线永远接不起来。S4/S5 是自动化的两个专用场景，可以并行。
 
@@ -674,8 +857,15 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 | 4 | `require` 受限恢复 | 不恢复就只能单文件脚本，长脚本无法拆分（现状 `ScriptEngine.cpp:315` 把 `require` 摘了） |
 | 5 | Python 不进主链路 | 子进程 + JSON 全量序列化承载不了 10M 点（§3.5） |
 | 6 | 事件 P1 只做 `sourceLoaded` | 先验证机制，加事件源只是加枚举 + 分发分支 |
-| 7 | 不做"算子"抽象 | 用户裁决：算子就是普通 Lua 脚本，直接调用；版本由 git 管 |
+| 7 | 不做算子 schema / 参数面板 / 注册表 / 版本机制 | 算子仍是普通 Lua 函数，版本由 git 管；但补 `create/calculate/reset` 契约，因为实时推流必须有逐点入口（§2.7） |
 | 8 | 不接管绘图侧曲线变换 | 用户两次裁决："不需要你来考虑" |
+| 9 | 脚本是知识注入通道，不是"自动化工具" | 用户定调：app 无知，知识只能写进脚本由 app 执行 |
+| 10 | 判据必须多信号 + 状态 + 时序 | 用户举反例：`roll > 15°` 合不合理取决于 `flight_mode`（MANUAL 允到 25°）；单信号阈值是伪判据 |
+| 11 | `finding` 挂 `dataset`，不挂曲线 | 判据输入域是整个架次，结论不属于任何单条曲线；图只是观察窗口（PJ4 挂 topic 是其局限） |
+| 12 | 三级持久化：配置自动、知识可调、呈现重跑 | 用户裁决：派生列绑 `dataset` 配置自动重建；脚本产物关闭即失效，重开必须重跑 |
+| 13 | `dataset` 配置可绑后处理脚本，加载后自动执行 | 用户裁决；语义是"订阅式重跑"，不是"复原旧产物" |
+| 14 | marker 不作为独立引擎 | 收为 `ps.claim/ps.mark/ps.region` 的输出形态；PJ4 的整段单序列通道不采用 |
+| 15 | `ps.view` 会话内持久、同名幂等覆盖 | 用户裁决"持久"+"关闭必须重跑"共同定义：有 id 可引用，但只在本次会话 |
 
 ## 12. 剩下的真待定
 
@@ -690,7 +880,8 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 ## 13. 非目标
 
 - 不做脚本 IDE：无 LSP、无 App 内断点 UI、无包管理、**无脚本编辑器**（编辑器一律外部）。
-- **不做"算子"抽象**：没有文件头 schema、没有注册表、没有参数面板、没有版本机制。
+- **不做算子 schema / 注册表 / 参数面板 / 版本机制**：算子就是 `create / calculate / reset` 三个普通函数。
+- 不做 PJ4 式的"单序列 marker 引擎"，也不做"图上标注即结论"的简化路径：结论先落到 `dataset`，再由任意图选择显示。
 - 不做脚本管理 UI：目录就是文件，列表就是 `ls`。
 - 调试能力止于"定位 + 复现"；断点单步靠外部调试器连子进程（P2 可选）。
 - 不把 Python 接进数据面（理由见 §3.5）；Python 只做离线外部工具。
