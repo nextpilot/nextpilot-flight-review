@@ -37,6 +37,25 @@ static int32_t onEvent(void *, const char *, const char *)
     return 0;
 }
 
+static int32_t onFrame(void *ctx, const PsFrameBatch *b)
+{
+    auto *s = static_cast<SinkState *>(ctx);
+    if (!b || !b->table || !b->time_us)
+        return 0;
+    ++s->batches;
+    s->points += static_cast<int>(b->rows * b->columns);
+    for (uint32_t i = 0; i < b->columns; ++i)
+    {
+        const std::string name = std::string(b->table) + "." + b->column_data[i].name;
+        bool seen = false;
+        for (const auto &n : s->names)
+            seen = seen || n == name;
+        if (!seen)
+            s->names.push_back(name);
+    }
+    return 0;
+}
+
 int main()
 {
     const PsExtensionDescriptor *d = ps_extension_entry_data_source_sim();
@@ -55,7 +74,7 @@ int main()
     v->destroy(probe);
 
     SinkState state;
-    PsSourceSink sink{&state, onBatch, onEvent};
+    PsSourceSink sink{&state, nullptr, onEvent, nullptr, onFrame};
     void *handle = v->create();
     assert(handle);
     PsDataSourceServices services{};

@@ -98,7 +98,7 @@ public:
 
         std::vector<double> v(count);
         const PsSourceSink *sink = this->sink();
-        if (!sink || (!sink->channel_batch && !sink->frame_batch)) {
+        if (!sink || !sink->frame_batch) {
             ps::fillError(err, 1, "宿主 sink 未绑定");
             return false;
         }
@@ -140,22 +140,10 @@ public:
         }
         else
         {
-            for (int ch = 0; ch < channels_; ++ch)
-            {
-                const char *name = nullptr;
-                const char *unit = nullptr;
-                switch (ch) {
-                case 0: name = "sim.roll"; unit = "deg"; break;
-                case 1: name = "sim.pitch"; unit = "deg"; break;
-                case 2: name = "sim.rpm"; unit = "rpm"; break;
-                default: name = "sim.temp"; unit = "C"; break;
-                }
-                if (sink->channel_batch(sink->ctx, name, unit, t.data(), values[ch].data(), count) != 0)
-                {
-                    rc = 1;
-                    break;
-                }
-            }
+            ps::fillError(err, 1, "宿主缺少 frame_batch");
+            finished_ = true;
+            state_ = PS_INPUT_DONE;
+            return true;
         }
         if (rc != 0) {
             ps::fillError(err, 1, "宿主缓冲区已满");

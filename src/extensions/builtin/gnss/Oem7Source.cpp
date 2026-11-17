@@ -251,10 +251,6 @@ struct OemState
     std::unique_ptr<SerialPort> serial;
     QElapsedTimer clock;
     QByteArray rx;
-    QHash<QString, QVector<double>> times;
-    QHash<QString, QVector<double>> values;
-    QHash<QString, QString> units;
-    QStringList order;
     QHash<QString, QJsonObject> defs;
     QHash<int, QString> byId;
     QHash<QString, QHash<QString, int>> enums;
@@ -315,34 +311,6 @@ void recordRaw(OemState *st, const QByteArray &in)
     }
 }
 
-void addSample(OemState *st, const QString &name, const QString &unit, double t, double v)
-{
-    if (!st->times.contains(name))
-        st->order.append(name);
-    st->times[name].append(t);
-    st->values[name].append(v);
-    if (!st->units.contains(name))
-        st->units.insert(name, unit);
-}
-
-void flush(OemState *st)
-{
-    for (const QString &name : st->order)
-    {
-        const QVector<double> &t = st->times.value(name);
-        const QVector<double> &v = st->values.value(name);
-        const uint32_t n = static_cast<uint32_t>(qMin(t.size(), v.size()));
-        if (!n)
-            continue;
-        st->sink.channel_batch(st->sink.ctx, name.toUtf8().constData(),
-                               st->units.value(name).toUtf8().constData(),
-                               t.constData(), v.constData(), n);
-    }
-    st->order.clear();
-    st->times.clear();
-    st->values.clear();
-}
-
 struct LiveSample
 {
     QString field;
@@ -384,8 +352,6 @@ void pushFrame(OemState *st, const QString &table, double t, const QVector<LiveS
         return;
     }
 
-    for (const LiveSample &s : samples)
-        addSample(st, table + QLatin1Char('.') + s.field, s.unit, t, s.value);
 }
 
 bool parseDouble(const QString &s, double *out)
@@ -820,7 +786,7 @@ QString findDatabase(const QString &configured)
 int32_t openSource(const char *config, const PsSourceSink *sink, const PsHostApi *, void **handle,
                    char *err, uint32_t errCap)
 {
-    if (!handle || !sink || !sink->channel_batch)
+    if (!handle || !sink || !sink->frame_batch)
     {
         if (err && errCap)
             std::snprintf(err, errCap, "sink 不完整");
@@ -969,14 +935,12 @@ int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
             {
                 parseBinary(st);
                 parseLines(st);
-                flush(st);
-                st->replayFinished = true;
+                    st->replayFinished = true;
                 return 0;
             }
             st->rx.append(chunk);
             parseBinary(st);
             parseLines(st);
-            flush(st);
             return 0;
         }
 
@@ -995,8 +959,7 @@ int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
                 }
                 parseBinary(st);
                 parseLines(st);
-                flush(st);
-                st->replayFinished = true;
+                    st->replayFinished = true;
                 return 0;
             }
             if (record.encoding != "oem7")
@@ -1017,7 +980,6 @@ int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
                               static_cast<int>(record.payload.size()));
             parseBinary(st);
             parseLines(st);
-            flush(st);
             budget = record.payload.size() >= budget ? 0 : budget - record.payload.size();
         }
         return 0;
@@ -1041,7 +1003,6 @@ int32_t pollSource(void *handle, int32_t timeoutMs, char *err, uint32_t errCap)
     st->rx.append(in);
     parseBinary(st);
     parseLines(st);
-    flush(st);
     return 0;
 }
 
@@ -1118,7 +1079,6 @@ int32_t feedSource(void *handle, const char *topic, const char *encoding, int64_
     ++st->frames;
     parseBinary(st);
     parseLines(st);
-    flush(st);
     if (st->rx.size() > 4 * 1024 * 1024)
     {
         st->rx.clear();
@@ -1213,7 +1173,7 @@ public:
         if (handle_)
             return true;
         const PsSourceSink *s = sink();
-        if (!s || !s->channel_batch)
+        if (!s || !s->frame_batch)
         {
             ps::fillError(err, 1, "宿主 sink 未绑定");
             return false;
