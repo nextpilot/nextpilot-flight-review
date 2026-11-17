@@ -10,29 +10,26 @@
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
+#include <limits>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace {
 
-struct Channel
+struct Column
 {
-    std::string name;
     std::string unit;
-    std::vector<double> t;
     std::vector<double> v;
 };
 
-void add(std::map<std::string, Channel> &acc, const std::string &name, const std::string &unit,
-         double t, double v)
+// 一种 UBX 报文 = 一张表；同一报文的所有字段共享一条时间轴。
+struct Table
 {
-    Channel &c = acc[name];
-    c.name = name;
-    c.unit = unit;
-    c.t.push_back(t);
-    c.v.push_back(v);
-}
+    std::vector<double> t;
+    std::map<std::string, Column> cols;
+};
 
 bool isHeaderField(const QString &name)
 {
@@ -41,13 +38,13 @@ bool isHeaderField(const QString &name)
            name == QStringLiteral("checksum");
 }
 
-bool parseFile(const std::string &path, std::vector<Channel> &channels, std::string &err)
+bool parseFile(const std::string &path, std::vector<PsChannelData> &channels, std::string &err)
 {
     UbxMessageParser parser;
     std::vector<uint8_t> buf;
     if (!psReadFile(path.c_str(), buf, err))
         return false;
-    std::map<std::string, Channel> acc;
+    std::map<std::string, Table> tables;
     size_t pos = 0;
     while (pos + 8 <= buf.size())
     {
@@ -67,7 +64,9 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         PsDecodedFrame decoded;
         if (parser.parse(frame, decoded) && decoded.checksumOk)
         {
-            const std::string prefix = "ubx." + decoded.frameName.toStdString();
+            const std::string tableName = "ubx." + decoded.frameName.toStdString();
+            Table &table = tables[tableName];
+            table.t.push_back(decoded.timestamp);
             for (const PsDecodedField &field : decoded.fields)
             {
                 if (isHeaderField(field.name))
@@ -76,8 +75,11 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
                 const double value = field.value.toDouble(&ok);
                 if (!ok)
                     continue;
-                add(acc, prefix + "." + field.name.toStdString(), field.unit.toStdString(),
-                    decoded.timestamp, value);
+                Column &col = table.cols[field.name.toStdString()];
+                col.unit = field.unit.toStdString();
+                while (col.v.size() + 1 < table.t.size())
+                    col.v.push_back(std::numeric_limits<double>::quiet_NaN());
+                col.v.push_back(value);
             }
             pos += 8 + len;
         }
@@ -88,9 +90,43 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
     }
 
     psLoaderProgress(100, 100);
+    if (tables.empty())
+    {
+        err = "UBX 里没有描述库可解字段";
+        return false;
+    }
+
+    double t0 = 0;
+    bool got = false;
+    for (const auto &kv : tables)
+        if (!kv.second.t.empty())
+        {
+            t0 = got ? std::min(t0, kv.second.t.front()) : kv.second.t.front();
+            got = true;
+        }
+
     channels.clear();
-    for (auto &kv : acc)
-        channels.push_back(std::move(kv.second));
+    for (auto &kv : tables)
+    {
+        const std::string &tableName = kv.first;
+        Table &table = kv.second;
+        for (double &t : table.t)
+            t -= t0;
+        auto axis = std::make_shared<const std::vector<double>>(table.t);
+        for (auto &ck : table.cols)
+        {
+            Column &col = ck.second;
+            col.v.resize(table.t.size(), std::numeric_limits<double>::quiet_NaN());
+            PsChannelData pc;
+            pc.name = tableName + "." + ck.first;
+            pc.table = tableName;
+            pc.axis = axis;
+            pc.unit = col.unit;
+            pc.v = std::move(col.v);
+            pc.value_type = PS_VALUE_F64;
+            channels.push_back(std::move(pc));
+        }
+    }
     if (channels.empty())
     {
         err = "UBX 里没有描述库可解字段";
@@ -103,35 +139,14 @@ int32_t ubxLoad(const char *path, const char *, const PsHostApi *host, void **da
                 uint32_t errCap)
 {
     psLoaderSetHost(host);
-    std::vector<Channel> channels;
+    std::vector<PsChannelData> channels;
     std::string perr;
     if (!parseFile(path, channels, perr))
     {
         psWriteErr(err, errCap, perr);
         return 1;
     }
-    double t0 = 0;
-    bool got = false;
-    for (const auto &c : channels)
-        if (!c.t.empty())
-        {
-            t0 = got ? std::min(t0, c.t.front()) : c.t.front();
-            got = true;
-        }
-    std::vector<PsChannelData> data;
-    data.reserve(channels.size());
-    for (auto &c : channels)
-    {
-        PsChannelData pc;
-        pc.name = c.name;
-        pc.unit = c.unit;
-        pc.t = std::move(c.t);
-        pc.v = std::move(c.v);
-        for (double &t : pc.t)
-            t -= t0;
-        data.push_back(std::move(pc));
-    }
-    PsDataset *ds = psBuildDataset(data, perr, host);
+    PsDataset *ds = psBuildDataset(channels, perr, host);
     if (!ds)
     {
         psWriteErr(err, errCap, perr);

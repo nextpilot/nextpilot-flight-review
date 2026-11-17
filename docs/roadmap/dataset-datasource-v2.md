@@ -1,6 +1,6 @@
 # Dataset / DataSource v2 路线图
 
-状态：M0–M4 已完成；Live 第一/第二阶段已完成（2026-11-17）
+状态：M0–M4 已完成；NMEA/UBX typed 建表与 PSC2 typed 缓存已完成（2026-11-17）
 
 目标：把 PlotScope 的数据层统一成“DataSource 是单个数据源实例的聚合根，Dataset 是实际数据，按数据库表模型组织”。Rust 管生产数据，C++ `MemoryDataset` 只用于测试；离线/实时共用同一套 Dataset；字段按原始类型存储；实时整帧推送；绘图通过视口 LOD 适配层取数。
 
@@ -9,8 +9,9 @@
 - M0 typed 核心（`ps-ndf/src/typed.rs`）：完成。
 - M1 typed ABI 与 `PsFrameBatch`：完成。
 - M2 `DataSource`/`DataSourceSession` 聚合根、driver、配置持久化、generation：完成。
-- M3 离线 loader typed 表/列（ULog/APB/CSV；NMEA/UBX/OEM7 仍走旧通道路径）：完成。
+- M3 离线 loader typed 表/列（ULog/APB/CSV/NMEA/UBX；OEM7 仍走 live 通道路径）：完成。
 - M4 Canvas `dataset + table/column + 视口 LOD`：完成；主绘制/自动 Y 走 typed LOD，光标/标记仍用 ABI 提供的 f64 只读视图。
+- PSC2 typed 缓存：完成；PSC1 仅保留旧通道兼容读取。
 
 ## 1. 已定决策
 

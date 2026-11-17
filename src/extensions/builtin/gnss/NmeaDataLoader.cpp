@@ -11,18 +11,24 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
 
 namespace {
 
-struct Channel
+struct Column
 {
-    std::string name;
     std::string unit;
-    std::vector<double> t;
     std::vector<double> v;
+};
+
+// 一种 NMEA 语句 = 一张表；同一语句的所有字段共享一条时间轴。
+struct Table
+{
+    std::vector<double> t;
+    std::map<std::string, Column> cols;
 };
 
 std::string lowerCopy(std::string value)
@@ -32,7 +38,7 @@ std::string lowerCopy(std::string value)
     return value;
 }
 
-bool parseFile(const std::string &path, std::vector<Channel> &channels, std::string &err)
+bool parseFile(const std::string &path, std::vector<PsChannelData> &channels, std::string &err)
 {
     std::ifstream in(path);
     if (!in)
@@ -41,7 +47,7 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         return false;
     }
     NmeaMessageParser parser;
-    std::map<std::string, Channel> acc;
+    std::map<std::string, Table> tables;
     double lastT = 0, dayOffset = 0;
     bool first = true;
     std::error_code sizeEc;
@@ -69,7 +75,9 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
                 sentence = field.value.toString();
                 break;
             }
-        const std::string prefix = "nmea." + lowerCopy(sentence.toStdString());
+        if (sentence.isEmpty())
+            continue;
+        const std::string tableName = "nmea." + lowerCopy(sentence.toStdString());
 
         double t = decoded.timestamp;
         if (first)
@@ -87,14 +95,8 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
         }
         const double stamp = t + dayOffset;
 
-        auto add = [&](const std::string &name, const std::string &unit, double v) {
-            Channel &c = acc[name];
-            c.name = name;
-            c.unit = unit;
-            c.t.push_back(stamp);
-            c.v.push_back(v);
-        };
-
+        Table &table = tables[tableName];
+        table.t.push_back(stamp);
         for (const PsDecodedField &field : decoded.fields)
         {
             if (field.name == QStringLiteral("talker") || field.name == QStringLiteral("sentence") ||
@@ -106,13 +108,51 @@ bool parseFile(const std::string &path, std::vector<Channel> &channels, std::str
             const double value = field.value.toDouble(&ok);
             if (!ok || !std::isfinite(value))
                 continue;
-            add(prefix + "." + field.name.toStdString(), field.unit.toStdString(), value);
+            Column &col = table.cols[field.name.toStdString()];
+            col.unit = field.unit.toStdString();
+            while (col.v.size() + 1 < table.t.size())
+                col.v.push_back(std::numeric_limits<double>::quiet_NaN());
+            col.v.push_back(value);
         }
     }
     psLoaderProgress(100, 100);
+    if (tables.empty())
+    {
+        err = "NMEA 里没有可解析字段";
+        return false;
+    }
+
+    double t0 = 0;
+    bool gotT0 = false;
+    for (const auto &kv : tables)
+        if (!kv.second.t.empty())
+        {
+            t0 = gotT0 ? std::min(t0, kv.second.t.front()) : kv.second.t.front();
+            gotT0 = true;
+        }
+
     channels.clear();
-    for (auto &kv : acc)
-        channels.push_back(std::move(kv.second));
+    for (auto &kv : tables)
+    {
+        const std::string &tableName = kv.first;
+        Table &table = kv.second;
+        for (double &t : table.t)
+            t -= t0;
+        auto axis = std::make_shared<const std::vector<double>>(table.t);
+        for (auto &ck : table.cols)
+        {
+            Column &col = ck.second;
+            col.v.resize(table.t.size(), std::numeric_limits<double>::quiet_NaN());
+            PsChannelData pc;
+            pc.name = tableName + "." + ck.first;
+            pc.table = tableName;
+            pc.axis = axis;
+            pc.unit = col.unit;
+            pc.v = std::move(col.v);
+            pc.value_type = PS_VALUE_F64;
+            channels.push_back(std::move(pc));
+        }
+    }
     if (channels.empty())
     {
         err = "NMEA 里没有可解析字段";
@@ -125,35 +165,14 @@ int32_t nmeaLoad(const char *path, const char *, const PsHostApi *host, void **d
                  uint32_t errCap)
 {
     psLoaderSetHost(host);
-    std::vector<Channel> channels;
+    std::vector<PsChannelData> channels;
     std::string perr;
     if (!parseFile(path, channels, perr))
     {
         psWriteErr(err, errCap, perr);
         return 1;
     }
-    double t0 = 0;
-    bool gotT0 = false;
-    for (const auto &c : channels)
-        if (!c.t.empty())
-        {
-            t0 = gotT0 ? std::min(t0, c.t.front()) : c.t.front();
-            gotT0 = true;
-        }
-    std::vector<PsChannelData> data;
-    data.reserve(channels.size());
-    for (auto &c : channels)
-    {
-        PsChannelData pc;
-        pc.name = c.name;
-        pc.unit = c.unit;
-        pc.t = std::move(c.t);
-        pc.v = std::move(c.v);
-        for (double &t : pc.t)
-            t -= t0;
-        data.push_back(std::move(pc));
-    }
-    PsDataset *ds = psBuildDataset(data, perr, host);
+    PsDataset *ds = psBuildDataset(channels, perr, host);
     if (!ds)
     {
         psWriteErr(err, errCap, perr);

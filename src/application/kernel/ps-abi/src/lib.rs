@@ -543,6 +543,12 @@ pub unsafe extern "C" fn ps_cache_save_dataset(
         Ok(p) => p,
         Err(e) => { write_err(err, err_cap, &e); return 1; }
     };
+    if !(*ds).typed.tables.is_empty() {
+        return match ps_cache::save_typed_dataset(&p, &(*ds).typed, source_size, source_mtime) {
+            Ok(()) => 0,
+            Err(e) => { write_err(err, err_cap, &e); 2 }
+        };
+    }
     match ps_cache::save_dataset(&p, &(*ds).data, source_size, source_mtime) {
         Ok(()) => 0,
         Err(e) => { write_err(err, err_cap, &e); 2 }
@@ -568,6 +574,17 @@ pub unsafe extern "C" fn ps_cache_load_dataset(
         Ok(p) => p,
         Err(e) => { write_err(err, err_cap, &e); return 2; }
     };
+    match ps_cache::load_typed_dataset(&p, source_size, source_mtime) {
+        Ok(Some(typed)) => {
+            let mut ds = PsDataset::new();
+            ds.typed = typed;
+            ds.rebuild_infos();
+            *out = Box::into_raw(Box::new(ds));
+            return 0;
+        }
+        Ok(None) => {}
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    }
     match ps_cache::load_dataset(&p, source_size, source_mtime) {
         Ok(None) => 1,
         Ok(Some(data)) => {
