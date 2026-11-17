@@ -7,11 +7,10 @@
 
 class QWidget;
 
-namespace ps::data_source
+namespace ps::analysis
 {
 
-// 分析入口只声明“哪个数据格式适用”，命令实现仍由领域工具箱注册。
-// Action 执行命令；App 通过 create() 工厂打开独立面板。
+// 分析入口只描述应用本身；是否可用、需要什么数据由领域工具箱自己判断。
 enum class AnalysisKind
 {
     Action,
@@ -25,10 +24,11 @@ struct AnalysisEntry
     QString icon;
     QString description;
     QStringList tags;
-    QStringList formats; // 匹配 SourceData::fmt；为空表示不限制
     AnalysisKind kind = AnalysisKind::Action;
-    // App 工厂：传入父窗口和当前源路径，返回要放进 Dock 的面板；Action 留空。
-    std::function<QWidget *(QWidget *, const QString &)> create;
+    // 可选：由领域 App 判断当前窗口是否可用；analysis 只负责调用，不关心依据。
+    std::function<bool(QWidget *)> canOpen;
+    // App 工厂：返回要放进 Dock 的面板；Action 留空。
+    std::function<QWidget *(QWidget *)> create;
 };
 
 class AnalysisRegistry
@@ -38,10 +38,9 @@ public:
 
     void add(const AnalysisEntry &entry);
     const QVector<AnalysisEntry> &all() const { return m_entries; }
-    QVector<AnalysisEntry> forFormat(const QString &format) const;
 
 private:
     QVector<AnalysisEntry> m_entries;
 };
 
-} // namespace ps::data_source
+} // namespace ps::analysis

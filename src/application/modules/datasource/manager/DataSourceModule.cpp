@@ -46,6 +46,22 @@ DataSourceSession *dataSourceSession(MainWindow *mw)
 }
 
 ps::data_source::SourceStore *dataSourceStore(MainWindow *mw) { return dataSourceSession(mw)->store(); }
+int dataSourceActiveId(MainWindow *mw)
+{
+    return dataSourceSession(mw)->activeSourceId();
+}
+QString dataSourceActivePath(MainWindow *mw)
+{
+    auto *session = dataSourceSession(mw);
+    auto *source = session->sourceById(session->activeSourceId());
+    return source ? source->path : QString();
+}
+QString dataSourceActiveFormat(MainWindow *mw)
+{
+    auto *session = dataSourceSession(mw);
+    auto *source = session->sourceById(session->activeSourceId());
+    return source ? source->fmt : QString();
+}
 void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt) { dataSourceSession(mw)->addTimeMarker(t, label, prompt); }
 void removeDataSourceTimeMarker(MainWindow *mw, const QString &id) { dataSourceSession(mw)->removeTimeMarker(id); }
 void moveDataSourceTimeMarker(MainWindow *mw, const QString &id, double to) { dataSourceSession(mw)->moveTimeMarker(id, to); }

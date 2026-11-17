@@ -2,7 +2,6 @@ add_library(ps_datasource_protocol STATIC
   parser/MessageParserRegistry.cpp
   parser/ProtocolCatalog.cpp
   parser/FrameDecoder.cpp
-  manager/AnalysisRegistry.cpp
 )
 target_include_directories(ps_datasource_protocol PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include

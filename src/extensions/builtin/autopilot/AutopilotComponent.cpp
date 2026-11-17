@@ -4,7 +4,9 @@
 #include "MavlinkMessageParser.h"
 #include "UlogMessageParser.h"
 #include "datasource/MessageParserRegistry.h"
-#include "datasource/AnalysisRegistry.h"
+#include "analysis/AnalysisRegistry.h"
+#include "DataSourceModule.h"
+#include "MainWindow.h"
 
 #include <memory>
 #include <utility>
@@ -111,27 +113,42 @@ void AutopilotComponent::contribute(Registry &registry, HostContext &host)
     const QStringList analysisFormats = {
         QStringLiteral("ULog"), QStringLiteral("ArduPilot · BIN"),
         QStringLiteral("MAVLink · tlog"), QStringLiteral("MAVLink 遥测")};
-    ps::data_source::AnalysisRegistry::instance().add(
-        {QStringLiteral("autopilot.review.default"), QStringLiteral("默认曲线"),
-         QStringLiteral("datasource"), QStringLiteral("按飞控日志自动创建姿态/位置/电源等默认曲线"),
-         {QStringLiteral("飞控")}, analysisFormats});
-    ps::data_source::AnalysisRegistry::instance().add(
-        {QStringLiteral("autopilot.review.report"), QStringLiteral("分析报告"),
-         QStringLiteral("export_data"), QStringLiteral("生成飞控通道统计与基础飞行摘要"),
-         {QStringLiteral("飞控")}, analysisFormats});
-
-    ps::data_source::AnalysisEntry app;
-    app.id = QStringLiteral("autopilot.review.app");
-    app.title = QStringLiteral("飞控复盘");
-    app.icon = QStringLiteral("datasource");
-    app.description = QStringLiteral("打开飞控复盘面板，查看通道统计并生成曲线/报告");
-    app.tags = {QStringLiteral("飞控")};
-    app.formats = analysisFormats;
-    app.kind = ps::data_source::AnalysisKind::App;
-    app.create = [](QWidget *parent, const QString &path) {
-        return createFlightReviewApp(parent, path);
+    auto canOpen = [analysisFormats](QWidget *parent) {
+        auto *mw = qobject_cast<MainWindow *>(parent);
+        if (!mw)
+            return false;
+        return analysisFormats.contains(ps::components::dataSourceActiveFormat(mw),
+                                      Qt::CaseInsensitive);
     };
-    ps::data_source::AnalysisRegistry::instance().add(app);
+    auto addEntry = [&](const QString &id, const QString &title, const QString &icon,
+                        const QString &description,
+                        std::function<QWidget *(QWidget *)> create) {
+        ps::analysis::AnalysisEntry entry;
+        entry.id = id;
+        entry.title = title;
+        entry.icon = icon;
+        entry.description = description;
+        entry.tags = {QStringLiteral("飞控")};
+        entry.kind = create ? ps::analysis::AnalysisKind::App
+                            : ps::analysis::AnalysisKind::Action;
+        entry.canOpen = canOpen;
+        entry.create = std::move(create);
+        ps::analysis::AnalysisRegistry::instance().add(entry);
+    };
+
+    addEntry(QStringLiteral("autopilot.review.default"), QStringLiteral("默认曲线"),
+             QStringLiteral("datasource"), QStringLiteral("按飞控日志自动创建姿态/位置/电源等默认曲线"),
+             {});
+    addEntry(QStringLiteral("autopilot.review.report"), QStringLiteral("分析报告"),
+             QStringLiteral("export_data"), QStringLiteral("生成飞控通道统计与基础飞行摘要"),
+             {});
+    addEntry(QStringLiteral("autopilot.review.app"), QStringLiteral("飞控复盘"),
+             QStringLiteral("datasource"), QStringLiteral("打开飞控复盘面板，查看通道统计并生成曲线/报告"),
+             [](QWidget *parent) {
+                 auto *mw = qobject_cast<MainWindow *>(parent);
+                 return createFlightReviewApp(parent,
+                                             mw ? ps::components::dataSourceActivePath(mw) : QString());
+             });
 
     registerAutopilotReview(registry, host);
 }

@@ -1,4 +1,5 @@
 add_subdirectory(datasource)
+add_subdirectory(analysis)
 add_subdirectory(plotting)
 
 # 脚本子系统：控制台 + 自动化 + 受限 require，见 docs/roadmap/script-automation.md

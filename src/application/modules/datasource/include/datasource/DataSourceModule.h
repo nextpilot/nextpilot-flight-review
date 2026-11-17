@@ -12,6 +12,9 @@ namespace ps::data_source { struct SourceData; struct SourceStore; }
 namespace ps::components {
 ps::data_source::SourceStore *dataSourceStore(MainWindow *mw);
 const QVector<const PsChannelInfo *> &dataSourceChannels(MainWindow *mw);
+int dataSourceActiveId(MainWindow *mw);
+QString dataSourceActivePath(MainWindow *mw);
+QString dataSourceActiveFormat(MainWindow *mw);
 QVector<ps::TimeBookmark> &dataSourceTimeMarkers(MainWindow *mw);
 void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt);
 void removeDataSourceTimeMarker(MainWindow *mw, const QString &id);

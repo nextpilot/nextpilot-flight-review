@@ -18,6 +18,7 @@ target_include_directories(ps_autopilot PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
+  ${PROJECT_SOURCE_DIR}/src/application/modules/analysis/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
 )
 target_link_libraries(ps_autopilot PUBLIC
@@ -39,9 +40,11 @@ target_include_directories(ps_autopilot_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src/application/kernel/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
+  ${PROJECT_SOURCE_DIR}/src/application/modules/analysis/include
 )
 target_link_libraries(ps_autopilot_component PUBLIC
   ps_autopilot
+  ps_analysis_registry
   ps_host
   Qt6::Widgets
   ps_data_loader_ulog
