@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QFileInfo>
 #include <QString>
 
 namespace {
@@ -60,6 +61,34 @@ int32_t ulogLoad(const char *path, const char *, const PsHostApi *host, void **d
             values.text.push_back(p.second);
         }
         log.channels.push_back(std::move(names));
+        log.channels.push_back(std::move(values));
+    }
+    {
+        struct Row { const char *key; std::string value; };
+        std::vector<Row> rows = {
+            {"format", "ulog"},
+            {"file", QFileInfo(QString::fromUtf8(path)).fileName().toStdString()},
+            {"params", std::to_string(log.params.size())},
+        };
+        const uint32_t n = static_cast<uint32_t>(rows.size());
+        auto axis = std::make_shared<const std::vector<double>>();
+        std::vector<double> time(n);
+        for (uint32_t i = 0; i < n; ++i) time[i] = i * 1e-6;
+        axis = std::make_shared<const std::vector<double>>(std::move(time));
+        PsChannelData keys, values;
+        keys.name = "info.key";
+        keys.table = "info";
+        keys.axis = axis;
+        keys.value_type = PS_VALUE_TEXT;
+        keys.v.assign(n, 0.0);
+        values = keys;
+        values.name = "info.value";
+        for (const auto &r : rows)
+        {
+            keys.text.push_back(r.key);
+            values.text.push_back(r.value);
+        }
+        log.channels.push_back(std::move(keys));
         log.channels.push_back(std::move(values));
     }
     PsDataset *ds = psBuildDataset(log.channels, perr, host);
