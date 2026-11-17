@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <climits>
 #include <fstream>
 #include <map>
 #include <string>
@@ -16,7 +17,8 @@ public:
 
     bool open(const std::string &path, const std::string &profile, std::string &err);
     bool writeJson(const std::string &topic, uint64_t log_time_ns,
-                   const std::string &json, std::string &err);
+                   const std::string &json, std::string &err,
+                   uint32_t sequence = UINT32_MAX);
     bool writeRaw(const std::string &topic, const std::string &encoding,
                   uint64_t log_time_ns, const uint8_t *data, uint32_t size,
                   std::string &err);

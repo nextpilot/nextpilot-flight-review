@@ -1810,6 +1810,16 @@ pub unsafe extern "C" fn ps_dataset_read_window(
     n
 }
 
+/// 表内 seq；不存在返回 UINT64_MAX。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_seq_at(ds: *mut PsDataset, table: *const c_char, row: u32) -> u64 {
+    if ds.is_null() || table.is_null() { return u64::MAX; }
+    let ds = &*ds;
+    let name = CStr::from_ptr(table).to_string_lossy();
+    let Some(t) = ds.typed.tables.iter().find(|t| t.name == name) else { return u64::MAX; };
+    t.seq.get(row as usize).copied().unwrap_or(u64::MAX)
+}
+
 /// typed 列原始类型，返回 PsValueType；旧通道/不存在返回 -1。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_column_type(

@@ -2,6 +2,7 @@
 #include "LegacyFileInput.hpp"
 
 #include "UlogParser.h"
+#include "PsLoaderCommon.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -36,6 +37,30 @@ int32_t ulogLoad(const char *path, const char *, const PsHostApi *host, void **d
     {
         psWriteErr(err, errCap, perr);
         return 1;
+    }
+    if (!log.params.empty())
+    {
+        const uint32_t n = static_cast<uint32_t>(log.params.size());
+        auto axis = std::make_shared<const std::vector<double>>();
+        std::vector<double> time(n);
+        for (uint32_t i = 0; i < n; ++i)
+            time[i] = i * 1e-6;
+        axis = std::make_shared<const std::vector<double>>(std::move(time));
+        PsChannelData names;
+        names.name = "params.name";
+        names.table = "params";
+        names.axis = axis;
+        names.value_type = PS_VALUE_TEXT;
+        names.v.assign(n, 0.0);
+        PsChannelData values = names;
+        values.name = "params.value";
+        for (const auto &p : log.params)
+        {
+            names.text.push_back(p.first);
+            values.text.push_back(p.second);
+        }
+        log.channels.push_back(std::move(names));
+        log.channels.push_back(std::move(values));
     }
     PsDataset *ds = psBuildDataset(log.channels, perr, host);
     if (!ds)

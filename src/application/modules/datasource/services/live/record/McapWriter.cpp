@@ -142,7 +142,7 @@ uint16_t McapWriter::channelId(const std::string &topic, const std::string &enco
 }
 
 bool McapWriter::writeJson(const std::string &topic, uint64_t log_time_ns,
-                           const std::string &json, std::string &err)
+                           const std::string &json, std::string &err, uint32_t sequence)
 {
     err.clear();
     if (!file_.is_open() || failed_)
@@ -157,7 +157,8 @@ bool McapWriter::writeJson(const std::string &topic, uint64_t log_time_ns,
         return false;
     }
 
-    appendMessageRecord(id, sequences_[id]++, log_time_ns,
+    const uint32_t seq = sequence == UINT32_MAX ? sequences_[id]++ : sequence;
+    appendMessageRecord(id, seq, log_time_ns,
                         reinterpret_cast<const uint8_t *>(json.data()),
                         static_cast<uint32_t>(json.size()));
     if (!file_)

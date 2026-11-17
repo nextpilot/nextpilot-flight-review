@@ -251,6 +251,16 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
                                                         c.unit.c_str(), PS_VALUE_U8, v.data(), nullBits, n,
                                                         e, sizeof(e));
         }
+        case PS_VALUE_TEXT:
+        {
+            std::vector<const char *> p;
+            p.reserve(n);
+            for (uint32_t i = 0; i < n; ++i)
+                p.push_back(i < c.text.size() ? c.text[i].c_str() : "");
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_TEXT, p.data(), nullBits, n,
+                                                        e, sizeof(e));
+        }
         default:
             return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
                                                         c.unit.c_str(), PS_VALUE_F64, c.v.data(), nullBits, n,

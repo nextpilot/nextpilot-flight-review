@@ -1561,7 +1561,7 @@ void DataSourceDock::exportActiveMcap(const QString &path, ps::data_source::Data
             }
             const uint64_t ns = static_cast<uint64_t>(std::llround(cols.front()->time[i] * 1e9));
             const QByteArray json = QJsonDocument(row).toJson(QJsonDocument::Compact);
-            if (!writer.writeJson(it.key().toStdString(), ns, json.toStdString(), err))
+            if (!writer.writeJson(it.key().toStdString(), ns, json.toStdString(), err, i))
             {
                 QMessageBox::warning(this, QStringLiteral("导出失败"), QString::fromStdString(err));
                 return;

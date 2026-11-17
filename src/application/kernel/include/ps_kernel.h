@@ -137,6 +137,8 @@ int32_t              ps_dataset_value_near(PsDataset *ds, const char *table, con
 uint32_t             ps_dataset_read_window(PsDataset *ds, const char *table, const char *column,
                                             int64_t t0_us, int64_t t1_us,
                                             double *out_time, double *out_value, uint32_t cap);
+/* typed 表内 seq；不存在返回 UINT64_MAX。 */
+uint64_t             ps_dataset_seq_at(PsDataset *ds, const char *table, uint32_t row);
 /* typed 列原始类型；不存在/旧通道返回 -1。 */
 int32_t              ps_dataset_column_type(PsDataset *ds, const char *table, const char *column);
 static inline const char *ps_value_type_name(int32_t t)
