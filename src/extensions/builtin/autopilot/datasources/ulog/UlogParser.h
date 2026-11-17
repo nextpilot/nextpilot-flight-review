@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-struct UlogMessage
+struct UlogEvent
 {
     double t = 0.0;
     uint8_t level = 0;
@@ -28,9 +28,9 @@ struct UlogLog
     std::vector<PsChannelData> channels;
     std::vector<std::pair<std::string, std::string>> params;
     std::vector<std::pair<std::string, std::string>> defaultParams;
-    std::vector<std::pair<std::string, std::string>> info;
+    std::vector<std::pair<std::string, std::string>> facts;
     std::vector<std::pair<double, std::pair<std::string, std::string>>> changedParams;
-    std::vector<UlogMessage> messages;
+    std::vector<UlogEvent> events;
     std::vector<std::pair<double, uint16_t>> dropouts;
     std::vector<std::string> formats;
     struct SubscriptionInfo { uint16_t msgId; std::string topic; uint8_t multiId; };

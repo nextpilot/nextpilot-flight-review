@@ -402,8 +402,8 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
     {
         uint64_t start = 0;
         std::memcpy(&start, buf.data() + 8, 8);
-        meta.info.emplace_back("start_timestamp_us", std::to_string(start));
-        meta.info.emplace_back("file_version", std::to_string(buf[7]));
+        meta.facts.emplace_back("start_timestamp_us", std::to_string(start));
+        meta.facts.emplace_back("file_version", std::to_string(buf[7]));
         log.startTimestampUs = start;
         log.fileVersion = buf[7];
     }
@@ -539,26 +539,26 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         }
         else if (ty == 'I')
         {
-            addInfo(meta.info, p, size);
+            addInfo(meta.facts, p, size);
         }
         else if (ty == 'M')
         {
-            if (size >= 1) addInfo(meta.info, p + 1, size - 1);
+            if (size >= 1) addInfo(meta.facts, p + 1, size - 1);
         }
         else if (ty == 'L' && size >= 9)
         {
-            UlogMessage m;
+            UlogEvent m;
             m.level = p[0];
             uint64_t ts = 0;
             std::memcpy(&ts, p + 1, 8);
             m.t = static_cast<double>(ts) / 1e6;
             lastTimestamp = m.t;
             m.text = readCString(p + 9, size - 9);
-            meta.messages.push_back(std::move(m));
+            meta.events.push_back(std::move(m));
         }
         else if (ty == 'C' && size >= 11)
         {
-            UlogMessage m;
+            UlogEvent m;
             m.level = p[0];
             std::memcpy(&m.tag, p + 1, 2);
             uint64_t ts = 0;
@@ -567,7 +567,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             lastTimestamp = m.t;
             m.text = readCString(p + 11, size - 11);
             m.tagged = true;
-            meta.messages.push_back(std::move(m));
+            meta.events.push_back(std::move(m));
         }
         else if (ty == 'O' && size >= 10)
         {
@@ -589,10 +589,10 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
             char txt[64];
             std::snprintf(txt, sizeof(txt), "compat=%02x%02x%02x%02x%02x%02x%02x%02x",
                           p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7]);
-            meta.info.emplace_back("flags.compat", txt);
+            meta.facts.emplace_back("flags.compat", txt);
             std::snprintf(txt, sizeof(txt), "incompat=%02x%02x%02x%02x%02x%02x%02x%02x",
                           p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
-            meta.info.emplace_back("flags.incompat", txt);
+            meta.facts.emplace_back("flags.incompat", txt);
         }
         else if (ty == 'S')
         {
@@ -646,8 +646,8 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
     }
     log.params = std::move(params);
     log.defaultParams = std::move(meta.defaultParams);
-    log.info = std::move(meta.info);
-    log.messages = std::move(meta.messages);
+    log.facts = std::move(meta.facts);
+    log.events = std::move(meta.events);
     log.dropouts = std::move(meta.dropouts);
     log.changedParams = std::move(meta.changedParams);
     psLoaderProgress(100, 100);

@@ -88,27 +88,27 @@ int32_t ulogLoad(const char *path, const char *, const PsHostApi *host, void **d
     infoRows.push_back({0.0, {"format", "ulog"}});
     infoRows.push_back({0.0, {"file", QFileInfo(QString::fromUtf8(path)).fileName().toStdString()}});
     infoRows.push_back({0.0, {"params", std::to_string(log.params.size())}});
-    for (const auto &kv : log.info) infoRows.push_back({0.0, kv});
-    textTable("info", infoRows);
+    for (const auto &kv : log.facts) infoRows.push_back({0.0, kv});
+    textTable("facts", infoRows);
 
-    if (!log.messages.empty())
+    if (!log.events.empty())
     {
-        const uint32_t n = static_cast<uint32_t>(log.messages.size());
+        const uint32_t n = static_cast<uint32_t>(log.events.size());
         std::vector<double> time(n);
-        for (uint32_t i = 0; i < n; ++i) time[i] = log.messages[i].t;
+        for (uint32_t i = 0; i < n; ++i) time[i] = log.events[i].t;
         auto axis = std::make_shared<const std::vector<double>>(std::move(time));
         PsChannelData level, tag, text;
-        level.name = "messages.level"; level.table = "messages"; level.axis = axis;
+        level.name = "events.level"; level.table = "events"; level.axis = axis;
         level.value_type = PS_VALUE_U8; level.v.resize(n);
-        tag.name = "messages.tag"; tag.table = "messages"; tag.axis = axis;
+        tag.name = "events.tag"; tag.table = "events"; tag.axis = axis;
         tag.value_type = PS_VALUE_U16; tag.v.resize(n);
-        text.name = "messages.text"; text.table = "messages"; text.axis = axis;
+        text.name = "events.text"; text.table = "events"; text.axis = axis;
         text.value_type = PS_VALUE_TEXT; text.v.assign(n, 0.0);
         for (uint32_t i = 0; i < n; ++i) {
-            level.v[i] = log.messages[i].level;
-            tag.v[i] = log.messages[i].tagged ? log.messages[i].tag : 0;
-            text.text.push_back(log.messages[i].text);
-            if (!log.messages[i].tagged) tag.nulls.push_back(0);
+            level.v[i] = log.events[i].level;
+            tag.v[i] = log.events[i].tagged ? log.events[i].tag : 0;
+            text.text.push_back(log.events[i].text);
+            if (!log.events[i].tagged) tag.nulls.push_back(0);
         }
         log.channels.push_back(std::move(level));
         log.channels.push_back(std::move(tag));
