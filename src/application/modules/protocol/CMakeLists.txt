@@ -22,7 +22,7 @@ set_target_properties(ps_application_protocol PROPERTIES AUTOMOC ON)
 target_include_directories(ps_application_protocol PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/dialog

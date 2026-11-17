@@ -5,7 +5,7 @@ add_library(ps_data_loader_blf STATIC
 
 target_include_directories(ps_data_loader_blf PRIVATE
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
 )
 
 target_link_libraries(ps_data_loader_blf PRIVATE ps_can_common ps_zlib)

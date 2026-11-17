@@ -31,7 +31,7 @@
 | 5 | 数据面能力已有实现 | `DataSourceSession.h:36-92`：`loadFile/openPath/connectSource/connectLiveSource/closeSources/setSourcePaused/exportActiveCsv/reloadChannels` | 服务方法可直接复用，不需新造加载能力 |
 | 6 | 录制已有独立落盘器（有界队列、丢批计数、后台线程） | `LiveSession::startRecording/stopRecording`、`StreamRecorder`（Csv/Raw/Mcap） | 自动化录制只需包状态与取消语义 |
 | 7 | 实时源有溢出/丢批状态 | `LiveSession`（`kChannelCapacity=262144`、`overflow()`、`droppedBatches()`） | 脚本可查状态，别让脚本猜 |
-| 8 | 脚本能力只剩纯函数 runner，无宿主对象 | `ScriptService.h`（`modules/runtime/include/`）、`ScriptComponent.cpp:34-40` 只 `registry.addScriptRunner(...)` | P1 新建宿主服务面；旧 runner 槽位整体退场 |
+| 8 | 脚本能力只剩纯函数 runner，无宿主对象 | `ScriptService.h`（`runtime/host/include/`）、`ScriptComponent.cpp:34-40` 只 `registry.addScriptRunner(...)` | P1 新建宿主服务面；旧 runner 槽位整体退场 |
 | 8a | 绘图侧曲线变换已独立实现，且不再走脚本 | `shared/filter`（`src/application/shared/filter/include/filter/FilterCatalog.h`，13 个内置算子）+ `ps_filter_apply_series`（`src/application/kernel/include/ps_kernel.h:65-68`） | 本方案不涉及 |
 | 8b | 内核已有曲线级求值入口，指针进指针出，不走 dataset | `ps_filter_apply_series` | Lua 调 Rust 直接接这个，不需要新建 ABI |
 | 8c | `extensions/builtin/transform` 已删除 | commit `993711c` | 方案里"算子执行归 transform"的说法作废 |
@@ -39,7 +39,7 @@
 | 10 | Python 走子进程 + JSON，15 s 硬超时，无宿主 | `ScriptEngine.cpp:25-89`（`findExecutable("python3")`、`QTemporaryFile`、`:50-51` 逐点拼 `QJsonArray`、`:75` `waitForFinished(15000)`） | 不进主链路 |
 | 11 | 批处理脚本是未实现的愿景 | `resources/scripts/batch/resample.lua` 用的 4 个函数均未注册 | API 面按它对齐，S5 才验收批处理 |
 | 12 | 画布无稳定 id，`saveState` 不存派生样本 | `PlottingCanvas.h`、`saveState`/`restoreState` | "提升为正式曲线"留 P2 |
-| 13 | 跨模块只能过 `ModuleBridge`（全 `MainWindow*` 形参） | `modules/runtime/include/ModuleBridge.h` | 新服务面不得再过此路 |
+| 13 | 跨模块只能过 `ModuleBridge`（全 `MainWindow*` 形参） | `runtime/host/include/ModuleBridge.h` | 新服务面不得再过此路 |
 | 14 | 内置计算函数是 C++ 逐元素算，根本没走 Rust | `l_moving_avg`（`ScriptEngine.cpp:224-242`）从 Lua table `readVector` 逐点取、C++ 循环、再塞回 | 必须改走 `ps_filter_apply_series` 块级入口 |
 
 ## 2. 三层与三组 API 面
@@ -463,7 +463,7 @@ plotscope watch --live mavlink://...        # 将来，依赖 S4
 |---|---|
 | target | `ps_application_scripting` |
 | 拥有 | 两条线共用一个模块：**控制台**（REPL + 结果面板 + scratch 临时图 + 计算库）、**自动化**（Job 引擎 + 操作清单 + 批处理 + 事件分发）、对象浏览器、脚本目录、Lua 引擎、`script.*` 命令 |
-| 允许依赖 | `shell` 宿主接口、`modules/runtime`、`ps_kernel` C ABI、Qt、Lua |
+| 允许依赖 | `shell` 宿主接口、`runtime/host`、`ps_kernel` C ABI、Qt、Lua |
 | 禁止依赖 | `modules/datasource`/`modules/plotting` 私有头、`MainWindow*`、直接调画布方法 |
 | 装配 | 由 `plotscope_app` 链接；Dock 走 `DockContribution`，命令域 `script.*` |
 
@@ -478,7 +478,7 @@ modules/scripting/
 └── ...
 ```
 
-引擎代码从 `extensions/builtin/script` 搬进来即可，依赖已经核实干净：`ScriptEngine.cpp` 只 include `ScriptEngine.h` + Qt + `lua.h/lauxlib.h/lualib.h`，而 `ScriptEngine.h` 只往上追溯到 `ScriptService.h`（本就在 `modules/runtime/include/`），没有任何 extension 宿主 API，搬运不会牵出新依赖。
+引擎代码从 `extensions/builtin/script` 搬进来即可，依赖已经核实干净：`ScriptEngine.cpp` 只 include `ScriptEngine.h` + Qt + `lua.h/lauxlib.h/lualib.h`，而 `ScriptEngine.h` 只往上追溯到 `ScriptService.h`（本就在 `runtime/host/include/`），没有任何 extension 宿主 API，搬运不会牵出新依赖。
 
 若将来真出现第二个消费者，**按仓库现约定走 `src/application/shared/lua`，不新建 `modules/lua`**——`shared/filter` 就是这个模式的既有先例（`AGENTS.md §2` 把它列为"共享 UI 库"，`§3` 给它单列一行依赖约束）。现在提前拆只是给自己加依赖矩阵。
 
@@ -489,7 +489,7 @@ datasource 实现并注册，任何消费者（含 scripting）只消费（**不
 **名字里刻意不带 `Script`**：契约属于宿主层，数据源实现它时不需要知道调用方是脚本、是命令还是别的模块。早先叫 `HostDataService` / `HostDataBridge`，导致 `modules/datasource` 的源码里出现 `scripting::Result` 这类符号，等于数据源反向依赖脚本子系统；现已抽到中立的 `ps::host`，datasource 侧零 `scripting` 引用。
 
 ```cpp
-// modules/runtime/include/HostDataService.h
+// runtime/host/include/HostDataService.h
 namespace ps::host {
 
 struct Result { bool ok; QString code; QString message; };   // code: enoent/eformat/etimeout/ecanceled/...
@@ -839,7 +839,7 @@ P2 的处理策略：**S0 不删槽位**。先让 `modules/scripting` 并行建�
 | 片 | 范围 | 验收 | 不做 |
 |---|---|---|---|
 | **S0 引擎搬迁与骨架**（已完成） | Lua 引擎从 `extensions/builtin/script` 搬进 `modules/scripting/lua/`；受限 `require`（§2.4）；`HostDataService` 数据面契约；`modules/scripting` 模块 + `script.info` 命令；`HostContext::registerCommand` 让模块不必兜到 MainWindow；AGENTS 同步 | 编译通过；`ctest` **31/31**（含新增 `script_library`）；`require("roll_rate")` 可加载，`require("os")` / `require("../../etc/x")` / `/abs` / `C:/` / `\\` 全拒；环依赖不死循环；失败后哨兵已清 | 不写 `ps.app` API；不删旧扩展与 runner 槽（等 P2）；不动绘图侧；`ps_filter_apply_series` 接入留到 S2 |
-| **S0.5 死后清理**（已完成） | 删 `extensions/builtin/script` 整个目录；摘 `Registry::addScriptRunner` / `runScript` / `m_scriptRunner`；删 `runtime/include/ScriptService.h`，`ScriptSeries/ScriptOutput/ScriptResult` 移入 `scripting/ScriptTypes.h` 属脚本模块自有；绘图侧摘掉曲线变换的 `lua` 项与执行分支 | `grep addScriptRunner\|runScript\|ScriptService\|ScriptRunnerContribution` 零命中；`modules/runtime` 零 `Script` 字样；`ctest` **39/39** | 中立层 `Component.h` 不再 include 脚本类型，所有模块不再间接知道脚本子系统 |
+| **S0.5 死后清理**（已完成） | 删 `extensions/builtin/script` 整个目录；摘 `Registry::addScriptRunner` / `runScript` / `m_scriptRunner`；删 `runtime/include/ScriptService.h`，`ScriptSeries/ScriptOutput/ScriptResult` 移入 `scripting/ScriptTypes.h` 属脚本模块自有；绘图侧摘掉曲线变换的 `lua` 项与执行分支 | `grep addScriptRunner\|runScript\|ScriptService\|ScriptRunnerContribution` 零命中；`runtime/host` 零 `Script` 字样；`ctest` **39/39** | 中立层 `Component.h` 不再 include 脚本类型，所有模块不再间接知道脚本子系统 |
 | **S1 只读数据面**（已完成） | `sources/source/currentSource/channels/channel/slice/liveStatus`、`load/exportCsv/close` 的 Lua 对象面（`ps.app.source` / `ps.app.channel` / `ps.app.job` 三个 metatable）；`HostDataBridge` 落在 `datasource` 模块，`HostDataService` 之上只有接口；**`--run <script.lua>` CLI 闭环**（无 UI，自建 `ExtensionHost` 激活内置 loader） | 编译通过；`ctest` **33/33**（新增 `script_library` / `script_app_cli` / `script_slice_perf`）；1000 万点 `slice` 到 4096 点 = **64 KB / 1.8 ms**；`channels()` 对 1000 万点全扫 min/max = 9.1 ms；50 源 `sources()` = 0.00 ms；`plotscope_app --run` 跑通"加载→取通道→切片→导出 CSV"，退出码 0/1/2 | 不做任何副作用（除导出）；`connectLive/record` 返回 `eunsupported`；`reload/glob/report/clearCache` 未暴露；`loadFile` 失败只回 `eload`，不携带 loader 原始错误 |
 | **S2 控制台**（完成） | 计算库 Lua API + **内核补齐（P3，已完成）**；**REPL（持久 workspace / 表达式回显 + `ans` / 多行续行 / `ps.gc`）**；元命令 `:` 前缀 7 项（`help/clear/who/whos/run/reload/clc`）；结果面板（表 + scratch 临时图，频率域 x 轴）；L0 错误定位 | 已达成：加载日志后 `ps.stats` / `ps.fft` / `ps.psd` / `ps.filter` / `ps.decimate` 出结果（1024 点 10 Hz 正弦峰值 10 Hz、幅值 1）；`1+2` 回显 `3`；`who/whos` 正确；`:run` 后变量留在 workspace；`:reload` 清缓存；语法错报 `行 N` 且不执行；`ps.plot{ps.fft}` 出频谱临时图、`ps.table` 出表。`test_script_console` 21 条、`test_lua_calc`、`test_console_panel`、`ctest` **39/39** | 未做：Ctrl+C 中断、`ps.promote`（属 S6）、`peaks/correlate/find/align/resample`（缺算子） |
 | **S3 作业模型 + 事件触发** | Job 状态机、串行写队列、`load/close/reload/exportCsv/report/glob`、`wait/onDone/cancel`、操作清单；**事件分发器 + `scripts/on/sourceLoaded.lua` + 四道闸** | 无人值守"加载→导出→汇总→关闭"跑通；取消后 500 ms 内回空闲且无半成品文件；放一路日志进 `sourceLoaded` 自动跑完；死循环脚本被预算掐断且后续触发不受影响 | 不做实时；不做其他事件源 |

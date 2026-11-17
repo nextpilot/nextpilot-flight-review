@@ -9,7 +9,8 @@ plotscope_app
   ├─ ps_application_shell       宿主：窗口、命令、Dock/Ribbon、会话、设置、日志、扩展管理
   ├─ ps_application_datasource  数据源能力：注册、加载、实时源、缓存、数据源 Dock
   ├─ ps_application_plotting    绘图能力：画布、页签/切分、曲线、属性、绘图 Ribbon
-  ├─ ps_host                    通用契约：Registry、IComponent、动态扩展、ABI bridge
+  ├─ ps_runtime                 服务层：SessionState、SettingsStore、LogService、CommandBus
+  ├─ ps_host                    通用契约：Registry、IComponent、动态扩展、ABI bridge（runtime/host）
   ├─ ps_kernel                  Rust 数据内核，C ABI（ps_kernel.h）
   ├─ ps_cache / ps_live         缓存与实时源服务
   └─ ps_builtin_components      内置扩展聚合
@@ -23,7 +24,8 @@ C++ 侧只通过 `ps_kernel.h` 调 Rust，不 include Rust 内部头。`ps-abi` 
 |---|---|
 | `src/application/main.cpp` | 组装：QApplication、扩展扫描、MainWindow、命令行 |
 | `src/application/shell` | 最小宿主和管理内核，不含数据源/绘图业务 |
-| `src/application/modules/runtime` | 宿主侧通用契约层，不承载业务 |
+| `src/application/runtime` | 服务层：会话状态、设置/日志、CommandBus、ExtensionHost |
+| `src/application/runtime/host` | 宿主侧通用契约层（`ps_host`）：Registry、IComponent、动态扩展、ABI，不承载业务 |
 | `src/application/modules/datasource` | 数据源注册、加载器入口、实时源、缓存、数据源 UI |
 | `src/application/modules/plotting` | 画布、绘图页、切分布局、属性面板、绘图 UI |
 | `src/application/shared/filter` | 算子目录、共享参数表单，datasource/plotting 共用 |
@@ -75,7 +77,7 @@ shell 只负责顺序和容器；业务页签、画布、数据源面板由模�
 | 设备调试终端 | `src/application/modules/datasource/dialog` |
 | 数据源生命周期、加载器注册、数据源 Dock | `modules/datasource` |
 | 画布、坐标轴、曲线、绘图页、绘图 Ribbon | `modules/plotting` |
-| 组件契约、Registry、动态扩展 ABI | `modules/runtime` |
+| 组件契约、Registry、动态扩展 ABI | `runtime/host` |
 | 宿主窗口、命令表、Dock/Ribbon 容器、会话、设置、日志 | `shell` |
 | Rust 解析/算子/对齐/LOD | `src/application/kernel` |
 

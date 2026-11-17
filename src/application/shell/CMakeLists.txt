@@ -42,7 +42,7 @@ target_include_directories(ps_application_shell PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
 )
 target_link_libraries(ps_application_shell PUBLIC
   ps_host

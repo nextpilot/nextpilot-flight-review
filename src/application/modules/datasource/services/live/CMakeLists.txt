@@ -11,7 +11,7 @@ add_library(ps_live STATIC
 target_include_directories(ps_live PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
 target_link_libraries(ps_live PUBLIC Qt6::Core ps_kernel)

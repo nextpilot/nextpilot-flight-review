@@ -17,7 +17,7 @@ target_include_directories(ps_autopilot PUBLIC
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
   ${PROJECT_SOURCE_DIR}/src/application/modules/analysis/include
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
 )
 target_link_libraries(ps_autopilot PUBLIC
   Qt6::Core
@@ -35,7 +35,7 @@ target_include_directories(ps_autopilot_component PRIVATE
   ${PROJECT_SOURCE_DIR}/src/application
   ${PROJECT_SOURCE_DIR}/src/application/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/shell
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/application/kernel/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource

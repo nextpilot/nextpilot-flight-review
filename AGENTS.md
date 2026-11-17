@@ -16,14 +16,14 @@ shell（最小宿主）
 
 箭头表示“可以被谁依赖”。反向依赖、反向 include、反向 link 都不允许。
 
-`src/application/modules/runtime` 是宿主侧通用契约层，不是业务模块。它只放组件注册、扩展生命周期、贡献接口、动态扩展扫描和 ABI，不放具体格式、画布、数据源 UI；shell 和 modules 都可以依赖它。
+`src/application/runtime/host` 是宿主侧通用契约层，不是业务模块。它只放组件注册、扩展生命周期、贡献接口、动态扩展扫描和 ABI，不放具体格式、画布、数据源 UI；shell 和 modules 都可以依赖它。
 
 ## 2. 目录与所有权
 
 | 目录 | 所有者 | 放什么 | 禁止放什么 |
 |---|---|---|---|
 | `src/application/shell` | 宿主 | `MainWindow`、页签容器、Ribbon/Dock 管理器、命令、会话、日志、设置、主题入口、扩展管理、`UiDialogEngine` | 数据源、画布、绘图页、具体文件格式、业务状态、业务命令实现 |
-| `src/application/modules/runtime` | 宿主契约 | `Registry`、`IComponent`、`HostContext`、动态扩展扫描/ABI、跨模块 bridge | 具体业务格式、业务 Dock/画布、业务命令实现 |
+| `src/application/runtime/host` | 宿主契约 | `Registry`、`IComponent`、`HostContext`、动态扩展扫描/ABI、跨模块 bridge | 具体业务格式、业务 Dock/画布、业务命令实现 |
 | `src/application/modules/datasource` | 数据源能力 | 数据源注册、加载器入口、实时源、缓存、数据源 Dock/对话框、数据变换与设备调试终端、`data.*` 命令 | 画布、绘图页、属性面板、绘图状态 |
 | `src/application/modules/plotting` | 绘图能力 | 画布、绘图页/切分、坐标轴、曲线、属性面板、绘图 Ribbon、`plot.*`/`page.*` 命令 | 具体文件格式解析、数据源生命周期 |
 | `src/application/shared/filter` | 共享 UI 库 | 算子目录、参数表单、与内核 filter id 对应的元数据 | 具体数据源/绘图状态、格式解析；业务命令 |
@@ -38,17 +38,17 @@ shell（最小宿主）
 
 | 使用方 | 允许依赖 | 禁止依赖 |
 |---|---|---|
-| `shell` | `modules/runtime`、`ps_kernel` 的 C ABI、Qt、SARibbon | `datasource`、`plotting`、`extensions/builtin`、具体业务格式 |
-| `modules/runtime` | `ps_kernel` 的 C ABI、Qt Core | 具体业务模块、shell 的 `MainWindow` |
-| `modules/datasource` | `shell` 的宿主接口、`modules/runtime`、`shared/filter`、`ps_kernel` 的 C ABI、cache/live | `modules/plotting` 私有头；绘图状态 |
-| `modules/plotting` | `shell` 的宿主接口、`modules/runtime`、`shared/filter`、`ps_kernel` 的 C ABI | `modules/datasource` 私有头；格式解析 |
+| `shell` | `runtime/host`、`ps_kernel` 的 C ABI、Qt、SARibbon | `datasource`、`plotting`、`extensions/builtin`、具体业务格式 |
+| `runtime/host` | `ps_kernel` 的 C ABI、Qt Core | 具体业务模块、shell 的 `MainWindow` |
+| `modules/datasource` | `shell` 的宿主接口、`runtime/host`、`shared/filter`、`ps_kernel` 的 C ABI、cache/live | `modules/plotting` 私有头；绘图状态 |
+| `modules/plotting` | `shell` 的宿主接口、`runtime/host`、`shared/filter`、`ps_kernel` 的 C ABI | `modules/datasource` 私有头；格式解析 |
 | `shared/filter` | Qt Widgets | 具体数据源/绘图状态、业务状态、shell 私有头 |
-| `modules/protocol` | `shell` 的宿主接口、`modules/runtime`、`ps_kernel` 的 C ABI、`ps_loader_common`（加载器公共代码）、Qt | `modules/datasource`/`plotting` 私有头；画布与绘图状态 |
-| `modules/scripting` | `shell` 的宿主接口、`modules/runtime`（含 `HostDataService`）、`ps_kernel` 的 C ABI、Qt、Lua 5.4 | `modules/datasource`/`plotting` 私有头；直接持有 `MainWindow`；绘图侧曲线变换 |
-| `extensions/builtin` | `modules/runtime`、modules 的公开头、`ps_kernel` 的 C ABI、Qt | `shell` 的 `MainWindow` 或 shell 私有头 |
+| `modules/protocol` | `shell` 的宿主接口、`runtime/host`、`ps_kernel` 的 C ABI、`ps_loader_common`（加载器公共代码）、Qt | `modules/datasource`/`plotting` 私有头；画布与绘图状态 |
+| `modules/scripting` | `shell` 的宿主接口、`runtime/host`（含 `HostDataService`）、`ps_kernel` 的 C ABI、Qt、Lua 5.4 | `modules/datasource`/`plotting` 私有头；直接持有 `MainWindow`；绘图侧曲线变换 |
+| `extensions/builtin` | `runtime/host`、modules 的公开头、`ps_kernel` 的 C ABI、Qt | `shell` 的 `MainWindow` 或 shell 私有头 |
 | `extensions/dynamic` | 只提供公开 SDK、`ps_extension.h`、`ps_kernel.h`、C ABI | shell/modules 私有头、Qt Widgets、C++ 对象跨边界、官方格式加载器 |
 
-跨业务模块只走 `modules/runtime/include/ModuleBridge.h` 的公开函数和数据，或 `modules/runtime` 提供的能力服务（如 `ScriptHostService`），不直接 include 对方模块。
+跨业务模块只走 `runtime/host/include/ModuleBridge.h` 的公开函数和数据，或 `runtime/host` 提供的能力服务（如 `ScriptHostService`），不直接 include 对方模块。
 
 `HostDataService` 由 `modules/datasource` 的 `HostDataBridge` 实现，`modules/scripting` 只认接口；`--run` 无 UI 入口在 `src/application/main.cpp`，属 shell 侧装配，不属脚本模块。
 

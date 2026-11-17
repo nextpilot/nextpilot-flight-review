@@ -18,7 +18,7 @@ if(TARGET ps_application_scripting)
   add_executable(test_script_console unit/test_script_console.cpp)
   target_include_directories(test_script_console PRIVATE
     ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/kernel/include
     ${PROJECT_SOURCE_DIR}/src/application
     ${PROJECT_SOURCE_DIR}/src)
@@ -28,7 +28,7 @@ if(TARGET ps_application_scripting)
   add_executable(test_lua_calc unit/test_lua_calc.cpp)
   target_include_directories(test_lua_calc PRIVATE
     ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/kernel/include
     ${PROJECT_SOURCE_DIR}/src/application
     ${PROJECT_SOURCE_DIR}/src)
@@ -38,7 +38,7 @@ if(TARGET ps_application_scripting)
   add_executable(test_console_panel unit/test_console_panel.cpp)
   target_include_directories(test_console_panel PRIVATE
     ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/kernel/include
     ${PROJECT_SOURCE_DIR}/src/application
     ${PROJECT_SOURCE_DIR}/src)
@@ -56,7 +56,7 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp/PsDataSourceBase.
   add_executable(test_data_source_sdk unit/test_data_source_sdk.cpp)
   set_target_properties(test_data_source_sdk PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   target_include_directories(test_data_source_sdk PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp)
   add_test(NAME data_source_sdk COMMAND test_data_source_sdk)
 endif()
@@ -64,7 +64,7 @@ endif()
 if(TARGET ps_data_loader_csv)
   add_executable(test_extension_csv unit/test_extension_csv.cpp)
   target_include_directories(test_extension_csv PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_link_libraries(test_extension_csv PRIVATE ps_data_loader_csv ps_kernel ps_host)
   add_test(NAME extension_csv COMMAND test_extension_csv)
 endif()
@@ -72,7 +72,7 @@ endif()
 if(TARGET ps_cache)
   add_executable(test_dataset_cache unit/test_dataset_cache.cpp)
   target_include_directories(test_dataset_cache PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_link_libraries(test_dataset_cache PRIVATE ps_cache ps_kernel)
   add_test(NAME dataset_cache COMMAND test_dataset_cache)
 endif()
@@ -80,7 +80,7 @@ endif()
 if(TARGET ps_data_loader_ulog AND TARGET ps_data_loader_apbin AND TARGET ps_data_loader_asc AND TARGET ps_data_loader_blf)
   add_executable(test_extension_file_formats unit/test_extension_file_formats.cpp)
   target_include_directories(test_extension_file_formats PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_compile_definitions(test_extension_file_formats PRIVATE
     PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixture")
   target_link_libraries(test_extension_file_formats PRIVATE ps_host
@@ -106,7 +106,7 @@ endif()
 if(TARGET ps_data_load_mcap)
   add_executable(test_mcap_loader unit/test_mcap_loader.cpp)
   target_include_directories(test_mcap_loader PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_link_libraries(test_mcap_loader PRIVATE ps_data_load_mcap ps_host ps_kernel)
   add_test(NAME mcap_loader COMMAND test_mcap_loader)
 endif()
@@ -115,7 +115,7 @@ if(TARGET ps_live AND TARGET ps_data_load_mcap)
   add_executable(test_stream_recorder unit/test_stream_recorder.cpp)
   target_include_directories(test_stream_recorder PRIVATE
     ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/loader
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/robotics/datasources/mcap)
   target_link_libraries(test_stream_recorder PRIVATE ps_live ps_data_load_mcap)
@@ -124,7 +124,7 @@ if(TARGET ps_live AND TARGET ps_data_load_mcap)
   add_executable(test_live_frame unit/test_live_frame.cpp)
   target_include_directories(test_live_frame PRIVATE
     ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_link_libraries(test_live_frame PRIVATE ps_live)
   add_test(NAME live_frame COMMAND test_live_frame)
 endif()
@@ -132,13 +132,13 @@ endif()
 if(TARGET ps_data_source_mavlink)
   find_package(Qt6 REQUIRED COMPONENTS Network)
   add_executable(test_mavlink_source unit/test_mavlink_source.cpp)
-  target_include_directories(test_mavlink_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+  target_include_directories(test_mavlink_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_link_libraries(test_mavlink_source PRIVATE ps_data_source_mavlink ps_host ps_kernel ps_mavlink Qt6::Network)
   add_test(NAME mavlink_source COMMAND test_mavlink_source)
 
   add_executable(test_tlog_loader unit/test_tlog_loader.cpp)
   target_include_directories(test_tlog_loader PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_link_libraries(test_tlog_loader PRIVATE ps_data_loader_tlog ps_autopilot
     ps_host ps_kernel ps_mavlink Qt6::Core)
   add_test(NAME tlog_loader COMMAND test_tlog_loader)
@@ -149,7 +149,7 @@ if(TARGET ps_data_source_mavlink)
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/autopilot
     ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_compile_definitions(test_autopilot_message_parsers PRIVATE
     PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixture")
   target_link_libraries(test_autopilot_message_parsers PRIVATE ps_autopilot Qt6::Core)
@@ -159,7 +159,7 @@ endif()
 if(TARGET ps_gnss)
   find_package(Qt6 REQUIRED COMPONENTS Network)
   add_executable(test_oem7_source unit/test_oem7_source.cpp)
-  target_include_directories(test_oem7_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+  target_include_directories(test_oem7_source PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_link_libraries(test_oem7_source PRIVATE ps_gnss ps_host ps_kernel Qt6::Network)
   target_compile_definitions(test_oem7_source PRIVATE
     TEST_OEM7_DB="${CMAKE_SOURCE_DIR}/src/extensions/builtin/gnss/oem7_database.json")
@@ -206,7 +206,7 @@ if(TARGET ps_builtin_components)
   add_executable(test_toolbox_registration unit/test_toolbox_registration.cpp)
   target_include_directories(test_toolbox_registration PRIVATE
     ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/analysis/include
   )
@@ -232,7 +232,7 @@ endif()
 if(TARGET ps_data_source_sim)
   add_executable(test_data_source unit/test_data_source.cpp)
   target_include_directories(test_data_source PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_link_libraries(test_data_source PRIVATE ps_data_source_sim ps_host ps_kernel)
   add_test(NAME data_source COMMAND test_data_source)
 endif()
@@ -249,7 +249,7 @@ endif()
 if(TARGET ps_host)
   add_library(ps_demo_extension MODULE external_extension/DemoExtension.cpp)
   target_include_directories(ps_demo_extension PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   add_custom_command(TARGET ps_demo_extension POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${PROJECT_SOURCE_DIR}/tests/external_extension/manifest.json
@@ -262,7 +262,7 @@ if(TARGET ps_host)
 
   add_library(ps_bad_extension MODULE external_extension/BadExtension.cpp)
   target_include_directories(ps_bad_extension PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   set_target_properties(ps_bad_extension PROPERTIES
     PREFIX "" OUTPUT_NAME "bad_extension"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/extensions")
@@ -270,7 +270,7 @@ if(TARGET ps_host)
 
   add_executable(test_extension_runtime unit/test_extension_runtime.cpp)
   target_include_directories(test_extension_runtime PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include)
   target_compile_definitions(test_extension_runtime PRIVATE
     PS_EXTENSION_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}/extensions")
   target_link_libraries(test_extension_runtime PRIVATE ps_host)
@@ -320,7 +320,7 @@ if(CARGO_EXECUTABLE)
 
   add_executable(test_rust_extension unit/test_rust_extension.cpp)
   target_include_directories(test_rust_extension PRIVATE ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include ${PROJECT_SOURCE_DIR}/src/application/kernel/include)
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include ${PROJECT_SOURCE_DIR}/src/application/kernel/include)
   target_compile_definitions(test_rust_extension PRIVATE PS_RUST_EXTENSION_DIR="${RUST_EXTENSION_DIR}")
   target_link_libraries(test_rust_extension PRIVATE ps_host ps_kernel)
   ps_set_warnings(test_rust_extension)
@@ -332,7 +332,7 @@ find_package(Lua 5.4 QUIET)
 if(LUA_FOUND)
   add_executable(test_script_engine unit/test_script_engine.cpp)
   target_include_directories(test_script_engine PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
     ${LUA_INCLUDE_DIR})
   target_link_libraries(test_script_engine PRIVATE ps_application_scripting Qt6::Core ${LUA_LIBRARIES})
@@ -341,7 +341,7 @@ if(LUA_FOUND)
   # 受限 require：白名单 / 目录穿越 / 环依赖 / 缓存与失败清理
   add_executable(test_script_library unit/test_script_library.cpp)
   target_include_directories(test_script_library PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/scripting/lua)
   target_link_libraries(test_script_library PRIVATE ps_application_scripting Qt6::Core ${LUA_LIBRARIES})
@@ -352,7 +352,7 @@ find_package(Qt6 QUIET COMPONENTS Widgets)
 if(TARGET Qt6::Widgets)
   add_executable(test_video_sync unit/test_video_sync.cpp ${PROJECT_SOURCE_DIR}/src/extensions/builtin/video/VideoSyncWidget.cpp)
   set_target_properties(test_video_sync PROPERTIES AUTOMOC ON)
-  target_include_directories(test_video_sync PRIVATE ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  target_include_directories(test_video_sync PRIVATE ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/video)
   target_link_libraries(test_video_sync PRIVATE Qt6::Widgets)
   add_test(NAME video_sync COMMAND test_video_sync)
@@ -361,7 +361,7 @@ endif()
 
 add_executable(test_command_manager unit/test_command_manager.cpp ${PROJECT_SOURCE_DIR}/src/application/shell/CommandManager.cpp)
 target_include_directories(test_command_manager PRIVATE ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/application ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/application/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/shell)
 target_link_libraries(test_command_manager PRIVATE Qt6::Widgets)
@@ -376,7 +376,7 @@ add_executable(test_session_manager unit/test_session_manager.cpp
 target_include_directories(test_session_manager PRIVATE ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
   ${PROJECT_SOURCE_DIR}/src/application/runtime/include
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/application/shell)
 target_link_libraries(test_session_manager PRIVATE Qt6::Widgets ps_runtime)
 set_target_properties(test_session_manager PROPERTIES AUTOMOC ON)
@@ -388,7 +388,7 @@ add_executable(test_settings_manager unit/test_settings_manager.cpp
 target_include_directories(test_settings_manager PRIVATE ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
   ${PROJECT_SOURCE_DIR}/src/application/runtime/include
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/application/shell)
 target_link_libraries(test_settings_manager PRIVATE Qt6::Widgets ps_runtime)
 set_target_properties(test_settings_manager PROPERTIES AUTOMOC ON)
@@ -405,7 +405,7 @@ if(TARGET ps_application_plotting)
   target_include_directories(test_plotting_canvas PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/application
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/widget/canvas
     ${PROJECT_SOURCE_DIR}/src/application/shell)
   target_link_libraries(test_plotting_canvas PRIVATE ps_application_shell
@@ -419,7 +419,7 @@ if(TARGET ps_application_shell AND TARGET ps_application_plotting AND TARGET ps_
   add_executable(test_layout_restore unit/test_layout_restore.cpp)
   target_include_directories(test_layout_restore PRIVATE ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/application
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/shell)
   target_compile_definitions(test_layout_restore PRIVATE
     PS_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/tests/fixture")
@@ -447,7 +447,7 @@ if(TARGET plotscope_app)
   add_executable(test_script_slice_perf unit/test_script_slice_perf.cpp)
   target_include_directories(test_script_slice_perf PRIVATE ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/application
-    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+    ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include)
   target_link_libraries(test_script_slice_perf PRIVATE
     ps_application_shell ps_application_datasource ps_application_plotting
@@ -472,7 +472,7 @@ add_executable(test_controller_state
   ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/core/PlottingController.cpp)
 target_include_directories(test_controller_state PRIVATE
   ${PROJECT_SOURCE_DIR}/src/application
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include/datasource
   ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/core
   ${PROJECT_SOURCE_DIR}/src/application/modules/plotting/core)

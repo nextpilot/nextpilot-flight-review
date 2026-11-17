@@ -2,7 +2,7 @@ add_library(ps_data_loader_json STATIC
   JsonDataLoader.cpp
 )
 target_include_directories(ps_data_loader_json PRIVATE
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp
   ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/loader
 )

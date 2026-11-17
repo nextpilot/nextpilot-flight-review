@@ -16,7 +16,7 @@ target_include_directories(plotscope_app PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/shell
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/protocol/include
 )
 

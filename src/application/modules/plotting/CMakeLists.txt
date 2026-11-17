@@ -23,7 +23,7 @@ target_include_directories(ps_application_plotting PUBLIC
   ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
   ${PROJECT_SOURCE_DIR}/src/application/runtime/include
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/application/kernel/include
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )

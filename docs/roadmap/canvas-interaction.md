@@ -1,7 +1,7 @@
 # 画布交互重构：书签、A/B 与轴区手势
 
 - 状态：已实施（2026-11-16）
-- 相关代码：`src/application/modules/plotting/canvas/PlottingCanvas.*`、`PlottingTabs.*`、`PlottingSession.*`、`src/application/modules/datasource/manager/DataSourceSession.*`、`src/application/modules/runtime/include/ModuleBridge.h`、`src/application/modules/runtime/include/TimeBookmark.h`
+- 相关代码：`src/application/modules/plotting/canvas/PlottingCanvas.*`、`PlottingTabs.*`、`PlottingSession.*`、`src/application/modules/datasource/manager/DataSourceSession.*`、`src/application/runtime/host/include/ModuleBridge.h`、`src/application/runtime/host/include/TimeBookmark.h`
 - 目标：左键保留选择/书签/测量；中键平移；右键单击菜单、右键拖动框选；支持单 X/单 Y 轴缩放与平移。
 
 ## 输入映射

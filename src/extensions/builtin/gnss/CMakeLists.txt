@@ -13,7 +13,7 @@ add_library(ps_gnss STATIC
 set_target_properties(ps_gnss PROPERTIES AUTOMOC ON)
 target_include_directories(ps_gnss PUBLIC
   ${PROJECT_SOURCE_DIR}/src
-  ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/host/include
   ${PROJECT_SOURCE_DIR}/src/extensions/dynamic/sdk/cpp
   ${PROJECT_SOURCE_DIR}/src/extensions/builtin/common/loader
 )

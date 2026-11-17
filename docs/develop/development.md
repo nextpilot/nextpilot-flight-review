@@ -13,7 +13,7 @@ extensions（具体业务） → modules（通用能力） → shell（最小宿
 | 层 | 放什么 | 不能放什么 |
 |---|---|---|
 | `src/application/shell` | `MainWindow`、页签容器、Ribbon/Dock 骨架、命令、会话、日志、设置、扩展管理、主题入口 | 具体数据源、画布、业务格式、业务状态 |
-| `src/application/modules/runtime` | 组件注册、扩展生命周期、通用贡献接口、动态扩展扫描/ABI | 具体业务格式 |
+| `src/application/runtime/host` | 组件注册、扩展生命周期、通用贡献接口、动态扩展扫描/ABI | 具体业务格式 |
 | `src/application/modules/datasource` | 数据源抽象、加载器注册、实时源、缓存、数据源 Dock | 画布、绘图页 |
 | `src/application/modules/plotting` | 画布、绘图页/切分、轴/曲线、属性面板、脚本画布 | 具体文件格式解析 |
 | `src/application/shared/filter` | 算子目录、参数表单；datasource/plotting 共用，避免算子漂移 | 具体业务状态 |
@@ -28,7 +28,7 @@ extensions（具体业务） → modules（通用能力） → shell（最小宿
 - 数据源生命周期、加载器接口、数据源 Dock：`modules/datasource/{manager,dock,dialog,ribbon,services}`
 - 画布、绘图页、切分布局、绘图 Ribbon：`modules/plotting/{canvas,tabs,manager,ribbon}`
 - 协议文档、编辑器、codec、协议 loader：`modules/protocol/{protocol,dialog,codec,manager,include}`
-- 组件/扩展协议、Registry、HostServices：`modules/runtime`
+- 组件/扩展协议、Registry、HostServices：`runtime/host`
 - 跨模块复用的纯 UI 控件：`shell`，只依赖 Qt + `ThemeManager`；图库一律用 SARibbon 自带的 `SARibbonGallery`，不另造
 - 只和宿主有关：`shell`
 - 具体协议/行业逻辑：`extensions`

@@ -8,7 +8,6 @@ if(PS_BUILD_GUI)
   find_package(Qt6 QUIET COMPONENTS Widgets Network Svg)
   if(Qt6_FOUND)
     # 底座：宿主扩展层与宿主服务
-    add_subdirectory(application/modules/runtime)
     add_subdirectory(application/runtime)
     add_subdirectory(application/modules/datasource/services/cache)
 

@@ -64,7 +64,7 @@ ps-abi ──> ps-ndf
 ## 什么不许进 kernel
 
 - CSV/ULog/APBin/BLF/OEM7 解析；
-- 扩展 manifest、dlopen、ABI 版本检查（在 `src/application/modules/runtime`）；
+- 扩展 manifest、dlopen、ABI 版本检查（在 `src/application/runtime/host`）；
 - Qt、QWidget、Ribbon、Dock；
 - 实时 TCP/UDP 连接、设备命令；
 - 缓存 key 计算、缓存目录选择、何时删除（在 `application/modules/datasource/services/cache`）。

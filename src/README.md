@@ -45,7 +45,7 @@ src/
 | 东西 | 放哪 | 判据 |
 |---|---|---|
 | 数据模型、通用算子、LOD、缓存/流机制 | `application/kernel/` | 不碰 Qt、不做 I/O |
-| 扩展 ABI、注册表、动态装载、宿主 API、模块桥 | `application/modules/runtime/` | 只做生命周期、契约与跨模块中立接口 |
+| 扩展 ABI、注册表、动态装载、宿主 API、模块桥 | `application/runtime/host/` | 只做生命周期、契约与跨模块中立接口 |
 | 缓存策略、实时会话与录制 | `application/modules/datasource/services/` | 宿主侧服务，不是业务格式 |
 | 主窗口、Ribbon/Dock 容器、命令总线、组件宿主、主题 | `application/shell/` | app 骨架，只做组装与宿主生命周期 |
 | 数据源 Dock、输入对话框、数据 Ribbon | `application/modules/datasource/` | 数据进入与源管理 |
@@ -55,7 +55,7 @@ src/
 | 具体格式解析、协议、设备数据源 | `extensions/` | 决定数据从哪来、怎么解释 |
 | 用户 Lua 脚本与图标 | `application/resources/` | 运行期资源，不进 host 头文件 |
 
-`ps_extension_api.h` 位于 `application/modules/runtime/include/`，扩展与宿主都只依赖这一份 ABI 头；`ModuleBridge.h` 是 modules 之间唯一的中立调用面。
+`ps_extension_api.h` 位于 `application/runtime/host/include/`，扩展与宿主都只依赖这一份 ABI 头；`ModuleBridge.h` 是 modules 之间唯一的中立调用面。
 
 内置组件与外部动态扩展统一通过 `ExtensionRegistry::addExtension()` 注册；内置组件自己静态注册，外部 `.so` 由 `ExtensionRuntime` 装载后交给 `DynamicExtension` 适配。
 

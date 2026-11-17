@@ -10,7 +10,7 @@ set_target_properties(plot_bench PROPERTIES AUTOMOC ON)
 target_include_directories(plot_bench PRIVATE
     ${PS_ROOT}/src
     ${PS_ROOT}/src/application
-    ${PS_ROOT}/src/application/modules/runtime/include
+    ${PS_ROOT}/src/application/runtime/host/include
     ${PS_ROOT}/src/application/modules/plotting/widget/canvas
     ${PS_ROOT}/src/application/shell
     ${PS_ROOT}/benchmarks/qcustomplot-source
