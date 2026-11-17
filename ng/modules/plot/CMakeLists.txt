@@ -1,0 +1,5 @@
+find_package(Qt6 REQUIRED COMPONENTS Core)
+add_library(ng_module_plot STATIC PlotModule.cpp)
+target_include_directories(ng_module_plot PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ng_module_plot PUBLIC ng_host)
+set_target_properties(ng_module_plot PROPERTIES AUTOMOC ON CXX_STANDARD 17)
