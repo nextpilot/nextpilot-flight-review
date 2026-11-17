@@ -54,12 +54,12 @@ int main(int argc, char **argv)
     QTemporaryDir dir;
     const QString csv = writeCsv(dir);
 
-    // 1) 装载成功后三个模块都激活
+    // 1) 装载成功后四个模块都激活
     App application;
     const auto errors = application.startup(true);
     assert(errors.isEmpty());
-    assert(application.modules().activeIds().size() == 3);
-    fprintf(stdout, "[ok] 三个模块按依赖顺序激活\n");
+    assert(application.modules().activeIds().size() == 4);
+    fprintf(stdout, "[ok] 四个模块按依赖顺序激活（含脚本模块）\n");
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）
     Result<IntentResult> loaded = application.modules().execute(loadIntent(csv));
@@ -98,6 +98,55 @@ int main(int argc, char **argv)
     assert(spec.value(QStringLiteral("column")).toString() == QStringLiteral("pitch"));
     assert(spec.value(QStringLiteral("valueType")).toString() == QStringLiteral("F64"));
     fprintf(stdout, "[ok] 意图 plot.render 产出 PlotSpec（含 table/column/valueType）\n");
+
+    // 3b) 脚本自动化：Lua 通过门面 ps.* 发意图，与 GUI/CLI 走同一执行器。
+    //     脚本里不认识 CSV/plot 模块，只认识 ps 门面。
+    {
+        const QString script =
+            QStringLiteral("local id = ps.data.load('%1', 'csv', 100)\n"
+                           "ps.log('script loaded dataset ' .. id)\n"
+                           "local spec = ps.plot.render(id, 'demo.roll')\n"
+                           "assert(spec.type == 'timeseries')\n"
+                           "assert(spec.column == 'roll')\n").arg(csv);
+        Intent runScript;
+        runScript.op = QStringLiteral("script.run");
+        runScript.params[QStringLiteral("source")] = script.toUtf8();
+
+        application.recorder().clear();
+        application.recorder().setRecording(true);
+        Result<IntentResult> sr = application.modules().execute(runScript);
+        application.recorder().setRecording(false);
+        assert(sr);
+        fprintf(stdout, "[ok] Lua 脚本通过 ps 门面执行成功（headless，无 QWidget）\n");
+
+        // 3c) 录制：脚本调用产生的业务意图被录成 Job（不含 script.run 本身）
+        assert(application.recorder().size() == 2);
+        const Job recorded = application.recorder().toJob();
+        assert(recorded.at(0).op == QStringLiteral("data.load"));
+        assert(recorded.at(1).op == QStringLiteral("plot.render"));
+        fprintf(stdout, "[ok] 脚本操作被录制成 2 条业务意图的可回放 Job\n");
+
+        // 3d) 回放：移除脚本数据集后重放 Job，得到相同 PlotSpec —— 闭环成立。
+        //     稳定 id=100 让回放与会话状态无关，不影响主流程的 id=0 数据集。
+        application.data().remove(100);
+        assert(application.data().get(100) == nullptr);
+        assert(application.data().get(id) != nullptr); // 主数据集仍在
+        int replayedId = -1;
+        QVariantMap replayedSpec;
+        for (int i = 0; i < recorded.size(); ++i)
+        {
+            Result<IntentResult> rr = application.modules().execute(recorded.at(i));
+            assert(rr);
+            if (recorded.at(i).op == QStringLiteral("data.load"))
+                replayedId = rr.value().payload.toInt();
+            else
+                replayedSpec = rr.value().payload.toMap();
+        }
+        assert(replayedId >= 0);
+        assert(replayedSpec.value(QStringLiteral("column")).toString() == QStringLiteral("roll"));
+        assert(replayedSpec.value(QStringLiteral("points")).toInt() == 3);
+        fprintf(stdout, "[ok] Job 回放出相同 PlotSpec —— 脚本录制/回放闭环成立\n");
+    }
 
     // 4) 卸载隔离：关掉绘图模块后，CSV 仍能加载，数据不消失
     assert(application.modules().deactivate(QStringLiteral("mod.plot")));

@@ -2,6 +2,7 @@
 
 #include "ModuleHost.h"
 #include "DataRepository.h"
+#include "JobRecorder.h"
 
 #include <QObject>
 
@@ -18,6 +19,7 @@ public:
 
     ng::core::DataRepository &data() { return m_repo; }
     ng::host::ModuleHost &modules() { return m_host; }
+    ng::core::JobRecorder &recorder() { return m_recorder; }
 
     // headless=true 时不建 UI 上下文，模块的 onAttach 不被调用。
     QHash<QString, QString> startup(bool headless,
@@ -26,6 +28,7 @@ public:
 private:
     ng::core::DataRepository m_repo;
     ng::host::ModuleHost m_host;
+    ng::core::JobRecorder m_recorder;
 };
 
 } // namespace ng::app

@@ -22,6 +22,17 @@ Result<DatasetId> DataRepository::addWithId(Dataset dataset, const QString &requ
     return add(std::move(dataset));
 }
 
+Result<DatasetId> DataRepository::addWithStableId(Dataset dataset, DatasetId id)
+{
+    if (m_datasets.contains(id))
+        return fail(QStringLiteral("edupid"), QStringLiteral("数据集 id 已存在: %1").arg(id));
+    m_datasets.insert(id, std::move(dataset));
+    if (id >= m_nextId)
+        m_nextId = id + 1;
+    Q_EMIT datasetAdded(id);
+    return id;
+}
+
 bool DataRepository::remove(DatasetId id)
 {
     if (!m_datasets.remove(id))

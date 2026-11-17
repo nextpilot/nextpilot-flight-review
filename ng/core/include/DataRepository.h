@@ -21,6 +21,10 @@ public:
     DatasetId add(Dataset dataset);
     Result<DatasetId> addWithId(Dataset dataset, const QString &requestedName);
 
+    // 以显式稳定 id 存入：录制/回放时意图携带同一个 id，避免会话内自增 id 漂移。
+    // 若 id 已被占用则失败。会同步推进 m_nextId 防止后续自增冲突。
+    Result<DatasetId> addWithStableId(Dataset dataset, DatasetId id);
+
     bool remove(DatasetId id);
     const Dataset *get(DatasetId id) const;
     QVector<DatasetId> ids() const;

@@ -140,13 +140,19 @@ struct Intent {
 
 执行器是唯一知道"如何执行意图"的地方。它把意图分派给提供对应能力的模块。
 
-## 6. 自动化与 headless
+## 6. 自动化与 headless（已实现）
 
-- 脚本引擎是 core 服务，脚本只拿到门面 `ps`，永远碰不到 QWidget 和模块内部对象。
+- 脚本引擎是 core 门面 + 一个 script 模块（Lua 5.4）。脚本只拿到门面 `ps`，永远碰不到 QWidget 和模块内部对象。
 - **headless = 装载模块但不调用 `onAttach()`**：没有第二套装配代码。
 - GUI 与 CLI 共用同一个装载循环和同一个意图执行器；区别只在是否提供 `UiContext`。
-- CLI：`--list-modules`、`--info <file>`、`--run <job.json>`、`--export`。
-- CI：headless 跑 Job + 导出 PNG/CSV 做基线对比。
+- 脚本门面 API（全部翻译成普通 Intent）：
+  - `ps.data.load(path, format, stableId?)` → `data.load`
+  - `ps.plot.render(dataset, channel)` → `plot.render`（返回 PlotSpec table）
+  - `ps.log(msg)` / `ps.version()`
+- **稳定 id**：`data.load` 可携带显式 `DatasetId`，录制/回放用同一个 id，避免会话自增 id 漂移——这是 Job 可回放的前提。
+- CLI：`--list-modules`、`--info <file.csv>`、`--run <job.json>`、`--script <file.lua> [--record <out.json>]`。
+- 录制闭环：`--script demo.lua --record job.json` 把脚本产生的业务意图录成 Job（不含 `script.run` 本身），`--run job.json` 回放得到相同 PlotSpec。
+- CI：headless 跑 Job + 导出 PNG/CSV 做基线对比（待办）。
 
 ## 7. 我会明确砍掉的复杂度
 
@@ -162,18 +168,21 @@ struct Intent {
 ng/
 ├── ARCHITECTURE.md       本文档
 ├── CMakeLists.txt        独立构建，复用仓库 deps/Qt
-├── core/                 数据模型/仓库/事件/意图（无 QWidget）
+├── core/                 数据模型/仓库/事件/意图/脚本门面（无 QWidget）
 ├── host/                 IModule/装载循环/意图执行器/App
-├── modules/              器官：data / plot
+├── modules/              器官：data / plot / script
 ├── extensions/           知识包：csv
 ├── app/                  CLI 入口
 └── tests/                架构契约测试
 ```
 
-## 9. 落地顺序
+## 9. 落地顺序（进度）
 
-1. core：数据模型 + 意图定义。
-2. host：装载循环 + 依赖排序 + 执行器。
-3. 一条竖切：CSV 扩展 + 数据模块 + plot 意图，端到端跑通。
-4. 再铺开其余格式与功能。
-5. 脚本引擎与 Job 录制（前三步完成后近乎免费）。
+1. ✅ core：数据模型 + 意图定义。
+2. ✅ host：装载循环 + 依赖排序 + 执行器。
+3. ✅ 一条竖切：CSV 扩展 + 数据模块 + plot 意图，端到端跑通。
+4. ⬜ 再铺开其余格式与功能（ULog / apbin / 滤波算子 / GUI 画布）。
+5. ✅ 脚本引擎与 Job 录制：Lua 门面 `ps` + 稳定 id + `--script/--record` 录制回放闭环。
+
+验证：编译全绿；契约测试覆盖多表模型、通道投影、意图执行、卸载隔离、
+脚本 headless 执行、录制回放闭环；CLI 三入口（list/info/run/script）实测可用。

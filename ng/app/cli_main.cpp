@@ -1,6 +1,8 @@
 // PlotScope NG — headless CLI。验证新架构：统一数据模型 + 模块装载 + 意图执行。
+// GUI 点击、脚本调用、Job 回放三条路径共用同一个执行器（意图是公共货币）。
 #include "App.h"
 #include "Intent.h"
+#include "Dataset.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -18,7 +20,8 @@ static void printUsage()
             "用法:\n"
             "  plotscope-ng --list-modules\n"
             "  plotscope-ng --info <file.csv>\n"
-            "  plotscope-ng --run <job.json>\n");
+            "  plotscope-ng --run <job.json>\n"
+            "  plotscope-ng --script <file.lua> [--record <out.json>]\n");
 }
 
 static Intent makeLoadIntent(const QString &path)
@@ -30,12 +33,21 @@ static Intent makeLoadIntent(const QString &path)
     return intent;
 }
 
-static Intent makeRenderIntent(DatasetId id)
+static Intent makeScriptIntent(const QString &path)
 {
     Intent intent;
-    intent.op = QStringLiteral("plot.render");
-    intent.params[QStringLiteral("dataset")] = id;
+    intent.op = QStringLiteral("script.run");
+    intent.params[QStringLiteral("path")] = path;
     return intent;
+}
+
+static bool writeJob(const QString &path, const Job &job)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    f.write(QJsonDocument(job.toJson()).toJson(QJsonDocument::Indented));
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -62,7 +74,8 @@ int main(int argc, char **argv)
         for (const auto &info : application.modules().availableModules())
         {
             const char *kind = info.kind == ng::host::ModuleKind::Builtin ? "builtin" : "extension";
-            fprintf(stdout, "%-12s %-10s %s\n", qPrintable(info.id), kind, qPrintable(info.provides.join(QLatin1Char(','))));
+            fprintf(stdout, "%-12s %-10s %s\n", qPrintable(info.id), kind,
+                    qPrintable(info.provides.join(QLatin1Char(','))));
         }
         return 0;
     }
@@ -119,7 +132,6 @@ int main(int argc, char **argv)
                         qPrintable(r.error().code), qPrintable(r.error().message));
                 return 1;
             }
-            // 若意图产出了 PlotSpec，打印它——这就是 headless 的可复现产物。
             if (intent.op == QStringLiteral("plot.render"))
             {
                 const QJsonDocument doc(QJsonObject::fromVariantMap(r.value().payload.toMap()));
@@ -129,6 +141,41 @@ int main(int argc, char **argv)
             {
                 fprintf(stdout, "loaded dataset #%d\n", r.value().payload.toInt());
             }
+        }
+        return 0;
+    }
+
+    if (command == QStringLiteral("--script") && args.size() >= 3)
+    {
+        // --record <out.json> 是可选修饰参数：把脚本产生的业务意图录制成 Job。
+        QString recordPath;
+        for (int i = 2; i + 1 < args.size(); ++i)
+            if (args.at(i) == QStringLiteral("--record"))
+                recordPath = args.at(i + 1);
+
+        if (!recordPath.isEmpty())
+        {
+            application.recorder().clear();
+            application.recorder().setRecording(true);
+        }
+
+        Result<IntentResult> r = application.modules().execute(makeScriptIntent(args.at(2)));
+        if (!r)
+        {
+            fprintf(stderr, "脚本执行失败[%s]: %s\n", qPrintable(r.error().code), qPrintable(r.error().message));
+            return 1;
+        }
+        fprintf(stdout, "脚本执行完成\n");
+
+        if (!recordPath.isEmpty())
+        {
+            application.recorder().setRecording(false);
+            if (!writeJob(recordPath, application.recorder().toJob()))
+            {
+                fprintf(stderr, "无法写入录制 Job: %s\n", qPrintable(recordPath));
+                return 2;
+            }
+            fprintf(stdout, "已录制 %d 条意图 -> %s\n", application.recorder().size(), qPrintable(recordPath));
         }
         return 0;
     }

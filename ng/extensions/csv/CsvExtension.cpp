@@ -87,7 +87,20 @@ public:
                 return fail(QStringLiteral("ecolumn"), QStringLiteral("添加列失败: %1").arg(columns.at(c)));
         }
 
-        const DatasetId id = m_repo.add(std::move(ds));
+        // 意图可携带稳定 id（录制/回放用）；未指定则用仓库自增 id。
+        DatasetId id;
+        if (intent.params.contains(QStringLiteral("id")))
+        {
+            const DatasetId wanted = intent.params.value(QStringLiteral("id")).toInt();
+            Result<DatasetId> added = m_repo.addWithStableId(std::move(ds), wanted);
+            if (!added)
+                return fail(added.error().code, added.error().message);
+            id = added.value();
+        }
+        else
+        {
+            id = m_repo.add(std::move(ds));
+        }
         IntentResult r;
         r.payload = id;
         return r;

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "DataRepository.h"
+#include "IIntentExecutor.h"
 #include "Intent.h"
+#include "JobRecorder.h"
 #include "ModuleInfo.h"
 
 #include <QObject>
@@ -31,6 +33,11 @@ public:
 
     ng::core::DataRepository &data() { return m_repo; }
     ModuleHost &host() { return m_host; }
+
+    // 脚本/自动化能力：拿到意图执行器与可选录制器。
+    // 返回的是宿主实现的执行器抽象，模块只依赖接口不依赖宿主内部。
+    ng::core::IIntentExecutor &executor();
+    ng::core::JobRecorder *recorder();
 
     // 模块注册自己能处理的意图 op。
     void registerIntentHandler(ng::core::IIntentHandler *handler);

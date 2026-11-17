@@ -11,6 +11,16 @@ void ModuleContext::registerIntentHandler(ng::core::IIntentHandler *handler)
     m_host.registerIntentHandler(handler);
 }
 
+ng::core::IIntentExecutor &ModuleContext::executor()
+{
+    return m_host; // ModuleHost 实现了 IIntentExecutor
+}
+
+ng::core::JobRecorder *ModuleContext::recorder()
+{
+    return m_host.recorder();
+}
+
 ModuleHost::ModuleHost(ng::core::DataRepository &repo, QObject *parent)
     : QObject(parent), m_repo(repo) {}
 

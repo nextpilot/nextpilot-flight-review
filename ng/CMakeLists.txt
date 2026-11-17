@@ -19,6 +19,7 @@ add_subdirectory(core)
 add_subdirectory(host)
 add_subdirectory(modules/data)
 add_subdirectory(modules/plot)
+add_subdirectory(modules/script)
 add_subdirectory(extensions/csv)
 add_subdirectory(app)
 

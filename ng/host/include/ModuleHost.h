@@ -1,6 +1,8 @@
 #pragma once
 
 #include "IModule.h"
+#include "IIntentExecutor.h"
+#include "JobRecorder.h"
 #include "ModuleInfo.h"
 #include "Result.h"
 
@@ -22,7 +24,7 @@ struct ModuleRegistration
 };
 
 // 宿主的核心职责：按依赖顺序装载模块、统一驱动生命周期、执行意图。
-class ModuleHost : public QObject
+class ModuleHost : public QObject, public ng::core::IIntentExecutor
 {
     Q_OBJECT
 public:
@@ -43,8 +45,12 @@ public:
     // 模块注册自己能处理的意图 op（由 ModuleContext 转发，归属到当前初始化的模块）。
     void registerIntentHandler(ng::core::IIntentHandler *handler);
 
-    // 执行意图：分派给声明了对应能力的模块。
-    ng::core::Result<ng::core::IntentResult> execute(const ng::core::Intent &intent);
+    // 执行意图：分派给声明了对应能力的模块。（实现 IIntentExecutor）
+    ng::core::Result<ng::core::IntentResult> execute(const ng::core::Intent &intent) override;
+
+    // 录制器：非空时 ScriptFacade 会把成功执行的业务意图录进去。
+    void setRecorder(ng::core::JobRecorder *recorder) { m_recorder = recorder; }
+    ng::core::JobRecorder *recorder() const { return m_recorder; }
 
     bool isActive(const QString &moduleId) const;
     QStringList activeIds() const;
@@ -68,6 +74,7 @@ private:
     QStringList m_order;
     QHash<QString, ng::core::IIntentHandler *> m_handlers; // op -> handler
     QString m_initializing; // 当前正在 initialize 的模块 id，用于 handler 归属
+    ng::core::JobRecorder *m_recorder = nullptr; // 可选录制器，不拥有
 };
 
 } // namespace ng::host
