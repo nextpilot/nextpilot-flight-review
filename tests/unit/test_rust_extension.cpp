@@ -44,9 +44,9 @@ int main()
     PsDataset *ds = static_cast<PsDataset *>(raw);
     assert(ps_dataset_channel_count(ds) == 2);
     const PsChannelInfo *ch = ps_dataset_channel(ds, 0);
-    assert(ch && std::strcmp(ch->name, "roll") == 0);
+    assert(ch && std::strcmp(ch->name, "csv.roll") == 0);
     assert(ch->point_count == 3);
-    assert(ch->value[2] == 5.0);
+    assert(ps_channel_value_at(ch, 2) == 5.0);
     ps_dataset_free(ds);
     std::filesystem::remove(path);
     rt.clear();

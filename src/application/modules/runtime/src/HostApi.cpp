@@ -95,7 +95,6 @@ const PsHostApi kHostApi = {
     PS_HOST_API_VERSION,
     PS_ABI_VERSION,
     &host_dataset_new,
-    &host_dataset_add_channel,
     &host_dataset_free,
     &host_progress,
     &host_dataset_add_table,

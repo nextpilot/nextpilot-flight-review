@@ -1,5 +1,9 @@
 #include "CanFrames.h"
 
+#include <cmath>
+#include <limits>
+#include <memory>
+
 #include <cstdio>
 #include <map>
 #include <tuple>
@@ -33,10 +37,12 @@ std::vector<PsChannelData> psCanFramesToChannels(const std::vector<CanFrame> &fr
         for (size_t i : idx)
             maxLen = std::max(maxLen, frames[i].data.size());
 
+        std::map<size_t, bool> varies;
         for (size_t b = 0; b < maxLen; ++b)
         {
-            bool has = false, varies = false;
             int seen = -1;
+            bool has = false;
+            bool changed = false;
             for (size_t i : idx)
             {
                 if (b >= frames[i].data.size())
@@ -46,37 +52,62 @@ std::vector<PsChannelData> psCanFramesToChannels(const std::vector<CanFrame> &fr
                     seen = frames[i].data[b];
                 else if (seen != static_cast<int>(frames[i].data[b]))
                 {
-                    varies = true;
+                    changed = true;
                     break;
                 }
             }
-            if (!has || !varies)
-                continue;
-            PsChannelData c;
-            char name[64];
-            std::snprintf(name, sizeof(name), "CAN%u.%s.b%u", static_cast<unsigned>(bus), id.c_str(),
-                          static_cast<unsigned>(b));
-            c.name = name;
-            for (size_t i : idx)
-            {
-                if (b >= frames[i].data.size())
-                    continue;
-                c.t.push_back(frames[i].t - t0);
-                c.v.push_back(static_cast<double>(frames[i].data[b]));
-            }
-            out.push_back(std::move(c));
+            if (has && changed)
+                varies[b] = true;
         }
+        if (varies.empty())
+            continue;
 
-        if (idx.size() >= 3)
+        std::map<size_t, std::vector<double>> cols;
+        std::vector<double> time;
+        time.reserve(idx.size());
+        for (size_t i : idx)
+        {
+            time.push_back(frames[i].t - t0);
+            for (const auto &vb : varies)
+            {
+                auto &col = cols[vb.first];
+                col.push_back(vb.first < frames[i].data.size()
+                                  ? static_cast<double>(frames[i].data[vb.first])
+                                  : std::numeric_limits<double>::quiet_NaN());
+            }
+        }
+        if (idx.size() >= 2)
+        {
+            auto &period = cols[static_cast<size_t>(-1)];
+            auto &dlc = cols[static_cast<size_t>(-2)];
+            period.push_back(std::numeric_limits<double>::quiet_NaN());
+            dlc.push_back(static_cast<double>(frames[idx[0]].data.size()));
+            for (size_t i = 1; i < idx.size(); ++i)
+            {
+                period.push_back((frames[idx[i]].t - frames[idx[i - 1]].t) * 1000.0);
+                dlc.push_back(static_cast<double>(frames[idx[i]].data.size()));
+            }
+        }
+        auto axis = std::make_shared<const std::vector<double>>(time);
+        for (const auto &cb : cols)
         {
             PsChannelData c;
-            char name[64];
-            std::snprintf(name, sizeof(name), "CAN%u.%s.period", static_cast<unsigned>(bus), id.c_str());
+            char tableName[64];
+            char name[80];
+            std::snprintf(tableName, sizeof(tableName), "CAN%u.%s",
+                          static_cast<unsigned>(bus), id.c_str());
+            if (cb.first == static_cast<size_t>(-1))
+                std::snprintf(name, sizeof(name), "%s.period", tableName);
+            else if (cb.first == static_cast<size_t>(-2))
+                std::snprintf(name, sizeof(name), "%s.dlc", tableName);
+            else
+                std::snprintf(name, sizeof(name), "%s.b%u", tableName,
+                              static_cast<unsigned>(cb.first));
             c.name = name;
-            for (size_t i = 1; i < idx.size(); ++i)
-                c.t.push_back(frames[idx[i]].t - t0);
-            for (size_t i = 1; i < idx.size(); ++i)
-                c.v.push_back((frames[idx[i]].t - frames[idx[i - 1]].t) * 1000.0);
+            c.table = tableName;
+            c.axis = axis;
+            c.v = cb.second;
+            c.value_type = PS_VALUE_U8;
             out.push_back(std::move(c));
         }
     }

@@ -5,7 +5,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <QDir>
 #include <QFileInfo>
@@ -165,13 +167,17 @@ const DbcMessage *DbcDatabase::find(uint32_t id, bool extended) const
 std::vector<PsChannelData> psCanFramesToDbcChannels(const std::vector<CanFrame> &frames,
                                                     const DbcDatabase &dbc)
 {
-    struct Acc
+    struct Column
     {
         std::string unit;
-        std::vector<double> t;
         std::vector<double> v;
     };
-    std::map<std::string, Acc> acc;
+    struct Table
+    {
+        std::vector<double> t;
+        std::map<std::string, Column> cols;
+    };
+    std::map<std::string, Table> tables;
     if (frames.empty())
         return {};
     const double t0 = frames[0].t;
@@ -180,32 +186,39 @@ std::vector<PsChannelData> psCanFramesToDbcChannels(const std::vector<CanFrame> 
         const DbcMessage *m = dbc.find(f.id, f.ext);
         if (!m)
             continue;
+        char tableName[120];
+        std::snprintf(tableName, sizeof(tableName), "CAN%u.%s",
+                      static_cast<unsigned>(f.bus), m->name.c_str());
+        Table &table = tables[tableName];
+        table.t.push_back(f.t - t0);
+        const size_t row = table.t.size();
         for (const auto &s : m->entries)
         {
             bool ok = false;
             const uint64_t raw = extractBits(f.data, s, ok);
-            if (!ok)
-                continue;
-            const double value = static_cast<double>(raw) * s.scale + s.offset;
-            char name[160];
-            std::snprintf(name, sizeof(name), "CAN%u.%s.%s", static_cast<unsigned>(f.bus),
-                          m->name.c_str(), s.name.c_str());
-            auto &a = acc[name];
-            a.unit = s.unit;
-            a.t.push_back(f.t - t0);
-            a.v.push_back(value);
+            auto &col = table.cols[s.name];
+            col.unit = s.unit;
+            while (col.v.size() + 1 < row)
+                col.v.push_back(std::numeric_limits<double>::quiet_NaN());
+            col.v.push_back(ok ? static_cast<double>(raw) * s.scale + s.offset
+                               : std::numeric_limits<double>::quiet_NaN());
         }
     }
     std::vector<PsChannelData> out;
-    out.reserve(acc.size());
-    for (auto &kv : acc)
+    for (auto &kv : tables)
     {
-        PsChannelData c;
-        c.name = kv.first;
-        c.unit = kv.second.unit;
-        c.t = std::move(kv.second.t);
-        c.v = std::move(kv.second.v);
-        out.push_back(std::move(c));
+        auto axis = std::make_shared<const std::vector<double>>(kv.second.t);
+        for (auto &ck : kv.second.cols)
+        {
+            PsChannelData c;
+            c.name = kv.first + "." + ck.first;
+            c.table = kv.first;
+            c.axis = axis;
+            c.unit = ck.second.unit;
+            c.v = std::move(ck.second.v);
+            c.value_type = PS_VALUE_F64;
+            out.push_back(std::move(c));
+        }
     }
     return out;
 }

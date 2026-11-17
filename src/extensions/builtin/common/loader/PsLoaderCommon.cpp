@@ -1,6 +1,7 @@
 #include "PsLoaderCommon.h"
 
 #include <cmath>
+#include <memory>
 #include <map>
 
 namespace {
@@ -237,6 +238,19 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
     {
         if (c.name.empty())
             continue;
+        if (!c.axis && c.table.empty() && !c.t.empty())
+        {
+            // 旧扁平 loader：一通道一张单列表，列名固定 value，显示名仍用通道名。
+            c.table = c.name;
+            c.name += ".value";
+            c.axis = std::make_shared<const std::vector<double>>(std::move(c.t));
+        }
+        if (c.axis && c.v.size() != c.axis->size())
+        {
+            err = c.name + "：点数与时间轴不一致";
+            host->dataset_free(raw);
+            return nullptr;
+        }
         if (c.axis && !c.table.empty())
         {
             if (c.v.size() != c.axis->size())
@@ -279,20 +293,9 @@ PsDataset *psBuildDataset(std::vector<PsChannelData> &channels, std::string &err
             c.v.shrink_to_fit();
             continue;
         }
-        const int32_t rc = host->dataset_add_channel(raw, c.name.c_str(), c.unit.c_str(),
-                                                     c.t.data(), c.v.data(),
-                                                     static_cast<uint32_t>(std::min(c.t.size(), c.v.size())),
-                                                     e, sizeof(e));
-        if (rc != 0)
-        {
-            err = c.name + "：" + e;
-            host->dataset_free(raw);
-            return nullptr;
-        }
-        c.t.clear();
-        c.t.shrink_to_fit();
-        c.v.clear();
-        c.v.shrink_to_fit();
+        err = c.name + "：缺少 table，不能写旧单通道";
+        host->dataset_free(raw);
+        return nullptr;
     }
     return ds;
 }

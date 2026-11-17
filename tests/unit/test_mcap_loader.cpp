@@ -148,12 +148,12 @@ int main()
     }
     PsDataset *ds = static_cast<PsDataset *>(raw);
     assert(ds && ps_dataset_channel_count(ds) == 2);
-    const PsChannelInfo *roll = findChannel(ds, "/telemetry/roll");
-    const PsChannelInfo *pitch = findChannel(ds, "/telemetry/pitch");
+    const PsChannelInfo *roll = findChannel(ds, "/telemetry.roll");
+    const PsChannelInfo *pitch = findChannel(ds, "/telemetry.pitch");
     assert(roll && pitch);
     assert(roll->point_count == 2 && pitch->point_count == 2);
-    assert(roll->value[0] == 1.5 && roll->value[1] == 2.5);
-    assert(pitch->value[0] == -2.0 && pitch->value[1] == -3.0);
+    assert(ps_channel_value_at(roll, 0) == 1.5 && ps_channel_value_at(roll, 1) == 2.5);
+    assert(ps_channel_value_at(pitch, 0) == -2.0 && ps_channel_value_at(pitch, 1) == -3.0);
     assert(roll->time[1] - roll->time[0] > 0.09 && roll->time[1] - roll->time[0] < 0.11);
     ps_dataset_free(ds);
     vt->destroy(ctx);

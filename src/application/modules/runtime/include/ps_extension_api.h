@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 #define PS_EXTENSION_ABI_VERSION 8u
-#define PS_HOST_API_VERSION 5u
+#define PS_HOST_API_VERSION 6u
 #define PS_DATA_SOURCE_PROTOCOL_VERSION 3u
 
 #if defined(_WIN32)
@@ -99,9 +99,6 @@ typedef struct PsHostApi {
     uint32_t abi_version;       /* 必须等于 PS_HOST_API_VERSION */
     uint32_t kernel_abi_version;/* 当前 kernel ABI 版本，供扩展诊断 */
     void *(*dataset_new)(void);
-    int32_t (*dataset_add_channel)(void *dataset, const char *name, const char *unit,
-                                   const double *time_s, const double *value, uint32_t count,
-                                   char *err, uint32_t err_cap);
     void (*dataset_free)(void *dataset);
     /* 可选：解析进度。done/total 均为字节、行或记录数；total=0 表示不确定。
      * 宿主在 load 调用期间提供线程局部回调，扩展在解析循环中调用即可。 */

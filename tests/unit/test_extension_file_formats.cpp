@@ -97,7 +97,7 @@ bool checkMdf4Value(const PsExtensionDescriptor *d, const std::string &path,
         const PsChannelInfo *ch = ps_dataset_channel(ds, i);
         if (!ch || !ch->name || std::strcmp(ch->name, channel) != 0)
             continue;
-        found = ch->point_count > index && std::fabs(ch->value[index] - expected) < 1e-9 &&
+        found = ch->point_count > index && std::fabs(ps_channel_value_at(ch, index) - expected) < 1e-9 &&
                 (!unit || (ch->unit && std::strcmp(ch->unit, unit) == 0));
         break;
     }

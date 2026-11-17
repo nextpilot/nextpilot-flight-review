@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 #include <QHash>
+#include <QMap>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -11,7 +12,11 @@
 #include <QFileInfo>
 #include <QString>
 
+#include <cmath>
 #include <cstdio>
+#include <limits>
+#include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -27,68 +32,59 @@ const char *kSchema = R"({
 })";
 const char *kDefaults = R"({"encoding":""})";
 
-void addSample(const QString &name, double t, double v,
-               QHash<QString, int> &index, std::vector<PsChannelData> &channels)
+struct Table
 {
-    auto it = index.find(name);
-    if (it == index.end())
-    {
-        PsChannelData c;
-        c.name = name.toStdString();
-        channels.push_back(std::move(c));
-        it = index.insert(name, static_cast<int>(channels.size() - 1));
-    }
-    channels[it.value()].t.push_back(t);
-    channels[it.value()].v.push_back(v);
-}
+    std::vector<double> t;
+    std::map<std::string, std::vector<double>> cols;
+};
 
-void flattenJson(const QJsonValue &value, const QString &topic, const QString &path, double t,
-                 QHash<QString, int> &index, std::vector<PsChannelData> &channels,
-                 bool plainValue)
+void flattenJson(const QJsonValue &value, const QString &path, QMap<QString, double> &fields)
 {
-    const QString full = path.isEmpty() ? topic : (topic.isEmpty() ? path : topic + "/" + path);
     if (value.isObject())
     {
         const QJsonObject obj = value.toObject();
-        // PlotScope StreamRecorder 写的单值消息：{"value": x}，topic 就是通道名。
-        if (plainValue && path.isEmpty() && !topic.isEmpty() && obj.size() == 1 &&
-            obj.contains(QStringLiteral("value")))
-        {
-            flattenJson(obj.value(QStringLiteral("value")), topic, QString(), t, index, channels, false);
-            return;
-        }
         for (auto it = obj.begin(); it != obj.end(); ++it)
-            flattenJson(it.value(), topic, path.isEmpty() ? it.key() : path + "/" + it.key(),
-                        t, index, channels, false);
+            flattenJson(it.value(), path.isEmpty() ? it.key() : path + "/" + it.key(), fields);
         return;
     }
     if (value.isArray())
     {
         const QJsonArray arr = value.toArray();
         for (int i = 0; i < arr.size(); ++i)
-            flattenJson(arr.at(i), topic,
-                        path.isEmpty() ? QString::number(i) : path + "/" + QString::number(i),
-                        t, index, channels, false);
+            flattenJson(arr.at(i), path.isEmpty() ? QString::number(i)
+                                                  : path + "/" + QString::number(i),
+                        fields);
         return;
     }
+    if (path.isEmpty())
+        return;
     if (value.isDouble())
-    {
-        if (!full.isEmpty())
-            addSample(full, t, value.toDouble(), index, channels);
-        return;
-    }
-    if (value.isBool())
-    {
-        if (!full.isEmpty())
-            addSample(full, t, value.toBool() ? 1.0 : 0.0, index, channels);
-        return;
-    }
-    if (value.isString())
+        fields.insert(path, value.toDouble());
+    else if (value.isBool())
+        fields.insert(path, value.toBool() ? 1.0 : 0.0);
+    else if (value.isString())
     {
         bool ok = false;
         const double v = value.toString().toDouble(&ok);
-        if (ok && !full.isEmpty())
-            addSample(full, t, v, index, channels);
+        if (ok)
+            fields.insert(path, v);
+    }
+}
+
+void appendMessage(std::map<std::string, Table> &tables, const QString &topic,
+                   const QMap<QString, double> &fields, double t)
+{
+    if (topic.isEmpty() || fields.isEmpty())
+        return;
+    Table &table = tables[topic.toStdString()];
+    table.t.push_back(t);
+    const size_t row = table.t.size();
+    for (auto it = fields.begin(); it != fields.end(); ++it)
+    {
+        auto &col = table.cols[it.key().toStdString()];
+        while (col.size() + 1 < row)
+            col.push_back(std::numeric_limits<double>::quiet_NaN());
+        col.push_back(it.value());
     }
 }
 
@@ -130,8 +126,7 @@ public:
         }
 
         const uint64_t fileSize = static_cast<uint64_t>(QFileInfo(QString::fromStdString(std::string(path))).size());
-        std::vector<PsChannelData> channels;
-        QHash<QString, int> index;
+        std::map<std::string, Table> tables;
         std::set<std::string> unsupported;
         bool first = true;
         int64_t base = 0;
@@ -171,9 +166,16 @@ public:
                 auto schema = reader.schemas().find(ch->second.schema_id);
                 plainValue = schema != reader.schemas().end() && schema->second.name == "plotscope/value";
             }
+            QMap<QString, double> fields;
             flattenJson(doc.isObject() ? QJsonValue(doc.object()) : QJsonValue(doc.array()),
-                        QString::fromStdString(ch->second.topic), QString(), t, index, channels,
-                        plainValue);
+                        QString(), fields);
+            if (plainValue && fields.isEmpty() && doc.isObject())
+            {
+                const QJsonObject obj = doc.object();
+                if (obj.size() == 1 && obj.contains(QStringLiteral("value")))
+                    fields.insert(QStringLiteral("value"), obj.value(QStringLiteral("value")).toDouble());
+            }
+            appendMessage(tables, QString::fromStdString(ch->second.topic), fields, t);
             ++decoded;
         }
         if (!re.empty())
@@ -189,12 +191,28 @@ public:
             ps::fillError(err, 2, "不支持的 encoding: " + names);
             return false;
         }
-        if (channels.empty())
+        if (tables.empty())
         {
             ps::fillError(err, 2, decoded ? "JSON 中没有数值字段" : "MCAP 中没有可读消息");
             return false;
         }
 
+        std::vector<PsChannelData> channels;
+        for (auto &kv : tables)
+        {
+            auto axis = std::make_shared<const std::vector<double>>(kv.second.t);
+            for (auto &ck : kv.second.cols)
+            {
+                ck.second.resize(kv.second.t.size(), std::numeric_limits<double>::quiet_NaN());
+                PsChannelData c;
+                c.name = kv.first + "." + ck.first;
+                c.table = kv.first;
+                c.axis = axis;
+                c.v = std::move(ck.second);
+                c.value_type = PS_VALUE_F64;
+                channels.push_back(std::move(c));
+            }
+        }
         std::string buildErr;
         PsDataset *ds = psBuildDataset(channels, buildErr, host());
         if (!ds)

@@ -121,7 +121,12 @@ impl PsDataset {
                 time.push(t as f64 * 1e-6);
             }
             for col in &table.columns {
-                self.typed_names.push(CString::new(format!("{}.{}", table.name, col.name)).unwrap_or_default());
+                let full = if col.name == "value" {
+                    table.name.clone()
+                } else {
+                    format!("{}.{}", table.name, col.name)
+                };
+                self.typed_names.push(CString::new(full).unwrap_or_default());
                 let unit = CString::new(col.unit.as_str()).unwrap_or_default();
                 self.typed_units.push(unit);
                 self.typed_tables.push(CString::new(table.name.as_str()).unwrap_or_default());
@@ -194,6 +199,8 @@ fn find_series(d: &PsDataset, name: &str) -> Option<(Vec<f64>, Vec<f64>, String)
         for col in &table.columns {
             let full = if table.name.is_empty() {
                 col.name.clone()
+            } else if col.name == "value" {
+                table.name.clone()
             } else {
                 format!("{}.{}", table.name, col.name)
             };

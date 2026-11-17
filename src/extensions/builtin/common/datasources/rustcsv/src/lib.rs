@@ -141,7 +141,8 @@ unsafe extern "C" fn load(
         return 1;
     }
     let h = &*host;
-    if h.abi_version != PS_HOST_API_VERSION || h.dataset_new.is_none() || h.dataset_add_channel.is_none() {
+    if h.abi_version != PS_HOST_API_VERSION || h.dataset_new.is_none() ||
+        h.dataset_add_table_typed.is_none() || h.dataset_add_table_column_typed.is_none() {
         write_err(err, err_cap, "宿主 API 不兼容");
         return 1;
     }
@@ -215,15 +216,36 @@ unsafe extern "C" fn load(
     }
     let n = time.len();
     let ds = (h.dataset_new.unwrap())();
+    let mut time_us = Vec::with_capacity(n);
+    for t in &time {
+        time_us.push((t * 1e6).round() as i64);
+    }
+    let table = cstr("csv");
+    let rc = (h.dataset_add_table_typed.unwrap())(
+        ds,
+        table.as_ptr(),
+        time_us.as_ptr(),
+        n as u32,
+        err,
+        err_cap,
+    );
+    if rc != 0 {
+        if let Some(free) = h.dataset_free {
+            free(ds);
+        }
+        return 6;
+    }
     for i in 0..ncol - 1 {
         let name = cstr(&headers[i + 1]);
         let unit = cstr("");
-        let rc = (h.dataset_add_channel.unwrap())(
+        let rc = (h.dataset_add_table_column_typed.unwrap())(
             ds,
+            table.as_ptr(),
             name.as_ptr(),
             unit.as_ptr(),
-            time.as_ptr(),
-            cols[i].as_ptr(),
+            0u32, /* PS_VALUE_F64 */
+            cols[i].as_ptr() as *const std::ffi::c_void,
+            std::ptr::null(),
             n as u32,
             err,
             err_cap,
