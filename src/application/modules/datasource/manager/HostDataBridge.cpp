@@ -214,7 +214,7 @@ host::LiveStatus HostDataBridge::liveStatus(int sourceId)
     if (!src || !src->isLive())
         return st;
     st.connected = src->handle != nullptr;
-    // recording / dropped / samples 由 LiveSession 在 S4 补齐，S1 不猜字段
+    // recording / dropped / samples 由 LiveFrameSink 提供，HostDataBridge 只做只读适配。
     return st;
 }
 
