@@ -1,6 +1,6 @@
 # PJ4 架构迁移方案
 
-> 状态：方案待实施（2026-11-17）
+> 状态：部分实施（2026-11-18）。B1 已完成；B4 已完成 SettingsStore/LogService 下沉与模块 CMake option，Session/Command/Extension 尚未归位；B5 已通过 shell/datasource/plotting/autopilot 四个构建矩阵；B2/B3 的 core/widget 拆分待实施。
 >
 > 范围：把 PlotScope 从“MainWindow 兼做窗口壳和业务服务中心”调整为“shell 只组装、modules 自贡献、extensions 可裁剪、runtime 无 Widgets”的结构。先改依赖和所有权，不改 UI 行为、不改命令 ID、不一次性搬完所有代码。
 >
