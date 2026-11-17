@@ -40,6 +40,7 @@ int main()
     const PsChannelInfo *ch = ps_dataset_channel(hit, 0);
     assert(ch && std::strcmp(ch->name, "imu.roll") == 0 && ch->point_count == 3);
     assert(ps_channel_value_at(ch, 1) == 20.0);
+    assert(ps_dataset_seq_at(hit, "imu", 1) == 1);
     ps_dataset_free(hit);
 
     const QString params = QStringLiteral("[{\"name\":\"TEST\",\"value\":\"42\"}]");
