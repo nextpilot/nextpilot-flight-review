@@ -4,7 +4,7 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-pub const PS_EXTENSION_ABI_VERSION: u32 = 7;
+pub const PS_EXTENSION_ABI_VERSION: u32 = 8;
 pub const PS_HOST_API_VERSION: u32 = 5;
 pub const PS_FAMILY_DATA_LOADER: u32 = 1;
 pub const PS_FAMILY_LIVE_SOURCE: u32 = 2;
@@ -204,9 +204,6 @@ pub struct PsUiVtable {
 #[repr(C)]
 pub struct PsSourceSink {
     pub ctx: *mut c_void,
-    pub channel_batch: Option<
-        unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, *const f64, *const f64, u32) -> i32,
-    >,
     pub event: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> i32>,
     pub raw_batch: Option<
         unsafe extern "C" fn(

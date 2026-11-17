@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define PS_EXTENSION_ABI_VERSION 7u
+#define PS_EXTENSION_ABI_VERSION 8u
 #define PS_HOST_API_VERSION 5u
 #define PS_DATA_SOURCE_PROTOCOL_VERSION 3u
 
@@ -158,8 +158,6 @@ typedef struct PsLoaderVtable {
  * 返回非 0 表示宿主拒绝该批（例如缓冲区已满）；扩展可停止本次 poll。 */
 typedef struct PsSourceSink {
     void *ctx;
-    int32_t (*channel_batch)(void *ctx, const char *name, const char *unit,
-                             const double *time_s, const double *value, uint32_t count);
     int32_t (*event)(void *ctx, const char *topic, const char *payload_json);
     /* 可选：扩展把原始字节交给宿主统一录制。topic/encoding 用于回放路由。 */
     int32_t (*raw_batch)(void *ctx, const char *topic, const char *encoding,

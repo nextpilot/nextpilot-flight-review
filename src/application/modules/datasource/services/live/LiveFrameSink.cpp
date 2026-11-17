@@ -53,8 +53,6 @@ void LiveFrameSink::ChannelView::reserve()
 {
     if (time && time->capacity() < static_cast<size_t>(kReserveRows))
         time->reserve(kReserveRows);
-    if (!typed)
-        value.reserve(kReserveRows);
 }
 
 void LiveFrameSink::ChannelView::refresh()
@@ -63,9 +61,9 @@ void LiveFrameSink::ChannelView::refresh()
     info.unit = unit.constData();
     info.point_count = static_cast<uint32_t>(time ? time->size() : 0);
     info.time = time ? time->data() : nullptr;
-    info.value = typed ? nullptr : (value.empty() ? nullptr : value.data());
-    info.table = typed ? table.constData() : nullptr;
-    info.column = typed ? column.constData() : nullptr;
+    info.value = nullptr;
+    info.table = table.constData();
+    info.column = column.constData();
     info.generation = 0;
 }
 
@@ -75,8 +73,6 @@ void LiveFrameSink::ChannelView::trimTo(int capacity)
         return;
     const size_t drop = time->size() - static_cast<size_t>(capacity);
     time->erase(time->begin(), time->begin() + static_cast<long>(drop));
-    if (value.size() > drop)
-        value.erase(value.begin(), value.begin() + static_cast<long>(drop));
     refresh();
 }
 
@@ -102,8 +98,6 @@ void LiveFrameSink::TableView::trimTo(int capacity)
     time->erase(time->begin(), time->begin() + static_cast<long>(drop));
     for (auto &c : columns)
     {
-        if (c->value.size() > drop)
-            c->value.erase(c->value.begin(), c->value.begin() + static_cast<long>(drop));
         c->refresh();
     }
 }
@@ -118,7 +112,6 @@ LiveFrameSink::LiveFrameSink(QString extensionId, QString label)
         ps_dataset_set_ring_budget(m_dataset, nullptr, 32ull * 1024 * 1024, err, sizeof(err));
     }
     m_sink.ctx = this;
-    m_sink.channel_batch = &LiveFrameSink::onChannel;
     m_sink.frame_batch = &LiveFrameSink::onFrameBatch;
     m_sink.event = &LiveFrameSink::onEvent;
 }
@@ -136,34 +129,7 @@ QVector<const PsChannelInfo *> LiveFrameSink::channels() const
     for (const auto &it : m_tables)
         for (const auto &c : it.second->columns)
             out.append(&c->info);
-    for (const auto &it : m_legacy)
-        out.append(&it.second->info);
     return out;
-}
-
-const PsChannelInfo *LiveFrameSink::channelByName(const QString &name) const
-{
-    for (const auto &it : m_tables)
-        for (const auto &c : it.second->columns)
-            if (QString::fromUtf8(c->name) == name)
-                return &c->info;
-    const auto it = m_legacy.find(name);
-    return it == m_legacy.end() ? nullptr : &it->second->info;
-}
-
-LiveFrameSink::ChannelView *LiveFrameSink::legacyChannel(const QString &name, const QString &unit)
-{
-    auto it = m_legacy.find(name);
-    if (it != m_legacy.end())
-        return it->second.get();
-    auto view = std::make_unique<ChannelView>();
-    view->name = name.toUtf8();
-    view->unit = unit.toUtf8();
-    view->reserve();
-    view->refresh();
-    auto *raw = view.get();
-    m_legacy[name] = std::move(view);
-    return raw;
 }
 
 LiveFrameSink::TableView *LiveFrameSink::frameTable(const PsFrameBatch *batch, int *err)
@@ -198,27 +164,6 @@ LiveFrameSink::TableView *LiveFrameSink::frameTable(const PsFrameBatch *batch, i
     auto *raw = table.get();
     m_tables[key] = std::move(table);
     return raw;
-}
-
-int32_t LiveFrameSink::onChannel(void *ctx, const char *name, const char *unit,
-                                 const double *time_s, const double *value, uint32_t count)
-{
-    auto *self = static_cast<LiveFrameSink *>(ctx);
-    if (!self || !name || !name[0] || !time_s || !value || count == 0)
-        return 1;
-
-    if (self->m_recorder)
-        self->m_recorder->writeChannelBatch(name, unit ? unit : "", time_s, value, count);
-
-    auto *view = self->legacyChannel(QString::fromUtf8(name), QString::fromUtf8(unit ? unit : ""));
-    view->time->insert(view->time->end(), time_s, time_s + count);
-    view->value.insert(view->value.end(), value, value + count);
-    if (static_cast<int>(view->time->size()) > kChannelCapacity)
-        self->m_overflow = true;
-    view->trimTo(kChannelCapacity);
-    self->m_totalSamples += static_cast<int>(count);
-    self->m_changed = true;
-    return 0;
 }
 
 int32_t LiveFrameSink::onFrameBatch(void *ctx, const PsFrameBatch *batch)

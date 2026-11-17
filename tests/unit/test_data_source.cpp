@@ -74,7 +74,7 @@ int main()
     v->destroy(probe);
 
     SinkState state;
-    PsSourceSink sink{&state, nullptr, onEvent, nullptr, onFrame};
+    PsSourceSink sink{&state, onEvent, nullptr, onFrame};
     void *handle = v->create();
     assert(handle);
     PsDataSourceServices services{};

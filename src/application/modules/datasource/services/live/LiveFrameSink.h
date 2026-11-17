@@ -60,7 +60,6 @@ private:
         QByteArray column;
         bool typed = false;
         std::shared_ptr<std::vector<double>> time;
-        std::vector<double> value; // 仅旧 channel_batch 兼容；frame_batch 不复制 f64
         PsChannelInfo info{};
 
         ChannelView();
@@ -80,21 +79,16 @@ private:
         void trimTo(int capacity);
     };
 
-    static int32_t onChannel(void *ctx, const char *name, const char *unit,
-                             const double *time_s, const double *value, uint32_t count);
     static int32_t onFrameBatch(void *ctx, const PsFrameBatch *batch);
     static int32_t onRaw(void *ctx, const char *topic, const char *encoding,
                          int64_t timestamp_ns, const uint8_t *data, uint32_t size);
     static int32_t onEvent(void *ctx, const char *topic, const char *payload_json);
-    const PsChannelInfo *channelByName(const QString &name) const;
-    ChannelView *legacyChannel(const QString &name, const QString &unit);
     TableView *frameTable(const PsFrameBatch *batch, int *err);
 
     QString m_extensionId;
     QString m_label;
     PsDataset *m_dataset = nullptr;
     std::map<QString, std::unique_ptr<TableView>> m_tables;
-    std::map<QString, std::unique_ptr<ChannelView>> m_legacy;
     PsSourceSink m_sink{};
     std::unique_ptr<StreamRecorder> m_recorder;
     RawTap m_rawTap;

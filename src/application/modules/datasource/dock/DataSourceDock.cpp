@@ -612,17 +612,6 @@ struct FanoutParser
     PsSourceSink sink{};
 };
 
-int32_t fanoutChannel(void *ctx, const char *name, const char *unit,
-                      const double *time_s, const double *value, uint32_t count)
-{
-    auto *ep = static_cast<FanoutParser *>(ctx);
-    if (!ep || !ep->session || !name)
-        return 1;
-    const QByteArray full = ep->prefix.toUtf8() + '.' + QByteArray(name);
-    return ep->session->sink()->channel_batch(ep->session, full.constData(), unit,
-                                              time_s, value, count);
-}
-
 int32_t fanoutFrameBatch(void *ctx, const PsFrameBatch *batch)
 {
     auto *ep = static_cast<FanoutParser *>(ctx);
@@ -1023,7 +1012,6 @@ bool DataSourceDock::openLiveInput(const QStringList &ids, const QString &config
         ep->session = session.get();
         ep->prefix = QStringLiteral("fanout.%1").arg(p->id);
         ep->sink.ctx = ep.get();
-        ep->sink.channel_batch = &fanoutChannel;
         ep->sink.frame_batch = &fanoutFrameBatch;
         ep->sink.event = &fanoutEvent;
         if (p->open(QString::fromUtf8(QJsonDocument(sub).toJson(QJsonDocument::Compact)),

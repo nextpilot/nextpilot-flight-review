@@ -83,7 +83,7 @@ int main(int argc, char **argv)
     v->destroy(probe);
 
     Sink sink;
-    PsSourceSink ps{&sink, nullptr, onEvent, nullptr, onFrame};
+    PsSourceSink ps{&sink, onEvent, nullptr, onFrame};
     void *h = v->create();
     assert(h);
     PsDataSourceServices services{};

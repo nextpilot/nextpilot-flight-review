@@ -153,7 +153,7 @@ int main(int argc, char **argv)
     assert(server.listen(QHostAddress::LocalHost, 0));
     const int port = server.serverPort();
     Sink sink;
-    PsSourceSink ps{&sink, nullptr, onEvent, nullptr, onFrame};
+    PsSourceSink ps{&sink, onEvent, nullptr, onFrame};
     void *h = v->create();
     assert(h);
     PsDataSourceServices services{};
