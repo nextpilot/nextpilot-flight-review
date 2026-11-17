@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QStringList>
 #include <QVector>
+#include <QHash>
 #include <QPair>
 #include <QPoint>
 #include <QAction>
@@ -99,6 +100,8 @@ public:
 
 private:
     void persistSourceConfigsSoon();
+    void restoreSavedConfigs();
+    void applySavedConfig(ps::data_source::DataSource &src);
     void log(const QString &text);
     void refreshPropTree(PlottingCanvas *c = nullptr);
     PlottingCanvas *currentCanvas() const;
@@ -113,6 +116,7 @@ private:
     QLabel *m_srcCount = nullptr;
     QTimer *m_liveTimer = nullptr;
     QTimer *m_configTimer = nullptr;
+    QHash<QString, ps::data_source::DataSourceConfig> m_savedConfigs;
     qint64 m_liveUiMs = 0;
     bool m_viewBacked = false;
     QString m_srcFmt;

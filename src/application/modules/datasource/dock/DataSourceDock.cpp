@@ -571,15 +571,6 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
     srcLay->removeWidget(m_srcFilter);
     srcLay->insertWidget(0, m_srcFilter);
 
-    // 双击通道 → 画到当前页第一格（后续换成字段拖拽，见 §8.10）
-    connect(m_srcTree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
-        const qulonglong raw = item->data(0, Qt::UserRole).toULongLong();
-        const PsChannelInfo *ch = reinterpret_cast<const PsChannelInfo *>(raw);
-        if (!ch)
-            return;
-        m_ctx.setChannel(ch);
-        m_ctx.log(QStringLiteral("画布加载通道：%1").arg(QString::fromUtf8(ch->name)));
-    });
 
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);

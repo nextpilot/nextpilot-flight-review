@@ -100,6 +100,7 @@ DataSourceSession::DataSourceSession(MainWindow *mw) : QWidget(mw), m_mw(mw)
     m_configTimer->setSingleShot(true);
     m_configTimer->setInterval(250);
     connect(m_configTimer, &QTimer::timeout, this, &DataSourceSession::persistSourceConfigs);
+    restoreSavedConfigs();
     registerDataCommands();
 }
 
@@ -909,6 +910,40 @@ void DataSourceSession::applySrcFilter()
     }
 }
 
+void DataSourceSession::restoreSavedConfigs()
+{
+    m_savedConfigs.clear();
+    const QString raw = SettingsManager::instance().get(ps::settings::kDataSourceConfigs);
+    for (const QJsonValue &v : QJsonDocument::fromJson(raw.toUtf8()).array())
+    {
+        const ps::data_source::DataSourceConfig cfg =
+            ps::data_source::DataSourceConfig::fromJson(v.toObject());
+        const QString key = cfg.sourceKey.isEmpty() ? cfg.path : cfg.sourceKey;
+        if (!key.isEmpty())
+            m_savedConfigs.insert(key, cfg);
+    }
+}
+
+void DataSourceSession::applySavedConfig(ps::data_source::DataSource &src)
+{
+    const QString key = src.config.sourceKey.isEmpty() ? src.config.path : src.config.sourceKey;
+    auto it = m_savedConfigs.constFind(key);
+    if (it == m_savedConfigs.constEnd())
+        it = m_savedConfigs.constFind(src.config.path);
+    if (it == m_savedConfigs.constEnd())
+        return;
+    const ps::data_source::DataSourceConfig &saved = it.value();
+    if (!saved.alias.isEmpty())
+        src.config.alias = saved.alias;
+    if (!saved.name.isEmpty() && src.config.name.isEmpty())
+        src.config.name = saved.name;
+    if (saved.offsetSec != 0.0)
+    {
+        src.config.offsetSec = saved.offsetSec;
+        setSourceOffset(&src, saved.offsetSec, true);
+    }
+}
+
 void DataSourceSession::persistSourceConfigsSoon()
 {
     if (m_configTimer)
@@ -918,8 +953,14 @@ void DataSourceSession::persistSourceConfigsSoon()
 void DataSourceSession::persistSourceConfigs()
 {
     QJsonArray arr;
+    m_savedConfigs.clear();
     for (const ps::data_source::DataSource &src : m_sources)
+    {
         arr.append(src.config.toJson());
+        const QString key = src.config.sourceKey.isEmpty() ? src.config.path : src.config.sourceKey;
+        if (!key.isEmpty())
+            m_savedConfigs.insert(key, src.config);
+    }
     SettingsManager::instance().set(ps::settings::kDataSourceConfigs,
                                    QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
 }
@@ -928,13 +969,21 @@ bool DataSourceSession::loadFile(const QString &path, bool interactive)
 {
     const bool ok = m_dataSourceDock->loadFile(path, interactive);
     if (ok)
+    {
+        for (ps::data_source::DataSource &src : m_sources)
+            if (src.config.path == path)
+                applySavedConfig(src);
         persistSourceConfigs();
+    }
     return ok;
 }
 
 void DataSourceSession::connectLiveSource(const QString &extensionId)
 {
     m_dataSourceDock->connectLiveSource(extensionId);
+    for (ps::data_source::DataSource &src : m_sources)
+        if (src.isLive())
+            applySavedConfig(src);
 }
 
 bool DataSourceSession::openLiveInput(const QStringList &ids, const QString &config, DataSource &dst,
