@@ -15,6 +15,8 @@
 - OEM7 离线 loader：完成，复用 `Oem7MessageParser`，按日志名建 `oem7.<log>` 表，CRC 失败丢帧重搜。
 - 配置恢复：启动只读 `dataSource.configs` 作为默认别名/offset，不自动连接任何源；打开文件/实时源时套用。
 - Live `frame_batch`：完成，列值不再复制 f64，行数跟随内核 ring。
+- M6 输入旧路径：`PsSourceSink.channel_batch`、LiveFrameSink 旧通道视图、tlog/Mavlink 逐通道采集器已删除；`PS_EXTENSION_ABI_VERSION=8`。
+- `PsChannelInfo.time/value` 与 `dataset_add_channel` 仍保留给旧 Dataset 通道，供 Rust CSV 样例和缓存测试使用，下一轮再退。
 
 ## 1. 已定决策
 
