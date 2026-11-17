@@ -192,6 +192,8 @@ private:
         bool typed() const { return dataset && !table.isEmpty() && !column.isEmpty(); }
         double timeAt(quint32 i) const;
         double valueAt(quint32 i) const;
+        quint32 readWindow(double t0, double t1, QVector<double> &outT,
+                           QVector<double> &outV, quint32 cap) const;
         const double *time() const { return t ? t : tOwn.constData(); }
         const double *value() const { return v ? v : vOwn.constData(); }
         quint32 count() const

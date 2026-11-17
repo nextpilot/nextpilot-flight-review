@@ -68,6 +68,14 @@ int main(int argc, char **argv)
     assert(ps_dataset_value_at(session.dataset(), "imu", "pitch", 1, &nt, &nv) == 2);
     assert(std::isnan(nv));
 
+    // 批量窗口读取一次返回窗口内所有行。
+    double win_t[4] = {0}, win_v[4] = {0};
+    const uint32_t win_n = ps_dataset_read_window(
+        session.dataset(), "imu", "roll", 1700000000000000LL, 1700000000020000LL,
+        win_t, win_v, 4);
+    assert(win_n == 2);
+    assert(std::abs(win_t[0] - 1700000000.0) < 1e-6 && std::abs(win_v[1] - 2.5) < 1e-9);
+
     // typed 视口 LOD 使用 UTC 微秒；2 像素窗口应能覆盖两行。
     double lod[6] = {0};
     const uint32_t lod_n = ps_dataset_lod_minmax(session.dataset(), "imu", "roll",

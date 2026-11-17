@@ -382,6 +382,52 @@ double PlottingCanvas::Series::valueAt(quint32 i) const
     return value()[i];
 }
 
+quint32 PlottingCanvas::Series::readWindow(double t0, double t1, QVector<double> &outT,
+                                            QVector<double> &outV, quint32 cap) const
+{
+    outT.clear();
+    outV.clear();
+    if (!cap || count() == 0)
+        return 0;
+    if (typed())
+    {
+        outT.resize(int(cap));
+        outV.resize(int(cap));
+        const quint32 got = ps_dataset_read_window(
+            const_cast<PsDataset *>(dataset), table.toUtf8().constData(),
+            column.toUtf8().constData(),
+            static_cast<int64_t>(std::llround((t0 + offsetSec) * 1e6)),
+            static_cast<int64_t>(std::llround((t1 + offsetSec) * 1e6)),
+            outT.data(), outV.data(), cap);
+        outT.resize(int(got));
+        outV.resize(int(got));
+        return got;
+    }
+
+    const double *tp = time();
+    const double *vp = value();
+    quint32 lo = 0, hi = count();
+    while (lo < hi)
+    {
+        const quint32 mid = (lo + hi) / 2;
+        if (tp[mid] < t0 + offsetSec)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    quint32 end = lo;
+    while (end < count() && tp[end] <= t1 + offsetSec)
+        ++end;
+    const quint32 rows = end - lo;
+    const quint32 step = std::max<quint32>(1, (rows + cap - 1) / cap);
+    for (quint32 i = lo; i < end && outT.size() < int(cap); i += step)
+    {
+        outT.append(tp[i] - offsetSec);
+        outV.append(vp[i]);
+    }
+    return static_cast<quint32>(outT.size());
+}
+
 void PlottingCanvas::setChannels(const QVector<const PsChannelInfo *> &channels)
 {
     m_series.clear();
@@ -908,10 +954,10 @@ double PlottingCanvas::lastValue(const QString &namePart, bool *ok) const
         return 0.0;
     for (int i = int(hit->count()) - 1; i >= 0; --i)
     {
-        const double t = hit->time()[i] - hit->offsetSec;
+        const double t = hit->timeAt(i) - hit->offsetSec;
         if (t < m_t0 || t > m_t1)
             continue;
-        const double v = hit->value()[i];
+        const double v = hit->valueAt(i);
         if (!std::isfinite(v))
             continue;
         if (ok)
@@ -937,7 +983,7 @@ void PlottingCanvas::paintXy(QPainter &p, const QRectF &plot, const QFontMetrics
     QVector<double> xv;
     xv.reserve(int(sx->count()));
     for (quint32 i = 0; i < sx->count(); ++i)
-        xv.append(sx->value()[i]);
+        xv.append(sx->valueAt(i));
     double xlo = 0, xhi = 1, ylo = 0, yhi = 1;
     bool init = false;
     for (double x : xv)
@@ -959,11 +1005,11 @@ void PlottingCanvas::paintXy(QPainter &p, const QRectF &plot, const QFontMetrics
         {
             double v = 0.0;
             if (sy->count() == sx->count())
-                v = sy->value()[k];
+                v = sy->valueAt(k);
             else
             {
                 bool ok = false;
-                v = sampleAt(*sy, sx->time()[k] - sx->offsetSec, &ok);
+                v = sampleAt(*sy, sx->timeAt(k) - sx->offsetSec, &ok);
                 if (!ok)
                     continue;
             }
@@ -1058,16 +1104,17 @@ void PlottingCanvas::paintBar(QPainter &p, const QRectF &plot, const QFontMetric
         return;
     QVector<double> means;
     double lo = 0, hi = 0;
+    QVector<double> wt, wv;
     for (const Series *s : vis)
     {
         double sum = 0;
         int n = 0;
-        for (quint32 i = 0; i < s->count(); ++i)
+        const quint32 got = s->readWindow(m_t0, m_t1, wt, wv, 4096);
+        for (quint32 i = 0; i < got; ++i)
         {
-            const double t = s->time()[i] - s->offsetSec;
-            if (t < m_t0 || t > m_t1 || !std::isfinite(s->value()[i]))
+            if (!std::isfinite(wv.at(int(i))))
                 continue;
-            sum += s->value()[i];
+            sum += wv.at(int(i));
             ++n;
         }
         const double m = n ? sum / n : 0;
@@ -1101,13 +1148,11 @@ void PlottingCanvas::paintHistogram(QPainter &p, const QRectF &plot, const QFont
         if (x.visible && x.count()) { s = &x; break; }
     if (!s)
         return;
-    QVector<double> v;
-    for (quint32 i = 0; i < s->count(); ++i)
-    {
-        const double t = s->time()[i] - s->offsetSec;
-        if (t >= m_t0 && t <= m_t1 && std::isfinite(s->value()[i]))
-            v.append(s->value()[i]);
-    }
+    QVector<double> wt, v;
+    s->readWindow(m_t0, m_t1, wt, v, 16384);
+    for (int i = v.size() - 1; i >= 0; --i)
+        if (!std::isfinite(v.at(i)))
+            v.removeAt(i);
     if (v.isEmpty())
         return;
     const int bins = 40;
@@ -1142,15 +1187,15 @@ void PlottingCanvas::paintSpectrum(QPainter &p, const QRectF &plot, const QFontM
         return;
     const int n = std::min(512, int(s->count()));
     QVector<double> x(n);
-    const double t0 = s->time()[s->count() - n] - s->offsetSec;
-    const double t1 = s->time()[s->count() - 1] - s->offsetSec;
+    const double t0 = s->timeAt(s->count() - n) - s->offsetSec;
+    const double t1 = s->timeAt(s->count() - 1) - s->offsetSec;
     const double dt = (t1 - t0) / std::max(1, n - 1);
     double mean = 0;
     for (int i = 0; i < n; ++i)
-        mean += s->value()[s->count() - n + i];
+        mean += s->valueAt(s->count() - n + i);
     mean /= n;
     for (int i = 0; i < n; ++i)
-        x[i] = s->value()[s->count() - n + i] - mean;
+        x[i] = s->valueAt(s->count() - n + i) - mean;
     const int half = n / 2;
     QVector<double> amp(half, 0);
     for (int k = 0; k < half; ++k)
@@ -1243,9 +1288,11 @@ void PlottingCanvas::paintGauge(QPainter &p, const QRectF &plot, const QFontMetr
     {
         if (!s.visible || !s.count())
             continue;
-        for (quint32 i = 0; i < s.count(); ++i)
+        QVector<double> wt, wv;
+        s.readWindow(m_t0, m_t1, wt, wv, 4096);
+        for (int i = 0; i < wv.size(); ++i)
         {
-            const double x = s.valueAt(i);
+            const double x = wv.at(i);
             if (!std::isfinite(x))
                 continue;
             lo = std::min(lo, x);
@@ -1296,11 +1343,14 @@ void PlottingCanvas::paintGpsMap(QPainter &p, const QRectF &plot, const QFontMet
     }
 
     QVector<QPointF> pts;
-    const quint32 n = qMin(latS->count(), lonS->count());
+    QVector<double> latT, latV, lonT, lonV;
+    latS->readWindow(m_t0, m_t1, latT, latV, 8192);
+    lonS->readWindow(m_t0, m_t1, lonT, lonV, 8192);
+    const quint32 n = qMin(latV.size(), lonV.size());
     for (quint32 i = 0; i < n; ++i)
     {
-        const double lat = latS->value()[i];
-        const double lon = lonS->value()[i];
+        const double lat = latV.at(int(i));
+        const double lon = lonV.at(int(i));
         if (!std::isfinite(lat) || !std::isfinite(lon) || qAbs(lat) > 90.0 || qAbs(lon) > 180.0)
             continue;
         pts.append(QPointF(lon, lat));
@@ -1368,9 +1418,11 @@ void PlottingCanvas::paintSurface3D(QPainter &p, const QRectF &plot, const QFont
         if (!s.visible || s.count() < 2)
             continue;
         ids.append(i);
-        for (quint32 k = 0; k < s.count(); ++k)
+        QVector<double> wt, wv;
+        s.readWindow(m_t0, m_t1, wt, wv, 4096);
+        for (int k = 0; k < wv.size(); ++k)
         {
-            const double v = s.valueAt(k);
+            const double v = wv.at(k);
             if (!std::isfinite(v))
                 continue;
             if (!init) { lo = hi = v; init = true; }
@@ -1403,12 +1455,12 @@ void PlottingCanvas::paintSurface3D(QPainter &p, const QRectF &plot, const QFont
         const Series &s = m_series.at(ids.at(k));
         const double z = (n - 1 - k) * zStep;
         QPolygonF poly;
-        const quint32 cnt = s.count();
-        const quint32 step = qMax<quint32>(1, cnt / 400);
-        for (quint32 i = 0; i < cnt; i += step)
+        QVector<double> wt, wv;
+        s.readWindow(m_t0, m_t1, wt, wv, 4096);
+        for (int i = 0; i < wv.size(); ++i)
         {
-            const double t = (s.timeAt(i) - s.offsetSec - m_t0) / std::max(1e-12, m_t1 - m_t0);
-            const double v = s.valueAt(i);
+            const double t = (wt.at(i) - s.offsetSec - m_t0) / std::max(1e-12, m_t1 - m_t0);
+            const double v = wv.at(i);
             if (!std::isfinite(v) || t < 0 || t > 1)
                 continue;
             poly.append(QPointF(x0 + w * t + z * 0.5,
@@ -1437,18 +1489,23 @@ void PlottingCanvas::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMet
         p.drawText(plot, Qt::AlignCenter, QStringLiteral("3D 轨迹：至少两条通道（X/Y）"));
         return;
     }
-    const int n = std::min(2000, int(vis.at(0)->count()));
     const Series *ax = vis.at(0);
     const Series *ay = vis.at(1);
     const Series *az = vis.size() > 2 ? vis.at(2) : nullptr;
+    QVector<double> axt, axv, ayt, ayv, azt, azv;
+    ax->readWindow(m_t0, m_t1, axt, axv, 2000);
+    ay->readWindow(m_t0, m_t1, ayt, ayv, 2000);
+    if (az)
+        az->readWindow(m_t0, m_t1, azt, azv, 2000);
+    const int n = qMin(axv.size(), ayv.size());
     QVector<QPointF> proj;
     double cx = 0, cy = 0, cz = 0;
     int cnt = 0;
     for (int i = 0; i < n; ++i)
     {
-        const double x = ax->value()[i];
-        const double y = ay->count() == ax->count() ? ay->value()[i] : ax->value()[i];
-        const double z = az && az->count() == ax->count() ? az->value()[i] : 0.0;
+        const double x = axv.at(i);
+        const double y = ayv.at(i);
+        const double z = az && azv.size() == n ? azv.at(i) : 0.0;
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
             continue;
         cx += x; cy += y; cz += z; ++cnt;
@@ -1459,8 +1516,8 @@ void PlottingCanvas::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMet
     double span = 1e-9;
     for (int i = 0; i < n; ++i)
     {
-        const double x = ax->value()[i], y = ay->count() == ax->count() ? ay->value()[i] : ax->value()[i];
-        const double z = az && az->count() == ax->count() ? az->value()[i] : 0.0;
+        const double x = axv.at(i), y = ayv.at(i);
+        const double z = az && azv.size() == n ? azv.at(i) : 0.0;
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
             continue;
         span = std::max(span, std::max(std::abs(x - cx), std::max(std::abs(y - cy), std::abs(z - cz))));
@@ -1473,8 +1530,8 @@ void PlottingCanvas::paintTraj3D(QPainter &p, const QRectF &plot, const QFontMet
     };
     for (int i = 0; i < n; ++i)
     {
-        const double x = ax->value()[i], y = ay->count() == ax->count() ? ay->value()[i] : ax->value()[i];
-        const double z = az && az->count() == ax->count() ? az->value()[i] : 0.0;
+        const double x = axv.at(i), y = ayv.at(i);
+        const double z = az && azv.size() == n ? azv.at(i) : 0.0;
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
             continue;
         proj.append(prj(x, y, z));

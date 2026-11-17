@@ -132,6 +132,11 @@ int32_t              ps_dataset_value_at(PsDataset *ds, const char *table, const
 int32_t              ps_dataset_value_near(PsDataset *ds, const char *table, const char *column,
                                            int64_t t_us, double *out_time, double *out_value);
 /* 统一取值入口：旧通道读 f64 视图，typed 列走 ps_dataset_value_at。 */
+/* typed 表按时间窗口批量取值；out 为 time_sec/value 两个数组，cap 为各自容量。
+ * 行数超过 cap 时等步长抽稀；返回写入行数。 */
+uint32_t             ps_dataset_read_window(PsDataset *ds, const char *table, const char *column,
+                                            int64_t t0_us, int64_t t1_us,
+                                            double *out_time, double *out_value, uint32_t cap);
 static inline double ps_channel_value_at(const PsChannelInfo *ch, uint32_t i)
 {
     if (!ch)

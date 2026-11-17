@@ -1752,3 +1752,42 @@ pub unsafe extern "C" fn ps_dataset_value_near(
     }
     0
 }
+
+/// typed 表按时间窗口批量取值；超过 cap 时等步长抽稀。输出 time 秒 + f64 兼容值。
+/// 返回实际写入的行数。Null 值输出 NaN。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_read_window(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    column: *const c_char,
+    t0_us: i64,
+    t1_us: i64,
+    out_time: *mut f64,
+    out_value: *mut f64,
+    cap: u32,
+) -> u32 {
+    if ds.is_null() || table.is_null() || column.is_null() || out_time.is_null() || out_value.is_null() || cap == 0 {
+        return 0;
+    }
+    let ds = &*ds;
+    let tname = CStr::from_ptr(table).to_string_lossy();
+    let cname = CStr::from_ptr(column).to_string_lossy();
+    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 0; };
+    let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
+    let lo = t.time_us.partition_point(|&x| x < t0_us);
+    let hi = t.time_us.partition_point(|&x| x <= t1_us);
+    if hi <= lo {
+        return 0;
+    }
+    let rows = hi - lo;
+    let step = ((rows as u64 + cap as u64 - 1) / cap as u64).max(1) as usize;
+    let mut n = 0u32;
+    let mut i = lo;
+    while i < hi && n < cap {
+        *out_time.add(n as usize) = t.time_us[i] as f64 * 1e-6;
+        *out_value.add(n as usize) = c.value_as_f64(i).unwrap_or(f64::NAN);
+        n += 1;
+        i += step;
+    }
+    n
+}
