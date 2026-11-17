@@ -5,6 +5,7 @@
 #include "DataSourceRegistry.h"
 #include "ProtocolInspectorDock.h"
 #include "DataSourceSession.h"
+#include "SettingsManager.h"
 #include "SourceModel.h"
 #include "AnalysisRegistry.h"
 #include "CommandManager.h"
@@ -21,7 +22,6 @@
 #include <QMenu>
 #include <QDockWidget>
 #include <QFileDialog>
-#include <QSettings>
 #include <QDockWidget>
 #include <QIcon>
 #include <SARibbonPanel.h>
@@ -153,11 +153,8 @@ void buildAnalysisGallery(QWidget *parent)
     auto *allGroup = gallery->addCategoryActions(QStringLiteral("全部应用"), allEntries);
     styleGroup(allGroup);
 
-    auto recentSettings = std::make_shared<QSettings>(
-        QSettings::defaultFormat(), QSettings::UserScope,
-        QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
     auto recentIds = std::make_shared<QStringList>(
-        recentSettings->value(QStringLiteral("analysis.recent")).toStringList());
+        SettingsManager::instance().get(ps::settings::kAnalysisRecent));
     auto recentActions = std::make_shared<QHash<QString, QAction *>>();
     auto *recentPlaceholder = new QAction(QStringLiteral("暂无最近使用的分析应用"), panel);
     recentPlaceholder->setEnabled(false);
@@ -171,15 +168,14 @@ void buildAnalysisGallery(QWidget *parent)
                 return &entry;
         return nullptr;
     };
-    *recentCallback = [recentIds, recentActions, recentGroup, recentPlaceholder, entryById, makeAction,
-                       recentSettings](const QString &id) mutable {
+    *recentCallback = [recentIds, recentActions, recentGroup, recentPlaceholder, entryById, makeAction](const QString &id) mutable {
         if (id.isEmpty())
             return;
         recentIds->removeAll(id);
         recentIds->prepend(id);
         while (recentIds->size() > 6)
             recentIds->removeLast();
-        recentSettings->setValue(QStringLiteral("analysis.recent"), *recentIds);
+        SettingsManager::instance().set(ps::settings::kAnalysisRecent, *recentIds);
 
         for (QAction *action : *recentActions)
         {
@@ -217,11 +213,8 @@ void buildAnalysisGallery(QWidget *parent)
     if (!recentIds->isEmpty())
         recentGroup->removeActionItem(recentPlaceholder);
 
-    auto favoriteSettings = std::make_shared<QSettings>(
-        QSettings::defaultFormat(), QSettings::UserScope,
-        QStringLiteral("NextPilot"), QStringLiteral("PlotScope"));
     auto favoriteIds = std::make_shared<QStringList>(
-        favoriteSettings->value(QStringLiteral("analysis.favorites")).toStringList());
+        SettingsManager::instance().get(ps::settings::kAnalysisFavorites));
     auto favoriteActions = std::make_shared<QHash<QString, QAction *>>();
     auto *favoritePlaceholder = new QAction(QStringLiteral("尚无收藏的分析应用"), panel);
     favoritePlaceholder->setEnabled(false);
@@ -229,7 +222,7 @@ void buildAnalysisGallery(QWidget *parent)
     styleGroup(favoriteGroup);
 
     *favoriteCallback = [favoriteIds, favoriteActions, favoriteGroup, favoritePlaceholder,
-                         entryById, makeAction, favoriteSettings](const QString &id) {
+                         entryById, makeAction](const QString &id) {
         if (id.isEmpty())
             return;
         if (favoriteIds->contains(id))
@@ -240,7 +233,7 @@ void buildAnalysisGallery(QWidget *parent)
         {
             favoriteIds->append(id);
         }
-        favoriteSettings->setValue(QStringLiteral("analysis.favorites"), *favoriteIds);
+        SettingsManager::instance().set(ps::settings::kAnalysisFavorites, *favoriteIds);
 
         for (QAction *action : *favoriteActions)
         {

@@ -110,5 +110,15 @@ int main(int argc, char **argv)
     check(settings.exportTo(badPath) == false, "unwritable export path fails");
     check(!settings.toJson().isEmpty(), "toJson has keys");
 
+    settings.set(ps::settings::kAnalysisRecent, QStringList{QStringLiteral("a"), QStringLiteral("b")});
+    check(settings.get(ps::settings::kAnalysisRecent) == QStringList{QStringLiteral("a"), QStringLiteral("b")},
+          "analysis recent list round-trip");
+    settings.set(ps::settings::kAnalysisFavorites, QStringList{QStringLiteral("autopilot.review.app")});
+    check(settings.get(ps::settings::kAnalysisFavorites).size() == 1,
+          "analysis favorites list round-trip");
+    settings.remove(ps::settings::kAnalysisRecent);
+    settings.remove(ps::settings::kAnalysisFavorites);
+    check(settings.get(ps::settings::kAnalysisRecent).isEmpty(), "analysis recent default empty");
+
     return failures == 0 ? 0 : 1;
 }

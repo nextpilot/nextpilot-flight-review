@@ -37,6 +37,8 @@ inline const SettingsKey<bool> kRestoreLayout{QStringLiteral("restoreLayout"), f
 inline const SettingsKey<QString> kTheme{QStringLiteral("theme"), QStringLiteral("dark")};
 inline const SettingsKey<QString> kLastLayout{QStringLiteral("lastLayout"), QString()};
 inline const SettingsKey<QStringList> kRecentFiles{QStringLiteral("recentFiles"), {}};
+inline const SettingsKey<QStringList> kAnalysisRecent{QStringLiteral("analysis.recent"), {}};
+inline const SettingsKey<QStringList> kAnalysisFavorites{QStringLiteral("analysis.favorites"), {}};
 inline const SettingsKey<QByteArray> kWindowGeometry{QStringLiteral("windowGeometry"), QByteArray()};
 inline const SettingsKey<QByteArray> kWindowState{QStringLiteral("windowState"), QByteArray()};
 inline const SettingsKey<QStringList> kExtensionsDisabled{QStringLiteral("extensions.disabled"), {}};
