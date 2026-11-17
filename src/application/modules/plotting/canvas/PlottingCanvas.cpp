@@ -18,6 +18,8 @@
 #include <QMessageBox>
 #include <QSaveFile>
 #include <QTextStream>
+
+#include <limits>
 #include "SettingsManager.h"
 #include "ThemeManager.h"
 #include <QDateTime>
@@ -36,6 +38,11 @@
 #include "ps_kernel.h"
 
 namespace {
+bool typedChannel(const PsChannelInfo *ch)
+{
+    return ch && ch->dataset && ch->table && ch->table[0] && ch->column && ch->column[0];
+}
+
 
 Qt::PenStyle penStyleFor(int style)
 {
@@ -349,6 +356,32 @@ void PlottingCanvas::clearChannels()
     resetView();
 }
 
+double PlottingCanvas::Series::timeAt(quint32 i) const
+{
+    if (typed())
+    {
+        double t = std::numeric_limits<double>::quiet_NaN();
+        double v = 0.0;
+        ps_dataset_value_at(const_cast<PsDataset *>(dataset), table.toUtf8().constData(),
+                            column.toUtf8().constData(), i, &t, &v);
+        return t;
+    }
+    return time()[i];
+}
+
+double PlottingCanvas::Series::valueAt(quint32 i) const
+{
+    if (typed())
+    {
+        double t = 0.0;
+        double v = std::numeric_limits<double>::quiet_NaN();
+        ps_dataset_value_at(const_cast<PsDataset *>(dataset), table.toUtf8().constData(),
+                            column.toUtf8().constData(), i, &t, &v);
+        return v;
+    }
+    return value()[i];
+}
+
 void PlottingCanvas::setChannels(const QVector<const PsChannelInfo *> &channels)
 {
     m_series.clear();
@@ -356,7 +389,7 @@ void PlottingCanvas::setChannels(const QVector<const PsChannelInfo *> &channels)
     int idx = 0;
     for (const PsChannelInfo *ch : channels)
     {
-        if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
+        if (!ch || ch->point_count < 2 || (!typedChannel(ch) && (!ch->time || !ch->value)))
             continue;
         Series s;
         s.name = QString::fromUtf8(ch->name);
@@ -367,8 +400,8 @@ void PlottingCanvas::setChannels(const QVector<const PsChannelInfo *> &channels)
         s.srcId = m_inputSrcId;
         s.srcPath = m_inputSrcPath;
         s.offsetSec = m_inputOffset;
-        s.t = ch->time;
-        s.v = ch->value;
+        s.t = typedChannel(ch) ? nullptr : ch->time;
+        s.v = typedChannel(ch) ? nullptr : ch->value;
         s.n = ch->point_count;
         s.dataset = static_cast<const PsDataset *>(ch->dataset);
         s.table = QString::fromUtf8(ch->table ? ch->table : "");
@@ -393,8 +426,8 @@ QVector<PlottingCanvas::SampleSeries> PlottingCanvas::sampleSeries() const
         o.value.reserve(static_cast<int>(s.count()));
         for (quint32 i = 0; i < s.count(); ++i)
         {
-            o.time.append(s.time()[i] - s.offsetSec);
-            o.value.append(s.value()[i]);
+            o.time.append(s.timeAt(i) - s.offsetSec);
+            o.value.append(s.valueAt(i));
         }
         out.append(o);
     }
@@ -497,11 +530,14 @@ void PlottingCanvas::addChannel(const PsChannelInfo *ch)
 void PlottingCanvas::addChannelEx(const PsChannelInfo *ch, int srcId, const QString &path,
                                 const QString &alias, double offsetSec)
 {
-    if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
+    if (!ch || ch->point_count < 2 || (!typedChannel(ch) && (!ch->time || !ch->value)))
         return;
     for (const Series &s : m_series)
     {
-        if (s.name == QString::fromUtf8(ch->name) && s.t == ch->time)
+        if (s.name == QString::fromUtf8(ch->name) &&
+            (typedChannel(ch) ? s.table == QString::fromUtf8(ch->table ? ch->table : "") &&
+                                s.column == QString::fromUtf8(ch->column ? ch->column : "")
+                              : s.t == ch->time))
             return; // 同一通道重复拖入不重复加
     }
     Series s;
@@ -513,8 +549,8 @@ void PlottingCanvas::addChannelEx(const PsChannelInfo *ch, int srcId, const QStr
     s.offsetSec = offsetSec;
     s.color = ThemeManager::seriesColor(int(m_series.size()));
     s.info = ch;
-    s.t = ch->time;
-    s.v = ch->value;
+    s.t = typedChannel(ch) ? nullptr : ch->time;
+    s.v = typedChannel(ch) ? nullptr : ch->value;
     s.n = ch->point_count;
     s.dataset = static_cast<const PsDataset *>(ch->dataset);
     s.table = QString::fromUtf8(ch->table ? ch->table : "");
@@ -601,7 +637,7 @@ bool PlottingCanvas::setSeriesChannel(int index, const PsChannelInfo *ch, int sr
                                     const QString &srcPath, const QString &alias, double offsetSec)
 {
     if (index < 0 || index >= m_series.size() || !ch || ch->point_count < 2 ||
-        !ch->time || !ch->value)
+        (!typedChannel(ch) && (!ch->time || !ch->value)))
         return false;
     Series &s = m_series[index];
     s.name = QString::fromUtf8(ch->name);
@@ -610,8 +646,8 @@ bool PlottingCanvas::setSeriesChannel(int index, const PsChannelInfo *ch, int sr
     s.srcId = srcId;
     s.srcPath = srcPath;
     s.offsetSec = offsetSec;
-    s.t = ch->time;
-    s.v = ch->value;
+    s.t = typedChannel(ch) ? nullptr : ch->time;
+    s.v = typedChannel(ch) ? nullptr : ch->value;
     s.n = ch->point_count;
     s.dataset = static_cast<const PsDataset *>(ch->dataset);
     s.table = QString::fromUtf8(ch->table ? ch->table : "");
@@ -652,7 +688,7 @@ bool PlottingCanvas::setSeriesSamples(int index, const QVector<double> &time,
 
 bool PlottingCanvas::replaceChannel(const QString &oldName, const PsChannelInfo *ch)
 {
-    if (!ch || ch->point_count < 2 || !ch->time || !ch->value)
+    if (!ch || ch->point_count < 2 || (!typedChannel(ch) && (!ch->time || !ch->value)))
         return false;
     for (Series &s : m_series)
     {
@@ -661,8 +697,8 @@ bool PlottingCanvas::replaceChannel(const QString &oldName, const PsChannelInfo 
         s.name = QString::fromUtf8(ch->name);
         s.label = m_inputSrcAlias.isEmpty() ? s.name : m_inputSrcAlias + QStringLiteral(" · ") + s.name;
         s.unit = QString::fromUtf8(ch->unit ? ch->unit : "");
-        s.t = ch->time;
-        s.v = ch->value;
+        s.t = typedChannel(ch) ? nullptr : ch->time;
+        s.v = typedChannel(ch) ? nullptr : ch->value;
         s.n = ch->point_count;
         m_kernelBacked = true;
         m_autoY = true;
@@ -734,8 +770,8 @@ void PlottingCanvas::ensureTimeRange()
     {
         if (s.count() < 2)
             continue;
-        const double a = s.time()[0] - s.offsetSec;
-        const double b = s.time()[s.count() - 1] - s.offsetSec;
+        const double a = s.timeAt(0) - s.offsetSec;
+        const double b = s.timeAt(s.count() - 1) - s.offsetSec;
         if (!init) { m_t0 = a; m_t1 = b; init = true; }
         else { m_t0 = std::min(m_t0, a); m_t1 = std::max(m_t1, b); }
     }
@@ -746,7 +782,7 @@ void PlottingCanvas::ensureTimeRange()
         {
             if (s.count() == 0)
                 continue;
-            latest = std::max(latest, s.time()[s.count() - 1] - s.offsetSec);
+            latest = std::max(latest, s.timeAt(s.count() - 1) - s.offsetSec);
         }
         m_t1 = latest;
         m_t0 = latest - m_liveWindow;
@@ -1209,7 +1245,7 @@ void PlottingCanvas::paintGauge(QPainter &p, const QRectF &plot, const QFontMetr
             continue;
         for (quint32 i = 0; i < s.count(); ++i)
         {
-            const double x = s.value()[i];
+            const double x = s.valueAt(i);
             if (!std::isfinite(x))
                 continue;
             lo = std::min(lo, x);
@@ -1334,7 +1370,7 @@ void PlottingCanvas::paintSurface3D(QPainter &p, const QRectF &plot, const QFont
         ids.append(i);
         for (quint32 k = 0; k < s.count(); ++k)
         {
-            const double v = s.value()[k];
+            const double v = s.valueAt(k);
             if (!std::isfinite(v))
                 continue;
             if (!init) { lo = hi = v; init = true; }
@@ -1371,8 +1407,8 @@ void PlottingCanvas::paintSurface3D(QPainter &p, const QRectF &plot, const QFont
         const quint32 step = qMax<quint32>(1, cnt / 400);
         for (quint32 i = 0; i < cnt; i += step)
         {
-            const double t = (s.time()[i] - s.offsetSec - m_t0) / std::max(1e-12, m_t1 - m_t0);
-            const double v = s.value()[i];
+            const double t = (s.timeAt(i) - s.offsetSec - m_t0) / std::max(1e-12, m_t1 - m_t0);
+            const double v = s.valueAt(i);
             if (!std::isfinite(v) || t < 0 || t > 1)
                 continue;
             poly.append(QPointF(x0 + w * t + z * 0.5,
@@ -1556,23 +1592,23 @@ double PlottingCanvas::snapTimeToSample(double t, bool force) const
     double bestDist = force ? 1e300 : tol;
     for (const Series &s : m_series)
     {
-        if (!s.visible || s.count() < 1 || !s.time())
+        if (!s.visible || s.count() < 1 || (!s.typed() && !s.time()))
             continue;
         const double rawT = t + s.offsetSec;
         quint32 lo = 0, hi = s.count();
         while (lo < hi)
         {
             const quint32 mid = (lo + hi) / 2;
-            if (s.time()[mid] < rawT)
+            if (s.timeAt(mid) < rawT)
                 lo = mid + 1;
             else
                 hi = mid;
         }
         for (quint32 idx : {lo, lo > 0 ? lo - 1 : lo})
         {
-            if (idx >= s.count() || !std::isfinite(s.time()[idx]))
+            if (idx >= s.count() || !std::isfinite(s.timeAt(idx)))
                 continue;
-            const double dt = s.time()[idx] - s.offsetSec;
+            const double dt = s.timeAt(idx) - s.offsetSec;
             if (qAbs(dt - t) <= bestDist)
             {
                 bestDist = qAbs(dt - t);
@@ -1805,8 +1841,8 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         {
             p.setRenderHint(QPainter::Antialiasing, true);
             for (quint32 i = 0; i < s.count(); ++i)
-                drawMarker(p, QPointF(toX(s.time()[i] - s.offsetSec),
-                                      toY(s.value()[i], s.axis)),
+                drawMarker(p, QPointF(toX(s.timeAt(i) - s.offsetSec),
+                                      toY(s.valueAt(i), s.axis)),
                            s.marker, s.markerSize, s.color);
             p.setRenderHint(QPainter::Antialiasing, false);
         }
@@ -2260,10 +2296,10 @@ void PlottingCanvas::exportCsv()
             continue;
         for (quint32 i = 0; i < s.count(); ++i)
         {
-            const double t = s.time()[i] - s.offsetSec;
+            const double t = s.timeAt(i) - s.offsetSec;
             if (t < m_t0 || t > m_t1)
                 continue;
-            const double v = s.value()[i];
+            const double v = s.valueAt(i);
             if (!std::isfinite(v))
                 continue;
             ts << QString::number(t, 'g', 10) << ',' << s.label.section(QStringLiteral(" · "), 0, 0)
@@ -2279,14 +2315,14 @@ double PlottingCanvas::sampleAt(const Series &s, double displayT, bool *ok) cons
     if (ok)
         *ok = false;
     const quint32 n = s.count();
-    if (!n || !s.time() || !s.value())
+    if (!n || (!s.typed() && (!s.time() || !s.value())))
         return 0.0;
     const double rawT = displayT + s.offsetSec;
     quint32 lo = 0, hi = n;
     while (lo < hi)
     {
         const quint32 mid = (lo + hi) / 2;
-        if (s.time()[mid] < rawT)
+        if (s.timeAt(mid) < rawT)
             lo = mid + 1;
         else
             hi = mid;
@@ -2294,9 +2330,9 @@ double PlottingCanvas::sampleAt(const Series &s, double displayT, bool *ok) cons
     quint32 idx = lo;
     if (idx >= n)
         idx = n - 1;
-    else if (idx > 0 && qAbs(s.time()[idx - 1] - rawT) <= qAbs(s.time()[idx] - rawT))
+    else if (idx > 0 && qAbs(s.timeAt(idx - 1) - rawT) <= qAbs(s.timeAt(idx) - rawT))
         --idx;
-    const double v = s.value()[idx];
+    const double v = s.valueAt(idx);
     if (!std::isfinite(v))
         return 0.0;
     if (ok)
@@ -3118,8 +3154,8 @@ void PlottingCanvas::restoreState(const QJsonObject &o, const QHash<QString, con
         s.markerSize = so.value(QStringLiteral("markerSize")).toInt(5);
         s.visible = so.value(QStringLiteral("visible")).toBool(true);
         s.offsetSec = so.value(QStringLiteral("offset")).toDouble(0.0);
-        s.t = ch->time;
-        s.v = ch->value;
+        s.t = typedChannel(ch) ? nullptr : ch->time;
+        s.v = typedChannel(ch) ? nullptr : ch->value;
         s.n = ch->point_count;
         s.srcPath = srcPath;
         m_series.append(s);

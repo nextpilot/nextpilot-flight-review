@@ -78,9 +78,8 @@ pub struct PsDataset {
     infos: Vec<PsChannelInfo>,
     names: Vec<CString>,
     units: Vec<CString>,
-    // typed 表的 f64 绘图视图：每表一份共享时间轴 + 每列一份值。
+    // typed 表只保留每表一份共享 f64 时间轴；列值不再复制 f64，走 ps_dataset_value_at。
     typed_times: Vec<Vec<f64>>,
-    typed_values: Vec<Vec<Vec<f64>>>,
     typed_names: Vec<CString>,
     typed_units: Vec<CString>,
     typed_tables: Vec<CString>,
@@ -97,7 +96,6 @@ impl PsDataset {
             names: Vec::new(),
             units: Vec::new(),
             typed_times: Vec::new(),
-            typed_values: Vec::new(),
             typed_names: Vec::new(),
             typed_units: Vec::new(),
             typed_tables: Vec::new(),
@@ -110,9 +108,8 @@ impl PsDataset {
         self.names = self.data.channels.iter().map(|c| CString::new(c.name.as_str()).unwrap_or_default()).collect();
         self.units = self.data.channels.iter().map(|c| CString::new(c.unit.as_str()).unwrap_or_default()).collect();
 
-        // typed 表补一份共享时间轴 + 每列 f64 视图；Canvas 迁到 typed/LOD 前仍可绘图。
+        // typed 表只补一份共享 f64 时间轴，供旧 UI 读 point_count/时间；列值不再复制。
         self.typed_times.clear();
-        self.typed_values.clear();
         self.typed_names.clear();
         self.typed_units.clear();
         self.typed_tables.clear();
@@ -123,13 +120,7 @@ impl PsDataset {
             for &t in table.time_us.iter() {
                 time.push(t as f64 * 1e-6);
             }
-            let mut cols = Vec::with_capacity(table.columns.len());
             for col in &table.columns {
-                let mut values = Vec::with_capacity(rows);
-                for row in 0..rows {
-                    values.push(col.value_as_f64(row).unwrap_or(f64::NAN));
-                }
-                cols.push(values);
                 self.typed_names.push(CString::new(format!("{}.{}", table.name, col.name)).unwrap_or_default());
                 let unit = CString::new(col.unit.as_str()).unwrap_or_default();
                 self.typed_units.push(unit);
@@ -137,7 +128,6 @@ impl PsDataset {
                 self.typed_columns.push(CString::new(col.name.as_str()).unwrap_or_default());
             }
             self.typed_times.push(time);
-            self.typed_values.push(cols);
         }
 
         self.infos = self.data.channels.iter().enumerate().map(|(i, c)| PsChannelInfo {
@@ -153,13 +143,13 @@ impl PsDataset {
         }).collect();
         let mut typed_infos = Vec::new();
         for (ti, table) in self.typed.tables.iter().enumerate() {
-            for ci in 0..table.columns.len() {
+            for _ in 0..table.columns.len() {
                 typed_infos.push(PsChannelInfo {
                     name: self.typed_names[typed_infos.len()].as_ptr(),
                     unit: self.typed_units[typed_infos.len()].as_ptr(),
                     point_count: table.row_count() as u32,
                     time: self.typed_times[ti].as_ptr(),
-                    value: self.typed_values[ti][ci].as_ptr(),
+                    value: std::ptr::null(),
                     table: self.typed_tables[typed_infos.len()].as_ptr(),
                     column: self.typed_columns[typed_infos.len()].as_ptr(),
                     dataset: self as *const PsDataset as *const std::ffi::c_void,
@@ -1692,3 +1682,73 @@ mod tests {
 }
 
 
+
+/// typed 表按行取一个标量值。返回 0 成功，1 越界，2 该行为 null。
+/// 时间输出为秒，值输出为 f64（原类型在表内仍按 typed 存储）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_value_at(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    column: *const c_char,
+    row: u64,
+    out_time: *mut f64,
+    out_value: *mut f64,
+) -> i32 {
+    if ds.is_null() || table.is_null() || column.is_null() {
+        return 1;
+    }
+    let ds = &*ds;
+    let tname = CStr::from_ptr(table).to_string_lossy();
+    let cname = CStr::from_ptr(column).to_string_lossy();
+    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
+    let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
+    let idx = row as usize;
+    if idx >= t.row_count() || idx >= c.len() {
+        return 1;
+    }
+    if !out_time.is_null() {
+        *out_time = t.time_us[idx] as f64 * 1e-6;
+    }
+    if !out_value.is_null() {
+        *out_value = c.value_as_f64(idx).unwrap_or(f64::NAN);
+    }
+    if c.is_null(idx) { 2 } else { 0 }
+}
+
+/// typed 表按时间取最近行；t_us 为 UTC 微秒。返回 0 成功，1 空表/找不到。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_value_near(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    column: *const c_char,
+    t_us: i64,
+    out_time: *mut f64,
+    out_value: *mut f64,
+) -> i32 {
+    if ds.is_null() || table.is_null() || column.is_null() {
+        return 1;
+    }
+    let ds = &*ds;
+    let tname = CStr::from_ptr(table).to_string_lossy();
+    let cname = CStr::from_ptr(column).to_string_lossy();
+    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
+    let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
+    if t.time_us.is_empty() {
+        return 1;
+    }
+    let idx = match t.time_us.binary_search(&t_us) {
+        Ok(i) => i,
+        Err(0) => 0,
+        Err(i) if i >= t.time_us.len() => t.time_us.len() - 1,
+        Err(i) => {
+            if (t.time_us[i] - t_us).abs() < (t.time_us[i - 1] - t_us).abs() { i } else { i - 1 }
+        }
+    };
+    if !out_time.is_null() {
+        *out_time = t.time_us[idx] as f64 * 1e-6;
+    }
+    if !out_value.is_null() {
+        *out_value = c.value_as_f64(idx).unwrap_or(f64::NAN);
+    }
+    0
+}

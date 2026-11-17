@@ -189,9 +189,17 @@ private:
         QVector<double> tOwn;      // demo 数据所有权
         QVector<double> vOwn;
 
+        bool typed() const { return dataset && !table.isEmpty() && !column.isEmpty(); }
+        double timeAt(quint32 i) const;
+        double valueAt(quint32 i) const;
         const double *time() const { return t ? t : tOwn.constData(); }
         const double *value() const { return v ? v : vOwn.constData(); }
-        quint32 count() const { return t ? n : static_cast<quint32>(qMin(tOwn.size(), vOwn.size())); }
+        quint32 count() const
+        {
+            if (typed())
+                return n;
+            return t ? n : static_cast<quint32>(qMin(tOwn.size(), vOwn.size()));
+        }
     };
 
     enum AxisZone { NoAxis = 0, XAxis, YAxisLeft, YAxisRight };

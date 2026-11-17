@@ -188,11 +188,11 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
                     for (const PsChannelInfo *ch : src.channels)
                     {
                         if (!ch || ch->point_count < 8) continue;
-                        double lo = ch->value[0], hi = lo;
+                        double lo = ps_channel_value_at(ch, 0), hi = lo;
                         for (uint32_t k = 1; k < ch->point_count; ++k)
                         {
-                            lo = qMin(lo, ch->value[k]);
-                            hi = qMax(hi, ch->value[k]);
+                            lo = qMin(lo, ps_channel_value_at(ch, k));
+                            hi = qMax(hi, ps_channel_value_at(ch, k));
                         }
                         if (hi - lo > 1e-9) pick.append(ch);
                     }

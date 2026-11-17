@@ -34,6 +34,8 @@
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+
+#include <limits>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -586,6 +588,21 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
 }
 
 namespace {
+double channelValueAt(const PsChannelInfo *ch, uint32_t i)
+{
+    if (!ch)
+        return std::numeric_limits<double>::quiet_NaN();
+    if (ch->value)
+        return ch->value[i];
+    if (ch->dataset && ch->table && ch->column)
+    {
+        double t = 0.0, v = std::numeric_limits<double>::quiet_NaN();
+        ps_dataset_value_at(const_cast<PsDataset *>(static_cast<const PsDataset *>(ch->dataset)),
+                            ch->table, ch->column, i, &t, &v);
+        return v;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
 struct FanoutParser
 {
     QString id;
@@ -1390,8 +1407,12 @@ void DataSourceDock::exportActiveCsv()
                                   : 1;
         for (uint32_t i = 0; i < ch->point_count; i += step)
         {
-            ts << QString::number(ch->time[i], 'g', 17) << ',' << alias << ',' << name << ','
-               << QString::number(ch->value[i], 'g', 17) << ',' << unit << '\n';
+            double t = ch->time ? ch->time[i] : 0.0;
+            if (!ch->time && ch->dataset && ch->table && ch->column)
+                ps_dataset_value_at(const_cast<PsDataset *>(static_cast<const PsDataset *>(ch->dataset)),
+                                    ch->table, ch->column, i, &t, nullptr);
+            ts << QString::number(t, 'g', 17) << ',' << alias << ',' << name << ','
+               << QString::number(channelValueAt(ch, i), 'g', 17) << ',' << unit << '\n';
             ++rows;
         }
     }

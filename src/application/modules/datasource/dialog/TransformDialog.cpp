@@ -183,7 +183,7 @@ QWidget *TransformDialog::buildFilterPage()
 
     m_input = new QComboBox;
     for (const PsChannelInfo *ch : m_channels)
-        if (ch->point_count > 1 && ch->time && ch->value)
+        if (ch->point_count > 1 && ch->time)
             m_input->addItem(QString::fromUtf8(ch->name));
     form->addRow(QStringLiteral("输入通道"), m_input);
 
@@ -307,7 +307,8 @@ void TransformDialog::updatePreview()
     const uint32_t n = ch->point_count;
     QVector<double> in_t(n), in_v(n), out_t(n), out_v(n);
     std::copy(ch->time, ch->time + n, in_t.begin());
-    std::copy(ch->value, ch->value + n, in_v.begin());
+    for (uint32_t i = 0; i < n; ++i)
+        in_v[i] = ps_channel_value_at(ch, i);
 
     const QString id = m_filter->currentData().toString();
     const QByteArray json = QJsonDocument(m_paramEditor->params()).toJson(QJsonDocument::Compact);

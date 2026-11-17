@@ -56,6 +56,18 @@ int main(int argc, char **argv)
     // 同一张表的所有列必须共用一份时间轴，不能把时间轴复制到每列。
     assert(channels[0]->time == channels[1]->time);
 
+    // 内核 typed 通道不再保留每列 f64 值副本；取值统一走 ps_dataset_value_at。
+    for (uint32_t i = 0; i < ps_dataset_channel_count(session.dataset()); ++i)
+    {
+        const PsChannelInfo *kch = ps_dataset_channel(session.dataset(), i);
+        assert(kch && kch->value == nullptr && kch->time != nullptr);
+        double t = 0, v = 0;
+        assert(ps_dataset_value_at(session.dataset(), kch->table, kch->column, 0, &t, &v) == 0);
+    }
+    double nt = 0, nv = 0;
+    assert(ps_dataset_value_at(session.dataset(), "imu", "pitch", 1, &nt, &nv) == 2);
+    assert(std::isnan(nv));
+
     // typed 视口 LOD 使用 UTC 微秒；2 像素窗口应能覆盖两行。
     double lod[6] = {0};
     const uint32_t lod_n = ps_dataset_lod_minmax(session.dataset(), "imu", "roll",

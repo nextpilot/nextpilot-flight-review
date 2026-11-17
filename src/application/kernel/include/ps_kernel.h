@@ -125,6 +125,27 @@ uint64_t             ps_dataset_table_rows(PsDataset *ds, const char *table);
 uint32_t             ps_dataset_lod_minmax(PsDataset *ds, const char *table, const char *column,
                                            int64_t t0_us, int64_t t1_us, uint32_t px,
                                            double *out, uint32_t cap);
+/* typed 表按行取值；out_time 为秒，out_value 为 f64 兼容值。返回 0 成功、1 越界、2 null。 */
+int32_t              ps_dataset_value_at(PsDataset *ds, const char *table, const char *column,
+                                         uint64_t row, double *out_time, double *out_value);
+/* typed 表按 UTC 微秒取最近行；返回 0 成功、1 空表/找不到。 */
+int32_t              ps_dataset_value_near(PsDataset *ds, const char *table, const char *column,
+                                           int64_t t_us, double *out_time, double *out_value);
+/* 统一取值入口：旧通道读 f64 视图，typed 列走 ps_dataset_value_at。 */
+static inline double ps_channel_value_at(const PsChannelInfo *ch, uint32_t i)
+{
+    if (!ch)
+        return 0.0;
+    if (ch->value)
+        return ch->value[i];
+    if (ch->dataset && ch->table && ch->column)
+    {
+        double t = 0.0, v = 0.0;
+        ps_dataset_value_at((PsDataset *)ch->dataset, ch->table, ch->column, i, &t, &v);
+        return v;
+    }
+    return 0.0;
+}
 
 /* 绘图前变换：结果作为普通通道写回同一 PsDataset。
  * ps_dataset_apply_filter：input 为通道名，filter_id 为 PJ4 内置算子，

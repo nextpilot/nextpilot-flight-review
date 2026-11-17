@@ -92,12 +92,12 @@ QVector<host::ChannelInfo> HostDataBridge::channels(int sourceId)
         {
             info.t0 = ch->time[0];
             info.t1 = ch->time[ch->point_count - 1];
-            double lo = ch->value[0];
+            double lo = ps_channel_value_at(ch, 0);
             double hi = lo;
             for (uint32_t k = 1; k < ch->point_count; ++k)
             {
-                lo = std::min(lo, ch->value[k]);
-                hi = std::max(hi, ch->value[k]);
+                lo = std::min(lo, ps_channel_value_at(ch, k));
+                hi = std::max(hi, ps_channel_value_at(ch, k));
             }
             info.vMin = lo;
             info.vMax = hi;
@@ -202,7 +202,7 @@ host::Result HostDataBridge::slice(int sourceId, const QString &channel, double 
     for (uint32_t k = i0; k < i1; k += stride)
     {
         t->append(ch->time[k]);
-        v->append(ch->value[k]);
+        v->append(ps_channel_value_at(ch, k));
     }
     return {};
 }
@@ -360,7 +360,7 @@ host::JobHandle HostDataBridge::exportCsv(int sourceId, const QString &path, boo
             const PsChannelInfo *ch = ps_dataset_channel(src->ds, i);
             ts << ',';
             if (ch && r < ch->point_count)
-                ts << QString::number(ch->value[r], 'g', 17);
+                ts << QString::number(ps_channel_value_at(ch, r), 'g', 17);
         }
         ts << '\n';
     }

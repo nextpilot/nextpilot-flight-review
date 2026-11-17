@@ -60,6 +60,26 @@
 #include <QVector>
 #include <QWidget>
 #include "ps_kernel.h"
+
+#include <limits>
+namespace {
+double channelValueAt(const PsChannelInfo *ch, uint32_t i)
+{
+    if (!ch)
+        return std::numeric_limits<double>::quiet_NaN();
+    if (ch->value)
+        return ch->value[i];
+    if (ch->dataset && ch->table && ch->column)
+    {
+        double t = 0.0, v = std::numeric_limits<double>::quiet_NaN();
+        ps_dataset_value_at(const_cast<PsDataset *>(static_cast<const PsDataset *>(ch->dataset)),
+                            ch->table, ch->column, i, &t, &v);
+        return v;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+} // namespace
+
 #include "filter/FilterCatalog.h"
 #include "filter/FilterParamEditor.h"
 
@@ -1123,13 +1143,20 @@ void PlottingSession::editSeriesProps(PlottingCanvas *c, int index)
     if (!op.isEmpty() && ch)
     {
         const quint32 n = ch->point_count;
-        if (n < 2 || !ch->time || !ch->value)
+        if (n < 2 || (!ch->value && !(ch->dataset && ch->table && ch->column)))
             return;
         QVector<double> tt(n), vv(n);
         for (quint32 i = 0; i < n; ++i)
         {
-            tt[i] = ch->time[i] - off;
-            vv[i] = ch->value[i];
+            tt[i] = ch->time ? ch->time[i] : 0.0;
+            vv[i] = channelValueAt(ch, i);
+            if (!ch->time)
+            {
+                double ct = 0.0;
+                ps_dataset_value_at(const_cast<PsDataset *>(static_cast<const PsDataset *>(ch->dataset)),
+                                    ch->table, ch->column, i, &ct, nullptr);
+                tt[i] = ct - off;
+            }
         }
 
         QVector<double> ot(n), ov(n);
