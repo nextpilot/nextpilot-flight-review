@@ -1,11 +1,28 @@
-add_subdirectory(datasource)
-add_subdirectory(analysis)
-add_subdirectory(plotting)
+set(PS_MODULE_TARGETS "" CACHE INTERNAL "启用的业务模块 target" FORCE)
 
-# 脚本子系统：控制台 + 自动化 + 受限 require，见 docs/roadmap/script-automation.md
-add_subdirectory(scripting)
-
-# 协议：协议文档、编辑器、codec 与自定义协议 loader 归模块，不再走内置扩展聚合。
-if(PS_BUILD_CUSTOM_PROTOCOL)
-  add_subdirectory(protocol)
+if(PS_MODULE_DATASOURCE)
+  add_subdirectory(datasource)
+  list(APPEND PS_MODULE_TARGETS ps_application_datasource)
 endif()
+
+if(PS_MODULE_ANALYSIS)
+  add_subdirectory(analysis)
+  list(APPEND PS_MODULE_TARGETS ps_application_analysis)
+endif()
+
+if(PS_MODULE_PLOTTING)
+  add_subdirectory(plotting)
+  list(APPEND PS_MODULE_TARGETS ps_application_plotting)
+endif()
+
+if(PS_MODULE_SCRIPTING)
+  add_subdirectory(scripting)
+  list(APPEND PS_MODULE_TARGETS ps_application_scripting)
+endif()
+
+if(PS_MODULE_PROTOCOL AND PS_BUILD_CUSTOM_PROTOCOL)
+  add_subdirectory(protocol)
+  list(APPEND PS_MODULE_TARGETS ps_application_protocol)
+endif()
+
+set(PS_MODULE_TARGETS "${PS_MODULE_TARGETS}" CACHE INTERNAL "启用的业务模块 target" FORCE)

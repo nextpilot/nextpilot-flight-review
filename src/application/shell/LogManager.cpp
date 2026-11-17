@@ -27,10 +27,10 @@ ps::components::DockContribution LogManager::dockContribution()
 }
 
 LogManager::LogManager(QMainWindow *window)
-    : m_window(window)
+    : m_file(ShellPaths::logPath()), m_window(window)
 {
     QDir().mkpath(ShellPaths::logDir());
-    m_logPath = ShellPaths::logPath();
+    m_logPath = m_file.path();
 }
 
 void LogManager::setStatusBar(QStatusBar *statusBar)
@@ -85,9 +85,5 @@ void LogManager::write(const QString &text, Level level)
 
 void LogManager::appendFile(const QString &line) const
 {
-    QFile file(m_logPath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
-        return;
-    QTextStream out(&file);
-    out << line << '\n';
+    m_file.append(line);
 }

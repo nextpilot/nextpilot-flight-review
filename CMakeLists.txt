@@ -17,6 +17,19 @@ option(PS_ENABLE_LUA  "启用 Lua 5.4 脚本（M2 接）" ON)
 option(PS_BUILD_GNSS "构建 GNSS 内置组件" ON)
 option(PS_BUILD_CUSTOM_PROTOCOL "构建自定义协议内置组件" ON)
 option(PS_BUILD_BENCHMARKS "构建绘图性能基准" OFF)
+
+# 模块开关：关掉后不参与构建，运行期相关能力降级为空状态。
+option(PS_MODULE_DATASOURCE "数据源模块" ON)
+option(PS_MODULE_PLOTTING   "绘图模块"   ON)
+option(PS_MODULE_ANALYSIS   "分析模块"   ON)
+option(PS_MODULE_SCRIPTING  "脚本模块"   ON)
+option(PS_MODULE_PROTOCOL   "协议模块"   ON)
+
+# 内置扩展开关：每个领域可独立裁剪。
+option(PS_BUILTIN_COMMON    "CSV/JSON/binary 通用格式" ON)
+option(PS_BUILTIN_AUTOPILOT "飞控工具箱" ON)
+option(PS_BUILTIN_AUTOMOTIVE "汽车工具箱" ON)
+option(PS_BUILTIN_ROBOTICS  "机器人工具箱" ON)
 set(PS_EXTENSION_DIR "${PROJECT_SOURCE_DIR}/src/extensions/dynamic" CACHE PATH "动态扩展源码目录")
 # 产物目录是随目录布局派生的默认值，不写进 cache：否则目录重构后旧 cache 会把扩展继续投到已废弃路径。
 if(NOT DEFINED PS_EXTENSION_OUTPUT_DIR)

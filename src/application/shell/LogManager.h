@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include "LogService.h"
 #include <QVector>
 
 #include <functional>
@@ -45,6 +46,7 @@ private:
     void write(const QString &text, Level level);
     void appendFile(const QString &line) const;
 
+    ps::runtime::LogService m_file;
     QMainWindow *m_window = nullptr;
     QStatusBar *m_statusBar = nullptr;
     QPlainTextEdit *m_logView = nullptr;

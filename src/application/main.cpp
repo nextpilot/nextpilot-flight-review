@@ -7,10 +7,14 @@
 #include <cstdio>
 
 #include "Component.h"
-#include "DataSourceRegistry.h"
 #include "DynamicExtensionRegistry.h"
 #include "ThemeManager.h"
 #include "SettingsManager.h"
+
+#if defined(PS_MODULE_DATASOURCE)
+#include "DataSourceRegistry.h"
+#include "datasource/HostDataBridge.h"
+#endif
 
 #include "ps_kernel.h"
 #include "MainWindow.h"
@@ -18,8 +22,9 @@
 // --run 走无 UI 数据面
 #include "ExtensionHost.h"
 #include "HostDataService.h"
-#include "datasource/HostDataBridge.h"
+#if defined(PS_MODULE_SCRIPTING)
 #include "scripting/ScriptEngine.h"
+#endif
 
 int main(int argc, char **argv)
 {
@@ -39,7 +44,11 @@ int main(int argc, char **argv)
 
     // 动态扩展：目录扫描归 ExtensionManager，注册归各扩展点。
     ExtensionManager::scanStandardLocations();
+#if defined(PS_MODULE_DATASOURCE)
     QStringList extensionErrors = DataSourceRegistry::instance().registerLoadedExtensions();
+#else
+    QStringList extensionErrors;
+#endif
     extensionErrors += ps::components::registerDynamicExtensions();
     for (const QString &e : extensionErrors)
         qWarning("[extension] %s", qPrintable(e));
@@ -57,6 +66,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
+#if defined(PS_MODULE_SCRIPTING) && defined(PS_MODULE_DATASOURCE)
     // --run <script.lua>：无 UI 跑脚本，退出码即结论（CI 入口）
     const QStringList cliArgs = QCoreApplication::arguments();
     const int runIndex = cliArgs.indexOf(QStringLiteral("--run"));
@@ -100,6 +110,8 @@ int main(int argc, char **argv)
         return 0;
     }
 
+#endif
+
     MainWindow win;
     win.show();
 
@@ -127,8 +139,10 @@ int main(int argc, char **argv)
             ctx.arg = arg;
             if (arg.endsWith(QStringLiteral(".psl"), Qt::CaseInsensitive))
                 win.commands().invoke(QStringLiteral("layout.import"), ctx);
+#if defined(PS_MODULE_DATASOURCE)
             else
                 win.commands().invoke(QStringLiteral("data.openPath"), ctx);
+#endif
         }
     }
     else if (SettingsManager::instance().restoreLayout())

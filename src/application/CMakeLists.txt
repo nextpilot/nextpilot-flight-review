@@ -22,17 +22,21 @@ target_include_directories(plotscope_app PRIVATE
 
 target_link_libraries(plotscope_app PRIVATE
   ps_application_shell
-  ps_application_plotting
-  ps_application_datasource
-  ps_application_analysis
-  ps_application_scripting
+  ${PS_MODULE_TARGETS}
   Qt6::Widgets Qt6::Network Qt6::Svg
   ps_host ps_kernel ps_cache ps_live
 )
 
-if(TARGET ps_application_protocol)
-  target_link_libraries(plotscope_app PRIVATE ps_application_protocol)
-endif()
+foreach(module DATASOURCE PLOTTING ANALYSIS SCRIPTING PROTOCOL)
+  if(PS_MODULE_${module})
+    target_compile_definitions(plotscope_app PRIVATE PS_MODULE_${module}=1)
+  endif()
+endforeach()
+foreach(component COMMON AUTOPILOT AUTOMOTIVE ROBOTICS)
+  if(PS_BUILTIN_${component})
+    target_compile_definitions(plotscope_app PRIVATE PS_BUILTIN_${component}=1)
+  endif()
+endforeach()
 
 if(TARGET ps_builtin_components)
   target_link_libraries(plotscope_app PRIVATE ps_builtin_components)

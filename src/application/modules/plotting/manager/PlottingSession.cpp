@@ -1463,10 +1463,12 @@ void PlottingSession::reloadCanvasSettings() { for (PlottingCanvas *c : findChil
 
 PlottingSession *plottingSession(ps::runtime::ModuleContext &ctx)
 {
-    auto *existing = ctx.window()->findChild<QObject *>(QStringLiteral("ps.plottingSession"));
-    if (existing)
-        return static_cast<PlottingSession *>(existing);
+    if (auto *existing = ctx.services().find<PlottingSession>())
+        return existing;
     auto *c = new PlottingSession(ctx);
     c->setObjectName(QStringLiteral("ps.plottingSession"));
+    c->setParent(ctx.window());
+    c->hide();
+    ctx.services().provide(c);
     return c;
 }

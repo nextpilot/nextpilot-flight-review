@@ -3,7 +3,7 @@
 #include <QDebug>
 #include <QObject>
 #include <QMetaType>
-#include <QSettings>
+#include "SettingsStore.h"
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -60,7 +60,7 @@ public:
     template <typename T>
     T get(const ps::settings::SettingsKey<T> &key) const
     {
-        const QVariant raw = m_settings.value(key.name, QVariant::fromValue(key.defaultValue));
+        const QVariant raw = m_store.value(key.name, QVariant::fromValue(key.defaultValue));
         T out{};
         QString error;
         if (!decode(raw, key.defaultValue, &out, &error))
@@ -224,7 +224,7 @@ private:
         }
     }
 
-    QSettings m_settings;
+    ps::runtime::SettingsStore m_store;
     QMap<QString, QVariant> m_snapshot;
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer *m_debounce = nullptr;

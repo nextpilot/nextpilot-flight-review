@@ -374,9 +374,10 @@ add_executable(test_session_manager unit/test_session_manager.cpp
   ${PROJECT_SOURCE_DIR}/src/application/shell/CommandManager.cpp)
 target_include_directories(test_session_manager PRIVATE ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/shell)
-target_link_libraries(test_session_manager PRIVATE Qt6::Widgets)
+target_link_libraries(test_session_manager PRIVATE Qt6::Widgets ps_runtime)
 set_target_properties(test_session_manager PROPERTIES AUTOMOC ON)
 add_test(NAME session_manager COMMAND test_session_manager)
 set_tests_properties(session_manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -385,9 +386,10 @@ add_executable(test_settings_manager unit/test_settings_manager.cpp
   ${PROJECT_SOURCE_DIR}/src/application/shell/SettingsManager.cpp)
 target_include_directories(test_settings_manager PRIVATE ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/shell)
-target_link_libraries(test_settings_manager PRIVATE Qt6::Widgets)
+target_link_libraries(test_settings_manager PRIVATE Qt6::Widgets ps_runtime)
 set_target_properties(test_settings_manager PROPERTIES AUTOMOC ON)
 add_test(NAME settings_manager COMMAND test_settings_manager)
 set_tests_properties(settings_manager PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -20,8 +20,7 @@ SettingsManager &SettingsManager::instance()
 SettingsManager::SettingsManager()
     // 显式带上 defaultFormat：QSettings(org, app) 在 Windows 上会忽略 defaultFormat 直接落注册表，
     // 显式传才能让测试或宿主把默认格式改成 IniFormat 生效。
-    : m_settings(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("NextPilot"),
-                 QStringLiteral("PlotScope"))
+    : m_store(QStringLiteral("NextPilot"), QStringLiteral("PlotScope"))
 {
     snapshot();
     setupWatchers();
@@ -39,29 +38,29 @@ void SettingsManager::setRestoreLayout(bool value)
 
 QVariant SettingsManager::value(const QString &key, const QVariant &defaultValue) const
 {
-    return m_settings.value(key, defaultValue);
+    return m_store.value(key, defaultValue);
 }
 
 void SettingsManager::setValue(const QString &key, const QVariant &value)
 {
-    const QVariant oldValue = m_settings.value(key);
+    const QVariant oldValue = m_store.value(key);
     if (oldValue.isValid() && oldValue == value)
         return;
-    m_settings.setValue(key, value);
-    if (m_settings.status() != QSettings::NoError)
-        qWarning("settings: write failed for '%s', status=%d", qPrintable(key), int(m_settings.status()));
+    m_store.setValue(key, value);
+    if (m_store.status() != QSettings::NoError)
+        qWarning("settings: write failed for '%s', status=%d", qPrintable(key), int(m_store.status()));
     m_snapshot.insert(key, value);
     emitIfChanged(key, oldValue, value);
 }
 
 void SettingsManager::remove(const QString &key)
 {
-    const QVariant oldValue = m_settings.value(key);
+    const QVariant oldValue = m_store.value(key);
     if (!oldValue.isValid())
         return;
-    m_settings.remove(key);
-    if (m_settings.status() != QSettings::NoError)
-        qWarning("settings: remove failed for '%s', status=%d", qPrintable(key), int(m_settings.status()));
+    m_store.remove(key);
+    if (m_store.status() != QSettings::NoError)
+        qWarning("settings: remove failed for '%s', status=%d", qPrintable(key), int(m_store.status()));
     m_snapshot.remove(key);
     emitIfChanged(key, oldValue, QVariant());
 }
@@ -74,8 +73,8 @@ void SettingsManager::sync()
 void SettingsManager::snapshot()
 {
     m_snapshot.clear();
-    for (const QString &key : m_settings.allKeys())
-        m_snapshot.insert(key, m_settings.value(key));
+    for (const QString &key : m_store.allKeys())
+        m_snapshot.insert(key, m_store.value(key));
 }
 
 void SettingsManager::syncFromDisk()
@@ -83,13 +82,13 @@ void SettingsManager::syncFromDisk()
     if (m_syncing)
         return;
     m_syncing = true;
-    m_settings.sync();
-    if (m_settings.status() != QSettings::NoError)
-        qWarning("settings: sync failed, status=%d", int(m_settings.status()));
+    m_store.sync();
+    if (m_store.status() != QSettings::NoError)
+        qWarning("settings: sync failed, status=%d", int(m_store.status()));
 
     QMap<QString, QVariant> next;
-    for (const QString &key : m_settings.allKeys())
-        next.insert(key, m_settings.value(key));
+    for (const QString &key : m_store.allKeys())
+        next.insert(key, m_store.value(key));
 
     for (auto it = m_snapshot.cbegin(); it != m_snapshot.cend(); ++it)
     {
@@ -107,7 +106,7 @@ void SettingsManager::syncFromDisk()
 
 void SettingsManager::setupWatchers()
 {
-    const QString fileName = m_settings.fileName();
+    const QString fileName = m_store.fileName();
     // Windows 注册表后端的 fileName() 形如 \HKEY_CURRENT_USER\Software\...，看着像绝对路径但没有斜杠，
     // 只有文件后端才挂 watcher，其余后端退回低频轮询。
     const bool registryPath =
@@ -171,9 +170,9 @@ QMetaObject::Connection SettingsManager::onChanged(
 QJsonObject SettingsManager::toJson() const
 {
     QJsonObject root;
-    for (const QString &key : m_settings.allKeys())
+    for (const QString &key : m_store.allKeys())
     {
-        const QVariant value = m_settings.value(key);
+        const QVariant value = m_store.value(key);
         if (value.metaType().id() == QMetaType::QByteArray)
             root.insert(key, QString::fromLatin1(value.toByteArray().toBase64()));
         else
@@ -185,9 +184,9 @@ QJsonObject SettingsManager::toJson() const
 QString SettingsManager::toYaml() const
 {
     QString out = QStringLiteral("# PlotScope settings\n");
-    for (const QString &key : m_settings.allKeys())
+    for (const QString &key : m_store.allKeys())
     {
-        const QVariant value = m_settings.value(key);
+        const QVariant value = m_store.value(key);
         QString text;
         if (value.metaType().id() == QMetaType::QByteArray)
             text = QStringLiteral("\"%1\"").arg(QString::fromLatin1(value.toByteArray().toBase64()));

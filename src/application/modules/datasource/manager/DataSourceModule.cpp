@@ -37,11 +37,13 @@ ComponentManifest DataSourceComponent::manifest() const
 
 DataSourceSession *dataSourceSession(ps::runtime::ModuleContext &ctx)
 {
-    auto *existing = ctx.window()->findChild<QObject *>(QStringLiteral("ps.dataSourceSession"));
-    if (existing)
-        return static_cast<DataSourceSession *>(existing);
+    if (auto *existing = ctx.services().find<DataSourceSession>())
+        return existing;
     auto *c = new DataSourceSession(ctx);
     c->setObjectName(QStringLiteral("ps.dataSourceSession"));
+    c->setParent(ctx.window());
+    c->hide();
+    ctx.services().provide(c);
     return c;
 }
 
@@ -76,66 +78,33 @@ void DataSourceComponent::contribute(Registry &registry, HostContext &)
     registry.addStatusChip(StatusChipContribution{QStringLiteral("source"), QStringLiteral("无数据"), 0});
     registry.addModuleHook([](ps::runtime::ModuleContext &ctx) {
         dataSourceSession(ctx);
-        ps::bridge::setSourceViewsProvider(&ctx, [](ps::runtime::ModuleContext *m) {
+        auto &services = ps::bridge::services();
+        services.sourceViews = [](ps::runtime::ModuleContext *m) {
             QVector<ps::bridge::SourceView> out;
             for (const DataSource &src : dataSourceSession(*m)->sources())
                 out.append(ps::bridge::SourceView{src.config.id, src.config.path, src.config.name, src.config.alias, src.channels});
             return out;
-        });
+        };
+        services.sourceChannels = [](ps::runtime::ModuleContext *m) {
+            return dataSourceSession(*m)->channels();
+        };
+        services.timeMarkers = [](ps::runtime::ModuleContext *m) {
+            return dataSourceSession(*m)->timeMarkers();
+        };
+        services.addTimeMarker = [](ps::runtime::ModuleContext *m, double t, const QString &label, bool prompt) {
+            dataSourceSession(*m)->addTimeMarker(t, label, prompt);
+        };
+        services.removeTimeMarker = [](ps::runtime::ModuleContext *m, const QString &id) {
+            dataSourceSession(*m)->removeTimeMarker(id);
+        };
+        services.moveTimeMarker = [](ps::runtime::ModuleContext *m, const QString &id, double to) {
+            dataSourceSession(*m)->moveTimeMarker(id, to);
+        };
+        services.renameTimeMarker = [](ps::runtime::ModuleContext *m, const QString &id, const QString &label) {
+            dataSourceSession(*m)->renameTimeMarker(id, label);
+        };
     });
 }
 
-
 } // namespace ps::components
 
-namespace ps::bridge
-{
-namespace
-{
-QHash<ps::runtime::ModuleContext *, SourceViewsProvider> &providers()
-{
-    static QHash<ps::runtime::ModuleContext *, SourceViewsProvider> p;
-    return p;
-}
-} // namespace
-
-void setSourceViewsProvider(ps::runtime::ModuleContext *ctx, SourceViewsProvider provider)
-{
-    if (!ctx)
-        return;
-    if (provider)
-        providers().insert(ctx, std::move(provider));
-    else
-        providers().remove(ctx);
-}
-
-QVector<SourceView> sourceViews(ps::runtime::ModuleContext *ctx)
-{
-    const auto it = providers().constFind(ctx);
-    return it == providers().constEnd() ? QVector<SourceView>{} : it.value()(ctx);
-}
-QVector<const PsChannelInfo *> sourceChannels(ps::runtime::ModuleContext *ctx)
-{
-    return ps::components::dataSourceChannels(ctx);
-}
-QVector<ps::TimeBookmark> timeMarkers(ps::runtime::ModuleContext *ctx)
-{
-    return ps::components::dataSourceTimeMarkers(ctx);
-}
-void addTimeMarker(ps::runtime::ModuleContext *ctx, double t, const QString &label, bool prompt)
-{
-    ps::components::addDataSourceTimeMarker(ctx, t, label, prompt);
-}
-void removeTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id)
-{
-    ps::components::removeDataSourceTimeMarker(ctx, id);
-}
-void moveTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id, double to)
-{
-    ps::components::moveDataSourceTimeMarker(ctx, id, to);
-}
-void renameTimeMarker(ps::runtime::ModuleContext *ctx, const QString &id, const QString &label)
-{
-    ps::components::renameDataSourceTimeMarker(ctx, id, label);
-}
-} // namespace ps::bridge

@@ -35,6 +35,47 @@ struct SourceView
 };
 
 using SourceViewsProvider = std::function<QVector<SourceView>(ps::runtime::ModuleContext *)>;
+
+// 跨模块能力的运行期注册表。默认实现全部为空：模块不存在时调用方拿到空结果，
+// 不再因为缺少另一个模块而链接失败。
+struct Services
+{
+    SourceViewsProvider sourceViews;
+    std::function<QVector<const PsChannelInfo *>(ps::runtime::ModuleContext *)> sourceChannels;
+    std::function<QVector<ps::TimeBookmark>(ps::runtime::ModuleContext *)> timeMarkers;
+    std::function<void(ps::runtime::ModuleContext *, double, const QString &, bool)> addTimeMarker;
+    std::function<void(ps::runtime::ModuleContext *, const QString &)> removeTimeMarker;
+    std::function<void(ps::runtime::ModuleContext *, const QString &, double)> moveTimeMarker;
+    std::function<void(ps::runtime::ModuleContext *, const QString &, const QString &)> renameTimeMarker;
+
+    std::function<void(ps::runtime::ModuleContext *)> newPage;
+    std::function<QVector<PlottingCanvas *>(ps::runtime::ModuleContext *)> pageCanvases;
+    std::function<PlottingCanvas *(ps::runtime::ModuleContext *)> currentCanvas;
+    std::function<QJsonObject(ps::runtime::ModuleContext *, QWidget *)> pageState;
+    std::function<QWidget *(ps::runtime::ModuleContext *, const QJsonObject &)> buildPage;
+    std::function<void(ps::runtime::ModuleContext *, PlottingCanvas *)> refreshPropTree;
+    std::function<void(ps::runtime::ModuleContext *)> applyTimeMarkers;
+    std::function<QVector<PlottingCanvas *>(ps::runtime::ModuleContext *)> allCanvases;
+    std::function<QVector<QPair<QString, QString>>(ps::runtime::ModuleContext *)> plottedChannelColors;
+    std::function<void(PlottingCanvas *, const PsChannelInfo *)> canvasAddChannel;
+    std::function<void(PlottingCanvas *, const PsChannelInfo *, int, const QString &, const QString &, double)> canvasAddChannelEx;
+    std::function<bool(PlottingCanvas *, const QString &, const PsChannelInfo *)> canvasReplaceChannel;
+    std::function<void(PlottingCanvas *, const QVector<const PsChannelInfo *> &)> canvasSetChannels;
+    std::function<void(PlottingCanvas *, const QString &)> canvasSetTitle;
+    std::function<void(PlottingCanvas *, int, const QString &, const QString &, double)> canvasSetInputSource;
+    std::function<void(PlottingCanvas *, const QString &, double, bool)> canvasSetSourceOffset;
+    std::function<void(PlottingCanvas *, const QString &)> canvasRemoveChannel;
+    std::function<void(PlottingCanvas *, const QString &)> canvasRemoveChannelsFromSource;
+    std::function<void(PlottingCanvas *, const QString &, const QString &)> canvasRenameSource;
+    std::function<void(PlottingCanvas *)> canvasFollowLatest;
+    std::function<void(PlottingCanvas *)> canvasNotifyActivated;
+    std::function<void(PlottingCanvas *)> canvasUpdate;
+    std::function<bool(PlottingCanvas *)> canvasHasData;
+    std::function<void(PlottingCanvas *, bool, double)> canvasSetFollowLive;
+};
+
+Services &services();
+
 void setSourceViewsProvider(ps::runtime::ModuleContext *ctx, SourceViewsProvider provider);
 QVector<SourceView> sourceViews(ps::runtime::ModuleContext *ctx);
 QVector<const PsChannelInfo *> sourceChannels(ps::runtime::ModuleContext *ctx);

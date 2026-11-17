@@ -1,5 +1,6 @@
 #include "plotting/PlottingModule.h"
 #include "ModuleContext.h"
+#include "ModuleBridge.h"
 #include "PlottingSession.h"
 #include "PlottingCanvas.h"
 #include "PlottingRibbon.h"
@@ -40,6 +41,78 @@ void PlottingComponent::contribute(Registry &registry, HostContext &)
     registerPlottingContributions(registry);
     registry.addStatusChip(StatusChipContribution{QStringLiteral("lod"), QStringLiteral("LOD: Rust"), 1});
     registry.addModuleHook([](ps::runtime::ModuleContext &ctx) {
+        auto &services = ps::bridge::services();
+        services.newPage = [](ps::runtime::ModuleContext *m) { ps::plotting::newPage(m); };
+        services.pageCanvases = [](ps::runtime::ModuleContext *m) { return ps::plotting::pageCanvases(m); };
+        services.currentCanvas = [](ps::runtime::ModuleContext *m) { return ps::plotting::currentCanvas(m); };
+        services.pageState = [](ps::runtime::ModuleContext *m, QWidget *page) { return ps::plotting::pageState(m, page); };
+        services.buildPage = [](ps::runtime::ModuleContext *m, const QJsonObject &o) { return ps::plotting::buildPage(m, o); };
+        services.refreshPropTree = [](ps::runtime::ModuleContext *m, PlottingCanvas *c) { ps::plotting::refreshPropTree(m, c); };
+        services.applyTimeMarkers = [](ps::runtime::ModuleContext *m) { ps::plotting::applyTimeMarkers(m); };
+        services.allCanvases = [](ps::runtime::ModuleContext *m) {
+            QVector<PlottingCanvas *> out;
+            if (!m || !m->pages())
+                return out;
+            for (int i = 0; i < m->pages()->count(); ++i)
+                if (QWidget *page = m->pages()->widget(i))
+                    for (PlottingCanvas *c : page->findChildren<PlottingCanvas *>())
+                        out.append(c);
+            return out;
+        };
+        services.canvasAddChannel = [](PlottingCanvas *c, const PsChannelInfo *ch) { if (c) c->addChannel(ch); };
+        services.canvasAddChannelEx = [](PlottingCanvas *c, const PsChannelInfo *ch, int srcId,
+                                         const QString &path, const QString &alias, double offsetSec) {
+            if (c) c->addChannelEx(ch, srcId, path, alias, offsetSec);
+        };
+        services.canvasReplaceChannel = [](PlottingCanvas *c, const QString &oldName, const PsChannelInfo *ch) {
+            return c && c->replaceChannel(oldName, ch);
+        };
+        services.canvasSetChannels = [](PlottingCanvas *c, const QVector<const PsChannelInfo *> &channels) {
+            if (c) c->setChannels(channels);
+        };
+        services.canvasSetTitle = [](PlottingCanvas *c, const QString &title) { if (c) c->setTitle(title); };
+        services.canvasSetInputSource = [](PlottingCanvas *c, int id, const QString &path,
+                                           const QString &alias, double offsetSec) {
+            if (c) c->setInputSource(id, path, alias, offsetSec);
+        };
+        services.canvasSetSourceOffset = [](PlottingCanvas *c, const QString &path, double offsetSec, bool refit) {
+            if (c) c->setSourceOffset(path, offsetSec, refit);
+        };
+        services.canvasRemoveChannel = [](PlottingCanvas *c, const QString &name) { if (c) c->removeChannel(name); };
+        services.canvasRemoveChannelsFromSource = [](PlottingCanvas *c, const QString &path) {
+            if (c) c->removeChannelsFromSource(path);
+        };
+        services.canvasRenameSource = [](PlottingCanvas *c, const QString &path, const QString &alias) {
+            if (c) c->renameSource(path, alias);
+        };
+        services.canvasFollowLatest = [](PlottingCanvas *c) { if (c) c->followLatest(); };
+        services.canvasNotifyActivated = [](PlottingCanvas *c) { if (c) c->notifyActivated(); };
+        services.canvasUpdate = [](PlottingCanvas *c) { if (c) c->update(); };
+        services.canvasHasData = [](PlottingCanvas *c) { return c && c->hasData(); };
+        services.canvasSetFollowLive = [](PlottingCanvas *c, bool on, double windowSec) {
+            if (c) c->setFollowLive(on, windowSec);
+        };
+        services.plottedChannelColors = [](ps::runtime::ModuleContext *m) {
+            QVector<QPair<QString, QString>> out;
+            if (!m)
+                return out;
+            for (PlottingCanvas *c : ps::plotting::pageCanvases(m))
+                for (int i = 0;; ++i)
+                {
+                    const QJsonObject st = c->seriesState(i);
+                    if (st.isEmpty())
+                        break;
+                    const QString name = st.value(QStringLiteral("name")).toString();
+                    if (name.isEmpty() || st.value(QStringLiteral("srcPath")).toString().isEmpty())
+                        continue;
+                    bool dup = false;
+                    for (const auto &p : out)
+                        if (p.first == name) { dup = true; break; }
+                    if (!dup)
+                        out.append({name, st.value(QStringLiteral("color")).toString()});
+                }
+            return out;
+        };
         ps::plotting::createPages(&ctx);
     });
 }
@@ -84,72 +157,3 @@ void removeSourceFromCanvases(ps::runtime::ModuleContext *ctx, const QString &p)
 void addChannels(ps::runtime::ModuleContext *ctx, const QVector<const PsChannelInfo *> &c) { plottingSession(*ctx)->addChannels(c); }
 }
 
-namespace ps::bridge
-{
-void newPage(ps::runtime::ModuleContext *ctx) { ps::plotting::newPage(ctx); }
-QVector<PlottingCanvas *> pageCanvases(ps::runtime::ModuleContext *ctx) { return ps::plotting::pageCanvases(ctx); }
-PlottingCanvas *currentCanvas(ps::runtime::ModuleContext *ctx) { return ps::plotting::currentCanvas(ctx); }
-QJsonObject pageState(ps::runtime::ModuleContext *ctx, QWidget *page) { return ps::plotting::pageState(ctx, page); }
-QWidget *buildPage(ps::runtime::ModuleContext *ctx, const QJsonObject &o) { return ps::plotting::buildPage(ctx, o); }
-void refreshPropTree(ps::runtime::ModuleContext *ctx, PlottingCanvas *active) { ps::plotting::refreshPropTree(ctx, active); }
-void applyTimeMarkers(ps::runtime::ModuleContext *ctx) { ps::plotting::applyTimeMarkers(ctx); }
-QVector<PlottingCanvas *> allCanvases(ps::runtime::ModuleContext *ctx)
-{
-    QVector<PlottingCanvas *> out;
-    if (!ctx || !ctx->pages())
-        return out;
-    for (int i = 0; i < ctx->pages()->count(); ++i)
-        if (QWidget *page = ctx->pages()->widget(i))
-            for (PlottingCanvas *c : page->findChildren<PlottingCanvas *>())
-                out.append(c);
-    return out;
-}
-void canvasAddChannel(PlottingCanvas *c, const PsChannelInfo *ch) { if (c) c->addChannel(ch); }
-void canvasAddChannelEx(PlottingCanvas *c, const PsChannelInfo *ch, int srcId,
-                        const QString &path, const QString &alias, double offsetSec)
-{ if (c) c->addChannelEx(ch, srcId, path, alias, offsetSec); }
-bool canvasReplaceChannel(PlottingCanvas *c, const QString &oldName, const PsChannelInfo *ch)
-{ return c && c->replaceChannel(oldName, ch); }
-void canvasSetChannels(PlottingCanvas *c, const QVector<const PsChannelInfo *> &channels)
-{ if (c) c->setChannels(channels); }
-void canvasSetTitle(PlottingCanvas *c, const QString &title) { if (c) c->setTitle(title); }
-void canvasSetInputSource(PlottingCanvas *c, int id, const QString &path,
-                          const QString &alias, double offsetSec)
-{ if (c) c->setInputSource(id, path, alias, offsetSec); }
-void canvasSetSourceOffset(PlottingCanvas *c, const QString &path, double offsetSec, bool refit)
-{ if (c) c->setSourceOffset(path, offsetSec, refit); }
-void canvasRemoveChannel(PlottingCanvas *c, const QString &name) { if (c) c->removeChannel(name); }
-void canvasRemoveChannelsFromSource(PlottingCanvas *c, const QString &path)
-{ if (c) c->removeChannelsFromSource(path); }
-void canvasRenameSource(PlottingCanvas *c, const QString &path, const QString &alias)
-{ if (c) c->renameSource(path, alias); }
-void canvasFollowLatest(PlottingCanvas *c) { if (c) c->followLatest(); }
-void canvasNotifyActivated(PlottingCanvas *c) { if (c) c->notifyActivated(); }
-void canvasUpdate(PlottingCanvas *c) { if (c) c->update(); }
-bool canvasHasData(PlottingCanvas *c) { return c && c->hasData(); }
-void canvasSetFollowLive(PlottingCanvas *c, bool on, double windowSec)
-{ if (c) c->setFollowLive(on, windowSec); }
-QVector<QPair<QString, QString>> plottedChannelColors(ps::runtime::ModuleContext *ctx)
-{
-    QVector<QPair<QString, QString>> out;
-    if (!ctx)
-        return out;
-    for (PlottingCanvas *c : allCanvases(ctx))
-        for (int i = 0;; ++i)
-        {
-            const QJsonObject st = c->seriesState(i);
-            if (st.isEmpty())
-                break;
-            const QString name = st.value(QStringLiteral("name")).toString();
-            if (name.isEmpty() || st.value(QStringLiteral("srcPath")).toString().isEmpty())
-                continue;
-            bool dup = false;
-            for (const auto &p : out)
-                if (p.first == name) { dup = true; break; }
-            if (!dup)
-                out.append({name, st.value(QStringLiteral("color")).toString()});
-        }
-    return out;
-}
-
-} // namespace ps::bridge
