@@ -36,13 +36,6 @@ QString safeName(QString value)
     return value;
 }
 
-std::string csvField(std::string value)
-{
-    for (char &c : value)
-        if (c == ',' || c == '\n' || c == '\r')
-            c = '_';
-    return value;
-}
 
 std::string jsonNumber(double value)
 {
@@ -73,8 +66,6 @@ StreamRecorder::Format StreamRecorder::parseFormat(const QString &id, Format fal
     if (value == QLatin1String("raw") || value == QLatin1String("psraw") ||
         value == QLatin1String("psraw1"))
         return Format::Raw;
-    if (value == QLatin1String("csv"))
-        return Format::Csv;
     if (value == QLatin1String("mcap"))
         return Format::Mcap;
     return fallback;
@@ -85,7 +76,6 @@ QString StreamRecorder::formatId(Format format)
     switch (format)
     {
     case Format::Raw: return QStringLiteral("raw");
-    case Format::Csv: return QStringLiteral("csv");
     case Format::Mcap: break;
     }
     return QStringLiteral("mcap");
@@ -96,7 +86,6 @@ QString StreamRecorder::formatLabel(Format format)
     switch (format)
     {
     case Format::Raw: return QStringLiteral("RAW（原始字节）");
-    case Format::Csv: return QStringLiteral("CSV（解码通道）");
     case Format::Mcap: break;
     }
     return QStringLiteral("MCAP（解析后）");
@@ -131,7 +120,6 @@ bool StreamRecorder::start(Format format, const QString &extensionId, const QStr
     QString ext;
     switch (format)
     {
-    case Format::Csv: ext = QStringLiteral("csv"); break;
     case Format::Raw: ext = QStringLiteral("psraw"); break;
     case Format::Mcap: ext = QStringLiteral("mcap"); break;
     }
@@ -145,18 +133,6 @@ bool StreamRecorder::start(Format format, const QString &extensionId, const QStr
     bool opened = false;
     switch (format)
     {
-    case Format::Csv:
-        m_csv.open(m_path.toStdString(), std::ios::binary | std::ios::out | std::ios::trunc);
-        if (m_csv)
-        {
-            m_csv << "time,channel,value\n";
-            opened = true;
-        }
-        else
-        {
-            openError = "无法创建 CSV 文件";
-        }
-        break;
     case Format::Raw:
     {
         ps::capture::Header header;
@@ -324,34 +300,10 @@ bool StreamRecorder::writeItem(const Item &item)
 {
     switch (m_format)
     {
-    case Format::Csv: return writeCsv(item);
     case Format::Raw: return writeRawItem(item);
     case Format::Mcap: return writeMcap(item);
     }
     return false;
-}
-
-bool StreamRecorder::writeCsv(const Item &item)
-{
-    if (item.kind != Item::Kind::Channels)
-        return true;
-    if (!m_csv.is_open())
-    {
-        setError(QStringLiteral("CSV 文件未打开"));
-        return false;
-    }
-    m_csv.imbue(std::locale::classic());
-    for (size_t i = 0; i < item.time.size() && i < item.value.size(); ++i)
-    {
-        m_csv << std::setprecision(17) << item.time[i] << ','
-              << csvField(item.name) << ',' << std::setprecision(17) << item.value[i] << '\n';
-    }
-    if (!m_csv)
-    {
-        setError(QStringLiteral("写 CSV 记录失败"));
-        return false;
-    }
-    return true;
 }
 
 bool StreamRecorder::writeMcap(const Item &item)
@@ -422,13 +374,6 @@ void StreamRecorder::closeWriter()
     std::string err;
     switch (m_format)
     {
-    case Format::Csv:
-        if (m_csv.is_open())
-        {
-            m_csv.flush();
-            m_csv.close();
-        }
-        break;
     case Format::Raw:
         m_raw.close(err);
         break;

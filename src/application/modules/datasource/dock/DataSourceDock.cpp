@@ -34,6 +34,8 @@
 #include <QDrag>
 #include <QDropEvent>
 #include <QFileDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include <cmath>
 #include <cstdio>
@@ -1437,14 +1439,20 @@ void DataSourceDock::exportActiveCsv()
         exportActiveMcap(f, src);
         return;
     }
-    QFile out(f);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
+    QHash<QString, QVector<const PsChannelInfo *>> tables;
+    for (const PsChannelInfo *ch : src->channels)
     {
-        QMessageBox::warning(this, QStringLiteral("导出失败"), out.errorString());
+        if (!ch || ch->point_count == 0)
+            continue;
+        const QString table = ch->table ? QString::fromUtf8(ch->table)
+                                        : QString::fromUtf8(ch->name);
+        tables[table].push_back(ch);
+    }
+    if (tables.isEmpty())
+    {
+        m_ctx.log(QStringLiteral("没有可导出的表"));
         return;
     }
-    QTextStream ts(&out);
-    ts.setEncoding(QStringConverter::Utf8);
     auto esc = [](const QString &v) {
         QString s = v;
         s.replace(QLatin1Char('"'), QStringLiteral("\"\""));
@@ -1452,33 +1460,64 @@ void DataSourceDock::exportActiveCsv()
             ? QStringLiteral("\"%1\"").arg(s) : s;
     };
     const int sampleCap = SettingsManager::instance().get(ps::settings::kExportSampleLimit);
-    ts << "time,source,channel,value,unit\n";
+    const QFileInfo base(f);
     qulonglong rows = 0;
-    const QString alias = esc(src->config.alias);
-    for (const PsChannelInfo *ch : src->channels)
+    for (auto it = tables.cbegin(); it != tables.cend(); ++it)
     {
-        if (!ch)
-            continue;
-        const QString name = esc(QString::fromUtf8(ch->name));
-        const QString unit = esc(QString::fromUtf8(ch->unit ? ch->unit : ""));
-        const uint32_t step = sampleCap > 0 && ch->point_count > static_cast<uint32_t>(sampleCap)
-                                  ? (ch->point_count + static_cast<uint32_t>(sampleCap) - 1) /
+        QString path = f;
+        if (tables.size() > 1)
+        {
+            QString name = it.key();
+            name.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_.-]")), QStringLiteral("_"));
+            path = base.dir().filePath(base.completeBaseName() + QStringLiteral(".") + name +
+                                       QStringLiteral(".csv"));
+        }
+        QFile out(path);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
+        {
+            QMessageBox::warning(this, QStringLiteral("导出失败"), out.errorString());
+            return;
+        }
+        QTextStream ts(&out);
+        ts.setEncoding(QStringConverter::Utf8);
+        ts << "time_us";
+        for (const PsChannelInfo *ch : it.value())
+            ts << ',' << esc(QString::fromUtf8(ch->column ? ch->column : ch->name));
+        ts << '\n';
+        const uint32_t total = it.value().front()->point_count;
+        const uint32_t step = sampleCap > 0 && total > static_cast<uint32_t>(sampleCap)
+                                  ? (total + static_cast<uint32_t>(sampleCap) - 1) /
                                         static_cast<uint32_t>(sampleCap)
                                   : 1;
-        for (uint32_t i = 0; i < ch->point_count; i += step)
+        for (uint32_t i = 0; i < total; i += step)
         {
-            double t = ch->time ? ch->time[i] : 0.0;
-            if (!ch->time && ch->dataset && ch->table && ch->column)
-                ps_dataset_value_at(const_cast<PsDataset *>(static_cast<const PsDataset *>(ch->dataset)),
-                                    ch->table, ch->column, i, &t, nullptr);
-            ts << QString::number(t, 'g', 17) << ',' << alias << ',' << name << ','
-               << QString::number(channelValueAt(ch, i), 'g', 17) << ',' << unit << '\n';
+            double t = 0.0;
+            if (it.value().front()->time)
+                t = it.value().front()->time[i];
+            else
+                ps_dataset_value_at(const_cast<PsDataset *>(static_cast<const PsDataset *>(it.value().front()->dataset)),
+                                    it.value().front()->table, it.value().front()->column,
+                                    i, &t, nullptr);
+            ts << static_cast<qint64>(std::llround(t * 1e6));
+            for (const PsChannelInfo *ch : it.value())
+            {
+                if (i >= ch->point_count)
+                {
+                    ts << ',';
+                    continue;
+                }
+                const double v = channelValueAt(ch, i);
+                ts << ',';
+                if (!std::isnan(v))
+                    ts << QString::number(v, 'g', 17);
+            }
+            ts << '\n';
             ++rows;
         }
+        out.close();
     }
-    out.close();
-    m_ctx.log(QStringLiteral("已导出数据快照：%1（%2 行）").arg(f).arg(rows)
-        + (sampleCap > 0 ? QStringLiteral("；采样上限 %1 点/通道").arg(sampleCap) : QString()));
+    m_ctx.log(QStringLiteral("已导出数据快照：%1 张表，%2 行").arg(tables.size()).arg(rows)
+        + (sampleCap > 0 ? QStringLiteral("；采样上限 %1 点/表").arg(sampleCap) : QString()));
 }
 void DataSourceDock::exportActiveMcap(const QString &path, ps::data_source::DataSource *src)
 {
@@ -1494,18 +1533,35 @@ void DataSourceDock::exportActiveMcap(const QString &path, ps::data_source::Data
         QMessageBox::warning(this, QStringLiteral("导出失败"), QString::fromStdString(err));
         return;
     }
+    QHash<QString, QVector<const PsChannelInfo *>> tables;
     for (const PsChannelInfo *ch : src->channels)
     {
-        if (!ch || ch->point_count == 0 || !ch->time)
+        if (!ch || ch->point_count == 0)
             continue;
-        const std::string topic = ch->name;
-        for (uint32_t i = 0; i < ch->point_count; ++i)
+        const QString table = ch->table ? QString::fromUtf8(ch->table)
+                                        : QString::fromUtf8(ch->name);
+        tables[table].push_back(ch);
+    }
+    for (auto it = tables.cbegin(); it != tables.cend(); ++it)
+    {
+        const auto &cols = it.value();
+        const uint32_t total = cols.front()->point_count;
+        for (uint32_t i = 0; i < total; ++i)
         {
-            const double v = ps_channel_value_at(ch, i);
-            const uint64_t ns = static_cast<uint64_t>(std::llround(ch->time[i] * 1e9));
-            char json[64];
-            std::snprintf(json, sizeof(json), "{\"value\":%.17g}", v);
-            if (!writer.writeJson(topic, ns, json, err))
+            if (!cols.front()->time)
+                continue;
+            QJsonObject row;
+            for (const PsChannelInfo *ch : cols)
+            {
+                if (i >= ch->point_count)
+                    continue;
+                const double v = channelValueAt(ch, i);
+                if (!std::isnan(v))
+                    row.insert(QString::fromUtf8(ch->column ? ch->column : ch->name), v);
+            }
+            const uint64_t ns = static_cast<uint64_t>(std::llround(cols.front()->time[i] * 1e9));
+            const QByteArray json = QJsonDocument(row).toJson(QJsonDocument::Compact);
+            if (!writer.writeJson(it.key().toStdString(), ns, json.toStdString(), err))
             {
                 QMessageBox::warning(this, QStringLiteral("导出失败"), QString::fromStdString(err));
                 return;

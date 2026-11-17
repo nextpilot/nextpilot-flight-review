@@ -417,7 +417,6 @@ void DataSourceDialog::initUi()
         m_recordFormat = new QComboBox;
         m_recordFormat->addItem(QStringLiteral("MCAP（解析后）"), QStringLiteral("mcap"));
         m_recordFormat->addItem(QStringLiteral("RAW（原始字节）"), QStringLiteral("raw"));
-        m_recordFormat->addItem(QStringLiteral("CSV（解码通道）"), QStringLiteral("csv"));
         const QString format = m_initial.value(QStringLiteral("__record_format")).toString(
             QStringLiteral("mcap"));
         const int formatIndex = m_recordFormat->findData(format);

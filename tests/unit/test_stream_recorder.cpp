@@ -20,37 +20,6 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
-    // CSV：按点写，表头保持旧格式。
-    {
-        StreamRecorder recorder;
-        QString path;
-        QString err;
-        if (!recorder.start(StreamRecorder::Format::Csv, "sim", "sim", "{}", &path, &err)) { fprintf(stderr, "csv start: %s\n", err.toUtf8().constData()); return 1; }
-        const double t[3] = {0.0, 0.1, 0.2};
-        const double v[3] = {1.0, 2.0, 3.0};
-        recorder.writeChannelBatch("sim.roll", "deg", t, v, 3);
-        recorder.stop();
-        assert(QFile::exists(path));
-
-        {
-            std::ifstream in(path.toStdString());
-            std::string line;
-            bool sawHeader = false;
-            int rows = 0;
-            while (std::getline(in, line))
-            {
-                if (line == "time,channel,value")
-                    sawHeader = true;
-                else if (!line.empty())
-                    ++rows;
-            }
-            assert(sawHeader);
-            assert(rows == 3);
-        }
-        // Windows 上还有打开的句柄时删不掉文件，读完再删。
-        std::filesystem::remove(path.toStdString());
-    }
-
     // MCAP：每个点一条 json message，topic 就是通道名。
     {
         StreamRecorder recorder;

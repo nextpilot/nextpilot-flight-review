@@ -23,7 +23,6 @@ class StreamRecorder
 public:
     enum class Format
     {
-        Csv,
         Raw,
         Mcap,
     };
@@ -76,7 +75,6 @@ private:
 
     void run();
     bool writeItem(const Item &item);
-    bool writeCsv(const Item &item);
     bool writeMcap(const Item &item);
     bool writeRawItem(const Item &item);
     bool enqueue(Item &&item);
@@ -89,7 +87,6 @@ private:
     QString m_path;
     int64_t m_epochNs = 0;
 
-    std::ofstream m_csv;
     ps::capture::RawWriter m_raw;
     McapWriter m_mcap;
 
