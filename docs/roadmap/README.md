@@ -4,6 +4,7 @@
 
 | 文档 | 状态 | 内容 |
 |---|---|---|
+| [Dataset / DataSource v2](dataset-datasource-v2.md) | M0 开工（2026-11-17） | DataSource 聚合根、typed Table/Column、UTC 微秒主键、frame_batch、ring 窗口与 PlotSeries |
 | [主题与浅色模式](theme.md) | 已实施（实现记录） | 深/浅主题 token、Ribbon/画布/Dock 配色、验收与截图 |
 | [画布交互重构](canvas-interaction.md) | 已实施（2026-11-16） | 左键选择/书签/测量、中键平移、右键菜单/框选、轴区缩放、光标联动与固定读数 |
 | [设置层：强类型 key 与变更通知](settings.md) | 已实施（2026-11-16） | 实施记录与关键决策；使用指南见 [`../develop/settings.md`](../develop/settings.md) |

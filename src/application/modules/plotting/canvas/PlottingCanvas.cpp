@@ -370,6 +370,10 @@ void PlottingCanvas::setChannels(const QVector<const PsChannelInfo *> &channels)
         s.t = ch->time;
         s.v = ch->value;
         s.n = ch->point_count;
+        s.dataset = static_cast<const PsDataset *>(ch->dataset);
+        s.table = QString::fromUtf8(ch->table ? ch->table : "");
+        s.column = QString::fromUtf8(ch->column ? ch->column : "");
+        s.generation = ch->generation;
         m_series.append(s);
     }
     m_autoY = true;
@@ -512,6 +516,10 @@ void PlottingCanvas::addChannelEx(const PsChannelInfo *ch, int srcId, const QStr
     s.t = ch->time;
     s.v = ch->value;
     s.n = ch->point_count;
+    s.dataset = static_cast<const PsDataset *>(ch->dataset);
+    s.table = QString::fromUtf8(ch->table ? ch->table : "");
+    s.column = QString::fromUtf8(ch->column ? ch->column : "");
+    s.generation = ch->generation;
     m_series.append(s);
     m_kernelBacked = true;
     m_autoY = true;
@@ -605,6 +613,10 @@ bool PlottingCanvas::setSeriesChannel(int index, const PsChannelInfo *ch, int sr
     s.t = ch->time;
     s.v = ch->value;
     s.n = ch->point_count;
+    s.dataset = static_cast<const PsDataset *>(ch->dataset);
+    s.table = QString::fromUtf8(ch->table ? ch->table : "");
+    s.column = QString::fromUtf8(ch->column ? ch->column : "");
+    s.generation = ch->generation;
     s.tOwn.clear();
     s.vOwn.clear();
     m_kernelBacked = true;
@@ -755,6 +767,16 @@ void PlottingCanvas::setSourceOffset(const QString &path, double offsetSec, bool
     repaint();
 }
 
+uint32_t PlottingCanvas::kernelLod(const Series &s, double t0, double t1, uint32_t px,
+                                  double *out, uint32_t cap) const
+{
+    if (s.dataset && !s.table.isEmpty() && !s.column.isEmpty())
+        return ps_dataset_lod_minmax(const_cast<PsDataset *>(s.dataset),
+                                     s.table.toUtf8().constData(),
+                                     s.column.toUtf8().constData(), t0, t1, px, out, cap);
+    return ps_lod_minmax(s.time(), s.value(), s.count(), t0, t1, px, out, cap);
+}
+
 void PlottingCanvas::resetView()
 {
     ensureTimeRange();
@@ -771,9 +793,8 @@ void PlottingCanvas::resetView()
                 continue;
             const int ax = s.axis == 1 ? 1 : 0;
             QVector<double> buf(256 * 3);
-            const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(),
-                                              m_t0 + s.offsetSec, m_t1 + s.offsetSec,
-                                              256, buf.data(), 256);
+            const uint32_t got = kernelLod(s, m_t0 + s.offsetSec, m_t1 + s.offsetSec,
+                                           256, buf.data(), 256);
             for (uint32_t i = 0; i < got; ++i)
             {
                 const double mn = buf[i * 3 + 1];
@@ -1746,10 +1767,15 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
     m_hitOwner.clear();
     // 同源通道共享 offset，按 offset 分组批量抽稀；同组一次 FFI，内核在通道多时并行。
     QMap<double, QVector<int>> lodGroups;
+    QVector<int> typedIds;
     for (int si = 0; si < m_series.size(); ++si)
     {
         const Series &s = m_series.at(si);
-        if (s.visible && s.count() >= 2)
+        if (!s.visible || s.count() < 2)
+            continue;
+        if (s.dataset && !s.table.isEmpty() && !s.column.isEmpty())
+            typedIds.append(si);
+        else
             lodGroups[s.offsetSec].append(si);
     }
 
@@ -1759,6 +1785,31 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
         const double hi = axis == 1 ? m_y2Max : m_yMax;
         return m_flipY ? plot.top() + plot.height() * (v - lo) / (hi - lo)
                        : plot.bottom() - plot.height() * (v - lo) / (hi - lo);
+    };
+
+    const auto drawLod = [&](int si, const double *buf, uint32_t n) {
+        const Series &s = m_series.at(si);
+        if (n < 1)
+            return;
+        QPolygonF poly;
+        poly.reserve(static_cast<int>(n));
+        for (uint32_t i = 0; i < n; ++i)
+            poly.append(QPointF(toX(buf[i * 3] - s.offsetSec),
+                                toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0, s.axis)));
+        p.setPen(QPen(s.color, s.width + (si == m_selectedSeries ? 2 : 0),
+                      penStyleFor(s.lineStyle)));
+        p.drawPolyline(poly);
+        if (s.marker > 0 && s.count() <= 4000)
+        {
+            p.setRenderHint(QPainter::Antialiasing, true);
+            for (quint32 i = 0; i < s.count(); ++i)
+                drawMarker(p, QPointF(toX(s.time()[i] - s.offsetSec),
+                                      toY(s.value()[i], s.axis)),
+                           s.marker, s.markerSize, s.color);
+            p.setRenderHint(QPainter::Antialiasing, false);
+        }
+        m_hitPaths.append(poly);
+        m_hitOwner.append(si);
     };
 
     for (auto git = lodGroups.constBegin(); git != lodGroups.constEnd(); ++git)
@@ -1795,26 +1846,16 @@ void PlottingCanvas::paintEvent(QPaintEvent *)
             // 单屏只画中线：包络带留给"缩到很近、一像素含大量样本"的场景（M1）
             // 折线一律关 AA 用 drawPolyline：QPainterPath + AA 描边在 Qt 6.2 上是毫米级的
             // 灾难（20 条 × 1500 段实测 365 ms/帧，同样数据 drawPolyline 只要 1~2 ms）。
-            QPolygonF poly;
-            poly.reserve(static_cast<int>(n));
-            for (uint32_t i = 0; i < n; ++i)
-                poly.append(QPointF(toX(buf[i * 3] - s.offsetSec),
-                                    toY((buf[i * 3 + 1] + buf[i * 3 + 2]) / 2.0, s.axis)));
-            p.setPen(QPen(s.color, s.width + (si == m_selectedSeries ? 2 : 0),
-                          penStyleFor(s.lineStyle)));  // 1px 走快速 Bresenham；>1 才走宽线轮廓器
-            p.drawPolyline(poly);
-            if (s.marker > 0 && s.count() <= 4000)
-            {
-                p.setRenderHint(QPainter::Antialiasing, true);
-                for (quint32 i = 0; i < s.count(); ++i)
-                    drawMarker(p, QPointF(toX(s.time()[i] - s.offsetSec),
-                                          toY(s.value()[i], s.axis)),
-                               s.marker, s.markerSize, s.color);
-                p.setRenderHint(QPainter::Antialiasing, false);
-            }
-            m_hitPaths.append(poly);
-            m_hitOwner.append(si);
+            drawLod(si, buf, n);
         }
+    }
+    for (int si : typedIds)
+    {
+        const Series &s = m_series.at(si);
+        QVector<double> buf(static_cast<int>(px * 3));
+        const uint32_t n = kernelLod(s, m_t0 + s.offsetSec, m_t1 + s.offsetSec, px,
+                                     buf.data(), px);
+        drawLod(si, buf.constData(), n);
     }
     p.restore();
     p.setRenderHint(QPainter::Antialiasing, true);
@@ -2413,9 +2454,8 @@ void PlottingCanvas::resetYAxis()
             continue;
         const int ax = s.axis == 1 ? 1 : 0;
         QVector<double> buf(256 * 3);
-        const uint32_t got = ps_lod_minmax(s.time(), s.value(), s.count(),
-                                          m_t0 + s.offsetSec, m_t1 + s.offsetSec,
-                                          256, buf.data(), 256);
+        const uint32_t got = kernelLod(s, m_t0 + s.offsetSec, m_t1 + s.offsetSec,
+                                       256, buf.data(), 256);
         for (uint32_t i = 0; i < got; ++i)
         {
             const double mn = buf[i * 3 + 1];

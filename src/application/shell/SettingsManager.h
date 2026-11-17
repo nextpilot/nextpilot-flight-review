@@ -47,6 +47,8 @@ inline const SettingsKey<int> kExportSampleLimit{QStringLiteral("exportSampleLim
 inline const SettingsKey<bool> kGridDefault{QStringLiteral("gridDefault"), true};
 inline const SettingsKey<bool> kLegendDefault{QStringLiteral("legendDefault"), true};
 inline const SettingsKey<QString> kTimeFormat{QStringLiteral("timeFormat"), QStringLiteral("relative")};
+// 上次会话的数据源配置（JSON 数组）；只做持久化，不在启动时自动连接。
+inline const SettingsKey<QString> kDataSourceConfigs{QStringLiteral("dataSource.configs"), QStringLiteral("[]")};
 
 } // namespace ps::settings
 

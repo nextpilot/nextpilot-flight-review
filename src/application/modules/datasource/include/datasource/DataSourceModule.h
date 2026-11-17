@@ -8,9 +8,8 @@
 
 class MainWindow;
 struct PsChannelInfo;
-namespace ps::data_source { struct SourceData; struct SourceStore; }
+namespace ps::data_source { struct DataSource; }
 namespace ps::components {
-ps::data_source::SourceStore *dataSourceStore(MainWindow *mw);
 const QVector<const PsChannelInfo *> &dataSourceChannels(MainWindow *mw);
 int dataSourceActiveId(MainWindow *mw);
 QString dataSourceActivePath(MainWindow *mw);

@@ -5,7 +5,9 @@
 // GUI 用 DataSourceSession 的 store，CLI（--run）用一次性局部 store。
 
 #include "HostDataService.h"
-#include "SourceModel.h"
+#include "DataSourceModel.h"
+
+#include <deque>
 
 namespace ps::data_source
 {
@@ -13,7 +15,7 @@ namespace ps::data_source
 class HostDataBridge final : public host::HostDataService
 {
 public:
-    explicit HostDataBridge(SourceStore &store);
+    explicit HostDataBridge(std::deque<DataSource> &store);
 
     QVector<host::SourceInfo> sources() override;
     QVector<host::ChannelInfo> channels(int sourceId) override;
@@ -34,7 +36,10 @@ public:
     host::Result stopRecording(int sourceId) override;
 
 private:
-    SourceStore &m_store;
+    DataSource *sourceById(int id);
+    int nextId() const;
+
+    std::deque<DataSource> &m_store;
 };
 
 } // namespace ps::data_source

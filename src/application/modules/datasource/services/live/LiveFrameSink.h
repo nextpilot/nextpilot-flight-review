@@ -4,29 +4,34 @@
 #include "ps_kernel.h"
 #include "record/StreamRecorder.h"
 
+#include <QByteArray>
 #include <QString>
 #include <QVector>
 
 #include <functional>
+#include <map>
 #include <memory>
+#include <vector>
 
-// 实时源实例的宿主侧缓冲与分发。本身不做文件存储，
-// 录制交给独立的 StreamRecorder，便于 CSV / MCAP / RAW 统一。
-class LiveSession
+// 实时数据 sink：接收 frame_batch、落 typed Dataset，并维护一份绘图 view。
+// view 按表共享时间轴，不再把 time 复制到每个通道；后续 Canvas 改 typed 后这里只剩落库。
+// 不是“会话”，也不持有扩展生命周期；handle/fanout 由 LiveDataSourceDriver 管。
+class LiveFrameSink
 {
 public:
     static constexpr int kChannelCapacity = 262144;
 
-    LiveSession(QString extensionId, QString label);
-    ~LiveSession();
+    LiveFrameSink(QString extensionId, QString label);
+    ~LiveFrameSink();
 
-    LiveSession(const LiveSession &) = delete;
-    LiveSession &operator=(const LiveSession &) = delete;
+    LiveFrameSink(const LiveFrameSink &) = delete;
+    LiveFrameSink &operator=(const LiveFrameSink &) = delete;
 
     const QString &extensionId() const { return m_extensionId; }
     const QString &label() const { return m_label; }
     QVector<const PsChannelInfo *> channels() const;
     const PsSourceSink *sink() const { return &m_sink; }
+    PsDataset *dataset() const { return m_dataset; }
 
     using RawTap = std::function<void(const char *topic, const char *encoding,
                                       int64_t timestampNs, const uint8_t *data, uint32_t size)>;
@@ -47,16 +52,46 @@ public:
     QString lastEvent() const { return m_lastEvent; }
 
 private:
+    struct ChannelView
+    {
+        QByteArray name;
+        QByteArray unit;
+        std::shared_ptr<std::vector<double>> time;
+        std::vector<double> value;
+        PsChannelInfo info{};
+
+        ChannelView();
+        void refresh();
+        void reserve();
+        void trimTo(int capacity);
+    };
+
+    struct TableView
+    {
+        QByteArray name;
+        std::shared_ptr<std::vector<double>> time;
+        std::vector<std::unique_ptr<ChannelView>> columns;
+
+        TableView();
+        void reserve();
+        void trimTo(int capacity);
+    };
+
     static int32_t onChannel(void *ctx, const char *name, const char *unit,
                              const double *time_s, const double *value, uint32_t count);
+    static int32_t onFrameBatch(void *ctx, const PsFrameBatch *batch);
     static int32_t onRaw(void *ctx, const char *topic, const char *encoding,
                          int64_t timestamp_ns, const uint8_t *data, uint32_t size);
     static int32_t onEvent(void *ctx, const char *topic, const char *payload_json);
     const PsChannelInfo *channelByName(const QString &name) const;
+    ChannelView *legacyChannel(const QString &name, const QString &unit);
+    TableView *frameTable(const PsFrameBatch *batch, int *err);
 
     QString m_extensionId;
     QString m_label;
-    PsStream *m_stream = nullptr;
+    PsDataset *m_dataset = nullptr;
+    std::map<QString, std::unique_ptr<TableView>> m_tables;
+    std::map<QString, std::unique_ptr<ChannelView>> m_legacy;
     PsSourceSink m_sink{};
     std::unique_ptr<StreamRecorder> m_recorder;
     RawTap m_rawTap;

@@ -33,13 +33,13 @@ int main()
     char err[256] = {0};
     assert(ps_dataset_add_channel(ds, "x", "", t.data(), v.data(), n, err, sizeof(err)) == 0);
 
-    ps::data_source::SourceStore store;
-    ps::data_source::SourceData src;
-    src.id = 0;
-    src.name = QStringLiteral("big");
+    std::deque<ps::data_source::DataSource> store;
+    ps::data_source::DataSource src;
+    src.config.id = 0;
+    src.config.name = QStringLiteral("big");
     src.ds = ds;
     src.channels.append(ps_dataset_channel(ds, 0));
-    store.items().append(src);
+    store.push_back(src);
 
     ps::data_source::HostDataBridge bridge(store);
 
@@ -76,13 +76,13 @@ int main()
     assert(chans[0].vMin <= -0.99 && chans[0].vMax >= 0.99);
 
     // 50 源枚举：只查 sources()，不触通道统计
-    ps::data_source::SourceStore many;
+    std::deque<ps::data_source::DataSource> many;
     for (int i = 0; i < 50; ++i)
     {
-        ps::data_source::SourceData s;
-        s.id = i;
-        s.name = QStringLiteral("src%1").arg(i);
-        many.items().append(s);
+        ps::data_source::DataSource s;
+        s.config.id = i;
+        s.config.name = QStringLiteral("src%1").arg(i);
+        many.push_back(s);
     }
     ps::data_source::HostDataBridge manyBridge(many);
     const auto t1 = Clock::now();

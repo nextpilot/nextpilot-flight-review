@@ -5,6 +5,7 @@ use ps_ndf::{Dataset, Series};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const MAGIC: u32 = 0x5053_4331; // PSC1
 const VERSION: u32 = 1;
@@ -72,7 +73,7 @@ pub fn save_dataset(
             write_u32(&mut w, ch.t.len() as u32)?;
             w.write_all(name).map_err(|e| e.to_string())?;
             w.write_all(unit).map_err(|e| e.to_string())?;
-            for x in &ch.t {
+            for x in ch.t.iter() {
                 w.write_all(&x.to_le_bytes()).map_err(|e| e.to_string())?;
             }
             for x in &ch.v {
@@ -172,7 +173,7 @@ pub fn load_dataset(
         let series = Series {
             name: String::from_utf8_lossy(&name).into_owned(),
             unit: String::from_utf8_lossy(&unit).into_owned(),
-            t,
+            t: Arc::new(t),
             v,
         };
         ds.add_channel(series)?;

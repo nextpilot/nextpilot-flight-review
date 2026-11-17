@@ -5,6 +5,7 @@
 #include <array>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <optional>
 #include <tuple>
 
@@ -31,6 +32,24 @@ struct Format
     std::vector<Field> fields;
     std::optional<size_t> instanceIdx;
 };
+
+uint32_t psTypeFromCode(uint8_t c)
+{
+    switch (c)
+    {
+    case 'b': return PS_VALUE_I8;
+    case 'B': case 'M': return PS_VALUE_U8;
+    case 'h': case 'c': return PS_VALUE_I16;
+    case 'H': case 'C': return PS_VALUE_U16;
+    case 'i': case 'e': case 'L': return PS_VALUE_I32;
+    case 'I': case 'E': return PS_VALUE_U32;
+    case 'q': return PS_VALUE_I64;
+    case 'Q': return PS_VALUE_U64;
+    case 'f': return PS_VALUE_F32;
+    case 'd': return PS_VALUE_F64;
+    default: return PS_VALUE_TEXT;
+    }
+}
 
 struct FmtUnits
 {
@@ -299,7 +318,6 @@ void collectUnits(const std::vector<uint8_t> &buf, std::map<uint8_t, Format> &fo
 struct Builder
 {
     bool hasInstance = false;
-    std::vector<double> t;
     std::vector<double> v;
 };
 
@@ -329,6 +347,7 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
     psLoaderProgress(30, 100);
 
     std::map<std::tuple<uint8_t, uint8_t, size_t>, Builder> builders;
+    std::map<std::pair<uint8_t, uint8_t>, std::shared_ptr<std::vector<double>>> axes;
     std::vector<std::pair<std::string, std::string>> params;
     size_t pos = 0;
     while (pos + 3 <= buf.size())
@@ -395,6 +414,11 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
             if (readNum(pkt, fmt.length, fmt.fields[*fmt.instanceIdx], inst))
                 instance = static_cast<uint8_t>(inst);
         }
+        const auto axisKey = std::make_pair(fmt.id, instance);
+        auto &axis = axes[axisKey];
+        if (!axis)
+            axis = std::make_shared<std::vector<double>>();
+        axis->push_back(t);
 
         for (size_t fi = 0; fi < fmt.fields.size(); ++fi)
         {
@@ -408,13 +432,12 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
                 continue;
             Builder &b = builders[{fmt.id, instance, fi}];
             b.hasInstance = fmt.instanceIdx.has_value();
-            b.t.push_back(t);
             b.v.push_back(v);
         }
         pos += fmt.length;
     }
 
-    for (const auto &kv : builders)
+    for (auto &kv : builders)
     {
         const uint8_t msgId = std::get<0>(kv.first);
         const uint8_t instance = std::get<1>(kv.first);
@@ -424,12 +447,18 @@ bool psParseApbin(const char *path, ApbinLog &log, std::string &err)
             continue;
         const Format &fmt = fmtIt->second;
         const Field &f = fmt.fields[fi];
+        auto axisIt = axes.find(std::make_pair(msgId, instance));
+        if (axisIt == axes.end())
+            continue;
         PsChannelData c;
-        c.name = fmt.name;
-        c.name += kv.second.hasInstance ? ("." + std::string("#") + std::to_string(instance) + ".") : ".";
-        c.name += f.name;
-        c.t = kv.second.t;
-        c.v = kv.second.v;
+        const std::string table = fmt.name + (kv.second.hasInstance
+                                                  ? (".#" + std::to_string(instance))
+                                                  : std::string());
+        c.name = table + "." + f.name;
+        c.table = table;
+        c.value_type = psTypeFromCode(f.code);
+        c.axis = axisIt->second;
+        c.v = std::move(kv.second.v);
 
         if (fmtu.count(msgId) && fi < fmtu[msgId].units.size())
         {

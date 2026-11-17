@@ -30,7 +30,6 @@ dependencies = [
  "ps-cache",
  "ps-ndf",
  "ps-ops",
- "ps-stream",
  "serde_json",
 ]
 
@@ -50,13 +49,6 @@ name = "ps-ops"
 version = "0.1.0"
 dependencies = [
  "serde_json",
-]
-
-[[package]]
-name = "ps-stream"
-version = "0.1.0"
-dependencies = [
- "ps-ndf",
 ]
 
 [[package]]

@@ -6,7 +6,9 @@
 #include <QPair>
 #include <QPoint>
 #include <QAction>
+#include <deque>
 #include "TimeBookmark.h"
+#include "DataSourceModel.h"
 
 class MainWindow;
 class QDockWidget;
@@ -24,7 +26,7 @@ class QMenu;
 class PlottingCanvas;
 struct PsChannelInfo;
 namespace ps::shell { struct PropertyContent; }
-namespace ps::data_source { class DataSourceDock; struct SourceData; struct SourceStore; }
+namespace ps::data_source { class DataSourceDock; struct DataSource; }
 
 class DataSourceSession : public QWidget
 {
@@ -51,17 +53,17 @@ public:
     void saveLayoutTo(const QString &path);
     void importLayoutFrom(const QString &path);
     void refreshCount();
-    ps::data_source::SourceData *sourceById(int id);
+    ps::data_source::DataSource *sourceById(int id);
     int activeSourceId() const { return m_activeSource; }
-    QVector<ps::data_source::SourceData> &sources();
-    ps::data_source::SourceStore *store() { return m_sourceStore; }
+    std::deque<ps::data_source::DataSource> &sources();
+    const std::deque<ps::data_source::DataSource> &sources() const { return m_sources; }
     const QVector<const PsChannelInfo *> &channels() const { return m_srcChannels; }
     QVector<ps::TimeBookmark> &timeMarkers() { return m_timeMarkers; }
     void refreshActiveSource();
-    void reloadChannels(ps::data_source::SourceData *src);
+    void reloadChannels(ps::data_source::DataSource *src);
     void activateSource(QWidget *row);
     void switchSource(int id);
-    void setSourcePaused(ps::data_source::SourceData *src, bool paused);
+    void setSourcePaused(ps::data_source::DataSource *src, bool paused);
     void exportActiveCsv();
     void showSourceProps(QWidget *row);
     ps::shell::PropertyContent sourceContent(int srcId);
@@ -74,12 +76,12 @@ public:
     void updateStatusChips();
     void renderSourceData();
     int sourceIdForRow(QWidget *row) const;
-    void setSourceOffset(ps::data_source::SourceData *src, double offsetSec, bool refit);
-    void alignSource(ps::data_source::SourceData *src, int mode);
-    void setSourceBase(ps::data_source::SourceData *src);
-    void compareSources(ps::data_source::SourceData *src, ps::data_source::SourceData *other,
+    void setSourceOffset(ps::data_source::DataSource *src, double offsetSec, bool refit);
+    void alignSource(ps::data_source::DataSource *src, int mode);
+    void setSourceBase(ps::data_source::DataSource *src);
+    void compareSources(ps::data_source::DataSource *src, ps::data_source::DataSource *other,
                         bool all, const QString &pick);
-    void openSourceDebug(ps::data_source::SourceData *src);
+    void openSourceDebug(ps::data_source::DataSource *src);
     void updateSourceMeta(QWidget *row, const QString &meta, const QString &dotColor);
     void addTransformFor(const QString &channel);
     QWidget *addSourceRow(const QString &name, const QString &meta, const QString &dotColor,
@@ -88,11 +90,12 @@ public:
     void syncSrcChips();
     void updateSrcStatus();
     void applySrcFilter();
-    bool openLiveInput(const QStringList &ids, const QString &config, ps::data_source::SourceData &dst,
+    bool openLiveInput(const QStringList &ids, const QString &config, ps::data_source::DataSource &dst,
                        QString *fanoutNote, QString *err);
-    void configureLiveSource(ps::data_source::SourceData *src);
-    void refreshLiveSource(ps::data_source::SourceData *src);
-    void closeLiveSource(ps::data_source::SourceData *src);
+    void configureLiveSource(ps::data_source::DataSource *src);
+    void refreshLiveSource(ps::data_source::DataSource *src);
+    void closeLiveSource(ps::data_source::DataSource *src);
+    void persistSourceConfigs();
 
 private:
     void log(const QString &text);
@@ -122,7 +125,7 @@ private:
     QWidget *m_srcEmpty = nullptr;
     QVector<QToolButton *> m_srcChips;
     QVector<ps::TimeBookmark> m_timeMarkers;
-    ps::data_source::SourceStore *m_sourceStore = nullptr;
+    std::deque<ps::data_source::DataSource> m_sources;
     int m_activeSource = -1;
     QAction *m_chipSource = nullptr;
     QAction *m_chipLod = nullptr;

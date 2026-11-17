@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 #define PS_EXTENSION_ABI_VERSION 7u
-#define PS_HOST_API_VERSION 2u
+#define PS_HOST_API_VERSION 4u
 #define PS_DATA_SOURCE_PROTOCOL_VERSION 3u
 
 #if defined(_WIN32)
@@ -49,6 +49,49 @@ extern "C" {
 #define PS_CAP_CURVE     (1u << 13)  /* 注册曲线能力 */
 #define PS_CAP_PANEL     (1u << 14)  /* 注册面板 */
 
+/* typed 列类型（与 kernel ps_kernel.h 同值；两头都 include 时由 guard 去重）。 */
+#ifndef PS_VALUE_TYPE_DEFINED
+#define PS_VALUE_TYPE_DEFINED
+typedef enum PsValueType {
+    PS_VALUE_F64 = 0,
+    PS_VALUE_F32 = 1,
+    PS_VALUE_I64 = 2,
+    PS_VALUE_U64 = 3,
+    PS_VALUE_I32 = 4,
+    PS_VALUE_U32 = 5,
+    PS_VALUE_I16 = 6,
+    PS_VALUE_U16 = 7,
+    PS_VALUE_I8 = 8,
+    PS_VALUE_U8 = 9,
+    PS_VALUE_BOOL = 10,
+    PS_VALUE_TEXT = 11
+} PsValueType;
+#endif
+
+#ifndef PS_FRAME_COLUMN_DEFINED
+#define PS_FRAME_COLUMN_DEFINED
+typedef struct PsFrameColumn {
+    const char    *name;
+    const char    *unit;
+    PsValueType    type;
+    const void    *values;
+    const uint8_t *nulls;   /* 1=null，长度 (rows+7)/8；NULL=全有效 */
+} PsFrameColumn;
+#endif
+
+#ifndef PS_FRAME_BATCH_DEFINED
+#define PS_FRAME_BATCH_DEFINED
+/* 一帧 = 一行；同一帧的所有列共享 time_us。seq 可为 NULL，由宿主表内自增。 */
+typedef struct PsFrameBatch {
+    const char          *table;
+    const int64_t       *time_us;
+    const uint64_t      *seq;
+    uint32_t             rows;
+    uint32_t             columns;
+    const PsFrameColumn *column_data;
+} PsFrameBatch;
+#endif
+
 /* 宿主函数表：扩展不再直接链接 kernel，也不靠 exe 导出 ps_dataset_* 符号。
  * 扩展用 host->dataset_new/add_channel 构造数据集；数据集所有权仍归宿主。
  * 这张表由宿主在 load/open 时传入，跨 Windows/Linux 同一套语义。 */
@@ -63,6 +106,23 @@ typedef struct PsHostApi {
     /* 可选：解析进度。done/total 均为字节、行或记录数；total=0 表示不确定。
      * 宿主在 load 调用期间提供线程局部回调，扩展在解析循环中调用即可。 */
     void (*progress)(uint64_t done, uint64_t total);
+    /* 表级数据面：一个 topic 一张表，表持有唯一时间轴，通道只存 values。 */
+    int32_t (*dataset_add_table)(void *dataset, const char *table, const double *time_s,
+                                 uint32_t count, char *err, uint32_t err_cap);
+    int32_t (*dataset_add_table_channel)(void *dataset, const char *table, const char *name,
+                                         const char *unit, const double *value, uint32_t count,
+                                         char *err, uint32_t err_cap);
+    /* typed 表级数据面：UTC 微秒时间轴；列值按 value_type 解释，nulls 可选位图。 */
+    int32_t (*dataset_add_table_typed)(void *dataset, const char *table, const int64_t *time_us,
+                                       uint32_t count, char *err, uint32_t err_cap);
+    int32_t (*dataset_add_table_column_typed)(void *dataset, const char *table, const char *name,
+                                              const char *unit, uint32_t value_type,
+                                              const void *values, const uint8_t *nulls,
+                                              uint32_t count, char *err, uint32_t err_cap);
+    /* frame_batch 落库：表不存在则按首批列建表，存在则追加；seq 由宿主表内自增。 */
+    int32_t (*dataset_append_frame)(void *dataset, const char *table, const int64_t *time_us,
+                                    uint32_t rows, const PsFrameColumn *columns,
+                                    uint32_t column_count, char *err, uint32_t err_cap);
 } PsHostApi;
 
 /* Loader 数据面。所有 JSON 返回：>=0 为写入字节数；<0 失败。
@@ -97,6 +157,9 @@ typedef struct PsSourceSink {
     /* 可选：扩展把原始字节交给宿主统一录制。topic/encoding 用于回放路由。 */
     int32_t (*raw_batch)(void *ctx, const char *topic, const char *encoding,
                          int64_t timestamp_ns, const uint8_t *data, uint32_t size);
+    /* 整帧推送：一次回调带 table/time/rows/columns；新扩展优先走这里。
+     * 回调期间指针有效，宿主负责拷贝。追加在末尾，避免破坏旧扩展 ABI。 */
+    int32_t (*frame_batch)(void *ctx, const PsFrameBatch *batch);
 } PsSourceSink;
 
 /* ---- 统一数据输入 ABI（PJ4 形状，PlotScope 宿主服务） --------------------

@@ -885,7 +885,7 @@ public:
 已补（2026-11-13 复核）：
 1. 外部扩展 `.json` manifest 发现 + 动态库 ABI 已落地（`ExtensionRuntime` / `ps_extension_host`，DemoExtension 回归），`PS_EXTENSION_ABI_VERSION=6`。
 2. MAVLink UDP 实时流、OEM7 TCP/串口、Sim internal 已接入；MCAP 文件加载已落地；实时记录已落地（CSV/MCAP/RAW）。
-3. 实时环形缓冲由 kernel `PsStream` 承担，`LiveSession` 每通道 262144。
+3. 实时环形缓冲原由 kernel `PsStream` 承担，现已退役；`LiveFrameSink` 按表共享时间轴维护 view，容量 262144。
 4. OEM7 RAW 录制时，`StreamRecorder` 从配置 `database` 读取协议库字节写入 PSRAW1 `schema_blob`；回放不再依赖外部 database 路径。
 
 未完成：
@@ -956,7 +956,7 @@ public:
 ### 14.7 2026-11-13 实时录制收口与计划复核
 
 已落地：
-- `StreamRecorder` 独立于 `LiveSession`：有界队列（4096 批 / 32 MiB）、后台写线程、磁盘慢时整批丢弃并计数；默认目录 `QStandardPaths::AppDataLocation/recordings`，不可写回退 `/tmp/plotscope-recordings`。
+- `StreamRecorder` 独立于 `LiveFrameSink`：有界队列（4096 批 / 32 MiB）、后台写线程、磁盘慢时整批丢弃并计数；默认目录 `QStandardPaths::AppDataLocation/recordings`，不可写回退 `/tmp/plotscope-recordings`。
 - 三种格式：CSV（`time,channel,value`）、MCAP（每采样点 JSON，`plotscope/value` schema 标记）、RAW（PSRAW1 原始字节）。
 - `PsSourceSink` 增加可选 `raw_batch`，ABI 6；MAVLink/OEM7 raw 字节优先交宿主，未接宿主时保留扩展自带 `raw_path`。
 - `DataSourceDialog` 录制格式下拉框；`MainWindow` 按 `__record_format` 启动；配置 JSON 传入 raw header。

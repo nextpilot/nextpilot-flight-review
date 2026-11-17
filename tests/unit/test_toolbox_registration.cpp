@@ -1,6 +1,6 @@
 #include "Component.h"
 #include "datasource/MessageParserRegistry.h"
-#include "datasource/AnalysisRegistry.h"
+#include "analysis/AnalysisRegistry.h"
 
 #include <QSet>
 #include <QStringList>
@@ -78,7 +78,7 @@ int main()
                               QStringLiteral("autopilot.review.report")})
     {
         bool found = false;
-        for (const auto &entry : ps::data_source::AnalysisRegistry::instance().all())
+        for (const auto &entry : ps::analysis::AnalysisRegistry::instance().all())
             found = found || entry.id == id;
         if (!found)
         {
@@ -87,11 +87,11 @@ int main()
         }
     }
     bool foundApp = false;
-    for (const auto &entry : ps::data_source::AnalysisRegistry::instance().all())
+    for (const auto &entry : ps::analysis::AnalysisRegistry::instance().all())
     {
         if (entry.id == QStringLiteral("autopilot.review.app"))
         {
-            foundApp = entry.kind == ps::data_source::AnalysisKind::App && entry.create;
+            foundApp = entry.kind == ps::analysis::AnalysisKind::App && entry.create;
             break;
         }
     }

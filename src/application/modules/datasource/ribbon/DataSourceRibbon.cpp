@@ -6,7 +6,6 @@
 #include "ProtocolInspectorDock.h"
 #include "DataSourceSession.h"
 #include "SettingsManager.h"
-#include "SourceModel.h"
 #include "CommandManager.h"
 #include "MainWindow.h"
 #include "SARibbonGallery.h"

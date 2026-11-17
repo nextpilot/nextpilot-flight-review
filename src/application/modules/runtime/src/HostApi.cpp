@@ -26,6 +26,47 @@ extern "C" int32_t host_dataset_add_channel(void *dataset, const char *name, con
                                   count, err, err_cap);
 }
 
+extern "C" int32_t host_dataset_add_table(void *dataset, const char *table, const double *time_s,
+                                          uint32_t count, char *err, uint32_t err_cap)
+{
+    return ps_dataset_add_table(static_cast<PsDataset *>(dataset), table, time_s, count, err, err_cap);
+}
+
+extern "C" int32_t host_dataset_add_table_channel(void *dataset, const char *table, const char *name,
+                                                  const char *unit, const double *value,
+                                                  uint32_t count, char *err, uint32_t err_cap)
+{
+    return ps_dataset_add_table_channel(static_cast<PsDataset *>(dataset), table, name, unit, value,
+                                        count, err, err_cap);
+}
+
+extern "C" int32_t host_dataset_add_table_typed(void *dataset, const char *table,
+                                                const int64_t *time_us, uint32_t count,
+                                                char *err, uint32_t err_cap)
+{
+    return ps_dataset_add_table_typed(static_cast<PsDataset *>(dataset), table, time_us, count,
+                                      err, err_cap);
+}
+
+extern "C" int32_t host_dataset_add_table_column_typed(void *dataset, const char *table,
+                                                       const char *name, const char *unit,
+                                                       uint32_t value_type, const void *values,
+                                                       const uint8_t *nulls, uint32_t count,
+                                                       char *err, uint32_t err_cap)
+{
+    return ps_dataset_add_table_column_typed(static_cast<PsDataset *>(dataset), table, name, unit,
+                                             value_type, values, nulls, count, err, err_cap);
+}
+
+extern "C" int32_t host_dataset_append_frame(void *dataset, const char *table,
+                                             const int64_t *time_us, uint32_t rows,
+                                             const PsFrameColumn *columns, uint32_t column_count,
+                                             char *err, uint32_t err_cap)
+{
+    return ps_dataset_append_frame(static_cast<PsDataset *>(dataset), table, time_us, rows, columns,
+                                   column_count, err, err_cap);
+}
+
 extern "C" void host_dataset_free(void *dataset)
 {
     ps_dataset_free(static_cast<PsDataset *>(dataset));
@@ -38,6 +79,11 @@ const PsHostApi kHostApi = {
     &host_dataset_add_channel,
     &host_dataset_free,
     &host_progress,
+    &host_dataset_add_table,
+    &host_dataset_add_table_channel,
+    &host_dataset_add_table_typed,
+    &host_dataset_add_table_column_typed,
+    &host_dataset_append_frame,
 };
 
 } // namespace

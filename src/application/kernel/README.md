@@ -16,12 +16,11 @@ Kernel 是**同进程、无 Qt、无格式知识**的共享数据平面。它不
 
 ```text
 src/application/kernel/
-  Cargo.toml              workspace：ps-abi / ps-ndf / ps-ops / ps-cache / ps-stream
+  Cargo.toml              workspace：ps-abi / ps-ndf / ps-ops / ps-cache
   include/ps_kernel.h     唯一对外 C ABI；app 只能 include 这一个头
   ps-ndf/                 数据模型：Dataset / Series / 精度 / LOD 算法
   ps-ops/                 纯算子：filters / quat / align
   ps-cache/               数据集二进制缓存：原子写、指纹校验、损坏识别
-  ps-stream/              实时流：固定容量缓冲、通道视图、流上 LOD
   ps-abi/                 C ABI 门面：指针、错误码、panic 隔离
 ```
 
@@ -31,10 +30,9 @@ src/application/kernel/
 ps-abi ──> ps-ndf
    │  └──> ps-ops
    ├─────> ps-cache ──> ps-ndf
-   └─────> ps-stream ──> ps-ndf
 ```
 
-`ps-ndf` 不依赖其他 crate；`ps-ops` 不依赖 `ps-abi`；`ps-cache/ps-stream` 只依赖 `ps-ndf`，不依赖 App。
+`ps-ndf` 不依赖其他 crate；`ps-ops` 不依赖 `ps-abi`；`ps-cache` 只依赖 `ps-ndf`，不依赖 App。
 
 ## crate 职责
 
@@ -43,7 +41,6 @@ ps-abi ──> ps-ndf
 | `ps-ndf` | `Dataset`、`Series`、通道查找/增删、LOD、精度推断 | JSON、C 指针、Qt |
 | `ps-ops` | 过滤器、四元数转 RPY、时间对齐 | 数据集生命周期、UI |
 | `ps-cache` | 数据集二进制格式、原子写、源文件 size/mtime 指纹校验 | 缓存目录、key 拼接、何时失效 |
-| `ps-stream` | 固定容量环形缓冲、连续通道视图、视口 LOD | 连接协议、启停、落盘、增量 LOD 缓存 |
 | `ps-abi` | C 结构、指针/长度、错误码、panic 隔离、`ps_abi_selftest` | 通道数组本身、格式解析 |
 
 ## 对外 ABI
@@ -55,14 +52,12 @@ ps-abi ──> ps-ndf
 - `ps_dataset_apply_filter / preview_filter / apply_quat_rpy / remove_channel`
 - `ps_lod_minmax / ps_lod_minmax_many`
 - `ps_cache_save_dataset / ps_cache_load_dataset`
-- `ps_stream_new / free / push / channel_count / channel / lod`
 
 约定：
 
 - 不出现 Qt 类型；
 - 不出现 `ps_csv_* / ps_ulog_* / ps_oem7_*` 这类格式 API；
 - 缓存只接收“数据集 + 路径 + 源文件指纹”，不认 loader、不认选项 JSON；
-- 流只接收批量数组，不接收 socket / QWidget；
 - 跨边界只传批量数组，不逐点调用；
 - `PsChannelInfo` 的 `time/value` 指向内部内存，数据集/流释放或下一次追加后失效。
 

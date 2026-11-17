@@ -1,5 +1,9 @@
-//! NDF（NextPilot Data Format）：单通道时间序列的内存表示。
-//! 设计约束：t 与 v 分列存储（列式），f32/f64 双精度由 `Precision` 区分。
+//! NDF（NextPilot Data Format）：按表组织的时间序列内存表示。
+//! 逻辑上 Dataset 是库、Table 是 topic 表、Column 是字段列；物理上 t 与 v 分列存储。
+
+pub mod typed;
+
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Precision {
@@ -7,13 +11,20 @@ pub enum Precision {
     F64,
 }
 
-/// 一条通道的原始样本。`t` 用 f64 单调递增（秒），`v` 存 f64 便于统一算子。
-#[derive(Debug, Clone, Default)]
+/// 一条通道的原始样本。`t` 指向所属 topic 表的时间轴，同一表的所有列共享一份。
+/// `v` 存 f64 便于统一算子。
+#[derive(Debug, Clone)]
 pub struct Series {
     pub name: String,
     pub unit: String,
-    pub t: Vec<f64>,
+    pub t: Arc<Vec<f64>>,
     pub v: Vec<f64>,
+}
+
+impl Default for Series {
+    fn default() -> Self {
+        Self { name: String::new(), unit: String::new(), t: Arc::new(Vec::new()), v: Vec::new() }
+    }
 }
 
 impl Series {
@@ -22,8 +33,12 @@ impl Series {
     }
 
     pub fn push(&mut self, t: f64, v: f64) {
-        self.t.push(t);
+        Arc::make_mut(&mut self.t).push(t);
         self.v.push(v);
+    }
+
+    pub fn time(&self) -> &[f64] {
+        self.t.as_slice()
     }
 
     pub fn len(&self) -> usize {
@@ -74,16 +89,24 @@ impl Series {
     }
 }
 
-/// 数据集：一组具名通道。PS-NDF 是内核唯一的数据模型，
-/// `ps-abi` 只负责把这里的 Series 映射成 C 结构，不再自己持有通道数组。
+/// 一张 topic 表：一份时间轴 + 多列。Dataset 相当于库/schema。
+#[derive(Debug, Clone)]
+pub struct Table {
+    pub name: String,
+    pub t: Arc<Vec<f64>>,
+    pub channels: Vec<usize>,
+}
+
+/// 数据集：一组表；`channels` 是扁平视图，供现有 C ABI/绘图使用。
 #[derive(Debug, Clone, Default)]
 pub struct Dataset {
     pub channels: Vec<Series>,
+    pub tables: Vec<Table>,
 }
 
 impl Dataset {
     pub fn new() -> Self {
-        Self { channels: Vec::new() }
+        Self { channels: Vec::new(), tables: Vec::new() }
     }
 
     pub fn len(&self) -> usize {
@@ -103,7 +126,48 @@ impl Dataset {
         self.channels.iter().enumerate().find(|(_, c)| c.name == name)
     }
 
-    /// 追加通道；名字重复或为空返回错误。
+    /// 新建一张 topic 表；时间轴只复制一次。
+    pub fn add_table(&mut self, name: impl Into<String>, t: Vec<f64>) -> Result<usize, String> {
+        let name = name.into();
+        if name.is_empty() {
+            return Err("表名为空".into());
+        }
+        if self.tables.iter().any(|x| x.name == name) {
+            return Err(format!("表已存在：{name}"));
+        }
+        self.tables.push(Table { name, t: Arc::new(t), channels: Vec::new() });
+        Ok(self.tables.len() - 1)
+    }
+
+    /// 往指定表追加一列；同表所有列共享 table.t。
+    pub fn add_channel_to_table(
+        &mut self,
+        table: usize,
+        name: impl Into<String>,
+        unit: impl Into<String>,
+        v: Vec<f64>,
+    ) -> Result<(), String> {
+        let name = name.into();
+        if name.is_empty() {
+            return Err("输出通道名为空".into());
+        }
+        if table >= self.tables.len() {
+            return Err("表不存在".into());
+        }
+        if self.channels.iter().any(|c| c.name == name) {
+            return Err(format!("通道已存在：{name}"));
+        }
+        let t = self.tables[table].t.clone();
+        if v.len() != t.len() {
+            return Err(format!("通道点数与表时间轴不一致：{name}"));
+        }
+        let idx = self.channels.len();
+        self.channels.push(Series { name, unit: unit.into(), t, v });
+        self.tables[table].channels.push(idx);
+        Ok(())
+    }
+
+    /// 追加独立通道；名字重复或为空返回错误。
     pub fn add_channel(&mut self, series: Series) -> Result<(), String> {
         if series.name.is_empty() {
             return Err("输出通道名为空".into());
@@ -117,12 +181,17 @@ impl Dataset {
 
     /// 删除通道；返回是否删除成功。
     pub fn remove_channel(&mut self, name: &str) -> bool {
-        if let Some((idx, _)) = self.find(name) {
-            self.channels.remove(idx);
-            true
-        } else {
-            false
+        let Some(idx) = self.channels.iter().position(|c| c.name == name) else { return false; };
+        self.channels.remove(idx);
+        for table in &mut self.tables {
+            table.channels.retain(|&i| i != idx);
+            for i in &mut table.channels {
+                if *i > idx {
+                    *i -= 1;
+                }
+            }
         }
+        true
     }
 }
 
@@ -268,5 +337,19 @@ mod tests {
         assert!(ds.add_channel(Series::new("att.roll")).is_err());
         assert!(ds.remove_channel("att.roll"));
         assert!(ds.is_empty());
+    }
+
+    #[test]
+    fn table_channels_share_axis() {
+        let mut ds = Dataset::new();
+        let table = ds.add_table("att", vec![0.0, 1.0, 2.0]).unwrap();
+        ds.add_channel_to_table(table, "att.roll", "deg", vec![1.0, 2.0, 3.0]).unwrap();
+        ds.add_channel_to_table(table, "att.pitch", "deg", vec![4.0, 5.0, 6.0]).unwrap();
+        assert!(ds.add_channel_to_table(table, "att.yaw", "deg", vec![1.0]).is_err());
+        assert!(Arc::ptr_eq(&ds.channels[0].t, &ds.channels[1].t));
+        assert_eq!(ds.tables[0].channels, vec![0, 1]);
+        assert!(ds.remove_channel("att.roll"));
+        assert_eq!(ds.channels[0].name, "att.pitch");
+        assert_eq!(ds.tables[0].channels, vec![0]);
     }
 }

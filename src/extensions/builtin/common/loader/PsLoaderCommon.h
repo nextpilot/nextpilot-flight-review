@@ -6,6 +6,7 @@
 #include <QByteArray>
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -14,8 +15,11 @@ struct PsChannelData
 {
     std::string name;
     std::string unit;
-    std::vector<double> t;
+    std::string table;       /* 所属 topic 表；空则走旧单通道接口 */
+    std::shared_ptr<const std::vector<double>> axis; /* 同表共享的时间轴 */
+    std::vector<double> t;   /* 旧接口兼容；设置了 axis 时不再使用 */
     std::vector<double> v;
+    uint32_t value_type = PS_VALUE_F64; /* PsValueType；v 会按该类型写入 Dataset */
 };
 
 /* 把通道列表交给内核通用 dataset API，扩展不直接构造 PsDataset。 */

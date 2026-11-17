@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 pub const PS_EXTENSION_ABI_VERSION: u32 = 7;
-pub const PS_HOST_API_VERSION: u32 = 2;
+pub const PS_HOST_API_VERSION: u32 = 4;
 pub const PS_FAMILY_DATA_LOADER: u32 = 1;
 pub const PS_FAMILY_LIVE_SOURCE: u32 = 2;
 pub const PS_FAMILY_PARSER: u32 = 3;
@@ -47,6 +47,74 @@ pub type DatasetAddChannelFn = unsafe extern "C" fn(
     err_cap: u32,
 ) -> i32;
 pub type DatasetFreeFn = unsafe extern "C" fn(dataset: *mut c_void);
+pub type DatasetAddTableFn = unsafe extern "C" fn(
+    dataset: *mut c_void,
+    table: *const c_char,
+    time_s: *const f64,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32;
+pub type DatasetAddTableChannelFn = unsafe extern "C" fn(
+    dataset: *mut c_void,
+    table: *const c_char,
+    name: *const c_char,
+    unit: *const c_char,
+    value: *const f64,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32;
+pub type DatasetAddTableTypedFn = unsafe extern "C" fn(
+    dataset: *mut c_void,
+    table: *const c_char,
+    time_us: *const i64,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32;
+pub type DatasetAddTableColumnTypedFn = unsafe extern "C" fn(
+    dataset: *mut c_void,
+    table: *const c_char,
+    name: *const c_char,
+    unit: *const c_char,
+    value_type: u32,
+    values: *const c_void,
+    nulls: *const u8,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32;
+
+#[repr(C)]
+pub struct PsFrameColumn {
+    pub name: *const c_char,
+    pub unit: *const c_char,
+    pub value_type: u32,
+    pub values: *const c_void,
+    pub nulls: *const u8,
+}
+
+#[repr(C)]
+pub struct PsFrameBatch {
+    pub table: *const c_char,
+    pub time_us: *const i64,
+    pub seq: *const u64,
+    pub rows: u32,
+    pub columns: u32,
+    pub column_data: *const PsFrameColumn,
+}
+
+pub type DatasetAppendFrameFn = unsafe extern "C" fn(
+    dataset: *mut c_void,
+    table: *const c_char,
+    time_us: *const i64,
+    rows: u32,
+    columns: *const PsFrameColumn,
+    column_count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32;
 
 #[repr(C)]
 pub struct PsHostApi {
@@ -56,6 +124,11 @@ pub struct PsHostApi {
     pub dataset_add_channel: Option<DatasetAddChannelFn>,
     pub dataset_free: Option<DatasetFreeFn>,
     pub progress: Option<unsafe extern "C" fn(u64, u64)>,
+    pub dataset_add_table: Option<DatasetAddTableFn>,
+    pub dataset_add_table_channel: Option<DatasetAddTableChannelFn>,
+    pub dataset_add_table_typed: Option<DatasetAddTableTypedFn>,
+    pub dataset_add_table_column_typed: Option<DatasetAddTableColumnTypedFn>,
+    pub dataset_append_frame: Option<DatasetAppendFrameFn>,
 }
 
 pub type SchemaJsonFn = unsafe extern "C" fn(out: *mut c_char, cap: u32) -> i32;
@@ -120,6 +193,7 @@ pub struct PsSourceSink {
             u32,
         ) -> i32,
     >,
+    pub frame_batch: Option<unsafe extern "C" fn(*mut c_void, *const PsFrameBatch) -> i32>,
 }
 
 pub type OpenFn = unsafe extern "C" fn(

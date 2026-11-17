@@ -4,7 +4,7 @@
 #include "datasource/DataSourceRegistry.h"
 
 #include "MainWindow.h"
-#include "SourceModel.h"
+#include "DataSourceModel.h"
 
 #include <QAction>
 #include <QCursor>
@@ -83,13 +83,13 @@ void DataSourceSession::registerDataCommands()
     });
     m_mw->commands().add(QStringLiteral("data.exportSnapshot"), [this](const Ctx &) { exportActiveCsv(); });
     m_mw->commands().add(QStringLiteral("data.reload"), [this](const Ctx &) {
-        ps::data_source::SourceData *src = sourceById(m_activeSource);
-        if (!src || src->path.isEmpty())
+        ps::data_source::DataSource *src = sourceById(m_activeSource);
+        if (!src || src->config.path.isEmpty())
         {
             log(QStringLiteral("当前源没有可重载的文件"));
             return;
         }
-        const QString path = src->path;
+        const QString path = src->config.path;
         QWidget *row = src->row;
         if (row)
             removeSourceRow(row);

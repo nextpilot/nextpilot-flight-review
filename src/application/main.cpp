@@ -71,7 +71,7 @@ int main(int argc, char **argv)
         }
         const QString source = QString::fromUtf8(f.readAll());
 
-        ps::data_source::SourceStore store;
+        std::deque<ps::data_source::DataSource> store;
         ps::data_source::HostDataBridge bridge(store);
         ps::host::setHostService(&bridge);
 

@@ -343,6 +343,51 @@ void flush(OemState *st)
     st->values.clear();
 }
 
+struct LiveSample
+{
+    QString field;
+    QString unit;
+    double value;
+};
+
+// 一条 OEM7 语句 = 一帧。新宿主走 frame_batch；旧宿主退回逐通道。
+void pushFrame(OemState *st, const QString &table, double t, const QVector<LiveSample> &samples)
+{
+    if (samples.isEmpty())
+        return;
+
+    const PsSourceSink *sink = &st->sink;
+    if (sink->frame_batch)
+    {
+        const QByteArray tableName = table.toUtf8();
+        const int64_t time_us = static_cast<int64_t>(std::llround(t * 1e6));
+        std::vector<double> values(samples.size());
+        QVector<QByteArray> names;
+        QVector<QByteArray> units;
+        names.reserve(samples.size());
+        units.reserve(samples.size());
+        for (const LiveSample &s : samples)
+        {
+            names.append(s.field.toUtf8());
+            units.append(s.unit.toUtf8());
+        }
+        std::vector<PsFrameColumn> cols(samples.size());
+        for (int i = 0; i < samples.size(); ++i)
+        {
+            values[i] = samples[i].value;
+            cols[i] = PsFrameColumn{names[i].constData(), units[i].constData(),
+                                    PS_VALUE_F64, &values[i], nullptr};
+        }
+        PsFrameBatch batch{tableName.constData(), &time_us, nullptr, 1,
+                           static_cast<uint32_t>(cols.size()), cols.data()};
+        sink->frame_batch(sink->ctx, &batch);
+        return;
+    }
+
+    for (const LiveSample &s : samples)
+        addSample(st, table + QLatin1Char('.') + s.field, s.unit, t, s.value);
+}
+
 bool parseDouble(const QString &s, double *out)
 {
     bool ok = false;
@@ -427,6 +472,8 @@ bool parseBinaryFrame(OemState *st, int headerLength, const unsigned char *hdr,
         return false;
     int offset = 0;
     int emitted = 0;
+    QVector<LiveSample> samples;
+    const QString table = QStringLiteral("oem7.%1").arg(name.toLower());
     for (const QJsonValue &fv : arr)
     {
         const QJsonObject f = fv.toObject();
@@ -449,8 +496,7 @@ bool parseBinaryFrame(OemState *st, int headerLength, const unsigned char *hdr,
             double value = readScalar(dtype, body + offset);
             if (std::isfinite(value))
             {
-                addSample(st, QStringLiteral("oem7.%1.%2").arg(name.toLower(), fname),
-                          unitOf(fname), t, value);
+                samples.append({fname, unitOf(fname), value});
                 ++emitted;
             }
         }
@@ -458,6 +504,7 @@ bool parseBinaryFrame(OemState *st, int headerLength, const unsigned char *hdr,
     }
     Q_UNUSED(headerLength);
     Q_UNUSED(hdr);
+    pushFrame(st, table, t, samples);
     return emitted > 0;
 }
 
@@ -572,6 +619,8 @@ bool parseGeneric(OemState *st, const QString &logName, const QStringList &head,
         return false;
 
     int emitted = 0;
+    QVector<LiveSample> samples;
+    const QString table = QStringLiteral("oem7.%1").arg(logName.toLower());
     for (int i = 0; i < arr.size() && i < body.size() && emitted < 64; ++i)
     {
         const QJsonObject f = arr.at(i).toObject();
@@ -623,10 +672,10 @@ bool parseGeneric(OemState *st, const QString &logName, const QStringList &head,
         else if (lower.contains(QStringLiteral("velocity")) || lower.contains(QStringLiteral("speed")))
             unit = QStringLiteral("m/s");
 
-        addSample(st, QStringLiteral("oem7.%1.%2").arg(logName.toLower(), fname),
-                  unit, t, value);
+        samples.append({fname, unit, value});
         ++emitted;
     }
+    pushFrame(st, table, t, samples);
     return emitted > 0;
 }
 

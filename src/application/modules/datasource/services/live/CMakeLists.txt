@@ -1,6 +1,6 @@
 add_library(ps_live STATIC
-  LiveSession.h
-  LiveSession.cpp
+  LiveFrameSink.h
+  LiveFrameSink.cpp
   PsCaptureFormat.h
   PsCaptureFormat.cpp
   record/StreamRecorder.h

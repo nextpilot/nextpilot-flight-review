@@ -11,7 +11,9 @@ target_link_libraries(ps_datasource_protocol PUBLIC Qt6::Core)
 
 add_library(ps_application_datasource OBJECT
   include/datasource/DataSourceModule.h
-  include/datasource/SourceModel.h
+  include/datasource/DataSourceModel.h
+  include/datasource/DataSourceConfig.h
+  include/datasource/DataSourceDriver.h
   include/datasource/DataSourceEntry.h
   include/datasource/DataSourceRegistry.h
   include/datasource/HostDataBridge.h
@@ -20,10 +22,15 @@ add_library(ps_application_datasource OBJECT
   include/datasource/MessageParserRegistry.h
   include/datasource/DecodedFrame.h
   manager/DataSourceRegistry.cpp
+  manager/DataSourceConfig.cpp
   manager/DataSourceModule.cpp
   manager/HostDataBridge.cpp
   manager/DataSourceSession.h
   manager/DataSourceSession.cpp
+  manager/OfflineDataSourceDriver.h
+  manager/OfflineDataSourceDriver.cpp
+  manager/LiveDataSourceDriver.h
+  manager/LiveDataSourceDriver.cpp
   manager/DataSourceCommands.cpp
   ribbon/DataSourceRibbon.cpp
   dock/DataSourceDock.h

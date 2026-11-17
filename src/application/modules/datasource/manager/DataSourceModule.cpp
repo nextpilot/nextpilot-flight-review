@@ -3,11 +3,11 @@
 #include "ModuleBridge.h"
 #include "MainWindow.h"
 #include "DataSourceRegistry.h"
-#include "SourceModel.h"
+#include "DataSourceModel.h"
 
 #include <QHash>
 
-using ps::data_source::SourceData;
+using ps::data_source::DataSource;
 #include <QPair>
 #include <QVector>
 #include <QWidget>
@@ -45,7 +45,6 @@ DataSourceSession *dataSourceSession(MainWindow *mw)
     return c;
 }
 
-ps::data_source::SourceStore *dataSourceStore(MainWindow *mw) { return dataSourceSession(mw)->store(); }
 int dataSourceActiveId(MainWindow *mw)
 {
     return dataSourceSession(mw)->activeSourceId();
@@ -54,13 +53,13 @@ QString dataSourceActivePath(MainWindow *mw)
 {
     auto *session = dataSourceSession(mw);
     auto *source = session->sourceById(session->activeSourceId());
-    return source ? source->path : QString();
+    return source ? source->config.path : QString();
 }
 QString dataSourceActiveFormat(MainWindow *mw)
 {
     auto *session = dataSourceSession(mw);
     auto *source = session->sourceById(session->activeSourceId());
-    return source ? source->fmt : QString();
+    return source ? source->config.fmt : QString();
 }
 void addDataSourceTimeMarker(MainWindow *mw, double t, const QString &label, bool prompt) { dataSourceSession(mw)->addTimeMarker(t, label, prompt); }
 void removeDataSourceTimeMarker(MainWindow *mw, const QString &id) { dataSourceSession(mw)->removeTimeMarker(id); }
@@ -82,8 +81,8 @@ void DataSourceComponent::contribute(Registry &registry, HostContext &)
         dataSourceSession(mw);
         ps::bridge::setSourceViewsProvider(mw, [](MainWindow *m) {
             QVector<ps::bridge::SourceView> out;
-            for (const SourceData &src : dataSourceSession(m)->store()->items())
-                out.append(ps::bridge::SourceView{src.id, src.path, src.name, src.alias, src.channels});
+            for (const DataSource &src : dataSourceSession(m)->sources())
+                out.append(ps::bridge::SourceView{src.config.id, src.config.path, src.config.name, src.config.alias, src.channels});
             return out;
         });
     });

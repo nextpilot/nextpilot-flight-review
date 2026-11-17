@@ -32,21 +32,37 @@ host::Result missing(const QString &what)
 }
 } // namespace
 
-HostDataBridge::HostDataBridge(SourceStore &store) : m_store(store) {}
+HostDataBridge::HostDataBridge(std::deque<DataSource> &store) : m_store(store) {}
+
+DataSource *HostDataBridge::sourceById(int id)
+{
+    for (DataSource &src : m_store)
+        if (src.config.id == id)
+            return &src;
+    return nullptr;
+}
+
+int HostDataBridge::nextId() const
+{
+    int id = 0;
+    for (const DataSource &src : m_store)
+        id = std::max(id, src.config.id + 1);
+    return id;
+}
 
 QVector<host::SourceInfo> HostDataBridge::sources()
 {
     QVector<host::SourceInfo> out;
-    out.reserve(m_store.items().size());
-    for (const SourceData &src : m_store.items())
+    out.reserve(m_store.size());
+    for (const DataSource &src : m_store)
     {
         host::SourceInfo info;
-        info.id = src.id;
-        info.name = src.name;
-        info.alias = src.alias;
-        info.path = src.path;
-        info.format = src.fmt;
-        info.live = src.live;
+        info.id = src.config.id;
+        info.name = src.config.name;
+        info.alias = src.config.alias;
+        info.path = src.config.path;
+        info.format = src.config.fmt;
+        info.live = src.isLive();
         info.paused = src.paused;
         out.append(info);
     }
@@ -56,8 +72,8 @@ QVector<host::SourceInfo> HostDataBridge::sources()
 QVector<host::ChannelInfo> HostDataBridge::channels(int sourceId)
 {
     QVector<host::ChannelInfo> out;
-    SourceData *src = m_store.byId(sourceId);
-    if (!src || src->live || !src->ds)
+    DataSource *src = sourceById(sourceId);
+    if (!src || src->isLive() || !src->ds)
         return out;
 
     const uint32_t n = ps_dataset_channel_count(src->ds);
@@ -96,7 +112,7 @@ host::Result HostDataBridge::seriesView(int sourceId, const QString &channel,
     if (!out)
         return host::Result::failure(QStringLiteral("einvalid"), QStringLiteral("输出指针为空"));
 
-    SourceData *src = m_store.byId(sourceId);
+    DataSource *src = sourceById(sourceId);
     if (!src)
         return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
     if (!src->ds)
@@ -124,10 +140,10 @@ host::Result HostDataBridge::slice(int sourceId, const QString &channel, double 
     if (!t || !v)
         return host::Result::failure(QStringLiteral("einvalid"), QStringLiteral("输出指针为空"));
 
-    SourceData *src = m_store.byId(sourceId);
+    DataSource *src = sourceById(sourceId);
     if (!src)
         return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
-    if (src->live)
+    if (src->isLive())
         return host::Result::failure(QStringLiteral("elive"),
                                          QStringLiteral("实时源没有历史切片"));
     if (!src->ds)
@@ -193,8 +209,8 @@ host::Result HostDataBridge::slice(int sourceId, const QString &channel, double 
 host::LiveStatus HostDataBridge::liveStatus(int sourceId)
 {
     host::LiveStatus st;
-    const SourceData *src = m_store.byId(sourceId);
-    if (!src || !src->live)
+    const DataSource *src = sourceById(sourceId);
+    if (!src || !src->isLive())
         return st;
     st.connected = src->handle != nullptr;
     // recording / dropped / samples 由 LiveSession 在 S4 补齐，S1 不猜字段
@@ -229,32 +245,32 @@ host::JobHandle HostDataBridge::loadFile(const QString &path, const QString &loa
     if (entry->load(path, opts, &ds, err, sizeof(err)) != 0 || !ds)
         return {};
 
-    SourceData src;
-    src.id = m_store.nextId();
-    src.name = fi.fileName();
-    src.alias = fi.completeBaseName();
-    src.path = fi.absoluteFilePath();
-    src.fmt = entry->formatTag.isEmpty() ? entry->id : entry->formatTag;
+    DataSource src;
+    src.config.id = nextId();
+    src.config.name = fi.fileName();
+    src.config.alias = fi.completeBaseName();
+    src.config.path = fi.absoluteFilePath();
+    src.config.fmt = entry->formatTag.isEmpty() ? entry->id : entry->formatTag;
     src.ds = ds;
     src.channels.clear();
     const uint32_t n = ps_dataset_channel_count(ds);
     for (uint32_t i = 0; i < n; ++i)
         src.channels.append(ps_dataset_channel(ds, i));
-    m_store.items().append(src);
-    return {src.id};
+    m_store.push_back(std::move(src));
+    return {m_store.back().config.id};
 }
 
 host::Result HostDataBridge::closeSource(int sourceId)
 {
-    for (int i = 0; i < m_store.items().size(); ++i)
+    for (int i = 0; i < m_store.size(); ++i)
     {
-        if (m_store.items()[i].id != sourceId)
+        if (m_store[i].config.id != sourceId)
             continue;
-        SourceData &src = m_store.items()[i];
+        DataSource &src = m_store[i];
         if (src.ds)
             ps_dataset_free(src.ds);
         src.ds = nullptr;
-        m_store.items().removeAt(i);
+        m_store.erase(m_store.begin() + i);
         return {};
     }
     return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
@@ -262,10 +278,10 @@ host::Result HostDataBridge::closeSource(int sourceId)
 
 host::JobHandle HostDataBridge::reloadSource(int sourceId)
 {
-    SourceData *src = m_store.byId(sourceId);
-    if (!src || src->path.isEmpty())
+    DataSource *src = sourceById(sourceId);
+    if (!src || src->config.path.isEmpty())
         return {};
-    const QString path = src->path;
+    const QString path = src->config.path;
     if (src->ds)
         ps_dataset_free(src->ds);
     src->ds = nullptr;
@@ -284,12 +300,12 @@ host::JobHandle HostDataBridge::reloadSource(int sourceId)
     const uint32_t n = ps_dataset_channel_count(ds);
     for (uint32_t i = 0; i < n; ++i)
         src->channels.append(ps_dataset_channel(ds, i));
-    return {src->id};
+    return {src->config.id};
 }
 
 host::JobHandle HostDataBridge::exportCsv(int sourceId, const QString &path, bool overwrite)
 {
-    SourceData *src = m_store.byId(sourceId);
+    DataSource *src = sourceById(sourceId);
     if (!src || !src->ds)
         return {};
 
@@ -365,8 +381,8 @@ host::Result HostDataBridge::disconnectLive(int sourceId)
 
 host::Result HostDataBridge::setPaused(int sourceId, bool paused)
 {
-    SourceData *src = m_store.byId(sourceId);
-    if (!src || !src->live)
+    DataSource *src = sourceById(sourceId);
+    if (!src || !src->isLive())
         return missing(QStringLiteral("实时源不存在：%1").arg(sourceId));
     src->paused = paused;
     return {};
@@ -374,14 +390,14 @@ host::Result HostDataBridge::setPaused(int sourceId, bool paused)
 
 host::Result HostDataBridge::startRecording(int sourceId, const QString &, const QString &)
 {
-    if (!m_store.byId(sourceId))
+    if (!sourceById(sourceId))
         return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
     return host::Result::failure(QStringLiteral("eunsupported"), QStringLiteral("S1 不接录制"));
 }
 
 host::Result HostDataBridge::stopRecording(int sourceId)
 {
-    if (!m_store.byId(sourceId))
+    if (!sourceById(sourceId))
         return missing(QStringLiteral("数据源不存在：%1").arg(sourceId));
     return host::Result::failure(QStringLiteral("eunsupported"), QStringLiteral("S1 不接录制"));
 }

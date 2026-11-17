@@ -36,7 +36,7 @@ CSV 没有统一的时间规范。PlotScope 会按表头猜时间列，猜不中
 | 内置仿真 | 应用内启动 | 无硬件时验证绘图和脚本 |
 | 原始流回放 | PSRAW1 或旧裸字节 | 回放录制流 |
 
-实时源由独立 `LiveSession` 持有环形缓冲和 UI 刷新；录制由独立 `StreamRecorder` 写盘，不阻塞数据输入。
+实时源由独立 `LiveFrameSink` 持有环形缓冲和 UI 刷新；录制由独立 `StreamRecorder` 写盘，不阻塞数据输入。
 
 录制格式：
 

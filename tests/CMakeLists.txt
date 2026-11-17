@@ -120,6 +120,13 @@ if(TARGET ps_live AND TARGET ps_data_load_mcap)
     ${PROJECT_SOURCE_DIR}/src/extensions/builtin/robotics/datasources/mcap)
   target_link_libraries(test_stream_recorder PRIVATE ps_live ps_data_load_mcap)
   add_test(NAME stream_recorder COMMAND test_stream_recorder)
+
+  add_executable(test_live_frame unit/test_live_frame.cpp)
+  target_include_directories(test_live_frame PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include)
+  target_link_libraries(test_live_frame PRIVATE ps_live)
+  add_test(NAME live_frame COMMAND test_live_frame)
 endif()
 
 if(TARGET ps_data_source_mavlink)
@@ -201,6 +208,7 @@ if(TARGET ps_builtin_components)
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
     ${PROJECT_SOURCE_DIR}/src/application/modules/datasource/include
+    ${PROJECT_SOURCE_DIR}/src/application/modules/analysis/include
   )
   target_link_libraries(test_toolbox_registration PRIVATE
     ps_autopilot_component

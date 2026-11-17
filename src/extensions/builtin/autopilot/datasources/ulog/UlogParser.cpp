@@ -6,6 +6,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <tuple>
 
@@ -14,6 +15,25 @@ namespace {
 constexpr uint8_t kMagic[7] = {'U', 'L', 'o', 'g', 0x01, 0x12, 0x35};
 
 enum class Prim { I8, U8, I16, U16, I32, U32, I64, U64, F32, F64, Bool, Char };
+
+uint32_t psTypeFromPrim(Prim p)
+{
+    switch (p)
+    {
+    case Prim::I8: return PS_VALUE_I8;
+    case Prim::U8: return PS_VALUE_U8;
+    case Prim::I16: return PS_VALUE_I16;
+    case Prim::U16: return PS_VALUE_U16;
+    case Prim::I32: return PS_VALUE_I32;
+    case Prim::U32: return PS_VALUE_U32;
+    case Prim::I64: return PS_VALUE_I64;
+    case Prim::U64: return PS_VALUE_U64;
+    case Prim::F32: return PS_VALUE_F32;
+    case Prim::F64: return PS_VALUE_F64;
+    case Prim::Bool: return PS_VALUE_BOOL;
+    default: return PS_VALUE_TEXT;
+    }
+}
 
 size_t primSize(Prim p)
 {
@@ -499,6 +519,7 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         const std::string topic = multiTopics[s.topic] > 0
             ? s.topic + "." + (s.multiId < 10 ? "0" : "") + std::to_string(s.multiId)
             : s.topic;
+        auto axis = std::make_shared<const std::vector<double>>(std::move(s.t));
         size_t k = 0;
         for (const Leaf &l : s.leaves)
         {
@@ -508,7 +529,9 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                 break;
             PsChannelData c;
             c.name = topic + "." + l.path;
-            c.t = s.t;
+            c.table = topic;
+            c.value_type = psTypeFromPrim(l.prim);
+            c.axis = axis;
             c.v = std::move(s.vals[k]);
             log.channels.push_back(std::move(c));
             ++k;

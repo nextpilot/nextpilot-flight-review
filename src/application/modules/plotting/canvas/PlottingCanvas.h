@@ -16,6 +16,7 @@ class QToolButton;
 class QKeyEvent;
 
 struct PsChannelInfo;
+struct PsDataset;
 
 // 一块画布（一页里的一个 plot 格）。
 // 曲线数据来自内核（PsChannelInfo 指针，不拷贝）；视口抽稀调用 ps_lod_minmax，
@@ -171,6 +172,10 @@ private:
         QColor color;
         double offsetSec = 0.0;    // 显示时间 = 原始时间 - offset
         const PsChannelInfo *info = nullptr; // 实时通道：point_count 会增长
+        const PsDataset *dataset = nullptr;   // typed 表所属数据集；旧通道为空走旧 LOD
+        QString table;             // typed 表名
+        QString column;            // typed 列名
+        quint64 generation = 0;    // 数据源重建代数
         const double *t = nullptr; // 内核内存（或 demo 自有内存）
         const double *v = nullptr;
         quint32 n = 0;
@@ -209,6 +214,8 @@ private:
     void showSeriesMenu(int index, const QPoint &globalPos);
     void showCanvasMenu(double t, int markerIndex, AxisZone zone, const QPoint &globalPos);
     void showAxisMenu(AxisZone zone, const QPoint &globalPos);
+    uint32_t kernelLod(const Series &s, double t0, double t1, uint32_t px,
+                       double *out, uint32_t cap) const;
     double sampleAt(const Series &s, double displayT, bool *ok) const;          // 右键命中哪条曲线
     QString formatTime(double t) const;
     void resetView();

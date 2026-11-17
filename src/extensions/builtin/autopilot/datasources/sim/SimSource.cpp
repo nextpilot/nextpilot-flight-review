@@ -98,38 +98,70 @@ public:
 
         std::vector<double> v(count);
         const PsSourceSink *sink = this->sink();
-        if (!sink || !sink->channel_batch) {
+        if (!sink || (!sink->channel_batch && !sink->frame_batch)) {
             ps::fillError(err, 1, "宿主 sink 未绑定");
             return false;
         }
 
-        for (int ch = 0; ch < channels_; ++ch) {
-            const char *name = nullptr;
-            const char *unit = nullptr;
-            switch (ch) {
-            case 0: name = "sim.roll"; unit = "deg"; break;
-            case 1: name = "sim.pitch"; unit = "deg"; break;
-            case 2: name = "sim.rpm"; unit = "rpm"; break;
-            default: name = "sim.temp"; unit = "C"; break;
-            }
+        std::vector<double> values[4];
+        for (int ch = 0; ch < channels_; ++ch)
+        {
+            values[ch].resize(count);
             const double freq = 0.7 + 0.35 * ch;
-            for (uint32_t i = 0; i < count; ++i) {
+            for (uint32_t i = 0; i < count; ++i)
+            {
                 const double x = t[i];
                 if (ch == 0)
-                    v[i] = 1.2 * std::sin(2.0 * kPi * freq * x);
+                    values[ch][i] = 1.2 * std::sin(2.0 * kPi * freq * x);
                 else if (ch == 1)
-                    v[i] = 0.8 * std::sin(2.0 * kPi * freq * x + 0.7);
+                    values[ch][i] = 0.8 * std::sin(2.0 * kPi * freq * x + 0.7);
                 else if (ch == 2)
-                    v[i] = 1000.0 + 180.0 * std::sin(2.0 * kPi * 0.45 * x);
+                    values[ch][i] = 1000.0 + 180.0 * std::sin(2.0 * kPi * 0.45 * x);
                 else
-                    v[i] = 30.0 + 2.0 * std::sin(2.0 * kPi * 0.2 * x);
+                    values[ch][i] = 30.0 + 2.0 * std::sin(2.0 * kPi * 0.2 * x);
             }
-            if (sink->channel_batch(sink->ctx, name, unit, t.data(), v.data(), count) != 0) {
-                ps::fillError(err, 1, "宿主缓冲区已满");
-                finished_ = true;
-                state_ = PS_INPUT_DONE;
-                return true;
+        }
+
+        int32_t rc = 0;
+        if (sink->frame_batch)
+        {
+            std::vector<int64_t> time_us(count);
+            for (uint32_t i = 0; i < count; ++i)
+                time_us[i] = static_cast<int64_t>(std::llround(t[i] * 1e6));
+            PsFrameColumn cols[4] = {
+                {"roll", "deg", PS_VALUE_F64, values[0].data(), nullptr},
+                {"pitch", "deg", PS_VALUE_F64, values[1].data(), nullptr},
+                {"rpm", "rpm", PS_VALUE_F64, values[2].data(), nullptr},
+                {"temp", "C", PS_VALUE_F64, values[3].data(), nullptr},
+            };
+            PsFrameBatch batch{"sim", time_us.data(), nullptr, count,
+                               static_cast<uint32_t>(channels_), cols};
+            rc = sink->frame_batch(sink->ctx, &batch);
+        }
+        else
+        {
+            for (int ch = 0; ch < channels_; ++ch)
+            {
+                const char *name = nullptr;
+                const char *unit = nullptr;
+                switch (ch) {
+                case 0: name = "sim.roll"; unit = "deg"; break;
+                case 1: name = "sim.pitch"; unit = "deg"; break;
+                case 2: name = "sim.rpm"; unit = "rpm"; break;
+                default: name = "sim.temp"; unit = "C"; break;
+                }
+                if (sink->channel_batch(sink->ctx, name, unit, t.data(), values[ch].data(), count) != 0)
+                {
+                    rc = 1;
+                    break;
+                }
             }
+        }
+        if (rc != 0) {
+            ps::fillError(err, 1, "宿主缓冲区已满");
+            finished_ = true;
+            state_ = PS_INPUT_DONE;
+            return true;
         }
 
         generated_ = upto;

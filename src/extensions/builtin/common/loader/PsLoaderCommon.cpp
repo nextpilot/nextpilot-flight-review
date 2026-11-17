@@ -1,5 +1,8 @@
 #include "PsLoaderCommon.h"
 
+#include <cmath>
+#include <map>
+
 namespace {
 thread_local const PsHostApi *t_host = nullptr;
 thread_local uint32_t t_lastPct = 0xFFFFFFFFu;
@@ -137,10 +140,143 @@ PsDataset *psBuildDataset(const std::vector<PsChannelData> &channels, std::strin
         return nullptr;
     }
     char e[256] = {0};
+    std::map<std::string, const void *> tables;
+    auto tableColumn = [](const PsChannelData &c) {
+        const std::string prefix = c.table + ".";
+        if (!c.table.empty() && c.name.compare(0, prefix.size(), prefix) == 0)
+            return c.name.substr(prefix.size());
+        return c.name;
+    };
+    auto addTypedColumn = [&](const PsChannelData &c, uint32_t n) -> int32_t {
+        const std::string column = tableColumn(c);
+        switch (c.value_type)
+        {
+        case PS_VALUE_F64:
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_F64, c.v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        case PS_VALUE_F32:
+        {
+            std::vector<float> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<float>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_F32, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        case PS_VALUE_I64:
+        {
+            std::vector<int64_t> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<int64_t>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_I64, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        case PS_VALUE_U64:
+        {
+            std::vector<uint64_t> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<uint64_t>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_U64, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        case PS_VALUE_I32:
+        {
+            std::vector<int32_t> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<int32_t>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_I32, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        case PS_VALUE_U32:
+        {
+            std::vector<uint32_t> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<uint32_t>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_U32, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        case PS_VALUE_I16:
+        {
+            std::vector<int16_t> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<int16_t>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_I16, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        case PS_VALUE_U16:
+        {
+            std::vector<uint16_t> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<uint16_t>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_U16, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        case PS_VALUE_I8:
+        {
+            std::vector<int8_t> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<int8_t>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_I8, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        case PS_VALUE_U8:
+        {
+            std::vector<uint8_t> v(n);
+            for (uint32_t i = 0; i < n; ++i) v[i] = static_cast<uint8_t>(c.v[i]);
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_U8, v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+        default:
+            return host->dataset_add_table_column_typed(raw, c.table.c_str(), column.c_str(),
+                                                        c.unit.c_str(), PS_VALUE_F64, c.v.data(), nullptr, n,
+                                                        e, sizeof(e));
+        }
+    };
     for (const PsChannelData &c : channels)
     {
         if (c.name.empty())
             continue;
+        if (c.axis && !c.table.empty())
+        {
+            if (c.v.size() != c.axis->size())
+            {
+                err = c.name + "：点数与时间轴不一致";
+                host->dataset_free(raw);
+                return nullptr;
+            }
+            const uint32_t n = static_cast<uint32_t>(c.axis->size());
+            auto it = tables.find(c.table);
+            if (it == tables.end())
+            {
+                std::vector<int64_t> time_us(n);
+                for (uint32_t i = 0; i < n; ++i)
+                    time_us[i] = static_cast<int64_t>(std::llround((*c.axis)[i] * 1e6));
+                const int32_t rc = host->dataset_add_table_typed(
+                    raw, c.table.c_str(), time_us.data(), n, e, sizeof(e));
+                if (rc != 0)
+                {
+                    err = c.table + "：" + e;
+                    host->dataset_free(raw);
+                    return nullptr;
+                }
+                tables.emplace(c.table, c.axis.get());
+            }
+            else if (it->second != c.axis.get())
+            {
+                err = c.table + "：同一张表的时间轴不一致";
+                host->dataset_free(raw);
+                return nullptr;
+            }
+            const int32_t rc = addTypedColumn(c, n);
+            if (rc != 0)
+            {
+                err = c.name + "：" + e;
+                host->dataset_free(raw);
+                return nullptr;
+            }
+            continue;
+        }
         const int32_t rc = host->dataset_add_channel(raw, c.name.c_str(), c.unit.c_str(),
                                                      c.t.data(), c.v.data(),
                                                      static_cast<uint32_t>(std::min(c.t.size(), c.v.size())),

@@ -32,8 +32,12 @@ typedef struct PsChannelInfo {
     const char *name;
     const char *unit;
     uint32_t    point_count;
-    const double *time;   /* 秒 */
+    const double *time;   /* 秒；typed 表为共享 f64 视图 */
     const double *value;
+    const char   *table;     /* typed 表名；旧通道为 NULL */
+    const char   *column;    /* typed 列名；旧通道为 NULL */
+    const void   *dataset;   /* 拥有该 typed 表的 PsDataset；旧通道为 NULL */
+    uint64_t      generation;/* 数据源重建代数，0 表示旧通道 */
 } PsChannelInfo;
 
 /* 单通道统计结果。NaN/inf 视作缺失点，不计入 count。 */
@@ -47,6 +51,38 @@ typedef struct PsStats {
     double   median;    /* 未请求时填 NaN */
 } PsStats;
 
+/* typed 列类型；顺序与 Rust ps_ndf::typed::ValueType 一致。 */
+#ifndef PS_VALUE_TYPE_DEFINED
+#define PS_VALUE_TYPE_DEFINED
+typedef enum PsValueType {
+    PS_VALUE_F64 = 0,
+    PS_VALUE_F32 = 1,
+    PS_VALUE_I64 = 2,
+    PS_VALUE_U64 = 3,
+    PS_VALUE_I32 = 4,
+    PS_VALUE_U32 = 5,
+    PS_VALUE_I16 = 6,
+    PS_VALUE_U16 = 7,
+    PS_VALUE_I8 = 8,
+    PS_VALUE_U8 = 9,
+    PS_VALUE_BOOL = 10,
+    PS_VALUE_TEXT = 11
+} PsValueType;
+#endif
+
+/* 一帧/一批行里的单列。values 按 type 解释；nulls 长度 (rows+7)/8，NULL=全有效。 */
+#ifndef PS_FRAME_COLUMN_DEFINED
+#define PS_FRAME_COLUMN_DEFINED
+typedef struct PsFrameColumn {
+    const char    *name;
+    const char    *unit;
+    PsValueType    type;
+    const void    *values;
+    const uint8_t *nulls;
+} PsFrameColumn;
+#endif
+
+
 /* ---- 数据集只由扩展/缓存通过通用构造 API 生成 ---- */
 
 uint32_t             ps_dataset_channel_count(const PsDataset *ds);
@@ -59,6 +95,36 @@ PsDataset           *ps_dataset_new(void);
 int32_t              ps_dataset_add_channel(PsDataset *ds, const char *name, const char *unit,
                                             const double *time, const double *value, uint32_t count,
                                             char *err, uint32_t err_cap);
+/* 表级构造：一个 topic 一张表，表内通道共享同一时间轴。 */
+int32_t              ps_dataset_add_table(PsDataset *ds, const char *table, const double *time,
+                                          uint32_t count, char *err, uint32_t err_cap);
+int32_t              ps_dataset_add_table_channel(PsDataset *ds, const char *table,
+                                                  const char *name, const char *unit,
+                                                  const double *value, uint32_t count,
+                                                  char *err, uint32_t err_cap);
+/* typed 表级构造：时间轴用 UTC 微秒；列值按 PsValueType 解释，nulls 可选位图（1=null）。 */
+int32_t              ps_dataset_add_table_typed(PsDataset *ds, const char *table,
+                                                const int64_t *time_us, uint32_t count,
+                                                char *err, uint32_t err_cap);
+int32_t              ps_dataset_add_table_column_typed(PsDataset *ds, const char *table,
+                                                       const char *name, const char *unit,
+                                                       uint32_t value_type, const void *values,
+                                                       const uint8_t *nulls, uint32_t count,
+                                                       char *err, uint32_t err_cap);
+/* frame_batch 落库：表不存在则按首批列建表，存在则校验列顺序后追加；seq 表内自增。 */
+int32_t              ps_dataset_append_frame(PsDataset *ds, const char *table,
+                                             const int64_t *time_us, uint32_t rows,
+                                             const PsFrameColumn *columns, uint32_t column_count,
+                                             char *err, uint32_t err_cap);
+/* 设置 live ring 字节预算；table 为 NULL 表示 Dataset 默认预算，bytes=0 取消 ring。 */
+int32_t              ps_dataset_set_ring_budget(PsDataset *ds, const char *table, uint64_t bytes,
+                                                char *err, uint32_t err_cap);
+/* typed 表当前行数；表不存在返回 0。 */
+uint64_t             ps_dataset_table_rows(PsDataset *ds, const char *table);
+/* typed 表视口 LOD；out 为 (time_sec,min,max) 三元组，长度至少 cap*3，返回实际三元组数。 */
+uint32_t             ps_dataset_lod_minmax(PsDataset *ds, const char *table, const char *column,
+                                           int64_t t0_us, int64_t t1_us, uint32_t px,
+                                           double *out, uint32_t cap);
 
 /* 绘图前变换：结果作为普通通道写回同一 PsDataset。
  * ps_dataset_apply_filter：input 为通道名，filter_id 为 PJ4 内置算子，
@@ -156,26 +222,6 @@ int32_t ps_cache_load_params(const char *path,
                              int64_t source_size, int64_t source_mtime,
                              char *out, uint32_t cap,
                              char *err, uint32_t err_cap);
-
-/* ---- 实时流：固定容量缓冲 + 通道视图 + 视口 LOD ---- */
-
-typedef struct PsStream PsStream;  /* 不透明句柄，ps_stream_free 释放 */
-
-PsStream *ps_stream_new(uint32_t capacity);
-void      ps_stream_free(PsStream *stream);
-
-/* 追加一批样本；0 全收；1 容量不足截断；2 参数错误。 */
-int32_t ps_stream_push(PsStream *stream, const char *name, const char *unit,
-                       const double *time, const double *value, uint32_t count);
-
-uint32_t             ps_stream_channel_count(const PsStream *stream);
-/* 与 PsChannelInfo 同布局；会刷新环形缓冲的连续视图，下一次刷新/释放后失效。 */
-const PsChannelInfo *ps_stream_channel(PsStream *stream, uint32_t index);
-
-/* 对流通道做视口 LOD；返回三元组数。 */
-uint32_t ps_stream_lod(PsStream *stream, const char *name,
-                       double t0, double t1, uint32_t px,
-                       double *out_xyz, uint32_t cap_triples);
 
 
 #ifdef __cplusplus

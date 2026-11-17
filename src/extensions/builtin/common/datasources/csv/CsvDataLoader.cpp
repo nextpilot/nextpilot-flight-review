@@ -12,6 +12,7 @@
 #include <QString>
 
 #include <cstring>
+#include <memory>
 
 namespace {
 
@@ -288,14 +289,15 @@ int32_t csvLoad(const char *path, const char *optsJson, const PsHostApi *host, v
         return 2;
     }
     std::vector<PsChannelData> channels;
-    const auto &timeCol = table.columns[0];
+    auto axis = std::make_shared<const std::vector<double>>(std::move(table.columns[0]));
     for (size_t i = 1; i < table.columns.size(); ++i)
     {
         PsChannelData c;
         c.name = table.headers[i];
         c.unit = psUnitFromHeader(c.name);
-        c.t = timeCol;
-        c.v = table.columns[i];
+        c.table = "csv";
+        c.axis = axis;
+        c.v = std::move(table.columns[i]);
         channels.push_back(std::move(c));
     }
     PsDataset *ds = psBuildDataset(channels, perr, host);

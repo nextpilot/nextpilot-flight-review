@@ -4,7 +4,7 @@
 
 use std::ffi::CString;
 use std::os::raw::c_char;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 /// 与 `ps_kernel.h` 的 `PS_ABI_VERSION` 必须一致；CI 有 golden 校验。
 pub const ABI_VERSION: u32 = 2;
@@ -64,32 +64,117 @@ pub struct PsChannelInfo {
     pub point_count: u32,
     pub time: *const f64,
     pub value: *const f64,
+    pub table: *const c_char,
+    pub column: *const c_char,
+    pub dataset: *const std::ffi::c_void,
+    pub generation: u64,
 }
 
 /// C 侧看到的不透明数据集。真正的通道数组由 `ps_ndf::Dataset` 持有；
 /// 这里只缓存 C 视图和 CString 名，避免每次取通道都重新分配。
 pub struct PsDataset {
     data: ps_ndf::Dataset,
+    typed: ps_ndf::typed::Dataset,
     infos: Vec<PsChannelInfo>,
     names: Vec<CString>,
     units: Vec<CString>,
+    // typed 表的 f64 绘图视图：每表一份共享时间轴 + 每列一份值。
+    typed_times: Vec<Vec<f64>>,
+    typed_values: Vec<Vec<Vec<f64>>>,
+    typed_names: Vec<CString>,
+    typed_units: Vec<CString>,
+    typed_tables: Vec<CString>,
+    typed_columns: Vec<CString>,
+    infos_dirty: bool,
 }
 
 impl PsDataset {
     fn new() -> Self {
-        Self { data: ps_ndf::Dataset::new(), infos: Vec::new(), names: Vec::new(), units: Vec::new() }
+        Self {
+            data: ps_ndf::Dataset::new(),
+            typed: ps_ndf::typed::Dataset::new(),
+            infos: Vec::new(),
+            names: Vec::new(),
+            units: Vec::new(),
+            typed_times: Vec::new(),
+            typed_values: Vec::new(),
+            typed_names: Vec::new(),
+            typed_units: Vec::new(),
+            typed_tables: Vec::new(),
+            typed_columns: Vec::new(),
+            infos_dirty: true,
+        }
     }
 
     fn rebuild_infos(&mut self) {
         self.names = self.data.channels.iter().map(|c| CString::new(c.name.as_str()).unwrap_or_default()).collect();
         self.units = self.data.channels.iter().map(|c| CString::new(c.unit.as_str()).unwrap_or_default()).collect();
+
+        // typed 表补一份共享时间轴 + 每列 f64 视图；Canvas 迁到 typed/LOD 前仍可绘图。
+        self.typed_times.clear();
+        self.typed_values.clear();
+        self.typed_names.clear();
+        self.typed_units.clear();
+        self.typed_tables.clear();
+        self.typed_columns.clear();
+        for table in &self.typed.tables {
+            let rows = table.row_count();
+            let mut time = Vec::with_capacity(rows);
+            for &t in table.time_us.iter() {
+                time.push(t as f64 * 1e-6);
+            }
+            let mut cols = Vec::with_capacity(table.columns.len());
+            for col in &table.columns {
+                let mut values = Vec::with_capacity(rows);
+                for row in 0..rows {
+                    values.push(col.value_as_f64(row).unwrap_or(f64::NAN));
+                }
+                cols.push(values);
+                self.typed_names.push(CString::new(format!("{}.{}", table.name, col.name)).unwrap_or_default());
+                let unit = CString::new(col.unit.as_str()).unwrap_or_default();
+                self.typed_units.push(unit);
+                self.typed_tables.push(CString::new(table.name.as_str()).unwrap_or_default());
+                self.typed_columns.push(CString::new(col.name.as_str()).unwrap_or_default());
+            }
+            self.typed_times.push(time);
+            self.typed_values.push(cols);
+        }
+
         self.infos = self.data.channels.iter().enumerate().map(|(i, c)| PsChannelInfo {
             name: self.names[i].as_ptr(),
             unit: self.units[i].as_ptr(),
             point_count: c.t.len().min(c.v.len()) as u32,
             time: c.t.as_ptr(),
             value: c.v.as_ptr(),
+            table: std::ptr::null(),
+            column: std::ptr::null(),
+            dataset: std::ptr::null(),
+            generation: 0,
         }).collect();
+        let mut typed_infos = Vec::new();
+        for (ti, table) in self.typed.tables.iter().enumerate() {
+            for ci in 0..table.columns.len() {
+                typed_infos.push(PsChannelInfo {
+                    name: self.typed_names[typed_infos.len()].as_ptr(),
+                    unit: self.typed_units[typed_infos.len()].as_ptr(),
+                    point_count: table.row_count() as u32,
+                    time: self.typed_times[ti].as_ptr(),
+                    value: self.typed_values[ti][ci].as_ptr(),
+                    table: self.typed_tables[typed_infos.len()].as_ptr(),
+                    column: self.typed_columns[typed_infos.len()].as_ptr(),
+                    dataset: self as *const PsDataset as *const std::ffi::c_void,
+                    generation: 0,
+                });
+            }
+        }
+        self.infos.extend(typed_infos);
+        self.infos_dirty = false;
+    }
+
+    fn ensure_infos(&mut self) {
+        if self.infos_dirty {
+            self.rebuild_infos();
+        }
     }
 }
 
@@ -105,7 +190,7 @@ unsafe fn write_err(err: *mut c_char, cap: u32, msg: &str) {
 
 /// 在数据集里追加一条派生通道；同名拒绝。
 fn add_channel(d: &mut PsDataset, name: &str, unit: &str, t: Vec<f64>, v: Vec<f64>) -> Result<(), String> {
-    d.data.add_channel(ps_ndf::Series { name: name.to_string(), unit: unit.to_string(), t, v })?;
+    d.data.add_channel(ps_ndf::Series { name: name.to_string(), unit: unit.to_string(), t: Arc::new(t), v })?;
     d.rebuild_infos();
     Ok(())
 }
@@ -159,7 +244,7 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
-    let t = d.data.channels[idx].t.clone();
+    let t = d.data.channels[idx].t.as_ref().clone();
     let v = d.data.channels[idx].v.clone();
     let unit = d.data.channels[idx].unit.clone();
     let out_name = match require_name(output, "输出通道") {
@@ -331,7 +416,7 @@ pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
         write_err(err, err_cap, "四元数四个通道点数不一致");
         return 5;
     }
-    let times: Vec<f64> = d.data.channels[channels[0]].t.clone();
+    let times: Vec<f64> = d.data.channels[channels[0]].t.as_ref().clone();
     for i in &channels[1..] {
         if d.data.channels[*i].t.iter().zip(&times).any(|(a, b)| (a - b).abs() > 1e-6) {
             write_err(err, err_cap, "四元数四个通道时间戳不一致");
@@ -395,6 +480,8 @@ pub unsafe extern "C" fn ps_dataset_channel_count(ds: *const PsDataset) -> u32 {
     if ds.is_null() {
         return 0;
     }
+    let ds = ds as *mut PsDataset;
+    (*ds).ensure_infos();
     (*ds).infos.len() as u32
 }
 
@@ -403,6 +490,8 @@ pub unsafe extern "C" fn ps_dataset_channel(ds: *const PsDataset, index: u32) ->
     if ds.is_null() {
         return std::ptr::null();
     }
+    let ds = ds as *mut PsDataset;
+    (*ds).ensure_infos();
     (&(*ds).infos).get(index as usize).map_or(std::ptr::null(), |i| i as *const _)
 }
 
@@ -552,70 +641,6 @@ pub unsafe extern "C" fn ps_cache_load_params(
     }
 }
 
-/// 实时流：固定容量、按通道追加。0 全收；1 容量不足截断；2 参数错误。
-#[no_mangle]
-pub extern "C" fn ps_stream_new(capacity: u32) -> *mut ps_stream::Stream {
-    Box::into_raw(Box::new(ps_stream::Stream::new(capacity as usize)))
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn ps_stream_free(stream: *mut ps_stream::Stream) {
-    if !stream.is_null() {
-        drop(Box::from_raw(stream));
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn ps_stream_push(
-    stream: *mut ps_stream::Stream,
-    name: *const c_char,
-    unit: *const c_char,
-    time: *const f64,
-    value: *const f64,
-    count: u32,
-) -> i32 {
-    if stream.is_null() || name.is_null() || (count > 0 && (time.is_null() || value.is_null())) {
-        return 2;
-    }
-    let n = count as usize;
-    let t = std::slice::from_raw_parts(time, n);
-    let v = std::slice::from_raw_parts(value, n);
-    (*stream).push(&c_name(name), &c_name(unit), t, v)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn ps_stream_channel_count(stream: *const ps_stream::Stream) -> u32 {
-    if stream.is_null() { 0 } else { (*stream).channel_count() as u32 }
-}
-
-/// 返回的视图与 PsChannelInfo 同布局；指针指向流内部，下一次追加/释放后失效。
-#[no_mangle]
-pub unsafe extern "C" fn ps_stream_channel(
-    stream: *mut ps_stream::Stream,
-    index: u32,
-) -> *const PsChannelInfo {
-    if stream.is_null() { return std::ptr::null(); }
-    (*stream).channel(index as usize).map_or(std::ptr::null(), |v| v as *const _ as *const PsChannelInfo)
-}
-
-/// 对某条流通道做视口 LOD；返回写入的三元组数。
-#[no_mangle]
-pub unsafe extern "C" fn ps_stream_lod(
-    stream: *mut ps_stream::Stream,
-    name: *const c_char,
-    t0: f64,
-    t1: f64,
-    px: u32,
-    out: *mut f64,
-    cap_triples: u32,
-) -> u32 {
-    if stream.is_null() || out.is_null() || cap_triples == 0 {
-        return 0;
-    }
-    let out = std::slice::from_raw_parts_mut(out, cap_triples as usize * 3);
-    (*stream).lod_into(&c_name(name), t0, t1, px as usize, out) as u32
-}
-
 /// 往数据集追加一条通道。name/unit 为 UTF-8；time/value 由内核复制。
 /// 返回 0 成功；1 数据集为空；2 名称非法；3 数组为空但点数非 0；4 内存不足。
 #[no_mangle]
@@ -655,7 +680,7 @@ pub unsafe extern "C" fn ps_dataset_add_channel(
             (*ds).data.channels.push(ps_ndf::Series {
                 name: name.to_string_lossy().into_owned(),
                 unit: unit.to_string_lossy().into_owned(),
-                t,
+                t: Arc::new(t),
                 v,
             });
             (*ds).rebuild_infos();
@@ -665,6 +690,429 @@ pub unsafe extern "C" fn ps_dataset_add_channel(
             write_err(err, err_cap, "通道名含 NUL");
             2
         }
+    }
+}
+
+/// 新建一张 topic 表；时间轴只复制一次，同表所有列共享。
+/// 返回 0 成功；1 数据集为空；2 表名非法；3 时间数组为空；4 表已存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_add_table(
+    ds: *mut PsDataset,
+    name: *const c_char,
+    time: *const f64,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 1;
+    }
+    let name = match require_name(name, "表名") {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        Ok(_) => { write_err(err, err_cap, "表名为空"); return 2; }
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let n = count as usize;
+    if n > 0 && time.is_null() {
+        write_err(err, err_cap, "时间数组为空");
+        return 3;
+    }
+    let t = if n == 0 { Vec::new() } else { std::slice::from_raw_parts(time, n).to_vec() };
+    match (*ds).data.add_table(name, t) {
+        Ok(_) => 0,
+        Err(e) => { write_err(err, err_cap, &e); 4 }
+    }
+}
+
+/// 往 topic 表追加一列；列只存 values，时间轴引用表。
+/// 返回 0 成功；1 数据集为空；2 名称非法；3 值数组为空；4 表不存在；5 点数不一致或重名。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_add_table_channel(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    name: *const c_char,
+    unit: *const c_char,
+    value: *const f64,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 1;
+    }
+    let table = match require_name(table, "表名") {
+        Ok(s) => s.to_string(),
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let name = match require_name(name, "通道名") {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        Ok(_) => { write_err(err, err_cap, "通道名为空"); return 2; }
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let unit = if unit.is_null() {
+        String::new()
+    } else {
+        std::ffi::CStr::from_ptr(unit).to_string_lossy().into_owned()
+    };
+    let n = count as usize;
+    if n > 0 && value.is_null() {
+        write_err(err, err_cap, "值数组为空");
+        return 3;
+    }
+    let v = if n == 0 { Vec::new() } else { std::slice::from_raw_parts(value, n).to_vec() };
+    let Some(table_idx) = (*ds).data.tables.iter().position(|t| t.name == table) else {
+        write_err(err, err_cap, &format!("表不存在：{table}"));
+        return 4;
+    };
+    match (*ds).data.add_channel_to_table(table_idx, name, unit, v) {
+        Ok(()) => {
+            (*ds).rebuild_infos();
+            0
+        }
+        Err(e) => { write_err(err, err_cap, &e); 5 }
+    }
+}
+
+/// 表级 typed 构造：UTC 微秒时间轴，列类型由 `ps_dataset_add_table_column_typed` 决定。
+/// 返回 0 成功；1 数据集为空；2 表名非法；3 时间数组为空；4 表已存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_add_table_typed(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    time_us: *const i64,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 1;
+    }
+    let name = match require_name(table, "表名") {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        Ok(_) => { write_err(err, err_cap, "表名为空"); return 2; }
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let n = count as usize;
+    if n > 0 && time_us.is_null() {
+        write_err(err, err_cap, "时间数组为空");
+        return 3;
+    }
+    let t = if n == 0 { Vec::new() } else { std::slice::from_raw_parts(time_us, n).to_vec() };
+    match (*ds).typed.add_table(name, t) {
+        Ok(_) => { (*ds).infos_dirty = true; 0 }
+        Err(e) => { write_err(err, err_cap, &e); 4 }
+    }
+}
+
+fn map_value_type(raw: u32) -> Option<ps_ndf::typed::ValueType> {
+    use ps_ndf::typed::ValueType::*;
+    Some(match raw {
+        0 => F64,
+        1 => F32,
+        2 => I64,
+        3 => U64,
+        4 => I32,
+        5 => U32,
+        6 => I16,
+        7 => U16,
+        8 => I8,
+        9 => U8,
+        10 => Bool,
+        11 => Text,
+        _ => return None,
+    })
+}
+
+unsafe fn typed_column_data(
+    raw_type: u32,
+    values: *const std::ffi::c_void,
+    n: usize,
+) -> Result<ps_ndf::typed::ColumnData, String> {
+    use ps_ndf::typed::ColumnData;
+    if n > 0 && values.is_null() {
+        return Err("值数组为空".into());
+    }
+    if n == 0 {
+        return Ok(match raw_type {
+            0 => ColumnData::F64(Vec::new()),
+            1 => ColumnData::F32(Vec::new()),
+            2 => ColumnData::I64(Vec::new()),
+            3 => ColumnData::U64(Vec::new()),
+            4 => ColumnData::I32(Vec::new()),
+            5 => ColumnData::U32(Vec::new()),
+            6 => ColumnData::I16(Vec::new()),
+            7 => ColumnData::U16(Vec::new()),
+            8 => ColumnData::I8(Vec::new()),
+            9 => ColumnData::U8(Vec::new()),
+            10 => ColumnData::Bool(Vec::new()),
+            11 => ColumnData::Text(Vec::new()),
+            _ => return Err("未知列类型".into()),
+        });
+    }
+    let data = match raw_type {
+        0 => ColumnData::F64(std::slice::from_raw_parts(values as *const f64, n).to_vec()),
+        1 => ColumnData::F32(std::slice::from_raw_parts(values as *const f32, n).to_vec()),
+        2 => ColumnData::I64(std::slice::from_raw_parts(values as *const i64, n).to_vec()),
+        3 => ColumnData::U64(std::slice::from_raw_parts(values as *const u64, n).to_vec()),
+        4 => ColumnData::I32(std::slice::from_raw_parts(values as *const i32, n).to_vec()),
+        5 => ColumnData::U32(std::slice::from_raw_parts(values as *const u32, n).to_vec()),
+        6 => ColumnData::I16(std::slice::from_raw_parts(values as *const i16, n).to_vec()),
+        7 => ColumnData::U16(std::slice::from_raw_parts(values as *const u16, n).to_vec()),
+        8 => ColumnData::I8(std::slice::from_raw_parts(values as *const i8, n).to_vec()),
+        9 => ColumnData::U8(std::slice::from_raw_parts(values as *const u8, n).to_vec()),
+        10 => ColumnData::Bool(
+            std::slice::from_raw_parts(values as *const u8, n)
+                .iter()
+                .map(|x| *x != 0)
+                .collect(),
+        ),
+        11 => {
+            let ptr = values as *const *const c_char;
+            let mut out = Vec::with_capacity(n);
+            for i in 0..n {
+                let p = *ptr.add(i);
+                out.push(if p.is_null() {
+                    String::new()
+                } else {
+                    CStr::from_ptr(p).to_string_lossy().into_owned()
+                });
+            }
+            ColumnData::Text(out)
+        }
+        _ => return Err("未知列类型".into()),
+    };
+    Ok(data)
+}
+
+/// 往 typed 表追加一列。`values` 按 `value_type` 解释；`nulls` 为可选位图（1=null）。
+/// 返回 0 成功；1 数据集为空；2 名称/类型非法；3 值数组为空；4 表不存在；5 点数/NULL 非法/重名。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_add_table_column_typed(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    name: *const c_char,
+    unit: *const c_char,
+    value_type: u32,
+    values: *const std::ffi::c_void,
+    nulls: *const u8,
+    count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 1;
+    }
+    let table = match require_name(table, "表名") {
+        Ok(s) => s.to_string(),
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let name = match require_name(name, "列名") {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        Ok(_) => { write_err(err, err_cap, "列名为空"); return 2; }
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    let unit = if unit.is_null() {
+        String::new()
+    } else {
+        CStr::from_ptr(unit).to_string_lossy().into_owned()
+    };
+    let Some(vt) = map_value_type(value_type) else {
+        write_err(err, err_cap, &format!("未知列类型：{value_type}"));
+        return 2;
+    };
+    let n = count as usize;
+    let Some(table_idx) = (*ds).typed.table_index(&table) else {
+        write_err(err, err_cap, &format!("表不存在：{table}"));
+        return 4;
+    };
+    if (&(*ds).typed.tables)[table_idx].row_count() != n {
+        write_err(err, err_cap, "列点数与表行数不一致");
+        return 5;
+    }
+    let data = match typed_column_data(value_type, values, n) {
+        Ok(x) => x,
+        Err(e) => { write_err(err, err_cap, &e); return 3; }
+    };
+    let null_bits = if nulls.is_null() {
+        ps_ndf::typed::NullBits::new(n)
+    } else {
+        ps_ndf::typed::NullBits::from_raw(std::slice::from_raw_parts(nulls, n.div_ceil(8)), n)
+    };
+    let column = match ps_ndf::typed::Column::with_nulls(name, unit, data, null_bits) {
+        Ok(c) => c,
+        Err(e) => { write_err(err, err_cap, &e); return 5; }
+    };
+    if column.value_type() != vt {
+        write_err(err, err_cap, "列类型与数据不一致");
+        return 5;
+    }
+    match (*ds).typed.add_column(table_idx, column) {
+        Ok(()) => { (*ds).infos_dirty = true; 0 }
+        Err(e) => { write_err(err, err_cap, &e); 5 }
+    }
+}
+
+#[repr(C)]
+pub struct PsFrameColumn {
+    pub name: *const c_char,
+    pub unit: *const c_char,
+    pub value_type: u32,
+    pub values: *const std::ffi::c_void,
+    pub nulls: *const u8,
+}
+
+fn typed_nulls(nulls: *const u8, n: usize) -> ps_ndf::typed::NullBits {
+    if nulls.is_null() {
+        ps_ndf::typed::NullBits::new(n)
+    } else {
+        ps_ndf::typed::NullBits::from_raw(unsafe { std::slice::from_raw_parts(nulls, n.div_ceil(8)) }, n)
+    }
+}
+
+/// 设置 live ring 字节预算。`table == NULL` 表示 Dataset 默认预算，作用于现有和新建表；
+/// 指定表名只改该表。`bytes == 0` 表示取消 ring（恢复不裁剪）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_set_ring_budget(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    bytes: u64,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 1;
+    }
+    let table_name = if table.is_null() {
+        None
+    } else {
+        match require_name(table, "表名") {
+            Ok(s) if s.is_empty() => None,
+            Ok(s) => Some(s.to_string()),
+            Err(e) => { write_err(err, err_cap, &e); return 2; }
+        }
+    };
+    let budget = if bytes == 0 { None } else { Some(bytes as usize) };
+    match (*ds).typed.set_ring_budget(table_name.as_deref(), budget) {
+        Ok(()) => 0,
+        Err(e) => { write_err(err, err_cap, &e); 3 }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_table_rows(ds: *mut PsDataset, table: *const c_char) -> u64 {
+    if ds.is_null() || table.is_null() {
+        return 0;
+    }
+    let Ok(name) = CStr::from_ptr(table).to_str() else {
+        return 0;
+    };
+    (*ds).typed.find_table(name).map(|t| t.row_count() as u64).unwrap_or(0)
+}
+
+/// typed 表的视口 LOD：按列名取列，在 `[t0_us, t1_us]` 内分桶输出 `(time_sec, min, max)`。
+/// `out` 长度至少 `cap_triples * 3`；返回实际写入的三元组数。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_lod_minmax(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    column: *const c_char,
+    t0_us: i64,
+    t1_us: i64,
+    px: u32,
+    out: *mut f64,
+    cap_triples: u32,
+) -> u32 {
+    if ds.is_null() || table.is_null() || column.is_null() || out.is_null() {
+        return 0;
+    }
+    let (Ok(table_name), Ok(column_name)) = (CStr::from_ptr(table).to_str(), CStr::from_ptr(column).to_str()) else {
+        return 0;
+    };
+    let Some(table) = (*ds).typed.find_table(table_name) else {
+        return 0;
+    };
+    let Some(col_idx) = table.column_index(column_name) else {
+        return 0;
+    };
+    if cap_triples == 0 {
+        return 0;
+    }
+    let mut tmp = vec![0.0f64; cap_triples as usize * 3];
+    let n = table.lod_minmax(col_idx, t0_us, t1_us, px as usize, &mut tmp);
+    let take = n.min(cap_triples as usize);
+    std::ptr::copy_nonoverlapping(tmp.as_ptr(), out, take * 3);
+    take as u32
+}
+
+/// frame_batch 落库：表不存在则按首批列建表，存在则校验列顺序后追加；seq 表内自增。
+/// 返回 0 成功；1 数据集为空；2 表名/列名/类型非法；3 值数组为空；4 行数为 0；5 列不一致。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_append_frame(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    time_us: *const i64,
+    rows: u32,
+    columns: *const PsFrameColumn,
+    column_count: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 1;
+    }
+    let table = match require_name(table, "表名") {
+        Ok(s) if !s.is_empty() => s.to_string(),
+        Ok(_) => { write_err(err, err_cap, "表名为空"); return 2; }
+        Err(e) => { write_err(err, err_cap, &e); return 2; }
+    };
+    if rows == 0 {
+        write_err(err, err_cap, "frame_batch 至少需要 1 行");
+        return 4;
+    }
+    if time_us.is_null() {
+        write_err(err, err_cap, "时间数组为空");
+        return 3;
+    }
+    if column_count > 0 && columns.is_null() {
+        write_err(err, err_cap, "列数组为空");
+        return 2;
+    }
+    let times = std::slice::from_raw_parts(time_us, rows as usize).to_vec();
+    let mut cols = Vec::with_capacity(column_count as usize);
+    for i in 0..column_count as usize {
+        let col = &*columns.add(i);
+        let name = match require_name(col.name, "列名") {
+            Ok(s) if !s.is_empty() => s,
+            _ => { write_err(err, err_cap, "列名为空"); return 2; }
+        };
+        let unit = if col.unit.is_null() {
+            String::new()
+        } else {
+            CStr::from_ptr(col.unit).to_string_lossy().into_owned()
+        };
+        let Some(vt) = map_value_type(col.value_type) else {
+            write_err(err, err_cap, &format!("未知列类型：{}", col.value_type));
+            return 2;
+        };
+        let data = match typed_column_data(col.value_type, col.values, rows as usize) {
+            Ok(x) => x,
+            Err(e) => { write_err(err, err_cap, &e); return 3; }
+        };
+        if data.value_type() != vt {
+            write_err(err, err_cap, "列类型与数据不一致");
+            return 2;
+        }
+        cols.push((name.to_string(), unit, data, typed_nulls(col.nulls, rows as usize)));
+    }
+    match (*ds).typed.append_frame(&table, times, cols) {
+        Ok(()) => { (*ds).infos_dirty = true; 0 }
+        Err(e) => { write_err(err, err_cap, &e); 5 }
     }
 }
 
@@ -1034,6 +1482,195 @@ mod tests {
     fn version_is_exposed() {
         assert_eq!(ps_abi_version(), ABI_VERSION);
         assert!(!ps_kernel_version().is_null());
+    }
+
+    #[test]
+    fn typed_table_and_null_roundtrip() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("ATTITUDE").unwrap();
+            let times = [0i64, 1_000_000, 2_000_000];
+            let rc = ps_dataset_add_table_typed(
+                ds,
+                table.as_ptr(),
+                times.as_ptr(),
+                times.len() as u32,
+                std::ptr::null_mut(),
+                0,
+            );
+            assert_eq!(rc, 0);
+
+            let name = CString::new("roll").unwrap();
+            let unit = CString::new("deg").unwrap();
+            let values = [1.0f32, 2.0, 3.0];
+            // row 1 = null
+            let nulls = [0b10u8, 0u8];
+            let rc = ps_dataset_add_table_column_typed(
+                ds,
+                table.as_ptr(),
+                name.as_ptr(),
+                unit.as_ptr(),
+                1, // F32
+                values.as_ptr() as *const std::ffi::c_void,
+                nulls.as_ptr(),
+                values.len() as u32,
+                std::ptr::null_mut(),
+                0,
+            );
+            assert_eq!(rc, 0);
+
+            let d = &*ds;
+            assert_eq!(d.typed.tables.len(), 1);
+            let t = &d.typed.tables[0];
+            assert_eq!(t.name, "ATTITUDE");
+            assert_eq!(t.row_count(), 3);
+            assert_eq!(t.columns.len(), 1);
+            assert_eq!(t.columns[0].name, "roll");
+            assert_eq!(t.columns[0].unit, "deg");
+            assert_eq!(t.columns[0].value_type(), ps_ndf::typed::ValueType::F32);
+            assert_eq!(t.columns[0].value_as_f64(0), Some(1.0));
+            assert_eq!(t.columns[0].value_as_f64(1), None);
+            assert_eq!(t.columns[0].value_as_f64(2), Some(3.0));
+
+            ps_dataset_free(ds);
+        }
+    }
+
+    #[test]
+    fn append_frame_creates_then_extends() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("ATTITUDE").unwrap();
+            let name = CString::new("roll").unwrap();
+            let unit = CString::new("deg").unwrap();
+            let t1 = [0i64, 1_000];
+            let v1 = [1.0f32, 2.0];
+            let n1 = [0b10u8, 0u8];
+            let c1 = PsFrameColumn {
+                name: name.as_ptr(),
+                unit: unit.as_ptr(),
+                value_type: 1,
+                values: v1.as_ptr() as *const std::ffi::c_void,
+                nulls: n1.as_ptr(),
+            };
+            let rc = ps_dataset_append_frame(
+                ds,
+                table.as_ptr(),
+                t1.as_ptr(),
+                2,
+                &c1,
+                1,
+                std::ptr::null_mut(),
+                0,
+            );
+            assert_eq!(rc, 0);
+
+            let t2 = [2_000i64];
+            let v2 = [3.0f32];
+            let n2 = [0b1u8];
+            let c2 = PsFrameColumn {
+                name: name.as_ptr(),
+                unit: unit.as_ptr(),
+                value_type: 1,
+                values: v2.as_ptr() as *const std::ffi::c_void,
+                nulls: n2.as_ptr(),
+            };
+            let rc = ps_dataset_append_frame(
+                ds,
+                table.as_ptr(),
+                t2.as_ptr(),
+                1,
+                &c2,
+                1,
+                std::ptr::null_mut(),
+                0,
+            );
+            assert_eq!(rc, 0);
+
+            let d = &*ds;
+            let t = d.typed.find_table("ATTITUDE").unwrap();
+            assert_eq!(t.row_count(), 3);
+            assert_eq!(t.seq, vec![0, 1, 2]);
+            assert_eq!(t.time_us.as_slice(), &[0, 1_000, 2_000]);
+            assert_eq!(t.columns[0].value_as_f64(0), Some(1.0));
+            assert_eq!(t.columns[0].value_as_f64(1), None);
+            assert_eq!(t.columns[0].value_as_f64(2), None);
+            ps_dataset_free(ds);
+        }
+    }
+
+    #[test]
+    fn ring_budget_drops_oldest_via_abi() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let rc = ps_dataset_set_ring_budget(ds, std::ptr::null(), 125, std::ptr::null_mut(), 0);
+            assert_eq!(rc, 0);
+
+            let table = CString::new("ATTITUDE").unwrap();
+            let name = CString::new("roll").unwrap();
+            let unit = CString::new("deg").unwrap();
+            let times: Vec<i64> = (0..10).map(|i| i * 1_000).collect();
+            let values: Vec<f64> = (0..10).map(|i| i as f64).collect();
+            let nulls = [0u8; 2];
+            let col = PsFrameColumn {
+                name: name.as_ptr(),
+                unit: unit.as_ptr(),
+                value_type: 0,
+                values: values.as_ptr() as *const std::ffi::c_void,
+                nulls: nulls.as_ptr(),
+            };
+            let rc = ps_dataset_append_frame(
+                ds,
+                table.as_ptr(),
+                times.as_ptr(),
+                times.len() as u32,
+                &col,
+                1,
+                std::ptr::null_mut(),
+                0,
+            );
+            assert_eq!(rc, 0);
+
+            let d = &*ds;
+            let t = d.typed.find_table("ATTITUDE").unwrap();
+            assert_eq!(t.row_count(), 5);
+            assert_eq!(t.time_us.as_slice(), &[5_000, 6_000, 7_000, 8_000, 9_000]);
+            assert_eq!(t.seq, vec![5, 6, 7, 8, 9]);
+            assert_eq!(t.columns[0].value_as_f64(0), Some(5.0));
+            ps_dataset_free(ds);
+        }
+    }
+
+    #[test]
+    fn typed_lod_from_dataset() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("ATTITUDE").unwrap();
+            let name = CString::new("roll").unwrap();
+            let unit = CString::new("deg").unwrap();
+            let times = [0i64, 1_000, 2_000, 3_000];
+            let values = [0.0f64, 1.0, 2.0, 3.0];
+            let col = PsFrameColumn {
+                name: name.as_ptr(),
+                unit: unit.as_ptr(),
+                value_type: 0,
+                values: values.as_ptr() as *const std::ffi::c_void,
+                nulls: std::ptr::null(),
+            };
+            assert_eq!(
+                ps_dataset_append_frame(ds, table.as_ptr(), times.as_ptr(), 4, &col, 1, std::ptr::null_mut(), 0),
+                0
+            );
+            let mut out = [0.0f64; 6];
+            let n = ps_dataset_lod_minmax(
+                ds, table.as_ptr(), name.as_ptr(), 0, 3_000, 2, out.as_mut_ptr(), 2
+            );
+            assert_eq!(n, 2);
+            assert_eq!(out[3], 0.002);
+            assert_eq!(out[4], 2.0);
+            assert_eq!(out[5], 3.0);
+            ps_dataset_free(ds);
+        }
     }
 }
 
