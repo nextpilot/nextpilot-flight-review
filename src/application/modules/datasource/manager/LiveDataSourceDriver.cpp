@@ -21,7 +21,7 @@ LiveDataSourceDriver::~LiveDataSourceDriver()
     closeResources();
 }
 
-void LiveDataSourceDriver::closeResources()
+void LiveDataSourceDriver::closeHandles()
 {
     for (const auto &f : m_fanout)
         if (const DataSourceEntry *p = DataSourceRegistry::instance().findSourceById(f.first))
@@ -35,6 +35,11 @@ void LiveDataSourceDriver::closeResources()
             p->close(m_handle);
         m_handle = nullptr;
     }
+}
+
+void LiveDataSourceDriver::closeResources()
+{
+    closeHandles();
     if (m_sink)
     {
         m_sink->stopRecording();
@@ -81,11 +86,40 @@ bool LiveDataSourceDriver::poll(DataSource &, QString *err)
     return rc == 0;
 }
 
-bool LiveDataSourceDriver::reload(DataSource &, QString *err)
+bool LiveDataSourceDriver::reload(DataSource &src, QString *err)
 {
-    if (err)
-        *err = QStringLiteral("实时源不支持原地 reload");
-    return false;
+    if (!m_sink)
+    {
+        if (err)
+            *err = QStringLiteral("实时 sink 已关闭");
+        return false;
+    }
+    // 共享 transport 的 fanout 句柄无法按原拓扑重建，交给上层重新 openLiveInput。
+    if (!m_fanout.isEmpty())
+    {
+        if (err)
+            *err = QStringLiteral("共享 transport 源不支持原地重连");
+        return false;
+    }
+    const DataSourceEntry *p = DataSourceRegistry::instance().findSourceById(m_extensionId);
+    if (!p || !p->open)
+    {
+        if (err)
+            *err = QStringLiteral("实时扩展不存在：%1").arg(m_extensionId);
+        return false;
+    }
+
+    closeHandles();
+    void *handle = nullptr;
+    const int rc = p->open(src.config.configJson, m_sink->sink(), &handle, err);
+    if (rc != 0 || !handle)
+        return false;
+    m_handle = handle;
+    src.handle = handle;
+    src.liveSink = m_sink;
+    src.ds = m_sink->dataset();
+    ++src.generation;
+    return true;
 }
 
 } // namespace ps::data_source

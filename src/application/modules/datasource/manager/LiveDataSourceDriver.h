@@ -33,6 +33,7 @@ public:
     LiveFrameSink *sink() const { return m_sink.get(); }
 
 private:
+    void closeHandles();
     void closeResources();
 
     QString m_extensionId;
