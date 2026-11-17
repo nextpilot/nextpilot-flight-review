@@ -63,33 +63,69 @@ int32_t ulogLoad(const char *path, const char *, const PsHostApi *host, void **d
         log.channels.push_back(std::move(names));
         log.channels.push_back(std::move(values));
     }
-    {
-        struct Row { const char *key; std::string value; };
-        std::vector<Row> rows = {
-            {"format", "ulog"},
-            {"file", QFileInfo(QString::fromUtf8(path)).fileName().toStdString()},
-            {"params", std::to_string(log.params.size())},
-        };
+    auto textTable = [&](const std::string &table, const std::vector<std::pair<double, std::pair<std::string, std::string>>> &rows) {
+        if (rows.empty()) return;
         const uint32_t n = static_cast<uint32_t>(rows.size());
-        auto axis = std::make_shared<const std::vector<double>>();
         std::vector<double> time(n);
-        for (uint32_t i = 0; i < n; ++i) time[i] = i * 1e-6;
-        axis = std::make_shared<const std::vector<double>>(std::move(time));
+        for (uint32_t i = 0; i < n; ++i) time[i] = rows[i].first;
+        auto axis = std::make_shared<const std::vector<double>>(std::move(time));
         PsChannelData keys, values;
-        keys.name = "info.key";
-        keys.table = "info";
+        keys.name = table + ".key";
+        keys.table = table;
         keys.axis = axis;
         keys.value_type = PS_VALUE_TEXT;
         keys.v.assign(n, 0.0);
         values = keys;
-        values.name = "info.value";
-        for (const auto &r : rows)
-        {
-            keys.text.push_back(r.key);
-            values.text.push_back(r.value);
+        values.name = table + ".value";
+        for (const auto &r : rows) {
+            keys.text.push_back(r.second.first);
+            values.text.push_back(r.second.second);
         }
         log.channels.push_back(std::move(keys));
         log.channels.push_back(std::move(values));
+    };
+    std::vector<std::pair<double, std::pair<std::string, std::string>>> infoRows;
+    infoRows.push_back({0.0, {"format", "ulog"}});
+    infoRows.push_back({0.0, {"file", QFileInfo(QString::fromUtf8(path)).fileName().toStdString()}});
+    infoRows.push_back({0.0, {"params", std::to_string(log.params.size())}});
+    for (const auto &kv : log.info) infoRows.push_back({0.0, kv});
+    textTable("info", infoRows);
+
+    if (!log.messages.empty())
+    {
+        const uint32_t n = static_cast<uint32_t>(log.messages.size());
+        std::vector<double> time(n);
+        for (uint32_t i = 0; i < n; ++i) time[i] = log.messages[i].t;
+        auto axis = std::make_shared<const std::vector<double>>(std::move(time));
+        PsChannelData level, tag, text;
+        level.name = "messages.level"; level.table = "messages"; level.axis = axis;
+        level.value_type = PS_VALUE_U8; level.v.resize(n);
+        tag.name = "messages.tag"; tag.table = "messages"; tag.axis = axis;
+        tag.value_type = PS_VALUE_U16; tag.v.resize(n);
+        text.name = "messages.text"; text.table = "messages"; text.axis = axis;
+        text.value_type = PS_VALUE_TEXT; text.v.assign(n, 0.0);
+        for (uint32_t i = 0; i < n; ++i) {
+            level.v[i] = log.messages[i].level;
+            tag.v[i] = log.messages[i].tagged ? log.messages[i].tag : 0;
+            text.text.push_back(log.messages[i].text);
+            if (!log.messages[i].tagged) tag.nulls.push_back(0);
+        }
+        log.channels.push_back(std::move(level));
+        log.channels.push_back(std::move(tag));
+        log.channels.push_back(std::move(text));
+    }
+
+    if (!log.dropouts.empty())
+    {
+        const uint32_t n = static_cast<uint32_t>(log.dropouts.size());
+        std::vector<double> time(n);
+        for (uint32_t i = 0; i < n; ++i) time[i] = log.dropouts[i].first;
+        auto axis = std::make_shared<const std::vector<double>>(std::move(time));
+        PsChannelData dur;
+        dur.name = "dropouts.duration"; dur.table = "dropouts"; dur.axis = axis;
+        dur.value_type = PS_VALUE_U16; dur.v.resize(n);
+        for (uint32_t i = 0; i < n; ++i) dur.v[i] = log.dropouts[i].second;
+        log.channels.push_back(std::move(dur));
     }
     PsDataset *ds = psBuildDataset(log.channels, perr, host);
     if (!ds)

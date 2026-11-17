@@ -348,6 +348,27 @@ std::string readCString(const uint8_t *p, size_t len)
     return std::string(reinterpret_cast<const char *>(p), n);
 }
 
+std::string infoValue(const std::string &key, const uint8_t *p, size_t n)
+{
+    if ((key.find("ver") != std::string::npos || key.find("revision") != std::string::npos ||
+         key.find("count") != std::string::npos || key.find("bits") != std::string::npos) && n >= 4)
+    {
+        uint32_t v = 0;
+        std::memcpy(&v, p, 4);
+        return std::to_string(v);
+    }
+    return readCString(p, n);
+}
+
+void addInfo(std::vector<std::pair<std::string, std::string>> &out, const uint8_t *p, size_t n)
+{
+    if (n < 1) return;
+    const size_t kl = p[0];
+    if (n < 1 + kl) return;
+    const std::string key = readCString(p + 1, kl);
+    out.emplace_back(key, infoValue(key, p + 1 + kl, n - 1 - kl));
+}
+
 } // namespace
 
 bool psParseUlog(const char *path, UlogLog &log, std::string &err)
@@ -376,6 +397,14 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
     std::map<uint16_t, size_t> byId;
     std::map<std::pair<std::string, uint8_t>, size_t> byTopic;
     std::vector<std::pair<std::string, std::string>> params;
+
+    UlogLog meta;
+    {
+        uint64_t start = 0;
+        std::memcpy(&start, buf.data() + 8, 8);
+        meta.info.emplace_back("start_timestamp_us", std::to_string(start));
+        meta.info.emplace_back("file_version", std::to_string(buf[7]));
+    }
     size_t pos = 16;
 
     while (pos + 3 <= buf.size())
@@ -497,6 +526,54 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
                     params.emplace_back(key, value);
             }
         }
+        else if (ty == 'I')
+        {
+            addInfo(meta.info, p, size);
+        }
+        else if (ty == 'M')
+        {
+            if (size >= 1) addInfo(meta.info, p + 1, size - 1);
+        }
+        else if (ty == 'L' && size >= 9)
+        {
+            UlogMessage m;
+            m.level = p[0];
+            uint64_t ts = 0;
+            std::memcpy(&ts, p + 1, 8);
+            m.t = static_cast<double>(ts) / 1e6;
+            m.text = readCString(p + 9, size - 9);
+            meta.messages.push_back(std::move(m));
+        }
+        else if (ty == 'C' && size >= 11)
+        {
+            UlogMessage m;
+            m.level = p[0];
+            std::memcpy(&m.tag, p + 1, 2);
+            uint64_t ts = 0;
+            std::memcpy(&ts, p + 3, 8);
+            m.t = static_cast<double>(ts) / 1e6;
+            m.text = readCString(p + 11, size - 11);
+            m.tagged = true;
+            meta.messages.push_back(std::move(m));
+        }
+        else if (ty == 'O' && size >= 10)
+        {
+            uint64_t ts = 0;
+            uint16_t dur = 0;
+            std::memcpy(&ts, p, 8);
+            std::memcpy(&dur, p + 8, 2);
+            meta.dropouts.emplace_back(static_cast<double>(ts) / 1e6, dur);
+        }
+        else if (ty == 'B' && size >= 16)
+        {
+            char txt[64];
+            std::snprintf(txt, sizeof(txt), "compat=%02x%02x%02x%02x%02x%02x%02x%02x",
+                          p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7]);
+            meta.info.emplace_back("flags.compat", txt);
+            std::snprintf(txt, sizeof(txt), "incompat=%02x%02x%02x%02x%02x%02x%02x%02x",
+                          p[8],p[9],p[10],p[11],p[12],p[13],p[14],p[15]);
+            meta.info.emplace_back("flags.incompat", txt);
+        }
         else if (ty == 'R')
         {
             if (size >= 2)
@@ -543,6 +620,10 @@ bool psParseUlog(const char *path, UlogLog &log, std::string &err)
         return false;
     }
     log.params = std::move(params);
+    log.info = std::move(meta.info);
+    log.messages = std::move(meta.messages);
+    log.dropouts = std::move(meta.dropouts);
+    log.changedParams = std::move(meta.changedParams);
     psLoaderProgress(100, 100);
     return true;
 }
