@@ -362,6 +362,7 @@ endif()
 add_executable(test_command_manager unit/test_command_manager.cpp ${PROJECT_SOURCE_DIR}/src/application/shell/CommandManager.cpp)
 target_include_directories(test_command_manager PRIVATE ${PROJECT_SOURCE_DIR}/src
   ${PROJECT_SOURCE_DIR}/src/application ${PROJECT_SOURCE_DIR}/src/application/modules/runtime/include
+  ${PROJECT_SOURCE_DIR}/src/application/runtime/include
   ${PROJECT_SOURCE_DIR}/src/application/shell)
 target_link_libraries(test_command_manager PRIVATE Qt6::Widgets)
 add_test(NAME command_manager COMMAND test_command_manager)

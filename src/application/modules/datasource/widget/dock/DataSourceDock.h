@@ -22,6 +22,7 @@ class QVBoxLayout;
 
 namespace ps::data_source
 {
+class DataSourceService;
 struct DataSource;
 struct TransformRecipe;
 
@@ -37,6 +38,7 @@ public:
         std::function<void(const PsChannelInfo *)> addChannel;
         std::function<void(const PsChannelInfo *)> setChannel;
         std::function<DataSource *(int)> sourceById;
+        const DataSourceService *service = nullptr;
         std::function<QWidget *(int)> sourceRow;
         std::function<int()> activeSourceId;
         std::function<void()> refreshActiveSource;

@@ -1,4 +1,5 @@
 #include "DataSourceDock.h"
+#include "DataSourceService.h"
 #include "record/McapWriter.h"
 
 #include "DataSourceModel.h"
@@ -373,7 +374,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
         const QString name = item->data(0, Qt::UserRole + 1).toString();
         if (name.isEmpty())
             return;
-        ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.activeSourceId());
+        ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.service->activeSourceId());
         if (!src || !src->ds)
             return;
         QMenu menu(this);
@@ -490,7 +491,7 @@ DataSourceDock::DataSourceDock(Context context, QWidget *parent)
         const int row = m_msgTable->rowAt(pos.y());
         if (row < 0 || row >= m_ctx.sourceMsgs().size())
             return;
-        ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.activeSourceId());
+        ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.service->activeSourceId());
         const double raw = m_ctx.sourceMsgs().at(row).value(3).toDouble();
         const double t = raw - (src ? src->config.offsetSec : 0.0);
         const QString topic = m_ctx.sourceMsgs().at(row).value(0);
@@ -820,13 +821,13 @@ bool DataSourceDock::loadFile(const QString &path, bool interactive)
 
     const uint32_t n = ps_dataset_channel_count(ds);
     const QString fmt_tag = entry->formatTag;
-    const int oldCount = m_ctx.sources().size();
+    const int oldCount = m_ctx.service->sources().size();
     DataSource src;
-    for (const ps::data_source::DataSource &old : m_ctx.sources())
+    for (const ps::data_source::DataSource &old : m_ctx.service->sources())
         src.config.id = qMax(src.config.id, old.config.id + 1);
     src.config.name = fi.fileName();
     src.config.alias = fi.completeBaseName();
-    for (const ps::data_source::DataSource &old : m_ctx.sources())
+    for (const ps::data_source::DataSource &old : m_ctx.service->sources())
         if (old.config.alias == src.config.alias)
             src.config.alias += QStringLiteral(" #%1").arg(src.config.id + 1);
     src.config.path = fi.absoluteFilePath();
@@ -949,9 +950,9 @@ void DataSourceDock::connectLiveSource(const QString &extensionId)
     if (ids.isEmpty())
         ids << dlg.primaryParserId();
 
-    const int oldCount = m_ctx.sources().size();
+    const int oldCount = m_ctx.service->sources().size();
     DataSource src;
-    for (const ps::data_source::DataSource &old : m_ctx.sources())
+    for (const ps::data_source::DataSource &old : m_ctx.service->sources())
         src.config.id = qMax(src.config.id, old.config.id + 1);
     QString note, err;
     if (!openLiveInput(ids, dlg.configJson(), src, &note, &err))
@@ -1106,7 +1107,7 @@ void DataSourceDock::configureLiveSource(ps::data_source::DataSource *src)
     src->channels.squeeze();
     src->fanout.clear();
     src->plotted = false;
-    if (src->config.id == m_ctx.activeSourceId())
+    if (src->config.id == m_ctx.service->activeSourceId())
         m_ctx.clearSourceView();
 
     QString note, err;
@@ -1353,7 +1354,7 @@ void DataSourceDock::reloadSource(ps::data_source::DataSource *src)
         }
     }
 
-    if (m_ctx.activeSourceId() == src->config.id)
+    if (m_ctx.service->activeSourceId() == src->config.id)
         m_ctx.applySourceView(src);
     m_ctx.refreshSourceView();
     m_ctx.log(out.cacheHit
@@ -1362,7 +1363,7 @@ void DataSourceDock::reloadSource(ps::data_source::DataSource *src)
 }
 void DataSourceDock::refreshActiveSource()
 {
-    ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.activeSourceId());
+    ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.service->activeSourceId());
     if (!src || (!src->ds && !src->isLive()))
         return;
     reloadChannels(src);
@@ -1422,7 +1423,7 @@ void DataSourceDock::setSourcePaused(ps::data_source::DataSource *src, bool paus
 }
 void DataSourceDock::exportActiveCsv()
 {
-    ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.activeSourceId());
+    ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.service->activeSourceId());
     if (!src || !src->ds || src->isLive())
     {
         m_ctx.log(QStringLiteral("没有可导出的数据源"));
@@ -1732,7 +1733,7 @@ void DataSourceDock::removeSourceRow(QWidget *row)
         else if (src->ds)
             ps_dataset_free(src->ds);
         src->ds = nullptr;
-        if (m_ctx.activeSourceId() == id)
+        if (m_ctx.service->activeSourceId() == id)
         {
             m_ctx.setActiveSource(-1);
             m_ctx.clearSourceView();
@@ -1745,7 +1746,7 @@ void DataSourceDock::removeSourceRow(QWidget *row)
             m_ctx.sources().erase(m_ctx.sources().begin() + idx);
         m_ctx.refreshSourceView();
         // 删掉当前源后落到剩下的第一个可绘源
-        for (const ps::data_source::DataSource &other : m_ctx.sources())
+        for (const ps::data_source::DataSource &other : m_ctx.service->sources())
         {
             QWidget *row = m_ctx.sourceRow(other.config.id);
             if (other.ds && row)
@@ -1765,7 +1766,7 @@ void DataSourceDock::removeSourceRow(QWidget *row)
     m_srcRows->removeWidget(row);
     row->deleteLater();
     refreshSrcCount();
-    if (m_ctx.sources().empty())
+    if (m_ctx.service->sources().empty())
         m_ctx.refreshPropTree();
     m_ctx.log(QStringLiteral("移除数据源：%1").arg(name));
 }
@@ -1783,7 +1784,7 @@ void DataSourceDock::renderSourceData(const QVector<const PsChannelInfo *> &chan
     syncSrcChips();
     updateSrcStatus();
 
-    if (!(m_ctx.hasSources ? m_ctx.hasSources() : true) && m_srcEmpty)
+    if (!(m_ctx.service->hasSources()) && m_srcEmpty)
     {
         m_srcTabs->setTabText(0, QStringLiteral("字段 0"));
         m_srcTabs->setTabText(1, QStringLiteral("参数 0"));
@@ -2303,7 +2304,7 @@ void DataSourceDock::updateSrcStatus()
     QWidget *host = m_srcRows->parentWidget();
     if (!host)
         return;
-    const ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.activeSourceId());
+    const ps::data_source::DataSource *src = m_ctx.sourceById(m_ctx.service->activeSourceId());
     // 每个源独立算统计：行内只放通道数 + 采样率，完整数据放 tooltip
     auto statsFor = [this](int srcId, const QString &fallback) {
         QString shortText = fallback;
@@ -2357,7 +2358,7 @@ void DataSourceDock::syncSrcChips()
 {
     if (!m_srcTabs || m_srcChips.isEmpty())
         return;
-    const bool enabled = m_ctx.hasSources ? m_ctx.hasSources() : true;
+    const bool enabled = m_ctx.service->hasSources();
     for (int i = 0; i < m_srcChips.size() && i < m_srcTabs->count(); ++i)
     {
         auto *chip = m_srcChips[i];

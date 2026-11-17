@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CommandBus.h"
+
 #include <QString>
 #include <QStringList>
 
@@ -29,7 +31,7 @@ struct CommandSpec
     bool sessionDirty = false; // 命令成功后是否需要保存会话/布局
 };
 
-class CommandManager
+class CommandManager : public ps::commands::CommandBus
 {
 public:
     using Handler = std::function<void(const CommandContext &)>;
@@ -40,6 +42,7 @@ public:
     void bindShortcuts(QWidget *owner);
     bool contains(const QString &id) const;
     bool invoke(const QString &id, const CommandContext &ctx) const;
+    bool invoke(const QString &id, const QString &arg) override;
     bool isEnabled(const QString &id, const CommandContext &ctx) const;
     bool isChecked(const QString &id, const CommandContext &ctx) const;
     const CommandSpec *spec(const QString &id) const;

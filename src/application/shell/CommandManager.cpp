@@ -49,6 +49,11 @@ bool CommandManager::contains(const QString &id) const
     return m_handlers.find(id) != m_handlers.end();
 }
 
+bool CommandManager::invoke(const QString &id, const QString &arg)
+{
+    return invoke(id, CommandContext{nullptr, arg});
+}
+
 bool CommandManager::invoke(const QString &id, const CommandContext &ctx) const
 {
     const auto it = m_handlers.find(id);

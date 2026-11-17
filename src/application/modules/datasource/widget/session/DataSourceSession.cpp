@@ -157,6 +157,7 @@ QWidget *DataSourceSession::createDataSourcePanel(QWidget *parent)
                 }
             },
             [this](int id) { return sourceById(id); },
+            m_service,
             [this](int id) { return sourceRow(id); },
             [this] { return m_core->activeSourceId(); },
             [this] { refreshActiveSource(); },

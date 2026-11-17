@@ -1,6 +1,6 @@
 # PJ4 架构迁移方案
 
-> 状态：B1–B4 已实施（2026-11-18）。B2/B3 完成 core/widget 物理拆分，`DataSourceController/Service`、`PlottingController/Service` 注册到 `ServiceRegistry`，core 目录不含 Widgets/主窗口依赖；B4 完成 SettingsStore/LogService/SessionState 下沉、ExtensionHost 下沉 runtime、CommandBus 最小契约和模块/内置 CMake option。B5 默认构建与 `ctest 42/42` 通过；逐模块关闭矩阵已验证 datasource-off、plotting-off，其余组合仍需独立跑完。
+> 状态：B1–B4 已实施（2026-11-18）。B2/B3 完成 core/widget 物理拆分，`DataSourceController/Service`、`PlottingController/Service` 注册到 `ServiceRegistry`，core 目录不含 Widgets/主窗口依赖；B4 完成 SettingsStore/LogService/SessionState 下沉、ExtensionHost 下沉 runtime、CommandBus 最小契约和模块/内置 CMake option。B5 默认构建与 `ctest 42/42` 通过；13 组可删除性矩阵全部构建通过并完成 offscreen 启动冒烟。
 >
 > 范围：把 PlotScope 从“MainWindow 兼做窗口壳和业务服务中心”调整为“shell 只组装、modules 自贡献、extensions 可裁剪、runtime 无 Widgets”的结构。先改依赖和所有权，不改 UI 行为、不改命令 ID、不一次性搬完所有代码。
 >
@@ -465,9 +465,11 @@ rg 'ps_application_(datasource|plotting|analysis|scripting|protocol)' \
 | B4 | `runtime/SessionState` 管最近文件/layoutPath；`runtime/ExtensionHost`；`runtime/CommandBus` 契约；shell 只管窗口几何与 UI |
 | 默认构建 | `plotscope_app`、`plot_bench`、测试全部 Built |
 | 测试 | `ctest 42/42` 通过，新增 `controller_state` |
-| 矩阵 | datasource-off、plotting-off 构建通过并 offscreen 启动（exit=124 进入事件循环）；analysis/scripting/protocol/builtin 组合待跑 |
+| 矩阵 | 13 组全部通过（exit=124 进入事件循环）：5 个 module 逐个关闭、4 个 builtin 逐个关闭、全关只留 shell+runtime、仅 datasource、仅 plotting、仅 autopilot |
+| 依赖收敛 | datasource 关闭时自动裁掉 common/GNSS/automotive/robotics/protocol；common 关闭时自动裁掉依赖 loader_common 的扩展 |
+| Dock 只读查询 | Dock 的源数量/当前源/源列表查询走 `DataSourceService`，写操作仍由 Context 回调转到 Session |
 
-`DataSourceDock` 仍通过 `Context` 回调写数据，只读查询已具备 `DataSourceService`；完全改成“Dock 只依赖 Service”需要继续收敛 Context 回调表，属于后续清理项。
+`DataSourceDock` 的只读查询已走 `DataSourceService`；加载/连接/删除等写操作仍通过 `Context` 回调转到 Session。把整张回调表收口成 Service + Command 还需要单独一轮，不影响本轮可删除性验收。
 
 ## 9. 验收
 
