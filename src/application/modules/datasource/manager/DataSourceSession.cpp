@@ -918,6 +918,8 @@ void DataSourceSession::restoreSavedConfigs()
     {
         const ps::data_source::DataSourceConfig cfg =
             ps::data_source::DataSourceConfig::fromJson(v.toObject());
+        if (cfg.schemaVersion > ps::data_source::DataSourceConfig::kSchemaVersion)
+            continue;
         const QString key = cfg.sourceKey.isEmpty() ? cfg.path : cfg.sourceKey;
         if (!key.isEmpty())
             m_savedConfigs.insert(key, cfg);
