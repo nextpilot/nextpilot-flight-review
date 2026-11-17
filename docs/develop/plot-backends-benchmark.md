@@ -2,9 +2,9 @@
 
 ## 结论
 
-1. **自绘 `PlottingCanvas` 仍是当前大点数遥测场景的最优解，但优势已经没有 Debug 数据看起来那么大**。10 条曲线 × 100 万点，Release 整帧 34.5 ms（29.0 fps）；QCustomPlot 自适应采样 39.2 ms（25.5 fps），Qwt 331.2 ms（3.0 fps）。
+1. **自绘 `PlottingCanvas` 仍是当前大点数遥测场景的最优解，但优势已经没有 Debug 数据看起来那么大**。10 条曲线 × 100 万点，Release 整帧 34.5 ms（29.0 fps）；QCustomPlot 自适应采样 39.2 ms（25.5 fps），Qwt 默认 331.2 ms（3.0 fps）、开启激进过滤后 109.6 ms（9.1 fps）。
 2. **QCustomPlot 默认自适应采样是三方库里最接近可用的方案**。它在百万点能保持约 25 fps，但代价是曲线细节和尖峰包络可能被平滑；关闭自适应后 10 条 × 100 万点 763 ms/帧，不能用于原始遥测直绘。
-3. **Qwt 功能完整、导出/打印成熟，但没有面向像素列的 min/max LOD**。10 条 × 10 万点已需 76.0 ms/帧，适合静态图或中小数据，不适合实时飞控回放。
+3. **Qwt 功能完整、导出/打印成熟，并且有 `FilterPointsAggressive` 抽稀接口**，但默认没开。默认 10 条 × 10 万点 76.0 ms/帧；开启后 18.9 ms，100 万点 109.6 ms，仍比自绘 34.5 ms 慢约 3.2 倍。
 4. **Qt Charts 不作为遥测主画布候选**。它适合仪表盘和常规业务图，不提供百万点级抽稀与时间窗交互；本轮未做实测，只做功能对照。
 5. **JKQtPlotter 完整版功能面很全，但大数据性能不达标**。10 条 × 10 万点已需 1407.8 ms/帧（0.7 fps），默认线压缩仍无法替代列桶 LOD；`JKQTFastPlotter` 未测。
 6. 现阶段不建议替换自绘画布。可借鉴 Qwt 的 PDF/SVG 导出和 QCustomPlot 的交互/图层组织，但核心曲线渲染继续保留 Rust min/max LOD + `drawPolyline`。
@@ -22,7 +22,7 @@
 | 计时 | 预热 2 帧后，统计 5–15 帧；包含 backend 重绘 + `QWidget::render` 到 QImage |
 | 自绘配置 | Rust `ps_lod_minmax_many`，每像素 min/max 桶；曲线 `drawPolyline` 关闭抗锯齿 |
 | QCustomPlot | 2.1.1，默认自适应采样；另测 `--adaptive 0` 原始模式 |
-| Qwt | 6.3.0，`QwtPlotCurve::setSamples`，原始点直绘 |
+| Qwt | 6.3.0，`QwtPlotCurve::setSamples`；默认 `ClipPolygons | FilterPoints`，另测 `FilterPointsAggressive` |
 
 > 早期一次数据是在 `CMAKE_BUILD_TYPE=Debug` 下跑的，QCustomPlot 没有开优化，Qwt 却是 `-O2`，口径不一致，已作废。下面全部是 Release 数据。
 
@@ -43,7 +43,8 @@
 |---|---:|---:|---:|---:|
 | 自绘画布 | 10.1 | **6.1** | 6.9 | **162.9** |
 | QCustomPlot（自适应） | 23.9 | 20.8 | 21.1 | 48.1 |
-| Qwt | 79.2 | 76.0 | 76.6 | 13.2 |
+| Qwt（默认） | 79.2 | 76.0 | 76.6 | 13.2 |
+| Qwt（FilterPointsAggressive） | 26.3 | **18.9** | 18.9 | **53.0** |
 | JKQtPlotter（默认，压缩关） | 1400.6 | 1407.8 | 1434.6 | 0.7 |
 | JKQtPlotter（手动开压缩） | 560.4 | 541.7 | 543.3 | 1.8 |
 
@@ -53,7 +54,8 @@
 |---|---:|---:|---:|---:|
 | 自绘画布 | 38.4 | **34.5** | 34.6 | **29.0** |
 | QCustomPlot（自适应） | 45.1 | 39.2 | 41.3 | 25.5 |
-| Qwt | 342.6 | 331.2 | 333.0 | 3.0 |
+| Qwt（默认） | 342.6 | 331.2 | 333.0 | 3.0 |
+| Qwt（FilterPointsAggressive） | 109.4 | **109.6** | 110.4 | **9.1** |
 
 ### 10 条曲线 × 10 万点，只看 1% 时间窗
 
@@ -61,7 +63,8 @@
 |---|---:|---:|---:|---:|
 | 自绘画布 | 5.1 | **1.2** | 1.4 | **827.7** |
 | QCustomPlot（自适应） | 5.1 | 1.9 | 1.9 | 540.1 |
-| Qwt | 38.9 | 33.6 | 37.9 | 29.7 |
+| Qwt（默认） | 38.9 | 33.6 | 37.9 | 29.7 |
+| Qwt（FilterPointsAggressive） | 28.0 | **24.4** | 24.8 | **41.1** |
 
 ### QCustomPlot 自适应采样开关
 
@@ -89,10 +92,11 @@
 
 这组对照说明：
 
-- **Qwt 和 QCustomPlot 的“全量慢”主要来自输入点数**。喂 25.6k 点后 Qwt 从 76.0 ms 降到 9.3 ms；QCustomPlot 仍有约 19 ms 的固定重绘开销，所以只降到 19.2 ms。
+- **Qwt 和 QCustomPlot 的“全量慢”主要来自输入点数**。喂 25.6k 点后 Qwt 从 76.0 ms 降到 9.3 ms（激进过滤 9.0 ms）；QCustomPlot 仍有约 19 ms 的固定重绘开销，所以只降到 19.2 ms。
+- Qwt 的 `FilterPointsAggressive` 是每段像素列保留 first/min/max/last，语义接近自绘 LOD，但它是默认关闭的可选属性；开启后 1M 点仍为 109.6 ms。
 - **JKQtPlotter 的问题不只是数据量或拷贝**。即使只喂 25.6k 点，仍要 581.7 ms，说明完整版每帧重建 `QPolygonF`、做 `JKQTPSimplifyPolyLines` / `JKQTPClipPolyLines` 逐段裁剪、再走完整 plot 重绘的管线本身很重。
 - **自绘不是“免费抽稀”**。`ps_lod_minmax_many` 每帧扫全量数据，100 万点 × 10 条仍要 34.5 ms；它快在“扫描一次、输出每列 min/max”，不是跳过计算。
-- 如果比较“已经抽稀后的绘图后端”，自绘仍最快，Qwt 次之，QCustomPlot 有固定开销，JKQtPlotter 不可用；如果比较“从全量遥测到成图”，自绘的 LOD 优势才是 34.5 ms vs 331 ms 的主要来源。
+- 如果比较“已经抽稀后的绘图后端”，自绘仍最快，Qwt 次之，QCustomPlot 有固定开销，JKQtPlotter 不可用；如果比较“从全量遥测到成图”，自绘与 Qwt 激进过滤的差距是 34.5 ms vs 109.6 ms。
 
 > 说明：JKQtPlotter 默认 `useNonvisibleLineCompression=false`，所以默认 1407.8 ms；手动开启后 541.7 ms。预抽稀那组是在开启压缩下测的，仍有 581.7 ms，进一步说明其瓶颈不只在输入点数。
 
@@ -102,13 +106,13 @@
 |---|---|---|
 | 自绘画布 | `addGeneratedSeries` 用 `QVector` 隐式共享，通常不深拷贝；内核指针模式直接引用 | 分配 `lod` 缓冲，`ps_lod_minmax_many` 输出约 2×像素列点；再构造 `QPolygonF` 画折线 |
 | QCustomPlot | `setData` 把点深拷贝进 `QVector<QCPGraphData>` | `getLines` 每帧构造 `QVector<QCPGraphData> lineData` 和 `QVector<QPointF> lines`；自适应开启时只处理抽样子集，关闭时是全量 |
-| Qwt | `setSamples` 走 `QwtPointArrayData`，x/y 数组隐式共享 | `QwtPointMapper::toPolygonF` 每帧把可见范围的全量点变换成 `QPolygonF` |
+| Qwt | `setSamples` 走 `QwtPointArrayData`，x/y 数组隐式共享 | 默认每帧把可见范围全量点变换成 `QPolygonF`；`FilterPointsAggressive` 在映射前按像素列块保留 first/min/max/last |
 | JKQtPlotter | `addCopiedColumn` 深拷贝两列数据 | 每帧构造完整 `QPolygonF`，再做 `JKQTPSimplifyPolyLines`、`JKQTPClipPolyLines`，中间还会产生新的多边形副本 |
 
 结论：
 
 - **自绘不是不拷贝**，而是只拷贝“抽稀后的输出”，不每帧复制全量原始点。
-- **Qwt/JKQt 每帧都会把全量点变成绘制用 `QPolygonF`**；JKQt 还会多做简化/裁剪副本，所以更重。
+- **Qwt 默认每帧把全量点变成绘制用 `QPolygonF`**；开启 `FilterPointsAggressive` 后先列块过滤再映射，但仍保留约 4 点/列。**JKQt 每帧构造完整多边形，还会多做简化/裁剪副本，所以更重。**
 - **QCustomPlot 自适应模式只处理子集**，但仍有每帧 `lineData`/`lines` 构造开销，因此预抽稀后仍有约 19 ms。
 - 初始化拷贝在本次计时外；每帧构造绘制缓冲在计时内。两者不能混为一谈。
 
@@ -118,7 +122,7 @@
 |---|---|---|---|---|---|---|---|
 | Qt Widget 原生嵌入 | 是 | 是 | 是 | 是 | 否，需 OpenGL 上下文 | 是 | 是 |
 | 2D 折线 / 散点 | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
-| 百万点自动 LOD | **Rust min/max 每列桶** | 无自动 LOD；可手动裁剪/降采样 | 自适应采样，非 min/max 包络 | 无 | GPU 直绘，无 CPU LOD | 无 | 有压缩器，非 min/max 包络 |
+| 百万点自动 LOD | **Rust min/max 每列桶** | `FilterPointsAggressive`（first/min/max/last，默认关） | 自适应采样，非 min/max 包络 | 无 | GPU 直绘，无 CPU LOD | 无 | 有压缩器，非 min/max 包络 |
 | 多 Y 轴 | 是（左右轴） | 是 | 是 | 是 | 是 | 有限 | 是 |
 | 时间轴 / 时间窗 | 是，飞控时间语义 | 通用数值轴 | 通用数值轴 | 通用数值轴 | 通用数值轴 | 通用数值轴 | 通用数值轴 |
 | 平移 / 滚轮缩放 | 是 | 是（Zoomer/Panner） | 是 | 是 | 是 | 需自建 | 是 |

@@ -36,7 +36,7 @@ export LD_LIBRARY_PATH="$PWD/deps/Qt/6.2.4/gcc_64/lib:$PWD/benchmarks/qwt-build/
 ./build-release/benchmarks/plot_bench/plot_bench --lib qwt --curves 10 --points 100000 --frames 10
 ```
 
-`--zoom 0.01` 表示只看 1% 时间窗；`--adaptive 0` 关闭 QCustomPlot 自适应采样；`--jkqtCompress 0` 关闭 JKQtPlotter 线压缩；`--predecimate 1` 让所有后端只接收 2×像素列 min/max 点。
+`--zoom 0.01` 表示只看 1% 时间窗；`--adaptive 0` 关闭 QCustomPlot 自适应采样；`--jkqtCompress 0` 关闭 JKQtPlotter 线压缩；`--qwtAggressive 0` 关闭 Qwt `FilterPointsAggressive`；`--predecimate 1` 让所有后端只接收 2×像素列 min/max 点。
 计时包含 backend 重绘和 `QWidget::render` 到 QImage，不只是 blit。
 
 JKQtPlotter 构建示例：

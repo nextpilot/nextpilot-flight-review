@@ -138,7 +138,7 @@ public:
 class QwtBackend : public Backend
 {
 public:
-    QwtBackend(const QVector<Dataset> &data, double duration)
+    QwtBackend(const QVector<Dataset> &data, double duration, bool aggressive)
     {
         auto *plot = new QwtPlot;
         for (int i = 0; i < data.size(); ++i)
@@ -146,6 +146,9 @@ public:
             auto *c = new QwtPlotCurve(QStringLiteral("curve %1").arg(i));
             c->setSamples(data[i].t, data[i].v);
             c->setPen(QPen(QColor::fromHsv((i * 37) % 360, 180, 180), 1));
+            c->setPaintAttribute(QwtPlotCurve::ClipPolygons, true);
+            c->setPaintAttribute(QwtPlotCurve::FilterPoints, true);
+            c->setPaintAttribute(QwtPlotCurve::FilterPointsAggressive, aggressive);
             c->attach(plot);
         }
         plot->setAxisScale(QwtAxis::XBottom, 0, duration);
@@ -292,6 +295,7 @@ int main(int argc, char **argv)
     parser.addOption({QStringLiteral("adaptive"), QStringLiteral("qcustom adaptive sampling"), QStringLiteral("value"), QStringLiteral("1")});
     parser.addOption({QStringLiteral("jkqtCompress"), QStringLiteral("JKQtPlotter line compression"), QStringLiteral("value"), QStringLiteral("1")});
     parser.addOption({QStringLiteral("predecimate"), QStringLiteral("feed all backends 2 min/max points per pixel column"), QStringLiteral("value"), QStringLiteral("0")});
+    parser.addOption({QStringLiteral("qwtAggressive"), QStringLiteral("Qwt FilterPointsAggressive"), QStringLiteral("value"), QStringLiteral("1")});
     parser.process(app);
 
     const int curves = parser.value(QStringLiteral("curves")).toInt();
@@ -315,7 +319,7 @@ int main(int argc, char **argv)
 #endif
 #ifdef HAVE_QWT
     else if (lib == QStringLiteral("qwt"))
-        backend = std::make_unique<QwtBackend>(data, duration * zoom);
+        backend = std::make_unique<QwtBackend>(data, duration * zoom, parser.value(QStringLiteral("qwtAggressive")) != QStringLiteral("0"));
 #endif
 #ifdef HAVE_JKQT
     else if (lib == QStringLiteral("jkqt"))
