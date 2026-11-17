@@ -185,6 +185,31 @@ fn add_channel(d: &mut PsDataset, name: &str, unit: &str, t: Vec<f64>, v: Vec<f6
     Ok(())
 }
 
+/// 按通道全名取序列：先查派生/旧通道，再查 typed 表列。null → NaN。
+fn find_series(d: &PsDataset, name: &str) -> Option<(Vec<f64>, Vec<f64>, String)> {
+    if let Some((_, ch)) = d.data.find(name) {
+        return Some((ch.t.as_ref().clone(), ch.v.clone(), ch.unit.clone()));
+    }
+    for table in &d.typed.tables {
+        for col in &table.columns {
+            let full = if table.name.is_empty() {
+                col.name.clone()
+            } else {
+                format!("{}.{}", table.name, col.name)
+            };
+            if full != name {
+                continue;
+            }
+            let t = table.time_us.iter().map(|&us| us as f64 * 1e-6).collect();
+            let v = (0..table.row_count())
+                .map(|i| col.value_as_f64(i).unwrap_or(f64::NAN))
+                .collect();
+            return Some((t, v, col.unit.clone()));
+        }
+    }
+    None
+}
+
 fn require_name<'a>(ptr: *const c_char, what: &str) -> Result<&'a str, String> {
     if ptr.is_null() {
         return Err(format!("{what}为空"));
@@ -230,13 +255,10 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
         }
     };
     let d = &mut *ds;
-    let Some((idx, _)) = d.data.find(&input) else {
+    let Some((t, v, unit)) = find_series(d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
-    let t = d.data.channels[idx].t.as_ref().clone();
-    let v = d.data.channels[idx].v.clone();
-    let unit = d.data.channels[idx].unit.clone();
     let out_name = match require_name(output, "输出通道") {
         Ok(s) if !s.is_empty() => s.to_string(),
         Ok(_) => format!("{input}.{filter_id}"),
@@ -294,11 +316,11 @@ pub unsafe extern "C" fn ps_preview_filter(
         }
     };
     let d = &*ds;
-    let Some((_, ch)) = d.data.find(&input) else {
+    let Some((time, values, _)) = find_series(d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
-    let (ot, ov) = match ps_ops::filters::apply(filter_id, &ch.t, &ch.v, &params) {
+    let (ot, ov) = match ps_ops::filters::apply(filter_id, &time, &values, &params) {
         Ok(x) => x,
         Err(e) => { write_err(err, err_cap, &e); return 5; }
     };
@@ -388,35 +410,35 @@ pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
         return 1;
     }
     let names = [("w", w), ("x", x), ("y", y), ("z", z)];
-    let mut channels = Vec::new();
     let d = &*ds;
+    let mut series = Vec::new();
     for (label, ptr) in names {
         let name = match require_name(ptr, label) {
             Ok(s) => s,
             Err(e) => { write_err(err, err_cap, &e); return 2; }
         };
-        let Some((idx, _)) = d.data.find(&name) else {
+        let Some(s) = find_series(d, name) else {
             write_err(err, err_cap, &format!("找不到四元数通道：{name}"));
             return 3;
         };
-        channels.push(idx);
+        series.push(s);
     }
-    let len = d.data.channels[channels[0]].t.len();
-    if channels.iter().any(|i| d.data.channels[*i].t.len() != len) {
+    let len = series[0].0.len();
+    if series.iter().any(|s| s.0.len() != len || s.1.len() != len) {
         write_err(err, err_cap, "四元数四个通道点数不一致");
         return 5;
     }
-    let times: Vec<f64> = d.data.channels[channels[0]].t.as_ref().clone();
-    for i in &channels[1..] {
-        if d.data.channels[*i].t.iter().zip(&times).any(|(a, b)| (a - b).abs() > 1e-6) {
+    let times = &series[0].0;
+    for s in &series[1..] {
+        if s.0.iter().zip(times).any(|(a, b)| (a - b).abs() > 1e-6) {
             write_err(err, err_cap, "四元数四个通道时间戳不一致");
             return 5;
         }
     }
-    let wv = d.data.channels[channels[0]].v.clone();
-    let xv = d.data.channels[channels[1]].v.clone();
-    let yv = d.data.channels[channels[2]].v.clone();
-    let zv = d.data.channels[channels[3]].v.clone();
+    let wv = series[0].1.clone();
+    let xv = series[1].1.clone();
+    let yv = series[2].1.clone();
+    let zv = series[3].1.clone();
     let (r, p, yaw) = match ps_ops::quat::to_rpy(&wv, &xv, &yv, &zv, degrees != 0, unwrap != 0) {
         Ok(x) => x,
         Err(e) => { write_err(err, err_cap, &e); return 5; }

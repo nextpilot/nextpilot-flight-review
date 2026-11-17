@@ -121,6 +121,32 @@ int main()
         }
     }
     ps_dataset_free(ds);
+
+    // typed 通道也能作为滤波输入。
+    {
+        PsDataset *tds = ps_dataset_new();
+        const int64_t tu[3] = {0, 1000000, 2000000};
+        const double tv[3] = {0.0, 2.0, 4.0};
+        char e[128] = {0};
+        if (ps_dataset_add_table_typed(tds, "t", tu, 3, e, sizeof(e)) != 0 ||
+            ps_dataset_add_table_column_typed(tds, "t", "roll", "", PS_VALUE_F64,
+                                              tv, nullptr, 3, e, sizeof(e)) != 0)
+        {
+            std::fprintf(stderr, "typed setup failed: %s\n", e);
+            ps_dataset_free(tds);
+            return 13;
+        }
+        double pt[3] = {0}, pv[3] = {0};
+        uint32_t pn = 0;
+        if (ps_preview_filter(tds, "t.roll", "moving_average", "{\"window\":2}",
+                              pt, pv, 3, &pn, e, sizeof(e)) != 0 || pn != 3 || pv[1] != 1.0)
+        {
+            std::fprintf(stderr, "typed filter failed: %s pn=%u\n", e, pn);
+            ps_dataset_free(tds);
+            return 14;
+        }
+        ps_dataset_free(tds);
+    }
     std::printf("abi=%u version=%s selftest=ok transform=ok\n", ps_abi_version(), ver);
     return 0;
 }
