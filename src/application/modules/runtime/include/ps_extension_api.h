@@ -93,7 +93,7 @@ typedef struct PsFrameBatch {
 #endif
 
 /* 宿主函数表：扩展不再直接链接 kernel，也不靠 exe 导出 ps_dataset_* 符号。
- * 扩展用 host->dataset_new/add_channel 构造数据集；数据集所有权仍归宿主。
+ * 扩展用 host->dataset_new + typed 表/列或 frame_batch 构造数据集；数据集所有权仍归宿主。
  * 这张表由宿主在 load/open 时传入，跨 Windows/Linux 同一套语义。 */
 typedef struct PsHostApi {
     uint32_t abi_version;       /* 必须等于 PS_HOST_API_VERSION */
