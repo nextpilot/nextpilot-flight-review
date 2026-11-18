@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | P1–P5 完成（GUI 画布已接管，2026-11-18） |
+| 状态 | P1–P9 库层完成（2026-11-18）；会话/视图层待接，见 §13 |
 | 位置 | `ng/libs/fastplot/` |
 | 目标 | 把老 `src/application/modules/plotting` 的**绘图能力**抽成独立库，供 ng 直接调用 |
 | 约束 | `src/` 只读参考，不改一行；库不依赖 `ng/core`，纯 Qt Widgets |
@@ -257,18 +257,6 @@ A/B 双游标测量（Δt/Δy） | 未迁 |
 - 已覆盖：ctest 8/8——架构装配、GUI 装配、解析管道、P1–P4 库能力、真实 ULog LOD、六仪表库断言、ng 仪表意图+视图、画布导出/状态/图例（含经 AppContext 视图动作派发闭环）、散点符号出图。
 - 未覆盖：真实 fixture 的 track/traj3d/waterfall（该 fixture 无 gps/pos/多序列通道）；多画布拆分；A/B 游标；柱/直方/频谱/散点的 ng 视图入口；真栅格曲面；Windows 构建（本轮仅 Linux offscreen）。
 
-## 12. P8 柱状/直方图、P9 频谱（2026-11-18）
-
-| 部件 | 输入 | 说明 |
-|---|---|---|
-`BarChart` | 类别标签 + 值数组 + 可选配色 | 0 基线，负值向下；槽位留白比例可调；类别标签底部居中省略 |
-`Histogram` | `IPlotData*`（y 值）+ 箱数 | 有限值过滤 → min/max 分箱计数；按 revision+点数缓存，内容不变不重算 |
-`SpectrumPlot` | `IPlotData*` + 采样间隔 dt | 去均值 → 单边 DFT 幅值；频率轴按 dt 换算，dt 缺省归一化；**当前朴素 DFT O(n²)**，点数上来后换 FFT |
-
-三者与仪表同底座 `Instrument`（底色 + 内容区），不认识 PlotWidget。测试：三柱含负值、32 箱双峰、256 点 5Hz 正弦幅值谱，均出图断言。
-
-**老 `Surface3D` 核对结论**：翻老码确认它不是曲面——多条序列沿斜向 z 轴错开、按深度改透明度的折线瀑布，与已迁的 `WaterfallPlot` 同一形态（斜投影 + 深度 alpha 都已具备），不另立部件。真三维栅格曲面（网格/插值/着色）是新能力，将来另立 `SurfacePlot`，不占用 Waterfall 这个名字。
-
 ## 11. P6 视图动作机制 与 P7 散点（2026-11-18）
 
 ### P6：库能力接进 ng
@@ -290,3 +278,56 @@ A/B 双游标测量（Δt/Δy） | 未迁 |
 - 三种数据路径（LOD 桶 / 稀疏逐点 / 密集包络）都按 scatter 分支画符号；LOD 与密集路径取桶中点。
 - 测试：200 点菱形散点，1821 个符号像素，`fastplot_scatter.png`。
 - **遗留**：ng 视图还没有"按通道/图型选散点模式"的入口，随会话层图型选择一起接。
+## 12. P8 柱状/直方图、P9 频谱（2026-11-18）
+
+| 部件 | 输入 | 说明 |
+|---|---|---|
+`BarChart` | 类别标签 + 值数组 + 可选配色 | 0 基线，负值向下；槽位留白比例可调；类别标签底部居中省略 |
+`Histogram` | `IPlotData*`（y 值）+ 箱数 | 有限值过滤 → min/max 分箱计数；按 revision+点数缓存，内容不变不重算 |
+`SpectrumPlot` | `IPlotData*` + 采样间隔 dt | 去均值 → 单边 DFT 幅值；频率轴按 dt 换算，dt 缺省归一化；**当前朴素 DFT O(n²)**，点数上来后换 FFT |
+
+三者与仪表同底座 `Instrument`（底色 + 内容区），不认识 PlotWidget。测试：三柱含负值、32 箱双峰、256 点 5Hz 正弦幅值谱，均出图断言。
+
+**老 `Surface3D` 核对结论**：翻老码确认它不是曲面——多条序列沿斜向 z 轴错开、按深度改透明度的折线瀑布，与已迁的 `WaterfallPlot` 同一形态（斜投影 + 深度 alpha 都已具备），不另立部件。真三维栅格曲面（网格/插值/着色）是新能力，将来另立 `SurfacePlot`，不占用 Waterfall 这个名字。
+
+
+## 13. 当前快照与待完成（下次回顾先看这里）
+
+### 13.1 库层已落地（fastplot，纯 Qt Widgets，不依赖 ng/core）
+
+| 分组 | 部件 |
+|---|---|
+坐标/数据/交互 | Viewport、ScaleDiv、Axis、PlotWidget、IPlotData/ArrayData 零拷贝、Curve、LodCache、Zoomer、Panner、Picker |
+仪表族（Instrument 底座） | AttitudeIndicator、CompassRose、DialGauge、TrackPlot、Trajectory3D、WaterfallPlot |
+统计图族 | BarChart、Histogram、SpectrumPlot |
+ng 接入 | 视图动作表（AppContext 登记/派发）、PlotCanvas 薄包装、五个视图动作处理器、`plot.instrument` 意图 + InstrumentView 自注册面板 |
+
+### 13.2 老画布 12 种模式归属（对照 `src/application/modules/plotting`）
+
+| 老模式 | fastplot 落地 | 备注 |
+|---|---|---|
+TimeSeries | PlotWidget + Curve | 已接 ng 单曲线画布 |
+Scatter | Curve scatter + 符号 | 库层就绪，ng 入口待接 |
+XY 互绘 | 无需新部件，Curve 本就吃任意 x/y | 缺会话层双通道按时间配对/重采样 |
+BarChart | BarChart | 库层就绪，ng 入口待接 |
+Histogram | Histogram | 库层就绪，ng 入口待接 |
+Spectrum | SpectrumPlot | 朴素 DFT O(n²)，后续换 FFT；ng 入口待接 |
+Horizon | AttitudeIndicator | 已接仪表意图 |
+Compass | CompassRose | 已接仪表意图 |
+Gauge | DialGauge | 已接仪表意图 |
+Traj3D | Trajectory3D | 已接仪表意图 |
+GpsMap | TrackPlot | 经纬度折线 + 起终点色点；无底图瓦片 |
+Surface3D | WaterfallPlot（已覆盖） | 老实现本身就是 z 错开折线瀑布，非真曲面；真栅格曲面将来另立 `SurfacePlot` |
+
+### 13.3 待完成（按依赖顺序）
+
+1. **多曲线叠加**（前置项）：系列增删、左右轴归属、系列颜色/线型编辑；当前画布单曲线。双轴 UI、XY 配对、系列面板都卡在它后面。
+2. **图型选择入口**：散点/柱/直方/频谱/轨迹在 ng 界面怎么切（ribbon 动作 / 面板切换 / 双击通道按名推断），形态待拍板。
+3. **画布会话层**：多页多画布拆分与行列网格、最大化还原；A/B 双游标测 Δt/Δy；时间书签线；播放头竖线。
+4. **库内后续优化**：Spectrum 换 FFT；真实 fixture 补 track/traj3d/waterfall 出图断言；Windows 构建回归。
+5. **未来新能力**：真 3D 栅格曲面（网格/插值/着色）；地图底图/瓦片。
+
+### 13.4 测试基线
+
+- ctest 8/8（Linux offscreen）：架构装配、GUI 装配、解析管道、P1–P4 库能力、真实 ULog LOD、六仪表、ng 仪表意图+视图、画布导出/状态/图例派发闭环、散点/柱/直方/频谱出图断言。
+- 未覆盖：多画布拆分、A/B 游标、上述图型的 ng 视图入口、真栅格曲面、Windows 构建。
