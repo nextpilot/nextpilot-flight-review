@@ -2,6 +2,9 @@
 #include "Intent.h"
 #include "DataRepository.h"
 #include "Dataset.h"
+#include "ExtensionRegistry.h"
+#include "PluginScanner.h"
+#include "FormatToolbox.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -14,6 +17,16 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+
+// Release(NDEBUG) 下 assert 是空操作；用 CHECK 做真实断言，避免有副作用的
+// 调用被 assert 包裹后在 Release 里整个消失（历史踩过坑）。
+#define CHECK(cond)                                                            \
+    do {                                                                       \
+        if (!(cond)) {                                                         \
+            fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);    \
+            return 1;                                                          \
+        }                                                                      \
+    } while (0)
 
 using namespace ng::app;
 using namespace ng::core;
@@ -135,12 +148,29 @@ int main(int argc, char **argv)
     QTemporaryDir dir;
     const QString csv = writeCsv(dir);
 
-    // 1) 装载成功后五个模块都激活（3 个器官 + CSV/ULog 两个格式知识包）
+    // 1) 器官与工具箱分离装载：
+    //    - 器官模块只剩 3 个（data/plot/script），格式不再是器官；
+    //    - 格式驱动自注册进工具箱注册表；
+    //    - 外部插件扫描入口存在（本轮无插件，报告为空但接口可用）。
     App application;
     const auto errors = application.startup(true);
-    assert(errors.isEmpty());
-    assert(application.modules().activeIds().size() == 5);
-    fprintf(stdout, "[ok] 五个模块按依赖顺序激活（含 CSV/ULog 扩展）\n");
+    CHECK(errors.isEmpty());
+    CHECK(application.modules().activeIds().size() == 3);
+    ExtensionRegistry &toolbox = application.modules().extensions();
+    CHECK(toolbox.count() == 2);
+    CHECK(toolbox.contains(QStringLiteral("csv")));
+    CHECK(toolbox.contains(QStringLiteral("ulog")));
+    // 两种发现路径：按 format 精确查找 + 按文件后缀推断。
+    CHECK(toolbox.driverForFormat(QStringLiteral("csv")) != nullptr);
+    CHECK(toolbox.driverForFormat(QStringLiteral("ulog")) != nullptr);
+    CHECK(toolbox.driverForPath(QStringLiteral("x.ULG"))->id() == QStringLiteral("ulog"));
+    CHECK(toolbox.driverForPath(QStringLiteral("x.csv"))->id() == QStringLiteral("csv"));
+
+    // 外部插件扫描（本轮预留入口）：空目录返回空报告，不报错、不影响内置格式。
+    ng::ext::PluginScanReport scan = ng::ext::scanExternalPlugins(toolbox, dir.path());
+    CHECK(scan.discovered.isEmpty());
+    CHECK(toolbox.count() == 2); // 扫描未改动工具箱
+    fprintf(stdout, "[ok] 器官(3) 与工具箱(2 格式驱动) 分离装载；自注册 + 后缀推断 + 插件扫描入口就绪\n");
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）
     Result<IntentResult> loaded = application.modules().execute(loadIntent(csv));
@@ -349,21 +379,24 @@ int main(int argc, char **argv)
     }
 
     // 4) 卸载隔离：关掉绘图模块后，CSV 仍能加载，数据不消失
-    assert(application.modules().deactivate(QStringLiteral("mod.plot")));
-    assert(!application.modules().isActive(QStringLiteral("mod.plot")));
+    CHECK(application.modules().deactivate(QStringLiteral("mod.plot")));
+    CHECK(!application.modules().isActive(QStringLiteral("mod.plot")));
     Result<IntentResult> stillLoads = application.modules().execute(loadIntent(csv));
     assert(stillLoads);
     assert(application.data().get(id) != nullptr);
     fprintf(stdout, "[ok] 卸载 plot 模块后 CSV 仍可用，数据未丢失\n");
 
-    // 5) 关掉 CSV 扩展后，data.load 不再可执行（能力随模块撤销）
-    assert(application.modules().deactivate(QStringLiteral("ext.csv")));
+    // 5) 从工具箱撤销 CSV 驱动后，data.load format=csv 不再可执行（能力随注册表撤销）。
+    //    注意：撤销驱动 ≠ 卸载器官，器官三个模块仍在。
+    CHECK(toolbox.unregisterDriver(QStringLiteral("csv")));
+    CHECK(!toolbox.contains(QStringLiteral("csv")));
+    CHECK(toolbox.count() == 1);
     Result<IntentResult> noHandler = application.modules().execute(loadIntent(csv));
-    assert(!noHandler);
-    assert(noHandler.error().code == QStringLiteral("eunsupported"));
-    fprintf(stdout, "[ok] 卸载 CSV 扩展后能力被精确撤销\n");
+    CHECK(!noHandler);
+    CHECK(noHandler.error().code == QStringLiteral("eformat"));
+    fprintf(stdout, "[ok] 从工具箱撤销 CSV 驱动后能力被精确撤销（eformat）\n");
 
-    // 5b) 格式知识包卸载隔离：CSV 卸载后 ULog 仍能加载；卸载 ULog 后 ulog 能力精确撤销。
+    // 5b) 工具箱隔离：撤掉 CSV 不影响 ULog；再撤 ULog 后 ulog 能力精确撤销。
     {
         qint64 firstUs = 0, lastUs = 0;
         const QString ulg = writeUlog(dir, 6000, &firstUs, &lastUs);
@@ -371,12 +404,17 @@ int main(int argc, char **argv)
         ui.op = QStringLiteral("data.load");
         ui.params[QStringLiteral("path")] = ulg;
         ui.params[QStringLiteral("format")] = QStringLiteral("ulog");
-        Result<IntentResult> stillLoads = application.modules().execute(ui); // CSV 已停，ULog 仍在
-        assert(stillLoads);
-        assert(application.modules().deactivate(QStringLiteral("ext.ulog")));
+        Result<IntentResult> stillLoads = application.modules().execute(ui); // CSV 已撤，ULog 仍在
+        CHECK(stillLoads);
+        CHECK(toolbox.unregisterDriver(QStringLiteral("ulog")));
         Result<IntentResult> noUlog = application.modules().execute(ui);
-        assert(!noUlog && noUlog.error().code == QStringLiteral("eunsupported"));
-        fprintf(stdout, "[ok] 格式扩展互不干扰：停 CSV 不影响 ULog；停 ULog 后 ulog 能力精确撤销\n");
+        CHECK(!noUlog && noUlog.error().code == QStringLiteral("eformat"));
+        CHECK(toolbox.count() == 0);
+        fprintf(stdout, "[ok] 工具箱隔离：撤 CSV 不影响 ULog；撤 ULog 后 ulog 能力精确撤销\n");
+
+        // 重新自注册验证可逆（工具箱可热插，不留悬空能力）。
+        ng::ext::registerBuiltinFormats(toolbox);
+        CHECK(toolbox.count() == 2);
     }
 
     // 6) Job 序列化往返

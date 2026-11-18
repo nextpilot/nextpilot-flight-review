@@ -18,7 +18,8 @@ static void printUsage()
 {
     fprintf(stdout,
             "用法:\n"
-            "  plotscope-ng --list-modules\n"
+            "  plotscope-ng --list-modules      # 器官模块\n"
+            "  plotscope-ng --list-formats      # 工具箱里的格式驱动\n"
             "  plotscope-ng --kernel            # Rust kernel ABI/版本/自检\n"
             "  plotscope-ng --info <file.csv|file.ulg>   # 按扩展名选格式\n"
             "  plotscope-ng --run <job.json>\n"
@@ -88,6 +89,19 @@ int main(int argc, char **argv)
             const char *kind = info.kind == ng::host::ModuleKind::Builtin ? "builtin" : "extension";
             fprintf(stdout, "%-12s %-10s %s\n", qPrintable(info.id), kind,
                     qPrintable(info.provides.join(QLatin1Char(','))));
+        }
+        return 0;
+    }
+
+    if (command == QStringLiteral("--list-formats"))
+    {
+        const auto &toolbox = application.modules().extensions();
+        for (ng::core::IFormatDriver *driver : toolbox.drivers())
+        {
+            fprintf(stdout, "%-10s %-18s 后缀[%s]\n",
+                    qPrintable(driver->id()),
+                    qPrintable(driver->displayName()),
+                    qPrintable(driver->suffixes().join(QLatin1Char(','))));
         }
         return 0;
     }

@@ -5,6 +5,8 @@ add_library(ng_core STATIC
     src/DataRepository.cpp
     src/Intent.cpp
     src/ScriptFacade.cpp
+    src/IFormatDriver.cpp
+    src/ExtensionRegistry.cpp
     include/Result.h
     include/Dataset.h
     include/DataRepository.h
@@ -13,6 +15,8 @@ add_library(ng_core STATIC
     include/IIntentExecutor.h
     include/JobRecorder.h
     include/ScriptFacade.h
+    include/IFormatDriver.h
+    include/ExtensionRegistry.h
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

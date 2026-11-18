@@ -22,7 +22,12 @@ ng::core::JobRecorder *ModuleContext::recorder()
 }
 
 ModuleHost::ModuleHost(ng::core::DataRepository &repo, QObject *parent)
-    : QObject(parent), m_repo(repo) {}
+    : QObject(parent), m_repo(repo), m_dataLoadHandler(m_registry, repo)
+{
+    // 系统级 data.load 入口：不归属任何可卸载模块，任何模块装卸都不影响它。
+    // 用一个保留 key 注册，避免与模块 handler 的 "%id/%index" 冲突。
+    m_handlers.insert(QStringLiteral("@system/data.load"), &m_dataLoadHandler);
+}
 
 ModuleHost::~ModuleHost()
 {
@@ -120,7 +125,12 @@ void ModuleHost::deactivateAll()
     const QStringList ids = activeIds();
     for (const QString &id : ids)
         deactivate(id);
-    m_handlers.clear();
+    // 只清模块注册的 handler；系统级 data.load 入口保留。
+    for (auto it = m_handlers.begin(); it != m_handlers.end(); )
+        if (it.key().startsWith(QStringLiteral("@system/")))
+            ++it;
+        else
+            it = m_handlers.erase(it);
 }
 
 ng::core::Result<ng::core::IntentResult> ModuleHost::execute(const ng::core::Intent &intent)

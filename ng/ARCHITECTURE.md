@@ -28,17 +28,23 @@
 app/            CLI / GUI 入口（只做装配与参数解析）
   ↓
 host/           装载循环、依赖拓扑、意图执行器、生命周期驱动
-  ↓
-modules/        器官：data / plot / script（编译进 app，可配置关闭）
-extensions/     知识包：csv 等格式（格式 -> Dataset，可独立装卸）
+  ├── modules/      器官：data / plot / script（编译进 app，可配置关闭）
+  └── extensions/   工具箱：格式驱动等能力（见下"工具箱"一节）
   ↓
 core/           Dataset 的 C++ 薄门面 + DataRepository + 事件 + 意图定义
+                + ExtensionRegistry / IFormatDriver（工具箱抽象）
   ↓              （只 include ps_kernel.h 一张 C ABI 门）
 kernel (Rust)   数据地基：ps-ndf typed 表 / ps-cache 缓存 / ps-ops 抽稀·滤波·统计
 ```
 
 依赖方向严格向下。**core 不依赖任何上层；module 之间零直接依赖。**
 **数据本体归 Rust kernel 所有，C++ core 只是它的 RAII 门面与 schema 投影。**
+
+**器官（module）与工具箱（extension）是两条正交的线**：
+- 器官是 app 的功能组件，有生命周期、可上 UI，由 `ModuleHost` 按依赖拓扑装载/卸载；
+- 工具箱是"能力登记处"，里面装的是无 UI、无独立生命周期的驱动（当前是格式驱动，
+  未来可有算子/导出器等）；统一注册进 `core::ExtensionRegistry`，由宿主持有。
+- 两者都归宿主管，但互不伪装：格式不再是器官，器官也不认识任何具体格式。
 
 ## 3. 统一数据模型（core 门面 + Rust kernel 地基）
 
@@ -111,38 +117,57 @@ C++ 不存数据、不解析、不计算、不遍历。由此定死**三条不�
 
 **其他格式（已具备的资产）**：旧 `src/extensions/builtin/` 下已有 CSV/JSON/binary、ULog/apbin/tlog/mavlink、ASC/BLF/MDF4、NMEA/UBX/OEM7、MCAP/ROSbag2 等近 6000 行解析实现，统一产出 `PsChannelData` 再交 kernel。它们与 ng 共用**同一个 Rust kernel**（`ng/CMakeLists.txt` 的 `_ng_kernel_dir` 指向 `../src/application/kernel`，C ABI 完全相同）。ULog 样板证明了接入公式：**协议算法照搬、产出端换成流式 `appendFrame`**；其余格式按此公式逐个平移即可，无需重写格式知识。
 
-## 4. 模块与扩展
+## 4. 器官、工具箱与扩展发现
 
-### 4.1 统一接口
+### 4.1 器官（module）—— app 的功能组件
 
-器官（module）和知识包（extension）实现同一个接口，宿主一视同仁：
+有生命周期、可上 UI 的部分（data / plot / script）实现统一接口：
 
 ```cpp
 class IModule : public QObject {
-    virtual ModuleInfo info() const = 0;              // id/version/requires/provides/kind
+    virtual ModuleInfo info() const = 0;              // id/version/requires/provides
     virtual void initialize(ModuleContext&) = 0;      // 声明能力、订阅事件，不碰 UI
     virtual void onAttach(UiContext&) {}              // 建 UI；headless 时宿主不调用
 };
 ```
 
-- `ModuleKind::Builtin`：编译进 app，默认启用，可配置关闭。
-- `ModuleKind::Extension`：独立动态库，运行时扫描、ABI 校验后加载。
+- 宿主按 `requires/provides` 拓扑排序装载；缺依赖/成环的器官被跳过，不连坐。
+- 卸载 = `delete module` → Qt 父子树回收全部 UI 与信号槽（Qt 原生语义，无 token、无撤销协议）。
+- `--list-modules` 只列器官；格式驱动**不再是器官**。
 
-### 4.2 依赖前置解析
+### 4.2 工具箱（ExtensionRegistry）—— 能力登记表
 
-`ModuleInfo::requires` 声明依赖的能力。宿主启动时：
+格式解析等"无 UI、无独立生命周期的能力"不伪装成器官，而是注册进工具箱：
 
-1. 收集所有模块的 `provides/requires`。
-2. 拓扑排序；循环依赖启动即拒绝并打印环路径。
-3. 缺依赖的模块不加载（记日志），其余继续——失败隔离，不连坐。
+```cpp
+class ExtensionRegistry {
+    bool registerDriver(std::unique_ptr<IFormatDriver>); // 登记（拥有所有权）
+    bool unregisterDriver(const QString &id);            // 撤销 + 释放
+    IFormatDriver *driverForFormat(const QString &format) const; // 按 format 精确
+    IFormatDriver *driverForPath(const QString &path) const;      // 按后缀推断
+};
+```
 
-### 4.3 独立装卸的两个机制
+`IFormatDriver` 只声明"身份 + 识别规则 + load()"；解析算法与缓存/入库外壳都在驱动内。
+工具箱由宿主持有，经 `ModuleContext` / `App` 暴露；卸载一个驱动 = 从表撤销并释放，
+不留悬空能力，也不牵连其他驱动或器官。
 
-**所有权即撤销**：模块自己创建 dock/action，`parent` 给自己；宿主只放置、不接管。
-卸载时 `delete module` → Qt 父子树自动回收全部 UI、自动断开全部信号槽。
-没有 token、没有撤销协议，这是 Qt 原生语义。
+### 4.3 两条发现路径，一张注册表
 
-**依赖前置**：见 4.2，运行时不碰运气、不层层 bridge。
+| 路径 | 对象 | 方式 | 本轮状态 |
+|---|---|---|---|
+| 自注册 | 内置格式（编译进 app） | `registerBuiltinFormats(registry)` 集中登记，app 不认识具体类 | ✅ 已实现 |
+| 动态扫描 | 外部插件（第三方动态库） | `scanExternalPlugins(registry, dir)` 扫描→校验 ABI→注册 | ⬜ 入口已预留，未实际 dlopen |
+
+**只有外部插件才走动态扫描**；内置能力一律静态自注册，避免为已知格式付 ABI 代价。
+两条路径汇入同一个 `ExtensionRegistry`——宿主与器官对"能力从哪来"完全无感。
+插件加载失败（缺符号/ABI 不符/id 冲突）只记入报告，不中断其他插件，更不碰内置格式。
+
+### 4.4 独立装卸隔离
+
+- 器官：见 4.1，所有权即撤销 + 依赖前置。
+- 工具箱能力：`unregisterDriver(id)` 精确撤销；`data.load` 由唯一入口按注册表查表分派，
+  撤掉 CSV 不影响 ULog，反之亦然；可热插（重新 register 即可恢复）。
 
 ## 5. 统一意图层（automation 的灵魂）
 
@@ -159,9 +184,16 @@ struct Intent {
 - 脚本 `ps.plot.add(...)` → 生成同样的 Intent → 执行器。
 - **意图可序列化**：一串 Intent 就是 Job（JSON），可录制、可回放、可版本管理。
 
-执行器是唯一知道"如何执行意图"的地方。它把意图分派给提供对应能力的模块。
+执行器是唯一知道"如何执行意图"的地方。它把意图分派给提供对应能力的处理器。
 
-**按完整意图路由，而非只按 op**：`IIntentHandler::canHandle(const Intent&)` 接收整个意图。多个格式知识包会声明同一个 `data.load`——CSV 只认 `format=csv`，ULog 只认 `format=ulog`，各自精确认领、互不抢占。这保证了"卸载 CSV 不影响 ULog、反之亦然"的隔离性；若只按 `op` 匹配，先注册者会吞掉所有 `data.load`，格式扩展之间就会互相干扰。
+**按完整意图路由，而非只按 op**：`IIntentHandler::canHandle(const Intent&)` 接收整个意图，
+多个处理器可声明同一个 op，按意图参数精确认领，互不抢占。
+
+**data.load 只有唯一入口**（宿主系统级 `DataLoadHandler`，不归属任何可卸载模块）：
+它查工具箱注册表——有 `format` 就 `driverForFormat` 精确选驱动，否则按文件后缀
+`driverForPath` 推断——再委托驱动的 `load()`。因此格式驱动之间彻底解耦：
+新增格式只加一行自注册；卸载 = 从注册表撤销；器官与其他模块零改动。
+这正是"格式只是工具箱一部分、可注册可扫描"的落地形态。
 
 ## 6. 自动化与 headless（已实现）
 
@@ -173,7 +205,7 @@ struct Intent {
   - `ps.plot.render(dataset, channel)` → `plot.render`（返回 PlotSpec table）
   - `ps.log(msg)` / `ps.version()`
 - **稳定 id**：`data.load` 可携带显式 `DatasetId`，录制/回放用同一个 id，避免会话自增 id 漂移——这是 Job 可回放的前提。
-- CLI：`--list-modules`、`--info <file.csv>`、`--run <job.json>`、`--script <file.lua> [--record <out.json>]`。
+- CLI：`--list-modules`（器官）、`--list-formats`（工具箱格式驱动）、`--info <file>`（按后缀自动选驱动）、`--run <job.json>`、`--script <file.lua> [--record <out.json>]`。
 - 录制闭环：`--script demo.lua --record job.json` 把脚本产生的业务意图录成 Job（不含 `script.run` 本身），`--run job.json` 回放得到相同 PlotSpec。
 - CI：headless 跑 Job + 导出 PNG/CSV 做基线对比（待办）。
 
@@ -194,7 +226,9 @@ ng/
 ├── core/                 数据模型/仓库/事件/意图/脚本门面（无 QWidget）
 ├── host/                 IModule/装载循环/意图执行器/App
 ├── modules/              器官：data / plot / script
-├── extensions/           知识包：csv / ulog（UlogStreamParser 流式样板）
+├── extensions/           工具箱
+│   ├── csv / ulog        格式驱动（IFormatDriver；UlogStreamParser 流式样板）
+│   └── registry/         集中自注册 + 外部插件扫描入口
 ├── app/                  CLI 入口
 └── tests/                架构契约测试
 ```
@@ -210,10 +244,15 @@ ng/
    微秒时间轴 / 缓存 / 卸载隔离全验证。同时把意图路由从「只按 op」修正为「按完整 Intent」，
    使多格式扩展可共存互不抢占。
 5. ✅ 脚本引擎与 Job 录制：Lua 门面 `ps` + 稳定 id + `--script/--record` 录制回放闭环。
-6. ⬜ 按 ULog 公式平移其余格式（apbin / tlog / ASC / BLF / MDF4 / MCAP / ROSbag2 / GNSS…）与 GUI 画布。
+6. ✅ 器官与工具箱分离：格式从 IModule 抽成 `IFormatDriver`，集中自注册进 `ExtensionRegistry`；
+   `data.load` 收敛为宿主唯一入口按注册表查表分派。外部插件动态扫描入口预留（仅扫描框架，
+   未实际 dlopen）。契约测试覆盖注册表按 format/后缀选驱动、撤销隔离、可逆热插、插件扫描入口。
+7. ⬜ 启用外部插件真实动态加载（定义插件 C ABI + 加载器），并按 ULog 公式平移其余格式
+   （apbin / tlog / ASC / BLF / MDF4 / MCAP / ROSbag2 / GNSS…）与 GUI 画布。
 
-验证：编译全绿；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖 typed 多表模型、
-通道投影、**Rust LOD 抽稀 / 统计 / 抗混叠抽取 / ps-cache 指纹命中与过期**、
-意图执行、按格式精确路由、卸载隔离、脚本 headless 执行、录制回放闭环，以及
+验证：编译全绿（Release + Debug 双构建）；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖
+typed 多表模型、通道投影、**Rust LOD 抽稀 / 统计 / 抗混叠抽取 / ps-cache 指纹命中与过期**、
+**工具箱自注册 / 按 format 与后缀选驱动 / 撤销隔离 / 可逆热插 / 插件扫描入口**、
+意图执行、脚本 headless 执行、录制回放闭环，以及
 **9000 行 ULog 流式加载（跨 3 批 / F32+U16 typed 列 / U64 微秒时间轴精确 / events+facts 元数据表）**；
-CLI 五入口（kernel/list/info/run/script）实测可用。
+CLI 六入口（kernel/list-modules/list-formats/info/run/script）实测可用。

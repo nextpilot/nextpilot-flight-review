@@ -5,6 +5,8 @@
 #include "JobRecorder.h"
 #include "ModuleInfo.h"
 #include "Result.h"
+#include "ExtensionRegistry.h"
+#include "DataLoadHandler.h"
 
 #include <QHash>
 #include <QList>
@@ -56,6 +58,10 @@ public:
     QStringList activeIds() const;
     QList<ModuleInfo> availableModules() const;
 
+    // 工具箱注册表：内置格式自注册 + 外部插件扫描都汇入这里。
+    ng::core::ExtensionRegistry &extensions() { return m_registry; }
+    const ng::core::ExtensionRegistry &extensions() const { return m_registry; }
+
 private:
     struct Node
     {
@@ -70,6 +76,8 @@ private:
                                 QHash<QString, QString> &errors) const;
 
     ng::core::DataRepository &m_repo;
+    ng::core::ExtensionRegistry m_registry; // 工具箱：格式驱动/其他能力的登记处
+    DataLoadHandler m_dataLoadHandler;       // 系统级 data.load 入口，不归属可卸载模块
     QHash<QString, Node> m_nodes;
     QStringList m_order;
     QHash<QString, ng::core::IIntentHandler *> m_handlers; // op -> handler

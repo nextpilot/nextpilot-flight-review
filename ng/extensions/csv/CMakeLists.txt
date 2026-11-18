@@ -1,5 +1,5 @@
 find_package(Qt6 REQUIRED COMPONENTS Core)
-add_library(ng_ext_csv STATIC CsvExtension.cpp)
+add_library(ng_ext_csv STATIC CsvFormatDriver.cpp)
 target_include_directories(ng_ext_csv PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ng_ext_csv PUBLIC ng_host)
+target_link_libraries(ng_ext_csv PUBLIC ng_core)
 set_target_properties(ng_ext_csv PROPERTIES AUTOMOC ON CXX_STANDARD 17)
