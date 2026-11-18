@@ -232,6 +232,8 @@ ng 接线 | `PlotCanvas` 装三个部件；`zoomed/panned` → `rangeChanged(t0,
 
 | 老模式 | 状态 | 备注 |
 |---|---|---|
+XY 互绘 | **库层无需新部件** | PlotWidget 的 Curve 本来就吃任意 x/y 数组；缺的是会话层双通道按时间配对/重采样，随多曲线叠加批一起做 |
+GPS Map | **已由 TrackPlot 覆盖** | 经纬度折线 + 起终点色点 + 经纬网格；无底图/瓦片，名实相符 |
 Scatter 散点 | **库层已迁（P7）** | ng 视图尚未有模式选择入口，待会话层一起接 |
 BarChart 柱状图 | **库层已迁（P8）** | `BarChart`：类别-值柱，含负值基线；ng 视图入口待接 |
 Histogram 直方图 | **库层已迁（P8）** | `Histogram`：值域分箱计数，revision 缓存；ng 视图入口待接 |
