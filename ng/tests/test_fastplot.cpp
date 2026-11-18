@@ -12,6 +12,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace
 {
@@ -147,6 +148,83 @@ int main(int argc, char **argv)
                 path.toUtf8().constData());
     }
 
-    fprintf(stdout, "[ok] fastplot P1 全部通过\n");
+    // 5) 像素列聚合：3000 点压成 ~700 列，min/max 不丢峰
+    {
+        const int n = 3000;
+        std::vector<double> xs(n), ys(n);
+        for (int i = 0; i < n; ++i)
+        {
+            xs[i] = i * 0.001;
+            ys[i] = std::sin(i * 0.02);
+        }
+        fastplot::ArrayData data(xs.data(), ys.data(), n, 7);
+
+        fastplot::Viewport vp;
+        vp.setPlotRect(QRectF(0, 0, 700, 300));
+        vp.setXRange(0.0, 3.0);
+        vp.setYRange(-1.2, 1.2);
+
+        fastplot::LodCache cache;
+        const QVector<fastplot::LodPoint> &pts = cache.points(data, vp);
+        assert(!pts.isEmpty());
+        assert(pts.size() <= 700);
+        // 峰值必须活下来：包络保留列内 min/max，不会被"平均"掉
+        double lo = 0.0, hi = 0.0;
+        for (const fastplot::LodPoint &pt : pts)
+        {
+            assert(pt.min <= pt.max);
+            lo = std::min(lo, pt.min);
+            hi = std::max(hi, pt.max);
+        }
+        assert(hi >= 0.99 && lo <= -0.99);
+
+        // 同一视口再画一次：必须命中缓存，不重扫
+        const int rebuildsBefore = cache.rebuilds();
+        cache.points(data, vp);
+        assert(cache.rebuilds() == rebuildsBefore);
+
+        // 视口变了就得重算
+        vp.setXRange(0.0, 1.5);
+        cache.points(data, vp);
+        assert(cache.rebuilds() == rebuildsBefore + 1);
+        fprintf(stdout, "[ok] LodCache：3000 点 → %d 列，命中缓存不重扫\n", int(pts.size()));
+    }
+
+    // 6) 曲线渲染：画出来的确实是数据（不是空坐标系）
+    {
+        const int n = 3000;
+        std::vector<double> xs(n), ys(n);
+        for (int i = 0; i < n; ++i)
+        {
+            xs[i] = i * 0.001;
+            ys[i] = std::sin(i * 0.02) * 0.5;
+        }
+        fastplot::ArrayData data(xs.data(), ys.data(), n, 11);
+
+        const QColor ink(0x5b, 0xc0, 0xf0);
+        fastplot::PlotWidget plot;
+        plot.resize(800, 400);
+        plot.addCurve(fastplot::Curve::fromData(&data, ink, 1.4));
+        assert(plot.autoScale());
+
+        const QImage img = plot.grabImage();
+        int curvePixels = 0;
+        for (int y = 0; y < img.height(); ++y)
+        {
+            for (int x = 0; x < img.width(); ++x)
+            {
+                if (img.pixelColor(x, y) == ink)
+                    ++curvePixels;
+            }
+        }
+        assert(curvePixels > 200);
+
+        const QString path = QDir::current().filePath(QStringLiteral("fastplot_p2.png"));
+        assert(img.save(path));
+        fprintf(stdout, "[ok] 曲线渲染：%d 个曲线像素，PNG 已写出 %s\n", curvePixels,
+                path.toUtf8().constData());
+    }
+
+    fprintf(stdout, "[ok] fastplot P1+P2 全部通过\n");
     return 0;
 }

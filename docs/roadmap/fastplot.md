@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | P1 开工（2026-11-18） |
+| 状态 | P1 完成、P2 完成（2026-11-18） |
 | 位置 | `ng/libs/fastplot/` |
 | 目标 | 把老 `src/application/modules/plotting` 的**绘图能力**抽成独立库，供 ng 直接调用 |
 | 约束 | `src/` 只读参考，不改一行；库不依赖 `ng/core`，纯 Qt Widgets |
@@ -119,10 +119,23 @@ public:
 | 批次 | 内容 | 验收 |
 |---|---|---|
 **P1** | `Viewport` + `ScaleDiv` + `Axis` + `PlotWidget`（网格+轴），CMake 目标 `fastplot` | 离屏渲染出干净坐标网格；`test_fastplot` 断言刻度、变换、边距 【本次】 |
-**P2** | `IPlotData` + `Curve` + `LodCache`；ng 侧适配器把 `Dataset` 通道接进来 | `demo_flight.ulg` 画 `attitude.roll` 3000 点，与老画布同帧率 |
+**P2** | `IPlotData` + `Curve` + `LodCache`；ng 侧适配器把 `Dataset` 通道接进来 | `demo_flight.ulg` 画 `attitude.roll` 3000 点，与老画布同帧率 【已完成，见下】 |
 **P3** | `Zoomer/Panner/Picker` + 框选 + 键盘 | 缩放/框选/读数与老行为一致 |
 **P4** | 双轴/图例/hover/导出 PNG+CSV/状态 JSON | 双轴可画，导出与复原正确 |
 **P5** | 专用仪表（horizon/compass/gauge/gps map/3D） | 按需，`fastplot/gadgets` 子目标 |
+
+### P2 落地记录（2026-11-18）
+
+| 能力 | 实现 |
+|---|---|
+数据抽象 | `IPlotData`（size/xAt/yAt/directAccess/revision）+ 非拥有视图 `ArrayData` |
+内核 LOD 直通 | `Curve::fromLod(QVector<LodPoint>)`——ng 的 `Dataset::lodMinMax` 结果直接画，**C++ 不重扫** |
+C++ 侧聚合 | `LodCache`：O(n) 一次扫描 → 每屏幕列 min/max；按（数据版本, 视口, 列数）缓存，命中不重算 |
+绘制策略 | 点数 ≤ 列数 → 逐点折线（保真）；否则像素列包络（竖线 + 中点连线），成本 O(像素宽) |
+自动定界 | `autoScaleX/Y`：扫数据取极值，两端留余量；LOD 数据只扫三元组 |
+验收 | `fastplot` 测 3000 点正弦：700 列、峰值不丢、缓存命中不重扫；`fastplot_dataset` 测真实 `demo_flight.ulg`：3000 行 → 592 三联 → 出图 |
+
+实测（vm，offscreen）：ULog 3000 行 → 592 个三元组，曲线 5459 个像素，`fastplot_p2_ulg.png`。
 
 ## 7. 构建接入
 

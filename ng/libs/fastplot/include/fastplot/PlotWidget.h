@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fastplot/Axis.h"
+#include "fastplot/Curve.h"
 #include "fastplot/Viewport.h"
 
 #include <QColor>
@@ -38,6 +39,17 @@ public:
     void setGridVisible(bool visible);
     void replot();
 
+    // ---- 曲线（P2）----
+    // 按值移入并返回引用，便于连续调样式；曲线不拥有数据。
+    Curve &addCurve(Curve curve);
+    void clearCurves();
+    int curveCount() const { return m_curves.size(); }
+
+    // 按曲线数据自动定范围（两端各留 marginRatio 的余量）；无数据返回 false。
+    bool autoScaleY(double marginRatio = 0.05);
+    bool autoScaleX(double marginRatio = 0.02);
+    bool autoScale();   // 两轴一起
+
     QRectF plotRect() const { return m_vp.plotRect(); }
 
     // 离屏渲染，导出与测试用。
@@ -51,6 +63,8 @@ protected:
 
 private:
     Axis *axisPtr(AxisSide side);
+    void paintCurves(QPainter &painter);
+    QRectF dataBounds() const;
     void relayout();       // 边距 → 绘图区 → 刻度划分（三者必须一起算）
     void refreshScaleDivs();
     void invalidateStatic();
@@ -60,6 +74,7 @@ private:
     QColor m_background{0x10, 0x16, 0x1c};
     QPixmap m_staticCache;
     bool m_staticDirty = true;
+    QVector<Curve> m_curves;
 };
 
 } // namespace fastplot
