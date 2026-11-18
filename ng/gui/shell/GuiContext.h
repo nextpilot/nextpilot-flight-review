@@ -34,7 +34,8 @@ public:
                QObject *parent = nullptr);
 
     // ng::host::UiContext
-    void placePanel(QWidget *widget, const QString &area) override;
+    void placePanel(QWidget *widget, const QString &area,
+                    const QString &titleOverride = QString()) override;
     void placeCanvas(QWidget *widget) override;
     void declareSlot(const QString &area, const QString &label, ng::core::SlotKind kind,
                      const QString &parentArea = QString()) override;
@@ -42,6 +43,11 @@ public:
 
     // 请求 app 外壳提供一个部件，放到指定区域。
     QWidget *requestPanel(const QString &area, const QString &panelType) override;
+
+    // 领域面板（形态由知识包决定）：清单 + 按 id 请求。
+    QList<ng::core::PanelSpec> availableDomainPanels(
+        ng::core::FormatDomain domain) const override;
+    QWidget *requestDomainPanel(const QString &area, const QString &panelId) override;
 
     // 宿主执行器（模块在 GUI 里发意图用）。
     ng::core::IIntentExecutor &executor() override;

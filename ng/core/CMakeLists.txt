@@ -10,6 +10,7 @@ add_library(ng_core STATIC
     src/FormatDomain.cpp
     src/ContributionKind.cpp
     src/UiSlotRegistry.cpp
+    src/PanelFactoryRegistry.cpp
     src/BuiltinPackRegistry.cpp
     src/BuiltinContributions.cpp
     src/DataSourceRepository.cpp
@@ -43,6 +44,7 @@ add_library(ng_core STATIC
     include/IExampleContribution.h
     include/IDocContribution.h
     include/UiSlotRegistry.h
+    include/PanelFactoryRegistry.h
     include/BuiltinPackRegistry.h
     include/BuiltinContributions.h
     include/DataSource.h

@@ -3,9 +3,7 @@
 #include "AppContext.h"
 #include "IIntentExecutor.h"
 
-#include <QWidget>
-
-namespace ng::gui
+namespace ng::core
 {
 
 namespace
@@ -44,4 +42,4 @@ QStringList PanelFactoryRegistry::types()
     return out;
 }
 
-} // namespace ng::gui
+} // namespace ng::core

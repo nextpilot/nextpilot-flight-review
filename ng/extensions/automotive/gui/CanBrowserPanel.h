@@ -1,0 +1,38 @@
+#pragma once
+
+#include <QWidget>
+
+class QTableWidget;
+
+namespace ng::core
+{
+class AppContext;
+class IIntentExecutor;
+} // namespace ng::core
+
+namespace ng::ext::automotive
+{
+
+// CAN 报文浏览器：汽车领域专属面板（形态随 DBC 定义动态变化）。
+//
+// 详见 CanBrowserPanel.cpp 的说明：形态属领域知识，
+// 故实现在知识包的呈现层，而非通用视图层 gui/views/。
+class CanBrowserPanel : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit CanBrowserPanel(ng::core::AppContext &appCtx, QWidget *parent = nullptr);
+
+    // 重建表格（数据源变化时调用）。
+    void refresh();
+
+private:
+    ng::core::AppContext &m_appCtx;
+    QTableWidget *m_table = nullptr;
+};
+
+// 工厂函数：与通用视图同款签名，注册进共用的工厂表。
+QWidget *createCanBrowserPanel(ng::core::AppContext &appCtx, ng::core::IIntentExecutor &exec,
+                               QWidget *parent);
+
+} // namespace ng::ext::automotive

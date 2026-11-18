@@ -22,6 +22,15 @@ std::unique_ptr<IToolPack> AutomotivePack::build()
         QList<UiAction>{
             {QStringLiteral("car.dock.can"), QStringLiteral("CAN 报文面板"), QStringLiteral("dock.right"),
              QString(), QString()}});
+    // 领域面板**描述**（纯数据，headless 可见）：
+    // 汽车包提供 CAN 报文面板——它的形态由 DBC 定义的信号决定，
+    // 属于领域知识，通用视图层（gui/views/）不该认识它。
+    // 实现见 ng/extensions/automotive/gui/CanBrowserPanel.cpp（GUI 侧）。
+    pack->add<GenericPanelContribution>(
+        QStringLiteral("car.panels"), QStringLiteral("汽车领域面板"), FormatDomain::Automotive,
+        QList<PanelSpec>{
+            {QStringLiteral("car.can-browser"), QStringLiteral("CAN 报文"), QStringLiteral("dock.right")}});
+
     pack->add<GenericDocContribution>(
         QStringLiteral("car.docs"), QStringLiteral("汽车知识文档"), FormatDomain::Automotive,
         QList<DocEntry>{

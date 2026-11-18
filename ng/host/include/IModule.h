@@ -2,7 +2,9 @@
 
 #include "AppContext.h"
 #include "DataRepository.h"
+#include "FormatDomain.h"
 #include "IIntentExecutor.h"
+#include "IPanelContribution.h"
 #include "Intent.h"
 #include "JobRecorder.h"
 #include "ModuleInfo.h"
@@ -27,7 +29,9 @@ public:
     virtual ~UiContext() = default;
 
     // 把一个面板停靠到指定区域（dock.left / dock.right / dock.bottom / dock.top）。
-    virtual void placePanel(QWidget *widget, const QString &area) = 0;
+    // titleOverride 非空时用它作停靠标题（领域面板用自己的描述覆盖通用插槽标签）。
+    virtual void placePanel(QWidget *widget, const QString &area,
+                            const QString &titleOverride = QString()) = 0;
 
     // 把一个控件放进中央画布区（替换当前内容）。
     virtual void placeCanvas(QWidget *widget) = 0;
@@ -50,6 +54,32 @@ public:
     //   - 新增模块自带界面 = 声明一个部件类型 + 动作，无需改 GUI 层。
     // 返回部件的宿主引用（QWidget 前置声明），模块可用它设置数据/标题等。
     virtual QWidget *requestPanel(const QString &area, const QString &panelType) = 0;
+
+    // 请求一个**领域面板**（形态由知识包决定，模块不定义形态）。
+    //
+    // 什么时候需要它：有些面板的形态**本身就是领域知识**——
+    // CAN 报文浏览器长什么样取决于 DBC 定义的信号，波形调参器取决于参数表。
+    // 这类面板通用视图层不该认识（views/ 会长成领域杂物箱），
+    // 器官也给不出（器官是机制，不懂业务）。
+    // 于是形态归**知识包**：它用 IPanelContribution 声明
+    // "我提供 car.can-browser，标题'CAN 报文'"，并在 GUI 侧注册实现。
+    //
+    // 模块怎么知道该请求哪个？它不写死 id，而是先问
+    // availableDomainPanels(domain)——拿到该领域提供的面板清单，
+    // 再按 id 请求。于是：
+    //   - 模块只认**领域**（它的业务范围），不认具体面板；
+    //   - 面板清单由知识包决定，装/卸知识包即时反映；
+    //   - headless 下也能问（清单是纯数据）。
+    //
+    // domain 传 FormatDomain::General 表示不限领域，返回全部可用领域面板。
+    virtual QList<ng::core::PanelSpec> availableDomainPanels(
+        ng::core::FormatDomain domain) const = 0;
+
+    // 按 id 请求领域面板（id 来自 availableDomainPanels）。
+    // 与 requestPanel 的区别：这里不要求 views/ 预先注册，
+    // 实现由**知识包的呈现层**注册进同一张工厂表。
+    // 返回 nullptr 表示该面板当前不可用（如知识包未装载）。
+    virtual QWidget *requestDomainPanel(const QString &area, const QString &panelId) = 0;
 
     // 宿主执行器：模块在 GUI 里点击动作后，用它发意图（与脚本/CLI 同一路径）。
     virtual ng::core::IIntentExecutor &executor() = 0;

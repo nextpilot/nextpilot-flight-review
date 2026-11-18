@@ -10,6 +10,7 @@
 #include "BuiltinModuleRegistry.h"
 #include "BuiltinPackRegistry.h"
 #include "IModule.h"
+#include "IPanelContribution.h"
 
 #include <QCoreApplication>
 #include <QSet>
@@ -311,15 +312,16 @@ int main(int argc, char **argv)
         for (const auto &c : ap->contributions())
             CHECK(c->provider() == QStringLiteral("pack.autopilot"));
 
-        // 六类贡献都能按 kind 查到；开放 kind 用字符串而非枚举。
+        // 七类贡献都能按 kind 查到；开放 kind 用字符串而非枚举。
         // （计数含本测试文件自注册的探针包贡献：+1 个 UI）
         CHECK(toolbox.contributions(ContributionKind::Format).size() == 2);
         CHECK(toolbox.contributions(ContributionKind::Ui).size() == 4);
+        CHECK(toolbox.contributions(ContributionKind::Panel).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Script).size() == 2);
         CHECK(toolbox.contributions(ContributionKind::Data).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Example).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Doc).size() == 5);
-        CHECK(toolbox.kinds().size() == 6);
+        CHECK(toolbox.kinds().size() == 7);
 
         // 二维索引：按 (kind, domain) 精确过滤。
         CHECK(toolbox.contributions(ContributionKind::Ui, FormatDomain::Autopilot).size() == 1);
@@ -337,6 +339,16 @@ int main(int argc, char **argv)
             toolbox.contribution(QStringLiteral("ap.docs"));
         auto *doc = dynamic_cast<ng::core::IDocContribution *>(docRaw);
         CHECK(doc != nullptr && doc->entries().size() == 1);
+
+        // 领域面板的**描述**是纯数据，headless（CLI）也能查到——
+        // 实现（QWidget 工厂）只在 GUI 侧注册，两者用 id 关联。
+        ng::core::IToolContribution *panelRaw =
+            toolbox.contribution(QStringLiteral("car.panels"));
+        CHECK(panelRaw != nullptr);
+        auto *panel = dynamic_cast<ng::core::IPanelContribution *>(panelRaw);
+        CHECK(panel != nullptr && panel->panels().size() == 1);
+        CHECK(panel->panels().first().id == QStringLiteral("car.can-browser"));
+        CHECK(panel->domain() == FormatDomain::Automotive);
 
         // UI 插槽：骨架声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
         // （动作数含本测试文件自注册的探针包贡献：menu.plot +1）
@@ -362,7 +374,7 @@ int main(int argc, char **argv)
         CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 6); // 新包贡献被按 kind 索引
         CHECK(toolbox.unregisterPack(QStringLiteral("pack.custom")));    // 按包原子撤销
         CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 5);
-        fprintf(stdout, "[ok] 开放贡献点系统：5 知识包 / 6 类贡献 / (kind,domain) 二维索引 / UI 插槽 / 按包原子装卸\n");
+        fprintf(stdout, "[ok] 开放贡献点系统：5 知识包 / 7 类贡献 / (kind,domain) 二维索引 / UI 插槽 / 按包原子装卸\n");
     }
 
     // 1b) UI 插槽：骨架槽**唯一声明**，且信息完整。
@@ -564,7 +576,9 @@ int main(int argc, char **argv)
         {
             const QFileInfo fi(ulg);
             QString ce;
-            auto restored = Dataset::loadCache(ulg + QStringLiteral(".psc"),
+            // 缓存按 (源文件, 解析器) 粒度落盘：<source>.<parserId>.psc。
+            // 同一份源喂多个解析器时各有各的缓存，不会互相覆盖。
+            auto restored = Dataset::loadCache(ulg + QStringLiteral(".ulog.psc"),
                                                fi.size(), fi.lastModified().toMSecsSinceEpoch(), &ce);
             assert(restored.has_value());
             assert(restored->table(QStringLiteral("sensor")) != nullptr);

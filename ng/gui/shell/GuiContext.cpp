@@ -4,6 +4,7 @@
 #include "ShellBinder.h"
 
 #include "AppContext.h"
+#include "ExtensionRegistry.h"
 
 #include <QFileDialog>
 #include <QMainWindow>
@@ -20,14 +21,18 @@ GuiContext::GuiContext(QMainWindow *window, UiSlotRegistry &slotReg, ShellBinder
       m_executor(executor)
 {}
 
-void GuiContext::placePanel(QWidget *widget, const QString &area)
+void GuiContext::placePanel(QWidget *widget, const QString &area, const QString &titleOverride)
 {
     if (!widget || !m_binder)
         return;
-    // 插槽声明的标签作为停靠窗口标题；未声明则用区域名兜底。
-    QString title = area;
-    if (const UiSlot *slot = m_slots.slot(area))
-        title = slot->label;
+    // 标题优先级：调用方显式指定（领域面板自己的描述）> 插槽标签 > 区域名兜底。
+    QString title = titleOverride;
+    if (title.isEmpty())
+    {
+        title = area;
+        if (const UiSlot *slot = m_slots.slot(area))
+            title = slot->label;
+    }
     m_binder->dock(area, title, widget);
 }
 
@@ -61,7 +66,7 @@ void GuiContext::addAction(const QString &area, const UiAction &action)
 QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
 {
     // 部件由**视图层自注册**的工厂提供：外壳与器官都不认识具体实现。
-    QWidget *widget = PanelFactoryRegistry::create(panelType, m_appCtx, executor(), m_window);
+    QWidget *widget = ng::core::PanelFactoryRegistry::create(panelType, m_appCtx, executor(), m_window);
     if (!widget)
         return nullptr;
 
@@ -70,6 +75,67 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
         placeCanvas(widget);
     else
         placePanel(widget, area);
+    return widget;
+}
+
+QList<PanelSpec> GuiContext::availableDomainPanels(FormatDomain domain) const
+{
+    // 领域面板清单来自**知识包**（IPanelContribution，纯数据）。
+    //
+    // 模块据此知道"当前业务范围里有哪些面板可用"，而不必写死具体 id——
+    // 面板由哪个包提供、叫什么，都由包自己决定。
+    QList<PanelSpec> out;
+    const ExtensionRegistry &toolbox = m_appCtx.toolbox();
+    for (IToolContribution *c : toolbox.contributions(ContributionKind::Panel))
+    {
+        auto *panel = dynamic_cast<IPanelContribution *>(c);
+        if (!panel)
+            continue;
+        for (const PanelSpec &spec : panel->panels())
+        {
+            // 领域过滤：面板归属由**贡献者**的领域决定。
+            // 用贡献者所在的 pack 领域，而非面板自己声明（面板是包的一部分）。
+            const FormatDomain ownerDomain = panel->domain();
+            if (domain != FormatDomain::General && ownerDomain != domain)
+                continue;
+            out.append(spec);
+        }
+    }
+    return out;
+}
+
+QWidget *GuiContext::requestDomainPanel(const QString &area, const QString &panelId)
+{
+    if (panelId.isEmpty())
+        return nullptr;
+    // 实现来自**知识包的呈现层**（注册进同一张工厂表），
+    // 或通用视图层——两者共用一张表，模块不关心是谁提供的。
+    QWidget *widget = ng::core::PanelFactoryRegistry::create(panelId, m_appCtx, executor(),
+                                                             m_window);
+    if (!widget)
+        return nullptr;
+
+    // 标题优先用面板自己的描述（知识包声明的"CAN 报文"），
+    // 否则退回插槽的 label。
+    QString title;
+    for (const PanelSpec &spec : availableDomainPanels(FormatDomain::General))
+    {
+        if (spec.id == panelId)
+        {
+            title = spec.label;
+            break;
+        }
+    }
+    if (title.isEmpty())
+        title = area;
+
+    // 中央画布区走 setCentralContent，其余区域走停靠。
+    // 把面板自己的描述传给 placePanel 作标题——领域面板的形态（含标题）
+    // 由知识包决定，而不是被通用插槽的"属性"覆盖掉。
+    if (area == QStringLiteral("canvas.center"))
+        placeCanvas(widget);
+    else
+        placePanel(widget, area, title);
     return widget;
 }
 

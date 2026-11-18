@@ -7,6 +7,7 @@ QString kindName(const QString &kind)
 {
     if (kind == ContributionKind::Format)  return QStringLiteral("数据格式");
     if (kind == ContributionKind::Ui)      return QStringLiteral("界面贡献");
+    if (kind == ContributionKind::Panel)   return QStringLiteral("领域面板");
     if (kind == ContributionKind::Script)  return QStringLiteral("脚本");
     if (kind == ContributionKind::Data)    return QStringLiteral("数据");
     if (kind == ContributionKind::Example) return QStringLiteral("例子");
@@ -19,6 +20,7 @@ QStringList knownKinds()
     return {
         ContributionKind::Format,
         ContributionKind::Ui,
+        ContributionKind::Panel,
         ContributionKind::Script,
         ContributionKind::Data,
         ContributionKind::Example,

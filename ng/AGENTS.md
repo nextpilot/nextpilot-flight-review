@@ -38,7 +38,8 @@
 **交互能力也走接口** | `UiContext::pickFilePath`（`IModule.h:56`，`a5f2887` 新增）：器官要选文件**不许自己开 QFileDialog**，由外壳返回路径，模块拿到后照样发 `data.load` 意图 —— GUI 与 CLI/脚本加载数据仍是同一条路 | 看 `IModule.h` + 外壳实现 |
 **插拔被测试钉死** | `tests/test_architecture.cpp` 的 `ProbeModule` / `ProbePack` **只在该测试文件里**定义并自注册；哪天必须改 `App.cpp` 才能加模块，这条测试就红 | 跑契约测试 |
 | **骨架槽单一来源** | 骨架槽只在 `UiSlotRegistry::declareSkeletonSlots()` 一处声明，GUI 与 headless 拿同一份；契约测试钉死"槽齐备 + kind/父槽/label 完整 + 无未归属贡献" | 跑契约测试 |
-**视图链可用** | `test_gui` 断言 `dataset-tree` / `plot-canvas` 已登记、`dock.left` 面板存在、并能读出 1 dataset / 1 table | 跑 GUI 测试 |
+| **领域自带面板** | 形态随领域变时形态归知识包：描述 `IPanelContribution`（纯数据，headless 可见）+ 实现在 `extensions/<域>/gui/`（OBJECT 库，只 GUI 链接），共用 core 的一张工厂表；器官走 `availableDomainPanels(domain)` → `requestDomainPanel(area,id)`。呈现层依赖 core，**不依赖 ng_gui** | 跑 `test_gui` 3c 段 + `ldd` 确认 CLI 无 Qt6Widgets |
+| **视图链可用** | `test_gui` 断言 `dataset-tree` / `plot-canvas` 已登记、`dock.left` 面板存在、并能读出 1 dataset / 1 table | 跑 GUI 测试 |
 
 ---
 
@@ -138,7 +139,7 @@ Lua 停产风险 | 老绑定约 40 个 | 按 Intent op 重写，不做 shim | �
 3. **不许 `new QWidget` 直挂窗口。** 只能 `requestPanel` 声明需求。
 4. **不许 `qobject_cast` 成具体视图类。** 器官只许用通用 `QWidget` 接口。
 5. **不许自建注册表。** 一张注册表 + 索引视图，模块私有 registry 一律不给。
-6. **OBJECT 库不得改成 STATIC。** 自注册依赖 TU 静态对象的构造函数，链接器会丢弃未引用目标文件 → 功能静默消失。
+6. **OBJECT 库不得改成 STATIC。** 自注册依赖 TU 静态对象的构造函数，链接器会丢弃未引用目标文件 → 功能静默消失。**且 OBJECT 库必须被每个需要它的可执行文件显式链接（测试也算）**——`ng_test_gui` 曾漏链 `ng_ext_automotive_gui`，`CanBrowserPanel.cpp.o` 没进二进制，领域面板注册静默不发生。headless 测试故意不链，这是刻意保持 CLI 纯净。
 7. **行数预算：** view ≤300、canvas ≤200、interaction ≤250、spec ≤150。
 8. **每迁一块删一个老入口。** `src/` 冻结，只修 bug；留着「先保险」的入口，三个月后一定长回来。
 

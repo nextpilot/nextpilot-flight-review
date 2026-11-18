@@ -9,6 +9,10 @@ GenericUiContribution::GenericUiContribution(QString id, QString name, FormatDom
                                              QList<UiAction> actions)
     : m_id(std::move(id)), m_name(std::move(name)), m_domain(domain), m_actions(std::move(actions)) {}
 
+GenericPanelContribution::GenericPanelContribution(QString id, QString name, FormatDomain domain,
+                                                 QList<PanelSpec> panels)
+    : m_id(std::move(id)), m_name(std::move(name)), m_domain(domain), m_panels(std::move(panels)) {}
+
 GenericScriptContribution::GenericScriptContribution(QString id, QString name, FormatDomain domain,
                                                      QString language, QString source, QStringList exports)
     : m_id(std::move(id)), m_name(std::move(name)), m_domain(domain), m_language(std::move(language)),

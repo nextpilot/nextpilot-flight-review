@@ -10,12 +10,9 @@ class QWidget;
 
 namespace ng::core
 {
+
 class AppContext;
 class IIntentExecutor;
-} // namespace ng::core
-
-namespace ng::gui
-{
 
 // 部件工厂表：把"部件类型标识"映射到具体的 QWidget 构造过程。
 //
@@ -28,6 +25,13 @@ namespace ng::gui
 // 外壳与其它功能一律不参与。于是：
 //   - 加一个新功能 = 新建 views/<新功能>/ 目录 + 一个注册文件；
 //   - 外壳（MainWindow / GuiContext / ShellBinder）不需任何改动。
+//
+// **为什么这张表在 core 而不在 gui**：
+//   它是**纯数据**（QHash<QString, 函数指针>），QWidget 只做前置声明，
+//   实现本身不需要 Qt Widgets。放在 core 才能让
+//   **知识包的呈现层**（领域专属面板，如 CAN 报文浏览器）注册进来——
+//   否则扩展要注册面板就得依赖整个 gui 层，依赖方向就反了。
+//   详见 ARCHITECTURE.md §6「领域自带面板」。
 //
 // 工厂签名带 AppContext 与意图执行器：
 //   - AppContext：数据与共享状态（活动通道）；
@@ -66,10 +70,10 @@ public:
 #define NG_REGISTER_PANEL(TypeId, VarName, Fn)                                         \
     namespace {                                                                        \
     const bool g_ng_panel_reg_##VarName = [] {                                         \
-        ::ng::gui::PanelFactoryRegistry::registerPanel(                                 \
+        ::ng::core::PanelFactoryRegistry::registerPanel(                                 \
             QStringLiteral(TypeId), &Fn);                                              \
         return true;                                                                   \
     }();                                                                               \
     }
 
-} // namespace ng::gui
+} // namespace ng::core

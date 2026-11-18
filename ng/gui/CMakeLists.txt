@@ -10,7 +10,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 #     MainWindow                  窗口骨架与装配
 #     ShellBinder                 唯一知道 SARibbon / ADS 的地方
 #     GuiContext                  host::UiContext 的实现
-#     PanelFactoryRegistry        部件类型 -> QWidget 工厂
+#   （部件工厂表 PanelFactoryRegistry 已下沉到 core —— 它是纯数据，
+#    知识包的呈现层要能注册领域面板，就不能依赖整个 gui 层）
 #
 #   views/<功能>/                功能视图层：一个功能一个目录
 #     dataset/                    数据集管理（数据集->表->列 树）
@@ -33,8 +34,6 @@ add_library(ng_gui OBJECT
     shell/ShellBinder.h
     shell/GuiContext.cpp
     shell/GuiContext.h
-    shell/PanelFactoryRegistry.cpp
-    shell/PanelFactoryRegistry.h
     # --- 功能视图层 ---
     views/dataset/DataManagerPanel.cpp
     views/dataset/DataManagerPanel.h
@@ -66,6 +65,8 @@ target_link_libraries(plotscope-ng-gui PRIVATE
     ng_gui
     ng_module_data ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
+    ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
@@ -80,6 +81,7 @@ target_link_libraries(plotscope-ng-gui-bench PRIVATE
     ng_gui
     ng_module_data ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-bench PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
@@ -95,5 +97,6 @@ target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_gui
     ng_module_data ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-shot PROPERTIES AUTOMOC ON CXX_STANDARD 17)

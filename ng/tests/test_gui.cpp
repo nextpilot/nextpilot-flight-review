@@ -17,6 +17,8 @@
 #include "DataManagerPanel.h"
 #include "GuiContext.h"
 #include "MainWindow.h"
+#include "ExtensionRegistry.h"
+#include "IPanelContribution.h"
 #include "PanelFactoryRegistry.h"
 #include "PlotCanvas.h"
 #include "ShellBinder.h"
@@ -113,10 +115,79 @@ int main(int argc, char *argv[])
     // 若 ng_gui 被改成 STATIC 库，未被引用的 TU 会被链接器丢弃、
     // 静态初始化不执行，工厂表会**静默变空**——功能消失且无任何报错。
     // 所以这里显式断言两个视图都已登记。
-    CHECK(!PanelFactoryRegistry::types().isEmpty());
-    CHECK(PanelFactoryRegistry::types().contains(QStringLiteral("dataset-tree")));
-    CHECK(PanelFactoryRegistry::types().contains(QStringLiteral("plot-canvas")));
+    CHECK(!ng::core::PanelFactoryRegistry::types().isEmpty());
+    CHECK(ng::core::PanelFactoryRegistry::types().contains(QStringLiteral("dataset-tree")));
+    CHECK(ng::core::PanelFactoryRegistry::types().contains(QStringLiteral("plot-canvas")));
     OK("视图层自注册生效：dataset-tree / plot-canvas 均已登记（OBJECT 库保证 TU 不被丢弃）");
+
+    // --- 3b) 领域面板：形态随领域变时的解法 ---
+    //
+    // 有些面板的形态**本身就是领域知识**（CAN 报文浏览器取决于 DBC 定义的信号）。
+    // 通用视图层不该认识它，器官也给不出形态 —— 于是形态归**知识包**：
+    //   · 描述（IPanelContribution，纯数据，headless 可见）；
+    //   · 实现（知识包的呈现层，注册进**同一张**工厂表）。
+    //
+    // 这里锁住三件事：
+    //   1) 知识包声明的面板清单能被查到（headless 也可查）；
+    //   2) 该面板的实现确实注册进了工厂表（描述与实现用同一个 id 关联）；
+    //   3) 按领域过滤有效。
+    {
+        // 1) 描述：纯数据，headless 也查得到。
+        const auto &toolbox = application.context().toolbox();
+        int panelSpecCount = 0;
+        for (ng::core::IToolContribution *c :
+             toolbox.contributions(ng::core::ContributionKind::Panel))
+        {
+            auto *pc = dynamic_cast<ng::core::IPanelContribution *>(c);
+            CHECK(pc != nullptr);
+            if (pc)
+                panelSpecCount += pc->panels().size();
+        }
+        CHECK(panelSpecCount >= 1); // 汽车包的 CAN 报文面板
+
+        // 2) 实现：领域面板与通用面板共用同一张工厂表。
+        CHECK(ng::core::PanelFactoryRegistry::types().contains(QStringLiteral("car.can-browser")));
+
+        // 3) 领域过滤：汽车领域的清单里有它，通用领域不该混入。
+        int automotive = 0;
+        for (ng::core::IToolContribution *c :
+             toolbox.contributions(ng::core::ContributionKind::Panel,
+                                  ng::core::FormatDomain::Automotive))
+        {
+            auto *pc = dynamic_cast<ng::core::IPanelContribution *>(c);
+            if (pc)
+                automotive += pc->panels().size();
+        }
+        CHECK(automotive >= 1);
+        OK("领域面板：知识包声明描述（headless 可见）+ 呈现层注册实现，共用同一张工厂表");
+    }
+
+    // --- 3c) 模块侧视角：器官不认识面板实现，也能查询清单并请求到面板 ---
+    //
+    // 这才是用户问题的落点：modules 需要某个 panel，但 panel 的形态随业务变、
+    // gui/views 并不知道。器官只认**领域**，先问 availableDomainPanels(domain)，
+    // 再按 id 请求；面板从哪来、长什么样，全由知识包决定。
+    {
+        auto *ui = window.context(); // 模块 onAttach 拿到的就是这个 UiContext
+        CHECK(ui != nullptr);
+
+        // 器官按领域查清单（不写死 id）。
+        const auto specs = ui->availableDomainPanels(FormatDomain::Automotive);
+        const PanelSpec *canSpec = nullptr;
+        for (const PanelSpec &s : specs)
+            if (s.id == QStringLiteral("car.can-browser"))
+                canSpec = &s;
+        CHECK(canSpec != nullptr);
+        CHECK(canSpec->label == QStringLiteral("CAN 报文"));
+        CHECK(canSpec->area == QStringLiteral("dock.right"));
+
+        // 器官按清单里的 id 请求面板——它不知道这是领域面板还是通用面板。
+        QWidget *canPanel = ui->requestDomainPanel(canSpec->area, canSpec->id);
+        CHECK(canPanel != nullptr);
+        // 标题取面板自己的描述，而非通用插槽的"属性"：形态由领域决定。
+        CHECK(binder->panelTitle(QStringLiteral("dock.right")) == QStringLiteral("CAN 报文"));
+        OK("模块侧闭环：按领域查清单 -> 按 id 请求面板 -> 标题/形态由知识包决定");
+    }
 
     // --- 4) 停靠区就位（Qt-ADS）---
     CHECK(binder->panelCount() >= 1);

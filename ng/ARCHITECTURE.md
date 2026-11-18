@@ -509,6 +509,55 @@ NG_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 链接器丢弃、静态初始化不执行，自注册会**静默失效**（工厂表为空、功能消失
 且无任何报错）。契约测试显式断言两个视图都已登记，守住这条不变量。
 
+### 6.3 领域自带面板：形态随业务变
+
+器官需要某个面板，但**面板的形态本身就是领域知识**时怎么办？
+（CAN 报文浏览器长什么样取决于 DBC 信号；波形调参面板取决于参数表；
+地图轨迹面板取决于地图数据。）
+
+结论是：**形态归知识包**，而不是塞给 `gui/views/`（那会让通用视图层长成领域杂物箱），
+也不是让器官给出（器官是机制，不懂业务）。
+
+分工是本机制的核心：
+
+| 层 | 载体 | 内容 | 谁可见 |
+|---|---|---|---|
+| **描述**（纯数据） | `core::IPanelContribution` / `PanelSpec` | id / 标题 / 建议区域 / 图标 / 附加数据 | headless 也可见（CLI `--list-contributions panel` 可查） |
+| **机制**（纯数据） | `core::PanelFactoryRegistry` | `QHash<id, 工厂>`；`QWidget` 只前置声明 | core，谁都能调 |
+| **实现**（QWidget） | 知识包的**呈现层** | 真正的面板类，TU 末尾 `NG_REGISTER_PANEL` | 仅 GUI |
+
+描述与实现用**同一个 id** 关联。知识包因此拆成两个产物：
+
+```
+extensions/<域>/               知识层：协议 + 描述（纯数据，CLI 也链接）
+extensions/<域>/gui/           呈现层：QWidget 面板（只 GUI 链接）
+                                  依赖方向：呈现层 → core，不依赖 ng_gui
+```
+
+**器官侧的用法**（它不知道面板是领域还是通用、由谁提供）：
+
+```cpp
+// 1) 按领域问清单（纯数据，headless 也成立）
+auto specs = ui.availableDomainPanels(FormatDomain::Automotive);
+// 2) 按清单里的 id 请求；实现来自同一张工厂表
+QWidget *p = ui.requestDomainPanel(spec.area, spec.id);
+```
+
+`requestDomainPanel` 会用 `PanelSpec::label` 覆盖通用插槽的标题——
+领域面板的形态（含标题）由知识包决定，而不是被 `dock.right` 的"属性"覆盖掉。
+
+**两条工程不变量**（都在契约测试里钉死）：
+
+1. **呈现层必须是 OBJECT 库**：自注册靠 TU 静态对象构造函数，STATIC 库会丢弃未引用目标文件。
+2. **每个需要领域面板的可执行文件都必须显式链接呈现层**——包括 GUI 测试。
+   这一点曾经踩坑：`ng_test_gui` 没链 `ng_ext_automotive_gui`，`CanBrowserPanel.cpp.o`
+   根本没进测试二进制，注册自然不发生，表现为"工厂表里只有两个通用视图"。
+   headless 测试则**故意不链**，借此守住 CLI 不含 `libQt6Widgets`。
+
+`test_gui` 的闭环：知识包声明描述 → 工厂表出现实现 → 器官按领域查清单 →
+按 id 请求到面板 → 标题/形态由知识包决定。`test_architecture` 则确认描述是纯数据，
+headless 也能查到。
+
 ## 7. 视图层：可插拔，而非模式枚举
 
 老代码 `PlottingCanvas` 用一个 `PlotMode` 枚举承载 12 种绘图模式

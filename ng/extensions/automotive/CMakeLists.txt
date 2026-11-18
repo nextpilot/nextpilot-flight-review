@@ -8,3 +8,7 @@ add_library(ng_ext_automotive OBJECT
 target_include_directories(ng_ext_automotive PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_ext_automotive PUBLIC ng_core)
 set_target_properties(ng_ext_automotive PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+
+# 呈现层（领域专属面板的 QWidget 实现）：单独一个产物，只被 GUI 链接。
+# 见 gui/CMakeLists.txt 的说明。
+add_subdirectory(gui)

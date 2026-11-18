@@ -962,6 +962,39 @@ bool flushMetaTables(UlogState &st, Emitter &out, QString &err)
     auto &events = st.events;
     auto &dropouts = st.dropouts;
 
+    // params（P 段）与 facts（头信息 + I 段）：两列文本小表。
+    // 归并到 SPI 时曾漏掉这两张表的 emitBatch —— 数据攒在 st 里却从未落库，
+    // 表现为 ULog 数据集只有 sensor/events（facts 消失）。这里补回。
+    if (!params.rows.empty())
+    {
+        QVector<TimeUs> t(params.rows.size());
+        std::vector<std::string> names, values;
+        for (size_t i = 0; i < params.rows.size(); ++i)
+        {
+            t[static_cast<qsizetype>(i)] = static_cast<TimeUs>(i);
+            names.push_back(params.rows[i].first);
+            values.push_back(params.rows[i].second);
+        }
+        if (!writeTextTable(out, QStringLiteral("params"), t,
+                            QStringLiteral("name"), names,
+                            QStringLiteral("value"), values, err))
+            return false;
+    }
+    if (!facts.rows.empty())
+    {
+        QVector<TimeUs> t(facts.rows.size());
+        std::vector<std::string> keys, values;
+        for (size_t i = 0; i < facts.rows.size(); ++i)
+        {
+            t[static_cast<qsizetype>(i)] = static_cast<TimeUs>(i);
+            keys.push_back(facts.rows[i].first);
+            values.push_back(facts.rows[i].second);
+        }
+        if (!writeTextTable(out, QStringLiteral("facts"), t,
+                            QStringLiteral("key"), keys,
+                            QStringLiteral("value"), values, err))
+            return false;
+    }
 
     if (!events.empty())
     {

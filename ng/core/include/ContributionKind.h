@@ -19,6 +19,7 @@ namespace ContributionKind
 {
 inline const QString Format  = QStringLiteral("format");   // IFormatDriver：文件 -> Dataset
 inline const QString Ui      = QStringLiteral("ui");       // IUiContribution：菜单/面板/dock/画布工具
+inline const QString Panel   = QStringLiteral("panel");    // IPanelContribution：领域专属面板（形态随领域变）
 inline const QString Script  = QStringLiteral("script");   // IScriptContribution：可复用脚本
 inline const QString Data    = QStringLiteral("data");     // IDataContribution：样例数据/数据集
 inline const QString Example = QStringLiteral("example");  // IExampleContribution：示例工程/demo

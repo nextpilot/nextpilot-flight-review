@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IUiContribution.h"
+#include "IPanelContribution.h"
 #include "IScriptContribution.h"
 #include "IDataContribution.h"
 #include "IExampleContribution.h"
@@ -32,6 +33,28 @@ private:
     QString m_name;
     ng::core::FormatDomain m_domain;
     QList<ng::core::UiAction> m_actions;
+};
+
+// 领域面板贡献的通用数据持有实现。
+//
+// 与 GenericUiContribution 同构：只装"身份 + 数据"，不含任何控件逻辑。
+// 面板的**实现**在知识包的呈现层（GUI 侧）注册进 PanelFactoryRegistry，
+// 与这里的**描述**用同一个 id 关联。
+class GenericPanelContribution final : public ng::core::IPanelContribution
+{
+public:
+    GenericPanelContribution(QString id, QString name, ng::core::FormatDomain domain,
+                            QList<ng::core::PanelSpec> panels);
+    QString id() const override { return m_id; }
+    QString displayName() const override { return m_name; }
+    ng::core::FormatDomain domain() const override { return m_domain; }
+    QList<ng::core::PanelSpec> panels() const override { return m_panels; }
+
+private:
+    QString m_id;
+    QString m_name;
+    ng::core::FormatDomain m_domain;
+    QList<ng::core::PanelSpec> m_panels;
 };
 
 class GenericScriptContribution final : public ng::core::IScriptContribution
