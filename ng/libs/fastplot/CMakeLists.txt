@@ -17,6 +17,13 @@ add_library(fastplot STATIC
     src/Zoomer.cpp
     src/Panner.cpp
     src/Picker.cpp
+    src/Instrument.cpp
+    src/AttitudeIndicator.cpp
+    src/CompassRose.cpp
+    src/DialGauge.cpp
+    src/TrackPlot.cpp
+    src/Trajectory3D.cpp
+    src/WaterfallPlot.cpp
     # 头文件必须列进 sources，AUTOMOC 才会为带 Q_OBJECT 的类生成 moc。
     include/fastplot/Viewport.h
     include/fastplot/ScaleDiv.h
@@ -28,6 +35,13 @@ add_library(fastplot STATIC
     include/fastplot/Zoomer.h
     include/fastplot/Panner.h
     include/fastplot/Picker.h
+    include/fastplot/Instrument.h
+    include/fastplot/AttitudeIndicator.h
+    include/fastplot/CompassRose.h
+    include/fastplot/DialGauge.h
+    include/fastplot/TrackPlot.h
+    include/fastplot/Trajectory3D.h
+    include/fastplot/WaterfallPlot.h
 )
 
 target_include_directories(fastplot PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")

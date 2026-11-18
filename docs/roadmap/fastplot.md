@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | P1–P4 完成（GUI 画布已接管，2026-11-18） |
+| 状态 | P1–P5 完成（GUI 画布已接管，2026-11-18） |
 | 位置 | `ng/libs/fastplot/` |
 | 目标 | 把老 `src/application/modules/plotting` 的**绘图能力**抽成独立库，供 ng 直接调用 |
 | 约束 | `src/` 只读参考，不改一行；库不依赖 `ng/core`，纯 Qt Widgets |
@@ -164,6 +164,23 @@ ng 接线 | `PlotCanvas` 装三个部件；`zoomed/panned` → `rangeChanged(t0,
 `autoScaleY` | 左右轴**各算各的**：挂右轴的曲线不参与左轴定界，否则两条不同量级的曲线会互相压扁 |
 
 **踩到的真问题**：`Axis` 原来把纵向映射写死成 `vp.yToPixel`，于是右轴的刻度线仍按左轴范围摆放（图上表现为右轴标签挤在一起、曲线"看起来走了左轴"）。修法是让轴自带范围——`Axis::setYRange(lo,hi)`，不设则退回 Viewport，单轴场景零改动。**一条轴只认自己的范围，不再向画布借映射**，这是双轴能成立的前提。
+
+### P5 落地记录（2026-11-18）
+
+六个仪表各自一个类，共同底座只有 `Instrument`（底色 + 内容区 + `paintInstrument`）。它们**不认识 `PlotWidget`**，`PlotWidget` 也不认识它们：一个管坐标轴与视口，一个管"把几个标量画成一个形状"，硬塞在一起会把两套模型搅浑。
+
+| 部件 | 输入 | 说明 |
+|---|---|---|
+`AttitudeIndicator` | roll / pitch（角度） | 姿态球：先裁圆，再在圆里填天/地两个半平面 |
+`CompassRose` | heading | 航向归一化到 [0,360)，每 30° 一刻度，北向高亮 |
+`DialGauge` | value + [lo,hi] + title | 270° 弧 + 指针 + 中央数值；有 `setValueMissing()` 空态 |
+`TrackPlot` | 经度 / 纬度两条 `IPlotData*` | 经纬轨迹 + 网格（**没有底图**，所以不叫 Map） |
+`Trajectory3D` | X / Y / Z（Z 可空） | 正交投影折线 + 参考立方体，不引 OpenGL |
+`WaterfallPlot` | 多条 `IPlotData*` | 沿 z 错开堆叠的瀑布（**不是曲面**，所以不叫 Surface） |
+
+**零拷贝的代价要写明白**：`TrackPlot` / `Trajectory3D` / `WaterfallPlot` 都只持 `const IPlotData*`，**不放数据**。于是调用方必须保证被指对象的地址稳定——测试里第一次把 `ArrayData` 放进 `QVector` 边 push 边取地址，扩容搬走元素后指针变野指针，直接 segfault。规矩是：装 `IPlotData` 的容器先 `reserve`，或者干脆放在 `std::deque` / 堆上。
+
+**踩到的第二个坑**：姿态球第一版画两个错位的大圆当"天/地"，结果整块圆被天盖住——那不是地平线。正解是 `painter.setClipPath(圆)` 后填两个半平面，地平线只是一条分界线。
 
 ## 7. 构建接入
 

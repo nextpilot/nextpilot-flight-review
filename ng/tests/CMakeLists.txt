@@ -66,3 +66,10 @@ target_link_libraries(fastplot_dataset_test PRIVATE
 set_target_properties(fastplot_dataset_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME fastplot_dataset COMMAND fastplot_dataset_test)
 set_tests_properties(fastplot_dataset PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# === fastplot 仪表族（P5）：六个部件各画各的，互不认识 ===
+add_executable(fastplot_instruments_test test_fastplot_instruments.cpp)
+target_link_libraries(fastplot_instruments_test PRIVATE fastplot Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(fastplot_instruments_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME fastplot_instruments COMMAND fastplot_instruments_test)
+set_tests_properties(fastplot_instruments PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
