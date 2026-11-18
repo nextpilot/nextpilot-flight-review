@@ -22,15 +22,13 @@ void AppContext::setActiveSourceId(int id)
 
 void AppContext::setActiveChannel(int datasetId, const QString &table, const QString &column)
 {
-    if (m_activeSourceId == datasetId && m_activeTable == table && m_activeColumn == column)
+    if (m_activeDatasetId == datasetId && m_activeTable == table &&
+        m_activeColumn == column)
         return;
-    // 源变了才发源变更信号（活动通道变化已带 datasetId，订阅者按需判断）。
-    const bool sourceChanged = (m_activeSourceId != datasetId);
-    m_activeSourceId = datasetId;
+    // 只改活动**数据集**——活动源 id 由调用方显式给出（源与数据集不是一回事）。
+    m_activeDatasetId = datasetId;
     m_activeTable = table;
     m_activeColumn = column;
-    if (sourceChanged)
-        Q_EMIT activeSourceChanged(datasetId);
     Q_EMIT activeChannelChanged(datasetId, table, column);
 }
 

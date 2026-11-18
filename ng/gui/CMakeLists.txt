@@ -30,6 +30,20 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 # OBJECT 库：承载视图层的自注册 TU（NG_REGISTER_PANEL）。
 # 静态库中未被引用的目标文件会被链接器丢弃、静态初始化不执行，
 # 自注册会**静默失效**（部件工厂表为空，requestPanel 拿不到东西）。
+# 主题：横向 GUI 基础设施（token 化配色 + 双主题 + QSS/palette）。
+#
+# 独立 OBJECT 库，而非并进 ng_gui：主题是**被依赖的服务**，不只外壳用——
+# 功能专属视图（如数据源面板的状态圆点）也要从它取色。若把它塞进 ng_gui，
+# 那些视图就得链接整个外壳库（且 OBJECT 库重复链接会撞符号）。
+# 拆出来后：谁需要谁链 ng_gui_theme，依赖关系是显式的。
+add_library(ng_gui_theme OBJECT
+    theme/ThemeManager.cpp
+    theme/ThemeManager.h
+)
+target_include_directories(ng_gui_theme PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/theme)
+target_link_libraries(ng_gui_theme PUBLIC ng_core Qt6::Gui Qt6::Widgets Qt6::Core)
+set_target_properties(ng_gui_theme PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+
 add_library(ng_gui OBJECT
     # --- 外壳层 ---
     shell/MainWindow.cpp
@@ -38,9 +52,6 @@ add_library(ng_gui OBJECT
     shell/ShellBinder.h
     shell/GuiContext.cpp
     shell/GuiContext.h
-    # --- 主题：token 化配色 + 双主题 + QSS，系统级 GUI 能力 ---
-    theme/ThemeManager.cpp
-    theme/ThemeManager.h
     # --- 通用绘图能力库 ---
     # 数据集视图已聚合进 modules/data/（功能专属，见该目录 CMakeLists）；
     # 这里只剩**通用绘图库**（将来抽成 Qwt-like 独立库，不属于任何器官/领域）：
@@ -57,7 +68,7 @@ target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/shell
     ${CMAKE_CURRENT_SOURCE_DIR}/views/plot
     ${CMAKE_CURRENT_SOURCE_DIR}/theme)
-target_link_libraries(ng_gui PUBLIC ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core
+target_link_libraries(ng_gui PUBLIC ng_host ng_core ng_gui_theme Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
 set_target_properties(ng_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 
@@ -71,6 +82,11 @@ target_include_directories(plotscope-ng-gui PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。
 target_link_libraries(plotscope-ng-gui PRIVATE
     ng_gui
+    # 主题库必须**显式链到可执行文件**：OBJECT 库链 OBJECT 库只传播
+    # usage requirements，不传播目标文件——不显式链则 ThemeManager 的实现
+    # 不会进二进制，链接期报 undefined reference（与 ng_gui_theme 的
+    # AUTOMOC 产物一起进，故 moc 符号也一并满足）。
+    ng_gui_theme
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
@@ -87,6 +103,7 @@ add_executable(plotscope-ng-gui-bench
 target_include_directories(plotscope-ng-gui-bench PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(plotscope-ng-gui-bench PRIVATE
     ng_gui
+    ng_gui_theme
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
@@ -103,6 +120,7 @@ add_executable(plotscope-ng-gui-shot
 target_include_directories(plotscope-ng-gui-shot PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_gui
+    ng_gui_theme
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui

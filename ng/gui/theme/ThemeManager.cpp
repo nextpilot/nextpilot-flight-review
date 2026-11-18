@@ -13,6 +13,12 @@ namespace ng::gui
 
 namespace
 {
+// 进程级当前主题：供 delegate 绘制时取色（见头文件说明）。
+ThemeManager::Theme g_activeTheme = ThemeManager::Theme::Light;
+} // namespace
+
+namespace
+{
 // 语义 token 清单。视图代码只认这些名字，绝不认色值。
 // 命名沿用根 AGENTS §12.1 的契约：text / textDim / textMuted。
 const QString kWindow      = QStringLiteral("window");       // 顶层容器背景
@@ -27,6 +33,11 @@ const QString kAccentText  = QStringLiteral("accentText");   // 高亮背景上�
 const QString kSelection   = QStringLiteral("selection");    // 选中行背景
 const QString kSelectionTx = QStringLiteral("selectionText");// 选中行文字
 const QString kGrid        = QStringLiteral("grid");         // 网格线
+// 状态语义色（源状态点等）：深浅两套各自可读。
+const QString kStateOk     = QStringLiteral("stateOk");      // 运行中
+const QString kStateIdle   = QStringLiteral("stateIdle");    // 已停止
+const QString kStateError  = QStringLiteral("stateError");   // 错误
+const QString kStateWarn   = QStringLiteral("stateWarn");    // 警告/暂停
 
 // 色表：全工程**唯一**允许出现色值的地方（ThemeManager 自身即色源）。
 // 两套主题各一份，token 名一一对应。新增 token 必须同时填两套，
@@ -46,6 +57,10 @@ const QHash<QString, QColor> &table(ThemeManager::Theme theme)
         {kSelection,   QColor(QStringLiteral("#D6E6FF"))},
         {kSelectionTx, QColor(QStringLiteral("#1F2329"))},
         {kGrid,        QColor(QStringLiteral("#EDEEF0"))},
+        {kStateOk,     QColor(QStringLiteral("#2EAF7D"))},
+        {kStateIdle,   QColor(QStringLiteral("#6E7681"))},
+        {kStateError,  QColor(QStringLiteral("#E5484D"))},
+        {kStateWarn,   QColor(QStringLiteral("#D4A72C"))},
     };
     static const QHash<QString, QColor> dark = {
         {kWindow,      QColor(QStringLiteral("#1E1F22"))},
@@ -60,6 +75,10 @@ const QHash<QString, QColor> &table(ThemeManager::Theme theme)
         {kSelection,   QColor(QStringLiteral("#2F4E7E"))},
         {kSelectionTx, QColor(QStringLiteral("#E6E8EB"))},
         {kGrid,        QColor(QStringLiteral("#34363C"))},
+        {kStateOk,     QColor(QStringLiteral("#3FCF8E"))},
+        {kStateIdle,   QColor(QStringLiteral("#71757E"))},
+        {kStateError,  QColor(QStringLiteral("#FF6369"))},
+        {kStateWarn,   QColor(QStringLiteral("#F5C451"))},
     };
     return theme == ThemeManager::Theme::Dark ? dark : light;
 }
@@ -182,6 +201,7 @@ void ThemeManager::persist() const
 
 void ThemeManager::applyCurrent()
 {
+    g_activeTheme = m_current; // 进程级当前主题：delegate 取色用
     apply();
     emit themeChanged(m_current);
 }
@@ -198,6 +218,16 @@ void ThemeManager::setTheme(Theme theme)
 void ThemeManager::toggle()
 {
     setTheme(m_current == Theme::Dark ? Theme::Light : Theme::Dark);
+}
+
+ThemeManager::Theme ThemeManager::activeTheme()
+{
+    return g_activeTheme;
+}
+
+QColor ThemeManager::themeColor(const QString &token)
+{
+    return color(g_activeTheme, token);
 }
 
 QColor ThemeManager::color(const QString &token) const

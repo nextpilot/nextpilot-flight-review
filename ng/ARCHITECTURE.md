@@ -644,6 +644,55 @@ headless 也能查到。
 `test_gui` 钉死：双主题同 token 不同色、契约 token 齐全、未知 token 显洋红告警、曲线色
 随主题、`mapStyleSheet` 替换、意图切换改状态并发信号、全局 QSS/palette 落地。
 
+### 6.5 数据源面板：源列表 + 详情（对齐老 dock 的信息层）
+
+老代码 `DataSourceDock` 2442 行、50+ 个注入回调，是"胖视图"。ng **不搬它的实现**，
+只对齐它承载的**信息层**，并按新抽象重做：
+
+```
+上段：源列表        DataSourceRepository（源 id / 状态 / 进度 / 解析器绑定）
+   ↓ 选中
+下段：详情树        数据集 → 表 → 列
+```
+
+**与老 dock 的三处结构差异**（都是新架构的必然结果）：
+
+| 老 dock | ng | 原因 |
+|---|---|---|
+| 字段 / 参数 / 消息 三视图 | 统一为「表」 | 新架构解析器统一产出**表**；ULog 的 `params`/`facts` 已落库为普通表，无需单开 tab |
+| 源行 + 详情两套独立控件 | 源列表 + 详情树，同一面板 | 二者是同一信息层，拆两个面板会让用户在一个 dock 里看到割裂的两棵树 |
+| 50+ 个注入回调 | 订阅 `AppContext` + `DataSourceRepository` 信号 | 面板只读元数据，不持有业务状态 |
+
+**不搬的部分**（ng 尚无底层支撑，不做点了没反应的按钮）：live 源连接/暂停、
+变换派生通道、设备调试、协议检查（后者归 `extensions/<域>/gui/` 的领域面板机制）。
+
+**源右键菜单**只放有底层支撑的动作，全部走意图层：`data.reload` / `data.export` /
+`data.clearCache`；"设为活动源"是状态切换，直接改 `AppContext`。
+
+#### 判据一：源 id 与数据集 id 是两套空间，不可混用
+
+一个源可扇出多个解析器、产出多个数据集，故 `activeSourceId`（源）与
+`activeDatasetId`（数据集）必须分开。曾把 datasetId 写进 `activeSourceId`，
+于是 `data.reload` 按源 id 查源表必然落空——**表现为"重载"按钮永远报
+"没有可重载的数据源"**，而单元测试因显式传了源 id 一直是绿的，缺陷只在视图路径上。
+
+现在：`DataSourceRepository::sourceOfDataset(datasetId)` 提供反查，
+`setActiveChannel` 只改活动数据集、不动活动源。
+`test_gui` 用**真实加载路径**（`data.load` 意图）覆盖这条链——
+直接往仓库塞数据集是测不到源归属的。
+
+#### 判据二：显示名与定位路径分开存
+
+`DataSourceInfo.name` 是**显示名**（文件名），`origin` 是完整路径。
+早前把完整路径塞进 `name`，列表里就是一长串被列宽截断的路径。
+
+#### 判据三：状态点用 delegate 动态取色
+
+源列表的状态圆点由 `QStyledItemDelegate` 在 paint 时按主题 token 取色
+（深浅两套自动都对，且不新增图标资产）——根 `AGENTS.md` §12.5 要求
+"树/表用 delegate 或 token 动态取色"。为此 `ThemeManager` 提供进程级
+`activeTheme()` / `themeColor()` 静态入口，让"绘制时取色"成立。
+
 ## 7. 视图层：可插拔，而非模式枚举
 
 老代码 `PlottingCanvas` 用一个 `PlotMode` 枚举承载 12 种绘图模式

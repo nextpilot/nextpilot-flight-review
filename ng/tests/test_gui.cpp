@@ -241,18 +241,77 @@ int main(int argc, char *argv[])
     CHECK(!binder->panelTitle(QStringLiteral("dock.left")).isEmpty());
     OK("停靠区就位：左栏有数据集面板且标题正确");
 
-    // --- 5) 数据集管理面板能列出数据集 -> 表 -> 列 ---
+    // --- 5) 数据源面板：源列表 + 详情树（源 → 数据集 → 表 → 列）---
+    //
+    // 走**真实加载路径**（data.load 意图）——因为"数据集归属哪个源"只有走
+    // 摄取管道才会产生：直接往仓库塞数据集是测不到源列表的。
     // 面板由器官 requestPanel 申请、由视图层自注册的工厂创建——
     // MainWindow 不认识它，这里从插槽区取回。
-    const int dsId = buildDataset(application.data());
-    CHECK(dsId >= 0);
     auto *panel = qobject_cast<DataManagerPanel *>(
         binder->panelWidget(QStringLiteral("dock.left")));
     CHECK(panel != nullptr);
+
+    const QString fixture =
+        QStringLiteral(NG_TEST_FIXTURE_DIR "/demo_flight.csv");
+    Intent load;
+    load.op = QStringLiteral("data.load");
+    load.params[QStringLiteral("path")] = fixture;
+    const auto loaded = application.modules().execute(load);
+    CHECK(loaded);
+    const int loadedDsId =
+        loaded.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
+    CHECK(loadedDsId >= 0);
+
     panel->refresh();
+    // 上段：源列表出现 1 个源，状态文案可见（不是空白按钮）。
+    CHECK(panel->sourceNodeCount() == 1);
+    CHECK(!panel->sourceStateText(0).isEmpty());
+    // 下段：详情默认展示选中源的数据集 -> 表层级。
+    CHECK(panel->shownSourceId() >= 0);
     CHECK(panel->datasetNodeCount() == 1);
-    CHECK(panel->tableNodeCount(0) == 1); // 一张表 trace
-    OK("数据集管理面板：数据集/表层级正确（面板归视图层，外壳不认识它）");
+    CHECK(panel->tableNodeCount(0) >= 1); // 至少一张表
+    OK("数据源面板：源列表 + 详情树（源 → 数据集 → 表）层级正确");
+
+    // --- 5b) 活动源 id 与数据集 id 是两套空间（曾混用导致重载失效）---
+    //
+    // data.reload 要按**源** id 找源；若视图把数据集 id 写进活动源，
+    // handler 就永远找不到源。这里断言：反查能回到真正拥有该数据集的源。
+    {
+        const int sourceId = application.context().sources().sourceOfDataset(loadedDsId);
+        CHECK(sourceId >= 0);
+        const DataSourceInfo *info = application.context().sources().get(sourceId);
+        CHECK(info != nullptr);
+        CHECK(info->datasetIds.contains(loadedDsId));
+    }
+    OK("源与数据集 id 分离：sourceOfDataset 反查正确（重载/导出的前提）");
+
+    // --- 5c) data.reload 走视图语义后真能找到源 ---
+    //
+    // 回归点：视图曾把**数据集 id** 写进活动源，而 handler 按**源 id** 查源，
+    // 于是"重载"永远报"没有可重载的数据源"。这里显式给源 id 重载，
+    // 并验证数据集 id 稳定（重载后绘图视图不因 id 漂移失联）。
+    {
+        const int sourceId = application.context().sources().sourceOfDataset(loadedDsId);
+        CHECK(sourceId >= 0);
+        Intent rel;
+        rel.op = QStringLiteral("data.reload");
+        rel.params[QStringLiteral("id")] = sourceId;
+        const auto r = application.modules().execute(rel);
+        CHECK(r);
+        // 重载后数据集 id 不变（稳定 id 机制）。
+        const int newDsId =
+            r.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
+        CHECK(newDsId == loadedDsId);
+        // 源列表仍然只有一个源（重载是替换不是新增）。
+        panel->refresh();
+        CHECK(panel->sourceNodeCount() == 1);
+        OK("data.reload：按源 id 重载成功，数据集 id 稳定（绘图不失效）");
+    }
+
+    // 绘图路径用**内存构造**的数据集：它只关心 LOD 有界性，
+    // 与源列表无关；表/列名固定才好断言数值范围。
+    const int dsId = buildDataset(application.data());
+    CHECK(dsId >= 0);
 
     // --- 6) ps 数据呈现：plot.channel 返回像素级有界数据 ---
     // 关键断言：5000 行数据，请求 px=200，应返回 <= 200 个三元组——

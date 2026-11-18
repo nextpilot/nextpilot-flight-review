@@ -62,6 +62,13 @@ public:
     bool remove(int id, QVector<int> *datasetIds = nullptr);
 
     const DataSourceInfo *get(int id) const;
+    // 反查：某个数据集属于哪个源（数据集 id → 源 id）。
+    //
+    // 为什么需要：源与数据集是**两套 id 空间**，一个源可扇出多个解析器、
+    // 产出多个数据集。用户点了某张表，UI 需要知道该去重载哪个源。
+    // 没有反查就只能让调用方遍历比对——而这里是最该提供该关系的地方。
+    // 找不到时返回 -1。
+    int sourceOfDataset(int datasetId) const;
     QVector<int> ids() const;
     int count() const;
     void clear();

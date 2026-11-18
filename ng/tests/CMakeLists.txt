@@ -22,12 +22,19 @@ target_include_directories(ng_test_gui PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # headless 测试（ng_test_architecture）故意不链，借此守住 CLI 的 headless 纯净。
 target_link_libraries(ng_test_gui PRIVATE
     ng_gui
+    # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
+    ng_gui_theme
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板呈现层（OBJECT 库）：自注册 TU 必须显式链接进来。
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
 target_sources(ng_test_gui PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
+# 测试数据目录：仓库根的 tests/fixture（ng 自带 fixture 会重复同一批样本）。
+# 数据源面板的契约测试必须走**真实加载路径**（data.load 意图），
+# 因为"数据集归属哪个源"只有走摄取管道才会产生——直接往仓库塞数据集测不到。
+target_compile_definitions(ng_test_gui PRIVATE
+    NG_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/../tests/fixture")
 set_target_properties(ng_test_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 # offscreen 平台插件：无显示环境（CI）也能跑。
 add_test(NAME ng_gui COMMAND ng_test_gui)

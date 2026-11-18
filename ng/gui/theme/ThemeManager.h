@@ -62,6 +62,15 @@ public:
     static QColor seriesColor(int index, Theme theme);      // 数据语义色集中定义
     static QColor adaptColor(const QColor &c, Theme theme); // 按主题微调色，保证可读
 
+    // --- 进程级当前主题（供 delegate 绘制时取色）---
+    //
+    // 为什么需要静态入口：视图的绘制委托（如数据源列表的状态圆点）在
+    // paint 时才需要取色，而视图由工厂创建、拿不到 ThemeManager 实例。
+    // 静态入口让"绘制时动态取色"成立（§12.5：树/表用 delegate 动态取色），
+    // 且颜色自动跟随主题切换，无需额外信号。
+    static Theme activeTheme();
+    static QColor themeColor(const QString &token);
+
     // --- QSS 生成 ---
     // 全局样式（QApplication::setStyleSheet）。QSS 模板中的颜色全部来自 token。
     QString styleSheet() const;

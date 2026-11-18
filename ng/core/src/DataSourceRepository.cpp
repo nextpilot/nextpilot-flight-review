@@ -150,6 +150,18 @@ const DataSourceInfo *DataSourceRepository::get(int id) const
     return it == m_sources.constEnd() ? nullptr : &it.value();
 }
 
+int DataSourceRepository::sourceOfDataset(int datasetId) const
+{
+    if (datasetId < 0)
+        return -1;
+    for (const DataSourceInfo &info : m_sources)
+    {
+        if (info.datasetIds.contains(datasetId))
+            return info.id;
+    }
+    return -1;
+}
+
 QVector<int> DataSourceRepository::ids() const
 {
     QVector<int> out = m_sources.keys();

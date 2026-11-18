@@ -69,9 +69,19 @@ public:
     // GUI 点一下通道，脚本随后 query 应当得到同一答案。
     // 所以它属于进程级上下文，而**不是** GUI 内部状态。
     // 但存的是 id 指针而非数据副本——数据始终在仓库里，这里不复制一份。
+    //
+    // **两套 id 空间，不可混用**：
+    //   · activeSourceId —— **数据源** id（DataSourceRepository 的键）。
+    //     谁重载/导出/关闭，以它为准。
+    //   · activeDatasetId —— **数据集** id（DataRepository 的键）。活动通道
+    //     落在哪个数据集上。
+    // 一个源可扇出多个解析器、产出多个数据集，故二者不是一回事。
+    // 曾把 datasetId 写进 activeSourceId，于是 data.reload 拿数据集 id 去查源表，
+    // 必然找不到 —— 表现为"重载"按钮永远报"没有可重载的数据源"。
     int activeSourceId() const { return m_activeSourceId; }
     void setActiveSourceId(int id);
 
+    int activeDatasetId() const { return m_activeDatasetId; }
     QString activeTable() const { return m_activeTable; }
     QString activeColumn() const { return m_activeColumn; }
 
@@ -83,6 +93,9 @@ public:
     // 为什么走上下文而不是让两个视图互相引用：
     //   视图之间若直接依赖，就成了网状结构，加一个视图要改多个文件。
     //   走共享状态则是星形——新增视图只订阅信号，不影响已有视图。
+    //
+    // 注意：它只改活动**数据集**，不动 activeSourceId —— 源 id 由调用方
+    // 显式给出（数据集 → 源的反查用 DataSourceRepository::sourceOfDataset）。
     void setActiveChannel(int datasetId, const QString &table, const QString &column);
 
     void clearActiveChannel();
@@ -100,7 +113,8 @@ private:
     DataSourceRepository m_sources;
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
 
-    int m_activeSourceId = -1;
+    int m_activeSourceId = -1;   // 数据源 id（DataSourceRepository 键）
+    int m_activeDatasetId = -1;  // 活动通道所在的数据集 id（DataRepository 键）
     QString m_activeTable;
     QString m_activeColumn;
 };

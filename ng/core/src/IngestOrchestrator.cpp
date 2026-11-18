@@ -87,7 +87,12 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
 
     // --- 2) 建数据源（运行时实例）---
     DataSourceInfo info;
-    info.name = origin.isEmpty() ? QStringLiteral("source") : origin;
+    // name 是**显示名**（文件名），origin 是完整路径——两者分开存，
+    // 视图直接显示 name，不必自己猜"这是路径还是名字"（早前把完整路径塞进
+    // name，导致列表里显示一长串路径还被列宽截断）。
+    info.name = origin.isEmpty() ? QStringLiteral("source") : QFileInfo(origin).fileName();
+    if (info.name.isEmpty())
+        info.name = QStringLiteral("source");
     info.origin = origin;
     info.kind = SourceKind::File;
     info.state = SourceState::Opening;
