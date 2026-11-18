@@ -67,6 +67,14 @@ void ModuleHost::registerIntentHandler(ng::core::IIntentHandler *handler)
     m_nodes[m_initializing].handlers.append(handler);
 }
 
+void ModuleHost::registerSystemHandler(const QString &key, ng::core::IIntentHandler *handler)
+{
+    // 系统级：不经 m_initializing、不计入任何模块的 handlers，模块装卸不移除它。
+    if (!handler || key.isEmpty())
+        return;
+    m_handlers.insert(key, handler);
+}
+
 QHash<QString, QString> ModuleHost::activate(const QStringList &disabledIds, UiContext *ui)
 {
     QHash<QString, QString> errors;

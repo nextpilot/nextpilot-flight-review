@@ -20,6 +20,8 @@ void declareSkeletonSlots(UiSlotRegistry &registry)
                          SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
     registry.declareSlot(QStringLiteral("ribbon.group.home.view"), QStringLiteral("视图"), owner,
                          SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
+    registry.declareSlot(QStringLiteral("ribbon.group.home.appearance"), QStringLiteral("外观"), owner,
+                         SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
 
     // --- 停靠区 ---
     registry.declareSlot(QStringLiteral("dock.left"), QStringLiteral("数据集"), owner,

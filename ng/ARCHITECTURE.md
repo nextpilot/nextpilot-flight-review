@@ -609,6 +609,41 @@ QWidget *p = ui.requestDomainPanel(spec.area, spec.id);
 按 id 请求到面板 → 标题/形态由知识包决定。`test_architecture` 则确认描述是纯数据，
 headless 也能查到。
 
+### 6.4 主题子系统：token 化配色，深浅双主题
+
+主题是**横向 GUI 基础设施**（深浅两套主题必须同时成立，见根 `AGENTS.md` §12）。
+它不抄老代码 `ThemeManager` 的 389 行结构，按新架构重新设计为一条单向链：
+
+```
+语义 token  →  双主题色表（唯一色值来源）  →  QSS + palette  →  各控件
+     ↑                    ↑
+  视图只认 token      ThemeManager 认领 theme.* 意图
+```
+
+**组成部分**（都在 `gui/theme/`，不进 core）：
+
+| 部件 | 职责 | 关键约束 |
+|---|---|---|
+| `ThemeManager` | token 取色、双主题色表、QSS/palette 生成、当前主题状态与持久化、认领 `theme.set/toggle/get` | 十六进制色值**只在色表出现一次**；视图一律 `color(token)` / `styleSheet()` |
+| `ShellBinder::applyTheme` | 把 token QSS 套到 SARibbon | 绑定器是唯一知道 SARibbon 的地方（§7 原则）；不碰 ThemeManager 具体类型 |
+| `PlotCanvas` 等自绘视图 | 从 `palette()` 取色 + `PaletteChange` 重绘 | 自绘控件不吃 QSS，靠 palette 换肤；无硬编码色 |
+
+**三条设计判据**（都是踩过坑或守住红线的结果）：
+
+1. **三通道一起换肤，缺一不可**。只设 QSS 会漏掉自绘画布与 SARibbon 内部控件；
+   必须 `Fusion style + 全局 palette + 全局 QSS` 三管齐下，再给 SARibbon 单独设
+   token QSS（它自绘、全局 QSS 压不住）。实测反例：只设 QSS 时画布与 ribbon 保持浅色。
+2. **主题走意图，且是系统级**。`theme.set/toggle/get` 由 GUI 装配期创建的 ThemeManager
+   以 `@system/theme` 注册（不经模块初始化期）；按钮只声明 `intentOp`，点击/脚本/回放
+   同一条路径。headless 无此 handler，收到 `theme.*` 诚实报"无处理器"——主题是纯展示态，
+   不该在无界面的 CLI 里造假实现。
+3. **生命周期归宿主**。ThemeManager 的 QObject parent 是 `ModuleHost`，与系统级 handler
+   同生共死；`themeChanged` 信号驱动 ribbon 换肤，主题状态写入 `app/theme`（SettingsStore，
+   跨工作区）。
+
+`test_gui` 钉死：双主题同 token 不同色、契约 token 齐全、未知 token 显洋红告警、曲线色
+随主题、`mapStyleSheet` 替换、意图切换改状态并发信号、全局 QSS/palette 落地。
+
 ## 7. 视图层：可插拔，而非模式枚举
 
 老代码 `PlottingCanvas` 用一个 `PlotMode` 枚举承载 12 种绘图模式

@@ -2,6 +2,7 @@
 
 #include "GuiContext.h"
 #include "ShellBinder.h"
+#include "ThemeManager.h"
 
 #include "AppContext.h"
 #include "ModuleHost.h"
@@ -86,6 +87,17 @@ void MainWindow::declareStandardSlots()
     openAction.intentOp = QStringLiteral("data.load");
     openAction.icon = QStringLiteral("file_open");
     slotReg.bindLocal(openAction.area, openAction, QStringLiteral("app.skeleton"));
+
+    // "切换主题"是 app 骨架级能力（纯 GUI 展示态，非任何可卸载模块）。
+    // 它只声明 intentOp=theme.toggle，真正干活的是 GUI 装配期注册的 ThemeManager——
+    // 于是按钮、脚本、回放都走同一条 theme.toggle 意图路径。
+    UiAction themeAction;
+    themeAction.id = QStringLiteral("app.action.toggleTheme");
+    themeAction.label = QStringLiteral("切换主题");
+    themeAction.area = QStringLiteral("ribbon.group.home.appearance");
+    themeAction.intentOp = QStringLiteral("theme.toggle");
+    themeAction.icon = QStringLiteral("theme_toggle");
+    slotReg.bindLocal(themeAction.area, themeAction, QStringLiteral("app.skeleton"));
 }
 
 void MainWindow::build(ModuleHost &host)
@@ -106,6 +118,21 @@ void MainWindow::build(ModuleHost &host)
     // （见 setRibbonBar），这里只把它的**样式**调成我们要的样子，
     // 并把同一个对象交给绑定器去填内容。
     m_binder->createRibbon(ribbonBar());
+
+    // 2.1) 主题管理（系统级 GUI 能力，生命周期归宿主）。
+    //    ThemeManager 只产出 token/色/QSS 并发 themeChanged；
+    //    ribbon 换肤由绑定器订阅后套用——守 ARCHITECTURE §7"绑定器是唯一知道
+    //    SARibbon/ADS 的地方"。注册为系统级 handler，theme.* 意图走与按钮/脚本
+    //    同一条执行路径；headless 无此 handler，会诚实报"无模块能处理意图"。
+    m_theme = new ThemeManager(host.app().settings(), &host);
+    host.registerSystemHandler(QStringLiteral("@system/theme"), m_theme);
+    QObject::connect(m_theme, &ThemeManager::themeChanged, this,
+                     [this](ThemeManager::Theme theme) {
+                         if (m_binder)
+                             m_binder->applyTheme(theme == ThemeManager::Theme::Dark,
+                                                  m_theme->ribbonStyleSheet());
+                     });
+    m_theme->applyCurrent(); // 把 settings 里的初始值落到全局 QSS 与 ribbon
 
     // 3) 装器官（GUI 模式：会调用 onAttach，器官可自带界面入口）
     host.activate(QStringList(), m_context);

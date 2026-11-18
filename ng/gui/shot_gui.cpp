@@ -42,13 +42,20 @@ int main(int argc, char *argv[])
         return 2;
     }
     const QString out = QString::fromLocal8Bit(argv[1]);
-    // 末尾若有两个纯数字，视为宽高。
+    // 末尾若有两个纯数字，视为宽高；若出现 "dark"/"light" 关键字，视为初始主题。
     QStringList files;
+    QString themeArg;
     int w = 1440;
     int h = 900;
     for (int i = 2; i < argc; ++i)
     {
-        files << QString::fromLocal8Bit(argv[i]);
+        const QString a = QString::fromLocal8Bit(argv[i]);
+        if (a == QStringLiteral("dark") || a == QStringLiteral("light"))
+        {
+            themeArg = a;
+            continue;
+        }
+        files << a;
     }
     if (files.size() >= 3)
     {
@@ -68,6 +75,15 @@ int main(int argc, char *argv[])
     MainWindow window(application.context());
     window.build(application.modules());
     window.resize(w, h);
+
+    // 若指定主题，走与按钮/脚本相同的 theme.set 意图路径切换。
+    if (!themeArg.isEmpty())
+    {
+        Intent theme;
+        theme.op = QStringLiteral("theme.set");
+        theme.params[QStringLiteral("theme")] = themeArg;
+        application.modules().execute(theme);
+    }
 
     // 先 show()，让布局（停靠区 + 画布尺寸）确定下来。
     //

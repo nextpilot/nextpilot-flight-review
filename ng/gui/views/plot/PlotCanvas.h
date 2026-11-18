@@ -5,6 +5,7 @@
 #include <QColor>
 #include <QVector>
 #include <QWidget>
+#include <QEvent>
 
 // 中央绘图画布：QPainter 直接绘制 Rust LOD 给出的像素级三元组。
 //
@@ -57,6 +58,7 @@ Q_SIGNALS:
 protected:
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void changeEvent(QEvent *event) override; // PaletteChange 时重绘（主题切换）
 
 private:
     // 坐标轴留白（像素）。

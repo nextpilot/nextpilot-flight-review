@@ -101,6 +101,17 @@ void ShellBinder::createRibbon(SARibbonBar *ribbon)
     rebuildRibbon();
 }
 
+void ShellBinder::applyTheme(bool dark, const QString &ribbonQss)
+{
+    if (!m_ribbon || !m_window)
+        return;
+    Q_UNUSED(dark);
+    // SARibbon 自绘，全局 QSS 压不住它的内建配色。把 token 化的覆盖 QSS
+    // 直接设给 ribbonBar 本身——颜色由 ThemeManager 生成，这里只负责套用
+    // （守 §7：绑定器是唯一知道 SARibbon 的地方）。
+    m_ribbon->setStyleSheet(ribbonQss);
+}
+
 void ShellBinder::rebuildRibbon()
 {
     if (!m_ribbon)

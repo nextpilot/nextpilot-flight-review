@@ -51,6 +51,12 @@ public:
     // 模块注册自己能处理的意图 op（由 ModuleContext 转发，归属到当前初始化的模块）。
     void registerIntentHandler(ng::core::IIntentHandler *handler);
 
+    // 注册**系统级**意图处理器：不归属任何可卸载模块，用保留 key 直接入池。
+    // 供宿主构造期之外的系统能力使用（如 GUI 装配期的主题管理）——
+    // 与 @system/data.* 同类：模块装卸不影响它。host 只认 IIntentHandler 接口，
+    // 不 include 具体实现头，故不引入 GUI 依赖。
+    void registerSystemHandler(const QString &key, ng::core::IIntentHandler *handler);
+
     // 执行意图：分派给声明了对应能力的模块。（实现 IIntentExecutor）
     ng::core::Result<ng::core::IntentResult> execute(const ng::core::Intent &intent) override;
 

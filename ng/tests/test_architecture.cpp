@@ -353,12 +353,14 @@ int main(int argc, char **argv)
         // UI 插槽：骨架声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
         // （动作数含本测试文件自注册的探针包贡献：menu.plot +1）
         //
-        // 槽数是 8：骨架槽**唯一声明**（host 层 SkeletonSlots），
-        // headless 与 GUI 看到同一份（声明点已从 core 挪到 host，core 只留机制）。此前这里是 5 —— 因为骨架槽被声明在两处，
+        // 槽数是 9：骨架槽**唯一声明**（host 层 SkeletonSlots），
+        // headless 与 GUI 看到同一份（声明点已从 core 挪到 host，core 只留机制）。
+        // 第 9 个是"外观"分组（ribbon.group.home.appearance），承载主题切换按钮。
+        // 此前这里是 5 —— 因为骨架槽被声明在两处，
         // 幂等的 declareSlot 让 host 层那份信息更少的版本**静默丢弃**了 GUI 那份，
         // 于是 headless 只看到 5 个残缺槽（详见下方 1b 段的契约测试）。
         const auto &slotReg = application.modules().uiSlots();
-        CHECK(slotReg.allSlots().size() == 8);
+        CHECK(slotReg.allSlots().size() == 9);
         CHECK(slotReg.actionsIn(QStringLiteral("menu.plot")).size() == 3); // 姿态曲线 + TF 树 + 探针
         CHECK(slotReg.actionsIn(QStringLiteral("dock.left")).size() == 1); // 调参面板
         CHECK(slotReg.boundActionCount() == 6);
@@ -394,8 +396,9 @@ int main(int argc, char **argv)
 
         // 骨架槽齐备（headless 也能看到全部 —— 这正是"单一来源"的价值）。
         for (const char *area : {"ribbon.page.home", "ribbon.group.home.data",
-                                 "ribbon.group.home.view", "dock.left", "dock.right",
-                                 "canvas.center", "canvas.tool", "menu.plot"})
+                                 "ribbon.group.home.view", "ribbon.group.home.appearance",
+                                 "dock.left", "dock.right", "canvas.center", "canvas.tool",
+                                 "menu.plot"})
         {
             CHECK(slotReg.slot(QString::fromLatin1(area)) != nullptr);
         }

@@ -37,6 +37,7 @@ namespace ng::gui
 
 class GuiContext;
 class ShellBinder;
+class ThemeManager;
 
 // 主窗口：**只做骨架与装配，不含任何业务**。
 //
@@ -73,6 +74,7 @@ public:
     // 诊断/测试用。
     ShellBinder *binder() const { return m_binder; }
     GuiContext *context() const { return m_context; }
+    ThemeManager *themeManager() const { return m_theme; }
 
 private:
     // 声明 app 骨架提供的标准插槽（ribbon 页签/分组、停靠区、菜单）。
@@ -100,6 +102,7 @@ private:
     ng::host::ModuleHost *m_host = nullptr; // 用于取设置（状态持久化）
     ShellBinder *m_binder = nullptr;
     GuiContext *m_context = nullptr;
+    ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     bool m_ribbonLaidOut = false; // 是否已按真实宽度重建过 ribbon
 };
 

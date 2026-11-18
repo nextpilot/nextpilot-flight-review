@@ -82,10 +82,30 @@ void PlotCanvas::resizeEvent(QResizeEvent *event)
     emit viewportChanged();
 }
 
+void PlotCanvas::changeEvent(QEvent *event)
+{
+    QWidget::changeEvent(event);
+    // 主题切换时 ThemeManager 重设全局 palette，PaletteChange 会传播到每个 widget。
+    // 画布是自绘控件，必须主动 update() 才能用新 palette 重画。
+    if (event->type() == QEvent::PaletteChange)
+        update();
+}
+
 void PlotCanvas::paintEvent(QPaintEvent *event)
 {
+    // 颜色全部来自 palette（ThemeManager 把主题色设进全局 Fusion palette），
+    // 画布随之换肤；无硬编码色（根 AGENTS §12.1）。
+    const QPalette &pal = palette();
+    const QColor cBg       = pal.color(QPalette::Base);         // 画布背景
+    const QColor cTitle    = pal.color(QPalette::WindowText);   // 标题
+    const QColor cEmpty    = pal.color(QPalette::Mid);          // 空态文字
+    const QColor cGrid     = pal.color(QPalette::Light);        // 网格
+    const QColor cAxisBox  = pal.color(QPalette::Mid);          // 坐标轴边框
+    const QColor cCurve    = pal.color(QPalette::Highlight);    // 曲线（accent）
+    const QColor cTick     = pal.color(QPalette::WindowText);   // 轴标签（随正文色）
+
     QPainter p(this);
-    p.fillRect(event->rect(), QColor(0xFA, 0xFA, 0xFA));
+    p.fillRect(event->rect(), cBg);
 
     const int left = kMarginLeft, right = kMarginRight;
     const int top = kMarginTop, bottom = kMarginBottom;
@@ -93,7 +113,7 @@ void PlotCanvas::paintEvent(QPaintEvent *event)
                          qMax(1, height() - top - bottom));
 
     // 标题
-    p.setPen(QColor(0x33, 0x33, 0x33));
+    p.setPen(cTitle);
     QFont f = p.font();
     f.setBold(true);
     p.setFont(f);
@@ -103,7 +123,7 @@ void PlotCanvas::paintEvent(QPaintEvent *event)
     if (m_lod.isEmpty())
     {
         p.setFont(QFont());
-        p.setPen(QColor(0x88, 0x88, 0x88));
+        p.setPen(cEmpty);
         p.drawText(plotArea, Qt::AlignCenter, QStringLiteral("无数据"));
         return;
     }
@@ -122,13 +142,13 @@ void PlotCanvas::paintEvent(QPaintEvent *event)
     }
 
     // 网格 + 坐标轴
-    p.setPen(QColor(0xE4, 0xE4, 0xE4));
+    p.setPen(cGrid);
     for (int i = 0; i <= 4; ++i)
     {
         const int y = plotArea.top() + plotArea.height() * i / 4;
         p.drawLine(plotArea.left(), y, plotArea.right(), y);
     }
-    p.setPen(QColor(0xB0, 0xB0, 0xB0));
+    p.setPen(cAxisBox);
     p.drawRect(plotArea);
 
     // 曲线：min/max 抽稀结果的**包络带**画法。
@@ -172,7 +192,7 @@ void PlotCanvas::paintEvent(QPaintEvent *event)
             qSwap(yTop[i], yBot[i]);
     }
 
-    p.setPen(QPen(QColor(0x1F, 0x6F, 0xC0), 1.0));
+    p.setPen(QPen(cCurve, 1.0));
 
     // 1) 上下包络折线：让相邻桶的端点连起来，包络成为连续曲线。
     for (int i = 1; i < n; ++i)
@@ -186,7 +206,7 @@ void PlotCanvas::paintEvent(QPaintEvent *event)
         p.drawLine(xs[i], yTop[i], xs[i], yBot[i]);
 
     // 轴标签
-    p.setPen(QColor(0x66, 0x66, 0x66));
+    p.setPen(cTick);
     p.setFont(QFont());
     p.drawText(QRect(0, plotArea.top() - 8, left - 6, 16), Qt::AlignRight | Qt::AlignVCenter,
                QString::number(vmax, 'g', 4));

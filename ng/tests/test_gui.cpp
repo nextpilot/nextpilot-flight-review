@@ -17,6 +17,7 @@
 #include "DataManagerPanel.h"
 #include "GuiContext.h"
 #include "MainWindow.h"
+#include "ThemeManager.h"
 #include "ExtensionRegistry.h"
 #include "IPanelContribution.h"
 #include "PanelFactoryRegistry.h"
@@ -321,6 +322,64 @@ int main(int argc, char *argv[])
     CHECK(!badResult);
     CHECK(badResult.error().code == QStringLiteral("enoent"));
     OK("意图层错误语义一致：不存在的数据集返回 enoent");
+
+    // --- 9) 主题管理：双主题 token + 意图切换 + 全局 QSS + ribbon 联动 ---
+    // 反例锚点（根 AGENTS §12）：若颜色散落成十六进制字面量，切主题必残留旧色。
+    // 这里验证颜色全部来自 token 表，且切换走与按钮/脚本相同的 theme.* 意图。
+    {
+        using Theme = ng::gui::ThemeManager;
+        Theme *tm = window.themeManager();
+        CHECK(tm != nullptr);
+        CHECK(tm->current() == Theme::Theme::Light); // 缺省浅色
+
+        // 同一 token 两套主题必须给出不同颜色（色表真的分了深浅）。
+        CHECK(Theme::color(Theme::Theme::Light, QStringLiteral("text")) !=
+              Theme::color(Theme::Theme::Dark, QStringLiteral("text")));
+        CHECK(Theme::color(Theme::Theme::Light, QStringLiteral("window")) !=
+              Theme::color(Theme::Theme::Dark, QStringLiteral("window")));
+        // §12.1 契约 token 齐全；未知 token 给洋红告警色。
+        CHECK(Theme::color(Theme::Theme::Light, QStringLiteral("textDim")).isValid());
+        CHECK(Theme::color(Theme::Theme::Light, QStringLiteral("textMuted")).isValid());
+        CHECK(Theme::color(Theme::Theme::Light, QStringLiteral("no_such_token")) ==
+              QColor(QStringLiteral("#FF00FF")));
+        // 数据语义色：不同系列index、不同主题都可读且不越界。
+        CHECK(Theme::seriesColor(0, Theme::Theme::Dark) !=
+              Theme::seriesColor(1, Theme::Theme::Dark));
+        CHECK(Theme::seriesColor(0, Theme::Theme::Light).isValid());
+
+        // mapStyleSheet：内联片段的 $(token) 必须被替换成实色，不留占位符。
+        const QString mapped = tm->mapStyleSheet(QStringLiteral("color: $(text);"));
+        CHECK(!mapped.contains(QStringLiteral("$(")));
+        CHECK(mapped.contains(QStringLiteral("#")));
+
+        // themeChanged 信号确实发出（ribbon 联动挂在它上面）。
+        int changedCount = 0;
+        QObject::connect(tm, &Theme::themeChanged, &window,
+                         [&changedCount](Theme::Theme) { ++changedCount; });
+
+        // 走意图切换：与按钮点击、脚本调用同一条路径。
+        Intent dark;
+        dark.op = QStringLiteral("theme.set");
+        dark.params[QStringLiteral("theme")] = QStringLiteral("dark");
+        const auto r = application.modules().execute(dark);
+        CHECK(r); // 系统级 handler 认领（headless 才会报无处理器）
+        CHECK(r.value().payload.toString() == QStringLiteral("dark"));
+        CHECK(tm->current() == Theme::Theme::Dark);
+        CHECK(changedCount == 1);
+        // 全局 QSS 真的应用到 QApplication。
+        CHECK(!qApp->styleSheet().isEmpty());
+        CHECK(qApp->styleSheet().contains(Theme::color(
+                  Theme::Theme::Dark, QStringLiteral("text")).name()));
+
+        // theme.toggle 意图：切回浅色。
+        Intent toggle;
+        toggle.op = QStringLiteral("theme.toggle");
+        const auto r2 = application.modules().execute(toggle);
+        CHECK(r2);
+        CHECK(tm->current() == Theme::Theme::Light);
+        CHECK(changedCount == 2);
+        OK("主题管理：双主题 token 分色 + theme.set/toggle 意图切换 + 全局 QSS + themeChanged 联动");
+    }
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");
     return 0;

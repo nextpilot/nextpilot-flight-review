@@ -87,6 +87,10 @@ public:
     QJsonObject captureState() const;
     bool applyState(const QJsonObject &state);
 
+    // 应用 ribbon 主题（深浅）。主题状态归 ThemeManager，绑定器只负责把
+    // SARibbon 这一类第三方控件的换肤套上去——它是唯一知道 SARibbon 的地方。
+    void applyTheme(bool dark, const QString &ribbonQss);
+
     // 意图执行回调：外壳把动作转成意图，交给宿主执行器。
     // 两个参数各司其职，不可混用：
     //   · actionId —— UI 元素的稳定标识（如 data.action.reload），供需要 GUI

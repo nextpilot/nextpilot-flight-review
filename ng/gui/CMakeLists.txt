@@ -38,6 +38,9 @@ add_library(ng_gui OBJECT
     shell/ShellBinder.h
     shell/GuiContext.cpp
     shell/GuiContext.h
+    # --- 主题：token 化配色 + 双主题 + QSS，系统级 GUI 能力 ---
+    theme/ThemeManager.cpp
+    theme/ThemeManager.h
     # --- 通用绘图能力库 ---
     # 数据集视图已聚合进 modules/data/（功能专属，见该目录 CMakeLists）；
     # 这里只剩**通用绘图库**（将来抽成 Qwt-like 独立库，不属于任何器官/领域）：
@@ -52,7 +55,8 @@ add_library(ng_gui OBJECT
 target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/shell
-    ${CMAKE_CURRENT_SOURCE_DIR}/views/plot)
+    ${CMAKE_CURRENT_SOURCE_DIR}/views/plot
+    ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 target_link_libraries(ng_gui PUBLIC ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
 set_target_properties(ng_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
