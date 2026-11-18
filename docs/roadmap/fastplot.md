@@ -1,0 +1,142 @@
+# fastplot：独立绘图库
+
+| 项 | 值 |
+|---|---|
+| 状态 | P1 开工（2026-11-18） |
+| 位置 | `ng/libs/fastplot/` |
+| 目标 | 把老 `src/application/modules/plotting` 的**绘图能力**抽成独立库，供 ng 直接调用 |
+| 约束 | `src/` 只读参考，不改一行；库不依赖 `ng/core`，纯 Qt Widgets |
+
+## 1. 为什么单独成库
+
+老画布 `PlottingCanvas.cpp` 3810 行，把五件事混在一个类里：
+
+```
+坐标变换 + 刻度算法 + 采样(LOD) + 交互状态机 + 业务胶水(数据源 id/别名/撤销)
+```
+
+ng 现在只有 `gui/views/plot/PlotCanvas.cpp` 203 行（能画一条线，没有缩放/书签/A-B）。
+直接搬老文件等于把 3810 行原样搬进新架构，问题照旧。
+
+**拆法**：能复用的纯绘图能力进库，业务胶水留在 ng 的模块里。
+
+| 老代码 | 行数 | 去向 |
+|---|---|---|
+`PlottingCanvas` 的变换/刻度/采样/绘制/交互/导出/状态存取 | ~2800 | **进 fastplot** |
+`Series` 里的 `srcId` / `srcPath` / `renameSource` / `removeChannelsFromSource` | ~50 | 留数据层 |
+`PlottingRibbon.cpp` | 502 | 不抽（外壳） |
+`PlottingSession.cpp` | 1507 | 不抽（页签/多文档/布局） |
+`PlottingModule.cpp` + `PlottingLayout.cpp` | 380 | 不抽（宿主胶水/布局存盘） |
+
+## 2. 边界
+
+| 边界 | 内容 |
+|---|---|
+**是** | 视口变换、刻度（nice numbers）、像素列 LOD 采样、曲线/网格/轴/图例绘制、缩放/平移/框选/拾取、导出 PNG+CSV、状态 JSON |
+**不是** | 数据加载、数据集/数据源模型、ribbon、页签、布局持久化、主题 QSS、脚本 |
+依赖方向 | `fastplot` → Qt Widgets；**不反向依赖 `ng/core`**。数据由 ng 侧适配器传进来 |
+
+## 3. 目录
+
+```
+ng/libs/fastplot/
+  include/fastplot/
+    Viewport.h       世界坐标 <-> 像素，x/y 范围
+    ScaleDiv.h       刻度划分（主/次刻度 + 标签）
+    Axis.h           一条轴：位置、刻度长度、标签、网格开关
+    LodCache.h       像素列 min/max 缓存（P2）
+    PlotData.h       IPlotData：数据访问抽象（P2）
+    Curve.h          曲线样式 + 数据指针（P2）
+    PlotWidget.h     画布：网格 + 轴 + 曲线 + 图层缓存
+    Zoomer.h Panner.h Picker.h   交互部件（P3）
+  src/
+  CMakeLists.txt     目标名 fastplot，STATIC
+```
+
+命名：`namespace fastplot`，头文件 `#include <fastplot/PlotWidget.h>`。
+
+## 4. 公开接口（P1 已落地部分）
+
+```cpp
+namespace fastplot {
+
+class Viewport {
+public:
+    void   setPlotRect(const QRectF &);
+    QRectF plotRect() const;
+    void   setXRange(double lo, double hi);
+    void   setYRange(double lo, double hi);
+    double xToPixel(double x) const;
+    double yToPixel(double y) const;
+    double pixelToX(double px) const;
+    double pixelToY(double py) const;
+    QPointF toPixel(double x, double y) const;
+private:  QRectF m_rect; double m_lo, m_hi ...;
+};
+
+class ScaleDiv {
+public:
+    static ScaleDiv linear(double lo, double hi, int maxMajorTicks);
+    double lower, upper, majorStep;
+    QVector<Tick> ticks;      // {value, label, isMajor}
+    int indexBefore(double v) const;
+};
+
+class Axis {
+public:
+    void setSide(AxisSide), setInk(QColor), setFont(QFont),
+         setTickLength(int), setGridVisible(bool), setScaleDiv(ScaleDiv);
+    void paint(QPainter *, const QRectF &plotRect, const QRect &widgetRect);
+    int  preferredMargin() const;      // 给 PlotWidget 算左边距
+};
+
+class PlotWidget : public QWidget {
+public:
+    Viewport &viewport();
+    Axis     &axis(AxisSide);          // Left / Right / Bottom / Top
+    void setXRange(double, double);
+    void setYRange(double, double);
+    void replot();                     // 只失效缓存 + update
+    QRectF plotRect() const;
+    QImage grabImage();                // 离屏渲染，导出与测试用
+};
+
+} // namespace fastplot
+```
+
+后续批次按需扩展（P2 加 `setCurves`、`IPlotData`；P3 加 `Zoomer` 等）。
+
+## 5. 效率三条硬约束（不可破）
+
+| 约束 | 做法 | 违反的后果 |
+|---|---|---|
+**零拷贝** | 曲线只持有 `const double *x, *y + n + generation`；数据变更只换指针 | 每次刷新复制 10⁶ 点，卡顿回到老问题 |
+**像素列聚合** | 渲染按屏幕像素列取 min/max，一列一条竖线；typed 表优先走 `ps_dataset_lod_minmax` | 逐点 `drawLine` 描 10⁶ 点，缩放一次几百毫秒 |
+**图层缓存** | 网格/轴/图例画进 `QPixmap`，只在视口/尺寸/主题变化时重画 | 鼠标移动触发整屏重绘，hover 就掉帧 |
+
+## 6. 分批与验收
+
+| 批次 | 内容 | 验收 |
+|---|---|---|
+**P1** | `Viewport` + `ScaleDiv` + `Axis` + `PlotWidget`（网格+轴），CMake 目标 `fastplot` | 离屏渲染出干净坐标网格；`test_fastplot` 断言刻度、变换、边距 【本次】 |
+**P2** | `IPlotData` + `Curve` + `LodCache`；ng 侧适配器把 `Dataset` 通道接进来 | `demo_flight.ulg` 画 `attitude.roll` 3000 点，与老画布同帧率 |
+**P3** | `Zoomer/Panner/Picker` + 框选 + 键盘 | 缩放/框选/读数与老行为一致 |
+**P4** | 双轴/图例/hover/导出 PNG+CSV/状态 JSON | 双轴可画，导出与复原正确 |
+**P5** | 专用仪表（horizon/compass/gauge/gps map/3D） | 按需，`fastplot/gadgets` 子目标 |
+
+## 7. 构建接入
+
+| 规则 | 说明 |
+|---|---|
+只进 GUI | `fastplot` 是 Widgets 库，只允许 `ng_gui` 与 GUI 测试链接；`plotscope-ng`（CLI）不链 |
+源树只读 | `ng/CMakeLists.txt` 里 `add_subdirectory(libs/fastplot)`；不改 `src/` |
+复用第三方 | SARibbon / ADS 仍走 `../src/3rdparty`，fastplot 不引新依赖 |
+
+## 8. 风险
+
+| 风险 | 应对 |
+|---|---|
+交互状态机搬迁走样 | P3 之前不许把交互写进 `PlotWidget::paintEvent`，一律做成 `Zoomer/Panner/Picker` 部件 |
+数据适配层反过来污染库 | `ColumnSeries` 这类适配器写在 ng（`modules/plot` 或 `gui/views/plot`），不进 `fastplot` |
+双轴/多轴口径不一致 | 轴一律走 `Axis` 实例，禁止在曲线里写死“左/右”判断逻辑 |
+和老画布行为漂移 | 每批验收都用同一个 fixture + 同一段脚本，出图像素级对比 |

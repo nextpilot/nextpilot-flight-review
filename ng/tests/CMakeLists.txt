@@ -45,3 +45,11 @@ target_link_libraries(ng_test_pipeline PRIVATE
     ng_ext_registry ng_host ng_core Qt6::Core)
 set_target_properties(ng_test_pipeline PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_pipeline COMMAND ng_test_pipeline)
+
+# === fastplot 绘图库契约测试 ===
+# 与 ng_test_gui 同理：Widgets 侧测试单独成可执行文件，offscreen 下跑。
+add_executable(fastplot_test test_fastplot.cpp)
+target_link_libraries(fastplot_test PRIVATE fastplot Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(fastplot_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME fastplot COMMAND fastplot_test)
+set_tests_properties(fastplot PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -1,0 +1,158 @@
+#include "fastplot/Axis.h"
+#include "fastplot/Viewport.h"
+
+#include <QFontMetrics>
+#include <QPainter>
+#include <QRect>
+
+#include <algorithm>
+#include <cmath>
+
+namespace fastplot
+{
+
+Axis::Axis(AxisSide side)
+    : m_side(side)
+{
+}
+
+int Axis::preferredMargin() const
+{
+    if (!m_visible)
+        return 0;
+    const QFontMetrics fm(m_font);
+    switch (m_side)
+    {
+    case AxisSide::Left:
+    case AxisSide::Right:
+    {
+        int widest = fm.horizontalAdvance(QStringLiteral("-0.000"));
+        for (const Tick &t : m_div.ticks)
+        {
+            if (t.major)
+                widest = std::max(widest, fm.horizontalAdvance(t.label));
+        }
+        return widest + m_tickLength + 8;
+    }
+    case AxisSide::Bottom:
+    case AxisSide::Top:
+        return fm.height() + m_tickLength + 8;
+    }
+    return 0;
+}
+
+void Axis::paintGrid(QPainter *painter, const Viewport &vp) const
+{
+    if (!m_visible || !m_grid)
+        return;
+    const QRectF plot = vp.plotRect();
+    painter->save();
+    painter->setPen(QPen(m_gridInk, 1.0));
+    for (const Tick &t : m_div.ticks)
+    {
+        if (!t.major)
+            continue;
+        switch (m_side)
+        {
+        case AxisSide::Left:
+        case AxisSide::Right:
+        {
+            const double py = vp.yToPixel(t.value);
+            painter->drawLine(QPointF(plot.left(), py), QPointF(plot.right(), py));
+            break;
+        }
+        case AxisSide::Bottom:
+        case AxisSide::Top:
+        {
+            const double px = vp.xToPixel(t.value);
+            painter->drawLine(QPointF(px, plot.top()), QPointF(px, plot.bottom()));
+            break;
+        }
+        }
+    }
+    painter->restore();
+}
+
+void Axis::paint(QPainter *painter, const Viewport &vp, const QRect &widgetRect) const
+{
+    if (!m_visible)
+        return;
+    const QRectF plot = vp.plotRect();
+    const QFontMetrics fm(m_font);
+
+    painter->save();
+    painter->setFont(m_font);
+    painter->setRenderHint(QPainter::Antialiasing, false);
+    painter->setPen(QPen(m_ink, 1.0));
+
+    // 轴线本体：贴着绘图区边沿画一条，明确"这里是轴"。
+    switch (m_side)
+    {
+    case AxisSide::Left:
+        painter->drawLine(QPointF(plot.left(), plot.top()), QPointF(plot.left(), plot.bottom()));
+        break;
+    case AxisSide::Right:
+        painter->drawLine(QPointF(plot.right(), plot.top()), QPointF(plot.right(), plot.bottom()));
+        break;
+    case AxisSide::Bottom:
+        painter->drawLine(QPointF(plot.left(), plot.bottom()), QPointF(plot.right(), plot.bottom()));
+        break;
+    case AxisSide::Top:
+        painter->drawLine(QPointF(plot.left(), plot.top()), QPointF(plot.right(), plot.top()));
+        break;
+    }
+
+    for (const Tick &t : m_div.ticks)
+    {
+        if (!t.major && m_minorPerMajor <= 0)
+            continue;
+        const int len = t.major ? m_tickLength : std::max(2, m_tickLength / 2);
+
+        switch (m_side)
+        {
+        case AxisSide::Left:
+        case AxisSide::Right:
+        {
+            const double py = vp.yToPixel(t.value);
+            const double baseX = (m_side == AxisSide::Left) ? plot.left() : plot.right();
+            const double dir = (m_side == AxisSide::Left) ? -1.0 : 1.0;
+            painter->drawLine(QPointF(baseX, py), QPointF(baseX + dir * len, py));
+            if (t.major)
+            {
+                // 标签右对齐到刻度线外侧，留 4px 间隙。
+                const int textW = fm.horizontalAdvance(t.label);
+                const double textX = (m_side == AxisSide::Left)
+                    ? baseX - len - 4 - textW
+                    : baseX + len + 4;
+                painter->setPen(QPen(m_labelColor, 1.0));
+                painter->drawText(QPointF(textX, py + fm.ascent() / 2.0 - 1.0), t.label);
+                painter->setPen(QPen(m_ink, 1.0));
+            }
+            break;
+        }
+        case AxisSide::Bottom:
+        case AxisSide::Top:
+        {
+            const double px = vp.xToPixel(t.value);
+            const double baseY = (m_side == AxisSide::Bottom) ? plot.bottom() : plot.top();
+            const double dir = (m_side == AxisSide::Bottom) ? 1.0 : -1.0;
+            painter->drawLine(QPointF(px, baseY), QPointF(px, baseY + dir * len));
+            if (t.major)
+            {
+                const int textW = fm.horizontalAdvance(t.label);
+                const double textY = (m_side == AxisSide::Bottom)
+                    ? baseY + len + fm.ascent() + 3
+                    : baseY - len - 4;
+                painter->setPen(QPen(m_labelColor, 1.0));
+                painter->drawText(QPointF(px - textW / 2.0, textY), t.label);
+                painter->setPen(QPen(m_ink, 1.0));
+            }
+            break;
+        }
+        }
+    }
+
+    painter->restore();
+}
+
+} // namespace fastplot
