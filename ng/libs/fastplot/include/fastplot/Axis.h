@@ -59,6 +59,11 @@ public:
     const ScaleDiv &scaleDiv() const { return m_div; }
     void setScaleDiv(const ScaleDiv &div) { m_div = div; }
 
+    // 该轴自己的纵向数据范围（左/右轴各一套）。
+    // 不设时跟随 Viewport 的 y 范围——因此单轴场景一行代码都不用改。
+    void setYRange(double lo, double hi);
+    bool hasYRange() const { return m_hasYRange; }
+
     // 该轴需要预留的边距（像素）：标签尺寸 + 刻度线 + 间隙。
     int preferredMargin() const;
 
@@ -69,7 +74,13 @@ public:
     void paintGrid(QPainter *painter, const Viewport &vp) const;
 
 private:
+    // 纵向值 → 像素：有自带范围就用自己的，否则退回 Viewport。
+    double yToPixel(const Viewport &vp, double value) const;
+
     AxisSide m_side;
+    bool m_hasYRange = false;
+    double m_yLo = 0.0;
+    double m_yHi = 1.0;
     bool m_visible = true;
     bool m_grid = true;
     int m_tickLength = 4;

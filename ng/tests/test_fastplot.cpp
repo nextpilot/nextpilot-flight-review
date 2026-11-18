@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QImage>
+#include <QJsonObject>
 
 #include <cmath>
 #include <cstdio>
@@ -287,6 +288,104 @@ int main(int argc, char **argv)
         fprintf(stdout, "[ok] 交互：锚点缩放/框选/复位/最近样本/叠加层\n");
     }
 
-    fprintf(stdout, "[ok] fastplot P1+P2+P3 全部通过\n");
+    // 8) 双轴 / 图例 / 导出 / 状态复原
+    {
+        // 左轴曲线：正弦 ±0.5（占满左轴）；右轴曲线：约 200 的一条平带（只占右轴中间一小段）。
+        // 两条曲线像素不能"看起来一样"——否则无法证明各走各的映射。
+        QVector<fastplot::LodPoint> left;
+        QVector<fastplot::LodPoint> right;
+        for (int i = 0; i < 400; ++i)
+        {
+            const double x = i * 0.016;
+            left.push_back(fastplot::LodPoint{x, 0.5 * std::sin(x), 0.55 * std::sin(x) + 0.02});
+            right.push_back(fastplot::LodPoint{x, 199.5, 200.5});
+        }
+
+        const QColor leftInk(0x1F, 0x6F, 0xC0);
+        const QColor rightInk(0xE0, 0x6C, 0x00);
+
+        fastplot::PlotWidget plot;
+        plot.resize(800, 400);
+        plot.setXRange(0.0, 6.4);
+        plot.setYRange(-1.0, 1.0);
+        plot.setSecondAxis(true);
+        plot.setYRange2(190.0, 210.0);
+
+        auto &c1 = plot.addCurve(fastplot::Curve::fromLod(left, leftInk, 1.0));
+        c1.setName(QStringLiteral("roll"));
+        auto &c2 = plot.addCurve(fastplot::Curve::fromLod(right, rightInk, 1.0));
+        c2.setName(QStringLiteral("alt"));
+        c2.setYAxis(fastplot::AxisSide::Right);
+
+        assert(plot.hasSecondAxis());
+        assert(near(plot.y2Upper(), 210.0) && near(plot.y2Lower(), 190.0));
+
+        // 先关图例测曲线：图例色块也在左上角，会把"右侧窄带"的量测带偏。
+        plot.setLegendVisible(false);
+        const QImage img = plot.grabImage();
+        int leftPixels = 0;
+        int rightPixels = 0;
+        int leftTop = img.height();
+        int leftBottom = 0;
+        int rightTop = img.height();
+        int rightBottom = 0;
+        for (int y = 0; y < img.height(); ++y)
+        {
+            for (int x = 0; x < img.width(); ++x)
+            {
+                const QColor c = img.pixelColor(x, y);
+                if (c == leftInk)
+                {
+                    ++leftPixels;
+                    leftTop = std::min(leftTop, y);
+                    leftBottom = std::max(leftBottom, y);
+                }
+                else if (c == rightInk)
+                {
+                    ++rightPixels;
+                    rightTop = std::min(rightTop, y);
+                    rightBottom = std::max(rightBottom, y);
+                }
+            }
+        }
+        assert(leftPixels > 500);
+        assert(rightPixels > 500);
+        // 关键：右轴 190~210 的 200 落在绘图区中部，只占很薄一条；左轴正弦铺满高度。
+        assert(rightBottom - rightTop < 40);
+        assert(leftBottom - leftTop > 0.45 * img.height());
+
+        // 图例：开与不开必须画出不同结果（色块 + 名字确实是画上去的）
+        plot.setLegendVisible(true);
+        const QImage withLegend = plot.grabImage();
+        assert(withLegend != img);
+
+        const QString png = QDir::current().filePath(QStringLiteral("fastplot_p4.png"));
+        const QString csv = QDir::current().filePath(QStringLiteral("fastplot_p4.csv"));
+        assert(plot.exportPng(png));
+        assert(plot.exportCsv(csv));
+        // CSV 必须同时含两条曲线（LOD 输出 x,min,max）
+        QFile f(csv);
+        assert(f.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString text = QString::fromUtf8(f.readAll());
+        assert(text.contains(QStringLiteral("roll")));
+        assert(text.contains(QStringLiteral("alt")));
+        assert(text.contains(QStringLiteral("x,min,max")));
+
+        // 状态往返：范围/双轴/图例都要还原
+        const QJsonObject state = plot.saveState();
+        fastplot::PlotWidget restored;
+        restored.resize(800, 400);
+        assert(restored.restoreState(state));
+        assert(near(restored.viewport().xLower(), plot.viewport().xLower()));
+        assert(near(restored.viewport().xUpper(), plot.viewport().xUpper()));
+        assert(restored.hasSecondAxis());
+        assert(near(restored.y2Upper(), 210.0) && near(restored.y2Lower(), 190.0));
+        assert(restored.legendVisible());
+
+        fprintf(stdout, "[ok] 双轴/图例/导出 PNG+CSV/状态复原（左 %d px、右 %d px 高 %d px）\n",
+                leftPixels, rightPixels, rightBottom - rightTop);
+    }
+
+    fprintf(stdout, "[ok] fastplot P1~P4 全部通过\n");
     return 0;
 }

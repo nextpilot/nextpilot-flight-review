@@ -118,7 +118,11 @@ void PlotCanvas::pushToPlot()
         pts.push_back(fastplot::LodPoint{t.x, t.min, t.max});
 
     m_plot->clearCurves();
-    m_plot->addCurve(fastplot::Curve::fromLod(pts, kCurveInk, 1.0));
+    auto &curve = m_plot->addCurve(fastplot::Curve::fromLod(pts, kCurveInk, 1.0));
+    // 图例名字用通道名（表格.列），不用整条标题——标题已经在画布左上角了。
+    curve.setName(m_table.isEmpty() ? m_column
+                                    : QStringLiteral("%1.%2").arg(m_table, m_column));
+    m_plot->setLegendVisible(true);
 
     // 横轴按真实时间定界（不是按序号）：数据可能不等间隔。
     if (m_t1 > m_t0)

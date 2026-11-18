@@ -1,7 +1,10 @@
 #include "fastplot/PlotWidget.h"
 
+#include <QFile>
 #include <QFontMetrics>
+#include <QJsonArray>
 #include <QPainter>
+#include <QTextStream>
 #include <QPolygonF>
 #include <QResizeEvent>
 
@@ -25,26 +28,6 @@ int sideIndex(AxisSide side)
     }
     return 0;
 }
-// 画"每列一条竖线 + 相邻中点连线"的包络：
-// 密集数据看起来是一条实心带（正确的视觉语义），稀疏数据退回普通折线（见 paintCurves）。
-void drawEnvelope(QPainter &painter, const Viewport &vp, const QVector<LodPoint> &pts)
-{
-    if (pts.isEmpty())
-        return;
-    QPolygonF mid;
-    mid.reserve(pts.size());
-    for (const LodPoint &pt : pts)
-    {
-        const double px = vp.xToPixel(pt.x);
-        const double pyMin = vp.yToPixel(pt.min);
-        const double pyMax = vp.yToPixel(pt.max);
-        painter.drawLine(QPointF(px, pyMin), QPointF(px, pyMax));
-        mid.push_back(QPointF(px, (pyMin + pyMax) / 2.0));
-    }
-    if (mid.size() > 1)
-        painter.drawPolyline(mid);
-}
-
 } // namespace
 
 PlotWidget::PlotWidget(QWidget *parent)
@@ -79,6 +62,127 @@ Axis &PlotWidget::axis(AxisSide side)
 const Axis &PlotWidget::axis(AxisSide side) const
 {
     return m_axes[sideIndex(side)];
+}
+
+void PlotWidget::setYRange2(double lo, double hi)
+{
+    // 与左轴同一套规整规则（顺序、单点展开）。
+    if (lo > hi)
+        std::swap(lo, hi);
+    if (lo == hi)
+    {
+        const double pad = std::fabs(lo) > 1.0 ? std::fabs(lo) * 0.05 : 1.0;
+        lo -= pad;
+        hi += pad;
+    }
+    m_y2Lo = lo;
+    m_y2Hi = hi;
+    relayout();
+}
+
+void PlotWidget::setSecondAxis(bool enabled)
+{
+    m_secondAxis = enabled;
+    m_axes[sideIndex(AxisSide::Right)].setVisible(enabled);
+    relayout();
+}
+
+void PlotWidget::setLegendVisible(bool visible)
+{
+    m_legend = visible;
+    update();
+}
+
+double PlotWidget::yToPixel(AxisSide side, double y) const
+{
+    const QRectF plot = m_vp.plotRect();
+    if (side == AxisSide::Right && m_secondAxis)
+        return plot.bottom() - (y - m_y2Lo) / (m_y2Hi - m_y2Lo) * plot.height();
+    return m_vp.yToPixel(y);
+}
+
+bool PlotWidget::exportPng(const QString &path)
+{
+    return grabImage().save(path);
+}
+
+bool PlotWidget::exportCsv(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    QTextStream out(&file);
+    out << "# fastplot\n";
+    out << "# x_lo=" << QString::number(m_vp.xLower(), 'g', 12)
+        << " x_hi=" << QString::number(m_vp.xUpper(), 'g', 12)
+        << " y_lo=" << QString::number(m_vp.yLower(), 'g', 12)
+        << " y_hi=" << QString::number(m_vp.yUpper(), 'g', 12) << "\n";
+
+    for (const Curve &c : m_curves)
+    {
+        if (!c.isVisible())
+            continue;
+        out << "# curve " << (c.name().isEmpty() ? QStringLiteral("unnamed") : c.name()) << "\n";
+        if (c.isLod())
+        {
+            out << "x,min,max\n";
+            for (const LodPoint &pt : c.m_lod)
+                out << QString::number(pt.x, 'g', 12) << ","
+                    << QString::number(pt.min, 'g', 12) << ","
+                    << QString::number(pt.max, 'g', 12) << "\n";
+        }
+        else if (c.m_data && c.m_data->size() > 0)
+        {
+            out << "x,y\n";
+            for (qsizetype i = 0; i < c.m_data->size(); ++i)
+                out << QString::number(c.m_data->xAt(i), 'g', 12) << ","
+                    << QString::number(c.m_data->yAt(i), 'g', 12) << "\n";
+        }
+    }
+    return true;
+}
+
+QJsonObject PlotWidget::saveState() const
+{
+    // 只存"视图"，不存数据：数据归宿主，画布状态归画布。
+    QJsonObject o;
+    o[QStringLiteral("x")] = QJsonArray{m_vp.xLower(), m_vp.xUpper()};
+    o[QStringLiteral("y")] = QJsonArray{m_vp.yLower(), m_vp.yUpper()};
+    o[QStringLiteral("y2")] = QJsonArray{m_y2Lo, m_y2Hi};
+    o[QStringLiteral("secondAxis")] = m_secondAxis;
+    o[QStringLiteral("topAxis")] = m_axes[sideIndex(AxisSide::Top)].isVisible();
+    o[QStringLiteral("background")] = m_background.name(QColor::HexRgb);
+    o[QStringLiteral("grid")] = m_axes[sideIndex(AxisSide::Left)].gridVisible();
+    o[QStringLiteral("legend")] = m_legend;
+    return o;
+}
+
+bool PlotWidget::restoreState(const QJsonObject &state)
+{
+    const QJsonArray x = state.value(QStringLiteral("x")).toArray();
+    const QJsonArray y = state.value(QStringLiteral("y")).toArray();
+    if (x.size() == 2 && x.at(0).isDouble() && x.at(1).isDouble())
+        setXRange(x.at(0).toDouble(), x.at(1).toDouble());
+    if (y.size() == 2)
+        setYRange(y.at(0).toDouble(), y.at(1).toDouble());
+
+    const QJsonArray y2 = state.value(QStringLiteral("y2")).toArray();
+    if (y2.size() == 2)
+        setYRange2(y2.at(0).toDouble(), y2.at(1).toDouble());
+
+    setSecondAxis(state.value(QStringLiteral("secondAxis")).toBool(false));
+    m_axes[sideIndex(AxisSide::Top)].setVisible(state.value(QStringLiteral("topAxis")).toBool(false));
+    const QString bg = state.value(QStringLiteral("background")).toString();
+    if (!bg.isEmpty())
+    {
+        QColor color(bg);
+        if (color.isValid())
+            setBackground(color);
+    }
+    setGridVisible(state.value(QStringLiteral("grid")).toBool(true));
+    setLegendVisible(state.value(QStringLiteral("legend")).toBool(false));
+    relayout();
+    return true;
 }
 
 void PlotWidget::setXRange(double lo, double hi)
@@ -225,12 +329,21 @@ void PlotWidget::clearCurves()
 
 bool PlotWidget::autoScaleY(double marginRatio)
 {
-    double lo = std::numeric_limits<double>::infinity();
-    double hi = -std::numeric_limits<double>::infinity();
+    double loL = std::numeric_limits<double>::infinity();
+    double hiL = -std::numeric_limits<double>::infinity();
+    double loR = loL;
+    double hiR = hiL;
+    bool anyRight = false;
+
     for (const Curve &c : m_curves)
     {
         if (!c.isVisible())
             continue;
+        const bool right = (c.m_yAxis == AxisSide::Right) && m_secondAxis;
+        anyRight = anyRight || right;
+        double &lo = right ? loR : loL;
+        double &hi = right ? hiR : hiL;
+
         if (c.isLod())
         {
             for (const LodPoint &pt : c.m_lod)
@@ -253,22 +366,36 @@ bool PlotWidget::autoScaleY(double marginRatio)
             hi = std::max(hi, y);
         }
     }
-    if (!std::isfinite(lo) || !std::isfinite(hi))
-        return false;
-    if (lo == hi)
+
+    auto apply = [marginRatio](double lo, double hi, double *outLo, double *outHi) {
+        if (!std::isfinite(lo) || !std::isfinite(hi))
+            return false;
+        if (lo == hi)
+        {
+            const double pad = std::fabs(lo) > 1.0 ? std::fabs(lo) * 0.05 : 1.0;
+            *outLo = lo - pad;
+            *outHi = hi + pad;
+        }
+        else
+        {
+            const double pad = (hi - lo) * marginRatio;
+            *outLo = lo - pad;
+            *outHi = hi + pad;
+        }
+        return true;
+    };
+
+    bool ok = false;
+    double yLo = 0.0;
+    double yHi = 0.0;
+    if (apply(loL, hiL, &yLo, &yHi))
     {
-        const double pad = std::fabs(lo) > 1.0 ? std::fabs(lo) * 0.05 : 1.0;
-        lo -= pad;
-        hi += pad;
+        setYRange(yLo, yHi);
+        ok = true;
     }
-    else
-    {
-        const double pad = (hi - lo) * marginRatio;
-        lo -= pad;
-        hi += pad;
-    }
-    setYRange(lo, hi);
-    return true;
+    if (anyRight && apply(loR, hiR, &yLo, &yHi))
+        setYRange2(yLo, yHi);
+    return ok;
 }
 
 bool PlotWidget::autoScaleX(double marginRatio)
@@ -357,6 +484,26 @@ void PlotWidget::paintCurves(QPainter &painter)
     const QRectF plot = m_vp.plotRect();
     const int columns = std::max(1, static_cast<int>(std::lround(plot.width())));
 
+    // 每列一条竖线 + 相邻中点连线：密集数据看起来是一条实心带（正确的视觉语义），
+    // 稀疏数据退回普通折线（见下面 data 分支）。
+    // y 映射按曲线自己的轴走——双轴就是两套映射，不需要在曲线里做任何特判。
+    auto drawEnvelope = [&](const QVector<LodPoint> &pts, AxisSide side) {
+        if (pts.isEmpty())
+            return;
+        QPolygonF mid;
+        mid.reserve(pts.size());
+        for (const LodPoint &pt : pts)
+        {
+            const double px = m_vp.xToPixel(pt.x);
+            const double pyMin = yToPixel(side, pt.min);
+            const double pyMax = yToPixel(side, pt.max);
+            painter.drawLine(QPointF(px, pyMin), QPointF(px, pyMax));
+            mid.push_back(QPointF(px, (pyMin + pyMax) / 2.0));
+        }
+        if (mid.size() > 1)
+            painter.drawPolyline(mid);
+    };
+
     painter.save();
     painter.setClipRect(plot);
 
@@ -372,7 +519,7 @@ void PlotWidget::paintCurves(QPainter &painter)
         if (c.isLod())
         {
             // 内核已分桶：直接画，一行数据都不用扫。
-            drawEnvelope(painter, m_vp, c.m_lod);
+            drawEnvelope(c.m_lod, c.m_yAxis);
             continue;
         }
 
@@ -392,7 +539,7 @@ void PlotWidget::paintCurves(QPainter &painter)
             {
                 const double x = direct ? px[i] : data->xAt(i);
                 const double y = direct ? py[i] : data->yAt(i);
-                poly.push_back(m_vp.toPixel(x, y));
+                poly.push_back(QPointF(m_vp.xToPixel(x), yToPixel(c.m_yAxis, y)));
             }
             painter.setRenderHint(QPainter::Antialiasing, true);
             painter.drawPolyline(poly);
@@ -402,7 +549,7 @@ void PlotWidget::paintCurves(QPainter &painter)
 
         // 密集数据：像素列 min/max 包络，绘制成本 O(像素宽)。
         const QVector<LodPoint> &pts = c.m_cache.points(*data, m_vp);
-        drawEnvelope(painter, m_vp, pts);
+        drawEnvelope(pts, c.m_yAxis);
     }
 
     painter.restore();
@@ -421,7 +568,7 @@ void PlotWidget::relayout()
     int top = m_axes[sideIndex(AxisSide::Top)].preferredMargin();
     int bottom = m_axes[sideIndex(AxisSide::Bottom)].preferredMargin();
 
-    // 控件太小时优先保住绘图区，把边距压到 0。
+    // 控件太小时优先保住绘图区，把边距压到最小。
     if (width() - left - right < 40)
     {
         left = std::min(left, 24);
@@ -458,7 +605,12 @@ void PlotWidget::refreshScaleDivs()
     m_axes[sideIndex(AxisSide::Bottom)].setScaleDiv(xDiv);
     m_axes[sideIndex(AxisSide::Top)].setScaleDiv(xDiv);
     m_axes[sideIndex(AxisSide::Left)].setScaleDiv(yDiv);
-    m_axes[sideIndex(AxisSide::Right)].setScaleDiv(yDiv);
+    m_axes[sideIndex(AxisSide::Left)].setYRange(m_vp.yLower(), m_vp.yUpper());
+    // 右轴用自己的数据范围（双轴各说各话），左轴不替它定界。
+    m_axes[sideIndex(AxisSide::Right)].setScaleDiv(
+        m_secondAxis ? ScaleDiv::linear(m_y2Lo, m_y2Hi, yTicks) : yDiv);
+    m_axes[sideIndex(AxisSide::Right)].setYRange(m_secondAxis ? m_y2Lo : m_vp.yLower(),
+                                                 m_secondAxis ? m_y2Hi : m_vp.yUpper());
 }
 
 void PlotWidget::invalidateStatic()
@@ -482,6 +634,7 @@ void PlotWidget::paintEvent(QPaintEvent *event)
         p.setRenderHint(QPainter::Antialiasing, false);
 
         // 网格先画（在曲线之下），轴后画（在网格之上）。
+        // 右轴打开时，网格也只画一次——两条轴的网格重合会显得脏。
         for (const Axis &a : m_axes)
             a.paintGrid(&p, m_vp);
         for (const Axis &a : m_axes)
@@ -507,7 +660,33 @@ void PlotWidget::paintEvent(QPaintEvent *event)
     // 曲线画在静态图层之上；聚合结果按（数据版本, 视口, 列数）缓存，
     // 悬停/重绘不重扫数据。
     paintCurves(painter);
+    if (m_legend)
+        paintLegend(painter);
     paintOverlay(painter);
+}
+
+void PlotWidget::paintLegend(QPainter &painter)
+{
+    const QRectF plot = m_vp.plotRect();
+    QFont f = font();
+    const QFontMetrics fm(f);
+    const int rowH = fm.height() + 4;
+    int row = 0;
+    painter.save();
+    painter.setFont(f);
+    for (const Curve &c : m_curves)
+    {
+        if (!c.isVisible() || c.name().isEmpty())
+            continue;
+        const QPointF origin(plot.left() + 8, plot.top() + 8 + row * rowH);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(c.ink());
+        painter.drawRect(QRectF(origin.x(), origin.y() + 3, 10, 10));
+        painter.setPen(m_axes[sideIndex(AxisSide::Left)].labelColor());
+        painter.drawText(QPointF(origin.x() + 16, origin.y() + fm.ascent() + 1), c.name());
+        ++row;
+    }
+    painter.restore();
 }
 
 void PlotWidget::paintOverlay(QPainter &painter)

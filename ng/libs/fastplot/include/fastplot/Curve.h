@@ -5,6 +5,7 @@
 #include "fastplot/PlotData.h"
 
 #include <QColor>
+#include <QString>
 #include <QVector>
 
 namespace fastplot
@@ -22,6 +23,13 @@ class Curve
 public:
     static Curve fromData(const IPlotData *data, const QColor &ink, qreal lineWidth = 1.4);
     static Curve fromLod(const QVector<LodPoint> &lod, const QColor &ink, qreal lineWidth = 1.4);
+
+    // 曲线带多少点（LOD 是桶数，数据是行数）。缓存/自检用。
+    qsizetype pointCount() const { return isLod() ? m_lod.size() : (m_data ? m_data->size() : 0); }
+
+    // 图例里显示的名字（空 = 不进图例）。
+    QString name() const { return m_name; }
+    void setName(const QString &name) { m_name = name; }
 
     QColor ink() const { return m_ink; }
     void setInk(const QColor &color) { m_ink = color; }
@@ -48,6 +56,7 @@ private:
 
     const IPlotData *m_data = nullptr;
     QVector<LodPoint> m_lod;
+    QString m_name;
     QColor m_ink{0x5b, 0xc0, 0xf0};
     qreal m_lineWidth = 1.4;
     bool m_visible = true;

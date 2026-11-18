@@ -16,6 +16,26 @@ Axis::Axis(AxisSide side)
 {
 }
 
+void Axis::setYRange(double lo, double hi)
+{
+    if (lo > hi)
+        std::swap(lo, hi);
+    if (lo == hi)
+        hi = lo + 1.0;
+    m_yLo = lo;
+    m_yHi = hi;
+    m_hasYRange = true;
+}
+
+double Axis::yToPixel(const Viewport &vp, double value) const
+{
+    // 轴只负责"我的范围怎么映射到我的长度"，与曲线、画布都无关。
+    if (!m_hasYRange)
+        return vp.yToPixel(value);
+    const QRectF plot = vp.plotRect();
+    return plot.bottom() - (value - m_yLo) / (m_yHi - m_yLo) * plot.height();
+}
+
 int Axis::preferredMargin() const
 {
     if (!m_visible)
@@ -59,7 +79,7 @@ void Axis::paintGrid(QPainter *painter, const Viewport &vp) const
         case AxisSide::Left:
         case AxisSide::Right:
         {
-            const double py = vp.yToPixel(t.value);
+            const double py = yToPixel(vp, t.value);
             painter->drawLine(QPointF(plot.left(), py), QPointF(plot.right(), py));
             break;
         }
@@ -115,7 +135,7 @@ void Axis::paint(QPainter *painter, const Viewport &vp, const QRect &widgetRect)
         case AxisSide::Left:
         case AxisSide::Right:
         {
-            const double py = vp.yToPixel(t.value);
+            const double py = yToPixel(vp, t.value);
             const double baseX = (m_side == AxisSide::Left) ? plot.left() : plot.right();
             const double dir = (m_side == AxisSide::Left) ? -1.0 : 1.0;
             painter->drawLine(QPointF(baseX, py), QPointF(baseX + dir * len, py));
@@ -126,7 +146,7 @@ void Axis::paint(QPainter *painter, const Viewport &vp, const QRect &widgetRect)
                 double textX = (m_side == AxisSide::Left)
                     ? baseX - len - 4 - textW
                     : baseX + len + 4;
-                // 首尾标签会顶出控件边界：夹在窗口内，宁可贴边也不要被裁掉半个字。
+                // 竖向标签夹在控件内：宁可贴边，也不要被裁掉半个字。
                 textX = std::clamp(textX, double(widgetRect.left()),
                                    std::max(double(widgetRect.left()),
                                             double(widgetRect.right()) - textW));
@@ -147,9 +167,9 @@ void Axis::paint(QPainter *painter, const Viewport &vp, const QRect &widgetRect)
             {
                 const int textW = fm.horizontalAdvance(t.label);
                 double textX = px - textW / 2.0;
-                textX = std::clamp(textX, double(widgetRect.left()),
-                                   std::max(double(widgetRect.left()),
-                                            double(widgetRect.right()) - textW));
+                // 首尾刻度夹进绘图区：贴着画布边沿的标签不能被裁掉半截。
+                textX = std::clamp(textX, plot.left(),
+                                   std::max(plot.left(), plot.right() - textW));
                 const double textY = (m_side == AxisSide::Bottom)
                     ? baseY + len + fm.ascent() + 3
                     : baseY - len - 4;

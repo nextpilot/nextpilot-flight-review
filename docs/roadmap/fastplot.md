@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | P1–P3 完成（GUI 画布已接管，2026-11-18） |
+| 状态 | P1–P4 完成（GUI 画布已接管，2026-11-18） |
 | 位置 | `ng/libs/fastplot/` |
 | 目标 | 把老 `src/application/modules/plotting` 的**绘图能力**抽成独立库，供 ng 直接调用 |
 | 约束 | `src/` 只读参考，不改一行；库不依赖 `ng/core`，纯 Qt Widgets |
@@ -152,6 +152,18 @@ C++ 侧聚合 | `LodCache`：O(n) 一次扫描 → 每屏幕列 min/max；按（
 ng 接线 | `PlotCanvas` 装三个部件；`zoomed/panned` → `rangeChanged(t0,t1)` → `ChannelView` 合并定时器重取 LOD（`plot.channel` 新增 `t0Us/t1Us` 窗口参数，越界夹回表范围） |
 
 这样放大后画的是**窗口内**的 min/max，不是整段数据的包络——细节跟得上缩放。
+
+### P4 落地记录（2026-11-18）
+
+| 能力 | 实现 |
+|---|---|
+双轴 | `Curve::setYAxis(Right)` 声明归属；`PlotWidget::setYRange2` + 右轴独立的 `ScaleDiv`/映射 |
+图例 | `Curve::setName` + `setLegendVisible`；色块 + 名字画在绘图区左上角，不参与 LOD 缓存 |
+导出 | `exportPng()`（所见即所得）、`exportCsv()`（LOD 出 `x,min,max`、数据出 `x,y`，各曲线一段，带范围头注释） |
+状态 | `saveState()/restoreState()` 只存视图（x/y/y2 范围、轴可见性、背景、网格、图例），数据归宿主 |
+`autoScaleY` | 左右轴**各算各的**：挂右轴的曲线不参与左轴定界，否则两条不同量级的曲线会互相压扁 |
+
+**踩到的真问题**：`Axis` 原来把纵向映射写死成 `vp.yToPixel`，于是右轴的刻度线仍按左轴范围摆放（图上表现为右轴标签挤在一起、曲线"看起来走了左轴"）。修法是让轴自带范围——`Axis::setYRange(lo,hi)`，不设则退回 Viewport，单轴场景零改动。**一条轴只认自己的范围，不再向画布借映射**，这是双轴能成立的前提。
 
 ## 7. 构建接入
 
