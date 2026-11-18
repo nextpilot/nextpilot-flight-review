@@ -37,6 +37,7 @@
 **host 不碰 Widgets** | `ng_host` 是 STATIC 且只 link `ng_core + Qt6::Core`；`IModule.h` 只 `class QWidget;` 前置声明；CLI 可执行不 link gui | `host/CMakeLists.txt`、`app/CMakeLists.txt` |
 **交互能力也走接口** | `UiContext::pickFilePath`（`IModule.h:56`，`a5f2887` 新增）：器官要选文件**不许自己开 QFileDialog**，由外壳返回路径，模块拿到后照样发 `data.load` 意图 —— GUI 与 CLI/脚本加载数据仍是同一条路 | 看 `IModule.h` + 外壳实现 |
 **插拔被测试钉死** | `tests/test_architecture.cpp` 的 `ProbeModule` / `ProbePack` **只在该测试文件里**定义并自注册；哪天必须改 `App.cpp` 才能加模块，这条测试就红 | 跑契约测试 |
+| **骨架槽单一来源** | 骨架槽只在 `UiSlotRegistry::declareSkeletonSlots()` 一处声明，GUI 与 headless 拿同一份；契约测试钉死"槽齐备 + kind/父槽/label 完整 + 无未归属贡献" | 跑契约测试 |
 **视图链可用** | `test_gui` 断言 `dataset-tree` / `plot-canvas` 已登记、`dock.left` 面板存在、并能读出 1 dataset / 1 table | 跑 GUI 测试 |
 
 ---
@@ -91,6 +92,7 @@ P1-2 | **Intent 无 schema** | `op` 是裸字符串、payload 是 `QVariant`，�
 P1-3 | **`QWidget*` 是唯一耦合后门** | `requestPanel` 返回 `QWidget*`，器官一旦 `qobject_cast` 成具体视图类，就重新认识视图，耦合复活。**测试里可以，生产代码禁止** |
 P1-4 | **面板类型字符串静默失败** | 找不到工厂时 `requestPanel` 返回 `nullptr`，无日志无断言；类型名与器官声明之间没有对账机制（目前只有 `test_gui` 里硬写了两个名字） |
 P1-5 | **兼容入口未清** | `ModuleContext::data()/host()` 转发仍在，注释要求新代码用 `app()`；兼容入口留着，迟早长出第二条路径 |
+P1-6 | **幂等声明会静默丢弃后声明者** | `UiSlotRegistry::declareSlot` 是"先到者为准"。骨架槽曾在 host 层与 GUI 层各声明一次，于是信息更全的 GUI 那份被静默丢弃（label 不准、kind 退化成默认值），headless 还只看到半套槽。**已修**（骨架槽改为一处声明，见 §2 "骨架槽单一来源"）。同类风险仍在：任何新增的幂等声明接口都要问"谁先谁后，后来的会不会被吞" |
 
 ### P2 —— 内容单薄，属于进度而非缺陷
 

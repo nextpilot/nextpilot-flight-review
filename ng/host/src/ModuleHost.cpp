@@ -32,13 +32,16 @@ ModuleHost::ModuleHost(ng::core::AppContext &appCtx, QObject *parent)
     // 用一个保留 key 注册，避免与模块 handler 的 "%id/%index" 冲突。
     m_handlers.insert(QStringLiteral("@system/data.load"), &m_dataLoadHandler);
 
-    // app 骨架声明标准 UI 插槽（容器）。工具箱的 UI 贡献只是往这些槽里填内容；
-    // 骨架与器官代码从此不知道任何领域业务。headless 下这些槽也不创建 QWidget。
-    m_uiSlotRegistry.declareSlot(QStringLiteral("menu.plot"),   QStringLiteral("绘图菜单"),   QStringLiteral("app.skeleton"));
-    m_uiSlotRegistry.declareSlot(QStringLiteral("dock.left"),   QStringLiteral("左侧面板"),   QStringLiteral("app.skeleton"));
-    m_uiSlotRegistry.declareSlot(QStringLiteral("dock.right"),  QStringLiteral("右侧面板"),   QStringLiteral("app.skeleton"));
-    m_uiSlotRegistry.declareSlot(QStringLiteral("ribbon.home"), QStringLiteral("主页功能区"), QStringLiteral("app.skeleton"));
-    m_uiSlotRegistry.declareSlot(QStringLiteral("canvas.tool"), QStringLiteral("画布工具"),   QStringLiteral("app.skeleton"));
+    // app 骨架的标准 UI 插槽（容器）在**唯一一处**声明：
+    // 见 UiSlotRegistry::declareSkeletonSlots()。
+    //
+    // 这里不再重复声明——声明是幂等的（先到者为准），谁先谁后会让另一份
+    // 被静默丢弃：host 层声明的版本信息更少（没有 kind 与父槽、label 也不准），
+    // 而 GUI 层声明的版本更完整。放在一处，两边拿到的就是同一份。
+    //
+    // 骨架与器官代码从此不知道任何领域业务。
+    // headless 下这些槽也不创建 QWidget（槽是纯数据）。
+    ng::core::UiSlotRegistry::declareSkeletonSlots(m_uiSlotRegistry);
 }
 
 ModuleHost::~ModuleHost()

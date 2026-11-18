@@ -338,10 +338,15 @@ int main(int argc, char **argv)
         auto *doc = dynamic_cast<ng::core::IDocContribution *>(docRaw);
         CHECK(doc != nullptr && doc->entries().size() == 1);
 
-        // UI 插槽：器官声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
+        // UI 插槽：骨架声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
         // （动作数含本测试文件自注册的探针包贡献：menu.plot +1）
+        //
+        // 槽数是 8：骨架槽**唯一声明**（UiSlotRegistry::declareSkeletonSlots），
+        // headless 与 GUI 看到同一份。此前这里是 5 —— 因为骨架槽被声明在两处，
+        // 幂等的 declareSlot 让 host 层那份信息更少的版本**静默丢弃**了 GUI 那份，
+        // 于是 headless 只看到 5 个残缺槽（详见下方 1b 段的契约测试）。
         const auto &slotReg = application.modules().uiSlots();
-        CHECK(slotReg.allSlots().size() == 5);
+        CHECK(slotReg.allSlots().size() == 8);
         CHECK(slotReg.actionsIn(QStringLiteral("menu.plot")).size() == 3); // 姿态曲线 + TF 树 + 探针
         CHECK(slotReg.actionsIn(QStringLiteral("dock.left")).size() == 1); // 调参面板
         CHECK(slotReg.boundActionCount() == 6);
@@ -358,6 +363,52 @@ int main(int argc, char **argv)
         CHECK(toolbox.unregisterPack(QStringLiteral("pack.custom")));    // 按包原子撤销
         CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 5);
         fprintf(stdout, "[ok] 开放贡献点系统：5 知识包 / 6 类贡献 / (kind,domain) 二维索引 / UI 插槽 / 按包原子装卸\n");
+    }
+
+    // 1b) UI 插槽：骨架槽**唯一声明**，且信息完整。
+    //
+    // 这条契约来自一次真实缺陷：骨架槽曾在两处声明
+    // （host 层 ModuleHost 构造函数 + GUI 层 MainWindow::declareStandardSlots），
+    // 而 declareSlot 是幂等的（先到者为准），于是 host 层那份信息更少的声明
+    // （没有 kind/父槽、label 也不准）把 GUI 层那份**静默丢弃**了：
+    //   · dock.left 的 label 成了"左侧面板"而非"数据集"；
+    //   · ribbon.home / canvas.tool 落成默认 kind 的幽灵槽；
+    //   · headless（CLI --list-slots）只看到一半的骨架槽。
+    //
+    // 现在骨架槽只在 UiSlotRegistry::declareSkeletonSlots() 一处声明，
+    // GUI 与 headless 拿到同一份。这里钉死它的完整性。
+    {
+        const auto &slotReg = application.modules().uiSlots();
+
+        // 骨架槽齐备（headless 也能看到全部 —— 这正是"单一来源"的价值）。
+        for (const char *area : {"ribbon.page.home", "ribbon.group.home.data",
+                                 "ribbon.group.home.view", "dock.left", "dock.right",
+                                 "canvas.center", "canvas.tool", "menu.plot"})
+        {
+            CHECK(slotReg.slot(QString::fromLatin1(area)) != nullptr);
+        }
+
+        // 信息完整：kind 与父槽不能退化成默认值。
+        const UiSlot *page = slotReg.slot(QStringLiteral("ribbon.page.home"));
+        CHECK(page && page->kind == SlotKind::RibbonPage);
+        const UiSlot *grpData = slotReg.slot(QStringLiteral("ribbon.group.home.data"));
+        CHECK(grpData && grpData->kind == SlotKind::RibbonGroup);
+        CHECK(grpData && grpData->parentArea == QStringLiteral("ribbon.page.home"));
+        const UiSlot *canvas = slotReg.slot(QStringLiteral("canvas.center"));
+        CHECK(canvas && canvas->kind == SlotKind::Canvas);
+        const UiSlot *tool = slotReg.slot(QStringLiteral("canvas.tool"));
+        CHECK(tool && tool->kind == SlotKind::Canvas); // 画布工具归画布，不是默认 DockPanel
+
+        // label 要是**准确**的（曾经被 host 层那份"左侧面板"顶掉）。
+        const UiSlot *left = slotReg.slot(QStringLiteral("dock.left"));
+        CHECK(left && left->label == QStringLiteral("数据集"));
+        const UiSlot *right = slotReg.slot(QStringLiteral("dock.right"));
+        CHECK(right && right->label == QStringLiteral("属性"));
+
+        // 扩展的每个 UI 贡献都要能找到归属槽（曾有"航迹工具"落进无实现的空槽）。
+        CHECK(slotReg.unboundActions().isEmpty());
+
+        fprintf(stdout, "[ok] UI 插槽单一来源：骨架槽唯一声明、kind/父槽/label 完整、无未归属贡献\n");
     }
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）

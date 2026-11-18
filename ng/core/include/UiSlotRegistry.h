@@ -61,6 +61,20 @@ struct BoundUiAction
 class UiSlotRegistry
 {
 public:
+    // 声明 app 骨架的**标准插槽**（ribbon 页签/分组、停靠区、中央画布、菜单）。
+    //
+    // 为什么是静态方法而不是各层自己声明：
+    //   插槽是 app 的**骨架结构**，属于纯数据（无 QWidget），GUI 与 headless 都要看到
+    //   同一份 —— GUI 靠它绑定 SARibbon/ADS，CLI 靠它列出"某领域贡献了哪些入口"。
+    //   若让两层各自声明：
+    //     · 声明是幂等的（先到者为准），于是**后声明的那份被静默丢弃**；
+    //     · 而先声明的那份（host 层）信息更少（不知道 kind/父槽），label 也不准；
+    //     · headless 还会缺掉只在 GUI 层声明的那几个槽，槽集变成残缺的。
+    //   所以：**声明只有这一处**，谁需要就调它。
+    //
+    // 幂等：重复调用不会产生重复槽（declareSlot 先到者为准）。
+    static void declareSkeletonSlots(UiSlotRegistry &registry);
+
     // 声明一个插槽；同 area 重复声明以先到者为准。
     void declareSlot(const QString &area, const QString &label, const QString &owner,
                      SlotKind kind = SlotKind::DockPanel,

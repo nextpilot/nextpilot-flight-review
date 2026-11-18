@@ -67,25 +67,13 @@ MainWindow::~MainWindow()
 
 void MainWindow::declareStandardSlots()
 {
-    // app 骨架提供的标准插槽。工具箱与器官往这些槽里填内容，
-    // 骨架代码此后不再变动。
+    // app 骨架提供的标准插槽，在**唯一一处**声明：
+    // 见 UiSlotRegistry::declareSkeletonSlots()。
+    //
+    // 这里只做 GUI 侧的**幂等确认**（宿主已声明过，重复声明不会产生副本），
+    // 保证即便脱离宿主单独使用 MainWindow，槽也齐备。
     UiSlotRegistry &slotReg = m_context->slotRegistry();
-    slotReg.declareSlot(QStringLiteral("ribbon.page.home"), QStringLiteral("主页"),
-                        QStringLiteral("app.skeleton"), SlotKind::RibbonPage);
-    slotReg.declareSlot(QStringLiteral("ribbon.group.home.data"), QStringLiteral("数据"),
-                        QStringLiteral("app.skeleton"), SlotKind::RibbonGroup,
-                        QStringLiteral("ribbon.page.home"));
-    slotReg.declareSlot(QStringLiteral("ribbon.group.home.view"), QStringLiteral("视图"),
-                        QStringLiteral("app.skeleton"), SlotKind::RibbonGroup,
-                        QStringLiteral("ribbon.page.home"));
-    slotReg.declareSlot(QStringLiteral("dock.left"), QStringLiteral("数据集"),
-                        QStringLiteral("app.skeleton"), SlotKind::DockPanel);
-    slotReg.declareSlot(QStringLiteral("dock.right"), QStringLiteral("属性"),
-                        QStringLiteral("app.skeleton"), SlotKind::DockPanel);
-    slotReg.declareSlot(QStringLiteral("canvas.center"), QStringLiteral("画布"),
-                        QStringLiteral("app.skeleton"), SlotKind::Canvas);
-    slotReg.declareSlot(QStringLiteral("menu.plot"), QStringLiteral("绘图"),
-                        QStringLiteral("app.skeleton"), SlotKind::Menu);
+    UiSlotRegistry::declareSkeletonSlots(slotReg);
 
     // 骨架自带的**标准动作**：往标准插槽里放内容。
     //

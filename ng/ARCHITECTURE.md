@@ -434,6 +434,24 @@ gui::ShellBinder（唯一知道 SARibbon / ADS 的地方）
 - 业务 UI 随知识包装卸，app 骨架不动；
 - 第三方组件可整体替换，只改绑定器。
 
+#### 骨架槽：唯一声明处
+
+骨架槽（ribbon 页签/分组、左右停靠区、中央画布、画布工具、菜单）是 app 自己
+提供的**容器**，声明在 `UiSlotRegistry::declareSkeletonSlots()` —— **一处**。
+
+为什么必须一处（这是一次真实缺陷换来的）：`declareSlot` 是幂等的（先到者为准），
+若让 host 层与 GUI 层各自声明：
+
+| 后果 | 说明 |
+|---|---|
+| **信息更全的那份被丢弃** | host 层先声明（构造即跑），但它不知道 GUI 的容器语义——没有 `kind`、没有父槽、label 也不准；GUI 层那份更完整却被静默挡掉 |
+| **label 不准** | `dock.left` 显示"左侧面板"而非"数据集"，`dock.right` 显示"右侧面板"而非"属性" |
+| **幽灵槽** | 只在 host 层声明、GUI 层无容器实现的槽，其 `kind` 落成默认值；扩展往里填的动作因此没有真实去处 |
+| **headless 看到残缺的骨架** | 只在 GUI 层声明的槽（ribbon 页签/分组、中央画布）在 CLI 里完全不可见 —— 槽集变成半套 |
+
+单一来源同时解决"重复"与"残缺"：GUI 与 headless 拿到**同一份**完整槽集。
+契约测试钉死它（`test_architecture`：槽齐备、kind/父槽/label 完整、无未归属贡献）。
+
 ### 6.1 按功能分组，不产生上帝类
 
 需求原文：「不要把所有的 ui 功能全部塞到 mainwindow.cpp，导致以后无法管理，
@@ -444,7 +462,7 @@ gui::ShellBinder（唯一知道 SARibbon / ADS 的地方）
 ```
 gui/
   shell/                    外壳层：只做装配，零业务
-    MainWindow               窗口骨架：建 ribbon/dock、声明插槽、装器官、存取状态
+    MainWindow               窗口骨架：建 ribbon/dock、装器官、存取状态
     ShellBinder              唯一知道 SARibbon / ADS 的地方
     GuiContext               host::UiContext 的实现，把器官的 UI 需求路由出去
     PanelFactoryRegistry     部件类型 → QWidget 工厂（视图层自注册进这里）
