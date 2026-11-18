@@ -36,6 +36,11 @@ public:
     void setBackground(const QColor &color);
     QColor background() const { return m_background; }
 
+    // 画布标题（左上角）。非空时顶部会额外预留一行字高。
+    void setTitle(const QString &title);
+    QString title() const { return m_title; }
+    void setTitleColor(const QColor &color);
+
     void setGridVisible(bool visible);
     void replot();
 
@@ -72,6 +77,8 @@ private:
     Viewport m_vp;
     Axis m_axes[4];        // 索引 = AxisSide
     QColor m_background{0x10, 0x16, 0x1c};
+    QColor m_titleColor{0x33, 0x33, 0x33};
+    QString m_title;
     QPixmap m_staticCache;
     bool m_staticDirty = true;
     QVector<Curve> m_curves;

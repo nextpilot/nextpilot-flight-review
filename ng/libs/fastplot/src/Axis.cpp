@@ -36,7 +36,9 @@ int Axis::preferredMargin() const
     }
     case AxisSide::Bottom:
     case AxisSide::Top:
-        return fm.height() + m_tickLength + 8;
+        // 标签基线再下移 tickLength+ascent+3，最底一行还要留 descent，
+        // 所以 margin 必须覆盖 ascent+descent 整行（fm.height()）。
+        return fm.height() + m_tickLength + 10;
     }
     return 0;
 }
@@ -121,9 +123,13 @@ void Axis::paint(QPainter *painter, const Viewport &vp, const QRect &widgetRect)
             {
                 // 标签右对齐到刻度线外侧，留 4px 间隙。
                 const int textW = fm.horizontalAdvance(t.label);
-                const double textX = (m_side == AxisSide::Left)
+                double textX = (m_side == AxisSide::Left)
                     ? baseX - len - 4 - textW
                     : baseX + len + 4;
+                // 首尾标签会顶出控件边界：夹在窗口内，宁可贴边也不要被裁掉半个字。
+                textX = std::clamp(textX, double(widgetRect.left()),
+                                   std::max(double(widgetRect.left()),
+                                            double(widgetRect.right()) - textW));
                 painter->setPen(QPen(m_labelColor, 1.0));
                 painter->drawText(QPointF(textX, py + fm.ascent() / 2.0 - 1.0), t.label);
                 painter->setPen(QPen(m_ink, 1.0));
@@ -140,11 +146,15 @@ void Axis::paint(QPainter *painter, const Viewport &vp, const QRect &widgetRect)
             if (t.major)
             {
                 const int textW = fm.horizontalAdvance(t.label);
+                double textX = px - textW / 2.0;
+                textX = std::clamp(textX, double(widgetRect.left()),
+                                   std::max(double(widgetRect.left()),
+                                            double(widgetRect.right()) - textW));
                 const double textY = (m_side == AxisSide::Bottom)
                     ? baseY + len + fm.ascent() + 3
                     : baseY - len - 4;
                 painter->setPen(QPen(m_labelColor, 1.0));
-                painter->drawText(QPointF(px - textW / 2.0, textY), t.label);
+                painter->drawText(QPointF(textX, textY), t.label);
                 painter->setPen(QPen(m_ink, 1.0));
             }
             break;

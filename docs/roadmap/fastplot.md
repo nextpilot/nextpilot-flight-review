@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | P1 完成、P2 完成（2026-11-18） |
+| 状态 | P1 完成、P2 完成（GUI 画布已接管，2026-11-18） |
 | 位置 | `ng/libs/fastplot/` |
 | 目标 | 把老 `src/application/modules/plotting` 的**绘图能力**抽成独立库，供 ng 直接调用 |
 | 约束 | `src/` 只读参考，不改一行；库不依赖 `ng/core`，纯 Qt Widgets |
@@ -136,6 +136,10 @@ C++ 侧聚合 | `LodCache`：O(n) 一次扫描 → 每屏幕列 min/max；按（
 验收 | `fastplot` 测 3000 点正弦：700 列、峰值不丢、缓存命中不重扫；`fastplot_dataset` 测真实 `demo_flight.ulg`：3000 行 → 592 三联 → 出图 |
 
 实测（vm，offscreen）：ULog 3000 行 → 592 个三元组，曲线 5459 个像素，`fastplot_p2_ulg.png`。
+
+**GUI 接管**：`gui/views/plot/PlotCanvas` 不再自己画——内部持一个 `fastplot::PlotWidget`，
+只做"取 LOD → 转三元组 → addCurve"。`ng_gui` 公共链接 `fastplot`；CLI 不链，headless 依旧纯净。
+`plotscope-ng-gui-shot demo_flight.ulg` 出图：数据集树 3000 行 + `attitude.roll` 曲线 + 左/下轴刻度齐全。
 
 ## 7. 构建接入
 

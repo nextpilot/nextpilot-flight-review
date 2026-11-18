@@ -1,5 +1,6 @@
 #include "fastplot/PlotWidget.h"
 
+#include <QFontMetrics>
 #include <QPainter>
 #include <QPolygonF>
 #include <QResizeEvent>
@@ -95,6 +96,20 @@ void PlotWidget::setYRange(double lo, double hi)
 void PlotWidget::setBackground(const QColor &color)
 {
     m_background = color;
+    invalidateStatic();
+}
+
+void PlotWidget::setTitle(const QString &title)
+{
+    if (m_title == title)
+        return;
+    m_title = title;
+    relayout();   // 标题占一行，边距要重算
+}
+
+void PlotWidget::setTitleColor(const QColor &color)
+{
+    m_titleColor = color;
     invalidateStatic();
 }
 
@@ -327,6 +342,11 @@ void PlotWidget::relayout()
         left = std::min(left, 24);
         right = std::min(right, 24);
     }
+    if (!m_title.isEmpty())
+    {
+        // 标题压在最上面：给它一行字高，避免和轴标签抢位置。
+        top = std::max(top, QFontMetrics(m_axes[sideIndex(AxisSide::Top)].font()).height() + 10);
+    }
     if (height() - top - bottom < 30)
     {
         top = std::min(top, 8);
@@ -381,6 +401,17 @@ void PlotWidget::paintEvent(QPaintEvent *event)
             a.paintGrid(&p, m_vp);
         for (const Axis &a : m_axes)
             a.paint(&p, m_vp, rect());
+
+        if (!m_title.isEmpty())
+        {
+            const QRectF plot = m_vp.plotRect();
+            p.setPen(m_titleColor);
+            QFont f = font();
+            f.setBold(true);
+            p.setFont(f);
+            p.drawText(QRectF(plot.left(), 2, plot.width(), 18),
+                       Qt::AlignLeft | Qt::AlignVCenter, m_title);
+        }
         p.end();
 
         m_staticDirty = false;
