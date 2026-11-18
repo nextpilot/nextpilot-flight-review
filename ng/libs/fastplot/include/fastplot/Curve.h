@@ -18,6 +18,16 @@ namespace fastplot
 //
 // 曲线只持指针/三元组，不复制数据数组；LOD 三元组本身 <= 像素宽，
 // 拷贝它是有限开销（ng 侧每帧一次，不随行数增长）。
+// 散点符号形状。None = 不画符号（纯折线/包络）。
+enum class Symbol
+{
+    None,
+    Circle,
+    Square,
+    Diamond,
+    Cross
+};
+
 class Curve
 {
 public:
@@ -44,6 +54,15 @@ public:
     AxisSide yAxis() const { return m_yAxis; }
     void setYAxis(AxisSide side) { m_yAxis = side; }
 
+    // 散点模式：true = 不连线，只画符号（对应老画布 Scatter 模式）。
+    bool scatter() const { return m_scatter; }
+    void setScatter(bool on) { m_scatter = on; }
+
+    Symbol symbol() const { return m_symbol; }
+    void setSymbol(Symbol symbol) { m_symbol = symbol; }
+    qreal symbolSize() const { return m_symbolSize; }
+    void setSymbolSize(qreal size) { m_symbolSize = size; }
+
     bool isLod() const { return m_data == nullptr; }
     const IPlotData *data() const { return m_data; }
     const QVector<LodPoint> &lod() const { return m_lod; }
@@ -60,6 +79,9 @@ private:
     QColor m_ink{0x5b, 0xc0, 0xf0};
     qreal m_lineWidth = 1.4;
     bool m_visible = true;
+    bool m_scatter = false;
+    Symbol m_symbol = Symbol::Circle;
+    qreal m_symbolSize = 5.0;
     AxisSide m_yAxis = AxisSide::Left;
     LodCache m_cache;
 

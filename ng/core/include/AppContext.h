@@ -4,10 +4,15 @@
 #include "DataSourceRepository.h"
 #include "ExtensionRegistry.h"
 #include "IngestPipeline.h"
+#include "Result.h"
 #include "SettingsStore.h"
 
+#include <QHash>
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
+
+#include <functional>
 
 namespace ng::core
 {
@@ -34,6 +39,11 @@ namespace ng::core
 //     造成"多 App 实例时重复初始化"。
 //
 // 依赖方向：core → 无上层依赖；host 与 app 都只向下取用。
+// 视图动作处理器：GUI 视图在工厂里把自己的部件能力登记进来，
+// 外壳/模块按 id 触发。闭包可以捕获视图对象，但类型本身不含 QWidget——
+// core 依旧 headless 纯净（与 PanelFactoryRegistry 同一思路）。
+using ViewActionHandler = std::function<Result<QVariant>(const QVariantMap &params)>;
+
 class AppContext : public QObject
 {
     Q_OBJECT
@@ -87,6 +97,16 @@ public:
 
     void clearActiveChannel();
 
+    // === 视图动作登记与派发 ===
+    //
+    // 有些动作只能由具体部件完成（导出当前画布、切换图例、复原视图状态），
+    // 模块层拿不到 QWidget，于是视图在工厂里把处理器登记到这里；
+    // 外壳 ribbon 触发时先查这张表，命中就交视图执行，未命中再走意图层。
+    void registerViewAction(const QString &id, ViewActionHandler handler);
+    // 命中返回 true；out 带回成功载荷或错误。未注册返回 false。
+    bool dispatchViewAction(const QString &id, const QVariantMap &params,
+                            Result<QVariant> &out) const;
+
 Q_SIGNALS:
     // 当前活动源变化（GUI 树、脚本、CLI 都可订阅）。
     void activeSourceChanged(int sourceId);
@@ -99,6 +119,8 @@ private:
     ExtensionRegistry m_toolbox;
     DataSourceRepository m_sources;
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
+
+    QHash<QString, ViewActionHandler> m_viewActions;
 
     int m_activeSourceId = -1;
     QString m_activeTable;

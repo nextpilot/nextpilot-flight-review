@@ -39,4 +39,20 @@ void AppContext::clearActiveChannel()
     setActiveChannel(-1, QString(), QString());
 }
 
+void AppContext::registerViewAction(const QString &id, ViewActionHandler handler)
+{
+    if (handler)
+        m_viewActions.insert(id, std::move(handler));
+}
+
+bool AppContext::dispatchViewAction(const QString &id, const QVariantMap &params,
+                                    Result<QVariant> &out) const
+{
+    const auto it = m_viewActions.constFind(id);
+    if (it == m_viewActions.constEnd())
+        return false;
+    out = it.value()(params);
+    return true;
+}
+
 } // namespace ng::core

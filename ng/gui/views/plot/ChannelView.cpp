@@ -6,6 +6,7 @@
 #include "PanelFactoryRegistry.h"
 #include "Result.h"
 
+#include <QJsonObject>
 #include <QTimer>
 
 namespace ng::gui
@@ -146,6 +147,43 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                      [view](int datasetId, const QString &t, const QString &c) {
                          view->showChannel(datasetId, t, c);
                      });
+
+    // 视图动作：导出 / 视图状态 / 图例开关，由画布自己执行。
+    // 模块与外壳都不持有画布指针——外壳只按 id 派发，处理器在这里登记。
+    appCtx.registerViewAction(QStringLiteral("plot.export.png"),
+                              [canvas](const QVariantMap &params) -> Result<QVariant> {
+                                  const QString path = params.value(QStringLiteral("path")).toString();
+                                  if (path.isEmpty())
+                                      return fail(QStringLiteral("epath"), QStringLiteral("缺少导出路径"));
+                                  if (!canvas->exportPng(path))
+                                      return fail(QStringLiteral("eio"), QStringLiteral("PNG 导出失败"));
+                                  return QVariant(path);
+                              });
+    appCtx.registerViewAction(QStringLiteral("plot.export.csv"),
+                              [canvas](const QVariantMap &params) -> Result<QVariant> {
+                                  const QString path = params.value(QStringLiteral("path")).toString();
+                                  if (path.isEmpty())
+                                      return fail(QStringLiteral("epath"), QStringLiteral("缺少导出路径"));
+                                  if (!canvas->exportCsv(path))
+                                      return fail(QStringLiteral("eio"), QStringLiteral("CSV 导出失败"));
+                                  return QVariant(path);
+                              });
+    appCtx.registerViewAction(QStringLiteral("plot.state.save"),
+                              [canvas](const QVariantMap &) -> Result<QVariant> {
+                                  return QVariant(canvas->saveViewState());
+                              });
+    appCtx.registerViewAction(QStringLiteral("plot.state.restore"),
+                              [canvas](const QVariantMap &params) -> Result<QVariant> {
+                                  const auto state = params.value(QStringLiteral("state")).toJsonObject();
+                                  if (!canvas->restoreViewState(state))
+                                      return fail(QStringLiteral("estate"), QStringLiteral("视图状态复原失败"));
+                                  return QVariant(true);
+                              });
+    appCtx.registerViewAction(QStringLiteral("plot.legend.toggle"),
+                              [canvas](const QVariantMap &) -> Result<QVariant> {
+                                  canvas->setLegendVisible(!canvas->legendVisible());
+                                  return QVariant(canvas->legendVisible());
+                              });
 
     return canvas;
 }

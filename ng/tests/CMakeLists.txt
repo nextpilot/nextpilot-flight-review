@@ -87,3 +87,17 @@ target_sources(ng_test_instrument PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
 set_target_properties(ng_test_instrument PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_instrument COMMAND ng_test_instrument)
 set_tests_properties(ng_instrument PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# === 画布导出 / 视图状态 / 图例（P6：库能力接进 ng 视图层）===
+add_executable(ng_test_plot_io test_plot_io.cpp)
+target_include_directories(ng_test_plot_io PRIVATE ${CMAKE_SOURCE_DIR}/app)
+target_link_libraries(ng_test_plot_io PRIVATE
+    ng_gui
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_recording
+    ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+target_sources(ng_test_plot_io PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
+set_target_properties(ng_test_plot_io PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_plot_io COMMAND ng_test_plot_io)
+set_tests_properties(ng_plot_io PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

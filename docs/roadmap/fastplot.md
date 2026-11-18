@@ -223,7 +223,8 @@ ng 接线 | `PlotCanvas` 装三个部件；`zoomed/panned` → `rangeChanged(t0,
 坐标系 | Viewport/ScaleDiv/Axis/PlotWidget，网格、双轴、左右轴各自自动定界（P1/P4） |
 曲线数据 | IPlotData/ArrayData 零拷贝、Curve、LodCache；Rust LOD 直通，C++ 不重扫（P2） |
 交互 | Zoomer（滚轮/框选/键盘/复位）、Panner、Picker 悬停读数；窗口内重取 LOD（P3） |
-库级导出/状态 | exportPng/exportCsv、saveState/restoreState（P4，**库层已测，ng UI 入口未接**） |
+库级导出/状态 | exportPng/exportCsv、saveState/restoreState（P4 库层；P6 经视图动作接进 ng，ribbon 可触发） |
+散点符号 | Curve 符号模式（Circle/Square/Diamond/Cross）+ scatter 不连线（P7 库层） |
 六仪表 | 姿态/罗盘/表盘/经纬轨迹/3D 轨迹/瀑布；`plot.instrument` 意图 + InstrumentView 自注册面板（P5） |
 布局模型 | PlotLayout 存/读 pages 与 split 节点 JSON |
 
@@ -231,7 +232,7 @@ ng 接线 | `PlotCanvas` 装三个部件；`zoomed/panned` → `rangeChanged(t0,
 
 | 老模式 | 状态 | 备注 |
 |---|---|---|
-Scatter 散点 | 未迁 | Curve 目前只有折线，无符号/点样式 |
+Scatter 散点 | **库层已迁（P7）** | ng 视图尚未有模式选择入口，待会话层一起接 |
 BarChart 柱状图 | 未迁 | |
 Histogram 直方图 | 未迁 | |
 Spectrum 频谱 | 未迁 | |
@@ -244,12 +245,34 @@ Surface3D 三维曲面 | 未迁 | 已迁的 Trajectory3D 是轨迹折线，Water
 多页多画布（新建页、增删画布、水平/垂直拆分、行列网格、最大化还原） | 只有 PlotLayout JSON 模型，shell 无拆分画布 UI |
 A/B 双游标测量（Δt/Δy） | 未迁 |
 时间书签标记线、播放头竖线 | 未迁 |
-数据点符号样式（形状/大小） | 未迁 |
+数据点符号样式（形状/大小） | 库层已支持（P7），视图选择入口待接 |
 系列/轴属性编辑（颜色、左右轴归属、线型） | 未迁 |
-导出 PNG/CSV、视图状态保存的 UI/意图入口 | 库已具备，ng 未接线 |
+导出 PNG/CSV、视图状态/图例开关入口 | **已接（P6）**：视图动作登记到 AppContext，外壳按 id 派发 |
 仪表主界面入口 | 面板已注册 `plot-instrument`，ribbon 动作 / 双击通道推断 kind 未定 |
 
 ### 测试现状与缺口
 
-- 已覆盖：ctest 7/7——架构装配、GUI 装配、解析管道、P1–P4 库能力、真实 ULog LOD、六仪表库断言、ng 仪表意图+视图（合成数据六 kind + 真实 fixture 姿态/罗盘/表盘出图）。
-- 未覆盖：真实 fixture 的 track/traj3d/waterfall（该 fixture 无 gps/pos/多序列通道）；散点/柱/直方/频谱/曲面；多画布拆分；A/B 游标；导出文件内容回归；Windows 构建（本轮仅 Linux offscreen）。
+- 已覆盖：ctest 8/8——架构装配、GUI 装配、解析管道、P1–P4 库能力、真实 ULog LOD、六仪表库断言、ng 仪表意图+视图、画布导出/状态/图例（含经 AppContext 视图动作派发闭环）、散点符号出图。
+- 未覆盖：真实 fixture 的 track/traj3d/waterfall（该 fixture 无 gps/pos/多序列通道）；柱/直方/频谱/曲面；多画布拆分；A/B 游标；散点模式的 ng 视图入口；Windows 构建（本轮仅 Linux offscreen）。
+
+## 11. P6 视图动作机制 与 P7 散点（2026-11-18）
+
+### P6：库能力接进 ng
+
+导出/状态/图例是**部件侧动作**，模块层拿不到 QWidget。为此在 AppContext 加了一张视图动作表（与 PanelFactoryRegistry 同思路：只存 `std::function`，不含 QWidget 类型，core 依旧 headless 纯净）：
+
+| 环节 | 落地 |
+|---|---|
+登记 | `createPlotCanvas` 工厂把 `plot.export.png` / `plot.export.csv` / `plot.state.save` / `plot.state.restore` / `plot.legend.toggle` 处理器登记到 AppContext，闭包捕获画布 |
+派发 | 外壳 ribbon 触发时先 `dispatchViewAction`，命中交视图执行；未注册再回落意图层（CLI/脚本同路径） |
+选文件 | 导出路径对话框是外壳交互能力，留在 MainWindow（与 openDataFile 同例），处理器只收 `path` 参数 |
+测试 | `ng_test_plot_io`：直接调画布薄包装 + 经 AppContext 派发两条路径都断言；未知动作回落意图层 |
+
+**双轴未在本批接 UI**：当前画布是单曲线，左右轴归属要等多曲线叠加一起做；库层双轴能力 P4 已就绪。
+
+### P7：散点符号
+
+- `Curve::setScatter(true)` 不连线；`setSymbol(Circle/Square/Diamond/Cross)` + `setSymbolSize`。
+- 三种数据路径（LOD 桶 / 稀疏逐点 / 密集包络）都按 scatter 分支画符号；LOD 与密集路径取桶中点。
+- 测试：200 点菱形散点，1821 个符号像素，`fastplot_scatter.png`。
+- **遗留**：ng 视图还没有"按通道/图型选散点模式"的入口，随会话层图型选择一起接。

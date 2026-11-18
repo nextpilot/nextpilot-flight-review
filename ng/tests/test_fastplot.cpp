@@ -228,6 +228,40 @@ int main(int argc, char **argv)
                 path.toUtf8().constData());
     }
 
+    // 6b) 散点模式：只画符号不连线
+    {
+        const int n = 200;
+        std::vector<double> xs(n), ys(n);
+        for (int i = 0; i < n; ++i)
+        {
+            xs[i] = i * 0.05;
+            ys[i] = std::cos(i * 0.3) * 0.6 + 0.2 * std::sin(i * 1.7);
+        }
+        fastplot::ArrayData data(xs.data(), ys.data(), n, 31);
+
+        const QColor ink(0x8A, 0xD8, 0x6E);
+        fastplot::PlotWidget plot;
+        plot.resize(800, 400);
+        auto &curve = plot.addCurve(fastplot::Curve::fromData(&data, ink, 1.4));
+        curve.setScatter(true);
+        curve.setSymbol(fastplot::Symbol::Diamond);
+        curve.setSymbolSize(6.0);
+        assert(plot.autoScale());
+
+        const QImage img = plot.grabImage();
+        int markerPixels = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x)
+                if (img.pixelColor(x, y) == ink)
+                    ++markerPixels;
+        assert(markerPixels > 100);
+
+        const QString path = QDir::current().filePath(QStringLiteral("fastplot_scatter.png"));
+        assert(img.save(path));
+        fprintf(stdout, "[ok] 散点模式：%d 个符号像素，PNG 已写出 %s\n", markerPixels,
+                path.toUtf8().constData());
+    }
+
     // 7) 交互部件：缩放锚点不动、框选铺满、读数取最近样本
     {
         const int n = 3000;

@@ -506,6 +506,46 @@ void PlotWidget::paintCurves(QPainter &painter)
 
     painter.save();
     painter.setClipRect(plot);
+    // 散点符号：brush 填充形状；Cross 只画两条线。
+    auto drawMarker = [&](const QPointF &pt, const Curve &c) {
+        const double r = c.symbolSize() / 2.0;
+        if (c.symbol() == Symbol::Cross)
+        {
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(c.ink(), c.lineWidth()));
+            painter.drawLine(pt - QPointF(r, 0), pt + QPointF(r, 0));
+            painter.drawLine(pt - QPointF(0, r), pt + QPointF(0, r));
+            return;
+        }
+        painter.setBrush(QBrush(c.ink()));
+        painter.setPen(Qt::NoPen);
+        switch (c.symbol())
+        {
+        case Symbol::Circle:
+            painter.drawEllipse(pt, r, r);
+            break;
+        case Symbol::Square:
+            painter.drawRect(QRectF(pt.x() - r, pt.y() - r, 2 * r, 2 * r));
+            break;
+        case Symbol::Diamond:
+        {
+            QPolygonF d;
+            d << pt + QPointF(0, -r) << pt + QPointF(r, 0) << pt + QPointF(0, r)
+              << pt + QPointF(-r, 0);
+            painter.drawPolygon(d);
+            break;
+        }
+        case Symbol::None:
+        case Symbol::Cross:
+            break;
+        }
+    };
+
+    // 一批点的中点像素坐标（LOD 桶或数据点）。
+    auto midPoint = [&](const LodPoint &pt, AxisSide side) {
+        return QPointF(m_vp.xToPixel(pt.x), yToPixel(side, (pt.min + pt.max) / 2.0));
+    };
+
 
     for (Curve &c : m_curves)
     {
@@ -519,7 +559,15 @@ void PlotWidget::paintCurves(QPainter &painter)
         if (c.isLod())
         {
             // 内核已分桶：直接画，一行数据都不用扫。
-            drawEnvelope(c.m_lod, c.m_yAxis);
+            if (c.scatter())
+            {
+                for (const LodPoint &pt : c.m_lod)
+                    drawMarker(midPoint(pt, c.m_yAxis), c);
+            }
+            else
+            {
+                drawEnvelope(c.m_lod, c.m_yAxis);
+            }
             continue;
         }
 
@@ -542,14 +590,30 @@ void PlotWidget::paintCurves(QPainter &painter)
                 poly.push_back(QPointF(m_vp.xToPixel(x), yToPixel(c.m_yAxis, y)));
             }
             painter.setRenderHint(QPainter::Antialiasing, true);
-            painter.drawPolyline(poly);
+            if (c.scatter())
+            {
+                for (const QPointF &pt : poly)
+                    drawMarker(pt, c);
+            }
+            else
+            {
+                painter.drawPolyline(poly);
+            }
             painter.setRenderHint(QPainter::Antialiasing, false);
             continue;
         }
 
         // 密集数据：像素列 min/max 包络，绘制成本 O(像素宽)。
         const QVector<LodPoint> &pts = c.m_cache.points(*data, m_vp);
-        drawEnvelope(pts, c.m_yAxis);
+        if (c.scatter())
+        {
+            for (const LodPoint &pt : pts)
+                drawMarker(midPoint(pt, c.m_yAxis), c);
+        }
+        else
+        {
+            drawEnvelope(pts, c.m_yAxis);
+        }
     }
 
     painter.restore();

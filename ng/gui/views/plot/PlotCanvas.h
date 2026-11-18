@@ -3,6 +3,7 @@
 #include "Dataset.h"
 
 #include <QColor>
+#include <QJsonObject>
 #include <QVector>
 #include <QWidget>
 
@@ -55,6 +56,17 @@ public:
     // 上层按这个值向意图层请求 LOD——分辨率决策属于"画布有多大"，
     // 所以由画布自己回答，上层不重复推导。
     int plotPixelWidth() const;
+
+    // 导出（fastplot 库能力的视图薄包装；写文件在画布侧，模块层不碰 QWidget）。
+    bool exportPng(const QString &path);
+    bool exportCsv(const QString &path);
+
+    // 视图状态：只存视图（范围/轴/图例/背景），数据归宿主。
+    QJsonObject saveViewState() const;
+    bool restoreViewState(const QJsonObject &state);
+
+    void setLegendVisible(bool visible);
+    bool legendVisible() const;
 
     // 诊断/测试用。
     int lodPointCount() const { return m_lod.size(); }

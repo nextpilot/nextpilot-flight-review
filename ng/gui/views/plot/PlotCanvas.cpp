@@ -131,6 +131,37 @@ void PlotCanvas::pushToPlot()
     m_plot->autoScaleY();
 }
 
+bool PlotCanvas::exportPng(const QString &path)
+{
+    return m_plot && m_plot->exportPng(path);
+}
+
+bool PlotCanvas::exportCsv(const QString &path)
+{
+    return m_plot && m_plot->exportCsv(path);
+}
+
+QJsonObject PlotCanvas::saveViewState() const
+{
+    return m_plot ? m_plot->saveState() : QJsonObject();
+}
+
+bool PlotCanvas::restoreViewState(const QJsonObject &state)
+{
+    return m_plot && m_plot->restoreState(state);
+}
+
+void PlotCanvas::setLegendVisible(bool visible)
+{
+    if (m_plot)
+        m_plot->setLegendVisible(visible);
+}
+
+bool PlotCanvas::legendVisible() const
+{
+    return m_plot && m_plot->legendVisible();
+}
+
 bool PlotCanvas::visibleTimeRange(double *t0, double *t1) const
 {
     if (!m_plot || m_lod.isEmpty())

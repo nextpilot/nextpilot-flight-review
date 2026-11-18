@@ -433,6 +433,28 @@ void PlotModule::onAttach(UiContext &ui)
     // 具体资源由外壳管理——模块不直接依赖 GUI 资源。
     action.icon = QStringLiteral("plot_refresh");
     ui.addAction(action.area, action);
+
+    // 导出 / 图例：处理器由画布视图登记到 AppContext，外壳按 id 派发。
+    UiAction exportPng;
+    exportPng.id = QStringLiteral("plot.export.png");
+    exportPng.label = QStringLiteral("导出 PNG");
+    exportPng.area = QStringLiteral("ribbon.group.home.view");
+    exportPng.intentOp = QStringLiteral("plot.export.png");
+    ui.addAction(exportPng.area, exportPng);
+
+    UiAction exportCsv;
+    exportCsv.id = QStringLiteral("plot.export.csv");
+    exportCsv.label = QStringLiteral("导出 CSV");
+    exportCsv.area = QStringLiteral("ribbon.group.home.view");
+    exportCsv.intentOp = QStringLiteral("plot.export.csv");
+    ui.addAction(exportCsv.area, exportCsv);
+
+    UiAction legend;
+    legend.id = QStringLiteral("plot.legend.toggle");
+    legend.label = QStringLiteral("图例");
+    legend.area = QStringLiteral("ribbon.group.home.view");
+    legend.intentOp = QStringLiteral("plot.legend.toggle");
+    ui.addAction(legend.area, legend);
 }
 
 #include "PlotModule.moc"
