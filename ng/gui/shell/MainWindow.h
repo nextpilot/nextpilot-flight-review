@@ -94,6 +94,10 @@ private:
     // 与"打开数据"同级处理；不占用任何可卸载模块。
     void openProtocolInspector();
 
+    // 骨架自带的"协议编辑器"入口：创建/编辑/校验 .psproto 模板并试算单帧。
+    // 纯 GUI 工具（编辑配置文档，不入 Dataset），按 id 特判弹对话框。
+    void openProtocolEditor();
+
     // 窗口首次显示后：按真实宽度重排 ribbon。
     //
     // SARibbon 的面板是按 ribbon 的**当时宽度**算几何的。窗口显示前，

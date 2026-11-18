@@ -10,11 +10,15 @@ add_library(ng_ext_common OBJECT
     CsvImportProbe.h
     CsvParser.cpp
     CsvParser.h
+    CustomProtocolFormatDriver.cpp
+    CustomProtocolFormatDriver.h
+    CustomProtocolParser.cpp
+    CustomProtocolParser.h
     CommonPack.cpp
     CommonPack.h
     PspxParser.cpp
     PspxParser.h
 )
 target_include_directories(ng_ext_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ng_ext_common PUBLIC ng_core)
+target_link_libraries(ng_ext_common PUBLIC ng_core ng_protocol)
 set_target_properties(ng_ext_common PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

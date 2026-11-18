@@ -25,8 +25,7 @@ ChannelView::ChannelView(IIntentExecutor &executor, PlotCanvas *canvas, QObject 
     m_refreshTimer.setInterval(120);
     connect(&m_refreshTimer, &QTimer::timeout, this, [this] { refresh(); });
 
-    // 缩放/平移改变可见时间窗 → 按新窗口重取 LOD（带合并定时器）。
-    // 不重取的话，放大后看到的仍是整段数据的包络，糊成一片。
+    // 缩放/平移改变可见时间窗 → 按新窗口重取全部曲线（带合并定时器）。
     connect(m_canvas, &PlotCanvas::rangeChanged, this, [this](double t0, double t1) {
         m_windowSet = true;
         m_winT0 = t0;
@@ -34,55 +33,89 @@ ChannelView::ChannelView(IIntentExecutor &executor, PlotCanvas *canvas, QObject 
         m_refreshTimer.start();
     });
 
-    // 视口尺寸变化 → 按新像素宽重新取 LOD。
-    //
-    // 这是**分辨率正确性**的前提：抽稀的桶数必须等于画布实际像素宽。
-    // 若按旧宽度取数再拉伸，曲线会呈现梳齿状（每桶跨多个采样周期，
-    // min/max 被撑到值域两端），看起来像方波——是假象，不是数据。
-    //
-    // 用**合并定时器**而非直接重取：拖动窗口时 resize 事件连发，
-    // 每次都全量重扫百万行会把界面卡死。合并成一次即可——
-    // 反正用户停下来后只需要最终分辨率那一版。
+    // 视口尺寸变化 → 按新像素宽重新取 LOD（分辨率正确性）。
     connect(m_canvas, &PlotCanvas::viewportChanged, this, [this] {
         m_refreshTimer.start();
     });
 }
 
-bool ChannelView::showChannel(DatasetId datasetId, const QString &table, const QString &column,
-                               QString *err)
+QString ChannelView::makeKey(DatasetId datasetId, const QString &table, const QString &column)
 {
-    if (!m_canvas)
-        return false;
-
-    // 记住当前通道：视口变化时按它重新取数。
-    m_datasetId = datasetId;
-    m_table = table;
-    m_column = column;
-    // 换通道 = 换数据，旧的时间窗不再适用。
-    m_windowSet = false;
-    return doRender(err);
+    return QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column);
 }
 
-bool ChannelView::doRender(QString *err)
+int ChannelView::channelCount() const
+{
+    return m_channels.size();
+}
+
+bool ChannelView::addChannel(DatasetId datasetId, const QString &table, const QString &column,
+                             QString *err)
 {
     if (!m_canvas)
         return false;
-    const DatasetId datasetId = m_datasetId;
-    const QString table = m_table;
-    const QString column = m_column;
+    const QString key = makeKey(datasetId, table, column);
 
+    // 去重：同通道已存在则只刷新它，不重复叠加。
+    for (PlotSeries &s : m_channels)
+    {
+        if (s.key() == key)
+            return renderOne(s, err);
+    }
+
+    PlotSeries s;
+    s.datasetId = datasetId;
+    s.table = table;
+    s.column = column;
+    s.title = QStringLiteral("%1 / %2.%3").arg(datasetId).arg(table, column);
+    // 颜色由画布按当前已有条数分配；这里留空，renderOne 会补上。
+    if (!renderOne(s, err))
+        return false;
+    m_channels.append(s);
+    return true;
+}
+
+bool ChannelView::showChannel(DatasetId datasetId, const QString &table, const QString &column,
+                              QString *err)
+{
+    return addChannel(datasetId, table, column, err);
+}
+
+bool ChannelView::removeChannel(DatasetId datasetId, const QString &table, const QString &column)
+{
+    const QString key = makeKey(datasetId, table, column);
+    bool removed = false;
+    for (int i = m_channels.size() - 1; i >= 0; --i)
+    {
+        if (m_channels.at(i).key() == key)
+        {
+            m_channels.removeAt(i);
+            removed = true;
+        }
+    }
+    if (removed)
+        renderAll(nullptr);
+    return removed;
+}
+
+void ChannelView::clearChannels()
+{
+    m_channels.clear();
+    m_windowSet = false;
+    if (m_canvas)
+        m_canvas->clear();
+}
+
+bool ChannelView::renderOne(PlotSeries &series, QString *err)
+{
     // 取数走意图层：GUI 与 CLI/脚本同一条路径，行为一致、可录制回放。
     Intent intent;
     intent.op = QStringLiteral("plot.channel");
-    intent.params[QStringLiteral("dataset")] = datasetId;
-    intent.params[QStringLiteral("table")] = table;
-    intent.params[QStringLiteral("column")] = column;
-    // 像素级请求量按画布**实际绘图区**宽度定：绘制成本与像素宽相关，
-    // 与行数无关。由画布自己回答"我多宽"（PlotCanvas::plotPixelWidth），
-    // 上层不重复推导边距常量。
+    intent.params[QStringLiteral("dataset")] = series.datasetId;
+    intent.params[QStringLiteral("table")] = series.table;
+    intent.params[QStringLiteral("column")] = series.column;
     const int px = qMax(64, m_canvas->plotPixelWidth());
     intent.params[QStringLiteral("px")] = px;
-    // 可见时间窗（秒 → 微秒）：缩放后按窗口抽稀，细节才跟得上。
     if (m_windowSet && m_winT1 > m_winT0)
     {
         intent.params[QStringLiteral("t0Us")] = qint64(m_winT0 * 1e6);
@@ -113,24 +146,37 @@ bool ChannelView::doRender(QString *err)
         lod.append(triple);
     }
 
-    m_canvas->setChannel(datasetId, table, column,
-                         payload.value(QStringLiteral("title")).toString());
-    m_canvas->setLodData(lod, payload.value(QStringLiteral("t0")).toDouble(),
-                          payload.value(QStringLiteral("t1")).toDouble());
-
-    // 画布尺寸在**布局稳定之后**才是最终值（dock 区域、ribbon 重建都会改变它）。
-    // 所以取完数再排一次合并重取：等布局落定后按最终像素宽再取一版。
-    // 否则桶数会按"中间态宽度"算，与最终画布差几十像素——
-    // 表现为曲线右侧留白/拉伸，观感上像是"没画满"。
-    m_refreshTimer.start();
+    series.lod = lod;
+    series.t0 = payload.value(QStringLiteral("t0")).toDouble();
+    series.t1 = payload.value(QStringLiteral("t1")).toDouble();
+    if (series.title.isEmpty())
+        series.title = payload.value(QStringLiteral("title")).toString();
+    // 把这条曲线写进画布（画布按 key 更新/追加，并分配颜色）。
+    m_canvas->setSeries(series);
+    // 回读画布分配的颜色，保持稳定（下次重取不换色）。
+    const int idx = m_canvas->seriesCount() - 1;
+    if (const PlotSeries *inCanvas = m_canvas->seriesAt(idx))
+        if (inCanvas->key() == series.key())
+            series.color = inCanvas->color;
     return true;
+}
+
+bool ChannelView::renderAll(QString *err)
+{
+    bool allOk = true;
+    for (PlotSeries &s : m_channels)
+    {
+        if (!renderOne(s, err))
+            allOk = false;
+    }
+    return allOk;
 }
 
 void ChannelView::refresh()
 {
-    if (m_datasetId == kInvalidDataset || m_table.isEmpty() || m_column.isEmpty())
+    if (m_channels.isEmpty())
         return;
-    doRender(nullptr);
+    renderAll(nullptr);
 }
 
 QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
@@ -141,24 +187,21 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
     // 通道视图：负责"取数 + 填画布"，走意图层。
     auto *view = new ChannelView(executor, canvas, canvas);
 
-    // 订阅共享的"活动通道"：数据集树双击 → 这里自动重绘。
+    // 订阅共享的"活动通道"：数据集树双击 → 追加一条曲线。
     // 两个视图互不认识——协作全靠 AppContext 这一份共享状态。
     QObject::connect(&appCtx, &AppContext::activeChannelChanged, view,
                      [view](int datasetId, const QString &t, const QString &c) {
-                         view->showChannel(datasetId, t, c);
+                         view->addChannel(datasetId, t, c, nullptr);
                      });
 
     // 数据集树的"列"节点拖到画布：画布只解码 MIME 发信号，这里接住后
-    // 走与双击完全相同的 showChannel（→ plot.channel 意图）取数渲染。
+    // 走与双击完全相同的 addChannel（→ plot.channel 意图）取数渲染。
     QObject::connect(canvas, &PlotCanvas::channelDropped, view,
                      [&appCtx](int datasetId, const QString &t, const QString &c) {
-                         // 只更新共享活动通道；上面的 activeChannelChanged 订阅会把
-                         // 这次变化分发给所有视图（含本画布），与双击走同一条单一路径。
-                         // 不直接调 showChannel，避免同一拖拽触发两次渲染。
                          appCtx.setActiveChannel(datasetId, t, c);
                      });
 
-    // 视图动作：导出 / 视图状态 / 图例开关，由画布自己执行。
+    // 视图动作：导出 / 视图状态 / 图例开关 / 多曲线管理，由画布与视图执行。
     // 模块与外壳都不持有画布指针——外壳只按 id 派发，处理器在这里登记。
     appCtx.registerViewAction(QStringLiteral("plot.export.png"),
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
@@ -193,6 +236,26 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                               [canvas](const QVariantMap &) -> Result<QVariant> {
                                   canvas->setLegendVisible(!canvas->legendVisible());
                                   return QVariant(canvas->legendVisible());
+                              });
+    // 清空全部曲线。
+    appCtx.registerViewAction(QStringLiteral("plot.series.clear"),
+                              [view](const QVariantMap &) -> Result<QVariant> {
+                                  view->clearChannels();
+                                  return QVariant(true);
+                              });
+    // 当前曲线清单（供属性面板与脚本查询）。
+    appCtx.registerViewAction(QStringLiteral("plot.series.list"),
+                              [canvas](const QVariantMap &) -> Result<QVariant> {
+                                  QVariantList list;
+                                  for (const PlotSeries &s : canvas->series())
+                                      list.append(QVariantMap{
+                                          {QStringLiteral("key"), s.key()},
+                                          {QStringLiteral("dataset"), s.datasetId},
+                                          {QStringLiteral("table"), s.table},
+                                          {QStringLiteral("column"), s.column},
+                                          {QStringLiteral("points"), s.lod.size()},
+                                      });
+                                  return QVariant(list);
                               });
 
     return canvas;

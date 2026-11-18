@@ -3,6 +3,7 @@
 #include "GuiContext.h"
 #include "ImportDialog.h"
 #include "ProtocolInspectorDialog.h"
+#include "ProtocolEditorDialog.h"
 #include "ShellBinder.h"
 #include "ThemeManager.h"
 
@@ -99,6 +100,15 @@ void MainWindow::declareStandardSlots()
     inspectAction.icon = QStringLiteral("file_open");
     slotReg.bindLocal(inspectAction.area, inspectAction, QStringLiteral("app.skeleton"));
 
+    // "协议编辑器"：创建/编辑/校验顺序段协议模板（.psproto），试算单帧。
+    // 纯 GUI 工具，按 id 特判弹窗；编辑好的协议可被"自定义协议"数据格式直接加载。
+    UiAction editorAction;
+    editorAction.id = QStringLiteral("app.action.protocolEditor");
+    editorAction.label = QStringLiteral("协议编辑器");
+    editorAction.area = QStringLiteral("ribbon.group.home.data");
+    editorAction.icon = QStringLiteral("file_open");
+    slotReg.bindLocal(editorAction.area, editorAction, QStringLiteral("app.skeleton"));
+
     // "切换主题"是 app 骨架级能力（纯 GUI 展示态，非任何可卸载模块）。
     // 它只声明 intentOp=theme.toggle，真正干活的是 GUI 装配期注册的 ThemeManager——
     // 于是按钮、脚本、回放都走同一条 theme.toggle 意图路径。
@@ -165,6 +175,11 @@ void MainWindow::build(ModuleHost &host)
         if (actionId == QStringLiteral("app.action.protocolInspector"))
         {
             openProtocolInspector();
+            return;
+        }
+        if (actionId == QStringLiteral("app.action.protocolEditor"))
+        {
+            openProtocolEditor();
             return;
         }
 
@@ -240,6 +255,12 @@ void MainWindow::openProtocolInspector()
     // 专用协议检查对话框：消费工具箱里 IMessageParser 的自述信息。
     // 与 openDataFile 的区别：这里产的是可读字段帧（检查用），不是 Dataset（画图用）。
     ProtocolInspectorDialog::run(m_appCtx.toolbox(), this);
+}
+
+void MainWindow::openProtocolEditor()
+{
+    // 协议编辑器：编辑 .psproto 模板 + 校验 + 试算，逻辑来自 ng/libs/protocol。
+    ProtocolEditorDialog::run(this);
 }
 
 void MainWindow::showEvent(QShowEvent *event)

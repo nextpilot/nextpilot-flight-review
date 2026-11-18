@@ -910,9 +910,51 @@ script.run
 | 9 | **GUI 两层化**：shell/ + views/<功能>/，视图自注册 | 6 | ✅ 已建 |
 | 10 | 宿主喂数据流程接通 `DataSource`（读文件/流 → 管道 → 落库） | 7 | ✅ 已做（`IByteSource` + `IngestOrchestrator`；ulog / csv 均走管道，格式解析各只有一份实现；表名/缓存/stable id 三项宿主策略已归位） |
 | 11 | 器官补齐：`mod.source` / `mod.dataset` / `mod.analysis` / `mod.report` | 7 | ⬜ 待做 |
-| 12 | 视图注册表 + 首批 View（从老代码 PlottingCanvas 拆） | 11 | ⬜ 待做 |
+| 12 | 视图注册表 + 首批 View（从老代码 PlottingCanvas 拆） | 11 | ✅ 已建（plot-canvas / dataset-tree 自注册；PlotCanvas 退化为 fastplot 宿主） |
 | 13 | 外部插件扫描：dlopen + ABI 校验（解析器 + 录制格式 + 后端） | 2,3,4 | ⬜ 待做 |
-| 14 | 其余格式按 SPI 平移进对应知识包 | 2,10 | 🟡 进行中（ulog / csv 已完成；其余格式 mavlink/nmea/oem7/asc/blf/mdf4 待平移） |
+| 14 | 其余格式按 SPI 平移进对应知识包 | 2,10 | 🟡 进行中（ulog / csv / custom-protocol 已完成；其余格式 mavlink/nmea/oem7/asc/blf/mdf4 待平移） |
+| 15 | **plotting 会话层重写**：多曲线叠加 / 图例 / 拖拽追加 / 缩放重取 LOD / 导出 / 视图状态 | 12 | ✅ 已建（基于 fastplot 重写，不平移老 7081 行 UI 外壳） |
+| 16 | **protocol 逻辑资产平移**：`ng_protocol` 纯逻辑库 + SPI v2 解析器 + 薄协议编辑器 | 2 | ✅ 已建（2407 行纯逻辑平移；不做老 1749 行胖 UI） |
+
+### 11.1 本轮裁决：plotting 与 protocol 两个 module 的搬迁
+
+用户需求是"正常使用 plot 功能"与"protocol 逻辑资产 + 解析器 + 编辑器"。
+按总纲"老 `src/` 只作需求/算法参考，类结构与分层不在 ng 复刻"，两项都**不平移老外壳**：
+
+**plotting（会话层重写，不搬老 UI）**
+- 老 `modules/plotting` 约 7286 行，其中 7081 行是 `PlottingCanvas` 的 UI 外壳
+  （自研命令栈 / 属性页 / 粘性坐标 / 12 模式），真正 core 资产仅约 156 行。
+  平移外壳会把老 `CommandManager` / `PropertyManager` / `ModuleContext` 耦合带回 ng，
+  故只重写**会话层**能力，绘制内核用 fastplot。
+- `PlotCanvas` 从"单条 LOD"升级为 `QVector<PlotSeries>` 多曲线宿主，逐条
+  `addCurve(Curve::fromLod(...))`，全局 Y 范围取所有可见曲线的 min/max，
+  颜色由 palette 黄金角色相偏移分配。
+- `ChannelView` 从"呈现一个通道"改为"叠加 N 条通道"：`addChannel` 按
+  `datasetId|table|column` 去重，双击/拖拽字段都走同一追加路径；缩放/平移后按
+  可见时间窗与像素宽重新走 `plot.channel` 意图取数。内存铁律不变：
+  每条曲线 `(x,min,max)` 三元组数 ≤ 画布像素宽，与数据行数无关。
+- 新增 view actions `plot.series.clear` / `plot.series.list`，配合已有的
+  `plot.export.png` / `plot.export.csv` / `plot.state.save|restore` / `plot.legend.toggle`。
+- 12 模式、页面/拆分/最大化、AB 测量、书签/时标、播放头属**增量需求**，
+  本轮先交付"多曲线叠加 + 基础可用"，不阻塞主线。
+
+**protocol（纯逻辑库 + SPI 解析器 + 薄编辑器）**
+- 老 `protocol` 约 5342 行，可搬的是 `ProtocolDocument` / `ProtocolSpec` /
+  `SequentialCodec` 约 2407 行纯逻辑；老 1749 行 `ProtocolEditorDialog` 是胖 UI，不搬。
+- 新增 `libs/protocol`（`ng_protocol`，只依赖 `Qt6::Core`）：保留段解析 / 表达式 /
+  变体 / 校验 / 过滤算法，产出端从老 `PsHostApi` / `psBuildDataset` 改为中立的
+  `ProtocolDecodeResult`（channels + 统计），宿主再决定是否落 Dataset。
+- 新增 SPI v2 解析器 `CustomProtocolParser`（`extensions/common`）：`configure` 收
+  `{ "template": "<psproto JSON>" }`，feed 缓冲字节、finish 一次解码，经
+  `PsParserSink::frame_batch` 吐出 `PsFrameBatch`。解析器自身**不读文件**。
+- 配置边界：`templatePath` 是配置路径，由 `IFormatDriver::prepareParserOptions()`
+  读文件展开为 `template` 文本注入解析器；`DataLoadHandler` 调用该钩子，但
+  Workspace 申请单仍记录原始 `templatePath`，保证可重放。
+- 新增通用 `ImportDialog` 的 `file` 字段类型（QLineEdit + 浏览按钮），供协议模板选择。
+- 新增薄协议编辑器 `ProtocolEditorDialog`：新建 / 打开 / 保存 / 校验 / 试算单帧，
+  逻辑全部委托 `ng_protocol`，不复制任何解码规则。
+- 新增 `PropertySchema`（`core`）作为属性契约：schema 由提供者声明、属性表只是视图，
+  先定契约避免 plotting 属性页与协议编辑器长出两份私有属性面板。
 
 验证：编译全绿（Release + Debug 双构建）；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖
 **typed 多表模型 / 通道投影 / Rust LOD 抽稀·统计·抗混叠抽取 / ps-cache 指纹命中与过期**、
@@ -921,6 +963,9 @@ script.run
 **录制格式×后端正交 / 多路同时录制各写各的 / 未知后端明确报错**、
 **摄取单前端→多解析器扇出→各产独立数据集（结果互不覆盖）**、
 **视图层自注册（dataset-tree / plot-canvas 均已登记）**、
+**多曲线叠加（3 条不同色曲线不互相覆盖 / 同 key 刷新不新增 / 单项移除 / series.list）**、
+**protocol 逻辑资产（validate / parseDocument 往返 / 表达式求值 / 顺序帧解码成通道 /
+SPI v2 configure+feed+finish 吐 frame_batch / 未配置模板明确失败）**、
 意图执行、脚本 headless 执行、录制回放闭环，以及
 **9000 行 ULog 流式加载（跨 3 批 / F32+U16 typed 列 / U64 微秒时间轴精确）**；
 CLI 九入口实测可用；**CLI 无任何 GUI 依赖**（ldd 验证）；

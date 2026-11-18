@@ -1,4 +1,12 @@
 find_package(Qt6 REQUIRED COMPONENTS Core)
+
+# === 协议逻辑资产（顺序段协议解码内核平移）===
+# 纯逻辑测试：只依赖 ng_protocol + Qt Core，headless。
+add_executable(ng_test_protocol test_protocol.cpp)
+target_link_libraries(ng_test_protocol PRIVATE
+    ng_protocol ng_ext_common ng_ext_registry ng_host ng_core Qt6::Core)
+set_target_properties(ng_test_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_protocol COMMAND ng_test_protocol)
 add_executable(ng_test_architecture test_architecture.cpp)
 target_include_directories(ng_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。

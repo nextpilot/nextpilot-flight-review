@@ -18,11 +18,14 @@
 #include "MainWindow.h"
 #include "ModuleHost.h"
 #include "PlotCanvas.h"
+#include "ProtocolEditorDialog.h"
 #include "ShellBinder.h"
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QPlainTextEdit>
 #include <QPixmap>
+#include <QPushButton>
 #include <QTimer>
 
 #include <cstdio>
@@ -42,6 +45,40 @@ int main(int argc, char *argv[])
         return 2;
     }
     const QString out = QString::fromLocal8Bit(argv[1]);
+
+    // --protocol <输出png>：截图协议编辑器（填好样例帧并触发校验/试算）。
+    if (out == QStringLiteral("--protocol") && argc >= 3)
+    {
+        const QString png = QString::fromLocal8Bit(argv[2]);
+        ng::gui::ProtocolEditorDialog dlg;
+        // 对话框里有两个 QPlainTextEdit（JSON 模板框 + hex 样例框）。
+        // 不依赖构造顺序：含 "{" 的是 JSON 框（保持 blankTemplate 不动），
+        // 另一个是 hex 样例框，写入样例帧。
+        for (auto *edit : dlg.findChildren<QPlainTextEdit *>())
+        {
+            if (!edit->toPlainText().trimmed().startsWith(QLatin1Char('{')))
+                edit->setPlainText(QStringLiteral("AA 0C 00 01 00"));
+        }
+        // 触发"校验"与"试算单帧"按钮，让截图带上真实结果。
+        for (auto *btn : dlg.findChildren<QPushButton *>())
+        {
+            if (btn->text() == QStringLiteral("校验") ||
+                btn->text() == QStringLiteral("试算单帧"))
+                btn->click();
+        }
+        dlg.show();
+        QCoreApplication::processEvents();
+        QTimer::singleShot(200, [&] {
+            const QPixmap shot = dlg.grab();
+            if (shot.save(png))
+                fprintf(stdout, "协议编辑器截图已保存: %s (%dx%d)\n", qPrintable(png),
+                        shot.width(), shot.height());
+            else
+                fprintf(stderr, "协议编辑器截图保存失败: %s\n", qPrintable(png));
+            app.quit();
+        });
+        return app.exec();
+    }
     // 末尾若有两个纯数字，视为宽高；若出现 "dark"/"light" 关键字，视为初始主题。
     QStringList files;
     QString themeArg;
@@ -116,7 +153,9 @@ int main(int argc, char *argv[])
     if (firstDataset < 0)
         return 1;
 
-    // 选中第一条数值通道（与用户在数据集树双击同一条路径）
+    // 依次叠加全部数值通道：每次 setActiveChannel 等价于在数据集树双击一列，
+    // ChannelView 订阅后走 addChannel 追加一条曲线。这样截图呈现的是本轮的
+    // 核心能力——多曲线叠加，而不是只画一条。
     const Dataset *ds = application.data().get(firstDataset);
     if (ds && ds->tableCount() > 0)
     {
@@ -124,10 +163,7 @@ int main(int argc, char *argv[])
         for (const Column &c : table->columns)
         {
             if (c.type != ValueType::Text)
-            {
                 application.context().setActiveChannel(firstDataset, table->name, c.name);
-                break;
-            }
         }
     }
 

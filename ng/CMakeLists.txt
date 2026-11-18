@@ -55,6 +55,10 @@ endif()
 add_subdirectory(core)
 add_subdirectory(recording)
 add_subdirectory(host)
+
+# === 协议逻辑库（顺序段协议解码内核）===
+# 纯逻辑（只 Qt Core），SPI 解析器与协议编辑器共用；放在 extensions 之前。
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/libs/protocol" "${CMAKE_CURRENT_BINARY_DIR}/libs/protocol")
 add_subdirectory(modules/data)
 add_subdirectory(modules/plot)
 add_subdirectory(modules/script)

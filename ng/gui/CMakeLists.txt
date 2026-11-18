@@ -56,6 +56,8 @@ add_library(ng_gui OBJECT
     shell/ImportDialog.h
     shell/ProtocolInspectorDialog.cpp
     shell/ProtocolInspectorDialog.h
+    shell/ProtocolEditorDialog.cpp
+    shell/ProtocolEditorDialog.h
     # --- 通用绘图能力库 ---
     # 数据集视图已聚合进 modules/data/（功能专属，见该目录 CMakeLists）；
     # 这里只剩**通用绘图库**（将来抽成 Qwt-like 独立库，不属于任何器官/领域）：
@@ -76,7 +78,7 @@ target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 # fastplot：独立绘图库（只依赖 Qt Widgets）。绘图视图通过它绘制，
 # 因此 GUI 侧公共依赖；CLI 不链它，保持 headless 纯净。
-target_link_libraries(ng_gui PUBLIC ng_host ng_core ng_gui_theme fastplot Qt6::Widgets Qt6::Gui Qt6::Core
+target_link_libraries(ng_gui PUBLIC ng_host ng_core ng_gui_theme ng_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
 set_target_properties(ng_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 

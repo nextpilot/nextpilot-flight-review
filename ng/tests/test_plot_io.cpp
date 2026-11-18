@@ -138,6 +138,47 @@ int main(int argc, char *argv[])
         OK("视图动作：导出/状态/图例经 AppContext 派发闭环，未知动作回落意图层");
     }
 
+    // --- 6) 多曲线叠加：追加不覆盖、同 key 去重、单条移除 ---
+    {
+        auto mk = [](int id, const QString &col) {
+            PlotSeries s;
+            s.datasetId = id;
+            s.table = QStringLiteral("t");
+            s.column = col;
+            s.title = col;
+            QVector<LodTriple> l;
+            for (int i = 0; i < 40; ++i)
+                l.push_back(LodTriple{i * 0.01, std::sin(i * 0.1), std::sin(i * 0.1)});
+            s.lod = l;
+            s.t0 = 0.0;
+            s.t1 = 0.39;
+            return s;
+        };
+        canvas->clear();
+        canvas->setSeries(mk(1, QStringLiteral("roll")));
+        canvas->setSeries(mk(1, QStringLiteral("pitch")));
+        canvas->setSeries(mk(2, QStringLiteral("yaw")));
+        CHECK(canvas->seriesCount() == 3);
+        CHECK(canvas->lodPointCount() == 120);
+        // 同 key 刷新：不新增，点数不变。
+        canvas->setSeries(mk(1, QStringLiteral("roll")));
+        CHECK(canvas->seriesCount() == 3);
+        // 颜色互不相同（叠加可区分）。
+        CHECK(canvas->seriesAt(0)->color != canvas->seriesAt(1)->color);
+        // 单条移除。
+        CHECK(canvas->removeSeries(QStringLiteral("1|t|pitch")));
+        CHECK(canvas->seriesCount() == 2);
+        CHECK(canvas->seriesAt(0)->column == QStringLiteral("roll"));
+        CHECK(canvas->seriesAt(1)->column == QStringLiteral("yaw"));
+        // 曲线清单视图动作。
+        QVariant nullV;
+        Result<QVariant> listResult(nullV);
+        CHECK(application.context().dispatchViewAction(
+            QStringLiteral("plot.series.list"), {}, listResult));
+        CHECK(listResult.value().toList().size() == 2);
+        OK("多曲线叠加：追加/去重/移除/清单视图动作全部通过");
+    }
+
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");
     return 0;
 }

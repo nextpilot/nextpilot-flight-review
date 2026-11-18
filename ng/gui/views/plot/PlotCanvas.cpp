@@ -13,6 +13,9 @@
 #include <QResizeEvent>
 #include <QVBoxLayout>
 
+#include <cmath>
+#include <limits>
+
 using namespace ng::core;
 
 namespace ng::gui
@@ -24,6 +27,21 @@ namespace
 // 轴/网格/标题/背景色走 palette（见 applyPalette），同样随主题。
 const fastplot::AxisSide kSides[4] = {fastplot::AxisSide::Left, fastplot::AxisSide::Right,
                                       fastplot::AxisSide::Bottom, fastplot::AxisSide::Top};
+
+// 多曲线配色盘：从主题 highlight 出发做色相轮换，保证深浅主题都可读。
+// 不写死十六进制——取 palette 的一个基色，再按索引做 HSL 偏移。
+QColor paletteSeriesColor(const QPalette &pal, int index)
+{
+    const QColor base = pal.color(QPalette::Highlight);
+    int h = base.hue();
+    if (h < 0)
+        h = 210; // 无彩色（灰阶主题）时给一个稳定的蓝相
+    // 黄金角步进：相邻曲线色相差异大，多条也不易撞色。
+    const int hue = (h + int(index * 137.508)) % 360;
+    const int sat = qMax(90, base.saturation());
+    const int lit = qBound(110, base.lightness(), 170);
+    return QColor::fromHsl(hue, sat, lit);
+}
 } // namespace
 
 PlotCanvas::PlotCanvas(QWidget *parent)
@@ -76,51 +94,150 @@ PlotCanvas::PlotCanvas(QWidget *parent)
 
 PlotCanvas::~PlotCanvas() = default;
 
-void PlotCanvas::setChannel(DatasetId datasetId, const QString &table, const QString &column,
-                            const QString &title)
+const PlotSeries *PlotCanvas::seriesAt(int index) const
 {
-    m_datasetId = datasetId;
-    m_table = table;
-    m_column = column;
-    m_title = title;
-    m_plot->setTitle(title);
+    return index >= 0 && index < m_series.size() ? &m_series.at(index) : nullptr;
 }
 
 void PlotCanvas::setLodData(const QVector<LodTriple> &lod, double t0, double t1)
 {
-    m_lod = lod;
+    // 兼容入口：更新首条曲线的 LOD。
+    if (m_series.isEmpty())
+        return;
+    m_series[0].lod = lod;
+    m_series[0].t0 = t0;
+    m_series[0].t1 = t1;
     m_t0 = t0;
     m_t1 = t1;
     pushToPlot();
 }
 
+QColor PlotCanvas::nextSeriesColor() const
+{
+    return paletteSeriesColor(palette(), m_series.size());
+}
+
+int PlotCanvas::setSeries(const PlotSeries &series)
+{
+    // 同 key 已存在则原地更新（重复拖入同一通道不叠加、只刷新数据）。
+    for (int i = 0; i < m_series.size(); ++i)
+    {
+        if (m_series.at(i).key() == series.key())
+        {
+            PlotSeries updated = series;
+            if (updated.color.isValid() && !updated.color.name().isEmpty())
+            {
+                // 保留已有颜色（上层未显式指定时不要因刷新而换色）。
+                if (updated.color == m_series.at(i).color)
+                {
+                    // 保持不变
+                }
+            }
+            updated.color = m_series.at(i).color;
+            m_series[i] = updated;
+            m_title = updated.title;
+            m_plot->setTitle(updated.title);
+            pushToPlot();
+            return i;
+        }
+    }
+
+    PlotSeries s = series;
+    if (!s.color.isValid())
+        s.color = nextSeriesColor();
+    m_series.append(s);
+    if (m_series.size() == 1)
+    {
+        m_title = s.title;
+        m_plot->setTitle(s.title);
+    }
+    pushToPlot();
+    return m_series.size() - 1;
+}
+
+void PlotCanvas::setChannel(DatasetId datasetId, const QString &table, const QString &column,
+                            const QString &title)
+{
+    // 兼容入口：单条曲线替换全部（旧调用方/测试用）。
+    m_series.clear();
+    PlotSeries s;
+    s.datasetId = datasetId;
+    s.table = table;
+    s.column = column;
+    s.title = title;
+    s.color = paletteSeriesColor(palette(), 0);
+    m_series.append(s);
+    m_title = title;
+    m_plot->setTitle(title);
+    // 不在这里 pushToPlot：旧调用方随后会喂 LOD 数据触发绘制。
+}
+
+bool PlotCanvas::removeSeries(const QString &key)
+{
+    for (int i = 0; i < m_series.size(); ++i)
+    {
+        if (m_series.at(i).key() == key)
+        {
+            m_series.removeAt(i);
+            m_title = m_series.isEmpty() ? QString() : m_series.first().title;
+            pushToPlot();
+            return true;
+        }
+    }
+    return false;
+}
+
 void PlotCanvas::pushToPlot()
 {
-    if (m_lod.isEmpty())
+    m_plot->clearCurves();
+    if (m_series.isEmpty())
     {
-        m_plot->clearCurves();
+        m_plot->setLegendVisible(false);
+        m_plot->update();
         return;
     }
 
-    // 只转三元组（<= 像素宽），不复制原始数据——零拷贝的边界就在这里。
-    QVector<fastplot::LodPoint> pts;
-    pts.reserve(m_lod.size());
-    for (const LodTriple &t : m_lod)
-        pts.push_back(fastplot::LodPoint{t.x, t.min, t.max});
+    double lo = std::numeric_limits<double>::infinity();
+    double hi = -std::numeric_limits<double>::infinity();
+    bool haveTime = false;
 
-    m_plot->clearCurves();
-    const QColor curveInk = palette().color(QPalette::Highlight); // 主题 accent 色
-    auto &curve = m_plot->addCurve(fastplot::Curve::fromLod(pts, curveInk, 1.0));
-    // 图例名字用通道名（表格.列），不用整条标题——标题已经在画布左上角了。
-    curve.setName(m_table.isEmpty() ? m_column
-                                    : QStringLiteral("%1.%2").arg(m_table, m_column));
+    for (const PlotSeries &s : m_series)
+    {
+        if (s.lod.isEmpty() || !s.visible)
+            continue;
+        // 只转三元组（<= 像素宽），不复制原始数据——零拷贝的边界就在这里。
+        QVector<fastplot::LodPoint> pts;
+        pts.reserve(s.lod.size());
+        for (const LodTriple &t : s.lod)
+            pts.push_back(fastplot::LodPoint{t.x, t.min, t.max});
+
+        auto &curve = m_plot->addCurve(fastplot::Curve::fromLod(pts, s.color, s.lineWidth));
+        curve.setName(s.legendName());
+        curve.setYAxis(s.rightAxis ? fastplot::AxisSide::Right : fastplot::AxisSide::Left);
+        for (const LodTriple &t : s.lod)
+        {
+            lo = qMin(lo, qMin(t.min, t.max));
+            hi = qMax(hi, qMax(t.min, t.max));
+        }
+        if (!haveTime)
+        {
+            m_t0 = s.t0;
+            m_t1 = s.t1;
+            haveTime = true;
+        }
+    }
+
     m_plot->setLegendVisible(true);
-
     // 横轴按真实时间定界（不是按序号）：数据可能不等间隔。
-    if (m_t1 > m_t0)
+    if (haveTime && m_t1 > m_t0)
         m_plot->setXRange(m_t0, m_t1);
-    // 纵轴按 LOD 的 min/max 自动留 5% 余量。
-    m_plot->autoScaleY();
+    // 纵轴按所有可见曲线的全局 min/max 留 5% 余量，保证多曲线同尺度可比。
+    if (std::isfinite(lo) && std::isfinite(hi) && hi > lo)
+    {
+        const double pad = (hi - lo) * 0.05 + 1e-9;
+        m_plot->setYRange(lo - pad, hi + pad);
+    }
+    m_plot->update();
 }
 
 bool PlotCanvas::exportPng(const QString &path)
@@ -156,7 +273,7 @@ bool PlotCanvas::legendVisible() const
 
 bool PlotCanvas::visibleTimeRange(double *t0, double *t1) const
 {
-    if (!m_plot || m_lod.isEmpty())
+    if (!m_plot || m_series.isEmpty())
         return false;
     const auto &vp = m_plot->viewport();
     // 只认时间轴（x）；数据为空时 viewport 仍是默认 0..1，不能拿来当时间窗。
@@ -165,6 +282,14 @@ bool PlotCanvas::visibleTimeRange(double *t0, double *t1) const
     if (t1)
         *t1 = vp.xUpper();
     return true;
+}
+
+int PlotCanvas::lodPointCount() const
+{
+    int n = 0;
+    for (const PlotSeries &s : m_series)
+        n += s.lod.size();
+    return n;
 }
 
 int PlotCanvas::plotPixelWidth() const
@@ -176,34 +301,32 @@ int PlotCanvas::plotPixelWidth() const
 
 void PlotCanvas::renderFrom(const Dataset &dataset)
 {
-    if (m_table.isEmpty() || m_column.isEmpty())
+    // 用每条序列自己的 table.column 从 Dataset 重新取 LOD（便捷入口）。
+    for (PlotSeries &s : m_series)
     {
-        clear();
-        return;
+        if (s.table.isEmpty() || s.column.isEmpty())
+            continue;
+        const Table *table = dataset.table(s.table);
+        if (!table)
+            continue;
+        const int px = plotPixelWidth();
+        const auto lod = dataset.lodMinMax(s.table, s.column,
+                                           table->firstTimeUs, table->lastTimeUs, px);
+        s.lod = lod;
+        s.t0 = table->firstTimeUs / 1000000.0;
+        s.t1 = table->lastTimeUs / 1000000.0;
     }
-    const Table *table = dataset.table(m_table);
-    if (!table)
-    {
-        clear();
-        return;
-    }
-
-    // 抽稀在 Rust 内完成：输出恒定为 <= 像素宽 个三元组。
-    const int px = plotPixelWidth();
-    const auto lod = dataset.lodMinMax(m_table, m_column, table->firstTimeUs, table->lastTimeUs, px);
-    if (lod.isEmpty())
-    {
-        clear();
-        return;
-    }
-    setLodData(lod, table->firstTimeUs / 1000000.0, table->lastTimeUs / 1000000.0);
+    pushToPlot();
 }
 
 void PlotCanvas::clear()
 {
-    m_lod.clear();
+    m_series.clear();
+    m_title.clear();
     m_t0 = m_t1 = 0.0;
     m_plot->clearCurves();
+    m_plot->setTitle(QString());
+    m_plot->setLegendVisible(false);
     m_plot->update();
 }
 

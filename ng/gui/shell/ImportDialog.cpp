@@ -10,6 +10,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -63,6 +64,9 @@ QWidget *primaryWidget(QWidget *w)
         return cb;
     if (auto *sp = qobject_cast<QSpinBox *>(w))
         return sp;
+    // file 字段的容器：里面的 QLineEdit 才是值来源。
+    if (auto *line = w ? w->findChild<QLineEdit *>() : nullptr)
+        return line;
     return w;
 }
 
@@ -379,6 +383,28 @@ void ImportDialog::rebuildFields()
                 }
             }
             editor = cb;
+        }
+        else if (fld.type == QLatin1String("file"))
+        {
+            // 文件选择字段（如自定义协议模板 .psproto）：文本框 + 浏览按钮。
+            // editor 仍是 QLineEdit，值读取/可见性逻辑与 string 完全一致；
+            // 浏览按钮只是便利性，不引入新的值来源（遵守单一数据源）。
+            auto *host = new QWidget;
+            auto *row = new QHBoxLayout(host);
+            row->setContentsMargins(0, 0, 0, 0);
+            row->setSpacing(4);
+            auto *line = new QLineEdit(f.value(QStringLiteral("default")).toString());
+            auto *browseBtn = new QPushButton(QStringLiteral("浏览…"));
+            const QString filter = f.value(QStringLiteral("filter")).toString(QStringLiteral("所有文件 (*.*)"));
+            const QString title = f.value(QStringLiteral("hint")).toString(QStringLiteral("选择文件"));
+            QObject::connect(browseBtn, &QPushButton::clicked, this, [this, line, title, filter] {
+                const QString picked = QFileDialog::getOpenFileName(this, title, QString(), filter);
+                if (!picked.isEmpty())
+                    line->setText(picked);
+            });
+            row->addWidget(line, 1);
+            row->addWidget(browseBtn);
+            editor = host; // primaryWidget 需要认识这个容器
         }
         else
         {

@@ -7,7 +7,9 @@
 
 一句话结论：
 
-> **ng 解决了「东西怎么放」，没有解决「东西是什么」。机制层面已闭合，内容与迁移层面尚未开始。**
+> **ng 解决了「东西怎么放」，正在补「东西是什么」。机制层面已闭合；
+> 内容迁移已启动——plotting 会话层与 protocol（逻辑资产 + 解析器 + 编辑器）已完成首轮，
+> 其余格式与视图模式仍在迁移中。**
 
 ---
 
@@ -62,6 +64,8 @@
 | **视图链可用** | `test_gui` 断言 `dataset-tree` / `plot-canvas` 已登记、`dock.left` 面板存在、并能读出 1 dataset / 1 table | 跑 GUI 测试 |
 | **视图物理归属** | 三类判据：①功能专属 view 聚合进该功能目录（`modules/data/DataManagerPanel.*`），CMake 拆 `<功能>`/`<功能>_gui` 两 target（前者 CLI 链、后者只 GUI 链）；②通用能力库留 `gui/views/`——`plot-canvas` 将来抽成 Qwt-like 独立绘图库，**不属于任何器官、不进 modules**；③领域面板**永远属于领域**，留 `extensions/<域>/gui/`，不进 modules（器官是机制不懂业务）、不进 gui/views（会成领域杂物箱）。物理聚合但逻辑仍解耦：器官只发字符串 id，不 include 视图头 | `ldd` 确认 CLI 与 headless 测试无 Qt6Widgets、无 `DataManagerPanel.cpp.o`；GUI 测试含之 |
 | **data 意图归口宿主** | `data.load` + 派生（`data.reload`/`export`/`recent`/`clearCache`，`DataCommandsHandler`）都是宿主系统级 handler，不归属可卸载模块（要访问 AppContext 的 repo/sources/settings/pipeline）；`DataModule.onAttach` 只声明绑真实 intentOp 的 action。补能力铁律：**只搬底层有 API 支撑的，不造空按钮**。reload 用稳定 id 保持数据集不换 id（订阅者不失联） | 跑 `test_architecture` 3c 段 + `test_gui` action 段；headless 下四意图均可执行 |
+| **plot 多曲线叠加** | `PlotCanvas` 持 `QVector<PlotSeries>` 逐条喂 fastplot，`ChannelView::addChannel` 按 `datasetId\|table\|column` 去重，双击/拖拽共用追加路径；缩放/平移按可见窗重取 LOD；`test_plot_io` 钉死 3 曲线不同色/同 key 不新增/单项移除/`series.list` | 跑 `test_plot_io`；或 `plotscope-ng-gui-shot <png> <multi-col.csv>` 截图看 3 色曲线 |
+| **protocol 首轮迁移** | `libs/protocol`（`ng_protocol`，纯逻辑，只依赖 Qt6::Core）+ SPI v2 `CustomProtocolParser`（configure 收模板/finish 解码吐 frame_batch）+ 薄 `ProtocolEditorDialog`（新建/打开/保存/校验/试算）；`test_protocol` 钉死 validate/往返/求值/帧解码/SPI 闭环 | 跑 `ng_test_protocol`；或 `plotscope-ng-gui-shot --protocol <png>` 截图 |
 
 ---
 
@@ -91,9 +95,13 @@
   `src<源id>_<解析器id>`。
 - 处置（后续新格式）：**直接走 SPI，不写 driver 的 load()**。否则每加一个格式要写两份，录制回放只能覆盖其中一条。
 
-**P0-2 属性编辑无归属。**
-老 `PropertyManager` 449 行是「protocol 对话框」和「绘图属性页」**共同偷偷依赖**的能力；ng 没有对应物。
-处置：先定契约再搬 —— **属性 schema 由提供者声明，属性表只做视图显示**，两边通过 `Intent(prop.*)` 走同一条路。不定就先搬 protocol/plot，必然长出两份私有属性面板。
+**P0-2 属性编辑无归属 —— 契约已定，视图未接。**
+老 `PropertyManager` 449 行是「protocol 对话框」和「绘图属性页」**共同偷偷依赖**的能力。
+处置：先定契约再搬 —— **属性 schema 由提供者声明，属性表只做视图显示**，两边通过 `Intent(prop.*)` 走同一条路。
+**已进展**：`core/PropertySchema.h/.cpp` 已建（纯数据 `PropertySchema/PropObject/PropRow/PropKind` +
+`PropIntent` 常量 `prop.schema`/`prop.set`），协议编辑器明确不走此契约（文档级形态不同）。
+**仍待做**：通用属性面板 GUI 尚未接；plot 属性页与通用属性表尚未统一到该契约。
+注意协议编辑器是「整篇 JSON 文档」工具，与属性面板（少量键值行）形态不同，**不强行纳入** PropertySchema，否则会把文档编辑塞进键值视图。
 
 **P0-3 文档级状态无归宿。**
 老 `ModuleBridge` 31 项里有 5 项属于「文档级状态」（时标/书签），ng 的 `Intent`/`Dataset` 里没有明确位置；ng 也**没有 Document / Project 边界**。
@@ -131,8 +139,9 @@ P1-6 | **幂等声明会静默丢弃后声明者** | `UiSlotRegistry::declareSlo
 | 目标能力 | 现状 | 差什么 | 卡在哪 |
 |---|---|---|---|
 多格式解析（7 种：ulog/mavlink/nmea/oem7/asc/blf/mdf4） | 3 种 | 逐格式平移 + 等价性快照 | P0-1 必须先归并通路 |
-12 种视图 | 库层 12 种模式已全部归属 fastplot（见 `docs/roadmap/fastplot.md` §13），ng 视图仍只接了时间序列 + 六仪表 | 会话层多曲线叠加、图型选择入口、游标/书签/多画布 | 多曲线叠加是前置项 |
+12 种视图 | 库层 12 种模式已全部归属 fastplot（见 `docs/roadmap/fastplot.md` §13）；ng 会话层已完成**多曲线叠加**，仍只接时间序列 + 六仪表 | 图型选择入口、游标/书签/多画布 | 多曲线叠加前置项**已完成** |
 报告自动化 | 无 | `mod.report` + headless 渲染 | #11 |
+protocol 逻辑资产 | `ng_protocol` 纯逻辑库 + SPI v2 解析器 + 薄编辑器均已建，`test_protocol` 全绿 | 校验/试算已可用；位域模型/表达式图形编辑未做（老 1749 行胖 UI 不平移） | 首轮已完成 |
 插件生态 | 只有入口 | dlopen + ABI 校验 | P1-1 |
 工程文件（存盘/打开） | 无 | Document 边界 | P0-3 |
 Lua 停产风险 | 老绑定约 40 个 | 按 Intent op 重写，不做 shim | 需确认在用的脚本数量 |
@@ -156,7 +165,8 @@ Lua 停产风险 | 老绑定约 40 个 | 按 Intent op 重写，不做 shim | �
 
 - **库层完成**：坐标/数据零拷贝/交互/双轴图例导出/六仪表/散点符号/柱状/直方/频谱，全部在 `ng/libs/fastplot/`，纯 Qt Widgets、不依赖 ng/core；ctest 8/8（Linux offscreen）。
 - **老 12 种模式归属**与**待办清单**见 `docs/roadmap/fastplot.md` §13，下次回顾先看那里。
-- **下一步前置**：多曲线叠加（系列增删、左右轴归属）；之后才是图型选择入口、XY 配对、游标/书签/多画布。
+- **多曲线叠加已完成**（2026-11-19）：`PlotCanvas` 多 series + `ChannelView::addChannel` 去重追加 + 图例 + 缩放重取 LOD；`test_plot_io` 与 GUI 截图双重验证。
+- **下一步**：图型选择入口、XY 配对、游标/书签/多画布；左右轴归属（`rightAxis` 字段已预留，UI 入口待做）。
 - **红线不变**：`src/` 只读不改；库不复制数据；会话胶水（页签/多文档/布局/撤销）留在 ng 模块，不进库。
 
 ---
@@ -184,7 +194,7 @@ module 没法解耦 | ✅ 解了，而且是焊死的（include 不到，不是�
 注册方式太多（8 扇门） | ✅ 解了：一种写法 × 四个落点 |
 器官要有界面、但新增不改别人代码 | ✅ 解了：器官声明入口，视图实现控件 |
 用信号槽把 `MainWindow*` 发给模块 | ⚠️ 半边：通知用信号，命令用 Intent，指针不进模块 |
-plot 3000+ 行 | ✅ 库层已拆：fastplot 独立库，12 种模式全部有归属；⚠️ 会话层（多曲线/游标/拆分画布）未接 |
+plot 3000+ 行 | ✅ 库层已拆：fastplot 独立库，12 种模式全部有归属；✅ 会话层多曲线叠加/图例/拖拽/导出已接；⚠️ 游标/书签/拆分画布仍是增量 |
 MainWindow 太大 | ✘ 误诊：老 `MainWindow.cpp` 只有 194 行，真痛点是「同一件事 6 种注册写法」 |
 
 ---

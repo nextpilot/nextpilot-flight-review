@@ -262,9 +262,11 @@ int main(int argc, char **argv)
     fprintf(stdout, "[ok] 零改动新增：测试内自注册的探针模块被自动装载并可执行\n");
 
     ExtensionRegistry &toolbox = application.modules().extensions();
-    CHECK(toolbox.count() == 2);
+    // 断言语义（关键格式已装入）而非硬编码总数——加一个格式驱动不该让契约测试变红。
+    CHECK(toolbox.count() >= 3);
     CHECK(toolbox.contains(QStringLiteral("csv")));
     CHECK(toolbox.contains(QStringLiteral("ulog")));
+    CHECK(toolbox.contains(QStringLiteral("custom-protocol"))); // 自定义协议格式
     // 探针包也自动进了工具箱（同样零改动）。
     CHECK(toolbox.packIds().contains(QStringLiteral("pack.probe")));
     fprintf(stdout, "[ok] 零改动新增：测试内自注册的探针知识包被自动装入工具箱\n");
@@ -277,7 +279,8 @@ int main(int argc, char **argv)
     // 工具箱按业务领域分类：CSV=通用，ULog=飞控。
     CHECK(toolbox.driverForFormat(QStringLiteral("csv"))->domain() == FormatDomain::General);
     CHECK(toolbox.driverForFormat(QStringLiteral("ulog"))->domain() == FormatDomain::Autopilot);
-    CHECK(toolbox.driversByDomain(FormatDomain::General).size() == 1);
+    CHECK(toolbox.driverForFormat(QStringLiteral("custom-protocol"))->domain() == FormatDomain::General);
+    CHECK(toolbox.driversByDomain(FormatDomain::General).size() >= 2); // CSV + 自定义协议
     CHECK(toolbox.driversByDomain(FormatDomain::Autopilot).size() == 1);
     CHECK(toolbox.driversByDomain(FormatDomain::Automotive).isEmpty()); // 预留领域暂无驱动
     CHECK(toolbox.domains().size() == 2);
@@ -285,10 +288,12 @@ int main(int argc, char **argv)
     CHECK(domainName(FormatDomain::Robotics) == QStringLiteral("机器人"));
 
     // 外部插件扫描（本轮预留入口）：空目录返回空报告，不报错、不影响内置格式。
+    const int formatsBeforeScan = toolbox.count();
     ng::ext::PluginScanReport scan = ng::ext::scanExternalPlugins(toolbox, dir.path());
     CHECK(scan.discovered.isEmpty());
-    CHECK(toolbox.count() == 2); // 扫描未改动工具箱
-    fprintf(stdout, "[ok] 器官(3) 与工具箱(2 格式驱动) 分离装载；自注册 + 后缀推断 + 插件扫描入口就绪\n");
+    CHECK(toolbox.count() == formatsBeforeScan); // 扫描未改动工具箱
+    fprintf(stdout, "[ok] 器官(3) 与工具箱(%d 格式驱动) 分离装载；自注册 + 后缀推断 + 插件扫描入口就绪\n",
+            formatsBeforeScan);
 
     // 1b) 工具箱是开放贡献点系统：知识包装载/卸载 + 六类贡献 + (kind,domain) 二维索引。
     {
@@ -318,7 +323,7 @@ int main(int argc, char **argv)
 
         // 七类贡献都能按 kind 查到；开放 kind 用字符串而非枚举。
         // （计数含本测试文件自注册的探针包贡献：+1 个 UI）
-        CHECK(toolbox.contributions(ContributionKind::Format).size() == 2);
+        CHECK(toolbox.contributions(ContributionKind::Format).size() == 3); // csv + ulog + custom-protocol
         CHECK(toolbox.contributions(ContributionKind::Ui).size() == 4);
         CHECK(toolbox.contributions(ContributionKind::Panel).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Script).size() == 2);
@@ -477,7 +482,7 @@ int main(int argc, char **argv)
     const auto lod = ds->lodMinMax(QStringLiteral("demo"), QStringLiteral("roll"),
                                    0, 2000000, 2);
     assert(!lod.isEmpty() && lod.size() <= 2);
-    fprintf(stdout, "[ok] LOD 抽稀在 Rust 侧完成（%d 个三元组）\n", lod.size());
+    fprintf(stdout, "[ok] LOD 抽稀在 Rust 侧完成（%d 个三元组）\n", int(lod.size()));
     // 统计算子（ps_stats_series）：roll = 1.0/1.5/2.0，均值 1.5、最小 1、最大 2。
     const auto st = ds->stats(ch->value, /*withMedian=*/true);
     assert(st.has_value());
@@ -490,7 +495,7 @@ int main(int argc, char **argv)
     const int decRc = ds->decimate(2, ch->time, ch->value, dt, dv); // 副作用不能放进 assert（NDEBUG 会消除）
     assert(decRc == 0);
     assert(dt.size() < ch->size() && dt.size() >= 1);
-    fprintf(stdout, "[ok] 抗混叠抽取 factor=2：%d -> %d 点\n", ch->size(), dt.size());
+    fprintf(stdout, "[ok] 抗混叠抽取 factor=2：%d -> %d 点\n", int(ch->size()), int(dt.size()));
 
     // 2d) 缓存（ps-cache）：同一数据集写盘后按源文件指纹还原，schema 与列值一致。
     {
@@ -794,6 +799,8 @@ int main(int argc, char **argv)
         Result<IntentResult> stillLoads = application.modules().execute(ui); // CSV 已撤，ULog 仍在
         CHECK(stillLoads);
         CHECK(toolbox.unregisterDriver(QStringLiteral("ulog")));
+        // 注意：撤销 csv 时已按包原子撤掉 pack.common（csv + custom-protocol），
+        // 这里无需也不能再单独撤 custom-protocol。
         Result<IntentResult> noUlog = application.modules().execute(ui);
         CHECK(!noUlog && noUlog.error().code == QStringLiteral("eformat"));
         CHECK(toolbox.count() == 0);
@@ -801,7 +808,7 @@ int main(int argc, char **argv)
 
         // 重新自注册验证可逆（工具箱可热插，不留悬空能力）。
         ng::ext::registerBuiltinFormats(toolbox);
-        CHECK(toolbox.count() == 2);
+        CHECK(toolbox.count() == 3); // csv + ulog + custom-protocol
     }
 
     // 6) Job 序列化往返
@@ -871,7 +878,7 @@ int main(int argc, char **argv)
         const auto blod = big.lodMinMax(QStringLiteral("trace"), QStringLiteral("sig"),
                                         traceFirstUs, traceLastUs, /*px=*/800);
         assert(!blod.isEmpty() && blod.size() <= 800);
-        fprintf(stdout, "[ok] 20 万行 LOD 抽稀到 %d 个三元组（px 有界）\n", blod.size());
+        fprintf(stdout, "[ok] 20 万行 LOD 抽稀到 %d 个三元组（px 有界）\n", int(blod.size()));
     }
 
     // ========================================================================

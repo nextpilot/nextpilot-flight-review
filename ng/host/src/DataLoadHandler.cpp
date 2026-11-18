@@ -72,6 +72,12 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
         else if (ov.isValid() && !ov.toMap().isEmpty())
             parserOptions = QJsonDocument(QJsonObject::fromVariantMap(ov.toMap())).toJson(QJsonDocument::Compact);
         options.parserOptions = parserOptions;
+        // 驱动可把"指向配置文件的选项"展开成解析器能直接用的自包含参数
+        // （如自定义协议 templatePath → template 文本；解析器不读文件）。
+        // 展开结果只喂本次解析；申请单仍记**原始** options（templatePath），
+        // 于是重放时重新读模板文件，而不是把整篇 JSON 塞进 settings。
+        const QByteArray prepared = driver->prepareParserOptions(intent, parserOptions);
+        options.parserOptions = prepared;
 
         IngestOrchestrator orchestrator(m_repo, m_sources, *m_pipeline);
         const Result<int> opened = orchestrator.openFile(path, QStringList{parserId},

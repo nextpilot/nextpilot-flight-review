@@ -3,6 +3,7 @@
 #include "BuiltinContributions.h"
 #include "BuiltinPackRegistry.h"
 #include "CsvFormatDriver.h"
+#include "CustomProtocolFormatDriver.h"
 
 using namespace ng::core;
 
@@ -18,6 +19,7 @@ std::unique_ptr<IToolPack> CommonPack::build()
 {
     auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("通用工具箱"), FormatDomain::General);
     pack->add<CsvFormatDriver>(); // 格式：文件 -> Dataset
+    pack->add<CustomProtocolFormatDriver>(); // 格式：.psproto 模板 + 二进制帧 -> Dataset
     pack->add<GenericDocContribution>(
         QStringLiteral("common.doc.formats"), QStringLiteral("通用格式说明"), FormatDomain::General,
         QList<DocEntry>{

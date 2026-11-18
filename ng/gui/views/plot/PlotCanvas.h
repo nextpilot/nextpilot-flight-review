@@ -28,16 +28,43 @@ class Picker;
 //   - 抽稀在 Rust 内核（Dataset::lodMinMax），C++ 只得到 <= 像素宽 个三元组；
 //   - 坐标变换、刻度、网格、包络绘制全在 fastplot 里，本类只做"取数 + 适配"。
 //
-// 内存铁律不变：C++ 侧只持 <= 像素宽 个三元组，与数据总行数无关。
+// 内存铁律不变：C++ 侧每条曲线只持 <= 像素宽 个三元组，与数据总行数无关。
 //
-// 职责单一：只负责"把一条曲线的 LOD 画出来"，不加载数据、不认识格式、
-// 不做交互逻辑（交互由上层转发意图）。
+// 一个画布可叠加**多条曲线**（正常使用 plot 的核心）：每条曲线有独立的
+// 数据源标识、颜色、名字与 LOD。追加曲线不覆盖既有曲线。曲线样式（颜色/
+// 线宽/是否可见/挂左轴还是右轴）由上层按属性契约写入 PlotSeries.style。
 //
 // 它**不知道数据从哪来**，所以数据源变化由上层喂进来；
 // 但它知道"自己多大"——视口尺寸变化会发 viewportChanged，
 // 让上层按新的像素宽度重新取数（否则窄屏取的 LOD 会被拉伸成锯齿）。
 namespace ng::gui
 {
+
+// 画布上的一条曲线：逻辑标识 + 有界 LOD + 样式。
+struct PlotSeries
+{
+    ng::core::DatasetId datasetId = ng::core::kInvalidDataset;
+    QString table;
+    QString column;
+    QString title;             // 完整标题（数据集 / table.column）
+    QColor color;              // 曲线色（由上层按主题分配）
+    QVector<ng::core::LodTriple> lod;
+    double t0 = 0.0;
+    double t1 = 0.0;
+    bool visible = true;
+    bool rightAxis = false;    // 挂右 y 轴
+    qreal lineWidth = 1.4;
+
+    // 稳定键：同一通道重复拖入时据此去重（不重复叠加）。
+    QString key() const
+    {
+        return QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column);
+    }
+    QString legendName() const
+    {
+        return table.isEmpty() ? column : QStringLiteral("%1.%2").arg(table, column);
+    }
+};
 
 class PlotCanvas : public QWidget
 {
@@ -46,22 +73,31 @@ public:
     explicit PlotCanvas(QWidget *parent = nullptr);
     ~PlotCanvas() override;
 
-    // 设置要绘制的数据集与通道（只存标识，不取数）。
+    // 追加/替换一条曲线的 LOD 数据（按 dataset+table+column 匹配，存在则更新）。
+    // 返回曲线在序列中的索引。
+    int setSeries(const PlotSeries &series);
+
+    // 兼容入口：把 LOD 喂给首条曲线（旧调用方/测试用；无曲线时忽略）。
+    void setLodData(const QVector<ng::core::LodTriple> &lod, double t0, double t1);
+
+    // 从 Dataset 重新取数并刷新所有曲线（便捷入口）。
+    void renderFrom(const ng::core::Dataset &dataset);
+
+    // 从 Dataset 取 LOD 并追加（便捷入口，内部按画布像素宽取数）。
+    // 保留旧签名以兼容：它等价于用单条序列替换全部。
     void setChannel(ng::core::DatasetId datasetId, const QString &table, const QString &column,
                     const QString &title);
 
-    // 直接喂入 LOD 三元组（来自 Dataset::lodMinMax）。
-    void setLodData(const QVector<ng::core::LodTriple> &lod, double t0, double t1);
-
-    // 从 Dataset 取 LOD 并绘制（便捷入口，内部按画布像素宽取数）。
-    void renderFrom(const ng::core::Dataset &dataset);
-
-    // 清空。
+    // 清空全部曲线。removeSeries 按 key 删除单条。
     void clear();
+    bool removeSeries(const QString &key);
+
+    // 曲线表（只读）。
+    const QVector<PlotSeries> &series() const { return m_series; }
+    int seriesCount() const { return m_series.size(); }
+    const PlotSeries *seriesAt(int index) const;
 
     // 绘图区（不含坐标轴留白）的像素宽度。
-    // 上层按这个值向意图层请求 LOD——分辨率决策属于"画布有多大"，
-    // 所以由画布自己回答，上层不重复推导。
     int plotPixelWidth() const;
 
     // 导出（fastplot 库能力的视图薄包装；写文件在画布侧，模块层不碰 QWidget）。
@@ -76,26 +112,21 @@ public:
     bool legendVisible() const;
 
     // 诊断/测试用。
-    int lodPointCount() const { return m_lod.size(); }
+    int lodPointCount() const; // 全部曲线的点数之和
     QString channelTitle() const { return m_title; }
 
     // 需要直接操作画布能力（缩放/导出等）时用；正常情况下上层不要碰它。
     fastplot::PlotWidget *plotWidget() const { return m_plot; }
     fastplot::Zoomer *zoomer() const { return m_zoomer; }
 
-    // 当前可见时间窗（秒）。缩放后上层要按这个窗口重新取 LOD——
-    // 否则放大看的是整段数据的包络，糊成一片。
+    // 当前可见时间窗（秒）。
     bool visibleTimeRange(double *t0, double *t1) const;
 
     // 处理一路通道拖拽负载：解码合法则发 channelDropped，返回 true。
-    // dropEvent 与测试都走这里——把"解码+派发"与我们无法在 headless 下
-    // 真实模拟的 QDrag 投递机制解耦（Qt 对 sendEvent(QDropEvent) 有前置限制）。
     bool dropChannel(const QMimeData *mime);
 
 Q_SIGNALS:
-    // 视口尺寸变了：上层需要按新像素宽重新取 LOD。
     void viewportChanged();
-    // 缩放/平移改变了可见时间窗：上层需要按新窗口重取 LOD。
     void rangeChanged(double t0, double t1);
     // 有通道被拖到画布上（数据集树 → 画布）。画布只解码 MIME 发信号，
     // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
@@ -104,7 +135,7 @@ Q_SIGNALS:
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
-    void changeEvent(QEvent *event) override; // PaletteChange 时重绘（主题切换）
+    void changeEvent(QEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dragLeaveEvent(QDragLeaveEvent *event) override;
@@ -112,21 +143,17 @@ protected:
 
 private:
     void pushToPlot();
-    // 从当前 palette 取色重设 fastplot 画布/轴/标题——主题切换时调用，
-    // 避免 fastplot 库内的硬编码浅色在深色主题下刺眼（颜色知识留在宿主侧）。
     void applyPalette();
+    // 为新曲线分配主题色（按当前已有曲线条数轮换）。
+    QColor nextSeriesColor() const;
 
     fastplot::PlotWidget *m_plot = nullptr;
     fastplot::Zoomer *m_zoomer = nullptr;
     fastplot::Panner *m_panner = nullptr;
     fastplot::Picker *m_picker = nullptr;
 
-    ng::core::DatasetId m_datasetId = ng::core::kInvalidDataset;
-    QString m_table;
-    QString m_column;
-    QString m_title;
-
-    QVector<ng::core::LodTriple> m_lod; // <= 像素宽度 个三元组
+    QVector<PlotSeries> m_series; // 叠加的多条曲线
+    QString m_title;              // 画布标题（首条曲线标题，供状态显示）
     double m_t0 = 0.0;
     double m_t1 = 0.0;
 };

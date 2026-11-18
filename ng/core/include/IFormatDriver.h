@@ -133,6 +133,19 @@ public:
         Q_UNUSED(path);
         return QByteArray();
     }
+
+    // 把导入对话框收集的选项转成**解析器 configure 真正要吃的 JSON**。
+    //
+    // 为什么需要它：有些格式的配置不是纯值，而是"指向另一个文件的配置"
+    // （如自定义协议的 templatePath → 模板 JSON 文本）。解析器**不读文件**
+    // （铁律），但读配置文件、把它展开成自包含参数是驱动（格式知识）的职责。
+    // 默认原样返回——绝大多数格式（CSV/ULog）不需要转换。
+    virtual QByteArray prepareParserOptions(const Intent &intent,
+                                            const QByteArray &options) const
+    {
+        Q_UNUSED(intent);
+        return options;
+    }
 };
 
 } // namespace ng::core
