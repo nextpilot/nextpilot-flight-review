@@ -15,12 +15,11 @@
 #include "App.h"
 
 #include "DataManagerPanel.h"
-#include "DockManager.h"
 #include "GuiContext.h"
 #include "MainWindow.h"
 #include "PanelFactoryRegistry.h"
 #include "PlotCanvas.h"
-#include "RibbonBar.h"
+#include "ShellBinder.h"
 
 #include "Dataset.h"
 #include "Intent.h"
@@ -93,27 +92,28 @@ int main(int argc, char *argv[])
     CHECK(active.contains(QStringLiteral("mod.script")));
     OK("器官自注册装载：data / plot / script 全部激活");
 
-    // --- 2) ribbon 按插槽数据渲染 ---
-    RibbonBar *ribbon = window.ribbon();
-    CHECK(ribbon != nullptr);
-    CHECK(ribbon->pageCount() >= 1);
-    CHECK(ribbon->pageAreas().contains(QStringLiteral("ribbon.page.home")));
-    // 骨架声明了两个 ribbon 分组：数据 / 视图
-    CHECK(ribbon->groupCount(QStringLiteral("ribbon.page.home")) >= 2);
+    // --- 2) ribbon 按插槽数据渲染（SARibbon，结构层由第三方负责）---
+    ShellBinder *binder = window.binder();
+    CHECK(binder != nullptr);
+    // 绑定器创建了 SARibbonBar：窗口顶部区就是它
+    CHECK(window.menuWidget() != nullptr);
+    // 插槽声明了页签/分组；动作由器官在 onAttach 里登记
+    const auto &slotReg = application.modules().uiSlots();
+    CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() >= 1);
+    CHECK(slotReg.slotsOfKind(SlotKind::RibbonGroup).size() >= 2);
     // 绘图模块在 onAttach 里往"视图"分组放了"重绘"动作
-    CHECK(ribbon->actionCount(QStringLiteral("ribbon.group.home.view")) >= 1);
-    OK("ribbon 按插槽渲染：页签/分组/动作数量符合声明");
+    CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.home.view")).size() >= 1);
+    OK("ribbon 按插槽数据绑定：页签/分组/动作数量符合声明");
 
     // --- 3) 器官 requestPanel 拿到部件，骨架只提供工厂 ---
     CHECK(!PanelFactoryRegistry::types().isEmpty());
     CHECK(PanelFactoryRegistry::types().contains(QStringLiteral("dataset-tree")));
     OK("部件工厂表就位：器官只描述类型，骨架决定实现");
 
-    // --- 4) 停靠区就位 ---
-    DockManager *docks = window.docks();
-    CHECK(docks->dockCount() >= 1);
-    CHECK(docks->widget(QStringLiteral("dock.left")) != nullptr);
-    CHECK(!docks->title(QStringLiteral("dock.left")).isEmpty());
+    // --- 4) 停靠区就位（Qt-ADS）---
+    CHECK(binder->panelCount() >= 1);
+    CHECK(binder->panelWidget(QStringLiteral("dock.left")) != nullptr);
+    CHECK(!binder->panelTitle(QStringLiteral("dock.left")).isEmpty());
     OK("停靠区就位：左栏有数据集面板且标题正确");
 
     // --- 5) 数据集管理面板能列出数据集 -> 表 -> 列 ---

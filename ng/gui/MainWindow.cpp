@@ -1,11 +1,10 @@
 #include "MainWindow.h"
 
 #include "DataManagerPanel.h"
-#include "DockManager.h"
 #include "GuiContext.h"
 #include "PanelFactoryRegistry.h"
 #include "PlotCanvas.h"
-#include "RibbonBar.h"
+#include "ShellBinder.h"
 
 #include "Dataset.h"
 #include "IModule.h"
@@ -14,6 +13,7 @@
 
 #include <QMenuBar>
 #include <QStatusBar>
+
 using namespace ng::core;
 using namespace ng::host;
 
@@ -26,9 +26,7 @@ MainWindow::MainWindow(DataRepository &repo, QWidget *parent)
     setWindowTitle(QStringLiteral("PlotScope NG"));
     resize(1280, 800);
 
-    // 骨架：三个容器，各自由独立文件里的独立类实现。
-    m_ribbon = new RibbonBar(this);
-    m_docks = new DockManager(this);
+    // 骨架：画布 + （绑定器在 build() 里建——它需要宿主提供的插槽表）。
     m_canvas = new PlotCanvas(this);
 
     // 菜单栏（薄壳：真正的动作由器官/工具箱声明，这里只放容器）
@@ -37,11 +35,11 @@ MainWindow::MainWindow(DataRepository &repo, QWidget *parent)
 
     statusBar()->showMessage(QStringLiteral("就绪"));
 
-    // 部件工厂：器官只描述"我需要什么部件"，由骨架决定用哪个实现。
+    // 部件工厂：器官只描述"我需要什么部件"，由外壳决定用哪个实现。
     // 这样模块不依赖 Qt Widgets（CLI 保持纯净），新增器官自带界面也无需改 GUI 层。
     //
     // 注意：数据集树面板由 mod.data 器官通过 requestPanel 申请（见 DataModule::onAttach），
-    // 骨架只提供工厂实现——面板归器官所有，骨架不认识它。
+    // 外壳只提供工厂实现——面板归器官所有，外壳不认识它。
     PanelFactoryRegistry::registerPanel(
         QStringLiteral("dataset-tree"),
         [this](QWidget *parent) -> QWidget * {
@@ -66,46 +64,52 @@ void MainWindow::declareStandardSlots()
     // 骨架代码此后不再变动。
     UiSlotRegistry &slotReg = m_context->slotRegistry();
     slotReg.declareSlot(QStringLiteral("ribbon.page.home"), QStringLiteral("主页"),
-                      QStringLiteral("app.skeleton"), SlotKind::RibbonPage);
+                        QStringLiteral("app.skeleton"), SlotKind::RibbonPage);
     slotReg.declareSlot(QStringLiteral("ribbon.group.home.data"), QStringLiteral("数据"),
-                      QStringLiteral("app.skeleton"), SlotKind::RibbonGroup,
-                      QStringLiteral("ribbon.page.home"));
+                        QStringLiteral("app.skeleton"), SlotKind::RibbonGroup,
+                        QStringLiteral("ribbon.page.home"));
     slotReg.declareSlot(QStringLiteral("ribbon.group.home.view"), QStringLiteral("视图"),
-                      QStringLiteral("app.skeleton"), SlotKind::RibbonGroup,
-                      QStringLiteral("ribbon.page.home"));
+                        QStringLiteral("app.skeleton"), SlotKind::RibbonGroup,
+                        QStringLiteral("ribbon.page.home"));
     slotReg.declareSlot(QStringLiteral("dock.left"), QStringLiteral("数据集"),
-                      QStringLiteral("app.skeleton"), SlotKind::DockPanel);
+                        QStringLiteral("app.skeleton"), SlotKind::DockPanel);
     slotReg.declareSlot(QStringLiteral("dock.right"), QStringLiteral("属性"),
-                      QStringLiteral("app.skeleton"), SlotKind::DockPanel);
+                        QStringLiteral("app.skeleton"), SlotKind::DockPanel);
     slotReg.declareSlot(QStringLiteral("canvas.center"), QStringLiteral("画布"),
-                      QStringLiteral("app.skeleton"), SlotKind::Canvas);
+                        QStringLiteral("app.skeleton"), SlotKind::Canvas);
     slotReg.declareSlot(QStringLiteral("menu.plot"), QStringLiteral("绘图"),
-                      QStringLiteral("app.skeleton"), SlotKind::Menu);
+                        QStringLiteral("app.skeleton"), SlotKind::Menu);
 }
 
 void MainWindow::build(ModuleHost &host)
 {
     m_host = &host;
     UiSlotRegistry &slotReg = host.uiSlotsMutable();
-    m_context = new GuiContext(this, slotReg, m_ribbon, m_docks, m_canvas, &host, this);
+
+    // 绑定器需要插槽表，构造时给。
+    m_binder = new ShellBinder(this, slotReg);
+    m_context = new GuiContext(this, slotReg, m_binder, m_canvas, &host, this);
 
     // 1) 骨架插槽
     declareStandardSlots();
 
-    // 2) 数据面板停靠到左侧
-    m_context->placePanel(m_dataPanel, QStringLiteral("dock.left"));
-
-    // 3) 画布进中央
+    // 2) 画布进中央（ADS 中央 dock）
     m_context->placeCanvas(m_canvas);
+
+    // 3) ribbon（SARibbon）——结构层交给第三方，ng 只提供插槽数据
+    setMenuBar(nullptr); // 有 ribbon 就不留同名菜单栏，避免两排并排
+    if (QWidget *ribbon = m_binder->createRibbon())
+        setMenuWidget(ribbon); // SARibbon 占菜单栏位置，成为窗口顶部区
 
     // 4) 装器官（GUI 模式：会调用 onAttach，器官可自带界面入口）
     host.activate(QStringList(), m_context);
 
     // 5) ribbon 重建：把工具箱的 UI 贡献 + 器官的本地入口一起渲染出来
-    m_context->refreshRibbon();
+    m_binder->rebuildRibbon();
 
     // 6) 记录器官申请的部件（便于诊断与测试）
-    if (auto *panel = qobject_cast<DataManagerPanel *>(m_docks->widget(QStringLiteral("dock.left"))))
+    if (auto *panel = qobject_cast<DataManagerPanel *>(
+            m_binder->panelWidget(QStringLiteral("dock.left"))))
         m_dataPanel = panel;
 }
 
@@ -144,8 +148,8 @@ void MainWindow::showChannel(int datasetId, const QString &table, const QString 
     {
         LodTriple triple;
         triple.x = xs.at(i).toDouble();
-        triple.min = mins.value(i).toDouble();
-        triple.max = maxs.value(i).toDouble();
+        triple.min = mins.at(i).toDouble();
+        triple.max = maxs.at(i).toDouble();
         lod.append(triple);
     }
 

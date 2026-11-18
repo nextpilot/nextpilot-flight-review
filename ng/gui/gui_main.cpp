@@ -1,8 +1,5 @@
-#include "DataManagerPanel.h"
-#include "DockManager.h"
 #include "MainWindow.h"
-#include "PlotCanvas.h"
-#include "RibbonBar.h"
+#include "ShellBinder.h"
 
 #include "App.h"
 

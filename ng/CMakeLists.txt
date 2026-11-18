@@ -13,8 +13,8 @@ if(NOT DEFINED CMAKE_PREFIX_PATH OR CMAKE_PREFIX_PATH STREQUAL "")
   endif()
 endif()
 
-# Core：所有层都要。Widgets：仅 GUI 层需要（CLI/headless 不链接）。
-find_package(Qt6 REQUIRED COMPONENTS Core)
+# Core：所有层都要。Widgets/Svg：仅 GUI 层需要（CLI/headless 不链接）。
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Svg)
 
 # === Rust kernel（数据地基）===
 # Dataset 的数据本体、typed 表、ring、LOD、缓存、滤波全部由 Rust 实现；
@@ -56,6 +56,20 @@ add_subdirectory(extensions/robotics)
 add_subdirectory(extensions/gnss)
 add_subdirectory(extensions/registry)
 add_subdirectory(app)
+
+# === GUI 第三方组件（复用仓库已 vendored 的源码，不联网、不引新依赖）===
+# SARibbon（MIT）—— ribbon 结构层
+# Qt-ADS（LGPL-2.1）—— 停靠系统，以共享库方式链接（老仓库同为 SHARED）
+set(SARIBBON_BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+set(SARIBBON_BUILD_EXAMPLES   OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS               OFF CACHE BOOL "" FORCE)
+set(SARIBBON_USE_FRAMELESS_LIB OFF CACHE BOOL "" FORCE)
+set(SARIBBON_INSTALL_IN_CURRENT_DIR OFF CACHE BOOL "" FORCE)
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src/3rdparty/saribbon"
+                 "${CMAKE_CURRENT_BINARY_DIR}/3rdparty/saribbon" EXCLUDE_FROM_ALL)
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src/3rdparty/ads"
+                 "${CMAKE_CURRENT_BINARY_DIR}/3rdparty/ads" EXCLUDE_FROM_ALL)
+
 add_subdirectory(gui)
 
 enable_testing()

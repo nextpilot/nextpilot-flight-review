@@ -1,11 +1,9 @@
 #include "GuiContext.h"
 
-#include "DockManager.h"
 #include "PanelFactoryRegistry.h"
 #include "PlotCanvas.h"
-#include "RibbonBar.h"
+#include "ShellBinder.h"
 
-#include <QDockWidget>
 #include <QMainWindow>
 
 using namespace ng::core;
@@ -14,22 +12,21 @@ using namespace ng::host;
 namespace ng::gui
 {
 
-GuiContext::GuiContext(QMainWindow *window, UiSlotRegistry &slotReg, RibbonBar *ribbon,
-                       DockManager *docks, PlotCanvas *canvas, IIntentExecutor *executor,
-                       QObject *parent)
-    : QObject(parent), m_window(window), m_slots(slotReg), m_ribbon(ribbon), m_docks(docks),
-      m_canvas(canvas), m_executor(executor)
+GuiContext::GuiContext(QMainWindow *window, UiSlotRegistry &slotReg, ShellBinder *binder,
+                       PlotCanvas *canvas, IIntentExecutor *executor, QObject *parent)
+    : QObject(parent), m_window(window), m_slots(slotReg), m_binder(binder), m_canvas(canvas),
+      m_executor(executor)
 {}
 
 void GuiContext::placePanel(QWidget *widget, const QString &area)
 {
-    if (!widget)
+    if (!widget || !m_binder)
         return;
     // 插槽声明的标签作为停靠窗口标题；未声明则用区域名兜底。
     QString title = area;
     if (const UiSlot *slot = m_slots.slot(area))
         title = slot->label;
-    m_docks->dock(area, title, widget);
+    m_binder->dock(area, title, widget);
 }
 
 void GuiContext::placeCanvas(QWidget *widget)
@@ -38,32 +35,32 @@ void GuiContext::placeCanvas(QWidget *widget)
         return;
     if (m_canvas)
         m_canvas->setParent(nullptr);
-    m_window->setCentralWidget(widget);
+    // 中央内容交给 ADS（画布区是一个不可关闭/移动的中央 dock）。
+    if (m_binder)
+        m_binder->setCentralContent(widget);
+    else
+        m_window->setCentralWidget(widget);
 }
 
 void GuiContext::declareSlot(const QString &area, const QString &label, SlotKind kind,
                              const QString &parentArea)
 {
     m_slots.declareSlot(area, label, QStringLiteral("module"), kind, parentArea);
-    refreshRibbon();
+    if (m_binder)
+        m_binder->rebuildRibbon();
 }
 
 void GuiContext::addAction(const QString &area, const UiAction &action)
 {
     // 器官本地登记的入口，provider 记为 "module"，卸载时按 provider 清理。
     m_slots.bindLocal(area, action, QStringLiteral("module"));
-    refreshRibbon();
-}
-
-void GuiContext::refreshRibbon()
-{
-    if (m_ribbon)
-        m_ribbon->rebuild(m_slots);
+    if (m_binder)
+        m_binder->rebuildRibbon();
 }
 
 QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
 {
-    // 部件由 app 骨架的工厂表提供；模块只描述类型，不依赖具体实现。
+    // 部件由 app 外壳的工厂表提供；模块只描述类型，不依赖具体实现。
     QWidget *widget = PanelFactoryRegistry::create(panelType, m_window);
     if (!widget)
         return nullptr;
