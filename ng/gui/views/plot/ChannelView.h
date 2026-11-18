@@ -47,6 +47,8 @@ public:
 private:
     // 按当前画布像素宽重新取数（视口变化时调用）。
     void refresh();
+    // 真正取数的那一步：窗口非空时装上 t0/t1 参数。
+    bool doRender(QString *err);
 
     ng::core::IIntentExecutor &m_executor;
     PlotCanvas *m_canvas = nullptr;
@@ -58,6 +60,12 @@ private:
     ng::core::DatasetId m_datasetId = ng::core::kInvalidDataset;
     QString m_table;
     QString m_column;
+
+    // 缩放后的可见时间窗（秒）。空 = 全量。
+    // 换通道时清空，否则新通道会用旧通道的时间窗取数，直接取空。
+    bool m_windowSet = false;
+    double m_winT0 = 0.0;
+    double m_winT1 = 0.0;
 };
 
 // 绘图视图的工厂：创建画布 + 通道视图，并让视图订阅共享的"活动通道"。

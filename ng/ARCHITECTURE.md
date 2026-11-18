@@ -576,6 +576,13 @@ modules/data/                     一个"数据"功能，物理聚合
 "可独立复用"的表现。领域面板则相反：它**永远属于领域知识**，放 `extensions/<域>/gui/`，
 既不进 `modules/`（器官是机制，不懂业务），也不进 `gui/views/`（会污染通用层成领域杂物箱）。
 
+> **绘图内核已落地为 `libs/fastplot/`**（原"将来抽 Qwt-like 库"兑现）：纯 Qt Widgets、
+> 不依赖 core，含视口/刻度/轴/包络曲线/缩放平移读数/六仪表/频谱柱状等部件。
+> `gui/views/plot/PlotCanvas` 退化为**宿主**：只做取数（Rust LOD）+ 把 LOD 喂给 fastplot，
+> 不再自绘（旧 `paintEvent` 已删）。**集成边界**：fastplot 库不认识 ng 主题/数据，
+> 颜色由宿主在 `applyPalette()` 里从 palette 注入，曲线色在 `pushToPlot` 时按当时主题取——
+> 库保持纯净，定制在宿主侧做，不往库里塞 ng 概念。集成测试：`fastplot_*` 三套 + `ng_plot_io`。
+
 关键：**物理聚合不改逻辑解耦**——器官仍只发字符串 id（`requestPanel`），
 不 include 视图头；视图靠 `NG_REGISTER_PANEL` 自注册到 core 工厂表。
 CMake 保证 CLI 只链 headless 那一半：`ldd` 验证 CLI 与 headless 测试
@@ -684,7 +691,7 @@ headless 也能查到。
 |---|---|---|
 | `ThemeManager` | token 取色、双主题色表、QSS/palette 生成、当前主题状态与持久化、认领 `theme.set/toggle/get` | 十六进制色值**只在色表出现一次**；视图一律 `color(token)` / `styleSheet()` |
 | `ShellBinder::applyTheme` | 把 token QSS 套到 SARibbon | 绑定器是唯一知道 SARibbon 的地方（§7 原则）；不碰 ThemeManager 具体类型 |
-| `PlotCanvas` 等自绘视图 | 从 `palette()` 取色 + `PaletteChange` 重绘 | 自绘控件不吃 QSS，靠 palette 换肤；无硬编码色 |
+| `PlotCanvas`（fastplot 画布宿主） | `changeEvent(PaletteChange)` 里调 `applyPalette()`，从 `palette()` 取色重设 fastplot 的画布/轴/标题 | fastplot 库内不认识主题、颜色在构造时定死；宿主侧用 palette 覆盖，库保持纯净；曲线色在 `pushToPlot` 时按当时 palette 取 |
 
 **三条设计判据**（都是踩过坑或守住红线的结果）：
 

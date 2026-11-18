@@ -167,6 +167,30 @@ void MainWindow::build(ModuleHost &host)
             openProtocolInspector();
             return;
         }
+
+        // 视图动作（导出 / 视图状态 / 图例）：先查视图在 AppContext 登记的处理器，
+        // 命中就交视图执行；未注册再走意图层（CLI/脚本同路径）。
+        QVariantMap params;
+        if (actionId == QStringLiteral("plot.export.png")
+            || actionId == QStringLiteral("plot.export.csv"))
+        {
+            const bool png = actionId == QStringLiteral("plot.export.png");
+            const QString path = QFileDialog::getSaveFileName(
+                this, png ? QStringLiteral("导出 PNG") : QStringLiteral("导出 CSV"),
+                QString(), png ? QStringLiteral("PNG 图片 (*.png)") : QStringLiteral("CSV 表格 (*.csv)"));
+            if (path.isEmpty())
+                return; // 用户取消
+            params[QStringLiteral("path")] = path;
+        }
+        QVariant nullVariant;
+        Result<QVariant> viewResult(nullVariant);
+        if (m_appCtx.dispatchViewAction(actionId, params, viewResult))
+        {
+            if (!viewResult)
+                statusBar()->showMessage(QStringLiteral("动作失败: %1").arg(viewResult.error().message));
+            return;
+        }
+
         if (intentOp.isEmpty()) // 纯占位动作：没有意图可发，明确提示而非发空 op
         {
             statusBar()->showMessage(QStringLiteral("动作未声明意图: %1").arg(actionId));

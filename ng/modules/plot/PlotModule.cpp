@@ -28,13 +28,16 @@ public:
         return intent.op == QStringLiteral("plot.render")
             || intent.op == QStringLiteral("plot.channel")
             || intent.op == QStringLiteral("plot.layout.save")
-            || intent.op == QStringLiteral("plot.layout.load");
+            || intent.op == QStringLiteral("plot.layout.load")
+            || intent.op == QStringLiteral("plot.instrument");
     }
 
     Result<IntentResult> execute(const Intent &intent) override
     {
         if (intent.op == QStringLiteral("plot.channel"))
             return renderChannel(intent);
+        if (intent.op == QStringLiteral("plot.instrument"))
+            return renderInstrument(intent);
         if (intent.op == QStringLiteral("plot.layout.save"))
             return saveLayout(intent);
         if (intent.op == QStringLiteral("plot.layout.load"))
@@ -66,8 +69,27 @@ private:
         // 像素宽度由调用方给（画布宽度）；缺省 1024，恒定有界。
         const int px = qBound(16, intent.params.value(QStringLiteral("px"), 1024).toInt(), 8192);
 
-        const QVector<LodTriple> lod =
-            ds->lodMinMax(table, column, t->firstTimeUs, t->lastTimeUs, px);
+        // 可见时间窗（微秒，可选）：缩放后画布只关心这一段。
+        // 缺省用全表范围；越界一律夹回表范围，避免取空。
+        TimeUs t0Us = t->firstTimeUs;
+        TimeUs t1Us = t->lastTimeUs;
+        if (intent.params.contains(QStringLiteral("t0Us"))
+            && intent.params.contains(QStringLiteral("t1Us")))
+        {
+            const qint64 reqT0 = intent.params.value(QStringLiteral("t0Us")).toLongLong();
+            const qint64 reqT1 = intent.params.value(QStringLiteral("t1Us")).toLongLong();
+            const qint64 lo = qMin(reqT0, reqT1);
+            const qint64 hi = qMax(reqT0, reqT1);
+            t0Us = qMax<TimeUs>(t->firstTimeUs, TimeUs(lo));
+            t1Us = qMin<TimeUs>(t->lastTimeUs, TimeUs(hi));
+            if (t1Us <= t0Us)
+            {
+                t0Us = t->firstTimeUs;
+                t1Us = t->lastTimeUs;
+            }
+        }
+
+        const QVector<LodTriple> lod = ds->lodMinMax(table, column, t0Us, t1Us, px);
         if (lod.isEmpty())
             return fail(QStringLiteral("echan"), QStringLiteral("通道无数据: %1.%2").arg(table, column));
 
@@ -89,11 +111,169 @@ private:
             {QStringLiteral("column"), column},
             {QStringLiteral("title"), QStringLiteral("%1 / %2.%3").arg(ds->name(), table, column)},
             {QStringLiteral("points"), lod.size()},
-            {QStringLiteral("t0"), t->firstTimeUs / 1000000.0},
-            {QStringLiteral("t1"), t->lastTimeUs / 1000000.0},
+            {QStringLiteral("t0"), t0Us / 1000000.0},
+            {QStringLiteral("t1"), t1Us / 1000000.0},
             {QStringLiteral("x"), xs},
             {QStringLiteral("min"), mins},
             {QStringLiteral("max"), maxs},
+        };
+        return r;
+    }
+
+    // plot.instrument：为专用仪表（姿态球/罗盘/表盘/轨迹/3D/瀑布）取有界数据。
+    //
+    // 与 plot.channel 的区别：
+    //   - channel 给一条曲线的像素级 LOD；instrument 给仪表需要的标量末值 + 有界序列；
+    //   - 一条仪表可能要多个角色通道（roll/pitch、lon/lat、x/y/z），角色由调用方在
+    //     roles 里按"角色 → table.column"指定，模块不猜通道语义；
+    //   - 数据仍走 Dataset 门面，C++ 不攒全量（cap 内等步长抽稀在 Rust 侧）。
+    Result<IntentResult> renderInstrument(const Intent &intent)
+    {
+        const DatasetId id = intent.params.value(QStringLiteral("dataset")).toInt();
+        const Dataset *ds = m_repo.get(id);
+        if (!ds)
+            return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(id));
+
+        const QString kind = intent.params.value(QStringLiteral("kind")).toString();
+        const int cap = qBound(64, intent.params.value(QStringLiteral("cap"), 4096).toInt(), 65536);
+        const QVariantMap roles = intent.params.value(QStringLiteral("roles")).toMap();
+        const QVariantList channelList = intent.params.value(QStringLiteral("channels")).toList();
+
+        auto readChannel = [&](const QString &qualified) -> std::optional<ChannelView> {
+            if (qualified.isEmpty())
+                return std::nullopt;
+            return ds->channel(qualified, cap);
+        };
+
+        QVariantMap scalars;
+        QVariantMap series;
+        QVariantList channelsOut;
+        double dataLo = std::numeric_limits<double>::infinity();
+        double dataHi = -std::numeric_limits<double>::infinity();
+        bool rangeFromData = false;
+
+        // 一条角色通道：塞进 series（有界序列），末值记进 scalars（表盘/姿态/罗盘用）。
+        auto putRole = [&](const QString &role, const QString &qualified) -> bool {
+            auto view = readChannel(qualified);
+            if (!view || view->empty())
+                return false;
+            QVariantList tList, vList;
+            tList.reserve(view->time.size());
+            vList.reserve(view->value.size());
+            for (double x : view->time) tList.append(x);
+            for (double x : view->value) vList.append(x);
+            QVariantMap m;
+            m[QStringLiteral("name")] = view->name;
+            m[QStringLiteral("time")] = tList;
+            m[QStringLiteral("value")] = vList;
+            series[role] = m;
+            scalars[role] = view->value.last();
+            for (const double x : view->value)
+            {
+                dataLo = std::min(dataLo, x);
+                dataHi = std::max(dataHi, x);
+                rangeFromData = true;
+            }
+            return true;
+        };
+
+        if (kind == QStringLiteral("attitude"))
+        {
+            bool ok = false;
+            if (roles.contains(QStringLiteral("roll")))
+                ok |= putRole(QStringLiteral("roll"), roles.value(QStringLiteral("roll")).toString());
+            if (roles.contains(QStringLiteral("pitch")))
+                ok |= putRole(QStringLiteral("pitch"), roles.value(QStringLiteral("pitch")).toString());
+            if (!ok)
+                return fail(QStringLiteral("echan"),
+                            QStringLiteral("姿态仪至少需要 roll / pitch 中的一个通道"));
+        }
+        else if (kind == QStringLiteral("compass"))
+        {
+            QString yaw = roles.value(QStringLiteral("yaw")).toString();
+            if (yaw.isEmpty())
+                yaw = roles.value(QStringLiteral("heading")).toString();
+            if (!putRole(QStringLiteral("yaw"), yaw))
+                return fail(QStringLiteral("echan"), QStringLiteral("罗盘需要 yaw / heading 通道"));
+        }
+        else if (kind == QStringLiteral("gauge"))
+        {
+            if (!putRole(QStringLiteral("value"), roles.value(QStringLiteral("value")).toString()))
+                return fail(QStringLiteral("echan"), QStringLiteral("表盘需要 value 通道"));
+        }
+        else if (kind == QStringLiteral("track"))
+        {
+            if (!putRole(QStringLiteral("lon"), roles.value(QStringLiteral("lon")).toString()))
+                return fail(QStringLiteral("echan"), QStringLiteral("轨迹需要 lon 通道"));
+            if (!putRole(QStringLiteral("lat"), roles.value(QStringLiteral("lat")).toString()))
+                return fail(QStringLiteral("echan"), QStringLiteral("轨迹需要 lat 通道"));
+        }
+        else if (kind == QStringLiteral("traj3d"))
+        {
+            if (!putRole(QStringLiteral("x"), roles.value(QStringLiteral("x")).toString()))
+                return fail(QStringLiteral("echan"), QStringLiteral("3D 轨迹需要 x 通道"));
+            if (!putRole(QStringLiteral("y"), roles.value(QStringLiteral("y")).toString()))
+                return fail(QStringLiteral("echan"), QStringLiteral("3D 轨迹需要 y 通道"));
+            if (roles.contains(QStringLiteral("z")))
+                putRole(QStringLiteral("z"), roles.value(QStringLiteral("z")).toString());
+        }
+        else if (kind == QStringLiteral("waterfall"))
+        {
+            if (channelList.isEmpty())
+                return fail(QStringLiteral("echan"), QStringLiteral("瀑布图需要 channels 列表"));
+            for (const QVariant &q : channelList)
+            {
+                auto view = readChannel(q.toString());
+                if (!view || view->empty())
+                    continue;
+                QVariantList tList, vList;
+                tList.reserve(view->time.size());
+                vList.reserve(view->value.size());
+                for (double x : view->time) tList.append(x);
+                for (double x : view->value) vList.append(x);
+                QVariantMap m;
+                m[QStringLiteral("name")] = view->name;
+                m[QStringLiteral("time")] = tList;
+                m[QStringLiteral("value")] = vList;
+                channelsOut.append(m);
+            }
+            if (channelsOut.isEmpty())
+                return fail(QStringLiteral("echan"), QStringLiteral("瀑布图通道全部无数据"));
+        }
+        else
+        {
+            return fail(QStringLiteral("ekind"), QStringLiteral("未知仪表类型: %1").arg(kind));
+        }
+
+        // 表盘量程：调用方显式给了就用；否则按数据 min/max 各留 5% 余量。
+        QVariantList range;
+        if (intent.params.contains(QStringLiteral("range")))
+            range = intent.params.value(QStringLiteral("range")).toList();
+        else if (rangeFromData)
+        {
+            const double pad = (dataHi - dataLo) * 0.05 + 1e-9;
+            range = QVariantList{dataLo - pad, dataHi + pad};
+        }
+
+        static const QHash<QString, QString> kKindLabel{
+            {QStringLiteral("attitude"), QStringLiteral("姿态仪")},
+            {QStringLiteral("compass"), QStringLiteral("罗盘")},
+            {QStringLiteral("gauge"), QStringLiteral("表盘")},
+            {QStringLiteral("track"), QStringLiteral("经纬轨迹")},
+            {QStringLiteral("traj3d"), QStringLiteral("3D 轨迹")},
+            {QStringLiteral("waterfall"), QStringLiteral("瀑布图")},
+        };
+
+        IntentResult r;
+        r.payload = QVariantMap{
+            {QStringLiteral("dataset"), id},
+            {QStringLiteral("kind"), kind},
+            {QStringLiteral("title"),
+             QStringLiteral("%1 · %2").arg(ds->name(), kKindLabel.value(kind, kind))},
+            {QStringLiteral("scalars"), scalars},
+            {QStringLiteral("series"), series},
+            {QStringLiteral("channels"), channelsOut},
+            {QStringLiteral("range"), range},
         };
         return r;
     }
@@ -253,6 +433,28 @@ void PlotModule::onAttach(UiContext &ui)
     // 具体资源由外壳管理——模块不直接依赖 GUI 资源。
     action.icon = QStringLiteral("plot_refresh");
     ui.addAction(action);
+
+    // 导出 / 图例：处理器由画布视图登记到 AppContext，外壳按 id 派发。
+    UiAction exportPng;
+    exportPng.id = QStringLiteral("plot.export.png");
+    exportPng.label = QStringLiteral("导出 PNG");
+    exportPng.area = QStringLiteral("ribbon.group.home.view");
+    exportPng.intentOp = QStringLiteral("plot.export.png");
+    ui.addAction(exportPng);
+
+    UiAction exportCsv;
+    exportCsv.id = QStringLiteral("plot.export.csv");
+    exportCsv.label = QStringLiteral("导出 CSV");
+    exportCsv.area = QStringLiteral("ribbon.group.home.view");
+    exportCsv.intentOp = QStringLiteral("plot.export.csv");
+    ui.addAction(exportCsv);
+
+    UiAction legend;
+    legend.id = QStringLiteral("plot.legend.toggle");
+    legend.label = QStringLiteral("图例");
+    legend.area = QStringLiteral("ribbon.group.home.view");
+    legend.intentOp = QStringLiteral("plot.legend.toggle");
+    ui.addAction(legend);
 }
 
 #include "PlotModule.moc"

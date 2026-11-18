@@ -52,3 +52,63 @@ target_link_libraries(ng_test_pipeline PRIVATE
     ng_ext_registry ng_host ng_core Qt6::Core)
 set_target_properties(ng_test_pipeline PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_pipeline COMMAND ng_test_pipeline)
+
+# === fastplot 绘图库契约测试 ===
+# 与 ng_test_gui 同理：Widgets 侧测试单独成可执行文件，offscreen 下跑。
+add_executable(fastplot_test test_fastplot.cpp)
+target_link_libraries(fastplot_test PRIVATE fastplot Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(fastplot_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME fastplot COMMAND fastplot_test)
+set_tests_properties(fastplot PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# === fastplot × ng 集成测试（真实 ULog → 内核 LOD → 绘制）===
+# 这是"库能被 ng 直接调用"的可执行证明：链接 core + 扩展解析器，不碰老 src。
+add_executable(fastplot_dataset_test test_fastplot_dataset.cpp)
+target_include_directories(fastplot_dataset_test PRIVATE ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(fastplot_dataset_test PRIVATE
+    fastplot
+    ng_recording
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(fastplot_dataset_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME fastplot_dataset COMMAND fastplot_dataset_test)
+set_tests_properties(fastplot_dataset PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# === fastplot 仪表族（P5）：六个部件各画各的，互不认识 ===
+add_executable(fastplot_instruments_test test_fastplot_instruments.cpp)
+target_link_libraries(fastplot_instruments_test PRIVATE fastplot Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(fastplot_instruments_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME fastplot_instruments COMMAND fastplot_instruments_test)
+set_tests_properties(fastplot_instruments PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# === plot.instrument 意图 + 仪表视图（P5 接进 ng）===
+add_executable(ng_test_instrument test_instrument.cpp)
+target_include_directories(ng_test_instrument PRIVATE ${CMAKE_SOURCE_DIR}/app)
+target_link_libraries(ng_test_instrument PRIVATE
+    ng_gui
+    # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
+    ng_gui_theme
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
+    ng_recording
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+target_sources(ng_test_instrument PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
+set_target_properties(ng_test_instrument PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_instrument COMMAND ng_test_instrument)
+set_tests_properties(ng_instrument PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# === 画布导出 / 视图状态 / 图例（P6：库能力接进 ng 视图层）===
+add_executable(ng_test_plot_io test_plot_io.cpp)
+target_include_directories(ng_test_plot_io PRIVATE ${CMAKE_SOURCE_DIR}/app)
+target_link_libraries(ng_test_plot_io PRIVATE
+    ng_gui
+    # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
+    ng_gui_theme
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_recording
+    ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+target_sources(ng_test_plot_io PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
+set_target_properties(ng_test_plot_io PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_plot_io COMMAND ng_test_plot_io)
+set_tests_properties(ng_plot_io PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

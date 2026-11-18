@@ -82,6 +82,10 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src/3rdparty/saribbon"
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src/3rdparty/ads"
                  "${CMAKE_CURRENT_BINARY_DIR}/3rdparty/ads" EXCLUDE_FROM_ALL)
 
+# === 独立绘图库（fastplot）===
+# 只依赖 Qt Widgets，不依赖 ng_core；只允许 GUI 侧链接。
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/libs/fastplot" "${CMAKE_CURRENT_BINARY_DIR}/libs/fastplot")
+
 add_subdirectory(gui)
 
 enable_testing()

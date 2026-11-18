@@ -4,6 +4,9 @@
 
 | 文档 | 状态 | 内容 |
 |---|---|---|
+| [解析器插件模型 v2](parser-spi-v2.md) | 方案待开工（2026-11-18） | 解析器自描述接口（名称/领域/传输/参数 schema）+ 字符步进基类 `parseChar`，对话框直接消费描述信息 |
+| [自定义协议搬迁](protocol-migration.md) | 方案待开工（2026-11-18） | .psproto 变长变体协议：模型/解码/驱动/编辑器分 L1–L4 迁入 ng；头部全搬、变体定长变长都支持、CRC 校验一起搬 |
+| [fastplot 独立绘图库](fastplot.md) | P1 开工（2026-11-18） | 把老 plotting 的绘图能力抽成 `ng/libs/fastplot`；与 Qwt 同构的接口、零拷贝 + 像素列 LOD + 图层缓存三条硬约束、P1~P5 分批与验收 |
 | [Dataset / DataSource v2](dataset-datasource-v2.md) | M0 开工（2026-11-17） | DataSource 聚合根、typed Table/Column、UTC 微秒主键、frame_batch、ring 窗口与 PlotSeries |
 | [主题与浅色模式](theme.md) | 已实施（实现记录） | 深/浅主题 token、Ribbon/画布/Dock 配色、验收与截图 |
 | [画布交互重构](canvas-interaction.md) | 已实施（2026-11-16） | 左键选择/书签/测量、中键平移、右键菜单/框选、轴区缩放、光标联动与固定读数 |
@@ -19,11 +22,12 @@
 
 ## 当前优先级
 
-0. PJ4 架构迁移：`ps_runtime + ModuleContext + ServiceRegistry` 与模块构建矩阵已落地；下一步拆 datasource/plotting 的 core/widget，见 [`pj4-architecture-migration.md`](pj4-architecture-migration.md)。
-1. 扩展 toolbox 化：四业务域、`datasources` 目录、CSV 归 common、dynamic 退出官方格式。
-2. 飞控 autopilot：ULog / apbin / tlog 统一文件入口，默认曲线与报告。
-3. 脚本子系统：控制台（REPL + 计算库 + 临时图）先行，再上自动化（Job + 事件触发 + 批处理 + 录制），最后提升为正式曲线（切片与开工前置见方案 §8）。
-4. 格式补齐：Parquet、更多 MCAP 索引能力。
-5. 单独评估：UI 撤销栈，与脚本模块解耦。
+0. **ng 新骨架（当务之急）**：`ng/libs/fastplot` 抽取绘图库（P1 开工），随后按批把画布、领域面板搬到 ng；老 `src/` 只读参考，不删不改。见 [`fastplot.md`](fastplot.md)。
+1. PJ4 架构迁移：`ps_runtime + ModuleContext + ServiceRegistry` 与模块构建矩阵已落地；下一步拆 datasource/plotting 的 core/widget，见 [`pj4-architecture-migration.md`](pj4-architecture-migration.md)。
+2. 扩展 toolbox 化：四业务域、`datasources` 目录、CSV 归 common、dynamic 退出官方格式。
+3. 飞控 autopilot：ULog / apbin / tlog 统一文件入口，默认曲线与报告。
+4. 脚本子系统：控制台（REPL + 计算库 + 临时图）先行，再上自动化（Job + 事件触发 + 批处理 + 录制），最后提升为正式曲线（切片与开工前置见方案 §8）。
+5. 格式补齐：Parquet、更多 MCAP 索引能力。
+6. 单独评估：UI 撤销栈，与脚本模块解耦。
 
 新的方案先在 `roadmap/` 写清目标、边界、验收和风险，确认后再进 `develop/` 或代码。
