@@ -46,6 +46,8 @@ add_library(ng_gui OBJECT
     views/plot/PlotCanvas.h
     views/plot/ChannelView.cpp
     views/plot/ChannelView.h
+    views/plot/InstrumentView.cpp
+    views/plot/InstrumentView.h
     # --- 资源 ---
     resources/icons.qrc
 )

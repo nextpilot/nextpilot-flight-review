@@ -198,3 +198,18 @@ ng 接线 | `PlotCanvas` 装三个部件；`zoomed/panned` → `rangeChanged(t0,
 数据适配层反过来污染库 | `ColumnSeries` 这类适配器写在 ng（`modules/plot` 或 `gui/views/plot`），不进 `fastplot` |
 双轴/多轴口径不一致 | 轴一律走 `Axis` 实例，禁止在曲线里写死“左/右”判断逻辑 |
 和老画布行为漂移 | 每批验收都用同一个 fixture + 同一段脚本，出图像素级对比 |
+
+## 9. P5 接入 ng（仪表走意图 + 视图自注册）
+
+六个仪表没有直接塞进主窗口，而是沿用既有"意图 → 视图适配 → 库绘制"链路：
+
+| 层 | 落地 |
+|---|---|
+| 意图 | `plot.instrument`：params = `dataset` / `kind` / `roles`(角色→`table.column`) / `channels`(瀑布序列) / `range`(可选) / `cap`(64..65536)。返回 `scalars`(角色末值)、`series`(角色→{time,value,name})、`channels`、`range`、`title` |
+| 模块 | `PlotModule` 按 kind 校验必需角色（attitude 至少 roll/pitch 其一；compass yaw/heading；gauge value；track lon/lat；traj3d x/y，z 可选；waterfall channels≥1），缺角色/未知 kind/无数据集均返回失败语义 |
+| 视图 | `InstrumentView`：`QStackedLayout` 切六仪表；缓冲由视图持有（`RoleBuffer` + 瀑布缓冲 `reserve(64)` 后只 resize），仪表只持指针；面板以 `NG_REGISTER_PANEL("plot-instrument", ...)` 自注册进工厂表 |
+| 测试 | `ng_test_instrument`：offscreen 内存造数，六 kind 逐一断言 scalars/series/channels/range + 出图非背景像素；错误语义（未知 kind、缺通道、数据集 9999）；工厂表可取到 `InstrumentView*` |
+
+**和曲线画布的分工不变**：抽稀/取数在 Rust 内核与模块意图层，坐标/绘制在 fastplot，视图只做适配；仪表与曲线画布互不认识。
+
+**遗留入口形态**：仪表在主界面怎么被打开（ribbon 动作 / 面板切换 / 双击通道按名推断 kind）尚未拍板；当前面板已注册、可按 id 请求，主窗口暂未挂入口。
