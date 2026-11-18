@@ -233,10 +233,10 @@ ng 接线 | `PlotCanvas` 装三个部件；`zoomed/panned` → `rangeChanged(t0,
 | 老模式 | 状态 | 备注 |
 |---|---|---|
 Scatter 散点 | **库层已迁（P7）** | ng 视图尚未有模式选择入口，待会话层一起接 |
-BarChart 柱状图 | 未迁 | |
-Histogram 直方图 | 未迁 | |
-Spectrum 频谱 | 未迁 | |
-Surface3D 三维曲面 | 未迁 | 已迁的 Trajectory3D 是轨迹折线，WaterfallPlot 是序列错开堆叠，**都不是曲面** |
+BarChart 柱状图 | **库层已迁（P8）** | `BarChart`：类别-值柱，含负值基线；ng 视图入口待接 |
+Histogram 直方图 | **库层已迁（P8）** | `Histogram`：值域分箱计数，revision 缓存；ng 视图入口待接 |
+Spectrum 频谱 | **库层已迁（P9）** | `SpectrumPlot`：去均值单边 DFT，朴素 O(n²)，后续换 FFT；ng 视图入口待接 |
+Surface3D 三维曲面 | **老实现已被 WaterfallPlot 覆盖** | 老 `paintSurface3D` 本身就是 z 向错开的折线瀑布（非真曲面）；真栅格曲面留待将来另立 `SurfacePlot` |
 
 ### 未迁：画布 / 会话层
 
@@ -253,7 +253,19 @@ A/B 双游标测量（Δt/Δy） | 未迁 |
 ### 测试现状与缺口
 
 - 已覆盖：ctest 8/8——架构装配、GUI 装配、解析管道、P1–P4 库能力、真实 ULog LOD、六仪表库断言、ng 仪表意图+视图、画布导出/状态/图例（含经 AppContext 视图动作派发闭环）、散点符号出图。
-- 未覆盖：真实 fixture 的 track/traj3d/waterfall（该 fixture 无 gps/pos/多序列通道）；柱/直方/频谱/曲面；多画布拆分；A/B 游标；散点模式的 ng 视图入口；Windows 构建（本轮仅 Linux offscreen）。
+- 未覆盖：真实 fixture 的 track/traj3d/waterfall（该 fixture 无 gps/pos/多序列通道）；多画布拆分；A/B 游标；柱/直方/频谱/散点的 ng 视图入口；真栅格曲面；Windows 构建（本轮仅 Linux offscreen）。
+
+## 12. P8 柱状/直方图、P9 频谱（2026-11-18）
+
+| 部件 | 输入 | 说明 |
+|---|---|---|
+`BarChart` | 类别标签 + 值数组 + 可选配色 | 0 基线，负值向下；槽位留白比例可调；类别标签底部居中省略 |
+`Histogram` | `IPlotData*`（y 值）+ 箱数 | 有限值过滤 → min/max 分箱计数；按 revision+点数缓存，内容不变不重算 |
+`SpectrumPlot` | `IPlotData*` + 采样间隔 dt | 去均值 → 单边 DFT 幅值；频率轴按 dt 换算，dt 缺省归一化；**当前朴素 DFT O(n²)**，点数上来后换 FFT |
+
+三者与仪表同底座 `Instrument`（底色 + 内容区），不认识 PlotWidget。测试：三柱含负值、32 箱双峰、256 点 5Hz 正弦幅值谱，均出图断言。
+
+**老 `Surface3D` 核对结论**：翻老码确认它不是曲面——多条序列沿斜向 z 轴错开、按深度改透明度的折线瀑布，与已迁的 `WaterfallPlot` 同一形态（斜投影 + 深度 alpha 都已具备），不另立部件。真三维栅格曲面（网格/插值/着色）是新能力，将来另立 `SurfacePlot`，不占用 Waterfall 这个名字。
 
 ## 11. P6 视图动作机制 与 P7 散点（2026-11-18）
 

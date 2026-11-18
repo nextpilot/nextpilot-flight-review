@@ -1,6 +1,9 @@
 // fastplot P1 契约测试：视口映射、刻度划分、布局边距、图层缓存渲染。
 //
 // 不引入 QtTest —— 与仓库其它测试一致，用 assert + 打印。
+#include <fastplot/BarChart.h>
+#include <fastplot/Histogram.h>
+#include <fastplot/SpectrumPlot.h>
 #include <fastplot/Axis.h>
 #include <fastplot/Picker.h>
 #include <fastplot/PlotWidget.h>
@@ -19,6 +22,8 @@
 
 namespace
 {
+
+constexpr double kPi = 3.14159265358979323846;
 
 bool near(double a, double b, double eps = 1e-9)
 {
@@ -418,6 +423,81 @@ int main(int argc, char **argv)
 
         fprintf(stdout, "[ok] 双轴/图例/导出 PNG+CSV/状态复原（左 %d px、右 %d px 高 %d px）\n",
                 leftPixels, rightPixels, rightBottom - rightTop);
+    }
+
+    // 6c) 柱状图 / 直方图 / 频谱
+    {
+        auto nearInkCount = [](QWidget &w, const QColor &ink) {
+            const QImage img = w.grab().toImage();
+            int n = 0;
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x)
+                {
+                    const QColor c = img.pixelColor(x, y);
+                    if (std::abs(c.red() - ink.red()) < 40 &&
+                        std::abs(c.green() - ink.green()) < 40 &&
+                        std::abs(c.blue() - ink.blue()) < 40)
+                        ++n;
+                }
+            return n;
+        };
+
+        // 柱状图：三个类别，含一个负值。
+        {
+            fastplot::BarChart bar;
+            bar.resize(400, 300);
+            bar.setBars({QStringLiteral("roll"), QStringLiteral("pitch"), QStringLiteral("rpm")},
+                        {12.0, -3.0, 86.0},
+                        {QColor(0x5b, 0xc0, 0xf0), QColor(0xf0, 0x9d, 0x5b),
+                         QColor(0x8a, 0xd8, 0x6e)});
+            const QImage img = bar.grab().toImage();
+            assert(nearInkCount(bar, QColor(0x5b, 0xc0, 0xf0)) > 30);
+            assert(img.save(QDir::current().filePath(QStringLiteral("fastplot_bar.png"))));
+            fprintf(stdout, "[ok] 柱状图：三柱（含负值）出图\n");
+        }
+
+        // 直方图：一组双峰分布。
+        {
+            const int n = 2000;
+            std::vector<double> xs(n), ys(n);
+            for (int i = 0; i < n; ++i)
+            {
+                xs[i] = i * 0.01;
+                const double phase = i < n / 2 ? 0.0 : 3.0;
+                ys[i] = phase + std::sin(i * 0.1) * 0.3;
+            }
+            fastplot::ArrayData data(xs.data(), ys.data(), n, 41);
+            fastplot::Histogram hist;
+            hist.resize(400, 300);
+            hist.setData(&data);
+            hist.setBins(32);
+            const QImage img = hist.grab().toImage();
+            const int colored = nearInkCount(hist, QColor(0x5b, 0xc0, 0xf0));
+            assert(colored > 50);
+            assert(img.save(QDir::current().filePath(QStringLiteral("fastplot_hist.png"))));
+            fprintf(stdout, "[ok] 直方图：32 箱双峰分布出图\n");
+        }
+
+        // 频谱：5 Hz 正弦 + 小幅噪声，dt=0.01s。
+        {
+            const int n = 256;
+            std::vector<double> xs(n), ys(n);
+            for (int i = 0; i < n; ++i)
+            {
+                xs[i] = i * 0.01;
+                ys[i] = std::sin(2 * kPi * 5.0 * xs[i]) + 0.1 * std::sin(i * 1.3);
+            }
+            fastplot::ArrayData data(xs.data(), ys.data(), n, 43);
+            fastplot::SpectrumPlot spec;
+            spec.resize(400, 300);
+            spec.setData(&data);
+            spec.setSampleDt(0.01);
+            const QImage img = spec.grab().toImage();
+            const int colored = nearInkCount(spec, QColor(0x5b, 0xc0, 0xf0));
+            assert(colored > 20);
+            assert(img.save(QDir::current().filePath(QStringLiteral("fastplot_spectrum.png"))));
+            fprintf(stdout, "[ok] 频谱图：256 点单边幅值谱出图\n");
+        }
     }
 
     fprintf(stdout, "[ok] fastplot P1~P4 全部通过\n");
