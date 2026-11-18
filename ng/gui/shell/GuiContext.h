@@ -46,6 +46,9 @@ public:
     // 宿主执行器（模块在 GUI 里发意图用）。
     ng::core::IIntentExecutor &executor() override;
 
+    // 文件选取（GUI 交互能力）。
+    QString pickFilePath(const QString &title, const QString &filter) override;
+
     // 插槽登记表（MainWindow 用它声明骨架插槽）。
     ng::core::UiSlotRegistry &slotRegistry() { return m_slots; }
 

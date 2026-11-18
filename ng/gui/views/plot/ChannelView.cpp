@@ -6,6 +6,8 @@
 #include "PanelFactoryRegistry.h"
 #include "Result.h"
 
+#include <QTimer>
+
 namespace ng::gui
 {
 
@@ -14,6 +16,26 @@ using namespace ng::core;
 ChannelView::ChannelView(IIntentExecutor &executor, PlotCanvas *canvas, QObject *parent)
     : QObject(parent), m_executor(executor), m_canvas(canvas)
 {
+    if (!m_canvas)
+        return;
+
+    // 合并定时器：视口连续变化时只重取最后一次。
+    m_refreshTimer.setSingleShot(true);
+    m_refreshTimer.setInterval(120);
+    connect(&m_refreshTimer, &QTimer::timeout, this, [this] { refresh(); });
+
+    // 视口尺寸变化 → 按新像素宽重新取 LOD。
+    //
+    // 这是**分辨率正确性**的前提：抽稀的桶数必须等于画布实际像素宽。
+    // 若按旧宽度取数再拉伸，曲线会呈现梳齿状（每桶跨多个采样周期，
+    // min/max 被撑到值域两端），看起来像方波——是假象，不是数据。
+    //
+    // 用**合并定时器**而非直接重取：拖动窗口时 resize 事件连发，
+    // 每次都全量重扫百万行会把界面卡死。合并成一次即可——
+    // 反正用户停下来后只需要最终分辨率那一版。
+    connect(m_canvas, &PlotCanvas::viewportChanged, this, [this] {
+        m_refreshTimer.start();
+    });
 }
 
 bool ChannelView::showChannel(DatasetId datasetId, const QString &table, const QString &column,
@@ -22,14 +44,22 @@ bool ChannelView::showChannel(DatasetId datasetId, const QString &table, const Q
     if (!m_canvas)
         return false;
 
+    // 记住当前通道：视口变化时按它重新取数。
+    m_datasetId = datasetId;
+    m_table = table;
+    m_column = column;
+
     // 取数走意图层：GUI 与 CLI/脚本同一条路径，行为一致、可录制回放。
     Intent intent;
     intent.op = QStringLiteral("plot.channel");
     intent.params[QStringLiteral("dataset")] = datasetId;
     intent.params[QStringLiteral("table")] = table;
     intent.params[QStringLiteral("column")] = column;
-    // 像素级请求量按画布实际宽度定：绘制成本与像素宽相关，与行数无关。
-    intent.params[QStringLiteral("px")] = qMax(64, m_canvas->width() - 80);
+    // 像素级请求量按画布**实际绘图区**宽度定：绘制成本与像素宽相关，
+    // 与行数无关。由画布自己回答"我多宽"（PlotCanvas::plotPixelWidth），
+    // 上层不重复推导边距常量。
+    const int px = qMax(64, m_canvas->plotPixelWidth());
+    intent.params[QStringLiteral("px")] = px;
 
     const Result<IntentResult> result = m_executor.execute(intent);
     if (!result)
@@ -59,7 +89,20 @@ bool ChannelView::showChannel(DatasetId datasetId, const QString &table, const Q
                          payload.value(QStringLiteral("title")).toString());
     m_canvas->setLodData(lod, payload.value(QStringLiteral("t0")).toDouble(),
                           payload.value(QStringLiteral("t1")).toDouble());
+
+    // 画布尺寸在**布局稳定之后**才是最终值（dock 区域、ribbon 重建都会改变它）。
+    // 所以取完数再排一次合并重取：等布局落定后按最终像素宽再取一版。
+    // 否则桶数会按"中间态宽度"算，与最终画布差几十像素——
+    // 表现为曲线右侧留白/拉伸，观感上像是"没画满"。
+    m_refreshTimer.start();
     return true;
+}
+
+void ChannelView::refresh()
+{
+    if (m_datasetId == kInvalidDataset || m_table.isEmpty() || m_column.isEmpty())
+        return;
+    showChannel(m_datasetId, m_table, m_column);
 }
 
 QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
@@ -73,8 +116,8 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
     // 订阅共享的"活动通道"：数据集树双击 → 这里自动重绘。
     // 两个视图互不认识——协作全靠 AppContext 这一份共享状态。
     QObject::connect(&appCtx, &AppContext::activeChannelChanged, view,
-                     [view](int datasetId, const QString &table, const QString &column) {
-                         view->showChannel(datasetId, table, column);
+                     [view](int datasetId, const QString &t, const QString &c) {
+                         view->showChannel(datasetId, t, c);
                      });
 
     return canvas;

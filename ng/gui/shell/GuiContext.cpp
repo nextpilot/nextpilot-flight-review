@@ -5,6 +5,7 @@
 
 #include "AppContext.h"
 
+#include <QFileDialog>
 #include <QMainWindow>
 
 using namespace ng::core;
@@ -70,6 +71,15 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     else
         placePanel(widget, area);
     return widget;
+}
+
+QString GuiContext::pickFilePath(const QString &title, const QString &filter)
+{
+    if (!m_window)
+        return QString();
+    // 文件对话框是**外壳**的交互能力：模块层不链接 Qt Widgets，开不了它。
+    // 模块只拿到路径，之后照样走 data.load 意图——GUI 与 CLI 同一条路径。
+    return QFileDialog::getOpenFileName(m_window, title, QString(), filter);
 }
 
 IIntentExecutor &GuiContext::executor()

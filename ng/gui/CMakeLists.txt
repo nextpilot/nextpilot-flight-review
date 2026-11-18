@@ -42,6 +42,8 @@ add_library(ng_gui OBJECT
     views/plot/PlotCanvas.h
     views/plot/ChannelView.cpp
     views/plot/ChannelView.h
+    # --- 资源 ---
+    resources/icons.qrc
 )
 target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -50,7 +52,7 @@ target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/views/plot)
 target_link_libraries(ng_gui PUBLIC ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
-set_target_properties(ng_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+set_target_properties(ng_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 
 # 图形界面可执行文件：与 CLI 并列，共用同一套 app/host/core。
 add_executable(plotscope-ng-gui
@@ -80,3 +82,18 @@ target_link_libraries(plotscope-ng-gui-bench PRIVATE
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-bench PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+
+# GUI 截图工具（手动运行）：加载真实数据 → 渲染界面 → 存 PNG。
+# 用途是让人直接看到界面，而不是靠描述猜。
+add_executable(plotscope-ng-gui-shot
+    shot_gui.cpp
+    ${CMAKE_SOURCE_DIR}/app/App.cpp
+    ${CMAKE_SOURCE_DIR}/app/App.h
+)
+target_include_directories(plotscope-ng-gui-shot PRIVATE ${CMAKE_SOURCE_DIR}/app)
+target_link_libraries(plotscope-ng-gui-shot PRIVATE
+    ng_gui
+    ng_module_data ng_module_plot ng_module_script
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(plotscope-ng-gui-shot PROPERTIES AUTOMOC ON CXX_STANDARD 17)

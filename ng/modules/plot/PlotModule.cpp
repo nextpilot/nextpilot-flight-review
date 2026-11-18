@@ -249,6 +249,9 @@ void PlotModule::onAttach(UiContext &ui)
     action.label = QStringLiteral("重绘");
     action.area = QStringLiteral("ribbon.group.home.view");
     action.intentOp = QStringLiteral("plot.render");
+    // 图标名：外壳据此从资源里取 QIcon。图标名是**描述**，
+    // 具体资源由外壳管理——模块不直接依赖 GUI 资源。
+    action.icon = QStringLiteral("plot_refresh");
     ui.addAction(action.area, action);
 }
 

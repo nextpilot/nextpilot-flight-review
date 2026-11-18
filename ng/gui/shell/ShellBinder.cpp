@@ -14,6 +14,7 @@
 #include "SARibbonPanel.h"
 
 #include <QAction>
+#include <QIcon>
 #include <QMainWindow>
 #include <QObject>
 
@@ -35,6 +36,14 @@ ads::DockWidgetArea adsAreaFor(const QString &area)
         return ads::TopDockWidgetArea;
     return ads::LeftDockWidgetArea;
 }
+
+// 图标名 -> QIcon。资源由外壳统一管理（:/icons/<name>.svg）。
+// 动作只声明图标名，具体资源不外泄——于是模块/知识包不依赖 GUI 资源，
+// headless（CLI）构建保持纯净。
+QIcon iconFor(const QString &name)
+{
+    return QIcon(QStringLiteral(":/icons/%1.svg").arg(name));
+}
 } // namespace
 
 ShellBinder::ShellBinder(QMainWindow *window, ng::core::UiSlotRegistry &slotReg)
@@ -48,24 +57,48 @@ ShellBinder::~ShellBinder()
     m_dock = nullptr;
 }
 
-QWidget *ShellBinder::createRibbon()
+void ShellBinder::ensureDockManager()
 {
-    if (m_ribbon)
-        return m_ribbon;
+    if (m_dock)
+        return;
 
-    auto *ribbon = new SARibbonBar(m_window);
+    // ADS 在构造时按静态 flag 决定行为，必须先行设置。
+    ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::ActiveTabHasCloseButton, false);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::AllTabsHaveCloseButton, false);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaDynamicTabsMenuButtonVisibility);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize);
+    ads::CDockManager::setAutoHideConfigFlags(ads::CDockManager::DefaultAutoHideConfig);
+    m_dock = new ads::CDockManager(m_window);
+}
+
+void ShellBinder::createRibbon(SARibbonBar *ribbon)
+{
+    if (!ribbon)
+        return;
+    if (m_ribbon == ribbon)
+        return;
     m_ribbon = ribbon;
     // 结构层交给 SARibbon：页签溢出、键盘导航、面板布局都是它的事。
     ribbon->setRibbonStyle(SARibbonBar::RibbonStyleLooseSingleRow);
-    ribbon->setTitleVisible(false);
-    ribbon->setTitleBarHeight(0, true);
+    ribbon->setTitleVisible(false);       // 窗口标题由系统标题栏承担
+    ribbon->setTitleBarHeight(0, true);    // 标题带压成 0，否则页签被推低
     ribbon->setTabBarHeight(26);
+    // 收缩能力：右下角 chevron + 双击页签可把面板收起只留页签行。
+    ribbon->showMinimumModeButton(true);
+    ribbon->setTabDoubleClickToMinimumMode(true);
     ribbon->setPanelTitleHeight(14);
+    // 分组标题画在面板底边内，category 高度必须把它算进去。
     ribbon->setEnableShowPanelTitle(true);
+    ribbon->setPanelToolButtonIconSize(QSize(18, 18), QSize(26, 26));
+    ribbon->setPanelSpacing(3);
     ribbon->setCategoryHeight(78, true);
 
+    // 左上角默认带一个空 application button，留白很难看——藏掉。
+    if (auto *ab = ribbon->applicationButton())
+        ab->hide();
+
     rebuildRibbon();
-    return ribbon;
 }
 
 void ShellBinder::rebuildRibbon()
@@ -74,16 +107,26 @@ void ShellBinder::rebuildRibbon()
         return;
 
     // 清空旧页签（重建是幂等的）。
+    //
+    // 注意：SARibbon 的 removeCategory() 只把 category 从 stacked widget 里
+    // **移出**，并不销毁它——对象还在，且 stacked widget 的"当前页"仍可能
+    // 指向它。于是重建后新 category 排不上号，内容被旧的孤儿挡住，
+    // 表现为"内容挤在左上角一小块"。所以这里显式销毁。
     const auto categories = m_ribbon->categoryPages();
     for (SARibbonCategory *category : categories)
+    {
         m_ribbon->removeCategory(category);
+        category->deleteLater();
+    }
 
     // 插槽三级映射：RibbonPage → Category，RibbonGroup → Panel，UiAction → QAction
+    QVector<SARibbonCategory *> built;
     for (const ng::core::UiSlot &pageSlot : m_slots.slotsOfKind(ng::core::SlotKind::RibbonPage))
     {
         SARibbonCategory *category = m_ribbon->addCategoryPage(pageSlot.label);
         if (!category)
             continue;
+        built << category;
 
         for (const ng::core::UiSlot &groupSlot : m_slots.childrenOf(pageSlot.area))
         {
@@ -100,6 +143,9 @@ void ShellBinder::rebuildRibbon()
                 auto *action = new QAction(ua.label, m_ribbon);
                 action->setToolTip(ua.label);
                 action->setData(ua.id);
+                // 图标：动作只声明**图标名**，具体资源由外壳解析。
+                if (!ua.icon.isEmpty())
+                    action->setIcon(iconFor(ua.icon));
 
                 // 第一个动作做大按钮，其余小按钮——与常见 ribbon 观感一致。
                 if (i == 0)
@@ -115,27 +161,72 @@ void ShellBinder::rebuildRibbon()
                         m_dispatch(actionId);
                 });
             }
+
+            // 面板本体撑到能放下大按钮：SARibbon 的 category 高度不会
+            // 自动把 panel 拉满，少了这一步按钮会挤成一小块。
+            panel->setMinimumHeight(56);
         }
     }
+
+    // **内容填完后必须显式重排几何**。
+    //
+    // SARibbon 的按钮/面板位置是在 SARibbonBarLayout::doLayout() 里
+    // 按 category 的 sizeHint 手工摆的，而 sizeHint 只有在内容变化后
+    // 重新计算才会更新。SARibbon 自己在 QEvent::WindowActivate 时会
+    // relayout——但那是"窗口被激活"时的事：
+    //   · 内容是在窗口显示**之后**才填的（插槽来自器官的 onAttach），
+    //     激活事件早已过去；
+    //   · 无显示环境（offscreen）根本没有激活事件。
+    // 结果就是：ribbon 有 1440px 宽，内容却按空壳时的 sizeHint 挤在左上角。
+    //
+    // **内容填完后必须让 ribbon 重新布局一次**。
+    //
+    // SARibbon 把按钮/面板摆在哪，是 SARibbonBarLayout::doLayout() 按
+    // category 的 sizeHint 手工算的；而 sizeHint 只在内容变化后重算才更新。
+    // SARibbon 自己在 QEvent::WindowActivate 时会 relayout——但那是"窗口被
+    // 激活"时的事：内容是在窗口显示**之后**才填的（插槽来自器官 onAttach），
+    // 激活事件早已过去；无显示环境（offscreen）更是根本没有激活事件。
+    // 结果：ribbon 有 1440px 宽，内容却按空壳时的 sizeHint 挤在左上角。
+    //
+    // SARibbonCategory::updateItemGeometry() 是官方为此提供的入口：
+    // 它重算 category 内各面板的按钮几何。
+    for (SARibbonCategory *category : built)
+        category->updateItemGeometry();
+
+    // 再用公开的尺寸接口触发一次 ribbon 自身的重排
+    // （setCategoryHeight 的 resizeByNow 参数就是"立即重排"的意思）。
+    m_ribbon->setCategoryHeight(m_ribbon->categoryHeight(), /*resizeByNow=*/true);
+    m_ribbon->setPanelTitleHeight(m_ribbon->panelTitleHeight());
+    m_ribbon->updateGeometry();
+
+    // 当前页必须指向新建的 category：移出旧页后 stacked widget 的当前页
+    // 可能还停在已被移除的孤儿上，新页就显示不出来。
+    if (!built.isEmpty())
+        m_ribbon->setCurrentIndex(0);
 }
 
 void ShellBinder::dock(const QString &area, const QString &title, QWidget *content)
 {
     if (!content)
         return;
-    if (!m_dock)
-    {
-        // ADS 在构造时按静态 flag 决定行为，必须先行设置。
-        ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting);
-        ads::CDockManager::setConfigFlag(ads::CDockManager::ActiveTabHasCloseButton, false);
-        ads::CDockManager::setConfigFlag(ads::CDockManager::AllTabsHaveCloseButton, false);
-        ads::CDockManager::setConfigFlag(ads::CDockManager::DockAreaDynamicTabsMenuButtonVisibility);
-        ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize);
-        ads::CDockManager::setAutoHideConfigFlags(ads::CDockManager::DefaultAutoHideConfig);
-        m_dock = new ads::CDockManager(m_window);
-    }
+    ensureDockManager();
 
-    auto *dock = new ads::CDockWidget(title, m_dock);
+    // **中央区必须先于侧边区注册**——这是 ADS 的硬性布局约束。
+    //
+    // 原因在 ADS 的 addDockArea()：它只在"区域内 dock 数量 <= 1"时才按
+    // 插入参数重设根分割器方向。所以谁先注册谁决定最终方向：
+    //   先侧边区(Horizontal) → 再中央区(Vertical) → 根分割器被翻成垂直，
+    //                          于是数据集树在上、画布在下；
+    //   先中央区(Vertical)   → 再侧边区(Horizontal) → 根分割器保持水平，
+    //                          得到「左侧树 | 中央画布」。
+    //
+    // 老代码（src/application/shell/DockManager.cpp）用同一个招：
+    // installCentral() 在 ensure() 里紧跟 CDockManager 构造就装中央区。
+    // 这里沿用该做法：中央区内容先到就先装中央区，侧边区永远后装。
+    if (!m_centralInstalled)
+        installCentral();
+
+    auto *dock = new ads::CDockWidget(m_dock, title);
     dock->setObjectName(QStringLiteral("ng.dock.%1").arg(area));
     dock->setWidget(content);
     dock->setFeature(ads::CDockWidget::DockWidgetClosable, true);
@@ -160,17 +251,49 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
 
 void ShellBinder::setCentralContent(QWidget *content)
 {
+    if (!content)
+        return;
+    ensureDockManager();
+
+    // 中央内容后到：侧边区可能已经装好了。但中央 dock 仍是**第一个**
+    // 装进 ADS 的（dock() 里会先 installCentral() 占位），
+    // 所以布局方向不会因为它晚到而跑偏。
+    if (!m_centralInstalled)
+        installCentral();
+    else if (m_centralDock)
+    {
+        // 已有中央 dock：把真正的面板换进去（占位容器丢弃）。
+        QWidget *placeholder = m_centralDock->takeWidget();
+        if (placeholder)
+            placeholder->deleteLater();
+        m_centralDock->setWidget(content);
+    }
     m_centralContent = content;
-    if (!m_dock || m_centralInstalled || !content)
+}
+
+void ShellBinder::installCentral()
+{
+    if (!m_dock || m_centralInstalled)
         return;
 
-    // 中央内容装进一个不可关闭/移动/浮动的 ADS dock：它就是"画布区"。
-    auto *central = new ads::CDockWidget(QStringLiteral("主视图"), m_dock);
-    central->setWidget(content);
-    central->setFeature(ads::CDockWidget::DockWidgetClosable, false);
-    central->setFeature(ads::CDockWidget::DockWidgetMovable, false);
-    central->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
-    auto *area = m_dock->addDockWidget(ads::CenterDockWidgetArea, central);
+    // 中央区内容此刻可能还没到（画布模块可能尚未 attach）：
+    // 先用一个占位容器占住"中央"这个位置，
+    // 保证后续所有侧边 dock 都排在它之后——顺序约束由外壳兜住。
+    QWidget *content = m_centralContent ? m_centralContent : new QWidget();
+    m_centralDock = new ads::CDockWidget(m_dock, QStringLiteral("主视图"));
+    m_centralDock->setObjectName(QStringLiteral("ng.dock.canvas.center"));
+    content->setMinimumWidth(320);
+    m_centralDock->setWidget(content);
+    m_centralDock->setMinimumWidth(320);
+    m_centralDock->setFeature(ads::CDockWidget::DockWidgetClosable, false);
+    m_centralDock->setFeature(ads::CDockWidget::DockWidgetMovable, false);
+    m_centralDock->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
+
+    // 用 addDockWidget(CenterDockWidgetArea) 而不是 setCentralWidget()：
+    // 后者是 ADS 的"独占中央控件"入口，要求它是唯一且第一个 dock，
+    // 且会把中央控件排除在普通 dock 体系之外——与"画布区是一个可停靠区域"
+    // 的语义不符。老代码同样用 addDockWidget(CenterDockWidgetArea, ...)。
+    auto *area = m_dock->addDockWidget(ads::CenterDockWidgetArea, m_centralDock);
     if (area)
         area->setDockAreaFlag(ads::CDockAreaWidget::HideSingleWidgetTitleBar, true);
     m_centralInstalled = true;

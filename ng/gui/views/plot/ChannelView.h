@@ -3,6 +3,7 @@
 #include "PlotCanvas.h"
 
 #include <QObject>
+#include <QTimer>
 #include <QString>
 
 namespace ng::core
@@ -26,6 +27,10 @@ namespace ng::gui
 //   2. 视图不认识数据层——换掉渲染实现（Rust LOD / 别的来源）不影响它。
 //
 // 内存铁律不变：像素级三元组数量 <= 画布像素宽，与数据行数无关。
+//
+// **分辨率也由这里保证**：LOD 的桶数必须等于画布的实际像素宽，
+// 否则窄屏取的 LOD 会被拉到大屏（梳齿状假象）。所以视图订阅画布的
+// viewportChanged，视口一变就按新宽度重新取数。
 class ChannelView : public QObject
 {
     Q_OBJECT
@@ -40,8 +45,19 @@ public:
     PlotCanvas *canvas() const { return m_canvas; }
 
 private:
+    // 按当前画布像素宽重新取数（视口变化时调用）。
+    void refresh();
+
     ng::core::IIntentExecutor &m_executor;
     PlotCanvas *m_canvas = nullptr;
+
+    // 视口变化的合并重取定时器（拖动窗口时避免连发重扫）。
+    QTimer m_refreshTimer;
+
+    // 当前呈现的通道（视口变化时按它重新取数）。
+    ng::core::DatasetId m_datasetId = ng::core::kInvalidDataset;
+    QString m_table;
+    QString m_column;
 };
 
 // 绘图视图的工厂：创建画布 + 通道视图，并让视图订阅共享的"活动通道"。

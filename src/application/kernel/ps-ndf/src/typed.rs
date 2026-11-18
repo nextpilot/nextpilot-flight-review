@@ -574,7 +574,13 @@ impl Table {
                 }
                 cur_bucket = b;
                 let base = count * 3;
-                out[base] = self.time_us[row] as f64 / 1_000_000.0;
+                // x = **桶的几何中心时间**，不是桶内第一行的时间。
+                //
+                // 分桶是按时间均匀切的，所以桶中心才是该桶在时间轴上的代表点。
+                // 若写"桶内第一行时间"，源数据的时间戳抖动（ULog 采样并不严格
+                // 等间隔）会让相邻桶的 x 间距忽大忽小——画布按 x 定位像素时
+                // 就会跳格，曲线被画成一根根孤立竖线而不是连续包络。
+                out[base] = (t0_us as f64 + span * (b as f64 + 0.5) / px as f64) / 1_000_000.0;
                 out[base + 1] = f64::INFINITY;
                 out[base + 2] = f64::NEG_INFINITY;
                 count += 1;

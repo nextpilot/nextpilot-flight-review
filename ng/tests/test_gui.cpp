@@ -182,7 +182,11 @@ int main(int argc, char *argv[])
     application.context().setActiveChannel(dsId, QStringLiteral("trace"),
                                            QStringLiteral("sig"));
     CHECK(canvas->lodPointCount() > 0);
-    const int canvasPx = qMax(64, canvas->width() - 80);
+    // LOD 桶数必须 <= 画布绘图区像素宽：
+    // 桶数与画布宽不匹配就会出现"梳齿"假象（每桶跨多个采样周期，
+    // min/max 被撑到值域两端，看起来像方波）。
+    // 因此断言用的是画布自己给出的绘图区宽度。
+    const int canvasPx = qMax(64, canvas->plotPixelWidth());
     CHECK(canvas->lodPointCount() <= canvasPx);
     CHECK(!canvas->channelTitle().isEmpty());
     OK(QStringLiteral("画布消费像素级数据并渲染（%1 点，按画布像素宽有界，与行数无关）")

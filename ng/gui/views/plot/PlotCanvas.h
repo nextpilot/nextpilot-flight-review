@@ -15,6 +15,10 @@
 //
 // 职责单一：只负责"把一条曲线的 LOD 三元组画出来"，不加载数据、
 // 不认识格式、不做交互逻辑（交互由上层转发意图）。
+//
+// 它**不知道数据从哪来**，所以数据源变化由上层喂进来；
+// 但它知道"自己多大"——视口尺寸变化会发 viewportChanged，
+// 让上层按新的像素宽度重新取数（否则窄屏取的 LOD 会被拉伸成锯齿）。
 namespace ng::gui
 {
 
@@ -37,14 +41,30 @@ public:
     // 清空。
     void clear();
 
+    // 绘图区（不含坐标轴留白）的像素宽度。
+    // 上层按这个值向意图层请求 LOD——分辨率决策属于"画布有多大"，
+    // 所以由画布自己回答，上层不重复推导。
+    int plotPixelWidth() const;
+
     // 诊断/测试用。
     int lodPointCount() const { return m_lod.size(); }
     QString channelTitle() const { return m_title; }
 
+Q_SIGNALS:
+    // 视口尺寸变了：上层需要按新像素宽重新取 LOD。
+    void viewportChanged();
+
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
+    // 坐标轴留白（像素）。
+    static constexpr int kMarginLeft = 56;
+    static constexpr int kMarginRight = 16;
+    static constexpr int kMarginTop = 28;
+    static constexpr int kMarginBottom = 28;
+
     ng::core::DatasetId m_datasetId = ng::core::kInvalidDataset;
     QString m_table;
     QString m_column;

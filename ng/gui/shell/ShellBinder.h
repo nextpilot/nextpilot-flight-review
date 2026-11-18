@@ -49,8 +49,9 @@ public:
     ShellBinder(QMainWindow *window, ng::core::UiSlotRegistry &slotReg);
     ~ShellBinder();
 
-    // 创建并装配 ribbon（返回一个已挂到窗口上的 SARibbonBar）。
-    QWidget *createRibbon();
+    // 配置 ribbon 条（无边框窗体由 SARibbonMainWindow 提供 ribbon 条本体）。
+    // 传入的 ribbon 由 SARibbonMainWindow 持有，本类只负责往里填内容。
+    void createRibbon(SARibbonBar *ribbon);
 
     // 按插槽数据把内容停靠到指定区域；同区域重复停靠合并成标签页。
     void dock(const QString &area, const QString &title, QWidget *content);
@@ -91,6 +92,19 @@ public:
     void setIntentDispatcher(IntentDispatcher dispatcher) { m_dispatch = std::move(dispatcher); }
 
 private:
+    // 确保 ADS 停靠体系已建立（幂等）。
+    void ensureDockManager();
+
+    // 装中央画布区。**必须早于任何侧边 dock**——ADS 的 addDockArea() 只在
+    // "区域内 dock 数量 <= 1"时按插入参数重设根分割器方向，
+    // 于是谁先注册谁决定最终方向：
+    //   先中央区(Vertical) → 再侧边区(Horizontal) → 根分割器保持水平，
+    //                          得到「左侧树 | 中央画布」；
+    //   反过来则根分割器被翻成垂直，树在上、画布在下。
+    // 老代码（src/application/shell/DockManager.cpp）用同一个招：
+    // installCentral() 在 CDockManager 构造后立刻装中央区。
+    void installCentral();
+
     QMainWindow *m_window = nullptr;
     ng::core::UiSlotRegistry &m_slots;
 
@@ -100,7 +114,8 @@ private:
 
     // ADS
     ads::CDockManager *m_dock = nullptr;
-    QWidget *m_centralContent = nullptr;
+    ads::CDockWidget *m_centralDock = nullptr; // 中央画布区的 dock
+    QWidget *m_centralContent = nullptr;       // 装进中央区的面板
     bool m_centralInstalled = false;
     QHash<QString, ads::CDockAreaWidget *> m_lastArea; // area -> 该侧最后一个 DockArea
     QHash<QString, ads::CDockWidget *> m_panels;      // area -> 该侧主 dock

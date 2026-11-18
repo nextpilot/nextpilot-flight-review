@@ -53,6 +53,16 @@ public:
 
     // 宿主执行器：模块在 GUI 里点击动作后，用它发意图（与脚本/CLI 同一路径）。
     virtual ng::core::IIntentExecutor &executor() = 0;
+
+    // 选取一个文件路径（GUI 交互能力，由外壳实现）。
+    //
+    // 为什么放在 UiContext 而不是让模块自己开对话框：
+    //   - 模块层不链接 Qt Widgets（headless 构建保持纯净），开不了 QFileDialog；
+    //   - 文件对话框是**外壳**的交互能力，不是业务语义；
+    //   - 模块只拿到"一个路径"，拿到之后照样走 data.load 意图——
+    //     于是 GUI 与 CLI/脚本加载数据走的是同一条路径，行为一致。
+    // 返回空串表示用户取消。
+    virtual QString pickFilePath(const QString &title, const QString &filter) = 0;
 };
 
 // 模块拿到的运行时上下文：只有能力，没有全局单例、没有 MainWindow*。

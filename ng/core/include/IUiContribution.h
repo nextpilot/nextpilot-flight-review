@@ -23,6 +23,7 @@ struct UiAction
     QString area;      // 目标插槽：如 "menu.plot" / "dock.left" / "ribbon.home" / "canvas.tool"
     QString intentOp;  // 点击后发射的意图 op（空=仅占位）；如 "plot.render"
     QString data;      // 附加数据（可选，如预置的 PlotSpec JSON）
+    QString icon;      // 图标名（可选），如 "plot.refresh"；由外壳解析成 QIcon
 };
 
 // 界面贡献：一个知识包向 app 骨架贡献的菜单/面板/工具栏/画布工具入口集合。
