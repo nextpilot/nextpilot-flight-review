@@ -24,7 +24,8 @@ IngestPipeline::~IngestPipeline()
     }
 }
 
-Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &binding)
+Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &binding,
+                                    DatasetId preferredDatasetId)
 {
     if (binding.parserId.isEmpty())
         return fail(QStringLiteral("eformat"), QStringLiteral("解析器 id 为空"));
@@ -55,9 +56,22 @@ Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &bindin
     Dataset ds = Dataset::create(name, binding.parserId);
     if (ds.isNull())
         return fail(QStringLiteral("eio"), QStringLiteral("无法创建数据集: %1").arg(name));
-    const DatasetId dsId = m_repo.add(ds);
-    if (dsId == kInvalidDataset)
-        return fail(QStringLiteral("eio"), QStringLiteral("数据集入仓失败: %1").arg(name));
+    // 数据集入仓：指定了稳定 id 就用它（录制/回放需要 id 不漂移），
+    // 否则按仓库自增分配。
+    DatasetId dsId = kInvalidDataset;
+    if (preferredDatasetId != kInvalidDataset)
+    {
+        const Result<DatasetId> added = m_repo.addWithStableId(ds, preferredDatasetId);
+        if (!added)
+            return fail(added.error().code, added.error().message);
+        dsId = added.value();
+    }
+    else
+    {
+        dsId = m_repo.add(ds);
+        if (dsId == kInvalidDataset)
+            return fail(QStringLiteral("eio"), QStringLiteral("数据集入仓失败: %1").arg(name));
+    }
 
     ParserChannel ch;
     ch.parserId = binding.parserId;
@@ -83,6 +97,20 @@ Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &bindin
 
     chans.append(ch);
     return dsId;
+}
+
+void IngestPipeline::setTableRename(int sourceId, const QString &parserId, const QString &newName)
+{
+    auto cit = m_sinkCtx.find(sourceId);
+    if (cit == m_sinkCtx.end())
+        return;
+    for (auto &ctx : cit->second)
+    {
+        if (!ctx || ctx->parserId != parserId)
+            continue;
+        ctx->tableName = newName; // 空 = 沿用解析器给出的表名
+        return;
+    }
 }
 
 bool IngestPipeline::unbindParser(int sourceId, const QString &parserId)
@@ -248,9 +276,15 @@ int32_t IngestPipeline::onFrameBatch(void *ctx, const PsFrameBatch *batch)
         cols.append(fc);
     }
 
+    // 表名改写（宿主策略）：解析器只认字节，不知道表该叫什么；
+    // 单表格式由宿主命名（见 IFormatDriver::preferredTableName）。
+    // Rust 侧的表名在写入时定死，所以只能在这里改。
+    QString table = QString::fromUtf8(batch->table ? batch->table : "");
+    if (!sc->tableName.isEmpty())
+        table = sc->tableName;
+
     QString err;
-    if (!ds->appendFrame(QString::fromUtf8(batch->table ? batch->table : ""),
-                         batch->time_us, static_cast<int>(batch->rows), cols, &err))
+    if (!ds->appendFrame(table, batch->time_us, static_cast<int>(batch->rows), cols, &err))
         return -1;
 
     // 数据已进 Rust，但 C++ 侧的 schema 投影尚未刷新。

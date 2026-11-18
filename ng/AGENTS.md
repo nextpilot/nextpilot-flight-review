@@ -45,17 +45,27 @@
 
 ### P0 —— 现在不定，后面一定要返工
 
-**P0-1 两条数据通路并存 —— ULog 已归并，其余格式待归并。**
-- 通路 A（**部分归并**）：`data.load` → `DataLoadHandler` → `IFormatDriver::load()`，驱动自己读文件、自己建 Dataset。
-  **ULog 已退出这条通路**：驱动只声明 `parserId()="ulog"`，宿主据此走管道。
-  `CsvFormatDriver` 仍在旧通路上（待归并）。
-- 通路 B（**已有生产调用**）：`data.load` → `IngestOrchestrator` → `Source` → `IngestPipeline::bindParser/feed/finish` → parser sink → Dataset。
+**P0-1 两条数据通路并存 —— 内置格式已全部归并。**
+- 通路 A（旧）：`data.load` → `DataLoadHandler` → `IFormatDriver::load()`，驱动自己读文件、自己建 Dataset。
+  **内置格式（ulog / csv）已全部退出这条通路**：驱动只声明 `parserId()`，宿主据此走管道；
+  两个驱动的 `load()` 都改为明确报错（不再偷偷走另一条路）。
+  该接口保留为"尚未归并的格式"的过渡出口，宿主仅在 `parserId()` 为空时才调用。
+- 通路 B（**唯一生产路径**）：`data.load` → `IngestOrchestrator` → `Source` → `IngestPipeline::bindParser/feed/finish` → parser sink → Dataset。
   读字节由宿主统一编排（`IByteSource`），格式解析由 SPI 解析器提供（`ParserRegistry`）。
-- 归并后的形态：**每种格式只有一份解析器实现**。ULog 的协议解析在 `UlogStreamParser.cpp` 里，
-  SPI 路径与旧 driver 路径共用同一份代码，分叉点只有"批去哪"（`Emitter`）——不是两份 parser。
-- 行为锁：`tests/test_pipeline.cpp` 断言 **SPI 管道与旧 driver 路径产出逐行相同**；
-  `tests/test_architecture.cpp` 断言 ULog 加载后的数据集名是管道生成的 `src<源id>_ulog`。
-- 处置（其余格式）：**归并到 B，不新建第三条路**。否则每加一个格式要写两份（一份 driver、一份 parser），录制回放只能覆盖其中一条。
+- 归并后的形态：**每种格式只有一份解析器实现**。
+  - ULog 的协议解析在 `UlogStreamParser.cpp` 里，SPI 路径与旧路径共用同一份代码，分叉点只有"批去哪"（`Emitter`）；
+  - CSV 的解析在 `CsvParser.cpp`（新写的 SPI 实现），旧的"驱动自己读文件"版本已删除。
+- **宿主策略归位**（这三项都不是解析器的事，上一轮归并时一度丢失，已补回）：
+  | 策略 | 归属 | 载体 |
+  |---|---|---|
+  | 表名（CSV 取文件名/intent，ULog 取 topic） | 扩展层**声明** | `IFormatDriver::preferredTableName()` + `IngestPipeline::setTableRename()` |
+  | 缓存（源文件 size+mtime 指纹） | 宿主编排 | `IngestOptions::useCache`，缓存路径 `<源文件绝对路径>.<解析器id>.psc` |
+  | stable id（录制/回放 id 不漂移） | 宿主编排 | `IngestOptions::stableId` → `IngestPipeline::bindParser(..., preferredDatasetId)` |
+- 行为锁：`tests/test_pipeline.cpp` 断言 **ULog 的 SPI 管道与旧 driver 路径产出逐行相同**、
+  **CSV 走管道后表名/列值/时间轴与旧语义一致**、**缓存命中产出同名同内容的数据集**、
+  **stable id 生效**；`tests/test_architecture.cpp` 断言 ULog/CSV 加载后的数据集名是管道生成的
+  `src<源id>_<解析器id>`。
+- 处置（后续新格式）：**直接走 SPI，不写 driver 的 load()**。否则每加一个格式要写两份，录制回放只能覆盖其中一条。
 
 **P0-2 属性编辑无归属。**
 老 `PropertyManager` 449 行是「protocol 对话框」和「绘图属性页」**共同偷偷依赖**的能力；ng 没有对应物。
@@ -86,7 +96,7 @@ P1-5 | **兼容入口未清** | `ModuleContext::data()/host()` 转发仍在，�
 
 - 视图只有 `timeseries` 一种，12 模式未拆（§11 #12）。`a5f2887` 后 `PlotCanvas` 203 行 / `ChannelView` 129 行，仍是单视图
 - 器官缺 `mod.source` / `mod.dataset` / `mod.analysis` / `mod.report`（§11 #11）
-- 格式实作只有 `csv` / `ulog` / `pspx`（§11 #14）
+- 格式实作只有 `csv` / `ulog` / `pspx`（§11 #14）。`csv` 与 `ulog` 均已归并到统一摄取管道，**格式知识各只有一份实现**
 - **`UiContext` 的接口在增长**（`a5f2887` 加了 `pickFilePath`）。目前都是外壳能力、不构成概念，但每加一个方法都要回答同一个问题：**为什么它不能走 `Intent`**。答不出来就不该加——这是 `ServiceRegistry` 复活的最短路径
 
 ---
@@ -149,7 +159,7 @@ MainWindow 太大 | ✘ 误诊：老 `MainWindow.cpp` 只有 194 行，真痛点
 
 ## 7. 建议优先级
 
-1. **P0-1**：归并两条数据通路，ULog 一条先通 + 与老实现做等价性快照。
+1. **P0-1**：✅ 内置格式已全部归并（ulog / csv），等价性快照已建立。下一步是把其余格式（mavlink/nmea/oem7/asc/blf/mdf4）逐个按同法平移。
 2. **P0-2**：定属性契约（schema 归提供者，表归视图）。
 3. **P0-3**：四类状态归位，Document 放在 app 层，不进 core 概念表。
 4. **P1-3 / P1-4**：补两个守卫 —— 禁止 cast 具体视图类的检查、面板类型名的对账断言。

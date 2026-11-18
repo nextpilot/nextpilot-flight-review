@@ -46,7 +46,18 @@ public:
     // 按文件路径后缀判断（通用实现，基于 suffixes()）。
     bool acceptsSuffix(const QString &path) const;
 
-    // 执行加载：把 intent（含 path/table/id/nocache 等）解析进 Dataset 并入仓库。
+    // 旧路径：驱动自己读文件、自己建 Dataset、自己管缓存与入仓。
+    //
+    // **归并后（AGENTS.md §3 P0-1）内置格式都不再走这条路**：
+    //   读字节、缓存、stable id 都归宿主（IngestOrchestrator），
+    //   协议解析归 SPI 解析器，驱动只**声明** parserId。
+    // 于是每种格式只有一份解析器实现，录制旁路只需一个 tee 就能覆盖所有格式。
+    //
+    // 保留本接口是为了给"尚未归并的格式"一个过渡出口：
+    // 宿主在 parserId() 为空时才调用它（见 DataLoadHandler）。
+    // 已归并的驱动应让本函数明确报错，而不是偷偷走另一条路
+    // ——那会又长出第二条数据通路。
+    //
     // 返回 DatasetId 作为 IntentResult.payload，与既有 data.load 契约一致。
     virtual Result<IntentResult> load(const Intent &intent, DataRepository &repo) = 0;
 
@@ -68,6 +79,26 @@ public:
     //
     // 返回空串的驱动走旧的 load() 路径（尚未归并的格式仍可用）。
     virtual QString parserId() const { return QString(); }
+
+    // 本格式的**表名策略**（声明，不是执行）。
+    //
+    // 为什么要它：SPI 解析器只认字节，不知道"这个文件叫什么"，
+    // 于是**表名**（CSV 的表名原本取自 intent 参数或文件名）就成了宿主策略。
+    // 但"哪些列是数值列、第一列是不是时间"是**格式知识**，归解析器；
+    // "这张表叫什么"是**展示策略**，归驱动声明。
+    //
+    // 语义：返回本次加载应使用的表名；返回空串表示"沿用解析器给出的表名"。
+    //   - CSV：intent.params["table"] 或文件名（与旧行为一致）；
+    //   - ULog：空串（表名 = topic 名，由解析器给出）。
+    //
+    // 于是宿主在扇出绑定时按此设定**表名映射**，管道落库时套用——
+    // 解析器保持"只认字节"，表名策略仍留在扩展层。
+    virtual QString preferredTableName(const Intent &intent, const QString &sourcePath) const
+    {
+        Q_UNUSED(intent);
+        Q_UNUSED(sourcePath);
+        return QString();
+    }
 };
 
 } // namespace ng::core

@@ -149,6 +149,13 @@ public:
     QString format() const;
     void setFormat(const QString &format);
 
+    // 改数据集显示名。
+    //
+    // 为什么需要：数据集的名字由**创建它的一方**决定（管道给的是
+    // "src<源id>_<解析器id>"），而缓存还原出来的数据集带着缓存文件名。
+    // 两者必须一致，否则"同一份数据第二次打开显示不同的名字"。
+    void setName(const QString &name);
+
     // ---- schema 查询（来自构造期投影，纯元数据）----
     int tableCount() const;
     const Table *table(int index) const;

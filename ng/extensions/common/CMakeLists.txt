@@ -5,6 +5,9 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 # OBJECT 库的所有目标文件必然参与链接，注册一定发生。
 add_library(ng_ext_common OBJECT
     CsvFormatDriver.cpp
+    CsvFormatDriver.h
+    CsvParser.cpp
+    CsvParser.h
     CommonPack.cpp
     CommonPack.h
     PspxParser.cpp

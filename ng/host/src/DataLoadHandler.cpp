@@ -37,8 +37,26 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
     const QString parserId = driver->parserId();
     if (m_pipeline && !parserId.isEmpty())
     {
+        // 宿主策略（三项都不是解析器的事）：
+        //   · 表名：解析器只认字节，给不出"这张表叫什么" —— 由驱动声明；
+        //   · 缓存：按源文件指纹复用已解析的数据集；
+        //   · 稳定 id：录制/回放时数据集 id 不能漂移。
+        IngestOrchestrator::Options options;
+
+        // 表名：驱动的 preferredTableName 给出目标表名（单表格式才声明）。
+        // ULog 这类多表格式返回空串 —— 表名由 topic 决定，宿主不插手。
+        options.tableName = driver->preferredTableName(intent, path);
+
+        // 缓存：默认开启（与旧 driver 行为一致），nocache=true 时关闭。
+        options.useCache = !intent.params.value(QStringLiteral("nocache"), false).toBool();
+
+        // 稳定 id：脚本可显式指定，录制/回放据此保持 id 一致。
+        if (intent.params.contains(QStringLiteral("id")))
+            options.stableId = intent.params.value(QStringLiteral("id")).toInt();
+
         IngestOrchestrator orchestrator(m_repo, m_sources, *m_pipeline);
-        const Result<int> opened = orchestrator.openFile(path, QStringList{parserId});
+        const Result<int> opened = orchestrator.openFile(path, QStringList{parserId},
+                                                        QString(), options);
         if (!opened)
             return fail(opened.error().code, opened.error().message);
 

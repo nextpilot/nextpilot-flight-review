@@ -8,6 +8,7 @@
 #include "Result.h"
 
 #include <QString>
+#include <QStringList>
 
 namespace ng::core
 {
@@ -36,10 +37,38 @@ namespace ng::core
 //   每加一个格式要写一份读文件的代码，且录制旁路覆盖不到它们。
 //   现在格式知识归解析器（SPI），编排归宿主，两者都不重复。
 //
+// **宿主策略也在这一层**（不属于解析器）：
+//   - 表名映射：解析器只认字节，给不出"这张表叫什么"；
+//   - 缓存：按源文件指纹复用已解析的数据集（ps-cache）；
+//   - 稳定 id：录制/回放时数据集 id 不能漂移。
+//
 // 内存纪律：常驻内存 = 一个读取缓冲 + 每个解析器一批，与文件大小无关。
+// 一次摄取的**宿主策略**（不属于解析器，也不属于格式）。
+//
+// 这三项都是"读字节 → 落库"这条路上、解析器不该管的事：
+//   · 表名：解析器只认字节，给不出"这张表叫什么"；
+//   · 缓存：按源文件指纹复用已解析的数据集；
+//   · 稳定 id：录制/回放时数据集 id 不能随会话漂移。
+struct IngestOptions
+{
+    // 表名改写：把解析器产出的表改名为此（空 = 沿用解析器给出的表名）。
+    // 只在**单表格式**上声明（见 IFormatDriver::preferredTableName）。
+    QString tableName;
+
+    // 缓存：复用按源文件指纹（size+mtime）存下的已解析数据集。
+    // 只对**文件**来源有意义（流没有稳定指纹）。
+    bool useCache = false;
+
+    // 稳定 id：录制/回放时用它入仓，避免会话内自增 id 漂移。
+    // kInvalidDataset = 自动分配。
+    DatasetId stableId = kInvalidDataset;
+};
+
 class IngestOrchestrator
 {
 public:
+    using Options = IngestOptions;
+
     IngestOrchestrator(DataRepository &repo, DataSourceRepository &sources,
                        IngestPipeline &pipeline);
 
@@ -50,13 +79,15 @@ public:
     //
     // 返回主数据集 id（第一个解析器产出）。失败时 err 说明原因。
     Result<int> openFile(const QString &path, const QStringList &parserIds = QStringList(),
-                         const QString &topicFilter = QString());
+                         const QString &topicFilter = QString(),
+                         const Options &options = Options());
 
     // 从任意字节来源载入（文件 / 流 / 内存片段共用同一编排）。
     // source 由调用方持有，其生命周期须覆盖本调用。
     Result<int> openSource(IByteSource &source, const QStringList &parserIds,
                             const QString &topicFilter = QString(),
-                            const QString &origin = QString());
+                            const QString &origin = QString(),
+                            const Options &options = Options());
 
     // 上一次 open 产出的**全部**数据集 id（扇出的各路）。
     const QVector<int> &datasetIds() const { return m_datasetIds; }
@@ -67,7 +98,8 @@ public:
 private:
     // 打开 + 绑定 + 读取 + 收尾的共同实现。
     Result<int> ingest(IByteSource &source, const QStringList &parserIds,
-                       const QString &topicFilter, const QString &origin);
+                       const QString &topicFilter, const QString &origin,
+                       const Options &options);
 
     DataRepository &m_repo;
     DataSourceRepository &m_sources;

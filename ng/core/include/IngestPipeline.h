@@ -58,7 +58,29 @@ public:
 
     // 绑定一个解析器到指定数据源（扇出的一路）。
     // 绑定即创建独立实例与**独立数据集**，数据集立即登记进仓库。
-    Result<int> bindParser(int sourceId, const ParserBinding &binding);
+    //
+    // preferredDatasetId != kInvalidDataset 时，数据集以该**稳定 id** 入仓
+    // （录制/回放需要：会话内自增 id 会漂移，脚本引用就断了）。
+    Result<int> bindParser(int sourceId, const ParserBinding &binding,
+                           DatasetId preferredDatasetId = kInvalidDataset);
+
+    // 为某一路指定**表名改写**（宿主策略）。
+    //
+    // 为什么需要：SPI 解析器只认字节，不知道"这张表该叫什么"——
+    // 表名对 CSV 是"文件名或 intent 参数"，对 ULog 是"topic 名"。
+    // 前者是展示策略（归扩展层声明），后者由解析器给出。
+    //
+    // 语义：把该通道产出的**所有**表都改名为 newName。
+    // 于是宿主必须只在**单表格式**上声明它（CSV）——
+    // 多表格式（ULog 的多 topic）不声明，表名仍由解析器按内容决定。
+    //
+    // 为什么不写成"from -> to"的字符串配对：那要求宿主知道解析器内部
+    // 用什么表名，解析器一改内部名，宿主的映射就静默失效。
+    // 而"单表格式由宿主命名"是**格式的稳定属性**，不会随实现变。
+    //
+    // 为什么必须在这里（appendFrame 时）改：Rust 侧的表名在数据写入
+    // 时就定死了，没有事后改名的 API。
+    void setTableRename(int sourceId, const QString &parserId, const QString &newName);
 
     // 解除绑定（销毁实例；数据集本身仍由仓库持有，可另行清理）。
     bool unbindParser(int sourceId, const QString &parserId);
@@ -91,6 +113,9 @@ private:
         QString parserId;
         int datasetId = -1;
         bool dirty = false;   // 有新数据灌入，待收尾时刷新 schema
+        // 表名改写（宿主策略）：该通道所有表都用这个名字。
+        // 空 = 沿用解析器给出的表名。
+        QString tableName;
     };
 
     DataRepository &m_repo;

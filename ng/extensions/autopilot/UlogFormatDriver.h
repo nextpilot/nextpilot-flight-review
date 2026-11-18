@@ -19,6 +19,10 @@ public:
     // 于是 ULog 的解析实现只有**一份**（SPI 那份）。
     QString parserId() const override { return QStringLiteral("ulog"); }
 
+    // 旧路径已退休：ULog 归并到统一摄取管道后，驱动不再自己读文件、
+    // 不再管缓存与入仓（那两件事已归宿主：见 IngestOrchestrator）。
+    // 这里只保留接口实现，宿主不会走到这里
+    // （见 DataLoadHandler：parserId 非空即走管道）。
     ng::core::Result<ng::core::IntentResult> load(
         const ng::core::Intent &intent, ng::core::DataRepository &repo) override;
 };

@@ -3,17 +3,9 @@
 #include "DataRepository.h"
 #include "Dataset.h"
 
-#include <QFile>
 #include <QFileInfo>
-#include <QTextStream>
 
 using namespace ng::core;
-
-namespace
-{
-// 流式分块大小：C++ 侧缓冲恒定，与文件大小无关。
-constexpr int kChunkRows = 4096;
-} // namespace
 
 QString CsvFormatDriver::id() const
 {
@@ -41,129 +33,23 @@ bool CsvFormatDriver::acceptsFormat(const QString &format) const
     return format.isEmpty() || format == QStringLiteral("csv") || format == QStringLiteral(".csv");
 }
 
+QString CsvFormatDriver::preferredTableName(const Intent &intent, const QString &sourcePath) const
+{
+    // 表名策略（声明，非执行）：
+    //   intent 显式指定 table -> 用它；否则用文件名（去扩展名）。
+    // 与旧 driver 路径的行为保持一致。
+    const QString explicitName = intent.params.value(QStringLiteral("table")).toString();
+    if (!explicitName.isEmpty())
+        return explicitName;
+    return QFileInfo(sourcePath).completeBaseName();
+}
+
 Result<IntentResult> CsvFormatDriver::load(const Intent &intent, DataRepository &repo)
 {
-    const QString path = intent.params.value(QStringLiteral("path")).toString();
-    const QFileInfo fi(path);
-    if (!fi.exists())
-        return fail(QStringLiteral("eio"), QStringLiteral("文件不存在: %1").arg(path));
-
-    const QString tableName = intent.params.value(QStringLiteral("table"),
-                                                  fi.completeBaseName()).toString();
-    const qint64 sourceSize = fi.size();
-    const qint64 sourceMtime = fi.lastModified().toMSecsSinceEpoch();
-    const QString cachePath = path + QStringLiteral(".psc");
-
-    Dataset ds;
-    bool fromCache = false;
-    if (!intent.params.value(QStringLiteral("nocache"), false).toBool())
-    {
-        QString cacheErr;
-        if (auto cached = Dataset::loadCache(cachePath, sourceSize, sourceMtime, &cacheErr))
-        {
-            ds = std::move(*cached);
-            ds.setFormat(QStringLiteral("csv"));
-            fromCache = true;
-        }
-    }
-
-    if (!fromCache)
-    {
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-            return fail(QStringLiteral("eio"), QStringLiteral("无法打开: %1").arg(path));
-        QTextStream in(&file);
-
-        if (in.atEnd())
-            return fail(QStringLiteral("eempty"), QStringLiteral("文件为空"));
-        const QString headerLine = in.readLine();
-        QStringList headers = headerLine.split(QLatin1Char(','));
-        for (QString &c : headers)
-            c = c.trimmed();
-        if (headers.isEmpty() || headers.first().isEmpty())
-            return fail(QStringLiteral("eformat"), QStringLiteral("无表头"));
-
-        const int valueColCount = headers.size() - 1;
-        if (valueColCount <= 0)
-            return fail(QStringLiteral("eformat"), QStringLiteral("无数据列"));
-
-        QVector<TimeUs> timeBuf(kChunkRows);
-        QVector<QVector<double>> valueBufs(valueColCount);
-        for (QVector<double> &buf : valueBufs)
-            buf.resize(kChunkRows);
-        QVector<FrameColumn> frameCols(valueColCount);
-        for (int c = 0; c < valueColCount; ++c)
-        {
-            frameCols[c].name = headers.at(c + 1);
-            frameCols[c].unit = QString();
-            frameCols[c].type = ValueType::F64;
-            frameCols[c].values = valueBufs.at(c).constData();
-            frameCols[c].nulls = nullptr;
-        }
-
-        ds = Dataset::create(fi.completeBaseName(), QStringLiteral("csv"));
-        int filled = 0;
-        qint64 totalRows = 0;
-        while (!in.atEnd())
-        {
-            const QStringList cells = in.readLine().split(QLatin1Char(','));
-            if (cells.isEmpty() || cells.first().trimmed().isEmpty())
-                continue;
-
-            const double tSec = cells.at(0).trimmed().toDouble();
-            timeBuf[filled] = static_cast<TimeUs>(tSec * 1000000.0);
-            for (int c = 0; c < valueColCount; ++c)
-                valueBufs[c][filled] = (c + 1 < cells.size())
-                    ? cells.at(c + 1).trimmed().toDouble()
-                    : 0.0;
-            ++filled;
-            ++totalRows;
-
-            if (filled == kChunkRows)
-            {
-                QString appendErr;
-                if (!ds.appendFrame(tableName, timeBuf.constData(), filled,
-                                    frameCols, &appendErr))
-                {
-                    file.close();
-                    return fail(QStringLiteral("etable"),
-                                QStringLiteral("灌入数据失败: %1").arg(appendErr));
-                }
-                filled = 0;
-            }
-        }
-        file.close();
-
-        if (filled > 0)
-        {
-            QString appendErr;
-            if (!ds.appendFrame(tableName, timeBuf.constData(), filled,
-                                frameCols, &appendErr))
-                return fail(QStringLiteral("etable"),
-                            QStringLiteral("灌入数据失败: %1").arg(appendErr));
-        }
-        if (totalRows <= 0)
-            return fail(QStringLiteral("edata"), QStringLiteral("没有数据行"));
-
-        ds.refreshSchema();
-        QString cacheErr;
-        ds.saveCache(cachePath, sourceSize, sourceMtime, &cacheErr);
-    }
-
-    DatasetId datasetId;
-    if (intent.params.contains(QStringLiteral("id")))
-    {
-        const DatasetId wanted = intent.params.value(QStringLiteral("id")).toInt();
-        Result<DatasetId> added = repo.addWithStableId(std::move(ds), wanted);
-        if (!added)
-            return fail(added.error().code, added.error().message);
-        datasetId = added.value();
-    }
-    else
-    {
-        datasetId = repo.add(std::move(ds));
-    }
-    IntentResult r;
-    r.payload = datasetId;
-    return r;
+    Q_UNUSED(intent);
+    Q_UNUSED(repo);
+    // CSV 已归并到统一摄取管道（见 parserId()），宿主不会调用本函数。
+    // 协议解析在 CsvParser（SPI 实现）里，只有**一份**实现。
+    return fail(QStringLiteral("eunsupported"),
+                QStringLiteral("CSV 已归并到统一摄取管道，请走 data.load 的管道路径"));
 }

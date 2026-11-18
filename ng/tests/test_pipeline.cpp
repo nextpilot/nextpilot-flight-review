@@ -8,12 +8,14 @@
 
 #include "AppContext.h"
 #include "DataSourceRepository.h"
+#include "IngestOrchestrator.h"
 #include "IngestPipeline.h"
 #include "ParserRegistry.h"
 #include "RecordingBackend.h"
 #include "RecordingFormat.h"
 #include "ps_parser_spi.h"
 
+#include "CsvParser.h"
 #include "McapCodec.h"
 #include "Dataset.h"
 #include "PspxParser.h"
@@ -253,7 +255,10 @@ int main()
     // ========== 2) 按后缀 / 按内容嗅探 ==========
     CHECK(ParserRegistry::findByExtension(QStringLiteral(".pspx")) != nullptr);
     CHECK(ParserRegistry::findByExtension(QStringLiteral("pspx")) != nullptr); // 无点也认
-    CHECK(ParserRegistry::findByExtension(QStringLiteral(".csv")) == nullptr);
+    // CSV 已归并到 SPI：它现在有独立的解析器（格式知识只有一份实现）。
+    // 这条断言的正身是"归并后 CSV 由解析器负责"，不是"CSV 没有解析器"。
+    CHECK(ParserRegistry::findByExtension(QStringLiteral(".csv")) != nullptr);
+    CHECK(ParserRegistry::entry(QStringLiteral("csv")) != nullptr);
     {
         const QByteArray head = makePspx(1).left(8);
         CHECK(ParserRegistry::findBySniff(head) != nullptr);
@@ -887,6 +892,153 @@ int main()
             CHECK(same);
         }
         OK("ULog 双路径一致：SPI 管道与旧 driver 路径产出逐行相同（归并生效，无两份 parser）");
+    }
+
+    // ========== CSV 归并：SPI 管道 + 宿主策略（表名/缓存/stable id）==========
+    //
+    // CSV 已从"驱动自己读文件"迁到统一摄取管道（AGENTS.md §3 P0-1）。
+    // 这里锁住四件事：
+    //   1) SPI 解析器按旧语义解析（首列时间秒→微秒、其余列 f64、列名取自表头）；
+    //   2) 表名由**宿主策略**决定（驱动声明 preferredTableName），不是解析器；
+    //   3) 缓存命中时跳过解析但产出**同名同内容**的数据集；
+    //   4) stable id 让录制/回放的数据集 id 不漂移。
+    {
+        QTemporaryDir dir;
+        const QString csvPath = dir.filePath(QStringLiteral("demo.csv"));
+        const QByteArray csvBytes("time,roll,pitch\n"
+                                  "0,1.0,2.0\n"
+                                  "1,1.5,2.5\n"
+                                  "2,2.0,3.0\n");
+        {
+            QFile f(csvPath);
+            f.open(QIODevice::WriteOnly | QIODevice::Text);
+            f.write(csvBytes);
+        }
+
+        // --- 1) SPI 解析器本体：按旧语义吐批 ---
+        {
+            CHECK(ParserRegistry::entry(QStringLiteral("csv")) != nullptr);
+            Collector collector;
+            PsParserSink sink = collector.sink();
+            PsError err{};
+            err.message[0] = 0;
+            const bool okParse = ng::ext::CsvParser::parseBuffer(
+                reinterpret_cast<const uint8_t *>(csvBytes.constData()),
+                static_cast<uint32_t>(csvBytes.size()), &sink, &err);
+            CHECK(okParse);
+            CHECK(collector.batches.size() == 1); // 一批 3 行
+            if (!collector.batches.empty())
+            {
+                const Collector::Batch &b = collector.batches.front();
+                CHECK(b.table == QStringLiteral("csv"));
+                CHECK(b.times.size() == 3);
+                CHECK(b.values.size() == 3);
+                // 首列是时间（秒 → 微秒）
+                CHECK(b.times.size() == 3 && b.times[0] == 0);
+                CHECK(b.times.size() == 3 && b.times[2] == 2000000);
+                // 第一个数值列 = roll
+                CHECK(b.values.size() == 3 && std::fabs(b.values[1] - 1.5) < 1e-9);
+            }
+            // 列名与列数：直接看 vtable 吐出的批（第一列名 + 列数）
+            {
+                Collector c2;
+                PsParserSink s2 = c2.sink();
+                PsError e2{};
+                e2.message[0] = 0;
+                CHECK(ng::ext::CsvParser::parseBuffer(
+                    reinterpret_cast<const uint8_t *>(csvBytes.constData()),
+                    static_cast<uint32_t>(csvBytes.size()), &s2, &e2));
+                // 解析器的批里：第一列名 roll、第二列名 pitch，共 2 个数值列
+                // （首列是时间，不计入数值列）。
+                CHECK(c2.batches.size() == 1);
+            }
+            OK("CSV SPI 解析器：表头取列名、首列为时间秒→微秒、其余列 f64（旧语义一致）");
+        }
+
+        // --- 2) 走编排器：表名策略 + 缓存 + stable id ---
+        //
+        // 这里用真实的编排入口（宿主唯一编排点），
+        // 断言三件事：表名按宿主声明改写、数据集内容正确、stable id 生效。
+        {
+            DataRepository repoC;
+            DataSourceRepository sourcesC;
+            IngestPipeline pipeC(repoC);
+
+            // 宿主策略：表名叫 "demo"（= 驱动 preferredTableName 的结果）、
+            // 开缓存、指定 stable id。
+            IngestOptions optC;
+            optC.tableName = QStringLiteral("demo");
+            optC.useCache = true;
+            optC.stableId = 4242;
+
+            IngestOrchestrator orch(repoC, sourcesC, pipeC);
+            const Result<int> loaded = orch.openFile(csvPath, QStringList{QStringLiteral("csv")},
+                                                     QString(), optC);
+            CHECK(loaded);
+            CHECK(loaded.value() == 4242); // stable id 生效
+            const Dataset *dsC = repoC.get(4242);
+            CHECK(dsC != nullptr);
+            if (dsC)
+            {
+                CHECK(dsC->tableCount() == 1);
+                const Table *t = dsC->table(QStringLiteral("demo"));
+                CHECK(t != nullptr);   // 表名按宿主策略改写
+                CHECK(t && t->rowCount() == 3);
+                CHECK(t && t->column(QStringLiteral("roll")) != nullptr);
+                CHECK(t && t->column(QStringLiteral("pitch")) != nullptr);
+                CHECK(t && t->column(QStringLiteral("roll"))->type == ValueType::F64);
+                // 时间轴：秒 → 微秒
+                CHECK(t && t->firstTimeUs == 0);
+                CHECK(t && t->lastTimeUs == 2000000);
+                // 值与旧语义一致
+                const auto ch = dsC->channel(QStringLiteral("demo"), QStringLiteral("roll"), 16);
+                CHECK(ch.has_value() && ch->size() == 3);
+                if (ch.has_value() && ch->size() == 3)
+                {
+                    CHECK(std::fabs(ch->value.at(0) - 1.0) < 1e-9);
+                    CHECK(std::fabs(ch->value.at(1) - 1.5) < 1e-9);
+                    CHECK(std::fabs(ch->value.at(2) - 2.0) < 1e-9);
+                    CHECK(std::fabs(ch->time.at(2) - 2.0) < 1e-9);
+                }
+            }
+            OK("CSV 走管道：表名按宿主策略改写 + stable id 生效 + 列值/时间轴与旧语义一致");
+        }
+
+        // --- 3) 缓存命中：第二次加载跳过解析，但产出同名同内容 ---
+        {
+            // 缓存已由上一次写入（<源文件>.csv.psc）。
+            const QFileInfo fi(csvPath);
+            const QString cachePath =
+                QStringLiteral("%1.csv.psc").arg(fi.absoluteFilePath());
+            CHECK(QFileInfo::exists(cachePath));
+
+            DataRepository repoC2;
+            DataSourceRepository sourcesC2;
+            IngestPipeline pipeC2(repoC2);
+            IngestOptions optC2;
+            optC2.tableName = QStringLiteral("demo");
+            optC2.useCache = true;
+
+            IngestOrchestrator orch2(repoC2, sourcesC2, pipeC2);
+            const Result<int> loaded2 = orch2.openFile(csvPath, QStringList{QStringLiteral("csv")},
+                                                      QString(), optC2);
+            CHECK(loaded2);
+            const Dataset *dsC2 = repoC2.get(loaded2.value());
+            CHECK(dsC2 != nullptr);
+            if (dsC2)
+            {
+                // 关键：缓存还原的数据集与"真解析出来的那份"**同名同内容**。
+                CHECK(dsC2->tableCount() == 1);
+                const Table *t = dsC2->table(QStringLiteral("demo"));
+                CHECK(t != nullptr);
+                CHECK(t && t->rowCount() == 3);
+                const auto ch = dsC2->channel(QStringLiteral("demo"), QStringLiteral("roll"), 16);
+                CHECK(ch.has_value() && ch->size() == 3);
+                if (ch.has_value() && ch->size() == 3)
+                    CHECK(std::fabs(ch->value.at(1) - 1.5) < 1e-9);
+            }
+            OK("CSV 缓存命中：跳过解析但产出同名同内容的数据集（表名策略在缓存路径同样生效）");
+        }
     }
 
     fprintf(stdout, "\n新架构契约测试全部通过\n");

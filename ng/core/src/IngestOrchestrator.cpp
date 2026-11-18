@@ -7,6 +7,25 @@
 namespace ng::core
 {
 
+namespace
+{
+// 缓存路径：<源文件绝对路径>.<解析器id>.psc
+//
+// 为什么带解析器 id：管道路径下**每个解析器一个数据集**（扇出的各路），
+// 缓存的正是"某一路解析出来的数据集"，所以粒度必须是 (源, 解析器)。
+// 单路时就是 "<源文件>.psc" —— 与旧 driver 路径的缓存文件名一致。
+//
+// 为什么取绝对路径：源路径可能是相对路径（命令行给的），
+// 缓存若也用相对路径，就会落到**当前工作目录**而不是源文件旁边 ——
+// 换个目录跑同一条命令就找不到缓存，还会在 CWD 留垃圾。
+QString cachePathFor(const QString &origin, const QString &parserId)
+{
+    const QFileInfo fi(origin);
+    const QString abs = fi.absoluteFilePath();
+    return QStringLiteral("%1.%2.psc").arg(abs, parserId);
+}
+} // namespace
+
 IngestOrchestrator::IngestOrchestrator(DataRepository &repo, DataSourceRepository &sources,
                                        IngestPipeline &pipeline)
     : m_repo(repo), m_sources(sources), m_pipeline(pipeline)
@@ -14,7 +33,7 @@ IngestOrchestrator::IngestOrchestrator(DataRepository &repo, DataSourceRepositor
 }
 
 Result<int> IngestOrchestrator::openFile(const QString &path, const QStringList &parserIds,
-                                         const QString &topicFilter)
+                                         const QString &topicFilter, const Options &options)
 {
     if (path.isEmpty())
         return fail(QStringLiteral("eio"), QStringLiteral("路径为空"));
@@ -23,17 +42,19 @@ Result<int> IngestOrchestrator::openFile(const QString &path, const QStringList 
     if (!source.valid())
         return fail(QStringLiteral("eio"), source.error());
 
-    return ingest(source, parserIds, topicFilter, path);
+    return ingest(source, parserIds, topicFilter, path, options);
 }
 
 Result<int> IngestOrchestrator::openSource(IByteSource &source, const QStringList &parserIds,
-                                            const QString &topicFilter, const QString &origin)
+                                            const QString &topicFilter, const QString &origin,
+                                            const Options &options)
 {
-    return ingest(source, parserIds, topicFilter, origin);
+    return ingest(source, parserIds, topicFilter, origin, options);
 }
 
 Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &parserIds,
-                                        const QString &topicFilter, const QString &origin)
+                                        const QString &topicFilter, const QString &origin,
+                                        const Options &options)
 {
     // --- 1) 定解析器：显式指定 > 按后缀 > 按内容嗅探 ---
     QStringList ids = parserIds;
@@ -87,15 +108,55 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
     m_sourceId = sourceId;
 
     // --- 3) 绑定解析器：每个 (源, 解析器) 一个独立实例 + 独立数据集 ---
+    //
+    // 缓存命中的一路**不绑定解析器**：那份字节不必再解析，直接还原数据集。
+    // 于是"缓存"省掉的是解析开销，不是入仓开销。
     m_datasetIds.clear();
+    QVector<QString> toParse;   // 需要真正解析的解析器
     for (const QString &pid : ids)
     {
+        // 缓存路径按 (源文件, 解析器) 粒度：每个通道一个数据集，各存各的。
+        // 只对**文件**来源有意义（流没有稳定指纹）。
+        const QString cachePath = options.useCache ? cachePathFor(origin, pid) : QString();
+        bool fromCache = false;
+        if (!cachePath.isEmpty())
+        {
+            const QFileInfo fi(origin);
+            QString cacheErr;
+            if (auto cached = Dataset::loadCache(cachePath, fi.size(),
+                                                 fi.lastModified().toMSecsSinceEpoch(), &cacheErr))
+            {
+                // 还原的数据集要与"真解析出来的那份"同名同格式，
+                // 否则同一份数据两次打开显示不同名字。
+                cached->setName(QStringLiteral("src%1_%2").arg(sourceId).arg(pid));
+                cached->setFormat(pid);
+                const DatasetId dsId =
+                    (ids.size() == 1 && options.stableId != kInvalidDataset)
+                        ? [&] {
+                              const Result<DatasetId> a =
+                                  m_repo.addWithStableId(std::move(*cached), options.stableId);
+                              return a ? a.value() : m_repo.add(std::move(*cached));
+                          }()
+                        : m_repo.add(std::move(*cached));
+                m_datasetIds << dsId;
+                m_sources.addDataset(sourceId, dsId);
+                fromCache = true;
+            }
+        }
+        if (fromCache)
+            continue;
+
+        toParse << pid;
+
         ParserBinding b;
         b.parserId = pid;
         b.topic = topicFilter;
         b.active = true;
 
-        const Result<int> bound = m_pipeline.bindParser(sourceId, b);
+        // stable id 只对**单路**有意义（一 id 对多数据集语义不成立）。
+        // 多路扇出时仍按自增分配。
+        const DatasetId preferred = (ids.size() == 1) ? options.stableId : kInvalidDataset;
+        const Result<int> bound = m_pipeline.bindParser(sourceId, b, preferred);
         if (!bound)
         {
             m_sources.remove(sourceId);
@@ -104,6 +165,24 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
         }
         m_datasetIds << bound.value();
         m_sources.addDataset(sourceId, bound.value());
+
+        // 表名改写（宿主策略）：解析器只认字节，给不出"这张表叫什么"。
+        // 单表格式由宿主命名，这里声明，管道落库时套用。
+        if (!options.tableName.isEmpty())
+            m_pipeline.setTableRename(sourceId, pid, options.tableName);
+    }
+
+    // 全部命中缓存：不必读字节。
+    if (toParse.isEmpty())
+    {
+        m_sources.setState(sourceId, SourceState::Closed);
+        if (m_datasetIds.isEmpty())
+        {
+            m_sources.remove(sourceId);
+            return fail(QStringLiteral("edata"),
+                        QStringLiteral("没有解析出任何数据: %1").arg(origin));
+        }
+        return m_datasetIds.first();
     }
 
     // --- 4) 读字节 -> 喂给所有活跃通道（扇出）---
@@ -153,6 +232,33 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
         m_sources.remove(sourceId);
         return fail(QStringLiteral("edata"), QStringLiteral("没有解析出任何数据: %1").arg(origin));
     }
+
+    // --- 7) 写缓存：把这次解析的结果存下来，下次同一份文件直接复用 ---
+    //
+    // 粒度按 (源文件, 解析器)：每个通道一个数据集，各存各的。
+    // 指纹用源文件的 size + mtime，源文件一改缓存自动失效。
+    if (options.useCache)
+    {
+        const QFileInfo fi(origin);
+        const qint64 size = fi.size();
+        const qint64 mtime = fi.lastModified().toMSecsSinceEpoch();
+        for (int i = 0; i < toParse.size(); ++i)
+        {
+            // m_datasetIds 的顺序：缓存命中的在前、真解析的在后，
+            // 这里按 toParse 的顺序对应真解析那一段的 id。
+            const int idx = m_datasetIds.size() - toParse.size() + i;
+            if (idx < 0 || idx >= m_datasetIds.size())
+                continue;
+            const Dataset *ds = m_repo.get(m_datasetIds.at(idx));
+            if (!ds)
+                continue;
+            const QString cachePath = cachePathFor(origin, toParse.at(i));
+            QString cacheErr;
+            ds->saveCache(cachePath, size, mtime, &cacheErr);
+            // 缓存写失败不是致命错误：只是下次要重解析。
+        }
+    }
+
     return m_datasetIds.first();
 }
 

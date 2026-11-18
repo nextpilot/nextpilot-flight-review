@@ -367,6 +367,13 @@ int main(int argc, char **argv)
     const Dataset *ds = application.data().get(id);
     assert(ds != nullptr);
 
+    // 2a-0) 归并的**行为锁**：CSV 必须走统一摄取管道，
+    //       于是数据集名是管道生成的 "src<源id>_<解析器id>"，
+    //       而不是旧路径里驱动自己起的名字（文件名）。
+    //       这条断言的意义：将来谁把 CSV 退回"驱动自己读文件"，测试立刻红。
+    assert(ds->name().startsWith(QStringLiteral("src")));
+    assert(ds->name().endsWith(QStringLiteral("_csv")));
+
     // 2a) 多表模型：一张表，表内两列 typed 列，共享 3 行时间轴
     assert(ds->tableCount() == 1);
     const Table *t = ds->table(0);

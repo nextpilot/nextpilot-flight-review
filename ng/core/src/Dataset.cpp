@@ -213,6 +213,11 @@ void Dataset::setFormat(const QString &format)
     d->format = format;
 }
 
+void Dataset::setName(const QString &name)
+{
+    d->name = name;
+}
+
 int Dataset::tableCount() const
 {
     return d->schema.size();
