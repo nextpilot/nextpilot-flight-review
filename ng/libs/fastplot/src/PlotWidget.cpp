@@ -120,6 +120,91 @@ void PlotWidget::setGridVisible(bool visible)
     invalidateStatic();
 }
 
+void PlotWidget::setRubberBand(const QRect &pixels)
+{
+    m_rubberBand = pixels;
+    update();
+}
+
+void PlotWidget::setHover(const QPointF &dataPoint, bool active)
+{
+    m_hoverPoint = dataPoint;
+    m_hoverActive = active;
+    update();
+}
+
+void PlotWidget::setOverlayText(const QString &text)
+{
+    m_overlayText = text;
+    update();
+}
+
+void PlotWidget::clearOverlay()
+{
+    m_hoverActive = false;
+    m_overlayText.clear();
+    m_rubberBand = QRect();
+    update();
+}
+
+bool PlotWidget::nearestSample(const QPointF &pixel, double *x, double *y) const
+{
+    const QPointF data = QPointF(m_vp.pixelToX(pixel.x()), m_vp.pixelToY(pixel.y()));
+    if (x)
+        *x = data.x();
+    if (y)
+        *y = data.y();
+
+    for (const Curve &c : m_curves)
+    {
+        if (!c.isVisible())
+            continue;
+        if (c.isLod())
+        {
+            // LOD 点按 x 升序：二分找最近列，取该列的 (min+max)/2。
+            if (c.m_lod.isEmpty())
+                continue;
+            int lo = 0, hi = c.m_lod.size() - 1;
+            while (lo < hi)
+            {
+                const int mid = (lo + hi) / 2;
+                if (c.m_lod.at(mid).x < data.x())
+                    lo = mid + 1;
+                else
+                    hi = mid;
+            }
+            const LodPoint &pt = c.m_lod.at(lo);
+            if (x)
+                *x = pt.x;
+            if (y)
+                *y = (pt.min + pt.max) / 2.0;
+            return true;
+        }
+        const IPlotData *d = c.m_data;
+        if (!d || d->size() <= 0)
+            continue;
+        // 提示路径（悬停读数）：数据量大时按步长抽样，不在鼠标移动里扫全量。
+        const qsizetype step = std::max<qsizetype>(1, d->size() / 2048);
+        qsizetype best = 0;
+        double bestDist = std::numeric_limits<double>::max();
+        for (qsizetype i = 0; i < d->size(); i += step)
+        {
+            const double dx = std::fabs(d->xAt(i) - data.x());
+            if (dx < bestDist)
+            {
+                bestDist = dx;
+                best = i;
+            }
+        }
+        if (x)
+            *x = d->xAt(best);
+        if (y)
+            *y = d->yAt(best);
+        return true;
+    }
+    return false;
+}
+
 void PlotWidget::replot()
 {
     relayout();
@@ -422,6 +507,56 @@ void PlotWidget::paintEvent(QPaintEvent *event)
     // 曲线画在静态图层之上；聚合结果按（数据版本, 视口, 列数）缓存，
     // 悬停/重绘不重扫数据。
     paintCurves(painter);
+    paintOverlay(painter);
+}
+
+void PlotWidget::paintOverlay(QPainter &painter)
+{
+    const QRectF plot = m_vp.plotRect();
+
+    if (!m_overlayText.isEmpty())
+    {
+        painter.save();
+        QFont f = font();
+        f.setPointSizeF(std::max(7.0, f.pointSizeF()));
+        painter.setFont(f);
+        const QFontMetrics fm(f);
+        const int pad = 6;
+        const QRectF textRect(plot.right() - fm.horizontalAdvance(m_overlayText) - 2 * pad,
+                              plot.top() + pad,
+                              fm.horizontalAdvance(m_overlayText) + 2 * pad,
+                              fm.height() + pad);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0, 0, 0, 40));
+        painter.drawRoundedRect(textRect, 3, 3);
+        painter.setPen(m_axes[sideIndex(AxisSide::Left)].labelColor());
+        painter.drawText(textRect, Qt::AlignCenter, m_overlayText);
+        painter.restore();
+    }
+
+    if (m_hoverActive && m_vp.plotRect().contains(m_vp.toPixel(m_hoverPoint.x(), m_hoverPoint.y())))
+    {
+        const QPointF px = m_vp.toPixel(m_hoverPoint.x(), m_hoverPoint.y());
+        painter.save();
+        painter.setClipRect(plot);
+        QPen pen(QColor(0x88, 0x88, 0x88, 0xC0), 1.0, Qt::DashLine);
+        painter.setPen(pen);
+        painter.drawLine(QPointF(px.x(), plot.top()), QPointF(px.x(), plot.bottom()));
+        painter.drawLine(QPointF(plot.left(), px.y()), QPointF(plot.right(), px.y()));
+        painter.setBrush(QColor(0x1F, 0x6F, 0xC0));
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(px, 3.0, 3.0);
+        painter.restore();
+    }
+
+    if (!m_rubberBand.isNull())
+    {
+        painter.save();
+        painter.setPen(QPen(m_axes[sideIndex(AxisSide::Bottom)].ink(), 1.0));
+        painter.setBrush(QColor(0x1F, 0x6F, 0xC0, 40));
+        painter.drawRect(m_rubberBand);
+        painter.restore();
+    }
 }
 
 QImage PlotWidget::grabImage()

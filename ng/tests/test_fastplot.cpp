@@ -2,9 +2,11 @@
 //
 // 不引入 QtTest —— 与仓库其它测试一致，用 assert + 打印。
 #include <fastplot/Axis.h>
+#include <fastplot/Picker.h>
 #include <fastplot/PlotWidget.h>
 #include <fastplot/ScaleDiv.h>
 #include <fastplot/Viewport.h>
+#include <fastplot/Zoomer.h>
 
 #include <QApplication>
 #include <QDir>
@@ -225,6 +227,66 @@ int main(int argc, char **argv)
                 path.toUtf8().constData());
     }
 
-    fprintf(stdout, "[ok] fastplot P1+P2 全部通过\n");
+    // 7) 交互部件：缩放锚点不动、框选铺满、读数取最近样本
+    {
+        const int n = 3000;
+        std::vector<double> xs(n), ys(n);
+        for (int i = 0; i < n; ++i)
+        {
+            xs[i] = i * 0.001;
+            ys[i] = std::sin(i * 0.02);
+        }
+        fastplot::ArrayData data(xs.data(), ys.data(), n, 21);
+
+        fastplot::PlotWidget plot;
+        plot.resize(800, 400);
+        plot.addCurve(fastplot::Curve::fromData(&data, QColor(0x1F, 0x6F, 0xC0), 1.4));
+        plot.setXRange(0.0, 3.0);
+        plot.setYRange(-1.2, 1.2);
+
+        fastplot::Zoomer zoomer(&plot);
+        const QPointF anchor(400.0, 200.0);
+        const double ax = plot.viewport().pixelToX(anchor.x());
+        const double ay = plot.viewport().pixelToY(anchor.y());
+        const double spanXBefore = plot.viewport().xUpper() - plot.viewport().xLower();
+
+        zoomer.zoomBy(0.5, anchor);
+        // 锚点数据坐标不动 = 缩放"绕着鼠标"进行，不是绕着中心
+        assert(near(plot.viewport().pixelToX(anchor.x()), ax, 1e-9));
+        assert(near(plot.viewport().pixelToY(anchor.y()), ay, 1e-9));
+        const double spanXAfter = plot.viewport().xUpper() - plot.viewport().xLower();
+        assert(spanXAfter < spanXBefore * 0.55);
+
+        // 框选：像素矩形放大后跨度必须明显变小
+        const double spanBeforeBand = plot.viewport().xUpper() - plot.viewport().xLower();
+        zoomer.zoomToPixels(QRect(200, 100, 200, 100));
+        const double spanAfterBand = plot.viewport().xUpper() - plot.viewport().xLower();
+        assert(spanAfterBand < spanBeforeBand);
+
+        // 复位回接手时的视口
+        zoomer.resetZoom();
+        assert(near(plot.viewport().xUpper() - plot.viewport().xLower(), spanXBefore, 1e-6));
+
+        // 读数：最近样本落在曲线值域内
+        double sx = 0.0;
+        double sy = 0.0;
+        assert(plot.nearestSample(QPointF(400.0, 120.0), &sx, &sy));
+        assert(sy >= -1.01 && sy <= 1.01);
+
+        // 叠加层（十字光标 + 读数）确实画到了图上
+        plot.setHover(QPointF(sx, sy), true);
+        plot.setOverlayText(QStringLiteral("t = 1.234 s"));
+        const QImage img = plot.grabImage();
+        int overlayPixels = 0;
+        for (int y = 0; y < img.height(); ++y)
+            for (int x = 0; x < img.width(); ++x)
+                if (img.pixelColor(x, y).alpha() > 0 && img.pixelColor(x, y) != plot.background())
+                    ++overlayPixels;
+        assert(overlayPixels > 100);
+
+        fprintf(stdout, "[ok] 交互：锚点缩放/框选/复位/最近样本/叠加层\n");
+    }
+
+    fprintf(stdout, "[ok] fastplot P1+P2+P3 全部通过\n");
     return 0;
 }

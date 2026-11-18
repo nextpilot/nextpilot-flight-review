@@ -66,8 +66,27 @@ private:
         // 像素宽度由调用方给（画布宽度）；缺省 1024，恒定有界。
         const int px = qBound(16, intent.params.value(QStringLiteral("px"), 1024).toInt(), 8192);
 
-        const QVector<LodTriple> lod =
-            ds->lodMinMax(table, column, t->firstTimeUs, t->lastTimeUs, px);
+        // 可见时间窗（微秒，可选）：缩放后画布只关心这一段。
+        // 缺省用全表范围；越界一律夹回表范围，避免取空。
+        TimeUs t0Us = t->firstTimeUs;
+        TimeUs t1Us = t->lastTimeUs;
+        if (intent.params.contains(QStringLiteral("t0Us"))
+            && intent.params.contains(QStringLiteral("t1Us")))
+        {
+            const qint64 reqT0 = intent.params.value(QStringLiteral("t0Us")).toLongLong();
+            const qint64 reqT1 = intent.params.value(QStringLiteral("t1Us")).toLongLong();
+            const qint64 lo = qMin(reqT0, reqT1);
+            const qint64 hi = qMax(reqT0, reqT1);
+            t0Us = qMax<TimeUs>(t->firstTimeUs, TimeUs(lo));
+            t1Us = qMin<TimeUs>(t->lastTimeUs, TimeUs(hi));
+            if (t1Us <= t0Us)
+            {
+                t0Us = t->firstTimeUs;
+                t1Us = t->lastTimeUs;
+            }
+        }
+
+        const QVector<LodTriple> lod = ds->lodMinMax(table, column, t0Us, t1Us, px);
         if (lod.isEmpty())
             return fail(QStringLiteral("echan"), QStringLiteral("通道无数据: %1.%2").arg(table, column));
 
@@ -89,8 +108,8 @@ private:
             {QStringLiteral("column"), column},
             {QStringLiteral("title"), QStringLiteral("%1 / %2.%3").arg(ds->name(), table, column)},
             {QStringLiteral("points"), lod.size()},
-            {QStringLiteral("t0"), t->firstTimeUs / 1000000.0},
-            {QStringLiteral("t1"), t->lastTimeUs / 1000000.0},
+            {QStringLiteral("t0"), t0Us / 1000000.0},
+            {QStringLiteral("t1"), t1Us / 1000000.0},
             {QStringLiteral("x"), xs},
             {QStringLiteral("min"), mins},
             {QStringLiteral("max"), maxs},

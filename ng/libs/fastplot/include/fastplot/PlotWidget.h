@@ -7,6 +7,9 @@
 #include <QColor>
 #include <QImage>
 #include <QPixmap>
+#include <QPointF>
+#include <QRect>
+#include <QString>
 #include <QWidget>
 
 namespace fastplot
@@ -57,6 +60,19 @@ public:
 
     QRectF plotRect() const { return m_vp.plotRect(); }
 
+    // ---- 交互叠加层（部件负责状态，画布只负责画）----
+    // 框选橡皮筋（像素坐标）。空 QRect = 清除。
+    void setRubberBand(const QRect &pixels);
+    QRect rubberBand() const { return m_rubberBand; }
+    // 十字光标：给一个数据坐标；active=false 时隐藏。
+    void setHover(const QPointF &dataPoint, bool active);
+    // 右上角读数文本（空串 = 不画）。
+    void setOverlayText(const QString &text);
+    void clearOverlay();
+
+    // 鼠标最近样本（Picker 用）：返回是否找到，输出数据坐标。
+    bool nearestSample(const QPointF &pixel, double *x, double *y) const;
+
     // 离屏渲染，导出与测试用。
     QImage grabImage();
 
@@ -69,6 +85,7 @@ protected:
 private:
     Axis *axisPtr(AxisSide side);
     void paintCurves(QPainter &painter);
+    void paintOverlay(QPainter &painter);
     QRectF dataBounds() const;
     void relayout();       // 边距 → 绘图区 → 刻度划分（三者必须一起算）
     void refreshScaleDivs();
@@ -77,6 +94,10 @@ private:
     Viewport m_vp;
     Axis m_axes[4];        // 索引 = AxisSide
     QColor m_background{0x10, 0x16, 0x1c};
+    QRect m_rubberBand;
+    QPointF m_hoverPoint;
+    bool m_hoverActive = false;
+    QString m_overlayText;
     QColor m_titleColor{0x33, 0x33, 0x33};
     QString m_title;
     QPixmap m_staticCache;

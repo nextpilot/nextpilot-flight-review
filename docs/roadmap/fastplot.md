@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | P1 完成、P2 完成（GUI 画布已接管，2026-11-18） |
+| 状态 | P1–P3 完成（GUI 画布已接管，2026-11-18） |
 | 位置 | `ng/libs/fastplot/` |
 | 目标 | 把老 `src/application/modules/plotting` 的**绘图能力**抽成独立库，供 ng 直接调用 |
 | 约束 | `src/` 只读参考，不改一行；库不依赖 `ng/core`，纯 Qt Widgets |
@@ -120,7 +120,7 @@ public:
 |---|---|---|
 **P1** | `Viewport` + `ScaleDiv` + `Axis` + `PlotWidget`（网格+轴），CMake 目标 `fastplot` | 离屏渲染出干净坐标网格；`test_fastplot` 断言刻度、变换、边距 【本次】 |
 **P2** | `IPlotData` + `Curve` + `LodCache`；ng 侧适配器把 `Dataset` 通道接进来 | `demo_flight.ulg` 画 `attitude.roll` 3000 点，与老画布同帧率 【已完成，见下】 |
-**P3** | `Zoomer/Panner/Picker` + 框选 + 键盘 | 缩放/框选/读数与老行为一致 |
+**P3** | `Zoomer/Panner/Picker` + 框选 + 键盘 | 缩放/框选/读数与老行为一致 【已完成，见下】 |
 **P4** | 双轴/图例/hover/导出 PNG+CSV/状态 JSON | 双轴可画，导出与复原正确 |
 **P5** | 专用仪表（horizon/compass/gauge/gps map/3D） | 按需，`fastplot/gadgets` 子目标 |
 
@@ -140,6 +140,18 @@ C++ 侧聚合 | `LodCache`：O(n) 一次扫描 → 每屏幕列 min/max；按（
 **GUI 接管**：`gui/views/plot/PlotCanvas` 不再自己画——内部持一个 `fastplot::PlotWidget`，
 只做"取 LOD → 转三元组 → addCurve"。`ng_gui` 公共链接 `fastplot`；CLI 不链，headless 依旧纯净。
 `plotscope-ng-gui-shot demo_flight.ulg` 出图：数据集树 3000 行 + `attitude.roll` 曲线 + 左/下轴刻度齐全。
+
+### P3 落地记录（2026-11-18）
+
+| 部件 | 行为 |
+|---|---|
+`Zoomer` | 滚轮以光标为锚点缩放（Shift 仅 x / Ctrl 仅 y）；右键/中键框选缩放；`+`/`-`/`0`/方向键；`setHomeRange` + `resetZoom` |
+`Panner` | 左键拖动平移，像素位移→数据位移，与缩放正交、互不知道对方 |
+`Picker` | 悬停取最近样本（LOD 二分查找，数据曲线按步长抽样），发 `hovered(x,y,valid)`；十字光标+右上角读数由画布按状态绘制 |
+画布 | `setRubberBand/setHover/setOverlayText` + `nearestSample`——只画状态，不做判断 |
+ng 接线 | `PlotCanvas` 装三个部件；`zoomed/panned` → `rangeChanged(t0,t1)` → `ChannelView` 合并定时器重取 LOD（`plot.channel` 新增 `t0Us/t1Us` 窗口参数，越界夹回表范围） |
+
+这样放大后画的是**窗口内**的 min/max，不是整段数据的包络——细节跟得上缩放。
 
 ## 7. 构建接入
 

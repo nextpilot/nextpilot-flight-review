@@ -9,6 +9,9 @@
 namespace fastplot
 {
 class PlotWidget;
+class Zoomer;
+class Panner;
+class Picker;
 }
 
 // 中央绘图画布：把 ng 的 LOD 三元组交给 fastplot 绘制。
@@ -59,10 +62,17 @@ public:
 
     // 需要直接操作画布能力（缩放/导出等）时用；正常情况下上层不要碰它。
     fastplot::PlotWidget *plotWidget() const { return m_plot; }
+    fastplot::Zoomer *zoomer() const { return m_zoomer; }
+
+    // 当前可见时间窗（秒）。缩放后上层要按这个窗口重新取 LOD——
+    // 否则放大看的是整段数据的包络，糊成一片。
+    bool visibleTimeRange(double *t0, double *t1) const;
 
 Q_SIGNALS:
     // 视口尺寸变了：上层需要按新像素宽重新取 LOD。
     void viewportChanged();
+    // 缩放/平移改变了可见时间窗：上层需要按新窗口重取 LOD。
+    void rangeChanged(double t0, double t1);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -71,6 +81,9 @@ private:
     void pushToPlot();
 
     fastplot::PlotWidget *m_plot = nullptr;
+    fastplot::Zoomer *m_zoomer = nullptr;
+    fastplot::Panner *m_panner = nullptr;
+    fastplot::Picker *m_picker = nullptr;
 
     ng::core::DatasetId m_datasetId = ng::core::kInvalidDataset;
     QString m_table;

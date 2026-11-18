@@ -24,6 +24,15 @@ ChannelView::ChannelView(IIntentExecutor &executor, PlotCanvas *canvas, QObject 
     m_refreshTimer.setInterval(120);
     connect(&m_refreshTimer, &QTimer::timeout, this, [this] { refresh(); });
 
+    // 缩放/平移改变可见时间窗 → 按新窗口重取 LOD（带合并定时器）。
+    // 不重取的话，放大后看到的仍是整段数据的包络，糊成一片。
+    connect(m_canvas, &PlotCanvas::rangeChanged, this, [this](double t0, double t1) {
+        m_windowSet = true;
+        m_winT0 = t0;
+        m_winT1 = t1;
+        m_refreshTimer.start();
+    });
+
     // 视口尺寸变化 → 按新像素宽重新取 LOD。
     //
     // 这是**分辨率正确性**的前提：抽稀的桶数必须等于画布实际像素宽。
@@ -48,6 +57,18 @@ bool ChannelView::showChannel(DatasetId datasetId, const QString &table, const Q
     m_datasetId = datasetId;
     m_table = table;
     m_column = column;
+    // 换通道 = 换数据，旧的时间窗不再适用。
+    m_windowSet = false;
+    return doRender(err);
+}
+
+bool ChannelView::doRender(QString *err)
+{
+    if (!m_canvas)
+        return false;
+    const DatasetId datasetId = m_datasetId;
+    const QString table = m_table;
+    const QString column = m_column;
 
     // 取数走意图层：GUI 与 CLI/脚本同一条路径，行为一致、可录制回放。
     Intent intent;
@@ -60,6 +81,12 @@ bool ChannelView::showChannel(DatasetId datasetId, const QString &table, const Q
     // 上层不重复推导边距常量。
     const int px = qMax(64, m_canvas->plotPixelWidth());
     intent.params[QStringLiteral("px")] = px;
+    // 可见时间窗（秒 → 微秒）：缩放后按窗口抽稀，细节才跟得上。
+    if (m_windowSet && m_winT1 > m_winT0)
+    {
+        intent.params[QStringLiteral("t0Us")] = qint64(m_winT0 * 1e6);
+        intent.params[QStringLiteral("t1Us")] = qint64(m_winT1 * 1e6);
+    }
 
     const Result<IntentResult> result = m_executor.execute(intent);
     if (!result)
@@ -102,7 +129,7 @@ void ChannelView::refresh()
 {
     if (m_datasetId == kInvalidDataset || m_table.isEmpty() || m_column.isEmpty())
         return;
-    showChannel(m_datasetId, m_table, m_column);
+    doRender(nullptr);
 }
 
 QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)

@@ -1,6 +1,9 @@
 #include "PlotCanvas.h"
 
+#include <fastplot/Panner.h>
+#include <fastplot/Picker.h>
 #include <fastplot/PlotWidget.h>
+#include <fastplot/Zoomer.h>
 
 #include <QResizeEvent>
 #include <QVBoxLayout>
@@ -37,6 +40,37 @@ PlotCanvas::PlotCanvas(QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     layout->addWidget(m_plot);
+
+    // 交互部件：滚轮/框选缩放、左键平移、悬停读数。
+    // 三者的状态机都在库里，本类只做接线——画布自身仍然只负责画。
+    m_zoomer = new fastplot::Zoomer(m_plot, this);
+    m_panner = new fastplot::Panner(m_plot, this);
+    m_picker = new fastplot::Picker(m_plot, this);
+
+    connect(m_zoomer, &fastplot::Zoomer::zoomed, this, [this] {
+        double t0 = 0.0;
+        double t1 = 0.0;
+        if (visibleTimeRange(&t0, &t1))
+            Q_EMIT rangeChanged(t0, t1);
+    });
+    connect(m_panner, &fastplot::Panner::panned, this, [this] {
+        double t0 = 0.0;
+        double t1 = 0.0;
+        if (visibleTimeRange(&t0, &t1))
+            Q_EMIT rangeChanged(t0, t1);
+    });
+    connect(m_picker, &fastplot::Picker::hovered, this,
+            [this](double x, double y, bool valid) {
+                if (!valid)
+                {
+                    m_plot->setOverlayText(QString());
+                    return;
+                }
+                // 单位属于视图层的知识，库只给数值。
+                m_plot->setOverlayText(QStringLiteral("t = %1 s    v = %2")
+                                          .arg(x, 0, 'f', 3)
+                                          .arg(y, 0, 'f', 4));
+            });
 
     m_plot->setBackground(kBackground);
     m_plot->setTitleColor(kTitleInk);
@@ -91,6 +125,19 @@ void PlotCanvas::pushToPlot()
         m_plot->setXRange(m_t0, m_t1);
     // 纵轴按 LOD 的 min/max 自动留 5% 余量。
     m_plot->autoScaleY();
+}
+
+bool PlotCanvas::visibleTimeRange(double *t0, double *t1) const
+{
+    if (!m_plot || m_lod.isEmpty())
+        return false;
+    const auto &vp = m_plot->viewport();
+    // 只认时间轴（x）；数据为空时 viewport 仍是默认 0..1，不能拿来当时间窗。
+    if (t0)
+        *t0 = vp.xLower();
+    if (t1)
+        *t1 = vp.xUpper();
+    return true;
 }
 
 int PlotCanvas::plotPixelWidth() const
