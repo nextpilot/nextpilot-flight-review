@@ -80,6 +80,7 @@ target_include_directories(ng_test_instrument PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(ng_test_instrument PRIVATE
     ng_gui
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
+    ng_recording
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
 target_sources(ng_test_instrument PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)

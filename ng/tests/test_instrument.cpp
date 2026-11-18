@@ -8,11 +8,16 @@
 #include "InstrumentView.h"
 #include "PanelFactoryRegistry.h"
 
+#include "DataRepository.h"
 #include "Dataset.h"
+#include "IngestPipeline.h"
 #include "Intent.h"
 #include "ModuleHost.h"
+#include "ParserRegistry.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QFile>
 #include <QImage>
 
 #include <cmath>
@@ -279,6 +284,59 @@ int main(int argc, char *argv[])
         QStringLiteral("plot-instrument"), application.context(), application.modules(), nullptr);
     CHECK(qobject_cast<InstrumentView *>(panel) != nullptr);
     OK("面板自注册：plot-instrument 进工厂表");
+
+    // --- 9) 真实 ULog fixture：姿态/罗盘/表盘走完整管道出图 ---
+    {
+        QString path = qgetenv("FASTPLOT_ULG_FIXTURE");
+        if (path.isEmpty())
+            path = QStringLiteral(
+                "/home/user/Doubao/chats/38453274206336514/nextpilot-ng/tests/fixture/"
+                "demo_flight.ulg");
+        if (QFile::exists(path))
+        {
+            IngestPipeline pipe(application.data());
+            const Result<int> bound = pipe.bindParser(1, ParserBinding{QStringLiteral("ulog"), {}, true});
+            CHECK(bound);
+            QFile file(path);
+            CHECK(file.open(QIODevice::ReadOnly));
+            QByteArray chunk;
+            while (!file.atEnd())
+            {
+                chunk = file.read(4096);
+                if (chunk.isEmpty())
+                    break;
+                pipe.feed(1, reinterpret_cast<const uint8_t *>(chunk.constData()), chunk.size());
+            }
+            file.close();
+            pipe.finish(1);
+            const int realId = bound.value();
+
+            InstrumentView realView(application.modules());
+            realView.resize(360, 300);
+
+            const QVariantMap attitudeRoles{
+                {QStringLiteral("roll"), QStringLiteral("attitude.roll")},
+                {QStringLiteral("pitch"), QStringLiteral("attitude.pitch")}};
+            realView.renderInstrument(realId, QStringLiteral("attitude"), attitudeRoles, {}, {});
+            CHECK(inkPixels(realView.grabInstrument()) > 300);
+            realView.grabInstrument().save(QDir::currentPath() + "/instrument_real_attitude.png");
+
+            const QVariantMap compassRoles{{QStringLiteral("yaw"), QStringLiteral("attitude.yaw")}};
+            realView.renderInstrument(realId, QStringLiteral("compass"), compassRoles, {}, {});
+            CHECK(inkPixels(realView.grabInstrument()) > 200);
+            realView.grabInstrument().save(QDir::currentPath() + "/instrument_real_compass.png");
+
+            const QVariantMap gaugeRoles{{QStringLiteral("value"), QStringLiteral("engine.rpm")}};
+            realView.renderInstrument(realId, QStringLiteral("gauge"), gaugeRoles, {}, {});
+            CHECK(inkPixels(realView.grabInstrument()) > 200);
+            realView.grabInstrument().save(QDir::currentPath() + "/instrument_real_gauge.png");
+            OK("真实 ULog：姿态/罗盘/表盘经摄取管道取数并出图");
+        }
+        else
+        {
+            OK("真实 ULog fixture 不存在，跳过");
+        }
+    }
 
     fprintf(stdout, "\nplot.instrument 契约测试全部通过\n");
     return 0;
