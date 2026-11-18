@@ -4,6 +4,7 @@
 
 | 文档 | 状态 | 内容 |
 |---|---|---|
+| [自定义协议搬迁](protocol-migration.md) | 方案待开工（2026-11-18） | .psproto 变长变体协议：模型/解码/驱动/编辑器分 L1–L4 迁入 ng；头部全搬、变体定长变长都支持、CRC 校验一起搬 |
 | [fastplot 独立绘图库](fastplot.md) | P1 开工（2026-11-18） | 把老 plotting 的绘图能力抽成 `ng/libs/fastplot`；与 Qwt 同构的接口、零拷贝 + 像素列 LOD + 图层缓存三条硬约束、P1~P5 分批与验收 |
 | [Dataset / DataSource v2](dataset-datasource-v2.md) | M0 开工（2026-11-17） | DataSource 聚合根、typed Table/Column、UTC 微秒主键、frame_batch、ring 窗口与 PlotSeries |
 | [主题与浅色模式](theme.md) | 已实施（实现记录） | 深/浅主题 token、Ribbon/画布/Dock 配色、验收与截图 |
