@@ -156,7 +156,35 @@ finish()：冲刷残余里没结束的最后一行
 | Udp / Tcp | 主机、端口、（UDP）绑定地址 |
 | Can | 通道/接口名、比特率、（可选）DBC 路径 |
 
-### 3.4 与现有 C ABI 的关系
+### 3.4 openFile 怎么知道读什么、喂给谁、怎么喂
+
+整条链路分四段，openFile 自己**不掌握**格式细节：
+
+```
+对话框收集 {path, format?, 配置参数…}
+  → Intent "data.load"
+  → DataLoadHandler：选驱动（format 显式 > 后缀匹配 > 内容嗅探），驱动给出 parserId
+  → IngestOrchestrator：
+      1) 按 transport + params 构造字节源（FileByteSource；Serial/Udp/Tcp/Can 待补）
+      2) pipeline.bindParser：注册表查 vtable → create 实例 → 挂 sink
+      3) 【v2 补】configure(params)：把分隔符/波特率/模板路径等配置喂给实例
+      4) 循环 source.readChunk(256KB) → pipeline.feed → vtable.feed(ctx, bytes, sink)
+      5) finish 冲刷残余
+  → 解析器内部 parseChar/feedChunk，满帧经 sink.frame_batch 入 Dataset
+```
+
+分工对照：
+
+| 问题 | 谁回答 |
+|---|---|
+| 字节从哪个设备读、怎么读 | `IByteSource` 实现（按 transport 选）；编排层只调统一 `readChunk` |
+| 字节交给哪个解析器 | 驱动 `parserId` + `ParserRegistry` 查 vtable |
+| 字节怎么解成帧/批 | 解析器内部（`parseChar` / `feedChunk`） |
+| 配置参数（分隔符/波特率/模板…） | 对话框收进 `params` → 编排透传 → 解析器实例 `configure` |
+
+**当前缺口（v2 一并补）**：现有 vtable 没有配置入口，解析器拿不到 intent 里的参数。需要在实例生命周期 `create` 之后、`feed` 之前加一个 `configure(params)` 槽位（C++ 基类普通虚函数；C ABI 走可选尾部槽，传键值对）。解析器从这里取自己 schema 声明的参数，不从全局读。
+
+### 3.5 与现有 C ABI 的关系
 
 - **内置 C++ 解析器**：继承 `CharStreamParser`，基类导出 vtable；`NG_REGISTER_PARSER` 宏改为接收基类子类。
 - **外部插件（.so/.dll）**：保留纯 C ABI；描述信息经 vtable 尾部可选槽位返回（描述结构或 JSON）。老插件不填新槽位时，回退到旧 `PsParserInfo` 字段，不破坏兼容。
