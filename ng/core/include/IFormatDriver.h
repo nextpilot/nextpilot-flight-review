@@ -4,6 +4,7 @@
 #include "Result.h"
 #include "IToolContribution.h"
 
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 
@@ -98,6 +99,39 @@ public:
         Q_UNUSED(intent);
         Q_UNUSED(sourcePath);
         return QString();
+    }
+
+    // === 导入配置协议（声明式，供 GUI 通用对话框消费）===
+    //
+    // 为什么在这层：打开数据的"选项"（分隔符、表头、时间列…）是**格式知识**，
+    // 只有格式驱动知道；但渲染对话框是 GUI 的事。于是驱动声明一份 schema，
+    // GUI 通用渲染器按它生成控件——加一种格式只写 schema，不动对话框代码。
+    // 这与老架构 DataSourceEntry.schema/probe 同源，但这里是纯数据接口，
+    // 不携带任何 QWidget / 回调（headless 可用、可测试）。
+    //
+    // 三者都是默认空实现：没有选项的格式（如 ULog）不覆盖即可，
+    // GUI 见到空 schema 就跳过配置页，直接加载——行为与过去一致。
+
+    // 字段描述：{title, fields:[{key,type,label,default,options?,min?,max?...}],
+    //            ui:{preview:{...}, warnings:[...]}}
+    // type ∈ bool/int/double/enum/string/file。空对象 = 无选项。
+    virtual QJsonObject importSchema() const { return QJsonObject(); }
+
+    // 探测文件：读头部若干字节，返回 {delimiter,has_header,columns:[{name,kind}],
+    //   preview:[[cell,...]], suggested_time, warnings:[...]}。
+    // 供对话框预填字段、渲染预览与警告。失败返回 {"error": "..."}。
+    // 只读取文件头，不物化全量（内存纪律）。
+    virtual QJsonObject probeFile(const QString &path) const
+    {
+        Q_UNUSED(path);
+        return QJsonObject();
+    }
+
+    // 依据探测结果生成默认选项 JSON（字符串）。空 = 用解析器内置默认。
+    virtual QByteArray defaultImportOptions(const QString &path) const
+    {
+        Q_UNUSED(path);
+        return QByteArray();
     }
 };
 

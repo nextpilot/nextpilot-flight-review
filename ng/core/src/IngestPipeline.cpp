@@ -87,6 +87,22 @@ Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &bindin
                     QStringLiteral("解析器实例创建失败: %1").arg(binding.parserId));
     }
 
+    // 透传解析参数给解析器（create 后、feed 前）。老解析器没有 configure 槽位，
+    // ps_parser_has_configure 为假时跳过——它们用内置默认，行为不变。
+    if (ps_parser_has_configure(entry->vtable) && !binding.options.isEmpty())
+    {
+        PsError perr{};
+        const int32_t rc = entry->vtable->configure(ch.ctx, binding.options.constData(), &perr);
+        if (rc != 0)
+        {
+            entry->vtable->destroy(ch.ctx);
+            m_repo.remove(dsId);
+            return fail(QStringLiteral("eopt"),
+                        QStringLiteral("解析参数不被接受: %1")
+                            .arg(perr.message[0] ? perr.message : binding.parserId.toUtf8().constData()));
+        }
+    }
+
     // sink 上下文与通道同寿命：回调里直接定位到数据集，不查表。
     auto ctx = std::make_unique<SinkContext>();
     ctx->pipeline = this;

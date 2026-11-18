@@ -20,6 +20,11 @@ class IIntentExecutor;
 //   · data.export      —— 活动通道经 Dataset::channel 取数写 CSV（有 readWindow）
 //   · data.recent      —— 最近文件路径，存 settings（有 SettingsStore）
 //   · data.clearCache  —— 删除各源的 .psc 解析缓存（有缓存路径约定）
+//   · data.derive      —— Rust 实时算出派生序列交给 UI（ps_preview_filter，只读），
+//                          **不写回数据集、不新增通道**：payload 带 time/value 供脚本/CLI，
+//                          并发 AppContext::derivedSeriesReady 供画布叠加显示。
+//   · data.workspace.save/list/restore —— 工作区数据源配置的持久化与恢复。
+//                          恢复 = 重放 data.load + data.derive（配方），不存数据本体。
 //
 // 刻意不搬：protocol.inspect（领域面板，归 extensions/<域>/gui/）、
 // layout.save/import（已有 plot.layout.*）、file.open（已被 data.load 统一）。
@@ -42,6 +47,10 @@ private:
     ng::core::Result<ng::core::IntentResult> exportCsv(const ng::core::Intent &intent);
     ng::core::Result<ng::core::IntentResult> recent(const ng::core::Intent &intent);
     ng::core::Result<ng::core::IntentResult> clearCache();
+    ng::core::Result<ng::core::IntentResult> derive(const ng::core::Intent &intent);
+    ng::core::Result<ng::core::IntentResult> workspaceList();
+    ng::core::Result<ng::core::IntentResult> workspaceSave();
+    ng::core::Result<ng::core::IntentResult> workspaceRestore();
 
     ng::core::AppContext &m_app;
     ng::core::IIntentExecutor &m_executor;

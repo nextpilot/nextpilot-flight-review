@@ -1,0 +1,69 @@
+#pragma once
+
+#include <QDialog>
+#include <QJsonObject>
+#include <QString>
+
+class QWidget;
+
+namespace ng::core
+{
+class ExtensionRegistry;
+}
+
+namespace ng::gui
+{
+
+// 通用"打开数据"对话框：schema 驱动，不认识任何具体格式。
+//
+// 架构定位（外壳交互能力）：
+//   - 格式知识（有哪些选项、怎么探测）由 IFormatDriver::importSchema/probeFile 提供；
+//   - 本类只按 schema 渲染控件、调 probe、渲染预览、收集 options——
+//     加一种格式只写它的 schema，对话框代码不动。
+//   - 这与老架构 DataSourceDialog 同源，但这里依赖 core 的纯数据接口，
+//     不碰任何老 C ABI / QWidget 回调；ThemeManager token 上色。
+//
+// 结果由 result() 给出：path / format / optionsJson（JSON 字符串）。
+// MainWindow 拿到后发 data.load 意图（与 CLI/脚本同一条路径）。
+class ImportDialog : public QDialog
+{
+    Q_OBJECT
+public:
+    struct Result
+    {
+        QString path;
+        QString format;
+        QByteArray optionsJson;
+        bool ok() const { return !path.isEmpty(); }
+    };
+
+    explicit ImportDialog(ng::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
+    ~ImportDialog() override;
+
+    Result result() const { return m_result; }
+
+    // 预填文件路径并立即探测（外部带入路径时用，如"打开方式"）。
+    void setPath(const QString &path);
+
+    // 静态便捷：弹出对话框，用户确认返回结果；取消返回空 Result。
+    static Result run(ng::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
+
+private:
+    void rebuildFormatList();
+    void onFormatChanged();
+    void chooseFile();
+    void refreshProbe();
+    void rebuildFields();
+    void updateFieldVisibility();
+    void updatePreview();
+    void accept() override;
+
+    ng::core::ExtensionRegistry &m_registry;
+    Result m_result;
+
+    // 控件（前置声明避免头重）
+    class Private;
+    Private *d;
+};
+
+} // namespace ng::gui

@@ -3,6 +3,8 @@
 #include "ParserRegistry.h"
 
 #include <QByteArray>
+#include <QJsonObject>
+#include <QJsonDocument>
 #include <QString>
 #include <QStringList>
 
@@ -18,15 +20,68 @@ namespace
 // 每批行数上限：C++ 侧缓冲恒定，与文件行数无关。
 constexpr uint32_t kChunkRows = 4096;
 
+// 解析配置（由宿主经 configure 传入，字段与 CsvFormatDriver::schema() 一致）。
+// 默认值 = 历史行为：逗号分隔 / 第一行表头 / 第一列时间（秒）。
+// 这样老的 data.load 调用（不带 options）行为完全不变。
+struct CsvConfig
+{
+    QChar delimiter = QLatin1Char(',');
+    bool hasHeader = true;
+    int skipRows = 0;
+    int timeMode = 0;   // 0=行号, 1=指定列, 2=日期列+时间列合并
+    int timeIndex = 0;  // timeMode=1 时的时间列下标
+    int dateIndex = 0;  // timeMode=2
+    int clockIndex = 1; // timeMode=2
+};
+
+// 从宿主透传的 JSON 解析出配置。只认 schema 声明的键；缺字段用默认。
+CsvConfig configFromJson(const QByteArray &json)
+{
+    CsvConfig c;
+    if (json.isEmpty())
+        return c;
+    const QJsonObject o = QJsonDocument::fromJson(json).object();
+    if (o.isEmpty())
+        return c;
+
+    const QString delim = o.value(QStringLiteral("delimiter")).toString();
+    // "auto" 是对话框里"自动探测"的占位值：探测结果已预填成实际字符，
+    // 若仍是 auto 说明没探测到，退回默认逗号（绝不能取 'a' 当分隔符）。
+    if (!delim.isEmpty() && delim != QLatin1String("auto"))
+        c.delimiter = delim.at(0);
+    if (o.contains(QStringLiteral("has_header")))
+        c.hasHeader = o.value(QStringLiteral("has_header")).toBool(true);
+    c.skipRows = qMax(0, o.value(QStringLiteral("skip_rows")).toInt(0));
+
+    const QJsonObject time = o.value(QStringLiteral("time")).toObject();
+    const QString mode = time.value(QStringLiteral("mode")).toString(QStringLiteral("row"));
+    if (mode == QLatin1String("column"))
+    {
+        c.timeMode = 1;
+        c.timeIndex = qMax(0, time.value(QStringLiteral("index")).toInt(0));
+    }
+    else if (mode == QLatin1String("combined"))
+    {
+        c.timeMode = 2;
+        c.dateIndex = qMax(0, time.value(QStringLiteral("date")).toInt(0));
+        c.clockIndex = qMax(0, time.value(QStringLiteral("time")).toInt(1));
+    }
+    return c;
+}
+
 // 解析器实例状态：只保留"跨 feed 的残余字节"与列缓冲，不含任何存储。
 //
 // 内存纪律：常驻 = 一个分块缓冲（kChunkRows 行 × 列数），与文件行数无关。
 struct CsvCtx
 {
+    CsvConfig config;
+    int skippedRows = 0;          // 已跳过的开头行数（skip_rows）
+    int dataRowIndex = 0;         // 数据行序号（row 模式的时间基准，从 0 起）
     std::string pending;          // 未凑成完整行（含换行）的残余字节
     QByteArray lineBuf;           // 正在累积的一行
     QStringList headers;          // 表头列名（含第一列时间列的名字）
-    QStringList valueNames;       // 数值列名（= 表头去掉第一列）
+    QStringList valueNames;       // 数值列名（数据列对应的表头）
+    std::vector<int> valueCellIndex; // 每个数据列对应的 cell 下标
     int valueCols = 0;
     bool headerDone = false;
 
@@ -36,26 +91,83 @@ struct CsvCtx
     uint64_t consumed = 0;                          // 已消费字节数（进度上报）
 };
 
-// 解析一行：返回 false 表示格式错误。
+// 按配置的分隔符切一行（支持双引号包裹，兼容老实现）。
+QStringList splitLine(const QString &line, QChar sep)
+{
+    QStringList out;
+    QString cell;
+    bool quoted = false;
+    for (int i = 0; i < line.size(); ++i)
+    {
+        const QChar ch = line.at(i);
+        if (ch == QLatin1Char('"'))
+        {
+            if (quoted && i + 1 < line.size() && line.at(i + 1) == QLatin1Char('"'))
+            {
+                cell.append(QLatin1Char('"'));
+                ++i;
+            }
+            else
+                quoted = !quoted;
+        }
+        else if (ch == sep && !quoted)
+        {
+            out.append(cell.trimmed());
+            cell.clear();
+        }
+        else
+            cell.append(ch);
+    }
+    out.append(cell.trimmed());
+    return out;
+}
+
+// 时间列配置 → 产出 (时间秒, 该行是否作为数据行)。
+// dataCols 是"哪些 cell 下标是数据列"，在表头阶段算好（见 buildValueColumns）。
 //
-// 规则（老 CsvExtension 的语义，逐条保留）：
-//   - 空行跳过；
-//   - 第一格为空视为跳过（老实现：cells.first().trimmed().isEmpty()）；
-//   - 第一列是时间（秒，浮点），转微秒；
-//   - 其余列按 f64 解析，解析不出按 0（老实现 toDouble() 的行为）。
-bool parseCsvLine(const QStringList &cells, int valueCols, std::vector<int64_t> &times,
+// 时间模式：
+//   - 0 row（默认）：时间 = 数据行序号（秒），所有列都是数据列；
+//   - 1 column：time.index 指定列是时间（秒浮点），其余列是数据；
+//   - 2 combined：date + clock 两列数值相加作为时间，其余列是数据。
+bool parseCsvLine(CsvCtx *c, const QStringList &cells, std::vector<int64_t> &times,
                   std::vector<std::vector<double>> &values)
 {
     if (cells.isEmpty())
         return true;
-    if (cells.first().trimmed().isEmpty())
-        return true; // 跳过空行/无时间戳的行
 
-    const double tSec = cells.first().trimmed().toDouble();
+    const CsvConfig &cfg = c->config;
+    double tSec = 0.0;
+    if (cfg.timeMode == 0)
+    {
+        tSec = static_cast<double>(c->dataRowIndex);
+    }
+    else if (cfg.timeMode == 1)
+    {
+        if (cfg.timeIndex >= cells.size())
+            return true;
+        const QString s = cells.at(cfg.timeIndex).trimmed();
+        if (s.isEmpty())
+            return true;
+        tSec = s.toDouble();
+    }
+    else // combined
+    {
+        if (cfg.dateIndex >= cells.size() || cfg.clockIndex >= cells.size())
+            return true;
+        tSec = cells.at(cfg.dateIndex).trimmed().toDouble()
+             + cells.at(cfg.clockIndex).trimmed().toDouble();
+    }
+
+    // c->valueCellIndex[i] = 第 i 个数据列对应的 cell 下标（表头阶段算好）。
+    for (int col = 0; col < c->valueCols; ++col)
+    {
+        const int cellIdx = c->valueCellIndex.at(col);
+        const double v = (cellIdx >= 0 && cellIdx < cells.size())
+                       ? cells.at(cellIdx).trimmed().toDouble() : 0.0;
+        values[col].push_back(v);
+    }
     times.push_back(static_cast<int64_t>(tSec * 1000000.0));
-
-    for (int c = 0; c < valueCols; ++c)
-        values[c].push_back((c + 1 < cells.size()) ? cells.at(c + 1).trimmed().toDouble() : 0.0);
+    ++c->dataRowIndex;
     return true;
 }
 
@@ -112,24 +224,72 @@ bool emitBatch(CsvCtx *c, const PsParserSink *sink, PsError *err)
 // 处理一行完整文本（含可能的 \r）。返回 false 表示出错。
 bool handleLine(CsvCtx *c, const QString &line, const PsParserSink *sink, PsError *err)
 {
+    // skip_rows：跳过开头 N 行（在表头判定之前）。
+    if (c->skippedRows < c->config.skipRows)
+    {
+        ++c->skippedRows;
+        return true;
+    }
+
+    const QStringList cells = splitLine(line, c->config.delimiter);
+
     if (!c->headerDone)
     {
-        // 第一行是表头。
-        c->headers = line.split(QLatin1Char(','));
-        for (QString &h : c->headers)
-            h = h.trimmed();
-        if (c->headers.isEmpty() || c->headers.first().isEmpty())
+        // 无表头模式：用第一行的列数推断结构，生成 Column 1..N，
+        // 并把这一行也作为数据解析（存进 deferred 待表头建好后处理）。
+        if (!c->config.hasHeader)
         {
-            if (err)
+            if (cells.size() < 2)
             {
-                err->code = 3;
-                std::strncpy(err->message, "CSV 无表头", sizeof(err->message) - 1);
-                err->message[sizeof(err->message) - 1] = '\0';
+                if (err)
+                {
+                    err->code = 3;
+                    std::strncpy(err->message, "CSV 列数不足", sizeof(err->message) - 1);
+                    err->message[sizeof(err->message) - 1] = '\0';
+                }
+                return false;
             }
-            return false;
+            c->headers.clear();
+            for (int i = 0; i < cells.size(); ++i)
+                c->headers.push_back(QStringLiteral("Column %1").arg(i + 1));
         }
-        // 第一列是时间（名字只作参考，不作为数值列），其余是数值列。
-        c->valueCols = static_cast<int>(c->headers.size()) - 1;
+        else
+        {
+            c->headers = cells;
+            for (QString &h : c->headers)
+                h = h.trimmed();
+            if (c->headers.isEmpty() || c->headers.first().isEmpty())
+            {
+                if (err)
+                {
+                    err->code = 3;
+                    std::strncpy(err->message, "CSV 无表头", sizeof(err->message) - 1);
+                    err->message[sizeof(err->message) - 1] = '\0';
+                }
+                return false;
+            }
+        }
+
+        // 建立"数据列 → cell 下标"的映射（时间列不作为数据列）。
+        c->valueCellIndex.clear();
+        c->valueNames.clear();
+        for (int cellIdx = 0; cellIdx < c->headers.size(); ++cellIdx)
+        {
+            bool isTime = false;
+            if (c->config.timeMode == 1)
+                isTime = (cellIdx == c->config.timeIndex);
+            else if (c->config.timeMode == 2)
+                isTime = (cellIdx == c->config.dateIndex || cellIdx == c->config.clockIndex);
+            else if (c->config.timeMode == 0 && c->config.hasHeader)
+                isTime = (cellIdx == 0); // row 模式 + 有表头：第一列历史行为是时间列
+            // row 模式 + 无表头：所有列都是数据列（时间用行号）。
+            if (!isTime)
+            {
+                c->valueCellIndex.push_back(cellIdx);
+                c->valueNames.push_back(c->headers.at(cellIdx));
+            }
+        }
+        c->valueCols = static_cast<int>(c->valueCellIndex.size());
         if (c->valueCols <= 0)
         {
             if (err)
@@ -140,16 +300,18 @@ bool handleLine(CsvCtx *c, const QString &line, const PsParserSink *sink, PsErro
             }
             return false;
         }
-        c->valueNames.clear();
-        for (int i = 1; i < c->headers.size(); ++i)
-            c->valueNames.push_back(c->headers.at(i));
         c->values.assign(static_cast<size_t>(c->valueCols), std::vector<double>());
         c->headerDone = true;
+
+        // 无表头：第一行的 cells 也是第一条数据，补解析它。
+        if (!c->config.hasHeader && !parseCsvLine(c, cells, c->times, c->values))
+            return false;
+        if (c->times.size() >= kChunkRows)
+            return emitBatch(c, sink, err);
         return true;
     }
 
-    const QStringList cells = line.split(QLatin1Char(','));
-    if (!parseCsvLine(cells, c->valueCols, c->times, c->values))
+    if (!parseCsvLine(c, cells, c->times, c->values))
         return false;
 
     if (c->times.size() >= kChunkRows)
@@ -280,17 +442,38 @@ const PsParserVtable *CsvParser::parserVtable()
                 c->pending.clear();
                 c->headers.clear();
                 c->valueNames.clear();
+                c->valueCellIndex.clear();
                 c->valueCols = 0;
                 c->headerDone = false;
+                c->skippedRows = 0;
+                c->dataRowIndex = 0;
                 c->times.clear();
                 c->values.clear();
                 c->nameBytes.clear();
                 c->consumed = 0;
+                // config 保留：复用的下一个文件沿用同一套解析参数。
             }
         };
 
         v.info = [](void *) -> const PsParserInfo * { return &CsvParser::parserInfo(); };
         v.capabilities = [](void *) -> uint64_t { return 0; };
+
+        // configure：把对话框收集的解析参数灌进本实例（在 create 后、feed 前调用）。
+        v.configure = [](void *ctx, const char *opts_json, PsError *err) -> int32_t {
+            auto *c = static_cast<CsvCtx *>(ctx);
+            if (!c)
+            {
+                if (err)
+                {
+                    err->code = 1;
+                    std::strncpy(err->message, "configure: 非法实例", sizeof(err->message) - 1);
+                    err->message[sizeof(err->message) - 1] = '\0';
+                }
+                return -1;
+            }
+            c->config = configFromJson(QByteArray(opts_json ? opts_json : ""));
+            return 0;
+        };
 
         return v;
     }();

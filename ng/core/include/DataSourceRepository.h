@@ -69,6 +69,9 @@ public:
     // 没有反查就只能让调用方遍历比对——而这里是最该提供该关系的地方。
     // 找不到时返回 -1。
     int sourceOfDataset(int datasetId) const;
+    // 按来源标识（文件路径/端点）反查源 id。恢复重放时按配置里的 origin
+    // 找回刚载入的源，再取其数据集去重放派生配方。找不到返回 -1。
+    int sourceByOrigin(const QString &origin) const;
     QVector<int> ids() const;
     int count() const;
     void clear();

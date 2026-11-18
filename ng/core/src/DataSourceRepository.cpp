@@ -162,6 +162,18 @@ int DataSourceRepository::sourceOfDataset(int datasetId) const
     return -1;
 }
 
+int DataSourceRepository::sourceByOrigin(const QString &origin) const
+{
+    if (origin.isEmpty())
+        return -1;
+    for (const DataSourceInfo &info : m_sources)
+    {
+        if (info.origin == origin)
+            return info.id;
+    }
+    return -1;
+}
+
 QVector<int> DataSourceRepository::ids() const
 {
     QVector<int> out = m_sources.keys();

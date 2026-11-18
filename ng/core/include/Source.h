@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -44,6 +45,8 @@ struct ParserBinding
     QString parserId;   // 绑定的解析器 id（ParserRegistry 里的）
     QString topic;      // 可选通道过滤（空 = 接收全部）
     bool active = true;
+    QByteArray options; // 解析参数 JSON（对话框收集，透传给 parser->configure）；
+                        // 空 = 解析器用内置默认。宿主不解释，只透传。
 };
 
 // 一路录制的完整配置：**格式 × 后端**的正交组合。

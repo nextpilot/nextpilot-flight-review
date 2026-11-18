@@ -89,6 +89,11 @@ private:
     // 加载完成后依然走意图层，于是 GUI 与 CLI/脚本行为一致。
     void openDataFile(ng::host::ModuleHost &host);
 
+    // 骨架自带的"协议检查器"入口：按 IMessageParser 自述列协议、配参数、逐帧看字段。
+    // 纯 GUI 检查能力（产 DecodedFrame，不入 Dataset），故按 id 特判弹对话框，
+    // 与"打开数据"同级处理；不占用任何可卸载模块。
+    void openProtocolInspector();
+
     // 窗口首次显示后：按真实宽度重排 ribbon。
     //
     // SARibbon 的面板是按 ribbon 的**当时宽度**算几何的。窗口显示前，

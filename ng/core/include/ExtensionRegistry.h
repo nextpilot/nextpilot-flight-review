@@ -3,6 +3,7 @@
 #include "IToolContribution.h"
 #include "IToolPack.h"
 #include "IFormatDriver.h"
+#include "IMessageParser.h"
 #include "FormatDomain.h"
 
 #include <QHash>
@@ -61,6 +62,15 @@ public:
     QStringList ids() const;             // 格式驱动 id
     bool contains(const QString &id) const;
     int count() const;                   // 格式驱动数量
+
+    // === 协议解析器快捷 API（kind=message，供专用协议对话框/CLI 消费）===
+    // 与格式驱动并列而非混用：格式驱动产 Dataset，协议解析器产 DecodedFrame。
+    QList<IMessageParser *> messageParsers() const;
+    QList<IMessageParser *> messageParsersByDomain(FormatDomain domain) const;
+    IMessageParser *messageParser(const QString &id) const;
+    IMessageParser *messageParserForProtocol(const QString &protocolId) const;
+    // 按传输协议筛选：supportedTransports() 含 transport 的解析器。
+    QList<IMessageParser *> messageParsersByTransport(const QString &transport) const;
 
 private:
     void rebuildIndexes();

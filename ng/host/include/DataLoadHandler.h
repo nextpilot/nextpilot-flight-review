@@ -3,6 +3,8 @@
 #include "ExtensionRegistry.h"
 #include "Intent.h"
 
+#include <QByteArray>
+
 namespace ng::core
 {
 class DataRepository;
@@ -27,6 +29,10 @@ class SettingsStore;
 //
 // 这样格式扩展之间彻底解耦：新增格式只往注册表加驱动；卸载=从注册表撤销，
 // data 器官与其他器官都不用改。
+//
+// 成功后会把本次"来源 + 解析器"记入工作区配置（WorkspaceDataConfig，settings
+// 的 ws/data/sources 键），供重启恢复。恢复重放时传 record=false，避免把恢复
+// 出来的源又当新打开重复记录。
 class DataLoadHandler final : public ng::core::IIntentHandler
 {
 public:
@@ -43,6 +49,10 @@ public:
         const ng::core::Intent &intent) override;
 
 private:
+    // 把本次打开记入工作区配置（来源/解析器/解析参数）。record=false 时跳过（恢复路径用）。
+    void recordSpec(const QString &path, const QStringList &parserIds, bool record,
+                    const QByteArray &parserOptions = QByteArray());
+
     ng::core::ExtensionRegistry &m_registry;
     ng::core::DataRepository &m_repo;
     ng::core::DataSourceRepository &m_sources;

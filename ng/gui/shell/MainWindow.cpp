@@ -1,6 +1,8 @@
 #include "MainWindow.h"
 
 #include "GuiContext.h"
+#include "ImportDialog.h"
+#include "ProtocolInspectorDialog.h"
 #include "ShellBinder.h"
 #include "ThemeManager.h"
 
@@ -88,6 +90,15 @@ void MainWindow::declareStandardSlots()
     openAction.icon = QStringLiteral("file_open");
     slotReg.bindLocal(openAction.area, openAction, QStringLiteral("app.skeleton"));
 
+    // "协议检查器"：骨架级 GUI 能力，消费 IMessageParser 自述逐帧查看协议字段。
+    // 纯检查展示（产 DecodedFrame，不入 Dataset），没有对应意图 op，按 id 特判弹窗。
+    UiAction inspectAction;
+    inspectAction.id = QStringLiteral("app.action.protocolInspector");
+    inspectAction.label = QStringLiteral("协议检查器");
+    inspectAction.area = QStringLiteral("ribbon.group.home.data");
+    inspectAction.icon = QStringLiteral("file_open");
+    slotReg.bindLocal(inspectAction.area, inspectAction, QStringLiteral("app.skeleton"));
+
     // "切换主题"是 app 骨架级能力（纯 GUI 展示态，非任何可卸载模块）。
     // 它只声明 intentOp=theme.toggle，真正干活的是 GUI 装配期注册的 ThemeManager——
     // 于是按钮、脚本、回放都走同一条 theme.toggle 意图路径。
@@ -151,6 +162,11 @@ void MainWindow::build(ModuleHost &host)
             openDataFile(host);
             return;
         }
+        if (actionId == QStringLiteral("app.action.protocolInspector"))
+        {
+            openProtocolInspector();
+            return;
+        }
         if (intentOp.isEmpty()) // 纯占位动作：没有意图可发，明确提示而非发空 op
         {
             statusBar()->showMessage(QStringLiteral("动作未声明意图: %1").arg(actionId));
@@ -172,16 +188,19 @@ void MainWindow::build(ModuleHost &host)
 
 void MainWindow::openDataFile(ModuleHost &host)
 {
-    // 选文件（GUI 交互）-> 走 data.load 意图加载（与 CLI 完全相同的路径）。
-    const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("打开数据文件"), QString(),
-        QStringLiteral("数据文件 (*.ulg *.csv *.mcap *.bag);;所有文件 (*)"));
-    if (path.isEmpty())
+    // 通用导入对话框（schema 驱动）：选格式 + 选文件 + 配置解析选项 + 预览。
+    // 对话框只负责收集"怎么做"，真正加载仍走 data.load 意图——与 CLI/脚本同路径。
+    const ImportDialog::Result picked = ImportDialog::run(m_appCtx.toolbox(), this);
+    if (!picked.ok())
         return; // 用户取消
 
     Intent intent;
     intent.op = QStringLiteral("data.load");
-    intent.params[QStringLiteral("path")] = path;
+    intent.params[QStringLiteral("path")] = picked.path;
+    if (!picked.format.isEmpty())
+        intent.params[QStringLiteral("format")] = picked.format;
+    if (!picked.optionsJson.isEmpty())
+        intent.params[QStringLiteral("options")] = QString::fromUtf8(picked.optionsJson);
     const Result<IntentResult> r = host.execute(intent);
     if (!r)
     {
@@ -190,6 +209,13 @@ void MainWindow::openDataFile(ModuleHost &host)
     }
     const int dsId = r.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
     statusBar()->showMessage(QStringLiteral("已载入数据集 #%1").arg(dsId));
+}
+
+void MainWindow::openProtocolInspector()
+{
+    // 专用协议检查对话框：消费工具箱里 IMessageParser 的自述信息。
+    // 与 openDataFile 的区别：这里产的是可读字段帧（检查用），不是 Dataset（画图用）。
+    ProtocolInspectorDialog::run(m_appCtx.toolbox(), this);
 }
 
 void MainWindow::showEvent(QShowEvent *event)

@@ -52,6 +52,10 @@ add_library(ng_gui OBJECT
     shell/ShellBinder.h
     shell/GuiContext.cpp
     shell/GuiContext.h
+    shell/ImportDialog.cpp
+    shell/ImportDialog.h
+    shell/ProtocolInspectorDialog.cpp
+    shell/ProtocolInspectorDialog.h
     # --- 通用绘图能力库 ---
     # 数据集视图已聚合进 modules/data/（功能专属，见该目录 CMakeLists）；
     # 这里只剩**通用绘图库**（将来抽成 Qwt-like 独立库，不属于任何器官/领域）：

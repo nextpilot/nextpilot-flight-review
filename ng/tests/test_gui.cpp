@@ -263,14 +263,22 @@ int main(int argc, char *argv[])
     CHECK(loadedDsId >= 0);
 
     panel->refresh();
-    // 上段：源列表出现 1 个源，状态文案可见（不是空白按钮）。
+    // 源卡片：出现 1 个源，状态文案可见（不是空白按钮）。
     CHECK(panel->sourceNodeCount() == 1);
     CHECK(!panel->sourceStateText(0).isEmpty());
-    // 下段：详情默认展示选中源的数据集 -> 表层级。
+    // 字段视图（默认 chip）：数据集 -> 表 -> 列层级。
     CHECK(panel->shownSourceId() >= 0);
+    CHECK(panel->activeChip() == 0);
     CHECK(panel->datasetNodeCount() == 1);
     CHECK(panel->tableNodeCount(0) >= 1); // 至少一张表
-    OK("数据源面板：源列表 + 详情树（源 → 数据集 → 表）层级正确");
+    OK("数据源面板：源卡片 + 字段视图（数据集 → 表 → 列）层级正确");
+
+    // 字段/参数/消息 三 chip：对齐老 dock 与截图的领域信息分层。
+    // 字段 chip 统计真实列数（demo_flight.csv 有多列），文案不是占位 0。
+    CHECK(panel->chipText(0).startsWith(QStringLiteral("字段")));
+    CHECK(panel->chipText(1).startsWith(QStringLiteral("参数")));
+    CHECK(panel->chipText(2).startsWith(QStringLiteral("消息")));
+    OK("数据源面板：字段/参数/消息 三 chip 就位，文案来自真实元数据");
 
     // --- 5b) 活动源 id 与数据集 id 是两套空间（曾混用导致重载失效）---
     //
@@ -306,6 +314,62 @@ int main(int argc, char *argv[])
         panel->refresh();
         CHECK(panel->sourceNodeCount() == 1);
         OK("data.reload：按源 id 重载成功，数据集 id 稳定（绘图不失效）");
+    }
+
+    // --- 5d) data.derive：Rust 实时派生 → 结果给 UI，原数据集零改动 ---
+    //
+    // 回归点：派生曾走 ps_dataset_apply_filter **写回**数据集（污染原数据、
+    // 视图 schema 漂移）。现改为 ps_preview_filter 只读预览：payload 带 time/value，
+    // 并发 derivedSeriesReady 给画布；数据集的表/列/行数前后必须一致。
+    {
+        const Dataset *before = application.data().get(loadedDsId);
+        CHECK(before != nullptr && before->tableCount() >= 1);
+        const Table *tbl = before->table(0);
+        CHECK(tbl != nullptr && !tbl->columns.isEmpty());
+        const int rowsBefore = tbl->rows;
+        const int colsBefore = tbl->columns.size();
+        const QString tableName = tbl->name;
+        const QString columnName = tbl->columns.first().name;
+
+        // 订阅派生结果事件。
+        int derivedSignalCount = 0;
+        QString derivedName;
+        QObject::connect(&application.context(), &AppContext::derivedSeriesReady,
+                         &application, [&](const QString &name, const QVector<double> &time,
+                                           const QVector<double> &value) {
+                             ++derivedSignalCount;
+                             derivedName = name;
+                             CHECK(time.size() == value.size());
+                             CHECK(!time.isEmpty());
+                         });
+
+        Intent der;
+        der.op = QStringLiteral("data.derive");
+        der.params[QStringLiteral("dataset")] = loadedDsId;
+        der.params[QStringLiteral("table")] = tableName;
+        der.params[QStringLiteral("column")] = columnName;
+        der.params[QStringLiteral("filter")] = QStringLiteral("absolute");
+        const auto dr = application.modules().execute(der);
+        CHECK(dr);
+        const QVariantMap pm = dr.value().payload.toMap();
+        const int count = pm.value(QStringLiteral("count")).toInt();
+        CHECK(count > 0);
+        const QVector<double> dtime = pm.value(QStringLiteral("time")).value<QVector<double>>();
+        const QVector<double> dvalue = pm.value(QStringLiteral("value")).value<QVector<double>>();
+        CHECK(dtime.size() == count);
+        CHECK(dvalue.size() == count);
+        CHECK(derivedSignalCount == 1);
+        CHECK(!derivedName.isEmpty());
+
+        // 关键断言：派生后数据集结构完全没变（没有新列、行数一致）。
+        const Dataset *after = application.data().get(loadedDsId);
+        CHECK(after != nullptr);
+        CHECK(after->tableCount() == before->tableCount());
+        const Table *tblAfter = after->table(tableName);
+        CHECK(tblAfter != nullptr);
+        CHECK(tblAfter->rows == rowsBefore);
+        CHECK(tblAfter->columns.size() == colsBefore);
+        OK("data.derive：Rust 实时派生结果给 UI（payload+信号），原数据集零改动");
     }
 
     // 绘图路径用**内存构造**的数据集：它只关心 LOD 有界性，

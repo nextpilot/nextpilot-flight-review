@@ -6,6 +6,10 @@
 #include "IngestOrchestrator.h"
 #include "IngestPipeline.h"
 #include "SettingsStore.h"
+#include "WorkspaceDataConfig.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
 
 using namespace ng::core;
 
@@ -18,6 +22,8 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
 {
     const QString path = intent.params.value(QStringLiteral("path")).toString();
     const QString format = intent.params.value(QStringLiteral("format")).toString();
+    // 恢复重放时传 false：不要把恢复出来的源又当成"新打开"记一遍。
+    const bool record = intent.params.value(QStringLiteral("record"), true).toBool();
 
     IFormatDriver *driver = format.isEmpty()
         ? m_registry.driverForPath(path)
@@ -57,6 +63,16 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
         if (intent.params.contains(QStringLiteral("id")))
             options.stableId = intent.params.value(QStringLiteral("id")).toInt();
 
+        // 解析参数：导入对话框收集的选项，经 intent 透传给解析器 configure。
+        // 允许 JSON 字符串或 QVariantMap（脚本场景）。
+        QByteArray parserOptions;
+        const QVariant ov = intent.params.value(QStringLiteral("options"));
+        if (ov.type() == QVariant::String)
+            parserOptions = ov.toString().toUtf8();
+        else if (ov.isValid() && !ov.toMap().isEmpty())
+            parserOptions = QJsonDocument(QJsonObject::fromVariantMap(ov.toMap())).toJson(QJsonDocument::Compact);
+        options.parserOptions = parserOptions;
+
         IngestOrchestrator orchestrator(m_repo, m_sources, *m_pipeline);
         const Result<int> opened = orchestrator.openFile(path, QStringList{parserId},
                                                         QString(), options);
@@ -73,6 +89,8 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
                 files = files.mid(0, 10);
             m_settings->setValue(QLatin1String(DataCommandsHandler::kRecentKey), files);
         }
+        // 记入工作区配置（与"最近文件"并列：一个是偏好，一个是可恢复的申请单）。
+        recordSpec(path, QStringList{parserId}, record, parserOptions);
 
         IntentResult r;
         r.payload = opened.value();
@@ -90,5 +108,28 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
             files = files.mid(0, 10);
         m_settings->setValue(QLatin1String(DataCommandsHandler::kRecentKey), files);
     }
+    if (loaded && m_settings)
+        recordSpec(path, QStringList{format}, record);
     return loaded;
+}
+
+void DataLoadHandler::recordSpec(const QString &path, const QStringList &parserIds, bool record,
+                                 const QByteArray &parserOptions)
+{
+    if (!record || !m_settings || path.isEmpty())
+        return;
+    WorkspaceDataConfig cfg = WorkspaceDataConfig::load(*m_settings);
+    SourceSpec spec;
+    spec.origin = path;
+    spec.kind = QStringLiteral("file");
+    spec.parserIds = parserIds;
+    // 解析参数按 parserId 分组存入申请单，恢复时原样重放。
+    if (!parserOptions.isEmpty() && !parserIds.isEmpty())
+    {
+        QJsonObject params = QJsonDocument::fromJson(parserOptions).object();
+        if (!params.isEmpty())
+            spec.parserParams.insert(parserIds.first(), params);
+    }
+    cfg.upsert(spec);
+    cfg.save(*m_settings);
 }

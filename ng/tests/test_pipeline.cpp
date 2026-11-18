@@ -955,6 +955,38 @@ int main()
             OK("CSV SPI 解析器：表头取列名、首列为时间秒→微秒、其余列 f64（旧语义一致）");
         }
 
+        // --- 1b) configure：分号分隔 + 无表头 + 指定时间列 ---
+        // 验证导入对话框收集的参数真能被解析器消费（不是空控件）。
+        {
+            const QByteArray semi = "10;1.5;2.5\n20;2.0;3.0\n30;3.0;4.5\n";
+            const PsParserVtable *vt = ng::ext::CsvParser::parserVtable();
+            CHECK(ps_parser_has_configure(vt));
+            void *ctx = vt->create();
+            PsError err{}; err.message[0] = 0;
+            // delimiter=';'、无表头、时间取第 0 列 → 数据列应为第 1、2 列。
+            const QByteArray opts =
+                R"({"delimiter":";","has_header":false,"skip_rows":0,"time":{"mode":"column","index":0}})";
+            CHECK(vt->configure(ctx, opts.constData(), &err) == 0);
+            Collector collector;
+            PsParserSink sink = collector.sink();
+            CHECK(vt->feed(ctx, reinterpret_cast<const uint8_t *>(semi.constData()),
+                           static_cast<uint32_t>(semi.size()), &sink, &err) == 0);
+            CHECK(vt->finish(ctx, &sink, &err) == 0);
+            vt->destroy(ctx);
+            CHECK(collector.batches.size() == 1);
+            if (!collector.batches.empty())
+            {
+                const Collector::Batch &b = collector.batches.front();
+                // 时间 = 第 0 列（秒→微秒）
+                CHECK(b.times.size() == 3 && b.times[0] == 10000000);
+                CHECK(b.times.size() == 3 && b.times[2] == 30000000);
+                // 第一数据列 = 第 1 列（1.5/2.0/3.0），不是被当时间的第 0 列
+                CHECK(b.values.size() == 3 && std::fabs(b.values[0] - 1.5) < 1e-9);
+                CHECK(b.values.size() == 3 && std::fabs(b.values[2] - 3.0) < 1e-9);
+            }
+            OK("CSV configure：分号分隔 + 无表头 + 指定时间列生效（对话框参数真的落到解析）");
+        }
+
         // --- 2) 走编排器：表名策略 + 缓存 + stable id ---
         //
         // 这里用真实的编排入口（宿主唯一编排点），

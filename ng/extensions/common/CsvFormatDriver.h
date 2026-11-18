@@ -32,4 +32,9 @@ public:
     // （见 DataLoadHandler：parserId 非空即走管道）。
     ng::core::Result<ng::core::IntentResult> load(
         const ng::core::Intent &intent, ng::core::DataRepository &repo) override;
+
+    // 导入配置协议：schema + probe + 默认选项，供 GUI 通用对话框渲染。
+    QJsonObject importSchema() const override;
+    QJsonObject probeFile(const QString &path) const override;
+    QByteArray defaultImportOptions(const QString &path) const override;
 };

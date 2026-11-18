@@ -6,6 +6,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_library(ng_ext_common OBJECT
     CsvFormatDriver.cpp
     CsvFormatDriver.h
+    CsvImportProbe.cpp
+    CsvImportProbe.h
     CsvParser.cpp
     CsvParser.h
     CommonPack.cpp

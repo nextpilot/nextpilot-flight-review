@@ -2,6 +2,7 @@
 
 #include "BuiltinContributions.h"
 #include "BuiltinPackRegistry.h"
+#include "NmeaMessageParser.h"
 
 using namespace ng::core;
 
@@ -17,6 +18,8 @@ std::unique_ptr<IToolPack> GnssPack::build()
 {
     // 预留领域：卫星导航协议（NMEA / UBX / OEM7）格式后续平移时落入本包。
     auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("卫导工具箱"), FormatDomain::Gnss);
+    // 协议解析器（kind=message）：NMEA 0183 —— 自述 + configure + parse 的样板实现。
+    pack->add<NmeaMessageParser>();
     pack->add<GenericScriptContribution>(
         QStringLiteral("gnss.script.helpers"), QStringLiteral("卫导脚本库"), FormatDomain::Gnss,
         QStringLiteral("lua"),

@@ -21,7 +21,10 @@ set_target_properties(ng_module_data PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSIT
 # 与器官解耦（器官只发字符串 id，不 include 本头文件）。
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 add_library(ng_module_data_gui OBJECT DataManagerPanel.cpp DataManagerPanel.h)
-target_include_directories(ng_module_data_gui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(ng_module_data_gui PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    # 通道拖拽协议（纯头文件）：数据树 encode、画布 decode，共享同一张约定。
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../gui/views/plot)
 # 主题是横向 GUI 基础设施（状态点等取色走它），单独成库，谁需要谁链——
 # 不必为此链接整个外壳库 ng_gui。
 target_link_libraries(ng_module_data_gui PUBLIC ng_core ng_gui_theme Qt6::Widgets Qt6::Gui Qt6::Core)

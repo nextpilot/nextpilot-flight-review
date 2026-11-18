@@ -244,4 +244,50 @@ int ExtensionRegistry::count() const
     return m_byKind.value(ContributionKind::Format, {}).size();
 }
 
+// === 协议解析器快捷 API ===
+
+QList<IMessageParser *> ExtensionRegistry::messageParsers() const
+{
+    QList<IMessageParser *> out;
+    for (IToolContribution *c : m_byKind.value(ContributionKind::Message, {}))
+        if (auto *p = dynamic_cast<IMessageParser *>(c))
+            out.append(p);
+    return out;
+}
+
+QList<IMessageParser *> ExtensionRegistry::messageParsersByDomain(FormatDomain domain) const
+{
+    QList<IMessageParser *> out;
+    for (IMessageParser *p : messageParsers())
+        if (p->domain() == domain)
+            out.append(p);
+    return out;
+}
+
+IMessageParser *ExtensionRegistry::messageParser(const QString &id) const
+{
+    IToolContribution *c = m_byId.value(id, nullptr);
+    return (c && c->kind() == ContributionKind::Message)
+               ? dynamic_cast<IMessageParser *>(c)
+               : nullptr;
+}
+
+IMessageParser *ExtensionRegistry::messageParserForProtocol(const QString &protocolId) const
+{
+    const QString key = protocolId.trimmed().toLower();
+    for (IMessageParser *p : messageParsers())
+        if (p->id().toLower() == key || p->protocolName().toLower() == key)
+            return p;
+    return nullptr;
+}
+
+QList<IMessageParser *> ExtensionRegistry::messageParsersByTransport(const QString &transport) const
+{
+    QList<IMessageParser *> out;
+    for (IMessageParser *p : messageParsers())
+        if (p->supportedTransports().contains(transport, Qt::CaseInsensitive))
+            out.append(p);
+    return out;
+}
+
 } // namespace ng::core

@@ -104,6 +104,8 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
         b.parserId = pid;
         b.topic = topicFilter;
         b.active = true;
+        // 解析参数透传：宿主不解释内容，由各解析器实例的 configure 消费。
+        b.options = options.parserOptions;
         info.parsers << b;
     }
 
@@ -157,6 +159,8 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
         b.parserId = pid;
         b.topic = topicFilter;
         b.active = true;
+        // 解析参数透传：宿主不解释内容，由各解析器实例的 configure 消费。
+        b.options = options.parserOptions;
 
         // stable id 只对**单路**有意义（一 id 对多数据集语义不成立）。
         // 多路扇出时仍按自增分配。

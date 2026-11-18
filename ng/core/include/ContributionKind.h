@@ -24,6 +24,7 @@ inline const QString Script  = QStringLiteral("script");   // IScriptContributio
 inline const QString Data    = QStringLiteral("data");     // IDataContribution：样例数据/数据集
 inline const QString Example = QStringLiteral("example");  // IExampleContribution：示例工程/demo
 inline const QString Doc     = QStringLiteral("doc");      // IDocContribution：规格/知识文档
+inline const QString Message = QStringLiteral("message");  // IMessageParser：协议消息解析/检查（产 DecodedFrame）
 } // namespace ContributionKind
 
 // 已知 kind 的中文展示名；未知 kind 原样返回（开放扩展友好）。

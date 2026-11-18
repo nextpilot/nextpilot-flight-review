@@ -4,6 +4,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_library(ng_ext_gnss OBJECT
     GnssPack.cpp
     GnssPack.h
+    NmeaMessageParser.cpp
+    NmeaMessageParser.h
 )
 target_include_directories(ng_ext_gnss PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_ext_gnss PUBLIC ng_core)

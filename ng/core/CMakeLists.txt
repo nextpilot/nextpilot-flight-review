@@ -19,7 +19,9 @@ add_library(ng_core STATIC
     src/IByteSource.cpp
     src/AppContext.cpp
     src/SettingsStore.cpp
+    src/WorkspaceDataConfig.cpp
     src/ParserRegistry.cpp
+    src/IMessageParser.cpp
     src/RecordingFormat.cpp
     src/RecordingBackend.cpp
     include/Result.h
@@ -49,11 +51,15 @@ add_library(ng_core STATIC
     include/BuiltinContributions.h
     include/DataSource.h
     include/SettingsStore.h
+    include/WorkspaceDataConfig.h
     include/DataSourceRepository.h
     include/IngestPipeline.h
     include/AppContext.h
     include/ParserRegistry.h
     include/ps_parser_spi.h
+    include/DecodedFrame.h
+    include/IMessageParser.h
+    include/ps_message_parser_spi.h
     include/RecordingFormat.h
     include/RecordingBackend.h
 )

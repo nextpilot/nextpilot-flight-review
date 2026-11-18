@@ -12,6 +12,7 @@ QString kindName(const QString &kind)
     if (kind == ContributionKind::Data)    return QStringLiteral("数据");
     if (kind == ContributionKind::Example) return QStringLiteral("例子");
     if (kind == ContributionKind::Doc)     return QStringLiteral("文档");
+    if (kind == ContributionKind::Message) return QStringLiteral("协议解析器");
     return kind; // 自定义 kind：原样展示
 }
 
@@ -25,6 +26,7 @@ QStringList knownKinds()
         ContributionKind::Data,
         ContributionKind::Example,
         ContributionKind::Doc,
+        ContributionKind::Message,
     };
 }
 

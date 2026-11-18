@@ -8,6 +8,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVector>
 
 namespace ng::core
 {
@@ -105,6 +106,12 @@ Q_SIGNALS:
     void activeSourceChanged(int sourceId);
     // 当前活动通道变化（画布、状态栏、脚本都订阅它）。
     void activeChannelChanged(int datasetId, const QString &table, const QString &column);
+
+    // 派生序列已算出（data.derive 的结果）。这是**事件**而非状态，参数是可序列化的
+    // 数值数组（非 GUI 专属类型），故不违反"上下文不含 QWidget"的铁律。
+    // 数据集本身零改动：画布订阅后作为 generated series 叠加显示，与活动通道体系并列。
+    void derivedSeriesReady(const QString &name, const QVector<double> &time,
+                            const QVector<double> &value);
 
 private:
     DataRepository m_repo;

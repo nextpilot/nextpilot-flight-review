@@ -7,6 +7,7 @@
 #include "ParserRegistry.h"
 #include "Result.h"
 
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 
@@ -62,6 +63,11 @@ struct IngestOptions
     // 稳定 id：录制/回放时用它入仓，避免会话内自增 id 漂移。
     // kInvalidDataset = 自动分配。
     DatasetId stableId = kInvalidDataset;
+
+    // 解析参数（JSON 字符串）：由导入对话框收集、经 data.load 透传。
+    // 宿主不解释内容，只透传给每个解析器实例的 configure(ctx, json)。
+    // 空 = 解析器用内置默认（老调用不变）。
+    QByteArray parserOptions;
 };
 
 class IngestOrchestrator

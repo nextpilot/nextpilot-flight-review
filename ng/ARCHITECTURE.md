@@ -116,7 +116,7 @@ struct DataSourceInfo {
 ### 3.2 Parser —— 解析器（纯转换）
 
 ```c
-/* C ABI：任意语言可实现，可放进 .so/.dll */
+/* C ABI：任意语言可实现，可放进 .so/.dll。当前 PS_PARSER_ABI_VERSION = 2 */
 typedef struct PsParserVtable {
     uint32_t abi_version, struct_size;
     void *(*create)(void);  void (*destroy)(void *ctx);
@@ -125,8 +125,18 @@ typedef struct PsParserVtable {
                     const PsParserSink *sink, PsError *err);
     int32_t (*finish)(void *ctx, const PsParserSink *sink, PsError *err);
     void  (*reset)(void *ctx);
+    /* v2 尾部槽（按 struct_size 判定；无参数解析器可留空）：
+     * create 后、feed 前调用一次，把宿主收集的 JSON 键值对参数交给解析器。
+     * 解析器只取自己 schema 声明的参数，不读全局。 */
+    int32_t (*configure)(void *ctx, const char *opts_json, PsError *err);
 } PsParserVtable;
 ```
+
+> **为什么升 v2**：v1 没有配置入口，解析器拿不到意图里的参数（CSV 分隔符、协议模板路径等），
+> 只能读全局——破坏单测、重放与多实例隔离。v2 把 `configure` 升为正式语义槽：
+> C++ 基类是普通虚函数 `configure(const QJsonObject&)`，C 插件走上面的可选尾部槽传 JSON 键值对，
+> 两形态语义一致。`abi_version` 管"是否接受 v2 语义"，`struct_size` 管"这个 vtable 是否实现该槽位"，
+> 两者正交（无参数解析器可合法留空 configure）。版本升级是硬切换，v1 解析器需重编到 v2。
 
 职责边界（这是本设计的核心）：
 
@@ -141,6 +151,31 @@ typedef struct PsParserVtable {
 **批结构复用老仓库 `ps_extension_api.h` 的 `PsFrameBatch`**——与 Rust `append_frame`
 入参同构，落库零转换。老代码的 `builtin/*/datasources/*/XxxParser.{h,cpp}`
 协议算法**原样复用**，只把"产出端"从"自己建 Dataset"改成"通过 sink 吐批"。
+
+#### 两类解析器，不要混
+
+| | 数据摄取 Parser（§3.2 上文） | 协议检查器 IMessageParser（新增） |
+|---|---|---|
+| 接口形态 | 纯 C ABI vtable（`ps_parser_spi.h`） | C++ 接口类 `IMessageParser`（内置）+ C ABI 镜像 `ps_message_parser_spi.h`（插件） |
+| 产出 | `PsFrameBatch` 数值批 → Rust Dataset → 画图/分析 | `DecodedFrame` 可读字段树 → 协议检查对话框 |
+| 消费者 | `IngestPipeline` → `data.load` | 专用协议对话框（`gui/shell/ProtocolInspectorDialog`），不产 Dataset |
+| 用途 | 大数据绘图/分析主通路 | 逐帧看字段/枚举/校验，协议调试 |
+
+- 为什么检查器是 **C++ 接口类**：它带 Qt 数据（`QVariant` 字段），且要"继承一个接口类、自述元数据"——
+  继承 + 自述是 C++ 侧的自然形态。外部 C/Rust 插件仍走 C ABI 镜像 vtable，两者汇入同一注册表，
+  宿主无感。**反例**：若把 C ABI vtable 删掉只留 C++ 类，外部 `.so` 协议插件永久进不来
+  （C++ 虚表跨不了 dll 边界）——故镜像保留。
+- **自述四要素**（对话框零改代码即可列新协议）：`protocolName()` 协议名、`domain()+usage()`
+  使用范围（领域分类 + 人读用途）、`supportedTransports()` 支持的 transfer 协议
+  （复用 `MessageTransport` id，与 `IByteSource`/`RecordingBackend` 对齐）、`configSchema()` 可配置参数
+  （与 `IFormatDriver::importSchema` 同构的 JSON 字段描述）。
+- **生命周期**：`create → configure(params) → parse → destroy`。`configure` 是普通虚函数，
+  默认把参数快照存进受保护 `m_params`；派生类只用 `param(key, default)` 读取
+  （支持 `time.mode` 点分嵌套）。**硬约束：只读 configure 传入的值，禁止读全局**
+  （SettingsStore / QSettings / 环境变量 / 固定文件路径）——否则无法单测、无法重放、多实例串味。
+  老 NMEA 解析器在构造函数里扫全局路径找模板，正是被这条约束纠正的坏味道：
+  新实现默认用内置模板，换模板只能由宿主经 `database_path` 参数传入。
+- 样板：`extensions/gnss/NmeaMessageParser`（继承 + 自述 + configure + parse）。
 
 ### 3.3 Dataset —— 数据集（唯一数据形态）
 
@@ -266,6 +301,29 @@ core: AppContext ──▶ host: ModuleHost ──▶ app: App（组合根） �
 **活动视图是"指针"不是"副本"**：存的是 id（活动源 id / 活动表 / 活动列），
 数据始终在仓库里。这让"用户正在看哪个通道"成为**跨前端共享**的运行态——
 GUI 点一下通道，脚本随后 query 得到同一答案。
+
+#### 工作区数据源配置：存"配方"，不存"数据"
+
+需求：「数据源的端口、文件、解析器、解析器参数、录制参数、后端、时间轴平移、
+衍生数据都属于配置，需要保存到 settings」。落点判断：
+
+- 这八项本质是**一份数据源申请单**的字段——"用什么参数打开哪个源"。它们是**原子**
+  的：拆成独立键会出现"文件换了但解析器参数还是上一个源的"错配。故收成一个
+  `WorkspaceDataConfig`（`core/WorkspaceDataConfig.h`），整份作为一个 JSON 块存
+  `SettingsStore` 的 **Workspace** 作用域键 `ws/data/sources`。选 Workspace 而非
+  Document/App：它是会话可恢复状态，跟随当前工作区但不作为可分享文档分发。
+- **衍生数据只存配方**（`DeriveRecipeSpec`：origin + 表 + 列 + 算子 + 参数），
+  **不存结果数组**。理由三条：① 结果是百万行，塞进 JSON 是灾难；② 数据只在 Rust，
+  settings 里放数组违反内存铁律；③ 配方是可序列化意图，重开时用 `data.derive`
+  让 Rust 重算即可。配方用 `sourceOrigin` 而非会话期 `datasetId` 定位通道——后者
+  每次打开都可能变，存下来重放就指错了。
+- **恢复 = 重放**：`data.workspace.restore` 读配置，对每个源发 `data.load`
+  （带 `record=false`，避免把恢复出来的源又当新打开重复记录），对每条配方发
+  `data.derive` 重算。数据本体始终在 Rust，settings 全程只有"怎么做"。
+- `data.load` 成功即增量记一条申请单；`data.workspace.save` 负责 flush 到磁盘。
+- **当前边界（如实标注）**：来源、解析器 id、派生配方的存取与重放已闭环；
+  解析器参数、录制格式×后端、时间平移的**字段已进配置结构**，但 `data.load`/
+  摄取管道尚未接收这些参数，故重放时暂不生效——待后端接入，不在这里造空按钮。
 
 ---
 
@@ -644,27 +702,44 @@ headless 也能查到。
 `test_gui` 钉死：双主题同 token 不同色、契约 token 齐全、未知 token 显洋红告警、曲线色
 随主题、`mapStyleSheet` 替换、意图切换改状态并发信号、全局 QSS/palette 落地。
 
-### 6.5 数据源面板：源列表 + 详情（对齐老 dock 的信息层）
+### 6.5 数据源面板：源卡片 + 字段/参数/消息三视图（对齐老 dock 与截图）
 
 老代码 `DataSourceDock` 2442 行、50+ 个注入回调，是"胖视图"。ng **不搬它的实现**，
-只对齐它承载的**信息层**，并按新抽象重做：
+只对齐它承载的**信息层与交互形态**（见 `docs/screenshots/PlotScope-Source-Inspector.png`），
+数据全部走 ng 仓库，按新抽象重做：
 
 ```
-上段：源列表        DataSourceRepository（源 id / 状态 / 进度 / 解析器绑定）
+标题：数据源 · N 已连接
+上段：源卡片        DataSourceRepository（状态点 / 名称 / N 通道 / 元信息 tooltip）
    ↓ 选中
-下段：详情树        数据集 → 表 → 列
+中段：字段 N | 参数 N | 消息 N  ← 三 chip（计数来自真实元数据）
+      [ 搜索字段 / 参数 / 消息 ]
+下段：检查器（QStackedWidget）
+      字段树   数据集 → 表 → 列（列可拖到画布 / 双击激活）
+      参数表   参数 / 值（ULog params/facts 文本键值表）
+      消息表   消息 / 速率 / 字段 / 首时刻（事件 / 话题时序表）
 ```
 
-**与老 dock 的三处结构差异**（都是新架构的必然结果）：
+**为什么是三视图**（纠正一次历史偏差）：字段/参数/消息是老 dock 已确立、
+截图沿用的领域信息分层——字段是数值通道（画图用），参数是键值配置，
+消息是事件/话题流，三者的数据形态和消费者都不同。曾有一版按"新架构统一产出表"
+擅自把它压成单一"数据集→表→列"树、宣称"参数/消息不再单列"——那是脱离需求的
+架构想象，截图里明明有三 tab，已纠正回来。**需求/截图优先于我的架构偏好**，这是纪律。
 
 | 老 dock | ng | 原因 |
 |---|---|---|
-| 字段 / 参数 / 消息 三视图 | 统一为「表」 | 新架构解析器统一产出**表**；ULog 的 `params`/`facts` 已落库为普通表，无需单开 tab |
-| 源行 + 详情两套独立控件 | 源列表 + 详情树，同一面板 | 二者是同一信息层，拆两个面板会让用户在一个 dock 里看到割裂的两棵树 |
 | 50+ 个注入回调 | 订阅 `AppContext` + `DataSourceRepository` 信号 | 面板只读元数据，不持有业务状态 |
+| m_ctx 里的老 Repository/Service | 数据源只用 `DataSourceRepository` / `DataRepository` | 不引入老类型，物理逻辑都归 ng |
+
+**只读展示骨架的边界**：参数/消息 tab 当前展示真实的**表清单 / 列结构 / 行数 / 首时刻**；
+文本键值（`params`/`facts` 的 name→value）的真实值暂留占位——因为 `Dataset::readWindow`
+经 C ABI 只返回 `double`，读不出 `PS_VALUE_TEXT` 的字符串。要显示真实文本值需给 Rust
+侧加一个文本读取槽（下一轮，不伪造数据糊弄）。数据源卡片的文件加载完成态显示"已加载"
+而非"已停止"——加载完成是文件的自然终态，不是人为停止，与老 dock/截图一致。
 
 **不搬的部分**（ng 尚无底层支撑，不做点了没反应的按钮）：live 源连接/暂停、
-变换派生通道、设备调试、协议检查（后者归 `extensions/<域>/gui/` 的领域面板机制）。
+设备调试、协议检查（后者归 `extensions/<域>/gui/` 的领域面板机制）。派生通道已在
+字段树右键菜单实装（走 `data.derive` 只读预览，见 §数据派生）。
 
 **源右键菜单**只放有底层支撑的动作，全部走意图层：`data.reload` / `data.export` /
 `data.clearCache`；"设为活动源"是状态切换，直接改 `AppContext`。
@@ -686,12 +761,13 @@ headless 也能查到。
 `DataSourceInfo.name` 是**显示名**（文件名），`origin` 是完整路径。
 早前把完整路径塞进 `name`，列表里就是一长串被列宽截断的路径。
 
-#### 判据三：状态点用 delegate 动态取色
+#### 判据三：卡片/chip 用 palette 关键字取色，深浅主题自动适配
 
-源列表的状态圆点由 `QStyledItemDelegate` 在 paint 时按主题 token 取色
-（深浅两套自动都对，且不新增图标资产）——根 `AGENTS.md` §12.5 要求
-"树/表用 delegate 或 token 动态取色"。为此 `ThemeManager` 提供进程级
-`activeTheme()` / `themeColor()` 静态入口，让"绘制时取色"成立。
+源卡片与三 chip 的样式用 Qt QSS 的 `palette(button)` / `palette(highlight)` /
+`palette(alternate-base)` 等关键字取色，深浅两套主题自动跟随、不写死十六进制色值
+（根 `AGENTS.md` §12.5）。状态语义由卡片文字如实呈现（运行中/已加载/错误…）。
+`ThemeManager::activeTheme()` / `themeColor()` 静态入口仍供其它需要按 token 动态取色的
+视图使用。
 
 ## 7. 视图层：可插拔，而非模式枚举
 
@@ -791,7 +867,7 @@ script.run
 | loader 直接产 Dataset | Source → Parser → Dataset 三段分离 | 支持多源并存与字节级录制回放 |
 | `recordable` 挂在各 loader | 录制在 Source 层 | 一次实现覆盖所有格式 |
 | 12 模式合一 canvas | 视图注册表，每种独立类 | 加视图不改既有代码 |
-| `IMessageParser`（C++ 虚函数） | C ABI | 虚函数跨不了 dll，违背"不限语言" |
+| `IMessageParser`（C++ 虚函数） | C++ 接口类（内置）+ C ABI 镜像 vtable（插件） | 内置协议要"继承接口自述元数据"，C++ 自然形态；外部插件仍走 C ABI，虚函数跨不了 dll 的问题由镜像 vtable 解决，两者汇入同一注册表 |
 | 贡献里嵌 `QWidget*` | 纯数据插槽 + 部件工厂 | headless 可用 |
 
 ## 11. 落地顺序（进度）
@@ -806,6 +882,7 @@ script.run
 | 6 | **AppContext**：进程级运行态唯一持有者 | — | ✅ 已建 |
 | 7 | **摄取管道**：`IngestPipeline`（单前端 → 多解析器扇出 → 多数据集） | 1,2 | ✅ 已建 |
 | 8 | **统一设置**：`SettingsStore` 三作用域 + 变更通知 + 原子落盘 | — | ✅ 已建 |
+| 8b | **工作区数据源配置**：`WorkspaceDataConfig` 原子申请单（来源/解析器/录制/平移/派生配方）存 `ws/data/sources`；`data.load` 自动记录，`data.workspace.restore` 重放恢复 | 8 | ✅ 已建（配方存取闭环；解析器参数/录制参数的**重放生效**待 data.load 接对应参数） |
 | 9 | **GUI 两层化**：shell/ + views/<功能>/，视图自注册 | 6 | ✅ 已建 |
 | 10 | 宿主喂数据流程接通 `DataSource`（读文件/流 → 管道 → 落库） | 7 | ✅ 已做（`IByteSource` + `IngestOrchestrator`；ulog / csv 均走管道，格式解析各只有一份实现；表名/缓存/stable id 三项宿主策略已归位） |
 | 11 | 器官补齐：`mod.source` / `mod.dataset` / `mod.analysis` / `mod.report` | 7 | ⬜ 待做 |

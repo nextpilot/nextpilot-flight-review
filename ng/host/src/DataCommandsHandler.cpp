@@ -7,10 +7,14 @@
 #include "IIntentExecutor.h"
 #include "Result.h"
 #include "SettingsStore.h"
+#include "WorkspaceDataConfig.h"
 
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTextStream>
+#include <QVector>
 
 using namespace ng::core;
 
@@ -35,7 +39,10 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
 {
     const QString &op = intent.op;
     return op == QLatin1String("data.reload") || op == QLatin1String("data.export")
-        || op == QLatin1String("data.recent") || op == QLatin1String("data.clearCache");
+        || op == QLatin1String("data.recent") || op == QLatin1String("data.clearCache")
+        || op == QLatin1String("data.derive") || op == QLatin1String("data.workspace.list")
+        || op == QLatin1String("data.workspace.save")
+        || op == QLatin1String("data.workspace.restore");
 }
 
 Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
@@ -48,6 +55,14 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return recent(intent);
     if (intent.op == QLatin1String("data.clearCache"))
         return clearCache();
+    if (intent.op == QLatin1String("data.derive"))
+        return derive(intent);
+    if (intent.op == QLatin1String("data.workspace.list"))
+        return workspaceList();
+    if (intent.op == QLatin1String("data.workspace.save"))
+        return workspaceSave();
+    if (intent.op == QLatin1String("data.workspace.restore"))
+        return workspaceRestore();
     return fail(QStringLiteral("eunknown"),
                 QStringLiteral("DataCommandsHandler 不处理: %1").arg(intent.op));
 }
@@ -199,5 +214,163 @@ Result<IntentResult> DataCommandsHandler::clearCache()
     }
     IntentResult r;
     r.payload = removed;
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
+{
+    const DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    const QString table = intent.params.value(QStringLiteral("table")).toString();
+    const QString column = intent.params.value(QStringLiteral("column")).toString();
+    const QString filterId = intent.params.value(QStringLiteral("filter")).toString();
+    if (dsId < 0 || table.isEmpty() || column.isEmpty() || filterId.isEmpty())
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("data.derive 需要 dataset/table/column/filter 参数"));
+
+    // const 取数：派生只读，不碰仓库里的 Dataset——原数据零改动。
+    const Dataset *ds = m_app.data().get(dsId);
+    if (!ds)
+        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+    const QString input = table + QLatin1Char('.') + column;
+    const Table *t = ds->table(table);
+    if (!t || !t->column(column))
+        return fail(QStringLiteral("echan"), QStringLiteral("通道不存在: %1").arg(input));
+
+    // params 允许调用方给 JSON 字符串或 QVariantMap（脚本/Job 场景）。
+    QByteArray paramsJson;
+    const QVariant pv = intent.params.value(QStringLiteral("params"));
+    if (pv.type() == QVariant::String)
+        paramsJson = pv.toString().toUtf8();
+    else if (pv.isValid() && !pv.toMap().isEmpty())
+        paramsJson = QJsonDocument(QJsonObject::fromVariantMap(pv.toMap())).toJson(QJsonDocument::Compact);
+
+    // Rust 实时算，结果有界（默认上限见下）；数据集本身不变。
+    constexpr int kMaxDerivedPoints = 200000; // 画布/脚本够用，防全量派生灌爆 UI 内存
+    int cap = intent.params.value(QStringLiteral("cap"), kMaxDerivedPoints).toInt();
+    if (cap <= 0 || cap > kMaxDerivedPoints)
+        cap = kMaxDerivedPoints;
+
+    QString name = intent.params.value(QStringLiteral("name")).toString();
+    if (name.isEmpty())
+        name = input + QLatin1Char('.') + filterId;
+
+    QVector<double> time, value;
+    int total = 0;
+    QString err;
+    const int n = ds->previewFilter(input, filterId, paramsJson, cap, time, value, &total, &err);
+    if (n <= 0)
+        return fail(QStringLiteral("ederive"), err.isEmpty() ? QStringLiteral("派生失败") : err);
+
+    // payload 给脚本/CLI：time/value 数组 + 元信息（可序列化为 Job 结果）。
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("dataset"), dsId},
+        {QStringLiteral("table"), table},
+        {QStringLiteral("column"), column},
+        {QStringLiteral("filter"), filterId},
+        {QStringLiteral("name"), name},
+        {QStringLiteral("count"), n},
+        {QStringLiteral("total"), total},
+        {QStringLiteral("truncated"), total > n},
+        {QStringLiteral("time"), QVariant::fromValue(time)},
+        {QStringLiteral("value"), QVariant::fromValue(value)},
+    };
+    // GUI 画布订阅此事件，把派生序列作为一条 generated curve 叠加显示。
+    // 数据集零改动——老代码改 DataSource 时间基准那套副作用，这里彻底没有。
+    Q_EMIT m_app.derivedSeriesReady(name, time, value);
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::workspaceList()
+{
+    const WorkspaceDataConfig cfg = WorkspaceDataConfig::load(m_app.settings());
+    IntentResult r;
+    // 用 JSON 数组回传：CLI 直接可读，GUI 据此展示配置清单。
+    QJsonArray arr;
+    for (const SourceSpec &s : cfg.sources)
+        arr.append(s.toJson());
+    r.payload = QVariant::fromValue(QJsonDocument(arr).toJson(QJsonDocument::Compact));
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::workspaceSave()
+{
+    // 配置在 data.load 成功时已增量写入 settings；这里只是显式 flush 到磁盘。
+    QString err;
+    if (!m_app.settings().flush(&err))
+        return fail(QStringLiteral("eio"), err);
+    IntentResult r;
+    r.payload = true;
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::workspaceRestore()
+{
+    // 恢复 = 重放：对每个源发 data.load（record=false，避免重复记录），
+    // 再对每条派生配方发 data.derive（Rust 重算，不写回数据）。
+    const WorkspaceDataConfig cfg = WorkspaceDataConfig::load(m_app.settings());
+    int loadedSources = 0;
+    int replayedDerives = 0;
+
+    for (const SourceSpec &s : cfg.sources)
+    {
+        if (!s.isValid())
+            continue;
+
+        Intent load;
+        load.op = QStringLiteral("data.load");
+        load.params[QStringLiteral("path")] = s.origin;   // 文件/端点
+        load.params[QStringLiteral("record")] = false;     // 恢复不当成新打开
+        // 解析器：显式给定则带上（多解析器扇出）。
+        if (!s.parserIds.isEmpty())
+            load.params[QStringLiteral("parsers")] = QVariant::fromValue(s.parserIds);
+        // 解析参数：按 parserId 分组存的申请单，重放时原样透传给 data.load。
+        if (!s.parserIds.isEmpty() && s.parserParams.contains(s.parserIds.first()))
+        {
+            const QJsonObject params = s.parserParams.value(s.parserIds.first()).toObject();
+            load.params[QStringLiteral("options")] =
+                QString::fromUtf8(QJsonDocument(params).toJson(QJsonDocument::Compact));
+        }
+        const auto lr = m_executor.execute(load);
+        if (!lr)
+            continue; // 单个源失败不阻断其余（文件可能已移动/删除）
+        ++loadedSources;
+
+        // 反查刚载入的源 → 主数据集 id，供派生配方定位。
+        const int sourceId = m_app.sources().sourceByOrigin(s.origin);
+        if (sourceId < 0)
+            continue;
+        const DataSourceInfo *info = m_app.sources().get(sourceId);
+        if (!info || info->datasetIds.isEmpty())
+            continue;
+        const int datasetId = info->datasetIds.first();
+
+        // 重放派生配方：origin 匹配当前源（或留空表示默认作用该源）。
+        for (const DeriveRecipeSpec &recipe : s.deriveRecipes)
+        {
+            if (!recipe.isValid())
+                continue;
+            if (!recipe.sourceOrigin.isEmpty() && recipe.sourceOrigin != s.origin)
+                continue;
+            Intent der;
+            der.op = QStringLiteral("data.derive");
+            der.params[QStringLiteral("dataset")] = datasetId;
+            der.params[QStringLiteral("table")] = recipe.table;
+            der.params[QStringLiteral("column")] = recipe.column;
+            der.params[QStringLiteral("filter")] = recipe.filter;
+            der.params[QStringLiteral("params")] = recipe.paramsJson;
+            if (!recipe.name.isEmpty())
+                der.params[QStringLiteral("name")] = recipe.name;
+            const auto dr = m_executor.execute(der);
+            if (dr)
+                ++replayedDerives;
+        }
+    }
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("sources"), loadedSources},
+        {QStringLiteral("derives"), replayedDerives},
+    };
     return r;
 }

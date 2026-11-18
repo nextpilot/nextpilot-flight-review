@@ -508,6 +508,64 @@ int Dataset::applyFilter(const QString &filterId, const QJsonObject &params,
     return rc;
 }
 
+int Dataset::previewFilter(const QString &qualifiedName, const QString &filterId,
+                           const QByteArray &paramsJson, int cap,
+                           QVector<double> &outT, QVector<double> &outV,
+                           int *total, QString *err) const
+{
+    outT.clear();
+    outV.clear();
+    if (total)
+        *total = 0;
+    if (!d->native || qualifiedName.isEmpty() || filterId.isEmpty() || cap <= 0)
+    {
+        if (err)
+            *err = QStringLiteral("数据集为空或参数不足");
+        return 0;
+    }
+
+    const QByteArray nameUtf8 = qualifiedName.toUtf8();
+    const QByteArray filterUtf8 = filterId.toUtf8();
+    const QByteArray params = paramsJson.isEmpty() ? QByteArray("{}") : paramsJson;
+    char errBuf[512] = {0};
+
+    // 第一段：探测真实点数（out_t/out_v 传空缓冲、cap=0，kernel 仍会写 out_n）。
+    // ps_preview_filter 在前置检查里要求 out_t/out_v 非空指针，故给一个哑元素。
+    double dummy = 0.0;
+    quint32 actual = 0;
+    const int probeRc = ps_preview_filter(
+        d->native.get(), nameUtf8.constData(), filterUtf8.constData(), params.constData(),
+        &dummy, &dummy, 0, &actual, errBuf, sizeof(errBuf));
+    // cap=0 时必然因 n<len 返回 6；其余非 0 是真实错误。
+    if (probeRc != 0 && probeRc != 6)
+    {
+        if (err)
+            *err = QString::fromUtf8(errBuf);
+        return 0;
+    }
+    if (total)
+        *total = static_cast<int>(actual);
+    const int n = qMin<int>(static_cast<int>(actual), cap);
+    if (n <= 0)
+        return 0;
+
+    // 第二段：按 cap 有界取数。cap 已 clamp 到实际点数，kernel 返回 0。
+    outT.resize(n);
+    outV.resize(n);
+    const int rc = ps_preview_filter(
+        d->native.get(), nameUtf8.constData(), filterUtf8.constData(), params.constData(),
+        outT.data(), outV.data(), static_cast<quint32>(n), &actual, errBuf, sizeof(errBuf));
+    if (rc != 0 && rc != 6)
+    {
+        outT.clear();
+        outV.clear();
+        if (err)
+            *err = QString::fromUtf8(errBuf);
+        return 0;
+    }
+    return n;
+}
+
 int Dataset::decimate(quint32 factor, const QVector<double> &t, const QVector<double> &v,
                       QVector<double> &outT, QVector<double> &outV, QString *err) const
 {

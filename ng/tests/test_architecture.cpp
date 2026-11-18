@@ -1,5 +1,6 @@
 #include "App.h"
 #include "Intent.h"
+#include "WorkspaceDataConfig.h"
 #include "DataRepository.h"
 #include "Dataset.h"
 #include "ExtensionRegistry.h"
@@ -11,6 +12,9 @@
 #include "BuiltinPackRegistry.h"
 #include "IModule.h"
 #include "IPanelContribution.h"
+#include "DecodedFrame.h"
+#include "IMessageParser.h"
+#include "NmeaMessageParser.h"
 
 #include <QCoreApplication>
 #include <QSet>
@@ -321,7 +325,8 @@ int main(int argc, char **argv)
         CHECK(toolbox.contributions(ContributionKind::Data).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Example).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Doc).size() == 5);
-        CHECK(toolbox.kinds().size() == 7);
+        CHECK(toolbox.contributions(ContributionKind::Message).size() == 1); // NMEA 协议解析器
+        CHECK(toolbox.kinds().size() == 8);
 
         // 二维索引：按 (kind, domain) 精确过滤。
         CHECK(toolbox.contributions(ContributionKind::Ui, FormatDomain::Autopilot).size() == 1);
@@ -697,6 +702,67 @@ int main(int argc, char **argv)
         CHECK(cr.value().payload.toInt() >= 0);
         fprintf(stdout, "[ok] data.clearCache：解析缓存清理成功（清掉 %d 个）\n",
                 cr.value().payload.toInt());
+
+        // --- 工作区数据源配置：data.load 自动记录 + workspace 意图 ---
+        {
+            using namespace ng::core;
+            // data.load（上面已成功加载 csv）应已把来源记入 ws/data/sources。
+            WorkspaceDataConfig cfg = WorkspaceDataConfig::load(application.context().settings());
+            CHECK(!cfg.sources.isEmpty());
+            const SourceSpec *rec = cfg.findByOrigin(csv);
+            CHECK(rec != nullptr);
+            CHECK(rec->kind == QStringLiteral("file"));
+            CHECK(!rec->parserIds.isEmpty());
+            fprintf(stdout, "[ok] data.load 成功后自动记入工作区配置（来源+解析器）\n");
+
+            // 序列化往返：toJson -> fromJson 后字段不丢。
+            const QJsonObject blob = cfg.toJson();
+            const WorkspaceDataConfig round = WorkspaceDataConfig::fromJson(blob);
+            CHECK(round.sources.size() == cfg.sources.size());
+            CHECK(round.findByOrigin(csv) != nullptr);
+            fprintf(stdout, "[ok] WorkspaceDataConfig JSON 往返：字段不丢\n");
+
+            // 手动加一条派生配方（只存配方，不存结果数组），再保存/读取。
+            SourceSpec withRecipe = *cfg.findByOrigin(csv);
+            DeriveRecipeSpec dr;
+            dr.sourceOrigin = csv;
+            dr.table = QStringLiteral("csv");
+            dr.column = QStringLiteral("value");
+            dr.filter = QStringLiteral("absolute");
+            dr.paramsJson = QStringLiteral("{}");
+            withRecipe.deriveRecipes << dr;
+            cfg.upsert(withRecipe);
+            CHECK(cfg.save(application.context().settings()));
+            const WorkspaceDataConfig reread = WorkspaceDataConfig::load(application.context().settings());
+            CHECK(reread.findByOrigin(csv) != nullptr);
+            CHECK(reread.findByOrigin(csv)->deriveRecipes.size() == 1);
+            // 关键：配置里只有配方字符串，没有任何时间/数值数组（不存数据本体）。
+            const QJsonObject sourceJson = reread.findByOrigin(csv)->toJson();
+            CHECK(!sourceJson.contains(QStringLiteral("time")));
+            CHECK(!sourceJson.contains(QStringLiteral("value")));
+            CHECK(sourceJson.contains(QStringLiteral("deriveRecipes")));
+            fprintf(stdout, "[ok] 派生配方只存算子+参数，不存结果数组\n");
+
+            // data.workspace.list / save：可读、可 flush。
+            Result<IntentResult> wl = application.modules().execute(mk(QStringLiteral("data.workspace.list")));
+            CHECK(wl);
+            CHECK(!wl.value().payload.toByteArray().isEmpty());
+            Result<IntentResult> ws = application.modules().execute(mk(QStringLiteral("data.workspace.save")));
+            CHECK(ws);
+            fprintf(stdout, "[ok] data.workspace.list/save：配置可读可落盘\n");
+
+            // data.workspace.restore：重放 data.load（record=false 不重复记录）。
+            const int sourcesBefore = cfg.sources.size();
+            Result<IntentResult> wr = application.modules().execute(mk(QStringLiteral("data.workspace.restore")));
+            CHECK(wr);
+            const QVariantMap stat = wr.value().payload.toMap();
+            CHECK(stat.value(QStringLiteral("sources")).toInt() >= 1);
+            // 恢复不能把源重复记进配置（record=false 生效）。
+            const WorkspaceDataConfig afterRestore =
+                WorkspaceDataConfig::load(application.context().settings());
+            CHECK(afterRestore.sources.size() == sourcesBefore);
+            fprintf(stdout, "[ok] data.workspace.restore：重放 data.load，不重复记录源\n");
+        }
     }
 
     // 4) 卸载隔离：关掉绘图模块后，CSV 仍能加载，数据不消失
@@ -806,6 +872,85 @@ int main(int argc, char **argv)
                                         traceFirstUs, traceLastUs, /*px=*/800);
         assert(!blod.isEmpty() && blod.size() <= 800);
         fprintf(stdout, "[ok] 20 万行 LOD 抽稀到 %d 个三元组（px 有界）\n", blod.size());
+    }
+
+    // ========================================================================
+    // 协议解析器（kind=message）：自述 + configure + parse 的契约
+    // ========================================================================
+    {
+        // NMEA 已随 gnss 包自注册进工具箱；注册表按 kind=message 可查。
+        const QList<IMessageParser *> parsers = toolbox.messageParsers();
+        CHECK(parsers.size() >= 1);
+        IMessageParser *nmea = toolbox.messageParser(QStringLiteral("nmea"));
+        CHECK(nmea != nullptr);
+        CHECK(nmea->kind() == ContributionKind::Message);
+
+        // 自述四要素：协议名 / 使用范围（领域+用途）/ 支持 transfer / 配置 schema。
+        CHECK(nmea->protocolName() == QStringLiteral("NMEA 0183"));
+        CHECK(nmea->domain() == FormatDomain::Gnss);
+        CHECK(!nmea->usage().isEmpty());
+        CHECK(nmea->supportedTransports().contains(MessageTransport::Serial));
+        CHECK(nmea->supportedTransports().contains(MessageTransport::Udp));
+        CHECK(nmea->configSchema().value(QStringLiteral("fields")).toArray().size() >= 1);
+        // 按 transport 反查（对话框/CLI 据此过滤）。
+        CHECK(toolbox.messageParsersByTransport(MessageTransport::Serial).contains(nmea));
+        CHECK(toolbox.messageParserForProtocol(QStringLiteral("nmea")) == nmea);
+        fprintf(stdout, "[ok] 协议解析器自述：协议名/领域+用途/transfer/schema 四要素齐全，注册表可查\n");
+
+        // 直接实例化一个独立样本：默认内置模板可用（无 configure 也能 parse）。
+        ng::ext::NmeaMessageParser p;
+        CHECK(p.templateCount() >= 3);
+        // 标准 GGA 句（校验和 47 与 payload 自洽）。
+        const QByteArray gga =
+            "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n";
+        DecodedFrame f;
+        CHECK(p.parse(gga, f));
+        CHECK(f.protocol == QStringLiteral("nmea"));
+        CHECK(f.frameName == QStringLiteral("GGA"));
+        CHECK(f.checksumOk);
+        CHECK(!f.fields.isEmpty());
+
+        // configure：从传入参数取 database_path，不读全局。
+        // 用临时文件放一个只含 RMC 的精简模板，configure 后应只认 RMC。
+        QTemporaryDir tplDir;
+        const QString tpl = tplDir.path() + QStringLiteral("/tpl.json");
+        {
+            QFile out(tpl);
+            CHECK(out.open(QIODevice::WriteOnly | QIODevice::Text));
+            const QByteArray json =
+                R"({"sentences":[{"key":"RMC","fields":[{"name":"speed","index":7,"type":"number","label":"Speed"}]}]})";
+            out.write(json);
+            out.close();
+        }
+        QJsonObject params;
+        params.insert(QStringLiteral("database_path"), tpl);
+        CHECK(p.configure(params, nullptr));
+        // parse GGA → 模板已经没有 GGA，应标记 unknown。
+        DecodedFrame f2;
+        CHECK(p.parse(gga, f2));
+        CHECK(f2.unknown);
+        // parse RMC → 能用新模板解出 speed 字段。
+        const QByteArray rmc =
+            "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,,,*3D\r\n";
+        DecodedFrame f3;
+        CHECK(p.parse(rmc, f3));
+        CHECK(!f3.unknown);
+        bool sawSpeed = false;
+        for (const DecodedField &d : f3.fields)
+            if (d.name == QStringLiteral("speed"))
+                sawSpeed = true;
+        CHECK(sawSpeed);
+        fprintf(stdout, "[ok] 协议 configure：只从传入 database_path 取模板（不读全局），parse 随模板切换\n");
+
+        // param() 点分嵌套 + 缺省回退：不存在的键返回 fallback，绝不取全局。
+        QJsonObject nested;
+        nested.insert(QStringLiteral("time"),
+                      QJsonObject{{QStringLiteral("mode"), QStringLiteral("column")}});
+        CHECK(p.configure(nested, nullptr));
+        CHECK(p.param(QStringLiteral("time.mode")).toString() == QStringLiteral("column"));
+        CHECK(p.param(QStringLiteral("missing.key"), QStringLiteral("fallback")).toString()
+              == QStringLiteral("fallback"));
+        fprintf(stdout, "[ok] 协议参数：param() 支持点分嵌套 + 缺省回退，参数只在实例内生效\n");
     }
 
     fprintf(stdout, "\n全部架构契约测试通过\n");

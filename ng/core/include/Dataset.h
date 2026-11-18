@@ -205,6 +205,18 @@ public:
     int applyFilter(const QString &filterId, const QJsonObject &params,
                     const QVector<double> &t, const QVector<double> &v,
                     QVector<double> &outT, QVector<double> &outV, QString *err = nullptr) const;
+
+    // 只读派生预览（委托 Rust ps_preview_filter）：从本数据集的一条通道实时算出
+    // 变换后的 (time, value) 序列，**不写回数据集、不新增通道**——原数据零改动。
+    // 这是 data.derive 意图的底座：结果交给 UI（画布以 generated series 展示），
+    // 而数据集始终是不可变快照。
+    // cap 为硬上限（防止全量派生灌进 UI 内存）；total 输出 kernel 算出的实际点数，
+    // total > 返回值即表示被 cap 截断。返回实际写入 outT/outV 的点数，<=0 看 err。
+    int previewFilter(const QString &qualifiedName, const QString &filterId,
+                      const QByteArray &paramsJson, int cap,
+                      QVector<double> &outT, QVector<double> &outV,
+                      int *total = nullptr, QString *err = nullptr) const;
+
     int decimate(quint32 factor, const QVector<double> &t, const QVector<double> &v,
                  QVector<double> &outT, QVector<double> &outV, QString *err = nullptr) const;
     std::optional<ColumnStats> stats(const QVector<double> &v, bool withMedian = false,

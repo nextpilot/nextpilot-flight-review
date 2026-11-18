@@ -16,6 +16,8 @@ src/kernel/target/
 # 本地产物 / 抓取数据
 *.psl
 *.log
+# 解析缓存（data.load 落盘产物，运行时生成，不进版本库）
+*.psc
 refs/
 
 # 本地可搬移依赖（Qt/Lua）

@@ -23,14 +23,27 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* SPI ABI 版本。宿主与解析器必须一致，否则拒绝加载。 */
-#define PS_PARSER_ABI_VERSION 1u
+/* SPI ABI 版本。宿主与解析器必须一致，否则拒绝加载。
+ *
+ * v2（相对 v1）：configure 由"实验性尾部槽"升为**正式语义槽**——
+ *   create() 之后、首次 feed() 之前，宿主按 struct_size 判定并调用一次，
+ *   把宿主收集的解析参数（JSON 键值对，字段由该解析器的 schema 声明）交给实例。
+ *   解析器只从 configure 入参取自己的参数，不读全局。
+ *
+ * 两个正交机制，故意都保留：
+ *   - abi_version：管"能不能用"——低于 v2 的解析器不被接受 configure 语义；
+ *   - struct_size：管"这一个具体 vtable 有没有实现该槽位"——无参数的解析器
+ *     （如 ULog）可合法留空，宿主不会空调用。于是"加协议只写需要的部分"仍然成立。
+ *
+ * 版本升级是硬切换：v1 解析器不会被 v2 宿主加载（注册闸门按宏校验），需重编到 v2。 */
+#define PS_PARSER_ABI_VERSION 2u
 
 /* 列值类型：与 kernel ps_kernel.h / 老仓库 ps_extension_api.h 同值。 */
 #ifndef PS_VALUE_TYPE_DEFINED
@@ -132,14 +145,40 @@ typedef struct PsParserVtable {
     /* 重置：复用于下一个文件。 */
     void (*reset)(void *ctx);
 
-    /* ---- 以下为可选尾部槽位（宿主按 struct_size 判定是否存在）---- */
+    /* ---- v2 尾部槽位（宿主按 struct_size 判定是否存在）---- */
 
     /* 解析器的静态元数据（比 PsParserInfo 更灵活：可运行时构造）。 */
     const PsParserInfo *(*info)(void *ctx);
 
     /* 能力位：支持的文件后缀 / 是否可录制等。 */
     uint64_t (*capabilities)(void *ctx);
+
+    /* ---- configure：把宿主收集的解析参数交给解析器（v2 正式槽位）----
+     *
+     * 为什么在 SPI 上：对话框收集的解析参数是**格式/协议知识**，
+     * 只有解析器知道怎么用；宿主只透传 JSON 键值对，不解释字段。
+     *
+     * 纪律：解析器只从 opts_json 里取自己 schema 声明的参数，不读全局
+     *   （SettingsStore / QSettings / 环境变量 / 文件）。这样解析器可独立单测、
+     *   配置可持久化重放、同类多实例互不串味。C++ 基类走普通虚函数
+     *   configure(const QJsonObject&)，C 插件走本 C 槽位，语义一致。
+     *
+     * 调用时机：必须在 create() 之后、首次 feed() 之前调用一次。
+     * opts_json 为 NUL 结尾的 UTF-8 JSON 对象；NULL/空串表示用内置默认。
+     * 无参数需求的解析器可留空本槽位，宿主按 ps_parser_has_configure 跳过。
+     * 返回 0 成功；<0 失败（err 写原因）。
+     */
+    int32_t (*configure)(void *ctx, const char *opts_json, PsError *err);
 } PsParserVtable;
+
+/* configure 槽位是否存在：struct_size 覆盖到该槽位且指针非空。
+ * 注意与 abi_version 正交——本函数只回答"这个 vtable 有没有实现 configure"，
+ * 不回答"这个解析器是否兼容 v2 语义"（后者由注册/绑定处的 abi_version 闸门负责）。 */
+static inline int ps_parser_has_configure(const PsParserVtable *v)
+{
+    return v && v->struct_size >= offsetof(PsParserVtable, configure) + sizeof(v->configure)
+        && v->configure != 0;
+}
 
 /* 插件导出入口：外部 .so/.dll 必须导出此符号。
  * 返回 NULL 表示该插件不提供解析器。 */
