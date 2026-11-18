@@ -205,6 +205,59 @@ int ShellBinder::actionTriggerCount(const QString &actionId) const
     return m_actionTriggers.value(actionId, 0);
 }
 
+QJsonObject ShellBinder::captureState() const
+{
+    // 声明式快照：只描述"结果长什么样"，不含任何操作序列。
+    // 于是恢复时缺失的部分可以安全降级（数据没打开、扩展没装上……）。
+    QJsonObject state;
+    if (m_window)
+    {
+        state.insert(QStringLiteral("windowGeometry"),
+                     QString::fromLatin1(m_window->saveGeometry().toBase64()));
+        state.insert(QStringLiteral("windowState"),
+                     QString::fromLatin1(m_window->saveState().toBase64()));
+    }
+    // ADS 自带布局：dock 位置/标签合并/隐藏状态
+    const QByteArray adsState = m_dock ? m_dock->saveState() : QByteArray();
+    state.insert(QStringLiteral("adsLayout"), QString::fromLatin1(adsState.toBase64()));
+    // ribbon 当前页签
+    state.insert(QStringLiteral("ribbonPage"), m_currentPage);
+    return state;
+}
+
+bool ShellBinder::applyState(const QJsonObject &state)
+{
+    if (state.isEmpty())
+        return false;
+
+    if (m_window)
+    {
+        const QString geom = state.value(QStringLiteral("windowGeometry")).toString();
+        if (!geom.isEmpty())
+        {
+            const QByteArray raw = QByteArray::fromBase64(geom.toLatin1());
+            m_window->restoreGeometry(raw);
+        }
+        const QString ws = state.value(QStringLiteral("windowState")).toString();
+        if (!ws.isEmpty())
+            m_window->restoreState(QByteArray::fromBase64(ws.toLatin1()));
+    }
+
+    // ADS 布局：缺失或版本不符时安全降级（保持当前布局）
+    const QString ads = state.value(QStringLiteral("adsLayout")).toString();
+    if (!ads.isEmpty() && m_dock)
+        m_dock->restoreState(QByteArray::fromBase64(ads.toLatin1()));
+
+    // ribbon 页签：越界则忽略（安全降级）
+    const int page = state.value(QStringLiteral("ribbonPage")).toInt(-1);
+    if (page >= 0 && m_ribbon)
+    {
+        m_ribbon->setCurrentIndex(page);
+        m_currentPage = page;
+    }
+    return true;
+}
+
 QByteArray ShellBinder::saveLayout() const
 {
     return m_dock ? m_dock->saveState() : QByteArray();

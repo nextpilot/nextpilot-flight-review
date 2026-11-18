@@ -1,5 +1,8 @@
 #include "PanelFactoryRegistry.h"
 
+#include "AppContext.h"
+#include "IIntentExecutor.h"
+
 #include <QWidget>
 
 namespace ng::gui
@@ -23,12 +26,13 @@ void PanelFactoryRegistry::registerPanel(const QString &type, Factory factory)
     factories().insert(type, std::move(factory));
 }
 
-QWidget *PanelFactoryRegistry::create(const QString &type, QWidget *parent)
+QWidget *PanelFactoryRegistry::create(const QString &type, ng::core::AppContext &appCtx,
+                                       ng::core::IIntentExecutor &executor, QWidget *parent)
 {
     auto it = factories().constFind(type);
     if (it == factories().constEnd())
         return nullptr;
-    return it.value()(parent);
+    return it.value()(appCtx, executor, parent);
 }
 
 QStringList PanelFactoryRegistry::types()

@@ -1,5 +1,10 @@
 #include "DataManagerPanel.h"
+
+#include "PanelFactoryRegistry.h"
+
+#include "AppContext.h"
 #include "Dataset.h"
+
 #include <QHeaderView>
 #include <QVBoxLayout>
 #include <QTreeWidget>
@@ -21,8 +26,8 @@ constexpr int kRoleTable = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
 } // namespace
 
-DataManagerPanel::DataManagerPanel(DataRepository &repo, QWidget *parent)
-    : QWidget(parent), m_repo(repo)
+DataManagerPanel::DataManagerPanel(AppContext &appCtx, QWidget *parent)
+    : QWidget(parent), m_appCtx(appCtx), m_repo(appCtx.data())
 {
     auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(2, 2, 2, 2);
@@ -34,6 +39,11 @@ DataManagerPanel::DataManagerPanel(DataRepository &repo, QWidget *parent)
     lay->addWidget(m_tree);
 
     // 双击某个列节点 = 用户想看这条通道。
+    //
+    // 协作方式：**记到 AppContext 的共享状态**，而不是直接调用别的视图。
+    // 于是数据集树不认识绘图视图，绘图视图也不认识数据集树——
+    // 两者只是都订阅了同一份"当前活动通道"。加第三个视图时，
+    // 它只要订阅这个信号即可，谁都不用改。
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this,
             [this](QTreeWidgetItem *item, int) {
                 if (!item)
@@ -43,7 +53,13 @@ DataManagerPanel::DataManagerPanel(DataRepository &repo, QWidget *parent)
                 const QVariant column = item->data(0, kRoleColumn);
                 if (!dsId.isValid() || !table.isValid() || !column.isValid())
                     return;
-                emit channelActivated(dsId.toInt(), table.toString(), column.toString());
+                const int datasetId = dsId.toInt();
+                const QString tableName = table.toString();
+                const QString columnName = column.toString();
+                // 共享状态：活动数据集 + 活动通道
+                m_appCtx.setActiveSourceId(datasetId);
+                m_appCtx.setActiveChannel(datasetId, tableName, columnName);
+                emit channelActivated(datasetId, tableName, columnName);
             });
 
     // 仓库变化 -> 重建树。
@@ -112,5 +128,14 @@ int DataManagerPanel::tableNodeCount(int datasetIndex) const
     QTreeWidgetItem *item = m_tree->topLevelItem(datasetIndex);
     return item ? item->childCount() : 0;
 }
+
+QWidget *createDatasetTreePanel(AppContext &appCtx, IIntentExecutor &exec, QWidget *parent)
+{
+    (void)exec; // 数据集树不主动取数，只读元数据
+    return new DataManagerPanel(appCtx, parent);
+}
+
+// 视图层自注册：外壳与其它功能都不认识这个面板。
+NG_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 
 } // namespace ng::gui

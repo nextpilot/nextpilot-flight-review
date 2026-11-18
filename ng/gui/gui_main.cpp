@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
     parser.process(app);
 
     ng::app::App application;
-    ng::gui::MainWindow window(application.data());
+    ng::gui::MainWindow window(application.context());
     window.build(application.modules());
 
     // 启动即载文件：走与 CLI 完全相同的数据.load 意图路径。

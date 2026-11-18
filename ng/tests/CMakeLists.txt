@@ -3,7 +3,7 @@ add_executable(ng_test_architecture test_architecture.cpp)
 target_include_directories(ng_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。
 target_link_libraries(ng_test_architecture PRIVATE
-    ng_module_data ng_module_plot ng_module_script
+    ng_module_data ng_module_plot ng_module_script ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_core Qt6::Core)
 # 复用 CLI 里的 App 装配逻辑
@@ -19,7 +19,7 @@ add_executable(ng_test_gui test_gui.cpp)
 target_include_directories(ng_test_gui PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(ng_test_gui PRIVATE
     ng_gui
-    ng_module_data ng_module_plot ng_module_script
+    ng_module_data ng_module_plot ng_module_script ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
 target_sources(ng_test_gui PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
@@ -27,3 +27,16 @@ set_target_properties(ng_test_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 # offscreen 平台插件：无显示环境（CI）也能跑。
 add_test(NAME ng_gui COMMAND ng_test_gui)
 set_tests_properties(ng_gui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# === 新架构契约测试（Source 多数据源 + Parser SPI）===
+# 独立可执行文件：只依赖 core + 扩展里的解析器，不需要 GUI。
+add_executable(ng_test_pipeline test_pipeline.cpp)
+target_include_directories(ng_test_pipeline PRIVATE
+    ${CMAKE_SOURCE_DIR}/extensions/common
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(ng_test_pipeline PRIVATE
+    ng_recording
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_registry ng_host ng_core Qt6::Core)
+set_target_properties(ng_test_pipeline PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_pipeline COMMAND ng_test_pipeline)

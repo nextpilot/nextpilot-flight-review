@@ -21,8 +21,8 @@ ng::core::JobRecorder *ModuleContext::recorder()
     return m_host.recorder();
 }
 
-ModuleHost::ModuleHost(ng::core::DataRepository &repo, QObject *parent)
-    : QObject(parent), m_repo(repo), m_dataLoadHandler(m_registry, repo)
+ModuleHost::ModuleHost(ng::core::AppContext &appCtx, QObject *parent)
+    : QObject(parent), m_appCtx(appCtx), m_dataLoadHandler(appCtx.toolbox(), appCtx.data())
 {
     // 系统级 data.load 入口：不归属任何可卸载模块，任何模块装卸都不影响它。
     // 用一个保留 key 注册，避免与模块 handler 的 "%id/%index" 冲突。
@@ -76,7 +76,7 @@ QHash<QString, QString> ModuleHost::activate(const QStringList &disabledIds, UiC
 
     m_order = resolveOrder(provides, errors);
 
-    ModuleContext ctx(m_repo, *this);
+    ModuleContext ctx(m_appCtx, *this);
     for (const QString &id : m_order)
     {
         Node &node = m_nodes[id];
@@ -144,13 +144,13 @@ void ModuleHost::deactivateAll()
 const ng::core::UiSlotRegistry &ModuleHost::uiSlots()
 {
     // 每次访问都从当前工具箱重新绑定，装卸知识包后立即反映，无需手动同步。
-    m_uiSlotRegistry.refreshFrom(m_registry);
+    m_uiSlotRegistry.refreshFrom(m_appCtx.toolbox());
     return m_uiSlotRegistry;
 }
 
 ng::core::UiSlotRegistry &ModuleHost::uiSlotsMutable()
 {
-    m_uiSlotRegistry.refreshFrom(m_registry);
+    m_uiSlotRegistry.refreshFrom(m_appCtx.toolbox());
     return m_uiSlotRegistry;
 }
 

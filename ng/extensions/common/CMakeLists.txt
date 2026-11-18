@@ -7,6 +7,8 @@ add_library(ng_ext_common OBJECT
     CsvFormatDriver.cpp
     CommonPack.cpp
     CommonPack.h
+    PspxParser.cpp
+    PspxParser.h
 )
 target_include_directories(ng_ext_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_ext_common PUBLIC ng_core)

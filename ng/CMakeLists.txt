@@ -43,10 +43,12 @@ find_package(Threads REQUIRED)
 target_link_libraries(ng_kernel INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
 
 add_subdirectory(core)
+add_subdirectory(recording)
 add_subdirectory(host)
 add_subdirectory(modules/data)
 add_subdirectory(modules/plot)
 add_subdirectory(modules/script)
+add_subdirectory(modules/settings)
 # 工具箱按业务领域组织：common / autopilot / automotive / robotics / gnss。
 # 每个领域一个包，静态自注册（NG_REGISTER_PACK）。
 add_subdirectory(extensions/common)

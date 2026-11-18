@@ -5,7 +5,7 @@
 #include "JobRecorder.h"
 #include "ModuleInfo.h"
 #include "Result.h"
-#include "ExtensionRegistry.h"
+#include "AppContext.h"
 #include "UiSlotRegistry.h"
 #include "DataLoadHandler.h"
 
@@ -31,7 +31,9 @@ class ModuleHost : public QObject, public ng::core::IIntentExecutor
 {
     Q_OBJECT
 public:
-    explicit ModuleHost(ng::core::DataRepository &repo, QObject *parent = nullptr);
+    // 宿主持有应用上下文（进程级运行态的唯一入口）。
+    // 它不再自己拥有 repo/settings/toolbox——那些归 AppContext，避免状态分散两处。
+    explicit ModuleHost(ng::core::AppContext &appCtx, QObject *parent = nullptr);
     ~ModuleHost() override;
 
     // 注册一个模块的工厂（编译期或动态发现都走这里）。
@@ -59,9 +61,14 @@ public:
     QStringList activeIds() const;
     QList<ModuleInfo> availableModules() const;
 
-    // 工具箱注册表：内置知识包自注册 + 外部插件扫描都汇入这里。
-    ng::core::ExtensionRegistry &extensions() { return m_registry; }
-    const ng::core::ExtensionRegistry &extensions() const { return m_registry; }
+    // 应用上下文：进程级运行态（数据集/设置/工具箱/数据源/摄取管道）。
+    ng::core::AppContext &app() { return m_appCtx; }
+    const ng::core::AppContext &app() const { return m_appCtx; }
+
+    // 便捷转发（内部使用；器官请通过 ModuleContext::app() 取）。
+    ng::core::DataRepository &data() { return m_appCtx.data(); }
+    ng::core::SettingsStore &settings() { return m_appCtx.settings(); }
+    ng::core::ExtensionRegistry &extensions() { return m_appCtx.toolbox(); }
 
     // UI 插槽登记表：器官/骨架声明插槽，工具箱的 UI 贡献填内容。
     // 每次访问都从当前注册表重新绑定一次，保证装卸知识包后立即可见。
@@ -83,10 +90,9 @@ private:
     QList<QString> resolveOrder(const QHash<QString, QStringList> &provides,
                                 QHash<QString, QString> &errors) const;
 
-    ng::core::DataRepository &m_repo;
-    ng::core::ExtensionRegistry m_registry;       // 工具箱：知识包/贡献的登记处
-    ng::core::UiSlotRegistry m_uiSlotRegistry;    // UI 插槽：器官声明、工具箱填充
-    DataLoadHandler m_dataLoadHandler;            // 系统级 data.load 入口，不归属可卸载模块
+    ng::core::AppContext &m_appCtx;             // 进程级运行态：唯一持有者
+    ng::core::UiSlotRegistry m_uiSlotRegistry;   // UI 插槽：器官声明、工具箱填充
+    DataLoadHandler m_dataLoadHandler;           // 系统级 data.load 入口，不归属可卸载模块
     QHash<QString, Node> m_nodes;
     QStringList m_order;
     QHash<QString, ng::core::IIntentHandler *> m_handlers; // op -> handler

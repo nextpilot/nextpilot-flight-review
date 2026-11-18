@@ -12,6 +12,8 @@
 
 #include "MainWindow.h"
 #include "PlotCanvas.h"
+#include "PanelFactoryRegistry.h"
+#include "ShellBinder.h"
 
 #include "Dataset.h"
 #include "Intent.h"
@@ -56,7 +58,7 @@ int main(int argc, char *argv[])
     fprintf(stdout, "起始 RSS: %ld KB\n", rssKb());
 
     App application;
-    MainWindow window(application.data());
+    MainWindow window(application.context());
     window.build(application.modules());
     window.resize(1600, 900);
 
@@ -95,12 +97,20 @@ int main(int argc, char *argv[])
     fprintf(stdout, "表 %s：%d 行，绘制列 %s\n", qPrintable(table->name), table->rows,
             qPrintable(column));
 
-    // 渲染：走 plot.channel 意图（与 GUI 交互同一路径）
+    // 渲染：设活动通道 → 绘图视图订阅到变化 → 走 plot.channel 意图取数渲染。
+    // 这与用户在数据集树双击是**同一条路径**。
     timer.restart();
-    window.showChannel(dsId, table->name, column);
+    application.context().setActiveChannel(dsId, table->name, column);
     const qint64 renderMs = timer.elapsed();
 
-    PlotCanvas *canvas = window.canvas();
+    // 中央画布：从画布插槽取回（视图层自注册的 "plot-canvas" 部件）。
+    auto *canvas = qobject_cast<PlotCanvas *>(
+        window.binder()->centralContent());
+    if (!canvas)
+    {
+        fprintf(stderr, "画布未创建\n");
+        return 1;
+    }
     fprintf(stdout, "渲染：%lld ms，画布三元组 %d 个（像素宽 %d），RSS %ld KB\n", renderMs,
             canvas->lodPointCount(), canvas->width(), rssKb());
     fprintf(stdout, "结论：三元组数与行数无关（%d 行 -> %d 点），内存有界。\n", table->rows,

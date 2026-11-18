@@ -1,9 +1,13 @@
 #include "PlotModule.h"
 
+#include "PlotLayout.h"
+
 #include "BuiltinModuleRegistry.h"
 #include "DataRepository.h"
 #include "Dataset.h"
 #include "Intent.h"
+#include "ModuleHost.h"
+#include "SettingsStore.h"
 
 using namespace ng::core;
 using namespace ng::host;
@@ -16,19 +20,25 @@ class PlotModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(DataRepository &repo, QObject *parent)
-        : QObject(parent), m_repo(repo) {}
+    explicit Handler(DataRepository &repo, SettingsStore &settings, QObject *parent)
+        : QObject(parent), m_repo(repo), m_settings(settings) {}
 
     bool canHandle(const Intent &intent) const override
     {
         return intent.op == QStringLiteral("plot.render")
-            || intent.op == QStringLiteral("plot.channel");
+            || intent.op == QStringLiteral("plot.channel")
+            || intent.op == QStringLiteral("plot.layout.save")
+            || intent.op == QStringLiteral("plot.layout.load");
     }
 
     Result<IntentResult> execute(const Intent &intent) override
     {
         if (intent.op == QStringLiteral("plot.channel"))
             return renderChannel(intent);
+        if (intent.op == QStringLiteral("plot.layout.save"))
+            return saveLayout(intent);
+        if (intent.op == QStringLiteral("plot.layout.load"))
+            return loadLayout(intent);
         return renderSpec(intent);
     }
 
@@ -85,6 +95,38 @@ private:
             {QStringLiteral("min"), mins},
             {QStringLiteral("max"), maxs},
         };
+        return r;
+    }
+
+    // plot.layout.save：保存 plot 布局（文档作用域）。
+    //
+    // 布局是**声明式**的：只描述"画布是什么、放在哪、什么样式"，
+    // 于是可存盘、可分享、可跨会话恢复；恢复时按 id 匹配，匹配不上的安全跳过。
+    Result<IntentResult> saveLayout(const Intent &intent)
+    {
+        SettingsStore &store = m_settings;
+        const QString name = intent.params.value(QStringLiteral("name"),
+                                                QStringLiteral("default")).toString();
+        const QJsonObject obj = intent.params.value(QStringLiteral("layout")).toJsonObject();
+        const PlotDocumentSpec spec = PlotDocumentSpec::fromJson(obj);
+        store.setJson(SettingsScope::Document, QStringLiteral("plot/%1").arg(name),
+                      spec.toJson());
+        IntentResult r;
+        r.payload = true;
+        return r;
+    }
+
+    // plot.layout.load：读回 plot 布局。
+    Result<IntentResult> loadLayout(const Intent &intent)
+    {
+        const QString name = intent.params.value(QStringLiteral("name"),
+                                                QStringLiteral("default")).toString();
+        const QJsonObject obj = m_settings.json(SettingsScope::Document,
+                                                 QStringLiteral("plot/%1").arg(name));
+        if (obj.isEmpty())
+            return fail(QStringLiteral("enoent"), QStringLiteral("plot 布局不存在: %1").arg(name));
+        IntentResult r;
+        r.payload = obj;
         return r;
     }
 
@@ -157,6 +199,7 @@ private:
 
 private:
     DataRepository &m_repo;
+    SettingsStore &m_settings;
 };
 
 ModuleInfo PlotModule::moduleInfo()
@@ -183,7 +226,7 @@ ModuleInfo PlotModule::info() const
 
 void PlotModule::initialize(ModuleContext &ctx)
 {
-    m_handler = new Handler(ctx.data(), this);
+    m_handler = new Handler(ctx.app().data(), ctx.app().settings(), this);
     ctx.registerIntentHandler(m_handler);
 }
 
@@ -196,6 +239,10 @@ void PlotModule::onAttach(UiContext &ui)
     // 只需在自己的 onAttach 里 declareSlot/addAction，其他文件一律不动。
     ui.declareSlot(QStringLiteral("ribbon.group.home.view"), QStringLiteral("视图"),
                    SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
+
+    // 申请中央画布。实现由绘图视图层自注册（"plot-canvas" 类型），
+    // 本模块不依赖 Qt Widgets——CLI 构建保持纯净。
+    ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("plot-canvas"));
 
     UiAction action;
     action.id = QStringLiteral("plot.action.redraw");

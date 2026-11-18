@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppContext.h"
 #include "DataRepository.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
@@ -58,10 +59,19 @@ public:
 class ModuleContext
 {
 public:
-    ModuleContext(ng::core::DataRepository &repo, ModuleHost &host)
-        : m_repo(repo), m_host(host) {}
+    ModuleContext(ng::core::AppContext &appCtx, ModuleHost &host)
+        : m_appCtx(appCtx), m_host(host) {}
 
-    ng::core::DataRepository &data() { return m_repo; }
+    // 进程级运行态的**唯一入口**：数据集、设置、工具箱、数据源、摄取管道都在这里。
+    //
+    // 架构约定（重要）：器官只通过 ctx.app() 取 app 级状态，
+    // 不再混用 ctx.data() 与 ctx.host().settings() 两条路径——
+    // 那两条路径正是"状态分散持有"的症状。
+    ng::core::AppContext &app() { return m_appCtx; }
+    const ng::core::AppContext &app() const { return m_appCtx; }
+
+    // 便捷转发（保留以兼容既有器官代码；新代码请用 app()）。
+    ng::core::DataRepository &data() { return m_appCtx.data(); }
     ModuleHost &host() { return m_host; }
 
     // 脚本/自动化能力：拿到意图执行器与可选录制器。
@@ -73,7 +83,7 @@ public:
     void registerIntentHandler(ng::core::IIntentHandler *handler);
 
 private:
-    ng::core::DataRepository &m_repo;
+    ng::core::AppContext &m_appCtx;
     ModuleHost &m_host;
 };
 

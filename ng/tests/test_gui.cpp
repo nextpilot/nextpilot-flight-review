@@ -21,6 +21,8 @@
 #include "PlotCanvas.h"
 #include "ShellBinder.h"
 
+#include "AppContext.h"
+
 #include "Dataset.h"
 #include "Intent.h"
 #include "ModuleHost.h"
@@ -80,7 +82,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     App application;
-    MainWindow window(application.data());
+    MainWindow window(application.context());
     window.build(application.modules());
     // 先给窗口一个确定尺寸：画布按自身像素宽请求数据，尺寸确定后断言才可复现。
     window.resize(1280, 800);
@@ -105,10 +107,16 @@ int main(int argc, char *argv[])
     CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.home.view")).size() >= 1);
     OK("ribbon 按插槽数据绑定：页签/分组/动作数量符合声明");
 
-    // --- 3) 器官 requestPanel 拿到部件，骨架只提供工厂 ---
+    // --- 3) 视图层自注册生效：部件工厂表由 views/ 各 TU 自行登记 ---
+    //
+    // 这里守一条**架构级不变量**：视图自注册依赖 OBJECT 库。
+    // 若 ng_gui 被改成 STATIC 库，未被引用的 TU 会被链接器丢弃、
+    // 静态初始化不执行，工厂表会**静默变空**——功能消失且无任何报错。
+    // 所以这里显式断言两个视图都已登记。
     CHECK(!PanelFactoryRegistry::types().isEmpty());
     CHECK(PanelFactoryRegistry::types().contains(QStringLiteral("dataset-tree")));
-    OK("部件工厂表就位：器官只描述类型，骨架决定实现");
+    CHECK(PanelFactoryRegistry::types().contains(QStringLiteral("plot-canvas")));
+    OK("视图层自注册生效：dataset-tree / plot-canvas 均已登记（OBJECT 库保证 TU 不被丢弃）");
 
     // --- 4) 停靠区就位（Qt-ADS）---
     CHECK(binder->panelCount() >= 1);
@@ -117,14 +125,17 @@ int main(int argc, char *argv[])
     OK("停靠区就位：左栏有数据集面板且标题正确");
 
     // --- 5) 数据集管理面板能列出数据集 -> 表 -> 列 ---
-    DataManagerPanel *panel = window.dataPanel();
-    CHECK(panel != nullptr);
+    // 面板由器官 requestPanel 申请、由视图层自注册的工厂创建——
+    // MainWindow 不认识它，这里从插槽区取回。
     const int dsId = buildDataset(application.data());
     CHECK(dsId >= 0);
+    auto *panel = qobject_cast<DataManagerPanel *>(
+        binder->panelWidget(QStringLiteral("dock.left")));
+    CHECK(panel != nullptr);
     panel->refresh();
     CHECK(panel->datasetNodeCount() == 1);
     CHECK(panel->tableNodeCount(0) == 1); // 一张表 trace
-    OK("数据集管理面板：数据集/表层级正确");
+    OK("数据集管理面板：数据集/表层级正确（面板归视图层，外壳不认识它）");
 
     // --- 6) ps 数据呈现：plot.channel 返回像素级有界数据 ---
     // 关键断言：5000 行数据，请求 px=200，应返回 <= 200 个三元组——
@@ -164,9 +175,12 @@ int main(int argc, char *argv[])
     // --- 7) 画布消费 LOD 并渲染 ---
     // 画布按**自身像素宽度**请求数据（像素级渲染的应有行为），
     // 因此点数与画布宽度挂钩，但与数据行数无关。
-    PlotCanvas *canvas = window.canvas();
+    auto *canvas = qobject_cast<PlotCanvas *>(binder->centralContent());
     CHECK(canvas != nullptr);
-    window.showChannel(dsId, QStringLiteral("trace"), QStringLiteral("sig"));
+    // 渲染触发方式 = 设活动通道（与数据集树双击同一条路径）：
+    // 数据集树 -> AppContext 共享状态 -> 绘图视图订阅 -> 取数渲染。
+    application.context().setActiveChannel(dsId, QStringLiteral("trace"),
+                                           QStringLiteral("sig"));
     CHECK(canvas->lodPointCount() > 0);
     const int canvasPx = qMax(64, canvas->width() - 80);
     CHECK(canvas->lodPointCount() <= canvasPx);

@@ -241,8 +241,10 @@ int main(int argc, char **argv)
     App application;
     const auto errors = application.startup(true);
     CHECK(errors.isEmpty());
-    CHECK(application.modules().activeIds().size() == 4); // 3 内置 + 1 探针
+    CHECK(application.modules().activeIds().size() == 5); // 4 内置 + 1 探针
     CHECK(application.modules().isActive(QStringLiteral("mod.probe")));
+    // 新增的设置器官（统一设置管理的机制提供者）
+    CHECK(application.modules().isActive(QStringLiteral("mod.settings")));
 
     // 探针模块提供的能力可用（它自带的意图处理器已被注册）。
     {

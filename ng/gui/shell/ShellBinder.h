@@ -3,6 +3,7 @@
 #include "UiSlotRegistry.h"
 
 #include <QHash>
+#include <QJsonObject>
 #include <QString>
 
 class QAction;
@@ -66,6 +67,9 @@ public:
 
     // 面板内容与标题（诊断/测试用）。
     QWidget *panelWidget(const QString &area) const;
+
+    // 中央内容（画布区）——不在 dock 体系里，故单独暴露。
+    QWidget *centralContent() const { return m_centralContent; }
     QString panelTitle(const QString &area) const;
     int panelCount() const { return m_panels.size(); }
 
@@ -75,6 +79,12 @@ public:
     // 布局持久化（ADS 原生）。
     QByteArray saveLayout() const;
     bool restoreLayout(const QByteArray &state);
+
+    // --- 窗口状态快照（声明式）---
+    // 捕获：窗口几何 + ADS 布局 + ribbon 当前页签。
+    // 这些都是"结果长什么样"的描述，不含操作序列——恢复时缺失的部分安全降级。
+    QJsonObject captureState() const;
+    bool applyState(const QJsonObject &state);
 
     // 意图执行回调：外壳只负责把动作转成意图，交给宿主执行器。
     using IntentDispatcher = std::function<void(const QString &actionId)>;
@@ -86,6 +96,7 @@ private:
 
     // SARibbon
     SARibbonBar *m_ribbon = nullptr;
+    int m_currentPage = 0;   // 当前页签下标（状态快照用）
 
     // ADS
     ads::CDockManager *m_dock = nullptr;

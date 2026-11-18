@@ -1,8 +1,9 @@
 #include "GuiContext.h"
 
 #include "PanelFactoryRegistry.h"
-#include "PlotCanvas.h"
 #include "ShellBinder.h"
+
+#include "AppContext.h"
 
 #include <QMainWindow>
 
@@ -13,8 +14,8 @@ namespace ng::gui
 {
 
 GuiContext::GuiContext(QMainWindow *window, UiSlotRegistry &slotReg, ShellBinder *binder,
-                       PlotCanvas *canvas, IIntentExecutor *executor, QObject *parent)
-    : QObject(parent), m_window(window), m_slots(slotReg), m_binder(binder), m_canvas(canvas),
+                       AppContext &appCtx, IIntentExecutor *executor, QObject *parent)
+    : QObject(parent), m_window(window), m_slots(slotReg), m_binder(binder), m_appCtx(appCtx),
       m_executor(executor)
 {}
 
@@ -33,8 +34,6 @@ void GuiContext::placeCanvas(QWidget *widget)
 {
     if (!widget || !m_window)
         return;
-    if (m_canvas)
-        m_canvas->setParent(nullptr);
     // 中央内容交给 ADS（画布区是一个不可关闭/移动的中央 dock）。
     if (m_binder)
         m_binder->setCentralContent(widget);
@@ -60,11 +59,16 @@ void GuiContext::addAction(const QString &area, const UiAction &action)
 
 QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
 {
-    // 部件由 app 外壳的工厂表提供；模块只描述类型，不依赖具体实现。
-    QWidget *widget = PanelFactoryRegistry::create(panelType, m_window);
+    // 部件由**视图层自注册**的工厂提供：外壳与器官都不认识具体实现。
+    QWidget *widget = PanelFactoryRegistry::create(panelType, m_appCtx, executor(), m_window);
     if (!widget)
         return nullptr;
-    placePanel(widget, area);
+
+    // 中央画布区走 setCentralContent，其余区域走停靠。
+    if (area == QStringLiteral("canvas.center"))
+        placeCanvas(widget);
+    else
+        placePanel(widget, area);
     return widget;
 }
 

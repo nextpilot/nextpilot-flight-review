@@ -12,6 +12,13 @@ add_library(ng_core STATIC
     src/UiSlotRegistry.cpp
     src/BuiltinPackRegistry.cpp
     src/BuiltinContributions.cpp
+    src/DataSourceRepository.cpp
+    src/IngestPipeline.cpp
+    src/AppContext.cpp
+    src/SettingsStore.cpp
+    src/ParserRegistry.cpp
+    src/RecordingFormat.cpp
+    src/RecordingBackend.cpp
     include/Result.h
     include/Dataset.h
     include/DataRepository.h
@@ -34,6 +41,15 @@ add_library(ng_core STATIC
     include/UiSlotRegistry.h
     include/BuiltinPackRegistry.h
     include/BuiltinContributions.h
+    include/DataSource.h
+    include/SettingsStore.h
+    include/DataSourceRepository.h
+    include/IngestPipeline.h
+    include/AppContext.h
+    include/ParserRegistry.h
+    include/ps_parser_spi.h
+    include/RecordingFormat.h
+    include/RecordingBackend.h
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
