@@ -1,0 +1,47 @@
+#include "AutomotivePack.h"
+
+#include "BuiltinContributions.h"
+#include "BuiltinPackRegistry.h"
+
+using namespace ng::core;
+
+namespace ng::ext
+{
+
+QString AutomotivePack::packId()
+{
+    return QStringLiteral("pack.automotive");
+}
+
+std::unique_ptr<IToolPack> AutomotivePack::build()
+{
+    // 预留领域：先以 UI + 文档占位，格式驱动后续按 ULog 公式平移时落入本包。
+    auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("汽车工具箱"), FormatDomain::Automotive);
+    pack->add<GenericUiContribution>(
+        QStringLiteral("car.ui.contributions"), QStringLiteral("汽车界面入口"), FormatDomain::Automotive,
+        QList<UiAction>{
+            {QStringLiteral("car.dock.can"), QStringLiteral("CAN 报文面板"), QStringLiteral("dock.right"),
+             QString(), QString()}});
+    pack->add<GenericDocContribution>(
+        QStringLiteral("car.docs"), QStringLiteral("汽车知识文档"), FormatDomain::Automotive,
+        QList<DocEntry>{
+            {QStringLiteral("car.doc.formats"), QStringLiteral("汽车总线格式（待接入）"),
+             QStringLiteral("docs/automotive/formats.md"), QStringLiteral("text/markdown")}});
+    return pack;
+}
+
+QString AutomotivePack::id() const { return m_pack.id(); }
+QString AutomotivePack::displayName() const { return m_pack.displayName(); }
+FormatDomain AutomotivePack::domain() const { return m_pack.domain(); }
+const std::vector<std::unique_ptr<IToolContribution>> &AutomotivePack::contributions() const
+{
+    return m_pack.contributions();
+}
+std::vector<std::unique_ptr<IToolContribution>> &AutomotivePack::contributions()
+{
+    return m_pack.contributions();
+}
+
+} // namespace ng::ext
+
+NG_REGISTER_PACK(::ng::ext::AutomotivePack)

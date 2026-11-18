@@ -5,13 +5,14 @@
 namespace ng::core
 {
 
-void UiSlotRegistry::declareSlot(const QString &area, const QString &label, const QString &owner)
+void UiSlotRegistry::declareSlot(const QString &area, const QString &label, const QString &owner,
+                                 SlotKind kind, const QString &parentArea, int order)
 {
     auto it = std::find_if(m_slots.begin(), m_slots.end(),
                            [&area](const UiSlot &s) { return s.area == area; });
     if (it != m_slots.end())
         return; // 已声明，先到者为准
-    m_slots.append(UiSlot{area, label, owner});
+    m_slots.append(UiSlot{area, label, owner, kind, parentArea, order});
 }
 
 void UiSlotRegistry::refreshFrom(const ExtensionRegistry &registry)
@@ -38,6 +39,27 @@ void UiSlotRegistry::refreshFrom(const ExtensionRegistry &registry)
     }
 }
 
+void UiSlotRegistry::bindLocal(const QString &area, const UiAction &action, const QString &provider)
+{
+    if (!area.isEmpty())
+        m_local[area].append(BoundUiAction{action, provider});
+}
+
+void UiSlotRegistry::unbindProvider(const QString &provider)
+{
+    for (auto it = m_local.begin(); it != m_local.end();)
+    {
+        auto &list = it.value();
+        list.erase(std::remove_if(list.begin(), list.end(),
+                                  [&provider](const BoundUiAction &a) { return a.provider == provider; }),
+                   list.end());
+        if (list.isEmpty())
+            it = m_local.erase(it);
+        else
+            ++it;
+    }
+}
+
 QStringList UiSlotRegistry::areas() const
 {
     QStringList out;
@@ -51,15 +73,47 @@ QList<UiSlot> UiSlotRegistry::allSlots() const
     return m_slots;
 }
 
+QList<UiSlot> UiSlotRegistry::slotsOfKind(SlotKind kind) const
+{
+    QList<UiSlot> out;
+    for (const UiSlot &s : m_slots)
+        if (s.kind == kind)
+            out.append(s);
+    return out;
+}
+
+QList<UiSlot> UiSlotRegistry::childrenOf(const QString &parentArea) const
+{
+    QList<UiSlot> out;
+    for (const UiSlot &s : m_slots)
+        if (s.parentArea == parentArea)
+            out.append(s);
+    std::sort(out.begin(), out.end(),
+              [](const UiSlot &a, const UiSlot &b) { return a.order < b.order; });
+    return out;
+}
+
+const UiSlot *UiSlotRegistry::slot(const QString &area) const
+{
+    for (const UiSlot &s : m_slots)
+        if (s.area == area)
+            return &s;
+    return nullptr;
+}
+
 QList<BoundUiAction> UiSlotRegistry::actionsIn(const QString &area) const
 {
-    return m_bound.value(area, {});
+    QList<BoundUiAction> out = m_bound.value(area, {});
+    out += m_local.value(area, {});
+    return out;
 }
 
 int UiSlotRegistry::boundActionCount() const
 {
     int n = 0;
     for (auto it = m_bound.constBegin(); it != m_bound.constEnd(); ++it)
+        n += it.value().size();
+    for (auto it = m_local.constBegin(); it != m_local.constEnd(); ++it)
         n += it.value().size();
     return n;
 }

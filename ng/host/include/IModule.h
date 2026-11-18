@@ -5,6 +5,7 @@
 #include "Intent.h"
 #include "JobRecorder.h"
 #include "ModuleInfo.h"
+#include "UiSlotRegistry.h"
 
 #include <QObject>
 
@@ -16,12 +17,41 @@ namespace ng::host
 class ModuleHost;
 
 // UI 上下文：headless 时宿主不构造它，模块 onAttach 就不会被调用。
+//
 // 它只提供"放置"能力，不接管 UI 对象的所有权——所有权始终在模块。
+// QWidget 只做前置声明：host 层不链接 Qt Widgets，headless 构建保持轻量。
 class UiContext
 {
 public:
     virtual ~UiContext() = default;
+
+    // 把一个面板停靠到指定区域（dock.left / dock.right / dock.bottom / dock.top）。
     virtual void placePanel(QWidget *widget, const QString &area) = 0;
+
+    // 把一个控件放进中央画布区（替换当前内容）。
+    virtual void placeCanvas(QWidget *widget) = 0;
+
+    // 声明一个 UI 插槽（ribbon 页签/分组、停靠区、菜单）。
+    // 模块用它声明自己的容器，再往里放动作——这样新增模块能自带界面入口，
+    // 而 app 骨架与其他模块代码都不必修改。
+    virtual void declareSlot(const QString &area, const QString &label,
+                             ng::core::SlotKind kind,
+                             const QString &parentArea = QString()) = 0;
+
+    // 往已声明的插槽里放一个动作（ribbon 按钮 / 菜单项）。
+    virtual void addAction(const QString &area, const ng::core::UiAction &action) = 0;
+
+    // 请求 app 骨架提供一个部件，放到指定区域。
+    //
+    // 模块只描述"我需要什么部件"（用部件类型标识，如 "dataset-tree"），
+    // 由 app 骨架决定用哪个 QWidget 实现并停靠。这样：
+    //   - 模块不依赖 Qt Widgets，headless（CLI）构建保持纯净；
+    //   - 新增模块自带界面 = 声明一个部件类型 + 动作，无需改 GUI 层。
+    // 返回部件的宿主引用（QWidget 前置声明），模块可用它设置数据/标题等。
+    virtual QWidget *requestPanel(const QString &area, const QString &panelType) = 0;
+
+    // 宿主执行器：模块在 GUI 里点击动作后，用它发意图（与脚本/CLI 同一路径）。
+    virtual ng::core::IIntentExecutor &executor() = 0;
 };
 
 // 模块拿到的运行时上下文：只有能力，没有全局单例、没有 MainWindow*。

@@ -10,6 +10,8 @@ add_library(ng_core STATIC
     src/FormatDomain.cpp
     src/ContributionKind.cpp
     src/UiSlotRegistry.cpp
+    src/BuiltinPackRegistry.cpp
+    src/BuiltinContributions.cpp
     include/Result.h
     include/Dataset.h
     include/DataRepository.h
@@ -30,6 +32,8 @@ add_library(ng_core STATIC
     include/IExampleContribution.h
     include/IDocContribution.h
     include/UiSlotRegistry.h
+    include/BuiltinPackRegistry.h
+    include/BuiltinContributions.h
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

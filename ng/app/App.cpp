@@ -1,8 +1,6 @@
 #include "App.h"
 
-#include "DataModule.h"
-#include "PlotModule.h"
-#include "ScriptModule.h"
+#include "BuiltinModuleRegistry.h"
 #include "FormatToolbox.h"
 #include "PluginScanner.h"
 
@@ -17,13 +15,15 @@ namespace ng::app
 App::App(QObject *parent)
     : QObject(parent), m_repo(this), m_host(m_repo, this)
 {
-    // 器官（module）：有生命周期、可上 UI 的 app 功能。宿主按依赖拓扑装载。
-    m_host.registerModule(DataModule().info(), [] { return static_cast<IModule *>(new DataModule()); });
-    m_host.registerModule(PlotModule().info(), [] { return static_cast<IModule *>(new PlotModule()); });
-    m_host.registerModule(ScriptModule().info(), [] { return static_cast<IModule *>(new ScriptModule()); });
+    // 器官（module）：app 的组成部分，按依赖拓扑装载。
+    // 模块在各自 TU 里静态自注册（NG_REGISTER_MODULE），这里只把已登记的
+    // 全部装进宿主——新增一个 module 不用改本文件。
+    const auto &builtin = BuiltinModuleRegistry::modules();
+    for (const auto &entry : builtin)
+        m_host.registerModule(entry.first, entry.second);
 
-    // 工具箱（extensions）：知识包，不参与器官生命周期。
-    // 路径一——内置知识包：集中自注册，App 完全不认识 CSV/ULog/UI/脚本这些具体贡献。
+    // 工具箱（extensions）：业务能力包，不参与器官生命周期。
+    // 路径一——内置知识包：各自静态自注册，装载时统一收进工具箱。
     ng::ext::registerBuiltinPacks(m_host.extensions());
     // 路径二——外部插件：扫描目录、校验后注册进同一个工具箱（本轮仅预留入口）。
     // 目录可后续由配置/命令行注入；默认检查可执行文件旁的 plugins/ 目录。

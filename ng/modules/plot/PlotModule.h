@@ -2,18 +2,23 @@
 
 #include "IModule.h"
 
-// 绘图器官：headless 下把 "plot.render" 意图编译成一份 PlotSpec 描述。
-// GUI 模式下同一个 PlotSpec 交给真正的画布渲染；两条路径共享意图与 spec。
+// 绘图器官：把"数据集 + 通道"编译成 PlotSpec（纯数据），并提供分析算子入口。
+// 它不认识任何具体格式，也不直接画图——渲染由 UI 器官消费同一份 spec。
 class PlotModule final : public ng::host::IModule
 {
     Q_OBJECT
 public:
+    // 静态元数据：供编译期自注册（NG_REGISTER_MODULE）使用，无需实例化。
+    static ng::host::ModuleInfo moduleInfo();
+    static ng::host::IModule *create();
+
     ng::host::ModuleInfo info() const override;
     void initialize(ng::host::ModuleContext &ctx) override;
 
+    // GUI 环境下声明本模块的界面入口（headless 时宿主不调用）。
+    void onAttach(ng::host::UiContext &ui) override;
+
 private:
     class Handler;
-    Handler *m_handler = nullptr;
+    Handler *m_handler = nullptr; // parent=this，随模块析构自动回收
 };
-
-Q_DECLARE_INTERFACE(PlotModule, "nextpilot.ng.PlotModule/1.0")

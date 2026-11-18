@@ -1,0 +1,10 @@
+find_package(Qt6 REQUIRED COMPONENTS Core)
+
+# 机器人领域包：预留位，格式平移时在此目录追加驱动即可，不改其他代码。
+add_library(ng_ext_robotics OBJECT
+    RoboticsPack.cpp
+    RoboticsPack.h
+)
+target_include_directories(ng_ext_robotics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ng_ext_robotics PUBLIC ng_core)
+set_target_properties(ng_ext_robotics PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

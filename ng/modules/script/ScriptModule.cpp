@@ -1,5 +1,6 @@
 #include "ScriptModule.h"
 
+#include "BuiltinModuleRegistry.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
 #include "JobRecorder.h"
@@ -62,7 +63,7 @@ private:
     JobRecorder *m_recorder = nullptr;
 };
 
-ModuleInfo ScriptModule::info() const
+ModuleInfo ScriptModule::moduleInfo()
 {
     return ModuleInfo{
         QStringLiteral("mod.script"),
@@ -74,6 +75,16 @@ ModuleInfo ScriptModule::info() const
     };
 }
 
+IModule *ScriptModule::create()
+{
+    return new ScriptModule();
+}
+
+ModuleInfo ScriptModule::info() const
+{
+    return moduleInfo();
+}
+
 void ScriptModule::initialize(ModuleContext &ctx)
 {
     m_handler = new Handler(ctx.executor(), ctx.recorder(), this);
@@ -81,3 +92,6 @@ void ScriptModule::initialize(ModuleContext &ctx)
 }
 
 #include "ScriptModule.moc"
+
+// 编译期自注册：新增脚本模块无需改 App / 宿主。
+NG_REGISTER_MODULE(ScriptModule)

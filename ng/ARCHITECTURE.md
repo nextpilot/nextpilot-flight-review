@@ -25,10 +25,10 @@
 ## 2. 分层
 
 ```
-app/            CLI / GUI 入口（只做装配与参数解析）
-  ↓
-host/           装载循环、依赖拓扑、意图执行器、生命周期驱动
-  ├── modules/      器官：data / plot / script（编译进 app，可配置关闭）
+app/            CLI 入口（仅 Qt Core）/ gui/  GUI 入口与骨架（Qt Widgets）
+  ↓             两者共用同一套 app/host/core，行为一致
+host/           装载循环、依赖拓扑、意图执行器、生命周期驱动、自注册表
+  ├── modules/      器官：app 的组成部分 data / plot / script（编译进同一二进制）
   └── extensions/   工具箱：按领域组织的知识包，含六类贡献（见下"工具箱"一节）
   ↓
 core/           Dataset 的 C++ 薄门面 + DataRepository + 事件 + 意图定义
@@ -42,10 +42,15 @@ kernel (Rust)   数据地基：ps-ndf typed 表 / ps-cache 缓存 / ps-ops 抽�
 **数据本体归 Rust kernel 所有，C++ core 只是它的 RAII 门面与 schema 投影。**
 
 **器官（module）与工具箱（extension）是两条正交的线**：
-- 器官是 app 的功能组件，有生命周期、可上 UI，由 `ModuleHost` 按依赖拓扑装载/卸载；
+- 器官是 **app 的组成部分**（不是插件）：编译进同一二进制，有生命周期、可上 UI，
+  由 `ModuleHost` 按依赖拓扑装载/卸载；彼此**直接用 C++ 接口协作**，不必绕意图层。
+  首要目的是**代码组织**——避免 `MainWindow` 变成巨型文件，一类职责一个文件；
 - 工具箱是"业务知识包容器"，按 PlotScope 服务的业务方向组织：**飞控 / 汽车 / 机器人 /
   卫导**四个核心方向，外加通用（CSV/JSON/binary）与视频同步；
 - 两者都归宿主管，但互不伪装：器官不认识任何领域业务，工具箱不伪装成器官。
+
+**两条线都做到"新增不改既有代码"**：module 与知识包各自静态自注册进全局表
+（`NG_REGISTER_MODULE` / `NG_REGISTER_PACK`），宿主遍历装载。见 §4.1.1。
 
 **工具箱是开放贡献点系统，不是格式清单**（两个维度正交）：
 - **领域（domain）**是稳定的分类学：`FormatDomain` 枚举——通用/飞控/汽车/机器人/卫导/视频，
@@ -134,9 +139,22 @@ C++ 不存数据、不解析、不计算、不遍历。由此定死**三条不�
 
 ## 4. 器官、工具箱与扩展发现
 
-### 4.1 器官（module）—— app 的功能组件
+### 4.1 器官（module）—— app 的组成部分
 
-有生命周期、可上 UI 的部分（data / plot / script）实现统一接口：
+**定位澄清（重要）**：module 之所以叫 modules，首要目的是**代码组织**——避免
+`MainWindow` 膨胀成巨型文件，让每个功能块是独立编译单元，出问题能立刻定位到文件。
+它不是"插件"，不需要动态装载，也不需要跨进程边界。
+
+因此：
+
+- module 编译进 app 同一二进制，**直接用 C++ 接口协作**，不必绕意图层。
+  意图层是给 **CLI / 脚本 / 自动化**这条公共通道用的。
+- module 依赖 Qt Widgets 会污染 headless 构建，因此 module 只描述界面需求
+  （`requestPanel` / `declareSlot` / `addAction`），由 app 骨架的部件工厂提供 QWidget 实现。
+- 文件划分原则：**一类职责一个文件**。`MainWindow` 只做装配、零业务；
+  ribbon / dock / 画布 / 数据面板各自独立文件（见 §5 GUI 层）。
+
+接口：
 
 ```cpp
 class IModule : public QObject {
@@ -149,6 +167,30 @@ class IModule : public QObject {
 - 宿主按 `requires/provides` 拓扑排序装载；缺依赖/成环的器官被跳过，不连坐。
 - 卸载 = `delete module` → Qt 父子树回收全部 UI 与信号槽（Qt 原生语义，无 token、无撤销协议）。
 - `--list-modules` 只列器官；格式驱动**不再是器官**。
+
+### 4.1.1 零改动新增：编译期自注册
+
+需求是"增加一个 module 不要修改其他代码"。若宿主靠 `App.cpp` 逐个
+`registerModule(XxxModule().info(), factory)`，每加一个都要改 `App.cpp`——正是要消灭的耦合。
+
+改为**静态自注册**：模块在自己的 `.cpp` 末尾用宏把自己登记进全局表，宿主启动时遍历装载。
+
+```cpp
+//  模块 TU 末尾一行：
+NG_REGISTER_MODULE(DataModule)     // 需要 DataModule::moduleInfo() / ::create()
+//  知识包 TU 末尾一行：
+NG_REGISTER_PACK(::ng::ext::AutopilotPack)   // 需要 packId() / build()
+```
+
+于是"新增一个 module"= 新增一个目录 + 一行 CMake；"新增一个扩展"同理。
+宿主、App、注册表、既有模块与扩展**一行都不用改**。
+
+> **工程要点**：承载自注册的 target 必须是 **OBJECT 库**（不是 STATIC）。
+> 静态库中未被引用的目标文件会被链接器丢弃，其静态初始化不执行，注册会静默失效。
+
+契约测试里内置了一个"探针模块 + 探针包"——它们**只存在于测试文件**，
+却被自动装载并可执行。这条测试就是"零改动新增"的回归防线：
+哪天机制退化了（必须改 `App.cpp` 才能加模块），测试就会失败。
 
 ### 4.2 工具箱（ExtensionRegistry）—— 开放贡献点系统
 
@@ -216,7 +258,73 @@ class ExtensionRegistry {
   `DataLoadHandler` 按注册表查表分派，任何包装卸都不影响它；撤掉一个包不影响其他包，
   可热插（重新 register 即恢复）。
 
-## 5. 统一意图层（automation 的灵魂）
+## 5. GUI 层：ribbon / docking / ps 数据呈现
+
+### 5.1 文件划分原则（回应"别让 MainWindow 变大"）
+
+GUI 层每个部件一个独立文件、一个独立类，职责互不越界。**`MainWindow` 只做装配，零业务**：
+
+| 文件 | 职责 | 不做什么 |
+|---|---|---|
+| `MainWindow.{h,cpp}` | 建骨架、声明插槽、装器官 | 不画图、不读数据、不含任何业务分支 |
+| `RibbonBar.{h,cpp}` | 按插槽数据渲染 ribbon（页签/分组/按钮） | 不知道动作的业务含义 |
+| `DockManager.{h,cpp}` | 四边停靠的创建/归位/显隐 | 不管面板内容 |
+| `PlotCanvas.{h,cpp}` | 用 QPainter 画 LOD 三元组 | 不加载数据、不抽稀 |
+| `DataManagerPanel.{h,cpp}` | 数据集→表→列 树，选列发信号 | 不取数、不绘图 |
+| `GuiContext.{h,cpp}` | 实现 `host::UiContext`，把插槽动作路由到上面 | 不决定动作做什么 |
+| `PanelFactoryRegistry.{h,cpp}` | 部件类型 → QWidget 实现的工厂表 | 不认识具体部件 |
+
+出问题时的定位路径：`MainWindow` 只看装配；画布问题看 `PlotCanvas`；
+数据列表问题看 `DataManagerPanel`；按钮不显示看 `RibbonBar` + 插槽登记表。
+
+### 5.2 ribbon 与 docking：插槽驱动，不硬编码
+
+app 骨架在 `ModuleHost` 构造时声明标准插槽（纯数据，headless 也存在）：
+
+```
+ribbon.page.home          RibbonPage    ribbon 的页签
+  ribbon.group.home.data  RibbonGroup   页签内的分组
+  ribbon.group.home.view  RibbonGroup
+dock.left / dock.right    DockPanel     四边停靠
+canvas.center             Canvas        中央画布
+menu.plot                 Menu
+```
+
+插槽从"一个字符串"升级为**带语义的结构**（`SlotKind` + `parentArea` + `order`），
+于是 GUI 层能自动布局，贡献方只需说明"我要什么"：
+
+- 工具箱的 `IUiContribution` 按 area 填内容（业务包自带入口）；
+- 器官在 `onAttach` 里 `declareSlot` / `addAction` / `requestPanel`（app 自身功能）。
+
+**ribbon 自研**：Qt 无原生 ribbon。`RibbonBar` 用 QPainter + `QToolButton`
+实现"页签行 + 页面栈 + 分组容器（大按钮 + 小按钮列）"，无第三方依赖。
+
+**docking 用原生**：`QDockWidget` + `DockManager`，用户可自由拖拽/浮动/隐藏。
+
+### 5.3 ps 数据 UI 呈现：与行数解耦
+
+数据面板双击某列 → GUI 发 `plot.channel` 意图 → plot 模块返回**像素级三元组**：
+
+```cpp
+// plot.channel -> { x[], min[], max[], t0, t1, points, title }
+// 三元组个数恒定 <= px；抽稀（min/max 分桶）在 Rust kernel 内完成。
+```
+
+画布据此绘制，**内存与耗时都是 O(像素宽)，与数据行数无关**。
+这条路径与 CLI / 脚本完全同源（都走意图层），因此可录制、可回放、行为一致。
+
+### 5.4 CLI 与 GUI 分离，互不污染
+
+| 可执行文件 | 链接 | 用途 |
+|---|---|---|
+| `plotscope-ng` | 仅 `Qt6::Core` | CLI / headless / CI / 服务器批处理 |
+| `plotscope-ng-gui` | `+ Qt6::Widgets` | 图形界面 |
+| `plotscope-ng-gui-bench` | `+ Qt6::Widgets` | GUI 大数据量手动基准 |
+
+`ldd` 可验证 CLI 不含 `libQt6Widgets` / `libQt6Gui`。
+两个可执行文件共用同一套 `app/host/core`，保证行为一致。
+
+## 6. 统一意图层（automation 的灵魂）
 
 > GUI 的每次交互和脚本的每行代码，最终都变成同一种意图对象，交给同一个执行器。
 
@@ -242,7 +350,7 @@ struct Intent {
 新增格式只加一行自注册；卸载 = 从注册表撤销；器官与其他模块零改动。
 这正是"格式只是工具箱一部分、可注册可扫描"的落地形态。
 
-## 6. 自动化与 headless（已实现）
+## 7. 自动化与 headless（已实现）
 
 - 脚本引擎是 core 门面 + 一个 script 模块（Lua 5.4）。脚本只拿到门面 `ps`，永远碰不到 QWidget 和模块内部对象。
 - **headless = 装载模块但不调用 `onAttach()`**：没有第二套装配代码。
@@ -256,7 +364,7 @@ struct Intent {
 - 录制闭环：`--script demo.lua --record job.json` 把脚本产生的业务意图录成 Job（不含 `script.run` 本身），`--run job.json` 回放得到相同 PlotSpec。
 - CI：headless 跑 Job + 导出 PNG/CSV 做基线对比（待办）。
 
-## 7. 我会明确砍掉的复杂度
+## 8. 我会明确砍掉的复杂度
 
 - `ServiceRegistry` 那种 `type_index→void*` 服务定位器 → 构造函数注入。
 - 全局单例 `instance()` → 能力从 Context 注入。
@@ -264,27 +372,35 @@ struct Intent {
 - GUI/CLI 两套装配 → 共用装载循环。
 - 运行时热重载 UI → 明确"重启生效"。
 
-## 8. 目录结构
+## 9. 目录结构
 
 ```
 ng/
 ├── ARCHITECTURE.md       本文档
 ├── CMakeLists.txt        独立构建，复用仓库 deps/Qt
-├── core/                 数据模型/仓库/事件/意图/脚本门面（无 QWidget）
-├── host/                 IModule/装载循环/意图执行器/App
-├── modules/              器官：data / plot / script
+├── core/                 数据模型/仓库/事件/意图/脚本门面/插槽表/贡献抽象（无 QWidget）
+├── host/                 IModule/装载循环/意图执行器/自注册表
+├── modules/              器官（app 的组成部分）：data / plot / script
 ├── extensions/           工具箱（领域 × 开放贡献类型）
-│   ├── common/           通用：CSV 格式 + 文档包
+│   ├── common/           通用包：CSV 格式 + 文档
 │   ├── autopilot/        飞控包：格式+UI+脚本+数据+例子+文档（六类齐全样板）
 │   ├── automotive/       汽车包：UI+文档占位（ASC/BLF/MDF4/CAN 待接入）
 │   ├── robotics/         机器人包：UI+文档占位（MCAP/ROSbag2 待接入）
 │   ├── gnss/             卫导包：脚本+文档占位（NMEA/UBX/OEM7 待接入）
-│   └── registry/         知识包装配 + 通用贡献实现 + 外部插件扫描入口
-├── app/                  CLI 入口
-└── tests/                架构契约测试
+│   └── registry/         外部插件扫描入口 + 工具箱装载入口
+├── gui/                  GUI 层：一类职责一个文件（MainWindow 只做装配）
+│   ├── MainWindow        窗口骨架与装配（零业务）
+│   ├── RibbonBar         ribbon 控件（页签/分组/按钮，自研）
+│   ├── DockManager       四边停靠管理
+│   ├── PlotCanvas        中央画布（QPainter 绘 LOD 三元组）
+│   ├── DataManagerPanel  数据集→表→列 树
+│   ├── GuiContext        host::UiContext 的 GUI 实现
+│   └── PanelFactoryRegistry  部件类型→QWidget 工厂
+├── app/                  CLI 入口（仅 Qt Core，不链接 Widgets）
+└── tests/                契约测试：架构（headless）+ GUI（offscreen）
 ```
 
-## 9. 落地顺序（进度）
+## 10. 落地顺序（进度）
 
 0. ✅ 接入 Rust kernel 作为数据地基：`ng_kernel` 链接 `libps_abi.a`，Dataset 改为
    `PsDataset*` 的 RAII 门面；typed 构造 / read_window / LOD / 缓存 / 算子全走 C ABI。
@@ -305,15 +421,29 @@ ng/
    + `ExtensionRegistry` 按 (kind,domain) 二维索引 + `UiSlotRegistry`（器官声明插槽、工具箱填内容）。
    内置 5 个知识包，飞控包六类齐全；新增贡献类型/领域内容不改宿主与器官。契约测试覆盖六类
    贡献、按包原子装卸、二维索引、UI 插槽填充、开放 kind 可扩展性。
-9. ⬜ 启用外部插件真实动态加载（定义插件 C ABI + 加载器），并按 ULog 公式把其余格式
+9. ✅ 零改动新增（编译期自注册）：`BuiltinModuleRegistry` / `BuiltinPackRegistry` +
+   `NG_REGISTER_MODULE` / `NG_REGISTER_PACK` 宏；App 与宿主不再硬编码任何具体类；
+   五个知识包各自独立文件静态自注册；承载自注册的 target 改 OBJECT 库（静态库会丢 TU）。
+   契约测试内置"探针模块 + 探针包"证明零改动。
+10. ✅ GUI 层：ribbon（自研）+ docking（QDockWidget）+ ps 数据呈现；
+    `ng/gui/` 一类职责一个文件、`MainWindow` 只做装配；插槽升级为带 `SlotKind` 的结构；
+    `PanelFactoryRegistry` 让器官只描述部件类型、不依赖 Widgets；
+    `plot.channel` 意图返回像素级三元组；CLI 与 GUI 分离为两个可执行文件。
+11. ⬜ 启用外部插件真实动态加载（定义插件 C ABI + 加载器），并按 ULog 公式把其余格式
    平移进对应领域包（飞控 apbin/tlog/mavlink、汽车 ASC/BLF/MDF4/CAN、机器人 MCAP/ROSbag2、
-   卫导 NMEA/UBX/OEM7），实现真正消费 UI 贡献的 GUI 层与画布。
+   卫导 NMEA/UBX/OEM7），以及真正消费全部 UI 贡献类型（绘图/分析/报告）。
 
 验证：编译全绿（Release + Debug 双构建）；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖
 typed 多表模型、通道投影、**Rust LOD 抽稀 / 统计 / 抗混叠抽取 / ps-cache 指纹命中与过期**、
 **工具箱自注册 / 按 format 与后缀选驱动 / 撤销隔离 / 可逆热插 / 插件扫描入口 /
 六类贡献 / 按包原子装卸 / (kind,domain) 二维索引 / UI 插槽填充 / 开放 kind 可扩展**、
+**零改动新增（探针模块/包自动装载且可执行）**、
 意图执行、脚本 headless 执行、录制回放闭环，以及
 **9000 行 ULog 流式加载（跨 3 批 / F32+U16 typed 列 / U64 微秒时间轴精确 / events+facts 元数据表）**；
-CLI 九入口（kernel/list-modules/list-packs/list-contributions/list-slots/list-formats/info/run/script）实测可用；
-百万行 ULog（18MB）加载 0.12s / 峰值 RSS 40MB。
+**GUI 契约测试（offscreen）覆盖 ribbon 渲染 / 部件工厂 / 停靠区 / 数据集树 /
+plot.channel 有界抽稀（5000 行 -> 200 点）/ 画布渲染 / 意图错误语义**；
+CLI 九入口（kernel/list-modules/list-packs/list-contributions/list-slots/list-formats/info/run/script）
+与 GUI 入口实测可用；`ldd` 验证 CLI 不含 Widgets 依赖。
+
+实测：百万行 ULog（18MB）CLI 加载 0.12s / 峰值 RSS 40MB；
+GUI 侧载入 134ms、渲染 7ms，**100 万行 -> 240 个像素三元组**（内存与耗时与行数无关）。

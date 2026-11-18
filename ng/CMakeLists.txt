@@ -13,6 +13,7 @@ if(NOT DEFINED CMAKE_PREFIX_PATH OR CMAKE_PREFIX_PATH STREQUAL "")
   endif()
 endif()
 
+# Core：所有层都要。Widgets：仅 GUI 层需要（CLI/headless 不链接）。
 find_package(Qt6 REQUIRED COMPONENTS Core)
 
 # === Rust kernel（数据地基）===
@@ -32,9 +33,7 @@ endif()
 add_custom_target(ng_kernel_cargo ALL
   COMMAND "${NG_CARGO}" build --manifest-path "${_ng_kernel_dir}/Cargo.toml" -p ps-abi --release
   WORKING_DIRECTORY "${_ng_kernel_dir}"
-  BYPRODUCTS "${_ng_kernel_lib}"
-  COMMENT "cargo build -p ps-abi (release)"
-  VERBATIM)
+  BYPRODUCTS "${_ng_kernel_lib}")
 add_library(ng_kernel INTERFACE)
 add_dependencies(ng_kernel ng_kernel_cargo)
 target_include_directories(ng_kernel INTERFACE "${_ng_kernel_dir}/include")
@@ -49,11 +48,15 @@ add_subdirectory(modules/data)
 add_subdirectory(modules/plot)
 add_subdirectory(modules/script)
 # 工具箱按业务领域组织：common / autopilot / automotive / robotics / gnss。
-# automotive / robotics / gnss 目录预留，后续按 ULog 公式平移格式时直接落入对应领域。
+# 每个领域一个包，静态自注册（NG_REGISTER_PACK）。
 add_subdirectory(extensions/common)
 add_subdirectory(extensions/autopilot)
+add_subdirectory(extensions/automotive)
+add_subdirectory(extensions/robotics)
+add_subdirectory(extensions/gnss)
 add_subdirectory(extensions/registry)
 add_subdirectory(app)
+add_subdirectory(gui)
 
 enable_testing()
 add_subdirectory(tests)

@@ -8,8 +8,13 @@ class DataModule final : public ng::host::IModule
 {
     Q_OBJECT
 public:
+    // 静态元数据：供编译期自注册（NG_REGISTER_MODULE）使用，无需实例化。
+    static ng::host::ModuleInfo moduleInfo();
+    static ng::host::IModule *create();
+
     ng::host::ModuleInfo info() const override;
     void initialize(ng::host::ModuleContext &ctx) override;
-};
 
-Q_DECLARE_INTERFACE(DataModule, "nextpilot.ng.DataModule/1.0")
+    // GUI 环境下请求自己的界面部件（headless 时宿主不调用）。
+    void onAttach(ng::host::UiContext &ui) override;
+};

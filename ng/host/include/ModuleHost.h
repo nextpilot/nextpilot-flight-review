@@ -67,6 +67,9 @@ public:
     // 每次访问都从当前注册表重新绑定一次，保证装卸知识包后立即可见。
     const ng::core::UiSlotRegistry &uiSlots();
 
+    // 可变引用：GUI 层需要声明新插槽（新增模块自带界面入口时用）。
+    ng::core::UiSlotRegistry &uiSlotsMutable();
+
 private:
     struct Node
     {

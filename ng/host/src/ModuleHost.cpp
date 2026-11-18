@@ -148,6 +148,12 @@ const ng::core::UiSlotRegistry &ModuleHost::uiSlots()
     return m_uiSlotRegistry;
 }
 
+ng::core::UiSlotRegistry &ModuleHost::uiSlotsMutable()
+{
+    m_uiSlotRegistry.refreshFrom(m_registry);
+    return m_uiSlotRegistry;
+}
+
 ng::core::Result<ng::core::IntentResult> ModuleHost::execute(const ng::core::Intent &intent)
 {
     for (auto it = m_handlers.constBegin(); it != m_handlers.constEnd(); ++it)

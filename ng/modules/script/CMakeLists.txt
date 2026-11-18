@@ -12,7 +12,8 @@ set_target_properties(ng_lua PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${_ng_lua_root}/include"
 )
 
-add_library(ng_module_script STATIC
+# OBJECT 库：保证自注册 TU 一定参与链接（见 data/CMakeLists.txt 的说明）。
+add_library(ng_module_script OBJECT
     ScriptModule.cpp
     LuaEngine.cpp
     ScriptModule.h
@@ -20,4 +21,4 @@ add_library(ng_module_script STATIC
 )
 target_include_directories(ng_module_script PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_module_script PUBLIC ng_host ng_core ng_lua Qt6::Core ${CMAKE_DL_LIBS})
-set_target_properties(ng_module_script PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+set_target_properties(ng_module_script PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

@@ -1,5 +1,6 @@
 #include "PlotModule.h"
 
+#include "BuiltinModuleRegistry.h"
 #include "DataRepository.h"
 #include "Dataset.h"
 #include "Intent.h"
@@ -20,10 +21,75 @@ public:
 
     bool canHandle(const Intent &intent) const override
     {
-        return intent.op == QStringLiteral("plot.render");
+        return intent.op == QStringLiteral("plot.render")
+            || intent.op == QStringLiteral("plot.channel");
     }
 
     Result<IntentResult> execute(const Intent &intent) override
+    {
+        if (intent.op == QStringLiteral("plot.channel"))
+            return renderChannel(intent);
+        return renderSpec(intent);
+    }
+
+private:
+    // plot.channel：取一条通道的**像素级**绘图数据（GUI 画布直接消费）。
+    //
+    // 内存铁律：返回的 (x,min,max) 三元组个数恒定 <= px，与数据总行数无关。
+    // 抽稀（min/max 分桶）在 Rust kernel 内完成，这里只做一次调用与转义。
+    Result<IntentResult> renderChannel(const Intent &intent)
+    {
+        const DatasetId id = intent.params.value(QStringLiteral("dataset")).toInt();
+        const Dataset *ds = m_repo.get(id);
+        if (!ds)
+            return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(id));
+
+        const QString table = intent.params.value(QStringLiteral("table")).toString();
+        const QString column = intent.params.value(QStringLiteral("column")).toString();
+        if (table.isEmpty() || column.isEmpty())
+            return fail(QStringLiteral("echan"), QStringLiteral("缺少 table.column"));
+
+        const Table *t = ds->table(table);
+        if (!t || !t->column(column))
+            return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1.%2").arg(table, column));
+
+        // 像素宽度由调用方给（画布宽度）；缺省 1024，恒定有界。
+        const int px = qBound(16, intent.params.value(QStringLiteral("px"), 1024).toInt(), 8192);
+
+        const QVector<LodTriple> lod =
+            ds->lodMinMax(table, column, t->firstTimeUs, t->lastTimeUs, px);
+        if (lod.isEmpty())
+            return fail(QStringLiteral("echan"), QStringLiteral("通道无数据: %1.%2").arg(table, column));
+
+        QVariantList xs, mins, maxs;
+        xs.reserve(lod.size());
+        mins.reserve(lod.size());
+        maxs.reserve(lod.size());
+        for (const LodTriple &triple : lod)
+        {
+            xs.append(triple.x);
+            mins.append(triple.min);
+            maxs.append(triple.max);
+        }
+
+        IntentResult r;
+        r.payload = QVariantMap{
+            {QStringLiteral("dataset"), id},
+            {QStringLiteral("table"), table},
+            {QStringLiteral("column"), column},
+            {QStringLiteral("title"), QStringLiteral("%1 / %2.%3").arg(ds->name(), table, column)},
+            {QStringLiteral("points"), lod.size()},
+            {QStringLiteral("t0"), t->firstTimeUs / 1000000.0},
+            {QStringLiteral("t1"), t->lastTimeUs / 1000000.0},
+            {QStringLiteral("x"), xs},
+            {QStringLiteral("min"), mins},
+            {QStringLiteral("max"), maxs},
+        };
+        return r;
+    }
+
+    // plot.render：编译 PlotSpec（纯数据），headless 下即为最终产物。
+    Result<IntentResult> renderSpec(const Intent &intent)
     {
         const DatasetId id = intent.params.value(QStringLiteral("dataset")).toInt();
         const Dataset *ds = m_repo.get(id);
@@ -93,7 +159,7 @@ private:
     DataRepository &m_repo;
 };
 
-ModuleInfo PlotModule::info() const
+ModuleInfo PlotModule::moduleInfo()
 {
     return ModuleInfo{
         QStringLiteral("mod.plot"),
@@ -105,10 +171,41 @@ ModuleInfo PlotModule::info() const
     };
 }
 
+IModule *PlotModule::create()
+{
+    return new PlotModule();
+}
+
+ModuleInfo PlotModule::info() const
+{
+    return moduleInfo();
+}
+
 void PlotModule::initialize(ModuleContext &ctx)
 {
     m_handler = new Handler(ctx.data(), this);
     ctx.registerIntentHandler(m_handler);
 }
 
+void PlotModule::onAttach(UiContext &ui)
+{
+    // GUI 环境下：声明本模块的界面入口。
+    //
+    // 绘图模块往 ribbon 的"视图"分组放一个动作，说明自己提供"重新渲染"能力；
+    // 插槽由 app 骨架声明，模块只往里填内容——新增模块自带界面时，
+    // 只需在自己的 onAttach 里 declareSlot/addAction，其他文件一律不动。
+    ui.declareSlot(QStringLiteral("ribbon.group.home.view"), QStringLiteral("视图"),
+                   SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
+
+    UiAction action;
+    action.id = QStringLiteral("plot.action.redraw");
+    action.label = QStringLiteral("重绘");
+    action.area = QStringLiteral("ribbon.group.home.view");
+    action.intentOp = QStringLiteral("plot.render");
+    ui.addAction(action.area, action);
+}
+
 #include "PlotModule.moc"
+
+// 编译期自注册：新增绘图模块无需改 App / 宿主。
+NG_REGISTER_MODULE(PlotModule)

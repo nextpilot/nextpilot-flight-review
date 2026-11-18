@@ -7,6 +7,9 @@
 #include "PluginScanner.h"
 #include "FormatToolbox.h"
 #include "BuiltinContributions.h"
+#include "BuiltinModuleRegistry.h"
+#include "BuiltinPackRegistry.h"
+#include "IModule.h"
 
 #include <QCoreApplication>
 #include <QSet>
@@ -33,6 +36,82 @@
 
 using namespace ng::app;
 using namespace ng::core;
+
+// ============================================================================
+// 「新增一个 module / extension 不修改其他代码」的证明
+//
+// 下面这两个假模块与假包**只在本测试文件里**定义并静态自注册。
+// 它们的加入没有改动宿主、App、注册表或任何既有模块/扩展的一行代码——
+// 这正是自注册机制要兑现的承诺：如果哪天必须去改 App.cpp 才能加一个模块，
+// 这条测试就会失败，提醒我们机制退化了。
+// ============================================================================
+
+namespace
+{
+
+// 探针模块的意图处理器。普通类即可（不需要 Q_OBJECT：它不发信号）。
+class ProbeHandler final : public IIntentHandler
+{
+public:
+    bool canHandle(const Intent &intent) const override
+    {
+        return intent.op == QStringLiteral("probe.ping");
+    }
+    Result<IntentResult> execute(const Intent &) override
+    {
+        IntentResult r;
+        r.payload = QStringLiteral("pong");
+        return r;
+    }
+};
+
+// 假模块：声明一个能力，提供一个意图处理器。
+class ProbeModule final : public ng::host::IModule
+{
+    Q_OBJECT
+public:
+    static ng::host::ModuleInfo moduleInfo()
+    {
+        return ng::host::ModuleInfo{QStringLiteral("mod.probe"),
+                                    QStringLiteral("探针模块"),
+                                    QStringLiteral("1.0"),
+                                    ng::host::ModuleKind::Builtin,
+                                    {QStringLiteral("probe.capability")},
+                                    {}};
+    }
+    static ng::host::IModule *create() { return new ProbeModule(); }
+
+    ng::host::ModuleInfo info() const override { return moduleInfo(); }
+
+    void initialize(ng::host::ModuleContext &ctx) override
+    {
+        ctx.registerIntentHandler(new ProbeHandler);
+    }
+};
+
+// 假知识包：带一个 UI 贡献。
+// 用工厂函数而非继承（ToolPack 是 final 类）：静态自注册机制只要求
+// 提供 packId() 与 build() 两个静态接口。
+struct ProbePack
+{
+    static QString packId() { return QStringLiteral("pack.probe"); }
+    static std::unique_ptr<IToolPack> build()
+    {
+        auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("探针工具箱"),
+                                               FormatDomain::General);
+        pack->add<ng::ext::GenericUiContribution>(
+            QStringLiteral("probe.ui"), QStringLiteral("探针界面入口"), FormatDomain::General,
+            QList<UiAction>{{QStringLiteral("probe.ui.act"), QStringLiteral("探针动作"),
+                             QStringLiteral("menu.plot"), QString(), QString()}});
+        return pack;
+    }
+};
+
+} // namespace
+
+// 静态自注册：与生产代码里的模块/包完全同一套机制。
+NG_REGISTER_MODULE(::ProbeModule)
+NG_REGISTER_PACK(::ProbePack)
 
 static QString writeCsv(const QTemporaryDir &dir)
 {
@@ -152,17 +231,36 @@ int main(int argc, char **argv)
     const QString csv = writeCsv(dir);
 
     // 1) 器官与工具箱分离装载：
-    //    - 器官模块只剩 3 个（data/plot/script），格式不再是器官；
-    //    - 格式驱动自注册进工具箱注册表；
+    //    - 器官模块含内置 3 个（data/plot/script）+ 本文件自注册的探针模块；
+    //    - 格式不再是器官，而是工具箱里的驱动；
     //    - 外部插件扫描入口存在（本轮无插件，报告为空但接口可用）。
+    //
+    // 注意"探针"这两项：它们只在本测试文件里定义并自注册，宿主/App/注册表
+    // 以及所有既有模块与扩展的代码一行未改。它们能被装载，正是
+    // 「新增 module / extension 不修改其他代码」的直接证明。
     App application;
     const auto errors = application.startup(true);
     CHECK(errors.isEmpty());
-    CHECK(application.modules().activeIds().size() == 3);
+    CHECK(application.modules().activeIds().size() == 4); // 3 内置 + 1 探针
+    CHECK(application.modules().isActive(QStringLiteral("mod.probe")));
+
+    // 探针模块提供的能力可用（它自带的意图处理器已被注册）。
+    {
+        Intent ping;
+        ping.op = QStringLiteral("probe.ping");
+        const auto pong = application.modules().execute(ping);
+        CHECK(pong);
+        CHECK(pong.value().payload.toString() == QStringLiteral("pong"));
+    }
+    fprintf(stdout, "[ok] 零改动新增：测试内自注册的探针模块被自动装载并可执行\n");
+
     ExtensionRegistry &toolbox = application.modules().extensions();
     CHECK(toolbox.count() == 2);
     CHECK(toolbox.contains(QStringLiteral("csv")));
     CHECK(toolbox.contains(QStringLiteral("ulog")));
+    // 探针包也自动进了工具箱（同样零改动）。
+    CHECK(toolbox.packIds().contains(QStringLiteral("pack.probe")));
+    fprintf(stdout, "[ok] 零改动新增：测试内自注册的探针知识包被自动装入工具箱\n");
     // 两种发现路径：按 format 精确查找 + 按文件后缀推断。
     CHECK(toolbox.driverForFormat(QStringLiteral("csv")) != nullptr);
     CHECK(toolbox.driverForFormat(QStringLiteral("ulog")) != nullptr);
@@ -187,8 +285,9 @@ int main(int argc, char **argv)
 
     // 1b) 工具箱是开放贡献点系统：知识包装载/卸载 + 六类贡献 + (kind,domain) 二维索引。
     {
-        // 五个业务方向各一个知识包；包是装载/卸载的原子单位。
-        CHECK(toolbox.packCount() == 5);
+        // 五个业务方向各一个知识包 + 本文件自注册的探针包；
+        // 包是装载/卸载的原子单位。
+        CHECK(toolbox.packCount() == 6);
         CHECK(toolbox.pack(QStringLiteral("pack.common")) != nullptr);
         CHECK(toolbox.pack(QStringLiteral("pack.autopilot")) != nullptr);
         CHECK(toolbox.pack(QStringLiteral("pack.automotive")) != nullptr);
@@ -211,8 +310,9 @@ int main(int argc, char **argv)
             CHECK(c->provider() == QStringLiteral("pack.autopilot"));
 
         // 六类贡献都能按 kind 查到；开放 kind 用字符串而非枚举。
+        // （计数含本测试文件自注册的探针包贡献：+1 个 UI）
         CHECK(toolbox.contributions(ContributionKind::Format).size() == 2);
-        CHECK(toolbox.contributions(ContributionKind::Ui).size() == 3);
+        CHECK(toolbox.contributions(ContributionKind::Ui).size() == 4);
         CHECK(toolbox.contributions(ContributionKind::Script).size() == 2);
         CHECK(toolbox.contributions(ContributionKind::Data).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Example).size() == 1);
@@ -237,11 +337,12 @@ int main(int argc, char **argv)
         CHECK(doc != nullptr && doc->entries().size() == 1);
 
         // UI 插槽：器官声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
+        // （动作数含本测试文件自注册的探针包贡献：menu.plot +1）
         const auto &slotReg = application.modules().uiSlots();
         CHECK(slotReg.allSlots().size() == 5);
-        CHECK(slotReg.actionsIn(QStringLiteral("menu.plot")).size() == 2); // 姿态曲线 + TF 树
+        CHECK(slotReg.actionsIn(QStringLiteral("menu.plot")).size() == 3); // 姿态曲线 + TF 树 + 探针
         CHECK(slotReg.actionsIn(QStringLiteral("dock.left")).size() == 1); // 调参面板
-        CHECK(slotReg.boundActionCount() == 5);
+        CHECK(slotReg.boundActionCount() == 6);
         CHECK(slotReg.unboundActions().isEmpty()); // 所有贡献都有归属插槽
 
         // 开放 kind：自定义 kind 无需改注册表/宿主即可登记（证明可扩展，非封闭枚举）。
@@ -575,3 +676,5 @@ int main(int argc, char **argv)
     fprintf(stdout, "\n全部架构契约测试通过\n");
     return 0;
 }
+
+#include "test_architecture.moc"
