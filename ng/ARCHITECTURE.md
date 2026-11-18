@@ -103,9 +103,13 @@ C++ 不存数据、不解析、不计算、不遍历。由此定死**三条不�
 | 绘图路径 = O(px)，与行数无关 | 一屏最多几千点；100 万行和 100 行对 UI 同一成本 | `lodMinMax(px)` 返回 px 个三元组；`readWindow(cap)` 有界读，kernel 内等步长抽稀 |
 | 所有 O(n) 操作在 Rust | 加载/读取/抽稀/滤波/统计/缓存全委托 kernel | `append_frame` 流式灌入、`read_window`、`ps-ops`、`ps-cache`；C++ 一次调用零遍历 |
 
-**流式加载**：CSV 扩展逐行解析进固定 4096 行缓冲，满一批 `appendFrame` 灌入 Rust，缓冲复用；所有批次灌完后 `refreshSchema()` **只刷新一次**（kernel 的 `ps_dataset_channel()` 会重建整条 f64 时间轴，O(行数)，不能每批调）。C++ 峰值 = 一批缓冲（约 128KB），与文件大小无关。
+**流式加载**：所有格式扩展共用同一范式——解析进固定 4096 行缓冲，满一批 `appendFrame` 灌入 Rust，缓冲复用；所有批次灌完后 `refreshSchema()` **只刷新一次**（kernel 的 `ps_dataset_channel()` 会重建整条 f64 时间轴，O(行数)，不能每批调）。C++ 峰值 = 一批缓冲，与文件大小无关。
+- **CSV**：逐行解析，第一列作共享时间轴（秒→微秒）。
+- **ULog**（样板）：协议解析算法**逐字复用**旧 extension `UlogParser.cpp`——F 段格式表、A 段订阅展平、D 段字段解码、P/L/C/O 元数据段、U64 微秒时间戳，一个字没重写；**唯一改造是产出端**：旧版把 D 段所有消息攒进 `std::vector<double>` 再一次性建表，ng 版按 topic 分表、每列用类型化缓冲（`primToValueType` 保留 F32/U16/… 原始类型）、满 4096 行即灌入 Rust。时间戳走原生 U64 字节，不经 double，避免 1e15 量级精度损失。
 
-**实测**（100 万行 × 3 列 / 24MB CSV，走真实 `data.load` 路径）：加载 1.79 秒，峰值 RSS **58MB** ≈ Rust 数据本体（约 40MB）+ 运行时（约 15MB）+ C++ 单批缓冲。旧的全量 vector 方案会额外产生约 56MB C++ 副本，峰值 110MB+。契约测试含 20 万行流式加载 + 有界读取 + LOD 断言，全部通过。
+**实测**（100 万行 × 3 列 / 24MB CSV，走真实 `data.load` 路径）：加载 1.79 秒，峰值 RSS **58MB** ≈ Rust 数据本体（约 40MB）+ 运行时（约 15MB）+ C++ 单批缓冲。旧的全量 vector 方案会额外产生约 56MB C++ 副本，峰值 110MB+。契约测试含 20 万行流式加载 + 9000 行 ULog（跨 3 批、typed 列/微秒时间轴/多表/缓存）+ 有界读取 + LOD 断言，全部通过。
+
+**其他格式（已具备的资产）**：旧 `src/extensions/builtin/` 下已有 CSV/JSON/binary、ULog/apbin/tlog/mavlink、ASC/BLF/MDF4、NMEA/UBX/OEM7、MCAP/ROSbag2 等近 6000 行解析实现，统一产出 `PsChannelData` 再交 kernel。它们与 ng 共用**同一个 Rust kernel**（`ng/CMakeLists.txt` 的 `_ng_kernel_dir` 指向 `../src/application/kernel`，C ABI 完全相同）。ULog 样板证明了接入公式：**协议算法照搬、产出端换成流式 `appendFrame`**；其余格式按此公式逐个平移即可，无需重写格式知识。
 
 ## 4. 模块与扩展
 
@@ -157,6 +161,8 @@ struct Intent {
 
 执行器是唯一知道"如何执行意图"的地方。它把意图分派给提供对应能力的模块。
 
+**按完整意图路由，而非只按 op**：`IIntentHandler::canHandle(const Intent&)` 接收整个意图。多个格式知识包会声明同一个 `data.load`——CSV 只认 `format=csv`，ULog 只认 `format=ulog`，各自精确认领、互不抢占。这保证了"卸载 CSV 不影响 ULog、反之亦然"的隔离性；若只按 `op` 匹配，先注册者会吞掉所有 `data.load`，格式扩展之间就会互相干扰。
+
 ## 6. 自动化与 headless（已实现）
 
 - 脚本引擎是 core 门面 + 一个 script 模块（Lua 5.4）。脚本只拿到门面 `ps`，永远碰不到 QWidget 和模块内部对象。
@@ -188,7 +194,7 @@ ng/
 ├── core/                 数据模型/仓库/事件/意图/脚本门面（无 QWidget）
 ├── host/                 IModule/装载循环/意图执行器/App
 ├── modules/              器官：data / plot / script
-├── extensions/           知识包：csv
+├── extensions/           知识包：csv / ulog（UlogStreamParser 流式样板）
 ├── app/                  CLI 入口
 └── tests/                架构契约测试
 ```
@@ -200,10 +206,14 @@ ng/
 1. ✅ core：Dataset 门面 + schema 投影 + DataRepository + 意图定义。
 2. ✅ host：装载循环 + 依赖排序 + 执行器。
 3. ✅ 一条竖切：CSV 扩展（缓存优先）+ 数据模块 + plot 意图（含 Rust LOD），端到端跑通。
-4. ⬜ 再铺开其余格式与功能（ULog / apbin / GUI 画布；算子层已由 Rust 提供）。
+4. ✅ ULog 格式样板：协议算法复用旧 extension，产出端改流式 `appendFrame`；typed 多表 /
+   微秒时间轴 / 缓存 / 卸载隔离全验证。同时把意图路由从「只按 op」修正为「按完整 Intent」，
+   使多格式扩展可共存互不抢占。
 5. ✅ 脚本引擎与 Job 录制：Lua 门面 `ps` + 稳定 id + `--script/--record` 录制回放闭环。
+6. ⬜ 按 ULog 公式平移其余格式（apbin / tlog / ASC / BLF / MDF4 / MCAP / ROSbag2 / GNSS…）与 GUI 画布。
 
 验证：编译全绿；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖 typed 多表模型、
 通道投影、**Rust LOD 抽稀 / 统计 / 抗混叠抽取 / ps-cache 指纹命中与过期**、
-意图执行、卸载隔离、脚本 headless 执行、录制回放闭环；CLI 五入口
-（kernel/list/info/run/script）实测可用。
+意图执行、按格式精确路由、卸载隔离、脚本 headless 执行、录制回放闭环，以及
+**9000 行 ULog 流式加载（跨 3 批 / F32+U16 typed 列 / U64 微秒时间轴精确 / events+facts 元数据表）**；
+CLI 五入口（kernel/list/info/run/script）实测可用。

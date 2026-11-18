@@ -34,9 +34,14 @@ public:
     explicit Handler(DataRepository &repo, QObject *parent)
         : QObject(parent), m_repo(repo) {}
 
-    bool canHandle(const QString &op) const override
+    bool canHandle(const Intent &intent) const override
     {
-        return op == QStringLiteral("data.load");
+        if (intent.op != QStringLiteral("data.load"))
+            return false;
+        // 只有 CSV（含未指定 format 的兼容默认）才由本扩展认领；
+        // 其余格式交给对应知识包，避免多个 data.load handler 互相抢占。
+        const QString fmt = intent.params.value(QStringLiteral("format"), QStringLiteral("csv")).toString();
+        return fmt == QStringLiteral("csv");
     }
 
     Result<IntentResult> execute(const Intent &intent) override

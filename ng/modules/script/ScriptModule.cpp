@@ -20,9 +20,9 @@ public:
     explicit Handler(IIntentExecutor &executor, JobRecorder *recorder, QObject *parent)
         : QObject(parent), m_executor(executor), m_recorder(recorder) {}
 
-    bool canHandle(const QString &op) const override
+    bool canHandle(const Intent &intent) const override
     {
-        return op == QStringLiteral("script.run");
+        return intent.op == QStringLiteral("script.run");
     }
 
     Result<IntentResult> execute(const Intent &intent) override

@@ -13,6 +13,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 using namespace ng::app;
 using namespace ng::core;
@@ -28,6 +29,84 @@ static QString writeCsv(const QTemporaryDir &dir)
         << "1,1.5,2.5\n"
         << "2,2.0,3.0\n";
     f.close();
+    return path;
+}
+
+// ---- 合成 ULog v1 测试样本 ------------------------------------------------
+// 复用旧 extension 的协议知识手工构造：一个 F 格式定义 + A 订阅 + N 条 D 数据，
+// 外加 L 事件段。timestamp 为 U64 微秒，字段 float x / uint16 y（验证 typed 列）。
+static void put16(QByteArray &b, quint16 v)
+{
+    b.append(static_cast<char>(v & 0xff));
+    b.append(static_cast<char>((v >> 8) & 0xff));
+}
+static void put32(QByteArray &b, quint32 v)
+{
+    for (int i = 0; i < 4; ++i) b.append(static_cast<char>((v >> (8 * i)) & 0xff));
+}
+static void put64(QByteArray &b, quint64 v)
+{
+    for (int i = 0; i < 8; ++i) b.append(static_cast<char>((v >> (8 * i)) & 0xff));
+}
+static void putFloat(QByteArray &b, float v)
+{
+    quint32 bits = 0;
+    std::memcpy(&bits, &v, 4);
+    put32(b, bits);
+}
+
+static void addUlogMessage(QByteArray &out, char type, const QByteArray &body)
+{
+    put16(out, static_cast<quint16>(body.size()));
+    out.append(type);
+    out.append(body);
+}
+
+// 生成 rows 行、每 topic 两列（F32 x / U16 y）的 ULog；覆盖 kChunkRows=4096 的分批。
+static QString writeUlog(const QTemporaryDir &dir, int rows, qint64 *firstUs, qint64 *lastUs)
+{
+    const QByteArray f("sensor:uint64_t timestamp;float x;uint16_t y;");
+    const QString path = dir.filePath(QStringLiteral("demo.ulg"));
+    QByteArray out;
+    // 头：magic(7) + version(1) + start_timestamp(8)
+    out.append("ULog", 4);
+    out.append(static_cast<char>(0x01));
+    out.append(static_cast<char>(0x12));
+    out.append(static_cast<char>(0x35));
+    out.append(static_cast<char>(0x01)); // version v1
+    put64(out, 0);                        // start timestamp
+
+    addUlogMessage(out, 'F', f);
+    QByteArray a;
+    a.append(static_cast<char>(0));  // multiId
+    put16(a, 1);                     // msgId
+    a.append("sensor", 6);
+    a.append(static_cast<char>(0));  // cstring terminator
+    addUlogMessage(out, 'A', a);
+
+    *firstUs = 1000000; // 起始 1.0s
+    for (int i = 0; i < rows; ++i)
+    {
+        const quint64 ts = static_cast<quint64>(*firstUs) + static_cast<quint64>(i) * 1000ULL; // 每行 1ms
+        QByteArray d;
+        put16(d, 1);          // msgId
+        put64(d, ts);         // timestamp U64 微秒
+        putFloat(d, static_cast<float>(i) * 0.5f); // x = i*0.5
+        put16(d, static_cast<quint16>(i % 1000));   // y
+        addUlogMessage(out, 'D', d);
+        *lastUs = static_cast<qint64>(ts);
+    }
+    // L 事件段：level=6, timestamp=1.5s, "armed"
+    QByteArray l;
+    l.append(static_cast<char>(6));
+    put64(l, 1500000);
+    l.append("armed", 5);
+    addUlogMessage(out, 'L', l);
+
+    QFile file(path);
+    file.open(QIODevice::WriteOnly);
+    file.write(out);
+    file.close();
     return path;
 }
 
@@ -56,12 +135,12 @@ int main(int argc, char **argv)
     QTemporaryDir dir;
     const QString csv = writeCsv(dir);
 
-    // 1) 装载成功后四个模块都激活
+    // 1) 装载成功后五个模块都激活（3 个器官 + CSV/ULog 两个格式知识包）
     App application;
     const auto errors = application.startup(true);
     assert(errors.isEmpty());
-    assert(application.modules().activeIds().size() == 4);
-    fprintf(stdout, "[ok] 四个模块按依赖顺序激活（含脚本模块）\n");
+    assert(application.modules().activeIds().size() == 5);
+    fprintf(stdout, "[ok] 五个模块按依赖顺序激活（含 CSV/ULog 扩展）\n");
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）
     Result<IntentResult> loaded = application.modules().execute(loadIntent(csv));
@@ -112,7 +191,8 @@ int main(int argc, char **argv)
     fprintf(stdout, "[ok] 统计/滤波/抽取算子委托 Rust ps-ops（mean=%.2f）\n", st->mean);
     // 抽取（ps_decimate_series）：factor=2 点数约减半。
     QVector<double> dt, dv;
-    assert(ds->decimate(2, ch->time, ch->value, dt, dv) == 0);
+    const int decRc = ds->decimate(2, ch->time, ch->value, dt, dv); // 副作用不能放进 assert（NDEBUG 会消除）
+    assert(decRc == 0);
     assert(dt.size() < ch->size() && dt.size() >= 1);
     fprintf(stdout, "[ok] 抗混叠抽取 factor=2：%d -> %d 点\n", ch->size(), dt.size());
 
@@ -120,7 +200,8 @@ int main(int argc, char **argv)
     {
         const QString cachePath = csv + QStringLiteral(".psc");
         const QFileInfo fi(csv);
-        assert(ds->saveCache(cachePath, fi.size(), fi.lastModified().toMSecsSinceEpoch()));
+        const bool cacheSaved = ds->saveCache(cachePath, fi.size(), fi.lastModified().toMSecsSinceEpoch());
+        assert(cacheSaved);
         QString cacheErr;
         auto restored = Dataset::loadCache(cachePath, fi.size(),
                                            fi.lastModified().toMSecsSinceEpoch(), &cacheErr);
@@ -135,6 +216,78 @@ int main(int argc, char **argv)
                                         fi.lastModified().toMSecsSinceEpoch());
         assert(!stale.has_value());
         fprintf(stdout, "[ok] ps-cache 指纹命中还原 + 指纹过期失效\n");
+    }
+
+    // 2e) ULog 扩展：复用旧 extension 的协议算法，流式灌入 Rust typed 表。
+    //     合成 9000 行（跨 kChunkRows=4096 三批），验证多表 / typed 列 / 微秒时间轴 / 缓存。
+    {
+        qint64 firstUs = 0, lastUs = 0;
+        const int rows = 9000;
+        const QString ulg = writeUlog(dir, rows, &firstUs, &lastUs);
+        Intent ui;
+        ui.op = QStringLiteral("data.load");
+        ui.params[QStringLiteral("path")] = ulg;
+        ui.params[QStringLiteral("format")] = QStringLiteral("ulog");
+        Result<IntentResult> uloaded = application.modules().execute(ui);
+        if (!uloaded)
+            fprintf(stderr, "[diag] ULog 加载失败: %s / %s\n",
+                    uloaded.error().code.toUtf8().constData(),
+                    uloaded.error().message.toUtf8().constData());
+        assert(uloaded);
+        const DatasetId uid = uloaded.value().payload.toInt();
+        const Dataset *uds = application.data().get(uid);
+        assert(uds != nullptr);
+        assert(uds->format() == QStringLiteral("ulog"));
+
+        // 多张 typed 表：sensor 数值表 + events + facts 元数据表
+        if (uds->tableCount() < 3)
+        {
+            fprintf(stderr, "[diag] ULog 表数=%d:", uds->tableCount());
+            for (int i = 0; i < uds->tableCount(); ++i)
+                fprintf(stderr, " %s", uds->table(i)->name.toUtf8().constData());
+            fprintf(stderr, "\n");
+        }
+        assert(uds->tableCount() >= 3);
+        const Table *sensor = uds->table(QStringLiteral("sensor"));
+        assert(sensor != nullptr);
+        assert(sensor->rowCount() == rows);
+        // typed 列：x=F32、y=U16（协议算法保留原始字段类型）
+        const Column *cx = sensor->column(QStringLiteral("x"));
+        const Column *cy = sensor->column(QStringLiteral("y"));
+        assert(cx != nullptr && cx->type == ValueType::F32);
+        assert(cy != nullptr && cy->type == ValueType::U16);
+        // timestamp 走原生 U64 微秒，不经 double 中转——首尾时间精确
+        assert(sensor->firstTimeUs == firstUs);
+        assert(sensor->lastTimeUs == lastUs);
+        fprintf(stdout, "[ok] ULog 流式加载 %d 行（跨 3 批）：多表 + typed 列 F32/U16 + 微秒时间轴精确\n", rows);
+
+        // 全量取值核对（cap 提到行数）：x=i*0.5、y=i%1000，首行/末行精确
+        const auto xview = uds->channel(QStringLiteral("sensor"), QStringLiteral("x"), rows);
+        assert(xview.has_value() && xview->size() == rows);
+        assert(std::fabs(xview->value.first() - 0.0) < 1e-5);
+        assert(std::fabs(xview->value.last() - (rows - 1) * 0.5) < 1e-3);
+        const auto yview = uds->channel(QStringLiteral("sensor"), QStringLiteral("y"), rows);
+        assert(yview.has_value() && yview->size() == rows);
+        assert(yview->value.last() == (rows - 1) % 1000);
+        fprintf(stdout, "[ok] ULog typed 列值精确（F32 x / U16 y 跨批尾批 flush 正确）\n");
+
+        // 元数据小表：events（L 段）与 facts（头信息）
+        assert(uds->table(QStringLiteral("events")) != nullptr);
+        assert(uds->table(QStringLiteral("events"))->rowCount() == 1);
+        assert(uds->table(QStringLiteral("facts")) != nullptr);
+        fprintf(stdout, "[ok] ULog 元数据段 L/I 落表（events/facts）\n");
+
+        // 缓存命中：format 改为 ulog 还原，schema 一致
+        {
+            const QFileInfo fi(ulg);
+            QString ce;
+            auto restored = Dataset::loadCache(ulg + QStringLiteral(".psc"),
+                                               fi.size(), fi.lastModified().toMSecsSinceEpoch(), &ce);
+            assert(restored.has_value());
+            assert(restored->table(QStringLiteral("sensor")) != nullptr);
+            assert(restored->table(QStringLiteral("sensor"))->rowCount() == rows);
+            fprintf(stdout, "[ok] ULog 数据集 ps-cache 指纹命中还原\n");
+        }
     }
 
     // 3) 意图执行：plot 模块按 table.column 编译出 PlotSpec
@@ -210,6 +363,22 @@ int main(int argc, char **argv)
     assert(noHandler.error().code == QStringLiteral("eunsupported"));
     fprintf(stdout, "[ok] 卸载 CSV 扩展后能力被精确撤销\n");
 
+    // 5b) 格式知识包卸载隔离：CSV 卸载后 ULog 仍能加载；卸载 ULog 后 ulog 能力精确撤销。
+    {
+        qint64 firstUs = 0, lastUs = 0;
+        const QString ulg = writeUlog(dir, 6000, &firstUs, &lastUs);
+        Intent ui;
+        ui.op = QStringLiteral("data.load");
+        ui.params[QStringLiteral("path")] = ulg;
+        ui.params[QStringLiteral("format")] = QStringLiteral("ulog");
+        Result<IntentResult> stillLoads = application.modules().execute(ui); // CSV 已停，ULog 仍在
+        assert(stillLoads);
+        assert(application.modules().deactivate(QStringLiteral("ext.ulog")));
+        Result<IntentResult> noUlog = application.modules().execute(ui);
+        assert(!noUlog && noUlog.error().code == QStringLiteral("eunsupported"));
+        fprintf(stdout, "[ok] 格式扩展互不干扰：停 CSV 不影响 ULog；停 ULog 后 ulog 能力精确撤销\n");
+    }
+
     // 6) Job 序列化往返
     Job job;
     job.append(loadIntent(csv));
@@ -247,15 +416,20 @@ int main(int argc, char **argv)
                 vbuf[i] = static_cast<double>(r % 1000);
             }
             QString err;
-            assert(big.appendFrame(QStringLiteral("trace"), tbuf.constData(), n, cols, &err));
+            const bool appended = big.appendFrame(QStringLiteral("trace"), tbuf.constData(), n, cols, &err);
+            assert(appended && err.isEmpty());
+            (void)appended; // Release(NDEBUG) 下 assert 为空，避免 unused 警告
             written += n;
         }
         big.refreshSchema();
 
         const Table *bt = big.table(QStringLiteral("trace"));
         assert(bt != nullptr && bt->rows == kRows);
-        assert(bt->firstTimeUs == 0);
-        assert(bt->lastTimeUs == (kRows - 1) * 1000);
+        // 拷成局部值：Table* 指向 Dataset 内部 QVector，后续 channel() 等调用后不能假设仍有效。
+        const TimeUs traceFirstUs = bt->firstTimeUs;
+        const TimeUs traceLastUs = bt->lastTimeUs;
+        assert(traceFirstUs == 0);
+        assert(traceLastUs == (kRows - 1) * 1000);
         fprintf(stdout, "[ok] 流式灌入 %lld 行：schema 只存首尾时间，无 C++ 全量副本\n", kRows);
 
         // 有界读取：无论 20 万行，channel 默认只取 kDefaultWindowPoints（4096）点。
@@ -270,7 +444,7 @@ int main(int argc, char **argv)
 
         // LOD：20 万行压到 800 个像素桶，三元组数恒定在 px 量级。
         const auto blod = big.lodMinMax(QStringLiteral("trace"), QStringLiteral("sig"),
-                                        bt->firstTimeUs, bt->lastTimeUs, /*px=*/800);
+                                        traceFirstUs, traceLastUs, /*px=*/800);
         assert(!blod.isEmpty() && blod.size() <= 800);
         fprintf(stdout, "[ok] 20 万行 LOD 抽稀到 %d 个三元组（px 有界）\n", blod.size());
     }

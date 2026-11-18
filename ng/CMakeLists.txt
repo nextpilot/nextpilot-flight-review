@@ -49,6 +49,7 @@ add_subdirectory(modules/data)
 add_subdirectory(modules/plot)
 add_subdirectory(modules/script)
 add_subdirectory(extensions/csv)
+add_subdirectory(extensions/ulog)
 add_subdirectory(app)
 
 enable_testing()

@@ -128,7 +128,7 @@ ng::core::Result<ng::core::IntentResult> ModuleHost::execute(const ng::core::Int
     for (auto it = m_handlers.constBegin(); it != m_handlers.constEnd(); ++it)
     {
         ng::core::IIntentHandler *handler = it.value();
-        if (handler && handler->canHandle(intent.op))
+        if (handler && handler->canHandle(intent))
             return handler->execute(intent);
     }
     return ng::core::fail(QStringLiteral("eunsupported"),

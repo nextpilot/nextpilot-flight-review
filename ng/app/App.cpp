@@ -4,6 +4,7 @@
 #include "PlotModule.h"
 #include "ScriptModule.h"
 #include "CsvExtension.h"
+#include "UlogExtension.h"
 
 using namespace ng::core;
 using namespace ng::host;
@@ -19,6 +20,7 @@ App::App(QObject *parent)
     m_host.registerModule(PlotModule().info(), [] { return static_cast<IModule *>(new PlotModule()); });
     m_host.registerModule(ScriptModule().info(), [] { return static_cast<IModule *>(new ScriptModule()); });
     m_host.registerModule(CsvExtension().info(), [] { return static_cast<IModule *>(new CsvExtension()); });
+    m_host.registerModule(UlogExtension().info(), [] { return static_cast<IModule *>(new UlogExtension()); });
 }
 
 QHash<QString, QString> App::startup(bool headless, const QStringList &disabled)

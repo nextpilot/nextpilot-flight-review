@@ -20,17 +20,21 @@ static void printUsage()
             "用法:\n"
             "  plotscope-ng --list-modules\n"
             "  plotscope-ng --kernel            # Rust kernel ABI/版本/自检\n"
-            "  plotscope-ng --info <file.csv>\n"
+            "  plotscope-ng --info <file.csv|file.ulg>   # 按扩展名选格式\n"
             "  plotscope-ng --run <job.json>\n"
             "  plotscope-ng --script <file.lua> [--record <out.json>]\n");
 }
 
 static Intent makeLoadIntent(const QString &path)
 {
+    // 按扩展名选格式知识包；新格式只需在这里加一行，扩展自身不动宿主。
+    const QString format = path.endsWith(QStringLiteral(".ulg"), Qt::CaseInsensitive)
+        ? QStringLiteral("ulog")
+        : QStringLiteral("csv");
     Intent intent;
     intent.op = QStringLiteral("data.load");
     intent.params[QStringLiteral("path")] = path;
-    intent.params[QStringLiteral("format")] = QStringLiteral("csv");
+    intent.params[QStringLiteral("format")] = format;
     return intent;
 }
 

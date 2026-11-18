@@ -18,9 +18,9 @@ public:
     explicit Handler(DataRepository &repo, QObject *parent)
         : QObject(parent), m_repo(repo) {}
 
-    bool canHandle(const QString &op) const override
+    bool canHandle(const Intent &intent) const override
     {
-        return op == QStringLiteral("plot.render");
+        return intent.op == QStringLiteral("plot.render");
     }
 
     Result<IntentResult> execute(const Intent &intent) override
