@@ -22,7 +22,7 @@ target_include_directories(ng_test_gui PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # headless 测试（ng_test_architecture）故意不链，借此守住 CLI 的 headless 纯净。
 target_link_libraries(ng_test_gui PRIVATE
     ng_gui
-    ng_module_data ng_module_plot ng_module_script ng_module_settings
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板呈现层（OBJECT 库）：自注册 TU 必须显式链接进来。
     ng_ext_automotive_gui

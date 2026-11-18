@@ -13,9 +13,13 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 #   （部件工厂表 PanelFactoryRegistry 已下沉到 core —— 它是纯数据，
 #    知识包的呈现层要能注册领域面板，就不能依赖整个 gui 层）
 #
-#   views/<功能>/                功能视图层：一个功能一个目录
-#     dataset/                    数据集管理（数据集->表->列 树）
-#     plot/                       绘图（画布 + 通道视图）
+#   views/                       通用绘图能力库（将来抽成 Qwt-like 独立库）
+#     plot/                       绘图画布 + 通道视图，不属于任何器官/领域
+#
+# 功能**专属**视图已聚合进对应 capabilities 目录（如 data 的树视图在
+# modules/data/DataManagerPanel.*），与器官同目录、靠 CMake 拆 headless/GUI
+# 两个 target。判据：只服务一个功能的专属 UI → 聚合进该功能目录；
+# 通用能力库（如绘图）→ 留 gui/views/；形态随领域变 → extensions/<域>/gui/。
 #
 # 关键约束：
 #   - **外壳不认识视图**。MainWindow 不 include 任何 views/ 下的头文件，
@@ -34,9 +38,10 @@ add_library(ng_gui OBJECT
     shell/ShellBinder.h
     shell/GuiContext.cpp
     shell/GuiContext.h
-    # --- 功能视图层 ---
-    views/dataset/DataManagerPanel.cpp
-    views/dataset/DataManagerPanel.h
+    # --- 通用绘图能力库 ---
+    # 数据集视图已聚合进 modules/data/（功能专属，见该目录 CMakeLists）；
+    # 这里只剩**通用绘图库**（将来抽成 Qwt-like 独立库，不属于任何器官/领域）：
+    # PlotModule 用它，bench/shot 工具也直接用它。
     views/plot/PlotCanvas.cpp
     views/plot/PlotCanvas.h
     views/plot/ChannelView.cpp
@@ -47,7 +52,6 @@ add_library(ng_gui OBJECT
 target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/shell
-    ${CMAKE_CURRENT_SOURCE_DIR}/views/dataset
     ${CMAKE_CURRENT_SOURCE_DIR}/views/plot)
 target_link_libraries(ng_gui PUBLIC ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
@@ -63,7 +67,7 @@ target_include_directories(plotscope-ng-gui PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。
 target_link_libraries(plotscope-ng-gui PRIVATE
     ng_gui
-    ng_module_data ng_module_plot ng_module_script
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
     ng_ext_automotive_gui
@@ -79,7 +83,7 @@ add_executable(plotscope-ng-gui-bench
 target_include_directories(plotscope-ng-gui-bench PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(plotscope-ng-gui-bench PRIVATE
     ng_gui
-    ng_module_data ng_module_plot ng_module_script
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -95,7 +99,7 @@ add_executable(plotscope-ng-gui-shot
 target_include_directories(plotscope-ng-gui-shot PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_gui
-    ng_module_data ng_module_plot ng_module_script
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)

@@ -15,6 +15,12 @@ class QTreeWidgetItem;
 
 // 数据集管理面板：左侧停靠区的树视图。
 //
+// 物理归属：与 DataModule 同目录——一个"数据"功能的器官（意图/事件）
+// 与它的专属视图放在一起，方便作为一个完整单元开发。二者靠 CMake 拆成
+// ng_module_data（headless，CLI 装载）与 ng_module_data_gui（GUI 装载）。
+// 视图通过 NG_REGISTER_PANEL("dataset-tree") 自注册到 core 工厂表，
+// 器官只发字符串 id、不 include 本头文件——物理聚合但逻辑仍解耦。
+//
 // 职责单一：展示"仓库里有哪些数据集、每张表有哪些列"，并把用户的
 // 选列动作记入共享状态（AppContext 的活动通道）。
 // 不认识格式、不做分析、不自己取数绘图。

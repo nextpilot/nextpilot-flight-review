@@ -40,6 +40,7 @@
 | **骨架槽单一来源** | 骨架槽只在 `UiSlotRegistry::declareSkeletonSlots()` 一处声明，GUI 与 headless 拿同一份；契约测试钉死"槽齐备 + kind/父槽/label 完整 + 无未归属贡献" | 跑契约测试 |
 | **领域自带面板** | 形态随领域变时形态归知识包：描述 `IPanelContribution`（纯数据，headless 可见）+ 实现在 `extensions/<域>/gui/`（OBJECT 库，只 GUI 链接），共用 core 的一张工厂表；器官走 `availableDomainPanels(domain)` → `requestDomainPanel(area,id)`。呈现层依赖 core，**不依赖 ng_gui** | 跑 `test_gui` 3c 段 + `ldd` 确认 CLI 无 Qt6Widgets |
 | **视图链可用** | `test_gui` 断言 `dataset-tree` / `plot-canvas` 已登记、`dock.left` 面板存在、并能读出 1 dataset / 1 table | 跑 GUI 测试 |
+| **视图物理归属** | 三类判据：①功能专属 view 聚合进该功能目录（`modules/data/DataManagerPanel.*`），CMake 拆 `<功能>`/`<功能>_gui` 两 target（前者 CLI 链、后者只 GUI 链）；②通用能力库留 `gui/views/`——`plot-canvas` 将来抽成 Qwt-like 独立绘图库，**不属于任何器官、不进 modules**；③领域面板**永远属于领域**，留 `extensions/<域>/gui/`，不进 modules（器官是机制不懂业务）、不进 gui/views（会成领域杂物箱）。物理聚合但逻辑仍解耦：器官只发字符串 id，不 include 视图头 | `ldd` 确认 CLI 与 headless 测试无 Qt6Widgets、无 `DataManagerPanel.cpp.o`；GUI 测试含之 |
 
 ---
 

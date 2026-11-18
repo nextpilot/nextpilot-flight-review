@@ -467,10 +467,45 @@ gui/
     GuiContext               host::UiContext 的实现，把器官的 UI 需求路由出去
     PanelFactoryRegistry     部件类型 → QWidget 工厂（视图层自注册进这里）
 
-  views/<功能>/             功能视图层：一个功能一个目录
-    dataset/                 数据集管理（数据集→表→列 树）
-    plot/                    绘图（画布 + 通道视图）
+  views/                    通用绘图能力（将来抽成独立绘图库，类似 Qwt）
+    plot/                    绘图画布 + 通道视图 —— 是**可独立复用的绘图库**，
+                             不属于任何器官/领域；bench/shot 等工具也直接用它
 ```
+
+**plot 的演进方向**：绘图会被抽取成一个类似 Qwt 的独立库（`views/plot/` 是它的
+前身），所以它**不属于任何器官、不聚合进 `modules/`**——它是能力库，器官
+（`PlotModule`）只是通过 `requestPanel("canvas.center", "plot-canvas")` 使用它。
+这也决定了它必须留在 `gui/views/`（或未来的 `libs/plot/`），而非功能目录。
+
+#### 视图的物理归属：功能专属聚合，通用能力库与领域面板各归其位
+
+一个功能（器官 + 它的 UI + action + 意图）**物理上放在一个目录**，方便作为
+完整单元开发/查找/编辑；靠 CMake 拆成两个 target 实现**编译期分离**：
+
+```
+modules/data/                     一个"数据"功能，物理聚合
+  DataModule.{h,cpp}          ┐ → ng_module_data     （headless，CLI 装载）
+  DataManagerPanel.{h,cpp}    ┘ → ng_module_data_gui （GUI 装载，链 Widgets）
+  CMakeLists.txt                  在此把 headless / GUI 两类文件分开
+```
+
+判据（一个 view 归哪）：
+
+| view 的性质 | 归属 | 例子 |
+|---|---|---|
+| 只服务一个功能的专属 UI | **聚合进该功能目录**，`<功能> + <功能>_gui` 两个 target | `dataset-tree` → `modules/data/` |
+| **通用能力库**（可独立复用，将来抽成 Qwt-like 库） | **留 `gui/views/`**（未来 `libs/plot/`），不进任何器官 | `plot-canvas` —— 绘图是能力库，不是器官 UI |
+| 形态随领域变（知识包提供） | **留 `extensions/<域>/gui/`**，永不进 modules | `car.can-browser` |
+
+注意区分"跨功能"与"通用能力库"：`plot-canvas` 留 `gui/views/` 的根本原因是
+**它是要独立成库的绘图能力**，而非单纯因为被 bench/shot 多处使用——后者只是
+"可独立复用"的表现。领域面板则相反：它**永远属于领域知识**，放 `extensions/<域>/gui/`，
+既不进 `modules/`（器官是机制，不懂业务），也不进 `gui/views/`（会污染通用层成领域杂物箱）。
+
+关键：**物理聚合不改逻辑解耦**——器官仍只发字符串 id（`requestPanel`），
+不 include 视图头；视图靠 `NG_REGISTER_PANEL` 自注册到 core 工厂表。
+CMake 保证 CLI 只链 headless 那一半：`ldd` 验证 CLI 与 headless 测试
+都无 `libQt6Widgets`，也不含 `DataManagerPanel.cpp.o`。
 
 两条铁律：
 
@@ -497,7 +532,7 @@ gui/
 每个视图在自己的 TU 里静态登记自己的工厂：
 
 ```cpp
-// views/dataset/DataManagerPanel.cpp 末尾
+// modules/data/DataManagerPanel.cpp 末尾（功能专属视图已聚合进功能目录）
 QWidget *createDatasetTreePanel(AppContext &, IIntentExecutor &, QWidget *);
 NG_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 ```
@@ -581,7 +616,7 @@ app/         入口：CLI（纯 Core）· GUI（+ Widgets）· 脚本
   ↓
 gui/         GUI（仅 GUI 进程）
   shell/       外壳：MainWindow · ShellBinder · GuiContext · 部件工厂
-  views/<功能>/ 功能视图：数据集 · 绘图 · …（各自自注册到部件工厂）
+  views/        通用绘图能力库（将来独立成 Qwt-like 库；自注册到部件工厂）
   ↓
 recording/   录制子系统（app 内置机制）：raw/mcap 编解码实现
   ↓
