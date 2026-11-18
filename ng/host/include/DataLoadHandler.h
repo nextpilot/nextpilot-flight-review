@@ -8,6 +8,7 @@ namespace ng::core
 class DataRepository;
 class DataSourceRepository;
 class IngestPipeline;
+class SettingsStore;
 } // namespace ng::core
 
 // 数据加载意图的统一入口（宿主的系统级能力，不归属任何可卸载模块）。
@@ -32,8 +33,10 @@ public:
     DataLoadHandler(ng::core::ExtensionRegistry &registry,
                     ng::core::DataRepository &repo,
                     ng::core::DataSourceRepository &sources,
-                    ng::core::IngestPipeline *pipeline = nullptr)
-        : m_registry(registry), m_repo(repo), m_sources(sources), m_pipeline(pipeline) {}
+                    ng::core::IngestPipeline *pipeline = nullptr,
+                    ng::core::SettingsStore *settings = nullptr)
+        : m_registry(registry), m_repo(repo), m_sources(sources),
+          m_pipeline(pipeline), m_settings(settings) {}
 
     bool canHandle(const ng::core::Intent &intent) const override;
     ng::core::Result<ng::core::IntentResult> execute(
@@ -45,4 +48,6 @@ private:
     ng::core::DataSourceRepository &m_sources;
     // 摄取管道（宿主持有）。为空时 data.load 只走旧的 driver.load() 路径。
     ng::core::IngestPipeline *m_pipeline = nullptr;
+    // 设置库（可选）：成功后把路径记入"最近文件"。为空则不记录。
+    ng::core::SettingsStore *m_settings = nullptr;
 };

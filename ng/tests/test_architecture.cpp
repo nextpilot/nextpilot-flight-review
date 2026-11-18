@@ -645,6 +645,57 @@ int main(int argc, char **argv)
         fprintf(stdout, "[ok] Job 回放出相同 PlotSpec —— 脚本录制/回放闭环成立\n");
     }
 
+    // 3c) data 派生能力（对应老 datasource 的 DataSourceCommands）：
+    //     recent 自动记录 / export 导出活动通道 / clearCache / reload。
+    //     全部走宿主系统级 handler，headless 下也能执行。
+    {
+        auto mk = [](const QString &op) { Intent i; i.op = op; return i; };
+        // data.load 成功后自动记入最近文件（settings 持久化）。
+        Intent recent = mk(QStringLiteral("data.recent"));
+        Result<IntentResult> rr = application.modules().execute(recent);
+        CHECK(rr);
+        const QStringList recents = rr.value().payload.toStringList();
+        CHECK(recents.contains(csv));
+        fprintf(stdout, "[ok] data.recent：data.load 成功后最近文件自动记录并可读\n");
+
+        // data.export：把 CSV 数据集的活动列导出成新 CSV 文件。
+        const QString outCsv = dir.filePath(QStringLiteral("exported.csv"));
+        Intent exp = mk(QStringLiteral("data.export"));
+        exp.params[QStringLiteral("dataset")] = id;
+        exp.params[QStringLiteral("path")] = outCsv;
+        Result<IntentResult> er = application.modules().execute(exp);
+        if (!er)
+            fprintf(stderr, "[diag] data.export 失败: %s / %s\n",
+                    er.error().code.toUtf8().constData(),
+                    er.error().message.toUtf8().constData());
+        CHECK(er);
+        CHECK(QFile::exists(outCsv));
+        { QFile f(outCsv);
+          CHECK(f.open(QIODevice::ReadOnly | QIODevice::Text));
+          CHECK(QString::fromUtf8(f.readAll()).contains(QStringLiteral("time")));
+          f.close(); }
+        fprintf(stdout, "[ok] data.export：经 Dataset::channel 取数写出 CSV（有界抽稀）\n");
+
+        // data.reload：重载活动源，重新走 data.load（有 sources 支撑）。
+        application.context().setActiveSourceId(application.context().sources().ids().first());
+        Intent rel = mk(QStringLiteral("data.reload"));
+        Result<IntentResult> rer = application.modules().execute(rel);
+        if (!rer)
+            fprintf(stderr, "[diag] data.reload 失败: %s / %s\n",
+                    rer.error().code.toUtf8().constData(),
+                    rer.error().message.toUtf8().constData());
+        CHECK(rer);
+        fprintf(stdout, "[ok] data.reload：活动源经 data.load 同一路径重载\n");
+
+        // data.clearCache：删除 .psc 缓存（无缓存时返回 0 也算成功）。
+        Intent cc = mk(QStringLiteral("data.clearCache"));
+        Result<IntentResult> cr = application.modules().execute(cc);
+        CHECK(cr);
+        CHECK(cr.value().payload.toInt() >= 0);
+        fprintf(stdout, "[ok] data.clearCache：解析缓存清理成功（清掉 %d 个）\n",
+                cr.value().payload.toInt());
+    }
+
     // 4) 卸载隔离：关掉绘图模块后，CSV 仍能加载，数据不消失
     CHECK(application.modules().deactivate(QStringLiteral("mod.plot")));
     CHECK(!application.modules().isActive(QStringLiteral("mod.plot")));

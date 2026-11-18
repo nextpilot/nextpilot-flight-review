@@ -8,6 +8,7 @@
 #include "AppContext.h"
 #include "UiSlotRegistry.h"
 #include "DataLoadHandler.h"
+#include "DataCommandsHandler.h"
 
 #include <QHash>
 #include <QList>
@@ -93,6 +94,7 @@ private:
     ng::core::AppContext &m_appCtx;             // 进程级运行态：唯一持有者
     ng::core::UiSlotRegistry m_uiSlotRegistry;   // UI 插槽：器官声明、工具箱填充
     DataLoadHandler m_dataLoadHandler;           // 系统级 data.load 入口，不归属可卸载模块
+    DataCommandsHandler m_dataCommandsHandler;   // 系统级 data.reload/export/recent/clearCache，与 load 归口
     QHash<QString, Node> m_nodes;
     QStringList m_order;
     QHash<QString, ng::core::IIntentHandler *> m_handlers; // op -> handler

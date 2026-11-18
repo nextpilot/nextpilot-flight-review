@@ -107,6 +107,16 @@ int main(int argc, char *argv[])
     CHECK(slotReg.slotsOfKind(SlotKind::RibbonGroup).size() >= 2);
     // 绘图模块在 onAttach 里往"视图"分组放了"重绘"动作
     CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.home.view")).size() >= 1);
+    // 数据模块在 onAttach 里往"数据"分组放了 reload/export/clearCache 三个动作
+    const auto dataActs = slotReg.actionsIn(QStringLiteral("ribbon.group.home.data"));
+    CHECK(dataActs.size() >= 3);
+    bool hasReload = false, hasExport = false;
+    for (const auto &entry : dataActs)
+    {
+        if (entry.action.intentOp == QStringLiteral("data.reload")) hasReload = true;
+        if (entry.action.intentOp == QStringLiteral("data.export")) hasExport = true;
+    }
+    CHECK(hasReload && hasExport); // 动作绑的是真实意图，不是空按钮
     OK("ribbon 按插槽数据绑定：页签/分组/动作数量符合声明");
 
     // --- 3) 视图层自注册生效：部件工厂表由 views/ 各 TU 自行登记 ---

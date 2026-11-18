@@ -651,6 +651,29 @@ script.run
 
 `IntentResult` 必须可序列化 → GUI 操作能录成 Job、脚本能回放同一序列。
 
+#### data.* 系统级意图：归口宿主，只搬有底层支撑的能力
+
+数据加载与派生操作（`data.load` / `data.reload` / `data.export` / `data.recent` /
+`data.clearCache`）都是**宿主级 handler**，不归属可卸载模块——因为它们要访问
+宿主持有的 `AppContext`（repo / sources / settings / pipeline）。所有 data 意图
+集中在宿主一处，模块装卸不影响，也不建第二条路径。
+
+参考老代码 `datasource/DataSourceCommands` 补齐能力时，遵守一条铁律：
+**只实现底层有 API 支撑的能力，不造点了没反应的空按钮。**
+
+| 老代码命令 | ng 归属 | 底层支撑 |
+|---|---|---|
+| `file.open` / `data.quickOpen` | `data.load`（已有）+ 骨架 `app.action.openData` | 格式驱动 + 摄取管道 |
+| `data.reload` | `data.reload`（宿主） | `sources` + `data.load`，**稳定 id 保持数据集不换 id** |
+| `data.exportSnapshot` | `data.export`（宿主） | `Dataset::channel` 有界取数写 CSV |
+| `data.recent` | `data.recent`（宿主）+ `data.load` 成功自动记入 | `SettingsStore` 持久化 |
+| `data.clearCache` | `data.clearCache`（宿主） | `.psc` 缓存路径约定 |
+| `layout.save/import` | 已有 `plot.layout.save/load` | — |
+| `protocol.inspect` | 领域面板 `extensions/<域>/gui/`（非 data 意图） | — |
+
+`DataModule.onAttach` 只把这些能力声明成 ribbon"数据"组的 action（纯数据，
+绑真实 intentOp），不自己实现、不碰 Widgets——headless/CLI 同样能执行这些意图。
+
 ## 10. 与老代码的关系
 
 | 维度 | 关系 |

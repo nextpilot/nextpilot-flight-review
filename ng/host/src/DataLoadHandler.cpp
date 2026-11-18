@@ -1,8 +1,11 @@
 #include "DataLoadHandler.h"
 
+#include "AppContext.h"
+#include "DataCommandsHandler.h"
 #include "DataRepository.h"
 #include "IngestOrchestrator.h"
 #include "IngestPipeline.h"
+#include "SettingsStore.h"
 
 using namespace ng::core;
 
@@ -60,11 +63,32 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
         if (!opened)
             return fail(opened.error().code, opened.error().message);
 
+        // 成功载入 → 记入最近文件（settings 持久化，CLI 也能读）。
+        if (m_settings)
+        {
+            QStringList files = m_settings->value(QLatin1String(DataCommandsHandler::kRecentKey)).toStringList();
+            files.removeAll(path);
+            files.prepend(path);
+            if (files.size() > 10)
+                files = files.mid(0, 10);
+            m_settings->setValue(QLatin1String(DataCommandsHandler::kRecentKey), files);
+        }
+
         IntentResult r;
         r.payload = opened.value();
         return r;
     }
 
     // --- 旧路径：驱动自己读文件自己建 Dataset（尚未归并的格式）---
-    return driver->load(intent, m_repo);
+    auto loaded = driver->load(intent, m_repo);
+    if (loaded && m_settings)
+    {
+        QStringList files = m_settings->value(QLatin1String(DataCommandsHandler::kRecentKey)).toStringList();
+        files.removeAll(path);
+        files.prepend(path);
+        if (files.size() > 10)
+            files = files.mid(0, 10);
+        m_settings->setValue(QLatin1String(DataCommandsHandler::kRecentKey), files);
+    }
+    return loaded;
 }

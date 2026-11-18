@@ -3,6 +3,7 @@
 #include "BuiltinModuleRegistry.h"
 #include "DataRepository.h"
 #include "Events.h"
+#include "IUiContribution.h"
 #include "IModule.h"
 
 #include <cstdio>
@@ -54,6 +55,27 @@ void DataModule::onAttach(UiContext &ui)
     // 若将来新增另一个模块想自带界面，只需在这里 requestPanel + declareSlot，
     // 无需改动数据模块、GUI 层或任何其他文件。
     ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("dataset-tree"));
+
+    // 数据功能 ribbon 的"常用"动作（对应老代码 DataSourceRibbon 的常用组）。
+    // 每个都绑定**真实存在**的意图处理器（宿主级 data.* handler），不是空按钮。
+    // 打开数据在骨架里已有 app.action.openData（MainWindow 处理文件对话框），
+    // 这里补其余三个可用纯意图驱动的：重载 / 导出 / 清缓存。
+    auto add = [&ui](const QString &id, const QString &label,
+                     const QString &op, const QString &icon) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.area = QStringLiteral("ribbon.group.home.data");
+        a.intentOp = op;
+        a.icon = icon;
+        ui.addAction(a.area, a);
+    };
+    add(QStringLiteral("data.action.reload"), QStringLiteral("重载"),
+        QStringLiteral("data.reload"), QStringLiteral("reset"));
+    add(QStringLiteral("data.action.export"), QStringLiteral("导出 CSV"),
+        QStringLiteral("data.export"), QStringLiteral("export_data"));
+    add(QStringLiteral("data.action.clearCache"), QStringLiteral("清解析缓存"),
+        QStringLiteral("data.clearCache"), QStringLiteral("trash"));
 }
 
 #include "DataModule.moc"

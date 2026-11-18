@@ -26,11 +26,16 @@ ModuleHost::ModuleHost(ng::core::AppContext &appCtx, QObject *parent)
       // data.load 走统一摄取管道（读字节 -> 扇出 -> 落库）：
       // 格式驱动只声明 parserId，解析实现由 SPI 解析器提供。
       m_dataLoadHandler(appCtx.toolbox(), appCtx.data(), appCtx.sources(),
-                         &appCtx.ingest())
+                         &appCtx.ingest(), &appCtx.settings()),
+      m_dataCommandsHandler(appCtx, *this)
 {
     // 系统级 data.load 入口：不归属任何可卸载模块，任何模块装卸都不影响它。
     // 用一个保留 key 注册，避免与模块 handler 的 "%id/%index" 冲突。
     m_handlers.insert(QStringLiteral("@system/data.load"), &m_dataLoadHandler);
+
+    // data 派生能力（reload/export/recent/clearCache）与 load 同属系统级，
+    // 归口一处——所有 data.* 意图都在宿主，模块装卸不影响，也不建第二条路。
+    m_handlers.insert(QStringLiteral("@system/data.commands"), &m_dataCommandsHandler);
 
     // app 骨架的标准 UI 插槽（容器）在**唯一一处**声明：
     // 见 UiSlotRegistry::declareSkeletonSlots()。
