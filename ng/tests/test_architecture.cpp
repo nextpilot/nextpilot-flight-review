@@ -353,8 +353,8 @@ int main(int argc, char **argv)
         // UI 插槽：骨架声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
         // （动作数含本测试文件自注册的探针包贡献：menu.plot +1）
         //
-        // 槽数是 8：骨架槽**唯一声明**（UiSlotRegistry::declareSkeletonSlots），
-        // headless 与 GUI 看到同一份。此前这里是 5 —— 因为骨架槽被声明在两处，
+        // 槽数是 8：骨架槽**唯一声明**（host 层 SkeletonSlots），
+        // headless 与 GUI 看到同一份（声明点已从 core 挪到 host，core 只留机制）。此前这里是 5 —— 因为骨架槽被声明在两处，
         // 幂等的 declareSlot 让 host 层那份信息更少的版本**静默丢弃**了 GUI 那份，
         // 于是 headless 只看到 5 个残缺槽（详见下方 1b 段的契约测试）。
         const auto &slotReg = application.modules().uiSlots();
@@ -387,7 +387,7 @@ int main(int argc, char **argv)
     //   · ribbon.home / canvas.tool 落成默认 kind 的幽灵槽；
     //   · headless（CLI --list-slots）只看到一半的骨架槽。
     //
-    // 现在骨架槽只在 UiSlotRegistry::declareSkeletonSlots() 一处声明，
+    // 现在骨架槽只在 host 层 SkeletonSlots 一处声明（core 只留机制），
     // GUI 与 headless 拿到同一份。这里钉死它的完整性。
     {
         const auto &slotReg = application.modules().uiSlots();

@@ -5,6 +5,7 @@
 
 #include "AppContext.h"
 #include "ModuleHost.h"
+#include "SkeletonSlots.h"
 #include "Intent.h"
 #include "Result.h"
 #include "UiSlotRegistry.h"
@@ -67,13 +68,11 @@ MainWindow::~MainWindow()
 
 void MainWindow::declareStandardSlots()
 {
-    // app 骨架提供的标准插槽，在**唯一一处**声明：
-    // 见 UiSlotRegistry::declareSkeletonSlots()。
-    //
+    // app 骨架提供的标准插槽，声明清单在 host 层 SkeletonSlots（不写死在 core）。
     // 这里只做 GUI 侧的**幂等确认**（宿主已声明过，重复声明不会产生副本），
     // 保证即便脱离宿主单独使用 MainWindow，槽也齐备。
     UiSlotRegistry &slotReg = m_context->slotRegistry();
-    UiSlotRegistry::declareSkeletonSlots(slotReg);
+    ng::host::declareSkeletonSlots(slotReg);
 
     // 骨架自带的**标准动作**：往标准插槽里放内容。
     //
@@ -115,16 +114,23 @@ void MainWindow::build(ModuleHost &host)
     //
     // 意图由宿主执行（ModuleHost 实现了 IIntentExecutor），
     // 于是 GUI 点击与 CLI/脚本执行走**同一条意图路径**。
-    m_binder->setIntentDispatcher([&host, this](const QString &actionId) {
-        // 少数动作需要 GUI 交互（选文件），外壳在这里处理；
-        // 其余动作一律走意图层——与 CLI/脚本同一条路径。
+    m_binder->setIntentDispatcher([&host, this](const QString &actionId,
+                                                const QString &intentOp) {
+        // 少数动作需要 GUI 交互（选文件），外壳按 **id** 特判；
+        // 其余动作一律用 UiAction 声明的 **intentOp** 走意图层——与 CLI/脚本同一条路径。
+        // 注意两者不可混用：id 是 UI 元素标识，intentOp 才是要发的意图 op。
         if (actionId == QStringLiteral("app.action.openData"))
         {
             openDataFile(host);
             return;
         }
+        if (intentOp.isEmpty()) // 纯占位动作：没有意图可发，明确提示而非发空 op
+        {
+            statusBar()->showMessage(QStringLiteral("动作未声明意图: %1").arg(actionId));
+            return;
+        }
         Intent intent;
-        intent.op = actionId;
+        intent.op = intentOp;
         const Result<IntentResult> r = host.execute(intent);
         if (!r)
             statusBar()->showMessage(QStringLiteral("动作失败: %1").arg(r.error().message));

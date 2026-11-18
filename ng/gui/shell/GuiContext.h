@@ -39,7 +39,7 @@ public:
     void placeCanvas(QWidget *widget) override;
     void declareSlot(const QString &area, const QString &label, ng::core::SlotKind kind,
                      const QString &parentArea = QString()) override;
-    void addAction(const QString &area, const ng::core::UiAction &action) override;
+    void addAction(const ng::core::UiAction &action) override;
 
     // 请求 app 外壳提供一个部件，放到指定区域。
     QWidget *requestPanel(const QString &area, const QString &panelType) override;

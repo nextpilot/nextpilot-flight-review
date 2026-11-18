@@ -153,13 +153,16 @@ void ShellBinder::rebuildRibbon()
                 else
                     panel->addSmallAction(action);
 
-                // 点击 → 意图调度。本类不解释动作语义，只把 id 交出去。
+                // 点击 → 意图调度。本类不解释动作语义，只把 id 与声明的意图 op
+                // 一并交出去：id 供外壳特判/计数，intentOp 才是要发的意图。
                 const QString actionId = ua.id;
-                QObject::connect(action, &QAction::triggered, m_ribbon, [this, actionId] {
-                    m_actionTriggers[actionId]++;
-                    if (m_dispatch)
-                        m_dispatch(actionId);
-                });
+                const QString intentOp = ua.intentOp;
+                QObject::connect(action, &QAction::triggered, m_ribbon,
+                                 [this, actionId, intentOp] {
+                                     m_actionTriggers[actionId]++;
+                                     if (m_dispatch)
+                                         m_dispatch(actionId, intentOp);
+                                 });
             }
 
             // 面板本体撑到能放下大按钮：SARibbon 的 category 高度不会

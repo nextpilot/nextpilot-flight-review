@@ -44,7 +44,9 @@ public:
                              const QString &parentArea = QString()) = 0;
 
     // 往已声明的插槽里放一个动作（ribbon 按钮 / 菜单项）。
-    virtual void addAction(const QString &area, const ng::core::UiAction &action) = 0;
+    // 归属插槽由 action.area 单一来源给出——不另传 area 参数，
+    // 杜绝"参数 area 与 action.area 不一致"的双源隐患。
+    virtual void addAction(const ng::core::UiAction &action) = 0;
 
     // 请求 app 骨架提供一个部件，放到指定区域。
     //

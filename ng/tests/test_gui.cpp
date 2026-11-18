@@ -30,7 +30,9 @@
 #include "ModuleHost.h"
 #include "UiSlotRegistry.h"
 
+#include <QAction>
 #include <QApplication>
+#include <QStatusBar>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -118,6 +120,39 @@ int main(int argc, char *argv[])
     }
     CHECK(hasReload && hasExport); // 动作绑的是真实意图，不是空按钮
     OK("ribbon 按插槽数据绑定：页签/分组/动作数量符合声明");
+
+    // --- 2b) 点击链路端到端：按钮发的是 intentOp，不是把 id 当 op ---
+    // 回归点：UiAction 有 id（data.action.reload）与 intentOp（data.reload）两个字段。
+    // 曾把 id 当 op 发出，导致除 openData（被外壳特判）外所有按钮点击都报
+    // "没有模块能处理意图"。这里真触发 QAction，走
+    //   ShellBinder -> dispatcher -> ModuleHost -> handler 全链路，
+    // 用状态栏消息断言 op 确实被 handler 认领（业务错误允许，"无人认领"不允许）。
+    {
+        QStatusBar *status = window.statusBar();
+        auto findAction = [&window](const QString &id) -> QAction * {
+            const auto all = window.findChildren<QAction *>();
+            for (QAction *a : all)
+                if (a->data().toString() == id)
+                    return a;
+            return nullptr;
+        };
+        const QStringList ids = {QStringLiteral("data.action.reload"),
+                                 QStringLiteral("data.action.export"),
+                                 QStringLiteral("data.action.clearCache")};
+        for (const QString &id : ids)
+        {
+            QAction *action = findAction(id);
+            CHECK(action != nullptr); // 按钮确实渲染出来了
+            const int before = binder->actionTriggerCount(id);
+            status->clearMessage();
+            action->trigger(); // 真实点击
+            CHECK(binder->actionTriggerCount(id) == before + 1); // 点击到达绑定器
+            // 关键断言：op 必须被 handler 认领。业务错误（如无活动源、未指定导出
+            // 路径）是允许的，但绝不能停在"没有模块能处理意图"——那是把 id 当 op 的症状。
+            CHECK(!status->currentMessage().contains(QStringLiteral("没有模块能处理意图")));
+        }
+        OK("点击链路端到端：三个 data 按钮都按 intentOp 找到 handler（不是把 id 当 op）");
+    }
 
     // --- 3) 视图层自注册生效：部件工厂表由 views/ 各 TU 自行登记 ---
     //

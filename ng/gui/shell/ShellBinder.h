@@ -87,8 +87,13 @@ public:
     QJsonObject captureState() const;
     bool applyState(const QJsonObject &state);
 
-    // 意图执行回调：外壳只负责把动作转成意图，交给宿主执行器。
-    using IntentDispatcher = std::function<void(const QString &actionId)>;
+    // 意图执行回调：外壳把动作转成意图，交给宿主执行器。
+    // 两个参数各司其职，不可混用：
+    //   · actionId —— UI 元素的稳定标识（如 data.action.reload），供需要 GUI
+    //     交互的动作特判（打开文件对话框）与触发计数用；
+    //   · intentOp —— 点击真正要发的意图 op（如 data.reload），由 UiAction 声明。
+    // 曾把 actionId 当 op 发出，导致除 openData 外所有按钮都报"没有模块能处理意图"。
+    using IntentDispatcher = std::function<void(const QString &actionId, const QString &intentOp)>;
     void setIntentDispatcher(IntentDispatcher dispatcher) { m_dispatch = std::move(dispatcher); }
 
 private:

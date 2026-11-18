@@ -5,44 +5,6 @@
 namespace ng::core
 {
 
-void UiSlotRegistry::declareSkeletonSlots(UiSlotRegistry &registry)
-{
-    // app 骨架的标准插槽。**唯一声明处** —— 见 UiSlotRegistry.h 的说明。
-    //
-    // 骨架 = 应用自己提供的容器：ribbon 的页签与分组、左右停靠区、
-    // 中央画布、菜单栏。业务 UI 往这些槽里填内容，骨架本身不认识任何领域。
-    //
-    // 声明者统一是 "app.skeleton"：它们不属于任何可卸载的模块或知识包，
-    // 装卸它们不影响骨架（架构上：app 骨架与业务 UI 彻底分离）。
-    const QString owner = QStringLiteral("app.skeleton");
-
-    // --- ribbon：页签 -> 分组 ---
-    registry.declareSlot(QStringLiteral("ribbon.page.home"), QStringLiteral("主页"), owner,
-                         SlotKind::RibbonPage);
-    registry.declareSlot(QStringLiteral("ribbon.group.home.data"), QStringLiteral("数据"), owner,
-                         SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
-    registry.declareSlot(QStringLiteral("ribbon.group.home.view"), QStringLiteral("视图"), owner,
-                         SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
-
-    // --- 停靠区 ---
-    registry.declareSlot(QStringLiteral("dock.left"), QStringLiteral("数据集"), owner,
-                         SlotKind::DockPanel);
-    registry.declareSlot(QStringLiteral("dock.right"), QStringLiteral("属性"), owner,
-                         SlotKind::DockPanel);
-
-    // --- 中央画布 ---
-    registry.declareSlot(QStringLiteral("canvas.center"), QStringLiteral("画布"), owner,
-                         SlotKind::Canvas);
-    // 画布工具区：画布上的工具入口（ARCHITECTURE.md §4 器官表："画布工具"）。
-    // 它是**画布的一部分**，所以 kind = Canvas 而不是默认的 DockPanel。
-    registry.declareSlot(QStringLiteral("canvas.tool"), QStringLiteral("画布工具"), owner,
-                         SlotKind::Canvas);
-
-    // --- 菜单栏 ---
-    registry.declareSlot(QStringLiteral("menu.plot"), QStringLiteral("绘图"), owner,
-                         SlotKind::Menu);
-}
-
 void UiSlotRegistry::declareSlot(const QString &area, const QString &label, const QString &owner,
                                  SlotKind kind, const QString &parentArea, int order)
 {

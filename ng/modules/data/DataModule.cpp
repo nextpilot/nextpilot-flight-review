@@ -68,7 +68,7 @@ void DataModule::onAttach(UiContext &ui)
         a.area = QStringLiteral("ribbon.group.home.data");
         a.intentOp = op;
         a.icon = icon;
-        ui.addAction(a.area, a);
+        ui.addAction(a);
     };
     add(QStringLiteral("data.action.reload"), QStringLiteral("重载"),
         QStringLiteral("data.reload"), QStringLiteral("reset"));

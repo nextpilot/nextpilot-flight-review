@@ -55,10 +55,11 @@ void GuiContext::declareSlot(const QString &area, const QString &label, SlotKind
         m_binder->rebuildRibbon();
 }
 
-void GuiContext::addAction(const QString &area, const UiAction &action)
+void GuiContext::addAction(const UiAction &action)
 {
     // 器官本地登记的入口，provider 记为 "module"，卸载时按 provider 清理。
-    m_slots.bindLocal(area, action, QStringLiteral("module"));
+    // 归属插槽取 action.area 单一来源（接口已不再另传 area 参数）。
+    m_slots.bindLocal(action.area, action, QStringLiteral("module"));
     if (m_binder)
         m_binder->rebuildRibbon();
 }

@@ -477,10 +477,20 @@ gui/
 （`PlotModule`）只是通过 `requestPanel("canvas.center", "plot-canvas")` 使用它。
 这也决定了它必须留在 `gui/views/`（或未来的 `libs/plot/`），而非功能目录。
 
-#### 视图的物理归属：功能专属聚合，通用能力库与领域面板各归其位
+#### 统一定则：物理位置与逻辑位置正交
 
-一个功能（器官 + 它的 UI + action + 意图）**物理上放在一个目录**，方便作为
-完整单元开发/查找/编辑；靠 CMake 拆成两个 target 实现**编译期分离**：
+**这是每个 module 都必须遵守的定则，不是 data 的特例：**
+
+> **物理位置为开发管理，逻辑位置靠 CMake 表达，两者正交。**
+>
+> - **物理位置**（文件放哪个目录）只服务于**开发时便于查找、编辑、管理**：
+>   一个功能的器官、专属 UI、action、意图聚合在一起，作为完整单元。
+> - **逻辑位置**（这段代码属于 headless 还是 GUI、进哪个 target）**一律由 CMake 表达**，
+>   与文件放在哪个目录无关。
+> - 两者**正交**：不因逻辑归类去搬目录，也不因物理聚合去模糊逻辑边界。
+
+据此，一个功能（器官 + 它的 UI + action + 意图）**物理上放在一个目录**，
+靠 CMake 拆成两个 target 实现**编译期分离**：
 
 ```
 modules/data/                     一个"数据"功能，物理聚合
@@ -488,6 +498,12 @@ modules/data/                     一个"数据"功能，物理聚合
   DataManagerPanel.{h,cpp}    ┘ → ng_module_data_gui （GUI 装载，链 Widgets）
   CMakeLists.txt                  在此把 headless / GUI 两类文件分开
 ```
+
+**一个反复出现的误区，在此钉死**：「DataModule 只是 UI 贡献者 / 是空壳，所以该搬去
+`gui/` 或删掉」——这是拿**逻辑归类**去干涉**物理布局**，方向就错了。data 的非 UI 能力
+（load/reload/export/...）是宿主级 handler，UI 是专属视图，它们物理上仍同处
+`modules/data/`；逻辑归属由 CMake target 划分，headless 链不装载 GUI 那一半即可。
+目录不该因为"算不算 module"这种归类问题而变动——**归类影响的是 target，不是文件夹。**
 
 判据（一个 view 归哪）：
 

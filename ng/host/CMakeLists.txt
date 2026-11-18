@@ -4,12 +4,14 @@ add_library(ng_host STATIC
     src/ModuleHost.cpp
     src/DataLoadHandler.cpp
     src/DataCommandsHandler.cpp
+    src/SkeletonSlots.cpp
     src/BuiltinModuleRegistry.cpp
     include/ModuleInfo.h
     include/IModule.h
     include/ModuleHost.h
     include/DataLoadHandler.h
     include/DataCommandsHandler.h
+    include/SkeletonSlots.h
     include/BuiltinModuleRegistry.h
 )
 

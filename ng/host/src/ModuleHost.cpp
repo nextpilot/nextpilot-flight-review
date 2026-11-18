@@ -1,4 +1,5 @@
 #include "ModuleHost.h"
+#include "SkeletonSlots.h"
 
 #include <QSet>
 
@@ -37,16 +38,10 @@ ModuleHost::ModuleHost(ng::core::AppContext &appCtx, QObject *parent)
     // 归口一处——所有 data.* 意图都在宿主，模块装卸不影响，也不建第二条路。
     m_handlers.insert(QStringLiteral("@system/data.commands"), &m_dataCommandsHandler);
 
-    // app 骨架的标准 UI 插槽（容器）在**唯一一处**声明：
-    // 见 UiSlotRegistry::declareSkeletonSlots()。
-    //
-    // 这里不再重复声明——声明是幂等的（先到者为准），谁先谁后会让另一份
-    // 被静默丢弃：host 层声明的版本信息更少（没有 kind 与父槽、label 也不准），
-    // 而 GUI 层声明的版本更完整。放在一处，两边拿到的就是同一份。
-    //
-    // 骨架与器官代码从此不知道任何领域业务。
-    // headless 下这些槽也不创建 QWidget（槽是纯数据）。
-    ng::core::UiSlotRegistry::declareSkeletonSlots(m_uiSlotRegistry);
+    // app 骨架的标准 UI 插槽（容器）在**唯一一处**声明：SkeletonSlots（host 层）。
+    // 骨架槽清单是 app 的配置，不写死在 core——core 只有 declareSlot 机制。
+    // headless 下这些槽也是纯数据，不创建 QWidget。
+    declareSkeletonSlots(m_uiSlotRegistry);
 }
 
 ModuleHost::~ModuleHost()
