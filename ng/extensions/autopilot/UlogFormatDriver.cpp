@@ -18,6 +18,11 @@ QString UlogFormatDriver::displayName() const
     return QStringLiteral("ULog 格式驱动");
 }
 
+ng::core::FormatDomain UlogFormatDriver::domain() const
+{
+    return ng::core::FormatDomain::Autopilot;
+}
+
 QStringList UlogFormatDriver::suffixes() const
 {
     return {QStringLiteral("ulg"), QStringLiteral("ulog")};

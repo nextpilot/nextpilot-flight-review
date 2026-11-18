@@ -2,6 +2,7 @@
 
 #include "Intent.h"
 #include "Result.h"
+#include "FormatDomain.h"
 
 #include <QString>
 #include <QStringList>
@@ -28,6 +29,9 @@ public:
     // 注册表内的唯一标识，如 "csv" / "ulog"。
     virtual QString id() const = 0;
     virtual QString displayName() const = 0;
+
+    // 该驱动所属的业务领域。工具箱按领域分类；默认通用，领域驱动应显式覆盖。
+    virtual FormatDomain domain() const { return FormatDomain::General; }
 
     // 该驱动认识的文件后缀（不含点，小写），如 {"csv"} / {"ulg", "ulog"}。
     virtual QStringList suffixes() const = 0;

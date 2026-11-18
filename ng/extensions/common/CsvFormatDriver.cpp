@@ -25,6 +25,11 @@ QString CsvFormatDriver::displayName() const
     return QStringLiteral("CSV 格式驱动");
 }
 
+ng::core::FormatDomain CsvFormatDriver::domain() const
+{
+    return ng::core::FormatDomain::General;
+}
+
 QStringList CsvFormatDriver::suffixes() const
 {
     return {QStringLiteral("csv")};

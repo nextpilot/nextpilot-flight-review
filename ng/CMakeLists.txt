@@ -48,8 +48,10 @@ add_subdirectory(host)
 add_subdirectory(modules/data)
 add_subdirectory(modules/plot)
 add_subdirectory(modules/script)
-add_subdirectory(extensions/csv)
-add_subdirectory(extensions/ulog)
+# 工具箱按业务领域组织：common / autopilot / automotive / robotics / gnss。
+# automotive / robotics / gnss 目录预留，后续按 ULog 公式平移格式时直接落入对应领域。
+add_subdirectory(extensions/common)
+add_subdirectory(extensions/autopilot)
 add_subdirectory(extensions/registry)
 add_subdirectory(app)
 

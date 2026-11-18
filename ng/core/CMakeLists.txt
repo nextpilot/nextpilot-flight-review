@@ -7,6 +7,7 @@ add_library(ng_core STATIC
     src/ScriptFacade.cpp
     src/IFormatDriver.cpp
     src/ExtensionRegistry.cpp
+    src/FormatDomain.cpp
     include/Result.h
     include/Dataset.h
     include/DataRepository.h
@@ -17,6 +18,7 @@ add_library(ng_core STATIC
     include/ScriptFacade.h
     include/IFormatDriver.h
     include/ExtensionRegistry.h
+    include/FormatDomain.h
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

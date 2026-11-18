@@ -66,6 +66,24 @@ QList<IFormatDriver *> ExtensionRegistry::drivers() const
     return out;
 }
 
+QList<IFormatDriver *> ExtensionRegistry::driversByDomain(FormatDomain domain) const
+{
+    QList<IFormatDriver *> out;
+    for (const auto &driver : m_owned)
+        if (driver->domain() == domain)
+            out.append(driver.get());
+    return out;
+}
+
+QList<FormatDomain> ExtensionRegistry::domains() const
+{
+    QList<FormatDomain> out;
+    for (const auto &driver : m_owned)
+        if (!out.contains(driver->domain()))
+            out.append(driver->domain());
+    return out;
+}
+
 QStringList ExtensionRegistry::ids() const
 {
     return m_order;

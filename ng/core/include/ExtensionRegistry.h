@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IFormatDriver.h"
+#include "FormatDomain.h"
 
 #include <QHash>
 #include <QList>
@@ -39,6 +40,11 @@ public:
     IFormatDriver *driverForPath(const QString &path) const;
 
     QList<IFormatDriver *> drivers() const;
+
+    // 按业务领域分组查询（工具箱的分类学）。
+    QList<IFormatDriver *> driversByDomain(FormatDomain domain) const;
+    QList<FormatDomain> domains() const; // 当前已有驱动的领域（去重）
+
     QStringList ids() const;
     bool contains(const QString &id) const;
     int count() const;

@@ -95,13 +95,24 @@ int main(int argc, char **argv)
 
     if (command == QStringLiteral("--list-formats"))
     {
+        // 工具箱按业务领域分组展示（通用 / 飞控 / 汽车 / 机器人 / 卫导 / 视频）。
         const auto &toolbox = application.modules().extensions();
-        for (ng::core::IFormatDriver *driver : toolbox.drivers())
+        const ng::core::FormatDomain order[] = {
+            ng::core::FormatDomain::General, ng::core::FormatDomain::Autopilot,
+            ng::core::FormatDomain::Automotive, ng::core::FormatDomain::Robotics,
+            ng::core::FormatDomain::Gnss, ng::core::FormatDomain::Video
+        };
+        for (auto domain : order)
         {
-            fprintf(stdout, "%-10s %-18s 后缀[%s]\n",
-                    qPrintable(driver->id()),
-                    qPrintable(driver->displayName()),
-                    qPrintable(driver->suffixes().join(QLatin1Char(','))));
+            const auto drivers = toolbox.driversByDomain(domain);
+            if (drivers.isEmpty())
+                continue;
+            fprintf(stdout, "[%s]\n", qPrintable(ng::core::domainName(domain)));
+            for (ng::core::IFormatDriver *driver : drivers)
+                fprintf(stdout, "  %-10s %-18s 后缀[%s]\n",
+                        qPrintable(driver->id()),
+                        qPrintable(driver->displayName()),
+                        qPrintable(driver->suffixes().join(QLatin1Char(','))));
         }
         return 0;
     }

@@ -166,6 +166,16 @@ int main(int argc, char **argv)
     CHECK(toolbox.driverForPath(QStringLiteral("x.ULG"))->id() == QStringLiteral("ulog"));
     CHECK(toolbox.driverForPath(QStringLiteral("x.csv"))->id() == QStringLiteral("csv"));
 
+    // 工具箱按业务领域分类：CSV=通用，ULog=飞控。
+    CHECK(toolbox.driverForFormat(QStringLiteral("csv"))->domain() == FormatDomain::General);
+    CHECK(toolbox.driverForFormat(QStringLiteral("ulog"))->domain() == FormatDomain::Autopilot);
+    CHECK(toolbox.driversByDomain(FormatDomain::General).size() == 1);
+    CHECK(toolbox.driversByDomain(FormatDomain::Autopilot).size() == 1);
+    CHECK(toolbox.driversByDomain(FormatDomain::Automotive).isEmpty()); // 预留领域暂无驱动
+    CHECK(toolbox.domains().size() == 2);
+    CHECK(QString::fromLatin1(domainKey(FormatDomain::Gnss)) == QStringLiteral("gnss"));
+    CHECK(domainName(FormatDomain::Robotics) == QStringLiteral("机器人"));
+
     // 外部插件扫描（本轮预留入口）：空目录返回空报告，不报错、不影响内置格式。
     ng::ext::PluginScanReport scan = ng::ext::scanExternalPlugins(toolbox, dir.path());
     CHECK(scan.discovered.isEmpty());

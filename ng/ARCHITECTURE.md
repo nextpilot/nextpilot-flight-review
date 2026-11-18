@@ -42,9 +42,14 @@ kernel (Rust)   数据地基：ps-ndf typed 表 / ps-cache 缓存 / ps-ops 抽�
 
 **器官（module）与工具箱（extension）是两条正交的线**：
 - 器官是 app 的功能组件，有生命周期、可上 UI，由 `ModuleHost` 按依赖拓扑装载/卸载；
-- 工具箱是"能力登记处"，里面装的是无 UI、无独立生命周期的驱动（当前是格式驱动，
-  未来可有算子/导出器等）；统一注册进 `core::ExtensionRegistry`，由宿主持有。
+- 工具箱是"业务知识包登记处"，按 PlotScope 服务的业务方向组织：**飞控 / 汽车 / 机器人 /
+  卫导**四个核心方向，外加通用（CSV/JSON/binary）与视频同步；里面装的是无 UI、
+  无独立生命周期的格式驱动，统一注册进 `core::ExtensionRegistry`，由宿主持有；
 - 两者都归宿主管，但互不伪装：格式不再是器官，器官也不认识任何具体格式。
+
+**领域是工具箱的分类学**：每个驱动声明 `domain()`，注册表据此分组。目录也按领域组织
+（`extensions/{common,autopilot,automotive,robotics,gnss}/`），新增格式落入对应领域目录即可，
+不动宿主与器官。具体格式资产见 §3"其他格式（已具备的资产）"。
 
 ## 3. 统一数据模型（core 门面 + Rust kernel 地基）
 
@@ -148,7 +153,10 @@ class ExtensionRegistry {
 };
 ```
 
-`IFormatDriver` 只声明"身份 + 识别规则 + load()"；解析算法与缓存/入库外壳都在驱动内。
+`IFormatDriver` 只声明"身份（id/displayName/**domain**）+ 识别规则 + load()"；
+解析算法与缓存/入库外壳都在驱动内。领域（`FormatDomain`）是工具箱的一级分类：
+`General / Autopilot / Automotive / Robotics / Gnss / Video`，注册表支持
+`driversByDomain()` 与 `domains()`，CLI `--list-formats` 按领域分栏展示。
 工具箱由宿主持有，经 `ModuleContext` / `App` 暴露；卸载一个驱动 = 从表撤销并释放，
 不留悬空能力，也不牵连其他驱动或器官。
 
@@ -226,8 +234,12 @@ ng/
 ├── core/                 数据模型/仓库/事件/意图/脚本门面（无 QWidget）
 ├── host/                 IModule/装载循环/意图执行器/App
 ├── modules/              器官：data / plot / script
-├── extensions/           工具箱
-│   ├── csv / ulog        格式驱动（IFormatDriver；UlogStreamParser 流式样板）
+├── extensions/           工具箱（按业务领域组织）
+│   ├── common/           通用：CSV（IFormatDriver 样板）
+│   ├── autopilot/        飞控：ULog（UlogStreamParser 流式样板）
+│   ├── automotive/       汽车：预留（ASC/BLF/MDF4/CAN）
+│   ├── robotics/         机器人：预留（MCAP/ROSbag2）
+│   ├── gnss/             卫导：预留（NMEA/UBX/OEM7）
 │   └── registry/         集中自注册 + 外部插件扫描入口
 ├── app/                  CLI 入口
 └── tests/                架构契约测试
@@ -247,8 +259,11 @@ ng/
 6. ✅ 器官与工具箱分离：格式从 IModule 抽成 `IFormatDriver`，集中自注册进 `ExtensionRegistry`；
    `data.load` 收敛为宿主唯一入口按注册表查表分派。外部插件动态扫描入口预留（仅扫描框架，
    未实际 dlopen）。契约测试覆盖注册表按 format/后缀选驱动、撤销隔离、可逆热插、插件扫描入口。
-7. ⬜ 启用外部插件真实动态加载（定义插件 C ABI + 加载器），并按 ULog 公式平移其余格式
-   （apbin / tlog / ASC / BLF / MDF4 / MCAP / ROSbag2 / GNSS…）与 GUI 画布。
+7. ✅ 工具箱按业务领域组织：引入 `FormatDomain`（通用/飞控/汽车/机器人/卫导/视频），
+   驱动声明领域、注册表按领域分组，目录按领域重组；CSV=通用、ULog=飞控。
+8. ⬜ 启用外部插件真实动态加载（定义插件 C ABI + 加载器），并按 ULog 公式把其余格式
+   平移进对应领域目录（飞控 apbin/tlog/mavlink、汽车 ASC/BLF/MDF4/CAN、机器人 MCAP/ROSbag2、
+   卫导 NMEA/UBX/OEM7）与 GUI 画布。
 
 验证：编译全绿（Release + Debug 双构建）；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖
 typed 多表模型、通道投影、**Rust LOD 抽稀 / 统计 / 抗混叠抽取 / ps-cache 指纹命中与过期**、
