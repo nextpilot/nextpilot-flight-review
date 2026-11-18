@@ -92,6 +92,24 @@ protected:
 - `parseChar`：默认主路径，文本/流式/变长帧协议用；基类负责缓冲与逐字节派发。
 - `feedChunk`：批量逃生门，定长二进制/高吞吐帧用；覆写后该类绕过逐字节派发，直接在块上解析，残余字节仍由基类缓冲管理。
 
+### 3.3 边界：打开文件 / 串口 / 网络不属于解析器基类
+
+"字节从哪来"由 core 的 `IByteSource` 层负责，解析器基类**不引入**任何打开/连接/设备句柄的接口：
+
+| 层 | 职责 | 实现 |
+|---|---|---|
+| `IByteSource`（core，已有抽象） | 字节来源：打开/关闭/读/超时 | `FileByteSource`（已有）、`MemoryByteSource`；`UdpByteSource` / `SerialByteSource` 待补（Q3） |
+| `CharStreamParser`（本方案） | 字节解析：缓冲/状态机/吐批 | 只通过 `read()` 拿字节，不知道对面是文件还是网线 |
+| `IngestOrchestrator` | 编排：按 transport 选源 → 喂解析器 → 收批入仓；录制 tee 挂这层 | 现有摄取管道 |
+
+理由：
+
+- 同一解析器要能跑多种来源（如 MAVLink 既回放 `.tlog` 也监听 UDP）；开设备写进解析器会让逻辑复制两份。
+- 录制旁路只在字节源层做一次 tee；解析器自己开文件会让录制盖不住。
+- 解析器可 headless 单测（喂 `MemoryByteSource`）；掺句柄/socket 后测试无法跑。
+
+传输相关参数（串口名/波特率/主机端口）由对话框收集进 `params`，编排层据此构造对应 `IByteSource`；解析器不读这些参数。`transports()` 只做**能力声明**，不负责连接。
+
 ### 3.3 与现有 C ABI 的关系
 
 - **内置 C++ 解析器**：继承 `CharStreamParser`，基类导出 vtable；`NG_REGISTER_PARSER` 宏改为接收基类子类。
