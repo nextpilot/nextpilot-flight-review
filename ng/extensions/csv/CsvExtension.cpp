@@ -12,8 +12,8 @@ using namespace ng::core;
 using namespace ng::host;
 
 // 意图处理器：识别 "data.load" 且 format=csv 的意图，读取文件产出 Dataset。
-// 数据模型对齐 kernel：一张 CSV = 一张表，第一列为共享时间轴（UTC 微秒），
-// 其余列各成一张 typed 列，表内所有列共享这条时间轴。
+// DataSet 本体由 Rust kernel 持有：一张 CSV = 一张 typed 表，首列共享时间轴（UTC 微秒），
+// 其余列各成 F64 typed 列。加载前先查 ps-cache（按 size/mtime 指纹），命中则不重解析。
 class CsvExtension::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
@@ -33,58 +33,77 @@ public:
         if (fmt != QStringLiteral("csv"))
             return fail(QStringLiteral("eformat"), QStringLiteral("非 CSV 格式: %1").arg(fmt));
 
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-            return fail(QStringLiteral("eio"), QStringLiteral("无法打开: %1").arg(path));
+        const QFileInfo fi(path);
+        if (!fi.exists())
+            return fail(QStringLiteral("eio"), QStringLiteral("文件不存在: %1").arg(path));
 
-        QTextStream in(&file);
-        if (in.atEnd())
-            return fail(QStringLiteral("eempty"), QStringLiteral("文件为空"));
-
-        const QString headerLine = in.readLine();
-        QStringList columns = headerLine.split(QLatin1Char(','));
-        for (QString &c : columns)
-            c = c.trimmed();
-        if (columns.isEmpty())
-            return fail(QStringLiteral("eformat"), QStringLiteral("无表头"));
-
-        // 逐行读取，第一列当时间（秒），其余列当数值。
-        QVector<QVector<double>> cols(columns.size());
-        while (!in.atEnd())
-        {
-            const QStringList cells = in.readLine().split(QLatin1Char(','));
-            for (int i = 0; i < columns.size() && i < cells.size(); ++i)
-                cols[i].push_back(cells.at(i).trimmed().toDouble());
-        }
-        if (cols.isEmpty() || cols.first().isEmpty())
-            return fail(QStringLiteral("edata"), QStringLiteral("没有数据行"));
-
-        // 共享时间轴：由第一列换算成 UTC 微秒（kernel 表级时间轴）。
-        QVector<TimeUs> timeUs;
-        timeUs.reserve(cols.first().size());
-        for (double t : cols.first())
-            timeUs.push_back(static_cast<TimeUs>(t * 1000000.0));
-
-        // 一张 CSV = 一张表，表名取文件名（对齐"一个 topic 一张表"）。
         const QString tableName = intent.params.value(QStringLiteral("table"),
-                                                      QFileInfo(path).completeBaseName()).toString();
-        Dataset ds(QFileInfo(path).baseName());
-        ds.setFormat(QStringLiteral("csv"));
-        const int tableIdx = ds.addTable(tableName, timeUs);
-        if (tableIdx < 0)
-            return fail(QStringLiteral("etable"), QStringLiteral("建表失败（重名/时间轴非单调/为空）"));
+                                                      fi.completeBaseName()).toString();
+        const qint64 sourceSize = fi.size();
+        const qint64 sourceMtime = fi.lastModified().toMSecsSinceEpoch();
+        const QString cachePath = path + QStringLiteral(".psc");
 
-        // 其余列各成一张 typed 列，共享表级时间轴；跳过时间列本身。
-        for (int c = 1; c < columns.size(); ++c)
+        Dataset ds;
+        bool fromCache = false;
+
+        // 1) 缓存优先：命中则直接还原 Rust 数据集，跳过解析。
+        if (!intent.params.value(QStringLiteral("nocache"), false).toBool())
         {
-            Column col;
-            col.name = columns.at(c);
-            col.type = ValueType::F64;
-            col.values.reserve(cols.at(c).size());
-            for (double v : cols.at(c))
-                col.values.push_back(v);
-            if (!ds.addColumn(tableName, std::move(col)))
-                return fail(QStringLiteral("ecolumn"), QStringLiteral("添加列失败: %1").arg(columns.at(c)));
+            QString cacheErr;
+            if (auto cached = Dataset::loadCache(cachePath, sourceSize, sourceMtime, &cacheErr))
+            {
+                ds = std::move(*cached);
+                ds.setFormat(QStringLiteral("csv"));
+                fromCache = true;
+            }
+        }
+
+        // 2) 未命中：解析 CSV → 用 C ABI 构造 Rust typed 表。
+        if (!fromCache)
+        {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+                return fail(QStringLiteral("eio"), QStringLiteral("无法打开: %1").arg(path));
+            QTextStream in(&file);
+            if (in.atEnd())
+                return fail(QStringLiteral("eempty"), QStringLiteral("文件为空"));
+
+            const QString headerLine = in.readLine();
+            QStringList columns = headerLine.split(QLatin1Char(','));
+            for (QString &c : columns)
+                c = c.trimmed();
+            if (columns.isEmpty())
+                return fail(QStringLiteral("eformat"), QStringLiteral("无表头"));
+
+            QVector<QVector<double>> cols(columns.size());
+            while (!in.atEnd())
+            {
+                const QStringList cells = in.readLine().split(QLatin1Char(','));
+                for (int i = 0; i < columns.size() && i < cells.size(); ++i)
+                    cols[i].push_back(cells.at(i).trimmed().toDouble());
+            }
+            file.close();
+            if (cols.isEmpty() || cols.first().isEmpty())
+                return fail(QStringLiteral("edata"), QStringLiteral("没有数据行"));
+
+            QVector<TimeUs> timeUs;
+            timeUs.reserve(cols.first().size());
+            for (double t : cols.first())
+                timeUs.push_back(static_cast<TimeUs>(t * 1000000.0));
+
+            ds = Dataset::create(fi.completeBaseName(), QStringLiteral("csv"));
+            if (ds.addTable(tableName, timeUs) < 0)
+                return fail(QStringLiteral("etable"), QStringLiteral("建表失败（重名/时间轴为空）"));
+            for (int c = 1; c < columns.size(); ++c)
+            {
+                QVector<bool> nulls; // CSV 空值场景可扩展；当前全部有效
+                if (!ds.addF64Column(tableName, columns.at(c), QString(), cols.at(c), &nulls))
+                    return fail(QStringLiteral("ecolumn"), QStringLiteral("添加列失败: %1").arg(columns.at(c)));
+            }
+
+            // 3) 写缓存（原子写，按源文件指纹）；缓存失败不影响加载成功。
+            QString cacheErr;
+            ds.saveCache(cachePath, sourceSize, sourceMtime, &cacheErr);
         }
 
         // 意图可携带稳定 id（录制/回放用）；未指定则用仓库自增 id。

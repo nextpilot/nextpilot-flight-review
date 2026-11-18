@@ -10,7 +10,7 @@
 
 数据绘图分析软件 = **三条主干 + 一个地基**。
 
-- 地基：**统一数据模型**。所有代码围绕 `Dataset / Series` 转。
+- 地基：**统一数据模型**，由 Rust kernel 提供（内存安全 + 列式高性能 + 缓存/抽稀/滤波），C++ 只做薄门面。
 - 主干一（数据）：把各种来源变成 `Dataset`。
 - 主干二（视图）：把 `Series` 渲染成图、支持交互。
 - 主干三（自动化）：把人的操作变成可复现的意图序列。
@@ -30,65 +30,64 @@ app/            CLI / GUI 入口（只做装配与参数解析）
 host/           装载循环、依赖拓扑、意图执行器、生命周期驱动
   ↓
 modules/        器官：data / plot / script（编译进 app，可配置关闭）
+extensions/     知识包：csv 等格式（格式 -> Dataset，可独立装卸）
   ↓
-core/           地基：Dataset/Series、DataRepository、事件、意图定义
-  ↓
-(可选) kernel   重计算：LOD/滤波/对齐，纯计算，无 UI 无插件概念
+core/           Dataset 的 C++ 薄门面 + DataRepository + 事件 + 意图定义
+  ↓              （只 include ps_kernel.h 一张 C ABI 门）
+kernel (Rust)   数据地基：ps-ndf typed 表 / ps-cache 缓存 / ps-ops 抽稀·滤波·统计
 ```
 
 依赖方向严格向下。**core 不依赖任何上层；module 之间零直接依赖。**
+**数据本体归 Rust kernel 所有，C++ core 只是它的 RAII 门面与 schema 投影。**
 
-## 3. 统一数据模型（core）
+## 3. 统一数据模型（core 门面 + Rust kernel 地基）
 
-数据模型对齐仓库 kernel（`ps-ndf/src/typed.rs`）的 typed 表模型——**Dataset 是多张二维表的库，不是扁平 Series 列表**：
+数据模型**不是 C++ 另起炉灶实现的**，而是直接复用仓库的 Rust kernel
+（`src/application/kernel`：`ps-ndf` typed 表 + `ps-cache` 缓存 + `ps-ops` 算子 +
+`ps-abi` C ABI）。这样做的原因：Rust 提供内存安全（panic 不跨 FFI）、列式高性能，
+并为缓存、抽稀、滤波、FFT、对齐准备了统一基础设施。C++ 侧只用 `Dataset` 做薄封装。
 
 ```cpp
-enum class ValueType { F64, F32, I64, U64, I32, U32, I16, U16, I8, U8, Bool, Text };
+// C++ 侧：Dataset = Rust PsDataset* 的共享 RAII 句柄 + schema 投影。
+// 数据本体（typed 列、null 位图、共享时间轴、ring 预算）全在 Rust，不复制到 C++。
+class Dataset {
+    static Dataset create(name, format);            // ps_dataset_new
+    static Dataset adopt(PsDataset*, name, format); // 接管缓存还原的句柄
+    PsDataset* nativeHandle() const;
 
-struct Column {              // 一列（列式存储）
-    QString name, unit;
-    ValueType type;          // 12 种 typed 值，对齐 PsValueType
-    std::vector<QVariant> values;
-    std::vector<bool> nulls; // 每列独立 null 位图
+    int addTable(name, QVector<int64_t> timeUs);   // ps_dataset_add_table_typed
+    bool addF64Column(table, name, unit, values);  // ps_dataset_add_table_column_typed
+
+    std::optional<ChannelView> channel("table.column"); // ps_dataset_read_window
+    QVector<LodTriple> lodMinMax(table, col, t0us, t1us, px); // ps_dataset_lod_minmax
+    int decimate(factor, t, v, outT, outV);        // ps_decimate_series
+    int applyFilter(id, params, ...);              // ps_filter_apply_series
+    std::optional<ColumnStats> stats(v);           // ps_stats_series
+    bool saveCache(path, size, mtime);             // ps_cache_save_dataset
+    static std::optional<Dataset> loadCache(...);  // ps_cache_load_dataset
 };
 
-struct Table {               // 一张表 = 一个 topic
+struct Table {  // 轻量 schema 投影（非真相源），从 native 的 channel 派生
     QString name;
-    QVector<qint64> timeUs;  // 表级共享时间轴，UTC 微秒（不是列里的 double 秒）
-    QVector<quint64> seq;    // 表内序号，微秒相同时排序
-    QVector<Column> columns; // 表内所有列共享 timeUs
-};
-
-struct ChannelView {         // 绘图视图：把 (table,column) 投影成 (t_sec,value) f64
-    QString table, column, name, unit;
-    ValueType type;
-    QVector<double> time, value;
-};
-
-class Dataset {              // 库：装多张表，表名在库内唯一
-    int addTable(name, QVector<qint64> timeUs);
-    bool addColumn(tableName, Column);
-    const Table* table(QString name) const;
-    std::optional<ChannelView> channel("table.column") const;
-};
-
-class DataRepository {       // 数据的唯一所有者
-    DatasetId add(Dataset);
-    void remove(DatasetId);
-    const Dataset* get(DatasetId) const;
+    QVector<int64_t> timeUs;   // UTC 微秒，表级共享
+    QVector<Column> columns;   // name/unit/ValueType/rowCount，不含 values
 };
 ```
 
-关键约束（与 kernel 一致）：
-- **时间轴是表级的、UTC 微秒 i64**，表内所有列共享；绘图时才投影成秒。
-- **列是 typed 的**，带独立 null 位图；不是清一色 f64。
-- **Dataset 归 DataRepository 所有**，不归任何模块。模块卸载不删数据。
-- 不可变快照：派生/变换产生新 Dataset，不改原对象。
-- ng 用纯 C++ 值类型表达这套语义，独立于 Rust kernel；未来可平滑接入真实 `PsDataset`。
+Rust kernel 侧的真实模型（`ps-ndf/src/typed.rs`，C++ 语义与之对齐）：
 
-- **Dataset 归 DataRepository 所有**，不归任何模块。模块卸载不删数据。
-- 数据快照不可变：派生/变换产生新 Dataset，避免多处修改同一份数据。
-- 时间统一 UTC 秒，起点对齐作为视图属性，不复制底层数组。
+- **Dataset = 多张 typed Table 的库**，表名库内唯一。
+- **Table = 共享 UTC 微秒 i64 时间轴 + seq + 多列**；一个 topic 一张表。
+- **Column = 12 种 `PsValueType` + 独立 null 位图**；列值按类型存储，不强制 f64。
+- **ChannelView = `(table,column)` 的 f64 绘图投影**，时间从微秒换算成秒。
+
+关键约束：
+- **数据所有权在 Rust**，C++ `Dataset` 只持句柄（`shared_ptr<PsDataset>` + `ps_dataset_free`）。
+- **单一真相源**：C++ schema 完全从 native 派生，不在 C++ 侧保存列值副本。
+- **数据归 DataRepository 所有**，不归任何模块；模块卸载不删数据。
+- **降采样/滤波/统计在 Rust 侧完成**（LOD 铁律），C++ 不持有全量大数据副本。
+- **缓存按源文件 size/mtime 指纹**，命中不经解析直接还原 dataset。
+- `ng_kernel` INTERFACE target 链接 `libps_abi.a`，所有下游自动继承 C ABI 头文件与库。
 
 ## 4. 模块与扩展
 
@@ -178,11 +177,15 @@ ng/
 
 ## 9. 落地顺序（进度）
 
-1. ✅ core：数据模型 + 意图定义。
+0. ✅ 接入 Rust kernel 作为数据地基：`ng_kernel` 链接 `libps_abi.a`，Dataset 改为
+   `PsDataset*` 的 RAII 门面；typed 构造 / read_window / LOD / 缓存 / 算子全走 C ABI。
+1. ✅ core：Dataset 门面 + schema 投影 + DataRepository + 意图定义。
 2. ✅ host：装载循环 + 依赖排序 + 执行器。
-3. ✅ 一条竖切：CSV 扩展 + 数据模块 + plot 意图，端到端跑通。
-4. ⬜ 再铺开其余格式与功能（ULog / apbin / 滤波算子 / GUI 画布）。
+3. ✅ 一条竖切：CSV 扩展（缓存优先）+ 数据模块 + plot 意图（含 Rust LOD），端到端跑通。
+4. ⬜ 再铺开其余格式与功能（ULog / apbin / GUI 画布；算子层已由 Rust 提供）。
 5. ✅ 脚本引擎与 Job 录制：Lua 门面 `ps` + 稳定 id + `--script/--record` 录制回放闭环。
 
-验证：编译全绿；契约测试覆盖多表模型、通道投影、意图执行、卸载隔离、
-脚本 headless 执行、录制回放闭环；CLI 三入口（list/info/run/script）实测可用。
+验证：编译全绿；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖 typed 多表模型、
+通道投影、**Rust LOD 抽稀 / 统计 / 抗混叠抽取 / ps-cache 指纹命中与过期**、
+意图执行、卸载隔离、脚本 headless 执行、录制回放闭环；CLI 五入口
+（kernel/list/info/run/script）实测可用。

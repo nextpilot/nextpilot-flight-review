@@ -5,11 +5,13 @@
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QTextStream>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 
 using namespace ng::app;
@@ -89,6 +91,47 @@ int main(int argc, char **argv)
     assert(ch->time.first() == 0.0 && ch->time.last() == 2.0);
     assert(ch->value.at(1) == 1.5);
     fprintf(stdout, "[ok] 通道投影 table.column 产出绘图用 (t_sec, value) 序列\n");
+
+    // 2c) Rust kernel 是数据地基：C++ 只持句柄，算子与缓存全部委托 Rust C ABI。
+    assert(ds->nativeHandle() != nullptr); // 数据本体由 Rust PsDataset 持有
+    // LOD 抽稀：把 3 点压到 2 个像素桶，Rust 返回 (x,min,max) 三元组。
+    const auto lod = ds->lodMinMax(QStringLiteral("demo"), QStringLiteral("roll"),
+                                   0, 2000000, 2);
+    assert(!lod.isEmpty() && lod.size() <= 2);
+    fprintf(stdout, "[ok] LOD 抽稀在 Rust 侧完成（%d 个三元组）\n", lod.size());
+    // 统计算子（ps_stats_series）：roll = 1.0/1.5/2.0，均值 1.5、最小 1、最大 2。
+    const auto st = ds->stats(ch->value, /*withMedian=*/true);
+    assert(st.has_value());
+    assert(st->count == 3);
+    assert(std::fabs(st->mean - 1.5) < 1e-9);
+    assert(std::fabs(st->min - 1.0) < 1e-9 && std::fabs(st->max - 2.0) < 1e-9);
+    fprintf(stdout, "[ok] 统计/滤波/抽取算子委托 Rust ps-ops（mean=%.2f）\n", st->mean);
+    // 抽取（ps_decimate_series）：factor=2 点数约减半。
+    QVector<double> dt, dv;
+    assert(ds->decimate(2, ch->time, ch->value, dt, dv) == 0);
+    assert(dt.size() < ch->size() && dt.size() >= 1);
+    fprintf(stdout, "[ok] 抗混叠抽取 factor=2：%d -> %d 点\n", ch->size(), dt.size());
+
+    // 2d) 缓存（ps-cache）：同一数据集写盘后按源文件指纹还原，schema 与列值一致。
+    {
+        const QString cachePath = csv + QStringLiteral(".psc");
+        const QFileInfo fi(csv);
+        assert(ds->saveCache(cachePath, fi.size(), fi.lastModified().toMSecsSinceEpoch()));
+        QString cacheErr;
+        auto restored = Dataset::loadCache(cachePath, fi.size(),
+                                           fi.lastModified().toMSecsSinceEpoch(), &cacheErr);
+        assert(restored.has_value());
+        assert(restored->nativeHandle() != nullptr);
+        assert(restored->tableCount() == 1);
+        const auto rch = restored->channel(QStringLiteral("demo.roll"));
+        assert(rch.has_value() && rch->size() == 3);
+        assert(std::fabs(rch->value.at(1) - 1.5) < 1e-9);
+        // 指纹不匹配应过期（size+1）。
+        auto stale = Dataset::loadCache(cachePath, fi.size() + 1,
+                                        fi.lastModified().toMSecsSinceEpoch());
+        assert(!stale.has_value());
+        fprintf(stdout, "[ok] ps-cache 指纹命中还原 + 指纹过期失效\n");
+    }
 
     // 3) 意图执行：plot 模块按 table.column 编译出 PlotSpec
     Result<IntentResult> rendered = application.modules().execute(renderIntent(id, QStringLiteral("demo.pitch")));

@@ -19,6 +19,7 @@ static void printUsage()
     fprintf(stdout,
             "用法:\n"
             "  plotscope-ng --list-modules\n"
+            "  plotscope-ng --kernel            # Rust kernel ABI/版本/自检\n"
             "  plotscope-ng --info <file.csv>\n"
             "  plotscope-ng --run <job.json>\n"
             "  plotscope-ng --script <file.lua> [--record <out.json>]\n");
@@ -68,6 +69,13 @@ int main(int argc, char **argv)
         fprintf(stderr, "[skip] %s: %s\n", qPrintable(it.key()), qPrintable(it.value()));
 
     const QString command = args.at(1);
+
+    if (command == QStringLiteral("--kernel"))
+    {
+        fprintf(stdout, "Rust kernel: version=%s abi=%u (需要 %u) selftest=%d\n",
+                ps_kernel_version(), ps_abi_version(), PS_ABI_VERSION, ps_abi_selftest());
+        return ps_abi_version() == PS_ABI_VERSION && ps_abi_selftest() == 0 ? 0 : 1;
+    }
 
     if (command == QStringLiteral("--list-modules"))
     {

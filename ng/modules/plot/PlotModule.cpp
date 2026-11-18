@@ -9,7 +9,8 @@ using namespace ng::host;
 
 // 把 plot.render 意图编译成 PlotSpec。headless 下这就是最终产物（可导出 JSON）；
 // GUI 下渲染器消费同一份 spec。意图层与视图层由此解耦。
-// 数据通过 Dataset 的通道投影访问（table.column），绘图模块不认识任何数据格式。
+// 数据访问全部经 Dataset 门面走 Rust C ABI：通道读 ps_dataset_read_window，
+// 视口抽稀走 ps_dataset_lod_minmax（降采样在 Rust 侧完成）。绘图模块不认识任何格式。
 class PlotModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
@@ -45,7 +46,7 @@ public:
         if (!view || view->empty())
             return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1").arg(qualified));
 
-        // PlotSpec：与 GUI 无关的纯描述。数据来自通道投影（秒/值），类型也带上。
+        // PlotSpec：与 GUI 无关的纯描述。points 来自 Rust read_window 的结果。
         QVariantMap spec;
         spec[QStringLiteral("type")] = QStringLiteral("timeseries");
         spec[QStringLiteral("title")] = QStringLiteral("%1 / %2").arg(ds->name(), view->name);
@@ -55,6 +56,18 @@ public:
         spec[QStringLiteral("points")] = view->size();
         spec[QStringLiteral("t0")] = view->time.isEmpty() ? 0.0 : view->time.first();
         spec[QStringLiteral("t1")] = view->time.isEmpty() ? 0.0 : view->time.last();
+
+        // 视口 LOD：若意图带像素宽度 px，调用 Rust 侧抽稀并把三元组数写入 spec。
+        // 证明"降采样在 Rust 侧完成"，C++ 不持有全量大数据副本。
+        const int px = intent.params.value(QStringLiteral("px"), 0).toInt();
+        if (px > 0)
+        {
+            const TimeUs t0 = static_cast<TimeUs>(spec[QStringLiteral("t0")].toDouble() * 1000000.0);
+            const TimeUs t1 = static_cast<TimeUs>(spec[QStringLiteral("t1")].toDouble() * 1000000.0);
+            const QVector<LodTriple> lod = ds->lodMinMax(view->table, view->column, t0, t1, px);
+            spec[QStringLiteral("lodTriples")] = lod.size();
+            spec[QStringLiteral("px")] = px;
+        }
 
         IntentResult r;
         r.payload = spec;
