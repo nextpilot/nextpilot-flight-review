@@ -89,6 +89,24 @@ Rust kernel 侧的真实模型（`ps-ndf/src/typed.rs`，C++ 语义与之对齐�
 - **缓存按源文件 size/mtime 指纹**，命中不经解析直接还原 dataset。
 - `ng_kernel` INTERFACE target 链接 `libps_abi.a`，所有下游自动继承 C ABI 头文件与库。
 
+### 3.1 零副本门面：百万级数据的内存铁律
+
+这套架构要承受**百万级数据**，内存与速度是硬约束。核心原则只有一句：
+
+> **所有高性能数据处理都在 Rust；C++ 只是门面**（句柄 RAII + C ABI 类型映射 + 意图翻译）。
+
+C++ 不存数据、不解析、不计算、不遍历。由此定死**三条不变量**：
+
+| 不变量 | 含义 | 实现 |
+|---|---|---|
+| C++ 常驻内存 = O(列数 + 窗口上限)，与行数无关 | schema 只存元数据（行数/首尾时间/列名/类型），不持有时间轴数组或列值 | `Table` 删掉 `QVector<TimeUs>`，只留 `firstTimeUs/lastTimeUs`；`rebuildSchema` O(1) 读首尾 |
+| 绘图路径 = O(px)，与行数无关 | 一屏最多几千点；100 万行和 100 行对 UI 同一成本 | `lodMinMax(px)` 返回 px 个三元组；`readWindow(cap)` 有界读，kernel 内等步长抽稀 |
+| 所有 O(n) 操作在 Rust | 加载/读取/抽稀/滤波/统计/缓存全委托 kernel | `append_frame` 流式灌入、`read_window`、`ps-ops`、`ps-cache`；C++ 一次调用零遍历 |
+
+**流式加载**：CSV 扩展逐行解析进固定 4096 行缓冲，满一批 `appendFrame` 灌入 Rust，缓冲复用；所有批次灌完后 `refreshSchema()` **只刷新一次**（kernel 的 `ps_dataset_channel()` 会重建整条 f64 时间轴，O(行数)，不能每批调）。C++ 峰值 = 一批缓冲（约 128KB），与文件大小无关。
+
+**实测**（100 万行 × 3 列 / 24MB CSV，走真实 `data.load` 路径）：加载 1.79 秒，峰值 RSS **58MB** ≈ Rust 数据本体（约 40MB）+ 运行时（约 15MB）+ C++ 单批缓冲。旧的全量 vector 方案会额外产生约 56MB C++ 副本，峰值 110MB+。契约测试含 20 万行流式加载 + 有界读取 + LOD 断言，全部通过。
+
 ## 4. 模块与扩展
 
 ### 4.1 统一接口

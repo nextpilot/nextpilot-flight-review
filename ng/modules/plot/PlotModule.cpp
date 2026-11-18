@@ -30,43 +30,58 @@ public:
         if (!ds)
             return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(id));
 
-        // 通道限定符："table.column"；缺省时取全库第一个通道。
-        const QString qualified = intent.params.value(QStringLiteral("channel")).toString();
-        std::optional<ChannelView> view;
+        // 通道限定符："table.column"；缺省时取全库第一个通道名。
+        QString qualified = intent.params.value(QStringLiteral("channel")).toString();
         if (qualified.isEmpty())
         {
-            const QVector<ChannelView> all = ds->allChannels();
-            if (!all.isEmpty())
-                view = all.first();
+            const QStringList tables = ds->tableNames();
+            if (tables.isEmpty() || ds->table(tables.first())->columns.isEmpty())
+                return fail(QStringLiteral("echan"), QStringLiteral("数据集无通道"));
+            qualified = tables.first() + QLatin1Char('.')
+                      + ds->table(tables.first())->columns.first().name;
+        }
+        const int dot = qualified.indexOf(QLatin1Char('.'));
+        if (dot <= 0)
+            return fail(QStringLiteral("echan"), QStringLiteral("通道名格式错误: %1").arg(qualified));
+        const QString tableName = qualified.left(dot);
+        const QString columnName = qualified.mid(dot + 1);
+        const Table *t = ds->table(tableName);
+        if (!t || !t->column(columnName))
+            return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1").arg(qualified));
+        const Column *col = t->column(columnName);
+
+        // 绘图路径的内存铁律：只看屏幕像素级数据，与总行数无关。
+        //   - 带 px：直接走 Rust LOD，输出恒定为 px 个 (x,min,max) 三元组，不读 full channel。
+        //   - 无 px：走有界 channel（默认 cap 4096），kernel 内等步长抽稀。
+        const int px = intent.params.value(QStringLiteral("px"), 0).toInt();
+        QVariantMap spec;
+        spec[QStringLiteral("type")] = QStringLiteral("timeseries");
+        spec[QStringLiteral("title")] = QStringLiteral("%1 / %2").arg(ds->name(), qualified);
+        spec[QStringLiteral("table")] = tableName;
+        spec[QStringLiteral("column")] = columnName;
+        spec[QStringLiteral("valueType")] = QString::fromLatin1(valueTypeName(col->type));
+        spec[QStringLiteral("rows")] = t->rows; // 数据总行数（元数据，不读数据）
+
+        if (px > 0)
+        {
+            const QVector<LodTriple> lod = ds->lodMinMax(
+                tableName, columnName, t->firstTimeUs, t->lastTimeUs, px);
+            spec[QStringLiteral("mode")] = QStringLiteral("lod");
+            spec[QStringLiteral("points")] = lod.size();
+            spec[QStringLiteral("lodTriples")] = lod.size();
+            spec[QStringLiteral("px")] = px;
+            spec[QStringLiteral("t0")] = t->firstTimeUs / 1000000.0;
+            spec[QStringLiteral("t1")] = t->lastTimeUs / 1000000.0;
         }
         else
         {
-            view = ds->channel(qualified);
-        }
-        if (!view || view->empty())
-            return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1").arg(qualified));
-
-        // PlotSpec：与 GUI 无关的纯描述。points 来自 Rust read_window 的结果。
-        QVariantMap spec;
-        spec[QStringLiteral("type")] = QStringLiteral("timeseries");
-        spec[QStringLiteral("title")] = QStringLiteral("%1 / %2").arg(ds->name(), view->name);
-        spec[QStringLiteral("table")] = view->table;
-        spec[QStringLiteral("column")] = view->column;
-        spec[QStringLiteral("valueType")] = QString::fromLatin1(valueTypeName(view->type));
-        spec[QStringLiteral("points")] = view->size();
-        spec[QStringLiteral("t0")] = view->time.isEmpty() ? 0.0 : view->time.first();
-        spec[QStringLiteral("t1")] = view->time.isEmpty() ? 0.0 : view->time.last();
-
-        // 视口 LOD：若意图带像素宽度 px，调用 Rust 侧抽稀并把三元组数写入 spec。
-        // 证明"降采样在 Rust 侧完成"，C++ 不持有全量大数据副本。
-        const int px = intent.params.value(QStringLiteral("px"), 0).toInt();
-        if (px > 0)
-        {
-            const TimeUs t0 = static_cast<TimeUs>(spec[QStringLiteral("t0")].toDouble() * 1000000.0);
-            const TimeUs t1 = static_cast<TimeUs>(spec[QStringLiteral("t1")].toDouble() * 1000000.0);
-            const QVector<LodTriple> lod = ds->lodMinMax(view->table, view->column, t0, t1, px);
-            spec[QStringLiteral("lodTriples")] = lod.size();
-            spec[QStringLiteral("px")] = px;
+            const auto view = ds->channel(tableName, columnName);
+            if (!view || view->empty())
+                return fail(QStringLiteral("echan"), QStringLiteral("通道无数据: %1").arg(qualified));
+            spec[QStringLiteral("mode")] = QStringLiteral("window");
+            spec[QStringLiteral("points")] = view->size();
+            spec[QStringLiteral("t0")] = view->time.first();
+            spec[QStringLiteral("t1")] = view->time.last();
         }
 
         IntentResult r;

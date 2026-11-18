@@ -33,9 +33,11 @@ QVector<quint8> packNulls(const QVector<bool> *flags, int n)
     return bits;
 }
 
-// 从 Rust native 重建 C++ schema 投影。schema 完全派生自 Rust，不在 C++ 侧另存一份真相。
-// 注意：kernel 的 typed 表在没有任何列时不产生 channel，因此"空表"无法从 channel 枚举出来；
-// keepEmpty 用于 addTable 后立即重建时保留调用方刚建的表（时间轴由调用方持有并传入）。
+// 从 Rust native 重建 C++ schema 投影。
+// 铁律：只读 O(1) 元数据（行数/首尾时间/列名/类型/单位），绝不复制时间轴或列值数组。
+// PsChannelInfo::time 指向 Rust 内部 f64 视图（秒），首/末元素 O(1) 可读；
+// 每列一个 typed channel，共享同一时间轴。
+// kernel 的 typed 空表不产生 channel，keepEmpty 用于 addTable 后立即重建时保留空表。
 void rebuildSchema(const std::shared_ptr<PsDataset> &native, QVector<Table> &out,
                    const QVector<Table> *keepEmpty = nullptr)
 {
@@ -46,7 +48,7 @@ void rebuildSchema(const std::shared_ptr<PsDataset> &native, QVector<Table> &out
     for (quint32 i = 0; i < n; ++i)
     {
         const PsChannelInfo *info = ps_dataset_channel(native.get(), i);
-        if (!info || !info->table || !info->column || !info->time)
+        if (!info || !info->table || !info->column)
             continue; // 跳过旧式 f64 通道，只投影 typed 表列
         const QString tableName = QString::fromUtf8(info->table);
         int ti = -1;
@@ -60,10 +62,13 @@ void rebuildSchema(const std::shared_ptr<PsDataset> &native, QVector<Table> &out
         {
             Table t;
             t.name = tableName;
-            const int rows = static_cast<int>(info->point_count);
-            t.timeUs.reserve(rows);
-            for (int r = 0; r < rows; ++r)
-                t.timeUs.push_back(static_cast<TimeUs>(std::llround(info->time[r] * 1000000.0)));
+            t.rows = static_cast<int>(info->point_count);
+            // O(1) 读首尾时间：f64 秒 * 1e6 还原为 UTC 微秒。
+            if (info->time && t.rows > 0)
+            {
+                t.firstTimeUs = static_cast<TimeUs>(std::llround(info->time[0] * 1000000.0));
+                t.lastTimeUs = static_cast<TimeUs>(std::llround(info->time[t.rows - 1] * 1000000.0));
+            }
             out.push_back(std::move(t));
             ti = out.size() - 1;
         }
@@ -150,7 +155,7 @@ public:
     QString name;
     QString format;
     std::shared_ptr<PsDataset> native;
-    QVector<Table> schema; // 从 native 投影，非真相源
+    QVector<Table> schema; // 从 native 投影的纯元数据，非真相源
 };
 
 Dataset::Dataset() : d(new Data) {}
@@ -243,6 +248,55 @@ QStringList Dataset::tableNames() const
     return names;
 }
 
+bool Dataset::appendFrame(const QString &table, const TimeUs *timeUs, int count,
+                          const QVector<FrameColumn> &columns, QString *err)
+{
+    if (!d->native || table.isEmpty() || !timeUs || count <= 0)
+        return false;
+
+    const QByteArray tableUtf8 = table.toUtf8();
+    QVector<QByteArray> nameBufs;
+    QVector<QByteArray> unitBufs;
+    QVector<PsFrameColumn> nativeCols;
+    nameBufs.reserve(columns.size());
+    unitBufs.reserve(columns.size());
+    nativeCols.reserve(columns.size());
+    for (const FrameColumn &c : columns)
+    {
+        nameBufs.push_back(c.name.toUtf8());
+        unitBufs.push_back(c.unit.toUtf8());
+        PsFrameColumn nc;
+        std::memset(&nc, 0, sizeof(nc));
+        nc.name = nameBufs.constLast().constData();
+        nc.unit = unitBufs.constLast().constData();
+        nc.type = static_cast<PsValueType>(static_cast<int>(c.type));
+        nc.values = c.values;
+        nc.nulls = c.nulls;
+        nativeCols.push_back(nc);
+    }
+
+    char errBuf[256] = {0};
+    const int rc = ps_dataset_append_frame(
+        d->native.get(), tableUtf8.constData(), timeUs, static_cast<quint32>(count),
+        nativeCols.constData(), static_cast<quint32>(nativeCols.size()),
+        errBuf, sizeof(errBuf));
+    if (rc != 0)
+    {
+        if (err)
+            *err = QString::fromUtf8(errBuf);
+        return false;
+    }
+    // 刻意不在此刷新 schema：kernel 的 ps_dataset_channel() 会触发 rebuild_infos()
+    // 重建整条 f64 时间轴（O(行数)）。流式加载应在所有批次灌完后调用一次 refreshSchema()，
+    // 否则每批刷新会退化成 O(批数 × 行数)。
+    return true;
+}
+
+void Dataset::refreshSchema()
+{
+    rebuildSchema(d->native, d->schema);
+}
+
 int Dataset::addTable(const QString &name, const QVector<TimeUs> &timeUs)
 {
     if (!d->native || name.isEmpty() || timeUs.isEmpty() || tableIndex(name) >= 0)
@@ -254,10 +308,12 @@ int Dataset::addTable(const QString &name, const QVector<TimeUs> &timeUs)
                                               static_cast<quint32>(timeUs.size()), err, sizeof(err));
     if (rc != 0)
         return -1;
-    // 空表在 kernel 侧尚无 channel，无法从 native 投影出时间轴；直接登记调用方已知的时间轴。
+    // 空表在 kernel 侧尚无 channel，无法投影；直接登记调用方已知的 O(1) 元数据。
     Table t;
     t.name = name;
-    t.timeUs = timeUs;
+    t.rows = timeUs.size();
+    t.firstTimeUs = timeUs.first();
+    t.lastTimeUs = timeUs.last();
     d->schema.push_back(std::move(t));
     return d->schema.size() - 1;
 }
@@ -301,9 +357,11 @@ double Dataset::timeMin() const
 {
     std::optional<TimeUs> min;
     for (const Table &t : d->schema)
-        for (TimeUs us : t.timeUs)
-            if (!min || us < *min)
-                min = us;
+        if (t.rows > 0)
+        {
+            if (!min || t.firstTimeUs < *min)
+                min = t.firstTimeUs;
+        }
     return min ? *min / 1000000.0 : 0.0;
 }
 
@@ -311,33 +369,32 @@ double Dataset::timeMax() const
 {
     std::optional<TimeUs> max;
     for (const Table &t : d->schema)
-        for (TimeUs us : t.timeUs)
-            if (!max || us > *max)
-                max = us;
+        if (t.rows > 0)
+        {
+            if (!max || t.lastTimeUs > *max)
+                max = t.lastTimeUs;
+        }
     return max ? *max / 1000000.0 : 0.0;
 }
 
-std::optional<ChannelView> Dataset::channel(const QString &tableName, const QString &columnName) const
+std::optional<ChannelView> Dataset::readWindow(const QString &tableName, const QString &columnName,
+                                               TimeUs t0Us, TimeUs t1Us, int cap) const
 {
-    if (!d->native)
+    if (!d->native || cap <= 0)
         return std::nullopt;
     const Table *t = table(tableName);
-    if (!t || !t->column(columnName))
+    if (!t || !t->column(columnName) || t->rows <= 0)
         return std::nullopt;
 
     const QByteArray tableUtf8 = tableName.toUtf8();
     const QByteArray colUtf8 = columnName.toUtf8();
-    const int rows = t->rowCount();
-    if (rows <= 0)
-        return std::nullopt;
-
-    QVector<double> time(rows);
-    QVector<double> value(rows);
-    // 全量读：[INT64_MIN, INT64_MAX]，cap=rows 不触发等步长抽稀。
+    const int n = qMin(cap, t->rows);
+    QVector<double> time(n);
+    QVector<double> value(n);
+    // 有界读：cap 由调用方给定，kernel 在行数超过 cap 时等步长抽稀。
     const quint32 got = ps_dataset_read_window(
         d->native.get(), tableUtf8.constData(), colUtf8.constData(),
-        std::numeric_limits<TimeUs>::min(), std::numeric_limits<TimeUs>::max(),
-        time.data(), value.data(), static_cast<quint32>(rows));
+        t0Us, t1Us, time.data(), value.data(), static_cast<quint32>(n));
     if (got == 0)
         return std::nullopt;
 
@@ -352,31 +409,42 @@ std::optional<ChannelView> Dataset::channel(const QString &tableName, const QStr
     view.value.reserve(got);
     for (quint32 i = 0; i < got; ++i)
     {
-        if (std::isnan(value.at(static_cast<int>(i))))
+        const double v = value.at(static_cast<int>(i));
+        if (std::isnan(v))
             continue; // null 行跳过，与 kernel 视图一致
         view.time.push_back(time.at(static_cast<int>(i)));
-        view.value.push_back(value.at(static_cast<int>(i)));
+        view.value.push_back(v);
     }
     return view;
 }
 
-std::optional<ChannelView> Dataset::channel(const QString &qualifiedName) const
+std::optional<ChannelView> Dataset::channel(const QString &tableName, const QString &columnName,
+                                            int cap) const
+{
+    const Table *t = table(tableName);
+    if (!t)
+        return std::nullopt;
+    // 有界读：[首时间, 末时间] 窗口内最多 cap 点。
+    return readWindow(tableName, columnName, t->firstTimeUs, t->lastTimeUs, cap);
+}
+
+std::optional<ChannelView> Dataset::channel(const QString &qualifiedName, int cap) const
 {
     const int dot = qualifiedName.indexOf(QLatin1Char('.'));
     if (dot > 0)
-        return channel(qualifiedName.left(dot), qualifiedName.mid(dot + 1));
+        return channel(qualifiedName.left(dot), qualifiedName.mid(dot + 1), cap);
     for (const Table &t : d->schema)
         if (t.column(qualifiedName))
-            return channel(t.name, qualifiedName);
+            return channel(t.name, qualifiedName, cap);
     return std::nullopt;
 }
 
-QVector<ChannelView> Dataset::allChannels() const
+QVector<ChannelView> Dataset::allChannels(int cap) const
 {
     QVector<ChannelView> out;
     for (const Table &t : d->schema)
         for (const Column &c : t.columns)
-            if (auto view = channel(t.name, c.name))
+            if (auto view = channel(t.name, c.name, cap))
                 out.push_back(std::move(*view));
     return out;
 }
@@ -407,21 +475,21 @@ int Dataset::applyFilter(const QString &filterId, const QJsonObject &params,
                          QVector<double> &outT, QVector<double> &outV, QString *err) const
 {
     const QByteArray idUtf8 = filterId.toUtf8();
-    const QByteArray json = QJsonDocument(params).toJson(QJsonDocument::Compact);
+    const QJsonDocument json = QJsonDocument(params);
+    const QByteArray jsonBytes = json.toJson(QJsonDocument::Compact);
     const quint32 n = static_cast<quint32>(qMin(t.size(), v.size()));
     quint32 outN = 0;
     char errBuf[256] = {0};
     outT.resize(n);
     outV.resize(n);
-    // 缓冲不足时 Rust 返回 6 并回填 outN 实际长度 -> 扩容重试一次。
-    int rc = ps_filter_apply_series(idUtf8.constData(), json.constData(),
+    int rc = ps_filter_apply_series(idUtf8.constData(), jsonBytes.constData(),
                                     t.constData(), v.constData(), n,
                                     outT.data(), outV.data(), n, &outN, errBuf, sizeof(errBuf));
     if (rc == 6 && outN > 0)
     {
         outT.resize(outN);
         outV.resize(outN);
-        rc = ps_filter_apply_series(idUtf8.constData(), json.constData(),
+        rc = ps_filter_apply_series(idUtf8.constData(), jsonBytes.constData(),
                                     t.constData(), v.constData(), n,
                                     outT.data(), outV.data(), outN, &outN, errBuf, sizeof(errBuf));
     }

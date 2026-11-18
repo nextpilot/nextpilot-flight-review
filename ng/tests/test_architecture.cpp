@@ -78,11 +78,10 @@ int main(int argc, char **argv)
     assert(t->column(QStringLiteral("roll")) != nullptr);
     assert(t->column(QStringLiteral("pitch")) != nullptr);
     assert(t->column(QStringLiteral("roll"))->type == ValueType::F64);
-    // 共享时间轴：UTC 微秒，0/1/2 秒
-    assert(t->timeUs.at(0) == 0);
-    assert(t->timeUs.at(1) == 1000000);
-    assert(t->timeUs.at(2) == 2000000);
-    fprintf(stdout, "[ok] Dataset = 多张二维表；表内列共享 UTC 微秒时间轴（typed 列 + nulls）\n");
+    // 时间轴本体在 Rust；C++ 只存 O(1) 元数据（首/末时间），不复制整条数组。
+    assert(t->firstTimeUs == 0);
+    assert(t->lastTimeUs == 2000000);
+    fprintf(stdout, "[ok] Dataset = 多张二维表；C++ 仅存首尾时间元数据（时间轴本体在 Rust）\n");
 
     // 2b) 通道投影：table.column -> (秒,值) f64 序列
     const auto ch = ds->channel(QStringLiteral("demo.roll"));
@@ -91,6 +90,11 @@ int main(int argc, char **argv)
     assert(ch->time.first() == 0.0 && ch->time.last() == 2.0);
     assert(ch->value.at(1) == 1.5);
     fprintf(stdout, "[ok] 通道投影 table.column 产出绘图用 (t_sec, value) 序列\n");
+
+    // 2b-2) 有界读取：cap 是硬上限，绝不返回超过 cap 的点（kernel 内等步长抽稀）。
+    const auto capped = ds->channel(QStringLiteral("demo.roll"), /*cap=*/2);
+    assert(capped.has_value() && capped->size() == 2);
+    fprintf(stdout, "[ok] readWindow cap 硬上限：请求 2 点只读 2 点（不全量物化）\n");
 
     // 2c) Rust kernel 是数据地基：C++ 只持句柄，算子与缓存全部委托 Rust C ABI。
     assert(ds->nativeHandle() != nullptr); // 数据本体由 Rust PsDataset 持有
@@ -215,6 +219,61 @@ int main(int argc, char **argv)
     assert(parseErr);
     assert(restored.size() == 2);
     fprintf(stdout, "[ok] Job JSON 序列化往返\n");
+
+    // 7) 百万行压力：验证流式加载 + 有界读取，C++ 侧内存与行数无关。
+    //    用 20 万行（CI 友好）即可证明三条不变量；行数可放大到百万而不改代码路径。
+    //    直接走 Dataset::appendFrame 分块灌入，模拟 CSV 扩展的加载方式。
+    {
+        constexpr qint64 kRows = 200000;
+        constexpr int kBatch = 4096;
+        Dataset big = Dataset::create(QStringLiteral("big"), QStringLiteral("stress"));
+        QVector<TimeUs> tbuf(kBatch);
+        QVector<double> vbuf(kBatch);
+        QVector<FrameColumn> cols(1);
+        cols[0].name = QStringLiteral("sig");
+        cols[0].unit = QString();
+        cols[0].type = ValueType::F64;
+        cols[0].values = vbuf.constData();
+        cols[0].nulls = nullptr;
+
+        qint64 written = 0;
+        while (written < kRows)
+        {
+            const int n = static_cast<int>(qMin<qint64>(kBatch, kRows - written));
+            for (int i = 0; i < n; ++i)
+            {
+                const qint64 r = written + i;
+                tbuf[i] = static_cast<TimeUs>(r) * 1000; // 每行 1ms → 微秒
+                vbuf[i] = static_cast<double>(r % 1000);
+            }
+            QString err;
+            assert(big.appendFrame(QStringLiteral("trace"), tbuf.constData(), n, cols, &err));
+            written += n;
+        }
+        big.refreshSchema();
+
+        const Table *bt = big.table(QStringLiteral("trace"));
+        assert(bt != nullptr && bt->rows == kRows);
+        assert(bt->firstTimeUs == 0);
+        assert(bt->lastTimeUs == (kRows - 1) * 1000);
+        fprintf(stdout, "[ok] 流式灌入 %lld 行：schema 只存首尾时间，无 C++ 全量副本\n", kRows);
+
+        // 有界读取：无论 20 万行，channel 默认只取 kDefaultWindowPoints（4096）点。
+        const auto w = big.channel(QStringLiteral("trace.sig"));
+        assert(w.has_value() && w->size() <= Dataset::kDefaultWindowPoints);
+        assert(w->size() > 0);
+        // 自定义更小的 cap 也严格生效。
+        const auto w2 = big.channel(QStringLiteral("trace.sig"), /*cap=*/128);
+        assert(w2.has_value() && w2->size() == 128);
+        fprintf(stdout, "[ok] 20 万行有界读取：默认 %d 点 / 指定 128 点（与行数无关）\n",
+                Dataset::kDefaultWindowPoints);
+
+        // LOD：20 万行压到 800 个像素桶，三元组数恒定在 px 量级。
+        const auto blod = big.lodMinMax(QStringLiteral("trace"), QStringLiteral("sig"),
+                                        bt->firstTimeUs, bt->lastTimeUs, /*px=*/800);
+        assert(!blod.isEmpty() && blod.size() <= 800);
+        fprintf(stdout, "[ok] 20 万行 LOD 抽稀到 %d 个三元组（px 有界）\n", blod.size());
+    }
 
     fprintf(stdout, "\n全部架构契约测试通过\n");
     return 0;
