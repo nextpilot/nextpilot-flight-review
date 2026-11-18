@@ -60,7 +60,7 @@ public:
 ```
 
 - `ParserParam`（原 `ParamField`）上提到 core，`IFormatDriver` 与解析器描述共用一份定义，避免两套字段模型。
-- **单一真源（建议）**：元信息由解析器自述；`IFormatDriver` 委托给它对应的解析器，不在驱动侧再维护一份名称/后缀/参数。
+- **单一真源（已定）**：元信息由**解析器自述**；`IFormatDriver` 委托给它对应的解析器（按 `parserId` 取描述），不在驱动侧再维护一份名称/后缀/领域/参数。驱动只保留两件解析器给不出的事：表名策略 `preferredTableName`、旧路径 `load()` 兼容桥。现状里 driver 与 `PsParserInfo` 各存一份 displayName/extensions 的重复，迁 v2 时收敛掉。
 - 描述全部是纯值结构，不含 QWidget、不含解析逻辑，可 headless 单测。
 
 ### 3.2 字符步进基类 `CharStreamParser`
@@ -187,7 +187,7 @@ finish()：冲刷残余里没结束的最后一行
 ### 3.5 与现有 C ABI 的关系
 
 - **内置 C++ 解析器**：继承 `CharStreamParser`，基类导出 vtable；`NG_REGISTER_PARSER` 宏改为接收基类子类。
-- **外部插件（.so/.dll）**：保留纯 C ABI；描述信息经 vtable 尾部可选槽位返回（描述结构或 JSON）。老插件不填新槽位时，回退到旧 `PsParserInfo` 字段，不破坏兼容。
+- **外部插件（.so/.dll）**（本批一并做）：保留纯 C ABI；vtable 尾部加可选描述槽 `descriptor()`，返回 C 描述结构（id/name/description/domain/transports 位掩码/extensions），参数 schema 以 JSON 字符串返回（沿用老 loader schema 口径）。老插件不填新槽位时，回退到旧 `PsParserInfo` 字段，不破坏兼容；ABI 版本号与 `struct_size` 判定照旧。
 
 ### 3.4 对话框消费
 
@@ -202,9 +202,9 @@ finish()：冲刷残余里没结束的最后一行
 
 | 批次 | 内容 | 验收 |
 |---|---|---|
-| Q1 | core 抽出 `Transport / ParserParam / IParserDescriptor`；`CharStreamParser` 基类 + vtable 适配；`PspxParser` 迁移为参考实现 | 单测：逐字节喂入拼出整帧；残余跨 feed 保留；描述字段可查；ctest 通过 |
-| Q2 | `ParserRegistry` 与对话框接描述信息（领域分组/传输过滤/schema 表单）；现有解析器逐个迁到基类 | 对话框按描述生成表单；ULog/CSV 迁移后行为不变 |
-| Q3 | 插件 ABI 描述槽位；活源（udp/tcp/serial）接入通路 | 外部插件可声明描述；活源能建源 |
+| Q1 | core 抽出 `Transport / ParserParam / IParserDescriptor`；`CharStreamParser` 基类 + vtable 适配；C ABI 可选描述槽 + `configure(params)` 槽位；`PspxParser` 迁移为参考实现 | 单测：逐字节喂入拼出整帧；残余跨 feed 保留；描述字段可查；配置参数到达实例；ctest 通过 |
+| Q2 | `ParserRegistry` 与对话框接描述信息（领域分组/传输过滤/schema 表单）；驱动委托解析器描述、收敛重复元数据；现有解析器逐个迁到基类；插件描述槽兼容验证 | 对话框按描述生成表单；ULog/CSV 迁移后行为不变；老插件无描述槽时回退旧 info |
+| Q3 | 活源（udp/tcp/serial/can）字节源实现与接入通路 | 活源能建源、喂解析器；录制 tee 覆盖活源 |
 
 ## 5. 与协议搬迁的关系
 
@@ -216,10 +216,10 @@ finish()：冲刷残余里没结束的最后一行
 
 ## 6. 待拍板
 
-1. **描述真源**：解析器自述、驱动委托（推荐），还是驱动侧另维护一份？
+1. ~~**描述真源**~~ **已定**：解析器自述，驱动委托（见 §3.1），不再双份维护。
 2. ~~**`parseChar` 范围**~~ **已定**：`parseChar` 为默认主路径，`feedChunk` 批量逃生门保留（见 §3.2）。
 3. ~~**Transport 枚举**~~ **已定**：`File / Serial(COM) / Udp / Tcp / Can`；WebSocket/Bluetooth/SharedMemory 预留，需要时再加。解析器可声明支持其中多种。
-4. **插件描述槽**：本批只服务内置 C++ 解析器，还是同步把描述回传槽位加进外部插件 ABI？
+4. ~~**插件描述槽**~~ **已定**：本批同步加进外部插件 ABI（可选尾部槽，老插件回退旧 info，见 §3.5）。
 
 ## 7. 红线
 
