@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | P1–P9 库层完成（2026-11-18）；会话/视图层待接，见 §13 |
+| 状态 | P1–P9 库层完成（2026-11-18）；已集成进 `nextgen-architecture`，画布/拖拽/主题/仪表意图均接通（2026-11-19 核实，见 §13.2.5）；多曲线叠加与会话层待办见 §13.3 |
 | 位置 | `ng/libs/fastplot/` |
 | 目标 | 把老 `src/application/modules/plotting` 的**绘图能力**抽成独立库，供 ng 直接调用 |
 | 约束 | `src/` 只读参考，不改一行；库不依赖 `ng/core`，纯 Qt Widgets |
@@ -319,6 +319,20 @@ Traj3D | Trajectory3D | 已接仪表意图 |
 GpsMap | TrackPlot | 经纬度折线 + 起终点色点；无底图瓦片 |
 Surface3D | WaterfallPlot（已覆盖） | 老实现本身就是 z 错开折线瀑布，非真曲面；真栅格曲面将来另立 `SurfacePlot` |
 
+### 13.2.5 集成核实（2026-11-19，fastplot 合并进 ng 后）
+
+合并进 `nextgen-architecture` 后逐项实测，校正上表的"待接"措辞：
+
+| 项 | 核实结果 | 处理 |
+|---|---|---|
+| 画布渲染链路 | **确实可用**：真实 ULog/CSV → Rust LOD → `PlotWidget` 出包络曲线+轴+网格+图例；截图与像素断言均证实 | 已接 |
+| 拖拽画图（列→画布） | 合并前两端都缺接收端；DataManagerPanel 只发 `ChannelMime` | **本轮补上**：PlotCanvas `dropEvent` 解码→发 `channelDropped`→ChannelView 走 `plot.channel` 意图，与双击同路径；测试覆盖合法/非法 MIME |
+| 主题换肤 | fastplot 库内颜色构造时写死，深色主题下刺眼 | **本轮修**：宿主 `PlotCanvas::applyPalette()` 从 palette 注入颜色，库保持纯净 |
+| Release 测试假绿 | `test_fastplot`/`test_fastplot_instruments` 用标准 `assert`，Release `-DNDEBUG` 下被消除 → ctest 假绿 | **本轮修**：改用 exit(1) 的 `CHECK` 硬断言，Debug/Release 均真校验（72+15 项） |
+| 仪表主窗口入口 | `plot.instrument` 意图 + `plot-instrument` 面板都在，但 MainWindow 未挂动作 | 仍待办：入口形态（ribbon/面板切换/双击推断）未拍板 |
+| 散点/柱/直方/频谱 ng 入口 | 库层就绪，ng 无图型选择入口 | 仍待办：依赖下面的多曲线叠加 |
+| 多曲线叠加 | 当前画布 `pushToPlot` 每次 `clearCurves()` 只画一条 | 仍待办：**最大前置项**，见 13.3-1 |
+
 ### 13.3 待完成（按依赖顺序）
 
 1. **多曲线叠加**（前置项）：系列增删、左右轴归属、系列颜色/线型编辑；当前画布单曲线。双轴 UI、XY 配对、系列面板都卡在它后面。
@@ -329,5 +343,6 @@ Surface3D | WaterfallPlot（已覆盖） | 老实现本身就是 z 错开折线�
 
 ### 13.4 测试基线
 
-- ctest 8/8（Linux offscreen）：架构装配、GUI 装配、解析管道、P1–P4 库能力、真实 ULog LOD、六仪表、ng 仪表意图+视图、画布导出/状态/图例派发闭环、散点/柱/直方/频谱出图断言。
-- 未覆盖：多画布拆分、A/B 游标、上述图型的 ng 视图入口、真栅格曲面、Windows 构建。
+- ctest 8/8（Linux offscreen，Debug+Release 均实测通过）：架构装配、GUI 装配、解析管道、P1–P4 库能力、真实 ULog LOD、六仪表、ng 仪表意图+视图、画布导出/状态/图例派发闭环、散点/柱/直方/频谱出图断言、拖拽画图（合法/非法 MIME）。
+  - 注：库能力两套（P1/P5）原用标准 `assert`，Release `-DNDEBUG` 下会被消除成假绿；2026-11-19 已改用 `CHECK` 硬断言，Debug/Release 均为真校验。
+- 未覆盖：多画布拆分、A/B 游标、上述图型的 ng 视图入口、仪表主窗口入口、真栅格曲面、Windows 构建（本环境无法验证）。

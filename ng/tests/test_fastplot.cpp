@@ -1,6 +1,6 @@
 // fastplot P1 契约测试：视口映射、刻度划分、布局边距、图层缓存渲染。
 //
-// 不引入 QtTest —— 与仓库其它测试一致，用 assert + 打印。
+// 不引入 QtTest —— 用 CHECK 硬断言（Release 下 assert 会被 NDEBUG 消除，不能用）。
 #include <fastplot/BarChart.h>
 #include <fastplot/Histogram.h>
 #include <fastplot/SpectrumPlot.h>
@@ -19,6 +19,17 @@
 #include <cmath>
 #include <cstdio>
 #include <vector>
+
+// 硬断言：Release 下 -DNDEBUG 会消除标准 assert，测试就成空跑。
+// 用本宏替代 assert，失败即 exit(1)，Debug/Release 都真正校验。
+#include <cstdlib>
+#define CHECK(cond)                                                                      \
+    do {                                                                                 \
+        if (!(cond)) {                                                                   \
+            fprintf(stderr, "[FAIL] %s:%d  %s\n", __FILE__, __LINE__, #cond);            \
+            std::exit(1);                                                                \
+        }                                                                                \
+    } while (0)
 
 namespace
 {
@@ -43,34 +54,34 @@ int main(int argc, char **argv)
         vp.setXRange(0.0, 1.0);
         vp.setYRange(0.0, 1.0);
 
-        assert(near(vp.xToPixel(0.0), 10.0));
-        assert(near(vp.xToPixel(1.0), 110.0));
+        CHECK(near(vp.xToPixel(0.0), 10.0));
+        CHECK(near(vp.xToPixel(1.0), 110.0));
         // y 向上增大：上限在顶边，下限在底边
-        assert(near(vp.yToPixel(1.0), 10.0));
-        assert(near(vp.yToPixel(0.0), 60.0));
+        CHECK(near(vp.yToPixel(1.0), 10.0));
+        CHECK(near(vp.yToPixel(0.0), 60.0));
         // 往返一致
-        assert(near(vp.pixelToX(vp.xToPixel(0.37)), 0.37));
-        assert(near(vp.pixelToY(vp.yToPixel(0.42)), 0.42));
+        CHECK(near(vp.pixelToX(vp.xToPixel(0.37)), 0.37));
+        CHECK(near(vp.pixelToY(vp.yToPixel(0.42)), 0.42));
 
         // lo == hi 自动展开，不除零
         fastplot::Viewport degenerate;
         degenerate.setPlotRect(QRectF(0, 0, 10, 10));
         degenerate.setXRange(5.0, 5.0);
-        assert(degenerate.xUpper() > degenerate.xLower());
-        assert(std::isfinite(degenerate.xToPixel(5.0)));
+        CHECK(degenerate.xUpper() > degenerate.xLower());
+        CHECK(std::isfinite(degenerate.xToPixel(5.0)));
         fprintf(stdout, "[ok] Viewport：四角映射精确 + 退化范围自动展开\n");
     }
 
     // 2) 刻度划分：步长是"好看数"，标签无浮点尾巴
     {
         const fastplot::ScaleDiv div = fastplot::ScaleDiv::linear(0.0, 2.0, 8);
-        assert(div.majorStep > 0.0);
+        CHECK(div.majorStep > 0.0);
         // 0~2 分 8 段 → 步长应落在 0.2 / 0.25 这类"好看数"
         const bool niceStep = near(div.majorStep, 0.2) || near(div.majorStep, 0.25)
             || near(div.majorStep, 0.5);
-        assert(niceStep);
-        assert(div.lower <= 0.0 + 1e-12);
-        assert(div.upper >= 2.0 - 1e-12);
+        CHECK(niceStep);
+        CHECK(div.lower <= 0.0 + 1e-12);
+        CHECK(div.upper >= 2.0 - 1e-12);
 
         int majors = 0;
         for (const fastplot::Tick &t : div.ticks)
@@ -78,14 +89,14 @@ int main(int argc, char **argv)
             if (!t.major)
                 continue;
             ++majors;
-            assert(!t.label.isEmpty());
-            assert(!t.label.contains(QStringLiteral("00000000")));
+            CHECK(!t.label.isEmpty());
+            CHECK(!t.label.contains(QStringLiteral("00000000")));
         }
-        assert(majors >= 5);
+        CHECK(majors >= 5);
 
         // 标签格式：0.25 不带多余 0，-0 归一成 0
-        assert(fastplot::ScaleDiv::formatValue(0.25, 0.25) == QStringLiteral("0.25"));
-        assert(fastplot::ScaleDiv::formatValue(-0.0, 0.25) == QStringLiteral("0"));
+        CHECK(fastplot::ScaleDiv::formatValue(0.25, 0.25) == QStringLiteral("0.25"));
+        CHECK(fastplot::ScaleDiv::formatValue(-0.0, 0.25) == QStringLiteral("0"));
         fprintf(stdout, "[ok] ScaleDiv：步长 %.3f，主刻度 %d 个，标签 %.1f\n",
                 div.majorStep, majors, div.ticks.isEmpty() ? 0.0 : div.ticks.first().value);
     }
@@ -98,19 +109,19 @@ int main(int argc, char **argv)
         plot.setYRange(-1.0, 1.0);
 
         const QRectF pr = plot.plotRect();
-        assert(pr.width() > 600 && pr.height() > 300);
-        assert(pr.left() >= 24);            // 左轴标签占位
-        assert(pr.bottom() <= 400 - 16);    // 下轴标签占位
-        assert(plot.axis(fastplot::AxisSide::Bottom).scaleDiv().upper >= 2.0);
-        assert(plot.axis(fastplot::AxisSide::Left).scaleDiv().lower <= -1.0);
+        CHECK(pr.width() > 600 && pr.height() > 300);
+        CHECK(pr.left() >= 24);            // 左轴标签占位
+        CHECK(pr.bottom() <= 400 - 16);    // 下轴标签占位
+        CHECK(plot.axis(fastplot::AxisSide::Bottom).scaleDiv().upper >= 2.0);
+        CHECK(plot.axis(fastplot::AxisSide::Left).scaleDiv().lower <= -1.0);
         // 右轴默认隐藏 → 右边距应为 0
-        assert(pr.right() >= 800 - 24);
+        CHECK(pr.right() >= 800 - 24);
 
         // 打开右轴后，右边距增大
         const double widthBefore = plot.plotRect().width();
         plot.axis(fastplot::AxisSide::Right).setVisible(true);
         plot.replot();
-        assert(plot.plotRect().width() < widthBefore);
+        CHECK(plot.plotRect().width() < widthBefore);
         fprintf(stdout, "[ok] PlotWidget：边距 %.0f/%.0f，双轴切换后绘图区收窄\n",
                 pr.left(), 400 - pr.bottom());
     }
@@ -123,7 +134,7 @@ int main(int argc, char **argv)
         plot.setYRange(-1.0, 1.0);
 
         const QImage img = plot.grabImage();
-        assert(img.size() == QSize(800, 400));
+        CHECK(img.size() == QSize(800, 400));
 
         const QColor bg = plot.background();
         const QRectF pr = plot.plotRect();
@@ -147,11 +158,11 @@ int main(int argc, char **argv)
                 }
             }
         }
-        assert(hit >= 3);
+        CHECK(hit >= 3);
 
         // 导出 PNG，供肉眼验收（ctest 的工作目录是构建目录）
         const QString path = QDir::current().filePath(QStringLiteral("fastplot_p1.png"));
-        assert(img.save(path));
+        CHECK(img.save(path));
         fprintf(stdout, "[ok] 渲染：%d 条主网格可见，PNG 已写出 %s\n", hit,
                 path.toUtf8().constData());
     }
@@ -174,27 +185,27 @@ int main(int argc, char **argv)
 
         fastplot::LodCache cache;
         const QVector<fastplot::LodPoint> &pts = cache.points(data, vp);
-        assert(!pts.isEmpty());
-        assert(pts.size() <= 700);
+        CHECK(!pts.isEmpty());
+        CHECK(pts.size() <= 700);
         // 峰值必须活下来：包络保留列内 min/max，不会被"平均"掉
         double lo = 0.0, hi = 0.0;
         for (const fastplot::LodPoint &pt : pts)
         {
-            assert(pt.min <= pt.max);
+            CHECK(pt.min <= pt.max);
             lo = std::min(lo, pt.min);
             hi = std::max(hi, pt.max);
         }
-        assert(hi >= 0.99 && lo <= -0.99);
+        CHECK(hi >= 0.99 && lo <= -0.99);
 
         // 同一视口再画一次：必须命中缓存，不重扫
         const int rebuildsBefore = cache.rebuilds();
         cache.points(data, vp);
-        assert(cache.rebuilds() == rebuildsBefore);
+        CHECK(cache.rebuilds() == rebuildsBefore);
 
         // 视口变了就得重算
         vp.setXRange(0.0, 1.5);
         cache.points(data, vp);
-        assert(cache.rebuilds() == rebuildsBefore + 1);
+        CHECK(cache.rebuilds() == rebuildsBefore + 1);
         fprintf(stdout, "[ok] LodCache：3000 点 → %d 列，命中缓存不重扫\n", int(pts.size()));
     }
 
@@ -213,7 +224,7 @@ int main(int argc, char **argv)
         fastplot::PlotWidget plot;
         plot.resize(800, 400);
         plot.addCurve(fastplot::Curve::fromData(&data, ink, 1.4));
-        assert(plot.autoScale());
+        CHECK(plot.autoScale());
 
         const QImage img = plot.grabImage();
         int curvePixels = 0;
@@ -225,10 +236,10 @@ int main(int argc, char **argv)
                     ++curvePixels;
             }
         }
-        assert(curvePixels > 200);
+        CHECK(curvePixels > 200);
 
         const QString path = QDir::current().filePath(QStringLiteral("fastplot_p2.png"));
-        assert(img.save(path));
+        CHECK(img.save(path));
         fprintf(stdout, "[ok] 曲线渲染：%d 个曲线像素，PNG 已写出 %s\n", curvePixels,
                 path.toUtf8().constData());
     }
@@ -251,7 +262,7 @@ int main(int argc, char **argv)
         curve.setScatter(true);
         curve.setSymbol(fastplot::Symbol::Diamond);
         curve.setSymbolSize(6.0);
-        assert(plot.autoScale());
+        CHECK(plot.autoScale());
 
         const QImage img = plot.grabImage();
         int markerPixels = 0;
@@ -259,10 +270,10 @@ int main(int argc, char **argv)
             for (int x = 0; x < img.width(); ++x)
                 if (img.pixelColor(x, y) == ink)
                     ++markerPixels;
-        assert(markerPixels > 100);
+        CHECK(markerPixels > 100);
 
         const QString path = QDir::current().filePath(QStringLiteral("fastplot_scatter.png"));
-        assert(img.save(path));
+        CHECK(img.save(path));
         fprintf(stdout, "[ok] 散点模式：%d 个符号像素，PNG 已写出 %s\n", markerPixels,
                 path.toUtf8().constData());
     }
@@ -292,26 +303,26 @@ int main(int argc, char **argv)
 
         zoomer.zoomBy(0.5, anchor);
         // 锚点数据坐标不动 = 缩放"绕着鼠标"进行，不是绕着中心
-        assert(near(plot.viewport().pixelToX(anchor.x()), ax, 1e-9));
-        assert(near(plot.viewport().pixelToY(anchor.y()), ay, 1e-9));
+        CHECK(near(plot.viewport().pixelToX(anchor.x()), ax, 1e-9));
+        CHECK(near(plot.viewport().pixelToY(anchor.y()), ay, 1e-9));
         const double spanXAfter = plot.viewport().xUpper() - plot.viewport().xLower();
-        assert(spanXAfter < spanXBefore * 0.55);
+        CHECK(spanXAfter < spanXBefore * 0.55);
 
         // 框选：像素矩形放大后跨度必须明显变小
         const double spanBeforeBand = plot.viewport().xUpper() - plot.viewport().xLower();
         zoomer.zoomToPixels(QRect(200, 100, 200, 100));
         const double spanAfterBand = plot.viewport().xUpper() - plot.viewport().xLower();
-        assert(spanAfterBand < spanBeforeBand);
+        CHECK(spanAfterBand < spanBeforeBand);
 
         // 复位回接手时的视口
         zoomer.resetZoom();
-        assert(near(plot.viewport().xUpper() - plot.viewport().xLower(), spanXBefore, 1e-6));
+        CHECK(near(plot.viewport().xUpper() - plot.viewport().xLower(), spanXBefore, 1e-6));
 
         // 读数：最近样本落在曲线值域内
         double sx = 0.0;
         double sy = 0.0;
-        assert(plot.nearestSample(QPointF(400.0, 120.0), &sx, &sy));
-        assert(sy >= -1.01 && sy <= 1.01);
+        CHECK(plot.nearestSample(QPointF(400.0, 120.0), &sx, &sy));
+        CHECK(sy >= -1.01 && sy <= 1.01);
 
         // 叠加层（十字光标 + 读数）确实画到了图上
         plot.setHover(QPointF(sx, sy), true);
@@ -322,7 +333,7 @@ int main(int argc, char **argv)
             for (int x = 0; x < img.width(); ++x)
                 if (img.pixelColor(x, y).alpha() > 0 && img.pixelColor(x, y) != plot.background())
                     ++overlayPixels;
-        assert(overlayPixels > 100);
+        CHECK(overlayPixels > 100);
 
         fprintf(stdout, "[ok] 交互：锚点缩放/框选/复位/最近样本/叠加层\n");
     }
@@ -356,8 +367,8 @@ int main(int argc, char **argv)
         c2.setName(QStringLiteral("alt"));
         c2.setYAxis(fastplot::AxisSide::Right);
 
-        assert(plot.hasSecondAxis());
-        assert(near(plot.y2Upper(), 210.0) && near(plot.y2Lower(), 190.0));
+        CHECK(plot.hasSecondAxis());
+        CHECK(near(plot.y2Upper(), 210.0) && near(plot.y2Lower(), 190.0));
 
         // 先关图例测曲线：图例色块也在左上角，会把"右侧窄带"的量测带偏。
         plot.setLegendVisible(false);
@@ -387,39 +398,39 @@ int main(int argc, char **argv)
                 }
             }
         }
-        assert(leftPixels > 500);
-        assert(rightPixels > 500);
+        CHECK(leftPixels > 500);
+        CHECK(rightPixels > 500);
         // 关键：右轴 190~210 的 200 落在绘图区中部，只占很薄一条；左轴正弦铺满高度。
-        assert(rightBottom - rightTop < 40);
-        assert(leftBottom - leftTop > 0.45 * img.height());
+        CHECK(rightBottom - rightTop < 40);
+        CHECK(leftBottom - leftTop > 0.45 * img.height());
 
         // 图例：开与不开必须画出不同结果（色块 + 名字确实是画上去的）
         plot.setLegendVisible(true);
         const QImage withLegend = plot.grabImage();
-        assert(withLegend != img);
+        CHECK(withLegend != img);
 
         const QString png = QDir::current().filePath(QStringLiteral("fastplot_p4.png"));
         const QString csv = QDir::current().filePath(QStringLiteral("fastplot_p4.csv"));
-        assert(plot.exportPng(png));
-        assert(plot.exportCsv(csv));
+        CHECK(plot.exportPng(png));
+        CHECK(plot.exportCsv(csv));
         // CSV 必须同时含两条曲线（LOD 输出 x,min,max）
         QFile f(csv);
-        assert(f.open(QIODevice::ReadOnly | QIODevice::Text));
+        CHECK(f.open(QIODevice::ReadOnly | QIODevice::Text));
         const QString text = QString::fromUtf8(f.readAll());
-        assert(text.contains(QStringLiteral("roll")));
-        assert(text.contains(QStringLiteral("alt")));
-        assert(text.contains(QStringLiteral("x,min,max")));
+        CHECK(text.contains(QStringLiteral("roll")));
+        CHECK(text.contains(QStringLiteral("alt")));
+        CHECK(text.contains(QStringLiteral("x,min,max")));
 
         // 状态往返：范围/双轴/图例都要还原
         const QJsonObject state = plot.saveState();
         fastplot::PlotWidget restored;
         restored.resize(800, 400);
-        assert(restored.restoreState(state));
-        assert(near(restored.viewport().xLower(), plot.viewport().xLower()));
-        assert(near(restored.viewport().xUpper(), plot.viewport().xUpper()));
-        assert(restored.hasSecondAxis());
-        assert(near(restored.y2Upper(), 210.0) && near(restored.y2Lower(), 190.0));
-        assert(restored.legendVisible());
+        CHECK(restored.restoreState(state));
+        CHECK(near(restored.viewport().xLower(), plot.viewport().xLower()));
+        CHECK(near(restored.viewport().xUpper(), plot.viewport().xUpper()));
+        CHECK(restored.hasSecondAxis());
+        CHECK(near(restored.y2Upper(), 210.0) && near(restored.y2Lower(), 190.0));
+        CHECK(restored.legendVisible());
 
         fprintf(stdout, "[ok] 双轴/图例/导出 PNG+CSV/状态复原（左 %d px、右 %d px 高 %d px）\n",
                 leftPixels, rightPixels, rightBottom - rightTop);
@@ -451,8 +462,8 @@ int main(int argc, char **argv)
                         {QColor(0x5b, 0xc0, 0xf0), QColor(0xf0, 0x9d, 0x5b),
                          QColor(0x8a, 0xd8, 0x6e)});
             const QImage img = bar.grab().toImage();
-            assert(nearInkCount(bar, QColor(0x5b, 0xc0, 0xf0)) > 30);
-            assert(img.save(QDir::current().filePath(QStringLiteral("fastplot_bar.png"))));
+            CHECK(nearInkCount(bar, QColor(0x5b, 0xc0, 0xf0)) > 30);
+            CHECK(img.save(QDir::current().filePath(QStringLiteral("fastplot_bar.png"))));
             fprintf(stdout, "[ok] 柱状图：三柱（含负值）出图\n");
         }
 
@@ -473,8 +484,8 @@ int main(int argc, char **argv)
             hist.setBins(32);
             const QImage img = hist.grab().toImage();
             const int colored = nearInkCount(hist, QColor(0x5b, 0xc0, 0xf0));
-            assert(colored > 50);
-            assert(img.save(QDir::current().filePath(QStringLiteral("fastplot_hist.png"))));
+            CHECK(colored > 50);
+            CHECK(img.save(QDir::current().filePath(QStringLiteral("fastplot_hist.png"))));
             fprintf(stdout, "[ok] 直方图：32 箱双峰分布出图\n");
         }
 
@@ -494,8 +505,8 @@ int main(int argc, char **argv)
             spec.setSampleDt(0.01);
             const QImage img = spec.grab().toImage();
             const int colored = nearInkCount(spec, QColor(0x5b, 0xc0, 0xf0));
-            assert(colored > 20);
-            assert(img.save(QDir::current().filePath(QStringLiteral("fastplot_spectrum.png"))));
+            CHECK(colored > 20);
+            CHECK(img.save(QDir::current().filePath(QStringLiteral("fastplot_spectrum.png"))));
             fprintf(stdout, "[ok] 频谱图：256 点单边幅值谱出图\n");
         }
     }

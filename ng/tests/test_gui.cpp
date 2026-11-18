@@ -25,6 +25,7 @@
 #include "ShellBinder.h"
 
 #include "AppContext.h"
+#include "ChannelMime.h"
 
 #include "Dataset.h"
 #include "Intent.h"
@@ -33,6 +34,9 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QStatusBar>
 #include <QTemporaryDir>
 
@@ -433,6 +437,35 @@ int main(int argc, char *argv[])
            .arg(canvas->lodPointCount())
            .toUtf8()
            .constData());
+
+    // --- 7.5) 拖拽画图：数据集树的列拖到画布 → 与双击同一路径重新渲染 ---
+    {
+        // 先切到 sig 之外的通道，确保拖拽确实改变了活动通道（不是早退的假通过）。
+        application.context().setActiveChannel(dsId, QStringLiteral("trace"),
+                                               QStringLiteral("sig"));
+        CHECK(application.context().activeColumn() == QStringLiteral("sig"));
+
+        // 构造通道 MIME（与 DataManagerPanel 发起端完全同一编码）。
+        QMimeData mime;
+        mime.setData(QString::fromLatin1(channel_mime::type()),
+                     channel_mime::encode(dsId, QStringLiteral("trace"),
+                                          QStringLiteral("alt"))
+                         .toUtf8());
+        // 投递拖拽负载：画布解码 → channelDropped → setActiveChannel → 视图重绘。
+        // 直接调 dropChannel（dropEvent 的核心逻辑），避开 Qt 在 headless 下
+        // 对 sendEvent(QDropEvent) 的分发限制——真实拖拽由 QDrag 系统投递同一函数。
+        CHECK(canvas->dropChannel(&mime));                     // 合法 MIME 被接受
+        CHECK(application.context().activeColumn() == QStringLiteral("alt")); // 活动通道被切换
+        CHECK(canvas->lodPointCount() > 0);                    // 新通道已渲染
+        OK("拖拽画图：列节点 MIME → 活动通道切换 + 重新渲染（与双击同路径）");
+
+        // 非法 MIME（非通道格式）应被拒绝，且不影响当前通道。
+        QMimeData garbage;
+        garbage.setText(QStringLiteral("not a channel"));
+        CHECK(!canvas->dropChannel(&garbage));
+        CHECK(application.context().activeColumn() == QStringLiteral("alt")); // 未被改动
+        OK("拖拽画图：非法 MIME 被拒，画布状态不受影响");
+    }
 
     // --- 8) 渲染触发走意图层（与 CLI 同路径）---
     // plot.channel 是公开意图，CLI 与脚本同样可用。

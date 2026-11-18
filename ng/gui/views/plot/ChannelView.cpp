@@ -148,6 +148,16 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                          view->showChannel(datasetId, t, c);
                      });
 
+    // 数据集树的"列"节点拖到画布：画布只解码 MIME 发信号，这里接住后
+    // 走与双击完全相同的 showChannel（→ plot.channel 意图）取数渲染。
+    QObject::connect(canvas, &PlotCanvas::channelDropped, view,
+                     [&appCtx](int datasetId, const QString &t, const QString &c) {
+                         // 只更新共享活动通道；上面的 activeChannelChanged 订阅会把
+                         // 这次变化分发给所有视图（含本画布），与双击走同一条单一路径。
+                         // 不直接调 showChannel，避免同一拖拽触发两次渲染。
+                         appCtx.setActiveChannel(datasetId, t, c);
+                     });
+
     // 视图动作：导出 / 视图状态 / 图例开关，由画布自己执行。
     // 模块与外壳都不持有画布指针——外壳只按 id 派发，处理器在这里登记。
     appCtx.registerViewAction(QStringLiteral("plot.export.png"),

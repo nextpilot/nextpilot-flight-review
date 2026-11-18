@@ -776,6 +776,23 @@ headless 也能查到。
 `ThemeManager::activeTheme()` / `themeColor()` 静态入口仍供其它需要按 token 动态取色的
 视图使用。
 
+#### 判据四：拖拽画图——画布只解码，取数仍走意图层
+
+字段树的"列"节点可拖到画布（`ChannelMime` 线协议：`datasetId|table|column` 逻辑标识，
+不传裸指针）。两端职责严格切开：
+
+- **数据树**只 `encode`，**画布**只 `decode`——两者唯一共享的是无依赖小头 `ChannelMime.h`，
+  互不 include（星形解耦，不是网状）。
+- `PlotCanvas::dropEvent` 解码合法 MIME 后**只发 `channelDropped` 信号**，不认识意图层；
+  `ChannelView` 订阅后调 `setActiveChannel` → `activeChannelChanged` → `showChannel`
+  → `plot.channel` 意图取数。**与双击同一条单一路径**，所以拖拽/双击/脚本三条入口
+  行为必然一致，且可录制回放。
+- 之所以用"更新活动通道"而非直接 `showChannel`：避免 `setActiveChannel` 发出的
+  `activeChannelChanged` 再触发一次渲染（同一拖拽画两遍）。单一数据变更源，
+  多个订阅者各自响应——这是 `AppContext` 共享状态的意义。
+- 非法 MIME（非通道格式）被拒、不改画布状态；`dropChannel()` 把"解码+派发"与
+  Qt 的 QDrag 投递机制解耦，headless 测试可直接验证这条链（真实拖拽由 QDrag 投递同一函数）。
+
 ## 7. 视图层：可插拔，而非模式枚举
 
 老代码 `PlottingCanvas` 用一个 `PlotMode` 枚举承载 12 种绘图模式

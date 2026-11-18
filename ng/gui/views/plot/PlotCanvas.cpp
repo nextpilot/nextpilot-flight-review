@@ -1,10 +1,15 @@
 #include "PlotCanvas.h"
+#include "ChannelMime.h"
 
 #include <fastplot/Panner.h>
 #include <fastplot/Picker.h>
 #include <fastplot/PlotWidget.h>
 #include <fastplot/Zoomer.h>
 
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QResizeEvent>
 #include <QVBoxLayout>
 
@@ -26,6 +31,7 @@ PlotCanvas::PlotCanvas(QWidget *parent)
 {
     setMinimumSize(320, 200);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setAcceptDrops(true); // 数据集树的"列"节点可拖到画布（ChannelMime）
 
     // 绘制全部委托给 fastplot：本类不再自己算坐标、画网格、画包络。
     m_plot = new fastplot::PlotWidget(this);
@@ -236,6 +242,59 @@ void PlotCanvas::applyPalette()
     // 曲线色在 pushToPlot 时按当时主题 palette 取（见 pushToPlot），
     // 主题切换后的下一次重取数会用新色；这里不重建曲线，避免丢失 LOD。
     m_plot->replot();
+}
+
+// --- 拖拽画图：只认通道 MIME，解码后发信号，取数交给 ChannelView ---
+void PlotCanvas::dragEnterEvent(QDragEnterEvent *event)
+{
+    // 只接受本应用的通道 MIME（数据集树发的），不认文件路径/其它来源——
+    // 打开文件有 data.load 意图那条正路，拖文件进来不该走画布。
+    if (event->mimeData() && channel_mime::decode(event->mimeData()).valid)
+    {
+        event->acceptProposedAction();
+        m_plot->setOverlayText(QStringLiteral("松开以绘制此通道"));
+        return;
+    }
+    QWidget::dragEnterEvent(event);
+}
+
+void PlotCanvas::dragMoveEvent(QDragMoveEvent *event)
+{
+    if (event->mimeData() && channel_mime::decode(event->mimeData()).valid)
+    {
+        event->acceptProposedAction();
+        return;
+    }
+    QWidget::dragMoveEvent(event);
+}
+
+bool PlotCanvas::dropChannel(const QMimeData *mime)
+{
+    const channel_mime::Decoded ch = channel_mime::decode(mime);
+    if (m_plot)
+        m_plot->setOverlayText(QString()); // 清掉拖拽提示
+    if (!ch.valid)
+        return false;
+    // 画布不知道"取数"这回事——只发信号。ChannelView 订阅后走
+    // plot.channel 意图（与数据集树双击完全同一条路径）。
+    Q_EMIT channelDropped(ch.datasetId, ch.table, ch.column);
+    return true;
+}
+
+void PlotCanvas::dropEvent(QDropEvent *event)
+{
+    if (dropChannel(event->mimeData()))
+    {
+        event->acceptProposedAction();
+        return;
+    }
+    QWidget::dropEvent(event);
+}
+
+void PlotCanvas::dragLeaveEvent(QDragLeaveEvent *event)
+{
+    m_plot->setOverlayText(QString());
+    QWidget::dragLeaveEvent(event);
 }
 
 } // namespace ng::gui

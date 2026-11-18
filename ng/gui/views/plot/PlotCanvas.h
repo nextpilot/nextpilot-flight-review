@@ -8,6 +8,12 @@
 #include <QWidget>
 #include <QEvent>
 
+class QDragEnterEvent;
+class QDragLeaveEvent;
+class QDragMoveEvent;
+class QDropEvent;
+class QMimeData;
+
 namespace fastplot
 {
 class PlotWidget;
@@ -81,15 +87,28 @@ public:
     // 否则放大看的是整段数据的包络，糊成一片。
     bool visibleTimeRange(double *t0, double *t1) const;
 
+    // 处理一路通道拖拽负载：解码合法则发 channelDropped，返回 true。
+    // dropEvent 与测试都走这里——把"解码+派发"与我们无法在 headless 下
+    // 真实模拟的 QDrag 投递机制解耦（Qt 对 sendEvent(QDropEvent) 有前置限制）。
+    bool dropChannel(const QMimeData *mime);
+
 Q_SIGNALS:
     // 视口尺寸变了：上层需要按新像素宽重新取 LOD。
     void viewportChanged();
     // 缩放/平移改变了可见时间窗：上层需要按新窗口重取 LOD。
     void rangeChanged(double t0, double t1);
+    // 有通道被拖到画布上（数据集树 → 画布）。画布只解码 MIME 发信号，
+    // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
+    void channelDropped(ng::core::DatasetId datasetId, const QString &table,
+                        const QString &column);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
     void changeEvent(QEvent *event) override; // PaletteChange 时重绘（主题切换）
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dragLeaveEvent(QDragLeaveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     void pushToPlot();

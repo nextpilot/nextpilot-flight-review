@@ -25,6 +25,17 @@
 #include <cstdio>
 #include <vector>
 
+// 硬断言：Release 下 -DNDEBUG 会消除标准 assert，测试就成空跑。
+// 用本宏替代 assert，失败即 exit(1)，Debug/Release 都真正校验。
+#include <cstdlib>
+#define CHECK(cond)                                                                      \
+    do {                                                                                 \
+        if (!(cond)) {                                                                   \
+            fprintf(stderr, "[FAIL] %s:%d  %s\n", __FILE__, __LINE__, #cond);            \
+            std::exit(1);                                                                \
+        }                                                                                \
+    } while (0)
+
 namespace
 {
 bool near(double a, double b, double eps = 1e-9)
@@ -75,17 +86,17 @@ int main(int argc, char **argv)
         attitude.setGroundColor(QColor(0x9A, 0x62, 0x2E));
         attitude.setRollPitch(15.0, 8.0);
         const QImage img = render(attitude, 300, 240);
-        assert(countColor(img, QColor(0x2A, 0x6F, 0xC0)) > 1000);
-        assert(countColor(img, QColor(0x9A, 0x62, 0x2E)) > 1000);
+        CHECK(countColor(img, QColor(0x2A, 0x6F, 0xC0)) > 1000);
+        CHECK(countColor(img, QColor(0x9A, 0x62, 0x2E)) > 1000);
 
         attitude.setRollPitch(-30.0, -10.0);
         const QImage img2 = render(attitude, 300, 240);
-        assert(img2 != img);
+        CHECK(img2 != img);
 
         // 滚转 90°：天空/地面占比明显变化（球转过来了）
         attitude.setRollPitch(90.0, 0.0);
         const QImage img3 = render(attitude, 300, 240);
-        assert(countColor(img3, QColor(0x2A, 0x6F, 0xC0)) != countColor(img, QColor(0x2A, 0x6F, 0xC0)));
+        CHECK(countColor(img3, QColor(0x2A, 0x6F, 0xC0)) != countColor(img, QColor(0x2A, 0x6F, 0xC0)));
         fprintf(stdout, "[ok] 姿态球：天空/地面/滚转生效\n");
     }
 
@@ -93,15 +104,15 @@ int main(int argc, char **argv)
     {
         fastplot::CompassRose compass;
         compass.setHeading(360.0);
-        assert(near(compass.headingDeg(), 0.0, 1e-9));
+        CHECK(near(compass.headingDeg(), 0.0, 1e-9));
         compass.setHeading(-45.0);
-        assert(near(compass.headingDeg(), 315.0, 1e-9));
+        CHECK(near(compass.headingDeg(), 315.0, 1e-9));
 
         compass.setHeading(90.0);
         const QImage east = render(compass, 240, 240);
         compass.setHeading(270.0);
         const QImage west = render(compass, 240, 240);
-        assert(east != west); // 指针方向不同，图像必然不同
+        CHECK(east != west); // 指针方向不同，图像必然不同
         fprintf(stdout, "[ok] 罗盘：航向归一化 + 指针方向\n");
     }
 
@@ -114,10 +125,10 @@ int main(int argc, char **argv)
         const QImage low = render(gauge, 260, 240);
         gauge.setValue(90.0);
         const QImage high = render(gauge, 260, 240);
-        assert(countColor(high, gauge.accent()) > countColor(low, gauge.accent()));
+        CHECK(countColor(high, gauge.accent()) > countColor(low, gauge.accent()));
         gauge.setValueMissing();
         const QImage missing = render(gauge, 260, 240);
-        assert(missing != high);
+        CHECK(missing != high);
         fprintf(stdout, "[ok] 表盘：弧长随值变化 + 无数据态\n");
     }
 
@@ -138,12 +149,12 @@ int main(int argc, char **argv)
         track.setEndColor(QColor(0xFF, 0x6B, 0x6B));
         track.setTrack(&lonData, &latData, QStringLiteral("lon"), QStringLiteral("lat"));
         QImage img = render(track, 320, 260);
-        assert(countColor(img, QColor(0x3D, 0xDC, 0x84)) > 20); // 起点标记
-        assert(countColor(img, QColor(0xFF, 0x6B, 0x6B)) > 20); // 终点标记
+        CHECK(countColor(img, QColor(0x3D, 0xDC, 0x84)) > 20); // 起点标记
+        CHECK(countColor(img, QColor(0xFF, 0x6B, 0x6B)) > 20); // 终点标记
 
         track.clearTrack();
         const QImage empty = render(track, 320, 260);
-        assert(countColor(empty, QColor(0x3D, 0xDC, 0x84)) == 0);
+        CHECK(countColor(empty, QColor(0x3D, 0xDC, 0x84)) == 0);
         fprintf(stdout, "[ok] 轨迹图：起终点标记 + 无数据态\n");
     }
 
@@ -165,7 +176,7 @@ int main(int argc, char **argv)
         traj.setCurveColor(QColor(0x5B, 0xC0, 0xF0));
         traj.setTracks(&xd, &yd, &zd, QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("z"));
         const QImage img = render(traj, 320, 280);
-        assert(countColor(img, QColor(0x5B, 0xC0, 0xF0)) > 100);
+        CHECK(countColor(img, QColor(0x5B, 0xC0, 0xF0)) > 100);
         fprintf(stdout, "[ok] 3D 轨迹：正交投影折线\n");
     }
 
@@ -203,7 +214,7 @@ int main(int argc, char **argv)
             for (int x = 0; x < img.width(); ++x)
                 if (img.pixelColor(x, y) != waterfall.background())
                     ++ink;
-        assert(ink > 3000 || colored > 300);
+        CHECK(ink > 3000 || colored > 300);
         fprintf(stdout, "[ok] 瀑布图：%d 条序列\n", series.size());
     }
 
@@ -285,7 +296,7 @@ int main(int argc, char **argv)
         painter.end();
 
         const QString path = QDir::current().filePath(QStringLiteral("fastplot_instruments.png"));
-        assert(sheet.save(path));
+        CHECK(sheet.save(path));
         fprintf(stdout, "[ok] 总览图已写出 %s\n", qPrintable(path));
     }
 
