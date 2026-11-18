@@ -94,6 +94,37 @@ protected:
 | sink 出口、错误透传、finish 冲刷钩子 | 满帧时调 `emitBatch` 填列 |
 | 内存纪律：常驻 = 残余缓冲 + 一批 | 帧内字段解释、scale/offset、字节序 |
 
+### 3.2.1 文本文件怎么进 parse
+
+文本格式（CSV / NMEA / ASCII 日志）和二进制帧走**同一条字节流通路**，不在喂入上换机制；区别只在"一帧怎么算完整"：二进制按固定宽度/帧头帧尾，文本按**分隔符 / 行结束符**。
+
+喂入链路：
+
+```
+FileByteSource 读一块(≤256KB) → orchestrator 调 parser.feed(chunk)
+  → 基类追加到残余缓冲 → 逐字节 drain
+      → 行式便捷层：累积到换行符 → 解码成 QString → onLine(...)
+      → 或原始层：parseChar(b) 自己识别分隔符/帧头
+  → 一行/一帧凑齐 → 字段切分 → emitBatch
+finish()：冲刷残余里没结束的最后一行
+```
+
+基类为文本提供两个粒度，子类按协议选：
+
+| 粒度 | 入口 | 适用 |
+|---|---|---|
+| 原始字节状态机 | `parseChar(uint8_t)` | 帧头帧尾混合、NMEA 那种 `$...\r\n` + 校验和的复杂文本协议 |
+| 行式便捷层（建议提供 `LineStreamParser` 薄基类） | `onLine(const QString &line, sink, err)` | CSV、ASCII 日志等纯换行分隔；基类负责攒行、剥 `\r`、保留跨行半行 |
+
+文本处理约定：
+
+- **编码**：基类不做转码，按 UTF-8/ASCII 解释；行累积完再 `QString::fromUtf8`。非 UTF-8 编码留后续。
+- **BOM**：首行开头的 UTF-8 BOM 由基类 helper 剥掉一次。
+- **半行跨 chunk**：没遇到换行符的残留在缓冲里，下次 feed 接上，和二进制残余同一套机制。
+- **字段切分**：行内分隔符（逗号/制表符/空格）是协议知识，由子类按自己的 `paramSchema`（如 CSV `delimiter`）切；基类不猜分隔符。
+- **末行**：文件结尾没有换行符时，`finish()` 把残余作为最后一行交给 `onLine`。
+- **批量逃生门对文本同样可用**：超大 CSV 可覆写 `feedChunk` 按行整块扫描，避免逐字符开销；默认行走行累积即可。
+
 **批量逃生门（已拍板保留）**：定长二进制帧格式（如 ULog D 段）逐字节开销大。基类保留一个可选 `feedChunk(data, size, sink, err)` 覆写点；不覆写就走默认逐字节路径。不为了统一而牺牲高吞吐格式的效率。
 
 两条路径的分工：
@@ -125,7 +156,7 @@ protected:
 | Udp / Tcp | 主机、端口、（UDP）绑定地址 |
 | Can | 通道/接口名、比特率、（可选）DBC 路径 |
 
-### 3.3 与现有 C ABI 的关系
+### 3.4 与现有 C ABI 的关系
 
 - **内置 C++ 解析器**：继承 `CharStreamParser`，基类导出 vtable；`NG_REGISTER_PARSER` 宏改为接收基类子类。
 - **外部插件（.so/.dll）**：保留纯 C ABI；描述信息经 vtable 尾部可选槽位返回（描述结构或 JSON）。老插件不填新槽位时，回退到旧 `PsParserInfo` 字段，不破坏兼容。
