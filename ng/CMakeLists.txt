@@ -40,7 +40,17 @@ target_include_directories(ng_kernel INTERFACE "${_ng_kernel_dir}/include")
 target_link_libraries(ng_kernel INTERFACE "${_ng_kernel_lib}")
 find_package(Threads REQUIRED)
 # Rust std 静态链进 C++ 可执行文件时需要的系统库。
-target_link_libraries(ng_kernel INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
+# libm / libdl 是 POSIX 专有：Windows 上不存在 m.lib，CMAKE_DL_LIBS 也为空，
+# 无条件链接会让 MSVC 报 LNK1181 无法打开 "m.lib"。
+target_link_libraries(ng_kernel INTERFACE Threads::Threads)
+if(UNIX)
+  target_link_libraries(ng_kernel INTERFACE ${CMAKE_DL_LIBS} m)
+endif()
+if(WIN32)
+  # Rust std 的 Windows 后端会引用 winsock 与 ntdll 的原生符号，
+  # 静态链进 C++ 可执行文件时必须显式补上这些系统库，否则 LNK2019。
+  target_link_libraries(ng_kernel INTERFACE ws2_32 ntdll userenv bcrypt advapi32 ole32 oleaut32)
+endif()
 
 add_subdirectory(core)
 add_subdirectory(recording)
