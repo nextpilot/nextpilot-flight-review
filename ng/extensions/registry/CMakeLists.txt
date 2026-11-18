@@ -5,6 +5,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_library(ng_ext_registry STATIC
     FormatToolbox.cpp
     FormatToolbox.h
+    BuiltinContributions.cpp
+    BuiltinContributions.h
     PluginScanner.cpp
     PluginScanner.h
 )

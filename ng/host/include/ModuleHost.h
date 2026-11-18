@@ -6,6 +6,7 @@
 #include "ModuleInfo.h"
 #include "Result.h"
 #include "ExtensionRegistry.h"
+#include "UiSlotRegistry.h"
 #include "DataLoadHandler.h"
 
 #include <QHash>
@@ -58,9 +59,13 @@ public:
     QStringList activeIds() const;
     QList<ModuleInfo> availableModules() const;
 
-    // 工具箱注册表：内置格式自注册 + 外部插件扫描都汇入这里。
+    // 工具箱注册表：内置知识包自注册 + 外部插件扫描都汇入这里。
     ng::core::ExtensionRegistry &extensions() { return m_registry; }
     const ng::core::ExtensionRegistry &extensions() const { return m_registry; }
+
+    // UI 插槽登记表：器官/骨架声明插槽，工具箱的 UI 贡献填内容。
+    // 每次访问都从当前注册表重新绑定一次，保证装卸知识包后立即可见。
+    const ng::core::UiSlotRegistry &uiSlots();
 
 private:
     struct Node
@@ -76,8 +81,9 @@ private:
                                 QHash<QString, QString> &errors) const;
 
     ng::core::DataRepository &m_repo;
-    ng::core::ExtensionRegistry m_registry; // 工具箱：格式驱动/其他能力的登记处
-    DataLoadHandler m_dataLoadHandler;       // 系统级 data.load 入口，不归属可卸载模块
+    ng::core::ExtensionRegistry m_registry;       // 工具箱：知识包/贡献的登记处
+    ng::core::UiSlotRegistry m_uiSlotRegistry;    // UI 插槽：器官声明、工具箱填充
+    DataLoadHandler m_dataLoadHandler;            // 系统级 data.load 入口，不归属可卸载模块
     QHash<QString, Node> m_nodes;
     QStringList m_order;
     QHash<QString, ng::core::IIntentHandler *> m_handlers; // op -> handler

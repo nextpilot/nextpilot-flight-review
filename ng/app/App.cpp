@@ -22,9 +22,9 @@ App::App(QObject *parent)
     m_host.registerModule(PlotModule().info(), [] { return static_cast<IModule *>(new PlotModule()); });
     m_host.registerModule(ScriptModule().info(), [] { return static_cast<IModule *>(new ScriptModule()); });
 
-    // 工具箱（extensions）：能力驱动，不参与器官生命周期。
-    // 路径一——内置格式：集中自注册，App 完全不认识 CSV/ULog 这些具体类。
-    ng::ext::registerBuiltinFormats(m_host.extensions());
+    // 工具箱（extensions）：知识包，不参与器官生命周期。
+    // 路径一——内置知识包：集中自注册，App 完全不认识 CSV/ULog/UI/脚本这些具体贡献。
+    ng::ext::registerBuiltinPacks(m_host.extensions());
     // 路径二——外部插件：扫描目录、校验后注册进同一个工具箱（本轮仅预留入口）。
     // 目录可后续由配置/命令行注入；默认检查可执行文件旁的 plugins/ 目录。
     ng::ext::scanExternalPlugins(m_host.extensions(),

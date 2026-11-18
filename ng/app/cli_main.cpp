@@ -19,7 +19,10 @@ static void printUsage()
     fprintf(stdout,
             "用法:\n"
             "  plotscope-ng --list-modules      # 器官模块\n"
-            "  plotscope-ng --list-formats      # 工具箱里的格式驱动\n"
+            "  plotscope-ng --list-packs        # 工具箱里的知识包（装载/卸载单位）\n"
+            "  plotscope-ng --list-contributions [kind]  # 贡献（按 kind×领域，开放类型）\n"
+            "  plotscope-ng --list-formats      # 工具箱里的格式驱动（list-contributions format 别名）\n"
+            "  plotscope-ng --list-slots        # UI 插槽及工具箱填入的入口\n"
             "  plotscope-ng --kernel            # Rust kernel ABI/版本/自检\n"
             "  plotscope-ng --info <file.csv|file.ulg>   # 按扩展名选格式\n"
             "  plotscope-ng --run <job.json>\n"
@@ -89,6 +92,65 @@ int main(int argc, char **argv)
             const char *kind = info.kind == ng::host::ModuleKind::Builtin ? "builtin" : "extension";
             fprintf(stdout, "%-12s %-10s %s\n", qPrintable(info.id), kind,
                     qPrintable(info.provides.join(QLatin1Char(','))));
+        }
+        return 0;
+    }
+
+    if (command == QStringLiteral("--list-packs"))
+    {
+        // 知识包是装载/卸载的原子单位：每包聚合任意 kind 的贡献。
+        const auto &toolbox = application.modules().extensions();
+        for (const QString &packId : toolbox.packIds())
+        {
+            ng::core::IToolPack *pack = toolbox.pack(packId);
+            if (!pack)
+                continue;
+            int n = static_cast<int>(pack->contributions().size());
+            fprintf(stdout, "%-18s %-12s [%s] %d 项贡献\n",
+                    qPrintable(pack->id()), qPrintable(pack->displayName()),
+                    qPrintable(QString::fromLatin1(ng::core::domainKey(pack->domain()))), n);
+        }
+        return 0;
+    }
+
+    if (command == QStringLiteral("--list-contributions"))
+    {
+        const auto &toolbox = application.modules().extensions();
+        const QString filter = args.size() >= 3 ? args.at(2) : QString();
+        // 稳定顺序：按已知 kind 顺序，再按领域顺序。
+        for (const QString &kind : ng::core::knownKinds())
+        {
+            if (!filter.isEmpty() && filter != kind)
+                continue;
+            const auto list = toolbox.contributions(kind);
+            if (list.isEmpty())
+                continue;
+            fprintf(stdout, "[%s / %s] %d 项\n",
+                    qPrintable(kind), qPrintable(ng::core::kindName(kind)), list.size());
+            for (ng::core::IToolContribution *c : list)
+                fprintf(stdout, "  %-26s %-18s %-10s <- %s\n",
+                        qPrintable(c->id()), qPrintable(c->displayName()),
+                        qPrintable(QString::fromLatin1(ng::core::domainKey(c->domain()))),
+                        qPrintable(c->provider()));
+        }
+        return 0;
+    }
+
+    if (command == QStringLiteral("--list-slots"))
+    {
+        // 器官/骨架声明插槽，工具箱的 UI 贡献填内容。
+        const auto &slotReg = application.modules().uiSlots();
+        for (const ng::core::UiSlot &slot : slotReg.allSlots())
+        {
+            const auto actions = slotReg.actionsIn(slot.area);
+            fprintf(stdout, "[%s] %s (%s) <- %d 项\n",
+                    qPrintable(slot.area), qPrintable(slot.label),
+                    qPrintable(slot.owner), actions.size());
+            for (const ng::core::BoundUiAction &b : actions)
+                fprintf(stdout, "    %-24s %-14s op=%s (来自 %s)\n",
+                        qPrintable(b.action.id), qPrintable(b.action.label),
+                        qPrintable(b.action.intentOp.isEmpty() ? QStringLiteral("-") : b.action.intentOp),
+                        qPrintable(b.provider));
         }
         return 0;
     }

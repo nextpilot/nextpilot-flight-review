@@ -27,6 +27,14 @@ ModuleHost::ModuleHost(ng::core::DataRepository &repo, QObject *parent)
     // 系统级 data.load 入口：不归属任何可卸载模块，任何模块装卸都不影响它。
     // 用一个保留 key 注册，避免与模块 handler 的 "%id/%index" 冲突。
     m_handlers.insert(QStringLiteral("@system/data.load"), &m_dataLoadHandler);
+
+    // app 骨架声明标准 UI 插槽（容器）。工具箱的 UI 贡献只是往这些槽里填内容；
+    // 骨架与器官代码从此不知道任何领域业务。headless 下这些槽也不创建 QWidget。
+    m_uiSlotRegistry.declareSlot(QStringLiteral("menu.plot"),   QStringLiteral("绘图菜单"),   QStringLiteral("app.skeleton"));
+    m_uiSlotRegistry.declareSlot(QStringLiteral("dock.left"),   QStringLiteral("左侧面板"),   QStringLiteral("app.skeleton"));
+    m_uiSlotRegistry.declareSlot(QStringLiteral("dock.right"),  QStringLiteral("右侧面板"),   QStringLiteral("app.skeleton"));
+    m_uiSlotRegistry.declareSlot(QStringLiteral("ribbon.home"), QStringLiteral("主页功能区"), QStringLiteral("app.skeleton"));
+    m_uiSlotRegistry.declareSlot(QStringLiteral("canvas.tool"), QStringLiteral("画布工具"),   QStringLiteral("app.skeleton"));
 }
 
 ModuleHost::~ModuleHost()
@@ -131,6 +139,13 @@ void ModuleHost::deactivateAll()
             ++it;
         else
             it = m_handlers.erase(it);
+}
+
+const ng::core::UiSlotRegistry &ModuleHost::uiSlots()
+{
+    // 每次访问都从当前工具箱重新绑定，装卸知识包后立即反映，无需手动同步。
+    m_uiSlotRegistry.refreshFrom(m_registry);
+    return m_uiSlotRegistry;
 }
 
 ng::core::Result<ng::core::IntentResult> ModuleHost::execute(const ng::core::Intent &intent)

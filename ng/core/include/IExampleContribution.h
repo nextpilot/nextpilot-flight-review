@@ -1,0 +1,28 @@
+#pragma once
+
+#include "IToolContribution.h"
+
+#include <QList>
+#include <QString>
+
+namespace ng::core
+{
+
+// 例子贡献里描述的一个示例工程 / demo / 教程条目。
+struct ExampleEntry
+{
+    QString id;
+    QString title;
+    QString location;    // 示例资源路径（脚本 / 数据 / Job JSON 等）
+    QString description;
+};
+
+// 例子贡献：一个知识包随附的可运行示例，通常是"脚本 + 数据 + 文档"的组合入口。
+class IExampleContribution : public IToolContribution
+{
+public:
+    QString kind() const override { return ContributionKind::Example; }
+    virtual QList<ExampleEntry> entries() const = 0;
+};
+
+} // namespace ng::core

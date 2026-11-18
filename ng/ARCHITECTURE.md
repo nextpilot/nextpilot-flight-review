@@ -29,10 +29,11 @@ app/            CLI / GUI 入口（只做装配与参数解析）
   ↓
 host/           装载循环、依赖拓扑、意图执行器、生命周期驱动
   ├── modules/      器官：data / plot / script（编译进 app，可配置关闭）
-  └── extensions/   工具箱：格式驱动等能力（见下"工具箱"一节）
+  └── extensions/   工具箱：按领域组织的知识包，含六类贡献（见下"工具箱"一节）
   ↓
 core/           Dataset 的 C++ 薄门面 + DataRepository + 事件 + 意图定义
-                + ExtensionRegistry / IFormatDriver（工具箱抽象）
+                + 工具箱抽象：IToolPack / IToolContribution（六类）/
+                  ExtensionRegistry（按 kind×domain 二维索引）/ UiSlotRegistry
   ↓              （只 include ps_kernel.h 一张 C ABI 门）
 kernel (Rust)   数据地基：ps-ndf typed 表 / ps-cache 缓存 / ps-ops 抽稀·滤波·统计
 ```
@@ -42,14 +43,23 @@ kernel (Rust)   数据地基：ps-ndf typed 表 / ps-cache 缓存 / ps-ops 抽�
 
 **器官（module）与工具箱（extension）是两条正交的线**：
 - 器官是 app 的功能组件，有生命周期、可上 UI，由 `ModuleHost` 按依赖拓扑装载/卸载；
-- 工具箱是"业务知识包登记处"，按 PlotScope 服务的业务方向组织：**飞控 / 汽车 / 机器人 /
-  卫导**四个核心方向，外加通用（CSV/JSON/binary）与视频同步；里面装的是无 UI、
-  无独立生命周期的格式驱动，统一注册进 `core::ExtensionRegistry`，由宿主持有；
-- 两者都归宿主管，但互不伪装：格式不再是器官，器官也不认识任何具体格式。
+- 工具箱是"业务知识包容器"，按 PlotScope 服务的业务方向组织：**飞控 / 汽车 / 机器人 /
+  卫导**四个核心方向，外加通用（CSV/JSON/binary）与视频同步；
+- 两者都归宿主管，但互不伪装：器官不认识任何领域业务，工具箱不伪装成器官。
 
-**领域是工具箱的分类学**：每个驱动声明 `domain()`，注册表据此分组。目录也按领域组织
-（`extensions/{common,autopilot,automotive,robotics,gnss}/`），新增格式落入对应领域目录即可，
-不动宿主与器官。具体格式资产见 §3"其他格式（已具备的资产）"。
+**工具箱是开放贡献点系统，不是格式清单**（两个维度正交）：
+- **领域（domain）**是稳定的分类学：`FormatDomain` 枚举——通用/飞控/汽车/机器人/卫导/视频，
+  几乎不变；目录也按领域组织（`extensions/{common,autopilot,automotive,robotics,gnss}/`）。
+- **贡献类型（kind）**是**开放字符串**（`ContributionKind`，不用枚举）：格式 / UI / 脚本 /
+  数据 / 例子 / 文档……以及未来的算子/导出器/协议/主题。用字符串而非枚举，是因为清单会
+  随业务"等等一系列"不断生长——新增类型 = 新 typed 接口 + 注册槽，**不改 core 枚举、
+  不重编译宿主**，符合开闭原则。
+- 每类贡献有 typed 接口（`IFormatDriver`/`IUiContribution`/`IScriptContribution`/
+  `IDataContribution`/`IExampleContribution`/`IDocContribution`），共享极小共性
+  `IToolContribution`（id/displayName/kind/domain/provider）。
+- **知识包（`IToolPack`）是装载/卸载的原子单位**：一个飞控包同时贡献格式+UI+脚本+数据+
+  例子+文档，装则全装、卸则全卸，`provider()` 指向所属包，扩展之间天然隔离。
+- 注册表 `ExtensionRegistry` 按 `(kind, domain)` 建二维索引；具体格式资产见 §3。
 
 ## 3. 统一数据模型（core 门面 + Rust kernel 地基）
 
@@ -140,42 +150,71 @@ class IModule : public QObject {
 - 卸载 = `delete module` → Qt 父子树回收全部 UI 与信号槽（Qt 原生语义，无 token、无撤销协议）。
 - `--list-modules` 只列器官；格式驱动**不再是器官**。
 
-### 4.2 工具箱（ExtensionRegistry）—— 能力登记表
+### 4.2 工具箱（ExtensionRegistry）—— 开放贡献点系统
 
-格式解析等"无 UI、无独立生命周期的能力"不伪装成器官，而是注册进工具箱：
+工具箱不是"格式清单"，而是**按业务方向组织的知识包容器**。两个正交维度：稳定的领域枚举
+`FormatDomain` + 开放的贡献类型字符串 `ContributionKind`（不封枚举，清单可持续生长）。
+核心抽象：
 
 ```cpp
+class IToolContribution {                 // 所有贡献的极小共性
+    QString id(); QString displayName();
+    QString kind();                       // 开放：format/ui/script/data/example/doc/...
+    FormatDomain domain();                // 稳定：通用/飞控/汽车/机器人/卫导/视频
+    QString provider();                   // 所属知识包 id（按包装卸的依据）
+};
+class IToolPack {                         // 知识包 = 装载/卸载的原子单位
+    QString id(); FormatDomain domain();
+    const vector<unique_ptr<IToolContribution>>& contributions(); // 可含任意 kind
+};
 class ExtensionRegistry {
-    bool registerDriver(std::unique_ptr<IFormatDriver>); // 登记（拥有所有权）
-    bool unregisterDriver(const QString &id);            // 撤销 + 释放
-    IFormatDriver *driverForFormat(const QString &format) const; // 按 format 精确
-    IFormatDriver *driverForPath(const QString &path) const;      // 按后缀推断
+    bool registerPack(unique_ptr<IToolPack>);   // 整包装入 + 按 (kind,domain) 建索引
+    bool unregisterPack(const QString&);        // 整包原子撤销
+    QList<IToolContribution*> contributions(const QString &kind, FormatDomain domain) const;
+    // 格式快捷 API（内部包装成隐式包），保持 data.load 零改动：
+    IFormatDriver *driverForFormat(const QString&) const;
+    IFormatDriver *driverForPath(const QString&) const;
 };
 ```
 
-`IFormatDriver` 只声明"身份（id/displayName/**domain**）+ 识别规则 + load()"；
-解析算法与缓存/入库外壳都在驱动内。领域（`FormatDomain`）是工具箱的一级分类：
-`General / Autopilot / Automotive / Robotics / Gnss / Video`，注册表支持
-`driversByDomain()` 与 `domains()`，CLI `--list-formats` 按领域分栏展示。
-工具箱由宿主持有，经 `ModuleContext` / `App` 暴露；卸载一个驱动 = 从表撤销并释放，
-不留悬空能力，也不牵连其他驱动或器官。
+**六类 typed 贡献**（共享 IToolContribution，各带自己的领域数据，均为纯数据、headless 可用）：
+
+| kind | 接口 | 承载内容 |
+|---|---|---|
+| `format` | `IFormatDriver` | 文件 → Dataset（流式解析，见 §3） |
+| `ui` | `IUiContribution` | 菜单/面板/dock/ribbon/画布工具入口（`UiAction` 描述，非 QWidget） |
+| `script` | `IScriptContribution` | 可复用脚本（语言 + 正文 + 导出符号） |
+| `data` | `IDataContribution` | 样例数据/预置数据集资产 |
+| `example` | `IExampleContribution` | 示例工程/demo 入口 |
+| `doc` | `IDocContribution` | 规格/知识文档条目 |
+
+新增一类 = 新 typed 接口 + 注册表按 kind 自动索引（kind 是字符串，无需改枚举/宿主）。
+当前内置 5 个包：通用（格式+文档）、飞控（**六类齐全**）、汽车/机器人/卫导（UI+脚本/文档，
+格式位预留）。`--list-packs` 列知识包，`--list-contributions [kind]` 按 kind×领域列贡献。
+
+**UI 插槽解耦**（`UiSlotRegistry`）：器官/骨架只声明"容器"插槽（`menu.plot`/`dock.left`/
+`canvas.tool`…），工具箱的 `ui` 贡献按 `area` 填内容；`app` 骨架与器官代码不知道任何领域
+业务，业务 UI 随知识包装卸。插槽与动作都是**纯数据**，headless 也能完整查询
+（真实 QWidget 由未来 GUI 层读取后创建）。`--list-slots` 展示插槽填充情况。
 
 ### 4.3 两条发现路径，一张注册表
 
 | 路径 | 对象 | 方式 | 本轮状态 |
 |---|---|---|---|
-| 自注册 | 内置格式（编译进 app） | `registerBuiltinFormats(registry)` 集中登记，app 不认识具体类 | ✅ 已实现 |
-| 动态扫描 | 外部插件（第三方动态库） | `scanExternalPlugins(registry, dir)` 扫描→校验 ABI→注册 | ⬜ 入口已预留，未实际 dlopen |
+| 自注册 | 内置知识包（编译进 app） | `registerBuiltinPacks(registry)` 集中装配，app 不认识具体贡献 | ✅ 已实现 |
+| 动态扫描 | 外部插件（第三方动态库） | `scanExternalPlugins(registry, dir)` 扫描→校验 ABI→注册整包 | ⬜ 入口已预留，未实际 dlopen |
 
-**只有外部插件才走动态扫描**；内置能力一律静态自注册，避免为已知格式付 ABI 代价。
+**只有外部插件才走动态扫描**；内置能力一律静态自注册，避免为已知包付 ABI 代价。
 两条路径汇入同一个 `ExtensionRegistry`——宿主与器官对"能力从哪来"完全无感。
-插件加载失败（缺符号/ABI 不符/id 冲突）只记入报告，不中断其他插件，更不碰内置格式。
+插件加载失败（缺符号/ABI 不符/id 冲突）只记入报告，不中断其他插件，更不碰内置包。
 
 ### 4.4 独立装卸隔离
 
 - 器官：见 4.1，所有权即撤销 + 依赖前置。
-- 工具箱能力：`unregisterDriver(id)` 精确撤销；`data.load` 由唯一入口按注册表查表分派，
-  撤掉 CSV 不影响 ULog，反之亦然；可热插（重新 register 即可恢复）。
+- 工具箱：`unregisterPack(id)` 按包原子撤销（连带该包全部 kind 贡献，无悬空、不牵连他包）；
+  `unregisterDriver(id)` 兼容旧语义（撤销驱动所在包）。`data.load` 由唯一系统级入口
+  `DataLoadHandler` 按注册表查表分派，任何包装卸都不影响它；撤掉一个包不影响其他包，
+  可热插（重新 register 即恢复）。
 
 ## 5. 统一意图层（automation 的灵魂）
 
@@ -213,7 +252,7 @@ struct Intent {
   - `ps.plot.render(dataset, channel)` → `plot.render`（返回 PlotSpec table）
   - `ps.log(msg)` / `ps.version()`
 - **稳定 id**：`data.load` 可携带显式 `DatasetId`，录制/回放用同一个 id，避免会话自增 id 漂移——这是 Job 可回放的前提。
-- CLI：`--list-modules`（器官）、`--list-formats`（工具箱格式驱动）、`--info <file>`（按后缀自动选驱动）、`--run <job.json>`、`--script <file.lua> [--record <out.json>]`。
+- CLI：`--list-modules`（器官）、`--list-packs`（知识包）、`--list-contributions [kind]`（按 kind×领域列贡献）、`--list-slots`（UI 插槽填充）、`--list-formats`（格式驱动别名）、`--info <file>`（按后缀自动选驱动）、`--run <job.json>`、`--script <file.lua> [--record <out.json>]`。
 - 录制闭环：`--script demo.lua --record job.json` 把脚本产生的业务意图录成 Job（不含 `script.run` 本身），`--run job.json` 回放得到相同 PlotSpec。
 - CI：headless 跑 Job + 导出 PNG/CSV 做基线对比（待办）。
 
@@ -234,13 +273,13 @@ ng/
 ├── core/                 数据模型/仓库/事件/意图/脚本门面（无 QWidget）
 ├── host/                 IModule/装载循环/意图执行器/App
 ├── modules/              器官：data / plot / script
-├── extensions/           工具箱（按业务领域组织）
-│   ├── common/           通用：CSV（IFormatDriver 样板）
-│   ├── autopilot/        飞控：ULog（UlogStreamParser 流式样板）
-│   ├── automotive/       汽车：预留（ASC/BLF/MDF4/CAN）
-│   ├── robotics/         机器人：预留（MCAP/ROSbag2）
-│   ├── gnss/             卫导：预留（NMEA/UBX/OEM7）
-│   └── registry/         集中自注册 + 外部插件扫描入口
+├── extensions/           工具箱（领域 × 开放贡献类型）
+│   ├── common/           通用：CSV 格式 + 文档包
+│   ├── autopilot/        飞控包：格式+UI+脚本+数据+例子+文档（六类齐全样板）
+│   ├── automotive/       汽车包：UI+文档占位（ASC/BLF/MDF4/CAN 待接入）
+│   ├── robotics/         机器人包：UI+文档占位（MCAP/ROSbag2 待接入）
+│   ├── gnss/             卫导包：脚本+文档占位（NMEA/UBX/OEM7 待接入）
+│   └── registry/         知识包装配 + 通用贡献实现 + 外部插件扫描入口
 ├── app/                  CLI 入口
 └── tests/                架构契约测试
 ```
@@ -261,13 +300,20 @@ ng/
    未实际 dlopen）。契约测试覆盖注册表按 format/后缀选驱动、撤销隔离、可逆热插、插件扫描入口。
 7. ✅ 工具箱按业务领域组织：引入 `FormatDomain`（通用/飞控/汽车/机器人/卫导/视频），
    驱动声明领域、注册表按领域分组，目录按领域重组；CSV=通用、ULog=飞控。
-8. ⬜ 启用外部插件真实动态加载（定义插件 C ABI + 加载器），并按 ULog 公式把其余格式
-   平移进对应领域目录（飞控 apbin/tlog/mavlink、汽车 ASC/BLF/MDF4/CAN、机器人 MCAP/ROSbag2、
-   卫导 NMEA/UBX/OEM7）与 GUI 画布。
+8. ✅ 工具箱泛化为**开放贡献点系统**：`IToolContribution` 共性 + 开放 kind 字符串（不封枚举）
+   + 六类 typed 接口（format/ui/script/data/example/doc）+ `IToolPack` 知识包（装载/卸载原子单位）
+   + `ExtensionRegistry` 按 (kind,domain) 二维索引 + `UiSlotRegistry`（器官声明插槽、工具箱填内容）。
+   内置 5 个知识包，飞控包六类齐全；新增贡献类型/领域内容不改宿主与器官。契约测试覆盖六类
+   贡献、按包原子装卸、二维索引、UI 插槽填充、开放 kind 可扩展性。
+9. ⬜ 启用外部插件真实动态加载（定义插件 C ABI + 加载器），并按 ULog 公式把其余格式
+   平移进对应领域包（飞控 apbin/tlog/mavlink、汽车 ASC/BLF/MDF4/CAN、机器人 MCAP/ROSbag2、
+   卫导 NMEA/UBX/OEM7），实现真正消费 UI 贡献的 GUI 层与画布。
 
 验证：编译全绿（Release + Debug 双构建）；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖
 typed 多表模型、通道投影、**Rust LOD 抽稀 / 统计 / 抗混叠抽取 / ps-cache 指纹命中与过期**、
-**工具箱自注册 / 按 format 与后缀选驱动 / 撤销隔离 / 可逆热插 / 插件扫描入口**、
+**工具箱自注册 / 按 format 与后缀选驱动 / 撤销隔离 / 可逆热插 / 插件扫描入口 /
+六类贡献 / 按包原子装卸 / (kind,domain) 二维索引 / UI 插槽填充 / 开放 kind 可扩展**、
 意图执行、脚本 headless 执行、录制回放闭环，以及
 **9000 行 ULog 流式加载（跨 3 批 / F32+U16 typed 列 / U64 微秒时间轴精确 / events+facts 元数据表）**；
-CLI 六入口（kernel/list-modules/list-formats/info/run/script）实测可用。
+CLI 九入口（kernel/list-modules/list-packs/list-contributions/list-slots/list-formats/info/run/script）实测可用；
+百万行 ULog（18MB）加载 0.12s / 峰值 RSS 40MB。

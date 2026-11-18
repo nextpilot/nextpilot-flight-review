@@ -3,10 +3,13 @@
 #include "DataRepository.h"
 #include "Dataset.h"
 #include "ExtensionRegistry.h"
+#include "UiSlotRegistry.h"
 #include "PluginScanner.h"
 #include "FormatToolbox.h"
+#include "BuiltinContributions.h"
 
 #include <QCoreApplication>
+#include <QSet>
 #include <QFile>
 #include <QFileInfo>
 #include <QTextStream>
@@ -181,6 +184,78 @@ int main(int argc, char **argv)
     CHECK(scan.discovered.isEmpty());
     CHECK(toolbox.count() == 2); // 扫描未改动工具箱
     fprintf(stdout, "[ok] 器官(3) 与工具箱(2 格式驱动) 分离装载；自注册 + 后缀推断 + 插件扫描入口就绪\n");
+
+    // 1b) 工具箱是开放贡献点系统：知识包装载/卸载 + 六类贡献 + (kind,domain) 二维索引。
+    {
+        // 五个业务方向各一个知识包；包是装载/卸载的原子单位。
+        CHECK(toolbox.packCount() == 5);
+        CHECK(toolbox.pack(QStringLiteral("pack.common")) != nullptr);
+        CHECK(toolbox.pack(QStringLiteral("pack.autopilot")) != nullptr);
+        CHECK(toolbox.pack(QStringLiteral("pack.automotive")) != nullptr);
+        CHECK(toolbox.pack(QStringLiteral("pack.robotics")) != nullptr);
+        CHECK(toolbox.pack(QStringLiteral("pack.gnss")) != nullptr);
+        // 飞控包装载了全部六类贡献——一个包能同时贡献格式/UI/脚本/数据/例子/文档。
+        ng::core::IToolPack *ap = toolbox.pack(QStringLiteral("pack.autopilot"));
+        CHECK(ap->contributions().size() == 6);
+        QSet<QString> apKinds;
+        for (const auto &c : ap->contributions())
+            apKinds.insert(c->kind());
+        CHECK(apKinds.contains(ContributionKind::Format));
+        CHECK(apKinds.contains(ContributionKind::Ui));
+        CHECK(apKinds.contains(ContributionKind::Script));
+        CHECK(apKinds.contains(ContributionKind::Data));
+        CHECK(apKinds.contains(ContributionKind::Example));
+        CHECK(apKinds.contains(ContributionKind::Doc));
+        // 每个贡献的 provider 指向所属包（按包原子装卸的依据）。
+        for (const auto &c : ap->contributions())
+            CHECK(c->provider() == QStringLiteral("pack.autopilot"));
+
+        // 六类贡献都能按 kind 查到；开放 kind 用字符串而非枚举。
+        CHECK(toolbox.contributions(ContributionKind::Format).size() == 2);
+        CHECK(toolbox.contributions(ContributionKind::Ui).size() == 3);
+        CHECK(toolbox.contributions(ContributionKind::Script).size() == 2);
+        CHECK(toolbox.contributions(ContributionKind::Data).size() == 1);
+        CHECK(toolbox.contributions(ContributionKind::Example).size() == 1);
+        CHECK(toolbox.contributions(ContributionKind::Doc).size() == 5);
+        CHECK(toolbox.kinds().size() == 6);
+
+        // 二维索引：按 (kind, domain) 精确过滤。
+        CHECK(toolbox.contributions(ContributionKind::Ui, FormatDomain::Autopilot).size() == 1);
+        CHECK(toolbox.contributions(ContributionKind::Doc, FormatDomain::General).size() == 1);
+        CHECK(toolbox.contributionsByDomain(FormatDomain::Autopilot).size() == 6);
+        CHECK(toolbox.contributionsByDomain(FormatDomain::Video).isEmpty()); // 预留领域无贡献
+
+        // typed 接口可向下转换拿到领域数据（UI 贡献是纯数据，headless 也成立）。
+        ng::core::IToolContribution *uiRaw =
+            toolbox.contribution(QStringLiteral("ap.ui.contributions"));
+        CHECK(uiRaw != nullptr);
+        auto *ui = dynamic_cast<ng::core::IUiContribution *>(uiRaw);
+        CHECK(ui != nullptr && ui->actions().size() == 3);
+        ng::core::IToolContribution *docRaw =
+            toolbox.contribution(QStringLiteral("ap.docs"));
+        auto *doc = dynamic_cast<ng::core::IDocContribution *>(docRaw);
+        CHECK(doc != nullptr && doc->entries().size() == 1);
+
+        // UI 插槽：器官声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
+        const auto &slotReg = application.modules().uiSlots();
+        CHECK(slotReg.allSlots().size() == 5);
+        CHECK(slotReg.actionsIn(QStringLiteral("menu.plot")).size() == 2); // 姿态曲线 + TF 树
+        CHECK(slotReg.actionsIn(QStringLiteral("dock.left")).size() == 1); // 调参面板
+        CHECK(slotReg.boundActionCount() == 5);
+        CHECK(slotReg.unboundActions().isEmpty()); // 所有贡献都有归属插槽
+
+        // 开放 kind：自定义 kind 无需改注册表/宿主即可登记（证明可扩展，非封闭枚举）。
+        auto customPack = std::make_unique<ToolPack>(QStringLiteral("pack.custom"),
+                                                     QStringLiteral("自定义工具箱"), FormatDomain::General);
+        customPack->add<ng::ext::GenericDocContribution>(
+            QStringLiteral("custom.thing"), QStringLiteral("自定义能力"), FormatDomain::General,
+            QList<ng::core::DocEntry>{});
+        CHECK(toolbox.registerPack(std::move(customPack)));
+        CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 6); // 新包贡献被按 kind 索引
+        CHECK(toolbox.unregisterPack(QStringLiteral("pack.custom")));    // 按包原子撤销
+        CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 5);
+        fprintf(stdout, "[ok] 开放贡献点系统：5 知识包 / 6 类贡献 / (kind,domain) 二维索引 / UI 插槽 / 按包原子装卸\n");
+    }
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）
     Result<IntentResult> loaded = application.modules().execute(loadIntent(csv));

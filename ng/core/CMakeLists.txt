@@ -8,6 +8,8 @@ add_library(ng_core STATIC
     src/IFormatDriver.cpp
     src/ExtensionRegistry.cpp
     src/FormatDomain.cpp
+    src/ContributionKind.cpp
+    src/UiSlotRegistry.cpp
     include/Result.h
     include/Dataset.h
     include/DataRepository.h
@@ -19,6 +21,15 @@ add_library(ng_core STATIC
     include/IFormatDriver.h
     include/ExtensionRegistry.h
     include/FormatDomain.h
+    include/ContributionKind.h
+    include/IToolContribution.h
+    include/IToolPack.h
+    include/IUiContribution.h
+    include/IScriptContribution.h
+    include/IDataContribution.h
+    include/IExampleContribution.h
+    include/IDocContribution.h
+    include/UiSlotRegistry.h
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

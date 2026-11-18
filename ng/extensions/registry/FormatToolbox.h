@@ -2,14 +2,24 @@
 
 #include "ExtensionRegistry.h"
 
-// 工具箱的"内置格式自注册"入口。
+// 内置知识包的自注册入口。
 //
-// app 启动期只调用 registerBuiltinFormats(registry)，完全不认识 CSV/ULog 这些
-// 具体类——新增一种内置格式，只需在这里加一行注册，宿主与器官零改动。
+// app 启动期只调用 registerBuiltinPacks(registry)，完全不认识 CSV/ULog 或任何
+// 具体贡献类型——新增一个领域的知识包、或往某包加一类贡献，只在这里装配，
+// 宿主与器官零改动。
 //
 // 外部插件走另一条路径：由 PluginScanner 扫描动态库、校验 ABI 后，把插件提供的
-// 驱动注册进同一个 registry（本轮预留接口，不实际加载）。
+// 整个 ToolPack registerPack 进同一个 registry。
 namespace ng::ext
 {
-void registerBuiltinFormats(ng::core::ExtensionRegistry &registry);
+
+// 装配全部内置知识包（通用 / 飞控 / 汽车 / 机器人 / 卫导），一次注册到工具箱。
+void registerBuiltinPacks(ng::core::ExtensionRegistry &registry);
+
+// 向后兼容：历史上只登记格式驱动的入口，现等价于 registerBuiltinPacks。
+inline void registerBuiltinFormats(ng::core::ExtensionRegistry &registry)
+{
+    registerBuiltinPacks(registry);
 }
+
+} // namespace ng::ext

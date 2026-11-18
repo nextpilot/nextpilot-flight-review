@@ -1,11 +1,14 @@
 #pragma once
 
+#include "IToolContribution.h"
+#include "IToolPack.h"
 #include "IFormatDriver.h"
 #include "FormatDomain.h"
 
 #include <QHash>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 #include <memory>
 #include <vector>
@@ -13,48 +16,61 @@
 namespace ng::core
 {
 
-// 工具箱注册表：所有"能力驱动"的唯一登记处。
+// 工具箱注册表：所有知识包 / 贡献的唯一登记处。
+//
+// 从"格式驱动注册表"泛化为"开放贡献点系统"：
+//   - 一次登记的单位是 IToolPack（知识包），它聚合任意 kind 的贡献；
+//   - 贡献按 (kind, domain) 建二维索引，kind 是开放字符串，新增类型不改注册表；
+//   - 按包原子装卸：unregisterPack 一次性撤销该包全部贡献，扩展之间互不牵连。
 //
 // 两条发现路径都汇入这里：
-//   - 内置扩展（编译进 app）：由 registerBuiltinFormats() 在启动期自注册；
-//   - 外部插件（动态库）：由宿主的插件扫描器加载后注册（本轮预留入口）。
+//   - 内置包：由 registerBuiltinPacks() 在启动期自注册；
+//   - 外部插件：由插件扫描器加载后，把整个包 registerPack 进来。
 //
-// 注册表拥有 driver 的所有权；卸载 = 撤销登记 + 释放，
-// 因此"卸掉一个格式"不会留下任何悬空的能力声明。
-//
-// 注意：注册表只装"能力"，不装器官。data/plot/script 这类有生命周期、
-// 会上 UI 的功能仍是 IModule，由 ModuleHost 管理。
+// 保留 registerDriver / driverForFormat / driverForPath / drivers 等旧 API（内部
+// 把单个驱动包装成一个隐式包），使 data.load 与既有调用零改动。
 class ExtensionRegistry
 {
 public:
-    // 登记一个驱动；同 id 已存在则拒绝（返回 false），不覆盖。
+    // === 包级：装载/卸载的原子单位 ===
+    bool registerPack(std::unique_ptr<IToolPack> pack);
+    bool unregisterPack(const QString &packId);
+    QStringList packIds() const;
+    IToolPack *pack(const QString &packId) const;
+    int packCount() const;
+
+    // === 通用贡献查询（开放，支持任意 kind）===
+    QList<IToolContribution *> contributions() const;
+    QList<IToolContribution *> contributions(const QString &kind) const;
+    QList<IToolContribution *> contributions(const QString &kind, FormatDomain domain) const;
+    QList<IToolContribution *> contributionsByDomain(FormatDomain domain) const;
+    IToolContribution *contribution(const QString &id) const;
+    QStringList kinds() const;             // 当前已登记的所有 kind（去重）
+    QStringList contributionIds() const;   // 所有贡献 id
+    bool containsContribution(const QString &id) const;
+    int contributionCount() const;
+
+    // === 格式快捷 API（向后兼容 data.load 与既有测试）===
     bool registerDriver(std::unique_ptr<IFormatDriver> driver);
-
-    // 撤销登记并释放驱动；返回是否确实移除。
     bool unregisterDriver(const QString &id);
-
-    // 按 format 参数精确查找（如 "csv" / "ulog" / ".ulg"）。
     IFormatDriver *driverForFormat(const QString &format) const;
-
-    // 按文件路径后缀查找（format 缺省时的兜底推断）。
     IFormatDriver *driverForPath(const QString &path) const;
-
     QList<IFormatDriver *> drivers() const;
-
-    // 按业务领域分组查询（工具箱的分类学）。
     QList<IFormatDriver *> driversByDomain(FormatDomain domain) const;
-    QList<FormatDomain> domains() const; // 当前已有驱动的领域（去重）
-
-    QStringList ids() const;
+    QList<FormatDomain> domains() const; // 已有格式驱动的领域（去重）
+    QStringList ids() const;             // 格式驱动 id
     bool contains(const QString &id) const;
-    int count() const;
+    int count() const;                   // 格式驱动数量
 
 private:
-    // unique_ptr 不可拷贝，Qt 6.2 的 QHash 不支持 move-only 值；
-    // 故用 vector 持有所有权，QHash 只存裸指针做索引。
-    std::vector<std::unique_ptr<IFormatDriver>> m_owned;
-    QHash<QString, IFormatDriver *> m_index;
-    QStringList m_order;
+    void rebuildIndexes();
+
+    std::vector<std::unique_ptr<IToolPack>> m_owned;         // 拥有所有包（间接拥有全部贡献）
+    QHash<QString, IToolPack *> m_packIndex;                  // pack id -> 包
+    QStringList m_packOrder;
+    QHash<QString, IToolContribution *> m_byId;               // 贡献 id -> 贡献
+    QHash<QString, QList<IToolContribution *>> m_byKind;      // kind -> 贡献列表
+    QStringList m_idOrder;                                    // 贡献登记顺序
 };
 
 } // namespace ng::core

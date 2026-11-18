@@ -1,0 +1,28 @@
+#pragma once
+
+#include "IToolContribution.h"
+
+#include <QList>
+#include <QString>
+
+namespace ng::core
+{
+
+// 文档贡献里描述的一篇知识文档（格式规格 / 使用说明 / 领域知识）。
+struct DocEntry
+{
+    QString id;
+    QString title;
+    QString location;    // 文档资源路径（md/html/pdf…）
+    QString mime;        // 便于 UI 选择渲染器，可空
+};
+
+// 文档贡献：一个知识包随附的领域知识文档集合。
+class IDocContribution : public IToolContribution
+{
+public:
+    QString kind() const override { return ContributionKind::Doc; }
+    virtual QList<DocEntry> entries() const = 0;
+};
+
+} // namespace ng::core

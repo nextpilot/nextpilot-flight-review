@@ -2,7 +2,7 @@
 
 #include "Intent.h"
 #include "Result.h"
-#include "FormatDomain.h"
+#include "IToolContribution.h"
 
 #include <QString>
 #include <QStringList>
@@ -21,17 +21,20 @@ class DataRepository;
 //
 // 这样 extensions 是真正的工具箱：格式驱动只是其中一类工具，未来还能放算子、
 // 导出器等其他工具门类，而不需要它们伪装成器官。
-class IFormatDriver
+class IFormatDriver : public IToolContribution
 {
 public:
     virtual ~IFormatDriver() = default;
 
-    // 注册表内的唯一标识，如 "csv" / "ulog"。
+    // 格式驱动天然是 kind=format 的贡献；provider() 由基类持有、ToolPack 在 add 时写入。
+    QString kind() const final { return ContributionKind::Format; }
+
+    // 注册表内的唯一标识，如 "csv" / "ulog"（实现 IToolContribution）。
     virtual QString id() const = 0;
     virtual QString displayName() const = 0;
 
     // 该驱动所属的业务领域。工具箱按领域分类；默认通用，领域驱动应显式覆盖。
-    virtual FormatDomain domain() const { return FormatDomain::General; }
+    FormatDomain domain() const override { return FormatDomain::General; }
 
     // 该驱动认识的文件后缀（不含点，小写），如 {"csv"} / {"ulg", "ulog"}。
     virtual QStringList suffixes() const = 0;
