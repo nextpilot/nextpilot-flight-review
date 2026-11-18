@@ -31,7 +31,15 @@
 ### 3.1 描述接口 `IParserDescriptor`（headless C++）
 
 ```cpp
-enum class Transport { File, Udp, Tcp, Serial /*, Can, WebSocket 预留 */ };
+// 字节传输方式。一个解析器可支持多种（如 CAN：File 回放 blf/asc/mdf，Can 实时总线）。
+enum class Transport {
+    File,     // 文件回放（.ulg/.csv/.blf/…）
+    Serial,   // 串口 / COM 口
+    Udp,
+    Tcp,
+    Can,      // CAN 总线（socketcan / 设备通道）
+    // 预留：WebSocket / Bluetooth / SharedMemory，需要时再加枚举值
+};
 
 class IParserDescriptor
 {
@@ -42,7 +50,7 @@ public:
     virtual QString displayName() const = 0;     // 对话框展示名
     virtual QString description() const = 0;     // 使用范围 / 适用场景说明
     virtual FormatDomain domain() const = 0;     // 业务领域（复用 FormatDomain）
-    virtual QList<Transport> transports() const = 0;
+    virtual QList<Transport> transports() const = 0;  // 支持多种；对话框据此显示对应配置行
     virtual QStringList extensions() const = 0;  // 带点小写后缀，可空
     virtual bool canSniff() const = 0;
 
@@ -98,7 +106,7 @@ protected:
 
 | 层 | 职责 | 实现 |
 |---|---|---|
-| `IByteSource`（core，已有抽象） | 字节来源：打开/关闭/读/超时 | `FileByteSource`（已有）、`MemoryByteSource`；`UdpByteSource` / `SerialByteSource` 待补（Q3） |
+| `IByteSource`（core，已有抽象） | 字节来源：打开/关闭/读/超时 | `FileByteSource`（已有）、`MemoryByteSource`；`SerialByteSource` / `UdpByteSource` / `TcpByteSource` / `CanByteSource` 待补（Q3） |
 | `CharStreamParser`（本方案） | 字节解析：缓冲/状态机/吐批 | 只通过 `read()` 拿字节，不知道对面是文件还是网线 |
 | `IngestOrchestrator` | 编排：按 transport 选源 → 喂解析器 → 收批入仓；录制 tee 挂这层 | 现有摄取管道 |
 
@@ -108,7 +116,14 @@ protected:
 - 录制旁路只在字节源层做一次 tee；解析器自己开文件会让录制盖不住。
 - 解析器可 headless 单测（喂 `MemoryByteSource`）；掺句柄/socket 后测试无法跑。
 
-传输相关参数（串口名/波特率/主机端口）由对话框收集进 `params`，编排层据此构造对应 `IByteSource`；解析器不读这些参数。`transports()` 只做**能力声明**，不负责连接。
+传输相关参数由对话框收集进 `params`，编排层据此构造对应 `IByteSource`；解析器不读这些参数。`transports()` 只做**能力声明**，不负责连接。各传输典型参数：
+
+| Transport | 典型配置参数 |
+|---|---|
+| File | 文件路径 |
+| Serial | COM 口/设备名、波特率、数据位/校验/停止位 |
+| Udp / Tcp | 主机、端口、（UDP）绑定地址 |
+| Can | 通道/接口名、比特率、（可选）DBC 路径 |
 
 ### 3.3 与现有 C ABI 的关系
 
@@ -144,7 +159,7 @@ protected:
 
 1. **描述真源**：解析器自述、驱动委托（推荐），还是驱动侧另维护一份？
 2. ~~**`parseChar` 范围**~~ **已定**：`parseChar` 为默认主路径，`feedChunk` 批量逃生门保留（见 §3.2）。
-3. **Transport 枚举**：`File / Udp / Tcp / Serial` 是否够用，要不要现在加 `Can / WebSocket`？
+3. ~~**Transport 枚举**~~ **已定**：`File / Serial(COM) / Udp / Tcp / Can`；WebSocket/Bluetooth/SharedMemory 预留，需要时再加。解析器可声明支持其中多种。
 4. **插件描述槽**：本批只服务内置 C++ 解析器，还是同步把描述回传槽位加进外部插件 ABI？
 
 ## 7. 红线
