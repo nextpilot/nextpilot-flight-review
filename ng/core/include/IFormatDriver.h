@@ -49,6 +49,25 @@ public:
     // 执行加载：把 intent（含 path/table/id/nocache 等）解析进 Dataset 并入仓库。
     // 返回 DatasetId 作为 IntentResult.payload，与既有 data.load 契约一致。
     virtual Result<IntentResult> load(const Intent &intent, DataRepository &repo) = 0;
+
+    // 本驱动对应的 **SPI 解析器 id**（如 "ulog"）；空串表示没有。
+    //
+    // 架构定位（AGENTS.md §3 P0-1，归并两条数据通路）：
+    //   ng 曾有两条数据通路并存——
+    //     A：data.load → IFormatDriver::load()，驱动自己读文件、自己建 Dataset；
+    //     B：Source → IngestPipeline → parser SPI → Dataset，生产零调用。
+    //   处置是**归并到 B，不新建第三条路**。
+    //
+    // 驱动在此的角色因此变成**声明**（"这个格式由哪个解析器负责"），
+    // 而不是**执行**（自己去读文件）。宿主据此把字节喂进统一管道：
+    //   读字节 -> 扇出给 N 个解析器 -> 各自产出数据集。
+    // 于是：
+    //   - 每加一个格式只写**一份**解析器实现；
+    //   - 录制旁路只需一个 tee，就能覆盖所有格式；
+    //   - 同一份字节可同时喂多个解析器（扇出）。
+    //
+    // 返回空串的驱动走旧的 load() 路径（尚未归并的格式仍可用）。
+    virtual QString parserId() const { return QString(); }
 };
 
 } // namespace ng::core

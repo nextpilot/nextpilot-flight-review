@@ -556,11 +556,11 @@ script.run
 | 7 | **摄取管道**：`IngestPipeline`（单前端 → 多解析器扇出 → 多数据集） | 1,2 | ✅ 已建 |
 | 8 | **统一设置**：`SettingsStore` 三作用域 + 变更通知 + 原子落盘 | — | ✅ 已建 |
 | 9 | **GUI 两层化**：shell/ + views/<功能>/，视图自注册 | 6 | ✅ 已建 |
-| 10 | 宿主喂数据流程接通 `DataSource`（读文件/流 → 管道 → 落库） | 7 | ⬜ 待做 |
+| 10 | 宿主喂数据流程接通 `DataSource`（读文件/流 → 管道 → 落库） | 7 | ✅ 已做（ULog 走管道；`IByteSource` + `IngestOrchestrator`，格式解析与旧路径共用一份实现） |
 | 11 | 器官补齐：`mod.source` / `mod.dataset` / `mod.analysis` / `mod.report` | 7 | ⬜ 待做 |
 | 12 | 视图注册表 + 首批 View（从老代码 PlottingCanvas 拆） | 11 | ⬜ 待做 |
 | 13 | 外部插件扫描：dlopen + ABI 校验（解析器 + 录制格式 + 后端） | 2,3,4 | ⬜ 待做 |
-| 14 | 其余格式按 SPI 平移进对应知识包 | 2,10 | ⬜ 待做 |
+| 14 | 其余格式按 SPI 平移进对应知识包 | 2,10 | 🟡 进行中（ULog 已完成；CSV 等待平移） |
 
 验证：编译全绿（Release + Debug 双构建）；`--kernel` 显示 ABI=2 且自检通过；契约测试覆盖
 **typed 多表模型 / 通道投影 / Rust LOD 抽稀·统计·抗混叠抽取 / ps-cache 指纹命中与过期**、

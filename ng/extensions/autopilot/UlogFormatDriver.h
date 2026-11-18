@@ -13,6 +13,12 @@ public:
     ng::core::FormatDomain domain() const override;
     QStringList suffixes() const override;
     bool acceptsFormat(const QString &format) const override;
+
+    // 本格式由 ULog SPI 解析器负责——宿主据此走统一摄取管道
+    // （读字节 -> 扇出 -> 落库），而不是让驱动自己读文件。
+    // 于是 ULog 的解析实现只有**一份**（SPI 那份）。
+    QString parserId() const override { return QStringLiteral("ulog"); }
+
     ng::core::Result<ng::core::IntentResult> load(
         const ng::core::Intent &intent, ng::core::DataRepository &repo) override;
 };

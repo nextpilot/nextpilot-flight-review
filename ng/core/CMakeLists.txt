@@ -14,6 +14,8 @@ add_library(ng_core STATIC
     src/BuiltinContributions.cpp
     src/DataSourceRepository.cpp
     src/IngestPipeline.cpp
+    src/IngestOrchestrator.cpp
+    src/IByteSource.cpp
     src/AppContext.cpp
     src/SettingsStore.cpp
     src/ParserRegistry.cpp
@@ -28,6 +30,8 @@ add_library(ng_core STATIC
     include/JobRecorder.h
     include/ScriptFacade.h
     include/IFormatDriver.h
+    include/IByteSource.h
+    include/IngestOrchestrator.h
     include/ExtensionRegistry.h
     include/FormatDomain.h
     include/ContributionKind.h

@@ -457,6 +457,13 @@ int main(int argc, char **argv)
         assert(uds != nullptr);
         assert(uds->format() == QStringLiteral("ulog"));
 
+        // 归并的**行为锁**：ULog 必须走统一摄取管道，
+        // 于是数据集名是管道生成的 "src<源id>_<解析器id>"，
+        // 而不是旧路径里驱动自己起的名字（文件名）。
+        // 这条断言的意义：将来谁把 ULog 退回"驱动自己读文件"，测试立刻红。
+        assert(uds->name().startsWith(QStringLiteral("src")));
+        assert(uds->name().endsWith(QStringLiteral("_ulog")));
+
         // 多张 typed 表：sensor 数值表 + events + facts 元数据表
         if (uds->tableCount() < 3)
         {

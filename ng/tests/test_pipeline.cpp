@@ -15,11 +15,14 @@
 #include "ps_parser_spi.h"
 
 #include "McapCodec.h"
+#include "Dataset.h"
 #include "PspxParser.h"
+#include "UlogStreamParser.h"
 #include "RawCodec.h"
 #include "Recorder.h"
 
 #include <QByteArray>
+#include <QFile>
 #include <QTemporaryDir>
 #include <cstdio>
 #include <cstdlib>
@@ -750,6 +753,140 @@ int main()
             CHECK(err.contains(QStringLiteral("nosuch")));
         }
         OK("多路同时录制：raw→file 与 mcap→file 各写各的，互不干扰；未知后端明确报错");
+    }
+
+    // ========== ULog 双路径一致性：SPI 管道 == 旧 driver 路径 ==========
+    //
+    // 这是 P0-1 归并的**核心断言**：同一个 .ulg 文件，
+    //   路径 A（data.load → IFormatDriver::load）  与
+    //   路径 B（Source → IngestPipeline → ULog SPI parser）
+    // 必须产出**逐行一致**的数据。
+    //
+    // 若不一致，说明"两份 parser"还在——那就等于没归并。
+    {
+        // 造一个最小 ULog：1 个 topic、2 列、N 行。
+        const QByteArray fmt("sensor:uint64_t timestamp;float x;uint16_t y;");
+        QByteArray ulg;
+        ulg.append("ULog", 4);
+        ulg.append(static_cast<char>(0x01));
+        ulg.append(static_cast<char>(0x12));
+        ulg.append(static_cast<char>(0x35));
+        ulg.append(static_cast<char>(0x01));
+        auto put16 = [](QByteArray &b, quint16 v) {
+            b.append(static_cast<char>(v & 0xFF));
+            b.append(static_cast<char>((v >> 8) & 0xFF));
+        };
+        auto put64 = [](QByteArray &b, quint64 v) {
+            for (int i = 0; i < 8; ++i)
+                b.append(static_cast<char>((v >> (8 * i)) & 0xFF));
+        };
+        auto putFloat = [](QByteArray &b, float f) {
+            char raw[4];
+            memcpy(raw, &f, 4);
+            b.append(raw, 4);
+        };
+        // ULog 文件头 = magic(7) + version(1) + start_timestamp(8) = 16 字节
+        put64(ulg, 0);
+        auto addMsg = [&put16](QByteArray &b, char ty, const QByteArray &body) {
+            put16(b, static_cast<quint16>(body.size()));
+            b.append(static_cast<char>(ty));
+            b.append(body);
+        };
+        addMsg(ulg, 'F', fmt);
+        QByteArray sub;
+        sub.append(static_cast<char>(0));
+        put16(sub, 1);
+        sub.append("sensor", 6);
+        sub.append(static_cast<char>(0));
+        addMsg(ulg, 'A', sub);
+        const int rows = 500;
+        for (int i = 0; i < rows; ++i)
+        {
+            QByteArray d;
+            put16(d, 1);
+            put64(d, 1000000ULL + static_cast<quint64>(i) * 1000ULL);
+            putFloat(d, static_cast<float>(i) * 0.5f);
+            put16(d, static_cast<quint16>(i % 1000));
+            addMsg(ulg, 'D', d);
+        }
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("dual.ulg"));
+        {
+            QFile f(path);
+            f.open(QIODevice::WriteOnly);
+            f.write(ulg);
+        }
+
+        // --- 路径 B：SPI 管道（Source → IngestPipeline → ULog parser）---
+        DataRepository repoB;
+        IngestPipeline pipeB(repoB);
+        CHECK(ParserRegistry::entry(QStringLiteral("ulog")) != nullptr);
+        const Result<int> bound = pipeB.bindParser(1, ParserBinding{QStringLiteral("ulog"), {}, true});
+        CHECK(bound);
+        {
+            QFile f(path);
+            f.open(QIODevice::ReadOnly);
+            QByteArray chunk;
+            while (!f.atEnd())
+            {
+                chunk = f.read(4096);
+                if (chunk.isEmpty())
+                    break;
+                pipeB.feed(1, reinterpret_cast<const uint8_t *>(chunk.constData()),
+                           static_cast<qint64>(chunk.size()));
+            }
+        }
+        pipeB.finish(1);
+        const int dsB = bound.value();
+        CHECK(dsB >= 0);
+        const Dataset *dB = repoB.get(dsB);
+        CHECK(dB != nullptr);
+        const Table *tB = dB ? dB->table(QStringLiteral("sensor")) : nullptr;
+        CHECK(tB != nullptr);
+        CHECK(tB && tB->rows == rows);
+
+        // --- 路径 A：旧 driver 路径（data.load → IFormatDriver）---
+        // 这里直接调扩展里的 driver，避免把整个 App 拉进来。
+        Dataset dsA = Dataset::create(QStringLiteral("dual"), QStringLiteral("ulog"));
+        QString errA;
+        CHECK(ng::ext::ulog::parseUlogStream(path, dsA, errA));
+        dsA.refreshSchema();
+        const Table *tA = dsA.table(QStringLiteral("sensor"));
+        CHECK(tA != nullptr);
+        CHECK(tA && tA->rows == rows);
+
+        // --- 逐行比对：两条路径必须完全一致 ---
+        //
+        // 数据本体在 Rust（typed 表），C++ 侧只能通过 channel() 读——
+        // 这正好也验证了"两条路径落到同一个数据集抽象上"。
+        if (tA && tB)
+        {
+            const auto ax = dsA.channel(QStringLiteral("sensor.x"), rows + 10);
+            const auto bx = dB->channel(QStringLiteral("sensor.x"), rows + 10);
+            const auto ay = dsA.channel(QStringLiteral("sensor.y"), rows + 10);
+            const auto by = dB->channel(QStringLiteral("sensor.y"), rows + 10);
+            CHECK(ax.has_value() && bx.has_value() && ay.has_value() && by.has_value());
+            bool same = ax.has_value() && bx.has_value() && ay.has_value() && by.has_value();
+            if (same)
+            {
+                same = ax->size() == bx->size() && ax->size() == rows;
+                for (int i = 0; i < ax->size() && same; ++i)
+                {
+                    if (qFuzzyCompare(ax->value[i] + 1.0, bx->value[i] + 1.0)
+                        && qFuzzyCompare(ay->value[i] + 1.0, by->value[i] + 1.0))
+                        continue;
+                    same = false;
+                    fprintf(stderr, "[diag] 第 %d 行不一致: A(x=%g y=%g) B(x=%g y=%g)\n", i,
+                            ax->value[i], ay->value[i], bx->value[i], by->value[i]);
+                }
+                // 时间轴也要一致
+                same = same && ax->time.size() == bx->time.size();
+                for (int i = 0; i < ax->time.size() && same; ++i)
+                    same = qFuzzyCompare(ax->time[i] + 1.0, bx->time[i] + 1.0);
+            }
+            CHECK(same);
+        }
+        OK("ULog 双路径一致：SPI 管道与旧 driver 路径产出逐行相同（归并生效，无两份 parser）");
     }
 
     fprintf(stdout, "\n新架构契约测试全部通过\n");

@@ -1,6 +1,12 @@
 #include "UlogStreamParser.h"
 
+#include "UlogParserSpi.h"
+
+#include "UlogParserSpi.h"
+
 #include "Dataset.h"
+#include "ParserRegistry.h"
+#include "ps_parser_spi.h"
 
 #include <QByteArray>
 #include <QFile>
@@ -23,6 +29,13 @@ namespace ng::ext::ulog
 {
 namespace
 {
+
+// ============================================================================
+// 以下协议解析算法复用自旧 extension：
+//   src/extensions/builtin/autopilot/datasources/ulog/UlogParser.cpp
+// 格式知识（magic / 段语义 / 类型解码 / 字段展平）逐字保留，未重新发明。
+// ============================================================================
+
 
 // ============================================================================
 // 以下协议解析算法复用自旧 extension：
@@ -388,6 +401,10 @@ ValueType primToValueType(Prim p)
     return ValueType::F64;
 }
 
+// 小数据元数据表（params/facts/events/dropouts）：量本身有界，攒完一次写出。
+struct KvRows { std::vector<std::pair<std::string, std::string>> rows; };
+struct EventRow { double t; uint8_t level; uint16_t tag; bool tagged; std::string text; };
+
 // 单个数值列的一批缓冲：按原生类型存字节，values 指针直接交给 kernel。
 struct ColumnBuffer
 {
@@ -456,7 +473,74 @@ struct StreamTable
     }
 };
 
-bool flushTable(StreamTable &st, Dataset &ds, const std::map<std::string, uint8_t> &multiTopics,
+// ============================================================================
+// 以下为 ng 的「产出端」改造：流式 typed 缓冲 + appendFrame 灌入 Rust。
+// 协议解析算法不变，只把「攒满全量再建表」换成「满批即灌入、缓冲复用」。
+// ============================================================================
+
+
+// 单个数值列的一批缓冲：按原生类型存字节，values 指针直接交给 kernel。
+// ============================================================================
+// 产出端（emitter）：解析器把"一批行"交给它，由它决定去哪。
+//
+// 这是**两条数据通路归并的唯一分叉点**（AGENTS.md §3 P0-1）：
+//   - 经 PsParserSink 吐批：SPI 路径，宿主决定批去哪（Rust 表 / 转发 / 丢弃）；
+//   - 直接写进 Dataset：旧路径，driver 直连仓库。
+// 协议解析逻辑完全不感知它——所以格式知识只有**一份实现**，
+// 不会出现"每个格式写两份 parser"的问题。
+// ============================================================================
+struct Emitter
+{
+    virtual ~Emitter() = default;
+
+    // 方法名不能叫 emit：Qt 把 emit 定义成空宏（#define emit），
+    // 写成成员函数会被展开成 "virtual bool (params)" —— 语法错误。
+    virtual bool emitBatch(const QString &table, const int64_t *timeUs, uint32_t rows,
+                           const std::vector<PsFrameColumn> &cols, QString &err) = 0;
+};
+
+// core 的 ValueType <-> SPI 的 PsValueType（同值域，见 ps_parser_spi.h）。
+PsValueType toPsValueType(ValueType t)
+{
+    switch (t)
+    {
+    case ValueType::F64: return PS_VALUE_F64;
+    case ValueType::F32: return PS_VALUE_F32;
+    case ValueType::I64: return PS_VALUE_I64;
+    case ValueType::U64: return PS_VALUE_U64;
+    case ValueType::I32: return PS_VALUE_I32;
+    case ValueType::U32: return PS_VALUE_U32;
+    case ValueType::I16: return PS_VALUE_I16;
+    case ValueType::U16: return PS_VALUE_U16;
+    case ValueType::I8: return PS_VALUE_I8;
+    case ValueType::U8: return PS_VALUE_U8;
+    case ValueType::Bool: return PS_VALUE_BOOL;
+    case ValueType::Text: return PS_VALUE_TEXT;
+    }
+    return PS_VALUE_F64;
+}
+
+ValueType fromPsValueType(PsValueType t)
+{
+    switch (t)
+    {
+    case PS_VALUE_F64: return ValueType::F64;
+    case PS_VALUE_F32: return ValueType::F32;
+    case PS_VALUE_I64: return ValueType::I64;
+    case PS_VALUE_U64: return ValueType::U64;
+    case PS_VALUE_I32: return ValueType::I32;
+    case PS_VALUE_U32: return ValueType::U32;
+    case PS_VALUE_I16: return ValueType::I16;
+    case PS_VALUE_U16: return ValueType::U16;
+    case PS_VALUE_I8: return ValueType::I8;
+    case PS_VALUE_U8: return ValueType::U8;
+    case PS_VALUE_BOOL: return ValueType::Bool;
+    case PS_VALUE_TEXT: return ValueType::Text;
+    }
+    return ValueType::F64;
+}
+
+bool flushTable(StreamTable &st, Emitter &out, const std::map<std::string, uint8_t> &multiTopics,
                 QString &err)
 {
     if (st.filled <= 0)
@@ -469,31 +553,35 @@ bool flushTable(StreamTable &st, Dataset &ds, const std::map<std::string, uint8_
             : std::string();
         st.tableName = QString::fromStdString(st.baseTopic + suffix);
     }
-    QVector<FrameColumn> cols;
+    // 列的原生字节布局与 PsFrameColumn 同构（name/unit/type/values/nulls），
+    // 所以这里直接组装 SPI 形状——零转换。
+    //
+    // PsFrameColumn.name 是 const char*，只在回调期间有效：
+    // utf8 副本必须活到 emitBatch() 返回，用局部数组兜住。
+    std::vector<QByteArray> names;
+    names.reserve(st.buffers.size());
+    std::vector<PsFrameColumn> cols;
     cols.reserve(st.buffers.size());
     for (const ColumnBuffer &buf : st.buffers)
     {
-        FrameColumn c;
-        c.name = buf.name;
-        c.unit = QString();
-        c.type = buf.type;
+        names.push_back(buf.name.toUtf8());
+        PsFrameColumn c{};
+        c.name = names.back().constData();
+        c.unit = "";
+        c.type = toPsValueType(buf.type);
         c.values = buf.data();
         c.nulls = nullptr; // readPrim 失败写 NaN，kernel 统计天然忽略
         cols.push_back(c);
     }
-    if (!ds.appendFrame(st.tableName, st.timeBuf.constData(), st.filled, cols, &err))
+    if (!out.emitBatch(st.tableName, st.timeBuf.constData(), static_cast<uint32_t>(st.filled),
+                       cols, err))
         return false;
     st.filled = 0;
     for (ColumnBuffer &buf : st.buffers)
         buf.clear();
     return true;
 }
-
-// 小数据元数据表（params/facts/events/dropouts）：量本身有界，攒完一次写入。
-struct KvRows { std::vector<std::pair<std::string, std::string>> rows; };
-struct EventRow { double t; uint8_t level; uint16_t tag; bool tagged; std::string text; };
-
-bool writeTextTable(Dataset &ds, const QString &table, const QVector<TimeUs> &timeUs,
+bool writeTextTable(Emitter &out, const QString &table, const QVector<TimeUs> &timeUs,
                     const QString &col0, const std::vector<std::string> &c0,
                     const QString &col1, const std::vector<std::string> &c1, QString &err)
 {
@@ -505,30 +593,25 @@ bool writeTextTable(Dataset &ds, const QString &table, const QVector<TimeUs> &ti
     QVector<const char *> p0, p1;
     for (const auto &s : c0) { store0.push_back(QByteArray::fromStdString(s)); p0.push_back(store0.constLast().constData()); }
     for (const auto &s : c1) { store1.push_back(QByteArray::fromStdString(s)); p1.push_back(store1.constLast().constData()); }
-    QVector<FrameColumn> cols(2);
-    cols[0].name = col0; cols[0].type = ValueType::Text; cols[0].values = p0.constData(); cols[0].nulls = nullptr;
-    cols[1].name = col1; cols[1].type = ValueType::Text; cols[1].values = p1.constData(); cols[1].nulls = nullptr;
-    return ds.appendFrame(table, timeUs.constData(), static_cast<int>(c0.size()), cols, &err);
+    const QByteArray n0 = col0.toUtf8();
+    const QByteArray n1 = col1.toUtf8();
+    std::vector<PsFrameColumn> cols(2);
+    cols[0].name = n0.constData(); cols[0].unit = ""; cols[0].type = PS_VALUE_TEXT; cols[0].values = p0.constData(); cols[0].nulls = nullptr;
+    cols[1].name = n1.constData(); cols[1].unit = ""; cols[1].type = PS_VALUE_TEXT; cols[1].values = p1.constData(); cols[1].nulls = nullptr;
+    return out.emitBatch(table, timeUs.constData(), static_cast<uint32_t>(c0.size()), cols, err);
 }
 
-} // namespace
+// ---------------------------------------------------------------------------
+// 喂字节式解析：把字节流喂进来，解析出的批交给产出端。
+//
+// 这是 SPI 路径的**唯一**实现；旧路径 parseUlogStream() 也委托给它。
+// 于是"格式解析"只有一份，"读文件"与"批去哪"由调用方决定。
+// ---------------------------------------------------------------------------
 
-bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
+// 解析器的可变状态（跨 feed 调用保持）。
+struct UlogState
 {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-    {
-        err = QStringLiteral("无法打开 ULog: %1").arg(path);
-        return false;
-    }
-
-    QByteArray head = file.read(16);
-    const auto *hb = reinterpret_cast<const uint8_t *>(head.constData());
-    if (head.size() < 16 || std::memcmp(hb, kMagic, 7) != 0 || hb[7] != 1)
-    {
-        err = QStringLiteral("magic/版本不匹配（不是 ULog v1）");
-        return false;
-    }
+    QByteArray pending; // 段缓冲：字节流 -> 攒够一段
 
     std::map<std::string, std::vector<Field>> formats;
     std::vector<StreamTable> tables;
@@ -540,30 +623,27 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
     KvRows facts;
     std::vector<EventRow> events;
     std::vector<std::pair<double, uint16_t>> dropouts;
-    uint64_t startUs = 0;
-    std::memcpy(&startUs, hb + 8, 8);
-    facts.rows.emplace_back("start_timestamp_us", std::to_string(startUs));
-    facts.rows.emplace_back("file_version", std::to_string(hb[7]));
 
+    bool headerDone = false;
+    bool failed = false;
     double lastTimestamp = 0.0;
+};
 
-    // 逐条消息解析：每条 body 是独立 QByteArray（上限 64KB，ULog 段长是 u16），
-    // 与文件行数无关；D 段数值在 ColumnBuffer 里按 kChunkRows 分块，满批即灌入 Rust。
-    while (true)
-    {
-        // 3 字节段头：size(u16) + type(u8)
-        const QByteArray hdr = file.read(3);
-        if (hdr.size() < 3)
-            break;
-        const auto *h = reinterpret_cast<const uint8_t *>(hdr.constData());
-        const uint16_t size = static_cast<uint16_t>(h[0] | (h[1] << 8));
-        const uint8_t ty = h[2];
-        if (size == 0)
-            continue;
-        const QByteArray body = file.read(size);
-        if (body.size() < static_cast<int>(size))
-            break;
-        const uint8_t *p = reinterpret_cast<const uint8_t *>(body.constData());
+// 处理一个完整段（type + body）。返回 false 表示出错。
+bool handleSegment(UlogState &st, uint8_t ty, const uint8_t *p, uint16_t size, Emitter &out,
+                   QString &err)
+{
+    // 局部别名：段处理代码逐字保留自旧实现，只把状态取自 st。
+    auto &formats = st.formats;
+    auto &tables = st.tables;
+    auto &byId = st.byId;
+    auto &byTopic = st.byTopic;
+    auto &multiTopics = st.multiTopics;
+    auto &params = st.params;
+    auto &facts = st.facts;
+    auto &events = st.events;
+    auto &dropouts = st.dropouts;
+    auto &lastTimestamp = st.lastTimestamp;
 
         // F：格式定义
         if (ty == 'F')
@@ -582,11 +662,11 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
             const std::string name = readCString(p + 3, size - 3);
             auto fit = formats.find(name);
             if (fit == formats.end())
-                continue;
+                return true;
             std::vector<Leaf> leaves;
             size_t consumed = 0;
             if (!flatten(formats, name, 0, "", leaves, 0, consumed))
-                continue;
+                return true;
             std::optional<size_t> tsOff;
             for (const Leaf &l : leaves)
                 if (l.path == "timestamp" && l.hasPrim && l.prim == Prim::U64)
@@ -595,9 +675,9 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
                     break;
                 }
             if (!tsOff)
-                continue;
+                return true;
             if (byTopic.count({name, multiId}))
-                continue;
+                return true;
 
             StreamTable st;
             st.baseTopic = name;
@@ -606,7 +686,7 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
                 if (l.hasPrim && l.keepValue)
                     st.leaves.push_back(l);
             if (st.leaves.empty())
-                continue;
+                return true;
             st.init(tsOff);
             const size_t idx = tables.size();
             byTopic[{name, multiId}] = idx;
@@ -620,13 +700,13 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
             const uint16_t msgId = static_cast<uint16_t>(p[0] | (p[1] << 8));
             auto bit = byId.find(msgId);
             if (bit == byId.end())
-                continue;
+                return true;
             StreamTable &st = tables[bit->second];
             const uint8_t *payload = p + 2;
             const size_t plen = size - 2;
             uint64_t tsUs = 0;
             if (!st.tsOff || !readTimestampUs(payload, plen, *st.tsOff, tsUs))
-                continue;
+                return true;
             lastTimestamp = static_cast<double>(tsUs) / 1e6;
             st.timeBuf[st.filled] = static_cast<TimeUs>(tsUs);
             for (size_t k = 0; k < st.leaves.size(); ++k)
@@ -639,9 +719,8 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
             ++st.filled;
             if (st.filled == kChunkRows)
             {
-                if (!flushTable(st, ds, multiTopics, err))
+                if (!flushTable(st, out, multiTopics, err))
                 {
-                    file.close();
                     return false;
                 }
             }
@@ -709,55 +788,185 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
             const uint16_t msgId = static_cast<uint16_t>(p[0] | (p[1] << 8));
             byId.erase(msgId);
         }
-    }
-    file.close();
 
-    // flush 每个 topic 的尾批
-    for (StreamTable &st : tables)
-        if (!flushTable(st, ds, multiTopics, err))
-            return false;
+    return true;
+}
 
-    if (tables.empty())
+
+// 喂字节 / 收尾（SPI 与旧路径共用）。
+bool feedUlogBytes(UlogState &st, const uint8_t *data, uint32_t size, Emitter &out, QString &err);
+bool finishUlogBytes(UlogState &st, Emitter &out, QString &err);
+
+// ---------------------------------------------------------------------------
+// SPI 包装：把 ULog 以标准解析器的身份暴露给 ParserRegistry。
+//
+// 归并的支点（AGENTS.md §3 P0-1）：
+//   ng 曾有两条数据通路并存——
+//     A：data.load → IFormatDriver::load()，驱动自己读文件、自己建 Dataset；
+//     B：Source → IngestPipeline → parser SPI → Dataset，生产零调用。
+//   处置是**归并到 B，不新建第三条路**。有了这个包装，宿主可以：
+//     · 同一份解析器既读文件、也读流（喂字节的是调用者）；
+//     · 同一份字节同时喂给多个解析器（扇出）；
+//     · 读字节的同时旁路到录制器（raw/mcap 多路录制）。
+// 格式解析本体与旧路径共用——**只有一份实现**。
+// ---------------------------------------------------------------------------
+
+
+
+// SPI 实例的上下文。
+struct UlogCtx
+{
+    // 解析状态机（段缓冲 + 格式表 + 订阅表 + 元数据）。
+    std::unique_ptr<UlogState> state;
+    QString error;
+};
+
+// SPI 产出端：把批交给宿主给的 sink。
+struct SpiEmitter final : Emitter
+{
+    const PsParserSink *sink = nullptr;
+
+    bool emitBatch(const QString &table, const int64_t *timeUs, uint32_t rows,
+                   const std::vector<PsFrameColumn> &cols, QString &err) override
     {
-        err = QStringLiteral("没有可绘制的数值通道（可能只有参数/文本）");
-        return false;
-    }
-
-    // 元数据小表：一次性写入（量本身有界，不构成内存瓶颈）
-    if (!params.rows.empty())
-    {
-        QVector<TimeUs> t(params.rows.size());
-        std::vector<std::string> names, values;
-        for (size_t i = 0; i < params.rows.size(); ++i)
+        if (!sink || !sink->frame_batch)
+            return true;
+        // PsFrameBatch 与 Rust ps_dataset_append_frame 的入参同构，落库零转换。
+        PsFrameBatch batch{};
+        const QByteArray tableName = table.toUtf8();
+        batch.table = tableName.constData();
+        batch.time_us = timeUs;
+        batch.rows = rows;
+        batch.columns = static_cast<uint32_t>(cols.size());
+        batch.column_data = cols.empty() ? nullptr : cols.data();
+        if (sink->frame_batch(sink->ctx, &batch) != 0)
         {
-            t[static_cast<qsizetype>(i)] = static_cast<TimeUs>(i);
-            names.push_back(params.rows[i].first);
-            values.push_back(params.rows[i].second);
-        }
-        if (!writeTextTable(ds, QStringLiteral("params"), t,
-                            QStringLiteral("name"), names,
-                            QStringLiteral("value"), values, err))
+            err = QStringLiteral("宿主拒绝了一批数据");
             return false;
+        }
+        return true;
     }
-    if (!facts.rows.empty())
+};
+
+void *ulogCreate()
+{
+    auto *ctx = new UlogCtx();
+    ctx->state = std::make_unique<UlogState>();
+    return ctx;
+}
+
+void ulogDestroy(void *p)
+{
+    delete static_cast<UlogCtx *>(p);
+}
+
+int32_t ulogFeed(void *p, const uint8_t *data, uint32_t size, const PsParserSink *sink,
+                  PsError *err)
+{
+    auto *ctx = static_cast<UlogCtx *>(p);
+    if (!ctx)
+        return -1;
+    SpiEmitter emitter;
+    emitter.sink = sink;
+    QString msg;
+    if (!feedUlogBytes(*ctx->state, data, size, emitter, msg))
     {
-        QVector<TimeUs> t(facts.rows.size());
-        std::vector<std::string> keys, values;
-        for (size_t i = 0; i < facts.rows.size(); ++i)
+        ctx->error = msg;
+        if (err)
         {
-            t[static_cast<qsizetype>(i)] = static_cast<TimeUs>(i);
-            keys.push_back(facts.rows[i].first);
-            values.push_back(facts.rows[i].second);
+            err->code = -1;
+            const QByteArray utf8 = msg.toUtf8();
+            const int n = qMin(static_cast<int>(utf8.size()), 255);
+            memcpy(err->message, utf8.constData(), static_cast<size_t>(n));
+            err->message[n] = '\0';
         }
-        if (!writeTextTable(ds, QStringLiteral("facts"), t,
-                            QStringLiteral("key"), keys,
-                            QStringLiteral("value"), values, err))
-            return false;
+        return -1;
     }
+    return 0;
+}
+
+int32_t ulogFinish(void *p, const PsParserSink *sink, PsError *err)
+{
+    auto *ctx = static_cast<UlogCtx *>(p);
+    if (!ctx)
+        return -1;
+    SpiEmitter emitter;
+    emitter.sink = sink;
+    QString msg;
+    if (!finishUlogBytes(*ctx->state, emitter, msg))
+    {
+        ctx->error = msg;
+        if (err)
+        {
+            err->code = -1;
+            const QByteArray utf8 = msg.toUtf8();
+            const int n = qMin(static_cast<int>(utf8.size()), 255);
+            memcpy(err->message, utf8.constData(), static_cast<size_t>(n));
+            err->message[n] = '\0';
+        }
+        return -1;
+    }
+    return 0;
+}
+
+void ulogReset(void *p)
+{
+    auto *ctx = static_cast<UlogCtx *>(p);
+    if (ctx)
+        ctx->state = std::make_unique<UlogState>();
+}
+
+// 嗅探：ULog 的 magic 是 "ULog\x01\x12\x35"（7 字节）。
+int32_t ulogSniff(void *, const uint8_t *data, uint32_t size)
+{
+    if (!data || size < 7)
+        return 0;
+    static const uint8_t magic[7] = {'U', 'L', 'o', 'g', 0x01, 0x12, 0x35};
+    return memcmp(data, magic, 7) == 0 ? 1 : 0;
+}
+
+const PsParserInfo *ulogInfo(void *)
+{
+    static const PsParserInfo info = {
+        PS_PARSER_ABI_VERSION,
+        "ulog",
+        "ULog (ArduPilot)",
+        ".ulg,.ulog",
+        1,  // can_sniff
+        1,  // streaming（段式，可增量喂）
+        {0, 0}
+    };
+    return &info;
+}
+
+const PsParserVtable g_ulogVtable = {
+    PS_PARSER_ABI_VERSION,
+    static_cast<uint32_t>(sizeof(PsParserVtable)),
+    ulogCreate,
+    ulogDestroy,
+    ulogSniff,
+    ulogFeed,
+    ulogFinish,
+    ulogReset,
+    ulogInfo,
+    nullptr // capabilities
+};
+
+
+
+// 收尾：把元数据小表（params/facts/events/dropouts）吐出去。
+bool flushMetaTables(UlogState &st, Emitter &out, QString &err)
+{
+    auto &params = st.params;
+    auto &facts = st.facts;
+    auto &events = st.events;
+    auto &dropouts = st.dropouts;
+
+
     if (!events.empty())
     {
         QVector<TimeUs> t(events.size());
-        QVector<FrameColumn> cols(3);
+        std::vector<PsFrameColumn> eventsCols(3);
         QByteArray levelBytes, tagBytes;
         QVector<QByteArray> textStore;
         QVector<const char *> textPtrs;
@@ -774,10 +983,10 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
             textStore.push_back(QByteArray::fromStdString(events[i].text));
             textPtrs.push_back(textStore.constLast().constData());
         }
-        cols[0].name = QStringLiteral("level"); cols[0].type = ValueType::U8; cols[0].values = levelBytes.constData(); cols[0].nulls = nullptr;
-        cols[1].name = QStringLiteral("tag"); cols[1].type = ValueType::U16; cols[1].values = tagBytes.constData(); cols[1].nulls = nullptr;
-        cols[2].name = QStringLiteral("text"); cols[2].type = ValueType::Text; cols[2].values = textPtrs.constData(); cols[2].nulls = nullptr;
-        if (!ds.appendFrame(QStringLiteral("events"), t.constData(), static_cast<int>(events.size()), cols, &err))
+        eventsCols[0].name = "level"; eventsCols[0].unit = ""; eventsCols[0].type = PS_VALUE_U8; eventsCols[0].values = levelBytes.constData(); eventsCols[0].nulls = nullptr;
+        eventsCols[1].name = "tag"; eventsCols[1].unit = ""; eventsCols[1].type = PS_VALUE_U16; eventsCols[1].values = tagBytes.constData(); eventsCols[1].nulls = nullptr;
+        eventsCols[2].name = "text"; eventsCols[2].unit = ""; eventsCols[2].type = PS_VALUE_TEXT; eventsCols[2].values = textPtrs.constData(); eventsCols[2].nulls = nullptr;
+        if (!out.emitBatch(QStringLiteral("events"), t.constData(), static_cast<uint32_t>(events.size()), eventsCols, err))
             return false;
     }
     if (!dropouts.empty())
@@ -791,13 +1000,186 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
             const uint16_t d = dropouts[i].second;
             durBytes.append(reinterpret_cast<const char *>(&d), 2);
         }
-        QVector<FrameColumn> cols(1);
-        cols[0].name = QStringLiteral("duration"); cols[0].type = ValueType::U16; cols[0].values = durBytes.constData(); cols[0].nulls = nullptr;
-        if (!ds.appendFrame(QStringLiteral("dropouts"), t.constData(), static_cast<int>(dropouts.size()), cols, &err))
+        std::vector<PsFrameColumn> cols(1);
+        cols[0].name = "duration"; cols[0].unit = ""; cols[0].type = PS_VALUE_U16; cols[0].values = durBytes.constData(); cols[0].nulls = nullptr;
+        if (!out.emitBatch(QStringLiteral("dropouts"), t.constData(), static_cast<uint32_t>(dropouts.size()), cols, err))
             return false;
     }
 
     return true;
 }
 
+// 喂一批字节：攒段 -> 解析 -> 吐批。
+//
+// 段缓冲上限 = 最大段长（u16 -> 64KB）+ 段头，与文件行数无关。
+bool feedUlogBytes(UlogState &st, const uint8_t *data, uint32_t size, Emitter &out, QString &err)
+{
+    if (st.failed)
+        return false;
+    if (!data || size == 0)
+        return true;
+
+    st.pending.append(reinterpret_cast<const char *>(data), static_cast<qsizetype>(size));
+
+    // 文件头：magic(7) + version(1) + start_timestamp(8)
+    if (!st.headerDone)
+    {
+        if (st.pending.size() < 16)
+            return true;
+        const auto *hb = reinterpret_cast<const uint8_t *>(st.pending.constData());
+        if (std::memcmp(hb, kMagic, 7) != 0 || hb[7] != 1)
+        {
+            err = QStringLiteral("magic/版本不匹配（不是 ULog v1）");
+            st.failed = true;
+            return false;
+        }
+        uint64_t startUs = 0;
+        std::memcpy(&startUs, hb + 8, 8);
+        st.facts.rows.emplace_back("start_timestamp_us", std::to_string(startUs));
+        st.facts.rows.emplace_back("file_version", std::to_string(hb[7]));
+        // 消费掉文件头：注意 QByteArray::remove(pos,len) **不改变长度**
+        // （原地抹除），而我们要的是"丢掉已消费的前缀"——所以用 mid()。
+        st.pending = st.pending.mid(16);
+        st.headerDone = true;
+    }
+
+    // 逐段解析：3 字节段头（size u16 + type u8）+ size 字节体。
+    while (true)
+    {
+        if (st.pending.size() < 3)
+            break;
+        const auto *h = reinterpret_cast<const uint8_t *>(st.pending.constData());
+        const uint16_t segSize = static_cast<uint16_t>(h[0] | (h[1] << 8));
+        const uint8_t ty = h[2];
+        if (st.pending.size() < 3 + segSize)
+            break; // 段还没到齐，等下一批
+        const uint8_t *p = reinterpret_cast<const uint8_t *>(st.pending.constData()) + 3;
+        if (segSize > 0)
+        {
+            const bool segOk = handleSegment(st, ty, p, segSize, out, err);
+            if (!segOk)
+            {
+                st.failed = true;
+                return false;
+            }
+        }
+        // 同上：丢掉已解析的段，剩下的继续攒。
+        st.pending = st.pending.mid(3 + segSize);
+    }
+    return true;
+}
+
+// 收尾：冲刷未满的批与元数据表。
+bool finishUlogBytes(UlogState &st, Emitter &out, QString &err)
+{
+    if (st.failed)
+        return false;
+    if (!st.headerDone)
+    {
+        err = QStringLiteral("ULog 数据不足（没有文件头）");
+        return false;
+    }
+    // 每个 topic 的尾批
+    for (StreamTable &t : st.tables)
+        if (!flushTable(t, out, st.multiTopics, err))
+            return false;
+    if (st.tables.empty())
+    {
+        err = QStringLiteral("没有可绘制的数值通道（可能只有参数/文本）");
+        return false;
+    }
+    return flushMetaTables(st, out, err);
+}
+
+} // namespace
+
+bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
+{
+    // 旧路径：自己读文件 + 直写 Dataset。
+    // 读字节与批的归宿都在这里定；格式解析委托给喂字节式实现。
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        err = QStringLiteral("无法打开 ULog: %1").arg(path);
+        return false;
+    }
+
+    // 产出端：把 SPI 形状的批转成 Dataset::appendFrame。
+    struct DatasetEmitter final : Emitter
+    {
+        Dataset &ds;
+        explicit DatasetEmitter(Dataset &d) : ds(d) {}
+        bool emitBatch(const QString &table, const int64_t *timeUs, uint32_t rows,
+                       const std::vector<PsFrameColumn> &cols, QString &err) override
+        {
+            QVector<FrameColumn> frame;
+            frame.reserve(static_cast<qsizetype>(cols.size()));
+            for (const PsFrameColumn &c : cols)
+            {
+                FrameColumn f;
+                f.name = QString::fromUtf8(c.name);
+                f.unit = QString::fromUtf8(c.unit);
+                f.type = fromPsValueType(c.type);
+                f.values = c.values;
+                f.nulls = c.nulls;
+                frame.push_back(f);
+            }
+            return ds.appendFrame(table, timeUs, static_cast<int>(rows), frame, &err);
+        }
+    } datasetEmitter(ds);
+
+    UlogState st;
+    QByteArray buf;
+    buf.resize(256 * 1024);
+    while (true)
+    {
+        const qint64 n = file.read(buf.data(), buf.size());
+        if (n <= 0)
+            break;
+        if (!feedUlogBytes(st, reinterpret_cast<const uint8_t *>(buf.constData()),
+                           static_cast<uint32_t>(n), datasetEmitter, err))
+        {
+            file.close();
+            return false;
+        }
+    }
+    file.close();
+    return finishUlogBytes(st, datasetEmitter, err);
+}
+
+const PsParserInfo &parserInfo()
+{
+    static const PsParserInfo info = {
+        PS_PARSER_ABI_VERSION,
+        "ulog",
+        "ULog (ArduPilot)",
+        ".ulg,.ulog",
+        1,
+        1,
+        {0, 0}
+    };
+    return info;
+}
+
+const PsParserVtable *parserVtable()
+{
+    return &g_ulogVtable;
+}
+
 } // namespace ng::ext::ulog
+
+// 编译期自注册：ULog 以标准 SPI 解析器的身份进入 ParserRegistry。
+// 宿主于是能用统一管道（Source → IngestPipeline → parser）处理它，
+// 而不必为它单独写一条数据通路。
+namespace
+{
+struct UlogParserRegistration
+{
+    static const PsParserInfo &parserInfo() { return ng::ext::ulog::parserInfo(); }
+    static const PsParserVtable *parserVtable() { return ng::ext::ulog::parserVtable(); }
+};
+const bool g_ulogParserReg_ =
+    ::ng::core::ParserRegistry::registerParser(UlogParserRegistration::parserInfo(),
+                                               UlogParserRegistration::parserVtable(),
+                                               QStringLiteral("builtin"));
+}

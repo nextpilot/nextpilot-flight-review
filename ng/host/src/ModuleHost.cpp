@@ -22,7 +22,11 @@ ng::core::JobRecorder *ModuleContext::recorder()
 }
 
 ModuleHost::ModuleHost(ng::core::AppContext &appCtx, QObject *parent)
-    : QObject(parent), m_appCtx(appCtx), m_dataLoadHandler(appCtx.toolbox(), appCtx.data())
+    : QObject(parent), m_appCtx(appCtx),
+      // data.load 走统一摄取管道（读字节 -> 扇出 -> 落库）：
+      // 格式驱动只声明 parserId，解析实现由 SPI 解析器提供。
+      m_dataLoadHandler(appCtx.toolbox(), appCtx.data(), appCtx.sources(),
+                         &appCtx.ingest())
 {
     // 系统级 data.load 入口：不归属任何可卸载模块，任何模块装卸都不影响它。
     // 用一个保留 key 注册，避免与模块 handler 的 "%id/%index" 冲突。
