@@ -64,11 +64,42 @@
 - `ng/modules/protocol/ProtocolModule`：意图 `protocol.new / protocol.open / protocol.validate`，ribbon 动作；headless 校验走意图，对话框经视图动作表/面板工厂（模块不持有 QWidget）。
 - `ng/gui/views/protocol/`：编辑器视图。1857 行超行数预算，拆成：头部字段表、变体段表、变体行、单帧试算预览几个小组件。
 
-## 5. 待落地的一个管道缺口
+## 5. 载入入口：自定义对话框取代单一文件对话框
 
-`IngestOptions` 当前只有 `tableName / useCache / stableId`，**没有 sidecar 模板路径**。自定义协议需要"数据文件 + .psproto 模板"两文件配对。
+### 5.1 现状
 
-倾向方案：给 `IngestOptions` 加一个通用 `QVariantMap params`（模板路径放 `params["protocolTemplate"]`），驱动与 openFile 意图透传给解析器；不为协议特例加专门字段。该改动在 P3 开工前确认。
+`MainWindow::openDataFile` 直接弹 `QFileDialog` 选一个数据文件，发 `data.load` 意图（`params["path"]`）；`DataLoadHandler` 按 `params["format"]` 或后缀找驱动。`format` 参数管道已支持，只是对话框没让用户选。
+
+### 5.2 目标：一个自定义载入对话框
+
+新增 `ng/gui/dialogs/LoadDataDialog`（模态 QDialog，外壳交互能力，与 `pickFilePath` 同性质；不进模块、不进 core）：
+
+| 控件 | 来源 | 说明 |
+|---|---|---|
+| 格式下拉 | 从 `ExtensionRegistry` 枚举 `kind=format` 的驱动，动态读 `displayName / id / suffixes` | 不写死枚举；新增格式不改对话框 |
+| 数据文件行 | 路径输入 + 浏览按钮 | 文件过滤器随选中格式的 suffixes 切换 |
+| 附加参数行 | 按驱动声明的 sidecar 动态生成 | 自定义协议显示"协议模板 .psproto"行；无 sidecar 的格式不显示 |
+| 确定/取消 | —— | 确定后产出 `Intent{op:"data.load", params:{path, format, <sidecar key>}}`，由 MainWindow 交 `host.execute` |
+
+### 5.3 驱动声明附加输入
+
+`IFormatDriver` 增加可选虚函数（默认空 = 无附加输入）：
+
+```cpp
+struct SidecarSpec { QString key; QString label; QString filter; bool required = false; };
+virtual QList<SidecarSpec> sidecars() const { return {}; }
+```
+
+老 loader 的 `frameSchema` JSON（"协议模板 .psproto"文件项）翻译为这个声明；对话框按 sidecars 生成行，参数 key 原样进 `intent.params`，不为协议特例在对话框里写死分支。
+
+### 5.4 管道透传缺口
+
+`IngestOptions` 当前只有 `tableName / useCache / stableId`，没有 sidecar 参数位置。方案：加一个通用 `QVariantMap params`，`DataLoadHandler` 把意图里的 sidecar 参数（如 `protocolTemplate`）透传进 Options，再交给驱动/解析器；不为每种附加输入加专门字段。CLI/脚本直接带 `params`，不弹对话框，与 GUI 同一条 `data.load` 通路。
+
+### 5.5 边界
+
+- 对话框只收集参数与发起意图；格式匹配、解码、入仓仍走驱动注册表 + 统一摄取管道，不新开第二条通路。
+- `GuiContext::pickFilePath` 保留给模块内零星选文件场景；主载入入口换成 `LoadDataDialog`。
 
 ## 6. 分批与验收
 
@@ -76,8 +107,8 @@
 |---|---|---|
 | P1 | L1 `ps-protocol` 库：Spec + Document 平移，JSON 解析/校验/序列化 | 单测：样例协议 JSON 校验通过/报错、类型表字节宽度、Expr 解析与求值 |
 | P2 | L2 SPI 解码器：两层帧解析、变体命中、变长段、CRC/条件校验、scale/offset、大小端 | 单测：构造含变体的模板 + 字节帧，断言各通道批值；校验失败帧被拒 |
-| P3 | L3 驱动 + Pack 登记；打通"数据文件 + 模板 → 入仓"；补 Options.params 透传 | 集成测试：经 IngestOrchestrator 载入自定义协议文件，数据集通道齐全 |
-| P4 | L4 模块意图 + 编辑器视图（打开/展示/校验/保存 JSON/单帧试算） | GUI 测试：意图闭环；面板自注册；CLI 构建保持纯净 |
+| P3 | L3 驱动 + Pack 登记；驱动声明 sidecar；`IngestOptions` 补通用 `params` 透传；打通"数据文件 + 模板 → 入仓" | 集成测试：经 IngestOrchestrator 载入自定义协议文件，数据集通道齐全；sidecar 参数到达解析器 |
+| P4 | 自定义 `LoadDataDialog`（格式下拉动态枚举 + sidecar 行）；L4 模块意图 + 协议编辑器视图（打开/展示/校验/保存 JSON/单帧试算） | GUI 测试：对话框产出 `data.load` 意图闭环；面板自注册；CLI 构建保持纯净 |
 
 ## 7. 第二批（本轮不做）
 
