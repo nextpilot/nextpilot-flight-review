@@ -148,6 +148,14 @@
 5. **不动项**：器官拆分（`mod.source`/`mod.dataset`）、report 成品、SPI 合并、两对话框合一——本轮**明确不做**。
 6. **实现方异议**：如某批发现与裁决冲突的事实，在本文追加"复核意见"，不擅自删改裁决项，先报需求方。
 
+### 5.1 B6 复核意见（2026-11-20，实现方）
+
+开工前逐文件核对三个门面类与两条数据通路，澄清三点，均不改变裁决：
+
+1. **两条通路输出不同不是合并障碍**：`IFormatDriver` 经宿主管道产 Dataset（画图），`IMessageParser` 产 `DecodedFrame`（协议检查器）。B6 合并只动 C++ 声明层——门面的 `parserId`/`suffixes`/`preferredTableName`/`probe`/`paramSpecs` 声明并入 `IMessageParser` 自述，`parseFrames`/`parseMessages` 作多输出函数；SPI 与两条执行通路零改动。裁决 §2.3 本就如此，此处确认无歧义。
+2. **`load()` 全 `eunsupported`**：三个门面类的 `load()` 都已返回 `eunsupported`，取消门面无功能损失；`DataLoadHandler` 旧路径（`parserId` 为空才走 `load()`）随门面类一并删除，只剩统一管道一条路。
+3. **`prepareParserOptions` 读模板文件不违反解析器纪律**：CustomProtocol 在宿主调用时把 `templatePath` 展开成内嵌 `template` 文本，解析器本身仍不读文件、只吃 `configure` 参数。该函数是**宿主侧编排步骤**，归并后移到统一入口（不再是"格式门面的方法"），`IMessageParser::configure` 禁读文件的约束保持。
+
 ---
 
 ## 6. 拍板追溯（需求方 2026-11-19 已定）
