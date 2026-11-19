@@ -706,237 +706,129 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 
 ---
 
-## 10. 数值类型：不默认 double（§9.5 硬伤 1 的解法）
+## 10. 数值类型：值保持原类型，不做"统一 double"
 
-> 需求原话：「double 承载 u64，这个换不能默认是 double」。**接受，但解法不是"默认换成 i64"。**
+> 需求原话：「字段原来是什么类型就什么类型呀，为什么一定要强调转为统一的」。
+> **这个判断是对的。我上一版写"double 主路径 + raw 旁路"是妥协，会造成两份真相。**
 
-### 10.1 先说一个好消息：类型标签其实已经预留了
+### 10.1 为什么统一到 double 是错的
 
-我核对了三层现状：
+不是"精度差一点"，而是**类型是语义的一部分，抹掉类型等于抹掉语义**：
 
-| 层 | 现状 | 结论 |
+| 抹掉类型后 | 后果 |
+|---|---|
+| 校验 | `u64` 常量匹配在 double 域可能**判错真伪**（两个不同 u64 相等）→ 好帧判坏、坏帧判好 |
+| 派生 | `u64 * 2` 在 double 域溢出成 1.8e19 的模糊值，再转回整型全错 |
+| 导出 | 导出的"原始值"已经不是原始值 |
+| 溯源 | 只能看到"一个浮点数"，不知道它原本是 `u16` 还是 `f32` |
+| 显示 | 一个 32 位计数器显示成 `4.2949673e9`，用户无法判断是否越界 |
+
+所以段声明 `type: "u64"`，通道就必须是 `u64`，**不需要、也不该有一个"统一的 double 视图"**。
+
+### 10.2 但"统一"本身不是问题，"统一到有损表示"才是问题
+
+这里要区分**轴**和**值**：
+
+| | 是否该统一 | 统一到什么 |
 |---|---|---|
-| C ABI `ps_parser_spi.h:55` | **已声明** `PS_VALUE_U64 = 3`、`PS_VALUE_I64` 等全套 | 类型语义**早已定义** |
-| `Dataset.h:39` `ValueType` | **已映射** `F64/F32/I64/U64/I32/U32/I16/U16/I8…` | 类型标签**早已存在** |
-| `Dataset::Series::value` | 仍是 `QVector<double>` | **存储没兑现** |
-| `DecodedFrame.raw/value` | `QVariant`（可存 qlonglong/qulonglong） | 容器**已够用** |
-| psproto `ProtocolChannel` | `std::vector<double> t, v` | **源头就在这里降级** |
+| **时间轴** | **必须统一** | `i64` ticks（每秒/毫秒/微秒/纳秒的整数刻度） |
+| **值** | **不该统一** | 各按段声明的原类型 |
 
-所以这不是"要新造类型系统"，而是**补一个已经声明、但没落地的能力**。架构意图本来就有，断点在 psproto 输出的那一行。
+理由：时间轴是坐标系，不统一就没法对齐、没法画、没法比较——但统一到 `i64` 是**无损**的（整数刻度）。统一到 `double 秒`才是有损：纳秒墙钟 `1.7e18` 此刻 ULP 已是 256 ns。
 
-### 10.2 为什么不能"默认换成 i64"
+**一句话：轴上必须统一，但统一到无损的整数；值上不统一，各是各的类型。**
 
-一刀切会从"u64 失真"跳进"f64 失真"：
-
-- 气压、温度、加速度、IMU 原始值都是 `f32/f64`，i64 会截断小数；
-- 物理值 `raw * scale + offset` 里 `scale` 是浮点（`0.01`、`0.25`），整型乘法直接错。
-
-正解不是"换默认类型"，而是**按段的声明类型决定值类型**——`type: "u64"` 走 u64 域，`type: "f32"` 走 f64 域，谁也不迁就谁。
-
-### 10.3 设计：ValueType 驱动 + 精确旁路（不强迫下游改）
-
-`ProtocolChannel` 改为：
+### 10.3 设计：一个通道一份数据，类型由声明决定
 
 ```cpp
+// 每个通道按段声明的类型存，不做多份副本
+struct ChannelBuffer
+{
+    ValueType type;                        // 声明即类型，只读不改
+    std::variant<
+        std::vector<std::uint8_t>,  std::vector<std::uint16_t>,
+        std::vector<std::uint32_t>, std::vector<std::uint64_t>,
+        std::vector<std::int8_t>,   std::vector<std::int16_t>,
+        std::vector<std::int32_t>,  std::vector<std::int64_t>,
+        std::vector<float>,         std::vector<double>,
+        std::vector<std::string>
+    > data;
+};
+
 struct ProtocolChannel
 {
     std::string name, unit;
-    ValueType   type;                 // 直接复用 core 已有的 ValueType
-
-    // 绘图/分析路径（默认，和现在一致，不破坏任何消费者）
-    std::vector<double> t;            // 相对秒
-    std::vector<double> v;            // phys 值（scale/offset 之后）
-
-    // 精确路径（仅当 type 为整数时存在，按需填充）
-    std::vector<uint64_t> rawU;
-    std::vector<int64_t>  rawI;
+    ValueType   type;        // 与 data 的实际类型一一对应，校验期断言一致性
+    std::variant<…> v;       // 一份数据，无旁路、无双写
+    std::vector<std::int64_t> t;   // 时间：i64 ticks（唯一统一项）
+    std::int64_t tTicksPerSecond;  // 刻度换算，消费者自己转
 };
 ```
 
-三条规则：
+三条纪律：
 
-1. **整数段**：`rawU/rawI` 必填，`v` 仍填（供画图，允许有损）；**校验、派生、导出优先取 raw**；
-2. **浮点段**：只填 `v`，`rawU/rawI` 为空——不浪费内存；
-3. **`scale == 1 && offset == 0` 的整数段**：标记 `exact = true`，说明 `v` 无损，下游可放心用 double。
+1. **只有一份数据**。不做 `v` + `rawU` 双写——上一版那样做会出现"两份真相"，用户和下游都不知道该信哪个，这是最坏的设计；
+2. **`type` 与 `data` 的实际类型强绑定**，`validate` 阶段就断言，防止声明与存储不一致；
+3. **`phys`（scale/offset 之后）怎么办**：不额外存一份。当 `scale != 1 || offset != 0` 时，段的值和物理值确实不同——这时**段自身的声明类型就该是物理值的类型**（声明 `f32` 就是 `f32`）。`scale/offset` 是"从 raw 到 phys 的换算公式"，不是"两个通道"。需要 raw 的场景（如导出原始字节）走 `rawBytes`，不再造第二个 typed buffer。
 
-内存代价透明：只有整型通道多一份 8 字节/点；浮点通道零增长。
-
-### 10.4 时间戳：先减后转，顺序决定精度
-
-这是最容易做错的一处。`u64` 纳秒墙钟 `1.7e18` 在 double 域 ULP 已是 256 ns，**先转 double 再减 origin 会把误差带进相对时间**。
-
-正确顺序（必须写进实现与测试）：
+### 10.4 转换点唯一：消费端，不在解析端
 
 ```
-1) 从帧里取 i64 ticks（精确，比如 1700000000123456789 ns）
-2) 先做 i64 减法：ticks - originTicks   → 相对 ticks（精确，量级降到 1e10）
-3) 再按 unit 除以 ticksPerSec 转 double 秒 → 相对时间（< 2^53，精确）
+解析(psproto) ── 原类型，无损 ──► 消费端(需要 double 时才转)
 ```
 
-反例（错）：`double(t) - double(origin)` —— 两个 1.7e18 相减，各自先丢 256 ns，差值误差可达 512 ns。
+- 画图：`fastplot` 要 `double` → 在喂图那一刻转，**单点、显式、可测**；
+- 统计：按原类型算（整型算整型，浮点算浮点），需要时再转；
+- 导出 CSV：原始值按原类型格式化（`uint64` 不打成科学计数法）；
+- 校验：**永远在原生类型域**，这是正确性问题（§10.6）。
 
-配套：`timestampUnit` 增加 **`ns`**（现在只有 `s/ms/us`），并保留 `rawTimestamp`（i64）+ `tickUnit`，让需要绝对时间的消费者自己换算。
+对比上一版的错误：把转换藏在解析输出里，精度损失发生在"你还没决定要不要精确"的时候。
 
-### 10.5 表达式：类型化求值，禁止隐式降级
+### 10.5 表达式求值：跟着段类型走，不设"统一入口"
 
-这是本条工作量最大的部分——`evalExpr`（172 行）现在是 `double` 一路到底，必须重写为类型化。
+`evalExpr` 现在 `double` 一路到底（172 行），必须重写为类型化：
 
 | 运算 | 规则 |
 |---|---|
-| `u64 op u64` | u64（`/` 按无符号除，`%` 无符号取模） |
-| `i64 op i64` | i64 |
-| `u64` 与 `i64` 混合 | **编译期报错**，要求显式 `toI64()` / `toU64()`（避免静默符号错误） |
-| 整型 op 浮点 | **仅允许显式 `toF64()`**；隐式转换视为模板错误 |
-| 比较 | 同类型才允许；跨类型比较报错 |
-| 位移/位运算 | 只在整型域，`<<` 超过位宽时显式定义行为（不做 UB 传播） |
+| `u64 op u64` | `u64`（除法/取模按无符号） |
+| `i64 op i64` | `i64` |
+| `u64` 与 `i64` 混合 | **编译期报错**，要求显式 `toI64()` / `toU64()` |
+| 整型 op 浮点 | **仅允许显式 `toF64()`**，隐式转换 = 模板错误 |
+| 比较 | 同类型才允许 |
+| 位移/位运算 | 只在整型域；移位量超位宽时行为显式定义，不传播 UB |
 
-语义和 Rust 对齐，和你要的"不能默认 double"一致。这条一旦落地，`u64` 段的 `value`（期望值常量）比较、CRC 状态、累积计数器就都不会静默算错了。
+语义对齐 Rust。这与"值保持原类型"是同一件事的两面：**如果表达式里偷偷转 double，段类型保持了也没用**。
 
-### 10.6 校验：这是正确性问题，不是精度问题
+### 10.6 校验必须在原生类型域（正确性，不是精度）
 
-现在 `checkFrame` 里 `if (v != want)` 是 **double 比较**（`SequentialCodec.cpp:220-225`）。后果不是"差一点点"，而是：
+`checkFrame` 现在是 `if (v != want)` 的 **double 比较**（`SequentialCodec.cpp:220-225`）。后果：
 
-- `u64` 常量匹配可能**误判真伪**（两个不同的 u64 在 double 域相等）；
-- CRC 状态 `0xFFFFFFFFFFFFFFFE` 之类直接比错 → **把好帧判成坏帧，或反之**。
+- `u64` 常量匹配可能判错真伪；
+- CRC 状态类大数直接比错 → **把好帧判成坏帧，或把坏帧当成好帧**。
 
-所以校验必须在**原生类型域**完成，不能降级到 double。这一条应该在 S2 就修掉，不能等 Dataset 改造。
+这条与 S2 的段表编译一起做，不能等下游改造。
 
-### 10.7 下游边界：Dataset 存储要不要一起改
+### 10.7 下游 Dataset 的正确姿势
 
-我的判断：**分两步，不要一次动。**
+`Dataset::Series::value` 现在是 `QVector<double>`，但 `Series` 已经有 `ValueType type` 字段（`Dataset.h:92`、`ValueType` 枚举 `:39` 已含 `U64/I64/U32…`）。也就是说**core 层早就打算支持类型，只是存储没兑现**。
 
-| 步 | 范围 | 理由 |
+处理顺序：
+
+| 步 | 内容 | 为什么可以分步 |
 |---|---|---|
-| 第一步（S2 内） | psproto 输出带 `ValueType` + raw 精确旁路；表达式类型化；校验按类型比较；时间戳先减后转 | 这些是**正确性**问题，必须在解析层解决。Dataset 是 double 不影响"解出来对不对" |
-| 第二步（独立批次） | `Dataset::Series::value` 存 typed（`PS_VALUE_*`），统计/LOD/抽稀/导出按类型走 | 这是**显示与导出精度**问题，波及 fastplot 与统计全链路，工作量大、风险高，可以晚做 |
+| 第一步（S2） | psproto 输出 typed；表达式类型化；校验按类型；时间轴 i64 ticks | 这是**解析正确性**，不做则数据从源头就错 |
+| 第二步（独立批次） | `Series::value` 改 typed（兑现 `PS_VALUE_*`），统计/LOD/抽稀/导出按类型走 | 这是**存储与显示**，波及 fastplot 全链路，风险高，可晚做 |
 
-**不能因为"Dataset 是 double"就不修解析层**——否则用户导出的原始 u64 就是错的，而且校验还会误判。
+**中间态是可接受的**：psproto typed → 入库时按 `Dataset` 当前能力转 double（一次、显式、可记录"此处有损"），而不是解析时就模糊掉。区别在于**有损点是否可定位**。
 
 ### 10.8 验收
 
-1. `0xFFFFFFFFFFFFFFFE` 级别的 u64 段：解出值、`value` 常量校验、导出**三者全部精确**；
-2. 纳秒时间戳 `1700000000123456789`：相对时间与手算差值 **≤ 1 ns**（不是 256 ns）；
-3. 类型化表达式：`u64 * 2` 不丢位；`u64 + i64` 明文报错；
-4. 浮点段零回归：所有 `f32/f64` fixture 输出与现在**逐位相同**；
-5. `scale/offset` 段：`v` 与现在逐位相同（phys 路径不变）；
-6. 内存：浮点通道零增长，整型通道 +8 字节/点（可测）。
-
----
-
----
-
-## 11. 参考库语法对照：我们该改什么
-
-> 对照对象：Kaitai Struct（`.ksy`，YAML + codegen）、CAN DBC（工业界信号数据库）、Construct（Python 组合子）、DFDL（XML Schema + 注解）。目的不是抄，是**找出我们与全行业相反/缺失/冗余的地方**。
-
-### 11.1 逐项对照
-
-| # | 表达点 | Kaitai | DBC | Construct | psproto 现状 | 判定 |
-|---|---|---|---|---|---|---|
-| 1 | **`size` 语义** | **字节数**（"amount of bytes to read"）；`size-eos: true` 读到流末 | 无（用 bitLength） | 字节 | **元素数**（`bytes = count * type.size`） | **🔴 与全行业相反** |
-| 2 | 重复 | `repeat: expr / eos / until`，`repeat-until` 里 `_` 指上一元素 | 无 | `Array(n,…)` / `RepeatUntil` | 仅靠 `size` 数组近似 | 🔴 缺 `eos`/`until` |
-| 3 | 条件字段 | `if:` 表达式，false 时跳过得 null | 无 | `If` | 无（只能整帧变体替换） | 🔴 缺 |
-| 4 | 类型切换 | `switch-on` / `switch-bytes`（**字段级局部**） | `M` / `m<val>` 多路复用（**信号级局部**） | `Switch` | `series`（**整帧段表替换**） | 🟡 语义粒度不同 |
-| 5 | 常量/魔数 | `contents: [0xAA, 0x55]` | 无 | `Const` | `value` | 🟡 命名误导 |
-| 6 | 终止符 | `terminator` + `consume` + `eos-error` | 无 | `Terminated` | 无 | 🔴 缺 |
-| 7 | 位域 | `bits`（unaligned bit integers） | **核心**：`start|len@order` | `BitStruct` | 无 | 🔴 缺（§4.8） |
-| 8 | 枚举 | `enums` | `VAL_` 值表 | `Enum` | 无 | 🔴 缺 |
-| 9 | 校验/CRC | `process: crc32` 等 | 无（DBC 不管校验） | `Checksum` | 算子 + `over` 范围 + 自定义参数 | 🟢 **我们更强** |
-| 10 | 偏移/填充 | `pos` / `instances` | 无 | `Padding` / `Seek` | hidden 段模拟 | 🟡 语义模糊 |
-| 11 | 物理范围声明 | 无 | `[min|max]`（元信息，不判失败） | 无 | `checks.range`（**判失败**） | 🟡 两类需求混一起 |
-| 12 | 单位 | 无 | `"unit"` | 无 | `unit` | 🟢 一致 |
-| 13 | 派生/计算 | `instances`（惰性、可算） | 无 | `Computed` | `derive`（计划） | 🟢 够用 |
-| 14 | 类型别名 | `types`（子类型） | `SGTYPE`（信号模板） | 无 | 无 | 🟡 缺（重复写 scale/unit） |
-| 15 | 文档 | `doc` / `doc-ref` | `CM_` 注释 | 无 | `description` | 🟢 一致 |
-| 16 | 时间戳 | 无 | 无 | 无 | `timestamp`（expr/unit/origin） | 🟢 **我们有，别人没有** |
-| 17 | 整除语义 | `//` 整除，`/` 浮点 | — | Python 语义 | `/` **全部 trunc** | 🔴 陷阱 |
-
-### 11.2 五个必须先改的（不是补功能，是修错）
-
-**① `size` 改字节数。** Kaitai 文档原话是 "Specify amount of **bytes** to read in size key"；DBC 用 `bitLength`；没人用"元素数"叫 `size`。我们写 `"size": 4` 一个 `u16` 数组，结果是 **8 字节**——这是最容易被误读的一处。改：`size` = 字节，新增 `count` = 元素数。
-
-**② `/` 改浮点除，整除用 `//`。** 现在 `case '/': out = std::trunc(a / b)`，写 `"size": "len/2"` 得 0 会觉得"明明该是 1"。Kaitai 用 `//` 表整除正是为了避免这个坑。
-
-**③ 变体语义说清楚。** `variants[].segments` 与顶层 `segments` 是什么关系——替换？追加？共享段从哪来？对照 Kaitai 的 `switch-on`（字段级）和 DBC 的 `mux`（信号级），我们的粒度太粗。建议：保留帧级 `series`，**新增段级 `if`** 覆盖 90% 场景。另外 `fromVariant`（`SequentialCodec.cpp` 用来拼通道前缀）是**实现细节泄漏进 schema**，用户不该写这个键。
-
-**④ `value` 改名。** 它是"**期望值**"（常量匹配），Kaitai 叫 `contents`、Construct 叫 `Const`。和 `valueExpr` 并列时，"value"和"valueExpr"谁是值谁是表达式全凭猜。改：`expect`（常量）/ `expectExpr`（表达式）。
-
-**⑤ 端序值校验不一致。** 解码接受 `be`/`le`（`SequentialCodec.cpp` 里 `endian == "big" || endian == "be"`），`validate` 只认 `big`/`little`（`ProtocolSpec.cpp:93-96`）。→ 写 `"endian": "be"` 解码能跑、校验报错。统一为 `little`/`big`，别名在解析层归一。
-
-### 11.3 三个概念冗余（你最讨厌"概念太多"，这里就有一批）
-
-| 冗余 | 现状 | 建议 |
-|---|---|---|
-| `hidden` vs `plot` | `if (seg.hidden || !seg.plot …) continue` — **两个开关做同一件事** | 合成一个 `visible`（或 `emit`） |
-| `str` / `string` / `ascii` / `char` | 四个名字一个类型（`FType::STR`） | 只留 `text`，其余在解析层做别名 |
-| `role:"payload"` vs `series.payload` | 段上标 role，series 里又用名字引用同一个段 | 去掉段级 `role:"payload"`，只留 `series.payload` 引用 |
-| `checks` 里的谓词与摘要 | `eq/ne/lt…`（判真假）与 `crc/sum/xor`（算摘要）挤在同一个 `op` 命名空间；代码里 `op=="in"` 还被误归入 `sequenceOp` | 拆成 `expect`（谓词）与 `digest`（摘要/校验和） |
-
-### 11.4 我们比参考库强的地方（要保住，别在重构中丢了）
-
-1. **CRC 覆盖范围声明**：`over: ["name:from-to"]` + 自定义 `poly/init/refin/refout/xorout`。Kaitai 只有 `process` 简单套用，DBC 完全不管校验。
-2. **帧变体 + 选择器**：`series.selector` 直接从帧字段选布局，Kaitai 要写 `switch-on` + 多个子类型，DBC 要写 mux 信号。
-3. **时间戳表达**：`timestampExpr` + `unit` + `origin: first_frame` + `fallback`，三个参考库都没有——这对"数据分析软件"是刚需。
-4. **运行时模板**（不 codegen 也能解）：Kaitai/DBC 都是"先编译/先加载再解"，模板改动要重编译（Kaitai）或重读 DBC。我们支持运行中换模板。
-
-### 11.5 修订后的 schema 骨架（v2）
-
-```jsonc
-{
-  "version": "2",
-  "name": "can_8byte",
-  "layout": "sequential",
-  "endian": "little",              // 只认 little/big
-  "maxsize": 64,
-
-  "segments": [
-    { "name": "id",    "type": "u32", "size": 4, "role": "sync" },
-    { "name": "dlc",   "type": "u8",  "size": 1, "role": "length" },
-    { "name": "body",  "type": "u8",  "size": 8, "hidden": true },   // 位域容器
-
-    // 位域：DBC 的 SG_ 一行一个信号
-    { "name": "rpm", "type": "u16",
-      "bit": { "base": "body", "offset": 8, "width": 16, "order": "msb0" },
-      "scale": 0.25, "unit": "rpm",
-      "range": [0, 8000],                                     // ← 声明，不判失败
-      "enum": { "0": "off", "1": "on" } },                    // ← 状态量可读化
-
-    { "name": "crc", "type": "u16",
-      "digest": { "alg": "crc16/modbus", "over": ["id..body"] } },
-    { "name": "eol", "type": "u8", "size": 1 }                // ← 缺 driver
-  ],
-
-  "series": { "selector": "id", "payload": "body", "fallback": "raw", "variants": […] },
-
-  // 新增：按条件出现的字段（替代"整帧变体"覆盖不到的场景）
-  // "if": "has_extra == 1"
-}
-```
-
-新增/改名清单（按落地顺序）：
-
-| 变更 | 类型 | 兼容 |
-|---|---|---|
-| `size` → 字节，新增 `count` | **破坏** | 提供 `"version": 1` 兼容分支或批量迁移脚本 |
-| `/` 浮点，`//` 整除 | **行为变更** | 现有模板无人用除法的话无感；要扫一遍 fixture |
-| `value` → `expect` | 改名 | 双读一版 |
-| `hidden`+`plot` → `emit` | 合并 | 双读一版 |
-| 端序别名归一 | 修错 | 无感 |
-| 新增 `bit` / `until` / `if` / `repeat` / `enum` / `range` / `pad` / `digest` | 新增 | 纯增量 |
-
-### 11.6 明确不照搬
-
-| 不学 | 理由 |
-|---|---|
-| Kaitai 的 **codegen 优先** | 我们要运行时换模板 + 可视化编辑，codegen 作为附加（§4.6） |
-| Kaitai 的 `types` 深层嵌套 | 会把扁平段表变成树，破坏我们"不发散"的架构；用 `SGTYPE` 式的**平级类型别名**代替 |
-| DBC 的定宽文本格式（一行一信号、缩进敏感） | 我们要 JSON，可嵌套、可 diff、可程序化生成 |
-| DFDL 的 XML Schema 注解体系 | 复杂度与收益不成比例，JVM 生态 |
-| Construct 的"代码即 schema" | 模板要能被 GUI 编辑器和非程序员使用 |
-
-### 11.7 顺带记一笔 DBC 的官方坑（导入时必须知道）
-
-DBC 规范文档写 `byte_order = '0' | '1'; (* 0=little endian, 1=big endian *)`，而**实际实现全是反的**：`0` = Motorola(big)、`1` = Intel(little)。OpenVehicles 文档直接写"the DBC format documentation is wrong on this"。我们做 DBC 导入时以实测为准，并在 README 里警告。
+1. `0xFFFFFFFFFFFFFFFE` 级 u64：解出值、常量校验、导出**三者精确**；
+2. 通道里**只有一份数据**：`sizeof(channel)` 与单类型 vector 同量级，不存在双写；
+3. 纳秒时间戳 `1700000000123456789`：相对时间与手算差 **≤ 1 ns**（先 i64 相减，再换算）；
+4. 表达式：`u64 * 2` 不丢位；`u64 + i64` 明文报错；`u32 + 1.5` 明文报错；
+5. 所有 `f32/f64` fixture 输出与现在**逐位相同**（零回归）；
+6. `type` 与 `data` 类型不一致时，`validate` 直接拒绝（防声明与存储脱节）。
 
 ---
 
