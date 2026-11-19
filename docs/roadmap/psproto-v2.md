@@ -1216,3 +1216,49 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 - [ ] §12.2 的 8 项验收由需求方逐项确认后，才进入实现代码。
 
 > 以上清单来自 2026-11-19 对三份文档的逐节 review。实现方如有不同结论，在本节追加"复核意见"行，不要直接删除疑问项。
+
+---
+
+## 14. S4b：技术债 23 条落地状态（2026-11-19）
+
+### 14.1 已闭环（22 条）
+
+| # | 项 | 落点 | 提交 |
+|---|---|---|---|
+| 1 | 删文档级 `lexer`，段级边界 `boundary` | `SegBoundary{Byte,Literal,Delimit,Fixed,Rest,Repeat,Keyed}` | `14f0285` |
+| 2 | 字节段/定宽段进 StreamDecoder | 端序、`isSignedKind`、F32/F64 位模式、`expect` 常量 | `14f0285` |
+| 4 | `fixed`（小数位数校验）与 `as`（强制类型） | `parseNumber` / 编译期 `parseType` | `1e21e54` |
+| 5 | `pattern` 正则 + `on_mismatch`(reject/warn/skip) | 解码期判定，`warn` 写 NaN 且 `skipped++` | `1e21e54` |
+| 6 | ASCII 时间轴（`timestamp` + `unit` s/ms/us/ns） | StreamDecoder 执行字节码并回填 `ticksPerSecond` | `acd6245` |
+| 7 | `previewSequentialFrame` 对字符段走 StreamDecoder | 与真实解码同一路径 | `acd6245` |
+| 8 | `key=value` 词法（`SegBoundary::Keyed`） | 值到 `,`/`;`/空白/记录尾 | `e178a23` |
+| 9 | 错误码分类（TooMany/TooFew/CheckNotHex/RecordAborted/SyncMissing） | 带 code + 偏移 + 段名 | `e178a23` |
+| 10 | 文档/schema 同步段级边界、删 `lexer`、加 `key` | SPEC §7.1、README、schema | `68c3917` |
+| 11 | ASCII `series` 变体分派 | `segsOverride` + `s:`/`n:` selector 归一 + emit 覆盖变体段 | `1ac8942` |
+| 12 | `digest.inject`（CRC_EXTRA） | 尾部追加常量字节再算 | `a9fb76e` |
+| 13 | `range`/`enum` 值域校验 | 解码期判定，按 `on_mismatch` 分派 | `a9fb76e` |
+| 14 | `types` 类型别名（DBC SGTYPE 等价） | `parseAliases` + 段展开，段内显式优先 | `f65da45` |
+| 15 | `transform` 算子链 | `scale/mul`、`offset/add`、`abs`、`round`、`clamp` | `96274d3` |
+| 16 | `repeat` eos / until | `readFrame` 跳过 count 表达式，按终止条件定长 | `96274d3` |
+| 17 | 编译期校验补强（width 1..65535、literal 互斥、min>max、空 enum） | `ProtocolSpec.cpp` | `68c3917`/`a9fb76e` |
+| 18 | 负例测试 5 条 | `test_protocol.cpp` | `68c3917` |
+| 19 | Lua 5.4 脚本后端 | `ScriptEngine`，沙箱 + 40 万指令配额 | `0b25bcb` |
+| 20 | SPEC/README 同步 ASCII/混合 | §7、§10、§11 | `68c3917`/`29c505e` |
+| 21 | 删旧口径 fixture `demo_nmea_line.psproto` | 保留 GGA/CSV 两个正向样例 | `68c3917` |
+| 22 | `count` 语义（元素数，字节数由 type 推） | v1 `size`/`counts` 报错 | S2 |
+| 23 | schema 同步 `key`/`repeat`/`until`/`transform` | `psproto.schema.json` | `29c505e` 后一轮 |
+
+### 14.2 明确不合并（1 条，设计决策）
+
+**#3「`readFrame` 与 `StreamDecoder` 合并为单一 `RecordParser`」——判定：不做。**
+
+- 入口已统一：`decodeSequentialCompiled` 是唯一公开入口，按记录形态分派，输出同一 `ProtocolDecodeResult`。
+- 两种形态的读法本质不同：流式（同步字定位 + 收尾字硬匹配 + 半帧等待 + 候选重置）与结构式（定长段表 + 位域 + 条件段 + 变体 + series）没有共同的控制流；合并成一个函数只会得到一个长满分支的 god function，回归面反而扩大。
+- 保留的代价是"两个文件、一个契约"，收益是每条路径都能独立测试、独立演进。
+
+> 若后续必须合并，前提是先补足"位域/条件/变体在流式路径下"的测试矩阵，再谈代码合并。
+
+### 14.3 验收
+
+- [x] 协议单测 23 项全绿（`./build-ng/tests/ng_test_protocol`）；
+- [ ] 需求方逐项验收 §14.1 的行为口径（尤其 `repeat:"eos"` 在"后面还有段"时的语义）。

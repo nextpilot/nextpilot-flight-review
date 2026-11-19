@@ -421,13 +421,95 @@
           "$ref": "#/$defs/range"
         },
         "repeat": {
-          "type": "string",
-          "enum": [
-            "elems",
-            "eos",
-            "until"
-          ],
-          "default": "elems"
+          "description": "重复方式：字符串 elems/eos/until，或对象 {mode,until}",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "elems",
+                "eos",
+                "until"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "eos",
+                    "until"
+                  ]
+                },
+                "until": {
+                  "$ref": "#/$defs/expr"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            }
+          ]
+        },
+        "until": {
+          "$ref": "#/$defs/expr",
+          "description": "repeat:\"until\" 的终止表达式（与对象写法等价）"
+        },
+        "transform": {
+          "type": "array",
+          "description": "值算子链，解析后按序应用",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "sexagesimal",
+                  "abs",
+                  "round"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "sexagesimal",
+                      "scale",
+                      "mul",
+                      "offset",
+                      "add",
+                      "abs",
+                      "round",
+                      "clamp"
+                    ]
+                  },
+                  "split": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 8
+                  },
+                  "k": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  },
+                  "min": {
+                    "type": "number"
+                  },
+                  "max": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "op"
+                ]
+              }
+            ]
+          }
         },
         "empty": {
           "type": "string",
