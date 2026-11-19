@@ -17,6 +17,7 @@
 #include "DataManagerPanel.h"
 #include "GuiContext.h"
 #include "MainWindow.h"
+#include "views/PropertyPanel.h"
 #include "ThemeManager.h"
 #include "ExtensionRegistry.h"
 #include "IPanelContribution.h"
@@ -112,12 +113,13 @@ int main(int argc, char *argv[])
     CHECK(window.menuWidget() != nullptr);
     // 插槽声明了页签/分组；动作由器官在 onAttach 里登记
     const auto &slotReg = application.modules().uiSlots();
-    CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() >= 1);
-    CHECK(slotReg.slotsOfKind(SlotKind::RibbonGroup).size() >= 2);
-    // 绘图模块在 onAttach 里往"视图"分组放了"重绘"动作
-    CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.home.view")).size() >= 1);
-    // 数据模块在 onAttach 里往"数据"分组放了 reload/export/clearCache 三个动作
-    const auto dataActs = slotReg.actionsIn(QStringLiteral("ribbon.group.home.data"));
+    // Ribbon 按老代码/用户要求分 8 页：开始/文件/数据/绘图/脚本/协议/分析/视图。
+    CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 8);
+    CHECK(slotReg.slotsOfKind(SlotKind::RibbonGroup).size() >= 8);
+    // 绘图模块 onAttach 往绘图页"操作"分组放了"重绘"动作
+    CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.plot.action")).size() >= 1);
+    // 数据模块 onAttach 往数据页"常用"分组放了 reload/export/clearCache 三个动作
+    const auto dataActs = slotReg.actionsIn(QStringLiteral("ribbon.group.data.common"));
     CHECK(dataActs.size() >= 3);
     bool hasReload = false, hasExport = false;
     for (const auto &entry : dataActs)
@@ -131,7 +133,7 @@ int main(int argc, char *argv[])
     // --- 2a-2) 图库是纯数据声明（headless 可读），plot 类型 / parse 类型都在 ---
     {
         // 图型库：12 种图型，按"常用/曲线/地图3D/仪表"分组，缩略图 visual 声明齐全。
-        const auto plotActs = slotReg.actionsIn(QStringLiteral("ribbon.group.home.plottype"));
+        const auto plotActs = slotReg.actionsIn(QStringLiteral("ribbon.group.plot.type"));
         CHECK(plotActs.size() == 12);
         QSet<QString> groups;
         for (const auto &entry : plotActs)
@@ -144,7 +146,7 @@ int main(int argc, char *argv[])
         CHECK(groups.contains(QStringLiteral("曲线")));
         CHECK(groups.contains(QStringLiteral("仪表")));
         // 来源库：至少 csv/ulog/custom-protocol 三种格式驱动进了 gallery。
-        const auto srcActs = slotReg.actionsIn(QStringLiteral("ribbon.group.home.sources"));
+        const auto srcActs = slotReg.actionsIn(QStringLiteral("ribbon.group.data.sources"));
         CHECK(srcActs.size() >= 3);
         bool hasCsv = false, hasCustom = false;
         for (const auto &entry : srcActs)
@@ -277,9 +279,31 @@ int main(int argc, char *argv[])
         // 器官按清单里的 id 请求面板——它不知道这是领域面板还是通用面板。
         QWidget *canPanel = ui->requestDomainPanel(canSpec->area, canSpec->id);
         CHECK(canPanel != nullptr);
-        // 标题取面板自己的描述，而非通用插槽的"属性"：形态由领域决定。
-        CHECK(binder->panelTitle(QStringLiteral("dock.right")) == QStringLiteral("CAN 报文"));
-        OK("模块侧闭环：按领域查清单 -> 按 id 请求面板 -> 标题/形态由知识包决定");
+        // 用户决策：dock.right 主面板改为通用属性面板（替换 CAN 的默认占用）。
+        // CAN 面板能力仍在（工厂 + 清单 + 可请求），但不再占据 dock.right 主位。
+        CHECK(binder->panelTitle(QStringLiteral("dock.right")) == QStringLiteral("属性"));
+        OK("模块侧闭环：按领域查清单 -> 按 id 请求面板成功；dock.right 主位归属性面板");
+    }
+
+    // --- 3d) 属性面板：dock.right 主面板 + 统一 selection 联动 ---
+    {
+        CHECK(binder->panelWidget(QStringLiteral("dock.right")) != nullptr);
+        CHECK(binder->panelTitle(QStringLiteral("dock.right")) == QStringLiteral("属性"));
+        CHECK(nextpilot::plotscope::core::PanelFactoryRegistry::types()
+                  .contains(QStringLiteral("property-panel")));
+
+        // 统一 selection 联动：选中画布 -> 属性面板按 kind 找 provider 显示 schema。
+        auto *propPanel = qobject_cast<PropertyPanel *>(binder->panelWidget(QStringLiteral("dock.right")));
+        CHECK(propPanel != nullptr);
+        Selection canvasSel;
+        canvasSel.kind = SelectionKind::Canvas;
+        canvasSel.label = QStringLiteral("画布");
+        canvasSel.ids.insert(QStringLiteral("canvas"), QStringLiteral("active"));
+        application.context().setSelection(canvasSel);
+        CHECK(propPanel->schemaTitle().contains(QStringLiteral("画布")));
+        CHECK(propPanel->rowCount() >= 2); // 图型/曲线数/图例
+        CHECK(propPanel->selectionKindText() == QStringLiteral("canvas"));
+        OK("统一 selection 联动：选中画布 -> 属性面板按 provider 显示 schema 行");
     }
 
     // --- 4) 停靠区就位（Qt-ADS）---
@@ -580,6 +604,50 @@ int main(int argc, char *argv[])
         CHECK(tm->current() == Theme::Theme::Light);
         CHECK(changedCount == 2);
         OK("主题管理：双主题 token 分色 + theme.set/toggle 意图切换 + 全局 QSS + themeChanged 联动");
+    }
+
+    // --- plotting 全套操作：view action 必须已注册（GUI/脚本/回放同一路径）---
+    {
+        auto dispatchOk = [&](const QString &op, const QVariantMap &p = {}) {
+            QVariant vr;
+            Result<QVariant> res(vr);
+            return application.context().dispatchViewAction(op, p, res); // 只断言"已注册"
+        };
+        CHECK(dispatchOk(QStringLiteral("plot.series.list")));
+        CHECK(dispatchOk(QStringLiteral("plot.series.axis"),
+                         {{QStringLiteral("key"), QStringLiteral("x")}, {QStringLiteral("right"), true}}));
+        CHECK(dispatchOk(QStringLiteral("plot.series.visible"),
+                         {{QStringLiteral("key"), QStringLiteral("x")}, {QStringLiteral("visible"), false}}));
+        CHECK(dispatchOk(QStringLiteral("plot.series.remove"),
+                         {{QStringLiteral("key"), QStringLiteral("__none__")}}));
+        CHECK(dispatchOk(QStringLiteral("plot.zoom"), {{QStringLiteral("factor"), 0.5}}));
+        CHECK(dispatchOk(QStringLiteral("plot.autoscale")));
+        CHECK(dispatchOk(QStringLiteral("plot.grid")));
+        CHECK(dispatchOk(QStringLiteral("plot.axis.range"),
+                         {{QStringLiteral("axis"), QStringLiteral("x")},
+                          {QStringLiteral("lo"), 0.0}, {QStringLiteral("hi"), 1.0}}));
+        CHECK(dispatchOk(QStringLiteral("plot.overlay"), {{QStringLiteral("text"), QStringLiteral("A/B: 0.5")}}));
+        CHECK(dispatchOk(QStringLiteral("plot.legend.toggle")));
+        CHECK(dispatchOk(QStringLiteral("plot.export.png")));
+        CHECK(dispatchOk(QStringLiteral("page.addCanvas")));
+        CHECK(dispatchOk(QStringLiteral("page.splitHorizontal")));
+        CHECK(dispatchOk(QStringLiteral("page.splitVertical")));
+        CHECK(dispatchOk(QStringLiteral("page.grid")));
+        OK("plotting 全套操作：series/axis/marker/zoom/grid/page 等 view action 已注册");
+    }
+
+    // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---
+    {
+        const auto &slotReg = application.modules().uiSlots();
+        CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.analysis.apps")).size() >= 1);
+        CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.protocol.editor")).size() >= 1);
+        // analysis.run 意图：default 应用（无活动源时返回失败但被 handler 认领）。
+        Intent ar; ar.op = QStringLiteral("analysis.run");
+        ar.params[QStringLiteral("application")] = QStringLiteral("default");
+        const auto rr = application.modules().execute(ar);
+        // 无论有无活动源，都不能是 eunsupported（analysis.run handler 必须认领）。
+        CHECK(rr || rr.error().code != QStringLiteral("eunsupported"));
+        OK("analysis/protocol module：分析 gallery + 协议入口 + analysis.run handler 就位");
     }
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");

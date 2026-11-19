@@ -19,7 +19,11 @@
 #include "ModuleHost.h"
 #include "PlotCanvas.h"
 #include "ProtocolEditorDialog.h"
+#include "TransformEditorDialog.h"
+#include "Transform.h"
 #include "ShellBinder.h"
+#include "SARibbonCategory.h"
+#include "SARibbonBar.h"
 
 #include <QAction>
 #include <QApplication>
@@ -85,6 +89,8 @@ int main(int argc, char *argv[])
     QStringList files;
     QString themeArg;
     QString plotTypeArg;
+    QString tabArg;
+    QString transformArg; // --transform=<cap> 截变换编辑器（cap: derived/axis-y/checksum）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -99,6 +105,16 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--type=")))
         {
             plotTypeArg = a.mid(QStringLiteral("--type=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--tab=")))
+        {
+            tabArg = a.mid(QStringLiteral("--tab=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--transform=")))
+        {
+            transformArg = a.mid(QStringLiteral("--transform=").size());
             continue;
         }
         if (a.startsWith(QStringLiteral("--action=")))
@@ -144,6 +160,28 @@ int main(int argc, char *argv[])
     // 所以取数与选通道都放在 show() 之后。
     window.show();
     QCoreApplication::processEvents();
+
+    // --tab=<页名>：切到指定 ribbon 页（按 categoryTitle 匹配），用于逐页截图核对 8 页布局。
+    if (!tabArg.isEmpty())
+    {
+        if (SARibbonBar *ribbon = window.ribbonBar())
+        {
+            bool switched = false;
+            const auto cats = ribbon->categoryPages();
+            for (int i = 0; i < cats.size(); ++i)
+            {
+                if (cats.at(i)->categoryName() == tabArg)
+                {
+                    ribbon->setCurrentIndex(i);
+                    switched = true;
+                    break;
+                }
+            }
+            fprintf(stdout, "ribbon 页 %s: %s\n", qPrintable(tabArg),
+                    switched ? "已切换" : "未找到");
+        }
+        QCoreApplication::processEvents();
+    }
 
     // 载入数据（与 CLI 完全相同的数据.load 意图路径）。
     // 多个文件 = 多个数据源同时打开。
@@ -215,6 +253,28 @@ int main(int argc, char *argv[])
         const bool hit = application.context().dispatchViewAction(actionId, params, res);
         fprintf(stdout, "view action %s: %s\n", qPrintable(actionId),
                 hit ? (res ? "成功" : "失败") : "未注册");
+    }
+
+    // --transform=<cap>：截变换编辑器（展示按能力过滤 + 自说明 + 在线调试）。
+    if (!transformArg.isEmpty())
+    {
+        uint32_t cap = CapAxisY;
+        if (transformArg == QStringLiteral("derived")) cap = CapDerived;
+        else if (transformArg == QStringLiteral("axis-x")) cap = CapAxisX;
+        else if (transformArg == QStringLiteral("checksum")) cap = CapChecksum;
+        TransformEditorDialog dlg(application.context(), cap,
+                                  capabilityNames(cap), &window);
+        dlg.show();
+        QCoreApplication::processEvents();
+        QTimer::singleShot(200, [&] {
+            const QPixmap shot = dlg.grab();
+            if (shot.save(out))
+                fprintf(stdout, "变换编辑器截图已保存: %s\n", qPrintable(out));
+            else
+                fprintf(stderr, "变换编辑器截图保存失败\n");
+            app.quit();
+        });
+        return app.exec();
     }
 
     // 让事件循环转一圈，ribbon/dock/画布完成布局与绘制

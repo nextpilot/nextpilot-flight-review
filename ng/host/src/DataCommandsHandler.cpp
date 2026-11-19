@@ -254,6 +254,62 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
     if (name.isEmpty())
         name = input + QLatin1Char('.') + filterId;
 
+    // 统一变换（算子/表达式/Lua）：params 里带 transform 请求时走 TransformEvaluator。
+    // 能力位 CapDerived——选错（如 checksum专用）在 evaluator 内被挡住。
+    // 未指定则兼容原 previewFilter 路径（内置算子直接走 Rust，零额外开销）。
+    QVariant transformVar = intent.params.value(QStringLiteral("transform"));
+    if (transformVar.isValid())
+    {
+        const QJsonObject req = transformVar.type() == QVariant::String
+            ? QJsonDocument::fromJson(transformVar.toString().toUtf8()).object()
+            : QJsonObject::fromVariantMap(transformVar.toMap());
+
+        // 取原始通道（cap 有界），再交给统一变换器。
+        QVector<double> rawT, rawV;
+        const Table *srcTable = ds->table(table);
+        if (!srcTable)
+            return fail(QStringLiteral("etable"), QStringLiteral("表不存在: %1").arg(table));
+        auto raw = ds->channel(table, column);
+        if (!raw)
+            return fail(QStringLiteral("echan"), QStringLiteral("读取通道失败: %1").arg(input));
+        const int take = qMin(raw->size(), cap);
+        rawT.reserve(take);
+        rawV.reserve(take);
+        for (int i = 0; i < take; ++i)
+        {
+            rawT.append(raw->time.value(i));
+            rawV.append(raw->value.value(i));
+        }
+
+        if (!m_app.hasTransformEvaluator())
+            return fail(QStringLiteral("enoeval"), QStringLiteral("变换求值器未注册（script 模块未装载）"));
+        Result<QVector<double>> ev{QVector<double>()};
+        m_app.evalTransform(req, CapDerived, rawT, rawV, ev);
+        if (!ev)
+            return fail(ev.error().code, ev.error().message);
+
+        QVector<double> time = rawT;
+        QVector<double> value = ev.value();
+        const int n = value.size();
+        if (n <= 0)
+            return fail(QStringLiteral("ederive"), QStringLiteral("变换结果为空"));
+        IntentResult r;
+        r.payload = QVariantMap{
+            {QStringLiteral("dataset"), dsId},
+            {QStringLiteral("table"), table},
+            {QStringLiteral("column"), column},
+            {QStringLiteral("transform"), req},
+            {QStringLiteral("name"), name},
+            {QStringLiteral("count"), n},
+            {QStringLiteral("total"), n},
+            {QStringLiteral("truncated"), false},
+            {QStringLiteral("time"), QVariant::fromValue(time)},
+            {QStringLiteral("value"), QVariant::fromValue(value)},
+        };
+        Q_EMIT m_app.derivedSeriesReady(name, time, value);
+        return r;
+    }
+
     QVector<double> time, value;
     int total = 0;
     QString err;

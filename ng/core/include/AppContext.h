@@ -5,9 +5,12 @@
 #include "ExtensionRegistry.h"
 #include "IngestPipeline.h"
 #include "Result.h"
+#include "Selection.h"
 #include "SettingsStore.h"
+#include "Transform.h"
 
 #include <QHash>
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
@@ -111,6 +114,49 @@ public:
 
     void clearActiveChannel();
 
+    // === 统一选中对象（跨前端共享）===
+    //
+    // 与活动通道分开：活动通道只表达"正在画哪一列"，而选中对象是属性面板的
+    // 输入——它可以是源/表/列/曲线/轴/协议字段中的任意一个。二者会互相印证，
+    // 但不是一回事（例如点画布上的一条曲线选中 Series，活动通道不变）。
+    // 纯数据（Selection），故 headless/脚本可读，视图之间不互相引用。
+    const Selection &selection() const { return m_selection; }
+    void setSelection(const Selection &selection);
+    void clearSelection();
+
+    // === 属性提供者登记与派发 ===
+    //
+    // 属性面板（视图）不含任何业务：它按当前 selection.kind 找这里登记的
+    // provider，拿到 PropertySchema 后照表显示；编辑时发 prop.set 意图。
+    // provider 由各领域（数据源/绘图/协议）注册，闭包捕获视图，类型不含 QWidget。
+    using PropertyProvider = std::function<QJsonObject(const Selection &selection)>;
+    void registerPropertyProvider(SelectionKind kind, PropertyProvider provider);
+    // 命中返回 true；out 带回 schema JSON。未注册返回 false（属性面板显示空态）。
+    bool queryPropertySchema(const Selection &selection, QJsonObject &out) const;
+
+    // 属性写入器：与 provider 成对注册，按 selection.kind 路由。
+    // provider 声明哪些行可编辑，setter 负责把新值写回真正的持有者。
+    using PropertySetter = std::function<bool(const Selection &selection, const QString &objectId,
+                                              const QString &key, const QString &value, QString *err)>;
+    void registerPropertySetter(SelectionKind kind, PropertySetter setter);
+    // 命中并写入成功返回 true；未注册返回 false。
+    bool applyProperty(const Selection &selection, const QString &objectId,
+                       const QString &key, const QString &value, QString *err = nullptr) const;
+
+    // === 统一变换求值（三场景共用）===
+    //
+    // 求值实现在 script 模块（Lua）/ Rust kernel（算子/表达式），但调用方在
+    // host（数据源衍生）、gui（曲线）、protocol（checksum）——它们不能依赖 script
+    // 模块（依赖方向）。于是这里注入回调，类型不含任何 script 类，保持 headless。
+    using TransformEvalFn = std::function<Result<QVector<double>>(
+        const QJsonObject &request, uint32_t cap, const QVector<double> &t, const QVector<double> &v)>;
+    void registerTransformEvaluator(TransformEvalFn fn);
+    bool hasTransformEvaluator() const { return static_cast<bool>(m_transformEvaluator); }
+    // 未注册返回 false（out 带回错误）。
+    bool evalTransform(const QJsonObject &request, uint32_t cap,
+                       const QVector<double> &t, const QVector<double> &v,
+                       Result<QVector<double>> &out) const;
+
     // === 视图动作登记与派发 ===
     //
     // 有些动作只能由具体部件完成（导出当前画布、切换图例、复原视图状态），
@@ -126,6 +172,8 @@ Q_SIGNALS:
     void activeSourceChanged(int sourceId);
     // 当前活动通道变化（画布、状态栏、脚本都订阅它）。
     void activeChannelChanged(int datasetId, const QString &table, const QString &column);
+    // 统一选中对象变化：属性面板订阅它刷新。参数是选中对象的 JSON（跨线程安全）。
+    void selectionChanged(const QJsonObject &selection);
 
     // 派生序列已算出（data.derive 的结果）。这是**事件**而非状态，参数是可序列化的
     // 数值数组（非 GUI 专属类型），故不违反"上下文不含 QWidget"的铁律。
@@ -141,6 +189,10 @@ private:
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
 
     QHash<QString, ViewActionHandler> m_viewActions; // fastplot 视图动作处理器表
+    QHash<int, PropertyProvider> m_propertyProviders; // 按 SelectionKind 索引的属性提供者
+    QHash<int, PropertySetter> m_propertySetters;     // 按 SelectionKind 索引的属性写入器
+    TransformEvalFn m_transformEvaluator; // 统一变换求值（script 模块注入）
+    Selection m_selection;       // 当前统一选中对象
 
     int m_activeSourceId = -1;   // 数据源 id（DataSourceRepository 键）
     int m_activeDatasetId = -1;  // 活动通道所在的数据集 id（DataRepository 键）

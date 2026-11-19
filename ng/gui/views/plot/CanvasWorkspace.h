@@ -71,6 +71,10 @@ private:
 
     // 集中注册 view action（唯一注册点，路由到 active cell）。
     void registerViewActions();
+    // 注册曲线/轴/画布的属性 provider 与 setter（属性面板按 kind 路由到这里）。
+    void registerPropertyProviders();
+    // 连接一个画布的选中请求信号 -> AppContext.selection。
+    void connectCanvasSignals(PlotCanvas *canvas);
 
     void onActiveChannelChanged(int datasetId, const QString &table, const QString &column);
 

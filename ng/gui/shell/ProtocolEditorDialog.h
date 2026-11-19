@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QJsonObject>
 #include <QString>
 
 class QLabel;
@@ -8,6 +9,11 @@ class QPlainTextEdit;
 class QPushButton;
 class QTreeWidget;
 class QWidget;
+
+namespace nextpilot::plotscope::core
+{
+class AppContext;
+}
 
 namespace nextpilot::plotscope::gui
 {
@@ -26,10 +32,12 @@ class ProtocolEditorDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit ProtocolEditorDialog(QWidget *parent = nullptr);
+    explicit ProtocolEditorDialog(QWidget *parent = nullptr,
+                                  nextpilot::plotscope::core::AppContext *appCtx = nullptr);
     ~ProtocolEditorDialog() override;
 
-    static void run(QWidget *parent = nullptr);
+    static void run(QWidget *parent = nullptr,
+                    nextpilot::plotscope::core::AppContext *appCtx = nullptr);
 
     // 空白模板（供"新建"与测试使用）。
     static QString blankTemplate();
@@ -41,7 +49,11 @@ private:
     void validateDoc();
     void previewFrame();
     void applyTheme();
+    void configureChecksumTransform();
 
+    nextpilot::plotscope::core::AppContext *m_appCtx = nullptr;
+    QJsonObject m_checksumRequest;  // checksum 变换配方（算子/表达式/Lua）
+    QString m_checksumLabel;
     QString m_path;
     QPlainTextEdit *m_json = nullptr;
     QPlainTextEdit *m_hex = nullptr;

@@ -3,6 +3,7 @@
 #include "Dataset.h"
 
 #include <QColor>
+#include <QHash>
 #include <QJsonObject>
 #include <QVector>
 #include <QWidget>
@@ -56,6 +57,13 @@ struct PlotSeries
     bool rightAxis = false;    // 挂右 y 轴
     qreal lineWidth = 1.4;
 
+    // 曲线内变换（对齐需求：X 轴时间 offset，Y 轴算子/表达式/Lua）。
+    // 执行位置：builtin/expression 走 Rust kernel，lua 走 C++ TransformEvaluator
+    // （由 ChannelView/数据取数层在喂给画布前施加；这里只存配方与展示结果）。
+    double xTimeOffset = 0.0;      // X 轴时间偏移（秒）
+    QString yTransformId;          // Y 轴变换 descriptor id（TransformRegistry）
+    QString yTransformParamsJson;  // 变换参数/表达式/Lua 源码（JSON 载荷）
+
     // 稳定键：同一通道重复拖入时据此去重（不重复叠加）。
     QString key() const
     {
@@ -95,6 +103,25 @@ public:
 
     // 把某条曲线挂到左轴或右轴（双 Y 轴的用户选择入口）。
     bool setSeriesAxis(const QString &key, bool rightAxis);
+
+    // 曲线操作（plotting 全套操作意图的画布落点）：显隐 / 颜色 / 线宽 / 删除。
+    bool setSeriesVisible(const QString &key, bool visible);
+    bool setSeriesInk(const QString &key, const QColor &color);
+    bool setSeriesWidth(const QString &key, double width);
+
+    // 按 key 找曲线（属性面板/选中路由用）。
+    const PlotSeries *seriesByKey(const QString &key) const;
+    // 曲线内变换设置：X 时间 offset / Y 变换 descriptor id。
+    bool setSeriesXOffset(const QString &key, double offsetSec);
+    bool setSeriesYTransform(const QString &key, const QString &descriptorId,
+                             const QString &paramsJson = QString());
+    // 轴级变换（配方存画布视图状态；实际施加在曲线取数层）。
+    void setAxisTransform(const QString &axis, const QString &descriptorId);
+    QString axisTransform(const QString &axis) const;
+
+    // 视图缩放/自适应：factor<1 放大、>1 缩小；reset 自适应全量。
+    void zoomRange(double factor);
+    void autoScale();
 
     // 图型：timeseries（折线）/ scatter（散点）等在画布内切换；
     // 返回 false 表示该 kind 不属于本画布（如仪表，需切到 InstrumentView）。
@@ -137,6 +164,12 @@ public:
 Q_SIGNALS:
     void viewportChanged();
     void rangeChanged(double t0, double t1);
+    // 统一选中：右键菜单/交互选中了某条曲线或某个轴，交给上层转 AppContext selection。
+    void seriesSelectionRequested(const QString &seriesKey);
+    void axisSelectionRequested(const QString &axis); // "x" / "y-left" / "y-right"
+    void canvasSelectionRequested();
+    // 请求编辑曲线 Y 变换（上层打开变换编辑器后回写配方）。
+    void seriesTransformRequested(const QString &seriesKey);
     // 有通道被拖到画布上（数据集树 → 画布）。画布只解码 MIME 发信号，
     // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
     void channelDropped(nextpilot::plotscope::core::DatasetId datasetId, const QString &table,
@@ -163,6 +196,7 @@ private:
     nextpilot::plotscope::fastplot::Picker *m_picker = nullptr;
 
     QVector<PlotSeries> m_series; // 叠加的多条曲线
+    QHash<QString, QString> m_axisTransforms; // axis -> transform descriptor id（视图配方）
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
     QString m_plotKind = QStringLiteral("timeseries"); // 当前图型（画布内可切的）
     double m_t0 = 0.0;

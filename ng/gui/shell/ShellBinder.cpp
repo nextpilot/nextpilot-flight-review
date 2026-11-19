@@ -148,11 +148,15 @@ void ShellBinder::rebuildRibbon()
         {
             if (groupSlot.kind != nextpilot::plotscope::core::SlotKind::RibbonGroup)
                 continue;
+            const auto actions = m_slots.actionsIn(groupSlot.area);
+            // 空分组不渲染：兼容保留的旧 area（如 home 下的 plottype/sources）
+            // 没有 action 时若仍建 panel，会在页上留下几个只有竖排标题的空壳，很难看。
+            if (actions.isEmpty())
+                continue;
             SARibbonPanel *panel = category->addPanel(groupSlot.label);
             if (!panel)
                 continue;
 
-            const auto actions = m_slots.actionsIn(groupSlot.area);
 
             // 一个 action 若声明了 galleryGroup，就进图库（按组名聚合），
             // 否则是普通按钮。图库项与按钮可以共存在一个分组里。
@@ -180,12 +184,13 @@ void ShellBinder::rebuildRibbon()
                     action->setShortcut(QKeySequence(ua.shortcut));
                 const QString actionId = ua.id;
                 const QString intentOp = ua.intentOp;
+                const QString actionData = ua.data;
                 // 点击 → 意图调度（图库项与按钮走同一条路径）。
                 QObject::connect(action, &QAction::triggered, m_ribbon,
-                                 [this, actionId, intentOp] {
+                                 [this, actionId, intentOp, actionData] {
                                      m_actionTriggers[actionId]++;
                                      if (m_dispatch)
-                                         m_dispatch(actionId, intentOp);
+                                         m_dispatch(actionId, intentOp, actionData);
                                  });
 
                 if (!ua.galleryGroup.isEmpty())

@@ -78,6 +78,7 @@ public:
     void xlim(double lo, double hi) { setXRange(lo, hi); }
     void ylim(double lo, double hi) { setYRange(lo, hi); }
     void grid(bool on) { setGridVisible(on); }
+    bool gridVisible() const { return m_grid; }
     void legend(bool on) { setLegendVisible(on); }
     void xlabel(const QString &text) { setAxisLabel(AxisSide::Bottom, text); }
     void ylabel(const QString &text) { setAxisLabel(AxisSide::Left, text); }
@@ -152,6 +153,7 @@ private:
     double m_y2Hi = 1.0;
     bool m_secondAxis = false;
     bool m_legend = false;
+    bool m_grid = false;
     QRect m_rubberBand;
     QPointF m_hoverPoint;
     bool m_hoverActive = false;

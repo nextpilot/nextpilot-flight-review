@@ -97,7 +97,7 @@ public:
     //     交互的动作特判（打开文件对话框）与触发计数用；
     //   · intentOp —— 点击真正要发的意图 op（如 data.reload），由 UiAction 声明。
     // 曾把 actionId 当 op 发出，导致除 openData 外所有按钮都报"没有模块能处理意图"。
-    using IntentDispatcher = std::function<void(const QString &actionId, const QString &intentOp)>;
+    using IntentDispatcher = std::function<void(const QString &actionId, const QString &intentOp, const QString &data)>;
     void setIntentDispatcher(IntentDispatcher dispatcher) { m_dispatch = std::move(dispatcher); }
 
 private:

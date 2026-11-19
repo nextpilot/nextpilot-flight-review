@@ -46,6 +46,17 @@ target_include_directories(ng_gui_theme PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/theme
 target_link_libraries(ng_gui_theme PUBLIC ng_core Qt6::Gui Qt6::Widgets Qt6::Core)
 set_target_properties(ng_gui_theme PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
+# 变换编辑器 + 在线调试对话框：独立 OBJECT 库，被 gui（曲线/协议）与 data_gui
+# （数据源衍生）共用。只依赖 ng_core（AppContext.evalTransform 回调 + TransformRegistry）
+# 与 Qt Widgets，不含任何 script 类，故不会引入层依赖环。
+add_library(ng_gui_transform OBJECT
+    shell/TransformEditorDialog.cpp
+    shell/TransformEditorDialog.h
+)
+target_include_directories(ng_gui_transform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shell)
+target_link_libraries(ng_gui_transform PUBLIC ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(ng_gui_transform PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+
 add_library(ng_gui OBJECT
     # --- 外壳层 ---
     shell/MainWindow.cpp
@@ -72,6 +83,9 @@ add_library(ng_gui OBJECT
     views/plot/InstrumentView.h
     views/plot/CanvasWorkspace.cpp
     views/plot/CanvasWorkspace.h
+    # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
+    views/PropertyPanel.cpp
+    views/PropertyPanel.h
     # --- 资源 ---
     resources/icons.qrc
 )
@@ -82,7 +96,7 @@ target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 # fastplot：独立绘图库（只依赖 Qt Widgets）。绘图视图通过它绘制，
 # 因此 GUI 侧公共依赖；CLI 不链它，保持 headless 纯净。
-target_link_libraries(ng_gui PUBLIC ng_host ng_core ng_gui_theme ng_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
+target_link_libraries(ng_gui PUBLIC ng_host ng_core ng_gui_theme ng_gui_transform ng_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
 set_target_properties(ng_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 
@@ -101,7 +115,8 @@ target_link_libraries(plotscope-ng-gui PRIVATE
     # 不会进二进制，链接期报 undefined reference（与 ng_gui_theme 的
     # AUTOMOC 产物一起进，故 moc 符号也一并满足）。
     ng_gui_theme
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script
+    ng_gui_transform
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
     ng_ext_automotive_gui
@@ -118,7 +133,8 @@ target_include_directories(plotscope-ng-gui-bench PRIVATE ${CMAKE_SOURCE_DIR}/ap
 target_link_libraries(plotscope-ng-gui-bench PRIVATE
     ng_gui
     ng_gui_theme
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script
+    ng_gui_transform
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -135,7 +151,8 @@ target_include_directories(plotscope-ng-gui-shot PRIVATE ${CMAKE_SOURCE_DIR}/app
 target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_gui
     ng_gui_theme
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script
+    ng_gui_transform
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)

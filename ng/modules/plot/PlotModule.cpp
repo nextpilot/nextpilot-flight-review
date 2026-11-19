@@ -424,8 +424,8 @@ void PlotModule::onAttach(UiContext &ui)
     // 绘图模块往 ribbon 的"视图"分组放一个动作，说明自己提供"重新渲染"能力；
     // 插槽由 app 骨架声明，模块只往里填内容——新增模块自带界面时，
     // 只需在自己的 onAttach 里 declareSlot/addAction，其他文件一律不动。
-    ui.declareSlot(QStringLiteral("ribbon.group.home.view"), QStringLiteral("视图"),
-                   SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
+    ui.declareSlot(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("操作"),
+                   SlotKind::RibbonGroup, QStringLiteral("ribbon.page.plot"));
 
     // 申请中央画布工作区：实现由绘图视图层自注册（"canvas-workspace" 类型），
     // 它内部管理 N 个画布 cell（多曲线/拆分/网格），并集中路由 plot.* view action。
@@ -435,7 +435,7 @@ void PlotModule::onAttach(UiContext &ui)
     UiAction action;
     action.id = QStringLiteral("plot.action.redraw");
     action.label = QStringLiteral("重绘");
-    action.area = QStringLiteral("ribbon.group.home.view");
+    action.area = QStringLiteral("ribbon.group.plot.action");
     action.intentOp = QStringLiteral("plot.render");
     // 图标名：外壳据此从资源里取 QIcon。图标名是**描述**，
     // 具体资源由外壳管理——模块不直接依赖 GUI 资源。
@@ -446,21 +446,21 @@ void PlotModule::onAttach(UiContext &ui)
     UiAction exportPng;
     exportPng.id = QStringLiteral("plot.export.png");
     exportPng.label = QStringLiteral("导出 PNG");
-    exportPng.area = QStringLiteral("ribbon.group.home.view");
+    exportPng.area = QStringLiteral("ribbon.group.plot.action");
     exportPng.intentOp = QStringLiteral("plot.export.png");
     ui.addAction(exportPng);
 
     UiAction exportCsv;
     exportCsv.id = QStringLiteral("plot.export.csv");
     exportCsv.label = QStringLiteral("导出 CSV");
-    exportCsv.area = QStringLiteral("ribbon.group.home.view");
+    exportCsv.area = QStringLiteral("ribbon.group.plot.action");
     exportCsv.intentOp = QStringLiteral("plot.export.csv");
     ui.addAction(exportCsv);
 
     UiAction legend;
     legend.id = QStringLiteral("plot.legend.toggle");
     legend.label = QStringLiteral("图例");
-    legend.area = QStringLiteral("ribbon.group.home.view");
+    legend.area = QStringLiteral("ribbon.group.plot.action");
     legend.intentOp = QStringLiteral("plot.legend.toggle");
     ui.addAction(legend);
 }

@@ -222,6 +222,7 @@ void Axes::setTitleColor(const QColor &color)
 
 void Axes::setGridVisible(bool visible)
 {
+    m_grid = visible;
     for (Axis &a : m_axes)
         a.setGridVisible(visible);
     invalidateStatic();

@@ -11,13 +11,25 @@ add_executable(ng_test_architecture test_architecture.cpp)
 target_include_directories(ng_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。
 target_link_libraries(ng_test_architecture PRIVATE
-    ng_module_data ng_module_plot ng_module_script ng_module_settings
+    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_core Qt6::Core)
 # 复用 CLI 里的 App 装配逻辑
 target_sources(ng_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
 set_target_properties(ng_test_architecture PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_architecture COMMAND ng_test_architecture)
+
+# === 统一变换 / Selection / 能力防错契约（headless）===
+# 链 ng_module_script 触发 TransformEvaluator 注入；表达式走 Rust，Lua 走 C++。
+add_executable(ng_test_transform test_transform.cpp)
+target_include_directories(ng_test_transform PRIVATE ${CMAKE_SOURCE_DIR}/app)
+target_link_libraries(ng_test_transform PRIVATE
+    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_registry ng_host ng_core Qt6::Core)
+target_sources(ng_test_transform PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
+set_target_properties(ng_test_transform PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_transform COMMAND ng_test_transform)
 
 # === GUI 契约测试 ===
 # 独立可执行文件：GUI 依赖 Qt Widgets，与 headless 测试分开，
@@ -32,7 +44,8 @@ target_link_libraries(ng_test_gui PRIVATE
     ng_gui
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
+    ng_gui_transform
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板呈现层（OBJECT 库）：自注册 TU 必须显式链接进来。
     ng_ext_automotive_gui
@@ -103,7 +116,8 @@ target_link_libraries(ng_test_instrument PRIVATE
     ng_gui
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
+    ng_gui_transform
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_recording
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -119,7 +133,8 @@ target_link_libraries(ng_test_plot_io PRIVATE
     ng_gui
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_settings
+    ng_gui_transform
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_recording
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)

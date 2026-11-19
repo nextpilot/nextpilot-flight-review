@@ -1,6 +1,9 @@
 #include "ProtocolEditorDialog.h"
 
 #include "ThemeManager.h"
+#include "TransformEditorDialog.h"
+#include "AppContext.h"
+#include "Transform.h"
 
 #include "protocol/ProtocolDocument.h"
 #include "protocol/ProtocolSpec.h"
@@ -24,6 +27,8 @@
 #include <QStandardPaths>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+
+using namespace nextpilot::plotscope::core;
 
 namespace nextpilot::plotscope::gui
 {
@@ -61,8 +66,8 @@ QString protocolsDir()
 }
 } // namespace
 
-ProtocolEditorDialog::ProtocolEditorDialog(QWidget *parent)
-    : QDialog(parent)
+ProtocolEditorDialog::ProtocolEditorDialog(QWidget *parent, AppContext *appCtx)
+    : QDialog(parent), m_appCtx(appCtx)
 {
     setWindowTitle(QStringLiteral("协议编辑器 · 顺序段协议"));
     resize(1100, 720);
@@ -73,11 +78,15 @@ ProtocolEditorDialog::ProtocolEditorDialog(QWidget *parent)
     auto *openBtn = new QPushButton(QStringLiteral("打开"));
     m_saveBtn = new QPushButton(QStringLiteral("保存"));
     auto *validateBtn = new QPushButton(QStringLiteral("校验"));
+    auto *checksumBtn = new QPushButton(QStringLiteral("Checksum 变换…"));
+    checksumBtn->setToolTip(QStringLiteral("为 checksum 配置算子 / 数学表达式 / Lua（按能力过滤 + 在线调试）"));
     top->addWidget(newBtn);
     top->addWidget(openBtn);
     top->addWidget(m_saveBtn);
     top->addWidget(validateBtn);
+    top->addWidget(checksumBtn);
     top->addStretch(1);
+    connect(checksumBtn, &QPushButton::clicked, this, &ProtocolEditorDialog::configureChecksumTransform);
 
     // --- 主体：左 JSON 编辑，右 校验/试算 ---
     auto *body = new QSplitter(Qt::Horizontal);
@@ -285,9 +294,28 @@ void ProtocolEditorDialog::applyTheme()
     setStyleSheet(QString());
 }
 
-void ProtocolEditorDialog::run(QWidget *parent)
+void ProtocolEditorDialog::configureChecksumTransform()
 {
-    ProtocolEditorDialog dlg(parent);
+    if (!m_appCtx)
+    {
+        QMessageBox::information(this, QStringLiteral("Checksum 变换"),
+                                 QStringLiteral("当前没有应用上下文，无法调用在线调试。"));
+        return;
+    }
+    // 按 CapChecksum 过滤，用户只能选适用于 checksum 的算子/表达式/Lua。
+    const QJsonObject req = TransformEditorDialog::run(
+        this, *m_appCtx, CapChecksum, QStringLiteral("协议 Checksum"));
+    if (req.isEmpty())
+        return;
+    m_checksumRequest = req;
+    const QString id = req.value(QStringLiteral("descriptorId")).toString();
+    m_checksumLabel = TransformRegistry::get(id).label;
+    m_status->setText(QStringLiteral("Checksum 变换已配置：%1（对校验值再施加该变换）").arg(m_checksumLabel));
+}
+
+void ProtocolEditorDialog::run(QWidget *parent, AppContext *appCtx)
+{
+    ProtocolEditorDialog dlg(parent, appCtx);
     dlg.exec();
 }
 

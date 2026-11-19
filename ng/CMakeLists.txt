@@ -62,6 +62,8 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/libs/protocol" "${CMAKE_CURRENT_BI
 add_subdirectory(modules/data)
 add_subdirectory(modules/plot)
 add_subdirectory(modules/script)
+add_subdirectory(modules/protocol)
+add_subdirectory(modules/analysis)
 add_subdirectory(modules/settings)
 # 工具箱按业务领域组织：common / autopilot / automotive / robotics / gnss。
 # 每个领域一个包，静态自注册（NG_REGISTER_PACK）。

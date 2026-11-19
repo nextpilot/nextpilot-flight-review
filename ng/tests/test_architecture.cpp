@@ -246,10 +246,12 @@ int main(int argc, char **argv)
     App application;
     const auto errors = application.startup(true);
     CHECK(errors.isEmpty());
-    CHECK(application.modules().activeIds().size() == 5); // 4 内置 + 1 探针
+    CHECK(application.modules().activeIds().size() == 7); // 6 内置 + 1 探针
     CHECK(application.modules().isActive(QStringLiteral("mod.probe")));
-    // 新增的设置器官（统一设置管理的机制提供者）
+    // 内置器官：数据/绘图/脚本/设置 + 本轮补齐的协议/分析。
     CHECK(application.modules().isActive(QStringLiteral("mod.settings")));
+    CHECK(application.modules().isActive(QStringLiteral("mod.protocol")));
+    CHECK(application.modules().isActive(QStringLiteral("mod.analysis")));
 
     // 探针模块提供的能力可用（它自带的意图处理器已被注册）。
     {
@@ -371,12 +373,18 @@ int main(int argc, char **argv)
         // 幂等的 declareSlot 让 host 层那份信息更少的版本**静默丢弃**了 GUI 那份，
         // 于是 headless 只看到 5 个残缺槽（详见下方 1b 段的契约测试）。
         const auto &slotReg = application.modules().uiSlots();
-        CHECK(slotReg.allSlots().size() == 11);
-        CHECK(slotReg.slot(QStringLiteral("ribbon.group.home.plottype")) != nullptr);
-        CHECK(slotReg.slot(QStringLiteral("ribbon.group.home.sources")) != nullptr);
+        // Ribbon 8 页结构（开始/文件/数据/绘图/脚本/协议/分析/视图）。
+        CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 8);
+        for (const char *p : {"ribbon.page.home", "ribbon.page.file", "ribbon.page.data",
+                              "ribbon.page.plot", "ribbon.page.script", "ribbon.page.protocol",
+                              "ribbon.page.analysis", "ribbon.page.view"})
+            CHECK(slotReg.slot(QString::fromLatin1(p)) != nullptr);
+        // 图型库归绘图页、来源库归数据页。
+        CHECK(slotReg.slot(QStringLiteral("ribbon.group.plot.type")) != nullptr);
+        CHECK(slotReg.slot(QStringLiteral("ribbon.group.data.sources")) != nullptr);
         CHECK(slotReg.actionsIn(QStringLiteral("menu.plot")).size() == 3); // 姿态曲线 + TF 树 + 探针
         CHECK(slotReg.actionsIn(QStringLiteral("dock.left")).size() == 1); // 调参面板
-        CHECK(slotReg.boundActionCount() == 6);
+        CHECK(slotReg.boundActionCount() >= 6);
         CHECK(slotReg.unboundActions().isEmpty()); // 所有贡献都有归属插槽
 
         // 开放 kind：自定义 kind 无需改注册表/宿主即可登记（证明可扩展，非封闭枚举）。

@@ -4,6 +4,7 @@
 
 pub mod align;
 pub mod decimate;
+pub mod expr;
 pub mod fft;
 pub mod filters;
 pub mod iir;

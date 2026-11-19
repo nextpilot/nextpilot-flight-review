@@ -137,6 +137,10 @@ int PlotCanvas::setSeries(const PlotSeries &series)
                 }
             }
             updated.color = m_series.at(i).color;
+            // 变换配方是视图态：重新取数刷新时不丢（外部 series 不带这些字段）。
+            updated.xTimeOffset = m_series.at(i).xTimeOffset;
+            updated.yTransformId = m_series.at(i).yTransformId;
+            updated.yTransformParamsJson = m_series.at(i).yTransformParamsJson;
             m_series[i] = updated;
             m_title = updated.title;
             m_plot->setTitle(updated.title);
@@ -207,6 +211,127 @@ bool PlotCanvas::setSeriesAxis(const QString &key, bool rightAxis)
     return false;
 }
 
+bool PlotCanvas::setSeriesVisible(const QString &key, bool visible)
+{
+    for (PlotSeries &s : m_series)
+    {
+        if (s.key() == key)
+        {
+            if (s.visible == visible)
+                return true;
+            s.visible = visible;
+            pushToPlot();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PlotCanvas::setSeriesInk(const QString &key, const QColor &color)
+{
+    for (PlotSeries &s : m_series)
+    {
+        if (s.key() == key)
+        {
+            s.color = color;
+            pushToPlot();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PlotCanvas::setSeriesWidth(const QString &key, double width)
+{
+    for (PlotSeries &s : m_series)
+    {
+        if (s.key() == key)
+        {
+            s.lineWidth = width;
+            pushToPlot();
+            return true;
+        }
+    }
+    return false;
+}
+
+const PlotSeries *PlotCanvas::seriesByKey(const QString &key) const
+{
+    for (const PlotSeries &s : m_series)
+        if (s.key() == key)
+            return &s;
+    return nullptr;
+}
+
+bool PlotCanvas::setSeriesXOffset(const QString &key, double offsetSec)
+{
+    for (PlotSeries &s : m_series)
+    {
+        if (s.key() == key)
+        {
+            // offset 是配方（绝对值），pushToPlot 时对副本施加，原始数据不动。
+            s.xTimeOffset = offsetSec;
+            pushToPlot();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PlotCanvas::setSeriesYTransform(const QString &key, const QString &descriptorId,
+                                     const QString &paramsJson)
+{
+    for (PlotSeries &s : m_series)
+    {
+        if (s.key() == key)
+        {
+            s.yTransformId = descriptorId;
+            s.yTransformParamsJson = paramsJson;
+            // Y 变换的实际数值施加发生在取数层（ChannelView -> TransformEvaluator），
+            // 这里只更新配方；下次 setSeries 会把新结果喂进来。
+            return true;
+        }
+    }
+    return false;
+}
+
+void PlotCanvas::setAxisTransform(const QString &axis, const QString &descriptorId)
+{
+    // 轴级变换存视图配方（成员）；曲线级按 key 单独设置时优先。
+    if (descriptorId.isEmpty())
+        m_axisTransforms.remove(axis);
+    else
+        m_axisTransforms.insert(axis, descriptorId);
+}
+
+QString PlotCanvas::axisTransform(const QString &axis) const
+{
+    return m_axisTransforms.value(axis);
+}
+
+void PlotCanvas::zoomRange(double factor)
+{
+    if (!m_plot)
+        return;
+    // 以当前可见窗中心为锚点缩放 X 轴；factor<1 放大、>1 缩小。
+    double t0 = 0.0, t1 = 0.0;
+    if (!visibleTimeRange(&t0, &t1) || t1 <= t0)
+        return;
+    const double mid = (t0 + t1) / 2.0;
+    const double half = (t1 - t0) / 2.0 * factor;
+    m_plot->setXRange(mid - half, mid + half);
+    m_plot->update();
+}
+
+void PlotCanvas::autoScale()
+{
+    if (!m_plot)
+        return;
+    m_plot->autoScaleX();
+    m_plot->autoScaleY();
+    m_plot->update();
+}
+
 bool PlotCanvas::setPlotKind(const QString &kind)
 {
     // 本画布真正支持的图型：折线 / 散点 / XY 曲线（都是"曲线"模型，走 LOD 折线绘制）。
@@ -248,7 +373,9 @@ void PlotCanvas::pushToPlot()
         QVector<nextpilot::plotscope::fastplot::LodPoint> pts;
         pts.reserve(s.lod.size());
         for (const LodTriple &t : s.lod)
-            pts.push_back(nextpilot::plotscope::fastplot::LodPoint{t.x, t.min, t.max});
+            // X 轴时间偏移在副本上施加，LOD / 原始数据都不改。
+            pts.push_back(nextpilot::plotscope::fastplot::LodPoint{
+                t.x + s.xTimeOffset, t.min, t.max});
 
         auto &curve = m_plot->addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(pts, s.color, s.lineWidth));
         curve.setName(s.legendName());
@@ -317,6 +444,20 @@ QJsonObject PlotCanvas::saveViewState() const
         axes.append(o);
     }
     state.insert(QStringLiteral("seriesAxes"), axes);
+    // 曲线变换配方与 X 偏移：随视图状态持久化（重开后变换仍在）。
+    QJsonArray tfArr;
+    for (const PlotSeries &s : m_series)
+        tfArr.append(QJsonObject{
+            {QStringLiteral("key"), s.key()},
+            {QStringLiteral("xOffset"), s.xTimeOffset},
+            {QStringLiteral("yId"), s.yTransformId},
+            {QStringLiteral("yParams"), s.yTransformParamsJson},
+        });
+    state.insert(QStringLiteral("seriesTransforms"), tfArr);
+    QJsonObject axisTf;
+    for (auto it = m_axisTransforms.constBegin(); it != m_axisTransforms.constEnd(); ++it)
+        axisTf.insert(it.key(), it.value());
+    state.insert(QStringLiteral("axisTransform"), axisTf);
     // 图例可见性是视图状态（用户在"显示"里开关的），必须随状态 round-trip。
     state.insert(QStringLiteral("legendVisible"), legendVisible());
     return state;
@@ -336,9 +477,29 @@ bool PlotCanvas::restoreViewState(const QJsonObject &state)
             if (m_series.at(i).key() == key)
                 m_series[i].rightAxis = right;
     }
-    // 重设了挂轴就得重算 range；pushToPlot 内部会保留图例现状（不再强制打开），
+    // 变换配方恢复：曲线 X 偏移 / Y 变换。
+    const QJsonArray tfArr = state.value(QStringLiteral("seriesTransforms")).toArray();
+    for (const QJsonValue &v : tfArr)
+    {
+        const QJsonObject o = v.toObject();
+        const QString key = o.value(QStringLiteral("key")).toString();
+        for (int i = 0; i < m_series.size(); ++i)
+        {
+            if (m_series.at(i).key() != key)
+                continue;
+            m_series[i].xTimeOffset = o.value(QStringLiteral("xOffset")).toDouble();
+            m_series[i].yTransformId = o.value(QStringLiteral("yId")).toString();
+            m_series[i].yTransformParamsJson = o.value(QStringLiteral("yParams")).toString();
+        }
+    }
+    const QJsonObject axisTf = state.value(QStringLiteral("axisTransform")).toObject();
+    m_axisTransforms.clear();
+    for (auto it = axisTf.begin(); it != axisTf.end(); ++it)
+        m_axisTransforms.insert(it.key(), it.value().toString());
+
+    // 重设了挂轴/偏移就得重算 range；pushToPlot 内部会保留图例现状（不再强制打开），
     // 这里再把保存时的图例可见性精确恢复。
-    if (!axes.isEmpty())
+    if (!axes.isEmpty() || !tfArr.isEmpty())
         pushToPlot();
     if (state.contains(QStringLiteral("legendVisible")))
         setLegendVisible(state.value(QStringLiteral("legendVisible")).toBool());
@@ -512,22 +673,62 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
 {
     if (m_series.isEmpty())
     {
-        QWidget::contextMenuEvent(event);
+        // 空画布也允许选中画布/轴，让属性面板有内容可显示。
+        QMenu menu(this);
+        menu.setTitle(QStringLiteral("画布操作"));
+        menu.addAction(QStringLiteral("画布属性"), this, [this] { Q_EMIT canvasSelectionRequested(); });
+        menu.addAction(QStringLiteral("X 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("x")); });
+        menu.addAction(QStringLiteral("左 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-left")); });
+        menu.exec(event->globalPos());
+        event->accept();
         return;
     }
     QMenu menu(this);
-    menu.setTitle(QStringLiteral("曲线坐标轴"));
+    menu.setTitle(QStringLiteral("画布操作"));
+
+    // 统一选中入口：把画布/轴选中交给上层 -> 属性面板。
+    QMenu *inspect = menu.addMenu(QStringLiteral("属性"));
+    inspect->addAction(QStringLiteral("画布属性"), this, [this] { Q_EMIT canvasSelectionRequested(); });
+    inspect->addAction(QStringLiteral("X 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("x")); });
+    inspect->addAction(QStringLiteral("左 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-left")); });
+    inspect->addAction(QStringLiteral("右 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-right")); });
+    menu.addSeparator();
+
+    // 视图操作（抄老 PlottingCanvas 右键菜单的常用项）。
+    menu.addAction(QStringLiteral("放大"), this, [this] { zoomRange(0.5); });
+    menu.addAction(QStringLiteral("缩小"), this, [this] { zoomRange(2.0); });
+    menu.addAction(QStringLiteral("自适应"), this, [this] { autoScale(); });
+    menu.addSeparator();
+    auto *gridAction = menu.addAction(QStringLiteral("显示网格"));
+    gridAction->setCheckable(true);
+    gridAction->setChecked(m_plot && m_plot->gridVisible());
+    connect(gridAction, &QAction::triggered, this, [this](bool on) {
+        if (m_plot) { m_plot->grid(on); }
+    });
+    auto *legendAction = menu.addAction(QStringLiteral("显示图例"));
+    legendAction->setCheckable(true);
+    legendAction->setChecked(legendVisible());
+    connect(legendAction, &QAction::triggered, this, [this](bool on) { setLegendVisible(on); });
+    menu.addSeparator();
+
+    // 曲线子菜单：每条曲线 = 显隐 + 挂左/右轴 + 删除（老 showSeriesMenu 的体验）。
+    QMenu *seriesMenu = menu.addMenu(QStringLiteral("曲线"));
     for (const PlotSeries &s : m_series)
     {
-        // 每个曲线一个勾选动作：勾上=挂右轴。用 key 捕获，回调再查一次当前状态。
         const QString key = s.key();
-        auto *a = menu.addAction(s.legendName());
-        a->setCheckable(true);
-        a->setChecked(s.rightAxis);
-        a->setToolTip(QStringLiteral("勾选挂右侧 Y 轴，取消挂左侧"));
-        QObject::connect(a, &QAction::triggered, this, [this, key](bool on) {
-            setSeriesAxis(key, on);
-        });
+        QMenu *one = seriesMenu->addMenu(s.legendName());
+        auto *vis = one->addAction(QStringLiteral("显示"));
+        vis->setCheckable(true);
+        vis->setChecked(s.visible);
+        connect(vis, &QAction::triggered, this, [this, key](bool on) { setSeriesVisible(key, on); });
+        auto *right = one->addAction(QStringLiteral("挂右侧 Y 轴"));
+        right->setCheckable(true);
+        right->setChecked(s.rightAxis);
+        connect(right, &QAction::triggered, this, [this, key](bool on) { setSeriesAxis(key, on); });
+        one->addSeparator();
+        one->addAction(QStringLiteral("属性"), this, [this, key] { Q_EMIT seriesSelectionRequested(key); });
+        one->addAction(QStringLiteral("Y 轴变换…"), this, [this, key] { Q_EMIT seriesTransformRequested(key); });
+        one->addAction(QStringLiteral("删除"), this, [this, key] { removeSeries(key); });
     }
     menu.exec(event->globalPos());
     event->accept();

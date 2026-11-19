@@ -9,9 +9,10 @@
 #include "DataSource.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
+#include "PropertySchema.h"
+#include "TransformEditorDialog.h"
 
 #include <QAbstractItemView>
-#include <QButtonGroup>
 #include <QDrag>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -23,11 +24,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
-#include <QPainter>
 #include <QPushButton>
-#include <QStackedWidget>
-#include <QTableWidget>
-#include <QTableWidgetItem>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -40,13 +37,12 @@ namespace nextpilot::plotscope::gui
 
 namespace
 {
-// 节点角色标记：用于把 Qt 的树节点映射回领域标识。
 constexpr int kRoleDatasetId = Qt::UserRole + 1;
 constexpr int kRoleTable = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
 constexpr int kRoleSourceId = Qt::UserRole + 4;
+constexpr int kRoleNodeKind = Qt::UserRole + 5; // "source"/"dataset"/"table"/"column"/"param"/"msg"
 
-// 源状态的中文文案（§12.6：用户可见文案用中文）。
 QString stateText(SourceState state)
 {
     switch (state)
@@ -54,27 +50,13 @@ QString stateText(SourceState state)
     case SourceState::Opening:  return QStringLiteral("打开中");
     case SourceState::Streaming: return QStringLiteral("运行中");
     case SourceState::Paused:   return QStringLiteral("已暂停");
-    case SourceState::Closed:   return QStringLiteral("已停止");
+    case SourceState::Closed:   return QStringLiteral("已加载");
     case SourceState::Error:    return QStringLiteral("错误");
     }
     return QStringLiteral("未知");
 }
 
-// 源种类文案。
-QString kindText(SourceKind kind)
-{
-    switch (kind)
-    {
-    case SourceKind::File:   return QStringLiteral("文件");
-    case SourceKind::Stream: return QStringLiteral("流");
-    case SourceKind::Live:   return QStringLiteral("实时");
-    case SourceKind::Replay: return QStringLiteral("回放");
-    }
-    return QStringLiteral("未知");
-}
-
-// 检查器让"列"节点可拖拽。拖拽只发逻辑标识（ChannelMime），
-// 不暴露 Dataset 内部结构，画布据此走 plot.channel 意图取数。
+// 列节点可拖拽：只发逻辑标识（ChannelMime），不暴露 Dataset 内部结构。
 class ChannelTreeWidget : public QTreeWidget
 {
 public:
@@ -89,23 +71,18 @@ protected:
         const QVariant dsId = item->data(0, kRoleDatasetId);
         const QVariant table = item->data(0, kRoleTable);
         const QVariant column = item->data(0, kRoleColumn);
-        // 只有"列"节点可拖（三样标识齐全）。
         if (!dsId.isValid() || !table.isValid() || !column.isValid())
             return;
-
         auto *mime = new QMimeData;
         const QString payload = channel_mime::encode(dsId.toInt(), table.toString(), column.toString());
         mime->setData(QString::fromLatin1(channel_mime::type()), payload.toUtf8());
         mime->setText(table.toString() + QLatin1Char('.') + column.toString());
-
         auto *drag = new QDrag(this);
         drag->setMimeData(mime);
         drag->exec(supportedActions, Qt::CopyAction);
     }
 };
 
-// 派生算子清单：只列 Rust ps-ops::filters 里真实存在的算子（§12.6 不造空按钮）。
-// 每项 = (算子 id, 中文名, 默认参数 JSON)。
 struct DeriveRecipe
 {
     const char *id;
@@ -123,8 +100,6 @@ const DeriveRecipe kDeriveRecipes[] = {
     {"moving_variance","滑动方差",   "{\"window\":10}"},
 };
 
-// 一张表是否"文本键值表"：参数/事实这类表的特征是至少有一个 Text 列，
-// 且行数有限（配置，不是待画的时间序列）。用它把 param 视图和字段视图分开。
 bool isKeyValueTable(const Table *t)
 {
     if (!t || t->rows <= 0 || t->columns.isEmpty())
@@ -145,37 +120,23 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
 
-    // --- 标题：数据源 · N 已连接 ---
     m_header = new QLabel(QStringLiteral("数据源"), this);
     m_header->setObjectName(QStringLiteral("sectionTitle"));
     m_header->setContentsMargins(8, 6, 8, 4);
     lay->addWidget(m_header);
 
-    // --- 上段：源卡片列表 ---
-    auto *cardsHost = new QWidget(this);
-    m_cardsLay = new QVBoxLayout(cardsHost);
-    m_cardsLay->setContentsMargins(6, 0, 6, 4);
-    m_cardsLay->setSpacing(2);
-    m_cardsLay->setAlignment(Qt::AlignTop);
-    m_sourceGroup = new QButtonGroup(cardsHost);
-    m_sourceGroup->setExclusive(true);
-    lay->addWidget(cardsHost);
-
-    // --- 中段：字段/参数/消息 chip + 搜索框 ---
+    // chip：字段 / 参数 / 消息（切换树显示哪类内容，抄老代码）。
     auto *chipHost = new QWidget(this);
     auto *chipLay = new QHBoxLayout(chipHost);
     chipLay->setContentsMargins(6, 2, 6, 2);
     chipLay->setSpacing(4);
-    m_chipGroup = new QButtonGroup(chipHost);
-    m_chipGroup->setExclusive(true);
-    const char *chipLabels[3] = {"字段 0", "参数 0", "消息 0"};
-    // 圆角药丸 chip，用 palette 关键字取色，深浅两套主题自动适配（§12.5）。
     const QString chipQss = QStringLiteral(
         "QToolButton#sourceChip{background:palette(button);border:1px solid palette(mid);"
         "border-radius:9px;color:palette(button-text);font-size:11px;padding:2px 8px;}"
         "QToolButton#sourceChip:hover{border-color:palette(highlight);}"
         "QToolButton#sourceChip:checked{background:palette(highlight);color:palette(highlighted-text);"
         "border-color:palette(highlight);}");
+    const char *chipLabels[3] = {"字段 0", "参数 0", "消息 0"};
     for (int i = 0; i < 3; ++i)
     {
         auto *chip = new QToolButton(chipHost);
@@ -186,9 +147,10 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
         chip->setObjectName(QStringLiteral("sourceChip"));
         chip->setStyleSheet(chipQss);
         chip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        m_chipGroup->addButton(chip, i);
-        chipLay->addWidget(chip, 1);
+        chip->setProperty("chipIndex", i);
         m_chips[i] = chip;
+        chipLay->addWidget(chip, 1);
+        connect(chip, &QToolButton::clicked, this, [this, i] { selectChip(i); });
     }
     lay->addWidget(chipHost);
 
@@ -198,140 +160,256 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_filter->setObjectName(QStringLiteral("searchBox"));
     m_filter->setContentsMargins(6, 0, 6, 0);
     lay->addWidget(m_filter);
-
-    // --- 下段：检查器（空态 / 字段树 / 参数表 / 消息表）---
-    m_stack = new QStackedWidget(this);
-
-    // 空态
-    m_empty = new QWidget(m_stack);
-    auto *emptyLay = new QVBoxLayout(m_empty);
-    emptyLay->setContentsMargins(12, 20, 12, 20);
-    emptyLay->addStretch(1);
-    m_emptyTitle = new QLabel(QStringLiteral("还没有数据源"), m_empty);
-    m_emptyTitle->setAlignment(Qt::AlignCenter);
-    m_emptyTitle->setObjectName(QStringLiteral("textStrong"));
-    auto *emptyHint = new QLabel(QStringLiteral("打开飞行日志，或连接一个数据源开始分析"), m_empty);
-    emptyHint->setAlignment(Qt::AlignCenter);
-    emptyHint->setWordWrap(true);
-    emptyHint->setObjectName(QStringLiteral("textDim"));
-    emptyLay->addWidget(m_emptyTitle);
-    emptyLay->addWidget(emptyHint);
-    emptyLay->addSpacing(6);
-    auto *openBtn = new QPushButton(QStringLiteral("打开日志"), m_empty);
-    auto *liveBtn = new QPushButton(QStringLiteral("连接实时源"), m_empty);
-    auto *recentBtn = new QPushButton(QStringLiteral("最近文件"), m_empty);
-    for (QPushButton *b : {openBtn, liveBtn, recentBtn})
-    {
-        b->setObjectName(QStringLiteral("emptyAction"));
-        b->setCursor(Qt::PointingHandCursor);
-        emptyLay->addWidget(b);
-    }
-    emptyLay->addStretch(1);
-    m_stack->addWidget(m_empty);
-
-    // 字段树
-    m_fieldTree = new ChannelTreeWidget(m_stack);
-    m_fieldTree->setHeaderLabels({QStringLiteral("数据集 / 表 / 列"), QStringLiteral("行数 / 时长")});
-    m_fieldTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_fieldTree->setAlternatingRowColors(true);
-    m_fieldTree->setDragEnabled(true);
-    m_fieldTree->setDragDropMode(QAbstractItemView::DragOnly);
-    m_fieldTree->setDefaultDropAction(Qt::CopyAction);
-    m_fieldTree->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_stack->addWidget(m_fieldTree);
-
-    // 参数表：参数 / 值
-    m_paramTable = new QTableWidget(0, 2, m_stack);
-    m_paramTable->setHorizontalHeaderLabels({QStringLiteral("参数"), QStringLiteral("值")});
-    m_paramTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_paramTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
-    m_paramTable->setColumnWidth(1, 140);
-    m_paramTable->verticalHeader()->setVisible(false);
-    m_paramTable->setShowGrid(false);
-    m_paramTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_paramTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_stack->addWidget(m_paramTable);
-
-    // 消息表：消息 / 速率 / 字段 / 首时刻
-    m_msgTable = new QTableWidget(0, 4, m_stack);
-    m_msgTable->setHorizontalHeaderLabels(
-        {QStringLiteral("消息"), QStringLiteral("速率"), QStringLiteral("字段"), QStringLiteral("首时刻")});
-    m_msgTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_msgTable->verticalHeader()->setVisible(false);
-    m_msgTable->setShowGrid(false);
-    m_msgTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_msgTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_stack->addWidget(m_msgTable);
-
-    lay->addWidget(m_stack, 1);
-
-    // --- 交互 ---
-
-    connect(m_sourceGroup, &QButtonGroup::idClicked, this, &DataManagerPanel::selectSource);
-    connect(m_chipGroup, &QButtonGroup::idClicked, this, &DataManagerPanel::selectChip);
     connect(m_filter, &QLineEdit::textChanged, this, &DataManagerPanel::applyFilter);
 
-    // 字段树：双击 = 激活通道（走共享状态，星形解耦）。
-    connect(m_fieldTree, &QTreeWidget::itemDoubleClicked, this,
-            [this](QTreeWidgetItem *item, int) {
-                if (!item)
-                    return;
-                const QVariant dsId = item->data(0, kRoleDatasetId);
-                const QVariant table = item->data(0, kRoleTable);
-                const QVariant column = item->data(0, kRoleColumn);
-                if (!dsId.isValid() || !table.isValid() || !column.isValid())
-                    return;
-                const int datasetId = dsId.toInt();
-                const QString tableName = table.toString();
-                const QString columnName = column.toString();
-                const int sourceId = m_sources.sourceOfDataset(datasetId);
-                if (sourceId >= 0)
-                    m_appCtx.setActiveSourceId(sourceId);
-                m_appCtx.setActiveChannel(datasetId, tableName, columnName);
-                emit channelActivated(datasetId, tableName, columnName);
-            });
+    // 统一数据源树：每行一个源，展开后 dataset → 表 → 列。
+    m_tree = new ChannelTreeWidget(this);
+    m_tree->setHeaderLabels({QStringLiteral("数据源 / 数据集 / 字段"), QStringLiteral("信息")});
+    m_tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_tree->setAlternatingRowColors(true);
+    m_tree->setDragEnabled(true);
+    m_tree->setDragDropMode(QAbstractItemView::DragOnly);
+    m_tree->setDefaultDropAction(Qt::CopyAction);
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_tree->setIndentation(14);
+    lay->addWidget(m_tree, 1);
 
-    // 字段树右键：派生通道 / 画到画布。
-    connect(m_fieldTree, &QTreeWidget::customContextMenuRequested, this,
-            [this](const QPoint &pos) {
-                QTreeWidgetItem *item = m_fieldTree->itemAt(pos);
-                if (item)
-                    showColumnMenu(item, m_fieldTree->viewport()->mapToGlobal(pos));
-            });
+    // 空态：无源时显示，树隐藏。
+    m_empty = new QLabel(this);
+    m_empty->setText(QStringLiteral("还没有数据源\n打开飞行日志，或连接一个数据源开始分析"));
+    m_empty->setAlignment(Qt::AlignCenter);
+    m_empty->setWordWrap(true);
+    m_empty->setObjectName(QStringLiteral("textDim"));
+    lay->addWidget(m_empty, 1);
 
-    // 数据变化 -> 重建。
+    // 树：双击列节点 = 激活通道；单击源节点 = 展开/选中；右键 = 上下文菜单。
+    connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
+        if (!item)
+            return;
+        const QVariant dsId = item->data(0, kRoleDatasetId);
+        const QVariant table = item->data(0, kRoleTable);
+        const QVariant column = item->data(0, kRoleColumn);
+        if (!dsId.isValid() || !table.isValid() || !column.isValid())
+            return;
+        const int datasetId = dsId.toInt();
+        const QString tableName = table.toString();
+        const QString columnName = column.toString();
+        const int sourceId = m_sources.sourceOfDataset(datasetId);
+        if (sourceId >= 0)
+            m_appCtx.setActiveSourceId(sourceId);
+        m_appCtx.setActiveChannel(datasetId, tableName, columnName);
+        emit channelActivated(datasetId, tableName, columnName);
+    });
+    connect(m_tree, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int col) {
+        if (!item || col != 0)
+            return;
+        // 统一选中：任何节点单击都上报，属性面板据此刷新。
+        reportSelection(item);
+        const QVariant sid = item->data(0, kRoleSourceId);
+        if (!sid.isValid())
+            return;
+        const int sourceId = sid.toInt();
+        if (sourceId != m_shownSourceId)
+            selectSource(sourceId);
+    });
+    connect(m_tree, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QTreeWidgetItem *item = m_tree->itemAt(pos);
+        if (!item)
+        {
+            // 空白区右键：最近文件菜单（抄老代码空态）。
+            showRecentFilesMenu(m_tree->viewport()->mapToGlobal(pos));
+            return;
+        }
+        const QPoint global = m_tree->viewport()->mapToGlobal(pos);
+        const QVariant sid = item->data(0, kRoleSourceId);
+        if (sid.isValid() && item->data(0, kRoleNodeKind).toString() == QStringLiteral("source"))
+            showSourceMenu(sid.toInt(), global);
+        else if (item->data(0, kRoleDatasetId).isValid()
+                 && item->data(0, kRoleTable).isValid()
+                 && item->data(0, kRoleColumn).isValid())
+            showColumnMenu(item, global);
+    });
+
     connect(&m_repo, &DataRepository::datasetAdded, this, [this](DatasetId) { refresh(); });
     connect(&m_repo, &DataRepository::datasetRemoved, this, [this](DatasetId) { refresh(); });
     connect(&m_sources, &DataSourceRepository::sourceAdded, this, [this](int) { refresh(); });
     connect(&m_sources, &DataSourceRepository::sourceRemoved, this, [this](int) { refresh(); });
-    connect(&m_sources, &DataSourceRepository::sourceChanged, this, [this](int) {
-        rebuildSourceCards();
-    });
+    connect(&m_sources, &DataSourceRepository::sourceChanged, this, [this](int) { rebuildTree(); });
 
-    // 空态按钮
-    connect(openBtn, &QPushButton::clicked, this, &DataManagerPanel::openLogFile);
-    connect(liveBtn, &QPushButton::clicked, this, [this, liveBtn] {
-        QMenu menu(this);
-        menu.addAction(QStringLiteral("实时源扩展待接入（只读骨架）"))->setEnabled(false);
-        menu.exec(liveBtn->mapToGlobal(QPoint(0, liveBtn->height())));
-    });
-    connect(recentBtn, &QPushButton::clicked, this,
-            [this, recentBtn] { showRecentFilesMenu(recentBtn->mapToGlobal(QPoint(0, recentBtn->height()))); });
-
+    registerPropertyProviders();
     refresh();
+}
+
+// 单击树节点 -> 统一选中对象。把稳定标识填进 ids，供属性 provider 反查。
+void DataManagerPanel::reportSelection(QTreeWidgetItem *item)
+{
+    if (!item)
+        return;
+    const QString kind = item->data(0, kRoleNodeKind).toString();
+    Selection sel;
+    sel.ids.insert(QStringLiteral("source"), item->data(0, kRoleSourceId));
+    sel.ids.insert(QStringLiteral("dataset"), item->data(0, kRoleDatasetId));
+    sel.ids.insert(QStringLiteral("table"), item->data(0, kRoleTable));
+    sel.ids.insert(QStringLiteral("column"), item->data(0, kRoleColumn));
+    sel.label = item->text(0);
+
+    if (kind == QStringLiteral("source"))
+    {
+        sel.kind = SelectionKind::Source;
+        const int sid = item->data(0, kRoleSourceId).toInt();
+        sel.ids.insert(QStringLiteral("sourceId"), sid);
+    }
+    else if (kind == QStringLiteral("dataset"))
+        sel.kind = SelectionKind::Dataset;
+    else if (kind == QStringLiteral("table"))
+        sel.kind = SelectionKind::Table;
+    else if (kind == QStringLiteral("column"))
+        sel.kind = SelectionKind::Column;
+    else if (kind == QStringLiteral("param"))
+        sel.kind = SelectionKind::Param;
+    else if (kind == QStringLiteral("msg"))
+        sel.kind = SelectionKind::Message;
+    else
+        return; // 未知节点不上报
+    m_appCtx.setSelection(sel);
+}
+
+// 注册数据源树各节点的属性提供者与写入器。
+// provider 只查仓库生成 schema，不含任何 QWidget；setter 目前对数据源节点
+// 主要是只读（写入留 placeholder，返回 false -> 面板走 prop.set 意图兜底）。
+void DataManagerPanel::registerPropertyProviders()
+{
+    auto row = [](const QString &key, const QString &label, const QString &value,
+                  PropKind kind = PropKind::ReadOnly) {
+        PropRow r;
+        r.key = key;
+        r.label = label;
+        r.value = value;
+        r.kind = kind;
+        r.editable = false;
+        return r;
+    };
+
+    // --- 数据源 ---
+    m_appCtx.registerPropertyProvider(SelectionKind::Source, [this, row](const Selection &sel) {
+        const int sid = sel.ids.value(QStringLiteral("sourceId"),
+                                      sel.ids.value(QStringLiteral("source"))).toInt();
+        const DataSourceInfo *info = m_sources.get(sid);
+        PropertySchema s;
+        s.title = sel.label.isEmpty() ? QStringLiteral("数据源") : sel.label;
+        PropObject o;
+        o.id = QStringLiteral("source");
+        o.label = QStringLiteral("数据源");
+        if (info)
+        {
+            o.rows << row(QStringLiteral("name"), QStringLiteral("名称"), info->name);
+            o.rows << row(QStringLiteral("origin"), QStringLiteral("来源路径"), info->origin);
+            o.rows << row(QStringLiteral("format"), QStringLiteral("格式"), info->formatHint);
+            o.rows << row(QStringLiteral("state"), QStringLiteral("状态"), stateText(info->state));
+            o.rows << row(QStringLiteral("datasets"), QStringLiteral("数据集数"),
+                          QString::number(info->datasetIds.size()));
+        }
+        else
+            o.rows << row(QStringLiteral("name"), QStringLiteral("名称"), sel.label);
+        s.objects << o;
+        return s.toJson();
+    });
+
+    // --- 数据集 ---
+    m_appCtx.registerPropertyProvider(SelectionKind::Dataset, [this, row](const Selection &sel) {
+        const int dsId = sel.ids.value(QStringLiteral("dataset")).toInt();
+        const Dataset *ds = m_repo.get(dsId);
+        PropertySchema s;
+        s.title = sel.label;
+        PropObject o;
+        o.id = QStringLiteral("dataset");
+        o.label = QStringLiteral("数据集");
+        o.rows << row(QStringLiteral("id"), QStringLiteral("ID"), QString::number(dsId));
+        if (ds)
+        {
+            o.rows << row(QStringLiteral("name"), QStringLiteral("名称"), ds->name());
+            o.rows << row(QStringLiteral("tables"), QStringLiteral("表数"), QString::number(ds->tableCount()));
+        }
+        s.objects << o;
+        return s.toJson();
+    });
+
+    // --- 表 ---
+    m_appCtx.registerPropertyProvider(SelectionKind::Table, [this, row](const Selection &sel) {
+        const int dsId = sel.ids.value(QStringLiteral("dataset")).toInt();
+        const QString tableName = sel.ids.value(QStringLiteral("table")).toString();
+        const Dataset *ds = m_repo.get(dsId);
+        const Table *t = ds ? ds->table(tableName) : nullptr;
+        PropertySchema s;
+        s.title = sel.label;
+        PropObject o;
+        o.id = QStringLiteral("table");
+        o.label = QStringLiteral("表");
+        o.rows << row(QStringLiteral("name"), QStringLiteral("表名"), tableName);
+        if (t)
+        {
+            o.rows << row(QStringLiteral("rows"), QStringLiteral("行数"), QString::number(t->rows));
+            o.rows << row(QStringLiteral("columns"), QStringLiteral("列数"), QString::number(t->columns.size()));
+            o.rows << row(QStringLiteral("span"), QStringLiteral("时间跨度(s)"),
+                          QString::number((t->lastTimeUs - t->firstTimeUs) / 1000000.0, 'f', 3));
+        }
+        s.objects << o;
+        return s.toJson();
+    });
+
+    // --- 列（字段）：展示列元信息；可编辑"变换"行由曲线/衍生场景承接 ---
+    m_appCtx.registerPropertyProvider(SelectionKind::Column, [this, row](const Selection &sel) {
+        const int dsId = sel.ids.value(QStringLiteral("dataset")).toInt();
+        const QString tableName = sel.ids.value(QStringLiteral("table")).toString();
+        const QString columnName = sel.ids.value(QStringLiteral("column")).toString();
+        const Dataset *ds = m_repo.get(dsId);
+        const Table *t = ds ? ds->table(tableName) : nullptr;
+        const Column *col = t ? t->column(columnName) : nullptr;
+        PropertySchema s;
+        s.title = sel.label;
+        PropObject o;
+        o.id = QStringLiteral("column");
+        o.label = QStringLiteral("字段");
+        o.rows << row(QStringLiteral("name"), QStringLiteral("列名"), columnName);
+        o.rows << row(QStringLiteral("table"), QStringLiteral("所属表"), tableName);
+        if (col)
+        {
+            o.rows << row(QStringLiteral("unit"), QStringLiteral("单位"), col->unit);
+            o.rows << row(QStringLiteral("type"), QStringLiteral("类型"),
+                          QString::number(static_cast<int>(col->type)));
+            o.rows << row(QStringLiteral("rows"), QStringLiteral("行数"), QString::number(col->rowCount));
+        }
+        s.objects << o;
+        PropObject hint;
+        hint.id = QStringLiteral("actions");
+        hint.label = QStringLiteral("操作");
+        hint.rows << row(QStringLiteral("derive"), QStringLiteral("衍生"),
+                         QStringLiteral("右键列 -> 添加变换（算子/表达式/Lua）"));
+        s.objects << hint;
+        return s.toJson();
+    });
+
+    // --- 参数 / 消息：占位只读（真实文本值待 Rust 文本读取槽，见架构文档）---
+    auto kvProvider = [this, row](const Selection &sel) {
+        PropertySchema s;
+        s.title = sel.label;
+        PropObject o;
+        o.id = QStringLiteral("node");
+        o.label = selectionKindName(sel.kind);
+        o.rows << row(QStringLiteral("label"), QStringLiteral("名称"), sel.label);
+        const int dsId = sel.ids.value(QStringLiteral("dataset")).toInt();
+        o.rows << row(QStringLiteral("dataset"), QStringLiteral("数据集ID"), QString::number(dsId));
+        s.objects << o;
+        return s.toJson();
+    };
+    m_appCtx.registerPropertyProvider(SelectionKind::Param, kvProvider);
+    m_appCtx.registerPropertyProvider(SelectionKind::Message, kvProvider);
 }
 
 void DataManagerPanel::selectSource(int sourceId)
 {
-    if (sourceId == m_shownSourceId)
-        return;
     m_shownSourceId = sourceId;
-    rebuildChips();
-    rebuildFields();
-    rebuildParams();
-    rebuildMessages();
-    updateEmptyState();
-    applyFilter();
+    rebuildTree();
 }
 
 void DataManagerPanel::selectChip(int chip)
@@ -339,8 +417,213 @@ void DataManagerPanel::selectChip(int chip)
     if (chip == m_shownChip)
         return;
     m_shownChip = chip;
-    updateEmptyState();
+    rebuildTree();
+}
+
+void DataManagerPanel::rebuildChips()
+{
+    // 统计三类数量填充 chip 文本。
+    int nFields = 0, nParams = 0, nMsgs = 0;
+    m_paramCount = 0;
+    m_msgCount = 0;
+    for (int sid : m_sources.ids())
+    {
+        const DataSourceInfo *info = m_sources.get(sid);
+        if (!info)
+            continue;
+        for (int dsId : info->datasetIds)
+        {
+            const Dataset *ds = m_repo.get(dsId);
+            if (!ds)
+                continue;
+            for (int t = 0; t < ds->tableCount(); ++t)
+            {
+                const Table *tbl = ds->table(t);
+                if (!tbl || tbl->rows <= 0)
+                    continue;
+                if (isKeyValueTable(tbl))
+                {
+                    if (tbl->name.contains(QStringLiteral("param"), Qt::CaseInsensitive) ||
+                        tbl->name.contains(QStringLiteral("fact"), Qt::CaseInsensitive))
+                    { nParams += tbl->rows; ++m_paramCount; }
+                    else
+                    { nMsgs += tbl->rows; ++m_msgCount; }
+                }
+                else
+                    nFields += tbl->columns.size();
+            }
+        }
+    }
+    m_chips[0]->setText(QStringLiteral("字段 %1").arg(nFields));
+    m_chips[1]->setText(QStringLiteral("参数 %1").arg(nParams));
+    m_chips[2]->setText(QStringLiteral("消息 %1").arg(nMsgs));
+    for (int i = 0; i < 3; ++i)
+        m_chips[i]->setChecked(i == m_shownChip);
+}
+
+void DataManagerPanel::rebuildTree()
+{
+    const bool blocked = m_tree->blockSignals(true);
+    m_tree->clear();
+    rebuildChips();
+
+    const bool showFields = m_shownChip == 0;
+    m_header->setText(QStringLiteral("数据源 · %1 已连接").arg(m_sources.count()));
+
+    for (int sid : m_sources.ids())
+    {
+        const DataSourceInfo *info = m_sources.get(sid);
+        if (!info)
+            continue;
+
+        auto *srcItem = new QTreeWidgetItem(m_tree);
+        srcItem->setText(0, info->name.isEmpty() ? QFileInfo(info->origin).fileName() : info->name);
+        int chCount = 0;
+        for (int dsId : info->datasetIds)
+            if (const Dataset *ds = m_repo.get(dsId))
+                for (int t = 0; t < ds->tableCount(); ++t)
+                    if (!isKeyValueTable(ds->table(t)))
+                        chCount += ds->table(t)->columns.size();
+        srcItem->setText(1, QStringLiteral("%1 · %2 通道").arg(stateText(info->state)).arg(chCount));
+        srcItem->setData(0, kRoleSourceId, sid);
+        srcItem->setData(0, kRoleNodeKind, QStringLiteral("source"));
+        srcItem->setData(0, Qt::UserRole, stateText(info->state)); // sourceStateText 用
+        srcItem->setFirstColumnSpanned(false);
+
+        if (showFields)
+        {
+            // 字段视图：dataset → 表 → 列。
+            for (int dsId : info->datasetIds)
+            {
+                const Dataset *ds = m_repo.get(dsId);
+                if (!ds)
+                    continue;
+                auto *dsItem = new QTreeWidgetItem(srcItem);
+                dsItem->setText(0, QStringLiteral("#%1 %2").arg(dsId).arg(ds->name()));
+                dsItem->setData(0, kRoleDatasetId, dsId);
+                dsItem->setData(0, kRoleNodeKind, QStringLiteral("dataset"));
+
+                for (int t = 0; t < ds->tableCount(); ++t)
+                {
+                    const Table *table = ds->table(t);
+                    if (!table || isKeyValueTable(table))
+                        continue;
+                    auto *tItem = new QTreeWidgetItem(dsItem);
+                    tItem->setText(0, table->name);
+                    const double span = (table->lastTimeUs - table->firstTimeUs) / 1000000.0;
+                    tItem->setText(1, QStringLiteral("%1 行 · %2 s").arg(table->rows).arg(span, 0, 'f', 2));
+                    tItem->setData(0, kRoleTable, table->name);
+                    tItem->setData(0, kRoleDatasetId, dsId);
+                    tItem->setData(0, kRoleNodeKind, QStringLiteral("table"));
+
+                    for (const Column &col : table->columns)
+                    {
+                        auto *cItem = new QTreeWidgetItem(tItem);
+                        cItem->setText(0, col.name);
+                        cItem->setText(1, col.unit);
+                        cItem->setData(0, kRoleColumn, col.name);
+                        cItem->setData(0, kRoleTable, table->name);
+                        cItem->setData(0, kRoleDatasetId, dsId);
+                        cItem->setData(0, kRoleNodeKind, QStringLiteral("column"));
+                        cItem->setFlags(cItem->flags() | Qt::ItemIsDragEnabled);
+                        cItem->setToolTip(0, QStringLiteral("拖到画布即可绘制 %1.%2").arg(table->name, col.name));
+                    }
+                    tItem->setExpanded(true);
+                }
+                dsItem->setExpanded(true);
+            }
+        }
+        else if (m_shownChip == 1)
+        {
+            // 参数视图：每个 dataset 一个节点，下面是 param 表。
+            for (int dsId : info->datasetIds)
+            {
+                const Dataset *ds = m_repo.get(dsId);
+                if (!ds)
+                    continue;
+                for (int t = 0; t < ds->tableCount(); ++t)
+                {
+                    const Table *tbl = ds->table(t);
+                    if (!tbl || !isKeyValueTable(tbl))
+                        continue;
+                    if (!(tbl->name.contains(QStringLiteral("param"), Qt::CaseInsensitive) ||
+                          tbl->name.contains(QStringLiteral("fact"), Qt::CaseInsensitive)))
+                        continue;
+                    auto *pItem = new QTreeWidgetItem(srcItem);
+                    pItem->setText(0, QStringLiteral("[%1] %2").arg(tbl->name).arg(
+                        tbl->columns.isEmpty() ? QStringLiteral("—") : tbl->columns.first().name));
+                    pItem->setText(1, QStringLiteral("%1 项").arg(tbl->rows));
+                    pItem->setData(0, kRoleNodeKind, QStringLiteral("param"));
+                    pItem->setData(0, kRoleDatasetId, dsId);
+                    pItem->setFlags(pItem->flags() & ~Qt::ItemIsDragEnabled);
+                }
+            }
+        }
+        else
+        {
+            // 消息视图：每个非键值表一个消息节点。
+            for (int dsId : info->datasetIds)
+            {
+                const Dataset *ds = m_repo.get(dsId);
+                if (!ds)
+                    continue;
+                for (int t = 0; t < ds->tableCount(); ++t)
+                {
+                    const Table *tbl = ds->table(t);
+                    if (!tbl || tbl->rows <= 0 || isKeyValueTable(tbl))
+                        continue;
+                    auto *mItem = new QTreeWidgetItem(srcItem);
+                    mItem->setText(0, tbl->name);
+                    mItem->setText(1, QStringLiteral("%1 字段 · %2 s").arg(tbl->columns.size())
+                                          .arg(tbl->firstTimeUs / 1000000.0, 0, 'f', 2));
+                    mItem->setData(0, kRoleNodeKind, QStringLiteral("msg"));
+                    mItem->setData(0, kRoleDatasetId, dsId);
+                    mItem->setFlags(mItem->flags() & ~Qt::ItemIsDragEnabled);
+                }
+            }
+        }
+
+        // 展开当前选中的源（老代码：同一时刻只展开一个源）。
+        srcItem->setExpanded(sid == m_shownSourceId || m_shownSourceId < 0);
+    }
+    m_tree->blockSignals(blocked);
     applyFilter();
+    updateEmptyState();
+}
+
+void DataManagerPanel::applyFilter()
+{
+    const QString needle = m_filter->text().trimmed();
+    const bool empty = needle.isEmpty();
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i)
+    {
+        QTreeWidgetItem *src = m_tree->topLevelItem(i);
+        bool srcHit = false;
+        for (int d = 0; d < src->childCount(); ++d)
+        {
+            QTreeWidgetItem *child = src->child(d);
+            bool childHit = empty || child->text(0).contains(needle, Qt::CaseInsensitive);
+            for (int c = 0; c < child->childCount(); ++c)
+            {
+                QTreeWidgetItem *leaf = child->child(c);
+                const bool hit = empty || childHit || leaf->text(0).contains(needle, Qt::CaseInsensitive);
+                leaf->setHidden(!hit);
+                childHit = childHit || hit;
+            }
+            child->setHidden(!childHit);
+            srcHit = srcHit || childHit;
+        }
+        // 源名命中也算（展开全部子项）。
+        const bool nameHit = empty || src->text(0).contains(needle, Qt::CaseInsensitive);
+        src->setHidden(!(srcHit || nameHit));
+    }
+}
+
+void DataManagerPanel::updateEmptyState()
+{
+    const bool hasSource = m_sources.count() > 0;
+    m_tree->setVisible(hasSource);
+    m_empty->setVisible(!hasSource);
 }
 
 void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
@@ -348,61 +631,46 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     const DataSourceInfo *info = m_sources.get(sourceId);
     if (!info)
         return;
-
     QMenu menu(this);
     QAction *reload = menu.addAction(QStringLiteral("重载数据源"));
     QAction *exportCsv = menu.addAction(QStringLiteral("导出 CSV…"));
     QAction *clearCache = menu.addAction(QStringLiteral("清除全部解析缓存"));
     menu.addSeparator();
     QAction *activate = menu.addAction(QStringLiteral("设为活动数据源"));
-
     QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
 
     if (chosen == reload)
     {
-        Intent intent;
-        intent.op = QStringLiteral("data.reload");
+        Intent intent; intent.op = QStringLiteral("data.reload");
         intent.params[QStringLiteral("id")] = sourceId;
         const auto r = m_executor.execute(intent);
-        if (!r)
-            QMessageBox::warning(this, QStringLiteral("重载失败"), r.error().message);
+        if (!r) QMessageBox::warning(this, QStringLiteral("重载失败"), r.error().message);
     }
     else if (chosen == exportCsv)
     {
-        const DataSourceInfo *src = m_sources.get(sourceId);
-        if (!src || src->datasetIds.isEmpty())
+        if (info->datasetIds.isEmpty())
         {
-            QMessageBox::information(this, QStringLiteral("导出 CSV"),
-                                     QStringLiteral("该数据源还没有解析出数据集"));
+            QMessageBox::information(this, QStringLiteral("导出 CSV"), QStringLiteral("该数据源还没有解析出数据集"));
             return;
         }
-        const QString path = QFileDialog::getSaveFileName(
-            this, QStringLiteral("导出 CSV"), QString(),
-            QStringLiteral("CSV 文件 (*.csv)"));
-        if (path.isEmpty())
-            return;
-        Intent intent;
-        intent.op = QStringLiteral("data.export");
-        intent.params[QStringLiteral("dataset")] = src->datasetIds.first();
+        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("导出 CSV"), QString(), QStringLiteral("CSV 文件 (*.csv)"));
+        if (path.isEmpty()) return;
+        Intent intent; intent.op = QStringLiteral("data.export");
+        intent.params[QStringLiteral("dataset")] = info->datasetIds.first();
         intent.params[QStringLiteral("path")] = path;
         const auto r = m_executor.execute(intent);
-        if (!r)
-            QMessageBox::warning(this, QStringLiteral("导出失败"), r.error().message);
+        if (!r) QMessageBox::warning(this, QStringLiteral("导出失败"), r.error().message);
     }
     else if (chosen == clearCache)
     {
-        Intent intent;
-        intent.op = QStringLiteral("data.clearCache");
+        Intent intent; intent.op = QStringLiteral("data.clearCache");
         const auto r = m_executor.execute(intent);
-        if (!r)
-            QMessageBox::warning(this, QStringLiteral("清除缓存失败"), r.error().message);
+        if (!r) QMessageBox::warning(this, QStringLiteral("清除缓存失败"), r.error().message);
     }
     else if (chosen == activate)
-    {
         m_appCtx.setActiveSourceId(sourceId);
-    }
 }
 
 void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globalPos)
@@ -410,62 +678,76 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
     const QVariant dsId = item->data(0, kRoleDatasetId);
     const QVariant table = item->data(0, kRoleTable);
     const QVariant column = item->data(0, kRoleColumn);
-    if (!dsId.isValid() || !table.isValid())
-        return; // 只在表/列节点弹菜单
-
+    if (!dsId.isValid() || !table.isValid() || !column.isValid())
+        return;
     QMenu menu(this);
-    QAction *draw = menu.addAction(QStringLiteral("画到画布"));
-    QAction *derive = nullptr;
-    if (column.isValid())
-        derive = menu.addAction(QStringLiteral("派生通道…"));
-
+    QAction *plot = menu.addAction(QStringLiteral("画到当前画布"));
+    menu.addSeparator();
+    QMenu *derive = menu.addMenu(QStringLiteral("添加变换…"));
+    QList<QAction *> deriveActs;
+    for (const DeriveRecipe &r : kDeriveRecipes)
+    {
+        QAction *a = derive->addAction(QString::fromUtf8(r.label));
+        a->setData(QString::fromUtf8(r.id));
+        deriveActs << a;
+    }
+    derive->addSeparator();
+    QAction *openEditor = derive->addAction(QStringLiteral("变换编辑器（算子/表达式/Lua）…"));
+    openEditor->setToolTip(QStringLiteral("按能力过滤的变换选择器；支持单点/批量在线调试"));
     QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
 
-    if (chosen == draw)
+    const int datasetId = dsId.toInt();
+    const QString tableName = table.toString();
+    const QString columnName = column.toString();
+    if (chosen == plot)
     {
-        QString colName = column.isValid() ? column.toString() : QString();
-        if (colName.isEmpty())
-        {
-            const Dataset *ds = m_repo.get(dsId.toInt());
-            const Table *t = ds ? ds->table(table.toString()) : nullptr;
-            if (t && !t->columns.isEmpty())
-                colName = t->columns.first().name;
-        }
-        if (colName.isEmpty())
-            return;
-        const int datasetId = dsId.toInt();
         const int sourceId = m_sources.sourceOfDataset(datasetId);
-        if (sourceId >= 0)
-            m_appCtx.setActiveSourceId(sourceId);
-        m_appCtx.setActiveChannel(datasetId, table.toString(), colName);
-        emit channelActivated(datasetId, table.toString(), colName);
+        if (sourceId >= 0) m_appCtx.setActiveSourceId(sourceId);
+        m_appCtx.setActiveChannel(datasetId, tableName, columnName);
+        emit channelActivated(datasetId, tableName, columnName);
+        return;
     }
-    else if (chosen == derive && column.isValid())
+    if (chosen == openEditor)
     {
-        QStringList labels;
-        for (const DeriveRecipe &r : kDeriveRecipes)
-            labels << QString::fromLatin1(r.label);
-        bool ok = false;
-        const QString picked = QInputDialog::getItem(
-            this, QStringLiteral("派生通道"), QStringLiteral("选择算子（作用于 %1）")
-                .arg(column.toString()), labels, 0, false, &ok);
-        if (!ok || picked.isEmpty())
+        // 统一变换编辑器：按 CapDerived 过滤，配置算子/表达式/Lua 后走 data.derive。
+        const QJsonObject req = TransformEditorDialog::run(
+            this, m_appCtx, CapDerived,
+            QStringLiteral("数据源衍生 · %1.%2").arg(tableName, columnName));
+        if (req.isEmpty())
             return;
-        const DeriveRecipe *recipe = nullptr;
-        for (const DeriveRecipe &r : kDeriveRecipes)
-            if (QString::fromLatin1(r.label) == picked) { recipe = &r; break; }
-        if (!recipe)
-            return;
-
         Intent intent;
         intent.op = QStringLiteral("data.derive");
-        intent.params[QStringLiteral("dataset")] = dsId.toInt();
-        intent.params[QStringLiteral("table")] = table.toString();
-        intent.params[QStringLiteral("column")] = column.toString();
-        intent.params[QStringLiteral("filter")] = QString::fromLatin1(recipe->id);
-        intent.params[QStringLiteral("params")] = QString::fromLatin1(recipe->params);
+        intent.params[QStringLiteral("dataset")] = datasetId;
+        intent.params[QStringLiteral("table")] = tableName;
+        intent.params[QStringLiteral("column")] = columnName;
+        intent.params[QStringLiteral("transform")] = QVariant(req);
+        const QString label = TransformRegistry::get(
+            req.value(QStringLiteral("descriptorId")).toString()).label;
+        intent.params[QStringLiteral("name")] = tableName + QLatin1Char('.') + columnName
+                                               + QStringLiteral(".") + label;
+        const auto r = m_executor.execute(intent);
+        if (!r)
+            QMessageBox::warning(this, QStringLiteral("变换失败"), r.error().message);
+        else
+        {
+            const int count = r.value().payload.toMap().value(QStringLiteral("count")).toInt();
+            QMessageBox::information(this, QStringLiteral("衍生完成"),
+                QStringLiteral("变换「%1」已算出 %2 点并叠加到画布，原数据未改动。")
+                    .arg(label).arg(count));
+        }
+        return;
+    }
+    for (QAction *a : deriveActs)
+    {
+        if (chosen != a) continue;
+        Intent intent; intent.op = QStringLiteral("data.derive");
+        intent.params[QStringLiteral("dataset")] = datasetId;
+        intent.params[QStringLiteral("table")] = tableName;
+        intent.params[QStringLiteral("column")] = columnName;
+        intent.params[QStringLiteral("filter")] = a->data().toString();
+        intent.params[QStringLiteral("params")] = QString();
         const auto r = m_executor.execute(intent);
         if (!r)
             QMessageBox::warning(this, QStringLiteral("派生失败"), r.error().message);
@@ -475,21 +757,18 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
             const QString name = pm.value(QStringLiteral("name")).toString();
             const int count = pm.value(QStringLiteral("count")).toInt();
             const bool truncated = pm.value(QStringLiteral("truncated")).toBool();
-            QMessageBox::information(
-                this, QStringLiteral("派生完成"),
+            QMessageBox::information(this, QStringLiteral("派生完成"),
                 QStringLiteral("已将「%1」送到画布叠加显示（%2 点%3）。\n原始数据未改动。")
-                    .arg(name)
-                    .arg(count)
-                    .arg(truncated ? QStringLiteral("，已截取前 %1 点").arg(count)
-                                   : QString()));
+                    .arg(name).arg(count)
+                    .arg(truncated ? QStringLiteral("，已截取前 %1 点").arg(count) : QString()));
         }
+        break;
     }
 }
 
 void DataManagerPanel::showRecentFilesMenu(const QPoint &globalPos)
 {
-    Intent intent;
-    intent.op = QStringLiteral("data.recent");
+    Intent intent; intent.op = QStringLiteral("data.recent");
     const auto r = m_executor.execute(intent);
     const QStringList files = r ? r.value().payload.toStringList() : QStringList();
     if (files.isEmpty())
@@ -505,439 +784,81 @@ void DataManagerPanel::showRecentFilesMenu(const QPoint &globalPos)
         a->setData(path);
     }
     QAction *chosen = menu.exec(globalPos);
-    if (!chosen)
-        return;
-    Intent load;
-    load.op = QStringLiteral("data.load");
+    if (!chosen) return;
+    Intent load; load.op = QStringLiteral("data.load");
     load.params[QStringLiteral("path")] = chosen->data().toString();
     const auto lr = m_executor.execute(load);
-    if (!lr)
-        QMessageBox::warning(this, QStringLiteral("打开失败"), lr.error().message);
+    if (!lr) QMessageBox::warning(this, QStringLiteral("打开失败"), lr.error().message);
 }
 
 void DataManagerPanel::openLogFile()
 {
-    const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("打开飞行日志"), QString(),
+    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("打开飞行日志"), QString(),
         QStringLiteral("数据文件 (*.csv *.ulg *.log *.bin *.mcap *.tlog);;全部 (*)"));
-    if (path.isEmpty())
-        return;
-    Intent load;
-    load.op = QStringLiteral("data.load");
+    if (path.isEmpty()) return;
+    Intent load; load.op = QStringLiteral("data.load");
     load.params[QStringLiteral("path")] = path;
     const auto r = m_executor.execute(load);
-    if (!r)
-        QMessageBox::warning(this, QStringLiteral("打开失败"), r.error().message);
+    if (!r) QMessageBox::warning(this, QStringLiteral("打开失败"), r.error().message);
 }
 
 void DataManagerPanel::refresh()
 {
-    rebuildSourceCards();
-    rebuildChips();
-    rebuildFields();
-    rebuildParams();
-    rebuildMessages();
-    updateEmptyState();
-    applyFilter();
+    // 记住当前展开的源，重建后恢复。
+    if (m_shownSourceId < 0 && m_sources.count() > 0)
+        m_shownSourceId = m_sources.ids().first();
+    rebuildTree();
 }
 
-void DataManagerPanel::rebuildSourceCards()
-{
-    const QList<QAbstractButton *> old = m_sourceGroup->buttons();
-    for (QAbstractButton *b : old)
-    {
-        m_sourceGroup->removeButton(b);
-        m_cardsLay->removeWidget(b);
-        delete b;
-    }
-
-    const int n = m_sources.count();
-    m_header->setText(QStringLiteral("数据源 · %1 已连接").arg(n));
-
-    const int prevSourceId = m_shownSourceId;
-    int firstId = -1;
-    for (int sourceId : m_sources.ids())
-    {
-        const DataSourceInfo *info = m_sources.get(sourceId);
-        if (!info)
-            continue;
-        if (firstId < 0)
-            firstId = sourceId;
-
-        QString display = info->name;
-        if (display.isEmpty())
-        {
-            display = QFileInfo(info->origin).fileName();
-            if (display.isEmpty())
-                display = QStringLiteral("(未命名)");
-        }
-        int totalChannels = 0;
-        for (int dsId : info->datasetIds)
-            if (const Dataset *ds = m_repo.get(dsId))
-                for (int t = 0; t < ds->tableCount(); ++t)
-                    if (!isKeyValueTable(ds->table(t))) // 键值表不算"通道"
-                        totalChannels += ds->table(t)->columns.size();
-
-        // 文件源解析完成后状态是 Closed，但对用户呈现应是"已加载"而非"已停止"——
-        // 与老 dock/截图一致（文件不是被人为停止，是加载完成后的自然态）。
-        const QString shownState = (info->kind == SourceKind::File &&
-                                    info->state == SourceState::Closed && info->datasetIds.size() > 0)
-                                       ? QStringLiteral("已加载")
-                                       : stateText(info->state);
-
-        auto *card = new QToolButton(m_cardsLay->parentWidget());
-        card->setCheckable(true);
-        card->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        card->setObjectName(QStringLiteral("sourceCard"));
-        card->setCursor(Qt::PointingHandCursor);
-        card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        card->setStyleSheet(QStringLiteral(
-            "QToolButton#sourceCard{text-align:left;padding:4px 6px;border:1px solid transparent;"
-            "border-radius:3px;background:palette(button);color:palette(button-text);}"
-            "QToolButton#sourceCard:hover{border-color:palette(mid);}"
-            "QToolButton#sourceCard:checked{background:palette(alternate-base);"
-            "border-color:palette(highlight);}"));
-        card->setText(QStringLiteral("  %1\n  %2 通道 · %3")
-                          .arg(display)
-                          .arg(totalChannels)
-                          .arg(shownState));
-        card->setProperty("sourceId", sourceId);
-        card->setProperty("stateText", stateText(info->state));
-        card->setContextMenuPolicy(Qt::CustomContextMenu);
-        connect(card, &QToolButton::customContextMenuRequested, this,
-                [this, sourceId, card](const QPoint &pos) {
-                    showSourceMenu(sourceId, card->mapToGlobal(pos));
-                });
-
-        QStringList meta;
-        meta << QStringLiteral("来源: %1").arg(info->origin);
-        meta << QStringLiteral("种类: %1").arg(kindText(info->kind));
-        meta << QStringLiteral("状态: %1").arg(stateText(info->state));
-        if (!info->parsers.isEmpty())
-        {
-            QStringList pids;
-            for (const ParserBinding &b : info->parsers)
-                pids << b.parserId;
-            meta << QStringLiteral("解析器: %1").arg(pids.join(QStringLiteral(", ")));
-        }
-        if (!info->datasetIds.isEmpty())
-        {
-            QStringList dsids;
-            for (int d : info->datasetIds)
-                dsids << QStringLiteral("#%1").arg(d);
-            meta << QStringLiteral("数据集: %1").arg(dsids.join(QStringLiteral(", ")));
-        }
-        if (!info->error.isEmpty())
-            meta << QStringLiteral("错误: %1").arg(info->error);
-        card->setToolTip(meta.join(QLatin1Char('\n')));
-
-        m_sourceGroup->addButton(card, sourceId);
-        m_cardsLay->addWidget(card);
-    }
-
-    // 恢复选中：优先原选中；没有则选第一个。
-    int target = -1;
-    if (prevSourceId >= 0 && m_sourceGroup->button(prevSourceId))
-        target = prevSourceId;
-    else if (firstId >= 0)
-        target = firstId;
-    if (target >= 0)
-    {
-        if (QAbstractButton *b = m_sourceGroup->button(target))
-            b->setChecked(true);
-        if (m_shownSourceId != target)
-            m_shownSourceId = target;
-    }
-    else
-    {
-        m_shownSourceId = -1;
-    }
-
-    // 卡片刚重建，检查器内容需要跟着新选中源刷新。
-    rebuildChips();
-    rebuildFields();
-    rebuildParams();
-    rebuildMessages();
-}
-
-void DataManagerPanel::rebuildChips()
-{
-    int nFields = 0, nParams = 0, nMsgs = 0;
-    if (m_shownSourceId >= 0)
-    {
-        if (const DataSourceInfo *info = m_sources.get(m_shownSourceId))
-        {
-            for (int dsId : info->datasetIds)
-            {
-                const Dataset *ds = m_repo.get(dsId);
-                if (!ds)
-                    continue;
-                for (int t = 0; t < ds->tableCount(); ++t)
-                {
-                    const Table *tbl = ds->table(t);
-                    if (!tbl || tbl->rows <= 0)
-                        continue;
-                    if (isKeyValueTable(tbl))
-                    {
-                        if (tbl->name.contains(QStringLiteral("param"), Qt::CaseInsensitive) ||
-                            tbl->name.contains(QStringLiteral("fact"), Qt::CaseInsensitive))
-                            nParams += tbl->rows;
-                        else
-                            nMsgs += tbl->rows;
-                    }
-                    else
-                    {
-                        nFields += tbl->columns.size();
-                    }
-                }
-            }
-        }
-    }
-    m_chips[0]->setText(QStringLiteral("字段 %1").arg(nFields));
-    m_chips[1]->setText(QStringLiteral("参数 %1").arg(nParams));
-    m_chips[2]->setText(QStringLiteral("消息 %1").arg(nMsgs));
-}
-
-void DataManagerPanel::rebuildFields()
-{
-    const bool blocked = m_fieldTree->blockSignals(true);
-    m_fieldTree->clear();
-
-    if (m_shownSourceId >= 0)
-    {
-        if (const DataSourceInfo *info = m_sources.get(m_shownSourceId))
-        {
-            for (int dsId : info->datasetIds)
-            {
-                const Dataset *ds = m_repo.get(dsId);
-                if (!ds)
-                    continue;
-
-                auto *dsItem = new QTreeWidgetItem(m_fieldTree);
-                dsItem->setText(0, QStringLiteral("#%1 %2").arg(dsId).arg(ds->name()));
-                dsItem->setData(0, kRoleDatasetId, dsId);
-                dsItem->setFirstColumnSpanned(true);
-
-                for (int t = 0; t < ds->tableCount(); ++t)
-                {
-                    const Table *table = ds->table(t);
-                    if (!table || isKeyValueTable(table))
-                        continue; // 键值表不进字段树（去参数/消息 tab）
-                    auto *tItem = new QTreeWidgetItem(dsItem);
-                    tItem->setText(0, table->name);
-                    const double span = (table->lastTimeUs - table->firstTimeUs) / 1000000.0;
-                    tItem->setText(1, QStringLiteral("%1 行 · %2 s")
-                                          .arg(table->rows)
-                                          .arg(span, 0, 'f', 2));
-                    tItem->setData(0, kRoleTable, table->name);
-                    tItem->setData(0, kRoleDatasetId, dsId);
-
-                    for (const Column &col : table->columns)
-                    {
-                        auto *cItem = new QTreeWidgetItem(tItem);
-                        cItem->setText(0, col.name);
-                        cItem->setText(1, col.unit);
-                        cItem->setData(0, kRoleColumn, col.name);
-                        cItem->setData(0, kRoleTable, table->name);
-                        cItem->setData(0, kRoleDatasetId, dsId);
-                        cItem->setFlags(cItem->flags() | Qt::ItemIsDragEnabled);
-                        cItem->setToolTip(0, QStringLiteral("拖到画布即可绘制 %1.%2")
-                                                  .arg(table->name, col.name));
-                    }
-                    tItem->setExpanded(true);
-                }
-                dsItem->setExpanded(true);
-            }
-        }
-    }
-    m_fieldTree->blockSignals(blocked);
-}
-
-void DataManagerPanel::rebuildParams()
-{
-    m_paramTable->setRowCount(0);
-    if (m_shownSourceId < 0)
-        return;
-    const DataSourceInfo *info = m_sources.get(m_shownSourceId);
-    if (!info)
-        return;
-
-    for (int dsId : info->datasetIds)
-    {
-        const Dataset *ds = m_repo.get(dsId);
-        if (!ds)
-            continue;
-        for (int t = 0; t < ds->tableCount(); ++t)
-        {
-            const Table *tbl = ds->table(t);
-            if (!tbl || !isKeyValueTable(tbl))
-                continue;
-            if (!(tbl->name.contains(QStringLiteral("param"), Qt::CaseInsensitive) ||
-                  tbl->name.contains(QStringLiteral("fact"), Qt::CaseInsensitive)))
-                continue;
-            // 只读骨架：文本值暂不经 readWindow 读出（它只返回 double）。
-            // 展示真实的表名/键列/值列/行数，值列留占位，不伪造数据。
-            const QString cols = tbl->columns.isEmpty()
-                                     ? QStringLiteral("—")
-                                     : QStringLiteral("%1 → %2")
-                                           .arg(tbl->columns.first().name)
-                                           .arg(tbl->columns.last().name);
-            const int row = m_paramTable->rowCount();
-            m_paramTable->insertRow(row);
-            m_paramTable->setItem(row, 0, new QTableWidgetItem(
-                QStringLiteral("[%1] %2").arg(tbl->name, cols)));
-            auto *v = new QTableWidgetItem(QStringLiteral("%1 项 · 文本值未接入").arg(tbl->rows));
-            v->setForeground(ThemeManager::themeColor(QStringLiteral("textDim")));
-            m_paramTable->setItem(row, 1, v);
-        }
-    }
-}
-
-void DataManagerPanel::rebuildMessages()
-{
-    m_msgTable->setRowCount(0);
-    if (m_shownSourceId < 0)
-        return;
-    const DataSourceInfo *info = m_sources.get(m_shownSourceId);
-    if (!info)
-        return;
-
-    for (int dsId : info->datasetIds)
-    {
-        const Dataset *ds = m_repo.get(dsId);
-        if (!ds)
-            continue;
-        for (int t = 0; t < ds->tableCount(); ++t)
-        {
-            const Table *tbl = ds->table(t);
-            if (!tbl || tbl->rows <= 0 || isKeyValueTable(tbl))
-                continue;
-            const double firstSec = tbl->firstTimeUs / 1000000.0;
-            const int row = m_msgTable->rowCount();
-            m_msgTable->insertRow(row);
-            m_msgTable->setItem(row, 0, new QTableWidgetItem(tbl->name));
-            // 速率骨架：有首末时间才算得出，留占位；字段数与首时刻是真实元数据。
-            auto *rate = new QTableWidgetItem(QStringLiteral("—"));
-            rate->setForeground(ThemeManager::themeColor(QStringLiteral("textDim")));
-            m_msgTable->setItem(row, 1, rate);
-            m_msgTable->setItem(row, 2, new QTableWidgetItem(QString::number(tbl->columns.size())));
-            m_msgTable->setItem(row, 3, new QTableWidgetItem(
-                QStringLiteral("%1 s").arg(firstSec, 0, 'f', 2)));
-        }
-    }
-}
-
-void DataManagerPanel::applyFilter()
-{
-    const QString needle = m_filter->text().trimmed();
-    const bool empty = needle.isEmpty();
-
-    // 字段树：按表名/列名过滤（保留命中的祖先链）。
-    for (int i = 0; i < m_fieldTree->topLevelItemCount(); ++i)
-    {
-        QTreeWidgetItem *dsItem = m_fieldTree->topLevelItem(i);
-        bool dsVisible = false;
-        for (int t = 0; t < dsItem->childCount(); ++t)
-        {
-            QTreeWidgetItem *tItem = dsItem->child(t);
-            const bool tableHit = empty || tItem->text(0).contains(needle, Qt::CaseInsensitive);
-            bool anyCol = false;
-            for (int c = 0; c < tItem->childCount(); ++c)
-            {
-                QTreeWidgetItem *cItem = tItem->child(c);
-                const bool hit = empty || tableHit ||
-                                 cItem->text(0).contains(needle, Qt::CaseInsensitive);
-                cItem->setHidden(!hit);
-                anyCol = anyCol || hit;
-            }
-            tItem->setHidden(!anyCol);
-            dsVisible = dsVisible || anyCol;
-        }
-        dsItem->setHidden(!dsVisible);
-    }
-
-    // 参数/消息表：按行文本过滤。
-    for (QTableWidget *tbl : {m_paramTable, m_msgTable})
-    {
-        for (int r = 0; r < tbl->rowCount(); ++r)
-        {
-            bool hit = empty;
-            for (int c = 0; c < tbl->columnCount() && !hit; ++c)
-            {
-                QTableWidgetItem *it = tbl->item(r, c);
-                if (it && it->text().contains(needle, Qt::CaseInsensitive))
-                    hit = true;
-            }
-            tbl->setRowHidden(r, !hit);
-        }
-    }
-}
-
-void DataManagerPanel::updateEmptyState()
-{
-    const bool hasSource = m_sources.count() > 0 && m_shownSourceId >= 0;
-    if (!hasSource)
-    {
-        m_stack->setCurrentWidget(m_empty);
-        m_emptyTitle->setText(m_sources.count() == 0
-                                  ? QStringLiteral("还没有数据源")
-                                  : QStringLiteral("请选择一个数据源"));
-        return;
-    }
-    // 三视图：0 字段 / 1 参数 / 2 消息；stack 里空态是 index 0，视图顺延 1。
-    m_stack->setCurrentIndex(m_shownChip + 1);
-}
-
-int DataManagerPanel::sourceNodeCount() const
-{
-    return m_sourceGroup->buttons().size();
-}
+int DataManagerPanel::sourceNodeCount() const { return m_tree->topLevelItemCount(); }
 
 int DataManagerPanel::datasetNodeCount() const
 {
-    return m_fieldTree->topLevelItemCount();
+    // 当前展开源下的 dataset 节点数（取第一个源，兼容单源测试）。
+    QTreeWidgetItem *src = m_tree->topLevelItem(0);
+    if (!src) return 0;
+    int n = 0;
+    for (int i = 0; i < src->childCount(); ++i)
+        if (src->child(i)->data(0, kRoleNodeKind).toString() == QStringLiteral("dataset")) ++n;
+    return n;
 }
 
 int DataManagerPanel::tableNodeCount(int datasetIndex) const
 {
-    QTreeWidgetItem *item = m_fieldTree->topLevelItem(datasetIndex);
-    return item ? item->childCount() : 0;
+    QTreeWidgetItem *src = m_tree->topLevelItem(0);
+    if (!src) return 0;
+    int d = 0;
+    for (int i = 0; i < src->childCount(); ++i)
+    {
+        QTreeWidgetItem *child = src->child(i);
+        if (child->data(0, kRoleNodeKind).toString() != QStringLiteral("dataset")) continue;
+        if (d++ == datasetIndex) return child->childCount();
+    }
+    return 0;
 }
 
 QString DataManagerPanel::sourceStateText(int row) const
 {
-    const QList<QAbstractButton *> btns = m_sourceGroup->buttons();
-    if (row < 0 || row >= btns.size())
-        return QString();
-    return btns.at(row)->property("stateText").toString();
+    QTreeWidgetItem *src = m_tree->topLevelItem(row);
+    return src ? src->data(0, Qt::UserRole).toString() : QString();
 }
 
-int DataManagerPanel::activeChip() const
-{
-    return m_shownChip;
-}
+int DataManagerPanel::activeChip() const { return m_shownChip; }
 
 QString DataManagerPanel::chipText(int index) const
 {
     return (index >= 0 && index < 3 && m_chips[index]) ? m_chips[index]->text() : QString();
 }
 
-int DataManagerPanel::paramRowCount() const
-{
-    return m_paramTable->rowCount();
-}
-
-int DataManagerPanel::msgRowCount() const
-{
-    return m_msgTable->rowCount();
-}
+int DataManagerPanel::paramRowCount() const { return m_paramCount; }
+int DataManagerPanel::msgRowCount() const { return m_msgCount; }
 
 QWidget *createDatasetTreePanel(AppContext &appCtx, IIntentExecutor &exec, QWidget *parent)
 {
     return new DataManagerPanel(appCtx, exec, parent);
 }
 
-// 视图层自注册：外壳与其它功能都不认识这个面板。
+// 视图层自注册：器官只声明类型字符串 "dataset-tree"，外壳据此装配本面板。
 NG_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 
 } // namespace nextpilot::plotscope::gui

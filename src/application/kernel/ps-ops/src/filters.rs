@@ -25,6 +25,18 @@ pub fn apply(id: &str, t: &[f64], v: &[f64], p: &Value) -> Result<(Vec<f64>, Vec
     let mut ot = Vec::with_capacity(n);
     let mut ov = Vec::with_capacity(n);
     match id {
+        "expression" => {
+            // 数学表达式：如 5*x+10/sin(x)。x=当前值，t=当前时间（秒）。
+            // 编译一次成 AST，逐点求值——单点(live)友好，批量只是循环，
+            // kernel 有缓存，无需向量化。NaN 透传。
+            let text = p.get("expr").and_then(|v| v.as_str())
+                .ok_or_else(|| "表达式算子需要 expr 参数".to_string())?;
+            let compiled = crate::expr::Expression::compile(text)?;
+            for i in 0..n {
+                ot.push(t[i]);
+                ov.push(compiled.eval(v[i], t[i]));
+            }
+        }
         "none" => {
             ot.extend_from_slice(&t[..n]);
             ov.extend_from_slice(&v[..n]);
@@ -288,5 +300,26 @@ mod tests {
     #[test]
     fn unknown_filter_errors() {
         assert!(apply("nope", &[0.0], &[1.0], &json!({})).is_err());
+    }
+
+    #[test]
+    fn expression_filter_evaluates_per_point() {
+        let t = [0.0, 1.0, 2.0];
+        let v = [1.0, 2.0, 3.0];
+        // 5*x+1
+        let (ot, y) = apply("expression", &t, &v, &json!({"expr":"5*x+1"})).unwrap();
+        assert_eq!(ot, vec![0.0, 1.0, 2.0]);
+        assert_eq!(y, vec![6.0, 11.0, 16.0]);
+        // 取负号
+        let (_, neg) = apply("expression", &t, &v, &json!({"expr":"x*-1"})).unwrap();
+        assert_eq!(neg, vec![-1.0, -2.0, -3.0]);
+        // 用时间 t
+        let (_, with_t) = apply("expression", &t, &v, &json!({"expr":"x+t"})).unwrap();
+        assert_eq!(with_t, vec![1.0, 3.0, 5.0]);
+    }
+
+    #[test]
+    fn expression_filter_missing_expr_errors() {
+        assert!(apply("expression", &[0.0], &[1.0], &json!({})).is_err());
     }
 }

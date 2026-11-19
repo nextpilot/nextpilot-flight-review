@@ -37,6 +37,71 @@ void AppContext::clearActiveChannel()
     setActiveChannel(-1, QString(), QString());
 }
 
+void AppContext::setSelection(const Selection &selection)
+{
+    if (selection.key() == m_selection.key())
+        return;
+    m_selection = selection;
+    Q_EMIT selectionChanged(selection.toJson());
+}
+
+void AppContext::clearSelection()
+{
+    if (m_selection.empty())
+        return;
+    m_selection.clear();
+    Q_EMIT selectionChanged(m_selection.toJson());
+}
+
+void AppContext::registerPropertyProvider(SelectionKind kind, PropertyProvider provider)
+{
+    if (provider)
+        m_propertyProviders.insert(static_cast<int>(kind), std::move(provider));
+}
+
+bool AppContext::queryPropertySchema(const Selection &selection, QJsonObject &out) const
+{
+    const auto it = m_propertyProviders.constFind(static_cast<int>(selection.kind));
+    if (it == m_propertyProviders.constEnd())
+        return false;
+    out = it.value()(selection);
+    return true;
+}
+
+void AppContext::registerPropertySetter(SelectionKind kind, PropertySetter setter)
+{
+    if (setter)
+        m_propertySetters.insert(static_cast<int>(kind), std::move(setter));
+}
+
+bool AppContext::applyProperty(const Selection &selection, const QString &objectId,
+                               const QString &key, const QString &value, QString *err) const
+{
+    const auto it = m_propertySetters.constFind(static_cast<int>(selection.kind));
+    if (it == m_propertySetters.constEnd())
+    {
+        if (err)
+            *err = QStringLiteral("该对象类型没有属性写入器");
+        return false;
+    }
+    return it.value()(selection, objectId, key, value, err);
+}
+
+void AppContext::registerTransformEvaluator(TransformEvalFn fn)
+{
+    m_transformEvaluator = std::move(fn);
+}
+
+bool AppContext::evalTransform(const QJsonObject &request, uint32_t cap,
+                               const QVector<double> &t, const QVector<double> &v,
+                               Result<QVector<double>> &out) const
+{
+    if (!m_transformEvaluator)
+        return false;
+    out = m_transformEvaluator(request, cap, t, v);
+    return true;
+}
+
 void AppContext::registerViewAction(const QString &id, ViewActionHandler handler)
 {
     if (handler)

@@ -25,6 +25,8 @@ add_library(ng_core STATIC
     src/RecordingFormat.cpp
     src/RecordingBackend.cpp
     src/PropertySchema.cpp
+    src/Selection.cpp
+    src/Transform.cpp
     include/Result.h
     include/Dataset.h
     include/DataRepository.h
@@ -64,6 +66,8 @@ add_library(ng_core STATIC
     include/RecordingFormat.h
     include/RecordingBackend.h
     include/PropertySchema.h
+    include/Selection.h
+    include/Transform.h
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

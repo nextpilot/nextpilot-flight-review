@@ -65,7 +65,7 @@ void DataModule::onAttach(UiContext &ui)
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = QStringLiteral("ribbon.group.home.data");
+        a.area = QStringLiteral("ribbon.group.data.common");
         a.intentOp = op;
         a.icon = icon;
         ui.addAction(a);

@@ -9,6 +9,9 @@ extern "C" {
 }
 
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QVariant>
 #include <QVariantMap>
 
@@ -207,6 +210,157 @@ Result<void> LuaEngine::runFile(const QString &path)
     if (!f.open(QIODevice::ReadOnly))
         return fail(QStringLiteral("eio"), QStringLiteral("无法读取脚本: %1").arg(path));
     return runString(f.readAll(), QStringLiteral("@%1").arg(path));
+}
+
+// ===== LuaTransform：单点 / 批量数值变换 =====
+
+// QJsonValue -> Lua 值（递归）。用于把 ctx.params 传给脚本。
+static void pushJson(lua_State *L, const QJsonValue &v)
+{
+    if (v.isUndefined() || v.isNull())
+        lua_pushnil(L);
+    else if (v.isBool())
+        lua_pushboolean(L, v.toBool() ? 1 : 0);
+    else if (v.isDouble())
+        lua_pushnumber(L, v.toDouble());
+    else if (v.isString())
+        lua_pushstring(L, v.toString().toUtf8().constData());
+    else if (v.isArray())
+    {
+        const QJsonArray arr = v.toArray();
+        lua_createtable(L, arr.size(), 0);
+        for (int i = 0; i < arr.size(); ++i)
+        {
+            pushJson(L, arr.at(i));
+            lua_rawseti(L, -2, i + 1);
+        }
+    }
+    else if (v.isObject())
+    {
+        const QJsonObject obj = v.toObject();
+        lua_createtable(L, 0, obj.size());
+        for (auto it = obj.begin(); it != obj.end(); ++it)
+        {
+            lua_pushstring(L, it.key().toUtf8().constData());
+            pushJson(L, it.value());
+            lua_rawset(L, -3);
+        }
+    }
+    else
+        lua_pushnil(L);
+}
+
+LuaTransform::LuaTransform(const QByteArray &source, const QJsonObject &params, const QString &name)
+    : m_params(params)
+{
+    m_lua = luaL_newstate();
+    if (!m_lua)
+    {
+        m_error = QStringLiteral("Lua 状态创建失败");
+        return;
+    }
+    luaL_openlibs(m_lua);
+
+    // 加载用户源码。约定 transform(x, ctx) 函数；未提供则把源码当表达式。
+    // 先尝试原样加载（源码里定义 transform 函数）。
+    int st = luaL_loadbuffer(m_lua, source.constData(), source.size(), name.toUtf8().constData());
+    if (st == LUA_OK)
+        st = lua_pcall(m_lua, 0, 0, 0);
+    if (st != LUA_OK)
+    {
+        const char *e = lua_tostring(m_lua, -1);
+        m_error = e ? QString::fromUtf8(e) : QStringLiteral("Lua 编译失败");
+        lua_pop(m_lua, 1);
+        return;
+    }
+
+    // 判断是否有全局 transform 函数。
+    lua_getglobal(m_lua, "transform");
+    const bool hasFn = lua_isfunction(m_lua, -1);
+    lua_pop(m_lua, 1);
+
+    if (!hasFn)
+    {
+        // 把源码当表达式：构造 `transform = function(x, ctx) ... return (SRC) end`。
+        const QByteArray wrapped = "transform = function(x, ctx)\n  return (" + source + ")\nend";
+        st = luaL_loadbuffer(m_lua, wrapped.constData(), wrapped.size(), name.toUtf8().constData());
+        if (st == LUA_OK)
+            st = lua_pcall(m_lua, 0, 0, 0);
+        if (st != LUA_OK)
+        {
+            const char *e = lua_tostring(m_lua, -1);
+            m_error = e ? QString::fromUtf8(e) : QStringLiteral("Lua 表达式编译失败");
+            lua_pop(m_lua, 1);
+            return;
+        }
+    }
+}
+
+LuaTransform::~LuaTransform()
+{
+    if (m_lua)
+        lua_close(m_lua);
+}
+
+bool LuaTransform::eval(double x, double t, int index, double *out, QString *err) const
+{
+    if (!m_lua || !out)
+    {
+        if (err) *err = m_error.isEmpty() ? QStringLiteral("Lua 变换不可用") : m_error;
+        return false;
+    }
+    // 取 transform 函数。
+    lua_getglobal(m_lua, "transform");
+    if (!lua_isfunction(m_lua, -1))
+    {
+        lua_pop(m_lua, 1);
+        if (err) *err = QStringLiteral("未定义 transform 函数");
+        return false;
+    }
+    // 参数 1: x
+    lua_pushnumber(m_lua, x);
+    // 参数 2: ctx = { t=..., index=..., params=... }
+    lua_createtable(m_lua, 0, 3);
+    lua_pushnumber(m_lua, t);
+    lua_setfield(m_lua, -2, "t");
+    lua_pushinteger(m_lua, index);
+    lua_setfield(m_lua, -2, "index");
+    pushJson(m_lua, QJsonValue(m_params));
+    lua_setfield(m_lua, -2, "params");
+
+    const int st = lua_pcall(m_lua, 2, 1, 0);
+    if (st != LUA_OK)
+    {
+        const char *e = lua_tostring(m_lua, -1);
+        if (err) *err = e ? QString::fromUtf8(e) : QStringLiteral("Lua 变换运行失败");
+        lua_pop(m_lua, 1);
+        return false;
+    }
+    if (!lua_isnumber(m_lua, -1))
+    {
+        lua_pop(m_lua, 1);
+        if (err) *err = QStringLiteral("transform 未返回数值");
+        return false;
+    }
+    *out = lua_tonumber(m_lua, -1);
+    lua_pop(m_lua, 1);
+    return true;
+}
+
+bool LuaTransform::evalSeries(const QVector<double> &t, const QVector<double> &v,
+                              QVector<double> *out, QString *err) const
+{
+    if (!out)
+        return false;
+    out->resize(qMin(t.size(), v.size()));
+    for (int i = 0; i < out->size(); ++i)
+    {
+        double y = 0.0;
+        if (!eval(v.at(i), t.value(i), i, &y, err))
+            return false;
+        (*out)[i] = y;
+    }
+    return true;
 }
 
 } // namespace nextpilot::plotscope::script

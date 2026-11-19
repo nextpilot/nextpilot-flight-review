@@ -10,7 +10,7 @@ add_executable(plotscope-ng
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册，
 # 链接器不参与的 TU 不会执行其静态初始化。
 target_link_libraries(plotscope-ng PRIVATE
-    ng_module_data ng_module_plot ng_module_script ng_module_settings
+    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_core Qt6::Core)
 set_target_properties(plotscope-ng PROPERTIES AUTOMOC ON CXX_STANDARD 17)
