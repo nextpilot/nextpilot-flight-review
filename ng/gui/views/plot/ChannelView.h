@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IIntentExecutor.h"
 #include "PlotCanvas.h"
 
 #include <QObject>
@@ -9,7 +10,7 @@
 namespace nextpilot::plotscope::core
 {
 class AppContext;
-class IIntentExecutor;
+
 } // namespace nextpilot::plotscope::core
 
 namespace nextpilot::plotscope::gui

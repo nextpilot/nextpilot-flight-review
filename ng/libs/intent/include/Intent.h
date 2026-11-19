@@ -6,8 +6,11 @@
 #include <QString>
 #include <QVariantMap>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::intent
 {
+
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::foundation::fail;
 
 // 意图：GUI 点击与脚本调用的统一产物。
 struct Intent
@@ -46,4 +49,13 @@ private:
     QVector<Intent> m_intents;
 };
 
+} // namespace nextpilot::plotscope::intent
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using intent::Intent;
+using intent::IntentResult;
+using intent::IIntentHandler;
+using intent::Job;
 } // namespace nextpilot::plotscope::core
+

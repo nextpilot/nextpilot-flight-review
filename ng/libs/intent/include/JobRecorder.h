@@ -4,8 +4,11 @@
 
 #include <QVector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::intent
 {
+
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::foundation::fail;
 
 // 录制业务意图序列，产出可回放的 Job。不记录 script.run 本身。
 class JobRecorder
@@ -32,4 +35,10 @@ private:
     bool m_recording = false;
 };
 
+} // namespace nextpilot::plotscope::intent
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using intent::JobRecorder;
 } // namespace nextpilot::plotscope::core
+

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IIntentExecutor.h"
 #include "AppContext.h"
 #include "DataRepository.h"
 #include "SourceRegistry.h"
@@ -8,7 +9,7 @@
 
 namespace nextpilot::plotscope::core
 {
-class IIntentExecutor;
+
 } // namespace nextpilot::plotscope::core
 
 class QLabel;

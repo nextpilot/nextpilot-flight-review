@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IIntentExecutor.h"
 #include <QWidget>
 
 #include <QVector>
@@ -11,7 +12,7 @@ class QEvent;
 namespace nextpilot::plotscope::core
 {
 class AppContext;
-class IIntentExecutor;
+
 }
 
 namespace nextpilot::plotscope::gui

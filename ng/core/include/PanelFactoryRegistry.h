@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IIntentExecutor.h"
 #include <QHash>
 #include <QString>
 #include <QStringList>
@@ -12,7 +13,7 @@ namespace nextpilot::plotscope::core
 {
 
 class AppContext;
-class IIntentExecutor;
+
 
 // 部件工厂表：把"部件类型标识"映射到具体的 QWidget 构造过程。
 //

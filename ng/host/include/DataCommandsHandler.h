@@ -1,11 +1,12 @@
 #pragma once
 
+#include "IIntentExecutor.h"
 #include "Intent.h"
 
 namespace nextpilot::plotscope::core
 {
 class AppContext;
-class IIntentExecutor;
+
 } // namespace nextpilot::plotscope::core
 
 // 数据器官的"派生能力"：reload / export / recent / clearCache。

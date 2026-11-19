@@ -17,6 +17,7 @@
  * prepareParserOptions 是宿主侧的编排步骤（把 templatePath 展开成内嵌文本），不属于解析器实例。
  */
 
+#include "Intent.h"
 #include "ContributionKind.h"
 #include "DecodedFrame.h"
 #include "Domain.h"
@@ -45,7 +46,7 @@ enum class ParseOutput
 using MsgFrameSink = std::function<bool(const DecodedFrame &)>;
 using FrameBatchSink = std::function<bool(const QJsonObject &)>; // 一批数值的纯数据描述
 
-class Intent; // preferredTableName / prepareParserOptions 用，避免头重
+
 
 class IMessageParser : public IToolContribution
 {

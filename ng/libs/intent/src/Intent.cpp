@@ -3,8 +3,10 @@
 #include <QJsonArray>
 #include <QJsonValue>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::intent
 {
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::foundation::fail;
 
 void Job::append(Intent intent)
 {
@@ -55,4 +57,4 @@ Job Job::fromJson(const QJsonObject &obj, Result<void> *outError)
     return job;
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::intent
