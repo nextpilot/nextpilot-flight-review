@@ -52,6 +52,10 @@ set_target_properties(ng_gui_theme PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITIO
 add_library(ng_gui_transform OBJECT
     shell/TransformEditorDialog.cpp
     shell/TransformEditorDialog.h
+    shell/TransformField.cpp
+    shell/TransformField.h
+    shell/LuaEditor.cpp
+    shell/LuaEditor.h
 )
 target_include_directories(ng_gui_transform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shell)
 target_link_libraries(ng_gui_transform PUBLIC ng_core ng_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)

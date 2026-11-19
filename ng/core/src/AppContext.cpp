@@ -102,6 +102,11 @@ bool AppContext::evalTransform(const QJsonObject &request, uint32_t cap,
     return true;
 }
 
+void AppContext::registerTransformScriptOps(TransformScriptOps ops)
+{
+    m_transformScriptOps = std::move(ops);
+}
+
 void AppContext::registerViewAction(const QString &id, ViewActionHandler handler)
 {
     if (handler)

@@ -300,6 +300,10 @@ transformParamSpecs(const TransformDescriptor &descriptor)
         {
             spec.type = ParamType::Double;
             spec.defaultValue = p.defaultValue.toDouble();
+            // 变换系数可为负（取反、偏移）；给宽松范围，避免渲染器默认下限 0 截断。
+            spec.hasRange = true;
+            spec.min = -1e12;
+            spec.max = 1e12;
         }
         else
         {

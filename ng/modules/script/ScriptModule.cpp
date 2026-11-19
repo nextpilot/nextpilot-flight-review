@@ -9,6 +9,7 @@
 #include "TransformEvaluator.h"
 #include "AppContext.h"
 
+#include <QByteArray>
 #include <QFile>
 
 using namespace nextpilot::plotscope::core;
@@ -99,6 +100,24 @@ void ScriptModule::initialize(ModuleContext &ctx)
            const QVector<double> &t, const QVector<double> &v) {
             return nextpilot::plotscope::script::TransformEvaluator::evalSeries(request, cap, t, v);
         });
+
+    // Lua 脚本库：目录可用 NG_SCRIPTS_DIR 覆盖（部署/测试），默认 scripts/ops。
+    const QByteArray dirOverride = qgetenv("NG_SCRIPTS_DIR");
+    m_scriptLib.setOpsDir(dirOverride.isEmpty() ? QStringLiteral("scripts/ops")
+                                                 : QString::fromLocal8Bit(dirOverride.constData()));
+    m_scriptLib.loadAll();
+
+    TransformScriptOps ops;
+    ops.resolve = [this](const QString &scriptId, const QString &snapshot) {
+        return m_scriptLib.resolveSource(scriptId, snapshot);
+    };
+    ops.save = [this](const QString &name, const QByteArray &source) {
+        return m_scriptLib.save(name, source);
+    };
+    ops.describe = [this](const QByteArray &source, const QString &name) {
+        return m_scriptLib.describe(source, name);
+    };
+    ctx.app().registerTransformScriptOps(ops);
 }
 
 #include "ScriptModule.moc"

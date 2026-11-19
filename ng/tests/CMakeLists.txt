@@ -41,6 +41,14 @@ target_link_libraries(ng_test_lua_script_library PRIVATE
 set_target_properties(ng_test_lua_script_library PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_lua_script_library COMMAND ng_test_lua_script_library)
 
+# B8-b：TransformField 输入控件输出契约验收（offscreen GUI，链 gui_transform + core）。
+add_executable(ng_test_transform_field test_transform_field.cpp)
+target_link_libraries(ng_test_transform_field PRIVATE
+    ng_gui_transform ng_core ng_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(ng_test_transform_field PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_transform_field COMMAND ng_test_transform_field)
+set_tests_properties(ng_transform_field PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # === 协议逻辑资产（顺序段协议解码内核平移）===
 # 纯逻辑测试：只依赖 ng_protocol + Qt Core，headless。
 add_executable(ng_test_protocol test_protocol.cpp)

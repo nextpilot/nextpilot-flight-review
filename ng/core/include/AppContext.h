@@ -157,6 +157,12 @@ public:
                        const QVector<double> &t, const QVector<double> &v,
                        Result<QVector<double>> &out) const;
 
+    // === Lua 脚本库能力（script 模块注入）===
+    // GUI 的 LuaEditor 保存脚本、解析源码都走这里，不反向依赖 script 模块。
+    void registerTransformScriptOps(TransformScriptOps ops);
+    bool hasTransformScriptOps() const { return m_transformScriptOps.valid(); }
+    const TransformScriptOps &transformScriptOps() const { return m_transformScriptOps; }
+
     // === 视图动作登记与派发 ===
     //
     // 有些动作只能由具体部件完成（导出当前画布、切换图例、复原视图状态），
@@ -192,6 +198,7 @@ private:
     QHash<int, PropertyProvider> m_propertyProviders; // 按 SelectionKind 索引的属性提供者
     QHash<int, PropertySetter> m_propertySetters;     // 按 SelectionKind 索引的属性写入器
     TransformEvalFn m_transformEvaluator; // 统一变换求值（script 模块注入）
+    TransformScriptOps m_transformScriptOps; // Lua 脚本库能力（script 模块注入）
     Selection m_selection;       // 当前统一选中对象
 
     int m_activeSourceId = -1;   // 数据源 id（SourceRegistry 键）

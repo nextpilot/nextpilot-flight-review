@@ -1,7 +1,9 @@
 #pragma once
 
 #include "ParamSpec.h"
+#include "Result.h"
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -93,6 +95,21 @@ struct TransformRequest
 
     QJsonObject toJson() const;
     static TransformRequest fromJson(const QJsonObject &obj);
+};
+
+// 脚本库能力：GUI 不依赖 script 模块，由 script 模块经 AppContext 注入这组回调。
+// 只用 Qt/core 类型，保持无 script 依赖、headless 可测。
+struct TransformScriptOps
+{
+    using ResolveFn = std::function<QByteArray(const QString &scriptId, const QString &snapshot)>;
+    using SaveFn = std::function<Result<TransformDescriptor>(const QString &name, const QByteArray &source)>;
+    using DescribeFn = std::function<Result<TransformDescriptor>(const QByteArray &source, const QString &name)>;
+
+    ResolveFn resolve;  // 文件源码优先、快照兜底
+    SaveFn save;        // 写 scripts/ops/<name>.lua 并注册
+    DescribeFn describe; // 只解析 describe()，不落盘
+
+    bool valid() const { return static_cast<bool>(resolve) && static_cast<bool>(save) && static_cast<bool>(describe); }
 };
 
 // Transform 注册表：纯数据，headless 可见。内置项在 core 静态构造时注册；
