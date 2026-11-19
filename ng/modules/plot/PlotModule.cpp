@@ -440,6 +440,7 @@ void PlotModule::onAttach(UiContext &ui)
     // 图标名：外壳据此从资源里取 QIcon。图标名是**描述**，
     // 具体资源由外壳管理——模块不直接依赖 GUI 资源。
     action.icon = QStringLiteral("plot_refresh");
+    action.order = 0;
     ui.addAction(action);
 
     // 导出 / 图例：处理器由画布视图登记到 AppContext，外壳按 id 派发。
@@ -448,6 +449,7 @@ void PlotModule::onAttach(UiContext &ui)
     exportPng.label = QStringLiteral("导出 PNG");
     exportPng.area = QStringLiteral("ribbon.group.plot.action");
     exportPng.intentOp = QStringLiteral("plot.export.png");
+    exportPng.order = 1;
     ui.addAction(exportPng);
 
     UiAction exportCsv;
@@ -455,13 +457,15 @@ void PlotModule::onAttach(UiContext &ui)
     exportCsv.label = QStringLiteral("导出 CSV");
     exportCsv.area = QStringLiteral("ribbon.group.plot.action");
     exportCsv.intentOp = QStringLiteral("plot.export.csv");
+    exportCsv.order = 2;
     ui.addAction(exportCsv);
 
     UiAction legend;
-    legend.id = QStringLiteral("plot.legend.toggle");
+    legend.id = QStringLiteral("plot.action.legend");
     legend.label = QStringLiteral("图例");
     legend.area = QStringLiteral("ribbon.group.plot.action");
     legend.intentOp = QStringLiteral("plot.legend.toggle");
+    legend.order = 3;
     ui.addAction(legend);
 }
 

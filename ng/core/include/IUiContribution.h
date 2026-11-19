@@ -37,6 +37,10 @@ struct UiAction
     // 由外壳建 QAction 时 setShortcut，于是快捷键与按钮/图库项触发同一个 action id、
     // 走同一条意图路径；headless 也能读到声明，随知识包装卸一起消失。
     QString shortcut;
+    // 组内排序权重（默认 0，越小越靠前）。老代码 RibbonContribution 用 panel 数组顺序
+    // + items 数组顺序钉死 UI 顺序；ng 用 order 字段表达同样的意图，让顺序可控、
+    // 与模块装载顺序解耦。比较时先比 order，再比 id 保证稳定（同 order 按 id 字典序）。
+    int order = 0;
 };
 
 // 界面贡献：一个知识包向 app 骨架贡献的菜单/面板/工具栏/画布工具入口集合。

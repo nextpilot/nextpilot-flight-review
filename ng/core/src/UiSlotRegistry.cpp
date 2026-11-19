@@ -79,6 +79,14 @@ QList<UiSlot> UiSlotRegistry::slotsOfKind(SlotKind kind) const
     for (const UiSlot &s : m_slots)
         if (s.kind == kind)
             out.append(s);
+    // 页签顺序按 order 显式可控（老代码 RibbonContribution.order），
+    // 同权重按 label 稳定排列，与声明/装载顺序解耦。
+    std::stable_sort(out.begin(), out.end(),
+                     [](const UiSlot &a, const UiSlot &b) {
+                         if (a.order != b.order)
+                             return a.order < b.order;
+                         return a.label < b.label;
+                     });
     return out;
 }
 
@@ -105,6 +113,15 @@ QList<BoundUiAction> UiSlotRegistry::actionsIn(const QString &area) const
 {
     QList<BoundUiAction> out = m_bound.value(area, {});
     out += m_local.value(area, {});
+    // 组内动作顺序：先按 order 升序，同权重按 id 字典序，保证与模块/工具箱装载
+    // 顺序完全解耦（老代码靠 panel.items 数组顺序，ng 用 order 表达同一意图）。
+    // gallery 的分组出现顺序由 ShellBinder 按这里返回的动作顺序聚合，因此也稳定。
+    std::stable_sort(out.begin(), out.end(),
+                     [](const BoundUiAction &a, const BoundUiAction &b) {
+                         if (a.action.order != b.action.order)
+                             return a.action.order < b.action.order;
+                         return a.action.id < b.action.id;
+                     });
     return out;
 }
 

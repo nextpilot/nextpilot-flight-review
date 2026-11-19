@@ -967,6 +967,21 @@ script.run
 - 契约测试钉死：12 图型分 4 组、格式驱动进来源库、打开数据 `Ctrl+O`、双轴 round-trip、
   图型切换路由——全部 headless 可读，不依赖起 GUI。
 
+### 11.1.2 UI 顺序对齐老代码：order 显式化（本轮）
+
+老代码靠 `RibbonContribution.order` + panel/items **数组顺序**钉死 UI 排布；ng 若靠绑定先后
+（工具箱来源在前、骨架来源在后）则顺序随模块装载顺序漂移。本轮把顺序变成纯数据契约：
+
+- **`UiSlot.order`**：`slotsOfKind(RibbonPage)` 按 (order,label) 排 → 8 页顺序固定；
+  `childrenOf(page)` 按 group.order 排 → 同页面板左右顺序固定（抄老 panel 数组顺序）。
+- **`UiAction.order`**：`actionsIn(area)` 按 (order,id) 稳定排 → 组内按钮顺序、gallery 分类
+  出现顺序都固定。`ShellBinder` 按 `actionsIn` 返回顺序聚合 `galleryOrder`，于是图库分类
+  顺序也随 order 可控（gallery 用十位=分类、个位=组内序的全局编号）。
+- 意义：顺序与装载/注册顺序彻底解耦；headless 可断言（test_gui 2a-4 段钉死页顺序、
+  绘图页 7 组顺序、分组归属、组内升序、gallery 分类顺序），GUI 表现即可复现。
+- 反例：靠 `QList::append` 先后决定顺序——插件加载顺序一变，按钮位置就跳；老代码用数组顺序
+  规避这点，ng 用 order 字段达到同样效果且不写死在 shell。
+
 **protocol（纯逻辑库 + SPI 解析器 + 薄编辑器）**
 - 老 `protocol` 约 5342 行，可搬的是 `ProtocolDocument` / `ProtocolSpec` /
   `SequentialCodec` 约 2407 行纯逻辑；老 1749 行 `ProtocolEditorDialog` 是胖 UI，不搬。

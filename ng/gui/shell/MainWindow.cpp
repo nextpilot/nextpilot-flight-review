@@ -93,7 +93,8 @@ void MainWindow::declareStandardSlots()
     // 骨架级能力（data.load/主题等系统级意图）由骨架声明；module 级入口由各 module 声明。
     auto addSkeleton = [&slotReg](const QString &id, const QString &label,
                                   const QString &area, const QString &op,
-                                  const QString &icon, const QString &shortcut = QString()) {
+                                  const QString &icon, const QString &shortcut = QString(),
+                                  int order = 0) {
         UiAction a;
         a.id = id;
         a.label = label;
@@ -101,6 +102,7 @@ void MainWindow::declareStandardSlots()
         a.intentOp = op;
         a.icon = icon;
         a.shortcut = shortcut;
+        a.order = order;
         slotReg.bindLocal(area, a, QStringLiteral("app.skeleton"));
     };
 
@@ -108,114 +110,115 @@ void MainWindow::declareStandardSlots()
     addSkeleton(QStringLiteral("app.action.openData"), QStringLiteral("打开数据"),
                 QStringLiteral("ribbon.group.home.data"), QStringLiteral("data.load"),
                 QStringLiteral("file_open"), QStringLiteral("Ctrl+O")); // 抄老 file.open
-    // 文件页也放一个"打开文件"（同一意图，抄老 file 页）。
+    // 文件页也放一个"打开文件"（同一意图，抄老 file 页"文件"组第一个）。
     addSkeleton(QStringLiteral("file.open"), QStringLiteral("打开文件"),
                 QStringLiteral("ribbon.group.file.document"), QStringLiteral("data.load"),
-                QStringLiteral("file_open"), QStringLiteral("Ctrl+O"));
+                QStringLiteral("file_open"), QStringLiteral("Ctrl+O"), 0);
 
     // "协议检查器"：消费 IMessageParser 自述逐帧看字段，按 id 特判弹窗 → 协议页"检查"组。
     addSkeleton(QStringLiteral("app.action.protocolInspector"), QStringLiteral("协议检查器"),
                 QStringLiteral("ribbon.group.protocol.debug"), QString(),
-                QStringLiteral("file_open"));
+                QStringLiteral("file_open"), QString(), 0);
     // "协议编辑器"：创建/编辑/校验 .psproto，按 id 特判弹窗 → 协议页"编辑器"组。
     addSkeleton(QStringLiteral("app.action.protocolEditor"), QStringLiteral("协议编辑器"),
                 QStringLiteral("ribbon.group.protocol.editor"), QString(),
-                QStringLiteral("file_open"));
+                QStringLiteral("file_open"), QString(), 0);
 
     // "切换主题"：GUI 展示态，声明 intentOp=theme.toggle → 视图页"外观"组。
     addSkeleton(QStringLiteral("app.action.toggleTheme"), QStringLiteral("切换主题"),
                 QStringLiteral("ribbon.group.view.appearance"), QStringLiteral("theme.toggle"),
-                QStringLiteral("theme_toggle"), QStringLiteral("Ctrl+T"));
+                QStringLiteral("theme_toggle"), QStringLiteral("Ctrl+T"), 0);
 
-    // --- 文件页：布局导入/保存、导出设置/数据、截图、关于 ---
-    // 这些是骨架级 GUI 能力，用 intentOp 走意图层或按 id 特判。
+    // --- 文件页：抄老 ShellComponent 的四个组 + 组内顺序 ---
+    // 文件组：打开(0) / 导入布局(1) / 设置(2)
     addSkeleton(QStringLiteral("file.importLayout"), QStringLiteral("导入布局"),
                 QStringLiteral("ribbon.group.file.document"), QStringLiteral("layout.import"),
-                QStringLiteral("file_open"));
-    addSkeleton(QStringLiteral("file.saveLayout"), QStringLiteral("保存布局"),
-                QStringLiteral("ribbon.group.file.document"), QStringLiteral("layout.save"),
-                QStringLiteral("file_save"), QStringLiteral("Ctrl+S"));
+                QStringLiteral("import"), QString(), 1);
     addSkeleton(QStringLiteral("file.settings"), QStringLiteral("设置"),
                 QStringLiteral("ribbon.group.file.document"), QStringLiteral("settings.flush"),
-                QStringLiteral("settings"), QStringLiteral("Ctrl+,"));
+                QStringLiteral("settings"), QStringLiteral("Ctrl+,"), 2);
+    // 导出组：保存布局(0) / 导出设置(1) / 导出数据(2)
+    addSkeleton(QStringLiteral("file.saveLayout"), QStringLiteral("保存布局"),
+                QStringLiteral("ribbon.group.file.export"), QStringLiteral("layout.save"),
+                QStringLiteral("export"), QStringLiteral("Ctrl+S"), 0);
+    addSkeleton(QStringLiteral("file.exportSettings"), QStringLiteral("导出设置"),
+                QStringLiteral("ribbon.group.file.export"), QStringLiteral("settings.export"),
+                QStringLiteral("export_cfg"), QString(), 1);
     addSkeleton(QStringLiteral("file.exportData"), QStringLiteral("导出数据"),
                 QStringLiteral("ribbon.group.file.export"), QStringLiteral("data.export"),
-                QStringLiteral("export_data"));
+                QStringLiteral("export"), QString(), 2);
+    // 截图组（老设计独立一组）：截图(0)
     addSkeleton(QStringLiteral("file.screenshot"), QStringLiteral("截图"),
-                QStringLiteral("ribbon.group.file.export"), QStringLiteral("file.screenshot"),
-                QStringLiteral("camera"));
+                QStringLiteral("ribbon.group.file.screenshot"), QStringLiteral("file.screenshot"),
+                QStringLiteral("screenshot"), QString(), 0);
+    // 帮助组：关于(0)
     addSkeleton(QStringLiteral("help.about"), QStringLiteral("关于"),
                 QStringLiteral("ribbon.group.file.help"), QStringLiteral("help.about"),
-                QStringLiteral("info"));
+                QStringLiteral("settings"), QString(), 0);
+
+    // --- 数据页"常用"组前两项（抄老 DataSourceRibbon）：快速打开 / 最近 ---
+    // 快速打开与"打开数据"同为 data.load（走同一对话框/意图），最近走 data.recent。
+    // 其余 重载/导出/清缓存 由 DataModule 贡献（order 10+）。
+    addSkeleton(QStringLiteral("data.action.quickOpen"), QStringLiteral("快速打开"),
+                QStringLiteral("ribbon.group.data.common"), QStringLiteral("data.load"),
+                QStringLiteral("open"), QString(), 0);
+    addSkeleton(QStringLiteral("data.action.recent"), QStringLiteral("最近"),
+                QStringLiteral("ribbon.group.data.common"), QStringLiteral("data.recent"),
+                QStringLiteral("history"), QString(), 1);
+    // 数据页"调试"组（老 DataSourceRibbon 的 protocol.inspect）：复用协议检查器特判。
+    addSkeleton(QStringLiteral("app.action.protocolInspector"), QStringLiteral("协议检查"),
+                QStringLiteral("ribbon.group.data.debug"), QString(),
+                QStringLiteral("datasource"), QString(), 0);
 
     // --- 脚本页：运行脚本（选 .lua/.py 文件 → script.run 意图，抄老 CLI 路径）---
     addSkeleton(QStringLiteral("app.action.runScript"), QStringLiteral("运行脚本"),
                 QStringLiteral("ribbon.group.script.run"), QStringLiteral("script.run"),
-                QStringLiteral("play"), QStringLiteral("Ctrl+F5"));
+                QStringLiteral("play"), QStringLiteral("Ctrl+F5"), 0);
 
-    // --- 视图页：面板开关（抄老 view.toggleDock，每条 dock 一个按钮）---
+    // --- 视图页：面板开关（抄老 view.toggleDock，按 dock 顺序 left/right/bottom）---
     addSkeleton(QStringLiteral("view.toggleDock.left"), QStringLiteral("数据集"),
-                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"));
+                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"),
+                QString(), 0);
     addSkeleton(QStringLiteral("view.toggleDock.right"), QStringLiteral("属性"),
-                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"));
+                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"),
+                QString(), 1);
     addSkeleton(QStringLiteral("view.toggleDock.bottom"), QStringLiteral("日志"),
-                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"));
+                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"),
+                QString(), 2);
 
-    // --- 页面/画布操作（抄老 PlottingRibbon 页面面板的体验）---
+    // --- 绘图页四组：抄老 PlottingModule 的面板划分与顺序 ---
     // 走 view action，由 CanvasWorkspace 集中处理（多画布/网格）。intentOp 留空：
     // dispatcher 先按 action id 查 view action，命中即执行，与脚本同路径。
-    const QString pageArea = QStringLiteral("ribbon.group.plot.page");
-    struct PageDef { const char *id; const char *label; const char *icon; };
-    static const PageDef kPages[] = {
-        {"page.addCanvas", "添加画布", "plus"},
-        {"page.removeCanvas", "删除画布", "trash"},
-        {"page.splitHorizontal", "左右拆分", "split_h"},
-        {"page.splitVertical", "上下拆分", "split_v"},
+    struct PlotToolDef { const char *area; const char *id; const char *label; const char *icon;
+                         int order; const char *data; };
+    static const PlotToolDef kPlotTools[] = {
+        // 页面组（老 buildPagePanel）：新建页
+        {"ribbon.group.plot.page",   "page.new",            "新建页",  "newpage", 0, ""},
+        // 布局组（老 buildLayoutPicker）：网格 + 添加/删除/左右/上下
+        {"ribbon.group.plot.layout", "page.grid",           "网格",    "grid",    0, "{\"rows\":2,\"cols\":1}"},
+        {"ribbon.group.plot.layout", "page.addCanvas",      "添加",    "plus",    1, ""},
+        {"ribbon.group.plot.layout", "page.removeCanvas",   "删除",    "trash",   2, ""},
+        {"ribbon.group.plot.layout", "page.splitHorizontal","左右",   "split_h", 3, ""},
+        {"ribbon.group.plot.layout", "page.splitVertical",  "上下",    "split_v", 4, ""},
+        // 显示组（老 buildDisplayPanel）：网格线 / 图例（边框 ng 无对应能力，不造空按钮）
+        {"ribbon.group.plot.display","plot.grid",           "网格",    "grid",    0, ""},
+        {"ribbon.group.plot.display","plot.legend.toggle",  "图例",    "legend",  1, ""},
+        // 画布操作组（老 buildPanelsToolbar）：放大 / 缩小 / 自适应
+        // （"移动"是工具模式开关，ng 无 pan 工具 view action，不造空按钮）
+        {"ribbon.group.plot.tool",   "plot.zoom",           "放大",    "zoom_in", 0, "{\"factor\":0.5}"},
+        {"ribbon.group.plot.tool",   "plot.zoom",           "缩小",    "zoom_out",1, "{\"factor\":2.0}"},
+        {"ribbon.group.plot.tool",   "plot.autoscale",      "自适应",  "fit",     2, ""},
     };
-    for (const PageDef &d : kPages)
+    for (const PlotToolDef &d : kPlotTools)
     {
         UiAction a;
         a.id = QString::fromLatin1(d.id);
         a.label = QString::fromUtf8(d.label);
-        a.area = pageArea;
+        a.area = QString::fromLatin1(d.area);
         a.icon = QString::fromLatin1(d.icon);
-        slotReg.bindLocal(pageArea, a, QStringLiteral("app.skeleton"));
-    }
-
-    // --- 绘图页"显示"组：网格/图例/自适应（view action，带默认参数）---
-    const QString displayArea = QStringLiteral("ribbon.group.plot.display");
-    struct ToolDef { const char *id; const char *label; const char *icon; };
-    static const ToolDef kDisplay[] = {
-        {"plot.grid", "网格", "grid"},
-        {"plot.legend.toggle", "图例", "legend"},
-        {"plot.autoscale", "自适应", "fit"},
-    };
-    for (const ToolDef &d : kDisplay)
-    {
-        UiAction a;
-        a.id = QString::fromLatin1(d.id);
-        a.label = QString::fromUtf8(d.label);
-        a.area = displayArea;
-        a.icon = QString::fromLatin1(d.icon);
-        slotReg.bindLocal(displayArea, a, QStringLiteral("app.skeleton"));
-    }
-
-    // --- 绘图页"画布操作"组：放大/缩小（view action，factor 用默认值）---
-    const QString toolArea = QStringLiteral("ribbon.group.plot.tool");
-    static const ToolDef kTools[] = {
-        {"plot.zoom", "放大", "zoom_in"},
-    };
-    for (const ToolDef &d : kTools)
-    {
-        UiAction a;
-        a.id = QString::fromLatin1(d.id);
-        a.label = QString::fromUtf8(d.label);
-        a.area = toolArea;
-        a.icon = QString::fromLatin1(d.icon);
-        // 放大按钮用 factor=0.5（默认），平移是模式开关——分别为它们带 data。
-        if (QString::fromLatin1(d.id) == QStringLiteral("plot.zoom"))
-            a.data = QStringLiteral("{\"factor\":0.5}");
-        slotReg.bindLocal(toolArea, a, QStringLiteral("app.skeleton"));
+        a.data = QString::fromLatin1(d.data);
+        a.order = d.order;
+        slotReg.bindLocal(a.area, a, QStringLiteral("app.skeleton"));
     }
 
     // --- 图型库（抄老 PlottingRibbon::buildPlotGallery 的体验）---
@@ -223,15 +226,26 @@ void MainWindow::declareStandardSlots()
     // 点击走 view action "plot.setType"（int/dispatcher 里路由），
     // 与脚本/回放同一语义。缩略图由 visual 字段交给 GUI 层绘制。
     const QString plotArea = QStringLiteral("ribbon.group.plot.type");
-    struct PlotDef { const char *kind; const char *label; const char *group; };
+    // 分类与组内顺序抄老 buildPlotGallery：常用=时间序列/XY/散点/3D轨迹/GPS，
+    // 曲线=柱状/直方/频谱，地图/3D=3D曲面，仪表=地平仪/罗盘/表盘。
+    // 老代码把 timeseries/xy/scatter/traj3d/map 同时放进"常用"与各自分类；
+    // ng 一项只能归属一个 galleryGroup，故按主分类去重，共 12 项。
+    struct PlotDef { const char *kind; const char *label; const char *group; int order; };
+    // order 是全局序：十位=分类（常用0x/曲线1x/地图2x/仪表3x），个位=组内序。
+    // 这样 actionsIn 按 order 排序后，gallery 分类出现顺序与组内顺序都正确。
     static const PlotDef kPlots[] = {
-        {"timeseries", "时间序列", "常用"}, {"xy", "XY 曲线", "常用"},
-        {"scatter", "散点图", "常用"},       {"gauge", "仪表盘", "常用"},
-        {"bar", "柱状图", "曲线"},           {"histogram", "直方图", "曲线"},
-        {"fft", "频谱 FFT", "曲线"},
-        {"traj3d", "3D 轨迹", "地图 / 3D"},  {"map", "GPS 地图", "地图 / 3D"},
-        {"surface3d", "3D 曲面", "地图 / 3D"},
-        {"horizon", "地平仪", "仪表"},       {"compass", "罗盘", "仪表"},
+        {"timeseries", "时间序列", "常用",      0},
+        {"xy",         "XY 曲线",  "常用",      1},
+        {"scatter",    "散点图",   "常用",      2},
+        {"traj3d",     "3D 轨迹",  "常用",      3},
+        {"map",        "GPS 地图", "常用",      4},
+        {"bar",        "柱状图",   "曲线",     10},
+        {"histogram",  "直方图",   "曲线",     11},
+        {"fft",        "频谱 FFT", "曲线",     12},
+        {"surface3d",  "3D 曲面",  "地图 / 3D",20},
+        {"horizon",    "地平仪",   "仪表",     30},
+        {"compass",    "罗盘",     "仪表",     31},
+        {"gauge",      "仪表盘",   "仪表",     32},
     };
     for (const PlotDef &d : kPlots)
     {
@@ -244,6 +258,7 @@ void MainWindow::declareStandardSlots()
         a.visual = kind;
         a.galleryGroup = QString::fromUtf8(d.group);
         a.data = kind; // 图型种类随动作携带，dispatcher 转成 view action 参数
+        a.order = d.order;
         slotReg.bindLocal(plotArea, a, QStringLiteral("app.skeleton"));
     }
 
@@ -251,6 +266,9 @@ void MainWindow::declareStandardSlots()
     // 由工具箱里已注册的格式驱动动态生成：每个驱动一项，放"文件格式"组；
     // 实时源放"实时源"组。点击走 data.source.<id> → 按该格式直接弹文件对话框。
     const QString srcArea = QStringLiteral("ribbon.group.data.sources");
+    // gallery 分组出现顺序按动作 order 聚合：常用(0..3) 必须排在文件格式(100+) 之前，
+    // 抄老 DataSourceRibbon 的 addCategoryActions("常用")→("文件格式")→("实时源") 顺序。
+    int fmtOrder = 100;
     for (nextpilot::plotscope::core::IToolContribution *c : m_appCtx.toolbox().contributions(
              nextpilot::plotscope::core::ContributionKind::Format))
     {
@@ -264,6 +282,7 @@ void MainWindow::declareStandardSlots()
         a.visual = driver->id();
         a.galleryGroup = QStringLiteral("文件格式");
         a.icon = QStringLiteral("file_open");
+        a.order = fmtOrder++;
         slotReg.bindLocal(srcArea, a, QStringLiteral("app.skeleton"));
     }
     // 常用组：把前四个格式驱动也放进去（抄老代码"常用 = 前 4 个加载器"）。
@@ -273,7 +292,7 @@ void MainWindow::declareStandardSlots()
                  nextpilot::plotscope::core::ContributionKind::Format))
         {
             auto *driver = dynamic_cast<nextpilot::plotscope::core::IFormatDriver *>(c);
-            if (!driver || n++ >= 4)
+            if (!driver || n >= 4)
                 continue;
             UiAction a;
             a.id = QStringLiteral("data.source.common.") + driver->id();
@@ -282,7 +301,9 @@ void MainWindow::declareStandardSlots()
             a.visual = driver->id();
             a.galleryGroup = QStringLiteral("常用");
             a.icon = QStringLiteral("file_open");
+            a.order = n;
             slotReg.bindLocal(srcArea, a, QStringLiteral("app.skeleton"));
+            ++n;
         }
     }
 }
@@ -397,6 +418,26 @@ void MainWindow::build(ModuleHost &host)
                 QStringLiteral("PNG 图片 (*.png)"));
             if (!path.isEmpty())
                 grab().save(path);
+            return;
+        }
+        // 导出设置：把当前 SettingsStore 的键值导出为 JSON（抄老 file.exportSettings）。
+        if (actionId == QStringLiteral("file.exportSettings"))
+        {
+            const QString path = QFileDialog::getSaveFileName(
+                this, QStringLiteral("导出设置"), QStringLiteral("plotscope-settings.json"),
+                QStringLiteral("JSON (*.json)"));
+            if (path.isEmpty())
+                return;
+            QJsonObject root;
+            const QStringList keys = m_appCtx.settings().keys();
+            for (const QString &k : keys)
+                root.insert(k, QJsonValue::fromVariant(m_appCtx.settings().value(k)));
+            QFile f(path);
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)
+                && f.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) > 0)
+                statusBar()->showMessage(QStringLiteral("设置已导出: %1").arg(QFileInfo(path).fileName()));
+            else
+                statusBar()->showMessage(QStringLiteral("导出设置失败"));
             return;
         }
         // 关于：版本与用途说明（抄老 help.about）。

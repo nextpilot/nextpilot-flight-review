@@ -736,6 +736,14 @@ void CanvasWorkspace::registerViewActions()
                                                     {QStringLiteral("cols"), m_cols}};
                                     return QVariant(out);
                                 });
+    // 老 PlottingRibbon"页面"组的"新建页"：ng 用多画布工作区承载页概念，
+    // 新建页 = 重置为单个空画布（真实能力，非占位）。
+    m_appCtx.registerViewAction(QStringLiteral("page.new"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    if (!setGrid(1, 1))
+                                        return fail(QStringLiteral("epage"), QStringLiteral("新建页失败"));
+                                    return QVariant(true);
+                                });
     m_appCtx.registerViewAction(QStringLiteral("page.state"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},

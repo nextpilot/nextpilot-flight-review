@@ -115,8 +115,9 @@ void AnalysisModule::onAttach(UiContext &ui)
     // 分析页"应用库"gallery：抄老 AnalysisRibbon 的"全部/最近/收藏"分组体验。
     // 当前内置一个可用的 default 应用；领域应用由扩展注册后也能往这个 area 加项。
     const QString area = QStringLiteral("ribbon.group.analysis.apps");
+    // gallery 分组出现顺序抄老 AnalysisRibbon：全部应用(0..) → 最近使用(100+) → 收藏(200+)。
     auto entry = [&ui, &area](const QString &id, const QString &label,
-                              const QString &app, const QString &group) {
+                              const QString &app, const QString &group, int order) {
         UiAction a;
         a.id = id;
         a.label = label;
@@ -126,19 +127,20 @@ void AnalysisModule::onAttach(UiContext &ui)
         a.icon = QStringLiteral("chart");
         a.visual = QStringLiteral("timeseries");
         a.galleryGroup = group;
+        a.order = order;
         ui.addAction(a);
     };
 
     // "全部应用"组：默认曲线（真实可用）+ 两个领域应用占位（点了给出诚实提示）。
     entry(QStringLiteral("analysis.app.default"), QStringLiteral("默认曲线"),
-          QStringLiteral("default"), QStringLiteral("全部应用"));
+          QStringLiteral("default"), QStringLiteral("全部应用"), 0);
     entry(QStringLiteral("analysis.app.report"), QStringLiteral("分析报告"),
-          QStringLiteral("autopilot.review.report"), QStringLiteral("全部应用"));
+          QStringLiteral("autopilot.review.report"), QStringLiteral("全部应用"), 1);
     entry(QStringLiteral("analysis.app.review"), QStringLiteral("飞控复盘"),
-          QStringLiteral("autopilot.review.app"), QStringLiteral("全部应用"));
+          QStringLiteral("autopilot.review.app"), QStringLiteral("全部应用"), 2);
     // "最近使用"组：默认曲线（抄老代码把 default 作为默认最近项）。
     entry(QStringLiteral("analysis.app.recent.default"), QStringLiteral("默认曲线"),
-          QStringLiteral("default"), QStringLiteral("最近使用"));
+          QStringLiteral("default"), QStringLiteral("最近使用"), 100);
 }
 
 #include "AnalysisModule.moc"

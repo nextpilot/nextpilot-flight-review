@@ -171,6 +171,70 @@ int main(int argc, char *argv[])
         OK("快捷键作为动作属性：打开数据声明 Ctrl+O");
     }
 
+    // --- 2a-4) Ribbon 页顺序 + 分组归属 + action 顺序，抄老设计 ---
+    {
+        // 页顺序：slotsOfKind 现在按 order 升序，而不是声明顺序。
+        const auto pages = slotReg.slotsOfKind(SlotKind::RibbonPage);
+        CHECK(pages.size() == 8);
+        const QStringList expectPages = {QStringLiteral("开始"), QStringLiteral("文件"),
+            QStringLiteral("数据"), QStringLiteral("绘图"), QStringLiteral("脚本"),
+            QStringLiteral("协议"), QStringLiteral("分析"), QStringLiteral("视图")};
+        for (int i = 0; i < pages.size(); ++i)
+            CHECK(pages.at(i).label == expectPages.at(i));
+        // 组顺序：同页内按 group.order 升序（老设计 panel 数组顺序）。
+        const auto plotGroups = slotReg.childrenOf(QStringLiteral("ribbon.page.plot"));
+        const QStringList expectGroups = {QStringLiteral("页面"), QStringLiteral("布局"),
+            QStringLiteral("显示"), QStringLiteral("画布操作"), QStringLiteral("图表类型"),
+            QStringLiteral("曲线与轴"), QStringLiteral("操作")};
+        CHECK(plotGroups.size() == expectGroups.size());
+        for (int i = 0; i < plotGroups.size(); ++i)
+            CHECK(plotGroups.at(i).label == expectGroups.at(i));
+        OK("Ribbon 页/组顺序：slotsOfKind/childrenOf 按 order 升序，抄老设计面板顺序");
+    }
+    {
+        // 分组归属抄老 PlottingModule：页面=新建页 / 布局=增删拆分 / 显示=网格图例 / 画布操作=缩放自适应。
+        const auto idsIn = [&slotReg](const QString &area) {
+            QStringList ids;
+            for (const auto &b : slotReg.actionsIn(area))
+                ids << b.action.id;
+            return ids;
+        };
+        CHECK(idsIn(QStringLiteral("ribbon.group.plot.page")).contains(QStringLiteral("page.new")));
+        const auto layoutIds = idsIn(QStringLiteral("ribbon.group.plot.layout"));
+        CHECK(layoutIds.contains(QStringLiteral("page.grid")));
+        CHECK(layoutIds.contains(QStringLiteral("page.addCanvas")));
+        CHECK(layoutIds.contains(QStringLiteral("page.splitHorizontal")));
+        const auto displayIds = idsIn(QStringLiteral("ribbon.group.plot.display"));
+        CHECK(displayIds.contains(QStringLiteral("plot.grid")));
+        CHECK(displayIds.contains(QStringLiteral("plot.legend.toggle")));
+        CHECK(!displayIds.contains(QStringLiteral("plot.autoscale"))); // 自适应归画布操作组
+        const auto toolIds = idsIn(QStringLiteral("ribbon.group.plot.tool"));
+        CHECK(toolIds.contains(QStringLiteral("plot.autoscale")));
+        // 文件页：老设计"截图"是独立一组，不再塞在"导出"组。
+        CHECK(slotReg.slot(QStringLiteral("ribbon.group.file.screenshot")) != nullptr);
+        CHECK(idsIn(QStringLiteral("ribbon.group.file.screenshot")).contains(QStringLiteral("file.screenshot")));
+        CHECK(!idsIn(QStringLiteral("ribbon.group.file.export")).contains(QStringLiteral("file.screenshot")));
+        OK("分组归属抄老设计：页面/布局/显示/画布操作 + 独立截图组");
+    }
+    {
+        // action 组内顺序按 order 升序（不再依赖模块装载顺序）。
+        const auto layout = slotReg.actionsIn(QStringLiteral("ribbon.group.plot.layout"));
+        for (int i = 1; i < layout.size(); ++i)
+            CHECK(layout.at(i - 1).action.order <= layout.at(i).action.order);
+        // 老布局组首项是"网格"（page.grid, order 0）。
+        CHECK(!layout.isEmpty());
+        CHECK(layout.first().action.id == QStringLiteral("page.grid"));
+        // gallery 分类出现顺序：plot 类型 = 常用→曲线→地图/3D→仪表。
+        const auto plots = slotReg.actionsIn(QStringLiteral("ribbon.group.plot.type"));
+        QStringList catOrder;
+        for (const auto &b : plots)
+            if (!catOrder.contains(b.action.galleryGroup))
+                catOrder << b.action.galleryGroup;
+        CHECK(catOrder == (QStringList{QStringLiteral("常用"), QStringLiteral("曲线"),
+                                       QStringLiteral("地图 / 3D"), QStringLiteral("仪表")}));
+        OK("action 顺序可控：组内按 order 升序，gallery 分类按老设计顺序");
+    }
+
     // --- 2b) 点击链路端到端：按钮发的是 intentOp，不是把 id 当 op ---
     // 回归点：UiAction 有 id（data.action.reload）与 intentOp（data.reload）两个字段。
     // 曾把 id 当 op 发出，导致除 openData（被外壳特判）外所有按钮点击都报
