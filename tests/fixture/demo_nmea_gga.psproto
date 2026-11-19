@@ -1,0 +1,46 @@
+{
+  "name": "demo_nmea_gga",
+  "description": "NMEA GGA 流式解析：$ 定位、* 硬匹配、XOR 校验、\r\n 帧尾；与二进制共用同一套段模型",
+  "layout": "sequential",
+  "lexer": "delimited",
+  "maxsize": 128,
+  "term": ["\r\n"],
+  "segments": [
+    { "name": "dollar", "type": "char", "literal": "$", "emit": "none" },
+    { "name": "msgid", "type": "string", "delimiter": ",", "emit": "none" },
+    { "name": "utc", "type": "string", "delimiter": ",", "emit": "none" },
+    {
+      "name": "lat",
+      "type": "number",
+      "delimiter": ",",
+      "transform": [{ "op": "sexagesimal", "split": 3 }],
+      "unit": "deg"
+    },
+    { "name": "ns", "type": "string", "delimiter": ",", "emit": "none" },
+    {
+      "name": "lon",
+      "type": "number",
+      "delimiter": ",",
+      "transform": [{ "op": "sexagesimal", "split": 3 }],
+      "unit": "deg"
+    },
+    { "name": "ew", "type": "string", "delimiter": ",", "emit": "none" },
+    { "name": "fix", "type": "number", "delimiter": ",", "emit": "none" },
+    { "name": "sats", "type": "number", "delimiter": ",", "emit": "none" },
+    { "name": "hdop", "type": "number", "delimiter": ",", "emit": "none" },
+    { "name": "alt", "type": "number", "delimiter": ",", "unit": "m" },
+    { "name": "alt_unit", "type": "string", "delimiter": ",", "emit": "none" },
+    { "name": "geoid", "type": "string", "delimiter": ",", "emit": "none" },
+    { "name": "geoid_unit", "type": "string", "delimiter": ",", "emit": "none" },
+    { "name": "age", "type": "number", "delimiter": ",", "empty": "skip", "emit": "none" },
+    { "name": "station", "type": "string", "delimiter": ",", "empty": "skip", "emit": "none" },
+    { "name": "star", "type": "char", "literal": "*", "emit": "none" },
+    {
+      "name": "check",
+      "type": "number",
+      "base": 16,
+      "emit": "aux",
+      "digest": { "alg": "xor8", "from": "after:dollar", "to": "before:star" }
+    }
+  ]
+}

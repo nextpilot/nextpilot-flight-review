@@ -467,6 +467,74 @@ struct Compiler
     }
 };
 
+// ASCII 词法段编译（SPEC §7）：把候选定界符展开、字面量/重复/数值解释搬到段表，
+// digest 的 from/to 端点在这里解析成段下标（-1 frame_start / -2 frame_end / -3 before:self）。
+bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
+{
+    cs.isAscii = isAsciiSegment(s) || c.doc.lexer == "delimited" || c.doc.lexer == "fixed" ||
+                 c.doc.lexer == "keyed";
+    if (!cs.isAscii)
+        return true;
+    cs.isLiteral = !s.literal.empty();
+    cs.literal = s.literal;
+    cs.hasDelimiter = s.hasDelimiter;
+    for (const auto &d : s.delimiter)
+    {
+        if (d == "blank")
+            cs.blankDelim = true;
+        else
+            cs.delimiters.push_back(d);
+    }
+    // 最长匹配优先：\r\n 必须先于 \n/\r 尝试，否则 CRLF 会被切成空字段。
+    std::sort(cs.delimiters.begin(), cs.delimiters.end(),
+              [](const std::string &a, const std::string &b) { return a.size() > b.size(); });
+    cs.repeatAll = (s.repeater == "*");
+    cs.isRest = s.isRest;
+    cs.hasWidth = s.hasWidth;
+    cs.width = s.width;
+    cs.asciiType = (s.type.type == ValueType::Text) ? 1 : 0;
+    cs.base = s.base;
+    cs.hasFixedDigits = s.hasFixedDigits;
+    cs.fixedDigits = s.fixedDigits;
+    cs.signedFlag = s.signedFlag;
+    cs.sci = s.sci;
+    cs.emptyPolicy = s.emptyPolicy;
+    cs.pattern = s.pattern;
+    cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
+    cs.transform = s.transform;
+    if (s.digest.enabled)
+    {
+        cs.digestKind = s.digest.alg.empty() ? 2 : 1;
+        cs.digestAlg = s.digest.alg;
+        cs.digestScript = s.digest.script;
+        cs.digestFrom = -1;
+        cs.digestTo = -3;
+        if (s.digest.from.rfind("after:", 0) == 0)
+        {
+            const std::string ref = s.digest.from.substr(6);
+            cs.digestFrom = c.slotIndex(ref);
+            if (cs.digestFrom < 0)
+                return c.fail("段 " + s.name + " 的 digest.from 未找到段：" + ref);
+        }
+        if (s.digest.to == "frame_end")
+            cs.digestTo = -2;
+        else if (s.digest.to.rfind("before:", 0) == 0)
+        {
+            const std::string ref = s.digest.to.substr(7);
+            if (ref == s.name)
+                cs.digestTo = -3;
+            else
+            {
+                cs.digestTo = c.slotIndex(ref);
+                if (cs.digestTo < 0)
+                    return c.fail("段 " + s.name + " 的 digest.to 未找到段：" + ref);
+            }
+        }
+        cs.hasDigestBounds = true;
+    }
+    return true;
+}
+
 } // namespace
 
 bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
@@ -515,6 +583,8 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
         cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
         cs.isText = (s.type.type == ValueType::Text);
+        if (!compileAsciiSeg(s, cs, c))
+            return false;
 
         // 位域：不占独立字节，count 恒为 1，值从容器（或帧首）的位窗口取。
         if (s.bit.enabled)
@@ -558,8 +628,9 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                 return c.fail("段 " + s.name + " 的 count 非法");
             cs.countIsConst = true;
             cs.constCount = static_cast<uint32_t>(v);
-            cs.constBytes = cs.constCount * s.type.size;
-            if (cs.constBytes == 0 || cs.constBytes > (1u << 20))
+            // ASCII 段的元素个数由定界符决定，不占"字节区间"，constBytes 恒为 0。
+            cs.constBytes = cs.isAscii ? 0 : cs.constCount * s.type.size;
+            if (!cs.isAscii && (cs.constBytes == 0 || cs.constBytes > (1u << 20)))
                 return c.fail("段 " + s.name + " 字节数非法");
         }
         else
@@ -688,6 +759,8 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
             cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
             cs.isText = (s.type.type == ValueType::Text);
+            if (!compileAsciiSeg(s, cs, c))
+                return false;
 
                     // 位域：不占独立字节，count 恒为 1，值从容器（或帧首）的位窗口取。
                     if (s.bit.enabled)
@@ -731,7 +804,7 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                     return c.fail("变体段 " + s.name + " 的 count 非法");
         cs.countIsConst = true;
                 cs.constCount = static_cast<uint32_t>(n);
-                cs.constBytes = cs.constCount * s.type.size;
+                cs.constBytes = cs.isAscii ? 0 : cs.constCount * s.type.size;
             }
             if (s.expectExpr)
             {
@@ -761,6 +834,39 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             return c.fail("series.selector 引用了未知段");
         if (out.payloadSlot < 0)
             return c.fail("series.payload 引用了未知段");
+    }
+
+    // 记录层（ASCII）：段表里只要有一个 ASCII 段，整条记录就走词法切分而不是字节读。
+    for (const CompiledSeg &cs : out.segs)
+        if (cs.isAscii)
+            out.isAscii = true;
+    out.isDelimited = (doc.lexer == "delimited" || doc.lexer == "fixed" || doc.lexer == "keyed") ||
+                      (doc.lexer == "auto" && out.isAscii);
+    out.hasTerminator = doc.hasTerminator;
+    out.terminator = doc.terminator;
+    // 帧首字面量 = 第一个 literal 段的值；流式定位靠它（NMEA 的 "$"）。
+    for (const CompiledSeg &cs : out.segs)
+    {
+        if (cs.isLiteral && !cs.literal.empty())
+        {
+            out.hasStartAnchor = true;
+            out.startAnchor = cs.literal;
+            break;
+        }
+    }
+    if (out.isAscii && doc.lexer == "auto")
+    {
+        // 自动推断：有 literal/delimiter → delimited；只有 width → fixed；只有 key → keyed。
+        bool hasLiteralOrDelim = false, hasWidth = false;
+        for (const CompiledSeg &cs : out.segs)
+        {
+            if (cs.isLiteral || cs.hasDelimiter)
+                hasLiteralOrDelim = true;
+            if (cs.hasWidth)
+                hasWidth = true;
+        }
+        (void)hasLiteralOrDelim;
+        (void)hasWidth;
     }
 
     out.hasTimestamp = doc.hasTimestamp && doc.timestampExpr;

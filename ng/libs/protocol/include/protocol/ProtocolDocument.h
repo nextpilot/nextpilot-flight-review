@@ -83,6 +83,24 @@ struct BitSpec
     std::string order = "lsb0";
 };
 
+// ASCII 数值变换（SPEC §7.4）。只处理"非标准记法"，标准 CSV/NMEA 数值不需要它。
+struct TransformStep
+{
+    std::string op;  // "sexagesimal"：4807.038 → 48 + 7.038/60
+    int split = 2;   // 小数部分取多少位作为"分"
+};
+
+// 摘要校验（SPEC §10）：算什么（内置算子或 Lua 脚本）+ 算哪段原始字节。
+// 输入永远是记录的连续原始字节，不是字段值拼回去——分隔符被吃掉后拼回必错。
+struct DigestSpec
+{
+    bool enabled = false;
+    std::string alg;     // 内置算子名；为空表示走 script
+    std::string script;  // Lua 函数体（ctx.data / ctx.len / ctx.fields / ctx.raw）
+    std::string from;    // "after:<段名>" | "frame_start"（缺省 frame_start）
+    std::string to;      // "before:<段名>" | "frame_end"（缺省 before:self）
+};
+
 struct SegmentDef
 {
     std::string name;
@@ -100,6 +118,26 @@ struct SegmentDef
     ExprPtr expectExpr; // 非空即常量匹配
     std::vector<CheckSpec> checks;
     LengthSpec length;
+
+    // ---- ASCII 词法（SPEC §7）：段的边界不再来自字节宽度，而来自定界符/字面量 ----
+    std::string literal;                 // 字面量段：必须精确匹配，不产通道（如 "$"、"*"）
+    bool hasDelimiter = false;
+    std::vector<std::string> delimiter;  // 候选定界符集合；"blank" 表示空格/Tab 字符类
+    std::string repeater;                // ""（单个）| "*"（重复到下一段边界/记录尾）
+    bool hasWidth = false;               // fixed 词法：定宽字符数
+    uint32_t width = 0;
+    bool isRest = false;                 // 整块原文，不切分（CSV 引号字段、NMEA payload 原文）
+    int64_t base = 10;                   // 数值进制，缺省 10
+    bool hasFixedDigits = false;         // 数值小数位数（校验用）
+    uint32_t fixedDigits = 0;
+    bool signedFlag = false;             // 允许负号
+    bool sci = false;                    // 允许科学计数法
+    std::string as;                      // 覆盖输出类型名（u8/i16/f32...）
+    std::string emptyPolicy;             // ""（空串报错）| "nan" | "skip" | "raw"
+    std::string pattern;                 // 正则只做校验，不切分
+    std::string onMismatch;              // "" | "reject" | "warn" | "skip"
+    std::vector<TransformStep> transform;
+    DigestSpec digest;
 };
 
 struct VariantDef
@@ -125,6 +163,12 @@ using SeriesSpec = SeriesDef;
 /// 一份协议的唯一类型化表示：JSON 由 codec 解析进来，编辑器和校验器共用同一份结构。
 struct ProtocolDocument
 {
+    // 词法模式："auto"（缺省，按段上的 literal/delimiter/width 推断）| binary | delimited | fixed | keyed
+    std::string lexer = "auto";
+    // 帧尾候选集合（如 {"\r\n", "\n"}）。声明了就硬校验，没声明就不管：
+    // 有 literal 段时靠 literal 定位分帧，没 literal 时才用它分帧。
+    bool hasTerminator = false;
+    std::vector<std::string> terminator;
     std::string version = "1";
     std::string name = "frame";
     std::string description;
@@ -148,6 +192,13 @@ struct EvalCtx
 
     bool get(const std::string &n, int index, TypedValue &out, std::string &err) const;
 };
+
+// 段是否是 ASCII 词法段：边界来自 literal/delimiter/width/rest，而不是字节宽度。
+// 一个协议里允许二进制段与 ASCII 段共存（例如"文本头 + 二进制载荷"）。
+inline bool isAsciiSegment(const SegmentDef &s)
+{
+    return !s.literal.empty() || s.hasDelimiter || s.hasWidth || s.isRest || !s.repeater.empty();
+}
 
 /// 类型化求值。整型/浮点不隐式混算；越界与除零显式报错。
 bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, TypedValue &out, std::string &err);

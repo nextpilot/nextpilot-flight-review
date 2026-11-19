@@ -10,10 +10,14 @@ add_library(ng_protocol STATIC
     src/ProtocolSpec.cpp
     src/CompiledProgram.cpp
     src/SequentialCodec.cpp
+    src/DigestEngine.cpp
+    src/StreamDecoder.cpp
     include/protocol/ProtocolDocument.h
     include/protocol/ProtocolSpec.h
     include/protocol/SequentialCodec.h
     include/protocol/CompiledProgram.h
+    include/protocol/DigestEngine.h
+    include/protocol/StreamDecoder.h
 )
 target_include_directories(ng_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ng_protocol PUBLIC Qt6::Core)

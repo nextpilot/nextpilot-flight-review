@@ -124,6 +124,35 @@ struct CompiledSeg
     ByteCode cond;
 
     bool isText = false;
+
+    // ---- ASCII 词法（SPEC §7）：段边界来自字面量/定界符，不是字节宽度 ----
+    bool isAscii = false;
+    bool isLiteral = false; // 字面量段：精确匹配、不产通道（如 $ 或 *）
+    std::string literal;
+    bool hasDelimiter = false;
+    bool blankDelim = false;             // delimiter:"blank" → 空格/Tab 字符类
+    std::vector<std::string> delimiters; // 候选集合（已归一，最长匹配优先）
+    bool repeatAll = false;              // repeater:"*" 重复到下一段边界/记录尾
+    bool isRest = false;                 // 整块原文，不切分
+    bool hasWidth = false;               // fixed 词法：定宽字符数
+    uint32_t width = 0;
+    int asciiType = 0;                   // 0=number 1=text（string/char）
+    int64_t base = 10;
+    bool hasFixedDigits = false;
+    uint32_t fixedDigits = 0;
+    bool signedFlag = false;
+    bool sci = false;
+    std::string emptyPolicy;             // "" | nan | skip | raw
+    std::string pattern;
+    int onMismatch = 0;                  // 0=reject 1=warn 2=skip
+    std::vector<TransformStep> transform;
+    // digest 端点：编译期解析成段下标。 -1 = frame_start，-2 = frame_end，-3 = before:self
+    int32_t digestFrom = -1;
+    int32_t digestTo = -3;
+    int digestKind = 0;                  // 0=none 1=builtin 2=script
+    std::string digestAlg;
+    std::string digestScript;
+    bool hasDigestBounds = false;        // 有 digest 段（校验输出的那个）
 };
 
 struct CompiledVariant
@@ -152,6 +181,15 @@ struct CompiledProgram
     bool timestampIndexFallback = false;
 
     uint32_t maxsize = 4096;
+
+    // ---- 记录层（ASCII）：词法模式 + 帧尾候选集合 ----
+    bool isAscii = false;
+    bool isDelimited = false; // lexer=delimited（或按 literal/delimiter 推断）
+    bool hasTerminator = false;
+    std::vector<std::string> terminator;
+    // 用于流式定位的帧首字面量（第一个 literal 段的值）；空表示靠 terminator 分帧。
+    bool hasStartAnchor = false;
+    std::string startAnchor;
 };
 
 // 编译：一次性把名字解析、常量折叠、字节码生成全部做完。

@@ -2,6 +2,7 @@
 #include "protocol/CompiledProgram.h"
 #include "protocol/ProtocolSpec.h"
 #include "protocol/ProtocolDocument.h"
+#include "protocol/StreamDecoder.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -888,6 +889,18 @@ nextpilot::plotscope::protocol::ProtocolDecodeResult
 nextpilot::plotscope::protocol::decodeSequentialCompiled(const QByteArray &bytes,
                                                          const CompiledProgram &prog)
 {
+    // ASCII 协议（NMEA/CSV 等）走流式状态机；二进制仍走字节游标 readFrame。
+    if (prog.isAscii)
+    {
+        ProtocolDecodeResult result;
+        result.ticksPerSecond = kTicksPerSecond;
+        StreamDecoder dec(prog);
+        std::string pushErr;
+        dec.push(bytes, result, pushErr);
+        dec.finish(result);
+        return result;
+    }
+
     ProtocolDecodeResult result;
     result.ticksPerSecond = kTicksPerSecond;
 

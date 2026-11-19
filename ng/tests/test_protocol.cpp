@@ -8,6 +8,7 @@
 #include "protocol/ProtocolSpec.h"
 #include "protocol/SequentialCodec.h"
 #include "protocol/CompiledProgram.h"
+#include "protocol/StreamDecoder.h"
 #include "CustomProtocolParser.h"
 
 #include "ps_parser_spi.h"
@@ -21,6 +22,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -527,6 +529,190 @@ int main(int argc, char *argv[])
             CHECK(temp->v.at(0).asI64() == 127);
             OK("fixture：demo_can.psproto 位域模板解码通过");
         }
+    }
+#endif // 11) 位域 fixture
+
+#ifdef NG_TEST_FIXTURE_DIR
+    // --- 12) ASCII 流式：NMEA GGA（$ 定位 / * 硬匹配 / XOR / \r\n） ---
+    {
+        const QDir fixDir(QLatin1String(NG_TEST_FIXTURE_DIR));
+
+        QFile nf(fixDir.filePath(QStringLiteral("demo_nmea_gga.psproto")));
+        CHECK(nf.open(QIODevice::ReadOnly));
+        const QJsonObject nmeaObj = QJsonDocument::fromJson(nf.readAll()).object();
+        nf.close();
+
+        {
+            const QStringList verrs = validate(nmeaObj);
+            if (!verrs.isEmpty())
+                fprintf(stderr, "NMEA 模板校验失败：%s\n", verrs.join(QStringLiteral("; ")).toUtf8().constData());
+            CHECK(verrs.isEmpty());
+        }
+        ProtocolDocument nd;
+        std::string nerr;
+        {
+            const bool pok = parseDocument(nmeaObj, nd, nerr);
+            if (!pok) fprintf(stderr, "NMEA parseDocument: %s\n", nerr.c_str());
+            CHECK(pok);
+        }
+        CompiledProgram np;
+        {
+            const bool cok = compileProgram(nd, np, nerr);
+            if (!cok) fprintf(stderr, "NMEA compileProgram: %s\n", nerr.c_str());
+            CHECK(cok);
+        }
+        CHECK(np.isAscii && np.isDelimited);
+        CHECK(np.hasStartAnchor && np.startAnchor == "$");
+        CHECK(np.hasTerminator);
+
+        const std::string gga =
+            "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n";
+
+        auto findCh = [](const ProtocolDecodeResult &r, const char *name) -> const ProtocolChannel * {
+            for (const auto &ch : r.channels)
+                if (ch.name == name)
+                    return &ch;
+            return nullptr;
+        };
+
+        // (a) 整行一次 push：会话级校验通过即产出，不必等 term
+        {
+            ProtocolDecodeResult out;
+            StreamDecoder dec(np);
+            std::string perr;
+            CHECK(dec.push(QByteArray::fromStdString(gga), out, perr));
+            dec.finish(out);
+            CHECK(out.ok);
+            CHECK(out.errors.size() == 0);
+            const ProtocolChannel *lat = findCh(out, "frame.lat");
+            const ProtocolChannel *lon = findCh(out, "frame.lon");
+            const ProtocolChannel *alt = findCh(out, "frame.alt");
+            CHECK(lat && lon && alt);
+            CHECK(std::fabs(lat->v.at(0).asDouble() - (48.0 + 7.038 / 60.0)) < 1e-9);
+            CHECK(std::fabs(lon->v.at(0).asDouble() - (11.0 + 31.000 / 60.0)) < 1e-9);
+            CHECK(std::fabs(alt->v.at(0).asDouble() - 545.4) < 1e-9);
+            CHECK(dec.dropped() == 0 && dec.rejected() == 0);
+        }
+
+        // (b) 同一行分两个 chunk：跨包仍能拼起来
+        {
+            ProtocolDecodeResult out;
+            StreamDecoder dec(np);
+            std::string perr;
+            CHECK(dec.push(QByteArray::fromStdString(gga.substr(0, 25)), out, perr));
+            CHECK(out.channels.size() == 0);
+            CHECK(dec.push(QByteArray::fromStdString(gga.substr(25)), out, perr));
+            CHECK(out.ok);
+            CHECK(findCh(out, "frame.lat") != nullptr);
+        }
+
+        // (c) 去掉 term 也能靠 check 宽度自证记录尾
+        {
+            QJsonObject noTerm = nmeaObj;
+            noTerm.remove(QStringLiteral("term"));
+            ProtocolDocument d2;
+            std::string e2;
+            CHECK(parseDocument(noTerm, d2, e2));
+            CompiledProgram p2;
+            CHECK(compileProgram(d2, p2, e2));
+            CHECK(!p2.hasTerminator);
+
+            const std::string line = gga.substr(0, gga.size() - 2); // 去掉 \r\n
+            ProtocolDecodeResult out;
+            StreamDecoder dec(p2);
+            CHECK(dec.push(QByteArray::fromStdString(line), out, e2));
+            CHECK(out.ok);
+            CHECK(findCh(out, "frame.lat") != nullptr);
+        }
+
+        // (d) 校验错：明确分类，不产出半帧
+        {
+            std::string bad = gga;
+            const size_t star = bad.find('*');
+            bad[star + 1] = '4';
+            bad[star + 2] = '6';
+            ProtocolDecodeResult out;
+            StreamDecoder dec(np);
+            std::string perr;
+            CHECK(dec.push(QByteArray::fromStdString(bad), out, perr));
+            CHECK(!out.ok);
+            CHECK(out.channels.size() == 0);
+            CHECK(out.errors.size() == 1);
+            CHECK(out.errors.front().code == DecodeError::ChecksumMismatch);
+            CHECK(dec.rejected() == 1);
+        }
+
+        // (e) 等 * 时来新 $：旧候选作废，从新帧首重来
+        {
+            const std::string broken = "$GPGGA,123519,4807.038,N,01131.000,E";
+            ProtocolDecodeResult out;
+            StreamDecoder dec(np);
+            std::string perr;
+            CHECK(dec.push(QByteArray::fromStdString(broken), out, perr));
+            CHECK(!out.ok && out.errors.size() == 0); // 还在等，不报错
+            CHECK(dec.push(QByteArray::fromStdString(gga), out, perr));
+            CHECK(out.ok);
+            CHECK(findCh(out, "frame.lat") != nullptr);
+            CHECK(dec.dropped() == 1);
+            CHECK(out.errors.size() == 1);
+            CHECK(out.errors.front().code == DecodeError::RecordAborted);
+        }
+        OK("ASCII 流式：NMEA GGA 整行/跨包/无 term/校验错/新 $ 重置全部符合预期");
+
+        // --- 12b) ASCII 空白分隔（无同步字，靠 term 分帧） ---
+        QFile cf(fixDir.filePath(QStringLiteral("demo_csv_blank.psproto")));
+        CHECK(cf.open(QIODevice::ReadOnly));
+        const QJsonObject csvObj = QJsonDocument::fromJson(cf.readAll()).object();
+        cf.close();
+        CHECK(validate(csvObj).isEmpty());
+        ProtocolDocument cd;
+        std::string cerr;
+        {
+            const bool pok = parseDocument(csvObj, cd, cerr);
+            if (!pok) fprintf(stderr, "CSV parseDocument: %s\n", cerr.c_str());
+            CHECK(pok);
+        }
+        CompiledProgram cp;
+        {
+            const bool cok = compileProgram(cd, cp, cerr);
+            if (!cok) fprintf(stderr, "CSV compileProgram: %s\n", cerr.c_str());
+            CHECK(cok);
+        }
+        CHECK(cp.isAscii && !cp.hasStartAnchor && cp.hasTerminator);
+
+        {
+            const std::string csv = "1 23.5 alpha\r\n2 11.0 beta\r\n3 7.25 gamma\r\n";
+            ProtocolDecodeResult out;
+            StreamDecoder dec(cp);
+            std::string perr;
+            CHECK(dec.push(QByteArray::fromStdString(csv), out, perr));
+            dec.finish(out);
+            CHECK(out.ok);
+            CHECK(out.errors.size() == 0);
+            const ProtocolChannel *id = findCh(out, "frame.id");
+            const ProtocolChannel *val = findCh(out, "frame.val");
+            const ProtocolChannel *nm = findCh(out, "frame.name");
+            CHECK(id && val && nm);
+            CHECK(id->v.size() == 3 && val->v.size() == 3 && nm->v.size() == 3);
+            CHECK(id->v.at(2).asI64() == 3);
+            CHECK(std::fabs(val->v.at(2).asDouble() - 7.25) < 1e-9);
+            CHECK(nm->v.at(0).type == ValueType::Text);
+        }
+        OK("ASCII 空白分隔：三行三通道，blank 是协议级分隔符类");
+
+        // 便捷入口 decodeSequential 也要能走 ASCII（上层 CustomProtocolParser 用的就是它）
+        {
+            const std::string two =
+                "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
+                "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n";
+            ProtocolDecodeResult dr = decodeSequential(QByteArray::fromStdString(two), nd);
+            CHECK(dr.ok);
+            CHECK(dr.errors.size() == 0);
+            const ProtocolChannel *lat = findCh(dr, "frame.lat");
+            CHECK(lat && lat->v.size() == 2);
+            CHECK(lat->t.size() == 2 && lat->t.at(1) > lat->t.at(0));
+        }
+        OK("便捷入口：decodeSequential 对 ASCII 模板同样闭环，两行两值");
     }
 #endif
 

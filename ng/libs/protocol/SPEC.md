@@ -244,25 +244,102 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 
 ---
 
-## 7. ASCII（NMEA / AIS 行协议）
+## 7. ASCII（行协议：NMEA / 私有 CSV / 键值）
+
+ASCII **不是另一套模型**：同样是"段 + 边界"，只是边界从字节宽度换成字符边界。
+`$`、`*` 都是**段**（literal 段），不是协议级的 `starts`/`trailer` 概念。
+
+### 7.1 协议级词法
+
+```jsonc
+"lexer": "delimited",     // auto / binary / delimited / fixed / keyed
+"term": ["\r\n", "\n"]    // 帧尾候选集：写了就硬校验，没写就不管
+```
+
+- `delimited`：分隔符切 token（NMEA、CSV 这类）
+- `fixed`：定宽字符，段用 `width`
+- `keyed`：`key=value`（后续批次）
+- `term` **纯可选**：写了每条记录必须以它收尾，没写就不检查（靠 `digest` 宽度自证）
+
+### 7.2 段的 ASCII 键
+
+| 键 | 含义 |
+|---|---|
+| `literal` | 必须逐字符匹配的字面量段（`$`、`*`、`,`） |
+| `delimiter` | 该段结束边界：字符串或数组；`"blank"` = 空格/Tab 字符类 |
+| `repeater` | 只允许 `"*"`：重复到下一段边界（右边界 = 后一个 literal 或记录尾） |
+| `rest` | 整段剩余原文，不切分 |
+| `width` | 定宽字符数（`fixed` 词法） |
+| `base` | 数字进制，**默认 10**；`16` 用于校验字段 |
+| `fixed` | 定点小数位数（`fixed: 3` 表示 3 位小数） |
+| `signed` / `sci` | 允许负号 / 科学计数法（默认都拒绝） |
+| `transform` | `[{"op":"sexagesimal","split":3}]` → `DDMM.MMM` 转十进制度 |
+| `empty` | 空字段策略：`nan` / `skip` / `raw`（默认报错） |
+| `pattern` | 正则**只做校验**，不切分 |
+| `on_mismatch` | `reject` / `warn` / `skip` |
+| `digest` | 见 §4.2；ASCII 上 `from`/`to` 指向段名端点 |
+
+ASCII 段的 `count` 可省略（默认 1）；`bit` 不允许出现在 ASCII 段。
+
+### 7.3 例：NMEA GGA
 
 ```jsonc
 {
-  "starts": "$", "terminator": "\r\n",
+  "name": "nmea_gga", "lexer": "delimited", "term": ["\r\n"], "maxsize": 128,
   "segments": [
-    {"name":"msgid","type":"char","until":",","emit":"aux"},
-    {"name":"time",  "type":"char","until":",","derive":"time_hhmmss","emit":"channel"},
-    {"name":"lat",   "type":"char","until":",","derive":"deg_ddmm","emit":"channel"},
-    {"name":"empty", "type":"char","until":",","empty":"nan"},
-    {"name":"chk",   "type":"u8","digest":{"alg":"nmea_xor"}}
+    {"name":"dollar","type":"char","literal":"$","emit":"none"},
+    {"name":"msgid","type":"string","delimiter":",","emit":"none"},
+    {"name":"utc","type":"string","delimiter":",","emit":"none"},
+    {"name":"lat","type":"number","delimiter":",","transform":[{"op":"sexagesimal","split":3}]},
+    {"name":"ns","type":"string","delimiter":",","emit":"none"},
+    {"name":"lon","type":"number","delimiter":",","transform":[{"op":"sexagesimal","split":3}]},
+    {"name":"ew","type":"string","delimiter":",","emit":"none"},
+    {"name":"fix","type":"number","delimiter":",","emit":"none"},
+    {"name":"sats","type":"number","delimiter":",","emit":"none"},
+    {"name":"hdop","type":"number","delimiter":",","emit":"none"},
+    {"name":"alt","type":"number","delimiter":",","unit":"m"},
+    {"name":"alt_unit","type":"string","delimiter":",","emit":"none"},
+    {"name":"geoid","type":"string","delimiter":",","emit":"none"},
+    {"name":"geoid_unit","type":"string","delimiter":",","emit":"none"},
+    {"name":"age","type":"number","delimiter":",","empty":"skip","emit":"none"},
+    {"name":"station","type":"string","delimiter":",","empty":"skip","emit":"none"},
+    {"name":"star","type":"char","literal":"*","emit":"none"},
+    {"name":"check","type":"number","base":16,"emit":"aux",
+     "digest":{"alg":"xor8","from":"after:dollar","to":"before:star"}}
   ]
 }
 ```
 
-需要的五个原语：`starts`、`terminator`、段级 `until`、段级 `consume`、派生函数 `time_hhmmss` / `deg_ddmm` / `text_number`。
-**空字段**（NMEA 的 `,,`）必须能用 `empty: "nan"|"skip"` 表达，否则真实日志全部解析失败。
+`digest` 算的是 **`$` 之后到 `*` 之前的连续原始字节**（含所有逗号），不是字段值拼回去。
 
-**重同步按行，不按字节**：解析失败跳到下一个 `terminator`，成本是丢一行，不是 O(n²) 逐字节试探。
+### 7.4 例：无同步字的空白分隔（私有 CSV）
+
+```jsonc
+{"lexer":"delimited","term":["\r\n","\n"],"maxsize":128,
+ "segments":[
+   {"name":"id","type":"number","delimiter":"blank"},
+   {"name":"val","type":"number","delimiter":"blank"},
+   {"name":"name","type":"string","delimiter":"blank"}]}
+```
+
+`blank` 是**字符类**（空格/Tab，连续空白算一个分隔符），不做正则切分。
+
+### 7.5 流式语义
+
+1. 首个 literal 段 → 在流里定位，之前字节丢弃（保留末尾 `literal.size()-1` 字节防跨包截断）；
+2. 有 `term` 就在流里找它，作为记录逻辑尾；
+3. 逐段判定边界；`*` 是硬匹配，**等不到就一直等**；
+4. **等边界时又出现新帧首 `$` → 旧候选整体作废**，从新帧首重来（`RecordAborted`）；
+5. 记录完整后算 `digest`，通过才产出；
+6. 没有 `term` 时，靠 `check` 段的十六进制宽度自证记录尾（`xor8`=2、`crc16`=4、`crc32`=8 个字符）。
+
+### 7.6 错误分类
+
+`SyncMissing / RecordAborted / ChecksumMismatch / FieldInvalid / TooManyFields /
+PatternMismatch / OverflowMaxsize / IncompleteAtEof`
+
+每条带 `recordOffset`（记录首字节的流偏移）、`segment`（段名）、`detail`（期望/实际）；
+明细最多 128 条 + `dropped` / `rejected` / `overflow` / `skipped` 计数，流继续。
 
 ---
 

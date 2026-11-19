@@ -9,6 +9,8 @@
 #include <QVector>
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace nextpilot::plotscope::protocol
 {
@@ -35,6 +37,31 @@ struct ProtocolChannel
 
 struct CompiledProgram;
 
+// 解码错误分类（SPEC §8）。只有配置类在加载期致命；其余是运行期事件，流继续。
+struct DecodeError
+{
+    enum Code
+    {
+        None = 0,
+        ConfigInvalid,     // 模板非法（加载期，不进流）
+        OverflowMaxsize,   // 候选超过 maxsize 仍无终止符
+        SyncMissing,       // 该出现的字面量没出现（如 * 缺失 / 声明的 term 缺失）
+        RecordAborted,     // 候选未完成时又出现了帧首字面量（等 * 时来了 $）
+        ChecksumMismatch,  // 摘要与 check 值不符
+        CheckNotHex,       // check 字段不是合法十六进制
+        FieldInvalid,      // 字段无法按声明转换（数值/进制/小数位）
+        TooFewFields,      // 字段数少于模板
+        TooManyFields,     // 字段数多于模板
+        PatternMismatch,   // pattern 校验不通过
+        ScriptTimeout,     // 脚本指令数超限
+        IncompleteAtEof    // finish 时仍未闭合
+    };
+    Code code = None;
+    quint64 recordOffset = 0; // 该记录在流里的绝对偏移
+    std::string segment;      // 出问题的段（配置类为空）
+    std::string detail;       // 期望/实际
+};
+
 struct ProtocolDecodeResult
 {
     bool ok = false;
@@ -43,6 +70,42 @@ struct ProtocolDecodeResult
     int64_t ticksPerSecond = 1000000;
     quint64 rejectedFrames = 0;
     quint64 warnings = 0;
+    // 错误明细：只留前 128 条（避免坏数据吃内存），其余仅计数。
+    std::vector<DecodeError> errors;
+    quint64 dropped = 0;   // 半帧/被新帧首打断
+    quint64 overflow = 0;  // 超 maxsize
+    quint64 skipped = 0;   // 定位时丢弃的前导字节
+};
+
+// 流式解码器（SPEC §7.3）：push 增量、NeedMore 保留尾巴、finish 收尾。
+// 这是**唯一**的解析路径；decodeSequential 只是"一次喂完"的薄封装。
+class StreamDecoder
+{
+public:
+    explicit StreamDecoder(const CompiledProgram &prog);
+    ~StreamDecoder();
+    StreamDecoder(const StreamDecoder &) = delete;
+    StreamDecoder &operator=(const StreamDecoder &) = delete;
+
+    /// 喂一块数据，把已经完整的记录追加到 out。
+    /// 返回 false 只在配置/致命错误时（此时 out.error 有原因）。
+    bool push(const uint8_t *data, size_t len, ProtocolDecodeResult &out, std::string &err);
+    bool push(const QByteArray &chunk, ProtocolDecodeResult &out, std::string &err);
+    /// 输入结束：未闭合的候选按 IncompleteAtEof 计数（不产出）。
+    void finish(ProtocolDecodeResult &out);
+
+    quint64 dropped() const;
+    quint64 rejected() const;
+    quint64 overflow() const;
+
+private:
+    const CompiledProgram &m_prog;
+    std::vector<uint8_t> m_pending;
+    quint64 m_streamOffset = 0;
+    quint64 m_dropped = 0;
+    quint64 m_rejected = 0;
+    quint64 m_overflow = 0;
+    int64_t m_recordIndex = 0;
 };
 
 // 这段 JSON 是不是顺序段协议模板（自检/probe 用）。

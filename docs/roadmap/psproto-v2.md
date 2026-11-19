@@ -487,17 +487,22 @@ phys = raw * scale + offset;
 
 ---
 
-## 4.9 ASCII：以 NMEA 为目标（不做通用 CSV 引擎）
+## 4.9 ASCII：与二进制同一套段模型（NMEA 是样例，不是专用积木）
 
-> 需求原话：「ASCII 主要是想解析类似 NMEA 这样的」。
+> 需求原话：「ASCII 主要是想解析类似 NMEA 这样的」，后续追加：「我还是在想写通用 ASCII 协议，而不是 NMEA 的专用协议」。
 
-### 4.9.1 为什么收窄是对的
+### 4.9.1 定稿口径（S4a-2 已落地）
 
-通用 ASCII 引擎（CSV 引号转义、JSON、键值对、多行续行）会把这个库从"帧模板语言"变成 **tokenizer**，代价是 schema 复杂度翻倍、codegen 三语言难等价，而收益只覆盖少数格式。
+ASCII **不做独立模型**，也**不做 NMEA 专用积木**（`starts` / `trailer` / `derive` / `nmea_xor` 独立算法名全部删除）：
 
-NMEA 一族用 **5 个原语**就能完整覆盖，且其中 `until` / `text_number` 是通用原语——将来真要做 CSV，是在同一套原语上加"引号转义"两个标志位，不是另起一套。
+- 一切是段：`$`、`*`、`,` 都是 `literal` 段；字段段靠 `delimiter` 表达边界；
+- 分隔符是**协议级 lexer**（`delimited` / `fixed` / `keyed`），段里只声明用哪个；
+- `blank` 是字符类（空格/Tab，连续空白算一个分隔符），**不做正则切分**；`pattern` 只做校验；
+- 帧尾 `term` 是候选集合，**写了就要、没写就不管**（不报配置错）；
+- 数值靠 `base`（默认 10）/ `fixed` / `signed` / `sci` / `transform:sexagesimal`；
+- 校验靠 `digest`（内置算子 `xor8/crc16/crc32/crc24q/...` + Lua 脚本兜底）。
 
-**因此本节范围：NMEA 0183（含厂商私有语句）+ AIS 封装（P2）。明确不做：CSV/JSON/键值对/多行续行。**
+于是 CSV、键值行、私有文本混排都能写，不需要第二套 tokenizer。NMEA 只是回归样例。
 
 ### 4.9.2 先承认现状不可用
 
@@ -691,11 +696,36 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
   新增 `TypedValue::fromRawInt()`；位域沿用，避免 `fromU` 在有符号类型上静默得 0。
 - 新增 fixture `tests/fixture/demo_can.psproto`；测试补 CAN 式 8 字节帧（Intel/Motorola、base 容器、符号扩展、scale、条件段真假两路）。ctest 全绿。
 
+**S4a-2（本轮完成）：ASCII 统一段模型 + 流式解码**
+
+- 数据模型：`SegSpec` 增 `literal` / `delimiter` / `repeater` / `rest` / `width` / `base` / `fixed` /
+  `signed` / `sci` / `as` / `empty` / `pattern` / `on_mismatch` / `transform` / `digest(from,to)`；
+  文档级增 `lexer` 与 `term`（旧 `starts` 删除）。
+- 校验：`checkAsciiSegment`（literal 与 delimiter/width 互斥、repeater 只能是 `*`、`blank` 不混用、
+  `base`/`fixed`/`empty`/`on_mismatch` 枚举、`pattern` 正则合法性、`transform` 仅 sexagesimal、
+  `digest` 端点必须是前序段）；ASCII 段 `count` 一律可缺省，`fixedBytes` 不参与。
+- 编译：`CompiledSeg` 增全部 ASCII 字段；`compileAsciiSeg` 展开候选 delimiter 并按长度降序（`
+` 优先）；
+  程序级汇总 `isAscii/isDelimited/hasTerminator/startAnchor`。
+- 新增 `DigestEngine`：`xor8/sum8/crc8/crc16/crc16_modbus/crc16_x25/crc24q/crc32/crc32c`，
+  `nmea_xor` 归一为 `xor8`；通用 bitwise CRC；脚本后端 `scriptDigestAvailable()` 仍返回 false（接口已留）。
+- 新增 `StreamDecoder`：`$` 定位（保留末尾 anchor-1 防跨包）、`term` 剥离、空行直吞、
+  `*` 硬匹配、**第二个 `$` 出现即作废旧候选**（`RecordAborted`）、无 `term` 时按 `check` 十六进制宽度自证记录尾、
+  错误分类（`SyncMissing/RecordAborted/ChecksumMismatch/FieldInvalid/OverflowMaxsize/IncompleteAtEof`，
+  明细 128 条 + dropped/rejected/overflow/skipped）。
+- `decodeSequentialCompiled` 对 `prog.isAscii` 走 `StreamDecoder`，二进制路径不变（上层 `CustomProtocolParser` 无需改）。
+- 新增 fixture：`demo_nmea_gga.psproto`（真实 GGA + XOR + `\r\n`）、`demo_csv_blank.psproto`（blank + term）。
+- 测试 5 组：整行 / 跨 chunk / 无 term / XOR 错 / 等 `*` 时来 `$` 重置；CSV 三行三通道；`decodeSequential` 闭环。
+
 **S4a 仍未做**
-- `enum`、`range` 声明、`repeat: eos|until`、`derive` 计算字段、`types` 别名、`digest.inject`；
-  ASCII 原语 `until`/`consume`/`starts`/`terminator` 的完整代码路径（NMEA 目前靠 fixture 结构近似）。
+- `enum`、`range` 声明、`repeat: eos|until`、`types` 别名、`digest.inject`；
+- `fixed`（定宽）与 `keyed` 两种 lexer 的代码路径（数据模型与校验已就位，解码分支未接）；
+- ASCII 记录的时间轴（当前按记录序号当 tick，`timestamp` 表达式未接）；
 - 编译层负例测试（表达式引用未定义槽位、`bit.base` 引用未知段、width 越界）。
-- 三语言 codegen（S5）。
+
+**后续批次**
+- S4b Lua 脚本后端（`computeScriptDigest` 接入 `ng_module_script`）；
+- S5 三语言 codegen。
 
 
 

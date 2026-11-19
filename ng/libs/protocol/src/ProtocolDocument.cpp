@@ -761,7 +761,8 @@ static bool parseEmit(const QString &s, EmitMode &out, std::string &err)
     return false;
 }
 
-bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpec &seg, std::string &err)
+bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpec &seg, std::string &err,
+                  bool docAscii)
 {
     seg.name = o.value(QStringLiteral("name")).toString().toStdString();
     if (seg.name.empty())
@@ -769,16 +770,102 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         err = "segment 缺少 name";
         return false;
     }
+    // ---- ASCII 词法字段（SPEC §7）：先解析，因为 ASCII 段的 count 可缺省（默认 1） ----
+    seg.literal = o.value(QStringLiteral("literal")).toString().toStdString();
+    if (o.contains(QStringLiteral("delimiter")))
+    {
+        seg.hasDelimiter = true;
+        const QJsonValue dv = o.value(QStringLiteral("delimiter"));
+        if (dv.isArray())
+        {
+            for (const QJsonValue &v : dv.toArray())
+                seg.delimiter.push_back(v.toString().toStdString());
+        }
+        else
+            seg.delimiter.push_back(dv.toString().toStdString());
+    }
+    seg.repeater = o.value(QStringLiteral("repeater")).toString().toStdString();
+    if (o.contains(QStringLiteral("width")))
+    {
+        seg.hasWidth = true;
+        seg.width = static_cast<uint32_t>(o.value(QStringLiteral("width")).toInt(0));
+    }
+    seg.isRest = o.value(QStringLiteral("rest")).toBool(false);
+    seg.base = static_cast<int64_t>(o.value(QStringLiteral("base")).toDouble(10));
+    if (o.contains(QStringLiteral("fixed")))
+    {
+        seg.hasFixedDigits = true;
+        seg.fixedDigits = static_cast<uint32_t>(o.value(QStringLiteral("fixed")).toInt(0));
+    }
+    seg.signedFlag = o.value(QStringLiteral("signed")).toBool(false);
+    seg.sci = o.value(QStringLiteral("sci")).toBool(false);
+    seg.as = o.value(QStringLiteral("as")).toString().toStdString();
+    seg.emptyPolicy = o.value(QStringLiteral("empty")).toString().toStdString();
+    seg.pattern = o.value(QStringLiteral("pattern")).toString().toStdString();
+    seg.onMismatch = o.value(QStringLiteral("on_mismatch")).toString().toStdString();
+    if (o.contains(QStringLiteral("transform")))
+    {
+        const QJsonValue tv = o.value(QStringLiteral("transform"));
+        if (tv.isArray())
+        {
+            for (const QJsonValue &v : tv.toArray())
+            {
+                TransformStep st;
+                if (v.isString())
+                    st.op = v.toString().toStdString();
+                else
+                {
+                    const QJsonObject so = v.toObject();
+                    st.op = so.value(QStringLiteral("op")).toString().toStdString();
+                    st.split = so.value(QStringLiteral("split")).toInt(2);
+                }
+                if (!st.op.empty())
+                    seg.transform.push_back(st);
+            }
+        }
+    }
+    if (o.contains(QStringLiteral("digest")))
+    {
+        const QJsonValue dv = o.value(QStringLiteral("digest"));
+        if (!dv.isObject())
+        {
+            err = "segment " + seg.name + " 的 digest 必须是对象";
+            return false;
+        }
+        const QJsonObject dgo = dv.toObject();
+        seg.digest.enabled = true;
+        seg.digest.alg = dgo.value(QStringLiteral("alg")).toString().toStdString();
+        seg.digest.script = dgo.value(QStringLiteral("code")).toString().toStdString();
+        seg.digest.from = dgo.value(QStringLiteral("from")).toString().toStdString();
+        seg.digest.to = dgo.value(QStringLiteral("to")).toString().toStdString();
+    }
+
+    const bool asciiHints = docAscii || !seg.literal.empty() || seg.hasDelimiter || seg.hasWidth ||
+                            seg.isRest || !seg.repeater.empty();
     if (!o.contains(QStringLiteral("count")))
     {
-        err = "segment " + seg.name + " 缺少 count";
-        return false;
+        if (!asciiHints)
+        {
+            err = "segment " + seg.name + " 缺少 count";
+            return false;
+        }
+        auto one = std::make_shared<Expr>();
+        one->kind = Expr::Num;
+        one->isInt = true;
+        one->ival = 1;
+        seg.countExpr = one;
     }
-    seg.countExpr = jsonExpr(o.value(QStringLiteral("count")), err);
+    else
+    {
+        seg.countExpr = jsonExpr(o.value(QStringLiteral("count")), err);
+    }
     if (!seg.countExpr)
         return false;
     if (!parseType(o.value(QStringLiteral("type")).toString(QStringLiteral("u8")).toStdString(), seg.type, err))
         return false;
+    // 数值解释覆盖类型：base 非 10 或声明了小数位数，说明它是整数记法，不该退化成 f64。
+    if (seg.as.empty() && seg.type.type == ValueType::F64 && (seg.base != 10 || seg.hasFixedDigits))
+        seg.type = {ValueType::I64, 8};
 
     const std::string endian = o.value(QStringLiteral("endian")).toString(QString::fromStdString(defaultEndian)).toStdString();
     seg.bigEndian = (endian == "big" || endian == "be");
@@ -862,6 +949,24 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
     t.layout = root.value(QStringLiteral("layout")).toString(QStringLiteral("sequential")).toStdString();
     t.name = root.value(QStringLiteral("name")).toString(QStringLiteral("frame")).toStdString();
     t.endian = root.value(QStringLiteral("endian")).toString(QStringLiteral("little")).toStdString();
+    t.lexer = root.value(QStringLiteral("lexer")).toString(QStringLiteral("auto")).toStdString();
+    {
+        // 帧尾候选集合：声明了就硬校验，没声明就不管（SPEC §7.2）。
+        const QJsonValue tv = root.contains(QStringLiteral("term"))
+                                  ? root.value(QStringLiteral("term"))
+                                  : root.value(QStringLiteral("terminator"));
+        if (!tv.isUndefined() && !tv.isNull())
+        {
+            t.hasTerminator = true;
+            if (tv.isArray())
+            {
+                for (const QJsonValue &v : tv.toArray())
+                    t.terminator.push_back(v.toString().toStdString());
+            }
+            else
+                t.terminator.push_back(tv.toString().toStdString());
+        }
+    }
     t.maxsize = static_cast<uint32_t>(root.value(QStringLiteral("maxsize")).toInt(4096));
     if (t.maxsize < 2)
         t.maxsize = 4096;
@@ -879,10 +984,28 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
         t.timestampFallback = to.value(QStringLiteral("fallback")).toString(QStringLiteral("reject")).toStdString();
     }
 
+    // 文档级 ASCII：lexer 显式声明，或任一段带 ASCII 词法提示。
+    // ASCII 段没有"元素数 × 字节宽"，count 一律可缺省（默认 1）。
+    bool docAscii = (t.lexer == "delimited" || t.lexer == "fixed" || t.lexer == "keyed");
+    if (!docAscii)
+    {
+        for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
+        {
+            const QJsonObject sg = sv.toObject();
+            if (sg.contains(QStringLiteral("literal")) || sg.contains(QStringLiteral("delimiter")) ||
+                sg.contains(QStringLiteral("width")) || sg.contains(QStringLiteral("rest")) ||
+                sg.contains(QStringLiteral("repeater")))
+            {
+                docAscii = true;
+                break;
+            }
+        }
+    }
+
     for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
     {
         SegSpec seg;
-        if (!parseSegment(sv.toObject(), t.endian, seg, err))
+        if (!parseSegment(sv.toObject(), t.endian, seg, err, docAscii))
             return false;
         t.segments.push_back(std::move(seg));
     }
@@ -918,7 +1041,7 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
             for (const QJsonValue &fv : vo.value(QStringLiteral("segments")).toArray())
             {
                 SegSpec seg;
-                if (!parseSegment(fv.toObject(), t.endian, seg, err))
+                if (!parseSegment(fv.toObject(), t.endian, seg, err, docAscii))
                     return false;
                 seg.prefix = var.name + ".";
                 var.segments.push_back(std::move(seg));
@@ -1087,8 +1210,76 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
 {
     QJsonObject o;
     o["name"] = QString::fromStdString(seg.name);
-    o["count"] = exprJson(seg.countExpr);
+    const bool asciiSeg = isAsciiSegment(seg);
+    // ASCII 段的 count 缺省就是 1，不必回写，避免模板里多一行噪音。
+    if (!asciiSeg || !seg.countExpr || !seg.countExpr->isInt || seg.countExpr->ival != 1)
+        o["count"] = exprJson(seg.countExpr);
     o["type"] = typeName(seg.type);
+    if (asciiSeg)
+    {
+        if (!seg.literal.empty())
+            o["literal"] = QString::fromStdString(seg.literal);
+        if (seg.hasDelimiter)
+        {
+            if (seg.delimiter.size() == 1)
+                o["delimiter"] = QString::fromStdString(seg.delimiter.front());
+            else
+            {
+                QJsonArray d;
+                for (const auto &s : seg.delimiter)
+                    d.append(QString::fromStdString(s));
+                o["delimiter"] = d;
+            }
+        }
+        if (!seg.repeater.empty())
+            o["repeater"] = QString::fromStdString(seg.repeater);
+        if (seg.hasWidth)
+            o["width"] = static_cast<int>(seg.width);
+        if (seg.isRest)
+            o["rest"] = true;
+        if (seg.base != 10)
+            o["base"] = static_cast<qint64>(seg.base);
+        if (seg.hasFixedDigits)
+            o["fixed"] = static_cast<int>(seg.fixedDigits);
+        if (seg.signedFlag)
+            o["signed"] = true;
+        if (seg.sci)
+            o["sci"] = true;
+        if (!seg.as.empty())
+            o["as"] = QString::fromStdString(seg.as);
+        if (!seg.emptyPolicy.empty())
+            o["empty"] = QString::fromStdString(seg.emptyPolicy);
+        if (!seg.pattern.empty())
+            o["pattern"] = QString::fromStdString(seg.pattern);
+        if (!seg.onMismatch.empty())
+            o["on_mismatch"] = QString::fromStdString(seg.onMismatch);
+        if (!seg.transform.empty())
+        {
+            QJsonArray tr;
+            for (const auto &st : seg.transform)
+            {
+                QJsonObject t;
+                t["op"] = QString::fromStdString(st.op);
+                if (st.split != 2)
+                    t["split"] = st.split;
+                tr.append(t);
+            }
+            o["transform"] = tr;
+        }
+        if (seg.digest.enabled)
+        {
+            QJsonObject dg;
+            if (!seg.digest.alg.empty())
+                dg["alg"] = QString::fromStdString(seg.digest.alg);
+            if (!seg.digest.script.empty())
+                dg["code"] = QString::fromStdString(seg.digest.script);
+            if (!seg.digest.from.empty())
+                dg["from"] = QString::fromStdString(seg.digest.from);
+            if (!seg.digest.to.empty())
+                dg["to"] = QString::fromStdString(seg.digest.to);
+            o["digest"] = dg;
+        }
+    }
     const bool docBig = (doc.endian == "big" || doc.endian == "be");
     if (seg.bigEndian != docBig)
         o["endian"] = seg.bigEndian ? "big" : "little";
@@ -1150,6 +1341,20 @@ QJsonObject toJson(const ProtocolDocument &doc)
     root["layout"] = QString::fromStdString(doc.layout);
     root["endian"] = QString::fromStdString(doc.endian);
     root["maxsize"] = static_cast<int>(doc.maxsize);
+    if (doc.lexer != "auto")
+        root["lexer"] = QString::fromStdString(doc.lexer);
+    if (doc.hasTerminator)
+    {
+        if (doc.terminator.size() == 1)
+            root["term"] = QString::fromStdString(doc.terminator.front());
+        else
+        {
+            QJsonArray t;
+            for (const auto &s : doc.terminator)
+                t.append(QString::fromStdString(s));
+            root["term"] = t;
+        }
+    }
 
     if (doc.hasTimestamp && doc.timestampExpr)
     {
