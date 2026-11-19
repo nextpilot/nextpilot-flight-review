@@ -177,24 +177,21 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 
 ---
 
-## 7. 命名裁决：`FormatDomain` → `ToolboxDomain`（需求方 2026-11-19 追加，待确认）
+## 7. 命名裁决：`FormatDomain` → `Domain`（✅ 需求方 2026-11-19 拍板）
 
-需求方质疑："这个文件表示的是领域吗？为什么加 Format，格式所属于的领域？" 逐行核对后确认：**`Format` 前缀是误导，应去掉**。
+需求方质疑："这个文件表示的是领域吗？为什么加 Format，格式所属于的领域？" 逐行核对后确认：**`Format` 前缀是误导，应去掉**。需求方进一步裁决："domain 没必要区分是不是工具箱的，是通用的"——故**不采用** `ToolboxDomain`，直接用通用名 **`Domain`**。
 
 **真实职责（与"格式"无关）：**
 
 - 头注释自己写的是"**工具箱的业务领域分类**……工具箱按 PlotScope 服务的业务方向组织——这是它的分类学"。
 - 枚举值 `General/Autopilot/Automotive/Robotics/Gnss/Video` 是**业务方向**，不是格式类型——`ULog/apbin` 同属 `Autopilot`，`CSV/JSON` 同属 `General`。
 - 真正的持有者是 `IToolPack::domain()` 与 `IToolContribution::domain()`（脚本/面板/数据/示例贡献都带 domain）；`ExtensionRegistry::contributionsByDomain()` / `driversByDomain()` / `messageParsersByDomain()` 只是**按业务方向分组查询**——格式驱动/解析器是被分组的对象，不是 domain 的定义者。
-- `ContributionKind.h:12`、`IToolContribution.h:33` 均称其为"领域（稳定分类学）"；`toolbox-architecture.md` 通篇讲"四领域工具箱"。
 
-**裁决：`ToolboxDomain`。** 理由：
+**裁决：`Domain`（通用名，不绑工具箱）。** 理由：
 
-- 与持有者 `IToolPack` / `IToolContribution` 的"工具箱"主体一致，也与 `toolbox-architecture.md` 的四领域工具箱对齐；一眼看出是"工具箱按业务方向分类"。
-- `domainKey()` / `domainName()` **保留**（它们描述的就是领域本身，无歧义）。
-- 文件同步改名：`FormatDomain.h/.cpp` → `ToolboxDomain.h/.cpp`。
-- **候选否决**：`BusinessDomain` 太泛（任何业务都有 domain，不点明是工具箱分类学）；`Domain` 过短，与数学域/网络域撞名；`ToolDomain` 与具体"工具"概念混淆。
+- 需求方明确 domain 是**通用分类概念**，不应绑定"工具箱"限定——`BusinessDomain`/`ToolboxDomain` 都是多余的限定词。
+- 核对确认：代码库当前**无其它 `Domain` 类型占用**（`ng/core/include`、`ng/libs` 内除 `FormatDomain` 外无 `Domain` 定义），改名无撞名风险。
+- `domainKey()` / `domainName()` **保留**。文件同步改名：`FormatDomain.h/.cpp` → `Domain.h/.cpp`。
+- v1 曾以"过短、与数学域/网络域撞名"否决 `Domain`，需求方裁决覆盖该顾虑——本项目语境下 domain 就是业务领域，无需防御性加前缀。
 
-**影响面（实现方 R0，约 26 个 C++ 文件）**：`core`（`ExtensionRegistry`、`ContributionKind`、`BuiltinContributions`、`IFormatDriver`、`IToolContribution`、`IToolPack`）、4 个业务 Pack、各 FormatDriver、`GuiContext`、`ProtocolInspectorDialog`、`IModule.h`、`cli_main.cpp`、2 个测试，加 `ARCHITECTURE.md` 提及。纯机械全局替换，与 R0 的 `SourceRegistry` 改名同批处理。
-
-> 待确认：采用 `ToolboxDomain`（推荐）还是需求方另有偏好？确认后并入 R0。
+**影响面（实现方 R0，约 26 个 C++ 文件）**：`core`（`ExtensionRegistry`、`ContributionKind`、`BuiltinContributions`、`IFormatDriver`、`IToolContribution`、`IToolPack`）、4 个业务 Pack、各 FormatDriver、`GuiContext`、`ProtocolInspectorDialog`、`IModule.h`、`cli_main.cpp`、2 个测试，加 `ARCHITECTURE.md` 提及。纯机械全局替换（`FormatDomain` → `Domain`），与 R0 的 `SourceRegistry` 改名同批处理。

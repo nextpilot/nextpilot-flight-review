@@ -223,16 +223,16 @@ ng_dataset   ng_recording   GUI/ modules / host / extensions
 
 ## 9. `format` 概念辨析：一个词，四个意思（需求方 2026-11-19 追问）
 
-需求方问：`FormatToolbox`、`FormatDomain`、`IFormatDriver`……这些 `Format` 到底是什么意思？逐文件核对后结论：**`format` 在仓库里被用在了四个互不相同的概念上，其中两个是历史误命名。**
+需求方问：`FormatToolbox`、`FormatDomain`、`IFormatDriver`……这些 `Format` 到底是什么意思？逐文件核对后结论：**`format` 在仓库里被用在了四个互不相同的概念上，其中三个是历史误命名（F1/F2/F3），只有 F4 名实相符。** 需求方已于 2026-11-19 对四者全部拍板（见 §9.6）。
 
 ### 9.1 四个 `format` 概念
 
-| # | 概念 | 代码落点 | 真实含义 | 正名裁决 |
+| # | 概念 | 代码落点 | 真实含义 | 需求方裁决（2026-11-19） |
 |---|---|---|---|---|
-| F1 | **数据格式/格式驱动** | `IFormatDriver.h`、`CsvFormatDriver`、`UlogFormatDriver`、`CustomProtocolFormatDriver`、`acceptsFormat()`、`driverForFormat()`、意图参数 `params["format"]`、`importSchema()` | "能把某种文件读进 Dataset 的能力"，`format` 值是 `"csv"`/`"ulog"`/`"custom-protocol"` | ✅ **保留 `Format`**——这是 format 的本义，名实相符 |
-| F2 | **业务领域** | `FormatDomain.h/.cpp`、`domain()`、`driversByDomain()` | 通用/飞控/汽车/机器人/卫导/视频——是**工具箱的业务分类学**，与格式无关 | ❌ **误命名** → `ToolboxDomain`（见 `modules-organ-completion.md` §7，已裁决待确认） |
-| F3 | **工具箱本身** | `FormatToolbox.h/.cpp`、`registerBuiltinFormats()` | 现在装的是**全部**知识包（通用/飞控/汽车/机器人/卫导），格式驱动只是其中一类贡献 | ❌ **误命名** → `Toolbox` / `BuiltinToolbox`，`registerBuiltinFormats` → `registerBuiltinPacks`（后者已存在，前者是兼容别名） |
-| F4 | **录制格式** | `RecordingFormat.h/.cpp`、`registerFormat()` | raw/mcap 容器——是 app 机制选项，与"文件格式驱动"是两套东西（头注释已明确） | ⚠️ 语义独立、命名尚可，但建议改 `RecordingContainer` 以免与 F1 的 `format` 参数混淆（见 §1） |
+| F1 | **数据格式解析** | `IFormatDriver.h`、`CsvFormatDriver`、`UlogFormatDriver`、`CustomProtocolFormatDriver` | "能把某种文件解析成 Dataset 的能力"，声明 `parserId()` + 表名 + 导入 schema | ❌ **改叫 Parser**："是 Parser，不是 Format" → 正名 `DataParser`（分层，见 §9.3） |
+| F2 | **业务领域** | `FormatDomain.h/.cpp`、`domain()`、`driversByDomain()` | 通用/飞控/汽车/机器人/卫导/视频——是**通用的业务分类学**，与格式无关 | ❌ **误命名** → `Domain`（通用名，不绑工具箱；见 `modules-organ-completion.md` §7） |
+| F3 | **工具箱本身** | `FormatToolbox.h/.cpp`、`registerBuiltinFormats()` | 现在装的是**全部**知识包（通用/飞控/汽车/机器人/卫导），数据解析器只是其中一类贡献 | ❌ **误命名** → `Toolbox`（见 §9.6） |
+| F4 | **录制格式** | `RecordingFormat.h/.cpp`、`registerFormat()` | raw/mcap 容器——是 app 机制选项 | ✅ **保留 `Format`**——需求方认为改动意义不大，维持 `RecordingFormat` |
 
 **一句话区分**：F1 是"这个文件是什么格式、谁来处理它"；F2 是"这个能力属于哪个业务方向"；F3 是"所有能力的集合容器"；F4 是"录制成什么容器"。四个完全不同的维度，共用一个词，是命名混乱的根源。
 
@@ -241,27 +241,64 @@ ng_dataset   ng_recording   GUI/ modules / host / extensions
 - **F2 `FormatDomain`**：头注释自称"工具箱的业务领域分类"；持有者是 `IToolPack::domain()` / `IToolContribution::domain()`，格式驱动只是被它分组的对象之一。`ContributionKind.h:12` 明确"领域（FormatDomain）是稳定的分类学"——**不是格式的属性**。
 - **F3 `FormatToolbox`**：`FormatToolbox.cpp` 全文只调 `BuiltinPackRegistry::installAll(registry)`，装的是所有 `IToolPack`（含 panel/script/data/example/doc 各类贡献）。文件名却叫 FormatToolbox，且 `registerBuiltinFormats()` 已是 `registerBuiltinPacks()` 的**兼容别名**（`FormatToolbox.h:20`）——名字停留在"早期只有格式驱动"的阶段，没有跟上泛化。
 
-### 9.3 F1 的正名边界（`IFormatDriver` 名字该不该留）
+### 9.3 F1 正名为 Parser：撞名约束与分层方案（需求方裁决）
 
-`IFormatDriver` 的 `Format` **名实相符，保留**。但要注意它的职责已经缩小：归并两条数据通路（AGENTS.md §3 P0-1）后，驱动不再自己读文件建 Dataset，而是**声明** `parserId()` + 表名策略 + 导入 schema；真正读字节归宿主 `IngestOrchestrator`。所以更精确的概念是"**格式能力声明**"，但 `IFormatDriver` 作为约定俗成的入口名可保留，在注释里点明其"声明而非执行"的新角色（现有注释已写明）。
+需求方裁决："**F1 是 Parser，不是 Format**"。意图明确——这层能力的本质是"把某种数据解析进来"，叫 Format 是站在文件后缀的角度，叫 Parser 才是站在能力的角度。
+
+**但有一个必须先解决的硬约束：`Parser` 这个名字已被占用。** 仓库里已存在一整套真正的 SPI 解析器：
+
+| 已存在的 Parser（SPI 层，字节→数值批→Dataset） | 本层（F1，格式门面/声明层） |
+|---|---|
+| `CsvParser`、`UlogStreamParser`、`CustomProtocolParser`、`PspxParser`（`ext` 命名空间） | `CsvFormatDriver`、`UlogFormatDriver`、`CustomProtocolFormatDriver`（声明 `parserId()="csv"/"ulog"/"..."`，指向左列） |
+| `ParserRegistry`、`ParserEntry`、`PsParserVtable`（core SPI） | `IFormatDriver`（`core` 命名空间） |
+| 职责：**执行解析**（纯 C ABI 字节转换） | 职责：**声明**用哪个 parser + 表名策略 + 导入 schema/probe |
+
+若把 `CsvFormatDriver` 直接改成 `CsvParser`，会与同名 SPI 实现 `CsvParser` **直接撞名**；把 `IFormatDriver` 改成 `IParser` 也会与 `IMessageParser` 概念混淆（后者是"字节→可读字段树"的协议检查器，完全不同的产出）。
+
+**裁决：分层正名，用 `DataParser` 区分。**
+
+| 旧名 | 新名 | 层 |
+|---|---|---|
+| `IFormatDriver` | `IDataParser` | 声明层接口（core）："这个格式由哪个 SPI parser 负责 + 展示名/后缀/schema" |
+| `CsvFormatDriver` | `CsvDataParser` | 声明层实现（ext） |
+| `UlogFormatDriver` | `UlogDataParser` | 声明层实现 |
+| `CustomProtocolFormatDriver` | `CustomProtocolDataParser` | 声明层实现 |
+| `CsvParser` / `UlogStreamParser` / ... | **保持 `XxxParser`** | SPI 执行层（字节→批），不加 Data 前缀 |
+| `acceptsFormat()` / `driverForFormat()` / `params["format"]` | **保持字面量 `format`** | 意图参数与格式标识是另一回事（文件后缀语义），不属本次改名；仅方法名可改为 `acceptsFormat`→`acceptsDataFormat`（可选） |
+
+**理由**：
+
+- 满足需求方"是 Parser 不是 Format"的本质意图——接口与实现类都带 `Parser`，去掉 `Format`。
+- 用 `Data` 前缀与已存在的 SPI `Parser`、协议检查 `IMessageParser` 分层，避免三套 Parser 撞成一锅。
+- 三层语义清晰：`IDataParser`（声明"谁解析"）→ SPI `Parser`（执行"怎么解析"）→ `IMessageParser`（解析成可读帧供检查）。
+- **意图参数 `format` 与 `RecordingFormat`（F4）保持不动**——需求方明确 F4 保留 Format，且 `format="csv"` 这类标识是文件后缀语义，改它收益低、风险高。
+
+> 与 F2 `FormatDomain` → `Domain` 配套：改名后这层不再有任何 `Format` 字样（`Domain` 通用、`DataParser` 用 Parser），F4 `RecordingFormat` 成为仓库里唯一保留 `Format` 的家族——语义干净。
 
 ### 9.4 F1 牵出的第五套 schema（并入 §4 统一）
 
-`IFormatDriver::importSchema()` 与 `IMessageParser::configSchema()` 是第 3、4 套 schema（见 §4 表格）——它们的 `type ∈ bool/int/double/enum/string/file` 与 `TransformParam`、`PropKind` 又不一样。**§4 的 `FormSchema`/`FieldType` 统一必须覆盖这四套**，其中：
+`IDataParser`（原 `IFormatDriver`）的 `configSchema`/`importSchema` 与 `IMessageParser::configSchema` 是第 3、4 套 schema（见 §4 表格）——它们的 `type ∈ bool/int/double/enum/string/file` 与 `TransformParam`、`PropKind` 又不一样。**§4 的 `FormSchema`/`FieldType` 统一必须覆盖这四套**，其中：
 
 - `FieldType` 已补 `File`（覆盖 `"file"`），`Number` 覆盖 `int/double`（§4.1 已更新）；
 - `importSchema` 的 `ui:{preview,warnings}` 扩展段，在 `FormSchema` 里作为可选 `extras: QJsonObject` 保留，不丢能力；
 - `IMessageParser::configSchema` 注释已声明"与 importSchema 同构"，正好一并收敛。
 
-### 9.5 命名裁决汇总（并入 R0）
+### 9.5 F3 工具箱正名
+
+`FormatToolbox.h/.cpp` 全文只调 `BuiltinPackRegistry::installAll()`，装的是所有 `IToolPack`（含 panel/script/data/example/doc 各类贡献），"Format" 前缀停留在早期只有格式驱动的阶段。裁决：`FormatToolbox` → `Toolbox`（或 `BuiltinToolbox`）；`registerBuiltinFormats()` 已是 `registerBuiltinPacks()` 的兼容别名（`FormatToolbox.h:20`），保留一版 deprecated 别名后移除。
+
+### 9.6 命名裁决汇总（并入 R0）
 
 | 旧名 | 新名 | 类别 | 状态 |
 |---|---|---|---|
 | `DataSourceRepository` | `SourceRegistry` | 命名 | ✅ 已拍板 |
-| `FormatDomain` | `ToolboxDomain` | F2 | 待确认（§7） |
-| `FormatToolbox` | `Toolbox` / `BuiltinToolbox` | F3 | 待确认（本节） |
-| `registerBuiltinFormats` | 直接用 `registerBuiltinPacks` | F3 | 待确认（可保留为 deprecated 别名一版） |
-| `IFormatDriver` | 保留（声明角色） | F1 | 不改名，仅注释强化 |
-| `RecordingFormat` | `RecordingContainer`（可选） | F4 | 待确认 |
+| `FormatDomain` | `Domain` | F2 | ✅ 已拍板（通用名，不绑工具箱） |
+| `IFormatDriver` | `IDataParser` | F1 | ✅ 已拍板（分层 Parser） |
+| `CsvFormatDriver` 等 3 个 | `CsvDataParser` 等 | F1 | ✅ 已拍板 |
+| SPI `CsvParser` / `ParserRegistry` 等 | **保持** | F1 执行层 | ✅ 不改名（避免撞名） |
+| `FormatToolbox` | `Toolbox` | F3 | ✅ 已拍板 |
+| `registerBuiltinFormats` | 直接用 `registerBuiltinPacks` | F3 | ✅ 保留一版 deprecated 别名 |
+| `RecordingFormat` | **保持原名** | F4 | ✅ 已拍板（改动意义不大） |
+| 意图参数 `format` / `acceptsFormat` / `driverForFormat` | 保持字面量 | 其他 | ✅ 不属本次改名（文件后缀语义） |
 
-> 以上 F2/F3/F4 改名均为**机械替换**，与 R0 的 `SourceRegistry` 同批处理。
+> 全部为机械替换，与 R0 的 `SourceRegistry` 同批处理。副作用：改名后仓库里只剩 F4 `RecordingFormat` 带 `Format` 字样，语义干净。

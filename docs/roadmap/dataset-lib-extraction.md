@@ -74,7 +74,7 @@ ng_core (去掉 Dataset/DataRepository 源文件) ──────────
 `ng/libs/*` 的惯例是独立命名空间（`fastplot` → `nextpilot::plotscope::fastplot`；`protocol` → `nextpilot::plotscope::protocol`）。但 dataset 抽库**不建议本批改命名空间**：
 
 - 保持 `nextpilot::plotscope::core`：30+ 引用文件里所有 `core::Dataset` / `DatasetId` / `ValueType` / `TimeUs` 字面量**零改动**，本批只需移文件 + 改 CMake + 改 include 路径。抽库收益（独立链接）立刻到手。
-- 改 `nextpilot::plotscope::dataset`：更符合 libs 惯例，但要波及 30+ 文件、与 R0 的 `SourceRegistry`/`ToolboxDomain` 两个大改名叠加，实现方风险过高。
+- 改 `nextpilot::plotscope::dataset`：更符合 libs 惯例，但要波及 30+ 文件、与 R0 的 `SourceRegistry`/`Domain`/`IDataParser` 等多个大改名叠加，实现方风险过高。
 
 **裁决**：主推"物理抽库、命名空间保持 `core`"；命名空间统一作为**独立可选批次 R-D2**，待 R-D1 全绿后再评估。C++ 允许"库边界 ≠ 命名空间"（两者解耦），这不违反任何分层原则。
 
@@ -111,7 +111,7 @@ ng_core (去掉 Dataset/DataRepository 源文件) ──────────
 | R-D1 | 下沉 `Result` → `ng_foundation`；新建 `ng_dataset` 并迁入 `Dataset`/`DataRepository`；`ng_core` 改 PUBLIC 依赖；消费者按需换链 | — | §6 第 1–4 条 |
 | R-D2（可选） | 命名空间 `core` → `dataset` 全局统一（30+ 文件） | R-D1 | 与 libs 惯例一致；全绿 |
 
-> 与 R0（`SourceRegistry` + `ToolboxDomain` 改名）**无依赖冲突**：R0 动的是 core/extension 的类型命名，R-D1 动的是数据模型的物理归属。可并行，但建议 R0 先行、R-D1 跟进，避免一次改动面过大。
+> 与 R0（`SourceRegistry` + `Domain` + `IDataParser` 等命名裁决）**无依赖冲突**：R0 动的是 core/extension 的类型命名，R-D1 动的是数据模型的物理归属。可并行，但建议 R0 先行、R-D1 跟进，避免一次改动面过大。
 
 ---
 
