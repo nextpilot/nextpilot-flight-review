@@ -94,6 +94,8 @@ template <typename T> class OwnsPluginHandle; // 插件句柄 RAII（ParserRegis
 
 需求方点明"**主要是约束 schema 该什么样**"——这是关键。仓库里其实有**四套各画各的 schema**：
 
+> **方向更新（2026-11-19，§10）**：需求方进一步要求"取消手写 schema、框架按元信息自动生成"。本节的 `FormSchema`/`FieldType` **产物契约仍有效**，但生产方从"各实现手写 schema"改为"实现只写 `ParamSpec[]`、框架生成 `FormSchema`"——详见 §10。
+
 | 来源 | 文件 | 字段/控件类型 | 绘制端 |
 |---|---|---|---|
 | `PropertySchema` | `core/include/PropertySchema.h` | `PropKind` 6 种；`PropRow { key,label,value,kind,editable,unit,options,tooltip }` | `PropertyPanel.cpp` QTreeWidget 手绘 |
@@ -302,3 +304,112 @@ ng_dataset   ng_recording   GUI/ modules / host / extensions
 | 意图参数 `format` / `acceptsFormat` / `driverForFormat` | 保持字面量 | 其他 | ✅ 不属本次改名（文件后缀语义） |
 
 > 全部为机械替换，与 R0 的 `SourceRegistry` 同批处理。副作用：改名后仓库里只剩 F4 `RecordingFormat` 带 `Format` 字样，语义干净。
+
+---
+
+## 10. 参数配置统一：取消手写 schema，框架自动生成（需求方 2026-11-19 提案）
+
+需求方提案原文："把 `IFormatDriver` 的内容直接放进 `IMessageParser` 里面；她不需要输出 schema；调用她的 C++ 根据名字、能力、param 列表自动生成 schema。"
+
+逐条核对后的裁决：**核心诉求（取消手写 schema、框架按元信息自动生成）完全成立，采纳**；但提案里有两处硬约束，不修正就实现不了，下面讲透。
+
+### 10.1 硬约束一：C++ 无反射，param 列表不会凭空出现
+
+"根据名字、能力、param 列表自动生成 schema"里的 **param 列表，当前根本不存在于接口的元信息里**——它现在就藏在手写 schema 的 `fields[].key` 内部（`configSchema()`/`importSchema()` 返回的 QJsonObject）。
+
+- `IToolContribution` 只有 5 个元数据：`id / displayName / kind / domain / provider`，**没有任何参数信息**。
+- C++ 是编译期静态语言，没有运行时反射。调用方拿一个 `IMessageParser*`，**不可能"看一眼"就知道它有 `database_path` 这个参数、是 file 类型**。
+- 所以若完全不声明参数，`f(名字, 能力, param列表)` 的输入里 `param列表` 为空，框架无从生成——除非调用方硬编码参数表（那比手写 schema 更糟：加参数要改对话框代码）。
+
+**结论：param 列表必须显式声明，但这恰恰是好事**——把"声明"从"完整 UI schema"瘦身为"极简参数规格"，就是用户要的减负。
+
+### 10.2 落地：`schema = f(名字, 能力, 参数规格)`，参数规格是唯一要手写的
+
+把参数声明提为一等接口 `paramSpecs()`，返回 `QVector<ParamSpec>`：
+
+| 输入 | 来源 | 是否手写 |
+|---|---|---|
+| 名字 | `displayName()` / `id()`（已有） | 已有 |
+| 能力 | `kind()` / `domain()` / `parserId()` / `supportedTransports()`（已有） | 已有 |
+| **参数规格** | **新增 `paramSpecs()` → `QVector<ParamSpec>`** | ✅ **唯一新增/手写** |
+| schema / UI | 框架 `FormSchemaGenerator::from(paramSpecs, 名字, 能力)` | ❌ **自动生成，不手写** |
+
+`ParamSpec` 只保留**语义**，剥离全部**呈现**：
+
+```cpp
+struct ParamSpec {
+    QString key;                 // 稳定键（回传/配置用）
+    ParamType type;              // 枚举：Bool/Int/Double/Enum/String/File（复用 §4 FieldType 子集）
+    QVariant defaultValue;
+    // 语义约束（保留，非呈现）：
+    double min = 0, max = 0;     // Int/Double 范围
+    QVector<QPair<QString,QString>> options; // Enum 候选 {value,label}，label 是语义名非 UI 文案
+    QString fileFilter;          // File 类型过滤
+};
+// 不保留：title / label / hint / description / ui.preview / visible_if ——这些由框架生成或按约定补齐
+```
+
+- **label/title 生成**：`title` 用 `displayName()`；字段 label 由 `key` 按约定生成（`database_path` → "数据库路径"），需要覆盖时从统一术语表查，不写在 parser 里。
+- **`ui.preview/warnings`（原 importSchema 的预览段）**：不属于参数 schema，改为框架根据 `probe()` 返回统一渲染预览区（CSV 的探测预览所有格式共用一套），parser 不再各自声明 `ui` 段。
+- 与现有的 `TransformParam { key,label,type,description,defaultValue }` 合并：`ParamSpec` 吸收它，`label/description` 归框架、`key/type/defaultValue` 保留——Transform 编辑对话框也接入同一生成器。
+
+**净效果**：四个 driver/parser 手写的 `configSchema()`/`importSchema()` 全部删除，各改成 10 行内的 `paramSpecs()`；§4 的 `FormSchema` 从"各实现手写产物"降级为"框架生成的中间物"。
+
+### 10.3 硬约束二：两个接口不能硬合并——产物不同，但配置能力可共用
+
+需求方说"把 `IFormatDriver` 的内容放进 `IMessageParser`"。**直觉有道理**（两者都要自述、参数配置、探测，确实重复），但直接合并成一个接口会出问题：
+
+| 维度 | `IDataParser`（原 IFormatDriver） | `IMessageParser` |
+|---|---|---|
+| 产物 | Dataset 数值列 → 画图/分析 | DecodedFrame 可读帧 → 检查器 |
+| 通路 | 声明 parserId，宿主喂字节给 SPI | 自己 `parse()` 字节 |
+| kind | `format` | `message` |
+| 注册表槽 | `registerDriver` / `drivers()` | `registerMessageParser` / `messageParsers()` |
+| 消费者 | `DataLoadHandler` → `ImportDialog` | `ProtocolInspectorDialog` |
+
+硬合并 = 一个接口背两个产物、两个注册表槽、两条通路，正是当初刻意分开要避免的"上帝接口"。
+
+**裁决：不合并类型，抽取公共配置能力层。** 把两者重叠的"自述 + 参数规格 + 配置 + 探测"提到公共接口，两者继承；核心产物行为各留各的：
+
+```cpp
+class IConfigurableContribution : public IToolContribution {  // 新增公共层（core）
+    virtual QVector<ParamSpec> paramSpecs() const = 0;        // 参数规格（唯一手写）
+    virtual bool configure(const QJsonObject &params, QString *err) = 0;
+    virtual QJsonObject probe(... ) const = 0;                // 统一探测（原 sniff/probeFile 合一）
+};
+class IDataParser     : public IConfigurableContribution { /* parserId / load / 表名策略 */ };
+class IMessageParser  : public IConfigurableContribution { /* parse(bytes, DecodedFrame&) */ };
+```
+
+这样需求方要的"统一"效果**全部达到**，且不用冒硬合并的风险：
+
+- 一套参数声明（`paramSpecs`）、一套 schema 生成、一套配置注入——`IConfigurableContribution` 统一；
+- 两个对话框（`ImportDialog` / `ProtocolInspectorDialog`）合并为一个**通用参数对话框**，调同一个 `FormSchemaGenerator`；
+- 产物/通路/kind/注册表槽保持分离，各接口只保留自己的核心行为。
+
+> 一句话：合并的是"配置能力"（该合），不是"解析接口"（不该合）。用户看到的重叠 90% 在配置层，抽取公共基类后这 90% 就真的只剩一份了。
+
+### 10.4 与 §4 的关系
+
+§4 定的 `FormSchema`/`FieldSpec`/`FieldType` **仍是唯一产物契约**，不变；变的是**生产方**：
+
+- §4 原假设："各实现产出 `FormSchema`" → 实现方手写完整 schema；
+- §10 修正为："实现只写 `ParamSpec[]`，`FormSchemaGenerator`（在 `uischema` 库内）生成 `FormSchema`" —— 实现方连 schema JSON 都不写了。
+
+`uischema` 库职责相应扩展为：`ParamSpec → FormSchema → QWidget` 全链路，唯一一处 `ParamType → 控件` 映射。
+
+### 10.5 验收标准（并入 §6）
+
+1. 4 个 driver/parser + Transform 描述子中，**不再有任何 `QJsonObject` 手写的 schema**（`configSchema`/`importSchema` 删除）；
+2. 每个组件只提供 `paramSpecs()`，项数/键与旧 schema 的 `fields` 一一对应（不丢参数）；
+3. `ImportDialog` 与 `ProtocolInspectorDialog` 合并为通用对话框，二者不再各自 switch 控件类型；
+4. 新增一个参数：只改对应组件 `paramSpecs()` 一行，对话框与 schema 生成代码零改动；
+5. headless 可查询"某解析器/驱动有哪些参数"（契约层无 QWidget）；
+6. §4 的 `FormSchema` JSON 往返、类型化值、类型穷举三条约束仍全部成立。
+
+### 10.6 待需求方拍板
+
+1. 确认"param 列表必须显式声明、不能零声明"这一硬约束（**C++ 无反射，无法自动感知参数**）——接受 `paramSpecs()` 作为唯一手写项？
+2. 确认"合并配置能力、不合并解析接口"（§10.3 的 `IConfigurableContribution` 公共基类）替代"两个接口硬合并"？
+3. 确认字段 label 由 `key` 约定生成 + 统一术语表覆盖、预览区由框架按 `probe()` 统一渲染（parser 不再写 `ui` 段）？
+4. 确认两个参数对话框合并为一个通用对话框（涉及 ImportDialog 的探测预览交互，需保证体验不退化）？
