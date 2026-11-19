@@ -982,7 +982,10 @@ int main(int argc, char *argv[])
         CHECK(computeScriptDigest("local s = 0 for i = 1, ctx.len do s = s + string.byte(ctx.data, i) end return s % 256",
                                   in, out, err, &to) && out == 358 % 256);
         CHECK(!computeScriptDigest("while true do end", in, out, err, &to) && to);
-        OK("Lua 脚本后端：可用、能读 ctx.data/ctx.len、超指令配额判超时");
+        // 内存爆炸：单次分配超过预算必须被拒，归内存超限（不是指令超时）。
+        CHECK(!computeScriptDigest("return #string.rep(\"x\", 2000000)", in, out, err, &to) && !to);
+        CHECK(err.find("内存") != std::string::npos);
+        OK("Lua 脚本后端：可用、能读 ctx.data/ctx.len、超指令配额判超时、超内存预算被拒");
     }
 
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");

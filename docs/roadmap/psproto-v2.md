@@ -636,7 +636,7 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 | **S2** | `compile()` → 段表 + 表达式字节码；`decode` 改走段表 | 行为与现状逐字段一致（回归测试）；3000 帧基准耗时 ≤ 1/3 | ✅ 完成 |
 | **S3** | `StreamParser`（feedByte/feedChunk/finish/setSink/reset） | 单字节逐喂 与 整块喂 结果一致；跨块半帧正确；尾帧冲刷正确 | ✅ 完成（`StreamDecoder`） |
 | **S4a** | 表达力补齐：`until` / 位域（§4.8）/ 参数化 CRC（含 24 位）/ ASCII 原语 | NMEA、CSV 可解；CAN DBC 32 信号与 cantools 逐位一致；老模板不回归 | ✅ 主体完成；`text_number`、`derive` **未做** |
-| **S4b** | **Lua 兜底接入**：沙箱裁剪、指令配额、脚本预编译、`frame` API、编辑器脚本变量面板 | 用 Lua 写 CRC24Q 与内置 `alg:"crc24/q"` 结果逐位一致；`while true` 被配额中断；`os.execute` 不可用 | ✅ 摘要脚本完成（沙箱 + 指令配额）；**内存配额 / 预编译 / 编辑器面板未做** |
+| **S4b** | **Lua 兜底接入**：沙箱裁剪、指令配额、内存配额、脚本预编译、`frame` API、编辑器脚本变量面板 | 用 Lua 写 CRC24Q 与内置 `alg:"crc24/q"` 结果逐位一致；`while true` 被配额中断；`os.execute` 不可用；超内存预算被拒 | ✅ 摘要脚本完成（沙箱 + 指令配额 + 1 MiB 内存配额）；**脚本预编译 / 编辑器面板未做** |
 | **S4c** | codegen 处理含脚本模板 | 遇到 `lua` 节点**显式报错并列出段名**，不静默降级 | ⛔ 未做（codegen 本身未做） |
 | **S5** | 模板 codegen（帧结构 → 解析器源码） | 生成的 C++ 解析器与解释器逐字段一致 | ⛔ 未做 |
 
@@ -1322,6 +1322,8 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 > 注意：`repeat.mode`（重复模式 `eos`/`until`）是另一个同名键，与顶层 `mode` 无关，未混改。
 
 **验收**：协议单测 28/28 全绿；全量 ctest 18/18。4 个 validate 负例：缺 `mode`、非法值 `xml`、bin 段写 `delimiter`、text 段写 `bit`。`derive` 已补 text 路径用例（`3,4` → sum=7 / prod=12）；`derive`/`time` 在 `previewSequentialFrame` 与 `decodeSequentialCompiled` 双路的 `ok` 结论与派生/时间数值一致。
+
+**Lua 护栏补全（2026-11-19）**：`ScriptEngine` 增加内存配额——自定义 `lua_Alloc` 记账，预算 1 MiB，超预算拒绝分配并归类为"脚本内存超限"（与指令超时区分）；白名单注释对齐为 base/string/table/math（本构建未编 bit32）。负例：`string.rep("x", 2000000)` 被拒且非超时。剩余 Lua 遗留：脚本预编译（每模板 chunk 只 load 一次）、编辑器脚本变量面板。
 
 ---
 

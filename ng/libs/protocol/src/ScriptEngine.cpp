@@ -1,6 +1,7 @@
 // Lua 5.4 脚本后端（摘要校验用）。设计约束：
-//   - 不暴露 io/os/package（只留 base/string/table/math/bit32），脚本不能碰文件与进程；
+//   - 不暴露 io/os/package（只留 base/string/table/math），脚本不能碰文件与进程；
 //   - 指令配额（count hook）：超过就让 pcall 失败，错误码归 ScriptTimeout；
+//   - 内存配额：自定义分配器记账，超预算拒绝分配，归类为内存超限（非指令超时）；
 //   - 每次调用独立 lua_State，无跨调用状态，天然线程安全。
 
 #include "protocol/ScriptEngine.h"
@@ -14,6 +15,7 @@ extern "C"
 #include "lualib.h"
 }
 
+#include <cstdlib>
 #include <map>
 #include <string>
 
@@ -24,6 +26,51 @@ namespace
 {
 
 constexpr int kInstructionQuota = 400000;
+constexpr std::size_t kMemoryQuota = 1u << 20; // 1 MiB：摘要脚本只处理一帧字段/字节
+
+// 内存预算：分配器按块记账，超预算返回 NULL 触发 Lua 内存错误。
+struct MemBudget
+{
+    std::size_t quota = kMemoryQuota;
+    std::size_t used = 0;
+    bool exceeded = false;
+};
+
+void *budgetAlloc(void *ud, void *ptr, std::size_t osize, std::size_t nsize)
+{
+    auto *b = static_cast<MemBudget *>(ud);
+    if (nsize == 0)
+    {
+        std::free(ptr);
+        if (b->used >= osize)
+            b->used -= osize;
+        else
+            b->used = 0;
+        return nullptr;
+    }
+    if (ptr == nullptr)
+    {
+        if (b->used + nsize > b->quota)
+        {
+            b->exceeded = true;
+            return nullptr;
+        }
+        void *p = std::malloc(nsize);
+        if (p)
+            b->used += nsize;
+        return p;
+    }
+    if (b->used - osize + nsize > b->quota)
+    {
+        b->exceeded = true;
+        return nullptr;
+    }
+    void *p = std::realloc(ptr, nsize);
+    if (p)
+        b->used = b->used - osize + nsize;
+    // realloc 失败：原块仍在，记账保持不变，由 Lua 走失败路径。
+    return p;
+}
 
 void quotaHook(lua_State *L, lua_Debug *)
 {
@@ -63,10 +110,11 @@ bool runDigestScript(const std::string &code, const ScriptDigestInput &in, uint6
                      std::string &err, bool &timeout)
 {
     timeout = false;
-    lua_State *L = luaL_newstate();
+    MemBudget budget;
+    lua_State *L = lua_newstate(budgetAlloc, &budget);
     if (!L)
     {
-        err = "luaL_newstate 失败";
+        err = "lua 状态创建失败（内存预算不足）";
         return false;
     }
     luaL_requiref(L, "_G", luaopen_base, 1);
@@ -122,8 +170,16 @@ bool runDigestScript(const std::string &code, const ScriptDigestInput &in, uint6
     if (lua_pcall(L, 0, 1, 0) != LUA_OK)
     {
         const std::string m = lua_tostring(L, -1) ? lua_tostring(L, -1) : "脚本执行失败";
-        timeout = m.find("budget exceeded") != std::string::npos;
-        err = timeout ? "脚本超时（指令配额耗尽）" : m;
+        if (budget.exceeded)
+        {
+            timeout = false;
+            err = "脚本内存超限（分配预算耗尽）";
+        }
+        else
+        {
+            timeout = m.find("budget exceeded") != std::string::npos;
+            err = timeout ? "脚本超时（指令配额耗尽）" : m;
+        }
         lua_close(L);
         return false;
     }
