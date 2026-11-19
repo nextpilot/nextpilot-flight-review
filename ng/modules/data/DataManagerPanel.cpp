@@ -172,7 +172,9 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
 
     // 统一数据源树：每行一个源，展开后直接是表 → 列（dataset 层在 UI 透明化）。
     m_tree = new ChannelTreeWidget(this);
-    m_tree->setHeaderLabels({QStringLiteral("数据源 / 表 / 字段"), QStringLiteral("信息")});
+    // 对齐老界面：数据源树无横向表头（老 Dock 的 QTreeWidget 不显示 header）。
+    // 状态摘要并入源名文字（见 rebuildTree），不依赖第 2 列，故只需单列 Stretch。
+    m_tree->header()->hide();
     m_tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_tree->setAlternatingRowColors(true);
     m_tree->setDragEnabled(true);
@@ -485,14 +487,16 @@ void DataManagerPanel::rebuildTree()
             continue;
 
         auto *srcItem = new QTreeWidgetItem(m_tree);
-        srcItem->setText(0, info->name.isEmpty() ? QFileInfo(info->origin).fileName() : info->name);
+        const QString srcName = info->name.isEmpty() ? QFileInfo(info->origin).fileName() : info->name;
         int chCount = 0;
         for (int dsId : info->datasetIds)
             if (const Dataset *ds = m_repo.get(dsId))
                 for (int t = 0; t < ds->tableCount(); ++t)
                     if (!isKeyValueTable(ds->table(t)))
                         chCount += ds->table(t)->columns.size();
-        srcItem->setText(1, QStringLiteral("%1 · %2 通道").arg(stateText(info->state)).arg(chCount));
+        // 对齐老界面：源名一行 + 下方 dim 摘要一行（不依赖被隐藏的表头第 2 列）。
+        const QString srcMeta = QStringLiteral("%1 · %2 通道").arg(stateText(info->state)).arg(chCount);
+        srcItem->setText(0, srcName + QLatin1Char('\n') + srcMeta);
         srcItem->setData(0, kRoleSourceId, sid);
         srcItem->setData(0, kRoleNodeKind, QStringLiteral("source"));
         srcItem->setData(0, Qt::UserRole, stateText(info->state)); // sourceStateText 用
