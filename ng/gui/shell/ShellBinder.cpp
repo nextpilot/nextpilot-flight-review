@@ -11,10 +11,15 @@
 // SARibbon（vendored，MIT）
 #include "SARibbonBar.h"
 #include "SARibbonCategory.h"
+#include "SARibbonGallery.h"
+#include "SARibbonGalleryGroup.h"
 #include "SARibbonPanel.h"
+
+#include "PlotThumbnails.h"
 
 #include <QAction>
 #include <QIcon>
+#include <QKeySequence>
 #include <QMainWindow>
 #include <QObject>
 
@@ -148,32 +153,78 @@ void ShellBinder::rebuildRibbon()
                 continue;
 
             const auto actions = m_slots.actionsIn(groupSlot.area);
-            for (int i = 0; i < actions.size(); ++i)
+
+            // 一个 action 若声明了 galleryGroup，就进图库（按组名聚合），
+            // 否则是普通按钮。图库项与按钮可以共存在一个分组里。
+            // 这是"plot 类型 / parse 类型都能用图库选"的唯一装配点——
+            // 外壳不解释图型/格式语义，只按纯数据分组呈现。
+            QHash<QString, QList<QAction *>> galleryActions; // 组名 -> 项
+            QStringList galleryOrder;                        // 组出现顺序
+            int ordinaryIndex = 0;
+
+            for (const ng::core::BoundUiAction &bound : actions)
             {
-                const ng::core::UiAction &ua = actions[i].action;
-                auto *action = new QAction(ua.label, m_ribbon);
+                const ng::core::UiAction &ua = bound.action;
+
+                // 缩略图：优先按 visual 画（图型/格式），否则退回图标名。
+                QIcon ico = ua.visual.isEmpty() ? QIcon() : PlotThumbnails::plot(ua.visual);
+                if (ico.isNull() && !ua.icon.isEmpty())
+                    ico = iconFor(ua.icon);
+
+                auto *action = new QAction(ico, ua.label, m_ribbon);
                 action->setToolTip(ua.label);
                 action->setData(ua.id);
-                // 图标：动作只声明**图标名**，具体资源由外壳解析。
-                if (!ua.icon.isEmpty())
-                    action->setIcon(iconFor(ua.icon));
-
-                // 第一个动作做大按钮，其余小按钮——与常见 ribbon 观感一致。
-                if (i == 0)
-                    panel->addLargeAction(action);
-                else
-                    panel->addSmallAction(action);
-
-                // 点击 → 意图调度。本类不解释动作语义，只把 id 与声明的意图 op
-                // 一并交出去：id 供外壳特判/计数，intentOp 才是要发的意图。
+                // 快捷键是动作属性：外壳只做 setShortcut，触发仍走同一个 action id
+                // → 与按钮/图库项/脚本同一条意图路径。QKeySequence 解析无效串会留空，安全。
+                if (!ua.shortcut.isEmpty())
+                    action->setShortcut(QKeySequence(ua.shortcut));
                 const QString actionId = ua.id;
                 const QString intentOp = ua.intentOp;
+                // 点击 → 意图调度（图库项与按钮走同一条路径）。
                 QObject::connect(action, &QAction::triggered, m_ribbon,
                                  [this, actionId, intentOp] {
                                      m_actionTriggers[actionId]++;
                                      if (m_dispatch)
                                          m_dispatch(actionId, intentOp);
                                  });
+
+                if (!ua.galleryGroup.isEmpty())
+                {
+                    if (!galleryActions.contains(ua.galleryGroup))
+                        galleryOrder << ua.galleryGroup;
+                    galleryActions[ua.galleryGroup].append(action);
+                }
+                else
+                {
+                    // 第一个普通动作做大按钮，其余小按钮。
+                    if (ordinaryIndex == 0)
+                        panel->addLargeAction(action);
+                    else
+                        panel->addSmallAction(action);
+                    ++ordinaryIndex;
+                }
+            }
+
+            // 图库：单行模式 + 按声明顺序分组 + 默认显示第一组（抄老代码观感）。
+            if (!galleryOrder.isEmpty())
+            {
+                panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
+                auto *gallery = panel->addGallery();
+                gallery->setSingleRowMode(true);
+                SARibbonGalleryGroup *firstGroup = nullptr;
+                for (const QString &g : galleryOrder)
+                {
+                    auto *grp = gallery->addCategoryActions(g, galleryActions.value(g));
+                    grp->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
+                    grp->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
+                    grp->setGridMinimumWidth(88);
+                    grp->setGridMaximumWidth(96);
+                    if (!firstGroup)
+                        firstGroup = grp;
+                }
+                if (firstGroup)
+                    gallery->setCurrentViewGroup(firstGroup);
+                panel->setMaximumWidth(460);
             }
 
             // 面板本体撑到能放下大按钮：SARibbon 的 category 高度不会

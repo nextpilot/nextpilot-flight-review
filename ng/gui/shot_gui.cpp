@@ -21,6 +21,7 @@
 #include "ProtocolEditorDialog.h"
 #include "ShellBinder.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QPlainTextEdit>
@@ -80,8 +81,10 @@ int main(int argc, char *argv[])
         return app.exec();
     }
     // 末尾若有两个纯数字，视为宽高；若出现 "dark"/"light" 关键字，视为初始主题。
+    // --type=<kind>：加载后触发图库里的图型 action（走真实 dispatcher 链路）。
     QStringList files;
     QString themeArg;
+    QString plotTypeArg;
     int w = 1440;
     int h = 900;
     for (int i = 2; i < argc; ++i)
@@ -90,6 +93,11 @@ int main(int argc, char *argv[])
         if (a == QStringLiteral("dark") || a == QStringLiteral("light"))
         {
             themeArg = a;
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--type=")))
+        {
+            plotTypeArg = a.mid(QStringLiteral("--type=").size());
             continue;
         }
         files << a;
@@ -165,6 +173,25 @@ int main(int argc, char *argv[])
             if (c.type != ValueType::Text)
                 application.context().setActiveChannel(firstDataset, table->name, c.name);
         }
+    }
+
+    // 若指定 --type=<kind>：触发对应图库 action，走真实 dispatcher
+    // （图型 → plot.setType view action → 曲线本画布切 / 仪表切 InstrumentView）。
+    if (!plotTypeArg.isEmpty())
+    {
+        const QString targetId = QStringLiteral("plot.type.") + plotTypeArg;
+        bool triggered = false;
+        for (QAction *a : window.findChildren<QAction *>())
+        {
+            if (a->data().toString() == targetId)
+            {
+                a->trigger();
+                triggered = true;
+                break;
+            }
+        }
+        fprintf(stdout, "图型 action %s: %s\n", qPrintable(targetId),
+                triggered ? "已触发" : "未找到");
     }
 
     // 让事件循环转一圈，ribbon/dock/画布完成布局与绘制

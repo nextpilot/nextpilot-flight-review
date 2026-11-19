@@ -254,8 +254,32 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                                           {QStringLiteral("table"), s.table},
                                           {QStringLiteral("column"), s.column},
                                           {QStringLiteral("points"), s.lod.size()},
+                                          {QStringLiteral("rightAxis"), s.rightAxis},
                                       });
                                   return QVariant(list);
+                              });
+    // 双 Y 轴：把某条曲线挂到左轴或右轴（用户选择入口）。
+    // params: key=曲线稳定键, right=true→右轴 / false→左轴。
+    appCtx.registerViewAction(QStringLiteral("plot.series.axis"),
+                              [canvas](const QVariantMap &params) -> Result<QVariant> {
+                                  const QString key = params.value(QStringLiteral("key")).toString();
+                                  const bool right = params.value(QStringLiteral("right")).toBool();
+                                  if (key.isEmpty())
+                                      return fail(QStringLiteral("ekey"), QStringLiteral("缺少曲线 key"));
+                                  if (!canvas->setSeriesAxis(key, right))
+                                      return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
+                                  return QVariant(true);
+                              });
+    // 图型切换：曲线/散点在本画布内切；仪表/地图/3D 本画布不处理（返回 handled=false），
+    // 由外壳 dispatcher 切到专用 InstrumentView。
+    appCtx.registerViewAction(QStringLiteral("plot.setType"),
+                              [canvas](const QVariantMap &params) -> Result<QVariant> {
+                                  const QString kind = params.value(QStringLiteral("type")).toString();
+                                  const bool handled = canvas->setPlotKind(kind);
+                                  QVariantMap r;
+                                  r.insert(QStringLiteral("handled"), handled);
+                                  r.insert(QStringLiteral("kind"), kind);
+                                  return QVariant(r);
                               });
 
     return canvas;

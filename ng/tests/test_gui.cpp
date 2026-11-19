@@ -37,6 +37,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
+#include <QSet>
 #include <QStatusBar>
 #include <QTemporaryDir>
 
@@ -125,6 +126,47 @@ int main(int argc, char *argv[])
     }
     CHECK(hasReload && hasExport); // 动作绑的是真实意图，不是空按钮
     OK("ribbon 按插槽数据绑定：页签/分组/动作数量符合声明");
+
+    // --- 2a-2) 图库是纯数据声明（headless 可读），plot 类型 / parse 类型都在 ---
+    {
+        // 图型库：12 种图型，按"常用/曲线/地图3D/仪表"分组，缩略图 visual 声明齐全。
+        const auto plotActs = slotReg.actionsIn(QStringLiteral("ribbon.group.home.plottype"));
+        CHECK(plotActs.size() == 12);
+        QSet<QString> groups;
+        for (const auto &entry : plotActs)
+        {
+            CHECK(!entry.action.galleryGroup.isEmpty()); // 都是 gallery 项
+            CHECK(!entry.action.visual.isEmpty());       // 都有缩略图种类
+            groups.insert(entry.action.galleryGroup);
+        }
+        CHECK(groups.contains(QStringLiteral("常用")));
+        CHECK(groups.contains(QStringLiteral("曲线")));
+        CHECK(groups.contains(QStringLiteral("仪表")));
+        // 来源库：至少 csv/ulog/custom-protocol 三种格式驱动进了 gallery。
+        const auto srcActs = slotReg.actionsIn(QStringLiteral("ribbon.group.home.sources"));
+        CHECK(srcActs.size() >= 3);
+        bool hasCsv = false, hasCustom = false;
+        for (const auto &entry : srcActs)
+        {
+            CHECK(!entry.action.galleryGroup.isEmpty());
+            if (entry.action.id.contains(QStringLiteral("csv"))) hasCsv = true;
+            if (entry.action.id.contains(QStringLiteral("custom-protocol"))) hasCustom = true;
+        }
+        CHECK(hasCsv && hasCustom);
+        OK("图库纯数据声明：12 图型分 4 组 + 格式驱动进来源库，headless 可读");
+    }
+
+    // --- 2a-3) 快捷键是动作属性（纯数据），骨架动作声明了默认值 ---
+    {
+        const auto dataActs2 = slotReg.actionsIn(QStringLiteral("ribbon.group.home.data"));
+        bool hasOpenShortcut = false;
+        for (const auto &entry : dataActs2)
+            if (entry.action.id == QStringLiteral("app.action.openData")
+                && entry.action.shortcut == QStringLiteral("Ctrl+O"))
+                hasOpenShortcut = true;
+        CHECK(hasOpenShortcut); // 打开数据 = Ctrl+O（抄老 file.open）
+        OK("快捷键作为动作属性：打开数据声明 Ctrl+O");
+    }
 
     // --- 2b) 点击链路端到端：按钮发的是 intentOp，不是把 id 当 op ---
     // 回归点：UiAction 有 id（data.action.reload）与 intentOp（data.reload）两个字段。

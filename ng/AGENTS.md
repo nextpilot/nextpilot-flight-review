@@ -66,6 +66,8 @@
 | **data 意图归口宿主** | `data.load` + 派生（`data.reload`/`export`/`recent`/`clearCache`，`DataCommandsHandler`）都是宿主系统级 handler，不归属可卸载模块（要访问 AppContext 的 repo/sources/settings/pipeline）；`DataModule.onAttach` 只声明绑真实 intentOp 的 action。补能力铁律：**只搬底层有 API 支撑的，不造空按钮**。reload 用稳定 id 保持数据集不换 id（订阅者不失联） | 跑 `test_architecture` 3c 段 + `test_gui` action 段；headless 下四意图均可执行 |
 | **plot 多曲线叠加** | `PlotCanvas` 持 `QVector<PlotSeries>` 逐条喂 fastplot，`ChannelView::addChannel` 按 `datasetId\|table\|column` 去重，双击/拖拽共用追加路径；缩放/平移按可见窗重取 LOD；`test_plot_io` 钉死 3 曲线不同色/同 key 不新增/单项移除/`series.list` | 跑 `test_plot_io`；或 `plotscope-ng-gui-shot <png> <multi-col.csv>` 截图看 3 色曲线 |
 | **protocol 首轮迁移** | `libs/protocol`（`ng_protocol`，纯逻辑，只依赖 Qt6::Core）+ SPI v2 `CustomProtocolParser`（configure 收模板/finish 解码吐 frame_batch）+ 薄 `ProtocolEditorDialog`（新建/打开/保存/校验/试算）；`test_protocol` 钉死 validate/往返/求值/帧解码/SPI 闭环 | 跑 `ng_test_protocol`；或 `plotscope-ng-gui-shot --protocol <png>` 截图 |
+| **图库/快捷键是纯数据** | `UiAction` 的 `galleryGroup`/`visual`/`shortcut` 三个字符串字段；`ShellBinder` 按组收进 `SARibbonGallery`、建 QAction 时 setShortcut。plot 12 图型分 4 组、parse 格式驱动进来源库、打开数据 Ctrl+O，全 headless 可读 | 跑 `test_gui` 2a-2/2a-3 段；或 `plotscope-ng-gui-shot --type=gauge\|scatter <png> <csv>` 截图 |
+| **双 Y 轴用户可选** | `PlotCanvas` 右键菜单勾选曲线挂右轴（`plot.series.axis`）；`pushToPlot` 对左右轴分别 `setYRange`/`setYRange2`；挂轴分配随视图状态序列化 | 跑 `test_plot_io` 第 7 段 |
 
 ---
 
@@ -139,7 +141,7 @@ P1-6 | **幂等声明会静默丢弃后声明者** | `UiSlotRegistry::declareSlo
 | 目标能力 | 现状 | 差什么 | 卡在哪 |
 |---|---|---|---|
 多格式解析（7 种：ulog/mavlink/nmea/oem7/asc/blf/mdf4） | 3 种 | 逐格式平移 + 等价性快照 | P0-1 必须先归并通路 |
-12 种视图 | 库层 12 种模式已全部归属 fastplot（见 `docs/roadmap/fastplot.md` §13）；ng 会话层已完成**多曲线叠加**，仍只接时间序列 + 六仪表 | 图型选择入口、游标/书签/多画布 | 多曲线叠加前置项**已完成** |
+12 种视图 | 库层 12 种模式已全部归属 fastplot；ng 会话层已完成**多曲线叠加 + 双 Y 轴 + 图型 gallery（12 项）+ 仪表切换** | 游标/书签/多画布/页面拆分；仪表数据绑定（gallery 切换本身已可用） | 多曲线叠加前置项**已完成** |
 报告自动化 | 无 | `mod.report` + headless 渲染 | #11 |
 protocol 逻辑资产 | `ng_protocol` 纯逻辑库 + SPI v2 解析器 + 薄编辑器均已建，`test_protocol` 全绿 | 校验/试算已可用；位域模型/表达式图形编辑未做（老 1749 行胖 UI 不平移） | 首轮已完成 |
 插件生态 | 只有入口 | dlopen + ABI 校验 | P1-1 |
@@ -194,7 +196,7 @@ module 没法解耦 | ✅ 解了，而且是焊死的（include 不到，不是�
 注册方式太多（8 扇门） | ✅ 解了：一种写法 × 四个落点 |
 器官要有界面、但新增不改别人代码 | ✅ 解了：器官声明入口，视图实现控件 |
 用信号槽把 `MainWindow*` 发给模块 | ⚠️ 半边：通知用信号，命令用 Intent，指针不进模块 |
-plot 3000+ 行 | ✅ 库层已拆：fastplot 独立库，12 种模式全部有归属；✅ 会话层多曲线叠加/图例/拖拽/导出已接；⚠️ 游标/书签/拆分画布仍是增量 |
+plot 3000+ 行 | ✅ 库层已拆：fastplot 独立库，12 种模式全部有归属；✅ 会话层多曲线叠加/图例/拖拽/导出/双Y轴/图型 gallery/仪表切换已接（UI 体验抄老代码，架构不抄）；⚠️ 游标/书签/拆分画布/仪表数据绑定仍是增量 |
 MainWindow 太大 | ✘ 误诊：老 `MainWindow.cpp` 只有 194 行，真痛点是「同一件事 6 种注册写法」 |
 
 ---

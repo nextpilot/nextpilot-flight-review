@@ -933,10 +933,39 @@ script.run
   `datasetId|table|column` 去重，双击/拖拽字段都走同一追加路径；缩放/平移后按
   可见时间窗与像素宽重新走 `plot.channel` 意图取数。内存铁律不变：
   每条曲线 `(x,min,max)` 三元组数 ≤ 画布像素宽，与数据行数无关。
-- 新增 view actions `plot.series.clear` / `plot.series.list`，配合已有的
+- **双 Y 轴是用户选择**：每条 `PlotSeries` 有 `rightAxis`，画布右键菜单可勾选
+  某曲线挂右轴（view action `plot.series.axis`）；`pushToPlot` 对左右轴**分别**
+  用 `setYRange` / `setYRange2` 定界，不再混算（否则右轴曲线被左轴量级压扁）。
+  挂轴分配随 `saveViewState` 序列化。
+- 新增 view actions `plot.series.clear` / `plot.series.list` / `plot.series.axis` /
+  `plot.setType` / `plot.instrument.setKind`，配合已有的
   `plot.export.png` / `plot.export.csv` / `plot.state.save|restore` / `plot.legend.toggle`。
-- 12 模式、页面/拆分/最大化、AB 测量、书签/时标、播放头属**增量需求**，
-  本轮先交付"多曲线叠加 + 基础可用"，不阻塞主线。
+- 页面/拆分/最大化、AB 测量、书签/时标、播放头仍是**增量需求**，不阻塞主线。
+
+### 11.1.1 UI 体验对齐老代码：图库与快捷键（本轮）
+
+用户明确"UI 体验抄老代码、架构不抄"——据此把老 `PlottingRibbon` / `DataSourceRibbon`
+的**图库（SARibbonGallery）体验**平移进 ng，但坚持 ng 分层：
+
+- **gallery 是纯数据声明**：`UiAction` 加 `galleryGroup`（组名）/`visual`（缩略图种类）
+  两个字符串字段，headless 可读、core 不碰 QWidget。`ShellBinder` 按组把动作收进一个
+  `SARibbonGallery`（抄老代码单行模式 + IconOnly + 分组）。某个包卸载，图库项随动作一起消失。
+- **plot 类型 gallery**（`ribbon.group.home.plottype`）：抄老 `plotThumb` 的 12 种图型缩略图
+  与"常用/曲线/地图3D/仪表"分组。缩略图绘制逻辑平移到 `gui/theme/PlotThumbnails`，
+  颜色走 ng 的 `ThemeManager`（**注意 ng token 名与老工程不同**：`panel` 而非 `panelAlt`，
+  未知 token 会返回醒目洋红 `#FF00FF`——曾是缩略图发紫的根因）。
+  点击走 `plot.setType`：曲线/散点在 PlotCanvas 内切（`Curve::setScatter`）；
+  仪表/地图/3D 切到 `plot-instrument` 视图（`plot.instrument.setKind`）。
+  数据绑定（把当前通道喂进仪表）属后续增量，gallery 切换本身已可用。
+- **parse 类型 gallery**（`ribbon.group.home.sources`）：抄老 DataSourceRibbon"来源"组，
+  由格式驱动动态生成图库项（CSV/ULOG/自定义协议…），点选按该驱动后缀弹文件对话框，
+  仍走 `data.load` 意图——与通用导入、CLI/脚本同一加载路径。
+- **快捷键是动作属性**：`UiAction.shortcut`（如 `Ctrl+O`），`ShellBinder` 建 QAction 时
+  `setShortcut`。快捷键 → 同一 action id → 同一意图，GUI/脚本/快捷键语义一致；
+  反例：老代码把快捷键散在 `QShortcut`，动作换控件承载就失效。默认值抄老代码
+  `file.open=Ctrl+O`、主题切换 `Ctrl+T`。
+- 契约测试钉死：12 图型分 4 组、格式驱动进来源库、打开数据 `Ctrl+O`、双轴 round-trip、
+  图型切换路由——全部 headless 可读，不依赖起 GUI。
 
 **protocol（纯逻辑库 + SPI 解析器 + 薄编辑器）**
 - 老 `protocol` 约 5342 行，可搬的是 `ProtocolDocument` / `ProtocolSpec` /

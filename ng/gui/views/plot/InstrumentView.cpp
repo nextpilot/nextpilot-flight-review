@@ -208,10 +208,21 @@ QImage InstrumentView::grabInstrument()
     return grab().toImage();
 }
 
-QWidget *createInstrumentPanel(AppContext & /*appCtx*/, IIntentExecutor &executor,
+QWidget *createInstrumentPanel(AppContext &appCtx, IIntentExecutor &executor,
                                QWidget *parent)
 {
-    return new InstrumentView(executor, parent);
+    auto *view = new InstrumentView(executor, parent);
+    // 图库切图型：仪表盘/罗盘/地平仪/3D 等由外壳切到本视图后，
+    // 通过这个 view action 指定具体 kind（与脚本/回放同一入口）。
+    appCtx.registerViewAction(QStringLiteral("plot.instrument.setKind"),
+                              [view](const QVariantMap &params) -> Result<QVariant> {
+                                  const QString kind = params.value(QStringLiteral("kind")).toString();
+                                  if (kind.isEmpty())
+                                      return ng::core::fail(QStringLiteral("ekind"), QStringLiteral("缺少仪表 kind"));
+                                  view->switchKind(kind);
+                                  return QVariant(kind);
+                              });
+    return view;
 }
 
 // 视图层自注册：仪表面板类型 "plot-instrument"，器官按 id 请求，外壳不认识本类。

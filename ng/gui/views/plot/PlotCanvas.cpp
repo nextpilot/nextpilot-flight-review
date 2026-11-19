@@ -6,10 +6,13 @@
 #include <fastplot/PlotWidget.h>
 #include <fastplot/Zoomer.h>
 
+#include <QContextMenuEvent>
+#include <QJsonArray>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QMenu>
 #include <QResizeEvent>
 #include <QVBoxLayout>
 
@@ -150,6 +153,7 @@ int PlotCanvas::setSeries(const PlotSeries &series)
     {
         m_title = s.title;
         m_plot->setTitle(s.title);
+        m_plot->setLegendVisible(true); // 首条曲线：默认显示图例（之后归用户开关）
     }
     pushToPlot();
     return m_series.size() - 1;
@@ -187,18 +191,52 @@ bool PlotCanvas::removeSeries(const QString &key)
     return false;
 }
 
+bool PlotCanvas::setSeriesAxis(const QString &key, bool rightAxis)
+{
+    for (PlotSeries &s : m_series)
+    {
+        if (s.key() == key)
+        {
+            if (s.rightAxis == rightAxis)
+                return true;
+            s.rightAxis = rightAxis;
+            pushToPlot(); // 重算左右轴各自的 range（见 pushToPlot 分轴逻辑）
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PlotCanvas::setPlotKind(const QString &kind)
+{
+    // 本画布真正在支持的图型：折线 / 散点。仪表/地图/3D 由外壳切到专用视图，
+    // 不在这里假装支持——返回 false 让上层明确路由。
+    static const QStringList kHere = {QStringLiteral("timeseries"), QStringLiteral("scatter"),
+                                      QStringLiteral("xy"), QStringLiteral("bar"),
+                                      QStringLiteral("histogram"), QStringLiteral("fft")};
+    if (!kHere.contains(kind))
+        return false;
+    m_plotKind = kind;
+    pushToPlot(); // 按新图型重建曲线（scatter 决定画不画线）
+    return true;
+}
+
 void PlotCanvas::pushToPlot()
 {
     m_plot->clearCurves();
     if (m_series.isEmpty())
     {
-        m_plot->setLegendVisible(false);
+        // 图例可见性归用户/状态管理，pushToPlot 只管曲线，不在这里改图例开关。
         m_plot->update();
         return;
     }
 
-    double lo = std::numeric_limits<double>::infinity();
-    double hi = -std::numeric_limits<double>::infinity();
+    // 左右轴各自的范围——双 Y 轴是用户选择（曲线声明挂哪条轴），
+    // 两条轴必须独立定界；混算会让挂右轴的曲线被左轴量级压扁。
+    double leftLo = std::numeric_limits<double>::infinity();
+    double leftHi = -std::numeric_limits<double>::infinity();
+    double rightLo = std::numeric_limits<double>::infinity();
+    double rightHi = -std::numeric_limits<double>::infinity();
     bool haveTime = false;
 
     for (const PlotSeries &s : m_series)
@@ -214,6 +252,15 @@ void PlotCanvas::pushToPlot()
         auto &curve = m_plot->addCurve(fastplot::Curve::fromLod(pts, s.color, s.lineWidth));
         curve.setName(s.legendName());
         curve.setYAxis(s.rightAxis ? fastplot::AxisSide::Right : fastplot::AxisSide::Left);
+        // 散点图：只画符号不连线（fastplot 库能力，老 Scatter 模式的体验）。
+        if (m_plotKind == QStringLiteral("scatter"))
+        {
+            curve.setScatter(true);
+            curve.setSymbol(fastplot::Symbol::Circle);
+        }
+        // 按曲线挂的轴分别累计 min/max。
+        double &lo = s.rightAxis ? rightLo : leftLo;
+        double &hi = s.rightAxis ? rightHi : leftHi;
         for (const LodTriple &t : s.lod)
         {
             lo = qMin(lo, qMin(t.min, t.max));
@@ -227,16 +274,22 @@ void PlotCanvas::pushToPlot()
         }
     }
 
-    m_plot->setLegendVisible(true);
     // 横轴按真实时间定界（不是按序号）：数据可能不等间隔。
     if (haveTime && m_t1 > m_t0)
         m_plot->setXRange(m_t0, m_t1);
-    // 纵轴按所有可见曲线的全局 min/max 留 5% 余量，保证多曲线同尺度可比。
-    if (std::isfinite(lo) && std::isfinite(hi) && hi > lo)
-    {
+    // 每条轴按自己那条曲线的 min/max 留 5% 余量。
+    auto padRange = [](double lo, double hi) -> QPair<double, double> {
+        if (!std::isfinite(lo) || !std::isfinite(hi) || hi <= lo)
+            return {0.0, 0.0};
         const double pad = (hi - lo) * 0.05 + 1e-9;
-        m_plot->setYRange(lo - pad, hi + pad);
-    }
+        return {lo - pad, hi + pad};
+    };
+    const auto left = padRange(leftLo, leftHi);
+    if (left.first != left.second)
+        m_plot->setYRange(left.first, left.second);
+    const auto right = padRange(rightLo, rightHi);
+    if (right.first != right.second)
+        m_plot->setYRange2(right.first, right.second);
     m_plot->update();
 }
 
@@ -252,12 +305,43 @@ bool PlotCanvas::exportCsv(const QString &path)
 
 QJsonObject PlotCanvas::saveViewState() const
 {
-    return m_plot ? m_plot->saveState() : QJsonObject();
+    QJsonObject state = m_plot ? m_plot->saveState() : QJsonObject();
+    // 曲线的左右轴分配是"视图状态"（不是数据），随状态一起存。
+    QJsonArray axes;
+    for (const PlotSeries &s : m_series)
+    {
+        QJsonObject o;
+        o.insert(QStringLiteral("key"), s.key());
+        o.insert(QStringLiteral("right"), s.rightAxis);
+        axes.append(o);
+    }
+    state.insert(QStringLiteral("seriesAxes"), axes);
+    // 图例可见性是视图状态（用户在"显示"里开关的），必须随状态 round-trip。
+    state.insert(QStringLiteral("legendVisible"), legendVisible());
+    return state;
 }
 
 bool PlotCanvas::restoreViewState(const QJsonObject &state)
 {
-    return m_plot && m_plot->restoreState(state);
+    if (m_plot && !m_plot->restoreState(state))
+        return false;
+    const QJsonArray axes = state.value(QStringLiteral("seriesAxes")).toArray();
+    for (const QJsonValue &v : axes)
+    {
+        const QJsonObject o = v.toObject();
+        const QString key = o.value(QStringLiteral("key")).toString();
+        const bool right = o.value(QStringLiteral("right")).toBool();
+        for (int i = 0; i < m_series.size(); ++i)
+            if (m_series.at(i).key() == key)
+                m_series[i].rightAxis = right;
+    }
+    // 重设了挂轴就得重算 range；pushToPlot 内部会保留图例现状（不再强制打开），
+    // 这里再把保存时的图例可见性精确恢复。
+    if (!axes.isEmpty())
+        pushToPlot();
+    if (state.contains(QStringLiteral("legendVisible")))
+        setLegendVisible(state.value(QStringLiteral("legendVisible")).toBool());
+    return true;
 }
 
 void PlotCanvas::setLegendVisible(bool visible)
@@ -418,6 +502,34 @@ void PlotCanvas::dragLeaveEvent(QDragLeaveEvent *event)
 {
     m_plot->setOverlayText(QString());
     QWidget::dragLeaveEvent(event);
+}
+
+// 右键菜单：列出叠加的曲线，逐条勾选"挂右 Y 轴"——双 Y 轴的用户选择入口。
+// 老代码在 AxisZone 上做，这里简化为"按曲线选轴"：更直接、脚本/属性也能走
+// plot.series.axis 同一动作（菜单、view action、脚本三条路同一语义）。
+void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
+{
+    if (m_series.isEmpty())
+    {
+        QWidget::contextMenuEvent(event);
+        return;
+    }
+    QMenu menu(this);
+    menu.setTitle(QStringLiteral("曲线坐标轴"));
+    for (const PlotSeries &s : m_series)
+    {
+        // 每个曲线一个勾选动作：勾上=挂右轴。用 key 捕获，回调再查一次当前状态。
+        const QString key = s.key();
+        auto *a = menu.addAction(s.legendName());
+        a->setCheckable(true);
+        a->setChecked(s.rightAxis);
+        a->setToolTip(QStringLiteral("勾选挂右侧 Y 轴，取消挂左侧"));
+        QObject::connect(a, &QAction::triggered, this, [this, key](bool on) {
+            setSeriesAxis(key, on);
+        });
+    }
+    menu.exec(event->globalPos());
+    event->accept();
 }
 
 } // namespace ng::gui

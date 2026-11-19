@@ -13,6 +13,7 @@ class QDragLeaveEvent;
 class QDragMoveEvent;
 class QDropEvent;
 class QMimeData;
+class QContextMenuEvent;
 
 namespace fastplot
 {
@@ -92,6 +93,14 @@ public:
     void clear();
     bool removeSeries(const QString &key);
 
+    // 把某条曲线挂到左轴或右轴（双 Y 轴的用户选择入口）。
+    bool setSeriesAxis(const QString &key, bool rightAxis);
+
+    // 图型：timeseries（折线）/ scatter（散点）等在画布内切换；
+    // 返回 false 表示该 kind 不属于本画布（如仪表，需切到 InstrumentView）。
+    bool setPlotKind(const QString &kind);
+    QString plotKind() const { return m_plotKind; }
+
     // 曲线表（只读）。
     const QVector<PlotSeries> &series() const { return m_series; }
     int seriesCount() const { return m_series.size(); }
@@ -140,6 +149,7 @@ protected:
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dragLeaveEvent(QDragLeaveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
     void pushToPlot();
@@ -154,6 +164,7 @@ private:
 
     QVector<PlotSeries> m_series; // 叠加的多条曲线
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
+    QString m_plotKind = QStringLiteral("timeseries"); // 当前图型（画布内可切的）
     double m_t0 = 0.0;
     double m_t1 = 0.0;
 };

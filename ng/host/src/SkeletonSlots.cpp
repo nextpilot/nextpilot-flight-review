@@ -22,6 +22,13 @@ void declareSkeletonSlots(UiSlotRegistry &registry)
                          SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
     registry.declareSlot(QStringLiteral("ribbon.group.home.appearance"), QStringLiteral("外观"), owner,
                          SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
+    // 图型库：12 种绘图类型（曲线/地图3D/仪表）用 SARibbonGallery 呈现，
+    // 抄老 PlottingRibbon 的 UI 体验；纯数据声明在此，缩略图由 GUI 层画。
+    registry.declareSlot(QStringLiteral("ribbon.group.home.plottype"), QStringLiteral("图型"), owner,
+                         SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
+    // 来源库：各数据格式/实时源用 gallery 选择（抄老 DataSourceRibbon 的"来源"组）。
+    registry.declareSlot(QStringLiteral("ribbon.group.home.sources"), QStringLiteral("来源"), owner,
+                         SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
 
     // --- 停靠区 ---
     registry.declareSlot(QStringLiteral("dock.left"), QStringLiteral("数据集"), owner,

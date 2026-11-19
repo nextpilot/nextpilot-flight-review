@@ -49,6 +49,9 @@ public:
     QString currentKind() const { return m_kind; }
     QImage grabInstrument();
 
+    // 按 kind 切换当前仪表（供图库 view action 调用）。
+    void switchKind(const QString &kind);
+
 private:
     struct RoleBuffer
     {
@@ -57,7 +60,6 @@ private:
         std::optional<fastplot::ArrayData> data;
     };
 
-    void switchKind(const QString &kind);
     const fastplot::ArrayData *bindRole(const QString &role, const QVariantMap &series);
 
     core::IIntentExecutor &m_executor;

@@ -13,6 +13,8 @@
 #include "Intent.h"
 #include "Result.h"
 #include "UiSlotRegistry.h"
+#include "IFormatDriver.h"
+#include "IToolContribution.h"
 
 #include "SARibbonMainWindow.h"
 
@@ -89,6 +91,7 @@ void MainWindow::declareStandardSlots()
     openAction.area = QStringLiteral("ribbon.group.home.data");
     openAction.intentOp = QStringLiteral("data.load");
     openAction.icon = QStringLiteral("file_open");
+    openAction.shortcut = QStringLiteral("Ctrl+O"); // 抄老 file.open
     slotReg.bindLocal(openAction.area, openAction, QStringLiteral("app.skeleton"));
 
     // "协议检查器"：骨架级 GUI 能力，消费 IMessageParser 自述逐帧查看协议字段。
@@ -118,7 +121,76 @@ void MainWindow::declareStandardSlots()
     themeAction.area = QStringLiteral("ribbon.group.home.appearance");
     themeAction.intentOp = QStringLiteral("theme.toggle");
     themeAction.icon = QStringLiteral("theme_toggle");
+    themeAction.shortcut = QStringLiteral("Ctrl+T"); // 抄老 Ctrl+T 习惯
     slotReg.bindLocal(themeAction.area, themeAction, QStringLiteral("app.skeleton"));
+
+    // --- 图型库（抄老 PlottingRibbon::buildPlotGallery 的体验）---
+    // 12 种图型分"常用/曲线/地图3D/仪表"四组。每项都是纯 UiAction，
+    // 点击走 view action "plot.setType"（int/dispatcher 里路由），
+    // 与脚本/回放同一语义。缩略图由 visual 字段交给 GUI 层绘制。
+    const QString plotArea = QStringLiteral("ribbon.group.home.plottype");
+    struct PlotDef { const char *kind; const char *label; const char *group; };
+    static const PlotDef kPlots[] = {
+        {"timeseries", "时间序列", "常用"}, {"xy", "XY 曲线", "常用"},
+        {"scatter", "散点图", "常用"},       {"gauge", "仪表盘", "常用"},
+        {"bar", "柱状图", "曲线"},           {"histogram", "直方图", "曲线"},
+        {"fft", "频谱 FFT", "曲线"},
+        {"traj3d", "3D 轨迹", "地图 / 3D"},  {"map", "GPS 地图", "地图 / 3D"},
+        {"surface3d", "3D 曲面", "地图 / 3D"},
+        {"horizon", "地平仪", "仪表"},       {"compass", "罗盘", "仪表"},
+    };
+    for (const PlotDef &d : kPlots)
+    {
+        UiAction a;
+        const QString kind = QString::fromLatin1(d.kind);
+        a.id = QStringLiteral("plot.type.") + kind;
+        a.label = QString::fromUtf8(d.label);
+        a.area = plotArea;
+        a.intentOp = QStringLiteral("plot.setType");
+        a.visual = kind;
+        a.galleryGroup = QString::fromUtf8(d.group);
+        a.data = kind; // 图型种类随动作携带，dispatcher 转成 view action 参数
+        slotReg.bindLocal(plotArea, a, QStringLiteral("app.skeleton"));
+    }
+
+    // --- 来源库（抄老 DataSourceRibbon 的"来源"gallery）---
+    // 由工具箱里已注册的格式驱动动态生成：每个驱动一项，放"文件格式"组；
+    // 实时源放"实时源"组。点击走 data.source.<id> → 按该格式直接弹文件对话框。
+    const QString srcArea = QStringLiteral("ribbon.group.home.sources");
+    for (ng::core::IToolContribution *c : m_appCtx.toolbox().contributions(
+             ng::core::ContributionKind::Format))
+    {
+        auto *driver = dynamic_cast<ng::core::IFormatDriver *>(c);
+        if (!driver)
+            continue;
+        UiAction a;
+        a.id = QStringLiteral("data.source.") + driver->id();
+        a.label = driver->displayName();
+        a.area = srcArea;
+        a.visual = driver->id();
+        a.galleryGroup = QStringLiteral("文件格式");
+        a.icon = QStringLiteral("file_open");
+        slotReg.bindLocal(srcArea, a, QStringLiteral("app.skeleton"));
+    }
+    // 常用组：把前四个格式驱动也放进去（抄老代码"常用 = 前 4 个加载器"）。
+    {
+        int n = 0;
+        for (ng::core::IToolContribution *c : m_appCtx.toolbox().contributions(
+                 ng::core::ContributionKind::Format))
+        {
+            auto *driver = dynamic_cast<ng::core::IFormatDriver *>(c);
+            if (!driver || n++ >= 4)
+                continue;
+            UiAction a;
+            a.id = QStringLiteral("data.source.common.") + driver->id();
+            a.label = driver->displayName();
+            a.area = srcArea;
+            a.visual = driver->id();
+            a.galleryGroup = QStringLiteral("常用");
+            a.icon = QStringLiteral("file_open");
+            slotReg.bindLocal(srcArea, a, QStringLiteral("app.skeleton"));
+        }
+    }
 }
 
 void MainWindow::build(ModuleHost &host)
@@ -180,6 +252,64 @@ void MainWindow::build(ModuleHost &host)
         if (actionId == QStringLiteral("app.action.protocolEditor"))
         {
             openProtocolEditor();
+            return;
+        }
+
+        // 图型库项：plot.type.<kind> → 切中央视图到对应图型（view action）。
+        // 与脚本 `view plot.setType {type:kind}` 同一语义。
+        if (actionId.startsWith(QStringLiteral("plot.type.")))
+        {
+            const QString kind = actionId.mid(QStringLiteral("plot.type.").size());
+            QVariantMap p;
+            p.insert(QStringLiteral("type"), kind);
+            QVariant vr;
+            Result<QVariant> res(vr);
+            bool handled = false;
+            if (m_appCtx.dispatchViewAction(QStringLiteral("plot.setType"), p, res) && res)
+                handled = res.value().toMap().value(QStringLiteral("handled")).toBool();
+            if (!handled)
+            {
+                // 仪表/地图/3D：切中央视图到专用仪表视图（一路 gallery → 两种画布）。
+                // kind 映射到 InstrumentView 已有的能力；未接入的明确提示，不假装可用。
+                static const QHash<QString, QString> kInstrumentKind = {
+                    {QStringLiteral("gauge"), QStringLiteral("gauge")},
+                    {QStringLiteral("compass"), QStringLiteral("compass")},
+                    {QStringLiteral("horizon"), QStringLiteral("attitude")},
+                    {QStringLiteral("traj3d"), QStringLiteral("traj3d")},
+                    {QStringLiteral("map"), QStringLiteral("track")},
+                };
+                const QString instrKind = kInstrumentKind.value(kind);
+                if (!instrKind.isEmpty() && m_context)
+                {
+                    QWidget *w = m_context->requestPanel(QStringLiteral("canvas.center"),
+                                                         QStringLiteral("plot-instrument"));
+                    if (w)
+                    {
+                        QVariantMap ip;
+                        ip.insert(QStringLiteral("kind"), instrKind);
+                        QVariant ivr;
+                        Result<QVariant> ires(ivr);
+                        m_appCtx.dispatchViewAction(QStringLiteral("plot.instrument.setKind"), ip, ires);
+                        statusBar()->showMessage(QStringLiteral("图型: %1").arg(kind));
+                        return;
+                    }
+                }
+                statusBar()->showMessage(QStringLiteral("图型「%1」待接入").arg(kind));
+                return;
+            }
+            statusBar()->showMessage(QStringLiteral("图型: %1").arg(kind));
+            return;
+        }
+
+        // 来源库项：data.source.<id> → 按该格式直接弹文件对话框（跳过格式选择），
+        // 抄老 DataSourceRibbon 点加载器即弹对应 filter 的体验；仍走 data.load 意图。
+        if (actionId.startsWith(QStringLiteral("data.source.")))
+        {
+            // common.<id> 与 <id> 都归一到真实驱动 id。
+            QString id = actionId.mid(QStringLiteral("data.source.").size());
+            if (id.startsWith(QStringLiteral("common.")))
+                id = id.mid(QStringLiteral("common.").size());
+            openDataWithFormat(host, id);
             return;
         }
 
@@ -248,6 +378,43 @@ void MainWindow::openDataFile(ModuleHost &host)
     }
     const int dsId = r.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
     statusBar()->showMessage(QStringLiteral("已载入数据集 #%1").arg(dsId));
+}
+
+void MainWindow::openDataWithFormat(ModuleHost &host, const QString &formatId)
+{
+    // 抄老 DataSourceRibbon 的体验：点图库里的加载器，直接弹该格式的文件对话框。
+    auto *driver = m_appCtx.toolbox().driverForFormat(formatId);
+    QString filter = QStringLiteral("全部 (*)");
+    if (driver)
+    {
+        const QStringList suf = driver->suffixes();
+        if (!suf.isEmpty())
+        {
+            QStringList patterns;
+            for (const QString &s : suf)
+                patterns << QStringLiteral("*.") + s;
+            filter = driver->displayName() + QStringLiteral(" (") + patterns.join(QLatin1Char(' '))
+                     + QLatin1Char(')') + QStringLiteral(";;全部 (*)");
+        }
+    }
+    const QStringList files = QFileDialog::getOpenFileNames(
+        this, QStringLiteral("打开 %1").arg(driver ? driver->displayName() : formatId),
+        QString(), filter);
+    for (const QString &path : files)
+    {
+        Intent intent;
+        intent.op = QStringLiteral("data.load");
+        intent.params[QStringLiteral("path")] = path;
+        intent.params[QStringLiteral("format")] = formatId;
+        const Result<IntentResult> r = host.execute(intent);
+        if (!r)
+        {
+            statusBar()->showMessage(QStringLiteral("载入失败: %1").arg(r.error().message));
+            return;
+        }
+        const int dsId = r.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
+        statusBar()->showMessage(QStringLiteral("已载入数据集 #%1").arg(dsId));
+    }
 }
 
 void MainWindow::openProtocolInspector()

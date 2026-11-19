@@ -13,6 +13,7 @@
 #include <QApplication>
 #include <QFile>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QTemporaryDir>
 
 #include <cmath>
@@ -177,6 +178,59 @@ int main(int argc, char *argv[])
             QStringLiteral("plot.series.list"), {}, listResult));
         CHECK(listResult.value().toList().size() == 2);
         OK("多曲线叠加：追加/去重/移除/清单视图动作全部通过");
+    }
+
+    // --- 7) 双 Y 轴：用户可选挂轴 + 视图状态 round-trip + 图型切换 ---
+    {
+        auto mk = [](const QString &col, double scale) {
+            PlotSeries s;
+            s.datasetId = 7;
+            s.table = QStringLiteral("t");
+            s.column = col;
+            s.title = col;
+            QVector<LodTriple> l;
+            for (int i = 0; i < 20; ++i)
+            {
+                const double v = std::sin(i * 0.2) * scale;
+                l.push_back(LodTriple{i * 0.01, v, v});
+            }
+            s.lod = l;
+            s.t0 = 0.0;
+            s.t1 = 0.19;
+            return s;
+        };
+        canvas->clear();
+        canvas->setSeries(mk(QStringLiteral("leftCh"), 1.0));
+        canvas->setSeries(mk(QStringLiteral("rightCh"), 100.0)); // 量级差百倍
+        CHECK(canvas->seriesCount() == 2);
+
+        // 用户选择：把第二条挂右轴。
+        CHECK(canvas->setSeriesAxis(QStringLiteral("7|t|rightCh"), true));
+        CHECK(canvas->seriesAt(1)->rightAxis);
+        CHECK(!canvas->seriesAt(0)->rightAxis);
+
+        // 视图状态含左右轴分配与图例可见性，且可 round-trip。
+        const QJsonObject st = canvas->saveViewState();
+        CHECK(st.contains(QStringLiteral("seriesAxes")));
+        CHECK(st.value(QStringLiteral("seriesAxes")).toArray().size() == 2);
+        CHECK(st.contains(QStringLiteral("legendVisible")));
+        canvas->setSeriesAxis(QStringLiteral("7|t|rightCh"), false); // 改掉
+        canvas->setLegendVisible(false);
+        CHECK(canvas->restoreViewState(st));
+        CHECK(canvas->seriesAt(1)->rightAxis); // 恢复成挂右轴
+
+        // 图型切换：曲线类本画布处理，仪表类返回 handled=false 交外壳切视图。
+        QVariant nullV;
+        Result<QVariant> r(nullV);
+        CHECK(application.context().dispatchViewAction(
+            QStringLiteral("plot.setType"), {{QStringLiteral("type"), QStringLiteral("scatter")}}, r));
+        CHECK(r.value().toMap().value(QStringLiteral("handled")).toBool());
+        CHECK(canvas->plotKind() == QStringLiteral("scatter"));
+        Result<QVariant> r2(nullV);
+        CHECK(application.context().dispatchViewAction(
+            QStringLiteral("plot.setType"), {{QStringLiteral("type"), QStringLiteral("gauge")}}, r2));
+        CHECK(!r2.value().toMap().value(QStringLiteral("handled")).toBool());
+        OK("双 Y 轴：用户选轴 / 分轴范围 / 状态往返 / 图型切换路由全部通过");
     }
 
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");

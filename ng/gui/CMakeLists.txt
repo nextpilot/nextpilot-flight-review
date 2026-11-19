@@ -39,6 +39,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 add_library(ng_gui_theme OBJECT
     theme/ThemeManager.cpp
     theme/ThemeManager.h
+    theme/PlotThumbnails.cpp
+    theme/PlotThumbnails.h
 )
 target_include_directories(ng_gui_theme PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 target_link_libraries(ng_gui_theme PUBLIC ng_core Qt6::Gui Qt6::Widgets Qt6::Core)
