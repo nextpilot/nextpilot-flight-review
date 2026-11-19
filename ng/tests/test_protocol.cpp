@@ -981,11 +981,21 @@ int main(int argc, char *argv[])
         CHECK(computeScriptDigest("return ctx.len", in, out, err, &to) && out == 5 && !to);
         CHECK(computeScriptDigest("local s = 0 for i = 1, ctx.len do s = s + string.byte(ctx.data, i) end return s % 256",
                                   in, out, err, &to) && out == 358 % 256);
+        // 字节码缓存：同脚本连调两次结果一致，换输入不串状态。
+        uint64_t o1 = 0, o2 = 0;
+        CHECK(computeScriptDigest("return ctx.len * 2", in, o1, err, &to) && o1 == 10);
+        CHECK(computeScriptDigest("return ctx.len * 2", in, o2, err, &to) && o2 == 10);
+        ScriptDigestInput in2;
+        const char *d2 = "ABCD";
+        in2.data = reinterpret_cast<const uint8_t *>(d2);
+        in2.len = 4;
+        uint64_t o3 = 0;
+        CHECK(computeScriptDigest("return ctx.len * 2", in2, o3, err, &to) && o3 == 8);
         CHECK(!computeScriptDigest("while true do end", in, out, err, &to) && to);
         // 内存爆炸：单次分配超过预算必须被拒，归内存超限（不是指令超时）。
         CHECK(!computeScriptDigest("return #string.rep(\"x\", 2000000)", in, out, err, &to) && !to);
         CHECK(err.find("内存") != std::string::npos);
-        OK("Lua 脚本后端：可用、能读 ctx.data/ctx.len、超指令配额判超时、超内存预算被拒");
+        OK("Lua 脚本后端：可用、ctx 取值、字节码缓存复用、超指令超时/超内存被拒");
     }
 
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");

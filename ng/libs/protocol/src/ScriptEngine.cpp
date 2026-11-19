@@ -2,7 +2,8 @@
 //   - 不暴露 io/os/package（只留 base/string/table/math），脚本不能碰文件与进程；
 //   - 指令配额（count hook）：超过就让 pcall 失败，错误码归 ScriptTimeout；
 //   - 内存配额：自定义分配器记账，超预算拒绝分配，归类为内存超限（非指令超时）；
-//   - 每次调用独立 lua_State，无跨调用状态，天然线程安全。
+//   - 字节码预编译：源码只 loadstring/dump 一次并缓存，每帧用独立干净 state 从字节码
+//     loadbuffer，跳过源码词法语法解析；独立 state 保证可重入、无线程间残留。
 
 #include "protocol/ScriptEngine.h"
 
@@ -16,8 +17,11 @@ extern "C"
 }
 
 #include <cstdlib>
+#include <cstring>
 #include <map>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
 namespace nextpilot::plotscope::protocol
 {
@@ -85,53 +89,9 @@ void pushTypedValue(lua_State *L, const TypedValue &v)
         lua_pushnumber(L, v.asDouble());
 }
 
-int l_ctxIndex(lua_State *L)
+// 把输入包成 ctx 表压栈（data / len / fields）。
+void pushCtx(lua_State *L, const ScriptDigestInput &in)
 {
-    // ctx.fields["name"] → 数组段返回表，标量段返回值
-    lua_getfield(L, 1, "fields");
-    if (!lua_istable(L, -1))
-    {
-        lua_pushnil(L);
-        return 1;
-    }
-    lua_pushvalue(L, 2);
-    lua_gettable(L, -2);
-    return 1;
-}
-
-} // namespace
-
-bool scriptEngineAvailable()
-{
-    return true;
-}
-
-bool runDigestScript(const std::string &code, const ScriptDigestInput &in, uint64_t &out,
-                     std::string &err, bool &timeout)
-{
-    timeout = false;
-    MemBudget budget;
-    lua_State *L = lua_newstate(budgetAlloc, &budget);
-    if (!L)
-    {
-        err = "lua 状态创建失败（内存预算不足）";
-        return false;
-    }
-    luaL_requiref(L, "_G", luaopen_base, 1);
-    luaL_requiref(L, "string", luaopen_string, 1);
-    luaL_requiref(L, "table", luaopen_table, 1);
-    luaL_requiref(L, "math", luaopen_math, 1);
-    lua_pop(L, 4);
-    lua_sethook(L, quotaHook, LUA_MASKCOUNT, kInstructionQuota);
-
-    // 脚本本身就是一个 chunk，全局 ctx 可用：`return <expr>` 即摘要值。
-    if (luaL_loadstring(L, code.c_str()) != LUA_OK)
-    {
-        err = std::string("脚本语法错误：") + lua_tostring(L, -1);
-        lua_close(L);
-        return false;
-    }
-
     lua_newtable(L); // ctx
     lua_pushlstring(L, reinterpret_cast<const char *>(in.data), in.len);
     lua_setfield(L, -2, "data");
@@ -166,6 +126,115 @@ bool runDigestScript(const std::string &code, const ScriptDigestInput &in, uint6
     }
     lua_setfield(L, -2, "fields");
     lua_setglobal(L, "ctx");
+}
+
+struct DumpSink
+{
+    std::string data;
+};
+
+int dumpWriter(lua_State *, const void *p, std::size_t sz, void *ud)
+{
+    auto *s = static_cast<DumpSink *>(ud);
+    const auto *b = static_cast<const char *>(p);
+    s->data.append(b, sz);
+    return 0; // 0 = 写入成功
+}
+
+// 源码 → 预编译字节码缓存。键为源码文本；值为同 Lua 构建下可 loadbuffer 的字节码。
+std::mutex g_scriptMtx;
+std::unordered_map<std::string, std::string> g_bytecode;
+
+// 编译一次源码并 dump 成字节码。失败时 err 给出语法/内存原因，不缓存。
+bool compileOnce(const std::string &code, std::string &bytecode, std::string &err)
+{
+    MemBudget budget;
+    lua_State *L = lua_newstate(budgetAlloc, &budget);
+    if (!L)
+    {
+        err = "lua 状态创建失败（内存预算不足）";
+        return false;
+    }
+    if (luaL_loadstring(L, code.c_str()) != LUA_OK)
+    {
+        err = std::string("脚本语法错误：") + (lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
+        lua_close(L);
+        return false;
+    }
+    DumpSink sink;
+    if (lua_dump(L, dumpWriter, &sink, 0) != LUA_OK)
+    {
+        err = "脚本字节码编译失败";
+        lua_close(L);
+        return false;
+    }
+    lua_close(L);
+    bytecode = std::move(sink.data);
+    return true;
+}
+
+// 取（必要时编译并缓存）源码对应的字节码。
+bool getBytecode(const std::string &code, std::string &bytecode, std::string &err)
+{
+    {
+        std::lock_guard<std::mutex> lock(g_scriptMtx);
+        const auto it = g_bytecode.find(code);
+        if (it != g_bytecode.end())
+        {
+            bytecode = it->second;
+            return true;
+        }
+    }
+    std::string bc;
+    if (!compileOnce(code, bc, err))
+        return false;
+    {
+        std::lock_guard<std::mutex> lock(g_scriptMtx);
+        g_bytecode.emplace(code, bc);
+        bytecode = std::move(bc);
+    }
+    return true;
+}
+
+} // namespace
+
+bool scriptEngineAvailable()
+{
+    return true;
+}
+
+bool runDigestScript(const std::string &code, const ScriptDigestInput &in, uint64_t &out,
+                     std::string &err, bool &timeout)
+{
+    timeout = false;
+
+    std::string bytecode;
+    if (!getBytecode(code, bytecode, err))
+        return false;
+
+    MemBudget budget;
+    lua_State *L = lua_newstate(budgetAlloc, &budget);
+    if (!L)
+    {
+        err = "lua 状态创建失败（内存预算不足）";
+        return false;
+    }
+    luaL_requiref(L, "_G", luaopen_base, 1);
+    luaL_requiref(L, "string", luaopen_string, 1);
+    luaL_requiref(L, "table", luaopen_table, 1);
+    luaL_requiref(L, "math", luaopen_math, 1);
+    lua_pop(L, 4);
+    lua_sethook(L, quotaHook, LUA_MASKCOUNT, kInstructionQuota);
+
+    // 从缓存字节码加载（跳过源码解析）；chunk 名仅用于报错定位。
+    if (luaL_loadbuffer(L, bytecode.data(), bytecode.size(), "digest") != LUA_OK)
+    {
+        err = std::string("脚本加载失败：") + (lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
+        lua_close(L);
+        return false;
+    }
+
+    pushCtx(L, in);
 
     if (lua_pcall(L, 0, 1, 0) != LUA_OK)
     {
