@@ -12,13 +12,23 @@ add_library(ng_protocol STATIC
     src/SequentialCodec.cpp
     src/DigestEngine.cpp
     src/StreamDecoder.cpp
+    src/ScriptEngine.cpp
     include/protocol/ProtocolDocument.h
     include/protocol/ProtocolSpec.h
     include/protocol/SequentialCodec.h
     include/protocol/CompiledProgram.h
     include/protocol/DigestEngine.h
     include/protocol/StreamDecoder.h
+    include/protocol/ScriptEngine.h
 )
+
+# 脚本后端：仓库内 deps/lua（Lua 5.4 静态库），不走系统包。
+set(NG_LUA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../deps/lua")
+if(EXISTS "${NG_LUA_ROOT}/lib/liblua.a")
+    target_include_directories(ng_protocol PRIVATE "${NG_LUA_ROOT}/include")
+    target_link_libraries(ng_protocol PUBLIC "${NG_LUA_ROOT}/lib/liblua.a" m ${CMAKE_DL_LIBS})
+    target_compile_definitions(ng_protocol PUBLIC NG_PROTOCOL_LUA=1)
+endif()
 target_include_directories(ng_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ng_protocol PUBLIC Qt6::Core)
 set_target_properties(ng_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17)

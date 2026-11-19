@@ -9,6 +9,7 @@
 #include "protocol/SequentialCodec.h"
 #include "protocol/CompiledProgram.h"
 #include "protocol/StreamDecoder.h"
+#include "protocol/DigestEngine.h"
 #include "CustomProtocolParser.h"
 
 #include "ps_parser_spi.h"
@@ -797,6 +798,24 @@ int main(int argc, char *argv[])
         CHECK(std::fabs(lat->v.at(0).asDouble() - 4807.038) < 1e-6);
         CHECK(ns && ns->v.size() == 1 && ns->v.at(0).s == "N");
         OK("ASCII 变体：顶层段解 selector（msgid）→ 变体段表替换 payload 段重解");
+    }
+
+    // --- Lua 脚本后端 ---
+    {
+        CHECK(scriptDigestAvailable());
+        ScriptDigestInput in;
+        const char *d = "GPGGA";
+        in.data = reinterpret_cast<const uint8_t *>(d);
+        in.len = 5;
+        uint64_t out = 0;
+        std::string err;
+        bool to = false;
+        CHECK(computeScriptDigest("return 71", in, out, err, &to) && out == 71 && !to);
+        CHECK(computeScriptDigest("return ctx.len", in, out, err, &to) && out == 5 && !to);
+        CHECK(computeScriptDigest("local s = 0 for i = 1, ctx.len do s = s + string.byte(ctx.data, i) end return s % 256",
+                                  in, out, err, &to) && out == 358 % 256);
+        CHECK(!computeScriptDigest("while true do end", in, out, err, &to) && to);
+        OK("Lua 脚本后端：可用、能读 ctx.data/ctx.len、超指令配额判超时");
     }
 
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");

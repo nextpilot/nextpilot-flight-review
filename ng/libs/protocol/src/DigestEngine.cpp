@@ -1,4 +1,5 @@
 #include "protocol/DigestEngine.h"
+#include "protocol/ScriptEngine.h"
 
 #include <algorithm>
 #include <cctype>
@@ -179,17 +180,30 @@ bool computeDigest(const std::string &alg, const uint8_t *data, size_t len, uint
 
 bool scriptDigestAvailable()
 {
-    return false; // 脚本后端（Lua 5.4）在下一步接入；当前含 code 的模板按加载期错误处理
+#ifdef NG_PROTOCOL_LUA
+    return scriptEngineAvailable();
+#else
+    return false;
+#endif
 }
 
 bool computeScriptDigest(const std::string &code, const ScriptDigestInput &in, uint64_t &out,
-                         std::string &err)
+                         std::string &err, bool *timeout)
 {
+#ifdef NG_PROTOCOL_LUA
+    bool to = false;
+    const bool ok = runDigestScript(code, in, out, err, to);
+    if (timeout)
+        *timeout = to;
+    return ok;
+#else
     (void)code;
     (void)in;
     (void)out;
+    (void)timeout;
     err = "脚本后端未启用（脚本摘要需 Lua 5.4 支持）";
     return false;
+#endif
 }
 
 } // namespace nextpilot::plotscope::protocol

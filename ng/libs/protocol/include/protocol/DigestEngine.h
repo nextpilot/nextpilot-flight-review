@@ -43,6 +43,6 @@ struct ScriptDigestInput
 };
 
 bool computeScriptDigest(const std::string &code, const ScriptDigestInput &in, uint64_t &out,
-                         std::string &err);
+                         std::string &err, bool *timeout = nullptr);
 
 } // namespace nextpilot::plotscope::protocol
