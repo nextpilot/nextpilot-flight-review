@@ -93,7 +93,7 @@
 | `derive` | 派生字段，表达式引用前序段，不占输入 |
 | `transform` | 解析后算子链（见 §4.3） |
 | `scale` / `offset` | 单步线性换算 `phys = raw*scale + offset` |
-| `on_mismatch` | 校验失败策略：`reject`/`warn`/`skip` |
+| `on_mismatch` | 校验失败策略：`reject`（整帧作废，默认）/`warn`（该段写 NaN，帧保留，出诊断明细）/`skip`（该段不出通道，帧保留，出诊断明细）。**bin 段与 text 段同口径执行** |
 | `enum` / `range` | 合法取值集合 / 闭区间值域 |
 | `digest` | 跨段摘要校验（见 §4.2） |
 | `checks` | 段内谓词校验（eq/ne/lt/le/gt/ge/in/range/mask）；**序列类**（crc/sum/xor/parity）仅 bin 段放行 |

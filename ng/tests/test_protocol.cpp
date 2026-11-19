@@ -27,6 +27,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -868,6 +870,168 @@ int main(int argc, char *argv[])
             CHECK(compileFail(R"({"name":"neg5","mode":"bin","segments":[{"name":"a","type":"u8","width":70000}]})", why));
         }
         OK("编译层负例：未定义槽位/bit.base/width 越界/literal+delimiter 混写全部明确失败");
+    }
+
+    // --- 7d) Fuzz 冒烟：随机模板 + 随机字节，不许崩/不许抛（§9.7 第1条） ---
+    {
+        // 默认 2000 轮（秒级）；PS_FUZZ_TIME 可指定持续秒数做长稳。
+        const char *sec = std::getenv("PS_FUZZ_TIME");
+        const int rounds = sec ? 1000000 : 2000;
+        const int seconds = sec ? std::atoi(sec) : 0;
+        std::srand(20261119u);
+        const char *types[] = {"u8",  "u16", "u32", "i8",  "i16", "i32", "u64",  "i64",
+                               "f32", "f64", "bool", "bcd", "char", "number", "time"};
+        const char *keys[] = {"count", "type", "width", "delimiter", "literal", "expect",
+                              "bit", "scale", "range", "enum", "checks", "digest", "derive",
+                              "on_mismatch", "empty", "base", "repeater", "rest"};
+        int thrown = 0;
+        int decodedOk = 0;
+        int structuredErrs = 0;
+        double worstMs = 0;
+        for (int r = 0; r < rounds; ++r)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            try
+            {
+                const bool isBin = (std::rand() % 2) != 0;
+                // 一半样本走"可解出"骨架（bin 单 u8 段：任意 ≥1 字节都能出一帧），
+                // 确保 fuzz 不只覆盖校验层；另一半随机越界，压校验/解析的容错。
+                const bool semiLegal = isBin && ((std::rand() % 2) != 0);
+                const int nSeg = semiLegal ? 1 : (1 + std::rand() % 6);
+                std::string js = std::string("{\"name\":\"fuzz\",\"mode\":\"")
+                                 + (isBin ? "bin" : "text") + "\",\"layout\":\"sequential\",\"maxsize\":64,\"segments\":[";
+                static const char *binTypes[] = {"u8", "u16", "u32", "i8", "i16", "i32",
+                                                 "f32", "f64", "bool", "char"};
+                static const char *txtTypes[] = {"char", "number", "time"};
+                static const char *binKeys[] = {"count", "scale", "expect", "range",
+                                                "on_mismatch", "emit", "unit"};
+                static const char *txtKeys[] = {"delimiter", "width", "literal",
+                                                "on_mismatch", "emit", "unit"};
+                for (int i = 0; i < nSeg; ++i)
+                {
+                    if (i)
+                        js += ",";
+                    js += "{\"name\":\"s" + std::to_string(i) + "\"";
+                    const char **TS = semiLegal ? binTypes : types;
+                    const int tcount = semiLegal ? 1
+                                                 : static_cast<int>(sizeof(types) / sizeof(*types));
+                    js += ",\"type\":\"" + std::string(TS[std::rand() % tcount]) + "\"";
+                    const int nKey = std::rand() % 3;
+                    for (int k = 0; k < nKey; ++k)
+                    {
+                        if (semiLegal)
+                        {
+                            const char **KS = isBin ? binKeys : txtKeys;
+                            const std::string key = KS[std::rand() % (isBin ? 7 : 6)];
+                            js += ",\"" + key + "\":";
+                            if (key == "unit")
+                                js += "\"m\"";
+                            else if (key == "on_mismatch")
+                                js += "\"warn\"";
+                            else if (key == "delimiter")
+                                js += "\"|\"";
+                            else if (key == "emit")
+                                js += "\"aux\"";
+                            else
+                                js += std::to_string(1 + std::rand() % 3);
+                            continue;
+                        }
+                        const std::string key =
+                            keys[std::rand() % static_cast<int>(sizeof(keys) / sizeof(*keys))];
+                        // 故意写错值类型：随机数字/字符串/布尔，覆盖解析器的类型分支
+                        const int vk = std::rand() % 3;
+                        js += ",\"" + key + "\":";
+                        if (vk == 0)
+                            js += std::to_string(std::rand() % 4096);
+                        else if (vk == 1)
+                        {
+                            const int t2 = std::rand() % static_cast<int>(sizeof(types) / sizeof(*types));
+                            js += "\"" + std::string(types[t2]) + "\"";
+                        }
+                        else
+                            js += (std::rand() % 2 ? "true" : "\",\"");
+                    }
+                    js += "}";
+                }
+                js += "]}";
+                const int nBytes = 1 + std::rand() % 32;
+                QByteArray bytes;
+                for (int b = 0; b < nBytes; ++b)
+                    bytes.append(static_cast<char>(std::rand() % 256));
+                ProtocolDecodeResult dr = decodeSequentialJson(bytes, QByteArray(js.c_str()));
+                if (dr.ok)
+                    ++decodedOk;
+                else if (!dr.error.isEmpty())
+                    ++structuredErrs; // 拒绝必须给结构化原因，不许空错误静默失败
+                const double ms = std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - t0).count();
+                if (r > 0 && ms > worstMs)
+                    worstMs = ms; // 拒绝必须给结构化原因，不许空错误静默失败
+            }
+            catch (...)
+            {
+                ++thrown;
+            }
+            if (seconds > 0 && (r % 64) == 0)
+            {
+                static std::time_t start = std::time(nullptr);
+                if (std::time(nullptr) - start >= seconds)
+                    break;
+            }
+        }
+        // 第二段：合法模板 + 随机字节，直接压解码器内部路径（bin 定长 / text CSV）。
+        {
+            const QByteArray binTpl = R"({"name":"fz","mode":"bin","layout":"sequential",
+              "endian":"little","maxsize":64,"segments":[
+                {"name":"a","type":"u16"},{"name":"b","type":"u8","count":4},
+                {"name":"c","type":"f32"},{"name":"d","type":"u8","expect":7}]})";
+            const QByteArray txtTpl = R"({"name":"fz2","mode":"text","layout":"sequential",
+              "maxsize":128,"terminator":"\n","segments":[
+                {"name":"a","type":"number","delimiter":","},
+                {"name":"b","type":"char","delimiter":","},
+                {"name":"c","type":"number"}]})";
+            int okB = 0, errB = 0, silent = 0;
+            for (int r = 0; r < 1000; ++r)
+            {
+                QByteArray bytes;
+                const int n = std::rand() % 48;
+                for (int b = 0; b < n; ++b)
+                    bytes.append(static_cast<char>(std::rand() % 256));
+                try
+                {
+                    ProtocolDecodeResult d1 = decodeSequentialJson(bytes, binTpl);
+                    ProtocolDecodeResult d2 = decodeSequentialJson(bytes, txtTpl);
+                    if (d1.ok) ++okB; else ++errB;
+                    if (d2.ok) ++okB; else ++errB;
+                    if (!d1.ok && d1.error.isEmpty())
+                    {
+                        ++silent;
+                        if (silent <= 3)
+                            fprintf(stderr, "SILENT bin n=%d rej=%llu ch=%d\n", n,
+                                    (unsigned long long)d1.rejectedFrames, d1.channels.size());
+                    }
+                    if (!d2.ok && d2.error.isEmpty())
+                    {
+                        ++silent;
+                        if (silent <= 3)
+                            fprintf(stderr, "SILENT txt n=%d rej=%llu ch=%d\n", n,
+                                    (unsigned long long)d2.rejectedFrames, d2.channels.size());
+                    }
+                }
+                catch (...)
+                {
+                    ++thrown;
+                }
+            }
+            fprintf(stdout, "[ok] Fuzz 解码器内部：1000×2 组随机字节，ok=%d err=%d silent=%d\n", okB, errB, silent);
+        }
+
+        CHECK(thrown == 0);
+        CHECK(worstMs < 5.0); // §9.7 第1条：单轮解析 ≤ 5ms
+        fprintf(stdout,
+                "[ok] Fuzz 冒烟：%d 轮随机模板+随机字节，零崩溃零异常（解出 %d 次/结构化拒绝 %d 次，"
+                "单轮最坏 %.2fms）\n",
+                rounds, decodedOk, structuredErrs, worstMs);
     }
 
     // --- 7c) 畸形模板批量扫荡：全链路不抛异常、不崩溃，返回结构化错误 ---

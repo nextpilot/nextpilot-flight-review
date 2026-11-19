@@ -1498,6 +1498,8 @@ void StreamDecoder::finish(ProtocolDecodeResult &out)
         ++m_dropped;
         m_pending.clear();
     }
+    out.dropped = m_dropped;
+    out.rejectedFrames = m_rejected;
 }
 
 quint64 StreamDecoder::dropped() const

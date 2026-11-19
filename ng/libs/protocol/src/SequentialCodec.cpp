@@ -1048,6 +1048,25 @@ nextpilot::plotscope::protocol::decodeSequentialCompiled(const QByteArray &bytes
         std::string pushErr;
         dec.push(bytes, result, pushErr);
         dec.finish(result);
+        if (!result.ok)
+        {
+            // 不许静默失败：给不出通道时必须带上原因（首条结构化错误 → EOF 未闭合 → 推送错误）。
+            if (!result.errors.empty())
+            {
+                const DecodeError &e = result.errors.front();
+                result.error = QStringLiteral("没有可绘制通道：帧 #%1 段 %2 —— %3")
+                                   .arg(e.recordIndex)
+                                   .arg(QString::fromStdString(e.segment))
+                                   .arg(QString::fromStdString(e.detail));
+            }
+            else if (result.dropped > 0)
+                result.error = QStringLiteral("没有可绘制通道：%1 条记录在 EOF 时仍未闭合")
+                                   .arg(static_cast<qulonglong>(result.dropped));
+            else if (!pushErr.empty())
+                result.error = QString::fromStdString(pushErr);
+            else
+                result.error = QStringLiteral("没有可绘制通道；输入不含完整记录或模板边界不匹配");
+        }
         return result;
     }
 
@@ -1209,7 +1228,24 @@ nextpilot::plotscope::protocol::decodeSequentialCompiled(const QByteArray &bytes
     result.warnings = warnings;
     if (chans.empty())
     {
-        result.error = QStringLiteral("顺序协议没有可绘制通道；检查 emit/count 或协议内容");
+        // 不给空错误：把首条结构化原因（帧号/段名/期望实际）带上去，上层不用猜。
+        if (!result.errors.empty())
+        {
+            const DecodeError &e = result.errors.front();
+            result.error = QStringLiteral("没有可绘制通道：帧 #%1 段 %2 —— %3")
+                               .arg(e.recordIndex)
+                               .arg(QString::fromStdString(e.segment))
+                               .arg(QString::fromStdString(e.detail));
+        }
+        else if (result.dropped > 0)
+        {
+            result.error = QStringLiteral("没有可绘制通道：%1 条记录在 EOF 时仍未闭合")
+                               .arg(static_cast<qulonglong>(result.dropped));
+        }
+        else
+        {
+            result.error = QStringLiteral("没有可绘制通道；检查 emit/count 或协议内容");
+        }
         return result;
     }
     for (auto &kv : chans)
