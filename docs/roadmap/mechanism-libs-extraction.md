@@ -332,28 +332,68 @@ ng_dataset   ng_recording   GUI/ modules / host / extensions
 | 名字 | `displayName()` / `id()`（已有） | 已有 |
 | 能力 | `kind()` / `domain()` / `parserId()` / `supportedTransports()`（已有） | 已有 |
 | **参数规格** | **新增 `paramSpecs()` → `QVector<ParamSpec>`** | ✅ **唯一新增/手写** |
-| schema / UI | 框架 `FormSchemaGenerator::from(paramSpecs, 名字, 能力)` | ❌ **自动生成，不手写** |
+| schema / UI | 自研 `SchemaEngine` 解析参数规格 → 生成表单/对话框 | ❌ **自动生成，不手写** |
 
-`ParamSpec` 只保留**语义**，剥离全部**呈现**：
+#### 10.2.1 schema 是纯 metadata，零 UI 控件词汇（需求方 2026-11-19 追加确认，✅ 已拍板）
+
+需求方明确："后续 lib 库中的 schema 肯定不会指定 UI 控件，而是**数据类型、变量名、可选值，还有其他**——这些不是 UI，是 **metadata**；由**自己写的引擎解析**这个 metadata。"
+
+这条比 §4"框架生成 UI"更彻底，确定为本设计的**最高契约**：`ParamSpec` 的每个字段都必须是**数据语义**，**严禁出现任何控件/布局词汇**（不得有 `widget`、`control`、`QCheckBox`、`row/column`、`visible_if`、`placeholder` 之类）。分界线：
+
+| 字段 | 类别 | 语义 | 是否允许在 schema |
+|---|---|---|---|
+| `key` | 变量名 | 稳定参数名，回传/配置键（`database_path`） | ✅ metadata |
+| `type` | 数据类型 | Bool/Int/Double/Enum/String/File……描述**值是什么**，不是控件是什么 | ✅ metadata |
+| `defaultValue` | 数据 | 缺省值（类型化 `QVariant`） | ✅ metadata |
+| `options` | 可选值 | Enum 的合法取值集合 `{value, label}`——label 是**枚举语义名**（如"自动探测"），不是 UI 提示文案 | ✅ metadata |
+| `min/max` | 值域约束 | Int/Double 的合法范围 | ✅ metadata |
+| `fileFilter` | 数据约束 | File 类型接受的后缀模式 | ✅ metadata |
+| `unit` | 数据语义 | 物理单位（`ms`/`Hz`） | ✅ metadata |
+| `dependsOn` | 数据依赖 | `{key, value}`——"当 X=某值时本项才有意义"，是**参数间的逻辑依赖**，不是 `visible_if` 控件显隐 | ✅ metadata |
+| `description` | 数据文档 | 该参数的语义说明（引擎可作 tooltip，但 schema 里它是文档，不是 UI 指令） | ✅ metadata |
+| ~~`widget/control`~~ | UI | 指定用哪个控件 | ❌ 严禁 |
+| ~~`row/column/layout`~~ | UI | 布局位置 | ❌ 严禁 |
+| ~~`placeholder/visible_if`~~ | UI | 呈现/显隐指令 | ❌ 严禁 |
+
+> **判定法则**：字段若回答"这个参数**是什么数据**"（名字/类型/取值/约束/单位/依赖/说明）→ metadata，进 schema；若回答"这个数据**怎么画**"（控件/布局/样式/显隐）→ UI，归引擎。**类型决定控件，控件绝不写进 schema。**
 
 ```cpp
-struct ParamSpec {
-    QString key;                 // 稳定键（回传/配置用）
-    ParamType type;              // 枚举：Bool/Int/Double/Enum/String/File（复用 §4 FieldType 子集）
-    QVariant defaultValue;
-    // 语义约束（保留，非呈现）：
-    double min = 0, max = 0;     // Int/Double 范围
-    QVector<QPair<QString,QString>> options; // Enum 候选 {value,label}，label 是语义名非 UI 文案
-    QString fileFilter;          // File 类型过滤
+struct ParamSpec {              // 纯 metadata，headless 可构造/序列化/查询
+    QString key;                // 变量名
+    ParamType type;             // 数据类型枚举（Bool/Int/Double/Enum/String/File）
+    QVariant defaultValue;      // 缺省数据
+    double min = 0, max = 0;    // 值域（数据约束）
+    QVector<EnumOption> options;// 可选值 {value, semanticLabel}
+    QString fileFilter;         // File 后缀约束
+    QString unit;               // 物理单位
+    QVector<Dependency> dependsOn; // 参数间逻辑依赖 {key, equals}
+    QString description;        // 语义文档（非 UI 指令）
 };
-// 不保留：title / label / hint / description / ui.preview / visible_if ——这些由框架生成或按约定补齐
+// 严禁字段：widget/control/row/column/layout/placeholder/visible_if/style……
 ```
 
-- **label/title 生成**：`title` 用 `displayName()`；字段 label 由 `key` 按约定生成（`database_path` → "数据库路径"），需要覆盖时从统一术语表查，不写在 parser 里。
-- **`ui.preview/warnings`（原 importSchema 的预览段）**：不属于参数 schema，改为框架根据 `probe()` 返回统一渲染预览区（CSV 的探测预览所有格式共用一套），parser 不再各自声明 `ui` 段。
-- 与现有的 `TransformParam { key,label,type,description,defaultValue }` 合并：`ParamSpec` 吸收它，`label/description` 归框架、`key/type/defaultValue` 保留——Transform 编辑对话框也接入同一生成器。
+#### 10.2.2 自研 `SchemaEngine`：解析 metadata → 生成 UI
 
-**净效果**：四个 driver/parser 手写的 `configSchema()`/`importSchema()` 全部删除，各改成 10 行内的 `paramSpecs()`；§4 的 `FormSchema` 从"各实现手写产物"降级为"框架生成的中间物"。
+需求方明确"自己写的引擎解析这个"。引擎归属 `ng/libs/uischema`，是**唯一**把 metadata 翻译成 UI 的地方，分两层：
+
+```
+ParamSpec[] (纯 metadata, Qt Core, headless)
+    │  SchemaEngine::compile()        ← 自研解析器：类型/可选值/约束/依赖 → 表单模型
+    ▼
+FormSchema (§4 契约, 仍是纯数据)
+    │  QtFieldRenderer::render()      ← 唯一 ParamType → QWidget 映射
+    ▼
+QWidget / 对话框
+```
+
+- **compile 阶段**（headless、可单测）：读 `ParamSpec[]` + 名字/能力，套**类型→控件约定表**（`Bool→开关`、`Int/Double→带范围数值输入`、`Enum→单选`、`File→路径选择+filter`、`String→文本`）生成 `FormSchema`；处理 `dependsOn` 生成启用/禁用规则；label 由 `key` 约定或术语表补。
+- **render 阶段**（Qt Widgets，仅 GUI 链接）：唯一一处类型→控件映射，产出真实控件。
+- **扩展新控件类型**：改 `ParamType` 枚举 + 约定表（受控），**不改任何 parser**——这正是"schema 只描述数据、引擎负责呈现"的收益。
+- **CLI/headless**：只跑 compile，输出 `FormSchema` JSON 或参数清单，不渲染——契约层零 QWidget。
+
+与现有 `TransformParam { key,label,type,description,defaultValue }` 合并：`ParamSpec` 吸收它，`label` 归引擎（key 约定/术语表）、`type/defaultValue/description` 进 metadata——Transform 编辑对话框也接入同一引擎。
+
+**净效果**：四个 driver/parser 手写的 `configSchema()`/`importSchema()` 全部删除，各改成 10 行内的 `paramSpecs()`（纯 metadata）；UI 呈现逻辑在 `SchemaEngine` 里**只有一份**。
 
 ### 10.3 硬约束二：两个接口不能硬合并——产物不同，但配置能力可共用
 
@@ -394,9 +434,9 @@ class IMessageParser  : public IConfigurableContribution { /* parse(bytes, Decod
 §4 定的 `FormSchema`/`FieldSpec`/`FieldType` **仍是唯一产物契约**，不变；变的是**生产方**：
 
 - §4 原假设："各实现产出 `FormSchema`" → 实现方手写完整 schema；
-- §10 修正为："实现只写 `ParamSpec[]`，`FormSchemaGenerator`（在 `uischema` 库内）生成 `FormSchema`" —— 实现方连 schema JSON 都不写了。
+- §10 修正为："实现只写 `ParamSpec[]`（**纯 metadata、零 UI 词汇**），自研 `SchemaEngine` 编译出 `FormSchema`" —— 实现方连 schema JSON 都不写了。
 
-`uischema` 库职责相应扩展为：`ParamSpec → FormSchema → QWidget` 全链路，唯一一处 `ParamType → 控件` 映射。
+`uischema` 库职责相应扩展为：`ParamSpec(metadata) → SchemaEngine.compile → FormSchema → QtFieldRenderer → QWidget` 全链路，唯一一处 `ParamType → 控件` 映射（在引擎约定表，不在各 parser）。
 
 ### 10.5 验收标准（并入 §6）
 
@@ -407,9 +447,10 @@ class IMessageParser  : public IConfigurableContribution { /* parse(bytes, Decod
 5. headless 可查询"某解析器/驱动有哪些参数"（契约层无 QWidget）；
 6. §4 的 `FormSchema` JSON 往返、类型化值、类型穷举三条约束仍全部成立。
 
-### 10.6 待需求方拍板
+### 10.6 拍板状态
 
-1. 确认"param 列表必须显式声明、不能零声明"这一硬约束（**C++ 无反射，无法自动感知参数**）——接受 `paramSpecs()` 作为唯一手写项？
-2. 确认"合并配置能力、不合并解析接口"（§10.3 的 `IConfigurableContribution` 公共基类）替代"两个接口硬合并"？
-3. 确认字段 label 由 `key` 约定生成 + 统一术语表覆盖、预览区由框架按 `probe()` 统一渲染（parser 不再写 `ui` 段）？
-4. 确认两个参数对话框合并为一个通用对话框（涉及 ImportDialog 的探测预览交互，需保证体验不退化）？
+1. ~~确认 `paramSpecs()` 作为唯一手写项~~ → **✅ 已确认**（2026-11-19，需求方追加说明 schema 是 metadata）。
+2. 确认"合并配置能力、不合并解析接口"（§10.3 的 `IConfigurableContribution` 公共基类）替代"两个接口硬合并"？——**待拍板**。
+3. ~~确认字段 label 由 `key` 约定生成 + 预览区框架统一渲染~~ → **✅ 已确认**（§10.2.1 定为"schema 纯 metadata、零 UI 控件词汇"，label/description 归引擎，预览归 probe 统一渲染）。
+4. 确认两个参数对话框合并为一个通用对话框（涉及 ImportDialog 的探测预览交互，需保证体验不退化）？——**待拍板**。
+5. **✅ 已拍板（2026-11-19）**：schema 只描述 metadata（变量名/数据类型/可选值/值域/单位/依赖/说明），**严禁 UI 控件词汇**；由自研 `SchemaEngine` 解析生成 UI（§10.2.1/§10.2.2）。
