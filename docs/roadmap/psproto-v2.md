@@ -878,4 +878,6 @@ struct ProtocolChannel
 | 含脚本模板不做 codegen（显式报错） | **已定**（§4.7.2） |
 | CRC = 内置算法表为主 + Lua 兜底 | **已定**（§4.7.5） |
 
-| 旧 API 是否保留 | 待拍板 |
+| **时间戳 = i64 ticks（不转 double 秒）** | **已定**；落地见 [S0 施工方案](psproto-s0-plan.md) |
+| **保留 `decodeSequential`**（签名不变，内部后续改走 StreamParser） | **已定** |
+| 旧 API 是否保留 | ~~待拍板~~ |
