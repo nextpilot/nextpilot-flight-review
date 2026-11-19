@@ -226,7 +226,7 @@ private:
 | P0 | **读终止符** `until` | 段声明终止字节序列，读到即切帧；与 `size` 互斥；`finish` 时无终止符则丢弃或按 `fallback` 处理 | ASCII 行协议全部 |
 | P0 | **文本数字** `text_number` | 读到的 ASCII 片段按 `radix`（10/16）转 double；支持前导空格、`+/-`、科学计数 | CSV/NMEA/OEM7 |
 | P0 | **派生通道** `derive` | 表达式产通道（引用前序段、可用位运算）；取代 `valueExpr` 只校验的局限 | ARINC/ADS-B/CAN 手工解 |
-| P1 | **位域** `bit.offset/width` | 段可声明位偏移与位宽（跨字节），独立于字节对齐 | CAN/J1939/1553 |
+| P0 | **位域** `bit.*` | 见 §4.8：段可声明位偏移/位宽/位序，跨字节不对齐 | CAN/J1939/1553/ARINC/DBC |
 | P1 | **参数化 CRC** `op:"crc"` | 宽度显式（8/16/24/32/64）+ `poly/init/refin/refout/xorout` 全显式，`alg:"crc24q"` 可指向内含算法表；旧算子保留为别名 | RTCM3/任意标准 CRC |
 | P1 | **帧脚本（AST 逃生门）** | 见 §4.7：校验/派生/选择器三处都能写一小段代码 | 非标校验、非线性换算、协议内自写 CRC |
 | P2 | **字符串通道** | `str` 段可选产“枚举化数值通道”（值 → 枚举表下标） | 状态字、模式字段 |
@@ -379,6 +379,124 @@ return c == crc24;
 
 ---
 
+## 4.8 位域：按位切信号
+
+> 需求原话：「没有位域，这个要支持」。已从 P1 升为 **P0**。
+
+### 4.8.1 为什么必须内置，不接受“靠表达式拼”
+
+现状 `readElem()` 全部按整字节对齐读，`size` 最小粒度是 1 字节。用 `derive` 里 `(v >> 3) & 0x1F` 拼确实**能**凑出结果，但有四个代价：
+
+1. **可读性崩坏**：DBC 一帧 8 字节带 30 个信号，就是 30 行魔法数偏移，改一个信号要重算一片；
+2. **无法自动校验越界**：手算 shift 写错不报错，静默出垃圾数据；
+3. **codegen 无法优化**：表达式是通用路径，提取不出“一次加载 + 一次移位”；
+4. **DBC 无法直接导入**：`.dbc` 的 start bit/length/signed/scale 本来就与位域语义一一对应，绕道表达式就白丢了这张映射表。
+
+内置后：模板里一行一个信号，校验器能查越界，编译期能生成最优提取器，DBC 可 1:1 映射。
+
+### 4.8.2 数据模型：扁平位域段 + 容器段（不引入嵌套）
+
+沿用现有扁平段表，位域段用 `bit` 指向一个**容器段**，不新增嵌套结构：
+
+```jsonc
+// 容器：CAN 报文 8 字节 payload，自身不产通道
+{ "name": "payload", "type": "u8", "size": 8, "hidden": true }
+
+// 位域信号：相对 payload 首字节起算
+{ "name": "engine_rpm", "type": "u16",
+  "bit": { "base": "payload", "offset": 8, "width": 16, "order": "msb0" },
+  "scale": 0.25, "unit": "rpm" }
+```
+
+- `base`：缺省 `"frame"`（相对帧首字节）；可填段名（相对该段首字节）；
+- `offset`：**位**偏移（不是字节），从 `base` 首字节起算；
+- `width`：位宽 1–64；
+- `order`：`lsb0`（默认）/ `msb0`，见 §4.8.3；
+- 位域段**不再使用 `size`**，占用宽度由 `width` 决定；`type` 只用来定符号（`u16`/`i16`/`u32`…）；
+- 位域段不得为 `role: sync/length/payload/checksum`（这些必须是字节粒度）。
+
+这样做的理由：段表保持扁平，编译期不需要建树，`decode` 循环不用递归——与现有架构完全兼容。
+
+### 4.8.3 位编号：三个维度必须分开（这是最容易翻车的地方）
+
+业界的坑在于把三件事混成一个“位偏移”：
+
+| 维度 | 含义 | 本库字段 |
+|---|---|---|
+| 字节序 | 多字节整数怎么拼 | `endian`（文档级）/ 段级覆盖 |
+| **位序** | 位索引从 LSB 还是 MSB 起数 | `bit.order` |
+| 位偏移 | 从容器首字节起算多少位 | `bit.offset` |
+
+两种位序的精确定义：
+
+- **`lsb0`**：位索引 `i` → 第 `i/8` 字节的第 `i%8` 位（bit0 在最右）。索引递增 = 向高位走，跨字节连续。
+- **`msb0`**：位索引 `i` → 第 `i/8` 字节的第 `7 - (i%8)` 位（bit7 在最左）。索引递增 = 向低位走，跨字节连续。
+
+### 4.8.4 与主流协议位编号的等价对照（已核对）
+
+| 协议 / 工具 | 是否等价 | 对应配置 |
+|---|---|---|
+| DBC **Intel**（little-endian）信号 | 等价 | `order:"lsb0"`，`offset = start bit` |
+| DBC **Motorola**（big-endian）信号 | 等价 | `order:"msb0"`，`offset = 字节*8 + (7 - startbit%8)` |
+| J1939 / NMEA 2000 | 等价 | 同 Motorola，多帧需上层重组 |
+| u-blox UBX 位标志字 | 等价 | `lsb0` + `width:1` 取单个 flag |
+| ARINC 429 32 位字 | 等价 | 容器 `u32`（`order:"msb0"`），label/data/SSM 各一个位域 |
+| 1553B 命令字 | 等价 | 同 ARINC，`msb0` 分字段 |
+
+Motorola 等价性推导（写进文档防止后人改坏）：DBC start bit `s` 位于字节 `b=s/8`、位 `k=s%8`（MSB 优先编号），换算到 `msb0` 索引为 `b*8 + (7-k)`；信号向低位延伸时索引递增，`k=0` 之后正好落到下一字节 bit7，索引连续。**故 `msb0` 模型与 DBC Motorola 逐位等价。**
+
+### 4.8.5 提取算法（编译期编成一个四元组）
+
+编译期把 `(base, offset, width, order)` 折成：
+
+```cpp
+struct BitReader {
+    uint32_t byteOff;   // 起始字节（相对 base）
+    uint8_t  loadBytes; // 1..8
+    uint8_t  shift;
+    uint64_t mask;
+    bool     msb0;
+};
+```
+
+解码期：
+
+```cpp
+uint64_t raw = readUInt(p + byteOff, loadBytes, msb0 /* 拼装按 MSB 优先 */);
+raw = (raw >> shift) & mask;
+if (signed && width < 64) { raw = (uint64_t)((int64_t)(raw << (64-width)) >> (64-width)); }
+phys = raw * scale + offset;
+```
+
+- `lsb0`：`loadBytes = ceil((offset%8 + width)/8)`，`shift = offset%8`；
+- `msb0`：`shift = loadBytes*8 - (offset%8) - width`。
+
+**约束（务实取舍）**：`width + (offset % 8) ≤ 64`。这条保证了跨字节时 `loadBytes ≤ 8`，一次 `readUInt` 就能取完，不需要 `__int128`（MSVC 没有）也不需要第二次读取。违背此约束时校验器直接报错，不做静默降级——位域越界静默降级是最坏的设计。
+
+成本：一次 ≤8 字节 `readUInt`（常量长度，编译期可展开）+ 一次移位 + 一次 mask。比“每帧跑表达式”快，比逐位循环快得多。
+
+### 4.8.6 与现有能力的关系
+
+| 组合 | 行为 |
+|---|---|
+| 位域 + `scale/offset` | 支持（CAN 物理值 = raw*scale + offset，DBC 同语义） |
+| 位域 + 有符号 | 支持，按 `width` 做符号扩展（不是按 `type` 宽度） |
+| 位域 + `checks` | 支持（eq/range/mask 等，按物理值判） |
+| 位域 + `derive` / 脚本 | 支持，位域值可被脚本引用 |
+| 位域 + 变体 `series` | 支持（变体整体替换段表，offset 语义不变） |
+| 位域 + `until`（ASCII） | **互斥**，校验报错 |
+| 位域 + `counts` 数组 | **互斥**（数组请用字节粒度段 + `size` 表达式） |
+| 位域 + `role` | 互斥（sync/length/payload/checksum 必须字节粒度） |
+
+### 4.8.7 验收（硬标准，不接受“看起来对”）
+
+1. 用 `cantools` 从一份真实 `.dbc` 生成期望解码结果，抽 **32 个信号**（含 Intel/Motorola 混合、非对齐、有符号、跨字节），与本库输出**逐位比对全部相等**；
+2. 一份 8 字节 CAN 报文模板能解出 30+ 信号，模板内无一处手写 `>>`/`&`；
+3. 越界配置（`width + offset%8 > 64`、`base` 不存在、位域与 `until` 同时出现）全部被 `validate` 拒绝，报错带段名与具体位范围；
+4. ARINC 429 与 1553B 各一份模板可解，作为“非 CAN 场景”的回归。
+
+---
+
 ## 5. 分批与验收
 
 | 批次 | 内容 | 验收 |
@@ -386,7 +504,7 @@ return c == crc24;
 | **S1** | JSON Schema + README + 现状模板迁移（`demo*.psproto` 全部通过新校验） | schema 可被 VSCode 识别；7 个 fixture 全部 `validate` 通过；README 能照着写出新模板 |
 | **S2** | `compile()` → 段表 + 表达式字节码；`decode` 改走段表 | 行为与现状逐字段一致（回归测试）；3000 帧基准耗时 ≤ 1/3 |
 | **S3** | `StreamParser`（feedByte/feedChunk/finish/setSink/reset） | 单字节逐喂 与 整块喂 结果一致；跨块半帧正确；尾帧冲刷正确 |
-| **S4a** | 表达力补齐：`until` / `text_number` / `derive` / 位域 / **参数化 CRC（含 24 位）** | NMEA、CSV、CAN 风格、RTCM3 四份新模板可解；老模板不回归 |
+| **S4a** | 表达力补齐：`until` / `text_number` / `derive` / **位域（§4.8）** / 参数化 CRC（含 24 位） | NMEA、CSV 可解；**CAN DBC 32 信号与 cantools 逐位一致**；ARINC429/1553B 可解；RTCM3 可解；老模板不回归 |
 | **S4b** | **pscode 引擎**：类型化标量 + AST + 语义检查 + 字节码解释器 + 编辑器变量面板 | 用脚本写出 CRC24Q 且与内置算子结果**逐位一致**；循环上界可静态证明；错误带行列号 |
 | **S4c** | **pscode emitter**：C++ → Python → Java | 三语言生成物对同一输入逐位一致（golden）；生成物零依赖 |
 | **S5** | 模板 codegen（帧结构 → 解析器源码） | 生成的 C++ 解析器与解释器逐字段一致 |
@@ -420,3 +538,15 @@ return c == crc24;
 - 容器格式与嵌套 TLV **明确不覆盖**，不为“装得像通用引擎”牺牲简洁；
 - `str` 不产数值通道时不得伪造数值，避免污染数据集；
 - **脚本只能挂在校验/派生/选择器三处，不得用来描述帧布局**；脚本不得含 `while`、递归、I/O、堆分配。
+
+## 8. 已定 / 未定
+
+| 项 | 状态 |
+|---|---|
+| 位域内置（`bit.base/offset/width/order`） | **已定**（§4.8） |
+| 位序 `lsb0`/`msb0` 双模型，对齐 DBC Intel/Motorola | **已定**（§4.8.4 有等价性推导） |
+| 位域约束 `width + offset%8 ≤ 64`（避免 `__int128`） | **已定**（§4.8.5） |
+| 脚本引擎类型语义（定宽无符号） | 待拍板 |
+| CRC 定位（算子为主 / 全脚本） | 待拍板 |
+| ASCII 深度（全做 / 只定长） | 待拍板 |
+| 旧 API 是否保留 | 待拍板 |
