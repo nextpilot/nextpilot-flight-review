@@ -27,5 +27,5 @@ target_include_directories(ng_module_data_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../../gui/views/plot)
 # 主题是横向 GUI 基础设施（状态点等取色走它），单独成库，谁需要谁链——
 # 不必为此链接整个外壳库 ng_gui。
-target_link_libraries(ng_module_data_gui PUBLIC ng_core ng_gui_theme ng_gui_transform Qt6::Widgets Qt6::Gui Qt6::Core)
+target_link_libraries(ng_module_data_gui PUBLIC ng_context ng_gui_theme ng_gui_transform Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ng_module_data_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

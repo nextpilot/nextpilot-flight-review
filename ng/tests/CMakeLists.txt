@@ -1,7 +1,7 @@
 find_package(Qt6 REQUIRED COMPONENTS Core)
 
 # === ng_dataset 独立链接验收（B2）===
-# 故意只链 ng_dataset + Qt6::Core，不链 ng_core / host / module / extension。
+# 故意只链 ng_dataset + Qt6::Core，不链 ng_context / host / module / extension。
 # 任何 Dataset 对 core 业务类型的反向依赖都会在此链接失败。
 add_executable(ng_test_dataset_standalone test_dataset_standalone.cpp)
 target_link_libraries(ng_test_dataset_standalone PRIVATE ng_dataset Qt6::Core)
@@ -9,14 +9,14 @@ set_target_properties(ng_test_dataset_standalone PROPERTIES AUTOMOC ON CXX_STAND
 add_test(NAME ng_dataset_standalone COMMAND ng_test_dataset_standalone)
 
 # === ng_registry 独立链接验收（B3）===
-# 故意只链 ng_registry + Qt6::Core，不链 ng_core / host / module。
+# 故意只链 ng_registry + Qt6::Core，不链 ng_context / host / module。
 # 任何注册表核对 core 业务类型/QWidget/Rust 的反向依赖都会在此编译或链接失败。
 add_executable(ng_test_registry_standalone test_registry_standalone.cpp)
 target_link_libraries(ng_test_registry_standalone PRIVATE ng_registry Qt6::Core)
 set_target_properties(ng_test_registry_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_registry_standalone COMMAND ng_test_registry_standalone)
 
-# 意图契约独立验收：只链 ng_intent + foundation + Qt Core，不链 ng_core。
+# 意图契约独立验收：只链 ng_intent + foundation + Qt Core，不链 ng_context。
 add_executable(ng_test_intent_standalone test_intent_standalone.cpp)
 target_link_libraries(ng_test_intent_standalone PRIVATE ng_intent ng_foundation Qt6::Core)
 set_target_properties(ng_test_intent_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
@@ -30,21 +30,21 @@ add_test(NAME ng_uischema_standalone COMMAND ng_test_uischema_standalone)
 
 # TransformParam -> ParamSpec 适配链路验收（headless，链 core 但不拉 GUI）。
 add_executable(ng_test_transform_adapter test_transform_adapter.cpp)
-target_link_libraries(ng_test_transform_adapter PRIVATE ng_core ng_uischema Qt6::Core)
+target_link_libraries(ng_test_transform_adapter PRIVATE ng_context ng_uischema Qt6::Core)
 set_target_properties(ng_test_transform_adapter PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_transform_adapter COMMAND ng_test_transform_adapter)
 
 # B8-a：Lua 脚本库 describe() 加载器验收（headless，链 script 模块 + core + foundation）。
 add_executable(ng_test_lua_script_library test_lua_script_library.cpp)
 target_link_libraries(ng_test_lua_script_library PRIVATE
-    ng_module_script ng_core ng_uischema ng_foundation Qt6::Core)
+    ng_module_script ng_context ng_uischema ng_foundation Qt6::Core)
 set_target_properties(ng_test_lua_script_library PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_lua_script_library COMMAND ng_test_lua_script_library)
 
 # B8-b：TransformField 输入控件输出契约验收（offscreen GUI，链 gui_transform + core）。
 add_executable(ng_test_transform_field test_transform_field.cpp)
 target_link_libraries(ng_test_transform_field PRIVATE
-    ng_gui_transform ng_core ng_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_gui_transform ng_context ng_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ng_test_transform_field PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_transform_field COMMAND ng_test_transform_field)
 set_tests_properties(ng_transform_field PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -53,7 +53,7 @@ set_tests_properties(ng_transform_field PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 # 纯逻辑测试：只依赖 ng_protocol + Qt Core，headless。
 add_executable(ng_test_protocol test_protocol.cpp)
 target_link_libraries(ng_test_protocol PRIVATE
-    ng_protocol ng_ext_common ng_ext_registry ng_host ng_core ng_recording Qt6::Core)
+    ng_protocol ng_ext_common ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 target_compile_definitions(ng_test_protocol PRIVATE
     NG_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/../tests/fixture")
 set_target_properties(ng_test_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17)
@@ -64,7 +64,7 @@ target_include_directories(ng_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(ng_test_architecture PRIVATE
     ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 # 复用 CLI 里的 App 装配逻辑
 target_sources(ng_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
 set_target_properties(ng_test_architecture PROPERTIES AUTOMOC ON CXX_STANDARD 17)
@@ -77,7 +77,7 @@ target_include_directories(ng_test_transform PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(ng_test_transform PRIVATE
     ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 target_sources(ng_test_transform PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
 set_target_properties(ng_test_transform PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_transform COMMAND ng_test_transform)
@@ -100,7 +100,7 @@ target_link_libraries(ng_test_gui PRIVATE
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板呈现层（OBJECT 库）：自注册 TU 必须显式链接进来。
     ng_ext_automotive_gui
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 target_sources(ng_test_gui PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
 # 测试数据目录：仓库根的 tests/fixture（ng 自带 fixture 会重复同一批样本）。
 # 数据源面板的契约测试必须走**真实加载路径**（data.load 意图），
@@ -121,7 +121,7 @@ target_include_directories(ng_test_pipeline PRIVATE
 target_link_libraries(ng_test_pipeline PRIVATE
     ng_recording
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 set_target_properties(ng_test_pipeline PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_pipeline COMMAND ng_test_pipeline)
 
@@ -148,7 +148,7 @@ target_link_libraries(fastplot_dataset_test PRIVATE
     fastplot
     ng_recording
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(fastplot_dataset_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME fastplot_dataset COMMAND fastplot_dataset_test)
 set_tests_properties(fastplot_dataset PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -171,7 +171,7 @@ target_link_libraries(ng_test_instrument PRIVATE
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_recording
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 target_sources(ng_test_instrument PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
 set_target_properties(ng_test_instrument PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_instrument COMMAND ng_test_instrument)
@@ -188,7 +188,7 @@ target_link_libraries(ng_test_plot_io PRIVATE
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_recording
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 target_sources(ng_test_plot_io PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
 set_target_properties(ng_test_plot_io PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_plot_io COMMAND ng_test_plot_io)

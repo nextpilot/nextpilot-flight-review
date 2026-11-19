@@ -20,5 +20,5 @@ add_library(ng_ext_common OBJECT
     PspxParser.h
 )
 target_include_directories(ng_ext_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ng_ext_common PUBLIC ng_core ng_protocol)
+target_link_libraries(ng_ext_common PUBLIC ng_context ng_protocol)
 set_target_properties(ng_ext_common PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

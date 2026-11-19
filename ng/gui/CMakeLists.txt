@@ -43,11 +43,11 @@ add_library(ng_gui_theme OBJECT
     theme/PlotThumbnails.h
 )
 target_include_directories(ng_gui_theme PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/theme)
-target_link_libraries(ng_gui_theme PUBLIC ng_core Qt6::Gui Qt6::Widgets Qt6::Core)
+target_link_libraries(ng_gui_theme PUBLIC ng_context Qt6::Gui Qt6::Widgets Qt6::Core)
 set_target_properties(ng_gui_theme PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
 # 变换编辑器 + 在线调试对话框：独立 OBJECT 库，被 gui（曲线/协议）与 data_gui
-# （数据源衍生）共用。只依赖 ng_core（AppContext.evalTransform 回调 + TransformRegistry）
+# （数据源衍生）共用。只依赖 ng_context（AppContext.evalTransform 回调 + TransformRegistry）
 # 与 Qt Widgets，不含任何 script 类，故不会引入层依赖环。
 add_library(ng_gui_transform OBJECT
     shell/TransformEditorDialog.cpp
@@ -58,7 +58,7 @@ add_library(ng_gui_transform OBJECT
     shell/LuaEditor.h
 )
 target_include_directories(ng_gui_transform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shell)
-target_link_libraries(ng_gui_transform PUBLIC ng_core ng_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
+target_link_libraries(ng_gui_transform PUBLIC ng_context ng_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ng_gui_transform PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
 add_library(ng_gui OBJECT
@@ -100,7 +100,7 @@ target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 # fastplot：独立绘图库（只依赖 Qt Widgets）。绘图视图通过它绘制，
 # 因此 GUI 侧公共依赖；CLI 不链它，保持 headless 纯净。
-target_link_libraries(ng_gui PUBLIC ng_host ng_core ng_gui_theme ng_gui_transform ng_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
+target_link_libraries(ng_gui PUBLIC ng_host ng_context ng_gui_theme ng_gui_transform ng_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
 set_target_properties(ng_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 
@@ -124,7 +124,7 @@ target_link_libraries(plotscope-ng-gui PRIVATE
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
     ng_ext_automotive_gui
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
 # GUI 百万行实测（手动基准，不进 ctest）：验证大数据量下渲染路径的内存与速度。
@@ -141,7 +141,7 @@ target_link_libraries(plotscope-ng-gui-bench PRIVATE
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-bench PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
 # GUI 截图工具（手动运行）：加载真实数据 → 渲染界面 → 存 PNG。
@@ -159,5 +159,5 @@ target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-shot PROPERTIES AUTOMOC ON CXX_STANDARD 17)

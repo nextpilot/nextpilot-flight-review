@@ -8,7 +8,8 @@
 get_filename_component(_NG_LAYER_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 # 依赖层映射（按 target 名，不按物理目录——共享 UI 库虽在 gui/ 但归 L3）。
-# L0 foundation / L1 机制库 / L2 core / L3 host+共享UI / L4 module+ext / L5 gui / L6 可执行
+# L0 foundation / L1 机制库 / L2(空缺,原core) / L3 host+共享UI / L4 module+ext / L5 gui / L6 可执行
+# （B7 core 消亡：删除 L2 ng_core 映射，ng_context 归入 L1；其余层号保持，大小关系不变）
 function(_ng_layer_of _target _out)
   set(_layer "")
   if(_target STREQUAL "ng_foundation" OR _target STREQUAL "ng_kernel")
@@ -16,10 +17,9 @@ function(_ng_layer_of _target _out)
   elseif(_target STREQUAL "ng_dataset" OR _target STREQUAL "ng_registry" OR
          _target STREQUAL "ng_intent" OR _target STREQUAL "ng_uischema" OR
          _target STREQUAL "ng_uischema_widgets" OR _target STREQUAL "ng_protocol" OR
-         _target STREQUAL "fastplot" OR _target STREQUAL "ng_lua")
+         _target STREQUAL "fastplot" OR _target STREQUAL "ng_lua" OR
+         _target STREQUAL "ng_context")
     set(_layer 1)
-  elseif(_target STREQUAL "ng_core")
-    set(_layer 2)
   elseif(_target STREQUAL "ng_host" OR _target STREQUAL "ng_recording" OR
          _target STREQUAL "ng_gui_theme" OR _target STREQUAL "ng_gui_transform")
     set(_layer 3)

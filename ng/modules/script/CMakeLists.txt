@@ -24,5 +24,5 @@ add_library(ng_module_script OBJECT
     LuaScriptLibrary.h
 )
 target_include_directories(ng_module_script PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ng_module_script PUBLIC ng_host ng_core ng_lua Qt6::Core ${CMAKE_DL_LIBS})
+target_link_libraries(ng_module_script PUBLIC ng_host ng_context ng_lua Qt6::Core ${CMAKE_DL_LIBS})
 set_target_properties(ng_module_script PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

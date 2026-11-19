@@ -6,5 +6,5 @@ add_library(ng_ext_robotics OBJECT
     RoboticsPack.h
 )
 target_include_directories(ng_ext_robotics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ng_ext_robotics PUBLIC ng_core)
+target_link_libraries(ng_ext_robotics PUBLIC ng_context)
 set_target_properties(ng_ext_robotics PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

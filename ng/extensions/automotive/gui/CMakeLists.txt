@@ -18,6 +18,6 @@ add_library(ng_ext_automotive_gui OBJECT
     CanBrowserPanel.h
 )
 target_include_directories(ng_ext_automotive_gui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ng_ext_automotive_gui PUBLIC ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+target_link_libraries(ng_ext_automotive_gui PUBLIC ng_context Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ng_ext_automotive_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17
                                                   POSITION_INDEPENDENT_CODE ON)

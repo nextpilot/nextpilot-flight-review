@@ -10,5 +10,5 @@ add_library(ng_ext_registry STATIC
     PluginScanner.h
 )
 target_include_directories(ng_ext_registry PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ng_ext_registry PUBLIC ng_core Qt6::Core)
+target_link_libraries(ng_ext_registry PUBLIC ng_context Qt6::Core)
 set_target_properties(ng_ext_registry PROPERTIES AUTOMOC ON CXX_STANDARD 17)

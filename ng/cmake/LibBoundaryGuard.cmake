@@ -4,7 +4,7 @@
 #   1. libs 内 #include "../" 逃出库目录
 #   2. libs target 链接上层（core/host/gui/app/modules/extensions）
 #   3. Meyers 单例 static T& instance()
-# namespace core 残留只告警，B7 收口后再改失败。
+#   4. namespace nextpilot::plotscope::core 残留（B7 core 消亡后 FATAL）。
 
 get_filename_component(_NG_LIB_GUARD_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
@@ -35,18 +35,19 @@ function(_ng_lib_guard_sources)
         "请改用纯函数，或把实例交给上层组合根持有。")
     endif()
 
-    # 提示：core 命名空间残留。B7 收口前是合法中间态，故只警告不失败。
+    # B7 core 已消亡：libs 内禁止任何 nextpilot::plotscope::core 命名空间残留。
     if(_scan MATCHES "namespace[ \t]+nextpilot::plotscope::core")
-      message(WARNING
+      message(FATAL_ERROR
         "[libs 边界] ${_f} 仍用 nextpilot::plotscope::core 命名空间，"
-        "应随 B7 core 消亡收口为所属库名。")
+        "core 已随 B7 删除，必须收口为所属库名。")
     endif()
   endforeach()
 endfunction()
 
 function(_ng_lib_guard_targets)
   # 上层靶标：libs 一旦链接这些就构成依赖倒挂或成环。
-  set(_upper_rx "ng_core|ng_host|ng_gui|plotscope-ng|ng_module_|ng_ext_|ng_recording")
+  # （B7 core 消亡：移除 ng_core。ng_context 属 L1 libs 内部，同层互链合法，不拦截。）
+  set(_upper_rx "ng_host|ng_gui|plotscope-ng|ng_module_|ng_ext_|ng_recording")
 
   # 自动收集 libs 下所有 add_library(NAME ...) 的 target 名——新增库无需登记。
   file(GLOB_RECURSE _cmakes "${_NG_LIB_GUARD_ROOT}/libs/*/CMakeLists.txt")
@@ -73,7 +74,7 @@ function(_ng_lib_guard_targets)
             message(FATAL_ERROR
               "[libs 边界] target '${_t}' 通过 ${_prop} 链接上层 '${_l}'。\n"
               "  libs 只能向下依赖 foundation / Qt / 系统库，"
-              "禁止依赖 core / host / gui / modules / app / extensions。")
+              "禁止依赖 host / gui / modules / app / extensions 等上层。")
           endif()
         endforeach()
       endif()

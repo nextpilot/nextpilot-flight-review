@@ -12,5 +12,5 @@ add_executable(plotscope-ng
 target_link_libraries(plotscope-ng PRIVATE
     ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
-    ng_ext_registry ng_host ng_core ng_recording Qt6::Core)
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 set_target_properties(plotscope-ng PROPERTIES AUTOMOC ON CXX_STANDARD 17)
