@@ -69,6 +69,7 @@ public:
 
     // 切到指定页签（0 顶层字段 / 1 帧结构 / 2 子协议 / 3 JSON），供截图与自动化。
     void selectTab(int index);
+    void openFirstSegmentDetail();
 
 private:
     void newDoc();
@@ -91,8 +92,9 @@ private:
     void storeVariantSegs();         // 变体段表 -> 选中变体的缓存
     void addVariantRow();
     void removeVariantRow();
-    void addSegRow(QTableWidget *table);
-    void removeSegRow(QTableWidget *table);
+    void addSegRowAt(QTableWidget *table, int insertAt);
+    void removeSegRow(QTableWidget *table, int row);
+    void wireSegTable(QTableWidget *table);  // 右键增删 + Delete + 双击段详情
     void openSegmentDetail(QTableWidget *table, int row);
     void markDirty();
 

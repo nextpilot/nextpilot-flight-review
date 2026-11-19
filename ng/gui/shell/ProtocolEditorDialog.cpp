@@ -27,14 +27,17 @@
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QTimer>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSpinBox>
+#include <QShortcut>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTabWidget>
@@ -56,8 +59,8 @@ namespace
 enum SegCol
 {
     SegField = 0,
+    SegType,    // 类型紧随字段名：改类型比改长度频繁
     SegCount,
-    SegType,
     SegValue,
     SegUnit,
     SegOther,   // 只读摘要：表里没列的键（scale / bit / digest / enum / range / if …）
@@ -128,14 +131,14 @@ void moveTableRow(QTableWidget *t, int from, int to)
 
 void setupSegTable(QTableWidget *t, bool compact = false)
 {
-    t->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("长度"),
-                                  QStringLiteral("类型"), QStringLiteral("取值"),
+    t->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("类型"),
+                                  QStringLiteral("长度"), QStringLiteral("取值"),
                                   QStringLiteral("单位"), QStringLiteral("其它键")});
     t->horizontalHeader()->setStretchLastSection(true);
     // 紧凑档给变体段表：它只占右半栏，列宽按比例收，避免出现横向滚动条。
     t->setColumnWidth(SegField, compact ? 118 : 160);
-    t->setColumnWidth(SegCount, compact ? 58 : 90);
-    t->setColumnWidth(SegType, compact ? 58 : 90);
+    t->setColumnWidth(SegType, compact ? 62 : 96);
+    t->setColumnWidth(SegCount, compact ? 52 : 80);
     t->setColumnWidth(SegValue, compact ? 58 : 90);
     t->setColumnWidth(SegUnit, compact ? 54 : 80);
     t->setAlternatingRowColors(true);
@@ -151,10 +154,78 @@ void setupSegTable(QTableWidget *t, bool compact = false)
     t->setDefaultDropAction(Qt::MoveAction);
 }
 
+// 段详情里用 "bit.offset" 这种路径读写嵌套键：留空即删除，删空的分组对象也一并清掉。
+QJsonValue pathGet(const QJsonObject &o, const QString &path)
+{
+    QStringList parts = path.split(QLatin1Char('.'), Qt::SkipEmptyParts);
+    QJsonValue cur = o;
+    for (const QString &k : parts)
+    {
+        if (!cur.isObject())
+            return {};
+        cur = cur.toObject().value(k);
+    }
+    return cur;
+}
+
+void pathSet(QJsonObject &o, const QString &path, const QJsonValue &v)
+{
+    QStringList parts = path.split(QLatin1Char('.'), Qt::SkipEmptyParts);
+    if (parts.isEmpty())
+        return;
+    const QString key = parts.takeFirst();
+    if (parts.isEmpty())
+    {
+        if (v.isUndefined() || v.isNull())
+            o.remove(key);
+        else
+            o.insert(key, v);
+        return;
+    }
+    QJsonObject sub = o.value(key).toObject();
+    pathSet(sub, parts.join(QLatin1Char('.')), v);
+    if (sub.isEmpty())
+        o.remove(key);
+    else
+        o.insert(key, sub);
+}
+
 // 只读摘要：列出除"字段/长度/类型/取值"以外的键。
 QString otherKeysText(const QJsonObject &seg)
 {
-    QStringList keys;
+    static const QHash<QString, QString> kCn = {
+        {QStringLiteral("emit"), QStringLiteral("输出")},
+        {QStringLiteral("bit"), QStringLiteral("位域")},
+        {QStringLiteral("length"), QStringLiteral("长度")},
+        {QStringLiteral("scale"), QStringLiteral("缩放")},
+        {QStringLiteral("offset"), QStringLiteral("偏移")},
+        {QStringLiteral("endian"), QStringLiteral("字节序")},
+        {QStringLiteral("range"), QStringLiteral("范围")},
+        {QStringLiteral("enum"), QStringLiteral("枚举")},
+        {QStringLiteral("digest"), QStringLiteral("校验")},
+        {QStringLiteral("checks"), QStringLiteral("校验规则")},
+        {QStringLiteral("pattern"), QStringLiteral("正则")},
+        {QStringLiteral("if"), QStringLiteral("条件")},
+        {QStringLiteral("repeat"), QStringLiteral("重复")},
+        {QStringLiteral("until"), QStringLiteral("终止")},
+        {QStringLiteral("derive"), QStringLiteral("派生")},
+        {QStringLiteral("transform"), QStringLiteral("变换")},
+        {QStringLiteral("empty"), QStringLiteral("空值")},
+        {QStringLiteral("as"), QStringLiteral("类型覆盖")},
+        {QStringLiteral("base"), QStringLiteral("进制")},
+        {QStringLiteral("fixed"), QStringLiteral("小数位")},
+        {QStringLiteral("signed"), QStringLiteral("负号")},
+        {QStringLiteral("sci"), QStringLiteral("科学计数")},
+        {QStringLiteral("key"), QStringLiteral("键名")},
+        {QStringLiteral("delimiter"), QStringLiteral("边界")},
+        {QStringLiteral("literal"), QStringLiteral("字面量")},
+        {QStringLiteral("rest"), QStringLiteral("剩余文本")},
+        {QStringLiteral("width"), QStringLiteral("定宽")},
+        {QStringLiteral("repeater"), QStringLiteral("重复符")},
+        {QStringLiteral("on_mismatch"), QStringLiteral("不符策略")},
+        {QStringLiteral("description"), QStringLiteral("说明")},
+    };
+    QStringList out;
     for (auto it = seg.begin(); it != seg.end(); ++it)
     {
         const QString k = it.key();
@@ -162,10 +233,26 @@ QString otherKeysText(const QJsonObject &seg)
             k == QLatin1String("count") || k == QLatin1String("expect") ||
             k == QLatin1String("unit"))
             continue;
-        keys << k;
+        out << kCn.value(k, k);
     }
-    return keys.join(QStringLiteral(", "));
+    // 稳定顺序：先输出语义，再结构与校验，最后文本类，读起来像一句话
+    static const QStringList kOrder = {
+        QStringLiteral("输出"), QStringLiteral("位域"), QStringLiteral("缩放"),
+        QStringLiteral("偏移"), QStringLiteral("字节序"), QStringLiteral("范围"),
+        QStringLiteral("枚举"), QStringLiteral("校验"), QStringLiteral("校验规则"),
+        QStringLiteral("长度"), QStringLiteral("条件"), QStringLiteral("重复"),
+        QStringLiteral("终止"), QStringLiteral("派生"), QStringLiteral("变换"),
+    };
+    QStringList ordered;
+    for (const QString &k : kOrder)
+        if (out.contains(k))
+            ordered << k;
+    for (const QString &k : out)
+        if (!ordered.contains(k))
+            ordered << k;
+    return ordered.join(QStringLiteral(" · "));
 }
+
 } // namespace
 
 ProtocolEditorDialog::ProtocolEditorDialog(QWidget *parent, AppContext *appCtx,
@@ -246,10 +333,11 @@ ProtocolEditorDialog::ProtocolEditorDialog(QWidget *parent, AppContext *appCtx,
     m_preview->setWordWrap(false);
     rightLay->addWidget(m_preview, 1);
 
+    right->setFixedWidth(360);
     body->addWidget(left);
     body->addWidget(right);
-    body->setStretchFactor(0, 4);
-    body->setStretchFactor(1, 3);
+    body->setStretchFactor(0, 1);
+    body->setStretchFactor(1, 0);
 
     // --- 底部 ---
     m_status = new QLabel(QStringLiteral("新建协议"));
@@ -369,17 +457,14 @@ void ProtocolEditorDialog::buildDesignPages()
     auto *frameLay = new QVBoxLayout(framePage);
     frameLay->setContentsMargins(8, 8, 8, 8);
 
-    auto *segBar = new QHBoxLayout;
-    auto *segAdd = new QPushButton(QStringLiteral("+ 段"), framePage);
-    auto *segDel = new QPushButton(QStringLiteral("− 段"), framePage);
+    // 增删只在表格上发生（底部「＋ 添加字段」/ 右键 / Delete），顶部不再放一对按钮。
     auto *segHint = new QLabel(
-        QStringLiteral("长度=元素个数（可写前序段名或表达式），类型=元素类型；拖拽行调整顺序；"
-                       "双击行打开「段详情」编辑 bit / digest / scale 等其它键"), framePage);
+        QStringLiteral("类型在前、长度在后；长度=元素个数（可写前序段名或表达式）。"
+                       "拖动行调顺序，双击行开「段详情」— 里面每个属性都有说明和可选值。"),
+        framePage);
     segHint->setWordWrap(true);
-    segBar->addWidget(segAdd);
-    segBar->addWidget(segDel);
-    segBar->addWidget(segHint, 1);
-    frameLay->addLayout(segBar);
+    segHint->setStyleSheet(QStringLiteral("color:#666;"));
+    frameLay->addWidget(segHint);
 
     auto *segTable = new ReorderTable(0, SegColCount, framePage);
     m_segs = segTable;
@@ -389,6 +474,14 @@ void ProtocolEditorDialog::buildDesignPages()
         markDirty();
     };
     frameLay->addWidget(m_segs, 1);
+    auto *segAddRowBtn = new QPushButton(QStringLiteral("＋ 添加字段"), framePage);
+    segAddRowBtn->setFixedHeight(24);
+    segAddRowBtn->setFixedWidth(104);
+    segAddRowBtn->setToolTip(QStringLiteral("在表尾追加一行；插到中间用右键菜单"));
+    auto *addBar = new QHBoxLayout;
+    addBar->addWidget(segAddRowBtn);
+    addBar->addStretch(1);
+    frameLay->addLayout(addBar);
     m_tabs->addTab(framePage, QStringLiteral("帧结构"));
 
     // ---- 页 3：子协议（系列 + 变体段表） ----
@@ -467,6 +560,9 @@ void ProtocolEditorDialog::buildDesignPages()
         markDirty();
     };
     varSegLay->addWidget(m_varSegs, 1);
+    auto *varSegAddRowBtn = new QPushButton(QStringLiteral("＋ 添加字段"), varSegCol);
+    varSegAddRowBtn->setFixedHeight(24);
+    varSegLay->addWidget(varSegAddRowBtn);
     varArea->addWidget(varSegCol, 1);
 
     bodyLay->addLayout(varArea, 1);
@@ -475,8 +571,14 @@ void ProtocolEditorDialog::buildDesignPages()
     m_tabs->addTab(subPage, QStringLiteral("子协议"));
 
     // ---- 各页共用的动作 ----
-    connect(segAdd, &QPushButton::clicked, this, [this] { addSegRow(m_segs); });
-    connect(segDel, &QPushButton::clicked, this, [this] { removeSegRow(m_segs); });
+    connect(segAddRowBtn, &QPushButton::clicked, this, [this] {
+        addSegRowAt(m_segs, m_segs->rowCount());
+    });
+    connect(varSegAddRowBtn, &QPushButton::clicked, this, [this] {
+        addSegRowAt(m_varSegs, m_varSegs->rowCount());
+    });
+    wireSegTable(m_segs);
+    wireSegTable(m_varSegs);
     connect(varAdd, &QPushButton::clicked, this, &ProtocolEditorDialog::addVariantRow);
     connect(varDel, &QPushButton::clicked, this, &ProtocolEditorDialog::removeVariantRow);
     connect(m_variants, &QTableWidget::currentCellChanged, this, [this](int row, int, int, int) {
@@ -491,12 +593,7 @@ void ProtocolEditorDialog::buildDesignPages()
         storeVariantSegs();
         markDirty();
     });
-    connect(m_segs, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
-        openSegmentDetail(m_segs, row);
-    });
-    connect(m_varSegs, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
-        openSegmentDetail(m_varSegs, row);
-    });
+    // 双击段详情、右键增删、Delete 删除统一由 wireSegTable 装配（见上）。
 }
 
 // ---------------------------------------------------------------- 字面量
@@ -566,6 +663,17 @@ void ProtocolEditorDialog::fillSegTable(QTableWidget *table, const QJsonArray &s
         table->setItem(r, SegUnit,
                        new QTableWidgetItem(seg.value(QStringLiteral("unit")).toString()));
         auto *other = new QTableWidgetItem(otherKeysText(seg));
+        QStringList rawKeys;
+        for (auto it = seg.begin(); it != seg.end(); ++it)
+        {
+            const QString k = it.key();
+            if (k == QLatin1String("name") || k == QLatin1String("type") ||
+                k == QLatin1String("count") || k == QLatin1String("expect") ||
+                k == QLatin1String("unit"))
+                continue;
+            rawKeys << k;
+        }
+        other->setToolTip(rawKeys.join(QStringLiteral(", ")));
         other->setFlags(other->flags() & ~Qt::ItemIsEditable);
         table->setItem(r, SegOther, other);
     }
@@ -711,13 +819,13 @@ void ProtocolEditorDialog::removeVariantRow()
 
 // ---------------------------------------------------------------- 段增删与详情
 
-void ProtocolEditorDialog::addSegRow(QTableWidget *table)
+void ProtocolEditorDialog::addSegRowAt(QTableWidget *table, int insertAt)
 {
-    const int r = table->rowCount();
+    const int r = std::max(0, std::min(insertAt, table->rowCount()));
     table->insertRow(r);
     table->setItem(r, SegField, new QTableWidgetItem(QStringLiteral("field%1").arg(r + 1)));
-    table->setItem(r, SegCount, new QTableWidgetItem(QStringLiteral("1")));
     table->setItem(r, SegType, new QTableWidgetItem(QStringLiteral("u8")));
+    table->setItem(r, SegCount, new QTableWidgetItem(QStringLiteral("1")));
     table->setItem(r, SegValue, new QTableWidgetItem(QString()));
     table->setItem(r, SegUnit, new QTableWidgetItem(QString()));
     auto *other = new QTableWidgetItem(QString());
@@ -729,9 +837,9 @@ void ProtocolEditorDialog::addSegRow(QTableWidget *table)
     markDirty();
 }
 
-void ProtocolEditorDialog::removeSegRow(QTableWidget *table)
+void ProtocolEditorDialog::removeSegRow(QTableWidget *table, int row)
 {
-    const int r = table->currentRow();
+    const int r = row >= 0 ? row : table->currentRow();
     if (r < 0)
         return;
     m_syncing = true;
@@ -742,19 +850,58 @@ void ProtocolEditorDialog::removeSegRow(QTableWidget *table)
     markDirty();
 }
 
+void ProtocolEditorDialog::wireSegTable(QTableWidget *table)
+{
+    // 增删只在表格上发生：底部「＋ 添加字段」是主入口，右键与 Delete 是补充；
+    // 顺序靠拖拽，所以不再提供上移/下移按钮（按钮永远不如直接拖快）。
+    table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(table, &QWidget::customContextMenuRequested, this, [this, table](const QPoint &pos) {
+        const int row = table->indexAt(pos).row();
+        QMenu menu(this);
+        QAction *insBefore = menu.addAction(QStringLiteral("在此行前插入字段"));
+        QAction *insAfter = menu.addAction(QStringLiteral("在此行后插入字段"));
+        QAction *delAction = table->rowCount() ? menu.addAction(QStringLiteral("删除该字段"))
+                                              : nullptr;
+        QAction *detail = table->rowCount() ? menu.addAction(QStringLiteral("段详情…")) : nullptr;
+        delAction ? delAction->setEnabled(row >= 0) : void();
+        detail ? detail->setEnabled(row >= 0) : void();
+        QAction *chosen = menu.exec(table->viewport()->mapToGlobal(pos));
+        if (chosen == insBefore)
+            addSegRowAt(table, row < 0 ? table->rowCount() : row);
+        else if (chosen == insAfter)
+            addSegRowAt(table, row < 0 ? table->rowCount() : row + 1);
+        else if (chosen == delAction && row >= 0)
+            removeSegRow(table, row);
+        else if (chosen == detail && row >= 0)
+            openSegmentDetail(table, row);
+    });
+
+    auto *delKey = new QShortcut(QKeySequence::Delete, table);
+    delKey->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(delKey, &QShortcut::activated, this, [this, table] {
+        const int row = table->currentRow();
+        if (row >= 0)
+            removeSegRow(table, row);
+    });
+
+    // 双击行的任意位置 → 段详情（其它键的入口）
+    connect(table, &QTableWidget::cellDoubleClicked, this, [this, table](int row, int) {
+        openSegmentDetail(table, row);
+    });
+}
+
 void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
 {
     if (row < 0)
         return;
 
-    // 先把表格里可编辑的四列合并进对象，详情页看到的才是"当前真实值"。
+    // 先合并表格里可编辑的四列，详情页看到的是"当前真实值"。
     QJsonObject seg = objectFromItem(table->item(row, SegField));
     auto textOf = [table, row](int col) {
         const auto *it = table->item(row, col);
         return it ? it->text().trimmed() : QString();
     };
-    const QString name = textOf(SegField);
-    seg.insert(QStringLiteral("name"), name);
+    seg.insert(QStringLiteral("name"), textOf(SegField));
     const QString type = textOf(SegType);
     seg.insert(QStringLiteral("type"), type.isEmpty() ? QStringLiteral("u8") : type);
     const QJsonValue count = parseLiteral(textOf(SegCount));
@@ -771,130 +918,288 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
     else
         seg.insert(QStringLiteral("unit"), unit);
 
-    QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("段详情 · %1").arg(name));
-    dlg.resize(660, 540);
-    auto *lay = new QVBoxLayout(&dlg);
-
-    auto *hint = new QLabel(QStringLiteral(
-        "段支持的全部键都在这里（schema 允许的 %1 个键都可选）。标量直接填，"
-        "对象/数组填 JSON 文本；双击值单元格可多行编辑。").arg(QStringLiteral("33"), 0));
-    hint->setWordWrap(true);
-    lay->addWidget(hint);
-
-    auto *kv = new QTableWidget(0, 2);
-    kv->setHorizontalHeaderLabels({QStringLiteral("键"), QStringLiteral("值")});
-    kv->horizontalHeader()->setStretchLastSection(true);
-    kv->setColumnWidth(0, 150);
-    kv->setAlternatingRowColors(true);
-    kv->setSelectionBehavior(QAbstractItemView::SelectRows);
-    lay->addWidget(kv, 1);
-
-    auto valueText = [](const QJsonValue &v) -> QString {
-        if (v.isObject() || v.isArray())
-            return QString::fromUtf8(
-                QJsonDocument(v.isObject() ? QJsonDocument(v.toObject())
-                                           : QJsonDocument(v.toArray()))
-                    .toJson(QJsonDocument::Compact));
-        return ProtocolEditorDialog::literalText(v);
-    };
-
-    auto addRowFor = [kv, &valueText](const QString &key, const QJsonValue &v) {
-        const int r = kv->rowCount();
-        kv->insertRow(r);
-        kv->setItem(r, 0, new QTableWidgetItem(key));
-        kv->setItem(r, 1, new QTableWidgetItem(valueText(v)));
-    };
-
-    // 先按"常用顺序"排，其余已存在的键按字母补齐——不是只显示已知键，一个都不漏。
-    static const QStringList order = {
-        QStringLiteral("name"), QStringLiteral("type"), QStringLiteral("count"),
-        QStringLiteral("length"), QStringLiteral("endian"), QStringLiteral("scale"),
-        QStringLiteral("offset"), QStringLiteral("unit"), QStringLiteral("emit"),
-        QStringLiteral("expect"), QStringLiteral("bit"), QStringLiteral("digest"),
-        QStringLiteral("checks"), QStringLiteral("if"), QStringLiteral("enum"),
-        QStringLiteral("range"), QStringLiteral("repeat"), QStringLiteral("until"),
-        QStringLiteral("derive"), QStringLiteral("transform"), QStringLiteral("pattern"),
-        QStringLiteral("on_mismatch"), QStringLiteral("empty"), QStringLiteral("description"),
-        QStringLiteral("key"), QStringLiteral("literal"), QStringLiteral("delimiter"),
-        QStringLiteral("repeater"), QStringLiteral("rest"), QStringLiteral("width"),
-        QStringLiteral("base"), QStringLiteral("fixed"), QStringLiteral("signed"),
-        QStringLiteral("sci"), QStringLiteral("as")};
-    QStringList keys = order;
-    for (auto it = seg.begin(); it != seg.end(); ++it)
-        if (!keys.contains(it.key()))
-            keys << it.key();
-    for (const QString &k : keys)
+    enum BindKind { KText, KInt, KDouble, KTri, KFields, KInject, KEnumMap };
+    struct Bind
     {
-        if (seg.contains(k))
-            addRowFor(k, seg.value(k));
+        QString path;
+        QWidget *w;
+        BindKind kind;
+    };
+    QVector<Bind> binds;
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("段详情 · %1").arg(textOf(SegField)));
+    dlg.resize(760, 660);
+    auto *lay = new QVBoxLayout(&dlg);
+    auto *intro = new QLabel(QStringLiteral(
+        "每一项都可以留空——留空表示「不写这个键」。鼠标悬停或点占位文字能看到填法说明。"));
+    intro->setWordWrap(true);
+    lay->addWidget(intro);
+
+    auto *tabs = new QTabWidget;
+    lay->addWidget(tabs, 1);
+
+    // 一行 = 标签 + 控件；控件自带中文说明（placeholder + tooltip），不需要查文档。
+    auto addRow = [&binds](QTabWidget *tabs, QWidget *page, const QString &tabTitle,
+                           const QString &label, const QString &path, BindKind kind,
+                           const QString &hint, const QStringList &opts) -> QWidget * {
+        QFormLayout *form = page->findChild<QFormLayout *>();
+        if (!form)
+        {
+            page->setLayout(new QFormLayout);
+            form = static_cast<QFormLayout *>(page->layout());
+            form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+            form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            tabs->addTab(page, tabTitle);
+        }
+        QWidget *w = nullptr;
+        if (kind == KEnumMap)
+        {
+            auto *e = new QPlainTextEdit;
+            e->setPlaceholderText(hint);
+            e->setMaximumHeight(110);
+            w = e;
+        }
+        else if (!opts.isEmpty())
+        {
+            auto *c = new QComboBox;
+            c->setEditable(true);           // 允许填表里没有的值（如 @mytype 别名）
+            c->addItem(QStringLiteral("（不填）"));  // 索引 0 = 不写该键
+            for (const QString &o : opts)
+                c->addItem(o);
+            c->setCurrentIndex(0);
+            w = c;
+        }
+        else
+        {
+            auto *le = new QLineEdit;
+            le->setPlaceholderText(hint);
+            if (kind == KInt)
+                le->setValidator(new QIntValidator(-1 << 20, 1 << 20, le));
+            w = le;
+        }
+        w->setToolTip(hint);
+        form->addRow(label, w);
+        binds.push_back({path, w, kind});
+        return w;
+    };
+
+    // ---- 页1 基本 ----
+    auto *pBasic = new QWidget;
+    addRow(tabs, pBasic, QStringLiteral("基本"), QStringLiteral("字段名"),
+           QStringLiteral("name"), KText,
+           QStringLiteral("唯一段名，如 rpm。后面取值、时间戳、长度绑定都引用它"),
+           {});
+    addRow(tabs, pBasic, QStringLiteral("基本"), QStringLiteral("类型"), QStringLiteral("type"),
+           KText, QStringLiteral("选一个类型；常见：u8/u16/u32/i16/f32/char"),
+           {QStringLiteral("u8"), QStringLiteral("i8"), QStringLiteral("u16"),
+            QStringLiteral("i16"), QStringLiteral("u32"), QStringLiteral("i32"),
+            QStringLiteral("u64"), QStringLiteral("i64"), QStringLiteral("f32"),
+            QStringLiteral("f64"), QStringLiteral("bool"), QStringLiteral("bcd"),
+            QStringLiteral("char"), QStringLiteral("string"), QStringLiteral("number"),
+            QStringLiteral("rest"), QStringLiteral("time")});
+    addRow(tabs, pBasic, QStringLiteral("基本"), QStringLiteral("个数"), QStringLiteral("count"),
+           KText, QStringLiteral("元素个数，留空=1；可填前序段名（如 length）或表达式"),
+           {});
+    addRow(tabs, pBasic, QStringLiteral("基本"), QStringLiteral("期望值"),
+           QStringLiteral("expect"), KText,
+           QStringLiteral("常量匹配：170 或 0xAA；不匹配时按下面的「不符策略」处理"),
+           {});
+    addRow(tabs, pBasic, QStringLiteral("基本"), QStringLiteral("单位"), QStringLiteral("unit"),
+           KText, QStringLiteral("物理单位，如 rpm / degC；只影响显示标签"), {});
+    addRow(tabs, pBasic, QStringLiteral("基本"), QStringLiteral("输出"), QStringLiteral("emit"),
+           KText, QStringLiteral("不填=channel（画曲线）；aux=辅助通道；none=只校验不出图"),
+           {QStringLiteral("channel"), QStringLiteral("aux"), QStringLiteral("none")});
+    addRow(tabs, pBasic, QStringLiteral("基本"), QStringLiteral("不符策略"),
+           QStringLiteral("on_mismatch"), KText,
+           QStringLiteral("不填=reject（丢该帧）；warn=收下并记警告；skip=跳过该段"),
+           {QStringLiteral("reject"), QStringLiteral("warn"), QStringLiteral("skip")});
+    addRow(tabs, pBasic, QStringLiteral("基本"), QStringLiteral("说明"),
+           QStringLiteral("description"), KText,
+           QStringLiteral("给人看的备注，不影响解析"), {});
+
+    // ---- 页2 换算与位域 ----
+    auto *pScale = new QWidget;
+    addRow(tabs, pScale, QStringLiteral("换算与位域"), QStringLiteral("比例"),
+           QStringLiteral("scale"), KDouble,
+           QStringLiteral("原始值 × 比例 = 物理值，如 0.25；不填=1"), {});
+    addRow(tabs, pScale, QStringLiteral("换算与位域"), QStringLiteral("偏移"),
+           QStringLiteral("offset"), KDouble,
+           QStringLiteral("物理值 = 原始 × 比例 + 偏移；不填=0"), {});
+    addRow(tabs, pScale, QStringLiteral("换算与位域"), QStringLiteral("字节序"),
+           QStringLiteral("endian"), KText, QStringLiteral("不填=跟随协议全局设置"),
+           {QStringLiteral("little"), QStringLiteral("big")});
+    addRow(tabs, pScale, QStringLiteral("换算与位域"), QStringLiteral("位域容器"),
+           QStringLiteral("bit.base"), KText,
+           QStringLiteral("在哪个段的二进制里切位；不填=相对整帧起点"), {});
+    addRow(tabs, pScale, QStringLiteral("换算与位域"), QStringLiteral("位偏移"),
+           QStringLiteral("bit.offset"), KInt,
+           QStringLiteral("从容器起点算的位偏移（单位是 bit，不是字节）"), {});
+    addRow(tabs, pScale, QStringLiteral("换算与位域"), QStringLiteral("位宽"),
+           QStringLiteral("bit.width"), KInt, QStringLiteral("取多少位，1–64"), {});
+    addRow(tabs, pScale, QStringLiteral("换算与位域"), QStringLiteral("位序"),
+           QStringLiteral("bit.order"), KText,
+           QStringLiteral("lsb0=Intel（低位在前）；msb0=Motorola（高位在前）"),
+           {QStringLiteral("lsb0"), QStringLiteral("msb0")});
+
+    // ---- 页3 长度与校验 ----
+    auto *pLen = new QWidget;
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("长度覆盖段"),
+           QStringLiteral("length.fields"), KFields,
+           QStringLiteral("这个长度值等于后面哪些段的合计；多个用逗号分隔，如 payload,crc"),
+           {});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("长度单位"),
+           QStringLiteral("length.unit"), KText, QStringLiteral("bytes=字节；elements=元素数"),
+           {QStringLiteral("bytes"), QStringLiteral("elements")});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("长度表达式"),
+           QStringLiteral("length.expr"), KText,
+           QStringLiteral("直接用表达式算，如 payload+crc；与上面的字段列表二选一"), {});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("校验算法"),
+           QStringLiteral("digest.alg"), KText, QStringLiteral("内置算法；等价于 checks 里的 crc8 等"),
+           {QStringLiteral("xor8"), QStringLiteral("sum8"), QStringLiteral("crc8"),
+            QStringLiteral("crc16"), QStringLiteral("crc16_modbus"),
+            QStringLiteral("crc16_x25"), QStringLiteral("crc24q"),
+            QStringLiteral("crc32"), QStringLiteral("crc32c"), QStringLiteral("nmea_xor")});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("校验参与段"),
+           QStringLiteral("digest.over"), KFields,
+           QStringLiteral("参与校验的段，可用 a:b 表示区间；不填=从头到本级前一段"), {});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("校验位宽"),
+           QStringLiteral("digest.width"), KInt, QStringLiteral("默认 8；crc32 填 32"), {});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("追加常量"),
+           QStringLiteral("digest.inject"), KInject,
+           QStringLiteral("算完后再追加的常量字节（十六进制，如 0x1D；多个逗号分隔）"), {});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("多项式"),
+           QStringLiteral("digest.poly"), KText,
+           QStringLiteral("覆盖算法内建多项式，如 0x07；一般不用填"), {});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("初值"),
+           QStringLiteral("digest.init"), KText, QStringLiteral("如 0xFFFF"), {});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("结果异或"),
+           QStringLiteral("digest.xorout"), KText, QStringLiteral("如 0xFFFF"), {});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("输入反射"),
+           QStringLiteral("digest.refin"), KTri, QStringLiteral("不填=false；多数 CRC 不开，按数据手册填"),
+           {QStringLiteral("true"), QStringLiteral("false")});
+    addRow(tabs, pLen, QStringLiteral("长度与校验"), QStringLiteral("输出反射"),
+           QStringLiteral("digest.refout"), KTri, QStringLiteral("不填=false；一般与输入反射一致"),
+           {QStringLiteral("true"), QStringLiteral("false")});
+
+    // ---- 页4 文本与分支 ----
+    auto *pText = new QWidget;
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("字面量"),
+           QStringLiteral("literal"), KText,
+           QStringLiteral("必须逐字符匹配的符号，常用作段边界，如 $ 或 ,"), {});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("结束边界"),
+           QStringLiteral("delimiter"), KText,
+           QStringLiteral("该段到哪里结束：blank=空格/Tab；也可填逗号、分号等"), {});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("取剩余原文"),
+           QStringLiteral("rest"), KTri, QStringLiteral("true=整段剩余文本不再切分"),
+           {QStringLiteral("true"), QStringLiteral("false")});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("键名"),
+           QStringLiteral("key"), KText, QStringLiteral("key=value 词法里的键名，如 id"), {});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("定宽字符"),
+           QStringLiteral("width"), KInt, QStringLiteral("按固定字符数切分"), {});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("进制"),
+           QStringLiteral("base"), KText, QStringLiteral("数字按几进制解析"),
+           {QStringLiteral("2"), QStringLiteral("8"), QStringLiteral("10"),
+            QStringLiteral("16")});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("小数位"),
+           QStringLiteral("fixed"), KInt, QStringLiteral("定点小数位数，如 2 表示 12.34"), {});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("允许负号"),
+           QStringLiteral("signed"), KTri, QStringLiteral("不填/ false=拒绝负号；true=接受 -12 这种写法"),
+           {QStringLiteral("true"), QStringLiteral("false")});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("允许科学计数"),
+           QStringLiteral("sci"), KTri, QStringLiteral("不填/ false=拒绝 1.2e3；true=接受科学计数法"),
+           {QStringLiteral("true"), QStringLiteral("false")});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("数值解释"),
+           QStringLiteral("as"), KText, QStringLiteral("按指定类型解释数值，一般不用填"),
+           {QStringLiteral("f64"), QStringLiteral("f32"), QStringLiteral("i64"),
+            QStringLiteral("i32"), QStringLiteral("u64"), QStringLiteral("u32")});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("正则校验"),
+           QStringLiteral("pattern"), KText,
+           QStringLiteral("只校验不切分，如 ^[0-9]+$"), {});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("条件"),
+           QStringLiteral("if"), KText,
+           QStringLiteral("表达式为假时整段跳过，如 msgid>10"), {});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("重复方式"),
+           QStringLiteral("repeat"), KText,
+           QStringLiteral("elems=按个数；eos=读到记录结尾；until=读到终止表达式成立"),
+           {QStringLiteral("elems"), QStringLiteral("eos"), QStringLiteral("until")});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("终止条件"),
+           QStringLiteral("until"), KText, QStringLiteral("repeat=until 时用，如 b>=20"), {});
+    addRow(tabs, pText, QStringLiteral("文本与分支"), QStringLiteral("派生字段"),
+           QStringLiteral("derive"), KText,
+           QStringLiteral("由前序段算出来的字段，不占字节，如 time_s/1000"), {});
+
+    // ---- 页5 枚举与高级 ----
+    auto *pAdv = new QWidget;
+    auto *advLay = new QVBoxLayout(pAdv);
+    advLay->addWidget(new QLabel(QStringLiteral(
+        "枚举：每行写「值=名字」，例如 0=OFF、1=ON。改完只影响显示，不影响解析。")));
+    auto *enumEdit = new QPlainTextEdit;
+    enumEdit->setPlaceholderText(QStringLiteral("0=OFF\n1=ON"));
+    enumEdit->setMaximumHeight(110);
+    advLay->addWidget(enumEdit);
+    binds.push_back({QStringLiteral("enum"), enumEdit, KEnumMap});
+    advLay->addStretch(1);
+    auto *jsonBtn = new QPushButton(QStringLiteral("以 JSON 编辑整段（checks / transform 等嵌套结构）"));
+    advLay->addWidget(jsonBtn);
+    tabs->addTab(pAdv, QStringLiteral("枚举 · 高级"));
+
+    // 读：把已有值填进控件（没写过的键保持"（不填）"）
+    for (const Bind &b : binds)
+    {
+        const QJsonValue v = pathGet(seg, b.path);
+        if (auto *le = qobject_cast<QLineEdit *>(b.w))
+        {
+            if (v.isString())
+                le->setText(v.toString());
+            else if (v.isDouble())
+                le->setText(literalText(v));
+            else if (v.isBool())
+                le->setText(v.toBool() ? QStringLiteral("true") : QStringLiteral("false"));
+        }
+        else if (auto *c = qobject_cast<QComboBox *>(b.w))
+        {
+            if (v.isString())
+                c->setCurrentText(v.toString());
+            else if (v.isDouble())
+                c->setCurrentText(literalText(v));
+            else if (v.isBool())
+                c->setCurrentText(v.toBool() ? QStringLiteral("true") : QStringLiteral("false"));
+        }
+        else if (auto *e = qobject_cast<QPlainTextEdit *>(b.w))
+        {
+            if (b.kind == KEnumMap && v.isObject())
+            {
+                QStringList lines;
+                const QJsonObject m = v.toObject();
+                for (auto it = m.begin(); it != m.end(); ++it)
+                    lines << QStringLiteral("%1=%2").arg(it.key(), it.value().toString());
+                e->setPlainText(lines.join(QChar('\n')));
+            }
+        }
+        else if (auto *c = qobject_cast<QComboBox *>(b.w))
+        {
+            Q_UNUSED(c);
+        }
     }
 
-    auto *bar = new QHBoxLayout;
-    auto *addBtn = new QPushButton(QStringLiteral("+ 键"));
-    auto *delBtn = new QPushButton(QStringLiteral("− 键"));
-    auto *jsonBtn = new QPushButton(QStringLiteral("以 JSON 编辑整段…"));
-    auto *addAny = new QPushButton(QStringLiteral("+ 自定义键"));
-    bar->addWidget(addBtn);
-    bar->addWidget(delBtn);
-    bar->addWidget(addAny);
-    bar->addWidget(jsonBtn);
-    bar->addStretch(1);
-    lay->addLayout(bar);
-
     auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    bb->button(QDialogButtonBox::Ok)->setText(QStringLiteral("应用"));
+    bb->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
     lay->addWidget(bb);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
 
-    // 双击值 → 多行编辑（对象/数组在这里最好改）
-    connect(kv, &QTableWidget::cellDoubleClicked, &dlg, [kv](int r, int c) {
-        if (c != 1 || !kv->item(r, 1))
-            return;
-        bool ok = false;
-        const QString text = QInputDialog::getMultiLineText(
-            kv, QStringLiteral("编辑值"), kv->item(r, 0)->text(), kv->item(r, 1)->text(), &ok);
-        if (ok)
-            kv->item(r, 1)->setText(text);
-    });
-    // 加键：从 schema 白名单里选，已存在的不重复列
-    connect(addBtn, &QPushButton::clicked, &dlg, [kv, &keys, &addRowFor] {
-        QStringList avail;
-        for (const QString &k : keys)
-        {
-            bool present = false;
-            for (int r = 0; r < kv->rowCount(); ++r)
-                if (kv->item(r, 0) && kv->item(r, 0)->text() == k)
-                    present = true;
-            if (!present)
-                avail << k;
-        }
-        bool ok = false;
-        const QString k = QInputDialog::getItem(kv, QStringLiteral("加键"),
-                                                QStringLiteral("选择键"), avail, 0, false, &ok);
-        if (ok && !k.isEmpty())
-            addRowFor(k, QJsonValue());
-    });
-    connect(addAny, &QPushButton::clicked, &dlg, [kv, &addRowFor] {
-        bool ok = false;
-        const QString k = QInputDialog::getText(kv, QStringLiteral("自定义键"),
-                                                QStringLiteral("键名"), QLineEdit::Normal,
-                                                QString(), &ok);
-        if (ok && !k.trimmed().isEmpty())
-            addRowFor(k.trimmed(), QJsonValue());
-    });
-    connect(delBtn, &QPushButton::clicked, &dlg, [kv] {
-        const int r = kv->currentRow();
-        if (r >= 0)
-            kv->removeRow(r);
-    });
-    // 整段 JSON 兜底：嵌套很深或要从别处粘贴时用
-    connect(jsonBtn, &QPushButton::clicked, &dlg, [&seg, kv, &addRowFor, &valueText] {
-        QDialog sub(nullptr);
+    // "以 JSON 编辑整段"：先把当前控件写进对象，再开 JSON，改完回填控件
+    connect(jsonBtn, &QPushButton::clicked, &dlg, [&] {
+        QJsonObject cur = seg;
+        QDialog sub(&dlg);
         sub.setWindowTitle(QStringLiteral("整段 JSON"));
-        sub.resize(520, 420);
+        sub.resize(560, 460);
         auto *l = new QVBoxLayout(&sub);
         auto *e = new QPlainTextEdit;
         e->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-        e->setPlainText(QString::fromUtf8(QJsonDocument(seg).toJson(QJsonDocument::Indented)));
+        e->setPlainText(QString::fromUtf8(QJsonDocument(cur).toJson(QJsonDocument::Indented)));
         l->addWidget(e, 1);
         auto *b = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
         l->addWidget(b);
@@ -907,59 +1212,107 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
         if (perr.error != QJsonParseError::NoError || !d.isObject())
             return;
         seg = d.object();
-        kv->setRowCount(0);
-        for (auto it = seg.begin(); it != seg.end(); ++it)
-            addRowFor(it.key(), it.value());
-        Q_UNUSED(valueText);
     });
 
-    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    // 截图钩子：仅自动化验收用，正常交互不会有环境变量
+    const QString shotPath = qEnvironmentVariable("PLOTSCOPE_SHOT_SEG");
+    const int shotTab = qEnvironmentVariableIntValue("PLOTSCOPE_SHOT_SEG_TAB");
+    if (shotTab > 0 && shotTab < tabs->count())
+        tabs->setCurrentIndex(shotTab);
+    if (!shotPath.isEmpty())
+    {
+        QTimer::singleShot(900, &dlg, [&dlg, shotPath] {
+            dlg.grab().save(shotPath);
+            dlg.accept();
+        });
+    }
     if (dlg.exec() != QDialog::Accepted)
         return;
 
-    // 收集：空键跳过；值以 { / [ 开头按 JSON 解析，否则按标量字面量。
-    QJsonObject obj;
-    for (int r = 0; r < kv->rowCount(); ++r)
+    // 收集：留空即删除。数字/布尔按控件类型解析，其余按字面量（数字自动识别）。
+    QJsonObject out = seg;  // 保留没在表单里露面的键
+    for (const Bind &b : binds)
     {
-        const QString k = kv->item(r, 0) ? kv->item(r, 0)->text().trimmed() : QString();
-        if (k.isEmpty())
-            continue;
-        const QString raw = kv->item(r, 1) ? kv->item(r, 1)->text().trimmed() : QString();
-        if (raw.isEmpty())
+        QJsonValue v(QJsonValue::Undefined);
+        if (auto *le = qobject_cast<QLineEdit *>(b.w))
         {
-            obj.insert(k, QJsonValue(QJsonValue::Null));
-            continue;
-        }
-        if (raw.startsWith(QLatin1Char('{')) || raw.startsWith(QLatin1Char('[')))
-        {
-            QJsonParseError perr;
-            const QJsonDocument d = QJsonDocument::fromJson(raw.toUtf8(), &perr);
-            if (perr.error == QJsonParseError::NoError)
+            const QString t = le->text().trimmed();
+            if (t.isEmpty())
+                continue;  // 保持 out 原样 ⇒ 用户清空则删除
+            switch (b.kind)
             {
-                obj.insert(k, d.isObject() ? QJsonValue(d.object()) : QJsonValue(d.array()));
-                continue;
+            case KInt:
+                v = QJsonValue(t.toInt());
+                break;
+            case KDouble:
+                v = QJsonValue(t.toDouble());
+                break;
+            case KFields:
+            {
+                QJsonArray a;
+                for (const QString &x : t.split(QLatin1Char(','), Qt::SkipEmptyParts))
+                    a.append(x.trimmed());
+                v = a;
+                break;
+            }
+            case KInject:
+            {
+                QJsonArray a;
+                for (const QString &x : t.split(QLatin1Char(','), Qt::SkipEmptyParts))
+                    a.append(parseLiteral(x));
+                v = a;
+                break;
+            }
+            default:
+                v = parseLiteral(t);
+                break;
             }
         }
-        obj.insert(k, parseLiteral(raw));
+        else if (auto *c = qobject_cast<QComboBox *>(b.w))
+        {
+            if (c->currentIndex() <= 0)
+                v = QJsonValue(QJsonValue::Undefined);
+            else if (b.kind == KTri)
+                v = QJsonValue(c->currentText() == QLatin1String("true"));
+            else
+                v = QJsonValue(c->currentText());
+        }
+        else if (auto *e = qobject_cast<QPlainTextEdit *>(b.w))
+        {
+            const QStringList lines = e->toPlainText().split(QChar('\n'), Qt::SkipEmptyParts);
+            if (lines.isEmpty())
+                v = QJsonValue(QJsonValue::Undefined);
+            else
+            {
+                QJsonObject m;
+                for (const QString &ln : lines)
+                {
+                    const int eq = ln.indexOf(QLatin1Char('='));
+                    if (eq <= 0)
+                        continue;
+                    m.insert(ln.left(eq).trimmed(), ln.mid(eq + 1).trimmed());
+                }
+                v = m;
+            }
+        }
+        pathSet(out, b.path, v);
     }
-    // 空值（用户清空）不要写进模板
-    QStringList nullKeys;
-    for (auto it = obj.begin(); it != obj.end(); ++it)
-        if (it.value().isNull())
-            nullKeys << it.key();
-    for (const QString &k : nullKeys)
-        obj.remove(k);
+
+    // name/type 必填：空的话补默认，避免写出一份编译不了的模板
+    if (!out.contains(QStringLiteral("name")) || out.value(QStringLiteral("name")).toString().isEmpty())
+        out.insert(QStringLiteral("name"), textOf(SegField));
+    if (out.value(QStringLiteral("type")).toString().isEmpty())
+        out.insert(QStringLiteral("type"), QStringLiteral("u8"));
 
     m_syncing = true;
     auto *fieldItem = table->item(row, SegField);
-    fieldItem->setText(obj.value(QStringLiteral("name")).toString());
-    storeObjectOnItem(fieldItem, obj);
-    table->item(row, SegCount)->setText(literalText(obj.value(QStringLiteral("count"))));
-    table->item(row, SegType)->setText(obj.value(QStringLiteral("type")).toString());
-    table->item(row, SegValue)->setText(literalText(obj.value(QStringLiteral("expect"))));
-    table->item(row, SegUnit)->setText(obj.value(QStringLiteral("unit")).toString());
-    table->item(row, SegOther)->setText(otherKeysText(obj));
+    fieldItem->setText(out.value(QStringLiteral("name")).toString());
+    storeObjectOnItem(fieldItem, out);
+    table->item(row, SegType)->setText(out.value(QStringLiteral("type")).toString());
+    table->item(row, SegCount)->setText(literalText(out.value(QStringLiteral("count"))));
+    table->item(row, SegValue)->setText(literalText(out.value(QStringLiteral("expect"))));
+    table->item(row, SegUnit)->setText(out.value(QStringLiteral("unit")).toString());
+    table->item(row, SegOther)->setText(otherKeysText(out));
     m_syncing = false;
     if (table == m_varSegs)
         storeVariantSegs();
@@ -1170,6 +1523,11 @@ void ProtocolEditorDialog::setTemplateText(const QString &text, const QString &p
 void ProtocolEditorDialog::setSampleFrame(const QString &hex)
 {
     m_hex->setText(hex);
+}
+
+void ProtocolEditorDialog::openFirstSegmentDetail()
+{
+    openSegmentDetail(m_segs, 0);
 }
 
 void ProtocolEditorDialog::selectTab(int index)

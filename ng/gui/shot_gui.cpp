@@ -60,6 +60,13 @@ int main(int argc, char *argv[])
         const QString tplPath = argc >= 4 ? QString::fromLocal8Bit(argv[3]) : QString();
         const QString frameHex = argc >= 5 ? QString::fromLocal8Bit(argv[4]) : QString();
         const int tabIndex = argc >= 6 ? QString::fromLocal8Bit(argv[5]).toInt() : 0;
+        const bool segShot = argc >= 7 && QString::fromLocal8Bit(argv[6]) == QLatin1String("seg");
+        if (segShot)
+        {
+            qputenv("PLOTSCOPE_SHOT_SEG", (png + QStringLiteral("-seg.png")).toUtf8());
+            if (argc >= 8)
+                qputenv("PLOTSCOPE_SHOT_SEG_TAB", argv[7]);
+        }
         nextpilot::plotscope::gui::ProtocolEditorDialog dlg;
         QByteArray tpl;
         QString terr;
@@ -87,8 +94,14 @@ int main(int argc, char *argv[])
                         shot.width(), shot.height());
             else
                 fprintf(stderr, "协议编辑器截图保存失败: %s\n", qPrintable(png));
-            app.quit();
+            if (!segShot)
+                app.quit();
         });
+        if (segShot)
+        {
+            dlg.openFirstSegmentDetail();
+            return 0;
+        }
         return app.exec();
     }
     // 末尾若有两个纯数字，视为宽高；若出现 "dark"/"light" 关键字，视为初始主题。
