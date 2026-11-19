@@ -861,8 +861,8 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 
 1. **Fuzz 10 分钟**：随机字节流 + 随机模板，要求不崩、不超时（单次 ≤ 5 ms）、峰值内存 ≤ 2× maxsize；
 2. **畸形模板集**：全部返回结构化错误，**零异常抛出**、零崩溃；已落地 41 份坏模板批量扫荡（结构/类型/键互斥/值域/文本/series 各维度），validate→parse→compile→decode 全链路 try/catch 零崩溃；规模向 ≥100 份扩充留作后续；
-3. **单帧诊断**：任一失败帧能给出 帧号 + 段名 + 期望值/实际值；
-4. **静默丢数据零容忍**：任何"丢弃/截断/跳过"都必须出现在 `Diagnostics` 里，不得只有一个计数器；
+3. **单帧诊断**：任一失败帧能给出 帧号 + 段名 + 期望值/实际值。现状：`DecodeError` 已有 `recordOffset`（绝对偏移）/`segment`（段名）/`detail`（期望/实际），**缺显式帧号 `recordIndex`**；待与下游 Dataset/Diagnostics 契约对齐后补字段；
+4. **静默丢数据零容忍**：任何"丢弃/截断/跳过"都必须出现在 `Diagnostics` 里，不得只有一个计数器。现状：整帧 reject/abort/overflow/EOF 都已进 `errors` 明细（前 128 条）；**段级 `on_mismatch:skip` 完全无痕迹、`warn` 只进 `skipped` 计数器未留明细**——text 路径三个 skip/warn 分支待补段级诊断 note；bin 路径（readFrame）诊断归集待对齐；
 5. **u64 精度**：`0xFFFFFFFFFFFFFFFE` 级别的值必须原样解出（typed 模型 u64 走 `u` 成员不经 double，已补回归用例钉死高位不丢）。
 
 ---
