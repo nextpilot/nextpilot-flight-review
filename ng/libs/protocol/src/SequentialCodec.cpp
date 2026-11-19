@@ -803,6 +803,42 @@ nextpilot::plotscope::protocol::previewSequentialFrame(const QByteArray &frame,
         return res;
     }
 
+    // 有字符边界段 → 走流式解码器（与生产路径同一个记录解析器）。
+    if (prog.isAscii)
+    {
+        StreamDecoder dec(prog);
+        ProtocolDecodeResult dr;
+        std::string derr;
+        dec.push(frame, dr, derr);
+        dec.finish(dr);
+        res.ok = dr.ok;
+        if (!dr.ok)
+            res.error = dr.errors.empty() ? QStringLiteral("解码失败")
+                                          : QString::fromStdString(dr.errors.front().detail);
+        res.lines << QStringLiteral("记录 %1 B · %2（流式 · 记录级）")
+                         .arg(frame.size())
+                         .arg(QString::fromStdString(tpl.name));
+        for (const ProtocolChannel &ch : dr.channels)
+        {
+            QStringList vals;
+            const int n = static_cast<int>(ch.v.size());
+            for (int i = 0; i < n && i < 12; ++i)
+                vals << QString::number(ch.v.at(i).asDouble(), 'g', 10);
+            res.lines << QStringLiteral("%1  %2 值 = [%3]%4")
+                             .arg(QString::fromStdString(ch.name))
+                             .arg(n)
+                             .arg(vals.join(QStringLiteral(", ")))
+                             .arg(ch.unit.empty() ? QString()
+                                                  : QStringLiteral(" %1").arg(QString::fromStdString(ch.unit)));
+        }
+        if (dr.dropped || dr.skipped || dr.overflow)
+            res.lines << QStringLiteral("dropped=%1 skipped=%2 overflow=%3")
+                             .arg(dr.dropped)
+                             .arg(dr.skipped)
+                             .arg(dr.overflow);
+        return res;
+    }
+
     std::vector<TypedVec> rawSlots = makeSlots(prog);
     std::vector<TypedVec> physSlots = makeSlots(prog);
     FrameRead fr;

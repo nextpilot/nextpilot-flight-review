@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <cmath>
 #include <map>
 #include <regex>
 
@@ -970,7 +971,31 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
         RecAttempt r;
         if (attemptRecord(prog, p, limit, r))
         {
-            emitRecord(prog, r, m_recordIndex++, out);
+            // 时间轴：声明了 timestamp 就用它算 ticks，否则按记录序号。
+            int64_t t = m_recordIndex;
+            if (prog.hasTimestamp && prog.timestamp.constant)
+            {
+                t = static_cast<int64_t>(prog.timestamp.constValue.asDouble());
+            }
+            else if (prog.hasTimestamp)
+            {
+                TypedValue tv;
+                std::string terr;
+                if (runByteCode(prog.timestamp, r.vals, tv, terr) && tv.type != ValueType::Text)
+                {
+                    int64_t mult = 1;
+                    if (prog.timestampUnit == "ms")
+                        mult = 1000;
+                    else if (prog.timestampUnit == "us")
+                        mult = 1000000;
+                    else if (prog.timestampUnit == "ns")
+                        mult = 1000000000;
+                    t = static_cast<int64_t>(std::llround(tv.asDouble() * static_cast<double>(mult)));
+                    out.ticksPerSecond = mult;
+                }
+            }
+            m_recordIndex++;
+            emitRecord(prog, r, t, out);
             out.ok = true;
             // 有 term：消费到 term 结束；无 term：消费到 check 读满的位置（剩余留给下一条）。
             size_t take = prog.hasTerminator ? consume : r.used;
