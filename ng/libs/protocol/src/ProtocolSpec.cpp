@@ -16,8 +16,8 @@ QStringList typeNames()
     return {QStringLiteral("u8"), QStringLiteral("i8"), QStringLiteral("u16"), QStringLiteral("i16"),
             QStringLiteral("u32"), QStringLiteral("i32"), QStringLiteral("u64"), QStringLiteral("i64"),
             QStringLiteral("f32"), QStringLiteral("f64"), QStringLiteral("bool"),
-            QStringLiteral("bcd"), QStringLiteral("str"), QStringLiteral("string"),
-            QStringLiteral("ascii"), QStringLiteral("char")};
+            QStringLiteral("bcd"), QStringLiteral("text"), QStringLiteral("str"),
+            QStringLiteral("string"), QStringLiteral("ascii"), QStringLiteral("char")};
 }
 
 bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
@@ -36,7 +36,7 @@ bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
     if (t == "f64" || t == "double" || t == "float64") { ti = {FType::F64, 8, true, true, false}; return true; }
     if (t == "bool" || t == "boolean") { ti = {FType::BOOL, 1, false, false, false}; return true; }
     if (t == "bcd") { ti = {FType::BCD, 1, false, false, true}; return true; }
-    if (t == "str" || t == "string" || t == "ascii" || t == "char")
+    if (t == "text" || t == "str" || t == "string" || t == "ascii" || t == "char")
     { ti = {FType::STR, 1, false, false, false}; return true; }
     err = "未知类型: " + raw;
     return false;
