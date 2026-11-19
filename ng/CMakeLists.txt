@@ -72,6 +72,11 @@ endif()
 # 又不让 core 与机制库形成循环依赖。必须先于 core 定义。
 add_subdirectory(libs/foundation)
 
+# === 注册表最小核（header-only，先于 core 定义）===
+# 泛型 Registry<T> + 自注册助手。各具体表退化为薄壳委托；core PUBLIC 链它。
+# 无 QWidget / Rust / core 业务依赖，headless 可用，可独立链接验收。
+add_subdirectory(libs/registry)
+
 # === 数据地基（可独立链接，先于 core 定义）===
 # Dataset/DataRepository 只依赖 Rust kernel + Qt Core + foundation；
 # core  PUBLIC 链它，消费者得以只链 dataset 而不吞整个骨架。

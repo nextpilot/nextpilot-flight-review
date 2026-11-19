@@ -22,8 +22,17 @@ function(_ng_lib_guard_sources)
   foreach(_f IN LISTS _srcs)
     file(READ "${_f}" _txt)
 
+    # 先剥离注释再扫描：注释里解释「为什么不用单例」（如字面量 static T& instance()）
+    # 不应触发误报——误报会逼人给守卫加豁免，守卫就形同虚设。
+    # 用 file(READ) 全文 + 显式排除换行的注释正则：
+    #   不能用 file(STRINGS)——它对含 UTF-8 中文的整行切分有 bug，会把注释行拦腰截断，
+    #   反而把注释里的字面量暴露成「代码」造成误报（实测踩过）。
+    #   [^\n\r]* 明确不跨行，故 // 只吃到行尾；跨行块注释本仓库 libs 不使用。
+    string(REGEX REPLACE "//[^\n\r]*" "" _scan "${_txt}")
+    string(REGEX REPLACE "/\\*[^\n\r]*\\*/" "" _scan "${_scan}")
+
     # 破口 1：相对路径逃逸。libs 只能 include 自己的 public include 与 Qt/系统头。
-    if(_txt MATCHES "#[ \t]*include[ \t]*\"\\.\\./")
+    if(_scan MATCHES "#[ \t]*include[ \t]*\"\\.\\./")
       message(FATAL_ERROR
         "[libs 边界] ${_f}\n"
         "  libs 内禁止 #include \"../\" 逃出库目录。跨库/上层引用必须走公开 include 路径，"
@@ -31,7 +40,7 @@ function(_ng_lib_guard_sources)
     endif()
 
     # 破口 3：Meyers 单例——铁律禁止的全局活实例。
-    if(_txt MATCHES "static[ \t]+[A-Za-z_][A-Za-z0-9_:<>, \t]*&[ \t]*instance[ \t]*\\(")
+    if(_scan MATCHES "static[ \t]+[A-Za-z_][A-Za-z0-9_:<>, \t]*&[ \t]*instance[ \t]*\\(")
       message(FATAL_ERROR
         "[libs 边界] ${_f}\n"
         "  检测到 Meyers 单例 static T& instance()。libs 铁律禁止全局活实例/单例；"
@@ -39,7 +48,7 @@ function(_ng_lib_guard_sources)
     endif()
 
     # 提示：core 命名空间残留。B7 收口前是合法中间态，故只警告不失败。
-    if(_txt MATCHES "namespace[ \t]+nextpilot::plotscope::core")
+    if(_scan MATCHES "namespace[ \t]+nextpilot::plotscope::core")
       message(WARNING
         "[libs 边界] ${_f} 仍用 nextpilot::plotscope::core 命名空间，"
         "应随 B7 core 消亡收口为所属库名（master-plan §7.7）。")

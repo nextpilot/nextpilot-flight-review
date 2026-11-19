@@ -8,6 +8,14 @@ target_link_libraries(ng_test_dataset_standalone PRIVATE ng_dataset Qt6::Core)
 set_target_properties(ng_test_dataset_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_dataset_standalone COMMAND ng_test_dataset_standalone)
 
+# === ng_registry 独立链接验收（B3）===
+# 故意只链 ng_registry + Qt6::Core，不链 ng_core / host / module。
+# 任何注册表核对 core 业务类型/QWidget/Rust 的反向依赖都会在此编译或链接失败。
+add_executable(ng_test_registry_standalone test_registry_standalone.cpp)
+target_link_libraries(ng_test_registry_standalone PRIVATE ng_registry Qt6::Core)
+set_target_properties(ng_test_registry_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_registry_standalone COMMAND ng_test_registry_standalone)
+
 # === 协议逻辑资产（顺序段协议解码内核平移）===
 # 纯逻辑测试：只依赖 ng_protocol + Qt Core，headless。
 add_executable(ng_test_protocol test_protocol.cpp)

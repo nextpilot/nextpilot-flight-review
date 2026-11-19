@@ -1,6 +1,6 @@
 # 机制抽库设计：recording 归属 + 注册表/意向/schema→UI 下沉为 libs
 
-> 状态：**架构设计，待需求方拍板**（2026-11-19）。本轮只出边界与契约，**不写实现代码**。
+> 状态：**已拍板，分批实施中**（2026-11-19 定方案；2026-11-20 落地 B3 `ng_registry` 最小核，见 §11.1；intent / uischema / parser 各批仍待实施）。
 > 需求方三问：① `ng/recording` 为何独立、有何特权？② core 的注册机制（模板、支持多种类）与意向机制抽成 libs；③ 按 schema 让 Qt 绘制对话框/属性面板的能力抽成 libs，重点是**约束 schema 长什么样**。
 > 与 [`dataset-lib-extraction.md`](dataset-lib-extraction.md) 同属 core 瘦身动作；所有结论逐行核对过 `ng/core`、`ng/recording`、`ng/gui`。
 
@@ -498,3 +498,20 @@ class IMessageParser : public IConfigurableContribution {   // 唯一解析器�
 3. ~~确认字段 label 由 `key` 约定生成 + 预览区框架统一渲染~~ → **✅ 已确认**（§10.2.1 定为"schema 纯 metadata、零 UI 控件词汇"，label/description 归引擎，预览归 probe 统一渲染）。
 4. 确认两个参数对话框合并为一个通用对话框（涉及 ImportDialog 的探测预览交互，需保证体验不退化）？——**待拍板**。
 5. **✅ 已拍板（2026-11-19）**：schema 只描述 metadata（变量名/数据类型/可选值/值域/单位/依赖/说明），**严禁 UI 控件词汇**；由自研 `SchemaEngine` 解析生成 UI（§10.2.1/§10.2.2）。
+
+---
+
+## 11. 实施记录
+
+### 11.1 B3：`ng_registry` 最小核（2026-11-20，✅ 已实施）
+
+按总方案 B3 落地 §2「注册机制抽库」的第一步——**先做最小核 + 一套薄壳验证**，其余四套注册表待后续批次迁入：
+
+- **新建 `libs/registry`（INTERFACE/header-only）**：
+  - `Registry.h`：泛型 `Registry<T, Key=QString>`，提供 `insert`（重复 id 先到者为准）/ `remove` / `find` / `contains` / `keys` / `count` / `clear`。只依赖 Qt Core + STL，无 QWidget / Rust / core 业务类型，headless 可用。
+  - `StaticAutoRegistry.h`：`StaticRegistry<T>`（C++17 `static inline` 变量—— libs 铁律允许的「静态对象」例外，非 Meyers 单例）+ `AutoRegistrar` + `NG_AUTO_REGISTER` 宏，统一启动期自登记。
+- **薄壳验证：`PanelFactoryRegistry`**（`core/src/PanelFactoryRegistry.cpp`）内部容器由手搓 `QHash` 换为 `registry::Registry<Factory>`，**对外三个静态 API 与 `NG_REGISTER_PANEL` 宏零改动**，调用方无感。兑现 §2「接口等价重构、调用方零改动」。
+- **独立链接验收**：新增 `ng_test_registry_standalone`，只链 `ng_registry + Qt6::Core`（不链 ng_core），走通 CRUD + 自注册 + std::function 工厂型条目；编译期即证明无上层反向依赖。
+- **namespace**：`registry` 库自身用 `nextpilot::plotscope::registry`；被薄壳化的 `PanelFactoryRegistry` 随 core 保持原 namespace 至 B7 统一收口（与 B2 裁定一致）。
+- **构建守卫修复**：configure 期守卫原用 `file(STRINGS)` 逐行剥离注释，遇含 UTF-8 中文的注释行会把字节流截断、误把注释里的字面量当代码（本次踩坑：注释中解释「为什么不用单例」被误报）。改为 `file(READ)` 全文 + `[^\n\r]` 注释正则，注释正确剥离、真违规仍能 FATAL。
+- **验收**：Release + Debug ctest 全绿（新增 1 项）。

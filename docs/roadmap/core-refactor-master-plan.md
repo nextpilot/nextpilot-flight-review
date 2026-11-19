@@ -129,7 +129,7 @@
 |---|---|---|---|
 | **B1** | 下沉 `Result` → `ng_foundation`（INTERFACE），21 处引用零改字面量 | 新建 `libs/foundation/`，移 `Result.h`，改 CMake include 传递 | 5 个 target 均可拿到 Result；ctest 11/11 |
 | **B2** ✅ | 新建 `ng_dataset`，迁 `Dataset`/`DataRepository`，核心 PUBLIC 依赖 | `libs/dataset/`、`core/CMakeLists.txt`、`test_dataset_standalone.cpp` | 独立 target 只链 ng_dataset+Qt6::Core（实证 link.txt 无 ng_core）走通建表→读窗→仓库增删；12/12 |
-| **B3** | `ng_registry` 最小 CRUD 核 + 自注册助手；至少 1 套注册表薄壳化验证 | `libs/registry/`、选 `PanelFactoryRegistry` 先行 | 对外 API 不变；11/11 |
+| **B3** ✅ | `ng_registry` 最小 CRUD 核 + 自注册助手；`PanelFactoryRegistry` 薄壳化验证 | `libs/registry/`、`core/src/PanelFactoryRegistry.cpp`、`test_registry_standalone.cpp` | 独立 target 只链 ng_registry+Qt6::Core 走通 CRUD+自注册+工厂型条目（无 core/QWidget/Rust 反向依赖，编译即证）；对外 API/宏零改动；13/13 |
 | **B4** | `ng_intent` 移出 5 个意向类型 | `libs/intent/`、`core/`、`AppContext`/`ScriptFacade` | Job JSON 往返测试；11/11 |
 | **B5** | `ng_uischema`：纯 metadata 契约 + `SchemaEngine` + 唯一 Qt 渲染器；两个对话框共用渲染器 | `libs/uischema/`、`PropertyPanel`/`TransformEditorDialog`/`ImportDialog`/`ProtocolInspectorDialog` | 全仓一处 `FieldType→QWidget` 映射；11/11 |
 | **B6** | 取消 `IFormatDriver` + 三个门面类，统一 `IMessageParser`（多输出函数）；命名收敛 `SourceRegistry`/`Domain`/`Toolbox` | `core/`、`extensions/`、`ExtensionRegistry`、`ARCHITECTURE.md` | 无 `IFormatDriver`/`IDataParser`/`XxxFormatDriver` 门面类型；无旧命名残留；11/11 |
