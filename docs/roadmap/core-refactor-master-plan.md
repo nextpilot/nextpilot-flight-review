@@ -361,3 +361,24 @@ foundation(Result)
 - 实例由 **`AppContext` owns**（成员对象，符合 libs 铁律的"成员对象"许可），而非裁决原文的"host 持有"。理由：GUI 视图工厂签名固定为 `(AppContext&, IIntentExecutor&, QWidget*)`，`IIntentExecutor` 是纯接口够不到 host；且测试直接构造 `AppContext` 无 host。若严格只经 host 取用须改 `PanelFactoryRegistry` 契约与全部视图工厂，风险 disproportionate。改为 AppContext owns + `RuntimeHost` 编排（提供 5 类转发），行为等价、零构造链改动、测试可用。
 - 访问路径统一：module 走 `ModuleContext::host().registerX`（host 转发），GUI/测试走 `appCtx.interactions().registerX`（同一实例）。`AppContext` 本身不再有任何 register* 方法，只留 `interactions()` 取用口。
 - 验证：Release+Debug ctest 18/18，两层守卫通过，全仓零裸 `appCtx.registerX`。
+
+### 7.10 B7 执行裁决（盘点后修订，架构师定）
+
+**盘点事实**（2026-11-19）：`core` 仍是编译实体（30 头 + 23 源、namespace 全为 core）；全仓 662 处 `core::` 引用；libs 内 9 个文件（Result/Dataset/Intent 三库）历史残留 core namespace；AppContext 依赖闭包 ≈ 整个 core；6 处静态自注册表 + 4 个 QObject + C ABI（`ps_*_spi`）不可改结构。
+
+**裁决**：废弃 §7.9 的 B7-a/b（单独迁 AppContext）+ B7-c（一次性删 core）两步法——闭包决定 B7-a/b 单独做不成（libs/context 会依赖 core 倒挂）。改为 **8 簇垂直收口**，每簇 = 物理迁移（如需）+ namespace 收口 + 消费者更新 + 双配置全绿，独立可回滚：
+
+| 簇 | 内容 | 动作 |
+|---|---|---|
+| 1 | `foundation`：Result/Error/fail、Events topics | namespace core→foundation，全仓引用前缀更新 |
+| 2 | `dataset`：Dataset/DataRepository + core 里 Source/DataSource/SourceRegistry | 迁入 dataset，namespace→dataset |
+| 3 | `intent`：Intent/IIntentExecutor/JobRecorder | namespace core→intent |
+| 4 | uischema 数据簇：Selection/Transform/PropertySchema | 迁入 uischema，namespace→uischema |
+| 5 | registry 贡献簇：ExtensionRegistry + I*Contribution + BuiltinPack + UiSlot/PanelFactory + 6 静态表 | 迁入 registry（部分 host），namespace→registry |
+| 6 | parser 簇：IMessageParser/DecodedFrame/`ps_*_spi`/ParserRegistry/IByteSource/Ingest* | 迁入新库 libs/parser（C ABI 只搬家不改结构）；IngestPipeline 运行时编排归属本簇定 |
+| 7 | context 簇：AppContext/SettingsStore/WorkspaceDataConfig/ScriptFacade/InteractionRegistry | 迁入 libs/context，namespace→context，实例仍在 app |
+| 8 | 收尾：删 core 目录 + target、全仓去 `ng_core` 链接、守卫 core WARNING→FATAL | 验收：无 core namespace 残留、无 core 目录 |
+
+**过渡兼容**：每簇收口时用 core namespace 的 `using` 别名过渡（§7.4「演进有路」），终态随 core 目录删除一并去除；别名期间守卫 WARNING 属合法中间态。
+
+**硬约束**：C ABI 只换目录不改字段；6 静态表迁 libs 前逐个确认 libs 铁律例外；QObject 迁入库需开 AUTOMOC，唯一实例仍在 app；IngestPipeline 持 `DataRepository&`、创建解析器，倾向归 L3 host 而非 libs（第 6 簇定）。

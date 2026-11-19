@@ -2,7 +2,7 @@
 
 #include <QString>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::foundation
 {
 
 // 统一的轻量错误结果。避免到处抛异常或用 bool + 输出参数。
@@ -55,4 +55,12 @@ inline Error fail(const QString &code, const QString &message)
     return Error{code, message};
 }
 
+} // namespace nextpilot::plotscope::foundation
+
+// B7 过渡别名：core 消亡前，全仓仍以 core::Result 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using foundation::Error;
+using foundation::Result;
+using foundation::fail;
 } // namespace nextpilot::plotscope::core
