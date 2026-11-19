@@ -1,5 +1,6 @@
 {
   "name": "demo_flight",
+  "mode": "bin",
   "frame_size": 24,
   "sync": [170, 85],
   "crc16_ccitt": {"offset": 22, "poly": 4129, "init": 65535},

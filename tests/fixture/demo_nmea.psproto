@@ -1,5 +1,6 @@
 {
   "name": "demo_nmea",
+  "mode": "bin",
   "description": "NMEA 字符串 msgid 系列选择",
   "layout": "sequential",
   "endian": "little",

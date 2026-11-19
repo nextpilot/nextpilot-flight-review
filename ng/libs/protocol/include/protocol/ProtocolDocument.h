@@ -35,7 +35,7 @@ struct TypeInfo
 {
     ValueType type = ValueType::U8;
     uint32_t size = 1;
-    bool isTime = false; // type:"time"：ASCII 文本时间 hhmmss[.ss]，解析成当天秒
+    bool isTime = false; // type:"time"：text 文本时间 hhmmss[.ss]，解析成当天秒
 };
 
 // 段的输出形态，取代旧的 hidden/plot 两个布尔。
@@ -84,7 +84,7 @@ struct BitSpec
     std::string order = "lsb0";
 };
 
-// ASCII 数值变换（SPEC §7.4）。只处理"非标准记法"，标准 CSV/NMEA 数值不需要它。
+// text 数值变换（SPEC §7.4）。只处理"非标准记法"，标准 CSV/NMEA 数值不需要它。
 struct TransformStep
 {
     // sexagesimal：4807.038 → 48 + 7.038/60（split 是分的小数位数）
@@ -130,7 +130,7 @@ struct SegmentDef
     std::vector<CheckSpec> checks;
     LengthSpec length;
 
-    // ---- ASCII 词法（SPEC §7）：段的边界不再来自字节宽度，而来自定界符/字面量 ----
+    // ---- text 词法（SPEC §7）：段的边界不再来自字节宽度，而来自定界符/字面量 ----
     std::string literal;                 // 字面量段：必须精确匹配，不产通道（如 "$"、"*"）
     std::string key;                     // key=value 词法：段的键名（如 "lat"），值是键后到分隔符/记录尾
     bool hasDelimiter = false;
@@ -151,7 +151,7 @@ struct SegmentDef
     // 派生字段：不从字节/文本读，由表达式算出（引用前面已解析的段），不占空间
     ExprPtr derive;
 
-    // 二进制变长数组的终止条件（ASCII 用 repeater:"*"）：
+    // 二进制变长数组的终止条件（text 用 repeater:"*"）：
     //   "eos"   → 读到帧尾
     //   "until" → 每读一个元素求值 repeatUntil，为真即停
     std::string repeatMode;
@@ -208,6 +208,7 @@ struct ProtocolDocument
     std::string name = "frame";
     std::string description;
     std::string layout = "sequential";
+    std::string mode = "bin"; // bin=按字节解释；text=按字符串切 token。必填，无 mixed
     std::string endian = "little";
     uint32_t maxsize = 4096;
     std::vector<SegmentDef> segments;
@@ -229,7 +230,7 @@ struct EvalCtx
     bool get(const std::string &n, int index, TypedValue &out, std::string &err) const;
 };
 
-// 段的边界类型：这是唯一的分类维度，不存在"整份协议是 ASCII 还是二进制"。
+// 段的边界类型：这是唯一的分类维度，不存在"整份协议是 text 还是二进制"。
 //   Byte     → 边界由 type 宽度 × count 推出（位域段不推进游标）
 //   Literal  → 逐字符/逐字节匹配固定字面量（"$"、"*"、0xAA 用 expect 表达）
 //   Delimit  → 读到定界符（含 blank 字符类）
@@ -265,7 +266,7 @@ inline SegBoundary boundaryOf(const SegmentDef &s)
     return SegBoundary::Byte;
 }
 
-inline bool isAsciiSegment(const SegmentDef &s) { return boundaryOf(s) != SegBoundary::Byte; }
+inline bool isTextSegment(const SegmentDef &s) { return boundaryOf(s) != SegBoundary::Byte; }
 
 /// 类型化求值。整型/浮点不隐式混算；越界与除零显式报错。
 bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, TypedValue &out, std::string &err);

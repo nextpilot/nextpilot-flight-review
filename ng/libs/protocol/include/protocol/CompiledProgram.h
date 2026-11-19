@@ -125,8 +125,8 @@ struct CompiledSeg
 
     bool isText = false;
 
-    // ---- ASCII 词法（SPEC §7）：段边界来自字面量/定界符，不是字节宽度 ----
-    bool isAscii = false;
+    // ---- text 词法（SPEC §7）：段边界来自字面量/定界符，不是字节宽度 ----
+    bool isTextSeg = false;
     int boundary = 0;                    // SegBoundary：0 Byte / 1 Literal / 2 Delimit / 3 Fixed / 4 Rest / 5 Repeat
     bool isLiteral = false; // 字面量段：精确匹配、不产通道（如 $ 或 *）
     std::string key;        // key=value：非空时按 "key=" 定位
@@ -138,7 +138,7 @@ struct CompiledSeg
     bool isRest = false;                 // 整块原文，不切分
     bool hasWidth = false;               // fixed 词法：定宽字符数
     uint32_t width = 0;
-    int asciiType = 0;                   // 0=number 1=text（string/char）
+    int textType = 0;                   // 0=number 1=text（string/char）
     int64_t base = 10;
     bool hasFixedDigits = false;
     uint32_t fixedDigits = 0;
@@ -156,7 +156,7 @@ struct CompiledSeg
     std::string digestScript;
     bool hasDerive = false;              // 派生字段：不读数据，由表达式算出
     ByteCode derive;
-    bool isTime = false;                 // type:"time"：ASCII 文本时间 → 当天秒
+    bool isTime = false;                 // type:"time"：text 文本时间 → 当天秒
     int repeatMode = 0;                  // 0 none / 1 eos / 2 until
     ByteCode repeatUntil;
     bool digestHasInject = false;        // digest.inject：数据尾部追加的常量字节（CRC_EXTRA）
@@ -196,8 +196,8 @@ struct CompiledProgram
 
     uint32_t maxsize = 4096;
 
-    // ---- 记录层（ASCII）：词法模式 + 帧尾候选集合 ----
-    bool isAscii = false;
+    // ---- 记录层（text）：词法模式 + 帧尾候选集合 ----
+    bool isText = false;
     bool isDelimited = false; // 存在 delimiter 段（记录按切分解析）
     bool hasTerminator = false;
     std::vector<std::string> terminator;

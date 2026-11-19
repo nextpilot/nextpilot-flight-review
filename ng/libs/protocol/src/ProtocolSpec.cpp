@@ -18,7 +18,7 @@ QStringList typeNames()
             QStringLiteral("u32"), QStringLiteral("i32"), QStringLiteral("u64"), QStringLiteral("i64"),
             QStringLiteral("f32"), QStringLiteral("f64"), QStringLiteral("bool"),
             QStringLiteral("bcd"), QStringLiteral("char"),
-            // ASCII 文本协议的类型名（SPEC §7）：char/string/rest 都是文本，number 是数值。
+            // text 文本协议的类型名（SPEC §7）：char/string/rest 都是文本，number 是数值。
             QStringLiteral("string"), QStringLiteral("number"), QStringLiteral("rest"),
             QStringLiteral("time")};
 }
@@ -40,11 +40,11 @@ bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
     if (t == "bool") { ti = {ValueType::Bool, 1}; return true; }
     if (t == "bcd") { ti = {ValueType::Bcd, 1}; return true; }
     if (t == "char") { ti = {ValueType::Text, 1}; return true; }
-    // ASCII 文本协议的三个类型名（SPEC §7）。文本没有字节宽概念，size 只用于"每元素 1 字节"的类比。
+    // text 文本协议的三个类型名（SPEC §7）。文本没有字节宽概念，size 只用于"每元素 1 字节"的类比。
     if (t == "string" || t == "str") { ti = {ValueType::Text, 1}; return true; }
     if (t == "number" || t == "num") { ti = {ValueType::F64, 8}; return true; }
     if (t == "rest") { ti = {ValueType::Text, 1}; return true; }
-    // 文本时间：hhmmss / hhmmss.ss / hh:mm:ss[.ss] → 当天秒（f64）。只用于 ASCII 段。
+    // 文本时间：hhmmss / hhmmss.ss / hh:mm:ss[.ss] → 当天秒（f64）。只用于 text 段。
     if (t == "time") { ti = {ValueType::F64, 8, true}; return true; }
     err = "未知类型: " + raw;
     return false;
@@ -110,9 +110,9 @@ void checkEmit(const QJsonObject &seg, const QString &name, QStringList &errs)
 
 } // namespace
 
-// ASCII 段校验（SPEC §7）：边界来自 literal/delimiter/width，不再有字节宽度语义。
+// text 段校验（SPEC §7）：边界来自 literal/delimiter/width，不再有字节宽度语义。
 // digest 端点用段序表校验引用（避免"校验一个还没解析的段"）。
-void checkAsciiSegment(const QJsonObject &seg, const QString &name, const QMap<QString, int> &order,
+void checkTextSegment(const QJsonObject &seg, const QString &name, const QMap<QString, int> &order,
                        const QSet<QString> &names, int selfIndex, QStringList &errs)
 {
     for (const QJsonValue &cv : seg.value(QStringLiteral("checks")).toArray())
@@ -121,7 +121,7 @@ void checkAsciiSegment(const QJsonObject &seg, const QString &name, const QMap<Q
         if (op == QLatin1String("crc8") || op == QLatin1String("crc16") || op == QLatin1String("crc32") ||
             op == QLatin1String("sum8") || op == QLatin1String("sum16") || op == QLatin1String("xor8") ||
             op == QLatin1String("parity"))
-            errs << QStringLiteral("%1：ASCII 段的 checks 只支持谓词，序列校验请用 digest").arg(name);
+            errs << QStringLiteral("%1：text 段的 checks 只支持谓词，序列校验请用 digest").arg(name);
     }
     const QString lit = seg.value(QStringLiteral("literal")).toString();
     if (seg.contains(QStringLiteral("key")))
@@ -313,6 +313,13 @@ QStringList validate(const QJsonObject &o)
         errs << QStringLiteral("协议 name 不能为空");
     if (o.value(QStringLiteral("layout")).toString() != QLatin1String("sequential"))
         errs << QStringLiteral("新协议 layout 必须是 sequential");
+    {
+        const QString fmt = o.value(QStringLiteral("mode")).toString();
+        if (fmt.isEmpty())
+            errs << QStringLiteral("顶层 mode 必填（bin / text，无 mixed）");
+        else if (fmt != QLatin1String("bin") && fmt != QLatin1String("text"))
+            errs << QStringLiteral("mode 只能是 bin 或 text");
+    }
     const int maxsize = o.value(QStringLiteral("maxsize")).toInt(4096);
     if (maxsize < 2 || maxsize > 65535)
         errs << QStringLiteral("maxsize 必须在 2..65535");
@@ -354,23 +361,8 @@ QStringList validate(const QJsonObject &o)
     // series.payload 的段名：它是变体容器，允许被 length.fields 引用。
     const QString payloadName =
         o.value(QStringLiteral("series")).toObject().value(QStringLiteral("payload")).toString().trimmed();
-    // 任一段带字符边界（literal/delimiter/width/rest/repeater）→ 字符段 count 可缺省。
-    bool docAscii = false;
-    if (!docAscii)
-    {
-        for (const QJsonValue &sv : segArr)
-        {
-            const QJsonObject sg = sv.toObject();
-            if (sg.contains(QStringLiteral("key")) || sg.contains(QStringLiteral("literal")) ||
-                sg.contains(QStringLiteral("delimiter")) ||
-                sg.contains(QStringLiteral("width")) || sg.contains(QStringLiteral("rest")) ||
-                sg.contains(QStringLiteral("repeater")))
-            {
-                docAscii = true;
-                break;
-            }
-        }
-    }
+    // 形态由顶层 mode 显式声明，不靠段特征推断（SPEC §2.1.1）。
+    const bool docText = (o.value(QStringLiteral("mode")).toString() == QLatin1String("text"));
 
     QSet<QString> names;
     QMap<QString, int> order;
@@ -408,11 +400,24 @@ QStringList validate(const QJsonObject &o)
                     errs << QStringLiteral("%1 是 derive 段（不读数据），不能声明 %2").arg(name, QString::fromLatin1(k));
         }
 
-        const bool asciiSeg = docAscii || seg.contains(QStringLiteral("key")) ||
-                              seg.contains(QStringLiteral("literal")) ||
-                              seg.contains(QStringLiteral("delimiter")) ||
-                              seg.contains(QStringLiteral("width")) || seg.contains(QStringLiteral("rest")) ||
-                              seg.contains(QStringLiteral("repeater"));
+        const bool textSeg = docText; // 不设 mixed：整份协议同一种形态
+
+        // 键黑白名单（SPEC §2.1.1）：bin 段禁文本词法键，text 段禁字节/位域键。
+        if (docText)
+        {
+            static const char *binOnly[] = {"bit", "expect", "repeat", "until", "length", "endian"};
+            for (const char *k : binOnly)
+                if (seg.contains(QLatin1String(k)))
+                    errs << QStringLiteral("%1 是 text 段，不能声明 %2（字节/位域键归 bin）").arg(name, QString::fromLatin1(k));
+        }
+        else
+        {
+            static const char *textOnly[] = {"literal", "key", "delimiter", "repeater", "width",
+                                             "rest", "pattern", "empty", "base", "fixed", "signed", "sci"};
+            for (const char *k : textOnly)
+                if (seg.contains(QLatin1String(k)))
+                    errs << QStringLiteral("%1 是 bin 段，不能声明 %2（文本词法键归 text）").arg(name, QString::fromLatin1(k));
+        }
         if (seg.contains(QStringLiteral("repeat")))
         {
             const QJsonValue rv = seg.value(QStringLiteral("repeat"));
@@ -423,8 +428,8 @@ QStringList validate(const QJsonObject &o)
             if (mode == QLatin1String("until") &&
                 rv.toObject().value(QStringLiteral("until")).toString().isEmpty())
                 errs << QStringLiteral("%1 的 repeat.until 不能为空").arg(name);
-            if (asciiSeg)
-                errs << QStringLiteral("%1：ASCII 段用 repeater:\"*\"，不要用 repeat").arg(name);
+            if (textSeg)
+                errs << QStringLiteral("%1：text 段用 repeater:\"*\"，不要用 repeat").arg(name);
         }
 
         int n = 0;
@@ -433,14 +438,14 @@ QStringList validate(const QJsonObject &o)
         {
             // 派生字段不读数据：count/字节宽度都不适用
         }
-        else if (asciiSeg)
+        else if (textSeg)
         {
-            // ASCII 段没有"元素数 × 字节宽"语义：count 缺省 1，repeater:"*" 表示重复到下一段边界。
+            // text 段没有"元素数 × 字节宽"语义：count 缺省 1，repeater:"*" 表示重复到下一段边界。
             if (!count.isUndefined() && !literalSize(count, &n))
-                errs << QStringLiteral("%1 的 count 必须是正整数（ASCII 段可省略）").arg(name);
+                errs << QStringLiteral("%1 的 count 必须是正整数（text 段可省略）").arg(name);
             if (seg.contains(QStringLiteral("bit")))
-                errs << QStringLiteral("%1 是 ASCII 段，不能声明 bit（位域只对字节区间有意义）").arg(name);
-            checkAsciiSegment(seg, name, order, names, order.value(name, 0), errs);
+                errs << QStringLiteral("%1 是 text 段，不能声明 bit（位域只对字节区间有意义）").arg(name);
+            checkTextSegment(seg, name, order, names, order.value(name, 0), errs);
         }
         else if (count.isUndefined())
         {
@@ -454,8 +459,8 @@ QStringList validate(const QJsonObject &o)
         const QString type = seg.value(QStringLiteral("type")).toString().toLower();
         if (!isDerived && !typeNames().contains(type) && !aliasNames.contains(type))
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
-        if (type == QLatin1String("time") && !asciiSeg)
-            errs << QStringLiteral("%1：type:time 只用于 ASCII 段（文本时间），二进制请用 u32/u64 + transform").arg(name);
+        if (type == QLatin1String("time") && !textSeg)
+            errs << QStringLiteral("%1：type:time 只用于 text 段（文本时间），二进制请用 u32/u64 + transform").arg(name);
 
         // 位域（SPEC §6）：宽度 <= 64，且 width + offset%8 <= 64，单次 loadBytes<=8 即可取完。
         if (seg.contains(QStringLiteral("bit")))

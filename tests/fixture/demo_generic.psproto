@@ -1,5 +1,6 @@
 {
  "name": "generic_variable",
+  "mode": "bin",
  "frame_size": 32,
  "sync": [
   {

@@ -11,6 +11,7 @@
 ```jsonc
 {
   "name": "imu_frame",
+  "mode": "bin",
   "layout": "sequential",
   "endian": "little",
   "maxsize": 32,
@@ -28,17 +29,18 @@
 
 帧布局按 `segments` 顺序逐段读取；`scale/offset` 做物理换算 `phys = raw*scale + offset`。
 
-## ASCII / 混合协议
+## text（text）协议
 
-没有"协议是 ASCII 还是二进制"这一层——每个段声明自己的**边界**：
+顶层 `"mode":"text"` 声明按字符串处理；段边界由字符锚点 / 分隔符 / 定宽 / 记录尾声明。bin 与 text 的段键归属见 SPEC §2.1.1。
 
 ```jsonc
 {
   "name": "nmea_gga",
+  "mode": "text",
   "term": ["\r\n"],
   "segments": [
     { "name": "dollar", "literal": "$", "emit": "none" },
-    { "name": "msgid",  "char": true, "delimiter": "," },
+    { "name": "msgid",  "type": "char", "delimiter": "," },
     { "name": "lat",    "type": "number", "delimiter": "," },
     { "name": "star",   "literal": "*", "emit": "none" },
     { "name": "check",  "type": "number", "base": 16,
@@ -76,7 +78,7 @@
 | `series` | 帧族变体：按选择器换整套布局 |
 | `types` | 类型别名，复用 `type/scale/unit/range` |
 | `timestamp` | 时间戳取值与单位 |
-| `starts` / `terminator` | ASCII 行协议的起始/终止标记（可选） |
+| `starts` / `terminator` | text 行协议的起始/终止标记（可选） |
 
 ## 段键（常用）
 
@@ -104,7 +106,7 @@
 `u8 i8 u16 i16 u32 i32 u64 i64 f32 f64 bool bcd char`
 
 - 整型保持整型，浮点保持浮点；表达式不做隐式降级（规则见 SPEC §3 / v2 §10.9）。
-- `char` 为文本段（唯一的文本类型名）；ASCII 派生函数 `time_hhmmss` / `deg_ddmm` / `text_number`。
+- `char` 为文本段（唯一的文本类型名）；text 派生函数 `time_hhmmss` / `deg_ddmm` / `text_number`。
 
 ## 帧族变体 `series`
 

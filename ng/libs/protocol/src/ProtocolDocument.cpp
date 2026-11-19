@@ -797,7 +797,7 @@ bool parseAliases(const QJsonObject &root, std::map<std::string, AliasDef> &out,
 }
 
 bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpec &seg, std::string &err,
-                  bool docAscii, const std::map<std::string, AliasDef> *aliases = nullptr)
+                  bool docText, const std::map<std::string, AliasDef> *aliases = nullptr)
 {
     seg.name = o.value(QStringLiteral("name")).toString().toStdString();
     if (o.contains(QStringLiteral("derive")))
@@ -812,7 +812,7 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         err = "segment 缺少 name";
         return false;
     }
-    // ---- ASCII 词法字段（SPEC §7）：先解析，因为 ASCII 段的 count 可缺省（默认 1） ----
+    // ---- text 词法字段（SPEC §7）：先解析，因为 text 段的 count 可缺省（默认 1） ----
     seg.literal = o.value(QStringLiteral("literal")).toString().toStdString();
     seg.key = o.value(QStringLiteral("key")).toString().toStdString();
     if (o.contains(QStringLiteral("delimiter")))
@@ -944,12 +944,12 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         }
     }
 
-    const bool asciiHints = docAscii || !seg.literal.empty() || seg.hasDelimiter || seg.hasWidth ||
+    const bool textHints = docText || !seg.literal.empty() || seg.hasDelimiter || seg.hasWidth ||
                             seg.isRest || !seg.repeater.empty();
     if (!o.contains(QStringLiteral("count")))
     {
-        // 标量省略 count = 1（SPEC §2.1）：二进制与 ASCII 同一口径。
-        (void)asciiHints;
+        // 标量省略 count = 1（SPEC §2.1）：二进制与 text 同一口径。
+        (void)textHints;
         auto one = std::make_shared<Expr>();
         one->kind = Expr::Num;
         one->isInt = true;
@@ -1078,6 +1078,7 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
     t.layout = root.value(QStringLiteral("layout")).toString(QStringLiteral("sequential")).toStdString();
     t.name = root.value(QStringLiteral("name")).toString(QStringLiteral("frame")).toStdString();
     t.endian = root.value(QStringLiteral("endian")).toString(QStringLiteral("little")).toStdString();
+    t.mode = root.value(QStringLiteral("mode")).toString(QStringLiteral("bin")).toStdString();
     {
         // 帧尾候选集合：声明了就硬校验，没声明就不管（SPEC §7.2）。
         const QJsonValue tv = root.contains(QStringLiteral("term"))
@@ -1116,24 +1117,13 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
     // 这是段级事实，不是文档级模式。
     if (!parseAliases(root, t.aliases, err))
         return false;
-    bool docAscii = false;
-    for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
-    {
-        const QJsonObject sg = sv.toObject();
-        if (sg.contains(QStringLiteral("key")) || sg.contains(QStringLiteral("literal")) ||
-            sg.contains(QStringLiteral("delimiter")) ||
-            sg.contains(QStringLiteral("width")) || sg.contains(QStringLiteral("rest")) ||
-            sg.contains(QStringLiteral("repeater")))
-        {
-            docAscii = true;
-            break;
-        }
-    }
+    // 形态由顶层 mode 显式声明（SPEC §2.1.1），不再靠段特征推断。
+    const bool docText = (t.mode == "text");
 
     for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
     {
         SegSpec seg;
-        if (!parseSegment(sv.toObject(), t.endian, seg, err, docAscii, &t.aliases))
+        if (!parseSegment(sv.toObject(), t.endian, seg, err, docText, &t.aliases))
             return false;
         t.segments.push_back(std::move(seg));
     }
@@ -1169,7 +1159,7 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
             for (const QJsonValue &fv : vo.value(QStringLiteral("segments")).toArray())
             {
                 SegSpec seg;
-                if (!parseSegment(fv.toObject(), t.endian, seg, err, docAscii, &t.aliases))
+                if (!parseSegment(fv.toObject(), t.endian, seg, err, docText, &t.aliases))
                     return false;
                 seg.prefix = var.name + ".";
                 var.segments.push_back(std::move(seg));
@@ -1338,12 +1328,12 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
 {
     QJsonObject o;
     o["name"] = QString::fromStdString(seg.name);
-    const bool asciiSeg = isAsciiSegment(seg);
-    // ASCII 段的 count 缺省就是 1，不必回写，避免模板里多一行噪音。
-    if (!asciiSeg || !seg.countExpr || !seg.countExpr->isInt || seg.countExpr->ival != 1)
+    const bool textSeg = (doc.mode == "text");
+    // text 段的 count 缺省就是 1，不必回写，避免模板里多一行噪音。
+    if (!textSeg || !seg.countExpr || !seg.countExpr->isInt || seg.countExpr->ival != 1)
         o["count"] = exprJson(seg.countExpr);
     o["type"] = typeName(seg.type);
-    if (asciiSeg)
+    if (textSeg)
     {
         if (!seg.literal.empty())
             if (!seg.key.empty())
@@ -1469,6 +1459,7 @@ QJsonObject toJson(const ProtocolDocument &doc)
     if (!doc.description.empty())
         root["description"] = QString::fromStdString(doc.description);
     root["layout"] = QString::fromStdString(doc.layout);
+    root["mode"] = QString::fromStdString(doc.mode);
     root["endian"] = QString::fromStdString(doc.endian);
     root["maxsize"] = static_cast<int>(doc.maxsize);
     if (doc.hasTerminator)

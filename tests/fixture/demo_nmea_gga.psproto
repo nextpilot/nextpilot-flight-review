@@ -1,5 +1,6 @@
 {
   "name": "demo_nmea_gga",
+  "mode": "text",
   "description": "NMEA GGA 流式解析：$ 定位、* 硬匹配、XOR 校验、\r\n 帧尾；与二进制共用同一套段模型",
   "layout": "sequential",
   "lexer": "delimited",

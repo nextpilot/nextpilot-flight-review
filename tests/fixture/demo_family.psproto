@@ -1,5 +1,6 @@
 {
   "name": "demo_family",
+  "mode": "bin",
   "frame_size": 12,
   "sync": [
     {"offset": 0, "value": 170},

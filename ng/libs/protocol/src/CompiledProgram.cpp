@@ -329,7 +329,6 @@ struct Compiler
     const ProtocolDocument &doc;
     CompiledProgram &out;
     std::string &err;
-    bool docHasChar = false; // 任一顶层段有字符边界（literal/delimiter/width/rest/repeater）
     std::map<std::string, int32_t> slotOf; // 名字 → 槽位
 
     bool fail(const std::string &m)
@@ -469,26 +468,12 @@ struct Compiler
     }
 };
 
-// ASCII 词法段编译（SPEC §7）：把候选定界符展开、字面量/重复/数值解释搬到段表，
+// text 词法段编译（SPEC §7）：把候选定界符展开、字面量/重复/数值解释搬到段表，
 // digest 的 from/to 端点在这里解析成段下标（-1 frame_start / -2 frame_end / -3 before:self）。
 // 段在"记录里有字符边界段"的上下文里，且声明了任何字符语义键（进制/定宽/校验/模式/变换/
 // 输出覆盖）→ 它就该按 token 解析，而不是按 type 宽度读字节。典型：NMEA 的 check 段
 // （只有 base=16 + digest，没有 delimiter）。
-static bool hasCharSegments(const ProtocolDocument &doc)
-{
-    for (const SegSpec &s : doc.segments)
-        if (boundaryOf(s) != SegBoundary::Byte)
-            return true;
-    return false;
-}
-
-static bool wantsTokenContext(const SegSpec &s)
-{
-    return s.digest.enabled || s.base != 10 || s.hasFixedDigits || !s.as.empty() || !s.pattern.empty() ||
-           !s.onMismatch.empty() || !s.emptyPolicy.empty() || !s.transform.empty();
-}
-
-bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
+bool compileTextSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
 {
     cs.boundary = static_cast<int>(boundaryOf(s));
     cs.key = s.key;
@@ -505,7 +490,7 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
         return true; // 派生字段不参与边界/字节布局
     }
     cs.isTime = s.type.isTime;
-    cs.isAscii = (cs.boundary != static_cast<int>(SegBoundary::Byte)) || (c.docHasChar && wantsTokenContext(s));
+    cs.isTextSeg = (c.doc.mode == "text");
     if (!s.as.empty())
     {
         TypeInfo ti;
@@ -513,11 +498,11 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
         if (!parseType(s.as, ti, terr))
             return c.fail("as 类型非法：" + s.as);
         cs.type = ti.type;
-        cs.asciiType = (ti.type == ValueType::Text) ? 1 : 0;
+        cs.textType = (ti.type == ValueType::Text) ? 1 : 0;
     }
-    if (cs.isAscii && cs.boundary == static_cast<int>(SegBoundary::Byte))
+    if (cs.isTextSeg && cs.boundary == static_cast<int>(SegBoundary::Byte))
         cs.boundary = static_cast<int>(SegBoundary::Delimit); // 单 token（无定界符，靠后续边界/记录尾）
-    if (!cs.isAscii)
+    if (!cs.isTextSeg)
         return true;
     cs.isLiteral = !s.literal.empty();
     cs.literal = s.literal;
@@ -536,7 +521,7 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
     cs.isRest = s.isRest;
     cs.hasWidth = s.hasWidth;
     cs.width = s.width;
-    cs.asciiType = (s.type.type == ValueType::Text) ? 1 : 0;
+    cs.textType = (s.type.type == ValueType::Text) ? 1 : 0;
     cs.base = s.base;
     cs.hasFixedDigits = s.hasFixedDigits;
     cs.fixedDigits = s.fixedDigits;
@@ -546,7 +531,7 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
     cs.pattern = s.pattern;
     cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
     cs.transform = s.transform;
-    if (!s.repeatMode.empty() && !cs.isAscii)
+    if (!s.repeatMode.empty() && !cs.isTextSeg)
     {
         cs.repeatMode = (s.repeatMode == "eos") ? 1 : 2;
         if (cs.repeatMode == 2 && !c.compileExpr(s.repeatUntil, cs.repeatUntil))
@@ -603,7 +588,7 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
 {
     out = CompiledProgram{};
     out.maxsize = doc.maxsize;
-    Compiler c{doc, out, err, hasCharSegments(doc), {}};
+    Compiler c{doc, out, err, {}};
 
     // 1) 槽位：顶层段在前，变体段按出现顺序追加。表达式里能用到的名字都在这里解析。
     for (const SegSpec &s : doc.segments)
@@ -644,7 +629,7 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
         cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
         cs.isText = (s.type.type == ValueType::Text);
-        if (!compileAsciiSeg(s, cs, c))
+        if (!compileTextSeg(s, cs, c))
             return false;
 
         // 位域：不占独立字节，count 恒为 1，值从容器（或帧首）的位窗口取。
@@ -689,9 +674,9 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                 return c.fail("段 " + s.name + " 的 count 非法");
             cs.countIsConst = true;
             cs.constCount = static_cast<uint32_t>(v);
-            // ASCII 段的元素个数由定界符决定，不占"字节区间"，constBytes 恒为 0。
-            cs.constBytes = cs.isAscii ? 0 : cs.constCount * s.type.size;
-            if (!cs.isAscii && (cs.constBytes == 0 || cs.constBytes > (1u << 20)))
+            // text 段的元素个数由定界符决定，不占"字节区间"，constBytes 恒为 0。
+            cs.constBytes = cs.isTextSeg ? 0 : cs.constCount * s.type.size;
+            if (!cs.isTextSeg && (cs.constBytes == 0 || cs.constBytes > (1u << 20)))
                 return c.fail("段 " + s.name + " 字节数非法");
         }
         else
@@ -820,7 +805,7 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
             cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
             cs.isText = (s.type.type == ValueType::Text);
-            if (!compileAsciiSeg(s, cs, c))
+            if (!compileTextSeg(s, cs, c))
                 return false;
 
                     // 位域：不占独立字节，count 恒为 1，值从容器（或帧首）的位窗口取。
@@ -865,7 +850,7 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                     return c.fail("变体段 " + s.name + " 的 count 非法");
         cs.countIsConst = true;
                 cs.constCount = static_cast<uint32_t>(n);
-                cs.constBytes = cs.isAscii ? 0 : cs.constCount * s.type.size;
+                cs.constBytes = cs.isTextSeg ? 0 : cs.constCount * s.type.size;
             }
             if (s.expectExpr)
             {
@@ -897,11 +882,9 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             return c.fail("series.payload 引用了未知段");
     }
 
-    // 记录层（ASCII）：段表里只要有一个 ASCII 段，整条记录就走词法切分而不是字节读。
-    for (const CompiledSeg &cs : out.segs)
-        if (cs.isAscii)
-            out.isAscii = true;
-    // 有段用定界符切 token → 记录按"切分"解析（与是否称它为 ASCII 无关）。
+    // 记录层形态由顶层 mode 决定（SPEC §2.1.1），不靠段特征推断。
+    out.isText = (doc.mode == "text");
+    // 有段用定界符切 token → 记录按"切分"解析（与是否称它为 text 无关）。
     for (const CompiledSeg &cs : out.segs)
         if (cs.hasDelimiter)
             out.isDelimited = true;

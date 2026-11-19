@@ -7,6 +7,7 @@
   "additionalProperties": false,
   "required": [
     "name",
+    "mode",
     "segments"
   ],
   "properties": {
@@ -18,6 +19,11 @@
     "name": {
       "type": "string",
       "minLength": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["bin", "text"],
+      "description": "处理形态：bin 按字节解释；text 按字符串切 token 再解析。必填，不设 mixed"
     },
     "description": {
       "type": "string"
@@ -47,7 +53,7 @@
     },
     "terminator": {
       "type": "string",
-      "description": "ASCII 帧终止标记（可选）"
+      "description": "text 帧终止标记（可选）"
     },
     "segments": {
       "$ref": "#/$defs/segmentArray"
@@ -535,7 +541,7 @@
         "literal": {
           "type": "string",
           "minLength": 1,
-          "description": "必须逐字符匹配的字面量段（$ * , 等）；段级边界，不存在协议级 ascii/bin"
+          "description": "必须逐字符匹配的字面量段（$ * , 等）；段级边界，不存在协议级 bin/text"
         },
         "delimiter": {
           "oneOf": [

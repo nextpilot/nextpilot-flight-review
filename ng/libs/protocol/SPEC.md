@@ -12,7 +12,7 @@
 | 做 | 不做 |
 |---|---|
 | 描述**一个字节流如何切成帧** | 描述容器格式（PCAP / MDF4 / BLF / PNG） |
-| 描述**帧内每个字段怎么解**（定长、变长、变体、位域、ASCII 行） | 描述嵌套对象树（Protobuf / ASN.1 / JSON） |
+| 描述**帧内每个字段怎么解**（定长、变长、变体、位域、text 行） | 描述嵌套对象树（Protobuf / ASN.1 / JSON） |
 | 描述**校验与时间戳** | 描述压缩、加密、跨帧上下文（除 CRC 流） |
 | 运行时加载、可被 GUI 编辑、可生成代码 | 追求成为通用数据建模语言 |
 
@@ -23,7 +23,7 @@
 **psproto 把能力按协议族需要配齐，不按"谁来用"砍。**
 
 - ULog / MAVLink / NMEA / OEM7 等格式在产品里可以有**专门的代码解析器**（字典驱动、复杂协议用代码更稳）；这是**落地方式**的选择，不构成从 psproto 规范里删除对应能力的理由。
-- 同一项能力（位域、ASCII 行协议、带 `inject` 的 CRC、24 位 CRC）：有现成代码解析器就用代码；遇到私有格式、临时调试、陌生报文，再用 psproto 模板。用不用、走哪条路，是上层和用户的选择。
+- 同一项能力（位域、text 行协议、带 `inject` 的 CRC、24 位 CRC）：有现成代码解析器就用代码；遇到私有格式、临时调试、陌生报文，再用 psproto 模板。用不用、走哪条路，是上层和用户的选择。
 - 规范只排除**容器 / 嵌套 / 索引跳读**这类超出"一帧怎么解"定位的东西；其余能力一律保留。
 
 ---
@@ -34,12 +34,13 @@
 {
   "psproto": "2",              // 版本键与 "version" 分离，v1 的 "version":"1" 自动识别
   "name": "ubx_nav_pvt",
+  "mode": "bin",
   "description": "u-blox NAV-PVT",
   "layout": "sequential",      // 目前唯一布局；保留扩展位
   "endian": "little",          // 默认端序，段可覆盖
   "maxsize": 2048,             // 单帧字节上限，解码时强制
-  "starts": "$",               // ASCII 帧起始标记（可选）
-  "terminator": "\r\n",        // ASCII 帧终止标记（可选）
+  "starts": "$",               // text 帧起始标记（可选）
+  "terminator": "\r\n",        // text 帧终止标记（可选）
   "segments": [ … ],
   "series": { … },             // 帧族变体（可选）
   "types": { … },              // 类型别名（可选）
@@ -74,8 +75,68 @@
 | `range` | `[min,max]` | **声明**物理范围（不判失败） | 与 `checks.range` 语义区分 |
 | `repeat` | `elems`/`eos`/`until` | 重复方式 | 默认 `elems`（由 `count` 定）；`eos` = 读到帧尾，**必须是最后一个读字节的段**（后面只允许 `bit`（不推进字节游标）），否则编译期报错 |
 | `until` | 表达式/字符串 | 重复终止条件（读到该值为止） | 配 `repeat:"until"` |
-| `empty` | `"nan"`/`"skip"` | ASCII 空字段策略 | `nan`：空段填 NaN；`skip`：跳过不产出；见 §7 |
+| `empty` | `"nan"`/`"skip"` | text 空字段策略 | `nan`：空段填 NaN；`skip`：跳过不产出；见 §7 |
 | `description` | string | 文档 | 编辑器/Schema 生成用 |
+
+### 2.1.1 `mode` 键归属（bin / text 白名单）
+
+顶层 `mode` 必填，取值 `bin`（按字节解释）/ `text`（按字符串切 token 再解析），**不设 mixed**。段键按下表归属，validate 按此做黑白名单互斥；越界键在编译期报 `CONFIG_INVALID`。
+
+**通用键（两种格式都可写）**
+
+| 键 | 说明 |
+|---|---|
+| `name` / `unit` / `description` | 标识、单位、文档 |
+| `as` | 覆盖输出类型 |
+| `emit` | 出通道策略（见 §2.2） |
+| `if` | 段级条件，false 时整段跳过（不耗输入、不出通道） |
+| `derive` | 派生字段，表达式引用前序段，不占输入 |
+| `transform` | 解析后算子链（见 §4.3） |
+| `scale` / `offset` | 单步线性换算 `phys = raw*scale + offset` |
+| `on_mismatch` | 校验失败策略：`reject`/`warn`/`skip` |
+| `enum` / `range` | 合法取值集合 / 闭区间值域 |
+| `digest` | 跨段摘要校验（见 §4.2） |
+| `checks` | 段内谓词校验（eq/ne/lt/le/gt/ge/in/range/mask）；**序列类**（crc/sum/xor/parity）仅 bin 段放行 |
+| `prefix` | 变体段通道名前缀 |
+
+**仅 `bin`（按字节）**
+
+| 键 | 说明 |
+|---|---|
+| `count` | 元素个数；字节宽由 `type` 推算，可引用前序段做变长数组 |
+| `length` | 长度段反算绑定（见 §2.4） |
+| `endian` | 多字节端序 `little`/`big`，覆盖顶层默认 |
+| `bit` | 位域：位窗口 + 位序 + 可选 `base` 容器段；不推进字节游标（见 §6） |
+| `expect` | 解出值等于常量（魔数/固定状态字节校验） |
+| `repeat` / `until` | 变长数组终止：`eos` 读到帧尾 / `until` 逐元素求值即停 |
+
+**仅 `text`（按字符串）**
+
+| 键 | 说明 |
+|---|---|
+| `literal` | 必须逐字符匹配的字面量锚点（`$`、`*`、`,`） |
+| `key` | 键值词法的键名 |
+| `delimiter` | 段结束边界：字符串或数组；`"blank"` = 空格/Tab 字符类 |
+| `repeater` | 只允许 `"*"`：重复到下一段边界 |
+| `width` | 定宽字符数 |
+| `rest` | 整段剩余原文，不切分 |
+| `base` | 数字进制，默认 10 |
+| `fixed` | 定点小数位数 |
+| `signed` / `sci` | 允许负号 / 科学计数法（默认拒绝） |
+| `empty` | 空字段策略：`nan`/`skip`/`raw` |
+| `pattern` | 正则只做校验，不切分 |
+| `time` | `type` 取值之一：文本时间 → 当天秒（见 §7） |
+
+**类型集合差异**
+
+- `bin`：`u8/i8/u16/i16/u32/i32/u64/i64/f32/f64/bool/bcd/char`
+- `text`：`char`、`string`/`str`、`number`/`num`、`rest`、`time`
+
+**互斥拦截**
+
+- `bin` 段出现 `literal/key/delimiter/repeater/width/rest/base/fixed/signed/sci/empty/pattern` → 报错；
+- `text` 段出现 `bit/endian/expect/repeat/until/length` → 报错；
+- `text` 段需要"常量等于某文本"时，用 `checks` 的 `eq`（文本常量写 `"'OK'"`），不用 `expect`。
 
 ### 2.2 `emit` 三态（v1 的 `hidden`/`plot`/`hasValue` 三个键已删除）
 
@@ -114,7 +175,7 @@ v1 的 `role`（sync/length/payload/checksum/data）与显式键**完全重叠**
 
 运算符 `+ - * / % & | ^ << >>`，函数 `abs/min/max/clamp`，显式转换 `toF64/toI64/toU64`。
 
-ASCII 派生函数（作用于 `char` 段）：`time_hhmmss`（`hhmmss.ss` → 当日秒数）、`deg_ddmm`（度分格式 → 十进制度）、`text_number`（文本 → 数值，支持十进制/十六进制，空字段按 `empty` 策略处理）。
+text 派生函数（作用于 `char` 段）：`time_hhmmss`（`hhmmss.ss` → 当日秒数）、`deg_ddmm`（度分格式 → 十进制度）、`text_number`（文本 → 数值，支持十进制/十六进制，空字段按 `empty` 策略处理）。
 
 **类型由操作数决定，不做隐式降级**（完整规则见 `docs/roadmap/psproto-v2.md` §10.9）：
 
@@ -148,7 +209,7 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 ```
 `over`（段区间）只对摘要类有意义，**从 `checks` 移除**。
 
-> **适用范围**：`checks` 是谓词（eq/ne/lt/le/gt/ge/in/range/mask），ASCII 与二进制都执行（ASCII 在段解析完即判，不符→`FieldInvalid`）。序列类（crc/sum/xor/parity）不属于 `checks`，ASCII 段写了会被编译期拒绝，统一走 `digest`。
+> **适用范围**：`checks` 是谓词（eq/ne/lt/le/gt/ge/in/range/mask），text 与 bin都执行（text 在段解析完即判，不符→`FieldInvalid`）。序列类（crc/sum/xor/parity）不属于 `checks`，text 段写了会被编译期拒绝，统一走 `digest`。
 > 文本常量要写成表达式字面量：`{"op":"eq","value":"'N'"}`（`value` 里的字符串按表达式解析，裸 `"N"` 会被当成段名引用）。
 
 ### 4.2 `digest`（摘要，算校验和）
@@ -193,7 +254,7 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 ] }
 ```
 
-约束：算子链只作用于 ASCII 的 token 数值（二进制段用 `scale`/`offset`）；`clamp` 的 `min` 必须 ≤ `max`。
+约束：算子链只作用于 text 的 token 数值（二进制段用 `scale`/`offset`）；`clamp` 的 `min` 必须 ≤ `max`。
 
 ---
 
@@ -269,25 +330,25 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 
 ---
 
-## 7. ASCII（行协议：NMEA / 私有 CSV / 键值）
+## 7. text（行协议：NMEA / 私有 CSV / 键值）
 
-ASCII **不是另一套模型**：同样是"段 + 边界"，只是边界从字节宽度换成字符边界。
+text **不是另一套模型**：同样是"段 + 边界"，只是边界从字节宽度换成字符边界。
 `$`、`*` 都是**段**（literal 段），不是协议级的 `starts`/`trailer` 概念。
 
-### 7.1 段级边界（没有协议级 ascii/bin）
+### 7.1 段级边界（没有协议级 bin/text）
 
 ```jsonc
 "term": ["\r\n", "\n"]    // 帧尾候选集：写了就硬校验，没写就不管
 ```
 
-没有协议级 `lexer`/ascii/bin 开关：**每个段自己声明边界**（见 §7.2 的 `boundaryOf`）。
+没有协议级 `lexer`/bin/text 开关：**每个段自己声明边界**（见 §7.2 的 `boundaryOf`）。
 
 - `delimited`：分隔符切 token（NMEA、CSV 这类）
 - `fixed`：定宽字符，段用 `width`
 - `keyed`：`key=value`（后续批次）
 - `term` **纯可选**：写了每条记录必须以它收尾，没写就不检查（靠 `digest` 宽度自证）
 
-### 7.2 段的 ASCII 键
+### 7.2 段的 text 键
 
 | 键 | 含义 |
 |---|---|
@@ -295,7 +356,7 @@ ASCII **不是另一套模型**：同样是"段 + 边界"，只是边界从字�
 | `delimiter` | 该段结束边界：字符串或数组；`"blank"` = 空格/Tab 字符类 |
 | `repeater` | 只允许 `"*"`：重复到下一段边界（右边界 = 后一个 literal 或记录尾） |
 | `rest` | 整段剩余原文，不切分 |
-| `time` | 文本时间：`hhmmss[.ss]` 或 `hh:mm:ss[.ss]`（6 位整数部分），输出当天秒 f64，只用于 ASCII 段 |
+| `time` | 文本时间：`hhmmss[.ss]` 或 `hh:mm:ss[.ss]`（6 位整数部分），输出当天秒 f64，只用于 text 段 |
 | `width` | 定宽字符数（`fixed` 词法） |
 | `base` | 数字进制，**默认 10**；`16` 用于校验字段 |
 | `fixed` | 定点小数位数（`fixed: 3` 表示 3 位小数） |
@@ -304,9 +365,9 @@ ASCII **不是另一套模型**：同样是"段 + 边界"，只是边界从字�
 | `empty` | 空字段策略：`nan` / `skip` / `raw`（默认报错） |
 | `pattern` | 正则**只做校验**，不切分 |
 | `on_mismatch` | `reject` / `warn` / `skip` |
-| `digest` | 见 §4.2；ASCII 上 `from`/`to` 指向段名端点 |
+| `digest` | 见 §4.2；text 上 `from`/`to` 指向段名端点 |
 
-ASCII 段的 `count` 可省略（默认 1）；`bit` 不允许出现在 ASCII 段。
+text 段的 `count` 可省略（默认 1）；`bit` 不允许出现在 text 段。
 
 ### 7.3 例：NMEA GGA
 
@@ -433,7 +494,7 @@ PatternMismatch / OverflowMaxsize / IncompleteAtEof`
 
 `bit` 位域、`if` 条件段、`digest` 拆分+命名算法表+`inject`+位宽、`until`/`starts`/`terminator`、`enum`、`range` 声明、`repeat: eos|until`、`types` 别名。
 
-**ASCII/混合协议（v2 新增，S4a）**：`SegBoundary{Byte,Literal,Delimit,Fixed,Rest,Repeat,Keyed}`
+**text/混合协议（v2 新增，S4a）**：`SegBoundary{Byte,Literal,Delimit,Fixed,Rest,Repeat,Keyed}`
 取代协议级 `lexer`——字节段边界由 `type × count` 推出，字符段由 `literal`/`delimiter`/`width`/`rest`/`key` 声明；
 同一记录里可混排（文本头 + 二进制载荷）。流式语义：锚点定位、term 可选、`$`/`*` 硬匹配、新 `$` 作废旧候选、
 无 term 靠 check 十六进制宽度自证；`digest.from/to` 走原始字节。时间轴由 `timestamp` 表达式求值。
@@ -450,10 +511,10 @@ PatternMismatch / OverflowMaxsize / IncompleteAtEof`
 | 4 | 校验带额外常量字节 | **MAVLink v1/v2（CRC_EXTRA）** | ✗ | ✓（`inject`） |
 | 5 | 非 8 倍数位宽 CRC | **RTCM v3（CRC-24Q）** | ✗ | ✓（`width` 按位） |
 | 6 | 位域 | **CAN / J1939 / CANopen / ADS-B / CCSDS** | ✗ | ✓ |
-| 7 | 行终止 ASCII + 空字段 | **NMEA 0183** | ✗ | ✓ |
+| 7 | 行终止 text + 空字段 | **NMEA 0183** | ✗ | ✓ |
 | 8 | 重复到标记 | TLV 列表 / EDR | ✗ | ✓ |
 | 9 | 容器 / 嵌套 / 索引跳读 | PCAP / MDF4 / BLF / PNG / SpaceWire | ✗ | ✗（锁定排除，不进 v2.x；归上层专用 reader/writer） |
-| 10 | 6-bit ASCII 装甲 | **AIS** | ✗ | ✗（P2，需专门解包器） |
+| 10 | 6-bit text 装甲 | **AIS** | ✗ | ✗（P2，需专门解包器） |
 
 **两轴说明**：表中 v2 列指"psproto 模板能否表达该能力"，**与产品里是否已有专门代码解析器无关**。ULog / MAVLink / NMEA / OEM7 可由代码解析器承担；同一项能力在规范里保留，遇到私有格式时模板也能写。两者并存，互不为前提。
 
@@ -479,7 +540,7 @@ PatternMismatch / OverflowMaxsize / IncompleteAtEof`
 3. **语义校验**：段名唯一、表达式引用存在、`over` 区间合法、变体覆盖完整、`series.payload` 指向存在
 4. **诊断**：帧号 + 段名 + 偏移 + 原因，不是只 `++rejected`
 5. **迁移器** v1→v2，含不可自动迁移项报告
-6. **示例集**：定长 / 变长 / 变体族 / 位域 / ASCII / 校验 / 时间戳 各至少一个可跑样例
+6. **示例集**：定长 / 变长 / 变体族 / 位域 / text / 校验 / 时间戳 各至少一个可跑样例
 7. **一致性测试**：用真实日志（ULog、UBX、NMEA）解出的字段，与**既有成熟解析器**逐值比对（这是"半成品"和"能用"的分水岭）
 8. **fuzz**：随机字节 + 畸形模板，不崩、不超时、不越界
 9. **性能基线**：每 MB 耗时、零拷贝验证（payload 不复制）
@@ -494,6 +555,6 @@ PatternMismatch / OverflowMaxsize / IncompleteAtEof`
 **psproto v2 的调整不是"加功能"，而是三件事**：
 **修 3 处错**（端序校验、崩溃、除法）、
 **收敛 7 个概念**（role、hidden/plot/hasValue、value、四个文本类型名、fromVariant、size→count、counts→length）、
-**补 9 组表达力**（位域、条件段、digest 参数化与 inject、ASCII 原语、enum、range、repeat、types 别名）。
+**补 9 组表达力**（位域、条件段、digest 参数化与 inject、text 原语、enum、range、repeat、types 别名）。
 
 做完这三件，能力覆盖从 3/8 到 8/8，概念数量反而**减少**。

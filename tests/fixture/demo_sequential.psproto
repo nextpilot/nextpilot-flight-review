@@ -1,5 +1,6 @@
 {
   "name": "demo_seq",
+  "mode": "bin",
   "description": "顺序段、元素个数、CRC 区间、timestamp、系列协议",
   "layout": "sequential",
   "endian": "little",

@@ -47,6 +47,7 @@ static QByteArray makeTemplate()
 {
     return R"({
       "name": "simple",
+      "mode": "bin",
       "layout": "sequential",
       "endian": "little",
       "maxsize": 16,
@@ -97,7 +98,8 @@ int main(int argc, char *argv[])
     // --- 2b) v2 键名：count/emit/expect，validate 通过、回写对称、aux 不出通道 ---
     {
         const QByteArray v2 = R"({
-          "name": "v2", "layout": "sequential", "endian": "little", "maxsize": 16,
+          "name": "v2",
+      "mode": "bin", "layout": "sequential", "endian": "little", "maxsize": 16,
           "segments": [
             {"name": "sync", "count": 1, "type": "u8", "expect": 170, "emit": "none"},
             {"name": "a", "count": 1, "type": "u16"},
@@ -306,7 +308,8 @@ int main(int argc, char *argv[])
     // --- 7b) 畸形 CRC 参数：非法十六进制不得抛异常终止进程 ---
     {
         const QByteArray badPoly = R"({
-          "name": "bad_crc", "layout": "sequential", "endian": "little", "maxsize": 16,
+          "name": "bad_crc",
+      "mode": "bin", "layout": "sequential", "endian": "little", "maxsize": 16,
           "segments": [
             {"name": "crc", "count": 1, "type": "u8",
              "checks": [{"op": "crc16", "poly": "0xZZ", "over": ["crc:crc"]}]}
@@ -320,7 +323,8 @@ int main(int argc, char *argv[])
 
         // 合法 0x 前缀仍能正常解析
         const QByteArray okPoly = R"({
-          "name": "ok_crc", "layout": "sequential", "endian": "little", "maxsize": 16,
+          "name": "ok_crc",
+      "mode": "bin", "layout": "sequential", "endian": "little", "maxsize": 16,
           "segments": [
             {"name": "crc", "count": 1, "type": "u8",
              "checks": [{"op": "crc16", "poly": "0x1021", "init": "0xFFFF", "over": ["crc:crc"]}]}
@@ -334,7 +338,7 @@ int main(int argc, char *argv[])
 
     // --- 7c) 端序别名 be/le 被校验接受（解析层归一到 big/little） ---
     {
-        const QByteArray beTpl = R"({"name":"e","layout":"sequential","endian":"be",
+        const QByteArray beTpl = R"({"name":"e","mode":"bin","layout":"sequential","endian":"be",
           "segments":[{"name":"a","count":1,"type":"u8"}]})";
         CHECK(validate(QJsonDocument::fromJson(beTpl).object()).isEmpty());
         OK("端序别名 be 通过 validate");
@@ -366,7 +370,7 @@ int main(int argc, char *argv[])
 
         // count 是表达式：走字节码而不是每帧解释表达式树
         const QByteArray varTpl = R"({
-          "name":"var","layout":"sequential","endian":"little","maxsize":32,
+          "name":"var","mode":"bin","layout":"sequential","endian":"little","maxsize":32,
           "segments":[
             {"name":"n","count":1,"type":"u8"},
             {"name":"body","count":"n","type":"u8"},
@@ -403,7 +407,7 @@ int main(int argc, char *argv[])
     // --- 9) 位域：CAN 式 8 字节帧，Intel/Motorola、base 容器、符号扩展、scale ---
     {
         const QByteArray canTpl = R"({
-          "name":"can","layout":"sequential","endian":"little","maxsize":64,
+          "name":"can","mode":"bin","layout":"sequential","endian":"little","maxsize":64,
           "segments":[
             {"name":"body","count":8,"type":"u8","emit":"none"},
             {"name":"byte0","count":1,"type":"u8","bit":{"offset":0,"width":8,"order":"lsb0"}},
@@ -457,7 +461,7 @@ int main(int argc, char *argv[])
     // --- 10) 条件段 if：不成立不占字节、不出通道；位域负值符号扩展 ---
     {
         const QByteArray condTpl = R"({
-          "name":"cond","layout":"sequential","endian":"little","maxsize":32,
+          "name":"cond","mode":"bin","layout":"sequential","endian":"little","maxsize":32,
           "segments":[
             {"name":"flags","count":1,"type":"u8"},
             {"name":"a","count":1,"type":"u8"},
@@ -562,7 +566,7 @@ int main(int argc, char *argv[])
             if (!cok) fprintf(stderr, "NMEA compileProgram: %s\n", nerr.c_str());
             CHECK(cok);
         }
-        CHECK(np.isAscii && np.isDelimited);
+        CHECK(np.isText && np.isDelimited);
         CHECK(np.hasStartAnchor && np.startAnchor == "$");
         CHECK(np.hasTerminator);
 
@@ -679,7 +683,7 @@ int main(int argc, char *argv[])
             if (!cok) fprintf(stderr, "CSV compileProgram: %s\n", cerr.c_str());
             CHECK(cok);
         }
-        CHECK(cp.isAscii && !cp.hasStartAnchor && cp.hasTerminator);
+        CHECK(cp.isText && !cp.hasStartAnchor && cp.hasTerminator);
 
         {
             const std::string csv = "1 23.5 alpha\r\n2 11.0 beta\r\n3 7.25 gamma\r\n";
@@ -739,30 +743,41 @@ int main(int argc, char *argv[])
 
         {
             std::string why;
-            CHECK(compileFail(R"({"name":"neg1","segments":[{"name":"a","type":"u8"},{"name":"b","type":"u8","count":"undef_slot + 1"}]})", why));
+            CHECK(compileFail(R"({"name":"neg1","mode":"bin","segments":[{"name":"a","type":"u8"},{"name":"b","type":"u8","count":"undef_slot + 1"}]})", why));
         }
         {
             std::string why;
-            CHECK(compileFail(R"({"name":"neg2","segments":[{"name":"a","type":"u8","bit":{"base":"nope","offset":0,"width":3}}]})", why));
+            CHECK(compileFail(R"({"name":"neg2","mode":"bin","segments":[{"name":"a","type":"u8","bit":{"base":"nope","offset":0,"width":3}}]})", why));
         }
         {
             std::string why;
-            CHECK(compileFail(R"({"name":"neg3","segments":[{"name":"a","literal":"$","width":0}]})", why));
+            CHECK(compileFail(R"({"name":"neg3","mode":"text","segments":[{"name":"a","literal":"$","width":0}]})", why));
         }
         {
             std::string why;
-            CHECK(compileFail(R"({"name":"neg4","segments":[{"name":"a","literal":"$","delimiter":","}]})", why));
+            CHECK(compileFail(R"({"name":"neg4","mode":"text","segments":[{"name":"a","literal":"$","delimiter":","}]})", why));
+        }
+        {
+            // mode 必填 / 枚举 / bin-text 键黑白名单（validate 层）
+            auto vfail = [](const char *j) {
+                return !validate(QJsonDocument::fromJson(QByteArray(j)).object()).isEmpty();
+            };
+            CHECK(vfail(R"({"name":"x","segments":[{"name":"a","type":"u8"}]})")); // 缺 mode
+            CHECK(vfail(R"({"name":"x","mode":"xml","segments":[{"name":"a","type":"u8"}]})")); // 非法值
+            CHECK(vfail(R"({"name":"x","mode":"bin","segments":[{"name":"a","type":"char","delimiter":","}]})")); // bin 禁文本词法键
+            CHECK(vfail(R"({"name":"x","mode":"text","segments":[{"name":"a","type":"u8","bit":{"offset":0,"width":4}}]})")); // text 禁位域
+            OK("mode 必填/枚举与 bin-text 键黑白名单校验");
         }
         {
             std::string why;
-            CHECK(compileFail(R"({"name":"neg5","segments":[{"name":"a","type":"u8","width":70000}]})", why));
+            CHECK(compileFail(R"({"name":"neg5","mode":"bin","segments":[{"name":"a","type":"u8","width":70000}]})", why));
         }
         OK("编译层负例：未定义槽位/bit.base/width 越界/literal+delimiter 混写全部明确失败");
     }
 
     // --- ASCII 变体：按 msgid 选子协议（NMEA 多句） ---
     {
-        const char *js = R"({"name":"nmea_series","term":["\r\n"],"maxsize":128,
+        const char *js = R"({"name":"nmea_series","mode":"text","term":["\r\n"],"maxsize":128,
  "segments":[
    {"name":"dollar","literal":"$","emit":"none"},
    {"name":"msgid","type":"char","delimiter":",","emit":"none"},
@@ -803,7 +818,7 @@ int main(int argc, char *argv[])
     // --- derive 派生字段 + type:time 文本时间 ---
     {
         const QByteArray tplBin = R"({
-          "name":"derived","layout":"sequential","maxsize":64,
+          "name":"derived","mode":"bin","layout":"sequential","maxsize":64,
           "segments":[
             {"name":"a","type":"u16"},
             {"name":"b","type":"u16"},
@@ -823,7 +838,7 @@ int main(int argc, char *argv[])
         }
 
         const QByteArray tplTime = R"({
-          "name":"time_csv","layout":"sequential","maxsize":64,"terminator":"\n",
+          "name":"time_csv","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
           "segments":[
             {"name":"t","type":"time","delimiter":","},
             {"name":"v","type":"i32","delimiter":";"}
@@ -844,7 +859,7 @@ int main(int argc, char *argv[])
     // --- ASCII checks 生效 + preview/decode 一致性 ---
     {
         const QByteArray tpl = R"({
-          "name":"csv_checks","layout":"sequential","maxsize":64,"terminator":"\n",
+          "name":"csv_checks","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
           "segments":[
             {"name":"a","type":"i32","delimiter":",","checks":[{"op":"eq","value":12}]},
             {"name":"b","type":"char"}
@@ -857,7 +872,7 @@ int main(int argc, char *argv[])
 
         // 序列类 checks 在 ASCII 段必须编译期拒绝（那是 digest 的职责）
         const QByteArray badTpl = R"({
-          "name":"csv_bad","layout":"sequential","maxsize":64,"terminator":"\n",
+          "name":"csv_bad","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
           "segments":[{"name":"c","type":"char","delimiter":"\n","checks":[{"op":"crc16"}]}]
         })";
         CHECK(!validate(QJsonDocument::fromJson(badTpl).object()).isEmpty());
@@ -877,7 +892,7 @@ int main(int argc, char *argv[])
     {
         QJsonParseError pe;
         const QJsonObject bad = QJsonDocument::fromJson(R"({
-            "name":"eos_bad","layout":"sequential","maxsize":64,
+            "name":"eos_bad","mode":"bin","layout":"sequential","maxsize":64,
             "segments":[
                 {"name":"body","type":"u16","repeat":"eos"},
                 {"name":"crc","type":"u16"}

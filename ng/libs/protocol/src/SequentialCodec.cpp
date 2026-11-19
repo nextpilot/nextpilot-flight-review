@@ -856,7 +856,7 @@ nextpilot::plotscope::protocol::previewSequentialFrame(const QByteArray &frame,
     }
 
     // 有字符边界段 → 走流式解码器（与生产路径同一个记录解析器）。
-    if (prog.isAscii)
+    if (prog.isText)
     {
         StreamDecoder dec(prog);
         ProtocolDecodeResult dr;
@@ -977,8 +977,8 @@ nextpilot::plotscope::protocol::ProtocolDecodeResult
 nextpilot::plotscope::protocol::decodeSequentialCompiled(const QByteArray &bytes,
                                                          const CompiledProgram &prog)
 {
-    // ASCII 协议（NMEA/CSV 等）走流式状态机；二进制仍走字节游标 readFrame。
-    if (prog.isAscii)
+    // text 协议（NMEA/CSV 等）走流式状态机；二进制仍走字节游标 readFrame。
+    if (prog.isText)
     {
         ProtocolDecodeResult result;
         result.ticksPerSecond = kTicksPerSecond;

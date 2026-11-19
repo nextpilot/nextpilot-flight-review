@@ -1281,7 +1281,7 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 **不做 S5 的三条理由**
 
 1. 收益不在热路径：模板 JSON 只在"打开协议"时解析一次，之后走 `decodeSequentialCompiled` 的 ByteCode/CompiledSeg 数组；每次解码的开销是 I/O、TypedValue 构造与通道写入，不是模板解析。
-2. 代价是双实现：codegen 生成 C++ 后，同一套语义存在"解释器"与"生成代码"两份；`ascii/bin` 混排、位域、变长、`series`、`derive`、Lua 校验每加一条规则都要改两处并双份回归——长期负债大于一次性性能收益。
+2. 代价是双实现：codegen 生成 C++ 后，同一套语义存在"解释器"与"生成代码"两份；`bin/text` 混排、位域、变长、`series`、`derive`、Lua 校验每加一条规则都要改两处并双份回归——长期负债大于一次性性能收益。
 3. 没有证据：仓库内没有 decode 占用 >30% 的 profile 数据；先优化不存在（或未测量）的瓶颈不符合工程顺序。
 
 **S4c 口径（用户已确认）**：将来若真做 codegen，模板里出现 `digest.script`（Lua）→ 编译期**告警** `CODEGEN_UNSUPPORTED`，该字段**不转**、回退运行时 Lua 执行；不允许静默降级或生成"看起来对"的代码。
@@ -1290,9 +1290,38 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 ### 14.4 验收
 
-- [x] 协议单测 26 项全绿（`./build-ng/tests/ng_test_protocol`），含 `derive`（`a+b`/`a*b`）与 `type:"time"`（`083559.00` → 30959 s、`246100.00` 越界被拒）；
+- [x] 协议单测 27 项全绿（`./build-ng/tests/ng_test_protocol`），含 `derive`（`a+b`/`a*b`）与 `type:"time"`（`083559.00` → 30959 s、`246100.00` 越界被拒）；
 - [x] 省略 `count` 的标量与 SPEC §2.1 一致（validate 与 parse 都按 1 处理）；
+- [x] 全量 ctest 18/18 通过；
 - [ ] 需求方逐项验收 §14.1 的行为口径（尤其 `repeat:"eos"` 在"后面还有段"时的语义）。
+
+### 14.6 顶层 `mode` 形态声明落地（2026-11-19）
+
+**定稿口径（需求方确认）**
+
+1. 协议顶层**显式声明**形态，键名 `mode`，取值 `bin`（按字节解释，游标按字节推进）/ `text`（按字符串切 token 再解析）；**必填、不设 `mixed`**。
+2. 键名由早期 `format` 统一改为 `mode`；旧称 "ascii" 不准确，全链路改叫 `text`。
+3. 段级键黑白名单互斥，validate 在编译期拒绝越界键（对照表见 SPEC §2.1.1）：
+   - 仅 bin：`count/length/endian/bit/expect/repeat/until`（序列校验 crc/sum/xor/parity 也只对 bin 段放行；text 段"常量等于某文本"用 `checks.eq`）；
+   - 仅 text：`literal/key/delimiter/repeater/width/rest/base/fixed/signed/sci/empty/pattern/time`。
+
+**落地改动**
+
+- 模型 `ProtocolDocument.mode`；parse 读顶层 `mode`，toJson 回写；validate 校验必填与枚举，并由 `doc.mode=="text"` 驱动段级黑白名单（删除原先靠段特征反推 `docAscii` 的推断循环与死函数 `hasCharSegments`/`wantsTokenContext`）。
+- 编译层：`CompiledProgram.isText`（程序级形态）；段级词法标志 `CompiledSeg.isTextSeg`；解码分派 `decodeSequentialCompiled` 与 `previewSequentialFrame` 都按 `prog.isText` 选 `StreamDecoder`（text）或 `readFrame` 字节路径（bin），两路一致。
+
+**命名区分（改名时踩过的坑，留档）**
+
+| 符号 | 含义 | 改名来源 |
+|---|---|---|
+| `CompiledProgram.isText` | 整份协议是 text 形态 | 原 `prog.isAscii` |
+| `CompiledSeg.isTextSeg` | 该段走 text 词法路径（字面量/定界符/定宽） | 原 `cs.isAscii` |
+| `CompiledSeg.isText` | 该段值是 `ValueType::Text`（保留原名，未改） | 原本就叫 `isText` |
+| `CompiledSeg.textType` | 0=number 1=text | 原 `asciiType` |
+
+> 注意：`repeat.mode`（重复模式 `eos`/`until`）是另一个同名键，与顶层 `mode` 无关，未混改。
+
+**验收**：协议单测 27/27 全绿；全量 ctest 18/18。4 个 validate 负例：缺 `mode`、非法值 `xml`、bin 段写 `delimiter`、text 段写 `bit`。
 
 ---
 

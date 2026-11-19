@@ -88,7 +88,7 @@ bool isBlankByte(char c)
     return c == ' ' || c == '\t';
 }
 
-std::string trimAscii(const std::string &s)
+std::string trimText(const std::string &s)
 {
     size_t b = 0, e = s.size();
     while (b < e && isBlankByte(s[b]))
@@ -210,7 +210,7 @@ static bool parseTimeText(const std::string &s, TypedValue &out, std::string &er
 
 bool parseNumber(const std::string &rawIn, const CompiledSeg &seg, TypedValue &out, std::string &err)
 {
-    std::string s = trimAscii(rawIn);
+    std::string s = trimText(rawIn);
     if (s.empty())
     {
         err = "空字段";
@@ -248,7 +248,7 @@ bool parseNumber(const std::string &rawIn, const CompiledSeg &seg, TypedValue &o
         return true;
     }
 
-    if (seg.asciiType == 0 && (seg.type == ValueType::F64 || seg.type == ValueType::F32))
+    if (seg.textType == 0 && (seg.type == ValueType::F64 || seg.type == ValueType::F32))
     {
         if (!seg.sci && (s.find('e') != std::string::npos || s.find('E') != std::string::npos))
         {
@@ -384,7 +384,7 @@ struct RecAttempt
     int skipped = 0;
 };
 
-// checks 谓词（eq/ne/lt/le/gt/ge/in/range/mask）：ASCII 路径此前只有二进制 readFrame 执行它，
+// checks 谓词（eq/ne/lt/le/gt/ge/in/range/mask）：text 路径此前只有二进制 readFrame 执行它，
 // 导致模板里写 checks 在流式协议里静默失效。这里补齐，语义与 checkFrame 一致。
 static bool cmpTyped(const TypedValue &a, const TypedValue &b, int &cmp)
 {
@@ -412,7 +412,7 @@ static bool failPredicate(RecAttempt &r, const std::string &segName, const std::
     return false;
 }
 
-static bool checkAsciiPredicates(const CompiledSeg &seg, const TypedVec &col,
+static bool checkTextPredicates(const CompiledSeg &seg, const TypedVec &col,
                                  const std::vector<TypedVec> &cols, RecAttempt &r)
 {
     std::string bcErr;
@@ -482,7 +482,7 @@ static bool checkAsciiPredicates(const CompiledSeg &seg, const TypedVec &col,
 }
 
 // 解析一条记录。p[0] 是帧首（已定位/已是记录开始），n 是记录逻辑尾（不含 terminator）。
-// varIdx 非空时按变体段表解析（下标指向 prog.varSegs），用于 ASCII 变体按 msgid 分派。
+// varIdx 非空时按变体段表解析（下标指向 prog.varSegs），用于 text 变体按 msgid 分派。
 bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecAttempt &r,
                    const std::vector<const CompiledSeg *> *segsOverride = nullptr)
 {
@@ -545,7 +545,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         }
 
         // 字节段：边界由 elemSize × count 推出（位域/变体仍走 readFrame）。
-        if (!seg.isAscii)
+        if (!seg.isTextSeg)
         {
             const uint32_t elem = seg.elemSize > 0 ? seg.elemSize : 1;
             const uint32_t cnt = seg.countIsConst ? seg.constCount : 1;
@@ -616,7 +616,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             }
             r.vals[seg.slot] = col;
             spans[seg.slot] = {pos, pos + total};
-            if (!checkAsciiPredicates(seg, col, r.vals, r))
+            if (!checkTextPredicates(seg, col, r.vals, r))
                 return false;
             pos += total;
             continue;
@@ -682,7 +682,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                         col.push(TypedValue::fromText(std::string()));
                         continue;
                     }
-                    if (seg.emptyPolicy == "nan" && seg.asciiType == 0)
+                    if (seg.emptyPolicy == "nan" && seg.textType == 0)
                     {
                         col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), seg.type));
                         continue;
@@ -708,7 +708,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     r.detail = perr + "（原文 " + tok + "）";
                     return false;
                 }
-                if (seg.asciiType == 1)
+                if (seg.textType == 1)
                 {
                     col.push(TypedValue::fromText(tok));
                     continue;
@@ -926,7 +926,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 pos = nextPos;
                 continue;
             }
-            if (seg.emptyPolicy == "nan" && seg.asciiType == 0)
+            if (seg.emptyPolicy == "nan" && seg.textType == 0)
             {
                 col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), seg.type));
                 r.vals[seg.slot] = col;
@@ -959,7 +959,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             r.detail = perr + "（原文 " + tok + "）";
             return false;
         }
-        if (seg.asciiType == 1)
+        if (seg.textType == 1)
         {
             col.push(TypedValue::fromText(tok));
         }
@@ -1026,7 +1026,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         }
         r.vals[seg.slot] = col;
         spans[seg.slot] = {tokenStart, tokenEnd};
-        if (!checkAsciiPredicates(seg, col, r.vals, r))
+        if (!checkTextPredicates(seg, col, r.vals, r))
             return false;
         pos = nextPos;
     }
