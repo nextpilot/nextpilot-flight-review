@@ -34,6 +34,13 @@ target_link_libraries(ng_test_transform_adapter PRIVATE ng_core ng_uischema Qt6:
 set_target_properties(ng_test_transform_adapter PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_transform_adapter COMMAND ng_test_transform_adapter)
 
+# B8-a：Lua 脚本库 describe() 加载器验收（headless，链 script 模块 + core + foundation）。
+add_executable(ng_test_lua_script_library test_lua_script_library.cpp)
+target_link_libraries(ng_test_lua_script_library PRIVATE
+    ng_module_script ng_core ng_uischema ng_foundation Qt6::Core)
+set_target_properties(ng_test_lua_script_library PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_lua_script_library COMMAND ng_test_lua_script_library)
+
 # === 协议逻辑资产（顺序段协议解码内核平移）===
 # 纯逻辑测试：只依赖 ng_protocol + Qt Core，headless。
 add_executable(ng_test_protocol test_protocol.cpp)

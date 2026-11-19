@@ -17,9 +17,11 @@ add_library(ng_module_script OBJECT
     ScriptModule.cpp
     LuaEngine.cpp
     TransformEvaluator.cpp
+    LuaScriptLibrary.cpp
     ScriptModule.h
     LuaEngine.h
     TransformEvaluator.h
+    LuaScriptLibrary.h
 )
 target_include_directories(ng_module_script PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_module_script PUBLIC ng_host ng_core ng_lua Qt6::Core ${CMAKE_DL_LIBS})
