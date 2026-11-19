@@ -429,6 +429,44 @@ class IMessageParser  : public IConfigurableContribution { /* parse(bytes, Decod
 
 > 一句话：合并的是"配置能力"（该合），不是"解析接口"（不该合）。用户看到的重叠 90% 在配置层，抽取公共基类后这 90% 就真的只剩一份了。
 
+#### 10.3.1 职责纯化：解析器不绑定下游 + 一个解析器多输出函数（需求方 2026-11-19 追加，✅ 方向采纳，修正 10.3）
+
+需求方质疑："`IDataParser` 为什么要给他附加绘图的能力呀，甩给其他人。可以允许 `IMessageParser` 增加几个函数，不同函数接收不同的参数，输出不同的格式。"
+
+**质疑成立，且 SPI 早已如此设计——是我的表述错了。** `ps_parser_spi.h` 头部原文：
+
+> 解析器 = 字节 → 结构化批的纯转换。不读文件、不写存储、不认识宿主、不管生命周期。**结果归宿由调用者决定，解析器不绑定 Rust。** 调用者喂字节、收批、决定批去哪（Rust typed 表 / 其它存储 / 转发 / 丢弃）。
+
+- 绘图、Dataset、Rust、存储**从来都不是解析器的事**，是调用者（`IngestOrchestrator` → `plot`）的事。
+- 我上一版把"→ Dataset 画图"写进 `IDataParser` 的产物描述，只是陈述当前实现流向，**不该上升为接口职责**——按需求方要求改回"解析器只出数据、用途甩给调用者"。
+- 佐证：`PsParserSink` / `PsMsgSink` 都是**回调出口**——解析器解出数据往 Sink 里写，自己不持有、不决定去向。
+
+**裁决：解析器 = 纯转换 + 多输出函数，输出经 Sink 交还调用者。**
+
+1. **职责纯化**：解析器接口只回答"这段字节里有什么"，输出纯 metadata 数据结构（数值批 / 可读帧 / ……），**不碰 Dataset / Rust / 文件 / UI**。归宿全由调用者决定——"甩给其他人"在 SPI 层已落实，C++ 层对齐。
+
+2. **一个解析器，多个输出函数**：不同函数接收不同参数、输出不同格式，由 `outputs()` 能力声明支持哪些，调用方按需选择：
+
+```cpp
+enum class ParseOutput { FrameBatch, MsgFrame /* , Survey, ... */ }; // 纯数据输出类型
+class IParser : public IConfigurableContribution {          // 统一解析器接口
+    virtual QVector<ParseOutput> outputs() const = 0;       // 能力声明：本解析器能提供哪些输出
+    // 输出函数签名各异，调用方按 outputs() 挑选：
+    virtual int parseFrames(const QByteArray &, FrameBatchSink, ParseErr *) const;  // → 数值批（调用者拿去入仓/画图）
+    virtual int parseMessages(const QByteArray &, MsgFrameSink, ParseErr *) const;  // → 可读帧（调用者拿去检查）
+};
+```
+
+3. **对 10.3 的修正**：`IConfigurableContribution` 公共配置层（自述 + `paramSpecs` + `configure` + `probe`）**保留**；变的是产物组织方式——从"两个接口各一个产物方法"改为"**一个解析器挂多个输出函数**"。`IDataParser` 门面剩下的 `parserId`/表名/schema 声明并入统一 `IParser` 的自述与 `paramSpecs`，**取消独立门面层**——与"归并两条数据通路"同向，少一层间接。
+
+4. **注册表统一**：单一 `ParserRegistry`，按 `outputs()` 能力查询；原 `drivers()` / `messageParsers()` 退化为能力视图，`kind = format/message` 保留作兼容过滤。
+
+5. **SPI 对齐（另批）**：`ps_parser_spi.h` 与 `ps_message_parser_spi.h` 两个 vtable 可按同思路演进为"一个 vtable + 多输出槽"（按 `struct_size` 判定）——但这是 **ABI 变更**，本批先统一 C++ 层，SPI 另立批次。
+
+**验收补充**：① 解析器接口无 Dataset/Rust/文件/UI 依赖，可 headless 编译；② 一个协议类（如 MAVLink）能同时提供数值批与可读帧两种输出，调用方按需取用；③ 所有输出走 Sink 回调，解析器不持有结果、不决定去向。
+
+> **待拍板（修正 10.6-2）**：是否接受"取消 `IDataParser` 门面、统一为 `IParser` + 多输出函数"——这比 10.3 的"双接口 + 公共基类"更进一步，也更贴近需求方意图。
+
 ### 10.4 与 §4 的关系
 
 §4 定的 `FormSchema`/`FieldSpec`/`FieldType` **仍是唯一产物契约**，不变；变的是**生产方**：
@@ -450,7 +488,7 @@ class IMessageParser  : public IConfigurableContribution { /* parse(bytes, Decod
 ### 10.6 拍板状态
 
 1. ~~确认 `paramSpecs()` 作为唯一手写项~~ → **✅ 已确认**（2026-11-19，需求方追加说明 schema 是 metadata）。
-2. 确认"合并配置能力、不合并解析接口"（§10.3 的 `IConfigurableContribution` 公共基类）替代"两个接口硬合并"？——**待拍板**。
+2. ~~确认"双接口 + 公共基类"~~ → **2026-11-19 修正为更进一步方案**：取消 `IDataParser` 门面、统一 `IParser` + 多输出函数（§10.3.1）；解析器不绑定下游用途、输出经 Sink 交调用者——方向 ✅ 采纳，具体接口形态待拍板。
 3. ~~确认字段 label 由 `key` 约定生成 + 预览区框架统一渲染~~ → **✅ 已确认**（§10.2.1 定为"schema 纯 metadata、零 UI 控件词汇"，label/description 归引擎，预览归 probe 统一渲染）。
 4. 确认两个参数对话框合并为一个通用对话框（涉及 ImportDialog 的探测预览交互，需保证体验不退化）？——**待拍板**。
 5. **✅ 已拍板（2026-11-19）**：schema 只描述 metadata（变量名/数据类型/可选值/值域/单位/依赖/说明），**严禁 UI 控件词汇**；由自研 `SchemaEngine` 解析生成 UI（§10.2.1/§10.2.2）。
