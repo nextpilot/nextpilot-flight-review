@@ -3,6 +3,8 @@
 
 #include "ExtensionRegistry.h"
 #include "IMessageParser.h"
+#include "QtFieldRenderer.h"
+#include "SchemaEngine.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -10,8 +12,8 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
-#include <QHBoxLayout>
 #include <QGroupBox>
+#include <QHash>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -22,6 +24,8 @@
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QVBoxLayout>
+
+#include <functional>
 
 namespace nextpilot::plotscope::gui
 {
@@ -44,51 +48,6 @@ void setNested(QJsonObject &o, const QString &path, const QJsonValue &value)
     o.insert(parts.first(), child);
 }
 
-struct Field
-{
-    QString key;
-    QString type;
-    QJsonObject spec;
-    QWidget *editor = nullptr;
-    QLabel *label = nullptr;
-    bool visibleIf = false;      // 是否带 visible_if
-    QString visibleKey;          // 依赖字段 key（点路径）
-    QString visibleEquals;       // 依赖值
-};
-
-QWidget *primaryWidget(QWidget *w)
-{
-    if (auto *line = qobject_cast<QLineEdit *>(w))
-        return line;
-    if (auto *cb = qobject_cast<QComboBox *>(w))
-        return cb;
-    if (auto *sp = qobject_cast<QSpinBox *>(w))
-        return sp;
-    // file 字段的容器：里面的 QLineEdit 才是值来源。
-    if (auto *line = w ? w->findChild<QLineEdit *>() : nullptr)
-        return line;
-    return w;
-}
-
-QString fieldValueString(QWidget *w, const QString &type)
-{
-    if (type == QLatin1String("bool"))
-    {
-        auto *cb = qobject_cast<QCheckBox *>(w);
-        return cb && cb->isChecked() ? QStringLiteral("true") : QStringLiteral("false");
-    }
-    if (type == QLatin1String("int"))
-    {
-        auto *sp = qobject_cast<QSpinBox *>(w);
-        return sp ? QString::number(sp->value()) : QString();
-    }
-    if (auto *cb = qobject_cast<QComboBox *>(w))
-        return cb->currentData().toString();
-    if (auto *line = qobject_cast<QLineEdit *>(w))
-        return line->text();
-    return QString();
-}
-
 } // namespace
 
 // 用 PIMPL 收纳大量控件成员，避免头文件暴露 Qt Widgets 细节。
@@ -107,7 +66,7 @@ public:
     QList<nextpilot::plotscope::core::IMessageParser *> drivers;
     nextpilot::plotscope::core::IMessageParser *current = nullptr;
     QJsonObject probeData;
-    QList<Field> fields;
+    nextpilot::plotscope::uischema::FormSchema form;
     QString chosenPath;
 };
 
@@ -156,7 +115,7 @@ ImportDialog::ImportDialog(nextpilot::plotscope::core::ExtensionRegistry &regist
     topForm->addRow(QStringLiteral("文件"), pathRow);
     root->addWidget(top);
 
-    // 2) 解析选项（schema 渲染）
+    // 2) 解析选项（统一 uischema 渲染）
     auto *optBox = new QGroupBox(QStringLiteral("2 · 解析选项"));
     auto *optLay = new QVBoxLayout(optBox);
     d->fieldsHost = new QWidget;
@@ -285,187 +244,48 @@ void ImportDialog::refreshProbe()
         d->preview->clear();
         return;
     }
-    rebuildFields(); // source 字段依赖 probe columns，需重建选项
+    rebuildFields(); // 动态列依赖 probe，需重建选项
     updatePreview();
 }
 
 void ImportDialog::rebuildFields()
 {
-    // 清空旧控件
+    // 清空旧控件（removeRow 只断布局，需手动 delete）。
     while (d->fieldsForm->rowCount() > 0)
-        d->fieldsForm->removeRow(0);
-    d->fields.clear();
+    {
+        QLayoutItem *item = d->fieldsForm->takeAt(0);
+        if (QWidget *w = item->widget())
+        {
+            w->setParent(nullptr);
+            delete w;
+        }
+        delete item;
+    }
     if (!d->current)
         return;
 
-    const QJsonObject schema = d->current->configSchema();
-    const QJsonArray fieldSpecs = schema.value(QStringLiteral("fields")).toArray();
-    for (const QJsonValue &fv : fieldSpecs)
+    using namespace nextpilot::plotscope::uischema;
+    d->form = SchemaEngine::compileJson(d->current->configSchema(), d->probeData);
+    QtFieldRenderer::render(d->form, d->fieldsForm, d->fieldsHost);
+
+    // 任一控件变化 → 按 dependsOn 刷新启用/可见（如 time.mode 切换列选择）。
+    const auto widgets = d->fieldsHost->findChildren<QWidget *>();
+    for (QWidget *w : widgets)
     {
-        const QJsonObject f = fv.toObject();
-        Field fld;
-        fld.key = f.value(QStringLiteral("key")).toString();
-        fld.type = f.value(QStringLiteral("type")).toString(QStringLiteral("string"));
-        fld.spec = f;
-
-        const QString label = f.value(QStringLiteral("label")).toString(fld.key);
-        QWidget *editor = nullptr;
-
-        if (fld.type == QLatin1String("bool"))
-        {
-            auto *cb = new QCheckBox(f.value(QStringLiteral("hint")).toString());
-            cb->setChecked(f.value(QStringLiteral("default")).toBool());
-            editor = cb;
-        }
-        else if (fld.type == QLatin1String("int"))
-        {
-            auto *sp = new QSpinBox;
-            sp->setRange(f.value(QStringLiteral("min")).toInt(0), f.value(QStringLiteral("max")).toInt(1000000));
-            sp->setValue(f.value(QStringLiteral("default")).toInt());
-            editor = sp;
-        }
-        else if (fld.type == QLatin1String("enum"))
-        {
-            auto *cb = new QComboBox;
-            // source 字段：选项来自 probe 的 columns（可按 kind 过滤）。
-            const QJsonObject src = f.value(QStringLiteral("source")).toObject();
-            if (!src.isEmpty())
-            {
-                const QJsonArray items = d->probeData.value(src.value(QStringLiteral("probe_key")).toString()).toArray();
-                const QString labelKey = src.value(QStringLiteral("label_key")).toString(QStringLiteral("name"));
-                const QString filterKey = src.value(QStringLiteral("filter_key")).toString(QStringLiteral("kind"));
-                const QString wanted = f.value(QStringLiteral("filter_kind")).toString();
-                for (int ii = 0; ii < items.size(); ++ii)
-                {
-                    const QJsonObject item = items.at(ii).toObject();
-                    const QString kind = item.value(filterKey).toString();
-                    if (wanted != QLatin1String("all") && !wanted.isEmpty() && kind != wanted)
-                        continue;
-                    // data 存原始列下标（suggested_time 指向原始列）。
-                    cb->addItem(item.value(labelKey).toString(), ii);
-                }
-                // initial_from_probe：suggested_time 指向的列下标
-                const QJsonObject init = f.value(QStringLiteral("initial_from_probe")).toObject();
-                const int suggested = d->probeData.value(init.value(QStringLiteral("probe_key")).toString()).toInt(-1);
-                if (suggested >= 0)
-                {
-                    const int ci = cb->findData(suggested);
-                    if (ci >= 0)
-                        cb->setCurrentIndex(ci);
-                }
-            }
-            else
-            {
-                for (const QJsonValue &ov : f.value(QStringLiteral("options")).toArray())
-                {
-                    const QJsonObject o = ov.toObject();
-                    cb->addItem(o.value(QStringLiteral("label")).toString(), o.value(QStringLiteral("value")).toString());
-                }
-                const QJsonObject init = f.value(QStringLiteral("initial_from_probe")).toObject();
-                if (!init.isEmpty())
-                {
-                    const QString pk = init.value(QStringLiteral("probe_key")).toString();
-                    if (d->probeData.contains(pk))
-                    {
-                        QVariant v = d->probeData.value(pk).toVariant();
-                        if (init.contains(QStringLiteral("trim")) && v.canConvert<QString>())
-                            v = v.toString().left(init.value(QStringLiteral("trim")).toInt());
-                        const int ci = cb->findData(v.toString());
-                        if (ci >= 0)
-                            cb->setCurrentIndex(ci);
-                    }
-                }
-                else
-                {
-                    const int ci = cb->findData(f.value(QStringLiteral("default")).toString());
-                    if (ci >= 0)
-                        cb->setCurrentIndex(ci);
-                }
-            }
-            editor = cb;
-        }
-        else if (fld.type == QLatin1String("file"))
-        {
-            // 文件选择字段（如自定义协议模板 .psproto）：文本框 + 浏览按钮。
-            // editor 仍是 QLineEdit，值读取/可见性逻辑与 string 完全一致；
-            // 浏览按钮只是便利性，不引入新的值来源（遵守单一数据源）。
-            auto *host = new QWidget;
-            auto *row = new QHBoxLayout(host);
-            row->setContentsMargins(0, 0, 0, 0);
-            row->setSpacing(4);
-            auto *line = new QLineEdit(f.value(QStringLiteral("default")).toString());
-            auto *browseBtn = new QPushButton(QStringLiteral("浏览…"));
-            const QString filter = f.value(QStringLiteral("filter")).toString(QStringLiteral("所有文件 (*.*)"));
-            const QString title = f.value(QStringLiteral("hint")).toString(QStringLiteral("选择文件"));
-            QObject::connect(browseBtn, &QPushButton::clicked, this, [this, line, title, filter] {
-                const QString picked = QFileDialog::getOpenFileName(this, title, QString(), filter);
-                if (!picked.isEmpty())
-                    line->setText(picked);
-            });
-            row->addWidget(line, 1);
-            row->addWidget(browseBtn);
-            editor = host; // primaryWidget 需要认识这个容器
-        }
-        else
-        {
-            auto *line = new QLineEdit(f.value(QStringLiteral("default")).toString());
-            editor = line;
-        }
-
-        if (!editor)
-            continue;
-        fld.editor = editor;
-        d->fieldsForm->addRow(label, editor);
-        fld.label = qobject_cast<QLabel *>(d->fieldsForm->labelForField(editor));
-
-        const QJsonObject vi = f.value(QStringLiteral("visible_if")).toObject();
-        if (!vi.isEmpty())
-        {
-            fld.visibleIf = true;
-            fld.visibleKey = vi.value(QStringLiteral("key")).toString();
-            fld.visibleEquals = vi.value(QStringLiteral("equals")).toString();
-        }
-
-        // has_header / 分隔符变化 → 重新探测预览。
-        if (fld.key == QLatin1String("has_header") || fld.key == QLatin1String("delimiter"))
-        {
-            if (auto *cb = qobject_cast<QCheckBox *>(editor))
-                connect(cb, &QCheckBox::toggled, this, [this](bool) { updateFieldVisibility(); });
-            else if (auto *combo = qobject_cast<QComboBox *>(editor))
-                connect(combo, qOverload<int>(&QComboBox::currentIndexChanged), this,
-                        [this](int) { updateFieldVisibility(); });
-        }
-        d->fields.append(fld);
+        if (auto *cb = qobject_cast<QComboBox *>(w))
+            connect(cb, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                    [this] { QtFieldRenderer::applyEnabled(d->form, d->fieldsHost); });
+        else if (auto *chk = qobject_cast<QCheckBox *>(w))
+            connect(chk, &QCheckBox::toggled, this,
+                    [this] { QtFieldRenderer::applyEnabled(d->form, d->fieldsHost); });
     }
-    updateFieldVisibility();
-}
-
-// 解析某个字段的当前值（按点路径找依赖字段）。
-QString valueForKey(const QList<Field> &fields, const QString &key)
-{
-    for (const Field &f : fields)
-        if (f.key == key)
-            return fieldValueString(primaryWidget(f.editor), f.type);
-    return QString();
-}
-
-void ImportDialog::updateFieldVisibility()
-{
-    for (Field &f : d->fields)
-    {
-        bool visible = true;
-        if (f.visibleIf)
-            visible = (valueForKey(d->fields, f.visibleKey) == f.visibleEquals);
-        if (f.editor)
-            f.editor->setVisible(visible);
-        if (f.label)
-            f.label->setVisible(visible);
-    }
+    updatePreview();
 }
 
 void ImportDialog::updatePreview()
 {
-    const QJsonObject ui = d->current->configSchema().value(QStringLiteral("ui")).toObject();
+    const QJsonObject ui = d->current ? d->current->configSchema().value(QStringLiteral("ui")).toObject()
+                                      : QJsonObject();
     const QJsonObject pv = ui.value(QStringLiteral("preview")).toObject();
     if (pv.isEmpty())
     {
@@ -512,22 +332,38 @@ void ImportDialog::accept()
 {
     if (!d->current || d->chosenPath.isEmpty())
         return;
-    // 收集字段值（跳过 visible_if 不满足的字段）成嵌套 JSON。
-    QJsonObject options;
-    for (const Field &f : d->fields)
+
+    using namespace nextpilot::plotscope::uischema;
+    // 收集当前控件回传值。
+    QHash<QString, QVariant> current;
+    const auto widgets = d->fieldsHost->findChildren<QWidget *>();
+    for (QWidget *w : widgets)
     {
-        if (!f.editor)
-            continue;
-        if (f.visibleIf && valueForKey(d->fields, f.visibleKey) != f.visibleEquals)
-            continue;
-        const QString v = fieldValueString(primaryWidget(f.editor), f.type);
-        if (f.type == QLatin1String("int"))
-            setNested(options, f.key, v.toInt());
-        else if (f.type == QLatin1String("bool"))
-            setNested(options, f.key, v == QLatin1String("true"));
-        else if (!v.isEmpty())
-            setNested(options, f.key, v);
+        const QString key = QtFieldRenderer::keyOf(w);
+        if (!key.isEmpty() && !current.contains(key))
+            current.insert(key, QtFieldRenderer::valueOf(w));
     }
+
+    QJsonObject options;
+    // 按字段树递归收集：跳过 dependsOn 未满足、空字符串（走解析器内置默认）。
+    std::function<void(const QVector<FieldSpec> &)> collect = [&](const QVector<FieldSpec> &fields) {
+        for (const FieldSpec &f : fields)
+        {
+            if (f.type == FieldType::Tab || f.type == FieldType::Section
+                || f.type == FieldType::Horizontal || f.type == FieldType::Vertical)
+            {
+                collect(f.fields);
+                continue;
+            }
+            if (!SchemaEngine::isEnabled(f, current))
+                continue;
+            const QVariant v = current.value(f.key);
+            if (v.typeId() == QMetaType::QString && v.toString().isEmpty())
+                continue;
+            setNested(options, f.key, QJsonValue::fromVariant(v));
+        }
+    };
+    collect(d->form.fields);
 
     m_result.path = d->chosenPath;
     m_result.format = d->current->id();

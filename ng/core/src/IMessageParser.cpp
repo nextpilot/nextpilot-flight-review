@@ -1,48 +1,14 @@
 #include "IMessageParser.h"
 
-#include <QJsonArray>
+#include "SchemaEngine.h"
 
 namespace nextpilot::plotscope::core
 {
 
 QVector<nextpilot::plotscope::uischema::ParamSpec> IMessageParser::paramSpecs() const
 {
-    using nextpilot::plotscope::uischema::ParamSpec;
-    QVector<ParamSpec> specs;
-    const QJsonArray fields = configSchema().value(QStringLiteral("fields")).toArray();
-    for (const QJsonValue &v : fields)
-    {
-        const QJsonObject f = v.toObject();
-        ParamSpec spec;
-        spec.key = f.value(QStringLiteral("key")).toString();
-        if (spec.key.isEmpty())
-            continue;
-        spec.type = nextpilot::plotscope::uischema::paramTypeFromName(
-            f.value(QStringLiteral("type")).toString());
-        const QJsonValue def = f.value(QStringLiteral("default"));
-        if (def.isBool())
-            spec.defaultValue = def.toBool();
-        else if (def.isDouble())
-            spec.defaultValue = def.toDouble();
-        else
-            spec.defaultValue = def.toString();
-        if (f.contains(QStringLiteral("min")) && f.contains(QStringLiteral("max")))
-        {
-            spec.min = f.value(QStringLiteral("min")).toDouble();
-            spec.max = f.value(QStringLiteral("max")).toDouble();
-            spec.hasRange = true;
-        }
-        if (f.contains(QStringLiteral("filter")))
-            spec.fileFilter = f.value(QStringLiteral("filter")).toString();
-        for (const QJsonValue &ov : f.value(QStringLiteral("options")).toArray())
-        {
-            const QJsonObject o = ov.toObject();
-            const QString value = o.value(QStringLiteral("value")).toString();
-            spec.options.append({value, o.value(QStringLiteral("label")).toString(value)});
-        }
-        specs.append(spec);
-    }
-    return specs;
+    // v2：configSchema 的字段数组（五要素 + flags + from）统一解析成 ParamSpec 树。
+    return nextpilot::plotscope::uischema::SchemaEngine::specsFromJson(configSchema());
 }
 
 bool IMessageParser::configure(const QJsonObject &params, QString *err)

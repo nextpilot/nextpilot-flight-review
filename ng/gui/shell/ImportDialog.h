@@ -54,7 +54,6 @@ private:
     void chooseFile();
     void refreshProbe();
     void rebuildFields();
-    void updateFieldVisibility();
     void updatePreview();
     void accept() override;
 

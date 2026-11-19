@@ -50,110 +50,128 @@ QString CsvFormatParser::preferredTableName(const Intent &intent, const QString 
 
 QJsonObject CsvFormatParser::configSchema() const
 {
+    // v2 语法：name/type/label/options/flags/default + 布局容器 + {from} 来源。
     QJsonObject s;
     s[QStringLiteral("title")] = QStringLiteral("加载 CSV");
 
-    auto field = [](const QString &key, const QString &type, const QString &label) {
-        return QJsonObject{{QStringLiteral("key"), key},
-                           {QStringLiteral("type"), type},
-                           {QStringLiteral("label"), label}};
+    // 探测列的公共来源（time.index/date/time 都从 columns 取候选）。
+    auto columnSource = [](const QString &kind) {
+        return QJsonObject{{QStringLiteral("from"),
+                            QJsonObject{{QStringLiteral("probeKey"), QStringLiteral("columns")},
+                                        {QStringLiteral("labelKey"), QStringLiteral("name")},
+                                        {QStringLiteral("filterKey"), QStringLiteral("kind")},
+                                        {QStringLiteral("filterKind"), kind}}}};
     };
-    auto addOption = [](QJsonArray &opts, const QString &v, const QString &label) {
-        opts.append(QJsonObject{{QStringLiteral("value"), v}, {QStringLiteral("label"), label}});
+    auto dependsOn = [](const QString &equals) {
+        return QJsonObject{{QStringLiteral("dependsOn"),
+                            QJsonObject{{QStringLiteral("name"), QStringLiteral("time.mode")},
+                                        {QStringLiteral("equals"), equals}}}};
+    };
+    auto option = [](const QString &v, const QString &label) {
+        return QJsonObject{{QStringLiteral("value"), v}, {QStringLiteral("label"), label}};
     };
 
+    // 基本段
+    QJsonArray basic;
+    {
+        QJsonObject f{{QStringLiteral("name"), QStringLiteral("delimiter")},
+                      {QStringLiteral("type"), QStringLiteral("select")},
+                      {QStringLiteral("label"), QStringLiteral("分隔符")},
+                      {QStringLiteral("default"), QStringLiteral("auto")}};
+        f[QStringLiteral("options")] = QJsonArray{
+            option(QStringLiteral("auto"), QStringLiteral("自动探测")),
+            option(QStringLiteral(","), QStringLiteral("逗号  ,")),
+            option(QStringLiteral(";"), QStringLiteral("分号  ;")),
+            option(QStringLiteral("\t"), QStringLiteral("制表符  \\t")),
+            option(QStringLiteral(" "), QStringLiteral("空格"))};
+        f[QStringLiteral("defaultSource")] =
+            QJsonObject{{QStringLiteral("from"),
+                         QJsonObject{{QStringLiteral("probeKey"), QStringLiteral("delimiter")},
+                                     {QStringLiteral("trim"), 1}}}};
+        basic.append(f);
+    }
+    {
+        QJsonObject f{{QStringLiteral("name"), QStringLiteral("has_header")},
+                      {QStringLiteral("type"), QStringLiteral("bool")},
+                      {QStringLiteral("label"), QStringLiteral("第一行是表头")},
+                      {QStringLiteral("default"), true}};
+        f[QStringLiteral("defaultSource")] =
+            QJsonObject{{QStringLiteral("from"),
+                         QJsonObject{{QStringLiteral("probeKey"), QStringLiteral("has_header")}}}};
+        basic.append(f);
+    }
+    {
+        QJsonObject f{{QStringLiteral("name"), QStringLiteral("skip_rows")},
+                      {QStringLiteral("type"), QStringLiteral("number")},
+                      {QStringLiteral("label"), QStringLiteral("跳过开头行")},
+                      {QStringLiteral("default"), 0},
+                      {QStringLiteral("flags"),
+                       QJsonObject{{QStringLiteral("nonNegative"), true},
+                                   {QStringLiteral("min"), 0},
+                                   {QStringLiteral("max"), 1000}}}};
+        basic.append(f);
+    }
+
+    // 时间段
+    QJsonArray timing;
+    {
+        QJsonObject f{{QStringLiteral("name"), QStringLiteral("time.mode")},
+                      {QStringLiteral("type"), QStringLiteral("select")},
+                      {QStringLiteral("label"), QStringLiteral("时间轴")},
+                      {QStringLiteral("default"), QStringLiteral("row")}};
+        f[QStringLiteral("options")] = QJsonArray{
+            option(QStringLiteral("row"), QStringLiteral("行号（不解析时间）")),
+            option(QStringLiteral("column"), QStringLiteral("指定一列作为时间")),
+            option(QStringLiteral("combined"), QStringLiteral("日期列 + 时间列合并"))};
+        // 探测到明确时间列 → 自动切到 column。
+        f[QStringLiteral("defaultSource")] =
+            QJsonObject{{QStringLiteral("from"),
+                         QJsonObject{{QStringLiteral("probeKey"), QStringLiteral("suggested_time")},
+                                     {QStringLiteral("when"), QStringLiteral("ge:0")},
+                                     {QStringLiteral("set"), QStringLiteral("column")}}}};
+        timing.append(f);
+    }
+    {
+        QJsonObject f{{QStringLiteral("name"), QStringLiteral("time.index")},
+                      {QStringLiteral("type"), QStringLiteral("select")},
+                      {QStringLiteral("label"), QStringLiteral("时间列")},
+                      {QStringLiteral("options"), columnSource(QStringLiteral("all"))},
+                      {QStringLiteral("flags"), dependsOn(QStringLiteral("column"))}};
+        f[QStringLiteral("defaultSource")] =
+            QJsonObject{{QStringLiteral("from"),
+                         QJsonObject{{QStringLiteral("probeKey"), QStringLiteral("suggested_time")}}}};
+        timing.append(f);
+    }
+    {
+        QJsonObject f{{QStringLiteral("name"), QStringLiteral("time.date")},
+                      {QStringLiteral("type"), QStringLiteral("select")},
+                      {QStringLiteral("label"), QStringLiteral("日期列")},
+                      {QStringLiteral("options"), columnSource(QStringLiteral("date_only"))},
+                      {QStringLiteral("flags"), dependsOn(QStringLiteral("combined"))}};
+        timing.append(f);
+    }
+    {
+        QJsonObject f{{QStringLiteral("name"), QStringLiteral("time.time")},
+                      {QStringLiteral("type"), QStringLiteral("select")},
+                      {QStringLiteral("label"), QStringLiteral("时间列（时:分:秒）")},
+                      {QStringLiteral("options"), columnSource(QStringLiteral("time_only"))},
+                      {QStringLiteral("flags"), dependsOn(QStringLiteral("combined"))}};
+        timing.append(f);
+    }
+
+    // 字段树：基本 + 时间两个 section。
     QJsonArray fields;
-
-    // 分隔符（探测预填）
-    {
-        QJsonObject f = field(QStringLiteral("delimiter"), QStringLiteral("enum"), QStringLiteral("分隔符"));
-        f[QStringLiteral("default")] = QStringLiteral("auto");
-        QJsonArray opts;
-        addOption(opts, QStringLiteral("auto"), QStringLiteral("自动探测"));
-        addOption(opts, QStringLiteral(","), QStringLiteral("逗号  ,"));
-        addOption(opts, QStringLiteral(";"), QStringLiteral("分号  ;"));
-        addOption(opts, QStringLiteral("\t"), QStringLiteral("制表符  \\t"));
-        addOption(opts, QStringLiteral(" "), QStringLiteral("空格"));
-        f[QStringLiteral("options")] = opts;
-        f[QStringLiteral("initial_from_probe")] =
-            QJsonObject{{QStringLiteral("probe_key"), QStringLiteral("delimiter")},
-                        {QStringLiteral("trim"), 1}};
-        fields.append(f);
-    }
-    // 第一行是表头
-    {
-        QJsonObject f = field(QStringLiteral("has_header"), QStringLiteral("bool"), QStringLiteral("第一行是表头"));
-        f[QStringLiteral("default")] = true;
-        f[QStringLiteral("initial_from_probe")] =
-            QJsonObject{{QStringLiteral("probe_key"), QStringLiteral("has_header")}};
-        fields.append(f);
-    }
-    // 跳过开头行
-    {
-        QJsonObject f = field(QStringLiteral("skip_rows"), QStringLiteral("int"), QStringLiteral("跳过开头行"));
-        f[QStringLiteral("default")] = 0;
-        f[QStringLiteral("min")] = 0;
-        f[QStringLiteral("max")] = 1000;
-        fields.append(f);
-    }
-    // 时间轴模式
-    {
-        QJsonObject f = field(QStringLiteral("time.mode"), QStringLiteral("enum"), QStringLiteral("时间轴"));
-        f[QStringLiteral("default")] = QStringLiteral("row");
-        QJsonArray opts;
-        addOption(opts, QStringLiteral("row"), QStringLiteral("行号（不解析时间）"));
-        addOption(opts, QStringLiteral("column"), QStringLiteral("指定一列作为时间"));
-        addOption(opts, QStringLiteral("combined"), QStringLiteral("日期列 + 时间列合并"));
-        f[QStringLiteral("options")] = opts;
-        // 探测到明确时间列 → 自动切到 column 模式（老 schema 同款语义）。
-        f[QStringLiteral("initial_from_probe")] =
-            QJsonObject{{QStringLiteral("probe_key"), QStringLiteral("suggested_time")},
-                        {QStringLiteral("set"), QStringLiteral("column")}};
-        fields.append(f);
-    }
-    // 时间列（source = 探测到的列；仅 column 模式显示）
-    {
-        QJsonObject f = field(QStringLiteral("time.index"), QStringLiteral("enum"), QStringLiteral("时间列"));
-        f[QStringLiteral("source")] =
-            QJsonObject{{QStringLiteral("probe_key"), QStringLiteral("columns")},
-                        {QStringLiteral("label_key"), QStringLiteral("name")},
-                        {QStringLiteral("filter_key"), QStringLiteral("kind")}};
-        f[QStringLiteral("filter_kind")] = QStringLiteral("all");
-        f[QStringLiteral("initial_from_probe")] =
-            QJsonObject{{QStringLiteral("probe_key"), QStringLiteral("suggested_time")}};
-        f[QStringLiteral("visible_if")] =
-            QJsonObject{{QStringLiteral("key"), QStringLiteral("time.mode")},
-                        {QStringLiteral("equals"), QStringLiteral("column")}};
-        fields.append(f);
-    }
-    // 日期列 / 时间列（combined 模式显示）
-    {
-        QJsonObject f = field(QStringLiteral("time.date"), QStringLiteral("enum"), QStringLiteral("日期列"));
-        f[QStringLiteral("source")] =
-            QJsonObject{{QStringLiteral("probe_key"), QStringLiteral("columns")},
-                        {QStringLiteral("label_key"), QStringLiteral("name")},
-                        {QStringLiteral("filter_key"), QStringLiteral("kind")}};
-        f[QStringLiteral("filter_kind")] = QStringLiteral("date_only");
-        f[QStringLiteral("visible_if")] =
-            QJsonObject{{QStringLiteral("key"), QStringLiteral("time.mode")},
-                        {QStringLiteral("equals"), QStringLiteral("combined")}};
-        fields.append(f);
-    }
-    {
-        QJsonObject f = field(QStringLiteral("time.time"), QStringLiteral("enum"), QStringLiteral("时间列（时:分:秒）"));
-        f[QStringLiteral("source")] =
-            QJsonObject{{QStringLiteral("probe_key"), QStringLiteral("columns")},
-                        {QStringLiteral("label_key"), QStringLiteral("name")},
-                        {QStringLiteral("filter_key"), QStringLiteral("kind")}};
-        f[QStringLiteral("filter_kind")] = QStringLiteral("time_only");
-        f[QStringLiteral("visible_if")] =
-            QJsonObject{{QStringLiteral("key"), QStringLiteral("time.mode")},
-                        {QStringLiteral("equals"), QStringLiteral("combined")}};
-        fields.append(f);
-    }
+    fields.append(QJsonObject{{QStringLiteral("name"), QStringLiteral("basic")},
+                              {QStringLiteral("type"), QStringLiteral("section")},
+                              {QStringLiteral("label"), QStringLiteral("基本")},
+                              {QStringLiteral("fields"), basic}});
+    fields.append(QJsonObject{{QStringLiteral("name"), QStringLiteral("timing")},
+                              {QStringLiteral("type"), QStringLiteral("section")},
+                              {QStringLiteral("label"), QStringLiteral("时间")},
+                              {QStringLiteral("fields"), timing}});
     s[QStringLiteral("fields")] = fields;
 
-    // 预览与警告规则
+    // 预览与警告规则（ui 为 schema 顶层扩展，不属字段语法）。
     QJsonObject ui;
     ui[QStringLiteral("preview")] =
         QJsonObject{{QStringLiteral("columns_key"), QStringLiteral("columns")},

@@ -53,11 +53,12 @@ QJsonObject CustomProtocolFormatParser::configSchema() const
     s[QStringLiteral("title")] = QStringLiteral("加载自定义协议数据");
     QJsonArray fields;
     fields.append(QJsonObject{
-        {QStringLiteral("key"), QStringLiteral("templatePath")},
+        {QStringLiteral("name"), QStringLiteral("templatePath")},
         {QStringLiteral("type"), QStringLiteral("file")},
         {QStringLiteral("label"), QStringLiteral("协议模板 (.psproto)")},
-        {QStringLiteral("filter"), QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)")},
-        {QStringLiteral("hint"), QStringLiteral("选择协议模板")},
+        {QStringLiteral("description"), QStringLiteral("选择协议模板")},
+        {QStringLiteral("flags"), QJsonObject{{QStringLiteral("fileFilter"),
+                                               QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)")}}},
     });
     s[QStringLiteral("fields")] = fields;
     QJsonObject ui;

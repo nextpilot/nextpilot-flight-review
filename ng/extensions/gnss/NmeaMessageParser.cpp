@@ -148,12 +148,14 @@ QJsonObject NmeaMessageParser::configSchema() const
     QJsonObject s;
     s[QStringLiteral("title")] = QStringLiteral("NMEA 解析选项");
     QJsonArray fields;
-    fields.append(QJsonObject{{QStringLiteral("key"), QStringLiteral("database_path")},
-                              {QStringLiteral("type"), QStringLiteral("file")},
-                              {QStringLiteral("label"), QStringLiteral("句子模板 JSON（可选）")},
-                              {QStringLiteral("default"), QString()},
-                              {QStringLiteral("hint"),
-                               QStringLiteral("留空使用内置 GGA/RMC/GSV 模板；指定后用该文件的 sentences 字段")}});
+    fields.append(QJsonObject{
+        {QStringLiteral("name"), QStringLiteral("database_path")},
+        {QStringLiteral("type"), QStringLiteral("file")},
+        {QStringLiteral("label"), QStringLiteral("句子模板 JSON（可选）")},
+        {QStringLiteral("description"),
+         QStringLiteral("留空使用内置 GGA/RMC/GSV 模板；指定后用该文件的 sentences 字段")},
+        {QStringLiteral("flags"), QJsonObject{{QStringLiteral("fileFilter"),
+                                               QStringLiteral("JSON (*.json);;所有文件 (*.*)")}}}});
     s[QStringLiteral("fields")] = fields;
     return s;
 }
