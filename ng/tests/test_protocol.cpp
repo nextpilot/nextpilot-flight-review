@@ -801,6 +801,78 @@ int main(int argc, char *argv[])
         OK("编译层负例：未定义槽位/bit.base/width 越界/literal+delimiter 混写全部明确失败");
     }
 
+    // --- 7c) 畸形模板批量扫荡：全链路不抛异常、不崩溃，返回结构化错误 ---
+    {
+        const char *badTpls[] = {
+            "{}",
+            "{\"name\":\"x\",\"segments\":[]}",
+            "{\"name\":\"x\",\"mode\":\"bin\"}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":\"notarray\"}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[123]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"},{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":123,\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"zzz\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":123}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":-1}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":\"nope+1\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":0}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"width\":70000}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"offset\":0}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"offset\":0,\"width\":0}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"offset\":0,\"width\":64}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"endian\":\"middle\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"base\":\"nope\",\"offset\":0,\"width\":3}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"delimiter\":\",\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"offset\":0,\"width\":4}}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"segments\":[{\"name\":\"a\",\"literal\":\"$\",\"delimiter\":\",\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"segments\":[{\"name\":\"a\",\"literal\":\"$\",\"width\":3}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"enum\":[]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"range\":{\"min\":9,\"max\":1}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"scale\":\"x\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"transform\":[\"no_such_op\"]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u16\"},{\"name\":\"s\",\"derive\":\"undef+1\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"checks\":[{\"op\":\"no_such_op\"}]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"digest\":{\"alg\":\"no_such_crc\"}}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"checks\":[{\"op\":\"crc16\"}]}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"segments\":[{\"name\":\"a\",\"type\":\"number\",\"base\":3}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"time\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"pattern\":\"[unclosed\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"empty\":\"no_such_policy\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"on_mismatch\":\"no_such\"}]}",
+            "{\"name\":\"x\",\"layout\":\"weird\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"maxsize\":-1,\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"term\":42,\"segments\":[{\"name\":\"a\",\"type\":\"char\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"series\":{\"selector\":\"ghost\",\"payload\":\"p\",\"variants\":[]},\"segments\":[]}"
+        };
+        int thrown = 0;
+        for (const char *j : badTpls)
+        {
+            try
+            {
+                const QJsonObject root = QJsonDocument::fromJson(QByteArray(j)).object();
+                (void)validate(root);
+                ProtocolDocument doc;
+                std::string err;
+                const bool parsed = parseDocument(root, doc, err);
+                CompiledProgram prog;
+                if (parsed)
+                    compileProgram(doc, prog, err);
+                // 随机字节喂解码，同样必须不崩
+                ProtocolDecodeResult dr = decodeSequentialJson(QByteArray::fromHex("000102FF"), QByteArray(j));
+                (void)dr;
+            }
+            catch (...)
+            {
+                ++thrown;
+                fprintf(stderr, "畸形模板抛异常: %s\n", j);
+            }
+        }
+        CHECK(thrown == 0);
+        OK("畸形模板批量扫荡：41 份坏模板全链路不抛异常、不崩溃");
+    }
+
     // --- text 变体：按 msgid 选子协议（NMEA 多句） ---
     {
         const char *js = R"({"name":"nmea_series","mode":"text","term":["\r\n"],"maxsize":128,
