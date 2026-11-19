@@ -4,7 +4,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::rec
 {
 
 // 录制格式描述。
@@ -79,4 +79,12 @@ inline const QString Raw = QStringLiteral("raw");
 inline const QString Mcap = QStringLiteral("mcap");
 } // namespace FormatId
 
+} // namespace nextpilot::plotscope::rec
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using rec::RecordingFormat;
+using rec::RecordingFormatRegistry;
+namespace FormatId = nextpilot::plotscope::rec::FormatId;
 } // namespace nextpilot::plotscope::core
+

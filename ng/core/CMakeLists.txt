@@ -8,9 +8,6 @@ add_library(ng_core STATIC
     src/InteractionRegistry.cpp
     src/SettingsStore.cpp
     src/WorkspaceDataConfig.cpp
-    src/RecordingFormat.cpp
-    src/RecordingBackend.cpp
-    include/Events.h
     include/ScriptFacade.h
     include/IngestOrchestrator.h
     include/SettingsStore.h
@@ -18,8 +15,6 @@ add_library(ng_core STATIC
     include/IngestPipeline.h
     include/AppContext.h
     include/InteractionRegistry.h
-    include/RecordingFormat.h
-    include/RecordingBackend.h
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -2,7 +2,7 @@
 
 #include <QHash>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::rec
 {
 
 namespace
@@ -89,4 +89,4 @@ void RecordingBackendRegistry::reset()
     r.order.clear();
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::rec

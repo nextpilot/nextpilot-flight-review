@@ -11,6 +11,10 @@ add_library(ng_recording STATIC
     Sink.h
     Recorder.cpp
     Recorder.h
+    RecordingFormat.h
+    RecordingFormat.cpp
+    RecordingBackend.h
+    RecordingBackend.cpp
 )
 target_include_directories(ng_recording PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_recording PUBLIC ng_core Qt6::Core Qt6::Network)

@@ -2,7 +2,7 @@
 
 #include <QHash>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::rec
 {
 
 namespace
@@ -105,4 +105,4 @@ void RecordingFormatRegistry::reset()
     r.order.clear();
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::rec

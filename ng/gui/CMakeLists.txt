@@ -124,7 +124,7 @@ target_link_libraries(plotscope-ng-gui PRIVATE
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
     ng_ext_automotive_gui
-    ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
 # GUI 百万行实测（手动基准，不进 ctest）：验证大数据量下渲染路径的内存与速度。
@@ -141,7 +141,7 @@ target_link_libraries(plotscope-ng-gui-bench PRIVATE
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
-    ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-bench PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
 # GUI 截图工具（手动运行）：加载真实数据 → 渲染界面 → 存 PNG。
@@ -159,5 +159,5 @@ target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
-    ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
+    ng_ext_registry ng_host ng_core ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-shot PROPERTIES AUTOMOC ON CXX_STANDARD 17)
