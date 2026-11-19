@@ -131,7 +131,8 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_header->setContentsMargins(8, 6, 8, 4);
     lay->addWidget(m_header);
 
-    // chip：字段 / 参数 / 消息（切换树显示哪类内容，抄老代码）。
+    // chip：字段 / 参数 / 消息（状态模型；对齐老界面——老 Dock chipHost->hide()，
+    // 默认只显示字段视图，参数/消息视图保留为隐藏能力，不暴露切换入口）。
     auto *chipHost = new QWidget(this);
     auto *chipLay = new QHBoxLayout(chipHost);
     chipLay->setContentsMargins(6, 2, 6, 2);
@@ -158,6 +159,7 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
         chipLay->addWidget(chip, 1);
         connect(chip, &QToolButton::clicked, this, [this, i] { selectChip(i); });
     }
+    chipHost->hide(); // 对齐老界面：三分类切换不暴露，默认字段视图。
     lay->addWidget(chipHost);
 
     m_filter = new QLineEdit(this);
