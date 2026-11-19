@@ -42,7 +42,34 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 >
 > **拆开后的关联方式**：不新增任何跨模块依赖。两个新模块各自只认 `AppContext` 共享仓库，继续用 C1 的双向绑定；C2 的摄取串联留在宿主；C3 的 UI 读全局态。`mod.source` 与 `mod.dataset` 之间**互不 include、互不 requires**。
 
-### 1.4 拆分方案：模块边界 ≠ UI 边界
+### 1.4 命名裁决：`DataSourceRepository` → `SourceRegistry`
+
+需求方指出 `DataSourceRepository` 容易误解。逐行核对后确认批评成立，**裁决重命名为 `SourceRegistry`**（源码重命名属机械改动，由实现方在 R0 完成；本轮只固化裁决，不动实现代码）。
+
+**误解的四个根源（均有代码证据）：**
+
+| # | 根源 | 证据 |
+|---|---|---|
+| N1 | 类名与职责相反 | 类注释自称"登记表：**运行时实例**的容器"，并明确"不拥有解析器、不拥有数据集、不碰字节"；`Repository`（仓库）却暗示存数据 |
+| N2 | 与 `DataRepository` 只差一词、职责却相反 | `DataSourceRepository` 登记的是"源会话实例"，`DataRepository`（`Dataset` 唯一所有者）才是数据资产仓库。二者并列极易被读成"原始数据 vs 处理后数据"，实际前者一个字节都不存 |
+| N3 | 文档与代码已经不一致 | `ARCHITECTURE.md:288` 把进程级运行态写成 `SourceRepository`（无 `Data` 前缀），与代码类型 `DataSourceRepository` 对不上——这个名字连文档自己都没统一 |
+| N4 | 拆分后矛盾更突出 | `mod.source` 的 provides 是 `source.session`，配套仓库若仍叫 `DataSourceRepository`，与 dataset 侧的 `DataRepository` 看似一对、实则一个登记会话、一个拥有资产 |
+
+**裁决：`SourceRegistry`。** 理由：
+
+- **Registry 而非 Repository**：准确表达"登记运行时实例 + 绑定关系"，与类注释一字吻合；与进程级同层的 `ExtensionRegistry` 风格统一（`ARCHITECTURE.md:288` 二者并列）。
+- **去掉 `Data` 前缀**：与 `mod.source` / `source.session` 对齐，顺手消除 N3 的文档分歧；dataset 侧仍是 `DataRepository`——`Registry`（登记）与 `Repository`（资产）一眼可分。
+- **候选否决**：`DataSourceRegistry` 只换后缀，仍与 `DataRepository` 前缀撞车（未解 N2）；`SourceSessionRegistry` 更精确但冗长，且与 `source.session` 重复表意。
+
+**连带边界（不扩大改动面）：**
+
+- `DataSourceInfo` / `DataSource.h` **保留**——"广义数据源 = 来源 + 解析绑定 + 录制 + 数据集"是需求原文的领域术语，表达准确；`Source.h`（`SourceKind`/`SourceState`/`ParserBinding`）是更底层的字节通道概念，二者并非同一概念重复。
+- `AppContext::sources()` 访问器**保留**——语义清晰，与改名无关。
+- **可选一致性项（需求方定）**：`DataRepository` → `DatasetRepository`，与 `mod.dataset` 完全对齐。本裁决不擅自采纳，列为可选项。
+
+**改名影响面（实现方 R0，11 个引用文件）**：`AppContext.h`、`IngestOrchestrator.h/.cpp`、`DataLoadHandler.h`、`DataCommandsHandler.cpp`、`DataManagerPanel.h/.cpp`、`test_pipeline.cpp`，加类型自身 `DataSourceRepository.h/.cpp` → `SourceRegistry.h/.cpp`（文件名同步改）。`ARCHITECTURE.md` 的 5 处提及（`:288`、`:722`、`:740`、`:741`、`:763`）在 R0 随代码一并替换；本轮不改这些正文，避免制造"文档用新名、代码仍是旧名"的新不一致。
+
+### 1.5 拆分方案：模块边界 ≠ UI 边界
 
 | 模块 | provides | requires | 职责 |
 |---|---|---|---|
@@ -58,7 +85,7 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 - **UI 保持一个复合树**：数据源树是 shell/views 层面板，直接读 `AppContext.sources() + data()`，**不属于任何模块**——模块装卸不影响它。用户"每行一个源 → 展开看表/列"的体验不变。
 - **独立装卸成立**：headless 可只装 `mod.dataset`（查已有/恢复数据），不装 `mod.source`。
 
-### 1.5 迁移代价（一次性、可控）
+### 1.6 迁移代价（一次性、可控）
 
 - `DataModule` 一分为二：`mod.source`（源生命周期动作）+ `mod.dataset`（查询/订阅动作）；`DataManagerPanel` 留在 views 层不动（见 §1.3 C3）。
 - `mod.plot` 的 `requires` 由 `data.session` 改 `dataset.catalog`。
@@ -127,7 +154,8 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 
 | 批 | 内容 | 依赖 | 可独立验收 |
 |---|---|---|---|
-| R1 | 文档追认：`ARCHITECTURE.md` §4.1 器官表改为 source/dataset/plot/analysis/script/protocol/settings（无 report）；§11 #11 状态更新 | — | 文档与拆分裁决一致 |
+| R0 | 命名裁决落地（§1.4）：`DataSourceRepository` → `SourceRegistry`，11 个引用文件 + 类型文件名 + `ARCHITECTURE.md` 5 处提及全量替换 | — | 全仓无旧名残留；`ctest` 11 项全绿 |
+| R1 | 文档追认：`ARCHITECTURE.md` §4.1 器官表改为 source/dataset/plot/analysis/script/protocol/settings（无 report）；§11 #11 状态更新 | R0 | 文档与拆分裁决一致 |
 | R2 | 拆 `mod.data` → `mod.source` + `mod.dataset`：moduleInfo/OBJECT 库/自注册/意图处理器拆分；`mod.plot.requires` 改 `dataset.catalog` | R1 | §4 第 1、2、4 条 |
 | R3 | 数据源树改为 views 层复合面板，直接读共享态；UI 截图对比 | R2 | §4 第 3 条 |
 | R4 | 扩展点与契约（**仅接口/常量，无实现**）：`IReportTemplateContribution`、导出契约、`report.*` 意图常量 + 诚实提示 handler | R1 | §4 第 5、6 条 |
@@ -143,3 +171,4 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 2. **确认 report / autopilot review 本批不做成品**，只备扩展点 + 契约 + 意图常量（§2）？
 3. **导出后端**：本批只定接口不引入任何 PDF/HTML 依赖，确认？（§2.2）
 4. finding 结构固化为 `datasetId/kind/severity/payload` 是否够用，还是要留扩展字段？（§2.2）
+5. **确认 `DataSourceRepository` 改名 `SourceRegistry`**（§1.4）？连带的可选项：`DataRepository` 是否也改 `DatasetRepository` 与之对齐（本裁决**未**采纳，需你定）？
