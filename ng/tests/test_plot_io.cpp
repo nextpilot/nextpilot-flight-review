@@ -105,39 +105,39 @@ int main(int argc, char *argv[])
         QVariant nullV;
         Result<QVariant> pngResult(nullV);
         const QString png2 = dir.filePath(QStringLiteral("via_action.png"));
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.export.png"), {{QStringLiteral("path"), png2}}, pngResult));
         CHECK(pngResult);
         CHECK(QFile::exists(png2));
 
         Result<QVariant> csvResult(nullV);
         const QString csv2 = dir.filePath(QStringLiteral("via_action.csv"));
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.export.csv"), {{QStringLiteral("path"), csv2}}, csvResult));
         CHECK(csvResult);
         CHECK(QFile::exists(csv2));
 
         Result<QVariant> saveResult(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.state.save"), {}, saveResult));
         const QJsonObject saved = saveResult.value().toJsonObject();
         CHECK(!saved.isEmpty());
 
         canvas->setLegendVisible(true);
         Result<QVariant> restoreResult(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.state.restore"),
             {{QStringLiteral("state"), saved}}, restoreResult));
         CHECK(restoreResult);
 
         Result<QVariant> toggleResult(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.legend.toggle"), {}, toggleResult));
         CHECK(toggleResult);
 
         // 未注册的动作：派发返回 false，交回意图层。
         Result<QVariant> miss(nullV);
-        CHECK(!application.context().dispatchViewAction(
+        CHECK(!application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.not-a-real-action"), {}, miss));
         OK("视图动作：导出/状态/图例经 AppContext 派发闭环，未知动作回落意图层");
     }
@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
         // 曲线清单视图动作。
         QVariant nullV;
         Result<QVariant> listResult(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.series.list"), {}, listResult));
         CHECK(listResult.value().toList().size() == 2);
         OK("多曲线叠加：追加/去重/移除/清单视图动作全部通过");
@@ -225,12 +225,12 @@ int main(int argc, char *argv[])
         // 图型切换：工作区统一路由——曲线类在画布内切，专用图型在 cell 内切到仪表页。
         QVariant nullV;
         Result<QVariant> r(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.setType"), {{QStringLiteral("type"), QStringLiteral("scatter")}}, r));
         CHECK(r.value().toMap().value(QStringLiteral("handled")).toBool());
         CHECK(canvas->plotKind() == QStringLiteral("scatter"));
         Result<QVariant> r2(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.setType"), {{QStringLiteral("type"), QStringLiteral("gauge")}}, r2));
         // 多画布工作区把专用图型也在 cell 内接住了（cell 内切到仪表页），
         // 不再返回 handled=false 依赖外壳替换中央——这样多画布形态得以保留。
@@ -243,7 +243,7 @@ int main(int argc, char *argv[])
         QVariant nullV;
         auto stateOf = [&]() -> QVariantMap {
             Result<QVariant> st(nullV);
-            CHECK(application.context().dispatchViewAction(
+            CHECK(application.context().interactions().dispatchViewAction(
                 QStringLiteral("page.state"), {}, st));
             return st.value().toMap();
         };
@@ -251,17 +251,17 @@ int main(int argc, char *argv[])
         CHECK(stateOf().value(QStringLiteral("cells")).toInt() == 1);
 
         Result<QVariant> add(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("page.addCanvas"), {}, add));
         CHECK(stateOf().value(QStringLiteral("cells")).toInt() == 2);
 
         Result<QVariant> split(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("page.splitHorizontal"), {}, split));
         CHECK(stateOf().value(QStringLiteral("cells")).toInt() == 3);
 
         Result<QVariant> grid(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("page.grid"),
             {{QStringLiteral("rows"), 2}, {QStringLiteral("cols"), 2}}, grid));
         CHECK(grid.value().toMap().value(QStringLiteral("cells")).toInt() == 4);
@@ -271,7 +271,7 @@ int main(int argc, char *argv[])
         CHECK(workspace->activeChannelView() != nullptr);
 
         Result<QVariant> rm(nullV);
-        CHECK(application.context().dispatchViewAction(
+        CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("page.removeCanvas"), {}, rm));
         CHECK(workspace->cellCount() == 3);
         OK("多画布工作区：添加/拆分/2×2 网格/删除 + 活动画布路由全部通过");

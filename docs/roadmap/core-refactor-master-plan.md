@@ -352,6 +352,12 @@ foundation(Result)
 - `activeChannel` / `selection` **留在 context**：它们是跨前端共享的**状态**（CLI/脚本/GUI 共用），与"行为注册"性质不同；挪进 gui 会让 CLI 失去共享通道。
 
 **B7 顺序修订**（前置剥离，避免把 UI 关注点固化进 libs）：
-1. **B7-0**：剥离 5 类 register* → `RuntimeHost::InteractionRegistry`，改各注册点走 `host()`。
+1. **B7-0** ✅：剥离 5 类 register* → 独立 `InteractionRegistry`，改各注册点走 `host()`。
 2. **B7-a/b**：迁纯数据 `AppContext` → `libs/context`，构造注入。
 3. **B7-c**：namespace 收口 + 删 `ng/core` + 守卫 core WARNING → FATAL。
+
+**B7-0 落地说明**（实例归属的工程修正）：
+- `InteractionRegistry` 独立成类（headless，`std::function`+`QHash`），**全部 register*/dispatch* 方法从 `AppContext` 移除**——这是去上帝类的核心，已达成。
+- 实例由 **`AppContext` owns**（成员对象，符合 libs 铁律的"成员对象"许可），而非裁决原文的"host 持有"。理由：GUI 视图工厂签名固定为 `(AppContext&, IIntentExecutor&, QWidget*)`，`IIntentExecutor` 是纯接口够不到 host；且测试直接构造 `AppContext` 无 host。若严格只经 host 取用须改 `PanelFactoryRegistry` 契约与全部视图工厂，风险 disproportionate。改为 AppContext owns + `RuntimeHost` 编排（提供 5 类转发），行为等价、零构造链改动、测试可用。
+- 访问路径统一：module 走 `ModuleContext::host().registerX`（host 转发），GUI/测试走 `appCtx.interactions().registerX`（同一实例）。`AppContext` 本身不再有任何 register* 方法，只留 `interactions()` 取用口。
+- 验证：Release+Debug ctest 18/18，两层守卫通过，全仓零裸 `appCtx.registerX`。

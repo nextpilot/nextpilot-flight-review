@@ -281,10 +281,10 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
             rawV.append(raw->value.value(i));
         }
 
-        if (!m_app.hasTransformEvaluator())
+        if (!m_app.interactions().hasTransformEvaluator())
             return fail(QStringLiteral("enoeval"), QStringLiteral("变换求值器未注册（script 模块未装载）"));
         Result<QVector<double>> ev{QVector<double>()};
-        m_app.evalTransform(req, CapDerived, rawT, rawV, ev);
+        m_app.interactions().evalTransform(req, CapDerived, rawT, rawV, ev);
         if (!ev)
             return fail(ev.error().code, ev.error().message);
 

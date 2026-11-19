@@ -203,7 +203,7 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
 
     // 视图动作：导出 / 视图状态 / 图例开关 / 多曲线管理，由画布与视图执行。
     // 模块与外壳都不持有画布指针——外壳只按 id 派发，处理器在这里登记。
-    appCtx.registerViewAction(QStringLiteral("plot.export.png"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.export.png"),
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
                                   const QString path = params.value(QStringLiteral("path")).toString();
                                   if (path.isEmpty())
@@ -212,7 +212,7 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                                       return fail(QStringLiteral("eio"), QStringLiteral("PNG 导出失败"));
                                   return QVariant(path);
                               });
-    appCtx.registerViewAction(QStringLiteral("plot.export.csv"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.export.csv"),
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
                                   const QString path = params.value(QStringLiteral("path")).toString();
                                   if (path.isEmpty())
@@ -221,30 +221,30 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                                       return fail(QStringLiteral("eio"), QStringLiteral("CSV 导出失败"));
                                   return QVariant(path);
                               });
-    appCtx.registerViewAction(QStringLiteral("plot.state.save"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.state.save"),
                               [canvas](const QVariantMap &) -> Result<QVariant> {
                                   return QVariant(canvas->saveViewState());
                               });
-    appCtx.registerViewAction(QStringLiteral("plot.state.restore"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.state.restore"),
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
                                   const auto state = params.value(QStringLiteral("state")).toJsonObject();
                                   if (!canvas->restoreViewState(state))
                                       return fail(QStringLiteral("estate"), QStringLiteral("视图状态复原失败"));
                                   return QVariant(true);
                               });
-    appCtx.registerViewAction(QStringLiteral("plot.legend.toggle"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.toggle"),
                               [canvas](const QVariantMap &) -> Result<QVariant> {
                                   canvas->setLegendVisible(!canvas->legendVisible());
                                   return QVariant(canvas->legendVisible());
                               });
     // 清空全部曲线。
-    appCtx.registerViewAction(QStringLiteral("plot.series.clear"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.series.clear"),
                               [view](const QVariantMap &) -> Result<QVariant> {
                                   view->clearChannels();
                                   return QVariant(true);
                               });
     // 当前曲线清单（供属性面板与脚本查询）。
-    appCtx.registerViewAction(QStringLiteral("plot.series.list"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.series.list"),
                               [canvas](const QVariantMap &) -> Result<QVariant> {
                                   QVariantList list;
                                   for (const PlotSeries &s : canvas->series())
@@ -260,7 +260,7 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                               });
     // 双 Y 轴：把某条曲线挂到左轴或右轴（用户选择入口）。
     // params: key=曲线稳定键, right=true→右轴 / false→左轴。
-    appCtx.registerViewAction(QStringLiteral("plot.series.axis"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.series.axis"),
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
                                   const QString key = params.value(QStringLiteral("key")).toString();
                                   const bool right = params.value(QStringLiteral("right")).toBool();
@@ -272,7 +272,7 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                               });
     // 图型切换：曲线/散点在本画布内切；仪表/地图/3D 本画布不处理（返回 handled=false），
     // 由外壳 dispatcher 切到专用 InstrumentView。
-    appCtx.registerViewAction(QStringLiteral("plot.setType"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.setType"),
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
                                   const QString kind = params.value(QStringLiteral("type")).toString();
                                   const bool handled = canvas->setPlotKind(kind);

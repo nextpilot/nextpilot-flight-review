@@ -675,7 +675,7 @@ int main(int argc, char *argv[])
         auto dispatchOk = [&](const QString &op, const QVariantMap &p = {}) {
             QVariant vr;
             Result<QVariant> res(vr);
-            return application.context().dispatchViewAction(op, p, res); // 只断言"已注册"
+            return application.context().interactions().dispatchViewAction(op, p, res); // 只断言"已注册"
         };
         CHECK(dispatchOk(QStringLiteral("plot.series.list")));
         CHECK(dispatchOk(QStringLiteral("plot.series.axis"),

@@ -360,7 +360,7 @@ void CanvasWorkspace::registerPropertyProviders()
     };
 
     // --- 曲线 ---
-    m_appCtx.registerPropertyProvider(SelectionKind::Series, [this, row](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Series, [this, row](const Selection &sel) {
         const QString key = sel.ids.value(QStringLiteral("seriesKey")).toString();
         PlotCanvas *canvas = activeCanvas();
         const PlotSeries *s = canvas ? canvas->seriesByKey(key) : nullptr;
@@ -407,7 +407,7 @@ void CanvasWorkspace::registerPropertyProviders()
     });
 
     // --- 轴 ---
-    m_appCtx.registerPropertyProvider(SelectionKind::Axis, [this, row](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Axis, [this, row](const Selection &sel) {
         const QString axis = sel.ids.value(QStringLiteral("axis")).toString();
         PlotCanvas *canvas = activeCanvas();
         PropertySchema schema;
@@ -444,7 +444,7 @@ void CanvasWorkspace::registerPropertyProviders()
     });
 
     // --- 画布 ---
-    m_appCtx.registerPropertyProvider(SelectionKind::Canvas, [this, row](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Canvas, [this, row](const Selection &sel) {
         PlotCanvas *canvas = activeCanvas();
         PropertySchema schema;
         schema.title = QStringLiteral("画布属性");
@@ -463,7 +463,7 @@ void CanvasWorkspace::registerPropertyProviders()
     });
 
     // --- setter：把属性写回活动画布 ---
-    m_appCtx.registerPropertySetter(SelectionKind::Series,
+    m_appCtx.interactions().registerPropertySetter(SelectionKind::Series,
         [this](const Selection &sel, const QString &, const QString &key, const QString &value, QString *err) {
             PlotCanvas *canvas = activeCanvas();
             if (!canvas)
@@ -488,7 +488,7 @@ void CanvasWorkspace::registerPropertyProviders()
             return false;
         });
 
-    m_appCtx.registerPropertySetter(SelectionKind::Axis,
+    m_appCtx.interactions().registerPropertySetter(SelectionKind::Axis,
         [this](const Selection &sel, const QString &, const QString &key, const QString &value, QString *err) {
             PlotCanvas *canvas = activeCanvas();
             if (!canvas || !canvas->plotWidget())
@@ -516,7 +516,7 @@ void CanvasWorkspace::registerPropertyProviders()
             return false;
         });
 
-    m_appCtx.registerPropertySetter(SelectionKind::Canvas,
+    m_appCtx.interactions().registerPropertySetter(SelectionKind::Canvas,
         [this](const Selection &, const QString &, const QString &key, const QString &value, QString *err) {
             PlotCanvas *canvas = activeCanvas();
             if (!canvas)
@@ -537,7 +537,7 @@ void CanvasWorkspace::registerPropertyProviders()
 void CanvasWorkspace::registerViewActions()
 {
     // 所有 plot.* 只在这里注册一次，路由到 active cell —— 多画布不会被后建者劫持。
-    m_appCtx.registerViewAction(QStringLiteral("plot.export.png"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.export.png"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString path = params.value(QStringLiteral("path")).toString();
                                     if (path.isEmpty())
@@ -546,7 +546,7 @@ void CanvasWorkspace::registerViewActions()
                                         return fail(QStringLiteral("eio"), QStringLiteral("PNG 导出失败"));
                                     return QVariant(path);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.export.csv"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.export.csv"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString path = params.value(QStringLiteral("path")).toString();
                                     if (path.isEmpty())
@@ -555,32 +555,32 @@ void CanvasWorkspace::registerViewActions()
                                         return fail(QStringLiteral("eio"), QStringLiteral("CSV 导出失败"));
                                     return QVariant(path);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.state.save"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.state.save"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return activeCanvas() ? QVariant(activeCanvas()->saveViewState())
                                                           : QVariant(QVariantMap());
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.state.restore"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.state.restore"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const auto state = params.value(QStringLiteral("state")).toJsonObject();
                                     if (!activeCanvas() || !activeCanvas()->restoreViewState(state))
                                         return fail(QStringLiteral("estate"), QStringLiteral("视图状态复原失败"));
                                     return QVariant(true);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.legend.toggle"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.toggle"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!activeCanvas())
                                         return QVariant(false);
                                     activeCanvas()->setLegendVisible(!activeCanvas()->legendVisible());
                                     return QVariant(activeCanvas()->legendVisible());
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.series.clear"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.clear"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (activeChannelView())
                                         activeChannelView()->clearChannels();
                                     return QVariant(true);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.series.list"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.list"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     QVariantList list;
                                     if (PlotCanvas *c = activeCanvas())
@@ -595,7 +595,7 @@ void CanvasWorkspace::registerViewActions()
                                             });
                                     return QVariant(list);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.series.axis"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.axis"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     const bool right = params.value(QStringLiteral("right")).toBool();
@@ -607,7 +607,7 @@ void CanvasWorkspace::registerViewActions()
                                 });
     // 图型切换：workspace 直接处理（曲线在画布切、专用图型在 cell 内切页），
     // 不再需要外壳 requestPanel 替换整个中央——多画布形态得以保留。
-    m_appCtx.registerViewAction(QStringLiteral("plot.setType"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.setType"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString kind = params.value(QStringLiteral("type")).toString();
                                     const bool handled = setCellType(m_active, kind);
@@ -619,7 +619,7 @@ void CanvasWorkspace::registerViewActions()
 
     // —— plotting 全套操作意图（抄老 PlottingRibbon / PlottingCanvas 的体验）——
     // 全部落到 active cell 的 PlotCanvas 真实能力，不造空按钮。
-    m_appCtx.registerViewAction(QStringLiteral("plot.series.visible"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.visible"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     const bool vis = params.value(QStringLiteral("visible"), true).toBool();
@@ -629,7 +629,7 @@ void CanvasWorkspace::registerViewActions()
                                         return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
                                     return QVariant(true);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.series.color"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.color"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     const QColor color = params.value(QStringLiteral("color")).value<QColor>();
@@ -639,7 +639,7 @@ void CanvasWorkspace::registerViewActions()
                                         return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
                                     return QVariant(true);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.series.remove"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.remove"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     if (key.isEmpty())
@@ -648,7 +648,7 @@ void CanvasWorkspace::registerViewActions()
                                         return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
                                     return QVariant(true);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.zoom"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.zoom"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const double factor = params.value(QStringLiteral("factor"), 0.5).toDouble();
                                     if (!activeCanvas())
@@ -656,14 +656,14 @@ void CanvasWorkspace::registerViewActions()
                                     activeCanvas()->zoomRange(factor <= 0.0 ? 0.5 : factor);
                                     return QVariant(true);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.autoscale"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.autoscale"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!activeCanvas())
                                         return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
                                     activeCanvas()->autoScale();
                                     return QVariant(true);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.grid"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.grid"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
@@ -674,7 +674,7 @@ void CanvasWorkspace::registerViewActions()
                                     c->plotWidget()->grid(on);
                                     return QVariant(on);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("plot.axis.range"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.axis.range"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
@@ -695,7 +695,7 @@ void CanvasWorkspace::registerViewActions()
                                 });
     // 文本读数覆盖层：时间标记 / A-B 测量 / 播放头共用，诚实呈现为读数条
     // （老代码那套交互式拖拽游标是 P2，这里不伪装成已实现）。
-    m_appCtx.registerViewAction(QStringLiteral("plot.overlay"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.overlay"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
@@ -709,23 +709,23 @@ void CanvasWorkspace::registerViewActions()
                                 });
 
     // —— page.*：页面/画布布局操作（抄老 page 面板体验）——
-    m_appCtx.registerViewAction(QStringLiteral("page.addCanvas"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.addCanvas"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(addCell());
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("page.removeCanvas"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.removeCanvas"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(removeAt(m_active));
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("page.splitHorizontal"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.splitHorizontal"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(split(true));
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("page.splitVertical"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.splitVertical"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(split(false));
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("page.grid"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.grid"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const int r = params.value(QStringLiteral("rows")).toInt();
                                     const int c = params.value(QStringLiteral("cols")).toInt();
@@ -738,13 +738,13 @@ void CanvasWorkspace::registerViewActions()
                                 });
     // 老 PlottingRibbon"页面"组的"新建页"：ng 用多画布工作区承载页概念，
     // 新建页 = 重置为单个空画布（真实能力，非占位）。
-    m_appCtx.registerViewAction(QStringLiteral("page.new"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.new"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!setGrid(1, 1))
                                         return fail(QStringLiteral("epage"), QStringLiteral("新建页失败"));
                                     return QVariant(true);
                                 });
-    m_appCtx.registerViewAction(QStringLiteral("page.state"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.state"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},
                                                     {QStringLiteral("active"), m_active},

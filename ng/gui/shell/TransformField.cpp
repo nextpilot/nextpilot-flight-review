@@ -283,7 +283,7 @@ QJsonObject TransformField::request() const
 
 void TransformField::onEditLua()
 {
-    if (!m_appCtx.hasTransformScriptOps())
+    if (!m_appCtx.interactions().hasTransformScriptOps())
         return;
     LuaEditor editor(m_appCtx, this);
     const TransformRequest cur = TransformRequest::fromJson(m_lastLuaRequest);

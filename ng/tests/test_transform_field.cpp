@@ -113,7 +113,7 @@ int main(int argc, char **argv)
         TransformRegistry::registerDescriptor(d);
         return Result<TransformDescriptor>(d);
     };
-    ctx.registerTransformScriptOps(ops);
+    ctx.interactions().registerTransformScriptOps(ops);
     CHECK(ops.valid());
 
     // 手动走一遍"保存 -> 注册 -> 控件重拉"的链路（编辑按钮内部就是这么做的）。

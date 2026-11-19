@@ -4,19 +4,15 @@
 #include "SourceRegistry.h"
 #include "ExtensionRegistry.h"
 #include "IngestPipeline.h"
+#include "InteractionRegistry.h"
 #include "Result.h"
 #include "Selection.h"
 #include "SettingsStore.h"
 #include "Transform.h"
 
-#include <QHash>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
-#include <QVariantMap>
-#include <QVector>
-
-#include <functional>
 
 namespace nextpilot::plotscope::core
 {
@@ -43,11 +39,8 @@ namespace nextpilot::plotscope::core
 //     造成"多 App 实例时重复初始化"。
 //
 // 依赖方向：core → 无上层依赖；host 与 app 都只向下取用。
-// 视图动作处理器：GUI 视图在工厂里把自己的部件能力登记进来，
-// 外壳/模块按 id 触发。闭包可以捕获视图对象，但类型本身不含 QWidget——
-// core 依旧 headless 纯净（与 PanelFactoryRegistry 同一思路）。
-using ViewActionHandler = std::function<Result<QVariant>(const QVariantMap &params)>;
-
+// 交互注册（viewAction / property / transform）已剥离到 InteractionRegistry，
+// 经 interactions() 取用——它们是运行时路由行为，不是运行态数据。
 class AppContext : public QObject
 {
     Q_OBJECT
@@ -76,6 +69,12 @@ public:
 
     // 摄取管道（单前端 → 多解析器扇出 → 多数据集）。
     IngestPipeline &ingest() { return m_ingest; }
+
+    // 交互注册表（viewAction / property / transform 的注册与派发）。
+    // 这是运行时路由行为，与上面的静态运行态数据分开：AppContext 只 owns
+    // 这个成员对象、不实现任何 register*/dispatch* 方法；逻辑归 RuntimeHost 编排。
+    InteractionRegistry &interactions() { return m_interactions; }
+    const InteractionRegistry &interactions() const { return m_interactions; }
 
     // === 当前活动视图（指针，不是副本）===
     //
@@ -124,55 +123,6 @@ public:
     void setSelection(const Selection &selection);
     void clearSelection();
 
-    // === 属性提供者登记与派发 ===
-    //
-    // 属性面板（视图）不含任何业务：它按当前 selection.kind 找这里登记的
-    // provider，拿到 PropertySchema 后照表显示；编辑时发 prop.set 意图。
-    // provider 由各领域（数据源/绘图/协议）注册，闭包捕获视图，类型不含 QWidget。
-    using PropertyProvider = std::function<QJsonObject(const Selection &selection)>;
-    void registerPropertyProvider(SelectionKind kind, PropertyProvider provider);
-    // 命中返回 true；out 带回 schema JSON。未注册返回 false（属性面板显示空态）。
-    bool queryPropertySchema(const Selection &selection, QJsonObject &out) const;
-
-    // 属性写入器：与 provider 成对注册，按 selection.kind 路由。
-    // provider 声明哪些行可编辑，setter 负责把新值写回真正的持有者。
-    using PropertySetter = std::function<bool(const Selection &selection, const QString &objectId,
-                                              const QString &key, const QString &value, QString *err)>;
-    void registerPropertySetter(SelectionKind kind, PropertySetter setter);
-    // 命中并写入成功返回 true；未注册返回 false。
-    bool applyProperty(const Selection &selection, const QString &objectId,
-                       const QString &key, const QString &value, QString *err = nullptr) const;
-
-    // === 统一变换求值（三场景共用）===
-    //
-    // 求值实现在 script 模块（Lua）/ Rust kernel（算子/表达式），但调用方在
-    // host（数据源衍生）、gui（曲线）、protocol（checksum）——它们不能依赖 script
-    // 模块（依赖方向）。于是这里注入回调，类型不含任何 script 类，保持 headless。
-    using TransformEvalFn = std::function<Result<QVector<double>>(
-        const QJsonObject &request, uint32_t cap, const QVector<double> &t, const QVector<double> &v)>;
-    void registerTransformEvaluator(TransformEvalFn fn);
-    bool hasTransformEvaluator() const { return static_cast<bool>(m_transformEvaluator); }
-    // 未注册返回 false（out 带回错误）。
-    bool evalTransform(const QJsonObject &request, uint32_t cap,
-                       const QVector<double> &t, const QVector<double> &v,
-                       Result<QVector<double>> &out) const;
-
-    // === Lua 脚本库能力（script 模块注入）===
-    // GUI 的 LuaEditor 保存脚本、解析源码都走这里，不反向依赖 script 模块。
-    void registerTransformScriptOps(TransformScriptOps ops);
-    bool hasTransformScriptOps() const { return m_transformScriptOps.valid(); }
-    const TransformScriptOps &transformScriptOps() const { return m_transformScriptOps; }
-
-    // === 视图动作登记与派发 ===
-    //
-    // 有些动作只能由具体部件完成（导出当前画布、切换图例、复原视图状态），
-    // 模块层拿不到 QWidget，于是视图在工厂里把处理器登记到这里；
-    // 外壳 ribbon 触发时先查这张表，命中就交视图执行，未命中再走意图层。
-    void registerViewAction(const QString &id, ViewActionHandler handler);
-    // 命中返回 true；out 带回成功载荷或错误。未注册返回 false。
-    bool dispatchViewAction(const QString &id, const QVariantMap &params,
-                            Result<QVariant> &out) const;
-
 Q_SIGNALS:
     // 当前活动源变化（GUI 树、脚本、CLI 都可订阅）。
     void activeSourceChanged(int sourceId);
@@ -194,11 +144,7 @@ private:
     SourceRegistry m_sources;
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
 
-    QHash<QString, ViewActionHandler> m_viewActions; // fastplot 视图动作处理器表
-    QHash<int, PropertyProvider> m_propertyProviders; // 按 SelectionKind 索引的属性提供者
-    QHash<int, PropertySetter> m_propertySetters;     // 按 SelectionKind 索引的属性写入器
-    TransformEvalFn m_transformEvaluator; // 统一变换求值（script 模块注入）
-    TransformScriptOps m_transformScriptOps; // Lua 脚本库能力（script 模块注入）
+    InteractionRegistry m_interactions; // 交互注册表：AppContext owns，host 编排
     Selection m_selection;       // 当前统一选中对象
 
     int m_activeSourceId = -1;   // 数据源 id（SourceRegistry 键）

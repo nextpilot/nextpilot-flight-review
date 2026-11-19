@@ -389,7 +389,7 @@ QWidget *createInstrumentPanel(AppContext &appCtx, IIntentExecutor &executor,
     // 图库切图型：仪表盘/罗盘/地平仪/3D 等由外壳切到本视图后，
     // 通过这个 view action 指定 kind 并**立即从当前活动通道喂数据**
     // （与脚本/回放同一入口，不再留空表盘）。
-    appCtx.registerViewAction(QStringLiteral("plot.instrument.setKind"),
+    appCtx.interactions().registerViewAction(QStringLiteral("plot.instrument.setKind"),
                               [view](const QVariantMap &params) -> Result<QVariant> {
                                   const QString kind = params.value(QStringLiteral("kind")).toString();
                                   if (kind.isEmpty())

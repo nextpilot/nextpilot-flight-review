@@ -250,7 +250,7 @@ int main(int argc, char *argv[])
         }
         QVariant vr;
         Result<QVariant> res(vr);
-        const bool hit = application.context().dispatchViewAction(actionId, params, res);
+        const bool hit = application.context().interactions().dispatchViewAction(actionId, params, res);
         fprintf(stdout, "view action %s: %s\n", qPrintable(actionId),
                 hit ? (res ? "成功" : "失败") : "未注册");
     }

@@ -83,7 +83,7 @@ void PropertyPanel::refreshFromSelection()
     }
 
     QJsonObject schemaJson;
-    if (!m_appCtx.queryPropertySchema(sel, schemaJson) || schemaJson.isEmpty())
+    if (!m_appCtx.interactions().queryPropertySchema(sel, schemaJson) || schemaJson.isEmpty())
     {
         m_header->setText(QStringLiteral("属性 · %1").arg(sel.label));
         showEmpty(QStringLiteral("「%1」暂无属性提供者").arg(sel.label));
@@ -174,7 +174,7 @@ void PropertyPanel::commitEdit(const QString &objectId, const QString &key, cons
     // 按 selection.kind 路由到注册该类型时的写入器（provider/setter 成对）。
     // 写入器自己最懂如何把值写回持有者（曲线色/轴范围/协议字段…）。
     QString err;
-    if (!m_appCtx.applyProperty(m_appCtx.selection(), objectId, key, value, &err))
+    if (!m_appCtx.interactions().applyProperty(m_appCtx.selection(), objectId, key, value, &err))
     {
         // 兜底：没有专用写入器时走意图层（headless/脚本同路径）。
         Intent intent;

@@ -336,7 +336,7 @@ int main(int argc, char *argv[])
         QVariantMap params{{QStringLiteral("kind"), QStringLiteral("gauge")}};
         QVariant outValue;
         Result<QVariant> out(outValue);
-        const bool hit = application.context().dispatchViewAction(
+        const bool hit = application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.instrument.setKind"), params, out);
         CHECK(hit);
         CHECK(out);

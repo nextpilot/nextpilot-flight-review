@@ -113,7 +113,7 @@ void LuaEditor::showResult(const QString &text)
 
 void LuaEditor::onDebugSingle()
 {
-    if (!m_appCtx.hasTransformEvaluator())
+    if (!m_appCtx.interactions().hasTransformEvaluator())
     {
         showResult(QStringLiteral("求值器未注册"));
         return;
@@ -121,7 +121,7 @@ void LuaEditor::onDebugSingle()
     const double x = m_singleX->text().toDouble();
     const double t = m_singleT->text().toDouble();
     Result<QVector<double>> out{QVector<double>()};
-    m_appCtx.evalTransform(currentRequest(), CapDerived, QVector<double>{x}, QVector<double>{x}, out);
+    m_appCtx.interactions().evalTransform(currentRequest(), CapDerived, QVector<double>{x}, QVector<double>{x}, out);
     if (!out)
     {
         showResult(QStringLiteral("失败 — %1").arg(out.error().message));
@@ -134,7 +134,7 @@ void LuaEditor::onDebugSingle()
 
 void LuaEditor::onDebugBatch()
 {
-    if (!m_appCtx.hasTransformEvaluator())
+    if (!m_appCtx.interactions().hasTransformEvaluator())
     {
         showResult(QStringLiteral("求值器未注册"));
         return;
@@ -154,7 +154,7 @@ void LuaEditor::onDebugBatch()
     }
     QVector<double> t(v.size(), 0.0);
     Result<QVector<double>> out{QVector<double>()};
-    m_appCtx.evalTransform(currentRequest(), CapDerived, t, v, out);
+    m_appCtx.interactions().evalTransform(currentRequest(), CapDerived, t, v, out);
     if (!out)
     {
         showResult(QStringLiteral("失败 — %1").arg(out.error().message));
@@ -191,14 +191,14 @@ void LuaEditor::onFillFromActiveChannel()
 
 void LuaEditor::onSave()
 {
-    if (!m_appCtx.hasTransformScriptOps())
+    if (!m_appCtx.interactions().hasTransformScriptOps())
     {
         QMessageBox::warning(this, QStringLiteral("保存失败"), QStringLiteral("脚本库能力未注册"));
         return;
     }
     const QString name = m_name->currentText().trimmed();
     const QByteArray source = m_code->toPlainText().toUtf8();
-    const TransformScriptOps &ops = m_appCtx.transformScriptOps();
+    const TransformScriptOps &ops = m_appCtx.interactions().transformScriptOps();
     const Result<TransformDescriptor> r = ops.save(name, source);
     if (!r)
     {

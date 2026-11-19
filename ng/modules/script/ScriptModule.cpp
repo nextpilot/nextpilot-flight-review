@@ -8,6 +8,7 @@
 #include "ScriptFacade.h"
 #include "TransformEvaluator.h"
 #include "AppContext.h"
+#include "RuntimeHost.h"
 
 #include <QByteArray>
 #include <QFile>
@@ -95,7 +96,7 @@ void ScriptModule::initialize(ModuleContext &ctx)
 
     // 统一变换求值：注册进 AppContext，供 host(数据源衍生)/gui(曲线)/protocol(checksum)
     // 调用，而不必反向依赖 script 模块。builtin/expression 内部走 Rust，lua 走 C++。
-    ctx.app().registerTransformEvaluator(
+    ctx.host().registerTransformEvaluator(
         [](const QJsonObject &request, uint32_t cap,
            const QVector<double> &t, const QVector<double> &v) {
             return nextpilot::plotscope::script::TransformEvaluator::evalSeries(request, cap, t, v);
@@ -117,7 +118,7 @@ void ScriptModule::initialize(ModuleContext &ctx)
     ops.describe = [this](const QByteArray &source, const QString &name) {
         return m_scriptLib.describe(source, name);
     };
-    ctx.app().registerTransformScriptOps(ops);
+    ctx.host().registerTransformScriptOps(ops);
 }
 
 #include "ScriptModule.moc"

@@ -78,11 +78,13 @@ L6  app                    组合根：创建并装配 AppContext + RuntimeHost 
 | 项 | 内容 |
 |---|---|
 | 定位 | 运行时编排层——模块生命周期、意图路由、交互扩展点 |
-| 放什么 | 模块装载/激活/卸载、意图执行器、系统级命令、交互注册表（`InteractionRegistry`：viewAction/property/transform 的注册与派发） |
+| 放什么 | 模块装载/激活/卸载、意图执行器、系统级命令、交互扩展点的注册/派发转发（`InteractionRegistry` 的编排入口） |
 | 禁放什么 | 具体业务格式、具体画布/面板、任何 `QWidget*` 的跨层返回 |
 | 可依赖 | L0、L1、L2、Qt::Core |
 | 禁依赖 | L4+ 任何层 |
 | 判定 | 协调"谁来做"属于这里；"做什么业务"属于 L4 |
+
+> `InteractionRegistry`（viewAction/property/transform 五类注册与派发）是 headless 容器，B7-0 已落地：类型定义因依赖 `Selection`/`TransformScriptOps` 在 L2 `core`，**实例由 `AppContext` owns、经 `interactions()` 取用**，`RuntimeHost` 提供注册转发。module 走 `host()`，GUI/测试走 `app().interactions()`。详见 roadmap §7.9。
 
 ### L4 `modules` / `extensions`
 

@@ -469,7 +469,7 @@ void MainWindow::build(RuntimeHost &host)
             QVariant vr;
             Result<QVariant> res(vr);
             bool handled = false;
-            if (m_appCtx.dispatchViewAction(QStringLiteral("plot.setType"), p, res) && res)
+            if (m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.setType"), p, res) && res)
                 handled = res.value().toMap().value(QStringLiteral("handled")).toBool();
             if (!handled)
             {
@@ -497,7 +497,7 @@ void MainWindow::build(RuntimeHost &host)
                         ip.insert(QStringLiteral("kind"), instrKind);
                         QVariant ivr;
                         Result<QVariant> ires(ivr);
-                        m_appCtx.dispatchViewAction(QStringLiteral("plot.instrument.setKind"), ip, ires);
+                        m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.instrument.setKind"), ip, ires);
                         statusBar()->showMessage(QStringLiteral("图型: %1").arg(kind));
                         return;
                     }
@@ -552,7 +552,7 @@ void MainWindow::build(RuntimeHost &host)
         }
         QVariant nullVariant;
         Result<QVariant> viewResult(nullVariant);
-        if (m_appCtx.dispatchViewAction(actionId, params, viewResult))
+        if (m_appCtx.interactions().dispatchViewAction(actionId, params, viewResult))
         {
             if (!viewResult)
                 statusBar()->showMessage(QStringLiteral("动作失败: %1").arg(viewResult.error().message));

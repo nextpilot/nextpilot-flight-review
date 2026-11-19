@@ -99,11 +99,11 @@ int main(int argc, char *argv[])
 
     // ===== 3. 表达式（Rust）：单点 + 批量 + 负号 =====
     {
-        CHECK(application.context().hasTransformEvaluator());
+        CHECK(application.context().interactions().hasTransformEvaluator());
         const QJsonObject req = makeReq(QStringLiteral("expression"), TransformKind::Expression,
                                         QStringLiteral("5*x+1"), QString(), QJsonObject());
         Result<QVector<double>> out{QVector<double>()};
-        CHECK(application.context().evalTransform(req, CapAxisY,
+        CHECK(application.context().interactions().evalTransform(req, CapAxisY,
               QVector<double>{1.0, 2.0, 3.0}, QVector<double>{1.0, 2.0, 3.0}, out));
         CHECK(out);
         CHECK(out.value().size() == 3);
@@ -120,7 +120,7 @@ int main(int argc, char *argv[])
         const QJsonObject req = makeReq(QStringLiteral("builtin.scale"), TransformKind::Builtin,
                                         QString(), QString(), params);
         Result<QVector<double>> out{QVector<double>()};
-        CHECK(application.context().evalTransform(req, CapDerived,
+        CHECK(application.context().interactions().evalTransform(req, CapDerived,
               QVector<double>{0.0, 1.0}, QVector<double>{3.0, -4.0}, out));
         CHECK(out && out.value().size() == 2);
         CHECK(NEAR(out.value().at(0), -3.0));
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
                                         QStringLiteral("function transform(x, ctx) return x*ctx.params.k + ctx.t end"),
                                         lp);
         Result<QVector<double>> out{QVector<double>()};
-        CHECK(application.context().evalTransform(req, CapAxisY,
+        CHECK(application.context().interactions().evalTransform(req, CapAxisY,
               QVector<double>{1.0, 2.0}, QVector<double>{10.0, 20.0}, out));
         CHECK(out && out.value().size() == 2);
         // t=0 默认（evalTransform 传的是给定 t 数组：这里 t=1,2）
@@ -150,7 +150,7 @@ int main(int argc, char *argv[])
         const QJsonObject req = makeReq(QStringLiteral("builtin.normalize"), TransformKind::Builtin,
                                         QString(), QString(), QJsonObject());
         Result<QVector<double>> out{QVector<double>()};
-        CHECK(application.context().evalTransform(req, CapChecksum,
+        CHECK(application.context().interactions().evalTransform(req, CapChecksum,
               QVector<double>{0.0}, QVector<double>{1.0}, out));
         CHECK(!out); // 能力不匹配 -> 失败，"选错就死了"被挡住
         CHECK(out.error().code == QStringLiteral("ecap"));

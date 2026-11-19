@@ -6,6 +6,7 @@
 #include "ModuleInfo.h"
 #include "Result.h"
 #include "AppContext.h"
+#include "InteractionRegistry.h"
 #include "UiSlotRegistry.h"
 #include "DataLoadHandler.h"
 #include "DataCommandsHandler.h"
@@ -71,6 +72,39 @@ public:
     // 应用上下文：进程级运行态（数据集/设置/工具箱/数据源/摄取管道）。
     nextpilot::plotscope::core::AppContext &app() { return m_appCtx; }
     const nextpilot::plotscope::core::AppContext &app() const { return m_appCtx; }
+
+    // 交互注册表：逻辑归 host 编排，实例由 AppContext owns。
+    // module 经 ModuleContext::host() 到这里注册；GUI 经 app().interactions() 取用。
+    nextpilot::plotscope::core::InteractionRegistry &interactions() { return m_appCtx.interactions(); }
+    const nextpilot::plotscope::core::InteractionRegistry &interactions() const { return m_appCtx.interactions(); }
+
+    // 5 类扩展点的便捷转发：让"注册走 host()"成为统一入口（§7.9）。
+    using ViewActionHandler = nextpilot::plotscope::core::InteractionRegistry::ViewActionHandler;
+    using PropertyProvider = nextpilot::plotscope::core::InteractionRegistry::PropertyProvider;
+    using PropertySetter = nextpilot::plotscope::core::InteractionRegistry::PropertySetter;
+    using TransformEvalFn = nextpilot::plotscope::core::InteractionRegistry::TransformEvalFn;
+    void registerViewAction(const QString &id, ViewActionHandler h)
+    { m_appCtx.interactions().registerViewAction(id, std::move(h)); }
+    bool dispatchViewAction(const QString &id, const QVariantMap &params,
+                            nextpilot::plotscope::core::Result<QVariant> &out) const
+    { return m_appCtx.interactions().dispatchViewAction(id, params, out); }
+    void registerPropertyProvider(nextpilot::plotscope::core::SelectionKind kind, PropertyProvider p)
+    { m_appCtx.interactions().registerPropertyProvider(kind, std::move(p)); }
+    bool queryPropertySchema(const nextpilot::plotscope::core::Selection &sel, QJsonObject &out) const
+    { return m_appCtx.interactions().queryPropertySchema(sel, out); }
+    void registerPropertySetter(nextpilot::plotscope::core::SelectionKind kind, PropertySetter s)
+    { m_appCtx.interactions().registerPropertySetter(kind, std::move(s)); }
+    bool applyProperty(const nextpilot::plotscope::core::Selection &sel, const QString &objectId,
+                       const QString &key, const QString &value, QString *err = nullptr) const
+    { return m_appCtx.interactions().applyProperty(sel, objectId, key, value, err); }
+    void registerTransformEvaluator(TransformEvalFn fn)
+    { m_appCtx.interactions().registerTransformEvaluator(std::move(fn)); }
+    bool evalTransform(const QJsonObject &request, uint32_t cap,
+                       const QVector<double> &t, const QVector<double> &v,
+                       nextpilot::plotscope::core::Result<QVector<double>> &out) const
+    { return m_appCtx.interactions().evalTransform(request, cap, t, v, out); }
+    void registerTransformScriptOps(nextpilot::plotscope::core::TransformScriptOps ops)
+    { m_appCtx.interactions().registerTransformScriptOps(std::move(ops)); }
 
     // 便捷转发（内部使用；器官请通过 ModuleContext::app() 取）。
     nextpilot::plotscope::core::DataRepository &data() { return m_appCtx.data(); }

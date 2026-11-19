@@ -291,7 +291,7 @@ void DataManagerPanel::registerPropertyProviders()
     };
 
     // --- 数据源 ---
-    m_appCtx.registerPropertyProvider(SelectionKind::Source, [this, row](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Source, [this, row](const Selection &sel) {
         const int sid = sel.ids.value(QStringLiteral("sourceId"),
                                       sel.ids.value(QStringLiteral("source"))).toInt();
         const DataSourceInfo *info = m_sources.get(sid);
@@ -316,7 +316,7 @@ void DataManagerPanel::registerPropertyProviders()
     });
 
     // --- 数据集 ---
-    m_appCtx.registerPropertyProvider(SelectionKind::Dataset, [this, row](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Dataset, [this, row](const Selection &sel) {
         const int dsId = sel.ids.value(QStringLiteral("dataset")).toInt();
         const Dataset *ds = m_repo.get(dsId);
         PropertySchema s;
@@ -335,7 +335,7 @@ void DataManagerPanel::registerPropertyProviders()
     });
 
     // --- 表 ---
-    m_appCtx.registerPropertyProvider(SelectionKind::Table, [this, row](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Table, [this, row](const Selection &sel) {
         const int dsId = sel.ids.value(QStringLiteral("dataset")).toInt();
         const QString tableName = sel.ids.value(QStringLiteral("table")).toString();
         const Dataset *ds = m_repo.get(dsId);
@@ -358,7 +358,7 @@ void DataManagerPanel::registerPropertyProviders()
     });
 
     // --- 列（字段）：展示列元信息；可编辑"变换"行由曲线/衍生场景承接 ---
-    m_appCtx.registerPropertyProvider(SelectionKind::Column, [this, row](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Column, [this, row](const Selection &sel) {
         const int dsId = sel.ids.value(QStringLiteral("dataset")).toInt();
         const QString tableName = sel.ids.value(QStringLiteral("table")).toString();
         const QString columnName = sel.ids.value(QStringLiteral("column")).toString();
@@ -402,8 +402,8 @@ void DataManagerPanel::registerPropertyProviders()
         s.objects << o;
         return s.toJson();
     };
-    m_appCtx.registerPropertyProvider(SelectionKind::Param, kvProvider);
-    m_appCtx.registerPropertyProvider(SelectionKind::Message, kvProvider);
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Param, kvProvider);
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Message, kvProvider);
 }
 
 void DataManagerPanel::selectSource(int sourceId)

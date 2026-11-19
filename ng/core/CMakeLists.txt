@@ -14,6 +14,7 @@ add_library(ng_core STATIC
     src/IngestOrchestrator.cpp
     src/IByteSource.cpp
     src/AppContext.cpp
+    src/InteractionRegistry.cpp
     src/SettingsStore.cpp
     src/WorkspaceDataConfig.cpp
     src/ParserRegistry.cpp
@@ -47,6 +48,7 @@ add_library(ng_core STATIC
     include/SourceRegistry.h
     include/IngestPipeline.h
     include/AppContext.h
+    include/InteractionRegistry.h
     include/ParserRegistry.h
     include/ps_parser_spi.h
     include/DecodedFrame.h
