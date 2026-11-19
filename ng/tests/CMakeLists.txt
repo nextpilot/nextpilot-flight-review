@@ -58,6 +58,15 @@ target_compile_definitions(ng_test_protocol PRIVATE
     NG_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/../tests/fixture")
 set_target_properties(ng_test_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_protocol COMMAND ng_test_protocol)
+
+# === 协议模块意图面（ng/modules/protocol 建立在 ng_protocol 之上）===
+# headless：只链模块 + 库 + foundation，不拉 Widgets。
+# 覆盖 4 个 op 的正常/拒绝双路：op 认领、validate 分阶段、preview 双入口、模板库往返。
+add_executable(ng_test_protocol_module test_protocol_module.cpp)
+target_link_libraries(ng_test_protocol_module PRIVATE
+    ng_module_protocol ng_protocol ng_host ng_core ng_foundation Qt6::Core)
+set_target_properties(ng_test_protocol_module PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_protocol_module COMMAND ng_test_protocol_module)
 add_executable(ng_test_architecture test_architecture.cpp)
 target_include_directories(ng_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。

@@ -1370,6 +1370,24 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 上表中 ⛔ 的四项**全部在库外**（GUI 编辑器 / 传输层 / 载入入口），不属于本库范围，也未立项：任何一项开工都需要先定自己的验收口径，不得以"补协议库"的名义顺手做。
 
+### 15.2.2 模块层意图面（`ng/modules/protocol`，2026-11-19）
+
+库之上补了模块层，让协议能力脱离对话框也能被脚本/CLI 使用。模块从"只声明 4 个 Ribbon 动作"变成真正注册意图处理器：
+
+| op | 入参 | 出参 | 对应旧能力 |
+|---|---|---|---|
+| `protocol.validate` | `template` 内联 或 `templatePath` | `{ok, stage(json/spec/parse/compile/ok), issues[], name, mode, segmentCount}` | 编辑器"校验"按钮的内核 |
+| `protocol.preview` | 模板 + `frame`(hex) 或 `frameBase64` | `{ok, lines[], error, frameBytes}` | 编辑器"试算单帧" |
+| `protocol.templates.list` | — | `{dir, suffix, items[], count}` | 新增（模板库内省） |
+| `protocol.templates.save` | `name` + 模板 | `{ok, path}` | 新增（先 validate 后原子写） |
+
+设计要点：
+- **分阶段返回** `stage`：用户改模板时先要知道卡在 spec 还是 compile，而不是拿到一句合并报错。
+- `ProtocolTemplateStore` 是 `.psproto` 的唯一读写入口（目录 = `AppConfigLocation/protocols`，与 GUI 同一处），名字白名单拒绝路径分隔符与 `..`，落盘走 `QSaveFile` 原子替换，读入上限 8 MiB。
+- `ModuleInfo.capabilities` 与 op 表一一对应（`protocol.validate/preview/templates`）：声明了却不实现等于对外承诺空入口。
+- 验收：`ng_test_protocol_module` 覆盖 4 个 op 的正常/拒绝双路（op 认领、四阶段、hex/base64、越界名）；`test_architecture` 增加一条 `host.execute("protocol.validate")` 端到端断言——证明它进的是宿主分发链，而不是模块内的孤立实现。
+- 仍不做：GUI 按钮改调这些 op（现在是外壳按 action id 特判弹框），以及传输层。
+
 ### 15.3 红线（继续有效）
 
 - `src/` 只读参考，不改一行。
