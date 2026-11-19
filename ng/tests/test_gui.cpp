@@ -407,12 +407,12 @@ int main(int argc, char *argv[])
     // 源卡片：出现 1 个源，状态文案可见（不是空白按钮）。
     CHECK(panel->sourceNodeCount() == 1);
     CHECK(!panel->sourceStateText(0).isEmpty());
-    // 字段视图（默认 chip）：数据集 -> 表 -> 列层级。
+    // 字段视图（默认 chip）：一源一行，源展开直接是表 → 列（dataset 层透明化）。
     CHECK(panel->shownSourceId() >= 0);
     CHECK(panel->activeChip() == 0);
-    CHECK(panel->datasetNodeCount() == 1);
-    CHECK(panel->tableNodeCount(0) >= 1); // 至少一张表
-    OK("数据源面板：源卡片 + 字段视图（数据集 → 表 → 列）层级正确");
+    CHECK(panel->datasetNodeCount() == 1);   // 数据模型层仍有 1 个数据集
+    CHECK(panel->tableNodeCount(0) >= 1);    // 源下直接挂载至少一张表
+    OK("数据源面板：一源一行 + 字段视图（源 → 表 → 列）层级正确");
 
     // 字段/参数/消息 三 chip：对齐老 dock 与截图的领域信息分层。
     // 字段 chip 统计真实列数（demo_flight.csv 有多列），文案不是占位 0。

@@ -168,9 +168,9 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     lay->addWidget(m_filter);
     connect(m_filter, &QLineEdit::textChanged, this, &DataManagerPanel::applyFilter);
 
-    // 统一数据源树：每行一个源，展开后 dataset → 表 → 列。
+    // 统一数据源树：每行一个源，展开后直接是表 → 列（dataset 层在 UI 透明化）。
     m_tree = new ChannelTreeWidget(this);
-    m_tree->setHeaderLabels({QStringLiteral("数据源 / 数据集 / 字段"), QStringLiteral("信息")});
+    m_tree->setHeaderLabels({QStringLiteral("数据源 / 表 / 字段"), QStringLiteral("信息")});
     m_tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_tree->setAlternatingRowColors(true);
     m_tree->setDragEnabled(true);
@@ -498,45 +498,51 @@ void DataManagerPanel::rebuildTree()
 
         if (showFields)
         {
-            // 字段视图：dataset → 表 → 列。
+            // 字段视图：dataset 层在 UI 透明化。收集该源全部字段表（跨 dataset）。
+            struct FieldTable { int dsId; const Table *table; };
+            QList<FieldTable> tables;
             for (int dsId : info->datasetIds)
             {
                 const Dataset *ds = m_repo.get(dsId);
                 if (!ds)
                     continue;
-                auto *dsItem = new QTreeWidgetItem(srcItem);
-                dsItem->setText(0, QStringLiteral("#%1 %2").arg(dsId).arg(ds->name()));
-                dsItem->setData(0, kRoleDatasetId, dsId);
-                dsItem->setData(0, kRoleNodeKind, QStringLiteral("dataset"));
-
                 for (int t = 0; t < ds->tableCount(); ++t)
                 {
                     const Table *table = ds->table(t);
-                    if (!table || isKeyValueTable(table))
-                        continue;
-                    auto *tItem = new QTreeWidgetItem(dsItem);
-                    tItem->setText(0, table->name);
-                    const double span = (table->lastTimeUs - table->firstTimeUs) / 1000000.0;
-                    tItem->setText(1, QStringLiteral("%1 行 · %2 s").arg(table->rows).arg(span, 0, 'f', 2));
-                    tItem->setData(0, kRoleTable, table->name);
-                    tItem->setData(0, kRoleDatasetId, dsId);
-                    tItem->setData(0, kRoleNodeKind, QStringLiteral("table"));
-
-                    for (const Column &col : table->columns)
-                    {
-                        auto *cItem = new QTreeWidgetItem(tItem);
-                        cItem->setText(0, col.name);
-                        cItem->setText(1, col.unit);
-                        cItem->setData(0, kRoleColumn, col.name);
-                        cItem->setData(0, kRoleTable, table->name);
-                        cItem->setData(0, kRoleDatasetId, dsId);
-                        cItem->setData(0, kRoleNodeKind, QStringLiteral("column"));
-                        cItem->setFlags(cItem->flags() | Qt::ItemIsDragEnabled);
-                        cItem->setToolTip(0, QStringLiteral("拖到画布即可绘制 %1.%2").arg(table->name, col.name));
-                    }
-                    tItem->setExpanded(true);
+                    if (table && !isKeyValueTable(table))
+                        tables.append({dsId, table});
                 }
-                dsItem->setExpanded(true);
+            }
+            // 单表时省掉表节点（源 → 列）；多表时保留表节点分组（源 → 表 → 列）。
+            const bool flatten = tables.size() == 1;
+            for (const FieldTable &ft : tables)
+            {
+                QTreeWidgetItem *owner = srcItem;
+                if (!flatten)
+                {
+                    auto *tItem = new QTreeWidgetItem(srcItem);
+                    tItem->setText(0, ft.table->name);
+                    const double span = (ft.table->lastTimeUs - ft.table->firstTimeUs) / 1000000.0;
+                    tItem->setText(1, QStringLiteral("%1 行 · %2 s").arg(ft.table->rows).arg(span, 0, 'f', 2));
+                    tItem->setData(0, kRoleTable, ft.table->name);
+                    tItem->setData(0, kRoleDatasetId, ft.dsId);
+                    tItem->setData(0, kRoleNodeKind, QStringLiteral("table"));
+                    tItem->setToolTip(0, QStringLiteral("数据集 #%1").arg(ft.dsId));
+                    tItem->setExpanded(true);
+                    owner = tItem;
+                }
+                for (const Column &col : ft.table->columns)
+                {
+                    auto *cItem = new QTreeWidgetItem(owner);
+                    cItem->setText(0, col.name);
+                    cItem->setText(1, col.unit);
+                    cItem->setData(0, kRoleColumn, col.name);
+                    cItem->setData(0, kRoleTable, ft.table->name);
+                    cItem->setData(0, kRoleDatasetId, ft.dsId);
+                    cItem->setData(0, kRoleNodeKind, QStringLiteral("column"));
+                    cItem->setFlags(cItem->flags() | Qt::ItemIsDragEnabled);
+                    cItem->setToolTip(0, QStringLiteral("拖到画布即可绘制 %1.%2").arg(ft.table->name, col.name));
+                }
             }
         }
         else if (m_shownChip == 1)
@@ -820,27 +826,24 @@ int DataManagerPanel::sourceNodeCount() const { return m_tree->topLevelItemCount
 
 int DataManagerPanel::datasetNodeCount() const
 {
-    // 当前展开源下的 dataset 节点数（取第一个源，兼容单源测试）。
-    QTreeWidgetItem *src = m_tree->topLevelItem(0);
-    if (!src) return 0;
-    int n = 0;
-    for (int i = 0; i < src->childCount(); ++i)
-        if (src->child(i)->data(0, kRoleNodeKind).toString() == QStringLiteral("dataset")) ++n;
-    return n;
+    // dataset 层已在 UI 透明化，改从数据模型统计当前展开源的数据集数。
+    const DataSourceInfo *info = m_sources.get(m_shownSourceId);
+    return info ? info->datasetIds.size() : 0;
 }
 
 int DataManagerPanel::tableNodeCount(int datasetIndex) const
 {
-    QTreeWidgetItem *src = m_tree->topLevelItem(0);
-    if (!src) return 0;
-    int d = 0;
-    for (int i = 0; i < src->childCount(); ++i)
-    {
-        QTreeWidgetItem *child = src->child(i);
-        if (child->data(0, kRoleNodeKind).toString() != QStringLiteral("dataset")) continue;
-        if (d++ == datasetIndex) return child->childCount();
-    }
-    return 0;
+    // 单表时表节点被省掉（源 → 列），故从数据模型统计字段表数而非 UI 节点。
+    // datasetIndex 保留以兼容调用方，跨数据集的表统一计入。
+    Q_UNUSED(datasetIndex);
+    const DataSourceInfo *info = m_sources.get(m_shownSourceId);
+    if (!info) return 0;
+    int n = 0;
+    for (int dsId : info->datasetIds)
+        if (const Dataset *ds = m_repo.get(dsId))
+            for (int t = 0; t < ds->tableCount(); ++t)
+                if (!isKeyValueTable(ds->table(t))) ++n;
+    return n;
 }
 
 QString DataManagerPanel::sourceStateText(int row) const

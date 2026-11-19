@@ -16,18 +16,17 @@ class QVBoxLayout;
 
 // 数据源管理面板：左侧停靠区的**数据源树**（对齐老 DataSourceDock 的形态）。
 //
-// 结构（老代码是"每行一条数据源，展开后显示 dataset 树"）：
+// 结构（一源一行；单表源展开直接是列；多表源才显示表节点分组）：
 //   ┌ 标题：数据源 · N 已连接 ────────────────────┐
 //   │ [字段][参数][消息]  ← 三 chip 切换树内容      │
-//   │ [ 搜索字段 / 参数 / 消息 ]                    │
+//   │ [ 搜索字段 / 参数 / 消息 ]  ← 搜索框            │
 //   ├ 数据源树（QTreeWidget，每行一个源，可展开）────┤
-//   │  ▼ demo_flight.csv        已加载 · 6 通道     │ ← 顶层：数据源
-//   │     ▼ #0 src1_csv          3000 行            │   dataset
-//   │        ▼ att               3000 行·2999s      │   表
-//   │              att_roll[deg]                    │   列（拖到画布/双击激活）
-//   │              att_pitch[deg]                   │
-//   │     ▶ 参数 / 消息           （chip 切换时显示）│
-//   │  ▼ other.csv              ...                 │
+//   │  ▼ demo_flight.csv        已加载 · 6 通道     │ ← 顶层：数据源（一行）
+//   │        att_roll[deg]                        │   单表：列直接挂源下（dataset/表节点都省）
+//   │        att_pitch[deg]                       │
+//   │  ▼ multi.csv              已加载 · N 通道     │ ← 多表源：表节点分组
+//   │     ▼ table_a             ...               │
+//   │           col_x                             │
 //   └────────────────────────────────────────────────┘
 //
 // 关键交互：顶层"数据源"行可展开/折叠（同一时刻只展开一个，抄老代码）；
@@ -48,8 +47,8 @@ public:
 
     // --- 诊断/测试用（契约保持不变）---
     int sourceNodeCount() const;             // 顶层数据源行数
-    int datasetNodeCount() const;            // 当前展开源下的 dataset 节点数
-    int tableNodeCount(int datasetIndex) const;
+    int datasetNodeCount() const;            // 当前展开源的数据集数（数据模型）
+    int tableNodeCount(int datasetIndex) const; // 首源的字段表数（数据模型，含被省掉的节点）
     int shownSourceId() const { return m_shownSourceId; }
     QString sourceStateText(int row) const;
     int activeChip() const;
@@ -84,7 +83,7 @@ private:
     QLabel *m_header = nullptr;
     QToolButton *m_chips[3] = {nullptr, nullptr, nullptr};
     QLineEdit *m_filter = nullptr;
-    QTreeWidget *m_tree = nullptr;           // 统一数据源树：源 → dataset → 表 → 列
+    QTreeWidget *m_tree = nullptr;           // 统一数据源树：源 → (表) → 列；单表省表节点
     QLabel *m_empty = nullptr;               // 空态提示（无源时显示，树隐藏）
 
     int m_shownSourceId = -1;   // 当前展开的源
