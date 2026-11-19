@@ -772,6 +772,7 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     }
     // ---- ASCII 词法字段（SPEC §7）：先解析，因为 ASCII 段的 count 可缺省（默认 1） ----
     seg.literal = o.value(QStringLiteral("literal")).toString().toStdString();
+    seg.key = o.value(QStringLiteral("key")).toString().toStdString();
     if (o.contains(QStringLiteral("delimiter")))
     {
         seg.hasDelimiter = true;
@@ -989,7 +990,8 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
     for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
     {
         const QJsonObject sg = sv.toObject();
-        if (sg.contains(QStringLiteral("literal")) || sg.contains(QStringLiteral("delimiter")) ||
+        if (sg.contains(QStringLiteral("key")) || sg.contains(QStringLiteral("literal")) ||
+            sg.contains(QStringLiteral("delimiter")) ||
             sg.contains(QStringLiteral("width")) || sg.contains(QStringLiteral("rest")) ||
             sg.contains(QStringLiteral("repeater")))
         {
@@ -1214,6 +1216,8 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
     if (asciiSeg)
     {
         if (!seg.literal.empty())
+            if (!seg.key.empty())
+                o["key"] = QString::fromStdString(seg.key);
             o["literal"] = QString::fromStdString(seg.literal);
         if (seg.hasDelimiter)
         {

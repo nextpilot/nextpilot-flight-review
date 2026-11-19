@@ -121,6 +121,7 @@ struct SegmentDef
 
     // ---- ASCII 词法（SPEC §7）：段的边界不再来自字节宽度，而来自定界符/字面量 ----
     std::string literal;                 // 字面量段：必须精确匹配，不产通道（如 "$"、"*"）
+    std::string key;                     // key=value 词法：段的键名（如 "lat"），值是键后到分隔符/记录尾
     bool hasDelimiter = false;
     std::vector<std::string> delimiter;  // 候选定界符集合；"blank" 表示空格/Tab 字符类
     std::string repeater;                // ""（单个）| "*"（重复到下一段边界/记录尾）
@@ -206,13 +207,16 @@ enum class SegBoundary
     Delimit,
     Fixed,
     Rest,
-    Repeat
+    Repeat,
+    Keyed
 };
 
 inline SegBoundary boundaryOf(const SegmentDef &s)
 {
     if (!s.literal.empty())
         return SegBoundary::Literal;
+    if (!s.key.empty())
+        return SegBoundary::Keyed;
     if (s.isRest)
         return SegBoundary::Rest;
     if (s.hasWidth)

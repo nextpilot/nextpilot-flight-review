@@ -113,6 +113,16 @@ void checkAsciiSegment(const QJsonObject &seg, const QString &name, const QMap<Q
                        const QSet<QString> &names, int selfIndex, QStringList &errs)
 {
     const QString lit = seg.value(QStringLiteral("literal")).toString();
+    if (seg.contains(QStringLiteral("key")))
+    {
+        const QString k = seg.value(QStringLiteral("key")).toString();
+        if (k.isEmpty())
+            errs << QStringLiteral("%1：key 不能为空").arg(name);
+        else if (k.contains(QLatin1Char('=')) || k.contains(QLatin1Char(',')))
+            errs << QStringLiteral("%1：key 不能含 = 或 ,：%2").arg(name).arg(k);
+        if (!lit.isEmpty())
+            errs << QStringLiteral("%1：key 与 literal 互斥").arg(name);
+    }
     const bool hasDelim = seg.contains(QStringLiteral("delimiter"));
     const bool hasWidth = seg.contains(QStringLiteral("width"));
     const bool isRest = seg.value(QStringLiteral("rest")).toBool(false);
@@ -330,7 +340,8 @@ QStringList validate(const QJsonObject &o)
         for (const QJsonValue &sv : segArr)
         {
             const QJsonObject sg = sv.toObject();
-            if (sg.contains(QStringLiteral("literal")) || sg.contains(QStringLiteral("delimiter")) ||
+            if (sg.contains(QStringLiteral("key")) || sg.contains(QStringLiteral("literal")) ||
+                sg.contains(QStringLiteral("delimiter")) ||
                 sg.contains(QStringLiteral("width")) || sg.contains(QStringLiteral("rest")) ||
                 sg.contains(QStringLiteral("repeater")))
             {
@@ -365,7 +376,8 @@ QStringList validate(const QJsonObject &o)
         checkNoV1Keys(seg, name, errs);
         checkEmit(seg, name, errs);
 
-        const bool asciiSeg = docAscii || seg.contains(QStringLiteral("literal")) ||
+        const bool asciiSeg = docAscii || seg.contains(QStringLiteral("key")) ||
+                              seg.contains(QStringLiteral("literal")) ||
                               seg.contains(QStringLiteral("delimiter")) ||
                               seg.contains(QStringLiteral("width")) || seg.contains(QStringLiteral("rest")) ||
                               seg.contains(QStringLiteral("repeater"));

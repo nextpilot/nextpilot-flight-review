@@ -446,6 +446,14 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 stop = at;
             }
             const std::vector<std::string> toks = splitTokens(p, pos, stop, seg);
+            if (seg.countIsConst && seg.constCount > 0 && toks.size() > seg.constCount)
+            {
+                r.code = DecodeError::TooManyFields;
+                r.segment = seg.name;
+                r.detail = "声明 " + std::to_string(seg.constCount) + " 个元素，实际切出 " +
+                           std::to_string(toks.size()) + " 个";
+                return false;
+            }
             TypedVec col;
             col.reset(seg.type);
             for (const std::string &tok : toks)
@@ -501,7 +509,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                         col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
                         continue;
                     }
-                    r.code = DecodeError::FieldInvalid;
+                    r.code = (seg.base == 16) ? DecodeError::CheckNotHex : DecodeError::FieldInvalid;
                     r.segment = seg.name;
                     r.detail = perr + "（原文 " + tok + "）";
                     return false;
@@ -518,7 +526,33 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         size_t tokenStart = pos;
         size_t tokenEnd = n;
         size_t nextPos = n;
-        if (seg.hasWidth && seg.width > 0)
+        if (!seg.key.empty())
+        {
+            // key=value：定位 "key="，值到下一个 , ; 空白 或记录尾
+            const std::string pat = seg.key + "=";
+            size_t at = 0;
+            if (!findBytes(p, pos, n, pat, at))
+            {
+                r.segment = seg.name;
+                if (prog.hasTerminator)
+                {
+                    r.code = DecodeError::TooFewFields;
+                    r.detail = "记录中没有键 " + seg.key;
+                    return false;
+                }
+                r.needMore = true;
+                return false;
+            }
+            tokenStart = at + pat.size();
+            size_t vend = tokenStart;
+            while (vend < n && p[vend] != ',' && p[vend] != ';' && !isBlankByte(static_cast<char>(p[vend])))
+                ++vend;
+            tokenEnd = vend;
+            nextPos = vend;
+            while (nextPos < n && (p[nextPos] == ',' || p[nextPos] == ';' || isBlankByte(static_cast<char>(p[nextPos]))))
+                ++nextPos;
+        }
+        else if (seg.hasWidth && seg.width > 0)
         {
             if (pos + seg.width > n)
             {
@@ -583,7 +617,24 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 }
                 if (!haveStop)
                 {
+                    // 先看是不是新记录已经把旧候选截断（流式协议的正常重置）
+                    size_t anchorAt = 0;
+                    if (prog.hasStartAnchor && findBytes(p, pos, n, prog.startAnchor, anchorAt))
+                    {
+                        r.code = DecodeError::RecordAborted;
+                        r.segment = seg.name;
+                        r.detail = "等记录尾时遇到新帧首 " + prog.startAnchor;
+                        r.used = anchorAt;
+                        return false;
+                    }
                     r.segment = seg.name;
+                    if (prog.hasTerminator)
+                    {
+                        // 记录尾已经由 term 界定，还缺字段 → 字段数不足，不是数据不够
+                        r.code = DecodeError::TooFewFields;
+                        r.detail = "记录尾之前找不到段 " + seg.name;
+                        return false;
+                    }
                     r.needMore = true;
                     return false;
                 }
@@ -698,7 +749,20 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     pos = nextPos;
                     continue;
                 }
-                r.code = DecodeError::FieldInvalid;
+                // 值里混进了新帧首 → 旧候选被截断，不是字段本身非法
+                size_t anchorAt = 0;
+                if (prog.hasStartAnchor && findBytes(p, pos, n, prog.startAnchor, anchorAt))
+                {
+                    r.code = DecodeError::RecordAborted;
+                    r.segment = seg.name;
+                    r.detail = "解析段时遇到新帧首 " + prog.startAnchor;
+                    r.used = anchorAt;
+                    return false;
+                }
+                if (seg.base == 16 && tok.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+                    r.code = DecodeError::CheckNotHex;
+                else
+                    r.code = DecodeError::FieldInvalid;
                 r.segment = seg.name;
                 r.detail = perr + "（原文 " + tok + "）";
                 return false;
@@ -1049,8 +1113,12 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
             ++m_dropped;
         else
             ++m_rejected;
+        // 记录被新帧首截断时，具体字段错误都归为"作废"，否则上层无法区分坏帧与正常重置。
+        DecodeError::Code code = r.code;
+        if (aborted && code != DecodeError::RecordAborted && code != DecodeError::OverflowMaxsize)
+            code = DecodeError::RecordAborted;
         if (out.errors.size() < 128)
-            out.errors.push_back({r.code, m_streamOffset, r.segment, r.detail});
+            out.errors.push_back({code, m_streamOffset, r.segment, r.detail});
 
         size_t drop = cutByAnchor ? nextAnchor : consume;
         if (r.code == DecodeError::RecordAborted && r.used > 0 && r.used < drop)

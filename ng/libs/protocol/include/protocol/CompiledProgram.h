@@ -129,6 +129,7 @@ struct CompiledSeg
     bool isAscii = false;
     int boundary = 0;                    // SegBoundary：0 Byte / 1 Literal / 2 Delimit / 3 Fixed / 4 Rest / 5 Repeat
     bool isLiteral = false; // 字面量段：精确匹配、不产通道（如 $ 或 *）
+    std::string key;        // key=value：非空时按 "key=" 定位
     std::string literal;
     bool hasDelimiter = false;
     bool blankDelim = false;             // delimiter:"blank" → 空格/Tab 字符类

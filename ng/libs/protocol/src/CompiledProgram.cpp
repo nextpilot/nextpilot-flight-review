@@ -491,6 +491,7 @@ static bool wantsTokenContext(const SegSpec &s)
 bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
 {
     cs.boundary = static_cast<int>(boundaryOf(s));
+    cs.key = s.key;
     cs.isAscii = (cs.boundary != static_cast<int>(SegBoundary::Byte)) || (c.docHasChar && wantsTokenContext(s));
     if (!s.as.empty())
     {
