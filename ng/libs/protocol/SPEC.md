@@ -56,7 +56,7 @@
 | 键 | 类型 | 作用 | 说明 |
 |---|---|---|---|
 | `name` | string | 唯一名，表达式按名引用 | 必填 |
-| `type` | string | `u8/i8/u16/i16/u32/i32/u64/i64/f32/f64/bool/bcd/char`，或 `@别名` | 必填 |
+| `type` | string | `u8/i8/u16/i16/u32/i32/u64/i64/f32/f64/bool/bcd/char`，或 `types` 里定义的类型别名名 | 必填 |
 | `count` | 数字/表达式 | **元素个数（数组长度）** | 标量省略（默认 1）；**字节数由 `type` 推算，不写**；可引用前面段（`"len"`） |
 | `length` | object | 长度段反算绑定 | 原 `counts`：这段的值必须等于后面字段合计的字节/元素数；见 §2.4 |
 | `endian` | `little`/`big` | 覆盖顶层端序 | 别名 `le`/`be` 在解析层归一，**不再有 `bigEndian` 布尔** |
@@ -65,18 +65,15 @@
 | `transform` | array | 值算子链（解析后按序应用） | `sexagesimal`/`scale`/`mul`/`offset`/`add`/`abs`/`round`/`clamp`；见 §4.3 |
 | `emit` | `channel`/`aux`/`none` | 是否产出通道 | 见 2.2 |
 | `expect` | 数字/字符串/数组 | 常量匹配 | 原 `value` |
-| `expectExpr` | 表达式 | 常量匹配（表达式形式） | 原 `valueExpr` |
 | `checks` | array | **谓词校验**（eq/ne/lt/le/gt/ge/in/range/mask） | 见 §4.1 |
 | `digest` | object | **摘要校验**（crc/sum/xor/parity） | 见 §4.2 |
 | `bit` | object | 位域 | 见 §6 |
 | `if` | 表达式 | 条件字段，false 时整段跳过 | 新增 |
 | `enum` | object | 值→名字映射 | 新增 |
 | `range` | `[min,max]` | **声明**物理范围（不判失败） | 与 `checks.range` 语义区分 |
-| `repeat` | `elems`/`eos`/`until` | 重复方式 | 默认 `elems`（由 `count` 定）；`eos` = 读到帧尾，**必须是最后一个读字节的段**（后面只允许 `bit`/`derive`），否则编译期报错 |
+| `repeat` | `elems`/`eos`/`until` | 重复方式 | 默认 `elems`（由 `count` 定）；`eos` = 读到帧尾，**必须是最后一个读字节的段**（后面只允许 `bit`（不推进字节游标）），否则编译期报错 |
 | `until` | 表达式/字符串 | 重复终止条件（读到该值为止） | 配 `repeat:"until"` |
-| `consume` | bool | ASCII 段是否吃掉结束分隔符 | 见 §7 |
 | `empty` | `"nan"`/`"skip"` | ASCII 空字段策略 | `nan`：空段填 NaN；`skip`：跳过不产出；见 §7 |
-| `derive` | 表达式 | 计算字段（非字节读出） | 新增 |
 | `description` | string | 文档 | 编辑器/Schema 生成用 |
 
 ### 2.2 `emit` 三态（v1 的 `hidden`/`plot`/`hasValue` 三个键已删除）
@@ -429,7 +426,7 @@ PatternMismatch / OverflowMaxsize / IncompleteAtEof`
 
 ### 新增（9 组，补表达力）
 
-`bit` 位域、`if` 条件段、`digest` 拆分+命名算法表+`inject`+位宽、`until`/`consume`/`starts`/`terminator`、`enum`、`range` 声明、`repeat: eos|until`、`derive` 计算字段、`types` 别名。
+`bit` 位域、`if` 条件段、`digest` 拆分+命名算法表+`inject`+位宽、`until`/`starts`/`terminator`、`enum`、`range` 声明、`repeat: eos|until`、`types` 别名。
 
 **ASCII/混合协议（v2 新增，S4a）**：`SegBoundary{Byte,Literal,Delimit,Fixed,Rest,Repeat,Keyed}`
 取代协议级 `lexer`——字节段边界由 `type × count` 推出，字符段由 `literal`/`delimiter`/`width`/`rest`/`key` 声明；
@@ -492,6 +489,6 @@ PatternMismatch / OverflowMaxsize / IncompleteAtEof`
 **psproto v2 的调整不是"加功能"，而是三件事**：
 **修 3 处错**（端序校验、崩溃、除法）、
 **收敛 7 个概念**（role、hidden/plot/hasValue、value、四个文本类型名、fromVariant、size→count、counts→length）、
-**补 9 组表达力**（位域、条件段、digest 参数化与 inject、ASCII 原语、enum、range、repeat、derive 计算字段、types 别名）。
+**补 9 组表达力**（位域、条件段、digest 参数化与 inject、ASCII 原语、enum、range、repeat、types 别名）。
 
 做完这三件，能力覆盖从 3/8 到 8/8，概念数量反而**减少**。

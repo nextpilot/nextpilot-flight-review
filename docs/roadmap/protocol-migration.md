@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 方案待开工（2026-11-18） |
+| 状态 | **已完成（2026-11-19）**；落地见 [`psproto-v2.md` §14](psproto-v2.md) |
 | 老位置 | `src/application/modules/protocol/`（只读参考，一行不动） |
 | 目标 | 把"变长变体"协议的文档模型、解码、入仓、编辑器接到 ng 现有通路（SPI 解析器 + IFormatDriver + Pack + 模块/视图） |
 | 硬约束 | `src/` 不改；headless 部分不依赖 Qt Widgets / Dataset；解析器只喂字节、收批，不写存储 |

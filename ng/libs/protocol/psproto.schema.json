@@ -391,9 +391,7 @@
         "expect": {
           "description": "常量匹配（原 v1 value）"
         },
-        "expectExpr": {
-          "$ref": "#/$defs/expr"
-        },
+
         "checks": {
           "type": "array",
           "items": {
