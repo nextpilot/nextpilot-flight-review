@@ -1,31 +1,33 @@
 {
   "name": "demo_nmea",
-  "description": "NMEA \u5b57\u7b26\u4e32 msgid \u7cfb\u5217\u9009\u62e9",
+  "description": "NMEA 字符串 msgid 系列选择",
   "layout": "sequential",
   "endian": "little",
   "maxsize": 64,
   "segments": [
     {
       "name": "dollar",
-      "size": 1,
+      "count": 1,
       "type": "u8",
       "role": "sync",
-      "value": 36
+      "expect": 36,
+      "emit": "none"
     },
     {
       "name": "msgid",
-      "size": 5,
-      "type": "str"
+      "count": 5,
+      "type": "text"
     },
     {
       "name": "comma",
-      "size": 1,
+      "count": 1,
       "type": "u8",
-      "value": 44
+      "expect": 44,
+      "emit": "none"
     },
     {
       "name": "payload",
-      "size": 4,
+      "count": 4,
       "type": "u8",
       "role": "payload"
     }
@@ -41,14 +43,14 @@
         "segments": [
           {
             "name": "alt",
-            "size": 1,
+            "count": 1,
             "type": "u16",
             "scale": 0.1,
             "unit": "m"
           },
           {
             "name": "hdop",
-            "size": 1,
+            "count": 1,
             "type": "u16",
             "scale": 0.1
           }
@@ -60,14 +62,14 @@
         "segments": [
           {
             "name": "speed",
-            "size": 1,
+            "count": 1,
             "type": "u16",
             "scale": 0.1,
             "unit": "kn"
           },
           {
             "name": "course",
-            "size": 1,
+            "count": 1,
             "type": "u16",
             "scale": 0.1,
             "unit": "deg"

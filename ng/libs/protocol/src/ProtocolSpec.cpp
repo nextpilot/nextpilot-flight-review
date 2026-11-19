@@ -20,6 +20,13 @@ QStringList typeNames()
             QStringLiteral("string"), QStringLiteral("ascii"), QStringLiteral("char")};
 }
 
+// v2 `count` 优先，v1 `size` 兜底。
+static QJsonValue segCount(const QJsonObject &s)
+{
+    return s.contains(QLatin1String("count")) ? s.value(QLatin1String("count"))
+                                              : s.value(QLatin1String("size"));
+}
+
 bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
 {
     std::string t = raw;
@@ -120,11 +127,11 @@ QStringList validate(const QJsonObject &o)
         if (!QRegularExpression(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$")).match(name).hasMatch())
             errs << QStringLiteral("段名只能是标识符：%1").arg(name);
         int n = 0;
-        if (literalSize(seg.value(QStringLiteral("size")), &n))
+        if (literalSize(segCount(seg), &n))
             fixedBytes.insert(name, n * typeBytes(seg.value(QStringLiteral("type")).toString()));
-        else if (!seg.value(QStringLiteral("size")).isString() ||
-                 seg.value(QStringLiteral("size")).toString().trimmed().isEmpty())
-            errs << QStringLiteral("%1 的 size 必须是正整数或表达式").arg(name);
+        else if (!segCount(seg).isString() ||
+                 segCount(seg).toString().trimmed().isEmpty())
+            errs << QStringLiteral("%1 的 count 必须是正整数或表达式").arg(name);
         const QString type = seg.value(QStringLiteral("type")).toString().toLower();
         if (!typeNames().contains(type))
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
@@ -142,11 +149,12 @@ QStringList validate(const QJsonObject &o)
                 roles.insert(role, name);
             if (role == QLatin1String("payload") && type != QLatin1String("u8"))
                 errs << QStringLiteral("payload 段 %1 必须是 u8").arg(name);
-            if (role == QLatin1String("length") && seg.value(QStringLiteral("size")).isDouble() &&
-                seg.value(QStringLiteral("size")).toDouble() > 1)
+            if (role == QLatin1String("length") && segCount(seg).isDouble() &&
+                segCount(seg).toDouble() > 1)
                 errs << QStringLiteral("length 段 %1 应为单元素").arg(name);
         }
-        if (seg.contains(QStringLiteral("value")) && seg.value(QStringLiteral("value")).isUndefined())
+        if ((seg.contains(QStringLiteral("expect")) || seg.contains(QStringLiteral("value"))) &&
+            (seg.contains(QStringLiteral("expect")) ? seg.value(QStringLiteral("expect")) : seg.value(QStringLiteral("value"))).isUndefined())
             errs << QStringLiteral("%1 的 value 无效").arg(name);
 
         const QJsonArray checks = seg.value(QStringLiteral("checks")).toArray();
@@ -194,7 +202,7 @@ QStringList validate(const QJsonObject &o)
                 }
                 const int need = operatorWidth(op);
                 int elem = 0;
-                if (literalSize(seg.value(QStringLiteral("size")), &elem))
+                if (literalSize(segCount(seg), &elem))
                 {
                     const int have = elem * typeBytes(type);
                     if (need > 0 && have != need)
@@ -289,7 +297,7 @@ QStringList validate(const QJsonObject &o)
             {
                 const QJsonObject vseg = vsv.toObject();
                 int n = 0;
-                if (!literalSize(vseg.value(QStringLiteral("size")), &n))
+                if (!literalSize(segCount(vseg), &n))
                 {
                     vvariable = true;
                     continue;
@@ -309,7 +317,7 @@ QStringList validate(const QJsonObject &o)
     for (int b : fixedBytes)
         fixedTotal += b;
     for (const QJsonValue &sv : segArr)
-        if (!sv.toObject().value(QStringLiteral("size")).isDouble())
+        if (!segCount(sv.toObject()).isDouble())
             hasVariable = true;
     if (!hasVariable && fixedTotal > maxsize)
         errs << QStringLiteral("固定段总字节 %1 超过 maxsize %2").arg(fixedTotal).arg(maxsize);

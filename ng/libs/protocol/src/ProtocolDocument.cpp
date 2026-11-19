@@ -507,12 +507,15 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         err = "segment 缺少 name";
         return false;
     }
-    if (!o.contains(QStringLiteral("size")))
+    // v2 键优先，v1 别名兜底（兼容只读期）：count←size，length←counts，expect←value。
+    const QJsonValue countVal = o.contains(QStringLiteral("count"))
+        ? o.value(QStringLiteral("count")) : o.value(QStringLiteral("size"));
+    if (countVal.isUndefined())
     {
-        err = "segment " + seg.name + " 缺少 size";
+        err = "segment " + seg.name + " 缺少 count";
         return false;
     }
-    seg.sizeExpr = jsonExpr(o.value(QStringLiteral("size")), err);
+    seg.sizeExpr = jsonExpr(countVal, err);
     if (!seg.sizeExpr)
         return false;
     if (!parseType(o.value(QStringLiteral("type")).toString(QStringLiteral("u8")).toStdString(), seg.type, err))
@@ -523,14 +526,29 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     seg.scale = o.value(QStringLiteral("scale")).toDouble(1.0);
     seg.offset = o.value(QStringLiteral("offset")).toDouble(0.0);
     seg.role = o.value(QStringLiteral("role")).toString(QStringLiteral("data")).toStdString();
-    seg.hidden = o.value(QStringLiteral("hidden")).toBool(false);
-    seg.plot = o.value(QStringLiteral("plot")).toBool(true);
     seg.unit = o.value(QStringLiteral("unit")).toString().toStdString();
     seg.description = o.value(QStringLiteral("description")).toString().toStdString();
-    if (o.contains(QStringLiteral("value")))
+
+    // emit 三态（v2）；未写 emit 时回退 v1 的 hidden/plot 布尔。
+    if (o.contains(QStringLiteral("emit")))
+    {
+        const QString emitMode = o.value(QStringLiteral("emit")).toString();
+        if (emitMode == QLatin1String("none")) { seg.hidden = true; seg.plot = false; }
+        else if (emitMode == QLatin1String("aux")) { seg.hidden = false; seg.plot = false; }
+        else { seg.hidden = false; seg.plot = true; }
+    }
+    else
+    {
+        seg.hidden = o.value(QStringLiteral("hidden")).toBool(false);
+        seg.plot = o.value(QStringLiteral("plot")).toBool(true);
+    }
+
+    const QJsonValue expectVal = o.contains(QStringLiteral("expect"))
+        ? o.value(QStringLiteral("expect")) : o.value(QStringLiteral("value"));
+    if (!expectVal.isUndefined())
     {
         seg.hasValue = true;
-        seg.valueExpr = jsonExpr(o.value(QStringLiteral("value")), err);
+        seg.valueExpr = jsonExpr(expectVal, err);
         if (!seg.valueExpr)
             return false;
     }
@@ -539,9 +557,10 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         if (!parseChecks(o.value(QStringLiteral("checks")).toArray(), seg.checks, err))
             return false;
     }
-    if (o.contains(QStringLiteral("counts")))
+    const QJsonValue cv = o.contains(QStringLiteral("length"))
+        ? o.value(QStringLiteral("length")) : o.value(QStringLiteral("counts"));
+    if (!cv.isUndefined())
     {
-        const QJsonValue cv = o.value(QStringLiteral("counts"));
         if (cv.isObject())
         {
             const QJsonObject co = cv.toObject();
@@ -723,7 +742,7 @@ static QString typeName(const TypeInfo &ti)
     case FType::F64: return "f64";
     case FType::BOOL: return "bool";
     case FType::BCD: return "bcd";
-    case FType::STR: return "str";
+    case FType::STR: return "text";
     }
     return "u8";
 }
@@ -779,13 +798,11 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
 {
     QJsonObject o;
     o["name"] = QString::fromStdString(seg.name);
-    o["size"] = exprJson(seg.sizeExpr);
+    o["count"] = exprJson(seg.sizeExpr);
     o["type"] = typeName(seg.type);
     const bool docBig = (doc.endian == "big" || doc.endian == "be");
     if (seg.bigEndian != docBig)
         o["endian"] = seg.bigEndian ? "big" : "little";
-    if (seg.role != "data")
-        o["role"] = QString::fromStdString(seg.role);
     if (seg.scale != 1.0)
         o["scale"] = seg.scale;
     if (seg.offset != 0.0)
@@ -794,12 +811,13 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
         o["unit"] = QString::fromStdString(seg.unit);
     if (!seg.description.empty())
         o["description"] = QString::fromStdString(seg.description);
+    // emit 三态回写：hidden→none，非 plot→aux，其余 channel（默认省略）。
     if (seg.hidden)
-        o["hidden"] = true;
-    if (!seg.plot)
-        o["plot"] = false;
+        o["emit"] = "none";
+    else if (!seg.plot)
+        o["emit"] = "aux";
     if (seg.hasValue && seg.valueExpr)
-        o["value"] = exprJson(seg.valueExpr);
+        o["expect"] = exprJson(seg.valueExpr);
     if (!seg.checks.empty())
     {
         QJsonArray checks;
@@ -817,7 +835,7 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
         c["unit"] = QString::fromStdString(seg.counts.unit);
         if (seg.counts.expr)
             c["expr"] = exprJson(seg.counts.expr);
-        o["counts"] = c;
+        o["length"] = c;
     }
     return o;
 }

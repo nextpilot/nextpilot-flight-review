@@ -13,7 +13,10 @@
 
 #include <QByteArray>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QFile>
+#include <QDir>
 #include <QString>
 #include <QStringList>
 
@@ -86,6 +89,59 @@ int main(int argc, char *argv[])
     CHECK(doc2.segments.size() == 3);
     CHECK(toJson(doc2) == roundTrip);
     OK("协议文档：parseDocument/toJson round-trip 稳定");
+
+    // --- 2b) v2 键名：count/emit/expect，validate 通过、回写对称、aux 不出通道 ---
+    {
+        const QByteArray v2 = R"({
+          "name": "v2", "layout": "sequential", "endian": "little", "maxsize": 16,
+          "segments": [
+            {"name": "sync", "count": 1, "type": "u8", "expect": 170, "emit": "none"},
+            {"name": "a", "count": 1, "type": "u16"},
+            {"name": "b", "count": 1, "type": "u16", "scale": 0.1, "emit": "aux"}
+          ]
+        })";
+        const QJsonObject v2Root = QJsonDocument::fromJson(v2).object();
+        CHECK(validate(v2Root).isEmpty());
+        ProtocolDocument v2Doc;
+        CHECK(parseDocument(v2Root, v2Doc, err));
+        const QJsonObject v2Out = toJson(v2Doc);
+        CHECK(v2Out.value("segments").toArray().at(0).toObject().contains("count"));
+        CHECK(!v2Out.value("segments").toArray().at(0).toObject().contains("size"));
+        ProtocolDocument v2Doc2;
+        CHECK(parseDocument(v2Out, v2Doc2, err));
+        CHECK(toJson(v2Doc2) == v2Out);
+
+        QByteArray v2Frames;
+        appendFrame(v2Frames, 100, 50);
+        appendFrame(v2Frames, 200, 100);
+        ProtocolDecodeResult v2Res = decodeSequential(v2Frames, v2Doc);
+        CHECK(v2Res.ok);
+        // b 为 aux，不出通道；只剩 a。
+        CHECK(v2Res.channels.size() == 1);
+        CHECK(v2Res.channels.at(0).name == "frame.a");
+        OK("v2 键名：count/emit/expect 校验通过、回写对称、aux 段不出通道");
+    }
+
+    // --- 2c) 仓库 fixture：两个顺序方言模板迁移到 v2 键名后仍通过 validate/parse ---
+#ifdef NG_TEST_FIXTURE_DIR
+    {
+        const QStringList fixtures = {
+            QStringLiteral("demo_sequential.psproto"), QStringLiteral("demo_nmea.psproto")};
+        for (const QString &fn : fixtures)
+        {
+            QFile f(QDir(QLatin1String(NG_TEST_FIXTURE_DIR)).filePath(fn));
+            if (!f.exists())
+                continue;
+            CHECK(f.open(QIODevice::ReadOnly));
+            const QJsonObject fr = QJsonDocument::fromJson(f.readAll()).object();
+            const QStringList fissues = validate(fr);
+            CHECK(fissues.isEmpty());
+            ProtocolDocument fd;
+            CHECK(parseDocument(fr, fd, err));
+        }
+        OK("fixture：顺序方言模板 v2 键名通过 validate/parse");
+    }
+#endif
 
     // --- 3) 表达式求值 ---
     EvalCtx ctx;

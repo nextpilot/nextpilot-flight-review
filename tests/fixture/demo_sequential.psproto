@@ -12,34 +12,36 @@
   "segments": [
     {
       "name": "sync1",
-      "size": 1,
+      "count": 1,
       "type": "u8",
       "role": "sync",
-      "value": 170
+      "expect": 170,
+      "emit": "none"
     },
     {
       "name": "sync2",
-      "size": 1,
+      "count": 1,
       "type": "u8",
       "role": "sync",
-      "value": 85
+      "expect": 85,
+      "emit": "none"
     },
     {
       "name": "seq",
-      "size": 1,
+      "count": 1,
       "type": "u8"
     },
     {
       "name": "msgid",
-      "size": 1,
+      "count": 1,
       "type": "u16"
     },
     {
       "name": "length",
-      "size": 1,
+      "count": 1,
       "type": "u16",
       "role": "length",
-      "counts": {
+      "length": {
         "fields": [
           "payload"
         ],
@@ -48,20 +50,21 @@
     },
     {
       "name": "time_s",
-      "size": 1,
+      "count": 1,
       "type": "u32"
     },
     {
       "name": "payload",
-      "size": "length",
+      "count": "length",
       "type": "u8",
       "role": "payload"
     },
     {
       "name": "crc",
-      "size": 1,
+      "count": 1,
       "type": "u8",
       "role": "checksum",
+      "emit": "none",
       "checks": [
         {
           "op": "crc8",
@@ -83,14 +86,14 @@
         "segments": [
           {
             "name": "roll",
-            "size": 1,
+            "count": 1,
             "type": "i16",
             "scale": 0.01,
             "unit": "rad"
           },
           {
             "name": "pitch",
-            "size": 1,
+            "count": 1,
             "type": "i16",
             "scale": 0.01,
             "unit": "rad"
@@ -106,7 +109,7 @@
         "segments": [
           {
             "name": "temp",
-            "size": 1,
+            "count": 1,
             "type": "i16",
             "scale": 0.1,
             "unit": "C"

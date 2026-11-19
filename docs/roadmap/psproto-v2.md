@@ -635,6 +635,18 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 | **S4c** | codegen 处理含脚本模板 | 遇到 `lua` 节点**显式报错并列出段名**，不静默降级 |
 | **S5** | 模板 codegen（帧结构 → 解析器源码） | 生成的 C++ 解析器与解释器逐字段一致 |
 
+### 5.1 S1 落地状态（2026-11-19）
+
+**已落地并推送**
+- `psproto.schema.json`（draft 2020-12，13 个 `$defs`）与用户视角 `README.md`（含 v1→v2 键名对照表）。
+- 解析器 v2 键名兼容层：读取侧 `count`←`size`、`length`←`counts`、`expect`←`value`、`emit` 三态（none/aux/channel）；序列化侧回写 v2 键；`text` 作为 `str/string/ascii/char` 别名被 `parseType` 接受。
+- 顺序方言 fixture `demo_sequential.psproto`、`demo_nmea.psproto` 迁移到 v2 键名；`ng_test_protocol` 增加 v2 round-trip 与 fixture 加载校验用例，全量 ctest 11/11 通过。
+
+**仍属 S1/S2 边界，未在本轮完成**
+- 内部 `SegmentDef` 模型仍保留 `role/hidden/plot/hasValue/counts` 字段；`role` 仍是 codec 绑定 payload/length/sync/checksum 的结构依据。模板层已不要求写 `role`，但内部模型去 `role`、改由 `series.payload` 段名与 `length`/`digest` 键解析，留到 **S2 typed 重构** 一并做。
+- 5 个旧位置方言 fixture（`demo_family/generic/proto/demo/variable`）不是本顺序引擎消费的格式，未迁移。
+- 表达式类型感知除法/取模、段表编译、typed 全链路、诊断结构化、fuzz 见 S2 及后续批次。
+
 ---
 
 ## 6. 需要拍板的两点

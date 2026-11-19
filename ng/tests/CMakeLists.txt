@@ -5,6 +5,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_executable(ng_test_protocol test_protocol.cpp)
 target_link_libraries(ng_test_protocol PRIVATE
     ng_protocol ng_ext_common ng_ext_registry ng_host ng_core Qt6::Core)
+target_compile_definitions(ng_test_protocol PRIVATE
+    NG_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/../tests/fixture")
 set_target_properties(ng_test_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_protocol COMMAND ng_test_protocol)
 add_executable(ng_test_architecture test_architecture.cpp)
