@@ -410,7 +410,7 @@ SPI 解析器的职责被刻意收窄为「字节 → 结构化批」，于是�
 | `mod.report` | 报告产出：模板渲染、导出 | `report.preview` 面板 | 不知道报告内容 |
 | `mod.script` | 脚本引擎：Lua 门面、Job 录制回放 | — | 不知道业务语义 |
 
-> **实现状态（2026-11-19）**：上表是**目标态**。`mod.source`/`mod.dataset` 拆分与 `mod.report` 的落地裁决见 [`modules-organ-completion.md`](../docs/roadmap/modules-organ-completion.md)（待拍板）——当前代码二者仍合并为 `mod.data`、`mod.report` 暂不建成品（只备扩展点）；另 `mod.protocol`（协议编辑）与 `mod.settings`（设置）已实现，见 §11。数据模型 `Dataset`/`DataRepository` 下沉独立库的设计见 [`dataset-lib-extraction.md`](../docs/roadmap/dataset-lib-extraction.md)（待拍板）。
+> **实现状态（2026-11-19）**：上表是**目标态**。`mod.source`/`mod.dataset` 拆分与 `mod.report` 的落地裁决见 [`modules-organ-completion.md`](../docs/roadmap/modules-organ-completion.md)（待拍板）——当前代码二者仍合并为 `mod.data`、`mod.report` 暂不建成品（只备扩展点）；另 `mod.protocol`（协议编辑）与 `mod.settings`（设置）已实现，见 §11。数据模型 `Dataset`/`DataRepository` 下沉独立库的设计见 [`dataset-lib-extraction.md`](../docs/roadmap/dataset-lib-extraction.md)（待拍板）。注册表/意向/schema→UI 三项机制下沉 libs 的设计见 [`mechanism-libs-extraction.md`](../docs/roadmap/mechanism-libs-extraction.md)（待拍板）。
 
 ### 4.2 器官之间相对独立
 

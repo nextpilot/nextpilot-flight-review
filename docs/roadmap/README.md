@@ -36,3 +36,4 @@
 | [psproto v2 规范（协议本体）](../libs/protocol/SPEC.md) | **已定稿**（2026-11-19） | 段键表、emit 三态、digest/inject、位域、ASCII、覆盖矩阵 8/8、12 项交付标准 |
 | [器官补齐架构设计](modules-organ-completion.md) | **设计定稿，部分拍板**（2026-11-19） | source/dataset 拆分裁决（含 v1 纠错）、模块边界 ≠ UI 边界、report 暂不做成品只备扩展点/契约/意图常量、命名裁决（`SourceRegistry` ✅已定 / `ToolboxDomain` 待定）、R0–R4 落地建议；拍板后交实现 |
 | [dataset 抽库设计](dataset-lib-extraction.md) | **待拍板**（2026-11-19） | 把 `Dataset`/`DataRepository` 从 core 下沉为 `ng/libs/dataset`；`Result` 必须下沉 `ng_foundation`（防循环/防污染）、命名空间保持 core 先行、R-D1/R-D2 批次；拍板后交实现 |
+| [机制抽库设计](mechanism-libs-extraction.md) | **待拍板**（2026-11-19） | recording 归属裁决（独立正当、接口归位）、5 套注册表统一为泛型 `Registry<T>`、意向机制抽 `ng_intent`、**schema→UI 抽库（统一 `FormSchema`/`FieldSpec`/`FieldType` 契约，本设计重点）**、M1–M5 批次；拍板后交实现 |
