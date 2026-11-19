@@ -73,8 +73,6 @@ endif()
 add_subdirectory(libs/foundation)
 
 # === 注册表最小核（header-only，先于 core 定义）===
-# 泛型 Registry<T> + 自注册助手。各具体表退化为薄壳委托；core PUBLIC 链它。
-# 无 QWidget / Rust / core 业务依赖，headless 可用，可独立链接验收。
 add_subdirectory(libs/registry)
 
 # === 数据地基（可独立链接，先于 core 定义）===

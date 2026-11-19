@@ -1,17 +1,10 @@
-# LibBoundaryGuard.cmake —— 把 AGENTS.md §5 / master-plan §7.3 的 libs 铁律
-# 变成 CMake configure 期的硬失败（编译还没开始就红）。
+# LibBoundaryGuard.cmake —— configure 期扫描 libs 边界，违规直接报错。
 #
-# 设计哲学：宁可漏报，不可误报。误报会逼开发者加豁免，守卫就形同虚设。
-# 只检测三类能静态判定、零/低误报、且真实会发生的破口：
-#   1. libs 源码 #include "../" 逃出库目录（物理隔离破口）
-#   2. libs target 链接上层 target（依赖倒挂：core/host/gui/app/modules/extensions）
-#   3. Meyers 单例 static T& instance()（铁律禁止的全局活实例）
-# 另：namespace core 残留只发 WARNING——B7 core 消亡收口前是合法中间态。
-#
-# 不检测的（交给 code review / ctest，正则不可靠）：
-#   - 命名空间级普通全局对象实例（易与 extern 声明/类型定义混淆）
-#   - 服务定位器式 ctx.xxx() 取用（属调用习惯，非文本可判）
-#   - static 自注册对象（铁律明确允许，故意不拦）
+# 只查三类能静态判定的破口，宁可漏报不可误报：
+#   1. libs 内 #include "../" 逃出库目录
+#   2. libs target 链接上层（core/host/gui/app/modules/extensions）
+#   3. Meyers 单例 static T& instance()
+# namespace core 残留只告警，B7 收口后再改失败。
 
 get_filename_component(_NG_LIB_GUARD_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
@@ -22,12 +15,8 @@ function(_ng_lib_guard_sources)
   foreach(_f IN LISTS _srcs)
     file(READ "${_f}" _txt)
 
-    # 先剥离注释再扫描：注释里解释「为什么不用单例」（如字面量 static T& instance()）
-    # 不应触发误报——误报会逼人给守卫加豁免，守卫就形同虚设。
-    # 用 file(READ) 全文 + 显式排除换行的注释正则：
-    #   不能用 file(STRINGS)——它对含 UTF-8 中文的整行切分有 bug，会把注释行拦腰截断，
-    #   反而把注释里的字面量暴露成「代码」造成误报（实测踩过）。
-    #   [^\n\r]* 明确不跨行，故 // 只吃到行尾；跨行块注释本仓库 libs 不使用。
+    # 先剥离注释再扫描，否则注释里提到的字面量会被当成代码误报。
+    # 用 file(READ) 全文而非 file(STRINGS)：后者切分含中文的 UTF-8 行会把字节流截断。
     string(REGEX REPLACE "//[^\n\r]*" "" _scan "${_txt}")
     string(REGEX REPLACE "/\\*[^\n\r]*\\*/" "" _scan "${_scan}")
 
@@ -35,23 +24,22 @@ function(_ng_lib_guard_sources)
     if(_scan MATCHES "#[ \t]*include[ \t]*\"\\.\\./")
       message(FATAL_ERROR
         "[libs 边界] ${_f}\n"
-        "  libs 内禁止 #include \"../\" 逃出库目录。跨库/上层引用必须走公开 include 路径，"
-        "否则物理隔离失效（AGENTS §5.2 / master-plan §7.3）。")
+        "  libs 内禁止 #include \"../\" 逃出库目录。跨库/上层引用必须走公开 include 路径。")
     endif()
 
     # 破口 3：Meyers 单例——铁律禁止的全局活实例。
     if(_scan MATCHES "static[ \t]+[A-Za-z_][A-Za-z0-9_:<>, \t]*&[ \t]*instance[ \t]*\\(")
       message(FATAL_ERROR
         "[libs 边界] ${_f}\n"
-        "  检测到 Meyers 单例 static T& instance()。libs 铁律禁止全局活实例/单例；"
-        "请改用纯函数，或把实例交给上层组合根持有（master-plan §7.3）。")
+        "  检测到 Meyers 单例 static T& instance()。libs 禁止全局活实例/单例；"
+        "请改用纯函数，或把实例交给上层组合根持有。")
     endif()
 
     # 提示：core 命名空间残留。B7 收口前是合法中间态，故只警告不失败。
     if(_scan MATCHES "namespace[ \t]+nextpilot::plotscope::core")
       message(WARNING
         "[libs 边界] ${_f} 仍用 nextpilot::plotscope::core 命名空间，"
-        "应随 B7 core 消亡收口为所属库名（master-plan §7.7）。")
+        "应随 B7 core 消亡收口为所属库名。")
     endif()
   endforeach()
 endfunction()
@@ -85,7 +73,7 @@ function(_ng_lib_guard_targets)
             message(FATAL_ERROR
               "[libs 边界] target '${_t}' 通过 ${_prop} 链接上层 '${_l}'。\n"
               "  libs 只能向下依赖 foundation / Qt / 系统库，"
-              "禁止依赖 core / host / gui / modules / app / extensions（master-plan §7.5）。")
+              "禁止依赖 core / host / gui / modules / app / extensions。")
           endif()
         endforeach()
       endif()

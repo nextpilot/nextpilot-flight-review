@@ -1,6 +1,5 @@
-// B3 验收：registry 机制可独立链接、独立复用。
-// 只 include 两个公开头、只链 ng_registry + Qt6::Core，不链 ng_core。
-// 覆盖：泛型 CRUD + 自注册助手（AutoRegistrar / NG_AUTO_REGISTER 宏）。
+// registry 独立验收：只链 ng_registry + Qt6::Core，不链 ng_core。
+// 验证泛型 CRUD、自注册宏、工厂型条目。
 
 #include "Registry.h"
 #include "StaticAutoRegistry.h"
@@ -29,16 +28,16 @@ int g_failed = 0;
         }                                                                      \
     } while (0)
 
-// 自注册条目：模拟「工厂函数」这类具体注册表条目（无 QWidget / 无 core 依赖）。
+// 测试用的条目类型。
 struct Ping
 {
     int value;
 };
 
-// 启动期自注册一个条目，验证 AutoRegistrar 与宏在 main 之前完成登记。
+// 启动期自注册，验证宏在 main 前已登记。
 NG_AUTO_REGISTER(Ping, probe, QStringLiteral("builtin"), Ping{42})
 
-// 供 CRUD 用例使用的另一套表（不同 T 互不串表）。
+// 另一套表，验证不同条目类型互不串表。
 using StringRegistry = Registry<std::string>;
 } // namespace
 

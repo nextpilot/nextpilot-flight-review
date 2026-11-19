@@ -3,8 +3,7 @@
 #include "AppContext.h"
 #include "IIntentExecutor.h"
 
-// B3：泛型注册表核 + 自注册助手。本文件退化为薄壳——
-// 容器行为（增删查遍历）委托给 registry::Registry，自身只保留类型定义与对外 API。
+// B3：容器换成泛型 Registry，对外 API 与 NG_REGISTER_PANEL 宏不变。
 #include "Registry.h"
 #include "StaticAutoRegistry.h"
 
@@ -13,8 +12,7 @@ namespace nextpilot::plotscope::core
 
 namespace
 {
-// 静态共享表：C++17 inline 变量（铁律允许的「静态对象」例外），启动期构造。
-// 对外 registerPanel/create/types 与 NG_REGISTER_PANEL 宏完全不变，调用方零改动。
+// 面板工厂表：启动期自注册，运行期只读。
 registry::Registry<PanelFactoryRegistry::Factory> &factories()
 {
     return registry::StaticRegistry<PanelFactoryRegistry::Factory>::table;
