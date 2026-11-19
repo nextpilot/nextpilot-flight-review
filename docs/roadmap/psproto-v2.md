@@ -223,8 +223,8 @@ private:
 
 | 优先级 | 能力 | 设计 | 覆盖收益 |
 |---|---|---|---|
-| P0 | **读终止符** `until` | 段声明终止字节序列，读到即切帧；与 `size` 互斥；`finish` 时无终止符则丢弃或按 `fallback` 处理 | ASCII 行协议全部 |
-| P0 | **文本数字** `text_number` | 读到的 ASCII 片段按 `radix`（10/16）转 double；支持前导空格、`+/-`、科学计数 | CSV/NMEA/OEM7 |
+| P0 | **行帧 + 读终止符** `until` | 见 §4.9：帧以 `\r\n` 结束，字段读到分隔符为止 | NMEA / 行式 ASCII |
+| P0 | **文本数字** `text_number` / `time_hhmmss` | 见 §4.9：ASCII 片段转数值，含空字段策略 | NMEA / 行式 ASCII |
 | P0 | **派生通道** `derive` | 表达式产通道（引用前序段、可用位运算）；取代 `valueExpr` 只校验的局限 | ARINC/ADS-B/CAN 手工解 |
 | P0 | **位域** `bit.*` | 见 §4.8：段可声明位偏移/位宽/位序，跨字节不对齐 | CAN/J1939/1553/ARINC/DBC |
 | P1 | **参数化 CRC** `op:"crc"` | 宽度显式（8/16/24/32/64）+ `poly/init/refin/refout/xorout` 全显式，`alg:"crc24q"` 可指向内含算法表；旧算子保留为别名 | RTCM3/任意标准 CRC |
@@ -497,6 +497,142 @@ phys = raw * scale + offset;
 
 ---
 
+---
+
+## 4.9 ASCII：以 NMEA 为目标（不做通用 CSV 引擎）
+
+> 需求原话：「ASCII 主要是想解析类似 NMEA 这样的」。
+
+### 4.9.1 为什么收窄是对的
+
+通用 ASCII 引擎（CSV 引号转义、JSON、键值对、多行续行）会把这个库从"帧模板语言"变成 **tokenizer**，代价是 schema 复杂度翻倍、codegen 三语言难等价，而收益只覆盖少数格式。
+
+NMEA 一族用 **5 个原语**就能完整覆盖，且其中 `until` / `text_number` 是通用原语——将来真要做 CSV，是在同一套原语上加"引号转义"两个标志位，不是另起一套。
+
+**因此本节范围：NMEA 0183（含厂商私有语句）+ AIS 封装（P2）。明确不做：CSV/JSON/键值对/多行续行。**
+
+### 4.9.2 先承认现状不可用
+
+现在 `tests/fixture/demo_nmea.psproto` 是**假的**：它把 `msgid` 当定长 5 字节，把 payload 当定长 4 字节的 `u8`，再用 `u16 × scale:0.1` 假装读出 `alt/hdop`。真实 NMEA 是可变长度、逗号分隔、ASCII 文本。**这份模板解不了任何真实日志**——这是现状的第一个 ASCII 坑，必须先说明白。
+
+### 4.9.3 真实帧结构
+
+```
+$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n
+└起始  └地址└时间 └纬度   └半球└经度...                    └校验└终止
+```
+
+- 起始符：`$`（0183）或 `!`（AIS 封装）；
+- 地址：5 字符 = talker(2) + sentence(3)，如 `GPGGA`；
+- 字段：逗号分隔，**可能为空**（`,` 之间什么都没有）；
+- 校验：`*` + 2 位十六进制，算法是 **`$` 与 `*` 之间所有字符的 XOR8**（不是 CRC）；
+- 终止：`\r\n`。
+
+### 4.9.4 五个原语
+
+| 原语 | 语义 | 为什么必须有 |
+|---|---|---|
+| `frame.terminator` | 帧结束符（`"\r\n"`），`finish` 时冲刷 | 行帧的边界，替代"猜长度" |
+| `frame.starts` | 合法起始字节集合（`["$","!"]`） | 重同步：只在行首找起始符，不做逐字节暴力扫描 |
+| 段级 `until` | 读到指定字节序列为止（**不含**该序列） | 字段变长的唯一表达方式 |
+| 段级 `consume` | 读完再吞掉 N 个字节（通常是 1 个分隔符） | 一个字段一行，不必为每个逗号再写一段 |
+| `type: text_number` | ASCII 片段 → 数值（`radix` 10/16，支持 `+/-`/小数/科学计数） | 字段里是 `"4807.038"`，不是二进制 |
+| `type: time_hhmmss` | `hhmmss.ss` → 当日秒数（含小数） | NMEA 时间字段的专用格式，转数值才能当时间轴 |
+
+`type: hex2` 用于两位十六进制校验字段（`*4A` → 74）。
+
+### 4.9.5 字段模板（GGA 片段，真实可解）
+
+```jsonc
+{
+  "name": "nmea0183",
+  "layout": "sequential",
+  "endian": "little",
+  "frame": { "starts": ["$", "!"], "terminator": "\r\n" },
+  "segments": [
+    { "name": "start",  "type": "u8", "size": 1, "role": "sync", "value": "$" },
+    { "name": "addr",   "type": "ascii", "size": 5, "hidden": true },   // GPGGA
+    { "name": "sep0",   "type": "u8", "size": 1, "hidden": true, "consume": 0, "value": "," },
+
+    { "name": "utc",    "type": "time_hhmmss", "until": ",", "consume": 1, "unit": "s" },
+    { "name": "lat",    "type": "text_number", "until": ",", "consume": 1, "radix": 10, "empty": "nan" },
+    { "name": "ns",     "type": "ascii", "until": ",", "consume": 1, "hidden": true },
+    { "name": "lon",    "type": "text_number", "until": ",", "consume": 1, "empty": "nan" },
+    { "name": "ew",     "type": "ascii", "until": ",", "consume": 1, "hidden": true },
+    { "name": "fix",    "type": "text_number", "until": ",", "consume": 1, "empty": "skip" },
+    { "name": "sats",   "type": "text_number", "until": ",", "consume": 1, "empty": "skip" },
+    { "name": "hdop",   "type": "text_number", "until": ",", "consume": 1, "empty": "nan" },
+    { "name": "alt",    "type": "text_number", "until": ",", "consume": 1, "unit": "m", "empty": "nan" },
+    // … 水位/单位/差分龄期/站号，同构
+    { "name": "bodyEnd","type": "u8", "size": 0, "hidden": true },       // 校验区间的右端点锚
+
+    { "name": "star",   "type": "u8", "size": 1, "hidden": true, "value": "*" },
+    { "name": "csum",   "type": "hex2", "size": 1,
+      "checks": [ { "op": "xor8", "over": ["addr..bodyEnd"] } ] },
+    { "name": "eol",    "type": "u8", "size": 2, "hidden": true, "value": "\r\n" }
+  ],
+  "series": {                       // 按地址切语句类型
+    "selector": "addr",
+    "payload": "bodyEnd",
+    "fallback": "raw",
+    "variants": [ { "value": "GPGGA", "name": "gga", "segments": [] },
+                  { "value": "GPRMC", "name": "rmc", "segments": [] } ]
+  }
+}
+```
+
+关键点解释：
+
+- **`until` + `consume: 1`** 一个字段一行，不为每个逗号单独写段；
+- **`bodyEnd` 是零长度锚点**，给校验提供"从 addr 到最后字段末尾"的区间——见 §4.9.6；
+- **`series` 按 `addr` 切变体**：GGA 与 RMC 字段结构不同，用变体而不是硬塞一个模板；
+- **`empty`**：空字段（`,,`）常见，`nan` 表示产 NaN 点，`skip` 表示本帧该通道不产点。
+
+### 4.9.6 校验范围必须支持"段区间"
+
+现状 `over: ["name:from-to"]` 只能按**字节偏移**指定范围。NMEA 的 XOR 范围是"从地址字段首字节到最后字段末字节"，长度随内容变——偏移是运行期才知道的。
+
+所以 `over` 增加区间形式：
+
+```jsonc
+"over": ["addr..bodyEnd"]     // 左闭右开：addr 首字节 → bodyEnd 首字节之间
+"over": ["addr..lastField"]   // 也接受段名直接配对
+"over": ["body:0-10"]         // 原字节偏移形式保留不变
+```
+
+实现上：段表编译期把 `..` 记成 `(startSegIndex, endSegIndex)`，解码期解析完这些段后就有实际字节区间，XOR/CRC 直接在该区间算。**顺序解析天然满足这个条件**，不需要额外机制。
+
+### 4.9.7 重同步：按行首，不按字节
+
+ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）。规则：
+
+1. 在残余缓冲里找最近的 `\n`（或 `frame.starts` 中任一字节）；
+2. 从该位置重新按行解析；
+3. 一帧内字段数不符 / 校验失败 → 丢弃整行，跳到下一个 `\n`。
+
+这样错误成本是"一行"，不是"一字节一次重试"。
+
+### 4.9.8 明确不做
+
+| 不做 | 理由 |
+|---|---|
+| CSV 引号转义 / 内嵌逗号 | 属于 CSV 方言，NMEA 用不到 |
+| JSON / 键值对 | 结构嵌套，应交给专用解析器 |
+| 多行续行 | NMEA 无此需求 |
+| 跨帧日期拼装（RMC 日期 + GGA 时间 → 绝对 UTC） | 属于多帧状态重组，超出帧模板职责；先出"当日秒数"，绝对时间由上层或脚本处理 |
+| AIS 6bit armor 解码 | P2，可用脚本或专用类型，先不做 |
+
+### 4.9.9 验收
+
+1. 一份**真实** NMEA 日志（GGA+RMC+GSA 混合，≥500 行，含 CRC 错误行与截断行）能完整解析；
+2. 逐行字段值与独立工具（`nmea-parser` 或自写 python 脚本）比对，数值字段全部相等；
+3. 校验错误行被拒并计数，**不污染**通道；
+4. 截断行（缺 `\r\n`）在 `finish` 时正确处理；
+5. 空字段产 `NaN` 或跳过，行为符合 `empty` 声明；
+6. 重同步成本为"丢一行"，100 KB 日志解析耗时与行数线性相关（不是二次）。
+
+---
+
 ## 5. 分批与验收
 
 | 批次 | 内容 | 验收 |
@@ -513,15 +649,11 @@ phys = raw * scale + offset;
 
 ## 6. 需要拍板的五个点
 
-1. **ASCII 支持范围**：做到“分隔符切分 + 文本数字 + 键值对”（覆盖 NMEA/CSV/行协议，工作量中等），还是只做“定长 ASCII 字段”（工作量小，但 ASCII 覆盖仍然接近 0）？
-   建议：**做全**。不做全，这个库就只能描述二进制，而你的需求明确要求 ASCII。
-2. **位域实现方式**：内置 `bit.offset/width`（schema 变复杂，但 CAN/J1939/1553 直接能写），还是只靠 `derive` 里的 `>>`/`&` 手工拼（schema 不变，但模板可读性差、每个信号写一行表达式）？
-   建议：**内置**。CAN 是工业界最常见的“按位切信号”，靠表达式拼会把模板写成代码。
-3. **CRC 的定位**：参数化算子为主、脚本兜底（推荐），还是全部走脚本（模板里每个 CRC 都手写循环）？
+1. **CRC 的定位**：参数化算子为主、脚本兜底（推荐），还是全部走脚本（模板里每个 CRC 都手写循环）？
    建议：**算子为主、脚本兜底**。标准 CRC 手写循环既慢又易错，且无法 codegen 成最优实现。
-4. **脚本的类型语义**：定宽无符号（`u8..u64`，按宽截断，= C 语义）还是统一 double（改动小但 CRC 写不出）？
+2. **脚本的类型语义**：定宽无符号（`u8..u64`，按宽截断，= C 语义）还是统一 double（改动小但 CRC 写不出）？
    建议：**定宽无符号**。这是脚本能正确表达 CRC、且能被三语言等价生成的前提。
-5. **旧 API 兼容**：保留 `decodeSequential(bytes, doc)` 作为整块便捷入口（内部走 StreamParser），还是直接切到新接口、老调用点全改？
+3. **旧 API 兼容**：保留 `decodeSequential(bytes, doc)` 作为整块便捷入口（内部走 StreamParser），还是直接切到新接口、老调用点全改？
    建议：**保留**，行为不变，降低上层迁移风险。
 
 另外：**codegen（S5）是否本批就做**，还是先做到 S4c 再单独一批？
@@ -546,7 +678,8 @@ phys = raw * scale + offset;
 | 位域内置（`bit.base/offset/width/order`） | **已定**（§4.8） |
 | 位序 `lsb0`/`msb0` 双模型，对齐 DBC Intel/Motorola | **已定**（§4.8.4 有等价性推导） |
 | 位域约束 `width + offset%8 ≤ 64`（避免 `__int128`） | **已定**（§4.8.5） |
+| ASCII 目标 = NMEA 0183 + AIS(P2)，不做 CSV/JSON | **已定**（§4.9） |
 | 脚本引擎类型语义（定宽无符号） | 待拍板 |
 | CRC 定位（算子为主 / 全脚本） | 待拍板 |
-| ASCII 深度（全做 / 只定长） | 待拍板 |
+
 | 旧 API 是否保留 | 待拍板 |
