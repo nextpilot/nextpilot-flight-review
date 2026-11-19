@@ -52,6 +52,11 @@ if(WIN32)
   target_link_libraries(ng_kernel INTERFACE ws2_32 ntdll userenv bcrypt advapi32 ole32 oleaut32)
 endif()
 
+# === 公共基础头（header-only，最底层）===
+# Result.h 归位到这里：dataset / registry / intent / uischema 等机制库共享，
+# 又不让 core 与机制库形成循环依赖。必须先于 core 定义。
+add_subdirectory(libs/foundation)
+
 add_subdirectory(core)
 add_subdirectory(recording)
 add_subdirectory(host)
@@ -96,3 +101,9 @@ add_subdirectory(gui)
 
 enable_testing()
 add_subdirectory(tests)
+
+# === libs 边界守卫（configure 期硬失败）===
+# 必须在所有 target 定义之后调用，才能检查其链接关系。
+# 规则与豁免说明见 cmake/LibBoundaryGuard.cmake 顶部及 AGENTS.md §5。
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibBoundaryGuard.cmake")
+ng_lib_guard_boundary()

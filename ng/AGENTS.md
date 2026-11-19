@@ -184,6 +184,29 @@ Lua 停产风险 | 老绑定约 40 个 | 按 Intent op 重写，不做 shim | �
 7. **行数预算：** view ≤300、canvas ≤200、interaction ≤250、spec ≤150。
 8. **每迁一块删一个老入口。** `src/` 冻结，只修 bug；留着「先保险」的入口，三个月后一定长回来。
 
+### 5.1 libs 铁律（2026-11-19 新增；终态 = core 消亡）
+
+> 完整裁决见 `docs/roadmap/core-refactor-master-plan.md` §7。一句话：
+> **libs 是无隐藏运行时状态的能力提供者——谁要用谁在上层实例化，生命周期归组合根。**
+
+| 类别 | 判定 |
+|---|---|
+| 函数 / 算法 / 模板、class/struct **定义**（含成员）、常量 / 枚举 / 别名 | ✅ 允许 |
+| **static 自注册对象**（OBJECT 库那套 NG_REGISTER_*） | ✅ 允许——唯一的活实例例外 |
+| class 的成员对象（如 AppContext 的 `m_repo`，随实例生死） | ✅ 允许——不是独立存活 |
+| 命名空间级全局对象实例（跨调用存活的状态） | ❌ 禁止 |
+| 单例（Meyers、函数内 static 实例） | ❌ 禁止 |
+| 服务定位器式活实例被任意 include 取用（`ctx.data()` 满地抓） | ❌ 禁止 |
+| libs 内部 `new` / 持有跨调用存活对象 | ❌ 禁止 |
+| libs 依赖上层（core / host / gui / modules / app / extensions） | ❌ 禁止——只能向下依赖 foundation / Qt / 系统库 |
+| libs 内 `#include "../"` 逃逸出库目录 | ❌ 禁止——物理隔离是硬线 |
+
+**AppContext 特别规定**：定义在 `libs/context`、唯一实例在组合根 `App`、`host/gui/modules/extensions` 一律**构造注入**拿引用，不许 include 全局 ctx。**不进 app 文件夹**（app 是可执行目标，会被依赖倒挂 + 与 host 成环，master-plan §7.2 有论证）。
+
+**这些边界由构建期守卫强制**：`cmake/LibBoundaryGuard.cmake` 在 configure 期扫描，违反（逃逸 include / 单例 / 上层链接）直接 `FATAL_ERROR`，编译还没开始就红。正则不可靠的三项（普通全局对象、服务定位器取用、static 自注册例外）交给 code review 与 ctest。**守卫只许加严，不许为绕过而加豁免。**
+
+**命名空间纪律**：core 消亡按批次收口，每个 lib 搬迁时连 namespace 一起改（`core` → `context`/`dataset`/…），不留「目录叫 context、namespace 还叫 core」的中间态。B7 前 `core` 残留仅发 WARNING。
+
 ---
 
 ## 6. 判定：它解决了哪些疑惑

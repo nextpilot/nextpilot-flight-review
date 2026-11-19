@@ -1,7 +1,8 @@
-# Core 重构总方案：机制抽库 + 解析器合并 + 命名收敛（2026-11-19 开工版）
+# Core 重构总方案：core 消亡 + 机制抽库 + 解析器合并 + 命名收敛（2026-11-19 开工版）
 
-> **状态：✅ 需求方已拍板三条主线，架构师已做合理性判断，本轮起开工实现。**
+> **状态：✅ 需求方已拍板，架构师已做两轮评审，本轮起开工实现。**
 > 需求方原话："写成 roadmap 方案，然后开工：① schema、register、intent、dataset/repo 抽象成库；② IMessageParser 合并、去掉 IFormatDriver；③ 部分命名。你是架构师，要判断合理性，我是需求方。"
+> **v2 升级（2026-11-19 追加，见 §7）**：需求方进一步裁决——"core 我都不想要了，有意义的就一个 AppContext，其他抽象的实现尽量放在 libs"，并立铁律"'libs 不允许实例化对象（除非静态对象），只能是函数或 class'"。架构师据此把终态从"core 收敛为核心契约层"升级为 **core 目录彻底消亡**：全部内容按机制下沉 libs，AppContext 归 `libs/context` 并改构造注入。**以 §7 为准；§1–§6 作为开工基线与历史裁决保留。**
 > 本文件是**总方案 + 开工计划**，三条主线的详细裁决仍以三份专项文档为准：
 > - [`mechanism-libs-extraction.md`](mechanism-libs-extraction.md)（注册表 / 意向 / schema→UI / format 辨析 / 解析器合并）
 > - [`dataset-lib-extraction.md`](dataset-lib-extraction.md)（dataset 抽库）
@@ -155,3 +156,108 @@
 - ✅ schema = 纯 metadata（变量名/类型/可选值/值域/单位/依赖/说明），自研 `SchemaEngine` 解析生成 UI。
 - ✅ 解析器不绑定下游用途、多输出函数、输出经 Sink 交调用者。
 - 架构师修正（§2.2–§2.5）：注册表泛型克制、SPI 不碰、两对话框不合、`ParamSpec` 补 `optionsFrom`——**需需求方知悉**，若反对请在开工前提出；未提出则按修正执行。
+
+---
+
+## 7. v2 升级：core 消亡 + 架构评审条款（2026-11-19 追加，本节为终态裁决）
+
+### 7.1 需求方追加裁决
+
+> "core 只是一个核心，不要把 core 当成所有代码的实现，相当于上帝文件夹了。"
+> "其实 core 我都不想要的，我觉有意义的就一个 appcontext……其他抽象的实现，应该尽量放在 libs。"
+> "libs 不允许实例化对象（除非是静态对象），只能是函数，或者 class 等。"
+> "你是架构设计，最终你的意见为准。"
+
+**终态裁决**：`ng/core` 目录**彻底消亡**，其内容全部按机制下沉 libs；`AppContext` 是唯一被认可的运行态容器，归 `libs/context`，但必须遵守 §7.3 的 libs 铁律。§1–§6 的 B1–B6 是本终态的**前段批次**，本节是**后段批次（B7+）与不可退让的纪律**。
+
+### 7.2 为什么 AppContext 不能进 app 文件夹（架构师裁决，需求方已同意）
+
+需求方最初提议"AppContext 放 app 文件夹"，架构师**反对并已获同意**，两条硬约束：
+
+1. **依赖倒挂**：`app` 是最终可执行目标（`add_executable(plotscope-ng)`），而 `AppContext.h` 被 host / gui / modules / extensions / tests 共 20+ 处 include。下层库不能 include 可执行目标里的头，也不能链接它。
+2. **成环**：`app/App.h` 的 `App` 持有 `ModuleHost`（host 层），而 host 层的 `IModule.h` / `ModuleHost.h` 又 include `AppContext.h`。若两者同住一个库，形成 `host ↔ app` 循环。
+
+**落法**：`libs/context` 只提供 `class AppContext` 的**定义**；唯一实例在组合根 `App` 里创建（`AppContext m_ctx`）；host / gui / modules / extensions 通过**构造注入**显式拿到引用，不再 include 一个全局 ctx 用 `ctx.data()` 随手取——这正是 §7.3 铁律要根治的"服务定位器"反模式。
+
+### 7.3 libs 铁律（需求方立，架构师界定边界，不可退让）
+
+> **一句话判据：libs 是无隐藏运行时状态的能力提供者。谁要用谁在上层实例化，生命周期归组合根。**
+
+| 类别 | 允许 / 禁止 |
+|---|---|
+| 函数、算法、模板 | ✅ 允许——纯逻辑 |
+| class / struct **定义**（含其成员变量，随实例生死） | ✅ 允许——类型蓝图和它的组成部分 |
+| 常量、枚举、类型别名 | ✅ 允许 |
+| **static 自注册对象** | ✅ 允许——工程既有 OBJECT 库自注册惯例（BuiltinContributions / 模块 / 扩展注册表） |
+| 全局 / 命名空间级对象实例（跨调用存活状态） | ❌ 禁止 |
+| 单例（Meyers、函数内 static 实例） | ❌ 禁止 |
+| 服务定位器式"活实例"被任意 include 取用 | ❌ 禁止 |
+| libs 内部 new / 持有跨调用存活对象 | ❌ 禁止 |
+| libs 依赖上层 / `#include "../"` 逃逸库目录 | ❌ 禁止 |
+
+**边界澄清（需求方已确认）**：`AppContext` 内部的 `DataRepository m_repo;`、`SettingsStore m_settings;` 等**成员对象合规**——它们是类型的组成部分，随实例生死。禁止的是"全局活实例 + 服务定位器取用"，不是禁止 class 拥有成员。
+
+### 7.3.1 边界已做成构建期守卫（让违规编译不过）
+
+本节铁律不只写在文档里，已落为可执行守卫：
+
+- **`ng/cmake/LibBoundaryGuard.cmake`**：configure 期扫描，三条硬失败——
+  ① libs 内 `#include "../"` 逃逸库目录；② libs target 链接上层（core/host/gui/modules/app/extensions）；③ Meyers 单例 `static T& instance()`。
+  已反向验证：注入违规头 → `FATAL_ERROR`，删除后恢复通过。
+- **`ng/AGENTS.md` §5.1**：libs 铁律表 + AppContext 特别规定，供后续 AI 编码前必读。
+- 正则不可靠的三项（普通全局对象实例、服务定位器取用、static 自注册例外）**故意不拦**，交 code review + ctest；守卫只加严不加豁免。
+- `core` 命名空间残留暂为 WARNING（B7 收口前是合法中间态），B7 完成后改为 FATAL。
+
+### 7.4 架构评审四条约束（架构师对方案本身的保留，随方案一并执行）
+
+1. **接口稳定**：public header 就是契约，改签名 = breaking change。进 libs 的接口宁可多花两轮定对——这是 §2 反复推敲接口边界的意义。
+2. **测试底座**：每个 lib 有自己的契约测试钉死行为。"靠谱"不是口头承诺，进库前先立 ctest。真正危险的不是签名破坏（编译器会抓），是**语义破坏**——签名没变但行为变了，消费者静默出错。
+3. **依赖单向**：严格按 §7.5 分层，库之间不回头。否则升级一个 lib 拖一片，"升级就受益"的杠杆失效。
+4. **演进有路**：接口真要变时留兼容层或版本化，让消费者平滑升级，不一刀切。
+
+> 补充：静态库世界"升级 libs"= 全量重编，没有热替换；"靠谱 + 直接升级"的收益要靠 2、3 两条兑现，不是自动到账。
+
+### 7.5 终态依赖分层（无环，libs 铁律的载体）
+
+```
+foundation(Result)
+  → 机制库 dataset / registry / intent / uischema / settings / parser
+  → context(AppContext 聚合容器，唯一实例在 app)
+  → host(模块宿主)
+  → modules / extensions / gui
+  → app(App 组合根，持有 AppContext + ModuleHost)
+  → plotscope-ng(薄 main)
+```
+
+**控制库数量**：目标 6–7 个 lib，警惕"为拆而拆"。`SettingsStore` 归 `context`（本就是运行态一部分）；`Selection` / `Transform` 是纯数据契约，并入 `dataset` 或 `uischema`，不单列。
+
+### 7.6 core 内容归属映射表
+
+| 现有 core 内容 | 去处 | 批次 |
+|---|---|---|
+| Dataset / DataRepository / DataSource / DataSourceRepository（含 `SourceRegistry` 改名） | `libs/dataset` | B2 |
+| Intent / IIntentExecutor / JobRecorder | `libs/intent` | B4 |
+| ExtensionRegistry / *Contribution / UiSlot / PanelFactory / BuiltinPack / FormatDomain | `libs/registry` | B3 |
+| IMessageParser（合并 IFormatDriver）/ ParserRegistry / Ingest* / IByteSource | `libs/parser` | B6 |
+| PropertySchema / Selection / Transform | `libs/uischema` | B5 |
+| SettingsStore / WorkspaceDataConfig | `libs/context` | B7 |
+| **AppContext** | **`libs/context`（构造注入）** | B7 |
+| ScriptFacade | 随 script 模块或 `libs/context` | B7 |
+| Events / Result | `libs/foundation` | B1 |
+| RecordingFormat / RecordingBackend | `recording` | 已在 |
+
+### 7.7 后段批次与命名空间纪律
+
+- **B7（core 消亡批）**：迁 `AppContext` / `SettingsStore` / `WorkspaceDataConfig` 到 `libs/context`，改全仓 include 为构造注入；迁空后**删除 `ng/core` 目录与 target**，全仓移除 `target_link_libraries(... ng_core ...)`，并把守卫里的 `core` namespace WARNING 升级为 FATAL。
+- **命名空间纪律（修正 §5.4）**：不再"namespace 永远保持 core 另批统一"。**每个 lib 搬迁时连同 namespace 一起改**（`core` → `context`/`dataset`/`registry`/…），避免"目录叫 context、namespace 还叫 core"的最坏中间态。B1–B6 已落地的 `core` 命名空间在 B7 统一收口。
+- **垂直切分**：后段按"一个 lib 一个 lib 搬 + 带自己的契约测试 + 带自己的消费者"垂直推进，每批单独过 ctest，不做"先搬所有 Result 再搬所有 dataset"的水平切——big-bang 水平切中途全是红色、插不进别的需求，11 个 ctest 也兜不住。
+- **B7 验收**：全仓无 `ng/core` target、无 `nextpilot::plotscope::core` 命名空间残留、无 `ctx.xxx()` 全局服务定位器取用（改为注入）；Release + Debug ctest 11/11。
+
+### 7.8 拍板追溯（需求方 2026-11-19 追加）
+
+- ✅ core 消亡，内容全部下沉 libs；AppContext 归 `libs/context`。
+- ✅ libs 铁律：无全局活实例 / 单例 / 服务定位器；成员对象合规；static 自注册对象例外。
+- ✅ AppContext 不进 app 文件夹（依赖倒挂 + 成环），改构造注入。
+- ✅ 架构师四条约束（接口稳定 / 测试底座 / 依赖单向 / 演进有路）随方案执行。
+- ✅ 边界已固化为 CMake configure 期守卫（§7.3.1），违规编译不过。
+- ✅ "最终意见以架构师为准"——本节边界由架构师界定，需求方已逐条同意。

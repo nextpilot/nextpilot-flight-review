@@ -4,6 +4,12 @@
 > 设计输入是你的需求；老代码（`src/`）在**填代码阶段**可作参考（协议算法、画布绘制、
 > ADS/SARibbon 用法），但**类清单与分层不照抄**——那是演进产物，不是设计。
 
+> ⚠️ **终态裁决（2026-11-19，优先级高于本文正文）**：`core/` 目录将彻底消亡，内容全部下沉 `libs/`；
+> `AppContext` 归 `libs/context` 且唯一实例在组合根 `App`、其余层构造注入；libs 不许有全局活实例/单例/服务定位器。
+> 本文正文里所有 `core::` / `core/` 表述是**当前实现状态**，会在 B7 收口，以
+> [`docs/roadmap/core-refactor-master-plan.md` §7](../docs/roadmap/core-refactor-master-plan.md) 为准。
+> 边界已固化为 configure 期守卫 `cmake/LibBoundaryGuard.cmake`（违规编译不过）与 `AGENTS.md` §5.1。
+
 ---
 
 ## 1. 目标
