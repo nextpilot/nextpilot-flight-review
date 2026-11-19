@@ -208,6 +208,30 @@ private:
     QStringList m_opts;
 };
 
+
+// 「取值」列自检：0x 后必须是十六进制数字，在数字位置出现非数字要当场标红。
+// 文本常量（引号）、符号名、表达式一律放过，避免误伤 text 帧。
+bool expectLooksBroken(const QString &text)
+{
+    const QString t = text.trimmed();
+    if (t.isEmpty())
+        return false;
+    const bool hexPrefix = t.startsWith(QLatin1String("0x"), Qt::CaseInsensitive) ||
+                           t.startsWith(QLatin1String("-0x"), Qt::CaseInsensitive);
+    if (hexPrefix)
+    {
+        QString digits = t;
+        if (digits.startsWith(QLatin1Char('-')))
+            digits.remove(0, 1);
+        digits.remove(0, 2);
+        return !QRegularExpression(QStringLiteral("^[0-9A-Fa-f]+$")).match(digits).hasMatch();
+    }
+    // 以数字或 -/+ 开头就当数值，按十进制规则校验
+    if (t.at(0).isDigit() || t.at(0) == QLatin1Char('-') || t.at(0) == QLatin1Char('+'))
+        return !QRegularExpression(QStringLiteral("^[-+]?\\d+(\\.\\d+)?$")).match(t).hasMatch();
+    return false;
+}
+
 void setupSegTable(QTableWidget *t, bool compact = false)
 {
     t->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("类型"),
@@ -336,6 +360,26 @@ QString otherKeysText(const QJsonObject &seg)
     return ordered.join(QStringLiteral(" · "));
 }
 
+
+
+void lintExpectCell(QTableWidget *t, int row)
+{
+    auto *it = t ? t->item(row, SegValue) : nullptr;
+    if (!it)
+        return;
+    if (expectLooksBroken(it->text()))
+    {
+        it->setBackground(QColor(255, 228, 228));
+        it->setForeground(QColor(150, 0, 0));
+        it->setToolTip(QStringLiteral("疑似笔误：0x 后只能跟十六进制数字（0-9 A-F），数值不能再带单位或文字"));
+    }
+    else
+    {
+        it->setData(Qt::BackgroundRole, QVariant());
+        it->setData(Qt::ForegroundRole, QVariant());
+        it->setToolTip(QString());
+    }
+}
 
 // 段详情用：标量文本 ↔ JSON（不依赖类私有方法，供匿名命名空间内使用）
 QJsonValue parseScalarText(const QString &t)
@@ -911,10 +955,16 @@ void ProtocolEditorDialog::buildDesignPages()
         m_variantRow = row;
         reloadVariantSegs();
     });
-    connect(m_segs, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *) { markDirty(); });
-    connect(m_varSegs, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *) {
+    connect(m_segs, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *it) {
+        markDirty();
+        if (it && it->column() == SegValue)
+            lintExpectCell(m_segs, it->row());
+    });
+    connect(m_varSegs, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *it) {
         storeVariantSegs();
         markDirty();
+        if (it && it->column() == SegValue)
+            lintExpectCell(m_varSegs, it->row());
     });
     // 双击段详情、右键增删、Delete 删除统一由 wireSegTable 装配（见上）。
 }
@@ -1550,6 +1600,10 @@ void ProtocolEditorDialog::refreshFromJson()
             if (auto *d = typeDelegateMap().value(t))
                 d->setOptions(opts);
     }
+
+    for (QTableWidget *t : {m_segs, m_varSegs})
+        for (int r = 0; r < t->rowCount(); ++r)
+            lintExpectCell(t, r);
 
     const QJsonObject series = doc.value(QStringLiteral("series")).toObject();
     m_seriesOn->setChecked(!series.isEmpty());
