@@ -800,6 +800,13 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
                   bool docAscii, const std::map<std::string, AliasDef> *aliases = nullptr)
 {
     seg.name = o.value(QStringLiteral("name")).toString().toStdString();
+    if (o.contains(QStringLiteral("derive")))
+    {
+        seg.derive = jsonExpr(o.value(QStringLiteral("derive")), err);
+        if (!seg.derive)
+            return false;
+        seg.type = {ValueType::F64, 8, false};
+    }
     if (seg.name.empty())
     {
         err = "segment 缺少 name";
@@ -941,11 +948,8 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
                             seg.isRest || !seg.repeater.empty();
     if (!o.contains(QStringLiteral("count")))
     {
-        if (!asciiHints)
-        {
-            err = "segment " + seg.name + " 缺少 count";
-            return false;
-        }
+        // 标量省略 count = 1（SPEC §2.1）：二进制与 ASCII 同一口径。
+        (void)asciiHints;
         auto one = std::make_shared<Expr>();
         one->kind = Expr::Num;
         one->isInt = true;
@@ -958,6 +962,7 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     }
     if (!seg.countExpr)
         return false;
+    if (!seg.derive)
     {
         const std::string typeName =
             o.value(QStringLiteral("type")).toString(QStringLiteral("u8")).toStdString();

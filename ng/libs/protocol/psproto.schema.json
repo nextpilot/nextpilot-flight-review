@@ -102,7 +102,8 @@
         "str",
         "number",
         "num",
-        "rest"
+        "rest",
+        "time"
       ]
     },
     "expr": {
@@ -453,6 +454,10 @@
         "until": {
           "$ref": "#/$defs/expr",
           "description": "repeat:\"until\" 的终止表达式（与对象写法等价）"
+        },
+        "derive": {
+          "type": "string",
+          "description": "派生字段表达式（引用前序段名），不读数据、不占字节，输出 f64"
         },
         "transform": {
           "type": "array",

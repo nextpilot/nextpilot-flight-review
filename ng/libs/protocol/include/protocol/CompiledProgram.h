@@ -154,6 +154,9 @@ struct CompiledSeg
     int digestKind = 0;                  // 0=none 1=builtin 2=script
     std::string digestAlg;
     std::string digestScript;
+    bool hasDerive = false;              // 派生字段：不读数据，由表达式算出
+    ByteCode derive;
+    bool isTime = false;                 // type:"time"：ASCII 文本时间 → 当天秒
     int repeatMode = 0;                  // 0 none / 1 eos / 2 until
     ByteCode repeatUntil;
     bool digestHasInject = false;        // digest.inject：数据尾部追加的常量字节（CRC_EXTRA）

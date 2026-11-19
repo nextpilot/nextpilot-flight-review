@@ -467,6 +467,29 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
                 continue;
         }
 
+        // 派生字段：不读字节、不推进游标，用已解析的槽位求值。
+        if (seg.hasDerive)
+        {
+            TypedValue dv;
+            if (!runByteCode(seg.derive, rawSlots, dv, r.err))
+                return false;
+            TypedVec col;
+            col.reset(seg.type);
+            col.push(dv);
+            rawSlots[static_cast<size_t>(seg.slot)] = col;
+            physSlots[static_cast<size_t>(seg.slot)] = col;
+            Rt rt;
+            rt.spec = &seg;
+            rt.offset = pos;
+            rt.bytes = 0;
+            rt.count = 1;
+            rt.raw = col;
+            rt.phys = col;
+            byteRange[static_cast<size_t>(seg.slot)] = {pos, 0u};
+            r.fields.push_back(std::move(rt));
+            continue;
+        }
+
         // 位域段：一个位窗口，不推进字节游标。
         if (seg.hasBit)
         {

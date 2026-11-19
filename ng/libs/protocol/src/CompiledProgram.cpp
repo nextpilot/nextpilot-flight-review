@@ -496,6 +496,15 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
         return c.fail("段 " + s.name + " 的 width 必须在 1..65535");
     if (!s.literal.empty() && (s.hasDelimiter || s.hasWidth || s.isRest))
         return c.fail("段 " + s.name + " 的 literal 与 delimiter/width/rest 互斥");
+    if (s.derive)
+    {
+        if (!c.compileExpr(s.derive, cs.derive))
+            return false;
+        cs.hasDerive = true;
+        cs.type = ValueType::F64;
+        return true; // 派生字段不参与边界/字节布局
+    }
+    cs.isTime = s.type.isTime;
     cs.isAscii = (cs.boundary != static_cast<int>(SegBoundary::Byte)) || (c.docHasChar && wantsTokenContext(s));
     if (!s.as.empty())
     {

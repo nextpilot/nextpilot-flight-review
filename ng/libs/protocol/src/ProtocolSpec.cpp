@@ -19,7 +19,8 @@ QStringList typeNames()
             QStringLiteral("f32"), QStringLiteral("f64"), QStringLiteral("bool"),
             QStringLiteral("bcd"), QStringLiteral("char"),
             // ASCII 文本协议的类型名（SPEC §7）：char/string/rest 都是文本，number 是数值。
-            QStringLiteral("string"), QStringLiteral("number"), QStringLiteral("rest")};
+            QStringLiteral("string"), QStringLiteral("number"), QStringLiteral("rest"),
+            QStringLiteral("time")};
 }
 
 bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
@@ -43,6 +44,8 @@ bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
     if (t == "string" || t == "str") { ti = {ValueType::Text, 1}; return true; }
     if (t == "number" || t == "num") { ti = {ValueType::F64, 8}; return true; }
     if (t == "rest") { ti = {ValueType::Text, 1}; return true; }
+    // 文本时间：hhmmss / hhmmss.ss / hh:mm:ss[.ss] → 当天秒（f64）。只用于 ASCII 段。
+    if (t == "time") { ti = {ValueType::F64, 8, true}; return true; }
     err = "未知类型: " + raw;
     return false;
 }
@@ -394,6 +397,17 @@ QStringList validate(const QJsonObject &o)
         checkNoV1Keys(seg, name, errs);
         checkEmit(seg, name, errs);
 
+        const bool isDerived = seg.contains(QStringLiteral("derive"));
+        if (isDerived)
+        {
+            static const char *kReadKeys[] = {"type", "count", "bit",    "literal",  "delimiter",
+                                              "width", "rest", "key",   "repeater", "digest",
+                                              "expect", "endian"};
+            for (const char *k : kReadKeys)
+                if (seg.contains(QLatin1String(k)))
+                    errs << QStringLiteral("%1 是 derive 段（不读数据），不能声明 %2").arg(name, QString::fromLatin1(k));
+        }
+
         const bool asciiSeg = docAscii || seg.contains(QStringLiteral("key")) ||
                               seg.contains(QStringLiteral("literal")) ||
                               seg.contains(QStringLiteral("delimiter")) ||
@@ -415,7 +429,11 @@ QStringList validate(const QJsonObject &o)
 
         int n = 0;
         const QJsonValue count = seg.value(QStringLiteral("count"));
-        if (asciiSeg)
+        if (isDerived)
+        {
+            // 派生字段不读数据：count/字节宽度都不适用
+        }
+        else if (asciiSeg)
         {
             // ASCII 段没有"元素数 × 字节宽"语义：count 缺省 1，repeater:"*" 表示重复到下一段边界。
             if (!count.isUndefined() && !literalSize(count, &n))
@@ -424,13 +442,20 @@ QStringList validate(const QJsonObject &o)
                 errs << QStringLiteral("%1 是 ASCII 段，不能声明 bit（位域只对字节区间有意义）").arg(name);
             checkAsciiSegment(seg, name, order, names, order.value(name, 0), errs);
         }
+        else if (count.isUndefined())
+        {
+            // 标量省略 count = 1（SPEC §2.1），字节数由 type 推算
+            fixedBytes.insert(name, typeBytes(seg.value(QStringLiteral("type")).toString()));
+        }
         else if (literalSize(count, &n))
             fixedBytes.insert(name, n * typeBytes(seg.value(QStringLiteral("type")).toString()));
         else if (!count.isString() || count.toString().trimmed().isEmpty())
             errs << QStringLiteral("%1 的 count 必须是正整数或表达式").arg(name);
         const QString type = seg.value(QStringLiteral("type")).toString().toLower();
-        if (!typeNames().contains(type) && !aliasNames.contains(type))
+        if (!isDerived && !typeNames().contains(type) && !aliasNames.contains(type))
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
+        if (type == QLatin1String("time") && !asciiSeg)
+            errs << QStringLiteral("%1：type:time 只用于 ASCII 段（文本时间），二进制请用 u32/u64 + transform").arg(name);
 
         // 位域（SPEC §6）：宽度 <= 64，且 width + offset%8 <= 64，单次 loadBytes<=8 即可取完。
         if (seg.contains(QStringLiteral("bit")))

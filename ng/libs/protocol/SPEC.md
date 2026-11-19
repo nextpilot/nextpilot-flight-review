@@ -62,6 +62,7 @@
 | `endian` | `little`/`big` | 覆盖顶层端序 | 别名 `le`/`be` 在解析层归一，**不再有 `bigEndian` 布尔** |
 | `scale` / `offset` | number | 物理换算 `phys = raw*scale + offset` | 存在时通道类型为 `f64` |
 | `unit` | string | 单位 | 显示用 |
+| `derive` | string | 派生字段：表达式引用前序段，不算字节、不出现在布局里 | 段内不能再写 `type`/`count`/`bit`/`literal`/`delimiter`/`width`/`rest`/`key`/`repeater`/`digest` |
 | `transform` | array | 值算子链（解析后按序应用） | `sexagesimal`/`scale`/`mul`/`offset`/`add`/`abs`/`round`/`clamp`；见 §4.3 |
 | `emit` | `channel`/`aux`/`none` | 是否产出通道 | 见 2.2 |
 | `expect` | 数字/字符串/数组 | 常量匹配 | 原 `value` |
@@ -294,6 +295,7 @@ ASCII **不是另一套模型**：同样是"段 + 边界"，只是边界从字�
 | `delimiter` | 该段结束边界：字符串或数组；`"blank"` = 空格/Tab 字符类 |
 | `repeater` | 只允许 `"*"`：重复到下一段边界（右边界 = 后一个 literal 或记录尾） |
 | `rest` | 整段剩余原文，不切分 |
+| `time` | 文本时间：`hhmmss[.ss]` 或 `hh:mm:ss[.ss]`（6 位整数部分），输出当天秒 f64，只用于 ASCII 段 |
 | `width` | 定宽字符数（`fixed` 词法） |
 | `base` | 数字进制，**默认 10**；`16` 用于校验字段 |
 | `fixed` | 定点小数位数（`fixed: 3` 表示 3 位小数） |

@@ -58,6 +58,7 @@
 | `as` | 覆盖输出类型（`u8`/`i16`/`f32`…） |
 | `pattern` / `on_mismatch` | 正则校验；`reject`/`warn`/`skip` |
 | `empty` | 空字段策略：`nan`/`skip`/`raw` |
+| `derive` | 派生字段：不读数据，`{"name":"sum","derive":"a+b"}` 直接出通道 |
 | `transform` | 值变换（`sexagesimal`） |
 
 流式语义：锚点（首个 `literal`）定位 → `term` 收尾（写了就要、没写就不管）→ 校验通过才产出；

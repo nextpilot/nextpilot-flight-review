@@ -169,6 +169,45 @@ bool checkPattern(const std::string &tok, const CompiledSeg &seg, std::string &e
     return true;
 }
 
+static bool parseTimeText(const std::string &s, TypedValue &out, std::string &err)
+{
+    double hh = 0, mm = 0, ss = 0;
+    if (s.find(':') != std::string::npos)
+    {
+        size_t a = s.find(':'), b = s.find(':', a + 1);
+        if (b == std::string::npos)
+        {
+            err = "时间格式应为 hh:mm:ss：" + s;
+            return false;
+        }
+        hh = std::strtod(s.substr(0, a).c_str(), nullptr);
+        mm = std::strtod(s.substr(a + 1, b - a - 1).c_str(), nullptr);
+        ss = std::strtod(s.substr(b + 1).c_str(), nullptr);
+    }
+    else
+    {
+        // NMEA 记法 hhmmss[.ss]：整数部分必须 6 位
+        const size_t dot = s.find('.');
+        const std::string ip = (dot == std::string::npos) ? s : s.substr(0, dot);
+        if (ip.size() != 6 || ip.find_first_not_of("0123456789") != std::string::npos)
+        {
+            err = "时间应为 hhmmss[.ss]（整数部分 6 位）：" + s;
+            return false;
+        }
+        hh = std::strtod(ip.substr(0, 2).c_str(), nullptr);
+        mm = std::strtod(ip.substr(2, 2).c_str(), nullptr);
+        const double frac = (dot == std::string::npos) ? 0.0 : std::strtod(("0" + s.substr(dot)).c_str(), nullptr);
+        ss = std::strtod(ip.substr(4, 2).c_str(), nullptr) + frac;
+    }
+    if (hh > 23.0 || mm > 59.0 || ss >= 61.0)
+    {
+        err = "时间越界（hh<=23, mm<=59, ss<61）：" + s;
+        return false;
+    }
+    out = TypedValue::fromF(hh * 3600.0 + mm * 60.0 + ss, ValueType::F64);
+    return true;
+}
+
 bool parseNumber(const std::string &rawIn, const CompiledSeg &seg, TypedValue &out, std::string &err)
 {
     std::string s = trimAscii(rawIn);
@@ -199,6 +238,13 @@ bool parseNumber(const std::string &rawIn, const CompiledSeg &seg, TypedValue &o
                                 seg.type == ValueType::I16 || seg.type == ValueType::I8;
         out = signedType ? TypedValue::fromI(v, seg.type)
                          : TypedValue::fromU(static_cast<uint64_t>(v), seg.type);
+        return true;
+    }
+
+    if (seg.isTime)
+    {
+        if (!parseTimeText(s, out, err))
+            return false;
         return true;
     }
 
@@ -457,6 +503,26 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
     for (size_t si = 0; si < segCount; ++si)
     {
         const CompiledSeg &seg = segAt(si);
+
+        // 派生字段：不消耗任何输入，直接用已解析的段求值出通道。
+        if (seg.hasDerive)
+        {
+            TypedValue dv;
+            std::string derr;
+            if (!runByteCode(seg.derive, r.vals, dv, derr))
+            {
+                r.code = DecodeError::FieldInvalid;
+                r.segment = seg.name;
+                r.detail = derr;
+                return false;
+            }
+            TypedVec col;
+            col.reset(seg.type);
+            col.push(dv);
+            r.vals[static_cast<size_t>(seg.slot)] = col;
+            spans[static_cast<size_t>(seg.slot)] = {pos, pos};
+            continue;
+        }
 
         if (seg.isLiteral)
         {

@@ -1267,15 +1267,29 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 | 项 | 现状 | 判断 |
 |---|---|---|
-| `derive` 计算字段 | 规范里曾列，代码未实现 | 用 `transform` + `digest.script` 已覆盖大部分场景；若出现"表达式直接产通道"的真实需求再补 |
+| ~~`derive` 计算字段~~ | **已实现**（二进制 + ASCII 两条路径 + 编译期互斥校验） | 需求方明确"必须做"；`{"name":"sum","derive":"a+b"}` 不读数据、不占字节，直接算值出通道 |
 | 段级 `consume`（读完吞掉 N 字节） | 未实现 | ASCII 分隔符已由 `delimiter` 处理，二进制用填充段 `width`，不另设概念 |
 | 嵌套 / 重复组 | 不实现 | 明确留给专用代码解析器（容器类格式） |
 | 容器格式（PCAP/MDF4/BLF/PNG） | 不实现 | 超出"帧解码"边界 |
-| 模板 codegen（S4c/S5） | 未做 | 性能优化项，解释器路线已可用 |
+| 模板 codegen（S5） | 不做 | 见 §14.5：编译期已产出 ByteCode，模板解析不在热路径；再生成一套 C++ 等于把同一语义维护两遍，回归成本翻倍，当前无 profile 证据要求 |
+| codegen 遇 `digest.script`（S4c） | 若未来做 codegen | **告警、不转**：报 `CODEGEN_UNSUPPORTED`，该字段回退运行时 Lua，不静默降级、不生成错误代码 |
+
+### 14.5 codegen 判定（S5 为什么不做 / S4c 口径）
+
+**不做 S5 的三条理由**
+
+1. 收益不在热路径：模板 JSON 只在"打开协议"时解析一次，之后走 `decodeSequentialCompiled` 的 ByteCode/CompiledSeg 数组；每次解码的开销是 I/O、TypedValue 构造与通道写入，不是模板解析。
+2. 代价是双实现：codegen 生成 C++ 后，同一套语义存在"解释器"与"生成代码"两份；`ascii/bin` 混排、位域、变长、`series`、`derive`、Lua 校验每加一条规则都要改两处并双份回归——长期负债大于一次性性能收益。
+3. 没有证据：仓库内没有 decode 占用 >30% 的 profile 数据；先优化不存在（或未测量）的瓶颈不符合工程顺序。
+
+**S4c 口径（用户已确认）**：将来若真做 codegen，模板里出现 `digest.script`（Lua）→ 编译期**告警** `CODEGEN_UNSUPPORTED`，该字段**不转**、回退运行时 Lua 执行；不允许静默降级或生成"看起来对"的代码。
+
+**重新启动 S5 的前提**：① 有实测 profile 证明解码是瓶颈；② 只覆盖纯二进制定长/位域子集；③ 与解释器共享同一份语义测试向量。
 
 ### 14.4 验收
 
-- [x] 协议单测 23 项全绿（`./build-ng/tests/ng_test_protocol`）；
+- [x] 协议单测 26 项全绿（`./build-ng/tests/ng_test_protocol`），含 `derive`（`a+b`/`a*b`）与 `type:"time"`（`083559.00` → 30959 s、`246100.00` 越界被拒）；
+- [x] 省略 `count` 的标量与 SPEC §2.1 一致（validate 与 parse 都按 1 处理）；
 - [ ] 需求方逐项验收 §14.1 的行为口径（尤其 `repeat:"eos"` 在"后面还有段"时的语义）。
 
 ---

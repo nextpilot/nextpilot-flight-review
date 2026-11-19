@@ -800,6 +800,47 @@ int main(int argc, char *argv[])
         OK("ASCII 变体：顶层段解 selector（msgid）→ 变体段表替换 payload 段重解");
     }
 
+    // --- derive 派生字段 + type:time 文本时间 ---
+    {
+        const QByteArray tplBin = R"({
+          "name":"derived","layout":"sequential","maxsize":64,
+          "segments":[
+            {"name":"a","type":"u16"},
+            {"name":"b","type":"u16"},
+            {"name":"sum","derive":"a+b"},
+            {"name":"prod","derive":"a*b"}
+          ]
+        })";
+        const QByteArray rawBin("  ", 4);
+        ProtocolDecodeResult dr = decodeSequentialJson(rawBin, tplBin);
+        CHECK(dr.channels.size() == 4);
+        for (const auto &ch : dr.channels)
+        {
+            if (ch.name == "sum")
+                CHECK(ch.v.size() == 1 && ch.v.at(0).asDouble() == 7.0);
+            if (ch.name == "prod")
+                CHECK(ch.v.size() == 1 && ch.v.at(0).asDouble() == 12.0);
+        }
+
+        const QByteArray tplTime = R"({
+          "name":"time_csv","layout":"sequential","maxsize":64,"terminator":"\n",
+          "segments":[
+            {"name":"t","type":"time","delimiter":","},
+            {"name":"v","type":"i32","delimiter":";"}
+          ]
+        })";
+        ProtocolDecodeResult tr = decodeSequentialJson(QByteArray("083559.00,42;\n"), tplTime);
+        CHECK(tr.channels.size() == 2);
+        for (const auto &ch : tr.channels)
+            if (ch.name == "t")
+                CHECK(std::fabs(ch.v.at(0).asDouble() - 30959.0) < 1e-6);
+
+        // 越界时间必须被拒（24h 不存在）
+        ProtocolDecodeResult badT = decodeSequentialJson(QByteArray("246100.00,42;\n"), tplTime);
+        CHECK(!badT.ok || badT.rejectedFrames > 0);
+        OK("derive 派生字段（a+b / a*b）出通道；type:time 把 083559.00 解成 30959 秒，越界被拒");
+    }
+
     // --- ASCII checks 生效 + preview/decode 一致性 ---
     {
         const QByteArray tpl = R"({

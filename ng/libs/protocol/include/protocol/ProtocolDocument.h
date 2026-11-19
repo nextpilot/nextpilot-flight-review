@@ -35,6 +35,7 @@ struct TypeInfo
 {
     ValueType type = ValueType::U8;
     uint32_t size = 1;
+    bool isTime = false; // type:"time"：ASCII 文本时间 hhmmss[.ss]，解析成当天秒
 };
 
 // 段的输出形态，取代旧的 hidden/plot 两个布尔。
@@ -147,6 +148,9 @@ struct SegmentDef
     std::string emptyPolicy;             // ""（空串报错）| "nan" | "skip" | "raw"
     std::string pattern;                 // 正则只做校验，不切分
     std::string onMismatch;              // "" | "reject" | "warn" | "skip"
+    // 派生字段：不从字节/文本读，由表达式算出（引用前面已解析的段），不占空间
+    ExprPtr derive;
+
     // 二进制变长数组的终止条件（ASCII 用 repeater:"*"）：
     //   "eos"   → 读到帧尾
     //   "until" → 每读一个元素求值 repeatUntil，为真即停
