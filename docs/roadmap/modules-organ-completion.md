@@ -28,7 +28,21 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 2. **资产归属不同**：Dataset 是**共享资产**（被 plot/analysis/未来报告多方引用、可由多源产出），不是 source 的私有产物。把它绑在"打开源"的模块里，是把资产错当实例附属品。§3.1「聚合的是运行时绑定关系，不是资产归属」正支持此判断。
 3. **依赖方向错位**：现在 `plot requires data.session`（源管理），但绘图只需要**查数据**，不需要知道源如何打开。拆后 plot/analysis 应依赖 `dataset.catalog`。
 
-### 1.3 拆分方案：模块边界 ≠ UI 边界
+### 1.3 耦合点实测（逐行核对，决定拆什么、不动什么）
+
+问题："source/dataset 目前在哪耦合？拆开后怎么关联？" 实测结论如下——**真正的耦合只有三处，且都不在 mod.data 的业务逻辑里**：
+
+| # | 耦合位置 | 现状 | 拆分时如何处理 |
+|---|---|---|---|
+| C1 | **core 状态层**：`AppContext` 同时持有 `sources()` / `data()` 两个独立仓库、两套 id 空间 | 已解耦；正向绑定 `DataSourceInfo.datasetIds`，反查 `sourceOfDataset()`（`DataSourceRepository.cpp:153`，遍历 contains） | **不动**。两仓库互不 include，dataset 不持有 source 指针；双向绑定只是查询方法，不是所有权 |
+| C2 | **摄取层**：`DataLoadHandler.cpp:82` 的 `IngestOrchestrator(m_repo, m_sources, pipeline)` | 源→解析→落 dataset→记入 `datasetIds` 的唯一串联点，属宿主系统级 `@system/data.load` | **不动**。它是"源产生数据"的天然绑定，本就不属于 mod.data，模块装卸不影响 |
+| C3 | **UI 层**：`DataManagerPanel` 同时持 `m_repo` + `m_sources`，树为 源→dataset→表→列，两处调 `sourceOfDataset()`（`:197`/`:706`） | 面板在 gui/views 层，由部件工厂创建，**不归属于 mod.data** | **不动**。复合视图本就该读全局态；拆模块后它一行不改 |
+
+> 纠偏：`mod.data` 模块本身几乎不做源/数据集耦合——只订阅 datasetAdded/Removed 打日志、请求一个 `dataset-tree` 面板、加 reload/export/clearCache 三个动作。所以"拆 mod.data"拆的是**动作归属**，不是状态。
+>
+> **拆开后的关联方式**：不新增任何跨模块依赖。两个新模块各自只认 `AppContext` 共享仓库，继续用 C1 的双向绑定；C2 的摄取串联留在宿主；C3 的 UI 读全局态。`mod.source` 与 `mod.dataset` 之间**互不 include、互不 requires**。
+
+### 1.4 拆分方案：模块边界 ≠ UI 边界
 
 | 模块 | provides | requires | 职责 |
 |---|---|---|---|
@@ -44,9 +58,9 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 - **UI 保持一个复合树**：数据源树是 shell/views 层面板，直接读 `AppContext.sources() + data()`，**不属于任何模块**——模块装卸不影响它。用户"每行一个源 → 展开看表/列"的体验不变。
 - **独立装卸成立**：headless 可只装 `mod.dataset`（查已有/恢复数据），不装 `mod.source`。
 
-### 1.4 迁移代价（一次性、可控）
+### 1.5 迁移代价（一次性、可控）
 
-- `DataModule` 一分为二：`mod.source`（源生命周期动作）+ `mod.dataset`（查询/订阅动作）；`DataManagerPanel` 留在 views 层，改为直接读共享态。
+- `DataModule` 一分为二：`mod.source`（源生命周期动作）+ `mod.dataset`（查询/订阅动作）；`DataManagerPanel` 留在 views 层不动（见 §1.3 C3）。
 - `mod.plot` 的 `requires` 由 `data.session` 改 `dataset.catalog`。
 - 系统级 `@system/data.load`、`@system/data.commands` 仍归宿主（不随模块装卸），保持现状。
 - 现有 `data.*` 意图按归属拆分：`source.open/close/record/replay` 归 source；`data.derive/export/recent/clearCache` 归 dataset（意图名可沿用，避免破坏脚本）。
