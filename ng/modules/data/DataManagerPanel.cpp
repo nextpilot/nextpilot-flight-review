@@ -24,9 +24,12 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QStyledItemDelegate>
 #include <QPushButton>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QPalette>
+#include <QPainter>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
@@ -47,7 +50,8 @@ constexpr int kRoleDatasetId = Qt::UserRole + 1;
 constexpr int kRoleTable = Qt::UserRole + 2;
 constexpr int kRoleColumn = Qt::UserRole + 3;
 constexpr int kRoleSourceId = Qt::UserRole + 4;
-constexpr int kRoleNodeKind = Qt::UserRole + 5; // "source"/"dataset"/"table"/"column"/"param"/"msg"
+constexpr int kRoleNodeKind = Qt::UserRole + 5;      // "source"/"dataset"/"table"/"column"/"param"/"msg"
+constexpr int kRoleSourceActive = Qt::UserRole + 6;   // 源是否为当前激活（画左橙条）
 
 QString stateText(SourceState state)
 {
@@ -61,6 +65,85 @@ QString stateText(SourceState state)
     }
     return QStringLiteral("未知");
 }
+
+// 数据源行卡片底色：比树底色略深，明暗主题自适应。
+// 取 base 向 text 混 6%——浅色 #FFFFFF→浅灰、深色 #25262A→深灰，均清晰可辨。
+static QColor sourceCardColor(const QPalette &pal)
+{
+    const QColor base = pal.color(QPalette::Base);
+    const QColor text = pal.color(QPalette::Text);
+    const auto mix = [](int a, int b) { return a + (b - a) * 6 / 100; };
+    return QColor(mix(base.red(), text.red()), mix(base.green(), text.green()),
+                  mix(base.blue(), text.blue()));
+}
+
+// 源行卡片自绘（对齐老界面：40px 高、底色区分、激活左橙条、名称12px+摘要10px）。
+// 只接管 kind=="source" 的节点，列/表节点交回基类默认绘制，故拖拽/选中/展开不受影响。
+class SourceRowDelegate : public QStyledItemDelegate
+{
+public:
+    explicit SourceRowDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
+
+    QSize sizeHint(const QStyleOptionViewItem &opt, const QModelIndex &index) const override
+    {
+        if (index.data(kRoleNodeKind).toString() != QStringLiteral("source"))
+            return QStyledItemDelegate::sizeHint(opt, index);
+        QSize s = QStyledItemDelegate::sizeHint(opt, index);
+        s.setHeight(qMax(s.height(), 40));
+        return s;
+    }
+
+    void paint(QPainter *p, const QStyleOptionViewItem &opt, const QModelIndex &index) const override
+    {
+        if (index.data(kRoleNodeKind).toString() != QStringLiteral("source"))
+        {
+            QStyledItemDelegate::paint(p, opt, index);
+            return;
+        }
+        const bool active = index.data(kRoleSourceActive).toBool();
+        const QPalette &pal = opt.palette;
+        const QColor card = sourceCardColor(pal);
+        const QRect r = opt.rect;
+
+        p->save();
+        // 卡片底色（选中态用高亮色，普通态用自适应灰）
+        p->fillRect(r, opt.state & QStyle::State_Selected
+                           ? pal.color(QPalette::Highlight).lighter(120)
+                           : card);
+        // 激活源左侧橙色竖条（老界面 #f2b134）
+        if (active)
+        {
+            p->fillRect(QRect(r.left(), r.top(), 3, r.height()), QColor(QStringLiteral("#f2b134")));
+        }
+        // 底部分隔线
+        p->setPen(pal.color(QPalette::Mid));
+        p->drawLine(r.left(), r.bottom(), r.right(), r.bottom());
+
+        // 两行文字：名称（12px，正常色）+ 摘要（10px，dim）
+        const QString text = index.data(Qt::DisplayRole).toString();
+        const int sep = text.indexOf(QLatin1Char('\n'));
+        const QString name = sep < 0 ? text : text.left(sep);
+        const QString meta = sep < 0 ? QString() : text.mid(sep + 1);
+        const int left = r.left() + 6;
+        const int nameH = 16;
+        QFont nameFont = opt.font;
+        nameFont.setPixelSize(12);
+        QFont metaFont = opt.font;
+        metaFont.setPixelSize(10);
+        p->setFont(nameFont);
+        p->setPen(pal.color(QPalette::Text));
+        p->drawText(QRect(left, r.top() + 2, r.width() - left - 6, nameH),
+                    Qt::AlignLeft | Qt::AlignVCenter | Qt::TextElideMode::ElideRight, name);
+        if (!meta.isEmpty())
+        {
+            p->setFont(metaFont);
+            p->setPen(pal.color(QPalette::Text).lighter(155));
+            p->drawText(QRect(left, r.top() + 2 + nameH, r.width() - left - 6, 14),
+                        Qt::AlignLeft | Qt::AlignVCenter | Qt::TextElideMode::ElideRight, meta);
+        }
+        p->restore();
+    }
+};
 
 // 列节点可拖拽：只发逻辑标识（ChannelMime），不暴露 Dataset 内部结构。
 class ChannelTreeWidget : public QTreeWidget
@@ -166,7 +249,7 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_filter->setPlaceholderText(QStringLiteral("搜索字段 / 参数 / 消息"));
     m_filter->setClearButtonEnabled(true);
     m_filter->setObjectName(QStringLiteral("searchBox"));
-    m_filter->setContentsMargins(6, 0, 6, 0);
+    // 对齐老界面：搜索框与数据源树左右边缘齐平，不要额外内边距。
     lay->addWidget(m_filter);
     connect(m_filter, &QLineEdit::textChanged, this, &DataManagerPanel::applyFilter);
 
@@ -176,7 +259,7 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     // 状态摘要并入源名文字（见 rebuildTree），不依赖第 2 列，故只需单列 Stretch。
     m_tree->header()->hide();
     m_tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_tree->setAlternatingRowColors(true);
+    m_tree->setItemDelegate(new SourceRowDelegate(m_tree)); // 源行卡片自绘
     m_tree->setDragEnabled(true);
     m_tree->setDragDropMode(QAbstractItemView::DragOnly);
     m_tree->setDefaultDropAction(Qt::CopyAction);
@@ -499,8 +582,10 @@ void DataManagerPanel::rebuildTree()
         srcItem->setText(0, srcName + QLatin1Char('\n') + srcMeta);
         srcItem->setData(0, kRoleSourceId, sid);
         srcItem->setData(0, kRoleNodeKind, QStringLiteral("source"));
+        const bool active = (sid == m_shownSourceId || m_shownSourceId < 0);
+        srcItem->setData(0, kRoleSourceActive, active);
         srcItem->setData(0, Qt::UserRole, stateText(info->state)); // sourceStateText 用
-        srcItem->setFirstColumnSpanned(false);
+        srcItem->setFirstColumnSpanned(true); // 卡片底色横跨整行
 
         if (showFields)
         {
