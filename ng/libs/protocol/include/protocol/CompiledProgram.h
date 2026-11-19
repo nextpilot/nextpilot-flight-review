@@ -110,6 +110,19 @@ struct CompiledSeg
     double offset = 0.0;
     // 输出形态（编译期定死，热路径只做一次 int 判断）
     int emitMode = 0; // 0=channel 1=aux 2=none
+
+    // 位域（SPEC §6）：段不推进字节游标，只对容器字节区间取一个位窗口。
+    bool hasBit = false;
+    int32_t bitBaseSlot = -1; // -1 = 相对帧起点
+    int64_t bitOffset = 0;    // 位偏移
+    uint8_t bitWidth = 0;
+    bool bitMsb0 = false;     // true = Motorola/msb0，false = Intel/lsb0
+    bool bitSigned = false;   // 按 type 的符号性做符号扩展
+
+    // 段级条件：不成立时该段不存在（不占字节、不出通道、槽位为空）。
+    bool hasCond = false;
+    ByteCode cond;
+
     bool isText = false;
 };
 

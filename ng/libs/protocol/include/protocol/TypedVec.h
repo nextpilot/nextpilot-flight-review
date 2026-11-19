@@ -72,6 +72,12 @@ struct TypedValue
         r.f = v;
         return r;
     }
+    // 按目标类型的符号性写入正确字段：位域/位运算等“拿到一个裸整数”的地方必须走这里，
+    // 直接用 fromU 会在有符号类型上静默变成 0（u/i 是两个独立字段）。
+    static TypedValue fromRawInt(std::uint64_t v, ValueType t)
+    {
+        return isSignedType(t) ? fromI(static_cast<std::int64_t>(v), t) : fromU(v, t);
+    }
     static TypedValue fromText(std::string v)
     {
         TypedValue r;

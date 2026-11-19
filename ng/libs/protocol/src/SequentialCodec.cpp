@@ -402,6 +402,41 @@ bool checkFrame(const std::vector<Rt> &fields, const std::map<int32_t, const Rt 
     return true;
 }
 
+// 位窗口读取（SPEC §6）。
+//   lsb0 = Intel：位号从字节最低位起递增，值按位号升序组装（低位在前）。
+//   msb0 = Motorola：位号从字节最高位起递增，先读到的是高位（大端位序）。
+static uint64_t readBitsLsb(const uint8_t *b, int64_t offset, int width)
+{
+    uint64_t v = 0;
+    for (int i = 0; i < width; ++i)
+    {
+        const int64_t bp = offset + i;
+        const uint64_t bit = (b[bp >> 3] >> (bp & 7)) & 1u;
+        v |= bit << i;
+    }
+    return v;
+}
+
+static uint64_t readBitsMsb(const uint8_t *b, int64_t offset, int width)
+{
+    uint64_t v = 0;
+    for (int i = 0; i < width; ++i)
+    {
+        const int64_t bp = offset + i;
+        const uint64_t bit = (b[bp >> 3] >> (7 - (bp & 7))) & 1u;
+        v = (v << 1) | bit;
+    }
+    return v;
+}
+
+// 条件表达式只有“真/假”，不做隐式类型提升：0 与空文本为假。
+static bool truthy(const TypedValue &v)
+{
+    if (v.type == ValueType::Text)
+        return !v.s.empty();
+    return v.asDouble() != 0.0;
+}
+
 // 读一帧：调用方复用 rawSlots/physSlots（已按 prog.slotTable 尺寸准备）。
 bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
                std::vector<TypedVec> &physSlots, const uint8_t *p, size_t avail, FrameRead &r)
@@ -416,8 +451,58 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
     uint32_t payloadOff = 0, payloadBytes = 0, payloadCount = 0;
     const bool hasPayload = prog.hasSeries;
 
+    // 每个槽位在帧内的字节区间：位域段的 base 需要借它定位容器。
+    std::vector<std::pair<uint32_t, uint32_t>> byteRange(prog.slotTable.size(), {0u, 0u});
+
     for (const CompiledSeg &seg : prog.segs)
     {
+        // 条件段：不成立就当它不存在——不推进游标、不出通道、槽位保持空。
+        if (seg.hasCond)
+        {
+            TypedValue cond;
+            if (!runByteCode(seg.cond, rawSlots, cond, r.err))
+                return false;
+            if (!truthy(cond))
+                continue;
+        }
+
+        // 位域段：一个位窗口，不推进字节游标。
+        if (seg.hasBit)
+        {
+            const uint32_t base = (seg.bitBaseSlot >= 0)
+                ? byteRange[static_cast<size_t>(seg.bitBaseSlot)].first : 0u;
+            const uint32_t needBytes = static_cast<uint32_t>((seg.bitOffset + seg.bitWidth + 7) / 8);
+            if (static_cast<uint64_t>(base) + needBytes > avail)
+            {
+                r.err = "位域段 " + seg.name + " 超出帧长度";
+                return false;
+            }
+            uint64_t rawv = seg.bitMsb0 ? readBitsMsb(p + base, seg.bitOffset, seg.bitWidth)
+                                        : readBitsLsb(p + base, seg.bitOffset, seg.bitWidth);
+            if (seg.bitSigned && seg.bitWidth < 64 && ((rawv >> (seg.bitWidth - 1)) & 1u))
+                rawv |= ~((1ULL << seg.bitWidth) - 1);
+            Rt rt;
+            rt.spec = &seg;
+            rt.offset = base;
+            rt.bytes = 0;
+            rt.count = 1;
+            rt.raw.reset(prog.slotTable[static_cast<size_t>(seg.slot)].type);
+            rt.raw.push(TypedValue::fromRawInt(rawv, prog.slotTable[static_cast<size_t>(seg.slot)].type));
+            if (seg.identityPhys)
+                rt.phys = rt.raw;
+            else
+            {
+                rt.phys.reset(ValueType::F64);
+                rt.phys.push(TypedValue::fromF(rt.raw.at(0).asDouble() * seg.scale + seg.offset,
+                                              ValueType::F64));
+            }
+            rawSlots[static_cast<size_t>(seg.slot)] = rt.raw;
+            physSlots[static_cast<size_t>(seg.slot)] = rt.phys;
+            byteRange[static_cast<size_t>(seg.slot)] = {base, needBytes};
+            r.fields.push_back(std::move(rt));
+            continue;
+        }
+
         uint32_t count = 0, bytes = 0;
         if (!evalCountOf(seg, rawSlots, count, bytes, r.err))
             return false;
@@ -452,6 +537,7 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
         fillSlot(prog.slotTable[static_cast<size_t>(seg.slot)], p + pos, count, rt.raw, rt.phys, seg);
         rawSlots[static_cast<size_t>(seg.slot)] = rt.raw;
         physSlots[static_cast<size_t>(seg.slot)] = rt.phys;
+        byteRange[static_cast<size_t>(seg.slot)] = {pos, bytes};
         r.fields.push_back(std::move(rt));
         pos += bytes;
     }
@@ -499,6 +585,49 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
         for (int32_t vi : var->segs)
         {
             const CompiledSeg &seg = prog.varSegs[static_cast<size_t>(vi)];
+            if (seg.hasCond)
+            {
+                TypedValue cond;
+                if (!runByteCode(seg.cond, rawSlots, cond, r.err))
+                    return false;
+                if (!truthy(cond))
+                    continue;
+            }
+            if (seg.hasBit)
+            {
+                const uint32_t base = (seg.bitBaseSlot >= 0)
+                    ? byteRange[static_cast<size_t>(seg.bitBaseSlot)].first : 0u;
+                const uint32_t needBytes = static_cast<uint32_t>((seg.bitOffset + seg.bitWidth + 7) / 8);
+                if (static_cast<uint64_t>(base) + needBytes > avail)
+                {
+                    r.err = "位域段 " + seg.name + " 超出帧长度";
+                    return false;
+                }
+                uint64_t rawv = seg.bitMsb0 ? readBitsMsb(p + base, seg.bitOffset, seg.bitWidth)
+                                            : readBitsLsb(p + base, seg.bitOffset, seg.bitWidth);
+                if (seg.bitSigned && seg.bitWidth < 64 && ((rawv >> (seg.bitWidth - 1)) & 1u))
+                    rawv |= ~((1ULL << seg.bitWidth) - 1);
+                Rt rt;
+                rt.spec = &seg;
+                rt.offset = base;
+                rt.bytes = 0;
+                rt.count = 1;
+                rt.raw.reset(prog.slotTable[static_cast<size_t>(seg.slot)].type);
+                rt.raw.push(TypedValue::fromRawInt(rawv, prog.slotTable[static_cast<size_t>(seg.slot)].type));
+                if (seg.identityPhys)
+                    rt.phys = rt.raw;
+                else
+                {
+                    rt.phys.reset(ValueType::F64);
+                    rt.phys.push(TypedValue::fromF(rt.raw.at(0).asDouble() * seg.scale + seg.offset,
+                                                  ValueType::F64));
+                }
+                rawSlots[static_cast<size_t>(seg.slot)] = rt.raw;
+                physSlots[static_cast<size_t>(seg.slot)] = rt.phys;
+                byteRange[static_cast<size_t>(seg.slot)] = {base, needBytes};
+                r.fields.push_back(std::move(rt));
+                continue;
+            }
             uint32_t count = 0, bytes = 0;
             if (!evalCountOf(seg, rawSlots, count, bytes, r.err))
                 return false;

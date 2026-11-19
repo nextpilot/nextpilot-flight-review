@@ -790,6 +790,27 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     if (!parseEmit(o.value(QStringLiteral("emit")).toString(), seg.emitMode, err))
         return false;
 
+    if (o.contains(QStringLiteral("bit")))
+    {
+        const QJsonValue bv = o.value(QStringLiteral("bit"));
+        if (!bv.isObject())
+        {
+            err = "segment " + seg.name + " 的 bit 必须是对象";
+            return false;
+        }
+        const QJsonObject bo = bv.toObject();
+        seg.bit.enabled = true;
+        seg.bit.base = bo.value(QStringLiteral("base")).toString().toStdString();
+        seg.bit.offset = static_cast<int64_t>(bo.value(QStringLiteral("offset")).toDouble(0));
+        seg.bit.width = bo.value(QStringLiteral("width")).toInt(0);
+        seg.bit.order = bo.value(QStringLiteral("order")).toString(QStringLiteral("lsb0")).toStdString();
+    }
+    if (o.contains(QStringLiteral("if")))
+    {
+        seg.cond = jsonExpr(o.value(QStringLiteral("if")), err);
+        if (!seg.cond)
+            return false;
+    }
     if (o.contains(QStringLiteral("expect")))
     {
         seg.expectExpr = jsonExpr(o.value(QStringLiteral("expect")), err);
@@ -1083,6 +1104,18 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
         o["emit"] = "none";
     else if (seg.emitMode == EmitMode::Aux)
         o["emit"] = "aux";
+    if (seg.bit.enabled)
+    {
+        QJsonObject b;
+        if (!seg.bit.base.empty())
+            b["base"] = QString::fromStdString(seg.bit.base);
+        b["offset"] = static_cast<qint64>(seg.bit.offset);
+        b["width"] = seg.bit.width;
+        b["order"] = QString::fromStdString(seg.bit.order);
+        o["bit"] = b;
+    }
+    if (seg.cond)
+        o["if"] = exprJson(seg.cond);
     if (seg.expectExpr)
         o["expect"] = exprJson(seg.expectExpr);
     if (!seg.checks.empty())

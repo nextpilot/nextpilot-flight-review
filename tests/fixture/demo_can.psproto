@@ -1,0 +1,14 @@
+{
+  "name": "demo_can",
+  "layout": "sequential",
+  "endian": "little",
+  "maxsize": 64,
+  "segments": [
+    { "name": "body", "count": 8, "type": "u8", "emit": "none" },
+    { "name": "id", "count": 1, "type": "u32", "bit": { "offset": 0, "width": 29, "order": "msb0" } },
+    { "name": "rpm", "count": 1, "type": "u16", "bit": { "base": "body", "offset": 8, "width": 16, "order": "msb0" },
+      "scale": 0.25, "unit": "rpm", "range": [0, 8000] },
+    { "name": "temp", "count": 1, "type": "i8", "bit": { "base": "body", "offset": 24, "width": 8, "order": "lsb0" },
+      "unit": "degC" }
+  ]
+}

@@ -516,9 +516,41 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
         cs.isText = (s.type.type == ValueType::Text);
 
-        if (!c.compileExpr(s.countExpr, cs.count))
+        // 位域：不占独立字节，count 恒为 1，值从容器（或帧首）的位窗口取。
+        if (s.bit.enabled)
+        {
+            cs.hasBit = true;
+            cs.bitOffset = s.bit.offset;
+            cs.bitWidth = static_cast<uint8_t>(s.bit.width);
+            cs.bitMsb0 = (s.bit.order == "msb0");
+            cs.bitSigned = isSignedType(s.type.type);
+            cs.bitBaseSlot = -1;
+            if (!s.bit.base.empty())
+            {
+                const int32_t idx = c.slotIndex(s.bit.base);
+                if (idx < 0)
+                {
+                    err = "段 " + s.name + " 的 bit.base 未定义：" + s.bit.base;
+                    return false;
+                }
+                cs.bitBaseSlot = idx;
+            }
+            cs.countIsConst = true;
+            cs.constCount = 1;
+            cs.constBytes = 0;
+        }
+
+        // 段级 if：条件不成立就跳过该段。
+        if (s.cond)
+        {
+            cs.hasCond = true;
+            if (!c.compileExpr(s.cond, cs.cond))
+                return false;
+        }
+
+        if (!cs.hasBit && !c.compileExpr(s.countExpr, cs.count))
             return false;
-        if (cs.count.constant)
+        if (!cs.hasBit && cs.count.constant)
         {
             const int64_t v = cs.count.constValue.isSigned() ? cs.count.constValue.asI64()
                                                              : static_cast<int64_t>(cs.count.constValue.asU64());
@@ -656,16 +688,48 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
             cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
             cs.isText = (s.type.type == ValueType::Text);
-            if (!c.compileExpr(s.countExpr, cs.count))
+
+                    // 位域：不占独立字节，count 恒为 1，值从容器（或帧首）的位窗口取。
+                    if (s.bit.enabled)
+                    {
+                cs.hasBit = true;
+                cs.bitOffset = s.bit.offset;
+                cs.bitWidth = static_cast<uint8_t>(s.bit.width);
+                cs.bitMsb0 = (s.bit.order == "msb0");
+                cs.bitSigned = isSignedType(s.type.type);
+                cs.bitBaseSlot = -1;
+                        if (!s.bit.base.empty())
+                        {
+                            const int32_t idx = c.slotIndex(s.bit.base);
+                            if (idx < 0)
+                            {
+                                err = "段 " + s.name + " 的 bit.base 未定义：" + s.bit.base;
+                                return false;
+                            }
+                    cs.bitBaseSlot = idx;
+                        }
+                cs.countIsConst = true;
+                cs.constCount = 1;
+                cs.constBytes = 0;
+                    }
+
+                    // 段级 if：条件不成立就跳过该段。
+                    if (s.cond)
+                    {
+                cs.hasCond = true;
+                        if (!c.compileExpr(s.cond, cs.cond))
+                            return false;
+                    }
+            if (!cs.hasBit && !c.compileExpr(s.countExpr, cs.count))
                 return false;
-            if (cs.count.constant)
+            if (!cs.hasBit && cs.count.constant)
             {
                 const int64_t n = cs.count.constValue.isSigned()
                                       ? cs.count.constValue.asI64()
                                       : static_cast<int64_t>(cs.count.constValue.asU64());
                 if (n <= 0 || n > 1000000)
                     return c.fail("变体段 " + s.name + " 的 count 非法");
-                cs.countIsConst = true;
+        cs.countIsConst = true;
                 cs.constCount = static_cast<uint32_t>(n);
                 cs.constBytes = cs.constCount * s.type.size;
             }

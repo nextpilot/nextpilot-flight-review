@@ -71,6 +71,18 @@ struct LengthSpec
     ExprPtr expr;
 };
 
+// 位域窗口（SPEC §6）。位域段不推进字节游标，它是对某个字节区间的视图：
+//   base 为空 → 相对帧起点；base 指向一个已解析的容器段（典型：CAN 的 8 字节 data）。
+// order: lsb0 = DBC Intel（低位在前），msb0 = DBC Motorola（高位在前）。
+struct BitSpec
+{
+    bool enabled = false;
+    std::string base;
+    int64_t offset = 0; // 单位是位，不是字节
+    int width = 0;
+    std::string order = "lsb0";
+};
+
 struct SegmentDef
 {
     std::string name;
@@ -82,6 +94,8 @@ struct SegmentDef
     double scale = 1.0;
     double offset = 0.0;
     bool bigEndian = false;
+    BitSpec bit;
+    ExprPtr cond; // 段级 if：条件不成立时该段不存在（不消耗字节、不出通道）
     EmitMode emitMode = EmitMode::Channel;
     ExprPtr expectExpr; // 非空即常量匹配
     std::vector<CheckSpec> checks;

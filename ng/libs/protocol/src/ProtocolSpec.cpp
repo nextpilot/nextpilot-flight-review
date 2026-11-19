@@ -164,6 +164,52 @@ QStringList validate(const QJsonObject &o)
         if (!typeNames().contains(type))
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
 
+        // 位域（SPEC §6）：宽度 <= 64，且 width + offset%8 <= 64，单次 loadBytes<=8 即可取完。
+        if (seg.contains(QStringLiteral("bit")))
+        {
+            const QJsonValue bv = seg.value(QStringLiteral("bit"));
+            if (!bv.isObject())
+            {
+                errs << QStringLiteral("%1 的 bit 必须是对象").arg(name);
+            }
+            else
+            {
+                const QJsonObject bo = bv.toObject();
+                const int width = bo.value(QStringLiteral("width")).toInt(0);
+                const double offset = bo.value(QStringLiteral("offset")).toDouble(0);
+                const QString border = bo.value(QStringLiteral("order")).toString(QStringLiteral("lsb0"));
+                if (width <= 0 || width > 64)
+                    errs << QStringLiteral("%1 的 bit.width 必须在 1..64").arg(name);
+                if (offset < 0)
+                    errs << QStringLiteral("%1 的 bit.offset 不能为负").arg(name);
+                const int rem = static_cast<int>(static_cast<long long>(offset) % 8);
+                if (width + rem > 64)
+                    errs << QStringLiteral("%1 的 bit 跨度过大：width + offset%8 <= 64").arg(name);
+                if (border != QLatin1String("lsb0") && border != QLatin1String("msb0"))
+                    errs << QStringLiteral("%1 的 bit.order 只能是 lsb0/msb0").arg(name);
+                if (!type.startsWith(QLatin1Char('u')) && !type.startsWith(QLatin1Char('i')))
+                    errs << QStringLiteral("%1 的位域必须是整型").arg(name);
+                const QString base = bo.value(QStringLiteral("base")).toString().trimmed();
+                if (!base.isEmpty())
+                {
+                    // base 必须是本段之前出现的段，且不是位域段（否则位视图套位视图）
+                    auto oit = order.find(base);
+                    if (oit == order.end())
+                        errs << QStringLiteral("%1 的 bit.base 引用了未知段：%2").arg(name, base);
+                    else if (oit.value() >= order.value(name, 0))
+                        errs << QStringLiteral("%1 的 bit.base 必须在前序：%2").arg(name, base);
+                }
+            }
+        }
+
+        // 条件段：if 为表达式，条件不成立时该段不占字节、不产通道。
+        if (seg.contains(QStringLiteral("if")))
+        {
+            const QJsonValue iv = seg.value(QStringLiteral("if"));
+            if (iv.isString() && iv.toString().trimmed().isEmpty())
+                errs << QStringLiteral("%1 的 if 不能为空").arg(name);
+        }
+
         // length 段：自声明为长度，必须单元素整型。
         if (seg.contains(QStringLiteral("length")))
         {

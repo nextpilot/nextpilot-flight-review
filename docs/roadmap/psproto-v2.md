@@ -682,8 +682,19 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
   同一编译产物解码两次结果一致、通道列随 count 变化允许不齐。
 - 全量 ctest **11/11 通过**。
 
-**S2 之后仍未做**
-- 位域（`bit`）、条件段（`if`）、`enum`、`repeat/until`、`derive`、`types` 别名、`digest.inject`：规范已定义、代码未实现（S4a）。
+**S4a 第一块（本轮完成）：位域 + 条件段**
+- 位域 `bit`：模型（`BitSpec`）、解析/序列化、静态校验、编译（`hasBit/bitBaseSlot/bitOffset/bitWidth/bitMsb0/bitSigned`）、
+  解码（`readBitsLsb` = Intel / `readBitsMsb` = Motorola、符号扩展、`base` 容器字节区间）全部落地。
+- 位域段**不推进字节游标**（SPEC §6.1）：它是容器字节区间的视图，一个 CAN 裸帧只写一条 `body`，其余都是位域。
+- 条件段 `if`（SPEC §6.2）：编译成字节码；为假时该段不存在——不占字节、不出通道、槽位为空，后续段按「没有这一段」定位。
+- 修了一个通用隐患：`TypedValue` 的 `u`/`i` 是两个独立字段，裸整数写入必须按符号性选字段，
+  新增 `TypedValue::fromRawInt()`；位域沿用，避免 `fromU` 在有符号类型上静默得 0。
+- 新增 fixture `tests/fixture/demo_can.psproto`；测试补 CAN 式 8 字节帧（Intel/Motorola、base 容器、符号扩展、scale、条件段真假两路）。ctest 全绿。
+
+**S4a 仍未做**
+- `enum`、`range` 声明、`repeat: eos|until`、`derive` 计算字段、`types` 别名、`digest.inject`；
+  ASCII 原语 `until`/`consume`/`starts`/`terminator` 的完整代码路径（NMEA 目前靠 fixture 结构近似）。
+- 编译层负例测试（表达式引用未定义槽位、`bit.base` 引用未知段、width 越界）。
 - 三语言 codegen（S5）。
 
 

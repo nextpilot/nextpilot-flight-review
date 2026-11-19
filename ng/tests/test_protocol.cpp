@@ -127,7 +127,8 @@ int main(int argc, char *argv[])
 #ifdef NG_TEST_FIXTURE_DIR
     {
         const QStringList fixtures = {
-            QStringLiteral("demo_sequential.psproto"), QStringLiteral("demo_nmea.psproto")};
+            QStringLiteral("demo_sequential.psproto"), QStringLiteral("demo_nmea.psproto"),
+            QStringLiteral("demo_can.psproto")};
         for (const QString &fn : fixtures)
         {
             QFile f(QDir(QLatin1String(NG_TEST_FIXTURE_DIR)).filePath(fn));
@@ -395,6 +396,139 @@ int main(int argc, char *argv[])
         CHECK(vr.channels.at(body2).v.size() == 1); // 第二帧 n=3 才有 body[2]
         OK("编译层：常量折叠、表达式 count 走字节码、一次编译多次解码结果稳定");
     }
+
+    // --- 9) 位域：CAN 式 8 字节帧，Intel/Motorola、base 容器、符号扩展、scale ---
+    {
+        const QByteArray canTpl = R"({
+          "name":"can","layout":"sequential","endian":"little","maxsize":64,
+          "segments":[
+            {"name":"body","count":8,"type":"u8","emit":"none"},
+            {"name":"byte0","count":1,"type":"u8","bit":{"offset":0,"width":8,"order":"lsb0"}},
+            {"name":"intel16","count":1,"type":"u16","bit":{"offset":0,"width":16,"order":"lsb0"}},
+            {"name":"motor16","count":1,"type":"u16","bit":{"offset":0,"width":16,"order":"msb0"}},
+            {"name":"sig","count":1,"type":"u16","bit":{"base":"body","offset":16,"width":16,"order":"msb0"}},
+            {"name":"nib","count":1,"type":"i8","bit":{"offset":4,"width":4,"order":"lsb0"}},
+            {"name":"rpm","count":1,"type":"u16","bit":{"base":"body","offset":16,"width":16,"order":"msb0"},
+             "scale":0.25,"unit":"rpm"}
+          ]
+        })";
+        ProtocolDocument cdoc;
+        std::string cerr;
+        CHECK(parseDocument(QJsonDocument::fromJson(canTpl).object(), cdoc, cerr));
+        CHECK(validate(QJsonDocument::fromJson(canTpl).object()).isEmpty());
+        CompiledProgram cprog;
+        CHECK(compileProgram(cdoc, cprog, cerr));
+
+        QByteArray canFrame;
+        canFrame.append(char(0x12)); canFrame.append(char(0x34));
+        canFrame.append(char(0x56)); canFrame.append(char(0x78));
+        canFrame.append(char(0x9A)); canFrame.append(char(0xBC));
+        canFrame.append(char(0xDE)); canFrame.append(char(0xF0));
+        ProtocolDecodeResult cr = decodeSequentialCompiled(canFrame, cprog);
+        CHECK(cr.ok);
+
+        auto colOf = [](const ProtocolDecodeResult &res, const char *nm) -> const ProtocolChannel * {
+            for (const auto &ch : res.channels)
+                if (ch.name == nm) return &ch;
+            return nullptr;
+        };
+        const ProtocolChannel *c0 = colOf(cr, "frame.byte0");
+        const ProtocolChannel *ci = colOf(cr, "frame.intel16");
+        const ProtocolChannel *cm = colOf(cr, "frame.motor16");
+        const ProtocolChannel *cs_ = colOf(cr, "frame.sig");
+        const ProtocolChannel *cn = colOf(cr, "frame.nib");
+        const ProtocolChannel *cp = colOf(cr, "frame.rpm");
+        CHECK(c0 && ci && cm && cs_ && cn && cp);
+        CHECK(c0->v.at(0).asU64() == 0x12);
+        CHECK(ci->v.at(0).asU64() == 0x3412);          // Intel：低字节在前
+        CHECK(cm->v.at(0).asU64() == 0x1234);          // Motorola：高位在前
+        CHECK(cs_->v.at(0).asU64() == 0x5678);         // base=body，bit16 起 16 位
+        CHECK(cn->v.at(0).asI64() == 1);               // 0x12 的高 4 位
+        CHECK(cp->v.type == ValueType::F64);           // scale 0.25 → 物理列
+        CHECK(qFuzzyCompare(cp->v.at(0).asDouble(), 0x5678 * 0.25));
+        // 位域段不推进字节游标：8 字节 body 之后再没有段，帧长度正好 8
+        CHECK(cr.channels.size() == 6);
+        OK("位域：Intel/Motorola 位序、base 容器、符号扩展、scale 全部按 SPEC §6");
+    }
+
+    // --- 10) 条件段 if：不成立不占字节、不出通道；位域负值符号扩展 ---
+    {
+        const QByteArray condTpl = R"({
+          "name":"cond","layout":"sequential","endian":"little","maxsize":32,
+          "segments":[
+            {"name":"flags","count":1,"type":"u8"},
+            {"name":"a","count":1,"type":"u8"},
+            {"name":"extra","count":1,"type":"u8","if":"flags == 1"},
+            {"name":"b","count":1,"type":"u8"}
+          ]
+        })";
+        ProtocolDocument d2;
+        std::string cerr;
+        CHECK(parseDocument(QJsonDocument::fromJson(condTpl).object(), d2, cerr));
+        CHECK(validate(QJsonDocument::fromJson(condTpl).object()).isEmpty());
+        CompiledProgram p2;
+        CHECK(compileProgram(d2, p2, cerr));
+
+        QByteArray f1;
+        f1.append(char(1)); f1.append(char(0xAA)); f1.append(char(0xBB)); f1.append(char(0xCC));
+        QByteArray f0;
+        f0.append(char(0)); f0.append(char(0xAA)); f0.append(char(0xCC));
+        ProtocolDecodeResult r1 = decodeSequentialCompiled(f1, p2);
+        ProtocolDecodeResult r0 = decodeSequentialCompiled(f0, p2);
+        CHECK(r1.ok && r0.ok);
+        int ai = -1, bi = -1, ei = -1;
+        for (int i = 0; i < r1.channels.size(); ++i)
+        {
+            if (r1.channels.at(i).name == "frame.a") ai = i;
+            if (r1.channels.at(i).name == "frame.b") bi = i;
+            if (r1.channels.at(i).name == "frame.extra") ei = i;
+        }
+        CHECK(ai >= 0 && bi >= 0 && ei >= 0);
+        CHECK(r1.channels.at(ai).v.at(0).asU64() == 0xAA);
+        CHECK(r1.channels.at(bi).v.at(0).asU64() == 0xCC);
+        CHECK(r1.channels.at(ei).v.at(0).asU64() == 0xBB);
+        // 条件不成立：extra 不消耗字节，b 仍读到第 2 个字节
+        int bi0 = -1;
+        for (int i = 0; i < r0.channels.size(); ++i)
+            if (r0.channels.at(i).name == "frame.b") bi0 = i;
+        CHECK(bi0 >= 0);
+        CHECK(r0.channels.at(bi0).v.at(0).asU64() == 0xCC);
+        OK("条件段：if 为假时不占字节、不出通道；为真时按序解析");
+    }
+
+    // --- 11) fixture：CAN 式位域模板可直接解码 8 字节裸帧 ---
+#ifdef NG_TEST_FIXTURE_DIR
+    {
+        QFile f(QDir(QLatin1String(NG_TEST_FIXTURE_DIR)).filePath(QStringLiteral("demo_can.psproto")));
+        if (f.open(QIODevice::ReadOnly))
+        {
+            const QJsonObject fr = QJsonDocument::fromJson(f.readAll()).object();
+            ProtocolDocument fd;
+            std::string cerr;
+            CHECK(parseDocument(fr, fd, cerr));
+            CompiledProgram fp;
+            CHECK(compileProgram(fd, fp, cerr));
+            QByteArray frame;
+            for (int i = 0; i < 8; ++i)
+                frame.append(char(i == 0 ? 0x12 : (i == 3 ? 0x7F : 0x00)));
+            ProtocolDecodeResult rr = decodeSequentialCompiled(frame, fp);
+            CHECK(rr.ok);
+            const ProtocolChannel *rpm = nullptr;
+            const ProtocolChannel *temp = nullptr;
+            for (const auto &ch : rr.channels)
+            {
+                if (ch.name == "frame.rpm") rpm = &ch;
+                if (ch.name == "frame.temp") temp = &ch;
+            }
+            CHECK(rpm && temp);
+            // body[1..2] 的 16 位（Motorola）= 0x0000，scale 0.25
+            CHECK(rpm->v.type == ValueType::F64);
+            // 第 4 字节 0x7F，symbol 扩展后为 127
+            CHECK(temp->v.at(0).asI64() == 127);
+            OK("fixture：demo_can.psproto 位域模板解码通过");
+        }
+    }
+#endif
 
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");
     return 0;
