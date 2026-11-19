@@ -231,7 +231,7 @@ ng_dataset   ng_recording   GUI/ modules / host / extensions
 
 | # | 概念 | 代码落点 | 真实含义 | 需求方裁决（2026-11-19） |
 |---|---|---|---|---|
-| F1 | **数据格式解析** | `IFormatDriver.h`、`CsvFormatDriver`、`UlogFormatDriver`、`CustomProtocolFormatDriver` | "能把某种文件解析成 Dataset 的能力"，声明 `parserId()` + 表名 + 导入 schema | ❌ **改叫 Parser**："是 Parser，不是 Format" → 正名 `DataParser`（分层，见 §9.3） |
+| F1 | **数据格式解析** | `IFormatDriver.h`、`CsvFormatDriver`、`UlogFormatDriver`、`CustomProtocolFormatDriver` | "能把某种文件解析成 Dataset 的能力"，声明 `parserId()` + 表名 + 导入 schema | ✅ **取消门面，并入 `IMessageParser`**：统一为单一解析器接口，多输出函数（见 §9.3 / §10.3.1） |
 | F2 | **业务领域** | `FormatDomain.h/.cpp`、`domain()`、`driversByDomain()` | 通用/飞控/汽车/机器人/卫导/视频——是**通用的业务分类学**，与格式无关 | ❌ **误命名** → `Domain`（通用名，不绑工具箱；见 `modules-organ-completion.md` §7） |
 | F3 | **工具箱本身** | `FormatToolbox.h/.cpp`、`registerBuiltinFormats()` | 现在装的是**全部**知识包（通用/飞控/汽车/机器人/卫导），数据解析器只是其中一类贡献 | ❌ **误命名** → `Toolbox`（见 §9.6） |
 | F4 | **录制格式** | `RecordingFormat.h/.cpp`、`registerFormat()` | raw/mcap 容器——是 app 机制选项 | ✅ **保留 `Format`**——需求方认为改动意义不大，维持 `RecordingFormat` |
@@ -255,31 +255,32 @@ ng_dataset   ng_recording   GUI/ modules / host / extensions
 | `ParserRegistry`、`ParserEntry`、`PsParserVtable`（core SPI） | `IFormatDriver`（`core` 命名空间） |
 | 职责：**执行解析**（纯 C ABI 字节转换） | 职责：**声明**用哪个 parser + 表名策略 + 导入 schema/probe |
 
-若把 `CsvFormatDriver` 直接改成 `CsvParser`，会与同名 SPI 实现 `CsvParser` **直接撞名**；把 `IFormatDriver` 改成 `IParser` 也会与 `IMessageParser` 概念混淆（后者是"字节→可读字段树"的协议检查器，完全不同的产出）。
+若把 `CsvFormatDriver` 直接改成 `CsvParser`，会与同名 SPI 实现 `CsvParser` **直接撞名**；`IParser` 又太短、语义不清（需求方 2026-11-19 明确否决）。
 
-**裁决：分层正名，用 `DataParser` 区分。**
+**最终裁决（覆盖此前所有 F1 命名方案，2026-11-19）：取消 `IDataParser`，F1 声明层并入 `IMessageParser`。**
 
-| 旧名 | 新名 | 层 |
+需求方最终定调：`IMessageParser` 这个名字保留（自解释，Message 作广义"数据报文"解），`IDataParser` 没必要存在。结合 §10.3.1"一个解析器多输出函数、不绑定下游用途"，F1 与协议检查器统一为**同一个解析器接口**：
+
+| 旧名 | 最终处置 | 说明 |
 |---|---|---|
-| `IFormatDriver` | `IDataParser` | 声明层接口（core）："这个格式由哪个 SPI parser 负责 + 展示名/后缀/schema" |
-| `CsvFormatDriver` | `CsvDataParser` | 声明层实现（ext） |
-| `UlogFormatDriver` | `UlogDataParser` | 声明层实现 |
-| `CustomProtocolFormatDriver` | `CustomProtocolDataParser` | 声明层实现 |
-| `CsvParser` / `UlogStreamParser` / ... | **保持 `XxxParser`** | SPI 执行层（字节→批），不加 Data 前缀 |
-| `acceptsFormat()` / `driverForFormat()` / `params["format"]` | **保持字面量 `format`** | 意图参数与格式标识是另一回事（文件后缀语义），不属本次改名；仅方法名可改为 `acceptsFormat`→`acceptsDataFormat`（可选） |
+| `IFormatDriver` / 曾拟 `IDataParser` | **取消，并入 `IMessageParser`** | 声明能力（`parserId`/后缀/表名/schema/probe）成为 `IMessageParser` 的自述 + `paramSpecs` 的一部分 |
+| `CsvFormatDriver` / `UlogFormatDriver` / `CustomProtocolFormatDriver` | **取消独立门面类**，职责并入对应解析器实现 | 由 `XxxParser` 实现 `IMessageParser`，通过 `outputs()` 暴露能力 |
+| `IMessageParser` | **保留为唯一解析器接口** | 一个接口、多输出函数（`parseFrames`/`parseMessages`），名字自解释 |
+| SPI `CsvParser` / `UlogStreamParser` / ... | **保持** `XxxParser` | 执行层不变，实现统一接口或经适配层 |
+| `acceptsFormat()` / `driverForFormat()` / `params["format"]` | **保持字面量 `format`** | 意图参数/格式标识是文件后缀语义，不属命名变更 |
 
 **理由**：
 
-- 满足需求方"是 Parser 不是 Format"的本质意图——接口与实现类都带 `Parser`，去掉 `Format`。
-- 用 `Data` 前缀与已存在的 SPI `Parser`、协议检查 `IMessageParser` 分层，避免三套 Parser 撞成一锅。
-- 三层语义清晰：`IDataParser`（声明"谁解析"）→ SPI `Parser`（执行"怎么解析"）→ `IMessageParser`（解析成可读帧供检查）。
-- **意图参数 `format` 与 `RecordingFormat`（F4）保持不动**——需求方明确 F4 保留 Format，且 `format="csv"` 这类标识是文件后缀语义，改它收益低、风险高。
+- 需求方明确：`IParser` 太短看不明白，`IDataParser` 没必要存在——**统一叫 `IMessageParser`**，它就是"解析器"的唯一名字。
+- 结合 §10.3.1 的职责纯化：解析器只出数据、用途甩给调用者，数值批（原 F1 产物）与可读帧（原 message 产物）只是同一接口的两个输出函数，没有理由分成两个接口/两套门面类。
+- 少一层间接：原 `IFormatDriver → SPI parser` 的声明门面被取消，注册表统一为单一 `ParserRegistry`（按 `outputs()` 能力查询）。
+- **意图参数 `format` 与 `RecordingFormat`（F4）保持不动**——F4 保留 Format，`format="csv"` 是文件后缀语义。
 
-> 与 F2 `FormatDomain` → `Domain` 配套：改名后这层不再有任何 `Format` 字样（`Domain` 通用、`DataParser` 用 Parser），F4 `RecordingFormat` 成为仓库里唯一保留 `Format` 的家族——语义干净。
+> **一致性结果**：从此仓库里 `Parser` 家族只有 `IMessageParser`（统一 C++ 接口）+ SPI `XxxParser`（执行层）+ `ParserRegistry`（统一注册表）三件套，F1 不再有独立的 Format/Data 门面层。F2 `Domain`、F3 `Toolbox` 的改名不受影响。
 
 ### 9.4 F1 牵出的第五套 schema（并入 §4 统一）
 
-`IDataParser`（原 `IFormatDriver`）的 `configSchema`/`importSchema` 与 `IMessageParser::configSchema` 是第 3、4 套 schema（见 §4 表格）——它们的 `type ∈ bool/int/double/enum/string/file` 与 `TransformParam`、`PropKind` 又不一样。**§4 的 `FormSchema`/`FieldType` 统一必须覆盖这四套**，其中：
+统一后的 `IMessageParser`（原 F1 声明能力 + 原 F2 协议检查已合并，见 §9.3）的 `configSchema`/`importSchema` 是第 3、4 套 schema（见 §4 表格）——它们的 `type ∈ bool/int/double/enum/string/file` 与 `TransformParam`、`PropKind` 又不一样。**§4 的 `FormSchema`/`FieldType` 统一必须覆盖这四套**，其中：
 
 - `FieldType` 已补 `File`（覆盖 `"file"`），`Number` 覆盖 `int/double`（§4.1 已更新）；
 - `importSchema` 的 `ui:{preview,warnings}` 扩展段，在 `FormSchema` 里作为可选 `extras: QJsonObject` 保留，不丢能力；
@@ -295,8 +296,9 @@ ng_dataset   ng_recording   GUI/ modules / host / extensions
 |---|---|---|---|
 | `DataSourceRepository` | `SourceRegistry` | 命名 | ✅ 已拍板 |
 | `FormatDomain` | `Domain` | F2 | ✅ 已拍板（通用名，不绑工具箱） |
-| `IFormatDriver` | `IDataParser` | F1 | ✅ 已拍板（分层 Parser） |
-| `CsvFormatDriver` 等 3 个 | `CsvDataParser` 等 | F1 | ✅ 已拍板 |
+| `IFormatDriver`（F1） | **取消，并入 `IMessageParser`** | F1 | ✅ 已拍板（统一为单一解析器接口，见 §9.3） |
+| `CsvFormatDriver` 等 3 个 | **取消门面类**，职责并入解析器实现 | F1 | ✅ 已拍板 |
+| `IMessageParser` | **保留为唯一解析器接口** | — | ✅ 已拍板（名字自解释，多输出函数，见 §10.3.1） |
 | SPI `CsvParser` / `ParserRegistry` 等 | **保持** | F1 执行层 | ✅ 不改名（避免撞名） |
 | `FormatToolbox` | `Toolbox` | F3 | ✅ 已拍板 |
 | `registerBuiltinFormats` | 直接用 `registerBuiltinPacks` | F3 | ✅ 保留一版 deprecated 别名 |
@@ -395,11 +397,13 @@ QWidget / 对话框
 
 **净效果**：四个 driver/parser 手写的 `configSchema()`/`importSchema()` 全部删除，各改成 10 行内的 `paramSpecs()`（纯 metadata）；UI 呈现逻辑在 `SchemaEngine` 里**只有一份**。
 
-### 10.3 硬约束二：两个接口不能硬合并——产物不同，但配置能力可共用
+### 10.3 硬约束二的历史推演（⚠️ 已被 §10.3.1 取代，保留仅供了解决策过程）
 
-需求方说"把 `IFormatDriver` 的内容放进 `IMessageParser`"。**直觉有道理**（两者都要自述、参数配置、探测，确实重复），但直接合并成一个接口会出问题：
+> **注意**：本节最初裁决"双接口 + 公共基类"，随后需求方进一步明确"解析器不绑定下游用途、允许一个解析器多输出函数"（§10.3.1），并最终定调"`IMessageParser` 保留、`IDataParser` 取消"（§9.3）。**最终方案见 §10.3.1 + §9.3，以它们为准**；本节表格/代码是当时的中间状态，不再是有效设计。
 
-| 维度 | `IDataParser`（原 IFormatDriver） | `IMessageParser` |
+需求方最初说"把 `IFormatDriver` 的内容放进 `IMessageParser`"。**直觉有道理**（两者都要自述、参数配置、探测，确实重复），但当时我误以为直接合并成一个接口会出问题：
+
+| 维度 | `IDataParser`（原 IFormatDriver，已取消） | `IMessageParser`（现为统一接口） |
 |---|---|---|
 | 产物 | Dataset 数值列 → 画图/分析 | DecodedFrame 可读帧 → 检查器 |
 | 通路 | 声明 parserId，宿主喂字节给 SPI | 自己 `parse()` 字节 |
@@ -407,21 +411,21 @@ QWidget / 对话框
 | 注册表槽 | `registerDriver` / `drivers()` | `registerMessageParser` / `messageParsers()` |
 | 消费者 | `DataLoadHandler` → `ImportDialog` | `ProtocolInspectorDialog` |
 
-硬合并 = 一个接口背两个产物、两个注册表槽、两条通路，正是当初刻意分开要避免的"上帝接口"。
+当时的错误前提："硬合并 = 一个接口背两个产物、两个注册表槽、两条通路，是'上帝接口'"——**这个前提在 §10.3.1 被推翻**：产物（数值批/可读帧）本就该是同一接口的不同输出函数，注册表/通路也应统一，不是"上帝接口"而是"单一职责的解析器"。
 
-**裁决：不合并类型，抽取公共配置能力层。** 把两者重叠的"自述 + 参数规格 + 配置 + 探测"提到公共接口，两者继承；核心产物行为各留各的：
+当时的中间方案（**已废弃**）：抽公共配置层、保留双接口：
 
 ```cpp
-class IConfigurableContribution : public IToolContribution {  // 新增公共层（core）
-    virtual QVector<ParamSpec> paramSpecs() const = 0;        // 参数规格（唯一手写）
+class IConfigurableContribution : public IToolContribution {  // 公共层（§10.3.1 仍保留这部分）
+    virtual QVector<ParamSpec> paramSpecs() const = 0;
     virtual bool configure(const QJsonObject &params, QString *err) = 0;
-    virtual QJsonObject probe(... ) const = 0;                // 统一探测（原 sniff/probeFile 合一）
+    virtual QJsonObject probe(...) const = 0;
 };
-class IDataParser     : public IConfigurableContribution { /* parserId / load / 表名策略 */ };
-class IMessageParser  : public IConfigurableContribution { /* parse(bytes, DecodedFrame&) */ };
+class IDataParser     : public IConfigurableContribution { /* 已取消 */ };
+class IMessageParser  : public IConfigurableContribution { /* 现统一接口，见 §10.3.1 */ };
 ```
 
-这样需求方要的"统一"效果**全部达到**，且不用冒硬合并的风险：
+当时提到的"公共配置层 `IConfigurableContribution`"这一条**在最终方案中保留**；"双接口"这一条**废弃**。
 
 - 一套参数声明（`paramSpecs`）、一套 schema 生成、一套配置注入——`IConfigurableContribution` 统一；
 - 两个对话框（`ImportDialog` / `ProtocolInspectorDialog`）合并为一个**通用参数对话框**，调同一个 `FormSchemaGenerator`；
@@ -429,9 +433,9 @@ class IMessageParser  : public IConfigurableContribution { /* parse(bytes, Decod
 
 > 一句话：合并的是"配置能力"（该合），不是"解析接口"（不该合）。用户看到的重叠 90% 在配置层，抽取公共基类后这 90% 就真的只剩一份了。
 
-#### 10.3.1 职责纯化：解析器不绑定下游 + 一个解析器多输出函数（需求方 2026-11-19 追加，✅ 方向采纳，修正 10.3）
+#### 10.3.1 最终裁决：解析器不绑定下游 + 一个 `IMessageParser` 多输出函数（需求方 2026-11-19 定稿，✅ 已拍板）
 
-需求方质疑："`IDataParser` 为什么要给他附加绘图的能力呀，甩给其他人。可以允许 `IMessageParser` 增加几个函数，不同函数接收不同的参数，输出不同的格式。"
+需求方质疑："`IDataParser` 为什么要给他附加绘图的能力呀，甩给其他人。可以允许 `IMessageParser` 增加几个函数，不同函数接收不同的参数，输出不同的格式。" 最终定调："`IMessageParser` 叫这个名字，`IParser` 太短看不明白，`IDataParser` 没必要存在。"
 
 **质疑成立，且 SPI 早已如此设计——是我的表述错了。** `ps_parser_spi.h` 头部原文：
 
@@ -449,7 +453,7 @@ class IMessageParser  : public IConfigurableContribution { /* parse(bytes, Decod
 
 ```cpp
 enum class ParseOutput { FrameBatch, MsgFrame /* , Survey, ... */ }; // 纯数据输出类型
-class IParser : public IConfigurableContribution {          // 统一解析器接口
+class IMessageParser : public IConfigurableContribution {   // 唯一解析器接口（名字自解释，Message 作广义"数据报文"）
     virtual QVector<ParseOutput> outputs() const = 0;       // 能力声明：本解析器能提供哪些输出
     // 输出函数签名各异，调用方按 outputs() 挑选：
     virtual int parseFrames(const QByteArray &, FrameBatchSink, ParseErr *) const;  // → 数值批（调用者拿去入仓/画图）
@@ -457,15 +461,17 @@ class IParser : public IConfigurableContribution {          // 统一解析器�
 };
 ```
 
-3. **对 10.3 的修正**：`IConfigurableContribution` 公共配置层（自述 + `paramSpecs` + `configure` + `probe`）**保留**；变的是产物组织方式——从"两个接口各一个产物方法"改为"**一个解析器挂多个输出函数**"。`IDataParser` 门面剩下的 `parserId`/表名/schema 声明并入统一 `IParser` 的自述与 `paramSpecs`，**取消独立门面层**——与"归并两条数据通路"同向，少一层间接。
+> 命名说明：`IMessageParser` 虽然带 Message，但此处 Message 取广义"数据报文"义——一个协议报文既能解成数值批也能解成可读帧，名字仍自解释。否决 `IParser`（太短、看不明白）与 `IDataParser`（与前者重复、无存在必要）。
+
+3. **对 10.3 的修正**：`IConfigurableContribution` 公共配置层（自述 + `paramSpecs` + `configure` + `probe`）**保留**；变的是产物组织方式——从"两个接口各一个产物方法"改为"**一个 `IMessageParser` 挂多个输出函数**"。原 `IFormatDriver`/`IDataParser` 门面的 `parserId`/表名/schema 声明并入 `IMessageParser` 的自述与 `paramSpecs`，**取消独立门面层与 `IDataParser` 类型**——与"归并两条数据通路"同向，少一层间接（见 §9.3 最终裁决）。
 
 4. **注册表统一**：单一 `ParserRegistry`，按 `outputs()` 能力查询；原 `drivers()` / `messageParsers()` 退化为能力视图，`kind = format/message` 保留作兼容过滤。
 
 5. **SPI 对齐（另批）**：`ps_parser_spi.h` 与 `ps_message_parser_spi.h` 两个 vtable 可按同思路演进为"一个 vtable + 多输出槽"（按 `struct_size` 判定）——但这是 **ABI 变更**，本批先统一 C++ 层，SPI 另立批次。
 
-**验收补充**：① 解析器接口无 Dataset/Rust/文件/UI 依赖，可 headless 编译；② 一个协议类（如 MAVLink）能同时提供数值批与可读帧两种输出，调用方按需取用；③ 所有输出走 Sink 回调，解析器不持有结果、不决定去向。
+**验收补充**：① 解析器接口无 Dataset/Rust/文件/UI 依赖，可 headless 编译；② 一个协议类（如 MAVLink）能同时提供数值批与可读帧两种输出，调用方按需取用；③ 所有输出走 Sink 回调，解析器不持有结果、不决定去向；④ 仓库中不再有 `IDataParser` / `IFormatDriver` / 任何 `XxxFormatDriver` 门面类型。
 
-> **待拍板（修正 10.6-2）**：是否接受"取消 `IDataParser` 门面、统一为 `IParser` + 多输出函数"——这比 10.3 的"双接口 + 公共基类"更进一步，也更贴近需求方意图。
+> **已拍板（2026-11-19）**：取消 `IDataParser`、F1 声明层并入 `IMessageParser`（§9.3），统一接口保留 `IMessageParser` 之名 + 多输出函数（本节）。§10.3 的"双接口"中间方案作废。
 
 ### 10.4 与 §4 的关系
 
@@ -488,7 +494,7 @@ class IParser : public IConfigurableContribution {          // 统一解析器�
 ### 10.6 拍板状态
 
 1. ~~确认 `paramSpecs()` 作为唯一手写项~~ → **✅ 已确认**（2026-11-19，需求方追加说明 schema 是 metadata）。
-2. ~~确认"双接口 + 公共基类"~~ → **2026-11-19 修正为更进一步方案**：取消 `IDataParser` 门面、统一 `IParser` + 多输出函数（§10.3.1）；解析器不绑定下游用途、输出经 Sink 交调用者——方向 ✅ 采纳，具体接口形态待拍板。
+2. ~~确认"双接口 + 公共基类"~~ → **✅ 最终拍板（2026-11-19）**：取消 `IDataParser`、F1 声明层并入 `IMessageParser`，统一接口保留 `IMessageParser` 之名 + 多输出函数（§9.3 + §10.3.1）；解析器不绑定下游用途、输出经 Sink 交调用者。§10.3 的双接口方案作废。
 3. ~~确认字段 label 由 `key` 约定生成 + 预览区框架统一渲染~~ → **✅ 已确认**（§10.2.1 定为"schema 纯 metadata、零 UI 控件词汇"，label/description 归引擎，预览归 probe 统一渲染）。
 4. 确认两个参数对话框合并为一个通用对话框（涉及 ImportDialog 的探测预览交互，需保证体验不退化）？——**待拍板**。
 5. **✅ 已拍板（2026-11-19）**：schema 只描述 metadata（变量名/数据类型/可选值/值域/单位/依赖/说明），**严禁 UI 控件词汇**；由自研 `SchemaEngine` 解析生成 UI（§10.2.1/§10.2.2）。
