@@ -29,8 +29,13 @@ public:
     // 列举模板库。返回项：name（不含后缀）/ fileName / path / sizeBytes / modified。
     static QVector<QJsonObject> list(QString *err = nullptr);
 
-    // 读模板文本。拒绝：不存在、后缀不符、超过上限（防误把数据文件当模板读）。
-    static bool read(const QString &path, QByteArray *out, QString *err);
+    // 读模板文本。拒绝：不存在、超过上限（防误把数据文件当模板读）。
+    // requireSuffix=false 供编辑器打开 .json 草稿；模板库自身调用保持 true。
+    static bool read(const QString &path, QByteArray *out, QString *err, bool requireSuffix = true);
+
+    // 校验 + 原子写到指定路径（编辑器"另存为任意位置"用）。
+    // 与 save 共用同一份"先 validate 再落盘"的实现，避免 GUI 自己写一份裸 QFile::write。
+    static bool saveToPath(const QString &path, const QByteArray &content, QString *err);
 
     // 写模板。落盘前先过 validate（写进去的模板必须是能编译的），
     // 再用 QSaveFile 原子替换，避免半截文件被解析器读到。

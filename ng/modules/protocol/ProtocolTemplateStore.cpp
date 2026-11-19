@@ -89,7 +89,7 @@ QVector<QJsonObject> ProtocolTemplateStore::list(QString *err)
     return items;
 }
 
-bool ProtocolTemplateStore::read(const QString &path, QByteArray *out, QString *err)
+bool ProtocolTemplateStore::read(const QString &path, QByteArray *out, QString *err, bool requireSuffix)
 {
     QFileInfo fi(path);
     if (!fi.exists() || !fi.isFile())
@@ -98,7 +98,7 @@ bool ProtocolTemplateStore::read(const QString &path, QByteArray *out, QString *
             *err = QStringLiteral("模板文件不存在：%1").arg(path);
         return false;
     }
-    if (!fi.fileName().endsWith(suffix(), Qt::CaseInsensitive))
+    if (requireSuffix && !fi.fileName().endsWith(suffix(), Qt::CaseInsensitive))
     {
         if (err)
             *err = QStringLiteral("不是协议模板文件（需要 %1 后缀）：%2").arg(suffix(), fi.fileName());
@@ -139,6 +139,17 @@ bool ProtocolTemplateStore::save(const QString &name, const QByteArray &content,
             *err = nameErr;
         return false;
     }
+    // 校验与落盘都交给 saveToPath：一处实现，避免"库内写一份、编辑器写一份"。
+    const QString path = QDir(directory()).absoluteFilePath(name.trimmed() + suffix());
+    if (!saveToPath(path, content, err))
+        return false;
+    if (savedPath)
+        *savedPath = path;
+    return true;
+}
+
+bool ProtocolTemplateStore::saveToPath(const QString &path, const QByteArray &content, QString *err)
+{
     QJsonParseError perr;
     const QJsonObject root = QJsonDocument::fromJson(content, &perr).object();
     if (perr.error != QJsonParseError::NoError)
@@ -154,8 +165,6 @@ bool ProtocolTemplateStore::save(const QString &name, const QByteArray &content,
             *err = QStringLiteral("模板校验失败：%1").arg(issues.join(QStringLiteral("；")));
         return false;
     }
-
-    const QString path = QDir(directory()).absoluteFilePath(name.trimmed() + suffix());
     QSaveFile f(path);
     if (!f.open(QIODevice::WriteOnly))
     {
@@ -171,8 +180,6 @@ bool ProtocolTemplateStore::save(const QString &name, const QByteArray &content,
             *err = QStringLiteral("提交模板失败：%1").arg(f.errorString());
         return false;
     }
-    if (savedPath)
-        *savedPath = path;
     return true;
 }
 

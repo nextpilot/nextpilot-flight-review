@@ -19,6 +19,7 @@
 #include "RuntimeHost.h"
 #include "PlotCanvas.h"
 #include "ProtocolEditorDialog.h"
+#include "ProtocolTemplateStore.h"
 #include "TransformEditorDialog.h"
 #include "Transform.h"
 #include "ShellBinder.h"
@@ -51,19 +52,26 @@ int main(int argc, char *argv[])
     }
     const QString out = QString::fromLocal8Bit(argv[1]);
 
-    // --protocol <输出png>：截图协议编辑器（填好样例帧并触发校验/试算）。
+    // --protocol <输出png> [模板路径] [样例帧hex]：截图协议编辑器（触发校验/试算）。
+    // 给模板路径时按"打开现有协议"的真实路径载入（走 ProtocolTemplateStore，与 GUI 同一份）。
     if (out == QStringLiteral("--protocol") && argc >= 3)
     {
         const QString png = QString::fromLocal8Bit(argv[2]);
+        const QString tplPath = argc >= 4 ? QString::fromLocal8Bit(argv[3]) : QString();
+        const QString frameHex = argc >= 5 ? QString::fromLocal8Bit(argv[4]) : QString();
         nextpilot::plotscope::gui::ProtocolEditorDialog dlg;
         // 对话框里有两个 QPlainTextEdit（JSON 模板框 + hex 样例框）。
         // 不依赖构造顺序：含 "{" 的是 JSON 框（保持 blankTemplate 不动），
         // 另一个是 hex 样例框，写入样例帧。
-        for (auto *edit : dlg.findChildren<QPlainTextEdit *>())
-        {
-            if (!edit->toPlainText().trimmed().startsWith(QLatin1Char('{')))
-                edit->setPlainText(QStringLiteral("AA 0C 00 01 00"));
-        }
+        QByteArray tpl;
+        QString terr;
+        if (!tplPath.isEmpty() &&
+            nextpilot::plotscope::host::ProtocolTemplateStore::read(tplPath, &tpl, &terr, false))
+            dlg.setTemplateText(QString::fromUtf8(tpl), tplPath);
+
+        // 样例帧框：不再靠"哪个框里有 {" 猜，改成找 placeholder/内容判定不可靠，
+        // 直接用对话框的公开接口写样例帧。
+        dlg.setSampleFrame(frameHex.isEmpty() ? QStringLiteral("AA 0C 00 01 00") : frameHex);
         // 触发"校验"与"试算单帧"按钮，让截图带上真实结果。
         for (auto *btn : dlg.findChildren<QPushButton *>())
         {
