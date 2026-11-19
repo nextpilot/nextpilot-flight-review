@@ -21,6 +21,32 @@ namespace
 
 constexpr size_t kNoPos = static_cast<size_t>(-1);
 
+// transform 非标量解析类算子（sexagesimal 在 parseNumber 内完成，这里跳过）。
+void applyTransforms(const CompiledSeg &seg, TypedValue &v)
+{
+    for (const TransformStep &st : seg.transform)
+    {
+        if (st.op == "sexagesimal")
+            continue;
+        double d = v.asDouble();
+        if (st.op == "scale" || st.op == "mul")
+            d *= st.k;
+        else if (st.op == "offset" || st.op == "add")
+            d += st.b;
+        else if (st.op == "abs")
+            d = std::fabs(d);
+        else if (st.op == "round")
+            d = std::round(d);
+        else if (st.op == "clamp")
+            d = (st.hasMin ? std::max(st.minVal, d) : d);
+        else
+            continue;
+        if (st.op == "clamp" && st.hasMax)
+            d = std::min(st.maxVal, d);
+        v = TypedValue::fromF(d, v.type == ValueType::F32 ? ValueType::F32 : ValueType::F64);
+    }
+}
+
 // 值域/枚举：只做判定，处理策略由调用方的 on_mismatch 决定。
 bool violatesDomain(const CompiledSeg &seg, const TypedValue &v)
 {
@@ -553,6 +579,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     r.detail = "值超出 range/enum（原文 " + tok + "）";
                     return false;
                 }
+                applyTransforms(seg, v);
                 col.push(v);
             }
             r.vals[seg.slot] = col;
@@ -827,7 +854,10 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 }
             }
             else
+            {
+                applyTransforms(seg, v);
                 col.push(v);
+            }
         }
         r.vals[seg.slot] = col;
         spans[seg.slot] = {tokenStart, tokenEnd};

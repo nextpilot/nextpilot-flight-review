@@ -537,6 +537,12 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
     cs.pattern = s.pattern;
     cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
     cs.transform = s.transform;
+    if (!s.repeatMode.empty() && !cs.isAscii)
+    {
+        cs.repeatMode = (s.repeatMode == "eos") ? 1 : 2;
+        if (cs.repeatMode == 2 && !c.compileExpr(s.repeatUntil, cs.repeatUntil))
+            return false;
+    }
     cs.hasRange = s.hasRange;
     cs.rangeMin = s.rangeMin;
     cs.rangeMax = s.rangeMax;

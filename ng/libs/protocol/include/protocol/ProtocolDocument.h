@@ -86,8 +86,16 @@ struct BitSpec
 // ASCII 数值变换（SPEC §7.4）。只处理"非标准记法"，标准 CSV/NMEA 数值不需要它。
 struct TransformStep
 {
-    std::string op;  // "sexagesimal"：4807.038 → 48 + 7.038/60
-    int split = 2;   // 小数部分取多少位作为"分"
+    // sexagesimal：4807.038 → 48 + 7.038/60（split 是分的小数位数）
+    // scale/mul（乘 k）、offset/add（加 b）、abs、round、clamp（min..max）
+    std::string op;
+    int split = 2;
+    double k = 1.0;
+    double b = 0.0;
+    bool hasMin = false;
+    bool hasMax = false;
+    double minVal = 0.0;
+    double maxVal = 0.0;
 };
 
 // 摘要校验（SPEC §10）：算什么（内置算子或 Lua 脚本）+ 算哪段原始字节。
@@ -139,6 +147,11 @@ struct SegmentDef
     std::string emptyPolicy;             // ""（空串报错）| "nan" | "skip" | "raw"
     std::string pattern;                 // 正则只做校验，不切分
     std::string onMismatch;              // "" | "reject" | "warn" | "skip"
+    // 二进制变长数组的终止条件（ASCII 用 repeater:"*"）：
+    //   "eos"   → 读到帧尾
+    //   "until" → 每读一个元素求值 repeatUntil，为真即停
+    std::string repeatMode;
+    ExprPtr repeatUntil;
     bool hasRange = false;                // 值域：越界按 on_mismatch 处理
     double rangeMin = 0.0;
     double rangeMax = 0.0;

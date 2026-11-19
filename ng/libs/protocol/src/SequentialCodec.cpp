@@ -505,7 +505,36 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
         }
 
         uint32_t count = 0, bytes = 0;
-        if (!evalCountOf(seg, rawSlots, count, bytes, r.err))
+        if (seg.repeatMode != 0)
+        {
+            // 变长数组：count 由终止条件决定，不用 count 表达式。
+            const uint32_t elem = seg.elemSize > 0 ? seg.elemSize : 1;
+            const uint32_t maxN = static_cast<uint32_t>((avail - pos) / elem);
+            if (seg.repeatMode == 2)
+            {
+                count = maxN;
+                for (uint32_t k = 1; k <= maxN; ++k)
+                {
+                    TypedVec tr, tp;
+                    tr.reset(seg.type);
+                    tp.reset(seg.type);
+                    fillSlot(prog.slotTable[static_cast<size_t>(seg.slot)], p + pos, k, tr, tp, seg);
+                    rawSlots[static_cast<size_t>(seg.slot)] = tr;
+                    TypedValue cond;
+                    if (!runByteCode(seg.repeatUntil, rawSlots, cond, r.err))
+                        return false;
+                    if (truthy(cond))
+                    {
+                        count = k;
+                        break;
+                    }
+                }
+            }
+            else // eos：吃到帧尾
+                count = maxN;
+            bytes = count * elem;
+        }
+        else if (!evalCountOf(seg, rawSlots, count, bytes, r.err))
             return false;
         if (static_cast<uint64_t>(pos) + bytes > avail)
         {

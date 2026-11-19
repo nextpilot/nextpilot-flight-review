@@ -215,8 +215,16 @@ void checkAsciiSegment(const QJsonObject &seg, const QString &name, const QMap<Q
             {
                 const QString op = v.isString() ? v.toString()
                                                 : v.toObject().value(QStringLiteral("op")).toString();
-                if (op != QLatin1String("sexagesimal"))
-                    errs << QStringLiteral("%1 的 transform 只支持 sexagesimal：%2").arg(name, op);
+                static const QStringList kOps = {QStringLiteral("sexagesimal"), QStringLiteral("scale"),
+                                                  QStringLiteral("mul"), QStringLiteral("offset"),
+                                                  QStringLiteral("add"), QStringLiteral("abs"),
+                                                  QStringLiteral("round"), QStringLiteral("clamp")};
+                if (!kOps.contains(op))
+                    errs << QStringLiteral("%1 的 transform 不支持 op=%2").arg(name, op);
+                if (op == QLatin1String("clamp") &&
+                    v.toObject().value(QStringLiteral("min")).toDouble(0) >
+                        v.toObject().value(QStringLiteral("max")).toDouble(0))
+                    errs << QStringLiteral("%1 的 transform.clamp min > max").arg(name);
                 if (!v.isString())
                 {
                     const int split = v.toObject().value(QStringLiteral("split")).toInt(2);
@@ -383,6 +391,20 @@ QStringList validate(const QJsonObject &o)
                               seg.contains(QStringLiteral("delimiter")) ||
                               seg.contains(QStringLiteral("width")) || seg.contains(QStringLiteral("rest")) ||
                               seg.contains(QStringLiteral("repeater"));
+        if (seg.contains(QStringLiteral("repeat")))
+        {
+            const QJsonValue rv = seg.value(QStringLiteral("repeat"));
+            const QString mode = rv.isString() ? rv.toString()
+                                               : rv.toObject().value(QStringLiteral("mode")).toString();
+            if (mode != QLatin1String("eos") && mode != QLatin1String("until"))
+                errs << QStringLiteral("%1 的 repeat.mode 只能是 eos/until：%2").arg(name, mode);
+            if (mode == QLatin1String("until") &&
+                rv.toObject().value(QStringLiteral("until")).toString().isEmpty())
+                errs << QStringLiteral("%1 的 repeat.until 不能为空").arg(name);
+            if (asciiSeg)
+                errs << QStringLiteral("%1：ASCII 段用 repeater:\"*\"，不要用 repeat").arg(name);
+        }
+
         int n = 0;
         const QJsonValue count = seg.value(QStringLiteral("count"));
         if (asciiSeg)

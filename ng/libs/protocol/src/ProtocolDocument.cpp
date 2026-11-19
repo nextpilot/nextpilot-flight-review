@@ -827,6 +827,25 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         seg.width = static_cast<uint32_t>(o.value(QStringLiteral("width")).toInt(0));
     }
     seg.isRest = o.value(QStringLiteral("rest")).toBool(false);
+    if (o.contains(QStringLiteral("repeat")))
+    {
+        const QJsonValue rv = o.value(QStringLiteral("repeat"));
+        if (rv.isString())
+            seg.repeatMode = rv.toString().toStdString();
+        else
+        {
+            const QJsonObject ro = rv.toObject();
+            seg.repeatMode = ro.value(QStringLiteral("mode")).toString().toStdString();
+            const QString until = ro.value(QStringLiteral("until")).toString();
+            if (!until.isEmpty())
+            {
+                seg.repeatMode = "until";
+                seg.repeatUntil = parseExprText(until.toStdString(), err);
+                if (!seg.repeatUntil)
+                    return false;
+            }
+        }
+    }
     if (o.contains(QStringLiteral("range")))
     {
         const QJsonValue rv = o.value(QStringLiteral("range"));
@@ -877,6 +896,12 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
                     const QJsonObject so = v.toObject();
                     st.op = so.value(QStringLiteral("op")).toString().toStdString();
                     st.split = so.value(QStringLiteral("split")).toInt(2);
+                    st.k = so.value(QStringLiteral("k")).toDouble(1.0);
+                    st.b = so.value(QStringLiteral("b")).toDouble(0.0);
+                    st.hasMin = so.contains(QStringLiteral("min"));
+                    st.hasMax = so.contains(QStringLiteral("max"));
+                    st.minVal = so.value(QStringLiteral("min")).toDouble(0.0);
+                    st.maxVal = so.value(QStringLiteral("max")).toDouble(0.0);
                 }
                 if (!st.op.empty())
                     seg.transform.push_back(st);
