@@ -86,6 +86,9 @@ add_subdirectory(libs/intent)
 # schema 契约与渲染：ParamSpec metadata -> FormSchema -> QWidget。
 add_subdirectory(libs/uischema)
 
+# 消息解析契约与 C ABI（IMessageParser / ParserRegistry / ps_*_spi）。
+add_subdirectory(libs/parser)
+
 add_subdirectory(core)
 add_subdirectory(recording)
 add_subdirectory(host)

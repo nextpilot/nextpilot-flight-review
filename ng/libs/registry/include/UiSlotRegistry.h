@@ -8,7 +8,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 // 插槽的语义类别：决定 GUI 层把内容放到哪里、怎么呈现。
@@ -97,4 +97,13 @@ private:
     QHash<QString, QList<BoundUiAction>> m_local;        // area -> 动作（器官本地来源）
 };
 
+} // namespace nextpilot::plotscope::registry
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using registry::SlotKind;
+using registry::UiSlot;
+using registry::BoundUiAction;
+using registry::UiSlotRegistry;
 } // namespace nextpilot::plotscope::core
+

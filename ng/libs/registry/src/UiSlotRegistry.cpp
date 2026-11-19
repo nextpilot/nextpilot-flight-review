@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 void UiSlotRegistry::declareSlot(const QString &area, const QString &label, const QString &owner,
@@ -140,4 +140,4 @@ QList<BoundUiAction> UiSlotRegistry::unboundActions() const
     return m_unbound;
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::registry

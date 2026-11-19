@@ -4,22 +4,22 @@
 
 #include <QHash>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 namespace
 {
 
 // 函数内 static：避免静态初始化顺序问题。
-struct Registry
+struct PackStore
 {
     QList<QPair<QString, BuiltinPackRegistry::PackFactory>> ordered;
     QHash<QString, int> indexById;
 };
 
-Registry &registry()
+PackStore &registry()
 {
-    static Registry r;
+    static PackStore r;
     return r;
 }
 
@@ -29,7 +29,7 @@ bool BuiltinPackRegistry::registerPack(const QString &id, PackFactory factory)
 {
     if (id.isEmpty() || !factory)
         return false;
-    Registry &r = registry();
+    PackStore &r = registry();
     if (r.indexById.contains(id))
         return false; // 重复 id：先到者为准
     r.indexById.insert(id, r.ordered.size());
@@ -58,9 +58,9 @@ QStringList BuiltinPackRegistry::installAll(ExtensionRegistry &target)
 
 void BuiltinPackRegistry::reset()
 {
-    Registry &r = registry();
+    PackStore &r = registry();
     r.ordered.clear();
     r.indexById.clear();
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::registry

@@ -2,7 +2,7 @@
 
 #include <QString>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 // 工具箱的业务领域分类。
@@ -26,4 +26,12 @@ enum class Domain
 const char *domainKey(Domain domain);
 QString domainName(Domain domain);
 
+} // namespace nextpilot::plotscope::registry
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using registry::Domain;
+using registry::domainKey;
+using registry::domainName;
 } // namespace nextpilot::plotscope::core
+

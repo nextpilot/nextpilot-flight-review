@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 void ExtensionRegistry::rebuildIndexes()
@@ -279,4 +279,4 @@ int ExtensionRegistry::count() const
     return drivers().size();
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::registry

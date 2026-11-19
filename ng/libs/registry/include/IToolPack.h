@@ -9,7 +9,7 @@
 #include <memory>
 #include <vector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 // 知识包：一个业务方向（或其下的一个功能单元）对外提供的全部工具贡献的聚合。
@@ -73,4 +73,11 @@ private:
     std::vector<std::unique_ptr<IToolContribution>> m_contribs;
 };
 
+} // namespace nextpilot::plotscope::registry
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using registry::IToolPack;
+using registry::ToolPack;
 } // namespace nextpilot::plotscope::core
+

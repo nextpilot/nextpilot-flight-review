@@ -17,7 +17,7 @@
 #include <QVariant>
 #include <QVector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::parser
 {
 
 // 一个解码字段：raw 是线上的原值，value 是缩放/枚举后的可读值。
@@ -47,4 +47,11 @@ struct DecodedFrame
     bool unknown = false; // 帧 id 已识别但字段模板缺失
 };
 
+} // namespace nextpilot::plotscope::parser
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using parser::DecodedField;
+using parser::DecodedFrame;
 } // namespace nextpilot::plotscope::core
+

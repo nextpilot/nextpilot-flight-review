@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::parser
 {
 
 namespace
@@ -179,4 +179,4 @@ void ParserRegistry::reset()
     r.handles.clear();
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::parser

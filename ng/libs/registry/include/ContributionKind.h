@@ -3,7 +3,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 // 贡献类型（kind）是**开放**标识：用 QString 而不是枚举。
@@ -33,4 +33,12 @@ QString kindName(const QString &kind);
 // 所有已登记过的内置 kind（按顺序，供 CLI 展示骨架）。
 QStringList knownKinds();
 
+} // namespace nextpilot::plotscope::registry
+// B7 过渡别名：core 消亡前全仓仍以 core::ContributionKind 取用。
+namespace nextpilot::plotscope::core
+{
+namespace ContributionKind = nextpilot::plotscope::registry::ContributionKind;
+using nextpilot::plotscope::registry::kindName;
+using nextpilot::plotscope::registry::knownKinds;
 } // namespace nextpilot::plotscope::core
+

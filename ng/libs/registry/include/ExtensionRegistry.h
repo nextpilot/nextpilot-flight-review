@@ -14,8 +14,11 @@
 #include <memory>
 #include <vector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
+
+using nextpilot::plotscope::parser::IMessageParser;
+using nextpilot::plotscope::parser::ParseOutput;
 
 // 工具箱注册表：所有知识包 / 贡献的唯一登记处。
 //
@@ -93,4 +96,10 @@ private:
     QStringList m_idOrder;                                    // 贡献登记顺序
 };
 
+} // namespace nextpilot::plotscope::registry
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using registry::ExtensionRegistry;
 } // namespace nextpilot::plotscope::core
+

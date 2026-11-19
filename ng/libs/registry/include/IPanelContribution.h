@@ -5,7 +5,7 @@
 #include <QList>
 #include <QString>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 // 一个知识包提供的**领域面板**的描述——纯数据，不含 QWidget 指针。
@@ -60,4 +60,11 @@ public:
     virtual QList<PanelSpec> panels() const = 0;
 };
 
+} // namespace nextpilot::plotscope::registry
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using registry::PanelSpec;
+using registry::IPanelContribution;
 } // namespace nextpilot::plotscope::core
+

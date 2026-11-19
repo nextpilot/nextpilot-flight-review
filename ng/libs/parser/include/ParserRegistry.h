@@ -9,7 +9,7 @@
 
 #include <memory>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::parser
 {
 
 // 已登记的解析器。
@@ -84,4 +84,11 @@ private:
             Cls::parserInfo(), Cls::parserVtable(), QStringLiteral("builtin"));        \
     }
 
+} // namespace nextpilot::plotscope::parser
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using parser::ParserEntry;
+using parser::ParserRegistry;
 } // namespace nextpilot::plotscope::core
+

@@ -5,6 +5,8 @@
 #include <QString>
 
 #include "FormSchema.h"
+#include "ExtensionRegistry.h"
+#include "IMessageParser.h"
 
 class QComboBox;
 class QFormLayout;
@@ -14,12 +16,6 @@ class QListWidget;
 class QPlainTextEdit;
 class QTreeWidget;
 class QWidget;
-
-namespace nextpilot::plotscope::core
-{
-class ExtensionRegistry;
-class IMessageParser;
-} // namespace nextpilot::plotscope::core
 
 namespace nextpilot::plotscope::gui
 {

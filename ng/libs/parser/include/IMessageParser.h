@@ -32,8 +32,14 @@
 
 #include <functional>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::parser
 {
+
+namespace ContributionKind = nextpilot::plotscope::registry::ContributionKind;
+using nextpilot::plotscope::registry::Domain;
+using nextpilot::plotscope::registry::IToolContribution;
+using nextpilot::plotscope::intent::Intent;
+using nextpilot::plotscope::uischema::ParamSpec;
 
 // 解析器能提供的输出类型（能力声明，调用方按需取用）。
 enum class ParseOutput
@@ -174,4 +180,12 @@ inline const QString Serial = QStringLiteral("serial");
 inline const QString Can = QStringLiteral("can");
 } // namespace MessageTransport
 
+} // namespace nextpilot::plotscope::parser
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using parser::ParseOutput;
+using parser::IMessageParser;
+namespace MessageTransport = nextpilot::plotscope::parser::MessageTransport;
 } // namespace nextpilot::plotscope::core
+

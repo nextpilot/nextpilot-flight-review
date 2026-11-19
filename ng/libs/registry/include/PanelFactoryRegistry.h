@@ -9,11 +9,14 @@
 
 class QWidget;
 
+// AppContext 真身仍在 core（簇 7 迁 context），此处仅前向声明供工厂签名用。
 namespace nextpilot::plotscope::core
 {
-
 class AppContext;
+}
 
+namespace nextpilot::plotscope::registry
+{
 
 // 部件工厂表：把"部件类型标识"映射到具体的 QWidget 构造过程。
 //
@@ -77,4 +80,10 @@ public:
     }();                                                                               \
     }
 
+} // namespace nextpilot::plotscope::registry
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using registry::PanelFactoryRegistry;
 } // namespace nextpilot::plotscope::core
+

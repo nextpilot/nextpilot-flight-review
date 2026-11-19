@@ -1,13 +1,12 @@
 #include "PanelFactoryRegistry.h"
 
-#include "AppContext.h"
 #include "IIntentExecutor.h"
 
 // B3：容器换成泛型 Registry，对外 API 与 NG_REGISTER_PANEL 宏不变。
 #include "Registry.h"
 #include "StaticAutoRegistry.h"
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 namespace
@@ -44,4 +43,4 @@ QStringList PanelFactoryRegistry::types()
     return out;
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::registry

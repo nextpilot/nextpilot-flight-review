@@ -1,15 +1,12 @@
 #pragma once
 
+#include "ExtensionRegistry.h"
+
 #include <QDialog>
 #include <QJsonObject>
 #include <QString>
 
 class QWidget;
-
-namespace nextpilot::plotscope::core
-{
-class ExtensionRegistry;
-}
 
 namespace nextpilot::plotscope::gui
 {

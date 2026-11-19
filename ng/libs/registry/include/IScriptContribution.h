@@ -5,7 +5,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 // 脚本贡献：一个知识包提供的可复用脚本/自动化片段。
@@ -27,4 +27,10 @@ public:
     virtual QStringList exports() const { return {}; }
 };
 
+} // namespace nextpilot::plotscope::registry
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using registry::IScriptContribution;
 } // namespace nextpilot::plotscope::core
+

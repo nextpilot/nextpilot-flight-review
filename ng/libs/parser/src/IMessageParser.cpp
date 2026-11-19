@@ -2,7 +2,7 @@
 
 #include "SchemaEngine.h"
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::parser
 {
 
 QVector<nextpilot::plotscope::uischema::ParamSpec> IMessageParser::paramSpecs() const
@@ -37,4 +37,4 @@ QJsonValue IMessageParser::param(const QString &key, const QJsonValue &fallback)
     return cur;
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::parser

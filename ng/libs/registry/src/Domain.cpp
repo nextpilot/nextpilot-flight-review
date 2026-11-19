@@ -1,6 +1,6 @@
 #include "Domain.h"
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::registry
 {
 
 const char *domainKey(Domain domain)
@@ -31,4 +31,4 @@ QString domainName(Domain domain)
     return QStringLiteral("通用");
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::registry
