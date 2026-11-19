@@ -249,12 +249,13 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 ASCII **不是另一套模型**：同样是"段 + 边界"，只是边界从字节宽度换成字符边界。
 `$`、`*` 都是**段**（literal 段），不是协议级的 `starts`/`trailer` 概念。
 
-### 7.1 协议级词法
+### 7.1 段级边界（没有协议级 ascii/bin）
 
 ```jsonc
-"lexer": "delimited",     // auto / binary / delimited / fixed / keyed
 "term": ["\r\n", "\n"]    // 帧尾候选集：写了就硬校验，没写就不管
 ```
+
+没有协议级 `lexer`/ascii/bin 开关：**每个段自己声明边界**（见 §7.2 的 `boundaryOf`）。
 
 - `delimited`：分隔符切 token（NMEA、CSV 这类）
 - `fixed`：定宽字符，段用 `width`
@@ -285,7 +286,7 @@ ASCII 段的 `count` 可省略（默认 1）；`bit` 不允许出现在 ASCII �
 
 ```jsonc
 {
-  "name": "nmea_gga", "lexer": "delimited", "term": ["\r\n"], "maxsize": 128,
+  "name": "nmea_gga", "term": ["\r\n"], "maxsize": 128,
   "segments": [
     {"name":"dollar","type":"char","literal":"$","emit":"none"},
     {"name":"msgid","type":"string","delimiter":",","emit":"none"},
@@ -315,7 +316,7 @@ ASCII 段的 `count` 可省略（默认 1）；`bit` 不允许出现在 ASCII �
 ### 7.4 例：无同步字的空白分隔（私有 CSV）
 
 ```jsonc
-{"lexer":"delimited","term":["\r\n","\n"],"maxsize":128,
+{"term":["\r\n","\n"],"maxsize":128,
  "segments":[
    {"name":"id","type":"number","delimiter":"blank"},
    {"name":"val","type":"number","delimiter":"blank"},
@@ -405,6 +406,11 @@ PatternMismatch / OverflowMaxsize / IncompleteAtEof`
 ### 新增（9 组，补表达力）
 
 `bit` 位域、`if` 条件段、`digest` 拆分+命名算法表+`inject`+位宽、`until`/`consume`/`starts`/`terminator`、`enum`、`range` 声明、`repeat: eos|until`、`derive` 计算字段、`types` 别名。
+
+**ASCII/混合协议（v2 新增，S4a）**：`SegBoundary{Byte,Literal,Delimit,Fixed,Rest,Repeat,Keyed}`
+取代协议级 `lexer`——字节段边界由 `type × count` 推出，字符段由 `literal`/`delimiter`/`width`/`rest`/`key` 声明；
+同一记录里可混排（文本头 + 二进制载荷）。流式语义：锚点定位、term 可选、`$`/`*` 硬匹配、新 `$` 作废旧候选、
+无 term 靠 check 十六进制宽度自证；`digest.from/to` 走原始字节。时间轴由 `timestamp` 表达式求值。
 
 ---
 

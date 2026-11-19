@@ -28,6 +28,41 @@
 
 帧布局按 `segments` 顺序逐段读取；`scale/offset` 做物理换算 `phys = raw*scale + offset`。
 
+## ASCII / 混合协议
+
+没有"协议是 ASCII 还是二进制"这一层——每个段声明自己的**边界**：
+
+```jsonc
+{
+  "name": "nmea_gga",
+  "term": ["\r\n"],
+  "segments": [
+    { "name": "dollar", "literal": "$", "emit": "none" },
+    { "name": "msgid",  "char": true, "delimiter": "," },
+    { "name": "lat",    "type": "number", "delimiter": "," },
+    { "name": "star",   "literal": "*", "emit": "none" },
+    { "name": "check",  "type": "number", "base": 16,
+      "digest": { "alg": "xor8", "from": "after:dollar", "to": "before:star" } }
+  ]
+}
+```
+
+| 段键 | 作用 |
+|---|---|
+| `literal` | 逐字符/逐字节匹配（`$`、`*`），天然是同步标记 |
+| `delimiter` | 读到定界符；`"blank"` 是空格/Tab 字符类；候选集按长度降序（`\r\n` 优先） |
+| `key` | `key=value` 词法（`ver=1.0,name=x`） |
+| `width` | 定宽字符数 |
+| `rest` | 直到记录尾 |
+| `base` / `fixed` / `signed` / `sci` | 数值格式：进制、小数位、负号、科学计数 |
+| `as` | 覆盖输出类型（`u8`/`i16`/`f32`…） |
+| `pattern` / `on_mismatch` | 正则校验；`reject`/`warn`/`skip` |
+| `empty` | 空字段策略：`nan`/`skip`/`raw` |
+| `transform` | 值变换（`sexagesimal`） |
+
+流式语义：锚点（首个 `literal`）定位 → `term` 收尾（写了就要、没写就不管）→ 校验通过才产出；
+等 `*` 时来了新 `$`，旧候选整体作废。字节段（`type` + `count`）与字符段可在同一记录里混排。
+
 ## 顶层键
 
 | 键 | 说明 |

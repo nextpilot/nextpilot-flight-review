@@ -716,6 +716,49 @@ int main(int argc, char *argv[])
     }
 #endif
 
+    // --- 编译层负例：坏模板必须明确失败，不静默产出 ---
+    {
+        auto compileFail = [](const char *json, std::string &why) -> bool {
+            ProtocolDocument doc;
+            std::string perr;
+            if (!parseDocument(QJsonDocument::fromJson(QByteArray(json)).object(), doc, perr))
+            {
+                why = perr;
+                return true; // 解析/校验层拦下也算失败
+            }
+            CompiledProgram prog;
+            std::string err;
+            if (!compileProgram(doc, prog, err))
+            {
+                why = err;
+                return true;
+            }
+            return false;
+        };
+
+        {
+            std::string why;
+            CHECK(compileFail(R"({"name":"neg1","segments":[{"name":"a","type":"u8"},{"name":"b","type":"u8","count":"undef_slot + 1"}]})", why));
+        }
+        {
+            std::string why;
+            CHECK(compileFail(R"({"name":"neg2","segments":[{"name":"a","type":"u8","bit":{"base":"nope","offset":0,"width":3}}]})", why));
+        }
+        {
+            std::string why;
+            CHECK(compileFail(R"({"name":"neg3","segments":[{"name":"a","literal":"$","width":0}]})", why));
+        }
+        {
+            std::string why;
+            CHECK(compileFail(R"({"name":"neg4","segments":[{"name":"a","literal":"$","delimiter":","}]})", why));
+        }
+        {
+            std::string why;
+            CHECK(compileFail(R"({"name":"neg5","segments":[{"name":"a","type":"u8","width":70000}]})", why));
+        }
+        OK("编译层负例：未定义槽位/bit.base/width 越界/literal+delimiter 混写全部明确失败");
+    }
+
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");
     return 0;
 }

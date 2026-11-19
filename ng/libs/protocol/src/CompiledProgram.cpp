@@ -492,6 +492,10 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
 {
     cs.boundary = static_cast<int>(boundaryOf(s));
     cs.key = s.key;
+    if (s.hasWidth && (s.width == 0 || s.width > 65535))
+        return c.fail("段 " + s.name + " 的 width 必须在 1..65535");
+    if (!s.literal.empty() && (s.hasDelimiter || s.hasWidth || s.isRest))
+        return c.fail("段 " + s.name + " 的 literal 与 delimiter/width/rest 互斥");
     cs.isAscii = (cs.boundary != static_cast<int>(SegBoundary::Byte)) || (c.docHasChar && wantsTokenContext(s));
     if (!s.as.empty())
     {

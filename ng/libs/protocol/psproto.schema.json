@@ -65,18 +65,6 @@
     "timestamp": {
       "$ref": "#/$defs/timestamp"
     },
-    "lexer": {
-      "type": "string",
-      "enum": [
-        "auto",
-        "binary",
-        "delimited",
-        "fixed",
-        "keyed"
-      ],
-      "default": "auto",
-      "description": "协议级词法：delimited 分隔符切 token；fixed 定宽；keyed 键值；binary 走字节游标"
-    },
     "term": {
       "oneOf": [
         {
@@ -453,10 +441,16 @@
         "description": {
           "type": "string"
         },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^=,]+$",
+          "description": "key=value 词法：段的键名，值取到 , ; 空白 或记录尾"
+        },
         "literal": {
           "type": "string",
           "minLength": 1,
-          "description": "必须逐字符匹配的字面量段（$ * , 等）"
+          "description": "必须逐字符匹配的字面量段（$ * , 等）；段级边界，不存在协议级 ascii/bin"
         },
         "delimiter": {
           "oneOf": [
