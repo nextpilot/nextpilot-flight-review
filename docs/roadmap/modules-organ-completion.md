@@ -42,7 +42,9 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 >
 > **拆开后的关联方式**：不新增任何跨模块依赖。两个新模块各自只认 `AppContext` 共享仓库，继续用 C1 的双向绑定；C2 的摄取串联留在宿主；C3 的 UI 读全局态。`mod.source` 与 `mod.dataset` 之间**互不 include、互不 requires**。
 
-### 1.4 命名裁决：`DataSourceRepository` → `SourceRegistry`
+### 1.4 命名裁决：`DataSourceRepository` → `SourceRegistry`（✅ 已拍板）
+
+> ✅ **需求方已确认（2026-11-19）**：采用 `SourceRegistry`。本裁决定稿，R0 可执行。可选项 `DataRepository` → `DatasetRepository` **仍未采纳**，需求方未表态前保持 `DataRepository` 原名。
 
 需求方指出 `DataSourceRepository` 容易误解。逐行核对后确认批评成立，**裁决重命名为 `SourceRegistry`**（源码重命名属机械改动，由实现方在 R0 完成；本轮只固化裁决，不动实现代码）。
 
@@ -171,4 +173,28 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 2. **确认 report / autopilot review 本批不做成品**，只备扩展点 + 契约 + 意图常量（§2）？
 3. **导出后端**：本批只定接口不引入任何 PDF/HTML 依赖，确认？（§2.2）
 4. finding 结构固化为 `datasetId/kind/severity/payload` 是否够用，还是要留扩展字段？（§2.2）
-5. **确认 `DataSourceRepository` 改名 `SourceRegistry`**（§1.4）？连带的可选项：`DataRepository` 是否也改 `DatasetRepository` 与之对齐（本裁决**未**采纳，需你定）？
+5. ~~确认 `DataSourceRepository` 改名 `SourceRegistry`~~ → **✅ 已确认（2026-11-19）**，见 §1.4。可选项 `DataRepository` → `DatasetRepository` 需求方未表态，保持原名。
+
+---
+
+## 7. 命名裁决：`FormatDomain` → `ToolboxDomain`（需求方 2026-11-19 追加，待确认）
+
+需求方质疑："这个文件表示的是领域吗？为什么加 Format，格式所属于的领域？" 逐行核对后确认：**`Format` 前缀是误导，应去掉**。
+
+**真实职责（与"格式"无关）：**
+
+- 头注释自己写的是"**工具箱的业务领域分类**……工具箱按 PlotScope 服务的业务方向组织——这是它的分类学"。
+- 枚举值 `General/Autopilot/Automotive/Robotics/Gnss/Video` 是**业务方向**，不是格式类型——`ULog/apbin` 同属 `Autopilot`，`CSV/JSON` 同属 `General`。
+- 真正的持有者是 `IToolPack::domain()` 与 `IToolContribution::domain()`（脚本/面板/数据/示例贡献都带 domain）；`ExtensionRegistry::contributionsByDomain()` / `driversByDomain()` / `messageParsersByDomain()` 只是**按业务方向分组查询**——格式驱动/解析器是被分组的对象，不是 domain 的定义者。
+- `ContributionKind.h:12`、`IToolContribution.h:33` 均称其为"领域（稳定分类学）"；`toolbox-architecture.md` 通篇讲"四领域工具箱"。
+
+**裁决：`ToolboxDomain`。** 理由：
+
+- 与持有者 `IToolPack` / `IToolContribution` 的"工具箱"主体一致，也与 `toolbox-architecture.md` 的四领域工具箱对齐；一眼看出是"工具箱按业务方向分类"。
+- `domainKey()` / `domainName()` **保留**（它们描述的就是领域本身，无歧义）。
+- 文件同步改名：`FormatDomain.h/.cpp` → `ToolboxDomain.h/.cpp`。
+- **候选否决**：`BusinessDomain` 太泛（任何业务都有 domain，不点明是工具箱分类学）；`Domain` 过短，与数学域/网络域撞名；`ToolDomain` 与具体"工具"概念混淆。
+
+**影响面（实现方 R0，约 26 个 C++ 文件）**：`core`（`ExtensionRegistry`、`ContributionKind`、`BuiltinContributions`、`IFormatDriver`、`IToolContribution`、`IToolPack`）、4 个业务 Pack、各 FormatDriver、`GuiContext`、`ProtocolInspectorDialog`、`IModule.h`、`cli_main.cpp`、2 个测试，加 `ARCHITECTURE.md` 提及。纯机械全局替换，与 R0 的 `SourceRegistry` 改名同批处理。
+
+> 待确认：采用 `ToolboxDomain`（推荐）还是需求方另有偏好？确认后并入 R0。
