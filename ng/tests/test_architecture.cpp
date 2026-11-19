@@ -246,24 +246,24 @@ int main(int argc, char **argv)
     App application;
     const auto errors = application.startup(true);
     CHECK(errors.isEmpty());
-    CHECK(application.modules().activeIds().size() == 7); // 6 内置 + 1 探针
-    CHECK(application.modules().isActive(QStringLiteral("mod.probe")));
+    CHECK(application.host().activeIds().size() == 7); // 6 内置 + 1 探针
+    CHECK(application.host().isActive(QStringLiteral("mod.probe")));
     // 内置器官：数据/绘图/脚本/设置 + 本轮补齐的协议/分析。
-    CHECK(application.modules().isActive(QStringLiteral("mod.settings")));
-    CHECK(application.modules().isActive(QStringLiteral("mod.protocol")));
-    CHECK(application.modules().isActive(QStringLiteral("mod.analysis")));
+    CHECK(application.host().isActive(QStringLiteral("mod.settings")));
+    CHECK(application.host().isActive(QStringLiteral("mod.protocol")));
+    CHECK(application.host().isActive(QStringLiteral("mod.analysis")));
 
     // 探针模块提供的能力可用（它自带的意图处理器已被注册）。
     {
         Intent ping;
         ping.op = QStringLiteral("probe.ping");
-        const auto pong = application.modules().execute(ping);
+        const auto pong = application.host().execute(ping);
         CHECK(pong);
         CHECK(pong.value().payload.toString() == QStringLiteral("pong"));
     }
     fprintf(stdout, "[ok] 零改动新增：测试内自注册的探针模块被自动装载并可执行\n");
 
-    ExtensionRegistry &toolbox = application.modules().extensions();
+    ExtensionRegistry &toolbox = application.host().extensions();
     // 断言语义（关键格式已装入）而非硬编码总数——加一个格式驱动不该让契约测试变红。
     CHECK(toolbox.count() >= 3);
     CHECK(toolbox.contains(QStringLiteral("csv")));
@@ -374,7 +374,7 @@ int main(int argc, char **argv)
         // 此前这里是 5 —— 因为骨架槽被声明在两处，
         // 幂等的 declareSlot 让 host 层那份信息更少的版本**静默丢弃**了 GUI 那份，
         // 于是 headless 只看到 5 个残缺槽（详见下方 1b 段的契约测试）。
-        const auto &slotReg = application.modules().uiSlots();
+        const auto &slotReg = application.host().uiSlots();
         // Ribbon 8 页结构（开始/文件/数据/绘图/脚本/协议/分析/视图）。
         CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 8);
         for (const char *p : {"ribbon.page.home", "ribbon.page.file", "ribbon.page.data",
@@ -405,7 +405,7 @@ int main(int argc, char **argv)
     // 1b) UI 插槽：骨架槽**唯一声明**，且信息完整。
     //
     // 这条契约来自一次真实缺陷：骨架槽曾在两处声明
-    // （host 层 ModuleHost 构造函数 + GUI 层 MainWindow::declareStandardSlots），
+    // （host 层 RuntimeHost 构造函数 + GUI 层 MainWindow::declareStandardSlots），
     // 而 declareSlot 是幂等的（先到者为准），于是 host 层那份信息更少的声明
     // （没有 kind/父槽、label 也不准）把 GUI 层那份**静默丢弃**了：
     //   · dock.left 的 label 成了"左侧面板"而非"数据集"；
@@ -415,7 +415,7 @@ int main(int argc, char **argv)
     // 现在骨架槽只在 host 层 SkeletonSlots 一处声明（core 只留机制），
     // GUI 与 headless 拿到同一份。这里钉死它的完整性。
     {
-        const auto &slotReg = application.modules().uiSlots();
+        const auto &slotReg = application.host().uiSlots();
 
         // 骨架槽齐备（headless 也能看到全部 —— 这正是"单一来源"的价值）。
         for (const char *area : {"ribbon.page.home", "ribbon.group.home.data",
@@ -450,7 +450,7 @@ int main(int argc, char **argv)
     }
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）
-    Result<IntentResult> loaded = application.modules().execute(loadIntent(csv));
+    Result<IntentResult> loaded = application.host().execute(loadIntent(csv));
     assert(loaded);
     const DatasetId id = loaded.value().payload.toInt();
     const Dataset *ds = application.data().get(id);
@@ -542,7 +542,7 @@ int main(int argc, char **argv)
         ui.op = QStringLiteral("data.load");
         ui.params[QStringLiteral("path")] = ulg;
         ui.params[QStringLiteral("format")] = QStringLiteral("ulog");
-        Result<IntentResult> uloaded = application.modules().execute(ui);
+        Result<IntentResult> uloaded = application.host().execute(ui);
         if (!uloaded)
             fprintf(stderr, "[diag] ULog 加载失败: %s / %s\n",
                     uloaded.error().code.toUtf8().constData(),
@@ -614,7 +614,7 @@ int main(int argc, char **argv)
     }
 
     // 3) 意图执行：plot 模块按 table.column 编译出 PlotSpec
-    Result<IntentResult> rendered = application.modules().execute(renderIntent(id, QStringLiteral("demo.pitch")));
+    Result<IntentResult> rendered = application.host().execute(renderIntent(id, QStringLiteral("demo.pitch")));
     assert(rendered);
     const QVariantMap spec = rendered.value().payload.toMap();
     assert(spec.value(QStringLiteral("type")).toString() == QStringLiteral("timeseries"));
@@ -637,7 +637,7 @@ int main(int argc, char **argv)
 
         application.recorder().clear();
         application.recorder().setRecording(true);
-        Result<IntentResult> sr = application.modules().execute(runScript);
+        Result<IntentResult> sr = application.host().execute(runScript);
         application.recorder().setRecording(false);
         assert(sr);
         fprintf(stdout, "[ok] Lua 脚本通过 ps 门面执行成功（headless，无 QWidget）\n");
@@ -658,7 +658,7 @@ int main(int argc, char **argv)
         QVariantMap replayedSpec;
         for (int i = 0; i < recorded.size(); ++i)
         {
-            Result<IntentResult> rr = application.modules().execute(recorded.at(i));
+            Result<IntentResult> rr = application.host().execute(recorded.at(i));
             assert(rr);
             if (recorded.at(i).op == QStringLiteral("data.load"))
                 replayedId = rr.value().payload.toInt();
@@ -678,7 +678,7 @@ int main(int argc, char **argv)
         auto mk = [](const QString &op) { Intent i; i.op = op; return i; };
         // data.load 成功后自动记入最近文件（settings 持久化）。
         Intent recent = mk(QStringLiteral("data.recent"));
-        Result<IntentResult> rr = application.modules().execute(recent);
+        Result<IntentResult> rr = application.host().execute(recent);
         CHECK(rr);
         const QStringList recents = rr.value().payload.toStringList();
         CHECK(recents.contains(csv));
@@ -689,7 +689,7 @@ int main(int argc, char **argv)
         Intent exp = mk(QStringLiteral("data.export"));
         exp.params[QStringLiteral("dataset")] = id;
         exp.params[QStringLiteral("path")] = outCsv;
-        Result<IntentResult> er = application.modules().execute(exp);
+        Result<IntentResult> er = application.host().execute(exp);
         if (!er)
             fprintf(stderr, "[diag] data.export 失败: %s / %s\n",
                     er.error().code.toUtf8().constData(),
@@ -705,7 +705,7 @@ int main(int argc, char **argv)
         // data.reload：重载活动源，重新走 data.load（有 sources 支撑）。
         application.context().setActiveSourceId(application.context().sources().ids().first());
         Intent rel = mk(QStringLiteral("data.reload"));
-        Result<IntentResult> rer = application.modules().execute(rel);
+        Result<IntentResult> rer = application.host().execute(rel);
         if (!rer)
             fprintf(stderr, "[diag] data.reload 失败: %s / %s\n",
                     rer.error().code.toUtf8().constData(),
@@ -715,7 +715,7 @@ int main(int argc, char **argv)
 
         // data.clearCache：删除 .psc 缓存（无缓存时返回 0 也算成功）。
         Intent cc = mk(QStringLiteral("data.clearCache"));
-        Result<IntentResult> cr = application.modules().execute(cc);
+        Result<IntentResult> cr = application.host().execute(cc);
         CHECK(cr);
         CHECK(cr.value().payload.toInt() >= 0);
         fprintf(stdout, "[ok] data.clearCache：解析缓存清理成功（清掉 %d 个）\n",
@@ -762,16 +762,16 @@ int main(int argc, char **argv)
             fprintf(stdout, "[ok] 派生配方只存算子+参数，不存结果数组\n");
 
             // data.workspace.list / save：可读、可 flush。
-            Result<IntentResult> wl = application.modules().execute(mk(QStringLiteral("data.workspace.list")));
+            Result<IntentResult> wl = application.host().execute(mk(QStringLiteral("data.workspace.list")));
             CHECK(wl);
             CHECK(!wl.value().payload.toByteArray().isEmpty());
-            Result<IntentResult> ws = application.modules().execute(mk(QStringLiteral("data.workspace.save")));
+            Result<IntentResult> ws = application.host().execute(mk(QStringLiteral("data.workspace.save")));
             CHECK(ws);
             fprintf(stdout, "[ok] data.workspace.list/save：配置可读可落盘\n");
 
             // data.workspace.restore：重放 data.load（record=false 不重复记录）。
             const int sourcesBefore = cfg.sources.size();
-            Result<IntentResult> wr = application.modules().execute(mk(QStringLiteral("data.workspace.restore")));
+            Result<IntentResult> wr = application.host().execute(mk(QStringLiteral("data.workspace.restore")));
             CHECK(wr);
             const QVariantMap stat = wr.value().payload.toMap();
             CHECK(stat.value(QStringLiteral("sources")).toInt() >= 1);
@@ -784,9 +784,9 @@ int main(int argc, char **argv)
     }
 
     // 4) 卸载隔离：关掉绘图模块后，CSV 仍能加载，数据不消失
-    CHECK(application.modules().deactivate(QStringLiteral("mod.plot")));
-    CHECK(!application.modules().isActive(QStringLiteral("mod.plot")));
-    Result<IntentResult> stillLoads = application.modules().execute(loadIntent(csv));
+    CHECK(application.host().deactivate(QStringLiteral("mod.plot")));
+    CHECK(!application.host().isActive(QStringLiteral("mod.plot")));
+    Result<IntentResult> stillLoads = application.host().execute(loadIntent(csv));
     assert(stillLoads);
     assert(application.data().get(id) != nullptr);
     fprintf(stdout, "[ok] 卸载 plot 模块后 CSV 仍可用，数据未丢失\n");
@@ -796,7 +796,7 @@ int main(int argc, char **argv)
     CHECK(toolbox.unregisterDriver(QStringLiteral("csv")));
     CHECK(!toolbox.contains(QStringLiteral("csv")));
     CHECK(toolbox.count() == 1);
-    Result<IntentResult> noHandler = application.modules().execute(loadIntent(csv));
+    Result<IntentResult> noHandler = application.host().execute(loadIntent(csv));
     CHECK(!noHandler);
     CHECK(noHandler.error().code == QStringLiteral("eformat"));
     fprintf(stdout, "[ok] 从工具箱撤销 CSV 驱动后能力被精确撤销（eformat）\n");
@@ -809,12 +809,12 @@ int main(int argc, char **argv)
         ui.op = QStringLiteral("data.load");
         ui.params[QStringLiteral("path")] = ulg;
         ui.params[QStringLiteral("format")] = QStringLiteral("ulog");
-        Result<IntentResult> stillLoads = application.modules().execute(ui); // CSV 已撤，ULog 仍在
+        Result<IntentResult> stillLoads = application.host().execute(ui); // CSV 已撤，ULog 仍在
         CHECK(stillLoads);
         CHECK(toolbox.unregisterDriver(QStringLiteral("ulog")));
         // 注意：撤销 csv 时已按包原子撤掉 pack.common（csv + custom-protocol），
         // 这里无需也不能再单独撤 custom-protocol。
-        Result<IntentResult> noUlog = application.modules().execute(ui);
+        Result<IntentResult> noUlog = application.host().execute(ui);
         CHECK(!noUlog && noUlog.error().code == QStringLiteral("eformat"));
         CHECK(toolbox.count() == 0);
         fprintf(stdout, "[ok] 工具箱隔离：撤 CSV 不影响 ULog；撤 ULog 后 ulog 能力精确撤销\n");

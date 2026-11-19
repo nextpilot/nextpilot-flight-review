@@ -3,7 +3,7 @@
 #include "BuiltinModuleRegistry.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 #include "SettingsStore.h"
 
 #include <cstdio>

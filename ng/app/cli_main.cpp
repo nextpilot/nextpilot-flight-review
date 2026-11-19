@@ -87,7 +87,7 @@ int main(int argc, char **argv)
 
     if (command == QStringLiteral("--list-modules"))
     {
-        for (const auto &info : application.modules().availableModules())
+        for (const auto &info : application.host().availableModules())
         {
             const char *kind = info.kind == nextpilot::plotscope::host::ModuleKind::Builtin ? "builtin" : "extension";
             fprintf(stdout, "%-12s %-10s %s\n", qPrintable(info.id), kind,
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
     if (command == QStringLiteral("--list-packs"))
     {
         // 知识包是装载/卸载的原子单位：每包聚合任意 kind 的贡献。
-        const auto &toolbox = application.modules().extensions();
+        const auto &toolbox = application.host().extensions();
         for (const QString &packId : toolbox.packIds())
         {
             nextpilot::plotscope::core::IToolPack *pack = toolbox.pack(packId);
@@ -115,7 +115,7 @@ int main(int argc, char **argv)
 
     if (command == QStringLiteral("--list-contributions"))
     {
-        const auto &toolbox = application.modules().extensions();
+        const auto &toolbox = application.host().extensions();
         const QString filter = args.size() >= 3 ? args.at(2) : QString();
         // 稳定顺序：按已知 kind 顺序，再按领域顺序。
         for (const QString &kind : nextpilot::plotscope::core::knownKinds())
@@ -139,7 +139,7 @@ int main(int argc, char **argv)
     if (command == QStringLiteral("--list-slots"))
     {
         // 器官/骨架声明插槽，工具箱的 UI 贡献填内容。
-        const auto &slotReg = application.modules().uiSlots();
+        const auto &slotReg = application.host().uiSlots();
         for (const nextpilot::plotscope::core::UiSlot &slot : slotReg.allSlots())
         {
             const auto actions = slotReg.actionsIn(slot.area);
@@ -158,7 +158,7 @@ int main(int argc, char **argv)
     if (command == QStringLiteral("--list-formats"))
     {
         // 工具箱按业务领域分组展示（通用 / 飞控 / 汽车 / 机器人 / 卫导 / 视频）。
-        const auto &toolbox = application.modules().extensions();
+        const auto &toolbox = application.host().extensions();
         const nextpilot::plotscope::core::Domain order[] = {
             nextpilot::plotscope::core::Domain::General, nextpilot::plotscope::core::Domain::Autopilot,
             nextpilot::plotscope::core::Domain::Automotive, nextpilot::plotscope::core::Domain::Robotics,
@@ -181,7 +181,7 @@ int main(int argc, char **argv)
 
     if (command == QStringLiteral("--info") && args.size() >= 3)
     {
-        Result<IntentResult> r = application.modules().execute(makeLoadIntent(args.at(2)));
+        Result<IntentResult> r = application.host().execute(makeLoadIntent(args.at(2)));
         if (!r)
         {
             fprintf(stderr, "错误[%s]: %s\n", qPrintable(r.error().code), qPrintable(r.error().message));
@@ -224,7 +224,7 @@ int main(int argc, char **argv)
         for (int i = 0; i < job.size(); ++i)
         {
             const Intent &intent = job.at(i);
-            Result<IntentResult> r = application.modules().execute(intent);
+            Result<IntentResult> r = application.host().execute(intent);
             if (!r)
             {
                 fprintf(stderr, "意图 %d (%s) 失败[%s]: %s\n", i, qPrintable(intent.op),
@@ -258,7 +258,7 @@ int main(int argc, char **argv)
             application.recorder().setRecording(true);
         }
 
-        Result<IntentResult> r = application.modules().execute(makeScriptIntent(args.at(2)));
+        Result<IntentResult> r = application.host().execute(makeScriptIntent(args.at(2)));
         if (!r)
         {
             fprintf(stderr, "脚本执行失败[%s]: %s\n", qPrintable(r.error().code), qPrintable(r.error().message));

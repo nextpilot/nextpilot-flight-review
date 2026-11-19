@@ -32,7 +32,7 @@
 
 | 项 | 判断依据 |
 |---|---|
-| `Result` 下沉 `ng_foundation` | 复核 21 处引用，含 `ThemeManager`/`ModuleHost` 等纯 UI/宿主类。不下沉必然"循环依赖"或"污染所有消费者"，这是抽库的**硬前置**，别无选择 |
+| `Result` 下沉 `ng_foundation` | 复核 21 处引用，含 `ThemeManager`/`RuntimeHost` 等纯 UI/宿主类。不下沉必然"循环依赖"或"污染所有消费者"，这是抽库的**硬前置**，别无选择 |
 | dataset 抽库 | `Dataset.h` 只依赖 `ps_kernel.h` + Qt Core，零 core 业务类型；`test_fastplot_dataset.cpp` 被迫链接整个 `ng_core` 是现成的复用痛点。边界干净 |
 | intent 抽库 | `Intent`/`IntentResult`/`Job`/`IIntentHandler`/`IIntentExecutor` 全是纯契约 + 纯数据，无 QWidget、无领域词，天然可独立 |
 | schema = 纯 metadata、零 UI 控件词汇 | 需求方定性精准。C++ 无反射，参数必须显式声明（`paramSpecs()`），但声明从"完整 UI schema"瘦身为"数据规格"，方向正确 |
@@ -191,7 +191,7 @@
 需求方最初提议"AppContext 放 app 文件夹"，架构师**反对并已获同意**，两条硬约束：
 
 1. **依赖倒挂**：`app` 是最终可执行目标（`add_executable(plotscope-ng)`），而 `AppContext.h` 被 host / gui / modules / extensions / tests 共 20+ 处 include。下层库不能 include 可执行目标里的头，也不能链接它。
-2. **成环**：`app/App.h` 的 `App` 持有 `ModuleHost`（host 层），而 host 层的 `IModule.h` / `ModuleHost.h` 又 include `AppContext.h`。若两者同住一个库，形成 `host ↔ app` 循环。
+2. **成环**：`app/App.h` 的 `App` 持有 `RuntimeHost`（host 层），而 host 层的 `IModule.h` / `RuntimeHost.h` 又 include `AppContext.h`。若两者同住一个库，形成 `host ↔ app` 循环。
 
 **落法**：`libs/context` 只提供 `class AppContext` 的**定义**；唯一实例在组合根 `App` 里创建（`AppContext m_ctx`）；host / gui / modules / extensions 通过**构造注入**显式拿到引用，不再 include 一个全局 ctx 用 `ctx.data()` 随手取——这正是 §7.3 铁律要根治的"服务定位器"反模式。
 
@@ -241,7 +241,7 @@ foundation(Result)
   → context(AppContext 聚合容器，唯一实例在 app)
   → host(模块宿主)
   → modules / extensions / gui
-  → app(App 组合根，持有 AppContext + ModuleHost)
+  → app(App 组合根，持有 AppContext + RuntimeHost)
   → plotscope-ng(薄 main)
 ```
 
@@ -332,7 +332,7 @@ foundation(Result)
 | 依赖身份 | 被所有人依赖（最底） | 依赖 context+libs，被 modules/gui 依赖 |
 | 终态 | 消亡，内容分流进 libs | 保留 |
 
-组合根 `App` 持 `AppContext`（数据）+ `ModuleHost`（编排），两者是"有什么"与"怎么调度"的关系。
+组合根 `App` 持 `AppContext`（数据）+ `RuntimeHost`（编排），两者是"有什么"与"怎么调度"的关系。
 
 **AppContext 里的 register* 是职责污染**（上帝类的直接成因）。逐点核对注册方/消费方：
 
@@ -346,12 +346,12 @@ foundation(Result)
 这 5 类都是"注册 + 派发 = 运行时路由"，属 host 编排范畴，不是静态运行态数据。
 
 **归位裁决**：
-- 5 类 register*/dispatch* 从 `AppContext` 剥离 → `ModuleHost` 持有的独立 `InteractionRegistry`（headless，`std::function`+`QHash`，符合 libs 铁律）。各注册点由 `appCtx.registerX` 改走 `ModuleContext::host()`。
+- 5 类 register*/dispatch* 从 `AppContext` 剥离 → `RuntimeHost` 持有的独立 `InteractionRegistry`（headless，`std::function`+`QHash`，符合 libs 铁律）。各注册点由 `appCtx.registerX` 改走 `ModuleContext::host()`。
 - 落 host 而非 gui 的依据：注册方含 `modules/data`、`modules/script`，module 不能依赖 gui（依赖倒挂）；`ModuleContext` 同时持有 `app()`/`host()`，host 是 module 与 gui 共有的最低公共层；消费方在 gui，向下够得着 host。
 - `AppContext` 只留**静态运行态数据**：repo / settings / toolbox / sources / ingest + activeChannel / selection + 信号。
 - `activeChannel` / `selection` **留在 context**：它们是跨前端共享的**状态**（CLI/脚本/GUI 共用），与"行为注册"性质不同；挪进 gui 会让 CLI 失去共享通道。
 
 **B7 顺序修订**（前置剥离，避免把 UI 关注点固化进 libs）：
-1. **B7-0**：剥离 5 类 register* → `ModuleHost::InteractionRegistry`，改各注册点走 `host()`。
+1. **B7-0**：剥离 5 类 register* → `RuntimeHost::InteractionRegistry`，改各注册点走 `host()`。
 2. **B7-a/b**：迁纯数据 `AppContext` → `libs/context`，构造注入。
 3. **B7-c**：namespace 收口 + 删 `ng/core` + 守卫 core WARNING → FATAL。

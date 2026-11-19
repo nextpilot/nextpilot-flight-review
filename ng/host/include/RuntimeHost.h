@@ -28,14 +28,14 @@ struct ModuleRegistration
 };
 
 // 宿主的核心职责：按依赖顺序装载模块、统一驱动生命周期、执行意图。
-class ModuleHost : public QObject, public nextpilot::plotscope::core::IIntentExecutor
+class RuntimeHost : public QObject, public nextpilot::plotscope::core::IIntentExecutor
 {
     Q_OBJECT
 public:
     // 宿主持有应用上下文（进程级运行态的唯一入口）。
     // 它不再自己拥有 repo/settings/toolbox——那些归 AppContext，避免状态分散两处。
-    explicit ModuleHost(nextpilot::plotscope::core::AppContext &appCtx, QObject *parent = nullptr);
-    ~ModuleHost() override;
+    explicit RuntimeHost(nextpilot::plotscope::core::AppContext &appCtx, QObject *parent = nullptr);
+    ~RuntimeHost() override;
 
     // 注册一个模块的工厂（编译期或动态发现都走这里）。
     void registerModule(ModuleInfo info, ModuleFactory factory);

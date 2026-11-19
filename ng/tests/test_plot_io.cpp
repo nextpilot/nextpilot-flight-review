@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 
     App application;
     MainWindow window(application.context());
-    window.build(application.modules());
+    window.build(application.host());
     window.resize(1280, 800);
 
     ShellBinder *binder = window.binder();

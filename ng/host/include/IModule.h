@@ -17,7 +17,7 @@ class QWidget;
 namespace nextpilot::plotscope::host
 {
 
-class ModuleHost;
+class RuntimeHost;
 
 // UI 上下文：headless 时宿主不构造它，模块 onAttach 就不会被调用。
 //
@@ -101,7 +101,7 @@ public:
 class ModuleContext
 {
 public:
-    ModuleContext(nextpilot::plotscope::core::AppContext &appCtx, ModuleHost &host)
+    ModuleContext(nextpilot::plotscope::core::AppContext &appCtx, RuntimeHost &host)
         : m_appCtx(appCtx), m_host(host) {}
 
     // 进程级运行态的**唯一入口**：数据集、设置、工具箱、数据源、摄取管道都在这里。
@@ -114,7 +114,7 @@ public:
 
     // 便捷转发（保留以兼容既有器官代码；新代码请用 app()）。
     nextpilot::plotscope::core::DataRepository &data() { return m_appCtx.data(); }
-    ModuleHost &host() { return m_host; }
+    RuntimeHost &host() { return m_host; }
 
     // 脚本/自动化能力：拿到意图执行器与可选录制器。
     // 返回的是宿主实现的执行器抽象，模块只依赖接口不依赖宿主内部。
@@ -126,7 +126,7 @@ public:
 
 private:
     nextpilot::plotscope::core::AppContext &m_appCtx;
-    ModuleHost &m_host;
+    RuntimeHost &m_host;
 };
 
 // 统一模块接口。器官与知识包都实现它，宿主一视同仁地装载。

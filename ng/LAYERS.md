@@ -17,7 +17,7 @@ L4  modules  extensions    器官（机制提供者）· 知识包（领域业�
      ↑
 L5  gui                    GUI 外壳 + 功能视图
      ↑
-L6  app                    组合根：创建并装配 AppContext + ModuleHost + 模块
+L6  app                    组合根：创建并装配 AppContext + RuntimeHost + 模块
 ```
 
 箭头向上表示"可以被谁依赖"。依赖只能从上往下（上层依赖下层），**禁止下层依赖上层、禁止同层横向依赖**。
@@ -112,7 +112,7 @@ L6  app                    组合根：创建并装配 AppContext + ModuleHost +
 | 项 | 内容 |
 |---|---|
 | 定位 | 组合根——创建唯一实例、注册模块与扩展、装配启动 |
-| 放什么 | `App`（持有 AppContext + ModuleHost）、main 入口、启动顺序、命令行解析 |
+| 放什么 | `App`（持有 AppContext + RuntimeHost）、main 入口、启动顺序、命令行解析 |
 | 禁放什么 | 业务逻辑、格式分支、具体 UI 构建 |
 | 可依赖 | 全部下层 |
 | 禁依赖 | 无（最顶层） |

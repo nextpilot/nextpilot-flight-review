@@ -7,7 +7,7 @@
 #include "IUiContribution.h"
 #include "IModule.h"
 #include "Intent.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 #include "Result.h"
 
 using namespace nextpilot::plotscope::core;

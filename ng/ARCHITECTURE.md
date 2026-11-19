@@ -280,7 +280,7 @@ raw 与 mcap 的差别只在**②③如何编码**；①都是原始字节——
    而"当前打开哪些源、布局如何"这类状态，`SettingsStore` 的 Workspace 作用域
    已经承载了。**不要重犯"照抄老代码的 SessionManager"的错。**
 2. **AppContext 是真实需求**。此前 app 级状态分散在三处：`App` 持 repo/recorder、
-   `ModuleHost` 持 settings/toolbox、注册表是全局静态。于是器官取数据走
+   `RuntimeHost` 持 settings/toolbox、注册表是全局静态。于是器官取数据走
    `ctx.data()`，取设置走 `ctx.host().settings()`——**两条路径、两种持有方式**，
    这正是"上帝类"的温床。
 3. **但必须有铁律**：AppContext **绝不包含任何 QWidget 指针或 GUI 专属类型**。
@@ -299,7 +299,7 @@ raw 与 mcap 的差别只在**②③如何编码**；①都是原始字节——
 装配顺序严格单向：
 
 ```
-core: AppContext ──▶ host: ModuleHost ──▶ app: App（组合根） ──▶ gui: MainWindow
+core: AppContext ──▶ host: RuntimeHost ──▶ app: App（组合根） ──▶ gui: MainWindow
 ```
 
 器官取状态只认一个入口 `ctx.app()`。
@@ -710,7 +710,7 @@ headless 也能查到。
    以 `@system/theme` 注册（不经模块初始化期）；按钮只声明 `intentOp`，点击/脚本/回放
    同一条路径。headless 无此 handler，收到 `theme.*` 诚实报"无处理器"——主题是纯展示态，
    不该在无界面的 CLI 里造假实现。
-3. **生命周期归宿主**。ThemeManager 的 QObject parent 是 `ModuleHost`，与系统级 handler
+3. **生命周期归宿主**。ThemeManager 的 QObject parent 是 `RuntimeHost`，与系统级 handler
    同生共死；`themeChanged` 信号驱动 ribbon 换肤，主题状态写入 `app/theme`（SettingsStore，
    跨工作区）。
 

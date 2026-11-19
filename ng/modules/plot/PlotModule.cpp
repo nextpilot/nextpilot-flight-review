@@ -6,7 +6,7 @@
 #include "DataRepository.h"
 #include "Dataset.h"
 #include "Intent.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 #include "SettingsStore.h"
 
 using namespace nextpilot::plotscope::core;

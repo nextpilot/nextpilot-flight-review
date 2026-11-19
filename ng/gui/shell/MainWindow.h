@@ -29,7 +29,7 @@ class AppContext;
 
 namespace nextpilot::plotscope::host
 {
-class ModuleHost;
+class RuntimeHost;
 } // namespace nextpilot::plotscope::host
 
 namespace nextpilot::plotscope::gui
@@ -62,7 +62,7 @@ public:
     ~MainWindow() override;
 
     // 启动装配：建骨架、声明插槽、装载模块（GUI 模式）。
-    void build(nextpilot::plotscope::host::ModuleHost &host);
+    void build(nextpilot::plotscope::host::RuntimeHost &host);
 
     // 状态持久化（声明式快照）：
     //   - 保存：关窗时把窗口几何 + ADS 布局 + ribbon 页签写入 Workspace 作用域；
@@ -87,11 +87,11 @@ private:
     //     放在骨架里与意图的归属一致；
     //   - "选文件"是 GUI 交互能力，只有外壳有 QWidget 与 QFileDialog。
     // 加载完成后依然走意图层，于是 GUI 与 CLI/脚本行为一致。
-    void openDataFile(nextpilot::plotscope::host::ModuleHost &host);
+    void openDataFile(nextpilot::plotscope::host::RuntimeHost &host);
 
     // 来源库项：按指定格式驱动直接弹文件对话框（跳过格式选择步骤），
     // 选中的文件逐条走 data.load 意图——与通用导入、CLI/脚本同一条加载路径。
-    void openDataWithFormat(nextpilot::plotscope::host::ModuleHost &host, const QString &formatId);
+    void openDataWithFormat(nextpilot::plotscope::host::RuntimeHost &host, const QString &formatId);
 
     // 骨架自带的"协议检查器"入口：按 IMessageParser 自述列协议、配参数、逐帧看字段。
     // 纯 GUI 检查能力（产 DecodedFrame，不入 Dataset），故按 id 特判弹对话框，
@@ -112,7 +112,7 @@ private:
     void showEvent(QShowEvent *event) override;
 
     nextpilot::plotscope::core::AppContext &m_appCtx;
-    nextpilot::plotscope::host::ModuleHost *m_host = nullptr; // 用于取设置（状态持久化）
+    nextpilot::plotscope::host::RuntimeHost *m_host = nullptr; // 用于取设置（状态持久化）
     ShellBinder *m_binder = nullptr;
     GuiContext *m_context = nullptr;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主

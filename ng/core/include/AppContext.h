@@ -25,7 +25,7 @@ namespace nextpilot::plotscope::core
 //
 // 为什么需要它（而不是让器官各自去找）：
 //   在此之前，app 级状态分散在三处——
-//     App 持 repo/recorder、ModuleHost 持 settings/toolbox、注册表是全局静态。
+//     App 持 repo/recorder、RuntimeHost 持 settings/toolbox、注册表是全局静态。
 //   于是器官取数据要走 ctx.data()，取设置要走 ctx.host().settings()，
 //   两条路径、两种持有方式。新增能力时不知道该挂哪儿——这是"上帝类"的温床。
 //

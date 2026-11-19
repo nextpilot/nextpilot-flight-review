@@ -31,7 +31,7 @@
 
 #include "Dataset.h"
 #include "Intent.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 #include "UiSlotRegistry.h"
 
 #include <QAction>
@@ -95,12 +95,12 @@ int main(int argc, char *argv[])
 
     App application;
     MainWindow window(application.context());
-    window.build(application.modules());
+    window.build(application.host());
     // 先给窗口一个确定尺寸：画布按自身像素宽请求数据，尺寸确定后断言才可复现。
     window.resize(1280, 800);
 
     // --- 1) 器官在 GUI 环境下全部激活（静态自注册生效）---
-    const auto active = application.modules().activeIds();
+    const auto active = application.host().activeIds();
     CHECK(active.contains(QStringLiteral("mod.data")));
     CHECK(active.contains(QStringLiteral("mod.plot")));
     CHECK(active.contains(QStringLiteral("mod.script")));
@@ -112,7 +112,7 @@ int main(int argc, char *argv[])
     // 绑定器创建了 SARibbonBar：窗口顶部区就是它
     CHECK(window.menuWidget() != nullptr);
     // 插槽声明了页签/分组；动作由器官在 onAttach 里登记
-    const auto &slotReg = application.modules().uiSlots();
+    const auto &slotReg = application.host().uiSlots();
     // Ribbon 按老代码/用户要求分 8 页：开始/文件/数据/绘图/脚本/协议/分析/视图。
     CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 8);
     CHECK(slotReg.slotsOfKind(SlotKind::RibbonGroup).size() >= 8);
@@ -239,7 +239,7 @@ int main(int argc, char *argv[])
     // 回归点：UiAction 有 id（data.action.reload）与 intentOp（data.reload）两个字段。
     // 曾把 id 当 op 发出，导致除 openData（被外壳特判）外所有按钮点击都报
     // "没有模块能处理意图"。这里真触发 QAction，走
-    //   ShellBinder -> dispatcher -> ModuleHost -> handler 全链路，
+    //   ShellBinder -> dispatcher -> RuntimeHost -> handler 全链路，
     // 用状态栏消息断言 op 确实被 handler 认领（业务错误允许，"无人认领"不允许）。
     {
         QStatusBar *status = window.statusBar();
@@ -391,7 +391,7 @@ int main(int argc, char *argv[])
     Intent load;
     load.op = QStringLiteral("data.load");
     load.params[QStringLiteral("path")] = fixture;
-    const auto loaded = application.modules().execute(load);
+    const auto loaded = application.host().execute(load);
     CHECK(loaded);
     const int loadedDsId =
         loaded.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
@@ -439,7 +439,7 @@ int main(int argc, char *argv[])
         Intent rel;
         rel.op = QStringLiteral("data.reload");
         rel.params[QStringLiteral("id")] = sourceId;
-        const auto r = application.modules().execute(rel);
+        const auto r = application.host().execute(rel);
         CHECK(r);
         // 重载后数据集 id 不变（稳定 id 机制）。
         const int newDsId =
@@ -484,7 +484,7 @@ int main(int argc, char *argv[])
         der.params[QStringLiteral("table")] = tableName;
         der.params[QStringLiteral("column")] = columnName;
         der.params[QStringLiteral("filter")] = QStringLiteral("absolute");
-        const auto dr = application.modules().execute(der);
+        const auto dr = application.host().execute(der);
         CHECK(dr);
         const QVariantMap pm = dr.value().payload.toMap();
         const int count = pm.value(QStringLiteral("count")).toInt();
@@ -523,7 +523,7 @@ int main(int argc, char *argv[])
     intent.params[QStringLiteral("column")] = QStringLiteral("sig");
     intent.params[QStringLiteral("px")] = px;
 
-    const auto result = application.modules().execute(intent);
+    const auto result = application.host().execute(intent);
     CHECK(result);
     const QVariantMap payload = result.value().payload.toMap();
     const QVariantList xs = payload.value(QStringLiteral("x")).toList();
@@ -607,7 +607,7 @@ int main(int argc, char *argv[])
     bad.params[QStringLiteral("dataset")] = 9999;
     bad.params[QStringLiteral("table")] = QStringLiteral("trace");
     bad.params[QStringLiteral("column")] = QStringLiteral("sig");
-    const auto badResult = application.modules().execute(bad);
+    const auto badResult = application.host().execute(bad);
     CHECK(!badResult);
     CHECK(badResult.error().code == QStringLiteral("enoent"));
     OK("意图层错误语义一致：不存在的数据集返回 enoent");
@@ -650,7 +650,7 @@ int main(int argc, char *argv[])
         Intent dark;
         dark.op = QStringLiteral("theme.set");
         dark.params[QStringLiteral("theme")] = QStringLiteral("dark");
-        const auto r = application.modules().execute(dark);
+        const auto r = application.host().execute(dark);
         CHECK(r); // 系统级 handler 认领（headless 才会报无处理器）
         CHECK(r.value().payload.toString() == QStringLiteral("dark"));
         CHECK(tm->current() == Theme::Theme::Dark);
@@ -663,7 +663,7 @@ int main(int argc, char *argv[])
         // theme.toggle 意图：切回浅色。
         Intent toggle;
         toggle.op = QStringLiteral("theme.toggle");
-        const auto r2 = application.modules().execute(toggle);
+        const auto r2 = application.host().execute(toggle);
         CHECK(r2);
         CHECK(tm->current() == Theme::Theme::Light);
         CHECK(changedCount == 2);
@@ -702,13 +702,13 @@ int main(int argc, char *argv[])
 
     // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---
     {
-        const auto &slotReg = application.modules().uiSlots();
+        const auto &slotReg = application.host().uiSlots();
         CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.analysis.apps")).size() >= 1);
         CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.protocol.editor")).size() >= 1);
         // analysis.run 意图：default 应用（无活动源时返回失败但被 handler 认领）。
         Intent ar; ar.op = QStringLiteral("analysis.run");
         ar.params[QStringLiteral("application")] = QStringLiteral("default");
-        const auto rr = application.modules().execute(ar);
+        const auto rr = application.host().execute(ar);
         // 无论有无活动源，都不能是 eunsupported（analysis.run handler 必须认领）。
         CHECK(rr || rr.error().code != QStringLiteral("eunsupported"));
         OK("analysis/protocol module：分析 gallery + 协议入口 + analysis.run handler 就位");

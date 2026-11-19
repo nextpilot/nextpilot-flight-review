@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
 
     nextpilot::plotscope::app::App application;
     nextpilot::plotscope::gui::MainWindow window(application.context());
-    window.build(application.modules());
+    window.build(application.host());
 
     // 启动即载文件：走与 CLI 完全相同的数据.load 意图路径。
     if (parser.isSet(openOpt))
@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
         nextpilot::plotscope::core::Intent intent;
         intent.op = QStringLiteral("data.load");
         intent.params[QStringLiteral("path")] = parser.value(openOpt);
-        const auto result = application.modules().execute(intent);
+        const auto result = application.host().execute(intent);
         if (!result)
             window.statusBar()->showMessage(QStringLiteral("载入失败: %1")
                                                  .arg(result.error().message));

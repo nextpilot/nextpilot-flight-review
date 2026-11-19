@@ -129,7 +129,7 @@ v1 曾用"dataset 离开 source 没有数据来源、二者是假独立"作为�
 | 自注册宏 | `NG_REGISTER_MODULE(Cls)` 在模块 TU 静态期调 `BuiltinModuleRegistry::registerModule` |
 | 库类型 | 全部模块均为 **OBJECT 库**（静态 TU 不被链接器丢弃） |
 | 装载入口 | `App.cpp:23` 遍历 `BuiltinModuleRegistry::modules()`，宿主无具体器官类名 |
-| 依赖解析 | `ModuleHost::resolveOrder` Kahn 拓扑排序，能力名解耦 |
+| 依赖解析 | `RuntimeHost::resolveOrder` Kahn 拓扑排序，能力名解耦 |
 | 意图通信 | 器官间只经意图/共享态，互不 include 头 |
 
 **新增一个器官的改动面**：新增 `ng/modules/<name>/` 目录 + `ng/CMakeLists.txt` 加一行 `add_subdirectory` + `ng/app/CMakeLists.txt` 加一个 OBJECT 库链接项。

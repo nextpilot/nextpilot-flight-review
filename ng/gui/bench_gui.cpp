@@ -17,7 +17,7 @@
 
 #include "Dataset.h"
 #include "Intent.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
 
     App application;
     MainWindow window(application.context());
-    window.build(application.modules());
+    window.build(application.host());
     window.resize(1600, 900);
 
     // 走真实 data.load 路径（与 CLI 完全相同）
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
     Intent load;
     load.op = QStringLiteral("data.load");
     load.params[QStringLiteral("path")] = path;
-    const auto loaded = application.modules().execute(load);
+    const auto loaded = application.host().execute(load);
     const qint64 loadMs = timer.elapsed();
     if (!loaded)
     {

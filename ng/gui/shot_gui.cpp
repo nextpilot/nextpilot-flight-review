@@ -16,7 +16,7 @@
 #include "Dataset.h"
 #include "Intent.h"
 #include "MainWindow.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 #include "PlotCanvas.h"
 #include "ProtocolEditorDialog.h"
 #include "TransformEditorDialog.h"
@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
 
     App application;
     MainWindow window(application.context());
-    window.build(application.modules());
+    window.build(application.host());
     window.resize(w, h);
 
     // 若指定主题，走与按钮/脚本相同的 theme.set 意图路径切换。
@@ -149,7 +149,7 @@ int main(int argc, char *argv[])
         Intent theme;
         theme.op = QStringLiteral("theme.set");
         theme.params[QStringLiteral("theme")] = themeArg;
-        application.modules().execute(theme);
+        application.host().execute(theme);
     }
 
     // 先 show()，让布局（停靠区 + 画布尺寸）确定下来。
@@ -191,7 +191,7 @@ int main(int argc, char *argv[])
         Intent load;
         load.op = QStringLiteral("data.load");
         load.params[QStringLiteral("path")] = path;
-        const auto loaded = application.modules().execute(load);
+        const auto loaded = application.host().execute(load);
         if (!loaded)
         {
             fprintf(stderr, "载入失败(%s): %s\n", qPrintable(path),

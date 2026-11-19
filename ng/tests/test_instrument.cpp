@@ -12,7 +12,7 @@
 #include "Dataset.h"
 #include "IngestPipeline.h"
 #include "Intent.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 #include "ParserRegistry.h"
 
 #include <QApplication>
@@ -117,13 +117,13 @@ int main(int argc, char *argv[])
 
     App application;
     MainWindow window(application.context());
-    window.build(application.modules());
+    window.build(application.host());
     window.resize(1280, 800);
 
     const int dsId = buildInstrumentDataset(application.data());
     CHECK(dsId >= 0);
 
-    InstrumentView view(application.modules());
+    InstrumentView view(application.host());
     view.resize(360, 300);
 
     // --- 1) 姿态仪：roll/pitch 两个角色 ---
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
             {QStringLiteral("roll"), QStringLiteral("attitude.roll")},
             {QStringLiteral("pitch"), QStringLiteral("attitude.pitch")},
         };
-        const auto result = application.modules().execute(intent);
+        const auto result = application.host().execute(intent);
         CHECK(result);
         const QVariantMap scalars = result.value().payload.toMap().value(QStringLiteral("scalars")).toMap();
         CHECK(scalars.contains(QStringLiteral("roll")));
@@ -158,7 +158,7 @@ int main(int argc, char *argv[])
         intent.params[QStringLiteral("dataset")] = dsId;
         intent.params[QStringLiteral("kind")] = QStringLiteral("compass");
         intent.params[QStringLiteral("roles")] = roles;
-        const auto result = application.modules().execute(intent);
+        const auto result = application.host().execute(intent);
         CHECK(result);
         CHECK(result.value().payload.toMap().value(QStringLiteral("scalars")).toMap()
                   .contains(QStringLiteral("yaw")));
@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
         intent.params[QStringLiteral("dataset")] = dsId;
         intent.params[QStringLiteral("kind")] = QStringLiteral("gauge");
         intent.params[QStringLiteral("roles")] = roles;
-        const auto result = application.modules().execute(intent);
+        const auto result = application.host().execute(intent);
         CHECK(result);
         const QVariantList range = result.value().payload.toMap().value(QStringLiteral("range")).toList();
         CHECK(range.size() == 2);
@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
         intent.params[QStringLiteral("dataset")] = dsId;
         intent.params[QStringLiteral("kind")] = QStringLiteral("track");
         intent.params[QStringLiteral("roles")] = roles;
-        const auto result = application.modules().execute(intent);
+        const auto result = application.host().execute(intent);
         CHECK(result);
         CHECK(!seriesOf(result.value(), QStringLiteral("lon")).isEmpty());
         CHECK(!seriesOf(result.value(), QStringLiteral("lat")).isEmpty());
@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
         intent.params[QStringLiteral("dataset")] = dsId;
         intent.params[QStringLiteral("kind")] = QStringLiteral("traj3d");
         intent.params[QStringLiteral("roles")] = roles;
-        const auto result = application.modules().execute(intent);
+        const auto result = application.host().execute(intent);
         CHECK(result);
         CHECK(!seriesOf(result.value(), QStringLiteral("x")).isEmpty());
         CHECK(!seriesOf(result.value(), QStringLiteral("z")).isEmpty());
@@ -243,7 +243,7 @@ int main(int argc, char *argv[])
         intent.params[QStringLiteral("dataset")] = dsId;
         intent.params[QStringLiteral("kind")] = QStringLiteral("waterfall");
         intent.params[QStringLiteral("channels")] = channels;
-        const auto result = application.modules().execute(intent);
+        const auto result = application.host().execute(intent);
         CHECK(result);
         const QVariantList out = result.value().payload.toMap().value(QStringLiteral("channels")).toList();
         CHECK(out.size() == 3);
@@ -260,7 +260,7 @@ int main(int argc, char *argv[])
         badKind.op = QStringLiteral("plot.instrument");
         badKind.params[QStringLiteral("dataset")] = dsId;
         badKind.params[QStringLiteral("kind")] = QStringLiteral("hologram");
-        CHECK(!application.modules().execute(badKind));
+        CHECK(!application.host().execute(badKind));
 
         Intent missing;
         missing.op = QStringLiteral("plot.instrument");
@@ -268,13 +268,13 @@ int main(int argc, char *argv[])
         missing.params[QStringLiteral("kind")] = QStringLiteral("gauge");
         missing.params[QStringLiteral("roles")] = QVariantMap{
             {QStringLiteral("value"), QStringLiteral("nope.nope")}};
-        CHECK(!application.modules().execute(missing));
+        CHECK(!application.host().execute(missing));
 
         Intent noDataset;
         noDataset.op = QStringLiteral("plot.instrument");
         noDataset.params[QStringLiteral("dataset")] = 9999;
         noDataset.params[QStringLiteral("kind")] = QStringLiteral("gauge");
-        CHECK(!application.modules().execute(noDataset));
+        CHECK(!application.host().execute(noDataset));
         OK("错误语义：未知类型 / 缺通道 / 无数据集 均返回失败");
     }
 
@@ -287,12 +287,12 @@ int main(int argc, char *argv[])
         h.params[QStringLiteral("dataset")] = dsId;
         h.params[QStringLiteral("kind")] = QStringLiteral("histogram");
         h.params[QStringLiteral("roles")] = valueRole;
-        CHECK(application.modules().execute(h));
+        CHECK(application.host().execute(h));
 
         // 频谱：同一序列做 DFT。
         Intent f = h;
         f.params[QStringLiteral("kind")] = QStringLiteral("fft");
-        CHECK(application.modules().execute(f));
+        CHECK(application.host().execute(f));
 
         // 柱状：trace 三通道末值成柱。
         Intent b;
@@ -301,11 +301,11 @@ int main(int argc, char *argv[])
         b.params[QStringLiteral("kind")] = QStringLiteral("bar");
         b.params[QStringLiteral("channels")] = QVariantList{
             QStringLiteral("trace.a"), QStringLiteral("trace.b"), QStringLiteral("trace.c")};
-        const auto barResult = application.modules().execute(b);
+        const auto barResult = application.host().execute(b);
         CHECK(barResult);
         CHECK(barResult.value().payload.toMap().value(QStringLiteral("channels")).toList().size() == 3);
 
-        InstrumentView specView(application.modules());
+        InstrumentView specView(application.host());
         specView.resize(360, 300);
         specView.renderInstrument(dsId, QStringLiteral("histogram"), valueRole, {}, {});
         CHECK(specView.currentKind() == QStringLiteral("histogram"));
@@ -321,7 +321,7 @@ int main(int argc, char *argv[])
     // --- 8) 面板工厂自注册：plot-instrument 可按 id 取到 ---
     CHECK(PanelFactoryRegistry::types().contains(QStringLiteral("plot-instrument")));
     QWidget *panel = PanelFactoryRegistry::create(
-        QStringLiteral("plot-instrument"), application.context(), application.modules(), nullptr);
+        QStringLiteral("plot-instrument"), application.context(), application.host(), nullptr);
     auto *factoryView = qobject_cast<InstrumentView *>(panel);
     CHECK(factoryView != nullptr);
     OK("面板自注册：plot-instrument 进工厂表");
@@ -373,7 +373,7 @@ int main(int argc, char *argv[])
             pipe.finish(1);
             const int realId = bound.value();
 
-            InstrumentView realView(application.modules());
+            InstrumentView realView(application.host());
             realView.resize(360, 300);
 
             const QVariantMap attitudeRoles{

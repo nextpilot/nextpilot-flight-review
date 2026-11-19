@@ -54,7 +54,7 @@ ng_core (去掉 Dataset/DataRepository 源文件) ──────────
 
 ## 3. 硬约束：`Result.h` 必须下沉（否则循环或污染）
 
-**问题**：`DataRepository::addWithId/addWithStableId` 返回 `Result<DatasetId>`，所以 `ng_dataset` 需要 `Result.h`。但 `Result.h` 现状在 `ng/core/include/`，被 **21 处**引用，其中 `ThemeManager.h`、`ModuleHost.h`、`PropertySchema.h` 等**完全不碰数据**。
+**问题**：`DataRepository::addWithId/addWithStableId` 返回 `Result<DatasetId>`，所以 `ng_dataset` 需要 `Result.h`。但 `Result.h` 现状在 `ng/core/include/`，被 **21 处**引用，其中 `ThemeManager.h`、`RuntimeHost.h`、`PropertySchema.h` 等**完全不碰数据**。
 
 | 方案 | 后果 | 裁决 |
 |---|---|---|
@@ -99,7 +99,7 @@ ng_core (去掉 Dataset/DataRepository 源文件) ──────────
 1. **独立链接成立**：新增/改造一个最小 target，只链 `ng_dataset` + `ng_kernel` + `Qt6::Core`，能完成"建 Dataset → appendFrame → readWindow/lodMinMax"全流程，**不链接 `ng_core`**。`fastplot_dataset_test` 是天然的验收载体。
 2. **零回归**：`ctest` 现有 11 项全绿（Debug/Release 双配置）。
 3. **无循环**：`cmake` 配置成功、无 target 循环依赖告警。
-4. **Result 不污染**：`ThemeManager` / `ModuleHost` 等仅链 `ng_core` 或其既有依赖即可拿到 `Result.h`，不因 dataset 抽库新增链接要求。
+4. **Result 不污染**：`ThemeManager` / `RuntimeHost` 等仅链 `ng_core` 或其既有依赖即可拿到 `Result.h`，不因 dataset 抽库新增链接要求。
 5. **领域纯净**：`ng/libs/dataset` 接口无 source/parser/intent/飞行/CAN 等领域词——它只提供 `Dataset/Table/Column/ChannelView/LodTriple/ColumnStats` 数据模型与 `DataRepository` 仓库。
 
 ---

@@ -8,7 +8,7 @@
 #include "ThemeManager.h"
 
 #include "AppContext.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 #include "SkeletonSlots.h"
 #include "Intent.h"
 #include "Result.h"
@@ -302,7 +302,7 @@ void MainWindow::declareStandardSlots()
     }
 }
 
-void MainWindow::build(ModuleHost &host)
+void MainWindow::build(RuntimeHost &host)
 {
     m_host = &host;
     UiSlotRegistry &slotReg = host.uiSlotsMutable();
@@ -349,7 +349,7 @@ void MainWindow::build(ModuleHost &host)
 
     // 3.1) ribbon 动作 -> 意图：外壳只把动作 id 交出去，不解释语义。
     //
-    // 意图由宿主执行（ModuleHost 实现了 IIntentExecutor），
+    // 意图由宿主执行（RuntimeHost 实现了 IIntentExecutor），
     // 于是 GUI 点击与 CLI/脚本执行走**同一条意图路径**。
     m_binder->setIntentDispatcher([&host, this](const QString &actionId,
                                                 const QString &intentOp, const QString &actionData) {
@@ -579,7 +579,7 @@ void MainWindow::build(ModuleHost &host)
     restoreState();
 }
 
-void MainWindow::openDataFile(ModuleHost &host)
+void MainWindow::openDataFile(RuntimeHost &host)
 {
     // 通用导入对话框（schema 驱动）：选格式 + 选文件 + 配置解析选项 + 预览。
     // 对话框只负责收集"怎么做"，真正加载仍走 data.load 意图——与 CLI/脚本同路径。
@@ -604,7 +604,7 @@ void MainWindow::openDataFile(ModuleHost &host)
     statusBar()->showMessage(QStringLiteral("已载入数据集 #%1").arg(dsId));
 }
 
-void MainWindow::openDataWithFormat(ModuleHost &host, const QString &formatId)
+void MainWindow::openDataWithFormat(RuntimeHost &host, const QString &formatId)
 {
     // 抄老 DataSourceRibbon 的体验：点图库里的加载器，直接弹该格式的文件对话框。
     auto *driver = m_appCtx.toolbox().driverForFormat(formatId);

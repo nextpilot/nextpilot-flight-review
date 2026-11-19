@@ -2,7 +2,7 @@
 
 #include "AppContext.h"
 #include "JobRecorder.h"
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 
 #include <QObject>
 
@@ -17,7 +17,7 @@ namespace nextpilot::plotscope::app
 //  3. 驱动启动（headless / GUI 两种模式）。
 //
 // 它**不持有**业务状态——数据集、设置、工具箱都在 AppContext 里。
-// 这样"谁拥有状态"只有一个答案，避免状态在 App / ModuleHost 两处分叉。
+// 这样"谁拥有状态"只有一个答案，避免状态在 App / RuntimeHost 两处分叉。
 //
 // GUI 与 CLI 共用这一个类；区别只在是否传入 UiContext。
 class App : public QObject
@@ -33,7 +33,7 @@ public:
 
     // 便捷转发（内部使用）。
     nextpilot::plotscope::core::DataRepository &data() { return m_ctx.data(); }
-    nextpilot::plotscope::host::ModuleHost &modules() { return m_host; }
+    nextpilot::plotscope::host::RuntimeHost &host() { return m_host; }
     nextpilot::plotscope::core::JobRecorder &recorder() { return m_recorder; }
 
     // headless=true 时不建 UI 上下文，模块的 onAttach 不被调用。
@@ -42,7 +42,7 @@ public:
 
 private:
     nextpilot::plotscope::core::AppContext m_ctx;
-    nextpilot::plotscope::host::ModuleHost m_host;
+    nextpilot::plotscope::host::RuntimeHost m_host;
     nextpilot::plotscope::core::JobRecorder m_recorder;
 };
 

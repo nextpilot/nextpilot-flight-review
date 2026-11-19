@@ -1,4 +1,4 @@
-#include "ModuleHost.h"
+#include "RuntimeHost.h"
 #include "SkeletonSlots.h"
 
 #include <QSet>
@@ -14,7 +14,7 @@ void ModuleContext::registerIntentHandler(nextpilot::plotscope::core::IIntentHan
 
 nextpilot::plotscope::core::IIntentExecutor &ModuleContext::executor()
 {
-    return m_host; // ModuleHost 实现了 IIntentExecutor
+    return m_host; // RuntimeHost 实现了 IIntentExecutor
 }
 
 nextpilot::plotscope::core::JobRecorder *ModuleContext::recorder()
@@ -22,7 +22,7 @@ nextpilot::plotscope::core::JobRecorder *ModuleContext::recorder()
     return m_host.recorder();
 }
 
-ModuleHost::ModuleHost(nextpilot::plotscope::core::AppContext &appCtx, QObject *parent)
+RuntimeHost::RuntimeHost(nextpilot::plotscope::core::AppContext &appCtx, QObject *parent)
     : QObject(parent), m_appCtx(appCtx),
       // data.load 走统一摄取管道（读字节 -> 扇出 -> 落库）：
       // 格式驱动只声明 parserId，解析实现由 SPI 解析器提供。
@@ -44,19 +44,19 @@ ModuleHost::ModuleHost(nextpilot::plotscope::core::AppContext &appCtx, QObject *
     declareSkeletonSlots(m_uiSlotRegistry);
 }
 
-ModuleHost::~ModuleHost()
+RuntimeHost::~RuntimeHost()
 {
     deactivateAll();
 }
 
-void ModuleHost::registerModule(ModuleInfo info, ModuleFactory factory)
+void RuntimeHost::registerModule(ModuleInfo info, ModuleFactory factory)
 {
     Node node;
     node.reg = ModuleRegistration{info, std::move(factory)};
     m_nodes.insert(info.id, node);
 }
 
-void ModuleHost::registerIntentHandler(nextpilot::plotscope::core::IIntentHandler *handler)
+void RuntimeHost::registerIntentHandler(nextpilot::plotscope::core::IIntentHandler *handler)
 {
     if (!handler || m_initializing.isEmpty())
         return;
@@ -67,7 +67,7 @@ void ModuleHost::registerIntentHandler(nextpilot::plotscope::core::IIntentHandle
     m_nodes[m_initializing].handlers.append(handler);
 }
 
-void ModuleHost::registerSystemHandler(const QString &key, nextpilot::plotscope::core::IIntentHandler *handler)
+void RuntimeHost::registerSystemHandler(const QString &key, nextpilot::plotscope::core::IIntentHandler *handler)
 {
     // 系统级：不经 m_initializing、不计入任何模块的 handlers，模块装卸不移除它。
     if (!handler || key.isEmpty())
@@ -75,7 +75,7 @@ void ModuleHost::registerSystemHandler(const QString &key, nextpilot::plotscope:
     m_handlers.insert(key, handler);
 }
 
-QHash<QString, QString> ModuleHost::activate(const QStringList &disabledIds, UiContext *ui)
+QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, UiContext *ui)
 {
     QHash<QString, QString> errors;
 
@@ -118,7 +118,7 @@ QHash<QString, QString> ModuleHost::activate(const QStringList &disabledIds, UiC
     return errors;
 }
 
-bool ModuleHost::deactivate(const QString &moduleId)
+bool RuntimeHost::deactivate(const QString &moduleId)
 {
     auto it = m_nodes.find(moduleId);
     if (it == m_nodes.end() || !it->instance)
@@ -143,7 +143,7 @@ bool ModuleHost::deactivate(const QString &moduleId)
     return true;
 }
 
-void ModuleHost::deactivateAll()
+void RuntimeHost::deactivateAll()
 {
     const QStringList ids = activeIds();
     for (const QString &id : ids)
@@ -156,20 +156,20 @@ void ModuleHost::deactivateAll()
             it = m_handlers.erase(it);
 }
 
-const nextpilot::plotscope::core::UiSlotRegistry &ModuleHost::uiSlots()
+const nextpilot::plotscope::core::UiSlotRegistry &RuntimeHost::uiSlots()
 {
     // 每次访问都从当前工具箱重新绑定，装卸知识包后立即反映，无需手动同步。
     m_uiSlotRegistry.refreshFrom(m_appCtx.toolbox());
     return m_uiSlotRegistry;
 }
 
-nextpilot::plotscope::core::UiSlotRegistry &ModuleHost::uiSlotsMutable()
+nextpilot::plotscope::core::UiSlotRegistry &RuntimeHost::uiSlotsMutable()
 {
     m_uiSlotRegistry.refreshFrom(m_appCtx.toolbox());
     return m_uiSlotRegistry;
 }
 
-nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> ModuleHost::execute(const nextpilot::plotscope::core::Intent &intent)
+nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> RuntimeHost::execute(const nextpilot::plotscope::core::Intent &intent)
 {
     for (auto it = m_handlers.constBegin(); it != m_handlers.constEnd(); ++it)
     {
@@ -181,13 +181,13 @@ nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> Mod
                           QStringLiteral("没有模块能处理意图: %1").arg(intent.op));
 }
 
-bool ModuleHost::isActive(const QString &moduleId) const
+bool RuntimeHost::isActive(const QString &moduleId) const
 {
     const auto it = m_nodes.constFind(moduleId);
     return it != m_nodes.constEnd() && it->active;
 }
 
-QStringList ModuleHost::activeIds() const
+QStringList RuntimeHost::activeIds() const
 {
     QStringList ids;
     for (const QString &id : m_order)
@@ -196,7 +196,7 @@ QStringList ModuleHost::activeIds() const
     return ids;
 }
 
-QList<ModuleInfo> ModuleHost::availableModules() const
+QList<ModuleInfo> RuntimeHost::availableModules() const
 {
     QList<ModuleInfo> infos;
     for (auto it = m_nodes.constBegin(); it != m_nodes.constEnd(); ++it)
@@ -204,7 +204,7 @@ QList<ModuleInfo> ModuleHost::availableModules() const
     return infos;
 }
 
-QList<QString> ModuleHost::resolveOrder(const QHash<QString, QStringList> &provides,
+QList<QString> RuntimeHost::resolveOrder(const QHash<QString, QStringList> &provides,
                                         QHash<QString, QString> &errors) const
 {
     // Kahn 拓扑排序：节点是模块 id，边由 requires -> provides 产生。
