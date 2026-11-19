@@ -1,14 +1,14 @@
 #pragma once
 
+#include "DataRepository.h"
 #include "ExtensionRegistry.h"
 #include "Intent.h"
+#include "SourceRegistry.h"
 
 #include <QByteArray>
 
 namespace nextpilot::plotscope::core
 {
-class DataRepository;
-class SourceRegistry;
 class IngestPipeline;
 class SettingsStore;
 } // namespace nextpilot::plotscope::core

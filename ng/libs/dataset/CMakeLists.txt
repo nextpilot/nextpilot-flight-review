@@ -6,8 +6,12 @@
 add_library(ng_dataset STATIC
     src/Dataset.cpp
     src/DataRepository.cpp
+    src/SourceRegistry.cpp
     include/Dataset.h
     include/DataRepository.h
+    include/Source.h
+    include/DataSource.h
+    include/SourceRegistry.h
 )
 
 target_include_directories(ng_dataset PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -9,7 +9,7 @@
 #include <cstring>
 #include <limits>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::dataset
 {
 
 namespace
@@ -649,4 +649,4 @@ std::optional<Dataset> Dataset::loadCache(const QString &path, qint64 sourceSize
     return adopt(native, QFileInfo(path).completeBaseName(), QStringLiteral("cache"));
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::dataset

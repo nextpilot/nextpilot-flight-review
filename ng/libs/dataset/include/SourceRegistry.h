@@ -7,8 +7,10 @@
 #include <QObject>
 #include <QVector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::dataset
 {
+
+using nextpilot::plotscope::foundation::Result;
 
 // 数据源登记表：**运行时实例**的容器。
 //
@@ -86,4 +88,10 @@ private:
     int m_nextId = 1;
 };
 
+} // namespace nextpilot::plotscope::dataset
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using dataset::SourceRegistry;
 } // namespace nextpilot::plotscope::core
+

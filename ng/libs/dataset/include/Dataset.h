@@ -25,7 +25,7 @@
 #include <memory>
 #include <optional>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::dataset
 {
 
 using DatasetId = int;
@@ -234,4 +234,23 @@ private:
     QSharedDataPointer<Data> d;
 };
 
+} // namespace nextpilot::plotscope::dataset
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using dataset::DatasetId;
+using dataset::kInvalidDataset;
+using dataset::TimeUs;
+using dataset::ValueType;
+using dataset::Column;
+using dataset::Table;
+using dataset::ChannelView;
+using dataset::LodTriple;
+using dataset::ColumnStats;
+using dataset::FrameColumn;
+using dataset::Dataset;
+using dataset::valueTypeName;
+using dataset::valueTypeIsNumeric;
+using dataset::valueTypeBytes;
 } // namespace nextpilot::plotscope::core
+

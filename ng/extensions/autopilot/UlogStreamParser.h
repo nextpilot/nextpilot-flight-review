@@ -1,11 +1,8 @@
 #pragma once
 
-#include <QString>
+#include "Dataset.h"
 
-namespace nextpilot::plotscope::core
-{
-class Dataset;
-}
+#include <QString>
 
 namespace nextpilot::plotscope::ext::ulog
 {

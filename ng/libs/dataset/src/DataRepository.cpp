@@ -1,7 +1,9 @@
 #include "DataRepository.h"
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::dataset
 {
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::foundation::fail;
 
 DataRepository::DataRepository(QObject *parent) : QObject(parent) {}
 
@@ -69,4 +71,4 @@ void DataRepository::clear()
         Q_EMIT datasetRemoved(id);
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::dataset

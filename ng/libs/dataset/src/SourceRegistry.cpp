@@ -2,8 +2,10 @@
 
 #include <algorithm>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::dataset
 {
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::foundation::fail;
 
 SourceRegistry::SourceRegistry(QObject *parent) : QObject(parent) {}
 
@@ -193,4 +195,4 @@ void SourceRegistry::clear()
         remove(id);
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::dataset

@@ -9,7 +9,6 @@ add_library(ng_core STATIC
     src/PanelFactoryRegistry.cpp
     src/BuiltinPackRegistry.cpp
     src/BuiltinContributions.cpp
-    src/SourceRegistry.cpp
     src/IngestPipeline.cpp
     src/IngestOrchestrator.cpp
     src/IByteSource.cpp
@@ -42,10 +41,8 @@ add_library(ng_core STATIC
     include/PanelFactoryRegistry.h
     include/BuiltinPackRegistry.h
     include/BuiltinContributions.h
-    include/DataSource.h
     include/SettingsStore.h
     include/WorkspaceDataConfig.h
-    include/SourceRegistry.h
     include/IngestPipeline.h
     include/AppContext.h
     include/InteractionRegistry.h

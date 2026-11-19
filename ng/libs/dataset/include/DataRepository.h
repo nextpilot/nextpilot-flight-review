@@ -7,8 +7,10 @@
 #include <QObject>
 #include <QVector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::dataset
 {
+
+using nextpilot::plotscope::foundation::Result;
 
 // Dataset 的唯一所有者。模块与扩展都不拥有数据，只通过 repo 访问。
 // 模块卸载时数据不受影响——这是"装卸不牵连"的根本保证。
@@ -41,4 +43,10 @@ private:
     DatasetId m_nextId = 0;
 };
 
+} // namespace nextpilot::plotscope::dataset
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using dataset::DataRepository;
 } // namespace nextpilot::plotscope::core
+

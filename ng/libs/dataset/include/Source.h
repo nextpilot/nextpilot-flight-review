@@ -5,7 +5,7 @@
 #include <QStringList>
 #include <QVector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::dataset
 {
 
 // 数据源种类。
@@ -81,4 +81,14 @@ struct DataSourceCapability
     QStringList recordBackends;         // 支持的录制后端 id（file/udp/...）
 };
 
+} // namespace nextpilot::plotscope::dataset
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using dataset::SourceKind;
+using dataset::SourceState;
+using dataset::ParserBinding;
+using dataset::RecordingTarget;
+using dataset::DataSourceCapability;
 } // namespace nextpilot::plotscope::core
+

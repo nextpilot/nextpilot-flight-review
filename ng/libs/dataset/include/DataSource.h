@@ -6,7 +6,7 @@
 #include <QStringList>
 #include <QVector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::dataset
 {
 
 // 广义完整的数据源：**来源 + 解析绑定 + 录制配置 + 数据集**。
@@ -59,4 +59,10 @@ struct DataSourceInfo
     QVector<int> datasetIds;            // 该源解析产出的数据集 id
 };
 
+} // namespace nextpilot::plotscope::dataset
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using dataset::DataSourceInfo;
 } // namespace nextpilot::plotscope::core
+
