@@ -23,7 +23,7 @@
 
 ## 2. 目标（两条）
 
-1. **继承一个接口类自述**：协议名称、使用范围（领域 + 说明）、支持的传输协议、可供配置的参数；这些信息直接喂给自定义打开对话框（见 [protocol-migration.md](protocol-migration.md) §5）。
+1. **继承一个接口类自述**：协议名称、使用范围（领域 + 说明）、支持的传输协议、可供配置的参数；这些信息直接喂给通用载入对话框（参数契约见本文附录 A）。
 2. **特定类主要实现 `parseChar`**：基类负责缓冲、残余字节、逐字节派发、sink 出口与 ABI 适配；子类只写字符级状态机和元信息。
 
 ## 3. 分层设计
@@ -54,7 +54,7 @@ public:
     virtual QStringList extensions() const = 0;  // 带点小写后缀，可空
     virtual bool canSniff() const = 0;
 
-    // 可配置参数（结构与 protocol-migration §5.2 的 ParamField 同一套，提到 core 共享）
+    // 可配置参数（结构与附录 A 的 ParamField 同一套，提到 core 共享）
     virtual QList<ParserParam> paramSchema() const = 0;
 };
 ```
@@ -227,3 +227,36 @@ finish()：冲刷残余里没结束的最后一行
 - headless 接口不链 Qt Widgets；core 不加无关新概念。
 - 内存纪律：常驻内存与文件大小无关；parseChar 内只攒当前帧 + 一批。
 - 老 C ABI 向后兼容：既有插件不改编译不过。
+
+---
+
+## 附录 A：载入入口的参数契约（原 `protocol-migration.md` §5，未实现设计）
+
+> 来自"协议搬迁"文档，但内容属于**通用数据载入入口**，与 psproto 无关，故移到这里。
+> 现状：`LoadDataDialog`、`IFormatDriver::paramSchema/probe` 均**未实现**；当前载入仍走各格式自己的对话路径。
+
+**参数声明（headless 纯值，不含 QWidget）**
+
+| 类型 | 语义 | 关键字段 |
+|---|---|---|
+| `String` | 单行文本 | `placeholder` |
+| `Int` / `Double` | 数值 | `min/max`、`dMin/dMax`、`decimals`、`suffix` |
+| `Bool` | 复选框 | `defaultValue` |
+| `Enum` | 下拉 | `options`（value/label，可来自 probe） |
+| `File` | 路径行 | `fileFilter`、`canEdit`（模板类字段带"编辑…"） |
+
+- 条件显隐：`visibleIf {key, equals}`；依赖字段变化时刷新目标字段。
+- probe：`probe(path, params) → {ok, error, defaults, enumOptions, columns, rows, warnings}`，只读文件头，不写存储。
+- 老 schema 类型映射：`string→String`、`int→Int`、`double→Double`、`bool→Bool`、`enum→Enum`、`file→File`、`visible_if→visibleIf`。
+
+**对话框五步**（`LoadDataDialog`，模态，不进模块/不进 core）
+
+1. 格式下拉：从 `ExtensionRegistry` 枚举 `kind=format` 的驱动（`displayName/id/suffixes`），不写死枚举；
+2. 数据文件行：路径 + 浏览，过滤器随格式切换；
+3. 参数区：按 `paramSchema()` 动态生成控件 + `visibleIf`；
+4. probe 联动：路径或参数变化 → 回填 `defaults`、刷新枚举来源、填预览表与告警条；
+5. 确定：组装 `params{path, format, ...}` → `Intent{op:"data.load"}` → `host.execute`。
+
+**管道**：`IngestOptions` 加通用 `QVariantMap params`，`DataLoadHandler` 原样透传，不针对每种参数加字段；CLI 也走同一条 `data.load`。
+
+**分批**：P4a = 控件生成 + `visibleIf` + 收集参数（含协议模板 File + 编辑动作）；P4b = probe 联动、预览表、告警条；后续 = live 传输段、多 parser 页签。

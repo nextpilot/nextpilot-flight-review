@@ -1277,3 +1277,37 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 - [x] 协议单测 23 项全绿（`./build-ng/tests/ng_test_protocol`）；
 - [ ] 需求方逐项验收 §14.1 的行为口径（尤其 `repeat:"eos"` 在"后面还有段"时的语义）。
+
+---
+
+## 15. 搬迁记录（原 `protocol-migration.md`，已并入本节）
+
+### 15.1 老资产去向
+
+| 老文件 | 行数 | 现在位置 |
+|---|---|---|
+| `protocol/ProtocolSpec.{h,cpp}` | 341 | `ng/libs/protocol/src/ProtocolSpec.cpp`（结构校验 + 类型表） |
+| `protocol/ProtocolDocument.{h,cpp}` | 1006 | `ng/libs/protocol/src/ProtocolDocument.cpp`（文档模型 + JSON 解析/回写） |
+| `codec/SequentialCodec.{hpp,cpp}` | 1089 | `ng/libs/protocol/src/SequentialCodec.cpp` + `StreamDecoder.cpp`（二进制段表解码 + 流式解码） |
+| `manager/CustomProtocolLoader.cpp` | 912 | `ng/extensions/common/CustomProtocolFormatParser.cpp`（格式驱动） |
+| `dialog/ProtocolEditorDialog.{h,cpp}` | 1857 | `ng/gui/shell/ProtocolEditorDialog.cpp`（尚未按计划拆成 views 组件） |
+
+### 15.2 已搬与未搬
+
+| 项 | 状态 |
+|---|---|
+| 头部段全解析 + 变体分支（定长与变长都支持） | ✅ 已搬 |
+| 段内 `checks`（eq/ne/lt/le/gt/ge/in/range/mask） | ✅ 已搬 |
+| 段内序列校验（CRC8/16/32、sum、xor、parity、参数化 poly/init/xorout/refin/refout/width） | ✅ 已搬（`digest`） |
+| `scale/offset`、端序、BCD、STR | ✅ 已搬（BCD/char 走类型表） |
+| 格式驱动 + Pack 登记（`.bin/.raw/.frames` + 模板字段） | ✅ 完成（`CustomProtocolFormatParser`） |
+| 编辑器（段表/变体行/单帧试算/JSON 回写） | ✅ 可用（未拆组件） |
+| 编辑器变体字段可视化增删、Lua 脚本重建、字段拖拽排序 | ⛔ 未做 |
+| 流传输（串口/网络）下的协议解码 | ⛔ 未做（仅文件） |
+| 通用载入对话框（schema + probe + 预览） | ⛔ 未做，设计迁至 [`parser-spi-v2.md`](parser-spi-v2.md) 附录 A |
+
+### 15.3 红线（继续有效）
+
+- `src/` 只读参考，不改一行。
+- headless 库不链 Qt Widgets；`ng_protocol` 不认识 Dataset / 宿主。
+- 解析器零拷贝：喂入的 buffer 不由解析器持有，产出批走 sink。
