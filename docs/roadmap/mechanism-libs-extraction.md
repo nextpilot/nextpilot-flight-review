@@ -1,6 +1,6 @@
 # 机制抽库设计：recording 归属 + 注册表/意向/schema→UI 下沉为 libs
 
-> 状态：**已拍板，分批实施中**（2026-11-19 定方案；2026-11-20 落地 B3 `ng_registry` 最小核，见 §11.1；intent / uischema / parser 各批仍待实施）。
+> 状态：**已拍板，分批实施中**（2026-11-19 定方案；2026-11-20 落地 B3 `ng_registry`、B4 `ng_intent`，见 §11；uischema / parser 各批仍待实施）。
 > 需求方三问：① `ng/recording` 为何独立、有何特权？② core 的注册机制（模板、支持多种类）与意向机制抽成 libs；③ 按 schema 让 Qt 绘制对话框/属性面板的能力抽成 libs，重点是**约束 schema 长什么样**。
 > 与 [`dataset-lib-extraction.md`](dataset-lib-extraction.md) 同属 core 瘦身动作；所有结论逐行核对过 `ng/core`、`ng/recording`、`ng/gui`。
 
