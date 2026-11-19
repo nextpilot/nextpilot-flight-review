@@ -31,6 +31,6 @@
 6. 单独评估：UI 撤销栈，与脚本模块解耦。
 
 新的方案先在 `roadmap/` 写清目标、边界、验收和风险，确认后再进 `develop/` 或代码。
-| [psproto v2](psproto-v2.md) | 方案待拍板（2026-11-19） | 模板驱动动态帧解码：表达力统计（24 格式）、JSON Schema、编译成段表、流式 parser、codegen |
+| [psproto v2](psproto-v2.md) | **讨论定稿，待验收**（2026-11-19） | 表达力统计、类型规则、§12 定稿决策与开工前验收清单；协议本体见 [SPEC.md](../ng/libs/protocol/SPEC.md) |
 | [psproto S0 施工方案](psproto-s0-plan.md) | 待开工（2026-11-19） | 时间 i64 的三方案取舍、S0 八项文件级改动、256 倍数反例断言、回滚 |
 | [psproto v2 规范（协议本体）](../libs/protocol/SPEC.md) | **已定稿**（2026-11-19） | 段键表、emit 三态、digest/inject、位域、ASCII、覆盖矩阵 8/8、12 项交付标准 |
