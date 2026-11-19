@@ -759,6 +759,46 @@ int main(int argc, char *argv[])
         OK("编译层负例：未定义槽位/bit.base/width 越界/literal+delimiter 混写全部明确失败");
     }
 
+    // --- ASCII 变体：按 msgid 选子协议（NMEA 多句） ---
+    {
+        const char *js = R"({"name":"nmea_series","term":["\r\n"],"maxsize":128,
+ "segments":[
+   {"name":"dollar","literal":"$","emit":"none"},
+   {"name":"msgid","type":"char","delimiter":",","emit":"none"},
+   {"name":"payload","type":"char","delimiter":",","repeater":"*","emit":"none"},
+   {"name":"star","literal":"*","emit":"none"},
+   {"name":"tail","type":"char","delimiter":"\r","emit":"none"}
+ ],
+ "series":{"selector":"msgid","payload":"payload","fallback":"reject",
+   "variants":[{"values":["GPGGA"],"name":"gga","segments":[
+       {"name":"lat","type":"number","delimiter":","},
+       {"name":"ns","type":"char","delimiter":","}
+   ]}]}})";
+        ProtocolDocument doc;
+        std::string err;
+        const bool parsed = parseDocument(QJsonDocument::fromJson(QByteArray(js)).object(), doc, err);
+        if (!parsed) fprintf(stdout, "series parse err: %s\n", err.c_str());
+        CHECK(parsed);
+        CompiledProgram prog;
+        CHECK(compileProgram(doc, prog, err));
+        auto findCh = [](const ProtocolDecodeResult &r, const char *name) -> const ProtocolChannel * {
+            for (const ProtocolChannel &c : r.channels)
+                if (c.name == name)
+                    return &c;
+            return nullptr;
+        };
+        StreamDecoder dec(prog);
+        ProtocolDecodeResult out;
+        CHECK(dec.push(QByteArray("$GPGGA,4807.038,N*4F\r\n"), out, err));
+        CHECK(out.ok);
+        const ProtocolChannel *lat = findCh(out, "frame.gga.lat");
+        const ProtocolChannel *ns = findCh(out, "frame.gga.ns");
+        CHECK(lat && lat->v.size() == 1);
+        CHECK(std::fabs(lat->v.at(0).asDouble() - 4807.038) < 1e-6);
+        CHECK(ns && ns->v.size() == 1 && ns->v.at(0).s == "N");
+        OK("ASCII 变体：顶层段解 selector（msgid）→ 变体段表替换 payload 段重解");
+    }
+
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");
     return 0;
 }

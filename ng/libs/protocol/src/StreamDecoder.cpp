@@ -295,8 +295,14 @@ struct RecAttempt
 };
 
 // 解析一条记录。p[0] 是帧首（已定位/已是记录开始），n 是记录逻辑尾（不含 terminator）。
-bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecAttempt &r)
+// varIdx 非空时按变体段表解析（下标指向 prog.varSegs），用于 ASCII 变体按 msgid 分派。
+bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecAttempt &r,
+                   const std::vector<const CompiledSeg *> *segsOverride = nullptr)
 {
+    const size_t segCount = segsOverride ? segsOverride->size() : prog.segs.size();
+    auto segAt = [&](size_t i) -> const CompiledSeg & {
+        return segsOverride ? *(*segsOverride)[i] : prog.segs[i];
+    };
     if (prog.slotTable.empty())
     {
         r.code = DecodeError::ConfigInvalid;
@@ -307,9 +313,9 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
     std::vector<std::pair<size_t, size_t>> spans(prog.slotTable.size(), {kNoPos, kNoPos});
 
     size_t pos = 0;
-    for (size_t si = 0; si < prog.segs.size(); ++si)
+    for (size_t si = 0; si < segCount; ++si)
     {
-        const CompiledSeg &seg = prog.segs[si];
+        const CompiledSeg &seg = segAt(si);
 
         if (seg.isLiteral)
         {
@@ -409,11 +415,11 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
 
         // 本段之后的第一个 literal（repeat 段的右边界）
         std::string nextLit;
-        for (size_t j = si + 1; j < prog.segs.size(); ++j)
+        for (size_t j = si + 1; j < segCount; ++j)
         {
-            if (prog.segs[j].isLiteral && !prog.segs[j].literal.empty())
+            if (segAt(j).isLiteral && !segAt(j).literal.empty())
             {
-                nextLit = prog.segs[j].literal;
+                nextLit = segAt(j).literal;
                 break;
             }
         }
@@ -446,7 +452,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 stop = at;
             }
             const std::vector<std::string> toks = splitTokens(p, pos, stop, seg);
-            if (seg.countIsConst && seg.constCount > 0 && toks.size() > seg.constCount)
+            if (!seg.repeatAll && seg.countIsConst && seg.constCount > 0 && toks.size() > seg.constCount)
             {
                 r.code = DecodeError::TooManyFields;
                 r.segment = seg.name;
@@ -611,7 +617,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     else
                         haveStop = false;
                 }
-                else if (si + 1 < prog.segs.size())
+                else if (si + 1 < segCount)
                 {
                     haveStop = false;
                 }
@@ -870,8 +876,15 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
 void emitRecord(const CompiledProgram &prog, const RecAttempt &r, int64_t t, ProtocolDecodeResult &out)
 {
     out.skipped += r.skipped;
-    for (const CompiledSeg &seg : prog.segs)
+    // 顶层段与变体段都要出通道：变体记录里顶层段多半 emit=none，变体段才有值。
+    std::vector<const CompiledSeg *> allSegs;
+    for (const CompiledSeg &s : prog.segs)
+        allSegs.push_back(&s);
+    for (const CompiledSeg &s : prog.varSegs)
+        allSegs.push_back(&s);
+    for (const CompiledSeg *sp : allSegs)
     {
+        const CompiledSeg &seg = *sp;
         if (seg.emitMode == 2) // none
             continue;
         if (seg.slot < 0 || static_cast<size_t>(seg.slot) >= r.vals.size())
@@ -1035,6 +1048,58 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
         RecAttempt r;
         if (attemptRecord(prog, p, limit, r))
         {
+            // 变体分派：顶层段解出 selector（如 NMEA msgid）→ 用变体段表重解整条记录。
+            if (prog.hasSeries && prog.selectorSlot >= 0 &&
+                static_cast<size_t>(prog.selectorSlot) < r.vals.size())
+            {
+                const TypedVec &sel = r.vals[static_cast<size_t>(prog.selectorSlot)];
+                if (sel.size() == 1)
+                {
+                    const TypedValue sv = sel.at(0);
+                    std::string key = (sv.type == ValueType::Text)
+                                          ? ("s:" + sv.s)
+                                          : ("n:" + std::to_string(sv.isSigned() ? sv.asI64()
+                                                                               : static_cast<int64_t>(sv.asU64())));
+                    int vi = -1;
+                    for (size_t i = 0; i < prog.variants.size() && vi < 0; ++i)
+                        for (const std::string &k : prog.variants[i].keys)
+                            if (k == key || (sv.type == ValueType::Text && k == sv.s))
+                            {
+                                vi = static_cast<int>(i);
+                                break;
+                            }
+                    if (vi >= 0)
+                    {
+                        // pragma: 变体段替换 payload 段，头部/校验段沿用顶层段
+                        const CompiledVariant &cv = prog.variants[static_cast<size_t>(vi)];
+                        int pIdx = -1;
+                        for (size_t i = 0; i < prog.segs.size(); ++i)
+                            if (prog.payloadSlot >= 0 && prog.segs[i].slot == prog.payloadSlot)
+                            {
+                                pIdx = static_cast<int>(i);
+                                break;
+                            }
+                        std::vector<const CompiledSeg *> arr;
+                        const size_t cut = (pIdx < 0) ? prog.segs.size() : static_cast<size_t>(pIdx);
+                        for (size_t i = 0; i < cut; ++i)
+                            arr.push_back(&prog.segs[i]);
+                        for (int32_t k : cv.segs)
+                            arr.push_back(&prog.varSegs[static_cast<size_t>(k)]);
+                        if (pIdx >= 0)
+                            for (size_t i = static_cast<size_t>(pIdx) + 1; i < prog.segs.size(); ++i)
+                                arr.push_back(&prog.segs[i]);
+                        RecAttempt r2;
+                        if (attemptRecord(prog, p, limit, r2, &arr))
+                            r = std::move(r2);
+                    }
+                    else if (prog.fallbackReject)
+                    {
+                        r.code = DecodeError::FieldInvalid;
+                        r.segment = "series";
+                        r.detail = "selector " + key + " 没有匹配的变体";
+                    }
+                }
+            }
             // 时间轴：声明了 timestamp 就用它算 ticks，否则按记录序号。
             int64_t t = m_recordIndex;
             if (prog.hasTimestamp && prog.timestamp.constant)
