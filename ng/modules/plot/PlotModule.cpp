@@ -9,7 +9,14 @@
 #include "RuntimeHost.h"
 #include "SettingsStore.h"
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
+using namespace nextpilot::plotscope::plot;
 using namespace nextpilot::plotscope::host;
 
 // 把 plot.render 意图编译成 PlotSpec。headless 下这就是最终产物（可导出 JSON）；

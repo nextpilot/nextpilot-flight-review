@@ -8,10 +8,6 @@
 
 class QMainWindow;
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::gui
 {
 

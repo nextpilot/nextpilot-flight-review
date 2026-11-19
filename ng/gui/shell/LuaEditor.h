@@ -11,10 +11,6 @@ class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::gui
 {
 

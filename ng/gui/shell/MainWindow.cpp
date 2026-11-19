@@ -28,7 +28,13 @@
 #include <QShowEvent>
 #include <QStatusBar>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::host;
 
 // SARibbon 是**静态库**：它的 qrc 资源（主题配色 JSON、图标等）不会随

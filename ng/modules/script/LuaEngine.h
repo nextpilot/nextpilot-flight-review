@@ -10,10 +10,6 @@
 
 struct lua_State;
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::script
 {
 

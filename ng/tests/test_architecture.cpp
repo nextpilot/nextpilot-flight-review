@@ -40,7 +40,13 @@
     } while (0)
 
 using namespace nextpilot::plotscope::app;
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
 
 // ============================================================================
 // 「新增一个 module / extension 不修改其他代码」的证明
@@ -723,7 +729,13 @@ int main(int argc, char **argv)
 
         // --- 工作区数据源配置：data.load 自动记录 + workspace 意图 ---
         {
-            using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
             // data.load（上面已成功加载 csv）应已把来源记入 ws/data/sources。
             WorkspaceDataConfig cfg = WorkspaceDataConfig::load(application.context().settings());
             CHECK(!cfg.sources.isEmpty());

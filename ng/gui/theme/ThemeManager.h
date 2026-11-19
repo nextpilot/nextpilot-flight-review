@@ -9,10 +9,6 @@
 #include <QPalette>
 #include <QString>
 
-namespace nextpilot::plotscope::core
-{
-} // namespace nextpilot::plotscope::core
-
 namespace nextpilot::plotscope::gui
 {
 

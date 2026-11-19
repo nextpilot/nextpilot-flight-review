@@ -24,7 +24,10 @@
 #include <cstdio>
 #include <cstdlib>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
 
 namespace
 {

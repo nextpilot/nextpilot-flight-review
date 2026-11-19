@@ -7,11 +7,6 @@
 
 #include <QWidget>
 
-namespace nextpilot::plotscope::core
-{
-
-} // namespace nextpilot::plotscope::core
-
 class QLabel;
 class QLineEdit;
 class QToolButton;

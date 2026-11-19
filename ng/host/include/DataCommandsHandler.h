@@ -4,10 +4,6 @@
 #include "IIntentExecutor.h"
 #include "Intent.h"
 
-namespace nextpilot::plotscope::core
-{
-} // namespace nextpilot::plotscope::core
-
 // 数据器官的"派生能力"：reload / export / recent / clearCache。
 //
 // 与 DataLoadHandler（系统级 data.load 入口）归口一致，都是宿主级 handler——

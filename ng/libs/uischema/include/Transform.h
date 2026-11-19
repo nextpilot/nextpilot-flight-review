@@ -131,26 +131,3 @@ public:
 };
 
 } // namespace nextpilot::plotscope::uischema
-// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
-namespace nextpilot::plotscope::core
-{
-using uischema::TransformKind;
-using uischema::TransformCapability;
-using uischema::CapNone;
-using uischema::CapDerived;
-using uischema::CapAxisX;
-using uischema::CapAxisY;
-using uischema::CapChecksum;
-using uischema::CapTransform;
-using uischema::TransformParam;
-using uischema::TransformDescriptor;
-using uischema::TransformRequest;
-using uischema::TransformScriptOps;
-using uischema::TransformRegistry;
-using uischema::transformKindName;
-using uischema::transformKindFromName;
-using uischema::capabilityNames;
-using uischema::capabilitiesContain;
-using uischema::transformParamSpecs;
-} // namespace nextpilot::plotscope::core
-

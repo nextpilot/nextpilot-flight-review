@@ -21,7 +21,8 @@
         }                                                                      \
     } while (0)
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
 
 int main(int argc, char **argv)
 {

@@ -85,10 +85,3 @@ private:
     }
 
 } // namespace nextpilot::plotscope::parser
-// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
-namespace nextpilot::plotscope::core
-{
-using parser::ParserEntry;
-using parser::ParserRegistry;
-} // namespace nextpilot::plotscope::core
-

@@ -5,7 +5,8 @@
 
 #include <iostream>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::uischema;
 
 namespace

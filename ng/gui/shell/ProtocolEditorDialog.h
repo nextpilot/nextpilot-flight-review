@@ -11,10 +11,6 @@ class QPushButton;
 class QTreeWidget;
 class QWidget;
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::gui
 {
 

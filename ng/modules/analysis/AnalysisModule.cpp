@@ -10,7 +10,13 @@
 #include "RuntimeHost.h"
 #include "Result.h"
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::host;
 
 // analysis.run 的处理器：分析器官只提供调度机制。

@@ -13,7 +13,13 @@
 #include <QByteArray>
 #include <QFile>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::host;
 
 // script.run 处理器：接受 {source=...} 或 {path=...}，组装门面并执行脚本。

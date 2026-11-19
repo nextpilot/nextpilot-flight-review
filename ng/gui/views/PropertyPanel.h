@@ -11,10 +11,6 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QVBoxLayout;
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::gui
 {
 

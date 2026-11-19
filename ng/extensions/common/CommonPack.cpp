@@ -5,7 +5,11 @@
 #include "CsvFormatParser.h"
 #include "CustomProtocolFormatParser.h"
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
 
 namespace nextpilot::plotscope::ext
 {

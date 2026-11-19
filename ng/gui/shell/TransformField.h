@@ -13,10 +13,6 @@ class QPlainTextEdit;
 class QPushButton;
 class QVBoxLayout;
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::gui
 {
 

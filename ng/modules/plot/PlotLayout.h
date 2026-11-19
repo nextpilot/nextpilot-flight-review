@@ -5,7 +5,7 @@
 #include <QStringList>
 #include <QVector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::plot
 {
 
 // 一个画布在布局中的声明。
@@ -57,4 +57,4 @@ struct PlotDocumentSpec
     static PlotDocumentSpec fromJson(const QJsonObject &obj);
 };
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::plot

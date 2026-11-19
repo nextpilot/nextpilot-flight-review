@@ -13,7 +13,8 @@ extern "C" {
 #include <QJsonObject>
 #include <QJsonValue>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::uischema;
 
 namespace nextpilot::plotscope::script
 {

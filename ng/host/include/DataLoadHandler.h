@@ -9,10 +9,6 @@
 
 #include <QByteArray>
 
-namespace nextpilot::plotscope::core
-{
-} // namespace nextpilot::plotscope::core
-
 // 数据加载意图的统一入口（宿主的系统级能力，不归属任何可卸载模块）。
 //
 // 它不认识任何具体格式：拿到 data.load 意图后，

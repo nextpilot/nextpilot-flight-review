@@ -6,10 +6,6 @@
 
 #include "Transform.h"
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::gui
 {
 

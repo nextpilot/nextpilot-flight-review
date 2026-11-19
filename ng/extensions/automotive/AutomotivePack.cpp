@@ -3,7 +3,7 @@
 #include "BuiltinContributions.h"
 #include "BuiltinPackRegistry.h"
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::registry;
 
 namespace nextpilot::plotscope::ext
 {

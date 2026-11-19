@@ -6,10 +6,6 @@
 
 class QTableWidget;
 
-namespace nextpilot::plotscope::core
-{
-} // namespace nextpilot::plotscope::core
-
 namespace nextpilot::plotscope::ext::automotive
 {
 

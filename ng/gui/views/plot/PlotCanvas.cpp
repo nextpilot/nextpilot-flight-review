@@ -19,7 +19,7 @@
 #include <cmath>
 #include <limits>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::dataset;
 
 namespace nextpilot::plotscope::gui
 {

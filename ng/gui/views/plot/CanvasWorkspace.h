@@ -10,10 +10,6 @@ class QGridLayout;
 class QStackedWidget;
 class QEvent;
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::gui
 {
 

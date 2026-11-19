@@ -10,7 +10,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
 
 QString CustomProtocolFormatParser::id() const
 {

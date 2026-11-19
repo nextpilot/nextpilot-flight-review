@@ -36,10 +36,12 @@ public:
 };
 } // namespace
 
+
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::intent;
+
 int main()
 {
-    using namespace nextpilot::plotscope::core;
-
     Intent a;
     a.op = QStringLiteral("data.load");
     a.params[QStringLiteral("format")] = QStringLiteral("csv");

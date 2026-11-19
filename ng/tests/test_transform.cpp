@@ -28,7 +28,13 @@
 #define NEAR(a, b) (std::fabs((a) - (b)) < 1e-6)
 
 using namespace nextpilot::plotscope::app;
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
 
 // 构造一份 TransformRequest JSON（字段赋值，避免依赖聚合初始化顺序）。
 static QJsonObject makeReq(const QString &id, TransformKind kind,

@@ -6,7 +6,9 @@
 #include <QHash>
 #include <QStyleFactory>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::context;
 
 namespace nextpilot::plotscope::gui
 {

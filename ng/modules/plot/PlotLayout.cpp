@@ -2,7 +2,7 @@
 
 #include <QJsonArray>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::plot
 {
 
 namespace
@@ -118,4 +118,4 @@ PlotDocumentSpec PlotDocumentSpec::fromJson(const QJsonObject &obj)
     return spec;
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::plot

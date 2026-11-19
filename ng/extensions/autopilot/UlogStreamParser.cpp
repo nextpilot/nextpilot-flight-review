@@ -23,7 +23,8 @@
 #include <string>
 #include <vector>
 
-using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::parser;
 
 namespace nextpilot::plotscope::ext::ulog
 {

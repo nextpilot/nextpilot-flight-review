@@ -25,10 +25,6 @@ class Trajectory3D;
 class WaterfallPlot;
 }
 
-namespace nextpilot::plotscope::core
-{
-}
-
 namespace nextpilot::plotscope::gui
 {
 

@@ -73,12 +73,3 @@ inline const QString kSeriesSelectionChangedAlias = QStringLiteral("plot.selecti
 } // namespace topics
 
 } // namespace nextpilot::plotscope::uischema
-// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
-namespace nextpilot::plotscope::core
-{
-using uischema::SelectionKind;
-using uischema::Selection;
-using uischema::selectionKindName;
-using uischema::selectionKindFromName;
-} // namespace nextpilot::plotscope::core
-

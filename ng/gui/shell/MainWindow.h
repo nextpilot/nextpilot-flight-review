@@ -23,10 +23,6 @@
 
 #include <QShowEvent>
 
-namespace nextpilot::plotscope::core
-{
-} // namespace nextpilot::plotscope::core
-
 namespace nextpilot::plotscope::host
 {
 class RuntimeHost;
