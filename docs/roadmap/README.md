@@ -31,6 +31,6 @@
 6. 单独评估：UI 撤销栈，与脚本模块解耦。
 
 新的方案先在 `roadmap/` 写清目标、边界、验收和风险，确认后再进 `develop/` 或代码。
-| [psproto v2](psproto-v2.md) | **讨论定稿，待验收**（2026-11-19） | 表达力统计、类型规则、§12 定稿决策与开工前验收清单；协议本体见 [SPEC.md](../ng/libs/protocol/SPEC.md) |
-| [psproto S0 施工方案](psproto-s0-plan.md) | **部分被 v2 §12 取代**（2026-11-19） | 早期起步稿：时间路径 B 方案、size 改字节已废止；崩溃修复/fuzz/回滚仍成立，施工前以 v2 + SPEC 为准 |
+| [psproto v2](psproto-v2.md) | **讨论定稿，待验收**（2026-11-19） | 表达力统计、类型规则、§12 定稿决策与开工前验收清单、**§13 交接清单（A/B/C 文档消项 + D 业务问题）**；协议本体见 [SPEC.md](../ng/libs/protocol/SPEC.md) |
+| [psproto S0 施工方案](psproto-s0-plan.md) | **部分被 v2 §12 取代，待修订**（2026-11-19） | 早期起步稿：时间路径 B 方案、size 改字节已废止（时间改走 A typed）；崩溃修复/fuzz/回滚仍成立；**§7 分批表作废，以 v2 §5 为准**，施工前先消 [v2 §13 交接清单](psproto-v2.md) |
 | [psproto v2 规范（协议本体）](../libs/protocol/SPEC.md) | **已定稿**（2026-11-19） | 段键表、emit 三态、digest/inject、位域、ASCII、覆盖矩阵 8/8、12 项交付标准 |

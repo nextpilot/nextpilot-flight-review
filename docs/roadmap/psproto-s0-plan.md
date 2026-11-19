@@ -1,5 +1,10 @@
 # psproto 施工方案：S0 起步
 
+> ⚠️ **2026-11-19 review 提示**：本文 §7 的 S1–S5 分批表为旧版，**已作废**。
+> 分批方案以 [`psproto-v2.md` §5](psproto-v2.md) 为唯一权威；本文若干路径/行号与代码不符。
+> 开工前须先消项 [`psproto-v2.md` §13 交接清单](psproto-v2.md) 的 A/B/C 类，并取得 D 类业务问题的需求方答复。
+> **需求方未验收 v2 §12.2 清单前，不动实现代码。**
+
 > 依据：`docs/roadmap/psproto-v2.md`（设计）+ 两条已定决策：
 > **① 时间必须 i64；② `decodeSequential` 先保留。**
 
