@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
         {
             qputenv("PLOTSCOPE_SHOT_SEG", (png + QStringLiteral("-seg.png")).toUtf8());
             if (argc >= 8)
-                qputenv("PLOTSCOPE_SHOT_SEG_TAB", argv[7]);
+                qputenv("PLOTSCOPE_SHOT_SEG_ROW", argv[7]);
         }
         nextpilot::plotscope::gui::ProtocolEditorDialog dlg;
         QByteArray tpl;
