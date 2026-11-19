@@ -112,6 +112,14 @@ void checkEmit(const QJsonObject &seg, const QString &name, QStringList &errs)
 void checkAsciiSegment(const QJsonObject &seg, const QString &name, const QMap<QString, int> &order,
                        const QSet<QString> &names, int selfIndex, QStringList &errs)
 {
+    for (const QJsonValue &cv : seg.value(QStringLiteral("checks")).toArray())
+    {
+        const QString op = cv.toObject().value(QStringLiteral("op")).toString();
+        if (op == QLatin1String("crc8") || op == QLatin1String("crc16") || op == QLatin1String("crc32") ||
+            op == QLatin1String("sum8") || op == QLatin1String("sum16") || op == QLatin1String("xor8") ||
+            op == QLatin1String("parity"))
+            errs << QStringLiteral("%1：ASCII 段的 checks 只支持谓词，序列校验请用 digest").arg(name);
+    }
     const QString lit = seg.value(QStringLiteral("literal")).toString();
     if (seg.contains(QStringLiteral("key")))
     {

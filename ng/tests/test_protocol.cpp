@@ -800,6 +800,38 @@ int main(int argc, char *argv[])
         OK("ASCII 变体：顶层段解 selector（msgid）→ 变体段表替换 payload 段重解");
     }
 
+    // --- ASCII checks 生效 + preview/decode 一致性 ---
+    {
+        const QByteArray tpl = R"({
+          "name":"csv_checks","layout":"sequential","maxsize":64,"terminator":"\n",
+          "segments":[
+            {"name":"a","type":"i32","delimiter":",","checks":[{"op":"eq","value":12}]},
+            {"name":"b","type":"char"}
+          ]
+        })";
+        ProtocolDecodeResult okr = decodeSequentialJson(QByteArray("12,OK\n"), tpl);
+        CHECK(okr.ok && okr.channels.size() == 2);
+        ProtocolDecodeResult bad = decodeSequentialJson(QByteArray("99,NO\n"), tpl);
+        CHECK(!bad.ok || bad.rejectedFrames > 0);
+
+        // 序列类 checks 在 ASCII 段必须编译期拒绝（那是 digest 的职责）
+        const QByteArray badTpl = R"({
+          "name":"csv_bad","layout":"sequential","maxsize":64,"terminator":"\n",
+          "segments":[{"name":"c","type":"char","delimiter":"\n","checks":[{"op":"crc16"}]}]
+        })";
+        CHECK(!validate(QJsonDocument::fromJson(badTpl).object()).isEmpty());
+
+        // preview 与生产解码对同一帧结论一致
+        ProtocolDocument doc;
+        std::string pe;
+        CHECK(parseDocument(QJsonDocument::fromJson(tpl).object(), doc, pe));
+        const QByteArray one = QByteArray("12,OK\n");
+        SequentialFramePreview pv = previewSequentialFrame(one, doc);
+        ProtocolDecodeResult dr = decodeSequential(one, doc);
+        CHECK(pv.ok == dr.ok);
+        OK("ASCII checks 生效：谓词不符即拒；序列类 checks 被编译期拒；preview 与 decode 结论一致");
+    }
+
     // --- repeat:"eos" 必须收尾 ---
     {
         QJsonParseError pe;

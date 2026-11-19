@@ -147,6 +147,9 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 ```
 `over`（段区间）只对摘要类有意义，**从 `checks` 移除**。
 
+> **适用范围**：`checks` 是谓词（eq/ne/lt/le/gt/ge/in/range/mask），ASCII 与二进制都执行（ASCII 在段解析完即判，不符→`FieldInvalid`）。序列类（crc/sum/xor/parity）不属于 `checks`，ASCII 段写了会被编译期拒绝，统一走 `digest`。
+> 文本常量要写成表达式字面量：`{"op":"eq","value":"'N'"}`（`value` 里的字符串按表达式解析，裸 `"N"` 会被当成段名引用）。
+
 ### 4.2 `digest`（摘要，算校验和）
 
 ```jsonc

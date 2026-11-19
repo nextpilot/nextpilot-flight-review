@@ -338,6 +338,103 @@ struct RecAttempt
     int skipped = 0;
 };
 
+// checks 谓词（eq/ne/lt/le/gt/ge/in/range/mask）：ASCII 路径此前只有二进制 readFrame 执行它，
+// 导致模板里写 checks 在流式协议里静默失效。这里补齐，语义与 checkFrame 一致。
+static bool cmpTyped(const TypedValue &a, const TypedValue &b, int &cmp)
+{
+    if (a.type == ValueType::Text || b.type == ValueType::Text)
+    {
+        if (a.type != b.type)
+            return false;
+        cmp = a.s < b.s ? -1 : (a.s > b.s ? 1 : 0);
+        return true;
+    }
+    const bool fa = (a.type == ValueType::F32 || a.type == ValueType::F64);
+    const bool fb = (b.type == ValueType::F32 || b.type == ValueType::F64);
+    if (fa != fb)
+        return false;
+    const double da = a.asDouble(), db = b.asDouble();
+    cmp = da < db ? -1 : (da > db ? 1 : 0);
+    return true;
+}
+
+static bool failPredicate(RecAttempt &r, const std::string &segName, const std::string &detail)
+{
+    r.code = DecodeError::FieldInvalid;
+    r.segment = segName;
+    r.detail = detail;
+    return false;
+}
+
+static bool checkAsciiPredicates(const CompiledSeg &seg, const TypedVec &col,
+                                 const std::vector<TypedVec> &cols, RecAttempt &r)
+{
+    std::string bcErr;
+    for (const CompiledCheck &c : seg.checks)
+    {
+        if (c.isSequence)
+            continue;
+        for (std::size_t i = 0; i < col.size(); ++i)
+        {
+            const TypedValue &v = col.at(i);
+            bool ok = false;
+            if (c.op == "in")
+            {
+                for (const TypedValue &iv : c.values)
+                {
+                    int cmp = 0;
+                    if (!cmpTyped(v, iv, cmp))
+                        return failPredicate(r, seg.name, "checks in 的类型与字段不一致");
+                    if (cmp == 0)
+                    {
+                        ok = true;
+                        break;
+                    }
+                }
+            }
+            else if (c.op == "range" || c.op == "mask")
+            {
+                TypedValue a, b;
+                if (!runByteCode(c.rhs, cols, a, bcErr) || !runByteCode(c.rhs2, cols, b, bcErr))
+                    return failPredicate(r, seg.name, bcErr);
+                if (c.op == "mask")
+                    ok = ((v.asU64() & a.asU64()) == b.asU64());
+                else
+                {
+                    int ca = 0, cb = 0;
+                    if (!cmpTyped(v, a, ca) || !cmpTyped(v, b, cb))
+                        return failPredicate(r, seg.name, "checks range 的类型与字段不一致");
+                    ok = (ca >= 0 && cb <= 0);
+                }
+            }
+            else
+            {
+                TypedValue rhs;
+                if (!runByteCode(c.rhs, cols, rhs, bcErr))
+                    return failPredicate(r, seg.name, bcErr);
+                int cmp = 0;
+                if (!cmpTyped(v, rhs, cmp))
+                    return failPredicate(r, seg.name, "checks " + c.op + " 的类型与字段不一致");
+                if (c.op == "eq")
+                    ok = (cmp == 0);
+                else if (c.op == "ne")
+                    ok = (cmp != 0);
+                else if (c.op == "lt")
+                    ok = (cmp < 0);
+                else if (c.op == "le")
+                    ok = (cmp <= 0);
+                else if (c.op == "gt")
+                    ok = (cmp > 0);
+                else if (c.op == "ge")
+                    ok = (cmp >= 0);
+            }
+            if (!ok)
+                return failPredicate(r, seg.name, "checks 未通过（" + c.op + "）");
+        }
+    }
+    return true;
+}
+
 // 解析一条记录。p[0] 是帧首（已定位/已是记录开始），n 是记录逻辑尾（不含 terminator）。
 // varIdx 非空时按变体段表解析（下标指向 prog.varSegs），用于 ASCII 变体按 msgid 分派。
 bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecAttempt &r,
@@ -453,6 +550,8 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             }
             r.vals[seg.slot] = col;
             spans[seg.slot] = {pos, pos + total};
+            if (!checkAsciiPredicates(seg, col, r.vals, r))
+                return false;
             pos += total;
             continue;
         }
@@ -861,6 +960,8 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         }
         r.vals[seg.slot] = col;
         spans[seg.slot] = {tokenStart, tokenEnd};
+        if (!checkAsciiPredicates(seg, col, r.vals, r))
+            return false;
         pos = nextPos;
     }
 
