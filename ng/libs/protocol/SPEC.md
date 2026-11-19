@@ -72,7 +72,7 @@
 | `if` | 表达式 | 条件字段，false 时整段跳过 | 新增 |
 | `enum` | object | 值→名字映射 | 新增 |
 | `range` | `[min,max]` | **声明**物理范围（不判失败） | 与 `checks.range` 语义区分 |
-| `repeat` | `elems`/`eos`/`until` | 重复方式 | 默认 `elems`（由 `count` 定） |
+| `repeat` | `elems`/`eos`/`until` | 重复方式 | 默认 `elems`（由 `count` 定）；`eos` = 读到帧尾，**必须是最后一个读字节的段**（后面只允许 `bit`/`derive`），否则编译期报错 |
 | `until` | 表达式/字符串 | 重复终止条件（读到该值为止） | 配 `repeat:"until"` |
 | `consume` | bool | ASCII 段是否吃掉结束分隔符 | 见 §7 |
 | `empty` | `"nan"`/`"skip"` | ASCII 空字段策略 | `nan`：空段填 NaN；`skip`：跳过不产出；见 §7 |

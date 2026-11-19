@@ -670,6 +670,28 @@ QStringList validate(const QJsonObject &o)
             errs << QStringLiteral("变体 value/values 有重复");
     }
 
+    // repeat:"eos" 是"读到帧尾"，因此它必须是最后一个读字节的段：
+    // 后面再出现读字节的段（非 bit、非 derive），eos 会把它们一起吞掉。
+    for (size_t i = 0; i < static_cast<size_t>(segArr.size()); ++i)
+    {
+        const QJsonObject so = segArr.at(static_cast<int>(i)).toObject();
+        const QJsonValue rv = so.value(QStringLiteral("repeat"));
+        const QString mode = rv.isString() ? rv.toString()
+                                           : rv.toObject().value(QStringLiteral("mode")).toString();
+        if (mode != QLatin1String("eos"))
+            continue;
+        for (size_t j = i + 1; j < static_cast<size_t>(segArr.size()); ++j)
+        {
+            const QJsonObject after = segArr.at(static_cast<int>(j)).toObject();
+            if (after.contains(QStringLiteral("bit")) || after.contains(QStringLiteral("derive")))
+                continue;
+            errs << QStringLiteral("段 %1 用了 repeat:\"eos\"，后面不能再有读字节的段（%2）：eos 是\"读到帧尾\"")
+                        .arg(so.value(QStringLiteral("name")).toString(),
+                             after.value(QStringLiteral("name")).toString());
+            break;
+        }
+    }
+
     int fixedTotal = 0;
     bool hasVariable = false;
     for (int b : fixedBytes)

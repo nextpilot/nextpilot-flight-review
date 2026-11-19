@@ -800,6 +800,20 @@ int main(int argc, char *argv[])
         OK("ASCII 变体：顶层段解 selector（msgid）→ 变体段表替换 payload 段重解");
     }
 
+    // --- repeat:"eos" 必须收尾 ---
+    {
+        QJsonParseError pe;
+        const QJsonObject bad = QJsonDocument::fromJson(R"({
+            "name":"eos_bad","layout":"sequential","maxsize":64,
+            "segments":[
+                {"name":"body","type":"u16","repeat":"eos"},
+                {"name":"crc","type":"u16"}
+            ]
+        })", &pe).object();
+        CHECK(pe.error == QJsonParseError::NoError && !validate(bad).isEmpty());
+        OK("编译层负例：repeat:\"eos\" 之后不能再有读字节的段");
+    }
+
     // --- Lua 脚本后端 ---
     {
         CHECK(scriptDigestAvailable());

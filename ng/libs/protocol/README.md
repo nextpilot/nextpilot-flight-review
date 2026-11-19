@@ -95,7 +95,7 @@
 | `if` | 条件字段，false 时整段跳过 |
 | `enum` | 值 → 名字映射 |
 | `range` | 声明物理范围（不判失败） |
-| `repeat` / `until` | 重复方式：`elems`（按 count）/ `"eos"`（读到帧尾）/ `{mode:"until", until:"<expr>"}`（逐元素求值即停） |
+| `repeat` / `until` | 重复方式：`elems`（按 count）/ `"eos"`（读到帧尾，必须是最后一个读字节的段）/ `{mode:"until", until:"<expr>"}`（逐元素求值即停） |
 | `derive` | 计算字段，不从字节读 |
 | `length` | 长度段反算：本段值必须等于后面字段合计字节/元素数 |
 
