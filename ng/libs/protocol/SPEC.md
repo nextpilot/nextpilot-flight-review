@@ -67,7 +67,6 @@
 | `expectExpr` | 表达式 | 常量匹配（表达式形式） | 原 `valueExpr` |
 | `checks` | array | **谓词校验**（eq/ne/lt/le/gt/ge/in/range/mask） | 见 §4.1 |
 | `digest` | object | **摘要校验**（crc/sum/xor/parity） | 见 §4.2 |
-| `length` | object | 长度段反算绑定 | 见 §2.4；原 v1 `counts` |
 | `bit` | object | 位域 | 见 §6 |
 | `if` | 表达式 | 条件字段，false 时整段跳过 | 新增 |
 | `enum` | object | 值→名字映射 | 新增 |
@@ -87,7 +86,7 @@
 | `none` | 不出通道（仅供校验/位域容器/常量） | `hidden:true` / `hasValue` / `role:sync\|length\|checksum` |
 
 **默认规则**（避免用户漏写）：
-- 带 `expect` / `digest` / `counts` 的段默认 `none`；
+- 带 `expect` / `digest` / `length` 的段默认 `none`；
 - `series.payload` 指向的段默认 `aux`；
 - 其余默认 `channel`。
 
@@ -286,7 +285,7 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 
 | # | 删除/合并 | 理由 |
 |---|---|---|
-| 5 | **删 `role`** | 与 `expect`/`counts`/`digest`/`series.payload` 完全重叠 |
+| 5 | **删 `role`** | 与 `expect`/`length`/`digest`/`series.payload` 完全重叠 |
 | 6 | `hidden`+`plot`+`hasValue` → **`emit`** 三态 | 三个开关在 codec 里串在同一个 `if` 上，干的是同一件事 |
 | 7 | `value` → **`expect`** | 与 `valueExpr` 并列时"谁是常量谁是表达式"靠猜 |
 | 8 | `str`/`string`/`ascii`/`char` → **`text`** | 四个名字一个类型 |
