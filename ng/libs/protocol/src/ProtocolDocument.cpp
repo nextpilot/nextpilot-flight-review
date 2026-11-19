@@ -792,6 +792,29 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         seg.width = static_cast<uint32_t>(o.value(QStringLiteral("width")).toInt(0));
     }
     seg.isRest = o.value(QStringLiteral("rest")).toBool(false);
+    if (o.contains(QStringLiteral("range")))
+    {
+        const QJsonValue rv = o.value(QStringLiteral("range"));
+        seg.hasRange = true;
+        if (rv.isArray())
+        {
+            const QJsonArray ra = rv.toArray();
+            seg.rangeMin = ra.at(0).toDouble(0);
+            seg.rangeMax = ra.size() > 1 ? ra.at(1).toDouble(0) : seg.rangeMin;
+        }
+        else
+        {
+            const QJsonObject ro = rv.toObject();
+            seg.rangeMin = ro.value(QStringLiteral("min")).toDouble(0);
+            seg.rangeMax = ro.value(QStringLiteral("max")).toDouble(0);
+        }
+    }
+    if (o.contains(QStringLiteral("enum")))
+    {
+        seg.hasEnum = true;
+        for (const QJsonValue &ev : o.value(QStringLiteral("enum")).toArray())
+            seg.enumValues.push_back(ev.toDouble(0));
+    }
     seg.base = static_cast<int64_t>(o.value(QStringLiteral("base")).toDouble(10));
     if (o.contains(QStringLiteral("fixed")))
     {
@@ -839,6 +862,12 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         seg.digest.script = dgo.value(QStringLiteral("code")).toString().toStdString();
         seg.digest.from = dgo.value(QStringLiteral("from")).toString().toStdString();
         seg.digest.to = dgo.value(QStringLiteral("to")).toString().toStdString();
+        if (dgo.contains(QStringLiteral("inject")))
+        {
+            seg.digest.hasInject = true;
+            seg.digest.inject =
+                static_cast<uint32_t>(dgo.value(QStringLiteral("inject")).toDouble(0));
+        }
     }
 
     const bool asciiHints = docAscii || !seg.literal.empty() || seg.hasDelimiter || seg.hasWidth ||

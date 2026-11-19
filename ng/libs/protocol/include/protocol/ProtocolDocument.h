@@ -99,6 +99,8 @@ struct DigestSpec
     std::string script;  // Lua 函数体（ctx.data / ctx.len / ctx.fields / ctx.raw）
     std::string from;    // "after:<段名>" | "frame_start"（缺省 frame_start）
     std::string to;      // "before:<段名>" | "frame_end"（缺省 before:self）
+    bool hasInject = false;   // 追加常量（MAVLink CRC_EXTRA）：等价于在数据尾部再累加一个字节
+    uint32_t inject = 0;
 };
 
 struct SegmentDef
@@ -137,6 +139,11 @@ struct SegmentDef
     std::string emptyPolicy;             // ""（空串报错）| "nan" | "skip" | "raw"
     std::string pattern;                 // 正则只做校验，不切分
     std::string onMismatch;              // "" | "reject" | "warn" | "skip"
+    bool hasRange = false;                // 值域：越界按 on_mismatch 处理
+    double rangeMin = 0.0;
+    double rangeMax = 0.0;
+    bool hasEnum = false;                 // 合法取值集合（超集外按 on_mismatch）
+    std::vector<double> enumValues;
     std::vector<TransformStep> transform;
     DigestSpec digest;
 };

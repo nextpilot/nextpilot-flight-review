@@ -154,6 +154,13 @@ struct CompiledSeg
     int digestKind = 0;                  // 0=none 1=builtin 2=script
     std::string digestAlg;
     std::string digestScript;
+    bool digestHasInject = false;        // digest.inject：数据尾部追加的常量字节（CRC_EXTRA）
+    uint32_t digestInject = 0;
+    bool hasRange = false;               // 值域/枚举校验
+    double rangeMin = 0.0;
+    double rangeMax = 0.0;
+    bool hasEnum = false;
+    std::vector<double> enumValues;
     bool hasDigestBounds = false;        // 有 digest 段（校验输出的那个）
 };
 

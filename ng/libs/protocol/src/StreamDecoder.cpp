@@ -21,6 +21,24 @@ namespace
 
 constexpr size_t kNoPos = static_cast<size_t>(-1);
 
+// 值域/枚举：只做判定，处理策略由调用方的 on_mismatch 决定。
+bool violatesDomain(const CompiledSeg &seg, const TypedValue &v)
+{
+    if (v.type == ValueType::Text)
+        return false;
+    const double d = v.asDouble();
+    if (seg.hasRange && (d < seg.rangeMin || d > seg.rangeMax))
+        return true;
+    if (seg.hasEnum)
+    {
+        for (double e : seg.enumValues)
+            if (e == d)
+                return false;
+        return true;
+    }
+    return false;
+}
+
 bool isSignedKind(ValueType t)
 {
     return t == ValueType::I8 || t == ValueType::I16 || t == ValueType::I32 || t == ValueType::I64;
@@ -520,6 +538,21 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     r.detail = perr + "（原文 " + tok + "）";
                     return false;
                 }
+                if (violatesDomain(seg, v))
+                {
+                    if (seg.onMismatch == 2)
+                        continue;
+                    if (seg.onMismatch == 1)
+                    {
+                        r.skipped++;
+                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        continue;
+                    }
+                    r.code = DecodeError::FieldInvalid;
+                    r.segment = seg.name;
+                    r.detail = "值超出 range/enum（原文 " + tok + "）";
+                    return false;
+                }
                 col.push(v);
             }
             r.vals[seg.slot] = col;
@@ -773,7 +806,28 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 r.detail = perr + "（原文 " + tok + "）";
                 return false;
             }
-            col.push(v);
+            if (violatesDomain(seg, v))
+            {
+                if (seg.onMismatch == 2)
+                {
+                    pos = nextPos;
+                    continue;
+                }
+                if (seg.onMismatch == 1)
+                {
+                    r.skipped++;
+                    col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                }
+                else
+                {
+                    r.code = DecodeError::FieldInvalid;
+                    r.segment = seg.name;
+                    r.detail = "值超出 range/enum（原文 " + tok + "）";
+                    return false;
+                }
+            }
+            else
+                col.push(v);
         }
         r.vals[seg.slot] = col;
         spans[seg.slot] = {tokenStart, tokenEnd};
@@ -815,7 +869,10 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         if (seg.digestKind == 1)
         {
             std::string derr;
-            if (!computeDigest(seg.digestAlg, p + from, to - from, computed, derr))
+            std::vector<uint8_t> dbuf(p + from, p + to);
+            if (seg.digestHasInject)
+                dbuf.push_back(static_cast<uint8_t>(seg.digestInject & 0xFF));
+            if (!computeDigest(seg.digestAlg, dbuf.data(), dbuf.size(), computed, derr))
             {
                 r.code = DecodeError::ConfigInvalid;
                 r.segment = seg.name;

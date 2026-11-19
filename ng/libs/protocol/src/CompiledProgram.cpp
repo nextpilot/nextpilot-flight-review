@@ -537,6 +537,15 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
     cs.pattern = s.pattern;
     cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
     cs.transform = s.transform;
+    cs.hasRange = s.hasRange;
+    cs.rangeMin = s.rangeMin;
+    cs.rangeMax = s.rangeMax;
+    cs.hasEnum = s.hasEnum;
+    cs.enumValues = s.enumValues;
+    if (s.hasRange && s.rangeMin > s.rangeMax)
+        return c.fail("段 " + s.name + " 的 range.min > range.max");
+    if (s.hasEnum && s.enumValues.empty())
+        return c.fail("段 " + s.name + " 的 enum 为空");
     if (s.digest.enabled)
     {
         cs.digestKind = s.digest.alg.empty() ? 2 : 1;
@@ -565,6 +574,8 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
                     return c.fail("段 " + s.name + " 的 digest.to 未找到段：" + ref);
             }
         }
+        cs.digestHasInject = s.digest.hasInject;
+        cs.digestInject = s.digest.inject;
         cs.hasDigestBounds = true;
     }
     return true;
