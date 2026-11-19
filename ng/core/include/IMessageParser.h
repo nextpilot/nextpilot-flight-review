@@ -1,108 +1,173 @@
 #pragma once
 
 /*
- * 协议消息解析器接口（"协议检查器"能力）。
+ * 统一解析器接口（唯一名字，Message 取广义"数据报文"）。
  *
- * 与 ps_parser_spi.h 的关系——两套东西，刻意分开：
- *   - SPI parser：字节 → PsFrameBatch（数值批）→ Rust Dataset，供**画图/分析**，纯 C ABI；
- *   - IMessageParser：字节 → DecodedFrame（可读字段树）→ 协议检查器/打开对话框，C++ 接口。
+ * 与 SPI parser 的关系：
+ *   - SPI parser（ps_parser_spi.h）：字节 → PsFrameBatch，C ABI，供 data.load 摄取管道画图；
+ *   - IMessageParser：字节 → DecodedFrame（可读帧），C++ 接口，供协议检查器/打开对话框。
+ *   SPI 层零改动；格式声明能力（parserId/后缀/表名/schema/probe）并入自述，
+ *   一个接口同时回答"我是什么格式"和"我能解出什么"。
  *
- * 为什么后者是 C++ 虚接口而不进 SPI：
- *   反例——若把"协议名/使用范围/transfer/配置 schema"塞进 SPI 的 C vtable，
- *   SPI 立刻从"不认识宿主的纯字节转换"退化成"带 GUI 配置语义的东西"，
- *   跨语言 / dll 实现全废。协议检查器天然带 Qt 数据（QVariant 字段），本就是 C++ 侧能力。
+ * 多输出：
+ *   outputs() 声明本解析器能提供哪些输出。parseMessages() 产可读帧（默认委托 parse()）；
+ *   parseFrames() 产数值批，交给 SPI 解析器按 parserId 执行——C++ 这层不重复实现数值解析。
  *
- * === 自述（供专用协议对话框消费，加协议不动对话框代码）===
- *   protocolName()        协议可读名
- *   domain()              使用范围-业务领域（继承 IToolContribution）
- *   usage()               使用范围-人读用途说明
- *   supportedTransports() 支持的 transfer 协议 id（file/udp/tcp/serial/can...）
- *   configSchema()        可配置参数 schema（与 IFormatDriver::importSchema 同构，JSON 键值对描述）
- *
- * === 生命周期 ===
- *   create() → configure(params) → parse(bytes) → ... → destroy()
- *   configure 必须且只在 create 后、首次 parse 前调用一次。
- *
- * === 配置纪律（硬约束）===
- *   解析器**只从 configure 传入的 params 取参数**，且只取自己 configSchema() 声明的键。
- *   禁止读全局（SettingsStore / QSettings / 环境变量 / 文件）——
- *   这样协议可独立单测、配置可存 Workspace 重放、同一类的两个实例互不串味。
- *   基类提供 param(key, default) 助手，默认实现把 params 存进 m_params；
- *   派生类可从 m_params 读，但不得从别处读。
+ * 配置纪律：解析器只从 configure 传入的 params 取值，禁止读全局（Settings/QSettings/环境/文件）。
+ * prepareParserOptions 是宿主侧的编排步骤（把 templatePath 展开成内嵌文本），不属于解析器实例。
  */
 
 #include "ContributionKind.h"
 #include "DecodedFrame.h"
+#include "Domain.h"
 #include "IToolContribution.h"
 
 #include <QByteArray>
+#include <QFileInfo>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 namespace nextpilot::plotscope::core
 {
+
+// 解析器能提供的输出类型（能力声明，调用方按需取用）。
+enum class ParseOutput
+{
+    MsgFrame,   // 可读帧 → DecodedFrame（协议检查器）
+    FrameBatch, // 数值批 → SPI PsFrameBatch（data.load 摄取管道）
+};
+
+// 输出经 Sink 交还调用者：解析器不持有结果、不决定去向。
+using MsgFrameSink = std::function<bool(const DecodedFrame &)>;
+using FrameBatchSink = std::function<bool(const QJsonObject &)>; // 一批数值的纯数据描述
+
+class Intent; // preferredTableName / prepareParserOptions 用，避免头重
 
 class IMessageParser : public IToolContribution
 {
 public:
     ~IMessageParser() override = default;
 
-    // 贡献类型固定为 message（kind 与 intent 分离，这里只做身份声明）。
+    // 贡献类型固定为 message（格式声明已并入，不再有 kind=format 的独立门面）。
     QString kind() const final { return ContributionKind::Message; }
 
-    // === 自述：协议名称 ===
-    // 协议的规范名（如 "NMEA 0183" / "MAVLink 2"），与 id 区分：
-    // id 是稳定标识（配置/重放用），protocolName 是对人展示的协议名。
-    // 基类默认返回 displayName()，需要更精确协议名的派生类可覆盖。
+    // === 身份与领域 ===
+    virtual QString displayName() const = 0;
+    Domain domain() const override { return Domain::General; }
+
+    // === 协议自述 ===
     virtual QString protocolName() const { return displayName(); }
+    virtual QString usage() const { return QString(); }
+    virtual QStringList supportedTransports() const { return {}; }
 
-    // === 自述：使用范围 ===
-    virtual QString usage() const = 0;                    // 一句话用途说明
-    virtual QStringList supportedTransports() const = 0; // transfer 协议 id 列表
+    // === 格式声明 ===
+    // 对应的 SPI 解析器 id（如 "csv" / "ulog"）；空串表示不做数值批摄取。
+    virtual QString parserId() const { return QString(); }
+    virtual QStringList suffixes() const { return {}; }
+    virtual bool acceptsFormat(const QString &format) const
+    {
+        return !format.isEmpty() && format == id();
+    }
+    bool acceptsSuffix(const QString &path) const
+    {
+        const QString suffix = QFileInfo(path).suffix().toLower();
+        if (suffix.isEmpty())
+            return false;
+        for (const QString &s : suffixes())
+            if (suffix == s.toLower())
+                return true;
+        return false;
+    }
+    // 单表格式声明目标表名；空串表示沿用解析器给出的表名。
+    virtual QString preferredTableName(const Intent &intent, const QString &sourcePath) const
+    {
+        Q_UNUSED(intent);
+        Q_UNUSED(sourcePath);
+        return QString();
+    }
 
-    // === 自述：可配置参数 schema ===
-    // 形如 {"title":..., "fields":[{key,type,label,default,options?,visible_if?...}], "ui":{...}}
-    // type ∈ bool/int/double/enum/string/file。空对象 = 无参数。
-    // 与 IFormatDriver::importSchema 同构，对话框渲染器可共用同一套约定。
+    // === 配置契约 ===
+    // 参数规格（纯 metadata）。旧 configSchema/importSchema 的 JSON 将由 SchemaEngine 消费；
+    // B6 保留 JSON 接口兼容，paramSpecs() 在 B6-c 接入。
     virtual QJsonObject configSchema() const { return QJsonObject(); }
 
-    // === 生命周期 ===
-    // 把宿主收集的参数灌进本实例。默认实现存进 m_params，派生类一般无需 override——
-    // 直接在 parse() 里用 param(key) 取即可。需要派生处理时 override 并调用基类实现。
-    // 返回 false 表示参数非法（err 写原因），宿主应中止本次加载。
     virtual bool configure(const QJsonObject &params, QString *err = nullptr);
-
-    // 只从本次 configure 传入的参数取值（支持 "time.mode" 点分嵌套）。
-    // 这是解析器的**唯一**配置来源：拿不到就返回 default，绝不回退到全局。
     QJsonValue param(const QString &key, const QJsonValue &fallback = QJsonValue()) const;
 
-    // 探测：给一段头字节，判断是否本协议。宿主据此在对话框里预选协议。
+    // === 探测与选项展开（宿主侧编排，非解析器实例行为）===
     virtual bool sniff(const QByteArray &head) const
     {
         Q_UNUSED(head);
         return false;
     }
+    virtual QJsonObject probeFile(const QString &path) const
+    {
+        Q_UNUSED(path);
+        return QJsonObject();
+    }
+    virtual QByteArray defaultImportOptions(const QString &path) const
+    {
+        Q_UNUSED(path);
+        return QByteArray();
+    }
+    virtual QByteArray prepareParserOptions(const Intent &intent, const QByteArray &options) const
+    {
+        Q_UNUSED(intent);
+        return options;
+    }
 
-    // === 核心行为：每个具体类主要实现这个函数 ===
-    // 把一段字节解码成一帧。成功返回 true 并填 out；失败返回 false。
-    virtual bool parse(const QByteArray &bytes, DecodedFrame &out) const = 0;
+    // === 多输出函数 ===
+    virtual QList<ParseOutput> outputs() const { return {ParseOutput::MsgFrame}; }
+
+    // 可读帧：默认委托 parse()，把单帧喂给 sink，返回喂入的帧数。
+    virtual int parseMessages(const QByteArray &bytes, const MsgFrameSink &sink,
+                              QString *err = nullptr) const
+    {
+        DecodedFrame frame;
+        if (!parse(bytes, frame))
+        {
+            if (err)
+                *err = QStringLiteral("解析失败");
+            return 0;
+        }
+        return sink(frame) ? 1 : 0;
+    }
+
+    // 数值批：由 SPI 解析器按 parserId 执行，C++ 层不重复实现（SPI 对齐另批）。
+    virtual int parseFrames(const QByteArray &bytes, const FrameBatchSink &sink,
+                            QString *err = nullptr) const
+    {
+        Q_UNUSED(bytes);
+        Q_UNUSED(sink);
+        if (err)
+            *err = QStringLiteral("数值批输出由 SPI 解析器提供（parserId）");
+        return 0;
+    }
+
+    // 单帧解析：parseMessages 的默认实现依赖它；纯数值批解析器可不覆盖。
+    virtual bool parse(const QByteArray &bytes, DecodedFrame &out) const
+    {
+        Q_UNUSED(bytes);
+        Q_UNUSED(out);
+        return false;
+    }
 
 protected:
     QJsonObject m_params; // configure 传入的参数快照；派生类只读，不写全局
 };
 
-// === transfer 协议 id（开放字符串，与 ContributionKind 同风格）===
-// 表示"字节从哪来 / 怎么传"，供 supportedTransports() 声明、对话框渲染传输选项。
-// 与 IByteSource（读取端）和 RecordingBackend（投递端）的 id 对齐复用。
+// === transfer 协议 id ===
 namespace MessageTransport
 {
-inline const QString File = QStringLiteral("file");     // 本地文件
-inline const QString Memory = QStringLiteral("memory"); // 内存/回放片段
-inline const QString Udp = QStringLiteral("udp");       // UDP 组播/单播
-inline const QString Tcp = QStringLiteral("tcp");       // TCP 流
-inline const QString Serial = QStringLiteral("serial"); // 串口
-inline const QString Can = QStringLiteral("can");       // CAN 总线
+inline const QString File = QStringLiteral("file");
+inline const QString Memory = QStringLiteral("memory");
+inline const QString Udp = QStringLiteral("udp");
+inline const QString Tcp = QStringLiteral("tcp");
+inline const QString Serial = QStringLiteral("serial");
+inline const QString Can = QStringLiteral("can");
 } // namespace MessageTransport
 
 } // namespace nextpilot::plotscope::core

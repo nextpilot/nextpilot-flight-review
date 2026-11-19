@@ -44,7 +44,7 @@ PluginScanReport scanExternalPlugins(nextpilot::plotscope::core::ExtensionRegist
         // TODO(plugin-abi): 本轮只搭扫描框架，不实际 dlopen。启用时在此：
         //   1) QLibrary / QPluginLoader 加载该文件；
         //   2) 解析 ng_plugin_abi() 校验版本，不符则 errors << "ABI 不符" 并 continue；
-        //   3) 调用工厂取得 IFormatDriver*，用 unique_ptr 接管；
+        //   3) 调用工厂取得 IMessageParser*，用 unique_ptr 接管；
         //   4) registry.registerDriver(std::move(driver))，失败则 errors << "id 冲突"。
         // 单个插件失败只记 errors，不中断其她插件，也不触碰内置格式。
         report.errors.append(QStringLiteral("%1: 动态加载尚未启用（本轮仅预留入口）").arg(name));

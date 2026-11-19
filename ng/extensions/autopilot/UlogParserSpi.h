@@ -9,7 +9,7 @@
  *
  * 架构定位（AGENTS.md §3 P0-1）：
  *   ng 曾有两条数据通路并存——
- *     A：data.load → IFormatDriver::load()，驱动自己读文件、自己建 Dataset；
+ *     A：data.load → IMessageParser::load()，驱动自己读文件、自己建 Dataset；
  *     B：Source → IngestPipeline → parser SPI → Dataset，生产零调用。
  *   处置是**归并到 B，不新建第三条路**。本文件是 B 侧的一环：
  *   把 ULog 的格式解析能力以标准 SPI 解析器的身份暴露出去，让宿主能

@@ -2,7 +2,7 @@
 #include "ThemeManager.h"
 
 #include "ExtensionRegistry.h"
-#include "IFormatDriver.h"
+#include "IMessageParser.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -104,8 +104,8 @@ public:
     QLabel *warning = nullptr;
     QTableWidget *preview = nullptr;
 
-    QList<nextpilot::plotscope::core::IFormatDriver *> drivers;
-    nextpilot::plotscope::core::IFormatDriver *current = nullptr;
+    QList<nextpilot::plotscope::core::IMessageParser *> drivers;
+    nextpilot::plotscope::core::IMessageParser *current = nullptr;
     QJsonObject probeData;
     QList<Field> fields;
     QString chosenPath;
@@ -227,9 +227,9 @@ void ImportDialog::rebuildFormatList()
     d->drivers.clear();
     d->formats->clear();
     // 只列"声明了导入 schema"的格式驱动——其它格式走简化路径（无选项）。
-    for (nextpilot::plotscope::core::IFormatDriver *drv : m_registry.drivers())
+    for (nextpilot::plotscope::core::IMessageParser *drv : m_registry.drivers())
     {
-        if (drv->importSchema().isEmpty())
+        if (drv->configSchema().isEmpty())
             continue;
         QString filter;
         for (const QString &suf : drv->suffixes())
@@ -298,7 +298,7 @@ void ImportDialog::rebuildFields()
     if (!d->current)
         return;
 
-    const QJsonObject schema = d->current->importSchema();
+    const QJsonObject schema = d->current->configSchema();
     const QJsonArray fieldSpecs = schema.value(QStringLiteral("fields")).toArray();
     for (const QJsonValue &fv : fieldSpecs)
     {
@@ -465,7 +465,7 @@ void ImportDialog::updateFieldVisibility()
 
 void ImportDialog::updatePreview()
 {
-    const QJsonObject ui = d->current->importSchema().value(QStringLiteral("ui")).toObject();
+    const QJsonObject ui = d->current->configSchema().value(QStringLiteral("ui")).toObject();
     const QJsonObject pv = ui.value(QStringLiteral("preview")).toObject();
     if (pv.isEmpty())
     {

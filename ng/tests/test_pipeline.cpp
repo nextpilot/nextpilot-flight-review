@@ -763,7 +763,7 @@ int main()
     // ========== ULog 双路径一致性：SPI 管道 == 旧 driver 路径 ==========
     //
     // 这是 P0-1 归并的**核心断言**：同一个 .ulg 文件，
-    //   路径 A（data.load → IFormatDriver::load）  与
+    //   路径 A（data.load → IMessageParser::load）  与
     //   路径 B（Source → IngestPipeline → ULog SPI parser）
     // 必须产出**逐行一致**的数据。
     //
@@ -850,7 +850,7 @@ int main()
         CHECK(tB != nullptr);
         CHECK(tB && tB->rows == rows);
 
-        // --- 路径 A：旧 driver 路径（data.load → IFormatDriver）---
+        // --- 路径 A：旧 driver 路径（data.load → IMessageParser）---
         // 这里直接调扩展里的 driver，避免把整个 App 拉进来。
         Dataset dsA = Dataset::create(QStringLiteral("dual"), QStringLiteral("ulog"));
         QString errA;

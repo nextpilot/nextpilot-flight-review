@@ -2,7 +2,6 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 
 add_library(ng_core STATIC
     src/ScriptFacade.cpp
-    src/IFormatDriver.cpp
     src/ExtensionRegistry.cpp
     src/Domain.cpp
     src/ContributionKind.cpp
@@ -26,7 +25,6 @@ add_library(ng_core STATIC
     src/Transform.cpp
     include/Events.h
     include/ScriptFacade.h
-    include/IFormatDriver.h
     include/IByteSource.h
     include/IngestOrchestrator.h
     include/ExtensionRegistry.h

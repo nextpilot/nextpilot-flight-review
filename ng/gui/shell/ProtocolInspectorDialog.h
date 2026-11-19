@@ -25,7 +25,7 @@ namespace nextpilot::plotscope::gui
 // 专用协议检查对话框——消费 IMessageParser 的自述信息，不认识任何具体协议。
 //
 // 与 ImportDialog（数据打开对话框）刻意分开：
-//   - ImportDialog 消费 IFormatDriver，产出 data.load 意图 → Dataset（画图）；
+//   - ImportDialog 消费 IMessageParser，产出 data.load 意图 → Dataset（画图）；
 //   - 本对话框消费 IMessageParser，直接 parse → DecodedFrame（逐帧查看字段/校验）。
 //   两者用途不同，合并会让"打开"语义分裂（用户上一轮明确选择新建专用对话框）。
 //

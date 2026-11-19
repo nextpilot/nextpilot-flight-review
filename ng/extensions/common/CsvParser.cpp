@@ -20,7 +20,7 @@ namespace
 // 每批行数上限：C++ 侧缓冲恒定，与文件行数无关。
 constexpr uint32_t kChunkRows = 4096;
 
-// 解析配置（由宿主经 configure 传入，字段与 CsvFormatDriver::schema() 一致）。
+// 解析配置（由宿主经 configure 传入，字段与 CsvFormatParser::schema() 一致）。
 // 默认值 = 历史行为：逗号分隔 / 第一行表头 / 第一列时间（秒）。
 // 这样老的 data.load 调用（不带 options）行为完全不变。
 struct CsvConfig
@@ -196,7 +196,7 @@ bool emitBatch(CsvCtx *c, const PsParserSink *sink, PsError *err)
 
     PsFrameBatch batch{};
     // 表名固定 "csv"：解析器只认字节，不知道文件叫什么。
-    // 最终表名由宿主按扩展层声明的策略映射（见 IFormatDriver::preferredTableName）。
+    // 最终表名由宿主按扩展层声明的策略映射（见 IMessageParser::preferredTableName）。
     batch.table = "csv";
     batch.time_us = c->times.data();
     batch.rows = static_cast<uint32_t>(c->times.size());

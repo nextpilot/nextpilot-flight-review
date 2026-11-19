@@ -293,7 +293,7 @@ int32_t IngestPipeline::onFrameBatch(void *ctx, const PsFrameBatch *batch)
     }
 
     // 表名改写（宿主策略）：解析器只认字节，不知道表该叫什么；
-    // 单表格式由宿主命名（见 IFormatDriver::preferredTableName）。
+    // 单表格式由宿主命名（见 IMessageParser::preferredTableName）。
     // Rust 侧的表名在写入时定死，所以只能在这里改。
     QString table = QString::fromUtf8(batch->table ? batch->table : "");
     if (!sc->tableName.isEmpty())

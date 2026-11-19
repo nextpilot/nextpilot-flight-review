@@ -2,7 +2,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 
 # OBJECT 库：保证自注册 TU 一定参与链接（见 common/CMakeLists.txt 的说明）。
 add_library(ng_ext_autopilot OBJECT
-    UlogFormatDriver.cpp
+    UlogFormatParser.cpp
     UlogStreamParser.cpp
     AutopilotPack.cpp
     AutopilotPack.h

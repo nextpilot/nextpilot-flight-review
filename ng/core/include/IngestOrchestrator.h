@@ -53,7 +53,7 @@ namespace nextpilot::plotscope::core
 struct IngestOptions
 {
     // 表名改写：把解析器产出的表改名为此（空 = 沿用解析器给出的表名）。
-    // 只在**单表格式**上声明（见 IFormatDriver::preferredTableName）。
+    // 只在**单表格式**上声明（见 IMessageParser::preferredTableName）。
     QString tableName;
 
     // 缓存：复用按源文件指纹（size+mtime）存下的已解析数据集。

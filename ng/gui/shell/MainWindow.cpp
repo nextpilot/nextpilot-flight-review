@@ -13,7 +13,7 @@
 #include "Intent.h"
 #include "Result.h"
 #include "UiSlotRegistry.h"
-#include "IFormatDriver.h"
+#include "IMessageParser.h"
 #include "IToolContribution.h"
 
 #include "SARibbonMainWindow.h"
@@ -269,12 +269,8 @@ void MainWindow::declareStandardSlots()
     // gallery 分组出现顺序按动作 order 聚合：常用(0..3) 必须排在文件格式(100+) 之前，
     // 抄老 DataSourceRibbon 的 addCategoryActions("常用")→("文件格式")→("实时源") 顺序。
     int fmtOrder = 100;
-    for (nextpilot::plotscope::core::IToolContribution *c : m_appCtx.toolbox().contributions(
-             nextpilot::plotscope::core::ContributionKind::Format))
+    for (nextpilot::plotscope::core::IMessageParser *driver : m_appCtx.toolbox().drivers())
     {
-        auto *driver = dynamic_cast<nextpilot::plotscope::core::IFormatDriver *>(c);
-        if (!driver)
-            continue;
         UiAction a;
         a.id = QStringLiteral("data.source.") + driver->id();
         a.label = driver->displayName();
@@ -288,12 +284,10 @@ void MainWindow::declareStandardSlots()
     // 常用组：把前四个格式驱动也放进去（抄老代码"常用 = 前 4 个加载器"）。
     {
         int n = 0;
-        for (nextpilot::plotscope::core::IToolContribution *c : m_appCtx.toolbox().contributions(
-                 nextpilot::plotscope::core::ContributionKind::Format))
+        for (nextpilot::plotscope::core::IMessageParser *driver : m_appCtx.toolbox().drivers())
         {
-            auto *driver = dynamic_cast<nextpilot::plotscope::core::IFormatDriver *>(c);
-            if (!driver || n >= 4)
-                continue;
+            if (n >= 4)
+                break;
             UiAction a;
             a.id = QStringLiteral("data.source.common.") + driver->id();
             a.label = driver->displayName();

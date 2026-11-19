@@ -148,13 +148,66 @@ int ExtensionRegistry::contributionCount() const
     return static_cast<int>(m_byId.size());
 }
 
-// === 格式快捷 API ===
+namespace
+{
+bool producesFrames(const IMessageParser *p)
+{
+    return p && p->outputs().contains(ParseOutput::FrameBatch);
+}
+} // namespace
 
-bool ExtensionRegistry::registerDriver(std::unique_ptr<IFormatDriver> driver)
+// === 统一解析器视图（所有 kind=message 的 IMessageParser）===
+
+QList<IMessageParser *> ExtensionRegistry::parsers() const
+{
+    QList<IMessageParser *> out;
+    for (IToolContribution *c : m_byKind.value(ContributionKind::Message, {}))
+        if (auto *p = dynamic_cast<IMessageParser *>(c))
+            out.append(p);
+    return out;
+}
+
+QList<IMessageParser *> ExtensionRegistry::parsersByDomain(Domain domain) const
+{
+    QList<IMessageParser *> out;
+    for (IMessageParser *p : parsers())
+        if (p->domain() == domain)
+            out.append(p);
+    return out;
+}
+
+IMessageParser *ExtensionRegistry::parser(const QString &id) const
+{
+    IToolContribution *c = m_byId.value(id, nullptr);
+    return (c && c->kind() == ContributionKind::Message)
+               ? dynamic_cast<IMessageParser *>(c)
+               : nullptr;
+}
+
+IMessageParser *ExtensionRegistry::parserForProtocol(const QString &protocolId) const
+{
+    const QString key = protocolId.trimmed().toLower();
+    for (IMessageParser *p : parsers())
+        if (p->id().toLower() == key || p->protocolName().toLower() == key)
+            return p;
+    return nullptr;
+}
+
+QList<IMessageParser *> ExtensionRegistry::parsersByTransport(const QString &transport) const
+{
+    QList<IMessageParser *> out;
+    for (IMessageParser *p : parsers())
+        if (p->supportedTransports().contains(transport, Qt::CaseInsensitive))
+            out.append(p);
+    return out;
+}
+
+// === 旧 API 兼容别名：筛 outputs() 含 FrameBatch 的解析器 ===
+
+bool ExtensionRegistry::registerDriver(std::unique_ptr<IMessageParser> driver)
 {
     if (!driver)
         return false;
-    // 单个驱动包装成一个隐式包，复用统一的包登记路径。
     auto pack = std::make_unique<ToolPack>(QStringLiteral("auto.") + driver->id(),
                                            driver->displayName(), driver->domain());
     pack->contributions().push_back(std::move(driver));
@@ -164,73 +217,61 @@ bool ExtensionRegistry::registerDriver(std::unique_ptr<IFormatDriver> driver)
 bool ExtensionRegistry::unregisterDriver(const QString &id)
 {
     IToolContribution *c = m_byId.value(id, nullptr);
-    if (!c || c->kind() != ContributionKind::Format)
+    if (!c || c->kind() != ContributionKind::Message)
         return false;
-    // 找到该贡献所属的包并整体撤销（隐式包只含这一个驱动；显式包的格式驱动
-    // 也通过 provider 归属，撤销的是它所在包——语义与"按包装卸"一致）。
     return unregisterPack(c->provider());
 }
 
-IFormatDriver *ExtensionRegistry::driverForFormat(const QString &format) const
+IMessageParser *ExtensionRegistry::driverForFormat(const QString &format) const
 {
     if (format.isEmpty())
         return nullptr;
-    for (IToolContribution *c : m_byKind.value(ContributionKind::Format, {}))
-    {
-        auto *d = dynamic_cast<IFormatDriver *>(c);
-        if (d && d->acceptsFormat(format))
-            return d;
-    }
+    for (IMessageParser *p : parsers())
+        if (producesFrames(p) && p->acceptsFormat(format))
+            return p;
     return nullptr;
 }
 
-IFormatDriver *ExtensionRegistry::driverForPath(const QString &path) const
+IMessageParser *ExtensionRegistry::driverForPath(const QString &path) const
 {
-    for (IToolContribution *c : m_byKind.value(ContributionKind::Format, {}))
-    {
-        auto *d = dynamic_cast<IFormatDriver *>(c);
-        if (d && d->acceptsSuffix(path))
-            return d;
-    }
+    for (IMessageParser *p : parsers())
+        if (producesFrames(p) && p->acceptsSuffix(path))
+            return p;
     return nullptr;
 }
 
-QList<IFormatDriver *> ExtensionRegistry::drivers() const
+QList<IMessageParser *> ExtensionRegistry::drivers() const
 {
-    QList<IFormatDriver *> out;
-    for (IToolContribution *c : m_byKind.value(ContributionKind::Format, {}))
-        if (auto *d = dynamic_cast<IFormatDriver *>(c))
-            out.append(d);
+    QList<IMessageParser *> out;
+    for (IMessageParser *p : parsers())
+        if (producesFrames(p))
+            out.append(p);
     return out;
 }
 
-QList<IFormatDriver *> ExtensionRegistry::driversByDomain(Domain domain) const
+QList<IMessageParser *> ExtensionRegistry::driversByDomain(Domain domain) const
 {
-    QList<IFormatDriver *> out;
-    for (IToolContribution *c : m_byKind.value(ContributionKind::Format, {}))
-    {
-        auto *d = dynamic_cast<IFormatDriver *>(c);
-        if (d && d->domain() == domain)
-            out.append(d);
-    }
+    QList<IMessageParser *> out;
+    for (IMessageParser *p : parsers())
+        if (producesFrames(p) && p->domain() == domain)
+            out.append(p);
     return out;
 }
 
 QList<Domain> ExtensionRegistry::domains() const
 {
     QList<Domain> out;
-    for (IToolContribution *c : m_byKind.value(ContributionKind::Format, {}))
-        if (c && !out.contains(c->domain()))
-            out.append(c->domain());
+    for (IMessageParser *p : drivers())
+        if (!out.contains(p->domain()))
+            out.append(p->domain());
     return out;
 }
 
 QStringList ExtensionRegistry::ids() const
 {
     QStringList out;
-    for (IToolContribution *c : m_byKind.value(ContributionKind::Format, {}))
-        if (c)
-            out.append(c->id());
+    for (IMessageParser *p : drivers())
+        out.append(p->id());
     return out;
 }
 
@@ -241,53 +282,7 @@ bool ExtensionRegistry::contains(const QString &id) const
 
 int ExtensionRegistry::count() const
 {
-    return m_byKind.value(ContributionKind::Format, {}).size();
-}
-
-// === 协议解析器快捷 API ===
-
-QList<IMessageParser *> ExtensionRegistry::messageParsers() const
-{
-    QList<IMessageParser *> out;
-    for (IToolContribution *c : m_byKind.value(ContributionKind::Message, {}))
-        if (auto *p = dynamic_cast<IMessageParser *>(c))
-            out.append(p);
-    return out;
-}
-
-QList<IMessageParser *> ExtensionRegistry::messageParsersByDomain(Domain domain) const
-{
-    QList<IMessageParser *> out;
-    for (IMessageParser *p : messageParsers())
-        if (p->domain() == domain)
-            out.append(p);
-    return out;
-}
-
-IMessageParser *ExtensionRegistry::messageParser(const QString &id) const
-{
-    IToolContribution *c = m_byId.value(id, nullptr);
-    return (c && c->kind() == ContributionKind::Message)
-               ? dynamic_cast<IMessageParser *>(c)
-               : nullptr;
-}
-
-IMessageParser *ExtensionRegistry::messageParserForProtocol(const QString &protocolId) const
-{
-    const QString key = protocolId.trimmed().toLower();
-    for (IMessageParser *p : messageParsers())
-        if (p->id().toLower() == key || p->protocolName().toLower() == key)
-            return p;
-    return nullptr;
-}
-
-QList<IMessageParser *> ExtensionRegistry::messageParsersByTransport(const QString &transport) const
-{
-    QList<IMessageParser *> out;
-    for (IMessageParser *p : messageParsers())
-        if (p->supportedTransports().contains(transport, Qt::CaseInsensitive))
-            out.append(p);
-    return out;
+    return drivers().size();
 }
 
 } // namespace nextpilot::plotscope::core

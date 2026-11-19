@@ -2,7 +2,7 @@
 
 #include "BuiltinContributions.h"
 #include "BuiltinPackRegistry.h"
-#include "UlogFormatDriver.h"
+#include "UlogFormatParser.h"
 
 using namespace nextpilot::plotscope::core;
 
@@ -19,7 +19,7 @@ std::unique_ptr<IToolPack> AutopilotPack::build()
     auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("飞控工具箱"), Domain::Autopilot);
 
     // ① 格式：ULog -> Dataset（复用流式解析器）
-    pack->add<UlogFormatDriver>();
+    pack->add<UlogFormatParser>();
 
     // ② UI：往 app 骨架提供的插槽里填飞控专属入口（纯数据，headless 也能查询）
     pack->add<GenericUiContribution>(

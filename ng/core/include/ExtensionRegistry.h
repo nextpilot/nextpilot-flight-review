@@ -2,7 +2,6 @@
 
 #include "IToolContribution.h"
 #include "IToolPack.h"
-#include "IFormatDriver.h"
 #include "IMessageParser.h"
 #include "Domain.h"
 
@@ -28,8 +27,8 @@ namespace nextpilot::plotscope::core
 //   - 内置包：由 registerBuiltinPacks() 在启动期自注册；
 //   - 外部插件：由插件扫描器加载后，把整个包 registerPack 进来。
 //
-// 保留 registerDriver / driverForFormat / driverForPath / drivers 等旧 API（内部
-// 把单个驱动包装成一个隐式包），使 data.load 与既有调用零改动。
+// 所有解析器统一为 IMessageParser（kind=message）。旧 driver API 保留为兼容别名：
+// 按 outputs() 含 FrameBatch 筛出数值批解析器，使 data.load 与既有测试零改动。
 class ExtensionRegistry
 {
 public:
@@ -51,26 +50,31 @@ public:
     bool containsContribution(const QString &id) const;
     int contributionCount() const;
 
-    // === 格式快捷 API（向后兼容 data.load 与既有测试）===
-    bool registerDriver(std::unique_ptr<IFormatDriver> driver);
-    bool unregisterDriver(const QString &id);
-    IFormatDriver *driverForFormat(const QString &format) const;
-    IFormatDriver *driverForPath(const QString &path) const;
-    QList<IFormatDriver *> drivers() const;
-    QList<IFormatDriver *> driversByDomain(Domain domain) const;
-    QList<Domain> domains() const; // 已有格式驱动的领域（去重）
-    QStringList ids() const;             // 格式驱动 id
-    bool contains(const QString &id) const;
-    int count() const;                   // 格式驱动数量
+    // === 统一解析器视图（所有 kind=message 的 IMessageParser）===
+    QList<IMessageParser *> parsers() const;
+    QList<IMessageParser *> parsersByDomain(Domain domain) const;
+    IMessageParser *parser(const QString &id) const;
+    IMessageParser *parserForProtocol(const QString &protocolId) const;
+    QList<IMessageParser *> parsersByTransport(const QString &transport) const;
 
-    // === 协议解析器快捷 API（kind=message，供专用协议对话框/CLI 消费）===
-    // 与格式驱动并列而非混用：格式驱动产 Dataset，协议解析器产 DecodedFrame。
-    QList<IMessageParser *> messageParsers() const;
-    QList<IMessageParser *> messageParsersByDomain(Domain domain) const;
-    IMessageParser *messageParser(const QString &id) const;
-    IMessageParser *messageParserForProtocol(const QString &protocolId) const;
-    // 按传输协议筛选：supportedTransports() 含 transport 的解析器。
-    QList<IMessageParser *> messageParsersByTransport(const QString &transport) const;
+    // === 旧 API 兼容别名（内部筛 outputs() 含 FrameBatch 的解析器）===
+    bool registerDriver(std::unique_ptr<IMessageParser> driver);
+    bool unregisterDriver(const QString &id);
+    IMessageParser *driverForFormat(const QString &format) const;
+    IMessageParser *driverForPath(const QString &path) const;
+    QList<IMessageParser *> drivers() const;
+    QList<IMessageParser *> driversByDomain(Domain domain) const;
+    QList<Domain> domains() const;
+    QStringList ids() const;
+    bool contains(const QString &id) const;
+    int count() const;
+
+    // === 协议视图别名（供 ProtocolInspectorDialog / CLI）===
+    QList<IMessageParser *> messageParsers() const { return parsers(); }
+    QList<IMessageParser *> messageParsersByDomain(Domain domain) const { return parsersByDomain(domain); }
+    IMessageParser *messageParser(const QString &id) const { return parser(id); }
+    IMessageParser *messageParserForProtocol(const QString &protocolId) const { return parserForProtocol(protocolId); }
+    QList<IMessageParser *> messageParsersByTransport(const QString &transport) const { return parsersByTransport(transport); }
 
 private:
     void rebuildIndexes();

@@ -170,7 +170,7 @@ int main(int argc, char **argv)
             if (drivers.isEmpty())
                 continue;
             fprintf(stdout, "[%s]\n", qPrintable(nextpilot::plotscope::core::domainName(domain)));
-            for (nextpilot::plotscope::core::IFormatDriver *driver : drivers)
+            for (nextpilot::plotscope::core::IMessageParser *driver : drivers)
                 fprintf(stdout, "  %-10s %-18s 后缀[%s]\n",
                         qPrintable(driver->id()),
                         qPrintable(driver->displayName()),

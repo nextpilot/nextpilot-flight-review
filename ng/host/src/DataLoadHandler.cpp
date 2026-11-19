@@ -25,7 +25,7 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
     // 恢复重放时传 false：不要把恢复出来的源又当成"新打开"记一遍。
     const bool record = intent.params.value(QStringLiteral("record"), true).toBool();
 
-    IFormatDriver *driver = format.isEmpty()
+    IMessageParser *driver = format.isEmpty()
         ? m_registry.driverForPath(path)
         : m_registry.driverForFormat(format);
 
@@ -103,20 +103,10 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
         return r;
     }
 
-    // --- 旧路径：驱动自己读文件自己建 Dataset（尚未归并的格式）---
-    auto loaded = driver->load(intent, m_repo);
-    if (loaded && m_settings)
-    {
-        QStringList files = m_settings->value(QLatin1String(DataCommandsHandler::kRecentKey)).toStringList();
-        files.removeAll(path);
-        files.prepend(path);
-        if (files.size() > 10)
-            files = files.mid(0, 10);
-        m_settings->setValue(QLatin1String(DataCommandsHandler::kRecentKey), files);
-    }
-    if (loaded && m_settings)
-        recordSpec(path, QStringList{format}, record);
-    return loaded;
+    // 该解析器声明了 FrameBatch 输出却没有 parserId，或摄取管道未注入——配置错误。
+    return fail(QStringLiteral("enoparser"),
+                QStringLiteral("解析器 %1 未提供可执行的 parserId，无法走摄取管道")
+                    .arg(driver->id()));
 }
 
 void DataLoadHandler::recordSpec(const QString &path, const QStringList &parserIds, bool record,

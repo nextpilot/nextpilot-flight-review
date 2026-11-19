@@ -17,7 +17,7 @@ namespace nextpilot::plotscope::core
 // 下面只是**内置约定名**，外部插件可自定义任意 kind 字符串。
 namespace ContributionKind
 {
-inline const QString Format  = QStringLiteral("format");   // IFormatDriver：文件 -> Dataset
+inline const QString Format  = QStringLiteral("format");   // IMessageParser：文件 -> Dataset
 inline const QString Ui      = QStringLiteral("ui");       // IUiContribution：菜单/面板/dock/画布工具
 inline const QString Panel   = QStringLiteral("panel");    // IPanelContribution：领域专属面板（形态随领域变）
 inline const QString Script  = QStringLiteral("script");   // IScriptContribution：可复用脚本

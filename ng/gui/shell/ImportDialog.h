@@ -17,7 +17,7 @@ namespace nextpilot::plotscope::gui
 // 通用"打开数据"对话框：schema 驱动，不认识任何具体格式。
 //
 // 架构定位（外壳交互能力）：
-//   - 格式知识（有哪些选项、怎么探测）由 IFormatDriver::importSchema/probeFile 提供；
+//   - 格式知识（有哪些选项、怎么探测）由 IMessageParser::importSchema/probeFile 提供；
 //   - 本类只按 schema 渲染控件、调 probe、渲染预览、收集 options——
 //     加一种格式只写它的 schema，对话框代码不动。
 //   - 这与老架构 DataSourceDialog 同源，但这里依赖 core 的纯数据接口，

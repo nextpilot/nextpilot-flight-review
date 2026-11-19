@@ -1,8 +1,6 @@
-#include "CsvFormatDriver.h"
+#include "CsvFormatParser.h"
 #include "CsvImportProbe.h"
-
-#include "DataRepository.h"
-#include "Dataset.h"
+#include "Intent.h"
 
 #include <QFileInfo>
 #include <QJsonArray>
@@ -10,33 +8,33 @@
 
 using namespace nextpilot::plotscope::core;
 
-QString CsvFormatDriver::id() const
+QString CsvFormatParser::id() const
 {
     return QStringLiteral("csv");
 }
 
-QString CsvFormatDriver::displayName() const
+QString CsvFormatParser::displayName() const
 {
-    return QStringLiteral("CSV 格式驱动");
+    return QStringLiteral("CSV 格式解析器");
 }
 
-nextpilot::plotscope::core::Domain CsvFormatDriver::domain() const
+nextpilot::plotscope::core::Domain CsvFormatParser::domain() const
 {
     return nextpilot::plotscope::core::Domain::General;
 }
 
-QStringList CsvFormatDriver::suffixes() const
+QStringList CsvFormatParser::suffixes() const
 {
     return {QStringLiteral("csv")};
 }
 
-bool CsvFormatDriver::acceptsFormat(const QString &format) const
+bool CsvFormatParser::acceptsFormat(const QString &format) const
 {
     // 兼容默认：空 format 视为 csv（历史调用省略 format 时按 CSV 处理）。
     return format.isEmpty() || format == QStringLiteral("csv") || format == QStringLiteral(".csv");
 }
 
-QString CsvFormatDriver::preferredTableName(const Intent &intent, const QString &sourcePath) const
+QString CsvFormatParser::preferredTableName(const Intent &intent, const QString &sourcePath) const
 {
     // 表名策略（声明，非执行）：
     //   intent 显式指定 table -> 用它；否则用文件名（去扩展名）。
@@ -47,22 +45,10 @@ QString CsvFormatDriver::preferredTableName(const Intent &intent, const QString 
     return QFileInfo(sourcePath).completeBaseName();
 }
 
-Result<IntentResult> CsvFormatDriver::load(const Intent &intent, DataRepository &repo)
-{
-    Q_UNUSED(intent);
-    Q_UNUSED(repo);
-    // CSV 已归并到统一摄取管道（见 parserId()），宿主不会调用本函数。
-    // 协议解析在 CsvParser（SPI 实现）里，只有**一份**实现。
-    return fail(QStringLiteral("eunsupported"),
-                QStringLiteral("CSV 已归并到统一摄取管道，请走 data.load 的管道路径"));
-}
+// === 配置协议：schema + probe + 默认选项 ===
+// 纯 QJsonObject，不含 QWidget / 回调（headless 可用）。GUI 通用对话框按它渲染。
 
-// === 导入配置协议：schema + probe + 默认选项 ===
-//
-// 字段定义与老 CsvDataLoader::schema() 对齐，但这是纯 QJsonObject，
-// 不含任何 QWidget / 回调（headless 可用）。GUI 通用对话框按它渲染。
-
-QJsonObject CsvFormatDriver::importSchema() const
+QJsonObject CsvFormatParser::configSchema() const
 {
     QJsonObject s;
     s[QStringLiteral("title")] = QStringLiteral("加载 CSV");
@@ -187,12 +173,12 @@ QJsonObject CsvFormatDriver::importSchema() const
     return s;
 }
 
-QJsonObject CsvFormatDriver::probeFile(const QString &path) const
+QJsonObject CsvFormatParser::probeFile(const QString &path) const
 {
     return nextpilot::plotscope::ext::CsvImportProbe::probe(path);
 }
 
-QByteArray CsvFormatDriver::defaultImportOptions(const QString &path) const
+QByteArray CsvFormatParser::defaultImportOptions(const QString &path) const
 {
     const QJsonObject p = nextpilot::plotscope::ext::CsvImportProbe::probe(path);
     if (p.contains(QStringLiteral("error")))

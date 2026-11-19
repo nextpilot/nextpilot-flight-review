@@ -802,7 +802,7 @@ bool finishUlogBytes(UlogState &st, Emitter &out, QString &err);
 //
 // 归并的支点（AGENTS.md §3 P0-1）：
 //   ng 曾有两条数据通路并存——
-//     A：data.load → IFormatDriver::load()，驱动自己读文件、自己建 Dataset；
+//     A：data.load → IMessageParser::load()，驱动自己读文件、自己建 Dataset；
 //     B：Source → IngestPipeline → parser SPI → Dataset，生产零调用。
 //   处置是**归并到 B，不新建第三条路**。有了这个包装，宿主可以：
 //     · 同一份解析器既读文件、也读流（喂字节的是调用者）；

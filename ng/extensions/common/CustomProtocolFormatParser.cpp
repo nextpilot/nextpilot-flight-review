@@ -1,9 +1,8 @@
-#include "CustomProtocolFormatDriver.h"
+#include "CustomProtocolFormatParser.h"
+#include "Intent.h"
 
 #include "protocol/ProtocolSpec.h"
 #include "protocol/SequentialCodec.h"
-
-#include "DataRepository.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -13,33 +12,33 @@
 
 using namespace nextpilot::plotscope::core;
 
-QString CustomProtocolFormatDriver::id() const
+QString CustomProtocolFormatParser::id() const
 {
     return QStringLiteral("custom-protocol");
 }
 
-QString CustomProtocolFormatDriver::displayName() const
+QString CustomProtocolFormatParser::displayName() const
 {
     return QStringLiteral("自定义顺序协议");
 }
 
-nextpilot::plotscope::core::Domain CustomProtocolFormatDriver::domain() const
+nextpilot::plotscope::core::Domain CustomProtocolFormatParser::domain() const
 {
     return nextpilot::plotscope::core::Domain::General;
 }
 
-QStringList CustomProtocolFormatDriver::suffixes() const
+QStringList CustomProtocolFormatParser::suffixes() const
 {
     // 数据文件是任意二进制，不靠后缀识别；靠 format 参数显式选择。
     return {};
 }
 
-bool CustomProtocolFormatDriver::acceptsFormat(const QString &format) const
+bool CustomProtocolFormatParser::acceptsFormat(const QString &format) const
 {
     return format == QStringLiteral("custom-protocol");
 }
 
-QString CustomProtocolFormatDriver::preferredTableName(const Intent &intent,
+QString CustomProtocolFormatParser::preferredTableName(const Intent &intent,
                                                         const QString &sourcePath) const
 {
     const QString explicitName = intent.params.value(QStringLiteral("table")).toString();
@@ -48,16 +47,7 @@ QString CustomProtocolFormatDriver::preferredTableName(const Intent &intent,
     return QFileInfo(sourcePath).completeBaseName();
 }
 
-Result<IntentResult> CustomProtocolFormatDriver::load(const Intent &intent,
-                                                       DataRepository &repo)
-{
-    Q_UNUSED(intent);
-    Q_UNUSED(repo);
-    return fail(QStringLiteral("eunsupported"),
-                QStringLiteral("自定义协议已归并到统一摄取管道，请走 data.load 的管道路径"));
-}
-
-QJsonObject CustomProtocolFormatDriver::importSchema() const
+QJsonObject CustomProtocolFormatParser::configSchema() const
 {
     QJsonObject s;
     s[QStringLiteral("title")] = QStringLiteral("加载自定义协议数据");
@@ -76,7 +66,7 @@ QJsonObject CustomProtocolFormatDriver::importSchema() const
     return s;
 }
 
-QByteArray CustomProtocolFormatDriver::prepareParserOptions(const Intent &intent,
+QByteArray CustomProtocolFormatParser::prepareParserOptions(const Intent &intent,
                                                              const QByteArray &options) const
 {
     QJsonObject o = QJsonDocument::fromJson(options).object();

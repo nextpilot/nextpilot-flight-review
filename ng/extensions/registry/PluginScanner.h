@@ -20,7 +20,7 @@ struct PluginScanReport
 //
 // 设计约定（本轮只搭骨架，不实际 dlopen）：
 //   - 只有外部插件走动态扫描；内置格式走 registerBuiltinFormats 静态自注册。
-//   - 插件导出统一的 C ABI 工厂（见下），返回 IFormatDriver*；宿主校验 ABI 版本后接管。
+//   - 插件导出统一的 C ABI 工厂（见下），返回 IMessageParser*；宿主校验 ABI 版本后接管。
 //   - 加载失败（缺符号/ABI 不符/重复 id）单独记入 report.errors，不影响其他插件，
 //     更不影响内置格式——这是"插件互不牵连"的隔离保证。
 //

@@ -4,14 +4,14 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 # 静态库中未被引用的目标文件会被链接器丢弃，导致注册不生效。
 # OBJECT 库的所有目标文件必然参与链接，注册一定发生。
 add_library(ng_ext_common OBJECT
-    CsvFormatDriver.cpp
-    CsvFormatDriver.h
+    CsvFormatParser.cpp
+    CsvFormatParser.h
     CsvImportProbe.cpp
     CsvImportProbe.h
     CsvParser.cpp
     CsvParser.h
-    CustomProtocolFormatDriver.cpp
-    CustomProtocolFormatDriver.h
+    CustomProtocolFormatParser.cpp
+    CustomProtocolFormatParser.h
     CustomProtocolParser.cpp
     CustomProtocolParser.h
     CommonPack.cpp

@@ -11,7 +11,7 @@ namespace nextpilot::plotscope::core
 // 工具箱里任意"贡献"的最小共性。
 //
 // 一个知识包（IToolPack）聚合多个贡献；贡献是工具箱能登记、索引、装卸的最小单位。
-// 每类贡献有各自的 typed 接口（IFormatDriver / IUiContribution / ...），
+// 每类贡献有各自的 typed 接口（IMessageParser / IUiContribution / ...），
 // 但它们共享这四个元数据，使注册表能统一地按 (kind, domain) 建二维索引，
 // 使宿主能用一种方式装卸所有类型的能力。
 //

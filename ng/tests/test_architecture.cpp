@@ -313,7 +313,7 @@ int main(int argc, char **argv)
         QSet<QString> apKinds;
         for (const auto &c : ap->contributions())
             apKinds.insert(c->kind());
-        CHECK(apKinds.contains(ContributionKind::Format));
+        CHECK(apKinds.contains(ContributionKind::Message));
         CHECK(apKinds.contains(ContributionKind::Ui));
         CHECK(apKinds.contains(ContributionKind::Script));
         CHECK(apKinds.contains(ContributionKind::Data));
@@ -325,15 +325,17 @@ int main(int argc, char **argv)
 
         // 七类贡献都能按 kind 查到；开放 kind 用字符串而非枚举。
         // （计数含本测试文件自注册的探针包贡献：+1 个 UI）
-        CHECK(toolbox.contributions(ContributionKind::Format).size() == 3); // csv + ulog + custom-protocol
+        CHECK(toolbox.drivers().size() == 3); // csv + ulog + custom-protocol（统一为 message kind，FrameBatch 输出）
         CHECK(toolbox.contributions(ContributionKind::Ui).size() == 4);
         CHECK(toolbox.contributions(ContributionKind::Panel).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Script).size() == 2);
         CHECK(toolbox.contributions(ContributionKind::Data).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Example).size() == 1);
         CHECK(toolbox.contributions(ContributionKind::Doc).size() == 5);
-        CHECK(toolbox.contributions(ContributionKind::Message).size() == 1); // NMEA 协议解析器
-        CHECK(toolbox.kinds().size() == 8);
+        // 统一后所有解析器（3 格式 + NMEA）都是 message kind，按 outputs() 区分能力。
+        CHECK(toolbox.contributions(ContributionKind::Message).size() == 4);
+        CHECK(toolbox.parsers().size() == 4);
+        CHECK(toolbox.kinds().size() == 7);
 
         // 二维索引：按 (kind, domain) 精确过滤。
         CHECK(toolbox.contributions(ContributionKind::Ui, Domain::Autopilot).size() == 1);

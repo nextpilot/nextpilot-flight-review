@@ -8,7 +8,7 @@ namespace nextpilot::plotscope::ext
 
 // CSV 导入探测：读文件头若干行，推断分隔符/表头/列类型/建议时间列/警告。
 //
-// 职责：这是**格式知识**，供 CsvFormatDriver::probeFile 调用，
+// 职责：这是**格式知识**，供 CsvFormatParser::probeFile 调用，
 // 让 GUI 通用对话框预填字段、渲染预览。只切头部有限行，不物化全量。
 //
 // 算法平移自老扩展 psCsvProbeFile（src/extensions/.../CsvParser.cpp），
