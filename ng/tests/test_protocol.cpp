@@ -538,7 +538,7 @@ int main(int argc, char *argv[])
 #endif // 11) 位域 fixture
 
 #ifdef NG_TEST_FIXTURE_DIR
-    // --- 12) ASCII 流式：NMEA GGA（$ 定位 / * 硬匹配 / XOR / \r\n） ---
+    // --- 12) text 流式：NMEA GGA（$ 定位 / * 硬匹配 / XOR / \r\n） ---
     {
         const QDir fixDir(QLatin1String(NG_TEST_FIXTURE_DIR));
 
@@ -662,9 +662,9 @@ int main(int argc, char *argv[])
             CHECK(out.errors.size() == 1);
             CHECK(out.errors.front().code == DecodeError::RecordAborted);
         }
-        OK("ASCII 流式：NMEA GGA 整行/跨包/无 term/校验错/新 $ 重置全部符合预期");
+        OK("text 流式：NMEA GGA 整行/跨包/无 term/校验错/新 $ 重置全部符合预期");
 
-        // --- 12b) ASCII 空白分隔（无同步字，靠 term 分帧） ---
+        // --- 12b) text 空白分隔（无同步字，靠 term 分帧） ---
         QFile cf(fixDir.filePath(QStringLiteral("demo_csv_blank.psproto")));
         CHECK(cf.open(QIODevice::ReadOnly));
         const QJsonObject csvObj = QJsonDocument::fromJson(cf.readAll()).object();
@@ -703,9 +703,9 @@ int main(int argc, char *argv[])
             CHECK(std::fabs(val->v.at(2).asDouble() - 7.25) < 1e-9);
             CHECK(nm->v.at(0).type == ValueType::Text);
         }
-        OK("ASCII 空白分隔：三行三通道，blank 是协议级分隔符类");
+        OK("text 空白分隔：三行三通道，blank 是协议级分隔符类");
 
-        // 便捷入口 decodeSequential 也要能走 ASCII（上层 CustomProtocolParser 用的就是它）
+        // 便捷入口 decodeSequential 也要能走 text（上层 CustomProtocolParser 用的就是它）
         {
             const std::string two =
                 "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
@@ -717,7 +717,7 @@ int main(int argc, char *argv[])
             CHECK(lat && lat->v.size() == 2);
             CHECK(lat->t.size() == 2 && lat->t.at(1) > lat->t.at(0));
         }
-        OK("便捷入口：decodeSequential 对 ASCII 模板同样闭环，两行两值");
+        OK("便捷入口：decodeSequential 对 text 模板同样闭环，两行两值");
     }
 #endif
 
@@ -775,7 +775,7 @@ int main(int argc, char *argv[])
         OK("编译层负例：未定义槽位/bit.base/width 越界/literal+delimiter 混写全部明确失败");
     }
 
-    // --- ASCII 变体：按 msgid 选子协议（NMEA 多句） ---
+    // --- text 变体：按 msgid 选子协议（NMEA 多句） ---
     {
         const char *js = R"({"name":"nmea_series","mode":"text","term":["\r\n"],"maxsize":128,
  "segments":[
@@ -812,7 +812,7 @@ int main(int argc, char *argv[])
         CHECK(lat && lat->v.size() == 1);
         CHECK(std::fabs(lat->v.at(0).asDouble() - 4807.038) < 1e-6);
         CHECK(ns && ns->v.size() == 1 && ns->v.at(0).s == "N");
-        OK("ASCII 变体：顶层段解 selector（msgid）→ 变体段表替换 payload 段重解");
+        OK("text 变体：顶层段解 selector（msgid）→ 变体段表替换 payload 段重解");
     }
 
     // --- derive 派生字段 + type:time 文本时间 ---
@@ -856,7 +856,72 @@ int main(int argc, char *argv[])
         OK("derive 派生字段（a+b / a*b）出通道；type:time 把 083559.00 解成 30959 秒，越界被拒");
     }
 
-    // --- ASCII checks 生效 + preview/decode 一致性 ---
+    // --- derive 走 text 路径 + preview/compiled 双路一致 ---
+    {
+        const auto chOf = [](const ProtocolDecodeResult &r, const char *n) -> const ProtocolChannel * {
+            const std::string key = n;
+            const std::string prefixed = std::string("frame.") + n;
+            for (const auto &c : r.channels)
+                if (c.name == key || c.name == prefixed) return &c;
+            return nullptr;
+        };
+
+        const QByteArray tpl = R"({
+          "name":"derive_text","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
+          "segments":[
+            {"name":"a","type":"number","delimiter":","},
+            {"name":"b","type":"number"},
+            {"name":"sum","derive":"a+b"},
+            {"name":"prod","derive":"a*b"}
+          ]
+        })";
+        ProtocolDocument doc;
+        std::string pe;
+        CHECK(parseDocument(QJsonDocument::fromJson(tpl).object(), doc, pe));
+        CompiledProgram prog;
+        CHECK(compileProgram(doc, prog, pe));
+        const QByteArray frame("3,4\n");
+
+        // compiled 生产路径（text → StreamDecoder）：derive 出通道且值对
+        ProtocolDecodeResult cr = decodeSequentialCompiled(frame, prog);
+        CHECK(cr.ok);
+        const ProtocolChannel *sum = chOf(cr, "sum");
+        const ProtocolChannel *prod = chOf(cr, "prod");
+        CHECK(sum && sum->v.size() == 1 && sum->v.at(0).asDouble() == 7.0);
+        CHECK(prod && prod->v.size() == 1 && prod->v.at(0).asDouble() == 12.0);
+
+        // preview 路径与 compiled 结论一致，lines 里能看到派生值
+        SequentialFramePreview pv = previewSequentialFrame(frame, doc);
+        CHECK(pv.ok == cr.ok);
+        bool sumShown = false;
+        for (const QString &ln : pv.lines)
+            if (ln.contains(QStringLiteral("sum")) && ln.contains(QStringLiteral("7")))
+                sumShown = true;
+        CHECK(sumShown);
+
+        // type:time 同样双路一致：083559.00 → 30959 s
+        const QByteArray tplTime = R"({
+          "name":"time_csv2","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
+          "segments":[
+            {"name":"t","type":"time","delimiter":","},
+            {"name":"v","type":"i32","delimiter":";"}
+          ]
+        })";
+        ProtocolDocument tdoc;
+        CHECK(parseDocument(QJsonDocument::fromJson(tplTime).object(), tdoc, pe));
+        CompiledProgram tprog;
+        CHECK(compileProgram(tdoc, tprog, pe));
+        const QByteArray tframe("083559.00,42;\n");
+        ProtocolDecodeResult tr = decodeSequentialCompiled(tframe, tprog);
+        CHECK(tr.ok);
+        const ProtocolChannel *tc = chOf(tr, "t");
+        CHECK(tc && std::fabs(tc->v.at(0).asDouble() - 30959.0) < 1e-6);
+        SequentialFramePreview ptv = previewSequentialFrame(tframe, tdoc);
+        CHECK(ptv.ok == tr.ok);
+        OK("derive 走 text 路径出通道（sum=7 prod=12）；time/derive 在 preview 与 compiled 双路结论一致");
+    }
+
+    // --- text checks 生效 + preview/decode 一致性 ---
     {
         const QByteArray tpl = R"({
           "name":"csv_checks","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
@@ -870,7 +935,7 @@ int main(int argc, char *argv[])
         ProtocolDecodeResult bad = decodeSequentialJson(QByteArray("99,NO\n"), tpl);
         CHECK(!bad.ok || bad.rejectedFrames > 0);
 
-        // 序列类 checks 在 ASCII 段必须编译期拒绝（那是 digest 的职责）
+        // 序列类 checks 在 text 段必须编译期拒绝（那是 digest 的职责）
         const QByteArray badTpl = R"({
           "name":"csv_bad","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
           "segments":[{"name":"c","type":"char","delimiter":"\n","checks":[{"op":"crc16"}]}]
@@ -885,7 +950,7 @@ int main(int argc, char *argv[])
         SequentialFramePreview pv = previewSequentialFrame(one, doc);
         ProtocolDecodeResult dr = decodeSequential(one, doc);
         CHECK(pv.ok == dr.ok);
-        OK("ASCII checks 生效：谓词不符即拒；序列类 checks 被编译期拒；preview 与 decode 结论一致");
+        OK("text checks 生效：谓词不符即拒；序列类 checks 被编译期拒；preview 与 decode 结论一致");
     }
 
     // --- repeat:"eos" 必须收尾 ---
