@@ -10,7 +10,7 @@
 
 1. **recording 没有特权**：它独立是因为"格式 × 后端"是与 core 正交的关注点，独立正确；真正的瑕疵是**接口在 core、实现在 recording 的分家**，应把接口也归位到机制库。
 2. **注册表与意向机制可抽**：注册表做成**一个泛型模板** `Registry<T>` 支持多种条目类型，各具体注册表退化为薄配置；意向机制的 `Intent/Job/IIntentHandler/IIntentExecutor` 全是纯契约，天然可独立成库。
-3. **schema→UI 抽库是最大收益点**：现在 `PropertySchema`（6 种控件）与 `TransformParam`（3 种）**各画各的 UI**，抽库必须先**统一 schema 契约**——这是本文重点（§4）。
+3. **schema→UI 抽库是最大收益点**：现在 `PropertySchema`（6 种）、`TransformParam`（3 种）、`IFormatDriver::importSchema`（5 种 JSON）、`IMessageParser::configSchema` **四套各画各的 UI**，抽库必须先**统一 schema 契约**——这是本文重点（§4）。
 
 ---
 
@@ -92,12 +92,14 @@ template <typename T> class OwnsPluginHandle; // 插件句柄 RAII（ParserRegis
 
 ## 4. schema→UI 抽库：先统一 schema 契约（重点）
 
-需求方点明"**主要是约束 schema 该什么样**"——这是关键。现在有**两套各画各的 schema**：
+需求方点明"**主要是约束 schema 该什么样**"——这是关键。仓库里其实有**四套各画各的 schema**：
 
-| 来源 | 文件 | 字段/控件类型 |
-|---|---|---|
-| `PropertySchema` | `core/include/PropertySchema.h` | `PropKind { Text, Number, Bool, Enum, Color, ReadOnly }`，6 种；`PropRow { key,label,value,kind,editable,unit,options,tooltip }` |
-| `TransformParam` | `core/include/Transform.h` | `type: "number"/"string"/"bool"`（3 种，字符串魔法值）；`TransformParam { key,label,type,description,defaultValue }` |
+| 来源 | 文件 | 字段/控件类型 | 绘制端 |
+|---|---|---|---|
+| `PropertySchema` | `core/include/PropertySchema.h` | `PropKind` 6 种；`PropRow { key,label,value,kind,editable,unit,options,tooltip }` | `PropertyPanel.cpp` QTreeWidget 手绘 |
+| `TransformParam` | `core/include/Transform.h` | `type: "number"/"string"/"bool"` 3 种魔法字符串 | `TransformEditorDialog.cpp` QFormLayout 手写 switch |
+| `IFormatDriver::importSchema` | `core/include/IFormatDriver.h` | JSON：`{title, fields:[{key,type,label,default,options?,min?,max?}], ui:{...}}`，`type ∈ bool/int/double/enum/string/file` | `ImportDialog.cpp` 手绘（`:301/:468`） |
+| `IMessageParser::configSchema` | `core/include/IMessageParser.h` | 注释明确"与 `IFormatDriver::importSchema` 同构" | 协议检查对话框 |
 
 绘制端也分裂：
 
@@ -112,7 +114,8 @@ template <typename T> class OwnsPluginHandle; // 插件句柄 RAII（ParserRegis
 
 ```cpp
 enum class FieldType {          // 控件类型：穷举，不开放魔法字符串
-    Text, Number, Bool, Enum, Color, ReadOnly
+    Text, Number, Bool, Enum, Color, File, ReadOnly
+    // Number 覆盖 importSchema 的 int/double；File 覆盖其 "file" 类型（路径选择）
 };
 
 struct FieldSpec {              // 一个字段 = 一行可编辑/只读项
@@ -215,3 +218,50 @@ ng_dataset   ng_recording   GUI/ modules / host / extensions
    - `PropKind` 与 `TransformParam::type` 合并为穷举 `FieldType`（新增控件类型需改枚举，受控扩展）——是否接受？
    - `value` 从字符串改为 `QVariant` 类型化——涉及已有 `prop.set` 意图的值解析，是否本批一起改？
 5. **批次顺序**（§7）：确认 M1 前置只做一次、按 M1→R0→R-D1→M 序列推进？
+
+---
+
+## 9. `format` 概念辨析：一个词，四个意思（需求方 2026-11-19 追问）
+
+需求方问：`FormatToolbox`、`FormatDomain`、`IFormatDriver`……这些 `Format` 到底是什么意思？逐文件核对后结论：**`format` 在仓库里被用在了四个互不相同的概念上，其中两个是历史误命名。**
+
+### 9.1 四个 `format` 概念
+
+| # | 概念 | 代码落点 | 真实含义 | 正名裁决 |
+|---|---|---|---|---|
+| F1 | **数据格式/格式驱动** | `IFormatDriver.h`、`CsvFormatDriver`、`UlogFormatDriver`、`CustomProtocolFormatDriver`、`acceptsFormat()`、`driverForFormat()`、意图参数 `params["format"]`、`importSchema()` | "能把某种文件读进 Dataset 的能力"，`format` 值是 `"csv"`/`"ulog"`/`"custom-protocol"` | ✅ **保留 `Format`**——这是 format 的本义，名实相符 |
+| F2 | **业务领域** | `FormatDomain.h/.cpp`、`domain()`、`driversByDomain()` | 通用/飞控/汽车/机器人/卫导/视频——是**工具箱的业务分类学**，与格式无关 | ❌ **误命名** → `ToolboxDomain`（见 `modules-organ-completion.md` §7，已裁决待确认） |
+| F3 | **工具箱本身** | `FormatToolbox.h/.cpp`、`registerBuiltinFormats()` | 现在装的是**全部**知识包（通用/飞控/汽车/机器人/卫导），格式驱动只是其中一类贡献 | ❌ **误命名** → `Toolbox` / `BuiltinToolbox`，`registerBuiltinFormats` → `registerBuiltinPacks`（后者已存在，前者是兼容别名） |
+| F4 | **录制格式** | `RecordingFormat.h/.cpp`、`registerFormat()` | raw/mcap 容器——是 app 机制选项，与"文件格式驱动"是两套东西（头注释已明确） | ⚠️ 语义独立、命名尚可，但建议改 `RecordingContainer` 以免与 F1 的 `format` 参数混淆（见 §1） |
+
+**一句话区分**：F1 是"这个文件是什么格式、谁来处理它"；F2 是"这个能力属于哪个业务方向"；F3 是"所有能力的集合容器"；F4 是"录制成什么容器"。四个完全不同的维度，共用一个词，是命名混乱的根源。
+
+### 9.2 两个误命名的证据
+
+- **F2 `FormatDomain`**：头注释自称"工具箱的业务领域分类"；持有者是 `IToolPack::domain()` / `IToolContribution::domain()`，格式驱动只是被它分组的对象之一。`ContributionKind.h:12` 明确"领域（FormatDomain）是稳定的分类学"——**不是格式的属性**。
+- **F3 `FormatToolbox`**：`FormatToolbox.cpp` 全文只调 `BuiltinPackRegistry::installAll(registry)`，装的是所有 `IToolPack`（含 panel/script/data/example/doc 各类贡献）。文件名却叫 FormatToolbox，且 `registerBuiltinFormats()` 已是 `registerBuiltinPacks()` 的**兼容别名**（`FormatToolbox.h:20`）——名字停留在"早期只有格式驱动"的阶段，没有跟上泛化。
+
+### 9.3 F1 的正名边界（`IFormatDriver` 名字该不该留）
+
+`IFormatDriver` 的 `Format` **名实相符，保留**。但要注意它的职责已经缩小：归并两条数据通路（AGENTS.md §3 P0-1）后，驱动不再自己读文件建 Dataset，而是**声明** `parserId()` + 表名策略 + 导入 schema；真正读字节归宿主 `IngestOrchestrator`。所以更精确的概念是"**格式能力声明**"，但 `IFormatDriver` 作为约定俗成的入口名可保留，在注释里点明其"声明而非执行"的新角色（现有注释已写明）。
+
+### 9.4 F1 牵出的第五套 schema（并入 §4 统一）
+
+`IFormatDriver::importSchema()` 与 `IMessageParser::configSchema()` 是第 3、4 套 schema（见 §4 表格）——它们的 `type ∈ bool/int/double/enum/string/file` 与 `TransformParam`、`PropKind` 又不一样。**§4 的 `FormSchema`/`FieldType` 统一必须覆盖这四套**，其中：
+
+- `FieldType` 已补 `File`（覆盖 `"file"`），`Number` 覆盖 `int/double`（§4.1 已更新）；
+- `importSchema` 的 `ui:{preview,warnings}` 扩展段，在 `FormSchema` 里作为可选 `extras: QJsonObject` 保留，不丢能力；
+- `IMessageParser::configSchema` 注释已声明"与 importSchema 同构"，正好一并收敛。
+
+### 9.5 命名裁决汇总（并入 R0）
+
+| 旧名 | 新名 | 类别 | 状态 |
+|---|---|---|---|
+| `DataSourceRepository` | `SourceRegistry` | 命名 | ✅ 已拍板 |
+| `FormatDomain` | `ToolboxDomain` | F2 | 待确认（§7） |
+| `FormatToolbox` | `Toolbox` / `BuiltinToolbox` | F3 | 待确认（本节） |
+| `registerBuiltinFormats` | 直接用 `registerBuiltinPacks` | F3 | 待确认（可保留为 deprecated 别名一版） |
+| `IFormatDriver` | 保留（声明角色） | F1 | 不改名，仅注释强化 |
+| `RecordingFormat` | `RecordingContainer`（可选） | F4 | 待确认 |
+
+> 以上 F2/F3/F4 改名均为**机械替换**，与 R0 的 `SourceRegistry` 同批处理。
