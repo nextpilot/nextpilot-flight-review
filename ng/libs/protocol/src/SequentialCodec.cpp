@@ -212,6 +212,8 @@ struct FrameRead
     std::vector<Rt> fields;
     int32_t variant = -1;
     uint32_t consumed = 0;
+    // 段级告警/跳过明细（on_mismatch:warn/skip）：即使整帧通过也要带出来，不许只计数。
+    std::vector<DecodeError> notes;
 };
 
 void fillSlot(const CompiledSlot &slot, const uint8_t *sp, uint32_t count, TypedVec &raw,
@@ -277,13 +279,56 @@ bool evalCountOf(const CompiledSeg &seg, const std::vector<TypedVec> &cols, uint
     return true;
 }
 
-bool checkFrame(const std::vector<Rt> &fields, const std::map<int32_t, const Rt *> &bySlot,
+bool checkFrame(std::vector<Rt> &fields, const std::map<int32_t, const Rt *> &bySlot,
                 const CompiledProgram &prog, const uint8_t *frame, uint32_t payloadOff,
-                uint32_t payloadBytes, const std::vector<TypedVec> &rawSlots, std::string &err)
+                uint32_t payloadBytes, const std::vector<TypedVec> &rawSlots, std::string &err,
+                std::vector<DecodeError> &notes)
 {
-    for (const Rt &rt : fields)
+    for (Rt &rt : fields)
     {
         const CompiledSeg &seg = *rt.spec;
+        bool degraded = false; // 该段已被 warn/skip 降级：不再跑剩余校验，避免重复告警
+        // 段级裁决：0=reject（整帧作废）；1=warn（写 NaN 并记 note）；2=skip（不出通道并记 note）。
+        auto note = [&](const std::string &why) {
+            DecodeError e;
+            e.code = DecodeError::FieldInvalid;
+            e.segment = seg.name;
+            e.detail = why;
+            e.warning = true;
+            notes.push_back(std::move(e));
+        };
+        auto degrade = [&](const std::string &why) -> bool {
+            if (seg.onMismatch == 1)
+            {
+                if (rt.count > 0)
+                {
+                    // warn = 该段值不可信：raw/phys 统一升 f64 填 NaN，避免按原类型截断成 0。
+                    rt.raw.reset(ValueType::F64);
+                    rt.phys.reset(ValueType::F64);
+                    for (uint32_t i = 0; i < rt.count; ++i)
+                    {
+                        rt.raw.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(),
+                                                      ValueType::F64));
+                        rt.phys.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(),
+                                                      ValueType::F64));
+                    }
+                }
+                note(why + "（on_mismatch:warn，写 NaN）");
+                degraded = true;
+                return true;
+            }
+            if (seg.onMismatch == 2)
+            {
+                rt.count = 0;
+                rt.raw.reset(rt.spec->type);
+                rt.phys.reset(rt.spec->type);
+                note(why + "（on_mismatch:skip，不出通道）");
+                degraded = true;
+                return true;
+            }
+            return false;
+        };
+
         if (seg.hasExpect)
         {
             TypedValue want = seg.expectConst;
@@ -296,7 +341,10 @@ bool checkFrame(const std::vector<Rt> &fields, const std::map<int32_t, const Rt 
                     return false;
                 if (cmp != 0)
                 {
-                    err = "段 " + seg.name + " 常量不匹配";
+                    const std::string why = "段 " + seg.name + " 常量不匹配";
+                    if (degrade(why))
+                        break;
+                    err = why;
                     return false;
                 }
             }
@@ -304,6 +352,8 @@ bool checkFrame(const std::vector<Rt> &fields, const std::map<int32_t, const Rt 
 
         for (const CompiledCheck &c : seg.checks)
         {
+            if (degraded)
+                break;
             if (c.isSequence)
             {
                 if (rt.raw.size() != 1 || rt.bytes != static_cast<uint32_t>(c.width))
@@ -394,6 +444,9 @@ bool checkFrame(const std::vector<Rt> &fields, const std::map<int32_t, const Rt 
                 }
                 if (!ok)
                 {
+                    const std::string why = "段 " + seg.name + " 校验失败（op:" + c.op + "）";
+                    if (degrade(why))
+                        break;
                     err = "段 " + seg.name + " 校验失败";
                     return false;
                 }
@@ -711,8 +764,17 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
     for (Rt &rt : r.fields)
         bySlot[rt.spec->slot] = &rt;
 
-    if (!checkFrame(r.fields, bySlot, prog, p, payloadOff, payloadBytes, rawSlots, r.err))
+    if (!checkFrame(r.fields, bySlot, prog, p, payloadOff, payloadBytes, rawSlots, r.err, r.notes))
         return false;
+
+    // warn/skip 可能改写段值（NaN / 清空），槽位要跟着刷新，后续段读表达式才看到正确值。
+    if (!r.notes.empty())
+        for (const Rt &rt : r.fields)
+            if (rt.spec->slot >= 0 && static_cast<size_t>(rt.spec->slot) < rawSlots.size())
+            {
+                rawSlots[static_cast<size_t>(rt.spec->slot)] = rt.raw;
+                physSlots[static_cast<size_t>(rt.spec->slot)] = rt.phys;
+            }
 
     // length 反算：本段声明值必须等于后续字段合计（字节数或元素数）
     for (Rt &rt : r.fields)
@@ -1020,6 +1082,21 @@ nextpilot::plotscope::protocol::decodeSequentialCompiled(const QByteArray &bytes
         if (fr.consumed == 0)
             break;
 
+        // 段级 warn/skip 必须留明细（不许只计数）：带帧号与绝对偏移进 errors。
+        for (DecodeError &n : fr.notes)
+        {
+            n.recordIndex = frameIndex;
+            n.recordOffset = off;
+            if (n.code == DecodeError::None)
+                n.code = DecodeError::FieldInvalid;
+            if (n.detail.find("skip") != std::string::npos)
+                ++result.skipped;
+            ++warnings;
+            if (result.errors.size() < 128)
+                result.errors.push_back(n);
+        }
+        fr.notes.clear();
+
         // 无时间戳时按帧序给轴（1 帧 = 1 秒刻度），仍是整数 ticks。
         int64_t ts = frameIndex * kTicksPerSecond;
         if (prog.hasTimestamp)
@@ -1070,7 +1147,19 @@ nextpilot::plotscope::protocol::decodeSequentialCompiled(const QByteArray &bytes
             if (isPayload && fr.variant >= 0)
                 continue;
             if (rt.raw.size() > 256)
+            {
+                // 超 256 值要截断：必须留明细，不许只计数（§9.7 第4条）。
                 ++warnings;
+                DecodeError note;
+                note.code = DecodeError::None;
+                note.recordIndex = frameIndex;
+                note.recordOffset = off;
+                note.segment = seg.name;
+                note.detail = "段值数 " + std::to_string(rt.raw.size()) + " 超过 256，超出部分不进通道";
+                note.warning = true;
+                if (result.errors.size() < 128)
+                    result.errors.push_back(std::move(note));
+            }
             const uint32_t limit = std::min<uint32_t>(rt.count, 256);
             const std::string prefix = seg.prefix;
             const TypedVec &src = rt.phys.size() ? rt.phys : rt.raw;

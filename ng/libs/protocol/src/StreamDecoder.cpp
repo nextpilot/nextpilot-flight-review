@@ -382,7 +382,26 @@ struct RecAttempt
     std::string detail;
     std::vector<TypedVec> vals;
     int skipped = 0;
+    int64_t frameNo = -1; // 帧号（push 里回填，用于诊断明细定位）
+    // 段级 warn/skip 明细（on_mismatch）：即使整帧通过也要带出来，不许只计数。
+    std::vector<DecodeError> notes;
 };
+
+// 段级降级：warn 写 NaN 并记 note；skip 不出该段值并记 note；返回 true 表示已降级。
+inline bool degradeSeg(RecAttempt &r, const CompiledSeg &seg, TypedVec &col, int kind,
+                       const std::string &why)
+{
+    DecodeError e;
+    e.code = (kind == 1) ? DecodeError::PatternMismatch : DecodeError::FieldInvalid;
+    e.segment = seg.name;
+    e.detail = why + (kind == 1 ? "（on_mismatch:warn，写 NaN）" : "（on_mismatch:skip，不出通道）");
+    e.warning = true;
+    r.notes.push_back(std::move(e));
+    ++r.skipped;
+    if (kind == 1)
+        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+    return true;
+}
 
 // checks 谓词（eq/ne/lt/le/gt/ge/in/range/mask）：text 路径此前只有二进制 readFrame 执行它，
 // 导致模板里写 checks 在流式协议里静默失效。这里补齐，语义与 checkFrame 一致。
@@ -696,11 +715,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 if (!checkPattern(tok, seg, perr))
                 {
                     if (seg.onMismatch == 2)
+                    {
+                        degradeSeg(r, seg, col, 2, perr + "（原文 " + tok + "）");
                         continue;
+                    }
                     if (seg.onMismatch == 1)
                     {
-                        r.skipped++;
-                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        degradeSeg(r, seg, col, 1, perr + "（原文 " + tok + "）");
                         continue;
                     }
                     r.code = DecodeError::FieldInvalid;
@@ -717,11 +738,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 if (!parseNumber(tok, seg, v, perr))
                 {
                     if (seg.onMismatch == 2)
+                    {
+                        degradeSeg(r, seg, col, 2, perr + "（原文 " + tok + "）");
                         continue;
+                    }
                     if (seg.onMismatch == 1)
                     {
-                        r.skipped++;
-                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        degradeSeg(r, seg, col, 1, perr + "（原文 " + tok + "）");
                         continue;
                     }
                     r.code = (seg.base == 16) ? DecodeError::CheckNotHex : DecodeError::FieldInvalid;
@@ -732,11 +755,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 if (violatesDomain(seg, v))
                 {
                     if (seg.onMismatch == 2)
+                    {
+                        degradeSeg(r, seg, col, 2, "值超出 range/enum（原文 " + tok + "）");
                         continue;
+                    }
                     if (seg.onMismatch == 1)
                     {
-                        r.skipped++;
-                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        degradeSeg(r, seg, col, 1, "值超出 range/enum（原文 " + tok + "）");
                         continue;
                     }
                     r.code = DecodeError::FieldInvalid;
@@ -944,13 +969,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         {
             if (seg.onMismatch == 2)
             {
+                degradeSeg(r, seg, col, 2, perr + "（原文 " + tok + "）");
                 pos = nextPos;
                 continue;
             }
             if (seg.onMismatch == 1)
             {
-                r.skipped++;
-                col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                degradeSeg(r, seg, col, 1, perr + "（原文 " + tok + "）");
                 pos = nextPos;
                 continue;
             }
@@ -970,17 +995,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             {
                 if (seg.onMismatch == 2)
                 {
+                    degradeSeg(r, seg, col, 2, perr + "（原文 " + tok + "）");
                     pos = nextPos;
                     continue;
                 }
                 if (seg.onMismatch == 1)
                 {
-                    r.skipped++;
-                    col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                    degradeSeg(r, seg, col, 1, perr + "（原文 " + tok + "）");
                     pos = nextPos;
                     continue;
-                }
-                // 值里混进了新帧首 → 旧候选被截断，不是字段本身非法
+                }                // 值里混进了新帧首 → 旧候选被截断，不是字段本身非法
                 size_t anchorAt = 0;
                 if (prog.hasStartAnchor && findBytes(p, pos, n, prog.startAnchor, anchorAt))
                 {
@@ -1002,13 +1026,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             {
                 if (seg.onMismatch == 2)
                 {
+                    degradeSeg(r, seg, col, 2, "值超出 range/enum（原文 " + tok + "）");
                     pos = nextPos;
                     continue;
                 }
                 if (seg.onMismatch == 1)
                 {
-                    r.skipped++;
-                    col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                    degradeSeg(r, seg, col, 1, "值超出 range/enum（原文 " + tok + "）");
                 }
                 else
                 {
@@ -1127,9 +1151,19 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
 }
 
 // 把一条记录的值追加到通道。
-void emitRecord(const CompiledProgram &prog, const RecAttempt &r, int64_t t, ProtocolDecodeResult &out)
+void emitRecord(const CompiledProgram &prog, RecAttempt &r, int64_t t, ProtocolDecodeResult &out)
 {
     out.skipped += r.skipped;
+    // 段级 warn/skip 明细：即使整帧通过也要留痕（不许只计数，§9.7 第4条）。
+    for (DecodeError &n : r.notes)
+    {
+        n.recordIndex = r.frameNo;
+        if (n.detail.find("warn") != std::string::npos)
+            ++out.warnings;
+        if (out.errors.size() < 128)
+            out.errors.push_back(n);
+    }
+    r.notes.clear();
     // 顶层段与变体段都要出通道：变体记录里顶层段多半 emit=none，变体段才有值。
     std::vector<const CompiledSeg *> allSegs;
     for (const CompiledSeg &s : prog.segs)
@@ -1273,7 +1307,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
                 if (n > prog.maxsize)
                 {
                     ++m_overflow;
-                    out.errors.push_back({DecodeError::OverflowMaxsize, m_streamOffset, "", "超过 maxsize 仍无 term"});
+                    out.errors.push_back({DecodeError::OverflowMaxsize, m_streamOffset, "", "超过 maxsize 仍无 term", m_recordIndex, false});
                     m_pending.clear();
                     m_streamOffset += n;
                     break;
@@ -1378,6 +1412,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
                 }
             }
             m_recordIndex++;
+            r.frameNo = m_recordIndex - 1;
             emitRecord(prog, r, t, out);
             out.ok = true;
             // 有 term：消费到 term 结束；无 term：消费到 check 读满的位置（剩余留给下一条）。
@@ -1410,7 +1445,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
                 ++m_dropped;
                 if (out.errors.size() < 128)
                     out.errors.push_back({DecodeError::RecordAborted, m_streamOffset, r.segment,
-                                          "等边界时出现新帧首 " + prog.startAnchor});
+                                          "等边界时出现新帧首 " + prog.startAnchor, m_recordIndex, false});
                 m_pending.erase(m_pending.begin(), m_pending.begin() + static_cast<long>(nextAnchor));
                 m_streamOffset += nextAnchor;
                 continue;
@@ -1419,7 +1454,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
             {
                 ++m_overflow;
                 out.errors.push_back({DecodeError::OverflowMaxsize, m_streamOffset, r.segment,
-                                      "超过 maxsize 仍不完整"});
+                                      "超过 maxsize 仍不完整", m_recordIndex, false});
                 m_pending.clear();
                 break;
             }
@@ -1437,7 +1472,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
         if (aborted && code != DecodeError::RecordAborted && code != DecodeError::OverflowMaxsize)
             code = DecodeError::RecordAborted;
         if (out.errors.size() < 128)
-            out.errors.push_back({code, m_streamOffset, r.segment, r.detail});
+            out.errors.push_back({code, m_streamOffset, r.segment, r.detail, m_recordIndex, false});
 
         size_t drop = cutByAnchor ? nextAnchor : consume;
         if (r.code == DecodeError::RecordAborted && r.used > 0 && r.used < drop)
@@ -1459,7 +1494,7 @@ void StreamDecoder::finish(ProtocolDecodeResult &out)
     if (!m_pending.empty())
     {
         out.errors.push_back(
-            {DecodeError::IncompleteAtEof, m_streamOffset, "", "EOF 时仍有未闭合候选"});
+            {DecodeError::IncompleteAtEof, m_streamOffset, "", "EOF 时仍有未闭合候选", m_recordIndex, false});
         ++m_dropped;
         m_pending.clear();
     }

@@ -60,6 +60,8 @@ struct DecodeError
     quint64 recordOffset = 0; // 该记录在流里的绝对偏移
     std::string segment;      // 出问题的段（配置类为空）
     std::string detail;       // 期望/实际
+    int64_t recordIndex = -1; // 帧号（第几条记录，0 基；未知为 -1）
+    bool warning = false;     // true=该条只是告警（on_mismatch:warn/skip），数据未整体作废
 };
 
 struct ProtocolDecodeResult

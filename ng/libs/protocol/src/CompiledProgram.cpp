@@ -628,6 +628,10 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         cs.offset = s.offset;
         cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
         cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
+        // 段级降级策略与文本词法参数在 bin 段同样生效（此前只在 text 编译函数里赋值）。
+        cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
+        cs.pattern = s.pattern;
+        cs.emptyPolicy = s.emptyPolicy;
         cs.isText = (s.type.type == ValueType::Text);
         if (!compileTextSeg(s, cs, c))
             return false;
@@ -804,6 +808,9 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             cs.offset = s.offset;
             cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
             cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
+            cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
+            cs.pattern = s.pattern;
+            cs.emptyPolicy = s.emptyPolicy;
             cs.isText = (s.type.type == ValueType::Text);
             if (!compileTextSeg(s, cs, c))
                 return false;

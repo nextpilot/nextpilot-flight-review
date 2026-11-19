@@ -458,7 +458,76 @@ int main(int argc, char *argv[])
         OK("位域：Intel/Motorola 位序、base 容器、符号扩展、scale 全部按 SPEC §6");
     }
 
-    // --- 9b) u64 全量程精度：不经 double，高位必须原样保留 ---
+    // --- 9c) bin 段 on_mismatch 三种裁决 + 诊断留痕 ---
+    {
+        // 模板：校验段 c 声明常量 170(0xAA)，实际喂 0x55（不匹配）。
+        const char *base = R"({
+              "name":"mismatch_bin","mode":"bin","layout":"sequential","endian":"little","maxsize":8,
+              "segments":[
+                {"name":"v","type":"u8"},
+                {"name":"c","type":"u8","expect":170%s}
+              ]
+            })";
+        auto runWith = [&](const char *policy, ProtocolDecodeResult &out) {
+            const std::string extra =
+                policy[0] ? std::string(",\"on_mismatch\":\"") + policy + "\"" : std::string();
+            std::string js = base;
+            const std::size_t at = js.find("%s");
+            js.replace(at, 2, extra);
+            out = decodeSequentialJson(QByteArray::fromHex("0555"), QByteArray(js.c_str()));
+        };
+
+        ProtocolDecodeResult defR, warnR, skipR;
+        runWith("", defR);
+        runWith("warn", warnR);
+        runWith("skip", skipR);
+
+        // 默认 reject：整帧作废，不出通道
+        CHECK(!defR.ok || defR.rejectedFrames > 0 || defR.channels.isEmpty());
+
+        // warn：帧通过，c 段写 NaN，且 errors 里有带帧号的明细
+        CHECK(warnR.ok);
+        CHECK(warnR.errors.size() >= 1);
+        CHECK(warnR.errors.front().segment == "c");
+        CHECK(warnR.errors.front().warning);
+        CHECK(warnR.errors.front().recordIndex == 0);
+        const ProtocolChannel *cw = nullptr;
+        for (const auto &ch : warnR.channels)
+            if (ch.name == "frame.c") cw = &ch;
+        CHECK(cw && cw->v.size() == 1 && std::isnan(cw->v.at(0).asDouble()));
+
+        // skip：帧通过，c 段不出通道，errors 里有 skip 明细
+        CHECK(skipR.ok);
+        CHECK(skipR.errors.size() >= 1);
+        CHECK(skipR.errors.front().detail.find("skip") != std::string::npos);
+        bool hasC = false;
+        for (const auto &ch : skipR.channels)
+            if (ch.name == "frame.c") hasC = true;
+        CHECK(!hasC);
+        OK("bin 段 on_mismatch：默认 reject / warn 写 NaN+明细 / skip 不出通道+明细，明细带帧号");
+    }
+
+    // --- 9d) text 段 on_mismatch:skip 的明细不许只计数 ---
+    {
+        const QByteArray tpl = R"({
+          "name":"mismatch_text","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
+          "segments":[
+            {"name":"a","type":"number","delimiter":",","on_mismatch":"skip"},
+            {"name":"b","type":"number"}
+          ]
+        })";
+        ProtocolDecodeResult tr = decodeSequentialJson(QByteArray("xx,7\n"), tpl);
+        CHECK(tr.ok);
+        CHECK(tr.errors.size() >= 1);
+        CHECK(tr.errors.front().segment == "a");
+        CHECK(tr.errors.front().recordIndex == 0);
+        bool hasA = false;
+        for (const auto &ch : tr.channels)
+            if (ch.name == "frame.a") hasA = true;
+        CHECK(!hasA);
+        OK("text 段 on_mismatch:skip：不出通道且 errors 留存段名/帧号明细");
+    }
+
     {
         const QByteArray u64Tpl = R"({
           "name":"u64prec","mode":"bin","layout":"sequential","endian":"little","maxsize":8,
