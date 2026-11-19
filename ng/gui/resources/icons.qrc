@@ -7,5 +7,6 @@
     <file alias="file_open.svg">icons/file_open.svg</file>
     <file alias="record.svg">icons/record.svg</file>
     <file alias="theme_toggle.svg">icons/theme_toggle.svg</file>
+    <file alias="search.svg">icons/search.svg</file>
   </qresource>
 </RCC>

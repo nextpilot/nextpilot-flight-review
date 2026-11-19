@@ -25,6 +25,8 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QStyledItemDelegate>
+#include <QPolygonF>
+#include <QIcon>
 #include <QPushButton>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -104,27 +106,50 @@ public:
         const QPalette &pal = opt.palette;
         const QColor card = sourceCardColor(pal);
         const QRect r = opt.rect;
+        // 顶层项 rect 从缩进区后开始（≈17px）；老界面卡片贴面板左边缘，故左边界取 0。
+        const int cardLeft = 0;
+        const int cardRight = r.right();
 
         p->save();
-        // 卡片底色（选中态用高亮色，普通态用自适应灰）
-        p->fillRect(r, opt.state & QStyle::State_Selected
-                           ? pal.color(QPalette::Highlight).lighter(120)
-                           : card);
-        // 激活源左侧橙色竖条（老界面 #f2b134）
+        // 整行卡片底色：从视口最左铺到行尾，盖过缩进区（选中态用高亮色）
+        p->fillRect(QRect(cardLeft, r.top(), cardRight - cardLeft, r.height()),
+                    opt.state & QStyle::State_Selected
+                        ? pal.color(QPalette::Highlight).lighter(120)
+                        : card);
+        // 激活源左侧橙色竖条（老界面 #f2b134），贴最左
         if (active)
-        {
-            p->fillRect(QRect(r.left(), r.top(), 3, r.height()), QColor(QStringLiteral("#f2b134")));
-        }
+            p->fillRect(QRect(cardLeft, r.top(), 3, r.height()), QColor(QStringLiteral("#f2b134")));
         // 底部分隔线
         p->setPen(pal.color(QPalette::Mid));
-        p->drawLine(r.left(), r.bottom(), r.right(), r.bottom());
+        p->drawLine(cardLeft, r.bottom(), cardRight, r.bottom());
+
+        // 自绘展开箭头（原生箭头位于缩进区、已被卡片底色覆盖）：橙条右侧
+        auto *tree = qobject_cast<const QTreeWidget *>(parent());
+        const bool expanded = tree && tree->isExpanded(index);
+        const bool hasChildren = index.model()->hasChildren(index);
+        const int arrowX = cardLeft + 9;
+        const int arrowY = r.top() + r.height() / 2;
+        if (hasChildren)
+        {
+            p->setBrush(pal.color(QPalette::Text));
+            p->setPen(Qt::NoPen);
+            if (expanded)
+                p->drawPolygon(QPolygonF({QPointF(arrowX - 3, arrowY - 2),
+                                          QPointF(arrowX + 4, arrowY - 2),
+                                          QPointF(arrowX, arrowY + 3)}));
+            else
+                p->drawPolygon(QPolygonF({QPointF(arrowX - 2, arrowY - 4),
+                                          QPointF(arrowX - 2, arrowY + 4),
+                                          QPointF(arrowX + 4, arrowY)}));
+        }
 
         // 两行文字：名称（12px，正常色）+ 摘要（10px，dim）
         const QString text = index.data(Qt::DisplayRole).toString();
         const int sep = text.indexOf(QLatin1Char('\n'));
         const QString name = sep < 0 ? text : text.left(sep);
         const QString meta = sep < 0 ? QString() : text.mid(sep + 1);
-        const int left = r.left() + 6;
+        const int left = cardLeft + (hasChildren ? 22 : 8);
+        const int textW = cardRight - left - 6;
         const int nameH = 16;
         QFont nameFont = opt.font;
         nameFont.setPixelSize(12);
@@ -132,13 +157,13 @@ public:
         metaFont.setPixelSize(10);
         p->setFont(nameFont);
         p->setPen(pal.color(QPalette::Text));
-        p->drawText(QRect(left, r.top() + 2, r.width() - left - 6, nameH),
+        p->drawText(QRect(left, r.top() + 2, textW, nameH),
                     Qt::AlignLeft | Qt::AlignVCenter | Qt::TextElideMode::ElideRight, name);
         if (!meta.isEmpty())
         {
             p->setFont(metaFont);
             p->setPen(pal.color(QPalette::Text).lighter(155));
-            p->drawText(QRect(left, r.top() + 2 + nameH, r.width() - left - 6, 14),
+            p->drawText(QRect(left, r.top() + 2 + nameH, textW, 14),
                         Qt::AlignLeft | Qt::AlignVCenter | Qt::TextElideMode::ElideRight, meta);
         }
         p->restore();
@@ -249,6 +274,8 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_filter->setPlaceholderText(QStringLiteral("搜索字段 / 参数 / 消息"));
     m_filter->setClearButtonEnabled(true);
     m_filter->setObjectName(QStringLiteral("searchBox"));
+    // 对齐老界面：搜索框左侧带搜索图标（LeadingPosition）。
+    m_filter->addAction(QIcon(QStringLiteral(":/icons/search.svg")), QLineEdit::LeadingPosition);
     // 对齐老界面：搜索框与数据源树左右边缘齐平，不要额外内边距。
     lay->addWidget(m_filter);
     connect(m_filter, &QLineEdit::textChanged, this, &DataManagerPanel::applyFilter);
