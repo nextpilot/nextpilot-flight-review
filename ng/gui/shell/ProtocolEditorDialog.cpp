@@ -40,6 +40,7 @@
 #include <QShortcut>
 #include <QSplitter>
 #include <QTableWidget>
+#include <QStyledItemDelegate>
 #include <QTabWidget>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -130,6 +131,83 @@ void moveTableRow(QTableWidget *t, int from, int to)
     t->setCurrentCell(to, 0);
 }
 
+
+// 内置类型 + 模板 types 别名；段表"类型"列用它做纯下拉，禁止手输。
+const QStringList &baseTypeOptions()
+{
+    static const QStringList opts = {
+        QStringLiteral("u8"), QStringLiteral("i8"), QStringLiteral("u16"),
+        QStringLiteral("i16"), QStringLiteral("u32"), QStringLiteral("i32"),
+        QStringLiteral("u64"), QStringLiteral("i64"), QStringLiteral("f32"),
+        QStringLiteral("f64"), QStringLiteral("bool"), QStringLiteral("bcd"),
+        QStringLiteral("char"), QStringLiteral("string"), QStringLiteral("number"),
+        QStringLiteral("rest"), QStringLiteral("time")};
+    return opts;
+}
+
+QStringList typeOptionsWith(const QJsonObject &types)
+{
+    QStringList opts = baseTypeOptions();
+    for (auto it = types.begin(); it != types.end(); ++it)
+        opts << QStringLiteral("@") + it.key();
+    return opts;
+}
+
+QHash<QTableWidget *, class TypeComboDelegate *> &typeDelegateMap()
+{
+    static QHash<QTableWidget *, class TypeComboDelegate *> m;
+    return m;
+}
+
+class TypeComboDelegate : public QStyledItemDelegate
+{
+public:
+    explicit TypeComboDelegate(QStringList opts, QObject *parent = nullptr)
+        : QStyledItemDelegate(parent), m_opts(std::move(opts))
+    {
+    }
+
+    void setOptions(const QStringList &opts) { m_opts = opts; }
+
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &,
+                          const QModelIndex &) const override
+    {
+        auto *c = new QComboBox(parent);
+        c->setEditable(false);            // 只能选
+        for (const QString &o : m_opts)
+            c->addItem(o);
+        return c;
+    }
+
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        auto *c = qobject_cast<QComboBox *>(editor);
+        if (!c)
+            return;
+        const QString cur = index.data(Qt::EditRole).toString();
+        int i = c->findText(cur);
+        if (i < 0)
+        {
+            // 模板里已有、但不在选项里的类型仍要能选到，避免一打开就被清空
+            c->addItem(cur);
+            i = c->count() - 1;
+        }
+        c->setCurrentIndex(i);
+    }
+
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                      const QModelIndex &index) const override
+    {
+        auto *c = qobject_cast<QComboBox *>(editor);
+        if (!c)
+            return;
+        model->setData(index, c->currentText(), Qt::EditRole);
+    }
+
+private:
+    QStringList m_opts;
+};
+
 void setupSegTable(QTableWidget *t, bool compact = false)
 {
     t->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("类型"),
@@ -142,6 +220,10 @@ void setupSegTable(QTableWidget *t, bool compact = false)
     t->setColumnWidth(SegCount, compact ? 52 : 80);
     t->setColumnWidth(SegValue, compact ? 58 : 90);
     t->setColumnWidth(SegUnit, compact ? 54 : 80);
+    // 类型列常驻下拉（点击即弹，不可输入），与段详情口径一致
+    auto *typeDelegate = new TypeComboDelegate(typeOptionsWith({}), t);
+    t->setItemDelegateForColumn(SegType, typeDelegate);
+    typeDelegateMap().insert(t, typeDelegate);
     t->setAlternatingRowColors(true);
     t->verticalHeader()->setVisible(false);
     t->verticalHeader()->setDefaultSectionSize(26);
@@ -1461,6 +1543,13 @@ void ProtocolEditorDialog::refreshFromJson()
     const QJsonObject ts = doc.value(QStringLiteral("timestamp")).toObject();
     m_tsExpr->setText(ts.value(QStringLiteral("expr")).toString());
     m_tsUnit->setCurrentText(ts.value(QStringLiteral("unit")).toString());
+
+    {
+        const QStringList opts = typeOptionsWith(doc.value(QStringLiteral("types")).toObject());
+        for (QTableWidget *t : {m_segs, m_varSegs})
+            if (auto *d = typeDelegateMap().value(t))
+                d->setOptions(opts);
+    }
 
     const QJsonObject series = doc.value(QStringLiteral("series")).toObject();
     m_seriesOn->setChecked(!series.isEmpty());
