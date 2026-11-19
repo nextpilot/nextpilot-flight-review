@@ -1,7 +1,6 @@
 find_package(Qt6 REQUIRED COMPONENTS Core)
 
 add_library(ng_core STATIC
-    src/Intent.cpp
     src/ScriptFacade.cpp
     src/IFormatDriver.cpp
     src/ExtensionRegistry.cpp
@@ -25,9 +24,6 @@ add_library(ng_core STATIC
     src/PropertySchema.cpp
     src/Selection.cpp
     src/Transform.cpp
-    include/Intent.h
-    include/IIntentExecutor.h
-    include/JobRecorder.h
     include/Events.h
     include/ScriptFacade.h
     include/IFormatDriver.h
@@ -66,7 +62,7 @@ add_library(ng_core STATIC
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(ng_core PUBLIC Qt6::Core ng_kernel ng_foundation ng_dataset ng_registry)
+target_link_libraries(ng_core PUBLIC Qt6::Core ng_kernel ng_foundation ng_dataset ng_registry ng_intent)
 set_target_properties(ng_core PROPERTIES
     AUTOMOC ON
     CXX_STANDARD 17

@@ -7,9 +7,7 @@
 namespace nextpilot::plotscope::core
 {
 
-// 意图录制器：把执行过的意图序列录制成可回放的 Job。
-// 录制只记录"门面提交的业务意图"（如 data.load / plot.render），
-// 不记录 script.run 本身——回放时得到的是纯业务意图序列，干净可版本管理。
+// 录制业务意图序列，产出可回放的 Job。不记录 script.run 本身。
 class JobRecorder
 {
 public:

@@ -515,3 +515,13 @@ class IMessageParser : public IConfigurableContribution {   // 唯一解析器�
 - **namespace**：`registry` 库自身用 `nextpilot::plotscope::registry`；被薄壳化的 `PanelFactoryRegistry` 随 core 保持原 namespace 至 B7 统一收口（与 B2 裁定一致）。
 - **构建守卫修复**：configure 期守卫原用 `file(STRINGS)` 逐行剥离注释，遇含 UTF-8 中文的注释行会把字节流截断、误把注释里的字面量当代码（本次踩坑：注释中解释「为什么不用单例」被误报）。改为 `file(READ)` 全文 + `[^\n\r]` 注释正则，注释正确剥离、真违规仍能 FATAL。
 - **验收**：Release + Debug ctest 全绿（新增 1 项）。
+
+### 11.2 B4：`ng_intent` 意向契约库（2026-11-20，✅ 已实施）
+
+按总方案 B4 落地 §3「意向机制抽库」：
+
+- **新建 `libs/intent`（STATIC）**：把 `Intent.h` / `IIntentExecutor.h` / `JobRecorder.h` / `Intent.cpp` 四个文件从 core `git mv` 迁入（100% rename）。含 5 个契约类型（Intent / IntentResult / IIntentHandler / Job / IIntentExecutor）+ JobRecorder，全为纯契约与纯数据。PUBLIC 链 `ng_foundation + Qt6::Core`，无 QWidget / Rust / core 业务类型。
+- **core 改造**：移除四个源文件条目，PUBLIC 链 `ng_intent`；31 个引用文件走 include 路径传递，零改动。
+- **独立链接验收**：新增 `ng_test_intent_standalone`，只链 `ng_intent + ng_foundation + Qt6::Core`（link.txt 实证无 ng_core），走通 Job 双向序列化 + 二次序列化一致性 + 缺 op 报错 + JobRecorder 录制/清空 + 独立实现 IIntentExecutor；并顺带把迁入文件的长注释按写作纪律精简。
+- **namespace**：保持 `core` 至 B7 统一收口（与 B2/B3 裁定一致，避免与 Result 跨 namespace 割裂）。
+- **验收**：Release + Debug ctest 14/14 双绿；构建守卫通过。

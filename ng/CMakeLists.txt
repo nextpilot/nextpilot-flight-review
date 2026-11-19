@@ -80,6 +80,9 @@ add_subdirectory(libs/registry)
 # core  PUBLIC 链它，消费者得以只链 dataset 而不吞整个骨架。
 add_subdirectory(libs/dataset)
 
+# 意图契约库：Intent/Job/执行器抽象，只依赖 foundation + Qt Core。
+add_subdirectory(libs/intent)
+
 add_subdirectory(core)
 add_subdirectory(recording)
 add_subdirectory(host)

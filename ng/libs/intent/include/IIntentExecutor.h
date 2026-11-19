@@ -5,8 +5,7 @@
 namespace nextpilot::plotscope::core
 {
 
-// 意图执行器抽象。core 只定义契约，具体实现在 host。
-// 脚本门面依赖这个抽象而非任何具体宿主——这是 headless 与 GUI 共用的接口。
+// 意图执行器抽象，headless 与 GUI 共用。
 class IIntentExecutor
 {
 public:

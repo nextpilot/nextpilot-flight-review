@@ -9,25 +9,20 @@
 namespace nextpilot::plotscope::core
 {
 
-// 意图 = GUI 点击与脚本调用的统一产物。串起来就是可回放的 Job。
+// 意图：GUI 点击与脚本调用的统一产物。
 struct Intent
 {
     QString op;             // 例如 "data.load" / "plot.render"
     QVariantMap params;
 };
 
-// 意图执行结果：可带一段数据（如渲染用的 PlotSpec），供上层消费。
+// 执行结果，可携带数据供上层消费。
 struct IntentResult
 {
     QVariant payload;
 };
 
-// 执行器抽象：core 只定义契约，具体实现在 host。
-// 模块通过提供"能力"（能处理某些意图）参与执行。
-//
-// canHandle 接收完整 Intent 而非只有 op：多个知识包可能声明同一个 op（如
-// CSV/ULog 都处理 data.load），必须能按 format 等参数精确认领，才能做到
-// 多扩展独立加载、互不抢占、卸载其一不影响其余。
+// 意图处理器。canHandle 收完整 Intent，便于按参数认领同 op 的多个实现。
 class IIntentHandler
 {
 public:
@@ -36,7 +31,7 @@ public:
     virtual Result<IntentResult> execute(const Intent &intent) = 0;
 };
 
-// Job：一串可序列化的意图，是 GUI 录制与 CLI 执行的公共货币。
+// 可序列化的意图序列，用于录制回放。
 class Job
 {
 public:

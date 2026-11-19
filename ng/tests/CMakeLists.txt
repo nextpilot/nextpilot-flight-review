@@ -16,6 +16,12 @@ target_link_libraries(ng_test_registry_standalone PRIVATE ng_registry Qt6::Core)
 set_target_properties(ng_test_registry_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_registry_standalone COMMAND ng_test_registry_standalone)
 
+# 意图契约独立验收：只链 ng_intent + foundation + Qt Core，不链 ng_core。
+add_executable(ng_test_intent_standalone test_intent_standalone.cpp)
+target_link_libraries(ng_test_intent_standalone PRIVATE ng_intent ng_foundation Qt6::Core)
+set_target_properties(ng_test_intent_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_intent_standalone COMMAND ng_test_intent_standalone)
+
 # === 协议逻辑资产（顺序段协议解码内核平移）===
 # 纯逻辑测试：只依赖 ng_protocol + Qt Core，headless。
 add_executable(ng_test_protocol test_protocol.cpp)
