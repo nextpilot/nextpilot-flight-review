@@ -22,7 +22,7 @@ void ExtensionRegistry::rebuildIndexes()
             if (!c)
                 continue;
             m_byId.insert(c->id(), c.get());
-            m_byKind[c->kind()].append(c.get());
+            m_byKind.insert(c->kind(), c.get());
             m_idOrder.append(c->id());
         }
     }
@@ -72,8 +72,7 @@ QStringList ExtensionRegistry::packIds() const
 
 IToolPack *ExtensionRegistry::pack(const QString &packId) const
 {
-    auto it = m_packIndex.constFind(packId);
-    return it == m_packIndex.constEnd() ? nullptr : it.value();
+    return m_packIndex.value(packId, nullptr);
 }
 
 int ExtensionRegistry::packCount() const
@@ -86,21 +85,21 @@ QList<IToolContribution *> ExtensionRegistry::contributions() const
     QList<IToolContribution *> out;
     out.reserve(m_idOrder.size());
     for (const QString &id : m_idOrder)
-        if (auto it = m_byId.constFind(id); it != m_byId.constEnd())
-            out.append(it.value());
+        if (IToolContribution *c = m_byId.value(id, nullptr))
+            out.append(c);
     return out;
 }
 
 QList<IToolContribution *> ExtensionRegistry::contributions(const QString &kind) const
 {
-    return m_byKind.value(kind, {});
+    return m_byKind.values(kind);
 }
 
 QList<IToolContribution *> ExtensionRegistry::contributions(const QString &kind,
                                                             Domain domain) const
 {
     QList<IToolContribution *> out;
-    for (IToolContribution *c : m_byKind.value(kind, {}))
+    for (IToolContribution *c : m_byKind.values(kind))
         if (c->domain() == domain)
             out.append(c);
     return out;
@@ -111,7 +110,7 @@ QList<IToolContribution *> ExtensionRegistry::contributionsByDomain(Domain domai
     QList<IToolContribution *> out;
     for (const QString &id : m_idOrder)
     {
-        IToolContribution *c = m_byId.value(id);
+        IToolContribution *c = m_byId.value(id, nullptr);
         if (c && c->domain() == domain)
             out.append(c);
     }
@@ -120,17 +119,12 @@ QList<IToolContribution *> ExtensionRegistry::contributionsByDomain(Domain domai
 
 IToolContribution *ExtensionRegistry::contribution(const QString &id) const
 {
-    auto it = m_byId.constFind(id);
-    return it == m_byId.constEnd() ? nullptr : it.value();
+    return m_byId.value(id, nullptr);
 }
 
 QStringList ExtensionRegistry::kinds() const
 {
-    QStringList out;
-    for (auto it = m_byKind.constBegin(); it != m_byKind.constEnd(); ++it)
-        if (!it.value().isEmpty())
-            out.append(it.key());
-    return out;
+    return m_byKind.kinds();
 }
 
 QStringList ExtensionRegistry::contributionIds() const
@@ -145,7 +139,7 @@ bool ExtensionRegistry::containsContribution(const QString &id) const
 
 int ExtensionRegistry::contributionCount() const
 {
-    return static_cast<int>(m_byId.size());
+    return m_byId.count();
 }
 
 namespace
@@ -161,7 +155,7 @@ bool producesFrames(const IMessageParser *p)
 QList<IMessageParser *> ExtensionRegistry::parsers() const
 {
     QList<IMessageParser *> out;
-    for (IToolContribution *c : m_byKind.value(ContributionKind::Message, {}))
+    for (IToolContribution *c : m_byKind.values(ContributionKind::Message))
         if (auto *p = dynamic_cast<IMessageParser *>(c))
             out.append(p);
     return out;

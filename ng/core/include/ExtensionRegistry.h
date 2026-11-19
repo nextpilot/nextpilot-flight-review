@@ -1,11 +1,12 @@
 #pragma once
 
+#include "IndexedByKind.h"
 #include "IToolContribution.h"
 #include "IToolPack.h"
 #include "IMessageParser.h"
 #include "Domain.h"
+#include "Registry.h"
 
-#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -79,11 +80,16 @@ public:
 private:
     void rebuildIndexes();
 
+    // CRUD 委托 libs 泛型表；所有权与顺序语义留在薄壳（Registry 不接管、不保序）。
+    using PackTable = nextpilot::plotscope::registry::Registry<IToolPack *>;
+    using ContributionTable = nextpilot::plotscope::registry::Registry<IToolContribution *>;
+    using KindIndex = nextpilot::plotscope::registry::IndexedByKind<IToolContribution *>;
+
     std::vector<std::unique_ptr<IToolPack>> m_owned;         // 拥有所有包（间接拥有全部贡献）
-    QHash<QString, IToolPack *> m_packIndex;                  // pack id -> 包
-    QStringList m_packOrder;
-    QHash<QString, IToolContribution *> m_byId;               // 贡献 id -> 贡献
-    QHash<QString, QList<IToolContribution *>> m_byKind;      // kind -> 贡献列表
+    PackTable m_packIndex;                                    // pack id -> 包
+    QStringList m_packOrder;                                  // 包登记顺序
+    ContributionTable m_byId;                                 // 贡献 id -> 贡献
+    KindIndex m_byKind;                                       // kind -> 贡献列表
     QStringList m_idOrder;                                    // 贡献登记顺序
 };
 

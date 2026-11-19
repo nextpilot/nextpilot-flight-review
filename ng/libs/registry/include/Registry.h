@@ -42,6 +42,13 @@ public:
         return const_cast<T *>(&it.value());
     }
 
+    // 取条目副本；不存在返回 defaultValue。指针型条目用它比 find() 顺手。
+    T value(const Key &id, const T &defaultValue = T{}) const
+    {
+        auto it = m_map.constFind(id);
+        return it == m_map.constEnd() ? defaultValue : it.value();
+    }
+
     bool contains(const Key &id) const { return m_map.contains(id); }
 
     // 已登记 id 列表，顺序不保证。

@@ -516,6 +516,17 @@ class IMessageParser : public IConfigurableContribution {   // 唯一解析器�
 - **构建守卫修复**：configure 期守卫原用 `file(STRINGS)` 逐行剥离注释，遇含 UTF-8 中文的注释行会把字节流截断、误把注释里的字面量当代码（本次踩坑：注释中解释「为什么不用单例」被误报）。改为 `file(READ)` 全文 + `[^\n\r]` 注释正则，注释正确剥离、真违规仍能 FATAL。
 - **验收**：Release + Debug ctest 全绿（新增 1 项）。
 
+### 11.1b B3 补录：`ExtensionRegistry` 委托 + `IndexedByKind` 落地（2026-11-21，✅ 已实施）
+
+补齐 §2 规划里当时没做完的两块，仍是**接口等价重构、调用方零改动**：
+
+- **新增 `libs/registry/include/IndexedByKind.h`**：`IndexedByKind<T>` 二维索引（kind → 条目列表，组内保插入顺序），即 §2 里规划但未落地的 `IndexedByKind` mixin。无所有权、无全局状态，实例由使用方持有，符合 libs 铁律。
+- **`Registry.h` 补 `value(key, default)`**：与 QHash::value 同语义，省去指针型条目的 `find()` 解引用。
+- **`ExtensionRegistry` 内部委托**：`m_packIndex`/`m_byId` 改委托 `registry::Registry<...>`，`m_byKind` 改委托 `IndexedByKind<IToolContribution*>`；所有权 `m_owned` 与顺序表 `m_packOrder`/`m_idOrder` 留在薄壳（Registry 不接管所有权、不保序）。**对外 30 个方法签名零改动**，`rebuildIndexes` 逻辑等价。
+- **独立测试扩展**：`ng_test_registry_standalone` 覆盖 `value()`（值型默认 / 指针型免解引用）与 `IndexedByKind`（分组 / 组内顺序 / kinds / clear）。
+- **范围边界（诚实标注）**：本次只还 `ExtensionRegistry` 这一笔；`ParserRegistry` / `UiSlotRegistry` / `BuiltinPackRegistry` / `RecordingFormat` / `RecordingBackend` 的手写静态表仍各写各的，属后续批次（与 B7 一起或单列）。总方案 §7.6 把它们标成"已迁 libs"仍与代码有落差，不因本次改动而改变。
+- **验收**：Release + Debug ctest 18/18 双绿；libs 边界守卫、层契约守卫通过。
+
 ### 11.2 B4：`ng_intent` 意向契约库（2026-11-20，✅ 已实施）
 
 按总方案 B4 落地 §3「意向机制抽库」：
