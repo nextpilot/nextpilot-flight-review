@@ -259,123 +259,111 @@ public:
 
 ---
 
-## 4.7 帧脚本（pscode）：在协议里自己写代码
+## 4.7 脚本兜底：复用项目既有 Lua（放弃自建 AST）
 
-> 需求原话：「CRC 支持在协议里面自己写代码，一套 AST 语法」。
-> 这条要求不是给 CRC 加个参数，而是给模板语言开一个**表达能力逃生门**。
+> 需求：算子为主 + 脚本兜底，lib 内置常用算子；脚本能否直接用 Lua，省掉 AST。
+> **结论：用 Lua。项目里已经有了，不必新造。**
 
-### 4.7.1 先看清一个硬事实
+### 4.7.1 已核实的事实
 
-现有表达式引擎是 **double 语义**：位运算前 `static_cast<int64_t>` 再转回 double。这意味着：
-
-- `0xFFFFFFFFFFFFFFFF` 存不进 double（53 位尾数）→ u64 CRC 状态直接失真；
-- `c << 1` 连左移 11 次就开始丢低位；
-- 没有任何类型、没有变量、没有循环。
-
-**结论：现有表达式写不出 CRC。** 要支持"协议里自己写代码"，必须先给引擎一套**类型化 AST**，这是新增能力，不是改写现有算子。
-
-### 4.7.2 能力边界：脚本是逃生门，不是主路径
-
-| 该用内置算子 | 该用脚本 |
+| 事实 | 位置 |
 |---|---|
-| 标准 CRC（含 24 位）、sum/xor/parity、范围谓词 | 非标校验（协议自带算法、异或累积、双校验、哈希） |
-| 线性 `scale/offset` | 非线性换算（多项式温度、分段查表、单位反算） |
-| 单字段选变体 | 多字段联合决策的变体选择 |
+| Lua 5.4.4 静态库已入库 | `deps/lua/lib/liblua.a`，由 `tools/bootstrap-deps.sh` 提供 |
+| Lua 引擎已跑通，有 `ps` 门面 | `ng/modules/script/LuaEngine.{h,cpp}`（212+38 行） |
+| 目标由 module 层定义 | `ng/modules/script/CMakeLists.txt` 里 `ng_lua` IMPORTED target |
+| **无沙箱** | `LuaEngine.cpp:165` 是 `luaL_openlibs(m_lua)`，`io`/`os`/`package`/`debug` 全开 |
+| **无配额** | 没有 `lua_sethook`、没有 `lua_setallocf` |
 
-**红线**：脚本**不允许**替代整份帧布局描述。一旦允许"用脚本描述整帧"，这个库就退化成半吊子通用引擎，与 §7 红线冲突。脚本只能挂在**三个点**上：校验、派生通道、选择器。
+所以不是“要不要引入 Lua”，而是“怎么把已有的 Lua 正确地接进解码路径”。
 
-### 4.7.3 值语义（必须钉死，否则 codegen 不可等价）
+### 4.7.2 直接冲突：Lua 与 codegen 不能共存
 
-- 类型：`u8/u16/u24/u32/u64`（定宽无符号，运算结果**按类型宽度自动截断**，语义 = C 无符号整数）+ `f64`（仅派生通道用）+ `bool`
-- **不提供隐式 double↔整数转换**：混算报编译错，逼作者显式 `toF64()` / `toU32()`
-- 除零、越界访问 = 运行时错误，整帧判定失败（可重同步）
-- 无全局状态、无 I/O、无堆分配
+第 5 条要求「生成 C++/Java/Python 源码给其他语言用」。Lua 方案在这里有一个**无法绕过**的冲突：
 
-这套语义的好处：**C++ 里 `uint32_t` 直接对应，Java 用 `long` + mask 对应，Python 显式 mask 对应**——三语言 codegen 能逐位一致。
+- Lua 是**完整语言**：table、闭包、metatable、协程、可变参数、动态类型。把任意 Lua 翻译成 C++/Java/Python，等于写一个 Lua 编译器——**工作量比自建 pscode 大一个量级，且永远不完备**；
+- 让生成物依赖 Lua 运行时：C++ 要链 liblua，Java 要 JNI，Python 要 lupa/嵌入解释器——“自包含”随即破功。
 
-### 4.7.4 语法（最小集，够写 CRC 与换算）
+**结论：含脚本的模板，不做 codegen。**
 
-```text
-// 例：RTCM3 的 CRC24Q，协议里自写
-let c: u24 = 0;
-for (i = 0; i < len(body); i++) {
-    c ^= toU24(body[i]) << 16;
-    for (k = 0; k < 8; k++) {
-        c = c << 1;
-        if (c & 0x1000000) c ^= 0x1864CFB;
-    }
-}
-return c == crc24;
+这不是缺陷，因为「算子为主」意味着脚本是极少数例外（见 §4.7.6 的算子表），codegen 覆盖率会远高于 95%。codegen 遇到脚本时**必须显式报错并列出段名**，绝不静默产出错误代码——静默降级是这一行最坏的失败模式。
+
+### 4.7.3 三个必须补的护栏（现有 LuaEngine 一个都没有）
+
+**护栏 1：沙箱。** 解码循环里跑模板内的脚本，而 `luaL_openlibs` 全开会给用户 `os.execute` / `io.open`。裁掉 `io`、`os`、`package`、`debug`、`load`、`loadstring`、`dofile`、`require`，只保留 `string`/`math`/`table`/位运算/协程外的纯计算库。
+
+**护栏 2：配额。** `lua_sethook` count hook（每 1000 条指令检查）+ 单帧累计指令上限；`lua_setallocf` 限内存。没有这两条，一个 `while true do end` 就能卡死 GUI。
+
+**护栏 3：类型语义。** Lua 5.4 的 integer 是 **int64 有符号**，`c = c << 8` 反复移位会溢出成负数。CRC 必须在脚本里显式掩码：
+
+```lua
+-- CRC-24Q（RTCM3）用 Lua 写
+local c = 0
+for i = frame.off("body"), frame.off("body") + frame.len("body") - 1 do
+  c = (c ~ frame.byte(i)) << 8
+  c = c & 0xFFFFFF                       -- 必须显式掩码，否则 int64 溢出为负
+  for _ = 1, 8 do
+    if c & 0x800000 ~= 0 then
+      c = ((c << 1) ~ 0x1864CFB) & 0xFFFFFF
+    else
+      c = (c << 1) & 0xFFFFFF
+    end
+  end
+end
+return c == frame.seg("csum")
 ```
 
-语句：`let` / 赋值（含 `+= -= &= |= ^= <<= >>=`）/ `if-else` / `for`（有界）/ `break` / `continue` / `return`
-表达式：`+ - * / % & | ^ << >> ~`、比较、`&& || !`、三目
-**禁止 `while` / `goto` / 递归函数** → 循环次数上界可静态证明（`maxsize × 8`），保证 O(n) 不挂死
+这正是 Lua 相对「定宽无符号」的代价：**语义靠约定 + 手工掩码，容易写错**。因为脚本是兜底、数量极少，这个代价可以接受；但不能让用户以为 Lua 里 `u32` 自动截断。
 
-内建函数（首批）：
-
-| 函数 | 说明 |
-|---|---|
-| `len(seg)` | 段的元素/字节数 |
-| `seg[i]` | 段内第 i 个字节（u8） |
-| `mask(v, w)` / `toUN(v)` | 取低 w 位 / 转定宽 |
-| `crcParam(data, w, poly, init, refin, refout, xorout)` | **参数化 CRC**，脚本里也能调，不必手写循环 |
-| `abs/min/max/clamp/floor/ceil/round/pow` | 数学 |
-| `frame.offset / frame.size` | 帧在流内位置与总长 |
-
-### 4.7.5 三个挂点（同一套 AST，三处复用）
+### 4.7.4 写法（三个挂点）
 
 ```jsonc
-// 1) 校验：返回 bool
-"checks": [{ "op": "script", "code": "…", "expect": true }]
-
-// 2) 派生通道：返回数值/布尔，直接进数据集
-{ "name": "temp_c", "derive": { "code": "…", "unit": "C" } }
-
-// 3) 变体选择：返回用于匹配 variant 的键
-"series": { "selector": "…", "selectorScript": "…" }
+"checks":  [{ "op": "script", "lua": "…", "expect": true }]   // 返回 bool
+{ "name": "temp_c", "derive": { "lua": "…", "unit": "C" } }    // 返回 number
+"series":  { "selector": "…", "selectorLua": "…" }             // 返回 string/number
 ```
 
-`schema` 只需把一个字段声明为 `string`（源码字符串），编译期转 AST 再转字节码——**不用 JSON 嵌套 AST**，可读性与 diff 友好性都更好。
+脚本可访问的最小 API（只读写帧，不碰宿主）：
 
-### 4.7.6 校验与调试（脚本最大的风险点）
-
-- **编译期**：未定义变量、类型不匹配、循环无界、访问不存在的段、返回值类型不符 → 带 `行:列` 报错；
-- **运行期**：错误信息带行号 + 变量快照；
-- **编辑器**：单帧试算面板增加"脚本变量"一栏，逐语句可看中间值（这是让用户敢写脚本的前提；
-  没有这个，脚本就是黑盒，写错了只能靠猜）；
-- **常量折叠**：纯常量脚本在编译期直接求值，避免每帧重算。
-
-### 4.7.7 与 codegen 的关系（关键约束）
-
-脚本必须能被**编译进生成代码**，否则 codegen 产物就得依赖 psproto 运行时，违背"自包含"。因此：
-
-- 脚本 AST → 三语言 emitter（C++ 内联函数 / Java 方法 / Python 函数）；
-- 语义已钉死（定宽无符号 + 显式 mask），三语言可逐位一致；
-- **脚本不能有库依赖**，所以内建函数表必须小而固定，不做"插件函数"。
-
-### 4.7.8 性能与取舍
-
-| 路径 | 相对成本 | 用途 |
-|---|---|---|
-| 内置 `crc` 算子（参数化 + 预生成表） | 1×（基准） | 标准 CRC 的默认选择 |
-| 脚本走字节码解释器 | 约 5–10× | 非标场景兜底 |
-| 脚本常量折叠后 | ≈1× | 纯常量校验 |
-
-所以：**内置算子优先，脚本兜底**；文档里明确"能用算子就别写脚本"，避免用户把模板写成代码。
-
-### 4.7.9 工作量
-
-| 模块 | 估计 |
+| API | 说明 |
 |---|---|
-| 词法 + 语法 + AST | ~350 行 |
-| 语义检查 + 常量折叠 | ~250 行 |
-| AST → 字节码 | ~250 行 |
-| 字节码解释器（栈式） | ~300 行 |
-| C++ emitter | ~250 行 |
-| Python / Java emitter | 各 ~250 行 |
+| `frame.len` | 帧字节数 |
+| `frame.byte(i)` | 第 i 字节（0 基） |
+| `frame.off(seg)` / `frame.len(seg)` | 段的字节偏移/长度 |
+| `frame.seg(name)` | 段物理值（浮点） |
+| `frame.raw(name)` | 段原始值 |
 
-合计约 1900 行，**必须拆两批**：引擎（解释器跑通）与 emitter（三语言等价）分开验收。
+**性能纪律**：每份脚本按「模板 + 用途」`luaL_loadbuffer` **预编译一次**，之后每帧只 `lua_pcall`；禁止每帧 `luaL_dostring`。参数走 Lua 栈，不走 QVariant 转换。
+
+### 4.7.5 内置算子：把「算子为主」落到实处
+
+要真正让脚本变成极少数例外，光有 `crc` 参数化不够，得内置**标准算法表**，用户一个名字调用：
+
+```jsonc
+"checks": [{ "op": "crc", "alg": "crc16/modbus", "over": ["body..bodyEnd"] }]
+```
+
+首批内置（编译期按参数生成 256 项表）：
+
+| 族 | 算法 |
+|---|---|
+| CRC-8 | SAE-J1850、MAXIM(Dallas)、ROHC、ATM、AUTOSAR、ITU |
+| CRC-16 | CCITT-FALSE、XMODEM、KERMIT、MODBUS、USB、MAXIM、DNP、DECT-R |
+| **CRC-24** | **OPENPGP、OS9、LTE-A、RTCM/24Q** |
+| CRC-32 | ISO-HDLC、BZIP2、MPEG2、POSIX、JAMCRC、XFER、AUTOSAR、AIXM |
+| CRC-64 | XZ、ECMA-182、GO-ISO |
+| 非 CRC | sum8/16/32、xor8/16、parity、**Fletcher-16/32**、Adler-32 |
+
+`alg` 与手填 `poly/init/refin/refout/xorout` 二选一；`alg` 优先。
+
+### 4.7.6 依赖方向要动一处
+
+`ng_lua` 现在定义在 `ng/modules/script/CMakeLists.txt`，而 psproto 属于 `ng/libs`（纯逻辑层，不能依赖 modules）。**`ng_lua` 的 IMPORTED target 必须上提到 `ng/CMakeLists.txt` 顶层**，让 libs 与 modules 平级共用。
+
+否则会出现 `libs → modules` 的反向依赖，这条线一旦破，后面所有库都会照着破。
+
+### 4.7.7 什么时候才回头做 pscode
+
+只有当出现「**含脚本的模板也要求 codegen**」这个真实需求时才做。届时 pscode 的定位不是替代 Lua，而是「可编译的受限语言」——Lua 继续负责复杂脚本，pscode 负责需要生成源码的那部分。现在不做，避免 1900 行投入换取一个还不存在的需求。
 
 ---
 
@@ -641,19 +629,15 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 | **S2** | `compile()` → 段表 + 表达式字节码；`decode` 改走段表 | 行为与现状逐字段一致（回归测试）；3000 帧基准耗时 ≤ 1/3 |
 | **S3** | `StreamParser`（feedByte/feedChunk/finish/setSink/reset） | 单字节逐喂 与 整块喂 结果一致；跨块半帧正确；尾帧冲刷正确 |
 | **S4a** | 表达力补齐：`until` / `text_number` / `derive` / **位域（§4.8）** / 参数化 CRC（含 24 位） | NMEA、CSV 可解；**CAN DBC 32 信号与 cantools 逐位一致**；ARINC429/1553B 可解；RTCM3 可解；老模板不回归 |
-| **S4b** | **pscode 引擎**：类型化标量 + AST + 语义检查 + 字节码解释器 + 编辑器变量面板 | 用脚本写出 CRC24Q 且与内置算子结果**逐位一致**；循环上界可静态证明；错误带行列号 |
-| **S4c** | **pscode emitter**：C++ → Python → Java | 三语言生成物对同一输入逐位一致（golden）；生成物零依赖 |
+| **S4b** | **Lua 兜底接入**：沙箱裁剪、指令/内存配额、脚本预编译、`frame` API、编辑器脚本变量面板 | 用 Lua 写 CRC24Q 与内置 `alg:"crc24/rtcm"` 结果**逐位一致**；`while true` 被配额中断；`os.execute` 不可用；错误带行号 |
+| **S4c** | codegen 处理含脚本模板 | 遇到 `lua` 节点**显式报错并列出段名**，不静默降级 |
 | **S5** | 模板 codegen（帧结构 → 解析器源码） | 生成的 C++ 解析器与解释器逐字段一致 |
 
 ---
 
 ## 6. 需要拍板的五个点
 
-1. **CRC 的定位**：参数化算子为主、脚本兜底（推荐），还是全部走脚本（模板里每个 CRC 都手写循环）？
-   建议：**算子为主、脚本兜底**。标准 CRC 手写循环既慢又易错，且无法 codegen 成最优实现。
-2. **脚本的类型语义**：定宽无符号（`u8..u64`，按宽截断，= C 语义）还是统一 double（改动小但 CRC 写不出）？
-   建议：**定宽无符号**。这是脚本能正确表达 CRC、且能被三语言等价生成的前提。
-3. **旧 API 兼容**：保留 `decodeSequential(bytes, doc)` 作为整块便捷入口（内部走 StreamParser），还是直接切到新接口、老调用点全改？
+1. **旧 API 兼容**：保留 `decodeSequential(bytes, doc)` 作为整块便捷入口（内部走 StreamParser），还是直接切到新接口、老调用点全改？
    建议：**保留**，行为不变，降低上层迁移风险。
 
 另外：**codegen（S5）是否本批就做**，还是先做到 S4c 再单独一批？
@@ -679,7 +663,8 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 | 位序 `lsb0`/`msb0` 双模型，对齐 DBC Intel/Motorola | **已定**（§4.8.4 有等价性推导） |
 | 位域约束 `width + offset%8 ≤ 64`（避免 `__int128`） | **已定**（§4.8.5） |
 | ASCII 目标 = NMEA 0183 + AIS(P2)，不做 CSV/JSON | **已定**（§4.9） |
-| 脚本引擎类型语义（定宽无符号） | 待拍板 |
-| CRC 定位（算子为主 / 全脚本） | 待拍板 |
+| 脚本兜底 = 项目既有 Lua 5.4（不做自建 AST） | **已定**（§4.7） |
+| 含脚本模板不做 codegen（显式报错） | **已定**（§4.7.2） |
+| CRC = 内置算法表为主 + Lua 兜底 | **已定**（§4.7.5） |
 
 | 旧 API 是否保留 | 待拍板 |
