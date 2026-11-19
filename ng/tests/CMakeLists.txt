@@ -1,5 +1,13 @@
 find_package(Qt6 REQUIRED COMPONENTS Core)
 
+# === ng_dataset 独立链接验收（B2）===
+# 故意只链 ng_dataset + Qt6::Core，不链 ng_core / host / module / extension。
+# 任何 Dataset 对 core 业务类型的反向依赖都会在此链接失败。
+add_executable(ng_test_dataset_standalone test_dataset_standalone.cpp)
+target_link_libraries(ng_test_dataset_standalone PRIVATE ng_dataset Qt6::Core)
+set_target_properties(ng_test_dataset_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_dataset_standalone COMMAND ng_test_dataset_standalone)
+
 # === 协议逻辑资产（顺序段协议解码内核平移）===
 # 纯逻辑测试：只依赖 ng_protocol + Qt Core，headless。
 add_executable(ng_test_protocol test_protocol.cpp)

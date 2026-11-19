@@ -128,7 +128,7 @@
 | 批次 | 内容 | 关键文件 | 验收 |
 |---|---|---|---|
 | **B1** | 下沉 `Result` → `ng_foundation`（INTERFACE），21 处引用零改字面量 | 新建 `libs/foundation/`，移 `Result.h`，改 CMake include 传递 | 5 个 target 均可拿到 Result；ctest 11/11 |
-| **B2** | 新建 `ng_dataset`，迁 `Dataset`/`DataRepository`，核心 PUBLIC 依赖 | `libs/dataset/`、`core/CMakeLists.txt`、`fastplot_dataset_test` | "只链 ng_dataset 不链 ng_core" 的复用测试通过；11/11 |
+| **B2** ✅ | 新建 `ng_dataset`，迁 `Dataset`/`DataRepository`，核心 PUBLIC 依赖 | `libs/dataset/`、`core/CMakeLists.txt`、`test_dataset_standalone.cpp` | 独立 target 只链 ng_dataset+Qt6::Core（实证 link.txt 无 ng_core）走通建表→读窗→仓库增删；12/12 |
 | **B3** | `ng_registry` 最小 CRUD 核 + 自注册助手；至少 1 套注册表薄壳化验证 | `libs/registry/`、选 `PanelFactoryRegistry` 先行 | 对外 API 不变；11/11 |
 | **B4** | `ng_intent` 移出 5 个意向类型 | `libs/intent/`、`core/`、`AppContext`/`ScriptFacade` | Job JSON 往返测试；11/11 |
 | **B5** | `ng_uischema`：纯 metadata 契约 + `SchemaEngine` + 唯一 Qt 渲染器；两个对话框共用渲染器 | `libs/uischema/`、`PropertyPanel`/`TransformEditorDialog`/`ImportDialog`/`ProtocolInspectorDialog` | 全仓一处 `FieldType→QWidget` 映射；11/11 |
@@ -252,6 +252,18 @@ foundation(Result)
 - **命名空间纪律（修正 §5.4）**：不再"namespace 永远保持 core 另批统一"。**每个 lib 搬迁时连同 namespace 一起改**（`core` → `context`/`dataset`/`registry`/…），避免"目录叫 context、namespace 还叫 core"的最坏中间态。B1–B6 已落地的 `core` 命名空间在 B7 统一收口。
 - **垂直切分**：后段按"一个 lib 一个 lib 搬 + 带自己的契约测试 + 带自己的消费者"垂直推进，每批单独过 ctest，不做"先搬所有 Result 再搬所有 dataset"的水平切——big-bang 水平切中途全是红色、插不进别的需求，11 个 ctest 也兜不住。
 - **B7 验收**：全仓无 `ng/core` target、无 `nextpilot::plotscope::core` 命名空间残留、无 `ctx.xxx()` 全局服务定位器取用（改为注入）；Release + Debug ctest 11/11。
+
+### 7.7.1 实现复核：B2 的 namespace 保持 core（架构师裁定）
+
+> 冲突：专项文档 §4 说"dataset 抽库保持 core namespace、R-D2 另批"，总方案 §7.7 说"每个 lib 搬迁时连 namespace 一起改"。
+
+**B2 裁定：物理抽库先行，namespace 暂保持 `core`，统一在 B7 一次性收口。** 依据：
+
+1. B1 的 `Result.h` 已在 `ng_foundation` 但仍用 `core` namespace。若 B2 单独把 dataset 改成 `dataset` namespace，会出现 `dataset::DataRepository` 返回 `core::Result<dataset::DatasetId>` 的**跨命名空间割裂**，比现状更乱。
+2. dataset 的 34 个引用文件里 `core::Dataset` / `DatasetId` / `ValueType` 字面量遍布，B2 就改会与 B6 命名收敛（`SourceRegistry`/`Domain` 等）叠加，改动面翻倍、回归难定位。
+3. §7.7 的初心是避免"目录叫 context、namespace 还叫 core"的**终态**中间态；B2–B6 是渐进批，B7 一次性把 Result + Dataset + AppContext 等所有 core namespace 收口到各自库名，才是零割裂路径。
+
+**这条不违背 §7.7**：namespace 统一照做，只是集中在 B7 而非摊到每批。B7 验收项（无 `core` namespace 残留）仍是硬指标。
 
 ### 7.8 拍板追溯（需求方 2026-11-19 追加）
 

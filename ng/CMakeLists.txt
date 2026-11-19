@@ -72,6 +72,11 @@ endif()
 # 又不让 core 与机制库形成循环依赖。必须先于 core 定义。
 add_subdirectory(libs/foundation)
 
+# === 数据地基（可独立链接，先于 core 定义）===
+# Dataset/DataRepository 只依赖 Rust kernel + Qt Core + foundation；
+# core  PUBLIC 链它，消费者得以只链 dataset 而不吞整个骨架。
+add_subdirectory(libs/dataset)
+
 add_subdirectory(core)
 add_subdirectory(recording)
 add_subdirectory(host)

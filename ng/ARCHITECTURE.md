@@ -834,6 +834,8 @@ host/        装载循环 · 意图执行器 · 注册表（器官表 / 包表 /
   └── parsers/     解析器 SPI 与注册表
   ↓
 core/        Dataset 门面 · 仓库 · 意图 · 插槽表 · 贡献抽象（无 QWidget）
+             ↑ B2 起 Dataset/DataRepository 已迁至 libs/dataset/，core 仍 PUBLIC 链之；
+               此处保留历史职责描述，终态 core 消亡见顶部指针
   ↓
 kernel       Rust：typed 表 · LOD · 缓存 · 算子（只经 ps_kernel.h）
 ```

@@ -1,6 +1,6 @@
 # dataset 抽库设计：把数据地基从 `ng/core` 下沉为可复用 `ng/libs/dataset`
 
-> 状态：**架构设计，待需求方拍板**（2026-11-19）。本轮只出边界与契约，**不写实现代码**。
+> 状态：**B2 已实施（2026-11-19）**——`ng_dataset` 独立库建成，`Dataset`/`DataRepository` 迁入，独立链接验收通过（ctest 12/12）。以下为当时的边界设计，实现裁定见末尾 §9。
 > 需求方诉求原文："把 core 中的 dataset 抽象成一个 libs，这样其他地方可以复用。"
 > 定位：与 [`modules-organ-completion.md`](modules-organ-completion.md) 配套的 core 层瘦身动作；不改动 source/dataset 的模块拆分裁决。
 > 所有结论均逐行核对过 `ng/core`、`ng/CMakeLists.txt`、`ng/tests`。
@@ -121,3 +121,14 @@ ng_core (去掉 Dataset/DataRepository 源文件) ──────────
 2. **确认 `Result` 下沉 `ng_foundation`**（§3）——这是抽库的硬性前置，不可跳过。
 3. **确认命名空间保持 `core`、R-D2 另批**（§4）？若希望本批就统一到 `dataset`，请明确（将扩大改动面）。
 4. `DataRepository` 是否借机改名 `DatasetRepository`（与 §1.4 可选项同源）？本设计**不**擅自采纳。
+
+---
+
+## 9. B2 实施记录（2026-11-19）
+
+- **已落地**：`libs/dataset/`（STATIC，`Dataset.cpp` + `DataRepository.cpp`），PUBLIC 链 `ng_kernel` + `ng_foundation` + `Qt6::Core`；`ng_core` 移除两源文件、 PUBLIC 链 `ng_dataset`；`ng/CMakeLists.txt` 在 core 前 add_subdirectory。
+- **独立链接验收**（§6 第 1 条的真正载体）：`tests/test_dataset_standalone.cpp` + `ng_test_dataset_standalone` target，**只链 `ng_dataset` + Qt6::Core**。实证 `link.txt` 只有 `libng_dataset.a` + Rust `libps_abi.a`，无 `ng_core`。走通 create→addTable→addF64Column→readWindow→DataRepository 增删全流程。
+  - 注：原 §6 设想用 `fastplot_dataset_test` 验收，但它实际依赖 `IngestPipeline`/`ParserRegistry`/全部扩展（是集成测试不是纯 dataset 消费者），故新建独立 target 承载验收，未改原测试。
+- **命名空间**：按总方案 §7.7.1 裁定，B2 保持 `core`（与 B1 的 `Result` 一致，避免 `dataset::DataRepository` 返回 `core::Result` 的割裂），统一在 B7 收口。§4 的"R-D2 另批"由此并入 B7。
+- **`DataRepository` 改名**：本批未采纳，保持原名（§8-4 结论不变）。
+- **验收**：Release ctest 12/12（原 11 + 新增 ng_dataset_standalone）；构建期守卫 configure 通过。
