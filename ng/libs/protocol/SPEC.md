@@ -62,6 +62,7 @@
 | `endian` | `little`/`big` | 覆盖顶层端序 | 别名 `le`/`be` 在解析层归一，**不再有 `bigEndian` 布尔** |
 | `scale` / `offset` | number | 物理换算 `phys = raw*scale + offset` | 存在时通道类型为 `f64` |
 | `unit` | string | 单位 | 显示用 |
+| `transform` | array | 值算子链（解析后按序应用） | `sexagesimal`/`scale`/`mul`/`offset`/`add`/`abs`/`round`/`clamp`；见 §4.3 |
 | `emit` | `channel`/`aux`/`none` | 是否产出通道 | 见 2.2 |
 | `expect` | 数字/字符串/数组 | 常量匹配 | 原 `value` |
 | `expectExpr` | 表达式 | 常量匹配（表达式形式） | 原 `valueExpr` |
@@ -169,6 +170,29 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
    ```jsonc
    "digest": { "alg":"crc16/mcrf4xx", "over":["len:payload"], "inject":[0x41] }
    ```
+
+### 4.3 `transform` 算子链
+
+`scale`/`offset` 是单一线性换算；真实协议常要"换算后再取整/钳位/拆度分"。`transform` 是解析后按序应用的算子链，每步作用于上一步的值：
+
+| op | 参数 | 作用 |
+|---|---|---|
+| `sexagesimal` | `split`（0..8） | NMEA 的 `4807.038` → `48 + 7.038/60` |
+| `scale` / `mul` | `k` | `v *= k` |
+| `offset` / `add` | `b` | `v += b` |
+| `abs` | — | 绝对值 |
+| `round` | — | 四舍五入 |
+| `clamp` | `min` / `max` | 钳到区间（可只给一端） |
+
+```jsonc
+{ "name":"lat", "type":"f64", "transform":[
+    {"op":"sexagesimal","split":2},
+    {"op":"scale","k":1.0},
+    {"op":"clamp","min":-90,"max":90}
+] }
+```
+
+约束：算子链只作用于 ASCII 的 token 数值（二进制段用 `scale`/`offset`）；`clamp` 的 `min` 必须 ≤ `max`。
 
 ---
 

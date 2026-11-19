@@ -846,6 +846,13 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
             }
         }
     }
+    // SPEC §2.1：repeat:"until" + 顶层 until 键两种写法等价
+    if (seg.repeatMode == "until" && !seg.repeatUntil && o.contains(QStringLiteral("until")))
+    {
+        seg.repeatUntil = parseExprText(o.value(QStringLiteral("until")).toVariant().toString().toStdString(), err);
+        if (!seg.repeatUntil)
+            return false;
+    }
     if (o.contains(QStringLiteral("range")))
     {
         const QJsonValue rv = o.value(QStringLiteral("range"));

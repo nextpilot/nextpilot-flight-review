@@ -86,6 +86,7 @@
 | `count` | 元素个数（数组长度）；标量省略。**字节数由 `type` 推算，不写** |
 | `scale` / `offset` | 物理换算 |
 | `unit` | 单位，显示用 |
+| `transform` | 值算子链：`sexagesimal`/`scale`/`mul`/`offset`/`add`/`abs`/`round`/`clamp`，可串联 |
 | `emit` | `channel`（出通道，默认）/ `aux`（中间量）/ `none`（仅校验/容器） |
 | `expect` | 常量匹配（同步字、状态字） |
 | `checks` | 谓词校验：eq/ne/lt/le/gt/ge/in/range/mask |
@@ -94,7 +95,7 @@
 | `if` | 条件字段，false 时整段跳过 |
 | `enum` | 值 → 名字映射 |
 | `range` | 声明物理范围（不判失败） |
-| `repeat` / `until` | 重复方式：`elems`（按 count）/ `eos` / `until`（读到标记） |
+| `repeat` / `until` | 重复方式：`elems`（按 count）/ `"eos"`（读到帧尾）/ `{mode:"until", until:"<expr>"}`（逐元素求值即停） |
 | `derive` | 计算字段，不从字节读 |
 | `length` | 长度段反算：本段值必须等于后面字段合计字节/元素数 |
 
@@ -128,6 +129,20 @@
 
 - `unit`：`s` / `ms` / `us` / `ns`；输出整数 ticks，**不经过 double**。
 - `origin: first_frame` 先做整数相减再换算；`fallback: index` 用帧序号兜底。
+
+## 摘要脚本后端（Lua 5.4）
+
+`digest` 除内置算子外可写脚本兜底：`{"digest":{"script":"return xor_of(ctx.data) > 127 and 1 or 0","from":"$msgid","to":"check"}}`。
+
+脚本是普通 Lua chunk，可用全局 `ctx`：
+
+| 字段 | 内容 |
+|---|---|
+| `ctx.data` | 计算区间的原始字节（字符串） |
+| `ctx.len` | 字节数 |
+| `ctx.fields` | 段名 → 值（数组段是表，1 起） |
+
+`return` 必须是数字（摘要值）。沙箱只开 `base/string/table/math`，不暴露 `io/os/package`；指令配额 40 万条，超限报 `ScriptTimeout`。
 
 ## v1 键已删除
 
