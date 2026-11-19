@@ -410,6 +410,8 @@ SPI 解析器的职责被刻意收窄为「字节 → 结构化批」，于是�
 | `mod.report` | 报告产出：模板渲染、导出 | `report.preview` 面板 | 不知道报告内容 |
 | `mod.script` | 脚本引擎：Lua 门面、Job 录制回放 | — | 不知道业务语义 |
 
+> **实现状态（2026-11-19）**：上表是**目标态**。`mod.source`/`mod.dataset` 拆分与 `mod.report` 的落地裁决见 [`modules-organ-completion.md`](../docs/roadmap/modules-organ-completion.md)（待拍板）——当前代码二者仍合并为 `mod.data`、`mod.report` 暂不建成品（只备扩展点）；另 `mod.protocol`（协议编辑）与 `mod.settings`（设置）已实现，见 §11。
+
 ### 4.2 器官之间相对独立
 
 - 器官之间**只经意图通信**，互不 include 对方头文件；
@@ -909,7 +911,7 @@ script.run
 | 8b | **工作区数据源配置**：`WorkspaceDataConfig` 原子申请单（来源/解析器/录制/平移/派生配方）存 `ws/data/sources`；`data.load` 自动记录，`data.workspace.restore` 重放恢复 | 8 | ✅ 已建（配方存取闭环；解析器参数/录制参数的**重放生效**待 data.load 接对应参数） |
 | 9 | **GUI 两层化**：shell/ + views/<功能>/，视图自注册 | 6 | ✅ 已建 |
 | 10 | 宿主喂数据流程接通 `DataSource`（读文件/流 → 管道 → 落库） | 7 | ✅ 已做（`IByteSource` + `IngestOrchestrator`；ulog / csv 均走管道，格式解析各只有一份实现；表名/缓存/stable id 三项宿主策略已归位） |
-| 11 | 器官补齐：`mod.source` / `mod.dataset` / `mod.analysis` / `mod.report` | 7 | 🟡 设计定稿待拍板：边界裁决（不拆 source/dataset、真欠 report）与 `mod.report` 方案见 [`modules-organ-completion.md`](../docs/roadmap/modules-organ-completion.md)；analysis/data 已在位 |
+| 11 | 器官补齐：`mod.source` / `mod.dataset` / `mod.plot` / `mod.analysis` / `mod.script` + `mod.protocol` / `mod.settings` | 7 | 🟡 设计定稿待拍板：source/dataset **拆开**（v1 合并判为错）、report 暂不做成品只备扩展点；详见 [`modules-organ-completion.md`](../docs/roadmap/modules-organ-completion.md) |
 | 12 | 视图注册表 + 首批 View（从老代码 PlottingCanvas 拆） | 11 | ✅ 已建（plot-canvas / dataset-tree 自注册；PlotCanvas 退化为 fastplot 宿主） |
 | 13 | 外部插件扫描：dlopen + ABI 校验（解析器 + 录制格式 + 后端） | 2,3,4 | ⬜ 待做 |
 | 14 | 其余格式按 SPI 平移进对应知识包 | 2,10 | 🟡 进行中（ulog / csv / custom-protocol 已完成；其余格式 mavlink/nmea/oem7/asc/blf/mdf4 待平移） |
