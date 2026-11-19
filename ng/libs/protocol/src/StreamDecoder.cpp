@@ -10,6 +10,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <regex>
 
 namespace nextpilot::plotscope::protocol
 {
@@ -101,6 +102,28 @@ size_t digestHexWidth(const std::string &alg)
     return 0;
 }
 
+// pattern 只做校验，不参与切分。正则非法由 validate/compile 拦下，这里只会遇到匹配失败。
+bool checkPattern(const std::string &tok, const CompiledSeg &seg, std::string &err)
+{
+    if (seg.pattern.empty())
+        return true;
+    try
+    {
+        const std::regex re(seg.pattern);
+        if (!std::regex_match(tok, re))
+        {
+            err = "不匹配 pattern：" + seg.pattern;
+            return false;
+        }
+    }
+    catch (const std::regex_error &e)
+    {
+        err = std::string("pattern 编译失败：") + e.what();
+        return false;
+    }
+    return true;
+}
+
 bool parseNumber(const std::string &rawIn, const CompiledSeg &seg, TypedValue &out, std::string &err)
 {
     std::string s = trimAscii(rawIn);
@@ -171,6 +194,16 @@ bool parseNumber(const std::string &rawIn, const CompiledSeg &seg, TypedValue &o
             }
             out = TypedValue::fromF(deg + (deg < 0 ? -min : min) / 60.0, seg.type);
             return true;
+        }
+        if (seg.hasFixedDigits)
+        {
+            const size_t dot = s.find('.');
+            const int fracLen = (dot == std::string::npos) ? 0 : static_cast<int>(s.size() - dot - 1);
+            if (fracLen != static_cast<int>(seg.fixedDigits))
+            {
+                err = "小数位应为 " + std::to_string(seg.fixedDigits) + "（实际 " + std::to_string(fracLen) + "）：" + s;
+                return false;
+            }
         }
         char *endp = nullptr;
         const double v = std::strtod(s.c_str(), &endp);
@@ -257,6 +290,7 @@ struct RecAttempt
     std::string segment;
     std::string detail;
     std::vector<TypedVec> vals;
+    int skipped = 0;
 };
 
 // 解析一条记录。p[0] 是帧首（已定位/已是记录开始），n 是记录逻辑尾（不含 terminator）。
@@ -419,6 +453,11 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 {
                     if (seg.emptyPolicy == "skip")
                         continue;
+                    if (seg.emptyPolicy == "raw")
+                    {
+                        col.push(TypedValue::fromText(std::string()));
+                        continue;
+                    }
                     if (seg.emptyPolicy == "nan" && seg.asciiType == 0)
                     {
                         col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), seg.type));
@@ -429,15 +468,38 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     r.detail = "空字段（可用 empty:nan/skip）";
                     return false;
                 }
+                std::string perr;
+                if (!checkPattern(tok, seg, perr))
+                {
+                    if (seg.onMismatch == 2)
+                        continue;
+                    if (seg.onMismatch == 1)
+                    {
+                        r.skipped++;
+                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        continue;
+                    }
+                    r.code = DecodeError::FieldInvalid;
+                    r.segment = seg.name;
+                    r.detail = perr + "（原文 " + tok + "）";
+                    return false;
+                }
                 if (seg.asciiType == 1)
                 {
                     col.push(TypedValue::fromText(tok));
                     continue;
                 }
                 TypedValue v;
-                std::string perr;
                 if (!parseNumber(tok, seg, v, perr))
                 {
+                    if (seg.onMismatch == 2)
+                        continue;
+                    if (seg.onMismatch == 1)
+                    {
+                        r.skipped++;
+                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        continue;
+                    }
                     r.code = DecodeError::FieldInvalid;
                     r.segment = seg.name;
                     r.detail = perr + "（原文 " + tok + "）";
@@ -594,6 +656,26 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             r.detail = "空字段（可用 empty:nan/skip）";
             return false;
         }
+        std::string perr;
+        if (!checkPattern(tok, seg, perr))
+        {
+            if (seg.onMismatch == 2)
+            {
+                pos = nextPos;
+                continue;
+            }
+            if (seg.onMismatch == 1)
+            {
+                r.skipped++;
+                col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                pos = nextPos;
+                continue;
+            }
+            r.code = DecodeError::FieldInvalid;
+            r.segment = seg.name;
+            r.detail = perr + "（原文 " + tok + "）";
+            return false;
+        }
         if (seg.asciiType == 1)
         {
             col.push(TypedValue::fromText(tok));
@@ -601,9 +683,20 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         else
         {
             TypedValue v;
-            std::string perr;
             if (!parseNumber(tok, seg, v, perr))
             {
+                if (seg.onMismatch == 2)
+                {
+                    pos = nextPos;
+                    continue;
+                }
+                if (seg.onMismatch == 1)
+                {
+                    r.skipped++;
+                    col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                    pos = nextPos;
+                    continue;
+                }
                 r.code = DecodeError::FieldInvalid;
                 r.segment = seg.name;
                 r.detail = perr + "（原文 " + tok + "）";
@@ -711,6 +804,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
 // 把一条记录的值追加到通道。
 void emitRecord(const CompiledProgram &prog, const RecAttempt &r, int64_t t, ProtocolDecodeResult &out)
 {
+    out.skipped += r.skipped;
     for (const CompiledSeg &seg : prog.segs)
     {
         if (seg.emitMode == 2) // none

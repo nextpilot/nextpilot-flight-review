@@ -1,4 +1,5 @@
 #include "protocol/CompiledProgram.h"
+#include "protocol/ProtocolSpec.h"
 
 #include <algorithm>
 #include <cmath>
@@ -491,6 +492,15 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
 {
     cs.boundary = static_cast<int>(boundaryOf(s));
     cs.isAscii = (cs.boundary != static_cast<int>(SegBoundary::Byte)) || (c.docHasChar && wantsTokenContext(s));
+    if (!s.as.empty())
+    {
+        TypeInfo ti;
+        std::string terr;
+        if (!parseType(s.as, ti, terr))
+            return c.fail("as 类型非法：" + s.as);
+        cs.type = ti.type;
+        cs.asciiType = (ti.type == ValueType::Text) ? 1 : 0;
+    }
     if (cs.isAscii && cs.boundary == static_cast<int>(SegBoundary::Byte))
         cs.boundary = static_cast<int>(SegBoundary::Delimit); // 单 token（无定界符，靠后续边界/记录尾）
     if (!cs.isAscii)
