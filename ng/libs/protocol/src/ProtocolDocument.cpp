@@ -360,6 +360,50 @@ static std::string numberKey(double v)
 
 static std::string stringKey(const std::string &v) { return "s:" + v; }
 
+// 安全解析 u32：支持 0x/0X 十六进制前缀；非法字符、进制不符、越界均写 err 返回 false，
+// 不抛 std::invalid_argument / std::out_of_range（旧 stoul 会直接终止进程）。
+static bool parseU32Safe(const std::string &text, uint32_t &out, std::string &err)
+{
+    std::string body = text;
+    int base = 10;
+    if (body.size() > 2 && body[0] == '0' && (body[1] == 'x' || body[1] == 'X'))
+    {
+        base = 16;
+        body = body.substr(2);
+    }
+    if (body.empty())
+    {
+        err = "数值为空: " + text;
+        return false;
+    }
+    unsigned long long v = 0;
+    for (char ch : body)
+    {
+        int d;
+        if (ch >= '0' && ch <= '9') d = ch - '0';
+        else if (base == 16 && ch >= 'a' && ch <= 'f') d = ch - 'a' + 10;
+        else if (base == 16 && ch >= 'A' && ch <= 'F') d = ch - 'A' + 10;
+        else
+        {
+            err = "非法数值字符: " + text;
+            return false;
+        }
+        if (d >= base)
+        {
+            err = "数值与进制不符: " + text;
+            return false;
+        }
+        v = v * static_cast<unsigned>(base) + d;
+        if (v > 0xFFFFFFFFull)
+        {
+            err = "数值越界(>u32): " + text;
+            return false;
+        }
+    }
+    out = static_cast<uint32_t>(v);
+    return true;
+}
+
 bool parseChecks(const QJsonArray &arr, std::vector<CheckSpec> &out, std::string &err)
 {
     for (const QJsonValue &vv : arr)
@@ -423,11 +467,20 @@ bool parseChecks(const QJsonArray &arr, std::vector<CheckSpec> &out, std::string
             if (c.op == "xor8") c.width = 1;
             if (c.op == "parity") c.width = 1;
             if (o.contains(QStringLiteral("poly")))
-                c.poly = static_cast<uint32_t>(std::stoul(o.value(QStringLiteral("poly")).toString().toStdString(), nullptr, 0));
+            {
+                if (!parseU32Safe(o.value(QStringLiteral("poly")).toString().toStdString(), c.poly, err))
+                    return false;
+            }
             if (o.contains(QStringLiteral("init")))
-                c.init = static_cast<uint32_t>(std::stoul(o.value(QStringLiteral("init")).toString().toStdString(), nullptr, 0));
+            {
+                if (!parseU32Safe(o.value(QStringLiteral("init")).toString().toStdString(), c.init, err))
+                    return false;
+            }
             if (o.contains(QStringLiteral("xorout")))
-                c.xorout = static_cast<uint32_t>(std::stoul(o.value(QStringLiteral("xorout")).toString().toStdString(), nullptr, 0));
+            {
+                if (!parseU32Safe(o.value(QStringLiteral("xorout")).toString().toStdString(), c.xorout, err))
+                    return false;
+            }
             c.refin = o.value(QStringLiteral("refin")).toBool(c.refin);
             c.refout = o.value(QStringLiteral("refout")).toBool(c.refout);
             for (const QJsonValue &ov : o.value(QStringLiteral("over")).toArray())

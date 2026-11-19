@@ -192,6 +192,35 @@ int main(int argc, char *argv[])
     CHECK(!bad.error.isEmpty());
     OK("非法模板：明确报错，不静默产出");
 
+    // --- 7b) 畸形 CRC 参数：非法十六进制不得抛异常终止进程 ---
+    {
+        const QByteArray badPoly = R"({
+          "name": "bad_crc", "layout": "sequential", "endian": "little", "maxsize": 16,
+          "segments": [
+            {"name": "crc", "size": 1, "type": "u8",
+             "checks": [{"op": "crc16", "poly": "0xZZ", "over": ["crc:crc"]}]}
+          ]
+        })";
+        ProtocolDocument dBad;
+        std::string eBad;
+        CHECK(!parseDocument(QJsonDocument::fromJson(badPoly).object(), dBad, eBad));
+        CHECK(!eBad.empty());
+        OK("畸形 CRC 参数：parseDocument 返回错误，进程不崩溃");
+
+        // 合法 0x 前缀仍能正常解析
+        const QByteArray okPoly = R"({
+          "name": "ok_crc", "layout": "sequential", "endian": "little", "maxsize": 16,
+          "segments": [
+            {"name": "crc", "size": 1, "type": "u8",
+             "checks": [{"op": "crc16", "poly": "0x1021", "init": "0xFFFF", "over": ["crc:crc"]}]}
+          ]
+        })";
+        ProtocolDocument dOk;
+        std::string eOk;
+        CHECK(parseDocument(QJsonDocument::fromJson(okPoly).object(), dOk, eOk));
+        OK("合法 0x 前缀 CRC 参数：解析通过");
+    }
+
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");
     return 0;
 }
