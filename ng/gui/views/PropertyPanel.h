@@ -34,8 +34,8 @@ class PropertyPanel : public QWidget
 {
     Q_OBJECT
 public:
-    explicit PropertyPanel(nextpilot::plotscope::core::AppContext &appCtx,
-                           nextpilot::plotscope::core::IIntentExecutor &executor,
+    explicit PropertyPanel(nextpilot::plotscope::context::AppContext &appCtx,
+                           nextpilot::plotscope::intent::IIntentExecutor &executor,
                            QWidget *parent = nullptr);
     ~PropertyPanel() override;
 
@@ -59,8 +59,8 @@ private:
     // 提交属性编辑：优先走 view action，失败再走 intent prop.set。
     void commitEdit(const QString &objectId, const QString &key, const QString &value);
 
-    nextpilot::plotscope::core::AppContext &m_appCtx;
-    nextpilot::plotscope::core::IIntentExecutor &m_executor;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
+    nextpilot::plotscope::intent::IIntentExecutor &m_executor;
     QLabel *m_header = nullptr;
     QLabel *m_empty = nullptr;
     QTreeWidget *m_tree = nullptr;

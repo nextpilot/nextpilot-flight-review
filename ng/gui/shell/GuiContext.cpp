@@ -67,7 +67,7 @@ void GuiContext::addAction(const UiAction &action)
 QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
 {
     // 部件由**视图层自注册**的工厂提供：外壳与器官都不认识具体实现。
-    QWidget *widget = nextpilot::plotscope::core::PanelFactoryRegistry::create(panelType, m_appCtx, executor(), m_window);
+    QWidget *widget = nextpilot::plotscope::registry::PanelFactoryRegistry::create(panelType, m_appCtx, executor(), m_window);
     if (!widget)
         return nullptr;
 
@@ -111,7 +111,7 @@ QWidget *GuiContext::requestDomainPanel(const QString &area, const QString &pane
         return nullptr;
     // 实现来自**知识包的呈现层**（注册进同一张工厂表），
     // 或通用视图层——两者共用一张表，模块不关心是谁提供的。
-    QWidget *widget = nextpilot::plotscope::core::PanelFactoryRegistry::create(panelId, m_appCtx, executor(),
+    QWidget *widget = nextpilot::plotscope::registry::PanelFactoryRegistry::create(panelId, m_appCtx, executor(),
                                                              m_window);
     if (!widget)
         return nullptr;

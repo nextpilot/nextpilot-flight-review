@@ -269,7 +269,7 @@ void MainWindow::declareStandardSlots()
     // gallery 分组出现顺序按动作 order 聚合：常用(0..3) 必须排在文件格式(100+) 之前，
     // 抄老 DataSourceRibbon 的 addCategoryActions("常用")→("文件格式")→("实时源") 顺序。
     int fmtOrder = 100;
-    for (nextpilot::plotscope::core::IMessageParser *driver : m_appCtx.toolbox().drivers())
+    for (nextpilot::plotscope::parser::IMessageParser *driver : m_appCtx.toolbox().drivers())
     {
         UiAction a;
         a.id = QStringLiteral("data.source.") + driver->id();
@@ -284,7 +284,7 @@ void MainWindow::declareStandardSlots()
     // 常用组：把前四个格式驱动也放进去（抄老代码"常用 = 前 4 个加载器"）。
     {
         int n = 0;
-        for (nextpilot::plotscope::core::IMessageParser *driver : m_appCtx.toolbox().drivers())
+        for (nextpilot::plotscope::parser::IMessageParser *driver : m_appCtx.toolbox().drivers())
         {
             if (n >= 4)
                 break;

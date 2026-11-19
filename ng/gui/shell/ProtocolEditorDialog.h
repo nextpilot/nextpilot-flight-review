@@ -33,11 +33,11 @@ class ProtocolEditorDialog : public QDialog
     Q_OBJECT
 public:
     explicit ProtocolEditorDialog(QWidget *parent = nullptr,
-                                  nextpilot::plotscope::core::AppContext *appCtx = nullptr);
+                                  nextpilot::plotscope::context::AppContext *appCtx = nullptr);
     ~ProtocolEditorDialog() override;
 
     static void run(QWidget *parent = nullptr,
-                    nextpilot::plotscope::core::AppContext *appCtx = nullptr);
+                    nextpilot::plotscope::context::AppContext *appCtx = nullptr);
 
     // 空白模板（供"新建"与测试使用）。
     static QString blankTemplate();
@@ -51,7 +51,7 @@ private:
     void applyTheme();
     void configureChecksumTransform();
 
-    nextpilot::plotscope::core::AppContext *m_appCtx = nullptr;
+    nextpilot::plotscope::context::AppContext *m_appCtx = nullptr;
     QJsonObject m_checksumRequest;  // checksum 变换配方（算子/表达式/Lua）
     QString m_checksumLabel;
     QString m_path;

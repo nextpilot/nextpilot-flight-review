@@ -29,7 +29,7 @@ namespace nextpilot::plotscope::gui
 //   外壳层不设 "DockManager" / "RibbonManager" 这类中转类——
 //   ADS 已提供 ads::CDockManager，SARibbon 已提供 SARibbonBar，
 //   再包一层同名类只是零价值转发。本类把
-//       core::UiSlotRegistry（纯数据贡献）
+//       registry::UiSlotRegistry（纯数据贡献）
 //   一次性绑定成
 //       SARibbonBar + ads::CDockManager
 //   绑定规则集中于此，一处可换、可测、可整体替换第三方库。
@@ -46,7 +46,7 @@ namespace nextpilot::plotscope::gui
 class ShellBinder
 {
 public:
-    ShellBinder(QMainWindow *window, nextpilot::plotscope::core::UiSlotRegistry &slotReg);
+    ShellBinder(QMainWindow *window, nextpilot::plotscope::registry::UiSlotRegistry &slotReg);
     ~ShellBinder();
 
     // 配置 ribbon 条（无边框窗体由 SARibbonMainWindow 提供 ribbon 条本体）。
@@ -115,7 +115,7 @@ private:
     void installCentral();
 
     QMainWindow *m_window = nullptr;
-    nextpilot::plotscope::core::UiSlotRegistry &m_slots;
+    nextpilot::plotscope::registry::UiSlotRegistry &m_slots;
 
     // SARibbon
     SARibbonBar *m_ribbon = nullptr;

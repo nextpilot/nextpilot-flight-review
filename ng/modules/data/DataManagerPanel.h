@@ -46,8 +46,8 @@ class DataManagerPanel : public QWidget
 {
     Q_OBJECT
 public:
-    explicit DataManagerPanel(nextpilot::plotscope::core::AppContext &appCtx,
-                              nextpilot::plotscope::core::IIntentExecutor &executor, QWidget *parent = nullptr);
+    explicit DataManagerPanel(nextpilot::plotscope::context::AppContext &appCtx,
+                              nextpilot::plotscope::intent::IIntentExecutor &executor, QWidget *parent = nullptr);
 
     void refresh();
 
@@ -81,10 +81,10 @@ private:
     void showRecentFilesMenu(const QPoint &globalPos);
     void openLogFile();
 
-    nextpilot::plotscope::core::AppContext &m_appCtx;
-    nextpilot::plotscope::core::DataRepository &m_repo;
-    nextpilot::plotscope::core::SourceRegistry &m_sources;
-    nextpilot::plotscope::core::IIntentExecutor &m_executor;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
+    nextpilot::plotscope::dataset::DataRepository &m_repo;
+    nextpilot::plotscope::dataset::SourceRegistry &m_sources;
+    nextpilot::plotscope::intent::IIntentExecutor &m_executor;
 
     QLabel *m_header = nullptr;
     QToolButton *m_chips[3] = {nullptr, nullptr, nullptr};
@@ -98,7 +98,7 @@ private:
     int m_msgCount = 0;
 };
 
-QWidget *createDatasetTreePanel(nextpilot::plotscope::core::AppContext &appCtx, nextpilot::plotscope::core::IIntentExecutor &exec,
+QWidget *createDatasetTreePanel(nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &exec,
                                 QWidget *parent);
 
 } // namespace nextpilot::plotscope::gui

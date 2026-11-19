@@ -58,7 +58,7 @@ class MainWindow : public SARibbonMainWindow
 public:
     // 无边框窗体：UseRibbonFrame = SARibbon 自绘边框（ framelesshelper 接管
     // 拖拽/缩放/贴边），UseRibbonMenuBar = 用 ribbon 条而不是系统菜单栏。
-    explicit MainWindow(nextpilot::plotscope::core::AppContext &appCtx, QWidget *parent = nullptr);
+    explicit MainWindow(nextpilot::plotscope::context::AppContext &appCtx, QWidget *parent = nullptr);
     ~MainWindow() override;
 
     // 启动装配：建骨架、声明插槽、装载模块（GUI 模式）。
@@ -111,7 +111,7 @@ private:
     // 所以内容要在窗口布局完成之后再建一次。
     void showEvent(QShowEvent *event) override;
 
-    nextpilot::plotscope::core::AppContext &m_appCtx;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::host::RuntimeHost *m_host = nullptr; // 用于取设置（状态持久化）
     ShellBinder *m_binder = nullptr;
     GuiContext *m_context = nullptr;

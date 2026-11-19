@@ -15,6 +15,6 @@ namespace nextpilot::plotscope::host
 //
 // 单一来源：RuntimeHost 构造函数是唯一的真实声明点；GUI 侧 MainWindow
 // 在脱离宿主单独使用时可再调一次作幂等确认（同内容、先到者为准）。
-void declareSkeletonSlots(nextpilot::plotscope::core::UiSlotRegistry &registry);
+void declareSkeletonSlots(nextpilot::plotscope::registry::UiSlotRegistry &registry);
 
 } // namespace nextpilot::plotscope::host

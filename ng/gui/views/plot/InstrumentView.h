@@ -42,10 +42,10 @@ class InstrumentView : public QWidget
 {
     Q_OBJECT
 public:
-    InstrumentView(core::IIntentExecutor &executor, QWidget *parent = nullptr);
+    InstrumentView(intent::IIntentExecutor &executor, QWidget *parent = nullptr);
 
     // 发起 plot.instrument 意图，把结果填进对应仪表。
-    void renderInstrument(core::DatasetId datasetId, const QString &kind,
+    void renderInstrument(dataset::DatasetId datasetId, const QString &kind,
                           const QVariantMap &roles, const QVariantList &channels,
                           const QVariantList &range);
 
@@ -60,7 +60,7 @@ public:
     bool renderFromActive(const QString &kind);
 
     // 工厂注入运行态上下文（含数据仓），供 renderFromActive 读列名做角色推断。
-    void setAppContext(core::AppContext *ctx) { m_appCtx = ctx; }
+    void setAppContext(context::AppContext *ctx) { m_appCtx = ctx; }
 
 private:
     struct RoleBuffer
@@ -72,8 +72,8 @@ private:
 
     const nextpilot::plotscope::fastplot::ArrayData *bindRole(const QString &role, const QVariantMap &series);
 
-    core::IIntentExecutor &m_executor;
-    core::AppContext *m_appCtx = nullptr; // 非拥有；由工厂注入
+    intent::IIntentExecutor &m_executor;
+    context::AppContext *m_appCtx = nullptr; // 非拥有；由工厂注入
     QStackedLayout *m_stack = nullptr;
 
     nextpilot::plotscope::fastplot::AttitudeIndicator *m_attitude = nullptr;
@@ -96,7 +96,7 @@ private:
 };
 
 // 工厂：视图层自注册进部件表，器官按 id 请求即可，外壳不认识这个类。
-QWidget *createInstrumentPanel(core::AppContext &appCtx, core::IIntentExecutor &executor,
+QWidget *createInstrumentPanel(context::AppContext &appCtx, intent::IIntentExecutor &executor,
                                QWidget *parent);
 
 } // namespace nextpilot::plotscope::gui

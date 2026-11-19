@@ -63,14 +63,14 @@ public:
     QLabel *warning = nullptr;
     QTableWidget *preview = nullptr;
 
-    QList<nextpilot::plotscope::core::IMessageParser *> drivers;
-    nextpilot::plotscope::core::IMessageParser *current = nullptr;
+    QList<nextpilot::plotscope::parser::IMessageParser *> drivers;
+    nextpilot::plotscope::parser::IMessageParser *current = nullptr;
     QJsonObject probeData;
     nextpilot::plotscope::uischema::FormSchema form;
     QString chosenPath;
 };
 
-ImportDialog::ImportDialog(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent)
+ImportDialog::ImportDialog(nextpilot::plotscope::registry::ExtensionRegistry &registry, QWidget *parent)
     : QDialog(parent), m_registry(registry), d(new Private)
 {
     setWindowTitle(QStringLiteral("打开数据"));
@@ -186,7 +186,7 @@ void ImportDialog::rebuildFormatList()
     d->drivers.clear();
     d->formats->clear();
     // 只列"声明了导入 schema"的格式驱动——其它格式走简化路径（无选项）。
-    for (nextpilot::plotscope::core::IMessageParser *drv : m_registry.drivers())
+    for (nextpilot::plotscope::parser::IMessageParser *drv : m_registry.drivers())
     {
         if (drv->configSchema().isEmpty())
             continue;
@@ -371,7 +371,7 @@ void ImportDialog::accept()
     QDialog::accept();
 }
 
-ImportDialog::Result ImportDialog::run(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent)
+ImportDialog::Result ImportDialog::run(nextpilot::plotscope::registry::ExtensionRegistry &registry, QWidget *parent)
 {
     ImportDialog dlg(registry, parent);
     if (dlg.exec() == QDialog::Accepted)

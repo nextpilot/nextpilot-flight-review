@@ -23,11 +23,11 @@
 
 namespace nextpilot::plotscope::gui
 {
-using nextpilot::plotscope::core::AppContext;
-using nextpilot::plotscope::core::IIntentExecutor;
-using nextpilot::plotscope::core::Intent;
-using nextpilot::plotscope::core::IntentResult;
-using nextpilot::plotscope::core::Result;
+using nextpilot::plotscope::context::AppContext;
+using nextpilot::plotscope::intent::IIntentExecutor;
+using nextpilot::plotscope::intent::Intent;
+using nextpilot::plotscope::intent::IntentResult;
+using nextpilot::plotscope::foundation::Result;
 
 namespace
 {
@@ -54,17 +54,17 @@ double scalar(const QVariantMap &scalars, const QString &role, double fallback =
 // 从数据集的列名推断仪表角色（table.column 限定名）。
 // 这是"用户双击了某通道再点仪表"的默认绑定：只按列名语义匹配，不猜数值、不造数据。
 // 匹配不到的角色宁可留空让 plot.instrument 明确报错，也不拿无关通道顶替。
-QString findColumn(const nextpilot::plotscope::core::Dataset *ds, const QString &table,
+QString findColumn(const nextpilot::plotscope::dataset::Dataset *ds, const QString &table,
                    const QStringList &keywords)
 {
     if (!ds)
         return QString();
-    const nextpilot::plotscope::core::Table *t = ds->table(table);
+    const nextpilot::plotscope::dataset::Table *t = ds->table(table);
     if (!t)
         return QString();
-    for (const nextpilot::plotscope::core::Column &c : t->columns)
+    for (const nextpilot::plotscope::dataset::Column &c : t->columns)
     {
-        if (!nextpilot::plotscope::core::valueTypeIsNumeric(c.type))
+        if (!nextpilot::plotscope::dataset::valueTypeIsNumeric(c.type))
             continue;
         const QString lower = c.name.toLower();
         for (const QString &kw : keywords)
@@ -75,21 +75,21 @@ QString findColumn(const nextpilot::plotscope::core::Dataset *ds, const QString 
 }
 
 // 第一个数值通道（活动列缺失时的兜底）：只取 schema 元数据，不读数据。
-QString firstNumericColumn(const nextpilot::plotscope::core::Dataset *ds, const QString &table)
+QString firstNumericColumn(const nextpilot::plotscope::dataset::Dataset *ds, const QString &table)
 {
     if (!ds)
         return QString();
-    const nextpilot::plotscope::core::Table *t = ds->table(table);
+    const nextpilot::plotscope::dataset::Table *t = ds->table(table);
     if (!t)
         return QString();
-    for (const nextpilot::plotscope::core::Column &c : t->columns)
-        if (nextpilot::plotscope::core::valueTypeIsNumeric(c.type))
+    for (const nextpilot::plotscope::dataset::Column &c : t->columns)
+        if (nextpilot::plotscope::dataset::valueTypeIsNumeric(c.type))
             return table + QLatin1Char('.') + c.name;
     return QString();
 }
 } // namespace
 
-InstrumentView::InstrumentView(core::IIntentExecutor &executor, QWidget *parent)
+InstrumentView::InstrumentView(intent::IIntentExecutor &executor, QWidget *parent)
     : QWidget(parent), m_executor(executor)
 {
     m_stack = new QStackedLayout(this);
@@ -150,8 +150,8 @@ bool InstrumentView::renderFromActive(const QString &kind)
 {
     if (!m_appCtx)
         return false;
-    const core::DatasetId dsId = m_appCtx->activeDatasetId();
-    const core::Dataset *ds = m_appCtx->data().get(dsId);
+    const dataset::DatasetId dsId = m_appCtx->activeDatasetId();
+    const dataset::Dataset *ds = m_appCtx->data().get(dsId);
     if (!ds)
         return false;
 
@@ -209,9 +209,9 @@ bool InstrumentView::renderFromActive(const QString &kind)
     else if (kind == QStringLiteral("waterfall") || kind == QStringLiteral("bar"))
     {
         // 瀑布/柱状：该表全部数值通道都作为序列喂入。
-        if (const core::Table *t = ds->table(table))
-            for (const core::Column &c : t->columns)
-                if (core::valueTypeIsNumeric(c.type))
+        if (const dataset::Table *t = ds->table(table))
+            for (const dataset::Column &c : t->columns)
+                if (dataset::valueTypeIsNumeric(c.type))
                     channels.append(table + QLatin1Char('.') + c.name);
         if (channels.isEmpty())
             return false;
@@ -244,7 +244,7 @@ const nextpilot::plotscope::fastplot::ArrayData *InstrumentView::bindRole(const 
     return &(*buffer.data);
 }
 
-void InstrumentView::renderInstrument(core::DatasetId datasetId, const QString &kind,
+void InstrumentView::renderInstrument(dataset::DatasetId datasetId, const QString &kind,
                                       const QVariantMap &roles, const QVariantList &channels,
                                       const QVariantList &range)
 {
@@ -393,7 +393,7 @@ QWidget *createInstrumentPanel(AppContext &appCtx, IIntentExecutor &executor,
                               [view](const QVariantMap &params) -> Result<QVariant> {
                                   const QString kind = params.value(QStringLiteral("kind")).toString();
                                   if (kind.isEmpty())
-                                      return nextpilot::plotscope::core::fail(QStringLiteral("ekind"), QStringLiteral("缺少仪表 kind"));
+                                      return nextpilot::plotscope::foundation::fail(QStringLiteral("ekind"), QStringLiteral("缺少仪表 kind"));
                                   view->switchKind(kind);
                                   // 绑定失败（无活动数据集/无匹配通道）不使切型失败：仪表明仍切过去
                                   // 显示空态，由调用方决定如何提示。

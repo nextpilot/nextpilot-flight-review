@@ -308,7 +308,7 @@ int main(int argc, char **argv)
         CHECK(toolbox.pack(QStringLiteral("pack.robotics")) != nullptr);
         CHECK(toolbox.pack(QStringLiteral("pack.gnss")) != nullptr);
         // 飞控包装载了全部六类贡献——一个包能同时贡献格式/UI/脚本/数据/例子/文档。
-        nextpilot::plotscope::core::IToolPack *ap = toolbox.pack(QStringLiteral("pack.autopilot"));
+        nextpilot::plotscope::registry::IToolPack *ap = toolbox.pack(QStringLiteral("pack.autopilot"));
         CHECK(ap->contributions().size() == 6);
         QSet<QString> apKinds;
         for (const auto &c : ap->contributions())
@@ -344,22 +344,22 @@ int main(int argc, char **argv)
         CHECK(toolbox.contributionsByDomain(Domain::Video).isEmpty()); // 预留领域无贡献
 
         // typed 接口可向下转换拿到领域数据（UI 贡献是纯数据，headless 也成立）。
-        nextpilot::plotscope::core::IToolContribution *uiRaw =
+        nextpilot::plotscope::registry::IToolContribution *uiRaw =
             toolbox.contribution(QStringLiteral("ap.ui.contributions"));
         CHECK(uiRaw != nullptr);
-        auto *ui = dynamic_cast<nextpilot::plotscope::core::IUiContribution *>(uiRaw);
+        auto *ui = dynamic_cast<nextpilot::plotscope::registry::IUiContribution *>(uiRaw);
         CHECK(ui != nullptr && ui->actions().size() == 3);
-        nextpilot::plotscope::core::IToolContribution *docRaw =
+        nextpilot::plotscope::registry::IToolContribution *docRaw =
             toolbox.contribution(QStringLiteral("ap.docs"));
-        auto *doc = dynamic_cast<nextpilot::plotscope::core::IDocContribution *>(docRaw);
+        auto *doc = dynamic_cast<nextpilot::plotscope::registry::IDocContribution *>(docRaw);
         CHECK(doc != nullptr && doc->entries().size() == 1);
 
         // 领域面板的**描述**是纯数据，headless（CLI）也能查到——
         // 实现（QWidget 工厂）只在 GUI 侧注册，两者用 id 关联。
-        nextpilot::plotscope::core::IToolContribution *panelRaw =
+        nextpilot::plotscope::registry::IToolContribution *panelRaw =
             toolbox.contribution(QStringLiteral("car.panels"));
         CHECK(panelRaw != nullptr);
-        auto *panel = dynamic_cast<nextpilot::plotscope::core::IPanelContribution *>(panelRaw);
+        auto *panel = dynamic_cast<nextpilot::plotscope::registry::IPanelContribution *>(panelRaw);
         CHECK(panel != nullptr && panel->panels().size() == 1);
         CHECK(panel->panels().first().id == QStringLiteral("car.can-browser"));
         CHECK(panel->domain() == Domain::Automotive);
@@ -394,7 +394,7 @@ int main(int argc, char **argv)
                                                      QStringLiteral("自定义工具箱"), Domain::General);
         customPack->add<nextpilot::plotscope::ext::GenericDocContribution>(
             QStringLiteral("custom.thing"), QStringLiteral("自定义能力"), Domain::General,
-            QList<nextpilot::plotscope::core::DocEntry>{});
+            QList<nextpilot::plotscope::registry::DocEntry>{});
         CHECK(toolbox.registerPack(std::move(customPack)));
         CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 6); // 新包贡献被按 kind 索引
         CHECK(toolbox.unregisterPack(QStringLiteral("pack.custom")));    // 按包原子撤销

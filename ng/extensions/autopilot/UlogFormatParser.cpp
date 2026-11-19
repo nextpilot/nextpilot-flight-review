@@ -11,9 +11,9 @@ QString UlogFormatParser::displayName() const
     return QStringLiteral("ULog 格式解析器");
 }
 
-nextpilot::plotscope::core::Domain UlogFormatParser::domain() const
+nextpilot::plotscope::registry::Domain UlogFormatParser::domain() const
 {
-    return nextpilot::plotscope::core::Domain::Autopilot;
+    return nextpilot::plotscope::registry::Domain::Autopilot;
 }
 
 QStringList UlogFormatParser::suffixes() const

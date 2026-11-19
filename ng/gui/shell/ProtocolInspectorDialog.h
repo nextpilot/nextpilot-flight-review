@@ -35,11 +35,11 @@ class ProtocolInspectorDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit ProtocolInspectorDialog(nextpilot::plotscope::core::ExtensionRegistry &registry,
+    explicit ProtocolInspectorDialog(nextpilot::plotscope::registry::ExtensionRegistry &registry,
                                      QWidget *parent = nullptr);
     ~ProtocolInspectorDialog() override;
 
-    static void run(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
+    static void run(nextpilot::plotscope::registry::ExtensionRegistry &registry, QWidget *parent = nullptr);
 
 private:
     void rebuildProtocolList();
@@ -50,8 +50,8 @@ private:
     QJsonObject collectParams() const;
     void applyTheme();
 
-    nextpilot::plotscope::core::ExtensionRegistry &m_registry;
-    nextpilot::plotscope::core::IMessageParser *m_current = nullptr;
+    nextpilot::plotscope::registry::ExtensionRegistry &m_registry;
+    nextpilot::plotscope::parser::IMessageParser *m_current = nullptr;
 
     QListWidget *m_protocolList = nullptr;
     QLabel *m_info = nullptr;

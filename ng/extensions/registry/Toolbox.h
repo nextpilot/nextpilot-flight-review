@@ -14,10 +14,10 @@ namespace nextpilot::plotscope::ext
 {
 
 // 装配全部内置知识包（通用 / 飞控 / 汽车 / 机器人 / 卫导），一次注册到工具箱。
-void registerBuiltinPacks(nextpilot::plotscope::core::ExtensionRegistry &registry);
+void registerBuiltinPacks(nextpilot::plotscope::registry::ExtensionRegistry &registry);
 
 // 向后兼容：历史上只登记格式驱动的入口，现等价于 registerBuiltinPacks。
-inline void registerBuiltinFormats(nextpilot::plotscope::core::ExtensionRegistry &registry)
+inline void registerBuiltinFormats(nextpilot::plotscope::registry::ExtensionRegistry &registry)
 {
     registerBuiltinPacks(registry);
 }

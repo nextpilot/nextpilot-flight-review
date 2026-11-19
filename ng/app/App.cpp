@@ -36,8 +36,8 @@ App::App(const QString &settingsPath, QObject *parent)
     // 格式决定"字节长什么样"（raw/mcap），后端决定"字节送到哪"（文件/UDP）。
     // 正交组合使"同时录多种格式、多种后端"成为自然结果。
     // 二者都是 app 的机制选项，不含领域语义——不走知识包贡献体系。
-    nextpilot::plotscope::core::RecordingFormatRegistry::installBuiltinFormats();
-    nextpilot::plotscope::core::RecordingBackendRegistry::installBuiltinBackends();
+    nextpilot::plotscope::rec::RecordingFormatRegistry::installBuiltinFormats();
+    nextpilot::plotscope::rec::RecordingBackendRegistry::installBuiltinBackends();
 }
 
 QHash<QString, QString> App::startup(bool headless, const QStringList &disabled)

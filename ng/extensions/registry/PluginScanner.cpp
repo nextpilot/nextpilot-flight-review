@@ -18,7 +18,7 @@ static QStringList pluginSuffixes()
 #endif
 }
 
-PluginScanReport scanExternalPlugins(nextpilot::plotscope::core::ExtensionRegistry &registry,
+PluginScanReport scanExternalPlugins(nextpilot::plotscope::registry::ExtensionRegistry &registry,
                                      const QString &directory)
 {
     Q_UNUSED(registry); // 本轮不实际加载，保留接线位置

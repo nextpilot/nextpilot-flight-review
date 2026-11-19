@@ -60,10 +60,10 @@ double utcSeconds(const QString &text)
     return hours * 3600.0 + minutes * 60.0 + seconds;
 }
 
-nextpilot::plotscope::core::DecodedField textField(const QString &name, const QString &raw, const QString &unit,
+nextpilot::plotscope::parser::DecodedField textField(const QString &name, const QString &raw, const QString &unit,
                                  const QString &description)
 {
-    nextpilot::plotscope::core::DecodedField f;
+    nextpilot::plotscope::parser::DecodedField f;
     f.name = name;
     f.raw = raw;
     f.value = raw;
@@ -197,7 +197,7 @@ bool NmeaMessageParser::sniff(const QByteArray &head) const
     return firstLine(head).startsWith('$');
 }
 
-bool NmeaMessageParser::parse(const QByteArray &bytes, nextpilot::plotscope::core::DecodedFrame &out) const
+bool NmeaMessageParser::parse(const QByteArray &bytes, nextpilot::plotscope::parser::DecodedFrame &out) const
 {
     const QByteArray line = firstLine(bytes);
     if (!line.startsWith('$'))

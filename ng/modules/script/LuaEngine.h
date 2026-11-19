@@ -22,17 +22,17 @@ namespace nextpilot::plotscope::script
 class LuaEngine
 {
 public:
-    explicit LuaEngine(nextpilot::plotscope::core::ScriptFacade &facade);
+    explicit LuaEngine(nextpilot::plotscope::context::ScriptFacade &facade);
     ~LuaEngine();
 
     LuaEngine(const LuaEngine &) = delete;
     LuaEngine &operator=(const LuaEngine &) = delete;
 
     // 执行一段脚本源码；失败时 Result 带 Lua 错误信息。
-    nextpilot::plotscope::core::Result<void> runString(const QByteArray &source, const QString &chunkName = QStringLiteral("=script"));
+    nextpilot::plotscope::foundation::Result<void> runString(const QByteArray &source, const QString &chunkName = QStringLiteral("=script"));
 
     // 执行脚本文件。
-    nextpilot::plotscope::core::Result<void> runFile(const QString &path);
+    nextpilot::plotscope::foundation::Result<void> runFile(const QString &path);
 
 private:
     lua_State *m_lua = nullptr;

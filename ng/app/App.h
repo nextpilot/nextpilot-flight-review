@@ -28,22 +28,22 @@ public:
     explicit App(const QString &settingsPath = QString(), QObject *parent = nullptr);
 
     // 进程级运行态。
-    nextpilot::plotscope::core::AppContext &context() { return m_ctx; }
-    const nextpilot::plotscope::core::AppContext &context() const { return m_ctx; }
+    nextpilot::plotscope::context::AppContext &context() { return m_ctx; }
+    const nextpilot::plotscope::context::AppContext &context() const { return m_ctx; }
 
     // 便捷转发（内部使用）。
-    nextpilot::plotscope::core::DataRepository &data() { return m_ctx.data(); }
+    nextpilot::plotscope::dataset::DataRepository &data() { return m_ctx.data(); }
     nextpilot::plotscope::host::RuntimeHost &host() { return m_host; }
-    nextpilot::plotscope::core::JobRecorder &recorder() { return m_recorder; }
+    nextpilot::plotscope::intent::JobRecorder &recorder() { return m_recorder; }
 
     // headless=true 时不建 UI 上下文，模块的 onAttach 不被调用。
     QHash<QString, QString> startup(bool headless,
                                     const QStringList &disabled = {});
 
 private:
-    nextpilot::plotscope::core::AppContext m_ctx;
+    nextpilot::plotscope::context::AppContext m_ctx;
     nextpilot::plotscope::host::RuntimeHost m_host;
-    nextpilot::plotscope::core::JobRecorder m_recorder;
+    nextpilot::plotscope::intent::JobRecorder m_recorder;
 };
 
 } // namespace nextpilot::plotscope::app

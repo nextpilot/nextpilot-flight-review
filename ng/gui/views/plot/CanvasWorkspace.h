@@ -35,7 +35,7 @@ class CanvasWorkspace : public QWidget
 {
     Q_OBJECT
 public:
-    CanvasWorkspace(core::AppContext &appCtx, core::IIntentExecutor &executor,
+    CanvasWorkspace(context::AppContext &appCtx, intent::IIntentExecutor &executor,
                     QWidget *parent = nullptr);
     ~CanvasWorkspace() override;
 
@@ -82,20 +82,20 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-    core::AppContext &m_appCtx;
-    core::IIntentExecutor &m_executor;
+    context::AppContext &m_appCtx;
+    intent::IIntentExecutor &m_executor;
     QGridLayout *m_grid = nullptr;
     QVector<Cell> m_cells;
     int m_active = 0;
     int m_rows = 1;
     int m_cols = 1;
 
-    friend QWidget *createCanvasWorkspace(core::AppContext &appCtx,
-                                          core::IIntentExecutor &executor, QWidget *parent);
+    friend QWidget *createCanvasWorkspace(context::AppContext &appCtx,
+                                          intent::IIntentExecutor &executor, QWidget *parent);
 };
 
 // 工厂：注册进部件表，供 PlotModule::onAttach 申请（"canvas-workspace"）。
-QWidget *createCanvasWorkspace(core::AppContext &appCtx, core::IIntentExecutor &executor,
+QWidget *createCanvasWorkspace(context::AppContext &appCtx, intent::IIntentExecutor &executor,
                                QWidget *parent = nullptr);
 
 } // namespace nextpilot::plotscope::gui

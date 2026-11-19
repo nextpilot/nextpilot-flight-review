@@ -24,7 +24,7 @@ class LuaEditor : public QDialog
 {
     Q_OBJECT
 public:
-    explicit LuaEditor(nextpilot::plotscope::core::AppContext &appCtx, QWidget *parent = nullptr);
+    explicit LuaEditor(nextpilot::plotscope::context::AppContext &appCtx, QWidget *parent = nullptr);
     ~LuaEditor() override;
 
     // 载入已有脚本或内联代码。scriptId 非空表示脚本库引用。
@@ -43,7 +43,7 @@ private:
     void showResult(const QString &text);
     QJsonObject currentRequest() const;
 
-    nextpilot::plotscope::core::AppContext &m_appCtx;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
     QComboBox *m_name = nullptr;
     QLineEdit *m_label = nullptr;
     QPlainTextEdit *m_code = nullptr;

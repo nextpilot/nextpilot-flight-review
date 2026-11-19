@@ -36,7 +36,7 @@ public:
 
     // 按 (格式, 后端) 组合创建。
     // 未知格式或后端返回 false，并在 err 里说明缺哪一个。
-    static nextpilot::plotscope::core::Result<std::shared_ptr<Recorder>> create(const QString &formatId,
+    static nextpilot::plotscope::foundation::Result<std::shared_ptr<Recorder>> create(const QString &formatId,
                                                     const QString &backendId,
                                                     const QString &endpoint,
                                                     const QByteArray &headerJson = QByteArray(),

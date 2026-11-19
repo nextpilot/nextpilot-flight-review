@@ -7,29 +7,29 @@
 namespace nextpilot::plotscope::rec
 {
 
-using nextpilot::plotscope::core::fail;
+using nextpilot::plotscope::foundation::fail;
 
 Recorder::~Recorder()
 {
     close(nullptr);
 }
 
-nextpilot::plotscope::core::Result<std::shared_ptr<Recorder>> Recorder::create(const QString &formatId,
+nextpilot::plotscope::foundation::Result<std::shared_ptr<Recorder>> Recorder::create(const QString &formatId,
                                                    const QString &backendId,
                                                    const QString &endpoint,
                                                    const QByteArray &headerJson, QString *err)
 {
     // 两侧独立查表：格式管"字节长什么样"，后端管"字节送到哪"。
-    const nextpilot::plotscope::core::RecordingFormat *format =
-        nextpilot::plotscope::core::RecordingFormatRegistry::format(formatId);
+    const nextpilot::plotscope::rec::RecordingFormat *format =
+        nextpilot::plotscope::rec::RecordingFormatRegistry::format(formatId);
     if (!format)
     {
         if (err)
             *err = QStringLiteral("未注册的录制格式: %1").arg(formatId);
         return fail(QStringLiteral("eformat"), err ? *err : QString());
     }
-    const nextpilot::plotscope::core::RecordingBackend *backend =
-        nextpilot::plotscope::core::RecordingBackendRegistry::backend(backendId);
+    const nextpilot::plotscope::rec::RecordingBackend *backend =
+        nextpilot::plotscope::rec::RecordingBackendRegistry::backend(backendId);
     if (!backend)
     {
         if (err)
@@ -59,13 +59,13 @@ nextpilot::plotscope::core::Result<std::shared_ptr<Recorder>> Recorder::create(c
     rec->m_backendId = backendId;
     rec->m_sink = sink;
 
-    if (formatId == nextpilot::plotscope::core::FormatId::Raw)
+    if (formatId == nextpilot::plotscope::rec::FormatId::Raw)
     {
         rec->m_raw = std::make_shared<RawRecorder>();
         if (!rec->m_raw->open(rec->m_sink, headerJson, err))
             return fail(QStringLiteral("eio"), err ? *err : QString());
     }
-    else if (formatId == nextpilot::plotscope::core::FormatId::Mcap)
+    else if (formatId == nextpilot::plotscope::rec::FormatId::Mcap)
     {
         rec->m_mcap = std::make_shared<McapRecorder>();
         if (!rec->m_mcap->open(rec->m_sink, QStringLiteral("plotscope"), err))

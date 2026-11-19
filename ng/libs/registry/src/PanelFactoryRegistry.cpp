@@ -26,7 +26,7 @@ void PanelFactoryRegistry::registerPanel(const QString &type, Factory factory)
 }
 
 QWidget *PanelFactoryRegistry::create(const QString &type, nextpilot::plotscope::context::AppContext &appCtx,
-                                       nextpilot::plotscope::core::IIntentExecutor &executor, QWidget *parent)
+                                       nextpilot::plotscope::intent::IIntentExecutor &executor, QWidget *parent)
 {
     auto *factory = factories().find(type);
     if (!factory)

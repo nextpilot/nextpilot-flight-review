@@ -21,13 +21,13 @@ class TransformEditorDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit TransformEditorDialog(nextpilot::plotscope::core::AppContext &appCtx,
+    explicit TransformEditorDialog(nextpilot::plotscope::context::AppContext &appCtx,
                                    uint32_t capability,
                                    const QString &contextTitle = QString(),
                                    QWidget *parent = nullptr);
     ~TransformEditorDialog() override;
 
-    static QJsonObject run(QWidget *parent, nextpilot::plotscope::core::AppContext &appCtx,
+    static QJsonObject run(QWidget *parent, nextpilot::plotscope::context::AppContext &appCtx,
                            uint32_t capability, const QString &contextTitle = QString(),
                            const QJsonObject &initial = QJsonObject());
 

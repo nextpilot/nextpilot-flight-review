@@ -1212,7 +1212,7 @@ struct UlogParserRegistration
     static const PsParserVtable *parserVtable() { return nextpilot::plotscope::ext::ulog::parserVtable(); }
 };
 const bool g_ulogParserReg_ =
-    ::nextpilot::plotscope::core::ParserRegistry::registerParser(UlogParserRegistration::parserInfo(),
+    ::nextpilot::plotscope::parser::ParserRegistry::registerParser(UlogParserRegistration::parserInfo(),
                                                UlogParserRegistration::parserVtable(),
                                                QStringLiteral("builtin"));
 }

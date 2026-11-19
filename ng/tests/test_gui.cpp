@@ -274,9 +274,9 @@ int main(int argc, char *argv[])
     // 若 ng_gui 被改成 STATIC 库，未被引用的 TU 会被链接器丢弃、
     // 静态初始化不执行，工厂表会**静默变空**——功能消失且无任何报错。
     // 所以这里显式断言两个视图都已登记。
-    CHECK(!nextpilot::plotscope::core::PanelFactoryRegistry::types().isEmpty());
-    CHECK(nextpilot::plotscope::core::PanelFactoryRegistry::types().contains(QStringLiteral("dataset-tree")));
-    CHECK(nextpilot::plotscope::core::PanelFactoryRegistry::types().contains(QStringLiteral("plot-canvas")));
+    CHECK(!nextpilot::plotscope::registry::PanelFactoryRegistry::types().isEmpty());
+    CHECK(nextpilot::plotscope::registry::PanelFactoryRegistry::types().contains(QStringLiteral("dataset-tree")));
+    CHECK(nextpilot::plotscope::registry::PanelFactoryRegistry::types().contains(QStringLiteral("plot-canvas")));
     OK("视图层自注册生效：dataset-tree / plot-canvas 均已登记（OBJECT 库保证 TU 不被丢弃）");
 
     // --- 3b) 领域面板：形态随领域变时的解法 ---
@@ -294,10 +294,10 @@ int main(int argc, char *argv[])
         // 1) 描述：纯数据，headless 也查得到。
         const auto &toolbox = application.context().toolbox();
         int panelSpecCount = 0;
-        for (nextpilot::plotscope::core::IToolContribution *c :
-             toolbox.contributions(nextpilot::plotscope::core::ContributionKind::Panel))
+        for (nextpilot::plotscope::registry::IToolContribution *c :
+             toolbox.contributions(nextpilot::plotscope::registry::ContributionKind::Panel))
         {
-            auto *pc = dynamic_cast<nextpilot::plotscope::core::IPanelContribution *>(c);
+            auto *pc = dynamic_cast<nextpilot::plotscope::registry::IPanelContribution *>(c);
             CHECK(pc != nullptr);
             if (pc)
                 panelSpecCount += pc->panels().size();
@@ -305,15 +305,15 @@ int main(int argc, char *argv[])
         CHECK(panelSpecCount >= 1); // 汽车包的 CAN 报文面板
 
         // 2) 实现：领域面板与通用面板共用同一张工厂表。
-        CHECK(nextpilot::plotscope::core::PanelFactoryRegistry::types().contains(QStringLiteral("car.can-browser")));
+        CHECK(nextpilot::plotscope::registry::PanelFactoryRegistry::types().contains(QStringLiteral("car.can-browser")));
 
         // 3) 领域过滤：汽车领域的清单里有它，通用领域不该混入。
         int automotive = 0;
-        for (nextpilot::plotscope::core::IToolContribution *c :
-             toolbox.contributions(nextpilot::plotscope::core::ContributionKind::Panel,
-                                  nextpilot::plotscope::core::Domain::Automotive))
+        for (nextpilot::plotscope::registry::IToolContribution *c :
+             toolbox.contributions(nextpilot::plotscope::registry::ContributionKind::Panel,
+                                  nextpilot::plotscope::registry::Domain::Automotive))
         {
-            auto *pc = dynamic_cast<nextpilot::plotscope::core::IPanelContribution *>(c);
+            auto *pc = dynamic_cast<nextpilot::plotscope::registry::IPanelContribution *>(c);
             if (pc)
                 automotive += pc->panels().size();
         }
@@ -353,7 +353,7 @@ int main(int argc, char *argv[])
     {
         CHECK(binder->panelWidget(QStringLiteral("dock.right")) != nullptr);
         CHECK(binder->panelTitle(QStringLiteral("dock.right")) == QStringLiteral("属性"));
-        CHECK(nextpilot::plotscope::core::PanelFactoryRegistry::types()
+        CHECK(nextpilot::plotscope::registry::PanelFactoryRegistry::types()
                   .contains(QStringLiteral("property-panel")));
 
         // 统一 selection 联动：选中画布 -> 属性面板按 kind 找 provider 显示 schema。

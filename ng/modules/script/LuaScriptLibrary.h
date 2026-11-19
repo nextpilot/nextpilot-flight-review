@@ -13,8 +13,8 @@ struct lua_State;
 namespace nextpilot::plotscope::script
 {
 
-using nextpilot::plotscope::core::Result;
-using nextpilot::plotscope::core::TransformDescriptor;
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::uischema::TransformDescriptor;
 
 // Lua 脚本库：扫描目录、沙箱执行 describe()、注册 descriptor、保存脚本、解析源码。
 // 有状态对象，由组合根构造并注入；不进 libs。

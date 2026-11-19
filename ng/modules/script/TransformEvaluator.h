@@ -25,12 +25,12 @@ class TransformEvaluator
 public:
     // 单点求值：live 数据源 / checksum / 在线调试单点输入。
     // cap: 目标能力（如 CapAxisY / CapChecksum），用于运行时防错配。
-    static nextpilot::plotscope::core::Result<double> evalScalar(
+    static nextpilot::plotscope::foundation::Result<double> evalScalar(
         const QJsonObject &requestJson, uint32_t cap,
         double x, double t, int index);
 
     // 批量求值：offline 数据源 / 在线调试批量输入 / 曲线整段 Y 变换。
-    static nextpilot::plotscope::core::Result<QVector<double>> evalSeries(
+    static nextpilot::plotscope::foundation::Result<QVector<double>> evalSeries(
         const QJsonObject &requestJson, uint32_t cap,
         const QVector<double> &t, const QVector<double> &v);
 

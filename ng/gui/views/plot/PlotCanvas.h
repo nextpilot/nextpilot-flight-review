@@ -45,12 +45,12 @@ namespace nextpilot::plotscope::gui
 // 画布上的一条曲线：逻辑标识 + 有界 LOD + 样式。
 struct PlotSeries
 {
-    nextpilot::plotscope::core::DatasetId datasetId = nextpilot::plotscope::core::kInvalidDataset;
+    nextpilot::plotscope::dataset::DatasetId datasetId = nextpilot::plotscope::dataset::kInvalidDataset;
     QString table;
     QString column;
     QString title;             // 完整标题（数据集 / table.column）
     QColor color;              // 曲线色（由上层按主题分配）
-    QVector<nextpilot::plotscope::core::LodTriple> lod;
+    QVector<nextpilot::plotscope::dataset::LodTriple> lod;
     double t0 = 0.0;
     double t1 = 0.0;
     bool visible = true;
@@ -87,14 +87,14 @@ public:
     int setSeries(const PlotSeries &series);
 
     // 兼容入口：把 LOD 喂给首条曲线（旧调用方/测试用；无曲线时忽略）。
-    void setLodData(const QVector<nextpilot::plotscope::core::LodTriple> &lod, double t0, double t1);
+    void setLodData(const QVector<nextpilot::plotscope::dataset::LodTriple> &lod, double t0, double t1);
 
     // 从 Dataset 重新取数并刷新所有曲线（便捷入口）。
-    void renderFrom(const nextpilot::plotscope::core::Dataset &dataset);
+    void renderFrom(const nextpilot::plotscope::dataset::Dataset &dataset);
 
     // 从 Dataset 取 LOD 并追加（便捷入口，内部按画布像素宽取数）。
     // 保留旧签名以兼容：它等价于用单条序列替换全部。
-    void setChannel(nextpilot::plotscope::core::DatasetId datasetId, const QString &table, const QString &column,
+    void setChannel(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table, const QString &column,
                     const QString &title);
 
     // 清空全部曲线。removeSeries 按 key 删除单条。
@@ -172,7 +172,7 @@ Q_SIGNALS:
     void seriesTransformRequested(const QString &seriesKey);
     // 有通道被拖到画布上（数据集树 → 画布）。画布只解码 MIME 发信号，
     // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
-    void channelDropped(nextpilot::plotscope::core::DatasetId datasetId, const QString &table,
+    void channelDropped(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table,
                         const QString &column);
 
 protected:

@@ -18,9 +18,9 @@ QString CsvFormatParser::displayName() const
     return QStringLiteral("CSV 格式解析器");
 }
 
-nextpilot::plotscope::core::Domain CsvFormatParser::domain() const
+nextpilot::plotscope::registry::Domain CsvFormatParser::domain() const
 {
-    return nextpilot::plotscope::core::Domain::General;
+    return nextpilot::plotscope::registry::Domain::General;
 }
 
 QStringList CsvFormatParser::suffixes() const

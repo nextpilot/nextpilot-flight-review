@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
     // 启动即载文件：走与 CLI 完全相同的数据.load 意图路径。
     if (parser.isSet(openOpt))
     {
-        nextpilot::plotscope::core::Intent intent;
+        nextpilot::plotscope::intent::Intent intent;
         intent.op = QStringLiteral("data.load");
         intent.params[QStringLiteral("path")] = parser.value(openOpt);
         const auto result = application.host().execute(intent);

@@ -46,15 +46,15 @@ public:
 //
 // 其中 AutopilotPack 需提供：
 //   static QString packId();
-//   static std::unique_ptr<nextpilot::plotscope::core::IToolPack> build();
+//   static std::unique_ptr<nextpilot::plotscope::registry::IToolPack> build();
 //
 // 宏必须带完整命名空间：它在调用处的命名空间作用域展开。
 #define NG_REGISTER_PACK(FQN)                                                             \
     namespace {                                                                           \
     const bool g_ng_pack_reg_ =                                                           \
-        ::nextpilot::plotscope::core::BuiltinPackRegistry::registerPack(                                    \
+        ::nextpilot::plotscope::registry::BuiltinPackRegistry::registerPack(                                    \
             FQN::packId(),                                                                \
-            []() -> std::unique_ptr<::nextpilot::plotscope::core::IToolPack> { return FQN::build(); });    \
+            []() -> std::unique_ptr<::nextpilot::plotscope::registry::IToolPack> { return FQN::build(); });    \
     }
 
 } // namespace nextpilot::plotscope::registry

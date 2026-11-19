@@ -70,7 +70,7 @@ public:
 #define NG_REGISTER_RECORDING_FORMAT(Cls)                                               \
     namespace {                                                                        \
     const bool g_ng_recfmt_reg_ =                                                      \
-        ::nextpilot::plotscope::core::RecordingFormatRegistry::registerFormat(Cls::recordingFormat());   \
+        ::nextpilot::plotscope::rec::RecordingFormatRegistry::registerFormat(Cls::recordingFormat());   \
     }
 
 namespace FormatId

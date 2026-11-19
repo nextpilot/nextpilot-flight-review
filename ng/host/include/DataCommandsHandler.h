@@ -28,30 +28,30 @@ namespace nextpilot::plotscope::core
 //
 // 刻意不搬：protocol.inspect（领域面板，归 extensions/<域>/gui/）、
 // layout.save/import（已有 plot.layout.*）、file.open（已被 data.load 统一）。
-class DataCommandsHandler final : public nextpilot::plotscope::core::IIntentHandler
+class DataCommandsHandler final : public nextpilot::plotscope::intent::IIntentHandler
 {
 public:
-    explicit DataCommandsHandler(nextpilot::plotscope::core::AppContext &appCtx,
-                                 nextpilot::plotscope::core::IIntentExecutor &executor)
+    explicit DataCommandsHandler(nextpilot::plotscope::context::AppContext &appCtx,
+                                 nextpilot::plotscope::intent::IIntentExecutor &executor)
         : m_app(appCtx), m_executor(executor) {}
 
-    bool canHandle(const nextpilot::plotscope::core::Intent &intent) const override;
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> execute(
-        const nextpilot::plotscope::core::Intent &intent) override;
+    bool canHandle(const nextpilot::plotscope::intent::Intent &intent) const override;
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> execute(
+        const nextpilot::plotscope::intent::Intent &intent) override;
 
     // 最近文件在 settings 中的键（data.load 与 data.recent 共用）。
     static constexpr const char *kRecentKey = "data/recent";
 
 private:
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> reload(const nextpilot::plotscope::core::Intent &intent);
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> exportCsv(const nextpilot::plotscope::core::Intent &intent);
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> recent(const nextpilot::plotscope::core::Intent &intent);
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> clearCache();
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> derive(const nextpilot::plotscope::core::Intent &intent);
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> workspaceList();
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> workspaceSave();
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> workspaceRestore();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> reload(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> exportCsv(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recent(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearCache();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> derive(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceList();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceSave();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceRestore();
 
-    nextpilot::plotscope::core::AppContext &m_app;
-    nextpilot::plotscope::core::IIntentExecutor &m_executor;
+    nextpilot::plotscope::context::AppContext &m_app;
+    nextpilot::plotscope::intent::IIntentExecutor &m_executor;
 };

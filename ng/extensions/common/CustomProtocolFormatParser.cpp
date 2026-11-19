@@ -22,9 +22,9 @@ QString CustomProtocolFormatParser::displayName() const
     return QStringLiteral("自定义顺序协议");
 }
 
-nextpilot::plotscope::core::Domain CustomProtocolFormatParser::domain() const
+nextpilot::plotscope::registry::Domain CustomProtocolFormatParser::domain() const
 {
-    return nextpilot::plotscope::core::Domain::General;
+    return nextpilot::plotscope::registry::Domain::General;
 }
 
 QStringList CustomProtocolFormatParser::suffixes() const

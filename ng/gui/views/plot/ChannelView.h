@@ -33,19 +33,19 @@ class ChannelView : public QObject
 {
     Q_OBJECT
 public:
-    ChannelView(nextpilot::plotscope::core::IIntentExecutor &executor, PlotCanvas *canvas,
+    ChannelView(nextpilot::plotscope::intent::IIntentExecutor &executor, PlotCanvas *canvas,
                 QObject *parent = nullptr);
 
     // 追加一条通道并渲染（同 dataset+table+column 已存在则只刷新，不重复叠加）。
     // 返回 false 表示该通道取数失败（err 里说明原因）。
-    bool addChannel(nextpilot::plotscope::core::DatasetId datasetId, const QString &table, const QString &column,
+    bool addChannel(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table, const QString &column,
                     QString *err = nullptr);
     // 兼容旧名：等价于 addChannel（"显示某通道"=叠加它）。
-    bool showChannel(nextpilot::plotscope::core::DatasetId datasetId, const QString &table, const QString &column,
+    bool showChannel(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table, const QString &column,
                      QString *err = nullptr);
 
     // 移除/清空曲线。
-    bool removeChannel(nextpilot::plotscope::core::DatasetId datasetId, const QString &table, const QString &column);
+    bool removeChannel(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table, const QString &column);
     void clearChannels();
 
     // 当前叠加的通道数。
@@ -60,10 +60,10 @@ private:
     // 重取全部通道（视口变化时用）。
     bool renderAll(QString *err);
     // 曲线的稳定键。
-    static QString makeKey(nextpilot::plotscope::core::DatasetId datasetId, const QString &table,
+    static QString makeKey(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table,
                            const QString &column);
 
-    nextpilot::plotscope::core::IIntentExecutor &m_executor;
+    nextpilot::plotscope::intent::IIntentExecutor &m_executor;
     PlotCanvas *m_canvas = nullptr;
     QTimer m_refreshTimer;
 
@@ -77,7 +77,7 @@ private:
 };
 
 // 绘图视图的工厂：创建画布 + 通道视图，并让视图订阅共享的"活动通道"。
-QWidget *createPlotCanvas(nextpilot::plotscope::core::AppContext &appCtx, nextpilot::plotscope::core::IIntentExecutor &executor,
+QWidget *createPlotCanvas(nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
                           QWidget *parent);
 
 } // namespace nextpilot::plotscope::gui

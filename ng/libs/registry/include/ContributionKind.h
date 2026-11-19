@@ -34,7 +34,7 @@ QString kindName(const QString &kind);
 QStringList knownKinds();
 
 } // namespace nextpilot::plotscope::registry
-// B7 过渡别名：core 消亡前全仓仍以 core::ContributionKind 取用。
+// B7 过渡别名：core 消亡前全仓仍以 registry::ContributionKind 取用。
 namespace nextpilot::plotscope::core
 {
 namespace ContributionKind = nextpilot::plotscope::registry::ContributionKind;

@@ -183,9 +183,9 @@ private:
 
 std::unique_ptr<IByteSink> createByteSink(const QString &backendId, QString *err)
 {
-    if (backendId == nextpilot::plotscope::core::BackendId::File)
+    if (backendId == nextpilot::plotscope::rec::BackendId::File)
         return std::make_unique<FileSink>();
-    if (backendId == nextpilot::plotscope::core::BackendId::Udp)
+    if (backendId == nextpilot::plotscope::rec::BackendId::Udp)
         return std::make_unique<UdpSink>();
     if (err)
         *err = QStringLiteral("未注册的录制后端: %1").arg(backendId);

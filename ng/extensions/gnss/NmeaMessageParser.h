@@ -19,7 +19,7 @@ namespace nextpilot::plotscope::ext
 //   老版在构造函数里从 QCoreApplication::applicationDirPath()/当前目录等**全局路径**
 //   扫模板文件——无法单测、无法重放、两个实例会互相串味。
 //   新版默认用内置精简模板；要换模板只能由宿主经 configure 传 database_path。
-class NmeaMessageParser final : public nextpilot::plotscope::core::IMessageParser
+class NmeaMessageParser final : public nextpilot::plotscope::parser::IMessageParser
 {
 public:
     struct FieldDef
@@ -37,7 +37,7 @@ public:
     // === 身份（IToolContribution）===
     QString id() const override { return QStringLiteral("nmea"); }
     QString displayName() const override { return QStringLiteral("NMEA 协议解析器"); }
-    nextpilot::plotscope::core::Domain domain() const override { return nextpilot::plotscope::core::Domain::Gnss; }
+    nextpilot::plotscope::registry::Domain domain() const override { return nextpilot::plotscope::registry::Domain::Gnss; }
 
     // === 自述 ===
     QString protocolName() const override { return QStringLiteral("NMEA 0183"); }
@@ -48,8 +48,8 @@ public:
     }
     QStringList supportedTransports() const override
     {
-        return {nextpilot::plotscope::core::MessageTransport::File, nextpilot::plotscope::core::MessageTransport::Serial,
-                nextpilot::plotscope::core::MessageTransport::Udp, nextpilot::plotscope::core::MessageTransport::Memory};
+        return {nextpilot::plotscope::parser::MessageTransport::File, nextpilot::plotscope::parser::MessageTransport::Serial,
+                nextpilot::plotscope::parser::MessageTransport::Udp, nextpilot::plotscope::parser::MessageTransport::Memory};
     }
     QJsonObject configSchema() const override;
 
@@ -58,7 +58,7 @@ public:
 
     // === 行为 ===
     bool sniff(const QByteArray &head) const override;
-    bool parse(const QByteArray &bytes, nextpilot::plotscope::core::DecodedFrame &out) const override;
+    bool parse(const QByteArray &bytes, nextpilot::plotscope::parser::DecodedFrame &out) const override;
 
     // 供单测：当前生效的句子模板数量。
     int templateCount() const { return m_sentences.size(); }

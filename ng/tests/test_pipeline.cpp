@@ -416,19 +416,19 @@ int main()
     // ========== 8) 录制格式是一组可扩展的资产（raw / mcap）============
     {
         // raw 格式在本测试文件里注册（内置扩展也会注册同一个 id，先到者为准）
-        const nextpilot::plotscope::core::RecordingFormat raw = [] {
-            nextpilot::plotscope::core::RecordingFormat f;
-            f.id = nextpilot::plotscope::core::FormatId::Raw;
+        const nextpilot::plotscope::rec::RecordingFormat raw = [] {
+            nextpilot::plotscope::rec::RecordingFormat f;
+            f.id = nextpilot::plotscope::rec::FormatId::Raw;
             f.displayName = QStringLiteral("原始字节录制");
             f.extension = QStringLiteral(".raw");
             f.structured = false;
             return f;
         }();
-        CHECK(nextpilot::plotscope::core::RecordingFormatRegistry::registerFormat(raw));
-        CHECK(nextpilot::plotscope::core::RecordingFormatRegistry::format(QStringLiteral("raw")) != nullptr);
-        CHECK(nextpilot::plotscope::core::RecordingFormatRegistry::formatByExtension(QStringLiteral(".raw")) != nullptr);
+        CHECK(nextpilot::plotscope::rec::RecordingFormatRegistry::registerFormat(raw));
+        CHECK(nextpilot::plotscope::rec::RecordingFormatRegistry::format(QStringLiteral("raw")) != nullptr);
+        CHECK(nextpilot::plotscope::rec::RecordingFormatRegistry::formatByExtension(QStringLiteral(".raw")) != nullptr);
         // raw 不保留通道结构
-        CHECK(!nextpilot::plotscope::core::RecordingFormatRegistry::format(QStringLiteral("raw"))->structured);
+        CHECK(!nextpilot::plotscope::rec::RecordingFormatRegistry::format(QStringLiteral("raw"))->structured);
         OK("录制格式是资产而非机制：raw 已登记（无通道结构），可按 id / 后缀查找");
     }
 

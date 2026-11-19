@@ -44,7 +44,7 @@ class PanelFactoryRegistry
 {
 public:
     using Factory = std::function<QWidget *(nextpilot::plotscope::context::AppContext &appCtx,
-                                            nextpilot::plotscope::core::IIntentExecutor &executor,
+                                            nextpilot::plotscope::intent::IIntentExecutor &executor,
                                             QWidget *parent)>;
 
     // 注册一种部件类型。重复注册以先到者为准。
@@ -52,7 +52,7 @@ public:
 
     // 按类型创建部件；未注册返回 nullptr。
     static QWidget *create(const QString &type, nextpilot::plotscope::context::AppContext &appCtx,
-                           nextpilot::plotscope::core::IIntentExecutor &executor, QWidget *parent);
+                           nextpilot::plotscope::intent::IIntentExecutor &executor, QWidget *parent);
 
     // 已注册的部件类型（诊断/测试用）。
     static QStringList types();
@@ -74,7 +74,7 @@ public:
 #define NG_REGISTER_PANEL(TypeId, VarName, Fn)                                         \
     namespace {                                                                        \
     const bool g_ng_panel_reg_##VarName = [] {                                         \
-        ::nextpilot::plotscope::core::PanelFactoryRegistry::registerPanel(                                 \
+        ::nextpilot::plotscope::registry::PanelFactoryRegistry::registerPanel(                                 \
             QStringLiteral(TypeId), &Fn);                                              \
         return true;                                                                   \
     }();                                                                               \

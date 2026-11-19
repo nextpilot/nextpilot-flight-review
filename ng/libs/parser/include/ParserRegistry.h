@@ -80,7 +80,7 @@ private:
 #define NG_REGISTER_PARSER(Cls)                                                        \
     namespace {                                                                        \
     const bool g_ng_parser_reg_ =                                                      \
-        ::nextpilot::plotscope::core::ParserRegistry::registerParser(                                    \
+        ::nextpilot::plotscope::parser::ParserRegistry::registerParser(                                    \
             Cls::parserInfo(), Cls::parserVtable(), QStringLiteral("builtin"));        \
     }
 

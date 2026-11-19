@@ -23,14 +23,14 @@ void check(bool ok, const char *what)
 }
 
 // 最小执行器实现，验证契约头可独立实现，不依赖任何宿主。
-class EchoExecutor : public nextpilot::plotscope::core::IIntentExecutor
+class EchoExecutor : public nextpilot::plotscope::intent::IIntentExecutor
 {
 public:
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult>
-    execute(const nextpilot::plotscope::core::Intent &i) override
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult>
+    execute(const nextpilot::plotscope::intent::Intent &i) override
     {
         lastOp = i.op;
-        return nextpilot::plotscope::core::IntentResult{};
+        return nextpilot::plotscope::intent::IntentResult{};
     }
     QString lastOp;
 };

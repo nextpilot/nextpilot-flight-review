@@ -33,7 +33,7 @@ namespace nextpilot::plotscope::gui
 // 为什么是 IIntentHandler 而不是宿主成员：主题是纯 GUI 展示态，headless 无界面，
 // 不该在 headless 宿主里凭空存在一个"切主题"处理器。GUI 装配时把本实例注册为
 // 系统级 handler（@system/theme），于是 CLI 收到 theme.* 会诚实报"无处理器"。
-class ThemeManager final : public QObject, public nextpilot::plotscope::core::IIntentHandler
+class ThemeManager final : public QObject, public nextpilot::plotscope::intent::IIntentHandler
 {
     Q_OBJECT
 public:
@@ -44,7 +44,7 @@ public:
     };
     Q_ENUM(Theme)
 
-    explicit ThemeManager(nextpilot::plotscope::core::SettingsStore &settings, QObject *parent = nullptr);
+    explicit ThemeManager(nextpilot::plotscope::context::SettingsStore &settings, QObject *parent = nullptr);
 
     // --- 当前主题状态 ---
     Theme current() const { return m_current; }
@@ -85,9 +85,9 @@ public:
     QString mapStyleSheet(const QString &fragment) const;
 
     // --- IIntentHandler ---
-    bool canHandle(const nextpilot::plotscope::core::Intent &intent) const override;
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> execute(
-        const nextpilot::plotscope::core::Intent &intent) override;
+    bool canHandle(const nextpilot::plotscope::intent::Intent &intent) const override;
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> execute(
+        const nextpilot::plotscope::intent::Intent &intent) override;
 
     // app/theme 在 settings 中的键（app 作用域，跨工作区）。
     static constexpr const char *kThemeKey = "app/theme";
@@ -100,7 +100,7 @@ private:
     void persist() const;               // 写 settings
     Theme load() const;                 // 从 settings 读，缺省 Light
 
-    nextpilot::plotscope::core::SettingsStore &m_settings;
+    nextpilot::plotscope::context::SettingsStore &m_settings;
     Theme m_current = Theme::Light;
 };
 

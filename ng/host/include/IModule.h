@@ -40,13 +40,13 @@ public:
     // 模块用它声明自己的容器，再往里放动作——这样新增模块能自带界面入口，
     // 而 app 骨架与其他模块代码都不必修改。
     virtual void declareSlot(const QString &area, const QString &label,
-                             nextpilot::plotscope::core::SlotKind kind,
+                             nextpilot::plotscope::registry::SlotKind kind,
                              const QString &parentArea = QString()) = 0;
 
     // 往已声明的插槽里放一个动作（ribbon 按钮 / 菜单项）。
     // 归属插槽由 action.area 单一来源给出——不另传 area 参数，
     // 杜绝"参数 area 与 action.area 不一致"的双源隐患。
-    virtual void addAction(const nextpilot::plotscope::core::UiAction &action) = 0;
+    virtual void addAction(const nextpilot::plotscope::registry::UiAction &action) = 0;
 
     // 请求 app 骨架提供一个部件，放到指定区域。
     //
@@ -74,8 +74,8 @@ public:
     //   - headless 下也能问（清单是纯数据）。
     //
     // domain 传 Domain::General 表示不限领域，返回全部可用领域面板。
-    virtual QList<nextpilot::plotscope::core::PanelSpec> availableDomainPanels(
-        nextpilot::plotscope::core::Domain domain) const = 0;
+    virtual QList<nextpilot::plotscope::registry::PanelSpec> availableDomainPanels(
+        nextpilot::plotscope::registry::Domain domain) const = 0;
 
     // 按 id 请求领域面板（id 来自 availableDomainPanels）。
     // 与 requestPanel 的区别：这里不要求 views/ 预先注册，
@@ -84,7 +84,7 @@ public:
     virtual QWidget *requestDomainPanel(const QString &area, const QString &panelId) = 0;
 
     // 宿主执行器：模块在 GUI 里点击动作后，用它发意图（与脚本/CLI 同一路径）。
-    virtual nextpilot::plotscope::core::IIntentExecutor &executor() = 0;
+    virtual nextpilot::plotscope::intent::IIntentExecutor &executor() = 0;
 
     // 选取一个文件路径（GUI 交互能力，由外壳实现）。
     //
@@ -101,7 +101,7 @@ public:
 class ModuleContext
 {
 public:
-    ModuleContext(nextpilot::plotscope::core::AppContext &appCtx, RuntimeHost &host)
+    ModuleContext(nextpilot::plotscope::context::AppContext &appCtx, RuntimeHost &host)
         : m_appCtx(appCtx), m_host(host) {}
 
     // 进程级运行态的**唯一入口**：数据集、设置、工具箱、数据源、摄取管道都在这里。
@@ -109,23 +109,23 @@ public:
     // 架构约定（重要）：器官只通过 ctx.app() 取 app 级状态，
     // 不再混用 ctx.data() 与 ctx.host().settings() 两条路径——
     // 那两条路径正是"状态分散持有"的症状。
-    nextpilot::plotscope::core::AppContext &app() { return m_appCtx; }
-    const nextpilot::plotscope::core::AppContext &app() const { return m_appCtx; }
+    nextpilot::plotscope::context::AppContext &app() { return m_appCtx; }
+    const nextpilot::plotscope::context::AppContext &app() const { return m_appCtx; }
 
     // 便捷转发（保留以兼容既有器官代码；新代码请用 app()）。
-    nextpilot::plotscope::core::DataRepository &data() { return m_appCtx.data(); }
+    nextpilot::plotscope::dataset::DataRepository &data() { return m_appCtx.data(); }
     RuntimeHost &host() { return m_host; }
 
     // 脚本/自动化能力：拿到意图执行器与可选录制器。
     // 返回的是宿主实现的执行器抽象，模块只依赖接口不依赖宿主内部。
-    nextpilot::plotscope::core::IIntentExecutor &executor();
-    nextpilot::plotscope::core::JobRecorder *recorder();
+    nextpilot::plotscope::intent::IIntentExecutor &executor();
+    nextpilot::plotscope::intent::JobRecorder *recorder();
 
     // 模块注册自己能处理的意图 op。
-    void registerIntentHandler(nextpilot::plotscope::core::IIntentHandler *handler);
+    void registerIntentHandler(nextpilot::plotscope::intent::IIntentHandler *handler);
 
 private:
-    nextpilot::plotscope::core::AppContext &m_appCtx;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
     RuntimeHost &m_host;
 };
 

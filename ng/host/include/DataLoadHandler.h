@@ -33,31 +33,31 @@ namespace nextpilot::plotscope::core
 // 成功后会把本次"来源 + 解析器"记入工作区配置（WorkspaceDataConfig，settings
 // 的 ws/data/sources 键），供重启恢复。恢复重放时传 record=false，避免把恢复
 // 出来的源又当新打开重复记录。
-class DataLoadHandler final : public nextpilot::plotscope::core::IIntentHandler
+class DataLoadHandler final : public nextpilot::plotscope::intent::IIntentHandler
 {
 public:
-    DataLoadHandler(nextpilot::plotscope::core::ExtensionRegistry &registry,
-                    nextpilot::plotscope::core::DataRepository &repo,
-                    nextpilot::plotscope::core::SourceRegistry &sources,
-                    nextpilot::plotscope::core::IngestPipeline *pipeline = nullptr,
-                    nextpilot::plotscope::core::SettingsStore *settings = nullptr)
+    DataLoadHandler(nextpilot::plotscope::registry::ExtensionRegistry &registry,
+                    nextpilot::plotscope::dataset::DataRepository &repo,
+                    nextpilot::plotscope::dataset::SourceRegistry &sources,
+                    nextpilot::plotscope::context::IngestPipeline *pipeline = nullptr,
+                    nextpilot::plotscope::context::SettingsStore *settings = nullptr)
         : m_registry(registry), m_repo(repo), m_sources(sources),
           m_pipeline(pipeline), m_settings(settings) {}
 
-    bool canHandle(const nextpilot::plotscope::core::Intent &intent) const override;
-    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> execute(
-        const nextpilot::plotscope::core::Intent &intent) override;
+    bool canHandle(const nextpilot::plotscope::intent::Intent &intent) const override;
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> execute(
+        const nextpilot::plotscope::intent::Intent &intent) override;
 
 private:
     // 把本次打开记入工作区配置（来源/解析器/解析参数）。record=false 时跳过（恢复路径用）。
     void recordSpec(const QString &path, const QStringList &parserIds, bool record,
                     const QByteArray &parserOptions = QByteArray());
 
-    nextpilot::plotscope::core::ExtensionRegistry &m_registry;
-    nextpilot::plotscope::core::DataRepository &m_repo;
-    nextpilot::plotscope::core::SourceRegistry &m_sources;
+    nextpilot::plotscope::registry::ExtensionRegistry &m_registry;
+    nextpilot::plotscope::dataset::DataRepository &m_repo;
+    nextpilot::plotscope::dataset::SourceRegistry &m_sources;
     // 摄取管道（宿主持有）。为空时 data.load 只走旧的 driver.load() 路径。
-    nextpilot::plotscope::core::IngestPipeline *m_pipeline = nullptr;
+    nextpilot::plotscope::context::IngestPipeline *m_pipeline = nullptr;
     // 设置库（可选）：成功后把路径记入"最近文件"。为空则不记录。
-    nextpilot::plotscope::core::SettingsStore *m_settings = nullptr;
+    nextpilot::plotscope::context::SettingsStore *m_settings = nullptr;
 };

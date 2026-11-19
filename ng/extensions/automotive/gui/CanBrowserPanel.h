@@ -21,18 +21,18 @@ class CanBrowserPanel : public QWidget
 {
     Q_OBJECT
 public:
-    explicit CanBrowserPanel(nextpilot::plotscope::core::AppContext &appCtx, QWidget *parent = nullptr);
+    explicit CanBrowserPanel(nextpilot::plotscope::context::AppContext &appCtx, QWidget *parent = nullptr);
 
     // 重建表格（数据源变化时调用）。
     void refresh();
 
 private:
-    nextpilot::plotscope::core::AppContext &m_appCtx;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
     QTableWidget *m_table = nullptr;
 };
 
 // 工厂函数：与通用视图同款签名，注册进共用的工厂表。
-QWidget *createCanBrowserPanel(nextpilot::plotscope::core::AppContext &appCtx, nextpilot::plotscope::core::IIntentExecutor &exec,
+QWidget *createCanBrowserPanel(nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &exec,
                                QWidget *parent);
 
 } // namespace nextpilot::plotscope::ext::automotive

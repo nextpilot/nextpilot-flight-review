@@ -20,9 +20,9 @@ namespace nextpilot::plotscope::core
 namespace nextpilot::plotscope::gui
 {
 
-using nextpilot::plotscope::core::TransformCapability;
-using nextpilot::plotscope::core::TransformDescriptor;
-using nextpilot::plotscope::core::TransformKind;
+using nextpilot::plotscope::uischema::TransformCapability;
+using nextpilot::plotscope::uischema::TransformDescriptor;
+using nextpilot::plotscope::uischema::TransformKind;
 
 // 变换输入控件：可编辑下拉（选算子看说明 / 直接敲表达式）+ 参数区 + 右侧编辑按钮。
 // 输出同一份 TransformRequest JSON，求值器零改动。凡要输入变换处放一个它。
@@ -30,7 +30,7 @@ class TransformField : public QWidget
 {
     Q_OBJECT
 public:
-    explicit TransformField(nextpilot::plotscope::core::AppContext &appCtx,
+    explicit TransformField(nextpilot::plotscope::context::AppContext &appCtx,
                             uint32_t capability, QWidget *parent = nullptr);
     ~TransformField() override;
 
@@ -55,7 +55,7 @@ private:
     void refreshScripts();
     QString currentDescriptorId() const;
 
-    nextpilot::plotscope::core::AppContext &m_appCtx;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
     uint32_t m_capability = 0;
     QList<TransformDescriptor> m_descriptors;
     QJsonObject m_lastLuaRequest; // 编辑按钮回填的 Lua 请求
