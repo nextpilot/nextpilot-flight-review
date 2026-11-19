@@ -1345,7 +1345,9 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 | `protocol/ProtocolDocument.{h,cpp}` | 1006 | `ng/libs/protocol/src/ProtocolDocument.cpp`（文档模型 + JSON 解析/回写） |
 | `codec/SequentialCodec.{hpp,cpp}` | 1089 | `ng/libs/protocol/src/SequentialCodec.cpp` + `StreamDecoder.cpp`（二进制段表解码 + 流式解码） |
 | `manager/CustomProtocolLoader.cpp` | 912 | `ng/extensions/common/CustomProtocolFormatParser.cpp`（格式驱动） |
-| `dialog/ProtocolEditorDialog.{h,cpp}` | 1857 | `ng/gui/shell/ProtocolEditorDialog.cpp`（尚未按计划拆成 views 组件） |
+| `dialog/ProtocolEditorDialog.{h,cpp}` | 1857 | `ng/gui/shell/ProtocolEditorDialog.cpp`（322 行，**只搬了 JSON 编辑 + 校验 + 单帧试算，段表/变体行 UI 未搬**） |
+
+> 旧树 `src/application/modules/protocol/codec/SequentialCodec.{hpp,cpp}` **仍在且是有意保留的**：它是旧应用自己的实现，不在 `ng/` 构建图内（`ng_protocol` 只编 `ng/libs/protocol/src`），按 §15.3 红线只读不改。
 
 ### 15.2 已搬与未搬
 
@@ -1356,10 +1358,17 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 | 段内序列校验（CRC8/16/32、sum、xor、parity、参数化 poly/init/xorout/refin/refout/width） | ✅ 已搬（`digest`） |
 | `scale/offset`、端序、BCD、STR | ✅ 已搬（BCD/char 走类型表） |
 | 格式驱动 + Pack 登记（`.bin/.raw/.frames` + 模板字段） | ✅ 完成（`CustomProtocolFormatParser`） |
-| 编辑器（段表/变体行/单帧试算/JSON 回写） | ✅ 可用（未拆组件） |
-| 编辑器变体字段可视化增删、Lua 脚本重建、字段拖拽排序 | ⛔ 未做 |
-| 流传输（串口/网络）下的协议解码 | ⛔ 未做（仅文件） |
-| 通用载入对话框（schema + probe + 预览） | ⛔ 未做，设计迁至 [`parser-spi-v2.md`](parser-spi-v2.md) 附录 A |
+| 编辑器：JSON 编辑 + 校验 + 单帧 hex 试算 + 文件读写 | ✅ 可用（322 行，**纯文本编辑器，无段表/变体可视化**） |
+| 编辑器变体字段可视化增删、字段拖拽排序 | ⛔ 未做（无段列表/字段表单 UI，需从零建面板） |
+| Lua 脚本重建（编辑器改脚本后已配置数据源的生效策略） | ⛔ 未定义（缓存按源码文本 key，会话仍持编译期快照） |
+| 流传输（串口/网络）下的协议解码 | ⛔ 未做（仅文件；`CustomProtocolParser.streaming=0` 全流缓冲；deps 内只有 Qt6Network，无 Qt6SerialPort） |
+| 通用载入对话框（schema + probe + 预览） | ✅ **代码已实现**（`ImportDialog`，schema 驱动、不含任何格式知识）；⛔ **未接入** —— `MainWindow.cpp` 仍直接 `QFileDialog::getOpenFileName` |
+
+### 15.2.1 边界声明（2026-11-19 收尾）
+
+`ng/libs/protocol`（目标 `ng_protocol`）**到此交付完毕**：独立 static lib，依赖只有 `Qt6::Core` 与 `deps/lua`，不链 Widgets、不链 Rust kernel、不认 Dataset、不读 `src/`；协议单测 35 项、全量 ctest 18/18。
+
+上表中 ⛔ 的四项**全部在库外**（GUI 编辑器 / 传输层 / 载入入口），不属于本库范围，也未立项：任何一项开工都需要先定自己的验收口径，不得以"补协议库"的名义顺手做。
 
 ### 15.3 红线（继续有效）
 
