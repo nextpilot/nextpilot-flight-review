@@ -221,6 +221,14 @@ int main(int argc, char *argv[])
         OK("合法 0x 前缀 CRC 参数：解析通过");
     }
 
+    // --- 7c) 端序别名 be/le 被校验接受（解析层归一到 big/little） ---
+    {
+        const QByteArray beTpl = R"({"name":"e","layout":"sequential","endian":"be",
+          "segments":[{"name":"a","size":1,"type":"u8"}]})";
+        CHECK(validate(QJsonDocument::fromJson(beTpl).object()).isEmpty());
+        OK("端序别名 be 通过 validate");
+    }
+
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");
     return 0;
 }

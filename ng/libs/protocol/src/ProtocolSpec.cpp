@@ -90,10 +90,13 @@ QStringList validate(const QJsonObject &o)
     const QJsonArray segArr = o.value(QStringLiteral("segments")).toArray();
     if (segArr.isEmpty())
         errs << QStringLiteral("segments 不能为空");
-    if (o.value(QStringLiteral("endian")).toString() != QLatin1String("big") &&
-        o.value(QStringLiteral("endian")).toString() != QLatin1String("little") &&
-        o.contains(QStringLiteral("endian")))
-        errs << QStringLiteral("endian 只能是 little 或 big");
+    {
+        const QString endian = o.value(QStringLiteral("endian")).toString();
+        if (o.contains(QStringLiteral("endian")) && endian != QLatin1String("big") &&
+            endian != QLatin1String("little") && endian != QLatin1String("be") &&
+            endian != QLatin1String("le"))
+            errs << QStringLiteral("endian 只能是 little/big（别名 le/be，解析层归一）");
+    }
 
     QSet<QString> names;
     QMap<QString, int> order;
