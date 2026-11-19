@@ -1046,7 +1046,8 @@ void ProtocolEditorDialog::fillSegTable(QTableWidget *table, const QJsonArray &s
                 continue;
             rawKeys << k;
         }
-        other->setToolTip(rawKeys.join(QStringLiteral(", ")));
+        other->setToolTip(rawKeys.join(QStringLiteral(", ")) +
+                          QStringLiteral(" — 本列只读，双击本行在「更多属性」里改值"));
         other->setFlags(other->flags() & ~Qt::ItemIsEditable);
         table->setItem(r, SegOther, other);
     }
