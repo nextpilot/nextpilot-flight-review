@@ -328,6 +328,7 @@ struct Compiler
     const ProtocolDocument &doc;
     CompiledProgram &out;
     std::string &err;
+    bool docHasChar = false; // 任一顶层段有字符边界（literal/delimiter/width/rest/repeater）
     std::map<std::string, int32_t> slotOf; // 名字 → 槽位
 
     bool fail(const std::string &m)
@@ -469,10 +470,29 @@ struct Compiler
 
 // ASCII 词法段编译（SPEC §7）：把候选定界符展开、字面量/重复/数值解释搬到段表，
 // digest 的 from/to 端点在这里解析成段下标（-1 frame_start / -2 frame_end / -3 before:self）。
+// 段在"记录里有字符边界段"的上下文里，且声明了任何字符语义键（进制/定宽/校验/模式/变换/
+// 输出覆盖）→ 它就该按 token 解析，而不是按 type 宽度读字节。典型：NMEA 的 check 段
+// （只有 base=16 + digest，没有 delimiter）。
+static bool hasCharSegments(const ProtocolDocument &doc)
+{
+    for (const SegSpec &s : doc.segments)
+        if (boundaryOf(s) != SegBoundary::Byte)
+            return true;
+    return false;
+}
+
+static bool wantsTokenContext(const SegSpec &s)
+{
+    return s.digest.enabled || s.base != 10 || s.hasFixedDigits || !s.as.empty() || !s.pattern.empty() ||
+           !s.onMismatch.empty() || !s.emptyPolicy.empty() || !s.transform.empty();
+}
+
 bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
 {
-    cs.isAscii = isAsciiSegment(s) || c.doc.lexer == "delimited" || c.doc.lexer == "fixed" ||
-                 c.doc.lexer == "keyed";
+    cs.boundary = static_cast<int>(boundaryOf(s));
+    cs.isAscii = (cs.boundary != static_cast<int>(SegBoundary::Byte)) || (c.docHasChar && wantsTokenContext(s));
+    if (cs.isAscii && cs.boundary == static_cast<int>(SegBoundary::Byte))
+        cs.boundary = static_cast<int>(SegBoundary::Delimit); // 单 token（无定界符，靠后续边界/记录尾）
     if (!cs.isAscii)
         return true;
     cs.isLiteral = !s.literal.empty();
@@ -542,7 +562,7 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
 {
     out = CompiledProgram{};
     out.maxsize = doc.maxsize;
-    Compiler c{doc, out, err, {}};
+    Compiler c{doc, out, err, hasCharSegments(doc), {}};
 
     // 1) 槽位：顶层段在前，变体段按出现顺序追加。表达式里能用到的名字都在这里解析。
     for (const SegSpec &s : doc.segments)
@@ -840,8 +860,10 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
     for (const CompiledSeg &cs : out.segs)
         if (cs.isAscii)
             out.isAscii = true;
-    out.isDelimited = (doc.lexer == "delimited" || doc.lexer == "fixed" || doc.lexer == "keyed") ||
-                      (doc.lexer == "auto" && out.isAscii);
+    // 有段用定界符切 token → 记录按"切分"解析（与是否称它为 ASCII 无关）。
+    for (const CompiledSeg &cs : out.segs)
+        if (cs.hasDelimiter)
+            out.isDelimited = true;
     out.hasTerminator = doc.hasTerminator;
     out.terminator = doc.terminator;
     // 帧首字面量 = 第一个 literal 段的值；流式定位靠它（NMEA 的 "$"）。
@@ -854,21 +876,6 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             break;
         }
     }
-    if (out.isAscii && doc.lexer == "auto")
-    {
-        // 自动推断：有 literal/delimiter → delimited；只有 width → fixed；只有 key → keyed。
-        bool hasLiteralOrDelim = false, hasWidth = false;
-        for (const CompiledSeg &cs : out.segs)
-        {
-            if (cs.isLiteral || cs.hasDelimiter)
-                hasLiteralOrDelim = true;
-            if (cs.hasWidth)
-                hasWidth = true;
-        }
-        (void)hasLiteralOrDelim;
-        (void)hasWidth;
-    }
-
     out.hasTimestamp = doc.hasTimestamp && doc.timestampExpr;
     if (out.hasTimestamp)
     {

@@ -127,6 +127,7 @@ struct CompiledSeg
 
     // ---- ASCII 词法（SPEC §7）：段边界来自字面量/定界符，不是字节宽度 ----
     bool isAscii = false;
+    int boundary = 0;                    // SegBoundary：0 Byte / 1 Literal / 2 Delimit / 3 Fixed / 4 Rest / 5 Repeat
     bool isLiteral = false; // 字面量段：精确匹配、不产通道（如 $ 或 *）
     std::string literal;
     bool hasDelimiter = false;
@@ -184,7 +185,7 @@ struct CompiledProgram
 
     // ---- 记录层（ASCII）：词法模式 + 帧尾候选集合 ----
     bool isAscii = false;
-    bool isDelimited = false; // lexer=delimited（或按 literal/delimiter 推断）
+    bool isDelimited = false; // 存在 delimiter 段（记录按切分解析）
     bool hasTerminator = false;
     std::vector<std::string> terminator;
     // 用于流式定位的帧首字面量（第一个 literal 段的值）；空表示靠 terminator 分帧。

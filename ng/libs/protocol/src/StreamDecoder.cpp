@@ -19,6 +19,24 @@ namespace
 
 constexpr size_t kNoPos = static_cast<size_t>(-1);
 
+bool isSignedKind(ValueType t)
+{
+    return t == ValueType::I8 || t == ValueType::I16 || t == ValueType::I32 || t == ValueType::I64;
+}
+
+// 按端序从 elem 字节里组装整数（float 也走它，取到的是 bit pattern）。
+uint64_t readIntAt(const uint8_t *p, uint32_t size, bool bigEndian)
+{
+    uint64_t v = 0;
+    if (bigEndian)
+        for (uint32_t i = 0; i < size; ++i)
+            v = (v << 8) | p[i];
+    else
+        for (uint32_t i = size; i > 0; --i)
+            v = (v << 8) | p[i - 1];
+    return v;
+}
+
 bool isBlankByte(char c)
 {
     return c == ' ' || c == '\t';
@@ -278,6 +296,82 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             continue;
         }
 
+        // 字节段：边界由 elemSize × count 推出（位域/变体仍走 readFrame）。
+        if (!seg.isAscii)
+        {
+            const uint32_t elem = seg.elemSize > 0 ? seg.elemSize : 1;
+            const uint32_t cnt = seg.countIsConst ? seg.constCount : 1;
+            const uint32_t total = elem * cnt;
+            if (pos + total > n)
+            {
+                r.segment = seg.name;
+                r.needMore = true;
+                return false;
+            }
+            TypedVec col;
+            col.reset(seg.type);
+            if (seg.type == ValueType::Text)
+            {
+                col.push(TypedValue::fromText(
+                    std::string(reinterpret_cast<const char *>(p + pos), total)));
+            }
+            else
+            {
+                for (uint32_t k = 0; k < cnt; ++k)
+                {
+                    const uint8_t *q = p + pos + k * elem;
+                    TypedValue v;
+                    if (seg.type == ValueType::F32)
+                    {
+                        uint32_t bits = static_cast<uint32_t>(readIntAt(q, 4, seg.bigEndian));
+                        float f;
+                        std::memcpy(&f, &bits, 4);
+                        v = TypedValue::fromF(f, ValueType::F32);
+                    }
+                    else if (seg.type == ValueType::F64)
+                    {
+                        uint64_t bits = readIntAt(q, 8, seg.bigEndian);
+                        double d;
+                        std::memcpy(&d, &bits, 8);
+                        v = TypedValue::fromF(d, ValueType::F64);
+                    }
+                    else
+                    {
+                        const uint64_t raw = readIntAt(q, elem, seg.bigEndian);
+                        v = isSignedKind(seg.type)
+                                ? TypedValue::fromRawInt(static_cast<int64_t>(raw), seg.type)
+                                : TypedValue::fromU(raw, seg.type);
+                    }
+                    if (seg.hasExpect && seg.expectIsConst)
+                    {
+                        const uint64_t want = seg.expectConst.isSigned()
+                                                  ? static_cast<uint64_t>(seg.expectConst.asI64())
+                                                  : seg.expectConst.asU64();
+                        const uint64_t got = (seg.type == ValueType::F32 || seg.type == ValueType::F64)
+                                                 ? static_cast<uint64_t>(v.asDouble())
+                                                 : (v.isSigned() ? static_cast<uint64_t>(v.asI64())
+                                                                 : v.asU64());
+                        if (got != want)
+                        {
+                            r.code = DecodeError::SyncMissing;
+                            r.segment = seg.name;
+                            char buf[128];
+                            std::snprintf(buf, sizeof(buf), "期望 0x%llX，实际 0x%llX",
+                                          static_cast<unsigned long long>(want),
+                                          static_cast<unsigned long long>(got));
+                            r.detail = buf;
+                            return false;
+                        }
+                    }
+                    col.push(v);
+                }
+            }
+            r.vals[seg.slot] = col;
+            spans[seg.slot] = {pos, pos + total};
+            pos += total;
+            continue;
+        }
+
         // 本段之后的第一个 literal（repeat 段的右边界）
         std::string nextLit;
         for (size_t j = si + 1; j < prog.segs.size(); ++j)
@@ -361,7 +455,19 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         size_t tokenStart = pos;
         size_t tokenEnd = n;
         size_t nextPos = n;
-        if (seg.hasDelimiter)
+        if (seg.hasWidth && seg.width > 0)
+        {
+            if (pos + seg.width > n)
+            {
+                r.segment = seg.name;
+                r.needMore = true;
+                return false;
+            }
+            tokenStart = pos;
+            tokenEnd = pos + seg.width;
+            nextPos = tokenEnd;
+        }
+        else if (seg.hasDelimiter)
         {
             bool found = false;
             if (seg.blankDelim)

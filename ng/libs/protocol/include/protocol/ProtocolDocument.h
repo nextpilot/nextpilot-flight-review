@@ -163,8 +163,6 @@ using SeriesSpec = SeriesDef;
 /// 一份协议的唯一类型化表示：JSON 由 codec 解析进来，编辑器和校验器共用同一份结构。
 struct ProtocolDocument
 {
-    // 词法模式："auto"（缺省，按段上的 literal/delimiter/width 推断）| binary | delimited | fixed | keyed
-    std::string lexer = "auto";
     // 帧尾候选集合（如 {"\r\n", "\n"}）。声明了就硬校验，没声明就不管：
     // 有 literal 段时靠 literal 定位分帧，没 literal 时才用它分帧。
     bool hasTerminator = false;
@@ -193,12 +191,40 @@ struct EvalCtx
     bool get(const std::string &n, int index, TypedValue &out, std::string &err) const;
 };
 
-// 段是否是 ASCII 词法段：边界来自 literal/delimiter/width/rest，而不是字节宽度。
-// 一个协议里允许二进制段与 ASCII 段共存（例如"文本头 + 二进制载荷"）。
-inline bool isAsciiSegment(const SegmentDef &s)
+// 段的边界类型：这是唯一的分类维度，不存在"整份协议是 ASCII 还是二进制"。
+//   Byte     → 边界由 type 宽度 × count 推出（位域段不推进游标）
+//   Literal  → 逐字符/逐字节匹配固定字面量（"$"、"*"、0xAA 用 expect 表达）
+//   Delimit  → 读到定界符（含 blank 字符类）
+//   Fixed    → 定宽字符
+//   Rest     → 直到记录尾
+//   Repeat   → 重复到后一个段边界
+// 同一记录里允许混排（文本头 + 二进制载荷）。
+enum class SegBoundary
 {
-    return !s.literal.empty() || s.hasDelimiter || s.hasWidth || s.isRest || !s.repeater.empty();
+    Byte = 0,
+    Literal,
+    Delimit,
+    Fixed,
+    Rest,
+    Repeat
+};
+
+inline SegBoundary boundaryOf(const SegmentDef &s)
+{
+    if (!s.literal.empty())
+        return SegBoundary::Literal;
+    if (s.isRest)
+        return SegBoundary::Rest;
+    if (s.hasWidth)
+        return SegBoundary::Fixed;
+    if (s.hasDelimiter)
+        return SegBoundary::Delimit;
+    if (!s.repeater.empty())
+        return SegBoundary::Repeat;
+    return SegBoundary::Byte;
 }
+
+inline bool isAsciiSegment(const SegmentDef &s) { return boundaryOf(s) != SegBoundary::Byte; }
 
 /// 类型化求值。整型/浮点不隐式混算；越界与除零显式报错。
 bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, TypedValue &out, std::string &err);

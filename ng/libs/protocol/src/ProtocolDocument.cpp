@@ -949,7 +949,6 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
     t.layout = root.value(QStringLiteral("layout")).toString(QStringLiteral("sequential")).toStdString();
     t.name = root.value(QStringLiteral("name")).toString(QStringLiteral("frame")).toStdString();
     t.endian = root.value(QStringLiteral("endian")).toString(QStringLiteral("little")).toStdString();
-    t.lexer = root.value(QStringLiteral("lexer")).toString(QStringLiteral("auto")).toStdString();
     {
         // 帧尾候选集合：声明了就硬校验，没声明就不管（SPEC §7.2）。
         const QJsonValue tv = root.contains(QStringLiteral("term"))
@@ -984,21 +983,18 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
         t.timestampFallback = to.value(QStringLiteral("fallback")).toString(QStringLiteral("reject")).toStdString();
     }
 
-    // 文档级 ASCII：lexer 显式声明，或任一段带 ASCII 词法提示。
-    // ASCII 段没有"元素数 × 字节宽"，count 一律可缺省（默认 1）。
-    bool docAscii = (t.lexer == "delimited" || t.lexer == "fixed" || t.lexer == "keyed");
-    if (!docAscii)
+    // 只要协议里有字符边界段，字符段的 count 即可缺省（默认 1）。
+    // 这是段级事实，不是文档级模式。
+    bool docAscii = false;
+    for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
     {
-        for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
+        const QJsonObject sg = sv.toObject();
+        if (sg.contains(QStringLiteral("literal")) || sg.contains(QStringLiteral("delimiter")) ||
+            sg.contains(QStringLiteral("width")) || sg.contains(QStringLiteral("rest")) ||
+            sg.contains(QStringLiteral("repeater")))
         {
-            const QJsonObject sg = sv.toObject();
-            if (sg.contains(QStringLiteral("literal")) || sg.contains(QStringLiteral("delimiter")) ||
-                sg.contains(QStringLiteral("width")) || sg.contains(QStringLiteral("rest")) ||
-                sg.contains(QStringLiteral("repeater")))
-            {
-                docAscii = true;
-                break;
-            }
+            docAscii = true;
+            break;
         }
     }
 
@@ -1341,8 +1337,6 @@ QJsonObject toJson(const ProtocolDocument &doc)
     root["layout"] = QString::fromStdString(doc.layout);
     root["endian"] = QString::fromStdString(doc.endian);
     root["maxsize"] = static_cast<int>(doc.maxsize);
-    if (doc.lexer != "auto")
-        root["lexer"] = QString::fromStdString(doc.lexer);
     if (doc.hasTerminator)
     {
         if (doc.terminator.size() == 1)

@@ -298,12 +298,6 @@ QStringList validate(const QJsonObject &o)
             errs << QStringLiteral("endian 只能是 little/big（别名 le/be，解析层归一）");
     }
     {
-        const QString lx = o.value(QStringLiteral("lexer")).toString(QStringLiteral("auto"));
-        if (lx != QLatin1String("auto") && lx != QLatin1String("binary") && lx != QLatin1String("delimited") &&
-            lx != QLatin1String("fixed") && lx != QLatin1String("keyed"))
-            errs << QStringLiteral("lexer 只能是 auto/binary/delimited/fixed/keyed：%1").arg(lx);
-    }
-    {
         // term 是候选集合：写了就硬校验，没写就不管（SPEC §7.2）。
         const QJsonValue tv = o.contains(QStringLiteral("term"))
                                   ? o.value(QStringLiteral("term"))
@@ -329,11 +323,8 @@ QStringList validate(const QJsonObject &o)
     // series.payload 的段名：它是变体容器，允许被 length.fields 引用。
     const QString payloadName =
         o.value(QStringLiteral("series")).toObject().value(QStringLiteral("payload")).toString().trimmed();
-    // 文档级 ASCII 判定：lexer 显式声明，或任一段带 ASCII 词法提示。
-    // ASCII 段没有"元素数 × 字节宽"语义，count 一律可缺省（默认 1）。
-    const QString lexerMode = o.value(QStringLiteral("lexer")).toString(QStringLiteral("auto"));
-    bool docAscii = (lexerMode == QLatin1String("delimited") || lexerMode == QLatin1String("fixed") ||
-                     lexerMode == QLatin1String("keyed"));
+    // 任一段带字符边界（literal/delimiter/width/rest/repeater）→ 字符段 count 可缺省。
+    bool docAscii = false;
     if (!docAscii)
     {
         for (const QJsonValue &sv : segArr)
