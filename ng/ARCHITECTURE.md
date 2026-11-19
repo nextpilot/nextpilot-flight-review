@@ -366,7 +366,7 @@ struct ParserBinding {
 };
 ```
 
-落地是 `core::IngestPipeline`：持有通道表，喂字节时扇出给所有活跃通道；
+落地是 `context::IngestPipeline`：持有通道表，喂字节时扇出给所有活跃通道；
 一个解析器报错只记在该通道上并继续其它通道（一个格式坏了不该拖垮整条源）。
 
 **内存纪律**：C++ 侧只保留一个批次缓冲，不物化全量；帧立即 `appendFrame` 进 Rust。
@@ -484,7 +484,7 @@ NG_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 ng 只保留**一个绑定器**：
 
 ```
-core::UiSlotRegistry（纯数据：有哪些页签/分组/面板/动作）
+registry::UiSlotRegistry（纯数据：有哪些页签/分组/面板/动作）
         ↓
 gui::ShellBinder（唯一知道 SARibbon / ADS 的地方）
    ribbon.page  → SARibbonCategory
@@ -646,8 +646,8 @@ NG_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 
 | 层 | 载体 | 内容 | 谁可见 |
 |---|---|---|---|
-| **描述**（纯数据） | `core::IPanelContribution` / `PanelSpec` | id / 标题 / 建议区域 / 图标 / 附加数据 | headless 也可见（CLI `--list-contributions panel` 可查） |
-| **机制**（纯数据） | `core::PanelFactoryRegistry` | `QHash<id, 工厂>`；`QWidget` 只前置声明 | core，谁都能调 |
+| **描述**（纯数据） | `registry::IPanelContribution` / `PanelSpec` | id / 标题 / 建议区域 / 图标 / 附加数据 | headless 也可见（CLI `--list-contributions panel` 可查） |
+| **机制**（纯数据） | `registry::PanelFactoryRegistry` | `QHash<id, 工厂>`；`QWidget` 只前置声明 | registry，谁都能调 |
 | **实现**（QWidget） | 知识包的**呈现层** | 真正的面板类，TU 末尾 `NG_REGISTER_PANEL` | 仅 GUI |
 
 描述与实现用**同一个 id** 关联。知识包因此拆成两个产物：
