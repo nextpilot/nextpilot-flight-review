@@ -823,6 +823,123 @@ struct ProtocolChannel
 
 ---
 
+---
+
+## 11. 参考库语法对照：我们该改什么
+
+> 对照对象：Kaitai Struct（`.ksy`，YAML + codegen）、CAN DBC（工业界信号数据库）、Construct（Python 组合子）、DFDL（XML Schema + 注解）。目的不是抄，是**找出我们与全行业相反/缺失/冗余的地方**。
+
+### 11.1 逐项对照
+
+| # | 表达点 | Kaitai | DBC | Construct | psproto 现状 | 判定 |
+|---|---|---|---|---|---|---|
+| 1 | **`size` 语义** | **字节数**（"amount of bytes to read"）；`size-eos: true` 读到流末 | 无（用 bitLength） | 字节 | **元素数**（`bytes = count * type.size`） | **🔴 与全行业相反** |
+| 2 | 重复 | `repeat: expr / eos / until`，`repeat-until` 里 `_` 指上一元素 | 无 | `Array(n,…)` / `RepeatUntil` | 仅靠 `size` 数组近似 | 🔴 缺 `eos`/`until` |
+| 3 | 条件字段 | `if:` 表达式，false 时跳过得 null | 无 | `If` | 无（只能整帧变体替换） | 🔴 缺 |
+| 4 | 类型切换 | `switch-on` / `switch-bytes`（**字段级局部**） | `M` / `m<val>` 多路复用（**信号级局部**） | `Switch` | `series`（**整帧段表替换**） | 🟡 语义粒度不同 |
+| 5 | 常量/魔数 | `contents: [0xAA, 0x55]` | 无 | `Const` | `value` | 🟡 命名误导 |
+| 6 | 终止符 | `terminator` + `consume` + `eos-error` | 无 | `Terminated` | 无 | 🔴 缺 |
+| 7 | 位域 | `bits`（unaligned bit integers） | **核心**：`start|len@order` | `BitStruct` | 无 | 🔴 缺（§4.8） |
+| 8 | 枚举 | `enums` | `VAL_` 值表 | `Enum` | 无 | 🔴 缺 |
+| 9 | 校验/CRC | `process: crc32` 等 | 无（DBC 不管校验） | `Checksum` | 算子 + `over` 范围 + 自定义参数 | 🟢 **我们更强** |
+| 10 | 偏移/填充 | `pos` / `instances` | 无 | `Padding` / `Seek` | hidden 段模拟 | 🟡 语义模糊 |
+| 11 | 物理范围声明 | 无 | `[min|max]`（元信息，不判失败） | 无 | `checks.range`（**判失败**） | 🟡 两类需求混一起 |
+| 12 | 单位 | 无 | `"unit"` | 无 | `unit` | 🟢 一致 |
+| 13 | 派生/计算 | `instances`（惰性、可算） | 无 | `Computed` | `derive`（计划） | 🟢 够用 |
+| 14 | 类型别名 | `types`（子类型） | `SGTYPE`（信号模板） | 无 | 无 | 🟡 缺（重复写 scale/unit） |
+| 15 | 文档 | `doc` / `doc-ref` | `CM_` 注释 | 无 | `description` | 🟢 一致 |
+| 16 | 时间戳 | 无 | 无 | 无 | `timestamp`（expr/unit/origin） | 🟢 **我们有，别人没有** |
+| 17 | 整除语义 | `//` 整除，`/` 浮点 | — | Python 语义 | `/` **全部 trunc** | 🔴 陷阱 |
+
+### 11.2 五个必须先改的（不是补功能，是修错）
+
+**① `size` 改字节数。** Kaitai 文档原话是 "Specify amount of **bytes** to read in size key"；DBC 用 `bitLength`；没人用"元素数"叫 `size`。我们写 `"size": 4` 一个 `u16` 数组，结果是 **8 字节**——这是最容易被误读的一处。改：`size` = 字节，新增 `count` = 元素数。
+
+**② `/` 改浮点除，整除用 `//`。** 现在 `case '/': out = std::trunc(a / b)`，写 `"size": "len/2"` 得 0 会觉得"明明该是 1"。Kaitai 用 `//` 表整除正是为了避免这个坑。
+
+**③ 变体语义说清楚。** `variants[].segments` 与顶层 `segments` 是什么关系——替换？追加？共享段从哪来？对照 Kaitai 的 `switch-on`（字段级）和 DBC 的 `mux`（信号级），我们的粒度太粗。建议：保留帧级 `series`，**新增段级 `if`** 覆盖 90% 场景。另外 `fromVariant`（`SequentialCodec.cpp` 用来拼通道前缀）是**实现细节泄漏进 schema**，用户不该写这个键。
+
+**④ `value` 改名。** 它是"**期望值**"（常量匹配），Kaitai 叫 `contents`、Construct 叫 `Const`。和 `valueExpr` 并列时，"value"和"valueExpr"谁是值谁是表达式全凭猜。改：`expect`（常量）/ `expectExpr`（表达式）。
+
+**⑤ 端序值校验不一致。** 解码接受 `be`/`le`（`SequentialCodec.cpp` 里 `endian == "big" || endian == "be"`），`validate` 只认 `big`/`little`（`ProtocolSpec.cpp:93-96`）。→ 写 `"endian": "be"` 解码能跑、校验报错。统一为 `little`/`big`，别名在解析层归一。
+
+### 11.3 三个概念冗余（你最讨厌"概念太多"，这里就有一批）
+
+| 冗余 | 现状 | 建议 |
+|---|---|---|
+| `hidden` vs `plot` | `if (seg.hidden || !seg.plot …) continue` — **两个开关做同一件事** | 合成一个 `visible`（或 `emit`） |
+| `str` / `string` / `ascii` / `char` | 四个名字一个类型（`FType::STR`） | 只留 `text`，其余在解析层做别名 |
+| `role:"payload"` vs `series.payload` | 段上标 role，series 里又用名字引用同一个段 | 去掉段级 `role:"payload"`，只留 `series.payload` 引用 |
+| `checks` 里的谓词与摘要 | `eq/ne/lt…`（判真假）与 `crc/sum/xor`（算摘要）挤在同一个 `op` 命名空间；代码里 `op=="in"` 还被误归入 `sequenceOp` | 拆成 `expect`（谓词）与 `digest`（摘要/校验和） |
+
+### 11.4 我们比参考库强的地方（要保住，别在重构中丢了）
+
+1. **CRC 覆盖范围声明**：`over: ["name:from-to"]` + 自定义 `poly/init/refin/refout/xorout`。Kaitai 只有 `process` 简单套用，DBC 完全不管校验。
+2. **帧变体 + 选择器**：`series.selector` 直接从帧字段选布局，Kaitai 要写 `switch-on` + 多个子类型，DBC 要写 mux 信号。
+3. **时间戳表达**：`timestampExpr` + `unit` + `origin: first_frame` + `fallback`，三个参考库都没有——这对"数据分析软件"是刚需。
+4. **运行时模板**（不 codegen 也能解）：Kaitai/DBC 都是"先编译/先加载再解"，模板改动要重编译（Kaitai）或重读 DBC。我们支持运行中换模板。
+
+### 11.5 修订后的 schema 骨架（v2）
+
+```jsonc
+{
+  "version": "2",
+  "name": "can_8byte",
+  "layout": "sequential",
+  "endian": "little",              // 只认 little/big
+  "maxsize": 64,
+
+  "segments": [
+    { "name": "id",    "type": "u32", "size": 4, "role": "sync" },
+    { "name": "dlc",   "type": "u8",  "size": 1, "role": "length" },
+    { "name": "body",  "type": "u8",  "size": 8, "hidden": true },   // 位域容器
+
+    // 位域：DBC 的 SG_ 一行一个信号
+    { "name": "rpm", "type": "u16",
+      "bit": { "base": "body", "offset": 8, "width": 16, "order": "msb0" },
+      "scale": 0.25, "unit": "rpm",
+      "range": [0, 8000],                                     // ← 声明，不判失败
+      "enum": { "0": "off", "1": "on" } },                    // ← 状态量可读化
+
+    { "name": "crc", "type": "u16",
+      "digest": { "alg": "crc16/modbus", "over": ["id..body"] } },
+    { "name": "eol", "type": "u8", "size": 1 }                // ← 缺 driver
+  ],
+
+  "series": { "selector": "id", "payload": "body", "fallback": "raw", "variants": […] },
+
+  // 新增：按条件出现的字段（替代"整帧变体"覆盖不到的场景）
+  // "if": "has_extra == 1"
+}
+```
+
+新增/改名清单（按落地顺序）：
+
+| 变更 | 类型 | 兼容 |
+|---|---|---|
+| `size` → 字节，新增 `count` | **破坏** | 提供 `"version": 1` 兼容分支或批量迁移脚本 |
+| `/` 浮点，`//` 整除 | **行为变更** | 现有模板无人用除法的话无感；要扫一遍 fixture |
+| `value` → `expect` | 改名 | 双读一版 |
+| `hidden`+`plot` → `emit` | 合并 | 双读一版 |
+| 端序别名归一 | 修错 | 无感 |
+| 新增 `bit` / `until` / `if` / `repeat` / `enum` / `range` / `pad` / `digest` | 新增 | 纯增量 |
+
+### 11.6 明确不照搬
+
+| 不学 | 理由 |
+|---|---|
+| Kaitai 的 **codegen 优先** | 我们要运行时换模板 + 可视化编辑，codegen 作为附加（§4.6） |
+| Kaitai 的 `types` 深层嵌套 | 会把扁平段表变成树，破坏我们"不发散"的架构；用 `SGTYPE` 式的**平级类型别名**代替 |
+| DBC 的定宽文本格式（一行一信号、缩进敏感） | 我们要 JSON，可嵌套、可 diff、可程序化生成 |
+| DFDL 的 XML Schema 注解体系 | 复杂度与收益不成比例，JVM 生态 |
+| Construct 的"代码即 schema" | 模板要能被 GUI 编辑器和非程序员使用 |
+
+### 11.7 顺带记一笔 DBC 的官方坑（导入时必须知道）
+
+DBC 规范文档写 `byte_order = '0' | '1'; (* 0=little endian, 1=big endian *)`，而**实际实现全是反的**：`0` = Motorola(big)、`1` = Intel(little)。OpenVehicles 文档直接写"the DBC format documentation is wrong on this"。我们做 DBC 导入时以实测为准，并在 README 里警告。
+
+---
+
 ## 5. 分批与验收
 
 | 批次 | 内容 | 验收 |
