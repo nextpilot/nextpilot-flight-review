@@ -18,6 +18,14 @@
 
 **判断标准**：能描述"一段字节 → 一帧 → 若干字段"，就归 psproto；需要"先读索引表再跳着读"的，归上层容器解析器，不进 psproto。
 
+### 0.1 能力归属原则（先定这条，避免把能力砍窄）
+
+**psproto 把能力按协议族需要配齐，不按"谁来用"砍。**
+
+- ULog / MAVLink / NMEA / OEM7 等格式在产品里可以有**专门的代码解析器**（字典驱动、复杂协议用代码更稳）；这是**落地方式**的选择，不构成从 psproto 规范里删除对应能力的理由。
+- 同一项能力（位域、ASCII 行协议、带 `inject` 的 CRC、24 位 CRC）：有现成代码解析器就用代码；遇到私有格式、临时调试、陌生报文，再用 psproto 模板。用不用、走哪条路，是上层和用户的选择。
+- 规范只排除**容器 / 嵌套 / 索引跳读**这类超出"一帧怎么解"定位的东西；其余能力一律保留。
+
 ---
 
 ## 1. 顶层
@@ -49,8 +57,8 @@
 |---|---|---|---|
 | `name` | string | 唯一名，表达式按名引用 | 必填 |
 | `type` | string | `u8/i8/u16/i16/u32/i32/u64/i64/f32/f64/bool/bcd/text`，或 `@别名` | 必填 |
-| `size` | 数字/表达式 | **字节数** | 与全行业一致；可引用前面段（`"len"`） |
-| `count` | 数字/表达式 | **元素数** | 与 `size` 二选一 |
+| `count` | 数字/表达式 | **元素个数（数组长度）** | 标量省略（默认 1）；**字节数由 `type` 推算，不写**；可引用前面段（`"len"`） |
+| `length` | object | 长度段反算绑定 | 原 `counts`：这段的值必须等于后面字段合计的字节/元素数；见 §2.4 |
 | `endian` | `little`/`big` | 覆盖顶层端序 | 别名 `le`/`be` 在解析层归一，**不再有 `bigEndian` 布尔** |
 | `scale` / `offset` | number | 物理换算 `phys = raw*scale + offset` | 存在时通道类型为 `f64` |
 | `unit` | string | 单位 | 显示用 |
@@ -59,12 +67,12 @@
 | `expectExpr` | 表达式 | 常量匹配（表达式形式） | 原 `valueExpr` |
 | `checks` | array | **谓词校验**（eq/ne/lt/le/gt/ge/in/range/mask） | 见 §4.1 |
 | `digest` | object | **摘要校验**（crc/sum/xor/parity） | 见 §4.2 |
-| `counts` | object | 长度声明（这段的值必须等于后面多少字节/元素） | 同 v1 |
+| `length` | object | 长度段反算绑定 | 见 §2.4；原 v1 `counts` |
 | `bit` | object | 位域 | 见 §6 |
 | `if` | 表达式 | 条件字段，false 时整段跳过 | 新增 |
 | `enum` | object | 值→名字映射 | 新增 |
 | `range` | `[min,max]` | **声明**物理范围（不判失败） | 与 `checks.range` 语义区分 |
-| `repeat` | `elems`/`eos`/`until` | 重复方式 | 默认 `elems`（由 size/count 定） |
+| `repeat` | `elems`/`eos`/`until` | 重复方式 | 默认 `elems`（由 `count` 定） |
 | `until` | 表达式/字符串 | 重复终止条件（读到该值为止） | 配 `repeat:"until"` |
 | `consume` | bool | ASCII 段是否吃掉结束分隔符 | 见 §7 |
 | `derive` | 表达式 | 计算字段（非字节读出） | 新增 |
@@ -86,10 +94,20 @@
 ### 2.3 **删除 `role`**
 
 v1 的 `role`（sync/length/payload/checksum/data）与显式键**完全重叠**：
-`role:"sync"` ↔ `expect`、`role:"length"` ↔ `counts`、`role:"checksum"` ↔ `digest`、`role:"payload"` ↔ `series.payload`。
+`role:"sync"` ↔ `expect`、`role:"length"` ↔ `length`、`role:"checksum"` ↔ `digest`、`role:"payload"` ↔ `series.payload`。
 
 保留它只会有两种结果：**与显式键冲突**，或**变成没人读的装饰**。两种都是"概念太多"的病。
 → **v2 删 `role`，行为一律由显式键决定。** v1 模板迁移时按表机械映射。
+
+---
+
+### 2.4 `count` 与字节数的关系（不要再用 `size` 这个词）
+
+- **`count` = 元素个数**。人写协议时想的是"这一段有几个数"，不是"几个字节"。
+- **字节数不写**：`bytes = count × sizeof(type)`，由引擎按 `type` 推算。`u16` 天然是 2 字节，不需要在段里重复一遍。
+- 原始字节块（`type:"u8"`）此时 `count` 就是字节数，两种说法一致，不冲突。
+- **标量段省略 `count`**，默认 1。
+- `length`（原 `counts`）是**长度段反算**：声明这个段的值必须等于后面 payload 的合计字节/元素数，用于校验帧长度，与数组长度是两件事。
 
 ---
 
@@ -258,10 +276,11 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 
 | # | 现状 | v2 | 为什么 |
 |---|---|---|---|
-| 1 | `size` = **元素数**（`bytes = count * type.size`） | `size` = **字节数**，元素数用 `count` | 全行业（Kaitai/DBC/Construct）都是字节；写 `"size":4` 配 `u16` 现在得 8 字节，且不报错 |
-| 2 | `endian` 解码认 `be`、校验只认 `big` | 统一 `little`/`big`，别名在解析层归一 | 写 `"be"` 会"能跑但校验报错" |
-| 3 | `std::stoul` 解析 `poly`/`init`/`xorout` **无异常保护** | 安全解析，失败写 `err` | `"poly":"0xZZ"` 直接抛异常终止进程 |
-| 4 | `/` **恒为 trunc**（浮点也被截断） | 类型决定语义 | `1/2.0` 现在得 0 |
+| 1 | `endian` 解码认 `be`、校验只认 `big` | 统一 `little`/`big`，别名在解析层归一 | 写 `"be"` 会"能跑但校验报错" |
+| 2 | `std::stoul` 解析 `poly`/`init`/`xorout` **无异常保护** | 安全解析，失败写 `err` | `"poly":"0xZZ"` 直接抛异常终止进程 |
+| 3 | `/` **恒为 trunc**（浮点也被截断） | 类型决定语义 | `1/2.0` 现在得 0 |
+
+> 注：v1 的 `size` 表示**元素个数**，这是符合写协议习惯的，**语义保留、不反转**；只是名字容易被误读成"字节大小"，改名为 `count`（归入下表收敛项）。
 
 ### 收敛（5 项，删概念）
 
@@ -272,6 +291,8 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 | 7 | `value` → **`expect`** | 与 `valueExpr` 并列时"谁是常量谁是表达式"靠猜 |
 | 8 | `str`/`string`/`ascii`/`char` → **`text`** | 四个名字一个类型 |
 | 9 | **删 `fromVariant`** | 实现细节泄漏进 schema |
+| 10 | `size` → **`count`**（元素个数，语义不变） | `size` 容易被误读成字节数；字节宽由 `type` 推算，不需要第二个字段 |
+| 11 | `counts` → **`length`** | 避免与新的 `count` 看成一对；它是长度段反算，与数组长度是两件事 |
 
 ### 新增（8 项，补表达力）
 
@@ -294,16 +315,18 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 | 9 | 容器 / 嵌套 / 索引跳读 | PCAP / MDF4 / BLF / PNG / SpaceWire | ✗ | ✗（明确不覆盖） |
 | 10 | 6-bit ASCII 装甲 | **AIS** | ✗ | ✗（P2，需专门解包器） |
 
+**两轴说明**：表中 v2 列指"psproto 模板能否表达该能力"，**与产品里是否已有专门代码解析器无关**。ULog / MAVLink / NMEA / OEM7 可由代码解析器承担；同一项能力在规范里保留，遇到私有格式时模板也能写。两者并存，互不为前提。
+
 **结论**：v1 覆盖 3/8 类"值得覆盖"的能力；v2 覆盖 8/8，仅容器与 AIS 装甲明确排除。
-第 4、5 两条是**以前没意识到的硬缺口**——不补，MAVLink 和 RTCM 这两个主流协议族根本进不来。
+第 4、5 两条是**以前没意识到的硬缺口**：不补，psproto 模板这条路表达不了 MAVLink 的 CRC_EXTRA 与 RTCM 的 24 位 CRC；这两个协议族本身仍可由专门代码解析器承担。
 
 ---
 
 ## 12. 兼容与迁移
 
 - 顶层用 `"psproto":"2"` 标识；读到 `"version":"1"` 或缺失时走 v1 兼容分支（**只读不写**）。
-- `size` 语义反转是唯一**无法自动迁移**的项（因为 `"size":4` 在两种语义下都合法，含义不同）。迁移器必须**显式报告**每一处 `size` 并让人确认，不能自动猜。
-- 其余改名/合并项可自动迁移，迁移器输出逐条 diff。
+- `size` → `count` 是**纯改名**，语义不变（元素个数），可自动迁移；`counts` → `length` 同理。
+- 其余改名/合并项可自动迁移，迁移器输出逐条 diff。本规范没有"无法自动迁移"的语义反转项。
 
 ---
 
@@ -329,8 +352,8 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 ## 14. 一句话总结
 
 **psproto v2 的调整不是"加功能"，而是三件事**：
-**修 4 处错**（size 语义、端序校验、崩溃、除法）、
-**删 5 个概念**（role、hidden/plot/hasValue、value、四个文本类型名、fromVariant）、
+**修 3 处错**（端序校验、崩溃、除法）、
+**收敛 7 个概念**（role、hidden/plot/hasValue、value、四个文本类型名、fromVariant、size→count、counts→length）、
 **补 8 项表达力**（位域、条件段、digest 参数化与 inject、ASCII 原语、enum、range、repeat、types 别名）。
 
 做完这三件，能力覆盖从 3/8 到 8/8，概念数量反而**减少**。

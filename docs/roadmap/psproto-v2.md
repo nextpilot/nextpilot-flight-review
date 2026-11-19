@@ -143,9 +143,9 @@ schema 顶层结构：
   "name": "roll",
   "role": "data",
   "type": "i16",
-  "size": 1,
+  "count": 1,
   "bit": { "offset": 0, "width": 16 },     // ➕ 位域（可选，缺省整字节对齐）
-  "until": "\r\n",                          // ➕ 读到终止符（与 size 互斥）
+  "until": "\r\n",                          // ➕ 读到终止符（与 count 互斥）
   "scale": 0.01, "offset": 0.0, "unit": "rad",
   "derive": "temp_c * 1.8 + 32",            // ➕ 派生成通道（可引用前序段）
   "checks": [ { "op": "crc16", "over": ["body:0-10"] } ],
@@ -473,7 +473,7 @@ phys = raw * scale + offset;
 | 位域 + `derive` / 脚本 | 支持，位域值可被脚本引用 |
 | 位域 + 变体 `series` | 支持（变体整体替换段表，offset 语义不变） |
 | 位域 + `until`（ASCII） | **互斥**，校验报错 |
-| 位域 + `counts` 数组 | **互斥**（数组请用字节粒度段 + `size` 表达式） |
+| 位域 + `counts` 数组 | **互斥**（数组请用字节粒度段 + `count` 表达式） |
 | 位域 + `role` | 互斥（sync/length/payload/checksum 必须字节粒度） |
 
 ### 4.8.7 验收（硬标准，不接受“看起来对”）
@@ -538,9 +538,9 @@ $GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n
   "endian": "little",
   "frame": { "starts": ["$", "!"], "terminator": "\r\n" },
   "segments": [
-    { "name": "start",  "type": "u8", "size": 1, "role": "sync", "value": "$" },
+    { "name": "start",  "type": "u8", "count": 1, "role": "sync", "value": "$" },
     { "name": "addr",   "type": "ascii", "size": 5, "hidden": true },   // GPGGA
-    { "name": "sep0",   "type": "u8", "size": 1, "hidden": true, "consume": 0, "value": "," },
+    { "name": "sep0",   "type": "u8", "count": 1, "hidden": true, "consume": 0, "value": "," },
 
     { "name": "utc",    "type": "time_hhmmss", "until": ",", "consume": 1, "unit": "s" },
     { "name": "lat",    "type": "text_number", "until": ",", "consume": 1, "radix": 10, "empty": "nan" },
@@ -554,8 +554,8 @@ $GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n
     // … 水位/单位/差分龄期/站号，同构
     { "name": "bodyEnd","type": "u8", "size": 0, "hidden": true },       // 校验区间的右端点锚
 
-    { "name": "star",   "type": "u8", "size": 1, "hidden": true, "value": "*" },
-    { "name": "csum",   "type": "hex2", "size": 1,
+    { "name": "star",   "type": "u8", "count": 1, "hidden": true, "value": "*" },
+    { "name": "csum",   "type": "hex2", "count": 1,
       "checks": [ { "op": "xor8", "over": ["addr..bodyEnd"] } ] },
     { "name": "eol",    "type": "u8", "size": 2, "hidden": true, "value": "\r\n" }
   ],
