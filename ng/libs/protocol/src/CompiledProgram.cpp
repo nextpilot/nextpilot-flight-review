@@ -632,6 +632,13 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
         cs.pattern = s.pattern;
         cs.emptyPolicy = s.emptyPolicy;
+        // repeat 同样是"仅 bin"键，此前只在 text 编译函数里编译 → bin 段 repeat 一直静默为 0。
+        if (!s.repeatMode.empty())
+        {
+            cs.repeatMode = (s.repeatMode == "eos") ? 1 : 2;
+            if (cs.repeatMode == 2 && !c.compileExpr(s.repeatUntil, cs.repeatUntil))
+                return false;
+        }
         cs.isText = (s.type.type == ValueType::Text);
         if (!compileTextSeg(s, cs, c))
             return false;
@@ -811,6 +818,12 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
             cs.pattern = s.pattern;
             cs.emptyPolicy = s.emptyPolicy;
+            if (!s.repeatMode.empty())
+            {
+                cs.repeatMode = (s.repeatMode == "eos") ? 1 : 2;
+                if (cs.repeatMode == 2 && !c.compileExpr(s.repeatUntil, cs.repeatUntil))
+                    return false;
+            }
             cs.isText = (s.type.type == ValueType::Text);
             if (!compileTextSeg(s, cs, c))
                 return false;

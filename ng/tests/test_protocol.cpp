@@ -530,6 +530,33 @@ int main(int argc, char *argv[])
         OK("text 段 on_mismatch:skip：不出通道且 errors 留存段名/帧号明细");
     }
 
+    // --- 9e) bin 段 repeat eos / until 真正生效（此前只在 text 编译函数里赋值，bin 静默为 0） ---
+    {
+        const QByteArray eosTpl = R"({
+          "name":"rep_eos","mode":"bin","layout":"sequential","maxsize":16,
+          "segments":[{"name":"a","type":"u8","count":3},{"name":"b","type":"u8","repeat":"eos"}]})";
+        ProtocolDecodeResult er =
+            decodeSequentialJson(QByteArray::fromHex("0A0B0C141516"), eosTpl);
+        CHECK(er.ok);
+        int bCount = 0;
+        for (const auto &ch : er.channels)
+            if (ch.name.rfind("frame.b", 0) == 0) ++bCount;
+        CHECK(bCount == 3);
+
+        const QByteArray untilTpl = R"({
+          "name":"rep_until","mode":"bin","layout":"sequential","maxsize":16,
+          "segments":[{"name":"a","type":"u8","count":3},
+                      {"name":"b","type":"u8","repeat":{"mode":"until","until":"b>=20"}}]})";
+        ProtocolDecodeResult ur =
+            decodeSequentialJson(QByteArray::fromHex("0A0B0C141516"), untilTpl);
+        CHECK(ur.ok);
+        int uCount = 0;
+        for (const auto &ch : ur.channels)
+            if (ch.name.rfind("frame.b", 0) == 0) ++uCount;
+        CHECK(uCount == 1); // 第一个元素 20 就满足 b>=20，立刻停
+        OK("bin 段 repeat：eos 读到帧末（3 元素）、until 条件命中即停（1 元素）");
+    }
+
     {
         const QByteArray u64Tpl = R"({
           "name":"u64prec","mode":"bin","layout":"sequential","endian":"little","maxsize":8,
@@ -1077,24 +1104,95 @@ int main(int argc, char *argv[])
             "{\"name\":\"x\",\"layout\":\"weird\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
             "{\"name\":\"x\",\"mode\":\"bin\",\"maxsize\":-1,\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
             "{\"name\":\"x\",\"mode\":\"text\",\"term\":42,\"segments\":[{\"name\":\"a\",\"type\":\"char\"}]}",
-            "{\"name\":\"x\",\"mode\":\"text\",\"series\":{\"selector\":\"ghost\",\"payload\":\"p\",\"variants\":[]},\"segments\":[]}"
+            "{\"name\":\"x\",\"mode\":\"text\",\"series\":{\"selector\":\"ghost\",\"payload\":\"p\",\"variants\":[]},\"segments\":[]}",
+            "{\"name\":\"x\",\"mode\":\"BIN\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":null,\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"\",\"mode\":\"bin\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"segments\":[]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":null}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[null]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[[]]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":1.5}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":true}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":1000000000}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":\"a+b\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":\"-1\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":\"2147483648\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"repeat\":{\"mode\":\"nope\"}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"repeat\":{\"mode\":\"until\",\"until\":\"ghost>1\"}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"if\":\"ghost\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"as\":\"z\",\"derive\":\"ghost\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"offset\":8,\"width\":1,\"base\":\"a\"}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"offset\":0,\"width\":9}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"base\":\"a\",\"offset\":0,\"width\":4}},{\"name\":\"b\",\"type\":\"u8\",\"bit\":{\"base\":\"ghost\",\"offset\":0,\"width\":4}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"bit\":{\"offset\":0,\"width\":4,\"lsb0\":true,\"msb0\":true}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"endian\":\"BE\",\"segments\":[{\"name\":\"a\",\"type\":\"u16\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"endian\":123,\"segments\":[{\"name\":\"a\",\"type\":\"u16\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"maxsize\":0,\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"maxsize\":\"big\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"expect\":\"a\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"checks\":[{\"op\":\"eq\"}]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"checks\":[{\"op\":\"eq\",\"value\":\"x\"}]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"checks\":[{\"op\":\"crc16\",\"over\":[\"ghost\"]}]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"checks\":[{\"op\":\"crc16\",\"over\":[\"b:a\"]}]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"digest\":{\"script\":\"\"}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"digest\":{\"alg\":\"crc32\",\"over\":[\"ghost\"]}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"enum\":[\"nope\"]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"range\":\"nope\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"scale\":null}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"offset\":\"x\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"transform\":[\"scale(1,2,3,4,5)\"]}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"emit\":\"nope\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"on_mismatch\":123}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"prefix\":123}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"unit\":123}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"bool\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"width\":\"x\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"width\":0}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"base\":0}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"base\":37}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"number\",\"delimiter\":\"\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"number\",\"delimiter\":123}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"number\",\"repeater\":true}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"number\",\"rest\":1}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"number\",\"time\":\"nope\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"number\",\"fixed\":-1}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"number\",\"pattern\":\"(\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"key\":\"a\",\"literal\":\"*\"}]}",
+            "{\"name\":\"x\",\"mode\":\"text\",\"layout\":\"sequential\",\"series\":{\"selector\":\"ghost\",\"payload\":\"p\",\"variants\":[]},\"segments\":[]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"series\":{\"selector\":\"a\",\"payload\":\"ghost\",\"variants\":[]},\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"series\":{\"selector\":\"a\",\"payload\":\"a\",\"variants\":[{\"name\":\"v\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}]},\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"timestamp\":{\"mode\":\"delta\",\"field\":\"ghost\"},\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"timestamp\":\"nope\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\"}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"count\":1,\"length\":{\"fields\":[\"ghost\"]}}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"u8\",\"width\":70000,\"count\":2}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"bcd\",\"base\":99}]}",
+            "{\"name\":\"x\",\"mode\":\"bin\",\"layout\":\"sequential\",\"segments\":[{\"name\":\"a\",\"type\":\"char\",\"value\":\"zz\"}]}",
         };
         int thrown = 0;
+        int accepted = 0;
         for (const char *j : badTpls)
         {
             try
             {
                 const QJsonObject root = QJsonDocument::fromJson(QByteArray(j)).object();
-                (void)validate(root);
+                const QStringList issues = validate(root);
                 ProtocolDocument doc;
                 std::string err;
-                const bool parsed = parseDocument(root, doc, err);
+                const bool parsed = issues.isEmpty() && parseDocument(root, doc, err);
                 CompiledProgram prog;
-                if (parsed)
-                    compileProgram(doc, prog, err);
+                const bool compiled = parsed && compileProgram(doc, prog, err);
                 // 随机字节喂解码，同样必须不崩
                 ProtocolDecodeResult dr = decodeSequentialJson(QByteArray::fromHex("000102FF"), QByteArray(j));
-                (void)dr;
+                if (compiled && dr.ok)
+                {
+                    ++accepted;
+                    fprintf(stderr, "畸形模板被放行: %s\n", j);
+                }
+                if (!dr.ok && dr.error.isEmpty())
+                    ++thrown; // 拒绝却不给原因 = 静默失败
             }
             catch (...)
             {
@@ -1103,7 +1201,8 @@ int main(int argc, char *argv[])
             }
         }
         CHECK(thrown == 0);
-        OK("畸形模板批量扫荡：41 份坏模板全链路不抛异常、不崩溃");
+        CHECK(accepted == 0);
+        OK("畸形模板批量扫荡：108 份坏模板全链路不抛异常、不崩溃、不被放行");
     }
 
     // --- text 变体：按 msgid 选子协议（NMEA 多句） ---

@@ -110,6 +110,176 @@ void checkEmit(const QJsonObject &seg, const QString &name, QStringList &errs)
 
 } // namespace
 
+// 通用段键校验（SPEC §2.1）——bin 与 text 两种形态同口径执行，
+// 此前这几项只在 checkTextSegment 里校验，bin 段写错类型会被静默放行。
+void checkCommonSegment(const QJsonObject &seg, const QString &name,
+                        const QMap<QString, int> &order, const QSet<QString> &names,
+                        int selfIndex, bool textSeg, QStringList &errs)
+{
+    // 类型硬校验：JSON 里把键写成错误类型不能被静默当默认值（例如 scale:null → 0）。
+    if (seg.contains(QStringLiteral("unit")) && !seg.value(QStringLiteral("unit")).isString())
+        errs << QStringLiteral("%1 的 unit 必须是字符串").arg(name);
+    if (seg.contains(QStringLiteral("prefix")) && !seg.value(QStringLiteral("prefix")).isString())
+        errs << QStringLiteral("%1 的 prefix 必须是字符串").arg(name);
+    if (seg.contains(QStringLiteral("scale")) && !seg.value(QStringLiteral("scale")).isDouble())
+        errs << QStringLiteral("%1 的 scale 必须是数值").arg(name);
+    if (seg.contains(QStringLiteral("offset")) && !seg.value(QStringLiteral("offset")).isDouble())
+        errs << QStringLiteral("%1 的 offset 必须是数值").arg(name);
+    if (seg.contains(QStringLiteral("enum")))
+    {
+        const QJsonValue ev = seg.value(QStringLiteral("enum"));
+        if (!ev.isArray() || ev.toArray().isEmpty())
+            errs << QStringLiteral("%1 的 enum 必须是非空数值数组").arg(name);
+        else
+            for (const QJsonValue &v : ev.toArray())
+                if (!v.isDouble())
+                    errs << QStringLiteral("%1 的 enum 元素必须是数值").arg(name);
+    }
+    if (seg.contains(QStringLiteral("range")))
+    {
+        const QJsonValue rv = seg.value(QStringLiteral("range"));
+        if (rv.isArray())
+        {
+            if (rv.toArray().isEmpty() || rv.toArray().size() > 2)
+                errs << QStringLiteral("%1 的 range 必须是 [min] 或 [min,max]").arg(name);
+            for (const QJsonValue &v : rv.toArray())
+                if (!v.isDouble())
+                    errs << QStringLiteral("%1 的 range 元素必须是数值").arg(name);
+        }
+        else if (rv.isObject())
+        {
+            if (!rv.toObject().value(QStringLiteral("min")).isDouble() ||
+                !rv.toObject().value(QStringLiteral("max")).isDouble())
+                errs << QStringLiteral("%1 的 range 需要数值 min/max").arg(name);
+        }
+        else
+            errs << QStringLiteral("%1 的 range 必须是 [min,max] 或 {min,max}").arg(name);
+    }
+    if (seg.contains(QStringLiteral("expect")))
+    {
+        const QJsonValue ev = seg.value(QStringLiteral("expect"));
+        if (ev.isString())
+        {
+            const QString r = ev.toString().trimmed();
+            const int idx = order.value(r, -1);
+            if (!names.contains(r) || idx < 0 || idx >= selfIndex)
+                errs << QStringLiteral("%1 的 expect 引用了未知或非前序段：%2").arg(name, r);
+        }
+        else if (!ev.isDouble() && !ev.isObject())
+            errs << QStringLiteral("%1 的 expect 必须是数值/段名/表达式").arg(name);
+    }
+    if (seg.contains(QStringLiteral("on_mismatch")))
+    {
+        const QString m = seg.value(QStringLiteral("on_mismatch")).toString();
+        if (m != QLatin1String("reject") && m != QLatin1String("warn") && m != QLatin1String("skip"))
+            errs << QStringLiteral("%1 的 on_mismatch 只能是 reject/warn/skip：%2").arg(name, m);
+    }
+    if (textSeg && seg.contains(QStringLiteral("pattern")))
+    {
+        const QString p = seg.value(QStringLiteral("pattern")).toString();
+        if (p.isEmpty())
+            errs << QStringLiteral("%1 的 pattern 为空").arg(name);
+        else
+        {
+            QRegularExpression re(p);
+            if (!re.isValid())
+                errs << QStringLiteral("%1 的 pattern 非法：%2").arg(name, re.errorString());
+        }
+    }
+    if (seg.contains(QStringLiteral("transform")))
+    {
+        const QJsonValue tv = seg.value(QStringLiteral("transform"));
+        if (tv.isArray())
+        {
+            for (const QJsonValue &v : tv.toArray())
+            {
+                const QString op = v.isString() ? v.toString()
+                                                : v.toObject().value(QStringLiteral("op")).toString();
+                static const QStringList kOps = {QStringLiteral("sexagesimal"), QStringLiteral("scale"),
+                                                  QStringLiteral("mul"), QStringLiteral("offset"),
+                                                  QStringLiteral("add"), QStringLiteral("abs"),
+                                                  QStringLiteral("round"), QStringLiteral("clamp")};
+                if (!kOps.contains(op))
+                    errs << QStringLiteral("%1 的 transform 不支持 op=%2").arg(name, op);
+                if (op == QLatin1String("clamp") &&
+                    v.toObject().value(QStringLiteral("min")).toDouble(0) >
+                        v.toObject().value(QStringLiteral("max")).toDouble(0))
+                    errs << QStringLiteral("%1 的 transform.clamp min > max").arg(name);
+                if (!v.isString())
+                {
+                    const int split = v.toObject().value(QStringLiteral("split")).toInt(2);
+                    if (split < 0 || split > 8)
+                        errs << QStringLiteral("%1 的 transform.split 必须在 0..8").arg(name);
+                }
+            }
+        }
+    }
+
+    if (seg.contains(QStringLiteral("digest")))
+    {
+        const QJsonValue dv = seg.value(QStringLiteral("digest"));
+        if (!dv.isObject())
+        {
+            errs << QStringLiteral("%1 的 digest 必须是对象").arg(name);
+            return;
+        }
+        const QJsonObject dg = dv.toObject();
+        // 白名单必须与 psproto.schema.json 的 digest 定义一致，漏一个就会误拒合法模板。
+        static const QStringList kDigestKeys = {QStringLiteral("alg"), QStringLiteral("code"),
+                                                QStringLiteral("from"), QStringLiteral("to"),
+                                                QStringLiteral("width"), QStringLiteral("poly"),
+                                                QStringLiteral("init"), QStringLiteral("xorout"),
+                                                QStringLiteral("refin"), QStringLiteral("refout"),
+                                                QStringLiteral("inject")};
+        for (const QString &k : dg.keys())
+            if (!kDigestKeys.contains(k))
+                errs << QStringLiteral("%1 的 digest 未知键：%2（端点用 from/to，不用 over）").arg(name, k);
+        const QString alg = dg.value(QStringLiteral("alg")).toString();
+        const QString code = dg.value(QStringLiteral("code")).toString();
+        if (alg.isEmpty() && code.isEmpty())
+            errs << QStringLiteral("%1 的 digest 需要 alg 或 code").arg(name);
+        if (!alg.isEmpty() && !code.isEmpty())
+            errs << QStringLiteral("%1 的 digest 不能同时给 alg 和 code").arg(name);
+        if (!alg.isEmpty() && !digestAlgKnown(alg.toStdString()))
+            errs << QStringLiteral("%1 的摘要算子未知：%2（可用：%3）")
+                        .arg(name, alg, digestAlgorithmNames().join(QLatin1Char('/')));
+        if (!code.isEmpty() && !scriptDigestAvailable())
+            errs << QStringLiteral("%1 的 digest 用了脚本，但脚本后端未启用").arg(name);
+
+        auto checkEndpoint = [&](const QString &key, const QString &val, bool isFrom) {
+            if (val.isEmpty())
+                return;
+            if (val == QLatin1String("frame_start") || val == QLatin1String("frame_end"))
+            {
+                if (isFrom && val == QLatin1String("frame_end"))
+                    errs << QStringLiteral("%1 的 digest.from 不能用 frame_end").arg(name);
+                if (!isFrom && val == QLatin1String("frame_start"))
+                    errs << QStringLiteral("%1 的 digest.to 不能用 frame_start").arg(name);
+                return;
+            }
+            const QString prefix = isFrom ? QStringLiteral("after:") : QStringLiteral("before:");
+            if (!val.startsWith(prefix))
+            {
+                errs << QStringLiteral("%1 的 digest.%2 只能是 %3<段名>/%4")
+                            .arg(name, isFrom ? QStringLiteral("from") : QStringLiteral("to"), prefix,
+                                 isFrom ? QStringLiteral("frame_start") : QStringLiteral("frame_end"));
+                return;
+            }
+            const QString ref = val.mid(prefix.size()).trimmed();
+            if (!names.contains(ref))
+            {
+                errs << QStringLiteral("%1 的 digest 引用了未知段：%2").arg(name, ref);
+                return;
+            }
+            const int idx = order.value(ref, -1);
+            if (idx < 0 || idx >= selfIndex)
+                errs << QStringLiteral("%1 的 digest 区间跨越了校验段自身（%2 必须在前序）").arg(name, ref);
+        };
+        checkEndpoint(QStringLiteral("from"), dg.value(QStringLiteral("from")).toString(), true);
+        checkEndpoint(QStringLiteral("to"), dg.value(QStringLiteral("to")).toString(), false);
+    }
+}
+
 // text 段校验（SPEC §7）：边界来自 literal/delimiter/width，不再有字节宽度语义。
 // digest 端点用段序表校验引用（避免"校验一个还没解析的段"）。
 void checkTextSegment(const QJsonObject &seg, const QString &name, const QMap<QString, int> &order,
@@ -199,106 +369,7 @@ void checkTextSegment(const QJsonObject &seg, const QString &name, const QMap<QS
         if (!e.contains(QLatin1String("nan")) && e != QLatin1String("skip") && e != QLatin1String("raw"))
             errs << QStringLiteral("%1 的 empty 只能是 nan/skip/raw：%2").arg(name, e);
     }
-    if (seg.contains(QStringLiteral("on_mismatch")))
-    {
-        const QString m = seg.value(QStringLiteral("on_mismatch")).toString();
-        if (m != QLatin1String("reject") && m != QLatin1String("warn") && m != QLatin1String("skip"))
-            errs << QStringLiteral("%1 的 on_mismatch 只能是 reject/warn/skip：%2").arg(name, m);
-    }
-    if (seg.contains(QStringLiteral("pattern")))
-    {
-        const QString p = seg.value(QStringLiteral("pattern")).toString();
-        if (p.isEmpty())
-            errs << QStringLiteral("%1 的 pattern 为空").arg(name);
-        else
-        {
-            QRegularExpression re(p);
-            if (!re.isValid())
-                errs << QStringLiteral("%1 的 pattern 非法：%2").arg(name, re.errorString());
-        }
-    }
-    if (seg.contains(QStringLiteral("transform")))
-    {
-        const QJsonValue tv = seg.value(QStringLiteral("transform"));
-        if (tv.isArray())
-        {
-            for (const QJsonValue &v : tv.toArray())
-            {
-                const QString op = v.isString() ? v.toString()
-                                                : v.toObject().value(QStringLiteral("op")).toString();
-                static const QStringList kOps = {QStringLiteral("sexagesimal"), QStringLiteral("scale"),
-                                                  QStringLiteral("mul"), QStringLiteral("offset"),
-                                                  QStringLiteral("add"), QStringLiteral("abs"),
-                                                  QStringLiteral("round"), QStringLiteral("clamp")};
-                if (!kOps.contains(op))
-                    errs << QStringLiteral("%1 的 transform 不支持 op=%2").arg(name, op);
-                if (op == QLatin1String("clamp") &&
-                    v.toObject().value(QStringLiteral("min")).toDouble(0) >
-                        v.toObject().value(QStringLiteral("max")).toDouble(0))
-                    errs << QStringLiteral("%1 的 transform.clamp min > max").arg(name);
-                if (!v.isString())
-                {
-                    const int split = v.toObject().value(QStringLiteral("split")).toInt(2);
-                    if (split < 0 || split > 8)
-                        errs << QStringLiteral("%1 的 transform.split 必须在 0..8").arg(name);
-                }
-            }
-        }
-    }
-
-    if (seg.contains(QStringLiteral("digest")))
-    {
-        const QJsonValue dv = seg.value(QStringLiteral("digest"));
-        if (!dv.isObject())
-        {
-            errs << QStringLiteral("%1 的 digest 必须是对象").arg(name);
-            return;
-        }
-        const QJsonObject dg = dv.toObject();
-        const QString alg = dg.value(QStringLiteral("alg")).toString();
-        const QString code = dg.value(QStringLiteral("code")).toString();
-        if (alg.isEmpty() && code.isEmpty())
-            errs << QStringLiteral("%1 的 digest 需要 alg 或 code").arg(name);
-        if (!alg.isEmpty() && !code.isEmpty())
-            errs << QStringLiteral("%1 的 digest 不能同时给 alg 和 code").arg(name);
-        if (!alg.isEmpty() && !digestAlgKnown(alg.toStdString()))
-            errs << QStringLiteral("%1 的摘要算子未知：%2（可用：%3）")
-                        .arg(name, alg, digestAlgorithmNames().join(QLatin1Char('/')));
-        if (!code.isEmpty() && !scriptDigestAvailable())
-            errs << QStringLiteral("%1 的 digest 用了脚本，但脚本后端未启用").arg(name);
-
-        auto checkEndpoint = [&](const QString &key, const QString &val, bool isFrom) {
-            if (val.isEmpty())
-                return;
-            if (val == QLatin1String("frame_start") || val == QLatin1String("frame_end"))
-            {
-                if (isFrom && val == QLatin1String("frame_end"))
-                    errs << QStringLiteral("%1 的 digest.from 不能用 frame_end").arg(name);
-                if (!isFrom && val == QLatin1String("frame_start"))
-                    errs << QStringLiteral("%1 的 digest.to 不能用 frame_start").arg(name);
-                return;
-            }
-            const QString prefix = isFrom ? QStringLiteral("after:") : QStringLiteral("before:");
-            if (!val.startsWith(prefix))
-            {
-                errs << QStringLiteral("%1 的 digest.%2 只能是 %3<段名>/%4")
-                            .arg(name, isFrom ? QStringLiteral("from") : QStringLiteral("to"), prefix,
-                                 isFrom ? QStringLiteral("frame_start") : QStringLiteral("frame_end"));
-                return;
-            }
-            const QString ref = val.mid(prefix.size()).trimmed();
-            if (!names.contains(ref))
-            {
-                errs << QStringLiteral("%1 的 digest 引用了未知段：%2").arg(name, ref);
-                return;
-            }
-            const int idx = order.value(ref, -1);
-            if (idx < 0 || idx >= selfIndex)
-                errs << QStringLiteral("%1 的 digest 区间跨越了校验段自身（%2 必须在前序）").arg(name, ref);
-        };
-        checkEndpoint(QStringLiteral("from"), dg.value(QStringLiteral("from")).toString(), true);
-        checkEndpoint(QStringLiteral("to"), dg.value(QStringLiteral("to")).toString(), false);
-    }
+    checkCommonSegment(seg, name, order, names, selfIndex, true, errs);
 }
 
 QStringList validate(const QJsonObject &o)
@@ -320,6 +391,8 @@ QStringList validate(const QJsonObject &o)
         else if (fmt != QLatin1String("bin") && fmt != QLatin1String("text"))
             errs << QStringLiteral("mode 只能是 bin 或 text");
     }
+    if (o.contains(QStringLiteral("maxsize")) && !o.value(QStringLiteral("maxsize")).isDouble())
+        errs << QStringLiteral("maxsize 必须是数值");
     const int maxsize = o.value(QStringLiteral("maxsize")).toInt(4096);
     if (maxsize < 2 || maxsize > 65535)
         errs << QStringLiteral("maxsize 必须在 2..65535");
@@ -461,6 +534,11 @@ QStringList validate(const QJsonObject &o)
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
         if (type == QLatin1String("time") && !textSeg)
             errs << QStringLiteral("%1：type:time 只用于 text 段（文本时间），二进制请用 u32/u64 + transform").arg(name);
+
+        // bin 段同样要过通用键校验（on_mismatch/pattern/transform/digest），
+        // 否则 bin 段写错类型只会被静默吞掉，运行期才发现。
+        if (!textSeg && !isDerived)
+            checkCommonSegment(seg, name, order, names, order.value(name, 0), false, errs);
 
         // 位域（SPEC §6）：宽度 <= 64，且 width + offset%8 <= 64，单次 loadBytes<=8 即可取完。
         if (seg.contains(QStringLiteral("bit")))

@@ -859,8 +859,8 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 
 ### 9.7 强健性验收（建议直接进 CI）
 
-1. **Fuzz**：随机字节流 + 随机模板，要求不崩、不超时（单次 ≤ 5 ms）、峰值内存 ≤ 2× maxsize。**已落地**（`test_protocol.cpp` 7d）：默认 2000 轮（约 0.5 s，随单测常跑），`PS_FUZZ_TIME=<秒>` 拉长到千万轮级长稳。三段构成——① 模板 fuzz：一半走可解出骨架（bin 单段，确实产出 467/2000 帧），一半随机越界压校验/解析容错，2000 轮全部给出结构化原因、空错误为 0；② 解码器内部 fuzz：合法 bin/text 模板 × 随机字节 2000 组，`ok + 结构化拒绝` 必须有值，静默失败计缺陷；③ 断言单轮最坏耗时 < 5 ms（实测 2000 轮 0.44 ms / 100 万轮 1.48 ms）。峰值内存未做 RSS 断言（解码器按 maxsize 分配、单进程可测，留待 CI 侧 ulimit 守护）；
-2. **畸形模板集**：全部返回结构化错误，**零异常抛出**、零崩溃；已落地 41 份坏模板批量扫荡（结构/类型/键互斥/值域/文本/series 各维度），validate→parse→compile→decode 全链路 try/catch 零崩溃；规模向 ≥100 份扩充留作后续；
+1. **Fuzz**：随机字节流 + 随机模板，要求不崩、不超时（单次 ≤ 5 ms）、峰值内存 ≤ 2× maxsize。**已落地**（`test_protocol.cpp` 7d）：默认 2000 轮（约 0.5 s，随单测常跑），`PS_FUZZ_TIME=<秒>` 拉长到千万轮级长稳。三段构成——① 模板 fuzz：一半走可解出骨架（bin 单段，确实产出 467/2000 帧），一半随机越界压校验/解析容错，2000 轮全部给出结构化原因、空错误为 0；② 解码器内部 fuzz：合法 bin/text 模板 × 随机字节 2000 组，`ok + 结构化拒绝` 必须有值，静默失败计缺陷；③ 断言单轮最坏耗时 < 5 ms（实测 2000 轮 0.44 ms / 100 万轮 1.48 ms）。峰值内存实测：常规一轮 maxrss 16.9 MB（主要是 Qt 运行时底座），`PS_FUZZ_TIME=20` 跑满 100 万轮后仍为 16.9 MB，即解码路径不随输入长度增长；严格"≤2×maxsize"口径需要能记账的内部 allocator 钩子（`ScriptEngine` 已有同类机制），CI 侧先用 ulimit 兜底；
+2. **畸形模板集**：全部返回结构化错误，**零异常抛出**、零崩溃；已落地 **108 份**坏模板批量扫荡（结构/类型/键互斥/值域/文本/series/repeat/digest/transform 各维度），validate→parse→compile→decode 全链路零崩溃、零异常，且**断言"必须被拒"**——任何一份被 validate/compile 放行即测试失败；其中 15 份曾真被放行，暴露了 bin 段通用键校验缺失（见 §14.6）；
 3. **单帧诊断**：任一失败帧能给出 帧号 + 段名 + 期望值/实际值。现状：`DecodeError` 已含 `recordOffset`（绝对偏移）/`segment`（段名）/`detail`（期望/实际）/**`recordIndex`（帧号）**/**`warning`（告警而非作废）**，text 与 bin 两路均回填；
 4. **静默丢数据零容忍**：任何"丢弃/截断/跳过"都必须出现在 `Diagnostics` 里，不得只有一个计数器。现状：整帧 reject/abort/overflow/EOF 与段级 warn/skip、段值超 256 截断**全部进 `errors` 明细**（前 128 条，带帧号/偏移/段名/期望实际）；bin 与 text 两路同一口径；
 5. **u64 精度**：`0xFFFFFFFFFFFFFFFE` 级别的值必须原样解出（typed 模型 u64 走 `u` 成员不经 double，已补回归用例钉死高位不丢）。
@@ -1290,7 +1290,7 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 ### 14.4 验收
 
-- [x] 协议单测 34 项全绿（`./build-ng/tests/ng_test_protocol`），含 `derive`（`a+b`/`a*b`）与 `type:"time"`（`083559.00` → 30959 s、`246100.00` 越界被拒）；
+- [x] 协议单测 35 项全绿（`./build-ng/tests/ng_test_protocol`），含 `derive`（`a+b`/`a*b`）与 `type:"time"`（`083559.00` → 30959 s、`246100.00` 越界被拒）；
 - [x] 省略 `count` 的标量与 SPEC §2.1 一致（validate 与 parse 都按 1 处理）；
 - [x] 全量 ctest 18/18 通过；
 - [ ] 需求方逐项验收 §14.1 的行为口径（尤其 `repeat:"eos"` 在"后面还有段"时的语义）。
@@ -1321,11 +1321,13 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 > 注意：`repeat.mode`（重复模式 `eos`/`until`）是另一个同名键，与顶层 `mode` 无关，未混改。
 
-**验收**：协议单测 34/34 全绿；全量 ctest 18/18。4 个 validate 负例：缺 `mode`、非法值 `xml`、bin 段写 `delimiter`、text 段写 `bit`。`derive` 已补 text 路径用例（`3,4` → sum=7 / prod=12）；`derive`/`time` 在 `previewSequentialFrame` 与 `decodeSequentialCompiled` 双路的 `ok` 结论与派生/时间数值一致。
+**验收**：协议单测 35/35 全绿；全量 ctest 18/18。4 个 validate 负例：缺 `mode`、非法值 `xml`、bin 段写 `delimiter`、text 段写 `bit`。`derive` 已补 text 路径用例（`3,4` → sum=7 / prod=12）；`derive`/`time` 在 `previewSequentialFrame` 与 `decodeSequentialCompiled` 双路的 `ok` 结论与派生/时间数值一致。
 
 **Lua 护栏补全（2026-11-19）**：`ScriptEngine` 增加内存配额——自定义 `lua_Alloc` 记账，预算 1 MiB，超预算拒绝分配并归类为"脚本内存超限"（与指令超时区分）；白名单注释对齐为 base/string/table/math（本构建未编 bit32）。负例：`string.rep("x", 2000000)` 被拒且非超时。
 
 **诊断与段级降级（2026-11-19）**：`DecodeError` 增 `recordIndex`（帧号）与 `warning`（告警标志）；`on_mismatch` 此前**只在 text 词法段编译时赋值，bin 段静默失效**——现主段表与变体段表均赋值，`checkFrame` 按 0=reject / 1=warn（写 NaN）/ 2=skip（不出通道）裁决并产出 note；text 路径同口径改走 `degradeSeg`。两路 note 统一归集进 `errors`（前 128 条，带帧号/偏移/段名/期望实际），段值超 256 截断也留明细。
+
+**bin 段校验/编译三层不对称（2026-11-19）**：与 `on_mismatch` 同源的问题又发现两处——① `repeat`（`eos`/`until`）只在 text 编译函数里赋值，bin 段 `repeat` 一直为 0，即**声明了但完全不生效**，现主段表与变体段表补编译，并加正例（eos 读 3 元素 / until 命中即停 1 元素）；② `on_mismatch`/`pattern`/`transform`/`digest` 的校验只挂在 `checkTextSegment`，bin 段写错类型被静默吞掉，现抽出 `checkCommonSegment` 由两种形态共同执行。同时补键类型硬校验（`unit`/`prefix`/`scale`/`offset`/`maxsize`/`expect`/`enum`/`range`）与 digest 未知键拒绝。
 
 **静默失败清零（2026-11-19）**：fuzz 暴露 `ok=false` 但 `error` 为空的无通道路径（text 的 EOF 未闭合、bin 全帧被拒），现统一归因为"没有可绘制通道：帧 #N 段 X —— 原因"/"N 条记录 EOF 未闭合"/推送错误；`StreamDecoder::finish` 补齐 `dropped`/`rejectedFrames` 回写。
 
