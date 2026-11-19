@@ -4,7 +4,7 @@
 #include <QJsonArray>
 #include <QStringList>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::uischema
 {
 
 namespace
@@ -315,4 +315,4 @@ transformParamSpecs(const TransformDescriptor &descriptor)
     return specs;
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::uischema

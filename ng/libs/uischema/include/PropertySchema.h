@@ -7,8 +7,11 @@
 #include <QVariant>
 #include <QVector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::uischema
 {
+
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::foundation::fail;
 
 // 属性契约（P0-2）：把老 PropertyManager 里"既是模型又是控件"的东西撕成两半。
 //
@@ -89,4 +92,13 @@ inline const QString KeyKey = QStringLiteral("key");
 inline const QString ValueKey = QStringLiteral("value");
 } // namespace PropIntent
 
+} // namespace nextpilot::plotscope::uischema
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using uischema::PropKind;
+using uischema::PropRow;
+using uischema::PropObject;
+using uischema::PropertySchema;
 } // namespace nextpilot::plotscope::core
+

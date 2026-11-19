@@ -2,7 +2,7 @@
 
 #include <QJsonArray>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::uischema
 {
 
 QString selectionKindName(SelectionKind kind)
@@ -86,4 +86,4 @@ Selection Selection::fromJson(const QJsonObject &obj)
     return s;
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::uischema

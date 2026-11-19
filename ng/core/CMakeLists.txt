@@ -20,9 +20,6 @@ add_library(ng_core STATIC
     src/IMessageParser.cpp
     src/RecordingFormat.cpp
     src/RecordingBackend.cpp
-    src/PropertySchema.cpp
-    src/Selection.cpp
-    src/Transform.cpp
     include/Events.h
     include/ScriptFacade.h
     include/IByteSource.h
@@ -53,9 +50,6 @@ add_library(ng_core STATIC
     include/ps_message_parser_spi.h
     include/RecordingFormat.h
     include/RecordingBackend.h
-    include/PropertySchema.h
-    include/Selection.h
-    include/Transform.h
 )
 
 target_include_directories(ng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

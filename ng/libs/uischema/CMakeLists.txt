@@ -4,9 +4,15 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 add_library(ng_uischema STATIC
     src/SchemaEngine.cpp
     src/FormSchema.cpp
+    src/Selection.cpp
+    src/Transform.cpp
+    src/PropertySchema.cpp
     include/ParamSpec.h
     include/FormSchema.h
     include/SchemaEngine.h
+    include/Selection.h
+    include/Transform.h
+    include/PropertySchema.h
 )
 target_include_directories(ng_uischema PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ng_uischema PUBLIC Qt6::Core ng_foundation)
