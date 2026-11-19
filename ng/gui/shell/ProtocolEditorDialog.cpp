@@ -25,7 +25,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 namespace
 {
@@ -226,10 +226,10 @@ void ProtocolEditorDialog::validateDoc()
         m_validation->setText(QStringLiteral("JSON 解析失败：%1").arg(pe.errorString()));
         return;
     }
-    const QStringList issues = ps::protocol::validate(root);
-    ps::protocol::ProtocolDocument doc;
+    const QStringList issues = nextpilot::plotscope::protocol::validate(root);
+    nextpilot::plotscope::protocol::ProtocolDocument doc;
     std::string err;
-    if (!ps::protocol::parseDocument(root, doc, err))
+    if (!nextpilot::plotscope::protocol::parseDocument(root, doc, err))
         m_validation->setText(QStringLiteral("校验失败：%1").arg(QString::fromStdString(err)));
     else if (issues.isEmpty())
         m_validation->setText(QStringLiteral("✓ 校验通过（%1 段）").arg(doc.segments.size()));
@@ -249,14 +249,14 @@ void ProtocolEditorDialog::previewFrame()
     }
     QJsonParseError pe;
     const QJsonObject root = QJsonDocument::fromJson(m_json->toPlainText().toUtf8(), &pe).object();
-    ps::protocol::ProtocolDocument doc;
+    nextpilot::plotscope::protocol::ProtocolDocument doc;
     std::string err;
-    if (!ps::protocol::parseDocument(root, doc, err))
+    if (!nextpilot::plotscope::protocol::parseDocument(root, doc, err))
     {
         m_status->setText(QStringLiteral("协议模板无效，无法试算"));
         return;
     }
-    const auto preview = ps::protocol::previewSequentialFrame(frame, doc);
+    const auto preview = nextpilot::plotscope::protocol::previewSequentialFrame(frame, doc);
     if (!preview.ok)
     {
         m_status->setText(QStringLiteral("试算失败：%1").arg(preview.error));
@@ -291,4 +291,4 @@ void ProtocolEditorDialog::run(QWidget *parent)
     dlg.exec();
 }
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

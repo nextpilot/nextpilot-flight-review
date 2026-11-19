@@ -1,14 +1,14 @@
 #include "fastplot/Picker.h"
 
-#include "fastplot/PlotWidget.h"
+#include "fastplot/Axes.h"
 
 #include <QEvent>
 #include <QMouseEvent>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
-Picker::Picker(PlotWidget *plot, QObject *parent)
+Picker::Picker(Axes *plot, QObject *parent)
     : QObject(parent)
     , m_plot(plot)
 {
@@ -62,4 +62,4 @@ bool Picker::eventFilter(QObject *watched, QEvent *event)
     return QObject::eventFilter(watched, event);
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

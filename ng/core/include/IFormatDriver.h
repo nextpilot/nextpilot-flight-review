@@ -8,7 +8,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 class DataRepository;
@@ -148,4 +148,4 @@ public:
     }
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

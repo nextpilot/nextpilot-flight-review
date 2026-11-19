@@ -1,7 +1,7 @@
 #include "UlogFormatDriver.h"
 
 #include "DataRepository.h"
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 QString UlogFormatDriver::id() const
 {
@@ -13,9 +13,9 @@ QString UlogFormatDriver::displayName() const
     return QStringLiteral("ULog 格式驱动");
 }
 
-ng::core::FormatDomain UlogFormatDriver::domain() const
+nextpilot::plotscope::core::FormatDomain UlogFormatDriver::domain() const
 {
-    return ng::core::FormatDomain::Autopilot;
+    return nextpilot::plotscope::core::FormatDomain::Autopilot;
 }
 
 QStringList UlogFormatDriver::suffixes() const

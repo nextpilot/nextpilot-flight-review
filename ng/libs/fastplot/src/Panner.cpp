@@ -1,15 +1,15 @@
 #include "fastplot/Panner.h"
 
-#include "fastplot/PlotWidget.h"
+#include "fastplot/Axes.h"
 #include "fastplot/Viewport.h"
 
 #include <QEvent>
 #include <QMouseEvent>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
-Panner::Panner(PlotWidget *plot, QObject *parent)
+Panner::Panner(Axes *plot, QObject *parent)
     : QObject(parent)
     , m_plot(plot)
 {
@@ -67,4 +67,4 @@ bool Panner::eventFilter(QObject *watched, QEvent *event)
     return QObject::eventFilter(watched, event);
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

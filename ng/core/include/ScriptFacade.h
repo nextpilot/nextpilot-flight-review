@@ -8,7 +8,7 @@
 #include <QString>
 #include <QVariant>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 脚本门面：脚本唯一能拿到对象。它把 ps.* 调用翻译成 Intent 交给执行器，
@@ -32,4 +32,4 @@ private:
     JobRecorder *m_recorder = nullptr;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

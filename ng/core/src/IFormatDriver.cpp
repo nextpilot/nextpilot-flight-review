@@ -2,7 +2,7 @@
 
 #include <QFileInfo>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 bool IFormatDriver::acceptsSuffix(const QString &path) const
@@ -16,4 +16,4 @@ bool IFormatDriver::acceptsSuffix(const QString &path) const
     return false;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

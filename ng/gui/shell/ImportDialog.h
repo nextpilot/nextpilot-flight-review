@@ -6,12 +6,12 @@
 
 class QWidget;
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class ExtensionRegistry;
 }
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 // 通用"打开数据"对话框：schema 驱动，不认识任何具体格式。
@@ -37,7 +37,7 @@ public:
         bool ok() const { return !path.isEmpty(); }
     };
 
-    explicit ImportDialog(ng::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
+    explicit ImportDialog(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
     ~ImportDialog() override;
 
     Result result() const { return m_result; }
@@ -46,7 +46,7 @@ public:
     void setPath(const QString &path);
 
     // 静态便捷：弹出对话框，用户确认返回结果；取消返回空 Result。
-    static Result run(ng::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
+    static Result run(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
 
 private:
     void rebuildFormatList();
@@ -58,7 +58,7 @@ private:
     void updatePreview();
     void accept() override;
 
-    ng::core::ExtensionRegistry &m_registry;
+    nextpilot::plotscope::core::ExtensionRegistry &m_registry;
     Result m_result;
 
     // 控件（前置声明避免头重）
@@ -66,4 +66,4 @@ private:
     Private *d;
 };
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

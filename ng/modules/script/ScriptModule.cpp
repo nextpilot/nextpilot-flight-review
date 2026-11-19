@@ -9,8 +9,8 @@
 
 #include <QFile>
 
-using namespace ng::core;
-using namespace ng::host;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::host;
 
 // script.run 处理器：接受 {source=...} 或 {path=...}，组装门面并执行脚本。
 // 门面绑定宿主执行器 + 可选录制器，因此脚本调用与 GUI 点击走同一条执行路径。
@@ -48,7 +48,7 @@ public:
 
         // 门面是栈对象，仅本次执行有效；脚本拿不到它的指针。
         ScriptFacade facade(m_executor, m_recorder);
-        ng::script::LuaEngine lua(facade);
+        nextpilot::plotscope::script::LuaEngine lua(facade);
         Result<void> r = lua.runString(source, QStringLiteral("=script.run"));
         if (!r)
             return fail(r.error().code, r.error().message);

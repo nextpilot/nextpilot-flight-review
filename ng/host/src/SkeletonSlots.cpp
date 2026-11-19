@@ -1,8 +1,8 @@
 #include "SkeletonSlots.h"
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::host
+namespace nextpilot::plotscope::host
 {
 
 void declareSkeletonSlots(UiSlotRegistry &registry)
@@ -49,4 +49,4 @@ void declareSkeletonSlots(UiSlotRegistry &registry)
                          SlotKind::Menu);
 }
 
-} // namespace ng::host
+} // namespace nextpilot::plotscope::host

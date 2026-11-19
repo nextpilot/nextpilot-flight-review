@@ -23,8 +23,8 @@
 
 namespace {
 
-using namespace ps::protocol;
-using ps::protocol::ProtocolChannel;
+using namespace nextpilot::plotscope::protocol;
+using nextpilot::plotscope::protocol::ProtocolChannel;
 
 
 /* ---------------- 表达式 ---------------- */
@@ -356,7 +356,7 @@ bool matchVariant(const SeriesSpec &series, const std::string &selectorKey,
 
 } // namespace
 
-bool ps::protocol::looksSequentialProtocol(const QByteArray &json)
+bool nextpilot::plotscope::protocol::looksSequentialProtocol(const QByteArray &json)
 {
     const QJsonObject root = QJsonDocument::fromJson(json).object();
     return root.contains(QStringLiteral("segments"));
@@ -378,10 +378,10 @@ QString numList(const std::vector<double> &v)
 
 } // namespace
 
-ps::protocol::SequentialFramePreview ps::protocol::previewSequentialFrame(
+nextpilot::plotscope::protocol::SequentialFramePreview nextpilot::plotscope::protocol::previewSequentialFrame(
     const QByteArray &frame, const ProtocolDocument &tpl)
 {
-    ps::protocol::SequentialFramePreview res;
+    nextpilot::plotscope::protocol::SequentialFramePreview res;
     const uint8_t *data = reinterpret_cast<const uint8_t *>(frame.constData());
     const size_t total = static_cast<size_t>(frame.size());
     if (total == 0)
@@ -626,7 +626,7 @@ ps::protocol::SequentialFramePreview ps::protocol::previewSequentialFrame(
 }
 
 
-ps::protocol::ProtocolDecodeResult ps::protocol::decodeSequential(
+nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::protocol::decodeSequential(
     const QByteArray &bytes, const ProtocolDocument &tpl)
 {
     ProtocolDecodeResult result;
@@ -1025,7 +1025,7 @@ ps::protocol::ProtocolDecodeResult ps::protocol::decodeSequential(
     return result;
 }
 
-ps::protocol::ProtocolDecodeResult ps::protocol::decodeSequentialJson(
+nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::protocol::decodeSequentialJson(
     const QByteArray &bytes, const QByteArray &templateJson)
 {
     ProtocolDecodeResult result;
@@ -1036,7 +1036,7 @@ ps::protocol::ProtocolDecodeResult ps::protocol::decodeSequentialJson(
         result.error = QStringLiteral("协议 JSON 解析失败: ") + perr.errorString();
         return result;
     }
-    const QStringList issues = ps::protocol::validate(root);
+    const QStringList issues = nextpilot::plotscope::protocol::validate(root);
     if (!issues.isEmpty())
     {
         result.error = QStringLiteral("协议校验失败: ") + issues.join(QStringLiteral("；"));

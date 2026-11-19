@@ -6,7 +6,7 @@
 #include <QStringList>
 #include <QVector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 广义完整的数据源：**来源 + 解析绑定 + 录制配置 + 数据集**。
@@ -59,4 +59,4 @@ struct DataSourceInfo
     QVector<int> datasetIds;            // 该源解析产出的数据集 id
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

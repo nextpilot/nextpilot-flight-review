@@ -4,9 +4,9 @@
 #include "BuiltinPackRegistry.h"
 #include "NmeaMessageParser.h"
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 QString GnssPack::packId()
@@ -45,6 +45,6 @@ std::vector<std::unique_ptr<IToolContribution>> &GnssPack::contributions()
     return m_pack.contributions();
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext
 
-NG_REGISTER_PACK(::ng::ext::GnssPack)
+NG_REGISTER_PACK(::nextpilot::plotscope::ext::GnssPack)

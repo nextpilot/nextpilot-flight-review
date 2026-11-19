@@ -69,6 +69,13 @@ set_target_properties(fastplot_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME fastplot COMMAND fastplot_test)
 set_tests_properties(fastplot PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# === fastplot 术语对齐（Figure/Axes/Line/Bar + artist 模型）===
+add_executable(fastplot_api_test test_fastplot_api.cpp)
+target_link_libraries(fastplot_api_test PRIVATE fastplot Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(fastplot_api_test PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME fastplot_api COMMAND fastplot_api_test)
+set_tests_properties(fastplot_api PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # === fastplot × ng 集成测试（真实 ULog → 内核 LOD → 绘制）===
 # 这是"库能被 ng 直接调用"的可执行证明：链接 core + 扩展解析器，不碰老 src。
 add_executable(fastplot_dataset_test test_fastplot_dataset.cpp)

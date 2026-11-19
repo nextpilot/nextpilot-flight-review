@@ -24,10 +24,10 @@
 #include <cstdio>
 #include <cstdlib>
 
-using namespace ng::app;
-using namespace ng::core;
-using namespace ng::gui;
-using namespace ng::host;
+using namespace nextpilot::plotscope::app;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::gui;
+using namespace nextpilot::plotscope::host;
 
 #define CHECK(cond)                                                                      \
     do {                                                                                 \
@@ -278,12 +278,74 @@ int main(int argc, char *argv[])
         OK("错误语义：未知类型 / 缺通道 / 无数据集 均返回失败");
     }
 
+    // --- 7b) 柱状/直方/频谱：fastplot 专用 Instrument widget，真实出图（非折线假抄）---
+    {
+        // 直方：attitude.roll（sin 波）分箱。
+        const QVariantMap valueRole{{QStringLiteral("value"), QStringLiteral("attitude.roll")}};
+        Intent h;
+        h.op = QStringLiteral("plot.instrument");
+        h.params[QStringLiteral("dataset")] = dsId;
+        h.params[QStringLiteral("kind")] = QStringLiteral("histogram");
+        h.params[QStringLiteral("roles")] = valueRole;
+        CHECK(application.modules().execute(h));
+
+        // 频谱：同一序列做 DFT。
+        Intent f = h;
+        f.params[QStringLiteral("kind")] = QStringLiteral("fft");
+        CHECK(application.modules().execute(f));
+
+        // 柱状：trace 三通道末值成柱。
+        Intent b;
+        b.op = QStringLiteral("plot.instrument");
+        b.params[QStringLiteral("dataset")] = dsId;
+        b.params[QStringLiteral("kind")] = QStringLiteral("bar");
+        b.params[QStringLiteral("channels")] = QVariantList{
+            QStringLiteral("trace.a"), QStringLiteral("trace.b"), QStringLiteral("trace.c")};
+        const auto barResult = application.modules().execute(b);
+        CHECK(barResult);
+        CHECK(barResult.value().payload.toMap().value(QStringLiteral("channels")).toList().size() == 3);
+
+        InstrumentView specView(application.modules());
+        specView.resize(360, 300);
+        specView.renderInstrument(dsId, QStringLiteral("histogram"), valueRole, {}, {});
+        CHECK(specView.currentKind() == QStringLiteral("histogram"));
+        CHECK(inkPixels(specView.grabInstrument()) > 100);
+        specView.renderInstrument(dsId, QStringLiteral("fft"), valueRole, {}, {});
+        CHECK(inkPixels(specView.grabInstrument()) > 20);
+        specView.renderInstrument(dsId, QStringLiteral("bar"), {},
+                                  b.params.value(QStringLiteral("channels")).toList(), {});
+        CHECK(inkPixels(specView.grabInstrument()) > 100);
+        OK("柱状/直方/频谱：意图取数 + 专用 widget 出图（真实算法非折线）");
+    }
+
     // --- 8) 面板工厂自注册：plot-instrument 可按 id 取到 ---
     CHECK(PanelFactoryRegistry::types().contains(QStringLiteral("plot-instrument")));
     QWidget *panel = PanelFactoryRegistry::create(
         QStringLiteral("plot-instrument"), application.context(), application.modules(), nullptr);
-    CHECK(qobject_cast<InstrumentView *>(panel) != nullptr);
+    auto *factoryView = qobject_cast<InstrumentView *>(panel);
+    CHECK(factoryView != nullptr);
     OK("面板自注册：plot-instrument 进工厂表");
+
+    // --- 8b) gallery 切换数据绑定：setKind view action 自动从活动通道喂数据 ---
+    // 这是"点仪表盘 gallery 项后不应留空表盘"的回归钉子。
+    {
+        // 复用前面构建的数据集（dsId 仍有效）：设活动通道到 attitude.roll，
+        // 再经工厂注册的 view action 切到 gauge，断言表盘出图（非空格）。
+        application.context().setActiveChannel(dsId, QStringLiteral("attitude"),
+                                               QStringLiteral("roll"));
+        QVariantMap params{{QStringLiteral("kind"), QStringLiteral("gauge")}};
+        QVariant outValue;
+        Result<QVariant> out(outValue);
+        const bool hit = application.context().dispatchViewAction(
+            QStringLiteral("plot.instrument.setKind"), params, out);
+        CHECK(hit);
+        CHECK(out);
+        CHECK(factoryView->currentKind() == QStringLiteral("gauge"));
+        factoryView->resize(360, 300);
+        CHECK(inkPixels(factoryView->grabInstrument()) > 200);
+        OK("gallery 切型自动绑定：setKind 后表盘显示活动通道数据（非空表盘）");
+        application.context().clearActiveChannel();
+    }
 
     // --- 9) 真实 ULog fixture：姿态/罗盘/表盘走完整管道出图 ---
     {

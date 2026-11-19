@@ -3,7 +3,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 Instrument::Instrument(QWidget *parent)
@@ -51,4 +51,4 @@ void Instrument::paintEvent(QPaintEvent *event)
     paintInstrument(painter, QRectF(rect()).adjusted(m_margin, m_margin, -m_margin, -m_margin));
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

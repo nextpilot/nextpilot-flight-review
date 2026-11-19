@@ -17,7 +17,7 @@
 #include <QVariant>
 #include <QVector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 一个解码字段：raw 是线上的原值，value 是缩放/枚举后的可读值。
@@ -47,4 +47,4 @@ struct DecodedFrame
     bool unknown = false; // 帧 id 已识别但字段模板缺失
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -9,10 +9,10 @@
 #include <QJsonObject>
 #include <QTimer>
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 ChannelView::ChannelView(IIntentExecutor &executor, PlotCanvas *canvas, QObject *parent)
     : QObject(parent), m_executor(executor), m_canvas(canvas)
@@ -288,4 +288,4 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
 // 视图层自注册：绘图视图的工厂登记。外壳与其它功能都不认识它。
 NG_REGISTER_PANEL("plot-canvas", plotCanvas, createPlotCanvas)
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

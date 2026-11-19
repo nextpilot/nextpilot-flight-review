@@ -2,7 +2,7 @@
 
 #include <QHash>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 namespace
@@ -105,4 +105,4 @@ void RecordingFormatRegistry::reset()
     r.order.clear();
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -13,13 +13,13 @@ class QPlainTextEdit;
 class QTreeWidget;
 class QWidget;
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class ExtensionRegistry;
 class IMessageParser;
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 // 专用协议检查对话框——消费 IMessageParser 的自述信息，不认识任何具体协议。
@@ -37,11 +37,11 @@ class ProtocolInspectorDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit ProtocolInspectorDialog(ng::core::ExtensionRegistry &registry,
+    explicit ProtocolInspectorDialog(nextpilot::plotscope::core::ExtensionRegistry &registry,
                                      QWidget *parent = nullptr);
     ~ProtocolInspectorDialog() override;
 
-    static void run(ng::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
+    static void run(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent = nullptr);
 
 private:
     void rebuildProtocolList();
@@ -52,8 +52,8 @@ private:
     QJsonObject collectParams() const;
     void applyTheme();
 
-    ng::core::ExtensionRegistry &m_registry;
-    ng::core::IMessageParser *m_current = nullptr;
+    nextpilot::plotscope::core::ExtensionRegistry &m_registry;
+    nextpilot::plotscope::core::IMessageParser *m_current = nullptr;
 
     QListWidget *m_protocolList = nullptr;
     QLabel *m_info = nullptr;
@@ -74,4 +74,4 @@ private:
     QList<ParamField> m_paramFields;
 };
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

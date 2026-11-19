@@ -3,7 +3,7 @@
 #include <QString>
 #include <QVector>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 struct Tick
@@ -34,4 +34,4 @@ public:
     static QString formatValue(double value, double step);
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

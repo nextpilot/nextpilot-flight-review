@@ -2,7 +2,7 @@
 
 #include "ps_parser_spi.h"
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 // 一个最小的 SPI 解析器实现，示范"解析器如何写"。
@@ -29,4 +29,4 @@ public:
                             PsError *err);
 };
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

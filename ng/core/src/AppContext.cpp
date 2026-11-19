@@ -1,6 +1,6 @@
 #include "AppContext.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 AppContext::AppContext(const QString &settingsPath, QObject *parent)
@@ -53,4 +53,4 @@ bool AppContext::dispatchViewAction(const QString &id, const QVariantMap &params
     return true;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

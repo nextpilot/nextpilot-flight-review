@@ -2,7 +2,7 @@
 
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 统一的轻量错误结果。避免到处抛异常或用 bool + 输出参数。
@@ -55,4 +55,4 @@ inline Error fail(const QString &code, const QString &message)
     return Error{code, message};
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

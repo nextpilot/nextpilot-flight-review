@@ -11,7 +11,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 bool DataLoadHandler::canHandle(const Intent &intent) const
 {

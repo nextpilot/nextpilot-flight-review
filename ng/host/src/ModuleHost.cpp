@@ -3,26 +3,26 @@
 
 #include <QSet>
 
-namespace ng::host
+namespace nextpilot::plotscope::host
 {
 
-void ModuleContext::registerIntentHandler(ng::core::IIntentHandler *handler)
+void ModuleContext::registerIntentHandler(nextpilot::plotscope::core::IIntentHandler *handler)
 {
     // 依赖具体宿主实现：通过 host 转发注册。
     m_host.registerIntentHandler(handler);
 }
 
-ng::core::IIntentExecutor &ModuleContext::executor()
+nextpilot::plotscope::core::IIntentExecutor &ModuleContext::executor()
 {
     return m_host; // ModuleHost 实现了 IIntentExecutor
 }
 
-ng::core::JobRecorder *ModuleContext::recorder()
+nextpilot::plotscope::core::JobRecorder *ModuleContext::recorder()
 {
     return m_host.recorder();
 }
 
-ModuleHost::ModuleHost(ng::core::AppContext &appCtx, QObject *parent)
+ModuleHost::ModuleHost(nextpilot::plotscope::core::AppContext &appCtx, QObject *parent)
     : QObject(parent), m_appCtx(appCtx),
       // data.load 走统一摄取管道（读字节 -> 扇出 -> 落库）：
       // 格式驱动只声明 parserId，解析实现由 SPI 解析器提供。
@@ -56,7 +56,7 @@ void ModuleHost::registerModule(ModuleInfo info, ModuleFactory factory)
     m_nodes.insert(info.id, node);
 }
 
-void ModuleHost::registerIntentHandler(ng::core::IIntentHandler *handler)
+void ModuleHost::registerIntentHandler(nextpilot::plotscope::core::IIntentHandler *handler)
 {
     if (!handler || m_initializing.isEmpty())
         return;
@@ -67,7 +67,7 @@ void ModuleHost::registerIntentHandler(ng::core::IIntentHandler *handler)
     m_nodes[m_initializing].handlers.append(handler);
 }
 
-void ModuleHost::registerSystemHandler(const QString &key, ng::core::IIntentHandler *handler)
+void ModuleHost::registerSystemHandler(const QString &key, nextpilot::plotscope::core::IIntentHandler *handler)
 {
     // 系统级：不经 m_initializing、不计入任何模块的 handlers，模块装卸不移除它。
     if (!handler || key.isEmpty())
@@ -125,7 +125,7 @@ bool ModuleHost::deactivate(const QString &moduleId)
         return false;
 
     // 先移除该模块注册的意图处理器，避免执行器回调已析构的对象。
-    for (ng::core::IIntentHandler *h : it->handlers)
+    for (nextpilot::plotscope::core::IIntentHandler *h : it->handlers)
     {
         for (auto hit = m_handlers.begin(); hit != m_handlers.end(); ++hit)
             if (hit.value() == h)
@@ -156,28 +156,28 @@ void ModuleHost::deactivateAll()
             it = m_handlers.erase(it);
 }
 
-const ng::core::UiSlotRegistry &ModuleHost::uiSlots()
+const nextpilot::plotscope::core::UiSlotRegistry &ModuleHost::uiSlots()
 {
     // 每次访问都从当前工具箱重新绑定，装卸知识包后立即反映，无需手动同步。
     m_uiSlotRegistry.refreshFrom(m_appCtx.toolbox());
     return m_uiSlotRegistry;
 }
 
-ng::core::UiSlotRegistry &ModuleHost::uiSlotsMutable()
+nextpilot::plotscope::core::UiSlotRegistry &ModuleHost::uiSlotsMutable()
 {
     m_uiSlotRegistry.refreshFrom(m_appCtx.toolbox());
     return m_uiSlotRegistry;
 }
 
-ng::core::Result<ng::core::IntentResult> ModuleHost::execute(const ng::core::Intent &intent)
+nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> ModuleHost::execute(const nextpilot::plotscope::core::Intent &intent)
 {
     for (auto it = m_handlers.constBegin(); it != m_handlers.constEnd(); ++it)
     {
-        ng::core::IIntentHandler *handler = it.value();
+        nextpilot::plotscope::core::IIntentHandler *handler = it.value();
         if (handler && handler->canHandle(intent))
             return handler->execute(intent);
     }
-    return ng::core::fail(QStringLiteral("eunsupported"),
+    return nextpilot::plotscope::core::fail(QStringLiteral("eunsupported"),
                           QStringLiteral("没有模块能处理意图: %1").arg(intent.op));
 }
 
@@ -267,4 +267,4 @@ QList<QString> ModuleHost::resolveOrder(const QHash<QString, QStringList> &provi
     return order;
 }
 
-} // namespace ng::host
+} // namespace nextpilot::plotscope::host

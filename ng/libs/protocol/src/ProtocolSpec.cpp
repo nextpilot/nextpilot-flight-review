@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ps::protocol
+namespace nextpilot::plotscope::protocol
 {
 
 QStringList typeNames()
@@ -314,4 +314,4 @@ QStringList validate(const QJsonObject &o)
 }
 
 
-} // namespace ps::protocol
+} // namespace nextpilot::plotscope::protocol

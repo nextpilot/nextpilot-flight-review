@@ -8,7 +8,7 @@
 
 class QWidget;
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 class AppContext;
@@ -39,16 +39,16 @@ class IIntentExecutor;
 class PanelFactoryRegistry
 {
 public:
-    using Factory = std::function<QWidget *(ng::core::AppContext &appCtx,
-                                            ng::core::IIntentExecutor &executor,
+    using Factory = std::function<QWidget *(nextpilot::plotscope::core::AppContext &appCtx,
+                                            nextpilot::plotscope::core::IIntentExecutor &executor,
                                             QWidget *parent)>;
 
     // 注册一种部件类型。重复注册以先到者为准。
     static void registerPanel(const QString &type, Factory factory);
 
     // 按类型创建部件；未注册返回 nullptr。
-    static QWidget *create(const QString &type, ng::core::AppContext &appCtx,
-                           ng::core::IIntentExecutor &executor, QWidget *parent);
+    static QWidget *create(const QString &type, nextpilot::plotscope::core::AppContext &appCtx,
+                           nextpilot::plotscope::core::IIntentExecutor &executor, QWidget *parent);
 
     // 已注册的部件类型（诊断/测试用）。
     static QStringList types();
@@ -70,10 +70,10 @@ public:
 #define NG_REGISTER_PANEL(TypeId, VarName, Fn)                                         \
     namespace {                                                                        \
     const bool g_ng_panel_reg_##VarName = [] {                                         \
-        ::ng::core::PanelFactoryRegistry::registerPanel(                                 \
+        ::nextpilot::plotscope::core::PanelFactoryRegistry::registerPanel(                                 \
             QStringLiteral(TypeId), &Fn);                                              \
         return true;                                                                   \
     }();                                                                               \
     }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -23,9 +23,9 @@
 #include <string>
 #include <vector>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::ext::ulog
+namespace nextpilot::plotscope::ext::ulog
 {
 namespace
 {
@@ -1199,7 +1199,7 @@ const PsParserVtable *parserVtable()
     return &g_ulogVtable;
 }
 
-} // namespace ng::ext::ulog
+} // namespace nextpilot::plotscope::ext::ulog
 
 // 编译期自注册：ULog 以标准 SPI 解析器的身份进入 ParserRegistry。
 // 宿主于是能用统一管道（Source → IngestPipeline → parser）处理它，
@@ -1208,11 +1208,11 @@ namespace
 {
 struct UlogParserRegistration
 {
-    static const PsParserInfo &parserInfo() { return ng::ext::ulog::parserInfo(); }
-    static const PsParserVtable *parserVtable() { return ng::ext::ulog::parserVtable(); }
+    static const PsParserInfo &parserInfo() { return nextpilot::plotscope::ext::ulog::parserInfo(); }
+    static const PsParserVtable *parserVtable() { return nextpilot::plotscope::ext::ulog::parserVtable(); }
 };
 const bool g_ulogParserReg_ =
-    ::ng::core::ParserRegistry::registerParser(UlogParserRegistration::parserInfo(),
+    ::nextpilot::plotscope::core::ParserRegistry::registerParser(UlogParserRegistration::parserInfo(),
                                                UlogParserRegistration::parserVtable(),
                                                QStringLiteral("builtin"));
 }

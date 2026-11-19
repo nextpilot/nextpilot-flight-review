@@ -20,7 +20,7 @@ class CDockManager;
 class CDockWidget;
 }
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 // GUI 外壳绑定器：**唯一知道 SARibbon / ADS 的地方**。
@@ -46,7 +46,7 @@ namespace ng::gui
 class ShellBinder
 {
 public:
-    ShellBinder(QMainWindow *window, ng::core::UiSlotRegistry &slotReg);
+    ShellBinder(QMainWindow *window, nextpilot::plotscope::core::UiSlotRegistry &slotReg);
     ~ShellBinder();
 
     // 配置 ribbon 条（无边框窗体由 SARibbonMainWindow 提供 ribbon 条本体）。
@@ -115,7 +115,7 @@ private:
     void installCentral();
 
     QMainWindow *m_window = nullptr;
-    ng::core::UiSlotRegistry &m_slots;
+    nextpilot::plotscope::core::UiSlotRegistry &m_slots;
 
     // SARibbon
     SARibbonBar *m_ribbon = nullptr;
@@ -135,4 +135,4 @@ private:
     IntentDispatcher m_dispatch;
 };
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

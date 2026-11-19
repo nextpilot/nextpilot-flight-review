@@ -5,7 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-namespace ng::rec
+namespace nextpilot::plotscope::rec
 {
 
 // === RAW 编解码 ===
@@ -155,4 +155,4 @@ QByteArray RawPlayer::read(qint64 maxSize, QString *err)
     return chunk;
 }
 
-} // namespace ng::rec
+} // namespace nextpilot::plotscope::rec

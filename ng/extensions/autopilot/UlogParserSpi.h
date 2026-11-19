@@ -25,11 +25,11 @@
  *   区别只在"读字节"与"批去哪"由谁决定——见 UlogStreamParser.cpp 的 Emitter。
  */
 
-namespace ng::ext::ulog
+namespace nextpilot::plotscope::ext::ulog
 {
 
 // 解析器元数据与 vtable（供 NG_REGISTER_PARSER 使用）。
 const PsParserInfo &parserInfo();
 const PsParserVtable *parserVtable();
 
-} // namespace ng::ext::ulog
+} // namespace nextpilot::plotscope::ext::ulog

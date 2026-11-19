@@ -3,7 +3,7 @@
 #include "AppContext.h"
 #include "IIntentExecutor.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 namespace
@@ -24,8 +24,8 @@ void PanelFactoryRegistry::registerPanel(const QString &type, Factory factory)
     factories().insert(type, std::move(factory));
 }
 
-QWidget *PanelFactoryRegistry::create(const QString &type, ng::core::AppContext &appCtx,
-                                       ng::core::IIntentExecutor &executor, QWidget *parent)
+QWidget *PanelFactoryRegistry::create(const QString &type, nextpilot::plotscope::core::AppContext &appCtx,
+                                       nextpilot::plotscope::core::IIntentExecutor &executor, QWidget *parent)
 {
     auto it = factories().constFind(type);
     if (it == factories().constEnd())
@@ -42,4 +42,4 @@ QStringList PanelFactoryRegistry::types()
     return out;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

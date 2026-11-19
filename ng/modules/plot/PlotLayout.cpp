@@ -2,7 +2,7 @@
 
 #include <QJsonArray>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 namespace
@@ -118,4 +118,4 @@ PlotDocumentSpec PlotDocumentSpec::fromJson(const QJsonObject &obj)
     return spec;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

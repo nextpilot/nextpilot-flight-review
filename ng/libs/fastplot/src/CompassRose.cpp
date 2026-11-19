@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 namespace
 {
@@ -64,4 +64,4 @@ void CompassRose::paintInstrument(QPainter &painter, const QRectF &rect)
                      Qt::AlignCenter, QStringLiteral("HDG %1°").arg(m_heading, 0, 'f', 1));
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

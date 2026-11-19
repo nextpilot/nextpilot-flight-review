@@ -2,7 +2,7 @@
 
 #include <QtGlobal>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 // 一条曲线的数据访问抽象。
@@ -67,4 +67,4 @@ struct LodPoint
     double max = 0.0;
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

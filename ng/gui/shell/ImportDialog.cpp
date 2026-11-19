@@ -23,7 +23,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 namespace {
@@ -104,14 +104,14 @@ public:
     QLabel *warning = nullptr;
     QTableWidget *preview = nullptr;
 
-    QList<ng::core::IFormatDriver *> drivers;
-    ng::core::IFormatDriver *current = nullptr;
+    QList<nextpilot::plotscope::core::IFormatDriver *> drivers;
+    nextpilot::plotscope::core::IFormatDriver *current = nullptr;
     QJsonObject probeData;
     QList<Field> fields;
     QString chosenPath;
 };
 
-ImportDialog::ImportDialog(ng::core::ExtensionRegistry &registry, QWidget *parent)
+ImportDialog::ImportDialog(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent)
     : QDialog(parent), m_registry(registry), d(new Private)
 {
     setWindowTitle(QStringLiteral("打开数据"));
@@ -227,7 +227,7 @@ void ImportDialog::rebuildFormatList()
     d->drivers.clear();
     d->formats->clear();
     // 只列"声明了导入 schema"的格式驱动——其它格式走简化路径（无选项）。
-    for (ng::core::IFormatDriver *drv : m_registry.drivers())
+    for (nextpilot::plotscope::core::IFormatDriver *drv : m_registry.drivers())
     {
         if (drv->importSchema().isEmpty())
             continue;
@@ -535,7 +535,7 @@ void ImportDialog::accept()
     QDialog::accept();
 }
 
-ImportDialog::Result ImportDialog::run(ng::core::ExtensionRegistry &registry, QWidget *parent)
+ImportDialog::Result ImportDialog::run(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent)
 {
     ImportDialog dlg(registry, parent);
     if (dlg.exec() == QDialog::Accepted)
@@ -543,4 +543,4 @@ ImportDialog::Result ImportDialog::run(ng::core::ExtensionRegistry &registry, QW
     return Result{};
 }
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

@@ -5,9 +5,9 @@
 #include "CsvFormatDriver.h"
 #include "CustomProtocolFormatDriver.h"
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 QString CommonPack::packId()
@@ -40,6 +40,6 @@ std::vector<std::unique_ptr<IToolContribution>> &CommonPack::contributions()
     return m_pack.contributions();
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext
 
-NG_REGISTER_PACK(::ng::ext::CommonPack)
+NG_REGISTER_PACK(::nextpilot::plotscope::ext::CommonPack)

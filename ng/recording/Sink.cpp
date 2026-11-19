@@ -4,7 +4,7 @@
 #include <QHostAddress>
 #include <QUdpSocket>
 
-namespace ng::rec
+namespace nextpilot::plotscope::rec
 {
 
 namespace
@@ -183,13 +183,13 @@ private:
 
 std::unique_ptr<IByteSink> createByteSink(const QString &backendId, QString *err)
 {
-    if (backendId == ng::core::BackendId::File)
+    if (backendId == nextpilot::plotscope::core::BackendId::File)
         return std::make_unique<FileSink>();
-    if (backendId == ng::core::BackendId::Udp)
+    if (backendId == nextpilot::plotscope::core::BackendId::Udp)
         return std::make_unique<UdpSink>();
     if (err)
         *err = QStringLiteral("未注册的录制后端: %1").arg(backendId);
     return nullptr;
 }
 
-} // namespace ng::rec
+} // namespace nextpilot::plotscope::rec

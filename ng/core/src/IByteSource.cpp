@@ -3,7 +3,7 @@
 #include <QFile>
 #include <QFileInfo>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 FileByteSource::FileByteSource(const QString &path)
@@ -61,4 +61,4 @@ qint64 MemoryByteSource::read(char *buf, qint64 maxBytes)
     return n;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -7,7 +7,7 @@
 #include <QObject>
 #include <QVector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 数据源登记表：**运行时实例**的容器。
@@ -86,4 +86,4 @@ private:
     int m_nextId = 1;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -17,7 +17,7 @@
 #include <QMimeData>
 #include <QString>
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 namespace channel_mime
 {
@@ -25,7 +25,7 @@ namespace channel_mime
 // 自定义 MIME 类型（Qt 约定：application/x-<vendor>-<type>）。
 inline const char *type() { return "application/x-ngplotscope-channel"; }
 
-inline QString encode(ng::core::DatasetId datasetId, const QString &table, const QString &column)
+inline QString encode(nextpilot::plotscope::core::DatasetId datasetId, const QString &table, const QString &column)
 {
     // 格式： "datasetId|table|column"，表名/列名取自 schema，不含 '|'（parser 已清洗）。
     return QString::number(datasetId) + QLatin1Char('|') + table + QLatin1Char('|') + column;
@@ -34,7 +34,7 @@ inline QString encode(ng::core::DatasetId datasetId, const QString &table, const
 struct Decoded
 {
     bool valid = false;
-    ng::core::DatasetId datasetId = ng::core::kInvalidDataset;
+    nextpilot::plotscope::core::DatasetId datasetId = nextpilot::plotscope::core::kInvalidDataset;
     QString table;
     QString column;
 };
@@ -60,4 +60,4 @@ inline Decoded decode(const QMimeData *mime)
 }
 
 } // namespace channel_mime
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

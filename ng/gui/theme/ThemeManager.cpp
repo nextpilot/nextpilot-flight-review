@@ -6,9 +6,9 @@
 #include <QHash>
 #include <QStyleFactory>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 namespace
@@ -368,4 +368,4 @@ Result<IntentResult> ThemeManager::execute(const Intent &intent)
                 QStringLiteral("未知主题意图: %1").arg(intent.op));
 }
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

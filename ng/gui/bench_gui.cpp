@@ -25,9 +25,9 @@
 
 #include <cstdio>
 
-using namespace ng::app;
-using namespace ng::core;
-using namespace ng::gui;
+using namespace nextpilot::plotscope::app;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::gui;
 
 static long rssKb()
 {

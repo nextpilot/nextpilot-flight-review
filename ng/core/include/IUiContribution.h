@@ -6,7 +6,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // UI 贡献里描述的一个动作/入口——**纯数据**，不含 QWidget 指针。
@@ -49,4 +49,4 @@ public:
     virtual QList<UiAction> actions() const = 0;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

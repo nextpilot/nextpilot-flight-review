@@ -2,11 +2,11 @@
 
 #include "Intent.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class AppContext;
 class IIntentExecutor;
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core
 
 // 数据器官的"派生能力"：reload / export / recent / clearCache。
 //
@@ -28,30 +28,30 @@ class IIntentExecutor;
 //
 // 刻意不搬：protocol.inspect（领域面板，归 extensions/<域>/gui/）、
 // layout.save/import（已有 plot.layout.*）、file.open（已被 data.load 统一）。
-class DataCommandsHandler final : public ng::core::IIntentHandler
+class DataCommandsHandler final : public nextpilot::plotscope::core::IIntentHandler
 {
 public:
-    explicit DataCommandsHandler(ng::core::AppContext &appCtx,
-                                 ng::core::IIntentExecutor &executor)
+    explicit DataCommandsHandler(nextpilot::plotscope::core::AppContext &appCtx,
+                                 nextpilot::plotscope::core::IIntentExecutor &executor)
         : m_app(appCtx), m_executor(executor) {}
 
-    bool canHandle(const ng::core::Intent &intent) const override;
-    ng::core::Result<ng::core::IntentResult> execute(
-        const ng::core::Intent &intent) override;
+    bool canHandle(const nextpilot::plotscope::core::Intent &intent) const override;
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> execute(
+        const nextpilot::plotscope::core::Intent &intent) override;
 
     // 最近文件在 settings 中的键（data.load 与 data.recent 共用）。
     static constexpr const char *kRecentKey = "data/recent";
 
 private:
-    ng::core::Result<ng::core::IntentResult> reload(const ng::core::Intent &intent);
-    ng::core::Result<ng::core::IntentResult> exportCsv(const ng::core::Intent &intent);
-    ng::core::Result<ng::core::IntentResult> recent(const ng::core::Intent &intent);
-    ng::core::Result<ng::core::IntentResult> clearCache();
-    ng::core::Result<ng::core::IntentResult> derive(const ng::core::Intent &intent);
-    ng::core::Result<ng::core::IntentResult> workspaceList();
-    ng::core::Result<ng::core::IntentResult> workspaceSave();
-    ng::core::Result<ng::core::IntentResult> workspaceRestore();
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> reload(const nextpilot::plotscope::core::Intent &intent);
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> exportCsv(const nextpilot::plotscope::core::Intent &intent);
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> recent(const nextpilot::plotscope::core::Intent &intent);
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> clearCache();
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> derive(const nextpilot::plotscope::core::Intent &intent);
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> workspaceList();
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> workspaceSave();
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> workspaceRestore();
 
-    ng::core::AppContext &m_app;
-    ng::core::IIntentExecutor &m_executor;
+    nextpilot::plotscope::core::AppContext &m_app;
+    nextpilot::plotscope::core::IIntentExecutor &m_executor;
 };

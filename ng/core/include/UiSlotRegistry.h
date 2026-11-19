@@ -8,7 +8,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 插槽的语义类别：决定 GUI 层把内容放到哪里、怎么呈现。
@@ -97,4 +97,4 @@ private:
     QHash<QString, QList<BoundUiAction>> m_local;        // area -> 动作（器官本地来源）
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

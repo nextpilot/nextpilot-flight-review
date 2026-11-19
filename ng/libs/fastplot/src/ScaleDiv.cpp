@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 namespace
@@ -129,4 +129,4 @@ QString ScaleDiv::formatValue(double value, double step)
     return text;
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

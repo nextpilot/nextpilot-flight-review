@@ -2,7 +2,7 @@
 
 #include "fastplot/Instrument.h"
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 // 罗盘：航向角决定指针方向。刻度每 30° 一格，北向高亮。
@@ -22,4 +22,4 @@ private:
     double m_heading = 0.0;
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

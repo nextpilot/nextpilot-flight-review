@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace ps::protocol
+namespace nextpilot::plotscope::protocol
 {
 
 // 顺序帧协议（layout:"sequential"）解码器——老 CustomProtocolLoader 的解码内核
@@ -59,4 +59,4 @@ ProtocolDecodeResult decodeSequential(const QByteArray &bytes, const ProtocolDoc
 // 便捷：直接吃模板 JSON（内部做 validate + parseDocument）。
 ProtocolDecodeResult decodeSequentialJson(const QByteArray &bytes, const QByteArray &templateJson);
 
-} // namespace ng::protocol
+} // namespace nextpilot::plotscope::protocol

@@ -1,6 +1,6 @@
 #include "ContributionKind.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 QString kindName(const QString &kind)
@@ -30,4 +30,4 @@ QStringList knownKinds()
     };
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

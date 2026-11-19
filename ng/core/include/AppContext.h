@@ -15,7 +15,7 @@
 
 #include <functional>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 应用上下文：**进程级运行态的唯一持有者**。
@@ -148,4 +148,4 @@ private:
     QString m_activeColumn;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

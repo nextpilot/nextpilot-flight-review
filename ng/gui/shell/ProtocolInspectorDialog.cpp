@@ -30,10 +30,10 @@
 #include <QHBoxLayout>
 #include <QGroupBox>
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
-ProtocolInspectorDialog::ProtocolInspectorDialog(ng::core::ExtensionRegistry &registry,
+ProtocolInspectorDialog::ProtocolInspectorDialog(nextpilot::plotscope::core::ExtensionRegistry &registry,
                                                  QWidget *parent)
     : QDialog(parent), m_registry(registry)
 {
@@ -136,10 +136,10 @@ void ProtocolInspectorDialog::rebuildProtocolList()
 {
     m_protocolList->clear();
     const auto parsers = m_registry.messageParsers();
-    for (ng::core::IMessageParser *p : parsers)
+    for (nextpilot::plotscope::core::IMessageParser *p : parsers)
     {
         auto *item = new QListWidgetItem(QStringLiteral("%1  ·  %2")
-                                             .arg(p->protocolName(), ng::core::domainName(p->domain())));
+                                             .arg(p->protocolName(), nextpilot::plotscope::core::domainName(p->domain())));
         item->setData(Qt::UserRole, p->id());
         m_protocolList->addItem(item);
     }
@@ -321,7 +321,7 @@ void ProtocolInspectorDialog::doParse()
     }
 
     // 3) parse → DecodedFrame → 字段树。
-    ng::core::DecodedFrame frame;
+    nextpilot::plotscope::core::DecodedFrame frame;
     if (!m_current->parse(bytes, frame))
     {
         m_status->setText(QStringLiteral("解析失败：不是有效的 %1 帧").arg(m_current->protocolName()));
@@ -345,7 +345,7 @@ void ProtocolInspectorDialog::doParse()
     if (frame.unknown)
         addChild(QStringLiteral("注意"), QStringLiteral("帧型已识别但模板缺失，字段以原始形式展示"));
 
-    for (const ng::core::DecodedField &f : frame.fields)
+    for (const nextpilot::plotscope::core::DecodedField &f : frame.fields)
     {
         auto *it = new QTreeWidgetItem(root);
         it->setText(0, f.name);
@@ -359,10 +359,10 @@ void ProtocolInspectorDialog::doParse()
     m_status->setText(QStringLiteral("已解析 %1 个字段").arg(frame.fields.size()));
 }
 
-void ProtocolInspectorDialog::run(ng::core::ExtensionRegistry &registry, QWidget *parent)
+void ProtocolInspectorDialog::run(nextpilot::plotscope::core::ExtensionRegistry &registry, QWidget *parent)
 {
     ProtocolInspectorDialog dlg(registry, parent);
     dlg.exec();
 }
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

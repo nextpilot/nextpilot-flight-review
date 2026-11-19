@@ -11,8 +11,8 @@
 
 #include <cstdio>
 
-using namespace ng::app;
-using namespace ng::core;
+using namespace nextpilot::plotscope::app;
+using namespace nextpilot::plotscope::core;
 
 static void printUsage()
 {
@@ -89,7 +89,7 @@ int main(int argc, char **argv)
     {
         for (const auto &info : application.modules().availableModules())
         {
-            const char *kind = info.kind == ng::host::ModuleKind::Builtin ? "builtin" : "extension";
+            const char *kind = info.kind == nextpilot::plotscope::host::ModuleKind::Builtin ? "builtin" : "extension";
             fprintf(stdout, "%-12s %-10s %s\n", qPrintable(info.id), kind,
                     qPrintable(info.provides.join(QLatin1Char(','))));
         }
@@ -102,13 +102,13 @@ int main(int argc, char **argv)
         const auto &toolbox = application.modules().extensions();
         for (const QString &packId : toolbox.packIds())
         {
-            ng::core::IToolPack *pack = toolbox.pack(packId);
+            nextpilot::plotscope::core::IToolPack *pack = toolbox.pack(packId);
             if (!pack)
                 continue;
             int n = static_cast<int>(pack->contributions().size());
             fprintf(stdout, "%-18s %-12s [%s] %d 项贡献\n",
                     qPrintable(pack->id()), qPrintable(pack->displayName()),
-                    qPrintable(QString::fromLatin1(ng::core::domainKey(pack->domain()))), n);
+                    qPrintable(QString::fromLatin1(nextpilot::plotscope::core::domainKey(pack->domain()))), n);
         }
         return 0;
     }
@@ -118,7 +118,7 @@ int main(int argc, char **argv)
         const auto &toolbox = application.modules().extensions();
         const QString filter = args.size() >= 3 ? args.at(2) : QString();
         // 稳定顺序：按已知 kind 顺序，再按领域顺序。
-        for (const QString &kind : ng::core::knownKinds())
+        for (const QString &kind : nextpilot::plotscope::core::knownKinds())
         {
             if (!filter.isEmpty() && filter != kind)
                 continue;
@@ -126,11 +126,11 @@ int main(int argc, char **argv)
             if (list.isEmpty())
                 continue;
             fprintf(stdout, "[%s / %s] %d 项\n",
-                    qPrintable(kind), qPrintable(ng::core::kindName(kind)), list.size());
-            for (ng::core::IToolContribution *c : list)
+                    qPrintable(kind), qPrintable(nextpilot::plotscope::core::kindName(kind)), list.size());
+            for (nextpilot::plotscope::core::IToolContribution *c : list)
                 fprintf(stdout, "  %-26s %-18s %-10s <- %s\n",
                         qPrintable(c->id()), qPrintable(c->displayName()),
-                        qPrintable(QString::fromLatin1(ng::core::domainKey(c->domain()))),
+                        qPrintable(QString::fromLatin1(nextpilot::plotscope::core::domainKey(c->domain()))),
                         qPrintable(c->provider()));
         }
         return 0;
@@ -140,13 +140,13 @@ int main(int argc, char **argv)
     {
         // 器官/骨架声明插槽，工具箱的 UI 贡献填内容。
         const auto &slotReg = application.modules().uiSlots();
-        for (const ng::core::UiSlot &slot : slotReg.allSlots())
+        for (const nextpilot::plotscope::core::UiSlot &slot : slotReg.allSlots())
         {
             const auto actions = slotReg.actionsIn(slot.area);
             fprintf(stdout, "[%s] %s (%s) <- %d 项\n",
                     qPrintable(slot.area), qPrintable(slot.label),
                     qPrintable(slot.owner), actions.size());
-            for (const ng::core::BoundUiAction &b : actions)
+            for (const nextpilot::plotscope::core::BoundUiAction &b : actions)
                 fprintf(stdout, "    %-24s %-14s op=%s (来自 %s)\n",
                         qPrintable(b.action.id), qPrintable(b.action.label),
                         qPrintable(b.action.intentOp.isEmpty() ? QStringLiteral("-") : b.action.intentOp),
@@ -159,18 +159,18 @@ int main(int argc, char **argv)
     {
         // 工具箱按业务领域分组展示（通用 / 飞控 / 汽车 / 机器人 / 卫导 / 视频）。
         const auto &toolbox = application.modules().extensions();
-        const ng::core::FormatDomain order[] = {
-            ng::core::FormatDomain::General, ng::core::FormatDomain::Autopilot,
-            ng::core::FormatDomain::Automotive, ng::core::FormatDomain::Robotics,
-            ng::core::FormatDomain::Gnss, ng::core::FormatDomain::Video
+        const nextpilot::plotscope::core::FormatDomain order[] = {
+            nextpilot::plotscope::core::FormatDomain::General, nextpilot::plotscope::core::FormatDomain::Autopilot,
+            nextpilot::plotscope::core::FormatDomain::Automotive, nextpilot::plotscope::core::FormatDomain::Robotics,
+            nextpilot::plotscope::core::FormatDomain::Gnss, nextpilot::plotscope::core::FormatDomain::Video
         };
         for (auto domain : order)
         {
             const auto drivers = toolbox.driversByDomain(domain);
             if (drivers.isEmpty())
                 continue;
-            fprintf(stdout, "[%s]\n", qPrintable(ng::core::domainName(domain)));
-            for (ng::core::IFormatDriver *driver : drivers)
+            fprintf(stdout, "[%s]\n", qPrintable(nextpilot::plotscope::core::domainName(domain)));
+            for (nextpilot::plotscope::core::IFormatDriver *driver : drivers)
                 fprintf(stdout, "  %-10s %-18s 后缀[%s]\n",
                         qPrintable(driver->id()),
                         qPrintable(driver->displayName()),

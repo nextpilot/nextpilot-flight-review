@@ -2,7 +2,7 @@
 
 #include "ps_parser_spi.h"
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 // CSV 解析器（SPI 实现）。
@@ -28,4 +28,4 @@ public:
                             PsError *err);
 };
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

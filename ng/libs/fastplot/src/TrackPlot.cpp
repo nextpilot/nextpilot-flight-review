@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 TrackPlot::TrackPlot(QWidget *parent)
@@ -170,4 +170,4 @@ void TrackPlot::paintInstrument(QPainter &painter, const QRectF &rect)
                      QStringLiteral("%1 点%2").arg(drawn).arg(labels));
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

@@ -6,10 +6,10 @@
 
 #include <QWidget>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class IIntentExecutor;
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core
 
 class QButtonGroup;
 class QLabel;
@@ -55,15 +55,15 @@ class QVBoxLayout;
 //
 // 交互：字段树的"列"节点可拖到画布（ChannelMime）或双击激活；
 // 参数/消息表只读。所有命令仍走意图层，视图之间靠共享状态星形解耦。
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 class DataManagerPanel : public QWidget
 {
     Q_OBJECT
 public:
-    explicit DataManagerPanel(ng::core::AppContext &appCtx,
-                              ng::core::IIntentExecutor &executor, QWidget *parent = nullptr);
+    explicit DataManagerPanel(nextpilot::plotscope::core::AppContext &appCtx,
+                              nextpilot::plotscope::core::IIntentExecutor &executor, QWidget *parent = nullptr);
 
     // 重建整个面板（源/数据集变化时调用）。
     void refresh();
@@ -110,10 +110,10 @@ private:
     // 空态"打开日志"：走与主入口一致的 data.load 路径。
     void openLogFile();
 
-    ng::core::AppContext &m_appCtx;
-    ng::core::DataRepository &m_repo;
-    ng::core::DataSourceRepository &m_sources;
-    ng::core::IIntentExecutor &m_executor; // 发意图（源右键菜单）
+    nextpilot::plotscope::core::AppContext &m_appCtx;
+    nextpilot::plotscope::core::DataRepository &m_repo;
+    nextpilot::plotscope::core::DataSourceRepository &m_sources;
+    nextpilot::plotscope::core::IIntentExecutor &m_executor; // 发意图（源右键菜单）
 
     QVBoxLayout *m_cardsLay = nullptr;       // 源卡片容器
     QButtonGroup *m_sourceGroup = nullptr;   // 源卡片互斥组
@@ -135,7 +135,7 @@ private:
 
 // 视图层自注册：数据集管理面板的工厂函数。
 // 外壳与其它功能都不认识它——器官只声明类型字符串 "dataset-tree"。
-QWidget *createDatasetTreePanel(ng::core::AppContext &appCtx, ng::core::IIntentExecutor &exec,
+QWidget *createDatasetTreePanel(nextpilot::plotscope::core::AppContext &appCtx, nextpilot::plotscope::core::IIntentExecutor &exec,
                                 QWidget *parent);
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

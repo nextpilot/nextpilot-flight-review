@@ -3,7 +3,7 @@
 #include <QJsonObject>
 #include <QString>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 // CSV 导入探测：读文件头若干行，推断分隔符/表头/列类型/建议时间列/警告。
@@ -25,4 +25,4 @@ namespace CsvImportProbe
     QByteArray defaultOptions(const QJsonObject &probeResult);
 } // namespace CsvImportProbe
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

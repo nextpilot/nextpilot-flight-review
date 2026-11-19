@@ -14,7 +14,7 @@
 #include <memory>
 #include <vector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 工具箱注册表：所有知识包 / 贡献的唯一登记处。
@@ -83,4 +83,4 @@ private:
     QStringList m_idOrder;                                    // 贡献登记顺序
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

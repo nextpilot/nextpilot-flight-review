@@ -28,3 +28,6 @@ refs/
 # ng 新架构的构建产物
 /ng/build/
 /ng/build-*/
+
+# fastplot 契约测试的运行时截图产物（可视证据提交在 docs/screenshots/）
+fastplot_*.png

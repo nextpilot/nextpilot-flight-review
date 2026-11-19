@@ -4,7 +4,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 录制后端：字节**送到哪里**。
@@ -65,4 +65,4 @@ inline const QString File = QStringLiteral("file");
 inline const QString Udp = QStringLiteral("udp");
 } // namespace BackendId
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

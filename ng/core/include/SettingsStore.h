@@ -6,7 +6,7 @@
 #include <QStringList>
 #include <QVariant>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 键的作用域。三种性质不同的东西，但走同一个存储。
@@ -82,4 +82,4 @@ private:
     QHash<QString, QVariant> m_values;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

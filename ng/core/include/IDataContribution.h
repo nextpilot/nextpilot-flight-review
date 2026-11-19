@@ -5,7 +5,7 @@
 #include <QList>
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 数据贡献里描述的一个数据资产（样例数据 / 预置数据集 / 测试夹具）。
@@ -27,4 +27,4 @@ public:
     virtual QList<DataAsset> assets() const = 0;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

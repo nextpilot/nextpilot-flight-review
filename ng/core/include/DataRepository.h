@@ -7,7 +7,7 @@
 #include <QObject>
 #include <QVector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // Dataset 的唯一所有者。模块与扩展都不拥有数据，只通过 repo 访问。
@@ -41,4 +41,4 @@ private:
     DatasetId m_nextId = 0;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

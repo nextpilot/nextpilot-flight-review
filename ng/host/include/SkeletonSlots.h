@@ -2,7 +2,7 @@
 
 #include "UiSlotRegistry.h"
 
-namespace ng::host
+namespace nextpilot::plotscope::host
 {
 
 // 声明 app 骨架的标准插槽：主页页签、数据/视图分组、左右停靠区、画布、
@@ -15,6 +15,6 @@ namespace ng::host
 //
 // 单一来源：ModuleHost 构造函数是唯一的真实声明点；GUI 侧 MainWindow
 // 在脱离宿主单独使用时可再调一次作幂等确认（同内容、先到者为准）。
-void declareSkeletonSlots(ng::core::UiSlotRegistry &registry);
+void declareSkeletonSlots(nextpilot::plotscope::core::UiSlotRegistry &registry);
 
-} // namespace ng::host
+} // namespace nextpilot::plotscope::host

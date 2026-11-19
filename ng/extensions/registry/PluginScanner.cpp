@@ -3,7 +3,7 @@
 #include <QDir>
 #include <QFileInfo>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 // 插件目录约定：以 "psplug_" 开头、平台动态库后缀结尾的文件视为候选。
@@ -18,7 +18,7 @@ static QStringList pluginSuffixes()
 #endif
 }
 
-PluginScanReport scanExternalPlugins(ng::core::ExtensionRegistry &registry,
+PluginScanReport scanExternalPlugins(nextpilot::plotscope::core::ExtensionRegistry &registry,
                                      const QString &directory)
 {
     Q_UNUSED(registry); // 本轮不实际加载，保留接线位置
@@ -52,4 +52,4 @@ PluginScanReport scanExternalPlugins(ng::core::ExtensionRegistry &registry,
     return report;
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

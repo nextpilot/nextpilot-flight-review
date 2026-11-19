@@ -3,7 +3,7 @@
 #include <QJsonArray>
 #include <QJsonValue>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 void Job::append(Intent intent)
@@ -55,4 +55,4 @@ Job Job::fromJson(const QJsonObject &obj, Result<void> *outError)
     return job;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

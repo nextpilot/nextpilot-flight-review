@@ -1,6 +1,6 @@
 #include "FormatDomain.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 const char *domainKey(FormatDomain domain)
@@ -31,4 +31,4 @@ QString domainName(FormatDomain domain)
     return QStringLiteral("通用");
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

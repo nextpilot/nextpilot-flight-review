@@ -2,7 +2,7 @@
 
 #include "fastplot/Instrument.h"
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 class IPlotData;
@@ -37,4 +37,4 @@ private:
     QColor m_end{0xff, 0x6b, 0x6b};
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

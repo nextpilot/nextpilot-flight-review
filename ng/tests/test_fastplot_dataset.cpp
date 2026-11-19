@@ -3,7 +3,7 @@
 // 这条链证明的是"库可以直接被 ng 调用"：
 //   Source 字节 → IngestPipeline/ULog SPI parser → Dataset（Rust typed 表）
 //     → Dataset::lodMinMax（Rust 内按像素分桶，<=px 个三元组）
-//     → fastplot::Curve::fromLod（C++ 只画，不重扫）→ PlotWidget
+//     → nextpilot::plotscope::fastplot::Curve::fromLod（C++ 只画，不重扫）→ PlotWidget
 //
 // 关键点：C++ 侧从头到尾没有拿到全量行，也没有复制数据。
 // 找不到 fixture 时跳过（CI 上老仓库不在同一路径）。
@@ -24,7 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 namespace
 {
@@ -126,7 +126,7 @@ int main(int argc, char **argv)
             tableName.toUtf8().constData(), columnName.toUtf8().constData(), table->rows);
 
     // ---- 3) 建画布，按像素宽度向内核要 LOD ----
-    fastplot::PlotWidget plot;
+    nextpilot::plotscope::fastplot::PlotWidget plot;
     plot.resize(900, 420);
 
     const int px = static_cast<int>(plot.viewport().plotRect().width());
@@ -139,13 +139,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    QVector<fastplot::LodPoint> pts;
+    QVector<nextpilot::plotscope::fastplot::LodPoint> pts;
     pts.reserve(lod.size());
     for (const LodTriple &t : lod)
-        pts.push_back(fastplot::LodPoint{t.x, t.min, t.max});
+        pts.push_back(nextpilot::plotscope::fastplot::LodPoint{t.x, t.min, t.max});
 
     const QColor ink(0xff, 0x9f, 0x43);
-    plot.addCurve(fastplot::Curve::fromLod(pts, ink, 1.4));
+    plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(pts, ink, 1.4));
     if (!plot.autoScale())
     {
         fprintf(stderr, "FAIL: autoScale 失败\n");

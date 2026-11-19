@@ -23,10 +23,10 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
-namespace ng::ext::automotive
+namespace nextpilot::plotscope::ext::automotive
 {
 
-CanBrowserPanel::CanBrowserPanel(ng::core::AppContext &appCtx, QWidget *parent)
+CanBrowserPanel::CanBrowserPanel(nextpilot::plotscope::core::AppContext &appCtx, QWidget *parent)
     : QWidget(parent), m_appCtx(appCtx)
 {
     auto *layout = new QVBoxLayout(this);
@@ -43,10 +43,10 @@ CanBrowserPanel::CanBrowserPanel(ng::core::AppContext &appCtx, QWidget *parent)
 
     // 内容随数据源动态变化：仓库里有数据集就列出它们可能涉及的报文。
     // 这里先给出骨架（空表），真实填充等 CAN 格式接入后由数据驱动。
-    connect(&m_appCtx.data(), &ng::core::DataRepository::datasetAdded, this,
-            [this](ng::core::DatasetId) { refresh(); });
-    connect(&m_appCtx.data(), &ng::core::DataRepository::datasetRemoved, this,
-            [this](ng::core::DatasetId) { refresh(); });
+    connect(&m_appCtx.data(), &nextpilot::plotscope::core::DataRepository::datasetAdded, this,
+            [this](nextpilot::plotscope::core::DatasetId) { refresh(); });
+    connect(&m_appCtx.data(), &nextpilot::plotscope::core::DataRepository::datasetRemoved, this,
+            [this](nextpilot::plotscope::core::DatasetId) { refresh(); });
     refresh();
 }
 
@@ -57,14 +57,14 @@ void CanBrowserPanel::refresh()
     // 不需要 GUI 层或器官预先知道会有哪些信号。
     const auto datasets = m_appCtx.data().ids();
     m_table->setRowCount(0);
-    for (ng::core::DatasetId id : datasets)
+    for (nextpilot::plotscope::core::DatasetId id : datasets)
     {
-        const ng::core::Dataset *ds = m_appCtx.data().get(id);
+        const nextpilot::plotscope::core::Dataset *ds = m_appCtx.data().get(id);
         if (!ds)
             continue;
         for (int ti = 0; ti < ds->tableCount(); ++ti)
         {
-            const ng::core::Table *t = ds->table(ti);
+            const nextpilot::plotscope::core::Table *t = ds->table(ti);
             if (!t || !t->name.contains(QStringLiteral("can"), Qt::CaseInsensitive))
                 continue;
             const int row = m_table->rowCount();
@@ -77,14 +77,14 @@ void CanBrowserPanel::refresh()
     }
 }
 
-QWidget *createCanBrowserPanel(ng::core::AppContext &appCtx, ng::core::IIntentExecutor &exec,
+QWidget *createCanBrowserPanel(nextpilot::plotscope::core::AppContext &appCtx, nextpilot::plotscope::core::IIntentExecutor &exec,
                                QWidget *parent)
 {
     Q_UNUSED(exec); // 本面板自己取数，不经意图层
     return new CanBrowserPanel(appCtx, parent);
 }
 
-} // namespace ng::ext::automotive
+} // namespace nextpilot::plotscope::ext::automotive
 
 // 注册进**同一张**工厂表：领域面板与通用面板共用，模块不区分。
-NG_REGISTER_PANEL("car.can-browser", canBrowserPanel, ::ng::ext::automotive::createCanBrowserPanel)
+NG_REGISTER_PANEL("car.can-browser", canBrowserPanel, ::nextpilot::plotscope::ext::automotive::createCanBrowserPanel)

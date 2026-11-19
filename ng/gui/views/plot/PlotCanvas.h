@@ -15,9 +15,9 @@ class QDropEvent;
 class QMimeData;
 class QContextMenuEvent;
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
-class PlotWidget;
+class Axes;
 class Zoomer;
 class Panner;
 class Picker;
@@ -38,18 +38,18 @@ class Picker;
 // 它**不知道数据从哪来**，所以数据源变化由上层喂进来；
 // 但它知道"自己多大"——视口尺寸变化会发 viewportChanged，
 // 让上层按新的像素宽度重新取数（否则窄屏取的 LOD 会被拉伸成锯齿）。
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 // 画布上的一条曲线：逻辑标识 + 有界 LOD + 样式。
 struct PlotSeries
 {
-    ng::core::DatasetId datasetId = ng::core::kInvalidDataset;
+    nextpilot::plotscope::core::DatasetId datasetId = nextpilot::plotscope::core::kInvalidDataset;
     QString table;
     QString column;
     QString title;             // 完整标题（数据集 / table.column）
     QColor color;              // 曲线色（由上层按主题分配）
-    QVector<ng::core::LodTriple> lod;
+    QVector<nextpilot::plotscope::core::LodTriple> lod;
     double t0 = 0.0;
     double t1 = 0.0;
     bool visible = true;
@@ -79,14 +79,14 @@ public:
     int setSeries(const PlotSeries &series);
 
     // 兼容入口：把 LOD 喂给首条曲线（旧调用方/测试用；无曲线时忽略）。
-    void setLodData(const QVector<ng::core::LodTriple> &lod, double t0, double t1);
+    void setLodData(const QVector<nextpilot::plotscope::core::LodTriple> &lod, double t0, double t1);
 
     // 从 Dataset 重新取数并刷新所有曲线（便捷入口）。
-    void renderFrom(const ng::core::Dataset &dataset);
+    void renderFrom(const nextpilot::plotscope::core::Dataset &dataset);
 
     // 从 Dataset 取 LOD 并追加（便捷入口，内部按画布像素宽取数）。
     // 保留旧签名以兼容：它等价于用单条序列替换全部。
-    void setChannel(ng::core::DatasetId datasetId, const QString &table, const QString &column,
+    void setChannel(nextpilot::plotscope::core::DatasetId datasetId, const QString &table, const QString &column,
                     const QString &title);
 
     // 清空全部曲线。removeSeries 按 key 删除单条。
@@ -125,8 +125,8 @@ public:
     QString channelTitle() const { return m_title; }
 
     // 需要直接操作画布能力（缩放/导出等）时用；正常情况下上层不要碰它。
-    fastplot::PlotWidget *plotWidget() const { return m_plot; }
-    fastplot::Zoomer *zoomer() const { return m_zoomer; }
+    nextpilot::plotscope::fastplot::Axes *plotWidget() const { return m_plot; }
+    nextpilot::plotscope::fastplot::Zoomer *zoomer() const { return m_zoomer; }
 
     // 当前可见时间窗（秒）。
     bool visibleTimeRange(double *t0, double *t1) const;
@@ -139,7 +139,7 @@ Q_SIGNALS:
     void rangeChanged(double t0, double t1);
     // 有通道被拖到画布上（数据集树 → 画布）。画布只解码 MIME 发信号，
     // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
-    void channelDropped(ng::core::DatasetId datasetId, const QString &table,
+    void channelDropped(nextpilot::plotscope::core::DatasetId datasetId, const QString &table,
                         const QString &column);
 
 protected:
@@ -157,10 +157,10 @@ private:
     // 为新曲线分配主题色（按当前已有曲线条数轮换）。
     QColor nextSeriesColor() const;
 
-    fastplot::PlotWidget *m_plot = nullptr;
-    fastplot::Zoomer *m_zoomer = nullptr;
-    fastplot::Panner *m_panner = nullptr;
-    fastplot::Picker *m_picker = nullptr;
+    nextpilot::plotscope::fastplot::Axes *m_plot = nullptr;
+    nextpilot::plotscope::fastplot::Zoomer *m_zoomer = nullptr;
+    nextpilot::plotscope::fastplot::Panner *m_panner = nullptr;
+    nextpilot::plotscope::fastplot::Picker *m_picker = nullptr;
 
     QVector<PlotSeries> m_series; // 叠加的多条曲线
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
@@ -169,4 +169,4 @@ private:
     double m_t1 = 0.0;
 };
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

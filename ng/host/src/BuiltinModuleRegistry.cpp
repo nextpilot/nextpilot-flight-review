@@ -2,7 +2,7 @@
 
 #include <QHash>
 
-namespace ng::host
+namespace nextpilot::plotscope::host
 {
 
 namespace
@@ -47,4 +47,4 @@ void BuiltinModuleRegistry::reset()
     r.indexById.clear();
 }
 
-} // namespace ng::host
+} // namespace nextpilot::plotscope::host

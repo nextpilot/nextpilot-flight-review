@@ -39,8 +39,8 @@
         }                                                                      \
     } while (0)
 
-using namespace ng::app;
-using namespace ng::core;
+using namespace nextpilot::plotscope::app;
+using namespace nextpilot::plotscope::core;
 
 // ============================================================================
 // 「新增一个 module / extension 不修改其他代码」的证明
@@ -71,24 +71,24 @@ public:
 };
 
 // 假模块：声明一个能力，提供一个意图处理器。
-class ProbeModule final : public ng::host::IModule
+class ProbeModule final : public nextpilot::plotscope::host::IModule
 {
     Q_OBJECT
 public:
-    static ng::host::ModuleInfo moduleInfo()
+    static nextpilot::plotscope::host::ModuleInfo moduleInfo()
     {
-        return ng::host::ModuleInfo{QStringLiteral("mod.probe"),
+        return nextpilot::plotscope::host::ModuleInfo{QStringLiteral("mod.probe"),
                                     QStringLiteral("探针模块"),
                                     QStringLiteral("1.0"),
-                                    ng::host::ModuleKind::Builtin,
+                                    nextpilot::plotscope::host::ModuleKind::Builtin,
                                     {QStringLiteral("probe.capability")},
                                     {}};
     }
-    static ng::host::IModule *create() { return new ProbeModule(); }
+    static nextpilot::plotscope::host::IModule *create() { return new ProbeModule(); }
 
-    ng::host::ModuleInfo info() const override { return moduleInfo(); }
+    nextpilot::plotscope::host::ModuleInfo info() const override { return moduleInfo(); }
 
-    void initialize(ng::host::ModuleContext &ctx) override
+    void initialize(nextpilot::plotscope::host::ModuleContext &ctx) override
     {
         ctx.registerIntentHandler(new ProbeHandler);
     }
@@ -104,7 +104,7 @@ struct ProbePack
     {
         auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("探针工具箱"),
                                                FormatDomain::General);
-        pack->add<ng::ext::GenericUiContribution>(
+        pack->add<nextpilot::plotscope::ext::GenericUiContribution>(
             QStringLiteral("probe.ui"), QStringLiteral("探针界面入口"), FormatDomain::General,
             QList<UiAction>{{QStringLiteral("probe.ui.act"), QStringLiteral("探针动作"),
                              QStringLiteral("menu.plot"), QString(), QString()}});
@@ -289,7 +289,7 @@ int main(int argc, char **argv)
 
     // 外部插件扫描（本轮预留入口）：空目录返回空报告，不报错、不影响内置格式。
     const int formatsBeforeScan = toolbox.count();
-    ng::ext::PluginScanReport scan = ng::ext::scanExternalPlugins(toolbox, dir.path());
+    nextpilot::plotscope::ext::PluginScanReport scan = nextpilot::plotscope::ext::scanExternalPlugins(toolbox, dir.path());
     CHECK(scan.discovered.isEmpty());
     CHECK(toolbox.count() == formatsBeforeScan); // 扫描未改动工具箱
     fprintf(stdout, "[ok] 器官(3) 与工具箱(%d 格式驱动) 分离装载；自注册 + 后缀推断 + 插件扫描入口就绪\n",
@@ -306,7 +306,7 @@ int main(int argc, char **argv)
         CHECK(toolbox.pack(QStringLiteral("pack.robotics")) != nullptr);
         CHECK(toolbox.pack(QStringLiteral("pack.gnss")) != nullptr);
         // 飞控包装载了全部六类贡献——一个包能同时贡献格式/UI/脚本/数据/例子/文档。
-        ng::core::IToolPack *ap = toolbox.pack(QStringLiteral("pack.autopilot"));
+        nextpilot::plotscope::core::IToolPack *ap = toolbox.pack(QStringLiteral("pack.autopilot"));
         CHECK(ap->contributions().size() == 6);
         QSet<QString> apKinds;
         for (const auto &c : ap->contributions())
@@ -340,22 +340,22 @@ int main(int argc, char **argv)
         CHECK(toolbox.contributionsByDomain(FormatDomain::Video).isEmpty()); // 预留领域无贡献
 
         // typed 接口可向下转换拿到领域数据（UI 贡献是纯数据，headless 也成立）。
-        ng::core::IToolContribution *uiRaw =
+        nextpilot::plotscope::core::IToolContribution *uiRaw =
             toolbox.contribution(QStringLiteral("ap.ui.contributions"));
         CHECK(uiRaw != nullptr);
-        auto *ui = dynamic_cast<ng::core::IUiContribution *>(uiRaw);
+        auto *ui = dynamic_cast<nextpilot::plotscope::core::IUiContribution *>(uiRaw);
         CHECK(ui != nullptr && ui->actions().size() == 3);
-        ng::core::IToolContribution *docRaw =
+        nextpilot::plotscope::core::IToolContribution *docRaw =
             toolbox.contribution(QStringLiteral("ap.docs"));
-        auto *doc = dynamic_cast<ng::core::IDocContribution *>(docRaw);
+        auto *doc = dynamic_cast<nextpilot::plotscope::core::IDocContribution *>(docRaw);
         CHECK(doc != nullptr && doc->entries().size() == 1);
 
         // 领域面板的**描述**是纯数据，headless（CLI）也能查到——
         // 实现（QWidget 工厂）只在 GUI 侧注册，两者用 id 关联。
-        ng::core::IToolContribution *panelRaw =
+        nextpilot::plotscope::core::IToolContribution *panelRaw =
             toolbox.contribution(QStringLiteral("car.panels"));
         CHECK(panelRaw != nullptr);
-        auto *panel = dynamic_cast<ng::core::IPanelContribution *>(panelRaw);
+        auto *panel = dynamic_cast<nextpilot::plotscope::core::IPanelContribution *>(panelRaw);
         CHECK(panel != nullptr && panel->panels().size() == 1);
         CHECK(panel->panels().first().id == QStringLiteral("car.can-browser"));
         CHECK(panel->domain() == FormatDomain::Automotive);
@@ -382,9 +382,9 @@ int main(int argc, char **argv)
         // 开放 kind：自定义 kind 无需改注册表/宿主即可登记（证明可扩展，非封闭枚举）。
         auto customPack = std::make_unique<ToolPack>(QStringLiteral("pack.custom"),
                                                      QStringLiteral("自定义工具箱"), FormatDomain::General);
-        customPack->add<ng::ext::GenericDocContribution>(
+        customPack->add<nextpilot::plotscope::ext::GenericDocContribution>(
             QStringLiteral("custom.thing"), QStringLiteral("自定义能力"), FormatDomain::General,
-            QList<ng::core::DocEntry>{});
+            QList<nextpilot::plotscope::core::DocEntry>{});
         CHECK(toolbox.registerPack(std::move(customPack)));
         CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 6); // 新包贡献被按 kind 索引
         CHECK(toolbox.unregisterPack(QStringLiteral("pack.custom")));    // 按包原子撤销
@@ -713,7 +713,7 @@ int main(int argc, char **argv)
 
         // --- 工作区数据源配置：data.load 自动记录 + workspace 意图 ---
         {
-            using namespace ng::core;
+            using namespace nextpilot::plotscope::core;
             // data.load（上面已成功加载 csv）应已把来源记入 ws/data/sources。
             WorkspaceDataConfig cfg = WorkspaceDataConfig::load(application.context().settings());
             CHECK(!cfg.sources.isEmpty());
@@ -810,7 +810,7 @@ int main(int argc, char **argv)
         fprintf(stdout, "[ok] 工具箱隔离：撤 CSV 不影响 ULog；撤 ULog 后 ulog 能力精确撤销\n");
 
         // 重新自注册验证可逆（工具箱可热插，不留悬空能力）。
-        ng::ext::registerBuiltinFormats(toolbox);
+        nextpilot::plotscope::ext::registerBuiltinFormats(toolbox);
         CHECK(toolbox.count() == 3); // csv + ulog + custom-protocol
     }
 
@@ -908,7 +908,7 @@ int main(int argc, char **argv)
         fprintf(stdout, "[ok] 协议解析器自述：协议名/领域+用途/transfer/schema 四要素齐全，注册表可查\n");
 
         // 直接实例化一个独立样本：默认内置模板可用（无 configure 也能 parse）。
-        ng::ext::NmeaMessageParser p;
+        nextpilot::plotscope::ext::NmeaMessageParser p;
         CHECK(p.templateCount() >= 3);
         // 标准 GGA 句（校验和 47 与 payload 自洽）。
         const QByteArray gga =

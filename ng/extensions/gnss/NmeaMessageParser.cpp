@@ -8,7 +8,7 @@
 #include <QSet>
 #include <QVariant>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 namespace
 {
@@ -60,10 +60,10 @@ double utcSeconds(const QString &text)
     return hours * 3600.0 + minutes * 60.0 + seconds;
 }
 
-ng::core::DecodedField textField(const QString &name, const QString &raw, const QString &unit,
+nextpilot::plotscope::core::DecodedField textField(const QString &name, const QString &raw, const QString &unit,
                                  const QString &description)
 {
-    ng::core::DecodedField f;
+    nextpilot::plotscope::core::DecodedField f;
     f.name = name;
     f.raw = raw;
     f.value = raw;
@@ -195,7 +195,7 @@ bool NmeaMessageParser::sniff(const QByteArray &head) const
     return firstLine(head).startsWith('$');
 }
 
-bool NmeaMessageParser::parse(const QByteArray &bytes, ng::core::DecodedFrame &out) const
+bool NmeaMessageParser::parse(const QByteArray &bytes, nextpilot::plotscope::core::DecodedFrame &out) const
 {
     const QByteArray line = firstLine(bytes);
     if (!line.startsWith('$'))
@@ -293,4 +293,4 @@ bool NmeaMessageParser::parse(const QByteArray &bytes, ng::core::DecodedFrame &o
     return true;
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

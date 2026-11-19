@@ -7,7 +7,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 namespace
 {

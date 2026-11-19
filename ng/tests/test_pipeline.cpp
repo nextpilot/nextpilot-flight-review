@@ -41,7 +41,7 @@
 
 #define OK(msg) fprintf(stdout, "[ok] %s\n", msg)
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 namespace
 {
@@ -243,8 +243,8 @@ int main()
     // 需求(2)：新增解析器不改任何既有代码。
     // pspx 解析器在 extensions/common 里自注册（NG_REGISTER_PARSER），
     // 它的 TU 被链接进来即生效——宿主、注册表、其它解析器都没改过。
-    const PsParserInfo &info = ng::ext::PspxParser::parserInfo();
-    const PsParserVtable *vt = ng::ext::PspxParser::parserVtable();
+    const PsParserInfo &info = nextpilot::plotscope::ext::PspxParser::parserInfo();
+    const PsParserVtable *vt = nextpilot::plotscope::ext::PspxParser::parserVtable();
 
     CHECK(ParserRegistry::count() >= 1);
     CHECK(ParserRegistry::entry(QStringLiteral("pspx")) != nullptr);
@@ -317,10 +317,10 @@ int main()
         PsParserSink s1 = c1.sink(), s2 = c2.sink();
         const QByteArray b1 = makePspx(10, 1.0);
         const QByteArray b2 = makePspx(20, 3.0);
-        CHECK(ng::ext::PspxParser::parseBuffer(
+        CHECK(nextpilot::plotscope::ext::PspxParser::parseBuffer(
             reinterpret_cast<const uint8_t *>(b1.constData()),
             static_cast<uint32_t>(b1.size()), &s1, nullptr));
-        CHECK(ng::ext::PspxParser::parseBuffer(
+        CHECK(nextpilot::plotscope::ext::PspxParser::parseBuffer(
             reinterpret_cast<const uint8_t *>(b2.constData()),
             static_cast<uint32_t>(b2.size()), &s2, nullptr));
         CHECK(c1.batches.front().values.size() == 10);
@@ -390,10 +390,10 @@ int main()
         // "回放"：把录制文件当作新 Source 喂给同一解析器
         Collector live, replayed;
         PsParserSink sl = live.sink(), sr = replayed.sink();
-        CHECK(ng::ext::PspxParser::parseBuffer(
+        CHECK(nextpilot::plotscope::ext::PspxParser::parseBuffer(
             reinterpret_cast<const uint8_t *>(original.constData()),
             static_cast<uint32_t>(original.size()), &sl, nullptr));
-        CHECK(ng::ext::PspxParser::parseBuffer(
+        CHECK(nextpilot::plotscope::ext::PspxParser::parseBuffer(
             reinterpret_cast<const uint8_t *>(recorded.constData()),
             static_cast<uint32_t>(recorded.size()), &sr, nullptr));
 
@@ -416,19 +416,19 @@ int main()
     // ========== 8) 录制格式是一组可扩展的资产（raw / mcap）============
     {
         // raw 格式在本测试文件里注册（内置扩展也会注册同一个 id，先到者为准）
-        const ng::core::RecordingFormat raw = [] {
-            ng::core::RecordingFormat f;
-            f.id = ng::core::FormatId::Raw;
+        const nextpilot::plotscope::core::RecordingFormat raw = [] {
+            nextpilot::plotscope::core::RecordingFormat f;
+            f.id = nextpilot::plotscope::core::FormatId::Raw;
             f.displayName = QStringLiteral("原始字节录制");
             f.extension = QStringLiteral(".raw");
             f.structured = false;
             return f;
         }();
-        CHECK(ng::core::RecordingFormatRegistry::registerFormat(raw));
-        CHECK(ng::core::RecordingFormatRegistry::format(QStringLiteral("raw")) != nullptr);
-        CHECK(ng::core::RecordingFormatRegistry::formatByExtension(QStringLiteral(".raw")) != nullptr);
+        CHECK(nextpilot::plotscope::core::RecordingFormatRegistry::registerFormat(raw));
+        CHECK(nextpilot::plotscope::core::RecordingFormatRegistry::format(QStringLiteral("raw")) != nullptr);
+        CHECK(nextpilot::plotscope::core::RecordingFormatRegistry::formatByExtension(QStringLiteral(".raw")) != nullptr);
         // raw 不保留通道结构
-        CHECK(!ng::core::RecordingFormatRegistry::format(QStringLiteral("raw"))->structured);
+        CHECK(!nextpilot::plotscope::core::RecordingFormatRegistry::format(QStringLiteral("raw"))->structured);
         OK("录制格式是资产而非机制：raw 已登记（无通道结构），可按 id / 后缀查找");
     }
 
@@ -492,9 +492,9 @@ int main()
 
         // --- raw：录 → 放 ---
         {
-            ng::rec::RawRecorder rec;
-            std::shared_ptr<ng::rec::IByteSink> sink =
-                ng::rec::createByteSink(QStringLiteral("file"), nullptr);
+            nextpilot::plotscope::rec::RawRecorder rec;
+            std::shared_ptr<nextpilot::plotscope::rec::IByteSink> sink =
+                nextpilot::plotscope::rec::createByteSink(QStringLiteral("file"), nullptr);
             CHECK(sink != nullptr);
             CHECK(sink->open(rawPath, nullptr));
             CHECK(rec.open(sink, QByteArray("{\"source\":\"t\"}")));
@@ -502,7 +502,7 @@ int main()
             CHECK(rec.close());
         }
         {
-            ng::rec::RawPlayer player;
+            nextpilot::plotscope::rec::RawPlayer player;
             CHECK(player.open(rawPath));
             QByteArray back;
             while (!player.atEnd())
@@ -526,9 +526,9 @@ int main()
 
         // --- mcap：录（两个 topic）→ 放 ---
         {
-            ng::rec::McapRecorder rec;
-            std::shared_ptr<ng::rec::IByteSink> sink =
-                ng::rec::createByteSink(QStringLiteral("file"), nullptr);
+            nextpilot::plotscope::rec::McapRecorder rec;
+            std::shared_ptr<nextpilot::plotscope::rec::IByteSink> sink =
+                nextpilot::plotscope::rec::createByteSink(QStringLiteral("file"), nullptr);
             CHECK(sink != nullptr);
             CHECK(sink->open(mcapPath, nullptr));
             CHECK(rec.open(sink));
@@ -538,14 +538,14 @@ int main()
             CHECK(rec.close());
         }
         {
-            ng::rec::McapPlayer player;
+            nextpilot::plotscope::rec::McapPlayer player;
             CHECK(player.open(mcapPath));
             int count = 0;
             int imuCount = 0;
             QByteArray firstData;
             while (true)
             {
-                ng::rec::McapMessage msg;
+                nextpilot::plotscope::rec::McapMessage msg;
                 if (!player.nextMessage(msg))
                     break;
                 if (count == 0)
@@ -696,10 +696,10 @@ int main()
         const QString mcapPath = dir.filePath(QStringLiteral("multi.mcap"));
 
         // 两路 Recorder：格式不同，后端相同 —— 组合独立，各写各的文件
-        auto rawRec = ng::rec::Recorder::create(QStringLiteral("raw"), QStringLiteral("file"),
+        auto rawRec = nextpilot::plotscope::rec::Recorder::create(QStringLiteral("raw"), QStringLiteral("file"),
                                                  rawPath, QByteArray("{\"k\":\"raw\"}"));
         CHECK(rawRec);
-        auto mcapRec = ng::rec::Recorder::create(QStringLiteral("mcap"), QStringLiteral("file"),
+        auto mcapRec = nextpilot::plotscope::rec::Recorder::create(QStringLiteral("mcap"), QStringLiteral("file"),
                                                   mcapPath);
         CHECK(mcapRec);
 
@@ -715,7 +715,7 @@ int main()
 
         // raw 路：逐字节还原（回放等价于原始）
         {
-            ng::rec::RawPlayer player;
+            nextpilot::plotscope::rec::RawPlayer player;
             CHECK(player.open(rawPath));
             QByteArray back;
             while (!player.atEnd())
@@ -733,12 +733,12 @@ int main()
 
         // mcap 路：5 条消息 + 通道结构保留
         {
-            ng::rec::McapPlayer player;
+            nextpilot::plotscope::rec::McapPlayer player;
             CHECK(player.open(mcapPath));
             int count = 0;
             while (true)
             {
-                ng::rec::McapMessage msg;
+                nextpilot::plotscope::rec::McapMessage msg;
                 if (!player.nextMessage(msg))
                     break;
                 CHECK(msg.data == payload);
@@ -752,7 +752,7 @@ int main()
         // 后端缺失时明确报错（不是静默失败）
         {
             QString err;
-            const auto bad = ng::rec::Recorder::create(QStringLiteral("raw"),
+            const auto bad = nextpilot::plotscope::rec::Recorder::create(QStringLiteral("raw"),
                                                         QStringLiteral("nosuch"), "/tmp/x", {}, &err);
             CHECK(!bad);
             CHECK(err.contains(QStringLiteral("nosuch")));
@@ -854,7 +854,7 @@ int main()
         // 这里直接调扩展里的 driver，避免把整个 App 拉进来。
         Dataset dsA = Dataset::create(QStringLiteral("dual"), QStringLiteral("ulog"));
         QString errA;
-        CHECK(ng::ext::ulog::parseUlogStream(path, dsA, errA));
+        CHECK(nextpilot::plotscope::ext::ulog::parseUlogStream(path, dsA, errA));
         dsA.refreshSchema();
         const Table *tA = dsA.table(QStringLiteral("sensor"));
         CHECK(tA != nullptr);
@@ -922,7 +922,7 @@ int main()
             PsParserSink sink = collector.sink();
             PsError err{};
             err.message[0] = 0;
-            const bool okParse = ng::ext::CsvParser::parseBuffer(
+            const bool okParse = nextpilot::plotscope::ext::CsvParser::parseBuffer(
                 reinterpret_cast<const uint8_t *>(csvBytes.constData()),
                 static_cast<uint32_t>(csvBytes.size()), &sink, &err);
             CHECK(okParse);
@@ -945,7 +945,7 @@ int main()
                 PsParserSink s2 = c2.sink();
                 PsError e2{};
                 e2.message[0] = 0;
-                CHECK(ng::ext::CsvParser::parseBuffer(
+                CHECK(nextpilot::plotscope::ext::CsvParser::parseBuffer(
                     reinterpret_cast<const uint8_t *>(csvBytes.constData()),
                     static_cast<uint32_t>(csvBytes.size()), &s2, &e2));
                 // 解析器的批里：第一列名 roll、第二列名 pitch，共 2 个数值列
@@ -959,7 +959,7 @@ int main()
         // 验证导入对话框收集的参数真能被解析器消费（不是空控件）。
         {
             const QByteArray semi = "10;1.5;2.5\n20;2.0;3.0\n30;3.0;4.5\n";
-            const PsParserVtable *vt = ng::ext::CsvParser::parserVtable();
+            const PsParserVtable *vt = nextpilot::plotscope::ext::CsvParser::parserVtable();
             CHECK(ps_parser_has_configure(vt));
             void *ctx = vt->create();
             PsError err{}; err.message[0] = 0;

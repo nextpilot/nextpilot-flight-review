@@ -10,7 +10,7 @@
 
 #include <memory>
 
-namespace ng::rec
+namespace nextpilot::plotscope::rec
 {
 
 // MCAP 录制：app 官方内置的第二种录制格式。
@@ -116,4 +116,4 @@ private:
     QList<McapMessage> m_pending; // 已解析但尚未吐出的消息（一个 chunk 内有多条）
 };
 
-} // namespace ng::rec
+} // namespace nextpilot::plotscope::rec

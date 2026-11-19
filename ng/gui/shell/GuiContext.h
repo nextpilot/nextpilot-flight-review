@@ -7,12 +7,12 @@
 
 class QMainWindow;
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class AppContext;
 }
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 class ShellBinder;
@@ -25,48 +25,48 @@ class ShellBinder;
 //
 // 它**不认识任何功能视图**（views/ 下的类）：视图通过 PanelFactoryRegistry
 // 自注册自己，器官只声明类型字符串。
-class GuiContext final : public QObject, public ng::host::UiContext
+class GuiContext final : public QObject, public nextpilot::plotscope::host::UiContext
 {
     Q_OBJECT
 public:
-    GuiContext(QMainWindow *window, ng::core::UiSlotRegistry &slotReg, ShellBinder *binder,
-               ng::core::AppContext &appCtx, ng::core::IIntentExecutor *executor = nullptr,
+    GuiContext(QMainWindow *window, nextpilot::plotscope::core::UiSlotRegistry &slotReg, ShellBinder *binder,
+               nextpilot::plotscope::core::AppContext &appCtx, nextpilot::plotscope::core::IIntentExecutor *executor = nullptr,
                QObject *parent = nullptr);
 
-    // ng::host::UiContext
+    // nextpilot::plotscope::host::UiContext
     void placePanel(QWidget *widget, const QString &area,
                     const QString &titleOverride = QString()) override;
     void placeCanvas(QWidget *widget) override;
-    void declareSlot(const QString &area, const QString &label, ng::core::SlotKind kind,
+    void declareSlot(const QString &area, const QString &label, nextpilot::plotscope::core::SlotKind kind,
                      const QString &parentArea = QString()) override;
-    void addAction(const ng::core::UiAction &action) override;
+    void addAction(const nextpilot::plotscope::core::UiAction &action) override;
 
     // 请求 app 外壳提供一个部件，放到指定区域。
     QWidget *requestPanel(const QString &area, const QString &panelType) override;
 
     // 领域面板（形态由知识包决定）：清单 + 按 id 请求。
-    QList<ng::core::PanelSpec> availableDomainPanels(
-        ng::core::FormatDomain domain) const override;
+    QList<nextpilot::plotscope::core::PanelSpec> availableDomainPanels(
+        nextpilot::plotscope::core::FormatDomain domain) const override;
     QWidget *requestDomainPanel(const QString &area, const QString &panelId) override;
 
     // 宿主执行器（模块在 GUI 里发意图用）。
-    ng::core::IIntentExecutor &executor() override;
+    nextpilot::plotscope::core::IIntentExecutor &executor() override;
 
     // 文件选取（GUI 交互能力）。
     QString pickFilePath(const QString &title, const QString &filter) override;
 
     // 插槽登记表（MainWindow 用它声明骨架插槽）。
-    ng::core::UiSlotRegistry &slotRegistry() { return m_slots; }
+    nextpilot::plotscope::core::UiSlotRegistry &slotRegistry() { return m_slots; }
 
     // 应用上下文（视图用它取数据与共享状态）。
-    ng::core::AppContext &app() { return m_appCtx; }
+    nextpilot::plotscope::core::AppContext &app() { return m_appCtx; }
 
 private:
     QMainWindow *m_window = nullptr;
-    ng::core::UiSlotRegistry &m_slots;
+    nextpilot::plotscope::core::UiSlotRegistry &m_slots;
     ShellBinder *m_binder = nullptr;
-    ng::core::AppContext &m_appCtx;
-    ng::core::IIntentExecutor *m_executor = nullptr;
+    nextpilot::plotscope::core::AppContext &m_appCtx;
+    nextpilot::plotscope::core::IIntentExecutor *m_executor = nullptr;
 };
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

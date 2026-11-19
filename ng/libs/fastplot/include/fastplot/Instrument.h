@@ -6,7 +6,7 @@
 class QPainter;
 class QPaintEvent;
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 // 仪表的公共底座：一块底色 + 一块"内容区"，子类只画内容。
@@ -46,4 +46,4 @@ protected:
     int m_margin = 12;
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace ps::protocol
+namespace nextpilot::plotscope::protocol
 {
 
 struct Expr;
@@ -164,4 +164,4 @@ QJsonObject toJson(const ProtocolDocument &doc);
 /// 表达式文本化，供编辑器表格显示和 JSON 回写。
 std::string exprText(const ExprPtr &e);
 
-} // namespace ps::protocol
+} // namespace nextpilot::plotscope::protocol

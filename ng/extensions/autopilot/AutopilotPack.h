@@ -6,24 +6,24 @@
 
 #include <memory>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 // 飞控知识包：ULog 格式 + 飞控 UI/脚本/数据/例子/文档（六类齐全的样板）。
-class AutopilotPack final : public ng::core::IToolPack
+class AutopilotPack final : public nextpilot::plotscope::core::IToolPack
 {
 public:
     static QString packId();
-    static std::unique_ptr<ng::core::IToolPack> build();
+    static std::unique_ptr<nextpilot::plotscope::core::IToolPack> build();
 
     QString id() const override;
     QString displayName() const override;
-    ng::core::FormatDomain domain() const override;
-    const std::vector<std::unique_ptr<ng::core::IToolContribution>> &contributions() const override;
-    std::vector<std::unique_ptr<ng::core::IToolContribution>> &contributions() override;
+    nextpilot::plotscope::core::FormatDomain domain() const override;
+    const std::vector<std::unique_ptr<nextpilot::plotscope::core::IToolContribution>> &contributions() const override;
+    std::vector<std::unique_ptr<nextpilot::plotscope::core::IToolContribution>> &contributions() override;
 
 private:
-    ng::core::ToolPack m_pack;
+    nextpilot::plotscope::core::ToolPack m_pack;
 };
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

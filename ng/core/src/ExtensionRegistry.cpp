@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 void ExtensionRegistry::rebuildIndexes()
@@ -290,4 +290,4 @@ QList<IMessageParser *> ExtensionRegistry::messageParsersByTransport(const QStri
     return out;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

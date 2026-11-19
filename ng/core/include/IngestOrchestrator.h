@@ -11,7 +11,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 摄取编排器：**读字节 -> 扇出给解析器 -> 落库**。
@@ -114,4 +114,4 @@ private:
     QVector<int> m_datasetIds;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

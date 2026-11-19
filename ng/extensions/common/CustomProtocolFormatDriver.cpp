@@ -11,7 +11,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 QString CustomProtocolFormatDriver::id() const
 {
@@ -23,9 +23,9 @@ QString CustomProtocolFormatDriver::displayName() const
     return QStringLiteral("自定义顺序协议");
 }
 
-ng::core::FormatDomain CustomProtocolFormatDriver::domain() const
+nextpilot::plotscope::core::FormatDomain CustomProtocolFormatDriver::domain() const
 {
-    return ng::core::FormatDomain::General;
+    return nextpilot::plotscope::core::FormatDomain::General;
 }
 
 QStringList CustomProtocolFormatDriver::suffixes() const
@@ -90,7 +90,7 @@ QByteArray CustomProtocolFormatDriver::prepareParserOptions(const Intent &intent
         if (f.open(QIODevice::ReadOnly))
         {
             const QByteArray text = f.readAll();
-            const QStringList issues = ps::protocol::validate(QJsonDocument::fromJson(text).object());
+            const QStringList issues = nextpilot::plotscope::protocol::validate(QJsonDocument::fromJson(text).object());
             if (issues.isEmpty())
             {
                 // 展开成自包含参数：解析器只需 template 文本，不接触文件系统。

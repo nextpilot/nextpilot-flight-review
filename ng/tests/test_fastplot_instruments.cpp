@@ -81,7 +81,7 @@ int main(int argc, char **argv)
 
     // 1) 姿态仪：天空/地面都出现；俯仰改变要改变画面
     {
-        fastplot::AttitudeIndicator attitude;
+        nextpilot::plotscope::fastplot::AttitudeIndicator attitude;
         attitude.setSkyColor(QColor(0x2A, 0x6F, 0xC0));
         attitude.setGroundColor(QColor(0x9A, 0x62, 0x2E));
         attitude.setRollPitch(15.0, 8.0);
@@ -102,7 +102,7 @@ int main(int argc, char **argv)
 
     // 2) 罗盘：归一化（360 → 0）与北向高亮
     {
-        fastplot::CompassRose compass;
+        nextpilot::plotscope::fastplot::CompassRose compass;
         compass.setHeading(360.0);
         CHECK(near(compass.headingDeg(), 0.0, 1e-9));
         compass.setHeading(-45.0);
@@ -118,7 +118,7 @@ int main(int argc, char **argv)
 
     // 3) 表盘：值越大弧越长（用 accent 色像素跨度衡量）
     {
-        fastplot::DialGauge gauge;
+        nextpilot::plotscope::fastplot::DialGauge gauge;
         gauge.setRange(0.0, 100.0);
         gauge.setTitle(QStringLiteral("rpm"));
         gauge.setValue(20.0);
@@ -141,10 +141,10 @@ int main(int argc, char **argv)
             lon[i] = 104.06 + std::sin(i * 0.05) * 0.01;
             lat[i] = 30.66 + std::cos(i * 0.03) * 0.008;
         }
-        fastplot::ArrayData lonData(t.data(), lon.data(), 200, 31);
-        fastplot::ArrayData latData(t.data(), lat.data(), 200, 32);
+        nextpilot::plotscope::fastplot::ArrayData lonData(t.data(), lon.data(), 200, 31);
+        nextpilot::plotscope::fastplot::ArrayData latData(t.data(), lat.data(), 200, 32);
 
-        fastplot::TrackPlot track;
+        nextpilot::plotscope::fastplot::TrackPlot track;
         track.setStartColor(QColor(0x3D, 0xDC, 0x84));
         track.setEndColor(QColor(0xFF, 0x6B, 0x6B));
         track.setTrack(&lonData, &latData, QStringLiteral("lon"), QStringLiteral("lat"));
@@ -168,11 +168,11 @@ int main(int argc, char **argv)
             y[i] = std::sin(i * 0.05) * 5.0;
             z[i] = i * 0.02;
         }
-        fastplot::ArrayData xd(t.data(), x.data(), 300, 41);
-        fastplot::ArrayData yd(t.data(), y.data(), 300, 42);
-        fastplot::ArrayData zd(t.data(), z.data(), 300, 43);
+        nextpilot::plotscope::fastplot::ArrayData xd(t.data(), x.data(), 300, 41);
+        nextpilot::plotscope::fastplot::ArrayData yd(t.data(), y.data(), 300, 42);
+        nextpilot::plotscope::fastplot::ArrayData zd(t.data(), z.data(), 300, 43);
 
-        fastplot::Trajectory3D traj;
+        nextpilot::plotscope::fastplot::Trajectory3D traj;
         traj.setCurveColor(QColor(0x5B, 0xC0, 0xF0));
         traj.setTracks(&xd, &yd, &zd, QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("z"));
         const QImage img = render(traj, 320, 280);
@@ -190,11 +190,11 @@ int main(int argc, char **argv)
                 times[s][i] = i;
                 values[s][i] = std::sin(i * 0.03 + s) + s * 0.3;
             }
-        QVector<fastplot::ArrayData> holders;
+        QVector<nextpilot::plotscope::fastplot::ArrayData> holders;
         for (int s = 0; s < 5; ++s)
-            holders.push_back(fastplot::ArrayData(times[s].data(), values[s].data(), 200, 50 + s));
+            holders.push_back(nextpilot::plotscope::fastplot::ArrayData(times[s].data(), values[s].data(), 200, 50 + s));
 
-        QVector<const fastplot::IPlotData *> series;
+        QVector<const nextpilot::plotscope::fastplot::IPlotData *> series;
         QVector<QColor> colors;
         for (int s = 0; s < holders.size(); ++s)
         {
@@ -202,7 +202,7 @@ int main(int argc, char **argv)
             colors.push_back(QColor(0x40 + s * 20, 0x90, 0xE0 - s * 10));
         }
 
-        fastplot::WaterfallPlot waterfall;
+        nextpilot::plotscope::fastplot::WaterfallPlot waterfall;
         waterfall.setSeries(series, colors);
         const QImage img = render(waterfall, 340, 280);
         int colored = 0;
@@ -226,15 +226,15 @@ int main(int argc, char **argv)
         QPainter painter(&sheet);
         painter.setPen(QColor(0xc9, 0xd1, 0xd9));
 
-        fastplot::AttitudeIndicator attitude;
+        nextpilot::plotscope::fastplot::AttitudeIndicator attitude;
         attitude.setSkyColor(QColor(0x2A, 0x6F, 0xC0));
         attitude.setGroundColor(QColor(0x9A, 0x62, 0x2E));
         attitude.setRollPitch(12.0, 6.0);
 
-        fastplot::CompassRose compass;
+        nextpilot::plotscope::fastplot::CompassRose compass;
         compass.setHeading(145.0);
 
-        fastplot::DialGauge gauge;
+        nextpilot::plotscope::fastplot::DialGauge gauge;
         gauge.setRange(0.0, 100.0);
         gauge.setValue(62.0);
         gauge.setTitle(QStringLiteral("rpm"));
@@ -256,22 +256,22 @@ int main(int argc, char **argv)
             y[i] = std::sin(i * 0.02) * 6.0;
             z[i] = std::sin(i * 0.01) * 3.0;
         }
-        fastplot::ArrayData lonD(t.data(), lon.data(), 400, 61);
-        fastplot::ArrayData latD(t.data(), lat.data(), 400, 62);
-        fastplot::ArrayData xD(t.data(), x.data(), 400, 63);
-        fastplot::ArrayData yD(t.data(), y.data(), 400, 64);
-        fastplot::ArrayData zD(t.data(), z.data(), 400, 65);
+        nextpilot::plotscope::fastplot::ArrayData lonD(t.data(), lon.data(), 400, 61);
+        nextpilot::plotscope::fastplot::ArrayData latD(t.data(), lat.data(), 400, 62);
+        nextpilot::plotscope::fastplot::ArrayData xD(t.data(), x.data(), 400, 63);
+        nextpilot::plotscope::fastplot::ArrayData yD(t.data(), y.data(), 400, 64);
+        nextpilot::plotscope::fastplot::ArrayData zD(t.data(), z.data(), 400, 65);
 
-        fastplot::TrackPlot track;
+        nextpilot::plotscope::fastplot::TrackPlot track;
         track.setTrack(&lonD, &latD, QStringLiteral("lon"), QStringLiteral("lat"));
-        fastplot::Trajectory3D traj;
+        nextpilot::plotscope::fastplot::Trajectory3D traj;
         traj.setTracks(&xD, &yD, &zD, QStringLiteral("x"), QStringLiteral("y"), QStringLiteral("z"));
 
-        QVector<fastplot::ArrayData> holders;
+        QVector<nextpilot::plotscope::fastplot::ArrayData> holders;
         // 必须先 reserve：曲线只持指针，QVector 扩容会把 ArrayData 搬走，
         // 之前取到的指针立刻变成野指针（这里踩过一次，直接 segfault）。
         holders.reserve(4);
-        QVector<const fastplot::IPlotData *> series;
+        QVector<const nextpilot::plotscope::fastplot::IPlotData *> series;
         QVector<QColor> colors;
         for (int s = 0; s < 4; ++s)
         {
@@ -282,12 +282,12 @@ int main(int argc, char **argv)
                 (*tt)[i] = i;
                 (*vv)[i] = std::sin(i * 0.04 + s) + s * 0.4;
             }
-            holders.push_back(fastplot::ArrayData(tt->data(), vv->data(), 300, 70 + s));
+            holders.push_back(nextpilot::plotscope::fastplot::ArrayData(tt->data(), vv->data(), 300, 70 + s));
             series.push_back(&holders.last());
             colors.push_back(QColor(0x40 + s * 30, 0x90 + s * 10, 0xE0 - s * 20));
         }
 
-        fastplot::WaterfallPlot waterfall;
+        nextpilot::plotscope::fastplot::WaterfallPlot waterfall;
         waterfall.setSeries(series, colors);
 
         painter.drawImage(QRect(0, cellH, cellW, cellH), render(track, cellW, cellH));

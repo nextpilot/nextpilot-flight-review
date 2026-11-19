@@ -1,6 +1,6 @@
 #include "IMessageParser.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 bool IMessageParser::configure(const QJsonObject &params, QString *err)
@@ -29,4 +29,4 @@ QJsonValue IMessageParser::param(const QString &key, const QJsonValue &fallback)
     return cur;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

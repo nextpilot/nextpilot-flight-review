@@ -2,7 +2,7 @@
 
 #include "fastplot/Instrument.h"
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 // 姿态球（地平仪）：滚转决定倾斜、俯仰决定地平线上下平移。
@@ -30,4 +30,4 @@ private:
     QColor m_ground{0x8a, 0x5a, 0x2b};
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

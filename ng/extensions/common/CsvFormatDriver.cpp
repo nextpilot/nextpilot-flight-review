@@ -8,7 +8,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 QString CsvFormatDriver::id() const
 {
@@ -20,9 +20,9 @@ QString CsvFormatDriver::displayName() const
     return QStringLiteral("CSV 格式驱动");
 }
 
-ng::core::FormatDomain CsvFormatDriver::domain() const
+nextpilot::plotscope::core::FormatDomain CsvFormatDriver::domain() const
 {
-    return ng::core::FormatDomain::General;
+    return nextpilot::plotscope::core::FormatDomain::General;
 }
 
 QStringList CsvFormatDriver::suffixes() const
@@ -189,13 +189,13 @@ QJsonObject CsvFormatDriver::importSchema() const
 
 QJsonObject CsvFormatDriver::probeFile(const QString &path) const
 {
-    return ng::ext::CsvImportProbe::probe(path);
+    return nextpilot::plotscope::ext::CsvImportProbe::probe(path);
 }
 
 QByteArray CsvFormatDriver::defaultImportOptions(const QString &path) const
 {
-    const QJsonObject p = ng::ext::CsvImportProbe::probe(path);
+    const QJsonObject p = nextpilot::plotscope::ext::CsvImportProbe::probe(path);
     if (p.contains(QStringLiteral("error")))
         return QByteArray();
-    return ng::ext::CsvImportProbe::defaultOptions(p);
+    return nextpilot::plotscope::ext::CsvImportProbe::defaultOptions(p);
 }

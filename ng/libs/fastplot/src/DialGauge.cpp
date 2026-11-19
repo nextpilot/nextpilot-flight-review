@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 namespace
 {
@@ -82,4 +82,4 @@ void DialGauge::paintInstrument(QPainter &painter, const QRectF &rect)
                          : QStringLiteral("%1  %2 ~ %3").arg(m_title).arg(m_lo, 0, 'g', 3).arg(m_hi, 0, 'g', 3));
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

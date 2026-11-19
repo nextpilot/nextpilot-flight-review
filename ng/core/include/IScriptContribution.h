@@ -5,7 +5,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 脚本贡献：一个知识包提供的可复用脚本/自动化片段。
@@ -27,4 +27,4 @@ public:
     virtual QStringList exports() const { return {}; }
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

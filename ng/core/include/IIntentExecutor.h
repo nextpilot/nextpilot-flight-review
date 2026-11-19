@@ -2,7 +2,7 @@
 
 #include "Intent.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 意图执行器抽象。core 只定义契约，具体实现在 host。
@@ -14,4 +14,4 @@ public:
     virtual Result<IntentResult> execute(const Intent &intent) = 0;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

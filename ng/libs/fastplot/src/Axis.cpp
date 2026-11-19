@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 Axis::Axis(AxisSide side)
@@ -182,7 +182,28 @@ void Axis::paint(QPainter *painter, const Viewport &vp, const QRect &widgetRect)
         }
     }
 
+    // 轴标题：画在刻度标签一侧的中点。用 labelColor 区分于刻度值。
+    if (!m_label.isEmpty())
+    {
+        painter->setPen(QPen(m_labelColor, 1.0));
+        const QFontMetrics lfm(font());
+        const QPointF center = plot.center();
+        if (m_side == AxisSide::Left || m_side == AxisSide::Right)
+        {
+            const double x = (m_side == AxisSide::Left)
+                ? widgetRect.left() + 2
+                : widgetRect.right() - lfm.horizontalAdvance(m_label) - 2;
+            painter->drawText(QPointF(x, center.y() - lfm.height() / 2.0 + lfm.ascent()), m_label);
+        }
+        else
+        {
+            const double x = std::clamp(center.x() - lfm.horizontalAdvance(m_label) / 2.0,
+                                        plot.left(), std::max(plot.left(), plot.right() - lfm.horizontalAdvance(m_label)));
+            painter->drawText(QPointF(x, widgetRect.bottom() - 2), m_label);
+        }
+    }
+
     painter->restore();
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

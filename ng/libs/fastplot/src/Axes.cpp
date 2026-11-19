@@ -1,4 +1,7 @@
-#include "fastplot/PlotWidget.h"
+#include "fastplot/Axes.h"
+#include "fastplot/Bar.h"
+#include "fastplot/Histogram.h"
+#include "fastplot/Spectrum.h"
 
 #include <QFile>
 #include <QFontMetrics>
@@ -12,7 +15,7 @@
 #include <cmath>
 #include <limits>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 namespace
@@ -30,7 +33,7 @@ int sideIndex(AxisSide side)
 }
 } // namespace
 
-PlotWidget::PlotWidget(QWidget *parent)
+Axes::Axes(QWidget *parent)
     : QWidget(parent)
     , m_axes{Axis(AxisSide::Left), Axis(AxisSide::Right), Axis(AxisSide::Bottom), Axis(AxisSide::Top)}
 {
@@ -47,24 +50,24 @@ PlotWidget::PlotWidget(QWidget *parent)
     relayout();
 }
 
-PlotWidget::~PlotWidget() = default;
+Axes::~Axes() = default;
 
-Axis *PlotWidget::axisPtr(AxisSide side)
+Axis *Axes::axisPtr(AxisSide side)
 {
     return &m_axes[sideIndex(side)];
 }
 
-Axis &PlotWidget::axis(AxisSide side)
+Axis &Axes::axis(AxisSide side)
 {
     return *axisPtr(side);
 }
 
-const Axis &PlotWidget::axis(AxisSide side) const
+const Axis &Axes::axis(AxisSide side) const
 {
     return m_axes[sideIndex(side)];
 }
 
-void PlotWidget::setYRange2(double lo, double hi)
+void Axes::setYRange2(double lo, double hi)
 {
     // 与左轴同一套规整规则（顺序、单点展开）。
     if (lo > hi)
@@ -80,20 +83,20 @@ void PlotWidget::setYRange2(double lo, double hi)
     relayout();
 }
 
-void PlotWidget::setSecondAxis(bool enabled)
+void Axes::setSecondAxis(bool enabled)
 {
     m_secondAxis = enabled;
     m_axes[sideIndex(AxisSide::Right)].setVisible(enabled);
     relayout();
 }
 
-void PlotWidget::setLegendVisible(bool visible)
+void Axes::setLegendVisible(bool visible)
 {
     m_legend = visible;
     update();
 }
 
-double PlotWidget::yToPixel(AxisSide side, double y) const
+double Axes::yToPixel(AxisSide side, double y) const
 {
     const QRectF plot = m_vp.plotRect();
     if (side == AxisSide::Right && m_secondAxis)
@@ -101,12 +104,12 @@ double PlotWidget::yToPixel(AxisSide side, double y) const
     return m_vp.yToPixel(y);
 }
 
-bool PlotWidget::exportPng(const QString &path)
+bool Axes::exportPng(const QString &path)
 {
     return grabImage().save(path);
 }
 
-bool PlotWidget::exportCsv(const QString &path)
+bool Axes::exportCsv(const QString &path)
 {
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
@@ -118,7 +121,7 @@ bool PlotWidget::exportCsv(const QString &path)
         << " y_lo=" << QString::number(m_vp.yLower(), 'g', 12)
         << " y_hi=" << QString::number(m_vp.yUpper(), 'g', 12) << "\n";
 
-    for (const Curve &c : m_curves)
+    for (const Line &c : m_curves)
     {
         if (!c.isVisible())
             continue;
@@ -142,7 +145,7 @@ bool PlotWidget::exportCsv(const QString &path)
     return true;
 }
 
-QJsonObject PlotWidget::saveState() const
+QJsonObject Axes::saveState() const
 {
     // 只存"视图"，不存数据：数据归宿主，画布状态归画布。
     QJsonObject o;
@@ -157,7 +160,7 @@ QJsonObject PlotWidget::saveState() const
     return o;
 }
 
-bool PlotWidget::restoreState(const QJsonObject &state)
+bool Axes::restoreState(const QJsonObject &state)
 {
     const QJsonArray x = state.value(QStringLiteral("x")).toArray();
     const QJsonArray y = state.value(QStringLiteral("y")).toArray();
@@ -185,25 +188,25 @@ bool PlotWidget::restoreState(const QJsonObject &state)
     return true;
 }
 
-void PlotWidget::setXRange(double lo, double hi)
+void Axes::setXRange(double lo, double hi)
 {
     m_vp.setXRange(lo, hi);
     relayout();
 }
 
-void PlotWidget::setYRange(double lo, double hi)
+void Axes::setYRange(double lo, double hi)
 {
     m_vp.setYRange(lo, hi);
     relayout();
 }
 
-void PlotWidget::setBackground(const QColor &color)
+void Axes::setBackground(const QColor &color)
 {
     m_background = color;
     invalidateStatic();
 }
 
-void PlotWidget::setTitle(const QString &title)
+void Axes::setTitle(const QString &title)
 {
     if (m_title == title)
         return;
@@ -211,39 +214,39 @@ void PlotWidget::setTitle(const QString &title)
     relayout();   // 标题占一行，边距要重算
 }
 
-void PlotWidget::setTitleColor(const QColor &color)
+void Axes::setTitleColor(const QColor &color)
 {
     m_titleColor = color;
     invalidateStatic();
 }
 
-void PlotWidget::setGridVisible(bool visible)
+void Axes::setGridVisible(bool visible)
 {
     for (Axis &a : m_axes)
         a.setGridVisible(visible);
     invalidateStatic();
 }
 
-void PlotWidget::setRubberBand(const QRect &pixels)
+void Axes::setRubberBand(const QRect &pixels)
 {
     m_rubberBand = pixels;
     update();
 }
 
-void PlotWidget::setHover(const QPointF &dataPoint, bool active)
+void Axes::setHover(const QPointF &dataPoint, bool active)
 {
     m_hoverPoint = dataPoint;
     m_hoverActive = active;
     update();
 }
 
-void PlotWidget::setOverlayText(const QString &text)
+void Axes::setOverlayText(const QString &text)
 {
     m_overlayText = text;
     update();
 }
 
-void PlotWidget::clearOverlay()
+void Axes::clearOverlay()
 {
     m_hoverActive = false;
     m_overlayText.clear();
@@ -251,7 +254,7 @@ void PlotWidget::clearOverlay()
     update();
 }
 
-bool PlotWidget::nearestSample(const QPointF &pixel, double *x, double *y) const
+bool Axes::nearestSample(const QPointF &pixel, double *x, double *y) const
 {
     const QPointF data = QPointF(m_vp.pixelToX(pixel.x()), m_vp.pixelToY(pixel.y()));
     if (x)
@@ -259,7 +262,7 @@ bool PlotWidget::nearestSample(const QPointF &pixel, double *x, double *y) const
     if (y)
         *y = data.y();
 
-    for (const Curve &c : m_curves)
+    for (const Line &c : m_curves)
     {
         if (!c.isVisible())
             continue;
@@ -309,25 +312,92 @@ bool PlotWidget::nearestSample(const QPointF &pixel, double *x, double *y) const
     return false;
 }
 
-void PlotWidget::replot()
+void Axes::replot()
 {
     relayout();
 }
 
-Curve &PlotWidget::addCurve(Curve curve)
+Line &Axes::addCurve(Line curve)
 {
     m_curves.push_back(curve);
     update();
     return m_curves.last();
 }
 
-void PlotWidget::clearCurves()
+void Axes::clearCurves()
 {
     m_curves.clear();
     update();
 }
 
-bool PlotWidget::autoScaleY(double marginRatio)
+Bar &Axes::bar(const QStringList &labels, const QVector<double> &values,
+               const QVector<QColor> &colors)
+{
+    auto *b = new Bar(this);          // 父子所有权：Axes 析构时自动 delete
+    b->setBars(labels, values, colors);
+    b->hide();                        // artist 模式：不作为独立 widget 显示，避免重复绘制
+    m_artists.append(b);
+    update();
+    return *b;
+}
+
+Histogram &Axes::hist(const IPlotData *data, int bins)
+{
+    auto *h = new Histogram(this);
+    h->setData(data);
+    h->setBins(bins);
+    h->hide();                        // artist 模式：关闭 widget 自绘
+    m_artists.append(h);
+    update();
+    return *h;
+}
+
+Spectrum &Axes::spectrum(const IPlotData *data, double dt)
+{
+    auto *s = new Spectrum(this);
+    s->setData(data);
+    s->setSampleDt(dt);
+    s->hide();                        // artist 模式：关闭 widget 自绘
+    m_artists.append(s);
+    update();
+    return *s;
+}
+
+void Axes::addArtist(Artist *artist)
+{
+    if (!artist || m_artists.contains(artist))
+        return;
+    m_artists.append(artist);
+    update();
+}
+
+void Axes::clearArtists()
+{
+    // bar/hist/spectrum 是本 Axes 创建的子对象（parent==this），delete 由 Qt 回收；
+    // addArtist 外部挂载的实例不拥有——即便它是 QWidget，也不在此 delete。
+    for (Artist *a : m_artists)
+    {
+        auto *w = dynamic_cast<QWidget *>(a);
+        if (w && w->parent() == this)
+            delete w;
+    }
+    m_artists.clear();
+    update();
+}
+
+void Axes::setAxisLabel(AxisSide side, const QString &text)
+{
+    axis(side).setLabel(text);
+    relayout();
+    update();
+}
+
+QString Axes::axisLabel(AxisSide side) const
+{
+    return axis(side).label();
+}
+
+bool Axes::autoScaleY(double marginRatio)
 {
     double loL = std::numeric_limits<double>::infinity();
     double hiL = -std::numeric_limits<double>::infinity();
@@ -335,7 +405,7 @@ bool PlotWidget::autoScaleY(double marginRatio)
     double hiR = hiL;
     bool anyRight = false;
 
-    for (const Curve &c : m_curves)
+    for (const Line &c : m_curves)
     {
         if (!c.isVisible())
             continue;
@@ -398,11 +468,11 @@ bool PlotWidget::autoScaleY(double marginRatio)
     return ok;
 }
 
-bool PlotWidget::autoScaleX(double marginRatio)
+bool Axes::autoScaleX(double marginRatio)
 {
     double lo = std::numeric_limits<double>::infinity();
     double hi = -std::numeric_limits<double>::infinity();
-    for (const Curve &c : m_curves)
+    for (const Line &c : m_curves)
     {
         if (!c.isVisible())
             continue;
@@ -446,7 +516,7 @@ bool PlotWidget::autoScaleX(double marginRatio)
     return true;
 }
 
-bool PlotWidget::autoScale()
+bool Axes::autoScale()
 {
     // 先定 x 再定 y：刻度密度依赖绘图区尺寸，setXRange 会触发 relayout。
     const bool x = autoScaleX();
@@ -454,12 +524,12 @@ bool PlotWidget::autoScale()
     return x && y;
 }
 
-QRectF PlotWidget::dataBounds() const
+QRectF Axes::dataBounds() const
 {
     double xLo = std::numeric_limits<double>::infinity();
     double xHi = -std::numeric_limits<double>::infinity();
     double yLo = xLo, yHi = xHi;
-    for (const Curve &c : m_curves)
+    for (const Line &c : m_curves)
     {
         if (!c.isVisible())
             continue;
@@ -479,7 +549,7 @@ QRectF PlotWidget::dataBounds() const
     return QRectF(QPointF(xLo, yLo), QPointF(xHi, yHi));
 }
 
-void PlotWidget::paintCurves(QPainter &painter)
+void Axes::paintCurves(QPainter &painter)
 {
     const QRectF plot = m_vp.plotRect();
     const int columns = std::max(1, static_cast<int>(std::lround(plot.width())));
@@ -507,7 +577,7 @@ void PlotWidget::paintCurves(QPainter &painter)
     painter.save();
     painter.setClipRect(plot);
     // 散点符号：brush 填充形状；Cross 只画两条线。
-    auto drawMarker = [&](const QPointF &pt, const Curve &c) {
+    auto drawMarker = [&](const QPointF &pt, const Line &c) {
         const double r = c.symbolSize() / 2.0;
         if (c.symbol() == Symbol::Cross)
         {
@@ -547,7 +617,7 @@ void PlotWidget::paintCurves(QPainter &painter)
     };
 
 
-    for (Curve &c : m_curves)
+    for (Line &c : m_curves)
     {
         if (!c.isVisible())
             continue;
@@ -619,13 +689,13 @@ void PlotWidget::paintCurves(QPainter &painter)
     painter.restore();
 }
 
-void PlotWidget::resizeEvent(QResizeEvent *event)
+void Axes::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     relayout();
 }
 
-void PlotWidget::relayout()
+void Axes::relayout()
 {
     int left = m_axes[sideIndex(AxisSide::Left)].preferredMargin();
     int right = m_axes[sideIndex(AxisSide::Right)].preferredMargin();
@@ -656,7 +726,7 @@ void PlotWidget::relayout()
     invalidateStatic();
 }
 
-void PlotWidget::refreshScaleDivs()
+void Axes::refreshScaleDivs()
 {
     const QRectF plot = m_vp.plotRect();
     // 刻度密度按像素算：横向 72px 一个主刻度、纵向 48px 一个，避免标签重叠。
@@ -677,13 +747,13 @@ void PlotWidget::refreshScaleDivs()
                                                  m_secondAxis ? m_y2Hi : m_vp.yUpper());
 }
 
-void PlotWidget::invalidateStatic()
+void Axes::invalidateStatic()
 {
     m_staticDirty = true;
     update();
 }
 
-void PlotWidget::paintEvent(QPaintEvent *event)
+void Axes::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event);
 
@@ -724,12 +794,26 @@ void PlotWidget::paintEvent(QPaintEvent *event)
     // 曲线画在静态图层之上；聚合结果按（数据版本, 视口, 列数）缓存，
     // 悬停/重绘不重扫数据。
     paintCurves(painter);
+    // artist 图元（bar/hist/spectrum...）画在曲线之上、图例之下。
+    // 用绘图区作为像素画布；曲线类 artist 走 paint(axes) 保留坐标映射能力。
+    if (!m_artists.isEmpty())
+    {
+        painter.save();
+        painter.setClipRect(m_vp.plotRect());
+        for (const Artist *a : m_artists)
+        {
+            if (!a)
+                continue;
+            a->paintInRect(painter, m_vp.plotRect());
+        }
+        painter.restore();
+    }
     if (m_legend)
         paintLegend(painter);
     paintOverlay(painter);
 }
 
-void PlotWidget::paintLegend(QPainter &painter)
+void Axes::paintLegend(QPainter &painter)
 {
     const QRectF plot = m_vp.plotRect();
     QFont f = font();
@@ -738,7 +822,7 @@ void PlotWidget::paintLegend(QPainter &painter)
     int row = 0;
     painter.save();
     painter.setFont(f);
-    for (const Curve &c : m_curves)
+    for (const Line &c : m_curves)
     {
         if (!c.isVisible() || c.name().isEmpty())
             continue;
@@ -753,7 +837,7 @@ void PlotWidget::paintLegend(QPainter &painter)
     painter.restore();
 }
 
-void PlotWidget::paintOverlay(QPainter &painter)
+void Axes::paintOverlay(QPainter &painter)
 {
     const QRectF plot = m_vp.plotRect();
 
@@ -802,7 +886,7 @@ void PlotWidget::paintOverlay(QPainter &painter)
     }
 }
 
-QImage PlotWidget::grabImage()
+QImage Axes::grabImage()
 {
     QImage image(size(), QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
@@ -810,4 +894,4 @@ QImage PlotWidget::grabImage()
     return image;
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

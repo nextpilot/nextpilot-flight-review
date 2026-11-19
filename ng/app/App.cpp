@@ -8,10 +8,10 @@
 
 #include <QCoreApplication>
 
-using namespace ng::core;
-using namespace ng::host;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::host;
 
-namespace ng::app
+namespace nextpilot::plotscope::app
 {
 
 App::App(const QString &settingsPath, QObject *parent)
@@ -26,18 +26,18 @@ App::App(const QString &settingsPath, QObject *parent)
 
     // 工具箱（extensions）：业务能力包，不参与器官生命周期。
     // 路径一——内置知识包：各自静态自注册，装载时统一收进工具箱。
-    ng::ext::registerBuiltinPacks(m_ctx.toolbox());
+    nextpilot::plotscope::ext::registerBuiltinPacks(m_ctx.toolbox());
     // 路径二——外部插件：扫描目录、校验后注册进同一个工具箱（本轮仅预留入口）。
     // 目录可后续由配置/命令行注入；默认检查可执行文件旁的 plugins/ 目录。
-    ng::ext::scanExternalPlugins(m_ctx.toolbox(),
+    nextpilot::plotscope::ext::scanExternalPlugins(m_ctx.toolbox(),
                                  QCoreApplication::applicationDirPath() + QStringLiteral("/plugins"));
 
     // 录制：格式 × 后端两个独立注册表。
     // 格式决定"字节长什么样"（raw/mcap），后端决定"字节送到哪"（文件/UDP）。
     // 正交组合使"同时录多种格式、多种后端"成为自然结果。
     // 二者都是 app 的机制选项，不含领域语义——不走知识包贡献体系。
-    ng::core::RecordingFormatRegistry::installBuiltinFormats();
-    ng::core::RecordingBackendRegistry::installBuiltinBackends();
+    nextpilot::plotscope::core::RecordingFormatRegistry::installBuiltinFormats();
+    nextpilot::plotscope::core::RecordingBackendRegistry::installBuiltinBackends();
 }
 
 QHash<QString, QString> App::startup(bool headless, const QStringList &disabled)
@@ -48,4 +48,4 @@ QHash<QString, QString> App::startup(bool headless, const QStringList &disabled)
     return m_host.activate(disabled, nullptr);
 }
 
-} // namespace ng::app
+} // namespace nextpilot::plotscope::app

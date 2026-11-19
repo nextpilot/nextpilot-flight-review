@@ -6,7 +6,7 @@
 #include <QRectF>
 #include <QVector>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 // 像素列聚合缓存：把全分辨率点集压成"每屏幕列一个 min/max"。
@@ -42,4 +42,4 @@ private:
     int m_rebuilds = 0;
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

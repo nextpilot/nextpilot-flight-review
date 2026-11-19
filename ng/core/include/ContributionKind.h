@@ -3,7 +3,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 贡献类型（kind）是**开放**标识：用 QString 而不是枚举。
@@ -33,4 +33,4 @@ QString kindName(const QString &kind);
 // 所有已登记过的内置 kind（按顺序，供 CLI 展示骨架）。
 QStringList knownKinds();
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

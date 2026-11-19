@@ -9,10 +9,10 @@ class QMouseEvent;
 class QWheelEvent;
 class QKeyEvent;
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
-class PlotWidget;
+class Axes;
 
 // 缩放部件：滚轮（以光标为锚点）、右键/中键框选、键盘（+ / - / 0 / 方向键）。
 //
@@ -22,7 +22,7 @@ class Zoomer : public QObject
 {
     Q_OBJECT
 public:
-    explicit Zoomer(PlotWidget *plot, QObject *parent = nullptr);
+    explicit Zoomer(Axes *plot, QObject *parent = nullptr);
 
     // 复位基准（"回到全量视图"）。构造时取当前视口，之后可显式设置。
     void setHomeRange(const QRectF &dataRange);
@@ -43,10 +43,10 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-    PlotWidget *m_plot = nullptr;
+    Axes *m_plot = nullptr;
     QRectF m_home;
     bool m_banding = false;
     QPoint m_press;
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

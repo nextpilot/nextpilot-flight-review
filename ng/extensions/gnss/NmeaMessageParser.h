@@ -5,7 +5,7 @@
 #include <QHash>
 #include <QVector>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 // NMEA 0183 协议解析器——"协议解析器如何写"的样板。
@@ -19,7 +19,7 @@ namespace ng::ext
 //   老版在构造函数里从 QCoreApplication::applicationDirPath()/当前目录等**全局路径**
 //   扫模板文件——无法单测、无法重放、两个实例会互相串味。
 //   新版默认用内置精简模板；要换模板只能由宿主经 configure 传 database_path。
-class NmeaMessageParser final : public ng::core::IMessageParser
+class NmeaMessageParser final : public nextpilot::plotscope::core::IMessageParser
 {
 public:
     struct FieldDef
@@ -37,7 +37,7 @@ public:
     // === 身份（IToolContribution）===
     QString id() const override { return QStringLiteral("nmea"); }
     QString displayName() const override { return QStringLiteral("NMEA 协议解析器"); }
-    ng::core::FormatDomain domain() const override { return ng::core::FormatDomain::Gnss; }
+    nextpilot::plotscope::core::FormatDomain domain() const override { return nextpilot::plotscope::core::FormatDomain::Gnss; }
 
     // === 自述 ===
     QString protocolName() const override { return QStringLiteral("NMEA 0183"); }
@@ -48,8 +48,8 @@ public:
     }
     QStringList supportedTransports() const override
     {
-        return {ng::core::MessageTransport::File, ng::core::MessageTransport::Serial,
-                ng::core::MessageTransport::Udp, ng::core::MessageTransport::Memory};
+        return {nextpilot::plotscope::core::MessageTransport::File, nextpilot::plotscope::core::MessageTransport::Serial,
+                nextpilot::plotscope::core::MessageTransport::Udp, nextpilot::plotscope::core::MessageTransport::Memory};
     }
     QJsonObject configSchema() const override;
 
@@ -58,7 +58,7 @@ public:
 
     // === 行为 ===
     bool sniff(const QByteArray &head) const override;
-    bool parse(const QByteArray &bytes, ng::core::DecodedFrame &out) const override;
+    bool parse(const QByteArray &bytes, nextpilot::plotscope::core::DecodedFrame &out) const override;
 
     // 供单测：当前生效的句子模板数量。
     int templateCount() const { return m_sentences.size(); }
@@ -70,4 +70,4 @@ private:
     QHash<QString, QVector<FieldDef>> m_sentences; // configure 填充；默认内置模板
 };
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

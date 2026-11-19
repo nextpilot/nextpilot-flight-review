@@ -5,7 +5,7 @@
 #include <cstring>
 #include <vector>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 namespace
@@ -229,7 +229,7 @@ bool PspxParser::parseBuffer(const uint8_t *data, uint32_t size, PsParserSink *s
     return rc == 0;
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext
 
 // 静态自注册：与外部插件走同一张 ParserRegistry。
-NG_REGISTER_PARSER(::ng::ext::PspxParser)
+NG_REGISTER_PARSER(::nextpilot::plotscope::ext::PspxParser)

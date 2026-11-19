@@ -6,7 +6,7 @@
 #include <QJsonDocument>
 #include <QSaveFile>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 namespace
@@ -208,4 +208,4 @@ bool SettingsStore::saveToDisk(QString *err) const
     return true;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

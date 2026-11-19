@@ -1,17 +1,17 @@
-#include "fastplot/BarChart.h"
+#include "fastplot/Bar.h"
 
 #include <QPainter>
 #include <QtMath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
-BarChart::BarChart(QWidget *parent) : Instrument(parent)
+Bar::Bar(QWidget *parent) : Instrument(parent)
 {
     setMinimumSize(200, 140);
 }
 
-void BarChart::setBars(const QStringList &labels, const QVector<double> &values,
+void Bar::setBars(const QStringList &labels, const QVector<double> &values,
                        const QVector<QColor> &colors)
 {
     m_labels = labels;
@@ -20,7 +20,7 @@ void BarChart::setBars(const QStringList &labels, const QVector<double> &values,
     update();
 }
 
-void BarChart::setValueRange(double lo, double hi)
+void Bar::setValueRange(double lo, double hi)
 {
     m_rangeSet = true;
     m_lo = lo;
@@ -28,21 +28,21 @@ void BarChart::setValueRange(double lo, double hi)
     update();
 }
 
-void BarChart::clearValueRange()
+void Bar::clearValueRange()
 {
     m_rangeSet = false;
     update();
 }
 
-void BarChart::setBarGap(double ratio)
+void Bar::setBarGap(double ratio)
 {
     m_gap = qBound(0.0, ratio, 0.9);
     update();
 }
 
-void BarChart::paintInstrument(QPainter &painter, const QRectF &rect)
+void Bar::paintInRect(QPainter &painter, const QRectF &rect) const
 {
-    const int n = m_values.size();
+const int n = m_values.size();
     if (n == 0)
         return;
 
@@ -95,4 +95,9 @@ void BarChart::paintInstrument(QPainter &painter, const QRectF &rect)
     painter.drawLine(QPointF(plot.left(), baseline), QPointF(plot.right(), baseline));
 }
 
-} // namespace fastplot
+void Bar::paintInstrument(QPainter &painter, const QRectF &rect)
+{
+    paintInRect(painter, rect);
+}
+
+} // namespace nextpilot::plotscope::fastplot

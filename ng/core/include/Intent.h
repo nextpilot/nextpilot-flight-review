@@ -6,7 +6,7 @@
 #include <QString>
 #include <QVariantMap>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 意图 = GUI 点击与脚本调用的统一产物。串起来就是可回放的 Job。
@@ -51,4 +51,4 @@ private:
     QVector<Intent> m_intents;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -8,8 +8,8 @@
 
 #include <cstdio>
 
-using namespace ng::core;
-using namespace ng::host;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::host;
 
 ModuleInfo DataModule::moduleInfo()
 {

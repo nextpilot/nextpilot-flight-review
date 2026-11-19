@@ -5,7 +5,7 @@
 #include <QList>
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 例子贡献里描述的一个示例工程 / demo / 教程条目。
@@ -25,4 +25,4 @@ public:
     virtual QList<ExampleEntry> entries() const = 0;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

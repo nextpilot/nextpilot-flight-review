@@ -33,9 +33,9 @@
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 namespace
@@ -940,4 +940,4 @@ QWidget *createDatasetTreePanel(AppContext &appCtx, IIntentExecutor &exec, QWidg
 // 视图层自注册：外壳与其它功能都不认识这个面板。
 NG_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

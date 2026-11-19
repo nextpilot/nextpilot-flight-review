@@ -9,8 +9,8 @@
 #include "ModuleHost.h"
 #include "SettingsStore.h"
 
-using namespace ng::core;
-using namespace ng::host;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::host;
 
 // 把 plot.render 意图编译成 PlotSpec。headless 下这就是最终产物（可导出 JSON）；
 // GUI 下渲染器消费同一份 spec。意图层与视图层由此解耦。
@@ -196,10 +196,13 @@ private:
             if (!putRole(QStringLiteral("yaw"), yaw))
                 return fail(QStringLiteral("echan"), QStringLiteral("罗盘需要 yaw / heading 通道"));
         }
-        else if (kind == QStringLiteral("gauge"))
+        else if (kind == QStringLiteral("gauge") || kind == QStringLiteral("histogram") ||
+                 kind == QStringLiteral("fft"))
         {
+            // 表盘/直方图/频谱共用"一条序列"取数：表盘取末值，直方图分箱，频谱做 DFT。
+            // 差异在视图端怎么画，模块只负责按 value 角色取有界序列。
             if (!putRole(QStringLiteral("value"), roles.value(QStringLiteral("value")).toString()))
-                return fail(QStringLiteral("echan"), QStringLiteral("表盘需要 value 通道"));
+                return fail(QStringLiteral("echan"), kind + QStringLiteral(" 需要 value 通道"));
         }
         else if (kind == QStringLiteral("track"))
         {
@@ -217,10 +220,11 @@ private:
             if (roles.contains(QStringLiteral("z")))
                 putRole(QStringLiteral("z"), roles.value(QStringLiteral("z")).toString());
         }
-        else if (kind == QStringLiteral("waterfall"))
+        else if (kind == QStringLiteral("waterfall") || kind == QStringLiteral("bar"))
         {
+            // 瀑布/柱状共用"多通道"取数：瀑布画时间×通道热图，柱状取各通道末值成柱。
             if (channelList.isEmpty())
-                return fail(QStringLiteral("echan"), QStringLiteral("瀑布图需要 channels 列表"));
+                return fail(QStringLiteral("echan"), kind + QStringLiteral(" 需要 channels 列表"));
             for (const QVariant &q : channelList)
             {
                 auto view = readChannel(q.toString());
@@ -238,7 +242,7 @@ private:
                 channelsOut.append(m);
             }
             if (channelsOut.isEmpty())
-                return fail(QStringLiteral("echan"), QStringLiteral("瀑布图通道全部无数据"));
+                return fail(QStringLiteral("echan"), kind + QStringLiteral(" 通道全部无数据"));
         }
         else
         {
@@ -262,6 +266,9 @@ private:
             {QStringLiteral("track"), QStringLiteral("经纬轨迹")},
             {QStringLiteral("traj3d"), QStringLiteral("3D 轨迹")},
             {QStringLiteral("waterfall"), QStringLiteral("瀑布图")},
+            {QStringLiteral("histogram"), QStringLiteral("直方图")},
+            {QStringLiteral("fft"), QStringLiteral("频谱")},
+            {QStringLiteral("bar"), QStringLiteral("柱状图")},
         };
 
         IntentResult r;
@@ -420,9 +427,10 @@ void PlotModule::onAttach(UiContext &ui)
     ui.declareSlot(QStringLiteral("ribbon.group.home.view"), QStringLiteral("视图"),
                    SlotKind::RibbonGroup, QStringLiteral("ribbon.page.home"));
 
-    // 申请中央画布。实现由绘图视图层自注册（"plot-canvas" 类型），
+    // 申请中央画布工作区：实现由绘图视图层自注册（"canvas-workspace" 类型），
+    // 它内部管理 N 个画布 cell（多曲线/拆分/网格），并集中路由 plot.* view action。
     // 本模块不依赖 Qt Widgets——CLI 构建保持纯净。
-    ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("plot-canvas"));
+    ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("canvas-workspace"));
 
     UiAction action;
     action.id = QStringLiteral("plot.action.redraw");

@@ -3,9 +3,9 @@
 #include "BuiltinContributions.h"
 #include "BuiltinPackRegistry.h"
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 QString AutomotivePack::packId()
@@ -51,6 +51,6 @@ std::vector<std::unique_ptr<IToolContribution>> &AutomotivePack::contributions()
     return m_pack.contributions();
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext
 
-NG_REGISTER_PACK(::ng::ext::AutomotivePack)
+NG_REGISTER_PACK(::nextpilot::plotscope::ext::AutomotivePack)

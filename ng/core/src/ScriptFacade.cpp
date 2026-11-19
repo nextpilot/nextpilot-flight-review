@@ -1,6 +1,6 @@
 #include "ScriptFacade.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 ScriptFacade::ScriptFacade(IIntentExecutor &executor, JobRecorder *recorder)
@@ -46,4 +46,4 @@ Result<QVariantMap> ScriptFacade::renderPlot(DatasetId id, const QString &channe
     return r.value().toMap();
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

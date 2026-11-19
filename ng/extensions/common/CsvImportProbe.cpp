@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 namespace {
 
@@ -294,4 +294,4 @@ QByteArray CsvImportProbe::defaultOptions(const QJsonObject &p)
     return QJsonDocument(o).toJson(QJsonDocument::Compact);
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

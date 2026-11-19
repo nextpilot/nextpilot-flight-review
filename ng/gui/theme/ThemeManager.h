@@ -8,12 +8,12 @@
 #include <QPalette>
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class SettingsStore;
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 // 主题管理：语义 token -> 双主题色值 -> QSS，一条链收口。
@@ -33,7 +33,7 @@ namespace ng::gui
 // 为什么是 IIntentHandler 而不是宿主成员：主题是纯 GUI 展示态，headless 无界面，
 // 不该在 headless 宿主里凭空存在一个"切主题"处理器。GUI 装配时把本实例注册为
 // 系统级 handler（@system/theme），于是 CLI 收到 theme.* 会诚实报"无处理器"。
-class ThemeManager final : public QObject, public ng::core::IIntentHandler
+class ThemeManager final : public QObject, public nextpilot::plotscope::core::IIntentHandler
 {
     Q_OBJECT
 public:
@@ -44,7 +44,7 @@ public:
     };
     Q_ENUM(Theme)
 
-    explicit ThemeManager(ng::core::SettingsStore &settings, QObject *parent = nullptr);
+    explicit ThemeManager(nextpilot::plotscope::core::SettingsStore &settings, QObject *parent = nullptr);
 
     // --- 当前主题状态 ---
     Theme current() const { return m_current; }
@@ -85,23 +85,23 @@ public:
     QString mapStyleSheet(const QString &fragment) const;
 
     // --- IIntentHandler ---
-    bool canHandle(const ng::core::Intent &intent) const override;
-    ng::core::Result<ng::core::IntentResult> execute(
-        const ng::core::Intent &intent) override;
+    bool canHandle(const nextpilot::plotscope::core::Intent &intent) const override;
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> execute(
+        const nextpilot::plotscope::core::Intent &intent) override;
 
     // app/theme 在 settings 中的键（app 作用域，跨工作区）。
     static constexpr const char *kThemeKey = "app/theme";
 
 Q_SIGNALS:
-    void themeChanged(ng::gui::ThemeManager::Theme theme);
+    void themeChanged(nextpilot::plotscope::gui::ThemeManager::Theme theme);
 
 private:
     void apply();                       // 应用全局 QSS 到 QApplication
     void persist() const;               // 写 settings
     Theme load() const;                 // 从 settings 读，缺省 Light
 
-    ng::core::SettingsStore &m_settings;
+    nextpilot::plotscope::core::SettingsStore &m_settings;
     Theme m_current = Theme::Light;
 };
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

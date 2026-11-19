@@ -9,7 +9,7 @@
 
 #include <memory>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 已登记的解析器。
@@ -80,8 +80,8 @@ private:
 #define NG_REGISTER_PARSER(Cls)                                                        \
     namespace {                                                                        \
     const bool g_ng_parser_reg_ =                                                      \
-        ::ng::core::ParserRegistry::registerParser(                                    \
+        ::nextpilot::plotscope::core::ParserRegistry::registerParser(                                    \
             Cls::parserInfo(), Cls::parserVtable(), QStringLiteral("builtin"));        \
     }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

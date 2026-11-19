@@ -2,7 +2,7 @@
 
 #include <QJsonArray>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 namespace
@@ -113,4 +113,4 @@ PropertySchema PropertySchema::fromJson(const QJsonObject &obj)
     return s;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

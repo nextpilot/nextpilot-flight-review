@@ -25,7 +25,7 @@
 #include <memory>
 #include <optional>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 using DatasetId = int;
@@ -234,4 +234,4 @@ private:
     QSharedDataPointer<Data> d;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

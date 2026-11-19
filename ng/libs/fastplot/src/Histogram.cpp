@@ -4,7 +4,7 @@
 #include <cmath>
 #include <limits>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 Histogram::Histogram(QWidget *parent) : Instrument(parent)
@@ -77,9 +77,9 @@ void Histogram::rebuild() const
     m_n = n;
 }
 
-void Histogram::paintInstrument(QPainter &painter, const QRectF &rect)
+void Histogram::paintInRect(QPainter &painter, const QRectF &rect) const
 {
-    rebuild();
+rebuild();
     if (m_counts.isEmpty() || m_maxCount <= 0)
         return;
 
@@ -104,4 +104,9 @@ void Histogram::paintInstrument(QPainter &painter, const QRectF &rect)
                      Qt::AlignRight | Qt::AlignVCenter, QString::number(m_hi, 'g', 4));
 }
 
-} // namespace fastplot
+void Histogram::paintInstrument(QPainter &painter, const QRectF &rect)
+{
+    paintInRect(painter, rect);
+}
+
+} // namespace nextpilot::plotscope::fastplot

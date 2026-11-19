@@ -22,17 +22,17 @@
 
 #include <QShowEvent>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class AppContext;
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core
 
-namespace ng::host
+namespace nextpilot::plotscope::host
 {
 class ModuleHost;
-} // namespace ng::host
+} // namespace nextpilot::plotscope::host
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 class GuiContext;
@@ -58,11 +58,11 @@ class MainWindow : public SARibbonMainWindow
 public:
     // 无边框窗体：UseRibbonFrame = SARibbon 自绘边框（ framelesshelper 接管
     // 拖拽/缩放/贴边），UseRibbonMenuBar = 用 ribbon 条而不是系统菜单栏。
-    explicit MainWindow(ng::core::AppContext &appCtx, QWidget *parent = nullptr);
+    explicit MainWindow(nextpilot::plotscope::core::AppContext &appCtx, QWidget *parent = nullptr);
     ~MainWindow() override;
 
     // 启动装配：建骨架、声明插槽、装载模块（GUI 模式）。
-    void build(ng::host::ModuleHost &host);
+    void build(nextpilot::plotscope::host::ModuleHost &host);
 
     // 状态持久化（声明式快照）：
     //   - 保存：关窗时把窗口几何 + ADS 布局 + ribbon 页签写入 Workspace 作用域；
@@ -87,11 +87,11 @@ private:
     //     放在骨架里与意图的归属一致；
     //   - "选文件"是 GUI 交互能力，只有外壳有 QWidget 与 QFileDialog。
     // 加载完成后依然走意图层，于是 GUI 与 CLI/脚本行为一致。
-    void openDataFile(ng::host::ModuleHost &host);
+    void openDataFile(nextpilot::plotscope::host::ModuleHost &host);
 
     // 来源库项：按指定格式驱动直接弹文件对话框（跳过格式选择步骤），
     // 选中的文件逐条走 data.load 意图——与通用导入、CLI/脚本同一条加载路径。
-    void openDataWithFormat(ng::host::ModuleHost &host, const QString &formatId);
+    void openDataWithFormat(nextpilot::plotscope::host::ModuleHost &host, const QString &formatId);
 
     // 骨架自带的"协议检查器"入口：按 IMessageParser 自述列协议、配参数、逐帧看字段。
     // 纯 GUI 检查能力（产 DecodedFrame，不入 Dataset），故按 id 特判弹对话框，
@@ -111,12 +111,12 @@ private:
     // 所以内容要在窗口布局完成之后再建一次。
     void showEvent(QShowEvent *event) override;
 
-    ng::core::AppContext &m_appCtx;
-    ng::host::ModuleHost *m_host = nullptr; // 用于取设置（状态持久化）
+    nextpilot::plotscope::core::AppContext &m_appCtx;
+    nextpilot::plotscope::host::ModuleHost *m_host = nullptr; // 用于取设置（状态持久化）
     ShellBinder *m_binder = nullptr;
     GuiContext *m_context = nullptr;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     bool m_ribbonLaidOut = false; // 是否已按真实宽度重建过 ribbon
 };
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

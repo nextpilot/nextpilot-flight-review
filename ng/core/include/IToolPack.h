@@ -9,7 +9,7 @@
 #include <memory>
 #include <vector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 知识包：一个业务方向（或其下的一个功能单元）对外提供的全部工具贡献的聚合。
@@ -73,4 +73,4 @@ private:
     std::vector<std::unique_ptr<IToolContribution>> m_contribs;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

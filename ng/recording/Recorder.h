@@ -9,7 +9,7 @@
 
 #include <memory>
 
-namespace ng::rec
+namespace nextpilot::plotscope::rec
 {
 
 class RawRecorder;
@@ -36,7 +36,7 @@ public:
 
     // 按 (格式, 后端) 组合创建。
     // 未知格式或后端返回 false，并在 err 里说明缺哪一个。
-    static ng::core::Result<std::shared_ptr<Recorder>> create(const QString &formatId,
+    static nextpilot::plotscope::core::Result<std::shared_ptr<Recorder>> create(const QString &formatId,
                                                     const QString &backendId,
                                                     const QString &endpoint,
                                                     const QByteArray &headerJson = QByteArray(),
@@ -67,4 +67,4 @@ private:
     qint64 m_bytes = 0;
 };
 
-} // namespace ng::rec
+} // namespace nextpilot::plotscope::rec

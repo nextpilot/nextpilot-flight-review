@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-using namespace ng::gui;
+using namespace nextpilot::plotscope::gui;
 
 namespace
 {

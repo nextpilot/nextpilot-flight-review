@@ -1,10 +1,10 @@
-#include "fastplot/SpectrumPlot.h"
+#include "fastplot/Spectrum.h"
 
 #include <QPainter>
 #include <cmath>
 #include <limits>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 namespace
@@ -12,31 +12,31 @@ namespace
 constexpr double kPi = 3.14159265358979323846;
 }
 
-SpectrumPlot::SpectrumPlot(QWidget *parent) : Instrument(parent)
+Spectrum::Spectrum(QWidget *parent) : Instrument(parent)
 {
     m_color = accent();
     setMinimumSize(200, 140);
 }
 
-void SpectrumPlot::setData(const IPlotData *data)
+void Spectrum::setData(const IPlotData *data)
 {
     m_data = data;
     update();
 }
 
-void SpectrumPlot::setSampleDt(double dt)
+void Spectrum::setSampleDt(double dt)
 {
     m_dt = dt;
     update();
 }
 
-void SpectrumPlot::setColor(const QColor &color)
+void Spectrum::setColor(const QColor &color)
 {
     m_color = color;
     update();
 }
 
-void SpectrumPlot::rebuild() const
+void Spectrum::rebuild() const
 {
     m_amp.clear();
     m_ampMax = 0.0;
@@ -89,9 +89,9 @@ void SpectrumPlot::rebuild() const
     m_n = n;
 }
 
-void SpectrumPlot::paintInstrument(QPainter &painter, const QRectF &rect)
+void Spectrum::paintInRect(QPainter &painter, const QRectF &rect) const
 {
-    rebuild();
+rebuild();
     if (m_amp.isEmpty() || m_ampMax <= 0.0)
         return;
 
@@ -122,4 +122,9 @@ void SpectrumPlot::paintInstrument(QPainter &painter, const QRectF &rect)
                      QStringLiteral("%1 Hz").arg(m_fMax, 0, 'g', 3));
 }
 
-} // namespace fastplot
+void Spectrum::paintInstrument(QPainter &painter, const QRectF &rect)
+{
+    paintInRect(painter, rect);
+}
+
+} // namespace nextpilot::plotscope::fastplot

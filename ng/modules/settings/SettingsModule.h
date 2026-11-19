@@ -14,16 +14,16 @@
 //   App        用户偏好，跨工作区
 //   Workspace  会话状态，重启可恢复（窗口几何、dock 排列、最近源）
 //   Document   具体工作区，可分享（plot 布局、曲线样式）
-class SettingsModule final : public ng::host::IModule
+class SettingsModule final : public nextpilot::plotscope::host::IModule
 {
     Q_OBJECT
 public:
     // 静态元数据：供编译期自注册（NG_REGISTER_MODULE）使用，无需实例化。
-    static ng::host::ModuleInfo moduleInfo();
-    static ng::host::IModule *create();
+    static nextpilot::plotscope::host::ModuleInfo moduleInfo();
+    static nextpilot::plotscope::host::IModule *create();
 
-    ng::host::ModuleInfo info() const override;
-    void initialize(ng::host::ModuleContext &ctx) override;
+    nextpilot::plotscope::host::ModuleInfo info() const override;
+    void initialize(nextpilot::plotscope::host::ModuleContext &ctx) override;
 
 private:
     class Handler;

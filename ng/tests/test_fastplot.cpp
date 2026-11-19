@@ -49,7 +49,7 @@ int main(int argc, char **argv)
 
     // 1) 视口映射：四角必须精确落在绘图区边界上
     {
-        fastplot::Viewport vp;
+        nextpilot::plotscope::fastplot::Viewport vp;
         vp.setPlotRect(QRectF(10, 10, 100, 50));
         vp.setXRange(0.0, 1.0);
         vp.setYRange(0.0, 1.0);
@@ -64,7 +64,7 @@ int main(int argc, char **argv)
         CHECK(near(vp.pixelToY(vp.yToPixel(0.42)), 0.42));
 
         // lo == hi 自动展开，不除零
-        fastplot::Viewport degenerate;
+        nextpilot::plotscope::fastplot::Viewport degenerate;
         degenerate.setPlotRect(QRectF(0, 0, 10, 10));
         degenerate.setXRange(5.0, 5.0);
         CHECK(degenerate.xUpper() > degenerate.xLower());
@@ -74,7 +74,7 @@ int main(int argc, char **argv)
 
     // 2) 刻度划分：步长是"好看数"，标签无浮点尾巴
     {
-        const fastplot::ScaleDiv div = fastplot::ScaleDiv::linear(0.0, 2.0, 8);
+        const nextpilot::plotscope::fastplot::ScaleDiv div = nextpilot::plotscope::fastplot::ScaleDiv::linear(0.0, 2.0, 8);
         CHECK(div.majorStep > 0.0);
         // 0~2 分 8 段 → 步长应落在 0.2 / 0.25 这类"好看数"
         const bool niceStep = near(div.majorStep, 0.2) || near(div.majorStep, 0.25)
@@ -84,7 +84,7 @@ int main(int argc, char **argv)
         CHECK(div.upper >= 2.0 - 1e-12);
 
         int majors = 0;
-        for (const fastplot::Tick &t : div.ticks)
+        for (const nextpilot::plotscope::fastplot::Tick &t : div.ticks)
         {
             if (!t.major)
                 continue;
@@ -95,15 +95,15 @@ int main(int argc, char **argv)
         CHECK(majors >= 5);
 
         // 标签格式：0.25 不带多余 0，-0 归一成 0
-        CHECK(fastplot::ScaleDiv::formatValue(0.25, 0.25) == QStringLiteral("0.25"));
-        CHECK(fastplot::ScaleDiv::formatValue(-0.0, 0.25) == QStringLiteral("0"));
+        CHECK(nextpilot::plotscope::fastplot::ScaleDiv::formatValue(0.25, 0.25) == QStringLiteral("0.25"));
+        CHECK(nextpilot::plotscope::fastplot::ScaleDiv::formatValue(-0.0, 0.25) == QStringLiteral("0"));
         fprintf(stdout, "[ok] ScaleDiv：步长 %.3f，主刻度 %d 个，标签 %.1f\n",
                 div.majorStep, majors, div.ticks.isEmpty() ? 0.0 : div.ticks.first().value);
     }
 
     // 3) 控件布局：边距由轴自己算出来，绘图区不等于整个窗口
     {
-        fastplot::PlotWidget plot;
+        nextpilot::plotscope::fastplot::PlotWidget plot;
         plot.resize(800, 400);
         plot.setXRange(0.0, 2.0);
         plot.setYRange(-1.0, 1.0);
@@ -112,14 +112,14 @@ int main(int argc, char **argv)
         CHECK(pr.width() > 600 && pr.height() > 300);
         CHECK(pr.left() >= 24);            // 左轴标签占位
         CHECK(pr.bottom() <= 400 - 16);    // 下轴标签占位
-        CHECK(plot.axis(fastplot::AxisSide::Bottom).scaleDiv().upper >= 2.0);
-        CHECK(plot.axis(fastplot::AxisSide::Left).scaleDiv().lower <= -1.0);
+        CHECK(plot.axis(nextpilot::plotscope::fastplot::AxisSide::Bottom).scaleDiv().upper >= 2.0);
+        CHECK(plot.axis(nextpilot::plotscope::fastplot::AxisSide::Left).scaleDiv().lower <= -1.0);
         // 右轴默认隐藏 → 右边距应为 0
         CHECK(pr.right() >= 800 - 24);
 
         // 打开右轴后，右边距增大
         const double widthBefore = plot.plotRect().width();
-        plot.axis(fastplot::AxisSide::Right).setVisible(true);
+        plot.axis(nextpilot::plotscope::fastplot::AxisSide::Right).setVisible(true);
         plot.replot();
         CHECK(plot.plotRect().width() < widthBefore);
         fprintf(stdout, "[ok] PlotWidget：边距 %.0f/%.0f，双轴切换后绘图区收窄\n",
@@ -128,7 +128,7 @@ int main(int argc, char **argv)
 
     // 4) 渲染：网格真的画出来了，且静态缓存可复用
     {
-        fastplot::PlotWidget plot;
+        nextpilot::plotscope::fastplot::PlotWidget plot;
         plot.resize(800, 400);
         plot.setXRange(0.0, 2.0);
         plot.setYRange(-1.0, 1.0);
@@ -140,9 +140,9 @@ int main(int argc, char **argv)
         const QRectF pr = plot.plotRect();
 
         // 取下轴第一个主刻度，横向扫 ±2 像素找网格线
-        const fastplot::ScaleDiv &xDiv = plot.axis(fastplot::AxisSide::Bottom).scaleDiv();
+        const nextpilot::plotscope::fastplot::ScaleDiv &xDiv = plot.axis(nextpilot::plotscope::fastplot::AxisSide::Bottom).scaleDiv();
         int hit = 0;
-        for (const fastplot::Tick &t : xDiv.ticks)
+        for (const nextpilot::plotscope::fastplot::Tick &t : xDiv.ticks)
         {
             if (!t.major || t.value < 0.0)
                 continue;
@@ -176,20 +176,20 @@ int main(int argc, char **argv)
             xs[i] = i * 0.001;
             ys[i] = std::sin(i * 0.02);
         }
-        fastplot::ArrayData data(xs.data(), ys.data(), n, 7);
+        nextpilot::plotscope::fastplot::ArrayData data(xs.data(), ys.data(), n, 7);
 
-        fastplot::Viewport vp;
+        nextpilot::plotscope::fastplot::Viewport vp;
         vp.setPlotRect(QRectF(0, 0, 700, 300));
         vp.setXRange(0.0, 3.0);
         vp.setYRange(-1.2, 1.2);
 
-        fastplot::LodCache cache;
-        const QVector<fastplot::LodPoint> &pts = cache.points(data, vp);
+        nextpilot::plotscope::fastplot::LodCache cache;
+        const QVector<nextpilot::plotscope::fastplot::LodPoint> &pts = cache.points(data, vp);
         CHECK(!pts.isEmpty());
         CHECK(pts.size() <= 700);
         // 峰值必须活下来：包络保留列内 min/max，不会被"平均"掉
         double lo = 0.0, hi = 0.0;
-        for (const fastplot::LodPoint &pt : pts)
+        for (const nextpilot::plotscope::fastplot::LodPoint &pt : pts)
         {
             CHECK(pt.min <= pt.max);
             lo = std::min(lo, pt.min);
@@ -218,12 +218,12 @@ int main(int argc, char **argv)
             xs[i] = i * 0.001;
             ys[i] = std::sin(i * 0.02) * 0.5;
         }
-        fastplot::ArrayData data(xs.data(), ys.data(), n, 11);
+        nextpilot::plotscope::fastplot::ArrayData data(xs.data(), ys.data(), n, 11);
 
         const QColor ink(0x5b, 0xc0, 0xf0);
-        fastplot::PlotWidget plot;
+        nextpilot::plotscope::fastplot::PlotWidget plot;
         plot.resize(800, 400);
-        plot.addCurve(fastplot::Curve::fromData(&data, ink, 1.4));
+        plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromData(&data, ink, 1.4));
         CHECK(plot.autoScale());
 
         const QImage img = plot.grabImage();
@@ -253,14 +253,14 @@ int main(int argc, char **argv)
             xs[i] = i * 0.05;
             ys[i] = std::cos(i * 0.3) * 0.6 + 0.2 * std::sin(i * 1.7);
         }
-        fastplot::ArrayData data(xs.data(), ys.data(), n, 31);
+        nextpilot::plotscope::fastplot::ArrayData data(xs.data(), ys.data(), n, 31);
 
         const QColor ink(0x8A, 0xD8, 0x6E);
-        fastplot::PlotWidget plot;
+        nextpilot::plotscope::fastplot::PlotWidget plot;
         plot.resize(800, 400);
-        auto &curve = plot.addCurve(fastplot::Curve::fromData(&data, ink, 1.4));
+        auto &curve = plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromData(&data, ink, 1.4));
         curve.setScatter(true);
-        curve.setSymbol(fastplot::Symbol::Diamond);
+        curve.setSymbol(nextpilot::plotscope::fastplot::Symbol::Diamond);
         curve.setSymbolSize(6.0);
         CHECK(plot.autoScale());
 
@@ -287,15 +287,15 @@ int main(int argc, char **argv)
             xs[i] = i * 0.001;
             ys[i] = std::sin(i * 0.02);
         }
-        fastplot::ArrayData data(xs.data(), ys.data(), n, 21);
+        nextpilot::plotscope::fastplot::ArrayData data(xs.data(), ys.data(), n, 21);
 
-        fastplot::PlotWidget plot;
+        nextpilot::plotscope::fastplot::PlotWidget plot;
         plot.resize(800, 400);
-        plot.addCurve(fastplot::Curve::fromData(&data, QColor(0x1F, 0x6F, 0xC0), 1.4));
+        plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromData(&data, QColor(0x1F, 0x6F, 0xC0), 1.4));
         plot.setXRange(0.0, 3.0);
         plot.setYRange(-1.2, 1.2);
 
-        fastplot::Zoomer zoomer(&plot);
+        nextpilot::plotscope::fastplot::Zoomer zoomer(&plot);
         const QPointF anchor(400.0, 200.0);
         const double ax = plot.viewport().pixelToX(anchor.x());
         const double ay = plot.viewport().pixelToY(anchor.y());
@@ -342,30 +342,30 @@ int main(int argc, char **argv)
     {
         // 左轴曲线：正弦 ±0.5（占满左轴）；右轴曲线：约 200 的一条平带（只占右轴中间一小段）。
         // 两条曲线像素不能"看起来一样"——否则无法证明各走各的映射。
-        QVector<fastplot::LodPoint> left;
-        QVector<fastplot::LodPoint> right;
+        QVector<nextpilot::plotscope::fastplot::LodPoint> left;
+        QVector<nextpilot::plotscope::fastplot::LodPoint> right;
         for (int i = 0; i < 400; ++i)
         {
             const double x = i * 0.016;
-            left.push_back(fastplot::LodPoint{x, 0.5 * std::sin(x), 0.55 * std::sin(x) + 0.02});
-            right.push_back(fastplot::LodPoint{x, 199.5, 200.5});
+            left.push_back(nextpilot::plotscope::fastplot::LodPoint{x, 0.5 * std::sin(x), 0.55 * std::sin(x) + 0.02});
+            right.push_back(nextpilot::plotscope::fastplot::LodPoint{x, 199.5, 200.5});
         }
 
         const QColor leftInk(0x1F, 0x6F, 0xC0);
         const QColor rightInk(0xE0, 0x6C, 0x00);
 
-        fastplot::PlotWidget plot;
+        nextpilot::plotscope::fastplot::PlotWidget plot;
         plot.resize(800, 400);
         plot.setXRange(0.0, 6.4);
         plot.setYRange(-1.0, 1.0);
         plot.setSecondAxis(true);
         plot.setYRange2(190.0, 210.0);
 
-        auto &c1 = plot.addCurve(fastplot::Curve::fromLod(left, leftInk, 1.0));
+        auto &c1 = plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(left, leftInk, 1.0));
         c1.setName(QStringLiteral("roll"));
-        auto &c2 = plot.addCurve(fastplot::Curve::fromLod(right, rightInk, 1.0));
+        auto &c2 = plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(right, rightInk, 1.0));
         c2.setName(QStringLiteral("alt"));
-        c2.setYAxis(fastplot::AxisSide::Right);
+        c2.setYAxis(nextpilot::plotscope::fastplot::AxisSide::Right);
 
         CHECK(plot.hasSecondAxis());
         CHECK(near(plot.y2Upper(), 210.0) && near(plot.y2Lower(), 190.0));
@@ -423,7 +423,7 @@ int main(int argc, char **argv)
 
         // 状态往返：范围/双轴/图例都要还原
         const QJsonObject state = plot.saveState();
-        fastplot::PlotWidget restored;
+        nextpilot::plotscope::fastplot::PlotWidget restored;
         restored.resize(800, 400);
         CHECK(restored.restoreState(state));
         CHECK(near(restored.viewport().xLower(), plot.viewport().xLower()));
@@ -455,7 +455,7 @@ int main(int argc, char **argv)
 
         // 柱状图：三个类别，含一个负值。
         {
-            fastplot::BarChart bar;
+            nextpilot::plotscope::fastplot::BarChart bar;
             bar.resize(400, 300);
             bar.setBars({QStringLiteral("roll"), QStringLiteral("pitch"), QStringLiteral("rpm")},
                         {12.0, -3.0, 86.0},
@@ -477,8 +477,8 @@ int main(int argc, char **argv)
                 const double phase = i < n / 2 ? 0.0 : 3.0;
                 ys[i] = phase + std::sin(i * 0.1) * 0.3;
             }
-            fastplot::ArrayData data(xs.data(), ys.data(), n, 41);
-            fastplot::Histogram hist;
+            nextpilot::plotscope::fastplot::ArrayData data(xs.data(), ys.data(), n, 41);
+            nextpilot::plotscope::fastplot::Histogram hist;
             hist.resize(400, 300);
             hist.setData(&data);
             hist.setBins(32);
@@ -498,8 +498,8 @@ int main(int argc, char **argv)
                 xs[i] = i * 0.01;
                 ys[i] = std::sin(2 * kPi * 5.0 * xs[i]) + 0.1 * std::sin(i * 1.3);
             }
-            fastplot::ArrayData data(xs.data(), ys.data(), n, 43);
-            fastplot::SpectrumPlot spec;
+            nextpilot::plotscope::fastplot::ArrayData data(xs.data(), ys.data(), n, 43);
+            nextpilot::plotscope::fastplot::SpectrumPlot spec;
             spec.resize(400, 300);
             spec.setData(&data);
             spec.setSampleDt(0.01);

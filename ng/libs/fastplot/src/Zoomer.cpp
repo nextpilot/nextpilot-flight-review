@@ -1,6 +1,6 @@
 #include "fastplot/Zoomer.h"
 
-#include "fastplot/PlotWidget.h"
+#include "fastplot/Axes.h"
 #include "fastplot/Viewport.h"
 
 #include <QEvent>
@@ -11,10 +11,10 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
-Zoomer::Zoomer(PlotWidget *plot, QObject *parent)
+Zoomer::Zoomer(Axes *plot, QObject *parent)
     : QObject(parent)
     , m_plot(plot)
 {
@@ -183,4 +183,4 @@ bool Zoomer::eventFilter(QObject *watched, QEvent *event)
     return QObject::eventFilter(watched, event);
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

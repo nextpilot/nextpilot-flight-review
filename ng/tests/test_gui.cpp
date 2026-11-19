@@ -22,6 +22,7 @@
 #include "IPanelContribution.h"
 #include "PanelFactoryRegistry.h"
 #include "PlotCanvas.h"
+#include "CanvasWorkspace.h"
 #include "ShellBinder.h"
 
 #include "AppContext.h"
@@ -44,10 +45,10 @@
 #include <cstdio>
 #include <cstdlib>
 
-using namespace ng::app;
-using namespace ng::core;
-using namespace ng::gui;
-using namespace ng::host;
+using namespace nextpilot::plotscope::app;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::gui;
+using namespace nextpilot::plotscope::host;
 
 // Release 下 assert 被 NDEBUG 消除，用它做真实校验（失败即退出码非零）。
 #define CHECK(cond)                                                                      \
@@ -207,9 +208,9 @@ int main(int argc, char *argv[])
     // 若 ng_gui 被改成 STATIC 库，未被引用的 TU 会被链接器丢弃、
     // 静态初始化不执行，工厂表会**静默变空**——功能消失且无任何报错。
     // 所以这里显式断言两个视图都已登记。
-    CHECK(!ng::core::PanelFactoryRegistry::types().isEmpty());
-    CHECK(ng::core::PanelFactoryRegistry::types().contains(QStringLiteral("dataset-tree")));
-    CHECK(ng::core::PanelFactoryRegistry::types().contains(QStringLiteral("plot-canvas")));
+    CHECK(!nextpilot::plotscope::core::PanelFactoryRegistry::types().isEmpty());
+    CHECK(nextpilot::plotscope::core::PanelFactoryRegistry::types().contains(QStringLiteral("dataset-tree")));
+    CHECK(nextpilot::plotscope::core::PanelFactoryRegistry::types().contains(QStringLiteral("plot-canvas")));
     OK("视图层自注册生效：dataset-tree / plot-canvas 均已登记（OBJECT 库保证 TU 不被丢弃）");
 
     // --- 3b) 领域面板：形态随领域变时的解法 ---
@@ -227,10 +228,10 @@ int main(int argc, char *argv[])
         // 1) 描述：纯数据，headless 也查得到。
         const auto &toolbox = application.context().toolbox();
         int panelSpecCount = 0;
-        for (ng::core::IToolContribution *c :
-             toolbox.contributions(ng::core::ContributionKind::Panel))
+        for (nextpilot::plotscope::core::IToolContribution *c :
+             toolbox.contributions(nextpilot::plotscope::core::ContributionKind::Panel))
         {
-            auto *pc = dynamic_cast<ng::core::IPanelContribution *>(c);
+            auto *pc = dynamic_cast<nextpilot::plotscope::core::IPanelContribution *>(c);
             CHECK(pc != nullptr);
             if (pc)
                 panelSpecCount += pc->panels().size();
@@ -238,15 +239,15 @@ int main(int argc, char *argv[])
         CHECK(panelSpecCount >= 1); // 汽车包的 CAN 报文面板
 
         // 2) 实现：领域面板与通用面板共用同一张工厂表。
-        CHECK(ng::core::PanelFactoryRegistry::types().contains(QStringLiteral("car.can-browser")));
+        CHECK(nextpilot::plotscope::core::PanelFactoryRegistry::types().contains(QStringLiteral("car.can-browser")));
 
         // 3) 领域过滤：汽车领域的清单里有它，通用领域不该混入。
         int automotive = 0;
-        for (ng::core::IToolContribution *c :
-             toolbox.contributions(ng::core::ContributionKind::Panel,
-                                  ng::core::FormatDomain::Automotive))
+        for (nextpilot::plotscope::core::IToolContribution *c :
+             toolbox.contributions(nextpilot::plotscope::core::ContributionKind::Panel,
+                                  nextpilot::plotscope::core::FormatDomain::Automotive))
         {
-            auto *pc = dynamic_cast<ng::core::IPanelContribution *>(c);
+            auto *pc = dynamic_cast<nextpilot::plotscope::core::IPanelContribution *>(c);
             if (pc)
                 automotive += pc->panels().size();
         }
@@ -461,7 +462,9 @@ int main(int argc, char *argv[])
     // --- 7) 画布消费 LOD 并渲染 ---
     // 画布按**自身像素宽度**请求数据（像素级渲染的应有行为），
     // 因此点数与画布宽度挂钩，但与数据行数无关。
-    auto *canvas = qobject_cast<PlotCanvas *>(binder->centralContent());
+    auto *workspace = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+    CHECK(workspace != nullptr);
+    auto *canvas = workspace ? workspace->activeCanvas() : nullptr;
     CHECK(canvas != nullptr);
     // 渲染触发方式 = 设活动通道（与数据集树双击同一条路径）：
     // 数据集树 -> AppContext 共享状态 -> 绘图视图订阅 -> 取数渲染。
@@ -525,7 +528,7 @@ int main(int argc, char *argv[])
     // 反例锚点（根 AGENTS §12）：若颜色散落成十六进制字面量，切主题必残留旧色。
     // 这里验证颜色全部来自 token 表，且切换走与按钮/脚本相同的 theme.* 意图。
     {
-        using Theme = ng::gui::ThemeManager;
+        using Theme = nextpilot::plotscope::gui::ThemeManager;
         Theme *tm = window.themeManager();
         CHECK(tm != nullptr);
         CHECK(tm->current() == Theme::Theme::Light); // 缺省浅色

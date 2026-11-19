@@ -31,9 +31,9 @@
 
 #include <cstdio>
 
-using namespace ng::app;
-using namespace ng::core;
-using namespace ng::gui;
+using namespace nextpilot::plotscope::app;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::gui;
 
 int main(int argc, char *argv[])
 {
@@ -51,7 +51,7 @@ int main(int argc, char *argv[])
     if (out == QStringLiteral("--protocol") && argc >= 3)
     {
         const QString png = QString::fromLocal8Bit(argv[2]);
-        ng::gui::ProtocolEditorDialog dlg;
+        nextpilot::plotscope::gui::ProtocolEditorDialog dlg;
         // 对话框里有两个 QPlainTextEdit（JSON 模板框 + hex 样例框）。
         // 不依赖构造顺序：含 "{" 的是 JSON 框（保持 blankTemplate 不动），
         // 另一个是 hex 样例框，写入样例帧。
@@ -85,6 +85,7 @@ int main(int argc, char *argv[])
     QStringList files;
     QString themeArg;
     QString plotTypeArg;
+    QStringList actionArgs;
     int w = 1440;
     int h = 900;
     for (int i = 2; i < argc; ++i)
@@ -98,6 +99,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--type=")))
         {
             plotTypeArg = a.mid(QStringLiteral("--type=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--action=")))
+        {
+            actionArgs << a.mid(QStringLiteral("--action=").size());
             continue;
         }
         files << a;
@@ -192,6 +198,23 @@ int main(int argc, char *argv[])
         }
         fprintf(stdout, "图型 action %s: %s\n", qPrintable(targetId),
                 triggered ? "已触发" : "未找到");
+    }
+
+    // 通用 view action 触发（如 page.splitHorizontal / page.grid）：
+    // 走与 ribbon 点击相同的 AppContext 派发路径。
+    for (const QString &actionId : actionArgs)
+    {
+        QVariantMap params;
+        if (actionId == QStringLiteral("page.grid"))
+        {
+            params.insert(QStringLiteral("rows"), 2);
+            params.insert(QStringLiteral("cols"), 1);
+        }
+        QVariant vr;
+        Result<QVariant> res(vr);
+        const bool hit = application.context().dispatchViewAction(actionId, params, res);
+        fprintf(stdout, "view action %s: %s\n", qPrintable(actionId),
+                hit ? (res ? "成功" : "失败") : "未注册");
     }
 
     // 让事件循环转一圈，ribbon/dock/画布完成布局与绘制

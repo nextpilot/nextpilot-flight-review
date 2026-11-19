@@ -4,7 +4,7 @@
 #include <cmath>
 #include <limits>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 const QVector<LodPoint> &LodCache::points(const IPlotData &data, const Viewport &vp)
@@ -104,4 +104,4 @@ void LodCache::clear()
     m_columns = 0;
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

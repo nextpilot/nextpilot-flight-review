@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 DataSourceRepository::DataSourceRepository(QObject *parent) : QObject(parent) {}
@@ -193,4 +193,4 @@ void DataSourceRepository::clear()
         remove(id);
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

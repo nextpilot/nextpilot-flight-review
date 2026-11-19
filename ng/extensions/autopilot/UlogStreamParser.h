@@ -2,12 +2,12 @@
 
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class Dataset;
 }
 
-namespace ng::ext::ulog
+namespace nextpilot::plotscope::ext::ulog
 {
 
 // 流式 ULog 解析器。
@@ -26,6 +26,6 @@ namespace ng::ext::ulog
 //   ds    - 调用方（扩展 Handler）已创建好的空 Dataset，本函数负责填充
 //   err   - 出错信息
 // 返回 false 表示失败；成功时 ds 内含若干 typed 表（每个订阅 topic 一张）+ 元数据表。
-bool parseUlogStream(const QString &path, ng::core::Dataset &ds, QString &err);
+bool parseUlogStream(const QString &path, nextpilot::plotscope::core::Dataset &ds, QString &err);
 
-} // namespace ng::ext::ulog
+} // namespace nextpilot::plotscope::ext::ulog

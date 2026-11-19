@@ -3,9 +3,9 @@
 #include "BuiltinContributions.h"
 #include "BuiltinPackRegistry.h"
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 QString RoboticsPack::packId()
@@ -42,6 +42,6 @@ std::vector<std::unique_ptr<IToolContribution>> &RoboticsPack::contributions()
     return m_pack.contributions();
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext
 
-NG_REGISTER_PACK(::ng::ext::RoboticsPack)
+NG_REGISTER_PACK(::nextpilot::plotscope::ext::RoboticsPack)

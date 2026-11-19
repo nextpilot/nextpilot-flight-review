@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 namespace
 {
@@ -41,7 +41,7 @@ void setErr(PsError *err, int32_t code, const char *msg)
 }
 
 // 把解码结果吐成一批（每条通道一列，共享时间轴）。
-bool emitBatch(const ps::protocol::ProtocolDecodeResult &decoded, Ctx *c,
+bool emitBatch(const nextpilot::plotscope::protocol::ProtocolDecodeResult &decoded, Ctx *c,
           const PsParserSink *sink, PsError *err)
 {
     if (decoded.channels.isEmpty())
@@ -104,7 +104,7 @@ bool decodeAndEmit(Ctx *c, const PsParserSink *sink, PsError *err)
         return false;
     }
     // 用便捷入口从 JSON 模板做 validate + parse + decode（与编辑器同一份内核）。
-    auto decoded = ps::protocol::decodeSequentialJson(c->bytes, c->templateJson);
+    auto decoded = nextpilot::plotscope::protocol::decodeSequentialJson(c->bytes, c->templateJson);
     if (!decoded.ok)
     {
         setErr(err, 4, decoded.error.toUtf8().constData());
@@ -223,6 +223,6 @@ const PsParserVtable *CustomProtocolParser::parserVtable()
     return &vt;
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext
 
-NG_REGISTER_PARSER(::ng::ext::CustomProtocolParser)
+NG_REGISTER_PARSER(::nextpilot::plotscope::ext::CustomProtocolParser)

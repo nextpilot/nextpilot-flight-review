@@ -6,6 +6,7 @@
 #include "App.h"
 #include "MainWindow.h"
 #include "PlotCanvas.h"
+#include "CanvasWorkspace.h"
 #include "ShellBinder.h"
 
 #include "Dataset.h"
@@ -20,10 +21,10 @@
 #include <cstdio>
 #include <cstdlib>
 
-using namespace ng::app;
-using namespace ng::core;
-using namespace ng::gui;
-using namespace ng::host;
+using namespace nextpilot::plotscope::app;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::gui;
+using namespace nextpilot::plotscope::host;
 
 #define CHECK(cond)                                                                      \
     do {                                                                                 \
@@ -47,7 +48,9 @@ int main(int argc, char *argv[])
 
     ShellBinder *binder = window.binder();
     CHECK(binder != nullptr);
-    auto *canvas = qobject_cast<PlotCanvas *>(binder->centralContent());
+    auto *workspace = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+    CHECK(workspace != nullptr);
+    auto *canvas = workspace ? workspace->activeCanvas() : nullptr;
     CHECK(canvas != nullptr);
 
     // 喂一批 LOD 三元组，让画布上确实有曲线可导出。
@@ -219,7 +222,7 @@ int main(int argc, char *argv[])
         CHECK(canvas->restoreViewState(st));
         CHECK(canvas->seriesAt(1)->rightAxis); // 恢复成挂右轴
 
-        // 图型切换：曲线类本画布处理，仪表类返回 handled=false 交外壳切视图。
+        // 图型切换：工作区统一路由——曲线类在画布内切，专用图型在 cell 内切到仪表页。
         QVariant nullV;
         Result<QVariant> r(nullV);
         CHECK(application.context().dispatchViewAction(
@@ -229,8 +232,49 @@ int main(int argc, char *argv[])
         Result<QVariant> r2(nullV);
         CHECK(application.context().dispatchViewAction(
             QStringLiteral("plot.setType"), {{QStringLiteral("type"), QStringLiteral("gauge")}}, r2));
-        CHECK(!r2.value().toMap().value(QStringLiteral("handled")).toBool());
+        // 多画布工作区把专用图型也在 cell 内接住了（cell 内切到仪表页），
+        // 不再返回 handled=false 依赖外壳替换中央——这样多画布形态得以保留。
+        CHECK(r2.value().toMap().value(QStringLiteral("handled")).toBool());
         OK("双 Y 轴：用户选轴 / 分轴范围 / 状态往返 / 图型切换路由全部通过");
+    }
+
+    // --- 7) 多画布工作区：添加/拆分/网格/删除，view action 路由到活动画布 ---
+    {
+        QVariant nullV;
+        auto stateOf = [&]() -> QVariantMap {
+            Result<QVariant> st(nullV);
+            CHECK(application.context().dispatchViewAction(
+                QStringLiteral("page.state"), {}, st));
+            return st.value().toMap();
+        };
+        // 前一段 setType(gauge) 只切了 cell 内页，cell 数不变；本段从 1 起。
+        CHECK(stateOf().value(QStringLiteral("cells")).toInt() == 1);
+
+        Result<QVariant> add(nullV);
+        CHECK(application.context().dispatchViewAction(
+            QStringLiteral("page.addCanvas"), {}, add));
+        CHECK(stateOf().value(QStringLiteral("cells")).toInt() == 2);
+
+        Result<QVariant> split(nullV);
+        CHECK(application.context().dispatchViewAction(
+            QStringLiteral("page.splitHorizontal"), {}, split));
+        CHECK(stateOf().value(QStringLiteral("cells")).toInt() == 3);
+
+        Result<QVariant> grid(nullV);
+        CHECK(application.context().dispatchViewAction(
+            QStringLiteral("page.grid"),
+            {{QStringLiteral("rows"), 2}, {QStringLiteral("cols"), 2}}, grid));
+        CHECK(grid.value().toMap().value(QStringLiteral("cells")).toInt() == 4);
+        CHECK(workspace->rows() == 2 && workspace->cols() == 2);
+        CHECK(workspace->cellCount() == 4);
+        CHECK(workspace->activeCanvas() != nullptr);
+        CHECK(workspace->activeChannelView() != nullptr);
+
+        Result<QVariant> rm(nullV);
+        CHECK(application.context().dispatchViewAction(
+            QStringLiteral("page.removeCanvas"), {}, rm));
+        CHECK(workspace->cellCount() == 3);
+        OK("多画布工作区：添加/拆分/2×2 网格/删除 + 活动画布路由全部通过");
     }
 
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");

@@ -9,7 +9,7 @@ class QPushButton;
 class QTreeWidget;
 class QWidget;
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 // 协议编辑器：创建/编辑/校验顺序段协议模板（.psproto），并试算样例帧。
@@ -51,4 +51,4 @@ private:
     QPushButton *m_saveBtn = nullptr;
 };
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

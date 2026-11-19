@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 WaterfallPlot::WaterfallPlot(QWidget *parent)
@@ -114,4 +114,4 @@ void WaterfallPlot::paintInstrument(QPainter &painter, const QRectF &rect)
                      QStringLiteral("瀑布 · %1 条").arg(count));
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

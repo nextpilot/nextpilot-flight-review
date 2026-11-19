@@ -4,7 +4,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 录制格式描述。
@@ -70,7 +70,7 @@ public:
 #define NG_REGISTER_RECORDING_FORMAT(Cls)                                               \
     namespace {                                                                        \
     const bool g_ng_recfmt_reg_ =                                                      \
-        ::ng::core::RecordingFormatRegistry::registerFormat(Cls::recordingFormat());   \
+        ::nextpilot::plotscope::core::RecordingFormatRegistry::registerFormat(Cls::recordingFormat());   \
     }
 
 namespace FormatId
@@ -79,4 +79,4 @@ inline const QString Raw = QStringLiteral("raw");
 inline const QString Mcap = QStringLiteral("mcap");
 } // namespace FormatId
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

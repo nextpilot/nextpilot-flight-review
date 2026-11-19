@@ -3,7 +3,7 @@
 #include "Dataset.h"
 #include "ParserRegistry.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 IngestPipeline::IngestPipeline(DataRepository &repo, QObject *parent)
@@ -315,4 +315,4 @@ void IngestPipeline::onProgress(void *, uint64_t, uint64_t)
     // 进度上报预留：宿主可据此更新 UI 进度条。
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

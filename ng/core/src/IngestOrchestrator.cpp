@@ -4,7 +4,7 @@
 
 #include <QFileInfo>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 namespace
@@ -271,4 +271,4 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
     return m_datasetIds.first();
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -5,7 +5,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 // 外部插件发现结果（供 CLI / 诊断输出）。
@@ -25,7 +25,7 @@ struct PluginScanReport
 //     更不影响内置格式——这是"插件互不牵连"的隔离保证。
 //
 // 后续启用真实加载只需实现 loadOne()，扫描框架与注册表接线无需改动。
-PluginScanReport scanExternalPlugins(ng::core::ExtensionRegistry &registry,
+PluginScanReport scanExternalPlugins(nextpilot::plotscope::core::ExtensionRegistry &registry,
                                      const QString &directory);
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

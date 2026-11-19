@@ -4,7 +4,7 @@
 
 #include <QVector>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 class IPlotData;
@@ -40,4 +40,4 @@ private:
     QColor m_curve{0x5b, 0xc0, 0xf0};
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

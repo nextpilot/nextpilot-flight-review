@@ -6,7 +6,7 @@
 
 #include <QObject>
 
-namespace ng::app
+namespace nextpilot::plotscope::app
 {
 
 // 组合根：**app 的装配点**。
@@ -28,22 +28,22 @@ public:
     explicit App(const QString &settingsPath = QString(), QObject *parent = nullptr);
 
     // 进程级运行态。
-    ng::core::AppContext &context() { return m_ctx; }
-    const ng::core::AppContext &context() const { return m_ctx; }
+    nextpilot::plotscope::core::AppContext &context() { return m_ctx; }
+    const nextpilot::plotscope::core::AppContext &context() const { return m_ctx; }
 
     // 便捷转发（内部使用）。
-    ng::core::DataRepository &data() { return m_ctx.data(); }
-    ng::host::ModuleHost &modules() { return m_host; }
-    ng::core::JobRecorder &recorder() { return m_recorder; }
+    nextpilot::plotscope::core::DataRepository &data() { return m_ctx.data(); }
+    nextpilot::plotscope::host::ModuleHost &modules() { return m_host; }
+    nextpilot::plotscope::core::JobRecorder &recorder() { return m_recorder; }
 
     // headless=true 时不建 UI 上下文，模块的 onAttach 不被调用。
     QHash<QString, QString> startup(bool headless,
                                     const QStringList &disabled = {});
 
 private:
-    ng::core::AppContext m_ctx;
-    ng::host::ModuleHost m_host;
-    ng::core::JobRecorder m_recorder;
+    nextpilot::plotscope::core::AppContext m_ctx;
+    nextpilot::plotscope::host::ModuleHost m_host;
+    nextpilot::plotscope::core::JobRecorder m_recorder;
 };
 
-} // namespace ng::app
+} // namespace nextpilot::plotscope::app

@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace ps::protocol
+namespace nextpilot::plotscope::protocol
 {
 
 bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &err);
@@ -836,4 +836,4 @@ QJsonObject toJson(const ProtocolDocument &doc)
     return root;
 }
 
-} // namespace ps::protocol
+} // namespace nextpilot::plotscope::protocol

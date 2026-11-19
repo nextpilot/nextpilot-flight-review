@@ -1,6 +1,6 @@
 #include "DataRepository.h"
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 DataRepository::DataRepository(QObject *parent) : QObject(parent) {}
@@ -69,4 +69,4 @@ void DataRepository::clear()
         Q_EMIT datasetRemoved(id);
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

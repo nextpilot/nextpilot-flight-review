@@ -5,7 +5,7 @@
 #include <QList>
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 一个知识包提供的**领域面板**的描述——纯数据，不含 QWidget 指针。
@@ -60,4 +60,4 @@ public:
     virtual QList<PanelSpec> panels() const = 0;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

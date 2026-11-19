@@ -24,8 +24,8 @@
 #include <QShowEvent>
 #include <QStatusBar>
 
-using namespace ng::core;
-using namespace ng::host;
+using namespace nextpilot::plotscope::core;
+using namespace nextpilot::plotscope::host;
 
 // SARibbon 是**静态库**：它的 qrc 资源（主题配色 JSON、图标等）不会随
 // 链接自动初始化——静态库的目标文件若未被引用，链接器会直接丢弃，
@@ -41,7 +41,7 @@ static void initSaribbonResources()
     Q_INIT_RESOURCE(SARibbonResource);
 }
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 MainWindow::MainWindow(AppContext &appCtx, QWidget *parent)
@@ -78,7 +78,7 @@ void MainWindow::declareStandardSlots()
     // 这里只做 GUI 侧的**幂等确认**（宿主已声明过，重复声明不会产生副本），
     // 保证即便脱离宿主单独使用 MainWindow，槽也齐备。
     UiSlotRegistry &slotReg = m_context->slotRegistry();
-    ng::host::declareSkeletonSlots(slotReg);
+    nextpilot::plotscope::host::declareSkeletonSlots(slotReg);
 
     // 骨架自带的**标准动作**：往标准插槽里放内容。
     //
@@ -124,6 +124,27 @@ void MainWindow::declareStandardSlots()
     themeAction.shortcut = QStringLiteral("Ctrl+T"); // 抄老 Ctrl+T 习惯
     slotReg.bindLocal(themeAction.area, themeAction, QStringLiteral("app.skeleton"));
 
+    // --- 页面/画布操作（抄老 PlottingRibbon 页面面板的体验）---
+    // 走 view action，由 CanvasWorkspace 集中处理（多画布/网格）。intentOp 留空：
+    // dispatcher 先按 action id 查 view action，命中即执行，与脚本同路径。
+    const QString pageArea = QStringLiteral("ribbon.group.home.view");
+    struct PageDef { const char *id; const char *label; const char *icon; };
+    static const PageDef kPages[] = {
+        {"page.addCanvas", "添加画布", "plus"},
+        {"page.removeCanvas", "删除画布", "trash"},
+        {"page.splitHorizontal", "左右拆分", "split_h"},
+        {"page.splitVertical", "上下拆分", "split_v"},
+    };
+    for (const PageDef &d : kPages)
+    {
+        UiAction a;
+        a.id = QString::fromLatin1(d.id);
+        a.label = QString::fromUtf8(d.label);
+        a.area = pageArea;
+        a.icon = QString::fromLatin1(d.icon);
+        slotReg.bindLocal(pageArea, a, QStringLiteral("app.skeleton"));
+    }
+
     // --- 图型库（抄老 PlottingRibbon::buildPlotGallery 的体验）---
     // 12 种图型分"常用/曲线/地图3D/仪表"四组。每项都是纯 UiAction，
     // 点击走 view action "plot.setType"（int/dispatcher 里路由），
@@ -157,10 +178,10 @@ void MainWindow::declareStandardSlots()
     // 由工具箱里已注册的格式驱动动态生成：每个驱动一项，放"文件格式"组；
     // 实时源放"实时源"组。点击走 data.source.<id> → 按该格式直接弹文件对话框。
     const QString srcArea = QStringLiteral("ribbon.group.home.sources");
-    for (ng::core::IToolContribution *c : m_appCtx.toolbox().contributions(
-             ng::core::ContributionKind::Format))
+    for (nextpilot::plotscope::core::IToolContribution *c : m_appCtx.toolbox().contributions(
+             nextpilot::plotscope::core::ContributionKind::Format))
     {
-        auto *driver = dynamic_cast<ng::core::IFormatDriver *>(c);
+        auto *driver = dynamic_cast<nextpilot::plotscope::core::IFormatDriver *>(c);
         if (!driver)
             continue;
         UiAction a;
@@ -175,10 +196,10 @@ void MainWindow::declareStandardSlots()
     // 常用组：把前四个格式驱动也放进去（抄老代码"常用 = 前 4 个加载器"）。
     {
         int n = 0;
-        for (ng::core::IToolContribution *c : m_appCtx.toolbox().contributions(
-                 ng::core::ContributionKind::Format))
+        for (nextpilot::plotscope::core::IToolContribution *c : m_appCtx.toolbox().contributions(
+                 nextpilot::plotscope::core::ContributionKind::Format))
         {
-            auto *driver = dynamic_cast<ng::core::IFormatDriver *>(c);
+            auto *driver = dynamic_cast<nextpilot::plotscope::core::IFormatDriver *>(c);
             if (!driver || n++ >= 4)
                 continue;
             UiAction a;
@@ -277,6 +298,10 @@ void MainWindow::build(ModuleHost &host)
                     {QStringLiteral("horizon"), QStringLiteral("attitude")},
                     {QStringLiteral("traj3d"), QStringLiteral("traj3d")},
                     {QStringLiteral("map"), QStringLiteral("track")},
+                    // 柱状/直方/频谱：fastplot 专用 Instrument widget，与仪表同视图。
+                    {QStringLiteral("bar"), QStringLiteral("bar")},
+                    {QStringLiteral("histogram"), QStringLiteral("histogram")},
+                    {QStringLiteral("fft"), QStringLiteral("fft")},
                 };
                 const QString instrKind = kInstrumentKind.value(kind);
                 if (!instrKind.isEmpty() && m_context)
@@ -479,4 +504,4 @@ bool MainWindow::hasSavedState() const
                         .isEmpty();
 }
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

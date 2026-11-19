@@ -24,7 +24,7 @@
 #include <QString>
 #include <QVector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 class SettingsStore;
@@ -98,4 +98,4 @@ public:
     bool removeByOrigin(const QString &origin);
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -5,7 +5,7 @@
 
 class QFile;
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 字节来源：**数据源的前端**——字节从哪来。
@@ -98,4 +98,4 @@ private:
     qint64 m_pos = 0;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

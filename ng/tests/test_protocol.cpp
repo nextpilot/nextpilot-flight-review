@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-using namespace ps::protocol;
+using namespace nextpilot::plotscope::protocol;
 
 #define CHECK(cond)                                                                      \
     do {                                                                                 \
@@ -161,7 +161,7 @@ int main(int argc, char *argv[])
 
         PsParserSink sink = collector.sink();
         PsError perr{};
-        bool ok = ng::ext::CustomProtocolParser::parseBuffer(
+        bool ok = nextpilot::plotscope::ext::CustomProtocolParser::parseBuffer(
             tplJson, reinterpret_cast<const uint8_t *>(frames.constData()),
             static_cast<uint32_t>(frames.size()), &sink, &perr);
         CHECK(ok);
@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
         {
             PsParserSink s2 = collector.sink();
             PsError e2{};
-            const PsParserVtable *vt = ng::ext::CustomProtocolParser::parserVtable();
+            const PsParserVtable *vt = nextpilot::plotscope::ext::CustomProtocolParser::parserVtable();
             void *ctx = vt->create();
             vt->feed(ctx, reinterpret_cast<const uint8_t *>(frames.constData()),
                      static_cast<uint32_t>(frames.size()), &s2, &e2);

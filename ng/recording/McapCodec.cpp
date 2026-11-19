@@ -2,7 +2,7 @@
 
 #include <QtEndian>
 
-namespace ng::rec
+namespace nextpilot::plotscope::rec
 {
 
 namespace
@@ -446,4 +446,4 @@ bool McapPlayer::nextMessage(McapMessage &out, QString *err)
     }
 }
 
-} // namespace ng::rec
+} // namespace nextpilot::plotscope::rec

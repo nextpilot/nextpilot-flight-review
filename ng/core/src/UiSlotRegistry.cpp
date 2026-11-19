@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 void UiSlotRegistry::declareSlot(const QString &area, const QString &label, const QString &owner,
@@ -123,4 +123,4 @@ QList<BoundUiAction> UiSlotRegistry::unboundActions() const
     return m_unbound;
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

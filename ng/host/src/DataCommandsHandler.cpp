@@ -16,7 +16,7 @@
 #include <QTextStream>
 #include <QVector>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
 namespace
 {

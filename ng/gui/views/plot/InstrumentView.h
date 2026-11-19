@@ -10,23 +10,26 @@
 
 class QStackedLayout;
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 class AttitudeIndicator;
+class Bar;
 class CompassRose;
 class DialGauge;
+class Histogram;
+class Spectrum;
 class TrackPlot;
 class Trajectory3D;
 class WaterfallPlot;
 }
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class AppContext;
 class IIntentExecutor;
 }
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 // 仪表视图：按 kind 在六个 fastplot 仪表之间切换，取数走 `plot.instrument` 意图。
@@ -52,25 +55,36 @@ public:
     // 按 kind 切换当前仪表（供图库 view action 调用）。
     void switchKind(const QString &kind);
 
+    // 从 AppContext 的当前活动通道推断角色并喂数据（gallery 切换后的数据绑定）。
+    // 无活动数据集/通道时返回 false，仪表保持空态——不猜、不造假数据。
+    bool renderFromActive(const QString &kind);
+
+    // 工厂注入运行态上下文（含数据仓），供 renderFromActive 读列名做角色推断。
+    void setAppContext(core::AppContext *ctx) { m_appCtx = ctx; }
+
 private:
     struct RoleBuffer
     {
         QVector<double> time;
         QVector<double> value;
-        std::optional<fastplot::ArrayData> data;
+        std::optional<nextpilot::plotscope::fastplot::ArrayData> data;
     };
 
-    const fastplot::ArrayData *bindRole(const QString &role, const QVariantMap &series);
+    const nextpilot::plotscope::fastplot::ArrayData *bindRole(const QString &role, const QVariantMap &series);
 
     core::IIntentExecutor &m_executor;
+    core::AppContext *m_appCtx = nullptr; // 非拥有；由工厂注入
     QStackedLayout *m_stack = nullptr;
 
-    fastplot::AttitudeIndicator *m_attitude = nullptr;
-    fastplot::CompassRose *m_compass = nullptr;
-    fastplot::DialGauge *m_gauge = nullptr;
-    fastplot::TrackPlot *m_track = nullptr;
-    fastplot::Trajectory3D *m_traj = nullptr;
-    fastplot::WaterfallPlot *m_waterfall = nullptr;
+    nextpilot::plotscope::fastplot::AttitudeIndicator *m_attitude = nullptr;
+    nextpilot::plotscope::fastplot::Bar *m_bar = nullptr;
+    nextpilot::plotscope::fastplot::CompassRose *m_compass = nullptr;
+    nextpilot::plotscope::fastplot::DialGauge *m_gauge = nullptr;
+    nextpilot::plotscope::fastplot::Histogram *m_histogram = nullptr;
+    nextpilot::plotscope::fastplot::Spectrum *m_spectrum = nullptr;
+    nextpilot::plotscope::fastplot::TrackPlot *m_track = nullptr;
+    nextpilot::plotscope::fastplot::Trajectory3D *m_traj = nullptr;
+    nextpilot::plotscope::fastplot::WaterfallPlot *m_waterfall = nullptr;
 
     QString m_kind;
     quint64 m_revision = 0;
@@ -78,11 +92,11 @@ private:
 
     // 瀑布序列的缓冲：reserve 后只 resize，容量不变，数组地址稳定（扩容搬移会让指针变野）。
     QVector<RoleBuffer> m_wfBuffers;
-    QVector<fastplot::ArrayData> m_wfData;
+    QVector<nextpilot::plotscope::fastplot::ArrayData> m_wfData;
 };
 
 // 工厂：视图层自注册进部件表，器官按 id 请求即可，外壳不认识这个类。
 QWidget *createInstrumentPanel(core::AppContext &appCtx, core::IIntentExecutor &executor,
                                QWidget *parent);
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

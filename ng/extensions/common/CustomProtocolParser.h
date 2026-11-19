@@ -4,7 +4,7 @@
 
 #include <QByteArray>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 // 自定义顺序协议解析器（SPI 实现）。
@@ -29,4 +29,4 @@ public:
                             PsParserSink *sink, PsError *err);
 };
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

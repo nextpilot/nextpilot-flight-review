@@ -23,9 +23,9 @@
 #include <QMainWindow>
 #include <QObject>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 namespace
@@ -51,7 +51,7 @@ QIcon iconFor(const QString &name)
 }
 } // namespace
 
-ShellBinder::ShellBinder(QMainWindow *window, ng::core::UiSlotRegistry &slotReg)
+ShellBinder::ShellBinder(QMainWindow *window, nextpilot::plotscope::core::UiSlotRegistry &slotReg)
     : m_window(window), m_slots(slotReg)
 {}
 
@@ -137,16 +137,16 @@ void ShellBinder::rebuildRibbon()
 
     // 插槽三级映射：RibbonPage → Category，RibbonGroup → Panel，UiAction → QAction
     QVector<SARibbonCategory *> built;
-    for (const ng::core::UiSlot &pageSlot : m_slots.slotsOfKind(ng::core::SlotKind::RibbonPage))
+    for (const nextpilot::plotscope::core::UiSlot &pageSlot : m_slots.slotsOfKind(nextpilot::plotscope::core::SlotKind::RibbonPage))
     {
         SARibbonCategory *category = m_ribbon->addCategoryPage(pageSlot.label);
         if (!category)
             continue;
         built << category;
 
-        for (const ng::core::UiSlot &groupSlot : m_slots.childrenOf(pageSlot.area))
+        for (const nextpilot::plotscope::core::UiSlot &groupSlot : m_slots.childrenOf(pageSlot.area))
         {
-            if (groupSlot.kind != ng::core::SlotKind::RibbonGroup)
+            if (groupSlot.kind != nextpilot::plotscope::core::SlotKind::RibbonGroup)
                 continue;
             SARibbonPanel *panel = category->addPanel(groupSlot.label);
             if (!panel)
@@ -162,9 +162,9 @@ void ShellBinder::rebuildRibbon()
             QStringList galleryOrder;                        // 组出现顺序
             int ordinaryIndex = 0;
 
-            for (const ng::core::BoundUiAction &bound : actions)
+            for (const nextpilot::plotscope::core::BoundUiAction &bound : actions)
             {
-                const ng::core::UiAction &ua = bound.action;
+                const nextpilot::plotscope::core::UiAction &ua = bound.action;
 
                 // 缩略图：优先按 visual 画（图型/格式），否则退回图标名。
                 QIcon ico = ua.visual.isEmpty() ? QIcon() : PlotThumbnails::plot(ua.visual);
@@ -456,4 +456,4 @@ bool ShellBinder::restoreLayout(const QByteArray &state)
     return m_dock ? m_dock->restoreState(state) : false;
 }
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

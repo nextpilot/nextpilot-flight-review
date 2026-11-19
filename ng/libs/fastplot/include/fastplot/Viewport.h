@@ -3,7 +3,7 @@
 #include <QPointF>
 #include <QRectF>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 // 视口：世界坐标（数据）与像素坐标（画布）的双向映射。
@@ -44,4 +44,4 @@ private:
     double m_yHi = 1.0;
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

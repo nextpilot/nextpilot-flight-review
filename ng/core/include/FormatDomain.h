@@ -2,7 +2,7 @@
 
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 工具箱的业务领域分类。
@@ -26,4 +26,4 @@ enum class FormatDomain
 const char *domainKey(FormatDomain domain);
 QString domainName(FormatDomain domain);
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

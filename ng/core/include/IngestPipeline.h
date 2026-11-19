@@ -12,7 +12,7 @@
 #include <memory>
 #include <vector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 摄取管道：**一个数据源（单前端）的字节流 → 多个解析器 → 多个数据集**。
@@ -126,4 +126,4 @@ private:
     std::map<int, std::vector<std::unique_ptr<SinkContext>>> m_sinkCtx;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

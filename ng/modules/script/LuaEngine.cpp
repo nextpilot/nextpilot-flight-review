@@ -14,9 +14,9 @@ extern "C" {
 
 #include <cstdio>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::script
+namespace nextpilot::plotscope::script
 {
 
 // 门面指针在 registry 中的 key。脚本拿不到它，只有 C 回调能取。
@@ -209,4 +209,4 @@ Result<void> LuaEngine::runFile(const QString &path)
     return runString(f.readAll(), QStringLiteral("@%1").arg(path));
 }
 
-} // namespace ng::script
+} // namespace nextpilot::plotscope::script

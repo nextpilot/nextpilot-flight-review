@@ -3,7 +3,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::host
+namespace nextpilot::plotscope::host
 {
 
 enum class ModuleKind
@@ -24,4 +24,4 @@ struct ModuleInfo
     QStringList requires;
 };
 
-} // namespace ng::host
+} // namespace nextpilot::plotscope::host

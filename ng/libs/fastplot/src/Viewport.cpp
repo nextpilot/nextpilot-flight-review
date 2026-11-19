@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 namespace
@@ -73,4 +73,4 @@ bool Viewport::sameAs(const Viewport &other) const
         && m_yLo == other.m_yLo && m_yHi == other.m_yHi;
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

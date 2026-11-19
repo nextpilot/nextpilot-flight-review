@@ -4,9 +4,9 @@
 #include "BuiltinPackRegistry.h"
 #include "UlogFormatDriver.h"
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 QString AutopilotPack::packId()
@@ -76,6 +76,6 @@ std::vector<std::unique_ptr<IToolContribution>> &AutopilotPack::contributions()
     return m_pack.contributions();
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext
 
-NG_REGISTER_PACK(::ng::ext::AutopilotPack)
+NG_REGISTER_PACK(::nextpilot::plotscope::ext::AutopilotPack)

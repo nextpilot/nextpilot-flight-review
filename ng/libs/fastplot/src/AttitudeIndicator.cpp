@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 AttitudeIndicator::AttitudeIndicator(QWidget *parent)
@@ -81,4 +81,4 @@ void AttitudeIndicator::paintInstrument(QPainter &painter, const QRectF &rect)
                          .arg(m_pitch, 0, 'f', 1));
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

@@ -1,8 +1,8 @@
 #include "BuiltinContributions.h"
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 GenericUiContribution::GenericUiContribution(QString id, QString name, FormatDomain domain,
@@ -30,4 +30,4 @@ GenericDocContribution::GenericDocContribution(QString id, QString name, FormatD
                                                QList<DocEntry> entries)
     : m_id(std::move(id)), m_name(std::move(name)), m_domain(domain), m_entries(std::move(entries)) {}
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext

@@ -5,7 +5,7 @@
 #include <QList>
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 文档贡献里描述的一篇知识文档（格式规格 / 使用说明 / 领域知识）。
@@ -25,4 +25,4 @@ public:
     virtual QList<DocEntry> entries() const = 0;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

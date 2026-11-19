@@ -7,7 +7,7 @@
 
 class QPainter;
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 class Viewport;
@@ -43,6 +43,10 @@ public:
 
     QFont font() const { return m_font; }
     void setFont(const QFont &font) { m_font = font; }
+
+    // 轴标题（xlabel/ylabel）：绘制在该轴刻度标签一侧的中点。
+    QString label() const { return m_label; }
+    void setLabel(const QString &label) { m_label = label; }
 
     int tickLength() const { return m_tickLength; }
     void setTickLength(int px) { m_tickLength = px; }
@@ -89,7 +93,8 @@ private:
     QColor m_labelColor{0xc9, 0xd1, 0xd9};
     QColor m_gridInk{0x1c, 0x24, 0x30};
     QFont m_font;
+    QString m_label;
     ScaleDiv m_div;
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

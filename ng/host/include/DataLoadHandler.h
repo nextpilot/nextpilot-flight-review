@@ -5,13 +5,13 @@
 
 #include <QByteArray>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 class DataRepository;
 class DataSourceRepository;
 class IngestPipeline;
 class SettingsStore;
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core
 
 // 数据加载意图的统一入口（宿主的系统级能力，不归属任何可卸载模块）。
 //
@@ -33,31 +33,31 @@ class SettingsStore;
 // 成功后会把本次"来源 + 解析器"记入工作区配置（WorkspaceDataConfig，settings
 // 的 ws/data/sources 键），供重启恢复。恢复重放时传 record=false，避免把恢复
 // 出来的源又当新打开重复记录。
-class DataLoadHandler final : public ng::core::IIntentHandler
+class DataLoadHandler final : public nextpilot::plotscope::core::IIntentHandler
 {
 public:
-    DataLoadHandler(ng::core::ExtensionRegistry &registry,
-                    ng::core::DataRepository &repo,
-                    ng::core::DataSourceRepository &sources,
-                    ng::core::IngestPipeline *pipeline = nullptr,
-                    ng::core::SettingsStore *settings = nullptr)
+    DataLoadHandler(nextpilot::plotscope::core::ExtensionRegistry &registry,
+                    nextpilot::plotscope::core::DataRepository &repo,
+                    nextpilot::plotscope::core::DataSourceRepository &sources,
+                    nextpilot::plotscope::core::IngestPipeline *pipeline = nullptr,
+                    nextpilot::plotscope::core::SettingsStore *settings = nullptr)
         : m_registry(registry), m_repo(repo), m_sources(sources),
           m_pipeline(pipeline), m_settings(settings) {}
 
-    bool canHandle(const ng::core::Intent &intent) const override;
-    ng::core::Result<ng::core::IntentResult> execute(
-        const ng::core::Intent &intent) override;
+    bool canHandle(const nextpilot::plotscope::core::Intent &intent) const override;
+    nextpilot::plotscope::core::Result<nextpilot::plotscope::core::IntentResult> execute(
+        const nextpilot::plotscope::core::Intent &intent) override;
 
 private:
     // 把本次打开记入工作区配置（来源/解析器/解析参数）。record=false 时跳过（恢复路径用）。
     void recordSpec(const QString &path, const QStringList &parserIds, bool record,
                     const QByteArray &parserOptions = QByteArray());
 
-    ng::core::ExtensionRegistry &m_registry;
-    ng::core::DataRepository &m_repo;
-    ng::core::DataSourceRepository &m_sources;
+    nextpilot::plotscope::core::ExtensionRegistry &m_registry;
+    nextpilot::plotscope::core::DataRepository &m_repo;
+    nextpilot::plotscope::core::DataSourceRepository &m_sources;
     // 摄取管道（宿主持有）。为空时 data.load 只走旧的 driver.load() 路径。
-    ng::core::IngestPipeline *m_pipeline = nullptr;
+    nextpilot::plotscope::core::IngestPipeline *m_pipeline = nullptr;
     // 设置库（可选）：成功后把路径记入"最近文件"。为空则不记录。
-    ng::core::SettingsStore *m_settings = nullptr;
+    nextpilot::plotscope::core::SettingsStore *m_settings = nullptr;
 };

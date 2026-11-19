@@ -7,7 +7,7 @@
 
 #include <memory>
 
-namespace ng::rec
+namespace nextpilot::plotscope::rec
 {
 
 // 录制输出端（后端）：把**已经成帧的字节**送到目的地。
@@ -54,4 +54,4 @@ public:
 // 未知 id 返回 nullptr（调用方据此报"后端未注册"）。
 std::unique_ptr<IByteSink> createByteSink(const QString &backendId, QString *err);
 
-} // namespace ng::rec
+} // namespace nextpilot::plotscope::rec

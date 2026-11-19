@@ -6,7 +6,7 @@
 #include <QString>
 #include <functional>
 
-namespace ng::host
+namespace nextpilot::plotscope::host
 {
 
 class IModule;
@@ -52,9 +52,9 @@ public:
 #define NG_REGISTER_MODULE(Cls)                                                          \
     namespace {                                                                           \
     const bool g_ng_module_reg_ =                                                        \
-        ::ng::host::BuiltinModuleRegistry::registerModule(                               \
+        ::nextpilot::plotscope::host::BuiltinModuleRegistry::registerModule(                               \
             Cls::moduleInfo(),                                                            \
-            []() -> ::ng::host::IModule * { return Cls::create(); });                     \
+            []() -> ::nextpilot::plotscope::host::IModule * { return Cls::create(); });                     \
     }
 
-} // namespace ng::host
+} // namespace nextpilot::plotscope::host

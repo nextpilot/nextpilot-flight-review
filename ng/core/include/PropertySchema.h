@@ -7,7 +7,7 @@
 #include <QVariant>
 #include <QVector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 属性契约（P0-2）：把老 PropertyManager 里"既是模型又是控件"的东西撕成两半。
@@ -89,4 +89,4 @@ inline const QString KeyKey = QStringLiteral("key");
 inline const QString ValueKey = QStringLiteral("value");
 } // namespace PropIntent
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

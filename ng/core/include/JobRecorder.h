@@ -4,7 +4,7 @@
 
 #include <QVector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 意图录制器：把执行过的意图序列录制成可回放的 Job。
@@ -34,4 +34,4 @@ private:
     bool m_recording = false;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -5,7 +5,7 @@
 #include <QStringList>
 #include <QVector>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 数据源种类。
@@ -81,4 +81,4 @@ struct DataSourceCapability
     QStringList recordBackends;         // 支持的录制后端 id（file/udp/...）
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

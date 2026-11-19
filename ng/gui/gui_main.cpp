@@ -30,14 +30,14 @@ int main(int argc, char *argv[])
     parser.addOption(openOpt);
     parser.process(app);
 
-    ng::app::App application;
-    ng::gui::MainWindow window(application.context());
+    nextpilot::plotscope::app::App application;
+    nextpilot::plotscope::gui::MainWindow window(application.context());
     window.build(application.modules());
 
     // 启动即载文件：走与 CLI 完全相同的数据.load 意图路径。
     if (parser.isSet(openOpt))
     {
-        ng::core::Intent intent;
+        nextpilot::plotscope::core::Intent intent;
         intent.op = QStringLiteral("data.load");
         intent.params[QStringLiteral("path")] = parser.value(openOpt);
         const auto result = application.modules().execute(intent);

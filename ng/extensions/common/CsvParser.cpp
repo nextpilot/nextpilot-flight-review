@@ -11,7 +11,7 @@
 #include <cstring>
 #include <vector>
 
-namespace ng::ext
+namespace nextpilot::plotscope::ext
 {
 
 namespace
@@ -491,7 +491,7 @@ bool CsvParser::parseBuffer(const uint8_t *data, uint32_t size, PsParserSink *si
     return rc == 0;
 }
 
-} // namespace ng::ext
+} // namespace nextpilot::plotscope::ext
 
 // 静态自注册：与外部插件走同一张 ParserRegistry。
-NG_REGISTER_PARSER(::ng::ext::CsvParser)
+NG_REGISTER_PARSER(::nextpilot::plotscope::ext::CsvParser)

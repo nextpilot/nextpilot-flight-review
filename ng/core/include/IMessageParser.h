@@ -40,7 +40,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 class IMessageParser : public IToolContribution
@@ -105,4 +105,4 @@ inline const QString Serial = QStringLiteral("serial"); // 串口
 inline const QString Can = QStringLiteral("can");       // CAN 总线
 } // namespace MessageTransport
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 Trajectory3D::Trajectory3D(QWidget *parent)
@@ -124,4 +124,4 @@ void Trajectory3D::paintInstrument(QPainter &painter, const QRectF &rect)
                               (m_z && !m_zLabel.isEmpty()) ? m_zLabel : QStringLiteral("-")));
 }
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

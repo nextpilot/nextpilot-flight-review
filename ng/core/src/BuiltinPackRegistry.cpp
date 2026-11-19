@@ -4,7 +4,7 @@
 
 #include <QHash>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 namespace
@@ -63,4 +63,4 @@ void BuiltinPackRegistry::reset()
     r.indexById.clear();
 }
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core

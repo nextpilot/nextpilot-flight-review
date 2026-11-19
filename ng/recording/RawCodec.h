@@ -9,7 +9,7 @@
 
 #include <memory>
 
-namespace ng::rec
+namespace nextpilot::plotscope::rec
 {
 
 // RAW 录制：app 内置的落盘格式之一。
@@ -93,4 +93,4 @@ private:
     qint64 m_total = 0;
 };
 
-} // namespace ng::rec
+} // namespace nextpilot::plotscope::rec

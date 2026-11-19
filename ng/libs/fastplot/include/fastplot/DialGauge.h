@@ -2,7 +2,7 @@
 
 #include "fastplot/Instrument.h"
 
-namespace fastplot
+namespace nextpilot::plotscope::fastplot
 {
 
 // 表盘：270° 弧 + 指针 + 中央数值。量程由调用方给（仪表不猜数据含义）。
@@ -33,4 +33,4 @@ private:
     QString m_title;
 };
 
-} // namespace fastplot
+} // namespace nextpilot::plotscope::fastplot

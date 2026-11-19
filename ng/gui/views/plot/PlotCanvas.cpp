@@ -3,7 +3,7 @@
 
 #include <fastplot/Panner.h>
 #include <fastplot/Picker.h>
-#include <fastplot/PlotWidget.h>
+#include <fastplot/Axes.h>
 #include <fastplot/Zoomer.h>
 
 #include <QContextMenuEvent>
@@ -19,17 +19,17 @@
 #include <cmath>
 #include <limits>
 
-using namespace ng::core;
+using namespace nextpilot::plotscope::core;
 
-namespace ng::gui
+namespace nextpilot::plotscope::gui
 {
 
 namespace
 {
 // 曲线色来自主题 token（数据语义色），不硬编码——深色主题下自动换成适配色。
 // 轴/网格/标题/背景色走 palette（见 applyPalette），同样随主题。
-const fastplot::AxisSide kSides[4] = {fastplot::AxisSide::Left, fastplot::AxisSide::Right,
-                                      fastplot::AxisSide::Bottom, fastplot::AxisSide::Top};
+const nextpilot::plotscope::fastplot::AxisSide kSides[4] = {nextpilot::plotscope::fastplot::AxisSide::Left, nextpilot::plotscope::fastplot::AxisSide::Right,
+                                      nextpilot::plotscope::fastplot::AxisSide::Bottom, nextpilot::plotscope::fastplot::AxisSide::Top};
 
 // 多曲线配色盘：从主题 highlight 出发做色相轮换，保证深浅主题都可读。
 // 不写死十六进制——取 palette 的一个基色，再按索引做 HSL 偏移。
@@ -55,7 +55,7 @@ PlotCanvas::PlotCanvas(QWidget *parent)
     setAcceptDrops(true); // 数据集树的"列"节点可拖到画布（ChannelMime）
 
     // 绘制全部委托给 fastplot：本类不再自己算坐标、画网格、画包络。
-    m_plot = new fastplot::PlotWidget(this);
+    m_plot = new nextpilot::plotscope::fastplot::Axes(this);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -63,23 +63,23 @@ PlotCanvas::PlotCanvas(QWidget *parent)
 
     // 交互部件：滚轮/框选缩放、左键平移、悬停读数。
     // 三者的状态机都在库里，本类只做接线——画布自身仍然只负责画。
-    m_zoomer = new fastplot::Zoomer(m_plot, this);
-    m_panner = new fastplot::Panner(m_plot, this);
-    m_picker = new fastplot::Picker(m_plot, this);
+    m_zoomer = new nextpilot::plotscope::fastplot::Zoomer(m_plot, this);
+    m_panner = new nextpilot::plotscope::fastplot::Panner(m_plot, this);
+    m_picker = new nextpilot::plotscope::fastplot::Picker(m_plot, this);
 
-    connect(m_zoomer, &fastplot::Zoomer::zoomed, this, [this] {
+    connect(m_zoomer, &nextpilot::plotscope::fastplot::Zoomer::zoomed, this, [this] {
         double t0 = 0.0;
         double t1 = 0.0;
         if (visibleTimeRange(&t0, &t1))
             Q_EMIT rangeChanged(t0, t1);
     });
-    connect(m_panner, &fastplot::Panner::panned, this, [this] {
+    connect(m_panner, &nextpilot::plotscope::fastplot::Panner::panned, this, [this] {
         double t0 = 0.0;
         double t1 = 0.0;
         if (visibleTimeRange(&t0, &t1))
             Q_EMIT rangeChanged(t0, t1);
     });
-    connect(m_picker, &fastplot::Picker::hovered, this,
+    connect(m_picker, &nextpilot::plotscope::fastplot::Picker::hovered, this,
             [this](double x, double y, bool valid) {
                 if (!valid)
                 {
@@ -209,11 +209,12 @@ bool PlotCanvas::setSeriesAxis(const QString &key, bool rightAxis)
 
 bool PlotCanvas::setPlotKind(const QString &kind)
 {
-    // 本画布真正在支持的图型：折线 / 散点。仪表/地图/3D 由外壳切到专用视图，
-    // 不在这里假装支持——返回 false 让上层明确路由。
+    // 本画布真正支持的图型：折线 / 散点 / XY 曲线（都是"曲线"模型，走 LOD 折线绘制）。
+    // 柱状/直方/频谱是另一种模型（无时间轴、无 LOD），由 fastplot 的专用 Instrument
+    // widget 承载，走 plot-instrument 视图；仪表/地图/3D 同理。返回 false 让上层明确路由，
+    // 不在这里假装支持。
     static const QStringList kHere = {QStringLiteral("timeseries"), QStringLiteral("scatter"),
-                                      QStringLiteral("xy"), QStringLiteral("bar"),
-                                      QStringLiteral("histogram"), QStringLiteral("fft")};
+                                      QStringLiteral("xy")};
     if (!kHere.contains(kind))
         return false;
     m_plotKind = kind;
@@ -244,19 +245,19 @@ void PlotCanvas::pushToPlot()
         if (s.lod.isEmpty() || !s.visible)
             continue;
         // 只转三元组（<= 像素宽），不复制原始数据——零拷贝的边界就在这里。
-        QVector<fastplot::LodPoint> pts;
+        QVector<nextpilot::plotscope::fastplot::LodPoint> pts;
         pts.reserve(s.lod.size());
         for (const LodTriple &t : s.lod)
-            pts.push_back(fastplot::LodPoint{t.x, t.min, t.max});
+            pts.push_back(nextpilot::plotscope::fastplot::LodPoint{t.x, t.min, t.max});
 
-        auto &curve = m_plot->addCurve(fastplot::Curve::fromLod(pts, s.color, s.lineWidth));
+        auto &curve = m_plot->addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(pts, s.color, s.lineWidth));
         curve.setName(s.legendName());
-        curve.setYAxis(s.rightAxis ? fastplot::AxisSide::Right : fastplot::AxisSide::Left);
+        curve.setYAxis(s.rightAxis ? nextpilot::plotscope::fastplot::AxisSide::Right : nextpilot::plotscope::fastplot::AxisSide::Left);
         // 散点图：只画符号不连线（fastplot 库能力，老 Scatter 模式的体验）。
         if (m_plotKind == QStringLiteral("scatter"))
         {
             curve.setScatter(true);
-            curve.setSymbol(fastplot::Symbol::Circle);
+            curve.setSymbol(nextpilot::plotscope::fastplot::Symbol::Circle);
         }
         // 按曲线挂的轴分别累计 min/max。
         double &lo = s.rightAxis ? rightLo : leftLo;
@@ -439,7 +440,7 @@ void PlotCanvas::applyPalette()
     const QPalette &pal = palette();
     m_plot->setBackground(pal.color(QPalette::Base));
     m_plot->setTitleColor(pal.color(QPalette::WindowText));
-    for (fastplot::AxisSide side : kSides)
+    for (nextpilot::plotscope::fastplot::AxisSide side : kSides)
     {
         auto &axis = m_plot->axis(side);
         axis.setInk(pal.color(QPalette::Mid));
@@ -532,4 +533,4 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
     event->accept();
 }
 
-} // namespace ng::gui
+} // namespace nextpilot::plotscope::gui

@@ -5,7 +5,7 @@
 
 #include <QString>
 
-namespace ng::core
+namespace nextpilot::plotscope::core
 {
 
 // 工具箱里任意"贡献"的最小共性。
@@ -42,4 +42,4 @@ private:
     QString m_provider;
 };
 
-} // namespace ng::core
+} // namespace nextpilot::plotscope::core
