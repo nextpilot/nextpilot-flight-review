@@ -1,6 +1,6 @@
 # Core 重构总方案：core 消亡 + 机制抽库 + 解析器合并 + 命名收敛（2026-11-19 开工版）
 
-> **状态：✅ 需求方已拍板，架构师已做两轮评审，本轮起开工实现。**
+> **状态：✅ 全部落地完成（2026-11-19）：B1–B8 + B7 core 消亡 8 簇全部完成；core 目录/target 删除，全仓零 `core::` 残留；Release + Debug 双配置 18/18。**
 > 需求方原话："写成 roadmap 方案，然后开工：① schema、register、intent、dataset/repo 抽象成库；② IMessageParser 合并、去掉 IFormatDriver；③ 部分命名。你是架构师，要判断合理性，我是需求方。"
 > **v2 升级（2026-11-19 追加，见 §7）**：需求方进一步裁决——"core 我都不想要了，有意义的就一个 AppContext，其他抽象的实现尽量放在 libs"，并立铁律"'libs 不允许实例化对象（除非静态对象），只能是函数或 class'"。架构师据此把终态从"core 收敛为核心契约层"升级为 **core 目录彻底消亡**：全部内容按机制下沉 libs，AppContext 归 `libs/context` 并改构造注入。**以 §7 为准；§1–§6 作为开工基线与历史裁决保留。**
 > 本文件是**总方案 + 开工计划**，三条主线的详细裁决仍以三份专项文档为准：
@@ -370,14 +370,14 @@ foundation(Result)
 
 | 簇 | 内容 | 动作 |
 |---|---|---|
-| 1 | `foundation`：Result/Error/fail、Events topics | namespace core→foundation，全仓引用前缀更新 |
-| 2 | `dataset`：Dataset/DataRepository + core 里 Source/DataSource/SourceRegistry | 迁入 dataset，namespace→dataset |
-| 3 | `intent`：Intent/IIntentExecutor/JobRecorder | namespace core→intent |
-| 4 | uischema 数据簇：Selection/Transform/PropertySchema | 迁入 uischema，namespace→uischema |
-| 5 | registry 贡献簇：ExtensionRegistry + I*Contribution + BuiltinPack + UiSlot/PanelFactory + 6 静态表 | 迁入 registry（部分 host），namespace→registry |
-| 6 | parser 簇：IMessageParser/DecodedFrame/`ps_*_spi`/ParserRegistry/IByteSource/Ingest* | 迁入新库 libs/parser（C ABI 只搬家不改结构）；IngestPipeline 运行时编排归属本簇定 |
-| 7 | context 簇：AppContext/SettingsStore/WorkspaceDataConfig/ScriptFacade/InteractionRegistry | 迁入 libs/context，namespace→context，实例仍在 app |
-| 8 | 收尾：删 core 目录 + target、全仓去 `ng_core` 链接、守卫 core WARNING→FATAL | 验收：无 core namespace 残留、无 core 目录 |
+| 1 ✅ | `foundation`：Result/Error/fail、Events topics | namespace core→foundation，全仓引用前缀更新 |
+| 2 ✅ | `dataset`：Dataset/DataRepository + core 里 Source/DataSource/SourceRegistry | 迁入 dataset，namespace→dataset |
+| 3 ✅ | `intent`：Intent/IIntentExecutor/JobRecorder | namespace core→intent |
+| 4 ✅ | uischema 数据簇：Selection/Transform/PropertySchema | 迁入 uischema，namespace→uischema |
+| 5 ✅ | registry 贡献簇：ExtensionRegistry + I*Contribution + BuiltinPack + UiSlot/PanelFactory + 6 静态表 | 迁入 registry（部分 host），namespace→registry |
+| 6 ✅ | parser 簇：IMessageParser/DecodedFrame/`ps_*_spi`/ParserRegistry/IByteSource/Ingest* | 迁入新库 libs/parser（C ABI 只搬家不改结构）；IngestPipeline 运行时编排归属本簇定 |
+| 7 ✅ | context 簇：AppContext/SettingsStore/WorkspaceDataConfig/ScriptFacade/InteractionRegistry | 迁入 libs/context，namespace→context，实例仍在 app |
+| 8 ✅ | 收尾：删 core 目录 + target、全仓去 `ng_core` 链接、守卫 core WARNING→FATAL | 验收：无 core namespace 残留、无 core 目录 |
 
 **过渡兼容**：每簇收口时用 core namespace 的 `using` 别名过渡（§7.4「演进有路」），终态随 core 目录删除一并去除；别名期间守卫 WARNING 属合法中间态。
 
