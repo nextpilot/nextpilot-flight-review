@@ -52,17 +52,15 @@ int main(int argc, char *argv[])
     }
     const QString out = QString::fromLocal8Bit(argv[1]);
 
-    // --protocol <输出png> [模板路径] [样例帧hex]：截图协议编辑器（触发校验/试算）。
+    // --protocol <输出png> [模板路径] [样例帧hex] [页签序号]：截图协议编辑器（触发校验/试算）。
     // 给模板路径时按"打开现有协议"的真实路径载入（走 ProtocolTemplateStore，与 GUI 同一份）。
     if (out == QStringLiteral("--protocol") && argc >= 3)
     {
         const QString png = QString::fromLocal8Bit(argv[2]);
         const QString tplPath = argc >= 4 ? QString::fromLocal8Bit(argv[3]) : QString();
         const QString frameHex = argc >= 5 ? QString::fromLocal8Bit(argv[4]) : QString();
+        const int tabIndex = argc >= 6 ? QString::fromLocal8Bit(argv[5]).toInt() : 0;
         nextpilot::plotscope::gui::ProtocolEditorDialog dlg;
-        // 对话框里有两个 QPlainTextEdit（JSON 模板框 + hex 样例框）。
-        // 不依赖构造顺序：含 "{" 的是 JSON 框（保持 blankTemplate 不动），
-        // 另一个是 hex 样例框，写入样例帧。
         QByteArray tpl;
         QString terr;
         if (!tplPath.isEmpty() &&
@@ -79,6 +77,7 @@ int main(int argc, char *argv[])
                 btn->text() == QStringLiteral("试算单帧"))
                 btn->click();
         }
+        dlg.selectTab(tabIndex);
         dlg.show();
         QCoreApplication::processEvents();
         QTimer::singleShot(200, [&] {

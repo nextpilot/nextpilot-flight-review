@@ -67,6 +67,9 @@ public:
     // 写入样例帧（hex，空格或连写均可），供截图与外部调用。
     void setSampleFrame(const QString &hex);
 
+    // 切到指定页签（0 顶层字段 / 1 帧结构 / 2 子协议 / 3 JSON），供截图与自动化。
+    void selectTab(int index);
+
 private:
     void newDoc();
     void openDoc();
@@ -77,7 +80,7 @@ private:
     void configureChecksumTransform();
 
     // --- 协议页 ---
-    void buildDesignPage();
+    void buildDesignPages();  // 顶层字段 / 帧结构 / 子协议 三页 + JSON 页
     void refreshFromJson();          // JSON -> 控件（打开/切回协议页时）
     void commitDesign();             // 控件 -> JSON（切页签/校验/试算/保存前）
     QJsonObject collectDoc() const;  // 以 JSON 为底，覆盖表单、段表与变体
@@ -110,9 +113,9 @@ private:
 
     QTabWidget *m_tabs = nullptr;
     QPlainTextEdit *m_json = nullptr;
-    QPlainTextEdit *m_hex = nullptr;
+    QLineEdit *m_hex = nullptr;   // 样例帧是单行输入，不需要多行编辑框
     QLabel *m_validation = nullptr;
-    QTreeWidget *m_preview = nullptr;
+    QTableWidget *m_preview = nullptr;  // 试算结果：字段 / 偏移 / 值 三列严格对齐
     QLabel *m_status = nullptr;
     QPushButton *m_saveBtn = nullptr;
 
@@ -123,6 +126,7 @@ private:
     QComboBox *m_layout = nullptr;
     QSpinBox *m_maxsize = nullptr;
     QComboBox *m_endian = nullptr;
+    QLineEdit *m_terminator = nullptr;  // text 帧终止标记（可选）
     QLineEdit *m_tsExpr = nullptr;
     QComboBox *m_tsUnit = nullptr;
 
@@ -141,6 +145,7 @@ private:
     bool m_syncing = false;
     bool m_dirty = false;
     int m_variantRow = -1;   // 变体表选中行
+    int m_jsonTab = 0;       // JSON 页索引（切页签时判"是否要落表"）
 };
 
 } // namespace nextpilot::plotscope::gui
