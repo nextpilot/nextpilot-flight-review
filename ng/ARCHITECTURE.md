@@ -843,6 +843,8 @@ kernel       Rust：typed 表 · LOD · 缓存 · 算子（只经 ps_kernel.h）
 依赖严格向下。**core 无 Qt Widgets、无第三方 GUI 库**——headless 纯净的保证，
 也是 CLI 与 GUI 行为一致的前提。
 
+> 上述分层是机制视角。各目录的**定位、放什么/禁放什么、可依赖/禁依赖**以 [`LAYERS.md`](LAYERS.md) 为准——新增代码先在那里判归属。跨层依赖由 `cmake/LayerContractGuard.cmake` 在 configure 期强制。B7 后 core 目录删除，届时以 LAYERS.md 终态为准。
+
 ## 9. 统一意图管道
 
 所有前端的所有请求，最终都是一个 `Intent{op, params}`，交给同一个执行器。

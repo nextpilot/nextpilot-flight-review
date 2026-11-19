@@ -136,3 +136,7 @@ add_subdirectory(tests)
 # 规则与豁免说明见 cmake/LibBoundaryGuard.cmake 顶部及 AGENTS.md §5。
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibBoundaryGuard.cmake")
 ng_lib_guard_boundary()
+
+# 全层依赖方向守卫：层定义见 LAYERS.md，拦跨层倒挂与同层横向。
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/LayerContractGuard.cmake")
+ng_layer_guard_contract()

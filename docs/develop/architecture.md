@@ -1,6 +1,13 @@
-# 当前架构与装配
+# 老工程架构与装配（已冻结）
 
-> 本文件是可直接使用的开发入门，不是历史决策记录。仓库级硬边界见 [`../../AGENTS.md`](../../AGENTS.md)；历史架构基线与决策在 [`../roadmap/architecture-v1.md`](../roadmap/architecture-v1.md)。
+> **此文档描述的是 `src/` 老工程**（`ps_application_shell` / `ps_*` target 那套），不是当前活跃开发的 `ng/` 工程。`src/` 已冻结，只修 bug、不新增能力。
+>
+> 新代码一律进 `ng/`，其权威文档是：
+> - 目录定位与依赖契约：[`../../ng/LAYERS.md`](../../ng/LAYERS.md)
+> - 机制与架构总纲：[`../../ng/ARCHITECTURE.md`](../../ng/ARCHITECTURE.md)
+> - 编码硬约束：[`../../ng/AGENTS.md`](../../ng/AGENTS.md)
+>
+> 下文仅作老工程维护参考，不要拿它的目录/术语指导 `ng/` 开发。
 
 ## 运行时组成
 
