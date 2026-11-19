@@ -21,6 +21,7 @@
 #include "DecodedFrame.h"
 #include "Domain.h"
 #include "IToolContribution.h"
+#include "ParamSpec.h"
 
 #include <QByteArray>
 #include <QFileInfo>
@@ -90,8 +91,10 @@ public:
     }
 
     // === 配置契约 ===
-    // 参数规格（纯 metadata）。旧 configSchema/importSchema 的 JSON 将由 SchemaEngine 消费；
-    // B6 保留 JSON 接口兼容，paramSpecs() 在 B6-c 接入。
+    // 参数规格（纯 metadata）。默认从 configSchema() 的 fields 转换，供 headless 查询与
+    // uischema 渲染；字段简单的解析器可直接用，动态探测字段的解析器保留 configSchema 自渲染。
+    virtual QVector<nextpilot::plotscope::uischema::ParamSpec> paramSpecs() const;
+    // schema 的 JSON 视图（含 label/hint/动态列/probe 预览等），各解析器按需要覆盖。
     virtual QJsonObject configSchema() const { return QJsonObject(); }
 
     virtual bool configure(const QJsonObject &params, QString *err = nullptr);

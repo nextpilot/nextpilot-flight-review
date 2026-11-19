@@ -6,6 +6,8 @@
 #include "ExtensionRegistry.h"
 #include "Domain.h"
 #include "IMessageParser.h"
+#include "QtFieldRenderer.h"
+#include "SchemaEngine.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -177,97 +179,40 @@ void ProtocolInspectorDialog::rebuildParamFields()
 {
     while (m_paramForm->rowCount() > 0)
         m_paramForm->removeRow(0);
-    m_paramFields.clear();
     if (!m_current)
         return;
 
-    // configSchema 驱动：加参数只改协议类的 schema，本对话框代码不动。
-    const QJsonArray specs = m_current->configSchema().value(QStringLiteral("fields")).toArray();
-    for (const QJsonValue &fv : specs)
+    // 参数区走统一 uischema：解析器只写 paramSpecs()，控件映射全在渲染器。
+    using namespace nextpilot::plotscope::uischema;
+    QHash<QString, QString> labels;
+    const QJsonArray fields = m_current->configSchema().value(QStringLiteral("fields")).toArray();
+    for (const QJsonValue &v : fields)
     {
-        const QJsonObject f = fv.toObject();
-        ParamField pf;
-        pf.key = f.value(QStringLiteral("key")).toString();
-        pf.type = f.value(QStringLiteral("type")).toString(QStringLiteral("string"));
-        const QString label = f.value(QStringLiteral("label")).toString(pf.key);
-        QWidget *editor = nullptr;
-
-        if (pf.type == QLatin1String("bool"))
-        {
-            auto *cb = new QCheckBox(f.value(QStringLiteral("hint")).toString());
-            cb->setChecked(f.value(QStringLiteral("default")).toBool());
-            editor = cb;
-        }
-        else if (pf.type == QLatin1String("int"))
-        {
-            auto *sp = new QSpinBox;
-            sp->setRange(f.value(QStringLiteral("min")).toInt(0),
-                         f.value(QStringLiteral("max")).toInt(1000000));
-            sp->setValue(f.value(QStringLiteral("default")).toInt());
-            editor = sp;
-        }
-        else if (pf.type == QLatin1String("enum"))
-        {
-            auto *cb = new QComboBox;
-            for (const QJsonValue &ov : f.value(QStringLiteral("options")).toArray())
-            {
-                const QJsonObject o = ov.toObject();
-                cb->addItem(o.value(QStringLiteral("label")).toString(),
-                            o.value(QStringLiteral("value")).toString());
-            }
-            const int idx = cb->findData(f.value(QStringLiteral("default")).toString());
-            if (idx >= 0)
-                cb->setCurrentIndex(idx);
-            editor = cb;
-        }
-        else
-        {
-            // string / file：file 用只读展示路径，点"浏览"由统一入口处理（这里给输入）。
-            auto *line = new QLineEdit(f.value(QStringLiteral("default")).toString());
-            line->setPlaceholderText(f.value(QStringLiteral("hint")).toString());
-            editor = line;
-        }
-
-        if (!editor)
-            continue;
-        pf.editor = editor;
-        m_paramForm->addRow(label, editor);
-        m_paramFields.append(pf);
+        const QJsonObject f = v.toObject();
+        const QString key = f.value(QStringLiteral("key")).toString();
+        const QString label = f.value(QStringLiteral("label")).toString();
+        if (!key.isEmpty() && !label.isEmpty())
+            labels.insert(key, label);
     }
+    m_paramFormModel = SchemaEngine::compile(m_current->protocolName(),
+                                             m_current->paramSpecs(), labels);
+    QtFieldRenderer::render(m_paramFormModel, m_paramForm, m_paramHost);
 }
 
 QJsonObject ProtocolInspectorDialog::collectParams() const
 {
-    // 与 configSchema 同构的键值对。协议 Params 目前均为平铺 key
-    // （如 database_path）；嵌套 key 的点分写回在 param() 读取侧已支持，
-    // 若将来 schema 出现嵌套字段，在这里按点分拆层写回即可。
+    using namespace nextpilot::plotscope::uischema;
     QJsonObject out;
-    for (const ParamField &pf : m_paramFields)
+    for (QWidget *w : m_paramHost->findChildren<QWidget *>())
     {
-        if (pf.type == QLatin1String("bool"))
-        {
-            if (auto *cb = qobject_cast<QCheckBox *>(pf.editor))
-                out.insert(pf.key, cb->isChecked());
-        }
-        else if (pf.type == QLatin1String("int"))
-        {
-            if (auto *sp = qobject_cast<QSpinBox *>(pf.editor))
-                out.insert(pf.key, sp->value());
-        }
-        else if (pf.type == QLatin1String("enum"))
-        {
-            if (auto *cb = qobject_cast<QComboBox *>(pf.editor))
-                out.insert(pf.key, cb->currentData().toString());
-        }
-        else
-        {
-            if (auto *line = qobject_cast<QLineEdit *>(pf.editor))
-            {
-                // 支持 "database_path" 等 file 字段；用户为空则不传（走内置默认）。
-                if (!line->text().isEmpty())
-                    out.insert(pf.key, line->text());
-            }
-        }
+        const QString key = QtFieldRenderer::keyOf(w);
+        if (key.isEmpty())
+            continue;
+        const QVariant value = QtFieldRenderer::valueOf(w);
+        // 空字符串不传，让解析器走内置默认（如 database_path 留空用内置模板）。
+        if (value.typeId() == QMetaType::QString && value.toString().isEmpty())
+            continue;
+        out.insert(key, QJsonValue::fromVariant(value));
     }
     return out;
 }

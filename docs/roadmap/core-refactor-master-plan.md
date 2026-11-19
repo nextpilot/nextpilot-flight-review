@@ -132,7 +132,7 @@
 | **B3** ✅ | `ng_registry` 最小 CRUD 核 + 自注册助手；`PanelFactoryRegistry` 薄壳化验证 | `libs/registry/`、`core/src/PanelFactoryRegistry.cpp`、`test_registry_standalone.cpp` | 独立 target 只链 ng_registry+Qt6::Core 走通 CRUD+自注册+工厂型条目（无 core/QWidget/Rust 反向依赖，编译即证）；对外 API/宏零改动；13/13 |
 | **B4** ✅ | `ng_intent` 移出 5 个意向类型 | `libs/intent/`、`core/`、`AppContext`/`ScriptFacade` | 独立验收 `ng_test_intent_standalone`（只链 ng_intent+foundation）走通 Job JSON 往返+缺 op 报错+录制器+契约实现；Release+Debug 14/14 |
 | **B5**（部分） | `ng_uischema`：纯 metadata 契约 + `SchemaEngine` + 唯一 Qt 渲染器；TransformEditorDialog 已接入 | `libs/uischema/`、`core/Transform`、`gui/TransformEditorDialog` | 唯一 `FieldType→QWidget` 映射落在 uischema；headless compile/JSON 往返测试 + transform 适配测试；Release+Debug 16/16。ImportDialog/ProtocolInspectorDialog 待 B6 `paramSpecs()` 接口后接入 |
-| **B6** | 取消 `IFormatDriver` + 三个门面类，统一 `IMessageParser`（多输出函数）；命名收敛 `SourceRegistry`/`Domain`/`Toolbox` | `core/`、`extensions/`、`ExtensionRegistry`、`ARCHITECTURE.md` | 无 `IFormatDriver`/`IDataParser`/`XxxFormatDriver` 门面类型；无旧命名残留；11/11 |
+| **B6** ✅ | 取消 `IFormatDriver` + 三个门面类，统一 `IMessageParser`（多输出函数）；命名收敛 `SourceRegistry`/`Domain`/`Toolbox`；ProtocolInspectorDialog 接入 uischema | `core/`、`extensions/`、`ExtensionRegistry`、`ARCHITECTURE.md` | 无 `IFormatDriver`/`IDataParser`/`XxxFormatDriver` 门面类型；无旧命名残留；Release+Debug 16/16。ImportDialog 动态探测字段接入见 §5.2 |
 | **B8** | Transform 输入控件重构：`TransformField` 可编辑下拉 + 独立 `LuaEditor` + 脚本 `describe()` 自述元数据 | `gui/TransformField`、`gui/LuaEditor`、`modules/script`、`core/Transform` | 下拉可选算子（带说明）/ 直接敲表达式 / 编辑按钮进 Lua Editor；脚本落 `scripts/ops/*.lua` 并注册 `lua.<name>`；能力过滤与在线调试保留；双配置全绿 |
 
 **每批硬指标**：Release + Debug 双配置 `ctest` 11/11 全绿；新库领域纯净（无飞行/CAN/姿态词）；headless 可编译。
@@ -155,6 +155,13 @@
 1. **两条通路输出不同不是合并障碍**：`IFormatDriver` 经宿主管道产 Dataset（画图），`IMessageParser` 产 `DecodedFrame`（协议检查器）。B6 合并只动 C++ 声明层——门面的 `parserId`/`suffixes`/`preferredTableName`/`probe`/`paramSpecs` 声明并入 `IMessageParser` 自述，`parseFrames`/`parseMessages` 作多输出函数；SPI 与两条执行通路零改动。裁决 §2.3 本就如此，此处确认无歧义。
 2. **`load()` 全 `eunsupported`**：三个门面类的 `load()` 都已返回 `eunsupported`，取消门面无功能损失；`DataLoadHandler` 旧路径（`parserId` 为空才走 `load()`）随门面类一并删除，只剩统一管道一条路。
 3. **`prepareParserOptions` 读模板文件不违反解析器纪律**：CustomProtocol 在宿主调用时把 `templatePath` 展开成内嵌 `template` 文本，解析器本身仍不读文件、只吃 `configure` 参数。该函数是**宿主侧编排步骤**，归并后移到统一入口（不再是"格式门面的方法"），`IMessageParser::configure` 禁读文件的约束保持。
+
+### 5.2 B6-c 收口状态（2026-11-20，实现方）
+
+`paramSpecs()` 统一参数契约已落地：`IMessageParser::paramSpecs()` 默认从 `configSchema()` 的 fields 转纯 metadata（key/type/default/min/max/options/fileFilter），headless 可查。`configSchema()` 保留 virtual，供含额外信息的解析器覆盖。
+
+- **已接入**：`ProtocolInspectorDialog` 参数区改为 `paramSpecs() → SchemaEngine.compile → QtFieldRenderer.render`，删除手绘 bool/int/enum/string switch；中文 label 从 configSchema 作术语表覆盖传入。`collectParams()` 改用渲染器统一 `keyOf/valueOf`。
+- **遗留：ImportDialog 未接入 uischema**。原因（实现方复核）：CSV 的 `time.index`/`time.date` 等枚举候选来自 `probe()` 结果的**列下标**，而 uischema 的 enum 用字符串 label 作值、无 probe 注入通道；强行接入要么扩展 `ParamSpec` 加 `optionsFrom/initialFrom` 并让渲染器接受 probe 数据（§2.5 裁决项，属独立中等重构），要么丢失动态列能力导致探测预览退化。ImportDialog 暂保留自渲染（schema 读 `configSchema()`），其动态列/预览/警告交互不动。此项不阻塞 B6 验收（门面类型清零 + 命名收敛 + 双配置全绿均达成），作为独立小批后续推进。
 
 ---
 

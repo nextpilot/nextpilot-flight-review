@@ -4,6 +4,8 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "FormSchema.h"
+
 class QComboBox;
 class QFormLayout;
 class QLabel;
@@ -65,13 +67,7 @@ private:
     QTreeWidget *m_fields = nullptr;
     QLabel *m_status = nullptr;
 
-    struct ParamField
-    {
-        QString key;
-        QString type;
-        QWidget *editor = nullptr;
-    };
-    QList<ParamField> m_paramFields;
+    nextpilot::plotscope::uischema::FormSchema m_paramFormModel;
 };
 
 } // namespace nextpilot::plotscope::gui

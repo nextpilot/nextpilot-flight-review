@@ -537,3 +537,12 @@ class IMessageParser : public IConfigurableContribution {   // 唯一解析器�
 - **独立验收**：`ng_test_uischema_standalone` 只链 ng_uischema + foundation + Qt Core（link.txt 实证无 Widgets/ng_core，headless 成立），覆盖各类型映射、label 生成、类型化默认值、依赖判定、JSON 往返、零 UI 词汇断言；`ng_test_transform_adapter` 覆盖 TransformParam→ParamSpec→FormSchema 适配链路（headless，链 core 不拉 GUI）。
 - **范围说明**：ImportDialog / ProtocolInspectorDialog 的 schema 来自 `IFormatDriver::importSchema` / `IMessageParser::configSchema`，须待 B6 合并解析器并加 `paramSpecs()` 后才能接同一引擎，故本批不碰。
 - **验收**：Release + Debug ctest 16/16 双绿；构建守卫通过。
+
+### 11.4 B6：解析器统一 + 命名收敛 + paramSpecs 收口（2026-11-20，✅ 已实施）
+
+按总方案 B6 落地 §9.3 / §10.3.1 的解析器合并裁决，分三个子批（各自独立提交、双配置验收）：
+
+- **B6-b 命名收敛**：`DataSourceRepository` → `SourceRegistry`、`FormatDomain` → `Domain`、`FormatToolbox` → `Toolbox`，6 文件 `git mv` + 全仓 51 处符号/include 替换，零旧名残留。`domainKey/domainName` 函数名保留，namespace 仍 `core` 待 B7 收口。
+- **B6-a 接口统一**：删 `IFormatDriver.h/.cpp` 与三个 `XxxFormatDriver` 门面类；`IMessageParser` 成唯一接口，并入 `parserId`/`suffixes`/`acceptsFormat`/`preferredTableName`/`probeFile`/`defaultImportOptions`/`prepareParserOptions` 声明，加 `ParseOutput` 能力枚举 + `outputs()` + 多输出函数（`parseMessages` 委托 `parse` 产可读帧，`parseFrames` 明确归 SPI 另批）。三个门面类改名 `XxxFormatParser` 并改继承 `IMessageParser`，删空壳 `load()`。`ExtensionRegistry` 加统一 `parsers()` 视图，`drivers()/driverForFormat()/driverForPath()/messageParsers()` 保留兼容别名（内部按 `outputs()` 含 `FrameBatch` 筛数值批解析器）。SPI 层（`ps_parser_spi.h`/`ParserRegistry`）零改动，`data.load` 与既有测试零改动。
+- **B6-c paramSpecs 收口**：`IMessageParser::paramSpecs()` 默认从 `configSchema()` 的 fields 转纯 metadata（headless 可查），`configSchema()` 保留 virtual。`ProtocolInspectorDialog` 参数区改走 `paramSpecs() → SchemaEngine.compile → QtFieldRenderer.render`，删除手绘控件 switch，中文 label 经术语表覆盖。**ImportDialog 未接入**：CSV 动态列枚举来自 probe 列下标，uischema enum 用字符串 label 作值且无 probe 注入通道，强接会退化探测预览；保留自渲染，作为独立小批记录（见总方案 §5.2）。
+- **验收**：B6-a/b/c 各批 Release + Debug ctest 16/16 双绿；门面类型全清零；构建守卫通过；rebase 合并远端 protocol(S4a-1) 后复验双配置仍全绿。
