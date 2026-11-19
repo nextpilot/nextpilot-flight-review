@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppContext.h"
 #include <QDialog>
 #include <QJsonObject>
 #include <QString>
@@ -12,7 +13,6 @@ class QWidget;
 
 namespace nextpilot::plotscope::core
 {
-class AppContext;
 }
 
 namespace nextpilot::plotscope::gui

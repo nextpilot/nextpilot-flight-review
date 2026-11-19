@@ -11,8 +11,15 @@
 #include <QString>
 #include <QStringList>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::dataset::DataRepository;
+using nextpilot::plotscope::dataset::SourceRegistry;
+using nextpilot::plotscope::parser::IByteSource;
+using nextpilot::plotscope::parser::ParserRegistry;
+
 
 // 摄取编排器：**读字节 -> 扇出给解析器 -> 落库**。
 //
@@ -114,4 +121,11 @@ private:
     QVector<int> m_datasetIds;
 };
 
+} // namespace nextpilot::plotscope::context
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using context::IngestOptions;
+using context::IngestOrchestrator;
 } // namespace nextpilot::plotscope::core
+

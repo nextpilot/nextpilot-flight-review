@@ -4,8 +4,16 @@
 
 #include <QFileInfo>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+using nextpilot::plotscope::dataset::Dataset;
+using nextpilot::plotscope::dataset::SourceKind;
+using nextpilot::plotscope::dataset::SourceState;
+
+using nextpilot::plotscope::parser::ParserEntry;
+using nextpilot::plotscope::parser::IByteSource;
+using nextpilot::plotscope::parser::FileByteSource;
+
 
 namespace
 {
@@ -271,4 +279,4 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
     return m_datasetIds.first();
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::context

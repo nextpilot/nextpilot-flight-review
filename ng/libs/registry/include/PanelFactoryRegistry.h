@@ -9,8 +9,8 @@
 
 class QWidget;
 
-// AppContext 真身仍在 core（簇 7 迁 context），此处仅前向声明供工厂签名用。
-namespace nextpilot::plotscope::core
+// AppContext 真身在 context（B7 簇 7），仅前向声明供工厂签名用。
+namespace nextpilot::plotscope::context
 {
 class AppContext;
 }
@@ -43,7 +43,7 @@ namespace nextpilot::plotscope::registry
 class PanelFactoryRegistry
 {
 public:
-    using Factory = std::function<QWidget *(nextpilot::plotscope::core::AppContext &appCtx,
+    using Factory = std::function<QWidget *(nextpilot::plotscope::context::AppContext &appCtx,
                                             nextpilot::plotscope::core::IIntentExecutor &executor,
                                             QWidget *parent)>;
 
@@ -51,7 +51,7 @@ public:
     static void registerPanel(const QString &type, Factory factory);
 
     // 按类型创建部件；未注册返回 nullptr。
-    static QWidget *create(const QString &type, nextpilot::plotscope::core::AppContext &appCtx,
+    static QWidget *create(const QString &type, nextpilot::plotscope::context::AppContext &appCtx,
                            nextpilot::plotscope::core::IIntentExecutor &executor, QWidget *parent);
 
     // 已注册的部件类型（诊断/测试用）。

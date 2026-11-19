@@ -6,8 +6,9 @@
 #include <QStringList>
 #include <QVariant>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+
 
 // 键的作用域。三种性质不同的东西，但走同一个存储。
 //
@@ -82,4 +83,11 @@ private:
     QHash<QString, QVariant> m_values;
 };
 
+} // namespace nextpilot::plotscope::context
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using context::SettingsScope;
+using context::SettingsStore;
 } // namespace nextpilot::plotscope::core
+

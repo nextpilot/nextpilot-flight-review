@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppContext.h"
 #include "IIntentExecutor.h"
 #include "Dataset.h"
 #include "fastplot/PlotData.h"
@@ -26,8 +27,6 @@ class WaterfallPlot;
 
 namespace nextpilot::plotscope::core
 {
-class AppContext;
-
 }
 
 namespace nextpilot::plotscope::gui

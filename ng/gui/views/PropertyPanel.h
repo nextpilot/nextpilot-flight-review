@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppContext.h"
 #include "IIntentExecutor.h"
 #include <QWidget>
 
@@ -12,8 +13,6 @@ class QVBoxLayout;
 
 namespace nextpilot::plotscope::core
 {
-class AppContext;
-
 }
 
 namespace nextpilot::plotscope::gui

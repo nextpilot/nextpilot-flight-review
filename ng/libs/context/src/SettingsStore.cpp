@@ -6,8 +6,9 @@
 #include <QJsonDocument>
 #include <QSaveFile>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+
 
 namespace
 {
@@ -208,4 +209,4 @@ bool SettingsStore::saveToDisk(QString *err) const
     return true;
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::context

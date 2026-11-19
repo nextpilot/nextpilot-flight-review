@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SettingsStore.h"
+#include "IngestPipeline.h"
 #include "DataRepository.h"
 #include "ExtensionRegistry.h"
 #include "Intent.h"
@@ -9,8 +11,6 @@
 
 namespace nextpilot::plotscope::core
 {
-class IngestPipeline;
-class SettingsStore;
 } // namespace nextpilot::plotscope::core
 
 // 数据加载意图的统一入口（宿主的系统级能力，不归属任何可卸载模块）。

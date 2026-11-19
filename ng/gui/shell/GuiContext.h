@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppContext.h"
 #include "IModule.h"
 #include "UiSlotRegistry.h"
 
@@ -9,7 +10,6 @@ class QMainWindow;
 
 namespace nextpilot::plotscope::core
 {
-class AppContext;
 }
 
 namespace nextpilot::plotscope::gui

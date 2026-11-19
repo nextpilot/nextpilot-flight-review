@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ScriptFacade.h"
 #include "Result.h"
 
 #include <QJsonObject>
@@ -11,7 +12,6 @@ struct lua_State;
 
 namespace nextpilot::plotscope::core
 {
-class ScriptFacade;
 }
 
 namespace nextpilot::plotscope::script

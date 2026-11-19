@@ -11,8 +11,15 @@
 
 #include <functional>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::foundation::fail;
+using nextpilot::plotscope::uischema::Selection;
+using nextpilot::plotscope::uischema::SelectionKind;
+using nextpilot::plotscope::uischema::TransformScriptOps;
+
 
 // 交互注册表：容纳"注册 + 派发"型扩展点（viewAction / property / transform）。
 // 这些是运行时路由行为，不是静态运行态数据，故独立于 AppContext。
@@ -60,4 +67,10 @@ private:
     TransformScriptOps m_transformScriptOps;
 };
 
+} // namespace nextpilot::plotscope::context
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using context::InteractionRegistry;
 } // namespace nextpilot::plotscope::core
+

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "SettingsStore.h"
 #include "Intent.h"
 #include "Result.h"
 
@@ -10,7 +11,6 @@
 
 namespace nextpilot::plotscope::core
 {
-class SettingsStore;
 } // namespace nextpilot::plotscope::core
 
 namespace nextpilot::plotscope::gui

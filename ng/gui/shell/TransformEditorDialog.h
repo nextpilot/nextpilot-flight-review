@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppContext.h"
 #include <QDialog>
 #include <QJsonObject>
 
@@ -7,7 +8,6 @@
 
 namespace nextpilot::plotscope::core
 {
-class AppContext;
 }
 
 namespace nextpilot::plotscope::gui

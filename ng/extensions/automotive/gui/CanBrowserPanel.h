@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppContext.h"
 #include "IIntentExecutor.h"
 #include <QWidget>
 
@@ -7,8 +8,6 @@ class QTableWidget;
 
 namespace nextpilot::plotscope::core
 {
-class AppContext;
-
 } // namespace nextpilot::plotscope::core
 
 namespace nextpilot::plotscope::ext::automotive

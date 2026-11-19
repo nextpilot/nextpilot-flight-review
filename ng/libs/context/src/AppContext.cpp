@@ -1,7 +1,8 @@
 #include "AppContext.h"
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+
 
 AppContext::AppContext(const QString &settingsPath, QObject *parent)
     : QObject(parent),
@@ -53,4 +54,4 @@ void AppContext::clearSelection()
     Q_EMIT selectionChanged(m_selection.toJson());
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::context

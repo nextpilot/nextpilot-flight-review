@@ -1,7 +1,8 @@
 #include "InteractionRegistry.h"
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+
 
 void InteractionRegistry::registerViewAction(const QString &id, ViewActionHandler handler)
 {
@@ -73,4 +74,4 @@ void InteractionRegistry::registerTransformScriptOps(TransformScriptOps ops)
     m_transformScriptOps = std::move(ops);
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::context

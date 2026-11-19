@@ -14,8 +14,15 @@
 #include <QObject>
 #include <QString>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::dataset::DataRepository;
+using nextpilot::plotscope::dataset::SourceRegistry;
+using nextpilot::plotscope::registry::ExtensionRegistry;
+using nextpilot::plotscope::uischema::Selection;
+
 
 // 应用上下文：**进程级运行态的唯一持有者**。
 //
@@ -153,4 +160,10 @@ private:
     QString m_activeColumn;
 };
 
+} // namespace nextpilot::plotscope::context
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using context::AppContext;
 } // namespace nextpilot::plotscope::core
+

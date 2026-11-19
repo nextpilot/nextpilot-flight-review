@@ -89,6 +89,9 @@ add_subdirectory(libs/uischema)
 # 消息解析契约与 C ABI（IMessageParser / ParserRegistry / ps_*_spi）。
 add_subdirectory(libs/parser)
 
+# 运行态容器：AppContext + 设置 + 摄取 + 交互注册（唯一实例在 app）。
+add_subdirectory(libs/context)
+
 add_subdirectory(core)
 add_subdirectory(recording)
 add_subdirectory(host)

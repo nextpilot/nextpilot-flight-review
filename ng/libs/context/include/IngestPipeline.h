@@ -2,6 +2,7 @@
 
 #include "DataSource.h"
 #include "DataRepository.h"
+#include "Result.h"
 #include "ps_parser_spi.h"
 
 #include <QObject>
@@ -12,8 +13,17 @@
 #include <memory>
 #include <vector>
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+
+using nextpilot::plotscope::dataset::DataRepository;
+using nextpilot::plotscope::dataset::DataSourceInfo;
+using nextpilot::plotscope::dataset::ParserBinding;
+using nextpilot::plotscope::dataset::DatasetId;
+using nextpilot::plotscope::dataset::kInvalidDataset;
+using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::foundation::fail;
+
 
 // 摄取管道：**一个数据源（单前端）的字节流 → 多个解析器 → 多个数据集**。
 //
@@ -126,4 +136,10 @@ private:
     std::map<int, std::vector<std::unique_ptr<SinkContext>>> m_sinkCtx;
 };
 
+} // namespace nextpilot::plotscope::context
+// B7 过渡别名：core 消亡前全仓仍以 core::Xxx 取用。簇 8 删 core 时移除。
+namespace nextpilot::plotscope::core
+{
+using context::IngestPipeline;
 } // namespace nextpilot::plotscope::core
+

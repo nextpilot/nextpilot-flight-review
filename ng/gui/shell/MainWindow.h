@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AppContext.h"
 #include <QJsonObject>
 
 // SARibbon（vendored，MIT）：提供**无边框窗体** + ribbon 条。
@@ -24,7 +25,6 @@
 
 namespace nextpilot::plotscope::core
 {
-class AppContext;
 } // namespace nextpilot::plotscope::core
 
 namespace nextpilot::plotscope::host

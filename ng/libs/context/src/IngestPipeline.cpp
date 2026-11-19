@@ -3,8 +3,16 @@
 #include "Dataset.h"
 #include "ParserRegistry.h"
 
-namespace nextpilot::plotscope::core
+namespace nextpilot::plotscope::context
 {
+using nextpilot::plotscope::parser::ParserRegistry;
+using nextpilot::plotscope::dataset::ValueType;
+
+using nextpilot::plotscope::dataset::DataRepository;
+using nextpilot::plotscope::dataset::Dataset;
+using nextpilot::plotscope::dataset::FrameColumn;
+using nextpilot::plotscope::parser::ParserEntry;
+
 
 IngestPipeline::IngestPipeline(DataRepository &repo, QObject *parent)
     : QObject(parent), m_repo(repo)
@@ -315,4 +323,4 @@ void IngestPipeline::onProgress(void *, uint64_t, uint64_t)
     // 进度上报预留：宿主可据此更新 UI 进度条。
 }
 
-} // namespace nextpilot::plotscope::core
+} // namespace nextpilot::plotscope::context

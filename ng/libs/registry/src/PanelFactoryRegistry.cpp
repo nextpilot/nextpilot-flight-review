@@ -25,7 +25,7 @@ void PanelFactoryRegistry::registerPanel(const QString &type, Factory factory)
     factories().insert(type, std::move(factory)); // 重复 id 由 Registry 保证「先到者为准」
 }
 
-QWidget *PanelFactoryRegistry::create(const QString &type, nextpilot::plotscope::core::AppContext &appCtx,
+QWidget *PanelFactoryRegistry::create(const QString &type, nextpilot::plotscope::context::AppContext &appCtx,
                                        nextpilot::plotscope::core::IIntentExecutor &executor, QWidget *parent)
 {
     auto *factory = factories().find(type);
