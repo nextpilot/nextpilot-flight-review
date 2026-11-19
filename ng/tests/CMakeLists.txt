@@ -22,6 +22,18 @@ target_link_libraries(ng_test_intent_standalone PRIVATE ng_intent ng_foundation 
 set_target_properties(ng_test_intent_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_intent_standalone COMMAND ng_test_intent_standalone)
 
+# schema 契约独立验收：只链 ng_uischema + foundation + Qt Core（headless，不拉 Widgets）。
+add_executable(ng_test_uischema_standalone test_uischema_standalone.cpp)
+target_link_libraries(ng_test_uischema_standalone PRIVATE ng_uischema ng_foundation Qt6::Core)
+set_target_properties(ng_test_uischema_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_uischema_standalone COMMAND ng_test_uischema_standalone)
+
+# TransformParam -> ParamSpec 适配链路验收（headless，链 core 但不拉 GUI）。
+add_executable(ng_test_transform_adapter test_transform_adapter.cpp)
+target_link_libraries(ng_test_transform_adapter PRIVATE ng_core ng_uischema Qt6::Core)
+set_target_properties(ng_test_transform_adapter PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_transform_adapter COMMAND ng_test_transform_adapter)
+
 # === 协议逻辑资产（顺序段协议解码内核平移）===
 # 纯逻辑测试：只依赖 ng_protocol + Qt Core，headless。
 add_executable(ng_test_protocol test_protocol.cpp)

@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QJsonObject>
 
+#include "FormSchema.h"
 #include "Transform.h"
 
 class QCheckBox;
@@ -81,6 +82,7 @@ private:
     QComboBox *m_descriptorCombo = nullptr;
     QLabel *m_description = nullptr;
     QWidget *m_paramHost = nullptr;
+    nextpilot::plotscope::uischema::FormSchema m_paramForm;
     QPlainTextEdit *m_expression = nullptr;
     QPlainTextEdit *m_lua = nullptr;
     QLineEdit *m_singleX = nullptr;

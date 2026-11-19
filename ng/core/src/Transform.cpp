@@ -279,4 +279,36 @@ void TransformRegistry::clear()
     registry().clear();
 }
 
+QVector<nextpilot::plotscope::uischema::ParamSpec>
+transformParamSpecs(const TransformDescriptor &descriptor)
+{
+    using nextpilot::plotscope::uischema::ParamSpec;
+    using nextpilot::plotscope::uischema::ParamType;
+
+    QVector<ParamSpec> specs;
+    for (const TransformParam &p : descriptor.params)
+    {
+        ParamSpec spec;
+        spec.key = p.key;
+        spec.description = p.description;
+        if (p.type == QStringLiteral("bool"))
+        {
+            spec.type = ParamType::Bool;
+            spec.defaultValue = p.defaultValue == QStringLiteral("true");
+        }
+        else if (p.type == QStringLiteral("number"))
+        {
+            spec.type = ParamType::Double;
+            spec.defaultValue = p.defaultValue.toDouble();
+        }
+        else
+        {
+            spec.type = ParamType::String;
+            spec.defaultValue = p.defaultValue;
+        }
+        specs.append(spec);
+    }
+    return specs;
+}
+
 } // namespace nextpilot::plotscope::core

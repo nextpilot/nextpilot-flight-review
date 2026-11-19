@@ -1,6 +1,6 @@
 # 机制抽库设计：recording 归属 + 注册表/意向/schema→UI 下沉为 libs
 
-> 状态：**已拍板，分批实施中**（2026-11-19 定方案；2026-11-20 落地 B3 `ng_registry`、B4 `ng_intent`，见 §11；uischema / parser 各批仍待实施）。
+> 状态：**已拍板，分批实施中**（2026-11-19 定方案；2026-11-20 落地 B3 `ng_registry`、B4 `ng_intent`、B5 `ng_uischema` 首批，见 §11；parser 合并待 B6，uischema 其余消费者待 B6 `paramSpecs()` 后接入）。
 > 需求方三问：① `ng/recording` 为何独立、有何特权？② core 的注册机制（模板、支持多种类）与意向机制抽成 libs；③ 按 schema 让 Qt 绘制对话框/属性面板的能力抽成 libs，重点是**约束 schema 长什么样**。
 > 与 [`dataset-lib-extraction.md`](dataset-lib-extraction.md) 同属 core 瘦身动作；所有结论逐行核对过 `ng/core`、`ng/recording`、`ng/gui`。
 
@@ -525,3 +525,15 @@ class IMessageParser : public IConfigurableContribution {   // 唯一解析器�
 - **独立链接验收**：新增 `ng_test_intent_standalone`，只链 `ng_intent + ng_foundation + Qt6::Core`（link.txt 实证无 ng_core），走通 Job 双向序列化 + 二次序列化一致性 + 缺 op 报错 + JobRecorder 录制/清空 + 独立实现 IIntentExecutor；并顺带把迁入文件的长注释按写作纪律精简。
 - **namespace**：保持 `core` 至 B7 统一收口（与 B2/B3 裁定一致，避免与 Result 跨 namespace 割裂）。
 - **验收**：Release + Debug ctest 14/14 双绿；构建守卫通过。
+
+### 11.3 B5：`ng_uischema` 契约 + 引擎 + 唯一渲染器（2026-11-20，✅ 已实施首批）
+
+按总方案 B5 落地 §4/§10 的 schema 契约，采取垂直切——先建完整库 + 一个消费者接入验证，其余消费者待 B6 `paramSpecs()` 接口：
+
+- **新建 `libs/uischema` 两个 target**：
+  - `ng_uischema`（STATIC，Qt Core + foundation，headless）：`ParamSpec.h`（纯 metadata：key/type/defaultValue/min/max/options/fileFilter/unit/dependsOn/description，零 UI 控件词汇）、`SchemaEngine.h/.cpp`（`compile()` 唯一持有 `ParamType→FieldType` 约定 + label 术语表覆盖 + 依赖判定）、`FormSchema.h/.cpp`（产物契约，类型化 QVariant + JSON 往返）。
+  - `ng_uischema_widgets`（STATIC，Qt Widgets + ng_uischema，只 GUI 链接）：`QtFieldRenderer.h/.cpp`——**全仓唯一一处 `FieldType→QWidget` 映射**，统一 valueOf/setValue/keyOf 读写。
+- **消费者接入：`TransformEditorDialog`**：core 的 `Transform.cpp` 加 `transformParamSpecs()` 把 `TransformParam` 魔法字符串适配为 metadata（core PUBLIC 链 ng_uischema）；对话框参数区从手绘 bool/else switch 改用 `SchemaEngine.compile() + QtFieldRenderer.render()`，回填/读取改用渲染器统一 API，中文 label 经术语表覆盖不倒退。
+- **独立验收**：`ng_test_uischema_standalone` 只链 ng_uischema + foundation + Qt Core（link.txt 实证无 Widgets/ng_core，headless 成立），覆盖各类型映射、label 生成、类型化默认值、依赖判定、JSON 往返、零 UI 词汇断言；`ng_test_transform_adapter` 覆盖 TransformParam→ParamSpec→FormSchema 适配链路（headless，链 core 不拉 GUI）。
+- **范围说明**：ImportDialog / ProtocolInspectorDialog 的 schema 来自 `IFormatDriver::importSchema` / `IMessageParser::configSchema`，须待 B6 合并解析器并加 `paramSpecs()` 后才能接同一引擎，故本批不碰。
+- **验收**：Release + Debug ctest 16/16 双绿；构建守卫通过。

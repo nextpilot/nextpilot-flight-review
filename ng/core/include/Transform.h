@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ParamSpec.h"
+
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
@@ -73,6 +75,10 @@ struct TransformDescriptor
     QJsonObject toJson() const;
     static TransformDescriptor fromJson(const QJsonObject &obj);
 };
+
+// 把变换参数适配为纯 metadata 规格，供 SchemaEngine 统一编译表单。
+QVector<nextpilot::plotscope::uischema::ParamSpec>
+transformParamSpecs(const TransformDescriptor &descriptor);
 
 // 变换求值请求：descriptor id + 一种载荷 + 参数。
 // 三场景共用；执行由 TransformEvaluator 按 descriptor.kind 路由。

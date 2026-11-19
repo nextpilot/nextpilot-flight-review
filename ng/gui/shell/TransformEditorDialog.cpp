@@ -2,21 +2,26 @@
 
 #include "AppContext.h"
 #include "Dataset.h"
+#include "FormSchema.h"
+#include "QtFieldRenderer.h"
 #include "Result.h"
+#include "SchemaEngine.h"
 
-#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QJsonDocument>
+#include <QJsonValue>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+
+using namespace nextpilot::plotscope::uischema;
 
 using namespace nextpilot::plotscope::core;
 
@@ -135,31 +140,27 @@ void TransformEditorDialog::applyDescriptor(const TransformDescriptor &d, const 
     m_expression->setEnabled(d.kind == TransformKind::Expression);
     m_lua->setEnabled(d.kind == TransformKind::Lua);
     rebuildParamWidgets();
-    // 回填参数值。
+    // 回填参数值：优先用 initial.params，否则用 metadata 默认值。
     if (d.kind == TransformKind::Builtin || d.kind == TransformKind::Lua)
     {
-        auto *form = qobject_cast<QFormLayout *>(m_paramHost->layout());
-        if (form)
+        const auto widgets = m_paramHost->findChildren<QWidget *>();
+        for (QWidget *w : widgets)
         {
-            for (int i = 0; i < form->rowCount(); ++i)
-            {
-                QLayoutItem *field = form->itemAt(i, QFormLayout::FieldRole);
-                if (!field || !field->widget())
-                    continue;
-                const QString key = field->widget()->property("paramKey").toString();
-                const QVariant v = init.params.value(key);
-                if (auto *le = qobject_cast<QLineEdit *>(field->widget()))
-                    le->setText(v.isValid() ? v.toString() : d.params.at(i).defaultValue);
-                else if (auto *cb = qobject_cast<QCheckBox *>(field->widget()))
-                    cb->setChecked(v.isValid() ? v.toBool() : d.params.at(i).defaultValue == QStringLiteral("true"));
-            }
+            const QString key = QtFieldRenderer::keyOf(w);
+            if (key.isEmpty())
+                continue;
+            const QVariant v = init.params.value(key);
+            QVariant fallback;
+            for (const FieldSpec &f : m_paramForm.fields)
+                if (f.key == key)
+                    fallback = f.defaultValue;
+            QtFieldRenderer::setValue(w, v.isValid() ? v : fallback);
         }
     }
 }
 
 void TransformEditorDialog::rebuildParamWidgets()
 {
-    // 清空旧布局与其中的控件。
     if (QLayout *old = m_paramHost->layout())
     {
         while (QLayoutItem *item = old->takeAt(0))
@@ -179,26 +180,18 @@ void TransformEditorDialog::rebuildParamWidgets()
     if (idx < 0 || idx >= m_descriptors.size())
         return;
     const TransformDescriptor &d = m_descriptors.at(idx);
+
+    QHash<QString, QString> labels;
     for (const TransformParam &p : d.params)
+        labels.insert(p.key, p.label);
+    m_paramForm = SchemaEngine::compile(d.label, transformParamSpecs(d), labels);
+
+    if (m_paramForm.empty())
     {
-        if (p.type == QStringLiteral("bool"))
-        {
-            auto *cb = new QCheckBox(m_paramHost);
-            cb->setProperty("paramKey", p.key);
-            cb->setToolTip(p.description);
-            form->addRow(p.label, cb);
-        }
-        else
-        {
-            auto *le = new QLineEdit(m_paramHost);
-            le->setProperty("paramKey", p.key);
-            le->setPlaceholderText(p.description);
-            le->setText(p.defaultValue);
-            form->addRow(p.label, le);
-        }
-    }
-    if (d.params.isEmpty())
         form->addRow(new QLabel(QStringLiteral("（该变换无参数）"), m_paramHost));
+        return;
+    }
+    QtFieldRenderer::render(m_paramForm, form, m_paramHost);
 }
 
 void TransformEditorDialog::onDescriptorChanged(int index)
@@ -216,21 +209,12 @@ QJsonObject TransformEditorDialog::collectRequest() const
         return QJsonObject();
     const TransformDescriptor &d = m_descriptors.at(idx);
     QJsonObject params;
-    if (auto *form = qobject_cast<QFormLayout *>(m_paramHost->layout()))
+    const auto widgets = m_paramHost->findChildren<QWidget *>();
+    for (QWidget *w : widgets)
     {
-        for (int i = 0; i < form->rowCount(); ++i)
-        {
-            QLayoutItem *field = form->itemAt(i, QFormLayout::FieldRole);
-            if (!field || !field->widget())
-                continue;
-            const QString key = field->widget()->property("paramKey").toString();
-            if (key.isEmpty())
-                continue;
-            if (auto *le = qobject_cast<QLineEdit *>(field->widget()))
-                params.insert(key, le->text());
-            else if (auto *cb = qobject_cast<QCheckBox *>(field->widget()))
-                params.insert(key, cb->isChecked());
-        }
+        const QString key = QtFieldRenderer::keyOf(w);
+        if (!key.isEmpty())
+            params.insert(key, QJsonValue::fromVariant(QtFieldRenderer::valueOf(w)));
     }
     return transformRequestJson(d.id, d.kind,
                                 d.kind == TransformKind::Expression ? m_expression->toPlainText() : QString(),
