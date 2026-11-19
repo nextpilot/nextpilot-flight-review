@@ -133,6 +133,7 @@
 | **B4** ✅ | `ng_intent` 移出 5 个意向类型 | `libs/intent/`、`core/`、`AppContext`/`ScriptFacade` | 独立验收 `ng_test_intent_standalone`（只链 ng_intent+foundation）走通 Job JSON 往返+缺 op 报错+录制器+契约实现；Release+Debug 14/14 |
 | **B5**（部分） | `ng_uischema`：纯 metadata 契约 + `SchemaEngine` + 唯一 Qt 渲染器；TransformEditorDialog 已接入 | `libs/uischema/`、`core/Transform`、`gui/TransformEditorDialog` | 唯一 `FieldType→QWidget` 映射落在 uischema；headless compile/JSON 往返测试 + transform 适配测试；Release+Debug 16/16。ImportDialog/ProtocolInspectorDialog 待 B6 `paramSpecs()` 接口后接入 |
 | **B6** | 取消 `IFormatDriver` + 三个门面类，统一 `IMessageParser`（多输出函数）；命名收敛 `SourceRegistry`/`Domain`/`Toolbox` | `core/`、`extensions/`、`ExtensionRegistry`、`ARCHITECTURE.md` | 无 `IFormatDriver`/`IDataParser`/`XxxFormatDriver` 门面类型；无旧命名残留；11/11 |
+| **B8** | Transform 输入控件重构：`TransformField` 可编辑下拉 + 独立 `LuaEditor` + 脚本 `describe()` 自述元数据 | `gui/TransformField`、`gui/LuaEditor`、`modules/script`、`core/Transform` | 下拉可选算子（带说明）/ 直接敲表达式 / 编辑按钮进 Lua Editor；脚本落 `scripts/ops/*.lua` 并注册 `lua.<name>`；能力过滤与在线调试保留；双配置全绿 |
 
 **每批硬指标**：Release + Debug 双配置 `ctest` 11/11 全绿；新库领域纯净（无飞行/CAN/姿态词）；headless 可编译。
 
@@ -264,6 +265,30 @@ foundation(Result)
 3. §7.7 的初心是避免"目录叫 context、namespace 还叫 core"的**终态**中间态；B2–B6 是渐进批，B7 一次性把 Result + Dataset + AppContext 等所有 core namespace 收口到各自库名，才是零割裂路径。
 
 **这条不违背 §7.7**：namespace 统一照做，只是集中在 B7 而非摊到每批。B7 验收项（无 `core` namespace 残留）仍是硬指标。
+
+### 7.7.2 B8：Transform 输入控件重构（需求方 2026-11-20 追加）
+
+需求方否决当前 `TransformEditorDialog`（一个弹窗塞满算子/表达式/Lua/参数/单点/批量调试的形态），要的是"输入变换时"的轻量控件。三层裁决：
+
+1. **控件形态**：凡要输入变换处放一个 `TransformField`——可编辑下拉框（选已有算子并展示说明）+ 直接敲文本当数学表达式 + 右侧编辑按钮进 Lua Editor。输出仍是同一份 `TransformRequest` JSON，`TransformEvaluator` 零改动。
+2. **能力过滤保留**：控件构造传 `cap`，列表只列 `byCapability(cap)` 的项；运行时 evaluator 二次校验。防"选错就死"不打折。
+3. **调试区抽出来复用**：现有单点/批量调试代码抽成 `LuaEditor` 共用，不重写。
+
+**脚本存哪（架构师裁定：文件为真源 + 配置带快照）**：
+
+- Lua Editor 保存 = 写 `.lua` 文件到 `scripts/ops/` → 注册 `lua.<name>` descriptor → 回填控件。
+- 配置里 `scriptId`（来源）+ `luaSource`（快照）都写。有 `scriptId` 以文件为准、加载时刷新快照；文件丢失用快照兜底，不让配置变废。`scriptId` 为空 = 纯内联草稿。
+- 理由：配置 JSON 跨模块传递、可能拷到别机，纯引用会因脚本挪动悬空；快照保证自包含，同时不丢"文件是真源、可复用"的收益。当前 `evalLua` 本就只吃 `luaSource` 字符串、由调用方解析 `scriptId`，规则正好接上。
+
+**算子说明从哪来（架构师裁定：脚本导出 `describe()`，否决头注释与旁车文件）**：
+
+- 脚本导出 `function describe()` 返回 table：`label` / `description` / `capabilities` / `example` / `params`（按 `ParamSpec` 字段写）。
+- 加载器：执行脚本 → 调 `describe()` → table 转 `QJsonObject` → 填 `TransformDescriptor`（id=`lua.<name>`）注册。`params` 直接喂 `SchemaEngine` 生成参数区。
+- 无 `describe()` 的老脚本降级：文件名当 label、描述空、能力全开，不报错。
+- `describe()` 必须在 `LuaEngine`/`ScriptFacade` 沙箱里调，只构造 table、不跑主逻辑。builtin 仍走 C++ 硬编码注册，不强求统一。
+- 否决头注释 `@label`（要写注释解析器、易漂移）与旁车 `.meta.json`（两份文件要同步、用户嫌烦）。
+
+**边界**：`TransformField`/`LuaEditor` 在 gui；脚本文件读写/解析/注册在 `modules/script`（有状态，不进 libs，符合 libs 铁律）；迁移老代码 `ScriptLibrary`（scripts/lib、ops、batch + resolve/invalidate）思路，不另起炉灶。依赖 B5 的 uischema 渲染层。
 
 ### 7.8 拍板追溯（需求方 2026-11-19 追加）
 
