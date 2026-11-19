@@ -74,6 +74,7 @@
 | `repeat` | `elems`/`eos`/`until` | 重复方式 | 默认 `elems`（由 `count` 定） |
 | `until` | 表达式/字符串 | 重复终止条件（读到该值为止） | 配 `repeat:"until"` |
 | `consume` | bool | ASCII 段是否吃掉结束分隔符 | 见 §7 |
+| `empty` | `"nan"`/`"skip"` | ASCII 空字段策略 | `nan`：空段填 NaN；`skip`：跳过不产出；见 §7 |
 | `derive` | 表达式 | 计算字段（非字节读出） | 新增 |
 | `description` | string | 文档 | 编辑器/Schema 生成用 |
 
@@ -113,6 +114,8 @@ v1 的 `role`（sync/length/payload/checksum/data）与显式键**完全重叠**
 ## 3. 表达式
 
 运算符 `+ - * / % & | ^ << >>`，函数 `abs/min/max/clamp`，显式转换 `toF64/toI64/toU64`。
+
+ASCII 派生函数（作用于 `text` 段）：`time_hhmmss`（`hhmmss.ss` → 当日秒数）、`deg_ddmm`（度分格式 → 十进制度）、`text_number`（文本 → 数值，支持十进制/十六进制，空字段按 `empty` 策略处理）。
 
 **类型由操作数决定，不做隐式降级**（完整规则见 `docs/roadmap/psproto-v2.md` §10.9）：
 
@@ -196,7 +199,7 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 
 ```jsonc
 {"name":"id",  "type":"u32", "bit":{"offset":0,"width":29,"order":"msb0"}},
-{"name":"body","type":"u8","size":8,"emit":"none"},
+{"name":"body","type":"u8","count":8,"emit":"none"},
 {"name":"rpm", "type":"u16", "bit":{"base":"body","offset":8,"width":16,"order":"msb0"},
                "scale":0.25, "unit":"rpm", "range":[0,8000]}
 ```
@@ -271,7 +274,7 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 
 ## 10. v1 → v2 变更总表
 
-### 修错（4 项，非改不可）
+### 修错（3 项，非改不可）
 
 | # | 现状 | v2 | 为什么 |
 |---|---|---|---|
@@ -281,7 +284,7 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 
 > 注：v1 的 `size` 表示**元素个数**，这是符合写协议习惯的，**语义保留、不反转**；只是名字容易被误读成"字节大小"，改名为 `count`（归入下表收敛项）。
 
-### 收敛（5 项，删概念）
+### 收敛（7 项，删概念）
 
 | # | 删除/合并 | 理由 |
 |---|---|---|
@@ -293,9 +296,9 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 | 10 | `size` → **`count`**（元素个数，语义不变） | `size` 容易被误读成字节数；字节宽由 `type` 推算，不需要第二个字段 |
 | 11 | `counts` → **`length`** | 避免与新的 `count` 看成一对；它是长度段反算，与数组长度是两件事 |
 
-### 新增（8 项，补表达力）
+### 新增（9 组，补表达力）
 
-`bit` 位域、`if` 条件段、`digest` 拆分+命名算法表+`inject`+位宽、`until`/`consume`/`starts`/`terminator`、`enum`、`range` 声明、`repeat: eos|until`、`derive`、`types` 别名。
+`bit` 位域、`if` 条件段、`digest` 拆分+命名算法表+`inject`+位宽、`until`/`consume`/`starts`/`terminator`、`enum`、`range` 声明、`repeat: eos|until`、`derive` 计算字段、`types` 别名。
 
 ---
 
@@ -353,6 +356,6 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 **psproto v2 的调整不是"加功能"，而是三件事**：
 **修 3 处错**（端序校验、崩溃、除法）、
 **收敛 7 个概念**（role、hidden/plot/hasValue、value、四个文本类型名、fromVariant、size→count、counts→length）、
-**补 8 项表达力**（位域、条件段、digest 参数化与 inject、ASCII 原语、enum、range、repeat、types 别名）。
+**补 9 组表达力**（位域、条件段、digest 参数化与 inject、ASCII 原语、enum、range、repeat、derive 计算字段、types 别名）。
 
 做完这三件，能力覆盖从 3/8 到 8/8，概念数量反而**减少**。
