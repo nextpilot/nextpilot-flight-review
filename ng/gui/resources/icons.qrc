@@ -8,5 +8,7 @@
     <file alias="record.svg">icons/record.svg</file>
     <file alias="theme_toggle.svg">icons/theme_toggle.svg</file>
     <file alias="search.svg">icons/search.svg</file>
+    <file alias="settings.svg">icons/settings.svg</file>
+    <file alias="trash.svg">icons/trash.svg</file>
   </qresource>
 </RCC>

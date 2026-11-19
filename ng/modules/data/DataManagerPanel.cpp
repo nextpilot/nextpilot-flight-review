@@ -86,6 +86,31 @@ class SourceRowDelegate : public QStyledItemDelegate
 public:
     explicit SourceRowDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
 
+    // 状态底色（对齐老界面 loaded绿/live青/off灰的半透明叠加）；stateText 为 UI 文案。
+    static QColor stateTint(const QString &stateText, const QPalette &pal)
+    {
+        const bool dark = pal.color(QPalette::Base).lightness() < 128;
+        if (stateText == QStringLiteral("运行中"))
+            return QColor(dark ? QColor(57, 197, 207) : QColor(57, 197, 207));   // 青
+        if (stateText == QStringLiteral("已加载") || stateText == QStringLiteral("已暂停"))
+            return QColor(126, 231, 135);                                        // 绿
+        if (stateText == QStringLiteral("错误"))
+            return QColor(229, 72, 77);                                          // 红
+        return QColor(110, 125, 136);                                            // 灰/离线
+    }
+
+    // 右侧操作图标（配置/移除），静态加载一次。
+    static const QIcon &settingsIcon()
+    {
+        static const QIcon ic(QStringLiteral(":/icons/settings.svg"));
+        return ic;
+    }
+    static const QIcon &trashIcon()
+    {
+        static const QIcon ic(QStringLiteral(":/icons/trash.svg"));
+        return ic;
+    }
+
     QSize sizeHint(const QStyleOptionViewItem &opt, const QModelIndex &index) const override
     {
         if (index.data(kRoleNodeKind).toString() != QStringLiteral("source"))
@@ -107,8 +132,10 @@ public:
         const QColor card = sourceCardColor(pal);
         const QRect r = opt.rect;
         // 顶层项 rect 从缩进区后开始（≈17px）；老界面卡片贴面板左边缘，故左边界取 0。
+        // 右边界取视口宽（item rect.right() 可能超出可视区，图标会被画到面板外）。
+        auto *view = qobject_cast<const QTreeWidget *>(parent());
+        const int cardRight = (view ? view->viewport()->width() : r.right()) - 1;
         const int cardLeft = 0;
-        const int cardRight = r.right();
 
         p->save();
         // 整行卡片底色：从视口最左铺到行尾，盖过缩进区（选中态用高亮色）
@@ -116,6 +143,20 @@ public:
                     opt.state & QStyle::State_Selected
                         ? pal.color(QPalette::Highlight).lighter(120)
                         : card);
+        // 状态底色叠加（对齐老界面 loaded绿/live青/off灰半透明）
+        if (!(opt.state & QStyle::State_Selected))
+        {
+            QColor tint = stateTint(index.data(Qt::UserRole).toString(), pal);
+            tint.setAlpha(26); // ~10% 强度
+            p->fillRect(QRect(cardLeft, r.top(), cardRight - cardLeft, r.height()), tint);
+        }
+        // hover 高亮（老界面 QWidget:hover）
+        if (opt.state & QStyle::State_MouseOver)
+        {
+            QColor hover = pal.color(QPalette::Text);
+            hover.setAlpha(14);
+            p->fillRect(QRect(cardLeft, r.top(), cardRight - cardLeft, r.height()), hover);
+        }
         // 激活源左侧橙色竖条（老界面 #f2b134），贴最左
         if (active)
             p->fillRect(QRect(cardLeft, r.top(), 3, r.height()), QColor(QStringLiteral("#f2b134")));
@@ -124,8 +165,7 @@ public:
         p->drawLine(cardLeft, r.bottom(), cardRight, r.bottom());
 
         // 自绘展开箭头（原生箭头位于缩进区、已被卡片底色覆盖）：橙条右侧
-        auto *tree = qobject_cast<const QTreeWidget *>(parent());
-        const bool expanded = tree && tree->isExpanded(index);
+        const bool expanded = view && view->isExpanded(index);
         const bool hasChildren = index.model()->hasChildren(index);
         const int arrowX = cardLeft + 9;
         const int arrowY = r.top() + r.height() / 2;
@@ -148,8 +188,10 @@ public:
         const int sep = text.indexOf(QLatin1Char('\n'));
         const QString name = sep < 0 ? text : text.left(sep);
         const QString meta = sep < 0 ? QString() : text.mid(sep + 1);
+        // 右侧操作图标区（配置/移除），文字避开它
+        const int iconZone = 48;
         const int left = cardLeft + (hasChildren ? 22 : 8);
-        const int textW = cardRight - left - 6;
+        const int textW = cardRight - left - iconZone;
         const int nameH = 16;
         QFont nameFont = opt.font;
         nameFont.setPixelSize(12);
@@ -166,6 +208,11 @@ public:
             p->drawText(QRect(left, r.top() + 2 + nameH, textW, 14),
                         Qt::AlignLeft | Qt::AlignVCenter | Qt::TextElideMode::ElideRight, meta);
         }
+
+        // 右侧操作图标：配置（齿轮）+ 移除（垃圾桶），对齐老界面源卡片右端。
+        const int iconY = r.top() + (r.height() - 16) / 2;
+        settingsIcon().paint(p, QRect(cardRight - iconZone + 4, iconY, 16, 16));
+        trashIcon().paint(p, QRect(cardRight - iconZone + 26, iconY, 16, 16));
         p->restore();
     }
 };
@@ -274,6 +321,7 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_filter->setPlaceholderText(QStringLiteral("搜索字段 / 参数 / 消息"));
     m_filter->setClearButtonEnabled(true);
     m_filter->setObjectName(QStringLiteral("searchBox"));
+    m_filter->setFixedHeight(30); // 对齐老界面 m_srcFilter->setFixedHeight(30)
     // 对齐老界面：搜索框左侧带搜索图标（LeadingPosition）。
     m_filter->addAction(QIcon(QStringLiteral(":/icons/search.svg")), QLineEdit::LeadingPosition);
     // 对齐老界面：搜索框与数据源树左右边缘齐平，不要额外内边距。
