@@ -161,7 +161,7 @@
 `paramSpecs()` 统一参数契约已落地：`IMessageParser::paramSpecs()` 默认从 `configSchema()` 的 fields 转纯 metadata（key/type/default/min/max/options/fileFilter），headless 可查。`configSchema()` 保留 virtual，供含额外信息的解析器覆盖。
 
 - **已接入**：`ProtocolInspectorDialog` 参数区改为 `paramSpecs() → SchemaEngine.compile → QtFieldRenderer.render`，删除手绘 bool/int/enum/string switch；中文 label 从 configSchema 作术语表覆盖传入。`collectParams()` 改用渲染器统一 `keyOf/valueOf`。
-- **遗留：ImportDialog 未接入 uischema**。原因（实现方复核）：CSV 的 `time.index`/`time.date` 等枚举候选来自 `probe()` 结果的**列下标**，而 uischema 的 enum 用字符串 label 作值、无 probe 注入通道；强行接入要么扩展 `ParamSpec` 加 `optionsFrom/initialFrom` 并让渲染器接受 probe 数据（§2.5 裁决项，属独立中等重构），要么丢失动态列能力导致探测预览退化。ImportDialog 暂保留自渲染（schema 读 `configSchema()`），其动态列/预览/警告交互不动。此项不阻塞 B6 验收（门面类型清零 + 命名收敛 + 双配置全绿均达成），作为独立小批后续推进。
+- **已接入（uischema v2 收口）**：ImportDialog 改走 `compileJson(schema, probe) → render`，删除整套手绘 bool/int/enum/source 动态列逻辑，预览与警告渲染保留。原卡点是 CSV 时间列的"显示列名 / 回传列下标"冲突——v2 用 select 的 value→label 分离 + `{from}` 动态来源 + `defaultFrom` probe 预填解决（见 `docs/develop/uischema-syntax.md`）。该遗留项已闭合。
 
 ---
 
@@ -261,6 +261,7 @@ foundation(Result)
 | ScriptFacade | 随 script 模块或 `libs/context` | B7 |
 | Events / Result | `libs/foundation` | B1 |
 | RecordingFormat / RecordingBackend | `recording` | 已在 |
+| 5 类 register*/dispatch*（viewAction/property/transformEval/transformScriptOps） | `host`（`InteractionRegistry`） | B7-0，见 §7.9 |
 
 ### 7.7 后段批次与命名空间纪律
 
@@ -318,3 +319,39 @@ foundation(Result)
 - ✅ 架构师四条约束（接口稳定 / 测试底座 / 依赖单向 / 演进有路）随方案执行。
 - ✅ 边界已固化为 CMake configure 期守卫（§7.3.1），违规编译不过。
 - ✅ "最终意见以架构师为准"——本节边界由架构师界定，需求方已逐条同意。
+
+### 7.9 core / host 职责定位与 register* 归位（架构师裁决 2026-11-20）
+
+**定位一句话**：core 不是层，是待消亡的静态机制暂存区；host 是运行时编排层，保留。
+
+| | core | host |
+|---|---|---|
+| 本质 | 静态机制/契约集合、未分类区 | 运行时编排者 |
+| 边界 | 无，什么都能塞（故易成上帝类） | 模块生命周期 + 意图路由 |
+| 状态/时序 | 无 | 有：装载 → 激活 → 卸载 |
+| 依赖身份 | 被所有人依赖（最底） | 依赖 context+libs，被 modules/gui 依赖 |
+| 终态 | 消亡，内容分流进 libs | 保留 |
+
+组合根 `App` 持 `AppContext`（数据）+ `ModuleHost`（编排），两者是"有什么"与"怎么调度"的关系。
+
+**AppContext 里的 register* 是职责污染**（上帝类的直接成因）。逐点核对注册方/消费方：
+
+| 扩展点 | 注册方 | 消费方 |
+|---|---|---|
+| `registerViewAction` | `gui/views/plot/*` | GUI ribbon |
+| `registerPropertyProvider/Setter` | `modules/data`、`gui/views/plot` | GUI 属性面板 |
+| `registerTransformScriptOps` | `modules/script` | `gui/LuaEditor` |
+| `registerTransformEvaluator` | `modules/script` | host / gui / protocol |
+
+这 5 类都是"注册 + 派发 = 运行时路由"，属 host 编排范畴，不是静态运行态数据。
+
+**归位裁决**：
+- 5 类 register*/dispatch* 从 `AppContext` 剥离 → `ModuleHost` 持有的独立 `InteractionRegistry`（headless，`std::function`+`QHash`，符合 libs 铁律）。各注册点由 `appCtx.registerX` 改走 `ModuleContext::host()`。
+- 落 host 而非 gui 的依据：注册方含 `modules/data`、`modules/script`，module 不能依赖 gui（依赖倒挂）；`ModuleContext` 同时持有 `app()`/`host()`，host 是 module 与 gui 共有的最低公共层；消费方在 gui，向下够得着 host。
+- `AppContext` 只留**静态运行态数据**：repo / settings / toolbox / sources / ingest + activeChannel / selection + 信号。
+- `activeChannel` / `selection` **留在 context**：它们是跨前端共享的**状态**（CLI/脚本/GUI 共用），与"行为注册"性质不同；挪进 gui 会让 CLI 失去共享通道。
+
+**B7 顺序修订**（前置剥离，避免把 UI 关注点固化进 libs）：
+1. **B7-0**：剥离 5 类 register* → `ModuleHost::InteractionRegistry`，改各注册点走 `host()`。
+2. **B7-a/b**：迁纯数据 `AppContext` → `libs/context`，构造注入。
+3. **B7-c**：namespace 收口 + 删 `ng/core` + 守卫 core WARNING → FATAL。
