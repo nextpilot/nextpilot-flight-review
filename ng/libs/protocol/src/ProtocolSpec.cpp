@@ -297,6 +297,8 @@ QStringList validate(const QJsonObject &o)
     const int maxsize = o.value(QStringLiteral("maxsize")).toInt(4096);
     if (maxsize < 2 || maxsize > 65535)
         errs << QStringLiteral("maxsize 必须在 2..65535");
+    const QStringList aliasNames = o.value(QStringLiteral("types")).toObject()
+                                       .keys();
     const QJsonArray segArr = o.value(QStringLiteral("segments")).toArray();
     if (segArr.isEmpty())
         errs << QStringLiteral("segments 不能为空");
@@ -397,7 +399,7 @@ QStringList validate(const QJsonObject &o)
         else if (!count.isString() || count.toString().trimmed().isEmpty())
             errs << QStringLiteral("%1 的 count 必须是正整数或表达式").arg(name);
         const QString type = seg.value(QStringLiteral("type")).toString().toLower();
-        if (!typeNames().contains(type))
+        if (!typeNames().contains(type) && !aliasNames.contains(type))
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
 
         // 位域（SPEC §6）：宽度 <= 64，且 width + offset%8 <= 64，单次 loadBytes<=8 即可取完。

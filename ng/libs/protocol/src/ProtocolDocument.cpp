@@ -761,8 +761,43 @@ static bool parseEmit(const QString &s, EmitMode &out, std::string &err)
     return false;
 }
 
+bool parseAliases(const QJsonObject &root, std::map<std::string, AliasDef> &out, std::string &err)
+{
+    const QJsonObject to = root.value(QStringLiteral("types")).toObject();
+    for (auto it = to.begin(); it != to.end(); ++it)
+    {
+        const QJsonObject ao = it.value().toObject();
+        AliasDef ad;
+        if (!parseType(ao.value(QStringLiteral("type")).toString(QStringLiteral("u8")).toStdString(),
+                       ad.ti, err))
+            return false;
+        ad.scale = ao.value(QStringLiteral("scale")).toDouble(1.0);
+        ad.offset = ao.value(QStringLiteral("offset")).toDouble(0.0);
+        ad.unit = ao.value(QStringLiteral("unit")).toString().toStdString();
+        if (ao.contains(QStringLiteral("range")))
+        {
+            const QJsonValue rv = ao.value(QStringLiteral("range"));
+            ad.hasRange = true;
+            if (rv.isArray())
+            {
+                const QJsonArray ra = rv.toArray();
+                ad.rangeMin = ra.at(0).toDouble(0);
+                ad.rangeMax = ra.size() > 1 ? ra.at(1).toDouble(0) : ad.rangeMin;
+            }
+            else
+            {
+                const QJsonObject ro = rv.toObject();
+                ad.rangeMin = ro.value(QStringLiteral("min")).toDouble(0);
+                ad.rangeMax = ro.value(QStringLiteral("max")).toDouble(0);
+            }
+        }
+        out[it.key().toStdString()] = ad;
+    }
+    return true;
+}
+
 bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpec &seg, std::string &err,
-                  bool docAscii)
+                  bool docAscii, const std::map<std::string, AliasDef> *aliases = nullptr)
 {
     seg.name = o.value(QStringLiteral("name")).toString().toStdString();
     if (seg.name.empty())
@@ -891,8 +926,35 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     }
     if (!seg.countExpr)
         return false;
-    if (!parseType(o.value(QStringLiteral("type")).toString(QStringLiteral("u8")).toStdString(), seg.type, err))
-        return false;
+    {
+        const std::string typeName =
+            o.value(QStringLiteral("type")).toString(QStringLiteral("u8")).toStdString();
+        const AliasDef *alias = nullptr;
+        if (aliases)
+        {
+            auto it = aliases->find(typeName);
+            if (it != aliases->end())
+                alias = &it->second;
+        }
+        if (alias)
+        {
+            seg.type = alias->ti;
+            if (seg.scale == 1.0 && alias->scale != 1.0)
+                seg.scale = alias->scale;
+            if (seg.offset == 0.0 && alias->offset != 0.0)
+                seg.offset = alias->offset;
+            if (seg.unit.empty())
+                seg.unit = alias->unit;
+            if (!seg.hasRange && alias->hasRange)
+            {
+                seg.hasRange = true;
+                seg.rangeMin = alias->rangeMin;
+                seg.rangeMax = alias->rangeMax;
+            }
+        }
+        else if (!parseType(typeName, seg.type, err))
+            return false;
+    }
     // 数值解释覆盖类型：base 非 10 或声明了小数位数，说明它是整数记法，不该退化成 f64。
     if (seg.as.empty() && seg.type.type == ValueType::F64 && (seg.base != 10 || seg.hasFixedDigits))
         seg.type = {ValueType::I64, 8};
@@ -1015,6 +1077,8 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
 
     // 只要协议里有字符边界段，字符段的 count 即可缺省（默认 1）。
     // 这是段级事实，不是文档级模式。
+    if (!parseAliases(root, t.aliases, err))
+        return false;
     bool docAscii = false;
     for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
     {
@@ -1032,7 +1096,7 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
     for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
     {
         SegSpec seg;
-        if (!parseSegment(sv.toObject(), t.endian, seg, err, docAscii))
+        if (!parseSegment(sv.toObject(), t.endian, seg, err, docAscii, &t.aliases))
             return false;
         t.segments.push_back(std::move(seg));
     }
@@ -1068,7 +1132,7 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
             for (const QJsonValue &fv : vo.value(QStringLiteral("segments")).toArray())
             {
                 SegSpec seg;
-                if (!parseSegment(fv.toObject(), t.endian, seg, err, docAscii))
+                if (!parseSegment(fv.toObject(), t.endian, seg, err, docAscii, &t.aliases))
                     return false;
                 seg.prefix = var.name + ".";
                 var.segments.push_back(std::move(seg));

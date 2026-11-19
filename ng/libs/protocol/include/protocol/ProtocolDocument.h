@@ -148,6 +148,18 @@ struct SegmentDef
     DigestSpec digest;
 };
 
+// 类型别名（对应 DBC SGTYPE）：段写 type:"imu" 时展开成这里的类型/换算/值域。
+struct AliasDef
+{
+    TypeInfo ti;
+    double scale = 1.0;
+    double offset = 0.0;
+    std::string unit;
+    bool hasRange = false;
+    double rangeMin = 0.0;
+    double rangeMax = 0.0;
+};
+
 struct VariantDef
 {
     std::vector<std::string> keys;
@@ -182,6 +194,7 @@ struct ProtocolDocument
     std::string endian = "little";
     uint32_t maxsize = 4096;
     std::vector<SegmentDef> segments;
+    std::map<std::string, AliasDef> aliases;
     SeriesDef series;
     bool hasTimestamp = false;
     ExprPtr timestampExpr;
