@@ -863,7 +863,7 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 2. **畸形模板集（≥100 份）**：全部返回结构化错误，**零异常抛出**、零崩溃；
 3. **单帧诊断**：任一失败帧能给出 帧号 + 段名 + 期望值/实际值；
 4. **静默丢数据零容忍**：任何"丢弃/截断/跳过"都必须出现在 `Diagnostics` 里，不得只有一个计数器；
-5. **u64 精度**：`0xFFFFFFFFFFFFFFFE` 级别的值必须原样解出（当前会失败）。
+5. **u64 精度**：`0xFFFFFFFFFFFFFFFE` 级别的值必须原样解出（typed 模型 u64 走 `u` 成员不经 double，已补回归用例钉死高位不丢）。
 
 ---
 
@@ -1290,7 +1290,7 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 ### 14.4 验收
 
-- [x] 协议单测 28 项全绿（`./build-ng/tests/ng_test_protocol`），含 `derive`（`a+b`/`a*b`）与 `type:"time"`（`083559.00` → 30959 s、`246100.00` 越界被拒）；
+- [x] 协议单测 29 项全绿（`./build-ng/tests/ng_test_protocol`），含 `derive`（`a+b`/`a*b`）与 `type:"time"`（`083559.00` → 30959 s、`246100.00` 越界被拒）；
 - [x] 省略 `count` 的标量与 SPEC §2.1 一致（validate 与 parse 都按 1 处理）；
 - [x] 全量 ctest 18/18 通过；
 - [ ] 需求方逐项验收 §14.1 的行为口径（尤其 `repeat:"eos"` 在"后面还有段"时的语义）。
@@ -1321,7 +1321,7 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 > 注意：`repeat.mode`（重复模式 `eos`/`until`）是另一个同名键，与顶层 `mode` 无关，未混改。
 
-**验收**：协议单测 28/28 全绿；全量 ctest 18/18。4 个 validate 负例：缺 `mode`、非法值 `xml`、bin 段写 `delimiter`、text 段写 `bit`。`derive` 已补 text 路径用例（`3,4` → sum=7 / prod=12）；`derive`/`time` 在 `previewSequentialFrame` 与 `decodeSequentialCompiled` 双路的 `ok` 结论与派生/时间数值一致。
+**验收**：协议单测 29/29 全绿；全量 ctest 18/18。4 个 validate 负例：缺 `mode`、非法值 `xml`、bin 段写 `delimiter`、text 段写 `bit`。`derive` 已补 text 路径用例（`3,4` → sum=7 / prod=12）；`derive`/`time` 在 `previewSequentialFrame` 与 `decodeSequentialCompiled` 双路的 `ok` 结论与派生/时间数值一致。
 
 **Lua 护栏补全（2026-11-19）**：`ScriptEngine` 增加内存配额——自定义 `lua_Alloc` 记账，预算 1 MiB，超预算拒绝分配并归类为"脚本内存超限"（与指令超时区分）；白名单注释对齐为 base/string/table/math（本构建未编 bit32）。负例：`string.rep("x", 2000000)` 被拒且非超时。
 

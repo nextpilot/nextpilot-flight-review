@@ -458,6 +458,32 @@ int main(int argc, char *argv[])
         OK("位域：Intel/Motorola 位序、base 容器、符号扩展、scale 全部按 SPEC §6");
     }
 
+    // --- 9b) u64 全量程精度：不经 double，高位必须原样保留 ---
+    {
+        const QByteArray u64Tpl = R"({
+          "name":"u64prec","mode":"bin","layout":"sequential","endian":"little","maxsize":8,
+          "segments":[{"name":"ts","type":"u64"}]
+        })";
+        ProtocolDocument ud;
+        std::string uerr;
+        CHECK(parseDocument(QJsonDocument::fromJson(u64Tpl).object(), ud, uerr));
+        CompiledProgram uprog;
+        CHECK(compileProgram(ud, uprog, uerr));
+
+        // 0xFFFFFFFFFFFFFFFE 小端：FE FF FF FF FF FF FF FF
+        QByteArray uframe;
+        const uint8_t bytes[8] = {0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+        uframe.append(reinterpret_cast<const char *>(bytes), 8);
+        ProtocolDecodeResult ur = decodeSequentialCompiled(uframe, uprog);
+        CHECK(ur.ok);
+        const ProtocolChannel *uts = nullptr;
+        for (const auto &ch : ur.channels)
+            if (ch.name == "frame.ts") uts = &ch;
+        CHECK(uts && uts->v.type == ValueType::U64);
+        CHECK(uts->v.at(0).asU64() == 0xFFFFFFFFFFFFFFFEull);
+        OK("u64 全量程：0xFFFFFFFFFFFFFFFE 原样解出，不经过 double 丢位");
+    }
+
     // --- 10) 条件段 if：不成立不占字节、不出通道；位域负值符号扩展 ---
     {
         const QByteArray condTpl = R"({
