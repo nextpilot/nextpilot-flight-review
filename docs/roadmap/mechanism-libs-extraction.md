@@ -1,6 +1,6 @@
 # 机制抽库设计：recording 归属 + 注册表/意向/schema→UI 下沉为 libs
 
-> 状态：**已拍板，分批实施中**（2026-11-19 定方案；2026-11-20 落地 B3 `ng_registry`、B4 `ng_intent`、B5 `ng_uischema` 首批，见 §11；parser 合并待 B6，uischema 其余消费者待 B6 `paramSpecs()` 后接入；Transform 输入控件重构为 B8，方案见总方案 §7.7.2）。
+> 状态：**已拍板，分批实施中**（2026-11-19 定方案；2026-11-20 落地 B3 `ng_registry`、B4 `ng_intent`、B5 `ng_uischema` 首批、B6 解析器统一+命名收敛、B8 Transform 输入控件重构，见 §11；B7 core 消亡待办；uischema 的 ImportDialog 接入见总方案 §5.2）。
 > 需求方三问：① `ng/recording` 为何独立、有何特权？② core 的注册机制（模板、支持多种类）与意向机制抽成 libs；③ 按 schema 让 Qt 绘制对话框/属性面板的能力抽成 libs，重点是**约束 schema 长什么样**。
 > 与 [`dataset-lib-extraction.md`](dataset-lib-extraction.md) 同属 core 瘦身动作；所有结论逐行核对过 `ng/core`、`ng/recording`、`ng/gui`。
 
@@ -546,3 +546,11 @@ class IMessageParser : public IConfigurableContribution {   // 唯一解析器�
 - **B6-a 接口统一**：删 `IFormatDriver.h/.cpp` 与三个 `XxxFormatDriver` 门面类；`IMessageParser` 成唯一接口，并入 `parserId`/`suffixes`/`acceptsFormat`/`preferredTableName`/`probeFile`/`defaultImportOptions`/`prepareParserOptions` 声明，加 `ParseOutput` 能力枚举 + `outputs()` + 多输出函数（`parseMessages` 委托 `parse` 产可读帧，`parseFrames` 明确归 SPI 另批）。三个门面类改名 `XxxFormatParser` 并改继承 `IMessageParser`，删空壳 `load()`。`ExtensionRegistry` 加统一 `parsers()` 视图，`drivers()/driverForFormat()/driverForPath()/messageParsers()` 保留兼容别名（内部按 `outputs()` 含 `FrameBatch` 筛数值批解析器）。SPI 层（`ps_parser_spi.h`/`ParserRegistry`）零改动，`data.load` 与既有测试零改动。
 - **B6-c paramSpecs 收口**：`IMessageParser::paramSpecs()` 默认从 `configSchema()` 的 fields 转纯 metadata（headless 可查），`configSchema()` 保留 virtual。`ProtocolInspectorDialog` 参数区改走 `paramSpecs() → SchemaEngine.compile → QtFieldRenderer.render`，删除手绘控件 switch，中文 label 经术语表覆盖。**ImportDialog 未接入**：CSV 动态列枚举来自 probe 列下标，uischema enum 用字符串 label 作值且无 probe 注入通道，强接会退化探测预览；保留自渲染，作为独立小批记录（见总方案 §5.2）。
 - **验收**：B6-a/b/c 各批 Release + Debug ctest 16/16 双绿；门面类型全清零；构建守卫通过；rebase 合并远端 protocol(S4a-1) 后复验双配置仍全绿。
+
+### 11.5 B8：Transform 输入控件重构（2026-11-20，✅ 已实施）
+
+按总方案 §7.7.2 落地，分两子批（各自独立提交、双配置验收）：
+
+- **B8-a `LuaScriptLibrary`（script 模块，有状态不进 libs）**：扫描 `scripts/ops/*.lua`，裸 `lua_State` 只开 base/table/string/math，指令计数钩子防死循环。`describe()` 导出 table 经 Lua→QJson 反向转换（区分数组/对象）填 `TransformDescriptor`（id=`lua.<name>`）；无 `describe()` 老脚本降级为文件名 label + 能力全开、不报错。`save` 写文件并注册 descriptor，`resolveSource` 文件为真源、快照兜底，脚本名安全校验（小写/数字/_-）。headless 测试覆盖元数据解析/降级/语法错/死循环截断/沙箱隔离（io.open 失败）/保存注册/loadAll/非法名。
+- **B8-b GUI**：`TransformField`（可编辑下拉：选算子带说明 / 直接敲表达式 + uischema 参数区 + 右侧编辑按钮）；`LuaEditor`（代码编辑 + 单点/批量调试复用旧逻辑 + 保存到 `scripts/ops` 并注册，回传 `scriptId` + `luaSource` 快照）。`TransformEditorDialog` 退为承载 `TransformField` 的薄壳，4 个调用点 `run()` API 零改动。脚本能力经 `TransformScriptOps` 回调注入 `AppContext`，gui 不依赖 script 模块；`ScriptModule` 持有 `LuaScriptLibrary` 实例并注入（组合根装配、构造注入）。顺带修 B5 遗留缺陷：`transformParamSpecs` 的 number 参数用 QDoubleSpinBox 默认下限 0 截断负值（取反算子无法输入 -1），补宽松范围 ±1e12。
+- **验收**：新增 `ng_lua_script_library`（headless）、`ng_transform_field`（offscreen GUI）两个测试；Release + Debug ctest 18/18 双绿；libs 边界守卫通过。

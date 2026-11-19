@@ -133,7 +133,7 @@
 | **B4** ✅ | `ng_intent` 移出 5 个意向类型 | `libs/intent/`、`core/`、`AppContext`/`ScriptFacade` | 独立验收 `ng_test_intent_standalone`（只链 ng_intent+foundation）走通 Job JSON 往返+缺 op 报错+录制器+契约实现；Release+Debug 14/14 |
 | **B5**（部分） | `ng_uischema`：纯 metadata 契约 + `SchemaEngine` + 唯一 Qt 渲染器；TransformEditorDialog 已接入 | `libs/uischema/`、`core/Transform`、`gui/TransformEditorDialog` | 唯一 `FieldType→QWidget` 映射落在 uischema；headless compile/JSON 往返测试 + transform 适配测试；Release+Debug 16/16。ImportDialog/ProtocolInspectorDialog 待 B6 `paramSpecs()` 接口后接入 |
 | **B6** ✅ | 取消 `IFormatDriver` + 三个门面类，统一 `IMessageParser`（多输出函数）；命名收敛 `SourceRegistry`/`Domain`/`Toolbox`；ProtocolInspectorDialog 接入 uischema | `core/`、`extensions/`、`ExtensionRegistry`、`ARCHITECTURE.md` | 无 `IFormatDriver`/`IDataParser`/`XxxFormatDriver` 门面类型；无旧命名残留；Release+Debug 16/16。ImportDialog 动态探测字段接入见 §5.2 |
-| **B8** | Transform 输入控件重构：`TransformField` 可编辑下拉 + 独立 `LuaEditor` + 脚本 `describe()` 自述元数据 | `gui/TransformField`、`gui/LuaEditor`、`modules/script`、`core/Transform` | 下拉可选算子（带说明）/ 直接敲表达式 / 编辑按钮进 Lua Editor；脚本落 `scripts/ops/*.lua` 并注册 `lua.<name>`；能力过滤与在线调试保留；双配置全绿 |
+| **B8** ✅ | Transform 输入控件重构：`TransformField` 可编辑下拉 + 独立 `LuaEditor` + 脚本 `describe()` 自述元数据 | `gui/TransformField`、`gui/LuaEditor`、`modules/script/LuaScriptLibrary`、`core/Transform`、`AppContext` | 下拉可选算子（带说明）/ 直接敲表达式 / 编辑按钮进 Lua Editor；脚本落 `scripts/ops/*.lua` 并注册 `lua.<name>`；能力过滤与在线调试保留；`describe()` 沙箱解析元数据、文件为真源+快照兜底；Release+Debug 18/18 |
 
 **每批硬指标**：Release + Debug 双配置 `ctest` 11/11 全绿；新库领域纯净（无飞行/CAN/姿态词）；headless 可编译。
 
@@ -304,6 +304,11 @@ foundation(Result)
 - 否决头注释 `@label`（要写注释解析器、易漂移）与旁车 `.meta.json`（两份文件要同步、用户嫌烦）。
 
 **边界**：`TransformField`/`LuaEditor` 在 gui；脚本文件读写/解析/注册在 `modules/script`（有状态，不进 libs，符合 libs 铁律）；迁移老代码 `ScriptLibrary`（scripts/lib、ops、batch + resolve/invalidate）思路，不另起炉灶。依赖 B5 的 uischema 渲染层。
+
+**实施状态（✅ 2026-11-20 完成，分两子批）**：
+- **B8-a（`LuaScriptLibrary`，script 模块）**：裸 lua_State 只开 base/table/string/math，指令钩子防死循环；`describe()` 导出 table → QJson → descriptor（`lua.<name>`），无 `describe()` 老脚本降级；Lua table→QJson 反向转换区分数组/对象；`save` 写文件+注册，`resolveSource` 文件为真源/快照兜底，脚本名安全校验。headless 测试覆盖元数据/降级/语法错/死循环/沙箱隔离/保存注册/loadAll/非法名。
+- **B8-b（GUI）**：`TransformField` 可编辑下拉 + uischema 参数区 + 编辑按钮；`LuaEditor` 代码编辑 + 单点/批量调试（复用旧逻辑）+ 保存注册；`TransformEditorDialog` 退为薄壳，4 个调用点 `run()` API 零改动。脚本能力经 `TransformScriptOps` 回调注入 AppContext，gui 不依赖 script 模块。顺带修 B5 遗留缺陷：`transformParamSpecs` 的 number 参数因 QDoubleSpinBox 默认下限 0 截断负值，补宽松范围。
+- **验收**：`ng_lua_script_library`（headless）+ `ng_transform_field`（offscreen）两个新测试；Release+Debug ctest 18/18 双绿；libs 边界守卫通过。
 
 ### 7.8 拍板追溯（需求方 2026-11-19 追加）
 
