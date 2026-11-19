@@ -1,6 +1,6 @@
 #include "IngestOrchestrator.h"
 
-#include "DataSourceRepository.h"
+#include "SourceRegistry.h"
 
 #include <QFileInfo>
 
@@ -26,7 +26,7 @@ QString cachePathFor(const QString &origin, const QString &parserId)
 }
 } // namespace
 
-IngestOrchestrator::IngestOrchestrator(DataRepository &repo, DataSourceRepository &sources,
+IngestOrchestrator::IngestOrchestrator(DataRepository &repo, SourceRegistry &sources,
                                        IngestPipeline &pipeline)
     : m_repo(repo), m_sources(sources), m_pipeline(pipeline)
 {

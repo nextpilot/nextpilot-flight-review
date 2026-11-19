@@ -21,17 +21,17 @@ namespace nextpilot::plotscope::ext
 class GenericUiContribution final : public nextpilot::plotscope::core::IUiContribution
 {
 public:
-    GenericUiContribution(QString id, QString name, nextpilot::plotscope::core::FormatDomain domain,
+    GenericUiContribution(QString id, QString name, nextpilot::plotscope::core::Domain domain,
                           QList<nextpilot::plotscope::core::UiAction> actions);
     QString id() const override { return m_id; }
     QString displayName() const override { return m_name; }
-    nextpilot::plotscope::core::FormatDomain domain() const override { return m_domain; }
+    nextpilot::plotscope::core::Domain domain() const override { return m_domain; }
     QList<nextpilot::plotscope::core::UiAction> actions() const override { return m_actions; }
 
 private:
     QString m_id;
     QString m_name;
-    nextpilot::plotscope::core::FormatDomain m_domain;
+    nextpilot::plotscope::core::Domain m_domain;
     QList<nextpilot::plotscope::core::UiAction> m_actions;
 };
 
@@ -43,28 +43,28 @@ private:
 class GenericPanelContribution final : public nextpilot::plotscope::core::IPanelContribution
 {
 public:
-    GenericPanelContribution(QString id, QString name, nextpilot::plotscope::core::FormatDomain domain,
+    GenericPanelContribution(QString id, QString name, nextpilot::plotscope::core::Domain domain,
                             QList<nextpilot::plotscope::core::PanelSpec> panels);
     QString id() const override { return m_id; }
     QString displayName() const override { return m_name; }
-    nextpilot::plotscope::core::FormatDomain domain() const override { return m_domain; }
+    nextpilot::plotscope::core::Domain domain() const override { return m_domain; }
     QList<nextpilot::plotscope::core::PanelSpec> panels() const override { return m_panels; }
 
 private:
     QString m_id;
     QString m_name;
-    nextpilot::plotscope::core::FormatDomain m_domain;
+    nextpilot::plotscope::core::Domain m_domain;
     QList<nextpilot::plotscope::core::PanelSpec> m_panels;
 };
 
 class GenericScriptContribution final : public nextpilot::plotscope::core::IScriptContribution
 {
 public:
-    GenericScriptContribution(QString id, QString name, nextpilot::plotscope::core::FormatDomain domain,
+    GenericScriptContribution(QString id, QString name, nextpilot::plotscope::core::Domain domain,
                               QString language, QString source, QStringList exports);
     QString id() const override { return m_id; }
     QString displayName() const override { return m_name; }
-    nextpilot::plotscope::core::FormatDomain domain() const override { return m_domain; }
+    nextpilot::plotscope::core::Domain domain() const override { return m_domain; }
     QString language() const override { return m_language; }
     QString source() const override { return m_source; }
     QStringList exports() const override { return m_exports; }
@@ -72,7 +72,7 @@ public:
 private:
     QString m_id;
     QString m_name;
-    nextpilot::plotscope::core::FormatDomain m_domain;
+    nextpilot::plotscope::core::Domain m_domain;
     QString m_language;
     QString m_source;
     QStringList m_exports;
@@ -81,51 +81,51 @@ private:
 class GenericDataContribution final : public nextpilot::plotscope::core::IDataContribution
 {
 public:
-    GenericDataContribution(QString id, QString name, nextpilot::plotscope::core::FormatDomain domain,
+    GenericDataContribution(QString id, QString name, nextpilot::plotscope::core::Domain domain,
                             QList<nextpilot::plotscope::core::DataAsset> assets);
     QString id() const override { return m_id; }
     QString displayName() const override { return m_name; }
-    nextpilot::plotscope::core::FormatDomain domain() const override { return m_domain; }
+    nextpilot::plotscope::core::Domain domain() const override { return m_domain; }
     QList<nextpilot::plotscope::core::DataAsset> assets() const override { return m_assets; }
 
 private:
     QString m_id;
     QString m_name;
-    nextpilot::plotscope::core::FormatDomain m_domain;
+    nextpilot::plotscope::core::Domain m_domain;
     QList<nextpilot::plotscope::core::DataAsset> m_assets;
 };
 
 class GenericExampleContribution final : public nextpilot::plotscope::core::IExampleContribution
 {
 public:
-    GenericExampleContribution(QString id, QString name, nextpilot::plotscope::core::FormatDomain domain,
+    GenericExampleContribution(QString id, QString name, nextpilot::plotscope::core::Domain domain,
                                QList<nextpilot::plotscope::core::ExampleEntry> entries);
     QString id() const override { return m_id; }
     QString displayName() const override { return m_name; }
-    nextpilot::plotscope::core::FormatDomain domain() const override { return m_domain; }
+    nextpilot::plotscope::core::Domain domain() const override { return m_domain; }
     QList<nextpilot::plotscope::core::ExampleEntry> entries() const override { return m_entries; }
 
 private:
     QString m_id;
     QString m_name;
-    nextpilot::plotscope::core::FormatDomain m_domain;
+    nextpilot::plotscope::core::Domain m_domain;
     QList<nextpilot::plotscope::core::ExampleEntry> m_entries;
 };
 
 class GenericDocContribution final : public nextpilot::plotscope::core::IDocContribution
 {
 public:
-    GenericDocContribution(QString id, QString name, nextpilot::plotscope::core::FormatDomain domain,
+    GenericDocContribution(QString id, QString name, nextpilot::plotscope::core::Domain domain,
                            QList<nextpilot::plotscope::core::DocEntry> entries);
     QString id() const override { return m_id; }
     QString displayName() const override { return m_name; }
-    nextpilot::plotscope::core::FormatDomain domain() const override { return m_domain; }
+    nextpilot::plotscope::core::Domain domain() const override { return m_domain; }
     QList<nextpilot::plotscope::core::DocEntry> entries() const override { return m_entries; }
 
 private:
     QString m_id;
     QString m_name;
-    nextpilot::plotscope::core::FormatDomain m_domain;
+    nextpilot::plotscope::core::Domain m_domain;
     QList<nextpilot::plotscope::core::DocEntry> m_entries;
 };
 

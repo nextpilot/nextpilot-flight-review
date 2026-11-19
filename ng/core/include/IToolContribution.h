@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ContributionKind.h"
-#include "FormatDomain.h"
+#include "Domain.h"
 
 #include <QString>
 
@@ -30,8 +30,8 @@ public:
     // 贡献类型（开放字符串，见 ContributionKind）。
     virtual QString kind() const = 0;
 
-    // 业务领域（稳定分类学，见 FormatDomain）。
-    virtual FormatDomain domain() const = 0;
+    // 业务领域（稳定分类学，见 Domain）。
+    virtual Domain domain() const = 0;
 
     // 来自哪个知识包（provider pack id），用于按包原子装卸。
     // 由 ToolPack 在 add() 时写入；注册表也据此把贡献归到包。

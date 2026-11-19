@@ -2,7 +2,7 @@
 
 #include "AppContext.h"
 #include "DataRepository.h"
-#include "FormatDomain.h"
+#include "Domain.h"
 #include "IIntentExecutor.h"
 #include "IPanelContribution.h"
 #include "Intent.h"
@@ -73,9 +73,9 @@ public:
     //   - 面板清单由知识包决定，装/卸知识包即时反映；
     //   - headless 下也能问（清单是纯数据）。
     //
-    // domain 传 FormatDomain::General 表示不限领域，返回全部可用领域面板。
+    // domain 传 Domain::General 表示不限领域，返回全部可用领域面板。
     virtual QList<nextpilot::plotscope::core::PanelSpec> availableDomainPanels(
-        nextpilot::plotscope::core::FormatDomain domain) const = 0;
+        nextpilot::plotscope::core::Domain domain) const = 0;
 
     // 按 id 请求领域面板（id 来自 availableDomainPanels）。
     // 与 requestPanel 的区别：这里不要求 views/ 预先注册，

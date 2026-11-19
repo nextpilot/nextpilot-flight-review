@@ -2,7 +2,7 @@
 
 #include "AppContext.h"
 #include "DataRepository.h"
-#include "DataSourceRepository.h"
+#include "SourceRegistry.h"
 
 #include <QWidget>
 
@@ -82,7 +82,7 @@ private:
 
     nextpilot::plotscope::core::AppContext &m_appCtx;
     nextpilot::plotscope::core::DataRepository &m_repo;
-    nextpilot::plotscope::core::DataSourceRepository &m_sources;
+    nextpilot::plotscope::core::SourceRegistry &m_sources;
     nextpilot::plotscope::core::IIntentExecutor &m_executor;
 
     QLabel *m_header = nullptr;

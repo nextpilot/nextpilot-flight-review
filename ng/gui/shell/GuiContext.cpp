@@ -79,7 +79,7 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     return widget;
 }
 
-QList<PanelSpec> GuiContext::availableDomainPanels(FormatDomain domain) const
+QList<PanelSpec> GuiContext::availableDomainPanels(Domain domain) const
 {
     // 领域面板清单来自**知识包**（IPanelContribution，纯数据）。
     //
@@ -96,8 +96,8 @@ QList<PanelSpec> GuiContext::availableDomainPanels(FormatDomain domain) const
         {
             // 领域过滤：面板归属由**贡献者**的领域决定。
             // 用贡献者所在的 pack 领域，而非面板自己声明（面板是包的一部分）。
-            const FormatDomain ownerDomain = panel->domain();
-            if (domain != FormatDomain::General && ownerDomain != domain)
+            const Domain ownerDomain = panel->domain();
+            if (domain != Domain::General && ownerDomain != domain)
                 continue;
             out.append(spec);
         }
@@ -119,7 +119,7 @@ QWidget *GuiContext::requestDomainPanel(const QString &area, const QString &pane
     // 标题优先用面板自己的描述（知识包声明的"CAN 报文"），
     // 否则退回插槽的 label。
     QString title;
-    for (const PanelSpec &spec : availableDomainPanels(FormatDomain::General))
+    for (const PanelSpec &spec : availableDomainPanels(Domain::General))
     {
         if (spec.id == panelId)
         {

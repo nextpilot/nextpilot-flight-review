@@ -4,13 +4,13 @@ add_library(ng_core STATIC
     src/ScriptFacade.cpp
     src/IFormatDriver.cpp
     src/ExtensionRegistry.cpp
-    src/FormatDomain.cpp
+    src/Domain.cpp
     src/ContributionKind.cpp
     src/UiSlotRegistry.cpp
     src/PanelFactoryRegistry.cpp
     src/BuiltinPackRegistry.cpp
     src/BuiltinContributions.cpp
-    src/DataSourceRepository.cpp
+    src/SourceRegistry.cpp
     src/IngestPipeline.cpp
     src/IngestOrchestrator.cpp
     src/IByteSource.cpp
@@ -30,7 +30,7 @@ add_library(ng_core STATIC
     include/IByteSource.h
     include/IngestOrchestrator.h
     include/ExtensionRegistry.h
-    include/FormatDomain.h
+    include/Domain.h
     include/ContributionKind.h
     include/IToolContribution.h
     include/IToolPack.h
@@ -46,7 +46,7 @@ add_library(ng_core STATIC
     include/DataSource.h
     include/SettingsStore.h
     include/WorkspaceDataConfig.h
-    include/DataSourceRepository.h
+    include/SourceRegistry.h
     include/IngestPipeline.h
     include/AppContext.h
     include/ParserRegistry.h

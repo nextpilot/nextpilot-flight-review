@@ -159,10 +159,10 @@ int main(int argc, char **argv)
     {
         // 工具箱按业务领域分组展示（通用 / 飞控 / 汽车 / 机器人 / 卫导 / 视频）。
         const auto &toolbox = application.modules().extensions();
-        const nextpilot::plotscope::core::FormatDomain order[] = {
-            nextpilot::plotscope::core::FormatDomain::General, nextpilot::plotscope::core::FormatDomain::Autopilot,
-            nextpilot::plotscope::core::FormatDomain::Automotive, nextpilot::plotscope::core::FormatDomain::Robotics,
-            nextpilot::plotscope::core::FormatDomain::Gnss, nextpilot::plotscope::core::FormatDomain::Video
+        const nextpilot::plotscope::core::Domain order[] = {
+            nextpilot::plotscope::core::Domain::General, nextpilot::plotscope::core::Domain::Autopilot,
+            nextpilot::plotscope::core::Domain::Automotive, nextpilot::plotscope::core::Domain::Robotics,
+            nextpilot::plotscope::core::Domain::Gnss, nextpilot::plotscope::core::Domain::Video
         };
         for (auto domain : order)
         {

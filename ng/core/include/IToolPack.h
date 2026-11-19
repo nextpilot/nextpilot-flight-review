@@ -1,7 +1,7 @@
 #pragma once
 
 #include "IToolContribution.h"
-#include "FormatDomain.h"
+#include "Domain.h"
 
 #include <QList>
 #include <QString>
@@ -26,7 +26,7 @@ public:
 
     virtual QString id() const = 0;
     virtual QString displayName() const = 0;
-    virtual FormatDomain domain() const = 0;
+    virtual Domain domain() const = 0;
 
     // 该包提供的全部贡献（所有权归包本身，由 unique_ptr 持有）。
     virtual const std::vector<std::unique_ptr<IToolContribution>> &contributions() const = 0;
@@ -39,12 +39,12 @@ public:
 class ToolPack final : public IToolPack
 {
 public:
-    ToolPack(QString id, QString displayName, FormatDomain domain)
+    ToolPack(QString id, QString displayName, Domain domain)
         : m_id(std::move(id)), m_displayName(std::move(displayName)), m_domain(domain) {}
 
     QString id() const override { return m_id; }
     QString displayName() const override { return m_displayName; }
-    FormatDomain domain() const override { return m_domain; }
+    Domain domain() const override { return m_domain; }
 
     const std::vector<std::unique_ptr<IToolContribution>> &contributions() const override
     {
@@ -69,7 +69,7 @@ public:
 private:
     QString m_id;
     QString m_displayName;
-    FormatDomain m_domain;
+    Domain m_domain;
     std::vector<std::unique_ptr<IToolContribution>> m_contribs;
 };
 

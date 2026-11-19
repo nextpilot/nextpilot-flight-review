@@ -4,7 +4,7 @@
 #include "IToolPack.h"
 #include "IFormatDriver.h"
 #include "IMessageParser.h"
-#include "FormatDomain.h"
+#include "Domain.h"
 
 #include <QHash>
 #include <QList>
@@ -43,8 +43,8 @@ public:
     // === 通用贡献查询（开放，支持任意 kind）===
     QList<IToolContribution *> contributions() const;
     QList<IToolContribution *> contributions(const QString &kind) const;
-    QList<IToolContribution *> contributions(const QString &kind, FormatDomain domain) const;
-    QList<IToolContribution *> contributionsByDomain(FormatDomain domain) const;
+    QList<IToolContribution *> contributions(const QString &kind, Domain domain) const;
+    QList<IToolContribution *> contributionsByDomain(Domain domain) const;
     IToolContribution *contribution(const QString &id) const;
     QStringList kinds() const;             // 当前已登记的所有 kind（去重）
     QStringList contributionIds() const;   // 所有贡献 id
@@ -57,8 +57,8 @@ public:
     IFormatDriver *driverForFormat(const QString &format) const;
     IFormatDriver *driverForPath(const QString &path) const;
     QList<IFormatDriver *> drivers() const;
-    QList<IFormatDriver *> driversByDomain(FormatDomain domain) const;
-    QList<FormatDomain> domains() const; // 已有格式驱动的领域（去重）
+    QList<IFormatDriver *> driversByDomain(Domain domain) const;
+    QList<Domain> domains() const; // 已有格式驱动的领域（去重）
     QStringList ids() const;             // 格式驱动 id
     bool contains(const QString &id) const;
     int count() const;                   // 格式驱动数量
@@ -66,7 +66,7 @@ public:
     // === 协议解析器快捷 API（kind=message，供专用协议对话框/CLI 消费）===
     // 与格式驱动并列而非混用：格式驱动产 Dataset，协议解析器产 DecodedFrame。
     QList<IMessageParser *> messageParsers() const;
-    QList<IMessageParser *> messageParsersByDomain(FormatDomain domain) const;
+    QList<IMessageParser *> messageParsersByDomain(Domain domain) const;
     IMessageParser *messageParser(const QString &id) const;
     IMessageParser *messageParserForProtocol(const QString &protocolId) const;
     // 按传输协议筛选：supportedTransports() 含 transport 的解析器。

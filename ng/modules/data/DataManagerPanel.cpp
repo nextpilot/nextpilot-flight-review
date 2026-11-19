@@ -232,9 +232,9 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
 
     connect(&m_repo, &DataRepository::datasetAdded, this, [this](DatasetId) { refresh(); });
     connect(&m_repo, &DataRepository::datasetRemoved, this, [this](DatasetId) { refresh(); });
-    connect(&m_sources, &DataSourceRepository::sourceAdded, this, [this](int) { refresh(); });
-    connect(&m_sources, &DataSourceRepository::sourceRemoved, this, [this](int) { refresh(); });
-    connect(&m_sources, &DataSourceRepository::sourceChanged, this, [this](int) { rebuildTree(); });
+    connect(&m_sources, &SourceRegistry::sourceAdded, this, [this](int) { refresh(); });
+    connect(&m_sources, &SourceRegistry::sourceRemoved, this, [this](int) { refresh(); });
+    connect(&m_sources, &SourceRegistry::sourceChanged, this, [this](int) { rebuildTree(); });
 
     registerPropertyProviders();
     refresh();

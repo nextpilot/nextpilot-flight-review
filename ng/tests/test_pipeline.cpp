@@ -7,7 +7,7 @@
 //   4) 需求(6)：录制在字节层 —— 录的是原始字节，回放走同一 Parser。
 
 #include "AppContext.h"
-#include "DataSourceRepository.h"
+#include "SourceRegistry.h"
 #include "IngestOrchestrator.h"
 #include "IngestPipeline.h"
 #include "ParserRegistry.h"
@@ -332,7 +332,7 @@ int main()
 
     // ========== 5) 多数据源并存（需求 5）============
     {
-        DataSourceRepository repo;
+        SourceRegistry repo;
         DataSourceInfo s1;
         s1.name = QStringLiteral("flight-1.ulg");
         s1.kind = SourceKind::File;
@@ -434,7 +434,7 @@ int main()
 
     // ========== 9) 数据源是运行时实例：绑定引用资产，不复制 ==========
     {
-        DataSourceRepository repo;
+        SourceRegistry repo;
         DataSourceInfo info;
         info.name = QStringLiteral("flight.ulg");
         info.origin = QStringLiteral("/data/flight.ulg");
@@ -993,7 +993,7 @@ int main()
         // 断言三件事：表名按宿主声明改写、数据集内容正确、stable id 生效。
         {
             DataRepository repoC;
-            DataSourceRepository sourcesC;
+            SourceRegistry sourcesC;
             IngestPipeline pipeC(repoC);
 
             // 宿主策略：表名叫 "demo"（= 驱动 preferredTableName 的结果）、
@@ -1045,7 +1045,7 @@ int main()
             CHECK(QFileInfo::exists(cachePath));
 
             DataRepository repoC2;
-            DataSourceRepository sourcesC2;
+            SourceRegistry sourcesC2;
             IngestPipeline pipeC2(repoC2);
             IngestOptions optC2;
             optC2.tableName = QStringLiteral("demo");

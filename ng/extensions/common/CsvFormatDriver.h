@@ -15,7 +15,7 @@ class CsvFormatDriver final : public nextpilot::plotscope::core::IFormatDriver
 public:
     QString id() const override;
     QString displayName() const override;
-    nextpilot::plotscope::core::FormatDomain domain() const override;
+    nextpilot::plotscope::core::Domain domain() const override;
     QStringList suffixes() const override;
     bool acceptsFormat(const QString &format) const override;
 

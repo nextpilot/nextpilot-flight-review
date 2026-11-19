@@ -311,7 +311,7 @@ int main(int argc, char *argv[])
         int automotive = 0;
         for (nextpilot::plotscope::core::IToolContribution *c :
              toolbox.contributions(nextpilot::plotscope::core::ContributionKind::Panel,
-                                  nextpilot::plotscope::core::FormatDomain::Automotive))
+                                  nextpilot::plotscope::core::Domain::Automotive))
         {
             auto *pc = dynamic_cast<nextpilot::plotscope::core::IPanelContribution *>(c);
             if (pc)
@@ -331,7 +331,7 @@ int main(int argc, char *argv[])
         CHECK(ui != nullptr);
 
         // 器官按领域查清单（不写死 id）。
-        const auto specs = ui->availableDomainPanels(FormatDomain::Automotive);
+        const auto specs = ui->availableDomainPanels(Domain::Automotive);
         const PanelSpec *canSpec = nullptr;
         for (const PanelSpec &s : specs)
             if (s.id == QStringLiteral("car.can-browser"))

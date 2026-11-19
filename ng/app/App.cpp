@@ -1,7 +1,7 @@
 #include "App.h"
 
 #include "BuiltinModuleRegistry.h"
-#include "FormatToolbox.h"
+#include "Toolbox.h"
 #include "PluginScanner.h"
 #include "RecordingBackend.h"
 #include "RecordingFormat.h"

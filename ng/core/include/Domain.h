@@ -12,7 +12,7 @@ namespace nextpilot::plotscope::core
 //   - 通用（CSV/JSON/binary）与视频（同步）是横切方向。
 // 每个格式驱动声明自己属于哪个领域；注册表据此分组、CLI 据此分栏展示。
 // 新增业务方向只加一个枚举值，不动注册表与器官。
-enum class FormatDomain
+enum class Domain
 {
     General,     // 通用：CSV / JSON / binary
     Autopilot,   // 飞控：ULog / apbin / tlog / mavlink / sim
@@ -23,7 +23,7 @@ enum class FormatDomain
 };
 
 // 稳定标识（序列化/配置用）与展示名。
-const char *domainKey(FormatDomain domain);
-QString domainName(FormatDomain domain);
+const char *domainKey(Domain domain);
+QString domainName(Domain domain);
 
 } // namespace nextpilot::plotscope::core

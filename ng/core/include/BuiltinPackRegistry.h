@@ -17,7 +17,7 @@ class ExtensionRegistry;
 //
 // 与 host::BuiltinModuleRegistry 同构：工具箱的每个领域包在自己的 TU 里静态登记，
 // 宿主启动时遍历装载。于是"新增一个扩展（知识包）"= 新增一个目录 + 一行 CMake，
-// 既有的 FormatToolbox / App / 宿主代码全都不动。
+// 既有的 Toolbox / App / 宿主代码全都不动。
 //
 // 这里放 core 而非 extensions 层：注册表本体（ExtensionRegistry）在 core，
 // 自注册表与它同处一层最自然。

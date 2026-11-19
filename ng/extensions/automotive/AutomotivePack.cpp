@@ -16,9 +16,9 @@ QString AutomotivePack::packId()
 std::unique_ptr<IToolPack> AutomotivePack::build()
 {
     // 预留领域：先以 UI + 文档占位，格式驱动后续按 ULog 公式平移时落入本包。
-    auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("汽车工具箱"), FormatDomain::Automotive);
+    auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("汽车工具箱"), Domain::Automotive);
     pack->add<GenericUiContribution>(
-        QStringLiteral("car.ui.contributions"), QStringLiteral("汽车界面入口"), FormatDomain::Automotive,
+        QStringLiteral("car.ui.contributions"), QStringLiteral("汽车界面入口"), Domain::Automotive,
         QList<UiAction>{
             {QStringLiteral("car.dock.can"), QStringLiteral("CAN 报文面板"), QStringLiteral("dock.right"),
              QString(), QString()}});
@@ -27,12 +27,12 @@ std::unique_ptr<IToolPack> AutomotivePack::build()
     // 属于领域知识，通用视图层（gui/views/）不该认识它。
     // 实现见 ng/extensions/automotive/gui/CanBrowserPanel.cpp（GUI 侧）。
     pack->add<GenericPanelContribution>(
-        QStringLiteral("car.panels"), QStringLiteral("汽车领域面板"), FormatDomain::Automotive,
+        QStringLiteral("car.panels"), QStringLiteral("汽车领域面板"), Domain::Automotive,
         QList<PanelSpec>{
             {QStringLiteral("car.can-browser"), QStringLiteral("CAN 报文"), QStringLiteral("dock.right")}});
 
     pack->add<GenericDocContribution>(
-        QStringLiteral("car.docs"), QStringLiteral("汽车知识文档"), FormatDomain::Automotive,
+        QStringLiteral("car.docs"), QStringLiteral("汽车知识文档"), Domain::Automotive,
         QList<DocEntry>{
             {QStringLiteral("car.doc.formats"), QStringLiteral("汽车总线格式（待接入）"),
              QStringLiteral("docs/automotive/formats.md"), QStringLiteral("text/markdown")}});
@@ -41,7 +41,7 @@ std::unique_ptr<IToolPack> AutomotivePack::build()
 
 QString AutomotivePack::id() const { return m_pack.id(); }
 QString AutomotivePack::displayName() const { return m_pack.displayName(); }
-FormatDomain AutomotivePack::domain() const { return m_pack.domain(); }
+Domain AutomotivePack::domain() const { return m_pack.domain(); }
 const std::vector<std::unique_ptr<IToolContribution>> &AutomotivePack::contributions() const
 {
     return m_pack.contributions();

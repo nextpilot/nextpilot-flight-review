@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DataRepository.h"
-#include "DataSourceRepository.h"
+#include "SourceRegistry.h"
 #include "ExtensionRegistry.h"
 #include "IngestPipeline.h"
 #include "Result.h"
@@ -71,8 +71,8 @@ public:
     const ExtensionRegistry &toolbox() const { return m_toolbox; }
 
     // 数据源实例登记（多源并存）。
-    DataSourceRepository &sources() { return m_sources; }
-    const DataSourceRepository &sources() const { return m_sources; }
+    SourceRegistry &sources() { return m_sources; }
+    const SourceRegistry &sources() const { return m_sources; }
 
     // 摄取管道（单前端 → 多解析器扇出 → 多数据集）。
     IngestPipeline &ingest() { return m_ingest; }
@@ -85,7 +85,7 @@ public:
     // 但存的是 id 指针而非数据副本——数据始终在仓库里，这里不复制一份。
     //
     // **两套 id 空间，不可混用**：
-    //   · activeSourceId —— **数据源** id（DataSourceRepository 的键）。
+    //   · activeSourceId —— **数据源** id（SourceRegistry 的键）。
     //     谁重载/导出/关闭，以它为准。
     //   · activeDatasetId —— **数据集** id（DataRepository 的键）。活动通道
     //     落在哪个数据集上。
@@ -109,7 +109,7 @@ public:
     //   走共享状态则是星形——新增视图只订阅信号，不影响已有视图。
     //
     // 注意：它只改活动**数据集**，不动 activeSourceId —— 源 id 由调用方
-    // 显式给出（数据集 → 源的反查用 DataSourceRepository::sourceOfDataset）。
+    // 显式给出（数据集 → 源的反查用 SourceRegistry::sourceOfDataset）。
     void setActiveChannel(int datasetId, const QString &table, const QString &column);
 
     void clearActiveChannel();
@@ -185,7 +185,7 @@ private:
     DataRepository m_repo;
     SettingsStore m_settings;
     ExtensionRegistry m_toolbox;
-    DataSourceRepository m_sources;
+    SourceRegistry m_sources;
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
 
     QHash<QString, ViewActionHandler> m_viewActions; // fastplot 视图动作处理器表
@@ -194,7 +194,7 @@ private:
     TransformEvalFn m_transformEvaluator; // 统一变换求值（script 模块注入）
     Selection m_selection;       // 当前统一选中对象
 
-    int m_activeSourceId = -1;   // 数据源 id（DataSourceRepository 键）
+    int m_activeSourceId = -1;   // 数据源 id（SourceRegistry 键）
     int m_activeDatasetId = -1;  // 活动通道所在的数据集 id（DataRepository 键）
     QString m_activeTable;
     QString m_activeColumn;

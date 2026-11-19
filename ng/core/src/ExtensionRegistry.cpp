@@ -97,7 +97,7 @@ QList<IToolContribution *> ExtensionRegistry::contributions(const QString &kind)
 }
 
 QList<IToolContribution *> ExtensionRegistry::contributions(const QString &kind,
-                                                            FormatDomain domain) const
+                                                            Domain domain) const
 {
     QList<IToolContribution *> out;
     for (IToolContribution *c : m_byKind.value(kind, {}))
@@ -106,7 +106,7 @@ QList<IToolContribution *> ExtensionRegistry::contributions(const QString &kind,
     return out;
 }
 
-QList<IToolContribution *> ExtensionRegistry::contributionsByDomain(FormatDomain domain) const
+QList<IToolContribution *> ExtensionRegistry::contributionsByDomain(Domain domain) const
 {
     QList<IToolContribution *> out;
     for (const QString &id : m_idOrder)
@@ -204,7 +204,7 @@ QList<IFormatDriver *> ExtensionRegistry::drivers() const
     return out;
 }
 
-QList<IFormatDriver *> ExtensionRegistry::driversByDomain(FormatDomain domain) const
+QList<IFormatDriver *> ExtensionRegistry::driversByDomain(Domain domain) const
 {
     QList<IFormatDriver *> out;
     for (IToolContribution *c : m_byKind.value(ContributionKind::Format, {}))
@@ -216,9 +216,9 @@ QList<IFormatDriver *> ExtensionRegistry::driversByDomain(FormatDomain domain) c
     return out;
 }
 
-QList<FormatDomain> ExtensionRegistry::domains() const
+QList<Domain> ExtensionRegistry::domains() const
 {
-    QList<FormatDomain> out;
+    QList<Domain> out;
     for (IToolContribution *c : m_byKind.value(ContributionKind::Format, {}))
         if (c && !out.contains(c->domain()))
             out.append(c->domain());
@@ -255,7 +255,7 @@ QList<IMessageParser *> ExtensionRegistry::messageParsers() const
     return out;
 }
 
-QList<IMessageParser *> ExtensionRegistry::messageParsersByDomain(FormatDomain domain) const
+QList<IMessageParser *> ExtensionRegistry::messageParsersByDomain(Domain domain) const
 {
     QList<IMessageParser *> out;
     for (IMessageParser *p : messageParsers())

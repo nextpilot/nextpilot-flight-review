@@ -4,7 +4,7 @@
 
 #include "DecodedFrame.h"
 #include "ExtensionRegistry.h"
-#include "FormatDomain.h"
+#include "Domain.h"
 #include "IMessageParser.h"
 
 #include <QCheckBox>

@@ -37,7 +37,7 @@ public:
     // === 身份（IToolContribution）===
     QString id() const override { return QStringLiteral("nmea"); }
     QString displayName() const override { return QStringLiteral("NMEA 协议解析器"); }
-    nextpilot::plotscope::core::FormatDomain domain() const override { return nextpilot::plotscope::core::FormatDomain::Gnss; }
+    nextpilot::plotscope::core::Domain domain() const override { return nextpilot::plotscope::core::Domain::Gnss; }
 
     // === 自述 ===
     QString protocolName() const override { return QStringLiteral("NMEA 0183"); }

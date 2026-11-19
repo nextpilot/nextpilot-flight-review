@@ -23,11 +23,11 @@ namespace nextpilot::plotscope::core
 //
 // 需求「同时打开多个数据源」的直接落点：
 //   每个数据源有稳定 id，各有独立状态与推进节奏，互不牵连。
-class DataSourceRepository : public QObject
+class SourceRegistry : public QObject
 {
     Q_OBJECT
 public:
-    explicit DataSourceRepository(QObject *parent = nullptr);
+    explicit SourceRegistry(QObject *parent = nullptr);
 
     // 登记一个新数据源（分配 id）。
     int add(DataSourceInfo info);

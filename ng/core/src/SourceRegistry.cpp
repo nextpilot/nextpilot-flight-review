@@ -1,13 +1,13 @@
-#include "DataSourceRepository.h"
+#include "SourceRegistry.h"
 
 #include <algorithm>
 
 namespace nextpilot::plotscope::core
 {
 
-DataSourceRepository::DataSourceRepository(QObject *parent) : QObject(parent) {}
+SourceRegistry::SourceRegistry(QObject *parent) : QObject(parent) {}
 
-int DataSourceRepository::add(DataSourceInfo info)
+int SourceRegistry::add(DataSourceInfo info)
 {
     const int id = m_nextId++;
     info.id = id;
@@ -16,7 +16,7 @@ int DataSourceRepository::add(DataSourceInfo info)
     return id;
 }
 
-Result<int> DataSourceRepository::addWithStableId(DataSourceInfo info, int id)
+Result<int> SourceRegistry::addWithStableId(DataSourceInfo info, int id)
 {
     if (id < 0)
         return fail(QStringLiteral("eid"), QStringLiteral("数据源 id 非法"));
@@ -30,7 +30,7 @@ Result<int> DataSourceRepository::addWithStableId(DataSourceInfo info, int id)
     return id;
 }
 
-bool DataSourceRepository::update(int id, const DataSourceInfo &info)
+bool SourceRegistry::update(int id, const DataSourceInfo &info)
 {
     auto it = m_sources.find(id);
     if (it == m_sources.end())
@@ -42,7 +42,7 @@ bool DataSourceRepository::update(int id, const DataSourceInfo &info)
     return true;
 }
 
-bool DataSourceRepository::setState(int id, SourceState state, const QString &error)
+bool SourceRegistry::setState(int id, SourceState state, const QString &error)
 {
     auto it = m_sources.find(id);
     if (it == m_sources.end())
@@ -53,7 +53,7 @@ bool DataSourceRepository::setState(int id, SourceState state, const QString &er
     return true;
 }
 
-bool DataSourceRepository::bindParser(int id, const ParserBinding &binding)
+bool SourceRegistry::bindParser(int id, const ParserBinding &binding)
 {
     auto it = m_sources.find(id);
     if (it == m_sources.end())
@@ -75,7 +75,7 @@ bool DataSourceRepository::bindParser(int id, const ParserBinding &binding)
     return true;
 }
 
-bool DataSourceRepository::unbindParser(int id, const QString &parserId)
+bool SourceRegistry::unbindParser(int id, const QString &parserId)
 {
     auto it = m_sources.find(id);
     if (it == m_sources.end())
@@ -91,7 +91,7 @@ bool DataSourceRepository::unbindParser(int id, const QString &parserId)
     return true;
 }
 
-const ParserBinding *DataSourceRepository::parserFor(int id, const QString &parserId) const
+const ParserBinding *SourceRegistry::parserFor(int id, const QString &parserId) const
 {
     const auto it = m_sources.constFind(id);
     if (it == m_sources.constEnd())
@@ -102,7 +102,7 @@ const ParserBinding *DataSourceRepository::parserFor(int id, const QString &pars
     return nullptr;
 }
 
-QVector<ParserBinding> DataSourceRepository::parsersOf(int id) const
+QVector<ParserBinding> SourceRegistry::parsersOf(int id) const
 {
     const auto it = m_sources.constFind(id);
     if (it == m_sources.constEnd())
@@ -110,7 +110,7 @@ QVector<ParserBinding> DataSourceRepository::parsersOf(int id) const
     return it.value().parsers;
 }
 
-bool DataSourceRepository::addDataset(int id, int datasetId)
+bool SourceRegistry::addDataset(int id, int datasetId)
 {
     auto it = m_sources.find(id);
     if (it == m_sources.end())
@@ -121,7 +121,7 @@ bool DataSourceRepository::addDataset(int id, int datasetId)
     return true;
 }
 
-bool DataSourceRepository::removeDataset(int id, int datasetId)
+bool SourceRegistry::removeDataset(int id, int datasetId)
 {
     auto it = m_sources.find(id);
     if (it == m_sources.end())
@@ -132,7 +132,7 @@ bool DataSourceRepository::removeDataset(int id, int datasetId)
     return removed;
 }
 
-bool DataSourceRepository::remove(int id, QVector<int> *datasetIds)
+bool SourceRegistry::remove(int id, QVector<int> *datasetIds)
 {
     auto it = m_sources.find(id);
     if (it == m_sources.end())
@@ -144,13 +144,13 @@ bool DataSourceRepository::remove(int id, QVector<int> *datasetIds)
     return true;
 }
 
-const DataSourceInfo *DataSourceRepository::get(int id) const
+const DataSourceInfo *SourceRegistry::get(int id) const
 {
     const auto it = m_sources.constFind(id);
     return it == m_sources.constEnd() ? nullptr : &it.value();
 }
 
-int DataSourceRepository::sourceOfDataset(int datasetId) const
+int SourceRegistry::sourceOfDataset(int datasetId) const
 {
     if (datasetId < 0)
         return -1;
@@ -162,7 +162,7 @@ int DataSourceRepository::sourceOfDataset(int datasetId) const
     return -1;
 }
 
-int DataSourceRepository::sourceByOrigin(const QString &origin) const
+int SourceRegistry::sourceByOrigin(const QString &origin) const
 {
     if (origin.isEmpty())
         return -1;
@@ -174,19 +174,19 @@ int DataSourceRepository::sourceByOrigin(const QString &origin) const
     return -1;
 }
 
-QVector<int> DataSourceRepository::ids() const
+QVector<int> SourceRegistry::ids() const
 {
     QVector<int> out = m_sources.keys();
     std::sort(out.begin(), out.end());
     return out;
 }
 
-int DataSourceRepository::count() const
+int SourceRegistry::count() const
 {
     return m_sources.size();
 }
 
-void DataSourceRepository::clear()
+void SourceRegistry::clear()
 {
     const auto all = ids();
     for (int id : all)

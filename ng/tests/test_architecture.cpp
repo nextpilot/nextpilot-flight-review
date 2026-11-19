@@ -6,7 +6,7 @@
 #include "ExtensionRegistry.h"
 #include "UiSlotRegistry.h"
 #include "PluginScanner.h"
-#include "FormatToolbox.h"
+#include "Toolbox.h"
 #include "BuiltinContributions.h"
 #include "BuiltinModuleRegistry.h"
 #include "BuiltinPackRegistry.h"
@@ -103,9 +103,9 @@ struct ProbePack
     static std::unique_ptr<IToolPack> build()
     {
         auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("探针工具箱"),
-                                               FormatDomain::General);
+                                               Domain::General);
         pack->add<nextpilot::plotscope::ext::GenericUiContribution>(
-            QStringLiteral("probe.ui"), QStringLiteral("探针界面入口"), FormatDomain::General,
+            QStringLiteral("probe.ui"), QStringLiteral("探针界面入口"), Domain::General,
             QList<UiAction>{{QStringLiteral("probe.ui.act"), QStringLiteral("探针动作"),
                              QStringLiteral("menu.plot"), QString(), QString()}});
         return pack;
@@ -279,15 +279,15 @@ int main(int argc, char **argv)
     CHECK(toolbox.driverForPath(QStringLiteral("x.csv"))->id() == QStringLiteral("csv"));
 
     // 工具箱按业务领域分类：CSV=通用，ULog=飞控。
-    CHECK(toolbox.driverForFormat(QStringLiteral("csv"))->domain() == FormatDomain::General);
-    CHECK(toolbox.driverForFormat(QStringLiteral("ulog"))->domain() == FormatDomain::Autopilot);
-    CHECK(toolbox.driverForFormat(QStringLiteral("custom-protocol"))->domain() == FormatDomain::General);
-    CHECK(toolbox.driversByDomain(FormatDomain::General).size() >= 2); // CSV + 自定义协议
-    CHECK(toolbox.driversByDomain(FormatDomain::Autopilot).size() == 1);
-    CHECK(toolbox.driversByDomain(FormatDomain::Automotive).isEmpty()); // 预留领域暂无驱动
+    CHECK(toolbox.driverForFormat(QStringLiteral("csv"))->domain() == Domain::General);
+    CHECK(toolbox.driverForFormat(QStringLiteral("ulog"))->domain() == Domain::Autopilot);
+    CHECK(toolbox.driverForFormat(QStringLiteral("custom-protocol"))->domain() == Domain::General);
+    CHECK(toolbox.driversByDomain(Domain::General).size() >= 2); // CSV + 自定义协议
+    CHECK(toolbox.driversByDomain(Domain::Autopilot).size() == 1);
+    CHECK(toolbox.driversByDomain(Domain::Automotive).isEmpty()); // 预留领域暂无驱动
     CHECK(toolbox.domains().size() == 2);
-    CHECK(QString::fromLatin1(domainKey(FormatDomain::Gnss)) == QStringLiteral("gnss"));
-    CHECK(domainName(FormatDomain::Robotics) == QStringLiteral("机器人"));
+    CHECK(QString::fromLatin1(domainKey(Domain::Gnss)) == QStringLiteral("gnss"));
+    CHECK(domainName(Domain::Robotics) == QStringLiteral("机器人"));
 
     // 外部插件扫描（本轮预留入口）：空目录返回空报告，不报错、不影响内置格式。
     const int formatsBeforeScan = toolbox.count();
@@ -336,10 +336,10 @@ int main(int argc, char **argv)
         CHECK(toolbox.kinds().size() == 8);
 
         // 二维索引：按 (kind, domain) 精确过滤。
-        CHECK(toolbox.contributions(ContributionKind::Ui, FormatDomain::Autopilot).size() == 1);
-        CHECK(toolbox.contributions(ContributionKind::Doc, FormatDomain::General).size() == 1);
-        CHECK(toolbox.contributionsByDomain(FormatDomain::Autopilot).size() == 6);
-        CHECK(toolbox.contributionsByDomain(FormatDomain::Video).isEmpty()); // 预留领域无贡献
+        CHECK(toolbox.contributions(ContributionKind::Ui, Domain::Autopilot).size() == 1);
+        CHECK(toolbox.contributions(ContributionKind::Doc, Domain::General).size() == 1);
+        CHECK(toolbox.contributionsByDomain(Domain::Autopilot).size() == 6);
+        CHECK(toolbox.contributionsByDomain(Domain::Video).isEmpty()); // 预留领域无贡献
 
         // typed 接口可向下转换拿到领域数据（UI 贡献是纯数据，headless 也成立）。
         nextpilot::plotscope::core::IToolContribution *uiRaw =
@@ -360,7 +360,7 @@ int main(int argc, char **argv)
         auto *panel = dynamic_cast<nextpilot::plotscope::core::IPanelContribution *>(panelRaw);
         CHECK(panel != nullptr && panel->panels().size() == 1);
         CHECK(panel->panels().first().id == QStringLiteral("car.can-browser"));
-        CHECK(panel->domain() == FormatDomain::Automotive);
+        CHECK(panel->domain() == Domain::Automotive);
 
         // UI 插槽：骨架声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
         // （动作数含本测试文件自注册的探针包贡献：menu.plot +1）
@@ -389,9 +389,9 @@ int main(int argc, char **argv)
 
         // 开放 kind：自定义 kind 无需改注册表/宿主即可登记（证明可扩展，非封闭枚举）。
         auto customPack = std::make_unique<ToolPack>(QStringLiteral("pack.custom"),
-                                                     QStringLiteral("自定义工具箱"), FormatDomain::General);
+                                                     QStringLiteral("自定义工具箱"), Domain::General);
         customPack->add<nextpilot::plotscope::ext::GenericDocContribution>(
-            QStringLiteral("custom.thing"), QStringLiteral("自定义能力"), FormatDomain::General,
+            QStringLiteral("custom.thing"), QStringLiteral("自定义能力"), Domain::General,
             QList<nextpilot::plotscope::core::DocEntry>{});
         CHECK(toolbox.registerPack(std::move(customPack)));
         CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 6); // 新包贡献被按 kind 索引
@@ -905,7 +905,7 @@ int main(int argc, char **argv)
 
         // 自述四要素：协议名 / 使用范围（领域+用途）/ 支持 transfer / 配置 schema。
         CHECK(nmea->protocolName() == QStringLiteral("NMEA 0183"));
-        CHECK(nmea->domain() == FormatDomain::Gnss);
+        CHECK(nmea->domain() == Domain::Gnss);
         CHECK(!nmea->usage().isEmpty());
         CHECK(nmea->supportedTransports().contains(MessageTransport::Serial));
         CHECK(nmea->supportedTransports().contains(MessageTransport::Udp));

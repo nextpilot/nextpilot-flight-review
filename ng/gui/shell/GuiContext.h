@@ -46,7 +46,7 @@ public:
 
     // 领域面板（形态由知识包决定）：清单 + 按 id 请求。
     QList<nextpilot::plotscope::core::PanelSpec> availableDomainPanels(
-        nextpilot::plotscope::core::FormatDomain domain) const override;
+        nextpilot::plotscope::core::Domain domain) const override;
     QWidget *requestDomainPanel(const QString &area, const QString &panelId) override;
 
     // 宿主执行器（模块在 GUI 里发意图用）。

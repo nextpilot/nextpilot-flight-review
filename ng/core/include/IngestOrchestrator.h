@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DataRepository.h"
-#include "DataSourceRepository.h"
+#include "SourceRegistry.h"
 #include "IByteSource.h"
 #include "IngestPipeline.h"
 #include "ParserRegistry.h"
@@ -75,7 +75,7 @@ class IngestOrchestrator
 public:
     using Options = IngestOptions;
 
-    IngestOrchestrator(DataRepository &repo, DataSourceRepository &sources,
+    IngestOrchestrator(DataRepository &repo, SourceRegistry &sources,
                        IngestPipeline &pipeline);
 
     // 打开一个文件源，按 parserIds 绑定解析器，读完全部字节。
@@ -108,7 +108,7 @@ private:
                        const Options &options);
 
     DataRepository &m_repo;
-    DataSourceRepository &m_sources;
+    SourceRegistry &m_sources;
     IngestPipeline &m_pipeline;
     int m_sourceId = -1;
     QVector<int> m_datasetIds;

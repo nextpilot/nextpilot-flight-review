@@ -8,7 +8,7 @@
 namespace nextpilot::plotscope::core
 {
 class DataRepository;
-class DataSourceRepository;
+class SourceRegistry;
 class IngestPipeline;
 class SettingsStore;
 } // namespace nextpilot::plotscope::core
@@ -38,7 +38,7 @@ class DataLoadHandler final : public nextpilot::plotscope::core::IIntentHandler
 public:
     DataLoadHandler(nextpilot::plotscope::core::ExtensionRegistry &registry,
                     nextpilot::plotscope::core::DataRepository &repo,
-                    nextpilot::plotscope::core::DataSourceRepository &sources,
+                    nextpilot::plotscope::core::SourceRegistry &sources,
                     nextpilot::plotscope::core::IngestPipeline *pipeline = nullptr,
                     nextpilot::plotscope::core::SettingsStore *settings = nullptr)
         : m_registry(registry), m_repo(repo), m_sources(sources),
@@ -55,7 +55,7 @@ private:
 
     nextpilot::plotscope::core::ExtensionRegistry &m_registry;
     nextpilot::plotscope::core::DataRepository &m_repo;
-    nextpilot::plotscope::core::DataSourceRepository &m_sources;
+    nextpilot::plotscope::core::SourceRegistry &m_sources;
     // 摄取管道（宿主持有）。为空时 data.load 只走旧的 driver.load() 路径。
     nextpilot::plotscope::core::IngestPipeline *m_pipeline = nullptr;
     // 设置库（可选）：成功后把路径记入"最近文件"。为空则不记录。

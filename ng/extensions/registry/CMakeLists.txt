@@ -4,8 +4,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 # 内置知识包各自在领域目录里静态自注册（NG_REGISTER_PACK），本层不枚举它们——
 # 新增一个领域包 = 新增一个目录 + 一行 CMake，这里的代码不用动。
 add_library(ng_ext_registry STATIC
-    FormatToolbox.cpp
-    FormatToolbox.h
+    Toolbox.cpp
+    Toolbox.h
     PluginScanner.cpp
     PluginScanner.h
 )

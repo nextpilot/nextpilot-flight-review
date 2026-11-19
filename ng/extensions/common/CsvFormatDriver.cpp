@@ -20,9 +20,9 @@ QString CsvFormatDriver::displayName() const
     return QStringLiteral("CSV 格式驱动");
 }
 
-nextpilot::plotscope::core::FormatDomain CsvFormatDriver::domain() const
+nextpilot::plotscope::core::Domain CsvFormatDriver::domain() const
 {
-    return nextpilot::plotscope::core::FormatDomain::General;
+    return nextpilot::plotscope::core::Domain::General;
 }
 
 QStringList CsvFormatDriver::suffixes() const

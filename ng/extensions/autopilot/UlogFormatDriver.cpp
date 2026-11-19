@@ -13,9 +13,9 @@ QString UlogFormatDriver::displayName() const
     return QStringLiteral("ULog 格式驱动");
 }
 
-nextpilot::plotscope::core::FormatDomain UlogFormatDriver::domain() const
+nextpilot::plotscope::core::Domain UlogFormatDriver::domain() const
 {
-    return nextpilot::plotscope::core::FormatDomain::Autopilot;
+    return nextpilot::plotscope::core::Domain::Autopilot;
 }
 
 QStringList UlogFormatDriver::suffixes() const

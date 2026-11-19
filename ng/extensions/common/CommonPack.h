@@ -21,7 +21,7 @@ public:
 
     QString id() const override;
     QString displayName() const override;
-    nextpilot::plotscope::core::FormatDomain domain() const override;
+    nextpilot::plotscope::core::Domain domain() const override;
     const std::vector<std::unique_ptr<nextpilot::plotscope::core::IToolContribution>> &contributions() const override;
     std::vector<std::unique_ptr<nextpilot::plotscope::core::IToolContribution>> &contributions() override;
 

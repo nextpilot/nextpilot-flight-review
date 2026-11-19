@@ -2,7 +2,7 @@
 
 #include "AppContext.h"
 #include "DataSource.h"
-#include "DataSourceRepository.h"
+#include "SourceRegistry.h"
 #include "Dataset.h"
 #include "IIntentExecutor.h"
 #include "Result.h"
