@@ -33,6 +33,8 @@ struct ProtocolChannel
     TypedVec v;             // 原生类型值列
 };
 
+struct CompiledProgram;
+
 struct ProtocolDecodeResult
 {
     bool ok = false;
@@ -59,6 +61,12 @@ SequentialFramePreview previewSequentialFrame(const QByteArray &frame,
 // 生产解码：字节流 + 已解析的协议文档 → 多通道 (t,v)。
 // 这是 SPI 解析器的内核：全流一次喂入（流式分片由上层缓冲后调用）。
 ProtocolDecodeResult decodeSequential(const QByteArray &bytes, const ProtocolDocument &doc);
+
+// 已编译程序的解码入口：模板只编译一次，之后反复解码（批量/流式都走这里）。
+// CompiledProgram 由 compileProgram() 产生，见 protocol/CompiledProgram.h。
+struct CompiledProgram;
+ProtocolDecodeResult decodeSequentialCompiled(const QByteArray &bytes,
+                                              const CompiledProgram &program);
 
 // 便捷：直接吃模板 JSON（内部做 validate + parseDocument）。
 ProtocolDecodeResult decodeSequentialJson(const QByteArray &bytes, const QByteArray &templateJson);

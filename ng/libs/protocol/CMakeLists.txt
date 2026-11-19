@@ -8,10 +8,12 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_library(ng_protocol STATIC
     src/ProtocolDocument.cpp
     src/ProtocolSpec.cpp
+    src/CompiledProgram.cpp
     src/SequentialCodec.cpp
     include/protocol/ProtocolDocument.h
     include/protocol/ProtocolSpec.h
     include/protocol/SequentialCodec.h
+    include/protocol/CompiledProgram.h
 )
 target_include_directories(ng_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ng_protocol PUBLIC Qt6::Core)

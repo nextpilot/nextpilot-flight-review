@@ -1,4 +1,5 @@
 #include "protocol/SequentialCodec.h"
+#include "protocol/CompiledProgram.h"
 #include "protocol/ProtocolSpec.h"
 #include "protocol/ProtocolDocument.h"
 
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -28,14 +30,13 @@ using nextpilot::plotscope::protocol::ProtocolChannel;
 
 /* ---------------- 基础读取 ---------------- */
 
+// 与 parseDocument 生成变体 key 时同一套归一规则，保证 "n:1" / "s:GPGGA" 对得上。
 inline std::string numberKey(double v)
 {
     std::ostringstream os;
     os << std::setprecision(17) << v;
     return "n:" + os.str();
 }
-
-inline std::string stringKey(const std::string &v) { return "s:" + v; }
 
 uint64_t readUInt(const uint8_t *p, uint32_t n, bool be)
 {
@@ -53,10 +54,9 @@ uint64_t readUInt(const uint8_t *p, uint32_t n, bool be)
     return v;
 }
 
-// 按段类型读一个元素，保持原生类型（不经过 double）。
-TypedValue readTyped(const uint8_t *p, const TypeInfo &ti, bool be)
+TypedValue readTyped(const uint8_t *p, ValueType t, uint32_t size, bool be)
 {
-    switch (ti.type)
+    switch (t)
     {
     case ValueType::U8: return TypedValue::fromU(p[0], ValueType::U8);
     case ValueType::I8: return TypedValue::fromI(static_cast<int8_t>(p[0]), ValueType::I8);
@@ -86,11 +86,10 @@ TypedValue readTyped(const uint8_t *p, const TypeInfo &ti, bool be)
     case ValueType::Bool: return TypedValue::fromU(p[0] ? 1u : 0u, ValueType::Bool);
     case ValueType::Bcd:
     {
-        // 每字节两个十进制位，按大小端顺序组成十进制整数。
         uint64_t v = 0;
-        for (uint32_t i = 0; i < ti.size; ++i)
+        for (uint32_t i = 0; i < size; ++i)
         {
-            const uint8_t b = be ? p[i] : p[ti.size - 1 - i];
+            const uint8_t b = be ? p[i] : p[size - 1 - i];
             v = v * 100 + static_cast<uint64_t>(b >> 4) * 10 + (b & 0x0F);
         }
         return TypedValue::fromU(v, ValueType::Bcd);
@@ -100,15 +99,33 @@ TypedValue readTyped(const uint8_t *p, const TypeInfo &ti, bool be)
     return TypedValue{};
 }
 
-// 物理换算：scale=1 且 offset=0 时保持原生类型，否则升到 f64。
-TypedValue physOf(const TypedValue &raw, const SegSpec &seg)
+inline bool isTextVal(const TypedValue &v) { return v.type == ValueType::Text; }
+
+int compareNumeric(const TypedValue &a, const TypedValue &b, std::string &err)
 {
-    if (seg.scale == 1.0 && seg.offset == 0.0)
-        return raw;
-    return TypedValue::fromF(raw.asDouble() * seg.scale + seg.offset, ValueType::F64);
+    if (isTextVal(a) || isTextVal(b))
+    {
+        err = "文本值不能参与数值比较";
+        return 2;
+    }
+    const bool af = isFloatType(a.type), bf = isFloatType(b.type);
+    if (af != bf)
+    {
+        err = "整型与浮点不能直接比较，需要显式 toF64/toI64";
+        return 2;
+    }
+    if (af)
+        return (a.f < b.f) ? -1 : (a.f > b.f ? 1 : 0);
+    if (a.isSigned() || b.isSigned())
+    {
+        const int64_t x = a.asI64(), y = b.asI64();
+        return (x < y) ? -1 : (x > y ? 1 : 0);
+    }
+    const uint64_t x = a.asU64(), y = b.asU64();
+    return (x < y) ? -1 : (x > y ? 1 : 0);
 }
 
-/* ---------------- 校验 ---------------- */
+/* ---------------- 校验算子 ---------------- */
 
 uint32_t reflectBits(uint32_t v, int width)
 {
@@ -121,8 +138,8 @@ uint32_t reflectBits(uint32_t v, int width)
     return r;
 }
 
-uint32_t crcGeneric(const uint8_t *data, size_t n, uint32_t poly, uint32_t init,
-                    bool refin, bool refout, uint32_t xorout, int width)
+uint32_t crcGeneric(const uint8_t *data, size_t n, uint32_t poly, uint32_t init, bool refin,
+                    bool refout, uint32_t xorout, int width)
 {
     const uint32_t mask = (width >= 32) ? 0xFFFFFFFFu : ((1u << width) - 1u);
     const uint32_t top = 1u << (width - 1);
@@ -148,7 +165,7 @@ uint32_t crcGeneric(const uint8_t *data, size_t n, uint32_t poly, uint32_t init,
     return (crc ^ xorout) & mask;
 }
 
-uint32_t sequenceValue(const CheckSpec &c, const std::vector<uint8_t> &buf)
+uint32_t sequenceValue(const CompiledCheck &c, const std::vector<uint8_t> &buf)
 {
     if (c.op == "sum8" || c.op == "sum16")
     {
@@ -175,33 +192,11 @@ uint32_t sequenceValue(const CheckSpec &c, const std::vector<uint8_t> &buf)
                       c.width > 0 ? c.width * 8 : 16);
 }
 
-int compareNumeric(const TypedValue &a, const TypedValue &b, std::string &err)
-{
-    if (a.type == ValueType::Text || b.type == ValueType::Text)
-    {
-        err = "文本值不能参与数值比较";
-        return 2;
-    }
-    const bool af = isFloatType(a.type), bf = isFloatType(b.type);
-    if (af != bf)
-    {
-        err = "整型与浮点不能直接比较，需要显式 toF64/toI64";
-        return 2;
-    }
-    if (af)
-        return (a.f < b.f) ? -1 : (a.f > b.f ? 1 : 0);
-    if (a.isSigned() || b.isSigned())
-    {
-        const int64_t x = a.asI64(), y = b.asI64();
-        return (x < y) ? -1 : (x > y ? 1 : 0);
-    }
-    const uint64_t x = a.asU64(), y = b.asU64();
-    return (x < y) ? -1 : (x > y ? 1 : 0);
-}
+/* ---------------- 读一帧 ---------------- */
 
-struct RtSeg
+struct Rt
 {
-    const SegSpec *spec = nullptr;
+    const CompiledSeg *spec = nullptr;
     uint32_t offset = 0;
     uint32_t bytes = 0;
     uint32_t count = 0;
@@ -209,19 +204,70 @@ struct RtSeg
     TypedVec phys;
 };
 
-bool evalCount(const SegSpec &seg, const EvalCtx &ctx, uint32_t &count, uint32_t &bytes,
-               std::string &err)
+struct FrameRead
 {
-    int64_t v = 0;
-    if (!evalExprInt(seg.countExpr, ctx, v, err))
+    bool ok = false;
+    std::string err;
+    std::vector<Rt> fields;
+    int32_t variant = -1;
+    uint32_t consumed = 0;
+};
+
+void fillSlot(const CompiledSlot &slot, const uint8_t *sp, uint32_t count, TypedVec &raw,
+              TypedVec &phys, const CompiledSeg &seg)
+{
+    if (slot.type == ValueType::Text)
+    {
+        std::string txt;
+        txt.reserve(count);
+        for (uint32_t i = 0; i < count; ++i)
+            txt.push_back(static_cast<char>(sp[i]));
+        raw.reset(ValueType::Text);
+        raw.push(TypedValue::fromText(txt));
+        phys = raw;
+        return;
+    }
+    raw.reset(slot.type);
+    raw.reserve(count);
+    for (uint32_t i = 0; i < count; ++i)
+        raw.push(readTyped(sp + static_cast<size_t>(i) * slot.elemSize, slot.type, slot.elemSize,
+                           slot.bigEndian));
+    if (seg.identityPhys)
+    {
+        phys = raw;
+        return;
+    }
+    phys.reset(ValueType::F64);
+    phys.reserve(count);
+    for (uint32_t i = 0; i < count; ++i)
+        phys.push(TypedValue::fromF(raw.at(i).asDouble() * seg.scale + seg.offset, ValueType::F64));
+}
+
+bool evalCountOf(const CompiledSeg &seg, const std::vector<TypedVec> &cols, uint32_t &count,
+                 uint32_t &bytes, std::string &err)
+{
+    if (seg.countIsConst)
+    {
+        count = seg.constCount;
+        bytes = seg.constBytes;
+        return true;
+    }
+    TypedValue v;
+    if (!runByteCode(seg.count, cols, v, err))
         return false;
-    if (v <= 0 || v > 1000000)
+    if (isTextVal(v) || isFloatType(v.type))
+    {
+        err = "段 " + seg.name + " 的 count 必须是整型";
+        return false;
+    }
+    const int64_t n = v.asI64();
+    if (n <= 0 || n > 1000000)
     {
         err = "段 " + seg.name + " 的 count 非法";
         return false;
     }
-    count = static_cast<uint32_t>(v);
-    bytes = count * seg.type.size;
+    count = static_cast<uint32_t>(n);
+    bytes = count * seg.elemSize;
     if (bytes == 0 || bytes > (1u << 20))
     {
         err = "段 " + seg.name + " 字节数非法";
@@ -230,18 +276,17 @@ bool evalCount(const SegSpec &seg, const EvalCtx &ctx, uint32_t &count, uint32_t
     return true;
 }
 
-bool checkFrame(const std::vector<RtSeg> &fields, const std::map<std::string, RtSeg *> &byName,
-                const std::map<std::string, std::pair<uint32_t, uint32_t>> &pseudo,
-                const std::vector<std::string> &order, const uint8_t *frame,
-                const EvalCtx &rawCtx, std::string &err)
+bool checkFrame(const std::vector<Rt> &fields, const std::map<int32_t, const Rt *> &bySlot,
+                const CompiledProgram &prog, const uint8_t *frame, uint32_t payloadOff,
+                uint32_t payloadBytes, const std::vector<TypedVec> &rawSlots, std::string &err)
 {
-    for (const RtSeg &rt : fields)
+    for (const Rt &rt : fields)
     {
-        const SegSpec &seg = *rt.spec;
-        if (seg.expectExpr)
+        const CompiledSeg &seg = *rt.spec;
+        if (seg.hasExpect)
         {
-            TypedValue want;
-            if (!evalExpr(seg.expectExpr, rawCtx, want, err))
+            TypedValue want = seg.expectConst;
+            if (!seg.expectIsConst && !runByteCode(seg.expect, rawSlots, want, err))
                 return false;
             for (std::size_t i = 0; i < rt.raw.size(); ++i)
             {
@@ -256,11 +301,9 @@ bool checkFrame(const std::vector<RtSeg> &fields, const std::map<std::string, Rt
             }
         }
 
-        for (const CheckSpec &c : seg.checks)
+        for (const CompiledCheck &c : seg.checks)
         {
-            const bool seqOp = (c.op == "crc8" || c.op == "crc16" || c.op == "crc32" ||
-                                c.op == "sum8" || c.op == "sum16" || c.op == "xor8" || c.op == "parity");
-            if (seqOp)
+            if (c.isSequence)
             {
                 if (rt.raw.size() != 1 || rt.bytes != static_cast<uint32_t>(c.width))
                 {
@@ -268,52 +311,25 @@ bool checkFrame(const std::vector<RtSeg> &fields, const std::map<std::string, Rt
                     return false;
                 }
                 std::vector<uint8_t> buf;
-                std::set<std::string> seen;
-                for (const std::string &token : c.over)
+                for (int32_t slot : c.overSlots)
                 {
-                    std::vector<std::string> names;
-                    const size_t colon = token.find(':');
-                    if (colon != std::string::npos)
+                    if (slot < 0)
                     {
-                        const std::string a = token.substr(0, colon);
-                        const std::string b = token.substr(colon + 1);
-                        auto ia = std::find(order.begin(), order.end(), a);
-                        auto ib = std::find(order.begin(), order.end(), b);
-                        if (ia == order.end() || ib == order.end() || ia > ib)
-                        {
-                            err = "over 区间非法: " + token;
-                            return false;
-                        }
-                        names.assign(ia, ib + 1);
+                        const uint8_t *q = frame + payloadOff;
+                        buf.insert(buf.end(), q, q + payloadBytes);
+                        continue;
                     }
-                    else
+                    auto it = bySlot.find(slot);
+                    if (it == bySlot.end())
                     {
-                        names.push_back(token);
+                        err = "over 引用未知段";
+                        return false;
                     }
-                    for (const std::string &n : names)
-                    {
-                        if (!seen.insert(n).second)
-                            continue;
-                        auto pit = pseudo.find(n);
-                        if (pit != pseudo.end())
-                        {
-                            const uint8_t *p = frame + pit->second.first;
-                            buf.insert(buf.end(), p, p + pit->second.second);
-                            continue;
-                        }
-                        auto it = byName.find(n);
-                        if (it == byName.end())
-                        {
-                            err = "over 引用未知段: " + n;
-                            return false;
-                        }
-                        const uint8_t *p = frame + it->second->offset;
-                        buf.insert(buf.end(), p, p + it->second->bytes);
-                    }
+                    const uint8_t *q = frame + it->second->offset;
+                    buf.insert(buf.end(), q, q + it->second->bytes);
                 }
                 const uint32_t got = sequenceValue(c, buf);
-                const uint64_t want = rt.raw.at(0).asU64();
-                if (static_cast<uint32_t>(want) != got)
+                if (static_cast<uint32_t>(rt.raw.at(0).asU64()) != got)
                 {
                     err = "段 " + seg.name + " 校验失败";
                     return false;
@@ -323,93 +339,57 @@ bool checkFrame(const std::vector<RtSeg> &fields, const std::map<std::string, Rt
 
             for (std::size_t i = 0; i < rt.raw.size(); ++i)
             {
-                bool ok = false;
                 const TypedValue &v = rt.raw.at(i);
-                TypedValue rhs;
-                int cmp = 0;
-                switch (c.op[0])
+                bool ok = false;
+                if (c.op == "in")
                 {
-                case 'e':
-                    if (c.op == "eq")
+                    for (const TypedValue &iv : c.values)
                     {
-                        if (!evalExpr(c.rhs, rawCtx, rhs, err))
+                        const int cmp = compareNumeric(v, iv, err);
+                        if (cmp == 2)
                             return false;
-                        cmp = compareNumeric(v, rhs, err);
-                        if (cmp == 2) return false;
-                        ok = (cmp == 0);
+                        if (cmp == 0) { ok = true; break; }
                     }
-                    break;
-                case 'n':
-                    if (c.op == "ne")
+                }
+                else if (c.op == "mask")
+                {
+                    TypedValue m, expected;
+                    if (!runByteCode(c.rhs, rawSlots, m, err) ||
+                        !runByteCode(c.rhs2, rawSlots, expected, err))
+                        return false;
+                    if (isFloatType(v.type) || isFloatType(m.type) || isFloatType(expected.type))
                     {
-                        if (!evalExpr(c.rhs, rawCtx, rhs, err))
-                            return false;
-                        cmp = compareNumeric(v, rhs, err);
-                        if (cmp == 2) return false;
-                        ok = (cmp != 0);
+                        err = "mask 只支持整型";
+                        return false;
                     }
-                    break;
-                case 'l':
-                    if (c.op == "lt" || c.op == "le")
-                    {
-                        if (!evalExpr(c.rhs, rawCtx, rhs, err))
-                            return false;
-                        cmp = compareNumeric(v, rhs, err);
-                        if (cmp == 2) return false;
-                        ok = (c.op == "lt") ? (cmp < 0) : (cmp <= 0);
-                    }
-                    break;
-                case 'g':
-                    if (c.op == "gt" || c.op == "ge")
-                    {
-                        if (!evalExpr(c.rhs, rawCtx, rhs, err))
-                            return false;
-                        cmp = compareNumeric(v, rhs, err);
-                        if (cmp == 2) return false;
-                        ok = (c.op == "gt") ? (cmp > 0) : (cmp >= 0);
-                    }
-                    break;
-                case 'i':
-                    if (c.op == "in")
-                    {
-                        for (const TypedValue &iv : c.values)
-                        {
-                            cmp = compareNumeric(v, iv, err);
-                            if (cmp == 2) return false;
-                            if (cmp == 0) { ok = true; break; }
-                        }
-                    }
-                    break;
-                case 'r':
-                    if (c.op == "range")
-                    {
-                        TypedValue lo, hi;
-                        if (!evalExpr(c.rhs, rawCtx, lo, err) ||
-                            !evalExpr(c.rhs2, rawCtx, hi, err))
-                            return false;
-                        const int cl = compareNumeric(v, lo, err);
-                        const int ch = compareNumeric(v, hi, err);
-                        if (cl == 2 || ch == 2) return false;
-                        ok = (cl >= 0 && ch <= 0);
-                    }
-                    break;
-                case 'm':
-                    if (c.op == "mask")
-                    {
-                        TypedValue m, expected;
-                        if (!evalExpr(c.rhs, rawCtx, m, err) ||
-                            !evalExpr(c.rhs2, rawCtx, expected, err))
-                            return false;
-                        if (isFloatType(v.type) || isFloatType(m.type) || isFloatType(expected.type))
-                        {
-                            err = "mask 只支持整型";
-                            return false;
-                        }
-                        ok = ((v.asU64() & m.asU64()) == expected.asU64());
-                    }
-                    break;
-                default:
-                    break;
+                    ok = ((v.asU64() & m.asU64()) == expected.asU64());
+                }
+                else if (c.op == "range")
+                {
+                    TypedValue lo, hi;
+                    if (!runByteCode(c.rhs, rawSlots, lo, err) ||
+                        !runByteCode(c.rhs2, rawSlots, hi, err))
+                        return false;
+                    const int cl = compareNumeric(v, lo, err);
+                    const int ch = compareNumeric(v, hi, err);
+                    if (cl == 2 || ch == 2)
+                        return false;
+                    ok = (cl >= 0 && ch <= 0);
+                }
+                else
+                {
+                    TypedValue rhs;
+                    if (!runByteCode(c.rhs, rawSlots, rhs, err))
+                        return false;
+                    const int cmp = compareNumeric(v, rhs, err);
+                    if (cmp == 2)
+                        return false;
+                    if (c.op == "eq") ok = (cmp == 0);
+                    else if (c.op == "ne") ok = (cmp != 0);
+                    else if (c.op == "lt") ok = (cmp < 0);
+                    else if (c.op == "le") ok = (cmp <= 0);
+                    else if (c.op == "gt") ok = (cmp > 0);
+                    else if (c.op == "ge") ok = (cmp >= 0);
                 }
                 if (!ok)
                 {
@@ -422,258 +402,195 @@ bool checkFrame(const std::vector<RtSeg> &fields, const std::map<std::string, Rt
     return true;
 }
 
-bool matchVariant(const SeriesSpec &series, const std::string &selectorKey,
-                  const VariantSpec *&variant, std::string &)
+// 读一帧：调用方复用 rawSlots/physSlots（已按 prog.slotTable 尺寸准备）。
+bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
+               std::vector<TypedVec> &physSlots, const uint8_t *p, size_t avail, FrameRead &r)
 {
-    variant = nullptr;
-    for (const VariantSpec &v : series.variants)
-        for (const std::string &id : v.keys)
-            if (id == selectorKey)
-            {
-                variant = &v;
-                return true;
-            }
-    return true;
-}
-
-/* ---------------- 读一帧（唯一内核） ---------------- */
-
-struct FrameRead
-{
-    bool ok = false;
-    std::string err;
-    std::vector<RtSeg> fields;
-    EvalCtx rawCtx;
-    EvalCtx physCtx;
-    std::map<std::string, std::pair<uint32_t, uint32_t>> pseudo;
-    std::string variantName;
-    uint32_t consumed = 0;
-};
-
-// 读一帧：从 p 起、最多 avail 字节；consumed 为整帧占用字节。
-FrameRead readFrame(const ProtocolDocument &tpl, const uint8_t *p, size_t avail)
-{
-    FrameRead r;
-    std::vector<std::string> order;
-    for (const SegSpec &s : tpl.segments)
-        order.push_back(s.name);
+    for (size_t i = 0; i < prog.slotTable.size(); ++i)
+    {
+        rawSlots[i].reset(prog.slotTable[i].type);
+        physSlots[i].reset(prog.slotTable[i].type);
+    }
 
     uint32_t pos = 0;
-    bool payloadSeen = false;
     uint32_t payloadOff = 0, payloadBytes = 0, payloadCount = 0;
+    const bool hasPayload = prog.hasSeries;
 
-    for (const SegSpec &seg : tpl.segments)
+    for (const CompiledSeg &seg : prog.segs)
     {
-        uint32_t count = 0, nbytes = 0;
-        if (!evalCount(seg, r.rawCtx, count, nbytes, r.err))
-            return r;
-
-        const bool isPayload = tpl.series.enabled && seg.name == tpl.series.payload;
-        if (static_cast<uint64_t>(pos) + nbytes > avail)
+        uint32_t count = 0, bytes = 0;
+        if (!evalCountOf(seg, rawSlots, count, bytes, r.err))
+            return false;
+        if (static_cast<uint64_t>(pos) + bytes > avail)
         {
-            r.err = "段 " + seg.name + " 超出帧长度：需要 " + std::to_string(nbytes) +
-                    " B，剩余 " + std::to_string(avail - pos) + " B";
-            return r;
+            r.err = "段 " + seg.name + " 超出帧长度：需要 " + std::to_string(bytes) + " B，剩余 " +
+                    std::to_string(avail - pos) + " B";
+            return false;
         }
 
+        const bool isPayload = hasPayload && seg.slot == prog.payloadSlot;
         if (isPayload)
         {
-            payloadSeen = true;
             payloadOff = pos;
-            payloadBytes = nbytes;
+            payloadBytes = bytes;
             payloadCount = count;
-            TypedVec col(ValueType::U8);
-            col.reserve(nbytes);
-            for (uint32_t i = 0; i < nbytes; ++i)
-                col.push(TypedValue::fromU(p[pos + i], ValueType::U8));
-            r.rawCtx.values[seg.name] = col;
-            r.physCtx.values[seg.name] = col;
-            r.pseudo[seg.name] = {payloadOff, nbytes};
-            pos += nbytes;
+            TypedVec &raw = rawSlots[static_cast<size_t>(seg.slot)];
+            raw.reset(ValueType::U8);
+            raw.reserve(bytes);
+            for (uint32_t i = 0; i < bytes; ++i)
+                raw.push(TypedValue::fromU(p[static_cast<size_t>(pos) + i], ValueType::U8));
+            physSlots[static_cast<size_t>(seg.slot)] = raw;
+            pos += bytes;
             continue;
         }
 
-        RtSeg rt;
+        Rt rt;
         rt.spec = &seg;
         rt.offset = pos;
-        rt.bytes = nbytes;
+        rt.bytes = bytes;
         rt.count = count;
-        const uint8_t *sp = p + pos;
-
-        if (seg.type.type == ValueType::Text)
-        {
-            std::string txt;
-            txt.reserve(nbytes);
-            for (uint32_t i = 0; i < nbytes; ++i)
-                txt.push_back(static_cast<char>(sp[i]));
-            rt.raw.reset(ValueType::Text);
-            rt.raw.push(TypedValue::fromText(txt));
-            rt.phys = rt.raw;
-        }
-        else
-        {
-            rt.raw.reset(seg.type.type);
-            rt.raw.reserve(count);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                const TypedValue v = readTyped(sp + static_cast<size_t>(i) * seg.type.size,
-                                               seg.type, seg.bigEndian);
-                rt.raw.push(v);
-            }
-            const TypedValue firstPhys = rt.raw.size() ? physOf(rt.raw.at(0), seg) : TypedValue{};
-            rt.phys.reset(firstPhys.type);
-            rt.phys.reserve(count);
-            for (std::size_t i = 0; i < rt.raw.size(); ++i)
-                rt.phys.push(physOf(rt.raw.at(i), seg));
-        }
-        r.rawCtx.values[seg.name] = rt.raw;
-        r.physCtx.values[seg.name] = rt.phys;
+        fillSlot(prog.slotTable[static_cast<size_t>(seg.slot)], p + pos, count, rt.raw, rt.phys, seg);
+        rawSlots[static_cast<size_t>(seg.slot)] = rt.raw;
+        physSlots[static_cast<size_t>(seg.slot)] = rt.phys;
         r.fields.push_back(std::move(rt));
-        pos += nbytes;
+        pos += bytes;
     }
 
-    if (tpl.series.enabled)
+    if (hasPayload)
     {
-        if (!payloadSeen)
-        {
-            r.err = "series.payload 未找到";
-            return r;
-        }
         std::string selKey;
-        auto sit = r.rawCtx.values.find(tpl.series.selector ? tpl.series.selector->name : std::string());
-        if (tpl.series.selector && tpl.series.selector->kind == Expr::Ref && !tpl.series.selector->b &&
-            sit != r.rawCtx.values.end() && sit->second.type == ValueType::Text)
+        const TypedVec &selCol = rawSlots[static_cast<size_t>(prog.selectorSlot)];
+        if (selCol.size() != 1)
         {
-            selKey = stringKey(sit->second.at(0).s);
+            r.err = "series.selector 必须是单值";
+            return false;
         }
+        if (selCol.type == ValueType::Text)
+            selKey = "s:" + selCol.at(0).s;
         else
+            selKey = numberKey(selCol.at(0).asDouble());
+
+        const CompiledVariant *var = nullptr;
+        for (const CompiledVariant &v : prog.variants)
         {
-            int64_t sel = 0;
-            if (!tpl.series.selector || !evalExprInt(tpl.series.selector, r.rawCtx, sel, r.err))
-            {
-                if (r.err.empty())
-                    r.err = "series.selector 缺失";
-                return r;
-            }
-            selKey = numberKey(static_cast<double>(sel));
+            for (const std::string &k : v.keys)
+                if (k == selKey)
+                {
+                    var = &v;
+                    break;
+                }
+            if (var)
+                break;
         }
-        const VariantSpec *var = nullptr;
-        matchVariant(tpl.series, selKey, var, r.err);
         if (!var)
         {
-            if (tpl.series.fallback == "reject")
+            if (prog.fallbackReject)
             {
                 r.err = "series 未命中：" + selKey;
-                return r;
+                return false;
             }
             r.consumed = pos;
             r.ok = true;
-            return r;
+            return true;
         }
 
-        r.variantName = var->name;
+        r.variant = static_cast<int32_t>(var - prog.variants.data());
         uint32_t vpos = payloadOff;
-        for (const SegSpec &seg : var->segments)
+        for (int32_t vi : var->segs)
         {
-            uint32_t count = 0, nbytes = 0;
-            if (!evalCount(seg, r.rawCtx, count, nbytes, r.err))
-                return r;
-            if (static_cast<uint64_t>(vpos) + nbytes > avail)
+            const CompiledSeg &seg = prog.varSegs[static_cast<size_t>(vi)];
+            uint32_t count = 0, bytes = 0;
+            if (!evalCountOf(seg, rawSlots, count, bytes, r.err))
+                return false;
+            if (static_cast<uint64_t>(vpos) + bytes > avail)
             {
                 r.err = "变体段 " + seg.name + " 超出帧长度";
-                return r;
+                return false;
             }
-            RtSeg rt;
+            Rt rt;
             rt.spec = &seg;
             rt.offset = vpos;
-            rt.bytes = nbytes;
+            rt.bytes = bytes;
             rt.count = count;
-            const uint8_t *sp = p + vpos;
-            rt.raw.reset(seg.type.type);
-            rt.raw.reserve(count);
-            for (uint32_t i = 0; i < count; ++i)
-                rt.raw.push(readTyped(sp + static_cast<size_t>(i) * seg.type.size, seg.type,
-                                      seg.bigEndian));
-            rt.phys.reset(rt.raw.size() ? physOf(rt.raw.at(0), seg).type : seg.type.type);
-            for (std::size_t i = 0; i < rt.raw.size(); ++i)
-                rt.phys.push(physOf(rt.raw.at(i), seg));
-            r.rawCtx.values[seg.name] = rt.raw;
-            r.physCtx.values[seg.name] = rt.phys;
+            fillSlot(prog.slotTable[static_cast<size_t>(seg.slot)], p + vpos, count, rt.raw, rt.phys, seg);
+            rawSlots[static_cast<size_t>(seg.slot)] = rt.raw;
+            physSlots[static_cast<size_t>(seg.slot)] = rt.phys;
             r.fields.push_back(std::move(rt));
-            vpos += nbytes;
+            vpos += bytes;
         }
         if (vpos != payloadOff + payloadBytes)
         {
             r.err = "变体段总字节数不等于 payload";
-            return r;
+            return false;
         }
     }
 
-    std::sort(r.fields.begin(), r.fields.end(),
-              [](const RtSeg &a, const RtSeg &b) { return a.offset < b.offset; });
+    std::map<int32_t, const Rt *> bySlot;
+    for (Rt &rt : r.fields)
+        bySlot[rt.spec->slot] = &rt;
 
-    std::map<std::string, RtSeg *> byName;
-    for (RtSeg &rt : r.fields)
-        byName[rt.spec->name] = &rt;
+    if (!checkFrame(r.fields, bySlot, prog, p, payloadOff, payloadBytes, rawSlots, r.err))
+        return false;
 
-    if (!checkFrame(r.fields, byName, r.pseudo, order, p, r.rawCtx, r.err))
-        return r;
-
-    /* length 反算 */
-    for (RtSeg &rt : r.fields)
+    // length 反算：本段声明值必须等于后续字段合计（字节数或元素数）
+    for (Rt &rt : r.fields)
     {
-        const SegSpec &seg = *rt.spec;
+        const CompiledSeg &seg = *rt.spec;
         if (!seg.length.enabled)
             continue;
         const int64_t declared = rt.raw.size() ? rt.raw.at(0).asI64() : 0;
         int64_t actual = 0;
-        if (seg.length.expr)
+        if (!seg.length.fields.empty())
         {
-            if (!evalExprInt(seg.length.expr, r.rawCtx, actual, r.err))
-                return r;
+            for (int32_t slot : seg.length.fields)
+            {
+                if (slot < 0)
+                {
+                    actual += seg.length.bytesUnit ? static_cast<int64_t>(payloadBytes)
+                                                   : static_cast<int64_t>(payloadCount);
+                    continue;
+                }
+                auto it = bySlot.find(slot);
+                if (it == bySlot.end())
+                {
+                    r.err = "length 引用未知段";
+                    return false;
+                }
+                actual += seg.length.bytesUnit ? static_cast<int64_t>(it->second->bytes)
+                                               : static_cast<int64_t>(it->second->count);
+            }
         }
         else
         {
-            for (const std::string &fn : seg.length.fields)
+            TypedValue v;
+            if (!runByteCode(seg.length.expr, rawSlots, v, r.err))
+                return false;
+            if (isTextVal(v) || isFloatType(v.type))
             {
-                auto pit = r.pseudo.find(fn);
-                if (pit != r.pseudo.end())
-                {
-                    actual += (seg.length.unit == "bytes")
-                                  ? static_cast<int64_t>(pit->second.second)
-                                  : static_cast<int64_t>(payloadCount ? payloadCount
-                                                                      : pit->second.second);
-                    continue;
-                }
-                auto it = byName.find(fn);
-                if (it == byName.end())
-                {
-                    r.err = "length 引用未知段: " + fn;
-                    return r;
-                }
-                actual += (seg.length.unit == "bytes") ? static_cast<int64_t>(it->second->bytes)
-                                                       : static_cast<int64_t>(it->second->count);
+                r.err = "length 表达式必须是整型";
+                return false;
             }
+            actual = v.asI64();
         }
         if (declared != actual)
         {
             r.err = "长度段 " + seg.name + " 与 length 不一致";
-            return r;
+            return false;
         }
     }
 
     r.consumed = pos;
     r.ok = true;
-    return r;
+    return true;
 }
 
 /* ---------------- 时间戳（整数 ticks） ---------------- */
 
-const int64_t kTicksPerSecond = 1000000; // 统一微秒刻度
+const int64_t kTicksPerSecond = 1000000;
 
 bool unitTicks(int64_t raw, const std::string &unit, int64_t &ticks, std::string &err)
 {
-    switch (unit[0])
+    switch (unit.empty() ? 's' : unit[0])
     {
     case 's':
         if (raw > (INT64_MAX / kTicksPerSecond) || raw < (INT64_MIN / kTicksPerSecond))
@@ -683,19 +600,22 @@ bool unitTicks(int64_t raw, const std::string &unit, int64_t &ticks, std::string
         }
         ticks = raw * kTicksPerSecond;
         return true;
-    case 'm':
-        ticks = raw * 1000;
-        return true;
-    case 'u':
-        ticks = raw;
-        return true;
-    case 'n':
-        ticks = raw / 1000;
-        return true;
+    case 'm': ticks = raw * 1000; return true;
+    case 'u': ticks = raw; return true;
+    case 'n': ticks = raw / 1000; return true;
     default:
         err = "未知时间单位: " + unit;
         return false;
     }
+}
+
+std::vector<TypedVec> makeSlots(const CompiledProgram &prog)
+{
+    std::vector<TypedVec> cols;
+    cols.resize(prog.slotTable.size());
+    for (size_t i = 0; i < prog.slotTable.size(); ++i)
+        cols[i].reset(prog.slotTable[i].type);
+    return cols;
 }
 
 } // namespace
@@ -734,8 +654,9 @@ QString numList(const TypedVec &v)
 
 } // namespace
 
-nextpilot::plotscope::protocol::SequentialFramePreview nextpilot::plotscope::protocol::previewSequentialFrame(
-    const QByteArray &frame, const ProtocolDocument &tpl)
+nextpilot::plotscope::protocol::SequentialFramePreview
+nextpilot::plotscope::protocol::previewSequentialFrame(const QByteArray &frame,
+                                                      const ProtocolDocument &tpl)
 {
     SequentialFramePreview res;
     if (frame.isEmpty())
@@ -744,12 +665,23 @@ nextpilot::plotscope::protocol::SequentialFramePreview nextpilot::plotscope::pro
         return res;
     }
 
-    FrameRead fr = readFrame(tpl, reinterpret_cast<const uint8_t *>(frame.constData()),
-                             static_cast<size_t>(frame.size()));
-    if (!fr.ok)
+    CompiledProgram prog;
+    std::string e;
+    if (!compileProgram(tpl, prog, e))
+    {
+        res.error = QString::fromStdString("编译失败：" + e);
+        return res;
+    }
+
+    std::vector<TypedVec> rawSlots = makeSlots(prog);
+    std::vector<TypedVec> physSlots = makeSlots(prog);
+    FrameRead fr;
+    if (!readFrame(prog, rawSlots, physSlots,
+                   reinterpret_cast<const uint8_t *>(frame.constData()),
+                   static_cast<size_t>(frame.size()), fr))
     {
         res.error = QString::fromStdString(fr.err);
-        for (const RtSeg &rt : fr.fields)
+        for (const Rt &rt : fr.fields)
             res.lines << QStringLiteral("%1 @ %2  %3 B")
                              .arg(QString::fromStdString(rt.spec->name))
                              .arg(rt.offset)
@@ -758,20 +690,21 @@ nextpilot::plotscope::protocol::SequentialFramePreview nextpilot::plotscope::pro
     }
 
     res.ok = true;
+    const QString varName =
+        fr.variant >= 0
+            ? QString::fromStdString(prog.variants[static_cast<size_t>(fr.variant)].name)
+            : QString();
     res.lines << QStringLiteral("帧 %1 B · %2%3")
                      .arg(frame.size())
                      .arg(QString::fromStdString(tpl.name))
-                     .arg(fr.variantName.empty()
-                              ? QString()
-                              : QStringLiteral(" · 变体 %1").arg(QString::fromStdString(fr.variantName)));
-    for (const RtSeg &rt : fr.fields)
+                     .arg(varName.isEmpty() ? QString()
+                                            : QStringLiteral(" · 变体 %1").arg(varName));
+    for (const Rt &rt : fr.fields)
     {
-        const SegSpec &seg = *rt.spec;
-        if (seg.type.type == ValueType::Text)
+        const CompiledSeg &seg = *rt.spec;
+        if (seg.isText)
         {
-            const QString text = rt.raw.size()
-                                     ? QString::fromStdString(rt.raw.at(0).s)
-                                     : QString();
+            const QString text = rt.raw.size() ? QString::fromStdString(rt.raw.at(0).s) : QString();
             res.lines << QStringLiteral("%1 @ %2  char %3 B  \"%4\"")
                              .arg(QString::fromStdString(seg.name))
                              .arg(rt.offset)
@@ -784,10 +717,10 @@ nextpilot::plotscope::protocol::SequentialFramePreview nextpilot::plotscope::pro
                                .arg(QString::fromStdString(seg.name))
                                .arg(rt.offset)
                                .arg(rt.count)
-                               .arg(seg.type.size)
+                               .arg(seg.elemSize)
                                .arg(rt.bytes)
                                .arg(numList(rt.raw));
-            if (seg.scale != 1.0 || seg.offset != 0.0)
+            if (!seg.identityPhys)
                 line += QStringLiteral("  phys=[%1]").arg(numList(rt.phys));
             if (!seg.unit.empty())
                 line += QStringLiteral(" %1").arg(QString::fromStdString(seg.unit));
@@ -795,24 +728,26 @@ nextpilot::plotscope::protocol::SequentialFramePreview nextpilot::plotscope::pro
         }
     }
 
-    if (tpl.hasTimestamp && tpl.timestampExpr)
+    if (prog.hasTimestamp)
     {
-        int64_t rawTs = 0;
-        const EvalCtx &ctx = tpl.timestampRaw ? fr.rawCtx : fr.physCtx;
+        const std::vector<TypedVec> &ctx = prog.timestampRaw ? rawSlots : physSlots;
+        TypedValue tv;
         std::string err;
         int64_t ticks = 0;
-        if (evalExprInt(tpl.timestampExpr, ctx, rawTs, err) &&
-            unitTicks(rawTs, tpl.timestampUnit, ticks, err))
+        int64_t iv = 0;
+        bool got = runByteCode(prog.timestamp, ctx, tv, err) && !isTextVal(tv);
+        if (got)
+            iv = tv.isSigned() ? tv.asI64() : static_cast<int64_t>(tv.asU64());
+        if (got && unitTicks(iv, prog.timestampUnit, ticks, err))
         {
             res.lines << QStringLiteral("timestamp：%1 s（%2 ticks）")
-                             .arg(QString::number(static_cast<double>(ticks) / kTicksPerSecond,
-                                                  'f', 6))
+                             .arg(QString::number(static_cast<double>(ticks) / kTicksPerSecond, 'f',
+                                                  6))
                              .arg(QString::number(static_cast<qlonglong>(ticks)));
         }
         else
         {
-            res.lines << QStringLiteral("timestamp 求值失败：%1")
-                             .arg(QString::fromStdString(err));
+            res.lines << QStringLiteral("timestamp 求值失败：%1").arg(QString::fromStdString(err));
         }
     }
     return res;
@@ -820,8 +755,9 @@ nextpilot::plotscope::protocol::SequentialFramePreview nextpilot::plotscope::pro
 
 /* ---------------- 生产解码 ---------------- */
 
-nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::protocol::decodeSequential(
-    const QByteArray &bytes, const ProtocolDocument &tpl)
+nextpilot::plotscope::protocol::ProtocolDecodeResult
+nextpilot::plotscope::protocol::decodeSequentialCompiled(const QByteArray &bytes,
+                                                         const CompiledProgram &prog)
 {
     ProtocolDecodeResult result;
     result.ticksPerSecond = kTicksPerSecond;
@@ -829,6 +765,8 @@ nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::proto
     const uint8_t *data = reinterpret_cast<const uint8_t *>(bytes.constData());
     const size_t total = static_cast<size_t>(bytes.size());
     std::map<std::string, ProtocolChannel> chans;
+    std::vector<TypedVec> rawSlots = makeSlots(prog);
+    std::vector<TypedVec> physSlots = makeSlots(prog);
     size_t off = 0;
     int64_t frameIndex = 0;
     bool haveBase = false;
@@ -838,8 +776,8 @@ nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::proto
 
     while (off + 1 < total)
     {
-        FrameRead fr = readFrame(tpl, data + off, total - off);
-        if (!fr.ok)
+        FrameRead fr;
+        if (!readFrame(prog, rawSlots, physSlots, data + off, total - off, fr))
         {
             if (std::getenv("PS_SEQ_DEBUG"))
                 std::fprintf(stderr, "reject off=%zu: %s\n", off, fr.err.c_str());
@@ -854,35 +792,34 @@ nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::proto
 
         // 无时间戳时按帧序给轴（1 帧 = 1 秒刻度），仍是整数 ticks。
         int64_t ts = frameIndex * kTicksPerSecond;
-        if (tpl.hasTimestamp)
+        if (prog.hasTimestamp)
         {
-            int64_t rawTs = 0;
+            const std::vector<TypedVec> &ctx = prog.timestampRaw ? rawSlots : physSlots;
+            TypedValue tv;
             std::string err;
-            const EvalCtx &ctx = tpl.timestampRaw ? fr.rawCtx : fr.physCtx;
-            if (!evalExprInt(tpl.timestampExpr, ctx, rawTs, err))
+            bool got = runByteCode(prog.timestamp, ctx, tv, err) && !isTextVal(tv);
+            int64_t rawTs = 0;
+            if (got)
+                rawTs = tv.isSigned() ? tv.asI64() : static_cast<int64_t>(tv.asU64());
+            else if (prog.timestampIndexFallback)
+                rawTs = frameIndex;
+            else
             {
-                if (tpl.timestampFallback == "index")
-                {
-                    rawTs = frameIndex;
-                }
-                else
-                {
-                    ++off;
-                    ++rejected;
-                    continue;
-                }
+                ++off;
+                ++rejected;
+                continue;
             }
-            if (tpl.timestampOrigin == "first_frame")
+            if (prog.timestampOrigin == "first_frame")
             {
                 if (!haveBase)
                 {
                     baseTs = rawTs;
                     haveBase = true;
                 }
-                rawTs -= baseTs; // 先整数相减，再换算单位
+                rawTs -= baseTs;
             }
             int64_t ticks = 0;
-            if (!unitTicks(rawTs, tpl.timestampUnit, ticks, err))
+            if (!unitTicks(rawTs, prog.timestampUnit, ticks, err))
             {
                 ++off;
                 ++rejected;
@@ -892,23 +829,20 @@ nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::proto
         }
 
         bool anyChannel = false;
-        for (RtSeg &rt : fr.fields)
+        for (Rt &rt : fr.fields)
         {
-            const SegSpec &seg = *rt.spec;
-            if (seg.emitMode != EmitMode::Channel)
+            const CompiledSeg &seg = *rt.spec;
+            if (seg.emitMode != 0)
                 continue;
-            if (seg.type.type == ValueType::Text)
+            if (seg.isText)
                 continue;
-            // series 的 payload 是容器，其内容由变体段解释，本身不出通道。
-            const bool isPayload = tpl.series.enabled && seg.name == tpl.series.payload;
-            if (isPayload && !fr.variantName.empty())
+            const bool isPayload = prog.hasSeries && seg.slot == prog.payloadSlot;
+            if (isPayload && fr.variant >= 0)
                 continue;
             if (rt.raw.size() > 256)
                 ++warnings;
             const uint32_t limit = std::min<uint32_t>(rt.count, 256);
-            const std::string prefix = "frame." + seg.prefix;
-            // 通道值列的类型由段类型决定：新建时先把列类型钉住，
-            // 否则默认的 F64 列会把每次 push 都降级成 double。
+            const std::string prefix = seg.prefix;
             const TypedVec &src = rt.phys.size() ? rt.phys : rt.raw;
             if (rt.count == 1)
             {
@@ -959,15 +893,32 @@ nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::proto
         result.error = QStringLiteral("顺序协议没有可绘制通道；检查 emit/count 或协议内容");
         return result;
     }
-
     for (auto &kv : chans)
         result.channels.push_back(std::move(kv.second));
     result.ok = true;
     return result;
 }
 
-nextpilot::plotscope::protocol::ProtocolDecodeResult nextpilot::plotscope::protocol::decodeSequentialJson(
-    const QByteArray &bytes, const QByteArray &templateJson)
+nextpilot::plotscope::protocol::ProtocolDecodeResult
+nextpilot::plotscope::protocol::decodeSequential(const QByteArray &bytes,
+                                                 const ProtocolDocument &tpl)
+{
+    ProtocolDecodeResult result;
+    result.ticksPerSecond = kTicksPerSecond;
+
+    CompiledProgram prog;
+    std::string ce;
+    if (!compileProgram(tpl, prog, ce))
+    {
+        result.error = QString::fromStdString("编译失败：" + ce);
+        return result;
+    }
+    return decodeSequentialCompiled(bytes, prog);
+}
+
+nextpilot::plotscope::protocol::ProtocolDecodeResult
+nextpilot::plotscope::protocol::decodeSequentialJson(const QByteArray &bytes,
+                                                     const QByteArray &templateJson)
 {
     ProtocolDecodeResult result;
     result.ticksPerSecond = kTicksPerSecond;

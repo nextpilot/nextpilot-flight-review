@@ -7,6 +7,7 @@
 #include "protocol/ProtocolDocument.h"
 #include "protocol/ProtocolSpec.h"
 #include "protocol/SequentialCodec.h"
+#include "protocol/CompiledProgram.h"
 #include "CustomProtocolParser.h"
 
 #include "ps_parser_spi.h"
@@ -333,6 +334,66 @@ int main(int argc, char *argv[])
           "segments":[{"name":"a","count":1,"type":"u8"}]})";
         CHECK(validate(QJsonDocument::fromJson(beTpl).object()).isEmpty());
         OK("端序别名 be 通过 validate");
+    }
+
+    // --- 8) 编译层：段表常量折叠、count 走字节码、一次编译多次解码 ---
+    {
+        CompiledProgram prog;
+        std::string cerr;
+        CHECK(compileProgram(doc, prog, cerr));
+        CHECK(prog.segs.size() == 3);
+        // sync 段 count=1 是常量：编译期直接给出元素数与字节数，热路径不再求值
+        CHECK(prog.segs[0].countIsConst && prog.segs[0].constCount == 1);
+        CHECK(prog.segs[0].constBytes == 1);
+        // a 是 u16：字节宽由类型推算
+        CHECK(prog.segs[1].constBytes == 2);
+        // b 有 scale：编译期标记为非恒等换算
+        CHECK(!prog.segs[2].identityPhys);
+        // expect 170 在编译期折叠成常量，不必每帧求值
+        CHECK(prog.segs[0].hasExpect && prog.segs[0].expectIsConst);
+        CHECK(prog.segs[0].expectConst.asI64() == 170);
+
+        // 同一份编译产物解码两次，结果一致（解码无残留状态）
+        ProtocolDecodeResult r1 = decodeSequentialCompiled(frames, prog);
+        ProtocolDecodeResult r2 = decodeSequentialCompiled(frames, prog);
+        CHECK(r1.ok && r2.ok);
+        CHECK(r1.channels.size() == r2.channels.size());
+        CHECK(r1.channels.at(0).v.size() == r2.channels.at(0).v.size());
+
+        // count 是表达式：走字节码而不是每帧解释表达式树
+        const QByteArray varTpl = R"({
+          "name":"var","layout":"sequential","endian":"little","maxsize":32,
+          "segments":[
+            {"name":"n","count":1,"type":"u8"},
+            {"name":"body","count":"n","type":"u8"},
+            {"name":"tail","count":1,"type":"u8"}
+          ]
+        })";
+        ProtocolDocument vdoc;
+        CHECK(parseDocument(QJsonDocument::fromJson(varTpl).object(), vdoc, cerr));
+        CompiledProgram vprog;
+        CHECK(compileProgram(vdoc, vprog, cerr));
+        CHECK(!vprog.segs[1].countIsConst); // count 依赖 n，必须运行期求值
+        QByteArray varFrames;
+        varFrames.append(char(2)); varFrames.append(char(10)); varFrames.append(char(11)); varFrames.append(char(99));
+        varFrames.append(char(3)); varFrames.append(char(20)); varFrames.append(char(21)); varFrames.append(char(22)); varFrames.append(char(98));
+        ProtocolDecodeResult vr = decodeSequentialCompiled(varFrames, vprog);
+        CHECK(vr.ok);
+        // n + body[0..2] + tail：body 长度随 n 变化，通道列允许不齐
+        CHECK(vr.channels.size() == 5);
+        int nCol = -1, body2 = -1, tailCol = -1;
+        for (int i = 0; i < vr.channels.size(); ++i)
+        {
+            const std::string &nm = vr.channels.at(i).name;
+            if (nm == "frame.n") nCol = i;
+            if (nm == "frame.body[2]") body2 = i;
+            if (nm == "frame.tail") tailCol = i;
+        }
+        CHECK(nCol >= 0 && body2 >= 0 && tailCol >= 0);
+        CHECK(vr.channels.at(nCol).v.size() == 2);
+        CHECK(vr.channels.at(tailCol).v.size() == 2);
+        CHECK(vr.channels.at(body2).v.size() == 1); // 第二帧 n=3 才有 body[2]
+        OK("编译层：常量折叠、表达式 count 走字节码、一次编译多次解码结果稳定");
     }
 
     fprintf(stdout, "\n协议逻辑资产平移测试全部通过\n");

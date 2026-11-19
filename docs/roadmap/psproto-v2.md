@@ -667,9 +667,24 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
   通道列类型断言（u16 列 / scale 升 f64）、时间 ticks 断言、SPI 双列类型断言。
 - 全量 ctest **11/11 通过**。
 
-**S2 后半（未开始）**
-- 段表编译：`compile()` 把模板预编译成「段表 + 表达式字节码」，`decode` 走段表而非每帧解释 JSON 对象。
-  当前仍是逐帧遍历 `SegSpec`（功能正确，性能待压）。
+**S2 后半（本轮完成）：编译层**
+- 新增 `protocol/CompiledProgram.h/.cpp`：`compileProgram(doc, prog, err)` 把类型化模型编译成
+  「段表 + 表达式字节码」，模板只在启动时做一次，之后每帧解码不再递归遍历 `Expr` 树、不再按名字查 map。
+- 槽位表 `CompiledSlot` 把名字解析成整数下标（顶层段与各变体段共用一个扁平命名空间），
+  表达式的 `Load/LoadIdx` 直接按下标取值。
+- 表达式压成后缀字节码（栈式），算子覆盖算术/位运算/比较/`toF64|toI64|toU64`/`abs|min|max|clamp`；
+  不含槽位访问的表达式在编译期折叠成常量（典型：`count: 1`、`expect: 170`）。
+- 段表预存：常量 count 的元素数/字节数、物理换算是否恒等、`emit` 三态、是否文本段，
+  热路径只剩整数判断；`over` 区间、`length.fields` 也在编译期解析成槽位序列。
+- 新增 `decodeSequentialCompiled(bytes, prog)`：一次编译、多次解码（批量/流式复用同一份产物）；
+  `decodeSequential(doc)` 内部编译一次再走它，行为与之前一致。
+- 测试补 `编译层` 用例：段表常量折叠断言、表达式 count 走字节码（变长 body）、
+  同一编译产物解码两次结果一致、通道列随 count 变化允许不齐。
+- 全量 ctest **11/11 通过**。
+
+**S2 之后仍未做**
+- 位域（`bit`）、条件段（`if`）、`enum`、`repeat/until`、`derive`、`types` 别名、`digest.inject`：规范已定义、代码未实现（S4a）。
+- 三语言 codegen（S5）。
 
 
 
