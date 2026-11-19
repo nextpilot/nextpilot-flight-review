@@ -200,20 +200,21 @@ void MainWindow::declareStandardSlots()
     static const PlotToolDef kPlotTools[] = {
         // 页面组（老 buildPagePanel）：新建页
         {"ribbon.group.plot.page",   "page.new",            "新建页",  "newpage", 0, ""},
-        // 布局组（老 buildLayoutPicker）：网格 + 添加/删除/左右/上下
-        {"ribbon.group.plot.layout", "page.grid",           "网格",    "grid",    0, "{\"rows\":2,\"cols\":1}"},
+        // 布局组（老 buildLayoutPicker）：网格 m×n 选择器 + 添加/删除/左右/上下
+        {"ribbon.group.plot.layout", "page.grid",           "网格",    "grid",    0, "pick"},
         {"ribbon.group.plot.layout", "page.addCanvas",      "添加",    "plus",    1, ""},
         {"ribbon.group.plot.layout", "page.removeCanvas",   "删除",    "trash",   2, ""},
         {"ribbon.group.plot.layout", "page.splitHorizontal","左右",   "split_h", 3, ""},
         {"ribbon.group.plot.layout", "page.splitVertical",  "上下",    "split_v", 4, ""},
-        // 显示组（老 buildDisplayPanel）：网格线 / 图例（边框 ng 无对应能力，不造空按钮）
+        // 显示组（老 buildDisplayPanel）：网格线 / 边框 / 图例
         {"ribbon.group.plot.display","plot.grid",           "网格",    "grid",    0, ""},
-        {"ribbon.group.plot.display","plot.legend.toggle",  "图例",    "legend",  1, ""},
-        // 画布操作组（老 buildPanelsToolbar）：放大 / 缩小 / 自适应
-        // （"移动"是工具模式开关，ng 无 pan 工具 view action，不造空按钮）
-        {"ribbon.group.plot.tool",   "plot.zoom",           "放大",    "zoom_in", 0, "{\"factor\":0.5}"},
-        {"ribbon.group.plot.tool",   "plot.zoom",           "缩小",    "zoom_out",1, "{\"factor\":2.0}"},
-        {"ribbon.group.plot.tool",   "plot.autoscale",      "自适应",  "fit",     2, ""},
+        {"ribbon.group.plot.display","plot.box",            "边框",    "box",     1, ""},
+        {"ribbon.group.plot.display","plot.legend.toggle",  "图例",    "legend",  2, ""},
+        // 画布操作组（老 buildPanelsToolbar）：移动 / 放大 / 缩小（互斥工具模式）+ 自适应
+        {"ribbon.group.plot.tool",   "plot.tool",           "移动",    "hand",    0, "{\"tool\":0}"},
+        {"ribbon.group.plot.tool",   "plot.tool",           "放大",    "zoom_in", 1, "{\"tool\":1}"},
+        {"ribbon.group.plot.tool",   "plot.tool",           "缩小",    "zoom_out",2, "{\"tool\":2}"},
+        {"ribbon.group.plot.tool",   "plot.autoscale",      "自适应",  "fit",     3, ""},
     };
     for (const PlotToolDef &d : kPlotTools)
     {
@@ -558,7 +559,11 @@ void MainWindow::build(RuntimeHost &host)
         }
         QVariant nullVariant;
         Result<QVariant> viewResult(nullVariant);
-        if (m_appCtx.interactions().dispatchViewAction(actionId, params, viewResult))
+        // 「网格」按钮（id 仍为 page.grid 以满足契约）：data="pick" 时弹 m×n 选择器，
+        // 无 data（脚本/回放直接调）时保留原固定网格行为。
+        const QString dispatchId = (actionId == QStringLiteral("page.grid") && actionData == QStringLiteral("pick"))
+                                       ? QStringLiteral("page.grid.pick") : actionId;
+        if (m_appCtx.interactions().dispatchViewAction(dispatchId, params, viewResult))
         {
             if (!viewResult)
                 statusBar()->showMessage(QStringLiteral("动作失败: %1").arg(viewResult.error().message));

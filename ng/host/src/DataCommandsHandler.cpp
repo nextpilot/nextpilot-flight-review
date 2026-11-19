@@ -46,6 +46,7 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
     const QString &op = intent.op;
     return op == QLatin1String("data.reload") || op == QLatin1String("data.export")
         || op == QLatin1String("data.recent") || op == QLatin1String("data.clearCache")
+        || op == QLatin1String("data.remove")
         || op == QLatin1String("data.derive") || op == QLatin1String("data.workspace.list")
         || op == QLatin1String("data.workspace.save")
         || op == QLatin1String("data.workspace.restore");
@@ -61,6 +62,8 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return recent(intent);
     if (intent.op == QLatin1String("data.clearCache"))
         return clearCache();
+    if (intent.op == QLatin1String("data.remove"))
+        return removeSource(intent);
     if (intent.op == QLatin1String("data.derive"))
         return derive(intent);
     if (intent.op == QLatin1String("data.workspace.list"))
@@ -220,6 +223,33 @@ Result<IntentResult> DataCommandsHandler::clearCache()
     }
     IntentResult r;
     r.payload = removed;
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::removeSource(const Intent &intent)
+{
+    // 显式 id 优先，否则移除活动源。对齐老界面垃圾桶：移除源 + 它产出的数据集。
+    int sourceId = intent.params.value(QStringLiteral("id"), -1).toInt();
+    if (sourceId < 0)
+        sourceId = m_app.activeSourceId();
+    const DataSourceInfo *info = m_app.sources().get(sourceId);
+    if (!info)
+        return fail(QStringLiteral("enosource"), QStringLiteral("没有可移除的数据源"));
+
+    QVector<int> removedDatasets;
+    m_app.sources().remove(sourceId, &removedDatasets);
+    for (int ds : removedDatasets)
+        m_app.data().remove(ds);
+
+    // 若移除的是活动源，清空活动源，避免后续操作指向已消失的 id。
+    if (m_app.activeSourceId() == sourceId)
+        m_app.setActiveSourceId(-1);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("id"), sourceId},
+        {QStringLiteral("datasets"), removedDatasets.size()},
+    };
     return r;
 }
 

@@ -11,8 +11,12 @@
 #include "Transform.h"
 #include "TransformEditorDialog.h"
 #include <fastplot/Axes.h>
+#include <fastplot/Panner.h>
+#include <fastplot/Zoomer.h>
 
 #include <QEvent>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QGridLayout>
 #include <QJsonDocument>
 #include <QMouseEvent>
@@ -680,6 +684,34 @@ void CanvasWorkspace::registerViewActions()
                                     c->plotWidget()->grid(on);
                                     return QVariant(on);
                                 });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.box"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c || !c->plotWidget())
+                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                    const bool on = params.contains(QStringLiteral("on"))
+                                                        ? params.value(QStringLiteral("on")).toBool()
+                                                        : !c->plotWidget()->boxVisible();
+                                    c->plotWidget()->box(on);
+                                    return QVariant(on);
+                                });
+    // 老 buildPanelsToolbar 的工具模式：移动/放大/缩小左键互斥（-1=恢复默认）。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.tool"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    const int tool = params.value(QStringLiteral("tool"), -1).toInt();
+                                    for (const Cell &cell : m_cells)
+                                    {
+                                        PlotCanvas *c = cell.canvas;
+                                        if (!c || !c->zoomer() || !c->panner())
+                                            continue;
+                                        auto *z = c->zoomer();
+                                        auto *pn = c->panner();
+                                        z->setLeftBand(tool == 1 || tool == 2);
+                                        z->setBandZoomOut(tool == 2);
+                                        pn->setEnabled(tool == 0 || tool == -1);
+                                    }
+                                    return QVariant(tool);
+                                });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.axis.range"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
@@ -740,6 +772,34 @@ void CanvasWorkspace::registerViewActions()
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},
                                                     {QStringLiteral("rows"), m_rows},
                                                     {QStringLiteral("cols"), m_cols}};
+                                    return QVariant(out);
+                                });
+    // 老 buildLayoutPicker 的 m×n 选择器：点「网格」弹行列输入，再走 page.grid 重排。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.grid.pick"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    bool ok = false;
+                                    const QString input = QInputDialog::getText(
+                                        this, QStringLiteral("网格布局"),
+                                        QStringLiteral("输入行×列（如 2×1、3×2，最大 6×6）："),
+                                        QLineEdit::Normal,
+                                        QStringLiteral("%1×%2").arg(m_rows).arg(m_cols), &ok);
+                                    if (!ok || input.isEmpty())
+                                        return QVariant(false);
+                                    // 同时接受 × x X * 分隔符。
+                                    QString norm = input;
+                                    for (const QChar sep : {QLatin1Char('x'), QLatin1Char('X'), QLatin1Char('*')})
+                                        norm.replace(sep, QLatin1Char('\u00d7'));
+                                    const QStringList parts = norm.split(QLatin1Char('\u00d7'));
+                                    if (parts.size() != 2)
+                                        return fail(QStringLiteral("egrid"), QStringLiteral("格式应为 行×列"));
+                                    int r = parts.at(0).trimmed().toInt();
+                                    int c = parts.at(1).trimmed().toInt();
+                                    if (r < 1 || r > 6 || c < 1 || c > 6)
+                                        return fail(QStringLiteral("egrid"), QStringLiteral("行列须在 1~6 之间"));
+                                    if (!setGrid(r, c))
+                                        return fail(QStringLiteral("egrid"), QStringLiteral("网格规格非法"));
+                                    QVariantMap out{{QStringLiteral("cells"), m_cells.size()},
+                                                    {QStringLiteral("rows"), r}, {QStringLiteral("cols"), c}};
                                     return QVariant(out);
                                 });
     // 老 PlottingRibbon"页面"组的"新建页"：ng 用多画布工作区承载页概念，

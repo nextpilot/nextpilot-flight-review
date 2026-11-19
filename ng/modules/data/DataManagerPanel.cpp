@@ -13,6 +13,7 @@
 #include "TransformEditorDialog.h"
 
 #include <QAbstractItemView>
+#include <QCursor>
 #include <QDrag>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -23,11 +24,14 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <functional>
 #include <QMimeData>
 #include <QStyledItemDelegate>
 #include <QPolygonF>
 #include <QIcon>
 #include <QPushButton>
+#include <QShortcut>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QPalette>
@@ -217,13 +221,49 @@ public:
     }
 };
 
+// 源卡片右侧操作命中：对齐老界面配置/移除按钮。
+// 命中区与 SourceRowDelegate::paint 的图标绘制坐标一致。
+enum class SourceRowAction { Config, Remove };
+
 // 列节点可拖拽：只发逻辑标识（ChannelMime），不暴露 Dataset 内部结构。
 class ChannelTreeWidget : public QTreeWidget
 {
 public:
     explicit ChannelTreeWidget(QWidget *parent = nullptr) : QTreeWidget(parent) {}
 
+    // 点击源卡片右侧图标时回调（sourceId, action）；由面板接线到配置/移除。
+    std::function<void(int, SourceRowAction)> onRowAction;
+
 protected:
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        if (e->button() == Qt::LeftButton && onRowAction)
+        {
+            QTreeWidgetItem *item = itemAt(e->pos());
+            if (item && item->data(0, kRoleNodeKind).toString() == QStringLiteral("source"))
+            {
+                const QRect row = visualRect(indexFromItem(item));
+                const int cardRight = viewport()->width() - 1;
+                const int iconZone = 48;
+                const int iconY = row.top() + (row.height() - 16) / 2;
+                const QRect cfgRect(cardRight - iconZone + 4, iconY, 16, 16);
+                const QRect delRect(cardRight - iconZone + 26, iconY, 16, 16);
+                const int sid = item->data(0, kRoleSourceId).toInt();
+                if (cfgRect.contains(e->pos()))
+                {
+                    onRowAction(sid, SourceRowAction::Config);
+                    return; // 吞掉，避免同时选中/展开
+                }
+                if (delRect.contains(e->pos()))
+                {
+                    onRowAction(sid, SourceRowAction::Remove);
+                    return;
+                }
+            }
+        }
+        QTreeWidget::mousePressEvent(e);
+    }
+
     void startDrag(Qt::DropActions supportedActions) override
     {
         QTreeWidgetItem *item = currentItem();
@@ -281,10 +321,19 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
 
-    m_header = new QLabel(QStringLiteral("数据源"), this);
+    // 标题行：左「数据源」+ 右「N源 · N已连接」，对齐老界面两段式。
+    auto *headerRow = new QWidget(this);
+    auto *headerLay = new QHBoxLayout(headerRow);
+    headerLay->setContentsMargins(8, 6, 8, 4);
+    headerLay->setSpacing(6);
+    m_header = new QLabel(QStringLiteral("数据源"), headerRow);
     m_header->setObjectName(QStringLiteral("sectionTitle"));
-    m_header->setContentsMargins(8, 6, 8, 4);
-    lay->addWidget(m_header);
+    headerLay->addWidget(m_header);
+    headerLay->addStretch(1);
+    m_srcCount = new QLabel(QStringLiteral("0 源 · 0 已连接"), headerRow);
+    m_srcCount->setObjectName(QStringLiteral("textDim"));
+    headerLay->addWidget(m_srcCount);
+    lay->addWidget(headerRow);
 
     // chip：字段 / 参数 / 消息（状态模型；对齐老界面——老 Dock chipHost->hide()，
     // 默认只显示字段视图，参数/消息视图保留为隐藏能力，不暴露切换入口）。
@@ -340,14 +389,64 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_tree->setDefaultDropAction(Qt::CopyAction);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     m_tree->setIndentation(14);
+    // 源卡片右侧齿轮/垃圾桶点击：配置弹说明（文件源）/移除数据源。
+    static_cast<ChannelTreeWidget *>(m_tree)->onRowAction = [this](int sourceId, SourceRowAction action) {
+        if (action == SourceRowAction::Config)
+        {
+            const DataSourceInfo *info = m_sources.get(sourceId);
+            QMessageBox::information(this, QStringLiteral("配置数据源"),
+                QStringLiteral("「%1」是文件数据源，使用打开时的解析选项；\n如需更换解析方式，请移除后重新打开。")
+                    .arg(info ? (info->name.isEmpty() ? info->origin : info->name) : QStringLiteral("该源")));
+            return;
+        }
+        // Remove：确认后走 data.remove，注册表 sourceRemoved 信号会触发面板刷新。
+        const DataSourceInfo *info = m_sources.get(sourceId);
+        const QString name = info ? (info->name.isEmpty() ? QFileInfo(info->origin).fileName() : info->name)
+                                  : QStringLiteral("该数据源");
+        if (QMessageBox::question(this, QStringLiteral("移除数据源"),
+                QStringLiteral("确定移除「%1」及其全部通道？").arg(name),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+            return;
+        Intent intent; intent.op = QStringLiteral("data.remove");
+        intent.params[QStringLiteral("id")] = sourceId;
+        const auto r = m_executor.execute(intent);
+        if (!r)
+            QMessageBox::warning(this, QStringLiteral("移除失败"), r.error().message);
+    };
     lay->addWidget(m_tree, 1);
 
-    // 空态：无源时显示，树隐藏。
-    m_empty = new QLabel(this);
-    m_empty->setText(QStringLiteral("还没有数据源\n打开飞行日志，或连接一个数据源开始分析"));
-    m_empty->setAlignment(Qt::AlignCenter);
-    m_empty->setWordWrap(true);
-    m_empty->setObjectName(QStringLiteral("textDim"));
+    // 空态：无源时显示，树隐藏。对齐老界面 m_srcEmpty：提示 + 打开日志/连接实时源/最近文件。
+    m_empty = new QWidget(this);
+    auto *emptyLay = new QVBoxLayout(m_empty);
+    emptyLay->setAlignment(Qt::AlignCenter);
+    auto *emptyHint = new QLabel(QStringLiteral("还没有数据源\n打开飞行日志，或连接一个数据源开始分析"), m_empty);
+    emptyHint->setAlignment(Qt::AlignCenter);
+    emptyHint->setWordWrap(true);
+    emptyHint->setObjectName(QStringLiteral("textDim"));
+    emptyLay->addWidget(emptyHint);
+    emptyLay->addSpacing(6);
+    auto mkEmptyBtn = [this, emptyLay](const QString &text) {
+        auto *b = new QPushButton(text, m_empty);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setFixedHeight(28);
+        b->setObjectName(QStringLiteral("emptyAction"));
+        emptyLay->addWidget(b);
+        return b;
+    };
+    auto *openBtn = mkEmptyBtn(QStringLiteral("打开日志"));
+    auto *liveBtn = mkEmptyBtn(QStringLiteral("连接实时源"));
+    auto *recentBtn = mkEmptyBtn(QStringLiteral("最近文件"));
+    emptyLay->addStretch();
+    connect(openBtn, &QPushButton::clicked, this, &DataManagerPanel::openLogFile);
+    connect(liveBtn, &QPushButton::clicked, this, [this] {
+        // NG 暂无实时源运行时：对齐老界面入口——列出支持的实时 transport 扩展，
+        // 无可用扩展时给出明确提示，不留死按钮。
+        QMessageBox::information(this, QStringLiteral("连接实时源"),
+            QStringLiteral("当前版本的实时源采集尚未接入；可通过「打开日志」加载文件数据源。"));
+    });
+    connect(recentBtn, &QPushButton::clicked, this, [this] {
+        showRecentFilesMenu(QCursor::pos());
+    });
     lay->addWidget(m_empty, 1);
 
     // 树：双击列节点 = 激活通道；单击源节点 = 展开/选中；右键 = 上下文菜单。
@@ -403,6 +502,17 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     connect(&m_sources, &SourceRegistry::sourceAdded, this, [this](int) { refresh(); });
     connect(&m_sources, &SourceRegistry::sourceRemoved, this, [this](int) { refresh(); });
     connect(&m_sources, &SourceRegistry::sourceChanged, this, [this](int) { rebuildTree(); });
+
+    // 对齐老界面：Ctrl+T 对当前选中列直接添加变换（derive）。
+    auto *transformShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+T")), this);
+    connect(transformShortcut, &QShortcut::activated, this, [this] {
+        QTreeWidgetItem *item = m_tree->currentItem();
+        if (!item || !item->data(0, kRoleDatasetId).isValid()
+            || !item->data(0, kRoleTable).isValid() || !item->data(0, kRoleColumn).isValid())
+            return;
+        deriveColumn(item, m_tree->viewport()->mapToGlobal(
+            m_tree->visualItemRect(item).center()));
+    });
 
     registerPropertyProviders();
     refresh();
@@ -636,7 +746,18 @@ void DataManagerPanel::rebuildTree()
     rebuildChips();
 
     const bool showFields = m_shownChip == 0;
-    m_header->setText(QStringLiteral("数据源 · %1 已连接").arg(m_sources.count()));
+    // 标题两段：左固定「数据源」，右「N源 · N已连接」（对齐老界面 refreshSrcCount）。
+    if (m_srcCount)
+    {
+        int connected = 0;
+        for (int sid : m_sources.ids())
+        {
+            const DataSourceInfo *ci = m_sources.get(sid);
+            if (ci && ci->state != SourceState::Opening && ci->state != SourceState::Error)
+                ++connected;
+        }
+        m_srcCount->setText(QStringLiteral("%1 源 · %2 已连接").arg(m_sources.count()).arg(connected));
+    }
 
     for (int sid : m_sources.ids())
     {
@@ -860,6 +981,7 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
         return;
     QMenu menu(this);
     QAction *plot = menu.addAction(QStringLiteral("画到当前画布"));
+    QAction *delDerived = menu.addAction(QStringLiteral("删除派生通道…"));
     menu.addSeparator();
     QMenu *derive = menu.addMenu(QStringLiteral("添加变换…"));
     QList<QAction *> deriveActs;
@@ -885,6 +1007,11 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
         if (sourceId >= 0) m_appCtx.setActiveSourceId(sourceId);
         m_appCtx.setActiveChannel(datasetId, tableName, columnName);
         emit channelActivated(datasetId, tableName, columnName);
+        return;
+    }
+    if (chosen == delDerived)
+    {
+        removeDerivedChannels(item);
         return;
     }
     if (chosen == openEditor)
@@ -942,6 +1069,83 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
         }
         break;
     }
+}
+
+void DataManagerPanel::deriveColumn(QTreeWidgetItem *item, const QPoint &globalPos)
+{
+    if (!item)
+        return;
+    const int datasetId = item->data(0, kRoleDatasetId).toInt();
+    const QString tableName = item->data(0, kRoleTable).toString();
+    const QString columnName = item->data(0, kRoleColumn).toString();
+    if (item->data(0, kRoleDatasetId).isValid() && !tableName.isEmpty() && !columnName.isEmpty())
+    {
+        // 与列右键「添加变换…」同一语义：弹出派生配方供选择，走 data.derive。
+        QMenu menu(this);
+        QList<QAction *> acts;
+        for (const DeriveRecipe &r : kDeriveRecipes)
+        {
+            QAction *a = menu.addAction(QString::fromUtf8(r.label));
+            a->setData(QString::fromUtf8(r.id));
+            acts << a;
+        }
+        if (QAction *chosen = menu.exec(globalPos))
+        {
+            Intent intent; intent.op = QStringLiteral("data.derive");
+            intent.params[QStringLiteral("dataset")] = datasetId;
+            intent.params[QStringLiteral("table")] = tableName;
+            intent.params[QStringLiteral("column")] = columnName;
+            intent.params[QStringLiteral("filter")] = chosen->data().toString();
+            const auto r = m_executor.execute(intent);
+            if (!r)
+                QMessageBox::warning(this, QStringLiteral("派生失败"), r.error().message);
+        }
+    }
+}
+
+void DataManagerPanel::removeDerivedChannels(QTreeWidgetItem *item)
+{
+    // 老界面删的是数据集里的派生列；NG 架构派生为只读叠加、不写回数据集，
+    // 故这里删除画布上由该列派生出的曲线（真实动作，非死按钮）。
+    const QString tableName = item ? item->data(0, kRoleTable).toString() : QString();
+    const QString columnName = item ? item->data(0, kRoleColumn).toString() : QString();
+    QVariantMap params;
+    params[QStringLiteral("op")] = QStringLiteral("list");
+    Result<QVariant> res{QVariant()};
+    if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.series.list"), params, res)
+        || !res)
+    {
+        QMessageBox::information(this, QStringLiteral("删除派生通道"),
+            QStringLiteral("当前没有可删除的派生曲线。"));
+        return;
+    }
+    const QString prefix = tableName + QLatin1Char('.') + columnName;
+    QStringList keys;
+    for (const QVariant &v : res.value().toList())
+    {
+        const QVariantMap m = v.toMap();
+        const QString key = m.value(QStringLiteral("key")).toString();
+        const QString col = m.value(QStringLiteral("column")).toString();
+        // 派生曲线的列名带 .派生算子 后缀（如 att_roll.abs），天然含原列名前缀。
+        if (!key.isEmpty() && col.contains(prefix) && col != columnName)
+            keys << key;
+    }
+    if (keys.isEmpty())
+    {
+        QMessageBox::information(this, QStringLiteral("删除派生通道"),
+            QStringLiteral("「%1」当前没有派生曲线。\n（NG 派生为只读叠加，不写回数据集）").arg(prefix));
+        return;
+    }
+    int removed = 0;
+    for (const QString &key : keys)
+    {
+        QVariantMap p; p[QStringLiteral("key")] = key;
+        Result<QVariant> rr{QVariant()};
+        if (m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.series.remove"), p, rr))
+            ++removed;
+    }
+    QMessageBox::information(this, QStringLiteral("删除派生通道"),
+        QStringLiteral("已移除 %1 条派生曲线。").arg(removed));
 }
 
 void DataManagerPanel::showRecentFilesMenu(const QPoint &globalPos)

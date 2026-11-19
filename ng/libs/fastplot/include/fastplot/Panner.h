@@ -16,6 +16,10 @@ class Panner : public QObject
 public:
     explicit Panner(Axes *plot, QObject *parent = nullptr);
 
+    // 工具模式：放大/缩小工具激活时禁用平移（左键交给 Zoomer 框选）。
+    void setEnabled(bool enabled) { m_enabled = enabled; }
+    bool isEnabled() const { return m_enabled; }
+
 Q_SIGNALS:
     void panned();
 
@@ -24,6 +28,7 @@ protected:
 
 private:
     Axes *m_plot = nullptr;
+    bool m_enabled = true;
     bool m_dragging = false;
     QPointF m_lastPos;
 };

@@ -36,6 +36,12 @@ public:
     void zoomToPixels(const QRect &pixels);
     void resetZoom();
 
+    // 工具模式（对齐老界面放大/缩小工具）：
+    //   leftBand=true 时左键框选接管缩放（Panner 应同时禁用）；
+    //   zoomOut=true 时框选区按固定倍数缩小（否则框选区放大到铺满）。
+    void setLeftBand(bool enabled) { m_leftBand = enabled; }
+    void setBandZoomOut(bool out) { m_bandZoomOut = out; }
+
 Q_SIGNALS:
     void zoomed();
 
@@ -46,6 +52,8 @@ private:
     Axes *m_plot = nullptr;
     QRectF m_home;
     bool m_banding = false;
+    bool m_leftBand = false;     // 左键框选接管（工具模式）
+    bool m_bandZoomOut = false;  // 框选缩小而非放大
     QPoint m_press;
 };
 

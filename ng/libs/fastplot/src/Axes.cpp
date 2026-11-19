@@ -156,6 +156,7 @@ QJsonObject Axes::saveState() const
     o[QStringLiteral("topAxis")] = m_axes[sideIndex(AxisSide::Top)].isVisible();
     o[QStringLiteral("background")] = m_background.name(QColor::HexRgb);
     o[QStringLiteral("grid")] = m_axes[sideIndex(AxisSide::Left)].gridVisible();
+    o[QStringLiteral("box")] = m_box;
     o[QStringLiteral("legend")] = m_legend;
     return o;
 }
@@ -183,6 +184,7 @@ bool Axes::restoreState(const QJsonObject &state)
             setBackground(color);
     }
     setGridVisible(state.value(QStringLiteral("grid")).toBool(true));
+    setBoxVisible(state.value(QStringLiteral("box")).toBool(false));
     setLegendVisible(state.value(QStringLiteral("legend")).toBool(false));
     relayout();
     return true;
@@ -225,6 +227,14 @@ void Axes::setGridVisible(bool visible)
     m_grid = visible;
     for (Axis &a : m_axes)
         a.setGridVisible(visible);
+    invalidateStatic();
+}
+
+void Axes::setBoxVisible(bool visible)
+{
+    if (m_box == visible)
+        return;
+    m_box = visible;
     invalidateStatic();
 }
 
@@ -774,6 +784,15 @@ void Axes::paintEvent(QPaintEvent *event)
             a.paintGrid(&p, m_vp);
         for (const Axis &a : m_axes)
             a.paint(&p, m_vp, rect());
+
+        // 画布边框（老界面「显示」组的 box 开关）：plotRect 四条边。
+        if (m_box)
+        {
+            const QRectF plot = m_vp.plotRect();
+            p.setPen(QPen(m_axes[sideIndex(AxisSide::Left)].ink(), 1.0));
+            p.setBrush(Qt::NoBrush);
+            p.drawRect(plot.adjusted(0.5, 0.5, -0.5, -0.5));
+        }
 
         if (!m_title.isEmpty())
         {

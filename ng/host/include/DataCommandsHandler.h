@@ -16,6 +16,7 @@
 //   · data.export      —— 活动通道经 Dataset::channel 取数写 CSV（有 readWindow）
 //   · data.recent      —— 最近文件路径，存 settings（有 SettingsStore）
 //   · data.clearCache  —— 删除各源的 .psc 解析缓存（有缓存路径约定）
+//   · data.remove      —— 移除一个数据源及其产出的全部数据集（有 sources.remove + data.remove）
 //   · data.derive      —— Rust 实时算出派生序列交给 UI（ps_preview_filter，只读），
 //                          **不写回数据集、不新增通道**：payload 带 time/value 供脚本/CLI，
 //                          并发 AppContext::derivedSeriesReady 供画布叠加显示。
@@ -43,6 +44,7 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> exportCsv(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recent(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearCache();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> removeSource(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> derive(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceList();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceSave();

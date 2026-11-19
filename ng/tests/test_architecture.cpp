@@ -727,6 +727,15 @@ int main(int argc, char **argv)
         fprintf(stdout, "[ok] data.clearCache：解析缓存清理成功（清掉 %d 个）\n",
                 cr.value().payload.toInt());
 
+        // data.remove：无效 id 明确失败（不误删真实源）；有效路径在 GUI 垃圾桶处验证。
+        {
+            Intent rr = mk(QStringLiteral("data.remove"));
+            rr.params[QStringLiteral("id")] = -9999;
+            Result<IntentResult> rm = application.host().execute(rr);
+            CHECK(!rm);
+            fprintf(stdout, "[ok] data.remove：无效源 id 明确失败，不误删\n");
+        }
+
         // --- 工作区数据源配置：data.load 自动记录 + workspace 意图 ---
         {
 using namespace nextpilot::plotscope::foundation;

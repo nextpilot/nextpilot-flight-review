@@ -105,8 +105,11 @@ bool Zoomer::eventFilter(QObject *watched, QEvent *event)
     case QEvent::MouseButtonPress:
     {
         auto *m = static_cast<QMouseEvent *>(event);
-        // 右键 / 中键框选；左键留给 Panner。
-        if (m->button() == Qt::RightButton || m->button() == Qt::MiddleButton)
+        // 右键 / 中键框选；左键在「放大/缩小工具」模式下也框选（m_leftBand）。
+        const bool bandButton = m->button() == Qt::RightButton
+                             || m->button() == Qt::MiddleButton
+                             || (m_leftBand && m->button() == Qt::LeftButton);
+        if (bandButton)
         {
             if (!m_plot->plotRect().contains(m->pos()))
                 return false;
@@ -133,7 +136,19 @@ bool Zoomer::eventFilter(QObject *watched, QEvent *event)
         m_banding = false;
         const QRect band(m_press, m->pos());
         m_plot->setRubberBand(QRect());
-        zoomToPixels(band);
+        if (m_bandZoomOut)
+        {
+            // 缩小工具：以框选中心为锚点缩小固定倍数（框越大缩得越多）。
+            const QRect r = band.normalized();
+            const double span = qMax(r.width(), 1);
+            const double factor = qBound(1.2, 1.0 + span / 120.0, 4.0);
+            const QPointF center = r.center();
+            zoomBy(factor, center);
+        }
+        else
+        {
+            zoomToPixels(band);
+        }
         return true;
     }
     case QEvent::KeyPress:

@@ -154,6 +154,7 @@ public:
     // 需要直接操作画布能力（缩放/导出等）时用；正常情况下上层不要碰它。
     nextpilot::plotscope::fastplot::Axes *plotWidget() const { return m_plot; }
     nextpilot::plotscope::fastplot::Zoomer *zoomer() const { return m_zoomer; }
+    nextpilot::plotscope::fastplot::Panner *panner() const { return m_panner; }
 
     // 当前可见时间窗（秒）。
     bool visibleTimeRange(double *t0, double *t1) const;

@@ -27,7 +27,7 @@ bool Panner::eventFilter(QObject *watched, QEvent *event)
     case QEvent::MouseButtonPress:
     {
         auto *m = static_cast<QMouseEvent *>(event);
-        if (m->button() != Qt::LeftButton)
+        if (!m_enabled || m->button() != Qt::LeftButton)
             return false;
         if (!m_plot->plotRect().contains(m->pos()))
             return false;

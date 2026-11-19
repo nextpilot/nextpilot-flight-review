@@ -74,6 +74,8 @@ private:
     void showColumnMenu(QTreeWidgetItem *item, const QPoint &globalPos);
     void showRecentFilesMenu(const QPoint &globalPos);
     void openLogFile();
+    void deriveColumn(QTreeWidgetItem *item, const QPoint &globalPos); // Ctrl+T：为列添加派生变换
+    void removeDerivedChannels(QTreeWidgetItem *item);                 // 删除该列的派生曲线
 
     nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::dataset::DataRepository &m_repo;
@@ -81,10 +83,11 @@ private:
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;
 
     QLabel *m_header = nullptr;
+    QLabel *m_srcCount = nullptr;            // 标题右侧「N源 · N已连接」
     QToolButton *m_chips[3] = {nullptr, nullptr, nullptr};
     QLineEdit *m_filter = nullptr;
     QTreeWidget *m_tree = nullptr;           // 统一数据源树：源 → (表) → 列；单表省表节点
-    QLabel *m_empty = nullptr;               // 空态提示（无源时显示，树隐藏）
+    QWidget *m_empty = nullptr;              // 空态容器（无源时显示，树隐藏）：提示 + 三按钮
 
     int m_shownSourceId = -1;   // 当前展开的源
     int m_shownChip = 0;        // 0 字段 / 1 参数 / 2 消息

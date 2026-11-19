@@ -47,6 +47,9 @@ public:
     void setTitleColor(const QColor &color);
 
     void setGridVisible(bool visible);
+    // 画布边框（plotRect 四边）：老界面「显示」组有独立开关。
+    void setBoxVisible(bool visible);
+    bool boxVisible() const { return m_box; }
     void replot();
 
     // ---- 曲线（P2）----
@@ -79,6 +82,8 @@ public:
     void ylim(double lo, double hi) { setYRange(lo, hi); }
     void grid(bool on) { setGridVisible(on); }
     bool gridVisible() const { return m_grid; }
+    void box(bool on) { setBoxVisible(on); }
+    bool boxVisibleAlias() const { return m_box; }
     void legend(bool on) { setLegendVisible(on); }
     void xlabel(const QString &text) { setAxisLabel(AxisSide::Bottom, text); }
     void ylabel(const QString &text) { setAxisLabel(AxisSide::Left, text); }
@@ -154,6 +159,7 @@ private:
     bool m_secondAxis = false;
     bool m_legend = false;
     bool m_grid = false;
+    bool m_box = false;            // 画布边框（对齐老界面显示组）
     QRect m_rubberBand;
     QPointF m_hoverPoint;
     bool m_hoverActive = false;

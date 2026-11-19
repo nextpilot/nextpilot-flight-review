@@ -693,6 +693,9 @@ int main(int argc, char *argv[])
         CHECK(dispatchOk(QStringLiteral("plot.zoom"), {{QStringLiteral("factor"), 0.5}}));
         CHECK(dispatchOk(QStringLiteral("plot.autoscale")));
         CHECK(dispatchOk(QStringLiteral("plot.grid")));
+        CHECK(dispatchOk(QStringLiteral("plot.box"), {{QStringLiteral("on"), true}}));
+        CHECK(dispatchOk(QStringLiteral("plot.tool"), {{QStringLiteral("tool"), 1}}));
+        CHECK(dispatchOk(QStringLiteral("plot.tool"), {{QStringLiteral("tool"), -1}}));
         CHECK(dispatchOk(QStringLiteral("plot.axis.range"),
                          {{QStringLiteral("axis"), QStringLiteral("x")},
                           {QStringLiteral("lo"), 0.0}, {QStringLiteral("hi"), 1.0}}));
