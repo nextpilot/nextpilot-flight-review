@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <variant>
@@ -260,6 +261,32 @@ public:
         for (std::size_t i = 0; i < n; ++i)
             out.push_back(asDouble(i));
         return out;
+    }
+
+    // 数值列的字节视图（用于按原生类型直接交给下游，不做逐元素转换）。
+    // Bool 列底层是 VecU8，下游按 1 字节解释；Bcd 列底层是 VecU32。
+    std::vector<std::uint8_t> bytesCopy() const
+    {
+        std::vector<std::uint8_t> out;
+        if (std::holds_alternative<VecText>(data))
+            return out;
+        std::visit(
+            [&out](const auto &v) {
+                using T = typename std::decay_t<decltype(v)>::value_type;
+                out.resize(v.size() * sizeof(T));
+                if (!v.empty())
+                    std::memcpy(out.data(), v.data(), out.size());
+            },
+            data);
+        return out;
+    }
+
+    // 文本列拷贝（Text 以外的列为空）。
+    std::vector<std::string> textCopy() const
+    {
+        if (std::holds_alternative<VecText>(data))
+            return std::get<VecText>(data);
+        return {};
     }
 };
 

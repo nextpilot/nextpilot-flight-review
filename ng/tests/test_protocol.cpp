@@ -47,9 +47,9 @@ static QByteArray makeTemplate()
       "endian": "little",
       "maxsize": 16,
       "segments": [
-        {"name": "sync", "size": 1, "type": "u8", "role": "sync", "value": 170},
-        {"name": "a", "size": 1, "type": "u16"},
-        {"name": "b", "size": 1, "type": "u16", "scale": 0.1, "unit": "V"}
+        {"name": "sync", "count": 1, "type": "u8", "emit": "none", "expect": 170},
+        {"name": "a", "count": 1, "type": "u16"},
+        {"name": "b", "count": 1, "type": "u16", "scale": 0.1, "unit": "V"}
       ]
     })";
 }
@@ -135,6 +135,9 @@ int main(int argc, char *argv[])
             CHECK(f.open(QIODevice::ReadOnly));
             const QJsonObject fr = QJsonDocument::fromJson(f.readAll()).object();
             const QStringList fissues = validate(fr);
+            if (!fissues.isEmpty())
+                fprintf(stderr, "fixture %s: %s\n", fn.toUtf8().constData(),
+                        fissues.join(QStringLiteral(" | ")).toUtf8().constData());
             CHECK(fissues.isEmpty());
             ProtocolDocument fd;
             CHECK(parseDocument(fr, fd, err));
@@ -143,19 +146,49 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    // --- 3) 表达式求值 ---
+    // --- 3) 表达式求值（typed：整型/浮点各自结算）---
     EvalCtx ctx;
-    ctx.values["x"] = {3.0};
-    ctx.values["y"] = {4.0};
-    ExprPtr e;
-    // 构造 x*2+1 = 7
-    auto num = [](double v) { return std::make_shared<Expr>(Expr{Expr::Num, v, "", "", 0, nullptr, nullptr, nullptr}); };
-    auto refX = std::make_shared<Expr>(Expr{Expr::Ref, 0, "x", "", 0, nullptr, nullptr, nullptr});
-    e = std::make_shared<Expr>(Expr{Expr::Bin, 0, "", "", '+', refX, num(4.0), nullptr});
-    double out = 0;
-    CHECK(evalExpr(e, ctx, out, err));
-    CHECK(out == 7.0);
-    OK("表达式系统：x + 4 = 7 求值正确");
+    {
+        TypedVec x(ValueType::U8);
+        x.push(TypedValue::fromU(3, ValueType::U8));
+        TypedVec y(ValueType::F32);
+        y.push(TypedValue::fromF(4.0, ValueType::F32));
+        ctx.values["x"] = x;
+        ctx.values["y"] = y;
+    }
+    auto numI = [](std::int64_t v) {
+        auto p = std::make_shared<Expr>();
+        p->kind = Expr::Num; p->ival = v; p->isInt = true;
+        return p;
+    };
+    auto refX = std::make_shared<Expr>();
+    refX->kind = Expr::Ref; refX->name = "x";
+    auto binOp = [](char op, ExprPtr a, ExprPtr b) {
+        auto p = std::make_shared<Expr>();
+        p->kind = Expr::Bin; p->op = static_cast<int>(op); p->a = std::move(a); p->b = std::move(b);
+        return p;
+    };
+    {
+        // 整型：x + 4 = 7，结果仍是整型（不经过 double）
+        ExprPtr e = binOp('+', refX, numI(4));
+        TypedValue out;
+        CHECK(evalExpr(e, ctx, out, err));
+        CHECK(!isFloatType(out.type));
+        CHECK(out.asI64() == 7);
+        // 整型除法是整除，不是浮点除
+        ExprPtr d = binOp('/', refX, numI(2));
+        TypedValue dv;
+        CHECK(evalExpr(d, ctx, dv, err));
+        CHECK(dv.asI64() == 1);
+        // 整型与浮点混算必须显式转换，否则报错
+        auto refY = std::make_shared<Expr>();
+        refY->kind = Expr::Ref; refY->name = "y";
+        ExprPtr mix = binOp('+', refX, refY);
+        TypedValue mv;
+        CHECK(!evalExpr(mix, ctx, mv, err));
+        CHECK(!err.empty());
+    }
+    OK("表达式系统：整型 x+4=7、整型除法整除、整型+浮点未显式转换时明确报错");
 
     // --- 4) decodeSequential：两帧 → 两条通道，值正确 ---
     QByteArray frames;
@@ -176,12 +209,19 @@ int main(int argc, char *argv[])
     const auto &ca = result.channels.at(channelA);
     const auto &cb = result.channels.at(channelB);
     CHECK(ca.v.size() == 2 && cb.v.size() == 2);
-    CHECK(ca.v[0] == 100.0 && ca.v[1] == 200.0);
-    CHECK(cb.v[0] > 4.99 && cb.v[0] < 5.01);
-    CHECK(cb.v[1] > 9.99 && cb.v[1] < 10.01);
+    // a 是 u16，通道值列保持原生 u16（不是 double）
+    CHECK(ca.v.type == ValueType::U16);
+    CHECK(ca.v.at(0).asU64() == 100u && ca.v.at(1).asU64() == 200u);
+    // b 有 scale 0.1，物理量升到 f64
+    CHECK(cb.v.type == ValueType::F64);
+    CHECK(cb.v.at(0).asDouble() > 4.99 && cb.v.at(0).asDouble() < 5.01);
+    CHECK(cb.v.at(1).asDouble() > 9.99 && cb.v.at(1).asDouble() < 10.01);
+    // 时间轴是整数 ticks，两帧连续
+    CHECK(result.ticksPerSecond == 1000000);
+    CHECK(ca.t.size() == 2 && ca.t[0] == 0 && ca.t[1] == 1000000);
     CHECK(ca.unit.empty());
     CHECK(cb.unit == "V");
-    OK("顺序解码：两帧 → a/b 两条通道，值/单位/scale 正确");
+    OK("顺序解码：两帧 → a/b 两条通道，值保持原生类型、scale 升 f64、时间为整数 ticks");
 
     // --- 5) decodeSequentialJson：便捷入口也能跑 ---
     ProtocolDecodeResult r2 = decodeSequentialJson(frames, tplJson);
@@ -193,16 +233,22 @@ int main(int argc, char *argv[])
     {
         struct Sink {
             QStringList columns;
+            QVector<int> types;
             std::vector<double> values;
+            std::vector<uint8_t> u8;
             int rows = 0;
             static int32_t onBatch(void *ctx, const PsFrameBatch *b) {
                 auto *s = static_cast<Sink *>(ctx);
                 s->rows = static_cast<int>(b->rows);
                 for (uint32_t c = 0; c < b->columns; ++c) {
                     s->columns.append(QString::fromUtf8(b->column_data[c].name));
+                    s->types.append(static_cast<int>(b->column_data[c].type));
                     if (b->column_data[c].type == PS_VALUE_F64 && b->column_data[c].values)
                         s->values.assign(static_cast<const double *>(b->column_data[c].values),
                                          static_cast<const double *>(b->column_data[c].values) + b->rows);
+                    else if (b->column_data[c].type == PS_VALUE_U8 && b->column_data[c].values)
+                        s->u8.assign(static_cast<const uint8_t *>(b->column_data[c].values),
+                                     static_cast<const uint8_t *>(b->column_data[c].values) + b->rows);
                 }
                 return 0;
             }
@@ -225,8 +271,12 @@ int main(int argc, char *argv[])
         CHECK(collector.columns.size() == 2);
         CHECK(collector.columns.contains(QStringLiteral("frame.a")));
         CHECK(collector.columns.contains(QStringLiteral("frame.b")));
-        CHECK(collector.values.size() == 2); // 最后一列 b 的 2 个值
-        OK("SPI 解析器：自定义协议经 configure+feed+finish 吐出 PsFrameBatch（2 行 2 列）");
+        CHECK(collector.values.size() == 2); // b 列（f64）2 个值
+        // 两条列各自带原生类型：a=u8，b=f64
+        CHECK(collector.types.size() == 2);
+        CHECK(collector.types.contains(static_cast<int>(PS_VALUE_U16)));
+        CHECK(collector.types.contains(static_cast<int>(PS_VALUE_F64)));
+        OK("SPI 解析器：自定义协议吐出带原生类型的 PsFrameBatch（a=u16, b=f64，2 行 2 列）");
 
         // 未 configure（缺模板）：明确失败。
         {
@@ -253,7 +303,7 @@ int main(int argc, char *argv[])
         const QByteArray badPoly = R"({
           "name": "bad_crc", "layout": "sequential", "endian": "little", "maxsize": 16,
           "segments": [
-            {"name": "crc", "size": 1, "type": "u8",
+            {"name": "crc", "count": 1, "type": "u8",
              "checks": [{"op": "crc16", "poly": "0xZZ", "over": ["crc:crc"]}]}
           ]
         })";
@@ -267,7 +317,7 @@ int main(int argc, char *argv[])
         const QByteArray okPoly = R"({
           "name": "ok_crc", "layout": "sequential", "endian": "little", "maxsize": 16,
           "segments": [
-            {"name": "crc", "size": 1, "type": "u8",
+            {"name": "crc", "count": 1, "type": "u8",
              "checks": [{"op": "crc16", "poly": "0x1021", "init": "0xFFFF", "over": ["crc:crc"]}]}
           ]
         })";
@@ -280,7 +330,7 @@ int main(int argc, char *argv[])
     // --- 7c) 端序别名 be/le 被校验接受（解析层归一到 big/little） ---
     {
         const QByteArray beTpl = R"({"name":"e","layout":"sequential","endian":"be",
-          "segments":[{"name":"a","size":1,"type":"u8"}]})";
+          "segments":[{"name":"a","count":1,"type":"u8"}]})";
         CHECK(validate(QJsonDocument::fromJson(beTpl).object()).isEmpty());
         OK("端序别名 be 通过 validate");
     }

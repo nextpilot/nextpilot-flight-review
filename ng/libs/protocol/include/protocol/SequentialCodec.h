@@ -1,6 +1,7 @@
 #pragma once
 
 #include "protocol/ProtocolDocument.h"
+#include "protocol/TypedVec.h"
 
 #include <QByteArray>
 #include <QString>
@@ -22,12 +23,14 @@ namespace nextpilot::plotscope::protocol
 //     编辑器试算把它转成可读文本行。两种消费者共用同一份解码逻辑。
 
 // 一条解码出的通道（对标老 PsChannelData，但去掉 dataset/topic/共享轴等宿主概念）。
+// 值列带原生类型：段是 u16 就出 u16，不在这里统一降成 double。
+// 时间为整数 ticks（ticksPerSecond 由结果给出），避免浮点时间累积误差。
 struct ProtocolChannel
 {
     std::string name;
     std::string unit;
-    std::vector<double> t; // 秒
-    std::vector<double> v;
+    std::vector<int64_t> t; // ticks
+    TypedVec v;             // 原生类型值列
 };
 
 struct ProtocolDecodeResult
@@ -35,6 +38,7 @@ struct ProtocolDecodeResult
     bool ok = false;
     QString error;
     QVector<ProtocolChannel> channels;
+    int64_t ticksPerSecond = 1000000;
     quint64 rejectedFrames = 0;
     quint64 warnings = 0;
 };

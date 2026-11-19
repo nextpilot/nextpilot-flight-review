@@ -16,39 +16,29 @@ QStringList typeNames()
     return {QStringLiteral("u8"), QStringLiteral("i8"), QStringLiteral("u16"), QStringLiteral("i16"),
             QStringLiteral("u32"), QStringLiteral("i32"), QStringLiteral("u64"), QStringLiteral("i64"),
             QStringLiteral("f32"), QStringLiteral("f64"), QStringLiteral("bool"),
-            QStringLiteral("bcd"), QStringLiteral("text"), QStringLiteral("str"),
-            QStringLiteral("string"), QStringLiteral("ascii"), QStringLiteral("char")};
-}
-
-// v2 `count` 优先，v1 `size` 兜底。
-static QJsonValue segCount(const QJsonObject &s)
-{
-    return s.contains(QLatin1String("count")) ? s.value(QLatin1String("count"))
-                                              : s.value(QLatin1String("size"));
+            QStringLiteral("bcd"), QStringLiteral("char")};
 }
 
 bool parseType(const std::string &raw, TypeInfo &ti, std::string &err)
 {
     std::string t = raw;
     std::transform(t.begin(), t.end(), t.begin(), ::tolower);
-    if (t == "u8" || t == "uint8" || t == "byte") { ti = {FType::U8, 1, false, false, false}; return true; }
-    if (t == "i8" || t == "int8") { ti = {FType::I8, 1, true, false, false}; return true; }
-    if (t == "u16" || t == "uint16") { ti = {FType::U16, 2, false, false, false}; return true; }
-    if (t == "i16" || t == "int16") { ti = {FType::I16, 2, true, false, false}; return true; }
-    if (t == "u32" || t == "uint32") { ti = {FType::U32, 4, false, false, false}; return true; }
-    if (t == "i32" || t == "int32") { ti = {FType::I32, 4, true, false, false}; return true; }
-    if (t == "u64" || t == "uint64") { ti = {FType::U64, 8, false, false, false}; return true; }
-    if (t == "i64" || t == "int64") { ti = {FType::I64, 8, true, false, false}; return true; }
-    if (t == "f32" || t == "float" || t == "float32") { ti = {FType::F32, 4, true, true, false}; return true; }
-    if (t == "f64" || t == "double" || t == "float64") { ti = {FType::F64, 8, true, true, false}; return true; }
-    if (t == "bool" || t == "boolean") { ti = {FType::BOOL, 1, false, false, false}; return true; }
-    if (t == "bcd") { ti = {FType::BCD, 1, false, false, true}; return true; }
-    if (t == "text" || t == "str" || t == "string" || t == "ascii" || t == "char")
-    { ti = {FType::STR, 1, false, false, false}; return true; }
+    if (t == "u8") { ti = {ValueType::U8, 1}; return true; }
+    if (t == "i8") { ti = {ValueType::I8, 1}; return true; }
+    if (t == "u16") { ti = {ValueType::U16, 2}; return true; }
+    if (t == "i16") { ti = {ValueType::I16, 2}; return true; }
+    if (t == "u32") { ti = {ValueType::U32, 4}; return true; }
+    if (t == "i32") { ti = {ValueType::I32, 4}; return true; }
+    if (t == "u64") { ti = {ValueType::U64, 8}; return true; }
+    if (t == "i64") { ti = {ValueType::I64, 8}; return true; }
+    if (t == "f32") { ti = {ValueType::F32, 4}; return true; }
+    if (t == "f64") { ti = {ValueType::F64, 8}; return true; }
+    if (t == "bool") { ti = {ValueType::Bool, 1}; return true; }
+    if (t == "bcd") { ti = {ValueType::Bcd, 1}; return true; }
+    if (t == "char") { ti = {ValueType::Text, 1}; return true; }
     err = "未知类型: " + raw;
     return false;
 }
-
 
 int typeBytes(const QString &type)
 {
@@ -79,6 +69,37 @@ int operatorWidth(const QString &op)
     return 0;
 }
 
+namespace
+{
+
+// 段里出现任何 v1 键都直接报错：v2 是唯一方言，不做静默兼容。
+void checkNoV1Keys(const QJsonObject &seg, const QString &name, QStringList &errs)
+{
+    static const char *kForbidden[] = {"size", "counts", "value", "hidden", "plot", "role", "hasValue"};
+    for (const char *k : kForbidden)
+    {
+        if (!seg.contains(QLatin1String(k)))
+            continue;
+        const QString key = QString::fromLatin1(k);
+        if (key == QLatin1String("value") && seg.value(key).isUndefined())
+            continue;
+        errs << QStringLiteral("%1 使用了已废弃的 v1 键 %2（v2 用 count/length/expect/emit）")
+                    .arg(name, key);
+    }
+}
+
+// 校验 emit 取值。
+void checkEmit(const QJsonObject &seg, const QString &name, QStringList &errs)
+{
+    if (!seg.contains(QStringLiteral("emit")))
+        return;
+    const QString e = seg.value(QStringLiteral("emit")).toString();
+    if (e != QLatin1String("channel") && e != QLatin1String("aux") && e != QLatin1String("none"))
+        errs << QStringLiteral("%1 的 emit 只能是 channel/aux/none：%2").arg(name, e);
+}
+
+} // namespace
+
 QStringList validate(const QJsonObject &o)
 {
     QStringList errs;
@@ -105,10 +126,13 @@ QStringList validate(const QJsonObject &o)
             errs << QStringLiteral("endian 只能是 little/big（别名 le/be，解析层归一）");
     }
 
+    // series.payload 的段名：它是变体容器，允许被 length.fields 引用。
+    const QString payloadName =
+        o.value(QStringLiteral("series")).toObject().value(QStringLiteral("payload")).toString().trimmed();
     QSet<QString> names;
     QMap<QString, int> order;
     QMap<QString, int> fixedBytes;
-    QMap<QString, QString> roles;
+    QSet<QString> lengthNames;
     int index = 0;
     for (const QJsonValue &sv : segArr)
     {
@@ -126,36 +150,48 @@ QStringList validate(const QJsonObject &o)
         order.insert(name, index++);
         if (!QRegularExpression(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$")).match(name).hasMatch())
             errs << QStringLiteral("段名只能是标识符：%1").arg(name);
+
+        checkNoV1Keys(seg, name, errs);
+        checkEmit(seg, name, errs);
+
         int n = 0;
-        if (literalSize(segCount(seg), &n))
+        const QJsonValue count = seg.value(QStringLiteral("count"));
+        if (literalSize(count, &n))
             fixedBytes.insert(name, n * typeBytes(seg.value(QStringLiteral("type")).toString()));
-        else if (!segCount(seg).isString() ||
-                 segCount(seg).toString().trimmed().isEmpty())
+        else if (!count.isString() || count.toString().trimmed().isEmpty())
             errs << QStringLiteral("%1 的 count 必须是正整数或表达式").arg(name);
         const QString type = seg.value(QStringLiteral("type")).toString().toLower();
         if (!typeNames().contains(type))
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
-        const QString role = seg.value(QStringLiteral("role")).toString();
-        if (!role.isEmpty())
+
+        // length 段：自声明为长度，必须单元素整型。
+        if (seg.contains(QStringLiteral("length")))
         {
-            const QStringList allowed = {QStringLiteral("sync"), QStringLiteral("length"),
-                QStringLiteral("payload"), QStringLiteral("checksum"), QStringLiteral("data")};
-            if (!allowed.contains(role))
-                errs << QStringLiteral("%1 的 role 未知：%2").arg(name, role);
-            else if ((role == QLatin1String("length") || role == QLatin1String("payload") ||
-                      role == QLatin1String("checksum")) && roles.contains(role))
-                errs << QStringLiteral("role 重复：%1").arg(role);
-            else
-                roles.insert(role, name);
-            if (role == QLatin1String("payload") && type != QLatin1String("u8"))
-                errs << QStringLiteral("payload 段 %1 必须是 u8").arg(name);
-            if (role == QLatin1String("length") && segCount(seg).isDouble() &&
-                segCount(seg).toDouble() > 1)
+            lengthNames.insert(name);
+            if (count.isDouble() && count.toDouble() > 1)
                 errs << QStringLiteral("length 段 %1 应为单元素").arg(name);
+            if (!type.startsWith(QLatin1Char('u')) && !type.startsWith(QLatin1Char('i')))
+                errs << QStringLiteral("length 段 %1 必须是整型").arg(name);
+            const QJsonValue lv = seg.value(QStringLiteral("length"));
+            if (lv.isObject())
+            {
+                const QJsonObject lo = lv.toObject();
+                if (!lo.contains(QStringLiteral("fields")) && !lo.contains(QStringLiteral("expr")))
+                    errs << QStringLiteral("%1 的 length 需要 fields 或 expr").arg(name);
+                const QString unit = lo.value(QStringLiteral("unit")).toString(QStringLiteral("elements"));
+                if (unit != QLatin1String("bytes") && unit != QLatin1String("elements"))
+                    errs << QStringLiteral("%1 的 length.unit 只能是 bytes/elements").arg(name);
+                for (const QJsonValue &fv : lo.value(QStringLiteral("fields")).toArray())
+                {
+                    const QString fn = fv.toString().trimmed();
+                    // payload 是 series 的容器段，长度按变体内容反算，允许被 length 引用。
+                    if (!fn.isEmpty() && !names.contains(fn) && fn != payloadName)
+                        errs << QStringLiteral("%1 的 length.fields 引用了未知段：%2").arg(name, fn);
+                }
+            }
+            else if (!lv.isString() || lv.toString().trimmed().isEmpty())
+                errs << QStringLiteral("%1 的 length 必须是对象或表达式").arg(name);
         }
-        if ((seg.contains(QStringLiteral("expect")) || seg.contains(QStringLiteral("value"))) &&
-            (seg.contains(QStringLiteral("expect")) ? seg.value(QStringLiteral("expect")) : seg.value(QStringLiteral("value"))).isUndefined())
-            errs << QStringLiteral("%1 的 value 无效").arg(name);
 
         const QJsonArray checks = seg.value(QStringLiteral("checks")).toArray();
         for (const QJsonValue &cv : checks)
@@ -202,7 +238,7 @@ QStringList validate(const QJsonObject &o)
                 }
                 const int need = operatorWidth(op);
                 int elem = 0;
-                if (literalSize(segCount(seg), &elem))
+                if (literalSize(count, &elem))
                 {
                     const int have = elem * typeBytes(type);
                     if (need > 0 && have != need)
@@ -236,8 +272,15 @@ QStringList validate(const QJsonObject &o)
         if (ts.value(QStringLiteral("expr")).toString().trimmed().isEmpty())
             errs << QStringLiteral("timestamp.expr 不能为空");
         const QString unit = ts.value(QStringLiteral("unit")).toString(QStringLiteral("s"));
-        if (unit != QLatin1String("s") && unit != QLatin1String("ms") && unit != QLatin1String("us"))
-            errs << QStringLiteral("timestamp.unit 只能是 s/ms/us");
+        if (unit != QLatin1String("s") && unit != QLatin1String("ms") &&
+            unit != QLatin1String("us") && unit != QLatin1String("ns"))
+            errs << QStringLiteral("timestamp.unit 只能是 s/ms/us/ns");
+        const QString origin = ts.value(QStringLiteral("origin")).toString(QStringLiteral("first_frame"));
+        if (origin != QLatin1String("first_frame") && origin != QLatin1String("absolute"))
+            errs << QStringLiteral("timestamp.origin 只能是 first_frame/absolute");
+        const QString fb = ts.value(QStringLiteral("fallback")).toString(QStringLiteral("reject"));
+        if (fb != QLatin1String("reject") && fb != QLatin1String("index"))
+            errs << QStringLiteral("timestamp.fallback 只能是 reject/index");
     }
 
     const QJsonObject series = o.value(QStringLiteral("series")).toObject();
@@ -251,8 +294,14 @@ QStringList validate(const QJsonObject &o)
             errs << QStringLiteral("series.payload 不能为空");
         else if (!names.contains(payload))
             errs << QStringLiteral("series.payload 引用了未知段：%1").arg(payload);
-        else if (roles.value(QLatin1String("payload")) != payload)
-            errs << QStringLiteral("series.payload 必须指向 role=payload 的段");
+        else
+        {
+            const QJsonObject po = segArr.at(order.value(payload, 0)).toObject();
+            if (po.value(QStringLiteral("type")).toString().toLower() != QLatin1String("u8"))
+                errs << QStringLiteral("series.payload 段 %1 必须是 u8").arg(payload);
+            // payload 是变体容器，宽度可以是常量也可以是长度表达式；
+            // 变体段必须精确填满它，这条由解码期校验（静态期不猜）。
+        }
         const QString fallback = series.value(QStringLiteral("fallback")).toString(QStringLiteral("reject"));
         if (fallback != QLatin1String("reject") && fallback != QLatin1String("raw"))
             errs << QStringLiteral("series.fallback 只能是 reject 或 raw");
@@ -296,8 +345,11 @@ QStringList validate(const QJsonObject &o)
             for (const QJsonValue &vsv : vsegs)
             {
                 const QJsonObject vseg = vsv.toObject();
+                const QString vname = vseg.value(QStringLiteral("name")).toString();
+                checkNoV1Keys(vseg, vname.isEmpty() ? QStringLiteral("变体段") : vname, errs);
+                checkEmit(vseg, vname.isEmpty() ? QStringLiteral("变体段") : vname, errs);
                 int n = 0;
-                if (!literalSize(segCount(vseg), &n))
+                if (!literalSize(vseg.value(QStringLiteral("count")), &n))
                 {
                     vvariable = true;
                     continue;
@@ -317,12 +369,11 @@ QStringList validate(const QJsonObject &o)
     for (int b : fixedBytes)
         fixedTotal += b;
     for (const QJsonValue &sv : segArr)
-        if (!segCount(sv.toObject()).isDouble())
+        if (!sv.toObject().value(QStringLiteral("count")).isDouble())
             hasVariable = true;
     if (!hasVariable && fixedTotal > maxsize)
         errs << QStringLiteral("固定段总字节 %1 超过 maxsize %2").arg(fixedTotal).arg(maxsize);
     return errs;
 }
-
 
 } // namespace nextpilot::plotscope::protocol

@@ -65,10 +65,10 @@
 
 ## 类型
 
-`u8 i8 u16 i16 u32 i32 u64 i64 f32 f64 bool bcd text`
+`u8 i8 u16 i16 u32 i32 u64 i64 f32 f64 bool bcd char`
 
 - 整型保持整型，浮点保持浮点；表达式不做隐式降级（规则见 SPEC §3 / v2 §10.9）。
-- `text` 为文本段；ASCII 派生函数 `time_hhmmss` / `deg_ddmm` / `text_number`。
+- `char` 为文本段（唯一的文本类型名）；ASCII 派生函数 `time_hhmmss` / `deg_ddmm` / `text_number`。
 
 ## 帧族变体 `series`
 
@@ -94,16 +94,19 @@
 - `unit`：`s` / `ms` / `us` / `ns`；输出整数 ticks，**不经过 double**。
 - `origin: first_frame` 先做整数相减再换算；`fallback: index` 用帧序号兜底。
 
-## v1 → v2 键名对照
+## v1 键已删除
 
-| v1 | v2 |
+v1 的 `size` / `counts` / `value` / `hidden` / `plot` / `hasValue` / `role` / `fromVariant`
+**一律不再接受**，模板里出现任何一个都会直接报错，不做兼容映射。写模板时用：
+
+| 想表达 | 用 |
 |---|---|
-| `size`（元素个数） | `count` |
-| `counts` | `length` |
-| `role` | 由 `expect` / `length` / `digest` / `series.payload` 显式表达 |
-| `hidden` / `plot` / `hasValue` | `emit: none / aux / channel` |
-| `value` | `expect` |
-| `str` / `string` / `ascii` / `char` | `text` |
-| `fromVariant` | 删除（实现细节，不进模板） |
+| 元素个数 | `count` |
+| 长度反算 | `length` |
+| 常量匹配 | `expect` |
+| 出不出通道 | `emit: channel / aux / none` |
+| 变体通道名 | 段上的 `prefix`（由 series 解释） |
+
+文本类型只有一个名字：`char`（`str` / `string` / `ascii` / `text` 都已删除）。
 
 > 容器格式（PCAP / MDF4 / BLF / PNG）、嵌套对象树、压缩加密不在 psproto 范围，由上层专门解析器处理。

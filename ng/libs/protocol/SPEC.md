@@ -56,7 +56,7 @@
 | 键 | 类型 | 作用 | 说明 |
 |---|---|---|---|
 | `name` | string | 唯一名，表达式按名引用 | 必填 |
-| `type` | string | `u8/i8/u16/i16/u32/i32/u64/i64/f32/f64/bool/bcd/text`，或 `@别名` | 必填 |
+| `type` | string | `u8/i8/u16/i16/u32/i32/u64/i64/f32/f64/bool/bcd/char`，或 `@别名` | 必填 |
 | `count` | 数字/表达式 | **元素个数（数组长度）** | 标量省略（默认 1）；**字节数由 `type` 推算，不写**；可引用前面段（`"len"`） |
 | `length` | object | 长度段反算绑定 | 原 `counts`：这段的值必须等于后面字段合计的字节/元素数；见 §2.4 |
 | `endian` | `little`/`big` | 覆盖顶层端序 | 别名 `le`/`be` 在解析层归一，**不再有 `bigEndian` 布尔** |
@@ -78,7 +78,7 @@
 | `derive` | 表达式 | 计算字段（非字节读出） | 新增 |
 | `description` | string | 文档 | 编辑器/Schema 生成用 |
 
-### 2.2 `emit` 三态（合并 v1 的 `hidden` + `plot` + `hasValue` + `role` 隐含）
+### 2.2 `emit` 三态（v1 的 `hidden`/`plot`/`hasValue` 三个键已删除）
 
 | 值 | 含义 | v1 等价 |
 |---|---|---|
@@ -115,7 +115,7 @@ v1 的 `role`（sync/length/payload/checksum/data）与显式键**完全重叠**
 
 运算符 `+ - * / % & | ^ << >>`，函数 `abs/min/max/clamp`，显式转换 `toF64/toI64/toU64`。
 
-ASCII 派生函数（作用于 `text` 段）：`time_hhmmss`（`hhmmss.ss` → 当日秒数）、`deg_ddmm`（度分格式 → 十进制度）、`text_number`（文本 → 数值，支持十进制/十六进制，空字段按 `empty` 策略处理）。
+ASCII 派生函数（作用于 `char` 段）：`time_hhmmss`（`hhmmss.ss` → 当日秒数）、`deg_ddmm`（度分格式 → 十进制度）、`text_number`（文本 → 数值，支持十进制/十六进制，空字段按 `empty` 策略处理）。
 
 **类型由操作数决定，不做隐式降级**（完整规则见 `docs/roadmap/psproto-v2.md` §10.9）：
 
@@ -221,10 +221,10 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 {
   "starts": "$", "terminator": "\r\n",
   "segments": [
-    {"name":"msgid","type":"text","until":",","emit":"aux"},
-    {"name":"time",  "type":"text","until":",","derive":"time_hhmmss","emit":"channel"},
-    {"name":"lat",   "type":"text","until":",","derive":"deg_ddmm","emit":"channel"},
-    {"name":"empty", "type":"text","until":",","empty":"nan"},
+    {"name":"msgid","type":"char","until":",","emit":"aux"},
+    {"name":"time",  "type":"char","until":",","derive":"time_hhmmss","emit":"channel"},
+    {"name":"lat",   "type":"char","until":",","derive":"deg_ddmm","emit":"channel"},
+    {"name":"empty", "type":"char","until":",","empty":"nan"},
     {"name":"chk",   "type":"u8","digest":{"alg":"nmea_xor"}}
   ]
 }
@@ -291,7 +291,7 @@ v1 把"判真假"和"算摘要"塞进同一个 `op` 命名空间（`op:"in"` 还
 | 5 | **删 `role`** | 与 `expect`/`length`/`digest`/`series.payload` 完全重叠 |
 | 6 | `hidden`+`plot`+`hasValue` → **`emit`** 三态 | 三个开关在 codec 里串在同一个 `if` 上，干的是同一件事 |
 | 7 | `value` → **`expect`** | 与 `valueExpr` 并列时"谁是常量谁是表达式"靠猜 |
-| 8 | `str`/`string`/`ascii`/`char` → **`text`** | 四个名字一个类型 |
+| 8 | `str`/`string`/`ascii`/`text` → **`char`** | 四个名字一个类型；最终只留 `char` |
 | 9 | **删 `fromVariant`** | 实现细节泄漏进 schema |
 | 10 | `size` → **`count`**（元素个数，语义不变） | `size` 容易被误读成字节数；字节宽由 `type` 推算，不需要第二个字段 |
 | 11 | `counts` → **`length`** | 避免与新的 `count` 看成一对；它是长度段反算，与数组长度是两件事 |

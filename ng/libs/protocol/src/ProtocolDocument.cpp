@@ -20,7 +20,7 @@
 namespace nextpilot::plotscope::protocol
 {
 
-bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &err);
+/* ---------------- 表达式解析 ---------------- */
 
 class ExprParser
 {
@@ -41,7 +41,6 @@ private:
     const std::string &m_s;
     std::string &m_err;
     size_t m_pos = 0;
-    int m_depth = 0;
 
     void skip()
     {
@@ -98,7 +97,7 @@ private:
                 m_pos = save;
                 break;
             }
-            int prec = precedence(op);
+            const int prec = precedence(op);
             ExprPtr right = parseBin(prec + 1, depth);
             if (!right)
                 return nullptr;
@@ -153,8 +152,10 @@ private:
         }
         if (std::isdigit(static_cast<unsigned char>(m_s[m_pos])))
         {
-            size_t start = m_pos;
-            if (m_s[m_pos] == '0' && m_pos + 1 < m_s.size() && (m_s[m_pos + 1] == 'x' || m_s[m_pos + 1] == 'X'))
+            const size_t start = m_pos;
+            const bool hex = (m_s[m_pos] == '0' && m_pos + 1 < m_s.size() &&
+                              (m_s[m_pos + 1] == 'x' || m_s[m_pos + 1] == 'X'));
+            if (hex)
             {
                 m_pos += 2;
                 while (m_pos < m_s.size() && std::isxdigit(static_cast<unsigned char>(m_s[m_pos])))
@@ -164,12 +165,44 @@ private:
             {
                 while (m_pos < m_s.size() && std::isdigit(static_cast<unsigned char>(m_s[m_pos])))
                     ++m_pos;
+                // 小数/指数：切到浮点字面量
+                bool isFloat = false;
+                if (m_pos < m_s.size() && m_s[m_pos] == '.')
+                {
+                    isFloat = true;
+                    ++m_pos;
+                    while (m_pos < m_s.size() && std::isdigit(static_cast<unsigned char>(m_s[m_pos])))
+                        ++m_pos;
+                }
+                if (m_pos < m_s.size() && (m_s[m_pos] == 'e' || m_s[m_pos] == 'E'))
+                {
+                    isFloat = true;
+                    ++m_pos;
+                    if (m_pos < m_s.size() && (m_s[m_pos] == '+' || m_s[m_pos] == '-'))
+                        ++m_pos;
+                    while (m_pos < m_s.size() && std::isdigit(static_cast<unsigned char>(m_s[m_pos])))
+                        ++m_pos;
+                }
+                const std::string tok = m_s.substr(start, m_pos - start);
+                ExprPtr n = std::make_shared<Expr>();
+                n->kind = Expr::Num;
+                if (isFloat)
+                {
+                    n->isInt = false;
+                    n->num = std::strtod(tok.c_str(), nullptr);
+                }
+                else
+                {
+                    n->isInt = true;
+                    n->ival = static_cast<int64_t>(std::strtoull(tok.c_str(), nullptr, 10));
+                }
+                return n;
             }
-            std::string tok = m_s.substr(start, m_pos - start);
+            const std::string tok = m_s.substr(start, m_pos - start);
             ExprPtr n = std::make_shared<Expr>();
             n->kind = Expr::Num;
-            try { n->num = static_cast<double>(std::stoull(tok, nullptr, 0)); }
-            catch (...) { m_err = "非法数字: " + tok; return nullptr; }
+            n->isInt = true;
+            n->ival = static_cast<int64_t>(std::strtoull(tok.c_str(), nullptr, 16));
             return n;
         }
         if (std::isalpha(static_cast<unsigned char>(m_s[m_pos])) || m_s[m_pos] == '_')
@@ -233,7 +266,86 @@ private:
     }
 };
 
-bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &err)
+/* ---------------- 类型化求值 ---------------- */
+
+namespace
+{
+
+bool isText(const TypedValue &v) { return v.type == ValueType::Text; }
+
+// 两个数值是不是"整型族"。Text 不算。
+bool compareNumeric(const TypedValue &a, const TypedValue &b, int &cmp, std::string &err)
+{
+    if (isText(a) || isText(b))
+    {
+        err = "文本值不能参与数值比较";
+        return false;
+    }
+    const bool af = isFloatType(a.type), bf = isFloatType(b.type);
+    if (af != bf)
+    {
+        err = "整型与浮点不能直接比较，需要显式 toF64/toI64";
+        return false;
+    }
+    if (af)
+    {
+        const double x = a.f, y = b.f;
+        cmp = (x < y) ? -1 : (x > y ? 1 : 0);
+        return true;
+    }
+    if (a.isSigned() || b.isSigned())
+    {
+        const int64_t x = a.asI64(), y = b.asI64();
+        cmp = (x < y) ? -1 : (x > y ? 1 : 0);
+        return true;
+    }
+    const uint64_t x = a.asU64(), y = b.asU64();
+    cmp = (x < y) ? -1 : (x > y ? 1 : 0);
+    return true;
+}
+
+bool intResult(int64_t v, bool asUnsigned, TypedValue &out)
+{
+    if (asUnsigned)
+    {
+        out = TypedValue::fromU(static_cast<uint64_t>(v), ValueType::U64);
+        return true;
+    }
+    out = TypedValue::fromI(v, ValueType::I64);
+    return true;
+}
+
+} // namespace
+
+bool EvalCtx::get(const std::string &n, int index, TypedValue &out, std::string &err) const
+{
+    auto it = values.find(n);
+    if (it == values.end())
+    {
+        err = "表达式引用未知字段: " + n;
+        return false;
+    }
+    const TypedVec &col = it->second;
+    if (index < 0)
+    {
+        if (col.size() != 1)
+        {
+            err = "字段 " + n + " 是数组，需要下标";
+            return false;
+        }
+        out = col.at(0);
+        return true;
+    }
+    if (index >= static_cast<int>(col.size()))
+    {
+        err = "字段 " + n + " 下标越界";
+        return false;
+    }
+    out = col.at(static_cast<size_t>(index));
+    return true;
+}
+
+bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, TypedValue &out, std::string &err)
 {
     if (!e)
     {
@@ -243,15 +355,18 @@ bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &er
     switch (e->kind)
     {
     case Expr::Num:
-        out = e->num;
+        if (e->isInt)
+            out = TypedValue::fromI(e->ival, ValueType::I64);
+        else
+            out = TypedValue::fromF(e->num, ValueType::F64);
         return true;
     case Expr::Ref:
     {
         int idx = -1;
         if (e->b)
         {
-            double iv = 0;
-            if (!evalExpr(e->b, ctx, iv, err))
+            int64_t iv = 0;
+            if (!evalExprInt(e->b, ctx, iv, err))
                 return false;
             idx = static_cast<int>(iv);
         }
@@ -259,23 +374,59 @@ bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &er
     }
     case Expr::Un:
     {
-        double v = 0;
+        TypedValue v;
         if (!evalExpr(e->a, ctx, v, err))
             return false;
-        out = -v;
+        if (isText(v))
+        {
+            err = "文本值不能取负";
+            return false;
+        }
+        if (isFloatType(v.type))
+        {
+            out = TypedValue::fromF(-v.f, ValueType::F64);
+            return true;
+        }
+        out = TypedValue::fromI(-v.asI64(), ValueType::I64);
         return true;
     }
     case Expr::Fn:
     {
-        double a = 0;
-        if (!evalExpr(e->a, ctx, a, err))
+        if (e->fn == "toF64" || e->fn == "toI64" || e->fn == "toU64")
+        {
+            TypedValue a;
+            if (!e->a || !evalExpr(e->a, ctx, a, err))
+                return false;
+            if (isText(a))
+            {
+                err = e->fn + " 不接受文本值";
+                return false;
+            }
+            if (e->fn == "toF64")
+                out = TypedValue::fromF(a.asDouble(), ValueType::F64);
+            else if (e->fn == "toI64")
+                out = TypedValue::fromI(a.asI64(), ValueType::I64);
+            else
+                out = TypedValue::fromU(a.asU64(), ValueType::U64);
+            return true;
+        }
+        TypedValue a;
+        if (!e->a || !evalExpr(e->a, ctx, a, err))
             return false;
         if (e->fn == "abs")
         {
-            out = std::fabs(a);
+            if (isText(a))
+            {
+                err = "abs 不接受文本值";
+                return false;
+            }
+            if (isFloatType(a.type))
+                out = TypedValue::fromF(std::fabs(a.f), ValueType::F64);
+            else
+                out = TypedValue::fromI(a.asI64() < 0 ? -a.asI64() : a.asI64(), ValueType::I64);
             return true;
         }
-        double b = 0;
+        TypedValue b;
         if (!e->b)
         {
             err = "函数参数不足: " + e->fn;
@@ -283,17 +434,27 @@ bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &er
         }
         if (!evalExpr(e->b, ctx, b, err))
             return false;
-        if (e->fn == "min") { out = std::min(a, b); return true; }
-        if (e->fn == "max") { out = std::max(a, b); return true; }
+        if (e->fn == "min" || e->fn == "max")
+        {
+            int cmp = 0;
+            if (!compareNumeric(a, b, cmp, err))
+                return false;
+            const bool takeA = (e->fn == "min") ? (cmp <= 0) : (cmp >= 0);
+            out = takeA ? a : b;
+            return true;
+        }
         if (e->fn == "clamp")
         {
-            double c = 0;
+            TypedValue c;
             if (!e->c || !evalExpr(e->c, ctx, c, err))
             {
                 err = "clamp 需要 3 个参数";
                 return false;
             }
-            out = std::min(std::max(a, b), c);
+            int ab = 0, ac = 0;
+            if (!compareNumeric(a, b, ab, err) || !compareNumeric(a, c, ac, err))
+                return false;
+            out = (ab < 0) ? b : (ac > 0 ? c : a);
             return true;
         }
         err = "未知函数: " + e->fn;
@@ -301,33 +462,117 @@ bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &er
     }
     case Expr::Bin:
     {
-        double a = 0, b = 0;
+        TypedValue a, b;
         if (!evalExpr(e->a, ctx, a, err) || !evalExpr(e->b, ctx, b, err))
             return false;
+        if (isText(a) || isText(b))
+        {
+            err = "文本值不能参与运算";
+            return false;
+        }
+        const bool af = isFloatType(a.type), bf = isFloatType(b.type);
+        if (af != bf)
+        {
+            err = "整型与浮点不能直接混算，需要显式 toF64/toI64";
+            return false;
+        }
+        if (af)
+        {
+            const double x = a.f, y = b.f;
+            switch (e->op)
+            {
+            case '+': out = TypedValue::fromF(x + y, ValueType::F64); return true;
+            case '-': out = TypedValue::fromF(x - y, ValueType::F64); return true;
+            case '*': out = TypedValue::fromF(x * y, ValueType::F64); return true;
+            case '/':
+                if (y == 0.0) { err = "表达式除零"; return false; }
+                out = TypedValue::fromF(x / y, ValueType::F64);
+                return true;
+            default:
+                err = "浮点值不支持位运算/取模";
+                return false;
+            }
+        }
+
+        const bool anySigned = a.isSigned() || b.isSigned();
+        if (anySigned)
+        {
+            const int64_t x = a.asI64(), y = b.asI64();
+            switch (e->op)
+            {
+            case '+': return intResult(x + y, false, out);
+            case '-': return intResult(x - y, false, out);
+            case '*': return intResult(x * y, false, out);
+            case '/':
+                if (y == 0) { err = "表达式除零"; return false; }
+                return intResult(x / y, false, out);
+            case '%':
+                if (y == 0) { err = "表达式取模零"; return false; }
+                return intResult(x % y, false, out);
+            case '&': return intResult(x & y, false, out);
+            case '|': return intResult(x | y, false, out);
+            case '^': return intResult(x ^ y, false, out);
+            case 100: return intResult(x << y, false, out);
+            case 101: return intResult(x >> y, false, out);
+            default: err = "未知运算符"; return false;
+            }
+        }
+        const uint64_t x = a.asU64(), y = b.asU64();
         switch (e->op)
         {
-        case '+': out = a + b; return true;
-        case '-': out = a - b; return true;
-        case '*': out = a * b; return true;
+        case '+': return intResult(static_cast<int64_t>(x + y), true, out);
+        case '-': return intResult(static_cast<int64_t>(x - y), true, out);
+        case '*': return intResult(static_cast<int64_t>(x * y), true, out);
         case '/':
-            if (b == 0) { err = "表达式除零"; return false; }
-            out = std::trunc(a / b);
-            return true;
+            if (y == 0) { err = "表达式除零"; return false; }
+            return intResult(static_cast<int64_t>(x / y), true, out);
         case '%':
-            if (b == 0) { err = "表达式取模零"; return false; }
-            out = std::fmod(a, b);
-            return true;
-        case '&': out = double(static_cast<int64_t>(a) & static_cast<int64_t>(b)); return true;
-        case '|': out = double(static_cast<int64_t>(a) | static_cast<int64_t>(b)); return true;
-        case '^': out = double(static_cast<int64_t>(a) ^ static_cast<int64_t>(b)); return true;
-        case 100: out = double(static_cast<int64_t>(a) << static_cast<int64_t>(b)); return true;
-        case 101: out = double(static_cast<int64_t>(a) >> static_cast<int64_t>(b)); return true;
+            if (y == 0) { err = "表达式取模零"; return false; }
+            return intResult(static_cast<int64_t>(x % y), true, out);
+        case '&': return intResult(static_cast<int64_t>(x & y), true, out);
+        case '|': return intResult(static_cast<int64_t>(x | y), true, out);
+        case '^': return intResult(static_cast<int64_t>(x ^ y), true, out);
+        case 100: return intResult(static_cast<int64_t>(x << y), true, out);
+        case 101: return intResult(static_cast<int64_t>(x >> y), true, out);
         default: err = "未知运算符"; return false;
         }
     }
     }
     err = "表达式求值失败";
     return false;
+}
+
+bool evalExprInt(const ExprPtr &e, const EvalCtx &ctx, int64_t &out, std::string &err)
+{
+    TypedValue v;
+    if (!evalExpr(e, ctx, v, err))
+        return false;
+    if (isText(v))
+    {
+        err = "此处需要数值，得到文本";
+        return false;
+    }
+    if (isFloatType(v.type))
+    {
+        err = "此处需要整型，得到浮点（需要显式 toI64）";
+        return false;
+    }
+    out = v.asI64();
+    return true;
+}
+
+bool evalExprDouble(const ExprPtr &e, const EvalCtx &ctx, double &out, std::string &err)
+{
+    TypedValue v;
+    if (!evalExpr(e, ctx, v, err))
+        return false;
+    if (isText(v))
+    {
+        err = "此处需要数值，得到文本";
+        return false;
+    }
+    out = v.asDouble();
+    return true;
 }
 
 ExprPtr parseExprText(const std::string &text, std::string &err)
@@ -340,9 +585,19 @@ ExprPtr jsonExpr(const QJsonValue &v, std::string &err)
 {
     if (v.isDouble())
     {
+        const double d = v.toDouble();
         ExprPtr n = std::make_shared<Expr>();
         n->kind = Expr::Num;
-        n->num = v.toDouble();
+        if (d == std::trunc(d) && std::fabs(d) < 9.0e15)
+        {
+            n->isInt = true;
+            n->ival = static_cast<int64_t>(d);
+        }
+        else
+        {
+            n->isInt = false;
+            n->num = d;
+        }
         return n;
     }
     if (v.isString())
@@ -350,6 +605,8 @@ ExprPtr jsonExpr(const QJsonValue &v, std::string &err)
     err = "表达式必须是数字或字符串";
     return nullptr;
 }
+
+/* ---------------- JSON 读取 ---------------- */
 
 static std::string numberKey(double v)
 {
@@ -418,23 +675,13 @@ bool parseChecks(const QJsonArray &arr, std::vector<CheckSpec> &out, std::string
             return false;
         }
         if (o.contains(QStringLiteral("value")))
-        {
-            const QJsonValue v = o.value(QStringLiteral("value"));
-            if (v.isString())
-            {
-                c.rhs = parseExprText(v.toString().toStdString(), err);
-                if (!c.rhs) return false;
-            }
-            else
-            {
-                c.rhs = jsonExpr(v, err);
-                if (!c.rhs) return false;
-            }
-        }
+            c.rhs = jsonExpr(o.value(QStringLiteral("value")), err);
         else if (o.contains(QStringLiteral("expr")))
-        {
             c.rhs = jsonExpr(o.value(QStringLiteral("expr")), err);
-            if (!c.rhs) return false;
+        if (o.contains(QStringLiteral("value")) || o.contains(QStringLiteral("expr")))
+        {
+            if (!c.rhs)
+                return false;
         }
 
         if (c.op == "range")
@@ -454,7 +701,13 @@ bool parseChecks(const QJsonArray &arr, std::vector<CheckSpec> &out, std::string
         else if (c.op == "in")
         {
             for (const QJsonValue &iv : o.value(QStringLiteral("values")).toArray())
-                c.values.push_back(iv.toDouble());
+            {
+                if (iv.isString())
+                    c.values.push_back(TypedValue::fromText(iv.toString().toStdString()));
+                else
+                    c.values.push_back(TypedValue::fromI(static_cast<int64_t>(iv.toDouble()),
+                                                         ValueType::I64));
+            }
         }
         else if (c.op == "crc8" || c.op == "crc16" || c.op == "crc32" ||
                  c.op == "sum8" || c.op == "sum16" || c.op == "xor8" || c.op == "parity")
@@ -487,8 +740,8 @@ bool parseChecks(const QJsonArray &arr, std::vector<CheckSpec> &out, std::string
                 c.over.push_back(ov.toString().toStdString());
         }
         const bool sequenceOp = (c.op == "crc8" || c.op == "crc16" || c.op == "crc32" ||
-                                 c.op == "sum8" || c.op == "sum16" || c.op == "xor8" || c.op == "parity" ||
-                                 c.op == "in");
+                                 c.op == "sum8" || c.op == "sum16" || c.op == "xor8" ||
+                                 c.op == "parity" || c.op == "in");
         if (!sequenceOp && c.rhs == nullptr)
         {
             err = "check 缺少比较值";
@@ -499,6 +752,15 @@ bool parseChecks(const QJsonArray &arr, std::vector<CheckSpec> &out, std::string
     return true;
 }
 
+static bool parseEmit(const QString &s, EmitMode &out, std::string &err)
+{
+    if (s.isEmpty() || s == QLatin1String("channel")) { out = EmitMode::Channel; return true; }
+    if (s == QLatin1String("aux")) { out = EmitMode::Aux; return true; }
+    if (s == QLatin1String("none")) { out = EmitMode::None; return true; }
+    err = "emit 只能是 channel/aux/none: " + s.toStdString();
+    return false;
+}
+
 bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpec &seg, std::string &err)
 {
     seg.name = o.value(QStringLiteral("name")).toString().toStdString();
@@ -507,16 +769,13 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         err = "segment 缺少 name";
         return false;
     }
-    // v2 键优先，v1 别名兜底（兼容只读期）：count←size，length←counts，expect←value。
-    const QJsonValue countVal = o.contains(QStringLiteral("count"))
-        ? o.value(QStringLiteral("count")) : o.value(QStringLiteral("size"));
-    if (countVal.isUndefined())
+    if (!o.contains(QStringLiteral("count")))
     {
         err = "segment " + seg.name + " 缺少 count";
         return false;
     }
-    seg.sizeExpr = jsonExpr(countVal, err);
-    if (!seg.sizeExpr)
+    seg.countExpr = jsonExpr(o.value(QStringLiteral("count")), err);
+    if (!seg.countExpr)
         return false;
     if (!parseType(o.value(QStringLiteral("type")).toString(QStringLiteral("u8")).toStdString(), seg.type, err))
         return false;
@@ -525,31 +784,16 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     seg.bigEndian = (endian == "big" || endian == "be");
     seg.scale = o.value(QStringLiteral("scale")).toDouble(1.0);
     seg.offset = o.value(QStringLiteral("offset")).toDouble(0.0);
-    seg.role = o.value(QStringLiteral("role")).toString(QStringLiteral("data")).toStdString();
     seg.unit = o.value(QStringLiteral("unit")).toString().toStdString();
     seg.description = o.value(QStringLiteral("description")).toString().toStdString();
 
-    // emit 三态（v2）；未写 emit 时回退 v1 的 hidden/plot 布尔。
-    if (o.contains(QStringLiteral("emit")))
-    {
-        const QString emitMode = o.value(QStringLiteral("emit")).toString();
-        if (emitMode == QLatin1String("none")) { seg.hidden = true; seg.plot = false; }
-        else if (emitMode == QLatin1String("aux")) { seg.hidden = false; seg.plot = false; }
-        else { seg.hidden = false; seg.plot = true; }
-    }
-    else
-    {
-        seg.hidden = o.value(QStringLiteral("hidden")).toBool(false);
-        seg.plot = o.value(QStringLiteral("plot")).toBool(true);
-    }
+    if (!parseEmit(o.value(QStringLiteral("emit")).toString(), seg.emitMode, err))
+        return false;
 
-    const QJsonValue expectVal = o.contains(QStringLiteral("expect"))
-        ? o.value(QStringLiteral("expect")) : o.value(QStringLiteral("value"));
-    if (!expectVal.isUndefined())
+    if (o.contains(QStringLiteral("expect")))
     {
-        seg.hasValue = true;
-        seg.valueExpr = jsonExpr(expectVal, err);
-        if (!seg.valueExpr)
+        seg.expectExpr = jsonExpr(o.value(QStringLiteral("expect")), err);
+        if (!seg.expectExpr)
             return false;
     }
     if (o.contains(QStringLiteral("checks")) && o.value(QStringLiteral("checks")).isArray())
@@ -557,30 +801,34 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         if (!parseChecks(o.value(QStringLiteral("checks")).toArray(), seg.checks, err))
             return false;
     }
-    const QJsonValue cv = o.contains(QStringLiteral("length"))
-        ? o.value(QStringLiteral("length")) : o.value(QStringLiteral("counts"));
-    if (!cv.isUndefined())
+    if (o.contains(QStringLiteral("length")))
     {
+        const QJsonValue cv = o.value(QStringLiteral("length"));
         if (cv.isObject())
         {
             const QJsonObject co = cv.toObject();
-            seg.counts.enabled = true;
+            seg.length.enabled = true;
             for (const QJsonValue &fv : co.value(QStringLiteral("fields")).toArray())
-                seg.counts.fields.push_back(fv.toString().toStdString());
-            seg.counts.unit = co.value(QStringLiteral("unit")).toString(QStringLiteral("elements")).toStdString();
+                seg.length.fields.push_back(fv.toString().toStdString());
+            seg.length.unit = co.value(QStringLiteral("unit")).toString(QStringLiteral("elements")).toStdString();
             if (co.contains(QStringLiteral("expr")))
             {
-                seg.counts.expr = jsonExpr(co.value(QStringLiteral("expr")), err);
-                if (!seg.counts.expr)
+                seg.length.expr = jsonExpr(co.value(QStringLiteral("expr")), err);
+                if (!seg.length.expr)
                     return false;
             }
         }
         else if (cv.isString())
         {
-            seg.counts.enabled = true;
-            seg.counts.expr = jsonExpr(cv, err);
-            if (!seg.counts.expr)
+            seg.length.enabled = true;
+            seg.length.expr = jsonExpr(cv, err);
+            if (!seg.length.expr)
                 return false;
+        }
+        else
+        {
+            err = "segment " + seg.name + " 的 length 必须是对象或表达式";
+            return false;
         }
     }
     return true;
@@ -651,7 +899,6 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
                 SegSpec seg;
                 if (!parseSegment(fv.toObject(), t.endian, seg, err))
                     return false;
-                seg.fromVariant = true;
                 seg.prefix = var.name + ".";
                 var.segments.push_back(std::move(seg));
             }
@@ -671,19 +918,39 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
     return true;
 }
 
-/* ---------------- 解码与校验 ---------------- */
+/* ---------------- 序列化 ---------------- */
 
-
-static std::string numText(double v)
+static std::string numText(const Expr &e)
 {
-    if (v == static_cast<double>(static_cast<int64_t>(v)))
+    if (e.isInt)
     {
         std::ostringstream os;
-        os << static_cast<int64_t>(v);
+        os << e.ival;
         return os.str();
     }
     std::ostringstream os;
-    os << std::setprecision(17) << v;
+    os << std::setprecision(17) << e.num;
+    return os.str();
+}
+
+static std::string numTextValue(const TypedValue &v)
+{
+    if (v.type == ValueType::Text)
+        return v.s;
+    if (isFloatType(v.type))
+    {
+        std::ostringstream os;
+        os << std::setprecision(17) << v.f;
+        return os.str();
+    }
+    if (v.isSigned())
+    {
+        std::ostringstream os;
+        os << v.i;
+        return os.str();
+    }
+    std::ostringstream os;
+    os << v.u;
     return os.str();
 }
 
@@ -694,7 +961,7 @@ std::string exprText(const ExprPtr &e)
     switch (e->kind)
     {
     case Expr::Num:
-        return numText(e->num);
+        return numText(*e);
     case Expr::Ref:
         return e->b ? e->name + "[" + exprText(e->b) + "]" : e->name;
     case Expr::Un:
@@ -722,7 +989,7 @@ static QJsonValue exprJson(const ExprPtr &e)
     if (!e)
         return QJsonValue();
     if (e->kind == Expr::Num)
-        return QJsonValue(e->num);
+        return e->isInt ? QJsonValue(static_cast<qlonglong>(e->ival)) : QJsonValue(e->num);
     return QJsonValue(QString::fromStdString(exprText(e)));
 }
 
@@ -730,19 +997,19 @@ static QString typeName(const TypeInfo &ti)
 {
     switch (ti.type)
     {
-    case FType::U8: return "u8";
-    case FType::I8: return "i8";
-    case FType::U16: return "u16";
-    case FType::I16: return "i16";
-    case FType::U32: return "u32";
-    case FType::I32: return "i32";
-    case FType::U64: return "u64";
-    case FType::I64: return "i64";
-    case FType::F32: return "f32";
-    case FType::F64: return "f64";
-    case FType::BOOL: return "bool";
-    case FType::BCD: return "bcd";
-    case FType::STR: return "text";
+    case ValueType::U8: return "u8";
+    case ValueType::I8: return "i8";
+    case ValueType::U16: return "u16";
+    case ValueType::I16: return "i16";
+    case ValueType::U32: return "u32";
+    case ValueType::I32: return "i32";
+    case ValueType::U64: return "u64";
+    case ValueType::I64: return "i64";
+    case ValueType::F32: return "f32";
+    case ValueType::F64: return "f64";
+    case ValueType::Bool: return "bool";
+    case ValueType::Bcd: return "bcd";
+    case ValueType::Text: return "char";
     }
     return "u8";
 }
@@ -783,8 +1050,9 @@ static QJsonObject checkJson(const CheckSpec &c)
     else if (c.op == "in")
     {
         QJsonArray values;
-        for (double v : c.values)
-            values.append(v);
+        for (const TypedValue &v : c.values)
+            values.append(v.type == ValueType::Text ? QJsonValue(QString::fromStdString(v.s))
+                                                   : QJsonValue(v.asDouble()));
         o["values"] = values;
     }
     else if (c.rhs)
@@ -798,7 +1066,7 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
 {
     QJsonObject o;
     o["name"] = QString::fromStdString(seg.name);
-    o["count"] = exprJson(seg.sizeExpr);
+    o["count"] = exprJson(seg.countExpr);
     o["type"] = typeName(seg.type);
     const bool docBig = (doc.endian == "big" || doc.endian == "be");
     if (seg.bigEndian != docBig)
@@ -811,13 +1079,12 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
         o["unit"] = QString::fromStdString(seg.unit);
     if (!seg.description.empty())
         o["description"] = QString::fromStdString(seg.description);
-    // emit 三态回写：hidden→none，非 plot→aux，其余 channel（默认省略）。
-    if (seg.hidden)
+    if (seg.emitMode == EmitMode::None)
         o["emit"] = "none";
-    else if (!seg.plot)
+    else if (seg.emitMode == EmitMode::Aux)
         o["emit"] = "aux";
-    if (seg.hasValue && seg.valueExpr)
-        o["expect"] = exprJson(seg.valueExpr);
+    if (seg.expectExpr)
+        o["expect"] = exprJson(seg.expectExpr);
     if (!seg.checks.empty())
     {
         QJsonArray checks;
@@ -825,16 +1092,16 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
             checks.append(checkJson(c));
         o["checks"] = checks;
     }
-    if (seg.counts.enabled)
+    if (seg.length.enabled)
     {
         QJsonObject c;
         QJsonArray fields;
-        for (const auto &f : seg.counts.fields)
+        for (const auto &f : seg.length.fields)
             fields.append(QString::fromStdString(f));
         c["fields"] = fields;
-        c["unit"] = QString::fromStdString(seg.counts.unit);
-        if (seg.counts.expr)
-            c["expr"] = exprJson(seg.counts.expr);
+        c["unit"] = QString::fromStdString(seg.length.unit);
+        if (seg.length.expr)
+            c["expr"] = exprJson(seg.length.expr);
         o["length"] = c;
     }
     return o;

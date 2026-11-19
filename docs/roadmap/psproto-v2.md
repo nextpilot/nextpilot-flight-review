@@ -635,7 +635,43 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 | **S4c** | codegen 处理含脚本模板 | 遇到 `lua` 节点**显式报错并列出段名**，不静默降级 |
 | **S5** | 模板 codegen（帧结构 → 解析器源码） | 生成的 C++ 解析器与解释器逐字段一致 |
 
-### 5.1 S1 落地状态（2026-11-19）
+### 5.1 S1/S2 落地状态（2026-11-19）
+
+**口径变更（用户拍板，已执行）**
+- **v1 键硬删除**：`size` / `counts` / `value` / `hidden` / `plot` / `hasValue` / `role` / `fromVariant`
+  不再有任何兼容映射，模板里出现即报「使用了已废弃的 v1 键」。
+- **文本类型只留 `char`**：`str` / `string` / `ascii` / `text` 别名全部删除，`parseType` 只认精确类型名。
+
+**S1 已落地并推送**
+- `psproto.schema.json`（draft 2020-12，13 个 `$defs`）与用户视角 `README.md`；
+  README 的「v1 → v2 对照表」已改写为「v1 键已删除 + 该用什么」。
+- 顺序方言 fixture `demo_sequential.psproto`、`demo_nmea.psproto` 迁移到 v2 键名
+  （`count/expect/emit/length/char`，去掉 `role`）。
+
+**S2 前半（typed 全链路 + 内部模型去 role + 整数时间轴）—— 本轮落地**
+- 内部模型与旧 `FType` 合并，`TypeInfo{ValueType, size}` 直接复用 `TypedVec.h` 的 `ValueType`
+  （U8…I64/F32/F64/Bool/Bcd/Text），全库只有一套类型枚举。
+- 值链路 typed：读取、表达式求值、校验、通道输出都在原生类型上完成；
+  只有显式 `toDoubleVec()` 才降级，降级点可 grep、可统计。
+  `EvalCtx` 的 `strings` 旁路删除，`char` 段也走 `TypedVec<Text>`。
+- `ProtocolChannel` 改为 `{name, unit, vector<int64_t> t, TypedVec v}`，
+  结果带 `ticksPerSecond = 1e6`；时间先整数相减再换算单位（`s/ms/us/ns`），全程 i64，无 double 累积误差。
+- 表达式类型感知：整型 op 整型得 I64/U64、浮点 op 浮点得 F64；整型与浮点混算**直接报错**，
+  要求显式 `toF64/toI64`；`/` 对整型是整除，`%` 只接受整型。
+- `role` 概念消失：payload 由 `series.payload` 段名绑定，长度由段上 `length` 键绑定，
+  sync/checksum 由 `expect` / `digest` / `checks` 决定；三态 `emit`（channel/aux/none）成为唯一输出开关。
+- 解码内核收敛成一个 `readFrame()`（preview 与流式解码共用），消灭此前两份重复实现。
+- 消费端 `CustomProtocolParser` 按 `ValueType` 映射 SPI 列类型（u8/u16/u32/f32/f64/text…），
+  时间从 ticks 换算成整数微秒；不再统一 double。
+- `ng_test_protocol` 改到 typed API，新增用例：整型整除、整型+浮点混算报错、
+  通道列类型断言（u16 列 / scale 升 f64）、时间 ticks 断言、SPI 双列类型断言。
+- 全量 ctest **11/11 通过**。
+
+**S2 后半（未开始）**
+- 段表编译：`compile()` 把模板预编译成「段表 + 表达式字节码」，`decode` 走段表而非每帧解释 JSON 对象。
+  当前仍是逐帧遍历 `SegSpec`（功能正确，性能待压）。
+
+
 
 **已落地并推送**
 - `psproto.schema.json`（draft 2020-12，13 个 `$defs`）与用户视角 `README.md`（含 v1→v2 键名对照表）。

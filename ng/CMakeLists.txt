@@ -5,6 +5,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# 依赖前缀：优先用 NG_DEPS_PREFIX（可持久化的独立 Qt/Lua 安装，不被系统镜像恢复）。
+# 该前缀下是标准 usr/ 布局（include、lib、lib/cmake、lib/qt6/plugins），
+# 一次性铺好后重装系统也不用重新 apt install。
+if(DEFINED ENV{NG_DEPS_PREFIX} AND EXISTS "$ENV{NG_DEPS_PREFIX}")
+  set(NG_DEPS_PREFIX "$ENV{NG_DEPS_PREFIX}")
+elseif(EXISTS "/home/user/Doubao/tools/ng-deps/usr/lib/x86_64-linux-gnu/cmake/Qt6")
+  set(NG_DEPS_PREFIX "/home/user/Doubao/tools/ng-deps")
+endif()
+if(NG_DEPS_PREFIX)
+  list(PREPEND CMAKE_PREFIX_PATH "${NG_DEPS_PREFIX}/usr/lib/x86_64-linux-gnu/cmake")
+  link_directories("${NG_DEPS_PREFIX}/usr/lib/x86_64-linux-gnu")
+  # 运行时（测试/程序）从同一个前缀加载 Qt，不依赖系统里有没有装。
+  set(CMAKE_BUILD_RPATH "${NG_DEPS_PREFIX}/usr/lib/x86_64-linux-gnu")
+endif()
+
 # 复用仓库 deps/Qt：既有预设未设置 prefix 时自动指向 deps 下固定版本。
 if(NOT DEFINED CMAKE_PREFIX_PATH OR CMAKE_PREFIX_PATH STREQUAL "")
   set(_ng_deps_qt "${CMAKE_CURRENT_SOURCE_DIR}/../deps/Qt/6.2.4/gcc_64")

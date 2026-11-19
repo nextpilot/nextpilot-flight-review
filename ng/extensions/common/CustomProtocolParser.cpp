@@ -27,8 +27,11 @@ struct Ctx
     bool configured = false;
     std::vector<std::string> nameBytes; // PsFrameColumn.name 的 utf8 副本，回调期间有效
     std::vector<std::string> unitBytes;
-    std::vector<std::vector<double>> columns; // 每列值
-    std::vector<int64_t> times;               // 微秒
+    // 每列按原生类型各存一段连续内存（bytesCopy 的字节视图），回调期间指针有效。
+    std::vector<std::vector<uint8_t>> values;
+    std::vector<std::vector<std::string>> textBytes; // TEXT 列的字符串本体
+    std::vector<std::vector<const char *>> textPtrs; // TEXT 列给 SPI 的 const char* 数组
+    std::vector<int64_t> times;                     // 微秒
 };
 
 void setErr(PsError *err, int32_t code, const char *msg)
@@ -40,6 +43,29 @@ void setErr(PsError *err, int32_t code, const char *msg)
     err->message[sizeof(err->message) - 1] = '\0';
 }
 
+// TypedVec 的列类型 → SPI 列类型（一一对应，无降级）。
+PsValueType spiType(const nextpilot::plotscope::protocol::TypedVec &col)
+{
+    using nextpilot::plotscope::protocol::ValueType;
+    switch (col.type)
+    {
+    case ValueType::U8: return PS_VALUE_U8;
+    case ValueType::I8: return PS_VALUE_I8;
+    case ValueType::U16: return PS_VALUE_U16;
+    case ValueType::I16: return PS_VALUE_I16;
+    case ValueType::U32: return PS_VALUE_U32;
+    case ValueType::I32: return PS_VALUE_I32;
+    case ValueType::U64: return PS_VALUE_U64;
+    case ValueType::I64: return PS_VALUE_I64;
+    case ValueType::F32: return PS_VALUE_F32;
+    case ValueType::F64: return PS_VALUE_F64;
+    case ValueType::Bool: return PS_VALUE_BOOL;
+    case ValueType::Bcd: return PS_VALUE_U32;
+    case ValueType::Text: return PS_VALUE_TEXT;
+    }
+    return PS_VALUE_F64;
+}
+
 // 把解码结果吐成一批（每条通道一列，共享时间轴）。
 bool emitBatch(const nextpilot::plotscope::protocol::ProtocolDecodeResult &decoded, Ctx *c,
           const PsParserSink *sink, PsError *err)
@@ -49,34 +75,54 @@ bool emitBatch(const nextpilot::plotscope::protocol::ProtocolDecodeResult &decod
 
     c->nameBytes.clear();
     c->unitBytes.clear();
-    c->columns.clear();
     c->times.clear();
-    c->columns.resize(decoded.channels.size());
+    c->values.clear();   // vector<vector<...>> 由列类型各自持有
+    c->textPtrs.clear();
+    c->values.reserve(decoded.channels.size());
 
+    // 时间轴：ticks 按 ticksPerSecond 换成整数微秒，全程整数运算。
+    const auto &first = decoded.channels.first();
+    c->times.resize(first.t.size());
+    for (size_t i = 0; i < first.t.size(); ++i)
+        c->times[i] = static_cast<int64_t>(first.t[i]) * 1000000 / decoded.ticksPerSecond;
+
+    std::vector<PsFrameColumn> cols;
+    cols.reserve(decoded.channels.size());
     for (int i = 0; i < decoded.channels.size(); ++i)
     {
         const auto &ch = decoded.channels.at(i);
         c->nameBytes.push_back(ch.name);
         c->unitBytes.push_back(ch.unit);
-        c->columns[static_cast<size_t>(i)] = ch.v;
     }
 
-    // 用第一条通道的 t 作为共享时间轴。
-    const auto &first = decoded.channels.first();
-    c->times.resize(first.t.size());
-    for (size_t i = 0; i < first.t.size(); ++i)
-        c->times[i] = static_cast<int64_t>(first.t[i] * 1000000.0);
-
-    std::vector<PsFrameColumn> cols;
-    cols.reserve(decoded.channels.size());
-    for (size_t i = 0; i < decoded.channels.size(); ++i)
+    // 每列按原生类型单独存一段连续内存，指针在回调期间有效。
+    for (int i = 0; i < decoded.channels.size(); ++i)
     {
+        const auto &ch = decoded.channels.at(i);
+        const PsValueType vt = spiType(ch.v);
         PsFrameColumn col{};
-        col.name = c->nameBytes[i].c_str();
-        col.unit = c->unitBytes[i].empty() ? nullptr : c->unitBytes[i].c_str();
-        col.type = PS_VALUE_F64;
-        col.values = c->columns[i].data();
+        col.name = c->nameBytes[static_cast<size_t>(i)].c_str();
+        col.unit = c->unitBytes[static_cast<size_t>(i)].empty()
+                       ? nullptr
+                       : c->unitBytes[static_cast<size_t>(i)].c_str();
+        col.type = vt;
         col.nulls = nullptr;
+        if (vt == PS_VALUE_TEXT)
+        {
+            c->textPtrs.emplace_back();
+            auto &ptrs = c->textPtrs.back();
+            auto &texts = c->textBytes.emplace_back();
+            texts = ch.v.textCopy();
+            ptrs.reserve(texts.size());
+            for (auto &s : texts)
+                ptrs.push_back(s.c_str());
+            col.values = ptrs.data();
+        }
+        else
+        {
+            c->values.push_back(ch.v.bytesCopy());
+            col.values = c->values.back().data();
+        }
         cols.push_back(col);
     }
 
