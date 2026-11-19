@@ -452,7 +452,7 @@ PatternMismatch / OverflowMaxsize / IncompleteAtEof`
 | 6 | 位域 | **CAN / J1939 / CANopen / ADS-B / CCSDS** | ✗ | ✓ |
 | 7 | 行终止 ASCII + 空字段 | **NMEA 0183** | ✗ | ✓ |
 | 8 | 重复到标记 | TLV 列表 / EDR | ✗ | ✓ |
-| 9 | 容器 / 嵌套 / 索引跳读 | PCAP / MDF4 / BLF / PNG / SpaceWire | ✗ | ✗（明确不覆盖） |
+| 9 | 容器 / 嵌套 / 索引跳读 | PCAP / MDF4 / BLF / PNG / SpaceWire | ✗ | ✗（锁定排除，不进 v2.x；归上层专用 reader/writer） |
 | 10 | 6-bit ASCII 装甲 | **AIS** | ✗ | ✗（P2，需专门解包器） |
 
 **两轴说明**：表中 v2 列指"psproto 模板能否表达该能力"，**与产品里是否已有专门代码解析器无关**。ULog / MAVLink / NMEA / OEM7 可由代码解析器承担；同一项能力在规范里保留，遇到私有格式时模板也能写。两者并存，互不为前提。
