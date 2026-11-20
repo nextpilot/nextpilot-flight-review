@@ -1132,6 +1132,7 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
             BlockDef bd;
             bd.name = it.key().toStdString();
             bd.of = bod.value(QStringLiteral("of")).toString().toLower().toStdString();
+            bd.repeater = bod.value(QStringLiteral("repeater")).toString().toStdString();
             bd.description = bod.value(QStringLiteral("description")).toString().toStdString();
             for (const QJsonValue &fv : bod.value(QStringLiteral("fields")).toArray())
             {
@@ -1553,6 +1554,8 @@ QJsonObject toJson(const ProtocolDocument &doc)
             QJsonObject bo;
             if (!bd.of.empty())
                 bo["of"] = QString::fromStdString(bd.of);
+            if (!bd.repeater.empty())
+                bo["repeater"] = QString::fromStdString(bd.repeater);
             if (!bd.description.empty())
                 bo["description"] = QString::fromStdString(bd.description);
             QJsonArray fields;

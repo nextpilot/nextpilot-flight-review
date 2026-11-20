@@ -598,7 +598,49 @@ static ExprPtr constCountExpr(int64_t n)
 //   顺序块（of 为空）：字段按序读字节，通道名摊成 段名.字段名。
 // 常量 count=N 摊成 N 份，命名 段名[i].字段名（对应界面里的 payload[i].a）。
 // count:"*"（整组重复到帧尾）需要组循环，尚未接入，这里明确报错而不是静默按 1 处理。
-static bool expandBlockSegs(const ProtocolDocument &doc, std::vector<SegSpec> &out, std::string &err)
+// 深拷贝表达式树，并把指向 from 的 Ref 换名成 to。
+// v3 的 transform 表达式里 self 指本段原始值：编译成字节码时直接换成该段自己的槽位名。
+static ExprPtr renameRefs(const ExprPtr &e, const std::string &from, const std::string &to)
+{
+    if (!e)
+        return e;
+    auto n = std::make_shared<Expr>();
+    *n = *e;
+    n->name = (e->kind == Expr::Ref && e->name == from) ? to : e->name;
+    n->a = renameRefs(e->a, from, to);
+    n->b = renameRefs(e->b, from, to);
+    n->c = renameRefs(e->c, from, to);
+    return n;
+}
+
+// transform 表达式一律按浮点算：物理量本来就是实数，
+// 否则 (self-32)*5/9 会走整型整除，5/9 直接变 0。字面量统一转浮点。
+static ExprPtr floatize(const ExprPtr &e)
+{
+    if (!e)
+        return e;
+    auto n = std::make_shared<Expr>();
+    *n = *e;
+    if (e->kind == Expr::Num && e->isInt)
+    {
+        n->isInt = false;
+        n->num = static_cast<double>(e->ival);
+    }
+    n->a = floatize(e->a);
+    n->b = floatize(e->b);
+    n->c = floatize(e->c);
+    return n;
+}
+
+struct FlatGroup
+{
+    size_t first = 0;
+    size_t count = 0;
+    uint32_t bytes = 0;
+};
+
+static bool expandBlockSegs(const ProtocolDocument &doc, std::vector<SegSpec> &out,
+                            std::vector<FlatGroup> &groups, std::string &err)
 {
     for (const SegSpec &s : doc.segments)
     {
@@ -619,9 +661,12 @@ static bool expandBlockSegs(const ProtocolDocument &doc, std::vector<SegSpec> &o
             err = "块 " + b.name + " 没有字段";
             return false;
         }
+        // 组重复由块自己的 repeater:"*" 声明，段不再写 count:"*"（重复不算字段数）。
+        const bool repeats = (b.repeater == "*");
         if (s.countWildcard)
         {
-            err = "段 " + s.name + " 引用的块还不支持 count:\"*\"（整组重复到帧尾需要组循环）";
+            err = repeats ? "段 " + s.name + "：块已用 repeater 声明重复，不要再写 count:\"*\""
+                          : "段 " + s.name + "：组重复请写在块的 repeater 上，段的 count:\"*\" 对块无效";
             return false;
         }
         int64_t reps = 1;
@@ -634,34 +679,60 @@ static bool expandBlockSegs(const ProtocolDocument &doc, std::vector<SegSpec> &o
             }
             reps = s.countExpr->ival;
         }
+        if (repeats && reps != 1)
+        {
+            err = "段 " + s.name + "：块已声明 repeater，不能再写 count";
+            return false;
+        }
         if (reps > 100000)
         {
             err = "段 " + s.name + " 引用块时 count 过大";
             return false;
         }
 
+        // 一组占多少字节：位域块就是容器宽度；顺序块是各字段定长之和。
         TypeInfo containerTi;
+        uint32_t groupBytes = 0;
         if (!b.of.empty())
         {
             std::string terr;
-            if (!parseType(b.of, containerTi, terr))
+            if (!parseType(b.of, containerTi, terr) || containerTi.size == 0)
             {
                 err = "块 " + b.name + " 的 of 类型非法：" + b.of;
                 return false;
             }
-            if (containerTi.size == 0)
+            groupBytes = containerTi.size;
+        }
+        else
+        {
+            for (const SegSpec &f : b.fields)
             {
-                err = "块 " + b.name + " 的 of 类型没有字节宽：" + b.of;
+                if (f.bit.enabled)
+                {
+                    err = "块 " + b.name + " 的字段 " + f.name + " 是位域字段，顺序块不能用";
+                    return false;
+                }
+                if (!f.countExpr || f.countExpr->kind != Expr::Num || !f.countExpr->isInt ||
+                    f.countExpr->ival <= 0)
+                {
+                    err = "块 " + b.name + " 的字段 " + f.name + " 不是定长，不能作为重复组";
+                    return false;
+                }
+                groupBytes += static_cast<uint32_t>(f.countExpr->ival * f.type.size);
+            }
+            if (groupBytes == 0)
+            {
+                err = "块 " + b.name + " 占 0 字节，无法重复";
                 return false;
             }
         }
 
+        const size_t startIdx = out.size();
         for (int64_t r = 0; r < reps; ++r)
         {
             const std::string inst = (reps == 1) ? s.name : s.name + "[" + std::to_string(r) + "]";
             if (!b.of.empty())
             {
-                // 容器：只占字节、给位窗口当定位基准，不出通道、不做变换与校验
                 SegSpec cont;
                 cont.name = inst;
                 cont.type = containerTi;
@@ -677,52 +748,14 @@ static bool expandBlockSegs(const ProtocolDocument &doc, std::vector<SegSpec> &o
                 fs.name = inst + "." + f.name;
                 fs.prefix = s.prefix;
                 if (!b.of.empty())
-                    fs.bit.base = inst; // 位窗口偏移相对容器起点，不是帧起点
+                    fs.bit.base = inst; // 位窗口偏移相对容器起点
                 out.push_back(fs);
             }
         }
+        if (repeats)
+            groups.push_back(FlatGroup{startIdx, out.size() - startIdx, groupBytes});
     }
     return true;
-}
-
-// 深拷贝表达式树，并把指向 from 的 Ref 换名成 to。
-// v3 的 transform 表达式里 self 指本段原始值，编译成字节码不需要新机制：
-// 直接换成该段自己的槽位名，运行期槽位里存的就是原始值。
-// transform 表达式一律按浮点算：物理量本来就是实数，
-// 否则 (self-32)*5/9 会走整型整除，5/9 直接变 0。字面量统一转浮点。
-static ExprPtr floatize(const ExprPtr &e)
-{
-    if (!e)
-        return e;
-    auto n = std::make_shared<Expr>();
-    *n = *e;
-    if (e->kind == Expr::Num && e->isInt)
-    {
-        n->isInt = false;
-        n->num = static_cast<double>(e->ival);
-    }
-    n->a = floatize(e->a);
-    n->b = floatize(e->b);
-    n->c = floatize(e->c);
-    return n;
-}
-
-static ExprPtr renameRefs(const ExprPtr &e, const std::string &from, const std::string &to)
-{
-    if (!e)
-        return e;
-    auto n = std::make_shared<Expr>();
-    n->kind = e->kind;
-    n->num = e->num;
-    n->ival = e->ival;
-    n->isInt = e->isInt;
-    n->name = (e->kind == Expr::Ref && e->name == from) ? to : e->name;
-    n->fn = e->fn;
-    n->op = e->op;
-    n->a = renameRefs(e->a, from, to);
-    n->b = renameRefs(e->b, from, to);
-    n->c = renameRefs(e->c, from, to);
-    return n;
 }
 
 bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
@@ -734,7 +767,8 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
 
     // 0) 块展开：把 type 指向块的段摊平成普通段，后面所有环节只认摊平结果。
     std::vector<SegSpec> flat;
-    if (!expandBlockSegs(doc, flat, err))
+    std::vector<FlatGroup> groups;
+    if (!expandBlockSegs(doc, flat, groups, err))
         return false;
 
     // v3 顶层 derived：摊成"派生段"追加到末尾——不读字节、不进边界计算，按序求值。
@@ -782,8 +816,9 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         }
 
     // 2) 顶层段表（摊平后）。
-    for (const SegSpec &s : flat)
+    for (size_t fi = 0; fi < flat.size(); ++fi)
     {
+        const SegSpec &s = flat[fi];
         CompiledSeg cs;
         cs.name = s.name;
         cs.unit = s.unit;
@@ -967,6 +1002,16 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             }
             if (s.length.expr && !c.compileExpr(s.length.expr, cs.length.expr))
                 return false;
+        }
+        for (const FlatGroup &g : groups)
+        {
+            if (fi >= g.first && fi < g.first + g.count)
+            {
+                cs.groupFirst = static_cast<int32_t>(g.first);
+                cs.groupLast = static_cast<int32_t>(g.first + g.count - 1);
+                cs.groupBytes = g.bytes;
+                break;
+            }
         }
         out.segs.push_back(std::move(cs));
     }

@@ -568,6 +568,13 @@
           "$ref": "#/$defs/typeName",
           "description": "位域块的容器类型（如 u32）；不写为顺序块。位域块只读一个容器值，子字段按 wide@off 切位"
         },
+        "repeater": {
+          "type": "string",
+          "enum": [
+            "*"
+          ],
+          "description": "组重复：写 * 表示这组字段整体重复到帧尾（块内字段必须定长）。重复不算字段数，也不占 count"
+        },
         "description": {
           "type": "string"
         },

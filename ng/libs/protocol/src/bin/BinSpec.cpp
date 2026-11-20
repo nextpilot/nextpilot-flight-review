@@ -324,7 +324,7 @@ QStringList validateBin(const QJsonObject &root)
         const QJsonObject block = it.value().toObject();
         for (auto bk = block.begin(); bk != block.end(); ++bk)
             if (bk.key() != QLatin1String("of") && bk.key() != QLatin1String("description") &&
-                bk.key() != QLatin1String("fields"))
+                bk.key() != QLatin1String("fields") && bk.key() != QLatin1String("repeater"))
                 errs << QStringLiteral("块 %1 有未知键：%2").arg(bname, bk.key());
 
         const QJsonArray fields = block.value(QStringLiteral("fields")).toArray();
@@ -339,6 +339,12 @@ QStringList validateBin(const QJsonObject &root)
                 errs << QStringLiteral("块 %1 的 of 必须是整型（u8..u64/i8..i64）").arg(bname);
             containerBytes = typeBytes(of);
         }
+
+        // 组重复：块自己声明 repeater:"*"，不靠段的 count。
+        const QString rep = block.value(QStringLiteral("repeater")).toString();
+        if (!rep.isEmpty() && rep != QLatin1String("*"))
+            errs << QStringLiteral("块 %1 的 repeater 只能是 \"*\"（读到帧尾）").arg(bname);
+        const bool repeats = (rep == QLatin1String("*"));
 
         int totalBits = 0;
         QList<QPair<int, int>> spans; // 位域块：已占用的 [off, off+width)

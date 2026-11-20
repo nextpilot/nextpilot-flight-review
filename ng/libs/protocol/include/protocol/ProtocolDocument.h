@@ -178,6 +178,7 @@ struct BlockDef
 {
     std::string name;
     std::string of;
+    std::string repeater; // "*" = 这组字段整体重复到帧尾（块内字段必须定长）；空 = 只出现一次
     std::string description;
     std::vector<SegmentDef> fields;
 };

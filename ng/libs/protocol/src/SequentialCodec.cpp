@@ -201,6 +201,7 @@ struct Rt
     uint32_t offset = 0;
     uint32_t bytes = 0;
     uint32_t count = 0;
+    int32_t groupIndex = -1; // >=0：本段属于某个重复组，这是第几轮（对应通道名里的 [i]）
     TypedVec raw;
     TypedVec phys;
 };
@@ -508,8 +509,20 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
     // 每个槽位在帧内的字节区间：位域段的 base 需要借它定位容器。
     std::vector<std::pair<uint32_t, uint32_t>> byteRange(prog.slotTable.size(), {0u, 0u});
 
-    for (const CompiledSeg &seg : prog.segs)
+    int32_t curGroupFirst = -1;  // 当前正在走的重复组（组首段下标），切换组时才重置起点
+    uint32_t groupStartPos = 0;  // 这组从帧内哪个字节开始，算第几轮要靠它
+
+    size_t segIdx = 0;
+    while (segIdx < prog.segs.size())
     {
+        const CompiledSeg &seg = prog.segs[segIdx];
+        size_t after = segIdx + 1;
+        if (seg.groupFirst >= 0 && curGroupFirst != seg.groupFirst)
+        {
+            curGroupFirst = seg.groupFirst;
+            groupStartPos = pos;
+        }
+        {
         // 条件段：不成立就当它不存在——不推进游标、不出通道、槽位保持空。
         if (seg.hasCond)
         {
@@ -517,7 +530,7 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
             if (!runByteCode(seg.cond, rawSlots, cond, r.err))
                 return false;
             if (!truthy(cond))
-                continue;
+                goto seg_tail;
         }
 
         // 派生字段：不读字节、不推进游标，用已解析的槽位求值。
@@ -540,7 +553,7 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
             rt.phys = col;
             byteRange[static_cast<size_t>(seg.slot)] = {pos, 0u};
             r.fields.push_back(std::move(rt));
-            continue;
+                goto seg_tail;
         }
 
         // 位域段：一个位窗口，不推进字节游标。
@@ -577,7 +590,7 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
             physSlots[static_cast<size_t>(seg.slot)] = rt.phys;
             byteRange[static_cast<size_t>(seg.slot)] = {base, needBytes};
             r.fields.push_back(std::move(rt));
-            continue;
+                goto seg_tail;
         }
 
         uint32_t count = 0, bytes = 0;
@@ -632,11 +645,14 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
                 raw.push(TypedValue::fromU(p[static_cast<size_t>(pos) + i], ValueType::U8));
             physSlots[static_cast<size_t>(seg.slot)] = raw;
             pos += bytes;
-            continue;
+                goto seg_tail;
         }
 
         Rt rt;
         rt.spec = &seg;
+        rt.groupIndex = (seg.groupFirst >= 0)
+                            ? static_cast<int32_t>((pos - groupStartPos) / seg.groupBytes)
+                            : -1;
         rt.offset = pos;
         rt.bytes = bytes;
         rt.count = count;
@@ -646,6 +662,12 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
         byteRange[static_cast<size_t>(seg.slot)] = {pos, bytes};
         r.fields.push_back(std::move(rt));
         pos += bytes;
+        } // 段体作用域：goto seg_tail 从块内跳出，声明随作用域结束
+    seg_tail:
+        if (seg.groupLast >= 0 && static_cast<int32_t>(segIdx) == seg.groupLast &&
+            seg.groupBytes > 0 && static_cast<uint64_t>(pos) + seg.groupBytes <= avail)
+            after = static_cast<size_t>(seg.groupFirst);
+        segIdx = after;
     }
 
     if (hasPayload)
@@ -1215,12 +1237,22 @@ nextpilot::plotscope::protocol::decodeSequentialCompiled(const QByteArray &bytes
             const uint32_t limit = std::min<uint32_t>(rt.count, 256);
             const std::string prefix = seg.prefix;
             const TypedVec &src = rt.phys.size() ? rt.phys : rt.raw;
+            // 重复组里同一字段每轮算一个独立通道：payload[0].a / payload[1].a
+            std::string baseName = prefix + seg.name;
+            if (rt.groupIndex >= 0)
+            {
+                // 索引插在块实例名后、字段名前：payload.a → payload[0].a
+                const std::string idx = "[" + std::to_string(rt.groupIndex) + "]";
+                const size_t dot = baseName.rfind('.');
+                baseName = (dot == std::string::npos) ? baseName + idx
+                                                      : baseName.substr(0, dot) + idx + baseName.substr(dot);
+            }
             if (rt.count == 1)
             {
-                ProtocolChannel &ch = chans[prefix + seg.name];
+                ProtocolChannel &ch = chans[baseName];
                 if (ch.t.empty())
                 {
-                    ch.name = prefix + seg.name;
+                    ch.name = baseName;
                     ch.unit = seg.unit;
                     ch.v.reset(src.type);
                 }

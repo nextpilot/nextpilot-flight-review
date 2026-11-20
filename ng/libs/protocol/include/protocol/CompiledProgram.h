@@ -104,6 +104,11 @@ struct CompiledSeg
     ByteCode expect;
     std::vector<CompiledCheck> checks;
     CompiledLength length;
+    // 组重复（块声明 repeater:"*"）：同一组的段整体重复到帧尾。
+    int32_t groupFirst = -1; // 组内第一段在 prog.segs 的下标
+    int32_t groupLast = -1;  // 组内最后一段
+    uint32_t groupBytes = 0; // 一组占多少字节
+
     // 非线性 transform：表达式逐元素求值（self 编译时已重写成该段自己的槽位）。
     bool hasTransformExpr = false;
     ByteCode transformCode;

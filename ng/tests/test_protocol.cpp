@@ -702,6 +702,59 @@ int main(int argc, char *argv[])
         OK("位序：bit=lsb0 / rbit=msb0，同字节 12 34 分别解出 0x3412 与 0x1234，回写保持");
     }
 
+    // --- 11f) 组重复：块声明 repeater:"*"，整组重复到帧尾 ---
+    {
+        const QJsonObject go = QJsonDocument::fromJson(R"json({
+            "name": "grp", "mode": "bin", "layout": "sequential", "maxsize": 64,
+            "blocks": {
+                "rec": { "repeater": "*", "fields": [
+                    { "name": "a", "type": "u16" },
+                    { "name": "b", "type": "u8" }
+                ]}
+            },
+            "segments": [ { "name": "payload", "type": "rec" } ]
+        })json").object();
+        {
+            const QStringList ge = validate(go);
+            if (!ge.isEmpty()) fprintf(stderr, "组重复校验失败：%s\n", ge.join(QStringLiteral("; ")).toUtf8().constData());
+            CHECK(ge.isEmpty());
+        }
+        ProtocolDocument gd;
+        std::string gerr;
+        CHECK(parseDocument(go, gd, gerr));
+        CHECK(gd.blocks["rec"].repeater == std::string("*"));
+        // 回写保留 repeater
+        CHECK(toJson(gd).value(QStringLiteral("blocks")).toObject().value(QStringLiteral("rec"))
+                  .toObject().value(QStringLiteral("repeater")).toString() == QStringLiteral("*"));
+
+        CompiledProgram gp;
+        CHECK(compileProgram(gd, gp, gerr));
+        CHECK(gp.segs.size() == 2);
+        CHECK(gp.segs[0].groupFirst == 0 && gp.segs[1].groupFirst == 0);
+        CHECK(gp.segs[0].groupLast == 1);
+        CHECK(gp.segs[0].groupBytes == 3); // u16 + u8
+
+        // 9 字节 = 3 组，每组 3 字节
+        QByteArray gframe;
+        for (int i = 1; i <= 9; ++i) gframe.append(char(i));
+        ProtocolDecodeResult gr = decodeSequentialCompiled(gframe, gp);
+        if (!gr.ok) fprintf(stderr, "组重复解码失败：%s\n", gr.error.toUtf8().constData());
+        CHECK(gr.ok);
+        auto gc = [&](const char *n) -> const ProtocolChannel * {
+            for (const auto &ch : gr.channels)
+                if (ch.name == n) return &ch;
+            return nullptr;
+        };
+        CHECK(gc("frame.payload[0].a") && gc("frame.payload[0].b"));
+        CHECK(gc("frame.payload[1].a") && gc("frame.payload[2].b"));
+        CHECK(gc("frame.payload[0].a")->v.at(0).asU64() == 0x0201u);
+        CHECK(gc("frame.payload[0].b")->v.at(0).asU64() == 0x03u);
+        CHECK(gc("frame.payload[1].a")->v.at(0).asU64() == 0x0504u);
+        CHECK(gc("frame.payload[2].a")->v.at(0).asU64() == 0x0807u);
+        CHECK(gc("frame.payload[2].b")->v.at(0).asU64() == 0x09u);
+        OK("组重复：块 repeater:* 把 3 字节一组重复到帧尾，通道为 payload[i].a / .b");
+    }
+
     // --- 11e) 非线性 transform：折不成 self*k+b 的表达式逐帧求值 ---
     {
         const QJsonObject tv = QJsonDocument::fromJson(R"json({
