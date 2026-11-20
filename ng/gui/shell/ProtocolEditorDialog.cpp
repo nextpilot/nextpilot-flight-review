@@ -1499,15 +1499,16 @@ QString ProtocolEditorDialog::expectItemText(const QJsonValue &v) const
         return QStringLiteral("&") + literalText(o.value(QStringLiteral("and"))) +
                QStringLiteral("==") + literalText(o.value(QStringLiteral("eq")));
     // 摘要/校验和：把参与区间一起显示出来，"xor8 msgid:station" 一眼能看出算的是哪一段
-    const QJsonArray ov = o.value(QStringLiteral("over")).toArray();
-    if (!ov.isEmpty())
-    {
-        QStringList names;
-        for (const QJsonValue &x : ov)
+    // （over 在文件里既可能是字符串也可能是数组，两种都认）
+    QStringList names;
+    const QJsonValue ovv = o.value(QStringLiteral("over"));
+    if (ovv.isString())
+        names << ovv.toString();
+    else
+        for (const QJsonValue &x : ovv.toArray())
             names << x.toString();
-        if (!names.isEmpty())
-            return op + QLatin1Char(' ') + names.join(QLatin1Char(','));
-    }
+    if (!names.isEmpty())
+        return op + QLatin1Char(' ') + names.join(QLatin1Char(','));
     return op;
 }
 QString ProtocolEditorDialog::expectCellText(const QJsonObject &seg) const
@@ -2197,7 +2198,7 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
     addMain(QStringLiteral("个数"), QStringLiteral("count"), SKText,
             QStringLiteral("元素个数，留空=1；可填前序段名"), {});
     addMain(QStringLiteral("期望值"), QStringLiteral("expect"), SKText,
-            QStringLiteral("常量匹配：170 或 0xAA"), {});
+            QStringLiteral("与段表约束格同一套写法：170、>=1、{1,3,5}、[1,5]、xor8 over区间"), {});
     addMain(QStringLiteral("单位"), QStringLiteral("unit"), SKText,
             QStringLiteral("物理单位，如 rpm / degC"), {});
     addMain(QStringLiteral("输出"), QStringLiteral("emit"), SKEnum,
@@ -2256,8 +2257,12 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
 
     for (const SegKeyDef &d : segKeyDefs())
     {
-        const QJsonValue v = pathGet(seg, d.path);
-        if (!v.isUndefined() && !v.isNull())
+        // expect 在 v3 里是数组，直接按路径取值只能拿到一个数组对象；这里换成段表同款摘要串，
+        // 这样详情页和段表约束格是同一套写法，改完也能原样解析回去。
+        const QJsonValue v = (d.path == QLatin1String("expect"))
+                                 ? QJsonValue(expectCellText(seg))
+                                 : pathGet(seg, d.path);
+        if (!v.isUndefined() && !v.isNull() && (!v.isString() || !v.toString().isEmpty()))
             appendRow(d, v);
     }
 
@@ -2318,7 +2323,10 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
     connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
 
     for (const Bind &b : binds)
-        segEditorSetValue(b.editor, b.kind, pathGet(seg, b.path));
+        segEditorSetValue(b.editor, b.kind,
+                          b.path == QLatin1String("expect")
+                              ? QJsonValue(expectCellText(seg))
+                              : pathGet(seg, b.path));
 
     // 模板里本来就写了非基本属性时，默认展开，省得再点一下
     if (binds.size() > 7)
@@ -2347,7 +2355,10 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
             return;
         seg = d.object();
         for (const Bind &b : binds)
-            segEditorSetValue(b.editor, b.kind, pathGet(seg, b.path));
+            segEditorSetValue(b.editor, b.kind,
+                              b.path == QLatin1String("expect")
+                                  ? QJsonValue(expectCellText(seg))
+                                  : pathGet(seg, b.path));
     });
 
     // 截图钩子（仅自动化验收）
@@ -2364,7 +2375,19 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
 
     QJsonObject out = seg;
     for (const Bind &b : binds)
+    {
+        if (b.path == QLatin1String("expect"))
+        {
+            QString why;
+            if (!applyExpectCell(segEditorValue(b.editor, b.kind).toString(), out, &why))
+            {
+                QMessageBox::warning(&dlg, QStringLiteral("约束写法有误"), why);
+                return;
+            }
+            continue;
+        }
         pathSet(out, b.path, segEditorValue(b.editor, b.kind));
+    }
 
     if (out.value(QStringLiteral("name")).toString().isEmpty())
         out.insert(QStringLiteral("name"), textOf(SegField));
