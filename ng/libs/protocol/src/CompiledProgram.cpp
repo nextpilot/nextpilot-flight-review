@@ -506,6 +506,57 @@ bool compileTextSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
         return true;
     cs.isLiteral = !s.literal.empty();
     cs.literal = s.literal;
+    // format：由第一个取值转换符定出列类型与进制（%* 丢弃不算）
+    if (!s.format.empty())
+    {
+        cs.textFormat = s.format;
+        ValueType vt = ValueType::Text;
+        for (size_t i = 0; i < s.format.size(); ++i)
+        {
+            if (s.format[i] != '%')
+                continue;
+            ++i;
+            if (i >= s.format.size())
+                break;
+            if (s.format[i] == '%')
+                continue;
+            bool dis = false;
+            if (s.format[i] == '*')
+            {
+                dis = true;
+                ++i;
+            }
+            while (i < s.format.size() && std::isdigit(static_cast<unsigned char>(s.format[i])))
+                ++i;
+            if (i >= s.format.size())
+                break;
+            const char c = s.format[i];
+            if (dis)
+                continue;
+            if (c == 'f' || c == 'e' || c == 'g' || c == 't' || c == 'T')
+                vt = ValueType::F64;
+            else if (c == 's' || c == 'c' || c == '[')
+                vt = ValueType::Text;
+            else
+                vt = ValueType::I64;
+            break;
+        }
+        cs.type = vt;
+        // 整条 format 没有转换符 = 纯字面段：走字面匹配，同时保住帧首锚点（$）
+        if (s.format.find('%') == std::string::npos)
+        {
+            cs.isLiteral = true;
+            cs.literal = s.format;
+            cs.boundary = static_cast<int>(SegBoundary::Literal);
+        }
+        if (s.format.find("%x") != std::string::npos || s.format.find("%X") != std::string::npos)
+            cs.base = 16;
+        else if (s.format.find("%o") != std::string::npos)
+            cs.base = 8;
+    }
+    cs.textRepeat = s.countExpr && s.countExpr->kind == Expr::Num && s.countExpr->ival > 0
+                        ? static_cast<uint32_t>(s.countExpr->ival)
+                        : 1u;
     cs.hasDelimiter = s.hasDelimiter;
     for (const auto &d : s.delimiter)
     {
@@ -1128,7 +1179,7 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
     out.isText = (doc.mode == "text");
     // 有段用定界符切 token → 记录按"切分"解析（与是否称它为 text 无关）。
     for (const CompiledSeg &cs : out.segs)
-        if (cs.hasDelimiter)
+        if (cs.hasDelimiter || cs.boundary == static_cast<int>(SegBoundary::Format))
             out.isDelimited = true;
     out.hasTerminator = doc.hasTerminator;
     out.terminator = doc.terminator;

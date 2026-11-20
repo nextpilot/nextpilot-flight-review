@@ -876,7 +876,8 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         return false;
     }
 
-    // ---- text 词法（SPEC §7）：text 解析器待独立，这里先照旧收 ----
+    // ---- text 词法（SPEC §10）：format 是新口径；老键仍收，供未迁完的模板过渡 ----
+    seg.format = o.value(QStringLiteral("format")).toString().toStdString();
     seg.literal = o.value(QStringLiteral("literal")).toString().toStdString();
     seg.key = o.value(QStringLiteral("key")).toString().toStdString();
     if (o.contains(QStringLiteral("delimiter")))
@@ -1420,6 +1421,8 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
 
     if (textSeg)
     {
+        if (!seg.format.empty())
+            o["format"] = QString::fromStdString(seg.format);
         if (!seg.key.empty() && seg.literal.empty())
             o["key"] = QString::fromStdString(seg.key);
         if (!seg.literal.empty())

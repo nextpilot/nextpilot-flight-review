@@ -1148,6 +1148,11 @@ int main(int argc, char *argv[])
             CHECK(vfail(R"({"name":"x","mode":"xml","segments":[{"name":"a","type":"u8"}]})")); // 非法值
             CHECK(vfail(R"({"name":"x","mode":"bin","segments":[{"name":"a","type":"char","delimiter":","}]})")); // bin 禁文本词法键
             CHECK(vfail(R"({"name":"x","mode":"text","segments":[{"name":"a","type":"u8","scale":2}]})")); // bin 键混进 text
+            CHECK(vfail(R"({"name":"x","mode":"text","segments":[{"name":"a","format":"%d,%d"}]})")); // 一段只能取一个值
+            {
+                const bool okStar = !vfail(R"({"name":"x","mode":"text","layout":"sequential","segments":[{"name":"a","format":"$XX,%*d,%5d"}]})");
+                CHECK(okStar); // %* 丢弃不算
+            }
             CHECK(vfail(R"({"name":"x","mode":"bin","segments":[{"name":"a","type":"u8","scale":2}]})")); // v3 已删 scale
             OK("mode 必填/枚举与 v3 未知键校验");
             OK("mode 必填/枚举与 bin-text 键黑白名单校验");
@@ -1546,18 +1551,18 @@ int main(int argc, char *argv[])
         const QByteArray tplTime = R"({
           "name":"time_csv","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
           "segments":[
-            {"name":"t","type":"time","delimiter":","},
-            {"name":"v","type":"i32","delimiter":";"}
+            {"name":"t","format":"%t"},
+            {"name":"v","format":"%d","delimiter":";"}
           ]
         })";
-        ProtocolDecodeResult tr = decodeSequentialJson(QByteArray("083559.00,42;\n"), tplTime);
+        ProtocolDecodeResult tr = decodeSequentialJson(QByteArray("08:35:59.00,42;\n"), tplTime);
         CHECK(tr.channels.size() == 2);
         for (const auto &ch : tr.channels)
             if (ch.name == "t")
                 CHECK(std::fabs(ch.v.at(0).asDouble() - 30959.0) < 1e-6);
 
         // 越界时间必须被拒（24h 不存在）
-        ProtocolDecodeResult badT = decodeSequentialJson(QByteArray("246100.00,42;\n"), tplTime);
+        ProtocolDecodeResult badT = decodeSequentialJson(QByteArray("24:61:00.00,42;\n"), tplTime);
         CHECK(!badT.ok || badT.rejectedFrames > 0);
         OK("顶层 derived 派生字段（a+b / a*b）出通道；type:time 把 083559.00 解成 30959 秒，越界被拒");
     }
@@ -1632,8 +1637,8 @@ int main(int argc, char *argv[])
         const QByteArray tpl = R"({
           "name":"csv_checks","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
           "segments":[
-            {"name":"a","type":"i32","delimiter":",","expect":[{"op":"eq","value":12}]},
-            {"name":"b","type":"char"}
+            {"name":"a","format":"%d","expect":[{"op":"eq","value":12}]},
+            {"name":"b","format":"%s"}
           ]
         })";
         ProtocolDecodeResult okr = decodeSequentialJson(QByteArray("12,OK\n"), tpl);

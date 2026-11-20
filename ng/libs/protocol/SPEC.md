@@ -234,16 +234,66 @@ name / description / unit / output / type / count / transform / expect / on_mism
 
 ---
 
-## 10. `text`（部分待定）
+## 10. `text`
 
-`text` 仍走旧解析路径，**未按 v3 独立**，`src/text/` 尚未建立。
+text 段按 **扩展 scanf** 方式顺序消费：段与段共用同一条字符流，上一段读完的位置就是下一段的起点。
 
-已确定：段边界由 `literal` / `delimiter` / `width` / `rest` 决定，两种形态共用同一份文档模型。
+**11 个键**：`name` `description` `unit` `output` `format` `count` `transform` `expect` `on_mismatch` `if` `delimiter`
 
-**未定**：`count` 在 text 里的含义（bin 是元素数，text 应是 token 数，`"*"` 两边语义也不同）。
-此条定稿前，text 的 `expect` 序列校验（`xor8` 等）没有接入，相关用例仍挂起。
+`format` 直接写扩展 scanf 语法，不写 `oct`/`string` 这类类型名：想读字符串就写 `%s`，想读八进制就写 `%o`。
 
----
+### 10.1 `format` 语法
+
+| 写法 | 含义 |
+|---|---|
+| `%d` `%u` | 十进制有/无符号 |
+| `%x` `%X` | 十六进制（可带 `0x`） |
+| `%o` | 八进制 |
+| `%b` | 二进制 |
+| `%f` `%e` `%g` | 浮点；`%e`/`%g` 收科学计数 |
+| `%c` | 单字符，**不吃分隔符** |
+| `%s` | 读到 `delimiter` 或空白为止 |
+| `%[^,]` `%[^;\n]` | 自定义终止字符集 |
+| `%t` | 时间 `hh:mm:ss[.frac]` |
+| `%T` | ISO 时间 `yyyy-mm-ddThh:mm:ss` |
+| `%*d` `%*[^,]` | 读了但丢弃 |
+| `%5d` `%10s` | 定宽 |
+| 普通字符 `$GPGGA,` | 必须逐字匹配，不匹配走 `on_mismatch` |
+
+### 10.2 `count`
+
+整条 `format` 的重复次数，与 bin 同义（元素数）：
+
+- `{"format":"%d","count":8}` ＝ `%d,%d,%d,%d,%d,%d,%d,%d`
+- `{"format":"%c","count":4}` ＝ `%c%c%c%c`（不跳分隔符）
+- `count:"*"` ＝ 读到本帧尾（`terminator` 之前），全局唯一
+
+### 10.3 `delimiter`
+
+元素之间的分隔符，也是 `%s` 的终止集合，默认 `,`。`%c` 不消费分隔符。
+
+### 10.4 段头识别
+
+不再有 `literal`。段头用 `expect` 判等：
+
+```json
+{"name":"tag","format":"$GPGGA,","output":"none"}
+```
+
+或 `{"name":"tag","format":"%[^,]","expect":[{"op":"eq","value":"$GPGGA"}]}`。
+
+### 10.5 已删除的词法键
+
+| 删除 | 替代 |
+|---|---|
+| `literal` | `expect` 的 `eq`，或 `format` 里直接写死字面 |
+| `key` | 不做 KV 形态（`a=1,b=2` 交上层拆） |
+| `width` | `%5d` / `%10s` 宽度，或 `%c` + `count` |
+| `rest` / `repeater` | `count:"*"` |
+| `base` | `%x` / `%o` / `%b` / `%d` |
+| `pattern` | `%[^,]` 或 `expect` |
+| `fixed` / `signed` / `sci` | `transform`（如 `self/1000`） |
+| `empty` | `on_mismatch` |
 
 ## 11. 与 v2 的差异
 

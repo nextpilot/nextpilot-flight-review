@@ -8,130 +8,110 @@
     {
       "name": "dollar",
       "output": "none",
-      "type": "char",
-      "literal": "$"
+      "format": "$"
     },
     {
       "name": "msgid",
-      "output": "none",
-      "type": "string",
-      "delimiter": ","
+      "format": "%s",
+      "output": "none"
     },
     {
       "name": "utc",
-      "output": "none",
-      "type": "string",
-      "delimiter": ","
+      "format": "%s",
+      "output": "none"
     },
     {
       "name": "lat",
+      "format": "%f",
       "unit": "deg",
-      "type": "number",
       "transform": [
         {
           "op": "sexagesimal",
           "split": 3
         }
-      ],
-      "delimiter": ","
+      ]
     },
     {
       "name": "ns",
-      "output": "none",
-      "type": "string",
-      "delimiter": ","
+      "format": "%s",
+      "output": "none"
     },
     {
       "name": "lon",
+      "format": "%f",
       "unit": "deg",
-      "type": "number",
       "transform": [
         {
           "op": "sexagesimal",
           "split": 3
         }
-      ],
-      "delimiter": ","
+      ]
     },
     {
       "name": "ew",
-      "output": "none",
-      "type": "string",
-      "delimiter": ","
+      "format": "%s",
+      "output": "none"
     },
     {
       "name": "fix",
-      "output": "none",
-      "type": "number",
-      "delimiter": ","
+      "format": "%d",
+      "output": "none"
     },
     {
       "name": "sats",
-      "output": "none",
-      "type": "number",
-      "delimiter": ","
+      "format": "%d",
+      "output": "none"
     },
     {
       "name": "hdop",
-      "output": "none",
-      "type": "number",
-      "delimiter": ","
+      "format": "%f",
+      "output": "none"
     },
     {
       "name": "alt",
-      "unit": "m",
-      "type": "number",
-      "delimiter": ","
+      "format": "%f",
+      "unit": "m"
     },
     {
       "name": "alt_unit",
-      "output": "none",
-      "type": "string",
-      "delimiter": ","
+      "format": "%s",
+      "output": "none"
     },
     {
       "name": "geoid",
-      "output": "none",
-      "type": "string",
-      "delimiter": ","
+      "format": "%s",
+      "output": "none"
     },
     {
       "name": "geoid_unit",
-      "output": "none",
-      "type": "string",
-      "delimiter": ","
+      "format": "%s",
+      "output": "none"
     },
     {
       "name": "age",
-      "output": "none",
-      "type": "number",
-      "empty": "skip",
-      "delimiter": ","
+      "format": "%f",
+      "output": "none"
     },
     {
       "name": "station",
-      "output": "none",
-      "type": "string",
-      "empty": "skip",
-      "delimiter": ","
+      "format": "%s",
+      "output": "none"
     },
     {
       "name": "star",
       "output": "none",
-      "type": "char",
-      "literal": "*"
+      "format": "*"
     },
     {
       "name": "check",
       "output": "aux",
-      "type": "number",
+      "format": "%x",
       "expect": [
         {
           "op": "xor8",
           "over": "dollar:star"
         }
-      ],
-      "base": 16
+      ]
     }
   ],
   "term": [

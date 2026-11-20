@@ -17,7 +17,10 @@
     },
     "mode": {
       "type": "string",
-      "enum": ["bin", "text"],
+      "enum": [
+        "bin",
+        "text"
+      ],
       "description": "处理形态：bin 按字节解释；text 按字符串切 token 再解析。必填，不设 mixed"
     },
     "description": {
@@ -126,9 +129,12 @@
         "number",
         "num",
         "rest",
-        "time"
+        "time",
+        "hex",
+        "oct",
+        "dec"
       ],
-      "description": "内置类型。bit 按位取值（lsb0，字节内从低位起数），rbit 同一位域但 msb0（从高位起数）；两者宽度与起始位都写在 count 的 \"宽@偏移\" 形式"
+      "description": "内置类型。bit/rbit 为位域（宽度与偏移写在 count 的 \"宽@偏移\"）；text 段用 char=单个字符(%c)、string=到分隔符为止的串(%s)、number/dec=十进制(%d)、hex=十六进制(%x)、oct=八进制(%o)、time=时间值。"
     },
     "expr": {
       "type": "string",
@@ -419,10 +425,10 @@
     "segmentText": {
       "type": "object",
       "additionalProperties": false,
-      "description": "text 段：在 bin 段基础上保留词法切分键（key/literal/delimiter/width/base/fixed/signed/sci/pattern/empty/rest/repeater）",
+      "description": "text 段：format 是扩展 scanf 串（不写类型名），count 是整条格式重复次数，delimiter 是元素间分隔符。段与段连续扫，上一段读完即下一段起点；段头靠 expect 判等。",
       "required": [
         "name",
-        "type"
+        "format"
       ],
       "properties": {
         "name": {
@@ -437,8 +443,10 @@
         "output": {
           "$ref": "#/$defs/output"
         },
-        "type": {
-          "$ref": "#/$defs/typeName"
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "description": "扩展 scanf 格式串（也可以是一整段纯字面，如 \"$GPGGA,\"）：%d/%u 十进制、%x/%X 十六、%o 八进制、%b 二进制、%f/%e/%g 浮点、%c 单字符（不吃分隔符）、%s 读到 delimiter、%[^,] 字符集、%t 时间 hh:mm:ss、%T ISO 时间、%* 丢弃、%5d 宽度；普通字符逐字匹配。count 是整条格式重复次数，重复之间吃 delimiter。"
         },
         "count": {
           "$ref": "#/$defs/count"
@@ -447,24 +455,27 @@
           "$ref": "#/$defs/transform"
         },
         "expect": {
-          "$ref": "#/$defs/expectArray"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/expectArray"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "description": "约束。标量简写 = eq；数组逐项 AND，判原始值"
         },
         "on_mismatch": {
           "$ref": "#/$defs/onMismatch"
         },
         "if": {
           "$ref": "#/$defs/expr"
-        },
-        "key": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^[^=,]+$",
-          "description": "key=value 词法：段的键名，值取到 , ; 空白 或记录尾"
-        },
-        "literal": {
-          "type": "string",
-          "minLength": 1,
-          "description": "必须逐字符匹配的字面量段"
         },
         "delimiter": {
           "oneOf": [
@@ -481,61 +492,7 @@
               }
             }
           ],
-          "description": "该段结束边界；\"blank\" = 空格/Tab 字符类"
-        },
-        "repeater": {
-          "type": "string",
-          "enum": [
-            "*"
-          ],
-          "description": "重复到下一段边界（右边界=后一个 literal 或记录尾）"
-        },
-        "rest": {
-          "type": "boolean",
-          "description": "整段剩余原文，不切分"
-        },
-        "width": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535,
-          "description": "定宽字符数（fixed 词法）"
-        },
-        "base": {
-          "type": "integer",
-          "enum": [
-            2,
-            8,
-            10,
-            16
-          ],
-          "default": 10
-        },
-        "fixed": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 18,
-          "description": "定点小数位数"
-        },
-        "signed": {
-          "type": "boolean",
-          "description": "允许负号（默认拒绝）"
-        },
-        "sci": {
-          "type": "boolean",
-          "description": "允许科学计数法（默认拒绝）"
-        },
-        "pattern": {
-          "type": "string",
-          "description": "正则只做校验，不切分"
-        },
-        "empty": {
-          "type": "string",
-          "enum": [
-            "nan",
-            "skip",
-            "raw"
-          ],
-          "description": "空字段策略"
+          "description": "元素间分隔符 / %s 的终止集合，默认 \",\"；%c 不吃分隔符"
         }
       }
     },

@@ -135,7 +135,10 @@ struct SegmentDef
     std::string blockRef;        // type 指向 blocks 里的块名，编译期展开
     ExprPtr transformExpr;       // transform 写成非线性表达式时逐帧求值；线性形式折进 scale/offset
 
-    // ---- text 词法（SPEC §7）：段的边界不再来自字节宽度，而来自定界符/字面量 ----
+    // ---- text 词法（SPEC §10）：format 驱动 scanf 式扫描 ----
+    std::string format;                  // 扩展 scanf 格式（"%d,%f,%[^,]"），空则退回 type/边界口径
+
+    // ---- text 老词法（v2 遗留，仅兼容未迁完的模板；新模板不写这些）----
     std::string literal;                 // 字面量段：必须精确匹配，不产通道（如 "$"、"*"）
     std::string key;                     // key=value 词法：段的键名（如 "lat"），值是键后到分隔符/记录尾
     bool hasDelimiter = false;
@@ -276,11 +279,14 @@ enum class SegBoundary
     Fixed,
     Rest,
     Repeat,
-    Keyed
+    Keyed,
+    Format // 有 format：按扩展 scanf 扫
 };
 
 inline SegBoundary boundaryOf(const SegmentDef &s)
 {
+    if (!s.format.empty())
+        return SegBoundary::Format;
     if (!s.literal.empty())
         return SegBoundary::Literal;
     if (!s.key.empty())

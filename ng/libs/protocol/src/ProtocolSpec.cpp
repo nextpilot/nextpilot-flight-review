@@ -268,88 +268,128 @@ void checkCommonSegment(const QJsonObject &seg, const QString &name,
     }
 }
 
-// text 段校验（SPEC §7）：边界来自 literal/delimiter/width，不再有字节宽度语义。
-// digest 端点用段序表校验引用（避免"校验一个还没解析的段"）。
+// 扩展 scanf 格式串的语法检查：只认转换符与字符集，别的一律报错。
+// 返回空串 = 合法。
+QString checkTextFormat(const QString &fmt)
+{
+    static const QString convs = QStringLiteral("duixXobfegcs");
+    int values = 0; // 取值转换符个数（%* 丢弃、%% 字面不算）
+    for (int i = 0; i < fmt.size(); ++i)
+    {
+        if (fmt.at(i) != QLatin1Char('%'))
+            continue;
+        ++i;
+        if (i >= fmt.size())
+            return QStringLiteral("格式串不能以 % 结尾");
+        if (fmt.at(i) == QLatin1Char('%'))
+            continue; // %% 表示字面 %
+        const bool discard = fmt.at(i) == QLatin1Char('*');
+        if (discard)
+            ++i;
+        QString width;
+        while (i < fmt.size() && fmt.at(i).isDigit())
+            width += fmt.at(i++);
+        if (i >= fmt.size())
+            return QStringLiteral("% 后缺少转换符");
+        const QChar c = fmt.at(i);
+        if (c == QLatin1Char('['))
+        {
+            const int rb = fmt.indexOf(QLatin1Char(']'), i);
+            if (rb < 0)
+                return QStringLiteral("字符集缺少 ]");
+            i = rb;
+            if (!discard)
+                ++values;
+            continue;
+        }
+        if (!convs.contains(c) && c != QLatin1Char('t') && c != QLatin1Char('T'))
+            return QStringLiteral("未知转换符 %%%1").arg(c);
+        if (!discard)
+            ++values;
+    }
+    if (values > 1)
+        return QStringLiteral("一段只能取一个值（取到 %1 个转换符）").arg(values);
+    return QString();
+}
+
+// text 段校验：12 键白名单，v2 词法键一律报"已删除"并给替代。
 void checkTextSegment(const QJsonObject &seg, const QString &name, const QMap<QString, int> &order,
                        const QSet<QString> &names, int selfIndex, QStringList &errs)
 {
-    // v3：text 段也允许序列校验（NMEA 的 XOR 就是按字节区间算的），不再区分 digest/checks。
-    const QString lit = seg.value(QStringLiteral("literal")).toString();
-    if (seg.contains(QStringLiteral("key")))
+    static const QStringList allowed = {
+        QStringLiteral("name"), QStringLiteral("description"), QStringLiteral("unit"),
+        QStringLiteral("output"), QStringLiteral("format"), QStringLiteral("type"),
+        QStringLiteral("count"), QStringLiteral("transform"), QStringLiteral("expect"),
+        QStringLiteral("on_mismatch"), QStringLiteral("if"), QStringLiteral("delimiter")};
+    struct Retired { const char *key; const char *use; };
+    static const Retired retired[] = {
+        {"literal", "用 expect 的 eq，或在 format 里直接写死字面"},
+        {"key", "text 不再支持 KV 形态"},
+        {"width", "用 %5d / %10s，或 %c + count"},
+        {"rest", "用 count:\"*\""},
+        {"repeater", "用 count:\"*\""},
+        {"base", "用 %x / %o / %b / %d"},
+        {"pattern", "用 %[^,] 或 expect"},
+        {"fixed", "用 transform（self/1000）"},
+        {"signed", "用 transform"},
+        {"sci", "用 %e / %g"},
+        {"empty", "用 on_mismatch"}};
+    for (auto it = seg.begin(); it != seg.end(); ++it)
     {
-        const QString k = seg.value(QStringLiteral("key")).toString();
-        if (k.isEmpty())
-            errs << QStringLiteral("%1：key 不能为空").arg(name);
-        else if (k.contains(QLatin1Char('=')) || k.contains(QLatin1Char(',')))
-            errs << QStringLiteral("%1：key 不能含 = 或 ,：%2").arg(name).arg(k);
-        if (!lit.isEmpty())
-            errs << QStringLiteral("%1：key 与 literal 互斥").arg(name);
+        const QString k = it.key();
+        if (allowed.contains(k))
+            continue;
+        bool explained = false;
+        for (const Retired &r : retired)
+        {
+            if (k != QLatin1String(r.key))
+                continue;
+            errs << QStringLiteral("%1 的 %2 是 v2 词法键，text v3 已删除（%3）")
+                        .arg(name, k, QString::fromUtf8(r.use));
+            explained = true;
+            break;
+        }
+        if (!explained)
+            errs << QStringLiteral("%1 含未知键：%2").arg(name, k);
     }
-    const bool hasDelim = seg.contains(QStringLiteral("delimiter"));
-    const bool hasWidth = seg.contains(QStringLiteral("width"));
-    const bool isRest = seg.value(QStringLiteral("rest")).toBool(false);
 
-    if (!lit.isEmpty() && (hasDelim || hasWidth))
-        errs << QStringLiteral("%1 是字面量段，不能再声明 delimiter/width（它只做精确匹配）").arg(name);
-    if (isRest && hasDelim)
-        errs << QStringLiteral("%1 声明了 rest（整块原文），不能再按 delimiter 切").arg(name);
-
-    if (seg.contains(QStringLiteral("repeater")))
+    const QString fmt = seg.value(QStringLiteral("format")).toString();
+    const QString type = seg.value(QStringLiteral("type")).toString();
+    if (fmt.isEmpty() && type.isEmpty())
+        errs << QStringLiteral("%1 缺 format（text 段必须写 format 或 type）").arg(name);
+    if (!fmt.isEmpty())
     {
-        const QString r = seg.value(QStringLiteral("repeater")).toString();
-        if (r != QLatin1String("*") && !r.isEmpty())
-            errs << QStringLiteral("%1 的 repeater 只能是 \"*\"（单元素省略即可）：%2").arg(name, r);
+        const QString why = checkTextFormat(fmt);
+        if (!why.isEmpty())
+            errs << QStringLiteral("%1 的 format 语法错误：%2").arg(name, why);
     }
-
-    if (hasWidth)
+    if (!type.isEmpty() && fmt.isEmpty())
     {
-        const int w = seg.value(QStringLiteral("width")).toInt(0);
-        if (w <= 0 || w > 65535)
-            errs << QStringLiteral("%1 的 width 必须在 1..65535").arg(name);
+        static const QStringList ok = {QStringLiteral("char"), QStringLiteral("string"),
+                                       QStringLiteral("str"), QStringLiteral("number"),
+                                       QStringLiteral("num"), QStringLiteral("dec"),
+                                       QStringLiteral("hex"), QStringLiteral("oct"),
+                                       QStringLiteral("time"), QStringLiteral("bool"),
+                                       QStringLiteral("bcd")};
+        if (!ok.contains(type))
+            errs << QStringLiteral("%1 的 type 在 text 里只能是 char/string/number/dec/hex/oct/time：%2")
+                        .arg(name, type);
     }
 
-    if (hasDelim)
+    if (seg.contains(QStringLiteral("delimiter")))
     {
         QStringList list;
         const QJsonValue dv = seg.value(QStringLiteral("delimiter"));
         if (dv.isArray())
-        {
             for (const QJsonValue &v : dv.toArray())
                 list << v.toString();
-        }
         else
             list << dv.toString();
-        if (list.isEmpty())
-            errs << QStringLiteral("%1 的 delimiter 为空").arg(name);
         for (const QString &d : list)
-        {
             if (d.isEmpty())
                 errs << QStringLiteral("%1 的 delimiter 含空串").arg(name);
-        }
-        if (list.size() > 1 && list.contains(QStringLiteral("blank")))
-            errs << QStringLiteral("%1 的 blank 不能与其他分隔符混用").arg(name);
-        if (list.contains(QStringLiteral("blank")) && list.size() > 1)
-            errs << QStringLiteral("%1 的 delimiter 重复").arg(name);
     }
 
-    if (seg.contains(QStringLiteral("base")))
-    {
-        const double b = seg.value(QStringLiteral("base")).toDouble(10);
-        if (b != 2 && b != 8 && b != 10 && b != 16)
-            errs << QStringLiteral("%1 的 base 只能是 2/8/10/16").arg(name);
-    }
-    if (seg.contains(QStringLiteral("fixed")))
-    {
-        const int f = seg.value(QStringLiteral("fixed")).toInt(-1);
-        if (f < 0 || f > 18)
-            errs << QStringLiteral("%1 的 fixed（小数位数）必须在 0..18").arg(name);
-    }
-    if (seg.contains(QStringLiteral("empty")))
-    {
-        const QString e = seg.value(QStringLiteral("empty")).toString();
-        if (!e.contains(QLatin1String("nan")) && e != QLatin1String("skip") && e != QLatin1String("raw"))
-            errs << QStringLiteral("%1 的 empty 只能是 nan/skip/raw：%2").arg(name, e);
-    }
     checkCommonSegment(seg, name, order, names, selfIndex, true, errs);
 }
 
@@ -470,8 +510,7 @@ QStringList validate(const QJsonObject &o)
         }
         else
         {
-            static const char *textOnly[] = {"literal", "key", "delimiter", "repeater", "width",
-                                             "rest", "pattern", "empty", "base", "fixed", "signed", "sci"};
+            static const char *textOnly[] = {"format", "delimiter"};
             for (const char *k : textOnly)
                 if (seg.contains(QLatin1String(k)))
                     errs << QStringLiteral("%1 是 bin 段，不能声明 %2（文本词法键归 text）").arg(name, QString::fromLatin1(k));
@@ -515,7 +554,9 @@ QStringList validate(const QJsonObject &o)
         else if (!count.isString() || count.toString().trimmed().isEmpty())
             errs << QStringLiteral("%1 的 count 必须是正整数或表达式").arg(name);
         const QString type = seg.value(QStringLiteral("type")).toString().toLower();
-        if (!isDerived && !typeNames().contains(type) && !aliasNames.contains(type))
+        // text 段的类型由 format 的第一个取值转换符决定，不再要求写 type
+        if (!isDerived && !seg.contains(QStringLiteral("format")) && !typeNames().contains(type) &&
+            !aliasNames.contains(type))
             errs << QStringLiteral("%1 的类型未知：%2").arg(name, type);
         if (type == QLatin1String("time") && !textSeg)
             errs << QStringLiteral("%1：type:time 只用于 text 段（文本时间），二进制请用 u32/u64 + transform").arg(name);

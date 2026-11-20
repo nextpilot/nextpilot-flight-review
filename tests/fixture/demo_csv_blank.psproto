@@ -7,18 +7,18 @@
   "segments": [
     {
       "name": "id",
-      "type": "number",
-      "delimiter": "blank"
+      "delimiter": "blank",
+      "format": "%f"
     },
     {
       "name": "val",
-      "type": "number",
-      "delimiter": "blank"
+      "delimiter": "blank",
+      "format": "%f"
     },
     {
       "name": "name",
-      "type": "string",
-      "delimiter": "blank"
+      "delimiter": "blank",
+      "format": "%s"
     }
   ],
   "term": [
