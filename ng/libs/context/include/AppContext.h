@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "SourceRegistry.h"
 #include "ExtensionRegistry.h"
 #include "IngestPipeline.h"
@@ -20,7 +20,7 @@ namespace nextpilot::plotscope::context
 {
 
 using nextpilot::plotscope::foundation::Result;
-using nextpilot::plotscope::dataset::DataRepository;
+using nextpilot::plotscope::dataset::DatasetRegistry;
 using nextpilot::plotscope::dataset::SourceRegistry;
 using nextpilot::plotscope::registry::ExtensionRegistry;
 using nextpilot::plotscope::uischema::Selection;
@@ -61,8 +61,8 @@ public:
     // === 运行态访问器（器官唯一入口）===
 
     // 数据集仓库（数据本体由 Rust 拥有，这里只是句柄仓库）。
-    DataRepository &data() { return m_repo; }
-    const DataRepository &data() const { return m_repo; }
+    DatasetRegistry &data() { return m_repo; }
+    const DatasetRegistry &data() const { return m_repo; }
 
     // 统一设置（三作用域）。
     SettingsStore &settings() { return m_settings; }
@@ -101,7 +101,7 @@ public:
     // **两套 id 空间，不可混用**：
     //   · activeSourceId —— **数据源** id（SourceRegistry 的键）。
     //     谁重载/导出/关闭，以它为准。
-    //   · activeDatasetId —— **数据集** id（DataRepository 的键）。活动通道
+    //   · activeDatasetId —— **数据集** id（DatasetRegistry 的键）。活动通道
     //     落在哪个数据集上。
     // 一个源可扇出多个解析器、产出多个数据集，故二者不是一回事。
     // 曾把 datasetId 写进 activeSourceId，于是 data.reload 拿数据集 id 去查源表，
@@ -166,7 +166,7 @@ Q_SIGNALS:
                             const QVector<double> &value);
 
 private:
-    DataRepository m_repo;
+    DatasetRegistry m_repo;
     SettingsStore m_settings;
     ExtensionRegistry m_toolbox;
     SourceRegistry m_sources;
@@ -178,7 +178,7 @@ private:
 
     int m_activeSourceId = -1;   // 数据源 id（SourceRegistry 键）
     QHash<int, double> m_sourceTimeOffsets; // 源级显示时间 offset（秒，缺省 0）
-    int m_activeDatasetId = -1;  // 活动通道所在的数据集 id（DataRepository 键）
+    int m_activeDatasetId = -1;  // 活动通道所在的数据集 id（DatasetRegistry 键）
     QString m_activeTable;
     QString m_activeColumn;
 };

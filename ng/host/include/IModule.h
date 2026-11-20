@@ -1,10 +1,10 @@
 #pragma once
 
 #include "AppContext.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "Domain.h"
 #include "IIntentExecutor.h"
-#include "IPanelContribution.h"
+#include "Contribution.h"
 #include "Intent.h"
 #include "JobRecorder.h"
 #include "ModuleInfo.h"
@@ -71,7 +71,7 @@ public:
     // CAN 报文浏览器长什么样取决于 DBC 定义的信号，波形调参器取决于参数表。
     // 这类面板通用视图层不该认识（views/ 会长成领域杂物箱），
     // 器官也给不出（器官是机制，不懂业务）。
-    // 于是形态归**知识包**：它用 IPanelContribution 声明
+    // 于是形态归**知识包**：它用 PanelContribution 声明
     // "我提供 car.can-browser，标题'CAN 报文'"，并在 GUI 侧注册实现。
     //
     // 模块怎么知道该请求哪个？它不写死 id，而是先问
@@ -121,7 +121,7 @@ public:
     const nextpilot::plotscope::context::AppContext &app() const { return m_appCtx; }
 
     // 便捷转发（保留以兼容既有器官代码；新代码请用 app()）。
-    nextpilot::plotscope::dataset::DataRepository &data() { return m_appCtx.data(); }
+    nextpilot::plotscope::dataset::DatasetRegistry &data() { return m_appCtx.data(); }
     RuntimeHost &host() { return m_host; }
 
     // 脚本/自动化能力：拿到意图执行器与可选录制器。

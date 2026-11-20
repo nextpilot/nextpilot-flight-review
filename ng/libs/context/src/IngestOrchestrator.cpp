@@ -34,7 +34,7 @@ QString cachePathFor(const QString &origin, const QString &parserId)
 }
 } // namespace
 
-IngestOrchestrator::IngestOrchestrator(DataRepository &repo, SourceRegistry &sources,
+IngestOrchestrator::IngestOrchestrator(DatasetRegistry &repo, SourceRegistry &sources,
                                        IngestPipeline &pipeline)
     : m_repo(repo), m_sources(sources), m_pipeline(pipeline)
 {

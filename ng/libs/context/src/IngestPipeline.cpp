@@ -8,13 +8,13 @@ namespace nextpilot::plotscope::context
 using nextpilot::plotscope::parser::ParserRegistry;
 using nextpilot::plotscope::dataset::ValueType;
 
-using nextpilot::plotscope::dataset::DataRepository;
+using nextpilot::plotscope::dataset::DatasetRegistry;
 using nextpilot::plotscope::dataset::Dataset;
 using nextpilot::plotscope::dataset::FrameColumn;
 using nextpilot::plotscope::parser::ParserEntry;
 
 
-IngestPipeline::IngestPipeline(DataRepository &repo, QObject *parent)
+IngestPipeline::IngestPipeline(DatasetRegistry &repo, QObject *parent)
     : QObject(parent), m_repo(repo)
 {
 }

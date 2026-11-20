@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IUiContribution.h"
+#include "Contribution.h"
 #include "ExtensionRegistry.h"
 
 #include <QHash>
@@ -56,7 +56,7 @@ struct BoundUiAction
 // GUI 层读取这里的数据之后。
 //
 // 两条绑定来源：
-//   1) 工具箱的 IUiContribution（业务能力带来的入口）；
+//   1) 工具箱的 UiContribution（业务能力带来的入口）；
 //   2) 器官在 GUI 环境下直接注册的 UiAction（app 自身的功能入口）。
 class UiSlotRegistry
 {
@@ -68,7 +68,7 @@ public:
                      SlotKind kind = SlotKind::DockPanel,
                      const QString &parentArea = QString(), int order = 0);
 
-    // 从工具箱重新扫描所有 IUiContribution，按 area 绑定到已声明插槽。
+    // 从工具箱重新扫描所有 UiContribution，按 area 绑定到已声明插槽。
     // 每次知识包装卸后调用一次即可（O(贡献数)，与数据量无关）。
     void refreshFrom(const ExtensionRegistry &registry);
 

@@ -21,7 +21,7 @@
 #include "ContributionKind.h"
 #include "DecodedFrame.h"
 #include "Domain.h"
-#include "IToolContribution.h"
+#include "Contribution.h"
 #include "ParamSpec.h"
 
 #include <QByteArray>

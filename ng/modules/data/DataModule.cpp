@@ -1,9 +1,9 @@
 #include "DataModule.h"
 
 #include "BuiltinModuleRegistry.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "Events.h"
-#include "IUiContribution.h"
+#include "Contribution.h"
 #include "IModule.h"
 
 #include <cstdio>
@@ -46,13 +46,13 @@ void DataModule::initialize(ModuleContext &ctx)
     // PLOTSCONG_QUIET_STDOUT：MCP stdio 桥等协议场景下 stdout 是协议通道，
     // 提示打印必须让路（stderr 随便打，stdout 一个字节都不能混入）。
     const bool quiet = !qEnvironmentVariableIsEmpty("PLOTSCONG_QUIET_STDOUT");
-    connect(&ctx.app().data(), &DataRepository::datasetAdded, this, [quiet](DatasetId id) {
+    connect(&ctx.app().data(), &DatasetRegistry::datasetAdded, this, [quiet](DatasetId id) {
         if (quiet)
             fprintf(stderr, "[data] 数据集已加入: #%d\n", id);
         else
             fprintf(stdout, "[data] 数据集已加入: #%d\n", id);
     });
-    connect(&ctx.app().data(), &DataRepository::datasetRemoved, this, [quiet](DatasetId id) {
+    connect(&ctx.app().data(), &DatasetRegistry::datasetRemoved, this, [quiet](DatasetId id) {
         if (quiet)
             fprintf(stderr, "[data] 数据集已移除: #%d\n", id);
         else

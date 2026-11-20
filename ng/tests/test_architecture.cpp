@@ -1,17 +1,17 @@
 #include "App.h"
 #include "Intent.h"
 #include "WorkspaceDataConfig.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "Dataset.h"
 #include "ExtensionRegistry.h"
 #include "UiSlotRegistry.h"
 #include "PluginScanner.h"
 #include "Toolbox.h"
-#include "BuiltinContributions.h"
+#include "Contribution.h"
 #include "BuiltinModuleRegistry.h"
 #include "ExtensionRegistry.h"
 #include "IModule.h"
-#include "IPanelContribution.h"
+#include "Contribution.h"
 #include "DecodedFrame.h"
 #include "IMessageParser.h"
 #include "NmeaMessageParser.h"
@@ -110,7 +110,7 @@ struct ProbePack
     {
         auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("探针工具箱"),
                                                Domain::General);
-        pack->add<nextpilot::plotscope::ext::GenericUiContribution>(
+        pack->addUi(
             QStringLiteral("probe.ui"), QStringLiteral("探针界面入口"), Domain::General,
             QList<UiAction>{{QStringLiteral("probe.ui.act"), QStringLiteral("探针动作"),
                              QStringLiteral("menu.plot"), QString(), QString()}});
@@ -376,21 +376,21 @@ int main(int argc, char **argv)
         nextpilot::plotscope::registry::IToolContribution *uiRaw =
             toolbox.contribution(QStringLiteral("ap.ui.contributions"));
         CHECK(uiRaw != nullptr);
-        auto *ui = dynamic_cast<nextpilot::plotscope::registry::IUiContribution *>(uiRaw);
-        CHECK(ui != nullptr && ui->actions().size() == 3);
+        auto *ui = dynamic_cast<UiContribution *>(uiRaw);
+        CHECK(ui != nullptr && ui->actions.size() == 3);
         nextpilot::plotscope::registry::IToolContribution *docRaw =
             toolbox.contribution(QStringLiteral("ap.docs"));
-        auto *doc = dynamic_cast<nextpilot::plotscope::registry::IDocContribution *>(docRaw);
-        CHECK(doc != nullptr && doc->entries().size() == 1);
+        auto *doc = dynamic_cast<DocContribution *>(docRaw);
+        CHECK(doc != nullptr && doc->entries.size() == 1);
 
         // 领域面板的**描述**是纯数据，headless（CLI）也能查到——
         // 实现（QWidget 工厂）只在 GUI 侧注册，两者用 id 关联。
         nextpilot::plotscope::registry::IToolContribution *panelRaw =
             toolbox.contribution(QStringLiteral("car.panels"));
         CHECK(panelRaw != nullptr);
-        auto *panel = dynamic_cast<nextpilot::plotscope::registry::IPanelContribution *>(panelRaw);
-        CHECK(panel != nullptr && panel->panels().size() == 1);
-        CHECK(panel->panels().first().id == QStringLiteral("car.can-browser"));
+        auto *panel = dynamic_cast<PanelContribution *>(panelRaw);
+        CHECK(panel != nullptr && panel->panels.size() == 1);
+        CHECK(panel->panels.first().id == QStringLiteral("car.can-browser"));
         CHECK(panel->domain() == Domain::Automotive);
 
         // UI 插槽：骨架声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
@@ -421,7 +421,7 @@ int main(int argc, char **argv)
         // 开放 kind：自定义 kind 无需改注册表/宿主即可登记（证明可扩展，非封闭枚举）。
         auto customPack = std::make_unique<ToolPack>(QStringLiteral("pack.custom"),
                                                      QStringLiteral("自定义工具箱"), Domain::General);
-        customPack->add<nextpilot::plotscope::ext::GenericDocContribution>(
+        customPack->addDoc(
             QStringLiteral("custom.thing"), QStringLiteral("自定义能力"), Domain::General,
             QList<nextpilot::plotscope::registry::DocEntry>{});
         CHECK(toolbox.registerPack(std::move(customPack)));

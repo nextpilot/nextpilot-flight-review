@@ -43,9 +43,9 @@ CanBrowserPanel::CanBrowserPanel(nextpilot::plotscope::context::AppContext &appC
 
     // 内容随数据源动态变化：仓库里有数据集就列出它们可能涉及的报文。
     // 这里先给出骨架（空表），真实填充等 CAN 格式接入后由数据驱动。
-    connect(&m_appCtx.data(), &nextpilot::plotscope::dataset::DataRepository::datasetAdded, this,
+    connect(&m_appCtx.data(), &nextpilot::plotscope::dataset::DatasetRegistry::datasetAdded, this,
             [this](nextpilot::plotscope::dataset::DatasetId) { refresh(); });
-    connect(&m_appCtx.data(), &nextpilot::plotscope::dataset::DataRepository::datasetRemoved, this,
+    connect(&m_appCtx.data(), &nextpilot::plotscope::dataset::DatasetRegistry::datasetRemoved, this,
             [this](nextpilot::plotscope::dataset::DatasetId) { refresh(); });
     refresh();
 }

@@ -11,6 +11,7 @@
 // MIMO（如 quat_to_rpy）一次派生产出多条序列，每条独立登记。
 
 #include <QByteArray>
+#include "Registry.h"
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
@@ -67,14 +68,16 @@ public:
 
     QStringList names() const;
     QVector<Entry> all() const;
-    int count() const { return static_cast<int>(m_entries.size()); }
+    int count() const { return m_entries.count(); }
 
 Q_SIGNALS:
     // 任何登记/删除后发出（数据树/图例刷新用）。
     void changed();
 
 private:
-    QVector<Entry> m_entries;
+    // 容器本体委托泛型注册表（保序：登记顺序即 derive.list 展示顺序）；
+    // 本壳只保留领域语义：同名覆盖刷新缓存、追加缓存推进水位、按 dataset 级联清理。
+    nextpilot::plotscope::registry::Registry<Entry, QString> m_entries;
     int indexOf(const QString &name) const;
 };
 

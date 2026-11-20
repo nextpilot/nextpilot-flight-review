@@ -4,7 +4,7 @@
 
 #include "BuiltinModuleRegistry.h"
 #include "ChannelTransformConfig.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "Dataset.h"
 #include "Intent.h"
 #include "RuntimeHost.h"
@@ -550,7 +550,7 @@ private:
     }
 
 private:
-    DataRepository &m_repo;
+    DatasetRegistry &m_repo;
     SettingsStore &m_settings;
     SourceRegistry &m_sources;
     nextpilot::plotscope::context::InteractionRegistry &m_interactions;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IToolPack.h"
+#include "Contribution.h"
 
 #include <QString>
 

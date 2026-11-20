@@ -1,6 +1,6 @@
 #include "GnssPack.h"
 
-#include "BuiltinContributions.h"
+#include "Contribution.h"
 #include "ExtensionRegistry.h"
 #include "NmeaMessageParser.h"
 
@@ -24,12 +24,12 @@ std::unique_ptr<IToolPack> GnssPack::build()
     auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("卫导工具箱"), Domain::Gnss);
     // 协议解析器（kind=message）：NMEA 0183 —— 自述 + configure + parse 的样板实现。
     pack->add<NmeaMessageParser>();
-    pack->add<GenericScriptContribution>(
+    pack->addScript(
         QStringLiteral("gnss.script.helpers"), QStringLiteral("卫导脚本库"), Domain::Gnss,
         QStringLiteral("lua"),
         QStringLiteral("ps.gnss = { quality = function() ps.log('gnss quality helpers') end }\n"),
         QStringList{QStringLiteral("ps.gnss")});
-    pack->add<GenericDocContribution>(
+    pack->addDoc(
         QStringLiteral("gnss.docs"), QStringLiteral("卫导知识文档"), Domain::Gnss,
         QList<DocEntry>{
             {QStringLiteral("gnss.doc.nmea"), QStringLiteral("NMEA / UBX / OEM7（待接入）"),

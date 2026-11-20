@@ -8,7 +8,7 @@
 #include "InstrumentView.h"
 #include "PanelFactoryRegistry.h"
 
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "Dataset.h"
 #include "IngestPipeline.h"
 #include "Intent.h"
@@ -45,7 +45,7 @@ using namespace nextpilot::plotscope::host;
 
 #define OK(msg) fprintf(stdout, "[ok] %s\n", msg)
 
-static int buildInstrumentDataset(DataRepository &repo)
+static int buildInstrumentDataset(DatasetRegistry &repo)
 {
     Dataset ds = Dataset::create(QStringLiteral("instrument-test"), QStringLiteral("mem"));
     const int n = 600;

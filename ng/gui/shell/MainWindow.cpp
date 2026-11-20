@@ -14,7 +14,7 @@
 #include "Result.h"
 #include "UiSlotRegistry.h"
 #include "IMessageParser.h"
-#include "IToolContribution.h"
+#include "Contribution.h"
 
 #include "SARibbonMainWindow.h"
 

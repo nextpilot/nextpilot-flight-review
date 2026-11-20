@@ -536,6 +536,36 @@ NG_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 外部插件：目录扫描 → dlopen → ABI 校验 ────────────┘
 ```
 
+### 5.4 注册表全景：一张表说清谁是什么
+
+**架构裁决：`Registry<T,Key>` 是唯一的容器机制**——所有注册表的容器本体都
+委托它（保序：keys() 按插入序），壳类只保留各自的领域语义。看名字就知道层次：
+
+| 层 | 注册表 | 容器本体 | 壳保留的领域语义 |
+|---|---|---|---|
+| **机制**（libs/registry） | `Registry<T,Key>` / `StaticRegistry<T>` | —— 自身 | 纯值容器：insert/find/remove/keys/values/clear，保序 |
+| **能力**（libs/registry） | `ExtensionRegistry` | `Registry<IToolPack*>` + 二维索引 | 包级装卸、(kind,domain) 索引、解析器视图 |
+| | `ParserRegistry` | 泛型表 | 解析器资产（进程一份，无生命周期） |
+| | `PanelFactoryRegistry` | `StaticRegistry<工厂>` | 面板实现工厂（编译期自注册） |
+| | `UiSlotRegistry` | 插槽声明 + 绑定视图 | 骨架槽唯一声明处、动作→槽绑定 |
+| **运行态**（会话实例） | `DatasetRegistry`（原 DataRepository） | `Registry<Dataset,int>` | id 分配、datasetAdded/Removed 信号 |
+| | `SourceRegistry` | `Registry<DataSourceInfo,int>` | id 分配、信号、解析器绑定关系、dataset 反查 |
+| | `DerivedSeriesRegistry` | `Registry<Entry,QString>` | 同名覆盖刷新缓存、水位推进、按 dataset 级联清理 |
+| | `SinkRegistry`（规划） | `Registry<SinkSession,int>` | 流录制会话：id 分配、start/stop、样本计数 |
+
+**词汇表纪律**：`Repository` 一词已消灭——会话实例容器一律 `XxxRegistry`，
+内部委托泛型表；看到类名即知"运行态实例"还是"进程级能力"。
+
+**Sink 裁决（流数据录制，非 job 录制）**：
+
+- Sink 是**流数据的出口会话**：实时源样本流入 → 落盘/转发，与 Source（入口）
+  对称。`JobRecorder`（意图录制回放，automation 用）不是 Sink，两者无关系。
+- 录制**格式**（csv 增量追加 / NDF 落盘）是能力，作为 `exporter` 贡献登记进
+  ExtensionRegistry（与 parser"怎么读"对称的"怎么写"）；
+- 录制**会话**（"正在录制到 xxx.ndf，已写 N 样本"）是运行态实例，进
+  `SinkRegistry`（委托泛型表），壳保留 start/stop/计数语义。
+- 意图面：`data.sink.start / data.sink.stop / data.sink.list`。
+
 ## 6. GUI：外壳 + 功能视图（两层）
 
 **不自研 ribbon / docking**——SARibbon（MIT）与 Qt-ADS（LGPL-2.1）已在仓库内 vendored，
@@ -906,6 +936,29 @@ kernel       Rust：typed 表 · LOD · 缓存 · 算子（只经 ps_kernel.h）
 也是 CLI 与 GUI 行为一致的前提。
 
 > 上述分层是机制视角。各目录的**定位、放什么/禁放什么、可依赖/禁依赖**以 [`LAYERS.md`](LAYERS.md) 为准——新增代码先在那里判归属。跨层依赖由 `cmake/LayerContractGuard.cmake` 在 configure 期强制。B7 后 core 目录删除，届时以 LAYERS.md 终态为准。
+
+### 8.1 机制资产清单（uORB 式：先备齐，业务直接用）
+
+**架构裁决**：libs 里的中间件是**预先准备好的机制资产**——业务 libs/modules/extensions
+依赖它们，就像 PX4 的 uORB 把所有消息集中在 uORB 定义好、节点直接用。
+**写代码前先查本清单；清单里没有的机制，先在清单登记、在对应 lib 实现，
+再开始用——禁止在业务代码里临时自造一套**（再出现一个手写 QHash 注册容器
+即违规）。
+
+| 中间件（libs/） | 预备好的机制 | 业务何时直接用 / 禁止什么 |
+|---|---|---|
+| `foundation` | `Result<T>`（统一错误传播）、`Events`（事件主题集中定义） | 一切错误返回与跨层通知；禁止自造错误码体系、禁止字符串主题散落 |
+| `registry` | `Registry<T,Key>`（唯一容器机制，保序）、`StaticRegistry`（启动期自注册）、`Contribution.h`（贡献契约：基类 + 6 类声明式贡献 + ToolPack）、`ExtensionRegistry`（包/贡献容器） | 任何"按 id 登记与查询"；运行态注册表一律委托泛型表；禁止手写 QHash 注册容器、禁止为声明式资产新建类 |
+| `intent` | `Intent`（统一意图）、`IIntentExecutor`（统一执行契约）、`JobRecorder`（意图录制回放） | 一切功能入口与跨器官调用；禁止器官间直调、禁止旁路意图管道 |
+| `parser` | `IMessageParser`（怎么读）、`ParserRegistry` | 新格式 = 新解析器贡献；禁止在 handler 里 if-else 认后缀 |
+| `dataset` | `Dataset`（kernel 门面）、`DatasetRegistry`/`SourceRegistry`（运行态容器，委托泛型表） | 一切数据进出 kernel 的路径；禁止绕过门面直捅 Rust FFI |
+| `context` | `AppContext`（会话上下文）、`IngestPipeline`（入库）、`DerivedSeriesRegistry`、`ChannelTransformConfig` | 派生/变换机制复用；禁止业务层私建派生账本 |
+| `uischema` | 变换契约（能力位 + 自描述）、Form/Property/Marker schema | 新算子先登记能力位；禁止无自描述的算子 |
+
+新增机制的流程（三步，缺一不可）：
+1. 本清单加一行（机制名 + 一句话能力 + 使用纪律）；
+2. 在对应 lib 实现并配契约测试；
+3. `LAYERS.md` 同步归属。
 
 ## 9. 统一意图管道
 

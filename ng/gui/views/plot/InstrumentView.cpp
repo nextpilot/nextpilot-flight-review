@@ -5,7 +5,7 @@
 #include "IIntentExecutor.h"
 #include "Intent.h"
 #include "Result.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 
 #include <QStackedLayout>
 #include <QVariantList>

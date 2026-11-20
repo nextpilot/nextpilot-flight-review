@@ -1,6 +1,6 @@
 #include "RoboticsPack.h"
 
-#include "BuiltinContributions.h"
+#include "Contribution.h"
 #include "ExtensionRegistry.h"
 
 using namespace nextpilot::plotscope::registry;
@@ -17,12 +17,12 @@ std::unique_ptr<IToolPack> RoboticsPack::build()
 {
     // 预留领域：机器人消息中间件（MCAP / ROSbag2）格式后续平移时落入本包。
     auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("机器人工具箱"), Domain::Robotics);
-    pack->add<GenericUiContribution>(
+    pack->addUi(
         QStringLiteral("rob.ui.contributions"), QStringLiteral("机器人界面入口"), Domain::Robotics,
         QList<UiAction>{
             {QStringLiteral("rob.plot.tf"), QStringLiteral("TF 树可视化"), QStringLiteral("menu.plot"),
              QString(), QString()}});
-    pack->add<GenericDocContribution>(
+    pack->addDoc(
         QStringLiteral("rob.docs"), QStringLiteral("机器人知识文档"), Domain::Robotics,
         QList<DocEntry>{
             {QStringLiteral("rob.doc.mcap"), QStringLiteral("MCAP / ROSbag2（待接入）"),

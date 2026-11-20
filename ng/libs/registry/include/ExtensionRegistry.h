@@ -1,8 +1,8 @@
 #pragma once
 
 #include "IndexedByKind.h"
-#include "IToolContribution.h"
-#include "IToolPack.h"
+#include "Contribution.h"
+#include "Contribution.h"
 #include "IMessageParser.h"
 #include "Domain.h"
 #include "Registry.h"

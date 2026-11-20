@@ -21,7 +21,7 @@
 #include "views/PropertyPanel.h"
 #include "ThemeManager.h"
 #include "ExtensionRegistry.h"
-#include "IPanelContribution.h"
+#include "Contribution.h"
 #include "PanelFactoryRegistry.h"
 #include "PlotCanvas.h"
 #include "CanvasWorkspace.h"
@@ -79,7 +79,7 @@ using namespace nextpilot::plotscope::host;
 #define OK(msg) fprintf(stdout, "[ok] %s\n", msg)
 
 // 造一个 5000 行的内存数据集（三列），验证绘制路径的有界性。
-static int buildDataset(DataRepository &repo, double t0 = 0.0)
+static int buildDataset(DatasetRegistry &repo, double t0 = 0.0)
 {
     Dataset ds = Dataset::create(QStringLiteral("gui-test"), QStringLiteral("mem"));
     QVector<double> ts, a, b;
@@ -314,7 +314,7 @@ int main(int argc, char *argv[])
     //
     // 有些面板的形态**本身就是领域知识**（CAN 报文浏览器取决于 DBC 定义的信号）。
     // 通用视图层不该认识它，器官也给不出形态 —— 于是形态归**知识包**：
-    //   · 描述（IPanelContribution，纯数据，headless 可见）；
+    //   · 描述（PanelContribution，纯数据，headless 可见）；
     //   · 实现（知识包的呈现层，注册进**同一张**工厂表）。
     //
     // 这里锁住三件事：
@@ -328,10 +328,10 @@ int main(int argc, char *argv[])
         for (nextpilot::plotscope::registry::IToolContribution *c :
              toolbox.contributions(nextpilot::plotscope::registry::ContributionKind::Panel))
         {
-            auto *pc = dynamic_cast<nextpilot::plotscope::registry::IPanelContribution *>(c);
+            auto *pc = dynamic_cast<PanelContribution *>(c);
             CHECK(pc != nullptr);
             if (pc)
-                panelSpecCount += pc->panels().size();
+                panelSpecCount += pc->panels.size();
         }
         CHECK(panelSpecCount >= 1); // 汽车包的 CAN 报文面板
 
@@ -344,9 +344,9 @@ int main(int argc, char *argv[])
              toolbox.contributions(nextpilot::plotscope::registry::ContributionKind::Panel,
                                   nextpilot::plotscope::registry::Domain::Automotive))
         {
-            auto *pc = dynamic_cast<nextpilot::plotscope::registry::IPanelContribution *>(c);
+            auto *pc = dynamic_cast<PanelContribution *>(c);
             if (pc)
-                automotive += pc->panels().size();
+                automotive += pc->panels.size();
         }
         CHECK(automotive >= 1);
         OK("领域面板：知识包声明描述（headless 可见）+ 呈现层注册实现，共用同一张工厂表");
@@ -884,7 +884,7 @@ int main(int argc, char *argv[])
     // 结果登记宿主层派生注册表，data.series/plot.channel 按派生名穿透，
     // data.derive.list 提供可发现性。
     {
-        // (1) 专用 fixture：不动 stateDsId（DataRepository::get 是 const 不可变访问，
+        // (1) 专用 fixture：不动 stateDsId（DatasetRegistry::get 是 const 不可变访问，
         // 且其 trace 表已有 5000 行——四元数列需要独立的 100 行时间轴）。
         // trace 表 t=i*0.01（基准轴），aux 表 t=i*0.05（独立采样率，跨表重采样用）。
         Dataset fds = Dataset::create(QStringLiteral("att-fixture"), QStringLiteral("mem"));

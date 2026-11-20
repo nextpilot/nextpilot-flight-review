@@ -1,9 +1,9 @@
 #pragma once
 
 #include "DataSource.h"
+#include "Registry.h"
 #include "Result.h"
 
-#include <QHash>
 #include <QObject>
 #include <QVector>
 
@@ -84,7 +84,9 @@ Q_SIGNALS:
     void sourceChanged(int id);
 
 private:
-    QHash<int, DataSourceInfo> m_sources;
+    // 容器本体委托泛型注册表（保序：登记顺序即遍历顺序）；本壳只保留领域语义：
+    // id 分配、变更信号、解析器绑定关系、dataset 反查。
+    nextpilot::plotscope::registry::Registry<DataSourceInfo, int> m_sources;
     int m_nextId = 1;
 };
 

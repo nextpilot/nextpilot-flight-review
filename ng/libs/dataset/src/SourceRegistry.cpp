@@ -34,33 +34,33 @@ Result<int> SourceRegistry::addWithStableId(DataSourceInfo info, int id)
 
 bool SourceRegistry::update(int id, const DataSourceInfo &info)
 {
-    auto it = m_sources.find(id);
-    if (it == m_sources.end())
+    DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return false;
     DataSourceInfo updated = info;
     updated.id = id; // id 不可变
-    it.value() = updated;
+    *cur = updated;
     Q_EMIT sourceChanged(id);
     return true;
 }
 
 bool SourceRegistry::setState(int id, SourceState state, const QString &error)
 {
-    auto it = m_sources.find(id);
-    if (it == m_sources.end())
+    DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return false;
-    it.value().state = state;
-    it.value().error = error;
+    cur->state = state;
+    cur->error = error;
     Q_EMIT sourceChanged(id);
     return true;
 }
 
 bool SourceRegistry::bindParser(int id, const ParserBinding &binding)
 {
-    auto it = m_sources.find(id);
-    if (it == m_sources.end())
+    DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return false;
-    auto &list = it.value().parsers;
+    auto &list = cur->parsers;
     // 同解析器覆盖旧绑定（改配置，不新增一路）
     for (ParserBinding &b : list)
     {
@@ -79,10 +79,10 @@ bool SourceRegistry::bindParser(int id, const ParserBinding &binding)
 
 bool SourceRegistry::unbindParser(int id, const QString &parserId)
 {
-    auto it = m_sources.find(id);
-    if (it == m_sources.end())
+    DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return false;
-    auto &list = it.value().parsers;
+    auto &list = cur->parsers;
     const auto before = list.size();
     list.erase(std::remove_if(list.begin(), list.end(),
                                [&parserId](const ParserBinding &b) { return b.parserId == parserId; }),
@@ -95,10 +95,10 @@ bool SourceRegistry::unbindParser(int id, const QString &parserId)
 
 const ParserBinding *SourceRegistry::parserFor(int id, const QString &parserId) const
 {
-    const auto it = m_sources.constFind(id);
-    if (it == m_sources.constEnd())
+    const DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return nullptr;
-    for (const ParserBinding &b : it.value().parsers)
+    for (const ParserBinding &b : cur->parsers)
         if (b.parserId == parserId)
             return &b;
     return nullptr;
@@ -106,29 +106,29 @@ const ParserBinding *SourceRegistry::parserFor(int id, const QString &parserId) 
 
 QVector<ParserBinding> SourceRegistry::parsersOf(int id) const
 {
-    const auto it = m_sources.constFind(id);
-    if (it == m_sources.constEnd())
+    const DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return {};
-    return it.value().parsers;
+    return cur->parsers;
 }
 
 bool SourceRegistry::addDataset(int id, int datasetId)
 {
-    auto it = m_sources.find(id);
-    if (it == m_sources.end())
+    DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return false;
-    if (!it.value().datasetIds.contains(datasetId))
-        it.value().datasetIds.append(datasetId);
+    if (!cur->datasetIds.contains(datasetId))
+        cur->datasetIds.append(datasetId);
     Q_EMIT sourceChanged(id);
     return true;
 }
 
 bool SourceRegistry::removeDataset(int id, int datasetId)
 {
-    auto it = m_sources.find(id);
-    if (it == m_sources.end())
+    DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return false;
-    const bool removed = it.value().datasetIds.removeAll(datasetId) > 0;
+    const bool removed = cur->datasetIds.removeAll(datasetId) > 0;
     if (removed)
         Q_EMIT sourceChanged(id);
     return removed;
@@ -136,27 +136,26 @@ bool SourceRegistry::removeDataset(int id, int datasetId)
 
 bool SourceRegistry::remove(int id, QVector<int> *datasetIds)
 {
-    auto it = m_sources.find(id);
-    if (it == m_sources.end())
+    const DataSourceInfo *cur = m_sources.find(id);
+    if (!cur)
         return false;
     if (datasetIds)
-        *datasetIds = it.value().datasetIds;
-    m_sources.erase(it);
+        *datasetIds = cur->datasetIds;
+    m_sources.remove(id);
     Q_EMIT sourceRemoved(id);
     return true;
 }
 
 const DataSourceInfo *SourceRegistry::get(int id) const
 {
-    const auto it = m_sources.constFind(id);
-    return it == m_sources.constEnd() ? nullptr : &it.value();
+    return m_sources.find(id);
 }
 
 int SourceRegistry::sourceOfDataset(int datasetId) const
 {
     if (datasetId < 0)
         return -1;
-    for (const DataSourceInfo &info : m_sources)
+    for (const DataSourceInfo &info : m_sources.values())
     {
         if (info.datasetIds.contains(datasetId))
             return info.id;
@@ -168,7 +167,7 @@ int SourceRegistry::sourceByOrigin(const QString &origin) const
 {
     if (origin.isEmpty())
         return -1;
-    for (const DataSourceInfo &info : m_sources)
+    for (const DataSourceInfo &info : m_sources.values())
     {
         if (info.origin == origin)
             return info.id;
@@ -178,14 +177,14 @@ int SourceRegistry::sourceByOrigin(const QString &origin) const
 
 QVector<int> SourceRegistry::ids() const
 {
-    QVector<int> out = m_sources.keys();
+    QVector<int> out = m_sources.keys().toVector();
     std::sort(out.begin(), out.end());
     return out;
 }
 
 int SourceRegistry::count() const
 {
-    return m_sources.size();
+    return m_sources.count();
 }
 
 void SourceRegistry::clear()

@@ -7,7 +7,7 @@
 //
 // 关键点：C++ 侧从头到尾没有拿到全量行，也没有复制数据。
 // 找不到 fixture 时跳过（CI 上老仓库不在同一路径）。
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "IngestPipeline.h"
 #include "ParserRegistry.h"
 #include "ps_parser_spi.h"
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
     }
 
     // ---- 1) 走真实管道装载 ULog ----
-    DataRepository repo;
+    DatasetRegistry repo;
     IngestPipeline pipe(repo);
     const Result<int> bound = pipe.bindParser(1, ParserBinding{QStringLiteral("ulog"), {}, true});
     if (!bound)

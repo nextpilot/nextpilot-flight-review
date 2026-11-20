@@ -118,7 +118,7 @@ public:
     { m_appCtx.interactions().registerMarkerOps(std::move(ops)); }
 
     // 便捷转发（内部使用；器官请通过 ModuleContext::app() 取）。
-    nextpilot::plotscope::dataset::DataRepository &data() { return m_appCtx.data(); }
+    nextpilot::plotscope::dataset::DatasetRegistry &data() { return m_appCtx.data(); }
     nextpilot::plotscope::context::SettingsStore &settings() { return m_appCtx.settings(); }
     nextpilot::plotscope::registry::ExtensionRegistry &extensions() { return m_appCtx.toolbox(); }
 

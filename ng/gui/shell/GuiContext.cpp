@@ -103,7 +103,7 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
 
 QList<PanelSpec> GuiContext::availableDomainPanels(Domain domain) const
 {
-    // 领域面板清单来自**知识包**（IPanelContribution，纯数据）。
+    // 领域面板清单来自**知识包**（PanelContribution，纯数据）。
     //
     // 模块据此知道"当前业务范围里有哪些面板可用"，而不必写死具体 id——
     // 面板由哪个包提供、叫什么，都由包自己决定。
@@ -111,10 +111,10 @@ QList<PanelSpec> GuiContext::availableDomainPanels(Domain domain) const
     const ExtensionRegistry &toolbox = m_appCtx.toolbox();
     for (IToolContribution *c : toolbox.contributions(ContributionKind::Panel))
     {
-        auto *panel = dynamic_cast<IPanelContribution *>(c);
+        auto *panel = dynamic_cast<PanelContribution *>(c);
         if (!panel)
             continue;
-        for (const PanelSpec &spec : panel->panels())
+        for (const PanelSpec &spec : panel->panels)
         {
             // 领域过滤：面板归属由**贡献者**的领域决定。
             // 用贡献者所在的 pack 领域，而非面板自己声明（面板是包的一部分）。

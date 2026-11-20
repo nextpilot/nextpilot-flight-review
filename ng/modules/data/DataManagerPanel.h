@@ -2,7 +2,7 @@
 
 #include "IIntentExecutor.h"
 #include "AppContext.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "SourceRegistry.h"
 
 #include <QWidget>
@@ -78,7 +78,7 @@ private:
     void removeDerivedChannels(QTreeWidgetItem *item);                 // 删除该列的派生曲线
 
     nextpilot::plotscope::context::AppContext &m_appCtx;
-    nextpilot::plotscope::dataset::DataRepository &m_repo;
+    nextpilot::plotscope::dataset::DatasetRegistry &m_repo;
     nextpilot::plotscope::dataset::SourceRegistry &m_sources;
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;
 

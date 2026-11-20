@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Dataset.h"
+#include "Registry.h"
 #include "Result.h"
 
-#include <QHash>
 #include <QObject>
 #include <QVector>
 
@@ -14,11 +14,11 @@ using nextpilot::plotscope::foundation::Result;
 
 // Dataset 的唯一所有者。模块与扩展都不拥有数据，只通过 repo 访问。
 // 模块卸载时数据不受影响——这是"装卸不牵连"的根本保证。
-class DataRepository : public QObject
+class DatasetRegistry : public QObject
 {
     Q_OBJECT
 public:
-    explicit DataRepository(QObject *parent = nullptr);
+    explicit DatasetRegistry(QObject *parent = nullptr);
 
     DatasetId add(Dataset dataset);
     Result<DatasetId> addWithId(Dataset dataset, const QString &requestedName);
@@ -42,7 +42,8 @@ Q_SIGNALS:
     void datasetRemoved(DatasetId id);
 
 private:
-    QHash<DatasetId, Dataset> m_datasets;
+    // 容器本体委托泛型注册表；本壳只保留领域语义：id 分配、生命周期信号。
+    nextpilot::plotscope::registry::Registry<Dataset, DatasetId> m_datasets;
     DatasetId m_nextId = 0;
 };
 

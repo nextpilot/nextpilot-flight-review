@@ -2,7 +2,7 @@
 
 #include "AppContext.h"
 #include "DataCommandsHandler.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "IngestOrchestrator.h"
 #include "IngestPipeline.h"
 #include "SettingsStore.h"

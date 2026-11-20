@@ -1,13 +1,15 @@
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
+
+#include <algorithm>
 
 namespace nextpilot::plotscope::dataset
 {
 using nextpilot::plotscope::foundation::Result;
 using nextpilot::plotscope::foundation::fail;
 
-DataRepository::DataRepository(QObject *parent) : QObject(parent) {}
+DatasetRegistry::DatasetRegistry(QObject *parent) : QObject(parent) {}
 
-DatasetId DataRepository::add(Dataset dataset)
+DatasetId DatasetRegistry::add(Dataset dataset)
 {
     const DatasetId id = m_nextId++;
     m_datasets.insert(id, std::move(dataset));
@@ -15,7 +17,7 @@ DatasetId DataRepository::add(Dataset dataset)
     return id;
 }
 
-Result<DatasetId> DataRepository::addWithId(Dataset dataset, const QString &requestedName)
+Result<DatasetId> DatasetRegistry::addWithId(Dataset dataset, const QString &requestedName)
 {
     if (requestedName.isEmpty())
         return fail(QStringLiteral("ename"), QStringLiteral("数据集名为空"));
@@ -24,7 +26,7 @@ Result<DatasetId> DataRepository::addWithId(Dataset dataset, const QString &requ
     return add(std::move(dataset));
 }
 
-Result<DatasetId> DataRepository::addWithStableId(Dataset dataset, DatasetId id)
+Result<DatasetId> DatasetRegistry::addWithStableId(Dataset dataset, DatasetId id)
 {
     if (m_datasets.contains(id))
         return fail(QStringLiteral("edupid"), QStringLiteral("数据集 id 已存在: %1").arg(id));
@@ -35,7 +37,7 @@ Result<DatasetId> DataRepository::addWithStableId(Dataset dataset, DatasetId id)
     return id;
 }
 
-bool DataRepository::remove(DatasetId id)
+bool DatasetRegistry::remove(DatasetId id)
 {
     if (!m_datasets.remove(id))
         return false;
@@ -43,37 +45,33 @@ bool DataRepository::remove(DatasetId id)
     return true;
 }
 
-const Dataset *DataRepository::get(DatasetId id) const
+const Dataset *DatasetRegistry::get(DatasetId id) const
 {
-    const auto it = m_datasets.constFind(id);
-    return it == m_datasets.constEnd() ? nullptr : &it.value();
+    return m_datasets.find(id);
 }
 
-Dataset *DataRepository::getMutable(DatasetId id)
+Dataset *DatasetRegistry::getMutable(DatasetId id)
 {
-    const auto it = m_datasets.find(id);
-    return it == m_datasets.end() ? nullptr : &it.value();
+    return m_datasets.find(id);
 }
 
-QVector<DatasetId> DataRepository::ids() const
+QVector<DatasetId> DatasetRegistry::ids() const
 {
-    QVector<DatasetId> result;
-    result.reserve(m_datasets.size());
-    for (auto it = m_datasets.constBegin(); it != m_datasets.constEnd(); ++it)
-        result.push_back(it.key());
+    QVector<DatasetId> result = m_datasets.keys().toVector();
+    std::sort(result.begin(), result.end());
     return result;
 }
 
-int DataRepository::count() const
+int DatasetRegistry::count() const
 {
-    return m_datasets.size();
+    return m_datasets.count();
 }
 
-void DataRepository::clear()
+void DatasetRegistry::clear()
 {
-    const auto keys = m_datasets.keys();
+    const QVector<DatasetId> all = m_datasets.keys().toVector();
     m_datasets.clear();
-    for (DatasetId id : keys)
+    for (DatasetId id : all)
         Q_EMIT datasetRemoved(id);
 }
 

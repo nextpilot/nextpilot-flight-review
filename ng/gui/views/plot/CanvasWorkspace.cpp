@@ -8,7 +8,7 @@
 #include "PlotCanvas.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "Dataset.h"
 #include "SourceRegistry.h"
 #include "PropertySchema.h"

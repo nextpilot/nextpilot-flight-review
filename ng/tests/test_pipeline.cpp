@@ -639,7 +639,7 @@ int main()
 
     // ========== 14) 摄取：单前端 → 多解析器扇出 → 多数据集 ==========
     {
-        DataRepository repo;
+        DatasetRegistry repo;
         IngestPipeline pipe(repo);
 
         // 一个数据源 = 一个前端（单字节来源）
@@ -830,7 +830,7 @@ int main()
         }
 
         // --- 路径 B：SPI 管道（Source → IngestPipeline → ULog parser）---
-        DataRepository repoB;
+        DatasetRegistry repoB;
         IngestPipeline pipeB(repoB);
         CHECK(ParserRegistry::entry(QStringLiteral("ulog")) != nullptr);
         const Result<int> bound = pipeB.bindParser(1, ParserBinding{QStringLiteral("ulog"), {}, true});
@@ -999,7 +999,7 @@ int main()
         // 这里用真实的编排入口（宿主唯一编排点），
         // 断言三件事：表名按宿主声明改写、数据集内容正确、stable id 生效。
         {
-            DataRepository repoC;
+            DatasetRegistry repoC;
             SourceRegistry sourcesC;
             IngestPipeline pipeC(repoC);
 
@@ -1051,7 +1051,7 @@ int main()
                 QStringLiteral("%1.csv.psc").arg(fi.absoluteFilePath());
             CHECK(QFileInfo::exists(cachePath));
 
-            DataRepository repoC2;
+            DatasetRegistry repoC2;
             SourceRegistry sourcesC2;
             IngestPipeline pipeC2(repoC2);
             IngestOptions optC2;

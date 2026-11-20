@@ -4,7 +4,7 @@
 #include "BuiltinModuleRegistry.h"
 #include "DataSource.h"
 #include "Dataset.h"
-#include "IUiContribution.h"
+#include "Contribution.h"
 #include "IModule.h"
 #include "Intent.h"
 #include "RuntimeHost.h"

@@ -4,21 +4,12 @@
 add_library(ng_registry STATIC
     src/Domain.cpp
     src/ContributionKind.cpp
-    src/BuiltinContributions.cpp
     src/ExtensionRegistry.cpp
     src/UiSlotRegistry.cpp
     src/PanelFactoryRegistry.cpp
     include/Domain.h
     include/ContributionKind.h
-    include/IToolContribution.h
-    include/IToolPack.h
-    include/IUiContribution.h
-    include/IPanelContribution.h
-    include/IScriptContribution.h
-    include/IDataContribution.h
-    include/IExampleContribution.h
-    include/IDocContribution.h
-    include/BuiltinContributions.h
+    include/Contribution.h
     include/ExtensionRegistry.h
     include/UiSlotRegistry.h
     include/PanelFactoryRegistry.h

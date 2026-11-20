@@ -561,8 +561,8 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
             showColumnMenu(item, global);
     });
 
-    connect(&m_repo, &DataRepository::datasetAdded, this, [this](DatasetId) { refresh(); });
-    connect(&m_repo, &DataRepository::datasetRemoved, this, [this](DatasetId) { refresh(); });
+    connect(&m_repo, &DatasetRegistry::datasetAdded, this, [this](DatasetId) { refresh(); });
+    connect(&m_repo, &DatasetRegistry::datasetRemoved, this, [this](DatasetId) { refresh(); });
     connect(&m_sources, &SourceRegistry::sourceAdded, this, [this](int) { refresh(); });
     connect(&m_sources, &SourceRegistry::sourceRemoved, this, [this](int) { refresh(); });
     connect(&m_sources, &SourceRegistry::sourceChanged, this, [this](int) { rebuildTree(); });

@@ -25,10 +25,10 @@ void UiSlotRegistry::refreshFrom(const ExtensionRegistry &registry)
 
     for (IToolContribution *c : registry.contributions(ContributionKind::Ui))
     {
-        auto *ui = dynamic_cast<IUiContribution *>(c);
+        auto *ui = dynamic_cast<UiContribution *>(c);
         if (!ui)
             continue;
-        for (const UiAction &action : ui->actions())
+        for (const UiAction &action : ui->actions)
         {
             BoundUiAction bound{action, ui->provider()};
             if (m_bound.contains(action.area))

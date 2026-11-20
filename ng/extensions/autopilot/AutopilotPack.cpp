@@ -1,6 +1,6 @@
 #include "AutopilotPack.h"
 
-#include "BuiltinContributions.h"
+#include "Contribution.h"
 #include "ExtensionRegistry.h"
 #include "UlogFormatParser.h"
 
@@ -26,7 +26,7 @@ std::unique_ptr<IToolPack> AutopilotPack::build()
     pack->add<UlogFormatParser>();
 
     // ② UI：往 app 骨架提供的插槽里填飞控专属入口（纯数据，headless 也能查询）
-    pack->add<GenericUiContribution>(
+    pack->addUi(
         QStringLiteral("ap.ui.contributions"), QStringLiteral("飞控界面入口"), Domain::Autopilot,
         QList<UiAction>{
             {QStringLiteral("ap.plot.attitude"), QStringLiteral("姿态曲线"), QStringLiteral("menu.plot"),
@@ -37,14 +37,14 @@ std::unique_ptr<IToolPack> AutopilotPack::build()
              QString(), QString()}});
 
     // ③ 脚本：随包分发的飞控分析脚本（由脚本器官注入执行）
-    pack->add<GenericScriptContribution>(
+    pack->addScript(
         QStringLiteral("ap.script.helpers"), QStringLiteral("飞控脚本库"), Domain::Autopilot,
         QStringLiteral("lua"),
         QStringLiteral("ps.ap = { ctl = function() ps.log('autopilot control helpers') end }\n"),
         QStringList{QStringLiteral("ps.ap")});
 
     // ④ 数据：样例数据资产
-    pack->add<GenericDataContribution>(
+    pack->addData(
         QStringLiteral("ap.data.samples"), QStringLiteral("飞控样例数据"), Domain::Autopilot,
         QList<DataAsset>{
             {QStringLiteral("ap.sample.flight"), QStringLiteral("一次飞行样例"),
@@ -52,14 +52,14 @@ std::unique_ptr<IToolPack> AutopilotPack::build()
              QStringLiteral("含姿态与控制的短航段")}});
 
     // ⑤ 例子：可运行的示例工程
-    pack->add<GenericExampleContribution>(
+    pack->addExample(
         QStringLiteral("ap.examples"), QStringLiteral("飞控示例"), Domain::Autopilot,
         QList<ExampleEntry>{
             {QStringLiteral("ap.ex.attitude"), QStringLiteral("姿态分析示例"),
              QStringLiteral("examples/autopilot/attitude.lua"), QStringLiteral("加载 ULog 并绘制姿态")}});
 
     // ⑥ 文档：领域知识
-    pack->add<GenericDocContribution>(
+    pack->addDoc(
         QStringLiteral("ap.docs"), QStringLiteral("飞控知识文档"), Domain::Autopilot,
         QList<DocEntry>{
             {QStringLiteral("ap.doc.ulog"), QStringLiteral("ULog 协议说明"),

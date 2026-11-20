@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "SourceRegistry.h"
 #include "IByteSource.h"
 #include "IngestPipeline.h"
@@ -15,7 +15,7 @@ namespace nextpilot::plotscope::context
 {
 
 using nextpilot::plotscope::foundation::Result;
-using nextpilot::plotscope::dataset::DataRepository;
+using nextpilot::plotscope::dataset::DatasetRegistry;
 using nextpilot::plotscope::dataset::SourceRegistry;
 using nextpilot::plotscope::parser::IByteSource;
 using nextpilot::plotscope::parser::ParserRegistry;
@@ -82,7 +82,7 @@ class IngestOrchestrator
 public:
     using Options = IngestOptions;
 
-    IngestOrchestrator(DataRepository &repo, SourceRegistry &sources,
+    IngestOrchestrator(DatasetRegistry &repo, SourceRegistry &sources,
                        IngestPipeline &pipeline);
 
     // 打开一个文件源，按 parserIds 绑定解析器，读完全部字节。
@@ -114,7 +114,7 @@ private:
                        const QString &topicFilter, const QString &origin,
                        const Options &options);
 
-    DataRepository &m_repo;
+    DatasetRegistry &m_repo;
     SourceRegistry &m_sources;
     IngestPipeline &m_pipeline;
     int m_sourceId = -1;

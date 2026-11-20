@@ -2,7 +2,7 @@
 
 #include "SettingsStore.h"
 #include "IngestPipeline.h"
-#include "DataRepository.h"
+#include "DatasetRegistry.h"
 #include "ExtensionRegistry.h"
 #include "Intent.h"
 #include "SourceRegistry.h"
@@ -33,7 +33,7 @@ class DataLoadHandler final : public nextpilot::plotscope::intent::IIntentHandle
 {
 public:
     DataLoadHandler(nextpilot::plotscope::registry::ExtensionRegistry &registry,
-                    nextpilot::plotscope::dataset::DataRepository &repo,
+                    nextpilot::plotscope::dataset::DatasetRegistry &repo,
                     nextpilot::plotscope::dataset::SourceRegistry &sources,
                     nextpilot::plotscope::context::IngestPipeline *pipeline = nullptr,
                     nextpilot::plotscope::context::SettingsStore *settings = nullptr)
@@ -50,7 +50,7 @@ private:
                     const QByteArray &parserOptions = QByteArray());
 
     nextpilot::plotscope::registry::ExtensionRegistry &m_registry;
-    nextpilot::plotscope::dataset::DataRepository &m_repo;
+    nextpilot::plotscope::dataset::DatasetRegistry &m_repo;
     nextpilot::plotscope::dataset::SourceRegistry &m_sources;
     // 摄取管道（宿主持有）。为空时 data.load 只走旧的 driver.load() 路径。
     nextpilot::plotscope::context::IngestPipeline *m_pipeline = nullptr;

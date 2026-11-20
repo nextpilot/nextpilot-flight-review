@@ -2,7 +2,7 @@
 
 #include "ProtocolIntentHandler.h"
 #include "BuiltinModuleRegistry.h"
-#include "IUiContribution.h"
+#include "Contribution.h"
 #include "IModule.h"
 
 using namespace nextpilot::plotscope::foundation;

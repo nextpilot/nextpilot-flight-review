@@ -1,6 +1,6 @@
 #include "CommonPack.h"
 
-#include "BuiltinContributions.h"
+#include "Contribution.h"
 #include "ExtensionRegistry.h"
 #include "CsvFormatParser.h"
 #include "CustomProtocolFormatParser.h"
@@ -24,7 +24,7 @@ std::unique_ptr<IToolPack> CommonPack::build()
     auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("通用工具箱"), Domain::General);
     pack->add<CsvFormatParser>(); // 格式：文件 -> Dataset
     pack->add<CustomProtocolFormatParser>(); // 格式：.psproto 模板 + 二进制帧 -> Dataset
-    pack->add<GenericDocContribution>(
+    pack->addDoc(
         QStringLiteral("common.doc.formats"), QStringLiteral("通用格式说明"), Domain::General,
         QList<DocEntry>{
             {QStringLiteral("common.doc.csv"), QStringLiteral("CSV 载入指南"),

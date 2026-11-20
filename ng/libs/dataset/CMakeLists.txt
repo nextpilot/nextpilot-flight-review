@@ -5,10 +5,10 @@
 # 任何想用数据模型的消费者可只链本库，不必吞下整个 ng_context。
 add_library(ng_dataset STATIC
     src/Dataset.cpp
-    src/DataRepository.cpp
+    src/DatasetRegistry.cpp
     src/SourceRegistry.cpp
     include/Dataset.h
-    include/DataRepository.h
+    include/DatasetRegistry.h
     include/Source.h
     include/DataSource.h
     include/SourceRegistry.h
@@ -16,5 +16,5 @@ add_library(ng_dataset STATIC
 
 target_include_directories(ng_dataset PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # ng_kernel: Rust ps-abi（Dataset 的 C ABI 门）；ng_foundation: Result.h（DataRepository 返回类型）。
-target_link_libraries(ng_dataset PUBLIC ng_kernel ng_foundation Qt6::Core)
+target_link_libraries(ng_dataset PUBLIC ng_kernel ng_registry ng_foundation Qt6::Core)
 set_target_properties(ng_dataset PROPERTIES AUTOMOC ON CXX_STANDARD 17)

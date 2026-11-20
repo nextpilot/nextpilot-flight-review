@@ -32,7 +32,7 @@ public:
     const nextpilot::plotscope::context::AppContext &context() const { return m_ctx; }
 
     // 便捷转发（内部使用）。
-    nextpilot::plotscope::dataset::DataRepository &data() { return m_ctx.data(); }
+    nextpilot::plotscope::dataset::DatasetRegistry &data() { return m_ctx.data(); }
     nextpilot::plotscope::host::RuntimeHost &host() { return m_host; }
     nextpilot::plotscope::intent::JobRecorder &recorder() { return m_recorder; }
 
