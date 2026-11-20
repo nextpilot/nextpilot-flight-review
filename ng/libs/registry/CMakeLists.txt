@@ -8,7 +8,6 @@ add_library(ng_registry STATIC
     src/ExtensionRegistry.cpp
     src/UiSlotRegistry.cpp
     src/PanelFactoryRegistry.cpp
-    src/BuiltinPackRegistry.cpp
     include/Domain.h
     include/ContributionKind.h
     include/IToolContribution.h
@@ -23,7 +22,6 @@ add_library(ng_registry STATIC
     include/ExtensionRegistry.h
     include/UiSlotRegistry.h
     include/PanelFactoryRegistry.h
-    include/BuiltinPackRegistry.h
 )
 target_include_directories(ng_registry PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # ExtensionRegistry 用 IMessageParser(parser) 完整类型、PanelFactory 用 IIntentExecutor(intent)。

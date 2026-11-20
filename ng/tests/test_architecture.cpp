@@ -9,7 +9,7 @@
 #include "Toolbox.h"
 #include "BuiltinContributions.h"
 #include "BuiltinModuleRegistry.h"
-#include "BuiltinPackRegistry.h"
+#include "ExtensionRegistry.h"
 #include "IModule.h"
 #include "IPanelContribution.h"
 #include "DecodedFrame.h"

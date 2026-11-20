@@ -1,9 +1,62 @@
 #include "ExtensionRegistry.h"
 
+#include <QHash>
+
 #include <algorithm>
 
 namespace nextpilot::plotscope::registry
 {
+
+namespace
+{
+
+// 内置包工厂静态表：函数内 static，避免静态初始化顺序问题；保序（登记顺序即装载顺序）。
+struct BuiltinPackStore
+{
+    QList<QPair<QString, ExtensionRegistry::PackFactory>> ordered;
+    QHash<QString, int> indexById;
+};
+
+BuiltinPackStore &builtinPacks()
+{
+    static BuiltinPackStore s;
+    return s;
+}
+
+} // namespace
+
+bool ExtensionRegistry::registerBuiltinPack(const QString &id, PackFactory factory)
+{
+    if (id.isEmpty() || !factory)
+        return false;
+    BuiltinPackStore &r = builtinPacks();
+    if (r.indexById.contains(id))
+        return false; // 重复 id：先到者为准
+    r.indexById.insert(id, r.ordered.size());
+    r.ordered.append({id, std::move(factory)});
+    return true;
+}
+
+QStringList ExtensionRegistry::installBuiltinPacks()
+{
+    QStringList installed;
+    for (const auto &entry : builtinPacks().ordered)
+    {
+        auto pack = entry.second();
+        if (!pack)
+            continue;
+        if (registerPack(std::move(pack)))
+            installed.append(entry.first);
+    }
+    return installed;
+}
+
+void ExtensionRegistry::resetBuiltinPacks()
+{
+    BuiltinPackStore &r = builtinPacks();
+    r.ordered.clear();
+    r.indexById.clear();
+}
 
 void ExtensionRegistry::rebuildIndexes()
 {

@@ -1,7 +1,7 @@
 #include "AutopilotPack.h"
 
 #include "BuiltinContributions.h"
-#include "BuiltinPackRegistry.h"
+#include "ExtensionRegistry.h"
 #include "UlogFormatParser.h"
 
 using namespace nextpilot::plotscope::foundation;

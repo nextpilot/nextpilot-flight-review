@@ -1,7 +1,7 @@
 #include "CommonPack.h"
 
 #include "BuiltinContributions.h"
-#include "BuiltinPackRegistry.h"
+#include "ExtensionRegistry.h"
 #include "CsvFormatParser.h"
 #include "CustomProtocolFormatParser.h"
 

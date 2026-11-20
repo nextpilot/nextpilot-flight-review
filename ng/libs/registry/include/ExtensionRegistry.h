@@ -11,6 +11,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -37,6 +38,22 @@ class ExtensionRegistry
 {
 public:
     // === 包级：装载/卸载的原子单位 ===
+    using PackFactory = std::function<std::unique_ptr<IToolPack>()>;
+
+    // === 内置包静态自注册通道（原 BuiltinPackRegistry，折叠进容器本体）===
+    //
+    // 内置包与插件包语义相同（都是 IToolPack），唯一差别是"怎么被发现"：
+    // 插件由扫描器加载后 registerPack；内置包在各自 TU 静态初始化期把**工厂**
+    // 登记进下面的进程级静态表（NG_REGISTER_PACK 宏），宿主启动时
+    // installBuiltinPacks() 统一灌进实例。于是"新增一个内置包"= 新增目录 +
+    // 一行 CMake，宿主/Toolbox/既有包代码零改动。
+    //
+    // 静态表只存工厂（无所有权、装满只读、进程生命周期）；实例表拥有包。
+    // 二者生命周期不同，故静态方法与实例方法并存于本类。
+    static bool registerBuiltinPack(const QString &id, PackFactory factory);
+    QStringList installBuiltinPacks();        // 装进本实例，返回成功的包 id
+    static void resetBuiltinPacks();          // 清空静态表（仅测试用）
+
     bool registerPack(std::unique_ptr<IToolPack> pack);
     bool unregisterPack(const QString &packId);
     QStringList packIds() const;
@@ -97,3 +114,21 @@ private:
 };
 
 } // namespace nextpilot::plotscope::registry
+
+// 注册宏：在包 TU 文件末尾使用，把本包工厂登记进静态自注册表。
+//
+// 用法：
+//   NG_REGISTER_PACK(nextpilot::plotscope::ext::AutopilotPack)
+//
+// 其中 AutopilotPack 需提供：
+//   static QString packId();
+//   static std::unique_ptr<nextpilot::plotscope::registry::IToolPack> build();
+//
+// 宏必须带完整命名空间：它在调用处的命名空间作用域展开。
+#define NG_REGISTER_PACK(FQN)                                                             \
+    namespace {                                                                           \
+    const bool g_ng_pack_reg_ =                                                           \
+        ::nextpilot::plotscope::registry::ExtensionRegistry::registerBuiltinPack(         \
+            FQN::packId(),                                                                \
+            []() -> std::unique_ptr<::nextpilot::plotscope::registry::IToolPack> { return FQN::build(); }); \
+    }

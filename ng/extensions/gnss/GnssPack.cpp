@@ -1,7 +1,7 @@
 #include "GnssPack.h"
 
 #include "BuiltinContributions.h"
-#include "BuiltinPackRegistry.h"
+#include "ExtensionRegistry.h"
 #include "NmeaMessageParser.h"
 
 using namespace nextpilot::plotscope::foundation;

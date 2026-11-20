@@ -1,7 +1,7 @@
 #include "AutomotivePack.h"
 
 #include "BuiltinContributions.h"
-#include "BuiltinPackRegistry.h"
+#include "ExtensionRegistry.h"
 
 using namespace nextpilot::plotscope::registry;
 
