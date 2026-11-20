@@ -1001,3 +1001,17 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 - **测试**：test_gui 5h——双源（时间范围错开 10s）+ fixture 行号时间源三方对齐，用**基准无关的相对差**断言（B-A offset 差 = -10），覆盖 offset.set/clear 单源与全清、align end/start、数据集零改动；真机截图对比（offset=+1500s 曲线整体右移、游标读数随偏移消失）。
 
 备注：CSV 默认 `time.mode=row`（行号模式，1 行 = 1s），fixture tMax=2999 是预期行为，不是时间轴 bug。
+
+## 18. 图例交互增强（第二梯队 #205，2026-11-20 落地）
+
+对齐 PJ4 图例的三项交互，全部走 fastplot `Axes` 层（几何与状态）+ `PlotCanvas`（事件路由）：
+
+- **点击条目切显隐**：`paintLegend` 列出全部命名曲线行（隐藏行灰显仍占位，可点击切回），`legendHitTest` 基于最近一次 paint 缓存的行矩形做命中检测（返回曲线索引 / -1 标题栏 / -2 未命中）；`toggleLegendItem` 切 `Line::setVisible` 并发 `legendItemToggled`，`PlotCanvas` 接信号同步 `PlotSeries.visible`（单一事实源在 Axes；`pushToPlot` 重建时隐藏曲线仍进 Axes 灰显但不参与轴/时间范围累计——PJ4 语义：隐藏不影响 autoRange）。
+- **折叠**：标题栏"▾/▸ 图例"可点击折叠（`setLegendCollapsed` + `legendCollapseChanged` 信号），折叠后只剩标题行；固定读数框避让行数随折叠收缩。
+- **字号缩放**：`zoomLegendFont(steps)` 缩放因子 clamp [0.7, 2.0]；**Alt+滚轮悬停图例区**步进（`Ctrl+滚轮` 保留给 Y 轴缩放——canvas-interaction.md 既有约定，与 PJ4 双轴缩放冲突故改修饰键）；`Zoomer` 对 Alt+滚轮吞掉不缩放。
+- **view actions**：`plot.legend.toggleItem`（按 seriesKey）/ `plot.legend.collapse`（无参=切换）/ `plot.legend.fontZoom`（steps）——脚本与菜单共用；GUI 点击直接走画布命中路径。
+- **持久化**：`saveState/restoreState` 增加 `legendCollapsed` / `legendFontScale`。
+
+测试：test_gui #205 段（标题栏命中 -1/未命中 -2、toggle 后重建显隐保持、折叠往返、字号 clamp 边界 1.5/2.0/0.7/1.0、三个 view action）；真机三态截图 `ng-legend-base.png`（7 行 + 游标实时值）/ `ng-legend-collapse.png`（折叠 + 读数框上移）/ `ng-legend-zoom.png`（字号 1.6×）。
+
+备注：Debug 构建曾现 `vtable for PlotModule` 链接错——AUTOMOC 缓存失效（`mocs_compilation.cpp.o` 过期），删对象文件重建即愈，非代码问题。

@@ -90,6 +90,9 @@ bool Zoomer::eventFilter(QObject *watched, QEvent *event)
     case QEvent::Wheel:
     {
         auto *w = static_cast<QWheelEvent *>(event);
+        // Alt+滚轮保留给图例字号（#205），吞掉但不做视图缩放。
+        if (w->modifiers() & Qt::AltModifier)
+            return true;
         // 滚轮一格 120；上滚放大。
         const double factor = std::pow(1.2, -w->angleDelta().y() / 120.0);
         const bool xOnly = w->modifiers() & Qt::ShiftModifier;

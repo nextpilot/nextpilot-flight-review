@@ -810,6 +810,37 @@ void CanvasWorkspace::registerViewActions()
                                     return QVariant(true);
                                 });
 
+    // === 图例交互（第二梯队 #205，对齐 PJ4）===
+    // 点击条目切显隐 / 折叠 / 字号缩放的脚本与菜单入口（GUI 点击直接走画布命中）。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.toggleItem"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    const QString key = params.value(QStringLiteral("key")).toString();
+                                    if (!c || key.isEmpty())
+                                        return QVariant(false);
+                                    return QVariant(c->toggleSeriesVisible(key));
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.collapse"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c)
+                                        return QVariant(false);
+                                    const bool target = params.contains(QStringLiteral("collapsed"))
+                                                            ? params.value(QStringLiteral("collapsed")).toBool()
+                                                            : !c->legendCollapsed(); // 无参 = 切换
+                                    c->setLegendCollapsed(target);
+                                    return QVariant(target);
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.fontZoom"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c)
+                                        return QVariant(false);
+                                    const int steps = params.value(QStringLiteral("steps")).toInt();
+                                    c->zoomLegendFont(steps);
+                                    return QVariant(c->legendFontScale());
+                                });
+
     // === 多源时间对齐（第二梯队 #204，对齐 PJ4 SourceTimelineController）===
     // 源级显示时间偏移（秒）：施加在"曲线 x + 源 offset"，不改数据。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.offset.set"),

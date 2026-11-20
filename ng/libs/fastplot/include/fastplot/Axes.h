@@ -200,6 +200,23 @@ public:
     void setLegendVisible(bool visible);
     bool legendVisible() const { return m_legend; }
 
+    // === 图例交互（第二梯队 #205，对齐 PJ4）===
+    // 点击行切显隐（隐藏行灰显仍占位）、标题栏可折叠、Ctrl+滚轮改字号。
+    // 命中检测基于最近一次 paint 缓存的行矩形（resize/paint 后自动更新）。
+    int legendHitTest(const QPointF &pixel) const; // >=0 曲线行(m_curves 索引)；-1 标题栏；-2 未命中
+    bool legendCollapsed() const { return m_legendCollapsed; }
+    void setLegendCollapsed(bool collapsed);
+    double legendFontScale() const { return m_legendFontScale; }
+    void zoomLegendFont(int steps); // Ctrl+滚轮步进：缩放因子 clamp [0.7, 2.0]
+    void toggleLegendItem(int curveIndex);
+
+    // 图例行被点击切换显隐（PlotCanvas 同步 PlotSeries.visible，pushToPlot 重建不丢）。
+Q_SIGNALS:
+    void legendItemToggled(int curveIndex, bool visible);
+    void legendCollapseChanged(bool collapsed);
+    void legendTitleClicked();
+
+public:
     // 导出：PNG（所见即所得）/ CSV（可见数据，LOD 输出 x,min,max）。
     bool exportPng(const QString &path);
     bool exportCsv(const QString &path);
@@ -244,6 +261,15 @@ private:
     double m_y2Hi = 1.0;
     bool m_secondAxis = false;
     bool m_legend = false;
+    bool m_legendCollapsed = false;   // 图例折叠（只显示标题栏）
+    double m_legendFontScale = 1.0;   // 图例字号缩放因子（Ctrl+滚轮）
+    struct LegendRow
+    {
+        int curveIndex = -1;
+        QRectF rect;
+    };
+    QVector<LegendRow> m_legendRows;  // paintLegend 缓存的行矩形（命中检测）
+    QRectF m_legendTitleRect;         // 标题栏矩形（折叠按钮命中）
     bool m_grid = false;
     bool m_box = false;            // 画布边框（对齐老界面显示组）
     QRect m_rubberBand;

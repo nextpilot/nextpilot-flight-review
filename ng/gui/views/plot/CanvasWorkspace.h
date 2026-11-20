@@ -47,6 +47,9 @@ public:
     int rows() const { return m_rows; }
     int cols() const { return m_cols; }
 
+    // 设为活动 cell（点击/程序指定）。view action 处理器也用；测试需显式定位画布。
+    void setActive(int index);
+
 private:
     struct Cell
     {
@@ -63,7 +66,6 @@ private:
     bool duplicateActive();              // 复制活动页签（含曲线与样式）
     bool setGrid(int rows, int cols);    // 重排为 rows×cols 网格
     void toggleFullscreen();             // 单画布全屏/退出
-    void setActive(int index);           // 设为活动 cell（点击/程序指定）
     void relayout();                     // 按 m_rows/m_cols 重排所有 cell 到网格
 
     // 在指定 cell 内切图型：曲线类画布内切；专用图型把 cell 的 view 换成仪表。

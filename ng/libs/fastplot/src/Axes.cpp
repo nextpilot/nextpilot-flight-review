@@ -159,6 +159,8 @@ QJsonObject Axes::saveState() const
     o[QStringLiteral("grid")] = m_axes[sideIndex(AxisSide::Left)].gridVisible();
     o[QStringLiteral("box")] = m_box;
     o[QStringLiteral("legend")] = m_legend;
+    o[QStringLiteral("legendCollapsed")] = m_legendCollapsed;   // #205
+    o[QStringLiteral("legendFontScale")] = m_legendFontScale;   // #205
     return o;
 }
 
@@ -187,6 +189,15 @@ bool Axes::restoreState(const QJsonObject &state)
     setGridVisible(state.value(QStringLiteral("grid")).toBool(true));
     setBoxVisible(state.value(QStringLiteral("box")).toBool(false));
     setLegendVisible(state.value(QStringLiteral("legend")).toBool(false));
+    setLegendCollapsed(state.value(QStringLiteral("legendCollapsed")).toBool(false)); // #205
+    {
+        const double scale = state.value(QStringLiteral("legendFontScale")).toDouble(1.0);
+        if (scale > 0)
+        {
+            m_legendFontScale = qBound(0.7, scale, 2.0);
+            update();
+        }
+    }
     relayout();
     return true;
 }
@@ -919,20 +930,44 @@ void Axes::paintLegend(QPainter &painter)
 {
     const QRectF plot = m_vp.plotRect();
     QFont f = font();
+    // Ctrl+滚轮字号缩放：因子作用于基准字号（#205）。
+    f.setPointSizeF(std::max(6.0, f.pointSizeF() * m_legendFontScale));
     const QFontMetrics fm(f);
     const int rowH = fm.height() + 4;
-    int row = 0;
     painter.save();
     painter.setFont(f);
-    for (const Line &c : m_curves)
+    const QColor labelColor = m_axes[sideIndex(AxisSide::Left)].labelColor();
+    const QColor gray(0x88, 0x88, 0x88);
+
+    // 标题栏：▾/▸ 折叠指示 + "图例"。点击整栏切换折叠。
+    m_legendTitleRect = QRectF(plot.left() + 8, plot.top() + 8, plot.width() - 16, rowH);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0, 0, 0, 36));
+    painter.drawRoundedRect(m_legendTitleRect, 2, 2);
+    painter.setPen(labelColor);
+    painter.drawText(QRectF(m_legendTitleRect.left() + 4, m_legendTitleRect.top(), 80, rowH),
+                     Qt::AlignVCenter | Qt::AlignLeft,
+                     m_legendCollapsed ? QStringLiteral("▸ 图例") : QStringLiteral("▾ 图例"));
+
+    m_legendRows.clear();
+    if (m_legendCollapsed)
     {
-        if (!c.isVisible() || c.name().isEmpty())
+        painter.restore();
+        return;
+    }
+
+    // 每条命名曲线一行：可见用曲线色，隐藏灰显（PJ4 语义：隐藏行保留可点击切回）。
+    int row = 0;
+    for (int i = 0; i < m_curves.size(); ++i)
+    {
+        const Line &c = m_curves.at(i);
+        if (c.name().isEmpty())
             continue;
-        const QPointF origin(plot.left() + 8, plot.top() + 8 + row * rowH);
+        const QPointF origin(plot.left() + 8, plot.top() + 8 + (row + 1) * rowH);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(c.ink());
+        painter.setBrush(c.isVisible() ? c.ink() : gray);
         painter.drawRect(QRectF(origin.x(), origin.y() + 3, 10, 10));
-        painter.setPen(m_axes[sideIndex(AxisSide::Left)].labelColor());
+        painter.setPen(c.isVisible() ? labelColor : gray);
         painter.drawText(QPointF(origin.x() + 16, origin.y() + fm.ascent() + 1), c.name());
         // PJ4 图例实时值：游标激活时，图例每条曲线名后显示该时刻数值（与读数框同源、同行序）。
         if (m_cursorActive && row < m_cursorRows.size())
@@ -943,9 +978,51 @@ void Axes::paintLegend(QPainter &painter)
                                     origin.y(), 70, rowH),
                              Qt::AlignVCenter | Qt::AlignLeft, val);
         }
+        m_legendRows.append(LegendRow{i, QRectF(plot.left() + 8, origin.y(), plot.width() - 16, rowH)});
         ++row;
     }
     painter.restore();
+}
+
+int Axes::legendHitTest(const QPointF &pixel) const
+{
+    if (!m_legend)
+        return -2;
+    if (m_legendTitleRect.contains(pixel))
+        return -1;
+    for (const LegendRow &r : m_legendRows)
+        if (r.rect.contains(pixel))
+            return r.curveIndex;
+    return -2;
+}
+
+void Axes::setLegendCollapsed(bool collapsed)
+{
+    if (m_legendCollapsed == collapsed)
+        return;
+    m_legendCollapsed = collapsed;
+    update();
+    Q_EMIT legendCollapseChanged(collapsed);
+}
+
+void Axes::zoomLegendFont(int steps)
+{
+    const double next = qBound(0.7, m_legendFontScale + steps * 0.1, 2.0);
+    if (next == m_legendFontScale)
+        return;
+    m_legendFontScale = next;
+    update();
+}
+
+void Axes::toggleLegendItem(int curveIndex)
+{
+    if (curveIndex < 0 || curveIndex >= m_curves.size())
+        return;
+    const bool next = !m_curves.at(curveIndex).isVisible();
+    m_curves[curveIndex].setVisible(next);
+    invalidateStatic();
+    update();
+    Q_EMIT legendItemToggled(curveIndex, next);
 }
 
 void Axes::paintOverlay(QPainter &painter)
@@ -1074,8 +1151,14 @@ void Axes::paintCursorReadout(QPainter &painter, const QRectF &plot)
     // 游标在左侧时尤其需要，否则读数框会压住图例的实时值列。
     int legendRows = 0;
     if (m_legend)
+    {
+        // 标题栏（含折叠）+ 全部命名曲线行（隐藏行灰显仍占位，#205）。
+        legendRows = 1;
         for (const Line &c : m_curves)
-            if (c.isVisible() && !c.name().isEmpty()) ++legendRows;
+            if (!c.name().isEmpty()) ++legendRows;
+        if (m_legendCollapsed)
+            legendRows = 1;
+    }
     const double legendBottom = plot.top() + 8 + legendRows * (fm.height() + 4);
     double boxTop = plot.top() + (m_abEnabled ? 30 : 8);
     // 仅当读数框会与图例横向重叠（游标靠左）时才下移过图例。

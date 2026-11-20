@@ -1088,6 +1088,87 @@ int main(int argc, char *argv[])
         OK("PJ4 对齐：页签复制(cell+1) + 全屏切换 + 视图撤销(历史入栈/回退)");
     }
 
+    // --- PJ4 对齐 #205：图例交互（点条目切显隐 / 折叠 / 字号缩放）---
+    {
+        CHECK(canvas != nullptr);
+        auto *ax = canvas->plotForTest();
+        CHECK(ax != nullptr);
+        ax->setLegendVisible(true);
+        ax->setLegendCollapsed(false);
+        const int curves = ax->curveCount();
+        CHECK(curves >= 1);
+
+        // ① 标题栏命中：图例区顶部标题行 → -1；绘图区其它位置 → -2。
+        // hitTest 基于最近一次 paint 缓存的行矩形，先强制渲染一遍。
+        CHECK(!ax->grabImage().isNull());
+        const QRectF plotRect = ax->plotRect();
+        CHECK(ax->legendHitTest(QPointF(plotRect.left() + 20, plotRect.top() + 12)) == -1);
+        CHECK(ax->legendHitTest(QPointF(plotRect.center())) == -2);
+
+        // ② toggleLegendItem：Axes Line 显隐切换 + 信号同步回 PlotSeries（重建不丢）。
+        const bool v0 = ax->curveAt(0).isVisible();
+        ax->toggleLegendItem(0);
+        CHECK(ax->curveAt(0).isVisible() == !v0);
+        CHECK(canvas->seriesAtForTest(0).visible == !v0); // 单一事实源同步
+        // pushToPlot 重建后显隐仍生效（隐藏曲线灰显占位，不参与轴范围）。
+        canvas->refreshSeriesForTest();
+        CHECK(ax->curveAt(0).isVisible() == !v0);
+        ax->toggleLegendItem(0); // 恢复
+        CHECK(ax->curveAt(0).isVisible() == v0);
+
+        // ③ 折叠：标题栏折叠后只显示标题行（读数框避让行数=1）。
+        ax->setLegendCollapsed(true);
+        CHECK(ax->legendCollapsed());
+        ax->setLegendCollapsed(false);
+        CHECK(!ax->legendCollapsed());
+
+        // ④ 字号缩放：步进 + clamp [0.7, 2.0]。
+        ax->zoomLegendFont(5);
+        CHECK(std::fabs(ax->legendFontScale() - 1.5) < 1e-9);
+        ax->zoomLegendFont(50);
+        CHECK(std::fabs(ax->legendFontScale() - 2.0) < 1e-9);
+        ax->zoomLegendFont(-100);
+        CHECK(std::fabs(ax->legendFontScale() - 0.7) < 1e-9);
+        ax->zoomLegendFont(3); // 回到 1.0
+        CHECK(std::fabs(ax->legendFontScale() - 1.0) < 1e-9);
+
+        // ⑤ view action 通道：toggleItem（按 key）/ collapse / fontZoom。
+        QVariant vr;
+        Result<QVariant> res(vr);
+        // 页签复制段把活动 cell 漂到了复制品上；view action 作用于活动画布，
+        // 先把活动 cell 切回本段 canvas 所在 cell。
+        qobject_cast<CanvasWorkspace *>(binder->centralContent())->setActive(0);
+        const QString key0 = canvas->seriesAtForTest(0).key();
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.legend.toggleItem"),
+            {{QStringLiteral("key"), key0}}, res));
+        CHECK(res.ok() && res.value().toBool());
+        CHECK(!ax->curveAt(0).isVisible());
+        application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.legend.toggleItem"),
+            {{QStringLiteral("key"), key0}}, res); // 切回
+        CHECK(ax->curveAt(0).isVisible());
+
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.legend.collapse"), {}, res));
+        CHECK(res.ok() && res.value().toBool());
+        CHECK(canvas->legendCollapsed());
+        application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.legend.collapse"),
+            {{QStringLiteral("collapsed"), false}}, res);
+        CHECK(!canvas->legendCollapsed());
+
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.legend.fontZoom"),
+            {{QStringLiteral("steps"), 2}}, res));
+        CHECK(res.ok() && std::fabs(res.value().toDouble() - 1.2) < 1e-9);
+        application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.legend.fontZoom"),
+            {{QStringLiteral("steps"), -2}}, res); // 回到 1.0
+
+        OK("PJ4 对齐 #205：图例点击切显隐(含重建保持)+折叠+字号缩放+view action 三入口");
+    }
+
     // --- 脚本 app 全局：Lua 直接操作整个应用（意图 + view action 双通道） ---
     {
         auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());

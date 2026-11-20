@@ -78,6 +78,17 @@ PlotCanvas::PlotCanvas(QWidget *parent)
     const fastplot::Viewport &vp0 = m_plot->viewport();
     m_lastViewRange = {vp0.xLower(), vp0.xUpper(), vp0.yLower(), vp0.yUpper()};
 
+    // 图例行点击切显隐（#205）：Axes 只切 Line，这里同步 PlotSeries.visible，
+    // 否则 pushToPlot 的 clearCurves 重建会把显隐状态冲掉。
+    connect(m_plot, &nextpilot::plotscope::fastplot::Axes::legendItemToggled, this,
+            [this](int curveIndex, bool visible) {
+                if (curveIndex >= 0 && curveIndex < m_series.size())
+                {
+                    m_series[curveIndex].visible = visible;
+                    Q_EMIT seriesVisibilityChanged(m_series[curveIndex].key(), visible);
+                }
+            });
+
     connect(m_zoomer, &nextpilot::plotscope::fastplot::Zoomer::zoomed, this, [this] {
         pushViewHistory();
         double t0 = 0.0;
@@ -308,6 +319,20 @@ void PlotCanvas::refreshSourceOffsets()
         return;
     // LOD 不变，只重推 x 映射（源 offset 在 pushToPlot 的副本上施加）。
     pushToPlot();
+}
+
+bool PlotCanvas::toggleSeriesVisible(const QString &key)
+{
+    for (int i = 0; i < m_series.size(); ++i)
+    {
+        if (m_series.at(i).key() != key)
+            continue;
+        // Axes::toggleLegendItem 切 Line 并发 legendItemToggled →
+        // 构造里的 lambda 同步 m_series.visible（单一事实源在 Axes）。
+        m_plot->toggleLegendItem(i);
+        return true;
+    }
+    return false;
 }
 
 // 源级时间 offset：datasetId 反查源（provider），叠加在曲线 xTimeOffset 之上。
@@ -878,6 +903,22 @@ void PlotCanvas::onCanvasMousePress(QMouseEvent *event)
         return;
     const Qt::KeyboardModifiers mods = event->modifiers();
 
+    // 图例命中（#205，对齐 PJ4）：点击标题栏折叠/展开、点击行切显隐。
+    // 图例区优先于修饰键复合（Ctrl+点图例行 = 切显隐，不生成 A/B）。
+    {
+        const int legendHit = m_plot->legendHitTest(event->pos());
+        if (legendHit == -1)
+        {
+            m_plot->setLegendCollapsed(!m_plot->legendCollapsed());
+            return;
+        }
+        if (legendHit >= 0)
+        {
+            m_plot->toggleLegendItem(legendHit);
+            return;
+        }
+    }
+
     // Ctrl+左键：直接生成一组 A/B。
     if (mods & Qt::ControlModifier)
     {
@@ -924,6 +965,14 @@ void PlotCanvas::onCanvasMouseRelease(QMouseEvent *event)
 
 void PlotCanvas::onCanvasWheel(QWheelEvent *event)
 {
+    // Alt+滚轮且悬停在图例区（#205）：图例字号步进。
+    // Ctrl+滚轮保留给 Y 轴缩放（canvas-interaction.md 既有约定）。
+    if ((event->modifiers() & Qt::AltModifier) && m_plot
+        && m_plot->legendHitTest(event->position().toPoint()) != -2)
+    {
+        m_plot->zoomLegendFont(event->angleDelta().y() > 0 ? 1 : -1);
+        event->accept();
+    }
     // 缩放/平移后，固定读数要跟着时间映射重画；悬停读数由下一次 mouse move 刷新。
     if (m_cursorPinned)
         refreshReadout();
@@ -1024,7 +1073,7 @@ void PlotCanvas::pushToPlot()
 
     for (const PlotSeries &s : m_series)
     {
-        if (s.lod.isEmpty() || !s.visible)
+        if (s.lod.isEmpty())
             continue;
         // 只转三元组（<= 像素宽），不复制原始数据——零拷贝的边界就在这里。
         QVector<nextpilot::plotscope::fastplot::LodPoint> pts;
@@ -1044,6 +1093,11 @@ void PlotCanvas::pushToPlot()
             curve.setScatter(true);
             curve.setSymbol(nextpilot::plotscope::fastplot::Symbol::Circle);
         }
+        // #205：隐藏曲线也进 Axes（图例灰显占位、可点击切回），
+        // 但不参与轴范围与时间范围累计（PJ4 语义：隐藏不影响 autoRange）。
+        curve.setVisible(s.visible);
+        if (!s.visible)
+            continue;
         // 按曲线挂的轴分别累计 min/max。
         double &lo = s.rightAxis ? rightLo : leftLo;
         double &hi = s.rightAxis ? rightHi : leftHi;

@@ -128,6 +128,12 @@ public:
     void setSourceOffsetProvider(std::function<double(nextpilot::plotscope::dataset::DatasetId)> provider);
     // 源 offset 变化后重推曲线（LOD 不变，只重算 x 映射）。
     void refreshSourceOffsets();
+    // 图例交互（第二梯队 #205，对齐 PJ4）：转发到 fastplot Axes。
+    bool toggleSeriesVisible(const QString &key); // 按 seriesKey 切显隐（同步 PlotSeries.visible）
+    void setLegendCollapsed(bool collapsed) { if (m_plot) m_plot->setLegendCollapsed(collapsed); }
+    bool legendCollapsed() const { return m_plot ? m_plot->legendCollapsed() : false; }
+    void zoomLegendFont(int steps) { if (m_plot) m_plot->zoomLegendFont(steps); }
+    double legendFontScale() const { return m_plot ? m_plot->legendFontScale() : 1.0; }
     // 轴级变换（配方存画布视图状态；实际施加在曲线取数层）。
     void setAxisTransform(const QString &axis, const QString &descriptorId);
     QString axisTransform(const QString &axis) const;
@@ -154,6 +160,11 @@ public:
     bool cursorPinned() const { return m_cursorPinned; }
     double cursorTime() const { return m_cursorT; }
     bool cursorActiveForTest() const { return m_cursorActive; }
+
+    // 图例交互测试辅助（#205）：直接暴露 fastplot Axes 与 series 快照。
+    nextpilot::plotscope::fastplot::Axes *plotForTest() const { return m_plot; }
+    const PlotSeries &seriesAtForTest(int index) const { return m_series.at(index); }
+    void refreshSeriesForTest() { pushToPlot(); }
 
     void toggleAB();                                // Ctrl+左键 / view action：以当前游标为中心生成一组 A/B
     void clearAB();
@@ -247,6 +258,8 @@ Q_SIGNALS:
     void linkedTimeChanged(double t, bool visible, PlotCanvas *source);
     // 书签集合变化（上层存进布局）。
     void bookmarksChanged();
+    // 图例点击切换曲线显隐（#205）：上层可同步图例面板/属性面板状态。
+    void seriesVisibilityChanged(const QString &seriesKey, bool visible);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

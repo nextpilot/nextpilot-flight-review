@@ -106,6 +106,7 @@ int main(int argc, char *argv[])
     QString stateArg;     // --state=<table.column> 截状态视图色带（第二梯队 #203）
     QString offsetArg;    // --offset=<sourceId:seconds> 设源级时间偏移（#204）
     QString alignArg;     // --align=<start|center|end> 一键多源对齐（#204）
+    QString legendArg;    // --legend=<collapse|zoom[±N]> 图例交互演示（#205）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -171,6 +172,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--align=")))
         {
             alignArg = a.mid(QStringLiteral("--align=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--legend=")))
+        {
+            legendArg = a.mid(QStringLiteral("--legend=").size());
             continue;
         }
         files << a;
@@ -423,6 +429,34 @@ int main(int argc, char *argv[])
         if (!alignArg.isEmpty())
             runVa(QStringLiteral("plot.align"),
                   {{QStringLiteral("mode"), alignArg}});
+    }
+
+    // --legend=<collapse|zoomN>：图例交互（第二梯队 #205）。
+    // collapse = 折叠图例；zoomN = 字号缩放 N 步（正放大负缩小）。走 view action 同路径。
+    if (!legendArg.isEmpty() && firstDataset >= 0)
+    {
+        QVariant lv;
+        Result<QVariant> lres(lv);
+        auto *wsx = qobject_cast<CanvasWorkspace *>(
+            window.binder() ? window.binder()->centralContent() : nullptr);
+        if (wsx && wsx->activeCanvas())
+        {
+            // 确保 activeCanvas 是活动 cell 的画布（view action 作用于它）。
+            if (legendArg == QStringLiteral("collapse"))
+                application.context().interactions().dispatchViewAction(
+                    QStringLiteral("plot.legend.collapse"), {}, lres);
+            else if (legendArg.startsWith(QStringLiteral("zoom")))
+            {
+                bool okSteps = false;
+                const int steps = legendArg.mid(4).toInt(&okSteps);
+                if (okSteps)
+                    application.context().interactions().dispatchViewAction(
+                        QStringLiteral("plot.legend.fontZoom"),
+                        {{QStringLiteral("steps"), steps}}, lres);
+            }
+            fprintf(stdout, "图例交互 %s: %s\n", qPrintable(legendArg),
+                    lres.ok() ? "成功" : qPrintable(lres.error().message));
+        }
     }
 
     // --cursor=<t>：走真实画布 API 触发游标读数（老代码交互欠账验收）。
