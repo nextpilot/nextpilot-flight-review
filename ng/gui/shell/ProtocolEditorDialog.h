@@ -70,6 +70,7 @@ public:
 
     // 切到指定页签（0 顶层字段 / 1 帧结构 / 2 子协议 / 3 JSON），供截图与自动化。
     void selectTab(int index);
+    void shotExpectLines(int row, const QString &png);
     void openFirstSegmentDetail();
 
 private:

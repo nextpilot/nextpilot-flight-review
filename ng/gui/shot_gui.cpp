@@ -60,6 +60,7 @@ int main(int argc, char *argv[])
         const QString tplPath = argc >= 4 ? QString::fromLocal8Bit(argv[3]) : QString();
         const QString frameHex = argc >= 5 ? QString::fromLocal8Bit(argv[4]) : QString();
         const int tabIndex = argc >= 6 ? QString::fromLocal8Bit(argv[5]).toInt() : 0;
+        const bool expectShot = argc >= 7 && QString::fromLocal8Bit(argv[6]) == QLatin1String("expect");
         const bool segShot = argc >= 7 && QString::fromLocal8Bit(argv[6]) == QLatin1String("seg");
         if (segShot)
         {
@@ -85,9 +86,14 @@ int main(int argc, char *argv[])
                 btn->click();
         }
         dlg.selectTab(tabIndex);
+        if (expectShot)
+        {
+            const int row = argc >= 8 ? QString::fromLocal8Bit(argv[7]).toInt() : 0;
+            dlg.shotExpectLines(row, png + QStringLiteral("-expect.png"));
+        }
         dlg.show();
         QCoreApplication::processEvents();
-        QTimer::singleShot(200, [&] {
+        QTimer::singleShot(expectShot ? 1600 : 200, [&] {
             const QPixmap shot = dlg.grab();
             if (shot.save(png))
                 fprintf(stdout, "协议编辑器截图已保存: %s (%dx%d)\n", qPrintable(png),

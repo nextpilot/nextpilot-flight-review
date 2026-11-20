@@ -17,6 +17,10 @@
 #include <QFrame>
 #include <QClipboard>
 #include <QComboBox>
+#include <QCursor>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QTextCursor>
 #include <QDialogButtonBox>
 #include <QDropEvent>
 #include <QFile>
@@ -245,6 +249,147 @@ bool expectLooksBroken(const QString &text)
     return false;
 }
 
+// 约束的多行编辑框：就近弹出（贴着鼠标那格），一行一条，确定后整段替换。
+// 写法与段表格一致：每行可以是 170 / >=0 / {1,3} / [0,100) / xor8 msgid:station。
+static bool editExpectLines(QWidget *parent, const QString &initial, const QPoint &at, QString *out,
+                            const QString &shotPath = QString())
+{
+    QDialog dlg(parent);
+    dlg.setWindowTitle(QStringLiteral("约束（每行一条）"));
+    dlg.setWindowFlags(dlg.windowFlags() | Qt::Tool);
+    dlg.resize(440, 300);
+    auto *l = new QVBoxLayout(&dlg);
+    l->setContentsMargins(10, 10, 10, 10);
+    l->setSpacing(6);
+    auto *hint = new QLabel(QStringLiteral(
+        "每行一条。170 判等；>=0 / <100 比大小；{1,3} 属集合；[0,100) 是区间；"
+        "xor8 msgid:station 是校验和（区间写起止段名）。"));
+    hint->setWordWrap(true);
+    hint->setStyleSheet(QStringLiteral("color:#666;"));
+    l->addWidget(hint);
+
+    auto *e = new QPlainTextEdit;
+    e->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    e->setTabChangesFocus(true);
+    {
+        QStringList lines;
+        for (const QString &x : initial.split(QLatin1Char(';')))
+            if (!x.trimmed().isEmpty())
+                lines << x.trimmed();
+        e->setPlainText(lines.join(QLatin1Char('\n')));
+    }
+    l->addWidget(e, 1);
+
+    // 常用写法一点就插到当前行尾，省得背写法
+    auto *snipRow = new QHBoxLayout;
+    for (const QString &snip : QStringList{QStringLiteral(">=0"), QStringLiteral(">0"),
+                                           QStringLiteral("{0,1}"), QStringLiteral("[0,100)"),
+                                           QStringLiteral("xor8 "), QStringLiteral("crc16_modbus ")})
+    {
+        auto *b = new QToolButton;
+        b->setText(snip.trimmed());
+        b->setToolTip(QStringLiteral("插入到当前行末"));
+        QObject::connect(b, &QToolButton::clicked, e, [e, snip] {
+            QTextCursor cur = e->textCursor();
+            cur.movePosition(QTextCursor::EndOfLine);
+            cur.insertText(snip);
+            e->setTextCursor(cur);
+            e->setFocus();
+        });
+        snipRow->addWidget(b);
+    }
+    snipRow->addStretch(1);
+    l->addLayout(snipRow);
+
+    auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    bb->button(QDialogButtonBox::Ok)->setText(QStringLiteral("应用"));
+    bb->button(QDialogButtonBox::Ok)->setToolTip(QStringLiteral("Ctrl+Enter 也能直接应用"));
+    bb->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    l->addWidget(bb);
+    QObject::connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    // 就近弹：贴着鼠标那格的右下角，越界就往里收
+    QRect scr;
+    if (auto *s = QGuiApplication::screenAt(at))
+        scr = s->availableGeometry();
+    else if (auto *s = QGuiApplication::primaryScreen())
+        scr = s->availableGeometry();
+    QPoint want = at + QPoint(12, 12);
+    if (!scr.isNull())
+    {
+        want.setX(qMin(want.x(), scr.right() - dlg.width()));
+        want.setY(qMin(want.y(), scr.bottom() - dlg.height()));
+        want.setX(qMax(want.x(), scr.left()));
+        want.setY(qMax(want.y(), scr.top()));
+    }
+    dlg.move(want);
+
+    // Ctrl+Enter 直接应用（写多行时不用去够按钮）
+    {
+        struct KeyFilter : QObject
+        {
+            QDialog *dlg = nullptr;
+            bool eventFilter(QObject *o, QEvent *ev) override
+            {
+                if (ev->type() == QEvent::KeyPress &&
+                    static_cast<QKeyEvent *>(ev)->key() == Qt::Key_Return &&
+                    (static_cast<QKeyEvent *>(ev)->modifiers() & Qt::ControlModifier))
+                {
+                    dlg->accept();
+                    return true;
+                }
+                return QObject::eventFilter(o, ev);
+            }
+        };
+        auto *kf = new KeyFilter;
+        kf->dlg = &dlg;
+        kf->setParent(&dlg);
+        e->installEventFilter(kf);
+    }
+
+    // 截图钩子（仅自动化验收用）：抓完就关
+    if (!shotPath.isEmpty())
+        QTimer::singleShot(400, &dlg, [&dlg, shotPath] {
+            dlg.grab().save(shotPath);
+            dlg.accept();
+        });
+
+    if (dlg.exec() != QDialog::Accepted)
+        return false;
+    QStringList lines;
+    for (const QString &x : e->toPlainText().split(QLatin1Char('\n')))
+        if (!x.trimmed().isEmpty())
+            lines << x.trimmed();
+    if (out)
+        *out = lines.join(QStringLiteral("; "));
+    return true;
+}
+
+// 约束格：双击就近弹多行框（一行一条），不再在单行格里硬挤多个条件。
+class ExpectLinesDelegate : public QStyledItemDelegate
+{
+public:
+    explicit ExpectLinesDelegate(QWidget *owner) : m_owner(owner) {}
+
+    bool editorEvent(QEvent *e, QAbstractItemModel *model, const QStyleOptionViewItem &,
+                     const QModelIndex &index) override
+    {
+        if (e->type() != QEvent::MouseButtonDblClick)
+            return false;
+        const QString before = index.data(Qt::EditRole).toString();
+        QString after;
+        if (!editExpectLines(m_owner, before, QCursor::pos(), &after))
+            return true;
+        if (after != before)
+            model->setData(index, after, Qt::EditRole);
+        return true;
+    }
+
+private:
+    QWidget *m_owner;
+};
+
 // 约束格的小面板：列出最常用的几种写法，点一下就填进去；手打照样生效（格内仍可编辑）。
 class ExpectComboDelegate : public QStyledItemDelegate
 {
@@ -310,8 +455,8 @@ void setupSegTable(QTableWidget *t, bool compact = false)
     auto *typeDelegate = new TypeComboDelegate(typeOptionsWith({}), t);
     t->setItemDelegateForColumn(SegType, typeDelegate);
     typeDelegateMap().insert(t, typeDelegate);
-    // 约束格同样给一个可输入的下拉：常用条件一点即填，不用背写法
-    t->setItemDelegateForColumn(SegExpect, new ExpectComboDelegate(t));
+    // 约束格双击就近弹多行框：一行一条，多条件不用挤在一格里
+    t->setItemDelegateForColumn(SegExpect, new ExpectLinesDelegate(t));
     t->setAlternatingRowColors(true);
     t->verticalHeader()->setVisible(false);
     t->verticalHeader()->setDefaultSectionSize(26);
@@ -2169,6 +2314,22 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
         auto *h = new QHBoxLayout(holder);
         h->setContentsMargins(0, 0, 0, 0);
         h->addWidget(editor);
+        // 约束是多条件的东西，单行框只当摘要显示，真编辑走就近多行框
+        if (path == QLatin1String("expect"))
+        {
+            auto *mb = new QToolButton;
+            mb->setText(QStringLiteral("多行…"));
+            mb->setToolTip(QStringLiteral("每行一条约束，就近弹出"));
+            QObject::connect(mb, &QToolButton::clicked, &dlg, [&dlg, editor] {
+                auto *le = qobject_cast<QLineEdit *>(editor);
+                QString out;
+                if (!editExpectLines(&dlg, le ? le->text() : QString(), QCursor::pos(), &out))
+                    return;
+                if (le)
+                    le->setText(out);
+            });
+            h->addWidget(mb);
+        }
         grid->addWidget(lab, gi, gj * 2);
         grid->addWidget(holder, gi, gj * 2 + 1);
         addBind(holder, path, editor, kind);
@@ -2644,6 +2805,16 @@ void ProtocolEditorDialog::openFirstSegmentDetail()
     // 自动化验收可指定行号，正常交互固定第一行
     const int row = qEnvironmentVariableIntValue("PLOTSCOPE_SHOT_SEG_ROW");
     openSegmentDetail(m_segs, row > 0 ? row : 0);
+}
+
+void ProtocolEditorDialog::shotExpectLines(int row, const QString &png)
+{
+    if (!m_segs || row < 0 || row >= m_segs->rowCount())
+        return;
+    const QString cur = m_segs->item(row, SegExpect) ? m_segs->item(row, SegExpect)->text() : QString();
+    QTimer::singleShot(80, this, [this, cur, png] {
+        editExpectLines(this, cur, mapToGlobal(QPoint(120, 260)), nullptr, png);
+    });
 }
 
 void ProtocolEditorDialog::selectTab(int index)
