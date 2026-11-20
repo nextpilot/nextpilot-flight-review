@@ -70,42 +70,7 @@ enum SegCol
     SegColCount
 };
 
-// 类型格：可编辑下拉。手打 `float[3]` 仍然管用，但不必记住拼写——
-// 候选里直接给 `bit[8@0]`、`rbit[16@8]` 这种现成写法，加上本文档里的块名与 types 别名。
-class SegTypeDelegate : public QStyledItemDelegate
-{
-public:
-    explicit SegTypeDelegate(std::function<QStringList()> cands, QObject *parent = nullptr)
-        : QStyledItemDelegate(parent), m_cands(std::move(cands))
-    {
-    }
 
-    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &,
-                          const QModelIndex &) const override
-    {
-        auto *cb = new QComboBox(parent);
-        cb->setEditable(true);
-        cb->setInsertPolicy(QComboBox::NoInsert);
-        cb->addItems(m_cands());
-        return cb;
-    }
-
-    void setEditorData(QWidget *editor, const QModelIndex &index) const override
-    {
-        if (auto *cb = qobject_cast<QComboBox *>(editor))
-            cb->setCurrentText(index.data(Qt::EditRole).toString());
-    }
-
-    void setModelData(QWidget *editor, QAbstractItemModel *model,
-                      const QModelIndex &index) const override
-    {
-        if (auto *cb = qobject_cast<QComboBox *>(editor))
-            model->setData(index, cb->currentText(), Qt::EditRole);
-    }
-
-private:
-    std::function<QStringList()> m_cands;
-};
 
 
 QJsonObject objectFromItem(const QTableWidgetItem *item)
@@ -180,7 +145,11 @@ const QStringList &baseTypeOptions()
         QStringLiteral("u64"), QStringLiteral("i64"), QStringLiteral("f32"),
         QStringLiteral("f64"), QStringLiteral("bool"), QStringLiteral("bcd"),
         QStringLiteral("char"), QStringLiteral("string"), QStringLiteral("number"),
-        QStringLiteral("rest"), QStringLiteral("time")};
+        QStringLiteral("rest"), QStringLiteral("time"),
+        // 位域：bit=小端序、rbit=大端序；方括号里是 宽@偏移，偏移是帧内绝对位槽
+        QStringLiteral("bit[1@0]"), QStringLiteral("bit[8@0]"), QStringLiteral("bit[16@0]"),
+        QStringLiteral("bit[32@0]"), QStringLiteral("rbit[1@0]"), QStringLiteral("rbit[8@0]"),
+        QStringLiteral("rbit[16@8]"), QStringLiteral("rbit[32@0]")};
     return opts;
 }
 
@@ -212,7 +181,9 @@ public:
                           const QModelIndex &) const override
     {
         auto *c = new QComboBox(parent);
-        c->setEditable(false);            // 只能选
+        // 能选也能打：固定选项只覆盖常见写法，float[3] / bit[8@0] 这种组合还得手输
+        c->setEditable(true);
+        c->setInsertPolicy(QComboBox::NoInsert);
         for (const QString &o : m_opts)
             c->addItem(o);
         return c;
@@ -271,6 +242,43 @@ bool expectLooksBroken(const QString &text)
     return false;
 }
 
+// 约束格的小面板：列出最常用的几种写法，点一下就填进去；手打照样生效（格内仍可编辑）。
+class ExpectComboDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &,
+                          const QModelIndex &) const override
+    {
+        auto *c = new QComboBox(parent);
+        c->setEditable(true);
+        c->setInsertPolicy(QComboBox::NoInsert);
+        for (const QString &o : QStringList{QString(), QStringLiteral(">=0"),
+                                            QStringLiteral(">0"), QStringLiteral("<100"),
+                                            QStringLiteral("[0,100)"), QStringLiteral("{0,1}"),
+                                            QStringLiteral("0x5A"), QStringLiteral("53"),
+                                            QStringLiteral("crc8"), QStringLiteral("xor8"),
+                                            QStringLiteral("sum8"), QStringLiteral("crc16_modbus"),
+                                            QStringLiteral("parity")})
+            c->addItem(o);
+        return c;
+    }
+
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        if (auto *c = qobject_cast<QComboBox *>(editor))
+            c->setCurrentText(index.data(Qt::EditRole).toString());
+    }
+
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                      const QModelIndex &index) const override
+    {
+        if (auto *c = qobject_cast<QComboBox *>(editor))
+            model->setData(index, c->currentText(), Qt::EditRole);
+    }
+};
+
 void setupSegTable(QTableWidget *t, bool compact = false)
 {
     t->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("类型"),
@@ -287,6 +295,8 @@ void setupSegTable(QTableWidget *t, bool compact = false)
     auto *typeDelegate = new TypeComboDelegate(typeOptionsWith({}), t);
     t->setItemDelegateForColumn(SegType, typeDelegate);
     typeDelegateMap().insert(t, typeDelegate);
+    // 约束格同样给一个可输入的下拉：常用条件一点即填，不用背写法
+    t->setItemDelegateForColumn(SegExpect, new ExpectComboDelegate(t));
     t->setAlternatingRowColors(true);
     t->verticalHeader()->setVisible(false);
     t->verticalHeader()->setDefaultSectionSize(26);
@@ -787,12 +797,13 @@ ProtocolEditorDialog::~ProtocolEditorDialog() = default;
 
 void ProtocolEditorDialog::buildDesignPages()
 {
-    // ---- 页 1：顶层字段（协议级只写一次的东西） ----
-    auto *fieldPage = new QWidget;
-    auto *fieldLay = new QVBoxLayout(fieldPage);
-    fieldLay->setContentsMargins(8, 8, 8, 8);
+    // ---- 页 2：帧结构（段表，协议的主体） ----
+    auto *framePage = new QWidget;
+    auto *frameLay = new QVBoxLayout(framePage);
+    frameLay->setContentsMargins(8, 8, 8, 8);
 
-    auto *head = new QGroupBox(QStringLiteral("顶层字段"), fieldPage);
+    // ---- 结构页上半：顶层字段（协议级只写一次的东西） ----
+    auto *head = new QGroupBox(QStringLiteral("顶层字段"), framePage);
     // 单列表单在桌面上会被拉成 700px 的长条；两列网格更紧凑，也更好扫读。
     auto *grid = new QGridLayout(head);
     grid->setHorizontalSpacing(10);
@@ -834,7 +845,7 @@ void ProtocolEditorDialog::buildDesignPages()
     m_terminator = new QLineEdit(head);
     m_terminator->setPlaceholderText(QStringLiteral("text 帧终止标记，如 \\r\\n（可留空）"));
 
-    auto *verLabel = new QLabel(QStringLiteral("psproto 2 · v1 键已删除，不做兼容映射"), head);
+    auto *verLabel = new QLabel(QStringLiteral("v3：顶层 14 键、bin 段 10 键，不做 v2 兼容"), head);
     verLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
 
     grid->addWidget(new QLabel(QStringLiteral("名称")), 0, 0);
@@ -854,14 +865,8 @@ void ProtocolEditorDialog::buildDesignPages()
     grid->addWidget(new QLabel(QStringLiteral("帧终止")), 5, 0);
     grid->addWidget(m_terminator, 5, 1, 1, 3);
     grid->addWidget(verLabel, 6, 0, 1, 4);
-    fieldLay->addWidget(head);
-    fieldLay->addStretch(1);
-    m_tabs->addTab(fieldPage, QStringLiteral("顶层字段"));
+    frameLay->addWidget(head);
 
-    // ---- 页 2：帧结构（段表，协议的主体） ----
-    auto *framePage = new QWidget;
-    auto *frameLay = new QVBoxLayout(framePage);
-    frameLay->setContentsMargins(8, 8, 8, 8);
 
     // 增删只在表格上发生（底部「＋ 添加字段」/ 右键 / Delete），顶部不再放一对按钮。
     auto *segHint = new QLabel(
@@ -876,8 +881,6 @@ void ProtocolEditorDialog::buildDesignPages()
     auto *segTable = new ReorderTable(0, SegColCount, framePage);
     m_segs = segTable;
     setupSegTable(m_segs);
-    m_segs->setItemDelegateForColumn(
-        SegType, new SegTypeDelegate([this] { return segTypeCandidates(); }, this));
     static_cast<ReorderTable *>(m_segs)->onMove = [this](int from, int to) {
         moveTableRow(m_segs, from, to);
         markDirty();
@@ -891,7 +894,64 @@ void ProtocolEditorDialog::buildDesignPages()
     addBar->addWidget(segAddRowBtn);
     addBar->addStretch(1);
     frameLay->addLayout(addBar);
-    m_tabs->addTab(framePage, QStringLiteral("帧结构"));
+    m_tabs->addTab(framePage, QStringLiteral("结构"));
+
+    // ---- 页 2：派生（顶层 derived，按序求值） ----
+    auto *derPage = new QWidget;
+    auto *derLay = new QVBoxLayout(derPage);
+    derLay->setContentsMargins(8, 8, 8, 8);
+    auto *derHint = new QLabel(
+        QStringLiteral("派生量不进帧、不占字节：按行顺序求值，可引用前面已算出的派生；"
+                       "引用段取输出值（变换后的物理量），引用块内字段写裸字段名。"),
+        derPage);
+    derHint->setWordWrap(true);
+    derHint->setStyleSheet(QStringLiteral("color:#666;"));
+    derLay->addWidget(derHint);
+    m_derived = new QTableWidget(0, 4, derPage);
+    m_derived->setHorizontalHeaderLabels({QStringLiteral("名字"), QStringLiteral("表达式"),
+                                          QStringLiteral("单位"), QStringLiteral("输出")});
+    m_derived->horizontalHeader()->setStretchLastSection(false);
+    m_derived->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_derived->setColumnWidth(0, 130);
+    m_derived->setColumnWidth(2, 90);
+    m_derived->setColumnWidth(3, 90);
+    m_derived->verticalHeader()->setVisible(false);
+    m_derived->verticalHeader()->setDefaultSectionSize(26);
+    m_derived->setAlternatingRowColors(true);
+    m_derived->setSelectionBehavior(QAbstractItemView::SelectRows);
+    // 输出列只有三个合法值，给下拉，省得记
+    m_derived->setItemDelegateForColumn(
+        3, new TypeComboDelegate({QStringLiteral("channel"), QStringLiteral("aux"),
+                                  QStringLiteral("none")}, m_derived));
+    derLay->addWidget(m_derived, 1);
+    auto *derBar = new QHBoxLayout;
+    auto *derAdd = new QPushButton(QStringLiteral("＋ 添加派生"), derPage);
+    auto *derDel = new QPushButton(QStringLiteral("删除选中"), derPage);
+    derAdd->setFixedHeight(24);
+    derDel->setFixedHeight(24);
+    derBar->addWidget(derAdd);
+    derBar->addWidget(derDel);
+    derBar->addStretch(1);
+    derLay->addLayout(derBar);
+    connect(derAdd, &QPushButton::clicked, this, [this] {
+        const int r = m_derived->rowCount();
+        m_derived->insertRow(r);
+        m_derived->setItem(r, 0, new QTableWidgetItem(QStringLiteral("d%1").arg(r + 1)));
+        for (int c = 1; c < 4; ++c)
+            m_derived->setItem(r, c, new QTableWidgetItem(QString()));
+        markDirty();
+    });
+    connect(derDel, &QPushButton::clicked, this, [this] {
+        const int r = m_derived->currentRow();
+        if (r < 0)
+            return;
+        m_syncing = true;
+        m_derived->removeRow(r);
+        m_syncing = false;
+        markDirty();
+    });
+    connect(m_derived, &QTableWidget::itemChanged, this, [this] { markDirty(); });
+    m_tabs->insertTab(1, derPage, QStringLiteral("派生"));
 
     // ---- 页 3：子协议（系列 + 变体段表） ----
     auto *subPage = new QWidget;
@@ -963,8 +1023,6 @@ void ProtocolEditorDialog::buildDesignPages()
     auto *varSegTable = new ReorderTable(0, SegColCount, varSegCol);
     m_varSegs = varSegTable;
     setupSegTable(m_varSegs, true);
-    m_varSegs->setItemDelegateForColumn(
-        SegType, new SegTypeDelegate([this] { return segTypeCandidates(); }, this));
     static_cast<ReorderTable *>(m_varSegs)->onMove = [this](int from, int to) {
         moveTableRow(m_varSegs, from, to);
         storeVariantSegs();
@@ -1361,6 +1419,60 @@ bool ProtocolEditorDialog::applyExpectCell(const QString &text, QJsonObject &seg
 
 // ---------------------------------------------------------------- 段表填充/读取
 
+void ProtocolEditorDialog::fillDerivedTable(const QJsonArray &derived)
+{
+    m_syncing = true;
+    m_derived->setRowCount(0);
+    for (const QJsonValue &v : derived)
+    {
+        const QJsonObject o = v.toObject();
+        const int r = m_derived->rowCount();
+        m_derived->insertRow(r);
+        auto *name = new QTableWidgetItem(o.value(QStringLiteral("name")).toString());
+        storeObjectOnItem(name, o); // 底稿：保住 description 这些表里没有的键
+        m_derived->setItem(r, 0, name);
+        m_derived->setItem(r, 1, new QTableWidgetItem(o.value(QStringLiteral("expr")).toString()));
+        m_derived->setItem(r, 2, new QTableWidgetItem(o.value(QStringLiteral("unit")).toString()));
+        m_derived->setItem(r, 3, new QTableWidgetItem(o.value(QStringLiteral("output")).toString()));
+    }
+    m_syncing = false;
+}
+
+QJsonArray ProtocolEditorDialog::derivedTableToJson() const
+{
+    QJsonArray arr;
+    for (int r = 0; r < m_derived->rowCount(); ++r)
+    {
+        auto *nameItem = m_derived->item(r, 0);
+        const QString name = nameItem ? nameItem->text().trimmed() : QString();
+        if (name.isEmpty())
+            continue;
+        QJsonObject o = objectFromItem(nameItem);
+        o.insert(QStringLiteral("name"), name);
+        auto textOf = [this, r](int c) {
+            const auto *it = m_derived->item(r, c);
+            return it ? it->text().trimmed() : QString();
+        };
+        const QString expr = textOf(1);
+        if (expr.isEmpty())
+            o.remove(QStringLiteral("expr"));
+        else
+            o.insert(QStringLiteral("expr"), expr);
+        const QString unit = textOf(2);
+        if (unit.isEmpty())
+            o.remove(QStringLiteral("unit"));
+        else
+            o.insert(QStringLiteral("unit"), unit);
+        const QString out = textOf(3);
+        if (out.isEmpty())
+            o.remove(QStringLiteral("output"));
+        else
+            o.insert(QStringLiteral("output"), out);
+        arr.append(o);
+    }
+    return arr;
+}
+
 void ProtocolEditorDialog::fillSegTable(QTableWidget *table, const QJsonArray &segs,
                                         const QJsonObject &blocks)
 {
@@ -1433,23 +1545,6 @@ void ProtocolEditorDialog::fillSegTable(QTableWidget *table, const QJsonArray &s
         }
     }
     m_syncing = false;
-}
-
-QStringList ProtocolEditorDialog::segTypeCandidates() const
-{
-    // 内置类型在前，位域写法给几个常用组合（bit=小端序、rbit=大端序），
-    // 再接本文档自己的块名与 types 别名——用户不必记拼写，也不至于在下拉里迷路。
-    QStringList l{QStringLiteral("u8"),      QStringLiteral("u16"),   QStringLiteral("u32"),
-                  QStringLiteral("u64"),     QStringLiteral("i8"),    QStringLiteral("i16"),
-                  QStringLiteral("i32"),     QStringLiteral("i64"),   QStringLiteral("f32"),
-                  QStringLiteral("f64"),     QStringLiteral("float"), QStringLiteral("double"),
-                  QStringLiteral("bytes"),   QStringLiteral("string"), QStringLiteral("bool"),
-                  QStringLiteral("bit[1@0]"), QStringLiteral("bit[8@0]"),
-                  QStringLiteral("bit[16@0]"), QStringLiteral("bit[32@0]"),
-                  QStringLiteral("rbit[1@0]"), QStringLiteral("rbit[8@0]"),
-                  QStringLiteral("rbit[16@8]"), QStringLiteral("rbit[32@0]")};
-    l += m_knownTypes;
-    return l;
 }
 
 QJsonArray ProtocolEditorDialog::segTableToJson(QTableWidget *table) const
@@ -2037,7 +2132,11 @@ void ProtocolEditorDialog::refreshFromJson()
     m_tsUnit->setCurrentText(ts.value(QStringLiteral("unit")).toString());
 
     {
-        const QStringList opts = typeOptionsWith(doc.value(QStringLiteral("types")).toObject());
+        // 类型候选 = 内置类型 + 位域写法 + types 别名（@name）+ 本文档块名
+        QStringList opts = typeOptionsWith(doc.value(QStringLiteral("types")).toObject());
+        for (const QString &k : doc.value(QStringLiteral("blocks")).toObject().keys())
+            if (!opts.contains(k))
+                opts << k;
         for (QTableWidget *t : {m_segs, m_varSegs})
             if (auto *d = typeDelegateMap().value(t))
                 d->setOptions(opts);
@@ -2055,11 +2154,10 @@ void ProtocolEditorDialog::refreshFromJson()
     m_fallback->setCurrentText(series.value(QStringLiteral("fallback"))
                                    .toString(QStringLiteral("reject")));
 
-    m_knownTypes = doc.value(QStringLiteral("blocks")).toObject().keys() +
-                   doc.value(QStringLiteral("types")).toObject().keys();
     fillSegTable(m_segs, doc.value(QStringLiteral("segments")).toArray(),
                  doc.value(QStringLiteral("blocks")).toObject());
     fillVariantsTable(series.value(QStringLiteral("variants")).toArray());
+    fillDerivedTable(doc.value(QStringLiteral("derived")).toArray());
 
     m_syncing = false;
     m_dirty = false;
@@ -2103,7 +2201,6 @@ QJsonObject ProtocolEditorDialog::collectDoc() const
     else
         doc.remove(QStringLiteral("maxsize"));
     doc.insert(QStringLiteral("endian"), m_endian->currentText());
-    doc.insert(QStringLiteral("psproto"), QStringLiteral("2"));
     const QString terminator = m_terminator->text();
     if (terminator.isEmpty())
         doc.remove(QStringLiteral("terminator"));
@@ -2128,6 +2225,13 @@ QJsonObject ProtocolEditorDialog::collectDoc() const
     }
 
     doc.insert(QStringLiteral("segments"), segTableToJson(m_segs));
+    {
+        const QJsonArray der = derivedTableToJson();
+        if (der.isEmpty())
+            doc.remove(QStringLiteral("derived"));
+        else
+            doc.insert(QStringLiteral("derived"), der);
+    }
 
     if (m_seriesOn->isChecked())
     {

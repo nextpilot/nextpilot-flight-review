@@ -86,8 +86,9 @@ private:
     void commitDesign();             // 控件 -> JSON（切页签/校验/试算/保存前）
     QJsonObject collectDoc() const;  // 以 JSON 为底，覆盖表单、段表与变体
     QJsonArray segTableToJson(QTableWidget *table) const;
-    QStringList segTypeCandidates() const;
-    QStringList m_knownTypes; // 文档里的块名与 types 别名，进类型格候选
+    void fillDerivedTable(const QJsonArray &derived);
+    QJsonArray derivedTableToJson() const;
+    QTableWidget *m_derived = nullptr; // 派生页（顶层 derived）
     void fillSegTable(QTableWidget *table, const QJsonArray &segs,
                       const QJsonObject &blocks = QJsonObject());
     void fillVariantsTable(const QJsonArray &variants);
