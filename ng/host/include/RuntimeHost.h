@@ -105,6 +105,8 @@ public:
     { return m_appCtx.interactions().evalTransform(request, cap, t, v, out); }
     void registerTransformScriptOps(nextpilot::plotscope::uischema::TransformScriptOps ops)
     { m_appCtx.interactions().registerTransformScriptOps(std::move(ops)); }
+    void registerFilterOps(nextpilot::plotscope::uischema::FilterOps ops)
+    { m_appCtx.interactions().registerFilterOps(std::move(ops)); }
 
     // 便捷转发（内部使用；器官请通过 ModuleContext::app() 取）。
     nextpilot::plotscope::dataset::DataRepository &data() { return m_appCtx.data(); }

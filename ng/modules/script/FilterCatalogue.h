@@ -50,6 +50,14 @@ public:
     // 只返回 class id 的自包含 Luau 模块；create 会把未提供参数填成 descriptor default。
     std::optional<QByteArray> standaloneClassScript(const QString &id) const;
 
+    // 把 descriptor 编成 GUI 可直接生成表单的 JSON（字段与 ParamSpec 对齐）；不存在返回 null JSON。
+    static QJsonObject descriptorToJson(const FilterDescriptor &d);
+
+    // 对一条序列逐样本应用过滤器，返回 {time:[f64...], value:[f64...]}。
+    // t/v 为绝对时间/值；按首样本重基为相对秒喂给实例，处理 suppress/显式时间后加回基准。
+    Result<QJsonObject> applySeries(const QString &id, const QJsonObject &params,
+                                    const QVector<double> &t, const QVector<double> &v) const;
+
 private:
     std::shared_ptr<FilterEngine> m_engine;
     QVector<CatalogueEntry> m_entries;

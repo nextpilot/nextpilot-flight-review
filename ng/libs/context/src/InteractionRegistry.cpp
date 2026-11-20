@@ -69,6 +69,11 @@ bool InteractionRegistry::evalTransform(const QJsonObject &request, uint32_t cap
     return true;
 }
 
+void InteractionRegistry::registerFilterOps(FilterOps ops)
+{
+    m_filterOps = std::move(ops);
+}
+
 void InteractionRegistry::registerTransformScriptOps(TransformScriptOps ops)
 {
     m_transformScriptOps = std::move(ops);

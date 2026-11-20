@@ -12,6 +12,7 @@ add_library(ng_uischema STATIC
     include/SchemaEngine.h
     include/Selection.h
     include/Transform.h
+    include/FilterOps.h
     include/PropertySchema.h
 )
 target_include_directories(ng_uischema PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

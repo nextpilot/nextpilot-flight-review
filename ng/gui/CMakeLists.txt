@@ -52,6 +52,8 @@ set_target_properties(ng_gui_theme PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITIO
 add_library(ng_gui_transform OBJECT
     shell/TransformEditorDialog.cpp
     shell/TransformEditorDialog.h
+    shell/FilterEditorDialog.cpp
+    shell/FilterEditorDialog.h
     shell/TransformField.cpp
     shell/TransformField.h
     shell/LuaEditor.cpp

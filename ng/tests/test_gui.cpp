@@ -25,6 +25,7 @@
 #include "PlotCanvas.h"
 #include "CanvasWorkspace.h"
 #include "ShellBinder.h"
+#include "FilterEditorDialog.h"
 
 #include "AppContext.h"
 #include "ChannelMime.h"
@@ -36,12 +37,16 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
 #include <QSet>
 #include <QStatusBar>
 #include <QTemporaryDir>
+
+#include <cmath>
 
 #include <cstdio>
 #include <cstdlib>
@@ -101,6 +106,10 @@ int main(int argc, char *argv[])
 
     App application;
     MainWindow window(application.context());
+    // derivedSeriesReady 的观察计数：lambda 以 &application 为接收者会活到 application 析构，
+    // 故必须用 application 之前声明、之后的持久变量，不能捕获块内栈变量（悬空引用→堆损坏）。
+    int g_derivedCount = 0, g_filterCount = 0, g_scriptFilterCount = 0;
+    QString g_derivedName;
     window.build(application.host());
     // 先给窗口一个确定尺寸：画布按自身像素宽请求数据，尺寸确定后断言才可复现。
     window.resize(1280, 800);
@@ -472,14 +481,15 @@ int main(int argc, char *argv[])
         const QString tableName = tbl->name;
         const QString columnName = tbl->columns.first().name;
 
-        // 订阅派生结果事件。
-        int derivedSignalCount = 0;
-        QString derivedName;
+        // 订阅派生结果事件（用持久计数，精确捕获，杜绝悬空引用）。
         QObject::connect(&application.context(), &AppContext::derivedSeriesReady,
-                         &application, [&](const QString &name, const QVector<double> &time,
+                         &application, [&g_derivedCount, &g_derivedName](
+                                           const QString &name, const QVector<double> &time,
                                            const QVector<double> &value) {
-                             ++derivedSignalCount;
-                             derivedName = name;
+                             if (!name.contains(QStringLiteral(".absolute")))
+                                 return;
+                             ++g_derivedCount;
+                             g_derivedName = name;
                              CHECK(time.size() == value.size());
                              CHECK(!time.isEmpty());
                          });
@@ -499,8 +509,8 @@ int main(int argc, char *argv[])
         const QVector<double> dvalue = pm.value(QStringLiteral("value")).value<QVector<double>>();
         CHECK(dtime.size() == count);
         CHECK(dvalue.size() == count);
-        CHECK(derivedSignalCount == 1);
-        CHECK(!derivedName.isEmpty());
+        CHECK(g_derivedCount == 1);
+        CHECK(!g_derivedName.isEmpty());
 
         // 关键断言：派生后数据集结构完全没变（没有新列、行数一致）。
         const Dataset *after = application.data().get(loadedDsId);
@@ -511,6 +521,50 @@ int main(int argc, char *argv[])
         CHECK(tblAfter->rows == rowsBefore);
         CHECK(tblAfter->columns.size() == colsBefore);
         OK("data.derive：Rust 实时派生结果给 UI（payload+信号），原数据集零改动");
+
+        // --- 5d) data.filter：有状态 Lua 过滤器作用到通道（FilterOps 全链路）---
+        // script 模块把 FilterCatalogue 注入 InteractionRegistry；host 的 data.filter
+        // 取原始通道 → filterOps.applySeries → derivedSeriesReady，同样不写回数据集。
+        CHECK(application.context().interactions().hasFilterOps());
+        const QJsonArray filterList = application.context().interactions().filterOps().list();
+        CHECK(filterList.size() >= 12); // 12 个 PJ4 内置过滤器全部编目
+
+        // 原始通道首值做对照。
+        const auto rawCh = after->channel(tableName, columnName);
+        CHECK(rawCh.has_value() && rawCh->size() > 0);
+        const double firstRaw = rawCh->value.value(0);
+
+        QObject::connect(&application.context(), &AppContext::derivedSeriesReady,
+                         &application, [&g_filterCount](const QString &name, const QVector<double> &time,
+                                           const QVector<double> &value) {
+                             if (name.contains(QStringLiteral(".scale")))
+                             {
+                                 ++g_filterCount;
+                                 CHECK(time.size() == value.size());
+                                 CHECK(!time.isEmpty());
+                             }
+                         });
+
+        Intent fit;
+        fit.op = QStringLiteral("data.filter");
+        fit.params[QStringLiteral("dataset")] = loadedDsId;
+        fit.params[QStringLiteral("table")] = tableName;
+        fit.params[QStringLiteral("column")] = columnName;
+        fit.params[QStringLiteral("filter")] = QStringLiteral("scale");
+        fit.params[QStringLiteral("params")] =
+            QVariant(QJsonObject{{QStringLiteral("value_scale"), 2.0}});
+        const auto fr = application.host().execute(fit);
+        CHECK(fr);
+        const QVariantMap fpm = fr.value().payload.toMap();
+        const int fcount = fpm.value(QStringLiteral("count")).toInt();
+        CHECK(fcount > 0);
+        const QVector<double> fval = fpm.value(QStringLiteral("value")).value<QVector<double>>();
+        CHECK(fval.size() == fcount);
+        CHECK(std::abs(fval.first() - firstRaw * 2.0) < 1e-9); // scale.cpp: v*2
+        CHECK(g_filterCount == 1);
+        // 过滤器同样零改动数据集。
+        CHECK(application.data().get(loadedDsId)->table(tableName)->rows == rowsBefore);
+        OK("data.filter：FilterOps 全链路（list>=12 + scale 数值 + 信号 + 数据集零改动）");
     }
 
     // 绘图路径用**内存构造**的数据集：它只关心 LOD 有界性，
@@ -829,7 +883,62 @@ int main(int argc, char *argv[])
         CHECK(static_cast<bool>(sr2));
         CHECK(ws->cellCount() == nBefore + 1);
 
-        OK("脚本 app 全局：app.call 意图通道(数据+1) + view action 回退(cell+1)");
+        // (3) 脚本触发过滤器：app.call("data.filter", {...}) 直接把过滤结果叠加到画布。
+        // 证明脚本能像 CLI 一样调用 #209 新增的过滤器意图（VBA 式操作应用）。
+        const Dataset *scriptDs = application.context().data().get(loadedDsId);
+        CHECK(scriptDs != nullptr && scriptDs->tableCount() > 0);
+        const Table *sTbl = scriptDs->table(0);
+        CHECK(sTbl != nullptr && !sTbl->columns.isEmpty());
+        const QString sTable = sTbl->name;
+        const QString sColumn = sTbl->columns.first().name;
+        QObject::connect(&application.context(), &AppContext::derivedSeriesReady,
+                         &application, [&g_scriptFilterCount](const QString &name, const QVector<double> &,
+                                           const QVector<double> &) {
+                             if (name.contains(QStringLiteral(".moving_average")))
+                                 ++g_scriptFilterCount;
+                         });
+        Intent sc3;
+        sc3.op = QStringLiteral("script.run");
+        sc3.params[QStringLiteral("source")] = QByteArray(
+            "app.call(\"data.filter\", {dataset=" + QByteArray::number(loadedDsId)
+            + ", table=\"" + sTable.toUtf8()
+            + "\", column=\"" + sColumn.toUtf8()
+            + "\", filter=\"moving_average\", params={window=3}})");
+        const auto sr3 = application.host().execute(sc3);
+        CHECK(sr3);
+        CHECK(g_scriptFilterCount == 1);
+
+        OK("脚本 app 全局：app.call 意图通道(数据+1) + view action 回退(cell+1) + data.filter 脚本触发");
+    }
+
+    // --- 过滤器编辑器数据契约：descriptor 的 parameters 足以生成表单 ---
+    // （GUI 渲染由截图 ng-script-filter-editor.png 真机覆盖；这里只验数据，避免
+    //   offscreen 下额外 QWidget 触发 Qt 字体缓存退出期偶发崩溃）
+    {
+        const QJsonArray list = application.context().interactions().filterOps().list();
+        CHECK(list.size() >= 12);
+        bool foundScale = false;
+        for (const QJsonValue &jv : list)
+        {
+            const QJsonObject d = jv.toObject();
+            CHECK(d.contains(QStringLiteral("id")));
+            CHECK(d.contains(QStringLiteral("parameters")));
+            if (d.value(QStringLiteral("id")).toString() == QStringLiteral("scale"))
+            {
+                foundScale = true;
+                const QJsonArray params = d.value(QStringLiteral("parameters")).toArray();
+                CHECK(params.size() == 3); // value_scale/value_offset/time_offset_sec
+                for (const QJsonValue &pv : params)
+                {
+                    const QJsonObject po = pv.toObject();
+                    CHECK(po.contains(QStringLiteral("name")));
+                    CHECK(po.contains(QStringLiteral("type")));
+                    CHECK(po.contains(QStringLiteral("default")));
+                }
+            }
+        }
+        CHECK(foundScale);
+        OK("过滤器编辑器数据契约：12+ descriptor 的 parameters 字段齐全，足以生成表单");
     }
 
     // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---

@@ -99,6 +99,10 @@ static int l_version(lua_State *L)
 // 支持：nil/bool/number/string/table（数组用 1..n，其余按字符串 key）。
 static QVariant readVariant(lua_State *L, int idx)
 {
+    // 关键：idx 可能是相对索引（递归传 -1）。函数内 lua_pushnil/lua_rawgeti 会压栈，
+    // 使 -1 指向新元素而非原表，lua_next(L,-1) 会把 nil 当表遍历 → 崩溃。
+    // 先转成绝对索引，保证后续所有栈操作都指向同一张表。
+    idx = lua_absindex(L, idx);
     const int t = lua_type(L, idx);
     switch (t)
     {

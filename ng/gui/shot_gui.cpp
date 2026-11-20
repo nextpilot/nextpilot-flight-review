@@ -21,6 +21,7 @@
 #include "CanvasWorkspace.h"
 #include "ProtocolEditorDialog.h"
 #include "TransformEditorDialog.h"
+#include "FilterEditorDialog.h"
 #include "Transform.h"
 #include "ShellBinder.h"
 #include "SARibbonCategory.h"
@@ -100,6 +101,7 @@ int main(int argc, char *argv[])
     QString transformArg; // --transform=<cap> 截变换编辑器（cap: derived/axis-y/checksum）
     QString cursorArg;    // --cursor=<t> 触发游标读数（老代码交互欠账验收用）
     QString scriptArg;    // --script=<lua源码> 用脚本 app 全局操作应用（脚本对齐验收用）
+    QString filterArg;    // --filter=<id> 截过滤器编辑器（脚本对齐 C：FilterOps+表单）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -139,6 +141,12 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--script=")))
         {
             scriptArg = a.mid(QStringLiteral("--script=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--filter")))
+        {
+            filterArg = a.startsWith(QStringLiteral("--filter="))
+                ? a.mid(QStringLiteral("--filter=").size()) : QStringLiteral("scale");
             continue;
         }
         files << a;
@@ -306,6 +314,26 @@ int main(int argc, char *argv[])
             fprintf(stderr, "交互注入失败: canvas=%p, cursor=%s\n", (void *)pc, qPrintable(cursorArg));
         }
         QCoreApplication::processEvents();
+    }
+
+    // --filter[=<id>]：截过滤器编辑器（脚本对齐 C：FilterOps 列表 + 参数表单）。
+    if (!filterArg.isEmpty())
+    {
+        FilterEditorDialog dlg(application.context(),
+                               filterArg.isEmpty() ? QString() : filterArg, &window);
+        if (!filterArg.isEmpty())
+            dlg.setCurrentFilter(filterArg);
+        dlg.show();
+        QCoreApplication::processEvents();
+        QTimer::singleShot(200, [&] {
+            const QPixmap shot = dlg.grab();
+            if (shot.save(out))
+                fprintf(stdout, "过滤器编辑器截图已保存: %s\n", qPrintable(out));
+            else
+                fprintf(stderr, "过滤器编辑器截图保存失败\n");
+            app.quit();
+        });
+        return app.exec();
     }
 
     // --transform=<cap>：截变换编辑器（展示按能力过滤 + 自说明 + 在线调试）。

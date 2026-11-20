@@ -20,6 +20,9 @@
 //   · data.derive      —— Rust 实时算出派生序列交给 UI（ps_preview_filter，只读），
 //                          **不写回数据集、不新增通道**：payload 带 time/value 供脚本/CLI，
 //                          并发 AppContext::derivedSeriesReady 供画布叠加显示。
+//   · data.filter      —— 有状态 Lua 过滤器作用到一条通道（script 模块的 FilterOps），
+//                          与 derive 同款只读叠加：不写回数据集，结果走 derivedSeriesReady。
+//                          参数 dataset/table/column/filter(id)/params/cap/name。
 //   · data.workspace.save/list/restore —— 工作区数据源配置的持久化与恢复。
 //                          恢复 = 重放 data.load + data.derive（配方），不存数据本体。
 //
@@ -46,6 +49,7 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearCache();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> removeSource(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> derive(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> filterSeries(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceList();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceSave();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceRestore();

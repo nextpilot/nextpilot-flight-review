@@ -1,8 +1,11 @@
 #include "FilterCatalogue.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QStringList>
 
 #include <algorithm>
+#include <cmath>
 
 using namespace nextpilot::plotscope::foundation;
 
@@ -98,6 +101,92 @@ std::optional<QByteArray> FilterCatalogue::standaloneClassScript(const QString &
         "end\n"
         "error(\"no filter class \" .. " + quoted.toUtf8() + ")\n";
     return script;
+}
+
+QJsonObject FilterCatalogue::descriptorToJson(const FilterDescriptor &d)
+{
+    QJsonObject o;
+    o.insert(QStringLiteral("id"), d.id);
+    o.insert(QStringLiteral("name"), d.name);
+    o.insert(QStringLiteral("description"), d.description);
+    o.insert(QStringLiteral("version"), d.version);
+    o.insert(QStringLiteral("outputKind"), d.outputKind);
+    o.insert(QStringLiteral("origin"), d.origin);
+
+    QJsonArray params;
+    for (const FilterParamSpec &p : d.parameters)
+    {
+        QJsonObject po;
+        po.insert(QStringLiteral("name"), p.name);
+        QString type;
+        switch (p.type)
+        {
+        case FilterParamType::Number:  type = QStringLiteral("number"); break;
+        case FilterParamType::Integer: type = QStringLiteral("int"); break;
+        case FilterParamType::Boolean: type = QStringLiteral("bool"); break;
+        case FilterParamType::Enum:    type = QStringLiteral("enum"); break;
+        case FilterParamType::String:  type = QStringLiteral("string"); break;
+        case FilterParamType::Text:    type = QStringLiteral("text"); break;
+        }
+        po.insert(QStringLiteral("type"), type);
+        po.insert(QStringLiteral("label"), p.label.isEmpty() ? p.name : p.label);
+        po.insert(QStringLiteral("tooltip"), p.tooltip);
+        po.insert(QStringLiteral("default"), p.defaultValue);
+        if (p.hasMin) po.insert(QStringLiteral("min"), p.min);
+        if (p.hasMax) po.insert(QStringLiteral("max"), p.max);
+        if (p.hasStep) po.insert(QStringLiteral("step"), p.step);
+        if (p.hasDecimals) po.insert(QStringLiteral("decimals"), p.decimals);
+        if (!p.unit.isEmpty()) po.insert(QStringLiteral("unit"), p.unit);
+        if (!p.visibleWhenParam.isEmpty())
+        {
+            po.insert(QStringLiteral("visibleWhenParam"), p.visibleWhenParam);
+            po.insert(QStringLiteral("visibleWhenEquals"), p.visibleWhenEquals);
+        }
+        if (!p.values.isEmpty())
+        {
+            QJsonArray vals;
+            for (const FilterEnumValue &ev : p.values)
+                vals.append(QJsonObject{{QStringLiteral("value"), ev.value},
+                                        {QStringLiteral("label"), ev.label}});
+            po.insert(QStringLiteral("values"), vals);
+        }
+        params.append(po);
+    }
+    o.insert(QStringLiteral("parameters"), params);
+    return o;
+}
+
+Result<QJsonObject> FilterCatalogue::applySeries(const QString &id, const QJsonObject &params,
+                                                 const QVector<double> &t, const QVector<double> &v) const
+{
+    if (t.size() != v.size() || t.isEmpty())
+        return fail(QStringLiteral("eargs"), QStringLiteral("过滤器输入序列为空或时间/值长度不一致"));
+
+    auto made = makeProcessor(id, params);
+    if (!made)
+        return fail(made.error().code, made.error().message);
+    std::unique_ptr<FilterInstance> inst = std::move(made.value());
+
+    // 会话首样本重基：Lua 契约的 t 是"自首样本起秒数"，输出时间再加回 t0。
+    const double t0 = t.first();
+    QJsonArray outT, outV;
+    for (int i = 0; i < t.size(); ++i)
+    {
+        FilterSampleResult r = inst->calculate(t.at(i) - t0, v.at(i));
+        if (inst->failed())
+            return fail(QStringLiteral("eruntime"), inst->error());
+        if (r.suppress)
+            continue;
+        const double ot = r.hasExplicitTime ? t0 + r.outTime : t.at(i);
+        if (!std::isfinite(ot) || !std::isfinite(r.value))
+            return fail(QStringLiteral("enan"), QStringLiteral("过滤器 %1 产出非有限值").arg(id));
+        outT.append(ot);
+        outV.append(r.value);
+    }
+    QJsonObject out;
+    out.insert(QStringLiteral("time"), outT);
+    out.insert(QStringLiteral("value"), outV);
+    return Result<QJsonObject>(out);
 }
 
 std::shared_ptr<FilterCatalogue> makeBundledFilterCatalogue()

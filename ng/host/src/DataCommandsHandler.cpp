@@ -47,7 +47,8 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
     return op == QLatin1String("data.reload") || op == QLatin1String("data.export")
         || op == QLatin1String("data.recent") || op == QLatin1String("data.clearCache")
         || op == QLatin1String("data.remove")
-        || op == QLatin1String("data.derive") || op == QLatin1String("data.workspace.list")
+        || op == QLatin1String("data.derive") || op == QLatin1String("data.filter")
+        || op == QLatin1String("data.workspace.list")
         || op == QLatin1String("data.workspace.save")
         || op == QLatin1String("data.workspace.restore");
 }
@@ -66,6 +67,8 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return removeSource(intent);
     if (intent.op == QLatin1String("data.derive"))
         return derive(intent);
+    if (intent.op == QLatin1String("data.filter"))
+        return filterSeries(intent);
     if (intent.op == QLatin1String("data.workspace.list"))
         return workspaceList();
     if (intent.op == QLatin1String("data.workspace.save"))
@@ -370,6 +373,83 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
     // GUI 画布订阅此事件，把派生序列作为一条 generated curve 叠加显示。
     // 数据集零改动——老代码改 DataSource 时间基准那套副作用，这里彻底没有。
     Q_EMIT m_app.derivedSeriesReady(name, time, value);
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::filterSeries(const Intent &intent)
+{
+    const DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    const QString table = intent.params.value(QStringLiteral("table")).toString();
+    const QString column = intent.params.value(QStringLiteral("column")).toString();
+    const QString filterId = intent.params.value(QStringLiteral("filter")).toString();
+    if (dsId < 0 || table.isEmpty() || column.isEmpty() || filterId.isEmpty())
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("data.filter 需要 dataset/table/column/filter 参数"));
+
+    if (!m_app.interactions().hasFilterOps())
+        return fail(QStringLiteral("enofilterops"), QStringLiteral("过滤器能力未注册（script 模块未装载）"));
+
+    const Dataset *ds = m_app.data().get(dsId);
+    if (!ds)
+        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+    const QString input = table + QLatin1Char('.') + column;
+    auto channel = ds->channel(table, column);
+    if (!channel)
+        return fail(QStringLiteral("echan"), QStringLiteral("通道不存在: %1").arg(input));
+
+    // params 允许 JSON 字符串或 QVariantMap（脚本/CLI 与 GUI 两种来路）。
+    QJsonObject paramsObj;
+    const QVariant pv = intent.params.value(QStringLiteral("params"));
+    if (pv.type() == QVariant::String)
+        paramsObj = QJsonDocument::fromJson(pv.toString().toUtf8()).object();
+    else if (pv.isValid() && !pv.toMap().isEmpty())
+        paramsObj = QJsonObject::fromVariantMap(pv.toMap());
+
+    constexpr int kMaxPoints = 200000;
+    int cap = intent.params.value(QStringLiteral("cap"), kMaxPoints).toInt();
+    if (cap <= 0 || cap > kMaxPoints)
+        cap = kMaxPoints;
+    const int take = qMin(channel->size(), cap);
+    QVector<double> t, v;
+    t.reserve(take);
+    v.reserve(take);
+    for (int i = 0; i < take; ++i)
+    {
+        t.append(channel->time.value(i));
+        v.append(channel->value.value(i));
+    }
+
+    Result<QJsonObject> res = m_app.interactions().filterOps().applySeries(filterId, paramsObj, t, v);
+    if (!res)
+        return fail(res.error().code, res.error().message);
+
+    QVector<double> outT, outV;
+    for (const QJsonValue &jv : res.value().value(QStringLiteral("time")).toArray())
+        outT.append(jv.toDouble());
+    for (const QJsonValue &jv : res.value().value(QStringLiteral("value")).toArray())
+        outV.append(jv.toDouble());
+    if (outT.isEmpty() || outT.size() != outV.size())
+        return fail(QStringLiteral("efilter"), QStringLiteral("过滤器 %1 结果为空或长度不一致").arg(filterId));
+
+    QString name = intent.params.value(QStringLiteral("name")).toString();
+    if (name.isEmpty())
+        name = input + QLatin1Char('.') + filterId;
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("dataset"), dsId},
+        {QStringLiteral("table"), table},
+        {QStringLiteral("column"), column},
+        {QStringLiteral("filter"), filterId},
+        {QStringLiteral("params"), QVariant(paramsObj)},
+        {QStringLiteral("name"), name},
+        {QStringLiteral("count"), outT.size()},
+        {QStringLiteral("total"), take},
+        {QStringLiteral("truncated"), take < channel->size()},
+        {QStringLiteral("time"), QVariant::fromValue(outT)},
+        {QStringLiteral("value"), QVariant::fromValue(outV)},
+    };
+    Q_EMIT m_app.derivedSeriesReady(name, outT, outV);
     return r;
 }
 

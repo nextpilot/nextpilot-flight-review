@@ -2,6 +2,7 @@
 
 #include "Selection.h"
 #include "Transform.h"
+#include "FilterOps.h"
 
 #include <QHash>
 #include <QJsonObject>
@@ -19,6 +20,7 @@ using nextpilot::plotscope::foundation::fail;
 using nextpilot::plotscope::uischema::Selection;
 using nextpilot::plotscope::uischema::SelectionKind;
 using nextpilot::plotscope::uischema::TransformScriptOps;
+using nextpilot::plotscope::uischema::FilterOps;
 
 
 // 交互注册表：容纳"注册 + 派发"型扩展点（viewAction / property / transform）。
@@ -54,6 +56,12 @@ public:
                        const QVector<double> &t, const QVector<double> &v,
                        Result<QVector<double>> &out) const;
 
+    // 有状态过滤器能力：实现在 script/FilterCatalogue，调用方在 host(data.filter)/gui(过滤器编辑)。
+    // 与 transform 求值同理——只用 JSON 回调，不反向依赖 script 模块。
+    void registerFilterOps(FilterOps ops);
+    bool hasFilterOps() const { return m_filterOps.valid(); }
+    const FilterOps &filterOps() const { return m_filterOps; }
+
     // Lua 脚本库能力：GUI 保存/解析脚本走这里，不反向依赖 script 模块。
     void registerTransformScriptOps(TransformScriptOps ops);
     bool hasTransformScriptOps() const { return m_transformScriptOps.valid(); }
@@ -65,6 +73,7 @@ private:
     QHash<int, PropertySetter> m_propertySetters;
     TransformEvalFn m_transformEvaluator;
     TransformScriptOps m_transformScriptOps;
+    FilterOps m_filterOps;
 };
 
 } // namespace nextpilot::plotscope::context

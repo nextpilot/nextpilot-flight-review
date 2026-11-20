@@ -11,6 +11,7 @@
 #include "Intent.h"
 #include "PropertySchema.h"
 #include "TransformEditorDialog.h"
+#include "FilterEditorDialog.h"
 
 #include <QAbstractItemView>
 #include <QCursor>
@@ -994,6 +995,9 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
     derive->addSeparator();
     QAction *openEditor = derive->addAction(QStringLiteral("变换编辑器（算子/表达式/Lua）…"));
     openEditor->setToolTip(QStringLiteral("按能力过滤的变换选择器；支持单点/批量在线调试"));
+    menu.addSeparator();
+    QAction *openFilter = menu.addAction(QStringLiteral("添加过滤器…"));
+    openFilter->setToolTip(QStringLiteral("有状态 Lua 过滤器（滑窗/微分/积分/缩放等），只读叠加到画布"));
     QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
@@ -1041,6 +1045,32 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
             QMessageBox::information(this, QStringLiteral("衍生完成"),
                 QStringLiteral("变换「%1」已算出 %2 点并叠加到画布，原数据未改动。")
                     .arg(label).arg(count));
+        }
+        return;
+    }
+    if (chosen == openFilter)
+    {
+        // 有状态过滤器编辑器：选过滤器 + 参数表单 → data.filter 意图（只读叠加到画布）。
+        const QJsonObject req = FilterEditorDialog::run(
+            this, m_appCtx, QStringLiteral("%1.%2").arg(tableName, columnName));
+        if (req.isEmpty())
+            return;
+        Intent intent;
+        intent.op = QStringLiteral("data.filter");
+        intent.params[QStringLiteral("dataset")] = datasetId;
+        intent.params[QStringLiteral("table")] = tableName;
+        intent.params[QStringLiteral("column")] = columnName;
+        intent.params[QStringLiteral("filter")] = req.value(QStringLiteral("filter")).toString();
+        intent.params[QStringLiteral("params")] = req.value(QStringLiteral("params")).toObject();
+        const auto r = m_executor.execute(intent);
+        if (!r)
+            QMessageBox::warning(this, QStringLiteral("过滤失败"), r.error().message);
+        else
+        {
+            const int count = r.value().payload.toMap().value(QStringLiteral("count")).toInt();
+            QMessageBox::information(this, QStringLiteral("过滤完成"),
+                QStringLiteral("过滤器「%1」已算出 %2 点并叠加到画布，原数据未改动。")
+                    .arg(intent.params.value(QStringLiteral("filter")).toString()).arg(count));
         }
         return;
     }

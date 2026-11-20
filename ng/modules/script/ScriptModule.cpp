@@ -119,6 +119,30 @@ void ScriptModule::initialize(ModuleContext &ctx)
             return nextpilot::plotscope::script::TransformEvaluator::evalSeries(request, cap, t, v);
         });
 
+    // 有状态过滤器能力：内置目录注入 InteractionRegistry，供 host(data.filter) 与 GUI 编辑器调用。
+    // 目录归模块持有（生命周期）；回调只吃/吐 JSON，调用方不依赖 script 模块类型。
+    m_filterCatalogue = nextpilot::plotscope::script::makeBundledFilterCatalogue();
+    auto *cat = m_filterCatalogue.get();
+    nextpilot::plotscope::uischema::FilterOps filterOps;
+    filterOps.list = [cat]() -> QJsonArray {
+        QJsonArray arr;
+        for (const auto &e : cat->entries())
+            arr.append(nextpilot::plotscope::script::FilterCatalogue::descriptorToJson(e.cls));
+        return arr;
+    };
+    filterOps.describe = [cat](const QString &id) -> Result<QJsonObject> {
+        const auto *e = cat->find(id);
+        if (!e)
+            return fail(QStringLiteral("enoent"), QStringLiteral("未知过滤器: %1").arg(id));
+        return Result<QJsonObject>(
+            nextpilot::plotscope::script::FilterCatalogue::descriptorToJson(e->cls));
+    };
+    filterOps.applySeries = [cat](const QString &id, const QJsonObject &params,
+                                  const QVector<double> &t, const QVector<double> &v) {
+        return cat->applySeries(id, params, t, v);
+    };
+    ctx.host().registerFilterOps(std::move(filterOps));
+
     // Lua 脚本库：目录可用 NG_SCRIPTS_DIR 覆盖（部署/测试），默认 scripts/ops。
     const QByteArray dirOverride = qgetenv("NG_SCRIPTS_DIR");
     m_scriptLib.setOpsDir(dirOverride.isEmpty() ? QStringLiteral("scripts/ops")
