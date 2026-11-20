@@ -977,3 +977,15 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 §13 非目标写"不做 PJ4 式单序列 marker 引擎"——这是脚本子项目初期的裁决。**用户后续明确指令"脚本跟 PJ3/PJ4 靠齐全"覆盖了该条**：脚本对齐 D 已实现 MarkerEngine（Lua 规则扫整序列产出竖线/区间带/值带/事件点），对应脚本 B/C/D 三梯队全部落地。旧非目标条目保留作历史记录，以本节为准。
 
 脚本对齐完成度：A 有状态过滤器引擎 ✓、B 12 内置过滤器库 ✓、C 过滤器接入数据管道+GUI ✓、D Marker 规则引擎+画布叠加 ✓、E AI/MCP 工具层（意图 API，server 暂缓）✓。
+
+## 16. 状态视图（第二梯队 #203，2026-11-20 落地）
+
+对齐 PJ4 `StateTransitionsView` + `StateColors` + `StateSeriesAdapter` 的离散通道状态色带：
+
+- **着色**：`fastplot/StateColors.h`（header-only）——Okabe-Ito 色盲友好 10 色调色板 + FNV-1a 64 位哈希对状态标签的 UTF-8 字节取模选色，跨会话/平台稳定（golden 与 PJ4 `state_colors_test.cpp` 断言值逐项相同：`""→7`、`"True"→7`、`"False"→4`、`"RUNNING"→0`）。
+- **分段**：host `data.state` intent 把一条离散通道游程编码（同值延续、值变化闭合于新样本时间戳、尾段钳到最后样本），标签格式化对齐 `StateSeriesAdapter::formatStateLabel`：bool→`true`/`false`、整型→十进制串、浮点列按 `whole_numbers_only` 入口过滤语义整列拒绝非整数值。**取数用大 cap（200k）不抽稀**——kernel `readWindow` 等步长抽稀会吞掉样本，RLE 必须基于原始序列。
+- **绘制**：`Axes::setStateBands/paintStateBands`——画布顶部每通道一行（band 22px + gap 6px，`relayout` 顶部预留），段 = 0.82 alpha 调色板填充 + 1px 边框 + 段内状态名（宽段居中、窄段省略，按背景亮度选黑/白字）；行名固定 90px 左对齐。不遮挡曲线区。
+- **接线**：`data.state` intent → `plot.state.set` view action → `PlotCanvas::setStateRows`（append 模式按 channel 名合并，多通道多行叠加）；数据面板列右键"状态视图显示…"入口；脚本 `app.call("data.state", {...})`；shot_gui `--state=t.c[,t.c…]`。
+- **限制**：string 状态读取依赖 kernel string ABI（`PS_VALUE_TEXT` 有枚举无读取函数），暂明确报错 `etype`，待 kernel 增 ABI 后接入。
+
+测试：`ng_test_state_view`（FNV-1a 公开向量 + PJ4 golden + Axes 渲染）；test_gui 5f/5g（枚举分段≥40 + bool 标签 true/false + 非整数拒绝 + 画布叠加 + 脚本触发）；真机截图 `ng-state-view.png`（双行 flight_mode/armed）。

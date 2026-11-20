@@ -16,6 +16,8 @@
 #include <QTextStream>
 #include <QVector>
 
+#include <cmath>
+
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -39,6 +41,9 @@ QString cachePathForSource(const DataSourceInfo &info, const QString &parserId)
     const QString abs = QFileInfo(info.origin).absoluteFilePath();
     return QStringLiteral("%1.%2.psc").arg(abs, parserId);
 }
+
+// 状态视图取数上限：大于绝大多数日志行数，保证不触发 kernel 抽稀（RLE 需要原始样本）。
+constexpr int kStateMaxPoints = 200000;
 } // namespace
 
 bool DataCommandsHandler::canHandle(const Intent &intent) const
@@ -48,6 +53,7 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
         || op == QLatin1String("data.recent") || op == QLatin1String("data.clearCache")
         || op == QLatin1String("data.remove")
         || op == QLatin1String("data.derive")         || op == QLatin1String("data.filter") || op == QLatin1String("data.marker")
+        || op == QLatin1String("data.state")
         || op == QLatin1String("data.workspace.list")
         || op == QLatin1String("data.workspace.save")
         || op == QLatin1String("data.workspace.restore");
@@ -71,6 +77,8 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return filterSeries(intent);
     if (intent.op == QLatin1String("data.marker"))
         return runMarker(intent);
+    if (intent.op == QLatin1String("data.state"))
+        return stateSeries(intent);
     if (intent.op == QLatin1String("data.workspace.list"))
         return workspaceList();
     if (intent.op == QLatin1String("data.workspace.save"))
@@ -519,6 +527,160 @@ Result<IntentResult> DataCommandsHandler::runMarker(const Intent &intent)
         {QStringLiteral("count"), markers.size()},
         {QStringLiteral("points"), take},
         {QStringLiteral("markers"), markers.toVariantList()},
+        {QStringLiteral("drawn"), viewOut.ok()},
+    };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::stateSeries(const Intent &intent)
+{
+    const DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    const QString table = intent.params.value(QStringLiteral("table")).toString();
+    const QString column = intent.params.value(QStringLiteral("column")).toString();
+    if (dsId < 0 || table.isEmpty() || column.isEmpty())
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("data.state 需要 dataset/table/column 参数"));
+
+    const Dataset *ds = m_app.data().get(dsId);
+    if (!ds)
+        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+    const QString input = table + QLatin1Char('.') + column;
+    const Table *t = ds->table(table);
+    const Column *col = t ? t->column(column) : nullptr;
+    if (!t || !col)
+        return fail(QStringLiteral("echan"), QStringLiteral("通道不存在: %1").arg(input));
+    // 状态视图只接受离散值族：bool / 整型 / 仅含整数值的浮点（对齐 PJ4 的
+    // PrimitiveType 离散家族 + whole_numbers_only 约束）。Text 通道的 string
+    // 状态读取依赖 kernel string ABI（暂缺），此处明确报错而非静默空白。
+    if (col->type == ValueType::Text)
+        return fail(QStringLiteral("etype"),
+                    QStringLiteral("string 状态读取依赖内核 string ABI（暂未实现）: %1").arg(input));
+
+    auto channel = ds->channel(table, column, kStateMaxPoints);
+    if (!channel)
+        return fail(QStringLiteral("echan"), QStringLiteral("读取通道失败: %1").arg(input));
+    const int n = channel->size();
+    if (n <= 0)
+        return fail(QStringLiteral("eempty"), QStringLiteral("通道无样本: %1").arg(input));
+
+    // 标签格式化（对齐 StateSeriesAdapter::formatStateLabel）：
+    //   bool → "true"/"false"；整型 → 十进制串；浮点 → 整数值用整数串。
+    // 浮点列对齐 PJ4 ScalarFieldPayload::whole_numbers_only 的入口过滤语义：
+    // 只要含一个非整数值就整列拒绝（避免逐样本断段产生碎片化误导展示）。
+    // 注意取数用大 cap（不抽稀）：RLE 分段和整值探测都必须基于原始样本。
+    const bool isBool = col->type == ValueType::Bool;
+    const bool isFloat = col->type == ValueType::F64 || col->type == ValueType::F32;
+    if (isFloat)
+    {
+        for (int i = 0; i < channel->size(); ++i)
+        {
+            const double v = channel->value.value(i);
+            if (!std::isfinite(v) || v != std::floor(v)
+                || v < -9.007199254740992e15 || v > 9.007199254740992e15)
+                return fail(QStringLiteral("estate"),
+                            QStringLiteral("浮点列含非整数值，不构成离散状态: %1").arg(input));
+        }
+    }
+    auto formatLabel = [&](double v, bool *ok) -> QString {
+        *ok = true;
+        if (isBool)
+            return v != 0.0 ? QStringLiteral("true") : QStringLiteral("false");
+        if (isFloat)
+            return QString::number(static_cast<qlonglong>(v));
+        return QString::number(static_cast<qlonglong>(v));
+    };
+
+    // 游程编码（对齐 StateSeriesAdapter::rebuild）：
+    //   相同值延续开放段；值变化时前段闭合于新样本时间戳；null 关闭开放段产生 gap；
+    //   尾段开放，钳到最后样本时间（= 显示范围可用的最大值）。
+    constexpr int kMaxPoints = 200000;
+    const int take = qMin(n, kMaxPoints);
+    struct RawSeg { double t0; double t1; QString label; };
+    QVector<RawSeg> segs;
+    int pendingIdx = -1; // 未决样本下标（-1 无）
+    bool pendingNull = false;
+    QString pendingLabel;
+    auto flushPending = [&]()
+    {
+        if (pendingIdx < 0)
+            return;
+        const double ts = channel->time.value(pendingIdx);
+        const bool open = !segs.isEmpty() && segs.last().t1 < 0.0; // t1<0 = 开放
+        if (pendingNull)
+        {
+            if (open)
+                segs.last().t1 = ts; // null 关闭开放段，随后是 gap
+        }
+        else if (open && segs.last().label == pendingLabel)
+        {
+            // 同值：游程延续
+        }
+        else
+        {
+            if (open)
+                segs.last().t1 = ts;
+            segs.append({ts, -1.0, pendingLabel});
+        }
+        pendingIdx = -1;
+    };
+    for (int i = 0; i < take; ++i)
+    {
+        bool ok = true;
+        const QString label = formatLabel(channel->value.value(i), &ok);
+        // 同时间戳折叠到最后一个（对齐 PJ4 collapse equal-timestamp samples）。
+        if (pendingIdx >= 0 && channel->time.value(pendingIdx) == channel->time.value(i))
+        {
+            pendingIdx = i;
+            pendingNull = !ok;
+            pendingLabel = label;
+            continue;
+        }
+        flushPending();
+        pendingIdx = i;
+        pendingNull = !ok;
+        pendingLabel = label;
+    }
+    flushPending();
+    // 尾段开放（t1<0）钳到最后样本时间。
+    if (!segs.isEmpty() && segs.last().t1 < 0.0)
+        segs.last().t1 = channel->time.value(take - 1);
+    if (segs.isEmpty())
+        return fail(QStringLiteral("estate"),
+                    QStringLiteral("通道无有效状态段（浮点列需只含整数值）: %1").arg(input));
+
+    // 组行 JSON → 画布（经 view action，host 不依赖 GUI 类型）。
+    QJsonArray segArr;
+    for (const RawSeg &s : segs)
+        segArr.append(QJsonObject{
+            {QStringLiteral("tStart"), s.t0},
+            {QStringLiteral("tEnd"), s.t1},
+            {QStringLiteral("label"), s.label},
+        });
+    QJsonArray rowsArr;
+    rowsArr.append(QJsonObject{
+        {QStringLiteral("channel"), input},
+        {QStringLiteral("segments"), segArr},
+    });
+    QVariantMap draw;
+    draw.insert(QStringLiteral("rows"), rowsArr.toVariantList());
+    // append 模式（多通道多行叠加）：调用方对每个通道各发一次 data.state(append)。
+    if (intent.params.value(QStringLiteral("append")).toBool())
+        draw.insert(QStringLiteral("mode"), QStringLiteral("append"));
+    Result<QVariant> viewOut{QVariant()};
+    m_app.interactions().dispatchViewAction(QStringLiteral("plot.state.set"), draw, viewOut);
+
+    QString name = intent.params.value(QStringLiteral("name")).toString();
+    if (name.isEmpty())
+        name = input + QStringLiteral(".state");
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("dataset"), dsId},
+        {QStringLiteral("table"), table},
+        {QStringLiteral("column"), column},
+        {QStringLiteral("name"), name},
+        {QStringLiteral("segments"), segs.size()},
+        {QStringLiteral("points"), take},
+        {QStringLiteral("rows"), rowsArr.toVariantList()},
         {QStringLiteral("drawn"), viewOut.ok()},
     };
     return r;

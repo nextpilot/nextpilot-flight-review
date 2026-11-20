@@ -2,6 +2,7 @@
 #include "fastplot/Bar.h"
 #include "fastplot/Histogram.h"
 #include "fastplot/Spectrum.h"
+#include "fastplot/StateColors.h"
 
 #include <QFile>
 #include <QFontMetrics>
@@ -312,6 +313,15 @@ void Axes::setBookmarks(const QVector<BookmarkMark> &marks)
 void Axes::setMarkers(const QVector<MarkerMark> &marks)
 {
     m_markers = marks;
+    update();
+}
+
+void Axes::setStateBands(const QVector<StateRowMark> &rows)
+{
+    if (rows.size() == m_stateRows.size() && rows == m_stateRows)
+        return; // 内容不变不重排（relayout 有开销）
+    m_stateRows = rows;
+    relayout(); // 顶部为状态行预留空间（行高 + 行名）
     update();
 }
 
@@ -788,6 +798,14 @@ void Axes::relayout()
         // 标题压在最上面：给它一行字高，避免和轴标签抢位置。
         top = std::max(top, QFontMetrics(m_axes[sideIndex(AxisSide::Top)].font()).height() + 10);
     }
+    // 状态视图行（对齐 PJ4 StateTransitionsView 的 RowMetrics：band 22px + gap 6px）：
+    // 每行在顶部预留 band_h + gap，另有行名一行字高（只在有行时生效）。
+    if (!m_stateRows.isEmpty())
+    {
+        constexpr int kStateBandH = 22;
+        constexpr int kStateGap = 6;
+        top += m_stateRows.size() * (kStateBandH + kStateGap) + 4;
+    }
     if (height() - top - bottom < 30)
     {
         top = std::min(top, 8);
@@ -1005,7 +1023,9 @@ void Axes::paintOverlay(QPainter &painter)
         }
     }
 
-    // 读数叠加层：Marker 规则产出 → 书签 → A/B → 十字游标读数（后者画在最上，读数框不被遮挡）。
+    // 读数叠加层：状态色带（顶部预留区）→ Marker 规则产出 → 书签 → A/B → 十字游标读数
+    // （后者画在最上，读数框不被遮挡）。
+    paintStateBands(painter, plot);
     paintMarkers(painter, plot);
     paintBookmarks(painter, plot);
     paintAB(painter, plot);
@@ -1328,6 +1348,67 @@ void Axes::paintMarkers(QPainter &painter, const QRectF &plot)
                              fm.elidedText(mk.label, Qt::ElideRight, 160));
         }
         ++lane;
+    }
+    painter.restore();
+}
+
+// 状态视图色带（对齐 PJ4 StateTransitionsView）：
+// 每行画在绘图区上方的预留带里（band 22px + gap 6px），不遮挡曲线；
+// 段 = 半透明填充 + 1px 边框，宽度够时把状态名画在段内（居中、超出省略）；
+// 行名画在段带左侧（精简版 PJ4 行名 chip：名与 band 同行，左对齐固定宽）。
+void Axes::paintStateBands(QPainter &painter, const QRectF &plot)
+{
+    if (m_stateRows.isEmpty())
+        return;
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, false);
+    QFont f = font();
+    f.setPointSizeF(std::max(7.0, f.pointSizeF()));
+    painter.setFont(f);
+    const QFontMetrics fm(f);
+    constexpr double kBandH = 22.0;
+    constexpr double kGap = 6.0;
+    constexpr double kMinLabelPx = 24.0; // 段宽低于此不画状态名（对齐 PJ4 kBarMinLabelWidthPx 精神）
+    constexpr double kNameW = 90.0;      // 行名固定宽（超出省略）
+    const double bandLeft = plot.left();
+
+    double y = plot.top() - m_stateRows.size() * (kBandH + kGap) - 4.0;
+    for (const StateRowMark &row : m_stateRows)
+    {
+        const double bandY = y;
+        const double segLeft = bandLeft + kNameW + 4.0;
+        // 行名画在带内左侧。
+        painter.setPen(m_axes[sideIndex(AxisSide::Bottom)].ink());
+        painter.drawText(QRectF(bandLeft, bandY, kNameW, kBandH),
+                         Qt::AlignVCenter | Qt::AlignLeft,
+                         fm.elidedText(row.channel, Qt::ElideMiddle, static_cast<int>(kNameW)));
+
+        for (const StateBandMark &seg : row.segments)
+        {
+            const double x0 = m_vp.toPixel(seg.tStart, m_vp.yLower()).x();
+            const double x1 = m_vp.toPixel(seg.tEnd, m_vp.yLower()).x();
+            const double left = std::max(segLeft, x0);
+            const double right = std::min(plot.right(), x1);
+            if (right - left < 1.0)
+                continue; // 视口外或被行名遮住
+            const QColor col = seg.color.isValid() ? seg.color : stateColor(seg.label);
+            const QRectF rect(left, bandY, right - left, kBandH);
+            QColor fill = col;
+            fill.setAlphaF(0.82); // 中饱和：段内黑/白字都可读（对齐 PJ4 语义）
+            painter.fillRect(rect, fill);
+            painter.setPen(QPen(QColor(0, 0, 0, 90), 1.0));
+            painter.drawRect(rect.adjusted(0, 0, -1, -1));
+            if (rect.width() > kMinLabelPx && !seg.label.isEmpty())
+            {
+                // 按背景亮度选黑/白字。
+                const int brightness = (col.red() * 299 + col.green() * 587 + col.blue() * 114) / 1000;
+                painter.setPen(brightness > 140 ? Qt::black : Qt::white);
+                painter.drawText(rect, Qt::AlignCenter,
+                                 fm.elidedText(seg.label, Qt::ElideRight,
+                                               static_cast<int>(rect.width() - 4)));
+            }
+        }
+        y += kBandH + kGap;
     }
     painter.restore();
 }

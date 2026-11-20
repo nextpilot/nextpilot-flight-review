@@ -62,6 +62,14 @@ target_link_libraries(ng_test_marker_engine PRIVATE
 set_target_properties(ng_test_marker_engine PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_marker_engine COMMAND ng_test_marker_engine)
 
+# 状态视图 golden 验收（对齐 PJ4 StateColors/StateSeriesAdapter/StateTransitionsView）。
+add_executable(ng_test_state_view test_state_view.cpp)
+target_link_libraries(ng_test_state_view PRIVATE
+    fastplot Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(ng_test_state_view PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_state_view COMMAND ng_test_state_view)
+set_tests_properties(ng_state_view PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # B8-b：TransformField 输入控件输出契约验收（offscreen GUI，链 gui_transform + core）。
 add_executable(ng_test_transform_field test_transform_field.cpp)
 target_link_libraries(ng_test_transform_field PRIVATE

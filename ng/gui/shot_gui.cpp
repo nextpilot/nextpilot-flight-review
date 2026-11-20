@@ -103,6 +103,7 @@ int main(int argc, char *argv[])
     QString scriptArg;    // --script=<lua源码> 用脚本 app 全局操作应用（脚本对齐验收用）
     QString filterArg;    // --filter=<id> 截过滤器编辑器（脚本对齐 C：FilterOps+表单）
     QString markerArg;    // --marker=<lua规则> 截 Marker 规则叠加（脚本对齐 D）
+    QString stateArg;     // --state=<table.column> 截状态视图色带（第二梯队 #203）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -153,6 +154,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--marker=")))
         {
             markerArg = a.mid(QStringLiteral("--marker=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--state=")))
+        {
+            stateArg = a.mid(QStringLiteral("--state=").size());
             continue;
         }
         files << a;
@@ -319,6 +325,49 @@ int main(int argc, char *argv[])
         }
         else
             fprintf(stderr, "Marker 规则: 无可用数据集/通道\n");
+    }
+
+    // --state=<table.column>[,<table.column>…]：执行 data.state 意图（append 模式），
+    // 把状态色带画到画布顶部后截图（第二梯队 #203：状态视图对齐 PJ4 状态转换视图）。
+    if (!stateArg.isEmpty())
+    {
+        const QStringList stateChannels = stateArg.split(QLatin1Char(','));
+        int drawnRows = -1;
+        for (const QString &qualified : stateChannels)
+        {
+            const int dot = qualified.indexOf(QLatin1Char('.'));
+            if (dot <= 0 || firstDataset < 0)
+                continue;
+            Intent stit;
+            stit.op = QStringLiteral("data.state");
+            stit.params[QStringLiteral("dataset")] = firstDataset;
+            stit.params[QStringLiteral("table")] = qualified.left(dot);
+            stit.params[QStringLiteral("column")] = qualified.mid(dot + 1);
+            if (stateChannels.size() > 1)
+                stit.params[QStringLiteral("append")] = true;
+            const auto str = application.host().execute(stit);
+            if (str)
+            {
+                drawnRows = str.value().payload.toMap().value(QStringLiteral("segments")).toInt();
+                fprintf(stdout, "状态视图 %s: 成功，段数 %d\n",
+                        qPrintable(qualified), drawnRows);
+            }
+            else
+            {
+                fprintf(stdout, "状态视图 %s 失败: %s；可用通道：\n",
+                        qPrintable(qualified), qPrintable(str.error().message));
+                if (const Dataset *sds = application.context().data().get(firstDataset))
+                    for (int ti = 0; ti < sds->tableCount(); ++ti)
+                    {
+                        const Table *t = sds->table(ti);
+                        if (!t)
+                            continue;
+                        for (const Column &c : t->columns)
+                            fprintf(stdout, "  %s.%s (type=%d)\n",
+                                    qPrintable(t->name), qPrintable(c.name), int(c.type));
+                    }
+            }
+        }
     }
 
     // --cursor=<t>：走真实画布 API 触发游标读数（老代码交互欠账验收）。

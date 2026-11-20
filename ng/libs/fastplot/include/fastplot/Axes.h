@@ -169,6 +169,29 @@ public:
     void setMarkers(const QVector<MarkerMark> &marks);
     int markerCount() const { return m_markers.size(); }
 
+    // 状态视图（对齐 PJ4 StateTransitionsView）：每条通道一行色带，
+    // 每段是一个连续不变的状态（label 为着色键，见 StateColors.h）。
+    // 绘制在绘图区顶部（每行 22px + 6px 间距），行名画在段带上方。
+    struct StateBandMark
+    {
+        double tStart = 0.0;
+        double tEnd = 0.0;
+        QString label; // 状态标签（bool→"true"/"false"、枚举→十进制串、string 原文）
+        QColor color;  // 无效则用 stateColor(label)
+        bool operator==(const StateBandMark &o) const
+        { return tStart == o.tStart && tEnd == o.tEnd && label == o.label && color == o.color; }
+    };
+    struct StateRowMark
+    {
+        QString channel; // 行名（"table.column"）
+        QVector<StateBandMark> segments;
+        bool operator==(const StateRowMark &o) const
+        { return channel == o.channel && segments == o.segments; }
+    };
+    void setStateBands(const QVector<StateRowMark> &rows);
+    void clearStateBands() { setStateBands({}); }
+    int stateRowCount() const { return m_stateRows.size(); }
+
     // 像素/数据互转 + 命中：交互部件据此判断点到了哪条线/书签。
     double pixelToX(double px) const;
     double xToPixel(double x) const;
@@ -206,6 +229,7 @@ private:
     void paintAB(QPainter &painter, const QRectF &plot);
     void paintBookmarks(QPainter &painter, const QRectF &plot);
     void paintMarkers(QPainter &painter, const QRectF &plot);
+    void paintStateBands(QPainter &painter, const QRectF &plot);
     double yToPixel(AxisSide side, double y) const;
     QRectF dataBounds() const;
     void relayout();       // 边距 → 绘图区 → 刻度划分（三者必须一起算）
@@ -246,6 +270,7 @@ private:
     double m_abBy = 0.0;
     QVector<BookmarkMark> m_bookmarks;
     QVector<MarkerMark> m_markers;
+    QVector<StateRowMark> m_stateRows;
     QString m_overlayText;
     QColor m_titleColor{0x33, 0x33, 0x33};
     QString m_title;

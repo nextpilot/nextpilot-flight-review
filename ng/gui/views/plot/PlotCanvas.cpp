@@ -556,6 +556,65 @@ int PlotCanvas::markerCount() const
     return m_plot ? m_plot->markerCount() : 0;
 }
 
+bool PlotCanvas::setStateRows(const QJsonArray &rows, bool append)
+{
+    if (!m_plot)
+        return false;
+    QVector<fastplot::Axes::StateRowMark> parsed;
+    parsed.reserve(rows.size());
+    for (const QJsonValue &jv : rows)
+    {
+        if (!jv.isObject())
+            continue;
+        const QJsonObject o = jv.toObject();
+        fastplot::Axes::StateRowMark row;
+        row.channel = o.value(QStringLiteral("channel")).toString();
+        for (const QJsonValue &sv : o.value(QStringLiteral("segments")).toArray())
+        {
+            if (!sv.isObject())
+                continue;
+            const QJsonObject so = sv.toObject();
+            fastplot::Axes::StateBandMark seg;
+            seg.tStart = so.value(QStringLiteral("tStart")).toDouble();
+            seg.tEnd = so.value(QStringLiteral("tEnd")).toDouble();
+            seg.label = so.value(QStringLiteral("label")).toString();
+            const QString col = so.value(QStringLiteral("color")).toString();
+            if (!col.isEmpty())
+                seg.color = QColor(col); // 缺省走 StateColors 的 FNV-1a 稳定着色
+            row.segments.append(seg);
+        }
+        parsed.append(row);
+    }
+    if (append)
+    {
+        // 按 channel 名合并：同名单替换，新名追加（多通道多行叠加）。
+        for (const auto &row : parsed)
+        {
+            bool replaced = false;
+            for (auto &existing : m_stateRows)
+                if (existing.channel == row.channel)
+                {
+                    existing = row;
+                    replaced = true;
+                    break;
+                }
+            if (!replaced)
+                m_stateRows.append(row);
+        }
+    }
+    else
+    {
+        m_stateRows = parsed;
+    }
+    m_plot->setStateBands(m_stateRows);
+    return true;
+}
+
+int PlotCanvas::stateRowCount() const
+{
+    return m_plot ? m_plot->stateRowCount() : 0;
+}
+
 double PlotCanvas::timeAtPixel(double px) const
 {
     return m_plot ? m_plot->pixelToX(px) : 0.0;

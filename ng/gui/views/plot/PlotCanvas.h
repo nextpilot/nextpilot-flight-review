@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Dataset.h"
+#include "fastplot/Axes.h"
 
 #include <QColor>
 #include <QHash>
@@ -165,6 +166,12 @@ public:
     void setMarkers(const QJsonArray &markers);
     int markerCount() const;
 
+    // 状态视图（对齐 PJ4 StateTransitionsView）：rows JSON 数组
+    // [{channel, segments:[{tStart,tEnd,label}]}]，画到画布顶部色带区。
+    // append=true 时按 channel 名合并（同名单替换、新名追加），多行叠加。
+    bool setStateRows(const QJsonArray &rows, bool append = false);
+    int stateRowCount() const;
+
     // hit-test：给像素位置，返回命中的读数对象（供右键菜单/拖动仲裁）。
     enum class Hit { None, CursorLine, AB_A, AB_B, Bookmark };
     struct HitResult
@@ -282,6 +289,7 @@ private:
     bool m_abHasB = false;
     QVector<Bookmark> m_bookmarks;
     QString m_selectedBookmarkId;
+    QVector<fastplot::Axes::StateRowMark> m_stateRows; // 状态视图行（append 合并语义）
     // 拖动状态：1=A 2=B 3=书签 4=游标线。
     int m_dragKind = 0;
     QString m_dragBookmarkId;

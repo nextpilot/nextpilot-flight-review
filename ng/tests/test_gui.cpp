@@ -81,11 +81,17 @@ static int buildDataset(DataRepository &repo)
     ts.reserve(5000);
     a.reserve(5000);
     b.reserve(5000);
+    QVector<double> mode;      // 整数值枚举（0/1/2 循环，每 100 样本一段）——状态视图用
+    mode.reserve(5000);
+    QVector<quint8> armed;     // bool 编码 0/1（kernel Bool 列布局 = quint8 数组）
+    armed.reserve(5000);
     for (int i = 0; i < 5000; ++i)
     {
         ts.append(i * 0.001);
         a.append(i * 0.5);
         b.append(1000.0 - i * 0.25);
+        mode.append((i / 100) % 3);
+        armed.append((i % 400) < 200 ? 1 : 0);
     }
     // addTable 返回表索引（0 是合法值，不能用真假判断成功与否）
     if (ds.addTable(QStringLiteral("trace"), ts) < 0)
@@ -93,6 +99,11 @@ static int buildDataset(DataRepository &repo)
     if (!ds.addF64Column(QStringLiteral("trace"), QStringLiteral("sig"), QString(), a))
         return -1;
     if (!ds.addF64Column(QStringLiteral("trace"), QStringLiteral("alt"), QString(), b))
+        return -1;
+    if (!ds.addF64Column(QStringLiteral("trace"), QStringLiteral("mode"), QString(), mode))
+        return -1;
+    if (!ds.addColumnTyped(QStringLiteral("trace"), QStringLiteral("armed"), QString(),
+                           ValueType::Bool, armed.constData(), nullptr, armed.size()))
         return -1;
     ds.refreshSchema();
     return repo.add(ds);
@@ -600,6 +611,89 @@ int main(int argc, char *argv[])
         // 数据集零改动。
         CHECK(application.data().get(loadedDsId)->table(0)->rows == mTbl->rows);
         OK("data.marker：MarkerOps 规则执行(3 marker) + 画布叠加 + 数据集零改动");
+    }
+
+    // --- 5f) data.state：状态视图 —— bool/整数值通道游程编码 → 画布顶部色带 ---
+    int stateDsId = -1;
+    {
+        const int dsId = buildDataset(application.data());
+        stateDsId = dsId;
+        CHECK(dsId >= 0);
+        // 整数值枚举列（0/1/2 每 100 样本一段）：分段 + 画布叠加。
+        Intent st;
+        st.op = QStringLiteral("data.state");
+        st.params[QStringLiteral("dataset")] = dsId;
+        st.params[QStringLiteral("table")] = QStringLiteral("trace");
+        st.params[QStringLiteral("column")] = QStringLiteral("mode");
+        const auto sr = application.host().execute(st);
+        CHECK(static_cast<bool>(sr));
+        if (sr)
+        {
+            const QVariantMap spm = sr.value().payload.toMap();
+            // 全量 5000 点不抽稀：mode 每 100 样本切换 → 50 段。
+            CHECK(spm.value(QStringLiteral("segments")).toInt() >= 40);
+            CHECK(spm.value(QStringLiteral("drawn")).toBool()); // plot.state.set 成功
+            const QVariantList rowsL = spm.value(QStringLiteral("rows")).toList();
+            CHECK(rowsL.size() == 1);
+            const QVariantMap row0 = rowsL.first().toMap();
+            CHECK(row0.value(QStringLiteral("channel")).toString() == QStringLiteral("trace.mode"));
+            const QVariantList segs = row0.value(QStringLiteral("segments")).toList();
+            CHECK(!segs.isEmpty());
+            // 首段标签是枚举整数的十进制串（对齐 PJ4 formatStateLabel）。
+            const QString firstLabel = segs.first().toMap().value(QStringLiteral("label")).toString();
+            CHECK(firstLabel == QStringLiteral("0") || firstLabel == QStringLiteral("1")
+                  || firstLabel == QStringLiteral("2"));
+        }
+        // bool 列：标签 true/false。
+        Intent st2;
+        st2.op = QStringLiteral("data.state");
+        st2.params[QStringLiteral("dataset")] = dsId;
+        st2.params[QStringLiteral("table")] = QStringLiteral("trace");
+        st2.params[QStringLiteral("column")] = QStringLiteral("armed");
+        const auto sr2 = application.host().execute(st2);
+        CHECK(static_cast<bool>(sr2));
+        if (sr2)
+        {
+            const QVariantMap spm = sr2.value().payload.toMap();
+            CHECK(spm.value(QStringLiteral("segments")).toInt() >= 10); // 200 点一翻转，4096 点内 ~20 段
+            const QVariantList segs = spm.value(QStringLiteral("rows")).toList().first()
+                                          .toMap().value(QStringLiteral("segments")).toList();
+            bool hasTrue = false, hasFalse = false;
+            for (const QVariant &s : segs)
+            {
+                const QString l = s.toMap().value(QStringLiteral("label")).toString();
+                hasTrue |= (l == QStringLiteral("true"));
+                hasFalse |= (l == QStringLiteral("false"));
+            }
+            CHECK(hasTrue && hasFalse);
+        }
+        // 非整数浮点列明确拒绝（对齐 PJ4 whole_numbers_only）。
+        Intent bad;
+        bad.op = QStringLiteral("data.state");
+        bad.params[QStringLiteral("dataset")] = dsId;
+        bad.params[QStringLiteral("table")] = QStringLiteral("trace");
+        bad.params[QStringLiteral("column")] = QStringLiteral("sig");
+        const auto br = application.host().execute(bad);
+        CHECK(!static_cast<bool>(br)); // sig = i*0.5 含非整数值
+        // 数据集零改动。
+        CHECK(application.data().get(dsId)->table(QStringLiteral("trace"))->rows == 5000);
+        OK("data.state：状态视图（枚举分段+bool 标签+非整数拒绝+画布叠加）");
+    }
+
+    // --- 5g) 脚本触发状态视图：app.call("data.state", ...) ---
+    {
+        const int dsId = stateDsId;
+        CHECK(dsId >= 0);
+        Intent sit;
+        sit.op = QStringLiteral("script.run");
+        sit.params[QStringLiteral("source")] = QByteArray(
+            "app.call(\"data.state\", {dataset=" + QByteArray::number(dsId)
+            + ", table=\"trace\", column=\"mode\"})");
+        // app.call 失败会 luaL_error 使整个脚本失败：CHECK(scr) 即证明
+        // 脚本能路由 data.state 意图并成功分段叠加（画布行为 5f 已验）。
+        const auto scr = application.host().execute(sit);
+        CHECK(static_cast<bool>(scr));
+        OK("脚本触发 data.state：app.call 成功路由并叠加");
     }
 
     // 绘图路径用**内存构造**的数据集：它只关心 LOD 有界性，

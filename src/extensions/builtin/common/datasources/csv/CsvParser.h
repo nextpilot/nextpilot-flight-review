@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <string>
 #include <vector>
 
@@ -37,6 +39,7 @@ struct CsvTable
     std::vector<std::vector<double>> columns; // [0] 是秒
     std::vector<uint32_t> value_types;        // 与 columns 对齐，PsValueType
 };
+
 
 /* CSV 扩展的探测与解析都在扩展内完成。 */
 bool psCsvProbeFile(const char *path, char forcedDelimiter, CsvProbe &out, std::string &err);

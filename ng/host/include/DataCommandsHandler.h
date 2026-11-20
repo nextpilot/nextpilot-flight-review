@@ -26,6 +26,11 @@
 //   · data.marker      —— Marker 规则（script 模块的 MarkerOps）扫一条通道产出 PlotMarker，
 //                          经 plot.markers.set view action 画到活动画布；不写回数据集。
 //                          参数 dataset/table/column/code(Luau 规则)/name。
+//   · data.state       —— 状态视图（对齐 PJ4 StateTransitionsView）：把一条 bool/整型
+//                          （或仅含整数值的浮点）通道游程编码成状态段，经 plot.state.set
+//                          view action 画到活动画布顶部的状态色带。标签格式化对齐
+//                          StateSeriesAdapter：bool→"true"/"false"、整数→十进制串、
+//                          浮点非整数值断段（gap）。参数 dataset/table/column/name。
 //   · data.workspace.save/list/restore —— 工作区数据源配置的持久化与恢复。
 //                          恢复 = 重放 data.load + data.derive（配方），不存数据本体。
 //
@@ -54,6 +59,7 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> derive(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> filterSeries(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> runMarker(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> stateSeries(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceList();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceSave();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceRestore();

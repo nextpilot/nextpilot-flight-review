@@ -998,6 +998,8 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
     menu.addSeparator();
     QAction *openFilter = menu.addAction(QStringLiteral("添加过滤器…"));
     openFilter->setToolTip(QStringLiteral("有状态 Lua 过滤器（滑窗/微分/积分/缩放等），只读叠加到画布"));
+    QAction *openState = menu.addAction(QStringLiteral("状态视图显示…"));
+    openState->setToolTip(QStringLiteral("bool/枚举通道按状态着色画成顶部色带（对齐 PJ4 状态转换视图）"));
     QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
@@ -1072,6 +1074,19 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
                 QStringLiteral("过滤器「%1」已算出 %2 点并叠加到画布，原数据未改动。")
                     .arg(intent.params.value(QStringLiteral("filter")).toString()).arg(count));
         }
+        return;
+    }
+    if (chosen == openState)
+    {
+        // 状态视图：整条通道游程编码成状态段 → data.state 意图 → 画布顶部色带。
+        Intent intent;
+        intent.op = QStringLiteral("data.state");
+        intent.params[QStringLiteral("dataset")] = datasetId;
+        intent.params[QStringLiteral("table")] = tableName;
+        intent.params[QStringLiteral("column")] = columnName;
+        const auto r = m_executor.execute(intent);
+        if (!r)
+            QMessageBox::warning(this, QStringLiteral("状态视图失败"), r.error().message);
         return;
     }
     for (QAction *a : deriveActs)

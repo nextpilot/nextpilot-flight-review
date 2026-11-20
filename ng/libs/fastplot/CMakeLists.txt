@@ -33,6 +33,7 @@ add_library(fastplot STATIC
     include/fastplot/ScaleDiv.h
     include/fastplot/Axis.h
     include/fastplot/Axes.h
+    include/fastplot/StateColors.h
     include/fastplot/PlotWidget.h
     include/fastplot/PlotData.h
     include/fastplot/Artist.h

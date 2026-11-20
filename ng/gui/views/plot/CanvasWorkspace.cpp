@@ -767,6 +767,28 @@ void CanvasWorkspace::registerViewActions()
                                     return QVariant(true);
                                 });
 
+    // 状态视图（对齐 PJ4 StateTransitionsView）：rows = [{channel, segments:[…]}]，
+    // 画到活动画布顶部的状态色带区（host 的 data.state intent 负责分段取数）。
+    // params["mode"]=="append" 时按 channel 名合并（多通道多行叠加）。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.state.set"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c)
+                                        return QVariant(false);
+                                    QJsonArray arr = QJsonArray::fromVariantList(
+                                        params.value(QStringLiteral("rows")).toList());
+                                    const bool append =
+                                        params.value(QStringLiteral("mode")).toString() == QStringLiteral("append");
+                                    const bool ok = c->setStateRows(arr, append);
+                                    return QVariant(ok ? c->stateRowCount() : 0);
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.state.clear"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    if (PlotCanvas *c = activeCanvas())
+                                        c->setStateRows(QJsonArray());
+                                    return QVariant(true);
+                                });
+
     // 回放引擎（对齐 PJ4 PlaybackEngine）：会话级时间游标的播放/暂停/定位/速率/循环/步进。
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.play"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
