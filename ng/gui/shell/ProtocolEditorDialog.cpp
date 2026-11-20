@@ -37,6 +37,8 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSpinBox>
+#include <QStyledItemDelegate>
+#include <functional>
 #include <QShortcut>
 #include <QSplitter>
 #include <QTableWidget>
@@ -56,18 +58,55 @@ namespace nextpilot::plotscope::gui
 
 namespace
 {
-// 段表列：沿用老编辑器的「字段 / 长度 / 类型 / 取值」，末尾加一列"其它键"（只读摘要），
-// 让 scale / bit / digest / enum 这些结构化键可见但不挤进可编辑格——具体值在"段详情"里改。
+// 段表列：五列，一屏能读完。长度不单独占列，而是写进类型格里（float[3] / bit[8@0] / rbit[16@8]）；
+// on_mismatch、if、description 这些低频键不进表，统一在「段详情」里改。
 enum SegCol
 {
     SegField = 0,
-    SegType,    // 类型紧随字段名：改类型比改长度频繁
-    SegCount,
-    SegValue,
+    SegType,      // 类型 + 长度：float[3]、bit[8@0]、u16
+    SegTransform, // 变换：self*0.25
+    SegExpect,    // 约束：>63、[36,427)、{1,3,5}；多条用分号分隔
     SegUnit,
-    SegOther,   // 只读摘要：表里没列的键（scale / bit / digest / enum / range / if …）
     SegColCount
 };
+
+// 类型格：可编辑下拉。手打 `float[3]` 仍然管用，但不必记住拼写——
+// 候选里直接给 `bit[8@0]`、`rbit[16@8]` 这种现成写法，加上本文档里的块名与 types 别名。
+class SegTypeDelegate : public QStyledItemDelegate
+{
+public:
+    explicit SegTypeDelegate(std::function<QStringList()> cands, QObject *parent = nullptr)
+        : QStyledItemDelegate(parent), m_cands(std::move(cands))
+    {
+    }
+
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &,
+                          const QModelIndex &) const override
+    {
+        auto *cb = new QComboBox(parent);
+        cb->setEditable(true);
+        cb->setInsertPolicy(QComboBox::NoInsert);
+        cb->addItems(m_cands());
+        return cb;
+    }
+
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        if (auto *cb = qobject_cast<QComboBox *>(editor))
+            cb->setCurrentText(index.data(Qt::EditRole).toString());
+    }
+
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                      const QModelIndex &index) const override
+    {
+        if (auto *cb = qobject_cast<QComboBox *>(editor))
+            model->setData(index, cb->currentText(), Qt::EditRole);
+    }
+
+private:
+    std::function<QStringList()> m_cands;
+};
+
 
 QJsonObject objectFromItem(const QTableWidgetItem *item)
 {
@@ -235,15 +274,15 @@ bool expectLooksBroken(const QString &text)
 void setupSegTable(QTableWidget *t, bool compact = false)
 {
     t->setHorizontalHeaderLabels({QStringLiteral("字段"), QStringLiteral("类型"),
-                                  QStringLiteral("长度"), QStringLiteral("取值"),
-                                  QStringLiteral("单位"), QStringLiteral("其它键")});
+                                  QStringLiteral("变换"), QStringLiteral("约束"),
+                                  QStringLiteral("单位")});
     t->horizontalHeader()->setStretchLastSection(true);
     // 紧凑档给变体段表：它只占右半栏，列宽按比例收，避免出现横向滚动条。
-    t->setColumnWidth(SegField, compact ? 118 : 160);
-    t->setColumnWidth(SegType, compact ? 62 : 96);
-    t->setColumnWidth(SegCount, compact ? 52 : 80);
-    t->setColumnWidth(SegValue, compact ? 58 : 90);
-    t->setColumnWidth(SegUnit, compact ? 54 : 80);
+    t->setColumnWidth(SegField, compact ? 112 : 150);
+    t->setColumnWidth(SegType, compact ? 74 : 104);
+    t->setColumnWidth(SegTransform, compact ? 66 : 104);
+    t->setColumnWidth(SegExpect, compact ? 66 : 104);
+    t->setColumnWidth(SegUnit, compact ? 50 : 72);
     // 类型列常驻下拉（点击即弹，不可输入），与段详情口径一致
     auto *typeDelegate = new TypeComboDelegate(typeOptionsWith({}), t);
     t->setItemDelegateForColumn(SegType, typeDelegate);
@@ -364,7 +403,7 @@ QString otherKeysText(const QJsonObject &seg)
 
 void lintExpectCell(QTableWidget *t, int row)
 {
-    auto *it = t ? t->item(row, SegValue) : nullptr;
+    auto *it = t ? t->item(row, SegExpect) : nullptr;
     if (!it)
         return;
     if (expectLooksBroken(it->text()))
@@ -826,8 +865,9 @@ void ProtocolEditorDialog::buildDesignPages()
 
     // 增删只在表格上发生（底部「＋ 添加字段」/ 右键 / Delete），顶部不再放一对按钮。
     auto *segHint = new QLabel(
-        QStringLiteral("类型在前、长度在后；长度=元素个数（可写前序段名或表达式）。"
-                       "拖动行调顺序，双击行开「段详情」— 里面每个属性都有说明和可选值。"),
+        QStringLiteral("类型格里写长度：float[3]、bit[8@0]（bit=小端序、rbit=大端序，@ 是位偏移）；"
+                       "约束格写 >63 / [36,427) / {1,3,5}，多条用分号；变换格写 self*0.25。"
+                       "双击行开「段详情」，块段下面的灰色行是块内字段。"),
         framePage);
     segHint->setWordWrap(true);
     segHint->setStyleSheet(QStringLiteral("color:#666;"));
@@ -836,6 +876,8 @@ void ProtocolEditorDialog::buildDesignPages()
     auto *segTable = new ReorderTable(0, SegColCount, framePage);
     m_segs = segTable;
     setupSegTable(m_segs);
+    m_segs->setItemDelegateForColumn(
+        SegType, new SegTypeDelegate([this] { return segTypeCandidates(); }, this));
     static_cast<ReorderTable *>(m_segs)->onMove = [this](int from, int to) {
         moveTableRow(m_segs, from, to);
         markDirty();
@@ -921,6 +963,8 @@ void ProtocolEditorDialog::buildDesignPages()
     auto *varSegTable = new ReorderTable(0, SegColCount, varSegCol);
     m_varSegs = varSegTable;
     setupSegTable(m_varSegs, true);
+    m_varSegs->setItemDelegateForColumn(
+        SegType, new SegTypeDelegate([this] { return segTypeCandidates(); }, this));
     static_cast<ReorderTable *>(m_varSegs)->onMove = [this](int from, int to) {
         moveTableRow(m_varSegs, from, to);
         storeVariantSegs();
@@ -957,13 +1001,13 @@ void ProtocolEditorDialog::buildDesignPages()
     });
     connect(m_segs, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *it) {
         markDirty();
-        if (it && it->column() == SegValue)
+        if (it && it->column() == SegExpect)
             lintExpectCell(m_segs, it->row());
     });
     connect(m_varSegs, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *it) {
         storeVariantSegs();
         markDirty();
-        if (it && it->column() == SegValue)
+        if (it && it->column() == SegExpect)
             lintExpectCell(m_varSegs, it->row());
     });
     // 双击段详情、右键增删、Delete 删除统一由 wireSegTable 装配（见上）。
@@ -1012,9 +1056,313 @@ QJsonValue ProtocolEditorDialog::parseLiteral(const QString &text)
     return QJsonValue(t);
 }
 
+// ---------------------------------------------------------------- 段表格的界面语法
+// 三个可编辑格各自有一套"人能读、也能反解"的写法：
+//   类型格  float[3] / bit[8@0] / rbit[16@8]   —— 长度并进类型，不再单占一列
+//   变换格  self*0.25                          —— 表达式原样；算子数组只读（摘要无法反解）
+//   约束格  >63 / [36,427) / {1,3,5} / crc8     —— 多条用分号分隔，与 expect 数组顺序一致
+QString ProtocolEditorDialog::typeCellText(const QJsonObject &seg) const
+{
+    const QString type = seg.value(QStringLiteral("type")).toString(QStringLiteral("u8"));
+    const QString cnt = literalText(seg.value(QStringLiteral("count"))).trimmed();
+    if (cnt.isEmpty() || cnt == QLatin1String("1"))
+        return type;
+    return type + QLatin1Char('[') + cnt + QLatin1Char(']');
+}
+bool ProtocolEditorDialog::applyTypeCell(const QString &text, QJsonObject &seg, QString *why) const
+{
+    const QString t = text.trimmed();
+    if (t.isEmpty())
+    {
+        if (why)
+            *why = QStringLiteral("类型不能为空");
+        return false;
+    }
+    const int lb = t.indexOf(QLatin1Char('['));
+    if (lb < 0)
+    {
+        if (t.contains(QLatin1Char(']')))
+        {
+            if (why)
+                *why = QStringLiteral("括号不配对");
+            return false;
+        }
+        seg.insert(QStringLiteral("type"), t);
+        seg.remove(QStringLiteral("count"));
+        return true;
+    }
+    const int rb = t.lastIndexOf(QLatin1Char(']'));
+    if (rb < lb)
+    {
+        if (why)
+            *why = QStringLiteral("括号不配对");
+        return false;
+    }
+    const QString type = t.left(lb).trimmed();
+    const QString inner = t.mid(lb + 1, rb - lb - 1).trimmed();
+    if (type.isEmpty())
+    {
+        if (why)
+            *why = QStringLiteral("类型为空");
+        return false;
+    }
+    if (!t.mid(rb + 1).trimmed().isEmpty())
+    {
+        if (why)
+            *why = QStringLiteral("`]` 后面还有内容");
+        return false;
+    }
+    seg.insert(QStringLiteral("type"), type);
+    if (inner.isEmpty() || inner == QLatin1String("1"))
+    {
+        seg.remove(QStringLiteral("count"));
+        return true;
+    }
+    const QJsonValue v = parseLiteral(inner);
+    if (v.isUndefined())
+    {
+        if (why)
+            *why = QStringLiteral("长度无法解析");
+        return false;
+    }
+    seg.insert(QStringLiteral("count"), v);
+    return true;
+}
+QString ProtocolEditorDialog::transformCellText(const QJsonObject &seg) const
+{
+    const QJsonValue tv = seg.value(QStringLiteral("transform"));
+    if (tv.isUndefined() || tv.isNull())
+        return QString();
+    if (tv.isString())
+        return tv.toString();
+    if (tv.isArray())
+    {
+        QStringList parts;
+        for (const QJsonValue &v : tv.toArray())
+        {
+            const QJsonObject o = v.toObject();
+            QString one = o.value(QStringLiteral("op")).toString();
+            if (o.contains(QStringLiteral("k")))
+                one += QLatin1Char(' ') + literalText(o.value(QStringLiteral("k")));
+            else if (o.contains(QStringLiteral("b")))
+                one += QLatin1Char(' ') + literalText(o.value(QStringLiteral("b")));
+            if (o.contains(QStringLiteral("min")) || o.contains(QStringLiteral("max")))
+                one += QStringLiteral(" %1..%2").arg(literalText(o.value(QStringLiteral("min"))),
+                                                    literalText(o.value(QStringLiteral("max"))));
+            parts << one;
+        }
+        return parts.join(QStringLiteral(" · "));
+    }
+    return literalText(tv);
+}
+QString ProtocolEditorDialog::expectItemText(const QJsonValue &v) const
+{
+    if (!v.isObject())
+        return literalText(v);
+    const QJsonObject o = v.toObject();
+    const QString op = o.value(QStringLiteral("op")).toString(QStringLiteral("eq"));
+    const QString val = literalText(o.value(QStringLiteral("value")));
+    if (op == QLatin1String("eq"))
+        return val;
+    if (op == QLatin1String("ne"))
+        return QStringLiteral("!=") + val;
+    if (op == QLatin1String("gt"))
+        return QStringLiteral(">") + val;
+    if (op == QLatin1String("ge"))
+        return QStringLiteral(">=") + val;
+    if (op == QLatin1String("lt"))
+        return QStringLiteral("<") + val;
+    if (op == QLatin1String("le"))
+        return QStringLiteral("<=") + val;
+    if (op == QLatin1String("in"))
+    {
+        QStringList items;
+        for (const QJsonValue &x : o.value(QStringLiteral("values")).toArray())
+            items << literalText(x);
+        return QLatin1Char('{') + items.join(QStringLiteral(",")) + QLatin1Char('}');
+    }
+    // 摘要/校验和：格里只显示 op 名，参数在段详情里改
+    return op;
+}
+QString ProtocolEditorDialog::expectCellText(const QJsonObject &seg) const
+{
+    const QJsonValue ev = seg.value(QStringLiteral("expect"));
+    if (ev.isUndefined() || ev.isNull())
+        return QString();
+    if (!ev.isArray())
+        return literalText(ev);
+    const QJsonArray arr = ev.toArray();
+    QStringList parts;
+    for (int i = 0; i < arr.size(); ++i)
+    {
+        const QJsonObject o = arr.at(i).toObject();
+        const QString op = o.value(QStringLiteral("op")).toString(QStringLiteral("eq"));
+        // ge + lt/le 合成区间：拆开显示会让人以为是两条独立约束
+        if (op == QLatin1String("ge") && i + 1 < arr.size())
+        {
+            const QJsonObject next = arr.at(i + 1).toObject();
+            const QString nop = next.value(QStringLiteral("op")).toString();
+            if (nop == QLatin1String("lt") || nop == QLatin1String("le"))
+            {
+                const QChar close = (nop == QLatin1String("lt")) ? QLatin1Char(')') : QLatin1Char(']');
+                parts << QStringLiteral("[%1,%2%3")
+                             .arg(literalText(o.value(QStringLiteral("value"))),
+                                  literalText(next.value(QStringLiteral("value"))), QString(close));
+                ++i;
+                continue;
+            }
+        }
+        parts << expectItemText(arr.at(i));
+    }
+    return parts.join(QStringLiteral("; "));
+}
+bool ProtocolEditorDialog::applyExpectCell(const QString &text, QJsonObject &seg, QString *why) const
+{
+    const QString t = text.trimmed();
+    if (t.isEmpty())
+    {
+        seg.remove(QStringLiteral("expect"));
+        return true;
+    }
+    static const QStringList digestOps = {QStringLiteral("xor8"),   QStringLiteral("sum8"),
+                                          QStringLiteral("crc8"),   QStringLiteral("crc16"),
+                                          QStringLiteral("crc16_modbus"), QStringLiteral("crc16_x25"),
+                                          QStringLiteral("crc24q"), QStringLiteral("crc32"),
+                                          QStringLiteral("crc32c"), QStringLiteral("nmea_xor"),
+                                          QStringLiteral("parity"), QStringLiteral("script"),
+                                          QStringLiteral("mask")};
+    const QJsonArray old = seg.value(QStringLiteral("expect")).toArray();
+    QJsonArray arr;
+    for (const QString &raw : t.split(QLatin1Char(';'), Qt::SkipEmptyParts))
+    {
+        const QString p = raw.trimmed();
+        if (p.isEmpty())
+            continue;
+        // 摘要类的参数（poly / over …）不在格里编：同名的旧项原样搬过来，改参数进段详情
+        if (digestOps.contains(p))
+        {
+            bool carried = false;
+            for (const QJsonValue &v : old)
+                if (v.toObject().value(QStringLiteral("op")).toString() == p)
+                {
+                    arr.append(v);
+                    carried = true;
+                    break;
+                }
+            if (!carried)
+            {
+                QJsonObject o;
+                o.insert(QStringLiteral("op"), p);
+                arr.append(o);
+            }
+            continue;
+        }
+        // 区间 [a,b) / (a,b] / [a,b]
+        const int comma = p.indexOf(QLatin1Char(','));
+        if (comma > 0 && (p.startsWith(QLatin1Char('[')) || p.startsWith(QLatin1Char('('))))
+        {
+            const QChar close = p.at(p.size() - 1);
+            if (close == QLatin1Char(')') || close == QLatin1Char(']'))
+            {
+                const QJsonValue lo = parseLiteral(p.mid(1, comma - 1).trimmed());
+                const QJsonValue hi = parseLiteral(p.mid(comma + 1, p.size() - comma - 2).trimmed());
+                if (lo.isUndefined() || hi.isUndefined())
+                {
+                    if (why)
+                        *why = QStringLiteral("区间端点无法解析：%1").arg(p);
+                    return false;
+                }
+                QJsonObject g;
+                g.insert(QStringLiteral("op"),
+                         (p.at(0) == QLatin1Char('(')) ? QStringLiteral("gt") : QStringLiteral("ge"));
+                g.insert(QStringLiteral("value"), lo);
+                arr.append(g);
+                QJsonObject l;
+                l.insert(QStringLiteral("op"),
+                         (close == QLatin1Char(')')) ? QStringLiteral("lt") : QStringLiteral("le"));
+                l.insert(QStringLiteral("value"), hi);
+                arr.append(l);
+                continue;
+            }
+        }
+        // 集合 {1,3,5}
+        if (p.startsWith(QLatin1Char('{')) && p.endsWith(QLatin1Char('}')))
+        {
+            QJsonArray vals;
+            for (const QString &x : p.mid(1, p.size() - 2).split(QLatin1Char(','), Qt::SkipEmptyParts))
+            {
+                const QJsonValue v = parseLiteral(x.trimmed());
+                if (v.isUndefined())
+                {
+                    if (why)
+                        *why = QStringLiteral("集合里的值无法解析：%1").arg(x.trimmed());
+                    return false;
+                }
+                vals.append(v);
+            }
+            if (vals.isEmpty())
+            {
+                if (why)
+                    *why = QStringLiteral("集合为空");
+                return false;
+            }
+            QJsonObject o;
+            o.insert(QStringLiteral("op"), QStringLiteral("in"));
+            o.insert(QStringLiteral("values"), vals);
+            arr.append(o);
+            continue;
+        }
+        // 前缀比较
+        const char *pre[] = {">=", "<=", "!=", ">", "<", "="};
+        const char *opc[] = {"ge", "le", "ne", "gt", "lt", "eq"};
+        bool compared = false;
+        for (int k = 0; k < 6; ++k)
+        {
+            const QString pp = QString::fromLatin1(pre[k]);
+            if (!p.startsWith(pp))
+                continue;
+            const QJsonValue v = parseLiteral(p.mid(pp.size()).trimmed());
+            if (v.isUndefined())
+            {
+                if (why)
+                    *why = QStringLiteral("比较值无法解析：%1").arg(p);
+                return false;
+            }
+            QJsonObject o;
+            o.insert(QStringLiteral("op"), QString::fromLatin1(opc[k]));
+            o.insert(QStringLiteral("value"), v);
+            arr.append(o);
+            compared = true;
+            break;
+        }
+        if (compared)
+            continue;
+        // 剩下的按"等于"处理：数字走数字，表达式留字符串
+        const QJsonValue v = parseLiteral(p);
+        if (v.isUndefined())
+        {
+            if (why)
+                *why = QStringLiteral("约束无法解析：%1").arg(p);
+            return false;
+        }
+        QJsonObject o;
+        o.insert(QStringLiteral("op"), QStringLiteral("eq"));
+        o.insert(QStringLiteral("value"), v);
+        arr.append(o);
+    }
+    if (arr.isEmpty())
+    {
+        seg.remove(QStringLiteral("expect"));
+        return true;
+    }
+    seg.insert(QStringLiteral("expect"), arr);
+    return true;
+}
+
 // ---------------------------------------------------------------- 段表填充/读取
 
-void ProtocolEditorDialog::fillSegTable(QTableWidget *table, const QJsonArray &segs)
+void ProtocolEditorDialog::fillSegTable(QTableWidget *table, const QJsonArray &segs,
+                                        const QJsonObject &blocks)
 {
     m_syncing = true;
     table->setRowCount(0);
@@ -1027,31 +1375,81 @@ void ProtocolEditorDialog::fillSegTable(QTableWidget *table, const QJsonArray &s
         auto *fieldItem = new QTableWidgetItem(seg.value(QStringLiteral("name")).toString());
         storeObjectOnItem(fieldItem, seg);
         table->setItem(r, SegField, fieldItem);
-        table->setItem(r, SegCount,
-                       new QTableWidgetItem(literalText(seg.value(QStringLiteral("count")))));
-        table->setItem(r, SegType,
-                       new QTableWidgetItem(seg.value(QStringLiteral("type")).toString()));
-        table->setItem(r, SegValue,
-                       new QTableWidgetItem(literalText(seg.value(QStringLiteral("expect")))));
-        table->setItem(r, SegUnit,
-                       new QTableWidgetItem(seg.value(QStringLiteral("unit")).toString()));
-        auto *other = new QTableWidgetItem(otherKeysText(seg));
-        QStringList rawKeys;
-        for (auto it = seg.begin(); it != seg.end(); ++it)
+        table->setItem(r, SegType, new QTableWidgetItem(typeCellText(seg)));
+        table->setItem(r, SegTransform, new QTableWidgetItem(transformCellText(seg)));
+        table->setItem(r, SegExpect, new QTableWidgetItem(expectCellText(seg)));
+        table->setItem(r, SegUnit, new QTableWidgetItem(seg.value(QStringLiteral("unit")).toString()));
+
+        // 算子数组形态的 transform 没法从摘要反解：这格只读，双击行进「段详情」改。
+        if (seg.value(QStringLiteral("transform")).isArray())
         {
-            const QString k = it.key();
-            if (k == QLatin1String("name") || k == QLatin1String("type") ||
-                k == QLatin1String("count") || k == QLatin1String("expect") ||
-                k == QLatin1String("unit"))
-                continue;
-            rawKeys << k;
+            auto *ti = table->item(r, SegTransform);
+            ti->setFlags(ti->flags() & ~Qt::ItemIsEditable);
+            ti->setForeground(QColor(110, 110, 110));
+            ti->setToolTip(QStringLiteral("多步变换：双击本行进「段详情」改"));
         }
-        other->setToolTip(rawKeys.join(QStringLiteral(", ")) +
-                          QStringLiteral(" — 本列只读，双击本行在「更多属性」里改值"));
-        other->setFlags(other->flags() & ~Qt::ItemIsEditable);
-        table->setItem(r, SegOther, other);
+        lintExpectCell(table, r);
+
+        // 类型指向块 → 紧跟一行行缩进的子行，把块内字段摊开给人看：不用点进详情才知道
+        // 这个段底下藏着哪几个字段。子行只读（改字段仍走段详情），也不回写进 segments。
+        const QString typeName = seg.value(QStringLiteral("type")).toString();
+        if (!blocks.contains(typeName))
+            continue;
+        const QJsonObject blk = blocks.value(typeName).toObject();
+        const QJsonArray fields = blk.value(QStringLiteral("fields")).toArray();
+        const QString repeater = blk.value(QStringLiteral("repeater")).toString();
+        for (int k = 0; k < fields.size(); ++k)
+        {
+            const QJsonObject f = fields.at(k).toObject();
+            const int cr = table->rowCount();
+            table->insertRow(cr);
+            const QString branch = (k + 1 == fields.size()) ? QStringLiteral("└ ")
+                                                            : QStringLiteral("├ ");
+            auto *childName = new QTableWidgetItem(QStringLiteral("    %1%2").arg(
+                branch, f.value(QStringLiteral("name")).toString()));
+            childName->setData(Qt::UserRole + 1, QStringLiteral("child"));
+            childName->setToolTip(QStringLiteral("块 %1 的字段「%2」%3")
+                                      .arg(typeName, f.value(QStringLiteral("name")).toString(),
+                                           repeater.isEmpty() ? QString()
+                                                              : QStringLiteral("（整组重复 %1）").arg(repeater)));
+            auto *childType = new QTableWidgetItem(typeCellText(f));
+            auto *childUnit = new QTableWidgetItem(f.value(QStringLiteral("unit")).toString());
+            for (auto *it : {childName, childType, childUnit})
+            {
+                it->setFlags(it->flags() & ~Qt::ItemIsEditable);
+                it->setForeground(QColor(120, 120, 120));
+            }
+            table->setItem(cr, SegField, childName);
+            table->setItem(cr, SegType, childType);
+            table->setItem(cr, SegTransform, new QTableWidgetItem(transformCellText(f)));
+            table->setItem(cr, SegExpect, new QTableWidgetItem(expectCellText(f)));
+            table->setItem(cr, SegUnit, childUnit);
+            for (int c : {SegTransform, SegExpect})
+            {
+                auto *it = table->item(cr, c);
+                it->setFlags(it->flags() & ~Qt::ItemIsEditable);
+                it->setForeground(QColor(120, 120, 120));
+            }
+        }
     }
     m_syncing = false;
+}
+
+QStringList ProtocolEditorDialog::segTypeCandidates() const
+{
+    // 内置类型在前，位域写法给几个常用组合（bit=小端序、rbit=大端序），
+    // 再接本文档自己的块名与 types 别名——用户不必记拼写，也不至于在下拉里迷路。
+    QStringList l{QStringLiteral("u8"),      QStringLiteral("u16"),   QStringLiteral("u32"),
+                  QStringLiteral("u64"),     QStringLiteral("i8"),    QStringLiteral("i16"),
+                  QStringLiteral("i32"),     QStringLiteral("i64"),   QStringLiteral("f32"),
+                  QStringLiteral("f64"),     QStringLiteral("float"), QStringLiteral("double"),
+                  QStringLiteral("bytes"),   QStringLiteral("string"), QStringLiteral("bool"),
+                  QStringLiteral("bit[1@0]"), QStringLiteral("bit[8@0]"),
+                  QStringLiteral("bit[16@0]"), QStringLiteral("bit[32@0]"),
+                  QStringLiteral("rbit[1@0]"), QStringLiteral("rbit[8@0]"),
+                  QStringLiteral("rbit[16@8]"), QStringLiteral("rbit[32@0]")};
+    l += m_knownTypes;
+    return l;
 }
 
 QJsonArray ProtocolEditorDialog::segTableToJson(QTableWidget *table) const
@@ -1060,6 +1458,8 @@ QJsonArray ProtocolEditorDialog::segTableToJson(QTableWidget *table) const
     for (int r = 0; r < table->rowCount(); ++r)
     {
         auto *fieldItem = table->item(r, SegField);
+        if (fieldItem && fieldItem->data(Qt::UserRole + 1).toString() == QLatin1String("child"))
+            continue; // 块展开出来的二级行只是投影，不属于 segments
         const QString name = fieldItem ? fieldItem->text().trimmed() : QString();
         if (name.isEmpty())
             continue;
@@ -1068,23 +1468,40 @@ QJsonArray ProtocolEditorDialog::segTableToJson(QTableWidget *table) const
         QJsonObject seg = objectFromItem(fieldItem);
         seg.insert(QStringLiteral("name"), name);
 
-        const QString type =
-            table->item(r, SegType) ? table->item(r, SegType)->text().trimmed() : QString();
-        seg.insert(QStringLiteral("type"), type.isEmpty() ? QStringLiteral("u8") : type);
+        // 类型格：float[3] / bit[8@0] 拆回 type + count；拆不动就保留原值（不写坏文档）
+        {
+            QString why;
+            const QString typeText = table->item(r, SegType) ? table->item(r, SegType)->text() : QString();
+            if (!applyTypeCell(typeText, seg, &why))
+            {
+                if (!seg.contains(QStringLiteral("type")))
+                    seg.insert(QStringLiteral("type"), QStringLiteral("u8"));
+            }
+        }
 
-        const QJsonValue count = parseLiteral(
-            table->item(r, SegCount) ? table->item(r, SegCount)->text() : QString());
-        if (count.isUndefined())
-            seg.remove(QStringLiteral("count"));
-        else
-            seg.insert(QStringLiteral("count"), count);
+        // 变换格：只读格（算子数组）不动原值
+        {
+            auto *ti = table->item(r, SegTransform);
+            const bool readOnly = ti && !(ti->flags() & Qt::ItemIsEditable);
+            if (!readOnly)
+            {
+                const QString tr = ti ? ti->text().trimmed() : QString();
+                if (tr.isEmpty())
+                    seg.remove(QStringLiteral("transform"));
+                else
+                    seg.insert(QStringLiteral("transform"), tr);
+            }
+        }
 
-        const QJsonValue expect = parseLiteral(
-            table->item(r, SegValue) ? table->item(r, SegValue)->text() : QString());
-        if (expect.isUndefined())
-            seg.remove(QStringLiteral("expect"));
-        else
-            seg.insert(QStringLiteral("expect"), expect);
+        // 约束格：>63 / [36,427) / {1,3,5} 反解成 expect 数组
+        {
+            QString why;
+            const QString ex = table->item(r, SegExpect) ? table->item(r, SegExpect)->text() : QString();
+            if (!applyExpectCell(ex, seg, &why))
+            {
+                // 解析不了就保留原 expect，格里的红底由 lintExpectCell 提示
+            }
+        }
 
         const QString unit =
             table->item(r, SegUnit) ? table->item(r, SegUnit)->text().trimmed() : QString();
@@ -1199,12 +1616,9 @@ void ProtocolEditorDialog::addSegRowAt(QTableWidget *table, int insertAt)
     table->insertRow(r);
     table->setItem(r, SegField, new QTableWidgetItem(QStringLiteral("field%1").arg(r + 1)));
     table->setItem(r, SegType, new QTableWidgetItem(QStringLiteral("u8")));
-    table->setItem(r, SegCount, new QTableWidgetItem(QStringLiteral("1")));
-    table->setItem(r, SegValue, new QTableWidgetItem(QString()));
+    table->setItem(r, SegTransform, new QTableWidgetItem(QString()));
+    table->setItem(r, SegExpect, new QTableWidgetItem(QString()));
     table->setItem(r, SegUnit, new QTableWidgetItem(QString()));
-    auto *other = new QTableWidgetItem(QString());
-    other->setFlags(other->flags() & ~Qt::ItemIsEditable);
-    table->setItem(r, SegOther, other);
     table->setCurrentCell(r, SegField);
     if (table == m_varSegs)
         storeVariantSegs();
@@ -1224,13 +1638,31 @@ void ProtocolEditorDialog::removeSegRow(QTableWidget *table, int row)
     markDirty();
 }
 
+namespace
+{
+// 块展开出来的二级行不属于 segments：所有行操作先上溯到它所属的段行。
+int parentSegRow(const QTableWidget *table, int row)
+{
+    while (row >= 0)
+    {
+        const auto *it = table->item(row, SegField);
+        if (it && it->data(Qt::UserRole + 1).toString() != QLatin1String("child"))
+            return row;
+        --row;
+    }
+    return -1;
+}
+
+} // namespace
+
 void ProtocolEditorDialog::wireSegTable(QTableWidget *table)
 {
     // 增删只在表格上发生：底部「＋ 添加字段」是主入口，右键与 Delete 是补充；
     // 顺序靠拖拽，所以不再提供上移/下移按钮（按钮永远不如直接拖快）。
     table->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(table, &QWidget::customContextMenuRequested, this, [this, table](const QPoint &pos) {
-        const int row = table->indexAt(pos).row();
+        const int hit = table->indexAt(pos).row();
+        const int row = hit >= 0 ? parentSegRow(table, hit) : -1;
         QMenu menu(this);
         QAction *insBefore = menu.addAction(QStringLiteral("在此行前插入字段"));
         QAction *insAfter = menu.addAction(QStringLiteral("在此行后插入字段"));
@@ -1253,14 +1685,15 @@ void ProtocolEditorDialog::wireSegTable(QTableWidget *table)
     auto *delKey = new QShortcut(QKeySequence::Delete, table);
     delKey->setContext(Qt::WidgetWithChildrenShortcut);
     connect(delKey, &QShortcut::activated, this, [this, table] {
-        const int row = table->currentRow();
+        const int row = parentSegRow(table, table->currentRow());
         if (row >= 0)
             removeSegRow(table, row);
     });
 
     // 双击行的任意位置 → 段详情（其它键的入口）
-    connect(table, &QTableWidget::cellDoubleClicked, this, [this, table](int row, int) {
-        openSegmentDetail(table, row);
+    connect(table, &QTableWidget::cellDoubleClicked, this, [this, table](int hit, int) {
+        // 双击二级行 = 打开它所属的段（块内字段在段详情的「块字段」区改）
+        openSegmentDetail(table, parentSegRow(table, hit));
     });
 }
 
@@ -1275,18 +1708,27 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
         return it ? it->text().trimmed() : QString();
     };
     seg.insert(QStringLiteral("name"), textOf(SegField));
-    const QString type = textOf(SegType);
-    seg.insert(QStringLiteral("type"), type.isEmpty() ? QStringLiteral("u8") : type);
-    const QJsonValue count = parseLiteral(textOf(SegCount));
-    if (count.isUndefined())
-        seg.remove(QStringLiteral("count"));
-    else
-        seg.insert(QStringLiteral("count"), count);
-    const QJsonValue expect = parseLiteral(textOf(SegValue));
-    if (expect.isUndefined())
-        seg.remove(QStringLiteral("expect"));
-    else
-        seg.insert(QStringLiteral("expect"), expect);
+    // 先把三格里的界面写法反解进 seg，详情面板再基于它铺表单
+    {
+        QString why;
+        if (!applyTypeCell(textOf(SegType), seg, &why) && !seg.contains(QStringLiteral("type")))
+            seg.insert(QStringLiteral("type"), QStringLiteral("u8"));
+    }
+    {
+        auto *trItem = table->item(row, SegTransform);
+        if (!trItem || (trItem->flags() & Qt::ItemIsEditable))
+        {
+            const QString tr = trItem ? trItem->text().trimmed() : QString();
+            if (tr.isEmpty())
+                seg.remove(QStringLiteral("transform"));
+            else
+                seg.insert(QStringLiteral("transform"), tr);
+        }
+    }
+    {
+        QString why;
+        applyExpectCell(textOf(SegExpect), seg, &why);
+    }
     if (textOf(SegUnit).isEmpty())
         seg.remove(QStringLiteral("unit"));
     else
@@ -1551,11 +1993,10 @@ void ProtocolEditorDialog::openSegmentDetail(QTableWidget *table, int row)
     auto *fieldItem = table->item(row, SegField);
     fieldItem->setText(out.value(QStringLiteral("name")).toString());
     storeObjectOnItem(fieldItem, out);
-    table->item(row, SegType)->setText(out.value(QStringLiteral("type")).toString());
-    table->item(row, SegCount)->setText(literalText(out.value(QStringLiteral("count"))));
-    table->item(row, SegValue)->setText(literalText(out.value(QStringLiteral("expect"))));
+    table->item(row, SegType)->setText(typeCellText(out));
+    table->item(row, SegTransform)->setText(transformCellText(out));
+    table->item(row, SegExpect)->setText(expectCellText(out));
     table->item(row, SegUnit)->setText(out.value(QStringLiteral("unit")).toString());
-    table->item(row, SegOther)->setText(otherKeysText(out));
     m_syncing = false;
     if (table == m_varSegs)
         storeVariantSegs();
@@ -1614,7 +2055,10 @@ void ProtocolEditorDialog::refreshFromJson()
     m_fallback->setCurrentText(series.value(QStringLiteral("fallback"))
                                    .toString(QStringLiteral("reject")));
 
-    fillSegTable(m_segs, doc.value(QStringLiteral("segments")).toArray());
+    m_knownTypes = doc.value(QStringLiteral("blocks")).toObject().keys() +
+                   doc.value(QStringLiteral("types")).toObject().keys();
+    fillSegTable(m_segs, doc.value(QStringLiteral("segments")).toArray(),
+                 doc.value(QStringLiteral("blocks")).toObject());
     fillVariantsTable(series.value(QStringLiteral("variants")).toArray());
 
     m_syncing = false;

@@ -86,7 +86,10 @@ private:
     void commitDesign();             // 控件 -> JSON（切页签/校验/试算/保存前）
     QJsonObject collectDoc() const;  // 以 JSON 为底，覆盖表单、段表与变体
     QJsonArray segTableToJson(QTableWidget *table) const;
-    void fillSegTable(QTableWidget *table, const QJsonArray &segs);
+    QStringList segTypeCandidates() const;
+    QStringList m_knownTypes; // 文档里的块名与 types 别名，进类型格候选
+    void fillSegTable(QTableWidget *table, const QJsonArray &segs,
+                      const QJsonObject &blocks = QJsonObject());
     void fillVariantsTable(const QJsonArray &variants);
     void reloadVariantSegs();        // 变体表选中行 -> 变体段表
     void storeVariantSegs();         // 变体段表 -> 选中变体的缓存
@@ -101,6 +104,14 @@ private:
     // 单元格字面量：数字原样，字符串带类型信息。
     static QString literalText(const QJsonValue &v);
     static QJsonValue parseLiteral(const QString &text);
+
+    // 段表格三格的界面语法（类型/变换/约束）：人能读、也能反解回 JSON
+    QString typeCellText(const QJsonObject &seg) const;
+    bool applyTypeCell(const QString &text, QJsonObject &seg, QString *why) const;
+    QString transformCellText(const QJsonObject &seg) const;
+    QString expectItemText(const QJsonValue &v) const;
+    QString expectCellText(const QJsonObject &seg) const;
+    bool applyExpectCell(const QString &text, QJsonObject &seg, QString *why) const;
 
     // 校验/试算一律走 protocol.* 意图（与模块、脚本、CLI 同一份实现）；
     // executor 为空时退回同模块内的 handler 实例，逻辑仍是同一份，不另写规则。
