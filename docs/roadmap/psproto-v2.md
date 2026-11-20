@@ -1,5 +1,9 @@
 # psproto v2：模板驱动的动态帧解码库
 
+> **已被 v3 取代（2026-11）。** 当前规范以 `ng/libs/protocol/SPEC.md` 与 `psproto.schema.json` 为准。
+> 本文保留 v2 期的设计取舍与统计，只作为历史背景阅读；文中所有段级键（`scale/offset/range/checks/digest/bit/enum/as/length/repeat/derive/emit`）在 v3 中已删除。
+> v3 的要点：bin 段收敛到 10 键、`blocks`（顺序块/位域块/组重复）、顶层 `derived`、`expect` 统一约束数组、`bit`/`rbit` 用类型值表达位序、bin 与 text 拆两个独立校验/解析器。
+
 > 定位一句话：**用一份 JSON 模板声明帧布局，在运行时编译成段表，再把字节流解成 `channel → (t, v)`。不生成代码，不重编译。**
 >
 > 本文件是 `ng/libs/psproto`（现 `ng/libs/protocol`）的完善方案，含**表达力统计**、schema、流式解析器、编译器与代码生成路线。
