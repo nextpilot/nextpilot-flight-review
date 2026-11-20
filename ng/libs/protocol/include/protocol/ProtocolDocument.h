@@ -130,6 +130,11 @@ struct SegmentDef
     std::vector<CheckSpec> checks;
     LengthSpec length;
 
+    // ---- v3 ----
+    bool countWildcard = false;  // count:"*"：本段读到帧尾（全局唯一，其后只允许固定尾部段）
+    std::string blockRef;        // type 指向 blocks 里的块名，编译期展开
+    ExprPtr transformExpr;       // transform 写成非线性表达式时逐帧求值；线性形式折进 scale/offset
+
     // ---- text 词法（SPEC §7）：段的边界不再来自字节宽度，而来自定界符/字面量 ----
     std::string literal;                 // 字面量段：必须精确匹配，不产通道（如 "$"、"*"）
     std::string key;                     // key=value 词法：段的键名（如 "lat"），值是键后到分隔符/记录尾

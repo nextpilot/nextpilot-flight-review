@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://plotscope.local/schema/psproto-2.json",
-  "title": "psproto v2 帧协议模板",
-  "description": "顺序字节流 → 帧 → 字段的描述语言。规范见 SPEC.md；本文件只做结构层校验（键、类型、枚举、必填/互斥），语义校验由 C++ validate() 承担。",
+  "$id": "https://plotscope.local/schema/psproto-3.json",
+  "title": "psproto v3 帧协议模板",
+  "description": "顺序字节流 → 帧 → 字段的描述语言。规范见 SPEC.md；本文件只做结构层校验（键、类型、枚举、必填），语义校验由 C++ validate() 承担。v3 不做旧格式兼容：未知键即错误。",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,11 +11,6 @@
     "segments"
   ],
   "properties": {
-    "psproto": {
-      "type": "string",
-      "const": "2",
-      "description": "版本键；v1 键已删除，不做兼容映射"
-    },
     "name": {
       "type": "string",
       "minLength": 1
@@ -58,12 +53,26 @@
     "segments": {
       "$ref": "#/$defs/segmentArray"
     },
+    "blocks": {
+      "type": "object",
+      "description": "结构定义：块名 → 字段表。被段以 type 引用，展开成二级行。不写 of 为顺序块；写 of 为位域块",
+      "additionalProperties": {
+        "$ref": "#/$defs/block"
+      }
+    },
+    "derived": {
+      "type": "array",
+      "description": "派生量：不读数据、不占字节，按数组顺序求值，可引用前序派生与段输出值",
+      "items": {
+        "$ref": "#/$defs/derived"
+      }
+    },
     "series": {
       "$ref": "#/$defs/series"
     },
     "types": {
       "type": "object",
-      "description": "类型别名（对应 DBC SGTYPE）：别名 → 复用的 type/scale/unit/range",
+      "description": "类型别名：别名 → 复用的 type/unit/transform/expect",
       "additionalProperties": {
         "$ref": "#/$defs/typeAlias"
       }
@@ -88,9 +97,16 @@
     }
   },
   "$defs": {
+    "ident": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "合法标识符：字母/下划线开头，后续字母数字下划线"
+    },
     "typeName": {
       "type": "string",
       "enum": [
+        "bit",
         "u8",
         "i8",
         "u16",
@@ -110,11 +126,26 @@
         "num",
         "rest",
         "time"
-      ]
+      ],
+      "description": "内置类型。bit 表示按位取值，宽度与起始位写在 count 的 wide@off 形式"
     },
     "expr": {
       "type": "string",
-      "description": "表达式，引用前序段名"
+      "minLength": 1,
+      "description": "数学表达式，可引用其它段的输出值；self 指本段原始值"
+    },
+    "count": {
+      "description": "元素个数。整数 = 恰好 N 个；字符串 = 变量名、表达式、*、或 bit 类型的 \"宽@起始位\"",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ]
     },
     "segmentArray": {
       "type": "array",
@@ -123,69 +154,24 @@
         "$ref": "#/$defs/segment"
       }
     },
-    "typeAlias": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "$ref": "#/$defs/typeName"
+    "segment": {
+      "description": "段：bin 段（10 键）或 text 段（保留词法键）。oneOf 保证互不串键",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/segmentBin"
         },
-        "scale": {
-          "type": "number"
-        },
-        "offset": {
-          "type": "number"
-        },
-        "unit": {
-          "type": "string"
-        },
-        "range": {
-          "$ref": "#/$defs/range"
+        {
+          "$ref": "#/$defs/segmentText"
         }
-      }
+      ]
     },
-    "range": {
-      "type": "array",
-      "items": {
-        "type": "number"
-      },
-      "minItems": 2,
-      "maxItems": 2
-    },
-    "bit": {
+    "expectItem": {
       "type": "object",
+      "description": "一条约束。多位数组之间是 AND 关系；判定对象是段的原始值，不是变换后的输出值",
       "additionalProperties": false,
       "required": [
-        "offset",
-        "width"
+        "op"
       ],
-      "properties": {
-        "base": {
-          "type": "string",
-          "description": "位域容器段名；不写则相对帧起点"
-        },
-        "offset": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "位偏移（位，不是字节）"
-        },
-        "width": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 64
-        },
-        "order": {
-          "type": "string",
-          "enum": [
-            "lsb0",
-            "msb0"
-          ]
-        }
-      }
-    },
-    "check": {
-      "type": "object",
-      "additionalProperties": false,
       "properties": {
         "op": {
           "type": "string",
@@ -197,59 +183,7 @@
             "gt",
             "ge",
             "in",
-            "range",
-            "mask"
-          ]
-        },
-        "scope": {
-          "type": "string",
-          "enum": [
-            "element",
-            "frame"
-          ],
-          "default": "element"
-        },
-        "value": {
-          "description": "常量匹配（数字/字符串/数组）"
-        },
-        "expr": {
-          "$ref": "#/$defs/expr"
-        },
-        "min": {
-          "oneOf": [
-            {
-              "type": "number"
-            },
-            {
-              "$ref": "#/$defs/expr"
-            }
-          ]
-        },
-        "max": {
-          "oneOf": [
-            {
-              "type": "number"
-            },
-            {
-              "$ref": "#/$defs/expr"
-            }
-          ]
-        },
-        "values": {
-          "type": "array",
-          "items": {
-            "type": "number"
-          }
-        }
-      }
-    },
-    "digest": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "alg": {
-          "type": "string",
-          "enum": [
+            "mask",
             "xor8",
             "sum8",
             "crc8",
@@ -259,19 +193,60 @@
             "crc24q",
             "crc32",
             "crc32c",
-            "nmea_xor"
+            "nmea_xor",
+            "parity",
+            "script"
           ],
-          "description": "内置算子；nmea_xor 是 xor8 的别名"
+          "description": "比较类 eq/ne/lt/le/gt/ge/in/mask；序列类 xor8…parity；script 走脚本摘要"
         },
-        "width": {
+        "value": {
+          "description": "比较常量：数字或字符串；mask 时为比对目标值",
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "expr": {
+          "$ref": "#/$defs/expr"
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "description": "in 的候选集合",
+          "items": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "labels": {
+          "type": "object",
+          "description": "枚举名字表：值 → 显示名，仅 in 使用",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "mask": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 64,
-          "description": "位宽，支持 24/32 等非 8 倍数"
+          "description": "mask 的位掩码；判定 (raw & mask) == value"
+        },
+        "over": {
+          "type": "string",
+          "description": "序列类覆盖区间：start:end、after:<seg>、frame_start:frame_end、before:<seg>"
         },
         "poly": {
           "type": "string",
-          "description": "覆盖命名算法参数，支持 0x 前缀"
+          "description": "多项式，支持 0x 前缀"
         },
         "init": {
           "type": "string"
@@ -285,252 +260,199 @@
         "xorout": {
           "type": "string"
         },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "序列结果位宽，支持 24 等非 8 倍数"
+        },
         "inject": {
           "type": "array",
+          "description": "计算末尾追加的常量字节（如 MAVLink CRC_EXTRA）",
           "items": {
             "type": "integer"
-          },
-          "description": "CRC 计算末尾追加的常量字节（如 MAVLink CRC_EXTRA）"
+          }
         },
         "code": {
           "type": "string",
-          "description": "脚本摘要（alg 二选一）：ctx.data/ctx.len/ctx.fields"
-        },
-        "from": {
-          "type": "string",
-          "description": "区间起点：after:<seg> 或 frame_start"
-        },
-        "to": {
-          "type": "string",
-          "description": "区间终点：before:<seg> 或 frame_end"
+          "description": "script 摘要：ctx.data / ctx.len / ctx.fields"
         }
       }
     },
-    "length": {
+    "transformStep": {
       "type": "object",
-      "description": "长度段反算绑定：本段值必须等于后面字段合计的字节/元素数",
       "additionalProperties": false,
+      "required": [
+        "op"
+      ],
       "properties": {
-        "fields": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "unit": {
+        "op": {
           "type": "string",
           "enum": [
-            "bytes",
-            "elements"
-          ],
-          "default": "elements"
+            "sexagesimal",
+            "scale",
+            "mul",
+            "offset",
+            "add",
+            "abs",
+            "round",
+            "clamp",
+            "sin",
+            "cos",
+            "tan",
+            "sqrt",
+            "log",
+            "exp"
+          ]
         },
-        "expr": {
-          "$ref": "#/$defs/expr"
+        "split": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "k": {
+          "type": "number"
+        },
+        "b": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
         }
       }
     },
-    "segment": {
+    "transform": {
+      "description": "值变换：单条数学表达式（self 为本段原始值），或算子链数组。只影响输出值，不参与约束判定",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/expr"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/transformStep"
+          }
+        }
+      ]
+    },
+    "output": {
+      "type": "string",
+      "enum": [
+        "channel",
+        "aux",
+        "none"
+      ],
+      "default": "channel",
+      "description": "输出方式：channel 进图通道；aux 辅助值；none 不输出"
+    },
+    "onMismatch": {
+      "type": "string",
+      "enum": [
+        "reject",
+        "warn",
+        "skip"
+      ],
+      "default": "reject"
+    },
+    "expectArray": {
+      "type": "array",
+      "description": "约束数组，逐项 AND；空数组等价于不约束",
+      "items": {
+        "$ref": "#/$defs/expectItem"
+      }
+    },
+    "segmentBin": {
       "type": "object",
       "additionalProperties": false,
+      "description": "bin 段：name / description / unit / output / type / count / transform / expect / on_mismatch / if",
       "required": [
         "name",
         "type"
       ],
       "properties": {
         "name": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/ident"
         },
-        "type": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/typeName"
-            },
-            {
-              "type": "string",
-              "pattern": "^@"
-            }
-          ]
-        },
-        "count": {
-          "description": "元素个数（数组长度）；标量省略默认 1。字节数由 type 推算，不写",
-          "oneOf": [
-            {
-              "type": "integer",
-              "minimum": 1
-            },
-            {
-              "$ref": "#/$defs/expr"
-            }
-          ]
-        },
-        "length": {
-          "$ref": "#/$defs/length"
-        },
-        "endian": {
-          "type": "string",
-          "enum": [
-            "little",
-            "big",
-            "le",
-            "be"
-          ]
-        },
-        "scale": {
-          "type": "number"
-        },
-        "offset": {
-          "type": "number"
+        "description": {
+          "type": "string"
         },
         "unit": {
           "type": "string"
         },
-        "emit": {
-          "type": "string",
-          "enum": [
-            "channel",
-            "aux",
-            "none"
-          ],
-          "default": "channel"
+        "output": {
+          "$ref": "#/$defs/output"
         },
-        "expect": {
-          "description": "常量匹配（原 v1 value）"
-        },
-
-        "checks": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/check"
-          }
-        },
-        "digest": {
-          "$ref": "#/$defs/digest"
-        },
-        "bit": {
-          "$ref": "#/$defs/bit"
-        },
-        "if": {
-          "$ref": "#/$defs/expr",
-          "description": "条件字段，false 时整段跳过"
-        },
-        "enum": {
-          "type": "object",
-          "description": "值 → 名字映射",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "range": {
-          "$ref": "#/$defs/range"
-        },
-        "repeat": {
-          "description": "重复方式：字符串 elems/eos/until，或对象 {mode,until}",
-          "oneOf": [
+        "type": {
+          "description": "内置类型名、bit，或 blocks 里的块名",
+          "anyOf": [
             {
-              "type": "string",
-              "enum": [
-                "elems",
-                "eos",
-                "until"
-              ]
+              "$ref": "#/$defs/typeName"
             },
             {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "mode": {
-                  "type": "string",
-                  "enum": [
-                    "eos",
-                    "until"
-                  ]
-                },
-                "until": {
-                  "$ref": "#/$defs/expr"
-                }
-              },
-              "required": [
-                "mode"
-              ]
+              "$ref": "#/$defs/ident"
             }
           ]
         },
-        "until": {
-          "$ref": "#/$defs/expr",
-          "description": "repeat:\"until\" 的终止表达式（与对象写法等价）"
-        },
-        "derive": {
-          "type": "string",
-          "description": "派生字段表达式（引用前序段名），不读数据、不占字节，输出 f64"
+        "count": {
+          "$ref": "#/$defs/count"
         },
         "transform": {
-          "type": "array",
-          "description": "值算子链，解析后按序应用",
-          "items": {
-            "oneOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "sexagesimal",
-                  "abs",
-                  "round"
-                ]
-              },
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "op": {
-                    "type": "string",
-                    "enum": [
-                      "sexagesimal",
-                      "scale",
-                      "mul",
-                      "offset",
-                      "add",
-                      "abs",
-                      "round",
-                      "clamp"
-                    ]
-                  },
-                  "split": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 8
-                  },
-                  "k": {
-                    "type": "number"
-                  },
-                  "b": {
-                    "type": "number"
-                  },
-                  "min": {
-                    "type": "number"
-                  },
-                  "max": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "op"
-                ]
-              }
-            ]
-          }
+          "$ref": "#/$defs/transform"
         },
-        "empty": {
-          "type": "string",
-          "enum": [
-            "nan",
-            "skip",
-            "raw"
-          ],
-          "description": "空字段策略"
+        "expect": {
+          "$ref": "#/$defs/expectArray"
+        },
+        "on_mismatch": {
+          "$ref": "#/$defs/onMismatch"
+        },
+        "if": {
+          "$ref": "#/$defs/expr",
+          "description": "条件段，表达式为假时整段跳过、不占字节"
+        }
+      }
+    },
+    "segmentText": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "text 段：在 bin 段基础上保留词法切分键（key/literal/delimiter/width/base/fixed/signed/sci/pattern/empty/rest/repeater）",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/ident"
         },
         "description": {
           "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "output": {
+          "$ref": "#/$defs/output"
+        },
+        "type": {
+          "$ref": "#/$defs/typeName"
+        },
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "transform": {
+          "$ref": "#/$defs/transform"
+        },
+        "expect": {
+          "$ref": "#/$defs/expectArray"
+        },
+        "on_mismatch": {
+          "$ref": "#/$defs/onMismatch"
+        },
+        "if": {
+          "$ref": "#/$defs/expr"
         },
         "key": {
           "type": "string",
@@ -541,7 +463,7 @@
         "literal": {
           "type": "string",
           "minLength": 1,
-          "description": "必须逐字符匹配的字面量段（$ * , 等）；段级边界，不存在协议级 bin/text"
+          "description": "必须逐字符匹配的字面量段"
         },
         "delimiter": {
           "oneOf": [
@@ -585,8 +507,7 @@
             10,
             16
           ],
-          "default": 10,
-          "description": "数字进制，默认 10"
+          "default": 10
         },
         "fixed": {
           "type": "integer",
@@ -602,54 +523,85 @@
           "type": "boolean",
           "description": "允许科学计数法（默认拒绝）"
         },
-        "as": {
-          "type": "string",
-          "enum": [
-            "f64",
-            "f32",
-            "i64",
-            "i32",
-            "u64",
-            "u32"
-          ],
-          "description": "数值解释覆盖类型"
-        },
         "pattern": {
           "type": "string",
           "description": "正则只做校验，不切分"
         },
-        "on_mismatch": {
+        "empty": {
           "type": "string",
           "enum": [
-            "reject",
-            "warn",
-            "skip"
+            "nan",
+            "skip",
+            "raw"
           ],
-          "default": "reject"
+          "description": "空字段策略"
+        }
+      }
+    },
+    "typeAlias": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/typeName"
+        },
+        "unit": {
+          "type": "string"
         },
         "transform": {
+          "$ref": "#/$defs/transform"
+        },
+        "expect": {
+          "$ref": "#/$defs/expectArray"
+        }
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fields"
+      ],
+      "properties": {
+        "of": {
+          "$ref": "#/$defs/typeName",
+          "description": "位域块的容器类型（如 u32）；不写为顺序块。位域块只读一个容器值，子字段按 wide@off 切位"
+        },
+        "description": {
+          "type": "string"
+        },
+        "fields": {
           "type": "array",
+          "minItems": 1,
+          "description": "块内字段表；不再嵌套块",
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "op": {
-                "type": "string",
-                "enum": [
-                  "sexagesimal"
-                ]
-              },
-              "split": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 8
-              }
-            },
-            "required": [
-              "op"
-            ]
-          },
-          "description": "值变换；sexagesimal = DDMM.MMM → 十进制度"
+            "$ref": "#/$defs/segmentBin"
+          }
+        }
+      }
+    },
+    "derived": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "expr"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/ident"
+        },
+        "expr": {
+          "$ref": "#/$defs/expr"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "output": {
+          "$ref": "#/$defs/output"
+        },
+        "description": {
+          "type": "string"
         }
       }
     },

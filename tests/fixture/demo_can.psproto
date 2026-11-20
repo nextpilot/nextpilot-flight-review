@@ -5,11 +5,39 @@
   "endian": "little",
   "maxsize": 64,
   "segments": [
-    { "name": "body", "count": 8, "type": "u8", "emit": "none" },
-    { "name": "id", "count": 1, "type": "u32", "bit": { "offset": 0, "width": 29, "order": "msb0" } },
-    { "name": "rpm", "count": 1, "type": "u16", "bit": { "base": "body", "offset": 8, "width": 16, "order": "msb0" },
-      "scale": 0.25, "unit": "rpm", "range": [0, 8000] },
-    { "name": "temp", "count": 1, "type": "i8", "bit": { "base": "body", "offset": 24, "width": 8, "order": "lsb0" },
-      "unit": "degC" }
+    {
+      "name": "body",
+      "output": "none",
+      "type": "u8",
+      "count": 8
+    },
+    {
+      "name": "id",
+      "type": "bit",
+      "count": "29@0"
+    },
+    {
+      "name": "rpm",
+      "unit": "rpm",
+      "type": "bit",
+      "count": "16@8",
+      "transform": "self*0.25",
+      "expect": [
+        {
+          "op": "ge",
+          "value": 0
+        },
+        {
+          "op": "le",
+          "value": 8000
+        }
+      ]
+    },
+    {
+      "name": "temp",
+      "unit": "degC",
+      "type": "bit",
+      "count": "8@24"
+    }
   ]
 }

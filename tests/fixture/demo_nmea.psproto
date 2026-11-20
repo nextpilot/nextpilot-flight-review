@@ -8,27 +8,37 @@
   "segments": [
     {
       "name": "dollar",
-      "count": 1,
+      "output": "none",
       "type": "u8",
-      "expect": 36,
-      "emit": "none"
+      "count": 1,
+      "expect": [
+        {
+          "op": "eq",
+          "value": 36
+        }
+      ]
     },
     {
       "name": "msgid",
-      "count": 5,
-      "type": "char"
+      "type": "char",
+      "count": 5
     },
     {
       "name": "comma",
-      "count": 1,
+      "output": "none",
       "type": "u8",
-      "expect": 44,
-      "emit": "none"
+      "count": 1,
+      "expect": [
+        {
+          "op": "eq",
+          "value": 44
+        }
+      ]
     },
     {
       "name": "payload",
-      "count": 4,
-      "type": "u8"
+      "type": "u8",
+      "count": 4
     }
   ],
   "series": {
@@ -42,16 +52,16 @@
         "segments": [
           {
             "name": "alt",
-            "count": 1,
+            "unit": "m",
             "type": "u16",
-            "scale": 0.1,
-            "unit": "m"
+            "count": 1,
+            "transform": "self*0.1"
           },
           {
             "name": "hdop",
-            "count": 1,
             "type": "u16",
-            "scale": 0.1
+            "count": 1,
+            "transform": "self*0.1"
           }
         ]
       },
@@ -61,17 +71,17 @@
         "segments": [
           {
             "name": "speed",
-            "count": 1,
+            "unit": "kn",
             "type": "u16",
-            "scale": 0.1,
-            "unit": "kn"
+            "count": 1,
+            "transform": "self*0.1"
           },
           {
             "name": "course",
-            "count": 1,
+            "unit": "deg",
             "type": "u16",
-            "scale": 0.1,
-            "unit": "deg"
+            "count": 1,
+            "transform": "self*0.1"
           }
         ]
       }

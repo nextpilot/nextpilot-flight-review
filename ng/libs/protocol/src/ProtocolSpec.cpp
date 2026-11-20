@@ -155,19 +155,7 @@ void checkCommonSegment(const QJsonObject &seg, const QString &name,
         else
             errs << QStringLiteral("%1 的 range 必须是 [min,max] 或 {min,max}").arg(name);
     }
-    if (seg.contains(QStringLiteral("expect")))
-    {
-        const QJsonValue ev = seg.value(QStringLiteral("expect"));
-        if (ev.isString())
-        {
-            const QString r = ev.toString().trimmed();
-            const int idx = order.value(r, -1);
-            if (!names.contains(r) || idx < 0 || idx >= selfIndex)
-                errs << QStringLiteral("%1 的 expect 引用了未知或非前序段：%2").arg(name, r);
-        }
-        else if (!ev.isDouble() && !ev.isObject())
-            errs << QStringLiteral("%1 的 expect 必须是数值/段名/表达式").arg(name);
-    }
+    // expect 是 v3 的约束数组：bin 段由 validateBin 校验，text 段等独立解析器补齐。
     if (seg.contains(QStringLiteral("on_mismatch")))
     {
         const QString m = seg.value(QStringLiteral("on_mismatch")).toString();
@@ -285,14 +273,7 @@ void checkCommonSegment(const QJsonObject &seg, const QString &name,
 void checkTextSegment(const QJsonObject &seg, const QString &name, const QMap<QString, int> &order,
                        const QSet<QString> &names, int selfIndex, QStringList &errs)
 {
-    for (const QJsonValue &cv : seg.value(QStringLiteral("checks")).toArray())
-    {
-        const QString op = cv.toObject().value(QStringLiteral("op")).toString();
-        if (op == QLatin1String("crc8") || op == QLatin1String("crc16") || op == QLatin1String("crc32") ||
-            op == QLatin1String("sum8") || op == QLatin1String("sum16") || op == QLatin1String("xor8") ||
-            op == QLatin1String("parity"))
-            errs << QStringLiteral("%1：text 段的 checks 只支持谓词，序列校验请用 digest").arg(name);
-    }
+    // v3：text 段也允许序列校验（NMEA 的 XOR 就是按字节区间算的），不再区分 digest/checks。
     const QString lit = seg.value(QStringLiteral("literal")).toString();
     if (seg.contains(QStringLiteral("key")))
     {
@@ -374,6 +355,10 @@ void checkTextSegment(const QJsonObject &seg, const QString &name, const QMap<QS
 
 QStringList validate(const QJsonObject &o)
 {
+    // 形态分派只发生在这里：之后 bin/text 各自独立校验，不再传 bool 往下走。
+    if (o.value(QStringLiteral("mode")).toString() == QLatin1String("bin"))
+        return validateBin(o);
+
     QStringList errs;
     if (o.isEmpty())
     {
@@ -478,7 +463,7 @@ QStringList validate(const QJsonObject &o)
         // 键黑白名单（SPEC §2.1.1）：bin 段禁文本词法键，text 段禁字节/位域键。
         if (docText)
         {
-            static const char *binOnly[] = {"bit", "expect", "repeat", "until", "length", "endian"};
+            static const char *binOnly[] = {"bit", "repeat", "until", "length", "endian"};
             for (const char *k : binOnly)
                 if (seg.contains(QLatin1String(k)))
                     errs << QStringLiteral("%1 是 text 段，不能声明 %2（字节/位域键归 bin）").arg(name, QString::fromLatin1(k));

@@ -8,6 +8,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_library(ng_protocol STATIC
     src/ProtocolDocument.cpp
     src/ProtocolSpec.cpp
+    src/core/SharedSpec.cpp
+    src/bin/BinSpec.cpp
     src/CompiledProgram.cpp
     src/SequentialCodec.cpp
     src/DigestEngine.cpp
