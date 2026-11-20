@@ -235,3 +235,21 @@ set_tests_properties(ng_plot_io PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscree
 # Windows：把 ads.dll 拷到本目录各可执行目标旁边，构建完即可直接运行/跑测试。
 ng_deploy_windows_runtime_all()
 
+
+# === MCP stdio 桥契约测试 ===
+# 直接调 mcp_bridge.cpp 的纯函数 handleRequest（不经 stdin/stdout）。
+# 覆盖 initialize/ping/tools/list schema 转换/tools/call 正常与 isError/未知 method/
+# notification 静默/错误响应构造；同时验证 #215 的 read_series 工具在目录里。
+add_executable(ng_test_mcp_bridge test_mcp_bridge.cpp)
+target_include_directories(ng_test_mcp_bridge PRIVATE ${CMAKE_SOURCE_DIR}/app)
+target_sources(ng_test_mcp_bridge PRIVATE
+    ${CMAKE_SOURCE_DIR}/app/mcp_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/app/App.cpp)
+target_link_libraries(ng_test_mcp_bridge PRIVATE
+    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
+target_compile_definitions(ng_test_mcp_bridge PRIVATE
+    NG_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/../tests/fixture")
+set_target_properties(ng_test_mcp_bridge PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_mcp_bridge COMMAND ng_test_mcp_bridge)

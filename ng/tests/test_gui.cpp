@@ -700,6 +700,79 @@ int main(int argc, char *argv[])
         OK("脚本触发 data.state：app.call 成功路由并叠加");
     }
 
+    // --- 5i) data.series：读通道 t/v 进 payload（脚本/CLI/MCP 的数据出口，VBA 基石）---
+    {
+        const int dsId = stateDsId;
+        CHECK(dsId >= 0);
+        // (1) 意图直调：limit 截断 + count/truncated 字段。
+        Intent ser;
+        ser.op = QStringLiteral("data.series");
+        ser.params[QStringLiteral("dataset")] = dsId;
+        ser.params[QStringLiteral("table")] = QStringLiteral("trace");
+        ser.params[QStringLiteral("column")] = QStringLiteral("sig");
+        ser.params[QStringLiteral("limit")] = 128;
+        const auto sr = application.host().execute(ser);
+        CHECK(static_cast<bool>(sr));
+        const QVariantMap payload = sr.value().payload.toMap();
+        // 有界读取经 kernel 抽稀：返回点数 ≤ limit（不恒等于），rows>limit 时 truncated。
+        const int serCount = payload.value(QStringLiteral("count")).toInt();
+        CHECK(serCount >= 1 && serCount <= 128);
+        CHECK(payload.value(QStringLiteral("t")).toList().size() == serCount);
+        CHECK(payload.value(QStringLiteral("v")).toList().size() == serCount);
+        CHECK(payload.value(QStringLiteral("truncated")).toBool()); // 5000 行 > 128
+
+        // (2) 缺省定位：不给 dataset/table（当前数据集里可能多个，给 table/column 也不够；
+        //     这里显式 dataset 但不给 table，走"唯一表"兜底）。
+        Intent ser2;
+        ser2.op = QStringLiteral("data.series");
+        ser2.params[QStringLiteral("dataset")] = dsId;
+        ser2.params[QStringLiteral("column")] = QStringLiteral("sig");
+        const auto sr2 = application.host().execute(ser2);
+        CHECK(static_cast<bool>(sr2));
+
+        // (3) 通道不存在 → 明确失败。
+        Intent bad;
+        bad.op = QStringLiteral("data.series");
+        bad.params[QStringLiteral("dataset")] = dsId;
+        bad.params[QStringLiteral("column")] = QStringLiteral("no_such_column");
+        CHECK(!static_cast<bool>(application.host().execute(bad)));
+
+        // (4) 脚本 VBA：app.call 读序列并在 Lua 内做统计——证明脚本拿得到
+        //     数组本体（QVariantList→Lua 数组）而不只是执行回执。
+        Intent sit;
+        sit.op = QStringLiteral("script.run");
+        sit.params[QStringLiteral("source")] = QByteArray(
+            "local r = app.call(\"data.series\", {dataset=" + QByteArray::number(dsId)
+            + ", table=\"trace\", column=\"sig\", limit=16})\n"
+            "  if r.count < 1 or r.count > 16 then error('count out of range: ' .. tostring(r.count)) end\n"
+            "  if #r.v ~= r.count or #r.t ~= r.count then error('array size mismatch') end\n"
+            "  local sum = 0.0\n"
+            "  for i = 1, #r.v do sum = sum + r.v[i] end\n"
+            "  app.log('series mean: ' .. tostring(sum / #r.v))\n");
+        const auto scr = application.host().execute(sit);
+        CHECK(static_cast<bool>(scr));
+
+        // (5) AI 工具白名单：read_series 已注册（MCP 桥同一目录）。
+        Intent ai;
+        ai.op = QStringLiteral("ai.tool.call");
+        ai.params[QStringLiteral("tool")] = QStringLiteral("read_series");
+        QVariantMap aiArgs;
+        aiArgs[QStringLiteral("dataset")] = dsId;
+        aiArgs[QStringLiteral("table")] = QStringLiteral("trace");
+        aiArgs[QStringLiteral("column")] = QStringLiteral("sig");
+        aiArgs[QStringLiteral("limit")] = 32;
+        ai.params[QStringLiteral("args")] = aiArgs;
+        const auto air = application.host().execute(ai);
+        CHECK(static_cast<bool>(air));
+        const QVariantMap aiPayload = air.value().payload.toMap();
+        const QVariantMap aiResult = aiPayload.value(QStringLiteral("result")).toMap();
+        CHECK(aiResult.value(QStringLiteral("count")).toInt() == 32);
+
+        // 数据集零改动。
+        CHECK(application.data().get(dsId)->table(QStringLiteral("trace"))->rows == 5000);
+        OK("data.series：意图/脚本读数/AI read_series 三通道 + 失败路径 + 零改动");
+    }
+
     // --- 5h) 多源时间对齐（第二梯队 #204）：源级 offset + Align start/center/end ---
     //
     // 场景：两个源（各自一个内存数据集，时间范围错开 10 秒）。

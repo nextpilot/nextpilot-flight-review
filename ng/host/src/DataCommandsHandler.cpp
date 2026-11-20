@@ -54,7 +54,7 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
         || op == QLatin1String("data.remove")
         || op == QLatin1String("data.pause") || op == QLatin1String("data.resume")
         || op == QLatin1String("data.derive")         || op == QLatin1String("data.filter") || op == QLatin1String("data.marker")
-        || op == QLatin1String("data.state")
+        || op == QLatin1String("data.state")          || op == QLatin1String("data.series")
         || op == QLatin1String("data.workspace.list")
         || op == QLatin1String("data.workspace.save")
         || op == QLatin1String("data.workspace.restore");
@@ -84,6 +84,8 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return runMarker(intent);
     if (intent.op == QLatin1String("data.state"))
         return stateSeries(intent);
+    if (intent.op == QLatin1String("data.series"))
+        return series(intent);
     if (intent.op == QLatin1String("data.workspace.list"))
         return workspaceList();
     if (intent.op == QLatin1String("data.workspace.save"))
@@ -568,6 +570,69 @@ Result<IntentResult> DataCommandsHandler::runMarker(const Intent &intent)
         {QStringLiteral("markers"), markers.toVariantList()},
         {QStringLiteral("drawn"), viewOut.ok()},
     };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::series(const Intent &intent)
+{
+    // 通道定位：dataset/table/column，dataset/table 可缺省（唯一数据集/唯一表兜底），
+    // 与 data.export 同一套口径。这是脚本/CLI/MCP 读数据的标准出口——VBA 能力的
+    // 数据基石：脚本拿到 t/v 数组就能做统计、判断、条件导出。
+    int datasetId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    if (datasetId < 0 && m_app.data().count() == 1)
+        datasetId = m_app.data().ids().first();
+    if (datasetId < 0)
+        return fail(QStringLiteral("edataset"),
+                    QStringLiteral("请指定 dataset 参数（当前有多个数据集）"));
+    const Dataset *ds = m_app.data().get(datasetId);
+    if (!ds)
+        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(datasetId));
+
+    QString table = intent.params.value(QStringLiteral("table")).toString();
+    const QString column = intent.params.value(QStringLiteral("column")).toString();
+    if (table.isEmpty() && ds->tableCount() == 1)
+        table = ds->tableNames().first();
+    if (column.isEmpty())
+        return fail(QStringLiteral("eargs"), QStringLiteral("data.series 需要 column 参数"));
+    const Table *t = ds->table(table);
+    if (!t || !t->column(column))
+        return fail(QStringLiteral("echan"),
+                    QStringLiteral("通道不存在: %1.%2").arg(table, column));
+
+    // cap 默认 4096（有界读取口径，与 plot.render 无 px 路径一致），可调但不超过
+    // 内核不抽稀上限（对齐 kStateMaxPoints 的量级，防止一次意图拖走整列百万行）。
+    int limit = intent.params.value(QStringLiteral("limit"), 4096).toInt();
+    limit = qBound(1, limit, 200000);
+
+    auto channel = ds->channel(table, column, limit);
+    if (!channel)
+        return fail(QStringLiteral("echan"),
+                    QStringLiteral("读取通道失败: %1.%2").arg(table, column));
+    const int n = channel->size();
+    if (n <= 0)
+        return fail(QStringLiteral("eempty"), QStringLiteral("通道无样本"));
+
+    QVariantList ts, vs;
+    ts.reserve(n);
+    vs.reserve(n);
+    for (int i = 0; i < n; ++i)
+    {
+        ts << channel->time.value(i);
+        vs << channel->value.value(i);
+    }
+
+    QVariantMap payload;
+    payload[QStringLiteral("dataset")] = datasetId;
+    payload[QStringLiteral("table")] = table;
+    payload[QStringLiteral("column")] = column;
+    payload[QStringLiteral("count")] = n;
+    payload[QStringLiteral("t")] = ts;
+    payload[QStringLiteral("v")] = vs;
+    // 总行数大于 limit 即截断（抽稀后点数可能 < limit，不能拿 n==limit 判断）。
+    payload[QStringLiteral("truncated")] = t->rowCount() > limit;
+    payload[QStringLiteral("rows")] = t->rowCount();
+    IntentResult r;
+    r.payload = payload;
     return r;
 }
 

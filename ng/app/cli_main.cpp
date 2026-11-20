@@ -3,15 +3,19 @@
 #include "App.h"
 #include "Intent.h"
 #include "Dataset.h"
+#include "mcp_bridge.h"
 
 #include <QCoreApplication>
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QTextStream>
 
 #include <cstdio>
 
 using namespace nextpilot::plotscope::app;
+using namespace nextpilot::plotscope::mcp;
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -32,7 +36,8 @@ static void printUsage()
             "  plotscope-ng --kernel            # Rust kernel ABI/版本/自检\n"
             "  plotscope-ng --info <file.csv|file.ulg>   # 按扩展名选格式\n"
             "  plotscope-ng --run <job.json>\n"
-            "  plotscope-ng --script <file.lua> [--record <out.json>]\n");
+            "  plotscope-ng --script <file.lua> [--record <out.json>]\n"
+            "  plotscope-ng --mcp-bridge        # MCP server（stdio JSON-RPC，供外部代理驱动）\n");
 }
 
 static Intent makeLoadIntent(const QString &path)
@@ -76,6 +81,11 @@ int main(int argc, char **argv)
         printUsage();
         return 0;
     }
+
+    // MCP stdio 桥：stdout 是协议通道，任何提示打印都必须让路。
+    // 必须在 App 构造之前设置（模块 initialize 在构造时已接好事件）。
+    if (args.at(1) == QStringLiteral("--mcp-bridge"))
+        qputenv("PLOTSCONG_QUIET_STDOUT", "1");
 
     App application;
     const auto errors = application.startup(/*headless=*/true);
@@ -281,6 +291,38 @@ int main(int argc, char **argv)
                 return 2;
             }
             fprintf(stdout, "已录制 %d 条意图 -> %s\n", application.recorder().size(), qPrintable(recordPath));
+        }
+        return 0;
+    }
+
+    if (command == QStringLiteral("--mcp-bridge"))
+    {
+        // MCP over stdio：newline-delimited JSON-RPC 2.0。
+        // 每行一个请求 → 每请求一行响应（notification 不回）；stdin EOF 退出。
+        // 协议语义在 mcp_bridge.cpp（纯函数，另有单测）；这里只做传输。
+        fprintf(stderr, "[mcp-bridge] MCP server ready on stdio\n");
+        QTextStream in(stdin);
+        while (!in.atEnd())
+        {
+            const QString line = in.readLine().trimmed();
+            if (line.isEmpty())
+                continue;
+            QJsonParseError parseError;
+            const QJsonDocument doc = QJsonDocument::fromJson(line.toUtf8(), &parseError);
+            QJsonObject resp;
+            if (parseError.error != QJsonParseError::NoError || !doc.isObject())
+            {
+                resp = errorResponse(QJsonValue::Null, -32700,
+                                     QStringLiteral("JSON 解析失败: %1").arg(parseError.errorString()));
+            }
+            else
+            {
+                resp = handleRequest(doc.object(), application);
+            }
+            if (resp.isEmpty())
+                continue; // notification：无响应
+            fprintf(stdout, "%s\n", qPrintable(QString::fromUtf8(QJsonDocument(resp).toJson(QJsonDocument::Compact))));
+            fflush(stdout); // 代理按行读，必须立即冲刷
         }
         return 0;
     }

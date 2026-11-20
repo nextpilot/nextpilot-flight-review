@@ -43,11 +43,20 @@ void DataModule::initialize(ModuleContext &ctx)
 {
     // 只订阅仓库事件；不碰 UI、不认识格式。用 this 作 context object，
     // 模块析构时连接自动断开——不需要手动解绑。
-    connect(&ctx.app().data(), &DataRepository::datasetAdded, this, [](DatasetId id) {
-        fprintf(stdout, "[data] 数据集已加入: #%d\n", id);
+    // PLOTSCONG_QUIET_STDOUT：MCP stdio 桥等协议场景下 stdout 是协议通道，
+    // 提示打印必须让路（stderr 随便打，stdout 一个字节都不能混入）。
+    const bool quiet = !qEnvironmentVariableIsEmpty("PLOTSCONG_QUIET_STDOUT");
+    connect(&ctx.app().data(), &DataRepository::datasetAdded, this, [quiet](DatasetId id) {
+        if (quiet)
+            fprintf(stderr, "[data] 数据集已加入: #%d\n", id);
+        else
+            fprintf(stdout, "[data] 数据集已加入: #%d\n", id);
     });
-    connect(&ctx.app().data(), &DataRepository::datasetRemoved, this, [](DatasetId id) {
-        fprintf(stdout, "[data] 数据集已移除: #%d\n", id);
+    connect(&ctx.app().data(), &DataRepository::datasetRemoved, this, [quiet](DatasetId id) {
+        if (quiet)
+            fprintf(stderr, "[data] 数据集已移除: #%d\n", id);
+        else
+            fprintf(stdout, "[data] 数据集已移除: #%d\n", id);
     });
 }
 

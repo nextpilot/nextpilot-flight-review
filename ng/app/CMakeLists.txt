@@ -4,6 +4,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 # 保证无显示环境下也能跑（CI、服务器、批处理）。
 add_executable(plotscope-ng
     cli_main.cpp
+    mcp_bridge.cpp
+    mcp_bridge.h
     App.cpp
     App.h
 )

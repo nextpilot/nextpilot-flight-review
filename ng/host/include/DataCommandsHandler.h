@@ -31,6 +31,9 @@
 //                          view action 画到活动画布顶部的状态色带。标签格式化对齐
 //                          StateSeriesAdapter：bool→"true"/"false"、整数→十进制串、
 //                          浮点非整数值断段（gap）。参数 dataset/table/column/name。
+//   · data.series      —— 读一条通道的 t/v 数组进 payload（脚本/CLI/MCP 的数据出口，
+//                          VBA 能力基石：脚本内可取数做统计判断）。dataset 缺省取唯一
+//                          数据集，table 缺省取唯一表，limit 缺省 4096、上限 200000。
 //   · data.workspace.save/list/restore —— 工作区数据源配置的持久化与恢复。
 //                          恢复 = 重放 data.load + data.derive（配方），不存数据本体。
 //
@@ -64,6 +67,7 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> filterSeries(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> runMarker(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> stateSeries(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> series(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceList();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceSave();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceRestore();

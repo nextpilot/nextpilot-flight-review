@@ -82,6 +82,19 @@ static void pushVariant(lua_State *L, const QVariant &v)
         }
         break;
     }
+    case QMetaType::QVariantList:
+    {
+        // 数组 payload（data.series 的 t/v、ai 目录、Job 步骤）→ Lua 数组（1..n）。
+        // 缺这个分支数组会落到 default 变成串，脚本侧 #t 恒 0、无法遍历取值。
+        const QVariantList list = v.toList();
+        lua_createtable(L, static_cast<int>(list.size()), 0);
+        for (int i = 0; i < list.size(); ++i)
+        {
+            pushVariant(L, list.at(i));
+            lua_rawseti(L, -2, i + 1);
+        }
+        break;
+    }
     default:
         lua_pushstring(L, v.toString().toUtf8().constData());
         break;
@@ -158,7 +171,11 @@ static QVariant readVariant(lua_State *L, int idx)
 static int l_log(lua_State *L)
 {
     const char *msg = luaL_checkstring(L, 1);
-    fprintf(stdout, "[lua] %s\n", msg);
+    // PLOTSCONG_QUIET_STDOUT：MCP stdio 桥下 stdout 是协议通道，app.log 让路到 stderr。
+    if (!qEnvironmentVariableIsEmpty("PLOTSCONG_QUIET_STDOUT"))
+        fprintf(stderr, "[lua] %s\n", msg);
+    else
+        fprintf(stdout, "[lua] %s\n", msg);
     return 0;
 }
 

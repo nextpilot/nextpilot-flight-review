@@ -54,6 +54,11 @@ const ToolDef kTools[] = {
                     "{\"name\":\"table\",\"type\":\"string\",\"required\":true,\"description\":\"表名\"},"
                     "{\"name\":\"column\",\"type\":\"string\",\"required\":true,\"description\":\"列名\"},"
                     "{\"name\":\"path\",\"type\":\"string\",\"required\":true,\"description\":\"输出路径\"}]"},
+    {"read_series", "读取一条通道的 t/v 数值序列（脚本/代理做统计与条件判断的数据出口）",
+     "data.series", "[{\"name\":\"dataset\",\"type\":\"int\",\"required\":false,\"description\":\"数据集 id，缺省取唯一数据集\"},"
+                    "{\"name\":\"table\",\"type\":\"string\",\"required\":false,\"description\":\"表名，缺省取唯一表\"},"
+                    "{\"name\":\"column\",\"type\":\"string\",\"required\":true,\"description\":\"列名\"},"
+                    "{\"name\":\"limit\",\"type\":\"int\",\"required\":false,\"description\":\"最大样本数，缺省 4096\"}]"},
     {"script_run", "执行一段 Lua 脚本（app 全局可操作宿主，VBA 式自动化）",
      "script.run", "[{\"name\":\"source\",\"type\":\"string\",\"required\":true,\"description\":\"Lua 源码\"},"
                    "{\"name\":\"path\",\"type\":\"string\",\"required\":false,\"description\":\"脚本文件路径\"}]"},
