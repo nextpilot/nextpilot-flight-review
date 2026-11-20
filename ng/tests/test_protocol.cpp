@@ -405,27 +405,26 @@ int main(int argc, char *argv[])
         OK("编译层：常量折叠、表达式 count 走字节码、一次编译多次解码结果稳定");
     }
 
-    // --- 9) 位域：CAN 式 8 字节帧，Intel/Motorola、base 容器、符号扩展、scale ---
-    // 挂起：v3 删掉了段级 bit.order，"同一帧里 lsb0/msb0 混用"怎么表达还没定（等拍板）。
-#if 0
+    // --- 9) 位域：CAN 式 8 字节帧，lsb0/msb0 混用、绝对偏移位窗口、scale ---
+    // v3 里位序由类型值表达（bit=lsb0 / rbit=msb0），段级不存在 bit.order 键。
     {
         const QByteArray canTpl = R"({
           "name":"can","mode":"bin","layout":"sequential","endian":"little","maxsize":64,
           "segments":[
             {"name":"body","count":8,"type":"u8","output":"none"},
-            {"name":"byte0","count":1,"type":"u8","bit":{"offset":0,"width":8,"order":"lsb0"}},
-            {"name":"intel16","count":1,"type":"u16","bit":{"offset":0,"width":16,"order":"lsb0"}},
-            {"name":"motor16","count":1,"type":"u16","bit":{"offset":0,"width":16,"order":"msb0"}},
-            {"name":"sig","count":1,"type":"u16","bit":{"base":"body","offset":16,"width":16,"order":"msb0"}},
-            {"name":"nib","count":1,"type":"i8","bit":{"offset":4,"width":4,"order":"lsb0"}},
-            {"name":"rpm","count":1,"type":"u16","bit":{"base":"body","offset":16,"width":16,"order":"msb0"},
-             "transform":"self*0.25","unit":"rpm"}
+            {"name":"byte0","type":"bit","count":"8@0"},
+            {"name":"intel16","type":"bit","count":"16@0"},
+            {"name":"motor16","type":"rbit","count":"16@0"},
+            {"name":"sig","type":"rbit","count":"16@16"},
+            {"name":"nib","type":"bit","count":"4@4"},
+            {"name":"rpm","type":"rbit","count":"16@16","transform":"self*0.25","unit":"rpm"}
           ]
         })";
+        const QJsonObject canObj = QJsonDocument::fromJson(canTpl).object();
+        CHECK(validate(canObj).isEmpty());
         ProtocolDocument cdoc;
         std::string cerr;
-        CHECK(parseDocument(QJsonDocument::fromJson(canTpl).object(), cdoc, cerr));
-        CHECK(validate(QJsonDocument::fromJson(canTpl).object()).isEmpty());
+        CHECK(parseDocument(canObj, cdoc, cerr));
         CompiledProgram cprog;
         CHECK(compileProgram(cdoc, cprog, cerr));
 
@@ -435,6 +434,7 @@ int main(int argc, char *argv[])
         canFrame.append(char(0x9A)); canFrame.append(char(0xBC));
         canFrame.append(char(0xDE)); canFrame.append(char(0xF0));
         ProtocolDecodeResult cr = decodeSequentialCompiled(canFrame, cprog);
+        if (!cr.ok) fprintf(stderr, "位域解码失败：%s\n", cr.error.toUtf8().constData());
         CHECK(cr.ok);
 
         auto colOf = [](const ProtocolDecodeResult &res, const char *nm) -> const ProtocolChannel * {
@@ -450,17 +450,16 @@ int main(int argc, char *argv[])
         const ProtocolChannel *cp = colOf(cr, "frame.rpm");
         CHECK(c0 && ci && cm && cs_ && cn && cp);
         CHECK(c0->v.at(0).asU64() == 0x12);
-        CHECK(ci->v.at(0).asU64() == 0x3412);          // Intel：低字节在前
-        CHECK(cm->v.at(0).asU64() == 0x1234);          // Motorola：高位在前
-        CHECK(cs_->v.at(0).asU64() == 0x5678);         // base=body，bit16 起 16 位
-        CHECK(cn->v.at(0).asI64() == 1);               // 0x12 的高 4 位
-        CHECK(cp->v.type == ValueType::F64);           // scale 0.25 → 物理列
+        CHECK(ci->v.at(0).asU64() == 0x3412);   // lsb0：低字节在前
+        CHECK(cm->v.at(0).asU64() == 0x1234);   // msb0：高字节在前
+        CHECK(cs_->v.at(0).asU64() == 0x5678);  // 绝对位偏移 16 起 16 位
+        CHECK(cn->v.at(0).asU64() == 1);        // 0x12 的高 4 位（v3 位域无符号）
+        CHECK(cp->v.type == ValueType::F64);    // transform 0.25 → 物理列
         CHECK(qFuzzyCompare(cp->v.at(0).asDouble(), 0x5678 * 0.25));
-        // 位域段不推进字节游标：8 字节 body 之后再没有段，帧长度正好 8
+        // 位域段不推进字节游标：8 字节 body 之后帧长度正好 8
         CHECK(cr.channels.size() == 6);
-        OK("位域：Intel/Motorola 位序、base 容器、符号扩展、scale 全部按 SPEC §6");
+        OK("位域：bit/rbit 混用、绝对偏移位窗口、transform 全部按 v3 语义");
     }
-#endif
 
     // --- 9c) bin 段 on_mismatch 三种裁决 + 诊断留痕 ---
     {
@@ -1011,7 +1010,7 @@ int main(int argc, char *argv[])
         }
 
         // (d) 校验错：明确分类，不产出半帧
-        // 挂起：v3 把 digest 并入 expect 后，text 段的序列校验还没在 text 解析器里接上（随 text 重做）。
+        // 挂起：text 段的序列校验（xor8）还没在 text 解析器里接上，随 text 重做一起启用。
 #if 0
         {
             std::string bad = gga;
@@ -1508,27 +1507,41 @@ int main(int argc, char *argv[])
 
     // --- derive 派生字段 + type:time 文本时间 ---
     // 挂起：v3 把 derive 搬到顶层 derived，解码侧还没接（下一步单独做）。
-#if 0
+    // --- 15) 派生：顶层 derived（v3 不再有段级 derive 键）---
     {
         const QByteArray tplBin = R"({
           "name":"derived","mode":"bin","layout":"sequential","maxsize":64,
+          "derived":[
+            {"name":"sum","expr":"a+b"},
+            {"name":"prod","expr":"a*b"}
+          ],
           "segments":[
             {"name":"a","type":"u16"},
-            {"name":"b","type":"u16"},
-            {"name":"sum","derive":"a+b"},
-            {"name":"prod","derive":"a*b"}
+            {"name":"b","type":"u16"}
           ]
         })";
-        const QByteArray rawBin("  ", 4);
+        QByteArray rawBin;
+        rawBin.append(char(3)); rawBin.append(char(0));
+        rawBin.append(char(4)); rawBin.append(char(0));
         ProtocolDecodeResult dr = decodeSequentialJson(rawBin, tplBin);
-        CHECK(dr.channels.size() == 4);
+        if (!dr.ok) fprintf(stderr, "derived 解码失败：%s\n", dr.error.toUtf8().constData());
+        CHECK(dr.ok);
+        CHECK(dr.channels.size() == 4); // a b sum prod
+        bool sawSum = false, sawProd = false;
         for (const auto &ch : dr.channels)
         {
-            if (ch.name == "sum")
+            if (ch.name == "frame.sum")
+            {
+                sawSum = true;
                 CHECK(ch.v.size() == 1 && ch.v.at(0).asDouble() == 7.0);
-            if (ch.name == "prod")
+            }
+            if (ch.name == "frame.prod")
+            {
+                sawProd = true;
                 CHECK(ch.v.size() == 1 && ch.v.at(0).asDouble() == 12.0);
+            }
         }
+        CHECK(sawSum && sawProd);
 
         const QByteArray tplTime = R"({
           "name":"time_csv","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
@@ -1546,10 +1559,10 @@ int main(int argc, char *argv[])
         // 越界时间必须被拒（24h 不存在）
         ProtocolDecodeResult badT = decodeSequentialJson(QByteArray("246100.00,42;\n"), tplTime);
         CHECK(!badT.ok || badT.rejectedFrames > 0);
-        OK("derive 派生字段（a+b / a*b）出通道；type:time 把 083559.00 解成 30959 秒，越界被拒");
+        OK("顶层 derived 派生字段（a+b / a*b）出通道；type:time 把 083559.00 解成 30959 秒，越界被拒");
     }
 
-    // --- derive 走 text 路径 + preview/compiled 双路一致 ---
+    // --- 15b) 派生走 text 路径 + preview/compiled 双路一致 ---
     {
         const auto chOf = [](const ProtocolDecodeResult &r, const char *n) -> const ProtocolChannel * {
             const std::string key = n;
@@ -1561,11 +1574,13 @@ int main(int argc, char *argv[])
 
         const QByteArray tpl = R"({
           "name":"derive_text","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
+          "derived":[
+            {"name":"sum","expr":"a+b"},
+            {"name":"prod","expr":"a*b"}
+          ],
           "segments":[
             {"name":"a","type":"number","delimiter":","},
-            {"name":"b","type":"number"},
-            {"name":"sum","derive":"a+b"},
-            {"name":"prod","derive":"a*b"}
+            {"name":"b","type":"number"}
           ]
         })";
         ProtocolDocument doc;
@@ -1575,15 +1590,14 @@ int main(int argc, char *argv[])
         CHECK(compileProgram(doc, prog, pe));
         const QByteArray frame("3,4\n");
 
-        // compiled 生产路径（text → StreamDecoder）：derive 出通道且值对
         ProtocolDecodeResult cr = decodeSequentialCompiled(frame, prog);
+        if (!cr.ok) fprintf(stderr, "text derived 解码失败：%s\n", cr.error.toUtf8().constData());
         CHECK(cr.ok);
         const ProtocolChannel *sum = chOf(cr, "sum");
         const ProtocolChannel *prod = chOf(cr, "prod");
         CHECK(sum && sum->v.size() == 1 && sum->v.at(0).asDouble() == 7.0);
         CHECK(prod && prod->v.size() == 1 && prod->v.at(0).asDouble() == 12.0);
 
-        // preview 路径与 compiled 结论一致，lines 里能看到派生值
         SequentialFramePreview pv = previewSequentialFrame(frame, doc);
         CHECK(pv.ok == cr.ok);
         bool sumShown = false;
@@ -1592,7 +1606,6 @@ int main(int argc, char *argv[])
                 sumShown = true;
         CHECK(sumShown);
 
-        // type:time 同样双路一致：083559.00 → 30959 s
         const QByteArray tplTime = R"({
           "name":"time_csv2","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
           "segments":[
@@ -1611,9 +1624,8 @@ int main(int argc, char *argv[])
         CHECK(tc && std::fabs(tc->v.at(0).asDouble() - 30959.0) < 1e-6);
         SequentialFramePreview ptv = previewSequentialFrame(tframe, tdoc);
         CHECK(ptv.ok == tr.ok);
-        OK("derive 走 text 路径出通道（sum=7 prod=12）；time/derive 在 preview 与 compiled 双路结论一致");
+        OK("派生走 text 路径出通道（sum=7 prod=12）；time/派生在 preview 与 compiled 双路结论一致");
     }
-#endif
 
     // --- text checks 生效 + preview/decode 一致性 ---
     {
