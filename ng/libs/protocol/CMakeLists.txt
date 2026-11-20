@@ -10,6 +10,7 @@ add_library(ng_protocol STATIC
     src/ProtocolSpec.cpp
     src/core/SharedSpec.cpp
     src/bin/BinSpec.cpp
+    src/text/TextFormat.cpp
     src/CompiledProgram.cpp
     src/SequentialCodec.cpp
     src/DigestEngine.cpp
@@ -21,6 +22,7 @@ add_library(ng_protocol STATIC
     include/protocol/CompiledProgram.h
     include/protocol/DigestEngine.h
     include/protocol/StreamDecoder.h
+    include/protocol/TextFormat.h
     include/protocol/ScriptEngine.h
 )
 

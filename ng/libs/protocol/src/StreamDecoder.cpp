@@ -2,6 +2,7 @@
 
 #include "protocol/CompiledProgram.h"
 #include "protocol/DigestEngine.h"
+#include "protocol/TextFormat.h"
 
 #include <algorithm>
 #include <cctype>
@@ -109,273 +110,6 @@ uint64_t readIntAt(const uint8_t *p, uint32_t size, bool bigEndian)
         for (uint32_t i = size; i > 0; --i)
             v = (v << 8) | p[i - 1];
     return v;
-}
-
-bool isBlankByte(char c); // 定义在下面，扫描器先用
-
-// ---------------------------------------------------------------- text：扩展 scanf 扫描（SPEC §10）
-// 一个段 = 一个 format；format 里最多一个取值转换符（其余只能是字面 / %* 丢弃）。
-struct FmtPart
-{
-    int kind = 0; // 0=字面 1=转换符 2=字符集
-    std::string lit;
-    char conv = 0;
-    int width = 0;
-    bool discard = false;
-    std::string set;
-    bool negate = false;
-};
-
-bool compileFmt(const std::string &f, std::vector<FmtPart> &out, std::string &err)
-{
-    for (size_t i = 0; i < f.size(); ++i)
-    {
-        FmtPart part;
-        if (f[i] != '%')
-        {
-            part.kind = 0;
-            std::string lit;
-            while (i < f.size() && f[i] != '%')
-                lit.push_back(f[i++]);
-            --i;
-            part.lit = lit;
-            out.push_back(part);
-            continue;
-        }
-        if (i + 1 < f.size() && f[i + 1] == '%')
-        {
-            part.kind = 0;
-            part.lit = "%";
-            out.push_back(part);
-            ++i;
-            continue;
-        }
-        part.kind = 1;
-        ++i;
-        if (i < f.size() && f[i] == '*')
-        {
-            part.discard = true;
-            ++i;
-        }
-        std::string w;
-        while (i < f.size() && std::isdigit(static_cast<unsigned char>(f[i])))
-            w.push_back(f[i++]);
-        part.width = w.empty() ? 0 : std::atoi(w.c_str());
-        if (i >= f.size())
-        {
-            err = "格式串以 % 结尾";
-            return false;
-        }
-        if (f[i] == '[')
-        {
-            part.kind = 2;
-            ++i;
-            if (i < f.size() && f[i] == '^')
-            {
-                part.negate = true;
-                ++i;
-            }
-            while (i < f.size() && f[i] != ']')
-                part.set.push_back(f[i++]);
-            if (i >= f.size())
-            {
-                err = "字符集缺少 ]";
-                return false;
-            }
-            out.push_back(part);
-            continue;
-        }
-        static const std::string convs = "duixXobfegcs";
-        if (!convs.empty() && convs.find(f[i]) == std::string::npos && f[i] != 't' && f[i] != 'T')
-        {
-            err = std::string("未知转换符 %") + f[i];
-            return false;
-        }
-        part.conv = f[i];
-        out.push_back(part);
-    }
-    return true;
-}
-
-// 段开始/元素之间吃掉一个分隔符（blank 用空白字符类）
-size_t eatDelimiter(const uint8_t *p, size_t pos, size_t n, const CompiledSeg &seg)
-{
-    if (seg.blankDelim)
-    {
-        if (pos < n && isBlankByte(static_cast<char>(p[pos])))
-            return pos + 1;
-        return pos;
-    }
-    if (seg.delimiters.empty())
-    {
-        if (pos < n && p[pos] == ',')
-            return pos + 1;
-        return pos;
-    }
-    for (const std::string &d : seg.delimiters)
-        if (d.size() && pos + d.size() <= n &&
-            std::memcmp(p + pos, d.data(), d.size()) == 0)
-            return pos + d.size();
-    return pos;
-}
-
-// 读一个元素：按 format 的步走，产出一个原始字符串值（最多一个）
-bool scanFmtElem(const uint8_t *p, size_t n, size_t &pos, const std::vector<FmtPart> &parts,
-                 const CompiledSeg &seg, const std::string &stopLit, std::string &val, char &conv,
-                 bool &hasVal, std::string &err, bool &needMore)
-{
-    // 下一段的起始字面（NMEA 的 "*"）也算本段的右边界，否则 %s 会一路吃到行尾
-    auto atStopLit = [&](size_t at) {
-        return !stopLit.empty() && at + stopLit.size() <= n &&
-               std::memcmp(p + at, stopLit.data(), stopLit.size()) == 0;
-    };
-    auto isDelimAt = [&](size_t at) {
-        if (seg.blankDelim)
-            return at < n && isBlankByte(static_cast<char>(p[at]));
-        if (seg.delimiters.empty())
-            return at < n && p[at] == ',';
-        for (const std::string &d : seg.delimiters)
-            if (d.size() && at + d.size() <= n && std::memcmp(p + at, d.data(), d.size()) == 0)
-                return true;
-        return false;
-    };
-    for (const FmtPart &part : parts)
-    {
-        if (part.kind == 0)
-        {
-            // 字面：允许前面有空白，然后逐字匹配
-            while (pos < n && isBlankByte(static_cast<char>(p[pos])))
-                ++pos;
-            if (pos + part.lit.size() > n)
-            {
-                needMore = true;
-                err = "字面 \"" + part.lit + "\" 尚未到齐";
-                return false;
-            }
-            for (size_t k = 0; k < part.lit.size(); ++k)
-                if (static_cast<char>(p[pos + k]) != part.lit[k])
-                {
-                    err = "字面 \"" + part.lit + "\" 不匹配";
-                    return false;
-                }
-            pos += part.lit.size();
-            continue;
-        }
-        if (part.kind == 2)
-        {
-            // 字符集：不跳空白
-            const size_t start = pos;
-            while (pos < n)
-            {
-                const char c = static_cast<char>(p[pos]);
-                const bool in = part.set.find(c) != std::string::npos;
-                if (part.negate ? in : !in)
-                    break;
-                if (part.width && static_cast<int>(pos - start) >= part.width)
-                    break;
-                ++pos;
-            }
-            const std::string tok(reinterpret_cast<const char *>(p + start), pos - start);
-            if (!part.discard)
-            {
-                if (hasVal)
-                {
-                    err = "一段只能取一个值";
-                    return false;
-                }
-                val = tok;
-                conv = 's';
-                hasVal = true;
-            }
-            continue;
-        }
-        // 转换符
-        if (part.conv != 'c')
-            while (pos < n && isBlankByte(static_cast<char>(p[pos])))
-                ++pos;
-        size_t start = pos;
-        if (part.conv == 'c')
-        {
-            const int w = part.width > 0 ? part.width : 1;
-            if (pos + static_cast<size_t>(w) > n)
-            {
-                needMore = true;
-                err = "%c 剩余字符不足";
-                return false;
-            }
-            pos += static_cast<size_t>(w);
-        }
-        else if (part.conv == 's')
-        {
-            while (pos < n)
-            {
-                if (isDelimAt(pos) || isBlankByte(static_cast<char>(p[pos])) || atStopLit(pos))
-                    break;
-                if (part.width && static_cast<int>(pos - start) >= part.width)
-                    break;
-                ++pos;
-            }
-        }
-        else if (part.conv == 't' || part.conv == 'T')
-        {
-            while (pos < n && !isDelimAt(pos) && !atStopLit(pos))
-                ++pos;
-        }
-        else
-        {
-            // 数字：按转换符的字符集扫，遇分隔符/空白停
-            const char c = part.conv;
-            auto digitOk = [c](char ch) {
-                switch (c)
-                {
-                case 'x':
-                case 'X':
-                    return std::isxdigit(static_cast<unsigned char>(ch)) != 0;
-                case 'o':
-                    return ch >= '0' && ch <= '7';
-                case 'b':
-                    return ch == '0' || ch == '1';
-                case 'f':
-                case 'e':
-                case 'g':
-                    return std::isdigit(static_cast<unsigned char>(ch)) || ch == '.' || ch == 'e' ||
-                           ch == 'E' || ch == '+' || ch == '-';
-                default:
-                    return std::isdigit(static_cast<unsigned char>(ch)) != 0;
-                }
-            };
-            if (pos < n && (p[pos] == '-' || p[pos] == '+'))
-                ++pos;
-            if (c == 'x' || c == 'X')
-            {
-                if (pos + 1 < n && p[pos] == '0' && (p[pos + 1] == 'x' || p[pos + 1] == 'X'))
-                    pos += 2;
-            }
-            while (pos < n && !atStopLit(pos) && digitOk(static_cast<char>(p[pos])))
-            {
-                if (part.width && static_cast<int>(pos - start) >= part.width)
-                    break;
-                ++pos;
-            }
-        }
-        const std::string tok(reinterpret_cast<const char *>(p + start), pos - start);
-        if (part.discard)
-            continue;
-        if (hasVal)
-        {
-            err = "一段只能取一个值";
-            return false;
-        }
-        val = tok;
-        conv = part.conv;
-        hasVal = true;
-    }
-    return true;
-}
-
-bool isBlankByte(char c)
-{
-    return c == ' ' || c == '\t';
 }
 
 std::string trimText(const std::string &s)
@@ -836,7 +570,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         if (seg.isLiteral)
         {
             // 字面段也吃上一段留下的分隔符（NMEA 的 "*" 前面就有一个逗号）
-            pos = eatDelimiter(p, pos, n, seg);
+            pos = textEatDelimiter(p, pos, n, seg);
             if (pos + seg.literal.size() > n)
             {
                 r.segment = seg.name;
@@ -948,9 +682,9 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         if (seg.boundary == static_cast<int>(SegBoundary::Format) && !seg.textFormat.empty() &&
             seg.digestKind == 0)
         {
-            std::vector<FmtPart> parts;
+            std::vector<TextFmtPart> parts;
             std::string ferr;
-            if (!compileFmt(seg.textFormat, parts, ferr))
+            if (!textCompileFormat(seg.textFormat, parts, ferr))
             {
                 r.code = DecodeError::FieldInvalid;
                 r.segment = seg.name;
@@ -960,7 +694,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             // 段首吃掉上一段留在原地的分隔符（字面段也一样：NMEA 的 "*" 前面就有一个逗号）
             const size_t segStart = pos;
             size_t scanPos = segStart;
-            scanPos = eatDelimiter(p, scanPos, n, seg);
+            scanPos = textEatDelimiter(p, scanPos, n, seg);
 
             // 下一段的起始字面（如果有）：用它给 %s 收口
             std::string stopLit;
@@ -1004,7 +738,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 bool hasVal = false;
                 std::string err;
                 bool needMoreFlag = false;
-                if (!scanFmtElem(p + scanPos, n - scanPos, lp, parts, seg, stopLit, val, conv, hasVal,
+                if (!textScanElement(p + scanPos, n - scanPos, lp, parts, seg, stopLit, val, conv, hasVal,
                                  err, needMoreFlag))
                 {
                     r.segment = seg.name;
@@ -1148,7 +882,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     }
                 }
                 if (k + 1 < rep)
-                    scanPos = eatDelimiter(p, scanPos, n, seg);
+                    scanPos = textEatDelimiter(p, scanPos, n, seg);
             }
             r.vals[seg.slot] = col;
             spans[seg.slot] = {segStart, scanPos};
