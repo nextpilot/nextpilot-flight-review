@@ -1491,6 +1491,13 @@ QString ProtocolEditorDialog::expectItemText(const QJsonValue &v) const
             items << literalText(x);
         return QLatin1Char('{') + items.join(QStringLiteral(",")) + QLatin1Char('}');
     }
+    // 区间/掩码把端点也显示出来，不然格里只剩一个算子名，看不出实际条件
+    if (op == QLatin1String("range"))
+        return literalText(o.value(QStringLiteral("min"))) + QStringLiteral("..") +
+               literalText(o.value(QStringLiteral("max")));
+    if (op == QLatin1String("mask"))
+        return QStringLiteral("&") + literalText(o.value(QStringLiteral("and"))) +
+               QStringLiteral("==") + literalText(o.value(QStringLiteral("eq")));
     // 摘要/校验和：把参与区间一起显示出来，"xor8 msgid:station" 一眼能看出算的是哪一段
     const QJsonArray ov = o.value(QStringLiteral("over")).toArray();
     if (!ov.isEmpty())

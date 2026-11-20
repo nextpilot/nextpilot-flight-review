@@ -548,6 +548,10 @@ bool compileTextSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
             cs.isLiteral = true;
             cs.literal = s.format;
             cs.boundary = static_cast<int>(SegBoundary::Literal);
+            // 字面段匹配本身就是判等，再挂 expect 会被当成"第二个条件"，含义重复且容易被误解成
+            // "字面可替换" —— 编译期直接拦下，别留静默空间。
+            if (s.expectExpr || !s.checks.empty())
+                return c.fail("段 " + s.name + " 是纯字面段，不能写 expect（字面匹配已即判等）");
         }
         // 进制由转换符决定：%x/%X → 16，%o → 8，其余一律十进制。
         // （文本段没有 base 键，别让 s.base 的默认值把这里推出的结果覆盖掉。）

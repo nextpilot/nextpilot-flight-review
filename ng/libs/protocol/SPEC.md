@@ -313,6 +313,18 @@ text 的校验写在 `expect` 里，算的是**记录的连续原始字节**（�
 - `%x` / `%X` 按十六进制解析校验字节（`%o` 八进制），校验值宽度由算法决定；
 - 不符 → `ChecksumMismatch`，整帧拒收（计入 `rejectedFrames`），不会当普通字段读过去。
 
+### 10.4.2 expect 断言（eq / ne / lt / le / gt / ge / in / range / mask）
+
+text 与 bin 共用同一套断言语义，**没有"text 不做断言"这回事**：
+
+- 断言值是逐元素比对：`count>1` 的段每个元素都要过；
+- 文本段（`%s` / `%[^,]`）用字符串值断言，例如
+  `"expect":[{"op":"in","values":["GPGGA","GPRMC"]}]` 判 msgid；
+- `eq` 是"值等于"；裸写 `expect:[{"op":"eq","value":7}]` 与 bin 的等值语义一致；
+- 不满足 → `FieldInvalid`（`on_mismatch:"skip"/"warn"` 时按该段策略处理）；
+- **纯字面段（整条 `format` 不含 `%`）不能写 `expect`**：字面匹配本身就是判等，重复声明
+  会在编译期直接报错，避免有人误以为字面可以被替换。
+
 ### 10.5 段头识别
 
 不再有 `literal`。段头用 `expect` 判等：

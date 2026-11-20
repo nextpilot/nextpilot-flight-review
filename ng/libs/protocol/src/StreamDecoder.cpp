@@ -455,6 +455,54 @@ static bool failPredicate(RecAttempt &r, const std::string &segName, const std::
     return false;
 }
 
+static std::string dumpTyped(const TypedValue &v)
+{
+    char b[192];
+    if (v.type == ValueType::Text)
+        return v.s;
+    if (v.isFloat())
+        std::snprintf(b, sizeof(b), "%g", v.f);
+    else if (v.isSigned())
+        std::snprintf(b, sizeof(b), "%lld (0x%llX)", static_cast<long long>(v.i),
+                      static_cast<unsigned long long>(v.i));
+    else
+        std::snprintf(b, sizeof(b), "%llu (0x%llX)", static_cast<unsigned long long>(v.u),
+                      static_cast<unsigned long long>(v.u));
+    return b;
+}
+
+// 段的 expect 断言（v3 的 expect 只有数组形式，这里只处理"整段值的等值判等"，
+// 其余 in/range/mask/比较算子都走 checkTextPredicates）。
+// bin 与 text 共用一套语义，只有失败时的错误码不同（bin 的段首判等按丢了同步处理）。
+static bool checkSegmentExpect(const CompiledSeg &seg, const TypedVec &col,
+                               const std::vector<TypedVec> &cols, RecAttempt &r,
+                               DecodeError::Code miss)
+{
+    (void)cols;
+    if (!seg.hasExpect || !seg.expectIsConst)
+        return true;
+    for (std::size_t i = 0; i < col.size(); ++i)
+    {
+        int cmp = 0;
+        if (!cmpTyped(col.at(i), seg.expectConst, cmp))
+        {
+            r.code = miss;
+            r.segment = seg.name;
+            r.detail = "expect 的类型与字段不一致";
+            return false;
+        }
+        if (cmp != 0)
+        {
+            r.code = miss;
+            r.segment = seg.name;
+            r.detail = "expect 不符：期望 " + dumpTyped(seg.expectConst) + "，实际 " +
+                       dumpTyped(col.at(i));
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool checkTextPredicates(const CompiledSeg &seg, const TypedVec &col,
                                  const std::vector<TypedVec> &cols, RecAttempt &r,
                                  const uint8_t *p, const std::vector<std::pair<size_t, size_t>> &spans)
@@ -605,6 +653,10 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             col.push(dv);
             r.vals[static_cast<size_t>(seg.slot)] = col;
             spans[static_cast<size_t>(seg.slot)] = {pos, pos};
+            if (!checkSegmentExpect(seg, col, r.vals, r, DecodeError::FieldInvalid))
+                return false;
+            if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
+                return false;
             continue;
         }
 
@@ -676,32 +728,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                                 ? TypedValue::fromRawInt(static_cast<int64_t>(raw), seg.type)
                                 : TypedValue::fromU(raw, seg.type);
                     }
-                    if (seg.hasExpect && seg.expectIsConst)
-                    {
-                        const uint64_t want = seg.expectConst.isSigned()
-                                                  ? static_cast<uint64_t>(seg.expectConst.asI64())
-                                                  : seg.expectConst.asU64();
-                        const uint64_t got = (seg.type == ValueType::F32 || seg.type == ValueType::F64)
-                                                 ? static_cast<uint64_t>(v.asDouble())
-                                                 : (v.isSigned() ? static_cast<uint64_t>(v.asI64())
-                                                                 : v.asU64());
-                        if (got != want)
-                        {
-                            r.code = DecodeError::SyncMissing;
-                            r.segment = seg.name;
-                            char buf[128];
-                            std::snprintf(buf, sizeof(buf), "期望 0x%llX，实际 0x%llX",
-                                          static_cast<unsigned long long>(want),
-                                          static_cast<unsigned long long>(got));
-                            r.detail = buf;
-                            return false;
-                        }
-                    }
                     col.push(v);
                 }
             }
             r.vals[seg.slot] = col;
             spans[seg.slot] = {pos, pos + total};
+            if (!checkSegmentExpect(seg, col, r.vals, r, DecodeError::SyncMissing))
+                return false;
             if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
                 return false;
             pos += total;
@@ -927,6 +960,8 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             }
             r.vals[seg.slot] = col;
             spans[seg.slot] = {segStart, scanPos};
+            if (!checkSegmentExpect(seg, col, r.vals, r, DecodeError::FieldInvalid))
+                return false;
             if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
                 return false;
             pos = scanPos;
@@ -1349,6 +1384,8 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         }
         r.vals[seg.slot] = col;
         spans[seg.slot] = {tokenStart, tokenEnd};
+        if (!checkSegmentExpect(seg, col, r.vals, r, DecodeError::FieldInvalid))
+            return false;
         if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
             return false;
         pos = nextPos;

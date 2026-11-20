@@ -992,6 +992,94 @@ int main(int argc, char *argv[])
             CHECK(out.errors.front().segment == "check");
         }
 
+        // (a3) text 的 expect 断言要真跑：eq / range 不满足都必须拒收，不能静默放过
+        {
+            auto build = [](const char *j, CompiledProgram &prog, std::string *why = nullptr) -> bool {
+                ProtocolDocument doc;
+                std::string perr;
+                if (!parseDocument(QJsonDocument::fromJson(QByteArray(j)).object(), doc, perr))
+                {
+                    if (why)
+                        *why = perr;
+                    return false;
+                }
+                std::string err;
+                if (!compileProgram(doc, prog, err))
+                {
+                    if (why)
+                        *why = err;
+                    return false;
+                }
+                return true;
+            };
+            auto run = [](const CompiledProgram &prog, const char *frame) {
+                ProtocolDecodeResult out;
+                StreamDecoder dec(prog);
+                std::string err;
+                dec.push(QByteArray::fromStdString(frame), out, err);
+                dec.finish(out);
+                return std::make_pair(out, err);
+            };
+
+            CompiledProgram c1;
+            const char *j1 = R"({"name":"t_exp","mode":"text","layout":"sequential","maxsize":64,
+              "term":["\r\n"],"segments":[
+                {"name":"head","format":"$"},
+                {"name":"id","format":"%s"},
+                {"name":"val","format":"%d","expect":[{"op":"eq","value":7}]}]})";
+            CHECK(build(j1, c1));
+            {
+                auto r1 = run(c1, "$A,7\r\n");
+                CHECK(r1.first.errors.empty());
+                CHECK(r1.first.rejectedFrames == 0);
+                auto r2 = run(c1, "$A,6\r\n");
+                CHECK(r2.first.rejectedFrames >= 1);
+                CHECK(!r2.first.errors.empty() &&
+                      r2.first.errors.front().code == DecodeError::FieldInvalid);
+                CHECK(r2.first.errors.front().segment == "val");
+                CHECK(r2.first.errors.front().detail.find("eq") != std::string::npos);
+            }
+
+            // range：落在区间外拒收（区间端点内通过）
+            CompiledProgram c2;
+            const char *j2 = R"({"name":"t_exp2","mode":"text","layout":"sequential","maxsize":64,
+              "term":["\r\n"],"segments":[
+                {"name":"head","format":"$"},
+                {"name":"id","format":"%s"},
+                {"name":"val","format":"%d","expect":[{"op":"range","min":1,"max":5}]}]})";
+            CHECK(build(j2, c2));
+            CHECK(run(c2, "$A,3\r\n").first.errors.empty());
+            CHECK(run(c2, "$A,1\r\n").first.errors.empty());
+            CHECK(run(c2, "$A,5\r\n").first.errors.empty());
+            CHECK(run(c2, "$A,7\r\n").first.rejectedFrames >= 1);
+            CHECK(!run(c2, "$A,7\r\n").first.errors.empty() &&
+                  run(c2, "$A,7\r\n").first.errors.front().segment == "val");
+
+            // 文本字段（%s）的等值断言：NMEA 判 msgid 这类用法
+            CompiledProgram c3;
+            const char *j3 = R"({"name":"t_exp_s","mode":"text","layout":"sequential","maxsize":64,
+              "term":["\r\n"],"segments":[
+                {"name":"head","format":"$"},
+                {"name":"msgid","format":"%s","expect":[{"op":"in","values":["GPGGA","GPRMC"]}]},
+                {"name":"val","format":"%d"}]})";
+            CHECK(build(j3, c3));
+            CHECK(run(c3, "$GPGGA,7\r\n").first.errors.empty());
+            CHECK(run(c3, "$GPRMC,7\r\n").first.errors.empty());
+            {
+                auto rb = run(c3, "$GPGSV,7\r\n");
+                CHECK(rb.first.rejectedFrames >= 1);
+                CHECK(!rb.first.errors.empty() && rb.first.errors.front().segment == "msgid");
+            }
+
+            // 字面段本身就是判等，再挂 expect 只会被误解 -> 编译期直接拦
+            std::string why3;
+            CHECK(!build(R"({"name":"t_exp3","mode":"text","layout":"sequential","maxsize":64,
+              "term":["\r\n"],"segments":[
+                {"name":"head","format":"$","expect":[{"op":"eq","value":1}]},
+                {"name":"val","format":"%d"}]})", c2, &why3));
+            CHECK(why3.find("纯字面段") != std::string::npos);
+        }
+
         // (b) 同一行分两个 chunk：跨包仍能拼起来
         {
             ProtocolDecodeResult out;
