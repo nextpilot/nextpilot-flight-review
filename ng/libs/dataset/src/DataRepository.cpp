@@ -49,6 +49,12 @@ const Dataset *DataRepository::get(DatasetId id) const
     return it == m_datasets.constEnd() ? nullptr : &it.value();
 }
 
+Dataset *DataRepository::getMutable(DatasetId id)
+{
+    const auto it = m_datasets.find(id);
+    return it == m_datasets.end() ? nullptr : &it.value();
+}
+
 QVector<DatasetId> DataRepository::ids() const
 {
     QVector<DatasetId> result;

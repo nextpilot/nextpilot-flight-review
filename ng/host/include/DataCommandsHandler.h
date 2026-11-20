@@ -77,6 +77,9 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setChannelTransform(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearChannelTransform(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> deriveList(const nextpilot::plotscope::intent::Intent &intent);
+    // MIMO 派生流式增量刷新：对该 dataset 全部 quat_to_rpy 派生按注册表配方指纹
+    // 重建 intent 逐组重发（同名重发 = 增量，见 deriveMimoQuat）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> refreshDerives(const nextpilot::plotscope::intent::Intent &intent);
 
     nextpilot::plotscope::context::AppContext &m_app;
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;

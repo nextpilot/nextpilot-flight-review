@@ -35,6 +35,19 @@ const DerivedSeriesRegistry::Entry *DerivedSeriesRegistry::get(const QString &na
     return i >= 0 ? &m_entries.at(i) : nullptr;
 }
 
+bool DerivedSeriesRegistry::appendSeries(const QString &name, const QVector<double> &tNew,
+                                         const QVector<double> &vNew, qint64 waterUs)
+{
+    const int i = indexOf(name);
+    if (i < 0)
+        return false;
+    m_entries[i].t += tNew;
+    m_entries[i].v += vNew;
+    m_entries[i].waterUs = waterUs;
+    Q_EMIT changed();
+    return true;
+}
+
 bool DerivedSeriesRegistry::remove(const QString &name)
 {
     const int i = indexOf(name);

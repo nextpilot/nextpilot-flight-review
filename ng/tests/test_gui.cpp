@@ -1101,6 +1101,128 @@ int main(int argc, char *argv[])
 
         OK("派生注册表：SISO/MIMO 登记 + series/plot.channel 穿透 + 目录 + 零污染"
            " + 跨表重采样 + NaN 防线");
+
+        // (7) MIMO 流式增量（对齐 PJ4"只处理新样本"）：同名重发 = 增量刷新。
+        {
+            // 全量基线：100 点（trace 表 0..0.99s）。
+            Intent full;
+            full.op = QStringLiteral("data.derive");
+            full.params[QStringLiteral("dataset")] = dsId;
+            full.params[QStringLiteral("table")] = QStringLiteral("trace");
+            full.params[QStringLiteral("inputs")] = QStringList{
+                QStringLiteral("q.w"), QStringLiteral("q.x"),
+                QStringLiteral("q.y"), QStringLiteral("q.z") };
+            full.params[QStringLiteral("filter")] = QStringLiteral("quat_to_rpy");
+            full.params[QStringLiteral("degrees")] = true;
+            full.params[QStringLiteral("name")] = QStringLiteral("attinc");
+            const auto fr = application.host().execute(full);
+            CHECK(static_cast<bool>(fr));
+            const QVariantMap fp = fr.value().payload.toMap();
+            CHECK(fp.value(QStringLiteral("count")).toInt() == 100);
+            CHECK(!fp.value(QStringLiteral("incremental")).toBool());
+
+            // 实时追加 20 行（t=1.00..1.19s，绕 x 30°常值四元数 → roll 仍 30°）。
+            // appendFrame 直接灌 Rust kernel（与实时流同一入口），C++ schema 不刷。
+            // kernel 约束：列数/名称/单位必须与建表时完全一致——trace 已有
+            // sig/q.w/q.x/q.y/q.z/qn.w 六列，追加帧必须按顺序全给。
+            const int m2 = 20;
+            QVector<TimeUs> nts;
+            QVector<double> nw2(m2, std::cos(half)), nx2(m2, std::sin(half)),
+                ny2(m2, 0.0), nz2(m2, 0.0), nsig2(m2, 0.0), nqn2(m2, std::cos(half));
+            nts.reserve(m2);
+            for (int i = 0; i < m2; ++i)
+                nts.append(static_cast<TimeUs>(std::llround((1.00 + i * 0.01) * 1000000.0)));
+            auto mkCol = [](const char *name, const QVector<double> &v) {
+                FrameColumn c;
+                c.name = QString::fromUtf8(name);
+                c.unit = QString();
+                c.type = ValueType::F64;
+                c.values = v.constData();
+                c.nulls = nullptr;
+                return c;
+            };
+            const QVector<FrameColumn> nCols = {
+                mkCol("sig", nsig2), mkCol("q.w", nw2), mkCol("q.x", nx2),
+                mkCol("q.y", ny2), mkCol("q.z", nz2), mkCol("qn.w", nqn2) };
+            CHECK(fds.appendFrame(QStringLiteral("trace"), nts.constData(), m2, nCols));
+
+            // 同名重发 → 增量：只算 20 点新段，注册表缓存追加到 120。
+            const auto ir = application.host().execute(full);
+            CHECK(static_cast<bool>(ir));
+            const QVariantMap ip = ir.value().payload.toMap();
+            CHECK(ip.value(QStringLiteral("incremental")).toBool());
+            CHECK(ip.value(QStringLiteral("count")).toInt() == 20);
+            CHECK(ip.value(QStringLiteral("total")).toInt() == 120);
+            const QVariantList iouts = ip.value(QStringLiteral("outputs")).toList();
+            CHECK(iouts.size() == 3);
+            const QVariantList iv = iouts.first().toMap().value(QStringLiteral("value")).toList();
+            CHECK(iv.size() == 20);
+            CHECK(qFuzzyCompare(iv.first().toDouble(), 30.0)); // 增量段数学仍精确
+
+            // 穿透读数看到合并后的完整缓存（100 旧 + 20 新）。
+            {
+                Intent s;
+                s.op = QStringLiteral("data.series");
+                s.params[QStringLiteral("dataset")] = dsId;
+                s.params[QStringLiteral("column")] = QStringLiteral("attinc.roll");
+                const auto sr = application.host().execute(s);
+                CHECK(static_cast<bool>(sr));
+                const QVariantMap p = sr.value().payload.toMap();
+                CHECK(p.value(QStringLiteral("count")).toInt() == 120);
+                const QVariantList vs = p.value(QStringLiteral("v")).toList();
+                CHECK(vs.size() == 120);
+                CHECK(qFuzzyCompare(vs.first().toDouble(), 30.0));
+                CHECK(qFuzzyCompare(vs.at(100).toDouble(), 30.0)); // 增量接缝处连续
+                CHECK(qFuzzyCompare(vs.last().toDouble(), 30.0));
+            }
+
+            // 无新数据再刷 → 幂等 no-op（count=0）。
+            {
+                const auto nr = application.host().execute(full);
+                CHECK(static_cast<bool>(nr));
+                const QVariantMap np = nr.value().payload.toMap();
+                CHECK(np.value(QStringLiteral("incremental")).toBool());
+                CHECK(np.value(QStringLiteral("count")).toInt() == 0);
+                CHECK(np.value(QStringLiteral("total")).toInt() == 120);
+            }
+
+            // force=true → 全量重算（120 点整体重算，非增量）。
+            {
+                Intent f = full;
+                f.params[QStringLiteral("force")] = true;
+                const auto cr = application.host().execute(f);
+                CHECK(static_cast<bool>(cr));
+                const QVariantMap cp = cr.value().payload.toMap();
+                CHECK(!cp.value(QStringLiteral("incremental")).toBool());
+                CHECK(cp.value(QStringLiteral("count")).toInt() == 120);
+            }
+
+            // 配方变更（degrees 翻转）同名重发 → 指纹不同自动回全量（rad 口径）。
+            {
+                Intent r2 = full;
+                r2.params[QStringLiteral("degrees")] = false;
+                const auto rr = application.host().execute(r2);
+                CHECK(static_cast<bool>(rr));
+                const QVariantMap rp = rr.value().payload.toMap();
+                CHECK(!rp.value(QStringLiteral("incremental")).toBool());
+                CHECK(rp.value(QStringLiteral("count")).toInt() == 120);
+                const QVariantList outs2 = rp.value(QStringLiteral("outputs")).toList();
+                CHECK(outs2.first().toMap().value(QStringLiteral("unit")).toString()
+                      == QStringLiteral("rad"));
+            }
+
+            // data.derive.refresh：无新数据 → 幂等（refreshed=0）。
+            {
+                Intent rf;
+                rf.op = QStringLiteral("data.derive.refresh");
+                rf.params[QStringLiteral("dataset")] = dsId;
+                const auto rr = application.host().execute(rf);
+                CHECK(static_cast<bool>(rr));
+                CHECK(rr.value().payload.toMap().value(QStringLiteral("refreshed")).toInt() == 0);
+            }
+        }
+
+        OK("MIMO 流式增量：同名重发=增量新段 + 幂等 no-op + force 全量 + 配方变更回全量");
     }
 
     // --- 5h) 多源时间对齐（第二梯队 #204）：源级 offset + Align start/center/end ---

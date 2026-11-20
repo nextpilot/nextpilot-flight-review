@@ -440,9 +440,25 @@ SPI 解析器的职责被刻意收窄为「字节 → 结构化批」，于是�
 **与 PJ4（增量引擎）的对账**：PJ4 的 MIMO 对齐在引擎层 join——精确时间戳交集
 （各输入时刻必须完全相等，否则丢弃），"nearest-sample-to-primary" 仅是头文件
 注释中预留的契约、未实现；对象级多输入用"≤ 请求时刻的最新样本"（step 语义）。
-NG 的插值对齐覆盖了 PJ4 覆盖不了的跨采样率派生；但 PJ4 的**增量执行**（只处理
-新样本、逐 chunk 水位推进）是 NG 全量重读当前不具备的效率优势，实时源高频
-派生场景待后续补齐。
+NG 的插值对齐覆盖了 PJ4 覆盖不了的跨采样率派生；NG 的**增量执行**（见下）也已
+落地，补齐了 PJ4 chunk 水位推进的效率优势。
+
+**派生增量执行（水位机制，对齐 PJ4 chunk 水位思想）**：
+
+- 注册表 Entry 携带 `waterUs`（基准轴水位，微秒整型）与 `recipe`（配方指纹：
+  inputs 对象数组 + interp + degrees + unwrap）。
+- **同名重发 `data.derive` = 增量刷新**：指纹一致且未 `force` → 只读
+  `[waterUs, tNow]` 新样本窗口（tNow = 各输入表 `lastTimeUs` 最大值，O(1)），
+  只算新段，追加缓存；水位推进到新段最大时间戳。指纹变了自动回全量。
+- `data.derive.refresh {dataset}`：对该数据集全部 MIMO 派生按配方指纹分组逐组
+  增量刷新（同组三条输出，首条推进水位后其余自动 no-op）。返回
+  `groups`/`refreshed`（refreshed 只计产出新样本的组）。
+- 无新样本 → 幂等 no-op（`noop=true, count=0`），不重复计算。
+- 边界纪律：增量窗口内时间比较一律在微秒整型域做（double 秒往返 `llround`
+  精确），避免 1ulp 误判；其它输入窗口含 waterUs 时刻样本是合法插值左锚点
+  （输出行时间全部 > waterUs，不重复输出）。
+- 实时 `appendFrame` 不刷 C++ schema 投影（O(列数)，不能每批调）——增量刷新
+  是低频操作，入口处刷一次拿最新 `lastTimeUs`。
 
 ---
 

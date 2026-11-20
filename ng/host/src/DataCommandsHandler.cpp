@@ -12,12 +12,15 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTextStream>
 #include <QVector>
 
 #include <cmath>
+#include <limits>
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
@@ -45,6 +48,49 @@ QString cachePathForSource(const DataSourceInfo &info, const QString &parserId)
 
 // 状态视图取数上限：大于绝大多数日志行数，保证不触发 kernel 抽稀（RLE 需要原始样本）。
 constexpr int kStateMaxPoints = 200000;
+
+// 把源列对齐到基准轴（MIMO 派生的显式时间同步）。interpMode: linear/step/nearest，
+// 范围外取端点值（边界延拓，不产 NaN）。基准轴有序 → 源列游标单调推进 O(n)。
+// 注意：out 必须不与 st/sv 别名（调用方用局部量接收后回写）。
+void resampleToBase(const QVector<double> &baseT, const QVector<double> &st,
+                    const QVector<double> &sv, const QString &interpMode,
+                    QVector<double> &out)
+{
+    out.clear();
+    out.reserve(baseT.size());
+    if (st.isEmpty())
+        return;
+    int j = 0; // 源列游标
+    for (int i = 0; i < baseT.size(); ++i)
+    {
+        const double t = baseT.at(i);
+        if (t <= st.first()) // 范围外：边界延拓取端点（不产 NaN）
+        {
+            out.append(sv.first());
+            continue;
+        }
+        if (t >= st.last())
+        {
+            out.append(sv.last());
+            continue;
+        }
+        while (j + 1 < st.size() - 1 && st.at(j + 1) <= t)
+            ++j; // 保持 st[j] <= t < st[j+1]
+        if (interpMode == QLatin1String("step"))
+        {
+            out.append(sv.at(j));
+            continue;
+        }
+        const double t0 = st.at(j), t1 = st.at(j + 1);
+        if (interpMode == QLatin1String("nearest"))
+            out.append(t - t0 <= t1 - t ? sv.at(j) : sv.at(j + 1));
+        else if (t1 > t0) // 线性插值（重复时间戳防御：退化取左样本）
+            out.append(sv.at(j) * (1.0 - (t - t0) / (t1 - t0))
+                       + sv.at(j + 1) * ((t - t0) / (t1 - t0)));
+        else
+            out.append(sv.at(j));
+    }
+}
 } // namespace
 
 bool DataCommandsHandler::canHandle(const Intent &intent) const
@@ -61,7 +107,8 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
         || op == QLatin1String("data.workspace.restore")
         || op == QLatin1String("data.transform.set")
         || op == QLatin1String("data.transform.clear")
-        || op == QLatin1String("data.derive.list");
+        || op == QLatin1String("data.derive.list")
+        || op == QLatin1String("data.derive.refresh");
 }
 
 Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
@@ -102,6 +149,8 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return clearChannelTransform(intent);
     if (intent.op == QLatin1String("data.derive.list"))
         return deriveList(intent);
+    if (intent.op == QLatin1String("data.derive.refresh"))
+        return refreshDerives(intent);
     return fail(QStringLiteral("eunknown"),
                 QStringLiteral("DataCommandsHandler 不处理: %1").arg(intent.op));
 }
@@ -296,7 +345,7 @@ Result<IntentResult> DataCommandsHandler::removeSource(const Intent &intent)
 //
 //   data.derive { dataset, table, inputs: [w列,x列,y列,z列], filter: "quat_to_rpy",
 //                 outputs: [roll名,pitch名,yaw名]（缺省 "<w列>.roll/.pitch/.yaw"）,
-//                 degrees: false, unwrap: true, interp: "linear" }
+//                 degrees: false, unwrap: true, interp: "linear", force: false }
 //
 // 输入元素两种写法：
 //   "q.w"                       —— 字符串列名，用顶层 table（四列同表常规用法）
@@ -315,6 +364,14 @@ Result<IntentResult> DataCommandsHandler::removeSource(const Intent &intent)
 // 防线：任何输入（对齐后）含 NaN/null 样本（kernel 读 null 即 NaN）→ 明确失败，
 // 绝不静默产出垃圾角度。派生语义（不写回）：三条输出全部登记派生注册表 +
 // derivedSeriesReady，原始 dataset 零改动。
+//
+// 流式增量（对齐 PJ4 增量引擎"只处理新样本"）：
+//   同名重发 data.derive（配方指纹一致）= 增量刷新——只读 [waterUs, now] 新样本
+//   窗口（其它列窗口含 waterUs 时刻样本作插值左锚点），只算新段并追加注册表缓存，
+//   水位推进到新段最大时间戳。配方（inputs/interp/degrees/unwrap）变了或 force=true
+//   自动回全量。增量前 refreshSchema（实时 append 不刷 C++ 投影；O(列数) 低频可接受）。
+//   实时源自动触发待接（IngestPipeline 无样本级信号，需节流设计）；当前由
+//   data.derive.refresh 意图或脚本周期重发驱动。
 Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
 {
     DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
@@ -364,9 +421,224 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         ins.append(in);
     }
 
+    // 输出名：缺省 "<w列>.roll/.pitch/.yaw"（w 列取其列名，跨表对象输入同样适用）。
+    // 前移解析：增量判定需要第一输出名查注册表。
+    const QString prefix = intent.params.value(QStringLiteral("name")).toString();
+    QStringList outNames = intent.params.value(QStringLiteral("outputs")).toStringList();
+    if (outNames.size() != 3)
+    {
+        const QString base = prefix.isEmpty() ? ins.first().column : prefix;
+        outNames = { base + QStringLiteral(".roll"), base + QStringLiteral(".pitch"),
+                     base + QStringLiteral(".yaw") };
+    }
+
+    const bool degrees = intent.params.value(QStringLiteral("degrees"), false).toBool();
+    const bool unwrap = intent.params.value(QStringLiteral("unwrap"), true).toBool();
+    const QString interpMode =
+        intent.params.value(QStringLiteral("interp"), QStringLiteral("linear")).toString();
+    if (interpMode != QLatin1String("linear") && interpMode != QLatin1String("step")
+        && interpMode != QLatin1String("nearest"))
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("interp 仅支持 linear/step/nearest: %1").arg(interpMode));
+
+    // 配方指纹：inputs（对象 {table,column}，规避列名含点歧义）+ interp + degrees + unwrap。
+    // 同名重发且指纹一致 → 增量；变了 → 自动回全量（覆盖旧缓存）。
+    QJsonObject recipeObj;
+    QJsonArray recipeInputs;
+    for (const MimoInput &in : ins)
+        recipeInputs.append(QJsonObject{
+            { QStringLiteral("table"), in.table },
+            { QStringLiteral("column"), in.column } });
+    recipeObj.insert(QStringLiteral("inputs"), recipeInputs);
+    recipeObj.insert(QStringLiteral("interp"), interpMode);
+    recipeObj.insert(QStringLiteral("degrees"), degrees);
+    recipeObj.insert(QStringLiteral("unwrap"), unwrap);
+    const QByteArray recipe = QJsonDocument(recipeObj).toJson(QJsonDocument::Compact);
+
+    // 增量判定：同名派生已存在、同数据集、同配方、已有水位，且未 force。
+    auto &registry = m_app.derivedRegistry();
+    const DerivedSeriesRegistry::Entry *prev = registry.get(outNames.first());
+    const bool incremental = prev != nullptr
+        && prev->datasetId == dsId
+        && prev->filterId == QLatin1String("quat_to_rpy")
+        && prev->recipe == recipe
+        && prev->waterUs != std::numeric_limits<qint64>::min()
+        && !intent.params.value(QStringLiteral("force"), false).toBool();
+
+    constexpr int kDeriveMaxPoints = 200000;
+    QVector<double> time;   // 本段输出时间轴（秒）= 基准轴（全量）或新段（增量）
+    QVector<double> r, p, yaw;
+    // 增量分支在 appendSeries 后 prev 悬空（registry 内部可能重分配）——
+    // 所有需要的 prev 值在进入增量分支前拷贝成本地量。
+    const qint64 waterUs = incremental ? prev->waterUs : 0;
+    const int prevTotal = incremental ? prev->t.size() : 0;
+
+    if (incremental)
+    {
+        // === 增量分支：只读 [waterUs, now] 新样本窗口，只算新段 ===
+        // 实时 appendFrame 不刷 C++ schema 投影（O(列数)，不能每批调）——
+        // 增量刷新是低频操作，先刷一次拿到最新 lastTimeUs。
+        Dataset *dsMut = m_app.data().getMutable(dsId);
+        if (!dsMut)
+            return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+        dsMut->refreshSchema();
+
+        // 窗口右界 = 各输入表最新 lastTimeUs 的最大值（schema 投影，O(1)）。
+        TimeUs tNow = std::numeric_limits<TimeUs>::min();
+        for (const MimoInput &in : ins)
+        {
+            const Table *t = dsMut->table(in.table);
+            if (t)
+                tNow = qMax(tNow, t->lastTimeUs);
+        }
+        if (tNow <= waterUs)
+        {
+            // 无新样本：no-op 成功（幂等刷新）。
+            IntentResult res;
+            res.payload = QVariantMap{
+                {QStringLiteral("dataset"), dsId},
+                {QStringLiteral("filter"), QStringLiteral("quat_to_rpy")},
+                {QStringLiteral("incremental"), true},
+                {QStringLiteral("noop"), true},
+                {QStringLiteral("count"), 0},
+                {QStringLiteral("total"), prevTotal},
+            };
+            return res;
+        }
+
+        // 读四列窗口 [waterUs, tNow]（kernel 左闭右闭）。其它列窗口含 waterUs
+        // 时刻样本——它是基准新段的合法插值左锚点（输出行时间全部 > waterUs，
+        // 锚点本身不会重复输出）。
+        QVector<ChannelView> cols;
+        for (const MimoInput &in : ins)
+        {
+            auto ch = dsMut->readWindow(in.table, in.column, waterUs, tNow,
+                                        kDeriveMaxPoints);
+            if (!ch)
+                return fail(QStringLiteral("echan"),
+                            QStringLiteral("读取通道失败: %1.%2").arg(in.table, in.column));
+            cols.append(std::move(*ch));
+        }
+
+        // 基准新段：丢弃 t <= waterUs（上次已处理；kernel 窗口左闭含 waterUs）。
+        // 比较在微秒域做（llround 往返精确），避免 double 秒/微秒换算的 1ulp 误判。
+        time.clear();
+        for (int i = 0; i < cols[0].time.size(); ++i)
+        {
+            if (static_cast<qint64>(std::llround(cols[0].time.at(i) * 1000000.0))
+                > waterUs)
+                time.append(cols[0].time.at(i));
+        }
+        const int n = time.size();
+        if (n <= 0)
+        {
+            // 其它表有新数据但基准列没有 → 输出轴不动，no-op。
+            IntentResult res;
+            res.payload = QVariantMap{
+                {QStringLiteral("dataset"), dsId},
+                {QStringLiteral("filter"), QStringLiteral("quat_to_rpy")},
+                {QStringLiteral("incremental"), true},
+                {QStringLiteral("noop"), true},
+                {QStringLiteral("count"), 0},
+                {QStringLiteral("total"), prevTotal},
+            };
+            return res;
+        }
+
+        // 基准列新段值 + 其它列对齐到新段。
+        QVector<double> baseV;
+        baseV.reserve(n);
+        for (int i = 0; i < cols[0].value.size(); ++i)
+        {
+            if (static_cast<qint64>(std::llround(cols[0].time.at(i) * 1000000.0))
+                > waterUs)
+                baseV.append(cols[0].value.at(i));
+        }
+        cols[0].time = time;
+        cols[0].value = baseV;
+        for (int k = 1; k < 4; ++k)
+        {
+            const QVector<double> &st = cols[k].time;
+            if (st.isEmpty())
+                return fail(QStringLiteral("eempty"),
+                            QStringLiteral("输入无新样本: %1.%2")
+                                .arg(ins[k].table, ins[k].column));
+            QVector<double> aligned;
+            resampleToBase(time, st, cols[k].value, interpMode, aligned);
+            cols[k].value = aligned;
+        }
+
+        // NaN 防线（增量段同样适用）。
+        for (int k = 0; k < 4; ++k)
+        {
+            for (int i = 0; i < cols[k].value.size(); ++i)
+            {
+                if (std::isnan(cols[k].value.at(i)))
+                    return fail(QStringLiteral("enan"),
+                                QStringLiteral("输入含 NaN/null 样本，拒绝派生: %1.%2 @[%3]")
+                                    .arg(ins[k].table, ins[k].column)
+                                    .arg(i));
+            }
+        }
+
+        r.resize(n);
+        p.resize(n);
+        yaw.resize(n);
+        char errBuf[512] = {0};
+        const int rc = ps_quat_to_rpy(static_cast<uint32_t>(n),
+                                      cols[0].value.constData(), cols[1].value.constData(),
+                                      cols[2].value.constData(), cols[3].value.constData(),
+                                      degrees ? 1 : 0, unwrap ? 1 : 0,
+                                      r.data(), p.data(), yaw.data(),
+                                      errBuf, sizeof(errBuf));
+        if (rc != 0)
+            return fail(QStringLiteral("ederive"),
+                        QStringLiteral("quat_to_rpy 失败: %1").arg(QString::fromUtf8(errBuf)));
+
+        // 追加注册表缓存 + 水位推进到新段最大时间戳。
+        const qint64 newWater =
+            static_cast<qint64>(std::llround(time.last() * 1000000.0));
+        const QVector<QVector<double>> vals = { r, p, yaw };
+        QVariantList outPayload;
+        const QString unit = degrees ? QStringLiteral("deg") : QStringLiteral("rad");
+        for (int k = 0; k < 3; ++k)
+        {
+            registry.appendSeries(outNames.at(k), time, vals[k], newWater);
+            Q_EMIT m_app.derivedSeriesReady(outNames.at(k), time, vals[k]);
+
+            QVariantList vv;
+            vv.reserve(n);
+            for (int i = 0; i < n; ++i)
+                vv << vals[k].at(i);
+            QVariantList tt;
+            tt.reserve(n);
+            for (int i = 0; i < n; ++i)
+                tt << time.at(i);
+            outPayload.append(QVariantMap{
+                {QStringLiteral("name"), outNames.at(k)},
+                {QStringLiteral("unit"), unit},
+                {QStringLiteral("count"), n},
+                {QStringLiteral("time"), QVariant::fromValue(tt)},
+                {QStringLiteral("value"), QVariant::fromValue(vv)},
+            });
+        }
+
+        IntentResult res;
+        res.payload = QVariantMap{
+            {QStringLiteral("dataset"), dsId},
+            {QStringLiteral("table"), ins.first().table},
+            {QStringLiteral("filter"), QStringLiteral("quat_to_rpy")},
+            {QStringLiteral("outputs"), outPayload},
+            {QStringLiteral("count"), n},
+            {QStringLiteral("incremental"), true},
+            {QStringLiteral("total"), prevTotal + n},
+        };
+        return res;
+    }
+
+    // === 全量分支（首次派生 / 配方变更 / force）===
     // 读四列（各自可来自不同表）。派生读上限放宽到 200k（同 data.state 的
     // kStateMaxPoints）：真实日志远超默认 4096，等步长抽稀时间/值成对取、行对齐保持。
-    constexpr int kDeriveMaxPoints = 200000;
     QVector<ChannelView> cols;
     for (const MimoInput &in : ins)
     {
@@ -393,12 +665,6 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
     // 跨表输入重采样到基准轴。同表输入也统一走这里：门面 readWindow 会把 null/NaN
     // 样本成对剔除（绘图语义），同表各列读出点数可能不同——行对齐不能假设，
     // 必须显式对齐。基准轴有序 → 源列游标单调推进，O(n)。
-    const QString interpMode =
-        intent.params.value(QStringLiteral("interp"), QStringLiteral("linear")).toString();
-    if (interpMode != QLatin1String("linear") && interpMode != QLatin1String("step")
-        && interpMode != QLatin1String("nearest"))
-        return fail(QStringLiteral("eargs"),
-                    QStringLiteral("interp 仅支持 linear/step/nearest: %1").arg(interpMode));
     for (int k = 1; k < 4; ++k)
     {
         const QVector<double> &st = cols[k].time;
@@ -409,39 +675,9 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         if (cols[k].table == cols[0].table && cols[k].value.size() == n
             && std::equal(st.cbegin(), st.cend(), baseT.cbegin()))
             continue; // 快路径：轴完全一致（无 null 剔除）→ 已行对齐
-        QVector<double> out;
-        out.reserve(n);
-        int j = 0; // 源列游标
-        for (int i = 0; i < n; ++i)
-        {
-            const double t = baseT.at(i);
-            if (t <= st.first()) // 范围外：边界延拓取端点（不产 NaN）
-            {
-                out.append(sv.first());
-                continue;
-            }
-            if (t >= st.last())
-            {
-                out.append(sv.last());
-                continue;
-            }
-            while (j + 1 < st.size() - 1 && st.at(j + 1) <= t)
-                ++j; // 保持 st[j] <= t < st[j+1]
-            if (interpMode == QLatin1String("step"))
-            {
-                out.append(sv.at(j));
-                continue;
-            }
-            const double t0 = st.at(j), t1 = st.at(j + 1);
-            if (interpMode == QLatin1String("nearest"))
-                out.append(t - t0 <= t1 - t ? sv.at(j) : sv.at(j + 1));
-            else if (t1 > t0) // 线性插值（重复时间戳防御：退化取左样本）
-                out.append(sv.at(j) * (1.0 - (t - t0) / (t1 - t0))
-                           + sv.at(j + 1) * ((t - t0) / (t1 - t0)));
-            else
-                out.append(sv.at(j));
-        }
-        cols[k].value = out;
+        QVector<double> aligned;
+        resampleToBase(baseT, st, sv, interpMode, aligned);
+        cols[k].value = aligned;
     }
 
     // NaN 防线：null 样本经 kernel 读出即 NaN，quat 归一化会把它传播成垃圾角度——
@@ -458,10 +694,9 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         }
     }
 
-    const bool degrees = intent.params.value(QStringLiteral("degrees"), false).toBool();
-    const bool unwrap = intent.params.value(QStringLiteral("unwrap"), true).toBool();
-
-    QVector<double> r(n), p(n), yaw(n);
+    r.resize(n);
+    p.resize(n);
+    yaw.resize(n);
     char errBuf[512] = {0};
     const int rc = ps_quat_to_rpy(static_cast<uint32_t>(n),
                                   cols[0].value.constData(), cols[1].value.constData(),
@@ -473,24 +708,13 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         return fail(QStringLiteral("ederive"),
                     QStringLiteral("quat_to_rpy 失败: %1").arg(QString::fromUtf8(errBuf)));
 
-    // 输出名：缺省 "<w列>.roll/.pitch/.yaw"（w 列取其列名，跨表对象输入同样适用）。
-    const QString prefix = intent.params.value(QStringLiteral("name")).toString();
-    QStringList outNames = intent.params.value(QStringLiteral("outputs")).toStringList();
-    if (outNames.size() != 3)
-    {
-        const QString base = prefix.isEmpty() ? ins.first().column : prefix;
-        outNames = { base + QStringLiteral(".roll"), base + QStringLiteral(".pitch"),
-                     base + QStringLiteral(".yaw") };
-    }
-
-    QVector<double> time;
-    time.reserve(n);
-    for (int i = 0; i < n; ++i)
-        time.append(cols[0].time.at(i));
-
+    time = baseT;
     const QVector<QVector<double>> vals = { r, p, yaw };
     QVariantList outPayload;
     const QString unit = degrees ? QStringLiteral("deg") : QStringLiteral("rad");
+    // 全量登记时写配方指纹 + 水位（基准轴最大时间戳），为下次同名重发的增量做准备。
+    const QByteArray recipeCopy = recipe;
+    const qint64 fullWater = static_cast<qint64>(std::llround(baseT.last() * 1000000.0));
     for (int k = 0; k < 3; ++k)
     {
         // 登记（独立派生字段）+ 画布事件。
@@ -500,6 +724,8 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         entry.table = ins.first().table;
         entry.column = ins.first().column;
         entry.filterId = QStringLiteral("quat_to_rpy");
+        entry.recipe = recipeCopy;
+        entry.waterUs = fullWater;
         entry.t = time;
         entry.v = vals[k];
         m_app.derivedRegistry().registerSeries(entry);
@@ -529,6 +755,71 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         {QStringLiteral("filter"), QStringLiteral("quat_to_rpy")},
         {QStringLiteral("outputs"), outPayload},
         {QStringLiteral("count"), n},
+        {QStringLiteral("incremental"), false},
+    };
+    return res;
+}
+
+// data.derive.refresh {dataset}：对该数据集全部 MIMO（quat_to_rpy）派生执行增量刷新。
+// 配方从注册表指纹重建（inputs/interp/degrees/unwrap + 注册时的三条输出名），
+// 逐组重发同名 data.derive——同名重发即增量（见 deriveMimoQuat），同一配方的
+// 第 2/3 条输出在首条刷新后水位已推进，自动 no-op。
+// 返回 refreshed = 实际产出新样本的派生组数；无实时源自动触发的钩子前，
+// 这是实时链路刷新派生的入口（脚本/CLI/MCP 周期调用）。
+Result<IntentResult> DataCommandsHandler::refreshDerives(const Intent &intent)
+{
+    DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    if (dsId < 0 && m_app.data().count() == 1)
+        dsId = m_app.data().ids().first();
+    if (dsId < 0)
+        return fail(QStringLiteral("edataset"), QStringLiteral("请指定 dataset 参数"));
+
+    // 按 recipe 指纹分组（同组 = 同一配方派生的三条输出，注册顺序 roll/pitch/yaw）。
+    QHash<QByteArray, QStringList> groups;
+    for (const DerivedSeriesRegistry::Entry &e : m_app.derivedRegistry().all())
+    {
+        if (e.datasetId != dsId || e.filterId != QLatin1String("quat_to_rpy")
+            || e.recipe.isEmpty())
+            continue;
+        groups[e.recipe].append(e.name);
+    }
+
+    int refreshed = 0;
+    for (auto it = groups.constBegin(); it != groups.constEnd(); ++it)
+    {
+        const QStringList outNames = it.value();
+        if (outNames.size() != 3)
+            continue; // 防御：配方组不完整（部分被删）跳过，等下次全量重建
+        const QJsonObject obj = QJsonDocument::fromJson(it.key()).object();
+        QVariantList insV;
+        for (const auto &v : obj.value(QStringLiteral("inputs")).toArray())
+        {
+            const QJsonObject io = v.toObject();
+            insV.append(QVariantMap{
+                { QStringLiteral("table"), io.value(QStringLiteral("table")).toString() },
+                { QStringLiteral("column"), io.value(QStringLiteral("column")).toString() } });
+        }
+        if (insV.size() != 4)
+            continue;
+
+        Intent d;
+        d.op = QStringLiteral("data.derive");
+        d.params[QStringLiteral("dataset")] = dsId;
+        d.params[QStringLiteral("inputs")] = insV;
+        d.params[QStringLiteral("outputs")] = outNames;
+        d.params[QStringLiteral("interp")] = obj.value(QStringLiteral("interp")).toString();
+        d.params[QStringLiteral("degrees")] = obj.value(QStringLiteral("degrees")).toBool(false);
+        d.params[QStringLiteral("unwrap")] = obj.value(QStringLiteral("unwrap")).toBool(true);
+        const auto r = deriveMimoQuat(d);
+        if (r && r.value().payload.toMap().value(QStringLiteral("count")).toInt() > 0)
+            ++refreshed;
+    }
+
+    IntentResult res;
+    res.payload = QVariantMap{
+        { QStringLiteral("dataset"), dsId },
+        { QStringLiteral("groups"), groups.size() },
+        { QStringLiteral("refreshed"), refreshed },
     };
     return res;
 }

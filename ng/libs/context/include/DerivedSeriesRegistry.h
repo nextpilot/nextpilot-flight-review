@@ -10,11 +10,14 @@
 //
 // MIMO（如 quat_to_rpy）一次派生产出多条序列，每条独立登记。
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
 #include <QStringList>
 #include <QVector>
+
+#include <limits>
 
 namespace nextpilot::plotscope::context
 {
@@ -34,12 +37,25 @@ public:
         QJsonObject paramsJson;    // 算子参数（SISO Rust 路径时非空）
         QVector<double> t;   // 结果缓存（秒）
         QVector<double> v;   // 结果缓存（值）
+
+        // === 增量刷新（MIMO 流式派生，对齐 PJ4 增量引擎的水位思想）===
+        // 配方指纹：inputs/interp/degrees/unwrap 的序列化。同名重发 data.derive
+        // 时比对——一致走增量（只算 [waterUs, now] 新段），不一致自动回全量。
+        QByteArray recipe;
+        // 基准轴水位（微秒，UTC）：已处理到的最大基准轴时间戳。
+        // INT64_MIN = 尚未增量过（全量口径）。输出轴以基准轴为准，水位只属基准。
+        qint64 waterUs = std::numeric_limits<qint64>::min();
     };
 
     explicit DerivedSeriesRegistry(QObject *parent = nullptr);
 
     // 登记派生序列。同名覆盖（重复派生同一配方 = 刷新缓存）。返回最终 name。
     QString registerSeries(const Entry &entry);
+
+    // 增量追加（MIMO 流式派生）：向同名 entry 的 t/v 缓存追加新段并更新水位。
+    // 找不到同名 entry 返回 false（调用方应回全量登记）。
+    bool appendSeries(const QString &name, const QVector<double> &tNew,
+                      const QVector<double> &vNew, qint64 waterUs);
 
     // 按名取（穿透读数的入口）。找不到返回 nullptr。
     const Entry *get(const QString &name) const;

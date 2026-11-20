@@ -29,6 +29,9 @@ public:
 
     bool remove(DatasetId id);
     const Dataset *get(DatasetId id) const;
+    // 可变访问：仅限宿主级"数据集维护"操作——增量派生刷新前的 refreshSchema、
+    // 录制回放的 appendFrame 等（Dataset 是共享句柄，可变方法作用于 kernel 本体）。
+    Dataset *getMutable(DatasetId id);
     QVector<DatasetId> ids() const;
     int count() const;
 
