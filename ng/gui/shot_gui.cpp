@@ -20,6 +20,7 @@
 #include "PlotCanvas.h"
 #include "CanvasWorkspace.h"
 #include "ProtocolEditorDialog.h"
+#include "ProtocolTemplateStore.h"
 #include "TransformEditorDialog.h"
 #include "FilterEditorDialog.h"
 #include "Transform.h"
@@ -59,19 +60,32 @@ int main(int argc, char *argv[])
     }
     const QString out = QString::fromLocal8Bit(argv[1]);
 
-    // --protocol <输出png>：截图协议编辑器（填好样例帧并触发校验/试算）。
+    // --protocol <输出png> [模板路径] [样例帧hex] [页签序号]：截图协议编辑器（触发校验/试算）。
+    // 给模板路径时按"打开现有协议"的真实路径载入（走 ProtocolTemplateStore，与 GUI 同一份）。
     if (out == QStringLiteral("--protocol") && argc >= 3)
     {
         const QString png = QString::fromLocal8Bit(argv[2]);
-        nextpilot::plotscope::gui::ProtocolEditorDialog dlg;
-        // 对话框里有两个 QPlainTextEdit（JSON 模板框 + hex 样例框）。
-        // 不依赖构造顺序：含 "{" 的是 JSON 框（保持 blankTemplate 不动），
-        // 另一个是 hex 样例框，写入样例帧。
-        for (auto *edit : dlg.findChildren<QPlainTextEdit *>())
+        const QString tplPath = argc >= 4 ? QString::fromLocal8Bit(argv[3]) : QString();
+        const QString frameHex = argc >= 5 ? QString::fromLocal8Bit(argv[4]) : QString();
+        const int tabIndex = argc >= 6 ? QString::fromLocal8Bit(argv[5]).toInt() : 0;
+        const bool expectShot = argc >= 7 && QString::fromLocal8Bit(argv[6]) == QLatin1String("expect");
+        const bool segShot = argc >= 7 && QString::fromLocal8Bit(argv[6]) == QLatin1String("seg");
+        if (segShot)
         {
-            if (!edit->toPlainText().trimmed().startsWith(QLatin1Char('{')))
-                edit->setPlainText(QStringLiteral("AA 0C 00 01 00"));
+            qputenv("PLOTSCOPE_SHOT_SEG", (png + QStringLiteral("-seg.png")).toUtf8());
+            if (argc >= 8)
+                qputenv("PLOTSCOPE_SHOT_SEG_ROW", argv[7]);
         }
+        nextpilot::plotscope::gui::ProtocolEditorDialog dlg;
+        QByteArray tpl;
+        QString terr;
+        if (!tplPath.isEmpty() &&
+            nextpilot::plotscope::host::ProtocolTemplateStore::read(tplPath, &tpl, &terr, false))
+            dlg.setTemplateText(QString::fromUtf8(tpl), tplPath);
+
+        // 样例帧框：不再靠"哪个框里有 {" 猜，改成找 placeholder/内容判定不可靠，
+        // 直接用对话框的公开接口写样例帧。
+        dlg.setSampleFrame(frameHex.isEmpty() ? QStringLiteral("AA 0C 00 01 00") : frameHex);
         // 触发"校验"与"试算单帧"按钮，让截图带上真实结果。
         for (auto *btn : dlg.findChildren<QPushButton *>())
         {
@@ -79,17 +93,29 @@ int main(int argc, char *argv[])
                 btn->text() == QStringLiteral("试算单帧"))
                 btn->click();
         }
+        dlg.selectTab(tabIndex);
+        if (expectShot)
+        {
+            const int row = argc >= 8 ? QString::fromLocal8Bit(argv[7]).toInt() : 0;
+            dlg.shotExpectLines(row, png + QStringLiteral("-expect.png"));
+        }
         dlg.show();
         QCoreApplication::processEvents();
-        QTimer::singleShot(200, [&] {
+        QTimer::singleShot(expectShot ? 1600 : 200, [&] {
             const QPixmap shot = dlg.grab();
             if (shot.save(png))
                 fprintf(stdout, "协议编辑器截图已保存: %s (%dx%d)\n", qPrintable(png),
                         shot.width(), shot.height());
             else
                 fprintf(stderr, "协议编辑器截图保存失败: %s\n", qPrintable(png));
-            app.quit();
+            if (!segShot)
+                app.quit();
         });
+        if (segShot)
+        {
+            dlg.openFirstSegmentDetail();
+            return 0;
+        }
         return app.exec();
     }
     // 末尾若有两个纯数字，视为宽高；若出现 "dark"/"light" 关键字，视为初始主题。

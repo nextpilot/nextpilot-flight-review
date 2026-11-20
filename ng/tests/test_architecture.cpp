@@ -269,6 +269,29 @@ int main(int argc, char **argv)
     }
     fprintf(stdout, "[ok] 零改动新增：测试内自注册的探针模块被自动装载并可执行\n");
 
+    // 协议模块的意图面已真正接进宿主分发——不是"模块里有个能跑的静态类"。
+    // 走 host.execute 才证明脚本/CLI 拿到的就是这份实现。
+    {
+        Intent v;
+        v.op = QStringLiteral("protocol.validate");
+        v.params.insert(QStringLiteral("template"),
+                        QStringLiteral(R"({"name":"arch_tpl","mode":"bin","layout":"sequential",
+                            "segments":[{"name":"a","type":"u8"}]})"));
+        const auto r = application.host().execute(v);
+        CHECK(r.ok());
+        CHECK(r.value().payload.toMap().value(QStringLiteral("ok")).toBool());
+
+        // 非法模板经同一路径必须带回结构化原因，而不是空错误。
+        Intent bad = v;
+        bad.params.insert(QStringLiteral("template"),
+                          QStringLiteral(R"({"name":"x","segments":[{"name":"a","type":"u8"}]})"));
+        const auto rb = application.host().execute(bad);
+        CHECK(rb.ok()); // 意图本身成功执行
+        CHECK(!rb.value().payload.toMap().value(QStringLiteral("ok")).toBool());
+        CHECK(!rb.value().payload.toMap().value(QStringLiteral("issues")).toStringList().isEmpty());
+    }
+    fprintf(stdout, "[ok] 协议模块意图接入宿主分发：protocol.validate 经 host.execute 可执行\n");
+
     ExtensionRegistry &toolbox = application.host().extensions();
     // 断言语义（关键格式已装入）而非硬编码总数——加一个格式驱动不该让契约测试变红。
     CHECK(toolbox.count() >= 3);

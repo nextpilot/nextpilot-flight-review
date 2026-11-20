@@ -104,6 +104,15 @@ struct CompiledSeg
     ByteCode expect;
     std::vector<CompiledCheck> checks;
     CompiledLength length;
+    // 组重复（块声明 repeater:"*"）：同一组的段整体重复到帧尾。
+    int32_t groupFirst = -1; // 组内第一段在 prog.segs 的下标
+    int32_t groupLast = -1;  // 组内最后一段
+    uint32_t groupBytes = 0; // 一组占多少字节
+
+    // 非线性 transform：表达式逐元素求值（self 编译时已重写成该段自己的槽位）。
+    bool hasTransformExpr = false;
+    ByteCode transformCode;
+
     // 物理换算：恒等时不产生新列。
     bool identityPhys = true;
     double scale = 1.0;
@@ -125,8 +134,11 @@ struct CompiledSeg
 
     bool isText = false;
 
-    // ---- ASCII 词法（SPEC §7）：段边界来自字面量/定界符，不是字节宽度 ----
-    bool isAscii = false;
+    // ---- text 词法（SPEC §7）：段边界来自字面量/定界符，不是字节宽度 ----
+    bool isTextSeg = false;
+    // text：扩展 scanf 格式（已把 type 简写折成转换符）；count 是整条格式的重复次数
+    std::string textFormat;
+    uint32_t textRepeat = 1;
     int boundary = 0;                    // SegBoundary：0 Byte / 1 Literal / 2 Delimit / 3 Fixed / 4 Rest / 5 Repeat
     bool isLiteral = false; // 字面量段：精确匹配、不产通道（如 $ 或 *）
     std::string key;        // key=value：非空时按 "key=" 定位
@@ -138,7 +150,7 @@ struct CompiledSeg
     bool isRest = false;                 // 整块原文，不切分
     bool hasWidth = false;               // fixed 词法：定宽字符数
     uint32_t width = 0;
-    int asciiType = 0;                   // 0=number 1=text（string/char）
+    int textType = 0;                   // 0=number 1=text（string/char）
     int64_t base = 10;
     bool hasFixedDigits = false;
     uint32_t fixedDigits = 0;
@@ -154,6 +166,9 @@ struct CompiledSeg
     int digestKind = 0;                  // 0=none 1=builtin 2=script
     std::string digestAlg;
     std::string digestScript;
+    bool hasDerive = false;              // 派生字段：不读数据，由表达式算出
+    ByteCode derive;
+    bool isTime = false;                 // type:"time"：text 文本时间 → 当天秒
     int repeatMode = 0;                  // 0 none / 1 eos / 2 until
     ByteCode repeatUntil;
     bool digestHasInject = false;        // digest.inject：数据尾部追加的常量字节（CRC_EXTRA）
@@ -193,8 +208,8 @@ struct CompiledProgram
 
     uint32_t maxsize = 4096;
 
-    // ---- 记录层（ASCII）：词法模式 + 帧尾候选集合 ----
-    bool isAscii = false;
+    // ---- 记录层（text）：词法模式 + 帧尾候选集合 ----
+    bool isText = false;
     bool isDelimited = false; // 存在 delimiter 段（记录按切分解析）
     bool hasTerminator = false;
     std::vector<std::string> terminator;

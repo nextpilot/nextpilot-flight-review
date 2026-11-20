@@ -1,72 +1,70 @@
 {
   "name": "demo_seq",
+  "mode": "bin",
   "description": "顺序段、元素个数、CRC 区间、timestamp、系列协议",
   "layout": "sequential",
   "endian": "little",
   "maxsize": 64,
-  "timestamp": {
-    "expr": "time_s",
-    "unit": "s",
-    "origin": "first_frame"
-  },
   "segments": [
     {
       "name": "sync1",
-      "count": 1,
+      "output": "none",
       "type": "u8",
-      "expect": 170,
-      "emit": "none"
+      "count": 1,
+      "expect": [
+        {
+          "op": "eq",
+          "value": 170
+        }
+      ]
     },
     {
       "name": "sync2",
-      "count": 1,
+      "output": "none",
       "type": "u8",
-      "expect": 85,
-      "emit": "none"
+      "count": 1,
+      "expect": [
+        {
+          "op": "eq",
+          "value": 85
+        }
+      ]
     },
     {
       "name": "seq",
-      "count": 1,
-      "type": "u8"
+      "type": "u8",
+      "count": 1
     },
     {
       "name": "msgid",
-      "count": 1,
-      "type": "u16"
+      "type": "u16",
+      "count": 1
     },
     {
       "name": "length",
-      "count": 1,
+      "output": "none",
       "type": "u16",
-      "emit": "none",
-      "length": {
-        "fields": [
-          "payload"
-        ],
-        "unit": "bytes"
-      }
+      "count": 1
     },
     {
       "name": "time_s",
-      "count": 1,
-      "type": "u32"
+      "type": "u32",
+      "count": 1
     },
     {
       "name": "payload",
-      "count": "length",
-      "type": "u8"
+      "type": "u8",
+      "count": "length"
     },
     {
       "name": "crc",
-      "count": 1,
+      "output": "none",
       "type": "u8",
-      "emit": "none",
-      "checks": [
+      "count": 1,
+      "expect": [
         {
           "op": "crc8",
-          "over": [
-            "sync1:payload"
-          ]
+          "over": "sync1:payload"
         }
       ]
     }
@@ -82,17 +80,17 @@
         "segments": [
           {
             "name": "roll",
-            "count": 1,
+            "unit": "rad",
             "type": "i16",
-            "scale": 0.01,
-            "unit": "rad"
+            "count": 1,
+            "transform": "self*0.01"
           },
           {
             "name": "pitch",
-            "count": 1,
+            "unit": "rad",
             "type": "i16",
-            "scale": 0.01,
-            "unit": "rad"
+            "count": 1,
+            "transform": "self*0.01"
           }
         ]
       },
@@ -105,13 +103,18 @@
         "segments": [
           {
             "name": "temp",
-            "count": 1,
+            "unit": "C",
             "type": "i16",
-            "scale": 0.1,
-            "unit": "C"
+            "count": 1,
+            "transform": "self*0.1"
           }
         ]
       }
     ]
+  },
+  "timestamp": {
+    "expr": "time_s",
+    "unit": "s",
+    "origin": "first_frame"
   }
 }

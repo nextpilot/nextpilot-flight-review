@@ -106,7 +106,7 @@ target_include_directories(ng_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 # fastplot：独立绘图库（只依赖 Qt Widgets）。绘图视图通过它绘制，
 # 因此 GUI 侧公共依赖；CLI 不链它，保持 headless 纯净。
-target_link_libraries(ng_gui PUBLIC ng_host ng_context ng_gui_theme ng_gui_transform ng_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
+target_link_libraries(ng_gui PUBLIC ng_host ng_context ng_gui_theme ng_gui_transform ng_protocol ng_module_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
 set_target_properties(ng_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 
@@ -167,3 +167,7 @@ target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-shot PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+
+# Windows：把 ads.dll 拷到本目录各可执行目标旁边，构建完即可直接运行/跑测试。
+ng_deploy_windows_runtime_all()
+

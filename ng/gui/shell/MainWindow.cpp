@@ -661,9 +661,10 @@ void MainWindow::openProtocolInspector()
 
 void MainWindow::openProtocolEditor()
 {
-    // 协议编辑器：编辑 .psproto 模板 + 校验 + 试算，逻辑来自 ng/libs/protocol。
-    // 传入 appCtx 以支持 checksum 变换（算子/表达式/Lua）的在线调试。
-    ProtocolEditorDialog::run(this, &m_appCtx);
+    // 协议编辑器：编辑 .psproto 模板 + 校验 + 试算。
+    // 校验/试算走 protocol.* 意图（m_host 即 RuntimeHost，同时实现 IIntentExecutor），
+    // 与脚本、CLI 用的是同一份实现；appCtx 供 checksum 变换在线调试。
+    ProtocolEditorDialog::run(this, &m_appCtx, m_host);
 }
 
 void MainWindow::showEvent(QShowEvent *event)

@@ -1,5 +1,9 @@
 # psproto v2：模板驱动的动态帧解码库
 
+> **已被 v3 取代（2026-11）。** 当前规范以 `ng/libs/protocol/SPEC.md` 与 `psproto.schema.json` 为准。
+> 本文保留 v2 期的设计取舍与统计，只作为历史背景阅读；文中所有段级键（`scale/offset/range/checks/digest/bit/enum/as/length/repeat/derive/emit`）在 v3 中已删除。
+> v3 的要点：bin 段收敛到 10 键、`blocks`（顺序块/位域块/组重复）、顶层 `derived`、`expect` 统一约束数组、`bit`/`rbit` 用类型值表达位序、bin 与 text 拆两个独立校验/解析器。
+
 > 定位一句话：**用一份 JSON 模板声明帧布局，在运行时编译成段表，再把字节流解成 `channel → (t, v)`。不生成代码，不重编译。**
 >
 > 本文件是 `ng/libs/psproto`（现 `ng/libs/protocol`）的完善方案，含**表达力统计**、schema、流式解析器、编译器与代码生成路线。
@@ -636,7 +640,7 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 | **S2** | `compile()` → 段表 + 表达式字节码；`decode` 改走段表 | 行为与现状逐字段一致（回归测试）；3000 帧基准耗时 ≤ 1/3 | ✅ 完成 |
 | **S3** | `StreamParser`（feedByte/feedChunk/finish/setSink/reset） | 单字节逐喂 与 整块喂 结果一致；跨块半帧正确；尾帧冲刷正确 | ✅ 完成（`StreamDecoder`） |
 | **S4a** | 表达力补齐：`until` / 位域（§4.8）/ 参数化 CRC（含 24 位）/ ASCII 原语 | NMEA、CSV 可解；CAN DBC 32 信号与 cantools 逐位一致；老模板不回归 | ✅ 主体完成；`text_number`、`derive` **未做** |
-| **S4b** | **Lua 兜底接入**：沙箱裁剪、指令配额、脚本预编译、`frame` API、编辑器脚本变量面板 | 用 Lua 写 CRC24Q 与内置 `alg:"crc24/q"` 结果逐位一致；`while true` 被配额中断；`os.execute` 不可用 | ✅ 摘要脚本完成（沙箱 + 指令配额）；**内存配额 / 预编译 / 编辑器面板未做** |
+| **S4b** | **Lua 兜底接入**：沙箱裁剪、指令配额、内存配额、脚本预编译、`frame` API、编辑器脚本变量面板 | 用 Lua 写 CRC24Q 与内置 `alg:"crc24/q"` 结果逐位一致；`while true` 被配额中断；`os.execute` 不可用；超内存预算被拒；同脚本重复调用走字节码缓存 | ✅ 摘要脚本完成（沙箱 + 指令配额 + 1 MiB 内存配额 + 字节码预编译缓存）；**编辑器脚本变量面板未做** |
 | **S4c** | codegen 处理含脚本模板 | 遇到 `lua` 节点**显式报错并列出段名**，不静默降级 | ⛔ 未做（codegen 本身未做） |
 | **S5** | 模板 codegen（帧结构 → 解析器源码） | 生成的 C++ 解析器与解释器逐字段一致 | ⛔ 未做 |
 
@@ -859,11 +863,11 @@ ASCII 流的错误重同步不能逐字节试（一个 100 KB 日志会退化）
 
 ### 9.7 强健性验收（建议直接进 CI）
 
-1. **Fuzz 10 分钟**：随机字节流 + 随机模板，要求不崩、不超时（单次 ≤ 5 ms）、峰值内存 ≤ 2× maxsize；
-2. **畸形模板集（≥100 份）**：全部返回结构化错误，**零异常抛出**、零崩溃；
-3. **单帧诊断**：任一失败帧能给出 帧号 + 段名 + 期望值/实际值；
-4. **静默丢数据零容忍**：任何"丢弃/截断/跳过"都必须出现在 `Diagnostics` 里，不得只有一个计数器；
-5. **u64 精度**：`0xFFFFFFFFFFFFFFFE` 级别的值必须原样解出（当前会失败）。
+1. **Fuzz**：随机字节流 + 随机模板，要求不崩、不超时（单次 ≤ 5 ms）、峰值内存 ≤ 2× maxsize。**已落地**（`test_protocol.cpp` 7d）：默认 2000 轮（约 0.5 s，随单测常跑），`PS_FUZZ_TIME=<秒>` 拉长到千万轮级长稳。三段构成——① 模板 fuzz：一半走可解出骨架（bin 单段，确实产出 467/2000 帧），一半随机越界压校验/解析容错，2000 轮全部给出结构化原因、空错误为 0；② 解码器内部 fuzz：合法 bin/text 模板 × 随机字节 2000 组，`ok + 结构化拒绝` 必须有值，静默失败计缺陷；③ 断言单轮最坏耗时 < 5 ms（实测 2000 轮 0.44 ms / 100 万轮 1.48 ms）。峰值内存实测：常规一轮 maxrss 16.9 MB（主要是 Qt 运行时底座），`PS_FUZZ_TIME=20` 跑满 100 万轮后仍为 16.9 MB，即解码路径不随输入长度增长；严格"≤2×maxsize"口径需要能记账的内部 allocator 钩子（`ScriptEngine` 已有同类机制），CI 侧先用 ulimit 兜底；
+2. **畸形模板集**：全部返回结构化错误，**零异常抛出**、零崩溃；已落地 **108 份**坏模板批量扫荡（结构/类型/键互斥/值域/文本/series/repeat/digest/transform 各维度），validate→parse→compile→decode 全链路零崩溃、零异常，且**断言"必须被拒"**——任何一份被 validate/compile 放行即测试失败；其中 15 份曾真被放行，暴露了 bin 段通用键校验缺失（见 §14.6）；
+3. **单帧诊断**：任一失败帧能给出 帧号 + 段名 + 期望值/实际值。现状：`DecodeError` 已含 `recordOffset`（绝对偏移）/`segment`（段名）/`detail`（期望/实际）/**`recordIndex`（帧号）**/**`warning`（告警而非作废）**，text 与 bin 两路均回填；
+4. **静默丢数据零容忍**：任何"丢弃/截断/跳过"都必须出现在 `Diagnostics` 里，不得只有一个计数器。现状：整帧 reject/abort/overflow/EOF 与段级 warn/skip、段值超 256 截断**全部进 `errors` 明细**（前 128 条，带帧号/偏移/段名/期望实际）；bin 与 text 两路同一口径；
+5. **u64 精度**：`0xFFFFFFFFFFFFFFFE` 级别的值必须原样解出（typed 模型 u64 走 `u` 成员不经 double，已补回归用例钉死高位不丢）。
 
 ---
 
@@ -1267,13 +1271,129 @@ JSON 里 `1` 和 `1.0` 解析后**无法区分**，因此归类规则只能是�
 
 | 项 | 现状 | 判断 |
 |---|---|---|
-| `derive` 计算字段 | 规范里曾列，代码未实现 | 用 `transform` + `digest.script` 已覆盖大部分场景；若出现"表达式直接产通道"的真实需求再补 |
-| 段级 `consume`（读完吞掉 N 字节） | 未实现 | ASCII 分隔符已由 `delimiter` 处理，二进制用填充段 `width`，不另设概念 |
-| 嵌套 / 重复组 | 不实现 | 明确留给专用代码解析器（容器类格式） |
-| 容器格式（PCAP/MDF4/BLF/PNG） | 不实现 | 超出"帧解码"边界 |
-| 模板 codegen（S4c/S5） | 未做 | 性能优化项，解释器路线已可用 |
+| ~~`derive` 计算字段~~ | **已实现**（二进制 + ASCII 两条路径 + 编译期互斥校验） | 需求方明确"必须做"；`{"name":"sum","derive":"a+b"}` 不读数据、不占字节，直接算值出通道 |
+| 段级 `consume`（读完吞掉 N 字节） | **不做** | 跳过字节/字符已有三个边界覆盖：二进制填充用 `width` 定宽段（`skip` 策略不出通道），ASCII 分隔符由 `delimiter` 消费，读到记录尾用 `rest`；再立一个 `consume` 概念与三者重叠，用户要多记一个词。变长跳过（长度由前序段给出、且不留字段）将来若出现真实样例，应做成 `skip` 段的长度表达式，而不是新算子 |
+| 嵌套 / 重复组（结构体嵌套、重复 N 个结构体） | **不做**（v2.1 也不做） | 段模型是扁平槽位表（一维 `slot` + `TypedVec`），下游 Dataset 列也是一维通道；嵌套要引入层级 schema、子帧游标、槽位树，Decoder / Compiler / SPI 契约三处一起改。`variants`（同层多分支）与 `series`（同段重复列）只覆盖同层，不覆盖递归嵌套。真实嵌套（MAVLink 嵌套消息、OEM7 子结构体）归专用代码解析器 |
+| 容器格式（PCAP/MDF4/BLF/PNG） | **锁定不做**（需求方已确认） | 协议库边界是"一帧记录 → 通道"；容器是文件/流组织 + 多通道封包 + 索引/压缩/分块，属 reader/writer 层（`RawReader/RawWriter`、MCAP reader 那条线）。塞进模板会让段模型背文件格式的锅。这些格式由专用 reader 对接 `PsFrameBatch`，协议库不感知。注意：位域 `base` 指向的"容器段"是帧内字节区间（如 CAN 8 字节 body），与本项的文件容器格式不是一回事，不在排除之列 |
+
+**重开任一不做项的统一前提**：① 出现必须在通用模板里表达的真实样例（不是设想）；② 下游 Dataset / SPI 契约已具备对应承载能力；③ 与现有能力（`width`/`rest`/`delimiter`/`variants`/`series`/`derive`）不重叠。三条同时满足才重新评估。
+| 模板 codegen（S5） | 不做 | 见 §14.5：编译期已产出 ByteCode，模板解析不在热路径；再生成一套 C++ 等于把同一语义维护两遍，回归成本翻倍，当前无 profile 证据要求 |
+| codegen 遇 `digest.script`（S4c） | 若未来做 codegen | **告警、不转**：报 `CODEGEN_UNSUPPORTED`，该字段回退运行时 Lua，不静默降级、不生成错误代码 |
+
+### 14.5 codegen 判定（S5 为什么不做 / S4c 口径）
+
+**不做 S5 的三条理由**
+
+1. 收益不在热路径：模板 JSON 只在"打开协议"时解析一次，之后走 `decodeSequentialCompiled` 的 ByteCode/CompiledSeg 数组；每次解码的开销是 I/O、TypedValue 构造与通道写入，不是模板解析。
+2. 代价是双实现：codegen 生成 C++ 后，同一套语义存在"解释器"与"生成代码"两份；`bin/text` 混排、位域、变长、`series`、`derive`、Lua 校验每加一条规则都要改两处并双份回归——长期负债大于一次性性能收益。
+3. 没有证据：仓库内没有 decode 占用 >30% 的 profile 数据；先优化不存在（或未测量）的瓶颈不符合工程顺序。
+
+**S4c 口径（用户已确认）**：将来若真做 codegen，模板里出现 `digest.script`（Lua）→ 编译期**告警** `CODEGEN_UNSUPPORTED`，该字段**不转**、回退运行时 Lua 执行；不允许静默降级或生成"看起来对"的代码。
+
+**重新启动 S5 的前提**：① 有实测 profile 证明解码是瓶颈；② 只覆盖纯二进制定长/位域子集；③ 与解释器共享同一份语义测试向量。
 
 ### 14.4 验收
 
-- [x] 协议单测 23 项全绿（`./build-ng/tests/ng_test_protocol`）；
+- [x] 协议单测 35 项全绿（`./build-ng/tests/ng_test_protocol`），含 `derive`（`a+b`/`a*b`）与 `type:"time"`（`083559.00` → 30959 s、`246100.00` 越界被拒）；
+- [x] 省略 `count` 的标量与 SPEC §2.1 一致（validate 与 parse 都按 1 处理）；
+- [x] 全量 ctest 18/18 通过；
 - [ ] 需求方逐项验收 §14.1 的行为口径（尤其 `repeat:"eos"` 在"后面还有段"时的语义）。
+
+### 14.6 顶层 `mode` 形态声明落地（2026-11-19）
+
+**定稿口径（需求方确认）**
+
+1. 协议顶层**显式声明**形态，键名 `mode`，取值 `bin`（按字节解释，游标按字节推进）/ `text`（按字符串切 token 再解析）；**必填、不设 `mixed`**。
+2. 键名由早期 `format` 统一改为 `mode`；旧称 "ascii" 不准确，全链路改叫 `text`。
+3. 段级键黑白名单互斥，validate 在编译期拒绝越界键（对照表见 SPEC §2.1.1）：
+   - 仅 bin：`count/length/endian/bit/expect/repeat/until`（序列校验 crc/sum/xor/parity 也只对 bin 段放行；text 段"常量等于某文本"用 `checks.eq`）；
+   - 仅 text：`literal/key/delimiter/repeater/width/rest/base/fixed/signed/sci/empty/pattern/time`。
+
+**落地改动**
+
+- 模型 `ProtocolDocument.mode`；parse 读顶层 `mode`，toJson 回写；validate 校验必填与枚举，并由 `doc.mode=="text"` 驱动段级黑白名单（删除原先靠段特征反推 `docAscii` 的推断循环与死函数 `hasCharSegments`/`wantsTokenContext`）。
+- 编译层：`CompiledProgram.isText`（程序级形态）；段级词法标志 `CompiledSeg.isTextSeg`；解码分派 `decodeSequentialCompiled` 与 `previewSequentialFrame` 都按 `prog.isText` 选 `StreamDecoder`（text）或 `readFrame` 字节路径（bin），两路一致。
+
+**命名区分（改名时踩过的坑，留档）**
+
+| 符号 | 含义 | 改名来源 |
+|---|---|---|
+| `CompiledProgram.isText` | 整份协议是 text 形态 | 原 `prog.isAscii` |
+| `CompiledSeg.isTextSeg` | 该段走 text 词法路径（字面量/定界符/定宽） | 原 `cs.isAscii` |
+| `CompiledSeg.isText` | 该段值是 `ValueType::Text`（保留原名，未改） | 原本就叫 `isText` |
+| `CompiledSeg.textType` | 0=number 1=text | 原 `asciiType` |
+
+> 注意：`repeat.mode`（重复模式 `eos`/`until`）是另一个同名键，与顶层 `mode` 无关，未混改。
+
+**验收**：协议单测 35/35 全绿；全量 ctest 18/18。4 个 validate 负例：缺 `mode`、非法值 `xml`、bin 段写 `delimiter`、text 段写 `bit`。`derive` 已补 text 路径用例（`3,4` → sum=7 / prod=12）；`derive`/`time` 在 `previewSequentialFrame` 与 `decodeSequentialCompiled` 双路的 `ok` 结论与派生/时间数值一致。
+
+**Lua 护栏补全（2026-11-19）**：`ScriptEngine` 增加内存配额——自定义 `lua_Alloc` 记账，预算 1 MiB，超预算拒绝分配并归类为"脚本内存超限"（与指令超时区分）；白名单注释对齐为 base/string/table/math（本构建未编 bit32）。负例：`string.rep("x", 2000000)` 被拒且非超时。
+
+**诊断与段级降级（2026-11-19）**：`DecodeError` 增 `recordIndex`（帧号）与 `warning`（告警标志）；`on_mismatch` 此前**只在 text 词法段编译时赋值，bin 段静默失效**——现主段表与变体段表均赋值，`checkFrame` 按 0=reject / 1=warn（写 NaN）/ 2=skip（不出通道）裁决并产出 note；text 路径同口径改走 `degradeSeg`。两路 note 统一归集进 `errors`（前 128 条，带帧号/偏移/段名/期望实际），段值超 256 截断也留明细。
+
+**bin 段校验/编译三层不对称（2026-11-19）**：与 `on_mismatch` 同源的问题又发现两处——① `repeat`（`eos`/`until`）只在 text 编译函数里赋值，bin 段 `repeat` 一直为 0，即**声明了但完全不生效**，现主段表与变体段表补编译，并加正例（eos 读 3 元素 / until 命中即停 1 元素）；② `on_mismatch`/`pattern`/`transform`/`digest` 的校验只挂在 `checkTextSegment`，bin 段写错类型被静默吞掉，现抽出 `checkCommonSegment` 由两种形态共同执行。同时补键类型硬校验（`unit`/`prefix`/`scale`/`offset`/`maxsize`/`expect`/`enum`/`range`）与 digest 未知键拒绝。
+
+**静默失败清零（2026-11-19）**：fuzz 暴露 `ok=false` 但 `error` 为空的无通道路径（text 的 EOF 未闭合、bin 全帧被拒），现统一归因为"没有可绘制通道：帧 #N 段 X —— 原因"/"N 条记录 EOF 未闭合"/推送错误；`StreamDecoder::finish` 补齐 `dropped`/`rejectedFrames` 回写。
+
+**脚本预编译（2026-11-19）**：源码只 `loadstring`/`lua_dump` 一次，字节码按源码文本缓存；每帧仍新建独立干净 state，从字节码 `luaL_loadbuffer` 加载，跳过源码词法语法解析。独立 state 保留可重入与无线程间残留护栏；缓存只存不可变字节码，不持有常驻 Lua state。剩余 Lua 遗留：编辑器脚本变量面板（GUI 层）。
+
+---
+
+## 15. 搬迁记录（原 `protocol-migration.md`，已并入本节）
+
+### 15.1 老资产去向
+
+| 老文件 | 行数 | 现在位置 |
+|---|---|---|
+| `protocol/ProtocolSpec.{h,cpp}` | 341 | `ng/libs/protocol/src/ProtocolSpec.cpp`（结构校验 + 类型表） |
+| `protocol/ProtocolDocument.{h,cpp}` | 1006 | `ng/libs/protocol/src/ProtocolDocument.cpp`（文档模型 + JSON 解析/回写） |
+| `codec/SequentialCodec.{hpp,cpp}` | 1089 | `ng/libs/protocol/src/SequentialCodec.cpp` + `StreamDecoder.cpp`（二进制段表解码 + 流式解码） |
+| `manager/CustomProtocolLoader.cpp` | 912 | `ng/extensions/common/CustomProtocolFormatParser.cpp`（格式驱动） |
+| `dialog/ProtocolEditorDialog.{h,cpp}` | 1857 | `ng/gui/shell/ProtocolEditorDialog.cpp`（322 行，**只搬了 JSON 编辑 + 校验 + 单帧试算，段表/变体行 UI 未搬**） |
+
+> 旧树 `src/application/modules/protocol/codec/SequentialCodec.{hpp,cpp}` **仍在且是有意保留的**：它是旧应用自己的实现，不在 `ng/` 构建图内（`ng_protocol` 只编 `ng/libs/protocol/src`），按 §15.3 红线只读不改。
+
+### 15.2 已搬与未搬
+
+| 项 | 状态 |
+|---|---|
+| 头部段全解析 + 变体分支（定长与变长都支持） | ✅ 已搬 |
+| 段内 `checks`（eq/ne/lt/le/gt/ge/in/range/mask） | ✅ 已搬 |
+| 段内序列校验（CRC8/16/32、sum、xor、parity、参数化 poly/init/xorout/refin/refout/width） | ✅ 已搬（`digest`） |
+| `scale/offset`、端序、BCD、STR | ✅ 已搬（BCD/char 走类型表） |
+| 格式驱动 + Pack 登记（`.bin/.raw/.frames` + 模板字段） | ✅ 完成（`CustomProtocolFormatParser`） |
+| 编辑器：JSON 编辑 + 校验 + 单帧 hex 试算 + 文件读写 | ✅ 可用（322 行，**纯文本编辑器，无段表/变体可视化**） |
+| 编辑器变体字段可视化增删、字段拖拽排序 | ⛔ 未做（无段列表/字段表单 UI，需从零建面板） |
+| Lua 脚本重建（编辑器改脚本后已配置数据源的生效策略） | ⛔ 未定义（缓存按源码文本 key，会话仍持编译期快照） |
+| 流传输（串口/网络）下的协议解码 | ⛔ 未做（仅文件；`CustomProtocolParser.streaming=0` 全流缓冲；deps 内只有 Qt6Network，无 Qt6SerialPort） |
+| 通用载入对话框（schema + probe + 预览） | ✅ **代码已实现**（`ImportDialog`，schema 驱动、不含任何格式知识）；⛔ **未接入** —— `MainWindow.cpp` 仍直接 `QFileDialog::getOpenFileName` |
+
+### 15.2.1 边界声明（2026-11-19 收尾）
+
+`ng/libs/protocol`（目标 `ng_protocol`）**到此交付完毕**：独立 static lib，依赖只有 `Qt6::Core` 与 `deps/lua`，不链 Widgets、不链 Rust kernel、不认 Dataset、不读 `src/`；协议单测 35 项、全量 ctest 18/18。
+
+上表中 ⛔ 的四项**全部在库外**（GUI 编辑器 / 传输层 / 载入入口），不属于本库范围，也未立项：任何一项开工都需要先定自己的验收口径，不得以"补协议库"的名义顺手做。
+
+### 15.2.2 模块层意图面（`ng/modules/protocol`，2026-11-19）
+
+库之上补了模块层，让协议能力脱离对话框也能被脚本/CLI 使用。模块从"只声明 4 个 Ribbon 动作"变成真正注册意图处理器：
+
+| op | 入参 | 出参 | 对应旧能力 |
+|---|---|---|---|
+| `protocol.validate` | `template` 内联 或 `templatePath` | `{ok, stage(json/spec/parse/compile/ok), issues[], name, mode, segmentCount}` | 编辑器"校验"按钮的内核 |
+| `protocol.preview` | 模板 + `frame`(hex) 或 `frameBase64` | `{ok, lines[], error, frameBytes}` | 编辑器"试算单帧" |
+| `protocol.templates.list` | — | `{dir, suffix, items[], count}` | 新增（模板库内省） |
+| `protocol.templates.save` | `name` + 模板 | `{ok, path}` | 新增（先 validate 后原子写） |
+
+设计要点：
+- **分阶段返回** `stage`：用户改模板时先要知道卡在 spec 还是 compile，而不是拿到一句合并报错。
+- `ProtocolTemplateStore` 是 `.psproto` 的唯一读写入口（目录 = `AppConfigLocation/protocols`，与 GUI 同一处），名字白名单拒绝路径分隔符与 `..`，落盘走 `QSaveFile` 原子替换，读入上限 8 MiB。
+- `ModuleInfo.capabilities` 与 op 表一一对应（`protocol.validate/preview/templates`）：声明了却不实现等于对外承诺空入口。
+- 验收：`ng_test_protocol_module` 覆盖 4 个 op 的正常/拒绝双路（op 认领、四阶段、hex/base64、越界名）；`test_architecture` 增加一条 `host.execute("protocol.validate")` 端到端断言——证明它进的是宿主分发链，而不是模块内的孤立实现。
+- 仍不做：GUI 按钮改调这些 op（现在是外壳按 action id 特判弹框），以及传输层。
+
+### 15.3 红线（继续有效）
+
+- `src/` 只读参考，不改一行。
+- headless 库不链 Qt Widgets；`ng_protocol` 不认识 Dataset / 宿主。
+- 解析器零拷贝：喂入的 buffer 不由解析器持有，产出批走 sink。

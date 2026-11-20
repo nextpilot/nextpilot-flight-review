@@ -329,7 +329,6 @@ struct Compiler
     const ProtocolDocument &doc;
     CompiledProgram &out;
     std::string &err;
-    bool docHasChar = false; // 任一顶层段有字符边界（literal/delimiter/width/rest/repeater）
     std::map<std::string, int32_t> slotOf; // 名字 → 槽位
 
     bool fail(const std::string &m)
@@ -469,26 +468,12 @@ struct Compiler
     }
 };
 
-// ASCII 词法段编译（SPEC §7）：把候选定界符展开、字面量/重复/数值解释搬到段表，
+// text 词法段编译（SPEC §7）：把候选定界符展开、字面量/重复/数值解释搬到段表，
 // digest 的 from/to 端点在这里解析成段下标（-1 frame_start / -2 frame_end / -3 before:self）。
 // 段在"记录里有字符边界段"的上下文里，且声明了任何字符语义键（进制/定宽/校验/模式/变换/
 // 输出覆盖）→ 它就该按 token 解析，而不是按 type 宽度读字节。典型：NMEA 的 check 段
 // （只有 base=16 + digest，没有 delimiter）。
-static bool hasCharSegments(const ProtocolDocument &doc)
-{
-    for (const SegSpec &s : doc.segments)
-        if (boundaryOf(s) != SegBoundary::Byte)
-            return true;
-    return false;
-}
-
-static bool wantsTokenContext(const SegSpec &s)
-{
-    return s.digest.enabled || s.base != 10 || s.hasFixedDigits || !s.as.empty() || !s.pattern.empty() ||
-           !s.onMismatch.empty() || !s.emptyPolicy.empty() || !s.transform.empty();
-}
-
-bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
+bool compileTextSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
 {
     cs.boundary = static_cast<int>(boundaryOf(s));
     cs.key = s.key;
@@ -496,7 +481,16 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
         return c.fail("段 " + s.name + " 的 width 必须在 1..65535");
     if (!s.literal.empty() && (s.hasDelimiter || s.hasWidth || s.isRest))
         return c.fail("段 " + s.name + " 的 literal 与 delimiter/width/rest 互斥");
-    cs.isAscii = (cs.boundary != static_cast<int>(SegBoundary::Byte)) || (c.docHasChar && wantsTokenContext(s));
+    if (s.derive)
+    {
+        if (!c.compileExpr(s.derive, cs.derive))
+            return false;
+        cs.hasDerive = true;
+        cs.type = ValueType::F64;
+        return true; // 派生字段不参与边界/字节布局
+    }
+    cs.isTime = s.type.isTime;
+    cs.isTextSeg = (c.doc.mode == "text");
     if (!s.as.empty())
     {
         TypeInfo ti;
@@ -504,14 +498,70 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
         if (!parseType(s.as, ti, terr))
             return c.fail("as 类型非法：" + s.as);
         cs.type = ti.type;
-        cs.asciiType = (ti.type == ValueType::Text) ? 1 : 0;
+        cs.textType = (ti.type == ValueType::Text) ? 1 : 0;
     }
-    if (cs.isAscii && cs.boundary == static_cast<int>(SegBoundary::Byte))
+    if (cs.isTextSeg && cs.boundary == static_cast<int>(SegBoundary::Byte))
         cs.boundary = static_cast<int>(SegBoundary::Delimit); // 单 token（无定界符，靠后续边界/记录尾）
-    if (!cs.isAscii)
+    if (!cs.isTextSeg)
         return true;
     cs.isLiteral = !s.literal.empty();
     cs.literal = s.literal;
+    // format：由第一个取值转换符定出列类型与进制（%* 丢弃不算）
+    if (!s.format.empty())
+    {
+        cs.textFormat = s.format;
+        ValueType vt = ValueType::Text;
+        for (size_t i = 0; i < s.format.size(); ++i)
+        {
+            if (s.format[i] != '%')
+                continue;
+            ++i;
+            if (i >= s.format.size())
+                break;
+            if (s.format[i] == '%')
+                continue;
+            bool dis = false;
+            if (s.format[i] == '*')
+            {
+                dis = true;
+                ++i;
+            }
+            while (i < s.format.size() && std::isdigit(static_cast<unsigned char>(s.format[i])))
+                ++i;
+            if (i >= s.format.size())
+                break;
+            const char c = s.format[i];
+            if (dis)
+                continue;
+            if (c == 'f' || c == 'e' || c == 'g' || c == 't' || c == 'T')
+                vt = ValueType::F64;
+            else if (c == 's' || c == 'c' || c == '[')
+                vt = ValueType::Text;
+            else
+                vt = ValueType::I64;
+            break;
+        }
+        cs.type = vt;
+        // 整条 format 没有转换符 = 纯字面段：走字面匹配，同时保住帧首锚点（$）
+        if (s.format.find('%') == std::string::npos)
+        {
+            cs.isLiteral = true;
+            cs.literal = s.format;
+            cs.boundary = static_cast<int>(SegBoundary::Literal);
+            // 字面段匹配本身就是判等，再挂 expect 会被当成"第二个条件"，含义重复且容易被误解成
+            // "字面可替换" —— 编译期直接拦下，别留静默空间。
+            if (s.expectExpr || !s.checks.empty())
+                return c.fail("段 " + s.name + " 是纯字面段，不能写 expect（字面匹配已即判等）");
+        }
+        // 进制由转换符决定：%x/%X → 16，%o → 8，其余一律十进制。
+        // （文本段没有 base 键，别让 s.base 的默认值把这里推出的结果覆盖掉。）
+        cs.base = (s.format.find("%x") != std::string::npos || s.format.find("%X") != std::string::npos)
+                      ? 16
+                      : (s.format.find("%o") != std::string::npos ? 8 : 10);
+    }
+    cs.textRepeat = s.countExpr && s.countExpr->kind == Expr::Num && s.countExpr->ival > 0
+                        ? static_cast<uint32_t>(s.countExpr->ival)
+                        : 1u;
     cs.hasDelimiter = s.hasDelimiter;
     for (const auto &d : s.delimiter)
     {
@@ -527,8 +577,9 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
     cs.isRest = s.isRest;
     cs.hasWidth = s.hasWidth;
     cs.width = s.width;
-    cs.asciiType = (s.type.type == ValueType::Text) ? 1 : 0;
-    cs.base = s.base;
+    cs.textType = (s.type.type == ValueType::Text) ? 1 : 0;
+    if (!cs.isTextSeg)
+        cs.base = s.base;
     cs.hasFixedDigits = s.hasFixedDigits;
     cs.fixedDigits = s.fixedDigits;
     cs.signedFlag = s.signedFlag;
@@ -537,7 +588,7 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
     cs.pattern = s.pattern;
     cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
     cs.transform = s.transform;
-    if (!s.repeatMode.empty() && !cs.isAscii)
+    if (!s.repeatMode.empty() && !cs.isTextSeg)
     {
         cs.repeatMode = (s.repeatMode == "eos") ? 1 : 2;
         if (cs.repeatMode == 2 && !c.compileExpr(s.repeatUntil, cs.repeatUntil))
@@ -589,15 +640,208 @@ bool compileAsciiSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
 
 } // namespace
 
+// ---- v3 块展开 ----
+static ExprPtr constCountExpr(int64_t n)
+{
+    auto e = std::make_shared<Expr>();
+    e->kind = Expr::Num;
+    e->isInt = true;
+    e->ival = n;
+    return e;
+}
+
+// 把 segments 里"type 指向块名"的段摊平成普通段，后续编译/解码无需知道块的存在。
+//   位域块（of 非空）：先造一个读容器的占位段（不出通道），再让每个字段的位窗口相对容器起点；
+//   顺序块（of 为空）：字段按序读字节，通道名摊成 段名.字段名。
+// 常量 count=N 摊成 N 份，命名 段名[i].字段名（对应界面里的 payload[i].a）。
+// count:"*"（整组重复到帧尾）需要组循环，尚未接入，这里明确报错而不是静默按 1 处理。
+// 深拷贝表达式树，并把指向 from 的 Ref 换名成 to。
+// v3 的 transform 表达式里 self 指本段原始值：编译成字节码时直接换成该段自己的槽位名。
+static ExprPtr renameRefs(const ExprPtr &e, const std::string &from, const std::string &to)
+{
+    if (!e)
+        return e;
+    auto n = std::make_shared<Expr>();
+    *n = *e;
+    n->name = (e->kind == Expr::Ref && e->name == from) ? to : e->name;
+    n->a = renameRefs(e->a, from, to);
+    n->b = renameRefs(e->b, from, to);
+    n->c = renameRefs(e->c, from, to);
+    return n;
+}
+
+// transform 表达式一律按浮点算：物理量本来就是实数，
+// 否则 (self-32)*5/9 会走整型整除，5/9 直接变 0。字面量统一转浮点。
+static ExprPtr floatize(const ExprPtr &e)
+{
+    if (!e)
+        return e;
+    auto n = std::make_shared<Expr>();
+    *n = *e;
+    if (e->kind == Expr::Num && e->isInt)
+    {
+        n->isInt = false;
+        n->num = static_cast<double>(e->ival);
+    }
+    n->a = floatize(e->a);
+    n->b = floatize(e->b);
+    n->c = floatize(e->c);
+    return n;
+}
+
+struct FlatGroup
+{
+    size_t first = 0;
+    size_t count = 0;
+    uint32_t bytes = 0;
+};
+
+static bool expandBlockSegs(const ProtocolDocument &doc, std::vector<SegSpec> &out,
+                            std::vector<FlatGroup> &groups, std::string &err)
+{
+    for (const SegSpec &s : doc.segments)
+    {
+        if (s.blockRef.empty())
+        {
+            out.push_back(s);
+            continue;
+        }
+        auto it = doc.blocks.find(s.blockRef);
+        if (it == doc.blocks.end())
+        {
+            err = "段 " + s.name + " 引用的块不存在：" + s.blockRef;
+            return false;
+        }
+        const BlockDef &b = it->second;
+        if (b.fields.empty())
+        {
+            err = "块 " + b.name + " 没有字段";
+            return false;
+        }
+        // 组重复由块自己的 repeater:"*" 声明，段不再写 count:"*"（重复不算字段数）。
+        const bool repeats = (b.repeater == "*");
+        if (s.countWildcard)
+        {
+            err = repeats ? "段 " + s.name + "：块已用 repeater 声明重复，不要再写 count:\"*\""
+                          : "段 " + s.name + "：组重复请写在块的 repeater 上，段的 count:\"*\" 对块无效";
+            return false;
+        }
+        int64_t reps = 1;
+        if (s.countExpr)
+        {
+            if (s.countExpr->kind != Expr::Num || !s.countExpr->isInt || s.countExpr->ival <= 0)
+            {
+                err = "段 " + s.name + " 引用块时 count 只能是正整数常量";
+                return false;
+            }
+            reps = s.countExpr->ival;
+        }
+        if (repeats && reps != 1)
+        {
+            err = "段 " + s.name + "：块已声明 repeater，不能再写 count";
+            return false;
+        }
+        if (reps > 100000)
+        {
+            err = "段 " + s.name + " 引用块时 count 过大";
+            return false;
+        }
+
+        // 一组占多少字节：位域块就是容器宽度；顺序块是各字段定长之和。
+        TypeInfo containerTi;
+        uint32_t groupBytes = 0;
+        if (!b.of.empty())
+        {
+            std::string terr;
+            if (!parseType(b.of, containerTi, terr) || containerTi.size == 0)
+            {
+                err = "块 " + b.name + " 的 of 类型非法：" + b.of;
+                return false;
+            }
+            groupBytes = containerTi.size;
+        }
+        else
+        {
+            for (const SegSpec &f : b.fields)
+            {
+                if (f.bit.enabled)
+                {
+                    err = "块 " + b.name + " 的字段 " + f.name + " 是位域字段，顺序块不能用";
+                    return false;
+                }
+                if (!f.countExpr || f.countExpr->kind != Expr::Num || !f.countExpr->isInt ||
+                    f.countExpr->ival <= 0)
+                {
+                    err = "块 " + b.name + " 的字段 " + f.name + " 不是定长，不能作为重复组";
+                    return false;
+                }
+                groupBytes += static_cast<uint32_t>(f.countExpr->ival * f.type.size);
+            }
+            if (groupBytes == 0)
+            {
+                err = "块 " + b.name + " 占 0 字节，无法重复";
+                return false;
+            }
+        }
+
+        const size_t startIdx = out.size();
+        for (int64_t r = 0; r < reps; ++r)
+        {
+            const std::string inst = (reps == 1) ? s.name : s.name + "[" + std::to_string(r) + "]";
+            if (!b.of.empty())
+            {
+                SegSpec cont;
+                cont.name = inst;
+                cont.type = containerTi;
+                cont.countExpr = constCountExpr(1);
+                cont.bigEndian = s.bigEndian;
+                cont.emitMode = EmitMode::None;
+                cont.prefix = s.prefix;
+                out.push_back(cont);
+            }
+            for (const SegSpec &f : b.fields)
+            {
+                SegSpec fs = f;
+                fs.name = inst + "." + f.name;
+                fs.prefix = s.prefix;
+                if (!b.of.empty())
+                    fs.bit.base = inst; // 位窗口偏移相对容器起点
+                out.push_back(fs);
+            }
+        }
+        if (repeats)
+            groups.push_back(FlatGroup{startIdx, out.size() - startIdx, groupBytes});
+    }
+    return true;
+}
+
 bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                                                     CompiledProgram &out, std::string &err)
 {
     out = CompiledProgram{};
     out.maxsize = doc.maxsize;
-    Compiler c{doc, out, err, hasCharSegments(doc), {}};
+    Compiler c{doc, out, err, {}};
+
+    // 0) 块展开：把 type 指向块的段摊平成普通段，后面所有环节只认摊平结果。
+    std::vector<SegSpec> flat;
+    std::vector<FlatGroup> groups;
+    if (!expandBlockSegs(doc, flat, groups, err))
+        return false;
+
+    // v3 顶层 derived：摊成"派生段"追加到末尾——不读字节、不进边界计算，按序求值。
+    for (const DerivedDef &dd : doc.derived)
+    {
+        SegSpec ds;
+        ds.name = dd.name;
+        ds.derive = dd.expr;
+        ds.unit = dd.unit;
+        ds.description = dd.description;
+        ds.emitMode = dd.emitMode;
+        flat.push_back(std::move(ds));
+    }
 
     // 1) 槽位：顶层段在前，变体段按出现顺序追加。表达式里能用到的名字都在这里解析。
-    for (const SegSpec &s : doc.segments)
+    for (const SegSpec &s : flat)
     {
         CompiledSlot slot;
         slot.name = s.name;
@@ -605,6 +849,15 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         slot.elemSize = s.type.size;
         slot.bigEndian = s.bigEndian;
         c.slotOf[s.name] = static_cast<int32_t>(out.slotTable.size());
+        // 块内字段摊平后名字是 块名.字段名，表达式里只认裸字段名：补一条别名指到同一槽位。
+        // 同一裸名出现多次时以最早的那个实例为准（与校验端的注册顺序一致）。
+        const size_t dot = s.name.rfind('.');
+        if (dot != std::string::npos)
+        {
+            const std::string bare = s.name.substr(dot + 1);
+            if (c.slotOf.find(bare) == c.slotOf.end())
+                c.slotOf[bare] = static_cast<int32_t>(out.slotTable.size());
+        }
         out.slotTable.push_back(slot);
     }
     for (const VariantSpec &v : doc.series.variants)
@@ -619,9 +872,10 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             out.slotTable.push_back(slot);
         }
 
-    // 2) 顶层段表。
-    for (const SegSpec &s : doc.segments)
+    // 2) 顶层段表（摊平后）。
+    for (size_t fi = 0; fi < flat.size(); ++fi)
     {
+        const SegSpec &s = flat[fi];
         CompiledSeg cs;
         cs.name = s.name;
         cs.unit = s.unit;
@@ -634,8 +888,19 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         cs.offset = s.offset;
         cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
         cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
+        // 段级降级策略与文本词法参数在 bin 段同样生效（此前只在 text 编译函数里赋值）。
+        cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
+        cs.pattern = s.pattern;
+        cs.emptyPolicy = s.emptyPolicy;
+        // repeat 同样是"仅 bin"键，此前只在 text 编译函数里编译 → bin 段 repeat 一直静默为 0。
+        if (!s.repeatMode.empty())
+        {
+            cs.repeatMode = (s.repeatMode == "eos") ? 1 : 2;
+            if (cs.repeatMode == 2 && !c.compileExpr(s.repeatUntil, cs.repeatUntil))
+                return false;
+        }
         cs.isText = (s.type.type == ValueType::Text);
-        if (!compileAsciiSeg(s, cs, c))
+        if (!compileTextSeg(s, cs, c))
             return false;
 
         // 位域：不占独立字节，count 恒为 1，值从容器（或帧首）的位窗口取。
@@ -662,6 +927,15 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             cs.constBytes = 0;
         }
 
+        // 非线性 transform：解析期折不成 self*k+b 的表达式，逐帧求值。
+        if (s.transformExpr)
+        {
+            cs.hasTransformExpr = true;
+            cs.identityPhys = false;
+            if (!c.compileExpr(floatize(renameRefs(s.transformExpr, "self", s.name)), cs.transformCode))
+                return false;
+        }
+
         // 段级 if：条件不成立就跳过该段。
         if (s.cond)
         {
@@ -680,9 +954,9 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                 return c.fail("段 " + s.name + " 的 count 非法");
             cs.countIsConst = true;
             cs.constCount = static_cast<uint32_t>(v);
-            // ASCII 段的元素个数由定界符决定，不占"字节区间"，constBytes 恒为 0。
-            cs.constBytes = cs.isAscii ? 0 : cs.constCount * s.type.size;
-            if (!cs.isAscii && (cs.constBytes == 0 || cs.constBytes > (1u << 20)))
+            // text 段的元素个数由定界符决定，不占"字节区间"，constBytes 恒为 0。
+            cs.constBytes = cs.isTextSeg ? 0 : cs.constCount * s.type.size;
+            if (!cs.isTextSeg && (cs.constBytes == 0 || cs.constBytes > (1u << 20)))
                 return c.fail("段 " + s.name + " 字节数非法");
         }
         else
@@ -786,6 +1060,16 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             if (s.length.expr && !c.compileExpr(s.length.expr, cs.length.expr))
                 return false;
         }
+        for (const FlatGroup &g : groups)
+        {
+            if (fi >= g.first && fi < g.first + g.count)
+            {
+                cs.groupFirst = static_cast<int32_t>(g.first);
+                cs.groupLast = static_cast<int32_t>(g.first + g.count - 1);
+                cs.groupBytes = g.bytes;
+                break;
+            }
+        }
         out.segs.push_back(std::move(cs));
     }
 
@@ -810,8 +1094,17 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             cs.offset = s.offset;
             cs.identityPhys = (s.scale == 1.0 && s.offset == 0.0);
             cs.emitMode = (s.emitMode == EmitMode::Channel) ? 0 : (s.emitMode == EmitMode::Aux ? 1 : 2);
+            cs.onMismatch = (s.onMismatch == "warn") ? 1 : (s.onMismatch == "skip" ? 2 : 0);
+            cs.pattern = s.pattern;
+            cs.emptyPolicy = s.emptyPolicy;
+            if (!s.repeatMode.empty())
+            {
+                cs.repeatMode = (s.repeatMode == "eos") ? 1 : 2;
+                if (cs.repeatMode == 2 && !c.compileExpr(s.repeatUntil, cs.repeatUntil))
+                    return false;
+            }
             cs.isText = (s.type.type == ValueType::Text);
-            if (!compileAsciiSeg(s, cs, c))
+            if (!compileTextSeg(s, cs, c))
                 return false;
 
                     // 位域：不占独立字节，count 恒为 1，值从容器（或帧首）的位窗口取。
@@ -856,7 +1149,7 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                     return c.fail("变体段 " + s.name + " 的 count 非法");
         cs.countIsConst = true;
                 cs.constCount = static_cast<uint32_t>(n);
-                cs.constBytes = cs.isAscii ? 0 : cs.constCount * s.type.size;
+                cs.constBytes = cs.isTextSeg ? 0 : cs.constCount * s.type.size;
             }
             if (s.expectExpr)
             {
@@ -888,13 +1181,11 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             return c.fail("series.payload 引用了未知段");
     }
 
-    // 记录层（ASCII）：段表里只要有一个 ASCII 段，整条记录就走词法切分而不是字节读。
+    // 记录层形态由顶层 mode 决定（SPEC §2.1.1），不靠段特征推断。
+    out.isText = (doc.mode == "text");
+    // 有段用定界符切 token → 记录按"切分"解析（与是否称它为 text 无关）。
     for (const CompiledSeg &cs : out.segs)
-        if (cs.isAscii)
-            out.isAscii = true;
-    // 有段用定界符切 token → 记录按"切分"解析（与是否称它为 ASCII 无关）。
-    for (const CompiledSeg &cs : out.segs)
-        if (cs.hasDelimiter)
+        if (cs.hasDelimiter || cs.boundary == static_cast<int>(SegBoundary::Format))
             out.isDelimited = true;
     out.hasTerminator = doc.hasTerminator;
     out.terminator = doc.terminator;
@@ -907,6 +1198,30 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             out.startAnchor = cs.literal;
             break;
         }
+    }
+    // 首段用 expect 判等且值是字面串时，它也是帧首识别点（NMEA 除了 "$" 还有 "$GPGGA" 这种）。
+    if (out.isText && !out.hasStartAnchor && !out.segs.empty())
+    {
+        const CompiledSeg &first = out.segs.front();
+        for (const CompiledCheck &ck : first.checks)
+        {
+            if (ck.op != "eq" || ck.values.size() != 1 ||
+                ck.values.front().type != ValueType::Text)
+                continue;
+            if (ck.values.front().s.size() >= 2)
+            {
+                out.hasStartAnchor = true;
+                out.startAnchor = ck.values.front().s;
+            }
+            break;
+        }
+    }
+    // text 也必须先能定位帧首：锚点（首段字面 / expect 判等）或记录终止符，二者至少一个。
+    // 否则等于在流里任意偏移直接 scanf，会把垃圾数据读成字段。
+    if (out.isText && !out.hasStartAnchor && !out.hasTerminator)
+    {
+        err = "text 协议必须先能定位帧首：首段写字面（如 \"$\"）、首段 expect 判等，或顶层写 terminator";
+        return false;
     }
     out.hasTimestamp = doc.hasTimestamp && doc.timestampExpr;
     if (out.hasTimestamp)

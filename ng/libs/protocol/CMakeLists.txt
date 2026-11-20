@@ -8,6 +8,9 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_library(ng_protocol STATIC
     src/ProtocolDocument.cpp
     src/ProtocolSpec.cpp
+    src/core/SharedSpec.cpp
+    src/bin/BinSpec.cpp
+    src/text/TextFormat.cpp
     src/CompiledProgram.cpp
     src/SequentialCodec.cpp
     src/DigestEngine.cpp
@@ -19,16 +22,18 @@ add_library(ng_protocol STATIC
     include/protocol/CompiledProgram.h
     include/protocol/DigestEngine.h
     include/protocol/StreamDecoder.h
+    include/protocol/TextFormat.h
     include/protocol/ScriptEngine.h
 )
 
-# 脚本后端：仓库内 deps/lua（Lua 5.4 静态库），不走系统包。
-set(NG_LUA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../deps/lua")
-if(EXISTS "${NG_LUA_ROOT}/lib/liblua.a")
-    target_include_directories(ng_protocol PRIVATE "${NG_LUA_ROOT}/include")
-    target_link_libraries(ng_protocol PUBLIC "${NG_LUA_ROOT}/lib/liblua.a" m ${CMAKE_DL_LIBS})
-    target_compile_definitions(ng_protocol PUBLIC NG_PROTOCOL_LUA=1)
+# 脚本后端：仓库内 src/3rdparty/lua-5.4（源码编库，目标 lua::lua），不走系统包。
+# 目标由 ng 顶层 add_subdirectory 提供；路径、平台差异（m/libdl）都在 lua 目标自己身上，
+# 这里只管链接，不再出现任何 ../../../deps 之类写死的路径。
+if(NOT TARGET lua)
+    message(FATAL_ERROR "缺少 lua::lua 目标：ng/CMakeLists.txt 需要先引入 src/3rdparty/lua-5.4")
 endif()
+target_link_libraries(ng_protocol PUBLIC lua::lua)
+target_compile_definitions(ng_protocol PUBLIC NG_PROTOCOL_LUA=1)
 target_include_directories(ng_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ng_protocol PUBLIC Qt6::Core)
 set_target_properties(ng_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17)

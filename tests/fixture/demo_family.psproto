@@ -1,28 +1,5 @@
 {
   "name": "demo_family",
-  "frame_size": 12,
-  "sync": [
-    {"offset": 0, "value": 170},
-    {"offset": 1, "value": 85}
-  ],
-  "msgid": {"byte": 4, "bits": 8},
-  "fields": [
-    {"name": "msgid", "byte": 4, "bits": 8, "hidden": true}
-  ],
-  "variants": [
-    {
-      "id": 1,
-      "name": "att",
-      "fields": [
-        {"name": "roll", "byte": 5, "bits": 16, "signed": true, "scale": 0.01, "unit": "rad"}
-      ]
-    },
-    {
-      "id": 2,
-      "name": "env",
-      "fields": [
-        {"name": "temp", "byte": 5, "bits": 16, "signed": false, "scale": 0.1, "unit": "C"}
-      ]
-    }
-  ]
+  "mode": "bin",
+  "segments": []
 }

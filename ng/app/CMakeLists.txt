@@ -14,3 +14,7 @@ target_link_libraries(plotscope-ng PRIVATE
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 set_target_properties(plotscope-ng PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+
+# Windows：把 ads.dll 拷到本目录各可执行目标旁边，构建完即可直接运行/跑测试。
+ng_deploy_windows_runtime_all()
+

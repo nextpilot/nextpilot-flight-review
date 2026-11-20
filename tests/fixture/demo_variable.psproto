@@ -1,29 +1,3 @@
 {
- "frame_size": 16,
- "sync": [
-  170,
-  85
- ],
- "length": {
-  "byte": 2,
-  "bytes": 2,
-  "endian": "big",
-  "includes_header": true
- },
- "fields": [
-  {
-   "name": "roll",
-   "byte": 4,
-   "bits": 16,
-   "signed": true,
-   "scale": 0.01,
-   "unit": "rad"
-  },
-  {
-   "name": "temp",
-   "byte": 6,
-   "bits": 8,
-   "unit": "C"
-  }
- ]
+  "segments": []
 }

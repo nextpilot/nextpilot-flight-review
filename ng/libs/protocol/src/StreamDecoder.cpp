@@ -2,6 +2,7 @@
 
 #include "protocol/CompiledProgram.h"
 #include "protocol/DigestEngine.h"
+#include "protocol/TextFormat.h"
 
 #include <algorithm>
 #include <cctype>
@@ -47,6 +48,34 @@ void applyTransforms(const CompiledSeg &seg, TypedValue &v)
     }
 }
 
+// 表达式 transform（非线性）：把本段当前值临时占位到自己的槽位，self 才指得到它。
+// 算子数组走 applyTransforms；表达式走字节码，两条路径都在这里收口。
+bool applyValueTransforms(const CompiledSeg &seg, std::vector<TypedVec> &cols, TypedValue &v,
+                          std::string &err)
+{
+    applyTransforms(seg, v);
+    if (!seg.hasTransformExpr)
+        return true;
+    const size_t si = static_cast<size_t>(seg.slot);
+    if (si >= cols.size())
+    {
+        err = "transform 表达式引用的槽位越界";
+        return false;
+    }
+    const TypedVec saved = cols[si];
+    TypedVec one;
+    one.reset(ValueType::F64);
+    one.push(TypedValue::fromF(v.type == ValueType::Text ? 0.0 : v.asDouble(), ValueType::F64));
+    cols[si] = one;
+    TypedValue out;
+    const bool ok = runByteCode(seg.transformCode, cols, out, err);
+    cols[si] = saved;
+    if (!ok)
+        return false;
+    v = TypedValue::fromF(out.asDouble(), ValueType::F64);
+    return true;
+}
+
 // 值域/枚举：只做判定，处理策略由调用方的 on_mismatch 决定。
 bool violatesDomain(const CompiledSeg &seg, const TypedValue &v)
 {
@@ -83,12 +112,7 @@ uint64_t readIntAt(const uint8_t *p, uint32_t size, bool bigEndian)
     return v;
 }
 
-bool isBlankByte(char c)
-{
-    return c == ' ' || c == '\t';
-}
-
-std::string trimAscii(const std::string &s)
+std::string trimText(const std::string &s)
 {
     size_t b = 0, e = s.size();
     while (b < e && isBlankByte(s[b]))
@@ -169,9 +193,48 @@ bool checkPattern(const std::string &tok, const CompiledSeg &seg, std::string &e
     return true;
 }
 
+static bool parseTimeText(const std::string &s, TypedValue &out, std::string &err)
+{
+    double hh = 0, mm = 0, ss = 0;
+    if (s.find(':') != std::string::npos)
+    {
+        size_t a = s.find(':'), b = s.find(':', a + 1);
+        if (b == std::string::npos)
+        {
+            err = "时间格式应为 hh:mm:ss：" + s;
+            return false;
+        }
+        hh = std::strtod(s.substr(0, a).c_str(), nullptr);
+        mm = std::strtod(s.substr(a + 1, b - a - 1).c_str(), nullptr);
+        ss = std::strtod(s.substr(b + 1).c_str(), nullptr);
+    }
+    else
+    {
+        // NMEA 记法 hhmmss[.ss]：整数部分必须 6 位
+        const size_t dot = s.find('.');
+        const std::string ip = (dot == std::string::npos) ? s : s.substr(0, dot);
+        if (ip.size() != 6 || ip.find_first_not_of("0123456789") != std::string::npos)
+        {
+            err = "时间应为 hhmmss[.ss]（整数部分 6 位）：" + s;
+            return false;
+        }
+        hh = std::strtod(ip.substr(0, 2).c_str(), nullptr);
+        mm = std::strtod(ip.substr(2, 2).c_str(), nullptr);
+        const double frac = (dot == std::string::npos) ? 0.0 : std::strtod(("0" + s.substr(dot)).c_str(), nullptr);
+        ss = std::strtod(ip.substr(4, 2).c_str(), nullptr) + frac;
+    }
+    if (hh > 23.0 || mm > 59.0 || ss >= 61.0)
+    {
+        err = "时间越界（hh<=23, mm<=59, ss<61）：" + s;
+        return false;
+    }
+    out = TypedValue::fromF(hh * 3600.0 + mm * 60.0 + ss, ValueType::F64);
+    return true;
+}
+
 bool parseNumber(const std::string &rawIn, const CompiledSeg &seg, TypedValue &out, std::string &err)
 {
-    std::string s = trimAscii(rawIn);
+    std::string s = trimText(rawIn);
     if (s.empty())
     {
         err = "空字段";
@@ -202,7 +265,14 @@ bool parseNumber(const std::string &rawIn, const CompiledSeg &seg, TypedValue &o
         return true;
     }
 
-    if (seg.asciiType == 0 && (seg.type == ValueType::F64 || seg.type == ValueType::F32))
+    if (seg.isTime)
+    {
+        if (!parseTimeText(s, out, err))
+            return false;
+        return true;
+    }
+
+    if (seg.textType == 0 && (seg.type == ValueType::F64 || seg.type == ValueType::F32))
     {
         if (!seg.sci && (s.find('e') != std::string::npos || s.find('E') != std::string::npos))
         {
@@ -336,10 +406,215 @@ struct RecAttempt
     std::string detail;
     std::vector<TypedVec> vals;
     int skipped = 0;
+    int64_t frameNo = -1; // 帧号（push 里回填，用于诊断明细定位）
+    // 段级 warn/skip 明细（on_mismatch）：即使整帧通过也要带出来，不许只计数。
+    std::vector<DecodeError> notes;
 };
 
+// 段级降级：warn 写 NaN 并记 note；skip 不出该段值并记 note；返回 true 表示已降级。
+inline bool degradeSeg(RecAttempt &r, const CompiledSeg &seg, TypedVec &col, int kind,
+                       const std::string &why)
+{
+    DecodeError e;
+    e.code = (kind == 1) ? DecodeError::PatternMismatch : DecodeError::FieldInvalid;
+    e.segment = seg.name;
+    e.detail = why + (kind == 1 ? "（on_mismatch:warn，写 NaN）" : "（on_mismatch:skip，不出通道）");
+    e.warning = true;
+    r.notes.push_back(std::move(e));
+    ++r.skipped;
+    if (kind == 1)
+        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+    return true;
+}
+
+// checks 谓词（eq/ne/lt/le/gt/ge/in/range/mask）：text 路径此前只有二进制 readFrame 执行它，
+// 导致模板里写 checks 在流式协议里静默失效。这里补齐，语义与 checkFrame 一致。
+static bool cmpTyped(const TypedValue &a, const TypedValue &b, int &cmp)
+{
+    if (a.type == ValueType::Text || b.type == ValueType::Text)
+    {
+        if (a.type != b.type)
+            return false;
+        cmp = a.s < b.s ? -1 : (a.s > b.s ? 1 : 0);
+        return true;
+    }
+    const bool fa = (a.type == ValueType::F32 || a.type == ValueType::F64);
+    const bool fb = (b.type == ValueType::F32 || b.type == ValueType::F64);
+    if (fa != fb)
+        return false;
+    const double da = a.asDouble(), db = b.asDouble();
+    cmp = da < db ? -1 : (da > db ? 1 : 0);
+    return true;
+}
+
+static bool failPredicate(RecAttempt &r, const std::string &segName, const std::string &detail)
+{
+    r.code = DecodeError::FieldInvalid;
+    r.segment = segName;
+    r.detail = detail;
+    return false;
+}
+
+static std::string dumpTyped(const TypedValue &v)
+{
+    char b[192];
+    if (v.type == ValueType::Text)
+        return v.s;
+    if (v.isFloat())
+        std::snprintf(b, sizeof(b), "%g", v.f);
+    else if (v.isSigned())
+        std::snprintf(b, sizeof(b), "%lld (0x%llX)", static_cast<long long>(v.i),
+                      static_cast<unsigned long long>(v.i));
+    else
+        std::snprintf(b, sizeof(b), "%llu (0x%llX)", static_cast<unsigned long long>(v.u),
+                      static_cast<unsigned long long>(v.u));
+    return b;
+}
+
+// 段的 expect 断言（v3 的 expect 只有数组形式，这里只处理"整段值的等值判等"，
+// 其余 in/range/mask/比较算子都走 checkTextPredicates）。
+// bin 与 text 共用一套语义，只有失败时的错误码不同（bin 的段首判等按丢了同步处理）。
+static bool checkSegmentExpect(const CompiledSeg &seg, const TypedVec &col,
+                               const std::vector<TypedVec> &cols, RecAttempt &r,
+                               DecodeError::Code miss)
+{
+    (void)cols;
+    if (!seg.hasExpect || !seg.expectIsConst)
+        return true;
+    for (std::size_t i = 0; i < col.size(); ++i)
+    {
+        int cmp = 0;
+        if (!cmpTyped(col.at(i), seg.expectConst, cmp))
+        {
+            r.code = miss;
+            r.segment = seg.name;
+            r.detail = "expect 的类型与字段不一致";
+            return false;
+        }
+        if (cmp != 0)
+        {
+            r.code = miss;
+            r.segment = seg.name;
+            r.detail = "expect 不符：期望 " + dumpTyped(seg.expectConst) + "，实际 " +
+                       dumpTyped(col.at(i));
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool checkTextPredicates(const CompiledSeg &seg, const TypedVec &col,
+                                 const std::vector<TypedVec> &cols, RecAttempt &r,
+                                 const uint8_t *p, const std::vector<std::pair<size_t, size_t>> &spans)
+{
+    std::string bcErr;
+    for (const CompiledCheck &c : seg.checks)
+    {
+        if (c.isSequence)
+        {
+            // 序列校验（xor8 / sum8 / crc8 / crc16 / crc32 / parity）：
+            // text 也按"记录的连续原始字节"算，含中间的逗号，不是字段值拼回去。
+            // over 已在编译期折成槽位集合，这里把它们的字节区间取并集。
+            if (c.overSlots.empty())
+                return failPredicate(r, seg.name, "校验算子缺少 over 区间");
+            size_t from = kNoPos, to = kNoPos;
+            for (int32_t slot : c.overSlots)
+            {
+                if (slot < 0 || static_cast<size_t>(slot) >= spans.size())
+                    continue;
+                const auto &sp = spans[static_cast<size_t>(slot)];
+                if (sp.first == kNoPos || sp.second == kNoPos)
+                    continue;
+                if (from == kNoPos || sp.first < from)
+                    from = sp.first;
+                if (to == kNoPos || sp.second > to)
+                    to = sp.second;
+            }
+            if (from == kNoPos || to <= from)
+                return failPredicate(r, seg.name, "校验区间没有取到字节");
+            std::vector<uint8_t> buf(p + from, p + to);
+            uint64_t computed = 0;
+            std::string derr;
+            if (!computeDigest(c.op, buf.data(), buf.size(), computed, derr))
+                return failPredicate(r, seg.name, derr);
+            const uint32_t want = col.size() > 0 ? static_cast<uint32_t>(col.at(0).asU64()) : 0u;
+            if (static_cast<uint32_t>(computed) != want)
+            {
+                char msg[160];
+                std::snprintf(msg, sizeof(msg), "校验不符：算得 0x%llX，帧内 0x%llX，区间 [%zu,%zu)",
+                              static_cast<unsigned long long>(computed),
+                              static_cast<unsigned long long>(want), from, to);
+                // 校验和错有独立错误码，别混进"字段非法"，上层要按它做整帧拒收统计。
+                r.code = DecodeError::ChecksumMismatch;
+                r.segment = seg.name;
+                r.detail = msg;
+                return false;
+            }
+            continue;
+        }
+        for (std::size_t i = 0; i < col.size(); ++i)
+        {
+            const TypedValue &v = col.at(i);
+            bool ok = false;
+            if (c.op == "in")
+            {
+                for (const TypedValue &iv : c.values)
+                {
+                    int cmp = 0;
+                    if (!cmpTyped(v, iv, cmp))
+                        return failPredicate(r, seg.name, "checks in 的类型与字段不一致");
+                    if (cmp == 0)
+                    {
+                        ok = true;
+                        break;
+                    }
+                }
+            }
+            else if (c.op == "range" || c.op == "mask")
+            {
+                TypedValue a, b;
+                if (!runByteCode(c.rhs, cols, a, bcErr) || !runByteCode(c.rhs2, cols, b, bcErr))
+                    return failPredicate(r, seg.name, bcErr);
+                if (c.op == "mask")
+                    ok = ((v.asU64() & a.asU64()) == b.asU64());
+                else
+                {
+                    int ca = 0, cb = 0;
+                    if (!cmpTyped(v, a, ca) || !cmpTyped(v, b, cb))
+                        return failPredicate(r, seg.name, "checks range 的类型与字段不一致");
+                    ok = (ca >= 0 && cb <= 0);
+                }
+            }
+            else
+            {
+                TypedValue rhs;
+                if (!runByteCode(c.rhs, cols, rhs, bcErr))
+                    return failPredicate(r, seg.name, bcErr);
+                int cmp = 0;
+                if (!cmpTyped(v, rhs, cmp))
+                    return failPredicate(r, seg.name, "checks " + c.op + " 的类型与字段不一致");
+                if (c.op == "eq")
+                    ok = (cmp == 0);
+                else if (c.op == "ne")
+                    ok = (cmp != 0);
+                else if (c.op == "lt")
+                    ok = (cmp < 0);
+                else if (c.op == "le")
+                    ok = (cmp <= 0);
+                else if (c.op == "gt")
+                    ok = (cmp > 0);
+                else if (c.op == "ge")
+                    ok = (cmp >= 0);
+            }
+            if (!ok)
+                return failPredicate(r, seg.name, "checks 未通过（" + c.op + "）");
+        }
+    }
+    return true;
+}
+
 // 解析一条记录。p[0] 是帧首（已定位/已是记录开始），n 是记录逻辑尾（不含 terminator）。
-// varIdx 非空时按变体段表解析（下标指向 prog.varSegs），用于 ASCII 变体按 msgid 分派。
+// varIdx 非空时按变体段表解析（下标指向 prog.varSegs），用于 text 变体按 msgid 分派。
 bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecAttempt &r,
                    const std::vector<const CompiledSeg *> *segsOverride = nullptr)
 {
@@ -361,8 +636,34 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
     {
         const CompiledSeg &seg = segAt(si);
 
+        // 派生字段：不消耗任何输入，直接用已解析的段求值出通道。
+        if (seg.hasDerive)
+        {
+            TypedValue dv;
+            std::string derr;
+            if (!runByteCode(seg.derive, r.vals, dv, derr))
+            {
+                r.code = DecodeError::FieldInvalid;
+                r.segment = seg.name;
+                r.detail = derr;
+                return false;
+            }
+            TypedVec col;
+            col.reset(seg.type);
+            col.push(dv);
+            r.vals[static_cast<size_t>(seg.slot)] = col;
+            spans[static_cast<size_t>(seg.slot)] = {pos, pos};
+            if (!checkSegmentExpect(seg, col, r.vals, r, DecodeError::FieldInvalid))
+                return false;
+            if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
+                return false;
+            continue;
+        }
+
         if (seg.isLiteral)
         {
+            // 字面段也吃上一段留下的分隔符（NMEA 的 "*" 前面就有一个逗号）
+            pos = textEatDelimiter(p, pos, n, seg);
             if (pos + seg.literal.size() > n)
             {
                 r.segment = seg.name;
@@ -382,7 +683,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         }
 
         // 字节段：边界由 elemSize × count 推出（位域/变体仍走 readFrame）。
-        if (!seg.isAscii)
+        if (!seg.isTextSeg)
         {
             const uint32_t elem = seg.elemSize > 0 ? seg.elemSize : 1;
             const uint32_t cnt = seg.countIsConst ? seg.constCount : 1;
@@ -427,32 +728,15 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                                 ? TypedValue::fromRawInt(static_cast<int64_t>(raw), seg.type)
                                 : TypedValue::fromU(raw, seg.type);
                     }
-                    if (seg.hasExpect && seg.expectIsConst)
-                    {
-                        const uint64_t want = seg.expectConst.isSigned()
-                                                  ? static_cast<uint64_t>(seg.expectConst.asI64())
-                                                  : seg.expectConst.asU64();
-                        const uint64_t got = (seg.type == ValueType::F32 || seg.type == ValueType::F64)
-                                                 ? static_cast<uint64_t>(v.asDouble())
-                                                 : (v.isSigned() ? static_cast<uint64_t>(v.asI64())
-                                                                 : v.asU64());
-                        if (got != want)
-                        {
-                            r.code = DecodeError::SyncMissing;
-                            r.segment = seg.name;
-                            char buf[128];
-                            std::snprintf(buf, sizeof(buf), "期望 0x%llX，实际 0x%llX",
-                                          static_cast<unsigned long long>(want),
-                                          static_cast<unsigned long long>(got));
-                            r.detail = buf;
-                            return false;
-                        }
-                    }
                     col.push(v);
                 }
             }
             r.vals[seg.slot] = col;
             spans[seg.slot] = {pos, pos + total};
+            if (!checkSegmentExpect(seg, col, r.vals, r, DecodeError::SyncMissing))
+                return false;
+            if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
+                return false;
             pos += total;
             continue;
         }
@@ -466,6 +750,222 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 nextLit = segAt(j).literal;
                 break;
             }
+        }
+
+        // ---- text：format 驱动（SPEC §10）----
+        if (seg.boundary == static_cast<int>(SegBoundary::Format) && !seg.textFormat.empty() &&
+            seg.digestKind == 0)
+        {
+            std::vector<TextFmtPart> parts;
+            std::string ferr;
+            if (!textCompileFormat(seg.textFormat, parts, ferr))
+            {
+                r.code = DecodeError::FieldInvalid;
+                r.segment = seg.name;
+                r.detail = ferr;
+                return false;
+            }
+            // 段首吃掉上一段留在原地的分隔符（字面段也一样：NMEA 的 "*" 前面就有一个逗号）
+            const size_t segStart = pos;
+            size_t scanPos = segStart;
+            scanPos = textEatDelimiter(p, scanPos, n, seg);
+
+            // 下一段的起始字面（如果有）：用它给 %s 收口
+            std::string stopLit;
+            for (size_t j = si + 1; j < segCount; ++j)
+                if (segAt(j).isLiteral && !segAt(j).literal.empty())
+                {
+                    stopLit = segAt(j).literal;
+                    break;
+                }
+            // count 是"整条 format 重复次数"。常量直接用；写成表达式就逐帧求值，
+            // 允许引用前面已解出的字段（例如 count:"n"），不再默默按 1 处理。
+            uint32_t rep = seg.countIsConst && seg.constCount > 0 ? seg.constCount : 1u;
+            if (!seg.countIsConst)
+            {
+                TypedValue cv;
+                std::string cerr2;
+                if (!runByteCode(seg.count, r.vals, cv, cerr2))
+                {
+                    r.code = DecodeError::FieldInvalid;
+                    r.segment = seg.name;
+                    r.detail = "count 求值失败：" + cerr2;
+                    return false;
+                }
+                const double d = cv.asDouble();
+                if (!(d >= 1.0 && d <= 1000000.0))
+                {
+                    r.code = DecodeError::FieldInvalid;
+                    r.segment = seg.name;
+                    r.detail = "count 求值不是正整数：";
+                    return false;
+                }
+                rep = static_cast<uint32_t>(d);
+            }
+            TypedVec col;
+            col.reset(seg.type);
+            for (uint32_t k = 0; k < rep; ++k)
+            {
+                size_t lp = 0;
+                std::string val;
+                char conv = 0;
+                bool hasVal = false;
+                std::string err;
+                bool needMoreFlag = false;
+                if (!textScanElement(p + scanPos, n - scanPos, lp, parts, seg, stopLit, val, conv, hasVal,
+                                 err, needMoreFlag))
+                {
+                    r.segment = seg.name;
+                    if (needMoreFlag && !prog.hasTerminator)
+                    {
+                        r.needMore = true;
+                        return false;
+                    }
+                    r.code = needMoreFlag ? DecodeError::TooFewFields : DecodeError::FieldInvalid;
+                    r.detail = err + "（段 " + seg.name + "）";
+                    return false;
+                }
+                scanPos += lp;
+                if (hasVal && val.empty())
+                {
+                    // 空格子 = 缺值：数值给 NaN/0，文本给空串，不报错（SPEC §10）
+                    if (seg.type == ValueType::F32 || seg.type == ValueType::F64)
+                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), seg.type));
+                    else if (seg.type == ValueType::Text)
+                        col.push(TypedValue::fromText(std::string()));
+                    else
+                        col.push(TypedValue::fromI(0, seg.type));
+                }
+                else if (hasVal)
+                {
+                    if (conv == 's')
+                    {
+                        {
+                            TypedValue tv = TypedValue::fromText(val);
+                            {
+                                std::string terr2;
+                                if (!applyValueTransforms(seg, r.vals, tv, terr2))
+                                {
+                                    r.code = DecodeError::FieldInvalid;
+                                    r.segment = seg.name;
+                                    r.detail = terr2;
+                                    return false;
+                                }
+                            }
+                            col.push(tv);
+                        }
+                    }
+                    else if (conv == 'f' || conv == 'e' || conv == 'g')
+                    {
+                        // 数值解析统一走 parseNumber：它认得 sexagesimal 这类"按文本切"的算子。
+                        // v3 删掉了 signed/sci/fixed 三个键，这里临时放开（负号与科学计数都允许）。
+                        CompiledSeg ps = seg;
+                        ps.signedFlag = true;
+                        ps.sci = true;
+                        ps.hasFixedDigits = false;
+                        TypedValue tv;
+                        std::string perr2;
+                        if (!parseNumber(val, ps, tv, perr2))
+                        {
+                            r.code = DecodeError::FieldInvalid;
+                            r.segment = seg.name;
+                            r.detail = perr2 + "：" + val;
+                            return false;
+                        }
+                        {
+                            std::string terr2;
+                            if (!applyValueTransforms(seg, r.vals, tv, terr2))
+                            {
+                                r.code = DecodeError::FieldInvalid;
+                                r.segment = seg.name;
+                                r.detail = terr2;
+                                return false;
+                            }
+                        }
+                        col.push(tv);
+                    }
+                    else if (conv == 't' || conv == 'T')
+                    {
+                        // 时间：统一出当天秒（SPEC §10）
+                        double sec = 0.0;
+                        int hh = 0, mm = 0;
+                        double ss = 0.0;
+                        const char *src = val.c_str();
+                        if (conv == 'T' && val.size() >= 11)
+                            src = val.c_str() + 11; // 跳过 yyyy-mm-ddT
+                        if (std::sscanf(src, "%d:%d:%lf", &hh, &mm, &ss) >= 2)
+                        {
+                            // 时间域校验：24:61 这种不存在的时刻直接判坏值
+                            if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss >= 60)
+                            {
+                                r.code = DecodeError::FieldInvalid;
+                                r.segment = seg.name;
+                                r.detail = "时间越界：" + val;
+                                return false;
+                            }
+                            sec = hh * 3600.0 + mm * 60.0 + ss;
+                        }
+                        else
+                        {
+                            r.code = DecodeError::FieldInvalid;
+                            r.segment = seg.name;
+                            r.detail = "时间格式无法识别：" + val;
+                            return false;
+                        }
+                        {
+                            TypedValue tv = TypedValue::fromF(sec, ValueType::F64);
+                            {
+                                std::string terr2;
+                                if (!applyValueTransforms(seg, r.vals, tv, terr2))
+                                {
+                                    r.code = DecodeError::FieldInvalid;
+                                    r.segment = seg.name;
+                                    r.detail = terr2;
+                                    return false;
+                                }
+                            }
+                            col.push(tv);
+                        }
+                    }
+                    else
+                    {
+                        CompiledSeg ps = seg;
+                        ps.signedFlag = true;
+                        ps.sci = false;
+                        ps.hasFixedDigits = false;
+                        TypedValue tv;
+                        std::string perr2;
+                        if (!parseNumber(val, ps, tv, perr2))
+                        {
+                            r.code = DecodeError::FieldInvalid;
+                            r.segment = seg.name;
+                            r.detail = perr2 + "：" + val;
+                            return false;
+                        }
+                        {
+                            std::string terr2;
+                            if (!applyValueTransforms(seg, r.vals, tv, terr2))
+                            {
+                                r.code = DecodeError::FieldInvalid;
+                                r.segment = seg.name;
+                                r.detail = terr2;
+                                return false;
+                            }
+                        }
+                        col.push(tv);
+                    }
+                }
+                if (k + 1 < rep)
+                    scanPos = textEatDelimiter(p, scanPos, n, seg);
+            }
+            r.vals[seg.slot] = col;
+            spans[seg.slot] = {segStart, scanPos};
+            if (!checkSegmentExpect(seg, col, r.vals, r, DecodeError::FieldInvalid))
+                return false;
+            if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
+                return false;
+            pos = scanPos;
+            continue;
         }
 
         if (seg.repeatAll)
@@ -517,7 +1017,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                         col.push(TypedValue::fromText(std::string()));
                         continue;
                     }
-                    if (seg.emptyPolicy == "nan" && seg.asciiType == 0)
+                    if (seg.emptyPolicy == "nan" && seg.textType == 0)
                     {
                         col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), seg.type));
                         continue;
@@ -531,11 +1031,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 if (!checkPattern(tok, seg, perr))
                 {
                     if (seg.onMismatch == 2)
+                    {
+                        degradeSeg(r, seg, col, 2, perr + "（原文 " + tok + "）");
                         continue;
+                    }
                     if (seg.onMismatch == 1)
                     {
-                        r.skipped++;
-                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        degradeSeg(r, seg, col, 1, perr + "（原文 " + tok + "）");
                         continue;
                     }
                     r.code = DecodeError::FieldInvalid;
@@ -543,7 +1045,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     r.detail = perr + "（原文 " + tok + "）";
                     return false;
                 }
-                if (seg.asciiType == 1)
+                if (seg.textType == 1)
                 {
                     col.push(TypedValue::fromText(tok));
                     continue;
@@ -552,11 +1054,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 if (!parseNumber(tok, seg, v, perr))
                 {
                     if (seg.onMismatch == 2)
+                    {
+                        degradeSeg(r, seg, col, 2, perr + "（原文 " + tok + "）");
                         continue;
+                    }
                     if (seg.onMismatch == 1)
                     {
-                        r.skipped++;
-                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        degradeSeg(r, seg, col, 1, perr + "（原文 " + tok + "）");
                         continue;
                     }
                     r.code = (seg.base == 16) ? DecodeError::CheckNotHex : DecodeError::FieldInvalid;
@@ -567,11 +1071,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 if (violatesDomain(seg, v))
                 {
                     if (seg.onMismatch == 2)
+                    {
+                        degradeSeg(r, seg, col, 2, "值超出 range/enum（原文 " + tok + "）");
                         continue;
+                    }
                     if (seg.onMismatch == 1)
                     {
-                        r.skipped++;
-                        col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                        degradeSeg(r, seg, col, 1, "值超出 range/enum（原文 " + tok + "）");
                         continue;
                     }
                     r.code = DecodeError::FieldInvalid;
@@ -579,7 +1085,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     r.detail = "值超出 range/enum（原文 " + tok + "）";
                     return false;
                 }
-                applyTransforms(seg, v);
+                {
+                    std::string terr2;
+                    if (!applyValueTransforms(seg, r.vals, v, terr2))
+                    {
+                        r.code = DecodeError::FieldInvalid;
+                        r.segment = seg.name;
+                        r.detail = terr2;
+                        return false;
+                    }
+                }
                 col.push(v);
             }
             r.vals[seg.slot] = col;
@@ -761,7 +1276,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                 pos = nextPos;
                 continue;
             }
-            if (seg.emptyPolicy == "nan" && seg.asciiType == 0)
+            if (seg.emptyPolicy == "nan" && seg.textType == 0)
             {
                 col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), seg.type));
                 r.vals[seg.slot] = col;
@@ -779,13 +1294,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         {
             if (seg.onMismatch == 2)
             {
+                degradeSeg(r, seg, col, 2, perr + "（原文 " + tok + "）");
                 pos = nextPos;
                 continue;
             }
             if (seg.onMismatch == 1)
             {
-                r.skipped++;
-                col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                degradeSeg(r, seg, col, 1, perr + "（原文 " + tok + "）");
                 pos = nextPos;
                 continue;
             }
@@ -794,7 +1309,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             r.detail = perr + "（原文 " + tok + "）";
             return false;
         }
-        if (seg.asciiType == 1)
+        if (seg.textType == 1)
         {
             col.push(TypedValue::fromText(tok));
         }
@@ -805,17 +1320,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             {
                 if (seg.onMismatch == 2)
                 {
+                    degradeSeg(r, seg, col, 2, perr + "（原文 " + tok + "）");
                     pos = nextPos;
                     continue;
                 }
                 if (seg.onMismatch == 1)
                 {
-                    r.skipped++;
-                    col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                    degradeSeg(r, seg, col, 1, perr + "（原文 " + tok + "）");
                     pos = nextPos;
                     continue;
-                }
-                // 值里混进了新帧首 → 旧候选被截断，不是字段本身非法
+                }                // 值里混进了新帧首 → 旧候选被截断，不是字段本身非法
                 size_t anchorAt = 0;
                 if (prog.hasStartAnchor && findBytes(p, pos, n, prog.startAnchor, anchorAt))
                 {
@@ -837,13 +1351,13 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             {
                 if (seg.onMismatch == 2)
                 {
+                    degradeSeg(r, seg, col, 2, "值超出 range/enum（原文 " + tok + "）");
                     pos = nextPos;
                     continue;
                 }
                 if (seg.onMismatch == 1)
                 {
-                    r.skipped++;
-                    col.push(TypedValue::fromF(std::numeric_limits<double>::quiet_NaN(), ValueType::F64));
+                    degradeSeg(r, seg, col, 1, "值超出 range/enum（原文 " + tok + "）");
                 }
                 else
                 {
@@ -855,12 +1369,25 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             }
             else
             {
-                applyTransforms(seg, v);
+                {
+                    std::string terr2;
+                    if (!applyValueTransforms(seg, r.vals, v, terr2))
+                    {
+                        r.code = DecodeError::FieldInvalid;
+                        r.segment = seg.name;
+                        r.detail = terr2;
+                        return false;
+                    }
+                }
                 col.push(v);
             }
         }
         r.vals[seg.slot] = col;
         spans[seg.slot] = {tokenStart, tokenEnd};
+        if (!checkSegmentExpect(seg, col, r.vals, r, DecodeError::FieldInvalid))
+            return false;
+        if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
+            return false;
         pos = nextPos;
     }
 
@@ -960,9 +1487,19 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
 }
 
 // 把一条记录的值追加到通道。
-void emitRecord(const CompiledProgram &prog, const RecAttempt &r, int64_t t, ProtocolDecodeResult &out)
+void emitRecord(const CompiledProgram &prog, RecAttempt &r, int64_t t, ProtocolDecodeResult &out)
 {
     out.skipped += r.skipped;
+    // 段级 warn/skip 明细：即使整帧通过也要留痕（不许只计数，§9.7 第4条）。
+    for (DecodeError &n : r.notes)
+    {
+        n.recordIndex = r.frameNo;
+        if (n.detail.find("warn") != std::string::npos)
+            ++out.warnings;
+        if (out.errors.size() < 128)
+            out.errors.push_back(n);
+    }
+    r.notes.clear();
     // 顶层段与变体段都要出通道：变体记录里顶层段多半 emit=none，变体段才有值。
     std::vector<const CompiledSeg *> allSegs;
     for (const CompiledSeg &s : prog.segs)
@@ -1106,7 +1643,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
                 if (n > prog.maxsize)
                 {
                     ++m_overflow;
-                    out.errors.push_back({DecodeError::OverflowMaxsize, m_streamOffset, "", "超过 maxsize 仍无 term"});
+                    out.errors.push_back({DecodeError::OverflowMaxsize, m_streamOffset, "", "超过 maxsize 仍无 term", m_recordIndex, false});
                     m_pending.clear();
                     m_streamOffset += n;
                     break;
@@ -1211,6 +1748,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
                 }
             }
             m_recordIndex++;
+            r.frameNo = m_recordIndex - 1;
             emitRecord(prog, r, t, out);
             out.ok = true;
             // 有 term：消费到 term 结束；无 term：消费到 check 读满的位置（剩余留给下一条）。
@@ -1243,7 +1781,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
                 ++m_dropped;
                 if (out.errors.size() < 128)
                     out.errors.push_back({DecodeError::RecordAborted, m_streamOffset, r.segment,
-                                          "等边界时出现新帧首 " + prog.startAnchor});
+                                          "等边界时出现新帧首 " + prog.startAnchor, m_recordIndex, false});
                 m_pending.erase(m_pending.begin(), m_pending.begin() + static_cast<long>(nextAnchor));
                 m_streamOffset += nextAnchor;
                 continue;
@@ -1252,7 +1790,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
             {
                 ++m_overflow;
                 out.errors.push_back({DecodeError::OverflowMaxsize, m_streamOffset, r.segment,
-                                      "超过 maxsize 仍不完整"});
+                                      "超过 maxsize 仍不完整", m_recordIndex, false});
                 m_pending.clear();
                 break;
             }
@@ -1270,7 +1808,7 @@ bool StreamDecoder::push(const uint8_t *data, size_t len, ProtocolDecodeResult &
         if (aborted && code != DecodeError::RecordAborted && code != DecodeError::OverflowMaxsize)
             code = DecodeError::RecordAborted;
         if (out.errors.size() < 128)
-            out.errors.push_back({code, m_streamOffset, r.segment, r.detail});
+            out.errors.push_back({code, m_streamOffset, r.segment, r.detail, m_recordIndex, false});
 
         size_t drop = cutByAnchor ? nextAnchor : consume;
         if (r.code == DecodeError::RecordAborted && r.used > 0 && r.used < drop)
@@ -1292,10 +1830,12 @@ void StreamDecoder::finish(ProtocolDecodeResult &out)
     if (!m_pending.empty())
     {
         out.errors.push_back(
-            {DecodeError::IncompleteAtEof, m_streamOffset, "", "EOF 时仍有未闭合候选"});
+            {DecodeError::IncompleteAtEof, m_streamOffset, "", "EOF 时仍有未闭合候选", m_recordIndex, false});
         ++m_dropped;
         m_pending.clear();
     }
+    out.dropped = m_dropped;
+    out.rejectedFrames = m_rejected;
 }
 
 quint64 StreamDecoder::dropped() const

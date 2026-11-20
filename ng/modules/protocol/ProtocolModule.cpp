@@ -1,5 +1,6 @@
 #include "ProtocolModule.h"
 
+#include "ProtocolIntentHandler.h"
 #include "BuiltinModuleRegistry.h"
 #include "IUiContribution.h"
 #include "IModule.h"
@@ -20,7 +21,10 @@ ModuleInfo ProtocolModule::moduleInfo()
         QStringLiteral("协议模块"),
         QStringLiteral("1.0"),
         ModuleKind::Builtin,
-        {QStringLiteral("protocol.editor")}, // 提供协议编辑/校验能力
+        // 能力声明与 ProtocolIntentHandler 的 op 表一一对应：
+        // 声明了却不实现，等于对外承诺一个空入口。
+        {QStringLiteral("protocol.editor"), QStringLiteral("protocol.validate"),
+         QStringLiteral("protocol.preview"), QStringLiteral("protocol.templates")},
         {}                                  // 不依赖其它模块
     };
 }
@@ -35,10 +39,13 @@ ModuleInfo ProtocolModule::info() const
     return moduleInfo();
 }
 
-void ProtocolModule::initialize(ModuleContext &)
+void ProtocolModule::initialize(ModuleContext &ctx)
 {
     // 纯逻辑在 ng/libs/protocol（ng_protocol）+ SPI v2 CustomProtocolParser；
-    // 本模块只负责 UI 入口，核心能力已由库与自定义解析器提供，无需额外 handler。
+    // 模块负责把"模板校验/单帧试算/模板库"这三件界面之外也成立的事做成意图，
+    // 让脚本与 CLI 不必复制一份校验逻辑，也不必经过任何对话框。
+    m_handler = new ProtocolIntentHandler(this);
+    ctx.registerIntentHandler(m_handler);
 }
 
 void ProtocolModule::onAttach(UiContext &ui)

@@ -35,6 +35,7 @@ struct TypeInfo
 {
     ValueType type = ValueType::U8;
     uint32_t size = 1;
+    bool isTime = false; // type:"time"：text 文本时间 hhmmss[.ss]，解析成当天秒
 };
 
 // 段的输出形态，取代旧的 hidden/plot 两个布尔。
@@ -83,7 +84,7 @@ struct BitSpec
     std::string order = "lsb0";
 };
 
-// ASCII 数值变换（SPEC §7.4）。只处理"非标准记法"，标准 CSV/NMEA 数值不需要它。
+// text 数值变换（SPEC §7.4）。只处理"非标准记法"，标准 CSV/NMEA 数值不需要它。
 struct TransformStep
 {
     // sexagesimal：4807.038 → 48 + 7.038/60（split 是分的小数位数）
@@ -129,7 +130,15 @@ struct SegmentDef
     std::vector<CheckSpec> checks;
     LengthSpec length;
 
-    // ---- ASCII 词法（SPEC §7）：段的边界不再来自字节宽度，而来自定界符/字面量 ----
+    // ---- v3 ----
+    bool countWildcard = false;  // count:"*"：本段读到帧尾（全局唯一，其后只允许固定尾部段）
+    std::string blockRef;        // type 指向 blocks 里的块名，编译期展开
+    ExprPtr transformExpr;       // transform 写成非线性表达式时逐帧求值；线性形式折进 scale/offset
+
+    // ---- text 词法（SPEC §10）：format 驱动 scanf 式扫描 ----
+    std::string format;                  // 扩展 scanf 格式（"%d,%f,%[^,]"），空则退回 type/边界口径
+
+    // ---- text 老词法（v2 遗留，仅兼容未迁完的模板；新模板不写这些）----
     std::string literal;                 // 字面量段：必须精确匹配，不产通道（如 "$"、"*"）
     std::string key;                     // key=value 词法：段的键名（如 "lat"），值是键后到分隔符/记录尾
     bool hasDelimiter = false;
@@ -147,7 +156,10 @@ struct SegmentDef
     std::string emptyPolicy;             // ""（空串报错）| "nan" | "skip" | "raw"
     std::string pattern;                 // 正则只做校验，不切分
     std::string onMismatch;              // "" | "reject" | "warn" | "skip"
-    // 二进制变长数组的终止条件（ASCII 用 repeater:"*"）：
+    // 派生字段：不从字节/文本读，由表达式算出（引用前面已解析的段），不占空间
+    ExprPtr derive;
+
+    // 二进制变长数组的终止条件（text 用 repeater:"*"）：
     //   "eos"   → 读到帧尾
     //   "until" → 每读一个元素求值 repeatUntil，为真即停
     std::string repeatMode;
@@ -159,6 +171,29 @@ struct SegmentDef
     std::vector<double> enumValues;
     std::vector<TransformStep> transform;
     DigestSpec digest;
+};
+
+// 块（v3）：一组字段的整体，段用 type 引用块名。
+//   无 of = 顺序块：按自身顺序读字节，可配合 count:"*" 整体重复；
+//   有 of = 位域块：先读一个 of 类型的容器值，再按 fields 切位（偏移相对容器起点）。
+// 块只允许一层：fields 里不再引用别的块。
+struct BlockDef
+{
+    std::string name;
+    std::string of;
+    std::string repeater; // "*" = 这组字段整体重复到帧尾（块内字段必须定长）；空 = 只出现一次
+    std::string description;
+    std::vector<SegmentDef> fields;
+};
+
+// 派生字段（v3 顶层 derived）：不读字节，按序用已解析的段/前序派生求值。
+struct DerivedDef
+{
+    std::string name;
+    ExprPtr expr;
+    std::string unit;
+    std::string description;
+    EmitMode emitMode = EmitMode::Channel;
 };
 
 // 类型别名（对应 DBC SGTYPE）：段写 type:"imu" 时展开成这里的类型/换算/值域。
@@ -204,9 +239,12 @@ struct ProtocolDocument
     std::string name = "frame";
     std::string description;
     std::string layout = "sequential";
+    std::string mode = "bin"; // bin=按字节解释；text=按字符串切 token。必填，无 mixed
     std::string endian = "little";
     uint32_t maxsize = 4096;
     std::vector<SegmentDef> segments;
+    std::map<std::string, BlockDef> blocks; // v3：可被段引用的字段组
+    std::vector<DerivedDef> derived;        // v3：顶层派生字段，按序求值
     std::map<std::string, AliasDef> aliases;
     SeriesDef series;
     bool hasTimestamp = false;
@@ -225,7 +263,7 @@ struct EvalCtx
     bool get(const std::string &n, int index, TypedValue &out, std::string &err) const;
 };
 
-// 段的边界类型：这是唯一的分类维度，不存在"整份协议是 ASCII 还是二进制"。
+// 段的边界类型：这是唯一的分类维度，不存在"整份协议是 text 还是二进制"。
 //   Byte     → 边界由 type 宽度 × count 推出（位域段不推进游标）
 //   Literal  → 逐字符/逐字节匹配固定字面量（"$"、"*"、0xAA 用 expect 表达）
 //   Delimit  → 读到定界符（含 blank 字符类）
@@ -241,11 +279,14 @@ enum class SegBoundary
     Fixed,
     Rest,
     Repeat,
-    Keyed
+    Keyed,
+    Format // 有 format：按扩展 scanf 扫
 };
 
 inline SegBoundary boundaryOf(const SegmentDef &s)
 {
+    if (!s.format.empty())
+        return SegBoundary::Format;
     if (!s.literal.empty())
         return SegBoundary::Literal;
     if (!s.key.empty())
@@ -261,7 +302,7 @@ inline SegBoundary boundaryOf(const SegmentDef &s)
     return SegBoundary::Byte;
 }
 
-inline bool isAsciiSegment(const SegmentDef &s) { return boundaryOf(s) != SegBoundary::Byte; }
+inline bool isTextSegment(const SegmentDef &s) { return boundaryOf(s) != SegBoundary::Byte; }
 
 /// 类型化求值。整型/浮点不隐式混算；越界与除零显式报错。
 bool evalExpr(const ExprPtr &e, const EvalCtx &ctx, TypedValue &out, std::string &err);
