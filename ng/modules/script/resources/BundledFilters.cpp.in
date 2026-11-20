@@ -1,0 +1,14 @@
+// 自动生成：由 CMake 从 resources/builtin_filters.luau 内嵌，勿手改。
+#include "FilterCatalogue.h"
+
+namespace nextpilot::plotscope::script
+{
+
+QByteArray bundledBuiltinFiltersSource()
+{
+    // raw string 分隔符 NGFILTER_LUA 不与 Luau 源内容冲突（源里无 " )NGFILTER_LUA" 序列）。
+    static const QByteArray src = R"NGFILTER_LUA(@BUNDLED_FILTERS_LUA@)NGFILTER_LUA";
+    return src;
+}
+
+} // namespace nextpilot::plotscope::script

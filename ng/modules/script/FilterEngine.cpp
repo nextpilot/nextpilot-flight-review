@@ -619,15 +619,6 @@ Result<std::unique_ptr<FilterInstance>> FilterEngine::createInstance(const Filte
     return std::unique_ptr<FilterInstance>(new OwnedFilterInstance(std::move(impl), L, wd));
 }
 
-std::optional<QByteArray> FilterEngine::standaloneClassScript(const QString &source, const QString &id) const
-{
-    // 简化：直接返回完整 source（NG 的布局恢复按 id 在完整模块里找 class，无需裁剪）。
-    // 保留接口以便未来对接 PJ4 的 standaloneClassScript 语义。
-    if (source.isEmpty() || id.isEmpty())
-        return std::nullopt;
-    return source.toUtf8();
-}
-
 std::shared_ptr<FilterEngine> makeLuaFilterEngine()
 {
     return std::make_shared<FilterEngine>();

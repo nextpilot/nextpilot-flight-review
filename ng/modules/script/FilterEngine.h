@@ -106,8 +106,7 @@ public:
     Result<std::unique_ptr<FilterInstance>> createInstance(const FilterDescriptor &klass,
                                                             const QJsonObject &params) const;
 
-    // 单类模块：把某个 class 抽成自包含模块（类 id 由 standalone 指定）。
-    std::optional<QByteArray> standaloneClassScript(const QString &source, const QString &id) const;
+    // 单类模块抽取统一走 FilterCatalogue::standaloneClassScript（PJ4 语义，含默认值注入与 id 注入防护）。
 
     // 最大 VM 指令数（看门狗），防止死循环；0 表示不限。
     void setInstructionBudget(int budget) { m_instructionBudget = budget; }

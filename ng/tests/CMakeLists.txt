@@ -48,6 +48,13 @@ target_link_libraries(ng_test_filter_engine PRIVATE
 set_target_properties(ng_test_filter_engine PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_filter_engine COMMAND ng_test_filter_engine)
 
+# 内置过滤器库 golden 验收（12 个 bundled Luau 过滤器，对齐 PJ4 builtin_golden_test）。
+add_executable(ng_test_filter_catalogue test_filter_catalogue.cpp)
+target_link_libraries(ng_test_filter_catalogue PRIVATE
+    ng_module_script ng_context ng_foundation Qt6::Core)
+set_target_properties(ng_test_filter_catalogue PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_filter_catalogue COMMAND ng_test_filter_catalogue)
+
 # B8-b：TransformField 输入控件输出契约验收（offscreen GUI，链 gui_transform + core）。
 add_executable(ng_test_transform_field test_transform_field.cpp)
 target_link_libraries(ng_test_transform_field PRIVATE
