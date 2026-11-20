@@ -803,6 +803,35 @@ int main(int argc, char *argv[])
         OK("PJ4 对齐：页签复制(cell+1) + 全屏切换 + 视图撤销(历史入栈/回退)");
     }
 
+    // --- 脚本 app 全局：Lua 直接操作整个应用（意图 + view action 双通道） ---
+    {
+        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        CHECK(ws != nullptr);
+
+        // (1) 意图通道：脚本 app.call("data.load", {...}) 真的加载数据。
+        // 用 --script 语义等价的 script.run intent，source 内调 app.call。
+        const int dsBefore = application.context().data().count();
+        Intent sc;
+        sc.op = QStringLiteral("script.run");
+        sc.params[QStringLiteral("source")] =
+            QByteArray("app.call(\"data.load\", {path=\"/workspace/nextpilot-advance-plotscope/tests/fixture/demo_flight.csv\", format=\"csv\"})");
+        const auto sr = application.host().execute(sc);
+        CHECK(static_cast<bool>(sr));
+        CHECK(application.context().data().count() == dsBefore + 1);
+
+        // (2) view action 回退通道：脚本 app.call("page.duplicate") 在意图通道
+        // eunsupported 后回退到 view action，cell 数 +1。
+        const int nBefore = ws->cellCount();
+        Intent sc2;
+        sc2.op = QStringLiteral("script.run");
+        sc2.params[QStringLiteral("source")] = QByteArray("app.call(\"page.duplicate\")");
+        const auto sr2 = application.host().execute(sc2);
+        CHECK(static_cast<bool>(sr2));
+        CHECK(ws->cellCount() == nBefore + 1);
+
+        OK("脚本 app 全局：app.call 意图通道(数据+1) + view action 回退(cell+1)");
+    }
+
     // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---
     {
         const auto &slotReg = application.host().uiSlots();

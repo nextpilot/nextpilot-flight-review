@@ -16,10 +16,12 @@ set_target_properties(ng_lua PROPERTIES
 add_library(ng_module_script OBJECT
     ScriptModule.cpp
     LuaEngine.cpp
+    FilterEngine.cpp
     TransformEvaluator.cpp
     LuaScriptLibrary.cpp
     ScriptModule.h
     LuaEngine.h
+    FilterEngine.h
     TransformEvaluator.h
     LuaScriptLibrary.h
 )

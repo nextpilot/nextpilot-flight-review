@@ -13,8 +13,9 @@ struct lua_State;
 namespace nextpilot::plotscope::script
 {
 
-// Lua 引擎：封装 Lua VM，把 ScriptFacade 注入为全局门面 ps。
-// 脚本只能看到 ps.data.load / ps.plot.render 等，碰不到 QWidget 或模块内部对象。
+// Lua 引擎：封装 Lua VM，把 ScriptFacade 注入为全局对象 app（ps 为兼容别名）。
+// 脚本可经 app.call(op, params) 操作整个应用（意图 + view action 智能路由），
+// 类似 CLI；但拿不到 QWidget 或模块内部指针，仍保持 headless-safe。
 class LuaEngine
 {
 public:

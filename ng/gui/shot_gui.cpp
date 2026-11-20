@@ -99,6 +99,7 @@ int main(int argc, char *argv[])
     QString tabArg;
     QString transformArg; // --transform=<cap> 截变换编辑器（cap: derived/axis-y/checksum）
     QString cursorArg;    // --cursor=<t> 触发游标读数（老代码交互欠账验收用）
+    QString scriptArg;    // --script=<lua源码> 用脚本 app 全局操作应用（脚本对齐验收用）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -133,6 +134,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--cursor=")))
         {
             cursorArg = a.mid(QStringLiteral("--cursor=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--script=")))
+        {
+            scriptArg = a.mid(QStringLiteral("--script=").size());
             continue;
         }
         files << a;
@@ -266,6 +272,17 @@ int main(int argc, char *argv[])
         const bool hit = application.context().interactions().dispatchViewAction(actionId, params, res);
         fprintf(stdout, "view action %s: %s\n", qPrintable(actionId),
                 hit ? (res ? "成功" : "失败") : "未注册");
+    }
+
+    // --script=<lua>：通过 script.run 意图执行脚本，脚本内 app.call 可操作
+    // 意图通道 + view action 通道，验证"脚本直接引用 app 操作整个应用"。
+    if (!scriptArg.isEmpty())
+    {
+        Intent sc;
+        sc.op = QStringLiteral("script.run");
+        sc.params[QStringLiteral("source")] = scriptArg.toUtf8();
+        const auto sr = application.host().execute(sc);
+        fprintf(stdout, "app 脚本: %s\n", sr ? "执行成功" : qPrintable(sr.error().message));
     }
 
     // --cursor=<t>：走真实画布 API 触发游标读数（老代码交互欠账验收）。

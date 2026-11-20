@@ -95,12 +95,111 @@ static int l_version(lua_State *L)
     return 1;
 }
 
-// ps.log(msg)
+// Lua 值 -> QVariant（递归 table）。app.call 的参数表用它转成 QVariantMap。
+// 支持：nil/bool/number/string/table（数组用 1..n，其余按字符串 key）。
+static QVariant readVariant(lua_State *L, int idx)
+{
+    const int t = lua_type(L, idx);
+    switch (t)
+    {
+    case LUA_TNIL:
+        return QVariant();
+    case LUA_TBOOLEAN:
+        return QVariant(lua_toboolean(L, idx) != 0);
+    case LUA_TNUMBER:
+        return QVariant(lua_tonumber(L, idx));
+    case LUA_TSTRING:
+        return QVariant(QString::fromUtf8(lua_tostring(L, idx)));
+    case LUA_TTABLE:
+    {
+        // 先判是否为纯数组（1..n 连续且无其它键）。
+        QVariantList arr;
+        bool isArray = true;
+        for (int i = 1; ; ++i)
+        {
+            lua_rawgeti(L, idx, i);
+            const bool has = !lua_isnil(L, -1);
+            if (has)
+                arr.append(readVariant(L, -1));
+            lua_pop(L, 1);
+            if (!has)
+                break;
+        }
+        lua_pushnil(L);
+        while (lua_next(L, idx) != 0)
+        {
+            // key 在 -2，value 在 -1。非整数键说明不是纯数组。
+            if (lua_type(L, -2) != LUA_TNUMBER)
+                isArray = false;
+            lua_pop(L, 1);
+        }
+        if (isArray)
+            return QVariant(arr);
+        QVariantMap map;
+        lua_pushnil(L);
+        while (lua_next(L, idx) != 0)
+        {
+            const QString key = QString::fromUtf8(lua_tostring(L, -2));
+            map.insert(key, readVariant(L, -1));
+            lua_pop(L, 1);
+        }
+        return QVariant(map);
+    }
+    default:
+        return QVariant(QString::fromUtf8(lua_typename(L, t)));
+    }
+}
+
+// app.log(msg) / ps.log(msg)
 static int l_log(lua_State *L)
 {
     const char *msg = luaL_checkstring(L, 1);
     fprintf(stdout, "[lua] %s\n", msg);
     return 0;
+}
+
+// app.call(op, params?) -> result（统一入口，意图 + view action 智能路由）
+static int l_app_call(lua_State *L)
+{
+    ScriptFacade *f = facadeOf(L);
+    if (!f)
+        return luaL_error(L, "应用门面不可用");
+    const QString op = QString::fromUtf8(luaL_checkstring(L, 1));
+    QVariantMap params;
+    if (lua_gettop(L) >= 2 && lua_istable(L, 2))
+    {
+        const QVariant pv = readVariant(L, 2);
+        if (pv.typeId() == QMetaType::QVariantMap)
+            params = pv.toMap();
+    }
+    Result<QVariant> r = f->callAny(op, params);
+    if (!r)
+        return luaL_error(L, "app.call(%s) 失败[%s]: %s",
+                          qPrintable(op), qPrintable(r.error().code), qPrintable(r.error().message));
+    pushVariant(L, r.value());
+    return 1;
+}
+
+// app.view(id, params?) -> result（只走 view action 通道，语义更明确）
+static int l_app_view(lua_State *L)
+{
+    ScriptFacade *f = facadeOf(L);
+    if (!f)
+        return luaL_error(L, "应用门面不可用");
+    const QString id = QString::fromUtf8(luaL_checkstring(L, 1));
+    QVariantMap params;
+    if (lua_gettop(L) >= 2 && lua_istable(L, 2))
+    {
+        const QVariant pv = readVariant(L, 2);
+        if (pv.typeId() == QMetaType::QVariantMap)
+            params = pv.toMap();
+    }
+    Result<QVariant> r = f->callView(id, params);
+    if (!r)
+        return luaL_error(L, "app.view(%s) 失败[%s]: %s",
+                          qPrintable(id), qPrintable(r.error().code), qPrintable(r.error().message));
+    pushVariant(L, r.value());
+    return 1;
 }
 
 // ps.data.load(path, format?) -> dataset id
@@ -138,28 +237,48 @@ static int l_plot_render(lua_State *L)
     return 1;
 }
 
-// 组装全局 ps 表。
+// 组装全局 app 表（脚本直接引用它操作整个应用，类似 CLI）。
+// app 暴露：
+//   app.call(op, params?)   统一入口，意图+view action 智能路由（核心）
+//   app.view(id, params?)   只走 view action 通道
+//   app.load(path, fmt?)    语义化：加载数据源
+//   app.render(id, ch?)     语义化：渲染曲线规格
+//   app.log(msg) / app.version()
+//   app.data / app.plot      ps 风格子表（向后兼容）
+// 全局 ps 是 app 的别名，老脚本照常可用。
 static void installFacade(lua_State *L)
 {
-    lua_createtable(L, 0, 4); // ps
+    lua_createtable(L, 0, 10); // app
 
     lua_pushcfunction(L, l_version);
     lua_setfield(L, -2, "version");
     lua_pushcfunction(L, l_log);
     lua_setfield(L, -2, "log");
+    lua_pushcfunction(L, l_app_call);
+    lua_setfield(L, -2, "call");
+    lua_pushcfunction(L, l_app_view);
+    lua_setfield(L, -2, "view");
+    // 语义化快捷：app.load / app.render 直接复用 data.load / plot.render 实现。
+    lua_pushcfunction(L, l_data_load);
+    lua_setfield(L, -2, "load");
+    lua_pushcfunction(L, l_plot_render);
+    lua_setfield(L, -2, "render");
 
-    // ps.data
+    // app.data.load（兼容 ps.data.load）
     lua_createtable(L, 0, 1);
     lua_pushcfunction(L, l_data_load);
     lua_setfield(L, -2, "load");
     lua_setfield(L, -2, "data");
 
-    // ps.plot
+    // app.plot.render（兼容 ps.plot.render）
     lua_createtable(L, 0, 1);
     lua_pushcfunction(L, l_plot_render);
     lua_setfield(L, -2, "render");
     lua_setfield(L, -2, "plot");
 
+    // 同时设为 app 与 ps（同一张表，别名）。
+    lua_pushvalue(L, -1);
+    lua_setglobal(L, "app");
     lua_setglobal(L, "ps");
 }
 

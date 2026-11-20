@@ -28,8 +28,10 @@ class ScriptModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(IIntentExecutor &executor, JobRecorder *recorder, QObject *parent)
-        : QObject(parent), m_executor(executor), m_recorder(recorder) {}
+    explicit Handler(IIntentExecutor &executor, JobRecorder *recorder,
+                     ScriptFacade::ViewActionDispatcher viewDispatcher, QObject *parent)
+        : QObject(parent), m_executor(executor), m_recorder(recorder),
+          m_viewDispatcher(std::move(viewDispatcher)) {}
 
     bool canHandle(const Intent &intent) const override
     {
@@ -57,7 +59,8 @@ public:
         }
 
         // 门面是栈对象，仅本次执行有效；脚本拿不到它的指针。
-        ScriptFacade facade(m_executor, m_recorder);
+        // 注入 view dispatcher 后，脚本 app.call 可触达 GUI 视图能力。
+        ScriptFacade facade(m_executor, m_recorder, m_viewDispatcher);
         nextpilot::plotscope::script::LuaEngine lua(facade);
         Result<void> r = lua.runString(source, QStringLiteral("=script.run"));
         if (!r)
@@ -71,6 +74,7 @@ public:
 private:
     IIntentExecutor &m_executor;
     JobRecorder *m_recorder = nullptr;
+    ScriptFacade::ViewActionDispatcher m_viewDispatcher;
 };
 
 ModuleInfo ScriptModule::moduleInfo()
@@ -97,7 +101,14 @@ ModuleInfo ScriptModule::info() const
 
 void ScriptModule::initialize(ModuleContext &ctx)
 {
-    m_handler = new Handler(ctx.executor(), ctx.recorder(), this);
+    // view action 派发器：脚本 app.call 在意图通道 eunsupported 时回退到这里，
+    // 从而能触发 plot.*/page.*/playback.* 等 GUI 视图能力（headless 下也可注册但通常无视图）。
+    RuntimeHost *host = &ctx.host();
+    ScriptFacade::ViewActionDispatcher viewDispatcher =
+        [host](const QString &id, const QVariantMap &params, Result<QVariant> &out) {
+            return host->dispatchViewAction(id, params, out);
+        };
+    m_handler = new Handler(ctx.executor(), ctx.recorder(), std::move(viewDispatcher), this);
     ctx.registerIntentHandler(m_handler);
 
     // 统一变换求值：注册进 AppContext，供 host(数据源衍生)/gui(曲线)/protocol(checksum)

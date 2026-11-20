@@ -41,6 +41,13 @@ target_link_libraries(ng_test_lua_script_library PRIVATE
 set_target_properties(ng_test_lua_script_library PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_lua_script_library COMMAND ng_test_lua_script_library)
 
+# 有状态 Lua 过滤器引擎验收（headless，对齐 PJ4 FilterClass 契约）。
+add_executable(ng_test_filter_engine test_filter_engine.cpp)
+target_link_libraries(ng_test_filter_engine PRIVATE
+    ng_module_script ng_context ng_foundation Qt6::Core)
+set_target_properties(ng_test_filter_engine PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_filter_engine COMMAND ng_test_filter_engine)
+
 # B8-b：TransformField 输入控件输出契约验收（offscreen GUI，链 gui_transform + core）。
 add_executable(ng_test_transform_field test_transform_field.cpp)
 target_link_libraries(ng_test_transform_field PRIVATE
