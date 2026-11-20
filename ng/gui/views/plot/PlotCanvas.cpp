@@ -74,13 +74,19 @@ PlotCanvas::PlotCanvas(QWidget *parent)
     m_panner = new nextpilot::plotscope::fastplot::Panner(m_plot, this);
     m_picker = new nextpilot::plotscope::fastplot::Picker(m_plot, this);
 
+    // 记录初始范围作为历史基线（撤销可回到初始视图）。
+    const fastplot::Viewport &vp0 = m_plot->viewport();
+    m_lastViewRange = {vp0.xLower(), vp0.xUpper(), vp0.yLower(), vp0.yUpper()};
+
     connect(m_zoomer, &nextpilot::plotscope::fastplot::Zoomer::zoomed, this, [this] {
+        pushViewHistory();
         double t0 = 0.0;
         double t1 = 0.0;
         if (visibleTimeRange(&t0, &t1))
             Q_EMIT rangeChanged(t0, t1);
     });
     connect(m_panner, &nextpilot::plotscope::fastplot::Panner::panned, this, [this] {
+        pushViewHistory();
         double t0 = 0.0;
         double t1 = 0.0;
         if (visibleTimeRange(&t0, &t1))
@@ -332,6 +338,7 @@ void PlotCanvas::zoomRange(double factor)
     const double mid = (t0 + t1) / 2.0;
     const double half = (t1 - t0) / 2.0 * factor;
     m_plot->setXRange(mid - half, mid + half);
+    pushViewHistory(); // 变化后记录（内部压入变化前的 m_lastViewRange）
     m_plot->update();
 }
 
@@ -341,7 +348,51 @@ void PlotCanvas::autoScale()
         return;
     m_plot->autoScaleX();
     m_plot->autoScaleY();
+    pushViewHistory();
     m_plot->update();
+}
+
+void PlotCanvas::pushViewHistory()
+{
+    if (m_restoringView || !m_plot)
+        return;
+    const fastplot::Viewport &vp = m_plot->viewport();
+    const ViewRange cur{vp.xLower(), vp.xUpper(), vp.yLower(), vp.yUpper()};
+    // 变化后才发信号，故 m_lastViewRange 是"变化前"的范围——把它压栈作为撤销目标。
+    const auto same = [](double a, double b) { return std::fabs(a - b) < 1e-9; };
+    if (!(same(cur.xLo, m_lastViewRange.xLo) && same(cur.xHi, m_lastViewRange.xHi) &&
+          same(cur.yLo, m_lastViewRange.yLo) && same(cur.yHi, m_lastViewRange.yHi)))
+    {
+        m_viewHistory.push_back(m_lastViewRange);
+        if (m_viewHistory.size() > 64)
+            m_viewHistory.removeFirst();
+    }
+    m_lastViewRange = cur;
+}
+
+bool PlotCanvas::canUndoView() const
+{
+    return !m_viewHistory.isEmpty();
+}
+
+void PlotCanvas::undoView()
+{
+    if (m_viewHistory.isEmpty() || !m_plot)
+        return;
+    const ViewRange prev = m_viewHistory.takeLast();
+    m_restoringView = true;
+    m_plot->setXRange(prev.xLo, prev.xHi);
+    m_plot->setYRange(prev.yLo, prev.yHi);
+    m_restoringView = false;
+    m_lastViewRange = prev;
+    double t0 = 0.0, t1 = 0.0;
+    if (visibleTimeRange(&t0, &t1))
+        Q_EMIT rangeChanged(t0, t1);
+}
+
+int PlotCanvas::viewHistorySize() const
+{
+    return m_viewHistory.size();
 }
 
 void PlotCanvas::setPlayhead(double x, bool active)
@@ -765,6 +816,12 @@ void PlotCanvas::keyPressEvent(QKeyEvent *event)
     const int key = event->key();
     const Qt::KeyboardModifiers mods = event->modifiers();
 
+    // Ctrl+Z：撤销上一次缩放/平移（对齐 PJ4 undo）。
+    if (key == Qt::Key_Z && (mods & Qt::ControlModifier))
+    {
+        undoView();
+        return;
+    }
     if (key == Qt::Key_P && !(mods & Qt::ControlModifier))
     {
         // P：固定/解除当前读数。
@@ -1214,6 +1271,8 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
     menu.addAction(QStringLiteral("放大"), this, [this] { zoomRange(0.5); });
     menu.addAction(QStringLiteral("缩小"), this, [this] { zoomRange(2.0); });
     menu.addAction(QStringLiteral("自适应"), this, [this] { autoScale(); });
+    auto *undoAct = menu.addAction(QStringLiteral("撤销视图 (Ctrl+Z)"), this, [this] { undoView(); });
+    undoAct->setEnabled(canUndoView());
     menu.addSeparator();
     auto *gridAction = menu.addAction(QStringLiteral("显示网格"));
     gridAction->setCheckable(true);

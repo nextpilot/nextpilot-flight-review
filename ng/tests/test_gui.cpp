@@ -712,7 +712,11 @@ int main(int argc, char *argv[])
         CHECK(dispatchOk(QStringLiteral("plot.ab.toggle")));
         CHECK(dispatchOk(QStringLiteral("plot.bookmark.add"), {{QStringLiteral("t"), 0.5}}));
         CHECK(dispatchOk(QStringLiteral("plot.bookmark.list")));
-        OK("plotting 全套操作：series/axis/zoom/grid/page + 游标/A-B/书签 view action 已注册");
+        // PJ4 对齐新增：页签复制/全屏/视图撤销。
+        CHECK(dispatchOk(QStringLiteral("page.duplicate")));
+        CHECK(dispatchOk(QStringLiteral("page.fullscreen")));
+        CHECK(dispatchOk(QStringLiteral("plot.view.undo")));
+        OK("plotting 全套操作：series/axis/zoom/grid/page + 游标/A-B/书签/复制/全屏/撤销 view action 已注册");
     }
 
     // --- 回放引擎 view action（对齐 PJ4 PlaybackEngine）---
@@ -769,6 +773,34 @@ int main(int argc, char *argv[])
         CHECK(std::fabs(canvas->cursorTime() - 3.0) < 1e-9); // 联动不改本地游标
 
         OK("老代码交互欠账：游标固定/清除 + A-B 开关 + 书签增删改名去重 + 联动静默同步");
+    }
+
+    // --- PJ4 对齐：页签复制 / 单画布全屏 / 视图撤销 的真实行为 ---
+    {
+        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        CHECK(ws != nullptr);
+        // 页签复制：cell 数 +1，复制品继承曲线。
+        const int n0 = ws->cellCount();
+        QVariant vr;
+        Result<QVariant> res(vr);
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("page.duplicate"), {}, res));
+        CHECK(ws->cellCount() == n0 + 1);
+        // 全屏切换：开→关两次回到正常（避免影响后续）。
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("page.fullscreen"), {}, res));
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("page.fullscreen"), {}, res));
+        // 视图撤销：缩放产生历史 → undo 回退。
+        CHECK(canvas != nullptr);
+        const int h0 = canvas->viewHistorySize();
+        canvas->zoomRange(0.5);
+        CHECK(canvas->viewHistorySize() > h0);
+        CHECK(canvas->canUndoView());
+        canvas->undoView();
+        CHECK(canvas->viewHistorySize() == h0);
+
+        OK("PJ4 对齐：页签复制(cell+1) + 全屏切换 + 视图撤销(历史入栈/回退)");
     }
 
     // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---

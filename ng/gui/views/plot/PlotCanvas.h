@@ -126,6 +126,11 @@ public:
     void zoomRange(double factor);
     void autoScale();
 
+    // 缩放/平移撤销（对齐 PJ4 PlotMagnifier/Panner 的撤销）：Ctrl+Z 回退上一次视图范围。
+    bool canUndoView() const;
+    void undoView();
+    int viewHistorySize() const; // 诊断/测试用
+
     // 播放头竖线：回放时由播放引擎统一驱动所有画布，active=false 隐藏。
     void setPlayhead(double x, bool active);
     bool playheadActive() const;
@@ -248,6 +253,12 @@ private:
     void onCanvasMousePress(class QMouseEvent *event);
     void onCanvasMouseRelease(class QMouseEvent *event);
     void onCanvasWheel(class QWheelEvent *event);
+    // 视图范围历史：记录每次缩放/平移"之前"的范围，供撤销恢复。
+    struct ViewRange { double xLo = 0, xHi = 1, yLo = 0, yHi = 1; };
+    void pushViewHistory();
+    QVector<ViewRange> m_viewHistory;
+    ViewRange m_lastViewRange;
+    bool m_restoringView = false; // 撤销恢复时避免再次入栈
     int m_bookmarkSeq = 0;
 
     nextpilot::plotscope::fastplot::Axes *m_plot = nullptr;

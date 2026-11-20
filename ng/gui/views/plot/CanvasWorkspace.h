@@ -60,7 +60,9 @@ private:
     int addCell();                       // 在末尾追加一个画布并激活
     bool removeAt(int index);            // 删除 cell（至少保留一个）
     bool split(bool horizontal);         // 拆分活动 cell：水平=左右，垂直=上下
+    bool duplicateActive();              // 复制活动页签（含曲线与样式）
     bool setGrid(int rows, int cols);    // 重排为 rows×cols 网格
+    void toggleFullscreen();             // 单画布全屏/退出
     void setActive(int index);           // 设为活动 cell（点击/程序指定）
     void relayout();                     // 按 m_rows/m_cols 重排所有 cell 到网格
 
@@ -91,6 +93,7 @@ private:
     TimelineWidget *m_timeline = nullptr;
     QVector<Cell> m_cells;
     int m_active = 0;
+    int m_fullscreenCell = -1;           // >=0 表示某 cell 处于全屏（其它 cell 隐藏）
     int m_rows = 1;
     int m_cols = 1;
 

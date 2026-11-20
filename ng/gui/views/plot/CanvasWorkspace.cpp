@@ -93,11 +93,7 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
     outer->addWidget(m_timeline);
 
     QObject::connect(m_playback, &PlaybackEngine::currentTimeChanged, this,
-                     [this](double t) {
-                         for (const Cell &c : m_cells)
-                             if (c.canvas)
-                                 c.canvas->setPlayhead(t, true);
-                     });
+                     [this](double t) { onPlayheadChanged(t); });
 
     // 默认一个画布 cell。
     addCell();
@@ -273,6 +269,71 @@ bool CanvasWorkspace::split(bool horizontal)
     return true;
 }
 
+bool CanvasWorkspace::duplicateActive()
+{
+    PlotCanvas *src = activeCanvas();
+    if (!src)
+        return false;
+
+    // 复制 cell 骨架（与 addCell 同一装配），再逐条复制曲线 + 视图状态。
+    auto *stack = new QStackedWidget(this);
+    auto *canvas = new PlotCanvas(stack);
+    auto *view = new ChannelView(m_executor, canvas, canvas);
+    auto *instrument = new InstrumentView(m_executor, stack);
+    instrument->setAppContext(&m_appCtx);
+    stack->addWidget(canvas);
+    stack->addWidget(instrument);
+    stack->setCurrentWidget(canvas);
+    stack->installEventFilter(this);
+    QObject::connect(canvas, &PlotCanvas::channelDropped, this,
+                     [this](int datasetId, const QString &t, const QString &c) {
+                         m_appCtx.setActiveChannel(datasetId, t, c);
+                     });
+    connectCanvasSignals(canvas);
+
+    // 复制曲线：PlotSeries 自含数据源标识 + LOD + 全部样式，逐条 setSeries 即完整还原。
+    for (const PlotSeries &s : src->series())
+        canvas->setSeries(s);
+    // 复制视图状态（范围/轴/图例/变换配方）。
+    canvas->restoreViewState(src->saveViewState());
+
+    Cell cell;
+    cell.canvas = canvas;
+    cell.view = view;
+    cell.instrument = instrument;
+    cell.stack = stack;
+    const int insertAt = qBound(0, m_active + 1, m_cells.size());
+    m_cells.insert(insertAt, cell);
+    m_cols = m_cells.size();
+    m_rows = 1;
+    m_active = insertAt;
+    relayout();
+    return true;
+}
+
+void CanvasWorkspace::toggleFullscreen()
+{
+    if (m_fullscreenCell >= 0)
+    {
+        // 退出全屏：恢复所有 cell，重排网格。
+        m_fullscreenCell = -1;
+        for (const Cell &c : m_cells)
+            c.stack->setVisible(true);
+        relayout();
+        return;
+    }
+    if (m_cells.isEmpty())
+        return;
+    m_fullscreenCell = m_active;
+    for (int i = 0; i < m_cells.size(); ++i)
+        m_cells.at(i).stack->setVisible(i == m_fullscreenCell);
+    // 全屏 cell 独占整个网格区。
+    m_grid->removeWidget(m_cells.at(m_fullscreenCell).stack);
+    m_grid->addWidget(m_cells.at(m_fullscreenCell).stack, 0, 0);
+    for (int i = 0; i < m_grid->rowCount(); ++i) m_grid->setRowStretch(i, i == 0 ? 1 : 0);
+    for (int i = 0; i < m_grid->columnCount(); ++i) m_grid->setColumnStretch(i, i == 0 ? 1 : 0);
+}
+
 bool CanvasWorkspace::setGrid(int rows, int cols)
 {
     if (rows < 1 || cols < 1)
@@ -308,6 +369,13 @@ bool CanvasWorkspace::setCellType(int index, const QString &kind)
         return true;
     }
     return false;
+}
+
+void CanvasWorkspace::onPlayheadChanged(double t)
+{
+    for (const Cell &c : m_cells)
+        if (c.canvas)
+            c.canvas->setPlayhead(t, true);
 }
 
 void CanvasWorkspace::syncPlaybackRange(int datasetId)
@@ -822,6 +890,14 @@ void CanvasWorkspace::registerViewActions()
                                     activeCanvas()->zoomRange(factor <= 0.0 ? 0.5 : factor);
                                     return QVariant(true);
                                 });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.view.undo"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c || !c->canUndoView())
+                                        return QVariant(false);
+                                    c->undoView();
+                                    return QVariant(true);
+                                });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.autoscale"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!activeCanvas())
@@ -918,6 +994,16 @@ void CanvasWorkspace::registerViewActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.splitVertical"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(split(false));
+                                });
+    // 页签复制 + 单画布全屏（对齐 PJ4 TabbedPlotWidget / PlotDocker）。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.duplicate"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    return QVariant(duplicateActive());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.fullscreen"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    toggleFullscreen();
+                                    return QVariant(m_fullscreenCell >= 0);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.grid"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {

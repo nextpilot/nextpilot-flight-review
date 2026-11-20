@@ -910,6 +910,15 @@ void Axes::paintLegend(QPainter &painter)
         painter.drawRect(QRectF(origin.x(), origin.y() + 3, 10, 10));
         painter.setPen(m_axes[sideIndex(AxisSide::Left)].labelColor());
         painter.drawText(QPointF(origin.x() + 16, origin.y() + fm.ascent() + 1), c.name());
+        // PJ4 图例实时值：游标激活时，图例每条曲线名后显示该时刻数值（与读数框同源、同行序）。
+        if (m_cursorActive && row < m_cursorRows.size())
+        {
+            const QString val = m_cursorRows.at(row).value;
+            painter.setPen(m_cursorRows.at(row).color);
+            painter.drawText(QRectF(origin.x() + 16 + qMin(150, fm.horizontalAdvance(c.name()) + 12),
+                                    origin.y(), 70, rowH),
+                             Qt::AlignVCenter | Qt::AlignLeft, val);
+        }
         ++row;
     }
     painter.restore();
@@ -1034,8 +1043,17 @@ void Axes::paintCursorReadout(QPainter &painter, const QRectF &plot)
     const int lineH = fm.height() + 2;
     const int boxW = qMin(int(plot.width() - 16), 280);
     const int boxH = 22 + qMin(m_cursorRows.size(), 8) * lineH + 6;
-    // A/B 启用时顶部有 Δx 徽标和 A/B 标签，读数框下移一行避免遮挡（老界面打磨细节）。
-    const double boxTop = plot.top() + (m_abEnabled ? 30 : 8);
+    // 读数框避开图例（图例固定左上）：图例可见曲线占 top+8 起若干行，读数框落在它下方。
+    // 游标在左侧时尤其需要，否则读数框会压住图例的实时值列。
+    int legendRows = 0;
+    if (m_legend)
+        for (const Line &c : m_curves)
+            if (c.isVisible() && !c.name().isEmpty()) ++legendRows;
+    const double legendBottom = plot.top() + 8 + legendRows * (fm.height() + 4);
+    double boxTop = plot.top() + (m_abEnabled ? 30 : 8);
+    // 仅当读数框会与图例横向重叠（游标靠左）时才下移过图例。
+    if (m_legend && x < plot.left() + 300)
+        boxTop = qMax(boxTop, legendBottom + 4);
     QRectF box(x + 12, boxTop, boxW, boxH);
     if (box.right() > plot.right())
         box.moveLeft(x - 12 - boxW);
