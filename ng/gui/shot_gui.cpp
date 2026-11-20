@@ -104,6 +104,8 @@ int main(int argc, char *argv[])
     QString filterArg;    // --filter=<id> 截过滤器编辑器（脚本对齐 C：FilterOps+表单）
     QString markerArg;    // --marker=<lua规则> 截 Marker 规则叠加（脚本对齐 D）
     QString stateArg;     // --state=<table.column> 截状态视图色带（第二梯队 #203）
+    QString offsetArg;    // --offset=<sourceId:seconds> 设源级时间偏移（#204）
+    QString alignArg;     // --align=<start|center|end> 一键多源对齐（#204）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -159,6 +161,16 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--state=")))
         {
             stateArg = a.mid(QStringLiteral("--state=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--offset=")))
+        {
+            offsetArg = a.mid(QStringLiteral("--offset=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--align=")))
+        {
+            alignArg = a.mid(QStringLiteral("--align=").size());
             continue;
         }
         files << a;
@@ -368,6 +380,49 @@ int main(int argc, char *argv[])
                     }
             }
         }
+    }
+
+    // --offset=<sourceId:seconds>：源级显示时间偏移（第二梯队 #204 多源时间对齐）。
+    // --align=<start|center|end>：一键把所有源的开始/中点/结束平移到同一基准。
+    if (!offsetArg.isEmpty() || !alignArg.isEmpty())
+    {
+        auto runVa = [&application](const QString &op, const QVariantMap &params) {
+            QVariant v;
+            Result<QVariant> res(v);
+            const bool hit = application.context().interactions().dispatchViewAction(op, params, res);
+            if (!hit || !res.ok())
+                fprintf(stdout, "%s: 失败 %s\n", qPrintable(op),
+                        hit ? qPrintable(res.error().message) : "未注册");
+            else
+                fprintf(stdout, "%s: 成功 %s\n", qPrintable(op),
+                        qPrintable(res.value().toString()));
+        };
+        if (!offsetArg.isEmpty())
+        {
+            // 形式一：<sourceId>:<sec>；形式二：last:<sec>（最后加载的源，便于双文件演示）。
+            const int colon = offsetArg.indexOf(QLatin1Char(':'));
+            if (colon > 0)
+            {
+                const QString idPart = offsetArg.left(colon);
+                const double sec = offsetArg.mid(colon + 1).toDouble();
+                int src = -1;
+                if (idPart == QStringLiteral("last"))
+                {
+                    const QVector<int> srcIds = application.context().sources().ids();
+                    if (!srcIds.isEmpty())
+                        src = srcIds.last();
+                }
+                else
+                    src = idPart.toInt();
+                if (src >= 0)
+                    runVa(QStringLiteral("plot.offset.set"),
+                          {{QStringLiteral("sourceId"), src},
+                           {QStringLiteral("offsetSec"), sec}});
+            }
+        }
+        if (!alignArg.isEmpty())
+            runVa(QStringLiteral("plot.align"),
+                  {{QStringLiteral("mode"), alignArg}});
     }
 
     // --cursor=<t>：走真实画布 API 触发游标读数（老代码交互欠账验收）。

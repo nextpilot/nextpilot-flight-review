@@ -10,6 +10,7 @@
 #include "TimelineWidget.h"
 #include "DataRepository.h"
 #include "Dataset.h"
+#include "SourceRegistry.h"
 #include "PropertySchema.h"
 #include "Result.h"
 #include "Transform.h"
@@ -18,7 +19,10 @@
 #include <fastplot/Panner.h>
 #include <fastplot/Zoomer.h>
 
+#include <limits>
+
 #include <QEvent>
+#include <QHash>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QGridLayout>
@@ -95,6 +99,15 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
 
     QObject::connect(m_playback, &PlaybackEngine::currentTimeChanged, this,
                      [this](double t) { onPlayheadChanged(t); });
+
+    // 源级时间 offset 变化（第二梯队 #204 多源时间对齐）：统一刷新所有画布。
+    // offset 是宿主态配方，画布 LOO/原始数据不动，只重推 x 映射。
+    QObject::connect(&m_appCtx, &AppContext::sourceTimeOffsetChanged, this,
+                     [this](int, double) {
+                         for (const Cell &c : m_cells)
+                             if (c.canvas)
+                                 c.canvas->refreshSourceOffsets();
+                     });
 
     // 默认一个画布 cell。
     addCell();
@@ -411,6 +424,14 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
 {
     if (!canvas)
         return;
+    // 源级时间 offset provider（#204 多源时间对齐）：画布把 datasetId 经
+    // SourceRegistry 反查源 id，再取 AppContext 的源 offset。this 长生命周期，安全。
+    canvas->setSourceOffsetProvider([this](nextpilot::plotscope::dataset::DatasetId id) {
+        if (id == nextpilot::plotscope::dataset::kInvalidDataset)
+            return 0.0;
+        const int src = m_appCtx.sources().sourceOfDataset(id);
+        return src >= 0 ? m_appCtx.sourceTimeOffset(src) : 0.0;
+    });
     // 同页联动游标：任一画布时间变化 → 其它画布画联动竖线（只同步时间，不复制读数）。
     // source 指针避免回环；syncLinkedTime 静默不回广播。
     QObject::connect(canvas, &PlotCanvas::linkedTimeChanged, this,
@@ -787,6 +808,95 @@ void CanvasWorkspace::registerViewActions()
                                     if (PlotCanvas *c = activeCanvas())
                                         c->setStateRows(QJsonArray());
                                     return QVariant(true);
+                                });
+
+    // === 多源时间对齐（第二梯队 #204，对齐 PJ4 SourceTimelineController）===
+    // 源级显示时间偏移（秒）：施加在"曲线 x + 源 offset"，不改数据。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.offset.set"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    bool okId = false;
+                                    const int src = params.value(QStringLiteral("sourceId")).toInt(&okId);
+                                    if (!okId || src < 0)
+                                        return Error{QStringLiteral("eargs"),
+                                                     QStringLiteral("需要 sourceId 参数")};
+                                    const double off = params.value(QStringLiteral("offsetSec")).toDouble();
+                                    m_appCtx.setSourceTimeOffset(src, off);
+                                    return QVariant(off);
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.offset.clear"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    if (params.contains(QStringLiteral("sourceId")))
+                                    {
+                                        m_appCtx.setSourceTimeOffset(
+                                            params.value(QStringLiteral("sourceId")).toInt(), 0.0);
+                                    }
+                                    else
+                                    {
+                                        for (int src : m_appCtx.sourceTimeOffsetIds())
+                                            m_appCtx.setSourceTimeOffset(src, 0.0);
+                                    }
+                                    return QVariant(true);
+                                });
+    // 一键对齐：mode = start|center|end。按各源时间范围平移，使所有源
+    // 的开始/中点/结束落在同一时刻（基准取全局极值），返回 {sourceId: offset}。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.align"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    const QString mode =
+                                        params.value(QStringLiteral("mode")).toString();
+                                    if (mode != QStringLiteral("start")
+                                        && mode != QStringLiteral("center")
+                                        && mode != QStringLiteral("end"))
+                                        return Error{QStringLiteral("eargs"),
+                                                     QStringLiteral("mode 需为 start/center/end")};
+                                    // 每源聚合时间范围（数据集首尾时间）。
+                                    QHash<int, QPair<double, double>> ranges; // src -> [tMin,tMax]
+                                    for (const auto dsId : m_appCtx.data().ids())
+                                    {
+                                        const Dataset *ds = m_appCtx.data().get(dsId);
+                                        if (!ds || ds->tableCount() == 0)
+                                            continue;
+                                        const int src = m_appCtx.sources().sourceOfDataset(dsId);
+                                        if (src < 0)
+                                            continue;
+                                        const double lo = ds->timeMin();
+                                        const double hi = ds->timeMax();
+                                        if (!qIsFinite(lo) || !qIsFinite(hi))
+                                            continue;
+                                        auto it = ranges.find(src);
+                                        if (it == ranges.end())
+                                            ranges.insert(src, {lo, hi});
+                                        else
+                                        {
+                                            it.value().first = qMin(it.value().first, lo);
+                                            it.value().second = qMax(it.value().second, hi);
+                                        }
+                                    }
+                                    if (ranges.isEmpty())
+                                        return Error{QStringLiteral("enodata"),
+                                                     QStringLiteral("无可用数据源")};
+                                    double gLo = std::numeric_limits<double>::max();
+                                    double gHi = std::numeric_limits<double>::lowest();
+                                    for (auto it = ranges.constBegin(); it != ranges.constEnd(); ++it)
+                                    {
+                                        gLo = qMin(gLo, it.value().first);
+                                        gHi = qMax(gHi, it.value().second);
+                                    }
+                                    QVariantMap applied;
+                                    for (auto it = ranges.constBegin(); it != ranges.constEnd(); ++it)
+                                    {
+                                        const double anchor =
+                                            mode == QStringLiteral("start") ? it.value().first
+                                          : mode == QStringLiteral("end")   ? it.value().second
+                                                                            : (it.value().first + it.value().second) / 2.0;
+                                        const double target =
+                                            mode == QStringLiteral("start") ? gLo
+                                          : mode == QStringLiteral("end")   ? gHi
+                                                                            : (gLo + gHi) / 2.0;
+                                        const double off = target - anchor;
+                                        m_appCtx.setSourceTimeOffset(it.key(), off);
+                                        applied.insert(QString::number(it.key()), off);
+                                    }
+                                    return QVariant(applied);
                                 });
 
     // 回放引擎（对齐 PJ4 PlaybackEngine）：会话级时间游标的播放/暂停/定位/速率/循环/步进。

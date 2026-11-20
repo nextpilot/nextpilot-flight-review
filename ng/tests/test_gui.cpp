@@ -31,6 +31,8 @@
 #include "ChannelMime.h"
 
 #include "Dataset.h"
+#include "DataSource.h"
+#include "Source.h"
 #include "Intent.h"
 #include "RuntimeHost.h"
 #include "UiSlotRegistry.h"
@@ -74,7 +76,7 @@ using namespace nextpilot::plotscope::host;
 #define OK(msg) fprintf(stdout, "[ok] %s\n", msg)
 
 // 造一个 5000 行的内存数据集（三列），验证绘制路径的有界性。
-static int buildDataset(DataRepository &repo)
+static int buildDataset(DataRepository &repo, double t0 = 0.0)
 {
     Dataset ds = Dataset::create(QStringLiteral("gui-test"), QStringLiteral("mem"));
     QVector<double> ts, a, b;
@@ -87,7 +89,7 @@ static int buildDataset(DataRepository &repo)
     armed.reserve(5000);
     for (int i = 0; i < 5000; ++i)
     {
-        ts.append(i * 0.001);
+        ts.append(t0 + i * 0.001);
         a.append(i * 0.5);
         b.append(1000.0 - i * 0.25);
         mode.append((i / 100) % 3);
@@ -694,6 +696,106 @@ int main(int argc, char *argv[])
         const auto scr = application.host().execute(sit);
         CHECK(static_cast<bool>(scr));
         OK("脚本触发 data.state：app.call 成功路由并叠加");
+    }
+
+    // --- 5h) 多源时间对齐（第二梯队 #204）：源级 offset + Align start/center/end ---
+    //
+    // 场景：两个源（各自一个内存数据集，时间范围错开 10 秒）。
+    //   源 A：t ∈ [0, 5)（buildDataset 已建 dsId，0 起点但未挂源）
+    //   源 B：t ∈ [10, 15)
+    {
+        auto &sources = application.context().sources();
+        auto &repo = application.data();
+
+        DataSourceInfo infoA;
+        infoA.name = QStringLiteral("align-A");
+        infoA.state = SourceState::Closed;
+        const int srcA = sources.add(infoA);
+        DataSourceInfo infoB;
+        infoB.name = QStringLiteral("align-B");
+        infoB.state = SourceState::Closed;
+        const int srcB = sources.add(infoB);
+        CHECK(srcA >= 0 && srcB >= 0 && srcA != srcB);
+        const int dsA = buildDataset(repo, 0.0);  // t ∈ [0, 5)
+        CHECK(dsA >= 0);
+        const int dsB = buildDataset(repo, 10.0); // t ∈ [10, 15)
+        CHECK(dsB >= 0);
+        CHECK(sources.addDataset(srcA, dsA));
+        CHECK(sources.addDataset(srcB, dsB));
+
+        // view action 调用便捷包装（plot.* 走视图动作通道，不是 intent）。
+        auto va = [&application](const QString &op, const QVariantMap &params) {
+            QVariant v;
+            Result<QVariant> r(v);
+            const bool ok = application.context().interactions().dispatchViewAction(op, params, r);
+            return qMakePair(ok && r.ok(), r);
+        };
+
+        // ① offset.set / sourceTimeOffset 生效（宿主态配方，数据零改动）。
+        {
+            const auto rr = va(QStringLiteral("plot.offset.set"),
+                               {{QStringLiteral("sourceId"), srcB},
+                                {QStringLiteral("offsetSec"), 2.5}});
+            CHECK(rr.first);
+            CHECK(application.context().sourceTimeOffset(srcB) == 2.5);
+            CHECK(application.context().sourceTimeOffset(srcA) == 0.0);
+        }
+        OK("plot.offset.set：源级时间 offset 写入宿主态（A=0, B=2.5）");
+
+        // ② Align end：把所有源的结束时刻平移到同一基准（全局最晚 tMax，
+        // 含 fixture 行号时间源的 2999s，故用与基准无关的相对差断言：
+        // B-A offset 差 = (base-14.999)-(base-4.999) = -10）。
+        {
+            const auto rr = va(QStringLiteral("plot.align"),
+                               {{QStringLiteral("mode"), QStringLiteral("end")}});
+            CHECK(rr.first);
+            const QVariantMap am = rr.second.value().toMap();
+            CHECK(am.contains(QString::number(srcA))
+                  && am.contains(QString::number(srcB)));
+            CHECK(qAbs(am.value(QString::number(srcB)).toDouble()
+                       - am.value(QString::number(srcA)).toDouble() - (-10.0)) < 1e-6);
+        }
+        OK("plot.align end：两源结束时刻对齐（B-A offset 差=-10，基准无关）");
+
+        // ③ Align start：把所有源开始时刻平移到同一基准（全局最早 tMin），
+        // 同样用相对差断言：B-A offset 差 = (base-10)-(base-0) = -10。
+        {
+            const auto rr = va(QStringLiteral("plot.align"),
+                               {{QStringLiteral("mode"), QStringLiteral("start")}});
+            CHECK(rr.first);
+            const QVariantMap am = rr.second.value().toMap();
+            CHECK(qAbs(am.value(QString::number(srcB)).toDouble()
+                       - am.value(QString::number(srcA)).toDouble() - (-10.0)) < 1e-6);
+        }
+        OK("plot.align start：两源开始时刻对齐（B-A offset 差=-10，基准无关）");
+
+        // ④ offset.clear（带 sourceId）：单源归零。
+        {
+            const auto rr = va(QStringLiteral("plot.offset.clear"),
+                               {{QStringLiteral("sourceId"), srcB}});
+            CHECK(rr.first);
+            CHECK(application.context().sourceTimeOffset(srcB) == 0.0);
+        }
+        OK("plot.offset.clear：指定源 offset 归零");
+
+        // ⑤ 全清：先设 A、B 非零，再无参 clear。
+        {
+            va(QStringLiteral("plot.offset.set"),
+               {{QStringLiteral("sourceId"), srcA}, {QStringLiteral("offsetSec"), 1.0}});
+            va(QStringLiteral("plot.offset.set"),
+               {{QStringLiteral("sourceId"), srcB}, {QStringLiteral("offsetSec"), 1.0}});
+            const auto rr = va(QStringLiteral("plot.offset.clear"), {});
+            CHECK(rr.first);
+            CHECK(application.context().sourceTimeOffset(srcA) == 0.0
+                  && application.context().sourceTimeOffset(srcB) == 0.0);
+        }
+        OK("plot.offset.clear：无参全清两源归零");
+
+        // ⑥ 数据集零改动（offset 是显示配方，不动数据）。
+        const Dataset *dsChk = repo.get(dsB);
+        CHECK(dsChk && dsChk->table(0) && dsChk->table(0)->rows == 5000
+              && qAbs(dsChk->timeMin() - 10.0) < 1e-9);
+        OK("多源时间对齐：数据集时间范围零改动");
     }
 
     // 绘图路径用**内存构造**的数据集：它只关心 LOD 有界性，

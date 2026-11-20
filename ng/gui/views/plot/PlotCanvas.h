@@ -11,6 +11,8 @@
 #include <QWidget>
 #include <QEvent>
 
+#include <functional>
+
 class QDragEnterEvent;
 class QDragLeaveEvent;
 class QDragMoveEvent;
@@ -120,6 +122,12 @@ public:
     bool setSeriesXOffset(const QString &key, double offsetSec);
     bool setSeriesYTransform(const QString &key, const QString &descriptorId,
                              const QString &paramsJson = QString());
+    // 源级时间 offset provider（第二梯队 #204 多源时间对齐）：
+    // 画布把 datasetId 反查到源，取源 offset 叠加到曲线 x 上。
+    // 由上层注入（CanvasWorkspace 用 AppContext），画布不依赖 AppContext。
+    void setSourceOffsetProvider(std::function<double(nextpilot::plotscope::dataset::DatasetId)> provider);
+    // 源 offset 变化后重推曲线（LOD 不变，只重算 x 映射）。
+    void refreshSourceOffsets();
     // 轴级变换（配方存画布视图状态；实际施加在曲线取数层）。
     void setAxisTransform(const QString &axis, const QString &descriptorId);
     QString axisTransform(const QString &axis) const;
@@ -258,6 +266,8 @@ private:
     QColor nextSeriesColor() const;
     // 读数：从曲线有界窗口取 t 时刻最近样本，重写叠加层。
     void refreshReadout();
+    // 源级时间 offset：datasetId 经 provider 反查（无 provider 返回 0）。
+    double sourceOffsetFor(const PlotSeries &s) const;
     struct SampledValue { bool ok = false; double value = 0.0; };
     SampledValue sampleSeries(const PlotSeries &s, double t) const;
     // 交互状态机入口。
@@ -277,6 +287,8 @@ private:
     nextpilot::plotscope::fastplot::Zoomer *m_zoomer = nullptr;
     nextpilot::plotscope::fastplot::Panner *m_panner = nullptr;
     nextpilot::plotscope::fastplot::Picker *m_picker = nullptr;
+    // 源级时间 offset provider：datasetId -> 源 offset（秒）。空 = 无源 offset。
+    std::function<double(nextpilot::plotscope::dataset::DatasetId)> m_sourceOffsetProvider;
 
     QVector<PlotSeries> m_series; // 叠加的多条曲线
     // 游标读数/A-B/书签交互状态（对齐老 PlottingCanvas）。

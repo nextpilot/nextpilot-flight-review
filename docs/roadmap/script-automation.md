@@ -989,3 +989,15 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 - **限制**：string 状态读取依赖 kernel string ABI（`PS_VALUE_TEXT` 有枚举无读取函数），暂明确报错 `etype`，待 kernel 增 ABI 后接入。
 
 测试：`ng_test_state_view`（FNV-1a 公开向量 + PJ4 golden + Axes 渲染）；test_gui 5f/5g（枚举分段≥40 + bool 标签 true/false + 非整数拒绝 + 画布叠加 + 脚本触发）；真机截图 `ng-state-view.png`（双行 flight_mode/armed）。
+
+## 17. 多源时间对齐（第二梯队 #204，2026-11-20 落地）
+
+对齐 PJ4 `SourceTimelineController` 的源级显示时间偏移与一键对齐：
+
+- **宿主态配方**：`AppContext::setSourceTimeOffset(sourceId, seconds)`——offset 是**源级显示配方**（不改数据、不入视图状态），变化经 `sourceTimeOffsetChanged` 信号广播。
+- **画布施加**：`PlotCanvas::setSourceOffsetProvider`（由 CanvasWorkspace 注入 `datasetId → sourceId → offset` 反查），在 `pushToPlot`（曲线 x 映射副本）与 `sampleSeries`（游标读数采样）两处叠加 `xTimeOffset + 源 offset`；LOD 与原始数据不动。
+- **视图动作**：`plot.offset.set/clear`（单源/全清）、`plot.align`（mode=start/center/end——按各源 `Dataset::timeMin/timeMax` 聚合范围，把所有源的开始/中点/结束平移到全局基准）。脚本/GUI 共用一条路径。
+- **接线**：CanvasWorkspace 构造订阅 `sourceTimeOffsetChanged` 统一刷新所有画布；shot_gui `--offset=<src|last>:<sec>` + `--align=<mode>`。
+- **测试**：test_gui 5h——双源（时间范围错开 10s）+ fixture 行号时间源三方对齐，用**基准无关的相对差**断言（B-A offset 差 = -10），覆盖 offset.set/clear 单源与全清、align end/start、数据集零改动；真机截图对比（offset=+1500s 曲线整体右移、游标读数随偏移消失）。
+
+备注：CSV 默认 `time.mode=row`（行号模式，1 行 = 1s），fixture tMax=2999 是预期行为，不是时间轴 bug。

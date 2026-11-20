@@ -10,6 +10,7 @@
 #include "SettingsStore.h"
 #include "Transform.h"
 
+#include <QHash>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
@@ -130,9 +131,22 @@ public:
     void setSelection(const Selection &selection);
     void clearSelection();
 
+    // === 源级时间 offset（第二梯队 #204：多源时间对齐）===
+    //
+    // 对齐 PJ4 SourceTimelineController：每个数据源单独设显示时间偏移（秒），
+    // 画布施加"曲线 x + 源 offset"，一键 Align start/center/end 按各源时间范围
+    // 计算使多源对齐。offset 是**源级配方**（宿主态），不改数据、不入视图状态；
+    // 画布通过 sourceTimeOffsetChanged 刷新重取显示。
+    double sourceTimeOffset(int sourceId) const { return m_sourceTimeOffsets.value(sourceId, 0.0); }
+    void setSourceTimeOffset(int sourceId, double seconds);
+    // 已设置非零 offset 的源 id 列表（plot.offset.clear 全清用）。
+    QVector<int> sourceTimeOffsetIds() const { return m_sourceTimeOffsets.keys(); }
+
 Q_SIGNALS:
     // 当前活动源变化（GUI 树、脚本、CLI 都可订阅）。
     void activeSourceChanged(int sourceId);
+    // 源级时间 offset 变化（画布订阅后刷新；Align/脚本/GUI 共用一条路径）。
+    void sourceTimeOffsetChanged(int sourceId, double seconds);
     // 当前活动通道变化（画布、状态栏、脚本都订阅它）。
     void activeChannelChanged(int datasetId, const QString &table, const QString &column);
     // 统一选中对象变化：属性面板订阅它刷新。参数是选中对象的 JSON（跨线程安全）。
@@ -155,6 +169,7 @@ private:
     Selection m_selection;       // 当前统一选中对象
 
     int m_activeSourceId = -1;   // 数据源 id（SourceRegistry 键）
+    QHash<int, double> m_sourceTimeOffsets; // 源级显示时间 offset（秒，缺省 0）
     int m_activeDatasetId = -1;  // 活动通道所在的数据集 id（DataRepository 键）
     QString m_activeTable;
     QString m_activeColumn;

@@ -21,6 +21,15 @@ void AppContext::setActiveSourceId(int id)
     Q_EMIT activeSourceChanged(id);
 }
 
+void AppContext::setSourceTimeOffset(int sourceId, double seconds)
+{
+    // 值不变不广播（画布刷新有成本）。
+    if (qFuzzyCompare(m_sourceTimeOffsets.value(sourceId, 0.0), seconds))
+        return;
+    m_sourceTimeOffsets.insert(sourceId, seconds);
+    Q_EMIT sourceTimeOffsetChanged(sourceId, seconds);
+}
+
 void AppContext::setActiveChannel(int datasetId, const QString &table, const QString &column)
 {
     if (m_activeDatasetId == datasetId && m_activeTable == table &&

@@ -296,6 +296,26 @@ bool PlotCanvas::setSeriesXOffset(const QString &key, double offsetSec)
     return false;
 }
 
+void PlotCanvas::setSourceOffsetProvider(
+    std::function<double(nextpilot::plotscope::dataset::DatasetId)> provider)
+{
+    m_sourceOffsetProvider = std::move(provider);
+}
+
+void PlotCanvas::refreshSourceOffsets()
+{
+    if (m_series.isEmpty())
+        return;
+    // LOD 不变，只重推 x 映射（源 offset 在 pushToPlot 的副本上施加）。
+    pushToPlot();
+}
+
+// 源级时间 offset：datasetId 反查源（provider），叠加在曲线 xTimeOffset 之上。
+double PlotCanvas::sourceOffsetFor(const PlotSeries &s) const
+{
+    return m_sourceOffsetProvider ? m_sourceOffsetProvider(s.datasetId) : 0.0;
+}
+
 bool PlotCanvas::setSeriesYTransform(const QString &key, const QString &descriptorId,
                                      const QString &paramsJson)
 {
@@ -415,8 +435,8 @@ PlotCanvas::SampledValue PlotCanvas::sampleSeries(const PlotSeries &s, double t)
     SampledValue out;
     if (s.lod.isEmpty())
         return out;
-    // LOD 三元组按 x 升序，二分找最近列。x 已含 xTimeOffset，故目标要加偏移。
-    const double target = t + s.xTimeOffset;
+    // LOD 三元组按 x 升序，二分找最近列。x 已含 xTimeOffset 与源 offset，故目标要加偏移。
+    const double target = t + s.xTimeOffset + sourceOffsetFor(s);
     const QVector<LodTriple> &lod = s.lod;
     int lo = 0, hi = lod.size() - 1;
     while (lo < hi)
@@ -1010,9 +1030,10 @@ void PlotCanvas::pushToPlot()
         QVector<nextpilot::plotscope::fastplot::LodPoint> pts;
         pts.reserve(s.lod.size());
         for (const LodTriple &t : s.lod)
-            // X 轴时间偏移在副本上施加，LOD / 原始数据都不改。
+            // X 轴时间偏移在副本上施加（曲线级 xTimeOffset + 源级 offset），
+            // LOD / 原始数据都不改。
             pts.push_back(nextpilot::plotscope::fastplot::LodPoint{
-                t.x + s.xTimeOffset, t.min, t.max});
+                t.x + s.xTimeOffset + sourceOffsetFor(s), t.min, t.max});
 
         auto &curve = m_plot->addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(pts, s.color, s.lineWidth));
         curve.setName(s.legendName());
