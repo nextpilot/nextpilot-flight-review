@@ -13,13 +13,13 @@
     },
     {
       "name": "id",
-      "type": "bit",
+      "type": "rbit",
       "count": "29@0"
     },
     {
       "name": "rpm",
       "unit": "rpm",
-      "type": "bit",
+      "type": "rbit",
       "count": "16@8",
       "transform": "self*0.25",
       "expect": [

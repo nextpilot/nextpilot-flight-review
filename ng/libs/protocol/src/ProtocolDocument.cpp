@@ -937,9 +937,12 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
     if (!seg.countExpr)
         return false;
 
-    // ---- type：bit / blocks 名 / types 别名 / 内置类型 ----
+    // ---- type：bit/rbit / blocks 名 / types 别名 / 内置类型 ----
+    // rbit 与 bit 只差一个位序取值：bit = lsb0（字节内从低位起数），rbit = msb0（从高位起数）。
+    // 位偏移的编号方式两者完全一致，所以不额外占键。
     const QString tn = o.value(QStringLiteral("type")).toString(QStringLiteral("u8")).toLower();
-    if (tn == QLatin1String("bit"))
+    const bool isRbit = (tn == QLatin1String("rbit"));
+    if (tn == QLatin1String("bit") || isRbit)
     {
         int w = 0;
         int64_t off = 0;
@@ -952,7 +955,7 @@ bool parseSegment(const QJsonObject &o, const std::string &defaultEndian, SegSpe
         seg.bit.base.clear();
         seg.bit.offset = off;
         seg.bit.width = w;
-        seg.bit.order = "lsb0";
+        seg.bit.order = isRbit ? "msb0" : "lsb0";
         seg.type = {ValueType::U64, 8, false};
     }
     else
@@ -1348,7 +1351,7 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
 
     if (seg.bit.enabled)
     {
-        o["type"] = QStringLiteral("bit");
+        o["type"] = (seg.bit.order == "msb0") ? QStringLiteral("rbit") : QStringLiteral("bit");
         o["count"] = QStringLiteral("%1@%2")
                          .arg(seg.bit.width)
                          .arg(static_cast<qlonglong>(seg.bit.offset));

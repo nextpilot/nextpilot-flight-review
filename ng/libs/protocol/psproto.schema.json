@@ -107,6 +107,7 @@
       "type": "string",
       "enum": [
         "bit",
+        "rbit",
         "u8",
         "i8",
         "u16",
@@ -127,7 +128,7 @@
         "rest",
         "time"
       ],
-      "description": "内置类型。bit 表示按位取值，宽度与起始位写在 count 的 wide@off 形式"
+      "description": "内置类型。bit 按位取值（lsb0，字节内从低位起数），rbit 同一位域但 msb0（从高位起数）；两者宽度与起始位都写在 count 的 \"宽@偏移\" 形式"
     },
     "expr": {
       "type": "string",

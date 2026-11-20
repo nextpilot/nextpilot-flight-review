@@ -361,8 +361,9 @@ QStringList validateBin(const QJsonObject &root)
             if (!of.isEmpty())
             {
                 // 位域块：子字段只允许 bit + 宽@偏移，且不得重叠、不得超出容器
-                if (type != QLatin1String("bit"))
-                    errs << QStringLiteral("%1 在位域块里必须是 type:bit").arg(owner);
+                // 位域块子字段：bit（lsb0）或 rbit（msb0），宽@偏移 相对容器起点
+                if (type != QLatin1String("bit") && type != QLatin1String("rbit"))
+                    errs << QStringLiteral("%1 在位域块里必须是 type:bit 或 type:rbit").arg(owner);
                 const QJsonValue cv = f.value(QStringLiteral("count"));
                 int w = 0;
                 int off = 0;
@@ -402,8 +403,8 @@ QStringList validateBin(const QJsonObject &root)
                     ctx.hasVariable = true;
                     sumBytes = -1;
                 }
-                if (type == QLatin1String("bit"))
-                    errs << QStringLiteral("%1 是顺序块字段，不能用 type:bit（位域请用 of）").arg(owner);
+                if (type == QLatin1String("bit") || type == QLatin1String("rbit"))
+                    errs << QStringLiteral("%1 是顺序块字段，不能用 type:bit/rbit（位域请用 of）").arg(owner);
                 if (sumBytes >= 0)
                     sumBytes += n * typeBytes(type);
             }
@@ -463,7 +464,8 @@ QStringList validateBin(const QJsonObject &root)
 
         if (type.isEmpty())
             errs << QStringLiteral("%1 缺少 type").arg(name);
-        const bool isBit = (type == QLatin1String("bit"));
+        // bit 与 rbit 只差位序，校验、字节推进完全一致，共用同一分支
+        const bool isBit = (type == QLatin1String("bit") || type == QLatin1String("rbit"));
         const bool isBlock = blockNames.contains(type);
         const bool isBuiltin = typeNames().contains(type) || aliasNames.contains(type);
 
@@ -476,7 +478,7 @@ QStringList validateBin(const QJsonObject &root)
             int w = 0;
             int off = 0;
             if (!cv.isString() || !parseBitSpan(cv.toString(), &w, &off))
-                errs << QStringLiteral("%1 是 bit 类型，count 必须写成 \"宽@偏移\"（如 16@8）").arg(name);
+                errs << QStringLiteral("%1 是 bit/rbit 类型，count 必须写成 \"宽@偏移\"（如 16@8）").arg(name);
             else
             {
                 QString why;

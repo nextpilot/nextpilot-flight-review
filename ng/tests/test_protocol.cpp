@@ -651,6 +651,90 @@ int main(int argc, char *argv[])
     }
 #endif // 11) 位域 fixture
 
+    // --- 11b) 位序靠类型值表达：bit = lsb0 / rbit = msb0，同一字节解出不同值 ---
+    {
+        const QJsonObject bo = QJsonDocument::fromJson(R"json({
+            "name": "bitorder", "mode": "bin", "layout": "sequential",
+            "endian": "little", "maxsize": 8,
+            "segments": [
+                { "name": "raw", "type": "u8", "count": 2, "output": "none" },
+                { "name": "lsb", "type": "bit",  "count": "16@0" },
+                { "name": "msb", "type": "rbit", "count": "16@0" }
+            ]
+        })json").object();
+        const QStringList verrs = validate(bo);
+        if (!verrs.isEmpty())
+            fprintf(stderr, "bitorder 模板校验失败：%s\n", verrs.join(QStringLiteral("; ")).toUtf8().constData());
+        CHECK(verrs.isEmpty());
+
+        // 位序不影响偏移编号：@0 在两个段里都指"第一个字节的那个端点"，只是数位方向相反
+        ProtocolDocument bd;
+        std::string berr;
+        CHECK(parseDocument(bo, bd, berr));
+        CHECK(bd.segments.size() == 3);
+        CHECK(bd.segments[1].bit.order == std::string("lsb0"));
+        CHECK(bd.segments[2].bit.order == std::string("msb0"));
+
+        CompiledProgram bp;
+        CHECK(compileProgram(bd, bp, berr));
+        QByteArray frame;
+        frame.append(char(0x12));
+        frame.append(char(0x34));
+        ProtocolDecodeResult r = decodeSequentialCompiled(frame, bp);
+        if (!r.ok) fprintf(stderr, "位序解码失败：%s\n", r.error.toUtf8().constData());
+        CHECK(r.ok);
+        int li = -1, mi = -1;
+        for (int i = 0; i < r.channels.size(); ++i)
+        {
+            if (r.channels.at(i).name == "frame.lsb") li = i;
+            if (r.channels.at(i).name == "frame.msb") mi = i;
+        }
+        CHECK(li >= 0 && mi >= 0);
+        CHECK(r.channels.at(li).v.at(0).asU64() == 0x3412u); // lsb0：低字节在前
+        CHECK(r.channels.at(mi).v.at(0).asU64() == 0x1234u); // msb0：高字节在前
+
+        // 回写不丢位序：rbit 原样写回 rbit，默认仍是 bit
+        const QJsonObject back = toJson(bd);
+        const QJsonArray bsegs = back.value(QStringLiteral("segments")).toArray();
+        CHECK(bsegs.size() == 3);
+        CHECK(bsegs.at(1).toObject().value(QStringLiteral("type")).toString() == QStringLiteral("bit"));
+        CHECK(bsegs.at(2).toObject().value(QStringLiteral("type")).toString() == QStringLiteral("rbit"));
+        OK("位序：bit=lsb0 / rbit=msb0，同字节 12 34 分别解出 0x3412 与 0x1234，回写保持");
+    }
+
+    // --- 11c) 位序负例：rbit 也必须写 宽@偏移，且位域块内同样认 ---
+    {
+        auto doc = [](const QString &type, const QString &count) {
+            QJsonObject seg{{QStringLiteral("name"), QStringLiteral("x")},
+                            {QStringLiteral("type"), type},
+                            {QStringLiteral("count"), count}};
+            return QJsonObject{{QStringLiteral("name"), QStringLiteral("neg")},
+                               {QStringLiteral("mode"), QStringLiteral("bin")},
+                               {QStringLiteral("layout"), QStringLiteral("sequential")},
+                               {QStringLiteral("segments"), QJsonArray{seg}}};
+        };
+        CHECK(!validate(doc(QStringLiteral("rbit"), QStringLiteral("16"))).isEmpty());
+        CHECK(validate(doc(QStringLiteral("rbit"), QStringLiteral("16@8"))).isEmpty());
+
+        // 位域块：容器 u16，两个子字段一个 msb0 一个 lsb0，互相不重叠
+        const QJsonObject blk = QJsonDocument::fromJson(R"json({
+            "name": "bitblock", "mode": "bin", "layout": "sequential",
+            "blocks": {
+                "w": { "of": "u16", "fields": [
+                    { "name": "hi", "type": "rbit", "count": "4@12" },
+                    { "name": "lo", "type": "bit",  "count": "8@0" }
+                ]}
+            },
+            "segments": [ { "name": "v", "type": "w" } ]
+        })json").object();
+        const QStringList bend = validate(blk);
+        if (!bend.isEmpty())
+            fprintf(stderr, "位域块 rbit 校验失败：%s\n", bend.join(QStringLiteral("; ")).toUtf8().constData());
+        CHECK(bend.isEmpty());
+        OK("位序负例：rbit 缺 宽@偏移 被拒，位域块内 bit/rbit 可混用");
+    }
+
+
 #ifdef NG_TEST_FIXTURE_DIR
     // --- 12) text 流式：NMEA GGA（$ 定位 / * 硬匹配 / XOR / \r\n） ---
     {
