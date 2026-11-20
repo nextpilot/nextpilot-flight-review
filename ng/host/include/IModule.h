@@ -48,6 +48,14 @@ public:
     // 杜绝"参数 area 与 action.area 不一致"的双源隐患。
     virtual void addAction(const nextpilot::plotscope::registry::UiAction &action) = 0;
 
+    // 以**可整体重置**的动态 provider 注册动作（分析 gallery 的"最近使用/收藏"组）。
+    // 与 addAction（固定 provider "module"，终身有效）不同：动态条目随运行状态变化，
+    // 需要成组刷新——先 resetDynamicActions 清掉该 provider 的旧条目，再全量重注册。
+    virtual void addDynamicAction(const nextpilot::plotscope::registry::UiAction &action,
+                                  const QString &provider) = 0;
+    // 清空某动态 provider 的全部动作（外壳随后自动重建 ribbon）。
+    virtual void resetDynamicActions(const QString &provider) = 0;
+
     // 请求 app 骨架提供一个部件，放到指定区域。
     //
     // 模块只描述"我需要什么部件"（用部件类型标识，如 "dataset-tree"），

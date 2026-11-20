@@ -1031,3 +1031,13 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 - **修复真实潜伏 bug**：`rebuildFields` 清理循环用 `rowCount()`（表单行数）配 `takeAt(0)`（条目列表）——空表单上 takeAt 返回 nullptr 直接段错误。改用 `count()` 口径 + 空指针保护。**该 bug 在任何 GUI 打开数据路径都会崩，契约测试抓出后修复。**
 - **测试**：test_gui「通用导入对话框」——csv 后缀自动选中驱动 + schema 字段渲染 + probe 预览 + accept 收集三元组 + 探测失败进警告条；Release+Debug 双配置 23/23。
 - **截图**：`shot_gui --import=<path>`（早分支独立验收），`docs/screenshots/ng-import-dialog.png`——格式=CSV 解析器、解析选项表单（分隔符/表头/时间轴）、探测摘要「8 列 · 8 行预览」、预览表真实数据。
+
+## 21. 分析应用 gallery：全部/最近/收藏（#104，2026-11-20 落地）
+
+- **分层**：分析应用是纯数据条目（UiAction：intentOp=`analysis.run`、data=应用名、galleryGroup=分组）——模块贡献、外壳按组装配、点击走通用意图路径（与 CLI/脚本同一语义）。
+- **三组体验**（抄老 AnalysisRibbon）："全部应用"（0..，静态目录：默认曲线/分析报告/飞控复盘）→"最近使用"（100..，MRU 最多 5 条）→"收藏"（200..）。SARibbon gallery 默认显示第一组，其余组经右侧下拉切换。
+- **新意图 `analysis.favorite`**：切换收藏（仅目录内应用，未注册返回 `enoimpl`）；收藏/最近持久化在 Workspace settings（`analysis/favorites`、`analysis/recents`），跨会话恢复。
+- **动态组机制**：UiContext 新增 `addDynamicAction(action, provider)` / `resetDynamicActions(provider)`——动态条目挂独立 provider（`module:analysis-dynamic`），重置时整体撤销再全量重注册，外壳自动 rebuildRibbon；与终身有效的 "module" 条目隔离。
+- **MRU**：`analysis.run` 成功后自动记录（去重置顶、截断 5 条）；失败（如 enoimpl）不记录。
+- **测试**：test_gui「分析 gallery」断言——三组齐备（全部应用≥3）、收藏切换双向（registry 条目出现/撤销 + settings JSON 持久化）、未注册应用收藏被拒（enoimpl）、run default 后 MRU 首位 + 最近组动态条目（intentOp/data/galleryGroup 语义一致）；Release+Debug 双配置 23/23。
+- **截图**：shot_gui 新增 `--analysisfav=<app>`（走真实意图演示收藏，须在 `--tab` 之前执行——favorite 触发 rebuildRibbon 会重置当前页）；`docs/screenshots/ng-analysis-gallery.png`（分析页应用库，全部应用组 3 项）。

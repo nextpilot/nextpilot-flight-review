@@ -139,6 +139,7 @@ int main(int argc, char *argv[])
     QString themeArg;
     QString plotTypeArg;
     QString tabArg;
+    QString analysisFavArg; // --analysisfav=<app> 演示收藏切换（#104：走 analysis.favorite 真实意图）
     QString transformArg; // --transform=<cap> 截变换编辑器（cap: derived/axis-y/checksum）
     QString cursorArg;    // --cursor=<t> 触发游标读数（老代码交互欠账验收用）
     QString scriptArg;    // --script=<lua源码> 用脚本 app 全局操作应用（脚本对齐验收用）
@@ -168,6 +169,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--tab=")))
         {
             tabArg = a.mid(QStringLiteral("--tab=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--analysisfav=")))
+        {
+            analysisFavArg = a.mid(QStringLiteral("--analysisfav=").size());
             continue;
         }
         if (a.startsWith(QStringLiteral("--transform=")))
@@ -264,6 +270,21 @@ int main(int argc, char *argv[])
     // 所以取数与选通道都放在 show() 之后。
     window.show();
     QCoreApplication::processEvents();
+
+    // --analysisfav=<app>：走 analysis.favorite 真实意图切换收藏（#104 演示）。
+    // 收藏/最近组条目由 AnalysisModule 经动态 provider 重置重建，gallery 即时更新。
+    if (!analysisFavArg.isEmpty())
+    {
+        Intent fav;
+        fav.op = QStringLiteral("analysis.favorite");
+        fav.params[QStringLiteral("application")] = analysisFavArg;
+        const auto fr = application.host().execute(fav);
+        fprintf(stdout, "analysis.favorite %s: %s\n", qPrintable(analysisFavArg),
+                static_cast<bool>(fr) ? (fr.value().payload.toMap().value("favorite").toBool()
+                                             ? "已收藏" : "已取消收藏")
+                                      : qPrintable(fr.error().message));
+        QCoreApplication::processEvents();
+    }
 
     // --tab=<页名>：切到指定 ribbon 页（按 categoryTitle 匹配），用于逐页截图核对 8 页布局。
     if (!tabArg.isEmpty())

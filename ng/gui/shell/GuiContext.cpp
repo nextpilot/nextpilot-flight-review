@@ -70,6 +70,22 @@ void GuiContext::addAction(const UiAction &action)
         m_binder->rebuildRibbon();
 }
 
+void GuiContext::addDynamicAction(const UiAction &action, const QString &provider)
+{
+    // 动态条目挂在调用方给的 provider 下（如 "module:analysis-dynamic"），
+    // 与终身有效的 "module" 条目隔离——重置只影响动态组。
+    m_slots.bindLocal(action.area, action, provider);
+    if (m_binder)
+        m_binder->rebuildRibbon();
+}
+
+void GuiContext::resetDynamicActions(const QString &provider)
+{
+    m_slots.unbindProvider(provider);
+    if (m_binder)
+        m_binder->rebuildRibbon();
+}
+
 QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
 {
     // 部件由**视图层自注册**的工厂提供：外壳与器官都不认识具体实现。

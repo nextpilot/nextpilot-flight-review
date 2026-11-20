@@ -36,6 +36,9 @@ public:
     void declareSlot(const QString &area, const QString &label, nextpilot::plotscope::registry::SlotKind kind,
                      const QString &parentArea = QString()) override;
     void addAction(const nextpilot::plotscope::registry::UiAction &action) override;
+    void addDynamicAction(const nextpilot::plotscope::registry::UiAction &action,
+                          const QString &provider) override;
+    void resetDynamicActions(const QString &provider) override;
 
     // 请求 app 外壳提供一个部件，放到指定区域。
     QWidget *requestPanel(const QString &area, const QString &panelType) override;

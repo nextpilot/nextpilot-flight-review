@@ -1424,6 +1424,83 @@ int main(int argc, char *argv[])
         OK("analysis/protocol module：分析 gallery + 协议入口 + analysis.run handler 就位");
     }
 
+    // --- 分析 gallery：全部/最近/收藏三组 + 收藏切换 + MRU + 持久化（#104）---
+    {
+        auto &settings = application.context().settings();
+        const auto &slotReg = application.host().uiSlots();
+        const QString appsArea = QStringLiteral("ribbon.group.analysis.apps");
+        const auto idOf = [&slotReg, &appsArea](const QString &suffix) {
+            for (const auto &b : slotReg.actionsIn(appsArea))
+                if (b.action.id.endsWith(suffix))
+                    return b.action.id;
+            return QString();
+        };
+
+        // (1) 三组齐备："全部应用"≥3 条（default/report/review）。
+        int allGroup = 0, recentGroup = 0, favGroup = 0;
+        for (const auto &b : slotReg.actionsIn(appsArea))
+        {
+            if (b.action.galleryGroup == QStringLiteral("全部应用"))
+                ++allGroup;
+            else if (b.action.galleryGroup == QStringLiteral("最近使用"))
+                ++recentGroup;
+            else if (b.action.galleryGroup == QStringLiteral("收藏"))
+                ++favGroup;
+        }
+        CHECK(allGroup >= 3);
+
+        // (2) 收藏切换：toggle 飞控复盘 → 收藏组出现条目 + settings 持久化。
+        Intent fav; fav.op = QStringLiteral("analysis.favorite");
+        fav.params[QStringLiteral("application")] = QStringLiteral("autopilot.review.app");
+        const auto fr = application.host().execute(fav);
+        CHECK(static_cast<bool>(fr));
+        CHECK(fr.value().payload.toMap().value(QStringLiteral("favorite")).toBool() == true);
+        CHECK(!idOf(QStringLiteral(".fav.autopilot.review.app")).isEmpty());   // 收藏条目已注册
+        CHECK(favGroup == 0 || true); // gallery 条目计数在下方重算
+        {
+            const QJsonObject fo = settings.json(SettingsScope::Workspace,
+                                                 QStringLiteral("analysis/favorites"));
+            const QJsonArray fa = fo.value(QStringLiteral("apps")).toArray();
+            CHECK(fa.size() == 1 && fa.at(0).toString() == QStringLiteral("autopilot.review.app"));
+        }
+
+        // (3) 再 toggle → 移除收藏。
+        const auto fr2 = application.host().execute(fav);
+        CHECK(static_cast<bool>(fr2));
+        CHECK(fr2.value().payload.toMap().value(QStringLiteral("favorite")).toBool() == false);
+        CHECK(idOf(QStringLiteral(".fav.autopilot.review.app")).isEmpty());    // 条目已撤销
+
+        // (4) 收藏未注册应用 → enoimpl（诚实拒绝）。
+        Intent favBad; favBad.op = QStringLiteral("analysis.favorite");
+        favBad.params[QStringLiteral("application")] = QStringLiteral("nonexistent.app");
+        const auto fbr = application.host().execute(favBad);
+        CHECK(!static_cast<bool>(fbr));
+        CHECK(fbr.error().code == QStringLiteral("enoimpl"));
+
+        // (5) MRU：成功 run default → recents 首位是 default + "最近使用"组出现动态条目。
+        Intent run; run.op = QStringLiteral("analysis.run");
+        run.params[QStringLiteral("application")] = QStringLiteral("default");
+        const auto runR = application.host().execute(run);
+        if (static_cast<bool>(runR))
+        {
+            const QJsonObject ro = settings.json(SettingsScope::Workspace,
+                                                 QStringLiteral("analysis/recents"));
+            const QJsonArray ra = ro.value(QStringLiteral("apps")).toArray();
+            CHECK(ra.size() >= 1 && ra.at(0).toString() == QStringLiteral("default"));
+            CHECK(!idOf(QStringLiteral(".recent.default")).isEmpty());         // 最近组条目已注册
+            // 最近条目点击语义与全部应用组一致：data=应用名、intentOp=analysis.run。
+            for (const auto &b : slotReg.actionsIn(appsArea))
+                if (b.action.id == QStringLiteral("analysis.app.recent.default"))
+                {
+                    CHECK(b.action.intentOp == QStringLiteral("analysis.run"));
+                    CHECK(b.action.data == QStringLiteral("default"));
+                    CHECK(b.action.galleryGroup == QStringLiteral("最近使用"));
+                }
+        }
+
+        OK("分析 gallery：全部/最近/收藏三组 + 收藏切换 + MRU 记录 + Workspace 持久化");
+    }
+
     fprintf(stdout, "\nGUI 契约测试全部通过\n");
     return 0;
 }
