@@ -702,6 +702,37 @@ int main(int argc, char *argv[])
         OK("位序：bit=lsb0 / rbit=msb0，同字节 12 34 分别解出 0x3412 与 0x1234，回写保持");
     }
 
+    // --- 11e) 非线性 transform：折不成 self*k+b 的表达式逐帧求值 ---
+    {
+        const QJsonObject tv = QJsonDocument::fromJson(R"json({
+            "name": "trans", "mode": "bin", "layout": "sequential", "maxsize": 16,
+            "segments": [ { "name": "raw", "type": "u8", "count": 2, "output": "none" }, { "name": "t", "type": "u8", "unit": "degC", "transform": "(self-32)*5/9" } ]
+        })json").object();
+        CHECK(validate(tv).isEmpty());
+        ProtocolDocument td;
+        std::string terr;
+        CHECK(parseDocument(tv, td, terr));
+        CHECK(td.segments[1].transformExpr != nullptr); // 折不成线性，留在表达式
+        CompiledProgram tp;
+        if (!compileProgram(td, tp, terr))
+            fprintf(stderr, "非线性 transform 编译失败：%s\n", terr.c_str());
+        CHECK(tp.segs.size() == 2);
+        CHECK(tp.segs[1].hasTransformExpr);
+        QByteArray tframe;
+        tframe.append(char(0x00));
+        tframe.append(char(0x00));
+        tframe.append(char(50));
+        ProtocolDecodeResult tr = decodeSequentialCompiled(tframe, tp);
+        if (!tr.ok) fprintf(stderr, "非线性 transform 解码失败：%s\n", tr.error.toUtf8().constData());
+        CHECK(tr.ok);
+        const ProtocolChannel *tc = nullptr;
+        for (const auto &ch : tr.channels)
+            if (ch.name == "frame.t") tc = &ch;
+        CHECK(tc != nullptr);
+        CHECK(tc->v.at(0).asDouble() == 10.0); // (50-32)*5/9
+        OK("非线性 transform：(self-32)*5/9 在 50 上解出 10.0");
+    }
+
     // --- 11d) v3 blocks / derived 能进模型、能回写（编译展开另测） ---
     {
         const QJsonObject bd = QJsonDocument::fromJson(R"json({

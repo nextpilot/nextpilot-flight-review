@@ -104,6 +104,10 @@ struct CompiledSeg
     ByteCode expect;
     std::vector<CompiledCheck> checks;
     CompiledLength length;
+    // 非线性 transform：表达式逐元素求值（self 编译时已重写成该段自己的槽位）。
+    bool hasTransformExpr = false;
+    ByteCode transformCode;
+
     // 物理换算：恒等时不产生新列。
     bool identityPhys = true;
     double scale = 1.0;

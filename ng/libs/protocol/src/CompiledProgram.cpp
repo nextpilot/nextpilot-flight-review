@@ -685,6 +685,46 @@ static bool expandBlockSegs(const ProtocolDocument &doc, std::vector<SegSpec> &o
     return true;
 }
 
+// 深拷贝表达式树，并把指向 from 的 Ref 换名成 to。
+// v3 的 transform 表达式里 self 指本段原始值，编译成字节码不需要新机制：
+// 直接换成该段自己的槽位名，运行期槽位里存的就是原始值。
+// transform 表达式一律按浮点算：物理量本来就是实数，
+// 否则 (self-32)*5/9 会走整型整除，5/9 直接变 0。字面量统一转浮点。
+static ExprPtr floatize(const ExprPtr &e)
+{
+    if (!e)
+        return e;
+    auto n = std::make_shared<Expr>();
+    *n = *e;
+    if (e->kind == Expr::Num && e->isInt)
+    {
+        n->isInt = false;
+        n->num = static_cast<double>(e->ival);
+    }
+    n->a = floatize(e->a);
+    n->b = floatize(e->b);
+    n->c = floatize(e->c);
+    return n;
+}
+
+static ExprPtr renameRefs(const ExprPtr &e, const std::string &from, const std::string &to)
+{
+    if (!e)
+        return e;
+    auto n = std::make_shared<Expr>();
+    n->kind = e->kind;
+    n->num = e->num;
+    n->ival = e->ival;
+    n->isInt = e->isInt;
+    n->name = (e->kind == Expr::Ref && e->name == from) ? to : e->name;
+    n->fn = e->fn;
+    n->op = e->op;
+    n->a = renameRefs(e->a, from, to);
+    n->b = renameRefs(e->b, from, to);
+    n->c = renameRefs(e->c, from, to);
+    return n;
+}
+
 bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                                                     CompiledProgram &out, std::string &err)
 {
@@ -793,6 +833,15 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             cs.countIsConst = true;
             cs.constCount = 1;
             cs.constBytes = 0;
+        }
+
+        // 非线性 transform：解析期折不成 self*k+b 的表达式，逐帧求值。
+        if (s.transformExpr)
+        {
+            cs.hasTransformExpr = true;
+            cs.identityPhys = false;
+            if (!c.compileExpr(floatize(renameRefs(s.transformExpr, "self", s.name)), cs.transformCode))
+                return false;
         }
 
         // 段级 if：条件不成立就跳过该段。

@@ -823,6 +823,39 @@ bool readFrame(const CompiledProgram &prog, std::vector<TypedVec> &rawSlots,
         }
     }
 
+    // 非线性 transform：raw 已全部就位，统一求值覆盖物理列。
+    // self 在编译期已换写成该段自己的槽位，逐元素时把该槽位临时缩成单元素。
+    for (const CompiledSeg &seg : prog.segs)
+    {
+        if (!seg.hasTransformExpr)
+            continue;
+        const size_t si = static_cast<size_t>(seg.slot);
+        const TypedVec saved = rawSlots[si];
+        TypedVec phys;
+        phys.reset(ValueType::F64);
+        for (uint32_t i = 0; i < saved.size(); ++i)
+        {
+            // self 必须是浮点：否则 (self-32)*5/9 会走整型整除，5/9 直接变 0。
+            TypedVec one;
+            one.reset(ValueType::F64);
+            one.push(TypedValue::fromF(saved.at(i).asDouble(), ValueType::F64));
+            rawSlots[si] = one;
+            TypedValue v;
+            if (!runByteCode(seg.transformCode, rawSlots, v, r.err))
+            {
+                rawSlots[si] = saved;
+                return false;
+            }
+            phys.push(TypedValue::fromF(v.asDouble(), ValueType::F64));
+        }
+        rawSlots[si] = saved;
+        physSlots[si] = phys;
+        // 通道输出取的是字段记录里的 phys，必须同步，否则只有槽位被改、图上还是原始值。
+        for (Rt &rt : r.fields)
+            if (rt.spec == &seg)
+                rt.phys = phys;
+    }
+
     r.consumed = pos;
     r.ok = true;
     return true;
