@@ -70,6 +70,8 @@ endif()
 # === 公共基础头（header-only，最底层）===
 # Result.h 归位到这里：dataset / registry / intent / uischema 等机制库共享，
 # 又不让 core 与机制库形成循环依赖。必须先于 core 定义。
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/RuntimeDeploy.cmake")  # 提供 ng_deploy_windows_runtime_all，必须早于任何 add_subdirectory
+
 add_subdirectory(libs/foundation)
 
 # === 注册表最小核（header-only，先于 core 定义）===

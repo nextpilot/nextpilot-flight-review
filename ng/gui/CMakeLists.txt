@@ -161,3 +161,7 @@ target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_core Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(plotscope-ng-gui-shot PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+
+# Windows：把 ads.dll 拷到本目录各可执行目标旁边，构建完即可直接运行/跑测试。
+ng_deploy_windows_runtime_all()
+

@@ -30,7 +30,12 @@ add_library(ng_protocol STATIC
 set(NG_LUA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../deps/lua")
 if(EXISTS "${NG_LUA_ROOT}/lib/liblua.a")
     target_include_directories(ng_protocol PRIVATE "${NG_LUA_ROOT}/include")
-    target_link_libraries(ng_protocol PUBLIC "${NG_LUA_ROOT}/lib/liblua.a" m ${CMAKE_DL_LIBS})
+    # libm / libdl 是 POSIX 专有：Windows 上不存在 m.lib，无条件链接会 LNK1181。
+    set(_ng_lua_libs "${NG_LUA_ROOT}/lib/liblua.a")
+    if(UNIX)
+        list(APPEND _ng_lua_libs m ${CMAKE_DL_LIBS})
+    endif()
+    target_link_libraries(ng_protocol PUBLIC ${_ng_lua_libs})
     target_compile_definitions(ng_protocol PUBLIC NG_PROTOCOL_LUA=1)
 endif()
 target_include_directories(ng_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

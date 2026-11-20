@@ -202,3 +202,7 @@ target_sources(ng_test_plot_io PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
 set_target_properties(ng_test_plot_io PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_plot_io COMMAND ng_test_plot_io)
 set_tests_properties(ng_plot_io PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Windows：把 ads.dll 拷到本目录各可执行目标旁边，构建完即可直接运行/跑测试。
+ng_deploy_windows_runtime_all()
+
