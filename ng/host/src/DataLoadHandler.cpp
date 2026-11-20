@@ -1,4 +1,5 @@
 #include "DataLoadHandler.h"
+#include "ErrorCodes.h"
 
 #include "AppContext.h"
 #include "DataCommandsHandler.h"
@@ -40,7 +41,7 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
         driver = m_registry.driverForPath(path);
 
     if (!driver)
-        return fail(QStringLiteral("eformat"),
+        return fail(err::Format,
                     QStringLiteral("没有已注册的格式驱动能处理: %1 (format=%2)")
                         .arg(path, format));
 
@@ -110,7 +111,7 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
     }
 
     // 该解析器声明了 FrameBatch 输出却没有 parserId，或摄取管道未注入——配置错误。
-    return fail(QStringLiteral("enoparser"),
+    return fail(err::NoParser,
                 QStringLiteral("解析器 %1 未提供可执行的 parserId，无法走摄取管道")
                     .arg(driver->id()));
 }

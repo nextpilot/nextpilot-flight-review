@@ -9,6 +9,7 @@
 #include "Intent.h"
 #include "RuntimeHost.h"
 #include "Result.h"
+#include "ErrorCodes.h"
 #include "SettingsStore.h"
 
 #include <QJsonArray>
@@ -110,7 +111,7 @@ private:
 
         // 领域应用（飞控复盘等）由 extensions 贡献；此处没有对应实现就诚实返回失败，
         // 而不是弹一个空壳面板。
-        return fail(QStringLiteral("enoimpl"),
+        return fail(err::NoImpl,
                     QStringLiteral("分析应用「%1」由领域扩展提供，当前未注册").arg(app));
     }
 
@@ -119,9 +120,9 @@ private:
     {
         const QString app = intent.params.value(QStringLiteral("application")).toString();
         if (app.isEmpty())
-            return fail(QStringLiteral("eparam"), QStringLiteral("缺少 application 参数"));
+            return fail(err::Param, QStringLiteral("缺少 application 参数"));
         if (!m_catalog.contains(app))
-            return fail(QStringLiteral("enoimpl"),
+            return fail(err::NoImpl,
                         QStringLiteral("分析应用「%1」未注册，不能收藏").arg(app));
 
         QStringList favs = favorites();
@@ -222,7 +223,7 @@ private:
         const int sid = m_app.activeSourceId();
         const DataSourceInfo *src = m_app.sources().get(sid);
         if (!src)
-            return fail(QStringLiteral("enosource"), QStringLiteral("没有活动数据源，无法生成默认曲线"));
+            return fail(err::NoSource, QStringLiteral("没有活动数据源，无法生成默认曲线"));
 
         int channels = 0;
         for (int dsId : src->datasetIds)
@@ -245,7 +246,7 @@ private:
             }
         }
         if (channels == 0)
-            return fail(QStringLiteral("echan"), QStringLiteral("活动数据源没有可绘制的数值通道"));
+            return fail(err::Chan, QStringLiteral("活动数据源没有可绘制的数值通道"));
 
         IntentResult r;
         r.payload = QVariantMap{

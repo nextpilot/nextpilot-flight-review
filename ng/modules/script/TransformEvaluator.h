@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Result.h"
+#include "Transform.h"
 
 #include <QJsonObject>
 #include <QVector>
@@ -26,16 +27,19 @@ public:
     // 单点求值：live 数据源 / checksum / 在线调试单点输入。
     // cap: 目标能力（如 CapAxisY / CapChecksum），用于运行时防错配。
     static nextpilot::plotscope::foundation::Result<double> evalScalar(
+        const nextpilot::plotscope::uischema::TransformRegistry &transforms,
         const QJsonObject &requestJson, uint32_t cap,
         double x, double t, int index);
 
     // 批量求值：offline 数据源 / 在线调试批量输入 / 曲线整段 Y 变换。
     static nextpilot::plotscope::foundation::Result<QVector<double>> evalSeries(
+        const nextpilot::plotscope::uischema::TransformRegistry &transforms,
         const QJsonObject &requestJson, uint32_t cap,
         const QVector<double> &t, const QVector<double> &v);
 
     // 便捷：构造一份 TransformRequest JSON。
-    static QJsonObject makeRequest(const QString &descriptorId,
+    static QJsonObject makeRequest(const nextpilot::plotscope::uischema::TransformRegistry &transforms,
+                                   const QString &descriptorId,
                                    const QString &expression,
                                    const QString &luaSource,
                                    const QString &scriptId,

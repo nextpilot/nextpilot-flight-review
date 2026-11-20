@@ -75,7 +75,9 @@ int main(int argc, char *argv[])
 
     // ===== 2. TransformRegistry 自描述 + 按能力过滤 =====
     {
-        const auto all = TransformRegistry::all();
+        // 实例归组合根；测试里就地构造一份（构造即注册内置算子）。
+        TransformRegistry transforms;
+        const auto all = transforms.all();
         CHECK(all.size() >= 10); // 8 内置算子 + 表达式 + Lua
         for (const TransformDescriptor &d : all)
         {
@@ -84,7 +86,7 @@ int main(int argc, char *argv[])
             CHECK(d.capabilities != CapNone); // 每个都必须声明能力
         }
         // Checksum 能力过滤：列出的都真支持 checksum，不支持的一律不出现。
-        const auto checks = TransformRegistry::byCapability(CapChecksum);
+        const auto checks = transforms.byCapability(CapChecksum);
         CHECK(!checks.isEmpty());
         for (const TransformDescriptor &d : checks)
             CHECK(d.supports(CapChecksum));
@@ -94,8 +96,8 @@ int main(int argc, char *argv[])
                 hasNormalize = true;
         CHECK(!hasNormalize); // normalize 需要全段，不支持 checksum 单点
         // "选错"在 registry 层就被过滤掉。
-        CHECK(TransformRegistry::contains(QStringLiteral("expression")));
-        CHECK(TransformRegistry::contains(QStringLiteral("lua.inline")));
+        CHECK(transforms.contains(QStringLiteral("expression")));
+        CHECK(transforms.contains(QStringLiteral("lua.inline")));
         printf("OK  TransformRegistry：自描述齐全 / 按能力过滤 / 选错在 UI 层被挡\n");
     }
 

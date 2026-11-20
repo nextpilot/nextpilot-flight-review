@@ -20,6 +20,7 @@ struct BuiltinPackStore
 
 BuiltinPackStore &builtinPacks()
 {
+    // [静态纪律·合法] 进程一份、无生命周期、自注册表（NG_REGISTER_PACK TU 工厂）。
     static BuiltinPackStore s;
     return s;
 }

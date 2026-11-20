@@ -1,10 +1,12 @@
 #include "RuntimeHost.h"
+#include "ErrorCodes.h"
 #include "SkeletonSlots.h"
 
 #include <QSet>
 
 namespace nextpilot::plotscope::host
 {
+namespace err = nextpilot::plotscope::foundation::err;
 
 void ModuleContext::registerIntentHandler(nextpilot::plotscope::intent::IIntentHandler *handler)
 {
@@ -181,7 +183,7 @@ nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentRes
         if (handler && handler->canHandle(intent))
             return handler->execute(intent);
     }
-    return nextpilot::plotscope::foundation::fail(QStringLiteral("eunsupported"),
+    return nextpilot::plotscope::foundation::fail(err::Unsupported,
                           QStringLiteral("没有模块能处理意图: %1").arg(intent.op));
 }
 

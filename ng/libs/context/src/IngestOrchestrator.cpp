@@ -1,4 +1,5 @@
 #include "IngestOrchestrator.h"
+#include "ErrorCodes.h"
 
 #include "SourceRegistry.h"
 
@@ -6,6 +7,7 @@
 
 namespace nextpilot::plotscope::context
 {
+namespace err = nextpilot::plotscope::foundation::err;
 using nextpilot::plotscope::dataset::Dataset;
 using nextpilot::plotscope::dataset::SourceKind;
 using nextpilot::plotscope::dataset::SourceState;
@@ -44,11 +46,11 @@ Result<int> IngestOrchestrator::openFile(const QString &path, const QStringList 
                                          const QString &topicFilter, const Options &options)
 {
     if (path.isEmpty())
-        return fail(QStringLiteral("eio"), QStringLiteral("路径为空"));
+        return fail(err::Io, QStringLiteral("路径为空"));
 
     FileByteSource source(path);
     if (!source.valid())
-        return fail(QStringLiteral("eio"), source.error());
+        return fail(err::Io, source.error());
 
     return ingest(source, parserIds, topicFilter, path, options);
 }
@@ -89,7 +91,7 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
     }
     if (ids.isEmpty())
     {
-        return fail(QStringLiteral("eformat"),
+        return fail(err::Format,
                     QStringLiteral("没有匹配的解析器: %1").arg(origin));
     }
 
@@ -119,7 +121,7 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
 
     const int sourceId = m_sources.add(info);
     if (sourceId < 0)
-        return fail(QStringLiteral("eio"), QStringLiteral("数据源登记失败"));
+        return fail(err::Io, QStringLiteral("数据源登记失败"));
     m_sourceId = sourceId;
 
     // --- 3) 绑定解析器：每个 (源, 解析器) 一个独立实例 + 独立数据集 ---
@@ -196,7 +198,7 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
         if (m_datasetIds.isEmpty())
         {
             m_sources.remove(sourceId);
-            return fail(QStringLiteral("edata"),
+            return fail(err::Data,
                         QStringLiteral("没有解析出任何数据: %1").arg(origin));
         }
         return m_datasetIds.first();
@@ -214,7 +216,7 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
             m_sources.setState(sourceId, SourceState::Error,
                                       QStringLiteral("读取失败"));
             m_sources.remove(sourceId);
-            return fail(QStringLiteral("eio"), QStringLiteral("读取失败: %1").arg(origin));
+            return fail(err::Io, QStringLiteral("读取失败: %1").arg(origin));
         }
         if (n == 0)
             break;
@@ -247,7 +249,7 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
     if (m_datasetIds.isEmpty())
     {
         m_sources.remove(sourceId);
-        return fail(QStringLiteral("edata"), QStringLiteral("没有解析出任何数据: %1").arg(origin));
+        return fail(err::Data, QStringLiteral("没有解析出任何数据: %1").arg(origin));
     }
 
     // --- 7) 写缓存：把这次解析的结果存下来，下次同一份文件直接复用 ---

@@ -15,7 +15,9 @@ extern "C" {
 #include <cstring>
 #include <cstdio>
 
+#include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
+namespace err = nextpilot::plotscope::foundation::err;
 
 namespace nextpilot::plotscope::script
 {
@@ -458,7 +460,7 @@ Result<QVector<FilterDescriptor>> FilterEngine::inspectModule(const QByteArray &
 {
     lua_State *L = luaL_newstate();
     if (!L)
-        return fail(QStringLiteral("enolua"), QStringLiteral("Lua 状态创建失败"));
+        return fail(err::NoLua, QStringLiteral("Lua 状态创建失败"));
     luaL_openlibs(L);
 
     const int st = luaL_loadbuffer(L, source.constData(), source.size(), "=filter_module");
@@ -467,7 +469,7 @@ Result<QVector<FilterDescriptor>> FilterEngine::inspectModule(const QByteArray &
         const char *e = lua_tostring(L, -1);
         const QString msg = e ? QString::fromUtf8(e) : QStringLiteral("过滤器模块编译失败");
         lua_close(L);
-        return fail(QStringLiteral("esyntax"), msg);
+        return fail(err::Syntax, msg);
     }
     const int callSt = lua_pcall(L, 0, 1, 0);
     if (callSt != LUA_OK)
@@ -475,7 +477,7 @@ Result<QVector<FilterDescriptor>> FilterEngine::inspectModule(const QByteArray &
         const char *e = lua_tostring(L, -1);
         const QString msg = e ? QString::fromUtf8(e) : QStringLiteral("过滤器模块运行失败");
         lua_close(L);
-        return fail(QStringLiteral("eruntime"), msg);
+        return fail(err::Runtime, msg);
     }
     // 返回值：单个 class table 或 class 列表。
     QVector<FilterDescriptor> out;
@@ -506,7 +508,7 @@ Result<QVector<FilterDescriptor>> FilterEngine::inspectModule(const QByteArray &
     }
     lua_close(L);
     if (out.isEmpty())
-        return fail(QStringLiteral("eshape"), QStringLiteral("过滤器模块未声明任何 class"));
+        return fail(err::Shape, QStringLiteral("过滤器模块未声明任何 class"));
     return out;
 }
 
@@ -515,7 +517,7 @@ Result<std::unique_ptr<FilterInstance>> FilterEngine::createInstance(const Filte
 {
     lua_State *L = luaL_newstate();
     if (!L)
-        return fail(QStringLiteral("enolua"), QStringLiteral("Lua 状态创建失败"));
+        return fail(err::NoLua, QStringLiteral("Lua 状态创建失败"));
     luaL_openlibs(L);
 
     // Watchdog 放 registry。
@@ -530,14 +532,14 @@ Result<std::unique_ptr<FilterInstance>> FilterEngine::createInstance(const Filte
         const char *e = lua_tostring(L, -1);
         const QString msg = e ? QString::fromUtf8(e) : QStringLiteral("过滤器源码编译失败");
         lua_close(L); delete wd;
-        return fail(QStringLiteral("esyntax"), msg);
+        return fail(err::Syntax, msg);
     }
     if (lua_pcall(L, 0, 1, 0) != LUA_OK)
     {
         const char *e = lua_tostring(L, -1);
         const QString msg = e ? QString::fromUtf8(e) : QStringLiteral("过滤器源码运行失败");
         lua_close(L); delete wd;
-        return fail(QStringLiteral("eruntime"), msg);
+        return fail(err::Runtime, msg);
     }
     // 找到 id 匹配的 class。
     int classIdx = LUA_NOREF;
@@ -580,7 +582,7 @@ Result<std::unique_ptr<FilterInstance>> FilterEngine::createInstance(const Filte
     if (classIdx == LUA_NOREF)
     {
         lua_close(L); delete wd;
-        return fail(QStringLiteral("enoclass"), QStringLiteral("未找到过滤器 class: %1").arg(klass.id));
+        return fail(err::NoClass, QStringLiteral("未找到过滤器 class: %1").arg(klass.id));
     }
 
     // 调 create(params)。契约（script-automation.md §2.7）：create 用点号定义，
@@ -598,7 +600,7 @@ Result<std::unique_ptr<FilterInstance>> FilterEngine::createInstance(const Filte
     if (!lua_isfunction(L, -1))
     {
         lua_close(L); delete wd;
-        return fail(QStringLiteral("enocreate"), QStringLiteral("过滤器 %1 未定义 create").arg(klass.id));
+        return fail(err::NoCreate, QStringLiteral("过滤器 %1 未定义 create").arg(klass.id));
     }
     pushJson(L, QJsonValue(effective));
     if (lua_pcall(L, 1, 1, 0) != LUA_OK)
@@ -606,7 +608,7 @@ Result<std::unique_ptr<FilterInstance>> FilterEngine::createInstance(const Filte
         const char *e = lua_tostring(L, -1);
         const QString msg = e ? QString::fromUtf8(e) : QStringLiteral("create 失败");
         lua_close(L); delete wd;
-        return fail(QStringLiteral("ecreate"), msg);
+        return fail(err::Create, msg);
     }
     // pcall 吃掉 create + params，压回 state；栈里还剩 class（在 state 下面）。
     // 栈顶是 state 实例，ref 它。

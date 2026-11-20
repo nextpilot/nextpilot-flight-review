@@ -571,6 +571,14 @@ NG_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 - **静态自注册纪律**：进程级静态表一律 `StaticRegistry<T>` / `Registry<T>`（函数内
   static 持有），禁止手写 `static QHash` + 自造 register/get/all——曾出现
   TransformRegistry / BuiltinModuleRegistry / ParserRegistry 三处手写复本，已收敛。
+- **libs 静态对象纪律**：libs 是库——只提供机制与类型，真实对象的实例化必须严谨：
+  实例归组合根（AppContext）持有，构造期注入（如 `TransformRegistry` 由 AppContext
+  实例化、ScriptModule 构造 LuaScriptLibrary 时注入）。libs 里允许的静态真实对象
+  仅限一种形态：**进程一份、无生命周期、自注册表**（ParserRegistry 的 C ABI 表 /
+  BuiltinPackStore / PanelFactoryRegistry），必须挂 `[静态纪律·合法]` 注释；
+  有运行时生命周期的状态禁止放静态存储。
+- **对账（下批）**：`AppContext` 组合根目前住在 libs/context——组合逻辑应归 host
+  （LAYERS.md L3"运行时编排"），迁移牵连 60+ 文件 include（机械替换）。
 - 历史遗留已清除：`IToolContribution` / 6 个 `I*Contribution` / `IToolPack` /
   `ToolPack` 六个 add 方法 / `IndexedByKind` / `ContributionKind`（kind 字符串）全部删除。
 

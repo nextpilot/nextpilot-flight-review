@@ -13,6 +13,7 @@ extern "C" {
 #include <QJsonObject>
 #include <QJsonValue>
 
+#include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::uischema;
 
@@ -181,8 +182,8 @@ QJsonValue luaValueToJson(lua_State *L, int index)
     }
 }
 
-LuaScriptLibrary::LuaScriptLibrary(QString opsDir)
-    : m_opsDir(std::move(opsDir))
+LuaScriptLibrary::LuaScriptLibrary(TransformRegistry &transforms, QString opsDir)
+    : m_transforms(transforms), m_opsDir(std::move(opsDir))
 {
 }
 
@@ -198,7 +199,7 @@ Result<TransformDescriptor> LuaScriptLibrary::describe(const QByteArray &source,
 {
     lua_State *L = luaL_newstate();
     if (!L)
-        return fail(QStringLiteral("enolua"), QStringLiteral("Lua 状态创建失败"));
+        return fail(err::NoLua, QStringLiteral("Lua 状态创建失败"));
 
     openDescribeLibs(L);
     lua_sethook(L, interruptHook, LUA_MASKCOUNT, kMaxDescribeInstructions);
@@ -208,13 +209,13 @@ Result<TransformDescriptor> LuaScriptLibrary::describe(const QByteArray &source,
     {
         const QString err = luaError(L);
         lua_close(L);
-        return fail(QStringLiteral("esyntax"), err);
+        return fail(err::Syntax, err);
     }
     if (lua_pcall(L, 0, 0, 0) != LUA_OK)
     {
         const QString err = luaError(L);
         lua_close(L);
-        return fail(QStringLiteral("eruntime"), err);
+        return fail(err::Runtime, err);
     }
 
     lua_getglobal(L, "describe");
@@ -234,7 +235,7 @@ Result<TransformDescriptor> LuaScriptLibrary::describe(const QByteArray &source,
     {
         const QString err = luaError(L);
         lua_close(L);
-        return fail(QStringLiteral("edescribe"), err);
+        return fail(err::Describe, err);
     }
 
     const QJsonObject meta = luaValueToJson(L, -1).toObject();
@@ -276,7 +277,7 @@ LuaScriptLibrary::LoadReport LuaScriptLibrary::loadAll()
             report.errors << QStringLiteral("%1: %2").arg(name, r.error().message);
             continue;
         }
-        TransformRegistry::registerDescriptor(r.value());
+        m_transforms.registerDescriptor(r.value());
         ++report.loaded;
     }
     return report;
@@ -285,7 +286,7 @@ LuaScriptLibrary::LoadReport LuaScriptLibrary::loadAll()
 Result<TransformDescriptor> LuaScriptLibrary::save(const QString &name, const QByteArray &source)
 {
     if (!validScriptName(name))
-        return fail(QStringLiteral("ebadname"),
+        return fail(err::BadName,
                     QStringLiteral("脚本名只准小写字母/数字/下划线/短横线，长度 1..64"));
 
     const Result<TransformDescriptor> r = describe(source, name);
@@ -293,15 +294,15 @@ Result<TransformDescriptor> LuaScriptLibrary::save(const QString &name, const QB
         return r;
 
     if (m_opsDir.isEmpty() || !QDir().mkpath(m_opsDir))
-        return fail(QStringLiteral("eio"), QStringLiteral("无法创建脚本目录: %1").arg(m_opsDir));
+        return fail(err::Io, QStringLiteral("无法创建脚本目录: %1").arg(m_opsDir));
     QFile f(QDir(m_opsDir).filePath(name + QStringLiteral(".lua")));
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return fail(QStringLiteral("eio"), QStringLiteral("无法写入脚本: %1").arg(f.fileName()));
+        return fail(err::Io, QStringLiteral("无法写入脚本: %1").arg(f.fileName()));
     if (f.write(source) != source.size())
-        return fail(QStringLiteral("eio"), QStringLiteral("脚本写入不完整"));
+        return fail(err::Io, QStringLiteral("脚本写入不完整"));
     f.close();
 
-    TransformRegistry::registerDescriptor(r.value());
+    m_transforms.registerDescriptor(r.value());
     return r;
 }
 

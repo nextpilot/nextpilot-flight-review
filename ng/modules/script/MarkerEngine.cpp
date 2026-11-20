@@ -14,7 +14,9 @@ extern "C" {
 #include <cstdio>
 #include <cstring>
 
+#include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
+namespace err = nextpilot::plotscope::foundation::err;
 
 namespace nextpilot::plotscope::script
 {
@@ -621,7 +623,7 @@ Result<QVector<PlotMarker>> MarkerEngine::run(const QByteArray &code,
 {
     lua_State *L = luaL_newstate();
     if (!L)
-        return fail(QStringLiteral("enomem"), QStringLiteral("无法创建 Lua 状态"));
+        return fail(err::NoMem, QStringLiteral("无法创建 Lua 状态"));
     luaL_openlibs(L);
 
     RunCtx ctx;
@@ -654,7 +656,7 @@ Result<QVector<PlotMarker>> MarkerEngine::run(const QByteArray &code,
         const char *e = lua_tostring(L, -1);
         const QString msg = e ? QString::fromUtf8(e) : QStringLiteral("marker DSL 初始化失败");
         lua_close(L);
-        return fail(QStringLiteral("ebootstrap"), msg);
+        return fail(err::Bootstrap, msg);
     }
 
     // 看门狗
@@ -673,15 +675,15 @@ Result<QVector<PlotMarker>> MarkerEngine::run(const QByteArray &code,
             msg = QStringLiteral("marker 指令预算超限");
         lua_sethook(L, nullptr, 0, 0);
         lua_close(L);
-        return fail(QStringLiteral("erule"), msg);
+        return fail(err::Rule, msg);
     }
     lua_sethook(L, nullptr, 0, 0);
     lua_close(L);
 
     if (ctx.overBudget)
-        return fail(QStringLiteral("eoutput"), QStringLiteral("marker 输出数量超限"));
+        return fail(err::Output, QStringLiteral("marker 输出数量超限"));
     if (!ctx.error.isEmpty())
-        return fail(QStringLiteral("erule"), ctx.error);
+        return fail(err::Rule, ctx.error);
     return Result<QVector<PlotMarker>>(std::move(ctx.emitted));
 }
 

@@ -10,6 +10,8 @@ namespace nextpilot::plotscope::parser
 namespace
 {
 // 函数内 static：避免静态初始化顺序问题（解析器 TU 的静态对象可能先于本表构造）。
+// [静态纪律·合法] 进程一份、无生命周期、自注册表（NG_REGISTER_PARSER/插件 dlopen）——
+// 插件生命周期=进程，静态存储是自注册机制的必要实现。
 // 容器本体委托泛型注册表（机制唯一，保序：登记顺序即 ids() 顺序，order 列表不再自备）。
 // 插件句柄与条目同 id 存放，unregister/reset 随条目一起释放。
 using nextpilot::plotscope::registry::Registry;

@@ -21,7 +21,8 @@ using nextpilot::plotscope::uischema::TransformDescriptor;
 class LuaScriptLibrary
 {
 public:
-    explicit LuaScriptLibrary(QString opsDir = QString());
+    explicit LuaScriptLibrary(nextpilot::plotscope::uischema::TransformRegistry &transforms,
+                              QString opsDir = QString());
     ~LuaScriptLibrary();
 
     LuaScriptLibrary(const LuaScriptLibrary &) = delete;
@@ -52,6 +53,7 @@ public:
     QString descriptorId(const QString &name) const;
 
 private:
+    nextpilot::plotscope::uischema::TransformRegistry &m_transforms; // 注册表由组合根注入
     QString m_opsDir;
 };
 

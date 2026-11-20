@@ -107,12 +107,12 @@ private:
         const DatasetId id = intent.params.value(QStringLiteral("dataset")).toInt();
         const Dataset *ds = m_repo.get(id);
         if (!ds)
-            return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(id));
+            return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(id));
 
         const QString table = intent.params.value(QStringLiteral("table")).toString();
         const QString column = intent.params.value(QStringLiteral("column")).toString();
         if (table.isEmpty() || column.isEmpty())
-            return fail(QStringLiteral("echan"), QStringLiteral("缺少 table.column"));
+            return fail(err::Chan, QStringLiteral("缺少 table.column"));
 
         const Table *t = ds->table(table);
         if (!t || !t->column(column))
@@ -124,7 +124,7 @@ private:
                 return derivedChannelPayload(id, table, column, ds, entry->t, entry->v,
                                              qBound(16, intent.params.value(QStringLiteral("px"), 1024).toInt(), 8192),
                                              intent);
-            return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1.%2").arg(table, column));
+            return fail(err::Chan, QStringLiteral("通道不可用: %1.%2").arg(table, column));
         }
 
         // 像素宽度由调用方给（画布宽度）；缺省 1024，恒定有界。
@@ -152,7 +152,7 @@ private:
 
         const QVector<LodTriple> lod = ds->lodMinMax(table, column, t0Us, t1Us, px);
         if (lod.isEmpty())
-            return fail(QStringLiteral("echan"), QStringLiteral("通道无数据: %1.%2").arg(table, column));
+            return fail(err::Chan, QStringLiteral("通道无数据: %1.%2").arg(table, column));
 
         // ===== 变换路径（变换 = 非破坏视图：原始 dataset 不动、字段名不变）=====
         // 显式 params["transform"]（plot 级曲线配方）优先；其次 dataset 级配方
@@ -190,12 +190,12 @@ private:
         if (!transformReq.isEmpty() && transformReq.contains(QStringLiteral("descriptorId")))
         {
             if (!m_interactions.hasTransformEvaluator())
-                return fail(QStringLiteral("enoeval"),
+                return fail(err::NoEval,
                             QStringLiteral("变换求值器未注册（script 模块未装载）"));
 
             std::optional<ChannelView> ch = ds->channel(table, column);
             if (!ch)
-                return fail(QStringLiteral("echan"), QStringLiteral("读取通道失败: %1.%2").arg(table, column));
+                return fail(err::Chan, QStringLiteral("读取通道失败: %1.%2").arg(table, column));
 
             // 时间窗过滤（ChannelView.time 是秒；窗口 t0Us/t1Us 是微秒）。
             QVector<double> wt, wv;
@@ -212,7 +212,7 @@ private:
                 }
             }
             if (wt.isEmpty())
-                return fail(QStringLiteral("echan"), QStringLiteral("窗口内无数据: %1.%2").arg(table, column));
+                return fail(err::Chan, QStringLiteral("窗口内无数据: %1.%2").arg(table, column));
 
             // 统一变换（算子/表达式/Lua）。能力位 CapDerived——通道级变换与
             // 数据源衍生共用"channel 变换"能力，编辑器 UI 按同一位过滤。
@@ -224,7 +224,7 @@ private:
             const QVector<double> &vals = ev.value();
             const int n = qMin(wt.size(), vals.size());
             if (n <= 0)
-                return fail(QStringLiteral("etransform"), QStringLiteral("变换结果为空"));
+                return fail(err::Transform, QStringLiteral("变换结果为空"));
 
             // C++ min/max 分桶抽稀（对齐 Rust lodMinMax 语义：每桶取最小/最大，
             // x 用桶首样本时间）。桶数恒 <= px，内存有界。
@@ -297,7 +297,7 @@ private:
         const DatasetId id = intent.params.value(QStringLiteral("dataset")).toInt();
         const Dataset *ds = m_repo.get(id);
         if (!ds)
-            return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(id));
+            return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(id));
 
         const QString kind = intent.params.value(QStringLiteral("kind")).toString();
         const int cap = qBound(64, intent.params.value(QStringLiteral("cap"), 4096).toInt(), 65536);
@@ -350,7 +350,7 @@ private:
             if (roles.contains(QStringLiteral("pitch")))
                 ok |= putRole(QStringLiteral("pitch"), roles.value(QStringLiteral("pitch")).toString());
             if (!ok)
-                return fail(QStringLiteral("echan"),
+                return fail(err::Chan,
                             QStringLiteral("姿态仪至少需要 roll / pitch 中的一个通道"));
         }
         else if (kind == QStringLiteral("compass"))
@@ -359,7 +359,7 @@ private:
             if (yaw.isEmpty())
                 yaw = roles.value(QStringLiteral("heading")).toString();
             if (!putRole(QStringLiteral("yaw"), yaw))
-                return fail(QStringLiteral("echan"), QStringLiteral("罗盘需要 yaw / heading 通道"));
+                return fail(err::Chan, QStringLiteral("罗盘需要 yaw / heading 通道"));
         }
         else if (kind == QStringLiteral("gauge") || kind == QStringLiteral("histogram") ||
                  kind == QStringLiteral("fft"))
@@ -367,21 +367,21 @@ private:
             // 表盘/直方图/频谱共用"一条序列"取数：表盘取末值，直方图分箱，频谱做 DFT。
             // 差异在视图端怎么画，模块只负责按 value 角色取有界序列。
             if (!putRole(QStringLiteral("value"), roles.value(QStringLiteral("value")).toString()))
-                return fail(QStringLiteral("echan"), kind + QStringLiteral(" 需要 value 通道"));
+                return fail(err::Chan, kind + QStringLiteral(" 需要 value 通道"));
         }
         else if (kind == QStringLiteral("track"))
         {
             if (!putRole(QStringLiteral("lon"), roles.value(QStringLiteral("lon")).toString()))
-                return fail(QStringLiteral("echan"), QStringLiteral("轨迹需要 lon 通道"));
+                return fail(err::Chan, QStringLiteral("轨迹需要 lon 通道"));
             if (!putRole(QStringLiteral("lat"), roles.value(QStringLiteral("lat")).toString()))
-                return fail(QStringLiteral("echan"), QStringLiteral("轨迹需要 lat 通道"));
+                return fail(err::Chan, QStringLiteral("轨迹需要 lat 通道"));
         }
         else if (kind == QStringLiteral("traj3d"))
         {
             if (!putRole(QStringLiteral("x"), roles.value(QStringLiteral("x")).toString()))
-                return fail(QStringLiteral("echan"), QStringLiteral("3D 轨迹需要 x 通道"));
+                return fail(err::Chan, QStringLiteral("3D 轨迹需要 x 通道"));
             if (!putRole(QStringLiteral("y"), roles.value(QStringLiteral("y")).toString()))
-                return fail(QStringLiteral("echan"), QStringLiteral("3D 轨迹需要 y 通道"));
+                return fail(err::Chan, QStringLiteral("3D 轨迹需要 y 通道"));
             if (roles.contains(QStringLiteral("z")))
                 putRole(QStringLiteral("z"), roles.value(QStringLiteral("z")).toString());
         }
@@ -389,7 +389,7 @@ private:
         {
             // 瀑布/柱状共用"多通道"取数：瀑布画时间×通道热图，柱状取各通道末值成柱。
             if (channelList.isEmpty())
-                return fail(QStringLiteral("echan"), kind + QStringLiteral(" 需要 channels 列表"));
+                return fail(err::Chan, kind + QStringLiteral(" 需要 channels 列表"));
             for (const QVariant &q : channelList)
             {
                 auto view = readChannel(q.toString());
@@ -407,11 +407,11 @@ private:
                 channelsOut.append(m);
             }
             if (channelsOut.isEmpty())
-                return fail(QStringLiteral("echan"), kind + QStringLiteral(" 通道全部无数据"));
+                return fail(err::Chan, kind + QStringLiteral(" 通道全部无数据"));
         }
         else
         {
-            return fail(QStringLiteral("ekind"), QStringLiteral("未知仪表类型: %1").arg(kind));
+            return fail(err::Kind, QStringLiteral("未知仪表类型: %1").arg(kind));
         }
 
         // 表盘量程：调用方显式给了就用；否则按数据 min/max 各留 5% 余量。
@@ -476,7 +476,7 @@ private:
         const QJsonObject obj = m_settings.json(SettingsScope::Document,
                                                  QStringLiteral("plot/%1").arg(name));
         if (obj.isEmpty())
-            return fail(QStringLiteral("enoent"), QStringLiteral("plot 布局不存在: %1").arg(name));
+            return fail(err::NoEnt, QStringLiteral("plot 布局不存在: %1").arg(name));
         IntentResult r;
         r.payload = obj;
         return r;
@@ -488,7 +488,7 @@ private:
         const DatasetId id = intent.params.value(QStringLiteral("dataset")).toInt();
         const Dataset *ds = m_repo.get(id);
         if (!ds)
-            return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(id));
+            return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(id));
 
         // 通道限定符："table.column"；缺省时取全库第一个通道名。
         QString qualified = intent.params.value(QStringLiteral("channel")).toString();
@@ -496,18 +496,18 @@ private:
         {
             const QStringList tables = ds->tableNames();
             if (tables.isEmpty() || ds->table(tables.first())->columns.isEmpty())
-                return fail(QStringLiteral("echan"), QStringLiteral("数据集无通道"));
+                return fail(err::Chan, QStringLiteral("数据集无通道"));
             qualified = tables.first() + QLatin1Char('.')
                       + ds->table(tables.first())->columns.first().name;
         }
         const int dot = qualified.indexOf(QLatin1Char('.'));
         if (dot <= 0)
-            return fail(QStringLiteral("echan"), QStringLiteral("通道名格式错误: %1").arg(qualified));
+            return fail(err::Chan, QStringLiteral("通道名格式错误: %1").arg(qualified));
         const QString tableName = qualified.left(dot);
         const QString columnName = qualified.mid(dot + 1);
         const Table *t = ds->table(tableName);
         if (!t || !t->column(columnName))
-            return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1").arg(qualified));
+            return fail(err::Chan, QStringLiteral("通道不可用: %1").arg(qualified));
         const Column *col = t->column(columnName);
 
         // 绘图路径的内存铁律：只看屏幕像素级数据，与总行数无关。
@@ -537,7 +537,7 @@ private:
         {
             const auto view = ds->channel(tableName, columnName);
             if (!view || view->empty())
-                return fail(QStringLiteral("echan"), QStringLiteral("通道无数据: %1").arg(qualified));
+                return fail(err::Chan, QStringLiteral("通道无数据: %1").arg(qualified));
             spec[QStringLiteral("mode")] = QStringLiteral("window");
             spec[QStringLiteral("points")] = view->size();
             spec[QStringLiteral("t0")] = view->time.first();
@@ -563,7 +563,7 @@ private:
     {
         const int n = qMin(t.size(), v.size());
         if (n <= 0)
-            return fail(QStringLiteral("echan"), QStringLiteral("派生序列无样本: %1").arg(column));
+            return fail(err::Chan, QStringLiteral("派生序列无样本: %1").arg(column));
 
         // 可选时间窗过滤（秒）。
         double w0 = -1e18, w1 = 1e18;
@@ -586,7 +586,7 @@ private:
             }
         }
         if (wt.isEmpty())
-            return fail(QStringLiteral("echan"), QStringLiteral("窗口内无派生数据: %1").arg(column));
+            return fail(err::Chan, QStringLiteral("窗口内无派生数据: %1").arg(column));
 
         const QVector<LodTriple> lodT = minmaxBuckets(wt, wv, wt.size(), px);
         QVariantList xs, mins, maxs;
@@ -705,5 +705,6 @@ void PlotModule::onAttach(UiContext &ui)
 
 #include "PlotModule.moc"
 
+#include "ErrorCodes.h"
 // 编译期自注册：新增绘图模块无需改 App / 宿主。
 NG_REGISTER_MODULE(PlotModule)

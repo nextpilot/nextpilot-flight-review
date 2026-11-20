@@ -1,4 +1,5 @@
 #include "SourceRegistry.h"
+#include "ErrorCodes.h"
 
 #include <algorithm>
 
@@ -6,6 +7,7 @@ namespace nextpilot::plotscope::dataset
 {
 using nextpilot::plotscope::foundation::Result;
 using nextpilot::plotscope::foundation::fail;
+namespace err = nextpilot::plotscope::foundation::err;
 
 SourceRegistry::SourceRegistry(QObject *parent) : QObject(parent) {}
 
@@ -21,9 +23,9 @@ int SourceRegistry::add(DataSourceInfo info)
 Result<int> SourceRegistry::addWithStableId(DataSourceInfo info, int id)
 {
     if (id < 0)
-        return fail(QStringLiteral("eid"), QStringLiteral("数据源 id 非法"));
+        return fail(err::Id, QStringLiteral("数据源 id 非法"));
     if (m_sources.contains(id))
-        return fail(QStringLiteral("edupid"), QStringLiteral("数据源 id 已存在: %1").arg(id));
+        return fail(err::DupId, QStringLiteral("数据源 id 已存在: %1").arg(id));
     info.id = id;
     m_sources.insert(id, info);
     if (id >= m_nextId)

@@ -1,4 +1,5 @@
 #include "Intent.h"
+#include "ErrorCodes.h"
 
 #include <QJsonArray>
 #include <QJsonValue>
@@ -7,6 +8,7 @@ namespace nextpilot::plotscope::intent
 {
 using nextpilot::plotscope::foundation::Result;
 using nextpilot::plotscope::foundation::fail;
+namespace err = nextpilot::plotscope::foundation::err;
 
 void Job::append(Intent intent)
 {
@@ -44,7 +46,7 @@ Job Job::fromJson(const QJsonObject &obj, Result<void> *outError)
         if (intent.op.isEmpty())
         {
             if (outError)
-                *outError = fail(QStringLiteral("eintent"), QStringLiteral("意图缺少 op"));
+                *outError = fail(err::Intent, QStringLiteral("意图缺少 op"));
             return job;
         }
         const QJsonObject params = item.value(QStringLiteral("params")).toObject();

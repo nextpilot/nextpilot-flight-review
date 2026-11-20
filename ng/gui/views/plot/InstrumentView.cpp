@@ -5,6 +5,7 @@
 #include "IIntentExecutor.h"
 #include "Intent.h"
 #include "Result.h"
+#include "ErrorCodes.h"
 #include "DatasetRegistry.h"
 
 #include <QStackedLayout>
@@ -28,6 +29,7 @@ using nextpilot::plotscope::intent::IIntentExecutor;
 using nextpilot::plotscope::intent::Intent;
 using nextpilot::plotscope::intent::IntentResult;
 using nextpilot::plotscope::foundation::Result;
+namespace err = nextpilot::plotscope::foundation::err;
 
 namespace
 {
@@ -393,7 +395,7 @@ QWidget *createInstrumentPanel(AppContext &appCtx, IIntentExecutor &executor,
                               [view](const QVariantMap &params) -> Result<QVariant> {
                                   const QString kind = params.value(QStringLiteral("kind")).toString();
                                   if (kind.isEmpty())
-                                      return nextpilot::plotscope::foundation::fail(QStringLiteral("ekind"), QStringLiteral("缺少仪表 kind"));
+                                      return nextpilot::plotscope::foundation::fail(err::Kind, QStringLiteral("缺少仪表 kind"));
                                   view->switchKind(kind);
                                   // 绑定失败（无活动数据集/无匹配通道）不使切型失败：仪表明仍切过去
                                   // 显示空态，由调用方决定如何提示。

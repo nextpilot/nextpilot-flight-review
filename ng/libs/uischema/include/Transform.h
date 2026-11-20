@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ParamSpec.h"
+#include "Registry.h"
 #include "Result.h"
 
 #include <QByteArray>
@@ -13,6 +14,8 @@
 
 namespace nextpilot::plotscope::uischema
 {
+
+using nextpilot::plotscope::registry::Registry;
 
 using nextpilot::plotscope::foundation::Result;
 using nextpilot::plotscope::foundation::fail;
@@ -115,19 +118,27 @@ struct TransformScriptOps
     bool valid() const { return static_cast<bool>(resolve) && static_cast<bool>(save) && static_cast<bool>(describe); }
 };
 
-// Transform 注册表：纯数据，headless 可见。内置项在 core 静态构造时注册；
+// Transform 注册表实例：纯数据，headless 可见。内置算子在构造时注册（幂等）；
 // 用户的 Lua 脚本项由 script 模块加载脚本库后注册。
+// 实例归组合根（AppContext）持有——libs 只提供类型，不藏静态全局状态。
 class TransformRegistry
 {
 public:
-    static void registerDescriptor(const TransformDescriptor &descriptor);
-    static bool contains(const QString &id);
-    static TransformDescriptor get(const QString &id);
-    static QList<TransformDescriptor> all();
+    TransformRegistry();
+
+    bool registerDescriptor(const TransformDescriptor &descriptor);
+    bool contains(const QString &id) const;
+    TransformDescriptor get(const QString &id) const;
+    QList<TransformDescriptor> all() const;
     // 按能力过滤：UI 选择器只列这些——这是"防止选错"的核心接口。
-    static QList<TransformDescriptor> byCapability(TransformCapability cap);
-    static QStringList idsByCapability(TransformCapability cap);
-    static void clear();
+    QList<TransformDescriptor> byCapability(TransformCapability cap) const;
+    QStringList idsByCapability(TransformCapability cap) const;
+    // 清空并重建内置算子（内置永远可用；Lua 项需重新注册）。
+    void clear();
+
+private:
+    // 容器本体委托泛型注册表（机制唯一，保序：登记顺序即 all() 顺序）。
+    Registry<TransformDescriptor> m_entries;
 };
 
 } // namespace nextpilot::plotscope::uischema

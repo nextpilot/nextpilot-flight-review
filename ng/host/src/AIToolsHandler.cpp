@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "Intent.h"
 #include "Result.h"
+#include "ErrorCodes.h"
 
 #include <QJsonDocument>
 
@@ -108,7 +109,7 @@ Result<IntentResult> AIToolsHandler::execute(const Intent &intent)
         return callTool(intent);
     if (intent.op == QLatin1String("ai.status"))
         return getStatus();
-    return fail(QStringLiteral("eunknown"),
+    return fail(err::Unknown,
                 QStringLiteral("AIToolsHandler 不处理: %1").arg(intent.op));
 }
 
@@ -128,7 +129,7 @@ Result<IntentResult> AIToolsHandler::callTool(const Intent &intent)
 {
     const QString tool = intent.params.value(QStringLiteral("tool")).toString();
     if (tool.isEmpty())
-        return fail(QStringLiteral("eargs"), QStringLiteral("ai.tool.call 需要 tool 参数"));
+        return fail(err::Args, QStringLiteral("ai.tool.call 需要 tool 参数"));
 
     // 白名单：只接受工具目录里的名字，杜绝任意 op 透传。
     QString op;
@@ -141,7 +142,7 @@ Result<IntentResult> AIToolsHandler::callTool(const Intent &intent)
         }
     }
     if (op.isEmpty())
-        return fail(QStringLiteral("enotool"), QStringLiteral("未知工具: %1").arg(tool));
+        return fail(err::NoTool, QStringLiteral("未知工具: %1").arg(tool));
 
     // args 支持 QVariantMap 或 JSON 字符串（CLI/AI 两种来路）。
     QVariantMap args;

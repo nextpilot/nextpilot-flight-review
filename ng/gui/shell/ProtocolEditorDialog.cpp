@@ -3042,7 +3042,7 @@ void ProtocolEditorDialog::configureChecksumTransform()
         return;
     m_checksumRequest = req;
     const QString id = req.value(QStringLiteral("descriptorId")).toString();
-    m_checksumLabel = TransformRegistry::get(id).label;
+    m_checksumLabel = m_appCtx->transforms().get(id).label;
     m_status->setText(QStringLiteral("Checksum 变换已配置：%1").arg(m_checksumLabel));
 }
 

@@ -6,6 +6,7 @@
 #include "Dataset.h"
 #include "IIntentExecutor.h"
 #include "Result.h"
+#include "ErrorCodes.h"
 #include "SettingsStore.h"
 #include "WorkspaceDataConfig.h"
 #include "ChannelTransformConfig.h"
@@ -32,6 +33,23 @@ using namespace nextpilot::plotscope::context;
 
 namespace
 {
+
+// 序列 → (t, v) 两个 QVariantList：脚本/CLI/MCP 数据出口的标准形态。
+QPair<QVariantList, QVariantList> toVariantLists(const QVector<double> &t,
+                                                 const QVector<double> &v)
+{
+    const int n = qMin(t.size(), v.size());
+    QVariantList ts, vs;
+    ts.reserve(n);
+    vs.reserve(n);
+    vs.reserve(n);
+    for (int i = 0; i < n; ++i)
+    {
+        ts << t.at(i);
+        vs << v.at(i);
+    }
+    return {ts, vs};
+}
 
 // 最近文件：QStringList 存进 settings，最多 10 条，去重、最新在前。
 QStringList recentFiles(AppContext &app)
@@ -95,64 +113,67 @@ void resampleToBase(const QVector<double> &baseT, const QVector<double> &st,
 
 bool DataCommandsHandler::canHandle(const Intent &intent) const
 {
-    const QString &op = intent.op;
-    return op == QLatin1String("data.reload") || op == QLatin1String("data.export")
-        || op == QLatin1String("data.recent") || op == QLatin1String("data.clearCache")
-        || op == QLatin1String("data.remove")
-        || op == QLatin1String("data.pause") || op == QLatin1String("data.resume")
-        || op == QLatin1String("data.derive")         || op == QLatin1String("data.filter") || op == QLatin1String("data.marker")
-        || op == QLatin1String("data.state")          || op == QLatin1String("data.series")
-        || op == QLatin1String("data.workspace.list")
-        || op == QLatin1String("data.workspace.save")
-        || op == QLatin1String("data.workspace.restore")
-        || op == QLatin1String("data.transform.set")
-        || op == QLatin1String("data.transform.clear")
-        || op == QLatin1String("data.derive.list")
-        || op == QLatin1String("data.derive.refresh");
+    return m_dispatch.canHandle(intent);
 }
 
 Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
 {
-    if (intent.op == QLatin1String("data.reload"))
-        return reload(intent);
-    if (intent.op == QLatin1String("data.export"))
-        return exportCsv(intent);
-    if (intent.op == QLatin1String("data.recent"))
-        return recent(intent);
-    if (intent.op == QLatin1String("data.clearCache"))
-        return clearCache();
-    if (intent.op == QLatin1String("data.remove"))
-        return removeSource(intent);
-    if (intent.op == QLatin1String("data.pause"))
-        return setSourcePaused(intent, true);
-    if (intent.op == QLatin1String("data.resume"))
-        return setSourcePaused(intent, false);
-    if (intent.op == QLatin1String("data.derive"))
-        return derive(intent);
-    if (intent.op == QLatin1String("data.filter"))
-        return filterSeries(intent);
-    if (intent.op == QLatin1String("data.marker"))
-        return runMarker(intent);
-    if (intent.op == QLatin1String("data.state"))
-        return stateSeries(intent);
-    if (intent.op == QLatin1String("data.series"))
-        return series(intent);
-    if (intent.op == QLatin1String("data.workspace.list"))
-        return workspaceList();
-    if (intent.op == QLatin1String("data.workspace.save"))
-        return workspaceSave();
-    if (intent.op == QLatin1String("data.workspace.restore"))
-        return workspaceRestore();
-    if (intent.op == QLatin1String("data.transform.set"))
-        return setChannelTransform(intent);
-    if (intent.op == QLatin1String("data.transform.clear"))
-        return clearChannelTransform(intent);
-    if (intent.op == QLatin1String("data.derive.list"))
-        return deriveList(intent);
-    if (intent.op == QLatin1String("data.derive.refresh"))
-        return refreshDerives(intent);
-    return fail(QStringLiteral("eunknown"),
-                QStringLiteral("DataCommandsHandler 不处理: %1").arg(intent.op));
+    return m_dispatch.execute(intent);
+}
+
+// op → 成员函数注册表：op 字符串只写一遍，canHandle/execute 查同一张表。
+void DataCommandsHandler::buildDispatch()
+{
+    using I = nextpilot::plotscope::intent::Intent;
+    m_dispatch.reg(QStringLiteral("data.reload"), this, &DataCommandsHandler::reload);
+    m_dispatch.reg(QStringLiteral("data.export"), this, &DataCommandsHandler::exportCsv);
+    m_dispatch.reg(QStringLiteral("data.recent"), this, &DataCommandsHandler::recent);
+    m_dispatch.reg(QStringLiteral("data.clearCache"),
+                   [this](const I &) { return clearCache(); });
+    m_dispatch.reg(QStringLiteral("data.remove"), this, &DataCommandsHandler::removeSource);
+    m_dispatch.reg(QStringLiteral("data.pause"),
+                   [this](const I &i) { return setSourcePaused(i, true); });
+    m_dispatch.reg(QStringLiteral("data.resume"),
+                   [this](const I &i) { return setSourcePaused(i, false); });
+    m_dispatch.reg(QStringLiteral("data.derive"), this, &DataCommandsHandler::derive);
+    m_dispatch.reg(QStringLiteral("data.filter"), this, &DataCommandsHandler::filterSeries);
+    m_dispatch.reg(QStringLiteral("data.marker"), this, &DataCommandsHandler::runMarker);
+    m_dispatch.reg(QStringLiteral("data.state"), this, &DataCommandsHandler::stateSeries);
+    m_dispatch.reg(QStringLiteral("data.series"), this, &DataCommandsHandler::series);
+    m_dispatch.reg(QStringLiteral("data.workspace.list"),
+                   [this](const I &) { return workspaceList(); });
+    m_dispatch.reg(QStringLiteral("data.workspace.save"),
+                   [this](const I &) { return workspaceSave(); });
+    m_dispatch.reg(QStringLiteral("data.workspace.restore"),
+                   [this](const I &) { return workspaceRestore(); });
+    m_dispatch.reg(QStringLiteral("data.transform.set"), this, &DataCommandsHandler::setChannelTransform);
+    m_dispatch.reg(QStringLiteral("data.transform.clear"), this, &DataCommandsHandler::clearChannelTransform);
+    m_dispatch.reg(QStringLiteral("data.derive.list"), this, &DataCommandsHandler::deriveList);
+    m_dispatch.reg(QStringLiteral("data.derive.refresh"), this, &DataCommandsHandler::refreshDerives);
+}
+
+// === 兜底解析资产：dataset/table 的"缺省取唯一"口径全 handler 统一 ===
+Result<int> DataCommandsHandler::resolveDataset(const Intent &intent) const
+{
+    const int datasetId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    if (datasetId < 0 && m_app.data().count() == 1)
+        return m_app.data().ids().first();
+    if (datasetId < 0)
+        return fail(err::Dataset,
+                    QStringLiteral("请指定 dataset 参数（当前有多个数据集）"));
+    if (!m_app.data().get(datasetId))
+        return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(datasetId));
+    return datasetId;
+}
+
+Result<QString> DataCommandsHandler::resolveTable(const Dataset &ds, const QString &table) const
+{
+    QString resolved = table;
+    if (resolved.isEmpty() && ds.tableCount() == 1)
+        resolved = ds.tableNames().first();
+    if (!ds.table(resolved))
+        return fail(err::Table, QStringLiteral("表不存在: %1").arg(resolved));
+    return resolved;
 }
 
 Result<IntentResult> DataCommandsHandler::reload(const Intent &intent)
@@ -163,7 +184,7 @@ Result<IntentResult> DataCommandsHandler::reload(const Intent &intent)
         sourceId = m_app.activeSourceId();
     const DataSourceInfo *info = m_app.sources().get(sourceId);
     if (!info || info->origin.isEmpty())
-        return fail(QStringLiteral("enosource"), QStringLiteral("没有可重载的数据源"));
+        return fail(err::NoSource, QStringLiteral("没有可重载的数据源"));
 
     // 记住原绑定（一个源可扇出多个解析器）与产出的数据集 id。
     const QString origin = info->origin;
@@ -195,29 +216,19 @@ Result<IntentResult> DataCommandsHandler::reload(const Intent &intent)
 
 Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
 {
-    // 通道来源：显式指定 dataset/table/column，否则用活动通道。
-    int datasetId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    // 通道来源：显式指定 dataset/table/column，否则用唯一数据集/唯一表兜底。
     const QString table = intent.params.value(QStringLiteral("table")).toString();
     const QString column = intent.params.value(QStringLiteral("column")).toString();
 
-    // 活动通道的 datasetId 由 setActiveChannel 记在 AppContext，但这里没有
-    // 单独 getter（活动通道以 table/column 为准）；若未显式给 dataset，
-    // 取唯一数据集或最近加入的数据集作为默认。
-    if (datasetId < 0 && m_app.data().count() == 1)
-        datasetId = m_app.data().ids().first();
-    if (datasetId < 0)
-        return fail(QStringLiteral("edataset"),
-                    QStringLiteral("请指定 dataset 参数（当前有多个数据集）"));
+    Result<int> dsId = resolveDataset(intent);
+    if (!dsId)
+        return dsId.error();
+    const Dataset *ds = m_app.data().get(dsId.value());
 
-    const Dataset *ds = m_app.data().get(datasetId);
-    if (!ds)
-        return fail(QStringLiteral("edataset"),
-                    QStringLiteral("数据集 #%1 不存在").arg(datasetId));
-
-    const QString targetTable = table.isEmpty() && ds->tableCount() == 1
-        ? ds->tableNames().first() : table;
-    if (!ds->table(targetTable))
-        return fail(QStringLiteral("etable"), QStringLiteral("表不存在: %1").arg(targetTable));
+    Result<QString> targetTableRes = resolveTable(*ds, table);
+    if (!targetTableRes)
+        return targetTableRes.error();
+    const QString targetTable = targetTableRes.value();
 
     // 没指定列则导出该表全部列。
     QStringList columns;
@@ -227,15 +238,15 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
         for (const Column &c : t->columns)
             columns << c.name;
     if (columns.isEmpty())
-        return fail(QStringLiteral("ecolumn"), QStringLiteral("没有可导出的列"));
+        return fail(err::Column, QStringLiteral("没有可导出的列"));
 
     const QString outPath = intent.params.value(QStringLiteral("path")).toString();
     if (outPath.isEmpty())
-        return fail(QStringLiteral("epath"), QStringLiteral("请指定导出路径 path"));
+        return fail(err::Path, QStringLiteral("请指定导出路径 path"));
 
     QFile file(outPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-        return fail(QStringLiteral("ewrite"), QStringLiteral("无法写入: %1").arg(outPath));
+        return fail(err::Write, QStringLiteral("无法写入: %1").arg(outPath));
 
     QTextStream out(&file);
     // 表头
@@ -250,7 +261,7 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
     {
         auto v = ds->channel(targetTable, c);
         if (!v)
-            return fail(QStringLiteral("eread"), QStringLiteral("读取列失败: %1").arg(c));
+            return fail(err::Read, QStringLiteral("读取列失败: %1").arg(c));
         views.append(*v);
     }
     const int rows = views.isEmpty() ? 0 : views.first().size();
@@ -318,7 +329,7 @@ Result<IntentResult> DataCommandsHandler::removeSource(const Intent &intent)
         sourceId = m_app.activeSourceId();
     const DataSourceInfo *info = m_app.sources().get(sourceId);
     if (!info)
-        return fail(QStringLiteral("enosource"), QStringLiteral("没有可移除的数据源"));
+        return fail(err::NoSource, QStringLiteral("没有可移除的数据源"));
 
     QVector<int> removedDatasets;
     m_app.sources().remove(sourceId, &removedDatasets);
@@ -374,23 +385,20 @@ Result<IntentResult> DataCommandsHandler::removeSource(const Intent &intent)
 //   data.derive.refresh 意图或脚本周期重发驱动。
 Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
 {
-    DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
-    if (dsId < 0 && m_app.data().count() == 1)
-        dsId = m_app.data().ids().first();
-    if (dsId < 0)
-        return fail(QStringLiteral("edataset"), QStringLiteral("请指定 dataset 参数"));
+    Result<int> dsIdRes = resolveDataset(intent);
+    if (!dsIdRes)
+        return dsIdRes.error();
+    const DatasetId dsId = dsIdRes.value();
     const Dataset *ds = m_app.data().get(dsId);
-    if (!ds)
-        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
 
     const QVariantList inputs = intent.params.value(QStringLiteral("inputs")).toList();
     if (inputs.size() != 4)
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("quat_to_rpy 需要 inputs（w/x/y/z 四个输入）"));
     const QString topTable = intent.params.value(QStringLiteral("table")).toString();
     const QString filterId = intent.params.value(QStringLiteral("filter")).toString();
     if (filterId != QLatin1String("quat_to_rpy"))
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("MIMO 派生当前只支持 quat_to_rpy，收到: %1").arg(filterId));
 
     // 解析输入：对象 {table,column} 或字符串列名（用顶层 table）。
@@ -415,7 +423,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
             in.column = c.toString();
         }
         if (in.table.isEmpty() || in.column.isEmpty())
-            return fail(QStringLiteral("eargs"),
+            return fail(err::Args,
                         QStringLiteral("inputs 元素需为列名或 {table,column} 对象: %1")
                             .arg(c.toString()));
         ins.append(in);
@@ -438,7 +446,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         intent.params.value(QStringLiteral("interp"), QStringLiteral("linear")).toString();
     if (interpMode != QLatin1String("linear") && interpMode != QLatin1String("step")
         && interpMode != QLatin1String("nearest"))
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("interp 仅支持 linear/step/nearest: %1").arg(interpMode));
 
     // 配方指纹：inputs（对象 {table,column}，规避列名含点歧义）+ interp + degrees + unwrap。
@@ -480,7 +488,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         // 增量刷新是低频操作，先刷一次拿到最新 lastTimeUs。
         Dataset *dsMut = m_app.data().getMutable(dsId);
         if (!dsMut)
-            return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+            return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(dsId));
         dsMut->refreshSchema();
 
         // 窗口右界 = 各输入表最新 lastTimeUs 的最大值（schema 投影，O(1)）。
@@ -515,7 +523,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
             auto ch = dsMut->readWindow(in.table, in.column, waterUs, tNow,
                                         kDeriveMaxPoints);
             if (!ch)
-                return fail(QStringLiteral("echan"),
+                return fail(err::Chan,
                             QStringLiteral("读取通道失败: %1.%2").arg(in.table, in.column));
             cols.append(std::move(*ch));
         }
@@ -560,7 +568,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         {
             const QVector<double> &st = cols[k].time;
             if (st.isEmpty())
-                return fail(QStringLiteral("eempty"),
+                return fail(err::Empty,
                             QStringLiteral("输入无新样本: %1.%2")
                                 .arg(ins[k].table, ins[k].column));
             QVector<double> aligned;
@@ -574,7 +582,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
             for (int i = 0; i < cols[k].value.size(); ++i)
             {
                 if (std::isnan(cols[k].value.at(i)))
-                    return fail(QStringLiteral("enan"),
+                    return fail(err::Nan,
                                 QStringLiteral("输入含 NaN/null 样本，拒绝派生: %1.%2 @[%3]")
                                     .arg(ins[k].table, ins[k].column)
                                     .arg(i));
@@ -592,7 +600,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
                                       r.data(), p.data(), yaw.data(),
                                       errBuf, sizeof(errBuf));
         if (rc != 0)
-            return fail(QStringLiteral("ederive"),
+            return fail(err::Derive,
                         QStringLiteral("quat_to_rpy 失败: %1").arg(QString::fromUtf8(errBuf)));
 
         // 追加注册表缓存 + 水位推进到新段最大时间戳。
@@ -644,7 +652,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
     {
         auto ch = ds->channel(in.table, in.column, kDeriveMaxPoints);
         if (!ch)
-            return fail(QStringLiteral("echan"),
+            return fail(err::Chan,
                         QStringLiteral("读取通道失败: %1.%2").arg(in.table, in.column));
         cols.append(std::move(*ch));
     }
@@ -654,13 +662,13 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
     for (int i = 1; i < baseT.size(); ++i)
     {
         if (baseT.at(i) < baseT.at(i - 1))
-            return fail(QStringLiteral("etime"),
+            return fail(err::Time,
                         QStringLiteral("基准时间轴非单调: %1.%2")
                             .arg(ins[0].table, ins[0].column));
     }
     const int n = baseT.size();
     if (n <= 0)
-        return fail(QStringLiteral("eempty"), QStringLiteral("四元数通道无样本"));
+        return fail(err::Empty, QStringLiteral("四元数通道无样本"));
 
     // 跨表输入重采样到基准轴。同表输入也统一走这里：门面 readWindow 会把 null/NaN
     // 样本成对剔除（绘图语义），同表各列读出点数可能不同——行对齐不能假设，
@@ -670,7 +678,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         const QVector<double> &st = cols[k].time;
         const QVector<double> &sv = cols[k].value;
         if (st.isEmpty())
-            return fail(QStringLiteral("eempty"),
+            return fail(err::Empty,
                         QStringLiteral("输入无样本: %1.%2").arg(ins[k].table, ins[k].column));
         if (cols[k].table == cols[0].table && cols[k].value.size() == n
             && std::equal(st.cbegin(), st.cend(), baseT.cbegin()))
@@ -687,7 +695,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         for (int i = 0; i < cols[k].value.size(); ++i)
         {
             if (std::isnan(cols[k].value.at(i)))
-                return fail(QStringLiteral("enan"),
+                return fail(err::Nan,
                             QStringLiteral("输入含 NaN/null 样本，拒绝派生: %1.%2 @[%3]")
                                 .arg(ins[k].table, ins[k].column)
                                 .arg(i));
@@ -705,7 +713,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
                                   r.data(), p.data(), yaw.data(),
                                   errBuf, sizeof(errBuf));
     if (rc != 0)
-        return fail(QStringLiteral("ederive"),
+        return fail(err::Derive,
                     QStringLiteral("quat_to_rpy 失败: %1").arg(QString::fromUtf8(errBuf)));
 
     time = baseT;
@@ -768,11 +776,10 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
 // 这是实时链路刷新派生的入口（脚本/CLI/MCP 周期调用）。
 Result<IntentResult> DataCommandsHandler::refreshDerives(const Intent &intent)
 {
-    DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
-    if (dsId < 0 && m_app.data().count() == 1)
-        dsId = m_app.data().ids().first();
-    if (dsId < 0)
-        return fail(QStringLiteral("edataset"), QStringLiteral("请指定 dataset 参数"));
+    Result<int> dsIdRes = resolveDataset(intent);
+    if (!dsIdRes)
+        return dsIdRes.error();
+    const DatasetId dsId = dsIdRes.value();
 
     // 按 recipe 指纹分组（同组 = 同一配方派生的三条输出，注册顺序 roll/pitch/yaw）。
     QHash<QByteArray, QStringList> groups;
@@ -837,16 +844,16 @@ Result<IntentResult> DataCommandsHandler::setSourcePaused(const Intent &intent, 
         sourceId = m_app.activeSourceId();
     const DataSourceInfo *info = m_app.sources().get(sourceId);
     if (!info)
-        return fail(QStringLiteral("enosource"), QStringLiteral("没有可操作的数据源"));
+        return fail(err::NoSource, QStringLiteral("没有可操作的数据源"));
     if (info->kind != SourceKind::Live)
-        return fail(QStringLiteral("enotsupported"),
+        return fail(err::NotSupported,
                     QStringLiteral("仅实时(live)源支持暂停/继续，当前源不是实时源"));
 
     const SourceState target = paused ? SourceState::Paused : SourceState::Streaming;
     if (info->state != target)
     {
         if (!m_app.sources().setState(sourceId, target))
-            return fail(QStringLiteral("estate"),
+            return fail(err::State,
                         QStringLiteral("数据源状态切换失败（当前状态 %1）").arg(int(info->state)));
     }
 
@@ -870,17 +877,21 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
     const QString column = intent.params.value(QStringLiteral("column")).toString();
     const QString filterId = intent.params.value(QStringLiteral("filter")).toString();
     if (dsId < 0 || table.isEmpty() || column.isEmpty() || filterId.isEmpty())
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("data.derive 需要 dataset/table/column/filter 参数"));
 
     // const 取数：派生只读，不碰仓库里的 Dataset——原数据零改动。
     const Dataset *ds = m_app.data().get(dsId);
     if (!ds)
-        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+        return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(dsId));
     const QString input = table + QLatin1Char('.') + column;
+    Result<QString> tableRes = resolveTable(*ds, table);
+    if (!tableRes)
+        return tableRes.error();
+
     const Table *t = ds->table(table);
     if (!t || !t->column(column))
-        return fail(QStringLiteral("echan"), QStringLiteral("通道不存在: %1").arg(input));
+        return fail(err::Chan, QStringLiteral("通道不存在: %1").arg(input));
 
     // params 允许调用方给 JSON 字符串或 QVariantMap（脚本/Job 场景）。
     QByteArray paramsJson;
@@ -914,10 +925,10 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
         QVector<double> rawT, rawV;
         const Table *srcTable = ds->table(table);
         if (!srcTable)
-            return fail(QStringLiteral("etable"), QStringLiteral("表不存在: %1").arg(table));
+            return fail(err::Table, QStringLiteral("表不存在: %1").arg(table));
         auto raw = ds->channel(table, column);
         if (!raw)
-            return fail(QStringLiteral("echan"), QStringLiteral("读取通道失败: %1").arg(input));
+            return fail(err::Chan, QStringLiteral("读取通道失败: %1").arg(input));
         const int take = qMin(raw->size(), cap);
         rawT.reserve(take);
         rawV.reserve(take);
@@ -928,7 +939,7 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
         }
 
         if (!m_app.interactions().hasTransformEvaluator())
-            return fail(QStringLiteral("enoeval"), QStringLiteral("变换求值器未注册（script 模块未装载）"));
+            return fail(err::NoEval, QStringLiteral("变换求值器未注册（script 模块未装载）"));
         Result<QVector<double>> ev{QVector<double>()};
         m_app.interactions().evalTransform(req, CapDerived, rawT, rawV, ev);
         if (!ev)
@@ -938,7 +949,7 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
         QVector<double> value = ev.value();
         const int n = value.size();
         if (n <= 0)
-            return fail(QStringLiteral("ederive"), QStringLiteral("变换结果为空"));
+            return fail(err::Derive, QStringLiteral("变换结果为空"));
         IntentResult r;
         r.payload = QVariantMap{
             {QStringLiteral("dataset"), dsId},
@@ -972,7 +983,7 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
     QString err;
     const int n = ds->previewFilter(input, filterId, paramsJson, cap, time, value, &total, &err);
     if (n <= 0)
-        return fail(QStringLiteral("ederive"), err.isEmpty() ? QStringLiteral("派生失败") : err);
+        return fail(err::Derive, err.isEmpty() ? QStringLiteral("派生失败") : err);
 
     // payload 给脚本/CLI：time/value 数组 + 元信息（可序列化为 Job 结果）。
     IntentResult r;
@@ -1014,19 +1025,19 @@ Result<IntentResult> DataCommandsHandler::filterSeries(const Intent &intent)
     const QString column = intent.params.value(QStringLiteral("column")).toString();
     const QString filterId = intent.params.value(QStringLiteral("filter")).toString();
     if (dsId < 0 || table.isEmpty() || column.isEmpty() || filterId.isEmpty())
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("data.filter 需要 dataset/table/column/filter 参数"));
 
     if (!m_app.interactions().hasFilterOps())
-        return fail(QStringLiteral("enofilterops"), QStringLiteral("过滤器能力未注册（script 模块未装载）"));
+        return fail(err::NoFilterOps, QStringLiteral("过滤器能力未注册（script 模块未装载）"));
 
     const Dataset *ds = m_app.data().get(dsId);
     if (!ds)
-        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+        return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(dsId));
     const QString input = table + QLatin1Char('.') + column;
     auto channel = ds->channel(table, column);
     if (!channel)
-        return fail(QStringLiteral("echan"), QStringLiteral("通道不存在: %1").arg(input));
+        return fail(err::Chan, QStringLiteral("通道不存在: %1").arg(input));
 
     // params 允许 JSON 字符串或 QVariantMap（脚本/CLI 与 GUI 两种来路）。
     QJsonObject paramsObj;
@@ -1060,7 +1071,7 @@ Result<IntentResult> DataCommandsHandler::filterSeries(const Intent &intent)
     for (const QJsonValue &jv : res.value().value(QStringLiteral("value")).toArray())
         outV.append(jv.toDouble());
     if (outT.isEmpty() || outT.size() != outV.size())
-        return fail(QStringLiteral("efilter"), QStringLiteral("过滤器 %1 结果为空或长度不一致").arg(filterId));
+        return fail(err::Filter, QStringLiteral("过滤器 %1 结果为空或长度不一致").arg(filterId));
 
     QString name = intent.params.value(QStringLiteral("name")).toString();
     if (name.isEmpty())
@@ -1093,19 +1104,19 @@ Result<IntentResult> DataCommandsHandler::runMarker(const Intent &intent)
     if (code.isEmpty())
         code = intent.params.value(QStringLiteral("source")).toByteArray(); // 脚本/CLI 别名
     if (dsId < 0 || table.isEmpty() || column.isEmpty() || code.isEmpty())
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("data.marker 需要 dataset/table/column/code 参数"));
 
     if (!m_app.interactions().hasMarkerOps())
-        return fail(QStringLiteral("enomarkerops"), QStringLiteral("Marker 规则能力未注册（script 模块未装载）"));
+        return fail(err::NoMarkerOps, QStringLiteral("Marker 规则能力未注册（script 模块未装载）"));
 
     const Dataset *ds = m_app.data().get(dsId);
     if (!ds)
-        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+        return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(dsId));
     const QString input = table + QLatin1Char('.') + column;
     auto channel = ds->channel(table, column);
     if (!channel)
-        return fail(QStringLiteral("echan"), QStringLiteral("通道不存在: %1").arg(input));
+        return fail(err::Chan, QStringLiteral("通道不存在: %1").arg(input));
 
     constexpr int kMaxPoints = 200000;
     int cap = intent.params.value(QStringLiteral("cap"), kMaxPoints).toInt();
@@ -1158,24 +1169,18 @@ Result<IntentResult> DataCommandsHandler::series(const Intent &intent)
     // 通道定位：dataset/table/column，dataset/table 可缺省（唯一数据集/唯一表兜底），
     // 与 data.export 同一套口径。这是脚本/CLI/MCP 读数据的标准出口——VBA 能力的
     // 数据基石：脚本拿到 t/v 数组就能做统计、判断、条件导出。
-    int datasetId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
-    if (datasetId < 0 && m_app.data().count() == 1)
-        datasetId = m_app.data().ids().first();
-    if (datasetId < 0)
-        return fail(QStringLiteral("edataset"),
-                    QStringLiteral("请指定 dataset 参数（当前有多个数据集）"));
+    Result<int> dsIdRes = resolveDataset(intent);
+    if (!dsIdRes)
+        return dsIdRes.error();
+    const int datasetId = dsIdRes.value();
     const Dataset *ds = m_app.data().get(datasetId);
-    if (!ds)
-        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(datasetId));
 
-    QString table = intent.params.value(QStringLiteral("table")).toString();
     const QString column = intent.params.value(QStringLiteral("column")).toString();
-    if (table.isEmpty() && ds->tableCount() == 1)
-        table = ds->tableNames().first();
     if (column.isEmpty())
-        return fail(QStringLiteral("eargs"), QStringLiteral("data.series 需要 column 参数"));
+        return fail(err::Args, QStringLiteral("data.series 需要 column 参数"));
 
     // 派生名穿透（独立派生字段）：column 命中派生注册表 → 直接返回缓存结果。
+    // （table 不参与派生定位，故 table 兜底/校验放在穿透之后）
     // 数据集需匹配（防跨数据集撞名）；datasetId 缺省由第一个数据集兜底的
     // 场景下，若派生属于其他数据集则视为不命中（不穿帮）。
     {
@@ -1184,16 +1189,9 @@ Result<IntentResult> DataCommandsHandler::series(const Intent &intent)
         {
             const int n = qMin(entry->t.size(), entry->v.size());
             if (n <= 0)
-                return fail(QStringLiteral("eempty"),
+                return fail(err::Empty,
                             QStringLiteral("派生序列无样本: %1").arg(column));
-            QVariantList ts, vs;
-            ts.reserve(n);
-            vs.reserve(n);
-            for (int i = 0; i < n; ++i)
-            {
-                ts << entry->t.at(i);
-                vs << entry->v.at(i);
-            }
+            auto [ts, vs] = toVariantLists(entry->t, entry->v);
             IntentResult r;
             r.payload = QVariantMap{
                 {QStringLiteral("dataset"), entry->datasetId},
@@ -1209,9 +1207,14 @@ Result<IntentResult> DataCommandsHandler::series(const Intent &intent)
         }
     }
 
+    Result<QString> tableRes = resolveTable(*ds, intent.params.value(QStringLiteral("table")).toString());
+    if (!tableRes)
+        return tableRes.error();
+    const QString table = tableRes.value();
+
     const Table *t = ds->table(table);
     if (!t || !t->column(column))
-        return fail(QStringLiteral("echan"),
+        return fail(err::Chan,
                     QStringLiteral("通道不存在: %1.%2").arg(table, column));
 
     // cap 默认 4096（有界读取口径，与 plot.render 无 px 路径一致），可调但不超过
@@ -1221,20 +1224,14 @@ Result<IntentResult> DataCommandsHandler::series(const Intent &intent)
 
     auto channel = ds->channel(table, column, limit);
     if (!channel)
-        return fail(QStringLiteral("echan"),
+        return fail(err::Chan,
                     QStringLiteral("读取通道失败: %1.%2").arg(table, column));
     const int n = channel->size();
     if (n <= 0)
-        return fail(QStringLiteral("eempty"), QStringLiteral("通道无样本"));
+        return fail(err::Empty, QStringLiteral("通道无样本"));
 
-    QVariantList ts, vs;
-    ts.reserve(n);
-    vs.reserve(n);
-    for (int i = 0; i < n; ++i)
-    {
-        ts << channel->time.value(i);
-        vs << channel->value.value(i);
-    }
+    // 通道长度可能大于 time/value 各自容量（流式半行）：按短边截断。
+    auto [ts, vs] = toVariantLists(channel->time, channel->value);
 
     // dataset 级通道变换（变换 = 非破坏视图）：无显式 transform 参数时查
     // data.transform.set 的持久化配方，命中则统一变换后再返回——读数后端
@@ -1266,7 +1263,7 @@ Result<IntentResult> DataCommandsHandler::series(const Intent &intent)
     if (!tvReq.isEmpty() && tvReq.contains(QStringLiteral("descriptorId")))
     {
         if (!m_app.interactions().hasTransformEvaluator())
-            return fail(QStringLiteral("enoeval"),
+            return fail(err::NoEval,
                         QStringLiteral("变换求值器未注册（script 模块未装载）"));
         QVector<double> wt, wv;
         wt.reserve(n);
@@ -1311,30 +1308,30 @@ Result<IntentResult> DataCommandsHandler::stateSeries(const Intent &intent)
     const QString table = intent.params.value(QStringLiteral("table")).toString();
     const QString column = intent.params.value(QStringLiteral("column")).toString();
     if (dsId < 0 || table.isEmpty() || column.isEmpty())
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("data.state 需要 dataset/table/column 参数"));
 
     const Dataset *ds = m_app.data().get(dsId);
     if (!ds)
-        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+        return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(dsId));
     const QString input = table + QLatin1Char('.') + column;
     const Table *t = ds->table(table);
     const Column *col = t ? t->column(column) : nullptr;
     if (!t || !col)
-        return fail(QStringLiteral("echan"), QStringLiteral("通道不存在: %1").arg(input));
+        return fail(err::Chan, QStringLiteral("通道不存在: %1").arg(input));
     // 状态视图只接受离散值族：bool / 整型 / 仅含整数值的浮点（对齐 PJ4 的
     // PrimitiveType 离散家族 + whole_numbers_only 约束）。Text 通道的 string
     // 状态读取依赖 kernel string ABI（暂缺），此处明确报错而非静默空白。
     if (col->type == ValueType::Text)
-        return fail(QStringLiteral("etype"),
+        return fail(err::Type,
                     QStringLiteral("string 状态读取依赖内核 string ABI（暂未实现）: %1").arg(input));
 
     auto channel = ds->channel(table, column, kStateMaxPoints);
     if (!channel)
-        return fail(QStringLiteral("echan"), QStringLiteral("读取通道失败: %1").arg(input));
+        return fail(err::Chan, QStringLiteral("读取通道失败: %1").arg(input));
     const int n = channel->size();
     if (n <= 0)
-        return fail(QStringLiteral("eempty"), QStringLiteral("通道无样本: %1").arg(input));
+        return fail(err::Empty, QStringLiteral("通道无样本: %1").arg(input));
 
     // 标签格式化（对齐 StateSeriesAdapter::formatStateLabel）：
     //   bool → "true"/"false"；整型 → 十进制串；浮点 → 整数值用整数串。
@@ -1350,7 +1347,7 @@ Result<IntentResult> DataCommandsHandler::stateSeries(const Intent &intent)
             const double v = channel->value.value(i);
             if (!std::isfinite(v) || v != std::floor(v)
                 || v < -9.007199254740992e15 || v > 9.007199254740992e15)
-                return fail(QStringLiteral("estate"),
+                return fail(err::State,
                             QStringLiteral("浮点列含非整数值，不构成离散状态: %1").arg(input));
         }
     }
@@ -1418,7 +1415,7 @@ Result<IntentResult> DataCommandsHandler::stateSeries(const Intent &intent)
     if (!segs.isEmpty() && segs.last().t1 < 0.0)
         segs.last().t1 = channel->time.value(take - 1);
     if (segs.isEmpty())
-        return fail(QStringLiteral("estate"),
+        return fail(err::State,
                     QStringLiteral("通道无有效状态段（浮点列需只含整数值）: %1").arg(input));
 
     // 组行 JSON → 画布（经 view action，host 不依赖 GUI 类型）。
@@ -1476,7 +1473,7 @@ Result<IntentResult> DataCommandsHandler::workspaceSave()
     // 配置在 data.load 成功时已增量写入 settings；这里只是显式 flush 到磁盘。
     QString err;
     if (!m_app.settings().flush(&err))
-        return fail(QStringLiteral("eio"), err);
+        return fail(err::Io, err);
     IntentResult r;
     r.payload = true;
     return r;
@@ -1565,7 +1562,7 @@ Result<IntentResult> DataCommandsHandler::setChannelTransform(const Intent &inte
     QString table = intent.params.value(QStringLiteral("table")).toString();
     const QString column = intent.params.value(QStringLiteral("column")).toString();
     if (table.isEmpty() || column.isEmpty())
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("data.transform.set 需要 table/column 参数"));
 
     // origin：显式给优先（恢复重放场景），否则 dataset id 反查源。
@@ -1582,7 +1579,7 @@ Result<IntentResult> DataCommandsHandler::setChannelTransform(const Intent &inte
         const int lookupId = realSrc >= 0 ? realSrc : srcId;
         const DataSourceInfo *info = m_app.sources().get(lookupId);
         if (!info)
-            return fail(QStringLiteral("enosource"),
+            return fail(err::NoSource,
                         QStringLiteral("无法定位数据源（给 origin 或有效 dataset）"));
         origin = info->origin;
     }
@@ -1609,7 +1606,7 @@ Result<IntentResult> DataCommandsHandler::setChannelTransform(const Intent &inte
         QJsonParseError perr;
         req = QJsonDocument::fromJson(raw, &perr).object();
         if (req.isEmpty())
-            return fail(QStringLiteral("eargs"),
+            return fail(err::Args,
                         QStringLiteral("transform JSON 解析失败: %1").arg(perr.errorString()));
     }
     else if (tv.isValid())
@@ -1617,7 +1614,7 @@ Result<IntentResult> DataCommandsHandler::setChannelTransform(const Intent &inte
         req = QJsonObject::fromVariantMap(tv.toMap());
     }
     if (!req.contains(QStringLiteral("descriptorId")))
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("transform 请求缺少 descriptorId"));
 
     ChannelTransformConfig cfg = ChannelTransformConfig::load(m_app.settings());
@@ -1629,7 +1626,7 @@ Result<IntentResult> DataCommandsHandler::setChannelTransform(const Intent &inte
     cfg.upsert(spec);
     QString err;
     if (!cfg.save(m_app.settings(), &err))
-        return fail(QStringLiteral("eio"), err);
+        return fail(err::Io, err);
 
     IntentResult r;
     r.payload = QVariantMap{
@@ -1647,7 +1644,7 @@ Result<IntentResult> DataCommandsHandler::clearChannelTransform(const Intent &in
     QString table = intent.params.value(QStringLiteral("table")).toString();
     const QString column = intent.params.value(QStringLiteral("column")).toString();
     if (table.isEmpty() || column.isEmpty())
-        return fail(QStringLiteral("eargs"),
+        return fail(err::Args,
                     QStringLiteral("data.transform.clear 需要 table/column 参数"));
 
     QString origin = intent.params.value(QStringLiteral("origin")).toString();
@@ -1659,7 +1656,7 @@ Result<IntentResult> DataCommandsHandler::clearChannelTransform(const Intent &in
         const int realSrc = m_app.sources().sourceOfDataset(datasetId);
         const DataSourceInfo *info = m_app.sources().get(realSrc >= 0 ? realSrc : m_app.activeSourceId());
         if (!info)
-            return fail(QStringLiteral("enosource"),
+            return fail(err::NoSource,
                         QStringLiteral("无法定位数据源（给 origin 或有效 dataset）"));
         origin = info->origin;
     }
@@ -1668,7 +1665,7 @@ Result<IntentResult> DataCommandsHandler::clearChannelTransform(const Intent &in
     const bool removed = cfg.removeByChannel(origin, table, column);
     QString err;
     if (!cfg.save(m_app.settings(), &err))
-        return fail(QStringLiteral("eio"), err);
+        return fail(err::Io, err);
 
     IntentResult r;
     r.payload = QVariantMap{

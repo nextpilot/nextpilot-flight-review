@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
 
 namespace nextpilot::plotscope::script
@@ -52,7 +53,7 @@ Result<std::unique_ptr<FilterInstance>> FilterCatalogue::makeProcessor(const QSt
 {
     const CatalogueEntry *entry = find(id);
     if (!entry)
-        return fail(QStringLiteral("enofilter"), QStringLiteral("未知过滤器 id: %1").arg(id));
+        return fail(err::NoFilter, QStringLiteral("未知过滤器 id: %1").arg(id));
     return m_engine->createInstance(entry->cls, params);
 }
 
@@ -68,7 +69,7 @@ Result<std::unique_ptr<FilterInstance>> FilterCatalogue::makeProcessorFromSource
         if (cls.id == id)
             return m_engine->createInstance(cls, params);
     }
-    return fail(QStringLiteral("enofilter"), QStringLiteral("内嵌源无过滤器 id: %1").arg(id));
+    return fail(err::NoFilter, QStringLiteral("内嵌源无过滤器 id: %1").arg(id));
 }
 
 std::optional<QByteArray> FilterCatalogue::standaloneClassScript(const QString &id) const
@@ -160,7 +161,7 @@ Result<QJsonObject> FilterCatalogue::applySeries(const QString &id, const QJsonO
                                                  const QVector<double> &t, const QVector<double> &v) const
 {
     if (t.size() != v.size() || t.isEmpty())
-        return fail(QStringLiteral("eargs"), QStringLiteral("过滤器输入序列为空或时间/值长度不一致"));
+        return fail(err::Args, QStringLiteral("过滤器输入序列为空或时间/值长度不一致"));
 
     auto made = makeProcessor(id, params);
     if (!made)
@@ -174,12 +175,12 @@ Result<QJsonObject> FilterCatalogue::applySeries(const QString &id, const QJsonO
     {
         FilterSampleResult r = inst->calculate(t.at(i) - t0, v.at(i));
         if (inst->failed())
-            return fail(QStringLiteral("eruntime"), inst->error());
+            return fail(err::Runtime, inst->error());
         if (r.suppress)
             continue;
         const double ot = r.hasExplicitTime ? t0 + r.outTime : t.at(i);
         if (!std::isfinite(ot) || !std::isfinite(r.value))
-            return fail(QStringLiteral("enan"), QStringLiteral("过滤器 %1 产出非有限值").arg(id));
+            return fail(err::Nan, QStringLiteral("过滤器 %1 产出非有限值").arg(id));
         outT.append(ot);
         outV.append(r.value);
     }

@@ -1,4 +1,5 @@
 #include "ProtocolIntentHandler.h"
+#include "ErrorCodes.h"
 
 #include "ProtocolTemplateStore.h"
 
@@ -21,6 +22,7 @@ namespace
 using nextpilot::plotscope::foundation::Error;
 using nextpilot::plotscope::intent::IntentResult;
 using nextpilot::plotscope::foundation::Result;
+namespace err = nextpilot::plotscope::foundation::err;
 
 Result<IntentResult> ok(const QVariantMap &payload)
 {
@@ -31,7 +33,7 @@ Result<IntentResult> ok(const QVariantMap &payload)
 
 Error bad(const QString &msg)
 {
-    return nextpilot::plotscope::foundation::fail(QStringLiteral("eprotocol"), msg);
+    return nextpilot::plotscope::foundation::fail(err::Protocol, msg);
 }
 
 // "AA 55 0C" / "AA550C" → 字节。与编辑器 parseHex 同一口径（空格/逗号/竖线可分隔）。

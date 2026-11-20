@@ -1,4 +1,5 @@
 #include "ThemeManager.h"
+#include "ErrorCodes.h"
 
 #include "SettingsStore.h"
 
@@ -366,7 +367,7 @@ Result<IntentResult> ThemeManager::execute(const Intent &intent)
         r.payload = currentName();
         return r;
     }
-    return fail(QStringLiteral("eunsupported"),
+    return fail(err::Unsupported,
                 QStringLiteral("未知主题意图: %1").arg(intent.op));
 }
 

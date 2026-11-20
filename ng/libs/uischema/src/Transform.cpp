@@ -12,21 +12,11 @@ using nextpilot::plotscope::registry::Registry;
 
 namespace
 {
-// 容器本体委托泛型注册表（机制唯一，保序：登记顺序即 all() 顺序）。
-// 本文件只保留领域语义：内置定义不可被覆盖。
-Registry<TransformDescriptor> &registry()
+// 内置变换定义：构造时一次性注册。全部带能力位与自描述。
+void registerBuiltins(Registry<TransformDescriptor> &r)
 {
-    static Registry<TransformDescriptor> r;
-    return r;
-}
 
-// 内置变换定义：一次性注册。全部带能力位与自描述。
-void registerBuiltins()
-{
-    if (!registry().isEmpty())
-        return; // 幂等
-
-    auto add = [](const QString &id, const QString &label, TransformKind kind,
+    auto add = [&r](const QString &id, const QString &label, TransformKind kind,
                   uint32_t caps, const QString &desc, const QString &example,
                   const QList<TransformParam> &params) {
         TransformDescriptor d;
@@ -38,7 +28,7 @@ void registerBuiltins()
         d.example = example;
         d.params = params;
         d.builtin = true;
-        registry().insert(id, d);
+        r.insert(id, d);
     };
 
     // --- Rust 内置算子（ps-ops/filters 已有）：数据源衍生 + 曲线 X/Y 轴 ---
@@ -232,37 +222,38 @@ TransformRequest TransformRequest::fromJson(const QJsonObject &obj)
     return r;
 }
 
-void TransformRegistry::registerDescriptor(const TransformDescriptor &descriptor)
+TransformRegistry::TransformRegistry()
 {
-    registerBuiltins();
+    registerBuiltins(m_entries);
+}
+
+bool TransformRegistry::registerDescriptor(const TransformDescriptor &descriptor)
+{
     if (descriptor.id.isEmpty())
-        return;
+        return false;
     // 内置定义不允许被覆盖（用户脚本 id 用 lua.<scriptId> 前缀，不会撞）。
-    const TransformDescriptor *existing = registry().find(descriptor.id);
+    const TransformDescriptor *existing = m_entries.find(descriptor.id);
     if (existing && existing->builtin)
-        return;
-    registry().insert(descriptor.id, descriptor);
+        return false;
+    return m_entries.insert(descriptor.id, descriptor);
 }
 
-bool TransformRegistry::contains(const QString &id)
+bool TransformRegistry::contains(const QString &id) const
 {
-    registerBuiltins();
-    return registry().contains(id);
+    return m_entries.contains(id);
 }
 
-TransformDescriptor TransformRegistry::get(const QString &id)
+TransformDescriptor TransformRegistry::get(const QString &id) const
 {
-    registerBuiltins();
-    return registry().value(id);
+    return m_entries.value(id);
 }
 
-QList<TransformDescriptor> TransformRegistry::all()
+QList<TransformDescriptor> TransformRegistry::all() const
 {
-    registerBuiltins();
-    return registry().values();
+    return m_entries.values();
 }
 
-QList<TransformDescriptor> TransformRegistry::byCapability(TransformCapability cap)
+QList<TransformDescriptor> TransformRegistry::byCapability(TransformCapability cap) const
 {
     QList<TransformDescriptor> out;
     for (const TransformDescriptor &d : all())
@@ -271,7 +262,7 @@ QList<TransformDescriptor> TransformRegistry::byCapability(TransformCapability c
     return out;
 }
 
-QStringList TransformRegistry::idsByCapability(TransformCapability cap)
+QStringList TransformRegistry::idsByCapability(TransformCapability cap) const
 {
     QStringList ids;
     for (const TransformDescriptor &d : byCapability(cap))
@@ -281,7 +272,8 @@ QStringList TransformRegistry::idsByCapability(TransformCapability cap)
 
 void TransformRegistry::clear()
 {
-    registry().clear();
+    m_entries.clear();
+    registerBuiltins(m_entries); // 内置永远可用
 }
 
 QVector<nextpilot::plotscope::uischema::ParamSpec>

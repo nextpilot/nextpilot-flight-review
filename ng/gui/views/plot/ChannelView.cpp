@@ -5,6 +5,7 @@
 #include "Intent.h"
 #include "PanelFactoryRegistry.h"
 #include "Result.h"
+#include "ErrorCodes.h"
 #include "Transform.h"
 
 #include <QJsonDocument>
@@ -22,8 +23,9 @@ using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 
-ChannelView::ChannelView(IIntentExecutor &executor, PlotCanvas *canvas, QObject *parent)
-    : QObject(parent), m_executor(executor), m_canvas(canvas)
+ChannelView::ChannelView(const TransformRegistry &transforms, IIntentExecutor &executor,
+                         PlotCanvas *canvas, QObject *parent)
+    : m_transforms(transforms), QObject(parent), m_executor(executor), m_canvas(canvas)
 {
     if (!m_canvas)
         return;
@@ -136,7 +138,7 @@ bool ChannelView::renderOne(PlotSeries &series, QString *err)
     if (!series.yTransformId.isEmpty())
     {
         // kind 从注册表补全（TransformRequest::fromJson 依赖 kind 分派执行器）。
-        const TransformDescriptor d = TransformRegistry::get(series.yTransformId);
+        const TransformDescriptor d = m_transforms.get(series.yTransformId);
         QJsonObject req{
             { QStringLiteral("descriptorId"), series.yTransformId },
             { QStringLiteral("kind"), transformKindName(d.kind) },
@@ -215,7 +217,7 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
     auto *canvas = new PlotCanvas(parent);
 
     // 通道视图：负责"取数 + 填画布"，走意图层。
-    auto *view = new ChannelView(executor, canvas, canvas);
+    auto *view = new ChannelView(appCtx.transforms(), executor, canvas, canvas);
 
     // 订阅共享的"活动通道"：数据集树双击 → 追加一条曲线。
     // 两个视图互不认识——协作全靠 AppContext 这一份共享状态。
@@ -237,18 +239,18 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
                                   const QString path = params.value(QStringLiteral("path")).toString();
                                   if (path.isEmpty())
-                                      return fail(QStringLiteral("epath"), QStringLiteral("缺少导出路径"));
+                                      return fail(err::Path, QStringLiteral("缺少导出路径"));
                                   if (!canvas->exportPng(path))
-                                      return fail(QStringLiteral("eio"), QStringLiteral("PNG 导出失败"));
+                                      return fail(err::Io, QStringLiteral("PNG 导出失败"));
                                   return QVariant(path);
                               });
     appCtx.interactions().registerViewAction(QStringLiteral("plot.export.csv"),
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
                                   const QString path = params.value(QStringLiteral("path")).toString();
                                   if (path.isEmpty())
-                                      return fail(QStringLiteral("epath"), QStringLiteral("缺少导出路径"));
+                                      return fail(err::Path, QStringLiteral("缺少导出路径"));
                                   if (!canvas->exportCsv(path))
-                                      return fail(QStringLiteral("eio"), QStringLiteral("CSV 导出失败"));
+                                      return fail(err::Io, QStringLiteral("CSV 导出失败"));
                                   return QVariant(path);
                               });
     appCtx.interactions().registerViewAction(QStringLiteral("plot.state.save"),
@@ -259,7 +261,7 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                               [canvas](const QVariantMap &params) -> Result<QVariant> {
                                   const auto state = params.value(QStringLiteral("state")).toJsonObject();
                                   if (!canvas->restoreViewState(state))
-                                      return fail(QStringLiteral("estate"), QStringLiteral("视图状态复原失败"));
+                                      return fail(err::State, QStringLiteral("视图状态复原失败"));
                                   return QVariant(true);
                               });
     appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.toggle"),
@@ -295,9 +297,9 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
                                   const QString key = params.value(QStringLiteral("key")).toString();
                                   const bool right = params.value(QStringLiteral("right")).toBool();
                                   if (key.isEmpty())
-                                      return fail(QStringLiteral("ekey"), QStringLiteral("缺少曲线 key"));
+                                      return fail(err::Key, QStringLiteral("缺少曲线 key"));
                                   if (!canvas->setSeriesAxis(key, right))
-                                      return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
+                                      return fail(err::NoEnt, QStringLiteral("曲线不存在"));
                                   return QVariant(true);
                               });
     // 图型切换：曲线/散点在本画布内切；仪表/地图/3D 本画布不处理（返回 handled=false），

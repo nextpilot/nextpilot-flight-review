@@ -40,9 +40,9 @@ int main(int argc, char **argv)
 {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
-    TransformRegistry::clear();
 
     AppContext ctx;
+    ctx.transforms().clear();
 
     // --- 1. 按能力过滤出 descriptor ---
     TransformField field(ctx, CapDerived);
@@ -108,7 +108,7 @@ int main(int argc, char **argv)
         Q_UNUSED(src);
         return Result<TransformDescriptor>(d);
     };
-    ops.save = [&savedOk](const QString &name, const QByteArray &source) -> Result<TransformDescriptor> {
+    ops.save = [&savedOk, &ctx](const QString &name, const QByteArray &source) -> Result<TransformDescriptor> {
         savedOk = true;
         TransformDescriptor d;
         d.id = QStringLiteral("lua.") + name;
@@ -116,7 +116,7 @@ int main(int argc, char **argv)
         d.label = name;
         d.capabilities = CapTransform;
         Q_UNUSED(source);
-        TransformRegistry::registerDescriptor(d);
+        ctx.transforms().registerDescriptor(d);
         return Result<TransformDescriptor>(d);
     };
     ctx.interactions().registerTransformScriptOps(ops);
@@ -125,7 +125,7 @@ int main(int argc, char **argv)
     // 手动走一遍"保存 -> 注册 -> 控件重拉"的链路（编辑按钮内部就是这么做的）。
     const TransformDescriptor r = ops.save(QStringLiteral("myfilter"), QByteArray()).value();
     CHECK(savedOk);
-    CHECK(TransformRegistry::contains(QStringLiteral("lua.myfilter")));
+    CHECK(ctx.transforms().contains(QStringLiteral("lua.myfilter")));
 
     // 新控件应能看到新脚本。
     TransformField field2(ctx, CapDerived);

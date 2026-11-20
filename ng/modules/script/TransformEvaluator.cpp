@@ -9,6 +9,7 @@ extern "C" {
 
 #include <QJsonDocument>
 
+#include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -57,7 +58,7 @@ Result<QVector<double>> evalRust(const TransformDescriptor &d, const TransformRe
                                      v.isEmpty() ? nullptr : v.constData(), n,
                                      &dummy, &dummy, 0, &probeN, errBuf, sizeof(errBuf));
     if (rc != 0 && rc != 6)
-        return fail(QStringLiteral("erust"), QString::fromUtf8(errBuf));
+        return fail(err::Rust, QString::fromUtf8(errBuf));
 
     const quint32 cap = qMin(probeN, n);
     if (cap == 0)
@@ -70,7 +71,7 @@ Result<QVector<double>> evalRust(const TransformDescriptor &d, const TransformRe
                                  v.isEmpty() ? nullptr : v.constData(), n,
                                  outT.data(), outV.data(), cap, &outN, errBuf, sizeof(errBuf));
     if (rc != 0 && rc != 6)
-        return fail(QStringLiteral("erust"), QString::fromUtf8(errBuf));
+        return fail(err::Rust, QString::fromUtf8(errBuf));
     outV.resize(qMin<quint32>(outN, cap));
     return Result<QVector<double>>(outV);
 }
@@ -83,26 +84,27 @@ Result<QVector<double>> evalLua(const TransformDescriptor &d, const TransformReq
     if (source.isEmpty() && !req.scriptId.isEmpty())
     {
         // scriptId 引用的脚本源码由调用方通过 extra 注入（在线调试/编辑时直接给 luaSource）。
-        return fail(QStringLiteral("enoscript"),
+        return fail(err::NoScript,
                     QStringLiteral("Lua 脚本引用 %1 未提供源码，请在请求里带 luaSource").arg(req.scriptId));
     }
     if (source.isEmpty())
-        return fail(QStringLiteral("enolua"), QStringLiteral("Lua 变换需要代码或脚本源码"));
+        return fail(err::NoLua, QStringLiteral("Lua 变换需要代码或脚本源码"));
 
     LuaTransform lt(source, req.params, QStringLiteral("=transform.%1").arg(d.id));
     if (!lt.valid())
-        return fail(QStringLiteral("elua"), lt.error());
+        return fail(err::Lua, lt.error());
 
     QVector<double> out;
     QString err;
     if (!lt.evalSeries(t, v, &out, &err))
-        return fail(QStringLiteral("elua"), err);
+        return fail(err::Lua, err);
     return Result<QVector<double>>(out);
 }
 
 } // namespace
 
-QJsonObject TransformEvaluator::makeRequest(const QString &descriptorId,
+QJsonObject TransformEvaluator::makeRequest(const TransformRegistry &transforms,
+                                            const QString &descriptorId,
                                             const QString &expression,
                                             const QString &luaSource,
                                             const QString &scriptId,
@@ -110,7 +112,7 @@ QJsonObject TransformEvaluator::makeRequest(const QString &descriptorId,
 {
     TransformRequest req;
     req.descriptorId = descriptorId;
-    const TransformDescriptor d = TransformRegistry::get(descriptorId);
+    const TransformDescriptor d = transforms.get(descriptorId);
     req.kind = d.kind;
     req.expression = expression;
     req.luaSource = luaSource;
@@ -119,16 +121,17 @@ QJsonObject TransformEvaluator::makeRequest(const QString &descriptorId,
     return req.toJson();
 }
 
-Result<double> TransformEvaluator::evalScalar(const QJsonObject &requestJson, uint32_t cap,
+Result<double> TransformEvaluator::evalScalar(const TransformRegistry &transforms,
+                                              const QJsonObject &requestJson, uint32_t cap,
                                               double x, double t, int index)
 {
     const TransformRequest req = TransformRequest::fromJson(requestJson);
-    const TransformDescriptor d = TransformRegistry::get(req.descriptorId);
+    const TransformDescriptor d = transforms.get(req.descriptorId);
     if (d.id.isEmpty())
-        return fail(QStringLiteral("enodesc"),
+        return fail(err::NoDesc,
                     QStringLiteral("未知变换 descriptor: %1").arg(req.descriptorId));
     if (!d.supports(static_cast<TransformCapability>(cap)))
-        return fail(QStringLiteral("ecap"),
+        return fail(err::Cap,
                     QStringLiteral("变换「%1」不支持该场景（能力：%2，需要：%3）。选错变换已被挡住。")
                         .arg(d.label, capabilityNames(d.capabilities), capabilityNames(cap)));
 
@@ -142,17 +145,18 @@ Result<double> TransformEvaluator::evalScalar(const QJsonObject &requestJson, ui
     return Result<double>(out.isEmpty() ? 0.0 : out.first());
 }
 
-Result<QVector<double>> TransformEvaluator::evalSeries(const QJsonObject &requestJson, uint32_t cap,
+Result<QVector<double>> TransformEvaluator::evalSeries(const TransformRegistry &transforms,
+                                                       const QJsonObject &requestJson, uint32_t cap,
                                                        const QVector<double> &t,
                                                        const QVector<double> &v)
 {
     const TransformRequest req = TransformRequest::fromJson(requestJson);
-    const TransformDescriptor d = TransformRegistry::get(req.descriptorId);
+    const TransformDescriptor d = transforms.get(req.descriptorId);
     if (d.id.isEmpty())
-        return fail(QStringLiteral("enodesc"),
+        return fail(err::NoDesc,
                     QStringLiteral("未知变换 descriptor: %1").arg(req.descriptorId));
     if (!d.supports(static_cast<TransformCapability>(cap)))
-        return fail(QStringLiteral("ecap"),
+        return fail(err::Cap,
                     QStringLiteral("变换「%1」不支持该场景（能力：%2）。")
                         .arg(d.label, capabilityNames(d.capabilities)));
 

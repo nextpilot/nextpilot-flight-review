@@ -6,6 +6,8 @@ namespace nextpilot::plotscope::registry
 {
 
 // 启动期自注册表：inline 变量保证跨 TU 单一实例，进程生命周期，静态初始化期填好。
+// [静态纪律·合法形态] 仅用于"进程一份、无生命周期、自注册"的表（面板工厂等）；
+// 有运行时生命周期的状态禁止放静态存储——实例归组合根（AppContext）持有。
 // 只适合"装满后只读"的表；要运行期增删的自己持有 Registry 实例。
 template <typename T, typename Key = QString>
 struct StaticRegistry

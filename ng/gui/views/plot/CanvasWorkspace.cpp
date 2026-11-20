@@ -13,6 +13,7 @@
 #include "SourceRegistry.h"
 #include "PropertySchema.h"
 #include "Result.h"
+#include "ErrorCodes.h"
 #include "Transform.h"
 #include "TransformEditorDialog.h"
 #include <fastplot/Axes.h>
@@ -229,7 +230,7 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
 {
     auto *stack = new QStackedWidget(parentForStack);
     auto *canvas = new PlotCanvas(stack);
-    auto *view = new ChannelView(m_executor, canvas, canvas);
+    auto *view = new ChannelView(m_appCtx.transforms(), m_executor, canvas, canvas);
 
     auto *instrument = new InstrumentView(m_executor, stack);
     instrument->setAppContext(&m_appCtx);
@@ -951,7 +952,7 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
         {
             TransformRequest req;
             req.descriptorId = s->yTransformId;
-            req.kind = TransformRegistry::get(s->yTransformId).kind;
+            req.kind = m_appCtx.transforms().get(s->yTransformId).kind;
             req.params = QJsonDocument::fromJson(s->yTransformParamsJson.toUtf8()).object();
             initial = req.toJson();
         }
@@ -1018,12 +1019,12 @@ void CanvasWorkspace::registerPropertyProviders()
                        s ? QString::number(s->xTimeOffset, 'f', 3) : QStringLiteral("0.000"),
                        PropKind::Number, true);
         const QString yDesc = s && !s->yTransformId.isEmpty()
-            ? TransformRegistry::get(s->yTransformId).label : QStringLiteral("无");
+            ? m_appCtx.transforms().get(s->yTransformId).label : QStringLiteral("无");
         tr.rows << row(QStringLiteral("yTransform"), QStringLiteral("Y 轴变换"), yDesc,
                        PropKind::Text, true);
         tr.rows.last().tooltip = QStringLiteral("可选算子/表达式/Lua；在右键菜单或脚本里用 "
                                                 "plot.series.transform 设置（能力：轴Y）。可选清单见 "
-                                                "TransformRegistry::idsByCapability(CapAxisY)");
+                                                "transforms.idsByCapability(CapAxisY)");
         schema.objects << tr;
         return schema.toJson();
     });
@@ -1047,19 +1048,19 @@ void CanvasWorkspace::registerPropertyProviders()
         const QString tfId = canvas ? canvas->axisTransform(axis) : QString();
         const QString tfLabel = tfId.isEmpty()
             ? QStringLiteral("无（填 Transform id 或算子/表达式/Lua）")
-            : TransformRegistry::get(tfId).label;
+            : m_appCtx.transforms().get(tfId).label;
         if (axis == QStringLiteral("x"))
         {
             o.rows << row(QStringLiteral("transform"), QStringLiteral("X 变换"), tfLabel,
                           PropKind::Text, true);
-            o.rows.last().tooltip = QStringLiteral("X 轴变换 id。可选：TransformRegistry::idsByCapability(CapAxisX)，"
+            o.rows.last().tooltip = QStringLiteral("X 轴变换 id。可选：transforms.idsByCapability(CapAxisX)，"
                                                     "如 builtin.scale 的 time_offset_sec / expression");
         }
         else
         {
             o.rows << row(QStringLiteral("transform"), QStringLiteral("Y 变换"), tfLabel,
                           PropKind::Text, true);
-            o.rows.last().tooltip = QStringLiteral("Y 轴变换 id。可选：TransformRegistry::idsByCapability(CapAxisY)");
+            o.rows.last().tooltip = QStringLiteral("Y 轴变换 id。可选：transforms.idsByCapability(CapAxisY)");
         }
         schema.objects << o;
         return schema.toJson();
@@ -1126,7 +1127,7 @@ void CanvasWorkspace::registerPropertyProviders()
             if (key == QStringLiteral("transform"))
             {
                 // 轴变换通过 TransformRegistry 的 id 生效；实际执行在曲线内（Task #123）。
-                if (!value.isEmpty() && !TransformRegistry::contains(value))
+                if (!value.isEmpty() && !m_appCtx.transforms().contains(value))
                 {
                     if (err) *err = QStringLiteral("未知变换 id: %1").arg(value);
                     return false;
@@ -1163,18 +1164,18 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString path = params.value(QStringLiteral("path")).toString();
                                     if (path.isEmpty())
-                                        return fail(QStringLiteral("epath"), QStringLiteral("缺少导出路径"));
+                                        return fail(err::Path, QStringLiteral("缺少导出路径"));
                                     if (!activeCanvas() || !activeCanvas()->exportPng(path))
-                                        return fail(QStringLiteral("eio"), QStringLiteral("PNG 导出失败"));
+                                        return fail(err::Io, QStringLiteral("PNG 导出失败"));
                                     return QVariant(path);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.export.csv"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString path = params.value(QStringLiteral("path")).toString();
                                     if (path.isEmpty())
-                                        return fail(QStringLiteral("epath"), QStringLiteral("缺少导出路径"));
+                                        return fail(err::Path, QStringLiteral("缺少导出路径"));
                                     if (!activeCanvas() || !activeCanvas()->exportCsv(path))
-                                        return fail(QStringLiteral("eio"), QStringLiteral("CSV 导出失败"));
+                                        return fail(err::Io, QStringLiteral("CSV 导出失败"));
                                     return QVariant(path);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.state.save"),
@@ -1186,7 +1187,7 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const auto state = params.value(QStringLiteral("state")).toJsonObject();
                                     if (!activeCanvas() || !activeCanvas()->restoreViewState(state))
-                                        return fail(QStringLiteral("estate"), QStringLiteral("视图状态复原失败"));
+                                        return fail(err::State, QStringLiteral("视图状态复原失败"));
                                     return QVariant(true);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.toggle"),
@@ -1336,7 +1337,7 @@ void CanvasWorkspace::registerViewActions()
                                     bool okId = false;
                                     const int src = params.value(QStringLiteral("sourceId")).toInt(&okId);
                                     if (!okId || src < 0)
-                                        return Error{QStringLiteral("eargs"),
+                                        return Error{err::Args,
                                                      QStringLiteral("需要 sourceId 参数")};
                                     const double off = params.value(QStringLiteral("offsetSec")).toDouble();
                                     m_appCtx.setSourceTimeOffset(src, off);
@@ -1365,7 +1366,7 @@ void CanvasWorkspace::registerViewActions()
                                     if (mode != QStringLiteral("start")
                                         && mode != QStringLiteral("center")
                                         && mode != QStringLiteral("end"))
-                                        return Error{QStringLiteral("eargs"),
+                                        return Error{err::Args,
                                                      QStringLiteral("mode 需为 start/center/end")};
                                     // 每源聚合时间范围（数据集首尾时间）。
                                     QHash<int, QPair<double, double>> ranges; // src -> [tMin,tMax]
@@ -1391,7 +1392,7 @@ void CanvasWorkspace::registerViewActions()
                                         }
                                     }
                                     if (ranges.isEmpty())
-                                        return Error{QStringLiteral("enodata"),
+                                        return Error{err::NoData,
                                                      QStringLiteral("无可用数据源")};
                                     double gLo = std::numeric_limits<double>::max();
                                     double gHi = std::numeric_limits<double>::lowest();
@@ -1505,9 +1506,9 @@ void CanvasWorkspace::registerViewActions()
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     const bool right = params.value(QStringLiteral("right")).toBool();
                                     if (key.isEmpty())
-                                        return fail(QStringLiteral("ekey"), QStringLiteral("缺少曲线 key"));
+                                        return fail(err::Key, QStringLiteral("缺少曲线 key"));
                                     if (!activeCanvas() || !activeCanvas()->setSeriesAxis(key, right))
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
+                                        return fail(err::NoEnt, QStringLiteral("曲线不存在"));
                                     return QVariant(true);
                                 });
     // 图型切换：workspace 直接处理（曲线在画布切、专用图型在 cell 内切页），
@@ -1529,9 +1530,9 @@ void CanvasWorkspace::registerViewActions()
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     const bool vis = params.value(QStringLiteral("visible"), true).toBool();
                                     if (key.isEmpty())
-                                        return fail(QStringLiteral("ekey"), QStringLiteral("缺少曲线 key"));
+                                        return fail(err::Key, QStringLiteral("缺少曲线 key"));
                                     if (!activeCanvas() || !activeCanvas()->setSeriesVisible(key, vis))
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
+                                        return fail(err::NoEnt, QStringLiteral("曲线不存在"));
                                     return QVariant(true);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.color"),
@@ -1539,25 +1540,25 @@ void CanvasWorkspace::registerViewActions()
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     const QColor color = params.value(QStringLiteral("color")).value<QColor>();
                                     if (key.isEmpty() || !color.isValid())
-                                        return fail(QStringLiteral("ekey"), QStringLiteral("缺少曲线 key 或颜色"));
+                                        return fail(err::Key, QStringLiteral("缺少曲线 key 或颜色"));
                                     if (!activeCanvas() || !activeCanvas()->setSeriesInk(key, color))
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
+                                        return fail(err::NoEnt, QStringLiteral("曲线不存在"));
                                     return QVariant(true);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.remove"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     if (key.isEmpty())
-                                        return fail(QStringLiteral("ekey"), QStringLiteral("缺少曲线 key"));
+                                        return fail(err::Key, QStringLiteral("缺少曲线 key"));
                                     if (!activeCanvas() || !activeCanvas()->removeSeries(key))
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("曲线不存在"));
+                                        return fail(err::NoEnt, QStringLiteral("曲线不存在"));
                                     return QVariant(true);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.zoom"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const double factor = params.value(QStringLiteral("factor"), 0.5).toDouble();
                                     if (!activeCanvas())
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                        return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     activeCanvas()->zoomRange(factor <= 0.0 ? 0.5 : factor);
                                     return QVariant(true);
                                 });
@@ -1572,7 +1573,7 @@ void CanvasWorkspace::registerViewActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.autoscale"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!activeCanvas())
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                        return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     activeCanvas()->autoScale();
                                     return QVariant(true);
                                 });
@@ -1580,7 +1581,7 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                        return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     // axis 省略=整体开关；"x"=竖网格（Bottom 轴刻度）；"y"=横网格。
                                     auto *ax = c->plotWidget();
                                     const QString axis = params.value(QStringLiteral("axis")).toString();
@@ -1603,7 +1604,7 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                        return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     auto *ax = c->plotWidget();
                                     QVariantMap out{{QStringLiteral("x"),
                                                      ax->axisGridVisible(fastplot::AxisSide::Bottom)},
@@ -1616,7 +1617,7 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                        return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     const bool on = params.contains(QStringLiteral("on"))
                                                         ? params.value(QStringLiteral("on")).toBool()
                                                         : !c->plotWidget()->boxVisible();
@@ -1644,12 +1645,12 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                        return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     const QString axis = params.value(QStringLiteral("axis"), QStringLiteral("x")).toString();
                                     const double lo = params.value(QStringLiteral("lo")).toDouble();
                                     const double hi = params.value(QStringLiteral("hi")).toDouble();
                                     if (hi <= lo)
-                                        return fail(QStringLiteral("erange"), QStringLiteral("范围非法"));
+                                        return fail(err::Range, QStringLiteral("范围非法"));
                                     if (axis == QStringLiteral("y2"))
                                         c->plotWidget()->setYRange2(lo, hi);
                                     else if (axis == QStringLiteral("y"))
@@ -1665,7 +1666,7 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
-                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                        return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     const QString text = params.value(QStringLiteral("text")).toString();
                                     if (text.isEmpty())
                                         c->plotWidget()->clearOverlay();
@@ -1695,7 +1696,7 @@ void CanvasWorkspace::registerViewActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.duplicate"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!duplicatePage())
-                                        return fail(QStringLiteral("epage"), QStringLiteral("复制页失败"));
+                                        return fail(err::Page, QStringLiteral("复制页失败"));
                                     return QVariant(pageCount());
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.fullscreen"),
@@ -1708,7 +1709,7 @@ void CanvasWorkspace::registerViewActions()
                                     const int r = params.value(QStringLiteral("rows")).toInt();
                                     const int c = params.value(QStringLiteral("cols")).toInt();
                                     if (!setGrid(r, c))
-                                        return fail(QStringLiteral("egrid"), QStringLiteral("网格规格非法"));
+                                        return fail(err::Grid, QStringLiteral("网格规格非法"));
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},
                                                     {QStringLiteral("rows"), m_rows},
                                                     {QStringLiteral("cols"), m_cols}};
@@ -1731,13 +1732,13 @@ void CanvasWorkspace::registerViewActions()
                                         norm.replace(sep, QLatin1Char('\u00d7'));
                                     const QStringList parts = norm.split(QLatin1Char('\u00d7'));
                                     if (parts.size() != 2)
-                                        return fail(QStringLiteral("egrid"), QStringLiteral("格式应为 行×列"));
+                                        return fail(err::Grid, QStringLiteral("格式应为 行×列"));
                                     int r = parts.at(0).trimmed().toInt();
                                     int c = parts.at(1).trimmed().toInt();
                                     if (r < 1 || r > 6 || c < 1 || c > 6)
-                                        return fail(QStringLiteral("egrid"), QStringLiteral("行列须在 1~6 之间"));
+                                        return fail(err::Grid, QStringLiteral("行列须在 1~6 之间"));
                                     if (!setGrid(r, c))
-                                        return fail(QStringLiteral("egrid"), QStringLiteral("网格规格非法"));
+                                        return fail(err::Grid, QStringLiteral("网格规格非法"));
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},
                                                     {QStringLiteral("rows"), r}, {QStringLiteral("cols"), c}};
                                     return QVariant(out);
@@ -1764,7 +1765,7 @@ void CanvasWorkspace::registerViewActions()
                                         : m_activePage;
                                     const QString title = params.value(QStringLiteral("title")).toString();
                                     if (index < 0 || index >= m_pages.size() || title.isEmpty())
-                                        return fail(QStringLiteral("epage"), QStringLiteral("页签重命名参数非法"));
+                                        return fail(err::Page, QStringLiteral("页签重命名参数非法"));
                                     m_pages.at(index)->title = title;
                                     m_tabs->setTabText(index, title);
                                     return QVariant(title);
@@ -1773,7 +1774,7 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const int index = params.value(QStringLiteral("index")).toInt();
                                     if (index < 0 || index >= m_pages.size())
-                                        return fail(QStringLiteral("epage"), QStringLiteral("页索引越界"));
+                                        return fail(err::Page, QStringLiteral("页索引越界"));
                                     m_tabs->setCurrentIndex(index);
                                     switchPage(index);
                                     return QVariant(index);

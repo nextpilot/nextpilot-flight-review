@@ -1,10 +1,12 @@
 #include "IngestPipeline.h"
+#include "ErrorCodes.h"
 
 #include "Dataset.h"
 #include "ParserRegistry.h"
 
 namespace nextpilot::plotscope::context
 {
+namespace err = nextpilot::plotscope::foundation::err;
 using nextpilot::plotscope::parser::ParserRegistry;
 using nextpilot::plotscope::dataset::ValueType;
 
@@ -36,14 +38,14 @@ Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &bindin
                                     DatasetId preferredDatasetId)
 {
     if (binding.parserId.isEmpty())
-        return fail(QStringLiteral("eformat"), QStringLiteral("解析器 id 为空"));
+        return fail(err::Format, QStringLiteral("解析器 id 为空"));
 
     const ParserEntry *entry = ParserRegistry::entry(binding.parserId);
     if (!entry || !entry->vtable)
-        return fail(QStringLiteral("eformat"),
+        return fail(err::Format,
                     QStringLiteral("未注册的解析器: %1").arg(binding.parserId));
     if (entry->vtable->abi_version != PS_PARSER_ABI_VERSION)
-        return fail(QStringLiteral("eabi"),
+        return fail(err::Abi,
                     QStringLiteral("解析器 ABI 不匹配: %1").arg(binding.parserId));
 
     QVector<ParserChannel> &chans = m_channels[sourceId];
@@ -63,7 +65,7 @@ Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &bindin
     const QString name = QStringLiteral("src%1_%2").arg(sourceId).arg(binding.parserId);
     Dataset ds = Dataset::create(name, binding.parserId);
     if (ds.isNull())
-        return fail(QStringLiteral("eio"), QStringLiteral("无法创建数据集: %1").arg(name));
+        return fail(err::Io, QStringLiteral("无法创建数据集: %1").arg(name));
     // 数据集入仓：指定了稳定 id 就用它（录制/回放需要 id 不漂移），
     // 否则按仓库自增分配。
     DatasetId dsId = kInvalidDataset;
@@ -78,7 +80,7 @@ Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &bindin
     {
         dsId = m_repo.add(ds);
         if (dsId == kInvalidDataset)
-            return fail(QStringLiteral("eio"), QStringLiteral("数据集入仓失败: %1").arg(name));
+            return fail(err::Io, QStringLiteral("数据集入仓失败: %1").arg(name));
     }
 
     ParserChannel ch;
@@ -91,7 +93,7 @@ Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &bindin
     if (!ch.ctx)
     {
         m_repo.remove(dsId);
-        return fail(QStringLiteral("eio"),
+        return fail(err::Io,
                     QStringLiteral("解析器实例创建失败: %1").arg(binding.parserId));
     }
 
@@ -105,7 +107,7 @@ Result<int> IngestPipeline::bindParser(int sourceId, const ParserBinding &bindin
         {
             entry->vtable->destroy(ch.ctx);
             m_repo.remove(dsId);
-            return fail(QStringLiteral("eopt"),
+            return fail(err::Opt,
                         QStringLiteral("解析参数不被接受: %1")
                             .arg(perr.message[0] ? perr.message : binding.parserId.toUtf8().constData()));
         }

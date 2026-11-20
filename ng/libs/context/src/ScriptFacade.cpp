@@ -1,7 +1,9 @@
 #include "ScriptFacade.h"
+#include "ErrorCodes.h"
 
 namespace nextpilot::plotscope::context
 {
+namespace err = nextpilot::plotscope::foundation::err;
 
 
 ScriptFacade::ScriptFacade(IIntentExecutor &executor, JobRecorder *recorder,
@@ -25,10 +27,10 @@ Result<QVariant> ScriptFacade::call(const QString &op, const QVariantMap &params
 Result<QVariant> ScriptFacade::callView(const QString &id, const QVariantMap &params)
 {
     if (!m_viewDispatcher)
-        return fail(QStringLiteral("enoView"), QStringLiteral("view action 派发器不可用（headless？）: %1").arg(id));
+        return fail(err::NoView, QStringLiteral("view action 派发器不可用（headless？）: %1").arg(id));
     Result<QVariant> out{QVariant()};
     if (!m_viewDispatcher(id, params, out))
-        return fail(QStringLiteral("eunsupported"), QStringLiteral("没有视图能处理动作: %1").arg(id));
+        return fail(err::Unsupported, QStringLiteral("没有视图能处理动作: %1").arg(id));
     return out;
 }
 
@@ -39,7 +41,7 @@ Result<QVariant> ScriptFacade::callAny(const QString &op, const QVariantMap &par
     if (r)
         return r;
     // 2) 模块不支持时回退 view action 通道。
-    if (r.error().code == QStringLiteral("eunsupported") && m_viewDispatcher)
+    if (r.error().code == err::Unsupported && m_viewDispatcher)
         return callView(op, params);
     return r;
 }

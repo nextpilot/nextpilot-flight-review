@@ -1102,7 +1102,7 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
         intent.params[QStringLiteral("table")] = tableName;
         intent.params[QStringLiteral("column")] = columnName;
         intent.params[QStringLiteral("transform")] = QVariant(req);
-        const QString label = TransformRegistry::get(
+        const QString label = m_appCtx.transforms().get(
             req.value(QStringLiteral("descriptorId")).toString()).label;
         intent.params[QStringLiteral("name")] = tableName + QLatin1Char('.') + columnName
                                                + QStringLiteral(".") + label;

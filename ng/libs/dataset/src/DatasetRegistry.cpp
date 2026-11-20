@@ -1,4 +1,5 @@
 #include "DatasetRegistry.h"
+#include "ErrorCodes.h"
 
 #include <algorithm>
 
@@ -6,6 +7,7 @@ namespace nextpilot::plotscope::dataset
 {
 using nextpilot::plotscope::foundation::Result;
 using nextpilot::plotscope::foundation::fail;
+namespace err = nextpilot::plotscope::foundation::err;
 
 DatasetRegistry::DatasetRegistry(QObject *parent) : QObject(parent) {}
 
@@ -20,7 +22,7 @@ DatasetId DatasetRegistry::add(Dataset dataset)
 Result<DatasetId> DatasetRegistry::addWithId(Dataset dataset, const QString &requestedName)
 {
     if (requestedName.isEmpty())
-        return fail(QStringLiteral("ename"), QStringLiteral("数据集名为空"));
+        return fail(err::Name, QStringLiteral("数据集名为空"));
     if (!dataset.name().isEmpty() && dataset.name() != requestedName)
         dataset = Dataset(requestedName);
     return add(std::move(dataset));
@@ -29,7 +31,7 @@ Result<DatasetId> DatasetRegistry::addWithId(Dataset dataset, const QString &req
 Result<DatasetId> DatasetRegistry::addWithStableId(Dataset dataset, DatasetId id)
 {
     if (m_datasets.contains(id))
-        return fail(QStringLiteral("edupid"), QStringLiteral("数据集 id 已存在: %1").arg(id));
+        return fail(err::DupId, QStringLiteral("数据集 id 已存在: %1").arg(id));
     m_datasets.insert(id, std::move(dataset));
     if (id >= m_nextId)
         m_nextId = id + 1;

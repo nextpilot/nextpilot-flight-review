@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AppContext.h"
+#include "Transform.h"
 #include "IIntentExecutor.h"
 #include "PlotCanvas.h"
 
@@ -29,7 +30,8 @@ class ChannelView : public QObject
 {
     Q_OBJECT
 public:
-    ChannelView(nextpilot::plotscope::intent::IIntentExecutor &executor, PlotCanvas *canvas,
+    ChannelView(const nextpilot::plotscope::uischema::TransformRegistry &transforms,
+                nextpilot::plotscope::intent::IIntentExecutor &executor, PlotCanvas *canvas,
                 QObject *parent = nullptr);
 
     // 追加一条通道并渲染（同 dataset+table+column 已存在则只刷新，不重复叠加）。
@@ -50,6 +52,7 @@ public:
     PlotCanvas *canvas() const { return m_canvas; }
 
 private:
+    const nextpilot::plotscope::uischema::TransformRegistry &m_transforms;
     void refresh();
     // 取一条通道的数据并写入画布的一条 PlotSeries。
     bool renderOne(PlotSeries &series, QString *err);

@@ -65,7 +65,7 @@ public:
         {
             const QString key = intent.params.value(QStringLiteral("key")).toString();
             if (key.isEmpty())
-                return fail(QStringLiteral("ekey"), QStringLiteral("缺少 key"));
+                return fail(err::Key, QStringLiteral("缺少 key"));
             IntentResult r;
             r.payload = m_store.value(key);
             return r;
@@ -75,7 +75,7 @@ public:
         {
             const QString key = intent.params.value(QStringLiteral("key")).toString();
             if (key.isEmpty())
-                return fail(QStringLiteral("ekey"), QStringLiteral("缺少 key"));
+                return fail(err::Key, QStringLiteral("缺少 key"));
             m_store.setValue(key, intent.params.value(QStringLiteral("value")));
             IntentResult r;
             r.payload = true;
@@ -129,13 +129,13 @@ public:
         {
             QString err;
             if (!m_store.flush(&err))
-                return fail(QStringLiteral("eio"), err);
+                return fail(err::Io, err);
             IntentResult r;
             r.payload = true;
             return r;
         }
 
-        return fail(QStringLiteral("eunsupported"), QStringLiteral("未知设置操作: %1").arg(op));
+        return fail(err::Unsupported, QStringLiteral("未知设置操作: %1").arg(op));
     }
 
 private:
@@ -173,5 +173,6 @@ void SettingsModule::initialize(ModuleContext &ctx)
 
 #include "SettingsModule.moc"
 
+#include "ErrorCodes.h"
 // 编译期自注册：新增器官无需改 App / 宿主。
 NG_REGISTER_MODULE(SettingsModule)

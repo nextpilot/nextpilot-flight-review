@@ -9,6 +9,7 @@
 #include <QFileDialog>
 #include <QMainWindow>
 
+#include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -173,7 +174,7 @@ IIntentExecutor &GuiContext::executor()
     public:
         Result<IntentResult> execute(const Intent &) override
         {
-            return fail(QStringLiteral("eunsupported"), QStringLiteral("GUI 未连接宿主执行器"));
+            return fail(err::Unsupported, QStringLiteral("GUI 未连接宿主执行器"));
         }
     } nullExecutor;
     return nullExecutor;

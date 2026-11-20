@@ -54,10 +54,12 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
-    TransformRegistry::clear();
+    // 每用例一份实例（构造即含内置算子）；两份库共享同一张注册表。
+    TransformRegistry transforms;
+    transforms.clear();
 
     // --- 1. describe() 元数据解析 ---
-    LuaScriptLibrary lib;
+    LuaScriptLibrary lib(transforms);
     const Result<TransformDescriptor> r = lib.describe(scriptWithDescribe(), QStringLiteral("gain"));
     CHECK(r.ok());
     if (r)
@@ -112,11 +114,11 @@ int main(int argc, char **argv)
     // --- 6. 保存到临时目录 + 注册 + resolveSource 文件优先 ---
     QTemporaryDir tmp;
     CHECK(tmp.isValid());
-    LuaScriptLibrary fileLib(tmp.path());
+    LuaScriptLibrary fileLib(transforms, tmp.path());
     const Result<TransformDescriptor> saved = fileLib.save(
         QStringLiteral("saved_gain"), scriptWithDescribe());
     CHECK(saved.ok());
-    CHECK(TransformRegistry::contains(QStringLiteral("lua.saved_gain")));
+    CHECK(transforms.contains(QStringLiteral("lua.saved_gain")));
     CHECK(QFile::exists(QDir(tmp.path()).filePath(QStringLiteral("saved_gain.lua"))));
 
     // 文件为真源：快照写错，resolveSource 应返回文件里的正确源码。
@@ -131,11 +133,11 @@ int main(int argc, char **argv)
     CHECK(fallback == QByteArray("return 42"));
 
     // --- 7. loadAll 扫描目录并注册 ---
-    TransformRegistry::clear();
+    transforms.clear();
     const LuaScriptLibrary::LoadReport report = fileLib.loadAll();
     CHECK(report.loaded == 1);
     CHECK(report.errors.isEmpty());
-    CHECK(TransformRegistry::contains(QStringLiteral("lua.saved_gain")));
+    CHECK(transforms.contains(QStringLiteral("lua.saved_gain")));
 
     // --- 8. 非法脚本名被拒 ---
     const Result<TransformDescriptor> invalid = fileLib.save(

@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
+#include "OpDispatch.h"
 
 // 数据器官的"派生能力"：reload / export / recent / clearCache。
 //
@@ -44,7 +45,10 @@ class DataCommandsHandler final : public nextpilot::plotscope::intent::IIntentHa
 public:
     explicit DataCommandsHandler(nextpilot::plotscope::context::AppContext &appCtx,
                                  nextpilot::plotscope::intent::IIntentExecutor &executor)
-        : m_app(appCtx), m_executor(executor) {}
+        : m_app(appCtx), m_executor(executor)
+    {
+        buildDispatch();
+    }
 
     bool canHandle(const nextpilot::plotscope::intent::Intent &intent) const override;
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> execute(
@@ -54,6 +58,17 @@ public:
     static constexpr const char *kRecentKey = "data/recent";
 
 private:
+    // op → 成员函数注册表（机制唯一：OpDispatch，op 字符串只写一遍）。
+    void buildDispatch();
+
+    // 兜底解析（提前备好的资产，全 handler 共用，不再逐方法手抄）：
+    // dataset 缺省取唯一数据集 + 存在性校验。
+    nextpilot::plotscope::foundation::Result<int> resolveDataset(
+        const nextpilot::plotscope::intent::Intent &intent) const;
+    // table 缺省取唯一表 + 存在性校验。
+    nextpilot::plotscope::foundation::Result<QString> resolveTable(
+        const nextpilot::plotscope::dataset::Dataset &ds, const QString &table) const;
+
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> reload(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> exportCsv(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recent(const nextpilot::plotscope::intent::Intent &intent);
@@ -83,4 +98,5 @@ private:
 
     nextpilot::plotscope::context::AppContext &m_app;
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;
+    nextpilot::plotscope::intent::OpDispatch m_dispatch;
 };

@@ -51,12 +51,12 @@ public:
             const QString path = intent.params.value(QStringLiteral("path")).toString();
             QFile f(path);
             if (!f.open(QIODevice::ReadOnly))
-                return fail(QStringLiteral("eio"), QStringLiteral("无法读取脚本: %1").arg(path));
+                return fail(err::Io, QStringLiteral("无法读取脚本: %1").arg(path));
             source = f.readAll();
         }
         else
         {
-            return fail(QStringLiteral("eargs"), QStringLiteral("script.run 需要 source 或 path"));
+            return fail(err::Args, QStringLiteral("script.run 需要 source 或 path"));
         }
 
         // 门面是栈对象，仅本次执行有效；脚本拿不到它的指针。
@@ -114,10 +114,13 @@ void ScriptModule::initialize(ModuleContext &ctx)
 
     // 统一变换求值：注册进 AppContext，供 host(数据源衍生)/gui(曲线)/protocol(checksum)
     // 调用，而不必反向依赖 script 模块。builtin/expression 内部走 Rust，lua 走 C++。
+    // 捕获 AppContext 指针（其生命周期 = 进程运行期，长于回调）。
+    nextpilot::plotscope::context::AppContext *appCtx = &ctx.app();
     ctx.host().registerTransformEvaluator(
-        [](const QJsonObject &request, uint32_t cap,
-           const QVector<double> &t, const QVector<double> &v) {
-            return nextpilot::plotscope::script::TransformEvaluator::evalSeries(request, cap, t, v);
+        [appCtx](const QJsonObject &request, uint32_t cap,
+                 const QVector<double> &t, const QVector<double> &v) {
+            return nextpilot::plotscope::script::TransformEvaluator::evalSeries(
+                appCtx->transforms(), request, cap, t, v);
         });
 
     // 有状态过滤器能力：内置目录注入 InteractionRegistry，供 host(data.filter) 与 GUI 编辑器调用。
@@ -134,7 +137,7 @@ void ScriptModule::initialize(ModuleContext &ctx)
     filterOps.describe = [cat](const QString &id) -> Result<QJsonObject> {
         const auto *e = cat->find(id);
         if (!e)
-            return fail(QStringLiteral("enoent"), QStringLiteral("未知过滤器: %1").arg(id));
+            return fail(err::NoEnt, QStringLiteral("未知过滤器: %1").arg(id));
         return Result<QJsonObject>(
             nextpilot::plotscope::script::FilterCatalogue::descriptorToJson(e->cls));
     };
@@ -180,25 +183,28 @@ void ScriptModule::initialize(ModuleContext &ctx)
     ctx.host().registerMarkerOps(std::move(markerOps));
 
     // Lua 脚本库：目录可用 NG_SCRIPTS_DIR 覆盖（部署/测试），默认 scripts/ops。
+    // 注册表注入：脚本算子登记进 AppContext 持有的 TransformRegistry 实例。
     const QByteArray dirOverride = qgetenv("NG_SCRIPTS_DIR");
-    m_scriptLib.setOpsDir(dirOverride.isEmpty() ? QStringLiteral("scripts/ops")
-                                                 : QString::fromLocal8Bit(dirOverride.constData()));
-    m_scriptLib.loadAll();
+    m_scriptLib = std::make_unique<nextpilot::plotscope::script::LuaScriptLibrary>(ctx.app().transforms());
+    m_scriptLib->setOpsDir(dirOverride.isEmpty() ? QStringLiteral("scripts/ops")
+                                                  : QString::fromLocal8Bit(dirOverride.constData()));
+    m_scriptLib->loadAll();
 
     TransformScriptOps ops;
     ops.resolve = [this](const QString &scriptId, const QString &snapshot) {
-        return m_scriptLib.resolveSource(scriptId, snapshot);
+        return m_scriptLib->resolveSource(scriptId, snapshot);
     };
     ops.save = [this](const QString &name, const QByteArray &source) {
-        return m_scriptLib.save(name, source);
+        return m_scriptLib->save(name, source);
     };
     ops.describe = [this](const QByteArray &source, const QString &name) {
-        return m_scriptLib.describe(source, name);
+        return m_scriptLib->describe(source, name);
     };
     ctx.host().registerTransformScriptOps(ops);
 }
 
 #include "ScriptModule.moc"
 
+#include "ErrorCodes.h"
 // 编译期自注册：新增脚本模块无需改 App / 宿主。
 NG_REGISTER_MODULE(ScriptModule)

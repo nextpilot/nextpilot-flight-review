@@ -17,6 +17,7 @@ extern "C" {
 
 #include <cstdio>
 
+#include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -326,7 +327,7 @@ LuaEngine::~LuaEngine()
 Result<void> LuaEngine::runString(const QByteArray &source, const QString &chunkName)
 {
     if (!m_lua)
-        return fail(QStringLiteral("enolua"), QStringLiteral("Lua 状态创建失败"));
+        return fail(err::NoLua, QStringLiteral("Lua 状态创建失败"));
     const int status = luaL_loadbuffer(m_lua, source.constData(), source.size(),
                                        chunkName.toUtf8().constData());
     if (status != LUA_OK)
@@ -334,7 +335,7 @@ Result<void> LuaEngine::runString(const QByteArray &source, const QString &chunk
         const char *err = lua_tostring(m_lua, -1);
         const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("脚本编译失败");
         lua_pop(m_lua, 1);
-        return fail(QStringLiteral("esyntax"), msg);
+        return fail(err::Syntax, msg);
     }
     const int callStatus = lua_pcall(m_lua, 0, 0, 0);
     if (callStatus != LUA_OK)
@@ -342,7 +343,7 @@ Result<void> LuaEngine::runString(const QByteArray &source, const QString &chunk
         const char *err = lua_tostring(m_lua, -1);
         const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("脚本运行失败");
         lua_pop(m_lua, 1);
-        return fail(QStringLiteral("eruntime"), msg);
+        return fail(err::Runtime, msg);
     }
     return Result<void>();
 }
@@ -351,7 +352,7 @@ Result<void> LuaEngine::runFile(const QString &path)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
-        return fail(QStringLiteral("eio"), QStringLiteral("无法读取脚本: %1").arg(path));
+        return fail(err::Io, QStringLiteral("无法读取脚本: %1").arg(path));
     return runString(f.readAll(), QStringLiteral("@%1").arg(path));
 }
 

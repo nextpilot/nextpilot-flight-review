@@ -84,7 +84,7 @@ void TransformField::setLabel(const QString &label)
 void TransformField::rebuildDescriptors()
 {
     m_updating = true;
-    m_descriptors = TransformRegistry::byCapability(static_cast<TransformCapability>(m_capability));
+    m_descriptors = m_appCtx.transforms().byCapability(static_cast<TransformCapability>(m_capability));
     m_combo->clear();
     for (const TransformDescriptor &d : m_descriptors)
     {
@@ -256,7 +256,7 @@ QJsonObject TransformField::request() const
     }
     else
     {
-        kind = TransformRegistry::get(id).kind;
+        kind = m_appCtx.transforms().get(id).kind;
     }
 
     TransformRequest req;
