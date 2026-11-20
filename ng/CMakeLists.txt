@@ -5,13 +5,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# 依赖前缀：优先用 NG_DEPS_PREFIX（可持久化的独立 Qt/Lua 安装，不被系统镜像恢复）。
+# 依赖前缀：用 NG_DEPS_PREFIX（可持久化的独立 Qt/Lua 安装，不被系统镜像恢复）。
 # 该前缀下是标准 usr/ 布局（include、lib、lib/cmake、lib/qt6/plugins），
-# 一次性铺好后重装系统也不用重新 apt install。
+# 一次性铺好后重装系统也不用重新 apt install。前缀由 tools/bootstrap-ng-deps.sh 生成。
 if(DEFINED ENV{NG_DEPS_PREFIX} AND EXISTS "$ENV{NG_DEPS_PREFIX}")
   set(NG_DEPS_PREFIX "$ENV{NG_DEPS_PREFIX}")
-elseif(EXISTS "/home/user/Doubao/tools/ng-deps/usr/lib/x86_64-linux-gnu/cmake/Qt6")
-  set(NG_DEPS_PREFIX "/home/user/Doubao/tools/ng-deps")
 endif()
 if(NG_DEPS_PREFIX)
   list(PREPEND CMAKE_PREFIX_PATH "${NG_DEPS_PREFIX}/usr/lib/x86_64-linux-gnu/cmake")

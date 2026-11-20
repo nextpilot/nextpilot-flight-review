@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 把 ng 需要的开发依赖（Qt6 + Lua）装进一个不会被系统镜像恢复掉的前缀目录。
-# 用法：sudo bash /home/user/Doubao/tools/bootstrap-ng-deps.sh
+# 用法：sudo NG_DEPS_PREFIX=/opt/ng-deps bash tools/bootstrap-ng-deps.sh
 # 产物：$PREFIX/usr/...  之后用 NG_DEPS_PREFIX=$PREFIX 配置 cmake 即可。
 set -euo pipefail
-PREFIX="${NG_DEPS_PREFIX:-/home/user/Doubao/tools/ng-deps}"
+PREFIX="${NG_DEPS_PREFIX:-/opt/ng-deps}"
 PKGS=(
   qt6-base-dev qt6-base-dev-tools qt6-base-private-dev
   libqt6core6 libqt6gui6 libqt6widgets6 libqt6network6 libqt6dbus6

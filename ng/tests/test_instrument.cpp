@@ -357,9 +357,7 @@ int main(int argc, char *argv[])
     {
         QString path = qgetenv("FASTPLOT_ULG_FIXTURE");
         if (path.isEmpty())
-            path = QStringLiteral(
-                "/home/user/Doubao/chats/38453274206336514/nextpilot-ng/tests/fixture/"
-                "demo_flight.ulg");
+            path = QStringLiteral(NG_FIXTURE_DIR "/demo_flight.ulg");
         if (QFile::exists(path))
         {
             IngestPipeline pipe(application.data());

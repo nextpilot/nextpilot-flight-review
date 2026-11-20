@@ -182,6 +182,9 @@ set_tests_properties(fastplot_api PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscr
 # 这是"库能被 ng 直接调用"的可执行证明：链接 core + 扩展解析器，不碰老 src。
 add_executable(fastplot_dataset_test test_fastplot_dataset.cpp)
 target_include_directories(fastplot_dataset_test PRIVATE ${CMAKE_SOURCE_DIR}/core/include)
+# fixture 路径由 CMake 注入（随仓库走，不写死机器路径）
+target_compile_definitions(fastplot_dataset_test PRIVATE
+    NG_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/../tests/fixture")
 target_link_libraries(fastplot_dataset_test PRIVATE
     fastplot
     ng_recording
@@ -201,6 +204,9 @@ set_tests_properties(fastplot_instruments PROPERTIES ENVIRONMENT "QT_QPA_PLATFOR
 # === plot.instrument 意图 + 仪表视图（P5 接进 ng）===
 add_executable(ng_test_instrument test_instrument.cpp)
 target_include_directories(ng_test_instrument PRIVATE ${CMAKE_SOURCE_DIR}/app)
+# fixture 路径由 CMake 注入（随仓库走，不写死机器路径）
+target_compile_definitions(ng_test_instrument PRIVATE
+    NG_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/../tests/fixture")
 target_link_libraries(ng_test_instrument PRIVATE
     ng_gui
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。

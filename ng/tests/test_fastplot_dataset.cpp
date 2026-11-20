@@ -37,8 +37,8 @@ QString fixturePath()
     const QByteArray env = qgetenv("FASTPLOT_ULG_FIXTURE");
     if (!env.isEmpty())
         return QString::fromLocal8Bit(env);
-    // 默认指向老仓库的测试夹具（本机开发时的固定位置）
-    return QStringLiteral("/home/user/Doubao/chats/38453274206336514/nextpilot-flight-review/tests/fixture/demo_flight.ulg");
+    // 默认用 CMake 注入的仓库内 fixture 目录（NG_FIXTURE_DIR），不写死机器路径
+    return QStringLiteral(NG_FIXTURE_DIR "/demo_flight.ulg");
 }
 
 } // namespace
