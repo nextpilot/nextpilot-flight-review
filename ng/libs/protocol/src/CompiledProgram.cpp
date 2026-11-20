@@ -549,10 +549,11 @@ bool compileTextSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
             cs.literal = s.format;
             cs.boundary = static_cast<int>(SegBoundary::Literal);
         }
-        if (s.format.find("%x") != std::string::npos || s.format.find("%X") != std::string::npos)
-            cs.base = 16;
-        else if (s.format.find("%o") != std::string::npos)
-            cs.base = 8;
+        // 进制由转换符决定：%x/%X → 16，%o → 8，其余一律十进制。
+        // （文本段没有 base 键，别让 s.base 的默认值把这里推出的结果覆盖掉。）
+        cs.base = (s.format.find("%x") != std::string::npos || s.format.find("%X") != std::string::npos)
+                      ? 16
+                      : (s.format.find("%o") != std::string::npos ? 8 : 10);
     }
     cs.textRepeat = s.countExpr && s.countExpr->kind == Expr::Num && s.countExpr->ival > 0
                         ? static_cast<uint32_t>(s.countExpr->ival)
@@ -573,7 +574,8 @@ bool compileTextSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
     cs.hasWidth = s.hasWidth;
     cs.width = s.width;
     cs.textType = (s.type.type == ValueType::Text) ? 1 : 0;
-    cs.base = s.base;
+    if (!cs.isTextSeg)
+        cs.base = s.base;
     cs.hasFixedDigits = s.hasFixedDigits;
     cs.fixedDigits = s.fixedDigits;
     cs.signedFlag = s.signedFlag;

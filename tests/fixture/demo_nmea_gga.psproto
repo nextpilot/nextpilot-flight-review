@@ -109,7 +109,7 @@
       "expect": [
         {
           "op": "xor8",
-          "over": "dollar:star"
+          "over": "msgid:station"
         }
       ]
     }

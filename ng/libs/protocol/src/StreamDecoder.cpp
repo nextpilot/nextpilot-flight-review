@@ -456,13 +456,54 @@ static bool failPredicate(RecAttempt &r, const std::string &segName, const std::
 }
 
 static bool checkTextPredicates(const CompiledSeg &seg, const TypedVec &col,
-                                 const std::vector<TypedVec> &cols, RecAttempt &r)
+                                 const std::vector<TypedVec> &cols, RecAttempt &r,
+                                 const uint8_t *p, const std::vector<std::pair<size_t, size_t>> &spans)
 {
     std::string bcErr;
     for (const CompiledCheck &c : seg.checks)
     {
         if (c.isSequence)
+        {
+            // 序列校验（xor8 / sum8 / crc8 / crc16 / crc32 / parity）：
+            // text 也按"记录的连续原始字节"算，含中间的逗号，不是字段值拼回去。
+            // over 已在编译期折成槽位集合，这里把它们的字节区间取并集。
+            if (c.overSlots.empty())
+                return failPredicate(r, seg.name, "校验算子缺少 over 区间");
+            size_t from = kNoPos, to = kNoPos;
+            for (int32_t slot : c.overSlots)
+            {
+                if (slot < 0 || static_cast<size_t>(slot) >= spans.size())
+                    continue;
+                const auto &sp = spans[static_cast<size_t>(slot)];
+                if (sp.first == kNoPos || sp.second == kNoPos)
+                    continue;
+                if (from == kNoPos || sp.first < from)
+                    from = sp.first;
+                if (to == kNoPos || sp.second > to)
+                    to = sp.second;
+            }
+            if (from == kNoPos || to <= from)
+                return failPredicate(r, seg.name, "校验区间没有取到字节");
+            std::vector<uint8_t> buf(p + from, p + to);
+            uint64_t computed = 0;
+            std::string derr;
+            if (!computeDigest(c.op, buf.data(), buf.size(), computed, derr))
+                return failPredicate(r, seg.name, derr);
+            const uint32_t want = col.size() > 0 ? static_cast<uint32_t>(col.at(0).asU64()) : 0u;
+            if (static_cast<uint32_t>(computed) != want)
+            {
+                char msg[160];
+                std::snprintf(msg, sizeof(msg), "校验不符：算得 0x%llX，帧内 0x%llX，区间 [%zu,%zu)",
+                              static_cast<unsigned long long>(computed),
+                              static_cast<unsigned long long>(want), from, to);
+                // 校验和错有独立错误码，别混进"字段非法"，上层要按它做整帧拒收统计。
+                r.code = DecodeError::ChecksumMismatch;
+                r.segment = seg.name;
+                r.detail = msg;
+                return false;
+            }
             continue;
+        }
         for (std::size_t i = 0; i < col.size(); ++i)
         {
             const TypedValue &v = col.at(i);
@@ -661,7 +702,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             }
             r.vals[seg.slot] = col;
             spans[seg.slot] = {pos, pos + total};
-            if (!checkTextPredicates(seg, col, r.vals, r))
+            if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
                 return false;
             pos += total;
             continue;
@@ -886,7 +927,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             }
             r.vals[seg.slot] = col;
             spans[seg.slot] = {segStart, scanPos};
-            if (!checkTextPredicates(seg, col, r.vals, r))
+            if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
                 return false;
             pos = scanPos;
             continue;
@@ -1308,7 +1349,7 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
         }
         r.vals[seg.slot] = col;
         spans[seg.slot] = {tokenStart, tokenEnd};
-        if (!checkTextPredicates(seg, col, r.vals, r))
+        if (!checkTextPredicates(seg, col, r.vals, r, p, spans))
             return false;
         pos = nextPos;
     }

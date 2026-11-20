@@ -978,6 +978,20 @@ int main(int argc, char *argv[])
             CHECK(dec.dropped() == 0 && dec.rejected() == 0);
         }
 
+        // (a2) 校验和错：只改星号后的两位之一，整帧必须被拒（不能当普通字段读过去）
+        {
+            const std::string badCrc =
+                "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*48\r\n";
+            ProtocolDecodeResult out;
+            StreamDecoder dec(np);
+            std::string perr;
+            CHECK(dec.push(QByteArray::fromStdString(badCrc), out, perr));
+            dec.finish(out);
+            CHECK(out.rejectedFrames >= 1);
+            CHECK(!out.errors.empty() && out.errors.front().code == DecodeError::ChecksumMismatch);
+            CHECK(out.errors.front().segment == "check");
+        }
+
         // (b) 同一行分两个 chunk：跨包仍能拼起来
         {
             ProtocolDecodeResult out;

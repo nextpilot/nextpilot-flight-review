@@ -299,6 +299,20 @@ text 不是"在流里直接 scanf"：**必须先定位帧首才读**，否则垃
 - 锚点之前的字节计入 `skipped`，不算错误；
 - 读一条记录时，若中途又见到锚点，当前候选作废并按 `RecordAborted` 计（与 NMEA 行为一致）。
 
+### 10.4.1 校验和（xor8 / sum8 / crc8 / crc16 / crc32 / parity）
+
+text 的校验写在 `expect` 里，算的是**记录的连续原始字节**（含中间的逗号），不是字段值拼回去：
+
+```json
+{"name":"check","format":"%x","output":"aux",
+ "expect":[{"op":"xor8","over":"msgid:station"}]}
+```
+
+- `over` 用 `a:b` 表示段区间，取 `[start(a), end(b))` 的原始字节；`$`、`*` 要排除就把区间写成
+  `msgid:station`（NMEA 的标准做法：XOR 从 `$` 之后到 `*` 之前）；
+- `%x` / `%X` 按十六进制解析校验字节（`%o` 八进制），校验值宽度由算法决定；
+- 不符 → `ChecksumMismatch`，整帧拒收（计入 `rejectedFrames`），不会当普通字段读过去。
+
 ### 10.5 段头识别
 
 不再有 `literal`。段头用 `expect` 判等：

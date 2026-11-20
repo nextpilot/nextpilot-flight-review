@@ -1491,7 +1491,16 @@ QString ProtocolEditorDialog::expectItemText(const QJsonValue &v) const
             items << literalText(x);
         return QLatin1Char('{') + items.join(QStringLiteral(",")) + QLatin1Char('}');
     }
-    // 摘要/校验和：格里只显示 op 名，参数在段详情里改
+    // 摘要/校验和：把参与区间一起显示出来，"xor8 msgid:station" 一眼能看出算的是哪一段
+    const QJsonArray ov = o.value(QStringLiteral("over")).toArray();
+    if (!ov.isEmpty())
+    {
+        QStringList names;
+        for (const QJsonValue &x : ov)
+            names << x.toString();
+        if (!names.isEmpty())
+            return op + QLatin1Char(' ') + names.join(QLatin1Char(','));
+    }
     return op;
 }
 QString ProtocolEditorDialog::expectCellText(const QJsonObject &seg) const
@@ -1548,12 +1557,31 @@ bool ProtocolEditorDialog::applyExpectCell(const QString &text, QJsonObject &seg
         const QString p = raw.trimmed();
         if (p.isEmpty())
             continue;
-        // 摘要类的参数（poly / over …）不在格里编：同名的旧项原样搬过来，改参数进段详情
-        if (digestOps.contains(p))
+        // 摘要类：可以只写算子名（沿用旧参数），也可以写 "xor8 msgid:station" 直接改区间
+        QString opName = p;
+        QString overText;
+        const int sp = p.indexOf(QLatin1Char(' '));
+        if (sp > 0)
         {
+            opName = p.left(sp).trimmed();
+            overText = p.mid(sp + 1).trimmed();
+        }
+        if (digestOps.contains(opName))
+        {
+            if (!overText.isEmpty())
+            {
+                QJsonObject o;
+                o.insert(QStringLiteral("op"), opName);
+                QJsonArray one;
+                for (const QString &x : overText.split(QLatin1Char(','), Qt::SkipEmptyParts))
+                    one.append(x.trimmed());
+                o.insert(QStringLiteral("over"), one);
+                arr.append(o);
+                continue;
+            }
             bool carried = false;
             for (const QJsonValue &v : old)
-                if (v.toObject().value(QStringLiteral("op")).toString() == p)
+                if (v.toObject().value(QStringLiteral("op")).toString() == opName)
                 {
                     arr.append(v);
                     carried = true;
@@ -1562,7 +1590,7 @@ bool ProtocolEditorDialog::applyExpectCell(const QString &text, QJsonObject &seg
             if (!carried)
             {
                 QJsonObject o;
-                o.insert(QStringLiteral("op"), p);
+                o.insert(QStringLiteral("op"), opName);
                 arr.append(o);
             }
             continue;
