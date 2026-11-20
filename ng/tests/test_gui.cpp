@@ -1528,6 +1528,31 @@ int main(int argc, char *argv[])
         CHECK(dispatchOk(QStringLiteral("page.duplicate")));
         CHECK(dispatchOk(QStringLiteral("page.fullscreen")));
         CHECK(dispatchOk(QStringLiteral("plot.view.undo")));
+
+        // 「网格」下拉的勾选态查询（plot.grid.query）：返回值要能驱动菜单勾选，
+        // 且 plot.grid 按 axis 关闭后查询结果要跟着变——两者是同一份画布状态。
+        {
+            QVariant vr;
+            Result<QVariant> q(vr);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.grid.query"), {}, q));
+            CHECK(q);
+            const QVariantMap st = q.value().toMap();
+            CHECK(st.contains(QStringLiteral("x")));
+            CHECK(st.contains(QStringLiteral("y")));
+
+            CHECK(dispatchOk(QStringLiteral("plot.grid"),
+                             {{QStringLiteral("axis"), QStringLiteral("x")},
+                              {QStringLiteral("on"), false}}));
+            QVariant vr2;
+            Result<QVariant> q2(vr2);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.grid.query"), {}, q2));
+            CHECK(q2 && q2.value().toMap().value(QStringLiteral("x")).toBool() == false);
+            CHECK(dispatchOk(QStringLiteral("plot.grid"),
+                             {{QStringLiteral("axis"), QStringLiteral("x")},
+                              {QStringLiteral("on"), true}}));
+        }
         OK("plotting 全套操作：series/axis/zoom/grid/page + 游标/A-B/书签/复制/全屏/撤销 view action 已注册");
     }
 
