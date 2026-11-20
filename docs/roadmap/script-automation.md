@@ -955,3 +955,25 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 - 不暴露 `QWidget*` / Qt 对象 / `PsDataset*` 给脚本。
 - 不承诺全局回滚；只给补偿动作与操作清单。
 - 不做 UI 控制（菜单、Dock、设置项自动化）。
+
+## 14. AI/MCP 工具层（脚本对齐 E，2026-11-20 落地）
+
+定位：**意图层能力暴露 + 工具目录**，MCP server 本身暂缓（第三梯队）。后续 MCP bridge 直接消费下面两个意图即可，无需改宿主。
+
+| 意图 | 作用 | 关键参数 |
+|---|---|---|
+| `ai.tools.list` | 返回工具目录（PJ4 appTools 风格工具名 + 参数 schema + 已注册 op 列表） | — |
+| `ai.tool.call` | 按工具名调用，白名单校验后转发到对应 op | `tool`, `args`(map 或 JSON 串) |
+| `ai.status` | 应用状态（数据集/源数/活动源/工具数） | — |
+
+工具目录（PJ4 工具名 → NG op）：`get_status→ai.status`、`open_file→data.load`、`reload_file→data.reload`、`unload_file→data.remove`、`add_script_series→data.derive`、`add_filter→data.filter`、`add_marker→data.marker`、`export_series→data.export`、`script_run→script.run`、`screenshot→plot.export.png`。
+
+脚本侧组合：`app.call("ai.tool.call", {tool="get_status", args={}})` —— VBA 式 `app` 与 AI 工具层共用同一条意图通道；`args` 的嵌套 table 由 `readVariant` 的 `lua_absindex` 修复支撑。
+
+实现位置：`ng/host/{include,src}/AIToolsHandler.*`（系统级 handler，RuntimeHost 持有），`RuntimeHost::registeredOps()` 提供工具目录的 op 全景。测试在 `test_gui`「AI/MCP 工具层」段（目录 ≥10 + status + 白名单拒绝 + 脚本调用）。
+
+## 15. 本轮对齐决策变更（覆盖旧非目标）
+
+§13 非目标写"不做 PJ4 式单序列 marker 引擎"——这是脚本子项目初期的裁决。**用户后续明确指令"脚本跟 PJ3/PJ4 靠齐全"覆盖了该条**：脚本对齐 D 已实现 MarkerEngine（Lua 规则扫整序列产出竖线/区间带/值带/事件点），对应脚本 B/C/D 三梯队全部落地。旧非目标条目保留作历史记录，以本节为准。
+
+脚本对齐完成度：A 有状态过滤器引擎 ✓、B 12 内置过滤器库 ✓、C 过滤器接入数据管道+GUI ✓、D Marker 规则引擎+画布叠加 ✓、E AI/MCP 工具层（意图 API，server 暂缓）✓。

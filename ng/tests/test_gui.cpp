@@ -976,6 +976,56 @@ int main(int argc, char *argv[])
         OK("过滤器编辑器数据契约：12+ descriptor 的 parameters 字段齐全，足以生成表单");
     }
 
+    // --- AI/MCP 工具层：意图 API 暴露（供后续 MCP bridge 接）---
+    {
+        // (1) 工具目录：PJ4 风格工具名 + 参数 schema + 已注册 op 列表。
+        Intent li;
+        li.op = QStringLiteral("ai.tools.list");
+        const auto lr = application.host().execute(li);
+        CHECK(static_cast<bool>(lr));
+        const QVariantMap lpm = lr.value().payload.toMap();
+        const QVariantList tools = lpm.value(QStringLiteral("tools")).toList();
+        CHECK(tools.size() >= 10);
+        CHECK(lpm.value(QStringLiteral("count")).toInt() == tools.size());
+        bool hasAddFilter = false, hasAddMarker = false;
+        for (const QVariant &tv : tools)
+        {
+            const QVariantMap t = tv.toMap();
+            CHECK(t.contains(QStringLiteral("name")));
+            CHECK(t.contains(QStringLiteral("op")));
+            CHECK(t.value(QStringLiteral("parameters")).toList().size() >= 0);
+            if (t.value(QStringLiteral("name")).toString() == QStringLiteral("add_filter"))
+                hasAddFilter = true;
+            if (t.value(QStringLiteral("name")).toString() == QStringLiteral("add_marker"))
+                hasAddMarker = true;
+        }
+        CHECK(hasAddFilter && hasAddMarker);
+        CHECK(!lpm.value(QStringLiteral("registeredOps")).toStringList().isEmpty());
+
+        // (2) ai.status：状态查询。
+        Intent si;
+        si.op = QStringLiteral("ai.status");
+        const auto sr = application.host().execute(si);
+        CHECK(static_cast<bool>(sr));
+        CHECK(sr.value().payload.toMap().value(QStringLiteral("datasets")).toInt() > 0);
+
+        // (3) 白名单：未知工具被拒。
+        Intent bad;
+        bad.op = QStringLiteral("ai.tool.call");
+        bad.params[QStringLiteral("tool")] = QStringLiteral("dangerous_arbitrary_op");
+        const auto br = application.host().execute(bad);
+        CHECK(!static_cast<bool>(br));
+
+        // (4) 端到端：脚本经 app.call 走 AI 工具拿状态（VBA 式 + MCP 工具组合）。
+        Intent scr;
+        scr.op = QStringLiteral("script.run");
+        scr.params[QStringLiteral("source")] = QByteArray(
+            "app.call(\"ai.tool.call\", {tool=\"get_status\", args={}})");
+        const auto srr = application.host().execute(scr);
+        CHECK(static_cast<bool>(srr));
+        OK("AI/MCP 工具层：目录>=10 + status + 白名单拒绝 + 脚本 app.call 调工具");
+    }
+
     // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---
     {
         const auto &slotReg = application.host().uiSlots();

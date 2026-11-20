@@ -28,7 +28,8 @@ RuntimeHost::RuntimeHost(nextpilot::plotscope::context::AppContext &appCtx, QObj
       // 格式驱动只声明 parserId，解析实现由 SPI 解析器提供。
       m_dataLoadHandler(appCtx.toolbox(), appCtx.data(), appCtx.sources(),
                          &appCtx.ingest(), &appCtx.settings()),
-      m_dataCommandsHandler(appCtx, *this)
+      m_dataCommandsHandler(appCtx, *this),
+      m_aiToolsHandler(appCtx, *this, [this]() { return registeredOps(); })
 {
     // 系统级 data.load 入口：不归属任何可卸载模块，任何模块装卸都不影响它。
     // 用一个保留 key 注册，避免与模块 handler 的 "%id/%index" 冲突。
@@ -37,6 +38,9 @@ RuntimeHost::RuntimeHost(nextpilot::plotscope::context::AppContext &appCtx, QObj
     // data 派生能力（reload/export/recent/clearCache）与 load 同属系统级，
     // 归口一处——所有 data.* 意图都在宿主，模块装卸不影响，也不建第二条路。
     m_handlers.insert(QStringLiteral("@system/data.commands"), &m_dataCommandsHandler);
+
+    // AI/MCP 工具层：ai.* 系统级 handler，暴露工具目录与调用入口，供后续 MCP bridge 接。
+    m_handlers.insert(QStringLiteral("@system/ai.tools"), &m_aiToolsHandler);
 
     // app 骨架的标准 UI 插槽（容器）在**唯一一处**声明：SkeletonSlots（host 层）。
     // 骨架槽清单是 app 的配置，不写死在 core——core 只有 declareSlot 机制。

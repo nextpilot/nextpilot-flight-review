@@ -4,6 +4,7 @@ add_library(ng_host STATIC
     src/RuntimeHost.cpp
     src/DataLoadHandler.cpp
     src/DataCommandsHandler.cpp
+    src/AIToolsHandler.cpp
     src/SkeletonSlots.cpp
     src/BuiltinModuleRegistry.cpp
     include/ModuleInfo.h
@@ -11,6 +12,7 @@ add_library(ng_host STATIC
     include/RuntimeHost.h
     include/DataLoadHandler.h
     include/DataCommandsHandler.h
+    include/AIToolsHandler.h
     include/SkeletonSlots.h
     include/BuiltinModuleRegistry.h
 )

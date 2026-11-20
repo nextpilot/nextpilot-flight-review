@@ -10,6 +10,7 @@
 #include "UiSlotRegistry.h"
 #include "DataLoadHandler.h"
 #include "DataCommandsHandler.h"
+#include "AIToolsHandler.h"
 
 #include <QHash>
 #include <QList>
@@ -67,6 +68,8 @@ public:
 
     bool isActive(const QString &moduleId) const;
     QStringList activeIds() const;
+    // 已注册的意图 op 列表（供 ai.tools.list 暴露给 AI/MCP 工具层）。
+    QStringList registeredOps() const { return m_handlers.keys(); }
     QList<ModuleInfo> availableModules() const;
 
     // 应用上下文：进程级运行态（数据集/设置/工具箱/数据源/摄取管道）。
@@ -139,6 +142,7 @@ private:
     nextpilot::plotscope::registry::UiSlotRegistry m_uiSlotRegistry;   // UI 插槽：器官声明、工具箱填充
     DataLoadHandler m_dataLoadHandler;           // 系统级 data.load 入口，不归属可卸载模块
     DataCommandsHandler m_dataCommandsHandler;   // 系统级 data.reload/export/recent/clearCache，与 load 归口
+    AIToolsHandler m_aiToolsHandler;             // 系统级 ai.tools.list/ai.tool.call/ai.status
     QHash<QString, Node> m_nodes;
     QStringList m_order;
     QHash<QString, nextpilot::plotscope::intent::IIntentHandler *> m_handlers; // op -> handler
