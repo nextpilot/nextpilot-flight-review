@@ -21,7 +21,7 @@ cmake --build --preset linux-debug
 ctest --preset linux             # 自动设 QT_QPA_PLATFORM=offscreen
 ```
 
-`linux` 预设以 `deps/Qt/6.2.4/gcc_64` 作为 `CMAKE_PREFIX_PATH`、`deps/lua` 作为 Lua 静态库，build/test 预设带上 `~/.cargo/bin`，rustup 的 cargo 不用手工 export。Release 用 `linux-release` 预设（产物 `build-release/`）。`deps/` 不完整时预设会直接报找不到 Qt6，先跑 `bootstrap-deps.sh`。
+`linux` 预设以 `deps/Qt/6.2.4/gcc_64` 作为 `CMAKE_PREFIX_PATH`、旧 PlotScope 用 `deps/lua` 作为 Lua 静态库（ng 已改为仓库内 `src/3rdparty/lua-5.4` 源码编库，不再依赖 `deps/`），build/test 预设带上 `~/.cargo/bin`，rustup 的 cargo 不用手工 export。Release 用 `linux-release` 预设（产物 `build-release/`）。`deps/` 不完整时预设会直接报找不到 Qt6，先跑 `bootstrap-deps.sh`。
 
 系统 Qt（`qt6-base-dev` / `qt6-tools-dev` / `libqt6svg6-dev` / `qt6-l10n-tools`）也能用普通 `cmake -S . -B build` 配起来，但不要把它当云主机上的持久方案。
 

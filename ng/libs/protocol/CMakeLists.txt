@@ -26,18 +26,14 @@ add_library(ng_protocol STATIC
     include/protocol/ScriptEngine.h
 )
 
-# 脚本后端：仓库内 deps/lua（Lua 5.4 静态库），不走系统包。
-set(NG_LUA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../deps/lua")
-if(EXISTS "${NG_LUA_ROOT}/lib/liblua.a")
-    target_include_directories(ng_protocol PRIVATE "${NG_LUA_ROOT}/include")
-    # libm / libdl 是 POSIX 专有：Windows 上不存在 m.lib，无条件链接会 LNK1181。
-    set(_ng_lua_libs "${NG_LUA_ROOT}/lib/liblua.a")
-    if(UNIX)
-        list(APPEND _ng_lua_libs m ${CMAKE_DL_LIBS})
-    endif()
-    target_link_libraries(ng_protocol PUBLIC ${_ng_lua_libs})
-    target_compile_definitions(ng_protocol PUBLIC NG_PROTOCOL_LUA=1)
+# 脚本后端：仓库内 src/3rdparty/lua-5.4（源码编库，目标 lua::lua），不走系统包。
+# 目标由 ng 顶层 add_subdirectory 提供；路径、平台差异（m/libdl）都在 lua 目标自己身上，
+# 这里只管链接，不再出现任何 ../../../deps 之类写死的路径。
+if(NOT TARGET lua)
+    message(FATAL_ERROR "缺少 lua::lua 目标：ng/CMakeLists.txt 需要先引入 src/3rdparty/lua-5.4")
 endif()
+target_link_libraries(ng_protocol PUBLIC lua::lua)
+target_compile_definitions(ng_protocol PUBLIC NG_PROTOCOL_LUA=1)
 target_include_directories(ng_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ng_protocol PUBLIC Qt6::Core)
 set_target_properties(ng_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17)

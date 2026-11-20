@@ -72,6 +72,16 @@ endif()
 # 又不让 core 与机制库形成循环依赖。必须先于 core 定义。
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/RuntimeDeploy.cmake")  # 提供 ng_deploy_windows_runtime_all，必须早于任何 add_subdirectory
 
+# === 第三方源码统一根（必须早于 libs：protocol/script 都要链 lua::lua）（src/3rdparty）===
+# 各子目录只引用 ${NG_THIRDPARTY_DIR}/<库>，不再各自拼一串 ../../../deps 之类写死的相对路径；
+# 换落点、换目录布局只改这一处。
+set(NG_THIRDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/3rdparty"
+    CACHE PATH "第三方锁版本库源码根目录")
+
+# Lua 5.4.4（MIT）—— 脚本后端，源码编库（目标 lua::lua），Linux/Windows 吃同一份输入
+add_subdirectory("${NG_THIRDPARTY_DIR}/lua-5.4" "${CMAKE_CURRENT_BINARY_DIR}/3rdparty/lua"
+                 EXCLUDE_FROM_ALL)
+
 add_subdirectory(libs/foundation)
 
 # === 注册表最小核（header-only，先于 core 定义）===
@@ -119,9 +129,9 @@ set(SARIBBON_BUILD_EXAMPLES   OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTS               OFF CACHE BOOL "" FORCE)
 set(SARIBBON_USE_FRAMELESS_LIB OFF CACHE BOOL "" FORCE)
 set(SARIBBON_INSTALL_IN_CURRENT_DIR OFF CACHE BOOL "" FORCE)
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src/3rdparty/saribbon"
+add_subdirectory("${NG_THIRDPARTY_DIR}/saribbon"
                  "${CMAKE_CURRENT_BINARY_DIR}/3rdparty/saribbon" EXCLUDE_FROM_ALL)
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src/3rdparty/ads"
+add_subdirectory("${NG_THIRDPARTY_DIR}/ads"
                  "${CMAKE_CURRENT_BINARY_DIR}/3rdparty/ads" EXCLUDE_FROM_ALL)
 
 # === 独立绘图库（fastplot）===
