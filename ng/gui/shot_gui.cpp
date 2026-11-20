@@ -133,6 +133,7 @@ int main(int argc, char *argv[])
     QString offsetArg;    // --offset=<sourceId:seconds> 设源级时间偏移（#204）
     QString alignArg;     // --align=<start|center|end> 一键多源对齐（#204）
     QString legendArg;    // --legend=<collapse|zoom[±N]> 图例交互演示（#205）
+    QString liveArg;      // --livesource=<名>[:paused] 注册演示 live 源（#193 暂停/继续按钮）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -203,6 +204,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--legend=")))
         {
             legendArg = a.mid(QStringLiteral("--legend=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--livesource=")))
+        {
+            liveArg = a.mid(QStringLiteral("--livesource=").size());
             continue;
         }
         files << a;
@@ -287,6 +293,26 @@ int main(int argc, char *argv[])
     }
     if (firstDataset < 0)
         return 1;
+
+    // --livesource=<名>[:paused]：注册一个演示 live 源并挂上首数据集。
+    // NG 当前没有真实 live 运行时，这里只登记运行时实例（SourceKind::Live），
+    // 让数据源卡片呈现 live 形态：运行中显示暂停按钮 / 已暂停显示继续按钮（#193）。
+    if (!liveArg.isEmpty())
+    {
+        DataSourceInfo liveInfo;
+        const int colon = liveArg.indexOf(QLatin1Char(':'));
+        liveInfo.name = colon > 0 ? liveArg.left(colon) : liveArg;
+        const bool paused = liveArg.endsWith(QStringLiteral(":paused"));
+        liveInfo.origin = paused ? QStringLiteral("udp://127.0.0.1:14550 (paused)")
+                                 : QStringLiteral("udp://127.0.0.1:14550");
+        liveInfo.kind = SourceKind::Live;
+        liveInfo.state = paused ? SourceState::Paused : SourceState::Streaming;
+        liveInfo.datasetIds = {firstDataset};
+        const int liveId = application.context().sources().add(liveInfo);
+        application.context().setActiveSourceId(liveId);
+        fprintf(stdout, "演示 live 源已注册: id=%d name=%s state=%s\n", liveId,
+                qPrintable(liveInfo.name), paused ? "Paused" : "Streaming");
+    }
 
     // 依次叠加全部数值通道：每次 setActiveChannel 等价于在数据集树双击一列，
     // ChannelView 订阅后走 addChannel 追加一条曲线。这样截图呈现的是本轮的

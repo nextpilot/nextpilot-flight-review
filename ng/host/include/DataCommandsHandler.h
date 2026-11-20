@@ -56,6 +56,10 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recent(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearCache();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> removeSource(const nextpilot::plotscope::intent::Intent &intent);
+    // live 源暂停/继续（#193）：切 SourceState::Streaming/Paused。
+    // 仅 SourceKind::Live 源可操作；文件源返回 enotsupported。幂等：已在目标状态直接成功。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setSourcePaused(
+        const nextpilot::plotscope::intent::Intent &intent, bool paused);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> derive(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> filterSeries(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> runMarker(const nextpilot::plotscope::intent::Intent &intent);

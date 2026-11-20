@@ -59,6 +59,7 @@ constexpr int kRoleColumn = Qt::UserRole + 3;
 constexpr int kRoleSourceId = Qt::UserRole + 4;
 constexpr int kRoleNodeKind = Qt::UserRole + 5;      // "source"/"dataset"/"table"/"column"/"param"/"msg"
 constexpr int kRoleSourceActive = Qt::UserRole + 6;   // 源是否为当前激活（画左橙条）
+constexpr int kRoleSourceKind = Qt::UserRole + 7;     // 源种类："file"/"live"…（live 画暂停/继续图标）
 
 QString stateText(SourceState state)
 {
@@ -113,6 +114,16 @@ public:
     static const QIcon &trashIcon()
     {
         static const QIcon ic(QStringLiteral(":/icons/trash.svg"));
+        return ic;
+    }
+    static const QIcon &playIcon()
+    {
+        static const QIcon ic(QStringLiteral(":/icons/play.svg"));
+        return ic;
+    }
+    static const QIcon &pauseIcon()
+    {
+        static const QIcon ic(QStringLiteral(":/icons/pause.svg"));
         return ic;
     }
 
@@ -193,8 +204,9 @@ public:
         const int sep = text.indexOf(QLatin1Char('\n'));
         const QString name = sep < 0 ? text : text.left(sep);
         const QString meta = sep < 0 ? QString() : text.mid(sep + 1);
-        // 右侧操作图标区（配置/移除），文字避开它
-        const int iconZone = 48;
+        // 右侧操作图标区（live：暂停/继续 + 配置 + 移除；文件：配置 + 移除），文字避开它
+        const bool live = index.data(kRoleSourceKind).toString() == QStringLiteral("live");
+        const int iconZone = live ? 70 : 48;
         const int left = cardLeft + (hasChildren ? 22 : 8);
         const int textW = cardRight - left - iconZone;
         const int nameH = 16;
@@ -214,17 +226,28 @@ public:
                         Qt::AlignLeft | Qt::AlignVCenter | Qt::TextElideMode::ElideRight, meta);
         }
 
-        // 右侧操作图标：配置（齿轮）+ 移除（垃圾桶），对齐老界面源卡片右端。
+        // 右侧操作图标：live 源在配置/移除前多一个暂停/继续（运行中画暂停、已暂停画播放）；
+        // 文件源保持老界面两图标布局。
         const int iconY = r.top() + (r.height() - 16) / 2;
-        settingsIcon().paint(p, QRect(cardRight - iconZone + 4, iconY, 16, 16));
-        trashIcon().paint(p, QRect(cardRight - iconZone + 26, iconY, 16, 16));
+        if (live)
+        {
+            const bool paused = index.data(Qt::UserRole).toString() == QStringLiteral("已暂停");
+            (paused ? playIcon() : pauseIcon()).paint(p, QRect(cardRight - iconZone + 4, iconY, 16, 16));
+            settingsIcon().paint(p, QRect(cardRight - iconZone + 26, iconY, 16, 16));
+            trashIcon().paint(p, QRect(cardRight - iconZone + 48, iconY, 16, 16));
+        }
+        else
+        {
+            settingsIcon().paint(p, QRect(cardRight - iconZone + 4, iconY, 16, 16));
+            trashIcon().paint(p, QRect(cardRight - iconZone + 26, iconY, 16, 16));
+        }
         p->restore();
     }
 };
 
 // 源卡片右侧操作命中：对齐老界面配置/移除按钮。
 // 命中区与 SourceRowDelegate::paint 的图标绘制坐标一致。
-enum class SourceRowAction { Config, Remove };
+enum class SourceRowAction { Config, Remove, PauseResume };
 
 // 列节点可拖拽：只发逻辑标识（ChannelMime），不暴露 Dataset 内部结构。
 class ChannelTreeWidget : public QTreeWidget
@@ -245,20 +268,46 @@ protected:
             {
                 const QRect row = visualRect(indexFromItem(item));
                 const int cardRight = viewport()->width() - 1;
-                const int iconZone = 48;
+                const bool live = item->data(0, kRoleSourceKind).toString() == QStringLiteral("live");
+                const int iconZone = live ? 70 : 48;
                 const int iconY = row.top() + (row.height() - 16) / 2;
-                const QRect cfgRect(cardRight - iconZone + 4, iconY, 16, 16);
-                const QRect delRect(cardRight - iconZone + 26, iconY, 16, 16);
+                const QRect pauseRect(cardRight - iconZone + 4, iconY, 16, 16);
+                const QRect cfgRect(cardRight - iconZone + 26, iconY, 16, 16);
+                const QRect delRect(cardRight - iconZone + 48, iconY, 16, 16);
                 const int sid = item->data(0, kRoleSourceId).toInt();
-                if (cfgRect.contains(e->pos()))
+                if (live && pauseRect.contains(e->pos()))
                 {
-                    onRowAction(sid, SourceRowAction::Config);
+                    onRowAction(sid, SourceRowAction::PauseResume);
                     return; // 吞掉，避免同时选中/展开
                 }
-                if (delRect.contains(e->pos()))
+                if (!live)
                 {
-                    onRowAction(sid, SourceRowAction::Remove);
-                    return;
+                    // 文件源两图标口径：配置在 +4，移除在 +26
+                    const QRect cfgRectF(cardRight - iconZone + 4, iconY, 16, 16);
+                    const QRect delRectF(cardRight - iconZone + 26, iconY, 16, 16);
+                    if (cfgRectF.contains(e->pos()))
+                    {
+                        onRowAction(sid, SourceRowAction::Config);
+                        return;
+                    }
+                    if (delRectF.contains(e->pos()))
+                    {
+                        onRowAction(sid, SourceRowAction::Remove);
+                        return;
+                    }
+                }
+                else
+                {
+                    if (cfgRect.contains(e->pos()))
+                    {
+                        onRowAction(sid, SourceRowAction::Config);
+                        return;
+                    }
+                    if (delRect.contains(e->pos()))
+                    {
+                        onRowAction(sid, SourceRowAction::Remove);
+                        return;
+                    }
                 }
             }
         }
@@ -390,8 +439,22 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_tree->setDefaultDropAction(Qt::CopyAction);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     m_tree->setIndentation(14);
-    // 源卡片右侧齿轮/垃圾桶点击：配置弹说明（文件源）/移除数据源。
+    // 源卡片右侧齿轮/垃圾桶/暂停点击：配置弹说明（文件源）/移除/live 暂停继续。
     static_cast<ChannelTreeWidget *>(m_tree)->onRowAction = [this](int sourceId, SourceRowAction action) {
+        if (action == SourceRowAction::PauseResume)
+        {
+            const DataSourceInfo *li = m_sources.get(sourceId);
+            if (!li || li->kind != SourceKind::Live)
+                return;
+            const bool paused = li->state == SourceState::Paused;
+            Intent pint; pint.op = paused ? QStringLiteral("data.resume") : QStringLiteral("data.pause");
+            pint.params[QStringLiteral("id")] = sourceId;
+            const auto pr = m_executor.execute(pint);
+            if (!pr)
+                QMessageBox::warning(this, paused ? QStringLiteral("继续失败") : QStringLiteral("暂停失败"),
+                                     pr.error().message);
+            return; // 状态切换经 sourceChanged 信号刷新面板
+        }
         if (action == SourceRowAction::Config)
         {
             const DataSourceInfo *info = m_sources.get(sourceId);
@@ -781,6 +844,11 @@ void DataManagerPanel::rebuildTree()
         srcItem->setData(0, kRoleNodeKind, QStringLiteral("source"));
         const bool active = (sid == m_shownSourceId || m_shownSourceId < 0);
         srcItem->setData(0, kRoleSourceActive, active);
+        srcItem->setData(0, kRoleSourceKind,
+                         info->kind == SourceKind::Live  ? QStringLiteral("live")
+                         : info->kind == SourceKind::Replay ? QStringLiteral("replay")
+                         : info->kind == SourceKind::Stream ? QStringLiteral("stream")
+                                                            : QStringLiteral("file"));
         srcItem->setData(0, Qt::UserRole, stateText(info->state)); // sourceStateText 用
         srcItem->setFirstColumnSpanned(true); // 卡片底色横跨整行
 

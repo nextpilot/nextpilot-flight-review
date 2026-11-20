@@ -1015,3 +1015,11 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 测试：test_gui #205 段（标题栏命中 -1/未命中 -2、toggle 后重建显隐保持、折叠往返、字号 clamp 边界 1.5/2.0/0.7/1.0、三个 view action）；真机三态截图 `ng-legend-base.png`（7 行 + 游标实时值）/ `ng-legend-collapse.png`（折叠 + 读数框上移）/ `ng-legend-zoom.png`（字号 1.6×）。
 
 备注：Debug 构建曾现 `vtable for PlotModule` 链接错——AUTOMOC 缓存失效（`mocs_compilation.cpp.o` 过期），删对象文件重建即愈，非代码问题。
+
+## 19. live 源暂停/继续（#193/#194，2026-11-20 落地）
+
+- **意图层**：`data.pause` / `data.resume`（DataCommandsHandler::setSourcePaused）——切 `SourceState::Streaming ⇄ Paused`。仅 `SourceKind::Live` 源可操作（文件/回放源返回 `enotsupported`）；幂等（已在目标状态直接成功）；显式 `id` 参数，缺省取活动源。状态切换经 `SourceRegistry::setState` → `sourceChanged` 信号广播。
+- **面板层**：数据源卡片（DataManagerPanel）对 live 源加第三枚操作图标——运行中画 ⏸（`pause.svg`）、已暂停画 ▶（`play.svg`）；图标区扩到 70px，文字与命中区（`SourceRowAction::PauseResume`）同步；文件源保持两图标老布局。点击走意图层，无对话框。
+- **当前边界**：NG 尚无真实 live 运行时（ring/推送引擎未落地），暂停语义目前是**运行时实例的状态标记**——真实暂停（停止向数据集推送样本）在 live 数据引擎落地后自然生效，接口无需再改。shot_gui `--livesource=<名>[:paused]` 注册演示 live 源用于真机验收。
+- **测试**：test_gui「live 源暂停/继续」7 断言——pause/resume 双向切换 + 幂等 + 文件源 `enotsupported` + 未知源拒绝 + 面板状态文案（已暂停/运行中）；Release+Debug 双配置 23/23。
+- **截图**：`docs/screenshots/ng-live-streaming.png`（运行中⏸）、`docs/screenshots/ng-live-paused.png`（已暂停▶）。

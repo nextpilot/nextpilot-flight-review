@@ -52,6 +52,7 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
     return op == QLatin1String("data.reload") || op == QLatin1String("data.export")
         || op == QLatin1String("data.recent") || op == QLatin1String("data.clearCache")
         || op == QLatin1String("data.remove")
+        || op == QLatin1String("data.pause") || op == QLatin1String("data.resume")
         || op == QLatin1String("data.derive")         || op == QLatin1String("data.filter") || op == QLatin1String("data.marker")
         || op == QLatin1String("data.state")
         || op == QLatin1String("data.workspace.list")
@@ -71,6 +72,10 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return clearCache();
     if (intent.op == QLatin1String("data.remove"))
         return removeSource(intent);
+    if (intent.op == QLatin1String("data.pause"))
+        return setSourcePaused(intent, true);
+    if (intent.op == QLatin1String("data.resume"))
+        return setSourcePaused(intent, false);
     if (intent.op == QLatin1String("data.derive"))
         return derive(intent);
     if (intent.op == QLatin1String("data.filter"))
@@ -262,6 +267,40 @@ Result<IntentResult> DataCommandsHandler::removeSource(const Intent &intent)
     r.payload = QVariantMap{
         {QStringLiteral("id"), sourceId},
         {QStringLiteral("datasets"), removedDatasets.size()},
+    };
+    return r;
+}
+
+// live 源暂停/继续（#193）：
+//   data.pause  → SourceState::Paused   （停止向数据集推送新样本）
+//   data.resume → SourceState::Streaming（恢复推送）
+// 边界：仅 SourceKind::Live 源可操作——文件/回放源没有"实时"语义，明确拒绝；
+// 幂等：已处于目标状态时直接成功（重复点击/脚本重试不报错）。
+// 状态变化经 SourceRegistry::setState 触发 sourceChanged 信号，面板与视图自行刷新。
+Result<IntentResult> DataCommandsHandler::setSourcePaused(const Intent &intent, bool paused)
+{
+    int sourceId = intent.params.value(QStringLiteral("id"), -1).toInt();
+    if (sourceId < 0)
+        sourceId = m_app.activeSourceId();
+    const DataSourceInfo *info = m_app.sources().get(sourceId);
+    if (!info)
+        return fail(QStringLiteral("enosource"), QStringLiteral("没有可操作的数据源"));
+    if (info->kind != SourceKind::Live)
+        return fail(QStringLiteral("enotsupported"),
+                    QStringLiteral("仅实时(live)源支持暂停/继续，当前源不是实时源"));
+
+    const SourceState target = paused ? SourceState::Paused : SourceState::Streaming;
+    if (info->state != target)
+    {
+        if (!m_app.sources().setState(sourceId, target))
+            return fail(QStringLiteral("estate"),
+                        QStringLiteral("数据源状态切换失败（当前状态 %1）").arg(int(info->state)));
+    }
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("id"), sourceId},
+        {QStringLiteral("paused"), paused},
     };
     return r;
 }

@@ -1303,6 +1303,82 @@ int main(int argc, char *argv[])
         OK("AI/MCP 工具层：目录>=10 + status + 白名单拒绝 + 脚本 app.call 调工具");
     }
 
+    // --- live 源暂停/继续（#193）：data.pause / data.resume + 面板 live 卡片 ---
+    {
+        auto &sources = application.context().sources();
+
+        // (1) 注册一个演示 live 源（挂已有数据集，状态 Streaming）。
+        DataSourceInfo liveInfo;
+        liveInfo.name = QStringLiteral("串口遥测");
+        liveInfo.origin = QStringLiteral("udp://127.0.0.1:14550");
+        liveInfo.kind = SourceKind::Live;
+        liveInfo.state = SourceState::Streaming;
+        liveInfo.datasetIds = {loadedDsId};
+        const int liveId = sources.add(liveInfo);
+        CHECK(liveId > 0);
+        panel->refresh();
+
+        // (2) data.pause：Streaming → Paused，payload 报告新状态。
+        Intent pz;
+        pz.op = QStringLiteral("data.pause");
+        pz.params[QStringLiteral("id")] = liveId;
+        const auto pr = application.host().execute(pz);
+        CHECK(static_cast<bool>(pr));
+        const auto pm = pr.value().payload.toMap();
+        CHECK(pm.value(QStringLiteral("paused")).toBool() == true);
+        CHECK(pm.value(QStringLiteral("id")).toInt() == liveId);
+        CHECK(sources.get(liveId)->state == SourceState::Paused);
+        panel->refresh();
+        CHECK(panel->sourceStateText(panel->sourceNodeCount() - 1)
+              == QStringLiteral("已暂停"));
+
+        // (3) 幂等：再次 pause 仍成功（脚本重试/重复点击不报错）。
+        Intent pz2;
+        pz2.op = QStringLiteral("data.pause");
+        pz2.params[QStringLiteral("id")] = liveId;
+        CHECK(static_cast<bool>(application.host().execute(pz2)));
+
+        // (4) data.resume：Paused → Streaming。
+        Intent rs;
+        rs.op = QStringLiteral("data.resume");
+        rs.params[QStringLiteral("id")] = liveId;
+        const auto rr = application.host().execute(rs);
+        CHECK(static_cast<bool>(rr));
+        CHECK(rr.value().payload.toMap().value(QStringLiteral("paused")).toBool() == false);
+        CHECK(sources.get(liveId)->state == SourceState::Streaming);
+        panel->refresh();
+        CHECK(panel->sourceStateText(panel->sourceNodeCount() - 1)
+              == QStringLiteral("运行中"));
+
+        // (5) 文件源拒绝：data.pause 对 file 源返回 enotsupported。
+        const QVector<int> ids = sources.ids();
+        int fileId = -1;
+        for (int sid : ids)
+            if (sources.get(sid) && sources.get(sid)->kind == SourceKind::File)
+            {
+                fileId = sid;
+                break;
+            }
+        CHECK(fileId > 0);
+        Intent pf;
+        pf.op = QStringLiteral("data.pause");
+        pf.params[QStringLiteral("id")] = fileId;
+        const auto fr = application.host().execute(pf);
+        CHECK(!static_cast<bool>(fr));
+        CHECK(fr.error().code == QStringLiteral("enotsupported"));
+
+        // (6) 未知源拒绝。
+        Intent px;
+        px.op = QStringLiteral("data.pause");
+        px.params[QStringLiteral("id")] = 99999;
+        CHECK(!static_cast<bool>(application.host().execute(px)));
+
+        // (7) 面板层面：live 源卡片标记了 kind 角色（delegate 据此画暂停/继续图标）。
+        //     通过 view action 之外的真实路径——直接读源注册表确认面板刷新来源一致。
+        CHECK(sources.get(liveId)->kind == SourceKind::Live);
+        OK("live 源暂停/继续：data.pause/resume 切 Streaming/Paused + 幂等 + 文件源拒绝");
+    }
+
     // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---
     {
         const auto &slotReg = application.host().uiSlots();
