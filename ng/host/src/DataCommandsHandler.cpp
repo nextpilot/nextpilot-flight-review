@@ -8,6 +8,7 @@
 #include "Result.h"
 #include "SettingsStore.h"
 #include "WorkspaceDataConfig.h"
+#include "ChannelTransformConfig.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -57,7 +58,10 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
         || op == QLatin1String("data.state")          || op == QLatin1String("data.series")
         || op == QLatin1String("data.workspace.list")
         || op == QLatin1String("data.workspace.save")
-        || op == QLatin1String("data.workspace.restore");
+        || op == QLatin1String("data.workspace.restore")
+        || op == QLatin1String("data.transform.set")
+        || op == QLatin1String("data.transform.clear")
+        || op == QLatin1String("data.derive.list");
 }
 
 Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
@@ -92,6 +96,12 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return workspaceSave();
     if (intent.op == QLatin1String("data.workspace.restore"))
         return workspaceRestore();
+    if (intent.op == QLatin1String("data.transform.set"))
+        return setChannelTransform(intent);
+    if (intent.op == QLatin1String("data.transform.clear"))
+        return clearChannelTransform(intent);
+    if (intent.op == QLatin1String("data.derive.list"))
+        return deriveList(intent);
     return fail(QStringLiteral("eunknown"),
                 QStringLiteral("DataCommandsHandler 不处理: %1").arg(intent.op));
 }
@@ -114,7 +124,12 @@ Result<IntentResult> DataCommandsHandler::reload(const Intent &intent)
     QVector<int> removed;
     m_app.sources().remove(sourceId, &removed);
     for (int ds : removed)
+    {
+        // 派生序列是数据集的附属（原始数据不写回，但派生结果引用它）——
+        // 数据集移除时同步清理对应派生序列，防止悬空引用。
+        m_app.derivedRegistry().removeAllForDataset(ds);
         m_app.data().remove(ds);
+    }
 
     // 复用 data.load 这一条路径——重载与首次加载行为完全一致。
     // 稳定 id：单数据集时用原 id 重新入仓，订阅者（绘图视图）不会因重载失联。
@@ -259,7 +274,11 @@ Result<IntentResult> DataCommandsHandler::removeSource(const Intent &intent)
     QVector<int> removedDatasets;
     m_app.sources().remove(sourceId, &removedDatasets);
     for (int ds : removedDatasets)
+    {
+        // 派生序列随数据集移除清理（引用悬空防护）。
+        m_app.derivedRegistry().removeAllForDataset(ds);
         m_app.data().remove(ds);
+    }
 
     // 若移除的是活动源，清空活动源，避免后续操作指向已消失的 id。
     if (m_app.activeSourceId() == sourceId)
@@ -271,6 +290,247 @@ Result<IntentResult> DataCommandsHandler::removeSource(const Intent &intent)
         {QStringLiteral("datasets"), removedDatasets.size()},
     };
     return r;
+}
+
+// MIMO 派生：四元数 → roll/pitch/yaw（ps-ops::quat::to_rpy，公式对齐 PJ4 toolbox_quaternion）。
+//
+//   data.derive { dataset, table, inputs: [w列,x列,y列,z列], filter: "quat_to_rpy",
+//                 outputs: [roll名,pitch名,yaw名]（缺省 "<w列>.roll/.pitch/.yaw"）,
+//                 degrees: false, unwrap: true, interp: "linear" }
+//
+// 输入元素两种写法：
+//   "q.w"                       —— 字符串列名，用顶层 table（四列同表常规用法）
+//   {table:"att", column:"q.w"} —— 对象形式，可跨表（列名可能含点，不用限定名字符串避免歧义）
+//
+// 时间同步语义（统一机制：基准轴 + 显式对齐）：
+//   · 所有非基准输入统一对齐到第一个输入的时间轴（基准轴）。时间点完全重合时
+//     插值恒等于原值，精度无损。
+//   · 同表、轴完全一致（无 null 剔除）走快路径直取；否则插值。这样门面
+//     readWindow 剔除 null 样本（绘图语义）造成的同表行数不一致、以及跨表
+//     不同采样率，都被同一机制兜住——时间同步不再依赖"行对齐"假设。
+//   · interp: linear（缺省，两点线性插值）| step（前向填充）| nearest（最近样本）；
+//     范围外取端点值（边界延拓，不产 NaN）。基准轴防御性校验非降序。
+//   · 输出与基准同轴：基准列自身被剔除 null 时，输出点数随之（少而准，不猜值）。
+//
+// 防线：任何输入（对齐后）含 NaN/null 样本（kernel 读 null 即 NaN）→ 明确失败，
+// 绝不静默产出垃圾角度。派生语义（不写回）：三条输出全部登记派生注册表 +
+// derivedSeriesReady，原始 dataset 零改动。
+Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
+{
+    DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    if (dsId < 0 && m_app.data().count() == 1)
+        dsId = m_app.data().ids().first();
+    if (dsId < 0)
+        return fail(QStringLiteral("edataset"), QStringLiteral("请指定 dataset 参数"));
+    const Dataset *ds = m_app.data().get(dsId);
+    if (!ds)
+        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+
+    const QVariantList inputs = intent.params.value(QStringLiteral("inputs")).toList();
+    if (inputs.size() != 4)
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("quat_to_rpy 需要 inputs（w/x/y/z 四个输入）"));
+    const QString topTable = intent.params.value(QStringLiteral("table")).toString();
+    const QString filterId = intent.params.value(QStringLiteral("filter")).toString();
+    if (filterId != QLatin1String("quat_to_rpy"))
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("MIMO 派生当前只支持 quat_to_rpy，收到: %1").arg(filterId));
+
+    // 解析输入：对象 {table,column} 或字符串列名（用顶层 table）。
+    struct MimoInput
+    {
+        QString table, column;
+    };
+    QVector<MimoInput> ins;
+    ins.reserve(inputs.size());
+    for (const QVariant &c : inputs)
+    {
+        MimoInput in;
+        const QVariantMap m = c.toMap();
+        if (!m.isEmpty())
+        {
+            in.table = m.value(QStringLiteral("table")).toString();
+            in.column = m.value(QStringLiteral("column")).toString();
+        }
+        else
+        {
+            in.table = topTable;
+            in.column = c.toString();
+        }
+        if (in.table.isEmpty() || in.column.isEmpty())
+            return fail(QStringLiteral("eargs"),
+                        QStringLiteral("inputs 元素需为列名或 {table,column} 对象: %1")
+                            .arg(c.toString()));
+        ins.append(in);
+    }
+
+    // 读四列（各自可来自不同表）。派生读上限放宽到 200k（同 data.state 的
+    // kStateMaxPoints）：真实日志远超默认 4096，等步长抽稀时间/值成对取、行对齐保持。
+    constexpr int kDeriveMaxPoints = 200000;
+    QVector<ChannelView> cols;
+    for (const MimoInput &in : ins)
+    {
+        auto ch = ds->channel(in.table, in.column, kDeriveMaxPoints);
+        if (!ch)
+            return fail(QStringLiteral("echan"),
+                        QStringLiteral("读取通道失败: %1.%2").arg(in.table, in.column));
+        cols.append(std::move(*ch));
+    }
+
+    // 基准时间轴 = 第一个输入的轴；防御性校验非降序（kernel 表轴有序，这里是防线）。
+    const QVector<double> baseT = cols[0].time;
+    for (int i = 1; i < baseT.size(); ++i)
+    {
+        if (baseT.at(i) < baseT.at(i - 1))
+            return fail(QStringLiteral("etime"),
+                        QStringLiteral("基准时间轴非单调: %1.%2")
+                            .arg(ins[0].table, ins[0].column));
+    }
+    const int n = baseT.size();
+    if (n <= 0)
+        return fail(QStringLiteral("eempty"), QStringLiteral("四元数通道无样本"));
+
+    // 跨表输入重采样到基准轴。同表输入也统一走这里：门面 readWindow 会把 null/NaN
+    // 样本成对剔除（绘图语义），同表各列读出点数可能不同——行对齐不能假设，
+    // 必须显式对齐。基准轴有序 → 源列游标单调推进，O(n)。
+    const QString interpMode =
+        intent.params.value(QStringLiteral("interp"), QStringLiteral("linear")).toString();
+    if (interpMode != QLatin1String("linear") && interpMode != QLatin1String("step")
+        && interpMode != QLatin1String("nearest"))
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("interp 仅支持 linear/step/nearest: %1").arg(interpMode));
+    for (int k = 1; k < 4; ++k)
+    {
+        const QVector<double> &st = cols[k].time;
+        const QVector<double> &sv = cols[k].value;
+        if (st.isEmpty())
+            return fail(QStringLiteral("eempty"),
+                        QStringLiteral("输入无样本: %1.%2").arg(ins[k].table, ins[k].column));
+        if (cols[k].table == cols[0].table && cols[k].value.size() == n
+            && std::equal(st.cbegin(), st.cend(), baseT.cbegin()))
+            continue; // 快路径：轴完全一致（无 null 剔除）→ 已行对齐
+        QVector<double> out;
+        out.reserve(n);
+        int j = 0; // 源列游标
+        for (int i = 0; i < n; ++i)
+        {
+            const double t = baseT.at(i);
+            if (t <= st.first()) // 范围外：边界延拓取端点（不产 NaN）
+            {
+                out.append(sv.first());
+                continue;
+            }
+            if (t >= st.last())
+            {
+                out.append(sv.last());
+                continue;
+            }
+            while (j + 1 < st.size() - 1 && st.at(j + 1) <= t)
+                ++j; // 保持 st[j] <= t < st[j+1]
+            if (interpMode == QLatin1String("step"))
+            {
+                out.append(sv.at(j));
+                continue;
+            }
+            const double t0 = st.at(j), t1 = st.at(j + 1);
+            if (interpMode == QLatin1String("nearest"))
+                out.append(t - t0 <= t1 - t ? sv.at(j) : sv.at(j + 1));
+            else if (t1 > t0) // 线性插值（重复时间戳防御：退化取左样本）
+                out.append(sv.at(j) * (1.0 - (t - t0) / (t1 - t0))
+                           + sv.at(j + 1) * ((t - t0) / (t1 - t0)));
+            else
+                out.append(sv.at(j));
+        }
+        cols[k].value = out;
+    }
+
+    // NaN 防线：null 样本经 kernel 读出即 NaN，quat 归一化会把它传播成垃圾角度——
+    // 拒绝派生并指明位置，绝不静默产出。
+    for (int k = 0; k < 4; ++k)
+    {
+        for (int i = 0; i < cols[k].value.size(); ++i)
+        {
+            if (std::isnan(cols[k].value.at(i)))
+                return fail(QStringLiteral("enan"),
+                            QStringLiteral("输入含 NaN/null 样本，拒绝派生: %1.%2 @[%3]")
+                                .arg(ins[k].table, ins[k].column)
+                                .arg(i));
+        }
+    }
+
+    const bool degrees = intent.params.value(QStringLiteral("degrees"), false).toBool();
+    const bool unwrap = intent.params.value(QStringLiteral("unwrap"), true).toBool();
+
+    QVector<double> r(n), p(n), yaw(n);
+    char errBuf[512] = {0};
+    const int rc = ps_quat_to_rpy(static_cast<uint32_t>(n),
+                                  cols[0].value.constData(), cols[1].value.constData(),
+                                  cols[2].value.constData(), cols[3].value.constData(),
+                                  degrees ? 1 : 0, unwrap ? 1 : 0,
+                                  r.data(), p.data(), yaw.data(),
+                                  errBuf, sizeof(errBuf));
+    if (rc != 0)
+        return fail(QStringLiteral("ederive"),
+                    QStringLiteral("quat_to_rpy 失败: %1").arg(QString::fromUtf8(errBuf)));
+
+    // 输出名：缺省 "<w列>.roll/.pitch/.yaw"（w 列取其列名，跨表对象输入同样适用）。
+    const QString prefix = intent.params.value(QStringLiteral("name")).toString();
+    QStringList outNames = intent.params.value(QStringLiteral("outputs")).toStringList();
+    if (outNames.size() != 3)
+    {
+        const QString base = prefix.isEmpty() ? ins.first().column : prefix;
+        outNames = { base + QStringLiteral(".roll"), base + QStringLiteral(".pitch"),
+                     base + QStringLiteral(".yaw") };
+    }
+
+    QVector<double> time;
+    time.reserve(n);
+    for (int i = 0; i < n; ++i)
+        time.append(cols[0].time.at(i));
+
+    const QVector<QVector<double>> vals = { r, p, yaw };
+    QVariantList outPayload;
+    const QString unit = degrees ? QStringLiteral("deg") : QStringLiteral("rad");
+    for (int k = 0; k < 3; ++k)
+    {
+        // 登记（独立派生字段）+ 画布事件。
+        nextpilot::plotscope::context::DerivedSeriesRegistry::Entry entry;
+        entry.name = outNames.at(k);
+        entry.datasetId = dsId;
+        entry.table = ins.first().table;
+        entry.column = ins.first().column;
+        entry.filterId = QStringLiteral("quat_to_rpy");
+        entry.t = time;
+        entry.v = vals[k];
+        m_app.derivedRegistry().registerSeries(entry);
+        Q_EMIT m_app.derivedSeriesReady(outNames.at(k), time, vals[k]);
+
+        QVariantList vv;
+        vv.reserve(n);
+        for (int i = 0; i < n; ++i)
+            vv << vals[k].at(i);
+        QVariantList tt;
+        tt.reserve(n);
+        for (int i = 0; i < n; ++i)
+            tt << time.at(i);
+        outPayload.append(QVariantMap{
+            {QStringLiteral("name"), outNames.at(k)},
+            {QStringLiteral("unit"), unit},
+            {QStringLiteral("count"), n},
+            {QStringLiteral("time"), QVariant::fromValue(tt)},
+            {QStringLiteral("value"), QVariant::fromValue(vv)},
+        });
+    }
+
+    IntentResult res;
+    res.payload = QVariantMap{
+        {QStringLiteral("dataset"), dsId},
+        {QStringLiteral("table"), ins.first().table},
+        {QStringLiteral("filter"), QStringLiteral("quat_to_rpy")},
+        {QStringLiteral("outputs"), outPayload},
+        {QStringLiteral("count"), n},
+    };
+    return res;
 }
 
 // live 源暂停/继续（#193）：
@@ -309,6 +569,11 @@ Result<IntentResult> DataCommandsHandler::setSourcePaused(const Intent &intent, 
 
 Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
 {
+    // MIMO 分支：inputs 数组 + quat_to_rpy（多输入多输出，如 q0-q3 → roll/pitch/yaw）。
+    // 派生语义不变：结果登记派生注册表，原始 dataset 零改动。
+    if (intent.params.contains(QStringLiteral("inputs")))
+        return deriveMimoQuat(intent);
+
     const DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
     const QString table = intent.params.value(QStringLiteral("table")).toString();
     const QString column = intent.params.value(QStringLiteral("column")).toString();
@@ -396,6 +661,17 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
             {QStringLiteral("time"), QVariant::fromValue(time)},
             {QStringLiteral("value"), QVariant::fromValue(value)},
         };
+        // 登记派生序列（独立派生字段：不写回 dataset，全后端按 name 可读）。
+        nextpilot::plotscope::context::DerivedSeriesRegistry::Entry entry;
+        entry.name = name;
+        entry.datasetId = dsId;
+        entry.table = table;
+        entry.column = column;
+        entry.filterId = QStringLiteral("@transform");
+        entry.transform = req;
+        entry.t = time;
+        entry.v = value;
+        m_app.derivedRegistry().registerSeries(entry);
         Q_EMIT m_app.derivedSeriesReady(name, time, value);
         return r;
     }
@@ -421,6 +697,19 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
         {QStringLiteral("time"), QVariant::fromValue(time)},
         {QStringLiteral("value"), QVariant::fromValue(value)},
     };
+    // 登记派生序列（独立派生字段：不写回 dataset，全后端按 name 可读）。
+    {
+        nextpilot::plotscope::context::DerivedSeriesRegistry::Entry entry;
+        entry.name = name;
+        entry.datasetId = dsId;
+        entry.table = table;
+        entry.column = column;
+        entry.filterId = filterId;
+        entry.paramsJson = QJsonDocument::fromJson(paramsJson).object();
+        entry.t = time;
+        entry.v = value;
+        m_app.derivedRegistry().registerSeries(entry);
+    }
     // GUI 画布订阅此事件，把派生序列作为一条 generated curve 叠加显示。
     // 数据集零改动——老代码改 DataSource 时间基准那套副作用，这里彻底没有。
     Q_EMIT m_app.derivedSeriesReady(name, time, value);
@@ -594,6 +883,41 @@ Result<IntentResult> DataCommandsHandler::series(const Intent &intent)
         table = ds->tableNames().first();
     if (column.isEmpty())
         return fail(QStringLiteral("eargs"), QStringLiteral("data.series 需要 column 参数"));
+
+    // 派生名穿透（独立派生字段）：column 命中派生注册表 → 直接返回缓存结果。
+    // 数据集需匹配（防跨数据集撞名）；datasetId 缺省由第一个数据集兜底的
+    // 场景下，若派生属于其他数据集则视为不命中（不穿帮）。
+    {
+        const auto *entry = m_app.derivedRegistry().get(column);
+        if (entry && entry->datasetId == datasetId)
+        {
+            const int n = qMin(entry->t.size(), entry->v.size());
+            if (n <= 0)
+                return fail(QStringLiteral("eempty"),
+                            QStringLiteral("派生序列无样本: %1").arg(column));
+            QVariantList ts, vs;
+            ts.reserve(n);
+            vs.reserve(n);
+            for (int i = 0; i < n; ++i)
+            {
+                ts << entry->t.at(i);
+                vs << entry->v.at(i);
+            }
+            IntentResult r;
+            r.payload = QVariantMap{
+                {QStringLiteral("dataset"), entry->datasetId},
+                {QStringLiteral("table"), entry->table},
+                {QStringLiteral("column"), column},
+                {QStringLiteral("derived"), true},
+                {QStringLiteral("filter"), entry->filterId},
+                {QStringLiteral("count"), n},
+                {QStringLiteral("t"), ts},
+                {QStringLiteral("v"), vs},
+            };
+            return r;
+        }
+    }
+
     const Table *t = ds->table(table);
     if (!t || !t->column(column))
         return fail(QStringLiteral("echan"),
@@ -621,13 +945,67 @@ Result<IntentResult> DataCommandsHandler::series(const Intent &intent)
         vs << channel->value.value(i);
     }
 
+    // dataset 级通道变换（变换 = 非破坏视图）：无显式 transform 参数时查
+    // data.transform.set 的持久化配方，命中则统一变换后再返回——读数后端
+    // （脚本/CLI/MCP）与画布看到同一份变换后数据，字段名不变，原始数据不动。
+    bool transformed = false;
+    QJsonObject tvReq;
+    if (intent.params.contains(QStringLiteral("transform")))
+    {
+        const QVariant tv = intent.params.value(QStringLiteral("transform"));
+        tvReq = tv.type() == QVariant::String
+            ? QJsonDocument::fromJson(tv.toString().toUtf8()).object()
+            : QJsonObject::fromVariantMap(tv.toMap());
+    }
+    else
+    {
+        const int srcId = m_app.sources().sourceOfDataset(datasetId);
+        if (srcId >= 0)
+        {
+            if (const DataSourceInfo *info = m_app.sources().get(srcId))
+            {
+                const ChannelTransformConfig cfg =
+                    ChannelTransformConfig::load(m_app.settings());
+                if (const ChannelTransformSpec *spec =
+                        cfg.find(info->origin, table, column))
+                    tvReq = spec->transform;
+            }
+        }
+    }
+    if (!tvReq.isEmpty() && tvReq.contains(QStringLiteral("descriptorId")))
+    {
+        if (!m_app.interactions().hasTransformEvaluator())
+            return fail(QStringLiteral("enoeval"),
+                        QStringLiteral("变换求值器未注册（script 模块未装载）"));
+        QVector<double> wt, wv;
+        wt.reserve(n);
+        wv.reserve(n);
+        for (int i = 0; i < n; ++i)
+        {
+            wt.append(channel->time.value(i));
+            wv.append(channel->value.value(i));
+        }
+        Result<QVector<double>> ev{QVector<double>()};
+        m_app.interactions().evalTransform(tvReq, CapDerived, wt, wv, ev);
+        if (!ev)
+            return fail(ev.error().code, ev.error().message);
+        const int m = qMin(ev.value().size(), n);
+        vs.clear();
+        vs.reserve(m);
+        for (int i = 0; i < m; ++i)
+            vs << ev.value().at(i);
+        ts.resize(m);
+        transformed = true;
+    }
+
     QVariantMap payload;
     payload[QStringLiteral("dataset")] = datasetId;
     payload[QStringLiteral("table")] = table;
     payload[QStringLiteral("column")] = column;
-    payload[QStringLiteral("count")] = n;
+    payload[QStringLiteral("count")] = ts.size();
     payload[QStringLiteral("t")] = ts;
     payload[QStringLiteral("v")] = vs;
+    payload[QStringLiteral("transformed")] = transformed;
     // 总行数大于 limit 即截断（抽稀后点数可能 < limit，不能拿 n==limit 判断）。
     payload[QStringLiteral("truncated")] = t->rowCount() > limit;
     payload[QStringLiteral("rows")] = t->rowCount();
@@ -880,6 +1258,162 @@ Result<IntentResult> DataCommandsHandler::workspaceRestore()
     r.payload = QVariantMap{
         {QStringLiteral("sources"), loadedSources},
         {QStringLiteral("derives"), replayedDerives},
+    };
+    return r;
+}
+
+// ===== dataset 级通道变换配方（变换 = 非破坏视图，全后端生效）=====
+//
+//   data.transform.set    {dataset|origin, table, column, transform(请求 JSON/string)}
+//   data.transform.clear  {dataset|origin, table, column}
+//
+// 定位键持久化用 sourceOrigin（datasetId 会话间会变）；plot.channel / data.series
+// 读数时统一消费，原始 dataset 零改动。
+Result<IntentResult> DataCommandsHandler::setChannelTransform(const Intent &intent)
+{
+    QString table = intent.params.value(QStringLiteral("table")).toString();
+    const QString column = intent.params.value(QStringLiteral("column")).toString();
+    if (table.isEmpty() || column.isEmpty())
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("data.transform.set 需要 table/column 参数"));
+
+    // origin：显式给优先（恢复重放场景），否则 dataset id 反查源。
+    QString origin = intent.params.value(QStringLiteral("origin")).toString();
+    int datasetId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    if (datasetId < 0 && origin.isEmpty() && m_app.data().count() == 1)
+        datasetId = m_app.data().ids().first();
+    if (origin.isEmpty())
+    {
+        const int srcId = datasetId >= 0
+            ? datasetId
+            : m_app.activeSourceId();
+        const int realSrc = m_app.sources().sourceOfDataset(datasetId);
+        const int lookupId = realSrc >= 0 ? realSrc : srcId;
+        const DataSourceInfo *info = m_app.sources().get(lookupId);
+        if (!info)
+            return fail(QStringLiteral("enosource"),
+                        QStringLiteral("无法定位数据源（给 origin 或有效 dataset）"));
+        origin = info->origin;
+    }
+    // datasetId 缺省时用 origin 找回当前 id（payload 回给调用方）。
+    if (datasetId < 0)
+    {
+        const int srcId = m_app.sources().sourceByOrigin(origin);
+        if (srcId >= 0)
+        {
+            if (const DataSourceInfo *srcInfo = m_app.sources().get(srcId);
+                srcInfo && !srcInfo->datasetIds.isEmpty())
+                datasetId = srcInfo->datasetIds.first();
+        }
+    }
+
+    // transform 请求：JSON 字符串/字节数组（QJsonDocument::toJson 的产物）或对象。
+    const QVariant tv = intent.params.value(QStringLiteral("transform"));
+    QJsonObject req;
+    if (tv.type() == QVariant::String || tv.type() == QVariant::ByteArray)
+    {
+        const QByteArray raw = tv.type() == QVariant::ByteArray
+            ? tv.toByteArray()
+            : tv.toString().toUtf8();
+        QJsonParseError perr;
+        req = QJsonDocument::fromJson(raw, &perr).object();
+        if (req.isEmpty())
+            return fail(QStringLiteral("eargs"),
+                        QStringLiteral("transform JSON 解析失败: %1").arg(perr.errorString()));
+    }
+    else if (tv.isValid())
+    {
+        req = QJsonObject::fromVariantMap(tv.toMap());
+    }
+    if (!req.contains(QStringLiteral("descriptorId")))
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("transform 请求缺少 descriptorId"));
+
+    ChannelTransformConfig cfg = ChannelTransformConfig::load(m_app.settings());
+    ChannelTransformSpec spec;
+    spec.origin = origin;
+    spec.table = table;
+    spec.column = column;
+    spec.transform = req;
+    cfg.upsert(spec);
+    QString err;
+    if (!cfg.save(m_app.settings(), &err))
+        return fail(QStringLiteral("eio"), err);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("dataset"), datasetId},
+        {QStringLiteral("origin"), origin},
+        {QStringLiteral("table"), table},
+        {QStringLiteral("column"), column},
+        {QStringLiteral("descriptorId"), req.value(QStringLiteral("descriptorId")).toString()},
+    };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::clearChannelTransform(const Intent &intent)
+{
+    QString table = intent.params.value(QStringLiteral("table")).toString();
+    const QString column = intent.params.value(QStringLiteral("column")).toString();
+    if (table.isEmpty() || column.isEmpty())
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("data.transform.clear 需要 table/column 参数"));
+
+    QString origin = intent.params.value(QStringLiteral("origin")).toString();
+    int datasetId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    if (datasetId < 0 && origin.isEmpty() && m_app.data().count() == 1)
+        datasetId = m_app.data().ids().first();
+    if (origin.isEmpty())
+    {
+        const int realSrc = m_app.sources().sourceOfDataset(datasetId);
+        const DataSourceInfo *info = m_app.sources().get(realSrc >= 0 ? realSrc : m_app.activeSourceId());
+        if (!info)
+            return fail(QStringLiteral("enosource"),
+                        QStringLiteral("无法定位数据源（给 origin 或有效 dataset）"));
+        origin = info->origin;
+    }
+
+    ChannelTransformConfig cfg = ChannelTransformConfig::load(m_app.settings());
+    const bool removed = cfg.removeByChannel(origin, table, column);
+    QString err;
+    if (!cfg.save(m_app.settings(), &err))
+        return fail(QStringLiteral("eio"), err);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("removed"), removed},
+        {QStringLiteral("origin"), origin},
+        {QStringLiteral("table"), table},
+        {QStringLiteral("column"), column},
+    };
+    return r;
+}
+
+// 派生序列目录（独立派生字段的可发现性）：数据树/脚本经此列出全部派生序列。
+// 可选 dataset 过滤。
+Result<IntentResult> DataCommandsHandler::deriveList(const Intent &intent)
+{
+    const int datasetFilter = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    const auto all = m_app.derivedRegistry().all();
+
+    QVariantList list;
+    for (const auto &e : all)
+    {
+        if (datasetFilter >= 0 && e.datasetId != datasetFilter)
+            continue;
+        list.append(QVariantMap{
+            {QStringLiteral("name"), e.name},
+            {QStringLiteral("dataset"), e.datasetId},
+            {QStringLiteral("table"), e.table},
+            {QStringLiteral("column"), e.column},
+            {QStringLiteral("filter"), e.filterId},
+            {QStringLiteral("points"), qMin(e.t.size(), e.v.size())},
+        });
+    }
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("count"), list.size()},
+        {QStringLiteral("series"), list},
     };
     return r;
 }

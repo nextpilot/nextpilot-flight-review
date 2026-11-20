@@ -30,6 +30,7 @@
 
 #include "AppContext.h"
 #include "ChannelMime.h"
+#include "ChannelTransformConfig.h"
 
 #include "Dataset.h"
 #include "DataSource.h"
@@ -771,6 +772,335 @@ int main(int argc, char *argv[])
         // 数据集零改动。
         CHECK(application.data().get(dsId)->table(QStringLiteral("trace"))->rows == 5000);
         OK("data.series：意图/脚本读数/AI read_series 三通道 + 失败路径 + 零改动");
+    }
+
+    // --- 5j) 通道变换（非破坏视图）：dataset 级配方 + plot.channel 变换路径 ---
+    //
+    // 设计语义：变换只改值不改名，原始 dataset 永不改动；dataset 级配方
+    // （data.transform.set）全后端生效，plot 级（曲线配方）只影响当前曲线。
+    {
+        const int dsId = stateDsId;
+        // dataset 级配方以 origin 为键，series/plot.channel 反查走 sourceOfDataset——
+        // 给 fixture 挂一个源（真实场景 dataset 都来自源），origin 与 set 用的显式值一致。
+        DataSourceInfo xformInfo;
+        xformInfo.name = QStringLiteral("xform-src");
+        xformInfo.origin = QStringLiteral("test://trace-origin");
+        xformInfo.state = SourceState::Closed;
+        const int xformSrc = application.context().sources().add(xformInfo);
+        CHECK(xformSrc >= 0);
+        CHECK(application.context().sources().addDataset(xformSrc, dsId));
+
+        // dataset 未挂源（buildDataset 直接入仓）——用显式 origin 测 set 的 origin 路径。
+        const QString origin = QStringLiteral("test://trace-origin");
+        const QVariantMap xform{
+            { QStringLiteral("descriptorId"), QStringLiteral("expression") },
+            { QStringLiteral("kind"), QStringLiteral("expression") },
+            { QStringLiteral("expression"), QStringLiteral("x*2") },
+        };
+
+        // (1) set：origin 显式定位 + expression 变换请求。
+        Intent setI;
+        setI.op = QStringLiteral("data.transform.set");
+        setI.params[QStringLiteral("origin")] = origin;
+        setI.params[QStringLiteral("table")] = QStringLiteral("trace");
+        setI.params[QStringLiteral("column")] = QStringLiteral("alt");
+        setI.params[QStringLiteral("transform")] = QJsonDocument(QJsonObject::fromVariantMap(xform)).toJson(QJsonDocument::Compact);
+        const auto setR = application.host().execute(setI);
+        CHECK(static_cast<bool>(setR));
+
+        // (2) data.series 读 alt：limit 是读窗口 cap（抽稀口径）——5000 行抽到 4 点
+        // （step=1250：i=0/1250/2500/3750），再对抽稀点做变换：
+        // alt[1250]=687.5 → ×2 = 1375；v[0]=1000×2=2000。
+        {
+            Intent s;
+            s.op = QStringLiteral("data.series");
+            s.params[QStringLiteral("dataset")] = dsId;
+            s.params[QStringLiteral("table")] = QStringLiteral("trace");
+            s.params[QStringLiteral("column")] = QStringLiteral("alt");
+            s.params[QStringLiteral("limit")] = 4;
+            const auto r = application.host().execute(s);
+            CHECK(static_cast<bool>(r));
+            const QVariantMap p = r.value().payload.toMap();
+            CHECK(p.value(QStringLiteral("transformed")).toBool());
+            const QVariantList vs = p.value(QStringLiteral("v")).toList();
+            CHECK(vs.size() == 4);
+            CHECK(qFuzzyCompare(vs.at(0).toDouble(), 2000.0));
+            CHECK(qFuzzyCompare(vs.at(1).toDouble(), 1375.0));
+            CHECK(qFuzzyCompare(vs.at(3).toDouble(), 125.0));
+        }
+
+        // (3) 原始数据零改动（变换是非破坏视图的核心铁律）。
+        CHECK(application.data().get(dsId)->table(QStringLiteral("trace"))->rows == 5000);
+
+        // (4) clear 后恢复原始读数 + settings 里配方被移除。
+        {
+            Intent clearI;
+            clearI.op = QStringLiteral("data.transform.clear");
+            clearI.params[QStringLiteral("origin")] = origin;
+            clearI.params[QStringLiteral("table")] = QStringLiteral("trace");
+            clearI.params[QStringLiteral("column")] = QStringLiteral("alt");
+            const auto cr = application.host().execute(clearI);
+            CHECK(static_cast<bool>(cr));
+            CHECK(cr.value().payload.toMap().value(QStringLiteral("removed")).toBool());
+
+            Intent s;
+            s.op = QStringLiteral("data.series");
+            s.params[QStringLiteral("dataset")] = dsId;
+            s.params[QStringLiteral("table")] = QStringLiteral("trace");
+            s.params[QStringLiteral("column")] = QStringLiteral("alt");
+            s.params[QStringLiteral("limit")] = 4;
+            const auto r = application.host().execute(s);
+            CHECK(static_cast<bool>(r));
+            const QVariantMap p = r.value().payload.toMap();
+            CHECK(!p.value(QStringLiteral("transformed")).toBool());
+            const QVariantList vs = p.value(QStringLiteral("v")).toList();
+            CHECK(qFuzzyCompare(vs.at(1).toDouble(), 687.5)); // alt[1250]，抽稀口径恢复
+            CHECK(ChannelTransformConfig::load(application.context().settings()).specs.isEmpty());
+        }
+
+        // (5) plot.channel 显式 transform（plot 级同一条路）：变换 + C++ min/max 抽稀。
+        {
+            Intent pc;
+            pc.op = QStringLiteral("plot.channel");
+            pc.params[QStringLiteral("dataset")] = dsId;
+            pc.params[QStringLiteral("table")] = QStringLiteral("trace");
+            pc.params[QStringLiteral("column")] = QStringLiteral("alt");
+            pc.params[QStringLiteral("px")] = 64;
+            pc.params[QStringLiteral("transform")] =
+                QJsonDocument(QJsonObject::fromVariantMap(xform)).toJson(QJsonDocument::Compact);
+            const auto r = application.host().execute(pc);
+            CHECK(static_cast<bool>(r));
+            const QVariantMap p = r.value().payload.toMap();
+            CHECK(p.value(QStringLiteral("transformed")).toBool());
+            CHECK(p.value(QStringLiteral("points")).toInt() <= 64);
+        }
+
+        OK("通道变换：set/clear + series/plot.channel 变换路径 + 原始零改动");
+    }
+
+    // --- 5k) 派生注册表（独立派生字段）+ MIMO quat_to_rpy ---
+    //
+    // 设计语义：衍生生成新字段，但**不写回 dataset**（原始数据零污染）；
+    // 结果登记宿主层派生注册表，data.series/plot.channel 按派生名穿透，
+    // data.derive.list 提供可发现性。
+    {
+        // (1) 专用 fixture：不动 stateDsId（DataRepository::get 是 const 不可变访问，
+        // 且其 trace 表已有 5000 行——四元数列需要独立的 100 行时间轴）。
+        // trace 表 t=i*0.01（基准轴），aux 表 t=i*0.05（独立采样率，跨表重采样用）。
+        Dataset fds = Dataset::create(QStringLiteral("att-fixture"), QStringLiteral("mem"));
+        const int n = 100;
+        QVector<double> qt(n), sig(n), qw(n), qx(n), qy(n), qz(n);
+        const double half = qDegreesToRadians(15.0);
+        for (int i = 0; i < n; ++i)
+        {
+            qt[i] = i * 0.01;
+            sig[i] = i * 0.5;
+            qw[i] = std::cos(half);
+            qx[i] = std::sin(half);
+            qy[i] = 0.0;
+            qz[i] = 0.0;
+        }
+        CHECK(fds.addTable(QStringLiteral("trace"), qt) >= 0);
+        CHECK(fds.addF64Column(QStringLiteral("trace"), QStringLiteral("sig"), QString(), sig));
+        CHECK(fds.addF64Column(QStringLiteral("trace"), QStringLiteral("q.w"), QString(), qw));
+        CHECK(fds.addF64Column(QStringLiteral("trace"), QStringLiteral("q.x"), QString(), qx));
+        CHECK(fds.addF64Column(QStringLiteral("trace"), QStringLiteral("q.y"), QString(), qy));
+        CHECK(fds.addF64Column(QStringLiteral("trace"), QStringLiteral("q.z"), QString(), qz));
+        // aux 表：t ∈ [0, 1.6) 覆盖基准轴 [0, 0.99)，常值 0 → 插值/延拓都不改变结论。
+        const int m = 33;
+        QVector<double> at(m);
+        for (int i = 0; i < m; ++i)
+            at[i] = i * 0.05;
+        CHECK(fds.addTable(QStringLiteral("aux"), at) >= 0);
+        CHECK(fds.addF64Column(QStringLiteral("aux"), QStringLiteral("q2.y"), QString(),
+                               QVector<double>(m, 0.0)));
+        CHECK(fds.addF64Column(QStringLiteral("aux"), QStringLiteral("q2.z"), QString(),
+                               QVector<double>(m, 0.0)));
+        // NaN 防线用列：单个 null/NaN 样本（kernel 读 null 即 NaN）。
+        QVector<double> nw = qw;
+        nw[10] = std::nan("");
+        CHECK(fds.addF64Column(QStringLiteral("trace"), QStringLiteral("qn.w"), QString(), nw));
+        fds.refreshSchema();
+        const int dsId = application.data().add(fds);
+        CHECK(dsId >= 0);
+        const Dataset *ds = application.data().get(dsId);
+        CHECK(ds != nullptr);
+
+        // (2) SISO 派生登记 + data.series 穿透。
+        {
+            Intent d;
+            d.op = QStringLiteral("data.derive");
+            d.params[QStringLiteral("dataset")] = dsId;
+            d.params[QStringLiteral("table")] = QStringLiteral("trace");
+            d.params[QStringLiteral("column")] = QStringLiteral("sig");
+            d.params[QStringLiteral("filter")] = QStringLiteral("moving_average");
+            d.params[QStringLiteral("params")] = QStringLiteral("{\"window\":10}");
+            d.params[QStringLiteral("name")] = QStringLiteral("sig_avg");
+            const auto dr = application.host().execute(d);
+            CHECK(static_cast<bool>(dr));
+
+            Intent s;
+            s.op = QStringLiteral("data.series");
+            s.params[QStringLiteral("dataset")] = dsId;
+            s.params[QStringLiteral("column")] = QStringLiteral("sig_avg");
+            s.params[QStringLiteral("limit")] = 8;
+            const auto sr = application.host().execute(s);
+            CHECK(static_cast<bool>(sr));
+            const QVariantMap p = sr.value().payload.toMap();
+            CHECK(p.value(QStringLiteral("derived")).toBool());
+            CHECK(p.value(QStringLiteral("count")).toInt() >= 1);
+            // 原始 dataset 零污染：sig_avg 不是 trace 表的列。
+            CHECK(ds->table(QStringLiteral("trace"))->column(QStringLiteral("sig_avg")) == nullptr);
+        }
+
+        // (3) MIMO：q0-q3 → roll/pitch/yaw，roll≈30deg。
+        {
+            Intent d;
+            d.op = QStringLiteral("data.derive");
+            d.params[QStringLiteral("dataset")] = dsId;
+            d.params[QStringLiteral("table")] = QStringLiteral("trace");
+            d.params[QStringLiteral("inputs")] = QStringList{
+                QStringLiteral("q.w"), QStringLiteral("q.x"),
+                QStringLiteral("q.y"), QStringLiteral("q.z") };
+            d.params[QStringLiteral("filter")] = QStringLiteral("quat_to_rpy");
+            d.params[QStringLiteral("degrees")] = true;
+            d.params[QStringLiteral("name")] = QStringLiteral("att");
+            const auto dr = application.host().execute(d);
+            CHECK(static_cast<bool>(dr));
+            const QVariantMap p = dr.value().payload.toMap();
+            const QVariantList outs = p.value(QStringLiteral("outputs")).toList();
+            CHECK(outs.size() == 3);
+            const QVariantMap roll = outs.first().toMap();
+            CHECK(roll.value(QStringLiteral("name")).toString() == QStringLiteral("att.roll"));
+            CHECK(qFuzzyCompare(roll.value(QStringLiteral("value")).toList().first().toDouble(), 30.0));
+
+            // 派生名穿透（series + plot.channel）。
+            Intent s;
+            s.op = QStringLiteral("data.series");
+            s.params[QStringLiteral("dataset")] = dsId;
+            s.params[QStringLiteral("column")] = QStringLiteral("att.roll");
+            s.params[QStringLiteral("limit")] = 4;
+            const auto sr = application.host().execute(s);
+            CHECK(static_cast<bool>(sr));
+            CHECK(sr.value().payload.toMap().value(QStringLiteral("derived")).toBool());
+
+            Intent pc;
+            pc.op = QStringLiteral("plot.channel");
+            pc.params[QStringLiteral("dataset")] = dsId;
+            pc.params[QStringLiteral("table")] = QStringLiteral("trace");
+            pc.params[QStringLiteral("column")] = QStringLiteral("att.yaw");
+            pc.params[QStringLiteral("px")] = 16;
+            const auto pcr = application.host().execute(pc);
+            CHECK(static_cast<bool>(pcr));
+            CHECK(pcr.value().payload.toMap().value(QStringLiteral("derived")).toBool());
+
+            // 目录：SISO 1 条 + MIMO 3 条 = 4。
+            Intent list;
+            list.op = QStringLiteral("data.derive.list");
+            list.params[QStringLiteral("dataset")] = dsId;
+            const auto lr = application.host().execute(list);
+            CHECK(static_cast<bool>(lr));
+            CHECK(lr.value().payload.toMap().value(QStringLiteral("count")).toInt() == 4);
+        }
+
+        // (4) MIMO 失败路径：inputs 数量错 → 明确失败。
+        {
+            Intent d;
+            d.op = QStringLiteral("data.derive");
+            d.params[QStringLiteral("dataset")] = dsId;
+            d.params[QStringLiteral("table")] = QStringLiteral("trace");
+            d.params[QStringLiteral("inputs")] = QStringList{ QStringLiteral("q.w") };
+            d.params[QStringLiteral("filter")] = QStringLiteral("quat_to_rpy");
+            CHECK(!static_cast<bool>(application.host().execute(d)));
+        }
+
+        // (5) MIMO 跨表输入（时间同步核心场景）：aux 表独立采样率（0.05s 网格），
+        // 以 q.w 的 trace 轴（0.01s 网格）为基准重采样 → 常值四元数下插值不改变
+        // 结论，roll 在基准每个点（含插值点/边界延拓点）都精确等于 30°。
+        {
+            Intent d;
+            d.op = QStringLiteral("data.derive");
+            d.params[QStringLiteral("dataset")] = dsId;
+            d.params[QStringLiteral("table")] = QStringLiteral("trace"); // 字符串项的缺省表
+            d.params[QStringLiteral("inputs")] = QVariantList{
+                QStringLiteral("q.w"), QStringLiteral("q.x"),
+                QVariantMap{ { QStringLiteral("table"), QStringLiteral("aux") },
+                             { QStringLiteral("column"), QStringLiteral("q2.y") } },
+                QVariantMap{ { QStringLiteral("table"), QStringLiteral("aux") },
+                             { QStringLiteral("column"), QStringLiteral("q2.z") } } };
+            d.params[QStringLiteral("filter")] = QStringLiteral("quat_to_rpy");
+            d.params[QStringLiteral("degrees")] = true;
+            d.params[QStringLiteral("name")] = QStringLiteral("attx");
+            const auto dr = application.host().execute(d);
+            if (!dr)
+                fprintf(stderr, "[dbg] cross-table fail: %s / %s\n",
+                        qPrintable(dr.error().code), qPrintable(dr.error().message));
+            CHECK(static_cast<bool>(dr));
+            const QVariantMap p = dr.value().payload.toMap();
+            CHECK(p.value(QStringLiteral("count")).toInt() == 100);
+            const QVariantList outs = p.value(QStringLiteral("outputs")).toList();
+            CHECK(outs.size() == 3);
+            CHECK(outs.first().toMap().value(QStringLiteral("name")).toString()
+                  == QStringLiteral("attx.roll"));
+            const QVariantList rv = outs.first().toMap().value(QStringLiteral("value")).toList();
+            CHECK(rv.size() == 100);
+            // t=0（边界延拓）、t=0.07（落在 aux 两样本之间线性插值）、t=0.99（延拓）全部 30°。
+            CHECK(qFuzzyCompare(rv.first().toDouble(), 30.0));
+            CHECK(qFuzzyCompare(rv.at(7).toDouble(), 30.0));
+            CHECK(qFuzzyCompare(rv.last().toDouble(), 30.0));
+
+            // step 模式：前向填充同样保持常值结论。
+            Intent d2 = d;
+            d2.params[QStringLiteral("interp")] = QStringLiteral("step");
+            d2.params[QStringLiteral("name")] = QStringLiteral("attx2");
+            CHECK(static_cast<bool>(application.host().execute(d2)));
+
+            // interp 非法值 → eargs。
+            Intent d3 = d;
+            d3.params[QStringLiteral("interp")] = QStringLiteral("cubic");
+            const auto r3 = application.host().execute(d3);
+            CHECK(!static_cast<bool>(r3));
+            CHECK(r3.error().code == QStringLiteral("eargs"));
+        }
+
+        // (6) null/NaN 样本：门面 readWindow 成对剔除（qn.w 剩 99 点）→
+        // 派生统一走基准轴插值对齐补回 100 点，不静默产出垃圾角度：
+        // 剔除点邻域由线性插值恢复常值四元数 → roll 仍精确 30°。
+        {
+            {
+                const auto c = ds->channel(QStringLiteral("trace"), QStringLiteral("qn.w"));
+                CHECK(c.has_value());
+                CHECK(c->size() == 99); // null 样本被门面剔除
+                const auto full = ds->channel(QStringLiteral("trace"), QStringLiteral("q.x"));
+                CHECK(full.has_value());
+                CHECK(full->size() == 100); // 无 null 列不受影响 → 行数不同，禁止直取
+            }
+            Intent d;
+            d.op = QStringLiteral("data.derive");
+            d.params[QStringLiteral("dataset")] = dsId;
+            d.params[QStringLiteral("table")] = QStringLiteral("trace");
+            d.params[QStringLiteral("inputs")] = QStringList{
+                QStringLiteral("qn.w"), QStringLiteral("q.x"),
+                QStringLiteral("q.y"), QStringLiteral("q.z") };
+            d.params[QStringLiteral("filter")] = QStringLiteral("quat_to_rpy");
+            d.params[QStringLiteral("degrees")] = true;
+            d.params[QStringLiteral("name")] = QStringLiteral("attn");
+            const auto dr = application.host().execute(d);
+            CHECK(static_cast<bool>(dr));
+            // 基准轴 = 第一个输入（qn.w，null 剔除后 99 点）→ 输出与基准同轴（时间同步）。
+            const QVariantMap p = dr.value().payload.toMap();
+            CHECK(p.value(QStringLiteral("count")).toInt() == 99);
+            const QVariantList outs = p.value(QStringLiteral("outputs")).toList();
+            CHECK(outs.size() == 3);
+            const QVariantList rv = outs.first().toMap().value(QStringLiteral("value")).toList();
+            CHECK(rv.size() == 99);
+            CHECK(qFuzzyCompare(rv.first().toDouble(), 30.0));
+            CHECK(qFuzzyCompare(rv.at(50).toDouble(), 30.0));
+            CHECK(qFuzzyCompare(rv.last().toDouble(), 30.0));
+        }
+
+        OK("派生注册表：SISO/MIMO 登记 + series/plot.channel 穿透 + 目录 + 零污染"
+           " + 跨表重采样 + NaN 防线");
     }
 
     // --- 5h) 多源时间对齐（第二梯队 #204）：源级 offset + Align start/center/end ---

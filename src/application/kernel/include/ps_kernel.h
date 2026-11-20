@@ -184,6 +184,13 @@ int32_t              ps_dataset_apply_quat_rpy(PsDataset *ds, const char *w, con
                                                const char *y, const char *z, const char *out_topic,
                                                uint8_t degrees, uint8_t unwrap,
                                                char *err, uint32_t err_cap);
+/* 四元数 w/x/y/z → roll/pitch/yaw，**数组级**（不写回 dataset；派生语义专用）。
+ * 输出写调用方缓冲区，各 cap = n。返回 0 成功，非 0 失败（err 带原因）。 */
+int32_t              ps_quat_to_rpy(uint32_t n, const double *w, const double *x,
+                                    const double *y, const double *z,
+                                    uint8_t degrees, uint8_t unwrap,
+                                    double *out_roll, double *out_pitch, double *out_yaw,
+                                    char *err, uint32_t err_cap);
 /* 删除通道（包括派生通道）。 */
 int32_t              ps_dataset_remove_channel(PsDataset *ds, const char *name);
 

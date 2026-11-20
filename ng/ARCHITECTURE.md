@@ -399,6 +399,40 @@ SPI 解析器的职责被刻意收窄为「字节 → 结构化批」，于是�
 
 ---
 
+### 3.8 数据变换与衍生：两个概念，原始数据零污染
+
+变换与衍生是**两个概念**（设计语义经用户逐条敲定）：
+
+| | 变换（transform） | 衍生（derive） |
+|---|---|---|
+| 本质 | 非破坏视图：只改值不改字段名 | 独立派生字段：生成新字段 |
+| 归属 | dataset 级配方（`data.transform.set`，settings 持久化）或 plot 级曲线配方 | 派生注册表（`DerivedSeriesRegistry`，宿主层 `libs/context`） |
+| 作用域 | dataset 级对**所有后端**生效；plot 级只影响当前曲线 | 全后端可读（`data.series` / `plot.channel` 按派生名穿透） |
+| 原始数据 | 永不写回 | 永不写回（不污染 dataset） |
+| 形态 | SISO：值进值出（op 算子 / 数学表达式 / Lua） | SISO（previewFilter）+ MIMO（如 q0-q3→roll/pitch/yaw） |
+
+关键裁决：**派生注册表下沉 `libs/context`**（AppContext 持有）而非 host——`context`
+不能反向依赖 host，派生属于"跨前端共享的应用状态"，与源注册表同级。
+
+#### MIMO 派生的时间同步语义（基准轴 + 显式对齐）
+
+`data.derive { filter: "quat_to_rpy", inputs: [w,x,y,z] }` 的多输入时间同步不依赖
+"行对齐"假设，统一走**基准轴 + 插值对齐**：
+
+- 基准轴 = **第一个输入的时间轴**；所有其它输入对齐到它，输出与基准同轴。
+- 门面 `Dataset::readWindow` 会把 null/NaN 样本**成对剔除**（绘图语义：null 点不画），
+  同表各列读出点数因此可能不同——行对齐不可假设，必须显式对齐。
+- 同表且轴完全一致（无剔除）走快路径直取；否则插值。时间点完全重合时插值恒等于
+  原值，精度无损；跨表不同采样率同理被同一机制覆盖。
+- `interp`: `linear`（缺省）/ `step`（前向填充）/ `nearest`；范围外取端点值
+  （边界延拓，不产 NaN）。输入元素支持 `"列名"`（用顶层 table）或
+  `{table, column}` 对象（跨表；不用限定名字符串——列名本身可能含点，如 `q.w`）。
+- 防线：对齐后仍含 NaN 的输入**明确拒绝**（`enan`），绝不静默产出垃圾角度。
+- 数学底座：Rust `ps_quat_to_rpy`（数组级 FFI，不写回 dataset），公式对齐
+  PJ4 `toolbox_quaternion`。
+
+---
+
 ## 4. 器官（modules）：机制提供者
 
 ### 4.1 「是工具不懂业务」的操作化定义

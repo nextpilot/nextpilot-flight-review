@@ -5,7 +5,9 @@
 #include "Intent.h"
 #include "PanelFactoryRegistry.h"
 #include "Result.h"
+#include "Transform.h"
 
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
 
@@ -126,6 +128,28 @@ bool ChannelView::renderOne(PlotSeries &series, QString *err)
     {
         intent.params[QStringLiteral("t0Us")] = qint64(m_winT0 * 1e6);
         intent.params[QStringLiteral("t1Us")] = qint64(m_winT1 * 1e6);
+    }
+
+    // plot 级 Y 变换（非破坏视图，只影响本曲线）：曲线配方经 plot.channel 的
+    // transform 参数下到统一求值器；dataset 级配方由意图层自查（全后端生效）。
+    // 只对已注册（非空）配方生效；清除配方后走普通路径。
+    if (!series.yTransformId.isEmpty())
+    {
+        // kind 从注册表补全（TransformRequest::fromJson 依赖 kind 分派执行器）。
+        const TransformDescriptor d = TransformRegistry::get(series.yTransformId);
+        QJsonObject req{
+            { QStringLiteral("descriptorId"), series.yTransformId },
+            { QStringLiteral("kind"), transformKindName(d.kind) },
+        };
+        if (!series.yTransformParamsJson.isEmpty())
+        {
+            const QJsonObject params =
+                QJsonDocument::fromJson(series.yTransformParamsJson.toUtf8()).object();
+            if (!params.isEmpty())
+                req[QStringLiteral("params")] = params;
+        }
+        intent.params[QStringLiteral("transform")] =
+            QString::fromUtf8(QJsonDocument(req).toJson(QJsonDocument::Compact));
     }
 
     const Result<IntentResult> result = m_executor.execute(intent);

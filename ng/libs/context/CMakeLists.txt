@@ -6,14 +6,18 @@ add_library(ng_context STATIC
     src/InteractionRegistry.cpp
     src/SettingsStore.cpp
     src/WorkspaceDataConfig.cpp
+    src/ChannelTransformConfig.cpp
     src/ScriptFacade.cpp
+    src/DerivedSeriesRegistry.cpp
     src/IngestPipeline.cpp
     src/IngestOrchestrator.cpp
     include/AppContext.h
     include/InteractionRegistry.h
     include/SettingsStore.h
     include/WorkspaceDataConfig.h
+    include/ChannelTransformConfig.h
     include/ScriptFacade.h
+    include/DerivedSeriesRegistry.h
     include/IngestPipeline.h
     include/IngestOrchestrator.h
 )

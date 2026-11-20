@@ -64,6 +64,8 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setSourcePaused(
         const nextpilot::plotscope::intent::Intent &intent, bool paused);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> derive(const nextpilot::plotscope::intent::Intent &intent);
+    // MIMO 派生：四元数 → roll/pitch/yaw（独立派生字段，不写回 dataset）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> deriveMimoQuat(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> filterSeries(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> runMarker(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> stateSeries(const nextpilot::plotscope::intent::Intent &intent);
@@ -71,6 +73,10 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceList();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceSave();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceRestore();
+    // dataset 级通道变换配方（变换 = 非破坏视图，全后端生效；plot.channel / data.series 消费）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setChannelTransform(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearChannelTransform(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> deriveList(const nextpilot::plotscope::intent::Intent &intent);
 
     nextpilot::plotscope::context::AppContext &m_app;
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;

@@ -80,6 +80,10 @@ public:
     // module 经 ModuleContext::host() 到这里注册；GUI 经 app().interactions() 取用。
     nextpilot::plotscope::context::InteractionRegistry &interactions() { return m_appCtx.interactions(); }
     const nextpilot::plotscope::context::InteractionRegistry &interactions() const { return m_appCtx.interactions(); }
+    // 派生序列注册表：独立派生字段（不写回 dataset），data.derive 登记、
+    // data.series/plot.channel 按 name 穿透读数。实例归 AppContext。
+    nextpilot::plotscope::context::DerivedSeriesRegistry &derivedRegistry() { return m_appCtx.derivedRegistry(); }
+    const nextpilot::plotscope::context::DerivedSeriesRegistry &derivedRegistry() const { return m_appCtx.derivedRegistry(); }
 
     // 5 类扩展点的便捷转发：让"注册走 host()"成为统一入口（§7.9）。
     using ViewActionHandler = nextpilot::plotscope::context::InteractionRegistry::ViewActionHandler;

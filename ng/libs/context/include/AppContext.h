@@ -5,6 +5,7 @@
 #include "ExtensionRegistry.h"
 #include "IngestPipeline.h"
 #include "InteractionRegistry.h"
+#include "DerivedSeriesRegistry.h"
 #include "Result.h"
 #include "Selection.h"
 #include "SettingsStore.h"
@@ -83,6 +84,12 @@ public:
     // 这个成员对象、不实现任何 register*/dispatch* 方法；逻辑归 RuntimeHost 编排。
     InteractionRegistry &interactions() { return m_interactions; }
     const InteractionRegistry &interactions() const { return m_interactions; }
+
+    // 派生序列注册表：独立派生字段（不写回 dataset，原始数据零污染）。
+    // data.derive 登记结果，data.series/plot.channel 按派生名穿透读数，
+    // 数据树经 data.derive.list 展示。
+    DerivedSeriesRegistry &derivedRegistry() { return m_derivedRegistry; }
+    const DerivedSeriesRegistry &derivedRegistry() const { return m_derivedRegistry; }
 
     // === 当前活动视图（指针，不是副本）===
     //
@@ -166,6 +173,7 @@ private:
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
 
     InteractionRegistry m_interactions; // 交互注册表：AppContext owns，host 编排
+    DerivedSeriesRegistry m_derivedRegistry; // 派生序列注册表：独立派生字段
     Selection m_selection;       // 当前统一选中对象
 
     int m_activeSourceId = -1;   // 数据源 id（SourceRegistry 键）

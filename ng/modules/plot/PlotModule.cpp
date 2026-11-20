@@ -3,11 +3,17 @@
 #include "PlotLayout.h"
 
 #include "BuiltinModuleRegistry.h"
+#include "ChannelTransformConfig.h"
 #include "DataRepository.h"
 #include "Dataset.h"
 #include "Intent.h"
 #include "RuntimeHost.h"
 #include "SettingsStore.h"
+#include "SourceRegistry.h"
+#include "Transform.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
@@ -23,12 +29,51 @@ using namespace nextpilot::plotscope::host;
 // GUI 下渲染器消费同一份 spec。意图层与视图层由此解耦。
 // 数据访问全部经 Dataset 门面走 Rust C ABI：通道读 ps_dataset_read_window，
 // 视口抽稀走 ps_dataset_lod_minmax（降采样在 Rust 侧完成）。绘图模块不认识任何格式。
+
+namespace
+{
+// 变换路径的 C++ min/max 分桶抽稀：与 Rust lodMinMax 同语义（每桶取最小/最大，
+// x 用桶首样本时间）。桶数恒 <= px。
+QVector<LodTriple> minmaxBuckets(const QVector<double> &t, const QVector<double> &v, int n, int px)
+{
+    QVector<LodTriple> out;
+    if (n <= 0 || px <= 0)
+        return out;
+    if (n <= px)
+    {
+        out.reserve(n);
+        for (int i = 0; i < n; ++i)
+            out.append({t.at(i), v.at(i), v.at(i)});
+        return out;
+    }
+    const double bin = double(n) / px;
+    out.reserve(px);
+    int i = 0;
+    for (int b = 0; b < px && i < n; ++b)
+    {
+        const int end = qMin(n, int((b + 1) * bin));
+        if (end <= i)
+            continue;
+        double mn = v.at(i), mx = v.at(i);
+        for (int k = i + 1; k < end; ++k)
+        {
+            mn = qMin(mn, v.at(k));
+            mx = qMax(mx, v.at(k));
+        }
+        out.append({t.at(i), mn, mx});
+        i = end;
+    }
+    return out;
+}
+} // namespace
+
 class PlotModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(DataRepository &repo, SettingsStore &settings, QObject *parent)
-        : QObject(parent), m_repo(repo), m_settings(settings) {}
+    explicit Handler(nextpilot::plotscope::context::AppContext &appCtx, QObject *parent)
+        : QObject(parent), m_appCtx(appCtx), m_repo(appCtx.data()), m_settings(appCtx.settings()),
+          m_sources(appCtx.sources()), m_interactions(appCtx.interactions()) {}
 
     bool canHandle(const Intent &intent) const override
     {
@@ -71,7 +116,16 @@ private:
 
         const Table *t = ds->table(table);
         if (!t || !t->column(column))
+        {
+            // 派生名穿透（独立派生字段）：column 命中派生注册表 → 缓存结果
+            // 走 C++ min/max 抽稀返回（画布可直接画派生序列）。
+            const auto *entry = m_appCtx.derivedRegistry().get(column);
+            if (entry && entry->datasetId == id)
+                return derivedChannelPayload(id, table, column, ds, entry->t, entry->v,
+                                             qBound(16, intent.params.value(QStringLiteral("px"), 1024).toInt(), 8192),
+                                             intent);
             return fail(QStringLiteral("echan"), QStringLiteral("通道不可用: %1.%2").arg(table, column));
+        }
 
         // 像素宽度由调用方给（画布宽度）；缺省 1024，恒定有界。
         const int px = qBound(16, intent.params.value(QStringLiteral("px"), 1024).toInt(), 8192);
@@ -99,6 +153,110 @@ private:
         const QVector<LodTriple> lod = ds->lodMinMax(table, column, t0Us, t1Us, px);
         if (lod.isEmpty())
             return fail(QStringLiteral("echan"), QStringLiteral("通道无数据: %1.%2").arg(table, column));
+
+        // ===== 变换路径（变换 = 非破坏视图：原始 dataset 不动、字段名不变）=====
+        // 显式 params["transform"]（plot 级曲线配方）优先；其次 dataset 级配方
+        // （data.transform.set 持久化的通道变换，全后端生效）。
+        // 变换必须在抽稀前施加——min/max 分桶后再变换，非单调算子（abs/rms）
+        // 的包络会错，所以这条路径不走 Rust LOD，改为：窗口原始点 → 统一变换
+        // → C++ min/max 抽稀。点数有界（窗口内行数），语义与 LOD 一致。
+        QJsonObject transformReq;
+        if (intent.params.contains(QStringLiteral("transform")))
+        {
+            const QVariant tv = intent.params.value(QStringLiteral("transform"));
+            transformReq =
+                (tv.type() == QVariant::String || tv.type() == QVariant::ByteArray)
+                ? QJsonDocument::fromJson(tv.type() == QVariant::ByteArray
+                                              ? tv.toByteArray()
+                                              : tv.toString().toUtf8())
+                      .object()
+                : QJsonObject::fromVariantMap(tv.toMap());
+        }
+        else
+        {
+            const int srcId = m_sources.sourceOfDataset(id);
+            if (srcId >= 0)
+            {
+                if (const DataSourceInfo *info = m_sources.get(srcId))
+                {
+                    const ChannelTransformConfig cfg = ChannelTransformConfig::load(m_settings);
+                    if (const ChannelTransformSpec *spec =
+                            cfg.find(info->origin, table, column))
+                        transformReq = spec->transform;
+                }
+            }
+        }
+
+        if (!transformReq.isEmpty() && transformReq.contains(QStringLiteral("descriptorId")))
+        {
+            if (!m_interactions.hasTransformEvaluator())
+                return fail(QStringLiteral("enoeval"),
+                            QStringLiteral("变换求值器未注册（script 模块未装载）"));
+
+            std::optional<ChannelView> ch = ds->channel(table, column);
+            if (!ch)
+                return fail(QStringLiteral("echan"), QStringLiteral("读取通道失败: %1.%2").arg(table, column));
+
+            // 时间窗过滤（ChannelView.time 是秒；窗口 t0Us/t1Us 是微秒）。
+            QVector<double> wt, wv;
+            const double w0 = t0Us / 1000000.0, w1 = t1Us / 1000000.0;
+            wt.reserve(ch->size());
+            wv.reserve(ch->size());
+            for (int i = 0; i < ch->size(); ++i)
+            {
+                const double ts = ch->time.at(i);
+                if (ts >= w0 && ts <= w1)
+                {
+                    wt.append(ts);
+                    wv.append(ch->value.at(i));
+                }
+            }
+            if (wt.isEmpty())
+                return fail(QStringLiteral("echan"), QStringLiteral("窗口内无数据: %1.%2").arg(table, column));
+
+            // 统一变换（算子/表达式/Lua）。能力位 CapDerived——通道级变换与
+            // 数据源衍生共用"channel 变换"能力，编辑器 UI 按同一位过滤。
+            Result<QVector<double>> ev{QVector<double>()};
+            m_interactions.evalTransform(transformReq, CapDerived, wt, wv, ev);
+            if (!ev)
+                return fail(ev.error().code, ev.error().message);
+
+            const QVector<double> &vals = ev.value();
+            const int n = qMin(wt.size(), vals.size());
+            if (n <= 0)
+                return fail(QStringLiteral("etransform"), QStringLiteral("变换结果为空"));
+
+            // C++ min/max 分桶抽稀（对齐 Rust lodMinMax 语义：每桶取最小/最大，
+            // x 用桶首样本时间）。桶数恒 <= px，内存有界。
+            QVector<LodTriple> lodT = minmaxBuckets(wt, vals, n, px);
+
+            QVariantList xs2, mins2, maxs2;
+            xs2.reserve(lodT.size());
+            mins2.reserve(lodT.size());
+            maxs2.reserve(lodT.size());
+            for (const LodTriple &triple : lodT)
+            {
+                xs2.append(triple.x);
+                mins2.append(triple.min);
+                maxs2.append(triple.max);
+            }
+            IntentResult r2;
+            r2.payload = QVariantMap{
+                {QStringLiteral("dataset"), id},
+                {QStringLiteral("table"), table},
+                {QStringLiteral("column"), column},
+                {QStringLiteral("title"),
+                 QStringLiteral("%1 / %2.%3").arg(ds->name(), table, column)},
+                {QStringLiteral("points"), lodT.size()},
+                {QStringLiteral("t0"), t0Us / 1000000.0},
+                {QStringLiteral("t1"), t1Us / 1000000.0},
+                {QStringLiteral("x"), xs2},
+                {QStringLiteral("min"), mins2},
+                {QStringLiteral("max"), maxs2},
+                {QStringLiteral("transformed"), true},
+            };
+            return r2;
+        }
 
         QVariantList xs, mins, maxs;
         xs.reserve(lod.size());
@@ -394,6 +552,69 @@ private:
 private:
     DataRepository &m_repo;
     SettingsStore &m_settings;
+    SourceRegistry &m_sources;
+    nextpilot::plotscope::context::InteractionRegistry &m_interactions;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
+
+    // 派生序列取数（独立派生字段）：缓存 t/v → C++ min/max 抽稀 → payload。
+    Result<IntentResult> derivedChannelPayload(int id, const QString &table, const QString &column,
+                                               const Dataset *ds, const QVector<double> &t,
+                                               const QVector<double> &v, int px, const Intent &intent)
+    {
+        const int n = qMin(t.size(), v.size());
+        if (n <= 0)
+            return fail(QStringLiteral("echan"), QStringLiteral("派生序列无样本: %1").arg(column));
+
+        // 可选时间窗过滤（秒）。
+        double w0 = -1e18, w1 = 1e18;
+        if (intent.params.contains(QStringLiteral("t0Us"))
+            && intent.params.contains(QStringLiteral("t1Us")))
+        {
+            w0 = intent.params.value(QStringLiteral("t0Us")).toLongLong() / 1000000.0;
+            w1 = intent.params.value(QStringLiteral("t1Us")).toLongLong() / 1000000.0;
+        }
+        QVector<double> wt, wv;
+        wt.reserve(n);
+        wv.reserve(n);
+        for (int i = 0; i < n; ++i)
+        {
+            const double ts = t.at(i);
+            if (ts >= w0 && ts <= w1)
+            {
+                wt.append(ts);
+                wv.append(v.at(i));
+            }
+        }
+        if (wt.isEmpty())
+            return fail(QStringLiteral("echan"), QStringLiteral("窗口内无派生数据: %1").arg(column));
+
+        const QVector<LodTriple> lodT = minmaxBuckets(wt, wv, wt.size(), px);
+        QVariantList xs, mins, maxs;
+        xs.reserve(lodT.size());
+        mins.reserve(lodT.size());
+        maxs.reserve(lodT.size());
+        for (const LodTriple &triple : lodT)
+        {
+            xs.append(triple.x);
+            mins.append(triple.min);
+            maxs.append(triple.max);
+        }
+        IntentResult r;
+        r.payload = QVariantMap{
+            {QStringLiteral("dataset"), id},
+            {QStringLiteral("table"), table},
+            {QStringLiteral("column"), column},
+            {QStringLiteral("title"), QStringLiteral("%1 / %2").arg(ds->name(), column)},
+            {QStringLiteral("points"), lodT.size()},
+            {QStringLiteral("t0"), wt.first()},
+            {QStringLiteral("t1"), wt.last()},
+            {QStringLiteral("x"), xs},
+            {QStringLiteral("min"), mins},
+            {QStringLiteral("max"), maxs},
+            {QStringLiteral("derived"), true},
+        };
+        return r;
+    }
 };
 
 ModuleInfo PlotModule::moduleInfo()
@@ -420,7 +641,7 @@ ModuleInfo PlotModule::info() const
 
 void PlotModule::initialize(ModuleContext &ctx)
 {
-    m_handler = new Handler(ctx.app().data(), ctx.app().settings(), this);
+    m_handler = new Handler(ctx.app(), this);
     ctx.registerIntentHandler(m_handler);
 }
 

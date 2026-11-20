@@ -1870,3 +1870,44 @@ pub unsafe extern "C" fn ps_dataset_column_type(
         ps_ndf::typed::ValueType::Text => 11,
     }
 }
+
+/// 四元数 w/x/y/z → roll/pitch/yaw，**数组级**（不写回 dataset）。
+///
+/// 与 `ps_dataset_apply_quat_rpy`（写回式）并存：NG 的派生语义是"独立派生
+/// 字段"——派生结果登记在宿主层派生注册表，原始 dataset 零改动，因此这里
+/// 只做纯数值转换，输出写进调用方缓冲区（各 cap = n）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_quat_to_rpy(
+    n: u32,
+    w: *const f64,
+    x: *const f64,
+    y: *const f64,
+    z: *const f64,
+    degrees: u8,
+    unwrap: u8,
+    out_roll: *mut f64,
+    out_pitch: *mut f64,
+    out_yaw: *mut f64,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if n == 0 || w.is_null() || x.is_null() || y.is_null() || z.is_null()
+        || out_roll.is_null() || out_pitch.is_null() || out_yaw.is_null()
+    {
+        return 1;
+    }
+    let wv = std::slice::from_raw_parts(w, n as usize);
+    let xv = std::slice::from_raw_parts(x, n as usize);
+    let yv = std::slice::from_raw_parts(y, n as usize);
+    let zv = std::slice::from_raw_parts(z, n as usize);
+    let (r, p, yaw) = match ps_ops::quat::to_rpy(wv, xv, yv, zv, degrees != 0, unwrap != 0) {
+        Ok(v) => v,
+        Err(e) => { write_err(err, err_cap, &e); return 5; }
+    };
+    for i in 0..(n as usize) {
+        *out_roll.add(i) = r[i];
+        *out_pitch.add(i) = p[i];
+        *out_yaw.add(i) = yaw[i];
+    }
+    0
+}
