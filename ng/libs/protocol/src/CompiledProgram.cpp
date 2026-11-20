@@ -1193,6 +1193,30 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             break;
         }
     }
+    // 首段用 expect 判等且值是字面串时，它也是帧首识别点（NMEA 除了 "$" 还有 "$GPGGA" 这种）。
+    if (out.isText && !out.hasStartAnchor && !out.segs.empty())
+    {
+        const CompiledSeg &first = out.segs.front();
+        for (const CompiledCheck &ck : first.checks)
+        {
+            if (ck.op != "eq" || ck.values.size() != 1 ||
+                ck.values.front().type != ValueType::Text)
+                continue;
+            if (ck.values.front().s.size() >= 2)
+            {
+                out.hasStartAnchor = true;
+                out.startAnchor = ck.values.front().s;
+            }
+            break;
+        }
+    }
+    // text 也必须先能定位帧首：锚点（首段字面 / expect 判等）或记录终止符，二者至少一个。
+    // 否则等于在流里任意偏移直接 scanf，会把垃圾数据读成字段。
+    if (out.isText && !out.hasStartAnchor && !out.hasTerminator)
+    {
+        err = "text 协议必须先能定位帧首：首段写字面（如 \"$\"）、首段 expect 判等，或顶层写 terminator";
+        return false;
+    }
     out.hasTimestamp = doc.hasTimestamp && doc.timestampExpr;
     if (out.hasTimestamp)
     {

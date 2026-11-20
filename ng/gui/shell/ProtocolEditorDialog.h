@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QButtonGroup>
 #include <QDialog>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -102,6 +103,9 @@ private:
     void openSegmentDetail(QTableWidget *table, int row);
     void markDirty();
     void applySegModeHints();        // 按 bin/text 切段表列头与类型列候选
+    QString modeText() const;
+    void setModeText(const QString &m);
+    bool isTextMode() const;
 
     // 单元格字面量：数字原样，字符串带类型信息。
     static QString literalText(const QJsonValue &v);
@@ -130,6 +134,7 @@ private:
     QPlainTextEdit *m_json = nullptr;
     QLineEdit *m_hex = nullptr;   // 样例帧是单行输入，不需要多行编辑框
     QLabel *m_validation = nullptr;
+    QLabel *m_errBar = nullptr;     // 校验/试算失败的红色错误条（右栏顶部）
     QTableWidget *m_preview = nullptr;  // 试算结果：字段 / 偏移 / 值 三列严格对齐
     QLabel *m_status = nullptr;
     QPushButton *m_saveBtn = nullptr;
@@ -137,7 +142,8 @@ private:
     // 协议属性（竖排，沿用老编辑器）
     QLineEdit *m_name = nullptr;
     QLineEdit *m_desc = nullptr;
-    QComboBox *m_mode = nullptr;
+    QButtonGroup *m_modeGroup = nullptr;   // bin | text 分段按钮
+    QString m_modeText = QStringLiteral("bin");
     QStringList m_typeOptions;   // bin 模式的类型候选（内置 + 位域 + 别名 + 块名）
     QLabel *m_segHint = nullptr; // 段表上方的写法提示，随 mode 切换
     QComboBox *m_layout = nullptr;

@@ -1183,6 +1183,12 @@ int main(int argc, char *argv[])
                 CHECK(okStar); // %* 丢弃不算
             }
             CHECK(vfail(R"({"name":"x","mode":"bin","segments":[{"name":"a","type":"u8","scale":2}]})")); // v3 已删 scale
+            // text 必须先能定位帧首：既无字面锚点也无 terminator，等于在流里任意偏移硬读
+            {
+                std::string whyAnch;
+                CHECK(compileFail(R"({"name":"x","mode":"text","layout":"sequential","maxsize":64,
+                  "segments":[{"name":"a","format":"%d"}]})", whyAnch));
+            }
             OK("mode 必填/枚举与 v3 未知键校验");
             OK("mode 必填/枚举与 bin-text 键黑白名单校验");
         }
