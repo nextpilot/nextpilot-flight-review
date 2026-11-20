@@ -18,6 +18,7 @@
 #include "MainWindow.h"
 #include "RuntimeHost.h"
 #include "PlotCanvas.h"
+#include "CanvasWorkspace.h"
 #include "ProtocolEditorDialog.h"
 #include "TransformEditorDialog.h"
 #include "Transform.h"
@@ -97,6 +98,7 @@ int main(int argc, char *argv[])
     QString plotTypeArg;
     QString tabArg;
     QString transformArg; // --transform=<cap> 截变换编辑器（cap: derived/axis-y/checksum）
+    QString cursorArg;    // --cursor=<t> 触发游标读数（老代码交互欠账验收用）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -126,6 +128,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--action=")))
         {
             actionArgs << a.mid(QStringLiteral("--action=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--cursor=")))
+        {
+            cursorArg = a.mid(QStringLiteral("--cursor=").size());
             continue;
         }
         files << a;
@@ -259,6 +266,29 @@ int main(int argc, char *argv[])
         const bool hit = application.context().interactions().dispatchViewAction(actionId, params, res);
         fprintf(stdout, "view action %s: %s\n", qPrintable(actionId),
                 hit ? (res ? "成功" : "失败") : "未注册");
+    }
+
+    // --cursor=<t>：走真实画布 API 触发游标读数（老代码交互欠账验收）。
+    // 同时演示 A/B 与书签，让截图能一眼看到读数框、区间带、书签 chip。
+    if (!cursorArg.isEmpty())
+    {
+        auto *ws = qobject_cast<CanvasWorkspace *>(window.binder() ? window.binder()->centralContent() : nullptr);
+        PlotCanvas *pc = ws ? ws->activeCanvas() : nullptr;
+        bool ok = false;
+        const double t = cursorArg.toDouble(&ok);
+        if (pc && ok)
+        {
+            pc->setCursorTime(t, true);          // 固定读数
+            pc->toggleAB();                      // 生成 A/B（以游标为中心）
+            pc->addBookmark(t, QStringLiteral("游标书签"));
+            fprintf(stdout, "交互注入: cursor t=%f, ab=%d, bookmarks=%d\n",
+                    t, int(pc->abActive()), int(pc->bookmarks().size()));
+        }
+        else
+        {
+            fprintf(stderr, "交互注入失败: canvas=%p, cursor=%s\n", (void *)pc, qPrintable(cursorArg));
+        }
+        QCoreApplication::processEvents();
     }
 
     // --transform=<cap>：截变换编辑器（展示按能力过滤 + 自说明 + 在线调试）。

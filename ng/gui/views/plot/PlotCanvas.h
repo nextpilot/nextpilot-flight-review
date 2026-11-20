@@ -15,6 +15,9 @@ class QDragMoveEvent;
 class QDropEvent;
 class QMimeData;
 class QContextMenuEvent;
+class QMouseEvent;
+class QWheelEvent;
+class QKeyEvent;
 
 namespace nextpilot::plotscope::fastplot
 {
@@ -123,6 +126,46 @@ public:
     void zoomRange(double factor);
     void autoScale();
 
+    // 播放头竖线：回放时由播放引擎统一驱动所有画布，active=false 隐藏。
+    void setPlayhead(double x, bool active);
+    bool playheadActive() const;
+
+    // ---- 游标读数 / A-B / 书签 交互（对齐老 PlottingCanvas 打磨体验）----
+    // 取值从本画布曲线的有界窗口做最近样本查找（不插值），交 fastplot 画读数框。
+    void setCursorTime(double t, bool pinned);      // 悬停/固定游标；pinned=false 时 t 为最近样本吸附后的时间
+    void clearCursor();
+    // 联动：静默同步同页其它画布的时间竖线（不复制读数、不回广播），避免信号回环。
+    void syncLinkedTime(double t, bool visible);
+    bool cursorPinned() const { return m_cursorPinned; }
+    double cursorTime() const { return m_cursorT; }
+    bool cursorActiveForTest() const { return m_cursorActive; }
+
+    void toggleAB();                                // Ctrl+左键 / view action：以当前游标为中心生成一组 A/B
+    void clearAB();
+    bool abActive() const { return m_abEnabled; }
+
+    struct Bookmark
+    {
+        QString id;
+        double t = 0.0;
+        QString label;
+    };
+    void addBookmark(double t, const QString &label = QString());
+    void removeBookmark(const QString &id);
+    void renameBookmark(const QString &id, const QString &label);
+    const QVector<Bookmark> &bookmarks() const { return m_bookmarks; }
+
+    // hit-test：给像素位置，返回命中的读数对象（供右键菜单/拖动仲裁）。
+    enum class Hit { None, CursorLine, AB_A, AB_B, Bookmark };
+    struct HitResult
+    {
+        Hit kind = Hit::None;
+        QString bookmarkId;
+    };
+    HitResult hitTest(const QPointF &pixel) const;
+    // 把像素 x 换算为数据时间（交互部件据此生成 A/B、定位书签）。
+    double timeAtPixel(double px) const;
+
     // 图型：timeseries（折线）/ scatter（散点）等在画布内切换；
     // 返回 false 表示该 kind 不属于本画布（如仪表，需切到 InstrumentView）。
     bool setPlotKind(const QString &kind);
@@ -175,6 +218,10 @@ Q_SIGNALS:
     // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
     void channelDropped(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table,
                         const QString &column);
+    // 联动：本画布时间变化通知同页其它画布（source 用于避免回环，只同步竖线不复制读数）。
+    void linkedTimeChanged(double t, bool visible, PlotCanvas *source);
+    // 书签集合变化（上层存进布局）。
+    void bookmarksChanged();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -184,12 +231,24 @@ protected:
     void dragLeaveEvent(QDragLeaveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void pushToPlot();
     void applyPalette();
     // 为新曲线分配主题色（按当前已有曲线条数轮换）。
     QColor nextSeriesColor() const;
+    // 读数：从曲线有界窗口取 t 时刻最近样本，重写叠加层。
+    void refreshReadout();
+    struct SampledValue { bool ok = false; double value = 0.0; };
+    SampledValue sampleSeries(const PlotSeries &s, double t) const;
+    // 交互状态机入口。
+    void onCanvasMouseMove(class QMouseEvent *event);
+    void onCanvasMousePress(class QMouseEvent *event);
+    void onCanvasMouseRelease(class QMouseEvent *event);
+    void onCanvasWheel(class QWheelEvent *event);
+    int m_bookmarkSeq = 0;
 
     nextpilot::plotscope::fastplot::Axes *m_plot = nullptr;
     nextpilot::plotscope::fastplot::Zoomer *m_zoomer = nullptr;
@@ -197,6 +256,21 @@ private:
     nextpilot::plotscope::fastplot::Picker *m_picker = nullptr;
 
     QVector<PlotSeries> m_series; // 叠加的多条曲线
+    // 游标读数/A-B/书签交互状态（对齐老 PlottingCanvas）。
+    double m_cursorT = 0.0;
+    bool m_cursorActive = false;
+    bool m_cursorPinned = false;
+    bool m_abEnabled = false;
+    double m_abA = 0.0;
+    double m_abB = 0.0;
+    bool m_abHasB = false;
+    QVector<Bookmark> m_bookmarks;
+    QString m_selectedBookmarkId;
+    // 拖动状态：1=A 2=B 3=书签 4=游标线。
+    int m_dragKind = 0;
+    QString m_dragBookmarkId;
+    QPointF m_pressPos;
+    bool m_pressMoved = false;
     QHash<QString, QString> m_axisTransforms; // axis -> transform descriptor id（视图配方）
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
     QString m_plotKind = QStringLiteral("timeseries"); // 当前图型（画布内可切的）

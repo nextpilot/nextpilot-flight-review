@@ -7,6 +7,12 @@
 #include <fastplot/Zoomer.h>
 
 #include <QContextMenuEvent>
+#include <QMouseEvent>
+#include <QWheelEvent>
+#include <QKeyEvent>
+#include <QApplication>
+#include <QInputDialog>
+#include <QUuid>
 #include <QJsonArray>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -16,6 +22,7 @@
 #include <QResizeEvent>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -91,6 +98,11 @@ PlotCanvas::PlotCanvas(QWidget *parent)
                                           .arg(x, 0, 'f', 3)
                                           .arg(y, 0, 'f', 4));
             });
+
+    // 游标读数/A-B/书签交互：本类作为 m_plot 的事件过滤器，命中测量线/书签时优先处理，
+    // 其余交回 Panner/Zoomer/Picker（后装先收，故在三者之后 install）。
+    m_plot->installEventFilter(this);
+    m_plot->setFocusPolicy(Qt::StrongFocus); // 键盘快捷键（P/Esc/Del/[]）需要焦点
 
     applyPalette(); // 颜色全部来自当前主题 palette，不留硬编码浅色
 }
@@ -330,6 +342,476 @@ void PlotCanvas::autoScale()
     m_plot->autoScaleX();
     m_plot->autoScaleY();
     m_plot->update();
+}
+
+void PlotCanvas::setPlayhead(double x, bool active)
+{
+    if (!m_plot)
+        return;
+    m_plot->setPlayhead(x, active);
+}
+
+bool PlotCanvas::playheadActive() const
+{
+    return m_plot && m_plot->playheadActive();
+}
+
+// ---- 游标读数 / A-B / 书签 交互 ----
+
+// 从一条曲线取 t 时刻的最近样本（有界窗口，不插值）。xTimeOffset 在窗口时间上抵消。
+PlotCanvas::SampledValue PlotCanvas::sampleSeries(const PlotSeries &s, double t) const
+{
+    SampledValue out;
+    if (s.lod.isEmpty())
+        return out;
+    // LOD 三元组按 x 升序，二分找最近列。x 已含 xTimeOffset，故目标要加偏移。
+    const double target = t + s.xTimeOffset;
+    const QVector<LodTriple> &lod = s.lod;
+    int lo = 0, hi = lod.size() - 1;
+    while (lo < hi)
+    {
+        const int mid = (lo + hi) / 2;
+        if (lod.at(mid).x < target)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    int idx = lo;
+    if (idx > 0 && std::fabs(lod.at(idx - 1).x - target) <= std::fabs(lod.at(idx).x - target))
+        --idx;
+    const LodTriple &p = lod.at(idx);
+    out.ok = true;
+    out.value = (p.min + p.max) / 2.0; // LOD 桶的代表值（与 fastplot nearestSample 一致）
+    return out;
+}
+
+// 把当前游标/A-B 状态换算成读数行，重写叠加层。
+void PlotCanvas::refreshReadout()
+{
+    if (!m_plot)
+        return;
+
+    // 十字游标读数框。
+    if (m_cursorActive)
+    {
+        QVector<fastplot::Axes::ReadoutRow> rows;
+        for (const PlotSeries &s : m_series)
+        {
+            if (!s.visible || rows.size() >= 8)
+                continue;
+            const SampledValue v = sampleSeries(s, m_cursorT);
+            rows.append({s.legendName(),
+                         v.ok ? QString::number(v.value, 'g', 6) : QStringLiteral("--"),
+                         s.color});
+        }
+        const QString header = m_cursorPinned
+            ? QStringLiteral("固定 t = %1 s").arg(m_cursorT, 0, 'f', 3)
+            : QStringLiteral("t = %1 s").arg(m_cursorT, 0, 'f', 3);
+        m_plot->setCursorReadout(m_cursorT, true, m_cursorPinned, header, rows);
+    }
+    else
+    {
+        m_plot->setCursorReadout(0.0, false, false, QString(), {});
+    }
+
+    // A/B 读数：Δt + 每曲线 Δy 与斜率。
+    if (m_abEnabled)
+    {
+        const double dt = m_abB - m_abA;
+        QVector<fastplot::Axes::ReadoutRow> rows;
+        bool triangle = false;
+        double ayPix = 0.0, byPix = 0.0;
+        for (const PlotSeries &s : m_series)
+        {
+            if (!s.visible || rows.size() >= 6)
+                continue;
+            const SampledValue va = sampleSeries(s, m_abA);
+            const SampledValue vb = m_abHasB ? sampleSeries(s, m_abB) : SampledValue{};
+            const QString dy = (va.ok && vb.ok) ? QString::number(vb.value - va.value, 'g', 6) : QStringLiteral("--");
+            const QString k = (va.ok && vb.ok && std::fabs(dt) > 1e-12)
+                ? QString::number((vb.value - va.value) / dt, 'g', 5) + QStringLiteral("/s")
+                : QStringLiteral("--");
+            rows.append({s.legendName(), QStringLiteral("Δy %1  k %2").arg(dy, k), s.color});
+            // 首条可见曲线画直角三角形：把 A/B 两点 y 数据换算成像素。
+            if (!triangle && va.ok && vb.ok && s.rightAxis == false)
+            {
+                const QRectF plot = m_plot->plotRect();
+                const double lo = m_plot->viewport().yLower();
+                const double hi = m_plot->viewport().yUpper();
+                if (hi > lo)
+                {
+                    ayPix = plot.bottom() - plot.height() * (va.value - lo) / (hi - lo);
+                    byPix = plot.bottom() - plot.height() * (vb.value - lo) / (hi - lo);
+                    triangle = true;
+                }
+            }
+        }
+        const QString header = QStringLiteral("Δx = %1 s（时间轴）").arg(dt, 0, 'f', 4);
+        m_plot->setAB(true, m_abA, m_abB, m_abHasB, header, rows, triangle, ayPix, byPix, 0.0);
+    }
+    else
+    {
+        m_plot->setAB(false, 0, 0, false, QString(), {}, false, 0, 0, 0.0);
+    }
+
+    // 书签。
+    QVector<fastplot::Axes::BookmarkMark> marks;
+    for (const Bookmark &bm : m_bookmarks)
+    {
+        const QString label = bm.label.trimmed().isEmpty()
+            ? QStringLiteral("t=%1").arg(bm.t, 0, 'f', 3)
+            : bm.label;
+        marks.append({bm.id, bm.t, label, bm.id == m_selectedBookmarkId});
+    }
+    m_plot->setBookmarks(marks);
+}
+
+double PlotCanvas::timeAtPixel(double px) const
+{
+    return m_plot ? m_plot->pixelToX(px) : 0.0;
+}
+
+void PlotCanvas::setCursorTime(double t, bool pinned)
+{
+    m_cursorT = t;
+    m_cursorActive = true;
+    m_cursorPinned = pinned;
+    refreshReadout();
+    Q_EMIT linkedTimeChanged(t, true, this);
+}
+
+void PlotCanvas::clearCursor()
+{
+    if (!m_cursorActive)
+        return;
+    m_cursorActive = false;
+    m_cursorPinned = false;
+    refreshReadout();
+    Q_EMIT linkedTimeChanged(0.0, false, this);
+}
+
+void PlotCanvas::syncLinkedTime(double t, bool visible)
+{
+    // 静默：只画同页其它画布的联动竖线，不触发读数、不回广播。
+    if (m_plot)
+        m_plot->setLinkedCursor(t, visible);
+}
+
+void PlotCanvas::toggleAB()
+{
+    // Ctrl+左键：以当前游标时间为中心生成一组 A/B，间距约视窗 10%。
+    if (!m_plot)
+        return;
+    if (m_abEnabled)
+    {
+        clearAB();
+        return;
+    }
+    m_abEnabled = true;
+    m_abHasB = true;
+    const double center = m_cursorActive ? m_cursorT : m_plot->viewport().xLower();
+    double t0 = 0.0, t1 = 0.0;
+    visibleTimeRange(&t0, &t1);
+    const double span = qMax(1e-9, t1 - t0) * 0.10;
+    m_abA = center - span * 0.5;
+    m_abB = center + span * 0.5;
+    refreshReadout();
+}
+
+void PlotCanvas::clearAB()
+{
+    if (!m_abEnabled)
+        return;
+    m_abEnabled = false;
+    m_abHasB = false;
+    refreshReadout();
+}
+
+void PlotCanvas::addBookmark(double t, const QString &label)
+{
+    // 同一时间点已有书签则选中它，不重复创建。
+    for (const Bookmark &bm : m_bookmarks)
+    {
+        if (std::fabs(bm.t - t) < 1e-9)
+        {
+            m_selectedBookmarkId = bm.id;
+            refreshReadout();
+            return;
+        }
+    }
+    Bookmark bm;
+    bm.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    bm.t = t;
+    bm.label = label.trimmed().isEmpty() ? QStringLiteral("B%1").arg(++m_bookmarkSeq) : label.trimmed();
+    m_bookmarks.append(bm);
+    m_selectedBookmarkId = bm.id;
+    std::sort(m_bookmarks.begin(), m_bookmarks.end(),
+              [](const Bookmark &a, const Bookmark &c) { return a.t < c.t; });
+    refreshReadout();
+    Q_EMIT bookmarksChanged();
+}
+
+void PlotCanvas::removeBookmark(const QString &id)
+{
+    const int before = m_bookmarks.size();
+    m_bookmarks.erase(std::remove_if(m_bookmarks.begin(), m_bookmarks.end(),
+                                     [&](const Bookmark &bm) { return bm.id == id; }),
+                      m_bookmarks.end());
+    if (m_bookmarks.size() == before)
+        return;
+    if (m_selectedBookmarkId == id)
+        m_selectedBookmarkId.clear();
+    refreshReadout();
+    Q_EMIT bookmarksChanged();
+}
+
+void PlotCanvas::renameBookmark(const QString &id, const QString &label)
+{
+    if (label.trimmed().isEmpty())
+        return;
+    for (Bookmark &bm : m_bookmarks)
+    {
+        if (bm.id == id)
+        {
+            bm.label = label.trimmed();
+            refreshReadout();
+            Q_EMIT bookmarksChanged();
+            return;
+        }
+    }
+}
+
+PlotCanvas::HitResult PlotCanvas::hitTest(const QPointF &pixel) const
+{
+    HitResult res;
+    if (!m_plot)
+        return res;
+    const QRectF plot = m_plot->plotRect();
+    if (!plot.contains(pixel))
+        return res;
+    constexpr double kTolPx = 10.0;
+
+    // 书签 chip 命中：竖线附近优先（选中/拖动）。
+    for (const Bookmark &bm : m_bookmarks)
+    {
+        const double x = m_plot->xToPixel(bm.t);
+        if (std::fabs(x - pixel.x()) <= kTolPx)
+        {
+            res.kind = Hit::Bookmark;
+            res.bookmarkId = bm.id;
+            return res;
+        }
+    }
+    if (m_abEnabled)
+    {
+        if (std::fabs(m_plot->xToPixel(m_abA) - pixel.x()) <= kTolPx)
+        {
+            res.kind = Hit::AB_A;
+            return res;
+        }
+        if (m_abHasB && std::fabs(m_plot->xToPixel(m_abB) - pixel.x()) <= kTolPx)
+        {
+            res.kind = Hit::AB_B;
+            return res;
+        }
+    }
+    if (m_cursorActive && std::fabs(m_plot->xToPixel(m_cursorT) - pixel.x()) <= kTolPx)
+    {
+        res.kind = Hit::CursorLine;
+        return res;
+    }
+    return res;
+}
+
+bool PlotCanvas::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched != m_plot || !m_plot)
+        return QWidget::eventFilter(watched, event);
+
+    switch (event->type())
+    {
+    case QEvent::MouseMove:
+        onCanvasMouseMove(static_cast<QMouseEvent *>(event));
+        break;
+    case QEvent::MouseButtonPress:
+        onCanvasMousePress(static_cast<QMouseEvent *>(event));
+        break;
+    case QEvent::MouseButtonRelease:
+        onCanvasMouseRelease(static_cast<QMouseEvent *>(event));
+        break;
+    case QEvent::Wheel:
+        onCanvasWheel(static_cast<QWheelEvent *>(event));
+        break;
+    default:
+        break;
+    }
+    // 始终不吞事件：本过滤器只"顺便"维护读数状态，导航仍交给 Panner/Zoomer。
+    return QWidget::eventFilter(watched, event);
+}
+
+void PlotCanvas::onCanvasMouseMove(QMouseEvent *event)
+{
+    if (!m_plot || !m_plot->plotRect().contains(event->pos()))
+        return;
+
+    // 拖动进行中：更新被拖对象。
+    if (m_dragKind != 0)
+    {
+        const double t = timeAtPixel(event->pos().x());
+        if (m_dragKind == 1) m_abA = t;
+        else if (m_dragKind == 2) m_abB = t;
+        else if (m_dragKind == 3)
+        {
+            for (Bookmark &bm : m_bookmarks)
+                if (bm.id == m_dragBookmarkId) bm.t = t;
+            std::sort(m_bookmarks.begin(), m_bookmarks.end(),
+                      [](const Bookmark &a, const Bookmark &c) { return a.t < c.t; });
+        }
+        else if (m_dragKind == 4) m_cursorT = t;
+        if (std::fabs(event->pos().x() - m_pressPos.x()) > QApplication::startDragDistance())
+            m_pressMoved = true;
+        refreshReadout();
+        if (m_dragKind == 3) Q_EMIT bookmarksChanged();
+        if (m_dragKind == 4) Q_EMIT linkedTimeChanged(m_cursorT, true, this);
+        return;
+    }
+
+    // 修饰键：Shift 拖 = 移动书签、Ctrl = A/B 编辑态；普通悬停 = 吸附最近样本时间。
+    const HitResult hit = hitTest(event->pos());
+    if ((event->buttons() & Qt::LeftButton) && hit.kind == Hit::Bookmark)
+    {
+        m_dragKind = 3;
+        m_dragBookmarkId = hit.bookmarkId;
+        m_pressPos = event->pos();
+        return;
+    }
+    if ((event->buttons() & Qt::LeftButton) && (hit.kind == Hit::AB_A || hit.kind == Hit::AB_B))
+    {
+        m_dragKind = hit.kind == Hit::AB_A ? 1 : 2;
+        m_pressPos = event->pos();
+        return;
+    }
+
+    // 悬停：取最近样本时间，更新读数（不 pinned）。联动只同步时间。
+    double sx = 0.0, sy = 0.0;
+    if (m_plot->nearestSample(event->pos(), &sx, &sy))
+        setCursorTime(sx, false);
+}
+
+void PlotCanvas::onCanvasMousePress(QMouseEvent *event)
+{
+    if (!m_plot || !m_plot->plotRect().contains(event->pos()))
+        return;
+    m_pressPos = event->pos();
+    m_pressMoved = false;
+
+    if (event->button() != Qt::LeftButton)
+        return;
+    const Qt::KeyboardModifiers mods = event->modifiers();
+
+    // Ctrl+左键：直接生成一组 A/B。
+    if (mods & Qt::ControlModifier)
+    {
+        double sx = 0.0, sy = 0.0;
+        if (m_plot->nearestSample(event->pos(), &sx, &sy))
+            m_cursorT = sx;
+        toggleAB();
+        return;
+    }
+    // Shift+左键：添加时间书签。
+    if (mods & Qt::ShiftModifier)
+    {
+        double sx = 0.0, sy = 0.0;
+        m_plot->nearestSample(event->pos(), &sx, &sy);
+        addBookmark(sx);
+        return;
+    }
+
+    const HitResult hit = hitTest(event->pos());
+    if (hit.kind == Hit::Bookmark)
+    {
+        m_selectedBookmarkId = hit.bookmarkId;
+        m_dragKind = 3;
+        m_dragBookmarkId = hit.bookmarkId;
+        refreshReadout();
+    }
+    else if (hit.kind == Hit::AB_A || hit.kind == Hit::AB_B)
+    {
+        m_dragKind = hit.kind == Hit::AB_A ? 1 : 2;
+    }
+    else if (hit.kind == Hit::CursorLine)
+    {
+        m_dragKind = 4;
+    }
+}
+
+void PlotCanvas::onCanvasMouseRelease(QMouseEvent *event)
+{
+    if (event->button() != Qt::LeftButton)
+        return;
+    m_dragKind = 0;
+    m_dragBookmarkId.clear();
+}
+
+void PlotCanvas::onCanvasWheel(QWheelEvent *event)
+{
+    // 缩放/平移后，固定读数要跟着时间映射重画；悬停读数由下一次 mouse move 刷新。
+    if (m_cursorPinned)
+        refreshReadout();
+}
+
+void PlotCanvas::keyPressEvent(QKeyEvent *event)
+{
+    const int key = event->key();
+    const Qt::KeyboardModifiers mods = event->modifiers();
+
+    if (key == Qt::Key_P && !(mods & Qt::ControlModifier))
+    {
+        // P：固定/解除当前读数。
+        if (m_cursorActive)
+            setCursorTime(m_cursorT, !m_cursorPinned);
+        return;
+    }
+    if (key == Qt::Key_Escape)
+    {
+        // Esc 层级退出：拖动 > A/B > 书签选中 > 固定读数。
+        if (m_dragKind) { m_dragKind = 0; return; }
+        if (m_abEnabled) { clearAB(); return; }
+        if (!m_selectedBookmarkId.isEmpty()) { m_selectedBookmarkId.clear(); refreshReadout(); return; }
+        if (m_cursorPinned) { m_cursorPinned = false; refreshReadout(); return; }
+        clearCursor();
+        return;
+    }
+    if (key == Qt::Key_Delete || key == Qt::Key_Backspace)
+    {
+        if (!m_selectedBookmarkId.isEmpty())
+            removeBookmark(m_selectedBookmarkId);
+        return;
+    }
+    if (key == Qt::Key_BracketLeft || key == Qt::Key_BracketRight)
+    {
+        // [ / ]：上/下一个时间书签跳转。
+        if (m_bookmarks.isEmpty())
+            return;
+        const bool forward = key == Qt::Key_BracketRight;
+        if (m_selectedBookmarkId.isEmpty())
+        {
+            m_selectedBookmarkId = forward ? m_bookmarks.first().id : m_bookmarks.last().id;
+        }
+        else
+        {
+            int idx = -1;
+            for (int i = 0; i < m_bookmarks.size(); ++i)
+                if (m_bookmarks.at(i).id == m_selectedBookmarkId) { idx = i; break; }
+            idx = forward ? qMin(idx + 1, m_bookmarks.size() - 1) : qMax(idx - 1, 0);
+            m_selectedBookmarkId = m_bookmarks.at(idx).id;
+        }
+        for (const Bookmark &bm : m_bookmarks)
+            if (bm.id == m_selectedBookmarkId) { setCursorTime(bm.t, true); break; }
+        refreshReadout();
+        return;
+    }
+    QWidget::keyPressEvent(event);
 }
 
 bool PlotCanvas::setPlotKind(const QString &kind)
@@ -679,6 +1161,8 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
         menu.addAction(QStringLiteral("画布属性"), this, [this] { Q_EMIT canvasSelectionRequested(); });
         menu.addAction(QStringLiteral("X 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("x")); });
         menu.addAction(QStringLiteral("左 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-left")); });
+        menu.addSeparator();
+        menu.addAction(QStringLiteral("清除游标读数"), this, [this] { clearCursor(); clearAB(); });
         menu.exec(event->globalPos());
         event->accept();
         return;
@@ -692,6 +1176,38 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
     inspect->addAction(QStringLiteral("X 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("x")); });
     inspect->addAction(QStringLiteral("左 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-left")); });
     inspect->addAction(QStringLiteral("右 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-right")); });
+    menu.addSeparator();
+
+    // 读数测量（对齐老 PlottingCanvas 右键菜单）。
+    const HitResult hit = hitTest(event->pos());
+    const double clickT = timeAtPixel(event->pos().x());
+    if (hit.kind == Hit::Bookmark)
+    {
+        const QString id = hit.bookmarkId;
+        QMenu *bm = menu.addMenu(QStringLiteral("时间书签"));
+        bm->addAction(QStringLiteral("重命名…"), this, [this, id] {
+            bool ok = false;
+            QString cur;
+            for (const Bookmark &b : m_bookmarks) if (b.id == id) cur = b.label;
+            const QString text = QInputDialog::getText(this, QStringLiteral("重命名书签"),
+                QStringLiteral("标签："), QLineEdit::Normal, cur, &ok);
+            if (ok) renameBookmark(id, text);
+        });
+        bm->addAction(QStringLiteral("删除"), this, [this, id] { removeBookmark(id); });
+    }
+    else
+    {
+        menu.addAction(QStringLiteral("添加时间书签"), this, [this, clickT] { addBookmark(clickT); });
+    }
+    menu.addAction(m_abEnabled ? QStringLiteral("清除 A/B 测量") : QStringLiteral("A/B 游标测量（Δt/Δy）"),
+                   this, [this] { toggleAB(); });
+    if (m_cursorActive && m_cursorPinned)
+        menu.addAction(QStringLiteral("取消固定读数"), this, [this] { m_cursorPinned = false; refreshReadout(); });
+    else
+        menu.addAction(QStringLiteral("固定当前读数"), this, [this, clickT] {
+            if (!m_cursorActive) setCursorTime(clickT, true);
+            else setCursorTime(m_cursorT, true);
+        });
     menu.addSeparator();
 
     // 视图操作（抄老 PlottingCanvas 右键菜单的常用项）。

@@ -6,6 +6,10 @@
 #include "InstrumentView.h"
 #include "PanelFactoryRegistry.h"
 #include "PlotCanvas.h"
+#include "PlaybackEngine.h"
+#include "TimelineWidget.h"
+#include "DataRepository.h"
+#include "Dataset.h"
 #include "PropertySchema.h"
 #include "Result.h"
 #include "Transform.h"
@@ -72,9 +76,28 @@ QString toInstrumentKind(const QString &kind)
 CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
     : QWidget(parent), m_appCtx(appCtx), m_executor(executor)
 {
-    m_grid = new QGridLayout(this);
+    // 外层纵向布局：网格画布区 + 底部时间条（对齐 PJ4 的 TimelineWidget 位置）。
+    auto *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+
+    m_grid = new QGridLayout();
     m_grid->setContentsMargins(2, 2, 2, 2);
     m_grid->setSpacing(3);
+    outer->addLayout(m_grid, 1);
+
+    // 会话级播放引擎 + 底部时间条。引擎驱动所有画布的播放头，时间条只是它的视图。
+    m_playback = new PlaybackEngine(this);
+    m_timeline = new TimelineWidget(m_playback, this);
+    m_timeline->setVisible(false); // 有数据载入 range 后才显示
+    outer->addWidget(m_timeline);
+
+    QObject::connect(m_playback, &PlaybackEngine::currentTimeChanged, this,
+                     [this](double t) {
+                         for (const Cell &c : m_cells)
+                             if (c.canvas)
+                                 c.canvas->setPlayhead(t, true);
+                     });
 
     // 默认一个画布 cell。
     addCell();
@@ -85,6 +108,7 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
     QObject::connect(&m_appCtx, &AppContext::activeChannelChanged, this,
                      [this](int datasetId, const QString &t, const QString &c) {
                          onActiveChannelChanged(datasetId, t, c);
+                         syncPlaybackRange(datasetId);
                      });
 
     registerViewActions();
@@ -286,6 +310,22 @@ bool CanvasWorkspace::setCellType(int index, const QString &kind)
     return false;
 }
 
+void CanvasWorkspace::syncPlaybackRange(int datasetId)
+{
+    if (!m_playback || datasetId < 0)
+        return;
+    const Dataset *ds = m_appCtx.data().get(datasetId);
+    if (!ds)
+        return;
+    const double lo = ds->timeMin();
+    const double hi = ds->timeMax();
+    if (!(hi > lo))
+        return;
+    // 回放区间 = 数据首末时间；重置游标到起点，显示底部时间条。
+    m_playback->setRange(lo, hi);
+    m_timeline->setVisible(true);
+}
+
 void CanvasWorkspace::onActiveChannelChanged(int datasetId, const QString &t, const QString &c)
 {
     if (m_cells.isEmpty())
@@ -302,6 +342,14 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
 {
     if (!canvas)
         return;
+    // 同页联动游标：任一画布时间变化 → 其它画布画联动竖线（只同步时间，不复制读数）。
+    // source 指针避免回环；syncLinkedTime 静默不回广播。
+    QObject::connect(canvas, &PlotCanvas::linkedTimeChanged, this,
+                     [this](double t, bool visible, PlotCanvas *source) {
+                         for (const Cell &c : m_cells)
+                             if (c.canvas && c.canvas != source)
+                                 c.canvas->syncLinkedTime(t, visible);
+                     });
     QObject::connect(canvas, &PlotCanvas::seriesSelectionRequested, this, [this, canvas](const QString &key) {
         const PlotSeries *s = canvas->seriesByKey(key);
         if (!s)
@@ -584,6 +632,114 @@ void CanvasWorkspace::registerViewActions()
                                     activeCanvas()->setLegendVisible(!activeCanvas()->legendVisible());
                                     return QVariant(activeCanvas()->legendVisible());
                                 });
+
+    // 读数游标 / A-B / 书签（对齐老 PlottingCanvas 交互，view action 供菜单/快捷键/测试统一触发）。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.cursor.pinned"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c)
+                                        return QVariant(false);
+                                    c->setCursorTime(c->cursorTime(), !c->cursorPinned());
+                                    return QVariant(c->cursorPinned());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.cursor.clear"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    if (PlotCanvas *c = activeCanvas()) { c->clearCursor(); c->clearAB(); }
+                                    return QVariant(true);
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.ab.toggle"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c)
+                                        return QVariant(false);
+                                    c->toggleAB();
+                                    return QVariant(c->abActive());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.bookmark.add"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c)
+                                        return QVariant(false);
+                                    const double t = params.contains(QStringLiteral("t"))
+                                        ? params.value(QStringLiteral("t")).toDouble()
+                                        : c->cursorTime();
+                                    c->addBookmark(t, params.value(QStringLiteral("label")).toString());
+                                    return QVariant(c->bookmarks().size());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.bookmark.list"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    QVariantList list;
+                                    if (PlotCanvas *c = activeCanvas())
+                                        for (const PlotCanvas::Bookmark &bm : c->bookmarks())
+                                            list.append(QVariantMap{
+                                                {QStringLiteral("id"), bm.id},
+                                                {QStringLiteral("t"), bm.t},
+                                                {QStringLiteral("label"), bm.label},
+                                            });
+                                    return QVariant(list);
+                                });
+
+    // 回放引擎（对齐 PJ4 PlaybackEngine）：会话级时间游标的播放/暂停/定位/速率/循环/步进。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.play"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    if (!m_playback) return QVariant(false);
+                                    m_playback->play();
+                                    return QVariant(true);
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.pause"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    if (!m_playback) return QVariant(false);
+                                    m_playback->pause();
+                                    return QVariant(true);
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.toggle"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    if (!m_playback) return QVariant(false);
+                                    m_playback->togglePlay();
+                                    return QVariant(m_playback->isPlaying());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.seek"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    if (!m_playback) return QVariant(false);
+                                    m_playback->setCurrentTime(params.value(QStringLiteral("t")).toDouble());
+                                    return QVariant(m_playback->currentTime());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.rate"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    if (!m_playback) return QVariant(false);
+                                    m_playback->setRate(params.value(QStringLiteral("rate")).toDouble());
+                                    return QVariant(m_playback->rate());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.loop"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    if (!m_playback) return QVariant(false);
+                                    const bool on = params.contains(QStringLiteral("on"))
+                                        ? params.value(QStringLiteral("on")).toBool() : !m_playback->isLooping();
+                                    m_playback->setLooping(on);
+                                    return QVariant(m_playback->isLooping());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.step"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    if (!m_playback) return QVariant(false);
+                                    bool dirOk = false;
+                                    const int dir = params.value(QStringLiteral("dir")).toInt(&dirOk);
+                                    const int stepDir = dirOk ? dir : 1;
+                                    m_playback->setCurrentTime(m_playback->currentTime() + stepDir * m_playback->step());
+                                    return QVariant(m_playback->currentTime());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.state"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    if (!m_playback) return QVariant(false);
+                                    return QVariant(QVariantMap{
+                                        {QStringLiteral("t"), m_playback->currentTime()},
+                                        {QStringLiteral("min"), m_playback->rangeMin()},
+                                        {QStringLiteral("max"), m_playback->rangeMax()},
+                                        {QStringLiteral("rate"), m_playback->rate()},
+                                        {QStringLiteral("playing"), m_playback->isPlaying()},
+                                        {QStringLiteral("looping"), m_playback->isLooping()},
+                                    });
+                                });
+
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.clear"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (activeChannelView())

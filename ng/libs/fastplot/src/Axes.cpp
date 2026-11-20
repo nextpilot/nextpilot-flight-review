@@ -251,6 +251,64 @@ void Axes::setHover(const QPointF &dataPoint, bool active)
     update();
 }
 
+void Axes::setPlayhead(double x, bool active)
+{
+    m_playheadX = x;
+    m_playheadActive = active;
+    update();
+}
+
+void Axes::setLinkedCursor(double x, bool active)
+{
+    m_linkedX = x;
+    m_linkedActive = active;
+    update();
+}
+
+double Axes::pixelToX(double px) const
+{
+    return m_vp.pixelToX(px);
+}
+
+double Axes::xToPixel(double x) const
+{
+    return m_vp.toPixel(x, m_vp.yLower()).x();
+}
+
+void Axes::setCursorReadout(double x, bool active, bool pinned,
+                            const QString &header, const QVector<ReadoutRow> &rows)
+{
+    m_cursorX = x;
+    m_cursorActive = active;
+    m_cursorPinned = pinned;
+    m_cursorHeader = header;
+    m_cursorRows = rows;
+    update();
+}
+
+void Axes::setAB(bool enabled, double a, double b, bool hasB,
+                 const QString &header, const QVector<ReadoutRow> &rows,
+                 bool drawTriangle, double ay, double by, double ayPixelData)
+{
+    m_abEnabled = enabled;
+    m_abA = a;
+    m_abB = b;
+    m_abHasB = hasB;
+    m_abHeader = header;
+    m_abRows = rows;
+    m_abTriangle = drawTriangle;
+    m_abAy = ay;
+    m_abBy = by;
+    (void)ayPixelData; // 预留：A 点的 y 像素，供未来精确画直角顶点
+    update();
+}
+
+void Axes::setBookmarks(const QVector<BookmarkMark> &marks)
+{
+    m_bookmarks = marks;
+    update();
+}
+
 void Axes::setOverlayText(const QString &text)
 {
     m_overlayText = text;
@@ -896,6 +954,47 @@ void Axes::paintOverlay(QPainter &painter)
         painter.restore();
     }
 
+    // 播放头竖线（对齐 PJ4 tracker needle）：跨整幅绘图区的醒目橙红竖线。
+    // 用数据 x 映射像素，落在可见范围外则不画（随播放推进自然进/出视野）。
+    if (m_playheadActive)
+    {
+        const QPointF px = m_vp.toPixel(m_playheadX, m_vp.yLower());
+        if (px.x() >= plot.left() && px.x() <= plot.right())
+        {
+            painter.save();
+            painter.setClipRect(plot);
+            painter.setPen(QPen(QColor(QStringLiteral("#f2b134")), 1.6, Qt::SolidLine));
+            painter.drawLine(QPointF(px.x(), plot.top()), QPointF(px.x(), plot.bottom()));
+            // 顶部小三角，便于在密集曲线中定位。
+            QPolygonF head;
+            head << QPointF(px.x() - 4, plot.top()) << QPointF(px.x() + 4, plot.top())
+                 << QPointF(px.x(), plot.top() + 6);
+            painter.setBrush(QColor(QStringLiteral("#f2b134")));
+            painter.setPen(Qt::NoPen);
+            painter.drawPolygon(head);
+            painter.restore();
+        }
+    }
+
+    // 联动游标竖线（同页其它画布同步的时间，只画竖线，对齐老 setLinkedCursor）。
+    if (m_linkedActive)
+    {
+        const double lx = m_vp.toPixel(m_linkedX, m_vp.yLower()).x();
+        if (lx >= plot.left() && lx <= plot.right())
+        {
+            painter.save();
+            painter.setClipRect(plot);
+            painter.setPen(QPen(QColor(0x5b, 0xc0, 0xf0, 0xB0), 1.0, Qt::DashLine));
+            painter.drawLine(QPointF(lx, plot.top()), QPointF(lx, plot.bottom()));
+            painter.restore();
+        }
+    }
+
+    // 读数叠加层：书签 → A/B → 十字游标读数（后者画在最上，读数框不被遮挡）。
+    paintBookmarks(painter, plot);
+    paintAB(painter, plot);
+    paintCursorReadout(painter, plot);
+
     if (!m_rubberBand.isNull())
     {
         painter.save();
@@ -904,6 +1003,218 @@ void Axes::paintOverlay(QPainter &painter)
         painter.drawRect(m_rubberBand);
         painter.restore();
     }
+}
+
+// 十字游标 + 逐曲线读数框（对齐老 PlottingCanvas::paintEvent 的读数块）。
+void Axes::paintCursorReadout(QPainter &painter, const QRectF &plot)
+{
+    if (!m_cursorActive)
+        return;
+    const double x = m_vp.toPixel(m_cursorX, m_vp.yLower()).x();
+    if (x < plot.left() || x > plot.right())
+        return;
+
+    painter.save();
+    painter.setClipRect(plot);
+    QFont f = font();
+    f.setPointSizeF(std::max(7.0, f.pointSizeF()));
+    painter.setFont(f);
+    const QFontMetrics fm(f);
+
+    // 竖线：固定读数用实线 accent，普通悬停用虚线灰。
+    const QColor accent(QStringLiteral("#f2b134"));
+    painter.setPen(m_cursorPinned ? QPen(accent, 1.2, Qt::SolidLine)
+                                  : QPen(QColor(0x88, 0x88, 0x88, 0xC0), 1.0, Qt::DashLine));
+    painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+    painter.setBrush(m_cursorPinned ? accent : QColor(0x1F, 0x6F, 0xC0));
+    painter.setPen(Qt::NoPen);
+    painter.drawEllipse(QPointF(x, plot.top() + 1), 3.0, 3.0);
+
+    // 读数框：贴游标右侧，越界翻到左侧；最多 8 行。
+    const int lineH = fm.height() + 2;
+    const int boxW = qMin(int(plot.width() - 16), 280);
+    const int boxH = 22 + qMin(m_cursorRows.size(), 8) * lineH + 6;
+    // A/B 启用时顶部有 Δx 徽标和 A/B 标签，读数框下移一行避免遮挡（老界面打磨细节）。
+    const double boxTop = plot.top() + (m_abEnabled ? 30 : 8);
+    QRectF box(x + 12, boxTop, boxW, boxH);
+    if (box.right() > plot.right())
+        box.moveLeft(x - 12 - boxW);
+    if (box.bottom() > plot.bottom())
+        box.moveTop(plot.bottom() - boxH - 4);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0x14, 0x1a, 0x20, m_cursorPinned ? 252 : 238));
+    painter.drawRoundedRect(box, 3, 3);
+    if (m_cursorPinned)
+    {
+        painter.setPen(QPen(accent, 1));
+        painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
+    }
+
+    painter.setPen(accent);
+    painter.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
+                     Qt::AlignVCenter | Qt::AlignLeft, m_cursorHeader);
+    painter.setPen(QColor(0x7a, 0x84, 0x8f));
+    painter.drawLine(QPointF(box.left() + 7, box.top() + 21),
+                     QPointF(box.right() - 7, box.top() + 21));
+
+    int y = int(box.top()) + 23;
+    const QColor textColor = m_axes[sideIndex(AxisSide::Left)].labelColor();
+    for (int i = 0; i < m_cursorRows.size() && i < 8; ++i)
+    {
+        const ReadoutRow &r = m_cursorRows.at(i);
+        painter.setPen(r.color);
+        painter.drawText(QRectF(box.left() + 8, y, box.width() * 0.55, lineH),
+                         Qt::AlignVCenter | Qt::AlignLeft,
+                         fm.elidedText(r.label, Qt::ElideMiddle, int(box.width() * 0.55)));
+        painter.setPen(textColor);
+        painter.drawText(QRectF(box.left() + box.width() * 0.55, y, box.width() * 0.4, lineH),
+                         Qt::AlignVCenter | Qt::AlignRight, r.value);
+        y += lineH;
+    }
+    painter.restore();
+}
+
+// A/B 双游标测量（对齐老 PlottingCanvas：区间带 + ΔX 徽标 + A/B 直角三角 + 逐曲线 Δy/k）。
+void Axes::paintAB(QPainter &painter, const QRectF &plot)
+{
+    if (!m_abEnabled)
+        return;
+    const QColor accent(QStringLiteral("#f2b134"));
+    const QColor bColor(QStringLiteral("#5bc0f0"));
+    painter.save();
+    painter.setClipRect(plot);
+    QFont f = font();
+    f.setPointSizeF(std::max(7.0, f.pointSizeF()));
+    painter.setFont(f);
+    const QFontMetrics fm(f);
+
+    const double xa = m_vp.toPixel(m_abA, m_vp.yLower()).x();
+    if (xa < plot.left() || xa > plot.right())
+    {
+        painter.restore();
+        return;
+    }
+    if (!m_abHasB)
+    {
+        const QString hint = QStringLiteral("点击图表设置游标 A，再点一下设置 B");
+        const QRectF hr(plot.left() + 10, plot.top() + 4, fm.horizontalAdvance(hint) + 20, 20);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0x14, 0x1a, 0x20, 220));
+        painter.drawRoundedRect(hr, 3, 3);
+        painter.setPen(accent);
+        painter.drawText(hr.adjusted(8, 0, -8, 0), Qt::AlignVCenter | Qt::AlignLeft, hint);
+        painter.restore();
+        return;
+    }
+
+    const double xb = m_vp.toPixel(m_abB, m_vp.yLower()).x();
+    // 区间带（可能 A 在 B 右侧）。
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0xf2, 0xb1, 0x34, 24));
+    painter.drawRect(QRectF(QPointF(qMin(xa, xb), plot.top()),
+                            QPointF(qMax(xa, xb), plot.bottom())));
+
+    // A / B 竖线 + 顶部圆点。
+    painter.setPen(QPen(accent, 1.4, Qt::DashLine));
+    painter.drawLine(QPointF(xa, plot.top()), QPointF(xa, plot.bottom()));
+    painter.setBrush(accent);
+    painter.setPen(Qt::NoPen);
+    painter.drawEllipse(QPointF(xa, plot.top() + 1), 3, 3);
+    if (xb >= plot.left() && xb <= plot.right())
+    {
+        painter.setPen(QPen(bColor, 1.4, Qt::DashLine));
+        painter.drawLine(QPointF(xb, plot.top()), QPointF(xb, plot.bottom()));
+        painter.setBrush(bColor);
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(QPointF(xb, plot.top() + 1), 3, 3);
+    }
+
+    const QColor textColor = m_axes[sideIndex(AxisSide::Left)].labelColor();
+    // ΔX 徽标（居中于 A/B，夹在绘图区内）。
+    const int tw = fm.horizontalAdvance(m_abHeader) + 20;
+    QRectF badge((xa + xb) * 0.5 - tw * 0.5, plot.top() + 5, tw, 20);
+    if (badge.left() < plot.left() + 4) badge.moveLeft(plot.left() + 4);
+    if (badge.right() > plot.right() - 4) badge.moveRight(plot.right() - 4);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0xf2, 0xb1, 0x34, 235));
+    painter.drawRoundedRect(badge, 3, 3);
+    painter.setPen(QColor(0x10, 0x16, 0x1c));
+    painter.drawText(badge, Qt::AlignCenter, m_abHeader);
+
+    // 直角三角形：首条可见曲线的 Δy 一眼可见（y 值由上层换算成像素 y 传入）。
+    if (m_abTriangle && m_abAy >= plot.top() && m_abAy <= plot.bottom())
+    {
+        painter.setPen(QPen(QColor(0xf2, 0xb1, 0x34, 150), 1, Qt::DashLine));
+        painter.drawLine(QPointF(xa, m_abAy), QPointF(xb, m_abAy));
+        painter.drawLine(QPointF(xb, m_abAy), QPointF(xb, m_abBy));
+        painter.drawLine(QPointF(xa, m_abAy), QPointF(xb, m_abBy));
+    }
+
+    // 逐曲线 Δy / k 读数框（贴底部）。
+    if (!m_abRows.isEmpty())
+    {
+        const int lineH = fm.height() + 2;
+        const int boxH = 40 + qMin(m_abRows.size(), 6) * lineH + 6;
+        QRectF box(plot.left() + 10, plot.bottom() - boxH - 8, qMin(int(plot.width() - 20), 340), boxH);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0x14, 0x1a, 0x20, 238));
+        painter.drawRoundedRect(box, 3, 3);
+        painter.setPen(accent);
+        painter.drawText(QRectF(box.left() + 8, box.top() + 3, box.width() - 16, lineH),
+                         Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("A→B  Δx / 各曲线 Δy 与斜率"));
+        painter.setPen(QColor(0x7a, 0x84, 0x8f));
+        painter.drawLine(QPointF(box.left() + 7, box.top() + 21), QPointF(box.right() - 7, box.top() + 21));
+        int y = int(box.top()) + 23;
+        for (int i = 0; i < m_abRows.size() && i < 6; ++i)
+        {
+            const ReadoutRow &r = m_abRows.at(i);
+            painter.setPen(r.color);
+            painter.drawText(QRectF(box.left() + 8, y, box.width() * 0.45, lineH),
+                             Qt::AlignVCenter | Qt::AlignLeft,
+                             fm.elidedText(r.label, Qt::ElideMiddle, int(box.width() * 0.45)));
+            painter.setPen(textColor);
+            painter.drawText(QRectF(box.left() + box.width() * 0.45, y, box.width() * 0.53, lineH),
+                             Qt::AlignVCenter | Qt::AlignRight, r.value);
+            y += lineH;
+        }
+    }
+    painter.restore();
+}
+
+// 时间书签（对齐老 PlottingCanvas：竖线 + 顶部 chip + 视窗外边缘提示）。
+void Axes::paintBookmarks(QPainter &painter, const QRectF &plot)
+{
+    if (m_bookmarks.isEmpty())
+        return;
+    painter.save();
+    painter.setClipRect(plot);
+    QFont f = font();
+    f.setPointSizeF(std::max(7.0, f.pointSizeF()));
+    painter.setFont(f);
+    const QFontMetrics fm(f);
+    const QColor accent(QStringLiteral("#f2b134"));
+    int lane = 0;
+    for (const BookmarkMark &mk : m_bookmarks)
+    {
+        const double x = m_vp.toPixel(mk.t, m_vp.yLower()).x();
+        if (x < plot.left() || x > plot.right())
+            continue;
+        painter.setPen(QPen(QColor(0xf2, 0xb1, 0x34, 150), 1, Qt::DashLine));
+        painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+        const QString text = fm.elidedText(mk.label, Qt::ElideRight, 180);
+        const int tw = fm.horizontalAdvance(text) + 10;
+        QRectF chip(x + 3, plot.top() + 2 + (lane % 3) * 17, tw, 16);
+        if (chip.right() > plot.right()) chip.moveLeft(x - 3 - tw);
+        if (chip.left() < plot.left()) chip.moveLeft(plot.left() + 3);
+        painter.setPen(QPen(mk.selected ? accent : QColor(0x4a, 0x52, 0x5c), mk.selected ? 2 : 1));
+        painter.setBrush(QColor(0x14, 0x1a, 0x20, mk.selected ? 255 : 235));
+        painter.drawRoundedRect(chip, 2, 2);
+        painter.setPen(accent);
+        painter.drawText(chip.adjusted(5, 0, -5, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
+        ++lane;
+    }
+    painter.restore();
 }
 
 QImage Axes::grabImage()

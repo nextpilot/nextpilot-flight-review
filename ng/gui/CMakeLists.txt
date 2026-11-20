@@ -87,6 +87,10 @@ add_library(ng_gui OBJECT
     views/plot/InstrumentView.h
     views/plot/CanvasWorkspace.cpp
     views/plot/CanvasWorkspace.h
+    views/plot/PlaybackEngine.cpp
+    views/plot/PlaybackEngine.h
+    views/plot/TimelineWidget.cpp
+    views/plot/TimelineWidget.h
     # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
     views/PropertyPanel.cpp
     views/PropertyPanel.h

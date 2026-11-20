@@ -12,5 +12,10 @@
     <file alias="trash.svg">icons/trash.svg</file>
     <file alias="box.svg">icons/box.svg</file>
     <file alias="hand.svg">icons/hand.svg</file>
+    <file alias="play.svg">icons/play.svg</file>
+    <file alias="pause.svg">icons/pause.svg</file>
+    <file alias="loop.svg">icons/loop.svg</file>
+    <file alias="replay.svg">icons/replay.svg</file>
+    <file alias="step_fwd.svg">icons/step_fwd.svg</file>
   </qresource>
 </RCC>

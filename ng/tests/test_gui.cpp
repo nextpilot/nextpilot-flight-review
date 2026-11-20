@@ -706,7 +706,69 @@ int main(int argc, char *argv[])
         CHECK(dispatchOk(QStringLiteral("page.splitHorizontal")));
         CHECK(dispatchOk(QStringLiteral("page.splitVertical")));
         CHECK(dispatchOk(QStringLiteral("page.grid")));
-        OK("plotting 全套操作：series/axis/marker/zoom/grid/page 等 view action 已注册");
+        // 老代码交互欠账补齐后新增的 view action（游标/A-B/书签/联动）。
+        CHECK(dispatchOk(QStringLiteral("plot.cursor.pinned")));
+        CHECK(dispatchOk(QStringLiteral("plot.cursor.clear")));
+        CHECK(dispatchOk(QStringLiteral("plot.ab.toggle")));
+        CHECK(dispatchOk(QStringLiteral("plot.bookmark.add"), {{QStringLiteral("t"), 0.5}}));
+        CHECK(dispatchOk(QStringLiteral("plot.bookmark.list")));
+        OK("plotting 全套操作：series/axis/zoom/grid/page + 游标/A-B/书签 view action 已注册");
+    }
+
+    // --- 回放引擎 view action（对齐 PJ4 PlaybackEngine）---
+    {
+        auto dispatchOk = [&](const QString &op, const QVariantMap &p = {}) {
+            QVariant vr;
+            Result<QVariant> res(vr);
+            return application.context().interactions().dispatchViewAction(op, p, res);
+        };
+        CHECK(dispatchOk(QStringLiteral("playback.play")));
+        CHECK(dispatchOk(QStringLiteral("playback.pause")));
+        CHECK(dispatchOk(QStringLiteral("playback.toggle")));
+        CHECK(dispatchOk(QStringLiteral("playback.seek"), {{QStringLiteral("t"), 1.0}}));
+        CHECK(dispatchOk(QStringLiteral("playback.rate"), {{QStringLiteral("rate"), 2.0}}));
+        CHECK(dispatchOk(QStringLiteral("playback.loop"), {{QStringLiteral("on"), true}}));
+        CHECK(dispatchOk(QStringLiteral("playback.step"), {{QStringLiteral("dir"), 1}}));
+        CHECK(dispatchOk(QStringLiteral("playback.state")));
+        OK("回放引擎：play/pause/toggle/seek/rate/loop/step/state view action 已注册");
+    }
+
+    // --- 老代码交互欠账：游标读数 / A-B / 书签 / 联动的真实行为 ---
+    {
+        CHECK(canvas != nullptr);
+        // 游标：设时间后应激活；固定态可切换；清除后失效。
+        canvas->setCursorTime(1.25, false);
+        CHECK(canvas->cursorActiveForTest());
+        CHECK(std::fabs(canvas->cursorTime() - 1.25) < 1e-9);
+        canvas->setCursorTime(1.25, true);
+        CHECK(canvas->cursorPinned());
+        canvas->clearCursor();
+        CHECK(!canvas->cursorActiveForTest());
+
+        // A-B：首次开启生成一组，再次切换清除。
+        canvas->toggleAB();
+        CHECK(canvas->abActive());
+        canvas->toggleAB();
+        CHECK(!canvas->abActive());
+
+        // 书签：增（同时间不重复）/ 重命名 / 删。
+        const int b0 = canvas->bookmarks().size();
+        canvas->addBookmark(2.0, QStringLiteral("起飞"));
+        CHECK(canvas->bookmarks().size() == b0 + 1);
+        canvas->addBookmark(2.0, QStringLiteral("重复"));
+        CHECK(canvas->bookmarks().size() == b0 + 1); // 同时间不重复
+        const QString id = canvas->bookmarks().last().id;
+        canvas->renameBookmark(id, QStringLiteral("改名"));
+        CHECK(canvas->bookmarks().last().label == QStringLiteral("改名"));
+        canvas->removeBookmark(id);
+        CHECK(canvas->bookmarks().size() == b0);
+
+        // 联动：syncLinkedTime 静默同步（不应崩溃/不应改自己的游标态）。
+        canvas->setCursorTime(3.0, false);
+        canvas->syncLinkedTime(9.0, true);
+        CHECK(std::fabs(canvas->cursorTime() - 3.0) < 1e-9); // 联动不改本地游标
+
+        OK("老代码交互欠账：游标固定/清除 + A-B 开关 + 书签增删改名去重 + 联动静默同步");
     }
 
     // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---

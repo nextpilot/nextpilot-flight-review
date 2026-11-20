@@ -16,6 +16,8 @@ namespace nextpilot::plotscope::gui
 class ChannelView;
 class InstrumentView;
 class PlotCanvas;
+class PlaybackEngine;
+class TimelineWidget;
 
 // 画布工作区：中央区域的组合容器，管理 N 个画布 cell（网格布局）。
 //
@@ -73,6 +75,10 @@ private:
     void connectCanvasSignals(PlotCanvas *canvas);
 
     void onActiveChannelChanged(int datasetId, const QString &table, const QString &column);
+    // 播放头同步：引擎时间 → 所有 cell 画布的竖线。
+    void onPlayheadChanged(double t);
+    // 活动数据集变化时把时间范围喂给播放引擎（回放区间 = 数据首末时间）。
+    void syncPlaybackRange(int datasetId);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -81,6 +87,8 @@ private:
     context::AppContext &m_appCtx;
     intent::IIntentExecutor &m_executor;
     QGridLayout *m_grid = nullptr;
+    PlaybackEngine *m_playback = nullptr;
+    TimelineWidget *m_timeline = nullptr;
     QVector<Cell> m_cells;
     int m_active = 0;
     int m_rows = 1;

@@ -111,9 +111,51 @@ public:
     QRect rubberBand() const { return m_rubberBand; }
     // 十字光标：给一个数据坐标；active=false 时隐藏。
     void setHover(const QPointF &dataPoint, bool active);
+    // 播放头竖线：给一个 x 数据坐标；active=false 时隐藏。
+    // 对齐 PJ4 的 tracker needle——所有画布订阅同一播放引擎时间，画同色竖线。
+    void setPlayhead(double x, bool active);
+    bool playheadActive() const { return m_playheadActive; }
+    double playheadX() const { return m_playheadX; }
+    // 联动游标竖线：同页其它画布的时间同步，只画竖线不画读数框（对齐老 setLinkedCursor）。
+    void setLinkedCursor(double x, bool active);
     // 右上角读数文本（空串 = 不画）。
     void setOverlayText(const QString &text);
     void clearOverlay();
+
+    // ---- 读数叠加层（对齐老 PlottingCanvas 的打磨交互；状态由上层持有，画布只画）----
+    // 一行读数：曲线名 + 该时刻值 + 曲线色。取值/格式化都在 PlotCanvas 做（库不依赖 Dataset）。
+    struct ReadoutRow
+    {
+        QString label;
+        QString value;
+        QColor color;
+    };
+    // 十字游标 + 逐曲线读数框。x 为数据时间；pinned=固定读数（标题不同+高亮边框）。
+    void setCursorReadout(double x, bool active, bool pinned,
+                          const QString &header, const QVector<ReadoutRow> &rows);
+    bool cursorReadoutActive() const { return m_cursorActive; }
+    double cursorReadoutX() const { return m_cursorX; }
+
+    // A/B 双游标测量：a/b 为数据时间，hasB=false 时只画 A 和提示。
+    // rows 为每曲线 "Δy / 斜率" 读数；firstDelta 为首条可见曲线在 A→B 间的 Δy（画直角三角形）。
+    void setAB(bool enabled, double a, double b, bool hasB,
+               const QString &header, const QVector<ReadoutRow> &rows,
+               bool drawTriangle, double ay, double by, double ayPixelData);
+    bool abEnabled() const { return m_abEnabled; }
+
+    // 时间书签：稳定 id + 时间 + 标签 + 是否选中。
+    struct BookmarkMark
+    {
+        QString id;
+        double t = 0.0;
+        QString label;
+        bool selected = false;
+    };
+    void setBookmarks(const QVector<BookmarkMark> &marks);
+
+    // 像素/数据互转 + 命中：交互部件据此判断点到了哪条线/书签。
+    double pixelToX(double px) const;
+    double xToPixel(double x) const;
 
     // 图例：显示各曲线的名字 + 色块。
     void setLegendVisible(bool visible);
@@ -144,6 +186,9 @@ private:
     void paintCurves(QPainter &painter);
     void paintOverlay(QPainter &painter);
     void paintLegend(QPainter &painter);
+    void paintCursorReadout(QPainter &painter, const QRectF &plot);
+    void paintAB(QPainter &painter, const QRectF &plot);
+    void paintBookmarks(QPainter &painter, const QRectF &plot);
     double yToPixel(AxisSide side, double y) const;
     QRectF dataBounds() const;
     void relayout();       // 边距 → 绘图区 → 刻度划分（三者必须一起算）
@@ -163,6 +208,26 @@ private:
     QRect m_rubberBand;
     QPointF m_hoverPoint;
     bool m_hoverActive = false;
+    double m_playheadX = 0.0;
+    bool m_playheadActive = false;
+    double m_linkedX = 0.0;
+    bool m_linkedActive = false;
+    // 读数叠加层状态（只存"画什么"，不存"是什么数据"）。
+    double m_cursorX = 0.0;
+    bool m_cursorActive = false;
+    bool m_cursorPinned = false;
+    QString m_cursorHeader;
+    QVector<ReadoutRow> m_cursorRows;
+    bool m_abEnabled = false;
+    double m_abA = 0.0;
+    double m_abB = 0.0;
+    bool m_abHasB = false;
+    QString m_abHeader;
+    QVector<ReadoutRow> m_abRows;
+    bool m_abTriangle = false;
+    double m_abAy = 0.0;
+    double m_abBy = 0.0;
+    QVector<BookmarkMark> m_bookmarks;
     QString m_overlayText;
     QColor m_titleColor{0x33, 0x33, 0x33};
     QString m_title;
