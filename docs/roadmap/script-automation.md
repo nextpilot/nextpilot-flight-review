@@ -1,5 +1,7 @@
 # 脚本子系统：知识注入、自动化与判据
 
+> 状态：**✅ 已全部实施（2026-11-20）**——Lua `app` 全局对象、有状态过滤器引擎、12 内置过滤器库、管道接入（data.filter）、Marker 规则引擎（when DSL）、AI/MCP 工具层意图 API（`ai.tools.list`/`ai.tool.call`）全部落地；实施记录见文末 §1–§21。MCP server 协议外壳为后续候选（见 [README](README.md) 优先级）。
+>
 > 基线：`origin/main @ d057ee9`（2026-11-17）。本文只讨论 `modules/scripting`。
 
 ## 0. 本版定调（先看这 15 条）

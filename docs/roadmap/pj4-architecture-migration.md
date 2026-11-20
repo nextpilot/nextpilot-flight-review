@@ -1,6 +1,6 @@
 # PJ4 架构迁移方案
 
-> 状态：B1–B4 已实施（2026-11-18）。B2/B3 完成 core/widget 物理拆分，`DataSourceController/Service`、`PlottingController/Service` 注册到 `ServiceRegistry`，core 目录不含 Widgets/主窗口依赖；B4 完成 SettingsStore/LogService/SessionState 下沉、ExtensionHost 下沉 runtime、CommandBus 最小契约和模块/内置 CMake option。B5 默认构建与 `ctest 42/42` 通过；13 组可删除性矩阵全部构建通过并完成 offscreen 启动冒烟。
+> 状态：✅ 已全部实施（2026-11-20）：B1–B8 全部落地（B7 core 消亡、namespace 收口、依赖守卫固化；详见 [Core 重构总方案](core-refactor-master-plan.md)）。以下为过程记录——B1–B4 已实施（2026-11-18）。B2/B3 完成 core/widget 物理拆分，`DataSourceController/Service`、`PlottingController/Service` 注册到 `ServiceRegistry`，core 目录不含 Widgets/主窗口依赖；B4 完成 SettingsStore/LogService/SessionState 下沉、ExtensionHost 下沉 runtime、CommandBus 最小契约和模块/内置 CMake option。B5 默认构建与 `ctest 42/42` 通过；13 组可删除性矩阵全部构建通过并完成 offscreen 启动冒烟。
 >
 > 范围：把 PlotScope 从“MainWindow 兼做窗口壳和业务服务中心”调整为“shell 只组装、modules 自贡献、extensions 可裁剪、runtime 无 Widgets”的结构。先改依赖和所有权，不改 UI 行为、不改命令 ID、不一次性搬完所有代码。
 >

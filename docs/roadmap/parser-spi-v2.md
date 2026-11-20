@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 方案待开工（2026-11-18） |
+| 状态 | ✅ 已实施（2026-11-20）：SPI 统一为 `IMessageParser`+`configure` 双路径，`ng/extensions/*` 各驱动按域落位；本表其余行的 `ng/core` 路径已随 core 消亡迁至 `ng/libs/*`，详见 [Core 重构总方案](core-refactor-master-plan.md) |
 | 现状 SPI | `ng/core/include/ps_parser_spi.h`（纯 C ABI）+ `ParserRegistry` |
 | 目标 | 解析器继承统一接口类**自述元信息**（名称/范围/传输/参数），供打开对话框直接消费；具体解析器主要实现 `parseChar` 字符状态机，缓冲/残余/ABI 适配由基类承担 |
 | 硬约束 | 解析器只认字节、不写存储、不认识宿主；headless 不链 Qt Widgets；外部插件 ABI 向后兼容 |

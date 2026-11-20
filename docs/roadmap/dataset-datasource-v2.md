@@ -1,6 +1,6 @@
 # Dataset / DataSource v2 路线图
 
-状态：M0–M5 数据/缓存主线已完成；OEM7 离线 typed loader、Live `frame_batch` 去 f64 副本、配置恢复已完成（2026-11-17）
+状态：✅ 已全部落地（2026-11-20）——数据/缓存主线 + 领域 loader 全部完成，库已下沉 `ng/libs/dataset`（Rust 内核 + RAII 门面），见 [dataset 抽库设计](dataset-lib-extraction.md)
 
 目标：把 PlotScope 的数据层统一成“DataSource 是单个数据源实例的聚合根，Dataset 是实际数据，按数据库表模型组织”。Rust 管生产数据，C++ `MemoryDataset` 只用于测试；离线/实时共用同一套 Dataset；字段按原始类型存储；实时整帧推送；绘图通过视口 LOD 适配层取数。
 
