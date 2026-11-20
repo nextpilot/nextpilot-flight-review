@@ -23,19 +23,14 @@ void UiSlotRegistry::refreshFrom(const ExtensionRegistry &registry)
     for (const UiSlot &slot : m_slots)
         m_bound.insert(slot.area, {});
 
-    for (IToolContribution *c : registry.contributions(ContributionKind::Ui))
+    // 内容全是数据：直接读 uiActions 表，归属（provider）就在条目里。
+    for (const UiAction &action : registry.uiActions.values())
     {
-        auto *ui = dynamic_cast<UiContribution *>(c);
-        if (!ui)
-            continue;
-        for (const UiAction &action : ui->actions)
-        {
-            BoundUiAction bound{action, ui->provider()};
-            if (m_bound.contains(action.area))
-                m_bound[action.area].append(bound);
-            else
-                m_unbound.append(bound);
-        }
+        BoundUiAction bound{action, action.provider};
+        if (m_bound.contains(action.area))
+            m_bound[action.area].append(bound);
+        else
+            m_unbound.append(bound);
     }
 }
 

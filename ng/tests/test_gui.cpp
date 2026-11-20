@@ -314,7 +314,7 @@ int main(int argc, char *argv[])
     //
     // 有些面板的形态**本身就是领域知识**（CAN 报文浏览器取决于 DBC 定义的信号）。
     // 通用视图层不该认识它，器官也给不出形态 —— 于是形态归**知识包**：
-    //   · 描述（PanelContribution，纯数据，headless 可见）；
+    //   · 描述（panels 表条目，纯数据，headless 可见）；
     //   · 实现（知识包的呈现层，注册进**同一张**工厂表）。
     //
     // 这里锁住三件事：
@@ -324,30 +324,16 @@ int main(int argc, char *argv[])
     {
         // 1) 描述：纯数据，headless 也查得到。
         const auto &toolbox = application.context().toolbox();
-        int panelSpecCount = 0;
-        for (nextpilot::plotscope::registry::IToolContribution *c :
-             toolbox.contributions(nextpilot::plotscope::registry::ContributionKind::Panel))
-        {
-            auto *pc = dynamic_cast<PanelContribution *>(c);
-            CHECK(pc != nullptr);
-            if (pc)
-                panelSpecCount += pc->panels.size();
-        }
-        CHECK(panelSpecCount >= 1); // 汽车包的 CAN 报文面板
+        CHECK(toolbox.panels.count() >= 1); // 汽车包的 CAN 报文面板
 
         // 2) 实现：领域面板与通用面板共用同一张工厂表。
         CHECK(nextpilot::plotscope::registry::PanelFactoryRegistry::types().contains(QStringLiteral("car.can-browser")));
 
         // 3) 领域过滤：汽车领域的清单里有它，通用领域不该混入。
         int automotive = 0;
-        for (nextpilot::plotscope::registry::IToolContribution *c :
-             toolbox.contributions(nextpilot::plotscope::registry::ContributionKind::Panel,
-                                  nextpilot::plotscope::registry::Domain::Automotive))
-        {
-            auto *pc = dynamic_cast<PanelContribution *>(c);
-            if (pc)
-                automotive += pc->panels.size();
-        }
+        for (const nextpilot::plotscope::registry::PanelSpec &spec : toolbox.panels.values())
+            if (spec.domain == nextpilot::plotscope::registry::Domain::Automotive)
+                ++automotive;
         CHECK(automotive >= 1);
         OK("领域面板：知识包声明描述（headless 可见）+ 呈现层注册实现，共用同一张工厂表");
     }

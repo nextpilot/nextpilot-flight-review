@@ -446,7 +446,7 @@ void MainWindow::build(RuntimeHost &host)
         {
             QMessageBox::about(this, QStringLiteral("关于 PlotScope NG"),
                 QStringLiteral("PlotScope NG — 数据 / 绘图 / 分析软件\n"
-                               "架构底座：Dataset / Intent / Contribution / Module / ToolPack\n"
+                               "架构底座：Dataset / Intent / Contribution / Module / Pack\n"
                                "绘图库：fastplot（Figure / Axes / Line / Artist）"));
             return;
         }

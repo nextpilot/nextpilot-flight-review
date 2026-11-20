@@ -100,20 +100,18 @@ public:
     }
 };
 
-// 假知识包：带一个 UI 贡献。
-// 用工厂函数而非继承（ToolPack 是 final 类）：静态自注册机制只要求
-// 提供 packId() 与 build() 两个静态接口。
+// 假知识包：带一个 UI 动作。包只是 build() 工厂——填一份纯数据清单，
+// 静态自注册机制只要求提供 packId() 与 build() 两个静态接口。
 struct ProbePack
 {
     static QString packId() { return QStringLiteral("pack.probe"); }
-    static std::unique_ptr<IToolPack> build()
+    static std::unique_ptr<Pack> build()
     {
-        auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("探针工具箱"),
-                                               Domain::General);
-        pack->addUi(
-            QStringLiteral("probe.ui"), QStringLiteral("探针界面入口"), Domain::General,
-            QList<UiAction>{{QStringLiteral("probe.ui.act"), QStringLiteral("探针动作"),
-                             QStringLiteral("menu.plot"), QString(), QString()}});
+        auto pack = std::make_unique<Pack>();
+        pack->id = packId();
+        pack->name = QStringLiteral("探针工具箱");
+        pack->uiActions.append({{QStringLiteral("probe.ui.act"), QStringLiteral("探针动作"),
+                                 QStringLiteral("menu.plot"), QString(), QString()}});
         return pack;
     }
 };
@@ -299,7 +297,7 @@ int main(int argc, char **argv)
     CHECK(toolbox.contains(QStringLiteral("ulog")));
     CHECK(toolbox.contains(QStringLiteral("custom-protocol"))); // 自定义协议格式
     // 探针包也自动进了工具箱（同样零改动）。
-    CHECK(toolbox.packIds().contains(QStringLiteral("pack.probe")));
+    CHECK(toolbox.packs.contains(QStringLiteral("pack.probe")));
     fprintf(stdout, "[ok] 零改动新增：测试内自注册的探针知识包被自动装入工具箱\n");
     // 两种发现路径：按 format 精确查找 + 按文件后缀推断。
     CHECK(toolbox.driverForFormat(QStringLiteral("csv")) != nullptr);
@@ -329,69 +327,59 @@ int main(int argc, char **argv)
     // 1b) 工具箱是开放贡献点系统：知识包装载/卸载 + 六类贡献 + (kind,domain) 二维索引。
     {
         // 五个业务方向各一个知识包 + 本文件自注册的探针包；
-        // 包是装载/卸载的原子单位。
-        CHECK(toolbox.packCount() == 6);
-        CHECK(toolbox.pack(QStringLiteral("pack.common")) != nullptr);
-        CHECK(toolbox.pack(QStringLiteral("pack.autopilot")) != nullptr);
-        CHECK(toolbox.pack(QStringLiteral("pack.automotive")) != nullptr);
-        CHECK(toolbox.pack(QStringLiteral("pack.robotics")) != nullptr);
-        CHECK(toolbox.pack(QStringLiteral("pack.gnss")) != nullptr);
-        // 飞控包装载了全部六类贡献——一个包能同时贡献格式/UI/脚本/数据/例子/文档。
-        nextpilot::plotscope::registry::IToolPack *ap = toolbox.pack(QStringLiteral("pack.autopilot"));
-        CHECK(ap->contributions().size() == 6);
-        QSet<QString> apKinds;
-        for (const auto &c : ap->contributions())
-            apKinds.insert(c->kind());
-        CHECK(apKinds.contains(ContributionKind::Message));
-        CHECK(apKinds.contains(ContributionKind::Ui));
-        CHECK(apKinds.contains(ContributionKind::Script));
-        CHECK(apKinds.contains(ContributionKind::Data));
-        CHECK(apKinds.contains(ContributionKind::Example));
-        CHECK(apKinds.contains(ContributionKind::Doc));
-        // 每个贡献的 provider 指向所属包（按包原子装卸的依据）。
-        for (const auto &c : ap->contributions())
-            CHECK(c->provider() == QStringLiteral("pack.autopilot"));
+        // 包是装载/卸载的原子单位。包本身就是一条数据（packs 表），查询零特殊 API。
+        CHECK(toolbox.packs.count() == 6);
+        CHECK(toolbox.packs.find(QStringLiteral("pack.common")) != nullptr);
+        CHECK(toolbox.packs.find(QStringLiteral("pack.autopilot")) != nullptr);
+        CHECK(toolbox.packs.find(QStringLiteral("pack.automotive")) != nullptr);
+        CHECK(toolbox.packs.find(QStringLiteral("pack.robotics")) != nullptr);
+        CHECK(toolbox.packs.find(QStringLiteral("pack.gnss")) != nullptr);
+        const PackInfo *ap = toolbox.packs.find(QStringLiteral("pack.autopilot"));
+        CHECK(ap != nullptr && ap->domain == Domain::Autopilot);
 
-        // 七类贡献都能按 kind 查到；开放 kind 用字符串而非枚举。
-        // （计数含本测试文件自注册的探针包贡献：+1 个 UI）
-        CHECK(toolbox.drivers().size() == 3); // csv + ulog + custom-protocol（统一为 message kind，FrameBatch 输出）
-        CHECK(toolbox.contributions(ContributionKind::Ui).size() == 4);
-        CHECK(toolbox.contributions(ContributionKind::Panel).size() == 1);
-        CHECK(toolbox.contributions(ContributionKind::Script).size() == 2);
-        CHECK(toolbox.contributions(ContributionKind::Data).size() == 1);
-        CHECK(toolbox.contributions(ContributionKind::Example).size() == 1);
-        CHECK(toolbox.contributions(ContributionKind::Doc).size() == 5);
-        // 统一后所有解析器（3 格式 + NMEA）都是 message kind，按 outputs() 区分能力。
-        CHECK(toolbox.contributions(ContributionKind::Message).size() == 4);
+        // 内容全是数据，每种一张 Registry<T>：按类型读表，无 kind 字符串、无转型。
+        // （计数含本测试文件自注册的探针包贡献：+1 个 UI 动作；条目数而非贡献对象数）
+        CHECK(toolbox.drivers().size() == 3); // csv + ulog + custom-protocol（FrameBatch 输出）
+        CHECK(toolbox.uiActions.count() == 6); // 飞控3 + 汽车1 + 机器人1 + 探针1
+        CHECK(toolbox.panels.count() == 1);
+        CHECK(toolbox.scripts.count() == 2);
+        CHECK(toolbox.dataAssets.count() == 1);
+        CHECK(toolbox.examples.count() == 1);
+        CHECK(toolbox.docs.count() == 5);
+        // 解析器（3 格式 + NMEA）走行为通道，按 outputs() 区分能力。
         CHECK(toolbox.parsers().size() == 4);
-        CHECK(toolbox.kinds().size() == 7);
 
-        // 二维索引：按 (kind, domain) 精确过滤。
-        CHECK(toolbox.contributions(ContributionKind::Ui, Domain::Autopilot).size() == 1);
-        CHECK(toolbox.contributions(ContributionKind::Doc, Domain::General).size() == 1);
-        CHECK(toolbox.contributionsByDomain(Domain::Autopilot).size() == 6);
-        CHECK(toolbox.contributionsByDomain(Domain::Video).isEmpty()); // 预留领域无贡献
+        // 归属是字段：provider/domain 由 mount() 自动写入（按包原子装卸的依据）。
+        for (const UiAction &a : toolbox.uiActions.values())
+        {
+            if (a.id.startsWith(QStringLiteral("ap.")))
+            {
+                CHECK(a.provider == QStringLiteral("pack.autopilot"));
+                CHECK(a.domain == Domain::Autopilot);
+            }
+        }
+        // 按领域过滤 = 对表条目按 domain 字段过滤。
+        int apUi = 0, generalDocs = 0;
+        for (const UiAction &a : toolbox.uiActions.values())
+            if (a.domain == Domain::Autopilot)
+                ++apUi;
+        CHECK(apUi == 3); // 飞控包的 3 个动作条目
+        for (const DocEntry &d : toolbox.docs.values())
+            if (d.domain == Domain::General)
+                ++generalDocs;
+        CHECK(generalDocs == 1);
 
-        // typed 接口可向下转换拿到领域数据（UI 贡献是纯数据，headless 也成立）。
-        nextpilot::plotscope::registry::IToolContribution *uiRaw =
-            toolbox.contribution(QStringLiteral("ap.ui.contributions"));
-        CHECK(uiRaw != nullptr);
-        auto *ui = dynamic_cast<UiContribution *>(uiRaw);
-        CHECK(ui != nullptr && ui->actions.size() == 3);
-        nextpilot::plotscope::registry::IToolContribution *docRaw =
-            toolbox.contribution(QStringLiteral("ap.docs"));
-        auto *doc = dynamic_cast<DocContribution *>(docRaw);
-        CHECK(doc != nullptr && doc->entries.size() == 1);
+        // 飞控包的 UI/文档条目（纯数据，headless 也成立）。
+        const UiAction *attitude = toolbox.uiActions.find(QStringLiteral("ap.plot.attitude"));
+        CHECK(attitude != nullptr && attitude->intentOp == QStringLiteral("plot.render"));
+        const DocEntry *ulogDoc = toolbox.docs.find(QStringLiteral("ap.doc.ulog"));
+        CHECK(ulogDoc != nullptr);
 
         // 领域面板的**描述**是纯数据，headless（CLI）也能查到——
         // 实现（QWidget 工厂）只在 GUI 侧注册，两者用 id 关联。
-        nextpilot::plotscope::registry::IToolContribution *panelRaw =
-            toolbox.contribution(QStringLiteral("car.panels"));
-        CHECK(panelRaw != nullptr);
-        auto *panel = dynamic_cast<PanelContribution *>(panelRaw);
-        CHECK(panel != nullptr && panel->panels.size() == 1);
-        CHECK(panel->panels.first().id == QStringLiteral("car.can-browser"));
-        CHECK(panel->domain() == Domain::Automotive);
+        const PanelSpec *canPanel = toolbox.panels.find(QStringLiteral("car.can-browser"));
+        CHECK(canPanel != nullptr);
+        CHECK(canPanel->domain == Domain::Automotive);
 
         // UI 插槽：骨架声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
         // （动作数含本测试文件自注册的探针包贡献：menu.plot +1）
@@ -418,17 +406,17 @@ int main(int argc, char **argv)
         CHECK(slotReg.boundActionCount() >= 6);
         CHECK(slotReg.unboundActions().isEmpty()); // 所有贡献都有归属插槽
 
-        // 开放 kind：自定义 kind 无需改注册表/宿主即可登记（证明可扩展，非封闭枚举）。
-        auto customPack = std::make_unique<ToolPack>(QStringLiteral("pack.custom"),
-                                                     QStringLiteral("自定义工具箱"), Domain::General);
-        customPack->addDoc(
-            QStringLiteral("custom.thing"), QStringLiteral("自定义能力"), Domain::General,
-            QList<nextpilot::plotscope::registry::DocEntry>{});
-        CHECK(toolbox.registerPack(std::move(customPack)));
-        CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 6); // 新包贡献被按 kind 索引
-        CHECK(toolbox.unregisterPack(QStringLiteral("pack.custom")));    // 按包原子撤销
-        CHECK(toolbox.contributions(QStringLiteral("doc")).size() == 5);
-        fprintf(stdout, "[ok] 开放贡献点系统：5 知识包 / 7 类贡献 / (kind,domain) 二维索引 / UI 插槽 / 按包原子装卸\n");
+        // 挂载即数据：新包不改注册表/宿主——填一份清单 mount 进去，unmount 原子撤。
+        Pack customPack;
+        customPack.id = QStringLiteral("pack.custom");
+        customPack.name = QStringLiteral("自定义工具箱");
+        customPack.docs.append({QStringLiteral("custom.doc"), QStringLiteral("自定义能力"),
+                                QStringLiteral("docs/custom.md"), QString()});
+        CHECK(toolbox.mount(std::move(customPack)));
+        CHECK(toolbox.docs.count() == 6); // 新包条目已进表
+        CHECK(toolbox.unmount(QStringLiteral("pack.custom")));    // 按包原子撤销
+        CHECK(toolbox.docs.count() == 5);
+        fprintf(stdout, "[ok] 工具箱：机制唯一（Registry<T>）/ 内容全是数据 / mount-unmount 按包原子装卸\n");
     }
 
     // 1b) UI 插槽：骨架槽**唯一声明**，且信息完整。
@@ -947,7 +935,7 @@ using namespace nextpilot::plotscope::context;
         CHECK(parsers.size() >= 1);
         IMessageParser *nmea = toolbox.messageParser(QStringLiteral("nmea"));
         CHECK(nmea != nullptr);
-        CHECK(nmea->kind() == ContributionKind::Message);
+        CHECK(nmea->provider() == QStringLiteral("pack.gnss"));
 
         // 自述四要素：协议名 / 使用范围（领域+用途）/ 支持 transfer / 配置 schema。
         CHECK(nmea->protocolName() == QStringLiteral("NMEA 0183"));

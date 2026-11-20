@@ -1,12 +1,8 @@
 #include "GnssPack.h"
 
 #include "Contribution.h"
-#include "ExtensionRegistry.h"
 #include "NmeaMessageParser.h"
 
-using namespace nextpilot::plotscope::foundation;
-using namespace nextpilot::plotscope::intent;
-using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 
@@ -18,35 +14,28 @@ QString GnssPack::packId()
     return QStringLiteral("pack.gnss");
 }
 
-std::unique_ptr<IToolPack> GnssPack::build()
+std::unique_ptr<Pack> GnssPack::build()
 {
     // 预留领域：卫星导航协议（NMEA / UBX / OEM7）格式后续平移时落入本包。
-    auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("卫导工具箱"), Domain::Gnss);
-    // 协议解析器（kind=message）：NMEA 0183 —— 自述 + configure + parse 的样板实现。
-    pack->add<NmeaMessageParser>();
-    pack->addScript(
-        QStringLiteral("gnss.script.helpers"), QStringLiteral("卫导脚本库"), Domain::Gnss,
-        QStringLiteral("lua"),
-        QStringLiteral("ps.gnss = { quality = function() ps.log('gnss quality helpers') end }\n"),
-        QStringList{QStringLiteral("ps.gnss")});
-    pack->addDoc(
-        QStringLiteral("gnss.docs"), QStringLiteral("卫导知识文档"), Domain::Gnss,
-        QList<DocEntry>{
-            {QStringLiteral("gnss.doc.nmea"), QStringLiteral("NMEA / UBX / OEM7（待接入）"),
-             QStringLiteral("docs/gnss/nmea.md"), QStringLiteral("text/markdown")}});
-    return pack;
-}
+    auto pack = std::make_unique<Pack>();
+    pack->id = packId();
+    pack->name = QStringLiteral("卫导工具箱");
+    pack->domain = Domain::Gnss;
 
-QString GnssPack::id() const { return m_pack.id(); }
-QString GnssPack::displayName() const { return m_pack.displayName(); }
-Domain GnssPack::domain() const { return m_pack.domain(); }
-const std::vector<std::unique_ptr<IToolContribution>> &GnssPack::contributions() const
-{
-    return m_pack.contributions();
-}
-std::vector<std::unique_ptr<IToolContribution>> &GnssPack::contributions()
-{
-    return m_pack.contributions();
+    // 协议解析器：NMEA 0183 —— 自述 + configure + parse 的样板实现。
+    pack->parsers.push_back(std::make_unique<NmeaMessageParser>());
+
+    pack->scripts.append({
+        {QStringLiteral("lua"),
+         QStringLiteral("ps.gnss = { quality = function() ps.log('gnss quality helpers') end }\n"),
+         QStringList{QStringLiteral("ps.gnss")},
+         QStringLiteral("gnss.script.helpers"), QStringLiteral("卫导脚本库")}});
+
+    pack->docs.append({
+        {QStringLiteral("gnss.doc.nmea"), QStringLiteral("NMEA / UBX / OEM7（待接入）"),
+         QStringLiteral("docs/gnss/nmea.md"), QStringLiteral("text/markdown")}});
+
+    return pack;
 }
 
 } // namespace nextpilot::plotscope::ext

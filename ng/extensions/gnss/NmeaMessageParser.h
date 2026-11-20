@@ -34,7 +34,7 @@ public:
 
     NmeaMessageParser();
 
-    // === 身份（IToolContribution）===
+    // === 身份与归属 ===
     QString id() const override { return QStringLiteral("nmea"); }
     QString displayName() const override { return QStringLiteral("NMEA 协议解析器"); }
     nextpilot::plotscope::registry::Domain domain() const override { return nextpilot::plotscope::registry::Domain::Gnss; }

@@ -1,5 +1,6 @@
 // PlotScope NG — headless CLI。验证新架构：统一数据模型 + 模块装载 + 意图执行。
 // GUI 点击、脚本调用、Job 回放三条路径共用同一个执行器（意图是公共货币）。
+#include <type_traits>
 #include "App.h"
 #include "Intent.h"
 #include "Dataset.h"
@@ -128,15 +129,11 @@ int main(int argc, char **argv)
     {
         // 知识包是装载/卸载的原子单位：每包聚合任意 kind 的贡献。
         const auto &toolbox = application.host().extensions();
-        for (const QString &packId : toolbox.packIds())
+        for (const auto &pack : toolbox.packs.values())
         {
-            nextpilot::plotscope::registry::IToolPack *pack = toolbox.pack(packId);
-            if (!pack)
-                continue;
-            int n = static_cast<int>(pack->contributions().size());
-            fprintf(stdout, "%-18s %-12s [%s] %d 项贡献\n",
-                    qPrintable(pack->id()), qPrintable(pack->displayName()),
-                    qPrintable(QString::fromLatin1(nextpilot::plotscope::registry::domainKey(pack->domain()))), n);
+            fprintf(stdout, "%-18s %-12s [%s]\n",
+                    qPrintable(pack.id), qPrintable(pack.name),
+                    qPrintable(QString::fromLatin1(nextpilot::plotscope::registry::domainKey(pack.domain))));
         }
         return 0;
     }
@@ -145,21 +142,45 @@ int main(int argc, char **argv)
     {
         const auto &toolbox = application.host().extensions();
         const QString filter = args.size() >= 3 ? args.at(2) : QString();
-        // 稳定顺序：按已知 kind 顺序，再按领域顺序。
-        for (const QString &kind : nextpilot::plotscope::registry::knownKinds())
-        {
-            if (!filter.isEmpty() && filter != kind)
-                continue;
-            const auto list = toolbox.contributions(kind);
-            if (list.isEmpty())
-                continue;
-            fprintf(stdout, "[%s / %s] %d 项\n",
-                    qPrintable(kind), qPrintable(nextpilot::plotscope::registry::kindName(kind)), list.size());
-            for (nextpilot::plotscope::registry::IToolContribution *c : list)
+        namespace reg = nextpilot::plotscope::registry;
+        // 内容全是数据：各类型表逐一列出（类型即身份，无 kind 字符串索引）。
+        const auto displayNameOf = [](const auto &c) -> const QString & {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, reg::DocEntry> || std::is_same_v<T, reg::ExampleEntry>)
+                return c.title;
+            else
+                return c.label;
+        };
+        const auto listTable = [&](const char *kind, const char *cn, auto &table) {
+            if (!filter.isEmpty() && filter != QLatin1String(kind))
+                return;
+            if (table.count() == 0)
+                return;
+            fprintf(stdout, "[%s / %s] %d 项\n", kind, cn, table.count());
+            for (const auto &c : table.values())
                 fprintf(stdout, "  %-26s %-18s %-10s <- %s\n",
-                        qPrintable(c->id()), qPrintable(c->displayName()),
-                        qPrintable(QString::fromLatin1(nextpilot::plotscope::registry::domainKey(c->domain()))),
-                        qPrintable(c->provider()));
+                        qPrintable(c.id), qPrintable(displayNameOf(c)),
+                        qPrintable(QString::fromLatin1(reg::domainKey(c.domain))),
+                        qPrintable(c.provider));
+        };
+        listTable("ui", "界面", toolbox.uiActions);
+        listTable("panel", "面板", toolbox.panels);
+        listTable("script", "脚本", toolbox.scripts);
+        listTable("data", "数据", toolbox.dataAssets);
+        listTable("example", "示例", toolbox.examples);
+        listTable("doc", "文档", toolbox.docs);
+        if (filter.isEmpty() || filter == QLatin1String("parser"))
+        {
+            const auto list = toolbox.parsers();
+            if (!list.isEmpty())
+            {
+                fprintf(stdout, "[parser / 解析器] %d 项\n", list.size());
+                for (reg::IMessageParser *p : list)
+                    fprintf(stdout, "  %-26s %-18s %-10s <- %s\n",
+                            qPrintable(p->id()), qPrintable(p->displayName()),
+                            qPrintable(QString::fromLatin1(reg::domainKey(p->domain()))),
+                            qPrintable(p->provider()));
+            }
         }
         return 0;
     }

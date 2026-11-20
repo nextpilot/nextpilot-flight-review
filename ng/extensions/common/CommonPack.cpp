@@ -1,13 +1,9 @@
 #include "CommonPack.h"
 
 #include "Contribution.h"
-#include "ExtensionRegistry.h"
 #include "CsvFormatParser.h"
 #include "CustomProtocolFormatParser.h"
 
-using namespace nextpilot::plotscope::foundation;
-using namespace nextpilot::plotscope::intent;
-using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 
@@ -19,29 +15,21 @@ QString CommonPack::packId()
     return QStringLiteral("pack.common");
 }
 
-std::unique_ptr<IToolPack> CommonPack::build()
+std::unique_ptr<Pack> CommonPack::build()
 {
-    auto pack = std::make_unique<ToolPack>(packId(), QStringLiteral("通用工具箱"), Domain::General);
-    pack->add<CsvFormatParser>(); // 格式：文件 -> Dataset
-    pack->add<CustomProtocolFormatParser>(); // 格式：.psproto 模板 + 二进制帧 -> Dataset
-    pack->addDoc(
-        QStringLiteral("common.doc.formats"), QStringLiteral("通用格式说明"), Domain::General,
-        QList<DocEntry>{
-            {QStringLiteral("common.doc.csv"), QStringLiteral("CSV 载入指南"),
-             QStringLiteral("docs/common/csv.md"), QStringLiteral("text/markdown")}});
-    return pack;
-}
+    auto pack = std::make_unique<Pack>();
+    pack->id = packId();
+    pack->name = QStringLiteral("通用工具箱");
+    pack->domain = Domain::General;
 
-QString CommonPack::id() const { return m_pack.id(); }
-QString CommonPack::displayName() const { return m_pack.displayName(); }
-Domain CommonPack::domain() const { return m_pack.domain(); }
-const std::vector<std::unique_ptr<IToolContribution>> &CommonPack::contributions() const
-{
-    return m_pack.contributions();
-}
-std::vector<std::unique_ptr<IToolContribution>> &CommonPack::contributions()
-{
-    return m_pack.contributions();
+    pack->parsers.push_back(std::make_unique<CsvFormatParser>());            // 格式：文件 -> Dataset
+    pack->parsers.push_back(std::make_unique<CustomProtocolFormatParser>()); // 格式：.psproto 模板 + 二进制帧
+
+    pack->docs.append({
+        {QStringLiteral("common.doc.csv"), QStringLiteral("CSV 载入指南"),
+         QStringLiteral("docs/common/csv.md"), QStringLiteral("text/markdown")}});
+
+    return pack;
 }
 
 } // namespace nextpilot::plotscope::ext

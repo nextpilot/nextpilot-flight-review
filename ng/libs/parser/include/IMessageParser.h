@@ -18,10 +18,8 @@
  */
 
 #include "Intent.h"
-#include "ContributionKind.h"
 #include "DecodedFrame.h"
 #include "Domain.h"
-#include "Contribution.h"
 #include "ParamSpec.h"
 
 #include <QByteArray>
@@ -35,9 +33,7 @@
 namespace nextpilot::plotscope::parser
 {
 
-namespace ContributionKind = nextpilot::plotscope::registry::ContributionKind;
 using nextpilot::plotscope::registry::Domain;
-using nextpilot::plotscope::registry::IToolContribution;
 using nextpilot::plotscope::intent::Intent;
 using nextpilot::plotscope::uischema::ParamSpec;
 
@@ -54,17 +50,17 @@ using FrameBatchSink = std::function<bool(const QJsonObject &)>; // 一批数值
 
 
 
-class IMessageParser : public IToolContribution
+class IMessageParser
 {
 public:
-    ~IMessageParser() override = default;
+    virtual ~IMessageParser() = default;
 
-    // 贡献类型固定为 message（格式声明已并入，不再有 kind=format 的独立门面）。
-    QString kind() const final { return ContributionKind::Message; }
-
-    // === 身份与领域 ===
+    // === 身份与归属（字段语义：provider/domain 由 ExtensionRegistry::mount 写入）===
+    virtual QString id() const = 0;
     virtual QString displayName() const = 0;
-    Domain domain() const override { return Domain::General; }
+    virtual Domain domain() const { return Domain::General; }
+    QString provider() const { return m_provider; }
+    void setProvider(const QString &packId) { m_provider = packId; }
 
     // === 协议自述 ===
     virtual QString protocolName() const { return displayName(); }
@@ -167,6 +163,9 @@ public:
 
 protected:
     QJsonObject m_params; // configure 传入的参数快照；派生类只读，不写全局
+
+private:
+    QString m_provider; // 所属包 id（mount() 写入），按包原子装卸的依据
 };
 
 // === transfer 协议 id ===

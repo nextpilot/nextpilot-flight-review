@@ -9,7 +9,7 @@
 // 宿主与器官零改动。
 //
 // 外部插件走另一条路径：由 PluginScanner 扫描动态库、校验 ABI 后，把插件提供的
-// 整个 ToolPack registerPack 进同一个 registry。
+// 整个 Pack mount 进同一个 registry。
 namespace nextpilot::plotscope::ext
 {
 

@@ -2,7 +2,6 @@
 // 验证泛型 CRUD、自注册宏、工厂型条目。
 
 #include "Registry.h"
-#include "IndexedByKind.h"
 #include "StaticAutoRegistry.h"
 
 #include <QCoreApplication>
@@ -13,7 +12,6 @@
 #include <functional>
 #include <string>
 
-using nextpilot::plotscope::registry::IndexedByKind;
 using nextpilot::plotscope::registry::Registry;
 using nextpilot::plotscope::registry::StaticRegistry;
 
@@ -88,22 +86,6 @@ int main(int argc, char **argv)
     CHECK(ping != nullptr);
     if (ping)
         CHECK(ping->value == 42);
-
-    // --- 二维索引 mixin：kind → 条目列表，保组内插入顺序 ---
-    IndexedByKind<int> byKind;
-    CHECK(byKind.isEmpty());
-    byKind.insert("message", 1);
-    byKind.insert("message", 2);
-    byKind.insert("ui", 3);
-    CHECK(byKind.count() == 3);
-    CHECK(byKind.values("message") == (QList<int>{1, 2}));
-    CHECK(byKind.values("ui") == (QList<int>{3}));
-    CHECK(byKind.values("missing").isEmpty());
-    auto ks = byKind.kinds();
-    ks.sort();
-    CHECK(ks == (QStringList{"message", "ui"}));
-    byKind.clear();
-    CHECK(byKind.isEmpty());
 
     // --- 工厂型条目（std::function），证明可承载 PanelFactory 同型条目 ---
     Registry<std::function<int(int)>> factories;

@@ -40,16 +40,16 @@ QJsonObject collect(App &application)
     // 知识包
     QJsonArray packs;
     const auto &toolbox = application.host().extensions();
-    for (const QString &packId : toolbox.packIds())
+    for (const auto &pack : toolbox.packs.values())
     {
-        IToolPack *pack = toolbox.pack(packId);
-        if (!pack)
-            continue;
+        const int entries = toolbox.uiActions.count() + toolbox.panels.count()
+                            + toolbox.scripts.count() + toolbox.dataAssets.count()
+                            + toolbox.docs.count() + toolbox.examples.count();
+        Q_UNUSED(entries);
         packs.append(QJsonObject{
-            { QStringLiteral("id"), pack->id() },
-            { QStringLiteral("name"), pack->displayName() },
-            { QStringLiteral("domain"), QString::fromLatin1(domainKey(pack->domain())) },
-            { QStringLiteral("contributions"), static_cast<int>(pack->contributions().size()) },
+            { QStringLiteral("id"), pack.id },
+            { QStringLiteral("name"), pack.name },
+            { QStringLiteral("domain"), QString::fromLatin1(domainKey(pack.domain)) },
         });
     }
     root[QStringLiteral("packs")] = packs;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Contribution.h"
+#include "ExtensionRegistry.h"
 
 #include <QString>
 
@@ -9,24 +9,13 @@
 namespace nextpilot::plotscope::ext
 {
 
-// 通用知识包（CSV 等通用格式 + 通用文档）。
-//
-// 每个领域包一个独立文件，用 NG_REGISTER_PACK 静态自注册：
-// 新增一个领域包 = 新增一个目录 + 一行 CMake，既有的包、宿主、App 全都不动。
-class CommonPack final : public nextpilot::plotscope::registry::IToolPack
+// 通用知识包：CSV / 自定义协议格式 + 通用文档。
+// 包只是一个 build() 工厂：填一份纯数据清单（Pack），宿主 mount() 挂进工具箱。
+class CommonPack
 {
 public:
     static QString packId();
-    static std::unique_ptr<nextpilot::plotscope::registry::IToolPack> build();
-
-    QString id() const override;
-    QString displayName() const override;
-    nextpilot::plotscope::registry::Domain domain() const override;
-    const std::vector<std::unique_ptr<nextpilot::plotscope::registry::IToolContribution>> &contributions() const override;
-    std::vector<std::unique_ptr<nextpilot::plotscope::registry::IToolContribution>> &contributions() override;
-
-private:
-    nextpilot::plotscope::registry::ToolPack m_pack;
+    static std::unique_ptr<nextpilot::plotscope::registry::Pack> build();
 };
 
 } // namespace nextpilot::plotscope::ext

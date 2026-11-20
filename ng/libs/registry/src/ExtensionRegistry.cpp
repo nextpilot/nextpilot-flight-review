@@ -1,6 +1,7 @@
 #include "ExtensionRegistry.h"
 
 #include <QHash>
+#include <QSet>
 
 #include <algorithm>
 
@@ -21,6 +22,11 @@ BuiltinPackStore &builtinPacks()
 {
     static BuiltinPackStore s;
     return s;
+}
+
+bool producesFrames(const IMessageParser *p)
+{
+    return p && p->outputs().contains(ParseOutput::FrameBatch);
 }
 
 } // namespace
@@ -45,8 +51,9 @@ QStringList ExtensionRegistry::installBuiltinPacks()
         auto pack = entry.second();
         if (!pack)
             continue;
-        if (registerPack(std::move(pack)))
-            installed.append(entry.first);
+        const QString pid = pack->id;
+        if (mount(std::move(*pack)))
+            installed.append(pid);
     }
     return installed;
 }
@@ -58,159 +65,126 @@ void ExtensionRegistry::resetBuiltinPacks()
     r.indexById.clear();
 }
 
-void ExtensionRegistry::rebuildIndexes()
+bool ExtensionRegistry::mount(Pack pack)
 {
-    m_packIndex.clear();
-    m_byId.clear();
-    m_byKind.clear();
-    m_packOrder.clear();
-    m_idOrder.clear();
-
-    for (const auto &pack : m_owned)
-    {
-        m_packIndex.insert(pack->id(), pack.get());
-        m_packOrder.append(pack->id());
-        for (const auto &c : pack->contributions())
-        {
-            if (!c)
-                continue;
-            m_byId.insert(c->id(), c.get());
-            m_byKind.insert(c->kind(), c.get());
-            m_idOrder.append(c->id());
-        }
-    }
-}
-
-bool ExtensionRegistry::registerPack(std::unique_ptr<IToolPack> pack)
-{
-    if (!pack || pack->id().isEmpty() || m_packIndex.contains(pack->id()))
+    if (pack.id.isEmpty())
         return false;
 
-    // 校验贡献 id 全局唯一，且 provider 与包一致。
+    // 校验：包 id 与全部条目 id 全局唯一（先到者为准）。
+    if (packs.contains(pack.id))
+        return false;
     QSet<QString> seen;
-    for (const auto &c : pack->contributions())
-    {
-        if (!c || c->id().isEmpty())
+    seen.insert(pack.id);
+    const auto checkId = [&seen](const QString &id) {
+        if (id.isEmpty() || seen.contains(id))
             return false;
-        if (seen.contains(c->id()) || m_byId.contains(c->id()))
+        seen.insert(id);
+        return true;
+    };
+    for (const UiAction &a : pack.uiActions)
+        if (!checkId(a.id) || uiActions.contains(a.id))
             return false;
-        seen.insert(c->id());
-    }
-    for (const auto &c : pack->contributions())
-        if (c)
-            c->setProvider(pack->id());
+    for (const PanelSpec &p : pack.panels)
+        if (!checkId(p.id) || panels.contains(p.id))
+            return false;
+    for (const ScriptSpec &s : pack.scripts)
+        if (!checkId(s.id) || scripts.contains(s.id))
+            return false;
+    for (const DataAsset &d : pack.dataAssets)
+        if (!checkId(d.id) || dataAssets.contains(d.id))
+            return false;
+    for (const DocEntry &d : pack.docs)
+        if (!checkId(d.id) || docs.contains(d.id))
+            return false;
+    for (const ExampleEntry &e : pack.examples)
+        if (!checkId(e.id) || examples.contains(e.id))
+            return false;
+    for (const auto &p : pack.parsers)
+        if (!p || !checkId(p->id()) || parser(p->id()) != nullptr)
+            return false;
 
-    m_owned.push_back(std::move(pack));
-    rebuildIndexes();
+    // 挂载：写归属字段，各列表分插进对应类型的表。
+    const QString provider = pack.id;
+    const Domain domain = pack.domain;
+    const auto stamp = [provider, domain](auto &entry) {
+        entry.provider = provider;
+        entry.domain = domain;
+    };
+    for (UiAction &a : pack.uiActions)
+    {
+        stamp(a);
+        uiActions.insert(a.id, a);
+    }
+    for (PanelSpec &p : pack.panels)
+    {
+        stamp(p);
+        panels.insert(p.id, p);
+    }
+    for (ScriptSpec &s : pack.scripts)
+    {
+        stamp(s);
+        scripts.insert(s.id, s);
+    }
+    for (DataAsset &d : pack.dataAssets)
+    {
+        stamp(d);
+        dataAssets.insert(d.id, d);
+    }
+    for (DocEntry &d : pack.docs)
+    {
+        stamp(d);
+        docs.insert(d.id, d);
+    }
+    for (ExampleEntry &e : pack.examples)
+    {
+        stamp(e);
+        examples.insert(e.id, e);
+    }
+    for (auto &p : pack.parsers)
+    {
+        p->setProvider(provider);
+        m_parsers.push_back(std::move(p));
+    }
+    packs.insert(pack.id, PackInfo{pack.id, pack.name, pack.domain});
     return true;
 }
 
-bool ExtensionRegistry::unregisterPack(const QString &packId)
+bool ExtensionRegistry::unmount(const QString &packId)
 {
-    auto it = std::find_if(m_owned.begin(), m_owned.end(),
-                           [&packId](const std::unique_ptr<IToolPack> &p) {
-                               return p && p->id() == packId;
-                           });
-    if (it == m_owned.end())
+    if (!packs.contains(packId))
         return false;
-    m_owned.erase(it); // 包连同其全部贡献一起释放 —— 原子撤销
-    rebuildIndexes();
+    // 按包原子撤销：从各表移除 provider == packId 的全部条目，扩展之间互不牵连。
+    const auto dropByProvider = [packId](auto &table) {
+        for (const QString &id : table.keys())
+        {
+            const auto *e = table.find(id);
+            if (e && e->provider == packId)
+                table.remove(id);
+        }
+    };
+    dropByProvider(uiActions);
+    dropByProvider(panels);
+    dropByProvider(scripts);
+    dropByProvider(dataAssets);
+    dropByProvider(docs);
+    dropByProvider(examples);
+    m_parsers.erase(std::remove_if(m_parsers.begin(), m_parsers.end(),
+                                   [&packId](const auto &p) {
+                                       return p && p->provider() == packId;
+                                   }),
+                    m_parsers.end());
+    packs.remove(packId);
     return true;
 }
 
-QStringList ExtensionRegistry::packIds() const
-{
-    return m_packOrder;
-}
-
-IToolPack *ExtensionRegistry::pack(const QString &packId) const
-{
-    return m_packIndex.value(packId, nullptr);
-}
-
-int ExtensionRegistry::packCount() const
-{
-    return static_cast<int>(m_owned.size());
-}
-
-QList<IToolContribution *> ExtensionRegistry::contributions() const
-{
-    QList<IToolContribution *> out;
-    out.reserve(m_idOrder.size());
-    for (const QString &id : m_idOrder)
-        if (IToolContribution *c = m_byId.value(id, nullptr))
-            out.append(c);
-    return out;
-}
-
-QList<IToolContribution *> ExtensionRegistry::contributions(const QString &kind) const
-{
-    return m_byKind.values(kind);
-}
-
-QList<IToolContribution *> ExtensionRegistry::contributions(const QString &kind,
-                                                            Domain domain) const
-{
-    QList<IToolContribution *> out;
-    for (IToolContribution *c : m_byKind.values(kind))
-        if (c->domain() == domain)
-            out.append(c);
-    return out;
-}
-
-QList<IToolContribution *> ExtensionRegistry::contributionsByDomain(Domain domain) const
-{
-    QList<IToolContribution *> out;
-    for (const QString &id : m_idOrder)
-    {
-        IToolContribution *c = m_byId.value(id, nullptr);
-        if (c && c->domain() == domain)
-            out.append(c);
-    }
-    return out;
-}
-
-IToolContribution *ExtensionRegistry::contribution(const QString &id) const
-{
-    return m_byId.value(id, nullptr);
-}
-
-QStringList ExtensionRegistry::kinds() const
-{
-    return m_byKind.kinds();
-}
-
-QStringList ExtensionRegistry::contributionIds() const
-{
-    return m_idOrder;
-}
-
-bool ExtensionRegistry::containsContribution(const QString &id) const
-{
-    return m_byId.contains(id);
-}
-
-int ExtensionRegistry::contributionCount() const
-{
-    return m_byId.count();
-}
-
-namespace
-{
-bool producesFrames(const IMessageParser *p)
-{
-    return p && p->outputs().contains(ParseOutput::FrameBatch);
-}
-} // namespace
-
-// === 统一解析器视图（所有 kind=message 的 IMessageParser）===
+// === 解析器视图（行为式条目）===
 
 QList<IMessageParser *> ExtensionRegistry::parsers() const
 {
     QList<IMessageParser *> out;
-    for (IToolContribution *c : m_byKind.values(ContributionKind::Message))
-        if (auto *p = dynamic_cast<IMessageParser *>(c))
-            out.append(p);
+    out.reserve(static_cast<int>(m_parsers.size()));
+    for (const auto &p : m_parsers)
+        out.append(p.get());
     return out;
 }
 
@@ -225,10 +199,10 @@ QList<IMessageParser *> ExtensionRegistry::parsersByDomain(Domain domain) const
 
 IMessageParser *ExtensionRegistry::parser(const QString &id) const
 {
-    IToolContribution *c = m_byId.value(id, nullptr);
-    return (c && c->kind() == ContributionKind::Message)
-               ? dynamic_cast<IMessageParser *>(c)
-               : nullptr;
+    for (const auto &p : m_parsers)
+        if (p && p->id() == id)
+            return p.get();
+    return nullptr;
 }
 
 IMessageParser *ExtensionRegistry::parserForProtocol(const QString &protocolId) const
@@ -255,18 +229,18 @@ bool ExtensionRegistry::registerDriver(std::unique_ptr<IMessageParser> driver)
 {
     if (!driver)
         return false;
-    auto pack = std::make_unique<ToolPack>(QStringLiteral("auto.") + driver->id(),
-                                           driver->displayName(), driver->domain());
-    pack->contributions().push_back(std::move(driver));
-    return registerPack(std::move(pack));
+    Pack pack;
+    pack.id = QStringLiteral("auto.") + driver->id();
+    pack.name = driver->displayName();
+    pack.domain = driver->domain();
+    pack.parsers.push_back(std::move(driver));
+    return mount(std::move(pack));
 }
 
 bool ExtensionRegistry::unregisterDriver(const QString &id)
 {
-    IToolContribution *c = m_byId.value(id, nullptr);
-    if (!c || c->kind() != ContributionKind::Message)
-        return false;
-    return unregisterPack(c->provider());
+    IMessageParser *p = parser(id);
+    return p ? unmount(p->provider()) : false;
 }
 
 IMessageParser *ExtensionRegistry::driverForFormat(const QString &format) const
@@ -324,7 +298,7 @@ QStringList ExtensionRegistry::ids() const
 
 bool ExtensionRegistry::contains(const QString &id) const
 {
-    return m_byId.contains(id);
+    return parser(id) != nullptr;
 }
 
 int ExtensionRegistry::count() const

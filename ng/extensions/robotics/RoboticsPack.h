@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Contribution.h"
+#include "ExtensionRegistry.h"
 
 #include <QString>
 
@@ -9,21 +9,13 @@
 namespace nextpilot::plotscope::ext
 {
 
-// 机器人知识包：预留领域，后续平移 MCAP / ROSbag2 格式。
-class RoboticsPack final : public nextpilot::plotscope::registry::IToolPack
+// 机器人知识包：预留领域，机器人消息中间件（MCAP / ROSbag2）格式后续平移时落入本包。
+// 包只是一个 build() 工厂：填一份纯数据清单（Pack），宿主 mount() 挂进工具箱。
+class RoboticsPack
 {
 public:
     static QString packId();
-    static std::unique_ptr<nextpilot::plotscope::registry::IToolPack> build();
-
-    QString id() const override;
-    QString displayName() const override;
-    nextpilot::plotscope::registry::Domain domain() const override;
-    const std::vector<std::unique_ptr<nextpilot::plotscope::registry::IToolContribution>> &contributions() const override;
-    std::vector<std::unique_ptr<nextpilot::plotscope::registry::IToolContribution>> &contributions() override;
-
-private:
-    nextpilot::plotscope::registry::ToolPack m_pack;
+    static std::unique_ptr<nextpilot::plotscope::registry::Pack> build();
 };
 
 } // namespace nextpilot::plotscope::ext

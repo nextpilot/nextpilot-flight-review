@@ -538,13 +538,15 @@ NG_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 
 ### 5.4 注册表全景：一张表说清谁是什么
 
-**架构裁决：`Registry<T,Key>` 是唯一的容器机制**——所有注册表的容器本体都
-委托它（保序：keys() 按插入序），壳类只保留各自的领域语义。看名字就知道层次：
+**架构裁决：`Registry<T,Key>` 是唯一的容器机制，其余全是数据，挂进去就完事**
+（uORB 的组织方式：类型提前定义好，接口极少，任何新能力都不新增概念——只是
+又一条 `<T>` 数据）。所有注册表的容器本体都委托它（保序：keys() 按插入序），
+壳只保留各自的领域语义。看名字就知道层次：
 
 | 层 | 注册表 | 容器本体 | 壳保留的领域语义 |
 |---|---|---|---|
 | **机制**（libs/registry） | `Registry<T,Key>` / `StaticRegistry<T>` | —— 自身 | 纯值容器：insert/find/remove/keys/values/clear，保序 |
-| **能力**（libs/registry） | `ExtensionRegistry` | `Registry<IToolPack*>` + 二维索引 | 包级装卸、(kind,domain) 索引、解析器视图 |
+| **数据挂载**（libs/registry） | `ExtensionRegistry` | 七张 `Registry<T>`：packs / uiActions / panels / scripts / dataAssets / docs / examples | mount/unmount 按包原子装卸（写 provider/domain 归属字段）、解析器视图（唯一行为式条目） |
 | | `ParserRegistry` | 泛型表 | 解析器资产（进程一份，无生命周期） |
 | | `PanelFactoryRegistry` | `StaticRegistry<工厂>` | 面板实现工厂（编译期自注册） |
 | | `UiSlotRegistry` | 插槽声明 + 绑定视图 | 骨架槽唯一声明处、动作→槽绑定 |
@@ -552,6 +554,20 @@ NG_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 | | `SourceRegistry` | `Registry<DataSourceInfo,int>` | id 分配、信号、解析器绑定关系、dataset 反查 |
 | | `DerivedSeriesRegistry` | `Registry<Entry,QString>` | 同名覆盖刷新缓存、水位推进、按 dataset 级联清理 |
 | | `SinkRegistry`（规划） | `Registry<SinkSession,int>` | 流录制会话：id 分配、start/stop、样本计数 |
+
+**贡献体系纪律（无虚基类、无包装类、无 kind 字符串索引）**：
+
+- 六类贡献 = 六个纯数据 struct（`UiAction` / `PanelSpec` / `ScriptSpec` /
+  `DataAsset` / `DocEntry` / `ExampleEntry`，见 `Contribution.h`），身份
+  （id / provider / domain）是字段，不是虚函数；provider/domain 由 mount()
+  自动写入，包作者永远不填。
+- 包 = 一份纯数据清单（`Pack`：六个列表 + 解析器所有权）。包作者填清单 →
+  `toolbox.mount(std::move(pack))` 挂进去；`unmount(packId)` 按 provider 原子撤。
+- 查询 = 按类型读表：`toolbox.uiActions.find(id)` / `panels.values()`，类型即
+  身份，无转型、无 `(kind,domain)` 二维索引（领域过滤就是对条目 domain 字段过滤）。
+- 解析器是唯一有行为的贡献（真有 parse），走注册表内的解析器通道，与数据表并列。
+- 历史遗留已清除：`IToolContribution` / 6 个 `I*Contribution` / `IToolPack` /
+  `ToolPack` 六个 add 方法 / `IndexedByKind` / `ContributionKind`（kind 字符串）全部删除。
 
 **词汇表纪律**：`Repository` 一词已消灭——会话实例容器一律 `XxxRegistry`，
 内部委托泛型表；看到类名即知"运行态实例"还是"进程级能力"。

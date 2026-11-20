@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Contribution.h"
+#include "ExtensionRegistry.h"
 
 #include <QString>
 
@@ -10,20 +10,12 @@ namespace nextpilot::plotscope::ext
 {
 
 // 飞控知识包：ULog 格式 + 飞控 UI/脚本/数据/例子/文档（六类齐全的样板）。
-class AutopilotPack final : public nextpilot::plotscope::registry::IToolPack
+// 包只是一个 build() 工厂：填一份纯数据清单（Pack），宿主 mount() 挂进工具箱。
+class AutopilotPack
 {
 public:
     static QString packId();
-    static std::unique_ptr<nextpilot::plotscope::registry::IToolPack> build();
-
-    QString id() const override;
-    QString displayName() const override;
-    nextpilot::plotscope::registry::Domain domain() const override;
-    const std::vector<std::unique_ptr<nextpilot::plotscope::registry::IToolContribution>> &contributions() const override;
-    std::vector<std::unique_ptr<nextpilot::plotscope::registry::IToolContribution>> &contributions() override;
-
-private:
-    nextpilot::plotscope::registry::ToolPack m_pack;
+    static std::unique_ptr<nextpilot::plotscope::registry::Pack> build();
 };
 
 } // namespace nextpilot::plotscope::ext

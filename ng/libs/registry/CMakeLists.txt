@@ -3,12 +3,10 @@
 # 只依赖 Qt Core + STL + foundation(Result)，headless 可用。
 add_library(ng_registry STATIC
     src/Domain.cpp
-    src/ContributionKind.cpp
     src/ExtensionRegistry.cpp
     src/UiSlotRegistry.cpp
     src/PanelFactoryRegistry.cpp
     include/Domain.h
-    include/ContributionKind.h
     include/Contribution.h
     include/ExtensionRegistry.h
     include/UiSlotRegistry.h
