@@ -1023,3 +1023,11 @@ S3b 排在 S4 之前的理由：实时推流要的 `calculate(t,v)` 入口在 S3
 - **当前边界**：NG 尚无真实 live 运行时（ring/推送引擎未落地），暂停语义目前是**运行时实例的状态标记**——真实暂停（停止向数据集推送样本）在 live 数据引擎落地后自然生效，接口无需再改。shot_gui `--livesource=<名>[:paused]` 注册演示 live 源用于真机验收。
 - **测试**：test_gui「live 源暂停/继续」7 断言——pause/resume 双向切换 + 幂等 + 文件源 `enotsupported` + 未知源拒绝 + 面板状态文案（已暂停/运行中）；Release+Debug 双配置 23/23。
 - **截图**：`docs/screenshots/ng-live-streaming.png`（运行中⏸）、`docs/screenshots/ng-live-paused.png`（已暂停▶）。
+
+## 20. 通用导入对话框验收收尾（#74/#75，2026-11-20 落地）
+
+- **实现早已在库**：`ImportDialog`（schema 驱动，渲染 `configSchema` 字段、调 `probeFile`、预览表、ThemeManager token 上色）+ `MainWindow::openDataFile` 已从 QFileDialog 切到该对话框，收集 path/format/optionsJson 后发 `data.load`（与 CLI/脚本同路径）。本轮补齐 #75 验收三件套。
+- **测试诊断接口**：`fieldCount/currentFormatId/previewRowCount/warningText`；`accept()` 移到 public（QDialog 本就是公开 API），测试不经 exec 直接验证收集链路。
+- **修复真实潜伏 bug**：`rebuildFields` 清理循环用 `rowCount()`（表单行数）配 `takeAt(0)`（条目列表）——空表单上 takeAt 返回 nullptr 直接段错误。改用 `count()` 口径 + 空指针保护。**该 bug 在任何 GUI 打开数据路径都会崩，契约测试抓出后修复。**
+- **测试**：test_gui「通用导入对话框」——csv 后缀自动选中驱动 + schema 字段渲染 + probe 预览 + accept 收集三元组 + 探测失败进警告条；Release+Debug 双配置 23/23。
+- **截图**：`shot_gui --import=<path>`（早分支独立验收），`docs/screenshots/ng-import-dialog.png`——格式=CSV 解析器、解析选项表单（分隔符/表头/时间轴）、探测摘要「8 列 · 8 行预览」、预览表真实数据。

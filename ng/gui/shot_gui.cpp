@@ -23,6 +23,7 @@
 #include "ProtocolTemplateStore.h"
 #include "TransformEditorDialog.h"
 #include "FilterEditorDialog.h"
+#include "ImportDialog.h"
 #include "Transform.h"
 #include "ShellBinder.h"
 #include "SARibbonCategory.h"
@@ -59,6 +60,20 @@ int main(int argc, char *argv[])
         return 2;
     }
     const QString out = QString::fromLocal8Bit(argv[1]);
+
+    // --import[=<path>]：早分支参数（截图通用导入对话框，#74/#75）。
+    QString importArg;
+    bool importArgSeen = false;
+    for (int i = 2; i < argc; ++i)
+    {
+        const QString a = QString::fromLocal8Bit(argv[i]);
+        if (a == QStringLiteral("--import") || a.startsWith(QStringLiteral("--import=")))
+        {
+            importArg = a.startsWith(QStringLiteral("--import="))
+                            ? a.mid(QStringLiteral("--import=").size()) : QString();
+            importArgSeen = true;
+        }
+    }
 
     // --protocol <输出png> [模板路径] [样例帧hex] [页签序号]：截图协议编辑器（触发校验/试算）。
     // 给模板路径时按"打开现有协议"的真实路径载入（走 ProtocolTemplateStore，与 GUI 同一份）。
@@ -270,6 +285,27 @@ int main(int argc, char *argv[])
                     switched ? "已切换" : "未找到");
         }
         QCoreApplication::processEvents();
+    }
+
+    // --import[=<path>]：截通用"打开数据"对话框（#74/#75 验收）。
+    // 走真实对话框：schema 驱动渲染 + probeFile 探测 + 预览表，不硬编码任何格式。
+    // 独立验收：不需要先加载数据文件。
+    if (importArgSeen)
+    {
+        ImportDialog dlg(application.context().toolbox());
+        if (!importArg.isEmpty())
+            dlg.setPath(importArg); // 预填路径立即探测（与"打开方式"同路径）
+        dlg.resize(760, 620);
+        dlg.show();
+        QCoreApplication::processEvents();
+        const QPixmap shot = dlg.grab();
+        if (shot.save(out))
+            fprintf(stdout, "导入对话框截图已保存: %s (%dx%d) fields=%d format=%s previewRows=%d\n",
+                    qPrintable(out), shot.width(), shot.height(),
+                    dlg.fieldCount(), qPrintable(dlg.currentFormatId()), dlg.previewRowCount());
+        else
+            fprintf(stderr, "导入对话框截图保存失败: %s\n", qPrintable(out));
+        return 0;
     }
 
     // 载入数据（与 CLI 完全相同的数据.load 意图路径）。

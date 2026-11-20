@@ -15,6 +15,7 @@
 #include "App.h"
 
 #include "DataManagerPanel.h"
+#include "ImportDialog.h"
 #include "GuiContext.h"
 #include "MainWindow.h"
 #include "views/PropertyPanel.h"
@@ -40,6 +41,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -1377,6 +1379,35 @@ int main(int argc, char *argv[])
         //     通过 view action 之外的真实路径——直接读源注册表确认面板刷新来源一致。
         CHECK(sources.get(liveId)->kind == SourceKind::Live);
         OK("live 源暂停/继续：data.pause/resume 切 Streaming/Paused + 幂等 + 文件源拒绝");
+    }
+
+    // --- 通用导入对话框（#74/#75）：schema 驱动渲染 + probe + 选项收集 ---
+    {
+        ImportDialog dlg(application.context().toolbox());
+
+        // (1) 预填路径立即探测（与 MainWindow::openDataFile 同一条真实链路）。
+        dlg.setPath(fixture);
+        CHECK(dlg.currentFormatId() == QStringLiteral("csv"));  // 按后缀选中 csv 驱动
+        CHECK(dlg.fieldCount() > 0);                            // configSchema 字段已渲染成控件
+        CHECK(dlg.previewRowCount() > 0);                       // probeFile 预览表有数据
+
+        // (2) accept 收集：path/format/optionsJson 三元组完整，options 是合法 JSON。
+        dlg.accept();
+        const ImportDialog::Result picked = dlg.result();
+        CHECK(picked.ok());
+        CHECK(picked.path == fixture);
+        CHECK(picked.format == QStringLiteral("csv"));
+        const QJsonObject opts = QJsonDocument::fromJson(picked.optionsJson).object();
+        CHECK(QJsonDocument(opts).isObject());  // 反序列化成功 = 合法 JSON
+
+        // (3) 探测失败路径：文件不存在 → probeFile 报错进警告条，result 仍为空。
+        ImportDialog dlg2(application.context().toolbox());
+        dlg2.setPath(QStringLiteral("/nonexistent/missing_file.csv"));
+        CHECK(!dlg2.warningText().isEmpty());   // probe 错误文案可见
+        CHECK(dlg2.previewRowCount() == 0);     // 无预览
+        CHECK(!dlg2.result().ok());             // 未确认，无结果
+
+        OK("通用导入对话框：schema 渲染 + probe 预览 + options 收集，全部走真实链路");
     }
 
     // --- analysis/protocol module：分析 galley 与协议入口已贡献 ---

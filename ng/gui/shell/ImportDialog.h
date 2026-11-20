@@ -45,6 +45,16 @@ public:
     // 静态便捷：弹出对话框，用户确认返回结果；取消返回空 Result。
     static Result run(nextpilot::plotscope::registry::ExtensionRegistry &registry, QWidget *parent = nullptr);
 
+    // --- 诊断/测试用（#75 验收：不 exec 也能验证 schema 渲染与 probe 链路）---
+    int fieldCount() const;            // 已渲染的 schema 字段控件数
+    QString currentFormatId() const;   // 当前选中的格式驱动 id（空=未选中）
+    int previewRowCount() const;       // 探测预览表行数（0=无预览/未探测）
+    QString warningText() const;       // probe 警告/错误文案
+
+    // 公开 accept（QDialog 本就是公开 API）：收集 path/format/optionsJson 三元组。
+    // 测试不经 exec 直接调用，验证收集链路。
+    void accept() override;
+
 private:
     void rebuildFormatList();
     void onFormatChanged();
@@ -52,7 +62,6 @@ private:
     void refreshProbe();
     void rebuildFields();
     void updatePreview();
-    void accept() override;
 
     nextpilot::plotscope::registry::ExtensionRegistry &m_registry;
     Result m_result;

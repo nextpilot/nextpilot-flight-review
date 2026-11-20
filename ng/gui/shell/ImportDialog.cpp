@@ -250,10 +250,14 @@ void ImportDialog::refreshProbe()
 
 void ImportDialog::rebuildFields()
 {
-    // 清空旧控件（removeRow 只断布局，需手动 delete）。
-    while (d->fieldsForm->rowCount() > 0)
+    // 清空旧控件。注意口径：takeAt 按**条目列表**取（count()），
+    // rowCount() 是表单行数（可为条目数的 2 倍），两者混用会在空表单上
+    // 让 takeAt 返回 nullptr → 解引用崩溃（#75 契约测试抓出）。
+    while (d->fieldsForm->count() > 0)
     {
         QLayoutItem *item = d->fieldsForm->takeAt(0);
+        if (!item)
+            break;
         if (QWidget *w = item->widget())
         {
             w->setParent(nullptr);
@@ -369,6 +373,32 @@ void ImportDialog::accept()
     m_result.format = d->current->id();
     m_result.optionsJson = QJsonDocument(options).toJson(QJsonDocument::Compact);
     QDialog::accept();
+}
+
+int ImportDialog::fieldCount() const
+{
+    using namespace nextpilot::plotscope::uischema;
+    int n = 0;
+    const auto widgets = d->fieldsHost->findChildren<QWidget *>();
+    for (QWidget *w : widgets)
+        if (!QtFieldRenderer::keyOf(w).isEmpty())
+            ++n;
+    return n;
+}
+
+QString ImportDialog::currentFormatId() const
+{
+    return d->current ? d->current->id() : QString();
+}
+
+int ImportDialog::previewRowCount() const
+{
+    return d->preview->rowCount();
+}
+
+QString ImportDialog::warningText() const
+{
+    return d->warning->text();
 }
 
 ImportDialog::Result ImportDialog::run(nextpilot::plotscope::registry::ExtensionRegistry &registry, QWidget *parent)
