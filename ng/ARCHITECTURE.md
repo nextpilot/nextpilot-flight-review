@@ -1036,3 +1036,21 @@ CLI 九入口实测可用；**CLI 无任何 GUI 依赖**（ldd 验证）；
 - 不在 core 引入 QWidget（headless 纯净）；
 - 器官里不出现领域词汇（机制与知识严格分离）；
 - 不做数据库后端（当前不需要，数据层为此预留）。
+
+## 附录 A.2 工具箱的领域分类（#31/#32 契约）
+
+**工具箱 = 四个业务方向（飞控 / 汽车 / 机器人 / 卫导）+ 通用 + 视频**。
+
+- **领域是分类维度，不是边界**：`Domain` 枚举只有 6 个值（General/Autopilot/
+  Automotive/Robotics/Gnss/Video），工具箱按 `(kind, domain)` 二维索引贡献；
+  新增领域 = 枚举加一个值 + `extensions/<域>/` 建包，其余代码不动。
+- **格式是领域内的能力**：一个格式驱动（IMessageParser）总属于一个领域——
+  CSV/自定义协议/Pspx 归通用，ULog 归飞控，NMEA 归卫导；同一领域可以有
+  任意多个格式、分析应用、面板、脚本。
+- **目录结构即领域结构**：
+  `extensions/common|autopilot|automotive|robotics|gnss/`（知识层，纯数据，
+  CLI 也链接）+ `extensions/<域>/gui/`（呈现层，QWidget 面板，只 GUI 链接，
+  依赖方向呈现层 → core 的 PanelFactoryRegistry，绝不依赖 ng_gui）。
+- **CLI 按领域分组展示**：`--list-formats` 按 通用→飞控→汽车→机器人→卫导→视频
+  的顺序分节列出驱动；`driversByDomain(domain)` / `domainName(domain)` 是
+  查询契约（test_architecture 断言覆盖领域归属与中文域名）。
