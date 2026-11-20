@@ -170,6 +170,28 @@ struct SegmentDef
     DigestSpec digest;
 };
 
+// 块（v3）：一组字段的整体，段用 type 引用块名。
+//   无 of = 顺序块：按自身顺序读字节，可配合 count:"*" 整体重复；
+//   有 of = 位域块：先读一个 of 类型的容器值，再按 fields 切位（偏移相对容器起点）。
+// 块只允许一层：fields 里不再引用别的块。
+struct BlockDef
+{
+    std::string name;
+    std::string of;
+    std::string description;
+    std::vector<SegmentDef> fields;
+};
+
+// 派生字段（v3 顶层 derived）：不读字节，按序用已解析的段/前序派生求值。
+struct DerivedDef
+{
+    std::string name;
+    ExprPtr expr;
+    std::string unit;
+    std::string description;
+    EmitMode emitMode = EmitMode::Channel;
+};
+
 // 类型别名（对应 DBC SGTYPE）：段写 type:"imu" 时展开成这里的类型/换算/值域。
 struct AliasDef
 {
@@ -217,6 +239,8 @@ struct ProtocolDocument
     std::string endian = "little";
     uint32_t maxsize = 4096;
     std::vector<SegmentDef> segments;
+    std::map<std::string, BlockDef> blocks; // v3：可被段引用的字段组
+    std::vector<DerivedDef> derived;        // v3：顶层派生字段，按序求值
     std::map<std::string, AliasDef> aliases;
     SeriesDef series;
     bool hasTimestamp = false;

@@ -702,6 +702,62 @@ int main(int argc, char *argv[])
         OK("位序：bit=lsb0 / rbit=msb0，同字节 12 34 分别解出 0x3412 与 0x1234，回写保持");
     }
 
+    // --- 11d) v3 blocks / derived 能进模型、能回写（编译展开另测） ---
+    {
+        const QJsonObject bd = QJsonDocument::fromJson(R"json({
+            "name": "blocks_rt", "mode": "bin", "layout": "sequential",
+            "endian": "little", "maxsize": 32,
+            "blocks": {
+                "head": { "fields": [
+                    { "name": "a", "type": "u8" },
+                    { "name": "b", "type": "u16" }
+                ]},
+                "flags": { "of": "u16", "fields": [
+                    { "name": "hi", "type": "rbit", "count": "4@12" },
+                    { "name": "lo", "type": "bit",  "count": "12@0" }
+                ]}
+            },
+            "derived": [ { "name": "const", "expr": "1 + 2", "unit": "x" } ],
+            "segments": [ { "name": "h", "type": "head" }, { "name": "f", "type": "flags" } ]
+        })json").object();
+        const QStringList verrs = validate(bd);
+        if (!verrs.isEmpty())
+            fprintf(stderr, "blocks/derived 校验失败：%s\n", verrs.join(QStringLiteral("; ")).toUtf8().constData());
+        CHECK(verrs.isEmpty());
+
+        ProtocolDocument d;
+        std::string perr;
+        if (!parseDocument(bd, d, perr))
+            fprintf(stderr, "blocks/derived 解析失败：%s\n", perr.c_str());
+        CHECK(d.blocks.size() == 2);
+        CHECK(d.blocks.count("head") == 1 && d.blocks.count("flags") == 1);
+        CHECK(d.blocks["head"].of.empty());
+        CHECK(d.blocks["head"].fields.size() == 2);
+        CHECK(d.blocks["flags"].of == std::string("u16"));
+        CHECK(d.blocks["flags"].fields.size() == 2);
+        CHECK(d.blocks["flags"].fields[0].bit.order == std::string("msb0"));
+        CHECK(d.derived.size() == 1);
+        CHECK(d.derived[0].name == std::string("const"));
+        CHECK(d.derived[0].unit == std::string("x"));
+        CHECK(d.derived[0].expr != nullptr);
+
+        // 回写不丢：blocks 与 derived 都要原样回来，且不再产出 schema 已删的 version 键
+        const QJsonObject back = toJson(d);
+        CHECK(!back.contains(QStringLiteral("version")));
+        CHECK(back.contains(QStringLiteral("blocks")));
+        CHECK(back.contains(QStringLiteral("derived")));
+        const QJsonObject bko = back.value(QStringLiteral("blocks")).toObject();
+        CHECK(bko.size() == 2);
+        CHECK(bko.value(QStringLiteral("head")).toObject().value(QStringLiteral("fields")).toArray().size() == 2);
+        CHECK(bko.value(QStringLiteral("flags")).toObject().value(QStringLiteral("of")).toString() == QStringLiteral("u16"));
+        const QJsonArray bdr = back.value(QStringLiteral("derived")).toArray();
+        CHECK(bdr.size() == 1);
+        CHECK(bdr.at(0).toObject().value(QStringLiteral("name")).toString() == QStringLiteral("const"));
+        // 回写产物必须自己过得了校验（round-trip 闭合）
+        CHECK(validate(back).isEmpty());
+        OK("v3 blocks/derived：解析进模型、回写保真、回写产物自校验通过");
+    }
+
     // --- 11c) 位序负例：rbit 也必须写 宽@偏移，且位域块内同样认 ---
     {
         auto doc = [](const QString &type, const QString &count) {

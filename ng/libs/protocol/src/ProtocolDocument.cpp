@@ -1122,6 +1122,56 @@ bool parseDocument(const QJsonObject &root, ProtocolDocument &t, std::string &er
     // 形态由顶层 mode 显式声明（SPEC §2.1.1），不再靠段特征推断。
     const bool docText = (t.mode == "text");
 
+    // ---- v3 blocks：字段组。段用 type:"块名" 引用，编译期展开 ----
+    if (root.contains(QStringLiteral("blocks")))
+    {
+        const QJsonObject bo = root.value(QStringLiteral("blocks")).toObject();
+        for (auto it = bo.begin(); it != bo.end(); ++it)
+        {
+            const QJsonObject bod = it.value().toObject();
+            BlockDef bd;
+            bd.name = it.key().toStdString();
+            bd.of = bod.value(QStringLiteral("of")).toString().toLower().toStdString();
+            bd.description = bod.value(QStringLiteral("description")).toString().toStdString();
+            for (const QJsonValue &fv : bod.value(QStringLiteral("fields")).toArray())
+            {
+                SegSpec fs;
+                if (!parseSegment(fv.toObject(), t.endian, fs, err, docText, &t.aliases))
+                {
+                    err = "blocks." + bd.name + "：" + err;
+                    return false;
+                }
+                bd.fields.push_back(std::move(fs));
+            }
+            t.blocks[bd.name] = std::move(bd);
+        }
+    }
+
+    // ---- v3 derived：顶层派生字段，按序求值，可引用前序派生 ----
+    if (root.contains(QStringLiteral("derived")))
+    {
+        for (const QJsonValue &dv : root.value(QStringLiteral("derived")).toArray())
+        {
+            const QJsonObject dobj = dv.toObject();
+            DerivedDef dd;
+            dd.name = dobj.value(QStringLiteral("name")).toString().toStdString();
+            dd.unit = dobj.value(QStringLiteral("unit")).toString().toStdString();
+            dd.description = dobj.value(QStringLiteral("description")).toString().toStdString();
+            {
+                std::string ee;
+                dd.expr = jsonExpr(dobj.value(QStringLiteral("expr")), ee);
+                if (!dd.expr)
+                {
+                    err = "derived " + dd.name + " 的 expr 无效：" + ee;
+                    return false;
+                }
+            }
+            if (!parseEmit(dobj.value(QStringLiteral("output")).toString(), dd.emitMode, err))
+                return false;
+            t.derived.push_back(std::move(dd));
+        }
+    }
+
     for (const QJsonValue &sv : root.value(QStringLiteral("segments")).toArray())
     {
         SegSpec seg;
@@ -1452,7 +1502,7 @@ static QJsonObject segmentJson(const SegmentDef &seg, const ProtocolDocument &do
 QJsonObject toJson(const ProtocolDocument &doc)
 {
     QJsonObject root;
-    root["version"] = QString::fromStdString(doc.version);
+    // version 键已从 schema 删除：回写不产出，避免存回来的文件过不了自己的校验
     root["name"] = QString::fromStdString(doc.name);
     if (!doc.description.empty())
         root["description"] = QString::fromStdString(doc.description);
@@ -1492,6 +1542,50 @@ QJsonObject toJson(const ProtocolDocument &doc)
     for (const auto &seg : doc.segments)
         segs.append(segmentJson(seg, doc));
     root["segments"] = segs;
+
+    // v3 blocks：只有真的解析出块结构才回写，避免空对象污染输出
+    if (!doc.blocks.empty())
+    {
+        QJsonObject blocks;
+        for (const auto &kv : doc.blocks)
+        {
+            const BlockDef &bd = kv.second;
+            QJsonObject bo;
+            if (!bd.of.empty())
+                bo["of"] = QString::fromStdString(bd.of);
+            if (!bd.description.empty())
+                bo["description"] = QString::fromStdString(bd.description);
+            QJsonArray fields;
+            for (const auto &f : bd.fields)
+                fields.append(segmentJson(f, doc));
+            bo["fields"] = fields;
+            blocks[QString::fromStdString(bd.name)] = bo;
+        }
+        root["blocks"] = blocks;
+    }
+
+    // v3 derived：顶层派生字段，按声明顺序回写
+    if (!doc.derived.empty())
+    {
+        QJsonArray dv;
+        for (const auto &d : doc.derived)
+        {
+            QJsonObject o;
+            o["name"] = QString::fromStdString(d.name);
+            if (d.expr)
+                o["expr"] = exprJson(d.expr);
+            if (!d.unit.empty())
+                o["unit"] = QString::fromStdString(d.unit);
+            if (!d.description.empty())
+                o["description"] = QString::fromStdString(d.description);
+            if (d.emitMode == EmitMode::None)
+                o["output"] = QStringLiteral("none");
+            else if (d.emitMode == EmitMode::Aux)
+                o["output"] = QStringLiteral("aux");
+            dv.append(o);
+        }
+        root["derived"] = dv;
+    }
 
     if (doc.series.enabled && doc.series.selector)
     {
