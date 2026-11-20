@@ -1,6 +1,6 @@
 # fastplot —— 独立绘图库（只依赖 Qt Widgets，不依赖 ng/core）
 #
-# 设计见 docs/roadmap/fastplot.md。要点：
+# 设计要点：
 #   - 零拷贝：曲线只持数据指针，不复制（P2 起）
 #   - 像素列聚合：按屏幕像素列取 min/max，不逐点描线（P2 起）
 #   - 图层缓存：网格/轴画进 QPixmap，视口变化才重画

@@ -54,7 +54,7 @@ ps.plot("roll_rate", smooth)
 
 设置写入 `NextPilot/PlotScope` 配置。`文件 → 导出设置` 可以导出 JSON 或 YAML；JSON 适合脚本处理，YAML 适合人读和评审。
 
-浅色主题尚未完成，当前只提供深色界面；计划见 [`../roadmap/theme.md`](../roadmap/theme.md)。
+浅色主题尚未完成，当前只提供深色界面。
 
 ## 扩展启停
 

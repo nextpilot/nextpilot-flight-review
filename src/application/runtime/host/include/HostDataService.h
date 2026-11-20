@@ -5,7 +5,7 @@
 
 // 宿主数据访问契约：datasource/plotting 实现并注册，任何消费者（含脚本）只调用。
 // 这里刻意不带 scripting 字样——实现方不需要知道谁在用它。
-// 约束（见 roadmap/script-automation.md §3.3）：不放 QWidget*，不传 MainWindow*。
+// 约束：不放 QWidget*，不传 MainWindow*。
 
 namespace ps::host
 {

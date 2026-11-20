@@ -1,6 +1,6 @@
 # 组件与扩展模型
 
-> 当前实现指南。硬边界见 [`../../AGENTS.md`](../../AGENTS.md)；旧组件模型与决策记录在 [`../roadmap/extension-model-v1.md`](../roadmap/extension-model-v1.md) 和 [`../roadmap/extension-points.md`](../roadmap/extension-points.md)。
+> 当前实现指南。硬边界见 [`../../AGENTS.md`](../../AGENTS.md)。
 
 ## 两种加载方式
 

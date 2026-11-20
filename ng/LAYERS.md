@@ -66,7 +66,7 @@ L6  app                    组合根：创建并装配 AppContext + RuntimeHost 
 |---|---|
 | 定位 | **过渡层**：尚未迁走的静态机制暂存区，B7 后目录整体删除 |
 | 放什么 | 只允许 B1–B6 尚未迁完的存量代码；**不新增任何概念** |
-| 禁放什么 | 新功能、UI 关注点、register* 回调总线（→ L3 host，见 roadmap §7.9）、`QWidget` |
+| 禁放什么 | 新功能、UI 关注点、register* 回调总线（→ L3 host）、`QWidget` |
 | 可依赖 | L0、L1、Qt::Core |
 | 禁依赖 | L3+ 任何层 |
 | 终态 | 内容按 §7.6 映射表分流：纯数据 → L1 `context`，路由行为 → L3 `host` |
@@ -84,7 +84,7 @@ L6  app                    组合根：创建并装配 AppContext + RuntimeHost 
 | 禁依赖 | L4+ 任何层 |
 | 判定 | 协调"谁来做"属于这里；"做什么业务"属于 L4 |
 
-> `InteractionRegistry`（viewAction/property/transform 五类注册与派发）是 headless 容器，B7-0 已落地：类型定义因依赖 `Selection`/`TransformScriptOps` 在 L2 `core`，**实例由 `AppContext` owns、经 `interactions()` 取用**，`RuntimeHost` 提供注册转发。module 走 `host()`，GUI/测试走 `app().interactions()`。详见 roadmap §7.9。
+> `InteractionRegistry`（viewAction/property/transform 五类注册与派发）是 headless 容器，B7-0 已落地：类型定义因依赖 `Selection`/`TransformScriptOps` 在 L2 `core`，**实例由 `AppContext` owns、经 `interactions()` 取用**，`RuntimeHost` 提供注册转发。module 走 `host()`，GUI/测试走 `app().interactions()`。
 
 ### L4 `modules` / `extensions`
 

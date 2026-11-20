@@ -12,7 +12,7 @@ namespace nextpilot::plotscope::protocol
 
 // psproto 的值类型层。
 //
-// 设计原则（docs/roadmap/psproto-v2.md §10）：
+// 设计原则：
 //   - **值保持原类型**：段声明 u64，通道就是 u64，不存在"统一 double 视图"；
 //   - 类型属于容器（同一列必然同类型），不属于元素 —— 所以是 TypedVec，
 //     不是 vector<TypedValue>（后者每元素多带一份类型，破坏连续性与向量化）；

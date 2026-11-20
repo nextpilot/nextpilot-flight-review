@@ -76,7 +76,6 @@ PlotScope 是面向无人机、嵌入式与车辆研发的桌面日志分析工�
   - [编译与构建](docs/develop/building.md)
   - [开发约定](docs/develop/development.md)
   - [测试](docs/develop/testing.md)
-- 路线图与方案讨论：[`docs/roadmap/`](docs/roadmap/README.md)
 - UI 原型：[`docs/prototype/PlotScope-工作区原型.html`](docs/prototype/PlotScope-工作区原型.html)
 - 界面截图：[`docs/screenshots/`](docs/screenshots/)
 

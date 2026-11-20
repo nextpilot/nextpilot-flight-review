@@ -4,7 +4,6 @@
 
 - 协议本体规范：[`SPEC.md`](SPEC.md)
 - 结构校验 schema：[`psproto.schema.json`](psproto.schema.json)（可挂到编辑器做自动补全/校验）
-- 设计取舍与分批：`docs/roadmap/psproto-v2.md`
 
 ## 一个最小例子
 

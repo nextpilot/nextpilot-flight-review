@@ -4,10 +4,9 @@
 > 设计输入是你的需求；老代码（`src/`）在**填代码阶段**可作参考（协议算法、画布绘制、
 > ADS/SARibbon 用法），但**类清单与分层不照抄**——那是演进产物，不是设计。
 
-> ⚠️ **终态裁决（2026-11-19，优先级高于本文正文）**：`core/` 目录将彻底消亡，内容全部下沉 `libs/`；
-> `AppContext` 归 `libs/context` 且唯一实例在组合根 `App`、其余层构造注入；libs 不许有全局活实例/单例/服务定位器。
-> 本文正文里所有 `core::` / `core/` 表述是**当前实现状态**，会在 B7 收口，以
-> [`docs/roadmap/core-refactor-master-plan.md` §7](../docs/roadmap/core-refactor-master-plan.md) 为准。
+> ✅ **终态裁决已落地（2026-11-20，B7 收口）**：`core/` 目录已彻底消亡，内容全部下沉 `libs/`；
+> `AppContext` 归 `libs/context` 且唯一实例在组合根 `App`、其余层构造注入；libs 无全局活实例/单例/服务定位器。
+> 本文正文里残留的 `core::` / `core/` 表述均为历史描述，以 `libs/` 现状为准。
 > 边界已固化为 configure 期守卫 `cmake/LibBoundaryGuard.cmake`（违规编译不过）与 `AGENTS.md` §5.1。
 
 ---
@@ -416,7 +415,7 @@ SPI 解析器的职责被刻意收窄为「字节 → 结构化批」，于是�
 | `mod.report` | 报告产出：模板渲染、导出 | `report.preview` 面板 | 不知道报告内容 |
 | `mod.script` | 脚本引擎：Lua 门面、Job 录制回放 | — | 不知道业务语义 |
 
-> **实现状态（2026-11-19）**：上表是**目标态**。`mod.source`/`mod.dataset` 拆分与 `mod.report` 的落地裁决见 [`modules-organ-completion.md`](../docs/roadmap/modules-organ-completion.md)（待拍板）——当前代码二者仍合并为 `mod.data`、`mod.report` 暂不建成品（只备扩展点）；另 `mod.protocol`（协议编辑）与 `mod.settings`（设置）已实现，见 §11。数据模型 `Dataset`/`DataRepository` 下沉独立库的设计见 [`dataset-lib-extraction.md`](../docs/roadmap/dataset-lib-extraction.md)（待拍板）。注册表/意向/schema→UI 三项机制下沉 libs 的设计见 [`mechanism-libs-extraction.md`](../docs/roadmap/mechanism-libs-extraction.md)（待拍板）。
+> **实现状态（2026-11-20）**：上表已落地。`mod.data` 按 source/dataset **拆开**（v1 合并判为错）、`mod.report` 暂不建成品（只备扩展点）；`mod.protocol`（协议编辑）与 `mod.settings`（设置）已实现，见 §11。数据模型 `Dataset`/`DataRepository` 已下沉独立库（`ng/libs/dataset`）；注册表/意向/schema→UI 三项机制已下沉 libs。
 
 ### 4.2 器官之间相对独立
 
@@ -921,7 +920,7 @@ script.run
 | 8b | **工作区数据源配置**：`WorkspaceDataConfig` 原子申请单（来源/解析器/录制/平移/派生配方）存 `ws/data/sources`；`data.load` 自动记录，`data.workspace.restore` 重放恢复 | 8 | ✅ 已建（配方存取闭环；解析器参数/录制参数的**重放生效**待 data.load 接对应参数） |
 | 9 | **GUI 两层化**：shell/ + views/<功能>/，视图自注册 | 6 | ✅ 已建 |
 | 10 | 宿主喂数据流程接通 `DataSource`（读文件/流 → 管道 → 落库） | 7 | ✅ 已做（`IByteSource` + `IngestOrchestrator`；ulog / csv 均走管道，格式解析各只有一份实现；表名/缓存/stable id 三项宿主策略已归位） |
-| 11 | 器官补齐：`mod.source` / `mod.dataset` / `mod.plot` / `mod.analysis` / `mod.script` + `mod.protocol` / `mod.settings` | 7 | 🟡 设计定稿待拍板：source/dataset **拆开**（v1 合并判为错）、report 暂不做成品只备扩展点；详见 [`modules-organ-completion.md`](../docs/roadmap/modules-organ-completion.md)。配套 core 瘦身：dataset 下沉独立库见 [`dataset-lib-extraction.md`](../docs/roadmap/dataset-lib-extraction.md) |
+| 11 | 器官补齐：`mod.source` / `mod.dataset` / `mod.plot` / `mod.analysis` / `mod.script` + `mod.protocol` / `mod.settings` | 7 | ✅ 已建（source/dataset **拆开**，v1 合并判为错；report 暂不做成品只备扩展点；core 瘦身配套：dataset 已下沉独立库） |
 | 12 | 视图注册表 + 首批 View（从老代码 PlottingCanvas 拆） | 11 | ✅ 已建（plot-canvas / dataset-tree 自注册；PlotCanvas 退化为 fastplot 宿主） |
 | 13 | 外部插件扫描：dlopen + ABI 校验（解析器 + 录制格式 + 后端） | 2,3,4 | ⬜ 待做 |
 | 14 | 其余格式按 SPI 平移进对应知识包 | 2,10 | 🟡 进行中（ulog / csv / custom-protocol 已完成；其余格式 mavlink/nmea/oem7/asc/blf/mdf4 待平移） |
