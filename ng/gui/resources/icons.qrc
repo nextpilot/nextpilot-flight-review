@@ -17,5 +17,6 @@
     <file alias="loop.svg">icons/loop.svg</file>
     <file alias="replay.svg">icons/replay.svg</file>
     <file alias="step_fwd.svg">icons/step_fwd.svg</file>
+    <file alias="screenshot.svg">icons/screenshot.svg</file>
   </qresource>
 </RCC>

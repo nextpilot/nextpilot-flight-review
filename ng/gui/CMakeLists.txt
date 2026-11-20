@@ -115,6 +115,8 @@ add_executable(plotscope-ng-gui
     gui_main.cpp
     ${CMAKE_SOURCE_DIR}/app/App.cpp
     ${CMAKE_SOURCE_DIR}/app/App.h
+    ${CMAKE_SOURCE_DIR}/app/diagnostics.cpp
+    ${CMAKE_SOURCE_DIR}/app/diagnostics.h
 )
 target_include_directories(plotscope-ng-gui PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。

@@ -6,6 +6,8 @@ add_executable(plotscope-ng
     cli_main.cpp
     mcp_bridge.cpp
     mcp_bridge.h
+    diagnostics.cpp
+    diagnostics.h
     App.cpp
     App.h
 )

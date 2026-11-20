@@ -4,6 +4,7 @@
 #include "Intent.h"
 #include "Dataset.h"
 #include "mcp_bridge.h"
+#include "diagnostics.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -37,7 +38,8 @@ static void printUsage()
             "  plotscope-ng --info <file.csv|file.ulg>   # 按扩展名选格式\n"
             "  plotscope-ng --run <job.json>\n"
             "  plotscope-ng --script <file.lua> [--record <out.json>]\n"
-            "  plotscope-ng --mcp-bridge        # MCP server（stdio JSON-RPC，供外部代理驱动）\n");
+            "  plotscope-ng --mcp-bridge        # MCP server（stdio JSON-RPC，供外部代理驱动）\n"
+            "  plotscope-ng --dump-diagnostics  # 应用诊断 JSON（模块/知识包/数据面/工具目录）\n");
 }
 
 static Intent makeLoadIntent(const QString &path)
@@ -99,6 +101,16 @@ int main(int argc, char **argv)
         fprintf(stdout, "Rust kernel: version=%s abi=%u (需要 %u) selftest=%d\n",
                 ps_kernel_version(), ps_abi_version(), PS_ABI_VERSION, ps_abi_selftest());
         return ps_abi_version() == PS_ABI_VERSION && ps_abi_selftest() == 0 ? 0 : 1;
+    }
+
+    if (command == QStringLiteral("--dump-diagnostics"))
+    {
+        // 诊断模式抑制模块提示，保证 stdout 是纯 JSON。
+        qputenv("PLOTSCONG_QUIET_STDOUT", "1");
+        // startup 已在上方完成（模块/知识包已装载）；此处快照即终态。
+        const QJsonDocument doc(diag::collect(application));
+        fprintf(stdout, "%s\n", QString::fromUtf8(doc.toJson(QJsonDocument::Indented)).toUtf8().constData());
+        return 0;
     }
 
     if (command == QStringLiteral("--list-modules"))
