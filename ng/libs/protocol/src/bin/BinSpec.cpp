@@ -437,6 +437,25 @@ QStringList validateBin(const QJsonObject &root)
             errs << QStringLiteral("段名重复：%1").arg(name);
         ctx.names.insert(name);
         ctx.order.insert(name, index++);
+        // 块内字段在表达式里就用裸字段名引用（带点的 块名.字段名 不是合法标识符）。
+        // 注册点取"引用该块的段"的位置，这样 derived 能引用、且仍受"只能引用前序"约束。
+        // 同名冲突时不覆盖：裸名解析到最早出现的那个块实例。
+        {
+            const QString btype = seg.value(QStringLiteral("type")).toString().toLower();
+            const QJsonObject blocksObj = root.value(QStringLiteral("blocks")).toObject();
+            if (blocksObj.contains(btype))
+            {
+                const QJsonArray fields = blocksObj.value(btype).toObject().value(QStringLiteral("fields")).toArray();
+                for (const QJsonValue &fv : fields)
+                {
+                    const QString fname = fv.toObject().value(QStringLiteral("name")).toString().trimmed();
+                    if (fname.isEmpty() || ctx.names.contains(fname))
+                        continue;
+                    ctx.names.insert(fname);
+                    ctx.order.insert(fname, selfIndex);
+                }
+            }
+        }
         if (!QRegularExpression(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$")).match(name).hasMatch())
             errs << QStringLiteral("段名只能是标识符：%1").arg(name);
 

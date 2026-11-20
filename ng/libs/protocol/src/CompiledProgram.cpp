@@ -583,6 +583,108 @@ bool compileTextSeg(const SegSpec &s, CompiledSeg &cs, Compiler &c)
 
 } // namespace
 
+// ---- v3 块展开 ----
+static ExprPtr constCountExpr(int64_t n)
+{
+    auto e = std::make_shared<Expr>();
+    e->kind = Expr::Num;
+    e->isInt = true;
+    e->ival = n;
+    return e;
+}
+
+// 把 segments 里"type 指向块名"的段摊平成普通段，后续编译/解码无需知道块的存在。
+//   位域块（of 非空）：先造一个读容器的占位段（不出通道），再让每个字段的位窗口相对容器起点；
+//   顺序块（of 为空）：字段按序读字节，通道名摊成 段名.字段名。
+// 常量 count=N 摊成 N 份，命名 段名[i].字段名（对应界面里的 payload[i].a）。
+// count:"*"（整组重复到帧尾）需要组循环，尚未接入，这里明确报错而不是静默按 1 处理。
+static bool expandBlockSegs(const ProtocolDocument &doc, std::vector<SegSpec> &out, std::string &err)
+{
+    for (const SegSpec &s : doc.segments)
+    {
+        if (s.blockRef.empty())
+        {
+            out.push_back(s);
+            continue;
+        }
+        auto it = doc.blocks.find(s.blockRef);
+        if (it == doc.blocks.end())
+        {
+            err = "段 " + s.name + " 引用的块不存在：" + s.blockRef;
+            return false;
+        }
+        const BlockDef &b = it->second;
+        if (b.fields.empty())
+        {
+            err = "块 " + b.name + " 没有字段";
+            return false;
+        }
+        if (s.countWildcard)
+        {
+            err = "段 " + s.name + " 引用的块还不支持 count:\"*\"（整组重复到帧尾需要组循环）";
+            return false;
+        }
+        int64_t reps = 1;
+        if (s.countExpr)
+        {
+            if (s.countExpr->kind != Expr::Num || !s.countExpr->isInt || s.countExpr->ival <= 0)
+            {
+                err = "段 " + s.name + " 引用块时 count 只能是正整数常量";
+                return false;
+            }
+            reps = s.countExpr->ival;
+        }
+        if (reps > 100000)
+        {
+            err = "段 " + s.name + " 引用块时 count 过大";
+            return false;
+        }
+
+        TypeInfo containerTi;
+        if (!b.of.empty())
+        {
+            std::string terr;
+            if (!parseType(b.of, containerTi, terr))
+            {
+                err = "块 " + b.name + " 的 of 类型非法：" + b.of;
+                return false;
+            }
+            if (containerTi.size == 0)
+            {
+                err = "块 " + b.name + " 的 of 类型没有字节宽：" + b.of;
+                return false;
+            }
+        }
+
+        for (int64_t r = 0; r < reps; ++r)
+        {
+            const std::string inst = (reps == 1) ? s.name : s.name + "[" + std::to_string(r) + "]";
+            if (!b.of.empty())
+            {
+                // 容器：只占字节、给位窗口当定位基准，不出通道、不做变换与校验
+                SegSpec cont;
+                cont.name = inst;
+                cont.type = containerTi;
+                cont.countExpr = constCountExpr(1);
+                cont.bigEndian = s.bigEndian;
+                cont.emitMode = EmitMode::None;
+                cont.prefix = s.prefix;
+                out.push_back(cont);
+            }
+            for (const SegSpec &f : b.fields)
+            {
+                SegSpec fs = f;
+                fs.name = inst + "." + f.name;
+                fs.prefix = s.prefix;
+                if (!b.of.empty())
+                    fs.bit.base = inst; // 位窗口偏移相对容器起点，不是帧起点
+                out.push_back(fs);
+            }
+        }
+    }
+    return true;
+}
+
 bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
                                                     CompiledProgram &out, std::string &err)
 {
@@ -590,8 +692,25 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
     out.maxsize = doc.maxsize;
     Compiler c{doc, out, err, {}};
 
+    // 0) 块展开：把 type 指向块的段摊平成普通段，后面所有环节只认摊平结果。
+    std::vector<SegSpec> flat;
+    if (!expandBlockSegs(doc, flat, err))
+        return false;
+
+    // v3 顶层 derived：摊成"派生段"追加到末尾——不读字节、不进边界计算，按序求值。
+    for (const DerivedDef &dd : doc.derived)
+    {
+        SegSpec ds;
+        ds.name = dd.name;
+        ds.derive = dd.expr;
+        ds.unit = dd.unit;
+        ds.description = dd.description;
+        ds.emitMode = dd.emitMode;
+        flat.push_back(std::move(ds));
+    }
+
     // 1) 槽位：顶层段在前，变体段按出现顺序追加。表达式里能用到的名字都在这里解析。
-    for (const SegSpec &s : doc.segments)
+    for (const SegSpec &s : flat)
     {
         CompiledSlot slot;
         slot.name = s.name;
@@ -599,6 +718,15 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
         slot.elemSize = s.type.size;
         slot.bigEndian = s.bigEndian;
         c.slotOf[s.name] = static_cast<int32_t>(out.slotTable.size());
+        // 块内字段摊平后名字是 块名.字段名，表达式里只认裸字段名：补一条别名指到同一槽位。
+        // 同一裸名出现多次时以最早的那个实例为准（与校验端的注册顺序一致）。
+        const size_t dot = s.name.rfind('.');
+        if (dot != std::string::npos)
+        {
+            const std::string bare = s.name.substr(dot + 1);
+            if (c.slotOf.find(bare) == c.slotOf.end())
+                c.slotOf[bare] = static_cast<int32_t>(out.slotTable.size());
+        }
         out.slotTable.push_back(slot);
     }
     for (const VariantSpec &v : doc.series.variants)
@@ -613,8 +741,8 @@ bool nextpilot::plotscope::protocol::compileProgram(const ProtocolDocument &doc,
             out.slotTable.push_back(slot);
         }
 
-    // 2) 顶层段表。
-    for (const SegSpec &s : doc.segments)
+    // 2) 顶层段表（摊平后）。
+    for (const SegSpec &s : flat)
     {
         CompiledSeg cs;
         cs.name = s.name;

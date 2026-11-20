@@ -717,7 +717,7 @@ int main(int argc, char *argv[])
                     { "name": "lo", "type": "bit",  "count": "12@0" }
                 ]}
             },
-            "derived": [ { "name": "const", "expr": "1 + 2", "unit": "x" } ],
+            "derived": [ { "name": "sum", "expr": "a + b", "unit": "x" } ],
             "segments": [ { "name": "h", "type": "head" }, { "name": "f", "type": "flags" } ]
         })json").object();
         const QStringList verrs = validate(bd);
@@ -737,9 +737,51 @@ int main(int argc, char *argv[])
         CHECK(d.blocks["flags"].fields.size() == 2);
         CHECK(d.blocks["flags"].fields[0].bit.order == std::string("msb0"));
         CHECK(d.derived.size() == 1);
-        CHECK(d.derived[0].name == std::string("const"));
+        CHECK(d.derived[0].name == std::string("sum"));
         CHECK(d.derived[0].unit == std::string("x"));
         CHECK(d.derived[0].expr != nullptr);
+
+        // 编译展开：顺序块按序读字节、位域块读一个容器再切位
+        CompiledProgram cp;
+        std::string cexp;
+        if (!compileProgram(d, cp, cexp))
+            fprintf(stderr, "blocks 编译失败：%s\n", cexp.c_str());
+        CHECK(cp.segs.size() == 6); // h(head 两个字段) + f(容器 + 两个位字段) + derived
+
+        // 帧：a=01, b=0x0302(LE), 容器=ABCD
+        QByteArray fr;
+        fr.append(char(0x01));
+        fr.append(char(0x02));
+        fr.append(char(0x03));
+        fr.append(char(0xAB));
+        fr.append(char(0xCD));
+        ProtocolDecodeResult dr = decodeSequentialCompiled(fr, cp);
+        if (!dr.ok) fprintf(stderr, "blocks 解码失败：%s\n", dr.error.toUtf8().constData());
+        CHECK(dr.ok);
+        auto findCh = [&](const char *n) -> const ProtocolChannel * {
+            for (const auto &ch : dr.channels)
+                if (ch.name == n) return &ch;
+            return nullptr;
+        };
+        const ProtocolChannel *ca = findCh("frame.h.a");
+        const ProtocolChannel *cb = findCh("frame.h.b");
+        const ProtocolChannel *chi = findCh("frame.f.hi");
+        const ProtocolChannel *clo = findCh("frame.f.lo");
+        if (!ca || !cb || !chi || !clo)
+        {
+            for (const auto &ch : dr.channels) fprintf(stderr, "chan: %s\n", ch.name.c_str());
+        }
+        CHECK(ca && cb && chi && clo);
+        CHECK(ca->v.at(0).asU64() == 0x01u);
+        CHECK(cb->v.at(0).asU64() == 0x0302u);      // 顺序块里的 u16 按小端读
+        CHECK(chi->v.at(0).asU64() == 0x0Du);       // rbit 4@12 → 容器低字节的低 4 位
+        CHECK(clo->v.at(0).asU64() == 0xDABu);      // bit 12@0 → 低字节全 8 位 + 高字节低 4 位
+        // 顶层 derived：不读字节，用裸字段名引用块内字段，算出 1 + 770
+        const ProtocolChannel *csum = findCh("frame.sum");
+        if (!csum)
+            for (const auto &ch : dr.channels) fprintf(stderr, "chan: %s\n", ch.name.c_str());
+        CHECK(csum != nullptr);
+        CHECK(csum->v.at(0).asDouble() == 771.0);
 
         // 回写不丢：blocks 与 derived 都要原样回来，且不再产出 schema 已删的 version 键
         const QJsonObject back = toJson(d);
@@ -752,7 +794,7 @@ int main(int argc, char *argv[])
         CHECK(bko.value(QStringLiteral("flags")).toObject().value(QStringLiteral("of")).toString() == QStringLiteral("u16"));
         const QJsonArray bdr = back.value(QStringLiteral("derived")).toArray();
         CHECK(bdr.size() == 1);
-        CHECK(bdr.at(0).toObject().value(QStringLiteral("name")).toString() == QStringLiteral("const"));
+        CHECK(bdr.at(0).toObject().value(QStringLiteral("name")).toString() == QStringLiteral("sum"));
         // 回写产物必须自己过得了校验（round-trip 闭合）
         CHECK(validate(back).isEmpty());
         OK("v3 blocks/derived：解析进模型、回写保真、回写产物自校验通过");
