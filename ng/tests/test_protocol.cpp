@@ -1087,6 +1087,35 @@ int main(int argc, char *argv[])
         }
         OK("text 空白分隔：三行三通道，blank 是协议级分隔符类");
 
+        // --- 12c) text 段的表达式能力：transform 表达式 + count 表达式 ---
+        {
+            const QByteArray tpl = R"({
+              "name":"txt_expr","mode":"text","layout":"sequential","maxsize":64,"terminator":"\n",
+              "segments":[
+                {"name":"n","format":"%d","output":"none"},
+                {"name":"f","format":"%f","transform":"(self-32)*5/9"},
+                {"name":"v","format":"%d","count":"n"}
+              ]
+            })";
+            ProtocolDecodeResult r = decodeSequentialJson(QByteArray("3,80,1,2,3\n"), tpl);
+            if (!r.ok) fprintf(stderr, "text 表达式用例失败：%s\n", r.error.toUtf8().constData());
+            CHECK(r.ok);
+            auto chOfR = [&](const char *n) -> const ProtocolChannel * {
+                for (const auto &ch : r.channels)
+                    if (ch.name == n) return &ch;
+                return nullptr;
+            };
+            const ProtocolChannel *cf = chOfR("frame.f");
+            CHECK(cf && cf->v.size() == 1 && std::fabs(cf->v.at(0).asDouble() - 26.6666667) < 1e-4);
+            const ProtocolChannel *v0 = chOfR("frame.v[0]");
+            const ProtocolChannel *v1 = chOfR("frame.v[1]");
+            const ProtocolChannel *v2 = chOfR("frame.v[2]");
+            CHECK(v0 && v1 && v2); // count:"n" 解出 3，元素按 frame.v[i] 出通道
+            CHECK(v0->v.at(0).asDouble() == 1.0 && v1->v.at(0).asDouble() == 2.0 &&
+                  v2->v.at(0).asDouble() == 3.0);
+            OK("text 表达式 transform（(self-32)*5/9）与 count 表达式（count:\"n\"）都按运行时求值");
+        }
+
         // 便捷入口 decodeSequential 也要能走 text（上层 CustomProtocolParser 用的就是它）
         {
             const std::string two =

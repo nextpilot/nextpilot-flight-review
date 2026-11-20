@@ -267,6 +267,23 @@ text 段按 **扩展 scanf** 方式顺序消费：段与段共用同一条字符
 - `{"format":"%d","count":8}` ＝ `%d,%d,%d,%d,%d,%d,%d,%d`
 - `{"format":"%c","count":4}` ＝ `%c%c%c%c`（不跳分隔符）
 - `count:"*"` ＝ 读到本帧尾（`terminator` 之前），全局唯一
+- `count:"n"` ＝ 表达式，**逐帧求值**，可引用前面段已解出的字段（`"n"` 就是段名）；
+  求值结果必须是正整数，否则整帧判坏值。
+
+### 10.2.1 `transform`
+
+text 段与 bin 段共用同一套变换，两种写法等价：
+
+```json
+{"name":"t","format":"%f","transform":"(self-32)*5/9"}
+{"name":"t","format":"%f","transform":[{"op":"scale","k":0.5556},{"op":"offset","b":-17.778}]}
+```
+
+- 字符串 = 数学表达式，`self` 指本段刚读出的原始值，逐帧按浮点求值；
+- 能折成 `self*k+b` 的在编译期折进 scale/offset，折不了的留表达式求值；
+- 数组 = 算子链（`scale` `offset` `abs` `round` `clamp`），按顺序施加；
+- `sexagesimal` 是"按文本切"的算子，它在数值解析阶段完成（`%f` 读 `4807.038` → `48.1173`），
+  和表达式不冲突，可以并存。
 
 ### 10.3 `delimiter`
 

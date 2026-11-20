@@ -1121,6 +1121,15 @@ QJsonValue ProtocolEditorDialog::parseLiteral(const QString &text)
 //   约束格  >63 / [36,427) / {1,3,5} / crc8     —— 多条用分号分隔，与 expect 数组顺序一致
 QString ProtocolEditorDialog::typeCellText(const QJsonObject &seg) const
 {
+    // text 段没有 type，类型列直接显示 format 原文（`%5d` / `$GPGGA,`），count>1 时后缀 ×N
+    if (seg.contains(QStringLiteral("format")))
+    {
+        const QString f = seg.value(QStringLiteral("format")).toString();
+        const QString c = literalText(seg.value(QStringLiteral("count"))).trimmed();
+        if (c.isEmpty() || c == QLatin1String("1"))
+            return f;
+        return f + QStringLiteral("\u00d7") + c;
+    }
     const QString type = seg.value(QStringLiteral("type")).toString(QStringLiteral("u8"));
     const QString cnt = literalText(seg.value(QStringLiteral("count"))).trimmed();
     if (cnt.isEmpty() || cnt == QLatin1String("1"))
@@ -1135,6 +1144,35 @@ bool ProtocolEditorDialog::applyTypeCell(const QString &text, QJsonObject &seg, 
         if (why)
             *why = QStringLiteral("类型不能为空");
         return false;
+    }
+    // text 段：格子里写 format（含 % 或 $ 开头的字面），可选 ×count
+    if (t.contains(QLatin1Char('%')) || t.startsWith(QLatin1Char('$')) || t.startsWith(QLatin1Char('*')))
+    {
+        const int x = t.lastIndexOf(QStringLiteral("\u00d7"));
+        const QString fmt = (x < 0 ? t : t.left(x)).trimmed();
+        const QString cnt = (x < 0 ? QString() : t.mid(x + 1)).trimmed();
+        if (fmt.isEmpty())
+        {
+            if (why)
+                *why = QStringLiteral("format 不能为空");
+            return false;
+        }
+        seg.insert(QStringLiteral("format"), fmt);
+        seg.remove(QStringLiteral("type"));
+        if (cnt.isEmpty() || cnt == QLatin1String("1"))
+        {
+            seg.remove(QStringLiteral("count"));
+            return true;
+        }
+        const QJsonValue v = parseLiteral(cnt);
+        if (v.isUndefined())
+        {
+            if (why)
+                *why = QStringLiteral("count 无效：") + cnt;
+            return false;
+        }
+        seg.insert(QStringLiteral("count"), v);
+        return true;
     }
     const int lb = t.indexOf(QLatin1Char('['));
     if (lb < 0)

@@ -47,6 +47,34 @@ void applyTransforms(const CompiledSeg &seg, TypedValue &v)
     }
 }
 
+// 表达式 transform（非线性）：把本段当前值临时占位到自己的槽位，self 才指得到它。
+// 算子数组走 applyTransforms；表达式走字节码，两条路径都在这里收口。
+bool applyValueTransforms(const CompiledSeg &seg, std::vector<TypedVec> &cols, TypedValue &v,
+                          std::string &err)
+{
+    applyTransforms(seg, v);
+    if (!seg.hasTransformExpr)
+        return true;
+    const size_t si = static_cast<size_t>(seg.slot);
+    if (si >= cols.size())
+    {
+        err = "transform 表达式引用的槽位越界";
+        return false;
+    }
+    const TypedVec saved = cols[si];
+    TypedVec one;
+    one.reset(ValueType::F64);
+    one.push(TypedValue::fromF(v.type == ValueType::Text ? 0.0 : v.asDouble(), ValueType::F64));
+    cols[si] = one;
+    TypedValue out;
+    const bool ok = runByteCode(seg.transformCode, cols, out, err);
+    cols[si] = saved;
+    if (!ok)
+        return false;
+    v = TypedValue::fromF(out.asDouble(), ValueType::F64);
+    return true;
+}
+
 // 值域/枚举：只做判定，处理策略由调用方的 on_mismatch 决定。
 bool violatesDomain(const CompiledSeg &seg, const TypedValue &v)
 {
@@ -942,7 +970,30 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     stopLit = segAt(j).literal;
                     break;
                 }
-            const uint32_t rep = seg.countIsConst && seg.constCount > 0 ? seg.constCount : 1u;
+            // count 是"整条 format 重复次数"。常量直接用；写成表达式就逐帧求值，
+            // 允许引用前面已解出的字段（例如 count:"n"），不再默默按 1 处理。
+            uint32_t rep = seg.countIsConst && seg.constCount > 0 ? seg.constCount : 1u;
+            if (!seg.countIsConst)
+            {
+                TypedValue cv;
+                std::string cerr2;
+                if (!runByteCode(seg.count, r.vals, cv, cerr2))
+                {
+                    r.code = DecodeError::FieldInvalid;
+                    r.segment = seg.name;
+                    r.detail = "count 求值失败：" + cerr2;
+                    return false;
+                }
+                const double d = cv.asDouble();
+                if (!(d >= 1.0 && d <= 1000000.0))
+                {
+                    r.code = DecodeError::FieldInvalid;
+                    r.segment = seg.name;
+                    r.detail = "count 求值不是正整数：";
+                    return false;
+                }
+                rep = static_cast<uint32_t>(d);
+            }
             TypedVec col;
             col.reset(seg.type);
             for (uint32_t k = 0; k < rep; ++k)
@@ -983,7 +1034,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     {
                         {
                             TypedValue tv = TypedValue::fromText(val);
-                            applyTransforms(seg, tv);
+                            {
+                                std::string terr2;
+                                if (!applyValueTransforms(seg, r.vals, tv, terr2))
+                                {
+                                    r.code = DecodeError::FieldInvalid;
+                                    r.segment = seg.name;
+                                    r.detail = terr2;
+                                    return false;
+                                }
+                            }
                             col.push(tv);
                         }
                     }
@@ -1004,7 +1064,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                             r.detail = perr2 + "：" + val;
                             return false;
                         }
-                        applyTransforms(seg, tv);
+                        {
+                            std::string terr2;
+                            if (!applyValueTransforms(seg, r.vals, tv, terr2))
+                            {
+                                r.code = DecodeError::FieldInvalid;
+                                r.segment = seg.name;
+                                r.detail = terr2;
+                                return false;
+                            }
+                        }
                         col.push(tv);
                     }
                     else if (conv == 't' || conv == 'T')
@@ -1037,7 +1106,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                         }
                         {
                             TypedValue tv = TypedValue::fromF(sec, ValueType::F64);
-                            applyTransforms(seg, tv);
+                            {
+                                std::string terr2;
+                                if (!applyValueTransforms(seg, r.vals, tv, terr2))
+                                {
+                                    r.code = DecodeError::FieldInvalid;
+                                    r.segment = seg.name;
+                                    r.detail = terr2;
+                                    return false;
+                                }
+                            }
                             col.push(tv);
                         }
                     }
@@ -1056,7 +1134,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                             r.detail = perr2 + "：" + val;
                             return false;
                         }
-                        applyTransforms(seg, tv);
+                        {
+                            std::string terr2;
+                            if (!applyValueTransforms(seg, r.vals, tv, terr2))
+                            {
+                                r.code = DecodeError::FieldInvalid;
+                                r.segment = seg.name;
+                                r.detail = terr2;
+                                return false;
+                            }
+                        }
                         col.push(tv);
                     }
                 }
@@ -1188,7 +1275,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
                     r.detail = "值超出 range/enum（原文 " + tok + "）";
                     return false;
                 }
-                applyTransforms(seg, v);
+                {
+                    std::string terr2;
+                    if (!applyValueTransforms(seg, r.vals, v, terr2))
+                    {
+                        r.code = DecodeError::FieldInvalid;
+                        r.segment = seg.name;
+                        r.detail = terr2;
+                        return false;
+                    }
+                }
                 col.push(v);
             }
             r.vals[seg.slot] = col;
@@ -1463,7 +1559,16 @@ bool attemptRecord(const CompiledProgram &prog, const uint8_t *p, size_t n, RecA
             }
             else
             {
-                applyTransforms(seg, v);
+                {
+                    std::string terr2;
+                    if (!applyValueTransforms(seg, r.vals, v, terr2))
+                    {
+                        r.code = DecodeError::FieldInvalid;
+                        r.segment = seg.name;
+                        r.detail = terr2;
+                        return false;
+                    }
+                }
                 col.push(v);
             }
         }

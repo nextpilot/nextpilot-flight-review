@@ -537,9 +537,10 @@ QStringList validate(const QJsonObject &o)
         }
         else if (textSeg)
         {
-            // text 段没有"元素数 × 字节宽"语义：count 缺省 1，repeater:"*" 表示重复到下一段边界。
-            if (!count.isUndefined() && !literalSize(count, &n))
-                errs << QStringLiteral("%1 的 count 必须是正整数（text 段可省略）").arg(name);
+            // text 段没有"元素数 × 字节宽"语义：count 缺省 1，可以写整数或表达式（逐帧求值）。
+            if (!count.isUndefined() && !literalSize(count, &n) &&
+                (!count.isString() || count.toString().trimmed().isEmpty()))
+                errs << QStringLiteral("%1 的 count 必须是正整数或表达式（text 段可省略）").arg(name);
             if (seg.contains(QStringLiteral("bit")))
                 errs << QStringLiteral("%1 是 text 段，不能声明 bit（位域只对字节区间有意义）").arg(name);
             checkTextSegment(seg, name, order, names, order.value(name, 0), errs);
