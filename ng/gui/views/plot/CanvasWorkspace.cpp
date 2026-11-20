@@ -22,10 +22,19 @@
 #include <limits>
 
 #include <QEvent>
+#include <QFile>
+#include <QHBoxLayout>
 #include <QHash>
 #include <QInputDialog>
 #include <QLineEdit>
-#include <QGridLayout>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSplitter>
+#include <QTabBar>
+#include <QTabWidget>
+#include <QTimer>
+#include <QToolButton>
+#include <QVBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMouseEvent>
@@ -76,6 +85,13 @@ QString toInstrumentKind(const QString &kind)
         return QStringLiteral("attitude");
     return kind;
 }
+
+// 悬浮工具栏按钮的图标：资源缺失时返回空 QIcon（按钮退化为文字，不刷告警）。
+QIcon cellIcon(const char *name)
+{
+    const QString path = QStringLiteral(":/icons/%1.svg").arg(QLatin1String(name));
+    return QFile::exists(path) ? QIcon(path) : QIcon();
+}
 } // namespace
 
 CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
@@ -86,10 +102,41 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
     outer->setContentsMargins(0, 0, 0, 0);
     outer->setSpacing(0);
 
-    m_grid = new QGridLayout();
-    m_grid->setContentsMargins(2, 2, 2, 2);
-    m_grid->setSpacing(3);
-    outer->addLayout(m_grid, 1);
+    // 页签容器：一页 = 一套绘图布局（对齐老 PlottingTabs）。
+    // 可移动/可关闭，但至少保留一页（removePage 里挡）。
+    m_tabs = new QTabWidget(this);
+    m_tabs->setDocumentMode(true);
+    // 页序 = 绘图页序，拖拽改序会让页索引与页对象错位；老代码也不可拖。
+    m_tabs->setMovable(false);
+    m_tabs->setTabsClosable(true);
+    m_tabs->setUsesScrollButtons(true);
+    m_tabs->tabBar()->setExpanding(false);
+    m_tabs->tabBar()->setElideMode(Qt::ElideRight);
+    outer->addWidget(m_tabs, 1);
+
+    QObject::connect(m_tabs, &QTabWidget::currentChanged, this,
+                     [this](int index) { switchPage(index); });
+    QObject::connect(m_tabs, &QTabWidget::tabCloseRequested, this,
+                     [this](int index) {
+                         if (index >= m_pages.size())   // 末尾「＋」不参与关闭
+                             return;
+                         removePage(index);
+                     });
+    // 双击页签改名（对齐老 PlottingTabs::tabBarDoubleClicked），「＋」不参与。
+    QObject::connect(m_tabs->tabBar(), &QTabBar::tabBarDoubleClicked, this,
+                     [this](int index) {
+                         if (index < 0 || index >= m_pages.size())
+                             return;
+                         bool ok = false;
+                         const QString name = QInputDialog::getText(
+                             this, QStringLiteral("重命名页签"), QStringLiteral("页名"),
+                             QLineEdit::Normal, m_tabs->tabText(index), &ok);
+                         const QString trimmed = name.trimmed();
+                         if (!ok || trimmed.isEmpty())
+                             return;
+                         m_pages.at(index)->title = trimmed;
+                         m_tabs->setTabText(index, trimmed);
+                     });
 
     // 会话级播放引擎 + 底部时间条。引擎驱动所有画布的播放头，时间条只是它的视图。
     m_playback = new PlaybackEngine(this);
@@ -109,10 +156,28 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
                                  c.canvas->refreshSourceOffsets();
                      });
 
-    // 默认一个画布 cell。
+    // 末尾「＋」页签：老 PlottingTabs 的新建页入口（点一下＝加一页，不显示关闭按钮）。
+    // 建「＋」页签时屏蔽 currentChanged：count 0→1 会把 currentIndex 从 -1 变成 0，
+    // 若不屏蔽，switchPage 会把它当成"点了＋"而提前建页，和下面的 addPage 打架。
+    m_tabs->blockSignals(true);
+    const int plusIndex = m_tabs->addTab(new QWidget(m_tabs), QStringLiteral("＋"));
+    m_tabs->tabBar()->setTabToolTip(plusIndex, QStringLiteral("新建页"));
+    m_tabs->tabBar()->setTabButton(plusIndex, QTabBar::RightSide, nullptr);
+    m_tabs->blockSignals(false);
+
+    // 默认一页，页内一个画布 cell（对齐老代码的"启动就有一页"）。
+    // insertTab 会把 current 留在原来的「＋」上，必须显式切回第 0 页。
+    addPage(QStringLiteral("页 1"));
+    m_tabs->setCurrentIndex(0);
     addCell();
     m_rows = 1;
     m_cols = 1;
+
+    // 悬浮工具栏的自动收起：鼠标停止移动一会儿就隐藏，不让按钮常驻压住曲线。
+    m_hoverTimer = new QTimer(this);
+    m_hoverTimer->setSingleShot(true);
+    m_hoverTimer->setInterval(1600);
+    QObject::connect(m_hoverTimer, &QTimer::timeout, this, [this]() { hideHoverBars(); });
 
     // 活动通道只追加到当前 cell（"当前画布"语义）。
     QObject::connect(&m_appCtx, &AppContext::activeChannelChanged, this,
@@ -125,11 +190,22 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
     registerPropertyProviders();
 }
 
-CanvasWorkspace::~CanvasWorkspace() = default;
+CanvasWorkspace::~CanvasWorkspace()
+{
+    // 页对象是裸指针（Page 里还持有 scroll/host 的父子关系），析构时显式释放。
+    // cell 控件归 Qt 父子树管，随 scroll 一起销毁。
+    qDeleteAll(m_pages);
+    m_pages.clear();
+}
 
 int CanvasWorkspace::cellCount() const
 {
     return m_cells.size();
+}
+
+int CanvasWorkspace::pageCount() const
+{
+    return m_pages.size();
 }
 
 int CanvasWorkspace::activeIndex() const
@@ -147,9 +223,11 @@ ChannelView *CanvasWorkspace::activeChannelView() const
     return m_cells.isEmpty() ? nullptr : m_cells.at(qBound(0, m_active, m_cells.size() - 1)).view;
 }
 
-int CanvasWorkspace::addCell()
+// 装配一块画布 cell：画布 + 仪表 + 堆叠容器，并把所有信号接好。
+// addCell / split / duplicateActive 共用它，避免三份重复的装配代码各自漂移。
+CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
 {
-    auto *stack = new QStackedWidget(this);
+    auto *stack = new QStackedWidget(parentForStack);
     auto *canvas = new PlotCanvas(stack);
     auto *view = new ChannelView(m_executor, canvas, canvas);
 
@@ -173,28 +251,246 @@ int CanvasWorkspace::addCell()
     Cell cell;
     cell.canvas = canvas;
     cell.view = view;
-    cell.instrument = instrument; // 见头文件：需加字段
+    cell.instrument = instrument;
     cell.stack = stack;
-    m_cells.append(cell);
+    // 每格悬浮小工具栏（对齐老 PlottingCanvas 的 m_hoverBar）：
+    // 鼠标进到这一格才浮出，四个按钮直接作用在"这一格"，不必先点选。
+    cell.hoverBar = makeHoverBar(cell, stack);
+    // 图例从上往下让出工具栏的高度（28px + 留白），按钮与图例互不遮挡。
+    if (auto *ax = canvas->plotForTest())
+        ax->setLegendTopInset(34.0);
+    // 鼠标在画布/仪表上移动时浮出工具栏（画布内部收事件，过滤器必须装在画布上）。
+    canvas->installEventFilter(this);
+    instrument->installEventFilter(this);
+    // fastplot 的 Picker 吃掉了鼠标事件，父控件收不到 MouseMove；
+    // 走画布自己的 pointerHovered 信号（每帧悬停回调）来浮出本格工具栏。
+    QObject::connect(canvas, &PlotCanvas::pointerHovered, this, [this, canvas]() {
+        for (int i = 0; i < m_cells.size(); ++i)
+        {
+            if (m_cells.at(i).canvas == canvas)
+            {
+                showHoverBar(i);
+                return;
+            }
+        }
+    });
+    return cell;
+}
 
+int CanvasWorkspace::addCell()
+{
+    m_cells.append(makeCell(nullptr));
     m_active = m_cells.size() - 1;
-    relayout();
+    // 加到当前页末尾：网格模式下按列数补位（新格落在下一行首列）。
+    m_cols = std::max(1, m_cols);
+    m_rows = (m_cells.size() + m_cols - 1) / m_cols;
+    rebuildPageLayout();
+    syncPage();
     return m_active;
+}
+
+QWidget *CanvasWorkspace::makeHoverBar(Cell &cell, QWidget *parentStack)
+{
+    auto *bar = new QWidget(parentStack);
+    bar->setObjectName(QStringLiteral("cellHoverBar"));
+    bar->setAttribute(Qt::WA_StyledBackground, true);
+
+    // 底色跟 Axes 的标题栏同色（palette alternateBase），高度也取标题栏高度，
+    // 于是这一串按钮看起来就是标题栏右端的一段，而不是浮在曲线上的外来控件。
+    QColor barBg = parentStack->palette().alternateBase().color();
+    barBg.setAlpha(255);
+    bar->setFixedHeight(fastplot::Axes::kTitleBarHeight - 2);
+    bar->setStyleSheet(QStringLiteral(
+        "#cellHoverBar { background: %1; }"
+        " QToolButton { border: none; padding: 0px; border-radius: 2px; background: transparent; }"
+        " QToolButton:hover { background: rgba(127,127,127,0.28); }")
+        .arg(barBg.name(QColor::HexArgb)));
+
+    auto *lay = new QHBoxLayout(bar);
+    lay->setContentsMargins(2, 0, 2, 0);
+    lay->setSpacing(0);
+
+    auto makeBtn = [bar](const char *iconName, const QString &fallbackText, const QString &tip) {
+        auto *btn = new QToolButton(bar);
+        btn->setAutoRaise(true);
+        btn->setToolTip(tip);
+        btn->setIconSize(QSize(14, 14));
+        btn->setFixedSize(20, fastplot::Axes::kTitleBarHeight - 4);
+        btn->setCursor(Qt::PointingHandCursor);
+        const QIcon icon = cellIcon(iconName);
+        if (icon.isNull())
+            btn->setText(fallbackText);
+        else
+            btn->setIcon(icon);
+        return btn;
+    };
+
+    // 顺序按用户要求：左右 · 上下 · 全屏 · 书签 · AB · 删除。
+    QToolButton *leftRight = makeBtn("split_h", QStringLiteral("◫"), QStringLiteral("左右拆分"));
+    QToolButton *topBottom = makeBtn("split_v", QStringLiteral("◱"), QStringLiteral("上下拆分"));
+    QToolButton *maxBtn = makeBtn("maximize", QStringLiteral("⤢"), QStringLiteral("最大化 / 还原"));
+    QToolButton *bookmarkBtn = makeBtn("bookmark", QStringLiteral("◇"), QStringLiteral("在当前时刻加书签"));
+    QToolButton *abBtn = makeBtn("ab", QStringLiteral("AB"), QStringLiteral("A/B 区间测量"));
+    QToolButton *closeBtn = makeBtn("close", QStringLiteral("✕"), QStringLiteral("关闭这一格"));
+
+    auto cellFor = [this](QWidget *b) {
+        const int i = indexOfHoverBar(b);
+        return (i >= 0 && i < m_cells.size()) ? &m_cells[i] : nullptr;
+    };
+
+    QObject::connect(leftRight, &QToolButton::clicked, this, [this, bar]() {
+        const int i = indexOfHoverBar(bar);
+        if (i < 0)
+            return;
+        setActive(i);
+        split(true);
+        showHoverBar(m_active);
+    });
+    QObject::connect(topBottom, &QToolButton::clicked, this, [this, bar]() {
+        const int i = indexOfHoverBar(bar);
+        if (i < 0)
+            return;
+        setActive(i);
+        split(false);
+        showHoverBar(m_active);
+    });
+    QObject::connect(maxBtn, &QToolButton::clicked, this, [this, bar]() {
+        const int i = indexOfHoverBar(bar);
+        if (i < 0)
+            return;
+        setActive(i);
+        toggleFullscreen();
+        showHoverBar(m_active);
+    });
+    // 书签：以当前游标时刻为准；没有游标就取可见范围中点（总有明确落点）。
+    QObject::connect(bookmarkBtn, &QToolButton::clicked, this, [cellFor, bar]() {
+        Cell *c = cellFor(bar);
+        if (!c || !c->canvas)
+            return;
+        double t = c->canvas->cursorActiveForTest() ? c->canvas->cursorTime() : 0.0;
+        if (!c->canvas->cursorActiveForTest())
+        {
+            double t0 = 0.0;
+            double t1 = 0.0;
+            if (c->canvas->visibleTimeRange(&t0, &t1))
+                t = (t0 + t1) / 2.0;
+        }
+        c->canvas->addBookmark(t, QStringLiteral("书签"));
+    });
+    // A/B：与该画布右键/Ctrl+左键同一条实现（以游标为中心生成区间）。
+    QObject::connect(abBtn, &QToolButton::clicked, this, [cellFor, bar]() {
+        Cell *c = cellFor(bar);
+        if (c && c->canvas)
+            c->canvas->toggleAB();
+    });
+    QObject::connect(closeBtn, &QToolButton::clicked, this, [this, bar]() {
+        const int i = indexOfHoverBar(bar);
+        if (i >= 0)
+            removeAt(i);
+    });
+
+    lay->addWidget(leftRight);
+    lay->addWidget(topBottom);
+    lay->addWidget(maxBtn);
+    lay->addWidget(bookmarkBtn);
+    lay->addWidget(abBtn);
+    lay->addWidget(closeBtn);
+    bar->hide();
+    return bar;
+}
+void CanvasWorkspace::flashToolbar(bool autoHide)
+{
+    showHoverBar(m_active);
+    if (!autoHide && m_hoverTimer)
+        m_hoverTimer->stop();
+}
+
+void CanvasWorkspace::layoutHoverBar(Cell &cell)
+{
+    if (!cell.hoverBar || !cell.stack)
+        return;
+    cell.hoverBar->adjustSize();
+    // 对齐 Axes 标题栏：同一条横带（y 与高度都取标题栏），右端贴绘图区右边界。
+    // 坐标从 Axes 换到 stack：canvas 与 axes 同尺寸时偏移为 0，这里仍显式换算，
+    // 免得将来加内边距后按钮跑到标题栏外面。
+    int rightPx = cell.stack->width() - 4;
+    if (cell.canvas && cell.canvas->plotForTest())
+    {
+        const QRectF plot = cell.canvas->plotForTest()->plotRect();
+        const QPoint anchor = cell.canvas->plotForTest()->mapTo(
+            cell.stack, QPoint(int(plot.right()), 1));
+        rightPx = anchor.x();
+    }
+    const int x = qMax(0, rightPx - cell.hoverBar->width() - 2);
+    cell.hoverBar->move(x, 1);
+    cell.hoverBar->raise();
+}
+
+int CanvasWorkspace::indexOfHoverBar(const QObject *bar) const
+{
+    if (!bar)
+        return -1;
+    for (int i = 0; i < m_cells.size(); ++i)
+        if (m_cells.at(i).hoverBar == bar)
+            return i;
+    return -1;
+}
+
+void CanvasWorkspace::showHoverBar(int index)
+{
+    if (index < 0 || index >= m_cells.size())
+        return;
+    // 只浮出当前这一格的工具栏（多格时各自独立，不互相串）。
+    for (int i = 0; i < m_cells.size(); ++i)
+    {
+        if (i == index)
+            continue;
+        if (m_cells.at(i).hoverBar)
+            m_cells.at(i).hoverBar->hide();
+    }
+    Cell &cell = m_cells[index];
+    if (!cell.hoverBar)
+        return;
+    layoutHoverBar(cell);
+    cell.hoverBar->show();
+    if (m_hoverTimer)
+        m_hoverTimer->start();
+}
+
+void CanvasWorkspace::hideHoverBars()
+{
+    for (const Cell &c : m_cells)
+        if (c.hoverBar)
+            c.hoverBar->hide();
 }
 
 bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
 {
-    if (event->type() == QEvent::MouseButtonPress)
+    const QEvent::Type type = event->type();
+
+    // 这一格内的对象（stack 本身 / 画布 / 仪表）都被装了过滤器：统一映射回 cell 索引。
+    int cellIndex = -1;
+    for (int i = 0; i < m_cells.size(); ++i)
     {
-        for (int i = 0; i < m_cells.size(); ++i)
+        const Cell &c = m_cells.at(i);
+        if (watched == c.stack || watched == c.canvas || watched == c.instrument
+            || (c.hoverBar && watched == c.hoverBar))
         {
-            if (watched == m_cells.at(i).stack)
-            {
-                setActive(i);
-                break;
-            }
+            cellIndex = i;
+            break;
         }
     }
+
+    if (cellIndex >= 0)
+    {
+        if (type == QEvent::MouseButtonPress)
+            setActive(cellIndex);
+        else if (type == QEvent::Enter && watched == m_cells.at(cellIndex).stack)
+            showHoverBar(cellIndex);       // 指针进到这一格 → 浮出本格工具栏
+        else if (type == QEvent::Resize && watched == m_cells.at(cellIndex).stack)
+            layoutHoverBar(m_cells[cellIndex]);
+    }
+
     return QWidget::eventFilter(watched, event);
 }
 
@@ -205,24 +501,175 @@ void CanvasWorkspace::setActive(int index)
     m_active = index;
 }
 
-void CanvasWorkspace::relayout()
+void CanvasWorkspace::detachStacks()
 {
-    // 先把所有 cell 从布局摘下，再按当前 rows×cols 重新铺。
+    // 重建 splitter 树前必须先把 cell 控件移出去：QSplitter 析构会删掉它持有的子控件，
+    // 而 cell 的 stack 归本类所有（还要复用），不能被连带删除。
     for (const Cell &c : m_cells)
-        m_grid->removeWidget(c.stack);
-
-    const int n = m_cells.size();
-    for (int i = 0; i < n; ++i)
     {
-        const int r = i / std::max(1, m_cols);
-        const int c = i % std::max(1, m_cols);
-        m_grid->addWidget(m_cells.at(i).stack, r, c);
+        if (!c.stack)
+            continue;
+        c.stack->setParent(nullptr);
+        c.stack->hide();
     }
-    // 行列 stretch 均分，保证拆分后各画布等宽/等高。
-    for (int i = 0; i < m_grid->rowCount(); ++i)
-        m_grid->setRowStretch(i, 1);
-    for (int i = 0; i < m_grid->columnCount(); ++i)
-        m_grid->setColumnStretch(i, 1);
+}
+
+void CanvasWorkspace::rebuildPageLayout()
+{
+    if (m_pages.isEmpty())
+        return;
+    Page &page = *m_pages[m_activePage];
+    if (!page.host)
+        return;
+
+    detachStacks();
+    // 拆掉旧树（此时树里已经没有 cell，安全）。
+    if (page.root)
+    {
+        delete page.root;
+        page.root = nullptr;
+    }
+
+    // 对齐老 PlottingLayout：根=竖直 splitter（一行一个子项），行=水平 splitter（一格里一块画布）。
+    // 行高给下限，画布多到一屏放不下时由外层 QScrollArea 出竖直滚动条。
+    constexpr int kRowMinHeight = 200;
+    page.root = new QSplitter(Qt::Vertical, page.host);
+    page.root->setObjectName(QStringLiteral("plotPageRoot"));
+    page.root->setHandleWidth(6);
+    page.root->setChildrenCollapsible(false);
+    if (auto *lay = qobject_cast<QVBoxLayout *>(page.host->layout()))
+        lay->addWidget(page.root);
+    else
+    {
+        auto *lay2 = new QVBoxLayout(page.host);
+        lay2->setContentsMargins(0, 0, 0, 0);
+        lay2->setSpacing(0);
+        lay2->addWidget(page.root);
+    }
+
+    const int cols = std::max(1, m_cols);
+    const int rows = std::max(1, m_rows);
+    int index = 0;
+    for (int r = 0; r < rows; ++r)
+    {
+        auto *rowSplitter = new QSplitter(Qt::Horizontal, page.root);
+        rowSplitter->setHandleWidth(6);
+        rowSplitter->setChildrenCollapsible(false);
+        rowSplitter->setMinimumHeight(kRowMinHeight);
+        page.root->addWidget(rowSplitter);
+        for (int c = 0; c < cols && index < m_cells.size(); ++c, ++index)
+        {
+            Cell &cell = m_cells[index];
+            cell.stack->setParent(rowSplitter);
+            cell.stack->show();
+            rowSplitter->addWidget(cell.stack);
+        }
+    }
+    page.host->setMinimumHeight(rows * kRowMinHeight);
+    // 行内均分：QSplitter 默认按 sizeHint 分配，空白画布会被挤成 0 宽。
+    QTimer::singleShot(0, page.root, [rowsSplit = page.root, rows]() {
+        QList<int> sizes;
+        for (int i = 0; i < rowsSplit->count(); ++i)
+            sizes.append(1);
+        if (!sizes.isEmpty())
+            rowsSplit->setSizes(sizes);
+    });
+    page.gridMode = true;
+}
+
+void CanvasWorkspace::syncPage()
+{
+    if (m_pages.isEmpty())
+        return;
+    Page &page = *m_pages[m_activePage];
+    page.cells = m_cells;
+    page.rows = m_rows;
+    page.cols = m_cols;
+}
+
+int CanvasWorkspace::addPage(const QString &title)
+{
+    auto *page = new Page;
+    page->title = title.isEmpty() ? QStringLiteral("页 %1").arg(m_pages.size() + 1) : title;
+
+    // 页容器：竖直滚动（对齐老 PlottingPage）——画布多到一屏放不下时往下滚，
+    // 而不是把每格压成一条。
+    page->scroll = new QScrollArea(this);
+    page->scroll->setObjectName(QStringLiteral("plotPage"));
+    page->scroll->setWidgetResizable(true);
+    page->scroll->setFrameShape(QFrame::NoFrame);
+    page->scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    page->host = new QWidget(page->scroll);
+    auto *lay = new QVBoxLayout(page->host);
+    lay->setContentsMargins(2, 2, 2, 2);
+    lay->setSpacing(3);
+    page->scroll->setWidget(page->host);
+    m_pages.append(page);
+
+    // 永远排在末尾「＋」之前，保证 tab 索引 0..n-1 与 m_pages 一一对应。
+    const int plusIndex = qMax(0, m_tabs->count() - 1);
+    const int index = m_tabs->insertTab(plusIndex, page->scroll, page->title);
+    m_tabs->tabBar()->setTabToolTip(index, QStringLiteral("绘图页：双击页签可重命名"));
+    return index;
+}
+
+void CanvasWorkspace::switchPage(int index)
+{
+    if (index < 0)
+        return;
+    if (index >= m_pages.size())
+    {
+        // 点到末尾「＋」：新建一页并切过去（老 PlottingTabs::appendPlusTab 的行为）。
+        const int created = addPage();
+        m_tabs->setCurrentIndex(created);   // 触发本函数处理新页
+        if (m_cells.isEmpty())
+            addCell();                       // 新页先给一格空画布
+        m_rows = 1;
+        m_cols = 1;
+        return;
+    }
+    if (index == m_activePage)
+        return;
+    // 旧页先把当前 cells/网格规格写回去，再载入目标页——两侧都不丢状态。
+    syncPage();
+    m_activePage = index;
+    Page &page = *m_pages.at(index);
+    m_cells = page.cells;
+    m_rows = page.rows;
+    m_cols = page.cols;
+    m_active = m_cells.isEmpty() ? 0 : qBound(0, m_active, m_cells.size() - 1);
+    m_fullscreenCell = -1;
+}
+
+bool CanvasWorkspace::removePage(int index)
+{
+    if (index < 0 || index >= m_pages.size() || m_pages.size() <= 1)
+        return false;
+
+    Page *page = m_pages.takeAt(index);
+    // 关的是当前页：先把"当前"落到相邻页上，避免 m_cells 指向被删页的控件。
+    if (index == m_activePage)
+    {
+        const int next = qBound(0, index, m_pages.size() - 1);
+        m_activePage = next;
+        m_cells = m_pages.at(next)->cells;
+        m_rows = m_pages.at(next)->rows;
+        m_cols = m_pages.at(next)->cols;
+        m_active = 0;
+        m_fullscreenCell = -1;
+    }
+    else if (index < m_activePage)
+    {
+        --m_activePage;
+    }
+    m_tabs->blockSignals(true);
+    m_tabs->removeTab(index);
+    m_tabs->blockSignals(false);
+    m_tabs->setCurrentIndex(m_activePage);
+
+    delete page->scroll;   // 连同 host 与页内 cell 控件一起销毁
+    delete page;
+    return true;
 }
 
 bool CanvasWorkspace::removeAt(int index)
@@ -230,14 +677,18 @@ bool CanvasWorkspace::removeAt(int index)
     if (index < 0 || index >= m_cells.size() || m_cells.size() <= 1)
         return false;
     Cell cell = m_cells.takeAt(index);
-    m_grid->removeWidget(cell.stack);
-    cell.stack->deleteLater();
+    if (cell.stack)
+    {
+        cell.stack->setParent(nullptr);
+        cell.stack->deleteLater();
+    }
     if (m_active >= m_cells.size())
         m_active = m_cells.size() - 1;
-    // 删一个后重排为单行（列数 = 数量），保持整齐。
+    // 删一个后重排为单行（列数 = 数量），保持整齐（对齐老 removeCanvas → reflow）。
     m_rows = 1;
     m_cols = m_cells.size();
-    relayout();
+    rebuildPageLayout();
+    syncPage();
     return true;
 }
 
@@ -245,41 +696,25 @@ bool CanvasWorkspace::split(bool horizontal)
 {
     if (m_cells.isEmpty())
         return false;
-    // 在当前活动 cell 之后插入一个新画布；水平拆分=左右（列+1），垂直=上下（行+1）。
-    auto *stack = new QStackedWidget(this);
-    auto *canvas = new PlotCanvas(stack);
-    auto *view = new ChannelView(m_executor, canvas, canvas);
-    auto *instrument = new InstrumentView(m_executor, stack);
-    instrument->setAppContext(&m_appCtx);
-    stack->addWidget(canvas);
-    stack->addWidget(instrument);
-    stack->setCurrentWidget(canvas);
-    stack->installEventFilter(this);
-    QObject::connect(canvas, &PlotCanvas::channelDropped, this,
-                     [this](int datasetId, const QString &t, const QString &c) {
-                         m_appCtx.setActiveChannel(datasetId, t, c);
-                     });
-    // 画布选中请求 -> 统一 selection（属性面板据此刷新）。
-    connectCanvasSignals(canvas);
-
-    Cell cell;
-    cell.canvas = canvas;
-    cell.view = view;
-    cell.instrument = instrument;
-    cell.stack = stack;
-
+    // 拆分：在当前活动格之后插一块新画布。水平拆分往右长一列，垂直拆分往下长一行；
+    // 与老 PlottingLayout::split 的结果一致（同一格里对半、其它格尺寸不动），
+    // 差别只是本实现统一按网格重排，避免"拆分树"和"网格模式"两套几何互相打架。
+    Cell cell = makeCell(nullptr);
     const int insertAt = qBound(0, m_active + 1, m_cells.size());
     m_cells.insert(insertAt, cell);
-    // 拆分只加一列/一行；网格规格跟着更新。
     if (horizontal)
+    {
         m_cols = m_cells.size();
+        m_rows = 1;
+    }
     else
     {
         m_cols = 1;
         m_rows = m_cells.size();
     }
     m_active = insertAt;
-    relayout();
+    rebuildPageLayout();
+    syncPage();
     return true;
 }
 
@@ -290,62 +725,92 @@ bool CanvasWorkspace::duplicateActive()
         return false;
 
     // 复制 cell 骨架（与 addCell 同一装配），再逐条复制曲线 + 视图状态。
-    auto *stack = new QStackedWidget(this);
-    auto *canvas = new PlotCanvas(stack);
-    auto *view = new ChannelView(m_executor, canvas, canvas);
-    auto *instrument = new InstrumentView(m_executor, stack);
-    instrument->setAppContext(&m_appCtx);
-    stack->addWidget(canvas);
-    stack->addWidget(instrument);
-    stack->setCurrentWidget(canvas);
-    stack->installEventFilter(this);
-    QObject::connect(canvas, &PlotCanvas::channelDropped, this,
-                     [this](int datasetId, const QString &t, const QString &c) {
-                         m_appCtx.setActiveChannel(datasetId, t, c);
-                     });
-    connectCanvasSignals(canvas);
-
+    Cell cell = makeCell(nullptr);
     // 复制曲线：PlotSeries 自含数据源标识 + LOD + 全部样式，逐条 setSeries 即完整还原。
     for (const PlotSeries &s : src->series())
-        canvas->setSeries(s);
+        cell.canvas->setSeries(s);
     // 复制视图状态（范围/轴/图例/变换配方）。
-    canvas->restoreViewState(src->saveViewState());
+    cell.canvas->restoreViewState(src->saveViewState());
 
-    Cell cell;
-    cell.canvas = canvas;
-    cell.view = view;
-    cell.instrument = instrument;
-    cell.stack = stack;
     const int insertAt = qBound(0, m_active + 1, m_cells.size());
     m_cells.insert(insertAt, cell);
-    m_cols = m_cells.size();
     m_rows = 1;
+    m_cols = m_cells.size();
     m_active = insertAt;
-    relayout();
+    rebuildPageLayout();
+    syncPage();
+    return true;
+}
+
+bool CanvasWorkspace::duplicatePage()
+{
+    if (m_pages.isEmpty())
+        return false;
+    const QVector<Cell> srcCells = m_cells;
+    const int srcRows = m_rows;
+    const int srcCols = m_cols;
+
+    // 新页先建好并切过去，再把源页的每一格按原顺序复制进来（曲线与视图状态一并带走）。
+    const int pageIndex = addPage(QStringLiteral("页 %1 副本").arg(m_activePage + 1));
+    m_tabs->setCurrentIndex(pageIndex);
+    if (m_activePage != pageIndex)
+    {
+        // currentChanged 没触发（例如同索引）：显式切一次。
+        switchPage(pageIndex);
+    }
+
+    m_cells.clear();
+    for (const Cell &src : srcCells)
+    {
+        Cell cell = makeCell(nullptr);
+        if (src.canvas)
+        {
+            for (const PlotSeries &s : src.canvas->series())
+                cell.canvas->setSeries(s);
+            cell.canvas->restoreViewState(src.canvas->saveViewState());
+        }
+        m_cells.append(cell);
+    }
+    m_rows = srcRows;
+    m_cols = srcCols;
+    m_active = 0;
+    rebuildPageLayout();
+    syncPage();
     return true;
 }
 
 void CanvasWorkspace::toggleFullscreen()
 {
-    if (m_fullscreenCell >= 0)
-    {
-        // 退出全屏：恢复所有 cell，重排网格。
-        m_fullscreenCell = -1;
-        for (const Cell &c : m_cells)
-            c.stack->setVisible(true);
-        relayout();
-        return;
-    }
     if (m_cells.isEmpty())
         return;
+    // 退出：重建布局（rebuildPageLayout 会把所有格恢复可见）。
+    if (m_fullscreenCell >= 0)
+    {
+        m_fullscreenCell = -1;
+        rebuildPageLayout();
+        syncPage();
+        return;
+    }
     m_fullscreenCell = m_active;
+    rebuildPageLayout();
+    syncPage();
+    // 只留活动格可见；不含可见格的行随之隐藏，避免顶部/底部留下一条空 splitter。
     for (int i = 0; i < m_cells.size(); ++i)
         m_cells.at(i).stack->setVisible(i == m_fullscreenCell);
-    // 全屏 cell 独占整个网格区。
-    m_grid->removeWidget(m_cells.at(m_fullscreenCell).stack);
-    m_grid->addWidget(m_cells.at(m_fullscreenCell).stack, 0, 0);
-    for (int i = 0; i < m_grid->rowCount(); ++i) m_grid->setRowStretch(i, i == 0 ? 1 : 0);
-    for (int i = 0; i < m_grid->columnCount(); ++i) m_grid->setColumnStretch(i, i == 0 ? 1 : 0);
+    Page &page = *m_pages[m_activePage];
+    if (!page.root)
+        return;
+    for (int i = 0; i < page.root->count(); ++i)
+    {
+        auto *row = qobject_cast<QSplitter *>(page.root->widget(i));
+        if (!row)
+            continue;
+        bool anyVisible = false;
+        for (int j = 0; j < row->count(); ++j)
+            if (row->widget(j)->isVisible())
+                anyVisible = true;
+        row->setVisible(anyVisible);
+    }
 }
 
 bool CanvasWorkspace::setGrid(int rows, int cols)
@@ -354,13 +819,22 @@ bool CanvasWorkspace::setGrid(int rows, int cols)
         return false;
     const int want = rows * cols;
     while (m_cells.size() < want)
-        addCell();
+        m_cells.append(makeCell(nullptr));
     while (m_cells.size() > want && m_cells.size() > 1)
-        removeAt(m_cells.size() - 1);
+    {
+        Cell cell = m_cells.takeLast();
+        if (cell.stack)
+        {
+            cell.stack->setParent(nullptr);
+            cell.stack->deleteLater();
+        }
+    }
     m_rows = rows;
     m_cols = cols;
     m_active = qBound(0, m_active, m_cells.size() - 1);
-    relayout();
+    m_fullscreenCell = -1;
+    rebuildPageLayout();
+    syncPage();
     return true;
 }
 
@@ -747,14 +1221,28 @@ void CanvasWorkspace::registerViewActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.bookmark.add"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
-                                    if (!c)
+                                    // 「标记」：在**当前页所有画布**的同一时刻各画一条竖线
+                                    // （用户要求：绘制时所有 axes 同步添加），而不是只加活动那格。
+                                    PlotCanvas *ref = activeCanvas();
+                                    for (const Cell &cell : m_cells)
+                                        if (cell.canvas && !ref)
+                                            ref = cell.canvas;
+                                    if (!ref)
                                         return QVariant(false);
                                     const double t = params.contains(QStringLiteral("t"))
-                                        ? params.value(QStringLiteral("t")).toDouble()
-                                        : c->cursorTime();
-                                    c->addBookmark(t, params.value(QStringLiteral("label")).toString());
-                                    return QVariant(c->bookmarks().size());
+                                                         ? params.value(QStringLiteral("t")).toDouble()
+                                                         : ref->cursorTime();
+                                    const QString label =
+                                        params.value(QStringLiteral("label")).toString();
+                                    int added = 0;
+                                    for (const Cell &cell : m_cells)
+                                    {
+                                        if (!cell.canvas)
+                                            continue;
+                                        cell.canvas->addBookmark(t, label);
+                                        ++added;
+                                    }
+                                    return QVariant(added);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.bookmark.list"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
@@ -1093,11 +1581,36 @@ void CanvasWorkspace::registerViewActions()
                                     PlotCanvas *c = activeCanvas();
                                     if (!c || !c->plotWidget())
                                         return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                    // axis 省略=整体开关；"x"=竖网格（Bottom 轴刻度）；"y"=横网格。
+                                    auto *ax = c->plotWidget();
+                                    const QString axis = params.value(QStringLiteral("axis")).toString();
                                     const bool on = params.contains(QStringLiteral("on"))
                                                         ? params.value(QStringLiteral("on")).toBool()
-                                                        : !c->plotWidget()->gridVisible();
-                                    c->plotWidget()->grid(on);
+                                                        : !ax->gridVisible();
+                                    if (axis.compare(QStringLiteral("x"), Qt::CaseInsensitive) == 0)
+                                        ax->setAxisGridVisible(fastplot::AxisSide::Bottom, on);
+                                    else if (axis.compare(QStringLiteral("y"), Qt::CaseInsensitive) == 0)
+                                    {
+                                        ax->setAxisGridVisible(fastplot::AxisSide::Left, on);
+                                        ax->setAxisGridVisible(fastplot::AxisSide::Right, on);
+                                    }
+                                    else
+                                        ax->grid(on);
                                     return QVariant(on);
+                                });
+    // 显示组「网格」下拉的勾选态：返回当前活动画布的 X/Y 网格线可见性。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.grid.query"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    PlotCanvas *c = activeCanvas();
+                                    if (!c || !c->plotWidget())
+                                        return fail(QStringLiteral("enoent"), QStringLiteral("无活动画布"));
+                                    auto *ax = c->plotWidget();
+                                    QVariantMap out{{QStringLiteral("x"),
+                                                     ax->axisGridVisible(fastplot::AxisSide::Bottom)},
+                                                    {QStringLiteral("y"),
+                                                     ax->axisGridVisible(fastplot::AxisSide::Left)
+                                                         || ax->axisGridVisible(fastplot::AxisSide::Right)}};
+                                    return QVariant(out);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.box"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
@@ -1178,10 +1691,12 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(split(false));
                                 });
-    // 页签复制 + 单画布全屏（对齐 PJ4 TabbedPlotWidget / PlotDocker）。
+    // 页签复制：对齐老 PlottingTabs 的"复制页"——整页搬走（页内每一格的曲线与视图状态一起）。
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.duplicate"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    return QVariant(duplicateActive());
+                                    if (!duplicatePage())
+                                        return fail(QStringLiteral("epage"), QStringLiteral("复制页失败"));
+                                    return QVariant(pageCount());
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.fullscreen"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
@@ -1227,20 +1742,50 @@ void CanvasWorkspace::registerViewActions()
                                                     {QStringLiteral("rows"), r}, {QStringLiteral("cols"), c}};
                                     return QVariant(out);
                                 });
-    // 老 PlottingRibbon"页面"组的"新建页"：ng 用多画布工作区承载页概念，
-    // 新建页 = 重置为单个空画布（真实能力，非占位）。
+    // 老 PlottingRibbon"页面"组的"新建页"：真加一个页签，页内先给一块空画布
+    //（对齐老 appendPlusTab 的"+"页行为，而不是把当前页重置）。
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.new"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    if (!setGrid(1, 1))
-                                        return fail(QStringLiteral("epage"), QStringLiteral("新建页失败"));
-                                    return QVariant(true);
+                                    const int index = addPage();
+                                    m_tabs->setCurrentIndex(index);   // 触发 switchPage 载入新页
+                                    switchPage(index);                // 兜底（同索引无副作用）
+                                    if (m_cells.isEmpty())
+                                        addCell();                    // 新页先给一格空画布
+                                    return QVariant(pageCount());
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.closeCurrent"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    return QVariant(removePage(m_activePage));
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.rename"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    const int index = params.contains(QStringLiteral("index"))
+                                        ? params.value(QStringLiteral("index")).toInt()
+                                        : m_activePage;
+                                    const QString title = params.value(QStringLiteral("title")).toString();
+                                    if (index < 0 || index >= m_pages.size() || title.isEmpty())
+                                        return fail(QStringLiteral("epage"), QStringLiteral("页签重命名参数非法"));
+                                    m_pages.at(index)->title = title;
+                                    m_tabs->setTabText(index, title);
+                                    return QVariant(title);
+                                });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("page.select"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    const int index = params.value(QStringLiteral("index")).toInt();
+                                    if (index < 0 || index >= m_pages.size())
+                                        return fail(QStringLiteral("epage"), QStringLiteral("页索引越界"));
+                                    m_tabs->setCurrentIndex(index);
+                                    switchPage(index);
+                                    return QVariant(index);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.state"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},
                                                     {QStringLiteral("active"), m_active},
                                                     {QStringLiteral("rows"), m_rows},
-                                                    {QStringLiteral("cols"), m_cols}};
+                                                    {QStringLiteral("cols"), m_cols},
+                                                    {QStringLiteral("pages"), pageCount()},
+                                                    {QStringLiteral("activePage"), m_activePage}};
                                     return QVariant(out);
                                 });
 }

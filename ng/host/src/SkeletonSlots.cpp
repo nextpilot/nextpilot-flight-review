@@ -77,13 +77,13 @@ void declareSkeletonSlots(UiSlotRegistry &registry)
           QStringLiteral("ribbon.page.plot"), 1);
     group(QStringLiteral("ribbon.group.plot.display"), QStringLiteral("显示"),
           QStringLiteral("ribbon.page.plot"), 2);
-    group(QStringLiteral("ribbon.group.plot.tool"), QStringLiteral("画布操作"),
+    group(QStringLiteral("ribbon.group.plot.tool"), QStringLiteral("交互"),
           QStringLiteral("ribbon.page.plot"), 3);
-    group(QStringLiteral("ribbon.group.plot.type"), QStringLiteral("图表类型"),
+    group(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("导出"),
           QStringLiteral("ribbon.page.plot"), 4);
-    group(QStringLiteral("ribbon.group.plot.series"), QStringLiteral("曲线与轴"),
+    group(QStringLiteral("ribbon.group.plot.type"), QStringLiteral("图表类型"),
           QStringLiteral("ribbon.page.plot"), 5);
-    group(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("操作"),
+    group(QStringLiteral("ribbon.group.plot.series"), QStringLiteral("曲线与轴"),
           QStringLiteral("ribbon.page.plot"), 6);
 
     // 脚本页：控制台 + 运行（老代码无此页，按用户要求补）。

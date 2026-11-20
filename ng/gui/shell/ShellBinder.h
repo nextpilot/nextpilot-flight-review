@@ -6,7 +6,11 @@
 #include <QJsonObject>
 #include <QString>
 
+#include <functional>
+
 class QAction;
+class QIcon;
+class QMenu;
 class QMainWindow;
 class QWidget;
 
@@ -74,8 +78,19 @@ public:
     QString panelTitle(const QString &area) const;
     int panelCount() const { return m_panels.size(); }
 
+    // 动作 id → 按钮下拉菜单（由外壳之外提供内容，绑定器只负责挂到按钮上）。
+    // 用于「网格」这类"一个大按钮 + 下拉选项"的入口；每次重建都会重新挂。
+    using ActionMenuProvider = std::function<QMenu *(const QString &actionId)>;
+    void setActionMenuProvider(ActionMenuProvider provider) { m_actionMenuProvider = std::move(provider); }
+
+    // 动作 id → 就地改图标/文字（布局组大按钮在选出 m×n 后回写"实际分格"）。
+    void updateActionStyle(const QString &actionId, const QIcon &icon, const QString &text);
+
     // 动作 id → 触发计数（测试用：验证点击确实路由到意图）。
     int actionTriggerCount(const QString &actionId) const;
+
+    // 首帧后把左右 dock 收窄、中央拿大头（用户之后仍可自由拖宽）。
+    void applyDockProportions();
 
     // 布局持久化（ADS 原生）。
     QByteArray saveLayout() const;
@@ -101,6 +116,8 @@ public:
     void setIntentDispatcher(IntentDispatcher dispatcher) { m_dispatch = std::move(dispatcher); }
 
 private:
+    bool m_proportionsApplied = false;
+
     // 确保 ADS 停靠体系已建立（幂等）。
     void ensureDockManager();
 
@@ -130,7 +147,9 @@ private:
     QHash<QString, ads::CDockWidget *> m_panels;      // area -> 该侧主 dock
 
     // 动作
-    QHash<QString, int> m_actionTriggers; // actionId -> 触发次数
+    QHash<QString, int> m_actionTriggers;    // actionId -> 触发次数
+    QHash<QString, QAction *> m_actionById;   // actionId -> 已建动作（图标/文字就地更新用）
+    ActionMenuProvider m_actionMenuProvider;  // 下拉菜单来源（可为空）
 
     IntentDispatcher m_dispatch;
 };

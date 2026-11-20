@@ -230,6 +230,12 @@ public:
     int lodPointCount() const; // 全部曲线的点数之和
     QString channelTitle() const { return m_title; }
 
+    // 画布标题（axes 标题栏）。双击标题栏改名走这里：override 非空时优先于
+    // "首条曲线标题"，空串=恢复自动标题。与 PJ4 的标题双击改名同一语义。
+    void setCanvasTitle(const QString &title);
+    QString canvasTitle() const { return m_titleOverride.isEmpty() ? m_title : m_titleOverride; }
+    bool hasTitleOverride() const { return !m_titleOverride.isEmpty(); }
+
     // 需要直接操作画布能力（缩放/导出等）时用；正常情况下上层不要碰它。
     nextpilot::plotscope::fastplot::Axes *plotWidget() const { return m_plot; }
     nextpilot::plotscope::fastplot::Zoomer *zoomer() const { return m_zoomer; }
@@ -260,6 +266,9 @@ Q_SIGNALS:
     void bookmarksChanged();
     // 图例点击切换曲线显隐（#205）：上层可同步图例面板/属性面板状态。
     void seriesVisibilityChanged(const QString &seriesKey, bool visible);
+    // 鼠标在绘图区内移动（fastplot Picker 每帧回调）：上层据此浮出该格的悬浮工具栏。
+    // 用信号而不是事件过滤器——鼠标事件被 Axes/Picker 吃掉，父控件收不到 MouseMove。
+    void pointerHovered();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -322,6 +331,7 @@ private:
     bool m_pressMoved = false;
     QHash<QString, QString> m_axisTransforms; // axis -> transform descriptor id（视图配方）
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
+    QString m_titleOverride;      // 用户双击标题栏改的名字（非空时压过自动标题）
     QString m_plotKind = QStringLiteral("timeseries"); // 当前图型（画布内可切的）
     double m_t0 = 0.0;
     double m_t1 = 0.0;

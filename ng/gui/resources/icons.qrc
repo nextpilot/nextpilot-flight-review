@@ -17,6 +17,32 @@
     <file alias="loop.svg">icons/loop.svg</file>
     <file alias="replay.svg">icons/replay.svg</file>
     <file alias="step_fwd.svg">icons/step_fwd.svg</file>
+    <file alias="panel.svg">icons/panel.svg</file>
+    <file alias="import.svg">icons/import.svg</file>
+    <file alias="export.svg">icons/export.svg</file>
+    <file alias="export_cfg.svg">icons/export_cfg.svg</file>
     <file alias="screenshot.svg">icons/screenshot.svg</file>
+    <file alias="open.svg">icons/open.svg</file>
+    <file alias="history.svg">icons/history.svg</file>
+    <file alias="reset.svg">icons/reset.svg</file>
+    <file alias="export_data.svg">icons/export_data.svg</file>
+    <file alias="datasource.svg">icons/datasource.svg</file>
+    <file alias="newpage.svg">icons/newpage.svg</file>
+    <file alias="grid.svg">icons/grid.svg</file>
+    <file alias="plus.svg">icons/plus.svg</file>
+    <file alias="split_h.svg">icons/split_h.svg</file>
+    <file alias="split_v.svg">icons/split_v.svg</file>
+    <file alias="legend.svg">icons/legend.svg</file>
+    <file alias="zoom_in.svg">icons/zoom_in.svg</file>
+    <file alias="zoom_out.svg">icons/zoom_out.svg</file>
+    <file alias="fit.svg">icons/fit.svg</file>
+    <file alias="check.svg">icons/check.svg</file>
+    <file alias="maximize.svg">icons/maximize.svg</file>
+    <file alias="close.svg">icons/close.svg</file>
+    <file alias="bookmark.svg">icons/bookmark.svg</file>
+    <file alias="ab.svg">icons/ab.svg</file>
+    <file alias="marker.svg">icons/marker.svg</file>
+    <file alias="ruler.svg">icons/ruler.svg</file>
+    <file alias="grid_lines.svg">icons/grid_lines.svg</file>
   </qresource>
 </RCC>

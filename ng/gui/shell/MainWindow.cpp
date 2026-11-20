@@ -5,6 +5,7 @@
 #include "ProtocolInspectorDialog.h"
 #include "ProtocolEditorDialog.h"
 #include "ShellBinder.h"
+#include "theme/PlotThumbnails.h"
 #include "ThemeManager.h"
 
 #include "AppContext.h"
@@ -22,10 +23,12 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonParseError>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QResource>
 #include <QShowEvent>
+#include <QTimer>
 #include <QStatusBar>
 
 using namespace nextpilot::plotscope::foundation;
@@ -196,26 +199,44 @@ void MainWindow::declareStandardSlots()
     // 走 view action，由 CanvasWorkspace 集中处理（多画布/网格）。intentOp 留空：
     // dispatcher 先按 action id 查 view action，命中即执行，与脚本同路径。
     struct PlotToolDef { const char *area; const char *id; const char *label; const char *icon;
-                         int order; const char *data; };
+                         int order; const char *data; bool large; bool checkable; };
+    // 组划分与按钮尺寸按 main 的 PlottingRibbon：
+    //   页面   新建页(大) / 删除页(大)
+    //   布局   网格 m×n(大缩略) + 添加·删除·左右·上下(小，两行)
+    //   显示   重绘(大) / 网格线(大，下拉选 X/Y) / 边框 / 图例（小，两行）
+    //   交互   标记(大) / AB(大) + 放大·缩小·移动·恢复（小，两行 2+2）
+    //   导出   截图 / 导出 PNG / 导出 CSV
     static const PlotToolDef kPlotTools[] = {
-        // 页面组（老 buildPagePanel）：新建页
-        {"ribbon.group.plot.page",   "page.new",            "新建页",  "newpage", 0, ""},
-        // 布局组（老 buildLayoutPicker）：网格 m×n 选择器 + 添加/删除/左右/上下
-        {"ribbon.group.plot.layout", "page.grid",           "网格",    "grid",    0, "pick"},
-        {"ribbon.group.plot.layout", "page.addCanvas",      "添加",    "plus",    1, ""},
-        {"ribbon.group.plot.layout", "page.removeCanvas",   "删除",    "trash",   2, ""},
-        {"ribbon.group.plot.layout", "page.splitHorizontal","左右",   "split_h", 3, ""},
-        {"ribbon.group.plot.layout", "page.splitVertical",  "上下",    "split_v", 4, ""},
-        // 显示组（老 buildDisplayPanel）：网格线 / 边框 / 图例
-        {"ribbon.group.plot.display","plot.grid",           "网格",    "grid",    0, ""},
-        {"ribbon.group.plot.display","plot.box",            "边框",    "box",     1, ""},
-        {"ribbon.group.plot.display","plot.legend.toggle",  "图例",    "legend",  2, ""},
-        // 画布操作组（老 buildPanelsToolbar）：移动 / 放大 / 缩小（互斥工具模式）+ 自适应
-        {"ribbon.group.plot.tool",   "plot.tool",           "移动",    "hand",    0, "{\"tool\":0}"},
-        {"ribbon.group.plot.tool",   "plot.tool",           "放大",    "zoom_in", 1, "{\"tool\":1}"},
-        {"ribbon.group.plot.tool",   "plot.tool",           "缩小",    "zoom_out",2, "{\"tool\":2}"},
-        {"ribbon.group.plot.tool",   "plot.autoscale",      "自适应",  "fit",     3, ""},
+        // 页面组
+        {"ribbon.group.plot.page",   "page.new",           "新建页", "newpage", 0, "",        true,  false},
+        {"ribbon.group.plot.page",   "page.closeCurrent",  "删除页", "trash",   1, "",        true,  false},
+        // 布局组（网格是 m×n 选择器：带缩略图的大按钮，点击弹行列选择）
+        {"ribbon.group.plot.layout", "page.grid",          "2×1",   "grid",    0, "pick",    true,  false},
+        {"ribbon.group.plot.layout", "page.addCanvas",     "添加",   "plus",    1, "",        false, false},
+        {"ribbon.group.plot.layout", "page.removeCanvas",  "删除",   "trash",   2, "",        false, false},
+        {"ribbon.group.plot.layout", "page.splitHorizontal","左右",  "split_h", 3, "",        false, false},
+        {"ribbon.group.plot.layout", "page.splitVertical", "上下",   "split_v", 4, "",        false, false},
+        // 显示组：网格做成一个大按钮 + 下拉菜单（X 网格线 / Y 网格线），
+        // 下拉项由 MainWindow 的 menu provider 挂到按钮上（SARibbon 显示下拉箭头）。
+        {"ribbon.group.plot.display","plot.grid.menu",     "网格",   "grid_lines", 1, "",     true,  false},
+        {"ribbon.group.plot.display","plot.box",           "边框",   "box",     2, "",        false, true},
+        // 图例由 PlotModule 贡献（display 组 order 3）
+        // 交互组：两个测量/标记大按钮 + 四个工具小按钮（两行 2+2）
+        // 「标记」= 在所有画布同一时刻画一条竖直标记线（原「书签」改名）。
+        {"ribbon.group.plot.tool",   "plot.bookmark.add",  "标记",   "marker",  0, "",        true,  false},
+        {"ribbon.group.plot.tool",   "plot.ab.toggle",     "AB",     "ruler",   1, "",        true,  true},
+        // SARibbon 两行模式按**列**填充（先上后下、再下一列），所以 order 交错写，
+        // 视觉上才是"上排 放大·缩小 / 下排 移动·恢复"。
+        {"ribbon.group.plot.tool",   "plot.tool",          "放大",   "zoom_in", 2, "{\"tool\":1}", false, true},
+        {"ribbon.group.plot.tool",   "plot.tool",          "移动",   "hand",    3, "{\"tool\":0}", false, true},
+        {"ribbon.group.plot.tool",   "plot.tool",          "缩小",   "zoom_out",4, "{\"tool\":2}", false, true},
+        {"ribbon.group.plot.tool",   "plot.autoscale",     "恢复",   "fit",     5, "",        false, false},
+        // 导出组
+        {"ribbon.group.plot.action", "plot.screenshot",    "截图",   "screenshot", 0, "",     false, false},
     };
+    // 布局组大按钮：main 用 layoutThumb(r,c) 画分格缩略图、文字写 "r×c"，
+    // 点选后回写实际分格。ng 初始按当前页默认 1×1，选完由下面 dispatcher 更新。
+    QString layoutVisual = QStringLiteral("layout:2x1");
     for (const PlotToolDef &d : kPlotTools)
     {
         UiAction a;
@@ -225,9 +246,12 @@ void MainWindow::declareStandardSlots()
         a.icon = QString::fromLatin1(d.icon);
         a.data = QString::fromLatin1(d.data);
         a.order = d.order;
+        a.large = d.large;
+        a.checkable = d.checkable;
+        if (a.id == QStringLiteral("page.grid"))
+            a.visual = layoutVisual;
         slotReg.bindLocal(a.area, a, QStringLiteral("app.skeleton"));
     }
-
     // --- 图型库（抄老 PlottingRibbon::buildPlotGallery 的体验）---
     // 12 种图型分"常用/曲线/地图3D/仪表"四组。每项都是纯 UiAction，
     // 点击走 view action "plot.setType"（int/dispatcher 里路由），
@@ -328,6 +352,19 @@ void MainWindow::build(RuntimeHost &host)
     // 并把同一个对象交给绑定器去填内容。
     m_binder->createRibbon(ribbonBar());
 
+    // 2.0) 「网格」大按钮的下拉：内容由外壳给（绑定器只负责挂到 SARibbon 按钮上）。
+    //      X/Y 网格线各自开关，展开前按当前画布状态刷新勾选。
+    m_binder->setActionMenuProvider([this](const QString &actionId) -> QMenu * {
+        if (actionId != QStringLiteral("plot.grid.menu"))
+            return nullptr;
+        if (!m_gridMenu)
+        {
+            m_gridMenu = new QMenu(this);
+            QObject::connect(m_gridMenu, &QMenu::aboutToShow, this, [this] { rebuildGridMenu(); });
+        }
+        return m_gridMenu;
+    });
+
     // 2.1) 主题管理（系统级 GUI 能力，生命周期归宿主）。
     //    ThemeManager 只产出 token/色/QSS 并发 themeChanged；
     //    ribbon 换肤由绑定器订阅后套用——守 ARCHITECTURE §7"绑定器是唯一知道
@@ -412,7 +449,8 @@ void MainWindow::build(RuntimeHost &host)
             return;
         }
         // 截图：抓当前窗口存 PNG（抄老 file.screenshot）。
-        if (actionId == QStringLiteral("file.screenshot"))
+        if (actionId == QStringLiteral("file.screenshot")
+            || actionId == QStringLiteral("plot.screenshot"))
         {
             const QString path = QFileDialog::getSaveFileName(
                 this, QStringLiteral("截图"), QStringLiteral("plotscope.png"),
@@ -561,10 +599,26 @@ void MainWindow::build(RuntimeHost &host)
         Result<QVariant> viewResult(nullVariant);
         // 「网格」按钮（id 仍为 page.grid 以满足契约）：data="pick" 时弹 m×n 选择器，
         // 无 data（脚本/回放直接调）时保留原固定网格行为。
-        const QString dispatchId = (actionId == QStringLiteral("page.grid") && actionData == QStringLiteral("pick"))
-                                       ? QStringLiteral("page.grid.pick") : actionId;
+        QString dispatchId =
+            (actionId == QStringLiteral("page.grid") && actionData == QStringLiteral("pick"))
+                ? QStringLiteral("page.grid.pick") : actionId;
+        // 「显示」组把总网格开关拆成 X / Y 两个（plot.grid.x / .y）：参数在 data 里，
+        // 归一到一个 view action 上，脚本仍可直接调 plot.grid {"axis":"x"}。
+        if (actionId.startsWith(QStringLiteral("plot.grid.")))
+            dispatchId = QStringLiteral("plot.grid");
         if (m_appCtx.interactions().dispatchViewAction(dispatchId, params, viewResult))
         {
+            // 「网格」大按钮：回写缩略图与 "r×c" 文字（对齐 main buildLayoutPicker）。
+            if (actionId == QStringLiteral("page.grid") && viewResult)
+            {
+                const QVariantMap g = viewResult.value().toMap();
+                const int gr = g.value(QStringLiteral("rows")).toInt();
+                const int gc = g.value(QStringLiteral("cols")).toInt();
+                if (gr > 0 && gc > 0)
+                    m_binder->updateActionStyle(QStringLiteral("page.grid"),
+                                                PlotThumbnails::layout(gr, gc),
+                                                QStringLiteral("%1×%2").arg(gr).arg(gc));
+            }
             if (!viewResult)
                 statusBar()->showMessage(QStringLiteral("动作失败: %1").arg(viewResult.error().message));
             return;
@@ -588,6 +642,49 @@ void MainWindow::build(RuntimeHost &host)
 
     // 5) 恢复上次的窗口状态（首次运行则安全跳过）
     restoreState();
+}
+
+// 「网格」下拉：X 网格线 / Y 网格线 各自独立开关，展开时按活动画布现状勾选。
+void MainWindow::rebuildGridMenu()
+{
+    if (!m_gridMenu)
+        return;
+    m_gridMenu->clear();
+
+    QVariantMap state;
+    QVariant nullV;
+    Result<QVariant> qr(nullV);
+    if (m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.grid.query"), QVariantMap(), qr)
+        && qr)
+        state = qr.value().toMap();
+
+    auto addToggle = [this, &state](const QString &label, const QString &axis) {
+        const bool on = state.value(axis).toBool();
+        QAction *a = m_gridMenu->addAction(label);
+        a->setCheckable(true);
+        a->setChecked(on);
+        QObject::connect(a, &QAction::triggered, this, [this, axis, on] {
+            QVariantMap p;
+            p.insert(QStringLiteral("axis"), axis);
+            p.insert(QStringLiteral("on"), !on);
+            QVariant nullV;
+            Result<QVariant> r(nullV);
+            if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.grid"), p, r))
+                statusBar()->showMessage(QStringLiteral("网格线切换失败"));
+        });
+    };
+    addToggle(QStringLiteral("X 网格线"), QStringLiteral("x"));
+    addToggle(QStringLiteral("Y 网格线"), QStringLiteral("y"));
+    m_gridMenu->addSeparator();
+    QAction *off = m_gridMenu->addAction(QStringLiteral("全部关闭"));
+    QObject::connect(off, &QAction::triggered, this, [this] {
+        QVariantMap p;
+        p.insert(QStringLiteral("on"), false);
+        QVariant nullV;
+        Result<QVariant> r(nullV);
+        if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.grid"), p, r))
+            statusBar()->showMessage(QStringLiteral("网格线关闭失败"));
+    });
 }
 
 void MainWindow::openDataFile(RuntimeHost &host)
@@ -685,6 +782,12 @@ void MainWindow::showEvent(QShowEvent *event)
     {
         m_ribbonLaidOut = true;
         m_binder->rebuildRibbon();
+        // ribbing 重排之后窗口才有真实宽度：同一帧末把 dock 比例定下来
+        // （左右收窄、中央拿大头），之后不再干预以保留用户拖动。
+        QTimer::singleShot(0, this, [this]() {
+            if (m_binder)
+                m_binder->applyDockProportions();
+        });
     }
 }
 

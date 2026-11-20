@@ -156,7 +156,10 @@ int main(int argc, char *argv[])
         }
     }
 
-    window.show();
+    // 启动即最大化：PlotScope 的用法是长时间盯着多面板（数据集树 + 画布 + 属性），
+    // 1280×800 默认尺寸会让画布被 dock 挤掉一半；老代码靠 Windows 记住窗口状态，
+    // ng 没有持久化窗口几何，直接最大化更符合使用预期。
+    window.showMaximized();
 
     // 自动播放：走与脚本/测试完全相同的 view action 通道（playback.play）。
     if (parser.isSet(autoplayOpt))

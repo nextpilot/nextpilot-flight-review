@@ -43,10 +43,18 @@ public:
 
     // 画布标题（左上角）。非空时顶部会额外预留一行字高。
     void setTitle(const QString &title);
+    // 标题栏高度（像素）：画布内的悬浮工具栏按这条横带对齐。
+    static constexpr int kTitleBarHeight = 22;
+    // 标题栏底色：也供上层悬浮工具栏取同一个色，避免两个"栏"色差。
+    QColor titleBarColor() const;
     QString title() const { return m_title; }
     void setTitleColor(const QColor &color);
 
     void setGridVisible(bool visible);
+    // 按轴开关网格：Bottom 轴管竖线（X 刻度），Left/Right 轴管横线（Y 刻度）。
+    // 「显示」组的 X 网格 / Y 网格两个开关走这里，整体开关仍走 setGridVisible。
+    void setAxisGridVisible(AxisSide side, bool visible);
+    bool axisGridVisible(AxisSide side) const;
     // 画布边框（plotRect 四边）：老界面「显示」组有独立开关。
     void setBoxVisible(bool visible);
     bool boxVisible() const { return m_box; }
@@ -197,6 +205,11 @@ public:
     double xToPixel(double x) const;
 
     // 图例：显示各曲线的名字 + 色块。
+    // 图例顶部让位：图例块从 plotRect.top()+inset 起排（默认 0）。
+    // 画布上方压着悬浮工具栏时，由上层设一个大于工具栏高度的值，图例就不会被按钮压住。
+    void setLegendTopInset(qreal px) { m_legendTopInset = std::max<qreal>(0.0, px); }
+    qreal legendTopInset() const { return m_legendTopInset; }
+
     void setLegendVisible(bool visible);
     bool legendVisible() const { return m_legend; }
 
@@ -270,6 +283,10 @@ private:
     };
     QVector<LegendRow> m_legendRows;  // paintLegend 缓存的行矩形（命中检测）
     QRectF m_legendTitleRect;         // 标题栏矩形（折叠按钮命中）
+    // 图例整块矩形（标题栏 + 所有行）：右上角贴边绘制，读数框据此避让，
+    // 不能再用"固定左上 + 估算行数下移"的老办法（图例换到右边后那条规则失效）。
+    QRectF m_legendBlockRect;
+    qreal m_legendTopInset = 0.0;     // 图例顶部让位（悬浮工具栏占位）
     bool m_grid = false;
     bool m_box = false;            // 画布边框（对齐老界面显示组）
     QRect m_rubberBand;

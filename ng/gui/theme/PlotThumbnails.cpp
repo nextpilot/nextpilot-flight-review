@@ -24,6 +24,35 @@ QColor panelBg()
 }
 } // namespace
 
+QIcon PlotThumbnails::layout(int rows, int cols)
+{
+    // 抄 main 的 layoutThumb：32×32 透明底 + 琥珀线框 + 分格线，与 ribbon 线性图标同风格。
+    rows = qBound(1, rows, 6);
+    cols = qBound(1, cols, 6);
+    QPixmap pm(32, 32);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, false);
+
+    const QColor line = ink(QColor("#f2b134"));
+    const QRectF area(3.5, 5.5, 25, 21);
+    p.setPen(QPen(line, 1.2));
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(area);
+    p.setPen(QPen(line, 1.0));
+    for (int r = 1; r < rows; ++r)
+    {
+        const qreal y = area.top() + area.height() * r / rows;
+        p.drawLine(QPointF(area.left(), y), QPointF(area.right(), y));
+    }
+    for (int c = 1; c < cols; ++c)
+    {
+        const qreal x = area.left() + area.width() * c / cols;
+        p.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()));
+    }
+    return QIcon(pm);
+}
+
 QIcon PlotThumbnails::plot(const QString &kind)
 {
     QPixmap pm(96, 56);

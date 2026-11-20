@@ -110,6 +110,7 @@ PlotCanvas::PlotCanvas(QWidget *parent)
                     m_plot->setOverlayText(QString());
                     return;
                 }
+                Q_EMIT pointerHovered(); // 鼠标在绘图区内动：通知上层浮出本格工具栏
                 // 单位属于视图层的知识，库只给数值。
                 m_plot->setOverlayText(QStringLiteral("t = %1 s    v = %2")
                                           .arg(x, 0, 'f', 3)
@@ -817,6 +818,12 @@ PlotCanvas::HitResult PlotCanvas::hitTest(const QPointF &pixel) const
     return res;
 }
 
+void PlotCanvas::setCanvasTitle(const QString &title)
+{
+    m_titleOverride = title.trimmed();
+    m_plot->setTitle(m_titleOverride.isEmpty() ? m_title : m_titleOverride);
+}
+
 bool PlotCanvas::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched != m_plot || !m_plot)
@@ -827,6 +834,25 @@ bool PlotCanvas::eventFilter(QObject *watched, QEvent *event)
     case QEvent::MouseMove:
         onCanvasMouseMove(static_cast<QMouseEvent *>(event));
         break;
+    case QEvent::MouseButtonDblClick:
+    {
+        // 双击标题栏 = 行内改名（PJ4 DockToolbar 的 title 双击行为）：
+        // 只认标题带那一行，画图区双击仍然给 Zoomer/Picker。
+        const QMouseEvent *me = static_cast<QMouseEvent *>(event);
+        if (me->position().y() <= fastplot::Axes::kTitleBarHeight + 2)
+        {
+            bool ok = false;
+            const QString name = QInputDialog::getText(
+                this, QStringLiteral("重命名画布"), QStringLiteral("标题"),
+                QLineEdit::Normal, canvasTitle(), &ok);
+            if (ok)
+            {
+                setCanvasTitle(name);
+                return true;   // 改名这一下不再落到双击缩放
+            }
+        }
+        break;
+    }
     case QEvent::MouseButtonPress:
         onCanvasMousePress(static_cast<QMouseEvent *>(event));
         break;
@@ -1055,6 +1081,9 @@ bool PlotCanvas::setPlotKind(const QString &kind)
 
 void PlotCanvas::pushToPlot()
 {
+    // 用户改过名的画布，重建曲线后标题仍是改名后的（不被首条曲线标题顶掉）。
+    if (!m_titleOverride.isEmpty())
+        m_plot->setTitle(m_titleOverride);
     m_plot->clearCurves();
     if (m_series.isEmpty())
     {

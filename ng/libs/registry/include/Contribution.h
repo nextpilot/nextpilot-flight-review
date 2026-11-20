@@ -49,6 +49,12 @@ struct UiAction
     // 组内排序权重（默认 0，越小越靠前）。比较时先比 order，再比 id 保证稳定。
     int order = 0;
 
+    // 呈现尺寸：true=竖占两行的主入口大按钮（ribbon 里的"大按钮"）；
+    // false=普通小按钮。由外壳决定具体像素，声明里只描述"重不重要"。
+    bool large = false;
+    // 切换型动作（网格/边框/图例/工具模式）：外壳建成可勾选的按钮。
+    bool checkable = false;
+
     // 归属（mount() 自动写入，包作者不填）。
     QString provider;                 // 来自哪个包（pack id），按包原子装卸的依据
     Domain domain = Domain::General;  // 所属领域 = 包的领域

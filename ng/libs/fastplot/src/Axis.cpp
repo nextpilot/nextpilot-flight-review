@@ -69,7 +69,12 @@ void Axis::paintGrid(QPainter *painter, const Viewport &vp) const
         return;
     const QRectF plot = vp.plotRect();
     painter->save();
-    painter->setPen(QPen(m_gridInk, 1.0));
+    // 网格用虚线（对齐 PJ4 的观感）：实线网格在曲线密集时会和曲线抢视线。
+    // 4:3 的短虚线在 1px 笔宽下既看得出是虚线，又不至于稀疏得像刻度。
+    QPen gridPen(m_gridInk, 1.0);
+    gridPen.setStyle(Qt::CustomDashLine);
+    gridPen.setDashPattern({4.0, 3.0});
+    painter->setPen(gridPen);
     for (const Tick &t : m_div.ticks)
     {
         if (!t.major)

@@ -652,7 +652,7 @@ void PlotModule::onAttach(UiContext &ui)
     // 绘图模块往 ribbon 的"视图"分组放一个动作，说明自己提供"重新渲染"能力；
     // 插槽由 app 骨架声明，模块只往里填内容——新增模块自带界面时，
     // 只需在自己的 onAttach 里 declareSlot/addAction，其他文件一律不动。
-    ui.declareSlot(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("操作"),
+    ui.declareSlot(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("导出"),
                    SlotKind::RibbonGroup, QStringLiteral("ribbon.page.plot"));
 
     // 申请中央画布工作区：实现由绘图视图层自注册（"canvas-workspace" 类型），
@@ -663,12 +663,13 @@ void PlotModule::onAttach(UiContext &ui)
     UiAction action;
     action.id = QStringLiteral("plot.action.redraw");
     action.label = QStringLiteral("重绘");
-    action.area = QStringLiteral("ribbon.group.plot.action");
+    action.area = QStringLiteral("ribbon.group.plot.display");
     action.intentOp = QStringLiteral("plot.render");
     // 图标名：外壳据此从资源里取 QIcon。图标名是**描述**，
     // 具体资源由外壳管理——模块不直接依赖 GUI 资源。
     action.icon = QStringLiteral("plot_refresh");
-    action.order = 0;
+    action.order = 0;   // 显示组首个大按钮（用户要求：重绘排第一）
+    action.large = true;
     ui.addAction(action);
 
     // 导出 / 图例：处理器由画布视图登记到 AppContext，外壳按 id 派发。
@@ -677,6 +678,7 @@ void PlotModule::onAttach(UiContext &ui)
     exportPng.label = QStringLiteral("导出 PNG");
     exportPng.area = QStringLiteral("ribbon.group.plot.action");
     exportPng.intentOp = QStringLiteral("plot.export.png");
+    exportPng.icon = QStringLiteral("export");
     exportPng.order = 1;
     ui.addAction(exportPng);
 
@@ -685,14 +687,18 @@ void PlotModule::onAttach(UiContext &ui)
     exportCsv.label = QStringLiteral("导出 CSV");
     exportCsv.area = QStringLiteral("ribbon.group.plot.action");
     exportCsv.intentOp = QStringLiteral("plot.export.csv");
+    exportCsv.icon = QStringLiteral("export_data");
     exportCsv.order = 2;
     ui.addAction(exportCsv);
 
     UiAction legend;
-    legend.id = QStringLiteral("plot.action.legend");
+    // id 与 view action 同名：外壳先查视图登记的处理器，按钮点击直接命中，无需回落意图层。
+    legend.id = QStringLiteral("plot.legend.toggle");
     legend.label = QStringLiteral("图例");
-    legend.area = QStringLiteral("ribbon.group.plot.action");
+    legend.area = QStringLiteral("ribbon.group.plot.display");
     legend.intentOp = QStringLiteral("plot.legend.toggle");
+    legend.icon = QStringLiteral("legend");
+    legend.checkable = true;
     legend.order = 3;
     ui.addAction(legend);
 }

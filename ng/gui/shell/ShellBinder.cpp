@@ -16,8 +16,16 @@
 #include "SARibbonPanel.h"
 
 #include "PlotThumbnails.h"
+#include "DockWidgetTab.h"
+#include "SARibbonToolButton.h"
+
+#include <QMenu>
+#include <QToolButton>
 
 #include <QAction>
+#include <QEvent>
+#include <QTimer>
+#include <QFile>
 #include <QIcon>
 #include <QKeySequence>
 #include <QMainWindow>
@@ -51,7 +59,14 @@ ads::DockWidgetArea adsAreaFor(const QString &area)
 // headless（CLI）构建保持纯净。
 QIcon iconFor(const QString &name)
 {
-    return QIcon(QStringLiteral(":/icons/%1.svg").arg(name));
+    if (name.isEmpty())
+        return QIcon();
+    // 资源可能没随版本补齐（模块可以声明图标名而不带资源），缺失就静默给空图标：
+    // 让按钮退化为纯文字，而不是每次建 QAction 都刷一条 qt.svg 告警。
+    const QString path = QStringLiteral(":/icons/%1.svg").arg(name);
+    if (!QFile::exists(path))
+        return QIcon();
+    return QIcon(path);
 }
 } // namespace
 
@@ -93,8 +108,10 @@ void ShellBinder::createRibbon(SARibbonBar *ribbon)
     ribbon->setTitleVisible(false);       // 窗口标题由系统标题栏承担
     ribbon->setTitleBarHeight(0, true);    // 标题带压成 0，否则页签被推低
     ribbon->setTabBarHeight(26);
-    // 收缩能力：右下角 chevron + 双击页签可把面板收起只留页签行。
-    ribbon->showMinimumModeButton(true);
+    // 收缩能力：双击页签可把面板收起只留页签行。
+    // 右下角 chevron 在 UseRibbonFrame 下会和窗口的关闭按钮叠在一起（见截图），
+    // 因此不显示它——折叠功能仍在（双击页签）。
+    ribbon->showMinimumModeButton(false);
     ribbon->setTabDoubleClickToMinimumMode(true);
     ribbon->setPanelTitleHeight(14);
     // 分组标题画在面板底边内，category 高度必须把它算进去。
@@ -121,6 +138,22 @@ void ShellBinder::applyTheme(bool dark, const QString &ribbonQss)
     m_ribbon->setStyleSheet(ribbonQss);
 }
 
+// 布局组大按钮：选出 m×n 后把按钮的缩略图与文字改成本页实际分格（对齐 main
+// buildLayoutPicker 里 act->setIcon/setText 的做法）。动作不存在时静默忽略。
+void ShellBinder::updateActionStyle(const QString &actionId, const QIcon &icon, const QString &text)
+{
+    QAction *action = m_actionById.value(actionId, nullptr);
+    if (!action)
+        return;
+    if (!icon.isNull())
+        action->setIcon(icon);
+    if (!text.isEmpty())
+    {
+        action->setText(text);
+        action->setToolTip(QStringLiteral("%1：点击选择行×列，重排当前页画布").arg(text));
+    }
+}
+
 void ShellBinder::rebuildRibbon()
 {
     if (!m_ribbon)
@@ -132,6 +165,9 @@ void ShellBinder::rebuildRibbon()
     // **移出**，并不销毁它——对象还在，且 stacked widget 的"当前页"仍可能
     // 指向它。于是重建后新 category 排不上号，内容被旧的孤儿挡住，
     // 表现为"内容挤在左上角一小块"。所以这里显式销毁。
+    // 旧动作随旧 category 一起销毁，索引必须同时清空——否则留下的悬垂指针
+    // 会在下一次 updateActionStyle 时被 setIcon 崩掉。
+    m_actionById.clear();
     const auto categories = m_ribbon->categoryPages();
     for (SARibbonCategory *category : categories)
     {
@@ -169,19 +205,39 @@ void ShellBinder::rebuildRibbon()
             QHash<QString, QList<QAction *>> galleryActions; // 组名 -> 项
             QStringList galleryOrder;                        // 组出现顺序
             int ordinaryIndex = 0;
+            // 组内是否显式声明了大按钮：声明了就严格按声明摆（避免"第一个自动变大"）。
+            bool hasDeclaredLarge = false;
+            for (const nextpilot::plotscope::registry::BoundUiAction &bound : actions)
+                if (bound.action.large && bound.action.galleryGroup.isEmpty())
+                    hasDeclaredLarge = true;
+            // 两行排布：老代码每组都 two-row，按钮才不会被挤成一行细条。
+            panel->setPanelLayoutMode(SARibbonPanel::TwoRowMode);
 
             for (const nextpilot::plotscope::registry::BoundUiAction &bound : actions)
             {
                 const nextpilot::plotscope::registry::UiAction &ua = bound.action;
 
                 // 缩略图：优先按 visual 画（图型/格式），否则退回图标名。
-                QIcon ico = ua.visual.isEmpty() ? QIcon() : PlotThumbnails::plot(ua.visual);
+                // 布局组的大按钮用"分格缩略图"（visual="layout:RxC"），其余按图型/格式画。
+                QIcon ico;
+                if (ua.visual.startsWith(QStringLiteral("layout:")))
+                {
+                    const QStringList rc = ua.visual.mid(7).split(QLatin1Char('x'));
+                    ico = PlotThumbnails::layout(rc.value(0).toInt(), rc.value(1).toInt());
+                }
+                else if (!ua.visual.isEmpty())
+                {
+                    ico = PlotThumbnails::plot(ua.visual);
+                }
                 if (ico.isNull() && !ua.icon.isEmpty())
                     ico = iconFor(ua.icon);
 
                 auto *action = new QAction(ico, ua.label, m_ribbon);
                 action->setToolTip(ua.label);
                 action->setData(ua.id);
+                // 切换型动作（网格/边框/图例/工具模式）：按钮自己维护勾选态。
+                if (ua.checkable)
+                    action->setCheckable(true);
                 // 快捷键是动作属性：外壳只做 setShortcut，触发仍走同一个 action id
                 // → 与按钮/图库项/脚本同一条意图路径。QKeySequence 解析无效串会留空，安全。
                 if (!ua.shortcut.isEmpty())
@@ -197,6 +253,8 @@ void ShellBinder::rebuildRibbon()
                                          m_dispatch(actionId, intentOp, actionData);
                                  });
 
+                m_actionById.insert(ua.id, action);
+
                 if (!ua.galleryGroup.isEmpty())
                 {
                     if (!galleryActions.contains(ua.galleryGroup))
@@ -205,12 +263,30 @@ void ShellBinder::rebuildRibbon()
                 }
                 else
                 {
-                    // 第一个普通动作做大按钮，其余小按钮。
-                    if (ordinaryIndex == 0)
+                    // 尺寸由动作自己声明（large=一组的主入口，竖占两行）；没声明的退回
+                    // "第一个当大按钮"的老规则，兼容早期只写了 order 的贡献者。
+                    const bool useLarge = ua.large || (!ua.large && ordinaryIndex == 0
+                                                       && !hasDeclaredLarge);
+                    if (useLarge)
                         panel->addLargeAction(action);
                     else
                         panel->addSmallAction(action);
                     ++ordinaryIndex;
+
+                    // 有下拉内容的动作：把菜单挂到 SARibbon 已建的按钮上，
+                    // 按钮自带下拉箭头；InstantPopup 让单击直接展开选项。
+                    QMenu *menu = m_actionMenuProvider ? m_actionMenuProvider(ua.id) : nullptr;
+                    if (menu)
+                    {
+                        for (SARibbonToolButton *btn : panel->findChildren<SARibbonToolButton *>())
+                        {
+                            if (btn->defaultAction() != action)
+                                continue;
+                            btn->setMenu(menu);
+                            btn->setPopupMode(QToolButton::InstantPopup);
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -302,10 +378,37 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
 
     auto *dock = new ads::CDockWidget(m_dock, title);
     dock->setObjectName(QStringLiteral("ng.dock.%1").arg(area));
+    // 标题栏图标：一眼区分"数据集/属性/日志"三块侧栏。
+    static const struct { const char *area; const char *icon; } kDockIcons[] = {
+        {"dock.left", "data_table"}, {"dock.right", "panel"}, {"dock.bottom", "history"}};
+    for (const auto &di : kDockIcons)
+    {
+        if (area == QLatin1String(di.area))
+        {
+            dock->setIcon(iconFor(QString::fromLatin1(di.icon)));
+            break;
+        }
+    }
+    // 标题文字不再带一块异色底：ADS 的 tab 背景来自它自己的 palette，
+    // 全局 QSS 压不过，这里给 tab 控件自身设透明（控件级样式优先级最高，
+    // 也不怕 ADS 在 palette 变化时重载它自己的 stylesheet）。
+    if (auto *tab = dock->tabWidget())
+        tab->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
     dock->setWidget(content);
     dock->setFeature(ads::CDockWidget::DockWidgetClosable, true);
     dock->setFeature(ads::CDockWidget::DockWidgetMovable, true);
     dock->setFeature(ads::CDockWidget::DockWidgetFloatable, true);
+
+    // 侧边栏宽度约束：ADS 按内容的 sizeHint 分配初始宽度，而数据集树/属性面板
+    // 的 sizeHint 会随内容（长列名、长字段说明）一直涨，结果中央画布被挤到不足一半，
+    // 屏幕一大就更明显。这里给侧边内容一个上限（中央区在 installCentral 里
+    // 已保证 minimumWidth 640），于是"中央最大、两侧窄"的比例由布局自己稳定下来，
+    // 用户仍可在上限内拖宽。
+    if (area.startsWith(QStringLiteral("dock.")))
+    {
+        content->setMinimumWidth(200);
+        content->setMaximumWidth(400);
+    }
 
     // 同侧第二个及以后的面板并成标签页，不向下堆叠。
     ads::CDockAreaWidget *dockArea = nullptr;
@@ -319,8 +422,11 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
         m_lastArea.insert(area, dockArea);
         m_panels.insert(area, dock);
     }
-    if (dockArea)
-        dockArea->setDockAreaFlag(ads::CDockAreaWidget::HideSingleWidgetTitleBar, true);
+    // 侧边停靠区**不隐藏标题栏**：ADS 的拖动抓手就是标题栏（单面板时没有 tab 行可拖），
+    // 一旦 HideSingleWidgetTitleBar=true，面板就只剩内容区，用户既拖不动也浮不起来——
+    // 那样 ADS 就白引了。老代码（src/application/shell/DockManager.cpp）也只对
+    // **中央区**设这个 flag，侧边区一律保留标题栏。
+    // 多面板合并成 tab 时标题栏自然出现，无需在此另设。
 }
 
 void ShellBinder::setCentralContent(QWidget *content)
@@ -343,6 +449,43 @@ void ShellBinder::setCentralContent(QWidget *content)
         m_centralDock->setWidget(content);
     }
     m_centralContent = content;
+}
+
+void ShellBinder::applyDockProportions()
+{
+    if (!m_dock || !m_centralDock || m_proportionsApplied)
+        return;
+    ads::CDockAreaWidget *area = m_centralDock->dockAreaWidget();
+    if (!area)
+        return;
+
+    // 中央区所在的横向分割器：子项顺序与屏幕上从左到右一致。
+    const QList<int> sizes = m_dock->splitterSizes(area);
+    if (sizes.size() < 2)
+        return;                                   // 只有中央，没有侧边
+    int total = 0;
+    for (int v : sizes)
+        total += v;
+    if (total < 800)
+        return;                                   // 窗口还没真正布局出来
+
+    // 最大的那块当作中央（初始它就应该最大），两侧各封顶 300px，余下全部归中央。
+    int centralIdx = 0;
+    for (int i = 1; i < sizes.size(); ++i)
+        if (sizes.at(i) > sizes.at(centralIdx))
+            centralIdx = i;
+
+    QList<int> want = sizes;
+    int sides = 0;
+    for (int i = 0; i < sizes.size(); ++i)
+    {
+        if (i == centralIdx)
+            continue;
+        want[i] = qMin(sizes.at(i), 300);
+        sides += want[i];
+    }
+    want[centralIdx] = qMax(480, total - sides);
+    m_dock->setSplitterSizes(area, want);
 }
 
 void ShellBinder::installCentral()

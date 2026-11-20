@@ -214,9 +214,10 @@ int main(int argc, char *argv[])
             CHECK(pages.at(i).label == expectPages.at(i));
         // 组顺序：同页内按 group.order 升序（老设计 panel 数组顺序）。
         const auto plotGroups = slotReg.childrenOf(QStringLiteral("ribbon.page.plot"));
+        // 绘图页分组按用户要求重排：页面 → 布局 → 显示 → 交互 → 导出 → 图表类型(gallery)。
         const QStringList expectGroups = {QStringLiteral("页面"), QStringLiteral("布局"),
-            QStringLiteral("显示"), QStringLiteral("画布操作"), QStringLiteral("图表类型"),
-            QStringLiteral("曲线与轴"), QStringLiteral("操作")};
+            QStringLiteral("显示"), QStringLiteral("交互"), QStringLiteral("导出"),
+            QStringLiteral("图表类型"), QStringLiteral("曲线与轴")};
         CHECK(plotGroups.size() == expectGroups.size());
         for (int i = 0; i < plotGroups.size(); ++i)
             CHECK(plotGroups.at(i).label == expectGroups.at(i));
@@ -236,16 +237,29 @@ int main(int argc, char *argv[])
         CHECK(layoutIds.contains(QStringLiteral("page.addCanvas")));
         CHECK(layoutIds.contains(QStringLiteral("page.splitHorizontal")));
         const auto displayIds = idsIn(QStringLiteral("ribbon.group.plot.display"));
-        CHECK(displayIds.contains(QStringLiteral("plot.grid")));
+        // 网格改成一个大按钮 + 下拉（X/Y 网格线在菜单里选）；脚本仍可直调 plot.grid。
+        CHECK(displayIds.contains(QStringLiteral("plot.grid.menu")));
+        CHECK(!displayIds.contains(QStringLiteral("plot.grid.x")));
+        CHECK(!displayIds.contains(QStringLiteral("plot.grid.y")));
+        CHECK(displayIds.contains(QStringLiteral("plot.box")));
         CHECK(displayIds.contains(QStringLiteral("plot.legend.toggle")));
-        CHECK(!displayIds.contains(QStringLiteral("plot.autoscale"))); // 自适应归画布操作组
+        CHECK(!displayIds.contains(QStringLiteral("plot.autoscale"))); // 恢复/自适应归交互组
         const auto toolIds = idsIn(QStringLiteral("ribbon.group.plot.tool"));
         CHECK(toolIds.contains(QStringLiteral("plot.autoscale")));
         // 文件页：老设计"截图"是独立一组，不再塞在"导出"组。
         CHECK(slotReg.slot(QStringLiteral("ribbon.group.file.screenshot")) != nullptr);
         CHECK(idsIn(QStringLiteral("ribbon.group.file.screenshot")).contains(QStringLiteral("file.screenshot")));
         CHECK(!idsIn(QStringLiteral("ribbon.group.file.export")).contains(QStringLiteral("file.screenshot")));
-        OK("分组归属抄老设计：页面/布局/显示/画布操作 + 独立截图组");
+        // 页面组除新建页还有删除页（用户要求）。
+        CHECK(idsIn(QStringLiteral("ribbon.group.plot.page")).contains(QStringLiteral("page.closeCurrent")));
+        // 导出组：截图 + 导出 PNG/CSV。
+        const auto exportIds = idsIn(QStringLiteral("ribbon.group.plot.action"));
+        CHECK(exportIds.contains(QStringLiteral("plot.screenshot")));
+        CHECK(exportIds.contains(QStringLiteral("plot.export.png")));
+        // 交互组：三个工具模式 + 恢复 + AB + 书签。
+        CHECK(toolIds.contains(QStringLiteral("plot.ab.toggle")));
+        CHECK(toolIds.contains(QStringLiteral("plot.bookmark.add")));
+        OK("分组归属：页面/布局/显示(网格下拉)/交互/导出 + 独立截图组");
     }
     {
         // action 组内顺序按 order 升序（不再依赖模块装载顺序）。
@@ -1577,13 +1591,13 @@ int main(int argc, char *argv[])
     {
         auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
         CHECK(ws != nullptr);
-        // 页签复制：cell 数 +1，复制品继承曲线。
-        const int n0 = ws->cellCount();
+        // 页签复制：多出一页（整页复制，页内 cell 数不变）。
+        const int p0 = ws->pageCount();
         QVariant vr;
         Result<QVariant> res(vr);
         CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("page.duplicate"), {}, res));
-        CHECK(ws->cellCount() == n0 + 1);
+        CHECK(ws->pageCount() == p0 + 1);
         // 全屏切换：开→关两次回到正常（避免影响后续）。
         CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("page.fullscreen"), {}, res));
@@ -1598,7 +1612,7 @@ int main(int argc, char *argv[])
         canvas->undoView();
         CHECK(canvas->viewHistorySize() == h0);
 
-        OK("PJ4 对齐：页签复制(cell+1) + 全屏切换 + 视图撤销(历史入栈/回退)");
+        OK("PJ4 对齐：页签复制(页数+1，整页复制) + 全屏切换 + 视图撤销(历史入栈/回退)");
     }
 
     // --- PJ4 对齐 #205：图例交互（点条目切显隐 / 折叠 / 字号缩放）---
@@ -1611,11 +1625,13 @@ int main(int argc, char *argv[])
         const int curves = ax->curveCount();
         CHECK(curves >= 1);
 
-        // ① 标题栏命中：图例区顶部标题行 → -1；绘图区其它位置 → -2。
+        // ① 标题栏命中：图例贴**右上角**，标题行在 plotRect 右端 → -1；绘图区中部 → -2。
         // hitTest 基于最近一次 paint 缓存的行矩形，先强制渲染一遍。
         CHECK(!ax->grabImage().isNull());
         const QRectF plotRect = ax->plotRect();
-        CHECK(ax->legendHitTest(QPointF(plotRect.left() + 20, plotRect.top() + 12)) == -1);
+        // 图例上边 = plotRect.top() + insets（工作区给悬浮工具栏让位的量，默认 0）。
+        const qreal legendTop = plotRect.top() + ax->legendTopInset() + 12;
+        CHECK(ax->legendHitTest(QPointF(plotRect.right() - 20, legendTop)) == -1);
         CHECK(ax->legendHitTest(QPointF(plotRect.center())) == -2);
 
         // ② toggleLegendItem：Axes Line 显隐切换 + 信号同步回 PlotSeries（重建不丢）。
@@ -1648,9 +1664,14 @@ int main(int argc, char *argv[])
         // ⑤ view action 通道：toggleItem（按 key）/ collapse / fontZoom。
         QVariant vr;
         Result<QVariant> res(vr);
-        // 页签复制段把活动 cell 漂到了复制品上；view action 作用于活动画布，
-        // 先把活动 cell 切回本段 canvas 所在 cell。
-        qobject_cast<CanvasWorkspace *>(binder->centralContent())->setActive(0);
+        // 页签复制段把活动页/活动 cell 漂到了复制品上；view action 作用于当前页的活动画布，
+        // 先用 page.select 切回第 0 页，再 setActive(0) 定位到本段 canvas 所在 cell。
+        {
+            auto *wsBefore = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("page.select"), {{QStringLiteral("index"), 0}}, res));
+            wsBefore->setActive(0);
+        }
         const QString key0 = canvas->seriesAtForTest(0).key();
         CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.legend.toggleItem"),
@@ -1705,14 +1726,14 @@ int main(int argc, char *argv[])
         CHECK(application.context().data().count() == dsBefore + 1);
 
         // (2) view action 回退通道：脚本 app.call("page.duplicate") 在意图通道
-        // eunsupported 后回退到 view action，cell 数 +1。
-        const int nBefore = ws->cellCount();
+        // eunsupported 后回退到 view action，页数 +1。
+        const int pagesBefore = ws->pageCount();
         Intent sc2;
         sc2.op = QStringLiteral("script.run");
         sc2.params[QStringLiteral("source")] = QByteArray("app.call(\"page.duplicate\")");
         const auto sr2 = application.host().execute(sc2);
         CHECK(static_cast<bool>(sr2));
-        CHECK(ws->cellCount() == nBefore + 1);
+        CHECK(ws->pageCount() == pagesBefore + 1);
 
         // (3) 脚本触发过滤器：app.call("data.filter", {...}) 直接把过滤结果叠加到画布。
         // 证明脚本能像 CLI 一样调用 #209 新增的过滤器意图（VBA 式操作应用）。

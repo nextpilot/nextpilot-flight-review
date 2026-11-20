@@ -28,6 +28,8 @@ namespace nextpilot::plotscope::host
 class RuntimeHost;
 } // namespace nextpilot::plotscope::host
 
+class QMenu;
+
 namespace nextpilot::plotscope::gui
 {
 
@@ -98,6 +100,9 @@ private:
     // 纯 GUI 工具（编辑配置文档，不入 Dataset），按 id 特判弹对话框。
     void openProtocolEditor();
 
+    // 「网格」大按钮的下拉菜单：每次展开前按当前画布状态重建勾选项。
+    void rebuildGridMenu();
+
     // 窗口首次显示后：按真实宽度重排 ribbon。
     //
     // SARibbon 的面板是按 ribbon 的**当时宽度**算几何的。窗口显示前，
@@ -110,6 +115,7 @@ private:
     nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::host::RuntimeHost *m_host = nullptr; // 用于取设置（状态持久化）
     ShellBinder *m_binder = nullptr;
+    QMenu *m_gridMenu = nullptr;   // 「网格」大按钮的下拉（X/Y 网格线开关）
     GuiContext *m_context = nullptr;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     bool m_ribbonLaidOut = false; // 是否已按真实宽度重建过 ribbon

@@ -30,6 +30,7 @@
 #include "SARibbonBar.h"
 
 #include <QAction>
+#include <QMouseEvent>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QPlainTextEdit>
@@ -149,6 +150,7 @@ int main(int argc, char *argv[])
     QString offsetArg;    // --offset=<sourceId:seconds> 设源级时间偏移（#204）
     QString alignArg;     // --align=<start|center|end> 一键多源对齐（#204）
     QString legendArg;    // --legend=<collapse|zoom[±N]> 图例交互演示（#205）
+    bool hoverArg = false; // --hover 注入一次鼠标移动，让每格悬浮工具栏在截图里可见
     QString liveArg;      // --livesource=<名>[:paused] 注册演示 live 源（#193 暂停/继续按钮）
     QStringList actionArgs;
     int w = 1440;
@@ -189,6 +191,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--cursor=")))
         {
             cursorArg = a.mid(QStringLiteral("--cursor=").size());
+            continue;
+        }
+        if (a == QStringLiteral("--hover"))
+        {
+            hoverArg = true;
             continue;
         }
         if (a.startsWith(QStringLiteral("--script=")))
@@ -631,6 +638,18 @@ int main(int argc, char *argv[])
             app.quit();
         });
         return app.exec();
+    }
+
+    // --hover：给活动画布塞一次 MouseMove，触发本格的悬浮工具栏（验收截图用）。
+    if (hoverArg)
+    {
+        auto *ws = qobject_cast<CanvasWorkspace *>(window.binder() ? window.binder()->centralContent() : nullptr);
+        if (auto *pc = ws ? ws->activeCanvas() : nullptr)
+        {
+            ws->flashToolbar(false); // 浮出活动格工具栏且不自动收起，供截图
+            QCoreApplication::processEvents();
+            fprintf(stdout, "hover: 工具栏已浮出 (canvas=%p)\n", (void *)pc);
+        }
     }
 
     // 让事件循环转一圈，ribbon/dock/画布完成布局与绘制

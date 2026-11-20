@@ -94,6 +94,13 @@ void Axes::setSecondAxis(bool enabled)
 void Axes::setLegendVisible(bool visible)
 {
     m_legend = visible;
+    if (!visible)
+    {
+        // 图例关掉后要让读数框恢复"不避让"，否则残留的块矩形会把读数框一直往下推。
+        m_legendBlockRect = QRectF();
+        m_legendRows.clear();
+        m_legendTitleRect = QRectF();
+    }
     update();
 }
 
@@ -232,6 +239,17 @@ void Axes::setTitleColor(const QColor &color)
 {
     m_titleColor = color;
     invalidateStatic();
+}
+
+void Axes::setAxisGridVisible(AxisSide side, bool visible)
+{
+    m_axes[sideIndex(side)].setGridVisible(visible);
+    replot();
+}
+
+bool Axes::axisGridVisible(AxisSide side) const
+{
+    return m_axes[sideIndex(side)].gridVisible();
 }
 
 void Axes::setGridVisible(bool visible)
@@ -807,7 +825,7 @@ void Axes::relayout()
     if (!m_title.isEmpty())
     {
         // 标题压在最上面：给它一行字高，避免和轴标签抢位置。
-        top = std::max(top, QFontMetrics(m_axes[sideIndex(AxisSide::Top)].font()).height() + 10);
+        top = std::max(top, int(kTitleBarHeight) + 2);
     }
     // 状态视图行（对齐 PJ4 StateTransitionsView 的 RowMetrics：band 22px + gap 6px）：
     // 每行在顶部预留 band_h + gap，另有行名一行字高（只在有行时生效）。
@@ -890,11 +908,16 @@ void Axes::paintEvent(QPaintEvent *event)
         if (!m_title.isEmpty())
         {
             const QRectF plot = m_vp.plotRect();
+            // 标题栏底色：整条横带，与画布内的悬浮工具栏同色（用户要求两者一致）。
+            const QColor band = titleBarColor();
+            p.setPen(Qt::NoPen);
+            p.setBrush(band);
+            p.drawRect(QRectF(plot.left(), 1, plot.width(), kTitleBarHeight));
             p.setPen(m_titleColor);
             QFont f = font();
             f.setBold(true);
             p.setFont(f);
-            p.drawText(QRectF(plot.left(), 2, plot.width(), 18),
+            p.drawText(QRectF(plot.left() + 4, 1, plot.width() - 4, kTitleBarHeight - 1),
                        Qt::AlignLeft | Qt::AlignVCenter, m_title);
         }
         p.end();
@@ -926,6 +949,14 @@ void Axes::paintEvent(QPaintEvent *event)
     paintOverlay(painter);
 }
 
+QColor Axes::titleBarColor() const
+{
+    // 主题里 alternateBase 是最接近"标题/表头带"的中性色，深浅主题都有定义。
+    QColor c = palette().alternateBase().color();
+    c.setAlpha(255);
+    return c;
+}
+
 void Axes::paintLegend(QPainter &painter)
 {
     const QRectF plot = m_vp.plotRect();
@@ -940,7 +971,39 @@ void Axes::paintLegend(QPainter &painter)
     const QColor gray(0x88, 0x88, 0x88);
 
     // 标题栏：▾/▸ 折叠指示 + "图例"。点击整栏切换折叠。
-    m_legendTitleRect = QRectF(plot.left() + 8, plot.top() + 8, plot.width() - 16, rowH);
+    //
+    // 位置：贴**右上角**。宽度按内容自适应（标题 / 最长曲线名 / 实时值列），
+    // 上限绘图区 45%——图例在左上时会横铺一整行，把画面顶部整条吃掉，
+    // 而且与读数框抢位置；改成右上角窄块后，绘图区左侧完全让给曲线。
+    int legendW = fm.horizontalAdvance(QStringLiteral("▾ 图例")) + 20;
+    for (const Line &c : m_curves)
+    {
+        if (c.name().isEmpty())
+            continue;
+        int need = 16 + fm.horizontalAdvance(c.name()) + 12;
+        if (m_cursorActive)
+            need += 12 + 70;   // 实时值列
+        legendW = std::max(legendW, need);
+    }
+    legendW = std::max(96, std::min(legendW, int(plot.width() * 0.45)));
+    const double legendX = plot.right() - 8 - legendW;
+
+    // 行数（名字为空的曲线不进图例）。要先把整块底色铺上，否则曲线会从字里穿过去，
+    // 右上角窄块正好压在波形上时尤其难看。
+    int namedRows = 0;
+    for (const Line &c : m_curves)
+        if (!c.name().isEmpty())
+            ++namedRows;
+
+    const QRectF blockRect(legendX, plot.top() + 8 + m_legendTopInset, legendW,
+                           (namedRows + 1) * rowH);
+    QColor blockBg = palette().window().color();
+    blockBg.setAlpha(232);
+    painter.setPen(QPen(QColor(labelColor.red(), labelColor.green(), labelColor.blue(), 60), 1));
+    painter.setBrush(blockBg);
+    painter.drawRoundedRect(blockRect, 3, 3);
+
+    m_legendTitleRect = QRectF(legendX, plot.top() + 8 + m_legendTopInset, legendW, rowH);
     painter.setPen(Qt::NoPen);
     painter.setBrush(QColor(0, 0, 0, 36));
     painter.drawRoundedRect(m_legendTitleRect, 2, 2);
@@ -952,6 +1015,7 @@ void Axes::paintLegend(QPainter &painter)
     m_legendRows.clear();
     if (m_legendCollapsed)
     {
+        m_legendBlockRect = m_legendTitleRect;
         painter.restore();
         return;
     }
@@ -963,7 +1027,7 @@ void Axes::paintLegend(QPainter &painter)
         const Line &c = m_curves.at(i);
         if (c.name().isEmpty())
             continue;
-        const QPointF origin(plot.left() + 8, plot.top() + 8 + (row + 1) * rowH);
+        const QPointF origin(legendX, plot.top() + 8 + m_legendTopInset + (row + 1) * rowH);
         painter.setPen(Qt::NoPen);
         painter.setBrush(c.isVisible() ? c.ink() : gray);
         painter.drawRect(QRectF(origin.x(), origin.y() + 3, 10, 10));
@@ -978,9 +1042,11 @@ void Axes::paintLegend(QPainter &painter)
                                     origin.y(), 70, rowH),
                              Qt::AlignVCenter | Qt::AlignLeft, val);
         }
-        m_legendRows.append(LegendRow{i, QRectF(plot.left() + 8, origin.y(), plot.width() - 16, rowH)});
+        m_legendRows.append(LegendRow{i, QRectF(legendX, origin.y(), legendW, rowH)});
         ++row;
     }
+    // 整块矩形：标题栏一行 + 所有曲线行（读数框按它避让）。
+    m_legendBlockRect = blockRect;
     painter.restore();
 }
 
@@ -1147,26 +1213,18 @@ void Axes::paintCursorReadout(QPainter &painter, const QRectF &plot)
     const int lineH = fm.height() + 2;
     const int boxW = qMin(int(plot.width() - 16), 280);
     const int boxH = 22 + qMin(m_cursorRows.size(), 8) * lineH + 6;
-    // 读数框避开图例（图例固定左上）：图例可见曲线占 top+8 起若干行，读数框落在它下方。
-    // 游标在左侧时尤其需要，否则读数框会压住图例的实时值列。
-    int legendRows = 0;
-    if (m_legend)
-    {
-        // 标题栏（含折叠）+ 全部命名曲线行（隐藏行灰显仍占位，#205）。
-        legendRows = 1;
-        for (const Line &c : m_curves)
-            if (!c.name().isEmpty()) ++legendRows;
-        if (m_legendCollapsed)
-            legendRows = 1;
-    }
-    const double legendBottom = plot.top() + 8 + legendRows * (fm.height() + 4);
+    // 读数框避开图例：图例现在是**右上角**的自适应窄块，不再横铺一整行，
+    // 所以不能用"游标靠左就整体下移"的老规则（那会把框白推下去一大截）。
+    // 改为几何判定：按默认位置算出框，只有真正与图例矩形相交时才让开。
     double boxTop = plot.top() + (m_abEnabled ? 30 : 8);
-    // 仅当读数框会与图例横向重叠（游标靠左）时才下移过图例。
-    if (m_legend && x < plot.left() + 300)
-        boxTop = qMax(boxTop, legendBottom + 4);
     QRectF box(x + 12, boxTop, boxW, boxH);
     if (box.right() > plot.right())
         box.moveLeft(x - 12 - boxW);
+    if (box.bottom() > plot.bottom())
+        box.moveTop(plot.bottom() - boxH - 4);
+    // 真正压到右上角图例时，把框整体挪到图例下方（图例窄，绝大多数游标位置都不触发）。
+    if (!m_legendBlockRect.isEmpty() && box.intersects(m_legendBlockRect))
+        box.moveTop(m_legendBlockRect.bottom() + 4);
     if (box.bottom() > plot.bottom())
         box.moveTop(plot.bottom() - boxH - 4);
 
