@@ -7,6 +7,7 @@
 #include "LuaEngine.h"
 #include "ScriptFacade.h"
 #include "TransformEvaluator.h"
+#include "MarkerEngine.h"
 #include "AppContext.h"
 #include "RuntimeHost.h"
 
@@ -142,6 +143,41 @@ void ScriptModule::initialize(ModuleContext &ctx)
         return cat->applySeries(id, params, t, v);
     };
     ctx.host().registerFilterOps(std::move(filterOps));
+
+    // Marker 规则能力：run(code, seriesJson) -> markers JSON。用一次性 MarkerEngine 执行，
+    // seriesJson 里的序列在本 lambda 栈上构造，provider 的 get 返回它们的地址（调用期有效）。
+    nextpilot::plotscope::uischema::MarkerOps markerOps;
+    markerOps.run = [](const QByteArray &code, const QJsonArray &seriesJson) -> Result<QJsonArray> {
+        using namespace nextpilot::plotscope::script;
+        QVector<MarkerSeries> owned;
+        owned.reserve(seriesJson.size());
+        for (const QJsonValue &jv : seriesJson)
+        {
+            const QJsonObject o = jv.toObject();
+            MarkerSeries s;
+            s.name = o.value(QStringLiteral("name")).toString();
+            for (const QJsonValue &t : o.value(QStringLiteral("time")).toArray())
+                s.time.append(t.toDouble());
+            for (const QJsonValue &v : o.value(QStringLiteral("value")).toArray())
+                s.value.append(v.toDouble());
+            owned.append(std::move(s));
+        }
+        MarkerSeriesProvider provider;
+        for (const MarkerSeries &s : owned)
+            provider.names << s.name;
+        provider.get = [&owned](const QString &name) -> const MarkerSeries * {
+            for (const MarkerSeries &s : owned)
+                if (s.name == name)
+                    return &s;
+            return nullptr;
+        };
+        MarkerEngine eng;
+        auto r = eng.run(code, provider);
+        if (!r)
+            return fail(r.error().code, r.error().message);
+        return Result<QJsonArray>(markersToJson(r.value()));
+    };
+    ctx.host().registerMarkerOps(std::move(markerOps));
 
     // Lua 脚本库：目录可用 NG_SCRIPTS_DIR 覆盖（部署/测试），默认 scripts/ops。
     const QByteArray dirOverride = qgetenv("NG_SCRIPTS_DIR");

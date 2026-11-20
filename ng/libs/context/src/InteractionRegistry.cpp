@@ -74,6 +74,11 @@ void InteractionRegistry::registerFilterOps(FilterOps ops)
     m_filterOps = std::move(ops);
 }
 
+void InteractionRegistry::registerMarkerOps(MarkerOps ops)
+{
+    m_markerOps = std::move(ops);
+}
+
 void InteractionRegistry::registerTransformScriptOps(TransformScriptOps ops)
 {
     m_transformScriptOps = std::move(ops);

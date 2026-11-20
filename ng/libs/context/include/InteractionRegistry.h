@@ -3,6 +3,7 @@
 #include "Selection.h"
 #include "Transform.h"
 #include "FilterOps.h"
+#include "MarkerOps.h"
 
 #include <QHash>
 #include <QJsonObject>
@@ -21,6 +22,7 @@ using nextpilot::plotscope::uischema::Selection;
 using nextpilot::plotscope::uischema::SelectionKind;
 using nextpilot::plotscope::uischema::TransformScriptOps;
 using nextpilot::plotscope::uischema::FilterOps;
+using nextpilot::plotscope::uischema::MarkerOps;
 
 
 // 交互注册表：容纳"注册 + 派发"型扩展点（viewAction / property / transform）。
@@ -62,6 +64,11 @@ public:
     bool hasFilterOps() const { return m_filterOps.valid(); }
     const FilterOps &filterOps() const { return m_filterOps; }
 
+    // Marker 规则能力：实现在 script/MarkerEngine，调用方在 host(data.marker)/脚本。
+    void registerMarkerOps(MarkerOps ops);
+    bool hasMarkerOps() const { return m_markerOps.valid(); }
+    const MarkerOps &markerOps() const { return m_markerOps; }
+
     // Lua 脚本库能力：GUI 保存/解析脚本走这里，不反向依赖 script 模块。
     void registerTransformScriptOps(TransformScriptOps ops);
     bool hasTransformScriptOps() const { return m_transformScriptOps.valid(); }
@@ -74,6 +81,7 @@ private:
     TransformEvalFn m_transformEvaluator;
     TransformScriptOps m_transformScriptOps;
     FilterOps m_filterOps;
+    MarkerOps m_markerOps;
 };
 
 } // namespace nextpilot::plotscope::context

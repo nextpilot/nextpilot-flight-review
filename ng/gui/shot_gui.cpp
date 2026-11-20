@@ -102,6 +102,7 @@ int main(int argc, char *argv[])
     QString cursorArg;    // --cursor=<t> 触发游标读数（老代码交互欠账验收用）
     QString scriptArg;    // --script=<lua源码> 用脚本 app 全局操作应用（脚本对齐验收用）
     QString filterArg;    // --filter=<id> 截过滤器编辑器（脚本对齐 C：FilterOps+表单）
+    QString markerArg;    // --marker=<lua规则> 截 Marker 规则叠加（脚本对齐 D）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -147,6 +148,11 @@ int main(int argc, char *argv[])
         {
             filterArg = a.startsWith(QStringLiteral("--filter="))
                 ? a.mid(QStringLiteral("--filter=").size()) : QStringLiteral("scale");
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--marker=")))
+        {
+            markerArg = a.mid(QStringLiteral("--marker=").size());
             continue;
         }
         files << a;
@@ -291,6 +297,28 @@ int main(int argc, char *argv[])
         sc.params[QStringLiteral("source")] = scriptArg.toUtf8();
         const auto sr = application.host().execute(sc);
         fprintf(stdout, "app 脚本: %s\n", sr ? "执行成功" : qPrintable(sr.error().message));
+    }
+
+    // --marker=<lua规则>：执行 data.marker 意图，把 PlotMarker 画到画布后截图。
+    if (!markerArg.isEmpty())
+    {
+        const Dataset *mds = application.context().data().get(firstDataset);
+        if (mds && mds->tableCount() > 0 && mds->table(0) && !mds->table(0)->columns.isEmpty())
+        {
+            Intent mit;
+            mit.op = QStringLiteral("data.marker");
+            mit.params[QStringLiteral("dataset")] = firstDataset;
+            mit.params[QStringLiteral("table")] = mds->table(0)->name;
+            mit.params[QStringLiteral("column")] = mds->table(0)->columns.first().name;
+            mit.params[QStringLiteral("code")] = markerArg.toUtf8();
+            const auto mr = application.host().execute(mit);
+            fprintf(stdout, "Marker 规则: %s\n", mr ? "执行成功" : qPrintable(mr.error().message));
+            if (mr)
+                fprintf(stdout, "产出 marker: %d\n",
+                        mr.value().payload.toMap().value(QStringLiteral("count")).toInt());
+        }
+        else
+            fprintf(stderr, "Marker 规则: 无可用数据集/通道\n");
     }
 
     // --cursor=<t>：走真实画布 API 触发游标读数（老代码交互欠账验收）。

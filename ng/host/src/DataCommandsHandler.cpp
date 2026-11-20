@@ -47,7 +47,7 @@ bool DataCommandsHandler::canHandle(const Intent &intent) const
     return op == QLatin1String("data.reload") || op == QLatin1String("data.export")
         || op == QLatin1String("data.recent") || op == QLatin1String("data.clearCache")
         || op == QLatin1String("data.remove")
-        || op == QLatin1String("data.derive") || op == QLatin1String("data.filter")
+        || op == QLatin1String("data.derive")         || op == QLatin1String("data.filter") || op == QLatin1String("data.marker")
         || op == QLatin1String("data.workspace.list")
         || op == QLatin1String("data.workspace.save")
         || op == QLatin1String("data.workspace.restore");
@@ -69,6 +69,8 @@ Result<IntentResult> DataCommandsHandler::execute(const Intent &intent)
         return derive(intent);
     if (intent.op == QLatin1String("data.filter"))
         return filterSeries(intent);
+    if (intent.op == QLatin1String("data.marker"))
+        return runMarker(intent);
     if (intent.op == QLatin1String("data.workspace.list"))
         return workspaceList();
     if (intent.op == QLatin1String("data.workspace.save"))
@@ -450,6 +452,75 @@ Result<IntentResult> DataCommandsHandler::filterSeries(const Intent &intent)
         {QStringLiteral("value"), QVariant::fromValue(outV)},
     };
     Q_EMIT m_app.derivedSeriesReady(name, outT, outV);
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::runMarker(const Intent &intent)
+{
+    const DatasetId dsId = intent.params.value(QStringLiteral("dataset"), -1).toInt();
+    const QString table = intent.params.value(QStringLiteral("table")).toString();
+    const QString column = intent.params.value(QStringLiteral("column")).toString();
+    QByteArray code = intent.params.value(QStringLiteral("code")).toByteArray();
+    if (code.isEmpty())
+        code = intent.params.value(QStringLiteral("source")).toByteArray(); // 脚本/CLI 别名
+    if (dsId < 0 || table.isEmpty() || column.isEmpty() || code.isEmpty())
+        return fail(QStringLiteral("eargs"),
+                    QStringLiteral("data.marker 需要 dataset/table/column/code 参数"));
+
+    if (!m_app.interactions().hasMarkerOps())
+        return fail(QStringLiteral("enomarkerops"), QStringLiteral("Marker 规则能力未注册（script 模块未装载）"));
+
+    const Dataset *ds = m_app.data().get(dsId);
+    if (!ds)
+        return fail(QStringLiteral("enoent"), QStringLiteral("数据集不存在: %1").arg(dsId));
+    const QString input = table + QLatin1Char('.') + column;
+    auto channel = ds->channel(table, column);
+    if (!channel)
+        return fail(QStringLiteral("echan"), QStringLiteral("通道不存在: %1").arg(input));
+
+    constexpr int kMaxPoints = 200000;
+    int cap = intent.params.value(QStringLiteral("cap"), kMaxPoints).toInt();
+    if (cap <= 0 || cap > kMaxPoints)
+        cap = kMaxPoints;
+    const int take = qMin(channel->size(), cap);
+    QJsonArray timeArr, valueArr;
+    for (int i = 0; i < take; ++i)
+    {
+        timeArr.append(channel->time.value(i));
+        valueArr.append(channel->value.value(i));
+    }
+    QJsonObject seriesObj;
+    seriesObj.insert(QStringLiteral("name"), column);
+    seriesObj.insert(QStringLiteral("time"), timeArr);
+    seriesObj.insert(QStringLiteral("value"), valueArr);
+    QJsonArray seriesJson;
+    seriesJson.append(seriesObj);
+
+    Result<QJsonArray> res = m_app.interactions().markerOps().run(code, seriesJson);
+    if (!res)
+        return fail(res.error().code, res.error().message);
+    const QJsonArray markers = res.value();
+
+    // 画到活动画布（经 view action，host 不依赖 GUI 类型）。
+    QVariantMap draw;
+    draw.insert(QStringLiteral("markers"), markers.toVariantList());
+    Result<QVariant> viewOut{QVariant()};
+    m_app.interactions().dispatchViewAction(QStringLiteral("plot.markers.set"), draw, viewOut);
+
+    QString name = intent.params.value(QStringLiteral("name")).toString();
+    if (name.isEmpty())
+        name = input + QStringLiteral(".markers");
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("dataset"), dsId},
+        {QStringLiteral("table"), table},
+        {QStringLiteral("column"), column},
+        {QStringLiteral("name"), name},
+        {QStringLiteral("count"), markers.size()},
+        {QStringLiteral("points"), take},
+        {QStringLiteral("markers"), markers.toVariantList()},
+        {QStringLiteral("drawn"), viewOut.ok()},
+    };
     return r;
 }
 

@@ -22,6 +22,7 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QGridLayout>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QMouseEvent>
 #include <QStackedWidget>
@@ -745,6 +746,25 @@ void CanvasWorkspace::registerViewActions()
                                                 {QStringLiteral("label"), bm.label},
                                             });
                                     return QVariant(list);
+                                });
+
+    // Marker 规则产出：把 PlotMarker 列表画到活动画布（竖线/区间带/值带/label）。
+    // params["markers"] 为 QVariantList<QVariantMap>（每项是 PlotMarker::toJson 的 map）。
+    auto applyMarkers = [this](const QVariantMap &params) -> Result<QVariant> {
+        PlotCanvas *c = activeCanvas();
+        if (!c)
+            return QVariant(false);
+        QJsonArray arr = QJsonArray::fromVariantList(
+            params.value(QStringLiteral("markers")).toList());
+        c->setMarkers(arr);
+        return QVariant(c->markerCount());
+    };
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.markers.set"), applyMarkers);
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.markers.clear"),
+                                [this](const QVariantMap &) -> Result<QVariant> {
+                                    if (PlotCanvas *c = activeCanvas())
+                                        c->setMarkers(QJsonArray());
+                                    return QVariant(true);
                                 });
 
     // 回放引擎（对齐 PJ4 PlaybackEngine）：会话级时间游标的播放/暂停/定位/速率/循环/步进。

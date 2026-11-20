@@ -517,6 +517,45 @@ void PlotCanvas::refreshReadout()
     m_plot->setBookmarks(marks);
 }
 
+void PlotCanvas::setMarkers(const QJsonArray &markers)
+{
+    if (!m_plot)
+        return;
+    QVector<fastplot::Axes::MarkerMark> out;
+    out.reserve(markers.size());
+    for (const QJsonValue &jv : markers)
+    {
+        if (!jv.isObject())
+            continue;
+        const QJsonObject o = jv.toObject();
+        fastplot::Axes::MarkerMark mk;
+        const QString kind = o.value(QStringLiteral("kind")).toString();
+        if (kind == QStringLiteral("region"))    mk.kind = fastplot::Axes::MarkerMark::Kind::Region;
+        else if (kind == QStringLiteral("valueBand")) mk.kind = fastplot::Axes::MarkerMark::Kind::ValueBand;
+        else                                      mk.kind = fastplot::Axes::MarkerMark::Kind::Event;
+        const QString sev = o.value(QStringLiteral("severity")).toString();
+        if (sev == QStringLiteral("warning"))   mk.severity = fastplot::Axes::MarkerMark::Severity::Warning;
+        else if (sev == QStringLiteral("error")) mk.severity = fastplot::Axes::MarkerMark::Severity::Error;
+        else if (sev == QStringLiteral("critical")) mk.severity = fastplot::Axes::MarkerMark::Severity::Critical;
+        else                                    mk.severity = fastplot::Axes::MarkerMark::Severity::Info;
+        mk.tStart = o.value(QStringLiteral("tStart")).toDouble();
+        mk.tEnd = o.value(QStringLiteral("tEnd")).toDouble();
+        mk.valueLow = o.value(QStringLiteral("valueLow")).toDouble();
+        mk.valueHigh = o.value(QStringLiteral("valueHigh")).toDouble();
+        mk.hasValue = o.value(QStringLiteral("hasValue")).toBool();
+        mk.label = o.value(QStringLiteral("label")).toString();
+        const QString col = o.value(QStringLiteral("color")).toString();
+        if (!col.isEmpty()) mk.color = QColor(col);
+        out.append(mk);
+    }
+    m_plot->setMarkers(out);
+}
+
+int PlotCanvas::markerCount() const
+{
+    return m_plot ? m_plot->markerCount() : 0;
+}
+
 double PlotCanvas::timeAtPixel(double px) const
 {
     return m_plot ? m_plot->pixelToX(px) : 0.0;

@@ -55,6 +55,13 @@ target_link_libraries(ng_test_filter_catalogue PRIVATE
 set_target_properties(ng_test_filter_catalogue PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_filter_catalogue COMMAND ng_test_filter_catalogue)
 
+# Marker 规则引擎 golden 验收（对齐 PJ4 marker_engine_test.cpp 的 DSL 语义）。
+add_executable(ng_test_marker_engine test_marker_engine.cpp)
+target_link_libraries(ng_test_marker_engine PRIVATE
+    ng_module_script ng_context ng_foundation Qt6::Core)
+set_target_properties(ng_test_marker_engine PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_marker_engine COMMAND ng_test_marker_engine)
+
 # B8-b：TransformField 输入控件输出契约验收（offscreen GUI，链 gui_transform + core）。
 add_executable(ng_test_transform_field test_transform_field.cpp)
 target_link_libraries(ng_test_transform_field PRIVATE

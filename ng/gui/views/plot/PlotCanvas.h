@@ -4,6 +4,7 @@
 
 #include <QColor>
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QVector>
 #include <QWidget>
@@ -159,6 +160,10 @@ public:
     void removeBookmark(const QString &id);
     void renameBookmark(const QString &id, const QString &label);
     const QVector<Bookmark> &bookmarks() const { return m_bookmarks; }
+
+    // Marker 规则产出：把 PlotMarker JSON 数组交给 fastplot 绘制（竖线/区间带/值带/label）。
+    void setMarkers(const QJsonArray &markers);
+    int markerCount() const;
 
     // hit-test：给像素位置，返回命中的读数对象（供右键菜单/拖动仲裁）。
     enum class Hit { None, CursorLine, AB_A, AB_B, Bookmark };

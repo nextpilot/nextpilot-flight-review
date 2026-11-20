@@ -26,6 +26,7 @@ add_library(ng_module_script OBJECT
     LuaEngine.cpp
     FilterEngine.cpp
     FilterCatalogue.cpp
+    MarkerEngine.cpp
     TransformEvaluator.cpp
     LuaScriptLibrary.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/BundledFilters.cpp
@@ -33,6 +34,7 @@ add_library(ng_module_script OBJECT
     LuaEngine.h
     FilterEngine.h
     FilterCatalogue.h
+    MarkerEngine.h
     TransformEvaluator.h
     LuaScriptLibrary.h
 )

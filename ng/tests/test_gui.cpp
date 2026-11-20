@@ -567,6 +567,41 @@ int main(int argc, char *argv[])
         OK("data.filter：FilterOps 全链路（list>=12 + scale 数值 + 信号 + 数据集零改动）");
     }
 
+    // --- 5e) data.marker：Marker 规则扫通道 -> PlotMarker -> 画布叠加 ---
+    {
+        CHECK(application.context().interactions().hasMarkerOps());
+        const Dataset *mds = application.data().get(loadedDsId);
+        CHECK(mds != nullptr && mds->tableCount() > 0);
+        const Table *mTbl = mds->table(0);
+        CHECK(mTbl != nullptr && !mTbl->columns.isEmpty());
+
+        Intent mit;
+        mit.op = QStringLiteral("data.marker");
+        mit.params[QStringLiteral("dataset")] = loadedDsId;
+        mit.params[QStringLiteral("table")] = mTbl->name;
+        mit.params[QStringLiteral("column")] = mTbl->columns.first().name;
+        mit.params[QStringLiteral("code")] = QByteArray(
+            "createVerticalMarker(1, {label=\"thr\", severity=\"warning\"})\n"
+            "createBandMarker(-0.5, 0.5, {label=\"band\"})\n"
+            "createPointMarker(2, 1.0, {label=\"pt\", severity=\"error\"})");
+        const auto mr = application.host().execute(mit);
+        CHECK(static_cast<bool>(mr));
+        if (mr)
+        {
+            const QVariantMap mpm = mr.value().payload.toMap();
+            CHECK(mpm.value(QStringLiteral("count")).toInt() == 3);
+            CHECK(mpm.value(QStringLiteral("points")).toInt() > 0);
+            CHECK(mpm.value(QStringLiteral("drawn")).toBool()); // plot.markers.set 成功
+            const QVariantList mlist = mpm.value(QStringLiteral("markers")).toList();
+            CHECK(mlist.size() == 3);
+            CHECK(mlist.at(0).toMap().value(QStringLiteral("kind")).toString() == QStringLiteral("event"));
+            CHECK(mlist.at(1).toMap().value(QStringLiteral("kind")).toString() == QStringLiteral("valueBand"));
+        }
+        // 数据集零改动。
+        CHECK(application.data().get(loadedDsId)->table(0)->rows == mTbl->rows);
+        OK("data.marker：MarkerOps 规则执行(3 marker) + 画布叠加 + 数据集零改动");
+    }
+
     // 绘图路径用**内存构造**的数据集：它只关心 LOD 有界性，
     // 与源列表无关；表/列名固定才好断言数值范围。
     const int dsId = buildDataset(application.data());
