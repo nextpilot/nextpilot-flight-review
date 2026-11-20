@@ -1181,8 +1181,14 @@ int main(int argc, char *argv[])
         const int dsBefore = application.context().data().count();
         Intent sc;
         sc.op = QStringLiteral("script.run");
+        // 路径必须从 NG_TEST_FIXTURE_DIR 取：Lua 字符串里的 Windows 反斜杠会被当转义
+        // （"\n" 之类），所以统一换成正斜杠再拼进去——换成别的机器/目录也不会断。
+        const QString scriptCsv = QStringLiteral(NG_TEST_FIXTURE_DIR "/demo_flight.csv")
+                                      .replace(QLatin1Char('\\'), QLatin1Char('/'));
         sc.params[QStringLiteral("source")] =
-            QByteArray("app.call(\"data.load\", {path=\"/workspace/nextpilot-advance-plotscope/tests/fixture/demo_flight.csv\", format=\"csv\"})");
+            QStringLiteral("app.call(\"data.load\", {path=\"%1\", format=\"csv\"})")
+                .arg(scriptCsv)
+                .toUtf8();
         const auto sr = application.host().execute(sc);
         CHECK(static_cast<bool>(sr));
         CHECK(application.context().data().count() == dsBefore + 1);
