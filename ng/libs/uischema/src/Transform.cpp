@@ -1,17 +1,22 @@
 #include "Transform.h"
 
-#include <QHash>
+#include "Registry.h"
+
 #include <QJsonArray>
 #include <QStringList>
 
 namespace nextpilot::plotscope::uischema
 {
 
+using nextpilot::plotscope::registry::Registry;
+
 namespace
 {
-QHash<QString, TransformDescriptor> &registry()
+// 容器本体委托泛型注册表（机制唯一，保序：登记顺序即 all() 顺序）。
+// 本文件只保留领域语义：内置定义不可被覆盖。
+Registry<TransformDescriptor> &registry()
 {
-    static QHash<QString, TransformDescriptor> r;
+    static Registry<TransformDescriptor> r;
     return r;
 }
 
@@ -233,8 +238,8 @@ void TransformRegistry::registerDescriptor(const TransformDescriptor &descriptor
     if (descriptor.id.isEmpty())
         return;
     // 内置定义不允许被覆盖（用户脚本 id 用 lua.<scriptId> 前缀，不会撞）。
-    const auto it = registry().constFind(descriptor.id);
-    if (it != registry().constEnd() && it.value().builtin)
+    const TransformDescriptor *existing = registry().find(descriptor.id);
+    if (existing && existing->builtin)
         return;
     registry().insert(descriptor.id, descriptor);
 }

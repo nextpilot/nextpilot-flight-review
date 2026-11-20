@@ -18,5 +18,5 @@ add_library(ng_host STATIC
 )
 
 target_include_directories(ng_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(ng_host PUBLIC ng_context Qt6::Core)
+target_link_libraries(ng_host PUBLIC ng_context ng_registry Qt6::Core)
 set_target_properties(ng_host PROPERTIES AUTOMOC ON CXX_STANDARD 17)

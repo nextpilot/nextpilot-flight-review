@@ -1,5 +1,7 @@
 #include "ParserRegistry.h"
 
+#include "Registry.h"
+
 #include <algorithm>
 
 namespace nextpilot::plotscope::parser
@@ -8,17 +10,19 @@ namespace nextpilot::plotscope::parser
 namespace
 {
 // 函数内 static：避免静态初始化顺序问题（解析器 TU 的静态对象可能先于本表构造）。
-struct Registry
+// 容器本体委托泛型注册表（机制唯一，保序：登记顺序即 ids() 顺序，order 列表不再自备）。
+// 插件句柄与条目同 id 存放，unregister/reset 随条目一起释放。
+using nextpilot::plotscope::registry::Registry;
+struct ParserStore
 {
-    QHash<QString, ParserEntry> entries;
-    QStringList order;
-    QHash<QString, std::shared_ptr<void>> handles;
+    Registry<ParserEntry> entries;
+    Registry<std::shared_ptr<void>> handles;
 };
 
-Registry &registry()
+ParserStore &store()
 {
-    static Registry r;
-    return r;
+    static ParserStore s;
+    return s;
 }
 } // namespace
 
@@ -32,19 +36,13 @@ bool ParserRegistry::registerParser(const PsParserInfo &info, const PsParserVtab
     if (!vtable->create || !vtable->destroy || !vtable->feed)
         return false; // 必需槽位缺失
 
-    Registry &r = registry();
     const QString id = QString::fromUtf8(info.id);
-    if (r.entries.contains(id))
-        return false; // 重复 id：先到者为准
-
     ParserEntry entry;
     entry.info = info;
     entry.vtable = vtable;
     entry.provider = provider;
     entry.isPlugin = false;
-    r.entries.insert(id, entry);
-    r.order.append(id);
-    return true;
+    return store().entries.insert(id, std::move(entry)); // 重复 id：先到者为准
 }
 
 bool ParserRegistry::addPluginParser(const PsParserInfo &info, const PsParserVtable *vtable,
@@ -57,37 +55,29 @@ bool ParserRegistry::addPluginParser(const PsParserInfo &info, const PsParserVta
     if (!vtable->create || !vtable->destroy || !vtable->feed)
         return false;
 
-    Registry &r = registry();
     const QString id = QString::fromUtf8(info.id);
-    if (r.entries.contains(id))
-        return false;
-
     ParserEntry entry;
     entry.info = info;
     entry.vtable = vtable;
     entry.provider = provider;
     entry.isPlugin = true;
-    r.entries.insert(id, entry);
-    r.order.append(id);
-    r.handles.insert(id, std::move(pluginHandle));
+    if (!store().entries.insert(id, std::move(entry)))
+        return false;
+    store().handles.insert(id, std::move(pluginHandle));
     return true;
 }
 
 bool ParserRegistry::unregisterParser(const QString &id)
 {
-    Registry &r = registry();
-    if (!r.entries.contains(id))
+    if (!store().entries.remove(id))
         return false;
-    r.entries.remove(id);
-    r.order.removeAll(id);
-    r.handles.remove(id); // 插件句柄随之释放
+    store().handles.remove(id); // 插件句柄随之释放
     return true;
 }
 
 const ParserEntry *ParserRegistry::entry(const QString &id)
 {
-    const auto it = registry().entries.constFind(id);
-    return it == registry().entries.constEnd() ? nullptr : &it.value();
+    return store().entries.find(id);
 }
 
 const PsParserVtable *ParserRegistry::vtable(const QString &id)
@@ -98,12 +88,12 @@ const PsParserVtable *ParserRegistry::vtable(const QString &id)
 
 QStringList ParserRegistry::ids()
 {
-    return registry().order;
+    return store().entries.keys();
 }
 
 int ParserRegistry::count()
 {
-    return registry().entries.size();
+    return store().entries.count();
 }
 
 const ParserEntry *ParserRegistry::findByExtension(const QString &suffix)
@@ -114,10 +104,9 @@ const ParserEntry *ParserRegistry::findByExtension(const QString &suffix)
     if (!key.startsWith(QLatin1Char('.')))
         key.prepend(QLatin1Char('.'));
 
-    // 精确匹配优先；同后缀多解析器时取先登记者。
-    for (const QString &id : registry().order)
+    // 精确匹配优先；同后缀多解析器时取先登记者（values() 保序）。
+    for (const ParserEntry &e : store().entries.values())
     {
-        const ParserEntry &e = registry().entries[id];
         if (!e.info.extensions || !*e.info.extensions)
             continue;
         const QStringList exts = QString::fromUtf8(e.info.extensions)
@@ -133,9 +122,8 @@ const ParserEntry *ParserRegistry::findBySniff(const QByteArray &head)
 {
     if (head.isEmpty())
         return nullptr;
-    for (const QString &id : registry().order)
+    for (const ParserEntry &e : store().entries.values())
     {
-        const ParserEntry &e = registry().entries[id];
         if (!e.info.can_sniff || !e.vtable->sniff)
             continue;
         // 用一个临时实例做探测：探测不应改变解析器状态。
@@ -154,9 +142,8 @@ const ParserEntry *ParserRegistry::findBySniff(const QByteArray &head)
 QStringList ParserRegistry::unresolvedExtensions()
 {
     QStringList out;
-    for (const QString &id : registry().order)
+    for (const ParserEntry &e : store().entries.values())
     {
-        const ParserEntry &e = registry().entries[id];
         if (!e.info.extensions || !*e.info.extensions)
             continue;
         const QStringList exts = QString::fromUtf8(e.info.extensions)
@@ -173,10 +160,8 @@ QStringList ParserRegistry::unresolvedExtensions()
 
 void ParserRegistry::reset()
 {
-    Registry &r = registry();
-    r.entries.clear();
-    r.order.clear();
-    r.handles.clear();
+    store().entries.clear();
+    store().handles.clear();
 }
 
 } // namespace nextpilot::plotscope::parser

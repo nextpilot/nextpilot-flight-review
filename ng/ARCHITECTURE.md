@@ -547,8 +547,10 @@ NG_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 |---|---|---|---|
 | **机制**（libs/registry） | `Registry<T,Key>` / `StaticRegistry<T>` | —— 自身 | 纯值容器：insert/find/remove/keys/values/clear，保序 |
 | **数据挂载**（libs/registry） | `ExtensionRegistry` | 七张 `Registry<T>`：packs / uiActions / panels / scripts / dataAssets / docs / examples | mount/unmount 按包原子装卸（写 provider/domain 归属字段）、解析器视图（唯一行为式条目） |
-| | `ParserRegistry` | 泛型表 | 解析器资产（进程一份，无生命周期） |
+| | `ParserRegistry` | `Registry<ParserEntry>`（静态） | C ABI 解析器资产（进程一份）；插件句柄同 id 存放 |
 | | `PanelFactoryRegistry` | `StaticRegistry<工厂>` | 面板实现工厂（编译期自注册） |
+| | `TransformRegistry` | `Registry<TransformDescriptor>`（静态） | 内置算子不可覆盖（领域语义）；保序=all() 顺序 |
+| | `BuiltinModuleRegistry` | `Registry<ModuleEntry>`（静态） | 模块工厂（编译期自注册），与包自注册同构不再复写 |
 | | `UiSlotRegistry` | 插槽声明 + 绑定视图 | 骨架槽唯一声明处、动作→槽绑定 |
 | **运行态**（会话实例） | `DatasetRegistry`（原 DataRepository） | `Registry<Dataset,int>` | id 分配、datasetAdded/Removed 信号 |
 | | `SourceRegistry` | `Registry<DataSourceInfo,int>` | id 分配、信号、解析器绑定关系、dataset 反查 |
@@ -566,6 +568,9 @@ NG_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 - 查询 = 按类型读表：`toolbox.uiActions.find(id)` / `panels.values()`，类型即
   身份，无转型、无 `(kind,domain)` 二维索引（领域过滤就是对条目 domain 字段过滤）。
 - 解析器是唯一有行为的贡献（真有 parse），走注册表内的解析器通道，与数据表并列。
+- **静态自注册纪律**：进程级静态表一律 `StaticRegistry<T>` / `Registry<T>`（函数内
+  static 持有），禁止手写 `static QHash` + 自造 register/get/all——曾出现
+  TransformRegistry / BuiltinModuleRegistry / ParserRegistry 三处手写复本，已收敛。
 - 历史遗留已清除：`IToolContribution` / 6 个 `I*Contribution` / `IToolPack` /
   `ToolPack` 六个 add 方法 / `IndexedByKind` / `ContributionKind`（kind 字符串）全部删除。
 

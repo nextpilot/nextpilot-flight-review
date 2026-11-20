@@ -17,7 +17,7 @@ add_library(ng_uischema STATIC
     include/PropertySchema.h
 )
 target_include_directories(ng_uischema PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(ng_uischema PUBLIC Qt6::Core ng_foundation)
+target_link_libraries(ng_uischema PUBLIC Qt6::Core ng_foundation ng_registry)
 set_target_properties(ng_uischema PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
 
 # 渲染层：唯一的 FieldType→QWidget 映射，只 GUI 链接。
