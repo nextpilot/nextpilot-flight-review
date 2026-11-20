@@ -101,6 +101,7 @@ private:
     void wireSegTable(QTableWidget *table);  // 右键增删 + Delete + 双击段详情
     void openSegmentDetail(QTableWidget *table, int row);
     void markDirty();
+    void applySegModeHints();        // 按 bin/text 切段表列头与类型列候选
 
     // 单元格字面量：数字原样，字符串带类型信息。
     static QString literalText(const QJsonValue &v);
@@ -137,6 +138,8 @@ private:
     QLineEdit *m_name = nullptr;
     QLineEdit *m_desc = nullptr;
     QComboBox *m_mode = nullptr;
+    QStringList m_typeOptions;   // bin 模式的类型候选（内置 + 位域 + 别名 + 块名）
+    QLabel *m_segHint = nullptr; // 段表上方的写法提示，随 mode 切换
     QComboBox *m_layout = nullptr;
     QSpinBox *m_maxsize = nullptr;
     QComboBox *m_endian = nullptr;

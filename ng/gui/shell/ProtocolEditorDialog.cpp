@@ -818,6 +818,10 @@ void ProtocolEditorDialog::buildDesignPages()
     m_desc = new QLineEdit(head);
     m_mode = new QComboBox(head);
     m_mode->addItems({QStringLiteral("bin"), QStringLiteral("text")});
+    connect(m_mode, &QComboBox::currentTextChanged, this, [this](const QString &) {
+        applySegModeHints();
+        markDirty();
+    });
     m_layout = new QComboBox(head);
     m_layout->addItems({QStringLiteral("sequential"), QStringLiteral("line"),
                         QStringLiteral("csv"), QStringLiteral("kv")});
@@ -876,6 +880,7 @@ void ProtocolEditorDialog::buildDesignPages()
         framePage);
     segHint->setWordWrap(true);
     segHint->setStyleSheet(QStringLiteral("color:#666;"));
+    m_segHint = segHint;
     frameLay->addWidget(segHint);
 
     auto *segTable = new ReorderTable(0, SegColCount, framePage);
@@ -1112,6 +1117,48 @@ QJsonValue ProtocolEditorDialog::parseLiteral(const QString &text)
     if (ok)
         return QJsonValue(d);
     return QJsonValue(t);
+}
+
+// text 模式的"格式"列候选：常用 scanf 写法，含字面段头（NMEA 的 $GPGGA,）
+QStringList formatOptions()
+{
+    return {QStringLiteral("%d"),  QStringLiteral("%5d"),  QStringLiteral("%u"),
+            QStringLiteral("%x"),  QStringLiteral("%X"),   QStringLiteral("%o"),
+            QStringLiteral("%b"),  QStringLiteral("%f"),   QStringLiteral("%e"),
+            QStringLiteral("%g"),  QStringLiteral("%s"),   QStringLiteral("%10s"),
+            QStringLiteral("%c"),  QStringLiteral("%3c"),  QStringLiteral("%[^,]"),
+            QStringLiteral("%t"),  QStringLiteral("%T"),   QStringLiteral("%*d"),
+            QStringLiteral("$GPGGA,"), QStringLiteral("$")};
+}
+
+void ProtocolEditorDialog::applySegModeHints()
+{
+    const bool text = m_mode && m_mode->currentText() == QLatin1String("text");
+    const QString head = text ? QStringLiteral("格式") : QStringLiteral("类型");
+    for (QTableWidget *t : {m_segs, m_varSegs})
+    {
+        if (!t)
+            continue;
+        const QString old = t->horizontalHeaderItem(SegType)
+                                ? t->horizontalHeaderItem(SegType)->text()
+                                : QString();
+        if (old != head)
+            t->setHorizontalHeaderItem(SegType, new QTableWidgetItem(head));
+        if (auto *d = typeDelegateMap().value(t))
+            d->setOptions(text ? formatOptions() : m_typeOptions);
+    }
+    if (m_segHint)
+        m_segHint->setText(text
+                               ? QStringLiteral("格式格里直接写 scanf：%5d、%s、%[^,]、%c、%t；"
+                                                "整段字面写 $GPGGA,；重复次数写 ×N；"
+                                                "约束格写 >63 / [36,427) / {1,3,5}；"
+                                                "变换格写 self*0.25 或 (self-32)*5/9。"
+                                                "双击行开「段详情」。")
+                               : QStringLiteral("类型格里写长度：float[3]、bit[8@0]"
+                                                "（bit=小端序、rbit=大端序，@ 是位偏移）；"
+                                                "约束格写 >63 / [36,427) / {1,3,5}，多条用分号；"
+                                                "变换格写 self*0.25。双击行开「段详情」，"
+                                                "块段下面的灰色行是块内字段。"));
 }
 
 // ---------------------------------------------------------------- 段表格的界面语法
@@ -2175,10 +2222,12 @@ void ProtocolEditorDialog::refreshFromJson()
         for (const QString &k : doc.value(QStringLiteral("blocks")).toObject().keys())
             if (!opts.contains(k))
                 opts << k;
+        m_typeOptions = opts;
         for (QTableWidget *t : {m_segs, m_varSegs})
             if (auto *d = typeDelegateMap().value(t))
                 d->setOptions(opts);
     }
+    applySegModeHints();
 
     for (QTableWidget *t : {m_segs, m_varSegs})
         for (int r = 0; r < t->rowCount(); ++r)
