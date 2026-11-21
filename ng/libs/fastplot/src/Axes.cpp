@@ -119,7 +119,17 @@ double Axes::yToPixel(AxisSide side, double y) const
 
 bool Axes::exportPng(const QString &path)
 {
-    return grabImage().save(path);
+    // 导出不带悬停浮层：读数/A-B 浮窗跟着鼠标走，grab 时鼠标恰好停在画布上
+    // 就会被一并画进图（实测截图里出现过 t/v 读数框）。存下状态、导出、还原。
+    const bool cursorWas = m_cursorActive;
+    const QVector<ReadoutRow> abRowsWas = m_abRows;
+    m_cursorActive = false;
+    m_abRows.clear();
+    const bool ok = grabImage().save(path);
+    m_cursorActive = cursorWas;
+    m_abRows = abRowsWas;
+    update();
+    return ok;
 }
 
 bool Axes::exportCsv(const QString &path)

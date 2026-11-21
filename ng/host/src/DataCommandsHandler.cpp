@@ -256,7 +256,9 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
 
     QTextStream out(&file);
     if (!qFuzzyIsNull(alignOffsetSec))
-        out << "# source_time_offset_s=" << alignOffsetSec << '\n';
+        out << "# time_mode=offset, offset_us="
+            << QString::number(qRound64(alignOffsetSec * 1000000.0))
+            << ", offset_s=" << QString::number(alignOffsetSec, 'g', 12) << '\n';
     // 表头
     out << QStringLiteral("time");
     for (const QString &c : columns)
