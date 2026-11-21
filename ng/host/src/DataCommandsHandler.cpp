@@ -15,6 +15,12 @@
 #include <QHostAddress>
 #include <QNetworkDatagram>
 #include <QUdpSocket>
+
+#ifdef Q_OS_UNIX
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+#endif
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
@@ -894,8 +900,10 @@ Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
     if (url.isEmpty())
         return fail(err::Args, QStringLiteral("缺少 url（例：udp://0.0.0.0:14550）"));
     const QUrl qurl(url);
+    if (qurl.scheme() == QLatin1String("serial"))
+        return connectSerial(intent);
     if (qurl.scheme() != QLatin1String("udp"))
-        return fail(err::Args, QStringLiteral("目前只支持 udp://（收到 %1）").arg(qurl.scheme()));
+        return fail(err::Args, QStringLiteral("支持 udp:// 与 serial://（收到 %1）").arg(qurl.scheme()));
     const int port = qurl.port(0);
     if (port <= 0 || port > 65535)
         return fail(err::Args, QStringLiteral("端口无效: %1").arg(qurl.port()));
@@ -999,6 +1007,129 @@ Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
     return r;
 }
 
+Result<IntentResult> DataCommandsHandler::connectSerial(const Intent &intent)
+{
+#ifndef Q_OS_UNIX
+    return fail(err::NotSupported, QStringLiteral("串口前端目前只在 Linux/Unix 上实现"));
+#else
+    // 形如 serial:///dev/ttyUSB0:115200（设备路径里可能带 ':'，按**最后一个**冒号切）
+    QString rest = intent.params.value(QStringLiteral("url")).toString();
+    rest.remove(QStringLiteral("serial://"));
+    const int sep = rest.lastIndexOf(QLatin1Char(':'));
+    const QString dev = sep > 0 ? rest.left(sep) : rest;
+    const QString baudText = sep > 0 ? rest.mid(sep + 1) : QStringLiteral("115200");
+    if (dev.isEmpty())
+        return fail(err::Args, QStringLiteral("缺少串口设备路径（serial:///dev/ttyUSB0:115200）"));
+    static const QHash<int, int> kBaud{{9600, B9600}, {19200, B19200}, {38400, B38400},
+                                       {57600, B57600}, {115200, B115200}, {230400, B230400},
+                                       {460800, B460800}, {921600, B921600}};
+    const int baud = baudText.toInt();
+    if (!kBaud.contains(baud))
+        return fail(err::Args, QStringLiteral("不支持的波特率: %1").arg(baudText));
+
+    const QString parserId = intent.params.value(QStringLiteral("parser")).toString();
+    if (parserId.isEmpty())
+        return fail(err::Args, QStringLiteral("请指定 parser（如 custom-protocol）"));
+
+    QByteArray parserOptions;
+    if (const QVariant tv = intent.params.value(QStringLiteral("template")); tv.isValid()
+        && !tv.toString().isEmpty())
+        parserOptions = QJsonDocument(QJsonObject{{QStringLiteral("template"), tv.toString()}})
+                            .toJson(QJsonDocument::Compact);
+    else if (const QString tp = intent.params.value(QStringLiteral("templatePath")).toString();
+             !tp.isEmpty())
+    {
+        QFile f(tp);
+        if (!f.open(QIODevice::ReadOnly))
+            return fail(err::Path, QStringLiteral("无法读取模板: %1").arg(tp));
+        parserOptions = QJsonDocument(QJsonObject{{QStringLiteral("template"),
+                                                   QString::fromUtf8(f.readAll())}})
+                            .toJson(QJsonDocument::Compact);
+    }
+
+    DataSourceInfo info;
+    info.name = intent.params.value(QStringLiteral("name")).toString();
+    if (info.name.isEmpty())
+        info.name = dev;
+    info.origin = QStringLiteral("serial://%1:%2").arg(dev).arg(baud);
+    info.kind = SourceKind::Live;
+    info.state = SourceState::Streaming;
+    ParserBinding binding;
+    binding.parserId = parserId;
+    binding.active = true;
+    binding.options = parserOptions;
+    info.parsers << binding;
+
+    // 先开设备再登记源：打不开就不该在树里留一个"假的实时源"。
+    const int fd = ::open(dev.toUtf8().constData(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (fd < 0)
+        return fail(err::Io, QStringLiteral("打开串口失败: %1").arg(dev));
+    struct termios tio {};
+    if (::tcgetattr(fd, &tio) == 0)
+    {
+        ::cfmakeraw(&tio);
+        ::cfsetispeed(&tio, kBaud.value(baud));
+        ::cfsetospeed(&tio, kBaud.value(baud));
+        tio.c_cflag |= (CLOCAL | CREAD);
+        tio.c_cc[VMIN] = 0;
+        tio.c_cc[VTIME] = 0;
+        ::tcsetattr(fd, TCSANOW, &tio);
+    }
+
+    const int sourceId = m_app.sources().add(info);
+    if (sourceId < 0)
+    {
+        ::close(fd);
+        return fail(err::Io, QStringLiteral("数据源登记失败"));
+    }
+    const auto bound = m_app.ingest().bindParser(sourceId, binding, kInvalidDataset);
+    if (!bound)
+    {
+        ::close(fd);
+        m_app.sources().remove(sourceId);
+        return bound.error();
+    }
+    m_app.sources().addDataset(sourceId, bound.value());
+
+    LiveSession session;
+    session.sourceId = sourceId;
+    session.fd = fd;
+    session.since.start();
+    auto notifier = std::make_unique<QSocketNotifier>(fd, QSocketNotifier::Read);
+    QSocketNotifier *raw = notifier.get();
+    QObject::connect(raw, &QSocketNotifier::activated, raw, [this, raw, fd, sourceId] {
+        auto it = m_live.find(sourceId);
+        if (it == m_live.end())
+            return;
+        char buf[8192];
+        while (true)
+        {
+            const ssize_t n = ::read(fd, buf, sizeof buf);
+            if (n <= 0)
+                break;
+            it->second.bytes += n;
+            it->second.packets += 1; // 口径：一次可读触发算一"批"（与 UDP 的 datagram 区分，见 stats 注释）
+            if (it->second.paused)
+                continue;
+            m_app.ingest().feed(sourceId, reinterpret_cast<const uint8_t *>(buf),
+                                qint64(n));
+        }
+    });
+    session.notifier = std::move(notifier);
+    m_live[sourceId] = std::move(session);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("source"), sourceId},
+        {QStringLiteral("dataset"), bound.value()},
+        {QStringLiteral("url"), info.origin},
+        {QStringLiteral("parser"), parserId},
+        {QStringLiteral("baud"), baud},
+    };
+    return r;
+#endif
+}
+
 Result<IntentResult> DataCommandsHandler::disconnectLive(const Intent &intent)
 {
     int sourceId = intent.params.value(QStringLiteral("id"), -1).toInt();
@@ -1010,7 +1141,12 @@ Result<IntentResult> DataCommandsHandler::disconnectLive(const Intent &intent)
 
     // 先 flush 尾半帧，再断 socket，最后落状态——顺序反了会丢最后一个包。
     m_app.ingest().finish(sourceId);
-    it->second.socket->close();
+    if (it->second.socket)
+        it->second.socket->close();
+#ifdef Q_OS_UNIX
+    if (it->second.fd >= 0)
+        ::close(it->second.fd);
+#endif
     const qint64 packets = it->second.packets;
     const qint64 bytes = it->second.bytes;
     m_live.erase(it);

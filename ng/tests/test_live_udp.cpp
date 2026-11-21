@@ -20,6 +20,11 @@
 
 #include <cstdio>
 
+#ifdef __linux__
+#include <pty.h>
+#include <unistd.h>
+#endif
+
 using namespace nextpilot::plotscope;
 using namespace nextpilot::plotscope::app;
 using namespace nextpilot::plotscope::context;
@@ -168,6 +173,57 @@ int main(int argc, char **argv)
         CHECK(rows >= 20);
         CHECK(disk->timeMax() > 1.5);
     }
+
+#ifdef __linux__
+    // ---- 串口前端：用 pty 对模拟 RS232（openpty 给一对 master/slave）----
+    {
+        int master = -1;
+        int slave = -1;
+        CHECK(::openpty(&master, &slave, nullptr, nullptr, nullptr) == 0);
+        if (master >= 0 && slave >= 0)
+        {
+            const QString dev = QString::fromUtf8(::ttyname(slave));
+            Intent sc;
+            sc.op = QStringLiteral("data.connect");
+            sc.params[QStringLiteral("url")] =
+                QStringLiteral("serial://%1:115200").arg(dev);
+            sc.params[QStringLiteral("parser")] = QStringLiteral("custom-protocol");
+            sc.params[QStringLiteral("template")] = tpl;
+            sc.params[QStringLiteral("name")] = QStringLiteral("serial-test");
+            const auto scr = app.host().execute(sc);
+            CHECK(scr);
+            if (scr)
+            {
+                const int sds = scr.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
+                const int sid = scr.value().payload.toMap().value(QStringLiteral("source")).toInt();
+                for (int k = 0; k < 20; ++k)
+                {
+                    QByteArray frame(8, '\0');
+                    qToLittleEndian<quint32>(quint32(k * 100), frame.data());
+                    qToLittleEndian<float>(float(0.2 * k), frame.data() + 4);
+                    CHECK(::write(master, frame.constData(), size_t(frame.size())) == frame.size());
+                    pump(3);
+                }
+                pump(1000);
+                Intent sd;
+                sd.op = QStringLiteral("data.disconnect");
+                sd.params[QStringLiteral("id")] = sid;
+                CHECK(app.host().execute(sd));
+                if (const Dataset *sdsPtr = ctx.data().get(sds))
+                {
+                    int rows = 0;
+                    for (const QString &tn : sdsPtr->tableNames())
+                        if (const Table *t = sdsPtr->table(tn))
+                            rows = std::max(rows, t->rows);
+                    std::printf("serial rows=%d timeMax=%.3f\n", rows, sdsPtr->timeMax());
+                    CHECK(rows >= 18); // 串口按字节流聚合，允许最后一帧被截断
+                }
+            }
+            ::close(master);
+            ::close(slave);
+        }
+    }
+#endif
 
     if (failures == 0)
         std::printf("live udp: ALL PASS\n");

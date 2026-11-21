@@ -9,6 +9,7 @@
 #include <memory>
 
 #include <QElapsedTimer>
+#include <QSocketNotifier>
 #include <QUdpSocket>
 
 // 数据器官的"派生能力"：reload / export / recent / clearCache。
@@ -91,6 +92,10 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> disconnectLive(
         const nextpilot::plotscope::intent::Intent &intent);
     // 实时源速率统计（T1.3）：packets/bytes 已有，这里按会话时长折算 Hz / KB/s。
+    // 串口前端（Linux termios）：serial:///dev/ttyUSB0:115200。
+    // 与 UDP 同一出口（登记源→绑定解析器→字节扇出），只是取字节的方式不同。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> connectSerial(
+        const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> liveStats(
         const nextpilot::plotscope::intent::Intent &intent);
     // 源级时间对齐（T3.2）：mode = base/start/end/center/reset。
@@ -129,6 +134,8 @@ private:
         qint64 packets = 0;
         qint64 bytes = 0;
         QElapsedTimer since;     // 会话起点（统计 Hz/KB/s 用）
+        int fd = -1;             // 串口 fd（UDP 会话为 -1）
+        std::unique_ptr<QSocketNotifier> notifier; // 串口可读通知（UDP 用 readyRead）
     };
     std::map<int, LiveSession> m_live;
 };
