@@ -41,6 +41,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -1518,6 +1519,25 @@ int main(int argc, char *argv[])
         CHECK(dispatchOk(QStringLiteral("page.splitHorizontal")));
         CHECK(dispatchOk(QStringLiteral("page.splitVertical")));
         CHECK(dispatchOk(QStringLiteral("page.grid")));
+        // 布局选格：8×8 悬停选格（GridPickPopup，抄 main LayoutPickGrid）已取代手输对话框。
+        // offscreen 下弹不出弹层 → 必须明确失败，而不是卡在局部事件循环里把测试挂死。
+        if (QGuiApplication::platformName() == QLatin1String("offscreen"))
+        {
+            QVariant vr;
+            Result<QVariant> res(vr);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("page.grid.pick"), QVariantMap{}, res));
+            CHECK(!res);
+        }
+        // 行列上限 8×8：越界必须拒绝（否则 100×100 会一次造出上万个画布控件）。
+        {
+            QVariant vr;
+            Result<QVariant> res(vr);
+            const QVariantMap bad{{QStringLiteral("rows"), 100}, {QStringLiteral("cols"), 100}};
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("page.grid"), bad, res));
+            CHECK(!res);
+        }
         // 老代码交互欠账补齐后新增的 view action（游标/A-B/书签/联动）。
         CHECK(dispatchOk(QStringLiteral("plot.cursor.pinned")));
         CHECK(dispatchOk(QStringLiteral("plot.cursor.clear")));

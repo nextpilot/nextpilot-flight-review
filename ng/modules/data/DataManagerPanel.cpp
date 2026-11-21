@@ -1000,14 +1000,94 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     if (!info)
         return;
     QMenu menu(this);
+    // 实时源才给"暂停/继续"（文件源没有流可暂停，给了反而是假入口）。
+    const bool live = info->kind == SourceKind::Live;
+    const bool paused = info->state == SourceState::Paused;
+    QAction *pause = live ? menu.addAction(paused ? QStringLiteral("继续接收") : QStringLiteral("暂停接收")) : nullptr;
     QAction *reload = menu.addAction(QStringLiteral("重载数据源"));
+    QAction *rename = menu.addAction(QStringLiteral("重命名…"));
     QAction *exportCsv = menu.addAction(QStringLiteral("导出 CSV…"));
     QAction *clearCache = menu.addAction(QStringLiteral("清除全部解析缓存"));
     menu.addSeparator();
+    QAction *detail = menu.addAction(QStringLiteral("数据源信息…"));
     QAction *activate = menu.addAction(QStringLiteral("设为活动数据源"));
+    menu.addSeparator();
+    QAction *remove = menu.addAction(QStringLiteral("移除数据源"));
+    QAction *removeAll = menu.addAction(QStringLiteral("移除全部数据源"));
     QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
+
+    if (live && chosen == pause)
+    {
+        Intent pint; pint.op = paused ? QStringLiteral("data.resume") : QStringLiteral("data.pause");
+        pint.params[QStringLiteral("id")] = sourceId;
+        const auto pr = m_executor.execute(pint);
+        if (!pr)
+            QMessageBox::warning(this, paused ? QStringLiteral("继续失败") : QStringLiteral("暂停失败"),
+                                 pr.error().message);
+        return;
+    }
+    if (chosen == rename)
+    {
+        bool ok = false;
+        const QString text = QInputDialog::getText(this, QStringLiteral("重命名数据源"),
+            QStringLiteral("显示名："), QLineEdit::Normal,
+            info->name.isEmpty() ? QFileInfo(info->origin).fileName() : info->name, &ok);
+        if (!ok)
+            return;
+        // 只改显示名，不动 origin；update() 会 emit sourceChanged 触发面板刷新。
+        DataSourceInfo copy = *info;
+        copy.name = text.trimmed();
+        m_sources.update(sourceId, copy);
+        return;
+    }
+    if (chosen == detail)
+    {
+        const QString kindText = info->kind == SourceKind::Live ? QStringLiteral("实时源")
+                               : info->kind == SourceKind::Stream ? QStringLiteral("流")
+                               : info->kind == SourceKind::Replay ? QStringLiteral("回放")
+                                                                  : QStringLiteral("文件");
+        const QString stateText = info->state == SourceState::Streaming ? QStringLiteral("接收中")
+                                : info->state == SourceState::Paused ? QStringLiteral("已暂停")
+                                : info->state == SourceState::Error ? QStringLiteral("错误")
+                                                                    : QStringLiteral("已关闭");
+        const QString bytes = info->bytesTotal > 0
+            ? QStringLiteral("%1 / %2").arg(info->bytesRead).arg(info->bytesTotal)
+            : QStringLiteral("%1（总量未知）").arg(info->bytesRead);
+        QMessageBox::information(this, QStringLiteral("数据源信息"),
+            QStringLiteral("名称：%1\n来源：%2\n类型：%3　状态：%4\n字节：%5\n解析器：%6　数据集：%7%8")
+                .arg(info->name.isEmpty() ? QStringLiteral("(未命名)") : info->name,
+                     info->origin, kindText, stateText, bytes)
+                .arg(info->parsers.size())
+                .arg(info->datasetIds.size())
+                .arg(info->error.isEmpty() ? QString() : QStringLiteral("\n错误：%1").arg(info->error)));
+        return;
+    }
+    if (chosen == remove || chosen == removeAll)
+    {
+        const bool all = chosen == removeAll;
+        const QString name = info->name.isEmpty() ? QFileInfo(info->origin).fileName() : info->name;
+        const QString ask = all ? QStringLiteral("确定移除全部 %1 个数据源及其全部通道？").arg(m_sources.ids().size())
+                                : QStringLiteral("确定移除「%1」及其全部通道？").arg(name);
+        if (QMessageBox::question(this, all ? QStringLiteral("移除全部数据源") : QStringLiteral("移除数据源"),
+                ask, QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+            return;
+        QVector<int> targets = all ? m_sources.ids() : QVector<int>{sourceId};
+        // intent 一次删一个：批量只是循环下发，顺序清完更安全（中途失败留已删的部分）。
+        for (int id : targets)
+        {
+            Intent intent; intent.op = QStringLiteral("data.remove");
+            intent.params[QStringLiteral("id")] = id;
+            const auto rr = m_executor.execute(intent);
+            if (!rr)
+            {
+                QMessageBox::warning(this, QStringLiteral("移除失败"), rr.error().message);
+                break;
+            }
+        }
+        return;
+    }
 
     if (chosen == reload)
     {

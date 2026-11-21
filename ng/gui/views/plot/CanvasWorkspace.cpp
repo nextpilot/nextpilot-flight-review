@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "ChannelView.h"
+#include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
 #include "PanelFactoryRegistry.h"
@@ -23,7 +24,10 @@
 #include <limits>
 
 #include <QEvent>
+#include <QCursor>
 #include <QFile>
+#include <QGuiApplication>
+#include <QToolTip>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QInputDialog>
@@ -524,6 +528,11 @@ void CanvasWorkspace::rebuildPageLayout()
         return;
 
     detachStacks();
+    // 页内格数决定"删除此画布"是否可点：只剩一格时删无可删，
+    // 菜单项直接置灰，别让用户点了才弹提示（每次重排后同步一次）。
+    for (const Cell &c : m_cells)
+        if (c.canvas)
+            c.canvas->setCanvasRemovable(m_cells.size() > 1);
     // 拆掉旧树（此时树里已经没有 cell，安全）。
     if (page.root)
     {
@@ -944,6 +953,35 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
         sel.ids.insert(QStringLiteral("canvas"), QStringLiteral("active"));
         m_appCtx.setSelection(sel);
     });
+    // 右键"拆分 / 删除此画布"：按指针反查所在格再执行。
+    // 先 setActive 是必须的——右键的画布很可能不是当前激活格，
+    // 直接调 split()/removeAt(m_active) 会作用到别的画布上。
+    QObject::connect(canvas, &PlotCanvas::canvasActionRequested, this,
+                     [this, canvas](const QString &op) {
+                         int idx = -1;
+                         for (int i = 0; i < m_cells.size(); ++i)
+                         {
+                             if (m_cells.at(i).canvas == canvas)
+                             {
+                                 idx = i;
+                                 break;
+                             }
+                         }
+                         if (idx < 0)
+                             return;
+                         setActive(idx);
+                         if (op == QLatin1String("splitHorizontal"))
+                             split(true);
+                         else if (op == QLatin1String("splitVertical"))
+                             split(false);
+                         else if (op == QLatin1String("removeCanvas"))
+                         {
+                             // removeAt 在"只剩一格"时拒绝：给一次就地提示，
+                             // 否则用户会以为菜单项坏了（无任何反馈）。
+                             if (!removeAt(idx))
+                                 QToolTip::showText(QCursor::pos(), QStringLiteral("至少保留一个画布"), this);
+                         }
+                     });
     // 曲线 Y 变换：打开统一编辑器（按 CapAxisY 过滤 + 在线调试），回写配方。
     QObject::connect(canvas, &PlotCanvas::seriesTransformRequested, this, [this, canvas](const QString &key) {
         const PlotSeries *s = canvas->seriesByKey(key);
@@ -1708,6 +1746,10 @@ void CanvasWorkspace::registerViewActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const int r = params.value(QStringLiteral("rows")).toInt();
                                     const int c = params.value(QStringLiteral("cols")).toInt();
+                                    // 上限 8×8（与 main 的选格一致）：也挡住脚本传 100×100
+                                    // 造出上万个画布这种"参数合法但不合理"的输入。
+                                    if (r < 1 || r > 8 || c < 1 || c > 8)
+                                        return fail(QStringLiteral("egrid"), QStringLiteral("行/列须在 1~8 之间"));
                                     if (!setGrid(r, c))
                                         return fail(err::Grid, QStringLiteral("网格规格非法"));
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},
@@ -1715,28 +1757,24 @@ void CanvasWorkspace::registerViewActions()
                                                     {QStringLiteral("cols"), m_cols}};
                                     return QVariant(out);
                                 });
-    // 老 buildLayoutPicker 的 m×n 选择器：点「网格」弹行列输入，再走 page.grid 重排。
+    // 老 buildLayoutPicker 的 m×n 选择器：点「网格」弹 8×8 悬停选格（抄 main LayoutPickGrid），
+    // 选中即走 page.grid 重排；取消返回 false，不动当前布局。
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.grid.pick"),
-                                [this](const QVariantMap &) -> Result<QVariant> {
-                                    bool ok = false;
-                                    const QString input = QInputDialog::getText(
-                                        this, QStringLiteral("网格布局"),
-                                        QStringLiteral("输入行×列（如 2×1、3×2，最大 6×6）："),
-                                        QLineEdit::Normal,
-                                        QStringLiteral("%1×%2").arg(m_rows).arg(m_cols), &ok);
-                                    if (!ok || input.isEmpty())
-                                        return QVariant(false);
-                                    // 同时接受 × x X * 分隔符。
-                                    QString norm = input;
-                                    for (const QChar sep : {QLatin1Char('x'), QLatin1Char('X'), QLatin1Char('*')})
-                                        norm.replace(sep, QLatin1Char('\u00d7'));
-                                    const QStringList parts = norm.split(QLatin1Char('\u00d7'));
-                                    if (parts.size() != 2)
-                                        return fail(err::Grid, QStringLiteral("格式应为 行×列"));
-                                    int r = parts.at(0).trimmed().toInt();
-                                    int c = parts.at(1).trimmed().toInt();
-                                    if (r < 1 || r > 6 || c < 1 || c > 6)
-                                        return fail(err::Grid, QStringLiteral("行列须在 1~6 之间"));
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    // 无窗口平台（ctest 的 offscreen）弹不出弹层：明确失败并指路
+                                    // page.grid {rows,cols}，绝不阻塞事件循环（否则脚本/测试会挂死）。
+                                    if (QGuiApplication::platformName() == QLatin1String("offscreen"))
+                                        return fail(QStringLiteral("egui"),
+                                                    QStringLiteral("无窗口环境下无法选格，请用 page.grid {rows, cols}"));
+                                    // 锚点取鼠标位置：点「网格」大按钮时光标正好在按钮上，
+                                    // 等价于"贴按钮弹出"，不必让 MainWindow 传控件指针（少一层耦合）。
+                                    const QPoint anchor = params.contains(QStringLiteral("anchor"))
+                                        ? params.value(QStringLiteral("anchor")).toPoint()
+                                        : QCursor::pos();
+                                    int r = 0;
+                                    int c = 0;
+                                    if (!execGridPick(window(), anchor, m_rows, m_cols, &r, &c))
+                                        return QVariant(false); // 用户取消
                                     if (!setGrid(r, c))
                                         return fail(err::Grid, QStringLiteral("网格规格非法"));
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},

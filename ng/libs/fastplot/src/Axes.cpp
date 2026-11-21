@@ -49,6 +49,11 @@ Axes::Axes(QWidget *parent)
     m_vp.setXRange(0.0, 1.0);
     m_vp.setYRange(0.0, 1.0);
     relayout();
+
+    // 网格开关的"真值"在两处：Axes::m_grid 与各 Axis::m_grid。
+    // Axis 默认 grid=true、Axes 默认 false，绘制走的是 Axis —— 于是
+    // 首次打开菜单会出现"画布上有网格、菜单里没勾"的不一致。这里以 Axis 为准对齐。
+    m_grid = m_axes[sideIndex(AxisSide::Left)].gridVisible();
 }
 
 Axes::~Axes() = default;

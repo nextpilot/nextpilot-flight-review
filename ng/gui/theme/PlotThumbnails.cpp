@@ -27,8 +27,10 @@ QColor panelBg()
 QIcon PlotThumbnails::layout(int rows, int cols)
 {
     // 抄 main 的 layoutThumb：32×32 透明底 + 琥珀线框 + 分格线，与 ribbon 线性图标同风格。
-    rows = qBound(1, rows, 6);
-    cols = qBound(1, cols, 6);
+    // 上限 8×8：与「网格」选格弹层（GridPickPopup，抄 main LayoutPickGrid）保持一致，
+    // 否则选了 8×8 却画出一张 6×6 的缩略图，视觉和实际布局对不上。
+    rows = qBound(1, rows, 8);
+    cols = qBound(1, cols, 8);
     QPixmap pm(32, 32);
     pm.fill(Qt::transparent);
     QPainter p(&pm);

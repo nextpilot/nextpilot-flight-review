@@ -7,6 +7,7 @@
 #include <fastplot/Zoomer.h>
 
 #include <QContextMenuEvent>
+#include <QFileDialog>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QKeyEvent>
@@ -1412,20 +1413,9 @@ void PlotCanvas::dragLeaveEvent(QDragLeaveEvent *event)
 // plot.series.axis 同一动作（菜单、view action、脚本三条路同一语义）。
 void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
 {
-    if (m_series.isEmpty())
-    {
-        // 空画布也允许选中画布/轴，让属性面板有内容可显示。
-        QMenu menu(this);
-        menu.setTitle(QStringLiteral("画布操作"));
-        menu.addAction(QStringLiteral("画布属性"), this, [this] { Q_EMIT canvasSelectionRequested(); });
-        menu.addAction(QStringLiteral("X 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("x")); });
-        menu.addAction(QStringLiteral("左 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-left")); });
-        menu.addSeparator();
-        menu.addAction(QStringLiteral("清除游标读数"), this, [this] { clearCursor(); clearAB(); });
-        menu.exec(event->globalPos());
-        event->accept();
-        return;
-    }
+    // 空画布与有曲线共用同一套菜单。
+    // 早先这里 `m_series.isEmpty()` 提前 return，只给 4 项（属性三项 + 清游标）——
+    // 于是空画布上想"显示网格 / 导出 / 加书签"全都没有入口（实测踩到）。main 同一位置 13 项。
     QMenu menu(this);
     menu.setTitle(QStringLiteral("画布操作"));
 
@@ -1456,7 +1446,10 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
     }
     else
     {
-        menu.addAction(QStringLiteral("添加时间书签"), this, [this, clickT] { addBookmark(clickT); });
+        // 文案带点击时刻（main 的"在 16.02 添加时间书签…"语义）：
+        // 用户不必先把游标挪过去，右键点在哪一刻就打到哪一刻。
+        menu.addAction(QStringLiteral("在 %1 s 添加时间书签").arg(QString::number(clickT, 'f', 2)),
+                       this, [this, clickT] { addBookmark(clickT); });
     }
     menu.addAction(m_abEnabled ? QStringLiteral("清除 A/B 测量") : QStringLiteral("A/B 游标测量（Δt/Δy）"),
                    this, [this] { toggleAB(); });
@@ -1476,16 +1469,37 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
     auto *undoAct = menu.addAction(QStringLiteral("撤销视图 (Ctrl+Z)"), this, [this] { undoView(); });
     undoAct->setEnabled(canUndoView());
     menu.addSeparator();
-    auto *gridAction = menu.addAction(QStringLiteral("显示网格"));
+
+    // 「添加曲线」：ng 还没有通道选择对话框，这里给禁用项 + 指路，
+    // 而不是放一个点了没反应的假入口（main 那版是弹 ChannelPicker，ng 暂缺）。
+    auto *addSeries = menu.addAction(QStringLiteral("添加曲线…"));
+    addSeries->setEnabled(false);
+    addSeries->setToolTip(QStringLiteral("从左侧数据集面板拖入字段，或在字段右键选「画到当前画布」"));
+    menu.addSeparator();
+    // 显示网格 / 显示图例：主题里 QMenu::indicator 不绘制，单靠 setCheckable
+    // 用户看不出当前开关态，所以文案前置 ✓（与 main 同一位置、同一写法）。
+    auto *gridAction = menu.addAction(QString());
+    auto syncGridLabel = [gridAction](bool on) {
+        gridAction->setText(on ? QStringLiteral("✓ 显示网格") : QStringLiteral("显示网格"));
+    };
     gridAction->setCheckable(true);
     gridAction->setChecked(m_plot && m_plot->gridVisible());
-    connect(gridAction, &QAction::triggered, this, [this](bool on) {
+    syncGridLabel(gridAction->isChecked());
+    connect(gridAction, &QAction::triggered, this, [this, syncGridLabel](bool on) {
         if (m_plot) { m_plot->grid(on); }
+        syncGridLabel(on);
     });
-    auto *legendAction = menu.addAction(QStringLiteral("显示图例"));
+    auto *legendAction = menu.addAction(QString());
+    auto syncLegendLabel = [legendAction](bool on) {
+        legendAction->setText(on ? QStringLiteral("✓ 显示图例") : QStringLiteral("显示图例"));
+    };
     legendAction->setCheckable(true);
     legendAction->setChecked(legendVisible());
-    connect(legendAction, &QAction::triggered, this, [this](bool on) { setLegendVisible(on); });
+    syncLegendLabel(legendAction->isChecked());
+    connect(legendAction, &QAction::triggered, this, [this, syncLegendLabel](bool on) {
+        setLegendVisible(on);
+        syncLegendLabel(on);
+    });
     menu.addSeparator();
 
     // 曲线子菜单：每条曲线 = 显隐 + 挂左/右轴 + 删除（老 showSeriesMenu 的体验）。
@@ -1507,6 +1521,38 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
         one->addAction(QStringLiteral("Y 轴变换…"), this, [this, key] { Q_EMIT seriesTransformRequested(key); });
         one->addAction(QStringLiteral("删除"), this, [this, key] { removeSeries(key); });
     }
+    menu.addSeparator();
+
+    // 画布级操作（页内）：本画布只发信号，由 CanvasWorkspace 反查索引后执行——
+    // 保证"删的是你右键的那个画布"，而不是碰巧处于激活态的另一个。
+    menu.addAction(QStringLiteral("向右拆分"), this,
+                   [this] { Q_EMIT canvasActionRequested(QStringLiteral("splitHorizontal")); });
+    menu.addAction(QStringLiteral("向下拆分"), this,
+                   [this] { Q_EMIT canvasActionRequested(QStringLiteral("splitVertical")); });
+
+    // 导出本画布：自己开文件对话框（main 的"导出当前画布"在同一位置），
+    // 不绕回 MainWindow 的 action 路径，避免"导出的是当前激活画布而不是右键画布"。
+    menu.addAction(QStringLiteral("导出 PNG…"), this, [this] {
+        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("导出 PNG"), QString(),
+                                                          QStringLiteral("PNG 图片 (*.png)"));
+        if (!path.isEmpty())
+            exportPng(path);
+    });
+    menu.addAction(QStringLiteral("导出当前画布 CSV…"), this, [this] {
+        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("导出 CSV"), QString(),
+                                                          QStringLiteral("CSV 表格 (*.csv)"));
+        if (!path.isEmpty())
+            exportCsv(path);
+    });
+
+    menu.addSeparator();
+    // 单画布页删不到 0：置灰（由 workspace 重排时同步），而不是点了才弹提示。
+    auto *removeAct = menu.addAction(QStringLiteral("删除此画布"), this,
+                                     [this] { Q_EMIT canvasActionRequested(QStringLiteral("removeCanvas")); });
+    removeAct->setEnabled(m_canvasRemovable);
+    if (!m_canvasRemovable)
+        removeAct->setToolTip(QStringLiteral("页内至少保留一个画布"));
+
     menu.exec(event->globalPos());
     event->accept();
 }

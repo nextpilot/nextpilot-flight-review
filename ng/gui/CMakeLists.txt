@@ -89,6 +89,8 @@ add_library(ng_gui OBJECT
     views/plot/InstrumentView.h
     views/plot/CanvasWorkspace.cpp
     views/plot/CanvasWorkspace.h
+    views/plot/GridPickPopup.cpp
+    views/plot/GridPickPopup.h
     views/plot/PlaybackEngine.cpp
     views/plot/PlaybackEngine.h
     views/plot/TimelineWidget.cpp

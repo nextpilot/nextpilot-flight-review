@@ -226,6 +226,10 @@ public:
     void setLegendVisible(bool visible);
     bool legendVisible() const;
 
+    // "删除此画布"是否可点：页内只剩一格时删无可删，由 CanvasWorkspace 重排后同步。
+    void setCanvasRemovable(bool on) { m_canvasRemovable = on; }
+    bool canvasRemovable() const { return m_canvasRemovable; }
+
     // 诊断/测试用。
     int lodPointCount() const; // 全部曲线的点数之和
     QString channelTitle() const { return m_title; }
@@ -256,6 +260,10 @@ Q_SIGNALS:
     void canvasSelectionRequested();
     // 请求编辑曲线 Y 变换（上层打开变换编辑器后回写配方）。
     void seriesTransformRequested(const QString &seriesKey);
+    // 画布级命令（拆分 / 删除本画布）。画布自己不知道自己在页里的索引，
+    // 交给 CanvasWorkspace 按指针反查后再 setActive + split/removeAt——
+    // 这样右键"删除此画布"删的是你点的那个，而不是"碰巧激活"的另一个。
+    void canvasActionRequested(const QString &op);
     // 有通道被拖到画布上（数据集树 → 画布）。画布只解码 MIME 发信号，
     // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
     void channelDropped(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table,
@@ -317,6 +325,7 @@ private:
     double m_cursorT = 0.0;
     bool m_cursorActive = false;
     bool m_cursorPinned = false;
+    bool m_canvasRemovable = true;   // 见 setCanvasRemovable()
     bool m_abEnabled = false;
     double m_abA = 0.0;
     double m_abB = 0.0;
