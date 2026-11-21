@@ -381,6 +381,7 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     // 撞名会让后面的覆盖前面的（"脚本调试"曾被"属性"顶掉）。加序号消歧。
     dock->setObjectName(QStringLiteral("ng.dock.%1.%2").arg(area).arg(m_dockSeq++));
     m_dockByWidget.insert(content, dock);
+    m_docksByArea[area].append(dock); // 该区页签序列（panelTitles 断言/诊断用）
     // 标题栏图标：一眼区分"数据集/属性/日志"三块侧栏。
     static const struct { const char *area; const char *icon; } kDockIcons[] = {
         {"dock.left", "data_table"}, {"dock.right", "panel"}, {"dock.bottom", "history"}};
@@ -597,6 +598,14 @@ QString ShellBinder::panelTitle(const QString &area) const
 {
     ads::CDockWidget *dock = m_panels.value(area, nullptr);
     return dock ? dock->windowTitle() : QString();
+}
+
+QStringList ShellBinder::panelTitles(const QString &area) const
+{
+    QStringList out;
+    for (ads::CDockWidget *dw : m_docksByArea.value(area))
+        out << dw->windowTitle();
+    return out;
 }
 
 int ShellBinder::actionTriggerCount(const QString &actionId) const

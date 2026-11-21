@@ -3,6 +3,7 @@
 #include "UiSlotRegistry.h"
 
 #include <QHash>
+#include <QStringList>
 #include <QJsonObject>
 #include <QString>
 
@@ -85,6 +86,9 @@ public:
     // 中央区**全部**页签内容（画布 + 按需创建的脚本编辑器等）。
     QList<QWidget *> centralWidgets() const;
     QString panelTitle(const QString &area) const;
+    // 该停靠区**全部**页签标题（按放置顺序）——同区多面板时主位概念不成立，
+    // 断言/诊断用列表。
+    QStringList panelTitles(const QString &area) const;
     int panelCount() const { return m_panels.size(); }
 
     // 动作 id → 按钮下拉菜单（由外壳之外提供内容，绑定器只负责挂到按钮上）。
@@ -154,6 +158,7 @@ private:
     bool m_centralInstalled = false;
     QHash<QString, ads::CDockAreaWidget *> m_lastArea; // area -> 该侧最后一个 DockArea
     QHash<QString, ads::CDockWidget *> m_panels;      // area -> 该侧主 dock
+    QHash<QString, QList<ads::CDockWidget *>> m_docksByArea; // area -> 全部页签（按放置顺序）
     // 面板内容 widget -> 持有它的 dock 页签（raisePanel 置前用；
     // ADS 自带的 dockWidgetsMap 按 objectName 索引，撞名会互相覆盖不可靠）。
     QHash<QWidget *, ads::CDockWidget *> m_dockByWidget;

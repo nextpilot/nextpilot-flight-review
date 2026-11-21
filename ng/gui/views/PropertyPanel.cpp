@@ -222,6 +222,6 @@ QWidget *createPropertyPanel(AppContext &appCtx, IIntentExecutor &exec, QWidget 
 }
 
 // 视图层自注册：器官只声明类型字符串 "property-panel"，外壳据此装配本面板。
-NG_REGISTER_PANEL("property-panel", propertyPanel, createPropertyPanel)
+NG_REGISTER_PANEL_T("property-panel", propertyPanel, createPropertyPanel, "属性")
 
 } // namespace nextpilot::plotscope::gui

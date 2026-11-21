@@ -379,7 +379,7 @@ int main(int argc, char *argv[])
         CHECK(canPanel != nullptr);
         // 用户决策：dock.right 主面板改为通用属性面板（替换 CAN 的默认占用）。
         // CAN 面板能力仍在（工厂 + 清单 + 可请求），但不再占据 dock.right 主位。
-        CHECK(binder->panelTitle(QStringLiteral("dock.right")) == QStringLiteral("属性"));
+        CHECK(binder->panelTitles(QStringLiteral("dock.right")).contains(QStringLiteral("属性"))); // 页签集里有属性面板（同区多面板后主位概念已废）
         OK("模块侧闭环：按领域查清单 -> 按 id 请求面板成功；dock.right 主位归属性面板");
     }
 

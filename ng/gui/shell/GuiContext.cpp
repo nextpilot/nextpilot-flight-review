@@ -107,10 +107,12 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     m_panels.insert(key, widget);
 
     // 中央画布区走 setCentralContent（首到者占位，后来者并成页签），其余区域走停靠。
+    // 标题用面板自注册的显示名（"脚本调试"/"数据源"…），不能用区域标签——
+    // 否则同区多面板全是"属性"/"数据源"，页签没法分辨。
     if (area == QStringLiteral("canvas.center"))
         placeCanvas(widget, PanelFactoryRegistry::title(panelType));
     else
-        placePanel(widget, area);
+        placePanel(widget, area, PanelFactoryRegistry::title(panelType));
     return widget;
 }
 

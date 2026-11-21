@@ -1524,6 +1524,6 @@ QWidget *createDatasetTreePanel(AppContext &appCtx, IIntentExecutor &exec, QWidg
 }
 
 // 视图层自注册：器官只声明类型字符串 "dataset-tree"，外壳据此装配本面板。
-NG_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
+NG_REGISTER_PANEL_T("dataset-tree", datasetTree, createDatasetTreePanel, "数据源")
 
 } // namespace nextpilot::plotscope::gui
