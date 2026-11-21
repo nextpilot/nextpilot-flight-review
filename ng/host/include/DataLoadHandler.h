@@ -45,6 +45,11 @@ public:
         const nextpilot::plotscope::intent::Intent &intent) override;
 
 private:
+    // mcap 是**容器**不是格式：解出消息字节 + Schema 里的解析器/模板，走同一套摄取。
+    // 与 raw 回放共用 IngestOrchestrator::openSource，只是字节来源换了个实现。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> loadMcap(
+        const QString &path, const nextpilot::plotscope::intent::Intent &intent);
+
     // 把本次打开记入工作区配置（来源/解析器/解析参数）。record=false 时跳过（恢复路径用）。
     void recordSpec(const QString &path, const QStringList &parserIds, bool record,
                     const QByteArray &parserOptions = QByteArray());

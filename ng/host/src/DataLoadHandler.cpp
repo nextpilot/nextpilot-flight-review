@@ -8,9 +8,12 @@
 #include "IngestPipeline.h"
 #include "SettingsStore.h"
 #include "WorkspaceDataConfig.h"
+#include "McapCodec.h"
 
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <cstring>
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
@@ -19,6 +22,63 @@ using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
+namespace rec = nextpilot::plotscope::rec;
+
+namespace
+{
+// MCAP 作为字节容器：把消息体按顺序拼回字节流，交给同一套解析器。
+// 于是"录下来的 mcap"与"录下来的 raw"回放走同一条路，容器不同、字节等价。
+class McapByteSource final : public IByteSource
+{
+public:
+    explicit McapByteSource(const QString &path)
+        : m_origin(path)
+    {
+        QString e;
+        m_ok = m_player.open(path, &e);
+        m_error = e;
+    }
+
+    bool valid() const { return m_ok; }
+    QString error() const { return m_error; }
+
+    qint64 read(char *buf, qint64 maxBytes) override
+    {
+        while (m_off >= m_cur.size())
+        {
+            if (m_done)
+                return 0;
+            rec::McapMessage msg;
+            QString e;
+            if (!m_player.nextMessage(msg, &e))
+            {
+                m_done = true;
+                return 0;
+            }
+            m_cur = msg.data;
+            m_off = 0;
+        }
+        const int avail = m_cur.size() - m_off;
+        const int n = qMin(avail, static_cast<int>(maxBytes));
+        std::memcpy(buf, m_cur.constData() + m_off, static_cast<size_t>(n));
+        m_off += n;
+        return n;
+    }
+
+    bool atEnd() const override { return m_done && m_off >= m_cur.size(); }
+    qint64 totalBytes() const override { return 0; } // 容器解压后才知道，按流处理
+    QString origin() const override { return m_origin; }
+
+private:
+    rec::McapPlayer m_player;
+    QByteArray m_cur;
+    int m_off = 0;
+    bool m_done = false;
+    bool m_ok = false;
+    QString m_origin;
+    QString m_error;
+};
+} // namespace
 
 bool DataLoadHandler::canHandle(const Intent &intent) const
 {
@@ -31,6 +91,12 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
     const QString format = intent.params.value(QStringLiteral("format")).toString();
     // 恢复重放时传 false：不要把恢复出来的源又当成"新打开"记一遍。
     const bool record = intent.params.value(QStringLiteral("record"), true).toBool();
+
+    // mcap 是容器：先解 schema 拿到"哪个解析器 + 什么模板"，再按字节流摄取。
+    // 不走格式驱动表——驱动表里的条目是"文件格式"，mcap 更像"压缩包"。
+    const QString sfx = QFileInfo(path).suffix().toLower();
+    if (sfx == QLatin1String("mcap") || format == QLatin1String("mcap"))
+        return loadMcap(path, intent);
 
     IMessageParser *driver = format.isEmpty()
         ? m_registry.driverForPath(path)
@@ -114,6 +180,61 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
     return fail(err::NoParser,
                 QStringLiteral("解析器 %1 未提供可执行的 parserId，无法走摄取管道")
                     .arg(driver->id()));
+}
+
+Result<IntentResult> DataLoadHandler::loadMcap(const QString &path, const Intent &intent)
+{
+    if (!m_pipeline)
+        return fail(err::NoParser, QStringLiteral("摄取管道未注入，mcap 回放不可用"));
+
+    QString perr;
+    const QByteArray schema = rec::McapPlayer::peekSchema(path, &perr);
+    if (schema.isEmpty())
+        return fail(err::Format,
+                    QStringLiteral("mcap 没有 plotscope schema（录制时未写模板），无法解析: %1%2")
+                        .arg(perr.isEmpty() ? path : perr));
+
+    const QJsonDocument doc = QJsonDocument::fromJson(schema);
+    if (!doc.isObject())
+        return fail(err::Format, QStringLiteral("mcap schema 不是 JSON 对象: %1").arg(path));
+    const QJsonObject root = doc.object();
+    const QString parserId = root.value(QStringLiteral("parser")).toString();
+    if (parserId.isEmpty())
+        return fail(err::Format, QStringLiteral("mcap schema 缺 parser 字段: %1").arg(path));
+
+    // 解析选项原样回喂（录制时存的就是 data.connect 收到的那份）。
+    const QByteArray parserOptions =
+        QJsonDocument(root.value(QStringLiteral("options")).toObject()).toJson(QJsonDocument::Compact);
+
+    McapByteSource source(path);
+    if (!source.valid())
+        return fail(err::Io, source.error().isEmpty() ? path : source.error());
+
+    IngestOrchestrator::Options options;
+    options.useCache = false; // 容器解出来的字节没有稳定指纹
+    options.parserOptions = parserOptions;
+    if (intent.params.contains(QStringLiteral("id")))
+        options.stableId = intent.params.value(QStringLiteral("id")).toInt();
+
+    IngestOrchestrator orchestrator(m_repo, m_sources, *m_pipeline);
+    const Result<int> opened = orchestrator.openSource(source, QStringList{parserId}, QString(), path, options);
+    if (!opened)
+        return fail(opened.error().code, opened.error().message);
+
+    if (m_settings)
+    {
+        QStringList files = m_settings->value(QLatin1String(DataCommandsHandler::kRecentKey)).toStringList();
+        files.removeAll(path);
+        files.prepend(path);
+        if (files.size() > 10)
+            files = files.mid(0, 10);
+        m_settings->setValue(QLatin1String(DataCommandsHandler::kRecentKey), files);
+    }
+    recordSpec(path, QStringList{parserId}, true, parserOptions);
+
+    IntentResult r;
+    r.payload = opened.value();
+    return r;
 }
 
 void DataLoadHandler::recordSpec(const QString &path, const QStringList &parserIds, bool record,

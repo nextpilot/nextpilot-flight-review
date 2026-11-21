@@ -1549,8 +1549,25 @@ Result<IntentResult> DataCommandsHandler::recordStart(const Intent &intent)
         if (rs.sourceId == sourceId && rs.formatId == formatId && rs.backendId == backendId)
             return fail(err::State, QStringLiteral("该源已在用 %1/%2 录制").arg(formatId, backendId));
 
+    // mcap 自包含：把"这段字节该用哪个解析器、什么模板"写进 Schema 记录。
+    // 没有它，录下来的 mcap 回放时只是一袋字节（AC-07 的"读回行数"就过不了）。
+    QByteArray schemaJson;
+    if (formatId == QLatin1String("mcap"))
+    {
+        const auto it = m_live.find(sourceId);
+        if (it != m_live.end())
+        {
+            const LiveSession &s = it->second;
+            QJsonObject root;
+            root.insert(QStringLiteral("parser"), s.parserId);
+            const QJsonDocument od = QJsonDocument::fromJson(s.parserOptions);
+            root.insert(QStringLiteral("options"), od.isObject() ? od.object() : QJsonObject());
+            schemaJson = QJsonDocument(root).toJson(QJsonDocument::Compact);
+        }
+    }
+
     QString why;
-    auto created = rec::Recorder::create(formatId, backendId, endpoint, QByteArray(), &why);
+    auto created = rec::Recorder::create(formatId, backendId, endpoint, schemaJson, &why);
     if (!created)
         return fail(err::Io, why.isEmpty() ? QStringLiteral("录制创建失败") : why);
 

@@ -56,8 +56,13 @@ public:
     McapRecorder() = default;
     ~McapRecorder();
 
+    // schemaJson：写进 Schema 记录的**自包含**元信息（plotscope 约定：
+    // {"parser":"<解析器 id>","options":{...}}）。空 → 写 "{}"（老行为，回放无模板）。
+    // 有了它，mcap 自己就能说明"这段字节该用哪个解析器、什么模板解"。
     bool open(std::shared_ptr<IByteSink> sink,
-              const QString &profile = QStringLiteral("plotscope"), QString *err = nullptr);
+              const QString &profile = QStringLiteral("plotscope"),
+              const QByteArray &schemaJson = QByteArray(),
+              QString *err = nullptr);
 
     // 写一条消息。topic 决定 channel（首次出现时创建）。
     bool writeMessage(const QString &topic, const QByteArray &data, quint64 logTimeNs,
@@ -101,6 +106,13 @@ public:
 
     // 已登记的通道（topic -> channel id）。
     const QHash<QString, quint16> &channels() const { return m_channels; }
+
+    // Schema 记录原文（自包含元信息：{"parser":..,"options":..}）。空 = 文件没写 schema。
+    QByteArray schemaJson() const { return m_schemaJson; }
+
+    // 只扫文件头把 Schema 读出来（不建消息队列）。
+    // 用途：data.load 在决定"用哪个解析器"之前就得知道模板，此时还没开始读消息。
+    static QByteArray peekSchema(const QString &path, QString *err = nullptr);
     bool atEnd() const { return m_file.atEnd(); }
 
 private:
@@ -114,6 +126,7 @@ private:
     QHash<QString, quint16> m_channels;
     QHash<quint16, quint32> m_sequences;
     QList<McapMessage> m_pending; // 已解析但尚未吐出的消息（一个 chunk 内有多条）
+    QByteArray m_schemaJson;      // Schema 记录里的自包含元信息
 };
 
 } // namespace nextpilot::plotscope::rec

@@ -68,7 +68,7 @@ nextpilot::plotscope::foundation::Result<std::shared_ptr<Recorder>> Recorder::cr
     else if (formatId == nextpilot::plotscope::rec::FormatId::Mcap)
     {
         rec->m_mcap = std::make_shared<McapRecorder>();
-        if (!rec->m_mcap->open(rec->m_sink, QStringLiteral("plotscope"), err))
+        if (!rec->m_mcap->open(rec->m_sink, QStringLiteral("plotscope"), headerJson, err))
             return fail(QStringLiteral("eio"), err ? *err : QString());
     }
     else

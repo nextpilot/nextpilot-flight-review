@@ -221,6 +221,12 @@ int main(int argc, char **argv)
         const QByteArray rawBody = rawAll.right(160);
         std::printf("mcap back: msgs=%d joined=%d raw_file=%d (body=160)\n", msgs,
                     int(joined.size()), int(rawAll.size()));
+        // 自包含：Schema 里要写明"哪个解析器、什么模板"，否则回放无从下手。
+        const QByteArray sj = player.schemaJson();
+        std::printf("mcap schema=%s\n", sj.constData());
+        CHECK(!sj.isEmpty());
+        CHECK(sj.contains("custom-protocol"));
+        CHECK(sj.contains("template"));
         // 注意：mcap 消息粒度是"泵批次"而非单帧（一条消息可含多帧），
         // 所以这里断言的是字节级自洽；"回读成 20 行"要等 schema 自包含回放（另卡）。
         CHECK(msgs >= 1);
@@ -228,6 +234,41 @@ int main(int argc, char **argv)
         CHECK(joined == rawBody);                // 逐字节无损
         if (!perr.isEmpty())
             std::printf("mcap back err=%s\n", qPrintable(perr));
+    }
+    // AC-07 闭环：把刚录的 mcap 用 data.load 重新打开，行数应与源一致。
+    // 这条能过，靠的是 mcap 里那份 schema（parser + template）——没有它只剩一袋字节。
+    {
+        Intent ld;
+        ld.op = QStringLiteral("data.load");
+        ld.params[QStringLiteral("path")] = mcapPath;
+        ld.params[QStringLiteral("format")] = QStringLiteral("mcap");
+        const int dsBefore = ctx.data().count();
+        const auto ldr = app.host().execute(ld);
+        CHECK(ldr);
+        std::printf("reload: datasets %d -> %d\n", dsBefore, ctx.data().count());
+        if (!ldr)
+            std::printf("mcap load 失败: %s\n", qPrintable(ldr.error().message));
+        else
+        {
+            const QVariant pv = ldr.value().payload;
+            int id2 = pv.toInt();
+            if (id2 <= 0)
+                id2 = pv.toMap().value(QStringLiteral("dataset")).toInt();
+            std::printf("mcap reload dataset=%d\n", id2);
+            CHECK(id2 > 0);
+            if (const Dataset *rd = ctx.data().get(id2))
+            {
+                int rows = 0;
+                for (const QString &tn : rd->tableNames())
+                    if (const Table *t = rd->table(tn))
+                        rows = std::max(rows, t->rows);
+                std::printf("mcap reload rows=%d timeMax=%.3f tables=%d\n", rows,
+                            rd->timeMax(), int(rd->tableNames().size()));
+                CHECK(rows == 20);
+                CHECK(rd->timeMax() > 1.5);
+                CHECK(ctx.data().count() > dsBefore);
+            }
+        }
     }
     // 停止后源上的 recordings 应被清空（不再显示录制中）。
     if (const DataSourceInfo *rinfo = ctx.sources().get(srcId))

@@ -104,7 +104,8 @@ quint16 McapRecorder::channelIdFor(const QString &topic, bool created)
     return id;
 }
 
-bool McapRecorder::open(std::shared_ptr<IByteSink> sink, const QString &profile, QString *err)
+bool McapRecorder::open(std::shared_ptr<IByteSink> sink, const QString &profile,
+                        const QByteArray &schemaJson, QString *err)
 {
     close();
     if (!sink)
@@ -127,12 +128,13 @@ bool McapRecorder::open(std::shared_ptr<IByteSink> sink, const QString &profile,
     putString(header, QStringLiteral("plotscope"));
     writeRecord(kOpHeader, header);
 
-    // Schema record：单值 JSON，topic 即通道名
+    // Schema record：plotscope 自包含元信息（parser id + 解析选项）。
+    // 回放侧靠它选解析器，否则 mcap 只是一袋字节。
     QByteArray schema;
     putU16(schema, kSchemaId);
-    putString(schema, QStringLiteral("plotscope/value"));
+    putString(schema, QStringLiteral("plotscope/live"));
     putString(schema, QStringLiteral("jsonschema"));
-    putString(schema, QStringLiteral("{}"));
+    putString(schema, QString::fromUtf8(schemaJson.isEmpty() ? QByteArray("{}") : schemaJson));
     writeRecord(kOpSchema, schema);
 
     return true;
@@ -280,6 +282,48 @@ QString McapPlayer::getString(const QByteArray &b, int &off)
     const QString s = QString::fromUtf8(b.mid(off, static_cast<int>(len)));
     off += static_cast<int>(len);
     return s;
+}
+
+QByteArray McapPlayer::peekSchema(const QString &path, QString *err)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+    {
+        if (err)
+            *err = QStringLiteral("无法读取 MCAP 文件: %1").arg(path);
+        return QByteArray();
+    }
+    if (!McapCodec::hasMagic(f.read(8)))
+    {
+        if (err)
+            *err = QStringLiteral("不是 MCAP 文件: %1").arg(path);
+        return QByteArray();
+    }
+    while (!f.atEnd())
+    {
+        const QByteArray opByte = f.read(1);
+        if (opByte.size() < 1)
+            break;
+        const quint8 op = static_cast<quint8>(opByte[0]);
+        const QByteArray lenBytes = f.read(8);
+        if (lenBytes.size() < 8)
+            break;
+        quint64 len = 0;
+        for (int i = 0; i < 8; ++i)
+            len |= static_cast<quint64>(static_cast<quint8>(lenBytes[i])) << (i * 8);
+        const QByteArray body = f.read(static_cast<qint64>(len));
+        if (op == kOpSchema)
+        {
+            int so = 2;
+            getString(body, so);  // name
+            getString(body, so);  // encoding
+            return getString(body, so).toUtf8();
+        }
+        // 消息都在 chunk 里，schema 一定在 chunk 之前 —— 见到 chunk 就不用再扫。
+        if (op == kOpChunk || op == kOpFooter)
+            break;
+    }
+    return QByteArray();
 }
 
 bool McapPlayer::open(const QString &path, QString *err)
@@ -436,6 +480,17 @@ bool McapPlayer::nextMessage(McapMessage &out, QString *err)
                 out = m_pending.takeFirst();
                 return true;
             }
+            break;
+        }
+        case kOpSchema:
+        {
+            // Schema body: id(u16) + name(string) + encoding(string) + data(string)
+            int so = 2;
+            getString(body, so);  // name
+            getString(body, so);  // encoding
+            const QString data = getString(body, so);
+            if (!data.isEmpty())
+                m_schemaJson = data.toUtf8();
             break;
         }
         case kOpFooter:
