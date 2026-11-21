@@ -3,7 +3,7 @@
 > 配套 `移植清单-main到ng.md`。每条 AC 标注对应任务 ID、执行方式、判定标准、证据留存。
 > **无硬件的专项**：实时源验收一律用 UDP 打流替代真机；真机只在 AC-27 做附加确认。
 >
-> **当前进度（2026-11-21，`77fa6cc` 已推送）**：33 条验收项中 **8 条通过（AC-02、AC-03、AC-04、AC-05、AC-06、AC-10、AC-27、AC-29）、6 条部分通过（AC-07、AC-08、AC-09、AC-10B、AC-11、AC-12、AC-28a）**，通过率 24%（含部分 42%）。M1 已 100%；M2 三张卡代码落地，但 AC-07 的"读回行数"受 mcap 无 schema 自包含所限未过。
+> **当前进度（2026-11-21，`1470cbb` 已推送）**：33 条验收项中 **9 条通过（AC-02、AC-03、AC-04、AC-05、AC-06、AC-07、AC-10、AC-27、AC-29）、5 条部分通过（AC-08、AC-09、AC-10B、AC-11、AC-12、AC-28a）**，通过率 27%（含部分 45%）。M1、M2 均已闭环；AC-07（录制自洽）的"读回行数"已实测过。
 > 编译 0 error，`ctest -j1` **27/27** 全绿（每次推送前必跑；27 条含脚本工作台用例与本轮新增 `ng_test_live_udp`）。
 
 
@@ -86,13 +86,14 @@ ctest --test-dir build-ng -j 1
 
 ## 2 M2 录制
 
-### AC-07 录制自洽（T2.1，**最硬一条**）— 🟡 部分（字节级已过，行数未过）
+### AC-07 录制自洽（T2.1，**最硬一条**）— ✅ 通过（`cd5cc78`）
 - 步骤：UDP 打流 10s@100Hz 同时录制 `mcap` 与 `raw` 两路 → 停止 → `data.load` 读回 mcap。
 - 期望：回读 mcap 的**表数量**与源相同，主力表**行数 = 源行数 ±1%**；`raw` 文件字节数等于 `bytesWritten`。
 - 判定：job 内先 `income` 后 `回读`，两个 datasetId 分别 `data.series` 取行数比对，输出 `delta` 字段。
 - 证据：`ac07-*.json` + 两个录制文件（小体积可直接归档）。
 - **已过的部分（`77fa6cc`）**：UDP 20 帧同时录 raw+mcap → stop → 读回 mcap 全部消息并拼接，与 raw 正文 160B **逐字节相同**（raw 文件 176B = 160B 正文 + 16B PSRAW1 头），`bytesWritten` 与落盘一致。
-- **未过的部分（真缺陷，不是口径问题）**：mcap 里 20 帧只成 **6 条消息**（一条消息含多帧，粒度=泵批次），且 Schema 记录写的是 `{}` → 回放拿不到模板，**无法把 160B 解成 20 行**。补法：录制时把模板 JSON 写入 mcap Schema（`Recorder::create` 已有 headerJson 入参，当前被忽略），`data.load` 侧按 schema 选解析器。
+- **行数闭环（`cd5cc78`）**：mcap 的 Schema 记录改存 `{"parser":"custom-protocol","options":{模板}}`；`data.load` 把 mcap 当容器（`McapByteSource` 把消息体拼回字节流 → `IngestOrchestrator::openSource`），实测 **rows=20、timeMax=1.900、新建数据集（1→2）**，与源一致。
+- 说明：mcap 里 20 帧仍成 6~7 条消息（粒度=泵批次），但字节连续、块边界可切在帧中间——解析器吃流，所以条数不等于帧数**不再影响**回放行数；`raw` 与 `mcap` 两条回放路径字节等价。
 
 ### AC-08 多路录制意图（T2.2）— 🟡 部分（2 路已过，udp 后端未测）
 - 步骤：一次 `data.record.start` 带 3 个 target：`{mcap,file}`、`{raw,file}`、`{raw,udp}`。
@@ -307,7 +308,7 @@ ctest --test-dir build-ng -j 1
 - [x] AC-04 意图族 + 非法参数 — 9 op 全 ok；4 条非法输入全被拒且不崩（`f032b81`）
 - [x] AC-05 实时源入口 + 连接对话框 — 「＋」/空态按钮；UDP↔串口互斥无残留空行；真连接建源成功（`e32101c`）
 - [x] AC-06 源状态行 — 已实现并截图；数字由 stats 断言覆盖（`826a4de`）
-- [~] AC-07 录制 mcap 回读自洽 — 字节级逐字节相同已过（`77fa6cc`）；"读回 20 行"待 schema 自包含
+- [x] AC-07 录制 mcap 回读自洽 — 字节逐字节相同 + 回放 rows=20（`77fa6cc`、`cd5cc78`）
 - [~] AC-08 三路录制并存 — raw+mcap×file 两路已过；raw×udp 未测（`f91acf6`）
 - [~] AC-09 录制按钮两态 — 组与状态行红点已过；按钮两态/置灰未做（`826a4de`）
 - [x] AC-10 对齐不破坏存储（reset 逐点还原）— **实测逐字节还原**：同一源导出 → end 对齐 → 导出 → reset → 导出，首末两次 `cmp` 完全相同（offset 只存 AppContext，Dataset 零改写）

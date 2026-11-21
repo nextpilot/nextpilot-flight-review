@@ -48,7 +48,7 @@
 | T1.5 | UI：数据页入口 + 连接对话框 | **已完成** 2026-11-21 / `e32101c`：标题行「＋」菜单 + 空态按钮接真对话框；UDP/TCP/串口字段互斥显隐、解析器取自 ParserRegistry（默认 custom-protocol）；提交走 `data.connect`，失败就地红字。截图 `verify/ng_live_dlg_udp.png`、`ng_live_dlg_serial.png` | T1.4 | AC-05 |
 | T1.6 | 数据面板状态行：源状态、速率、字节、错误 | **已完成** 2026-11-21 / `826a4de`：800ms 轮询 stats + `data.record.list`；live 绿点、录制红点、暂停 ⏸、错误 ⚠、背压标注、无会话隐藏；录制段置前（窄 dock 尾部会被裁）。截图：录制组三组齐显、状态行两段共存 | T1.5 | AC-06 |
 | **M2 录制** | | | | |
-| T2.1 | 录制编排器：源 → `Recorder::create` → 泵内写字节 | **已完成** / `f91acf6`：`pumpLive` **先录后解析**（录制与解析吃同一块字节）；disconnect 自动收口该源所有录制；mcap 回读字节级自洽（`77fa6cc`）。注：粒度=泵批次、schema 为空 → 自包含回放待补 | T1.2 | AC-07 |
+| T2.1 | 录制编排器：源 → `Recorder::create` → 泵内写字节 | **已完成** / `f91acf6`：`pumpLive` **先录后解析**（录制与解析吃同一块字节）；disconnect 自动收口该源所有录制；mcap 回读字节级自洽（`77fa6cc`）。注：`cd5cc78` 补了 schema 自包含 + `data.load` 容器化回放，行数闭环已过 | T1.2 | AC-07 |
 | T2.2 | 意图：`data.record.start/stop/list`（含 format×backend×endpoint 多路） | **已完成** / `f91acf6`：raw+mcap × file 两路同开（160B/160B），`stop` 返回 list=2，停后源 `recordings` 清空。`udp` 后端组合尚未实测 | S | AC-08 |
 | T2.3 | UI：数据页"录制"组 + 状态与已写字节 | **已完成** / `826a4de`：组必须排在「来源」gallery **之前**（排后面会被挤成折叠 ▾，实测过）；状态行红点段读 `data.record.list`。按钮自身无两态（红点在状态行），配置入口走 CLI/脚本参数 | T2.2 | AC-09 |
 | **M3 时间对齐** | | | | |

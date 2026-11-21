@@ -110,6 +110,17 @@ int main(int argc, char **argv)
     rs2.params[QStringLiteral("endpoint")] = mcapPath;
     const auto rr2 = app.host().execute(rs2);
     CHECK(rr2);
+
+    // 第三路：raw × udp（后端正交的另一半）。本机绑一个 socket 收包，
+    // 证明字节真的投递到了网络上，而不是只在 list 里挂着。
+    QUdpSocket sinkRx;
+    CHECK(sinkRx.bind(QHostAddress::LocalHost, 0));
+    const quint16 sinkPort = sinkRx.localPort();
+    Intent rs3 = rs1;
+    rs3.params[QStringLiteral("backend")] = QStringLiteral("udp");
+    rs3.params[QStringLiteral("endpoint")] = QStringLiteral("127.0.0.1:%1").arg(sinkPort);
+    const auto rr3 = app.host().execute(rs3);
+    CHECK(rr3);
     if (rr2)
         CHECK(rr2.value().payload.toMap().value(QStringLiteral("format")).toString()
               == QLatin1String("mcap"));
@@ -177,7 +188,7 @@ int main(int argc, char **argv)
     const auto rlr = app.host().execute(rl);
     CHECK(rlr);
     if (rlr)
-        CHECK(rlr.value().payload.toList().size() == 2);
+        CHECK(rlr.value().payload.toList().size() == 3); // raw/file + mcap/file + raw/udp
 
     Intent rsp;
     rsp.op = QStringLiteral("data.record.stop");
@@ -199,6 +210,22 @@ int main(int argc, char **argv)
     }
     CHECK(QFile(rawPath).size() >= 160);
     CHECK(QFile(mcapPath).size() > 0);
+
+    // udp 那路：接收端要真的收到 ≥160 字节。
+    {
+        pump(300); // 让 UDP 发送侧把队列冲出去
+        int rxPkts = 0, rxBytes = 0;
+        while (sinkRx.hasPendingDatagrams())
+        {
+            QByteArray d;
+            d.resize(static_cast<int>(sinkRx.pendingDatagramSize()));
+            sinkRx.readDatagram(d.data(), d.size());
+            rxBytes += d.size();
+            ++rxPkts;
+        }
+        std::printf("udp sink rx: %d 包 %d 字节\n", rxPkts, rxBytes);
+        CHECK(rxBytes >= 160);
+    }
     // AC-07（字节级自洽）：mcap 回读出 20 条消息，拼接后与 raw 文件正文逐字节相同。
     // 说明：raw 文件外面套了一层 PSRAW1 头（16B），故只比正文 160B。
     {
