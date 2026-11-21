@@ -116,6 +116,24 @@ void DataModule::onAttach(UiContext &ui)
         QStringLiteral("data.export"), QStringLiteral("export_data"), 11);
     add(QStringLiteral("data.action.clearCache"), QStringLiteral("清解析缓存"),
         QStringLiteral("data.clearCache"), QStringLiteral("trash"), 12);
+
+    // 录制组（M2）：两态按钮，参数全走缺省——活动源 + raw/file + 自动文件名，
+    // 点一下就录，不弹对话框（要选格式/后端属于高级用法，可走 CLI/脚本传参）。
+    auto addRec = [&ui](const QString &id, const QString &label, const QString &op,
+                        const QString &icon, int order) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.area = QStringLiteral("ribbon.group.data.record");
+        a.intentOp = op;
+        a.icon = icon;
+        a.order = order;
+        ui.addAction(a);
+    };
+    addRec(QStringLiteral("data.action.recordStart"), QStringLiteral("开始录制"),
+           QStringLiteral("data.record.start"), QStringLiteral("record"), 20);
+    addRec(QStringLiteral("data.action.recordStop"), QStringLiteral("停止录制"),
+           QStringLiteral("data.record.stop"), QStringLiteral("pause"), 21);
 }
 
 #include "DataModule.moc"

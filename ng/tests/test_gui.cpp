@@ -162,6 +162,17 @@ int main(int argc, char *argv[])
         if (entry.action.intentOp == QStringLiteral("data.export")) hasExport = true;
     }
     CHECK(hasReload && hasExport); // 动作绑的是真实意图，不是空按钮
+    // 录制组（M2）：两个动作都绑真实意图，组必须存在（否则按钮无处可挂）
+    CHECK(slotReg.slot(QStringLiteral("ribbon.group.data.record")) != nullptr);
+    const auto recActs = slotReg.actionsIn(QStringLiteral("ribbon.group.data.record"));
+    CHECK(recActs.size() == 2);
+    bool hasRecStart = false, hasRecStop = false;
+    for (const auto &entry : recActs)
+    {
+        if (entry.action.intentOp == QStringLiteral("data.record.start")) hasRecStart = true;
+        if (entry.action.intentOp == QStringLiteral("data.record.stop")) hasRecStop = true;
+    }
+    CHECK(hasRecStart && hasRecStop);
     OK("ribbon 按插槽数据绑定：页签/分组/动作数量符合声明");
 
     // --- 2a-2) 图库是纯数据声明（headless 可读），plot 类型 / parse 类型都在 ---

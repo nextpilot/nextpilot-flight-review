@@ -25,6 +25,7 @@
 #include "FilterEditorDialog.h"
 #include "ImportDialog.h"
 #include "Transform.h"
+#include "DataManagerPanel.h"
 #include "ShellBinder.h"
 #include "SARibbonCategory.h"
 #include "SARibbonBar.h"
@@ -300,6 +301,18 @@ int main(int argc, char *argv[])
     }
 
     // --tab=<页名>：切到指定 ribbon 页（按 categoryTitle 匹配），用于逐页截图核对 8 页布局。
+    // 数据页截图默认拍到的是左 dock 的"脚本库"页（ADS 的 current 是最后加入者）。
+    // 这里按类型把数据源面板 raise 上来，截图才拍得到数据树与底部状态行。
+    if (tabArg == QStringLiteral("数据"))
+    {
+        for (QWidget *p : window.binder()->panelWidgets(QStringLiteral("dock.left")))
+            if (qobject_cast<DataManagerPanel *>(p))
+            {
+                window.binder()->raisePanel(p);
+                break;
+            }
+    }
+
     if (!tabArg.isEmpty())
     {
         if (SARibbonBar *ribbon = window.ribbonBar())
@@ -383,6 +396,19 @@ int main(int argc, char *argv[])
                     cr.value().payload.toMap().value(QStringLiteral("dataset")).toInt());
         else
             fprintf(stdout, "live 连接失败: %s\n", qPrintable(cr.error().message));
+
+        // 顺带起一路 raw 录制：截图要能看见状态行的"⏺ 录制中"段。
+        if (cr)
+        {
+            Intent rec;
+            rec.op = QStringLiteral("data.record.start");
+            rec.params[QStringLiteral("source")] =
+                cr.value().payload.toMap().value(QStringLiteral("source"));
+            rec.params[QStringLiteral("format")] = QStringLiteral("raw");
+            rec.params[QStringLiteral("endpoint")] = QStringLiteral("/tmp/shot_record.raw");
+            const auto rr = application.host().execute(rec);
+            fprintf(stdout, "录制已开始: %s\n", rr ? "ok" : qPrintable(rr.error().message));
+        }
     }
 
     if (!liveArg.isEmpty())

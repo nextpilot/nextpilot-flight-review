@@ -533,7 +533,7 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     // T1.6 状态行：有 live 会话时显示一行摘要，没有就整行隐藏（不留空条）。
     m_liveStatus = new QLabel(this);
     m_liveStatus->setObjectName(QStringLiteral("liveStatus"));
-    m_liveStatus->setTextFormat(Qt::PlainText);
+    m_liveStatus->setTextFormat(Qt::RichText);  // 状态行用彩点区分 live/录制，故走富文本
     m_liveStatus->setContentsMargins(8, 3, 8, 4);
     m_liveStatus->setStyleSheet(QStringLiteral(
         "QLabel#liveStatus{background:palette(alternate-base);border-top:1px solid palette(mid);"
@@ -1517,7 +1517,26 @@ void DataManagerPanel::updateLiveStatus()
     st.op = QStringLiteral("data.live.stats");
     const auto r = m_executor.execute(st);
     const QVariantList rows = r ? r.value().payload.toList() : QVariantList{};
-    if (rows.isEmpty())
+
+    // 录制段（M2）：即便没有 live 会话也要显示"正在录什么、录了多少"。
+    Intent rl;
+    rl.op = QStringLiteral("data.record.list");
+    const auto rlr = m_executor.execute(rl);
+    const QVariantList recs = rlr ? rlr.value().payload.toList() : QVariantList{};
+    // 录制中用一个实心红点，与 live 的绿点区分；文字本身用富文本（setTextFormat 已设为 RichText）。
+    const QString recDot = QStringLiteral("<span style=\"color:#d9363e;font-weight:600\">\u25CF</span>");
+    QString recText;
+    for (const QVariant &v : recs)
+    {
+        const QVariantMap m = v.toMap();
+        if (m.value(QStringLiteral("open")).toBool())
+            recText += QStringLiteral(" %1 %2 %3 KB")
+                           .arg(recDot)
+                           .arg(m.value(QStringLiteral("format")).toString().toHtmlEscaped())
+                           .arg(double(m.value(QStringLiteral("bytes")).toLongLong()) / 1024.0, 0, 'f', 1);
+    }
+
+    if (rows.isEmpty() && recText.isEmpty())
     {
         m_liveStatus->hide();
         return;
@@ -1540,28 +1559,35 @@ void DataManagerPanel::updateLiveStatus()
     const bool paused = m.value(QStringLiteral("paused")).toBool();
     const bool bp = m.value(QStringLiteral("backpressure")).toBool();
 
+    const QString dotLive = QStringLiteral("<span style=\"color:#18a058;font-weight:600\">\u25CF</span>");
     QString text;
-    if (!err.isEmpty())
-        text = QStringLiteral("⚠ %1 · %2").arg(name, err);
+    if (rows.isEmpty())
+        text.clear();
+    else if (!err.isEmpty())
+        text = QStringLiteral("⚠ %1 · %2").arg(name.toHtmlEscaped(), err.toHtmlEscaped());
     else if (paused)
-        text = QStringLiteral("⏸ %1 · 已暂停 · %2 包").arg(name).arg(packets);
+        text = QStringLiteral("⏸ %1 · 已暂停 · %2 包").arg(name.toHtmlEscaped()).arg(packets);
     else
     {
-        text = QStringLiteral("● %1 · %2 Hz · %3 KB/s · %4 包")
-                   .arg(name)
+        text = QStringLiteral("%5 %1 · %2 Hz · %3 KB/s · %4 包")
+                   .arg(name.toHtmlEscaped())
                    .arg(m.value(QStringLiteral("hz")).toDouble(), 0, 'f', 1)
                    .arg(m.value(QStringLiteral("kb_s")).toDouble(), 0, 'f', 1)
-                   .arg(packets);
+                   .arg(packets)
+                   .arg(dotLive);
         if (pending > 0)
             text += QStringLiteral(" · %1 KB 积压").arg(double(pending) / 1024.0, 0, 'f', 1);
-        text += QStringLiteral(" · 丢 %1 KB").arg(double(dropped) / 1024.0, 0, 'f', 1);
+        if (dropped > 0)  // 没丢就别占宽度（dock 窄，尾部会被裁）
+            text += QStringLiteral(" · 丢 %1 KB").arg(double(dropped) / 1024.0, 0, 'f', 1);
         if (bp)
             text += QStringLiteral(" · 背压");
     }
     m_liveStatus->setToolTip(QStringLiteral("源 #%1 · %2")
                                  .arg(m.value(QStringLiteral("id")).toInt())
                                  .arg(m.value(QStringLiteral("origin")).toString()));
-    m_liveStatus->setText(text);
+    // 录制段放前面：dock 面板窄，尾部会被裁掉，"正在录"比"多少 Hz"更需要先看见。
+    const QString sep = (text.isEmpty() || recText.isEmpty()) ? QString() : QStringLiteral(" · ");
+    m_liveStatus->setText(recText.trimmed() + sep + text);  // 富文本：录制红点 / live 绿点
     m_liveStatus->show();
 }
 

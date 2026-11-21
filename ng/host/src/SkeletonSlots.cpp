@@ -65,10 +65,13 @@ void declareSkeletonSlots(UiSlotRegistry &registry)
     // 数据页：老 DataSourceRibbon 常用/来源 gallery/调试。
     group(QStringLiteral("ribbon.group.data.common"), QStringLiteral("常用"),
           QStringLiteral("ribbon.page.data"), 0);
-    group(QStringLiteral("ribbon.group.data.sources"), QStringLiteral("来源"),
+    // 录制放"来源"之前：来源是宽 gallery，放前面会把录制挤成折叠态（只剩一个 ▾）。
+    group(QStringLiteral("ribbon.group.data.record"), QStringLiteral("录制"),
           QStringLiteral("ribbon.page.data"), 1);
-    group(QStringLiteral("ribbon.group.data.debug"), QStringLiteral("调试"),
+    group(QStringLiteral("ribbon.group.data.sources"), QStringLiteral("来源"),
           QStringLiteral("ribbon.page.data"), 2);
+    group(QStringLiteral("ribbon.group.data.debug"), QStringLiteral("调试"),
+          QStringLiteral("ribbon.page.data"), 3);
 
     // 绘图页：老 PlottingModule 页面/布局/显示/画布操作/图表类型 gallery；
     // ng 追加"曲线与轴/操作"两组承载后补的曲线操作（用户要求，老代码在右键菜单）。
