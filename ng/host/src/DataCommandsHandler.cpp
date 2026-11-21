@@ -164,6 +164,8 @@ void DataCommandsHandler::buildDispatch()
     m_dispatch.reg(QStringLiteral("data.live.stats"), this, &DataCommandsHandler::liveStats);
     m_dispatch.reg(QStringLiteral("data.reconnect"), this, &DataCommandsHandler::reconnectLive);
     m_dispatch.reg(QStringLiteral("data.source.list"), this, &DataCommandsHandler::sourceList);
+    m_dispatch.reg(QStringLiteral("data.rate.set"), this, &DataCommandsHandler::setRate);
+    m_dispatch.reg(QStringLiteral("data.config"), this, &DataCommandsHandler::sourceConfig);
     m_dispatch.reg(QStringLiteral("data.time.align"), this, &DataCommandsHandler::alignTime);
     m_dispatch.reg(QStringLiteral("data.transform.set"), this, &DataCommandsHandler::setChannelTransform);
     m_dispatch.reg(QStringLiteral("data.transform.clear"), this, &DataCommandsHandler::clearChannelTransform);
@@ -977,26 +979,11 @@ Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
     session.sourceId = sourceId;
     QUdpSocket *raw = sock.get();
     QObject::connect(raw, &QUdpSocket::readyRead, raw, [this, raw, sourceId] {
-        auto it = m_live.find(sourceId);
-        if (it == m_live.end() || it->second.paused)
-        {
-            // 暂停态：把内核缓冲读空但不喂解析器（不做补帧，恢复后从新数据继续）。
-            while (raw->hasPendingDatagrams())
-            {
-                QNetworkDatagram dg = raw->receiveDatagram();
-                it->second.bytes += dg.data().size();
-            }
-            return;
-        }
+        // 只入环：解析由泵按预算做，避免一包一解析把事件循环占住。
         while (raw->hasPendingDatagrams())
         {
-            QNetworkDatagram dg = raw->receiveDatagram();
-            const QByteArray bytes = dg.data();
-            it->second.packets += 1;
-            it->second.bytes += bytes.size();
-            m_app.ingest().feed(sourceId,
-                                reinterpret_cast<const uint8_t *>(bytes.constData()),
-                                bytes.size());
+            const QNetworkDatagram dg = raw->receiveDatagram();
+            enqueueLive(sourceId, dg.data());
         }
     });
     session.since.start();
@@ -1088,13 +1075,7 @@ Result<IntentResult> DataCommandsHandler::connectTcp(const Intent &intent)
                 const QByteArray bytes = sock->readAll();
                 if (bytes.isEmpty())
                     break;
-                it->second.packets += 1;
-                it->second.bytes += bytes.size();
-                if (it->second.paused)
-                    continue;
-                m_app.ingest().feed(sourceId,
-                                    reinterpret_cast<const uint8_t *>(bytes.constData()),
-                                    bytes.size());
+                enqueueLive(sourceId, bytes);
             }
         });
     };
@@ -1277,6 +1258,15 @@ Result<IntentResult> DataCommandsHandler::disconnectLive(const Intent &intent)
     if (it == m_live.end())
         return fail(err::NoSource, QStringLiteral("该数据源不是活动的实时源: %1").arg(sourceId));
 
+    // 先把环里剩下的字节喂完（泵是异步的，断开时可能还有积压），再 flush 尾半帧。
+    if (!it->second.buf.isEmpty())
+    {
+        m_app.ingest().feed(sourceId,
+                            reinterpret_cast<const uint8_t *>(it->second.buf.constData()),
+                            it->second.buf.size());
+        it->second.fedBytes += it->second.buf.size();
+        it->second.buf.clear();
+    }
     // 先 flush 尾半帧，再断 socket，最后落状态——顺序反了会丢最后一个包。
     m_app.ingest().finish(sourceId);
     if (it->second.socket)
@@ -1317,6 +1307,15 @@ Result<IntentResult> DataCommandsHandler::reconnectLive(const Intent &intent)
     const QString parserId = it->second.parserId;
     QByteArray options = it->second.parserOptions;
     const qint64 oldPackets = it->second.packets;
+    // 重连前把旧连接积压的字节喂完再丢，避免串到新连接里。
+    if (!it->second.buf.isEmpty())
+    {
+        m_app.ingest().feed(sourceId,
+                            reinterpret_cast<const uint8_t *>(it->second.buf.constData()),
+                            it->second.buf.size());
+        it->second.fedBytes += it->second.buf.size();
+        it->second.buf.clear();
+    }
     if (it->second.socket)
         it->second.socket->close();
 #ifdef Q_OS_UNIX
@@ -1340,18 +1339,10 @@ Result<IntentResult> DataCommandsHandler::reconnectLive(const Intent &intent)
             return fail(err::Io, QStringLiteral("重连绑定失败: %1").arg(sock->errorString()));
         QUdpSocket *raw = sock.get();
         QObject::connect(raw, &QUdpSocket::readyRead, raw, [this, raw, sourceId] {
-            auto iter = m_live.find(sourceId);
-            if (iter == m_live.end() || iter->second.paused)
-                return;
             while (raw->hasPendingDatagrams())
             {
-                QNetworkDatagram dg = raw->receiveDatagram();
-                const QByteArray bytes = dg.data();
-                iter->second.packets += 1;
-                iter->second.bytes += bytes.size();
-                m_app.ingest().feed(sourceId,
-                                    reinterpret_cast<const uint8_t *>(bytes.constData()),
-                                    bytes.size());
+                const QNetworkDatagram dg = raw->receiveDatagram();
+                enqueueLive(sourceId, dg.data());
             }
         });
         it->second.socket = std::move(sock);
@@ -1388,11 +1379,7 @@ Result<IntentResult> DataCommandsHandler::reconnectLive(const Intent &intent)
                 const ssize_t n = ::read(fd, buf, sizeof buf);
                 if (n <= 0)
                     break;
-                iter->second.bytes += n;
-                iter->second.packets += 1;
-                if (iter->second.paused)
-                    continue;
-                m_app.ingest().feed(sourceId, reinterpret_cast<const uint8_t *>(buf), qint64(n));
+                enqueueLive(sourceId, QByteArray(buf, int(n)));
             }
         });
         it->second.fd = fd;
@@ -1451,6 +1438,113 @@ Result<IntentResult> DataCommandsHandler::sourceList(const Intent &intent)
     return r;
 }
 
+void DataCommandsHandler::enqueueLive(int sourceId, const QByteArray &bytes)
+{
+    auto it = m_live.find(sourceId);
+    if (it == m_live.end())
+        return;
+    LiveSession &s = it->second;
+    s.bytes += bytes.size();
+    s.packets += 1; // 口径：一次可读/一报文算一包
+    if (s.paused)
+    {
+        // 暂停期不喂也不攒：直接丢，恢复后从新数据继续（明确取舍，不补帧）。
+        s.droppedBytes += bytes.size();
+        return;
+    }
+    s.buf.append(bytes);
+    if (s.buf.size() > s.bufCap)
+    {
+        const qint64 over = s.buf.size() - s.bufCap;
+        s.buf.remove(0, int(over));
+        s.droppedBytes += over; // 背压：环满丢最旧
+    }
+}
+
+void DataCommandsHandler::pumpLive()
+{
+    for (auto &kv : m_live)
+    {
+        LiveSession &s = kv.second;
+        if (s.paused || s.buf.isEmpty())
+            continue;
+        const int take = int(std::min<qint64>(s.pumpBudget, s.buf.size()));
+        m_app.ingest().feed(kv.first, reinterpret_cast<const uint8_t *>(s.buf.constData()),
+                            take);
+        s.buf.remove(0, take);
+        s.fedBytes += take;
+    }
+}
+
+Result<IntentResult> DataCommandsHandler::setRate(const Intent &intent)
+{
+    // 泵频率：收包与解析之间的节流阀。hz 越大越"跟手"，越小越省 CPU。
+    const int hz = intent.params.value(QStringLiteral("hz"), -1).toInt();
+    if (hz < 1 || hz > 200)
+        return fail(err::Args, QStringLiteral("hz 取值范围 1..200，收到 %1").arg(hz));
+    m_pumpHz = hz;
+    if (m_pump)
+        m_pump->setInterval(1000 / m_pumpHz);
+    IntentResult r;
+    r.payload = QVariantMap{{QStringLiteral("hz"), m_pumpHz},
+                            {QStringLiteral("interval_ms"), 1000 / m_pumpHz}};
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::sourceConfig(const Intent &intent)
+{
+    // 单源环参数：bufferBytes（环上限）/ pumpBudget（每 tick 喂多少）。
+    // 不带 source 时改全部会话；只读时传 key 为空。
+    const int only = intent.params.value(QStringLiteral("source"), -1).toInt();
+    const QString key = intent.params.value(QStringLiteral("key")).toString();
+    const qint64 value = intent.params.value(QStringLiteral("value"), -1).toLongLong();
+    if (!key.isEmpty() && value < 0)
+        return fail(err::Args, QStringLiteral("缺少 value"));
+
+    int touched = 0;
+    for (auto &kv : m_live)
+    {
+        if (only >= 0 && kv.first != only)
+            continue;
+        LiveSession &s = kv.second;
+        if (key == QLatin1String("bufferBytes") && value > 0)
+        {
+            s.bufCap = qMax<qint64>(64 * 1024, value);
+            if (s.buf.size() > s.bufCap)
+            {
+                const qint64 over = s.buf.size() - s.bufCap;
+                s.buf.remove(0, int(over));
+                s.droppedBytes += over;
+            }
+        }
+        else if (key == QLatin1String("pumpBudget") && value > 0)
+        {
+            s.pumpBudget = qMax<qint64>(1024, value);
+        }
+        ++touched;
+    }
+    if (only >= 0 && touched == 0)
+        return fail(err::NoEnt, QStringLiteral("没有这个 live 会话: %1").arg(only));
+
+    QVariantList rows;
+    for (const auto &kv : m_live)
+    {
+        if (only >= 0 && kv.first != only)
+            continue;
+        rows.append(QVariantMap{
+            {QStringLiteral("source"), kv.first},
+            {QStringLiteral("url"), kv.second.url},
+            {QStringLiteral("bufferBytes"), QVariant::fromValue<qlonglong>(kv.second.bufCap)},
+            {QStringLiteral("pumpBudget"), QVariant::fromValue<qlonglong>(kv.second.pumpBudget)},
+            {QStringLiteral("pending_bytes"), QVariant::fromValue<qlonglong>(kv.second.buf.size())},
+        });
+    }
+    IntentResult r;
+    r.payload = QVariantMap{{QStringLiteral("pump_hz"), m_pumpHz},
+                            {QStringLiteral("sources"), rows}};
+    return r;
+}
+
 Result<IntentResult> DataCommandsHandler::liveStats(const Intent &intent)
 {
     // 速率口径：整套会话的均值，不做滑动窗——先把"能看见"补齐，
@@ -1471,6 +1565,11 @@ Result<IntentResult> DataCommandsHandler::liveStats(const Intent &intent)
             {QStringLiteral("hz"), double(s.packets) / secs},
             {QStringLiteral("kb_s"), double(s.bytes) / secs / 1024.0},
             {QStringLiteral("paused"), s.paused},
+            {QStringLiteral("pending_bytes"), QVariant::fromValue<qlonglong>(s.buf.size())},
+            {QStringLiteral("dropped_bytes"), QVariant::fromValue<qlonglong>(s.droppedBytes)},
+            {QStringLiteral("fed_bytes"), QVariant::fromValue<qlonglong>(s.fedBytes)},
+            {QStringLiteral("backpressure"), s.buf.size() >= s.bufCap},
+            {QStringLiteral("pump_hz"), m_pumpHz},
             {QStringLiteral("parse_errors"), [this, id = kv.first] {
                  int n = 0;
                  for (const auto &ch : m_app.ingest().channels(id))

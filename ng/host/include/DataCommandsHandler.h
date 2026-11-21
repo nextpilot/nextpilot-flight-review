@@ -10,6 +10,9 @@
 
 #include <QElapsedTimer>
 #include <QSocketNotifier>
+#include <QCoreApplication>
+#include <QCoreApplication>
+#include <QTimer>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUdpSocket>
@@ -57,6 +60,13 @@ public:
         : m_app(appCtx), m_executor(executor)
     {
         buildDispatch();
+        // 泵：50Hz（20ms）批量 drain，单 tick 每源预算 256KB。
+        m_pump = std::make_unique<QTimer>();
+        m_pump->setTimerType(Qt::CoarseTimer);
+        m_pump->setInterval(1000 / m_pumpHz);
+        QObject::connect(m_pump.get(), &QTimer::timeout, m_pump.get(), [this] { pumpLive(); });
+        if (QCoreApplication::instance())
+            m_pump->start();
     }
 
     bool canHandle(const nextpilot::plotscope::intent::Intent &intent) const override;
@@ -153,6 +163,24 @@ private:
         std::unique_ptr<QSocketNotifier> notifier; // 串口可读通知（UDP 用 readyRead）
         std::unique_ptr<QTcpSocket> tcp;           // TCP 客户端连接
         std::unique_ptr<QTcpServer> tcpServer;      // TCP 监听端（host 为空/0.0.0.0）
+
+        // 收字节与解析解耦：readyRead 只入环，泵按预算 drain。
+        // 好处是慢解析器不会把事件循环堵死；环满则丢最旧并计入 dropped（背压可见）。
+        QByteArray buf;
+        qint64 bufCap = 4 * 1024 * 1024;   // 环上限（字节）
+        qint64 pumpBudget = 256 * 1024;    // 每 tick 最多喂多少字节
+        qint64 droppedBytes = 0;
+        qint64 fedBytes = 0;
     };
+    // 入环（不解析）；泵定时器按预算 drain 到 ingest。
+    void enqueueLive(int sourceId, const QByteArray &bytes);
+    void pumpLive();
+    std::unique_ptr<QTimer> m_pump;
+    int m_pumpHz = 50;
+    // 泵与环的运行时配置（data.rate.set / data.config）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setRate(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> sourceConfig(
+        const nextpilot::plotscope::intent::Intent &intent);
     std::map<int, LiveSession> m_live;
 };
