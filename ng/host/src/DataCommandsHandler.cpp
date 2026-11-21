@@ -160,6 +160,8 @@ void DataCommandsHandler::buildDispatch()
     m_dispatch.reg(QStringLiteral("data.connect"), this, &DataCommandsHandler::connectLive);
     m_dispatch.reg(QStringLiteral("data.disconnect"), this, &DataCommandsHandler::disconnectLive);
     m_dispatch.reg(QStringLiteral("data.live.stats"), this, &DataCommandsHandler::liveStats);
+    m_dispatch.reg(QStringLiteral("data.reconnect"), this, &DataCommandsHandler::reconnectLive);
+    m_dispatch.reg(QStringLiteral("data.source.list"), this, &DataCommandsHandler::sourceList);
     m_dispatch.reg(QStringLiteral("data.time.align"), this, &DataCommandsHandler::alignTime);
     m_dispatch.reg(QStringLiteral("data.transform.set"), this, &DataCommandsHandler::setChannelTransform);
     m_dispatch.reg(QStringLiteral("data.transform.clear"), this, &DataCommandsHandler::clearChannelTransform);
@@ -994,6 +996,9 @@ Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
         }
     });
     session.since.start();
+    session.url = url;
+    session.parserId = parserId;
+    session.parserOptions = parserOptions;
     session.socket = std::move(sock);
     m_live[sourceId] = std::move(session);
 
@@ -1095,6 +1100,9 @@ Result<IntentResult> DataCommandsHandler::connectSerial(const Intent &intent)
     session.sourceId = sourceId;
     session.fd = fd;
     session.since.start();
+    session.url = intent.params.value(QStringLiteral("url")).toString();
+    session.parserId = parserId;
+    session.parserOptions = parserOptions;
     auto notifier = std::make_unique<QSocketNotifier>(fd, QSocketNotifier::Read);
     QSocketNotifier *raw = notifier.get();
     QObject::connect(raw, &QSocketNotifier::activated, raw, [this, raw, fd, sourceId] {
@@ -1158,6 +1166,154 @@ Result<IntentResult> DataCommandsHandler::disconnectLive(const Intent &intent)
         {QStringLiteral("packets"), QVariant::fromValue<qlonglong>(packets)},
         {QStringLiteral("bytes"), QVariant::fromValue<qlonglong>(bytes)},
     };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::reconnectLive(const Intent &intent)
+{
+    int sourceId = intent.params.value(QStringLiteral("id"), -1).toInt();
+    if (sourceId < 0)
+        sourceId = m_app.activeSourceId();
+    auto it = m_live.find(sourceId);
+    if (it == m_live.end())
+        return fail(err::NoSource, QStringLiteral("该数据源不是活动的实时源: %1").arg(sourceId));
+
+    // 记住旧参数与旧计数；断开前端（不动源、不动数据集、不动解析器实例）。
+    const QString url = it->second.url;
+    const QString parserId = it->second.parserId;
+    QByteArray options = it->second.parserOptions;
+    const qint64 oldPackets = it->second.packets;
+    if (it->second.socket)
+        it->second.socket->close();
+#ifdef Q_OS_UNIX
+    if (it->second.fd >= 0)
+        ::close(it->second.fd);
+#endif
+    it->second.socket.reset();
+    it->second.notifier.reset();
+    it->second.fd = -1;
+
+    // 新前端：仅 UDP / 串口支持重连。
+    const QUrl qurl(url);
+    if (qurl.scheme() == QLatin1String("udp"))
+    {
+        const int port = qurl.port(0);
+        if (port <= 0)
+            return fail(err::Args, QStringLiteral("重连失败：url 端口丢失: %1").arg(url));
+        auto sock = std::make_unique<QUdpSocket>();
+        const QString host = qurl.host().isEmpty() ? QStringLiteral("0.0.0.0") : qurl.host();
+        if (!sock->bind(QHostAddress(host), quint16(port)))
+            return fail(err::Io, QStringLiteral("重连绑定失败: %1").arg(sock->errorString()));
+        QUdpSocket *raw = sock.get();
+        QObject::connect(raw, &QUdpSocket::readyRead, raw, [this, raw, sourceId] {
+            auto iter = m_live.find(sourceId);
+            if (iter == m_live.end() || iter->second.paused)
+                return;
+            while (raw->hasPendingDatagrams())
+            {
+                QNetworkDatagram dg = raw->receiveDatagram();
+                const QByteArray bytes = dg.data();
+                iter->second.packets += 1;
+                iter->second.bytes += bytes.size();
+                m_app.ingest().feed(sourceId,
+                                    reinterpret_cast<const uint8_t *>(bytes.constData()),
+                                    bytes.size());
+            }
+        });
+        it->second.socket = std::move(sock);
+    }
+#ifdef Q_OS_UNIX
+    else if (qurl.scheme() == QLatin1String("serial"))
+    {
+        // 复用 connectSerial 的 termios 配置逻辑过重，这里按同一规则重开。
+        QString rest = url;
+        rest.remove(QStringLiteral("serial://"));
+        const int sep = rest.lastIndexOf(QLatin1Char(':'));
+        const QString dev = sep > 0 ? rest.left(sep) : rest;
+        const int fd = ::open(dev.toUtf8().constData(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+        if (fd < 0)
+            return fail(err::Io, QStringLiteral("重连打开串口失败: %1").arg(dev));
+        struct termios tio {};
+        if (::tcgetattr(fd, &tio) == 0)
+        {
+            ::cfmakeraw(&tio);
+            tio.c_cflag |= (CLOCAL | CREAD);
+            tio.c_cc[VMIN] = 0;
+            tio.c_cc[VTIME] = 0;
+            ::tcsetattr(fd, TCSANOW, &tio);
+        }
+        auto notifier = std::make_unique<QSocketNotifier>(fd, QSocketNotifier::Read);
+        QSocketNotifier *raw = notifier.get();
+        QObject::connect(raw, &QSocketNotifier::activated, raw, [this, raw, fd, sourceId] {
+            auto iter = m_live.find(sourceId);
+            if (iter == m_live.end())
+                return;
+            char buf[8192];
+            while (true)
+            {
+                const ssize_t n = ::read(fd, buf, sizeof buf);
+                if (n <= 0)
+                    break;
+                iter->second.bytes += n;
+                iter->second.packets += 1;
+                if (iter->second.paused)
+                    continue;
+                m_app.ingest().feed(sourceId, reinterpret_cast<const uint8_t *>(buf), qint64(n));
+            }
+        });
+        it->second.fd = fd;
+        it->second.notifier = std::move(notifier);
+    }
+#endif
+    else
+        return fail(err::NotSupported, QStringLiteral("不支持的 url 方案: %1").arg(qurl.scheme()));
+
+    it->second.since.restart();
+    it->second.url = url;
+    it->second.parserId = parserId;
+    it->second.parserOptions = options;
+    m_app.sources().setState(sourceId, SourceState::Streaming);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("source"), sourceId},
+        {QStringLiteral("url"), url},
+        {QStringLiteral("packets_before"), QVariant::fromValue<qlonglong>(oldPackets)},
+    };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::sourceList(const Intent &intent)
+{
+    Q_UNUSED(intent);
+    QVariantList rows;
+    for (int id : m_app.sources().ids())
+    {
+        const DataSourceInfo *info = m_app.sources().get(id);
+        if (!info)
+            continue;
+        QVariantMap m{
+            {QStringLiteral("id"), id},
+            {QStringLiteral("name"), info->name},
+            {QStringLiteral("origin"), info->origin},
+            {QStringLiteral("kind"), int(info->kind)},
+            {QStringLiteral("state"), int(info->state)},
+            {QStringLiteral("datasets"), info->datasetIds.size()},
+            {QStringLiteral("parsers"), info->parsers.size()},
+            {QStringLiteral("bytes_read"), QVariant::fromValue<qlonglong>(info->bytesRead)},
+            {QStringLiteral("error"), info->error},
+        };
+        if (auto it = m_live.find(id); it != m_live.end())
+        {
+            const double secs = qMax(1e-6, double(it->second.since.elapsed()) / 1000.0);
+            m.insert(QStringLiteral("live"), true);
+            m.insert(QStringLiteral("hz"), double(it->second.packets) / secs);
+            m.insert(QStringLiteral("kb_s"), double(it->second.bytes) / secs / 1024.0);
+        }
+        rows.append(m);
+    }
+    IntentResult r;
+    r.payload = rows;
     return r;
 }
 

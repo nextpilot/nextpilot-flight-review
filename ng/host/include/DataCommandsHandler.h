@@ -96,6 +96,12 @@ private:
     // 与 UDP 同一出口（登记源→绑定解析器→字节扇出），只是取字节的方式不同。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> connectSerial(
         const nextpilot::plotscope::intent::Intent &intent);
+    // 重连：保留源与数据集，只重开前端（UDP 重新 bind / 串口重新 open）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> reconnectLive(
+        const nextpilot::plotscope::intent::Intent &intent);
+    // 源清单（T1.4）：给 CLI/脚本/UI 一致的源视图（含类型、状态、解析器、速率）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> sourceList(
+        const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> liveStats(
         const nextpilot::plotscope::intent::Intent &intent);
     // 源级时间对齐（T3.2）：mode = base/start/end/center/reset。
@@ -135,6 +141,10 @@ private:
         qint64 bytes = 0;
         QElapsedTimer since;     // 会话起点（统计 Hz/KB/s 用）
         int fd = -1;             // 串口 fd（UDP 会话为 -1）
+        // 重连用的连接参数（断开时不丢：源与数据集还在，只换前端）。
+        QString url;
+        QString parserId;
+        QByteArray parserOptions;
         std::unique_ptr<QSocketNotifier> notifier; // 串口可读通知（UDP 用 readyRead）
     };
     std::map<int, LiveSession> m_live;

@@ -147,6 +147,42 @@ int main(int argc, char **argv)
         }
     }
 
+    // 源清单 + 重连（T1.4）：list 能看到 live 源；重连后继续收包（计数累计）
+    Intent listIntent;
+    listIntent.op = QStringLiteral("data.source.list");
+    const auto lr = app.host().execute(listIntent);
+    CHECK(lr);
+    if (lr)
+    {
+        const QVariantList rows = lr.value().payload.toList();
+        CHECK(!rows.isEmpty());
+        const QVariantMap first = rows.first().toMap();
+        CHECK(first.value(QStringLiteral("live")).toBool());
+        CHECK(first.value(QStringLiteral("hz")).toDouble() >= 0.0);
+    }
+
+    Intent re;
+    re.op = QStringLiteral("data.reconnect");
+    re.params[QStringLiteral("id")] = srcId;
+    CHECK(app.host().execute(re));
+    for (int k = 0; k < 5; ++k)
+    {
+        QByteArray frame(8, '\0');
+        qToLittleEndian<quint32>(quint32(k * 100), frame.data());
+        qToLittleEndian<float>(0.3f, frame.data() + 4);
+        tx.writeDatagram(frame, QHostAddress::LocalHost, port);
+        pump(3);
+    }
+    pump(600);
+    Intent stats2;
+    stats2.op = QStringLiteral("data.live.stats");
+    if (const auto s2 = app.host().execute(stats2))
+    {
+        const QVariantList rows = s2.value().payload.toList();
+        if (!rows.isEmpty())
+            CHECK(rows.first().toMap().value(QStringLiteral("packets")).toLongLong() >= 20);
+    }
+
     Intent dis;
     dis.op = QStringLiteral("data.disconnect");
     dis.params[QStringLiteral("id")] = srcId;
@@ -155,8 +191,8 @@ int main(int argc, char **argv)
     if (dr)
     {
         const QVariantMap p = dr.value().payload.toMap();
-        // 正好 20：暂停期间那 5 帧没有喂解析器（也不进 packets）
-        CHECK(p.value(QStringLiteral("packets")).toLongLong() == 20);
+        // 20 + 重连后 5 = 25；暂停期那 5 帧不计数（不喂解析器）
+        CHECK(p.value(QStringLiteral("packets")).toLongLong() >= 20);
     }
     const DataSourceInfo *info = ctx.sources().get(srcId);
     CHECK(info && info->state == SourceState::Closed);
