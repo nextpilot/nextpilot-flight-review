@@ -3,7 +3,7 @@
 > 配套 `移植清单-main到ng.md`。每条 AC 标注对应任务 ID、执行方式、判定标准、证据留存。
 > **无硬件的专项**：实时源验收一律用 UDP 打流替代真机；真机只在 AC-27 做附加确认。
 >
-> **当前进度（2026-11-21，`1470cbb` 已推送）**：33 条验收项中 **9 条通过（AC-02、AC-03、AC-04、AC-05、AC-06、AC-07、AC-10、AC-27、AC-29）、5 条部分通过（AC-08、AC-09、AC-10B、AC-11、AC-12、AC-28a）**，通过率 27%（含部分 45%）。M1、M2 均已闭环；AC-07（录制自洽）的"读回行数"已实测过。
+> **当前进度（2026-11-21，`95f58c3` 已推送）**：33 条验收项中 **10 条通过（AC-02、AC-03、AC-04、AC-05、AC-06、AC-07、AC-08、AC-10、AC-27、AC-29）、5 条部分通过（AC-09、AC-10B、AC-11、AC-12、AC-28a）**，通过率 30%（含部分 45%）。M1、M2 均已闭环（AC-07 回读行数、AC-08 三路录制都有实测数字）。
 > 编译 0 error，`ctest -j1` **27/27** 全绿（每次推送前必跑；27 条含脚本工作台用例与本轮新增 `ng_test_live_udp`）。
 
 
@@ -95,11 +95,11 @@ ctest --test-dir build-ng -j 1
 - **行数闭环（`cd5cc78`）**：mcap 的 Schema 记录改存 `{"parser":"custom-protocol","options":{模板}}`；`data.load` 把 mcap 当容器（`McapByteSource` 把消息体拼回字节流 → `IngestOrchestrator::openSource`），实测 **rows=20、timeMax=1.900、新建数据集（1→2）**，与源一致。
 - 说明：mcap 里 20 帧仍成 6~7 条消息（粒度=泵批次），但字节连续、块边界可切在帧中间——解析器吃流，所以条数不等于帧数**不再影响**回放行数；`raw` 与 `mcap` 两条回放路径字节等价。
 
-### AC-08 多路录制意图（T2.2）— 🟡 部分（2 路已过，udp 后端未测）
+### AC-08 多路录制意图（T2.2）— ✅ 通过（`95f58c3`）
 - 步骤：一次 `data.record.start` 带 3 个 target：`{mcap,file}`、`{raw,file}`、`{raw,udp}`。
 - 期望：三路同时工作，`list` 返回 3 条各自 `bytesWritten>0`；停止后 3 条 `closed:true`。
 - 判定：udp 那路用 `nc -ul 5600` 收到字节数 >0 佐证。
-- 实况：`{raw,file}` + `{mcap,file}` 两路同开已实测（各 160B、`list` 2 条、stop 后 `recordings` 清空）；`{raw,udp}` 后端组合未实测，故记部分。
+- 实况（`95f58c3`）：三路并存实测 `{raw,file}`、`{mcap,file}`、`{raw,udp}`——`record.stop` 返回 `list=3`、各路 `bytes=160`；udp 那路本机绑 socket 收到 **7 包 176 字节**（160B 正文 + 16B PSRAW1 头），证明真投递而非只在 list 里挂着。
 
 ### AC-09 录制 UI（T2.3）— 🟡 部分（组与红点已过，置灰未做）
 - 期望：数据页出现「录制」组（开始/停止/配置），录制中按钮变红点 + 已写 MB 实时跳；未连接源时按钮**置灰不可点**（不弹错误）。
@@ -309,7 +309,7 @@ ctest --test-dir build-ng -j 1
 - [x] AC-05 实时源入口 + 连接对话框 — 「＋」/空态按钮；UDP↔串口互斥无残留空行；真连接建源成功（`e32101c`）
 - [x] AC-06 源状态行 — 已实现并截图；数字由 stats 断言覆盖（`826a4de`）
 - [x] AC-07 录制 mcap 回读自洽 — 字节逐字节相同 + 回放 rows=20（`77fa6cc`、`cd5cc78`）
-- [~] AC-08 三路录制并存 — raw+mcap×file 两路已过；raw×udp 未测（`f91acf6`）
+- [x] AC-08 三路录制并存 — raw/file + mcap/file + raw/udp，udp 收到 176B（`95f58c3`）
 - [~] AC-09 录制按钮两态 — 组与状态行红点已过；按钮两态/置灰未做（`826a4de`）
 - [x] AC-10 对齐不破坏存储（reset 逐点还原）— **实测逐字节还原**：同一源导出 → end 对齐 → 导出 → reset → 导出，首末两次 `cmp` 完全相同（offset 只存 AppContext，Dataset 零改写）
 - [~] AC-11 五项对齐动作 — end 实测 offset=+11.596s（params 0.4→flight 11.996）；start/center 同一代码路径未逐条实跑；reset 由 AC-10 证；GUI 子菜单 5 项受 Xvfb 悬停限制未截到（父菜单+箭头已实拍）
