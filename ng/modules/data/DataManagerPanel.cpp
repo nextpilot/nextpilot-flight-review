@@ -1,5 +1,7 @@
 #include "DataManagerPanel.h"
 
+#include "LiveConnectDialog.h"
+
 #include "PanelFactoryRegistry.h"
 #include "ThemeManager.h"
 #include "ChannelMime.h"
@@ -39,6 +41,7 @@
 #include <QPalette>
 #include <QPainter>
 #include <QTreeWidgetItem>
+#include <QTimer>
 #include <QVBoxLayout>
 
 using namespace nextpilot::plotscope::foundation;
@@ -381,6 +384,24 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_header->setObjectName(QStringLiteral("sectionTitle"));
     headerLay->addWidget(m_header);
     headerLay->addStretch(1);
+    // 加号（T1.5 入口）：数据页加源只有两条路——打开日志、连接实时源。
+    // 挂在标题行而不是树菜单里：源菜单是对"已存在的源"的动作，新开一个源不属于它。
+    auto *addBtn = new QToolButton(headerRow);
+    addBtn->setText(QStringLiteral("＋"));
+    addBtn->setToolTip(QStringLiteral("添加数据源"));
+    addBtn->setCursor(Qt::PointingHandCursor);
+    addBtn->setFixedSize(20, 20);
+    addBtn->setPopupMode(QToolButton::InstantPopup);
+    addBtn->setStyleSheet(QStringLiteral(
+        "QToolButton{border:none;border-radius:4px;font-size:14px;color:palette(window-text);}"
+        "QToolButton:hover{background:palette(midlight);}"));
+    auto *addMenu = new QMenu(addBtn);
+    QAction *addOpen = addMenu->addAction(QStringLiteral("打开日志…"));
+    QAction *addLive = addMenu->addAction(QStringLiteral("连接实时源…"));
+    addBtn->setMenu(addMenu);
+    connect(addOpen, &QAction::triggered, this, &DataManagerPanel::openLogFile);
+    connect(addLive, &QAction::triggered, this, &DataManagerPanel::openLiveConnect);
+    headerLay->addWidget(addBtn);
     m_srcCount = new QLabel(QStringLiteral("0 源 · 0 已连接"), headerRow);
     m_srcCount->setObjectName(QStringLiteral("textDim"));
     headerLay->addWidget(m_srcCount);
@@ -503,16 +524,26 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     auto *recentBtn = mkEmptyBtn(QStringLiteral("最近文件"));
     emptyLay->addStretch();
     connect(openBtn, &QPushButton::clicked, this, &DataManagerPanel::openLogFile);
-    connect(liveBtn, &QPushButton::clicked, this, [this] {
-        // NG 暂无实时源运行时：对齐老界面入口——列出支持的实时 transport 扩展，
-        // 无可用扩展时给出明确提示，不留死按钮。
-        QMessageBox::information(this, QStringLiteral("连接实时源"),
-            QStringLiteral("当前版本的实时源采集尚未接入；可通过「打开日志」加载文件数据源。"));
-    });
+    connect(liveBtn, &QPushButton::clicked, this, &DataManagerPanel::openLiveConnect);
     connect(recentBtn, &QPushButton::clicked, this, [this] {
         showRecentFilesMenu(QCursor::pos());
     });
     lay->addWidget(m_empty, 1);
+
+    // T1.6 状态行：有 live 会话时显示一行摘要，没有就整行隐藏（不留空条）。
+    m_liveStatus = new QLabel(this);
+    m_liveStatus->setObjectName(QStringLiteral("liveStatus"));
+    m_liveStatus->setTextFormat(Qt::PlainText);
+    m_liveStatus->setContentsMargins(8, 3, 8, 4);
+    m_liveStatus->setStyleSheet(QStringLiteral(
+        "QLabel#liveStatus{background:palette(alternate-base);border-top:1px solid palette(mid);"
+        "color:palette(window-text);font-size:11px;}"));
+    m_liveStatus->hide();
+    lay->addWidget(m_liveStatus);
+    m_liveTimer = new QTimer(this);
+    m_liveTimer->setInterval(800);
+    connect(m_liveTimer, &QTimer::timeout, this, &DataManagerPanel::updateLiveStatus);
+    m_liveTimer->start();
 
     // 树：双击列节点 = 激活通道；单击源节点 = 展开/选中；右键 = 上下文菜单。
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
@@ -1468,6 +1499,70 @@ void DataManagerPanel::openLogFile()
     load.params[QStringLiteral("path")] = path;
     const auto r = m_executor.execute(load);
     if (!r) QMessageBox::warning(this, QStringLiteral("打开失败"), r.error().message);
+}
+
+void DataManagerPanel::openLiveConnect()
+{
+    LiveConnectDialog dlg(m_executor, this);
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        refresh();
+        updateLiveStatus();
+    }
+}
+
+void DataManagerPanel::updateLiveStatus()
+{
+    Intent st;
+    st.op = QStringLiteral("data.live.stats");
+    const auto r = m_executor.execute(st);
+    const QVariantList rows = r ? r.value().payload.toList() : QVariantList{};
+    if (rows.isEmpty())
+    {
+        m_liveStatus->hide();
+        return;
+    }
+    // 多会话时优先显示活动源；否则第一条。
+    QVariantMap m = rows.first().toMap();
+    const int active = m_appCtx.activeSourceId();
+    for (const QVariant &v : rows)
+        if (v.toMap().value(QStringLiteral("id")).toInt() == active)
+        {
+            m = v.toMap();
+            break;
+        }
+
+    const QString name = m.value(QStringLiteral("name"), QStringLiteral("live")).toString();
+    const qlonglong packets = m.value(QStringLiteral("packets")).toLongLong();
+    const qlonglong dropped = m.value(QStringLiteral("dropped_bytes")).toLongLong();
+    const qlonglong pending = m.value(QStringLiteral("pending_bytes")).toLongLong();
+    const QString err = m.value(QStringLiteral("error")).toString();
+    const bool paused = m.value(QStringLiteral("paused")).toBool();
+    const bool bp = m.value(QStringLiteral("backpressure")).toBool();
+
+    QString text;
+    if (!err.isEmpty())
+        text = QStringLiteral("⚠ %1 · %2").arg(name, err);
+    else if (paused)
+        text = QStringLiteral("⏸ %1 · 已暂停 · %2 包").arg(name).arg(packets);
+    else
+    {
+        text = QStringLiteral("● %1 · %2 Hz · %3 KB/s · %4 包")
+                   .arg(name)
+                   .arg(m.value(QStringLiteral("hz")).toDouble(), 0, 'f', 1)
+                   .arg(m.value(QStringLiteral("kb_s")).toDouble(), 0, 'f', 1)
+                   .arg(packets);
+        if (pending > 0)
+            text += QStringLiteral(" · %1 KB 积压").arg(double(pending) / 1024.0, 0, 'f', 1);
+        text += QStringLiteral(" · 丢 %1 KB").arg(double(dropped) / 1024.0, 0, 'f', 1);
+        if (bp)
+            text += QStringLiteral(" · 背压");
+    }
+    m_liveStatus->setToolTip(QStringLiteral("源 #%1 · %2")
+                                 .arg(m.value(QStringLiteral("id")).toInt())
+                                 .arg(m.value(QStringLiteral("origin")).toString()));
+    m_liveStatus->setText(text);
+    m_liveStatus->show();
 }
 
 void DataManagerPanel::refresh()

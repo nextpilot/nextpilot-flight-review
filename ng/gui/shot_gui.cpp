@@ -152,6 +152,7 @@ int main(int argc, char *argv[])
     QString legendArg;    // --legend=<collapse|zoom[±N]> 图例交互演示（#205）
     bool hoverArg = false; // --hover 注入一次鼠标移动，让每格悬浮工具栏在截图里可见
     QString liveArg;      // --livesource=<名>[:paused] 注册演示 live 源（#193 暂停/继续按钮）
+    QString liveTplArg;   // --livetpl=<模板路径> 走真 data.connect 起一个 UDP 监听源（T1.5/T1.6 UI 验证）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -232,6 +233,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--legend=")))
         {
             legendArg = a.mid(QStringLiteral("--legend=").size());
+            continue;
+        }
+        if (a.startsWith(QStringLiteral("--livetpl=")))
+        {
+            liveTplArg = a.mid(QStringLiteral("--livetpl=").size());
             continue;
         }
         if (a.startsWith(QStringLiteral("--livesource=")))
@@ -361,6 +367,24 @@ int main(int argc, char *argv[])
     // --livesource=<名>[:paused]：注册一个演示 live 源并挂上首数据集。
     // NG 当前没有真实 live 运行时，这里只登记运行时实例（SourceKind::Live），
     // 让数据源卡片呈现 live 形态：运行中显示暂停按钮 / 已暂停显示继续按钮（#193）。
+    if (!liveTplArg.isEmpty())
+    {
+        // 真连接（不是演示登记）：走 data.connect 同一出口，用来验收数据树与状态行的真实呈现。
+        Intent conn;
+        conn.op = QStringLiteral("data.connect");
+        conn.params[QStringLiteral("url")] = QStringLiteral("udp://0.0.0.0:14550");
+        conn.params[QStringLiteral("parser")] = QStringLiteral("custom-protocol");
+        conn.params[QStringLiteral("templatePath")] = liveTplArg;
+        conn.params[QStringLiteral("name")] = QStringLiteral("live-demo");
+        const auto cr = application.host().execute(conn);
+        if (cr)
+            fprintf(stdout, "live 源已连接: source=%d dataset=%d\n",
+                    cr.value().payload.toMap().value(QStringLiteral("source")).toInt(),
+                    cr.value().payload.toMap().value(QStringLiteral("dataset")).toInt());
+        else
+            fprintf(stdout, "live 连接失败: %s\n", qPrintable(cr.error().message));
+    }
+
     if (!liveArg.isEmpty())
     {
         DataSourceInfo liveInfo;

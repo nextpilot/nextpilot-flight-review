@@ -1583,6 +1583,7 @@ Result<IntentResult> DataCommandsHandler::liveStats(const Intent &intent)
             m.insert(QStringLiteral("name"), info->name);
             m.insert(QStringLiteral("state"), int(info->state));
             m.insert(QStringLiteral("error"), info->error);
+            m.insert(QStringLiteral("origin"), info->origin);
         }
         rows.append(m);
     }

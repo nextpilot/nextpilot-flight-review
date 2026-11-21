@@ -9,6 +9,7 @@
 
 class QLabel;
 class QLineEdit;
+class QTimer;
 class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -74,6 +75,8 @@ private:
     void showColumnMenu(QTreeWidgetItem *item, const QPoint &globalPos);
     void showRecentFilesMenu(const QPoint &globalPos);
     void openLogFile();
+    void openLiveConnect();   // T1.5：连接对话框（传输/端点/波特率/解析器/模板）
+    void updateLiveStatus();  // T1.6：把 stats 汇总成一行
     void deriveColumn(QTreeWidgetItem *item, const QPoint &globalPos); // Ctrl+T：为列添加派生变换
     void removeDerivedChannels(QTreeWidgetItem *item);                 // 删除该列的派生曲线
 
@@ -88,6 +91,8 @@ private:
     QLineEdit *m_filter = nullptr;
     QTreeWidget *m_tree = nullptr;           // 统一数据源树：源 → (表) → 列；单表省表节点
     QWidget *m_empty = nullptr;              // 空态容器（无源时显示，树隐藏）：提示 + 三按钮
+    QLabel *m_liveStatus = nullptr;          // 底部实时源状态行（T1.6）：状态/速率/字节/丢字节
+    QTimer *m_liveTimer = nullptr;           // 800ms 轮询 data.live.stats
 
     int m_shownSourceId = -1;   // 当前展开的源
     int m_shownChip = 0;        // 0 字段 / 1 参数 / 2 消息
