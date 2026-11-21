@@ -195,6 +195,16 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
     if (toParse.isEmpty())
     {
         m_sources.setState(sourceId, SourceState::Closed);
+        // 字节态回写：缓存命中视作整份已读（数据源信息要显示"已读/总量"，
+        // 早前 bytesRead 从不赋值，对话框里永远是 0）。
+        if (const DataSourceInfo *cur = m_sources.get(sourceId))
+        {
+            const QFileInfo fi(origin);
+            DataSourceInfo copy = *cur;
+            copy.bytesRead = fi.size();
+            copy.bytesTotal = fi.size();
+            m_sources.update(sourceId, copy);
+        }
         if (m_datasetIds.isEmpty())
         {
             m_sources.remove(sourceId);
@@ -246,6 +256,15 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
 
     // --- 6) 登记状态 ---
     m_sources.setState(sourceId, SourceState::Closed);
+    // 字节态回写：文件源读完一次落定，成本可忽略；流式的高频路径仍然不回写。
+    if (const DataSourceInfo *cur = m_sources.get(sourceId))
+    {
+        const QFileInfo fi(origin);
+        DataSourceInfo copy = *cur;
+        copy.bytesRead = totalRead;
+        copy.bytesTotal = fi.exists() ? fi.size() : totalRead;
+        m_sources.update(sourceId, copy);
+    }
     if (m_datasetIds.isEmpty())
     {
         m_sources.remove(sourceId);

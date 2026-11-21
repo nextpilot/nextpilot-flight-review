@@ -980,6 +980,10 @@ void DataManagerPanel::applyFilter()
                 childHit = childHit || hit;
             }
             child->setHidden(!childHit);
+            // 过滤态下命中的表节点自动展开：搜 pitch 时直接看到字段，
+            // 不必先点 ▸。清空搜索不动用户自己收起的节点。
+            if (!empty && childHit)
+                child->setExpanded(true);
             srcHit = srcHit || childHit;
         }
         // 源名命中也算（展开全部子项）。
