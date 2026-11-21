@@ -13,6 +13,7 @@
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QApplication>
+#include <QDrag>
 #include <QInputDialog>
 #include <QUuid>
 #include <QJsonArray>
@@ -941,7 +942,28 @@ bool PlotCanvas::eventFilter(QObject *watched, QEvent *event)
 
 void PlotCanvas::onCanvasMouseMove(QMouseEvent *event)
 {
-    if (!m_plot || !m_plot->plotRect().contains(event->pos()))
+    if (!m_plot)
+        return;
+
+    // 图例上按住拖动 = 把这条曲线移到另一画布（M5/T5.4）。
+    // 放在 plotRect 判断之前：图例可能画在绘图区边缘，拖出去不该被早退吃掉。
+    if (m_legendDragRow >= 0 && (event->buttons() & Qt::LeftButton)
+        && (event->pos() - m_pressPos).manhattanLength() > QApplication::startDragDistance()
+        && m_legendDragRow < m_series.size())
+    {
+        const PlotSeries sp = m_series.at(m_legendDragRow);
+        QMimeData *mime = new QMimeData;
+        mime->setData(QString::fromLatin1(series_mime::type()),
+                      series_mime::encode(m_canvasId, sp.key(), sp.datasetId, sp.table,
+                                          sp.column, sp.title).toUtf8());
+        QDrag *drag = new QDrag(this);
+        drag->setMimeData(mime);
+        m_legendDragRow = -1;   // 交给 QDrag：release 不再当点击处理
+        drag->exec(Qt::MoveAction);
+        return;
+    }
+
+    if (!m_plot->plotRect().contains(event->pos()))
         return;
 
     // 拖动进行中：更新被拖对象。
@@ -1010,7 +1032,8 @@ void PlotCanvas::onCanvasMousePress(QMouseEvent *event)
         }
         if (legendHit >= 0)
         {
-            m_plot->toggleLegendItem(legendHit);
+            // 点击切显隐、拖动移动曲线——两者共用图例行，靠"是否移动过"区分。
+            m_legendDragRow = legendHit;
             return;
         }
     }
@@ -1057,6 +1080,13 @@ void PlotCanvas::onCanvasMouseRelease(QMouseEvent *event)
         return;
     m_dragKind = 0;
     m_dragBookmarkId.clear();
+    // 图例上"按下-松开"没有位移 = 点击切显隐（拖动已由 mouseMove 启动 QDrag 清掉候选）。
+    if (m_legendDragRow >= 0)
+    {
+        if (m_plot && !m_pressMoved)
+            m_plot->toggleLegendItem(m_legendDragRow);
+        m_legendDragRow = -1;
+    }
 }
 
 void PlotCanvas::onCanvasWheel(QWheelEvent *event)
@@ -1429,10 +1459,15 @@ void PlotCanvas::dragEnterEvent(QDragEnterEvent *event)
 {
     // 只接受本应用的通道 MIME（数据集树发的），不认文件路径/其它来源——
     // 打开文件有 data.load 意图那条正路，拖文件进来不该走画布。
-    if (event->mimeData() && channel_mime::decode(event->mimeData()).valid)
+    if (event->mimeData()
+        && (channel_mime::decode(event->mimeData()).valid
+            || (series_mime::decode(event->mimeData()).valid
+                && series_mime::decode(event->mimeData()).srcCanvasId != m_canvasId)))
     {
         event->acceptProposedAction();
-        m_plot->setOverlayText(QStringLiteral("松开以绘制此通道"));
+        m_plot->setOverlayText(series_mime::decode(event->mimeData()).valid
+                                   ? QStringLiteral("松开把这条曲线移到本画布")
+                                   : QStringLiteral("松开以绘制此通道"));
         return;
     }
     QWidget::dragEnterEvent(event);
@@ -1440,7 +1475,9 @@ void PlotCanvas::dragEnterEvent(QDragEnterEvent *event)
 
 void PlotCanvas::dragMoveEvent(QDragMoveEvent *event)
 {
-    if (event->mimeData() && channel_mime::decode(event->mimeData()).valid)
+    if (event->mimeData()
+        && (channel_mime::decode(event->mimeData()).valid
+            || series_mime::decode(event->mimeData()).valid))
     {
         event->acceptProposedAction();
         return;
@@ -1450,9 +1487,19 @@ void PlotCanvas::dragMoveEvent(QDragMoveEvent *event)
 
 bool PlotCanvas::dropChannel(const QMimeData *mime)
 {
-    const channel_mime::Decoded ch = channel_mime::decode(mime);
     if (m_plot)
         m_plot->setOverlayText(QString()); // 清掉拖拽提示
+    // 画布间移动曲线：拖回自己不算移动（否则会在原地丢一条）。
+    const series_mime::Decoded sm = series_mime::decode(mime);
+    if (sm.valid)
+    {
+        if (sm.srcCanvasId == m_canvasId)
+            return false;
+        Q_EMIT seriesTransferRequested(sm.srcCanvasId, sm.key, sm.datasetId, sm.table,
+                                      sm.column, sm.title);
+        return true;
+    }
+    const channel_mime::Decoded ch = channel_mime::decode(mime);
     if (!ch.valid)
         return false;
     // 画布不知道"取数"这回事——只发信号。ChannelView 订阅后走

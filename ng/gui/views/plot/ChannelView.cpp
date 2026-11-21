@@ -103,8 +103,21 @@ bool ChannelView::removeChannel(DatasetId datasetId, const QString &table, const
             removed = true;
         }
     }
-    if (removed)
-        renderAll(nullptr);
+    if (removed && m_canvas)
+    {
+        // 画布上这条也得摘掉：renderAll 只重画"还在 m_channels 里的"，
+        // 不处理已删除的，否则源画布图上会留一条幽灵曲线（跨画布移动时最明显）。
+        if (m_channels.isEmpty())
+        {
+            m_canvas->clear();
+            m_windowSet = false;
+        }
+        else
+        {
+            m_canvas->removeSeries(key);
+            renderAll(nullptr);
+        }
+    }
     return removed;
 }
 

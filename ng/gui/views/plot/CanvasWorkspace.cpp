@@ -234,6 +234,7 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
 {
     auto *stack = new QStackedWidget(parentForStack);
     auto *canvas = new PlotCanvas(stack);
+    canvas->setCanvasId(++m_canvasSeq);
     auto *view = new ChannelView(m_appCtx.transforms(), m_executor, canvas, canvas);
 
     auto *instrument = new InstrumentView(m_executor, stack);
@@ -249,6 +250,26 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
     QObject::connect(canvas, &PlotCanvas::channelDropped, this,
                      [this](int datasetId, const QString &t, const QString &c) {
                          m_appCtx.setActiveChannel(datasetId, t, c);
+                     });
+    // 曲线从一个画布拖到另一个画布：目标是"接收方"，源按 MIME 里的 canvasId 回找。
+    // 先让目标加上，成功后才删源——目标失败（比如数据集已卸载）时源不受影响，
+    // 也就不会出现"两边都没有"的半截状态。
+    QObject::connect(canvas, &PlotCanvas::seriesTransferRequested, this,
+                     [this](int srcCanvasId, const QString &key, int datasetId,
+                            const QString &table, const QString &column, const QString &title) {
+                         auto *targetCanvas = qobject_cast<PlotCanvas *>(sender());
+                         if (!targetCanvas || targetCanvas->canvasId() == srcCanvasId)
+                             return;
+                         ChannelView *targetView = viewOfCanvas(targetCanvas);
+                         PlotCanvas *srcCanvas = canvasById(srcCanvasId);
+                         ChannelView *srcView = viewOfCanvas(srcCanvas);
+                         if (!targetView || !srcView)
+                             return; // 源不在当前页（跨页移动未支持）：拒绝，源保持原样
+                         if (!targetView->addChannel(datasetId, table, column, nullptr, title))
+                             return;
+                         // 移动不是复制：目标成功后才摘源。
+                         srcView->removeChannel(datasetId, table, column);
+                         Q_UNUSED(key);
                      });
     // 画布选中请求 -> 统一 selection（属性面板据此刷新）。
     connectCanvasSignals(canvas);
@@ -504,6 +525,26 @@ void CanvasWorkspace::setActive(int index)
     if (index < 0 || index >= m_cells.size() || m_active == index)
         return;
     m_active = index;
+}
+
+PlotCanvas *CanvasWorkspace::canvasById(int id) const
+{
+    if (id < 0)
+        return nullptr;
+    for (const Cell &c : m_cells)
+        if (c.canvas && c.canvas->canvasId() == id)
+            return c.canvas;
+    return nullptr;
+}
+
+ChannelView *CanvasWorkspace::viewOfCanvas(const PlotCanvas *canvas) const
+{
+    if (!canvas)
+        return nullptr;
+    for (const Cell &c : m_cells)
+        if (c.canvas == canvas)
+            return c.view;
+    return nullptr;
 }
 
 void CanvasWorkspace::detachStacks()

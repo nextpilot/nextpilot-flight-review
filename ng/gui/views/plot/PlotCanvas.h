@@ -249,7 +249,13 @@ public:
     bool visibleTimeRange(double *t0, double *t1) const;
 
     // 处理一路通道拖拽负载：解码合法则发 channelDropped，返回 true。
+    // 若负载是"画布间曲线移动"（series_mime），发 seriesTransferRequested。
     bool dropChannel(const QMimeData *mime);
+
+    // 画布身份：跨画布移动曲线时用来判断"拖回自己"和找回源画布。
+    // id 由 CanvasWorkspace 分配（全进程单调递增），不参与持久化。
+    void setCanvasId(int id) { m_canvasId = id; }
+    int canvasId() const { return m_canvasId; }
 
 Q_SIGNALS:
     void viewportChanged();
@@ -268,6 +274,10 @@ Q_SIGNALS:
     // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
     void channelDropped(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table,
                         const QString &column);
+    // 曲线被拖到别的画布：由工作区执行"目标加一条、源删一条"（移动不是复制）。
+    void seriesTransferRequested(int srcCanvasId, const QString &key, int datasetId,
+                                 const QString &table, const QString &column,
+                                 const QString &title);
     // 联动：本画布时间变化通知同页其它画布（source 用于避免回环，只同步竖线不复制读数）。
     void linkedTimeChanged(double t, bool visible, PlotCanvas *source);
     // 书签集合变化（上层存进布局）。
@@ -338,6 +348,8 @@ private:
     QString m_dragBookmarkId;
     QPointF m_pressPos;
     bool m_pressMoved = false;
+    int m_canvasId = -1;
+    int m_legendDragRow = -1;   // 图例按下但还没拖动：release 未移动才算"点击切显隐"
     QHash<QString, QString> m_axisTransforms; // axis -> transform descriptor id（视图配方）
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
     QString m_titleOverride;      // 用户双击标题栏改的名字（非空时压过自动标题）

@@ -112,6 +112,12 @@ private:
     // 把 cell 的 stack 从布局摘出（重建树前必须先摘，否则 delete splitter 会连着删控件）。
     void detachStacks();
 
+    // —— 跨画布曲线移动（M5/T5.4）——
+    // 按画布身份找 cell：拖拽的源画布只在 MIME 里留 id，这里是唯一的翻译层。
+    PlotCanvas *canvasById(int id) const;
+    ChannelView *viewOfCanvas(const PlotCanvas *canvas) const;
+    int m_canvasSeq = 0;              // 画布 id 分配器（不持久化，进程内唯一即可）
+
     // —— 每格悬浮工具栏（对齐老 PlottingCanvas 的 m_hoverBar）——
     QWidget *makeHoverBar(Cell &cell, QWidget *parentStack);
     void layoutHoverBar(Cell &cell);

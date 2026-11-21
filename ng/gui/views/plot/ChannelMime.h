@@ -60,4 +60,62 @@ inline Decoded decode(const QMimeData *mime)
 }
 
 } // namespace channel_mime
+
+// 画布间**曲线移动**的线协议（M5/T5.4）。
+//
+// 与通道 MIME 同一条原则：只传逻辑标识，不传 PlotSeries*/PlotCanvas*。
+// 源画布只给 id；坐标三元组让它在新画布上走同一条 plot.channel 取数路径。
+// 用 \x1f 分隔（key 与 title 里可能有 '|' 与 '.'，不能用竖线）。
+namespace series_mime
+{
+
+inline const char *type() { return "application/x-ngplotscope-series"; }
+
+inline QString encode(int srcCanvasId, const QString &key, int datasetId,
+                      const QString &table, const QString &column, const QString &title)
+{
+    const QChar sep(0x1f);
+    return QString::number(srcCanvasId) + sep + QString::number(datasetId) + sep + table
+           + sep + column + sep + key + sep + title;
+}
+
+struct Decoded
+{
+    bool valid = false;
+    int srcCanvasId = -1;
+    int datasetId = nextpilot::plotscope::dataset::kInvalidDataset;
+    QString table;
+    QString column;
+    QString key;
+    QString title;
+};
+
+inline Decoded decode(const QMimeData *mime)
+{
+    Decoded out;
+    if (!mime || !mime->hasFormat(QString::fromLatin1(type())))
+        return out;
+    const QStringList parts =
+        QString::fromUtf8(mime->data(QString::fromLatin1(type()))).split(QChar(0x1f));
+    if (parts.size() != 6)
+        return out;
+    bool ok = false;
+    const int canvasId = parts.at(0).toInt(&ok);
+    if (!ok || canvasId < 0)
+        return out;
+    bool idOk = false;
+    const int ds = parts.at(1).toInt(&idOk);
+    if (!idOk || parts.at(2).isEmpty() || parts.at(3).isEmpty())
+        return out;
+    out.srcCanvasId = canvasId;
+    out.datasetId = ds;
+    out.table = parts.at(2);
+    out.column = parts.at(3);
+    out.key = parts.at(4);
+    out.title = parts.at(5);
+    out.valid = true;
+    return out;
+}
+
+} // namespace series_mime
 } // namespace nextpilot::plotscope::gui

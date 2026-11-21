@@ -2554,6 +2554,74 @@ int main(int argc, char *argv[])
                .constData());
     }
 
+    // --- 5c-f) 画布间曲线移动（M5/T5.4）---
+    //
+    // 语义：**移动不是复制**。先让目标画布加上，成功后才从源摘——目标失败时
+    // 源保持原样（不会出现"两边都没有"的半截状态）。拖回自己/垃圾负载一律拒绝。
+    {
+        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        CHECK(ws != nullptr);
+        // 用**两块全新画布**（前面的段往旧画布堆了十几条曲线，ChannelView 的
+        // m_channels 仍在，clear() 只清画布不 SVG 不了，会污染计数）。
+        auto addCellNow = [&]() -> PlotCanvas * {
+            QVariant vr;
+            Result<QVariant> r(vr);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("page.addCanvas"), {}, r));
+            CHECK(r);
+            return ws->activeCanvas();
+        };
+        PlotCanvas *c0 = addCellNow();
+        const int idx0 = ws->cellCount() - 1;
+        CHECK(c0 != nullptr);
+        PlotCanvas *c1 = addCellNow();
+        CHECK(c1 != nullptr && c1 != c0);
+
+        ws->setActive(idx0);
+        CHECK(ws->activeCanvas() == c0);
+        c0->clear();
+
+        // 在全新的 c0 上画一条：走共享活动通道（CanvasWorkspace 路由到活动 cell）。
+        const nextpilot::plotscope::dataset::Dataset *ds = application.data().get(loadedDsId);
+        CHECK(ds != nullptr && ds->tableCount() >= 1);
+        const QString tbl = ds->tableNames().first();
+        const QString col = QStringLiteral("att.pitch[deg]");
+        application.context().setActiveChannel(loadedDsId, tbl, col);
+        CHECK(c0->series().size() == 1);
+        const PlotSeries sp = c0->series().first();
+
+        // (1) 正常移动：B 多一条、A 少一条。
+        {
+            QMimeData mime;
+            mime.setData(QString::fromLatin1(series_mime::type()),
+                         series_mime::encode(c0->canvasId(), sp.key(), sp.datasetId, sp.table,
+                                             sp.column, sp.title).toUtf8());
+            CHECK(c1->dropChannel(&mime));
+            CHECK(c1->series().size() == 1);
+            CHECK(c0->series().isEmpty());
+            // 标题跟着走（否则新画布只剩 "id / 表.列" 的默认名）。
+            CHECK(c1->series().first().title == sp.title);
+        }
+        // (2) 拖回自己：拒绝（否则原地丢一条）。
+        {
+            QMimeData mime;
+            mime.setData(QString::fromLatin1(series_mime::type()),
+                         series_mime::encode(c1->canvasId(), sp.key(), sp.datasetId, sp.table,
+                                             sp.column, sp.title).toUtf8());
+            CHECK(!c1->dropChannel(&mime));
+            CHECK(c1->series().size() == 1);
+        }
+        // (3) 垃圾负载：拒绝且不留半截。
+        {
+            QMimeData mime;
+            mime.setData(QString::fromLatin1(series_mime::type()), QByteArray("garbage"));
+            CHECK(!c1->dropChannel(&mime));
+            CHECK(c1->series().size() == 1);
+            CHECK(c0->series().isEmpty());
+        }
+        OK("画布间曲线移动：目标加一条 + 源删一条（移动非复制）、拖回自己/垃圾负载拒绝");
+    }
+
     fprintf(stdout, "\nGUI 契约测试全部通过\n");
     return 0;
 }
