@@ -971,14 +971,19 @@ void DataManagerPanel::applyFilter()
         for (int d = 0; d < src->childCount(); ++d)
         {
             QTreeWidgetItem *child = src->child(d);
-            bool childHit = empty || child->text(0).contains(needle, Qt::CaseInsensitive);
+            // 表名自身命中（决定表节点显不显示）
+            const bool tableSelfHit = child->text(0).contains(needle, Qt::CaseInsensitive);
+            // 每个字段只看**自身**命中：早先把"本表已命中"并进 leaf 的 hit，
+            // 结果搜 pitch 会把 pitch 之后的同表字段一起显示（顺序相关假命中）。
+            bool leafHitAny = false;
             for (int c = 0; c < child->childCount(); ++c)
             {
                 QTreeWidgetItem *leaf = child->child(c);
-                const bool hit = empty || childHit || leaf->text(0).contains(needle, Qt::CaseInsensitive);
+                const bool hit = empty || leaf->text(0).contains(needle, Qt::CaseInsensitive);
                 leaf->setHidden(!hit);
-                childHit = childHit || hit;
+                leafHitAny = leafHitAny || hit;
             }
+            const bool childHit = empty || tableSelfHit || leafHitAny;
             child->setHidden(!childHit);
             // 过滤态下命中的表节点自动展开：搜 pitch 时直接看到字段，
             // 不必先点 ▸。清空搜索不动用户自己收起的节点。
