@@ -49,9 +49,14 @@ const QLatin1String kActInsert("script.insert");
 const QLatin1String kActConsoleAppend("script.console.append");
 const QLatin1String kActDebugUpdate("script.debug.update");
 const QLatin1String kActDebugClear("script.debug.clear");
+const QLatin1String kActDebugPause("script.debug.pause");   // module → editor 暂停行高亮
+const QLatin1String kActDebugDone("script.debug.done");     // module → editor 解除高亮
+const QLatin1String kActEditorRun("script.editor.run");     // module → editor 执行当前标签
 // 执行通道：处理函数由 ScriptModule::registerWorkbenchActions 注册（引擎归模块）。
 const QLatin1String kActRun("script.workbench.run");
 const QLatin1String kActRepl("script.workbench.repl");
+const QLatin1String kActDebugRun("script.workbench.debug");
+const QLatin1String kActDebugCmd("script.workbench.debug."); // 控制通道前缀
 
 // 脚本名规则：小写字母/数字/下划线/短横线，1..64（与 LuaScriptLibrary 一致）。
 bool validScriptName(const QString &name)
@@ -297,6 +302,14 @@ void ScriptCodeEditor::setErrorLine(int line)
         jumpToLine(line);
 }
 
+void ScriptCodeEditor::setDebugLine(int line)
+{
+    m_debugLine = line;
+    refreshExtraSelections();
+    if (line > 0)
+        jumpToLine(line);
+}
+
 void ScriptCodeEditor::jumpToLine(int line)
 {
     const QTextBlock block = document()->findBlockByNumber(line - 1);
@@ -330,6 +343,19 @@ void ScriptCodeEditor::refreshExtraSelections()
             err.format.setProperty(QTextFormat::FullWidthSelection, true);
             err.cursor = QTextCursor(b);
             sels.append(err);
+        }
+    }
+    // 调试暂停行（黄）
+    if (m_debugLine > 0)
+    {
+        const QTextBlock b = document()->findBlockByNumber(m_debugLine - 1);
+        if (b.isValid())
+        {
+            QTextEdit::ExtraSelection dbg;
+            dbg.format.setBackground(QColor(0xfe, 0xf3, 0xc7));
+            dbg.format.setProperty(QTextFormat::FullWidthSelection, true);
+            dbg.cursor = QTextCursor(b);
+            sels.append(dbg);
         }
     }
     setExtraSelections(sels);
@@ -369,9 +395,18 @@ ScriptEditorPanel::ScriptEditorPanel(AppContext &appCtx, IIntentExecutor &execut
     };
     addBtn(QStringLiteral("▶ 运行"), QStringLiteral("运行当前标签（F5）"),
            [this]() { onRunCurrent(false); });
-    addBtn(QStringLiteral("🐞 调试"), QStringLiteral("调试运行当前标签（F7）"),
+    addBtn(QStringLiteral("🐞 调试"), QStringLiteral("调试运行当前标签：入口暂停、断点、单步（F7）"),
            [this]() { onRunCurrent(true); });
-    addBtn(QStringLiteral("■ 停止"), QStringLiteral("停止执行"),
+    // 调试控制：经模块通道恢复/单步（引擎归 ScriptModule——层契约）
+    addBtn(QStringLiteral("⏭ 继续"), QStringLiteral("继续执行到下一断点（F9）"),
+           [this]() { dispatchDebugCmd(QStringLiteral("continue")); });
+    addBtn(QStringLiteral("⏭ 跳过"), QStringLiteral("单步跳过：函数体整段跨过（F10）"),
+           [this]() { dispatchDebugCmd(QStringLiteral("stepover")); });
+    addBtn(QStringLiteral("⤵ 进入"), QStringLiteral("单步进入：跟进被调函数（F11）"),
+           [this]() { dispatchDebugCmd(QStringLiteral("stepin")); });
+    addBtn(QStringLiteral("⤴ 跳出"), QStringLiteral("单步跳出：跑完当前函数（Shift+F11）"),
+           [this]() { dispatchDebugCmd(QStringLiteral("stepout")); });
+    addBtn(QStringLiteral("■ 停止"), QStringLiteral("停止执行/调试"),
            [this]() { onStop(); });
     addBtn(QStringLiteral("💾 保存"), QStringLiteral("保存当前标签（Ctrl+S）"),
            [this]() { saveCurrentDocument(); });
@@ -413,6 +448,19 @@ ScriptEditorPanel::ScriptEditorPanel(AppContext &appCtx, IIntentExecutor &execut
     connect(f5, &QShortcut::activated, this, [this]() { onRunCurrent(false); });
     auto *f7 = new QShortcut(QKeySequence(Qt::Key_F7), this);
     connect(f7, &QShortcut::activated, this, [this]() { onRunCurrent(true); });
+    // 调试控制快捷键（与工具条同路径：模块通道）
+    const struct { Qt::Key key; Qt::KeyboardModifiers mods; const char *cmd; } kDbgKeys[] = {
+        {Qt::Key_F9,  Qt::NoModifier,      "continue"},
+        {Qt::Key_F10, Qt::NoModifier,      "stepover"},
+        {Qt::Key_F11, Qt::NoModifier,      "stepin"},
+        {Qt::Key_F11, Qt::ShiftModifier,   "stepout"},
+    };
+    for (const auto &k : kDbgKeys)
+    {
+        auto *sc = new QShortcut(QKeySequence(static_cast<int>(k.key) | static_cast<int>(k.mods)), this);
+        const QString cmd = QString::fromLatin1(k.cmd);
+        connect(sc, &QShortcut::activated, this, [this, cmd]() { dispatchDebugCmd(cmd); });
+    }
     auto *save = new QShortcut(QKeySequence::Save, this);
     connect(save, &QShortcut::activated, this, [this]() { saveCurrentDocument(); });
     auto *ctrlW = new QShortcut(QKeySequence(QStringLiteral("Ctrl+W")), this);
@@ -473,6 +521,36 @@ void ScriptEditorPanel::attachViewActions()
         if (!guard)
             return fail(err::NoEnt, QStringLiteral("编辑器面板已关闭"));
         guard->insertText(params.value(QStringLiteral("text")).toString());
+        return Result<QVariant>(QVariant(true));
+    });
+    // script.editor.run {debug?}：执行当前标签（Ribbon"运行/调试运行"与 F5/F7 同路径）
+    reg.registerViewAction(kActEditorRun,
+                           [guard](const QVariantMap &params) -> Result<QVariant> {
+        if (!guard)
+            return fail(err::NoEnt, QStringLiteral("编辑器面板已关闭"));
+        guard->onRunCurrent(params.value(QStringLiteral("debug")).toBool());
+        return Result<QVariant>(QVariant(true));
+    });
+    // script.debug.pause：调试暂停 → 当前行高亮跳转（编辑器侧，与调试面板的 update 分开注册）
+    reg.registerViewAction(kActDebugPause,
+                           [guard](const QVariantMap &params) -> Result<QVariant> {
+        if (!guard)
+            return fail(err::NoEnt, QStringLiteral("编辑器面板已关闭"));
+        const QString name = params.value(QStringLiteral("name")).toString();
+        const int line = params.value(QStringLiteral("line")).toInt();
+        Document *d = (name.isEmpty() || guard->docByName(name) == nullptr)
+                          ? guard->currentDoc() : guard->docByName(name);
+        if (d && line > 0)
+            d->editor->setDebugLine(line);
+        return Result<QVariant>(QVariant(true));
+    });
+    // script.debug.done：调试结束 → 解除暂停高亮
+    reg.registerViewAction(kActDebugDone,
+                           [guard](const QVariantMap &) -> Result<QVariant> {
+        if (!guard)
+            return fail(err::NoEnt, QStringLiteral("编辑器面板已关闭"));
+        for (const Document &d : guard->m_docs)
+            d.editor->setDebugLine(-1);
         return Result<QVariant>(QVariant(true));
     });
 }
@@ -731,7 +809,6 @@ void ScriptEditorPanel::reportErrorLine(const QString &message)
 
 void ScriptEditorPanel::onRunCurrent(bool debugMode)
 {
-    Q_UNUSED(debugMode); // 调试钩子在 2.1.7 接入；v1 调试=运行
     Document *doc = currentDoc();
     if (!doc)
     {
@@ -740,6 +817,32 @@ void ScriptEditorPanel::onRunCurrent(bool debugMode)
     }
     doc->editor->setErrorLine(-1);
     const QString title = doc->name.isEmpty() ? QStringLiteral("untitled") : doc->name;
+
+    if (debugMode)
+    {
+        // 调试运行：经模块通道（script.workbench.debug），带断点集合。
+        // 执行在暂停期嵌套等恢复（UI 保持响应），返回即运行结束。
+        appendConsole(QStringLiteral("🐞 调试 %1 ...").arg(title), false);
+        m_debugging = true;
+        QVariantList bp;
+        for (int line : doc->editor->breakpoints())
+            bp.append(line);
+        QVariantMap p;
+        p.insert(QStringLiteral("source"), doc->editor->toPlainText().toUtf8());
+        p.insert(QStringLiteral("name"), title);
+        p.insert(QStringLiteral("breakpoints"), bp);
+        Result<QVariant> out{QVariant()};
+        const Result<QVariant> r = m_app->interactions().dispatchViewAction(kActDebugRun, p, out)
+                                       ? Result<QVariant>(out)
+                                       : Result<QVariant>(fail(err::NoEnt, QStringLiteral("脚本模块未就绪")));
+        m_debugging = false;
+        if (!r)
+            appendConsole(QStringLiteral("✘ %1").arg(r.error().message), true);
+        else
+            appendConsole(QStringLiteral("✔ 调试完成"), false);
+        return;
+    }
+
     appendConsole(QStringLiteral("▶ 运行 %1 ...").arg(title), false);
 
     // 执行走模块通道（引擎归 ScriptModule，GUI 层不依赖 script 内部类——层契约）。
@@ -764,10 +867,29 @@ void ScriptEditorPanel::onRunCurrent(bool debugMode)
     m_debugging = false;
 }
 
+void ScriptEditorPanel::dispatchDebugCmd(const QString &cmd)
+{
+    QVariantMap p;
+    Result<QVariant> out{QVariant()};
+    if (!m_app->interactions().dispatchViewAction(kActDebugCmd + cmd, p, out))
+        appendConsole(QStringLiteral("✘ 脚本模块未就绪"), true);
+    else if (!out)
+        appendConsole(QStringLiteral("⚠ %1").arg(out.error().message), true);
+}
+
 void ScriptEditorPanel::onStop()
 {
-    m_stopRequested = true; // 调试挂起时由恢复循环检查；普通运行暂不能强杀 VM（2.1.7 接指令桶）
-    appendConsole(QStringLiteral("■ 停止请求已发出"), false);
+    // 调试会话：经模块通道停止（暂停期立即中断；未暂停时置位待下次暂停生效）。
+    // 普通运行仍不能强杀 VM（Lua 无安全中止，v1 不做）。
+    QVariantMap p;
+    Result<QVariant> out{QVariant()};
+    if (m_app->interactions().dispatchViewAction(kActDebugCmd + QStringLiteral("stop"), p, out) && out)
+    {
+        appendConsole(QStringLiteral("■ 停止请求已发出"), false);
+        return;
+    }
+    m_stopRequested = true;
+    appendConsole(QStringLiteral("■ 停止请求已发出（普通运行不可强停，调试暂停期才可中断）"), false);
 }
 
 // ============================================================================

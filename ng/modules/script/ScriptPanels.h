@@ -47,6 +47,9 @@ class LuaHighlighter;
 //   script.debug.update {paused, name, line,
 //                        locals, stack}      editor → debug   暂停快照刷新
 //   script.debug.clear {}                    editor → debug   运行结束清快照
+//   script.debug.pause {name, line}          module → editor  调试暂停行高亮跳转
+//   script.debug.done {}                     module → editor  调试结束解除高亮
+//   script.editor.run {debug?}               module → editor  执行当前标签（Ribbon 同路径）
 //
 // 实例由 NG_REGISTER_PANEL 工厂创建（GUI 专属，headless 不链）。
 // ============================================================================
@@ -63,6 +66,7 @@ public:
 
     const QSet<int> &breakpoints() const { return m_breakpoints; }
     void setErrorLine(int line); // -1 清除
+    void setDebugLine(int line); // 调试暂停行高亮（黄），-1 清除
     void jumpToLine(int line);   // 滚动并置光标
 
     std::function<void(int)> onBreakpointToggle; // gutter 点击切换断点
@@ -80,6 +84,7 @@ private:
     QWidget *m_gutter;
     QSet<int> m_breakpoints;
     int m_errorLine = -1;
+    int m_debugLine = -1; // 调试暂停行
     int gutterWidth() const;
     void updateGutterWidth();
     void refreshExtraSelections(); // 当前行/错误行高亮
@@ -132,6 +137,7 @@ private:
     void appendConsole(const QString &text, bool isError);
     void reportErrorLine(const QString &message); // 解析 name:line 跳转高亮
     void attachViewActions();
+    void dispatchDebugCmd(const QString &cmd); // 调试控制经模块通道（continue/stepover/...）
 
     context::AppContext *m_app = nullptr;
     nextpilot::plotscope::intent::IIntentExecutor *m_executor = nullptr;

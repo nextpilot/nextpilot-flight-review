@@ -8,6 +8,7 @@ extern "C" {
 #include <lualib.h>
 }
 
+#include <QEventLoop>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -342,6 +343,196 @@ static void installFacade(lua_State *L)
     lua_setglobal(L, "ps");
 }
 
+// ===== 调试器 v1（2.1.7-2.1.8）：行钩子 + 断点 + 暂停/继续协议 =====
+
+// hook 入口（friend）：只关心行事件。
+void ngLuaDebugHook(lua_State *L, lua_Debug *ar)
+{
+    if (ar->event != LUA_HOOKLINE)
+        return;
+    if (LuaEngine *e = engineOf(L))
+        e->debugLineHook(L, ar);
+}
+
+// 当前栈深度（帧数，0 层 = 正在运行的函数）。
+int LuaEngine::stackDepth(lua_State *L) const
+{
+    int depth = 0;
+    lua_Debug d;
+    while (lua_getstack(L, depth, &d))
+        ++depth;
+    return depth;
+}
+
+void LuaEngine::debugLineHook(lua_State *L, lua_Debug *ar)
+{
+    if (!m_dbgActive)
+        return;
+    lua_getinfo(L, "Sl", ar);
+    const int line = ar->currentline;
+    const int depth = stackDepth(L);
+
+    // 停止优先：hook 内抛错中断执行（longjmp 回 runStringDebug 的 pcall）。
+    if (m_dbgStop)
+    {
+        m_dbgActive = false;
+        m_dbgPaused = false;
+        lua_sethook(L, nullptr, 0, 0);
+        luaL_error(L, "执行已停止（调试停止请求）");
+        return;
+    }
+
+    // 是否暂停：入口 → 单步语义 → 断点（断点只认本 chunk，库函数行号不误停）。
+    bool hit = false;
+    const char *reason = nullptr;
+    if (m_dbgEntryPause)
+    {
+        hit = true;
+        reason = "entry";
+        m_dbgEntryPause = false;
+    }
+    else if (m_dbgStep == StepMode::In) // 进入：任意行都停
+    {
+        hit = true;
+        reason = "step";
+    }
+    else if (m_dbgStep == StepMode::Over && depth <= m_dbgDepth) // 跳过：同深度才停
+    {
+        hit = true;
+        reason = "step";
+    }
+    else if (m_dbgStep == StepMode::Out && depth < m_dbgDepth) // 跳出：深度回退才停
+    {
+        hit = true;
+        reason = "step";
+    }
+    else if (m_dbgBreakpoints.contains(line) && ar->source == m_dbgChunk)
+    {
+        hit = true;
+        reason = "breakpoint";
+    }
+    if (!hit)
+        return;
+
+    // 暂停快照：本 chunk 基准深度（单步基准）+ 当前帧局部变量 + 调用栈。
+    m_dbgDepth = depth;
+    DebugPause pause;
+    pause.line = line;
+    pause.chunkName = QString::fromUtf8(ar->source);
+    pause.reason = reason;
+    lua_Debug frame;
+    if (lua_getstack(L, 0, &frame))
+    {
+        for (int i = 1;; ++i)
+        {
+            const char *name = lua_getlocal(L, &frame, i);
+            if (!name)
+                break;
+            pause.locals.insert(QString::fromUtf8(name), readVariant(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    for (int lvl = 0; lua_getstack(L, lvl, &frame); ++lvl)
+    {
+        lua_getinfo(L, "nSl", &frame);
+        const QString fname = frame.name ? QString::fromUtf8(frame.name) : QStringLiteral("?");
+        pause.stack << QStringLiteral("%1  %2:%3")
+                           .arg(fname, QString::fromUtf8(frame.short_src))
+                           .arg(frame.currentline);
+    }
+
+    // 上报快照 → 嵌套事件循环等主机恢复（UI 保持响应，控制指令改写 m_dbgStep 后 quit）。
+    m_dbgPaused = true;
+    if (m_dbgPauseCb)
+        m_dbgPauseCb(pause);
+    QEventLoop loop;
+    m_dbgLoop = &loop;
+    loop.exec();
+    m_dbgLoop = nullptr;
+    m_dbgPaused = false;
+    // 恢复后继续执行，下一行事件再判定。
+}
+
+void LuaEngine::debugContinue()
+{
+    m_dbgStep = StepMode::None;
+    if (m_dbgLoop)
+        m_dbgLoop->quit();
+}
+
+void LuaEngine::debugStepOver()
+{
+    m_dbgStep = StepMode::Over;
+    if (m_dbgLoop)
+        m_dbgLoop->quit();
+}
+
+void LuaEngine::debugStepIn()
+{
+    m_dbgStep = StepMode::In;
+    if (m_dbgLoop)
+        m_dbgLoop->quit();
+}
+
+void LuaEngine::debugStepOut()
+{
+    m_dbgStep = StepMode::Out;
+    if (m_dbgLoop)
+        m_dbgLoop->quit();
+}
+
+void LuaEngine::debugStop()
+{
+    m_dbgStop = true;
+    if (m_dbgLoop)
+        m_dbgLoop->quit(); // hook 恢复后看到 m_dbgStop，抛错中断
+}
+
+Result<QVariant> LuaEngine::debugEvaluate(const QString &source)
+{
+    if (!m_lua || !m_dbgPaused)
+        return fail(err::Args, QStringLiteral("仅调试暂停期可用"));
+    // 在新协程上求值：独立 Lua 栈、共享全局表。挂起的主线程栈不能再入，
+    // 新协程是唯一正解。注意 lua_newthread 会继承父线程钩子，必须摘掉，
+    // 否则 REPL 求值自己会触发行钩子。协程对象锚进 registry 防 GC。
+    lua_State *co = lua_newthread(m_lua);
+    lua_sethook(co, nullptr, 0, 0);
+    const int coRef = luaL_ref(m_lua, LUA_REGISTRYINDEX);
+
+    const QByteArray src = source.toUtf8();
+    const QByteArray wrapped = "return (" + src + ")";
+    int st = luaL_loadbuffer(co, wrapped.constData(), wrapped.size(), "=dbg-repl");
+    if (st != LUA_OK)
+    {
+        lua_pop(co, 1);
+        st = luaL_loadbuffer(co, src.constData(), src.size(), "=dbg-repl");
+    }
+    if (st != LUA_OK)
+    {
+        const char *err = lua_tostring(co, -1);
+        const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("编译失败");
+        lua_pop(co, 1);
+        luaL_unref(m_lua, LUA_REGISTRYINDEX, coRef);
+        return fail(err::Syntax, msg);
+    }
+    if (lua_pcall(co, 0, 1, 0) != LUA_OK)
+    {
+        const char *err = lua_tostring(co, -1);
+        const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("运行失败");
+        lua_pop(co, 1);
+        luaL_unref(m_lua, LUA_REGISTRYINDEX, coRef);
+        return fail(err::Runtime, msg);
+    }
+    QVariant result;
+    if (lua_gettop(co) > 0 && !lua_isnil(co, -1))
+        result = readVariant(co, -1);
+    lua_settop(co, 0);
+    luaL_unref(m_lua, LUA_REGISTRYINDEX, coRef);
+    return Result<QVariant>(result);
+}
+
+// ===== 常规执行 =====
+
 LuaEngine::LuaEngine(ScriptFacade &facade)
 {
     m_lua = luaL_newstate();
@@ -399,6 +590,48 @@ Result<void> LuaEngine::runFile(const QString &path)
     if (!f.open(QIODevice::ReadOnly))
         return fail(err::Io, QStringLiteral("无法读取脚本: %1").arg(path));
     return runString(f.readAll(), QStringLiteral("@%1").arg(path));
+}
+
+Result<void> LuaEngine::runStringDebug(const QByteArray &source, const QString &chunkName,
+                                       const QSet<int> &breakpoints, PauseCallback onPause,
+                                       bool stopOnEntry)
+{
+    if (!m_lua)
+        return fail(err::NoLua, QStringLiteral("Lua 状态创建失败"));
+    m_dbgBreakpoints = breakpoints;
+    m_dbgChunk = chunkName;
+    m_dbgPauseCb = std::move(onPause);
+    m_dbgStep = StepMode::None;
+    m_dbgStop = false;
+    m_dbgPaused = false;
+    m_dbgActive = true;
+    m_dbgEntryPause = stopOnEntry;
+
+    const int status = luaL_loadbuffer(m_lua, source.constData(), source.size(),
+                                       chunkName.toUtf8().constData());
+    if (status != LUA_OK)
+    {
+        const char *err = lua_tostring(m_lua, -1);
+        const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("脚本编译失败");
+        lua_pop(m_lua, 1);
+        m_dbgActive = false;
+        m_dbgPauseCb = nullptr;
+        return fail(err::Syntax, msg);
+    }
+    lua_sethook(m_lua, ngLuaDebugHook, LUA_MASKLINE, 0);
+    const int callStatus = lua_pcall(m_lua, 0, 0, 0);
+    lua_sethook(m_lua, nullptr, 0, 0); // 无论成败都摘钩子
+    m_dbgActive = false;
+    m_dbgPaused = false;
+    m_dbgPauseCb = nullptr;
+    if (callStatus != LUA_OK)
+    {
+        const char *err = lua_tostring(m_lua, -1);
+        const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("脚本运行失败");
+        lua_pop(m_lua, 1);
+        return fail(err::Runtime, msg);
+    }
+    return Result<void>();
 }
 
 Result<QVariant> LuaEngine::evaluate(const QString &source)

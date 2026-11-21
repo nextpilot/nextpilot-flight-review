@@ -249,10 +249,21 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
         });
 
     // script.workbench.repl：控制台求值。持久 VM 归模块持有，进程期共享全局状态。
+    // 调试暂停期自动切换到调试会话的暂停期 REPL（新协程求值，同一 VM 全局表）。
     ctx.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.repl"),
         [this, &executor, dispatcher, echo](const QVariantMap &params) -> Result<QVariant> {
             const QString code = params.value(QStringLiteral("code")).toString();
+            if (m_dbgEngine && m_dbgEngine->debugPaused())
+            {
+                const Result<QVariant> r = m_dbgEngine->debugEvaluate(code);
+                if (!r)
+                    return fail(r.error().code, r.error().message);
+                QVariant out;
+                if (!r.value().isNull() && r.value().isValid())
+                    out = r.value();
+                return Result<QVariant>(out);
+            }
             if (!m_replEngine)
             {
                 m_replFacade = std::make_unique<ScriptFacade>(executor, nullptr, dispatcher);
@@ -298,6 +309,121 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
             reg->dispatchViewAction(QStringLiteral("script.new"), params, out);
             return out;
         });
+
+    // ---- 调试通道（2.1.7-2.1.9）----
+
+    // script.workbench.debug {source, name, breakpoints:[int]}：调试运行。
+    // 引擎归模块（m_dbgEngine），暂停时上报快照（调试面板 + 编辑器行高亮），
+    // 嵌套事件循环等控制指令（.continue/.stepover/...），结束后清快照。
+    nextpilot::plotscope::context::InteractionRegistry *dbgReg = &ctx.app().interactions();
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.debug"),
+        [this, &executor, recorder, dispatcher, echo, dbgReg](const QVariantMap &params) -> Result<QVariant> {
+            const QByteArray source = params.value(QStringLiteral("source")).toByteArray();
+            const QString name = params.value(QStringLiteral("name")).toString();
+            QSet<int> breakpoints;
+            const QVariantList bpList = params.value(QStringLiteral("breakpoints")).toList();
+            for (const QVariant &v : bpList)
+                breakpoints.insert(v.toInt());
+
+            ScriptFacade facade(executor, recorder, dispatcher);
+            auto engine = std::make_unique<nextpilot::plotscope::script::LuaEngine>(facade);
+            engine->setOutputSink([&echo](const QString &m) { echo(m, false); });
+
+            m_dbgEngine = std::move(engine);
+            const Result<void> r = m_dbgEngine->runStringDebug(
+                source, QStringLiteral("@%1").arg(name), breakpoints,
+                [this, name, dbgReg](const nextpilot::plotscope::script::LuaEngine::DebugPause &p) {
+                    // 快照 → 调试面板（stack+var 树）
+                    QVariantMap up;
+                    up.insert(QStringLiteral("paused"), true);
+                    up.insert(QStringLiteral("name"), name);
+                    up.insert(QStringLiteral("line"), p.line);
+                    up.insert(QStringLiteral("reason"), p.reason);
+                    up.insert(QStringLiteral("locals"), p.locals);
+                    QVariantList stack;
+                    for (const QString &frame : p.stack)
+                        stack.append(frame);
+                    up.insert(QStringLiteral("stack"), stack);
+                    Result<QVariant> out{QVariant()};
+                    dbgReg->dispatchViewAction(QStringLiteral("script.debug.update"), up, out);
+                    // 行号 → 编辑器（暂停行高亮跳转；update 的处理器归调试面板，不冲突）
+                    QVariantMap pp;
+                    pp.insert(QStringLiteral("name"), name);
+                    pp.insert(QStringLiteral("line"), p.line);
+                    Result<QVariant> out2{QVariant()};
+                    dbgReg->dispatchViewAction(QStringLiteral("script.debug.pause"), pp, out2);
+                });
+            // 收尾：清调试面板快照 + 编辑器解除暂停高亮
+            Result<QVariant> co{QVariant()};
+            dbgReg->dispatchViewAction(QStringLiteral("script.debug.clear"), QVariantMap(), co);
+            Result<QVariant> done{QVariant()};
+            dbgReg->dispatchViewAction(QStringLiteral("script.debug.done"), QVariantMap(), done);
+            m_dbgEngine.reset();
+            if (!r)
+                return fail(r.error().code, r.error().message);
+            return Result<QVariant>(QVariant(true));
+        });
+
+    // 控制通道：调试暂停期由编辑器工具条/快捷键触发。无会话/未暂停时明确报错。
+    struct DebugCmd { const char *id; void (nextpilot::plotscope::script::LuaEngine::*fn)(); };
+    static const DebugCmd kDebugCmds[] = {
+        {"script.workbench.debug.continue", &nextpilot::plotscope::script::LuaEngine::debugContinue},
+        {"script.workbench.debug.stepover", &nextpilot::plotscope::script::LuaEngine::debugStepOver},
+        {"script.workbench.debug.stepin",   &nextpilot::plotscope::script::LuaEngine::debugStepIn},
+        {"script.workbench.debug.stepout",  &nextpilot::plotscope::script::LuaEngine::debugStepOut},
+        {"script.workbench.debug.stop",     &nextpilot::plotscope::script::LuaEngine::debugStop},
+    };
+    for (const DebugCmd &cmd : kDebugCmds)
+    {
+        const QString id = QString::fromLatin1(cmd.id);
+        const bool isStop = cmd.fn == &nextpilot::plotscope::script::LuaEngine::debugStop;
+        ctx.app().interactions().registerViewAction(
+            id, [this, fn = cmd.fn, isStop](const QVariantMap &) -> Result<QVariant> {
+                if (!m_dbgEngine)
+                    return fail(err::Args, QStringLiteral("没有进行中的调试会话"));
+                if (!isStop && !m_dbgEngine->debugPaused())
+                    return fail(err::Args, QStringLiteral("调试未处于暂停状态"));
+                (m_dbgEngine.get()->*fn)();
+                return Result<QVariant>(QVariant(true));
+            });
+    }
+
+    // script.workbench.runCurrent {debug?}：执行编辑器**当前标签**（Ribbon"运行"与
+    // 面板 F5 同路径）。转发给编辑器面板的 script.editor.run；headless/无面板时报错明确。
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.runCurrent"),
+        [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
+            Result<QVariant> out{QVariant()};
+            if (!ensureEditor(out))
+                return out;
+            reg->dispatchViewAction(QStringLiteral("script.editor.run"), params, out);
+            return out;
+        });
+
+    // script.workbench.debugRun：调试模式执行当前标签（Ribbon"调试运行"，带断点单步）。
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.debugRun"),
+        [this, ensureEditor, reg](const QVariantMap &) -> Result<QVariant> {
+            Result<QVariant> out{QVariant()};
+            if (!ensureEditor(out))
+                return out;
+            QVariantMap p;
+            p.insert(QStringLiteral("debug"), true);
+            reg->dispatchViewAction(QStringLiteral("script.editor.run"), p, out);
+            return out;
+        });
+
+    // script.workbench.console：确保控制台面板存在（常驻 dock.bottom，请求即置前）。
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.console"),
+        [this](const QVariantMap &) -> Result<QVariant> {
+            if (!m_ui)
+                return fail(err::Unsupported, QStringLiteral("脚本控制台需要 GUI 环境"));
+            return Result<QVariant>(
+                QVariant(m_ui->requestPanel(QStringLiteral("dock.bottom"),
+                                            QStringLiteral("script-console")) != nullptr));
+        });
 }
 
 ScriptModule::~ScriptModule() = default;
@@ -316,6 +442,42 @@ void ScriptModule::onAttach(UiContext &ui)
     ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("script-files"));
     ui.requestPanel(QStringLiteral("dock.bottom"), QStringLiteral("script-console"));
     ui.requestPanel(QStringLiteral("dock.right"), QStringLiteral("script-debug"));
+
+    // ---- Ribbon"脚本"页签（2.1.10）----
+    // 文件/运行/控制台三组动作。intentOp 留空：外壳按 **action id** 查 view action
+    // （处理器都在 registerWorkbenchActions 注册），与脚本 app.view(id) 同一条通道；
+    // 未命中才回退意图层——保证 Ribbon 按钮、面板快捷键、脚本三者同路径。
+    using nextpilot::plotscope::registry::UiAction;
+    const auto addRibbon = [&ui](const QString &id, const QString &label, const QString &area,
+                                 const QString &data, int order, bool large = false) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.area = area;
+        a.data = data; // 额外参数（JSON），经外壳透传给 view action
+        a.order = order;
+        a.large = large;
+        ui.addAction(a);
+    };
+
+    // "文件"组：新建 / 打开（组由本模块声明——骨架只声明页，组随能力出现）
+    ui.declareSlot(QStringLiteral("ribbon.group.script.file"), QStringLiteral("文件"),
+                   nextpilot::plotscope::registry::SlotKind::RibbonGroup,
+                   QStringLiteral("ribbon.page.script"));
+    addRibbon(QStringLiteral("script.workbench.new"), QStringLiteral("新建脚本"),
+              QStringLiteral("ribbon.group.script.file"), QString(), 0);
+    addRibbon(QStringLiteral("script.workbench.open"), QStringLiteral("打开脚本"),
+              QStringLiteral("ribbon.group.script.file"), QString(), 1);
+
+    // "运行"组：运行当前标签（与面板 F5 同路径）/ 调试运行（带断点、可单步）
+    addRibbon(QStringLiteral("script.workbench.runCurrent"), QStringLiteral("运行当前"),
+              QStringLiteral("ribbon.group.script.run"), QString(), 0, true);
+    addRibbon(QStringLiteral("script.workbench.debugRun"), QStringLiteral("调试运行"),
+              QStringLiteral("ribbon.group.script.run"), QString(), 1, true);
+
+    // "控制台"组：置前 REPL 控制台
+    addRibbon(QStringLiteral("script.workbench.console"), QStringLiteral("控制台"),
+              QStringLiteral("ribbon.group.script.console"), QString(), 0);
 }
 
 #include "ScriptModule.moc"

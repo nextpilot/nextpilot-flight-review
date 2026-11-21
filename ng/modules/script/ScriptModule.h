@@ -40,6 +40,9 @@ private:
         nextpilot::plotscope::context::ScriptFacade::ViewActionDispatcher dispatcher);
     std::unique_ptr<nextpilot::plotscope::context::ScriptFacade> m_replFacade;
     std::unique_ptr<nextpilot::plotscope::script::LuaEngine> m_replEngine;
+    // 调试会话引擎（script.workbench.debug 执行期持有；暂停期控制指令经它恢复/中断）。
+    // 同一时刻至多一个调试会话（编辑器调试运行是模态的：执行返回前嵌套等恢复）。
+    std::unique_ptr<nextpilot::plotscope::script::LuaEngine> m_dbgEngine;
     // GUI 上下文（onAttach 时注入；headless 恒空）。编辑器面板**按需创建**：
     // 中央区永远锚定画布（模块激活顺序不定，不能让编辑器抢先占位）。
     nextpilot::plotscope::host::UiContext *m_ui = nullptr;

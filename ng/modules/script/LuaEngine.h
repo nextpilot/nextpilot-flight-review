@@ -4,6 +4,7 @@
 #include "Result.h"
 
 #include <QJsonObject>
+#include <QSet>
 #include <QVariant>
 #include <QVector>
 #include <QString>
@@ -11,6 +12,8 @@
 #include <functional>
 
 struct lua_State;
+struct lua_Debug;
+class QEventLoop;
 
 namespace nextpilot::plotscope::script
 {
@@ -46,9 +49,67 @@ public:
     // 错误信息带 repl:<行号> 前缀，控制台可点击跳转。
     nextpilot::plotscope::foundation::Result<QVariant> evaluate(const QString &source);
 
+    // ===== 调试器 v1（2.1.7-2.1.8）=====
+    //
+    // debug.sethook 行钩子 + 断点集合 + 暂停/继续协议（嵌套 QEventLoop）。
+    // 调试运行**停在第 1 行**（类似 VBA 的 stop-on-entry），之后由恢复语义驱动：
+    //   continue  —— 跑到下一个断点或结束；
+    //   stepOver  —— 同深度才停（函数体整段跨过）；
+    //   stepIn    —— 任意行都停（跟进被调函数）；
+    //   stepOut   —— 深度回退才停（跑完当前函数回到调用方）；
+    //   stop      —— hook 内抛错中断执行，runStringDebug 返回失败。
+    //
+    // 暂停期主机嵌套 QEventLoop 等 UI 事件，暂停快照经 onPause 回调上报：
+    // 行号 / 局部变量 / 调用栈。暂停期 REPL 走 debugEvaluate：
+    // 在**新协程**上求值（与挂起的主线程共享全局表，协程栈独立——
+    // 同一 lua_State 挂起期间对主线程栈再入是不安全的，新协程是唯一正解）。
+    // v1 局限：协程求值只看到全局变量，局部变量请在快照面板看。
+    struct DebugPause
+    {
+        int line = 0;                // 暂停行（chunk 内 1 基）
+        QString chunkName;           // 暂停 chunk（如 "@name"）
+        QString reason;              // "entry" / "breakpoint" / "step" / "stop"
+        QVariantMap locals;          // 当前帧局部变量快照
+        QStringList stack;           // 调用栈帧描述（0 层在首）
+    };
+    using PauseCallback = std::function<void(const DebugPause &)>;
+
+    // 调试执行：命中断点/单步语义触发暂停（onPause 上报后嵌套等恢复）。
+    // stopOnEntry=false 时不做入口暂停（纯断点模式）。
+    nextpilot::plotscope::foundation::Result<void> runStringDebug(
+        const QByteArray &source, const QString &chunkName, const QSet<int> &breakpoints,
+        PauseCallback onPause, bool stopOnEntry = true);
+
+    bool debugPaused() const { return m_dbgPaused; }
+    void debugContinue();
+    void debugStepOver();
+    void debugStepIn();
+    void debugStepOut();
+    void debugStop(); // 暂停期调用：恢复后立即中断执行
+    // 暂停期 REPL：新协程求值（同 VM 全局状态）。仅暂停期有效。
+    nextpilot::plotscope::foundation::Result<QVariant> debugEvaluate(const QString &source);
+
 private:
     lua_State *m_lua = nullptr;
     OutputSink m_sink;
+
+    // 调试器状态（runStringDebug 执行期有效）
+    friend void ngLuaDebugHook(lua_State *L, lua_Debug *ar);
+    enum class StepMode { None, Over, In, Out };
+    QSet<int> m_dbgBreakpoints;
+    QString m_dbgChunk;              // 断点归属 chunk（source 匹配用）
+    PauseCallback m_dbgPauseCb;
+    StepMode m_dbgStep = StepMode::None;
+    int m_dbgDepth = 0;              // 单步基准深度（暂停时的栈深度）
+    bool m_dbgPaused = false;
+    bool m_dbgStop = false;
+    bool m_dbgActive = false;
+    bool m_dbgEntryPause = false;    // 停在第 1 行（stop-on-entry）
+    class QEventLoop *m_dbgLoop = nullptr;
+
+    // hook 主逻辑与快照采集（实现见 .cpp）
+    void debugLineHook(lua_State *L, lua_Debug *ar);
+    int stackDepth(lua_State *L) const;
 };
 
 // ===== Lua 变换求值（单点 live / 批量 offline 共用）=====

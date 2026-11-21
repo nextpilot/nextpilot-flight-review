@@ -447,6 +447,27 @@ int main(int argc, char *argv[])
         CHECK(editor->documentCount() == 1);
         CHECK(editor->currentDocumentName() == QStringLiteral("tgui_doc"));
         OK("脚本工作台：三侧栏就位；编辑器按需创建进中央页签，画布仍是首签");
+
+        // Ribbon"脚本"页签贡献（2.1.10）：file（新建/打开）+ run（运行/调试运行）+ 控制台。
+        {
+            const auto &scriptSlots = application.host().uiSlots();
+            const auto *fileGrp = scriptSlots.slot(QStringLiteral("ribbon.group.script.file"));
+            CHECK(fileGrp != nullptr);
+            QStringList fileIds, runIds;
+            for (const auto &b : scriptSlots.actionsIn(QStringLiteral("ribbon.group.script.file")))
+                fileIds << b.action.id;
+            for (const auto &b : scriptSlots.actionsIn(QStringLiteral("ribbon.group.script.run")))
+                runIds << b.action.id;
+            CHECK(fileIds.contains(QStringLiteral("script.workbench.new")));
+            CHECK(fileIds.contains(QStringLiteral("script.workbench.open")));
+            CHECK(runIds.contains(QStringLiteral("script.workbench.runCurrent")));
+            CHECK(runIds.contains(QStringLiteral("script.workbench.debugRun")));
+            // "运行当前"与面板 F5 同路径：编辑器有当前标签 → 派发成功（空注释脚本）
+            Result<QVariant> rc{QVariant()};
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("script.workbench.runCurrent"), QVariantMap(), rc));
+            OK("Ribbon 脚本页签：file/run 组动作就位；runCurrent 与 F5 同路径执行当前标签");
+        }
     }
 
     // --- 5) 数据源面板：源列表 + 详情树（源 → 数据集 → 表 → 列）---

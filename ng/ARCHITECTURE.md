@@ -1198,3 +1198,38 @@ CLI 九入口实测可用；**CLI 无任何 GUI 依赖**（ldd 验证）；
 - **CLI 按领域分组展示**：`--list-formats` 按 通用→飞控→汽车→机器人→卫导→视频
   的顺序分节列出驱动；`driversByDomain(domain)` / `domainName(domain)` 是
   查询契约（test_architecture 断言覆盖领域归属与中文域名）。
+
+## 附录 A.3 脚本工作台（M2.1）与 Lua 调试器 v1
+
+**脚本工作台**：四个独立 ADS 停靠面板（`ScriptPanels.cpp`，视图层自注册
+`NG_REGISTER_PANEL_T`，`ng_module_script_gui` 目标库）——
+
+- `script-files`（dock.left，脚本库）/ `script-editor`（中央页签，**按需创建**，
+  不与画布争位）/ `script-debug`（dock.right，调用栈+变量+API 速查）/
+  `script-console`（dock.bottom，持久 VM REPL）；
+- 面板间协作零新机制：全部走 `InteractionRegistry` 的 viewAction 通道
+  （`script.open/.new/.goto/.console.append/.debug.update/...`）。
+
+**引擎归 ScriptModule（层契约）**：`ng_module_script_gui` 禁止横向依赖
+`ng_module_script`，编辑器/控制台的执行、REPL 求值、调试运行都经
+`script.workbench.*` viewAction 通道发回模块（`ScriptModule::registerWorkbenchActions`），
+引擎在模块侧创建/持有，GUI 层只收发 JSON 参数。
+
+**Lua 调试器 v1**（`LuaEngine::runStringDebug`）：
+
+- `debug.sethook` 行钩子 + 断点集合（只认本 chunk，库函数行号不误停）+
+  嵌套 QEventLoop 暂停/继续协议；调试运行**停在首条指令行**（标准 Lua 语义，
+  `local function` 的 CLOSURE 挂在 `end` 行）；
+- 单步语义：跳过=同深度、进入=任意行、跳出=深度回退；停止经 hook 内
+  `luaL_error` 中断执行，VM 中断后仍可复用；
+- 暂停快照：行号 / 当前帧局部变量 / 调用栈，经 `script.debug.update`（调试
+  面板树）+ `script.debug.pause`（编辑器行高亮）双通道上报；
+- 暂停期 REPL：`debugEvaluate` 在**新协程**上求值（lua_newthread 会继承钩子，
+  必须摘除；挂起的主线程栈不可再入，新协程是唯一正解），与主线程共享全局表；
+- Ribbon"脚本"页签：file（新建/打开）/ run（运行当前/调试运行）/ 控制台三组
+  动作，`intentOp` 留空走 viewAction 通道（按 action id 派发），与面板 F5/F7、
+  脚本 `app.view(id)` 同一条路径；无 GUI 前台时报错明确。
+
+验收：`ng_test_lua_engine`（断点命中快照/三种单步/停止/暂停期 REPL 六组用例）+
+`ng_test_gui`（三侧栏、编辑器按需创建、Ribbon 贡献、runCurrent 同路径）；
+Release/Debug 均 25/25 全绿。
