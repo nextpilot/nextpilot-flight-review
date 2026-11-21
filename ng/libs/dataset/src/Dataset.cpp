@@ -156,6 +156,7 @@ public:
     QString format;
     std::shared_ptr<PsDataset> native;
     QVector<Table> schema; // 从 native 投影的纯元数据，非真相源
+    TimeUs timeOffsetUs = 0; // 源级对齐偏移：只影响出口，不改 schema/ native
 };
 
 Dataset::Dataset() : d(new Data) {}
@@ -358,7 +359,18 @@ bool Dataset::addColumnTyped(const QString &tableName, const QString &name, cons
     return true;
 }
 
-double Dataset::timeMin() const
+void Dataset::setTimeOffsetUs(TimeUs offset)
+{
+    // 只改出口偏移；native 里的时间轴一个字节都不动（reset 幂等的前提）。
+    d->timeOffsetUs = offset;
+}
+
+TimeUs Dataset::timeOffsetUs() const
+{
+    return d->timeOffsetUs;
+}
+
+double Dataset::rawTimeMin() const
 {
     std::optional<TimeUs> min;
     for (const Table &t : d->schema)
@@ -370,7 +382,7 @@ double Dataset::timeMin() const
     return min ? *min / 1000000.0 : 0.0;
 }
 
-double Dataset::timeMax() const
+double Dataset::rawTimeMax() const
 {
     std::optional<TimeUs> max;
     for (const Table &t : d->schema)
@@ -380,6 +392,16 @@ double Dataset::timeMax() const
                 max = t.lastTimeUs;
         }
     return max ? *max / 1000000.0 : 0.0;
+}
+
+double Dataset::timeMin() const
+{
+    return rawTimeMin() + d->timeOffsetUs / 1000000.0;
+}
+
+double Dataset::timeMax() const
+{
+    return rawTimeMax() + d->timeOffsetUs / 1000000.0;
 }
 
 std::optional<ChannelView> Dataset::readWindow(const QString &tableName, const QString &columnName,
@@ -397,9 +419,11 @@ std::optional<ChannelView> Dataset::readWindow(const QString &tableName, const Q
     QVector<double> time(n);
     QVector<double> value(n);
     // 有界读：cap 由调用方给定，kernel 在行数超过 cap 时等步长抽稀。
+    // 窗口范围也要平移：调用方给的是"对齐后"的时间，kernel 认原始时间。
+    const TimeUs offUs = d->timeOffsetUs;
     const quint32 got = ps_dataset_read_window(
         d->native.get(), tableUtf8.constData(), colUtf8.constData(),
-        t0Us, t1Us, time.data(), value.data(), static_cast<quint32>(n));
+        t0Us - offUs, t1Us - offUs, time.data(), value.data(), static_cast<quint32>(n));
     if (got == 0)
         return std::nullopt;
 
@@ -417,7 +441,8 @@ std::optional<ChannelView> Dataset::readWindow(const QString &tableName, const Q
         const double v = value.at(static_cast<int>(i));
         if (std::isnan(v))
             continue; // null 行跳过，与 kernel 视图一致
-        view.time.push_back(time.at(static_cast<int>(i)));
+        // 出口统一 effectiveTime()：原始 ts + 源级 offset。
+        view.time.push_back(time.at(static_cast<int>(i)) + offUs / 1000000.0);
         view.value.push_back(v);
     }
     return view;
@@ -430,7 +455,9 @@ std::optional<ChannelView> Dataset::channel(const QString &tableName, const QStr
     if (!t)
         return std::nullopt;
     // 有界读：[首时间, 末时间] 窗口内最多 cap 点。
-    return readWindow(tableName, columnName, t->firstTimeUs, t->lastTimeUs, cap);
+    // 传对齐后的范围（readWindow 内部再减回原始，别在这里减）。
+    const TimeUs off = d->timeOffsetUs;
+    return readWindow(tableName, columnName, t->firstTimeUs + off, t->lastTimeUs + off, cap);
 }
 
 std::optional<ChannelView> Dataset::channel(const QString &qualifiedName, int cap) const
@@ -463,13 +490,15 @@ QVector<LodTriple> Dataset::lodMinMax(const QString &tableName, const QString &c
     const QByteArray tableUtf8 = tableName.toUtf8();
     const QByteArray colUtf8 = columnName.toUtf8();
     QVector<double> triples(static_cast<qsizetype>(px) * 3);
+    // 视口范围与输出 x 都要按 offset 平移，否则画布与读取路径会各说各话。
+    const TimeUs offUs = d->timeOffsetUs;
     const quint32 n = ps_dataset_lod_minmax(d->native.get(), tableUtf8.constData(),
-                                            colUtf8.constData(), t0Us, t1Us,
+                                            colUtf8.constData(), t0Us - offUs, t1Us - offUs,
                                             static_cast<quint32>(px), triples.data(),
                                             static_cast<quint32>(px));
     out.reserve(n);
     for (quint32 i = 0; i < n; ++i)
-        out.push_back({triples.at(static_cast<int>(i) * 3),
+        out.push_back({triples.at(static_cast<int>(i) * 3) + offUs / 1000000.0,
                        triples.at(static_cast<int>(i) * 3 + 1),
                        triples.at(static_cast<int>(i) * 3 + 2)});
     return out;

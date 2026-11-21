@@ -1367,11 +1367,14 @@ void PlotCanvas::renderFrom(const Dataset &dataset)
         if (!table)
             continue;
         const int px = plotPixelWidth();
+        // 对齐偏移在这里一并给到：lodMinMax/readWindow 出口都按 effectiveTime()，
+        // 画布的 X 范围若还用原始 first/last，offset≠0 时会取到错窗口（T3.1 配套）。
+        const TimeUs off = dataset.timeOffsetUs();
         const auto lod = dataset.lodMinMax(s.table, s.column,
-                                           table->firstTimeUs, table->lastTimeUs, px);
+                                           table->firstTimeUs + off, table->lastTimeUs + off, px);
         s.lod = lod;
-        s.t0 = table->firstTimeUs / 1000000.0;
-        s.t1 = table->lastTimeUs / 1000000.0;
+        s.t0 = (table->firstTimeUs + off) / 1000000.0;
+        s.t1 = (table->lastTimeUs + off) / 1000000.0;
     }
     pushToPlot();
 }

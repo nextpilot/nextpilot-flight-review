@@ -180,9 +180,20 @@ public:
     // 刷新 schema 投影（append 后调用；只从 channel 读 O(1) 元数据）。
     void refreshSchema();
 
-    // 全库时间范围（秒，来自 schema 元数据）
+    // 全库时间范围（秒，来自 schema 元数据；含源级对齐偏移）
     double timeMin() const;
     double timeMax() const;
+
+    // ---- 源级时间对齐（T3.1）----
+    // 铁律：**存储永远存原始时间戳**，offset 只在出口叠加。
+    // 好处是 reset 就是 offset=0，不需要也不可能"还原"被改写过的数据；
+    // 导出（CSV/快照）与画布因此共用同一个出口口径 effectiveTime() = raw + offset。
+    // offset 挂在 Dataset 上（解析器产出一个 dataset），一源多解析器时各自独立。
+    void setTimeOffsetUs(TimeUs offset);
+    TimeUs timeOffsetUs() const;
+    // 原始时间范围（不含 offset），供对齐策略计算基准用。
+    double rawTimeMin() const;
+    double rawTimeMax() const;
 
     // ---- 有界读取：cap 是硬上限，kernel 内等步长抽稀，绝不返回全量 ----
     // 默认上限 4096：即使百万行，一次也只读最多 4096 点。
