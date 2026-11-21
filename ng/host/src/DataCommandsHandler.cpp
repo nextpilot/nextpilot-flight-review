@@ -14,6 +14,8 @@
 #include <QFile>
 #include <QHostAddress>
 #include <QNetworkDatagram>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QUdpSocket>
 
 #ifdef Q_OS_UNIX
@@ -904,6 +906,8 @@ Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
     const QUrl qurl(url);
     if (qurl.scheme() == QLatin1String("serial"))
         return connectSerial(intent);
+    if (qurl.scheme() == QLatin1String("tcp"))
+        return connectTcp(intent);
     if (qurl.scheme() != QLatin1String("udp"))
         return fail(err::Args, QStringLiteral("支持 udp:// 与 serial://（收到 %1）").arg(qurl.scheme()));
     const int port = qurl.port(0);
@@ -1008,6 +1012,132 @@ Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
         {QStringLiteral("dataset"), bound.value()},
         {QStringLiteral("url"), url},
         {QStringLiteral("parser"), parserId},
+    };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::connectTcp(const Intent &intent)
+{
+    // 与 UDP 同一出口：字节进管道扇出。差别只在"字节从哪来"。
+    const QString url = intent.params.value(QStringLiteral("url")).toString();
+    const QUrl qurl(url);
+    const int port = qurl.port(0);
+    if (port <= 0 || port > 65535)
+        return fail(err::Args, QStringLiteral("TCP 端口无效: %1").arg(url));
+    const QString parserId = intent.params.value(QStringLiteral("parser")).toString();
+    if (parserId.isEmpty())
+        return fail(err::Args, QStringLiteral("请指定 parser（如 custom-protocol）"));
+
+    QByteArray parserOptions;
+    if (const QVariant tv = intent.params.value(QStringLiteral("template")); tv.isValid()
+        && !tv.toString().isEmpty())
+        parserOptions = QJsonDocument(QJsonObject{{QStringLiteral("template"), tv.toString()}})
+                            .toJson(QJsonDocument::Compact);
+    else if (const QString tp = intent.params.value(QStringLiteral("templatePath")).toString();
+             !tp.isEmpty())
+    {
+        QFile f(tp);
+        if (!f.open(QIODevice::ReadOnly))
+            return fail(err::Path, QStringLiteral("无法读取模板: %1").arg(tp));
+        parserOptions = QJsonDocument(QJsonObject{{QStringLiteral("template"),
+                                                   QString::fromUtf8(f.readAll())}})
+                            .toJson(QJsonDocument::Compact);
+    }
+
+    DataSourceInfo info;
+    info.name = intent.params.value(QStringLiteral("name")).toString();
+    if (info.name.isEmpty())
+        info.name = url;
+    info.origin = url;
+    info.kind = SourceKind::Live;
+    info.state = SourceState::Streaming;
+    ParserBinding binding;
+    binding.parserId = parserId;
+    binding.active = true;
+    binding.options = parserOptions;
+    info.parsers << binding;
+
+    const int sourceId = m_app.sources().add(info);
+    if (sourceId < 0)
+        return fail(err::Io, QStringLiteral("数据源登记失败"));
+    const auto bound = m_app.ingest().bindParser(sourceId, binding, kInvalidDataset);
+    if (!bound)
+    {
+        m_app.sources().remove(sourceId);
+        return bound.error();
+    }
+    m_app.sources().addDataset(sourceId, bound.value());
+
+    LiveSession session;
+    session.sourceId = sourceId;
+    session.url = url;
+    session.parserId = parserId;
+    session.parserOptions = parserOptions;
+
+    const QString host = qurl.host();
+    const bool listen = host.isEmpty() || host == QLatin1String("0.0.0.0");
+
+    // 收字节的统一出口：一条 lambda，客户端/监听端共用。
+    auto attach = [this, sourceId](QTcpSocket *sock) {
+        QObject::connect(sock, &QTcpSocket::readyRead, sock, [this, sock, sourceId] {
+            auto it = m_live.find(sourceId);
+            if (it == m_live.end())
+                return;
+            while (sock->bytesAvailable() > 0)
+            {
+                const QByteArray bytes = sock->readAll();
+                if (bytes.isEmpty())
+                    break;
+                it->second.packets += 1;
+                it->second.bytes += bytes.size();
+                if (it->second.paused)
+                    continue;
+                m_app.ingest().feed(sourceId,
+                                    reinterpret_cast<const uint8_t *>(bytes.constData()),
+                                    bytes.size());
+            }
+        });
+    };
+
+    if (listen)
+    {
+        auto server = std::make_unique<QTcpServer>();
+        if (!server->listen(QHostAddress::Any, quint16(port)))
+        {
+            m_app.sources().remove(sourceId);
+            return fail(err::Io, QStringLiteral("TCP 监听 %1 失败: %2").arg(port).arg(server->errorString()));
+        }
+        QTcpServer *rawServer = server.get();
+        QObject::connect(rawServer, &QTcpServer::newConnection, rawServer, [this, rawServer, sourceId, attach] {
+            auto it = m_live.find(sourceId);
+            if (it == m_live.end())
+                return;
+            while (rawServer->hasPendingConnections())
+            {
+                QTcpSocket *conn = rawServer->nextPendingConnection();
+                attach(conn);
+            }
+        });
+        session.tcpServer = std::move(server);
+    }
+    else
+    {
+        auto sock = std::make_unique<QTcpSocket>();
+        attach(sock.get());
+        sock->connectToHost(host, quint16(port));
+        session.tcp = std::move(sock);
+    }
+
+    session.since.start();
+    m_live[sourceId] = std::move(session);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("source"), sourceId},
+        {QStringLiteral("dataset"), bound.value()},
+        {QStringLiteral("url"), url},
+        {QStringLiteral("parser"), parserId},
+        {QStringLiteral("mode"), listen ? QStringLiteral("listen") : QStringLiteral("client")},
     };
     return r;
 }
@@ -1151,6 +1281,10 @@ Result<IntentResult> DataCommandsHandler::disconnectLive(const Intent &intent)
     m_app.ingest().finish(sourceId);
     if (it->second.socket)
         it->second.socket->close();
+    if (it->second.tcp)
+        it->second.tcp->close();
+    if (it->second.tcpServer)
+        it->second.tcpServer->close();
 #ifdef Q_OS_UNIX
     if (it->second.fd >= 0)
         ::close(it->second.fd);
@@ -1337,6 +1471,13 @@ Result<IntentResult> DataCommandsHandler::liveStats(const Intent &intent)
             {QStringLiteral("hz"), double(s.packets) / secs},
             {QStringLiteral("kb_s"), double(s.bytes) / secs / 1024.0},
             {QStringLiteral("paused"), s.paused},
+            {QStringLiteral("parse_errors"), [this, id = kv.first] {
+                 int n = 0;
+                 for (const auto &ch : m_app.ingest().channels(id))
+                     if (!ch.error.isEmpty())
+                         ++n;
+                 return n;
+             }()},
         };
         if (const DataSourceInfo *info = m_app.sources().get(kv.first))
         {

@@ -10,6 +10,8 @@
 
 #include <QElapsedTimer>
 #include <QSocketNotifier>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QUdpSocket>
 
 // 数据器官的"派生能力"：reload / export / recent / clearCache。
@@ -102,6 +104,9 @@ private:
     // 源清单（T1.4）：给 CLI/脚本/UI 一致的源视图（含类型、状态、解析器、速率）。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> sourceList(
         const nextpilot::plotscope::intent::Intent &intent);
+    // TCP 前端：tcp://host:port（客户端）；host 为 0.0.0.0/空时按监听端处理。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> connectTcp(
+        const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> liveStats(
         const nextpilot::plotscope::intent::Intent &intent);
     // 源级时间对齐（T3.2）：mode = base/start/end/center/reset。
@@ -146,6 +151,8 @@ private:
         QString parserId;
         QByteArray parserOptions;
         std::unique_ptr<QSocketNotifier> notifier; // 串口可读通知（UDP 用 readyRead）
+        std::unique_ptr<QTcpSocket> tcp;           // TCP 客户端连接
+        std::unique_ptr<QTcpServer> tcpServer;      // TCP 监听端（host 为空/0.0.0.0）
     };
     std::map<int, LiveSession> m_live;
 };

@@ -15,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QHostAddress>
 #include <QThread>
+#include <QTcpSocket>
 #include <QUdpSocket>
 #include <QtEndian>
 
@@ -208,6 +209,57 @@ int main(int argc, char **argv)
                     int(disk->tableNames().size()));
         CHECK(rows >= 20);
         CHECK(disk->timeMax() > 1.5);
+    }
+
+    // ---- TCP 前端：监听端 tcp://0.0.0.0:port，测试端连上去写帧 ----
+    {
+        QUdpSocket portProbe; // 借用绑定取空闲端口（TCP/UDP 端口空间独立，仅作随机端口用）
+        CHECK(portProbe.bind(QHostAddress::LocalHost, 0));
+        const quint16 tcpPort = portProbe.localPort();
+        portProbe.close();
+
+        Intent tc;
+        tc.op = QStringLiteral("data.connect");
+        tc.params[QStringLiteral("url")] =
+            QStringLiteral("tcp://0.0.0.0:%1").arg(tcpPort);
+        tc.params[QStringLiteral("parser")] = QStringLiteral("custom-protocol");
+        tc.params[QStringLiteral("template")] = tpl;
+        tc.params[QStringLiteral("name")] = QStringLiteral("tcp-test");
+        const auto tcr = app.host().execute(tc);
+        CHECK(tcr);
+        if (tcr)
+        {
+            const int tid = tcr.value().payload.toMap().value(QStringLiteral("source")).toInt();
+            const int tds = tcr.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
+            QTcpSocket client;
+            client.connectToHost(QStringLiteral("127.0.0.1"), tcpPort);
+            CHECK(client.waitForConnected(3000));
+            pump(300);
+            for (int k = 0; k < 20; ++k)
+            {
+                QByteArray frame(8, '\0');
+                qToLittleEndian<quint32>(quint32(k * 100), frame.data());
+                qToLittleEndian<float>(float(0.05 * k), frame.data() + 4);
+                client.write(frame);
+                client.flush();
+                pump(3);
+            }
+            pump(1000);
+            Intent td;
+            td.op = QStringLiteral("data.disconnect");
+            td.params[QStringLiteral("id")] = tid;
+            CHECK(app.host().execute(td));
+            if (const Dataset *tdsPtr = ctx.data().get(tds))
+            {
+                int rows = 0;
+                for (const QString &tn : tdsPtr->tableNames())
+                    if (const Table *t = tdsPtr->table(tn))
+                        rows = std::max(rows, t->rows);
+                std::printf("tcp rows=%d timeMax=%.3f\n", rows, tdsPtr->timeMax());
+                CHECK(rows >= 18);
+            }
+            client.close();
+        }
     }
 
 #ifdef __linux__
