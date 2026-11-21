@@ -177,9 +177,28 @@ ctest --test-dir build-ng -j 1
 - 期望：双源同名通道一次叠加，曲线名带源前缀（`源A:table.column`），`plot.series.list` 条数 = 匹配对数；无同名时给出提示而非静默空跑。
 - 判定：job 断言 series 条数与命名规则。
 
+**实测结果（2026-11-21，`ng_test_gui` / `46f1c06`）**
+
+| 断言 | 结果 | 证据 |
+|---|---|---|
+| 两源同构 csv 一次叠加 | 通过：`matched==added>=2`，每条都以列名结尾且含 `:` | `ng_test_gui`「多源同名」段 |
+| 曲线名带源前缀 | 通过：`demo_flight.csv:demo_flight.att.pitch[deg]`、`ng_gui_overlay_b.csv:ng_gui_overlay_b.att.pitch[deg]` | 同上（测试打印） |
+| 源名重复时名字唯一 | 通过：重名源补 `#id`（实测 `demo_flight.csv#0` vs `demo_flight.csv#9`） | 同上 |
+| 无同名给提示 | 通过：返回 `enoent` + "没有其它源包含同名通道: <column>"（0 命中不静默） | 代码路径 `plot.overlaySame` |
+
 ### AC-19 对比同名（T5.2）
 - 期望：只取两条、双色、X 范围自动取并集、给出 offset 建议值（与 T3 算法一致）；源不同表不同名时提示"无同名通道"。
 - 判定：`plot.series.list` 恰 2 条 + offset 建议字段存在。
+
+**实测结果（2026-11-21，`ng_test_gui` / `46f1c06`）**
+
+| 断言 | 结果 | 证据 |
+|---|---|---|
+| 恰两条 | 通过：先 `clearChannels()`，之后 `plot.series.list` == 2 | `ng_test_gui`「多源同名」段 |
+| base/peer 不同源 | 通过：`base != peer`，且 peer 必须不是 base 的数据集 | 同上 |
+| offset 建议 | 通过：`offset_us` 字段存在，`(base.timeMax - peer.timeMax)*1e6`（终点对齐，与 `plot.align end` 同口径） | 同上 |
+| X 范围并集 | 通过：`x_lo <= x_hi`，取两源时间并集 | 同上 |
+| 双色 | 未单独断言：依赖画布按索引分配色板（两条索引 0/1 → 不同色） | 截图未拍，口径见 T5.1/T5.2 详述 |
 
 ### AC-20 展开数据列（T5.3）
 - 期望：表右键一列→一次最多画 8 条，超出弹"已截取前 8 列，可继续添加"而不是全画；数值列优先，bool/字符串列默认不画。

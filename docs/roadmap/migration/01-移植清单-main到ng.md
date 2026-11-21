@@ -64,8 +64,8 @@
 | T4.4 | 采样上限：CSV 导出、派生通道重算（0=不限） | **已完成** / `1298e57`：`export.csv.maxPoints`（0=全量）；抽稀改宿主编排并**钉住末点**（Rust 等步长 cap 会丢尾）；派生 `derive.maxPoints`（intent cap > settings > 默认 200000），输入通道同 cap 取数（否则仍被 4096 默认卡住）。实测 300 行 → maxPoints=100 → 100 行、末点 299 不变；设 0 回 300 行 | S | — | AC-16 |
 | T4.5 | 设置对话框 UI（数据/画布/时间轴三组） | **部分完成** / `cbab8e1`：`SettingsDialog` 数据组已落地（导出/派生上限 0=不限 + 解析缓存展示与清除），入口在标题行「＋」与源右键；画布/时间轴两组**故意先不做**——对应键还没有消费方，摆上去就是假入口。截图 `verify/ng_settings_dialog.png` | M | T4.3/T4.4 | AC-17 |
 | **M5 多源比对交互** | | | | |
-| T5.1 | `data.action.overlayAll`：把同名通道从所有源叠加到当前画布 | M | — | AC-18 |
-| T5.2 | `data.action.compareSame`：对比同名通道（统一 X + 双色 + 自动对齐提示） | M | T5.1 | AC-19 |
+| **T5.1** | **多源同名叠加**（main `data.action.overlayAll`；ng 落地为画布 view action `plot.overlaySame`） | M | — | AC-18 |
+| **T5.2** | **同名对比**（main `data.action.compareSame`；ng 落地为 `plot.compareSame`，统一 X + 双色 + 终点对齐 offset 建议） | M | T5.1 | AC-19 |
 | T5.3 | 树右键"展开数据列"（表节点一键展开全部字段到画布） | S | — | AC-20 |
 | T5.4 | 画布 ↔ 画布拖拽重排（main 的 `application/x-plotsc…` 语义） | M | — | AC-21 |
 | **T5.5** | **画布右键上下文补齐**（实测 ng 空画布仅 4 项、有曲线 11 项，main 13 项）：属性▸/在 t 处加书签/AB/固定读数/放大缩小自适应撤销/显示网格图例/曲线▸/向右向下拆分/导出 PNG·CSV/删除此画布，**空画布也走同一套** | **已完成** 2026-11-21 / `0664f0c` | — | AC-27 |
@@ -94,7 +94,7 @@
 | M2 录制 | 3 | 3 | 0 | 0 | 100% | T2.1 泵内接线 + T2.2 意图族（`f91acf6`）+ T2.3 录制组与状态行（`826a4de`）；缺口：mcap 无 schema 自包含 → AC-07 回读行数未过 |
 | M3 时间对齐 | 5 | 5 | 0 | 0 | 100% | T3.1 偏移收敛 AppContext、T3.2 五策略、T3.3 意图+树右键、T3.4 CSV 导出叠加、T3.5 选格 |
 | M4 数据工程 | 5 | 2 | 1 | 2 | 50% | T4.3 缓存可观测（`17fc74f`）、T4.4 采样上限（`1298e57`）完成；T4.5 数据组已出（`cbab8e1`），画布/时间轴组待各自功能接线；T4.1 快照、T4.2 参数表未动 |
-| M5 比对交互 | 7 | 2 | 1 | 4 | 29% | T5.5/T5.7 完成、T5.6 部分；T5.1–T5.4 未动 |
+| M5 比对交互 | 7 | 4 | 1 | 2 | 64% | T5.1/T5.2 叠加与对比同名（`46f1c06`）、T5.5/T5.7 完成；T5.6 部分；T5.3 展开数据列 / T5.4 拖拽重排未动 |
 | M6 格式扩展 | 3 | 0 | 0 | 3 | 0% | 重写型任务，与本次移植解耦 |
 | M7 现场排障 | 2 | 0 | 0 | 2 | 0% | 依赖 T1.3 的流控统计 |
 | M8 绘图补口 | 2 | 0 | 0 | 2 | 0% | 低优先，按需 |
@@ -257,8 +257,16 @@ main 是"在 16.02 添加时间书签…"，ng 是固定文案"添加时间书�
 
 ### T5.1–T5.4 比对交互
 
-- `overlayAll`：按 `table.column` 名称在全源里找同名，逐个 `plot.series.add` 到当前画布（去重靠 `series.id`），命名 `源名:table.column`。
-- `compareSame`：同 table.column 取两个源 → 两条曲线 + 统一 X 范围 + 自动计算 `offset` 建议（借 T3 的算法但只作用于这两条）。
+- `overlayAll` → **已完成（2026-11-21 / `46f1c06`）**，落地名 `plot.overlaySame`：
+  - 口径：**列名相同即同名**（表可不同；一个数据集里取第一张含该列的表）。main 用 `table.column` 全限定，ng 放宽到列名——多表格式里同名通道通常只出现在一张表，按列名命中率更高。
+  - 命名 `源名:表.列`；源名重复（同文件加载两次/同名不同路径）时补 `#id`，保证曲线名唯一。
+  - 返回 `matched / added / names`；0 命中文案"没有其它源包含同名通道: <column>"。
+  - 入口：数据树列右键「叠加全部同名…」（与画布动作同一路径，不另做 intent——画布动作走 `InteractionRegistry::registerViewAction`）。
+- `compareSame` → **已完成（2026-11-21 / `46f1c06`）**，落地名 `plot.compareSame`：
+  - 只取「当前数据集 + 第一个命中同名列的**别的源**」，先 `clearChannels()` 保证 AC-19「恰两条」，双色靠画布按索引分配色板。
+  - `offset_us = (base.timeMax - peer.timeMax) * 1e6`（**终点对齐**，与 `plot.align end` 同口径，未做多策略选择）。
+  - 返回 `series / offset_us / base / peer / x_lo / x_hi`；入口：列右键「对比同名通道…」。
+  - 测试：`ng_test_gui` 两源同构 csv → `matched==added>=2`、名字带源前缀、对比后 `plot.series.list` 恰 2 条。
 - `展开数据列`：表节点右键，一键把该表全部数值列画进当前画布（限 8 条防爆）。
 - DnD：`PlotCanvas` 增 `dragEnterEvent/dragLeaveEvent/dropEvent`，MIME `application/x-plotscope-series`；跨画布移动 series（不是复制），源画布 `plot.series.remove`。
 
