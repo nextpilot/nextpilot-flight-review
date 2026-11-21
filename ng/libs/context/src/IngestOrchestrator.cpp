@@ -7,6 +7,19 @@
 
 namespace nextpilot::plotscope::context
 {
+
+namespace
+{
+ParseCacheCounters g_cacheCounters;
+}
+
+ParseCacheCounters &parseCacheCounters() { return g_cacheCounters; }
+void resetParseCacheCounters()
+{
+    g_cacheCounters.hits = 0;
+    g_cacheCounters.misses = 0;
+    g_cacheCounters.writes = 0;
+}
 namespace err = nextpilot::plotscope::foundation::err;
 using nextpilot::plotscope::dataset::Dataset;
 using nextpilot::plotscope::dataset::SourceKind;
@@ -158,12 +171,14 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
                 m_datasetIds << dsId;
                 m_sources.addDataset(sourceId, dsId);
                 fromCache = true;
+                ++g_cacheCounters.hits;
             }
         }
         if (fromCache)
             continue;
 
         toParse << pid;
+        ++g_cacheCounters.misses;
 
         ParserBinding b;
         b.parserId = pid;
@@ -293,6 +308,7 @@ Result<int> IngestOrchestrator::ingest(IByteSource &source, const QStringList &p
             const QString cachePath = cachePathFor(origin, toParse.at(i));
             QString cacheErr;
             ds->saveCache(cachePath, size, mtime, &cacheErr);
+            ++g_cacheCounters.writes;
             // 缓存写失败不是致命错误：只是下次要重解析。
         }
     }

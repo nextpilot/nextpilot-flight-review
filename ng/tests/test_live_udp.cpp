@@ -495,6 +495,53 @@ int main(int argc, char **argv)
     }
 #endif
 
+    // ---- M4/T4.3 缓存可观测：命中/未命中/条目/字节 ----
+    {
+        const QString csvPath = QStringLiteral("/tmp/ng_cache_probe.csv");
+        const QString pscPath = csvPath + QStringLiteral(".csv.psc");
+        QFile::remove(pscPath); // 清历史缓存，保证第一次是 miss
+        QFile f(csvPath);
+        CHECK(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("time_ms,att.roll[deg],att.pitch[deg]\n0,1,2\n1,2,3\n2,3,4\n");
+        f.close();
+
+        auto loadCsv = [&]() {
+            Intent ld;
+            ld.op = QStringLiteral("data.load");
+            ld.params[QStringLiteral("path")] = csvPath;
+            return app.host().execute(ld);
+        };
+        CHECK(loadCsv());
+        CHECK(loadCsv()); // 第二次应命中缓存（同一份文件、size+mtime 未变）
+
+        Intent cs;
+        cs.op = QStringLiteral("data.cache.stats");
+        const auto cr = app.host().execute(cs);
+        CHECK(cr);
+        if (cr)
+        {
+            const QVariantMap m = cr.value().payload.toMap();
+            std::printf("cache: entries=%d bytes=%lld hits=%lld misses=%lld writes=%lld\n",
+                        m.value(QStringLiteral("entries")).toInt(),
+                        m.value(QStringLiteral("bytes")).toLongLong(),
+                        m.value(QStringLiteral("hits")).toLongLong(),
+                        m.value(QStringLiteral("misses")).toLongLong(),
+                        m.value(QStringLiteral("writes")).toLongLong());
+            CHECK(m.value(QStringLiteral("misses")).toLongLong() >= 1);
+            CHECK(m.value(QStringLiteral("hits")).toLongLong() >= 1);
+            CHECK(m.value(QStringLiteral("entries")).toInt() >= 1);
+            CHECK(m.value(QStringLiteral("bytes")).toLongLong() > 0);
+        }
+
+        Intent cc;
+        cc.op = QStringLiteral("data.clearCache");
+        CHECK(app.host().execute(cc));
+        const auto cr2 = app.host().execute(cs);
+        CHECK(cr2);
+        if (cr2)
+            CHECK(cr2.value().payload.toMap().value(QStringLiteral("entries")).toInt() == 0);
+    }
+
     if (failures == 0)
         std::printf("live udp: ALL PASS\n");
     return failures == 0 ? 0 : 1;

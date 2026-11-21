@@ -94,6 +94,8 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> exportCsv(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recent(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearCache();
+    // 缓存可观测（M4/T4.3）：磁盘上的 .psc 条目/字节 + 进程内命中/未命中计数。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> cacheStats();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> removeSource(const nextpilot::plotscope::intent::Intent &intent);
     // live 源暂停/继续（#193）：切 SourceState::Streaming/Paused。
     // 仅 SourceKind::Live 源可操作；文件源返回 enotsupported。幂等：已在目标状态直接成功。

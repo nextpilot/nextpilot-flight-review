@@ -77,6 +77,17 @@ struct IngestOptions
     QByteArray parserOptions;
 };
 
+// 解析缓存的进程内计数（供 data.cache.stats 展示"命中率"）。
+// 只统计"这次打开是否复用了 .psc"，不统计写缓存成功与否。
+struct ParseCacheCounters
+{
+    qint64 hits = 0;    // 复用缓存、跳过解析
+    qint64 misses = 0;  // 走真解析（含"有缓存但指纹失效"）
+    qint64 writes = 0;  // 解析完写出缓存
+};
+ParseCacheCounters &parseCacheCounters();
+void resetParseCacheCounters();
+
 class IngestOrchestrator
 {
 public:

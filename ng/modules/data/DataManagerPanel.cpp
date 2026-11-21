@@ -1065,7 +1065,24 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     QAction *reload = menu.addAction(QStringLiteral("重载数据源"));
     QAction *rename = menu.addAction(QStringLiteral("重命名…"));
     QAction *exportCsv = menu.addAction(QStringLiteral("导出 CSV…"));
-    QAction *clearCache = menu.addAction(QStringLiteral("清除全部解析缓存"));
+    // 缓存可观测（T4.3）：菜单项先把"有多少、占多大"摆出来，没有缓存就置灰，
+    // 免得点一个什么都不做的入口。
+    Intent cacheIntent;
+    cacheIntent.op = QStringLiteral("data.cache.stats");
+    const auto cacheRes = m_executor.execute(cacheIntent);
+    int cacheEntries = 0;
+    qlonglong cacheBytes = 0;
+    if (cacheRes)
+    {
+        const QVariantMap cm = cacheRes.value().payload.toMap();
+        cacheEntries = cm.value(QStringLiteral("entries")).toInt();
+        cacheBytes = cm.value(QStringLiteral("bytes")).toLongLong();
+    }
+    QAction *clearCache = cacheEntries > 0
+        ? menu.addAction(QStringLiteral("清除全部解析缓存（%1 项 · %2 MB）")
+                             .arg(cacheEntries)
+                             .arg(double(cacheBytes) / (1024.0 * 1024.0), 0, 'f', 1))
+        : menu.addAction(QStringLiteral("清除全部解析缓存（无缓存）"));
     // 时间对齐（T3.2）：五项策略共用一条意图 data.time.align，脚本/CLI/GUI 同语义。
     // 偏移落点只有一个：AppContext::setSourceTimeOffset()（画布订阅后自动重推 x）。
     QMenu *align = menu.addMenu(QStringLiteral("时间对齐"));
@@ -1087,6 +1104,7 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     rename->setIcon(MenuIcons::icon(QStringLiteral("rename")));
     exportCsv->setIcon(MenuIcons::icon(QStringLiteral("csv")));
     clearCache->setIcon(MenuIcons::icon(QStringLiteral("eraser")));
+    clearCache->setEnabled(cacheEntries > 0);
     detail->setIcon(MenuIcons::icon(QStringLiteral("info")));
     activate->setIcon(MenuIcons::icon(QStringLiteral("pin")));
     remove->setIcon(MenuIcons::icon(QStringLiteral("trash")));

@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "DataSource.h"
+#include "IngestOrchestrator.h"
 #include "SourceRegistry.h"
 #include "Dataset.h"
 #include "IIntentExecutor.h"
@@ -145,6 +146,8 @@ void DataCommandsHandler::buildDispatch()
     m_dispatch.reg(QStringLiteral("data.recent"), this, &DataCommandsHandler::recent);
     m_dispatch.reg(QStringLiteral("data.clearCache"),
                    [this](const I &) { return clearCache(); });
+    m_dispatch.reg(QStringLiteral("data.cache.stats"),
+                   [this](const I &) { return cacheStats(); });
     m_dispatch.reg(QStringLiteral("data.remove"), this, &DataCommandsHandler::removeSource);
     m_dispatch.reg(QStringLiteral("data.pause"),
                    [this](const I &i) { return setSourcePaused(i, true); });
@@ -351,8 +354,57 @@ Result<IntentResult> DataCommandsHandler::clearCache()
                 ++removed;
         }
     }
+    // 清空后进程内计数归零：否则"命中率"会把上一次生命周期的账算进来。
+    nextpilot::plotscope::context::resetParseCacheCounters();
+
     IntentResult r;
     r.payload = removed;
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::cacheStats()
+{
+    QVariantList items;
+    qint64 totalBytes = 0;
+    for (int id : m_app.sources().ids())
+    {
+        const DataSourceInfo *info = m_app.sources().get(id);
+        if (!info || info->origin.isEmpty())
+            continue;
+        QStringList parsers;
+        for (const ParserBinding &b : info->parsers)
+            parsers << b.parserId;
+        if (parsers.isEmpty())
+            parsers << QString(); // 源文件级缓存（parserId 为空）
+        for (const QString &pid : parsers)
+        {
+            const QString path = pid.isEmpty()
+                ? QFileInfo(info->origin).absoluteFilePath() + QStringLiteral(".psc")
+                : cachePathForSource(*info, pid);
+            const QFileInfo fi(path);
+            if (!fi.exists())
+                continue;
+            totalBytes += fi.size();
+            items.append(QVariantMap{
+                {QStringLiteral("source"), id},
+                {QStringLiteral("name"), info->name},
+                {QStringLiteral("parser"), pid},
+                {QStringLiteral("path"), path},
+                {QStringLiteral("bytes"), QVariant::fromValue<qlonglong>(fi.size())},
+                {QStringLiteral("mtime"), fi.lastModified().toString(Qt::ISODate)},
+            });
+        }
+    }
+    const auto counters = nextpilot::plotscope::context::parseCacheCounters();
+    QVariantMap out;
+    out.insert(QStringLiteral("entries"), int(items.size()));
+    out.insert(QStringLiteral("bytes"), QVariant::fromValue<qlonglong>(totalBytes));
+    out.insert(QStringLiteral("hits"), QVariant::fromValue<qlonglong>(counters.hits));
+    out.insert(QStringLiteral("misses"), QVariant::fromValue<qlonglong>(counters.misses));
+    out.insert(QStringLiteral("writes"), QVariant::fromValue<qlonglong>(counters.writes));
+    out.insert(QStringLiteral("items"), items);
+    IntentResult r;
+    r.payload = out;
     return r;
 }
 
