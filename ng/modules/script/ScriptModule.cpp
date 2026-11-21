@@ -2,6 +2,7 @@
 
 #include "BuiltinModuleRegistry.h"
 #include "BatchRunner.h"
+#include "PythonHandler.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
 #include "JobRecorder.h"
@@ -120,6 +121,13 @@ void ScriptModule::initialize(ModuleContext &ctx)
         ctx.executor(), &ctx.app().interactions(), &ctx.app().data(), &ctx.app().sources(),
         viewDispatcher, this);
     ctx.registerIntentHandler(m_batch);
+
+    // ---- Python 子进程桥（M2.6）：script.py.* 意图族 ----
+    // 常驻桥进程按需拉起（首个 script.py.* 调用时启动）；找不到解释器时
+    // 每条意图返回明确错误（优雅降级，不弹窗轰炸）。
+    m_py = new nextpilot::plotscope::script::PythonHandler(
+        ctx.executor(), &ctx.app().data(), this);
+    ctx.registerIntentHandler(m_py);
     ctx.app().interactions().registerViewAction(
         QStringLiteral("data.batch.cancel"),
         [this](const QVariantMap &) -> Result<QVariant> {
@@ -302,6 +310,30 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
         [&executor, recorder, dispatcher, echo](const QVariantMap &params) -> Result<QVariant> {
             const QByteArray source = params.value(QStringLiteral("source")).toByteArray();
             const QString name = params.value(QStringLiteral("name")).toString();
+
+            // .py 文档 → Python 子进程桥（M2.6）：与 Lua 同一个运行入口，语言按后缀路由。
+            if (name.endsWith(QStringLiteral(".py"), Qt::CaseInsensitive))
+            {
+                Intent py;
+                py.op = QStringLiteral("script.py.exec");
+                py.params.insert(QStringLiteral("source"),
+                                 QString::fromUtf8(source));
+                const Result<IntentResult> r = executor.execute(py);
+                if (!r)
+                {
+                    echo(QStringLiteral("✘ Python: %1").arg(r.error().message), true);
+                    return fail(r.error().code, r.error().message);
+                }
+                const QVariantMap out = r.value().payload.toMap();
+                const QString printed = out.value(QStringLiteral("out")).toString();
+                if (!printed.isEmpty())
+                    echo(printed.trimmed(), false);
+                const QVariant v = out.value(QStringLiteral("value"));
+                if (v.isValid() && !v.isNull())
+                    echo(QStringLiteral("⇒ %1").arg(v.toString()), false);
+                return Result<QVariant>(QVariant(true));
+            }
+
             ScriptFacade facade(executor, recorder, dispatcher);
             nextpilot::plotscope::script::LuaEngine engine(facade);
             engine.setOutputSink([&echo](const QString &m) { echo(m, false); });

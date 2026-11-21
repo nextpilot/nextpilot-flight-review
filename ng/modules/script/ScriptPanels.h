@@ -2,6 +2,7 @@
 
 #include <QPlainTextEdit>
 #include <QSet>
+#include <QSyntaxHighlighter>
 #include <QVector>
 #include <QListWidgetItem>
 #include <QWidget>
@@ -70,7 +71,7 @@ public:
     void jumpToLine(int line);   // 滚动并置光标
 
     std::function<void(int)> onBreakpointToggle; // gutter 点击切换断点
-    LuaHighlighter *highlighter = nullptr;       // 由面板按后缀注入
+    QSyntaxHighlighter *highlighter = nullptr;   // 由面板按语言注入（Lua/Python）
 
     // gutter 绘制（GutterWidget 是实现细节，同文件内回调）。
     void paintGutter(QPaintEvent *ev);
@@ -106,7 +107,7 @@ public:
     int documentCount() const;
     QString currentDocumentName() const;
     bool openScript(const QString &name);          // 打开脚本库脚本（不存在 false）
-    bool newDocument(const QString &name);         // 新建未保存文档
+    bool newDocument(const QString &name, const QString &initialText = QString()); // 新建未保存文档（initialText 非空时代替模板）
     bool closeDocumentByName(const QString &name); // 脚本库删除后同步关标签
     bool saveCurrentDocument();
     void gotoLine(const QString &name, int line);

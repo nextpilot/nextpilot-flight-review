@@ -58,11 +58,17 @@ const QLatin1String kActRepl("script.workbench.repl");
 const QLatin1String kActDebugRun("script.workbench.debug");
 const QLatin1String kActDebugCmd("script.workbench.debug."); // 控制通道前缀
 
-// 脚本名规则：小写字母/数字/下划线/短横线，1..64（与 LuaScriptLibrary 一致）。
+// 脚本名规则：小写字母/数字/下划线/短横线，1..64；可选 ".py" 后缀（M2.6 多语言）。
 bool validScriptName(const QString &name)
 {
-    static const QRegularExpression re(QStringLiteral("^[a-z0-9_-]{1,64}$"));
+    static const QRegularExpression re(QStringLiteral("^[a-z0-9_-]{1,60}(\\.py)?$"));
     return re.match(name).hasMatch();
+}
+
+// 文档语言：名字以 .py 结尾 → Python（运行路由 script.py.exec + Python 高亮）。
+bool isPythonDoc(const QString &name)
+{
+    return name.endsWith(QStringLiteral(".py"), Qt::CaseInsensitive);
 }
 
 QString variantToDisplay(const QVariant &v)
@@ -138,6 +144,69 @@ public:
         cmt.setForeground(QColor(0x9c, 0xa3, 0xaf));
         cmt.setFontItalic(true);
         m_rules.append({QRegularExpression(QStringLiteral("--[^\\n]*")), cmt});
+    }
+
+protected:
+    void highlightBlock(const QString &text) override
+    {
+        for (const Rule &r : m_rules)
+        {
+            auto it = r.re.globalMatch(text);
+            while (it.hasNext())
+            {
+                const QRegularExpressionMatch m = it.next();
+                setFormat(m.capturedStart(), m.capturedLength(), r.fmt);
+            }
+        }
+    }
+
+private:
+    struct Rule
+    {
+        QRegularExpression re;
+        QTextCharFormat fmt;
+    };
+    QVector<Rule> m_rules;
+};
+
+// ============================================================================
+// PythonHighlighter：.py 文档高亮（M2.6，与 LuaHighlighter 同构同配色）
+// ============================================================================
+class PythonHighlighter final : public QSyntaxHighlighter
+{
+public:
+    explicit PythonHighlighter(QTextDocument *doc) : QSyntaxHighlighter(doc)
+    {
+        // 关键字（紫）
+        QTextCharFormat kw;
+        kw.setForeground(QColor(0x7c, 0x3a, 0xed));
+        kw.setFontWeight(QFont::Bold);
+        m_rules.append({QRegularExpression(QStringLiteral(
+                            "\\b(def|class|return|if|elif|else|for|while|in|break|continue|"
+                            "import|from|as|with|try|except|finally|raise|lambda|yield|"
+                            "global|nonlocal|pass|assert|del|None|True|False|and|or|not|"
+                            "is|async|await)\\b")),
+                        kw});
+        // 字符串（绿）
+        QTextCharFormat str;
+        str.setForeground(QColor(0x05, 0x96, 0x69));
+        m_rules.append({QRegularExpression(QStringLiteral(
+                            "(?:[frb]{0,2})\"(?:[^\"\\\\]|\\\\.)*\"|(?:[frb]{0,2})'(?:[^'\\\\]|\\\\.)*'")),
+                        str});
+        // 数字（橙）
+        QTextCharFormat num;
+        num.setForeground(QColor(0xd9, 0x77, 0x06));
+        m_rules.append({QRegularExpression(QStringLiteral("\\b\\d+(?:\\.\\d+)?\\b")), num});
+        // 全局对象（蓝粗）：ds（数据集视图）/ np（预注入 numpy）
+        QTextCharFormat glob;
+        glob.setForeground(QColor(0x25, 0x63, 0xeb));
+        glob.setFontWeight(QFont::Bold);
+        m_rules.append({QRegularExpression(QStringLiteral("\\b(ds|np|self)\\b")), glob});
+        // 注释（灰斜体，最后套用保证覆盖）
+        QTextCharFormat cmt;
+        cmt.setForeground(QColor(0x9c, 0xa3, 0xaf));
+        cmt.setFontItalic(true);
+        m_rules.append({QRegularExpression(QStringLiteral("#[^\\n]*")), cmt});
     }
 
 protected:
@@ -499,8 +568,10 @@ void ScriptEditorPanel::attachViewActions()
         if (!guard)
             return fail(err::NoEnt, QStringLiteral("编辑器面板已关闭"));
         const QString name = params.value(QStringLiteral("name")).toString();
-        return guard->newDocument(name) ? Result<QVariant>(QVariant(true))
-                                        : fail(err::BadName, QStringLiteral("无法新建: %1").arg(name));
+        const QString text = params.value(QStringLiteral("text")).toString();
+        return guard->newDocument(name, text)
+                   ? Result<QVariant>(QVariant(true))
+                   : fail(err::BadName, QStringLiteral("无法新建: %1").arg(name));
     });
     reg.registerViewAction(kActClosed,
                            [guard](const QVariantMap &params) -> Result<QVariant> {
@@ -666,13 +737,28 @@ bool ScriptEditorPanel::openScript(const QString &name)
     return true;
 }
 
-bool ScriptEditorPanel::newDocument(const QString &name)
+bool ScriptEditorPanel::newDocument(const QString &name, const QString &initialText)
 {
     if (!validScriptName(name) || docByName(name))
         return false;
     auto *ed = new ScriptCodeEditor(this);
-    ed->setPlainText(QStringLiteral("-- %1.lua\n\n").arg(name));
-    ed->highlighter = new LuaHighlighter(ed->document());
+    if (isPythonDoc(name))
+    {
+        // .py 文档：Python 模板 + Python 高亮；运行走 script.py.exec（子进程桥）。
+        ed->setPlainText(initialText.isEmpty()
+                             ? QStringLiteral("# %1\n"
+                                             "# ds['col'] 读数据集列（ndarray）；ds['新列'] = ... 写回产生 v2。\n"
+                                             "import numpy as np\n\n")
+                                   .arg(name.chopped(3))
+                             : initialText);
+        ed->highlighter = new PythonHighlighter(ed->document());
+    }
+    else
+    {
+        ed->setPlainText(initialText.isEmpty() ? QStringLiteral("-- %1.lua\n\n").arg(name)
+                                               : initialText);
+        ed->highlighter = new LuaHighlighter(ed->document());
+    }
     connect(ed, &QPlainTextEdit::textChanged, this, &ScriptEditorPanel::onEditorModified);
     Document d;
     d.editor = ed;
@@ -704,7 +790,7 @@ bool ScriptEditorPanel::ensureSavedName(Document *doc)
         return true;
     bool ok = false;
     const QString name = QInputDialog::getText(this, QStringLiteral("保存脚本"),
-                                               QStringLiteral("脚本名（小写字母/数字/_/-）："),
+                                               QStringLiteral("脚本名（小写字母/数字/_/-；.py 结尾走 Python 引擎）："),
                                                QLineEdit::Normal, QString(), &ok);
     if (!ok || !validScriptName(name))
     {
@@ -725,6 +811,12 @@ bool ScriptEditorPanel::saveCurrentDocument()
     Document *doc = currentDoc();
     if (!doc)
         return false;
+    if (isPythonDoc(doc->name))
+    {
+        // v1：.py 是工作台草稿（脚本库只存 Lua）；运行即所得。
+        appendConsole(QStringLiteral("ℹ .py 脚本暂不入库（运行即可，保存能力随脚本库多语言扩展）"), false);
+        return false;
+    }
     if (!ensureSavedName(doc))
         return false;
     const auto &ops = m_app->interactions().transformScriptOps();
@@ -820,6 +912,11 @@ void ScriptEditorPanel::onRunCurrent(bool debugMode)
 
     if (debugMode)
     {
+        if (isPythonDoc(doc->name))
+        {
+            appendConsole(QStringLiteral("ℹ .py 调试（debugpy）远期接入，请用普通运行"), false);
+            return;
+        }
         // 调试运行：经模块通道（script.workbench.debug），带断点集合。
         // 执行在暂停期嵌套等恢复（UI 保持响应），返回即运行结束。
         appendConsole(QStringLiteral("🐞 调试 %1 ...").arg(title), false);
@@ -1092,7 +1189,7 @@ void ScriptFilesPanel::onNew()
     bool ok = false;
     const QString name = QInputDialog::getText(
         this, QStringLiteral("新建脚本"),
-        QStringLiteral("脚本名（小写字母/数字/_/-）："),
+        QStringLiteral("脚本名（小写字母/数字/_/-；.py 结尾走 Python 引擎）："),
         QLineEdit::Normal, QStringLiteral("myscript"), &ok);
     if (!ok || name.trimmed().isEmpty())
         return;

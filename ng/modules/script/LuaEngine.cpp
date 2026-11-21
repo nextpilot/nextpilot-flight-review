@@ -298,6 +298,108 @@ static int l_plot_render(lua_State *L)
     return 1;
 }
 
+// ===== py.*（M2.6 Python 子进程桥）：全部经 script.py.* 意图路由到 ScriptModule
+// 的 PythonHandler——LuaEngine 本身不持有桥进程（机制唯一：与 app.call 同一条路）。
+
+// py.eval(code) -> 值
+static int l_py_eval(lua_State *L)
+{
+    ScriptFacade *f = facadeOf(L);
+    if (!f)
+        return luaL_error(L, "脚本门面不可用");
+    const QString code = QString::fromUtf8(luaL_checkstring(L, 1));
+    QVariantMap params;
+    params.insert(QStringLiteral("code"), code);
+    Result<QVariant> r = f->callAny(QStringLiteral("script.py.eval"), params);
+    if (!r)
+        return luaL_error(L, "py.eval 失败: %s", qPrintable(r.error().message));
+    pushVariant(L, r.value());
+    return 1;
+}
+
+// py.exec(source, dataset?) -> {value, out, new, rows}（dataset 给定时注入 ds）
+static int l_py_exec(lua_State *L)
+{
+    ScriptFacade *f = facadeOf(L);
+    if (!f)
+        return luaL_error(L, "脚本门面不可用");
+    const QString source = QString::fromUtf8(luaL_checkstring(L, 1));
+    QVariantMap params;
+    params.insert(QStringLiteral("source"), source);
+    if (lua_gettop(L) >= 2 && !lua_isnil(L, 2))
+        params.insert(QStringLiteral("dataset"), lua_tointeger(L, 2));
+    Result<QVariant> r = f->callAny(QStringLiteral("script.py.exec"), params);
+    if (!r)
+        return luaL_error(L, "py.exec 失败: %s", qPrintable(r.error().message));
+    pushVariant(L, r.value());
+    return 1;
+}
+
+// py.status() -> {available, interpreter, running}
+static int l_py_status(lua_State *L)
+{
+    ScriptFacade *f = facadeOf(L);
+    if (!f)
+        return luaL_error(L, "脚本门面不可用");
+    Result<QVariant> r =
+        f->callAny(QStringLiteral("script.py.status"), QVariantMap());
+    if (!r)
+        return luaL_error(L, "py.status 失败: %s", qPrintable(r.error().message));
+    pushVariant(L, r.value());
+    return 1;
+}
+
+// py.push(dataset, column, name?) -> {rows, name}（单列推给 Python 全局）
+static int l_py_push(lua_State *L)
+{
+    ScriptFacade *f = facadeOf(L);
+    if (!f)
+        return luaL_error(L, "脚本门面不可用");
+    QVariantMap params;
+    params.insert(QStringLiteral("dataset"), luaL_checkinteger(L, 1));
+    params.insert(QStringLiteral("column"), QString::fromUtf8(luaL_checkstring(L, 2)));
+    if (lua_gettop(L) >= 3 && !lua_isnil(L, 3))
+        params.insert(QStringLiteral("name"), QString::fromUtf8(luaL_checkstring(L, 3)));
+    Result<QVariant> r = f->callAny(QStringLiteral("script.py.push"), params);
+    if (!r)
+        return luaL_error(L, "py.push 失败: %s", qPrintable(r.error().message));
+    pushVariant(L, r.value());
+    return 1;
+}
+
+// py.pull(name, wantValues?) -> {rows, mean, values?}（数组回传 Lua 表）
+static int l_py_pull(lua_State *L)
+{
+    ScriptFacade *f = facadeOf(L);
+    if (!f)
+        return luaL_error(L, "脚本门面不可用");
+    QVariantMap params;
+    params.insert(QStringLiteral("name"), QString::fromUtf8(luaL_checkstring(L, 1)));
+    if (lua_gettop(L) >= 2)
+        params.insert(QStringLiteral("want_values"), lua_toboolean(L, 2) != 0);
+    Result<QVariant> r = f->callAny(QStringLiteral("script.py.pull"), params);
+    if (!r)
+        return luaL_error(L, "py.pull 失败: %s", qPrintable(r.error().message));
+    pushVariant(L, r.value());
+    return 1;
+}
+
+// py.writeback(dataset?, ...) -> {dataset=v2 id, rows}；列集经意图参数可选（v1 缺省全部写回列）
+static int l_py_writeback(lua_State *L)
+{
+    ScriptFacade *f = facadeOf(L);
+    if (!f)
+        return luaL_error(L, "脚本门面不可用");
+    QVariantMap params;
+    if (lua_gettop(L) >= 1 && !lua_isnil(L, 1))
+        params.insert(QStringLiteral("dataset"), lua_tointeger(L, 1));
+    Result<QVariant> r = f->callAny(QStringLiteral("script.py.writeback"), params);
+    if (!r)
+        return luaL_error(L, "py.writeback 失败: %s", qPrintable(r.error().message));
+    pushVariant(L, r.value());
+    return 1;
+}
+
 // 组装全局 app 表（脚本直接引用它操作整个应用，类似 CLI）。
 // app 暴露：
 //   app.call(op, params?)   统一入口，意图+view action 智能路由（核心）
@@ -336,6 +438,23 @@ static void installFacade(lua_State *L)
     lua_pushcfunction(L, l_plot_render);
     lua_setfield(L, -2, "render");
     lua_setfield(L, -2, "plot");
+
+    // 全局 py 表（Python 子进程桥）：py.eval/exec/status/push/pull/writeback。
+    // 与 app 平级——双引擎分工：Lua 编排应用，Python 分析数据。
+    lua_createtable(L, 0, 6);
+    lua_pushcfunction(L, l_py_eval);
+    lua_setfield(L, -2, "eval");
+    lua_pushcfunction(L, l_py_exec);
+    lua_setfield(L, -2, "exec");
+    lua_pushcfunction(L, l_py_status);
+    lua_setfield(L, -2, "status");
+    lua_pushcfunction(L, l_py_push);
+    lua_setfield(L, -2, "push");
+    lua_pushcfunction(L, l_py_pull);
+    lua_setfield(L, -2, "pull");
+    lua_pushcfunction(L, l_py_writeback);
+    lua_setfield(L, -2, "writeback");
+    lua_setglobal(L, "py");
 
     // 同时设为 app 与 ps（同一张表，别名）。
     lua_pushvalue(L, -1);

@@ -13,8 +13,8 @@
 | M2.2 | 数据表格查看器（只读） | 大文件像 Excel 一样翻看不卡 | ✅ 已完成 |
 | M2.3 | 报告导出（一期） | 多画布 + 元数据一键导出 PDF | ✅ 已完成 |
 | M2.4 | 批量处理 | 100 个 ULog 一键跑完出汇总 | ✅ 已完成 |
-| **M2.6** | **Python 脚本引擎** | 工作台里 numpy 分析 + app.call 驱动绘图 | ⬅️ **下一步**（用户指定先于 M2.5） |
-| M2.5 | 数据编辑器（可写） | 编辑产生版本、派生自动重算、可撤销 | 暂缓（先评审后动工） |
+| M2.6 | Python 脚本引擎（子进程桥） | 工作台里 numpy 分析 + ds↔ndarray 写回 v2 | ✅ 已完成 |
+| M2.5 | 数据编辑器（可写） | 编辑产生版本、派生自动重算、可撤销 | ⬅️ **下一步**（暂缓中，先评审后动工） |
 | M3 | 工具箱打包/安装 + 首批领域包 | 非开发者能装包用包 | 规划中（依赖 M2.3/M2.4 落地） |
 
 ## 各里程碑详单
@@ -61,8 +61,16 @@
   文件上下文，脚本 return 表即指标）+ 失败明细 `{file, stage, error}`（空解析判损坏）
   + 事件循环分片（进度广播/协作式取消）+ `batch-summary` 汇总面板（进度条/取消/汇总表）
   + Ribbon「脚本→批量运行」+ CLI `--batch` JSON 双出口。
-  回归 29/29（新增 ng_batch 与 ng_test_gui 批量块）。提交见 git log。
+  回归 29/29（新增 ng_batch 与 ng_test_gui 批量块）。提交 `8ef4b63`。
+- M2.6 Python 脚本引擎（子进程桥，路线 B）：**主进程零 libpython 依赖**——常驻
+  `python -m nextpilot_bridge` 子进程（JSON-line 协议，崩溃/超时自动重启杀）+
+  `/dev/shm` f64 文件旁路（100 万行 push 26ms / pull 7ms，硬线 200ms）+
+  `script.py.*` 意图族（eval/exec/status/push/pull/writeback）+ Lua `py.*` 表 +
+  编辑器 `.py` 文档（Python 高亮、F5 按后缀路由 Python 引擎、输出进控制台）+
+  `ds['col']`→ndarray 注入、`ds['新列']=...` 写回落成 `"<原名> (py v2)"` 数据集
+  （原快照零改动，衔接 M2.5 版本化）。回归 30/30（新增 ng_test_python 与
+  ng_test_gui Python 块）。
 - 外壳顺手修复：requestPanel 按 (area, panelType) 去重（重复打开=聚焦）；
   停靠页签标题用面板自注册标题（消灭重复的"属性"/"数据源"）；调试暂停自动置前调试面板。
 
-回归基线：Release/Debug 均 29/29 全绿（ng/ 新架构）。
+回归基线：Release/Debug 均 30/30 全绿（ng/ 新架构）。

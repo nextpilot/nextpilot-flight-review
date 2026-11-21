@@ -19,6 +19,8 @@ add_library(ng_module_script OBJECT
     ScriptModule.cpp
     LuaEngine.cpp
     BatchRunner.cpp
+    PythonBridge.cpp
+    PythonHandler.cpp
     FilterEngine.cpp
     FilterCatalogue.cpp
     MarkerEngine.cpp
@@ -28,6 +30,8 @@ add_library(ng_module_script OBJECT
     ScriptModule.h
     LuaEngine.h
     BatchRunner.h
+    PythonBridge.h
+    PythonHandler.h
     FilterEngine.h
     FilterCatalogue.h
     MarkerEngine.h
@@ -37,6 +41,13 @@ add_library(ng_module_script OBJECT
 target_include_directories(ng_module_script PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_module_script PUBLIC ng_host ng_context lua::lua Qt6::Core ${CMAKE_DL_LIBS})
 set_target_properties(ng_module_script PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+
+# Python 桥模块内嵌 qrc：运行时解压到临时目录，PYTHONPATH 指过去（python -m 启动）。
+qt_add_resources(ng_module_script "ng_python_bridge"
+    PREFIX "/script"
+    BASE resources
+    FILES resources/nextpilot_bridge.py
+)
 
 # 功能专属视图：四个工作台停靠面板（files/editor/console/debug），
 # 独立 target、只被 GUI 与 GUI 测试链接——headless（CLI）不碰 Widgets。
