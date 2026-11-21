@@ -7,6 +7,7 @@
 #include "DataSource.h"
 #include "Dataset.h"
 #include "DatasetRegistry.h"
+#include "McapCodec.h"
 #include "Intent.h"
 #include "Result.h"
 #include "SourceRegistry.h"
@@ -198,6 +199,36 @@ int main(int argc, char **argv)
     }
     CHECK(QFile(rawPath).size() >= 160);
     CHECK(QFile(mcapPath).size() > 0);
+    // AC-07（字节级自洽）：mcap 回读出 20 条消息，拼接后与 raw 文件正文逐字节相同。
+    // 说明：raw 文件外面套了一层 PSRAW1 头（16B），故只比正文 160B。
+    {
+        rec::McapPlayer player;
+        CHECK(player.open(mcapPath));
+        QByteArray joined;
+        int msgs = 0;
+        rec::McapMessage msg;
+        QString perr;
+        while (player.nextMessage(msg, &perr))
+        {
+            joined += msg.data;
+            ++msgs;
+            std::printf("  mcap msg[%d] topic=%s len=%d\n", msgs - 1, qPrintable(msg.topic),
+                        int(msg.data.size()));
+        }
+        QFile rf(rawPath);
+        CHECK(rf.open(QIODevice::ReadOnly));
+        const QByteArray rawAll = rf.readAll();
+        const QByteArray rawBody = rawAll.right(160);
+        std::printf("mcap back: msgs=%d joined=%d raw_file=%d (body=160)\n", msgs,
+                    int(joined.size()), int(rawAll.size()));
+        // 注意：mcap 消息粒度是"泵批次"而非单帧（一条消息可含多帧），
+        // 所以这里断言的是字节级自洽；"回读成 20 行"要等 schema 自包含回放（另卡）。
+        CHECK(msgs >= 1);
+        CHECK(joined.size() == 160);             // 字节数一致
+        CHECK(joined == rawBody);                // 逐字节无损
+        if (!perr.isEmpty())
+            std::printf("mcap back err=%s\n", qPrintable(perr));
+    }
     // 停止后源上的 recordings 应被清空（不再显示录制中）。
     if (const DataSourceInfo *rinfo = ctx.sources().get(srcId))
         CHECK(rinfo->recordings.isEmpty());
