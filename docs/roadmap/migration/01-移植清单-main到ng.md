@@ -46,11 +46,11 @@
 | T1.3 | 流控与统计：pause / resume / reconnect / 速率 / 丢帧计数 | **已完成** 2026-11-21 / `f032b81`：pause/resume/reconnect + Hz/KB/s/packets/bytes/fed_bytes 已实测；丢帧计数分两层——`dropped_bytes`（环满丢最旧，应用层背压，实测可读）+ `parse_errors`（解析器通道错误）；内核 UDP 丢包仍在 socket 层递交给内核处理，不做自造补算 | T1.2 | AC-03 |
 | T1.4 | 意图 op：connect/disconnect/pause/resume/reconnect/rate.set/config/list | **已完成** 2026-11-21：`data.connect`（udp/serial/tcp）、`data.disconnect`、`data.pause/resume`、`data.reconnect`、`data.source.list`、`data.live.stats`、`data.rate.set`（hz 1..200 → 泵 interval）、`data.config`（bufferBytes / pumpBudget 热改）全部落地并单测 | T1.2 | AC-04 |
 | T1.5 | UI：数据页入口 + 连接对话框 | **已完成** 2026-11-21 / `e32101c`：标题行「＋」菜单 + 空态按钮接真对话框；UDP/TCP/串口字段互斥显隐、解析器取自 ParserRegistry（默认 custom-protocol）；提交走 `data.connect`，失败就地红字。截图 `verify/ng_live_dlg_udp.png`、`ng_live_dlg_serial.png` | T1.4 | AC-05 |
-| T1.6 | 数据面板状态行：源状态、速率、字节、错误 | **部分完成** `e32101c`：底部状态行已实现（800ms 轮询 stats，●/⏸/⚠ 三态、无会话隐藏）；**缺有 live 会话窗口的截图确认**（左 dock 默认页被脚本库占用） | T1.5 | AC-06 |
+| T1.6 | 数据面板状态行：源状态、速率、字节、错误 | **已完成** 2026-11-21 / `826a4de`：800ms 轮询 stats + `data.record.list`；live 绿点、录制红点、暂停 ⏸、错误 ⚠、背压标注、无会话隐藏；录制段置前（窄 dock 尾部会被裁）。截图：录制组三组齐显、状态行两段共存 | T1.5 | AC-06 |
 | **M2 录制** | | | | |
-| T2.1 | 录制编排器：`DataSourceInfo::recordings` → `Recorder::create` → 每帧 `writeMessage/writeBytes` | M | T1.2 | AC-07 |
-| T2.2 | 意图：`data.record.start/stop/list`（含 format×backend×endpoint 多路） | S | T2.1 | AC-08 |
-| T2.3 | UI：数据页"录制"组（开始/停止/配置）+ 状态与已写字节数 + 录制中红点 | S | T2.2 | AC-09 |
+| T2.1 | 录制编排器：源 → `Recorder::create` → 泵内写字节 | **已完成** / `f91acf6`：`pumpLive` **先录后解析**（录制与解析吃同一块字节）；disconnect 自动收口该源所有录制；mcap 回读字节级自洽（`77fa6cc`）。注：粒度=泵批次、schema 为空 → 自包含回放待补 | T1.2 | AC-07 |
+| T2.2 | 意图：`data.record.start/stop/list`（含 format×backend×endpoint 多路） | **已完成** / `f91acf6`：raw+mcap × file 两路同开（160B/160B），`stop` 返回 list=2，停后源 `recordings` 清空。`udp` 后端组合尚未实测 | S | AC-08 |
+| T2.3 | UI：数据页"录制"组 + 状态与已写字节 | **已完成** / `826a4de`：组必须排在「来源」gallery **之前**（排后面会被挤成折叠 ▾，实测过）；状态行红点段读 `data.record.list`。按钮自身无两态（红点在状态行），配置入口走 CLI/脚本参数 | T2.2 | AC-09 |
 | **M3 时间对齐** | | | | |
 | T3.1 | per-source 时间偏移：**偏移只存宿主态**（不修改原始时间戳，画布在 push 副本上叠加） | **已完成** 2026-11-21 / `dadf3f3`→`3f4a72c` 收敛 | — | AC-10 |
 | T3.2 | 对齐策略：设为基准 / 对齐起点 / 对齐终点 / 对齐中心 / 重置 | **已完成** 2026-11-21 / `3f4a72c`（5 策略在 `alignTime`，基准缺省取活动源） | T3.1 | AC-11 |
@@ -90,8 +90,8 @@
 
 | 里程碑 | 任务卡数 | 已完成 | 部分完成 | 未开始 | 完成率 | 说明 |
 |---|---|---|---|---|---|---|
-| M1 实时源 | 6 | 5 | 1 | 0 | 83% | T1.1 三前端 + T1.2 环/泵 + T1.3 统计 + T1.4 意图族全落地（`f032b81`）；T1.5 连接对话框、T1.6 状态行仍缺（UI 卡）；**流式解析器**只有 csv/custom-protocol/ulog（无 MAVLink，用户明确判定为“业务”不在底座范围） |
-| M2 录制 | 3 | 0 | 0 | 3 | 0% | 引擎已存在，只差接线，可紧跟 M1 |
+| M1 实时源 | 6 | 6 | 0 | 0 | 100% | T1.1 三前端 + T1.2 环/泵 + T1.3 统计 + T1.4 意图族（`f032b81`）+ T1.5 连接对话框（`e32101c`）+ T1.6 状态行（`826a4de`）；**流式解析器**只有 csv/custom-protocol/ulog（无 MAVLink，用户明确判定为"业务"不在底座范围） |
+| M2 录制 | 3 | 3 | 0 | 0 | 100% | T2.1 泵内接线 + T2.2 意图族（`f91acf6`）+ T2.3 录制组与状态行（`826a4de`）；缺口：mcap 无 schema 自包含 → AC-07 回读行数未过 |
 | M3 时间对齐 | 5 | 5 | 0 | 0 | 100% | T3.1 偏移收敛 AppContext、T3.2 五策略、T3.3 意图+树右键、T3.4 CSV 导出叠加、T3.5 选格 |
 | M4 数据工程 | 5 | 0 | 0 | 5 | 0% | 依赖 T3.1 的 offset 语义，顺序上排在 T3 之后 |
 | M5 比对交互 | 7 | 2 | 1 | 4 | 29% | T5.5/T5.7 完成、T5.6 部分；T5.1–T5.4 未动 |

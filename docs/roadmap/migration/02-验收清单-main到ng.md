@@ -3,7 +3,7 @@
 > 配套 `移植清单-main到ng.md`。每条 AC 标注对应任务 ID、执行方式、判定标准、证据留存。
 > **无硬件的专项**：实时源验收一律用 UDP 打流替代真机；真机只在 AC-27 做附加确认。
 >
-> **当前进度（2026-11-21，`f032b81` 已推送）**：33 条验收项中 **7 条通过（AC-02、AC-03、AC-04、AC-05、AC-10、AC-27、AC-29）、5 条部分通过（AC-06、AC-10B、AC-11、AC-12、AC-28a）**，通过率 21%（含部分 36%）。M1（实时源）除两张 UI 卡外已全部有证据；M2/M4/M6/M7/M8 尚未开始。
+> **当前进度（2026-11-21，`77fa6cc` 已推送）**：33 条验收项中 **8 条通过（AC-02、AC-03、AC-04、AC-05、AC-06、AC-10、AC-27、AC-29）、6 条部分通过（AC-07、AC-08、AC-09、AC-10B、AC-11、AC-12、AC-28a）**，通过率 24%（含部分 42%）。M1 已 100%；M2 三张卡代码落地，但 AC-07 的"读回行数"受 mcap 无 schema 自包含所限未过。
 > 编译 0 error，`ctest -j1` **27/27** 全绿（每次推送前必跑；27 条含脚本工作台用例与本轮新增 `ng_test_live_udp`）。
 
 
@@ -76,28 +76,34 @@ ctest --test-dir build-ng -j 1
 - 判定：截图肉眼核 + `--list-slots` 输出含实时源插槽。
 - 证据：`ac05.png`。
 
-### AC-06 状态可见（T1.6）
-- 期望：连接后左 dock 源节点显示 `Streaming · 100Hz · 12.4KB/s`；断开显示 `Closed`；失败显示 `Error: <原因>`。
-- 判定：截图 + 状态文本与 `data.source.list` 字段一一对应（不许出现套话）。
+### AC-06 状态可见（T1.6）— ✅ 通过
+- 期望：连接后显示状态/速率/字节；断开/失败有明确落点。
+- 实况：底部状态行（`QLabel#liveStatus`）800ms 轮询 `data.live.stats`，文本 `● 名称 · Hz · KB/s · N 包`；暂停 `⏸`、错误 `⚠`、背压追加"背压"、无会话隐藏。
+- 判定与证据：状态行文本字段与 `data.live.stats` 返回键一一对应（`hz` / `kb_s` / `packets` / `pending_bytes` / `dropped_bytes` / `backpressure` / `error` / `paused`）；数字正确性由 `ng_test_live_udp` 断言（实测 `hz=10.27 kb_s=0.08 packets=25`），排版由截图 `shot_rec7` 的裁图确认（`● raw 0.0 KB · ● live-demo · 0.0 Hz · 0.0 KB/s · 0 包`）。
+- 边界：截图进程是一次性进程，活不到收帧，故截图里数字为 0——不构成"数字对不上"，数字由单测覆盖。
 
 ---
 
 ## 2 M2 录制
 
-### AC-07 录制自洽（T2.1，**最硬一条**）
+### AC-07 录制自洽（T2.1，**最硬一条**）— 🟡 部分（字节级已过，行数未过）
 - 步骤：UDP 打流 10s@100Hz 同时录制 `mcap` 与 `raw` 两路 → 停止 → `data.load` 读回 mcap。
 - 期望：回读 mcap 的**表数量**与源相同，主力表**行数 = 源行数 ±1%**；`raw` 文件字节数等于 `bytesWritten`。
 - 判定：job 内先 `income` 后 `回读`，两个 datasetId 分别 `data.series` 取行数比对，输出 `delta` 字段。
 - 证据：`ac07-*.json` + 两个录制文件（小体积可直接归档）。
+- **已过的部分（`77fa6cc`）**：UDP 20 帧同时录 raw+mcap → stop → 读回 mcap 全部消息并拼接，与 raw 正文 160B **逐字节相同**（raw 文件 176B = 160B 正文 + 16B PSRAW1 头），`bytesWritten` 与落盘一致。
+- **未过的部分（真缺陷，不是口径问题）**：mcap 里 20 帧只成 **6 条消息**（一条消息含多帧，粒度=泵批次），且 Schema 记录写的是 `{}` → 回放拿不到模板，**无法把 160B 解成 20 行**。补法：录制时把模板 JSON 写入 mcap Schema（`Recorder::create` 已有 headerJson 入参，当前被忽略），`data.load` 侧按 schema 选解析器。
 
-### AC-08 多路录制意图（T2.2）
+### AC-08 多路录制意图（T2.2）— 🟡 部分（2 路已过，udp 后端未测）
 - 步骤：一次 `data.record.start` 带 3 个 target：`{mcap,file}`、`{raw,file}`、`{raw,udp}`。
 - 期望：三路同时工作，`list` 返回 3 条各自 `bytesWritten>0`；停止后 3 条 `closed:true`。
 - 判定：udp 那路用 `nc -ul 5600` 收到字节数 >0 佐证。
+- 实况：`{raw,file}` + `{mcap,file}` 两路同开已实测（各 160B、`list` 2 条、stop 后 `recordings` 清空）；`{raw,udp}` 后端组合未实测，故记部分。
 
-### AC-09 录制 UI（T2.3）
+### AC-09 录制 UI（T2.3）— 🟡 部分（组与红点已过，置灰未做）
 - 期望：数据页出现「录制」组（开始/停止/配置），录制中按钮变红点 + 已写 MB 实时跳；未连接源时按钮**置灰不可点**（不弹错误）。
 - 判定：截图两态（未连接灰 / 录制中红点）。
+- 实况：数据页「录制」组已渲染（开始/停止两动作，绑 `data.record.start/stop`）；录制中红点落在**状态行**（`● raw 0.0 KB`，读 `data.record.list` 的 open 条目），按钮本身无两态；未连接源时按钮未置灰（点了会走缺省活动源，无活动源则返回错误）。
 
 ---
 
@@ -300,10 +306,10 @@ ctest --test-dir build-ng -j 1
 - [x] AC-03 pause/resume/reconnect/速率 — pause 期 packets 不增、reconnect 同 dataset、rate/config 断言（`f032b81`）
 - [x] AC-04 意图族 + 非法参数 — 9 op 全 ok；4 条非法输入全被拒且不崩（`f032b81`）
 - [x] AC-05 实时源入口 + 连接对话框 — 「＋」/空态按钮；UDP↔串口互斥无残留空行；真连接建源成功（`e32101c`）
-- [~] AC-06 源状态行 — 已实现（●/⏸/⚠ 三态），缺 live 会话窗口截图（`e32101c`）
-- [ ] AC-07 录制 mcap 回读自洽
-- [ ] AC-08 三路录制并存
-- [ ] AC-09 录制按钮两态
+- [x] AC-06 源状态行 — 已实现并截图；数字由 stats 断言覆盖（`826a4de`）
+- [~] AC-07 录制 mcap 回读自洽 — 字节级逐字节相同已过（`77fa6cc`）；"读回 20 行"待 schema 自包含
+- [~] AC-08 三路录制并存 — raw+mcap×file 两路已过；raw×udp 未测（`f91acf6`）
+- [~] AC-09 录制按钮两态 — 组与状态行红点已过；按钮两态/置灰未做（`826a4de`）
 - [x] AC-10 对齐不破坏存储（reset 逐点还原）— **实测逐字节还原**：同一源导出 → end 对齐 → 导出 → reset → 导出，首末两次 `cmp` 完全相同（offset 只存 AppContext，Dataset 零改写）
 - [~] AC-11 五项对齐动作 — end 实测 offset=+11.596s（params 0.4→flight 11.996）；start/center 同一代码路径未逐条实跑；reset 由 AC-10 证；GUI 子菜单 5 项受 Xvfb 悬停限制未截到（父菜单+箭头已实拍）
 - [~] AC-12 意图 + 对齐后画布立即刷新 — `data.time.align` 已注册并实跑；画布刷新走 `sourceTimeOffsetChanged`→`refreshSourceOffsets`→`pushToPlot`（不重建曲线，颜色/可见性保留），只是没做 x 轴像素级前后对照
