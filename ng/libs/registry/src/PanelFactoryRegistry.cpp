@@ -16,13 +16,28 @@ registry::Registry<PanelFactoryRegistry::Factory> &factories()
 {
     return registry::StaticRegistry<PanelFactoryRegistry::Factory>::table;
 }
+
+// 面板标题表：与工厂同批自注册的纯数据（停靠/中央页签的显示标题）。
+// [静态纪律·合法形态] 进程一份、装满后只读。
+registry::Registry<QString> &titles()
+{
+    return registry::StaticRegistry<QString>::table;
+}
 } // namespace
 
-void PanelFactoryRegistry::registerPanel(const QString &type, Factory factory)
+void PanelFactoryRegistry::registerPanel(const QString &type, Factory factory, const QString &title)
 {
     if (type.isEmpty() || !factory)
         return;
     factories().insert(type, std::move(factory)); // 重复 id 由 Registry 保证「先到者为准」
+    if (!title.isEmpty())
+        titles().insert(type, title);
+}
+
+QString PanelFactoryRegistry::title(const QString &type)
+{
+    const QString *t = titles().find(type);
+    return t ? *t : QString();
 }
 
 QWidget *PanelFactoryRegistry::create(const QString &type, nextpilot::plotscope::context::AppContext &appCtx,

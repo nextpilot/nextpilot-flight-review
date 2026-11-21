@@ -306,6 +306,36 @@ Result<TransformDescriptor> LuaScriptLibrary::save(const QString &name, const QB
     return r;
 }
 
+QStringList LuaScriptLibrary::list() const
+{
+    if (m_opsDir.isEmpty())
+        return {};
+    QDir dir(m_opsDir);
+    if (!dir.exists())
+        return {};
+    QStringList names;
+    const QStringList files = dir.entryList({QStringLiteral("*.lua")}, QDir::Files, QDir::Name);
+    for (const QString &file : files)
+        names << QFileInfo(file).completeBaseName();
+    return names;
+}
+
+Result<void> LuaScriptLibrary::remove(const QString &name)
+{
+    if (!validScriptName(name))
+        return fail(err::BadName,
+                    QStringLiteral("脚本名只准小写字母/数字/下划线/短横线，长度 1..64"));
+    const QString path = QDir(m_opsDir).filePath(name + QStringLiteral(".lua"));
+    QFile f(path);
+    if (!f.exists())
+        return fail(err::NoEnt, QStringLiteral("脚本不存在: %1").arg(name));
+    if (!f.remove())
+        return fail(err::Io, QStringLiteral("无法删除脚本: %1").arg(path));
+    // descriptor 与文件同名（save/loadAll 均如此），同步摘除保持注册表一致。
+    m_transforms.removeDescriptor(descriptorId(name));
+    return Result<void>();
+}
+
 QByteArray LuaScriptLibrary::resolveSource(const QString &scriptId,
                                            const QString &snapshot) const
 {

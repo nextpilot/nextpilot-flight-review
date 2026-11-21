@@ -145,6 +145,27 @@ int main(int argc, char **argv)
     CHECK(!invalid.ok());
     CHECK(invalid.error().code == QStringLiteral("ebadname"));
 
+    // --- 9. list()：目录列举（不含后缀、按名称排序） ---
+    fileLib.save(QStringLiteral("alpha"), scriptWithDescribe());
+    const QStringList listed = fileLib.list();
+    CHECK(listed.contains(QStringLiteral("saved_gain")));
+    CHECK(listed.contains(QStringLiteral("alpha")));
+    CHECK((listed == QStringList{QStringLiteral("alpha"), QStringLiteral("saved_gain")}));
+
+    // --- 10. remove()：删文件 + 同步摘除 descriptor ---
+    const Result<void> removed = fileLib.remove(QStringLiteral("alpha"));
+    CHECK(removed.ok());
+    CHECK(!QFile::exists(QDir(tmp.path()).filePath(QStringLiteral("alpha.lua"))));
+    CHECK(!transforms.contains(QStringLiteral("lua.alpha")));
+    CHECK(!fileLib.list().contains(QStringLiteral("alpha")));
+    // 不存在/非法名各给明确报错
+    const Result<void> missing = fileLib.remove(QStringLiteral("alpha"));
+    CHECK(!missing.ok());
+    CHECK(missing.error().code == QStringLiteral("enoent"));
+    const Result<void> badName = fileLib.remove(QStringLiteral("../x"));
+    CHECK(!badName.ok());
+    CHECK(badName.error().code == QStringLiteral("ebadname"));
+
     if (g_fail == 0)
         std::printf("test_lua_script_library: ALL PASS\n");
     else

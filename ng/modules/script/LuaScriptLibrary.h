@@ -46,6 +46,12 @@ public:
     // 保存脚本到 opsDir/<name>.lua，describe 后注册 descriptor。name 只准安全字符。
     Result<TransformDescriptor> save(const QString &name, const QByteArray &source);
 
+    // 列出脚本库里的脚本名（不含 .lua 后缀，按名称排序）。目录不存在返回空。
+    QStringList list() const;
+
+    // 删除脚本文件并同步摘除 descriptor。name 为空/非法/不存在均报错。
+    Result<void> remove(const QString &name);
+
     // 解析请求的 Lua 源码：优先文件（scriptId → opsDir/<scriptId>.lua），缺失用快照兜底。
     // 返回最终要喂给求值器的源码；outRefresh 给调用方回填快照。
     QByteArray resolveSource(const QString &scriptId, const QString &snapshot) const;

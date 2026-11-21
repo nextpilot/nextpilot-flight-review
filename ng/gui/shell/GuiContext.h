@@ -32,7 +32,7 @@ public:
     // nextpilot::plotscope::host::UiContext
     void placePanel(QWidget *widget, const QString &area,
                     const QString &titleOverride = QString()) override;
-    void placeCanvas(QWidget *widget) override;
+    void placeCanvas(QWidget *widget, const QString &titleOverride = QString()) override;
     void declareSlot(const QString &area, const QString &label, nextpilot::plotscope::registry::SlotKind kind,
                      const QString &parentArea = QString()) override;
     void addAction(const nextpilot::plotscope::registry::UiAction &action) override;

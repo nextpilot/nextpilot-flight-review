@@ -48,11 +48,15 @@ public:
                                             QWidget *parent)>;
 
     // 注册一种部件类型。重复注册以先到者为准。
-    static void registerPanel(const QString &type, Factory factory);
+    // title：面板显示标题（停靠页签/中央页签用），纯数据，随注册一次给定。
+    static void registerPanel(const QString &type, Factory factory, const QString &title = QString());
 
     // 按类型创建部件；未注册返回 nullptr。
     static QWidget *create(const QString &type, nextpilot::plotscope::context::AppContext &appCtx,
                            nextpilot::plotscope::intent::IIntentExecutor &executor, QWidget *parent);
+
+    // 已注册部件类型的显示标题；未注册/未给标题返回空串。
+    static QString title(const QString &type);
 
     // 已注册的部件类型（诊断/测试用）。
     static QStringList types();
@@ -71,13 +75,25 @@ public:
 //     QWidget *createDatasetTreePanel(AppContext &, IIntentExecutor &, QWidget *);
 //
 // 这样新增视图 = 新增一个目录与一个文件，外壳与其它视图不动。
-#define NG_REGISTER_PANEL(TypeId, VarName, Fn)                                         \
-    namespace {                                                                        \
-    const bool g_ng_panel_reg_##VarName = [] {                                         \
-        ::nextpilot::plotscope::registry::PanelFactoryRegistry::registerPanel(                                 \
-            QStringLiteral(TypeId), &Fn);                                              \
-        return true;                                                                   \
-    }();                                                                               \
+#define NG_REGISTER_PANEL(TypeId, VarName, Fn)                                           \
+    namespace                                                                            \
+    {                                                                                    \
+    const bool g_ng_panel_reg_##VarName = [] {                                           \
+        ::nextpilot::plotscope::registry::PanelFactoryRegistry::registerPanel(                                    \
+            QStringLiteral(TypeId), &Fn);                                                \
+        return true;                                                                     \
+    }();                                                                                 \
+    }
+
+// 带标题版本：标题作停靠/中央页签的显示文本（如"脚本编辑器"）。
+#define NG_REGISTER_PANEL_T(TypeId, VarName, Fn, Title)                                  \
+    namespace                                                                            \
+    {                                                                                    \
+    const bool g_ng_panel_reg_##VarName = [] {                                           \
+        ::nextpilot::plotscope::registry::PanelFactoryRegistry::registerPanel(                                    \
+            QStringLiteral(TypeId), &Fn, QStringLiteral(Title));                         \
+        return true;                                                                     \
+    }();                                                                                 \
     }
 
 } // namespace nextpilot::plotscope::registry

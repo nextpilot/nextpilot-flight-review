@@ -110,10 +110,14 @@ struct TransformScriptOps
     using ResolveFn = std::function<QByteArray(const QString &scriptId, const QString &snapshot)>;
     using SaveFn = std::function<Result<TransformDescriptor>(const QString &name, const QByteArray &source)>;
     using DescribeFn = std::function<Result<TransformDescriptor>(const QByteArray &source, const QString &name)>;
+    using ListFn = std::function<QStringList()>;
+    using RemoveFn = std::function<Result<void>(const QString &name)>;
 
     ResolveFn resolve;  // 文件源码优先、快照兜底
     SaveFn save;        // 写 scripts/ops/<name>.lua 并注册
     DescribeFn describe; // 只解析 describe()，不落盘
+    ListFn list;        // 列出脚本库里的脚本名（工作台列表区）
+    RemoveFn remove;    // 删除脚本并同步摘除 descriptor（失败带原因）
 
     bool valid() const { return static_cast<bool>(resolve) && static_cast<bool>(save) && static_cast<bool>(describe); }
 };
@@ -133,6 +137,8 @@ public:
     // 按能力过滤：UI 选择器只列这些——这是"防止选错"的核心接口。
     QList<TransformDescriptor> byCapability(TransformCapability cap) const;
     QStringList idsByCapability(TransformCapability cap) const;
+    // 摘除一个 descriptor（脚本库删除时用）。返回 false=不存在。
+    bool removeDescriptor(const QString &id);
     // 清空并重建内置算子（内置永远可用；Lua 项需重新注册）。
     void clear();
 

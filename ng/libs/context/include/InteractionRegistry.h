@@ -74,6 +74,13 @@ public:
     bool hasTransformScriptOps() const { return m_transformScriptOps.valid(); }
     const TransformScriptOps &transformScriptOps() const { return m_transformScriptOps; }
 
+    // op 目录：速查面板/自动补全的数据源。存 provider 而非快照——意图 handler
+    // 是各模块 initialize 时逐个注册的，快照会漏掉后注册者；调用时实时拉取，
+    // 保证目录与实际可执行意图一致。
+    using OpCatalogueFn = std::function<QStringList()>;
+    void registerOpCatalogue(OpCatalogueFn fn);
+    QStringList opCatalogue() const; // 未注册返回空表
+
 private:
     QHash<QString, ViewActionHandler> m_viewActions;
     QHash<int, PropertyProvider> m_propertyProviders;
@@ -82,6 +89,7 @@ private:
     TransformScriptOps m_transformScriptOps;
     FilterOps m_filterOps;
     MarkerOps m_markerOps;
+    OpCatalogueFn m_opCatalogue;
 };
 
 } // namespace nextpilot::plotscope::context

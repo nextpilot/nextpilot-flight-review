@@ -60,8 +60,10 @@ public:
     // 按插槽数据把内容停靠到指定区域；同区域重复停靠合并成标签页。
     void dock(const QString &area, const QString &title, QWidget *content);
 
-    // 中央内容（画布区）。
-    void setCentralContent(QWidget *content);
+    // 中央内容（画布区）。首个到达者占据中央 dock（画布）；之后到达的
+    // （如脚本编辑器）并成同区页签、与画布平级——写代码需要全宽，
+    // 这是"中央区页签化"（方案 A）的入口。title 为后续页签的显示文本。
+    void setCentralContent(QWidget *content, const QString &title = QString());
 
     // 重新绑定 ribbon（插槽或动作变化后调用）。
     void rebuildRibbon();
@@ -72,9 +74,13 @@ public:
 
     // 面板内容与标题（诊断/测试用）。
     QWidget *panelWidget(const QString &area) const;
+    // 该停靠区**全部**面板（同侧页签化的每个成员；属性/脚本调试等并列时逐个可查）。
+    QList<QWidget *> panelWidgets(const QString &area) const;
 
     // 中央内容（画布区）——不在 dock 体系里，故单独暴露。
     QWidget *centralContent() const { return m_centralContent; }
+    // 中央区**全部**页签内容（画布 + 按需创建的脚本编辑器等）。
+    QList<QWidget *> centralWidgets() const;
     QString panelTitle(const QString &area) const;
     int panelCount() const { return m_panels.size(); }
 

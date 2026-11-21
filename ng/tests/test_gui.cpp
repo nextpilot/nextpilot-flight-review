@@ -16,6 +16,7 @@
 
 #include "DataManagerPanel.h"
 #include "ImportDialog.h"
+#include "ScriptPanels.h"
 #include "GuiContext.h"
 #include "MainWindow.h"
 #include "views/PropertyPanel.h"
@@ -381,15 +382,21 @@ int main(int argc, char *argv[])
         OK("模块侧闭环：按领域查清单 -> 按 id 请求面板成功；dock.right 主位归属性面板");
     }
 
-    // --- 3d) 属性面板：dock.right 主面板 + 统一 selection 联动 ---
+    // --- 3d) 属性面板：dock.right 页签之一 + 统一 selection 联动 ---
     {
         CHECK(binder->panelWidget(QStringLiteral("dock.right")) != nullptr);
-        CHECK(binder->panelTitle(QStringLiteral("dock.right")) == QStringLiteral("属性"));
+        // dock.right 可能并列多个页签（属性 + 脚本调试等，模块激活顺序不定），
+        // 按类型查找属性面板，不依赖注册先后。
+        PropertyPanel *propPanel = nullptr;
+        for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.right")))
+        {
+            if (!propPanel)
+                propPanel = qobject_cast<PropertyPanel *>(w);
+        }
         CHECK(nextpilot::plotscope::registry::PanelFactoryRegistry::types()
                   .contains(QStringLiteral("property-panel")));
 
         // 统一 selection 联动：选中画布 -> 属性面板按 kind 找 provider 显示 schema。
-        auto *propPanel = qobject_cast<PropertyPanel *>(binder->panelWidget(QStringLiteral("dock.right")));
         CHECK(propPanel != nullptr);
         Selection canvasSel;
         canvasSel.kind = SelectionKind::Canvas;
@@ -408,14 +415,53 @@ int main(int argc, char *argv[])
     CHECK(!binder->panelTitle(QStringLiteral("dock.left")).isEmpty());
     OK("停靠区就位：左栏有数据集面板且标题正确");
 
+    // --- 4b) 脚本工作台：侧栏面板就位 + 编辑器按需创建（中央区锚定画布）---
+    {
+        // 侧栏三面板随 attach 挂上（与既有面板同侧并成页签，顺序不定，按类型查）。
+        bool hasFiles = false, hasConsole = false, hasDebug = false;
+        for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.left")))
+            hasFiles = hasFiles || qobject_cast<nextpilot::plotscope::script::ScriptFilesPanel *>(w) != nullptr;
+        for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.bottom")))
+            hasConsole = hasConsole || qobject_cast<nextpilot::plotscope::script::ScriptConsolePanel *>(w) != nullptr;
+        for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.right")))
+            hasDebug = hasDebug || qobject_cast<nextpilot::plotscope::script::ScriptDebugPanel *>(w) != nullptr;
+        CHECK(hasFiles);
+        CHECK(hasConsole);
+        CHECK(hasDebug);
+
+        // 编辑器**按需创建**：初始中央区只有画布；经模块通道新建文档后出现编辑器页签。
+        CHECK(binder->centralWidgets().size() == 1);
+        QVariantMap p;
+        p.insert(QStringLiteral("name"), QStringLiteral("tgui_doc"));
+        Result<QVariant> out{QVariant()};
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("script.workbench.new"), p, out));
+        CHECK(binder->centralWidgets().size() == 2);
+        nextpilot::plotscope::script::ScriptEditorPanel *editor = nullptr;
+        for (QWidget *w : binder->centralWidgets())
+        {
+            if (!editor)
+                editor = qobject_cast<nextpilot::plotscope::script::ScriptEditorPanel *>(w);
+        }
+        CHECK(editor != nullptr);
+        CHECK(editor->documentCount() == 1);
+        CHECK(editor->currentDocumentName() == QStringLiteral("tgui_doc"));
+        OK("脚本工作台：三侧栏就位；编辑器按需创建进中央页签，画布仍是首签");
+    }
+
     // --- 5) 数据源面板：源列表 + 详情树（源 → 数据集 → 表 → 列）---
     //
     // 走**真实加载路径**（data.load 意图）——因为"数据集归属哪个源"只有走
     // 摄取管道才会产生：直接往仓库塞数据集是测不到源列表的。
     // 面板由器官 requestPanel 申请、由视图层自注册的工厂创建——
-    // MainWindow 不认识它，这里从插槽区取回。
-    auto *panel = qobject_cast<DataManagerPanel *>(
-        binder->panelWidget(QStringLiteral("dock.left")));
+    // MainWindow 不认识它，这里从插槽区取回（dock.left 可能并列脚本文件
+    // 面板且顺序不定，按类型查找）。
+    DataManagerPanel *panel = nullptr;
+    for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.left")))
+    {
+        if (!panel)
+            panel = qobject_cast<DataManagerPanel *>(w);
+    }
     CHECK(panel != nullptr);
 
     const QString fixture =

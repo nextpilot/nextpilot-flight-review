@@ -270,6 +270,11 @@ QStringList TransformRegistry::idsByCapability(TransformCapability cap) const
     return ids;
 }
 
+bool TransformRegistry::removeDescriptor(const QString &id)
+{
+    return m_entries.remove(id);
+}
+
 void TransformRegistry::clear()
 {
     m_entries.clear();

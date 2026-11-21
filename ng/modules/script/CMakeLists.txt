@@ -35,3 +35,14 @@ add_library(ng_module_script OBJECT
 target_include_directories(ng_module_script PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_module_script PUBLIC ng_host ng_context lua::lua Qt6::Core ${CMAKE_DL_LIBS})
 set_target_properties(ng_module_script PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+
+# 功能专属视图：四个工作台停靠面板（files/editor/console/debug），
+# 独立 target、只被 GUI 与 GUI 测试链接——headless（CLI）不碰 Widgets。
+# ScriptPanels 通过 NG_REGISTER_PANEL_T 自注册到 core 的工厂表，与器官解耦；
+# 层契约：不链接 ng_module_script（同层横向禁止）——执行/REPL 经 viewAction
+# script.workbench.* 回模块，面板只依赖 ng_context 的机制头。
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
+add_library(ng_module_script_gui OBJECT ScriptPanels.cpp ScriptPanels.h)
+target_include_directories(ng_module_script_gui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ng_module_script_gui PUBLIC ng_context Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(ng_module_script_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

@@ -200,7 +200,122 @@ void ScriptModule::initialize(ModuleContext &ctx)
     ops.describe = [this](const QByteArray &source, const QString &name) {
         return m_scriptLib->describe(source, name);
     };
+    ops.list = [this]() { return m_scriptLib->list(); };
+    ops.remove = [this](const QString &name) { return m_scriptLib->remove(name); };
     ctx.host().registerTransformScriptOps(ops);
+
+    // op 目录：工作台速查面板的数据源。存 provider 实时拉取，与实际可执行意图一致
+    // （handler 是各模块 initialize 陆续注册的，快照会漏后注册者）。
+    RuntimeHost *hostPtr = &ctx.host();
+    ctx.app().interactions().registerOpCatalogue([hostPtr]() {
+        return hostPtr->registeredOps();
+    });
+
+    // 工作台执行通道：GUI 面板（编辑器/控制台）经 viewAction 调用，引擎归模块——
+    // GUI 层不直接依赖 script 模块内部类（层契约：ng_module_script_gui 禁止横向
+    // 依赖 ng_module_script），输出回显经 script.console.append 回面板。
+    registerWorkbenchActions(ctx, std::move(viewDispatcher));
+}
+
+void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::ViewActionDispatcher dispatcher)
+{
+    IIntentExecutor &executor = ctx.executor();
+    JobRecorder *recorder = ctx.recorder();
+
+    // 输出回显：经 InteractionRegistry 发 script.console.append（GUI 控制台面板注册的处理
+    // 器接收）。headless 下没有面板，viewAction 不存在——静默忽略，不影响执行。
+    nextpilot::plotscope::context::InteractionRegistry *inter = &ctx.app().interactions();
+    auto echo = [inter](const QString &text, bool error) {
+        QVariantMap p;
+        p.insert(QStringLiteral("text"), text);
+        p.insert(QStringLiteral("error"), error);
+        Result<QVariant> out{QVariant()};
+        (void)inter->dispatchViewAction(QStringLiteral("script.console.append"), p, out);
+    };
+
+    // script.workbench.run：运行编辑器当前文档。引擎每次新建（与 script.run 同路径）。
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.run"),
+        [&executor, recorder, dispatcher, echo](const QVariantMap &params) -> Result<QVariant> {
+            const QByteArray source = params.value(QStringLiteral("source")).toByteArray();
+            const QString name = params.value(QStringLiteral("name")).toString();
+            ScriptFacade facade(executor, recorder, dispatcher);
+            nextpilot::plotscope::script::LuaEngine engine(facade);
+            engine.setOutputSink([&echo](const QString &m) { echo(m, false); });
+            const Result<void> r = engine.runString(source, QStringLiteral("@%1").arg(name));
+            if (!r)
+                return fail(r.error().code, r.error().message);
+            return Result<QVariant>(QVariant(true));
+        });
+
+    // script.workbench.repl：控制台求值。持久 VM 归模块持有，进程期共享全局状态。
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.repl"),
+        [this, &executor, dispatcher, echo](const QVariantMap &params) -> Result<QVariant> {
+            const QString code = params.value(QStringLiteral("code")).toString();
+            if (!m_replEngine)
+            {
+                m_replFacade = std::make_unique<ScriptFacade>(executor, nullptr, dispatcher);
+                m_replEngine = std::make_unique<nextpilot::plotscope::script::LuaEngine>(*m_replFacade);
+                m_replEngine->setOutputSink([echo](const QString &m) { echo(m, false); });
+            }
+            const Result<QVariant> r = m_replEngine->evaluate(code);
+            if (!r)
+                return fail(r.error().code, r.error().message);
+            QVariant out;
+            if (!r.value().isNull() && r.value().isValid())
+                out = r.value();
+            return Result<QVariant>(out);
+        });
+
+    // script.workbench.open / .new：确保编辑器面板存在（按需创建进中央区页签），
+    // 再转发给编辑器面板打开/新建文档。headless 下 m_ui 为空，明确报错。
+    auto ensureEditor = [this](Result<QVariant> &out) -> bool {
+        if (!m_ui)
+        {
+            out = fail(err::Unsupported, QStringLiteral("脚本编辑器需要 GUI 环境"));
+            return false;
+        }
+        return m_ui->requestPanel(QStringLiteral("canvas.center"),
+                                  QStringLiteral("script-editor")) != nullptr;
+    };
+    nextpilot::plotscope::context::InteractionRegistry *reg = &ctx.app().interactions();
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.open"),
+        [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
+            Result<QVariant> out{QVariant()};
+            if (!ensureEditor(out))
+                return out;
+            reg->dispatchViewAction(QStringLiteral("script.open"), params, out);
+            return out;
+        });
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.new"),
+        [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
+            Result<QVariant> out{QVariant()};
+            if (!ensureEditor(out))
+                return out;
+            reg->dispatchViewAction(QStringLiteral("script.new"), params, out);
+            return out;
+        });
+}
+
+ScriptModule::~ScriptModule() = default;
+
+void ScriptModule::onAttach(UiContext &ui)
+{
+    // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
+    //
+    // 三个侧边停靠面板随 attach 挂上（与既有面板同侧自动并成页签，零外壳改动）；
+    // **编辑器不在此创建**——模块激活顺序不定，编辑器抢先会占住中央 dock、
+    // 把画布挤成页签。编辑器按需创建（首次打开/新建脚本时）：
+    // script.workbench.open / .new 先 ensureEditor 再转发给编辑器面板。
+    // 面板实现由视图层自注册（ScriptPanels.cpp 的 NG_REGISTER_PANEL_T），
+    // 模块只发字符串 id，不依赖 Qt Widgets，headless 构建保持纯净。
+    m_ui = &ui;
+    ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("script-files"));
+    ui.requestPanel(QStringLiteral("dock.bottom"), QStringLiteral("script-console"));
+    ui.requestPanel(QStringLiteral("dock.right"), QStringLiteral("script-debug"));
 }
 
 #include "ScriptModule.moc"

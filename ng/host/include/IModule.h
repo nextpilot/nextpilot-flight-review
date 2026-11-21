@@ -33,8 +33,10 @@ public:
     virtual void placePanel(QWidget *widget, const QString &area,
                             const QString &titleOverride = QString()) = 0;
 
-    // 把一个控件放进中央画布区（替换当前内容）。
-    virtual void placeCanvas(QWidget *widget) = 0;
+    // 把一个控件放进中央画布区。首个到达者占据中央区（画布本体）；
+    // 之后到达的并成中央区页签、与画布平级（如脚本编辑器）。
+    // titleOverride 为后续页签的显示标题。
+    virtual void placeCanvas(QWidget *widget, const QString &titleOverride = QString()) = 0;
 
     // 声明一个 UI 插槽（ribbon 页签/分组、停靠区、菜单）。
     // 模块用它声明自己的容器，再往里放动作——这样新增模块能自带界面入口，

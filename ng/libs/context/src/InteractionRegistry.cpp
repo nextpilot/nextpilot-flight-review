@@ -84,4 +84,14 @@ void InteractionRegistry::registerTransformScriptOps(TransformScriptOps ops)
     m_transformScriptOps = std::move(ops);
 }
 
+void InteractionRegistry::registerOpCatalogue(OpCatalogueFn fn)
+{
+    m_opCatalogue = std::move(fn);
+}
+
+QStringList InteractionRegistry::opCatalogue() const
+{
+    return m_opCatalogue ? m_opCatalogue() : QStringList();
+}
+
 } // namespace nextpilot::plotscope::context

@@ -8,6 +8,8 @@
 #include <QVector>
 #include <QString>
 
+#include <functional>
+
 struct lua_State;
 
 namespace nextpilot::plotscope::script
@@ -19,6 +21,14 @@ namespace nextpilot::plotscope::script
 class LuaEngine
 {
 public:
+    // 输出 sink：print / app.log 的去向。设置后进 sink（REPL 控制台），
+    // 不设保持旧行为（stdout/stderr，MCP stdio 桥兼容）。
+    using OutputSink = std::function<void(const QString &)>;
+    void setOutputSink(OutputSink sink) { m_sink = std::move(sink); }
+    // C 回调（print/app.log）经这两个方法路由；脚本本身拿不到引擎指针。
+    bool hasOutputSink() const { return static_cast<bool>(m_sink); }
+    void emitToSink(const QString &msg) { if (m_sink) m_sink(msg); }
+
     explicit LuaEngine(nextpilot::plotscope::context::ScriptFacade &facade);
     ~LuaEngine();
 
@@ -31,8 +41,14 @@ public:
     // 执行脚本文件。
     nextpilot::plotscope::foundation::Result<void> runFile(const QString &path);
 
+    // REPL 求值：先试 `return (expr)`，编译不过降级为整段语句。
+    // 与 runString 共用同一 VM —— 连续求值共享全局状态。
+    // 错误信息带 repl:<行号> 前缀，控制台可点击跳转。
+    nextpilot::plotscope::foundation::Result<QVariant> evaluate(const QString &source);
+
 private:
     lua_State *m_lua = nullptr;
+    OutputSink m_sink;
 };
 
 // ===== Lua 变换求值（单点 live / 批量 offline 共用）=====

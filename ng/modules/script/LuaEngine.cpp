@@ -28,6 +28,8 @@ namespace nextpilot::plotscope::script
 
 // 门面指针在 registry 中的 key。脚本拿不到它，只有 C 回调能取。
 static const char *kFacadeKey = "ng.script.facade";
+// 引擎指针在 registry 中的 key：print/app.log 输出经它路由到 sink（REPL）。
+static const char *kEngineKey = "ng.script.engine";
 
 static ScriptFacade *facadeOf(lua_State *L)
 {
@@ -35,6 +37,29 @@ static ScriptFacade *facadeOf(lua_State *L)
     auto *f = static_cast<ScriptFacade *>(lua_touserdata(L, -1));
     lua_pop(L, 1);
     return f;
+}
+
+static LuaEngine *engineOf(lua_State *L)
+{
+    lua_getfield(L, LUA_REGISTRYINDEX, kEngineKey);
+    auto *e = static_cast<LuaEngine *>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    return e;
+}
+
+// 输出去向：有 sink 走 sink（REPL 控制台），否则按旧约定走 stdout/stderr。
+// PLOTSCONG_QUIET_STDOUT：MCP stdio 桥下 stdout 是协议通道，让路到 stderr。
+static void emitOutput(lua_State *L, const QString &msg)
+{
+    if (LuaEngine *e = engineOf(L); e && e->hasOutputSink())
+    {
+        e->emitToSink(msg);
+        return;
+    }
+    if (!qEnvironmentVariableIsEmpty("PLOTSCONG_QUIET_STDOUT"))
+        fprintf(stderr, "[lua] %s\n", qPrintable(msg));
+    else
+        fprintf(stdout, "[lua] %s\n", qPrintable(msg));
 }
 
 // QVariant -> Lua 值。PlotSpec 是 QVariantMap，递归展开成 table。
@@ -172,11 +197,24 @@ static QVariant readVariant(lua_State *L, int idx)
 static int l_log(lua_State *L)
 {
     const char *msg = luaL_checkstring(L, 1);
-    // PLOTSCONG_QUIET_STDOUT：MCP stdio 桥下 stdout 是协议通道，app.log 让路到 stderr。
-    if (!qEnvironmentVariableIsEmpty("PLOTSCONG_QUIET_STDOUT"))
-        fprintf(stderr, "[lua] %s\n", msg);
-    else
-        fprintf(stdout, "[lua] %s\n", msg);
+    emitOutput(L, QString::fromUtf8(msg));
+    return 0;
+}
+
+// print(...)：多参数以 tab 连接，路由与 app.log 相同（REPL 控制台可捕获）。
+static int l_print(lua_State *L)
+{
+    const int n = lua_gettop(L);
+    QString out;
+    for (int i = 1; i <= n; ++i)
+    {
+        if (i > 1)
+            out += QLatin1Char('\t');
+        size_t len = 0;
+        const char *s = luaL_tolstring(L, i, &len);
+        out += QString::fromUtf8(s, static_cast<qsizetype>(len));
+    }
+    emitOutput(L, out);
     return 0;
 }
 
@@ -314,6 +352,13 @@ LuaEngine::LuaEngine(ScriptFacade &facade)
     // 门面存 registry，脚本脚本本身拿不到指针。
     lua_pushlightuserdata(m_lua, &facade);
     lua_setfield(m_lua, LUA_REGISTRYINDEX, kFacadeKey);
+    // 引擎指针同理：print/app.log 的 C 回调经它找到输出 sink。
+    lua_pushlightuserdata(m_lua, this);
+    lua_setfield(m_lua, LUA_REGISTRYINDEX, kEngineKey);
+
+    // 覆盖内置 print：输出统一进 sink/stdout 通道，REPL 控制台才能捕获。
+    lua_pushcfunction(m_lua, l_print);
+    lua_setglobal(m_lua, "print");
 
     installFacade(m_lua);
 }
@@ -354,6 +399,45 @@ Result<void> LuaEngine::runFile(const QString &path)
     if (!f.open(QIODevice::ReadOnly))
         return fail(err::Io, QStringLiteral("无法读取脚本: %1").arg(path));
     return runString(f.readAll(), QStringLiteral("@%1").arg(path));
+}
+
+Result<QVariant> LuaEngine::evaluate(const QString &source)
+{
+    if (!m_lua)
+        return fail(err::NoLua, QStringLiteral("Lua 状态创建失败"));
+
+    const QByteArray src = source.toUtf8();
+    const char *chunk = "=repl"; // 错误消息前缀 "repl:行号:"，控制台可定位
+
+    // 先按表达式求值（`return (src)`），编译不过降级为整段语句。
+    const QByteArray wrapped = "return (" + src + ")";
+    int status = luaL_loadbuffer(m_lua, wrapped.constData(), wrapped.size(), chunk);
+    if (status != LUA_OK)
+    {
+        lua_pop(m_lua, 1);
+        status = luaL_loadbuffer(m_lua, src.constData(), src.size(), chunk);
+    }
+    if (status != LUA_OK)
+    {
+        const char *err = lua_tostring(m_lua, -1);
+        const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("编译失败");
+        lua_pop(m_lua, 1);
+        return fail(err::Syntax, msg);
+    }
+
+    if (lua_pcall(m_lua, 0, 1, 0) != LUA_OK)
+    {
+        const char *err = lua_tostring(m_lua, -1);
+        const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("运行失败");
+        lua_pop(m_lua, 1);
+        return fail(err::Runtime, msg);
+    }
+
+    QVariant result;
+    if (lua_gettop(m_lua) > 0 && !lua_isnil(m_lua, -1))
+        result = readVariant(m_lua, -1);
+    lua_settop(m_lua, 0); // 清栈，REPL 下一条从干净栈开始
+    return Result<QVariant>(result);
 }
 
 // ===== LuaTransform：单点 / 批量数值变换 =====

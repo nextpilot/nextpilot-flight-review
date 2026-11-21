@@ -429,20 +429,38 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     // 多面板合并成 tab 时标题栏自然出现，无需在此另设。
 }
 
-void ShellBinder::setCentralContent(QWidget *content)
+void ShellBinder::setCentralContent(QWidget *content, const QString &title)
 {
     if (!content)
         return;
     ensureDockManager();
 
-    // 中央内容后到：侧边区可能已经装好了。但中央 dock 仍是**第一个**
-    // 装进 ADS 的（dock() 里会先 installCentral() 占位），
-    // 所以布局方向不会因为它晚到而跑偏。
     if (!m_centralInstalled)
         installCentral();
-    else if (m_centralDock)
+
+    if (m_centralContent)
     {
-        // 已有中央 dock：把真正的面板换进去（占位容器丢弃）。
+        // 中央区已有真实内容（画布已就位）：后来者并成**页签**，与画布平级。
+        // 典型场景：脚本编辑器请求 canvas.center——写代码需要全宽，
+        // 挤在侧栏（400px 上限）里没法用。ADS 页签机制现成，零新布局代码。
+        auto *dock = new ads::CDockWidget(m_dock, title.isEmpty() ? QStringLiteral("视图") : title);
+        dock->setObjectName(QStringLiteral("ng.dock.central.tab"));
+        content->setMinimumWidth(320);
+        dock->setWidget(content);
+        dock->setMinimumWidth(320);
+        // 页签可关闭/拖动/浮动；中央 dock 本体（画布）仍不可关——保持
+        // "绘图分析是核心"的锚，画布页签永远在。
+        dock->setFeature(ads::CDockWidget::DockWidgetClosable, true);
+        dock->setFeature(ads::CDockWidget::DockWidgetMovable, true);
+        dock->setFeature(ads::CDockWidget::DockWidgetFloatable, true);
+        if (ads::CDockAreaWidget *area = m_centralDock->dockAreaWidget())
+            m_dock->addDockWidgetTabToArea(dock, area);
+        return;
+    }
+
+    // 首个中央内容：把占位容器换成本体（原有行为）。
+    if (m_centralDock)
+    {
         QWidget *placeholder = m_centralDock->takeWidget();
         if (placeholder)
             placeholder->deleteLater();
@@ -532,6 +550,34 @@ QWidget *ShellBinder::panelWidget(const QString &area) const
 {
     ads::CDockWidget *dock = m_panels.value(area, nullptr);
     return dock ? dock->widget() : nullptr;
+}
+
+QList<QWidget *> ShellBinder::panelWidgets(const QString &area) const
+{
+    ads::CDockWidget *first = m_panels.value(area, nullptr);
+    if (!first)
+        return {};
+    QList<QWidget *> out;
+    ads::CDockAreaWidget *areaWidget = first->dockAreaWidget();
+    if (!areaWidget)
+    {
+        out.append(first->widget());
+        return out;
+    }
+    const QList<ads::CDockWidget *> docks = areaWidget->dockWidgets();
+    for (ads::CDockWidget *dw : docks)
+        out.append(dw->widget());
+    return out;
+}
+
+QList<QWidget *> ShellBinder::centralWidgets() const
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return {};
+    QList<QWidget *> out;
+    for (ads::CDockWidget *dw : m_centralDock->dockAreaWidget()->dockWidgets())
+        out.append(dw->widget());
+    return out;
 }
 
 QString ShellBinder::panelTitle(const QString &area) const

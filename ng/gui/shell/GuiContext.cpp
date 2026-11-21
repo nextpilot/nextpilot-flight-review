@@ -43,13 +43,13 @@ void GuiContext::placePanel(QWidget *widget, const QString &area, const QString 
     m_binder->dock(area, title, widget);
 }
 
-void GuiContext::placeCanvas(QWidget *widget)
+void GuiContext::placeCanvas(QWidget *widget, const QString &titleOverride)
 {
     if (!widget || !m_window)
         return;
-    // 中央内容交给 ADS（画布区是一个不可关闭/移动的中央 dock）。
+    // 中央内容交给 ADS（画布区是不可关闭的中央 dock；后来的内容并成页签）。
     if (m_binder)
-        m_binder->setCentralContent(widget);
+        m_binder->setCentralContent(widget, titleOverride);
     else
         m_window->setCentralWidget(widget);
 }
@@ -94,9 +94,9 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     if (!widget)
         return nullptr;
 
-    // 中央画布区走 setCentralContent，其余区域走停靠。
+    // 中央画布区走 setCentralContent（首到者占位，后来者并成页签），其余区域走停靠。
     if (area == QStringLiteral("canvas.center"))
-        placeCanvas(widget);
+        placeCanvas(widget, PanelFactoryRegistry::title(panelType));
     else
         placePanel(widget, area);
     return widget;
@@ -149,7 +149,7 @@ QWidget *GuiContext::requestDomainPanel(const QString &area, const QString &pane
     // 把面板自己的描述传给 placePanel 作标题——领域面板的形态（含标题）
     // 由知识包决定，而不是被通用插槽的"属性"覆盖掉。
     if (area == QStringLiteral("canvas.center"))
-        placeCanvas(widget);
+        placeCanvas(widget, title);
     else
         placePanel(widget, area, title);
     return widget;

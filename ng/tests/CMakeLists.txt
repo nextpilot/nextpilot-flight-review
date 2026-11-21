@@ -41,6 +41,13 @@ target_link_libraries(ng_test_lua_script_library PRIVATE
 set_target_properties(ng_test_lua_script_library PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_lua_script_library COMMAND ng_test_lua_script_library)
 
+# M2.1：LuaEngine REPL 求值 + 输出 sink 验收（headless）。
+add_executable(ng_test_lua_engine test_lua_engine.cpp)
+target_link_libraries(ng_test_lua_engine PRIVATE
+    ng_module_script ng_context ng_foundation Qt6::Core)
+set_target_properties(ng_test_lua_engine PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_lua_engine COMMAND ng_test_lua_engine)
+
 # 有状态 Lua 过滤器引擎验收（headless，对齐 PJ4 FilterClass 契约）。
 add_executable(ng_test_filter_engine test_filter_engine.cpp)
 target_link_libraries(ng_test_filter_engine PRIVATE
@@ -134,7 +141,7 @@ target_link_libraries(ng_test_gui PRIVATE
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板呈现层（OBJECT 库）：自注册 TU 必须显式链接进来。
     ng_ext_automotive_gui
@@ -212,7 +219,7 @@ target_link_libraries(ng_test_instrument PRIVATE
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings
     ng_recording
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -229,7 +236,7 @@ target_link_libraries(ng_test_plot_io PRIVATE
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_recording
     ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
