@@ -542,6 +542,77 @@ int main(int argc, char **argv)
             CHECK(cr2.value().payload.toMap().value(QStringLiteral("entries")).toInt() == 0);
     }
 
+    // ---- M4/T4.4 采样上限：export.csv.maxPoints 控制导出点数，0=不限 ----
+    {
+        const QString csvPath = QStringLiteral("/tmp/ng_sample_probe.csv");
+        QFile::remove(csvPath + QStringLiteral(".csv.psc"));
+        QFile f(csvPath);
+        CHECK(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("time_ms,v\n");
+        for (int i = 0; i < 300; ++i)
+            f.write(QStringLiteral("%1,%2\n").arg(i * 10).arg(i).toUtf8());
+        f.close();
+
+        Intent ld;
+        ld.op = QStringLiteral("data.load");
+        ld.params[QStringLiteral("path")] = csvPath;
+        ld.params[QStringLiteral("nocache")] = true;
+        const auto lr = app.host().execute(ld);
+        CHECK(lr);
+        const QVariant lp = lr.value().payload;
+        int dsId = lp.toInt();
+        if (dsId <= 0)
+            dsId = lp.toMap().value(QStringLiteral("dataset")).toInt();
+        CHECK(dsId > 0);
+
+        auto exportTo = [&](const QString &path, QString *lastTime, QString *firstTime) {
+            Intent ex;
+            ex.op = QStringLiteral("data.export");
+            ex.params[QStringLiteral("dataset")] = dsId;
+            ex.params[QStringLiteral("path")] = path;
+            const auto er = app.host().execute(ex);
+            if (!er)
+                return -1;
+            QFile ef(path);
+            if (!ef.open(QIODevice::ReadOnly | QIODevice::Text))
+                return -1;
+            const QStringList lines =
+                QString::fromUtf8(ef.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            int rows = 0;
+            for (const QString &ln : lines)
+            {
+                if (ln.startsWith(QLatin1Char('#')) || ln.startsWith(QStringLiteral("time")))
+                    continue;
+                const QString t = ln.section(QLatin1Char(','), 0, 0);
+                if (firstTime && firstTime->isEmpty())
+                    *firstTime = t;
+                if (lastTime)
+                    *lastTime = t;
+                ++rows;
+            }
+            return rows;
+        };
+
+        QString fullFirst, fullLast;
+        const int fullRows = exportTo(QStringLiteral("/tmp/ng_sample_full.csv"), &fullLast, &fullFirst);
+        std::printf("export full rows=%d first=%s last=%s\n", fullRows, qPrintable(fullFirst),
+                    qPrintable(fullLast));
+        CHECK(fullRows == 300);
+
+        app.context().settings().setValue(QStringLiteral("export.csv.maxPoints"), 100);
+        QString smpLast;
+        const int smpRows = exportTo(QStringLiteral("/tmp/ng_sample_100.csv"), &smpLast, nullptr);
+        std::printf("export maxPoints=100 rows=%d last=%s\n", smpRows, qPrintable(smpLast));
+        CHECK(smpRows >= 99 && smpRows <= 101);  // 均匀抽稀到约 100 点
+        CHECK(smpLast == fullLast);             // 末点保留：抽稀不是截断
+
+        app.context().settings().setValue(QStringLiteral("export.csv.maxPoints"), 0);
+        const int backRows = exportTo(QStringLiteral("/tmp/ng_sample_0.csv"), nullptr, nullptr);
+        std::printf("export maxPoints=0 rows=%d\n", backRows);
+        CHECK(backRows == 300);                 // 0 = 不限，回到全量
+        app.context().settings().setValue(QStringLiteral("export.csv.maxPoints"), QVariant());
+    }
+
     if (failures == 0)
         std::printf("live udp: ALL PASS\n");
     return failures == 0 ? 0 : 1;

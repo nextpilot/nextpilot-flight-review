@@ -293,17 +293,46 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
         out << ',' << c;
     out << '\n';
 
-    // 逐列取数（channel 有 cap 上限，默认抽稀到 4096 点，保护内存）。
+    // 采样上限（M4/T4.4）：settings 的 export.csv.maxPoints。
+    //   0 / 未设 = 不限（按表的实际行数取全量）；
+    //   n > 0   = 均匀抽稀到 n 点，但**末点必须保留**（抽稀不是截断）。
+    // 上限交给 Dataset::channel 的 cap 去做——Rust 侧等步长取样，宿主不重复稀释。
+    const int totalRows = [&] {
+        const Table *t = ds->table(targetTable);
+        return t ? t->rows : 0;
+    }();
+    int maxPoints = m_app.settings().value(QStringLiteral("export.csv.maxPoints"), 0).toInt();
+    if (maxPoints < 0)
+        maxPoints = 0; // 负值视为"没设"，不当成 0 点
+    // 取数上限：抽稀要"末点保留"，不能直接交给 Rust 的等步长 cap（它会丢掉尾巴）。
+    // 所以先按行数取原样点（有 200000 点的硬保护），再由宿主均匀抽稀。
+    const int fetchCap = qMin(qMax(1, totalRows), int(kStateMaxPoints));
+
     QVector<ChannelView> views;
     for (const QString &c : columns)
     {
-        auto v = ds->channel(targetTable, c);
+        auto v = ds->channel(targetTable, c, fetchCap);
         if (!v)
             return fail(err::Read, QStringLiteral("读取列失败: %1").arg(c));
         views.append(*v);
     }
     const int rows = views.isEmpty() ? 0 : views.first().size();
-    for (int i = 0; i < rows; ++i)
+    // 均匀抽稀 + 末点钉住：picks[k] = floor(k*rows/n)，最后一格强制 rows-1。
+    QVector<int> picks;
+    if (maxPoints > 0 && rows > maxPoints)
+    {
+        picks.reserve(maxPoints);
+        for (int k = 0; k < maxPoints - 1; ++k)
+            picks.append(int(double(k) * double(rows) / double(maxPoints)));
+        picks.append(rows - 1);
+    }
+    else
+    {
+        picks.reserve(rows);
+        for (int i = 0; i < rows; ++i)
+            picks.append(i);
+    }
+    for (int i : picks)
     {
         out << (views.first().time.value(i) + alignOffsetSec);
         for (const ChannelView &v : views)
@@ -313,7 +342,13 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
     file.close();
 
     IntentResult r;
-    r.payload = outPath;
+    r.payload = QVariantMap{
+        {QStringLiteral("path"), outPath},
+        {QStringLiteral("rows"), int(picks.size())},
+        {QStringLiteral("total_rows"), totalRows},
+        {QStringLiteral("sampled"), maxPoints > 0 && totalRows > maxPoints},
+        {QStringLiteral("max_points"), maxPoints},
+    };
     return r;
 }
 
@@ -1971,11 +2006,22 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
     else if (pv.isValid() && !pv.toMap().isEmpty())
         paramsJson = QJsonDocument(QJsonObject::fromVariantMap(pv.toMap())).toJson(QJsonDocument::Compact);
 
-    // Rust 实时算，结果有界（默认上限见下）；数据集本身不变。
+    // 派生重算上限（M4/T4.4）：intent 的 cap > settings 的 derive.maxPoints > 默认。
+    //   0 = 不限（取表的全量行，最多 kMaxDerivedPoints 的硬保护）；
+    //   以前 `cap <= 0` 被悄悄重置成上限，"0 表示不限"根本没法表达。
     constexpr int kMaxDerivedPoints = 200000; // 画布/脚本够用，防全量派生灌爆 UI 内存
-    int cap = intent.params.value(QStringLiteral("cap"), kMaxDerivedPoints).toInt();
-    if (cap <= 0 || cap > kMaxDerivedPoints)
+    int cap = kMaxDerivedPoints;
+    if (intent.params.contains(QStringLiteral("cap")))
+        cap = intent.params.value(QStringLiteral("cap")).toInt();
+    else if (m_app.settings().contains(QStringLiteral("derive.maxPoints")))
+        cap = m_app.settings().value(QStringLiteral("derive.maxPoints")).toInt();
+    if (cap < 0)
         cap = kMaxDerivedPoints;
+    if (cap == 0)
+    {
+        const Table *dt = ds ? ds->table(table) : nullptr;
+        cap = dt && dt->rows > 0 ? qMin(dt->rows, kMaxDerivedPoints) : kMaxDerivedPoints;
+    }
 
     QString name = intent.params.value(QStringLiteral("name")).toString();
     if (name.isEmpty())
@@ -1996,7 +2042,7 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
         const Table *srcTable = ds->table(table);
         if (!srcTable)
             return fail(err::Table, QStringLiteral("表不存在: %1").arg(table));
-        auto raw = ds->channel(table, column);
+        auto raw = ds->channel(table, column, cap); // 输入也按同一上限取，否则派生点数还是被 4096 卡住
         if (!raw)
             return fail(err::Chan, QStringLiteral("读取通道失败: %1").arg(input));
         const int take = qMin(raw->size(), cap);
