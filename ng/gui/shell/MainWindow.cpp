@@ -4,6 +4,7 @@
 #include "ImportDialog.h"
 #include "ProtocolInspectorDialog.h"
 #include "ProtocolEditorDialog.h"
+#include "ReportExporter.h"
 #include "ShellBinder.h"
 #include "theme/PlotThumbnails.h"
 #include "ThemeManager.h"
@@ -39,6 +40,7 @@ using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::host;
+namespace gui = nextpilot::plotscope::gui;
 
 // SARibbon 是**静态库**：它的 qrc 资源（主题配色 JSON、图标等）不会随
 // 链接自动初始化——静态库的目标文件若未被引用，链接器会直接丢弃，
@@ -342,6 +344,25 @@ void MainWindow::build(RuntimeHost &host)
     m_binder = new ShellBinder(this, slotReg);
     m_context = new GuiContext(this, slotReg, m_binder, m_appCtx, &host, this);
 
+    // 报告导出同路径（M2.3）：脚本 app.call("report.export", {path,...}) 走
+    // 与 Ribbon 按钮（report.workbench.export 特判）完全相同的 QPdfWriter 管线。
+    // path 必填；title/subtitle/notes/templateId 可选（templateId 查工具箱 reports 表）。
+    m_appCtx.interactions().registerViewAction(
+        QStringLiteral("report.export"),
+        [this](const QVariantMap &params) -> Result<QVariant> {
+            gui::ReportRequest req;
+            req.path = params.value(QStringLiteral("path")).toString();
+            req.title = params.value(QStringLiteral("title")).toString();
+            req.subtitle = params.value(QStringLiteral("subtitle")).toString();
+            req.notes = params.value(QStringLiteral("notes")).toString();
+            req.templateId = params.value(QStringLiteral("template")).toString();
+            const auto r = gui::exportReportPdf(
+                m_appCtx, m_binder->centralWidgets(), m_binder->centralTitles(), req);
+            if (!r)
+                return Result<QVariant>(r.error());
+            return Result<QVariant>(QVariant(req.path));
+        });
+
     // 1) 骨架插槽
     declareStandardSlots();
 
@@ -417,6 +438,24 @@ void MainWindow::build(RuntimeHost &host)
             || actionId == QStringLiteral("protocol.editor"))
         {
             openProtocolEditor();
+            return;
+        }
+        // 报告导出（M2.3）：选保存路径 → QPdfWriter 矢量管线（画布+元数据+结论）。
+        // Ribbon 按钮与脚本 app.call("report.export") 最终都汇聚到 exportReportPdf。
+        if (actionId == QStringLiteral("report.workbench.export"))
+        {
+            const QString path = QFileDialog::getSaveFileName(
+                this, QStringLiteral("导出报告"), QStringLiteral("report.pdf"),
+                QStringLiteral("PDF (*.pdf);;全部 (*)"));
+            if (path.isEmpty())
+                return;
+            gui::ReportRequest req;
+            req.path = path;
+            req.title = QStringLiteral("PlotScope 报告");
+            const auto r = gui::exportReportPdf(
+                m_appCtx, m_binder->centralWidgets(), m_binder->centralTitles(), req);
+            statusBar()->showMessage(r ? QStringLiteral("报告已导出: %1").arg(path)
+                                       : QStringLiteral("导出失败: %1").arg(r.error().message));
             return;
         }
         // 视图页面板开关：抄老 view.toggleDock，按 dock id 切换停靠面板显隐。

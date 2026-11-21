@@ -36,7 +36,8 @@ void declareSkeletonSlots(UiSlotRegistry &registry)
     page(QStringLiteral("ribbon.page.script"),   QStringLiteral("脚本"), 4);
     page(QStringLiteral("ribbon.page.protocol"), QStringLiteral("协议"), 5);
     page(QStringLiteral("ribbon.page.analysis"), QStringLiteral("分析"), 6);
-    page(QStringLiteral("ribbon.page.view"),     QStringLiteral("视图"), 7);
+    page(QStringLiteral("ribbon.page.report"),   QStringLiteral("报告"), 7);
+    page(QStringLiteral("ribbon.page.view"),     QStringLiteral("视图"), 8);
 
     // 组（panel）顺序抄老代码每页的面板数组顺序；group() 的 order 决定同页内的左右位置。
     // 开始页：常用入口 + 外观；兼容空槽 plottype/view/sources 排在最后（无 action 时外壳不渲染）。

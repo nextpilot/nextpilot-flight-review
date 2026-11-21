@@ -250,12 +250,13 @@ int main(int argc, char **argv)
     App application;
     const auto errors = application.startup(true);
     CHECK(errors.isEmpty());
-    CHECK(application.host().activeIds().size() == 7); // 6 内置 + 1 探针
+    CHECK(application.host().activeIds().size() == 8); // 7 内置（含 mod.report）+ 1 探针
     CHECK(application.host().isActive(QStringLiteral("mod.probe")));
-    // 内置器官：数据/绘图/脚本/设置 + 本轮补齐的协议/分析。
+    // 内置器官：数据/绘图/脚本/设置 + 本轮补齐的协议/分析/报告。
     CHECK(application.host().isActive(QStringLiteral("mod.settings")));
     CHECK(application.host().isActive(QStringLiteral("mod.protocol")));
     CHECK(application.host().isActive(QStringLiteral("mod.analysis")));
+    CHECK(application.host().isActive(QStringLiteral("mod.report")));
 
     // 探针模块提供的能力可用（它自带的意图处理器已被注册）。
     {
@@ -393,7 +394,7 @@ int main(int argc, char **argv)
         // 于是 headless 只看到 5 个残缺槽（详见下方 1b 段的契约测试）。
         const auto &slotReg = application.host().uiSlots();
         // Ribbon 8 页结构（开始/文件/数据/绘图/脚本/协议/分析/视图）。
-        CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 8);
+        CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 9);
         for (const char *p : {"ribbon.page.home", "ribbon.page.file", "ribbon.page.data",
                               "ribbon.page.plot", "ribbon.page.script", "ribbon.page.protocol",
                               "ribbon.page.analysis", "ribbon.page.view"})

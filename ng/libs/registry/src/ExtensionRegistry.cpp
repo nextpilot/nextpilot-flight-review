@@ -100,6 +100,9 @@ bool ExtensionRegistry::mount(Pack pack)
     for (const ExampleEntry &e : pack.examples)
         if (!checkId(e.id) || examples.contains(e.id))
             return false;
+    for (const ReportTemplate &r : pack.reports)
+        if (!checkId(r.id) || reports.contains(r.id))
+            return false;
     for (const auto &p : pack.parsers)
         if (!p || !checkId(p->id()) || parser(p->id()) != nullptr)
             return false;
@@ -141,6 +144,11 @@ bool ExtensionRegistry::mount(Pack pack)
         stamp(e);
         examples.insert(e.id, e);
     }
+    for (ReportTemplate &r : pack.reports)
+    {
+        stamp(r);
+        reports.insert(r.id, r);
+    }
     for (auto &p : pack.parsers)
     {
         p->setProvider(provider);
@@ -169,6 +177,7 @@ bool ExtensionRegistry::unmount(const QString &packId)
     dropByProvider(dataAssets);
     dropByProvider(docs);
     dropByProvider(examples);
+    dropByProvider(reports);
     m_parsers.erase(std::remove_if(m_parsers.begin(), m_parsers.end(),
                                    [&packId](const auto &p) {
                                        return p && p->provider() == packId;

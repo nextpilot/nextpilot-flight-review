@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
     // 插槽声明了页签/分组；动作由器官在 onAttach 里登记
     const auto &slotReg = application.host().uiSlots();
     // Ribbon 按老代码/用户要求分 8 页：开始/文件/数据/绘图/脚本/协议/分析/视图。
-    CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 8);
+    CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 9);
     CHECK(slotReg.slotsOfKind(SlotKind::RibbonGroup).size() >= 8);
     // 绘图模块 onAttach 往绘图页"操作"分组放了"重绘"动作
     CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.plot.action")).size() >= 1);
@@ -209,10 +209,11 @@ int main(int argc, char *argv[])
     {
         // 页顺序：slotsOfKind 现在按 order 升序，而不是声明顺序。
         const auto pages = slotReg.slotsOfKind(SlotKind::RibbonPage);
-        CHECK(pages.size() == 8);
+        CHECK(pages.size() == 9);
         const QStringList expectPages = {QStringLiteral("开始"), QStringLiteral("文件"),
             QStringLiteral("数据"), QStringLiteral("绘图"), QStringLiteral("脚本"),
-            QStringLiteral("协议"), QStringLiteral("分析"), QStringLiteral("视图")};
+            QStringLiteral("协议"), QStringLiteral("分析"), QStringLiteral("报告"),
+            QStringLiteral("视图")};
         for (int i = 0; i < pages.size(); ++i)
             CHECK(pages.at(i).label == expectPages.at(i));
         // 组顺序：同页内按 group.order 升序（老设计 panel 数组顺序）。
@@ -583,6 +584,45 @@ int main(int argc, char *argv[])
             QStringLiteral("data.table.open"), p, out));
         CHECK(binder->centralWidgets().size() == before + 1);
         OK("数据表格查看器：按需创建中央页签、绑定数据同步、复用不重复");
+    }
+
+    // --- 5c-c) 报告导出（2.3.2/2.3.3）：view action 同路径 → QPdfWriter 管线 ---
+    //
+    // 回归点：脚本 app.call("report.export") 与 Ribbon 按钮汇聚同一导出管线；
+    // PDF 矢量输出、中文标题可读（pdftotext 反解校验，独立阅读器语义）。
+    {
+        QTemporaryDir dir;
+        CHECK(dir.isValid());
+        const QString pdfPath = dir.filePath(QStringLiteral("report-test.pdf"));
+
+        QVariantMap p;
+        p.insert(QStringLiteral("path"), pdfPath);
+        p.insert(QStringLiteral("title"), QStringLiteral("飞行检查报告"));
+        p.insert(QStringLiteral("subtitle"), QStringLiteral("demo_flight.csv 数据检查"));
+        p.insert(QStringLiteral("notes"), QStringLiteral("振动正常，EKF 收敛。\n无异常事件。"));
+        Result<QVariant> out{QVariant()};
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("report.export"), p, out));
+        CHECK(QFileInfo::exists(pdfPath));
+        CHECK(QFileInfo(pdfPath).size() > 1000); // 非空 PDF（封面+元数据+画布+结论）
+
+        // 模板 id 不存在时明确报错（工具箱 reports 表查询语义；派发本身成功，
+        // 失败语义在结果 payload 里——与 view action 通道约定一致）。
+        QVariantMap bad = p;
+        bad.insert(QStringLiteral("template"), QStringLiteral("report.no-such"));
+        Result<QVariant> out2{QVariant()};
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("report.export"), bad, out2));
+        CHECK(!out2.ok());
+        CHECK(out2.error().message.contains(QStringLiteral("报告模板不存在")));
+
+        // Ribbon 动作已声明（报告页/导出组/大按钮）——走 UiSlotRegistry 插槽数据。
+        const auto reportActs = slotReg.actionsIn(QStringLiteral("ribbon.group.report.export"));
+        CHECK(reportActs.size() == 1);
+        CHECK(!reportActs.isEmpty()
+              && reportActs.first().action.id == QStringLiteral("report.workbench.export"));
+        CHECK(reportActs.first().action.large); // 大按钮
+        OK("报告导出：view action 同路径出 PDF、模板缺省报错、Ribbon 入口就位");
     }
 
     // --- 5d) data.derive：Rust 实时派生 → 结果给 UI，原数据集零改动 ---

@@ -127,6 +127,33 @@ struct ExampleEntry
     Domain domain = Domain::General;
 };
 
+// === 报告模板（M2.3）===
+
+// 报告的一节。模板 = 节的有序列表，导出器按节拼版（一期支持四种 kind）：
+//   title    —— 封面标题页（content = 副标题/摘要，可空）
+//   metadata —— 元数据表（content = 逗号分隔的键名：time,file,dataset,…）
+//   canvas   —— 画布截图节（content = 画布页签 id，空 = 当前全部画布依序各一节）
+//   text     —— 文本段落（content = 正文，支持 \n 换行）
+struct ReportSection
+{
+    QString kind;
+    QString title;    // 节标题（可空）
+    QString content;  // 内容（语义随 kind，见上）
+};
+
+// 一个报告模板：扩展包可贡献（如 PX4 调参包的"检查清单报告"），
+// 导出管线按模板拼节，headless 可读声明。
+struct ReportTemplate
+{
+    QString id;
+    QString title;
+    QString description;
+    QList<ReportSection> sections;
+
+    QString provider; // mount() 自动写入
+    Domain domain = Domain::General;
+};
+
 // 包的自我声明（挂进 packs 表的那条数据）。
 struct PackInfo
 {

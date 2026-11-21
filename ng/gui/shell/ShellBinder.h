@@ -85,6 +85,8 @@ public:
     QWidget *centralContent() const { return m_centralContent; }
     // 中央区**全部**页签内容（画布 + 按需创建的脚本编辑器等）。
     QList<QWidget *> centralWidgets() const;
+    // 与 centralWidgets() 一一对应的页签标题（报告导出的节标题来源）。
+    QStringList centralTitles() const;
     QString panelTitle(const QString &area) const;
     // 该停靠区**全部**页签标题（按放置顺序）——同区多面板时主位概念不成立，
     // 断言/诊断用列表。

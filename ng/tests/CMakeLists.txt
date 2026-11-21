@@ -114,7 +114,7 @@ add_executable(ng_test_architecture test_architecture.cpp)
 target_include_directories(ng_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/app)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。
 target_link_libraries(ng_test_architecture PRIVATE
-    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 # 复用 CLI 里的 App 装配逻辑
@@ -127,7 +127,7 @@ add_test(NAME ng_architecture COMMAND ng_test_architecture)
 add_executable(ng_test_transform test_transform.cpp)
 target_include_directories(ng_test_transform PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(ng_test_transform PRIVATE
-    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 target_sources(ng_test_transform PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
@@ -148,7 +148,7 @@ target_link_libraries(ng_test_gui PRIVATE
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板呈现层（OBJECT 库）：自注册 TU 必须显式链接进来。
     ng_ext_automotive_gui
@@ -226,7 +226,7 @@ target_link_libraries(ng_test_instrument PRIVATE
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings ng_module_report
     ng_recording
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -243,7 +243,7 @@ target_link_libraries(ng_test_plot_io PRIVATE
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_recording
     ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -266,7 +266,7 @@ target_sources(ng_test_mcp_bridge PRIVATE
     ${CMAKE_SOURCE_DIR}/app/mcp_bridge.cpp
     ${CMAKE_SOURCE_DIR}/app/App.cpp)
 target_link_libraries(ng_test_mcp_bridge PRIVATE
-    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
 target_compile_definitions(ng_test_mcp_bridge PRIVATE
@@ -277,9 +277,15 @@ add_executable(ng_test_live_udp test_live_udp.cpp ${CMAKE_SOURCE_DIR}/app/App.cp
 target_include_directories(ng_test_live_udp PRIVATE ${CMAKE_SOURCE_DIR}/app)
 target_link_libraries(ng_test_live_udp PRIVATE
     ng_gui ng_gui_theme ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_settings ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core util)
 set_target_properties(ng_test_live_udp PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_test_live_udp COMMAND ng_test_live_udp)
+
+# 报告模板贡献独立验收（M2.3 2.3.1）：只链 ng_registry + Qt Core，headless。
+add_executable(ng_test_report_template test_report_template.cpp)
+target_link_libraries(ng_test_report_template PRIVATE ng_registry Qt6::Core)
+set_target_properties(ng_test_report_template PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_report_template COMMAND ng_test_report_template)

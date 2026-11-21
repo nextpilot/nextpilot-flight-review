@@ -594,6 +594,16 @@ QList<QWidget *> ShellBinder::centralWidgets() const
     return out;
 }
 
+QStringList ShellBinder::centralTitles() const
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return {};
+    QStringList out;
+    for (ads::CDockWidget *dw : m_centralDock->dockAreaWidget()->dockWidgets())
+        out.append(dw->windowTitle());
+    return out;
+}
+
 QString ShellBinder::panelTitle(const QString &area) const
 {
     ads::CDockWidget *dock = m_panels.value(area, nullptr);

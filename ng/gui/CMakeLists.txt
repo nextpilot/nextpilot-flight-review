@@ -79,6 +79,8 @@ add_library(ng_gui OBJECT
     shell/ProtocolInspectorDialog.h
     shell/ProtocolEditorDialog.cpp
     shell/ProtocolEditorDialog.h
+    shell/ReportExporter.cpp
+    shell/ReportExporter.h
     # --- 通用绘图能力库 ---
     # 数据集视图已聚合进 modules/data/（功能专属，见该目录 CMakeLists）；
     # 这里只剩**通用绘图库**（将来抽成 Qwt-like 独立库，不属于任何器官/领域）：
@@ -132,7 +134,7 @@ target_link_libraries(plotscope-ng-gui PRIVATE
     # AUTOMOC 产物一起进，故 moc 符号也一并满足）。
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
     ng_ext_automotive_gui
@@ -150,7 +152,7 @@ target_link_libraries(plotscope-ng-gui-bench PRIVATE
     ng_gui
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -168,7 +170,7 @@ target_link_libraries(plotscope-ng-gui-shot PRIVATE
     ng_gui
     ng_gui_theme
     ng_gui_transform
-    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis
+    ng_module_data ng_module_data_gui ng_module_plot ng_module_script ng_module_script_gui ng_module_protocol ng_module_analysis ng_module_report
     ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
     ng_ext_automotive_gui
     ng_ext_registry ng_host ng_context ng_recording Qt6::Widgets Qt6::Gui Qt6::Core)

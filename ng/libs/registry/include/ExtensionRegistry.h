@@ -46,6 +46,7 @@ struct Pack
     QList<DataAsset> dataAssets;
     QList<DocEntry> docs;
     QList<ExampleEntry> examples;
+    QList<ReportTemplate> reports;
 
     // 行为式条目：解析器（唯一有行为的贡献，所有权归包/注册表）。
     std::vector<std::unique_ptr<IMessageParser>> parsers;
@@ -73,6 +74,7 @@ public:
     Registry<DataAsset> dataAssets;
     Registry<DocEntry> docs;
     Registry<ExampleEntry> examples;
+    Registry<ReportTemplate> reports;
 
     // === 解析器视图（行为式条目，所有权在注册表）===
     QList<IMessageParser *> parsers() const;
