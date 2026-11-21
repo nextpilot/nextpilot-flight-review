@@ -1,6 +1,6 @@
 # roadmap：把 main 的能力搬进 ng
 
-本目录是「main → ng 移植」的唯一权威计划与验收记录。代码在 `nextgen-architecture` 分支上同步推进，本目录随每次落地一并提交，所以**看板上的勾与提交号是一一对应的事实**，不是计划口径。
+本目录（`docs/roadmap/migration/`）是「main → ng 移植」的唯一权威计划与验收记录。代码在 `nextgen-architecture` 分支上同步推进，本目录随每次落地一并提交，所以**看板上的勾与提交号是一一对应的事实**，不是计划口径。
 
 ## 文档索引
 
@@ -10,7 +10,7 @@
 | `02-验收清单-main到ng.md` | AC-01…AC-29，每条带勾选状态与证据（测试名/截图/CLI 实跑） | 想知道"做没做到、凭什么说做到了" |
 | `03-main-vs-ng-对比清单.md` | main 与 ng 的行为差异逐项对照（早期盘点，作为蓝本口径） | 想核对"main 长什么样、ng 差在哪" |
 
-## 进度看板（截至 `86b8244`，2026-11-21）
+## 进度看板（截至 `f032b81`，2026-11-21）
 
 33 张卡：**完成 11 · 部分完成 1 · 未开始 21 = 33%（含部分 36%）**。编译 0 error，`ctest -j1` **27/27 全绿**。
 
@@ -30,9 +30,9 @@
 | 卡 | 内容 | 状态 | 证据 |
 |---|---|---|---|
 | T1.1 | UDP / 串口 / TCP 字节源 | ✅ | `cb12809`；三前端各 20 帧 → 20 行、timeMax 1.900 |
-| T1.2 | 字节环 + 50Hz 后台泵、EOF 不关源 | ✅ | `86b8244`；readyRead 只入环，泵 256KB/tick |
-| T1.3 | pause/resume/reconnect、速率、丢帧 | ✅ | `86b8244`；`dropped_bytes` + `parse_errors` |
-| T1.4 | 意图族（含 `rate.set` / `config`） | ✅ | `86b8244`；`hz`→`interval_ms=200`、`bufferBytes=65536` 有断言 |
+| T1.2 | 字节环 + 50Hz 后台泵、EOF 不关源 | ✅ | `f032b81`；readyRead 只入环，泵 256KB/tick |
+| T1.3 | pause/resume/reconnect、速率、丢帧 | ✅ | `f032b81`；`dropped_bytes` + `parse_errors` |
+| T1.4 | 意图族（含 `rate.set` / `config`） | ✅ | `f032b81`；`hz`→`interval_ms=200`、`bufferBytes=65536` 有断言 |
 | T1.5 | 数据页「实时源」分类 + 连接对话框 | ⬜ | 未开始（纯 UI，需按 dock 现有视觉语言设计） |
 | T1.6 | 面板状态行：状态/速率/字节/错误 | ⬜ | 未开始，与 T1.5 同批做 |
 

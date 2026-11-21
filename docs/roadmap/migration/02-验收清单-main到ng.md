@@ -3,7 +3,7 @@
 > 配套 `移植清单-main到ng.md`。每条 AC 标注对应任务 ID、执行方式、判定标准、证据留存。
 > **无硬件的专项**：实时源验收一律用 UDP 打流替代真机；真机只在 AC-27 做附加确认。
 >
-> **当前进度（2026-11-21，`86b8244` 已推送）**：33 条验收项中 **6 条通过（AC-02、AC-03、AC-04、AC-10、AC-27、AC-29）、4 条部分通过（AC-10B、AC-11、AC-12、AC-28a）**，通过率 18%（含部分 30%）。M1（实时源）除两张 UI 卡外已全部有证据；M2/M4/M6/M7/M8 尚未开始。
+> **当前进度（2026-11-21，`f032b81` 已推送）**：33 条验收项中 **6 条通过（AC-02、AC-03、AC-04、AC-10、AC-27、AC-29）、4 条部分通过（AC-10B、AC-11、AC-12、AC-28a）**，通过率 18%（含部分 30%）。M1（实时源）除两张 UI 卡外已全部有证据；M2/M4/M6/M7/M8 尚未开始。
 > 编译 0 error，`ctest -j1` **27/27** 全绿（每次推送前必跑；27 条含脚本工作台用例与本轮新增 `ng_test_live_udp`）。
 
 
@@ -49,20 +49,20 @@ ctest --test-dir build-ng -j 1
 - 判定：**丢字节验证**——喂 10s@100Hz=1000 帧，解析结果行数 ≥ 990（允许首尾边界）。
 - 证据：`ac01.json` + 输出 JSON 存 `docs/verify/ac01-*.json`。
 
-### AC-02 长流不阻塞（T1.2）　✅ 已通过（`86b8244`）
+### AC-02 长流不阻塞（T1.2）　✅ 已通过（`f032b81`）
 - 步骤：连接 UDP 源（T1.2 生效后）→ 观察 `data.source.list` 在 **连接后 1s 内**就能返回，且此时数据仍在增长。
 - 期望：`connect` 调用**立即返回**（<200ms），后台持续 append；连续两次 `list` 的 `rows` 单调递增。
 - 判定：`connect` 到首次 `datasetChanged` 之间不阻塞 GUI（用 `--action=` 截图证明界面可交互）。
 - **结果**：`ng_test_live_udp` 中 `data.connect` 立即返回（测试进程无 GUI 阻塞即可跑完三前端）；收包侧只入环、泵 50Hz（20ms）批量 feed，20 帧在 `pump()` 内到达即成为 20 行；三前端（UDP/TCP/串口 pty）各 20 帧 → 20 行、timeMax 1.900，未出现阻塞或丢尾帧。
 
-### AC-03 流控与统计（T1.3）　✅ 已通过（`86b8244`）
+### AC-03 流控与统计（T1.3）　✅ 已通过（`f032b81`）
 - 步骤：流进行中依次发 `data.source.pause` → 等 2s → `list` → `resume` → `list`；然后 kill 打流端 3s 再启动，发 `data.source.reconnect`。
 - 期望：pause 期间 `rows` 冻结且 `state:"paused"`；resume 后 `rows` 继续增；reconnect 后**同一 datasetId** 继续追加（**不得新建 dataset**）。
 - 判定：pause 前后 `rows` 差值 ≤ 1 批；reconnect 前后 `datasetId` 相同。
 - 附加：`rate.hz` 与打流端设定偏差 ≤ ±10%（100Hz 应报 90–110）。
 - **结果**：pause 期间发 5 帧后 `packets` 不增、`dropped_bytes` 增长（暂停不入环）；resume 后继续追加；reconnect 后 `datasetId` 不变（同一数据集续写）。`data.rate.set hz=5` → `interval_ms=200`（断言）；`bufferBytes=65536` 热改成功（断言）；stats 暴露 `pending_bytes / dropped_bytes / fed_bytes / backpressure / pump_hz`。内核 UDP 丢包不在应用层伪造数据，明确不做自造补算。
 
-### AC-04 意图完整性（T1.4）　✅ 已通过（`86b8244`）
+### AC-04 意图完整性（T1.4）　✅ 已通过（`f032b81`）
 - 步骤：`plotscope-ng --run ac04.json`，job 内覆盖 8 个 op 且含 3 条**非法参数**（端口 70000 / 未知 parserId / 不存在的 sourceId）。
 - 期望：正常 8 条全 `ok`；非法 3 条返回 `ok:false` 且 `error` 指明字段名，**进程不崩**（退出码 0）。
 - 判定：`handles()` 白名单有全部 op；错误分支均走 `fail()`。
@@ -296,9 +296,9 @@ ctest --test-dir build-ng -j 1
 ## 11 勾选核对表（进度：2 通过 / 1 部分 / 30 未开始）
 
 - [ ] AC-01 流式源（udp/serial/tcp/sim）
-- [x] AC-02 长流不阻塞 — 三前端 20 帧→20 行，connect 立即返回，泵 50Hz 批量喂（`86b8244`）
-- [x] AC-03 pause/resume/reconnect/速率 — pause 期 packets 不增、reconnect 同 dataset、rate/config 断言（`86b8244`）
-- [x] AC-04 意图族 + 非法参数 — 9 op 全 ok；4 条非法输入全被拒且不崩（`86b8244`）
+- [x] AC-02 长流不阻塞 — 三前端 20 帧→20 行，connect 立即返回，泵 50Hz 批量喂（`f032b81`）
+- [x] AC-03 pause/resume/reconnect/速率 — pause 期 packets 不增、reconnect 同 dataset、rate/config 断言（`f032b81`）
+- [x] AC-04 意图族 + 非法参数 — 9 op 全 ok；4 条非法输入全被拒且不崩（`f032b81`）
 - [ ] AC-05 实时源 gallery 分类
 - [ ] AC-06 源状态行
 - [ ] AC-07 录制 mcap 回读自洽
