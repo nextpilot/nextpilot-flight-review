@@ -33,6 +33,8 @@
 
 #include "AppContext.h"
 #include "ChannelMime.h"
+
+#include <QProcess>
 #include "ChannelTransformConfig.h"
 
 #include "Dataset.h"
@@ -2620,6 +2622,110 @@ int main(int argc, char *argv[])
             CHECK(c0->series().isEmpty());
         }
         OK("画布间曲线移动：目标加一条 + 源删一条（移动非复制）、拖回自己/垃圾负载拒绝");
+    }
+
+    // --- 5c-g) 多表快照导出（M4/T4.1）---
+    //
+    // AC-13：单簿 xlsx，sheet 数 = 表数，列名与 schema 一致，**空表也留 sheet**。
+    // 不引第三方 xlsx/zip 库：store-only zip + 最小 OOXML（XlsxBook），
+    // 这里用 python zipfile 直接读回校验结构（不依赖 openpyxl）。
+    {
+        Dataset sds = Dataset::create(QStringLiteral("snapshot-fixture"), QStringLiteral("mem"));
+        const int n = 100;
+        QVector<double> ts(n), roll(n), pitch(n);
+        for (int i = 0; i < n; ++i)
+        {
+            ts[i] = i * 0.01;
+            roll[i] = i;
+            pitch[i] = -i;
+        }
+        CHECK(sds.addTable(QStringLiteral("trace"), ts) >= 0);
+        CHECK(sds.addF64Column(QStringLiteral("trace"), QStringLiteral("roll"), QStringLiteral("deg"), roll));
+        CHECK(sds.addF64Column(QStringLiteral("trace"), QStringLiteral("pitch"), QStringLiteral("deg"), pitch));
+        const int m = 33;
+        QVector<double> at(m), spd(m);
+        for (int i = 0; i < m; ++i)
+        {
+            at[i] = i * 0.05;
+            spd[i] = i * 2.0;
+        }
+        CHECK(sds.addTable(QStringLiteral("aux"), at) >= 0);
+        CHECK(sds.addF64Column(QStringLiteral("aux"), QStringLiteral("speed"), QString(), spd));
+        // 注：Dataset::addTable 拒零行时间轴（timeUs.isEmpty() → -1），
+        // 故 ng 侧不存在 0 行表，XlsxBook 的"空表只写表头"是防御分支，无法端到端构造。
+        sds.refreshSchema();
+        const int snapDs = application.data().add(sds);
+        CHECK(snapDs >= 0);
+
+        const QString xlsxPath = QStringLiteral("/tmp/ng_snapshot_multi.xlsx");
+        QFile::remove(xlsxPath);
+        Intent snap;
+        snap.op = QStringLiteral("data.exportSnapshot");
+        snap.params[QStringLiteral("datasets")] = QVariantList{snapDs};
+        snap.params[QStringLiteral("tables")] = QVariantList{QStringLiteral("*")};
+        snap.params[QStringLiteral("format")] = QStringLiteral("xlsx");
+        snap.params[QStringLiteral("path")] = xlsxPath;
+        const auto snapRes = application.host().execute(snap);
+        CHECK(snapRes);
+        const QVariantMap sp = snapRes.value().payload.toMap();
+        CHECK(sp.value(QStringLiteral("table_count")).toInt() == 2);
+        CHECK(sp.value(QStringLiteral("rows")).toInt() == n + m); // 100 + 33
+        CHECK(QFile::exists(xlsxPath));
+        CHECK(QFileInfo(xlsxPath).size() > 0);
+
+        // 读回结构：sheet 名 / 每 sheet 行数 / 首个文本表头。
+        const QString scriptPath = QStringLiteral("/tmp/ng_snapshot_check.py");
+        {
+            QFile f(scriptPath);
+            CHECK(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QTextStream out(&f);
+            out << "import sys, zipfile, re\n"
+                   "p = sys.argv[1]\n"
+                   "z = zipfile.ZipFile(p)\n"
+                   "wb = z.read('xl/workbook.xml').decode('utf-8')\n"
+                   "names = re.findall(r'<sheet name=\"([^\"]+)\"', wb)\n"
+                   "print('SHEETS=' + ','.join(names))\n"
+                   "for i in range(1, len(names) + 1):\n"
+                   "    sx = z.read('xl/worksheets/sheet%d.xml' % i).decode('utf-8')\n"
+                   "    rows = len(re.findall(r'<row r=\"', sx))\n"
+                   "    texts = re.findall(r'<t>([^<]*)</t>', sx)\n"
+                   "    print('S%d=rows:%d|hdr:%s' % (i, rows, texts[0] if texts else ''))\n";
+        }
+        QProcess proc;
+        proc.start(QStringLiteral("python3"), {scriptPath, xlsxPath});
+        CHECK(proc.waitForFinished(30000));
+        CHECK(proc.exitCode() == 0);
+        const QString out = QString::fromUtf8(proc.readAllStandardOutput());
+        CHECK(out.contains(QStringLiteral("SHEETS=trace,aux")));
+        CHECK(out.contains(QStringLiteral("S1=rows:101"))); // 表头 + 100 行
+        CHECK(out.contains(QStringLiteral("S2=rows:34")));  // 表头 + 33 行
+        CHECK(out.contains(QStringLiteral("hdr:time")));    // 列名与 schema 对齐（time 在前）
+
+        // csv 分支：每表一个文件（含空表）。
+        const QString csvDir = QStringLiteral("/tmp/ng_snapshot_csv");
+        QDir(csvDir).removeRecursively();
+        Intent snapCsv = snap;
+        snapCsv.params[QStringLiteral("format")] = QStringLiteral("csv");
+        snapCsv.params[QStringLiteral("path")] = csvDir;
+        const auto csvRes = application.host().execute(snapCsv);
+        CHECK(csvRes);
+        const QStringList files = csvRes.value().payload.toMap()
+                                      .value(QStringLiteral("files")).toStringList();
+        CHECK(files.size() == 2);
+        for (const QString &f : files)
+            CHECK(QFile::exists(f));
+
+        // 越界：format 非法 / 表名全不匹配 → 明确失败（不产出半截文件）。
+        {
+            Intent bad = snap;
+            bad.params[QStringLiteral("format")] = QStringLiteral("pdf");
+            CHECK(!application.host().execute(bad));
+            Intent noTable = snap;
+            noTable.params[QStringLiteral("tables")] =
+                QVariantList{QStringLiteral("__missing__")};
+            CHECK(!application.host().execute(noTable));
+        }
+        OK("多表快照：xlsx 单簿 2 sheet 列名对齐 schema、100/33 行正确、csv 每表一文件");
     }
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");

@@ -3,8 +3,8 @@
 > 配套 `移植清单-main到ng.md`。每条 AC 标注对应任务 ID、执行方式、判定标准、证据留存。
 > **无硬件的专项**：实时源验收一律用 UDP 打流替代真机；真机只在 AC-27 做附加确认。
 >
-> **当前进度（2026-11-21，`95f58c3` 已推送）**：33 条验收项中 **10 条通过（AC-02、AC-03、AC-04、AC-05、AC-06、AC-07、AC-08、AC-10、AC-27、AC-29）、5 条部分通过（AC-09、AC-10B、AC-11、AC-12、AC-28a）**，通过率 30%（含部分 45%）。M1、M2 均已闭环（AC-07 回读行数、AC-08 三路录制都有实测数字）。
-> 编译 0 error，`ctest -j1` **27/27** 全绿（每次推送前必跑；27 条含脚本工作台用例与本轮新增 `ng_test_live_udp`）。
+> **当前进度（2026-11-21，M5 100% + T4.1 完成）**：33 条验收项中 **11 条通过（AC-02、AC-03、AC-04、AC-05、AC-06、AC-07、AC-08、AC-10、AC-13、AC-27、AC-29）、5 条部分通过（AC-09、AC-10B、AC-11、AC-12、AC-28a）**，通过率 33%（含部分 48%）。M1、M2、M3、M5 已闭环；M4 3/5（T4.1 多表快照、T4.3 缓存、T4.4 采样上限）。
+> 编译 0 error，`ctest -j1` **30/30** 全绿（每次推送前必跑）。
 
 
 ---
@@ -139,10 +139,16 @@ ctest --test-dir build-ng -j 1
 
 ## 4 M4 数据工程
 
-### AC-13 多表快照（T4.1）
-- 步骤：`data.exportSnapshot {datasets:[1], tables:["*"], format:"xlsx"}`。
+### AC-13（多表快照 T4.1）— ✅ 通过
+- 步骤：`data.exportSnapshot {datasets:[N], tables:["*"], format:"xlsx", path:"/tmp/x.xlsx"}`；csv 分支把 `path` 换成目录。
 - 期望：生成单 xlsx，**sheet 数 = 表数**，每 sheet 列名与 `data.state` 返回的 schema 一致；空表也留 sheet（不静默丢）。
 - 判定：python `openpyxl` 读回比对 sheet 名与列名列表。
+- 实况（2026-11-21）：
+  - 双表 fixture（trace 100 行 roll/pitch、aux 33 行 speed）→ `sheets=['trace','aux']`，`trace` 101 行（表头+100）/`aux` 34 行；表头 `time,roll,pitch`、`time,speed`；`time` 为数值列、末行为末点。
+  - 真数据 `demo_flight.csv` 3000 行 → 1 sheet `demo_flight`、3001 行 × 8 列，表头 `time,att.roll[deg],att.pitch[deg],engine_rpm[rpm],battery_v[V],acc_x[g],flight_mode,armed`，末点 `time=2999`。
+  - 两条落地路径同尺寸（730 988 B）：CLI `--run job.json` 与 GUI 源右键「导出全部表 ▸ Excel 工作簿」；GUI 完成提示「1 张表 · 3000 行 → 路径」。
+  - csv 分支：`files=2`，`trace.csv` / `aux.csv` 各一文件（表头同 xlsx）。
+- 未覆盖（如实记）：`Dataset::addTable` 拒绝零行时间轴（`timeUs.isEmpty() → -1`），ng 侧不存在 0 行表，故"空表也留 sheet"只能保留为防御代码，无端到端用例；不压缩/无样式/公式/合并单元格（有意为之，环境无 zip 库）。
 
 ### AC-14 参数表 P/Q（T4.2）
 - 步骤：加载 `.ulg` fixture → `data.state` 查看 `param` 表。
@@ -363,7 +369,7 @@ ctest --test-dir build-ng -j 1
 - [~] AC-10B 对齐参与 CSV 导出 — 实测：params 终点对齐 flight 后导出首行 `time=11.596`、表头 `# time_mode=offset, offset_us=11596000, offset_s=11.596`（`2ff7687` 起合清单口径，断言 1/4 过）；多表混合 offset 与三种时间格式未测（断言 2/3），快照导出未做
 - [ ] AC-11 四策略 + reset 幂等
 - [ ] AC-12 对齐不重建曲线
-- [ ] AC-13 xlsx 多 sheet
+- [x] AC-13 xlsx 多 sheet
 - [ ] AC-14 param 表 P/Q
 - [ ] AC-15 缓存命中/清空
 - [ ] AC-16 采样上限均匀抽稀

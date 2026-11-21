@@ -9,6 +9,9 @@
 #include "Result.h"
 #include "ErrorCodes.h"
 #include "SettingsStore.h"
+#include "XlsxBook.h"
+
+#include <QDir>
 #include "WorkspaceDataConfig.h"
 #include "ChannelTransformConfig.h"
 
@@ -143,6 +146,8 @@ void DataCommandsHandler::buildDispatch()
     using I = nextpilot::plotscope::intent::Intent;
     m_dispatch.reg(QStringLiteral("data.reload"), this, &DataCommandsHandler::reload);
     m_dispatch.reg(QStringLiteral("data.export"), this, &DataCommandsHandler::exportCsv);
+    m_dispatch.reg(QStringLiteral("data.exportSnapshot"), this,
+                   &DataCommandsHandler::exportSnapshot);
     m_dispatch.reg(QStringLiteral("data.recent"), this, &DataCommandsHandler::recent);
     m_dispatch.reg(QStringLiteral("data.clearCache"),
                    [this](const I &) { return clearCache(); });
@@ -349,6 +354,191 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
         {QStringLiteral("sampled"), maxPoints > 0 && totalRows > maxPoints},
         {QStringLiteral("max_points"), maxPoints},
     };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::exportSnapshot(const Intent &intent)
+{
+    const QString format = intent.params.value(QStringLiteral("format"),
+                                               QStringLiteral("xlsx")).toString().toLower();
+    if (format != QLatin1String("xlsx") && format != QLatin1String("csv"))
+        return fail(err::Format,
+                    QStringLiteral("format 只支持 xlsx / csv，收到: %1").arg(format));
+    const QString path = intent.params.value(QStringLiteral("path")).toString();
+    if (path.isEmpty())
+        return fail(err::Path, QStringLiteral("请指定导出路径 path"));
+
+    // 数据集集合：显式 datasets（多源快照）；否则沿用 dataset / 唯一数据集兜底。
+    QVector<int> datasetIds;
+    for (const QVariant &v : intent.params.value(QStringLiteral("datasets")).toList())
+    {
+        const int id = v.toInt();
+        if (id >= 0)
+            datasetIds << id;
+    }
+    if (datasetIds.isEmpty())
+    {
+        const Result<int> only = resolveDataset(intent);
+        if (!only)
+            return only.error();
+        datasetIds << only.value();
+    }
+
+    // 表集合：tables 为空或 ["*"] 表示全部表。
+    QStringList wanted;
+    for (const QVariant &v : intent.params.value(QStringLiteral("tables")).toList())
+    {
+        const QString name = v.toString();
+        if (!name.isEmpty() && name != QLatin1String("*"))
+            wanted << name;
+    }
+    const bool allTables = wanted.isEmpty();
+
+    const int maxPoints =
+        m_app.settings().value(QStringLiteral("export.csv.maxPoints"), 0).toInt();
+
+    // 每张表先算成"表头 + 行"，xlsx/csv 两种落盘共用这一份，避免两条路径漂移。
+    struct SnapshotTable
+    {
+        QString sheet;
+        QStringList headers;
+        QVector<QVector<nextpilot::plotscope::host::XlsxBook::Cell>> rows;
+        int totalRows = 0;
+        bool sampled = false;
+    };
+    QVector<SnapshotTable> tables;
+
+    for (int dsId : datasetIds)
+    {
+        const Dataset *ds = m_app.data().get(dsId);
+        if (!ds)
+            return fail(err::NoEnt,
+                        QStringLiteral("数据集不存在: %1").arg(dsId));
+        const QStringList tableNames = ds->tableNames();
+        const QStringList picked = allTables ? tableNames : wanted;
+        for (const QString &tableName : picked)
+        {
+            const Table *t = ds->table(tableName);
+            if (!t)
+                continue; // 明确跳过的表不进快照（表名写错的场景）
+            SnapshotTable out;
+            // 多数据集时加前缀：两张表同名（不同源）在 xlsx 里会撞名。
+            out.sheet = datasetIds.size() > 1
+                            ? QStringLiteral("ds%1.%2").arg(dsId).arg(tableName)
+                            : tableName;
+            out.headers << QStringLiteral("time");
+            for (const Column &c : t->columns)
+                out.headers << c.name;
+            out.totalRows = t->rows;
+
+            // 取数：与 data.export 同一口径（time 列叠加源 offset，抽稀钉住末点）。
+            const int alignSrc = m_app.sources().sourceOfDataset(dsId);
+            const double offsetSec = alignSrc >= 0 ? m_app.sourceTimeOffset(alignSrc) : 0.0;
+            const int fetchCap = qMin(qMax(1, t->rows), int(kStateMaxPoints));
+            QVector<ChannelView> views;
+            for (const Column &c : t->columns)
+            {
+                auto v = ds->channel(tableName, c.name, fetchCap);
+                if (!v)
+                    return fail(err::Read, QStringLiteral("读取列失败: %1").arg(c.name));
+                views.append(*v);
+            }
+            const int rows = views.isEmpty() ? 0 : views.first().size();
+            QVector<int> picks;
+            if (maxPoints > 0 && rows > maxPoints)
+            {
+                out.sampled = true;
+                for (int k = 0; k < maxPoints - 1; ++k)
+                    picks.append(int(double(k) * double(rows) / double(maxPoints)));
+                picks.append(rows - 1); // 末点必须保留（抽稀不是截断）
+            }
+            else
+            {
+                for (int i = 0; i < rows; ++i)
+                    picks.append(i);
+            }
+            // 空表也留 sheet：只写表头，行数为 0——静默丢掉是最难查的那种错。
+            for (int i : picks)
+            {
+                QVector<nextpilot::plotscope::host::XlsxBook::Cell> row;
+                row.append(nextpilot::plotscope::host::XlsxBook::Cell::ofNumber(views.isEmpty()
+                                                        ? 0.0
+                                                        : views.first().time.value(i) + offsetSec));
+                for (const ChannelView &v : views)
+                    row.append(nextpilot::plotscope::host::XlsxBook::Cell::ofNumber(v.value.value(i)));
+                out.rows.append(row);
+            }
+            tables.append(out);
+        }
+    }
+    if (tables.isEmpty())
+        return fail(err::NoEnt, QStringLiteral("没有可导出的表（检查 tables 参数）"));
+
+    QStringList written;
+    if (format == QLatin1String("xlsx"))
+    {
+        nextpilot::plotscope::host::XlsxBook book;
+        for (const SnapshotTable &t : tables)
+        {
+            nextpilot::plotscope::host::XlsxBook::Sheet &sheet = book.addSheet(t.sheet);
+            sheet.headers = t.headers;
+            sheet.rows = t.rows;
+        }
+        QString err;
+        if (!book.save(path, &err))
+            return fail(err::Write, err);
+        written << path;
+    }
+    else
+    {
+        QDir dir(path);
+        if (!dir.exists() && !QDir().mkpath(path))
+            return fail(err::Write, QStringLiteral("无法创建目录: %1").arg(path));
+        for (const SnapshotTable &t : tables)
+        {
+            const QString file = dir.filePath(t.sheet + QStringLiteral(".csv"));
+            QFile f(file);
+            if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+                return fail(err::Write, QStringLiteral("无法写入: %1").arg(file));
+            QTextStream out(&f);
+            out << t.headers.join(QLatin1Char(',')) << '\n';
+            for (const QVector<nextpilot::plotscope::host::XlsxBook::Cell> &row : t.rows)
+            {
+                for (int i = 0; i < row.size(); ++i)
+                {
+                    if (i)
+                        out << ',';
+                    out << QString::number(row.at(i).number, 'g', 15);
+                }
+                out << '\n';
+            }
+            f.close();
+            written << file;
+        }
+    }
+
+    QVariantList tableInfo;
+    int totalRows = 0;
+    for (const SnapshotTable &t : tables)
+    {
+        totalRows += t.rows.size();
+        QVariantMap info;
+        info.insert(QStringLiteral("sheet"), t.sheet);
+        info.insert(QStringLiteral("rows"), int(t.rows.size()));
+        info.insert(QStringLiteral("total_rows"), t.totalRows);
+        info.insert(QStringLiteral("sampled"), t.sampled);
+        info.insert(QStringLiteral("columns"), t.headers);
+        tableInfo.append(info);
+    }
+    IntentResult r;
+    QVariantMap payload;
+    payload.insert(QStringLiteral("format"), format);
+    payload.insert(QStringLiteral("path"), path);
+    payload.insert(QStringLiteral("tables"), tableInfo);
+    payload.insert(QStringLiteral("table_count"), int(tables.size()));
+    payload.insert(QStringLiteral("rows"), totalRows);
+    payload.insert(QStringLiteral("files"), written);
+    r.payload = payload;
     return r;
 }
 

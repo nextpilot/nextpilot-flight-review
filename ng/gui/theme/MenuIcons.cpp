@@ -191,6 +191,15 @@ void drawCsv(QPainter &p)
     p.drawLine(QPointF(5.4, 10.6), QPointF(9.2, 10.6));
 }
 
+void drawWorkbook(QPainter &p)
+{
+    // 叠放两页 + 页内网格：读作"整本工作簿（多 sheet）"，与单表 csv 图标区分开。
+    p.drawRect(QRectF(5.6, 2.4, 8.2, 8.6)); // 后页（右上错位）
+    p.drawRect(QRectF(2.4, 5.2, 8.2, 8.6)); // 前页
+    p.drawLine(QPointF(2.4, 7.6), QPointF(10.6, 7.6));
+    p.drawLine(QPointF(6.5, 7.6), QPointF(6.5, 13.8));
+}
+
 void drawTrash(QPainter &p)
 {
     p.drawLine(QPointF(3.2, 4.4), QPointF(12.8, 4.4));
@@ -295,6 +304,7 @@ bool paint(QPainter &p, const QString &name)
     if (name == QLatin1String("split-v")) { drawSplit(p, false); return true; }
     if (name == QLatin1String("image")) { drawImage(p); return true; }
     if (name == QLatin1String("csv")) { drawCsv(p); return true; }
+    if (name == QLatin1String("workbook")) { drawWorkbook(p); return true; }
     if (name == QLatin1String("trash")) { drawTrash(p); return true; }
     if (name == QLatin1String("info")) { drawInfo(p); return true; }
     if (name == QLatin1String("reload")) { drawReload(p); return true; }

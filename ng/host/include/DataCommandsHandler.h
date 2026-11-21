@@ -92,6 +92,10 @@ private:
 
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> reload(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> exportCsv(const nextpilot::plotscope::intent::Intent &intent);
+    // 多表快照导出（M4/T4.1）：选表 → 单簿多 sheet xlsx 或每表一个 csv。
+    // 列口径与 data.export 一致（time 列叠加源 offset，settings 的采样上限同样生效）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> exportSnapshot(
+        const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recent(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearCache();
     // 缓存可观测（M4/T4.3）：磁盘上的 .psc 条目/字节 + 进程内命中/未命中计数。

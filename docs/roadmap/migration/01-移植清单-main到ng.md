@@ -58,7 +58,7 @@
 | T3.4 | **对齐参与导出**：CSV / 快照的时间列统一走对齐后时间；时间轴三种格式按对齐后零点渲染 | **完成（CSV 主路径）** `dff7f2e`：`data.export` 叠加源 offset + 表头注释；画布导出随 push 副本；三种时间格式未逐项实测 | T3.2 + T4.1 | AC-10B |
 | T3.5 | 布局选格：8×8 悬停选格（`GridPickPopup`）替代手输，上限 6×6→8×8 | **已完成** 2026-11-21 / `0664f0c` | — | 见 §2 T3.5 |
 | **M4 数据工程** | | | | |
-| T4.1 | 多表快照导出 `data.exportSnapshot`（选表 → xlsx/csv 多文件或单簿多 sheet） | M | — | AC-13 |
+| T4.1 | 多表快照导出 `data.exportSnapshot`（选表 → xlsx/csv 多文件或单簿多 sheet） | **已完成** 2026-11-21 / `XlsxBook` + `data.exportSnapshot`：xlsx 用**自写 store-only zip + 最小 OOXML**（环境里没有任何 zip/xlsx 第三方库）；`format(xlsx\|csv)` / `path`（xlsx 为文件、csv 为目录）/ `datasets[]` / `tables[]`（空或 `*`=全部）；表头 `time`+全部列，time 叠加源 offset（与 `data.export` 同口径），采样上限复用 `export.csv.maxPoints`（0=全量、抽稀钉末点）；返回 `table_count/rows/files` + 每表 `sheet/rows/total_rows/sampled/columns`。**明确不做**压缩/样式/公式/合并单元格。UI：源右键「导出全部表 ▸ Excel 工作簿 / CSV 目录」（图标 `workbook`，默认名取源名去后缀）。实测 3000 行 csv → 730 988 B / 1 sheet / 3001 行 / 8 列，openpyxl 读回列名与 schema 一致；双表 fixture sheet 数=表数 | M | — | AC-13 |
 | T4.2 | 参数表：P/Q 参数按 `param` 表落 dataset + 独立面板页签 | M | T3.1 | AC-14 |
 | T4.3 | 缓存可观测：解析缓存命中/未命中/大小 + 一键清空 | **已完成** / `17fc74f`：`data.cache.stats`（entries/bytes/hits/misses/writes + 逐条明细）；计数在 `IngestOrchestrator`（命中即跳过解析、写缓存计 write），`data.clearCache` 后归零；右键菜单带「N 项 · X MB」，无缓存置灰。实测 `entries=2 bytes=422 hits=1 misses=2 writes=1`（二次打开同一 csv 命中） | S | — | AC-15 |
 | T4.4 | 采样上限：CSV 导出、派生通道重算（0=不限） | **已完成** / `1298e57`：`export.csv.maxPoints`（0=全量）；抽稀改宿主编排并**钉住末点**（Rust 等步长 cap 会丢尾）；派生 `derive.maxPoints`（intent cap > settings > 默认 200000），输入通道同 cap 取数（否则仍被 4096 默认卡住）。实测 300 行 → maxPoints=100 → 100 行、末点 299 不变；设 0 回 300 行 | S | — | AC-16 |
@@ -93,7 +93,7 @@
 | M1 实时源 | 6 | 6 | 0 | 0 | 100% | T1.1 三前端 + T1.2 环/泵 + T1.3 统计 + T1.4 意图族（`f032b81`）+ T1.5 连接对话框（`e32101c`）+ T1.6 状态行（`826a4de`）；**流式解析器**只有 csv/custom-protocol/ulog（无 MAVLink，用户明确判定为"业务"不在底座范围） |
 | M2 录制 | 3 | 3 | 0 | 0 | 100% | T2.1 泵内接线 + T2.2 意图族（`f91acf6`）+ T2.3 录制组与状态行（`826a4de`）；缺口：mcap 无 schema 自包含 → AC-07 回读行数未过 |
 | M3 时间对齐 | 5 | 5 | 0 | 0 | 100% | T3.1 偏移收敛 AppContext、T3.2 五策略、T3.3 意图+树右键、T3.4 CSV 导出叠加、T3.5 选格 |
-| M4 数据工程 | 5 | 2 | 1 | 2 | 50% | T4.3 缓存可观测（`17fc74f`）、T4.4 采样上限（`1298e57`）完成；T4.5 数据组已出（`cbab8e1`），画布/时间轴组待各自功能接线；T4.1 快照、T4.2 参数表未动 |
+| M4 数据工程 | 5 | 3 | 1 | 1 | 60% | T4.1 多表快照、T4.3 缓存可观测（`17fc74f`）、T4.4 采样上限（`1298e57`）完成；T4.5 数据组已出（`cbab8e1`），画布/时间轴组待各自功能接线；T4.2 参数表未动 |
 | M5 比对交互 | 7 | 7 | 0 | 0 | 100% | T5.1/T5.2 叠加与对比同名（`46f1c06`）、T5.3 展开数据列（`f1c47d6`）、T5.4 同页曲线移动（`8f22223`）、T5.5/T5.7 完成，T5.6 源节点对齐▸/对比同名▸ 落地（`0b4e79b`） |
 | M6 格式扩展 | 3 | 0 | 0 | 3 | 0% | 重写型任务，与本次移植解耦 |
 | M7 现场排障 | 2 | 0 | 0 | 2 | 0% | 依赖 T1.3 的流控统计 |
@@ -199,6 +199,9 @@ data.source.list      {}            // 返回状态/速率/字节/错误/数据�
 ### T4.1–T4.5 数据工程
 
 - 快照：`data.exportSnapshot {datasets[], tables[], format:xlsx|csv}`；xlsx 一簿多 sheet，csv 一表一文件（目录）。
+  - 落地：`ng/host/{include,src}/XlsxBook`（store-only zip：本地头/中央目录/EOCD 三段 + 自算 CRC32 + 固定 DOS 时间戳，字节可复现；OOXML 五件套、数值 `<v>`/文本 `inlineStr`、XML 转义去控制字符、列号 A..Z/AA 换算）；sheet 名清洗（去 `[]:*?/\`、截 31 字符、重名 `_2`）。
+  - 边界：不压缩（体积随行数线性，3000 行 ≈ 715 KB）、无样式/公式/合并；csv 目录模式不带源 alias；Dataset 拒零行表，故"空表也留 sheet"是防御分支（无法端到端构造）。
+  - UI：源右键子菜单两项（Excel 单簿 / CSV 目录），完成提示给「N 张表 · M 行 → 路径」。截图 `verify/ng_export_all_menu.png`、`verify/ng_export_all_done.png`。
 - 参数表：ng 树里已有"参数"节点但无表；需解析器把 `param` 段落成独立 table（ULog 解析器改），P/Q 只是列名约定。
 - 缓存命中：`IngestOrchestrator::Options::useCache` 已有；补 `data.cache.stats` 返回 {files, bytes, hits, misses}，UI 在设置页显示。
 - 设置对话框：`ng/gui/shell/SettingsDialog.cpp`，三组（数据：采样上限/派生重算上限/缓存；画布：默认网格/图例；时间轴：相对秒/时分秒/UTC）。存储走已有 `SettingsStore`（scope=app），**不新增配置机制**。

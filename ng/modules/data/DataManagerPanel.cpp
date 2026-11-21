@@ -1101,6 +1101,11 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     QAction *reload = menu.addAction(QStringLiteral("重载数据源"));
     QAction *rename = menu.addAction(QStringLiteral("重命名…"));
     QAction *exportCsv = menu.addAction(QStringLiteral("导出 CSV…"));
+    // 多表快照（T4.1）：单表 CSV 之外，整源落成一个工作簿（每表一 sheet）或多文件目录。
+    // 多表快照（T4.1）：单表 CSV 之外，整源落成一个工作簿（每表一 sheet）或多文件目录。
+    QMenu *exportAll = menu.addMenu(QStringLiteral("导出全部表"));
+    QAction *exportXlsx = exportAll->addAction(QStringLiteral("Excel 工作簿（.xlsx）…"));
+    QAction *exportCsvDir = exportAll->addAction(QStringLiteral("CSV 目录（每表一个文件）…"));
     // 缓存可观测（T4.3）：菜单项先把"有多少、占多大"摆出来，没有缓存就置灰，
     // 免得点一个什么都不做的入口。
     Intent cacheIntent;
@@ -1171,6 +1176,9 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     reload->setIcon(MenuIcons::icon(QStringLiteral("reload")));
     rename->setIcon(MenuIcons::icon(QStringLiteral("rename")));
     exportCsv->setIcon(MenuIcons::icon(QStringLiteral("csv")));
+    exportAll->setIcon(MenuIcons::icon(QStringLiteral("workbook")));
+    exportXlsx->setIcon(MenuIcons::icon(QStringLiteral("workbook")));
+    exportCsvDir->setIcon(MenuIcons::icon(QStringLiteral("csv")));
     clearCache->setIcon(MenuIcons::icon(QStringLiteral("eraser")));
     settingsAction->setIcon(MenuIcons::icon(QStringLiteral("gear")));
     clearCache->setEnabled(cacheEntries > 0);
@@ -1323,6 +1331,48 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
         intent.params[QStringLiteral("path")] = path;
         const auto r = m_executor.execute(intent);
         if (!r) QMessageBox::warning(this, QStringLiteral("导出失败"), r.error().message);
+    }
+    else if (chosen == exportXlsx || chosen == exportCsvDir)
+    {
+        if (info->datasetIds.isEmpty())
+        {
+            QMessageBox::information(this, QStringLiteral("导出全部表"), QStringLiteral("该数据源还没有解析出数据集"));
+            return;
+        }
+        const bool xlsx = chosen == exportXlsx;
+        QString path;
+        if (xlsx)
+        {
+            path = QFileDialog::getSaveFileName(this, QStringLiteral("导出全部表到 Excel"),
+                                               QFileInfo(info->name).completeBaseName()
+                                                   + QStringLiteral(".xlsx"),
+                                               QStringLiteral("Excel 工作簿 (*.xlsx)"));
+            if (!path.isEmpty() && !path.endsWith(QStringLiteral(".xlsx"), Qt::CaseInsensitive))
+                path += QStringLiteral(".xlsx");
+        }
+        else
+        {
+            // 默认目录用源名去后缀（源名常带 .csv，直接当目录名会被读成"要建个 .csv 文件夹"）。
+            path = QFileDialog::getExistingDirectory(this, QStringLiteral("导出全部表到 CSV 目录"),
+                                                    QFileInfo(info->name).completeBaseName());
+        }
+        if (path.isEmpty()) return;
+        Intent intent; intent.op = QStringLiteral("data.exportSnapshot");
+        intent.params[QStringLiteral("datasets")] = QVariantList{info->datasetIds.first()};
+        intent.params[QStringLiteral("format")] = xlsx ? QStringLiteral("xlsx") : QStringLiteral("csv");
+        intent.params[QStringLiteral("path")] = path;
+        const auto r = m_executor.execute(intent);
+        if (!r)
+        {
+            QMessageBox::warning(this, QStringLiteral("导出失败"), r.error().message);
+            return;
+        }
+        const QVariantMap p = r.value().payload.toMap();
+        QMessageBox::information(this, QStringLiteral("导出完成"),
+                                 QStringLiteral("%1 张表 · %2 行 → %3")
+                                     .arg(p.value(QStringLiteral("table_count")).toInt())
+                                     .arg(p.value(QStringLiteral("rows")).toLongLong())
+                                     .arg(path));
     }
     else if (chosen == settingsAction)
     {
