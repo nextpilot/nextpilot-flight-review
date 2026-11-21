@@ -146,6 +146,7 @@ void DataCommandsHandler::buildDispatch()
                    [this](const I &) { return workspaceSave(); });
     m_dispatch.reg(QStringLiteral("data.workspace.restore"),
                    [this](const I &) { return workspaceRestore(); });
+    m_dispatch.reg(QStringLiteral("data.time.align"), this, &DataCommandsHandler::alignTime);
     m_dispatch.reg(QStringLiteral("data.transform.set"), this, &DataCommandsHandler::setChannelTransform);
     m_dispatch.reg(QStringLiteral("data.transform.clear"), this, &DataCommandsHandler::clearChannelTransform);
     m_dispatch.reg(QStringLiteral("data.derive.list"), this, &DataCommandsHandler::deriveList);
@@ -861,6 +862,106 @@ Result<IntentResult> DataCommandsHandler::setSourcePaused(const Intent &intent, 
     r.payload = QVariantMap{
         {QStringLiteral("id"), sourceId},
         {QStringLiteral("paused"), paused},
+    };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::alignTime(const Intent &intent)
+{
+    // 对齐策略（T3.2）。语义统一为"只改出口偏移"：
+    //   base   → 本源成为时间基准，offset 归零并把它设为活动源
+    //   start  → 本源起点对齐到基准源起点
+    //   end    → 本源终点对齐到基准源终点
+    //   center → 两端中点对齐
+    //   reset  → 偏移归零（原始时间从未被改写过，因此等价于逐点还原）
+    const QString mode = intent.params.value(QStringLiteral("mode")).toString();
+    static const QStringList kModes{QStringLiteral("base"), QStringLiteral("start"),
+                                    QStringLiteral("end"), QStringLiteral("center"),
+                                    QStringLiteral("reset")};
+    if (!kModes.contains(mode))
+        return fail(err::Args, QStringLiteral("mode 须为 base/start/end/center/reset 之一"));
+
+    int srcId = intent.params.value(QStringLiteral("source"), -1).toInt();
+    if (srcId < 0)
+        srcId = m_app.activeSourceId();
+    const DataSourceInfo *srcInfo = m_app.sources().get(srcId);
+    if (!srcInfo || srcInfo->datasetIds.isEmpty())
+        return fail(err::NoSource, QStringLiteral("该数据源没有可对齐的数据集"));
+
+    // 源范围必须是"原始"范围：offset 是相对量，拿叠加后的范围去算会自我累积。
+    auto rangeOf = [this](int sourceId) -> std::optional<std::pair<TimeUs, TimeUs>> {
+        const DataSourceInfo *info = m_app.sources().get(sourceId);
+        if (!info)
+            return std::nullopt;
+        std::optional<TimeUs> min;
+        std::optional<TimeUs> max;
+        for (int dsId : info->datasetIds)
+        {
+            Dataset *ds = m_app.data().getMutable(dsId);
+            if (!ds)
+                continue;
+            const auto r = ds->rawTimeRangeUs();
+            if (!r)
+                continue;
+            if (!min || r->first < *min)
+                min = r->first;
+            if (!max || r->second > *max)
+                max = r->second;
+        }
+        if (!min || !max)
+            return std::nullopt;
+        return std::make_pair(*min, *max);
+    };
+
+    const auto srcRange = rangeOf(srcId);
+    if (!srcRange)
+        return fail(err::State, QStringLiteral("该数据源没有时间数据（表为空）"));
+
+    TimeUs offset = 0;
+    int baseId = srcId;
+    if (mode == QLatin1String("base"))
+    {
+        m_app.setActiveSourceId(srcId);
+    }
+    else if (mode == QLatin1String("reset"))
+    {
+        // offset=0，不需要基准
+    }
+    else
+    {
+        baseId = intent.params.value(QStringLiteral("base"), -1).toInt();
+        if (baseId < 0)
+            baseId = m_app.activeSourceId();
+        if (baseId == srcId)
+            return fail(err::Args, QStringLiteral("对齐对象与基准是同一个数据源，请指定 base"));
+        const auto baseRange = rangeOf(baseId);
+        if (!baseRange)
+            return fail(err::NoSource, QStringLiteral("基准数据源没有时间数据"));
+
+        if (mode == QLatin1String("start"))
+            offset = baseRange->first - srcRange->first;
+        else if (mode == QLatin1String("end"))
+            offset = baseRange->second - srcRange->second;
+        else // center：中点对齐，整除不丢符号。
+        {
+            const TimeUs srcMid = srcRange->first + (srcRange->second - srcRange->first) / 2;
+            const TimeUs baseMid = baseRange->first + (baseRange->second - baseRange->first) / 2;
+            offset = baseMid - srcMid;
+        }
+    }
+
+    // 偏移的唯一真值在宿主态 AppContext（画布订阅 sourceTimeOffsetChanged 重推 x）。
+    // Dataset 只存原始时间戳，不存偏移——两处都存会双算，这是刻意收敛到一条路径。
+    m_app.setSourceTimeOffset(srcId, offset / 1000000.0);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("source"), srcId},
+        {QStringLiteral("base"), baseId},
+        {QStringLiteral("mode"), mode},
+        {QStringLiteral("offset_us"), QVariant::fromValue<qlonglong>(offset)},
+        {QStringLiteral("raw_min_us"), QVariant::fromValue<qlonglong>(srcRange->first)},
+        {QStringLiteral("raw_max_us"), QVariant::fromValue<qlonglong>(srcRange->second)},
     };
     return r;
 }

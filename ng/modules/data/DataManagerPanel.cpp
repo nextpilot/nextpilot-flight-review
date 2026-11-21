@@ -1009,6 +1009,14 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     QAction *rename = menu.addAction(QStringLiteral("重命名…"));
     QAction *exportCsv = menu.addAction(QStringLiteral("导出 CSV…"));
     QAction *clearCache = menu.addAction(QStringLiteral("清除全部解析缓存"));
+    // 时间对齐（T3.2）：五项策略共用一条意图 data.time.align，脚本/CLI/GUI 同语义。
+    // 偏移落点只有一个：AppContext::setSourceTimeOffset()（画布订阅后自动重推 x）。
+    QMenu *align = menu.addMenu(QStringLiteral("时间对齐"));
+    QAction *alBase = align->addAction(QStringLiteral("设为时间基准（清零偏移）"));
+    QAction *alStart = align->addAction(QStringLiteral("起点对齐到基准"));
+    QAction *alEnd = align->addAction(QStringLiteral("终点对齐到基准"));
+    QAction *alCenter = align->addAction(QStringLiteral("中点对齐到基准"));
+    QAction *alReset = align->addAction(QStringLiteral("重置偏移"));
     menu.addSeparator();
     QAction *detail = menu.addAction(QStringLiteral("数据源信息…"));
     QAction *activate = menu.addAction(QStringLiteral("设为活动数据源"));
@@ -1026,10 +1034,46 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     activate->setIcon(MenuIcons::icon(QStringLiteral("pin")));
     remove->setIcon(MenuIcons::icon(QStringLiteral("trash")));
     removeAll->setIcon(MenuIcons::icon(QStringLiteral("remove-all")));
+    align->setIcon(MenuIcons::icon(QStringLiteral("fit")));
     QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
 
+    if (chosen == alBase || chosen == alStart || chosen == alEnd
+        || chosen == alCenter || chosen == alReset)
+    {
+        QString mode = QStringLiteral("reset");
+        if (chosen == alBase) mode = QStringLiteral("base");
+        else if (chosen == alStart) mode = QStringLiteral("start");
+        else if (chosen == alEnd) mode = QStringLiteral("end");
+        else if (chosen == alCenter) mode = QStringLiteral("center");
+        Intent intent;
+        intent.op = QStringLiteral("data.time.align");
+        intent.params[QStringLiteral("mode")] = mode;
+        intent.params[QStringLiteral("source")] = sourceId;
+        if (mode != QLatin1String("base") && mode != QLatin1String("reset"))
+        {
+            // 基准 = 活动源；活动源就是自己时自动取另一个源，省得用户先去切活动源。
+            int base = m_appCtx.activeSourceId();
+            if (base == sourceId)
+            {
+                base = -1;
+                for (int id : m_sources.ids())
+                    if (id != sourceId) { base = id; break; }
+            }
+            if (base < 0 || base == sourceId)
+            {
+                QMessageBox::information(this, QStringLiteral("时间对齐"),
+                    QStringLiteral("需要另一个数据源作为基准：请先打开第二个源，或把它设为活动数据源。"));
+                return;
+            }
+            intent.params[QStringLiteral("base")] = base;
+        }
+        const auto ar = m_executor.execute(intent);
+        if (!ar)
+            QMessageBox::warning(this, QStringLiteral("对齐失败"), ar.error().message);
+        return;
+    }
     if (live && chosen == pause)
     {
         Intent pint; pint.op = paused ? QStringLiteral("data.resume") : QStringLiteral("data.pause");

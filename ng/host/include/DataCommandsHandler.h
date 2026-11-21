@@ -78,6 +78,10 @@ private:
     // 仅 SourceKind::Live 源可操作；文件源返回 enotsupported。幂等：已在目标状态直接成功。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setSourcePaused(
         const nextpilot::plotscope::intent::Intent &intent, bool paused);
+    // 源级时间对齐（T3.2）：mode = base/start/end/center/reset。
+    // 只改 Dataset 出口偏移（见 Dataset::setTimeOffsetUs），原始时间戳不动。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> alignTime(
+        const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> derive(const nextpilot::plotscope::intent::Intent &intent);
     // MIMO 派生：四元数 → roll/pitch/yaw（独立派生字段，不写回 dataset）。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> deriveMimoQuat(const nextpilot::plotscope::intent::Intent &intent);
