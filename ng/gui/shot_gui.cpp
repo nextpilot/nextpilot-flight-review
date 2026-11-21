@@ -26,6 +26,7 @@
 #include "ImportDialog.h"
 #include "Transform.h"
 #include "DataManagerPanel.h"
+#include "SettingsDialog.h"
 #include "ShellBinder.h"
 #include "SARibbonCategory.h"
 #include "SARibbonBar.h"
@@ -154,6 +155,7 @@ int main(int argc, char *argv[])
     bool hoverArg = false; // --hover 注入一次鼠标移动，让每格悬浮工具栏在截图里可见
     QString liveArg;      // --livesource=<名>[:paused] 注册演示 live 源（#193 暂停/继续按钮）
     QString liveTplArg;   // --livetpl=<模板路径> 走真 data.connect 起一个 UDP 监听源（T1.5/T1.6 UI 验证）
+    bool settingsDlgArg = false; // --settingsdlg：截数据设置对话框（T4.5）
     QStringList actionArgs;
     int w = 1440;
     int h = 900;
@@ -193,6 +195,11 @@ int main(int argc, char *argv[])
         if (a.startsWith(QStringLiteral("--cursor=")))
         {
             cursorArg = a.mid(QStringLiteral("--cursor=").size());
+            continue;
+        }
+        if (a == QStringLiteral("--settingsdlg"))
+        {
+            settingsDlgArg = true;
             continue;
         }
         if (a == QStringLiteral("--hover"))
@@ -668,6 +675,26 @@ int main(int argc, char *argv[])
                 fprintf(stdout, "过滤器编辑器截图已保存: %s\n", qPrintable(out));
             else
                 fprintf(stderr, "过滤器编辑器截图保存失败\n");
+            app.quit();
+        });
+        return app.exec();
+    }
+
+    // --settingsdlg：截数据设置对话框（T4.5）——只截对话框本体，不截整屏。
+    if (settingsDlgArg)
+    {
+        nextpilot::plotscope::gui::SettingsDialog dlg(application.host(), &window);
+        dlg.show();
+        dlg.adjustSize();
+        QCoreApplication::processEvents();
+        fprintf(stderr, "[settingsdlg] shown size=%dx%d\n", dlg.width(), dlg.height());
+        QTimer::singleShot(250, [&] {
+            const QPixmap shot = dlg.grab();
+            if (shot.save(out))
+                fprintf(stdout, "数据设置截图已保存: %s (%dx%d)\n", qPrintable(out), shot.width(),
+                        shot.height());
+            else
+                fprintf(stderr, "数据设置截图保存失败\n");
             app.quit();
         });
         return app.exec();

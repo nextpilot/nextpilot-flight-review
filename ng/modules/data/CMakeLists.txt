@@ -30,6 +30,7 @@ set_target_properties(ng_data_tablemodel PROPERTIES AUTOMOC ON CXX_STANDARD 17 P
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 add_library(ng_module_data_gui OBJECT DataManagerPanel.cpp DataManagerPanel.h
                                       LiveConnectDialog.cpp LiveConnectDialog.h
+                                      SettingsDialog.cpp SettingsDialog.h
                                       DataTablePanel.cpp DataTablePanel.h)
 target_include_directories(ng_module_data_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

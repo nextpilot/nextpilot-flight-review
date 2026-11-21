@@ -1,6 +1,7 @@
 #include "DataManagerPanel.h"
 
 #include "LiveConnectDialog.h"
+#include "SettingsDialog.h"
 
 #include "PanelFactoryRegistry.h"
 #include "ThemeManager.h"
@@ -398,9 +399,16 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     auto *addMenu = new QMenu(addBtn);
     QAction *addOpen = addMenu->addAction(QStringLiteral("打开日志…"));
     QAction *addLive = addMenu->addAction(QStringLiteral("连接实时源…"));
+    addMenu->addSeparator();
+    // 设置也挂这里：已存在的源才有右键菜单，而"设置"在没有源时也该能进。
+    QAction *addSettings = addMenu->addAction(QStringLiteral("数据设置…"));
     addBtn->setMenu(addMenu);
     connect(addOpen, &QAction::triggered, this, &DataManagerPanel::openLogFile);
     connect(addLive, &QAction::triggered, this, &DataManagerPanel::openLiveConnect);
+    connect(addSettings, &QAction::triggered, this, [this]() {
+        SettingsDialog dlg(m_executor, this);
+        dlg.exec();
+    });
     headerLay->addWidget(addBtn);
     m_srcCount = new QLabel(QStringLiteral("0 源 · 0 已连接"), headerRow);
     m_srcCount->setObjectName(QStringLiteral("textDim"));
@@ -1078,6 +1086,7 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
         cacheEntries = cm.value(QStringLiteral("entries")).toInt();
         cacheBytes = cm.value(QStringLiteral("bytes")).toLongLong();
     }
+    QAction *settingsAction = menu.addAction(QStringLiteral("数据设置…"));
     QAction *clearCache = cacheEntries > 0
         ? menu.addAction(QStringLiteral("清除全部解析缓存（%1 项 · %2 MB）")
                              .arg(cacheEntries)
@@ -1104,6 +1113,7 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     rename->setIcon(MenuIcons::icon(QStringLiteral("rename")));
     exportCsv->setIcon(MenuIcons::icon(QStringLiteral("csv")));
     clearCache->setIcon(MenuIcons::icon(QStringLiteral("eraser")));
+    settingsAction->setIcon(MenuIcons::icon(QStringLiteral("gear")));
     clearCache->setEnabled(cacheEntries > 0);
     detail->setIcon(MenuIcons::icon(QStringLiteral("info")));
     activate->setIcon(MenuIcons::icon(QStringLiteral("pin")));
@@ -1241,6 +1251,11 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
         intent.params[QStringLiteral("path")] = path;
         const auto r = m_executor.execute(intent);
         if (!r) QMessageBox::warning(this, QStringLiteral("导出失败"), r.error().message);
+    }
+    else if (chosen == settingsAction)
+    {
+        SettingsDialog dlg(m_executor, this);
+        dlg.exec();
     }
     else if (chosen == clearCache)
     {
