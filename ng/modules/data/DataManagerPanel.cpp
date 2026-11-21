@@ -1276,6 +1276,11 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
         return;
     QMenu menu(this);
     QAction *plot = menu.addAction(QStringLiteral("画到当前画布"));
+    // 多源同名（M5/T5.1、T5.2）：曲线名带源前缀，两层含义区分得开。
+    QAction *overlaySame = menu.addAction(QStringLiteral("叠加全部同名…"));
+    overlaySame->setToolTip(QStringLiteral("把其它源里同名通道全部叠到当前画布，曲线名带源前缀"));
+    QAction *compareSame = menu.addAction(QStringLiteral("对比同名通道…"));
+    compareSame->setToolTip(QStringLiteral("只取两条、双色对比，并给出终点对齐的偏移建议"));
     QAction *viewTable = menu.addAction(QStringLiteral("查看数据表格"));
     QAction *delDerived = menu.addAction(QStringLiteral("删除派生通道…"));
     menu.addSeparator();
@@ -1308,6 +1313,21 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
         if (sourceId >= 0) m_appCtx.setActiveSourceId(sourceId);
         m_appCtx.setActiveChannel(datasetId, tableName, columnName);
         emit channelActivated(datasetId, tableName, columnName);
+        return;
+    }
+    if (chosen == overlaySame || chosen == compareSame)
+    {
+        QVariantMap p;
+        p.insert(QStringLiteral("dataset"), datasetId);
+        p.insert(QStringLiteral("column"), columnName);
+        Result<QVariant> out{QVariant()};
+        const bool ok = m_appCtx.interactions().dispatchViewAction(
+            chosen == overlaySame ? QStringLiteral("plot.overlaySame")
+                                  : QStringLiteral("plot.compareSame"),
+            p, out);
+        if (!ok)
+            QMessageBox::information(this, QStringLiteral("叠加/对比"),
+                                     out.error().message);
         return;
     }
     if (chosen == viewTable)

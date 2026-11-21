@@ -60,7 +60,7 @@ int ChannelView::channelCount() const
 }
 
 bool ChannelView::addChannel(DatasetId datasetId, const QString &table, const QString &column,
-                             QString *err)
+                             QString *err, const QString &title)
 {
     if (!m_canvas)
         return false;
@@ -77,7 +77,7 @@ bool ChannelView::addChannel(DatasetId datasetId, const QString &table, const QS
     s.datasetId = datasetId;
     s.table = table;
     s.column = column;
-    s.title = QStringLiteral("%1 / %2.%3").arg(datasetId).arg(table, column);
+    s.title = title.isEmpty() ? QStringLiteral("%1 / %2.%3").arg(datasetId).arg(table, column) : title;
     // 颜色由画布按当前已有条数分配；这里留空，renderOne 会补上。
     if (!renderOne(s, err))
         return false;

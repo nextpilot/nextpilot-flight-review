@@ -1713,6 +1713,194 @@ void CanvasWorkspace::registerViewActions()
                                     return QVariant(true);
                                 });
 
+    // —— 多源同名叠加/对比（M5/T5.1、T5.2）——
+    //
+    // 判定口径：同名 = **列名相同**（表可以不同；一个源里多表更常见）。
+    // 曲线名统一「源名:table.column」，否则 N 条曲线挤在一起分不清谁是谁。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.overlaySame"),
+        [this](const QVariantMap &params) -> Result<QVariant> {
+            PlotCanvas *c = activeCanvas();
+            if (!c)
+                return fail(err::NoEnt, QStringLiteral("无活动画布"));
+            int dsId = params.value(QStringLiteral("dataset"), m_appCtx.activeDatasetId()).toInt();
+            const QString column = params.value(QStringLiteral("column"),
+                                                m_appCtx.activeColumn()).toString();
+            if (column.isEmpty() || dsId < 0)
+                return fail(err::NoEnt, QStringLiteral("先在数据集树里选一个字段"));
+
+            // 源名可能重复（同一份文件被加载两次、或同名不同路径），
+            // 重名时补 #id —— 曲线名必须唯一，否则 N 条曲线在图上分不清。
+            auto uniqSrc = [this](int srcId, const QString &name) -> QString {
+                int dup = 0;
+                for (int s : m_appCtx.sources().ids())
+                {
+                    const nextpilot::plotscope::dataset::DataSourceInfo *i =
+                        m_appCtx.sources().get(s);
+                    if (i && i->name == name)
+                        ++dup;
+                }
+                return dup > 1 ? QStringLiteral("%1#%2").arg(name).arg(srcId) : name;
+            };
+
+            QVariantList addedNames;
+            int matched = 0;
+            for (int srcId : m_appCtx.sources().ids())
+            {
+                const nextpilot::plotscope::dataset::DataSourceInfo *info =
+                    m_appCtx.sources().get(srcId);
+                if (!info)
+                    continue;
+                const QString srcName = uniqSrc(srcId,
+                                                info->name.isEmpty()
+                                                    ? QStringLiteral("src%1").arg(srcId)
+                                                    : info->name);
+                for (int d : info->datasetIds)
+                {
+                    const nextpilot::plotscope::dataset::Dataset *ds = m_appCtx.data().get(d);
+                    if (!ds)
+                        continue;
+                    // 一个数据集里取第一张含该列的表（多表格式里同名通道通常只出现一次）。
+                    QString hitTable;
+                    for (const QString &tn : ds->tableNames())
+                    {
+                        const nextpilot::plotscope::dataset::Table *t = ds->table(tn);
+                        if (!t)
+                            continue;
+                        for (const nextpilot::plotscope::dataset::Column &col : t->columns)
+                            if (col.name == column)
+                            {
+                                hitTable = tn;
+                                break;
+                            }
+                        if (!hitTable.isEmpty())
+                            break;
+                    }
+                    if (hitTable.isEmpty())
+                        continue;
+                    ++matched;
+                    const QString title =
+                        QStringLiteral("%1:%2.%3").arg(srcName, hitTable, column);
+                    if (activeChannelView())
+                        activeChannelView()->addChannel(d, hitTable, column, nullptr, title);
+                    addedNames.append(title);
+                }
+            }
+            if (matched == 0)
+                return fail(err::NoEnt,
+                            QStringLiteral("没有其它源包含同名通道: %1").arg(column));
+            QVariantMap out;
+            out.insert(QStringLiteral("matched"), matched);
+            out.insert(QStringLiteral("added"), int(addedNames.size()));
+            out.insert(QStringLiteral("names"), addedNames);
+            return QVariant(out);
+        });
+
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.compareSame"),
+        [this](const QVariantMap &params) -> Result<QVariant> {
+            PlotCanvas *c = activeCanvas();
+            if (!c)
+                return fail(err::NoEnt, QStringLiteral("无活动画布"));
+            const int dsId = params.value(QStringLiteral("dataset"), m_appCtx.activeDatasetId()).toInt();
+            const QString column = params.value(QStringLiteral("column"),
+                                                m_appCtx.activeColumn()).toString();
+            if (column.isEmpty() || dsId < 0)
+                return fail(err::NoEnt, QStringLiteral("先在数据集树里选一个字段"));
+
+            // 只取两条：当前通道 + 第一个能匹配上的**别的源**。
+            auto uniqSrc = [this](int srcId, const QString &name) -> QString {
+                int dup = 0;
+                for (int s : m_appCtx.sources().ids())
+                {
+                    const nextpilot::plotscope::dataset::DataSourceInfo *i =
+                        m_appCtx.sources().get(s);
+                    if (i && i->name == name)
+                        ++dup;
+                }
+                return dup > 1 ? QStringLiteral("%1#%2").arg(name).arg(srcId) : name;
+            };
+            struct Hit { int datasetId; QString table; QString srcName; };
+            Hit self{-1, QString(), QString()};
+            Hit other{-1, QString(), QString()};
+            bool hasOther = false;
+            for (int srcId : m_appCtx.sources().ids())
+            {
+                const nextpilot::plotscope::dataset::DataSourceInfo *info =
+                    m_appCtx.sources().get(srcId);
+                if (!info)
+                    continue;
+                const QString srcName = uniqSrc(srcId,
+                                                info->name.isEmpty()
+                                                    ? QStringLiteral("src%1").arg(srcId)
+                                                    : info->name);
+                for (int d : info->datasetIds)
+                {
+                    const nextpilot::plotscope::dataset::Dataset *ds = m_appCtx.data().get(d);
+                    if (!ds)
+                        continue;
+                    QString hitTable;
+                    for (const QString &tn : ds->tableNames())
+                    {
+                        const nextpilot::plotscope::dataset::Table *t = ds->table(tn);
+                        if (!t)
+                            continue;
+                        for (const nextpilot::plotscope::dataset::Column &col : t->columns)
+                            if (col.name == column)
+                            {
+                                hitTable = tn;
+                                break;
+                            }
+                        if (!hitTable.isEmpty())
+                            break;
+                    }
+                    if (hitTable.isEmpty())
+                        continue;
+                    if (d == dsId)
+                    {
+                        self = Hit{d, hitTable, srcName};
+                    }
+                    else if (!hasOther && d != self.datasetId)
+                    {
+                        other = Hit{d, hitTable, srcName};
+                        hasOther = true;
+                        break; // 只取一条对照，够了
+                    }
+                }
+                if (hasOther)
+                    break;
+            }
+            if (self.datasetId < 0 || !hasOther)
+                return fail(err::NoEnt,
+                            QStringLiteral("没有别的源包含同名通道: %1").arg(column));
+
+            const nextpilot::plotscope::dataset::Dataset *base = m_appCtx.data().get(self.datasetId);
+            const nextpilot::plotscope::dataset::Dataset *peer = m_appCtx.data().get(other.datasetId);
+            if (!base || !peer)
+                return fail(err::NoEnt, QStringLiteral("数据集已失效"));
+
+            // 对比前先清掉当前画布的曲线：AC-19 要求"恰两条"，残留会让条数不对。
+            if (activeChannelView())
+                activeChannelView()->clearChannels();
+            if (activeChannelView())
+            {
+                activeChannelView()->addChannel(self.datasetId, self.table, column, nullptr,
+                                                QStringLiteral("%1:%2.%3").arg(self.srcName, self.table, column));
+                activeChannelView()->addChannel(other.datasetId, other.table, column, nullptr,
+                                                QStringLiteral("%1:%2.%3").arg(other.srcName, other.table, column));
+            }
+
+            // offset 建议与 T3 同一口径：**终点对齐**（baseEnd - peerEnd）。
+            const qint64 offsetUs =
+                qRound64((base->timeMax() - peer->timeMax()) * 1000000.0);
+            QVariantMap out;
+            out.insert(QStringLiteral("series"), 2);
+            out.insert(QStringLiteral("offset_us"), QVariant::fromValue<qlonglong>(offsetUs));
+            out.insert(QStringLiteral("base"), QStringLiteral("%1:%2.%3").arg(self.srcName, self.table, column));
+            out.insert(QStringLiteral("peer"), QStringLiteral("%1:%2.%3").arg(other.srcName, other.table, column));
+            out.insert(QStringLiteral("x_lo"), qMin(base->timeMin(), peer->timeMin()));
+            out.insert(QStringLiteral("x_hi"), qMax(base->timeMax(), peer->timeMax()));
+            return QVariant(out);
+        });
+
     // —— page.*：页面/画布布局操作（抄老 page 面板体验）——
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.addCanvas"),
                                 [this](const QVariantMap &) -> Result<QVariant> {

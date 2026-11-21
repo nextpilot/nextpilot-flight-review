@@ -564,6 +564,8 @@ int main(int argc, char *argv[])
         OK("data.reload：按源 id 重载成功，数据集 id 稳定（绘图不失效）");
     }
 
+
+
     // --- 5c-b) 数据表格查看器（2.2.3）：树选表 → 中央页签按需创建 → 表格同步 ---
     //
     // 回归点：面板必须**按需创建**（初始中央区只有画布 + 已有的脚本编辑器页签），
@@ -2297,6 +2299,99 @@ int main(int argc, char *argv[])
         }
 
         OK("分析 gallery：全部/最近/收藏三组 + 收藏切换 + MRU 记录 + Workspace 持久化");
+    }
+
+    // --- 5c-d) 多源同名叠加/对比（M5/T5.1、T5.2）---
+    //
+    // 第二份**同构** CSV：文件名不同 → 另一个源，列名完全相同 —— 正是
+    // "两台设备同一套参数对比"的真实形态。
+    {
+        const QString copyPath = QStringLiteral("/tmp/ng_gui_overlay_b.csv");
+        QFile::remove(copyPath);
+        CHECK(QFile::copy(fixture, copyPath));
+        Intent load2;
+        load2.op = QStringLiteral("data.load");
+        load2.params[QStringLiteral("path")] = copyPath;
+        const auto l2 = application.host().execute(load2);
+        CHECK(l2);
+        // payload 两种形态都要认：首次载入是 {dataset,...} 的 map，
+        // 已有同指纹缓存时直接回数据集 id（int）。
+        const QVariant pv = l2.value().payload;
+        const int dsB = pv.metaType().id() == QMetaType::QVariantMap
+                            ? pv.toMap().value(QStringLiteral("dataset")).toInt()
+                            : pv.toInt();
+        CHECK(dsB >= 0);
+        CHECK(dsB != loadedDsId);
+
+        const QString col = QStringLiteral("att.pitch[deg]");
+        // 叠加：其它源的同名列全部画上，曲线名带源前缀（否则 N 条曲线分不清谁是谁）。
+        {
+            QVariant vr;
+            Result<QVariant> res(vr);
+            const QVariantMap p{{QStringLiteral("dataset"), loadedDsId},
+                                {QStringLiteral("column"), col}};
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.overlaySame"), p, res));
+            CHECK(res);
+            const QVariantMap m = res.value().toMap();
+            // 该列可能不止两个源有（前面各段也加载过含同名表头的 csv），
+            // 但至少这两源必须命中，且"命中数 = 添加数"。
+            CHECK(m.value(QStringLiteral("matched")).toInt() >= 2);
+            CHECK(m.value(QStringLiteral("added")).toInt() ==
+                  m.value(QStringLiteral("matched")).toInt());
+            const QStringList names = m.value(QStringLiteral("names")).toStringList();
+            CHECK(names.size() >= 2);
+            CHECK(names.filter(QStringLiteral("ng_gui_overlay_b")).size() == 1);
+            // 曲线名形状「源名:表.列」——源前缀让 N 条同名曲线分得清。
+            for (const QString &n : names)
+            {
+                CHECK(n.endsWith(col));
+                CHECK(n.contains(QStringLiteral(":")));
+            }
+        }
+        // 对比：清掉残留、只留两条，并给终点对齐的 offset 建议。
+        {
+            QVariant vr;
+            Result<QVariant> res(vr);
+            const QVariantMap p{{QStringLiteral("dataset"), loadedDsId},
+                                {QStringLiteral("column"), col}};
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.compareSame"), p, res));
+            CHECK(res);
+            const QVariantMap m = res.value().toMap();
+            CHECK(m.value(QStringLiteral("series")).toInt() == 2);
+            CHECK(m.contains(QStringLiteral("offset_us")));
+            CHECK(m.value(QStringLiteral("base")).toString() !=
+                  m.value(QStringLiteral("peer")).toString());
+            CHECK(m.value(QStringLiteral("x_lo")).toDouble() <=
+                  m.value(QStringLiteral("x_hi")).toDouble());
+
+            // 画布上真的只有两条（AC-19「恰两条」）。
+            QVariant vl;
+            Result<QVariant> list(vl);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.series.list"), {}, list));
+            CHECK(list);
+            CHECK(list.value().toList().size() == 2);
+        }
+        OK("多源同名：叠加取全部同名列（曲线名带源前缀）、对比清场后恰两条 + 终点对齐 offset");
+
+        // 段末清场：后面「画布消费 LOD」段按"一条曲线的点数 <= 像素宽"断言，
+        // 残留的两条对比曲线会把总点数撑到 2×宽度（曾因此 FAIL）。
+        QVariant vl2;
+        Result<QVariant> list2(vl2);
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.series.list"), {}, list2));
+        for (const QVariant &v : list2.value().toList())
+        {
+            QVariantMap p;
+            p.insert(QStringLiteral("key"),
+                     v.toMap().value(QStringLiteral("key")).toString());
+            QVariant vr2;
+            Result<QVariant> rm(vr2);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.series.remove"), p, rm));
+        }
     }
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");

@@ -36,8 +36,10 @@ public:
 
     // 追加一条通道并渲染（同 dataset+table+column 已存在则只刷新，不重复叠加）。
     // 返回 false 表示该通道取数失败（err 里说明原因）。
+    // title 非空时作为曲线显示名（叠加/对比要带源前缀，如「源A:attitude.pitch」）；
+    // 空则沿用默认「datasetId / table.column」。
     bool addChannel(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table, const QString &column,
-                    QString *err = nullptr);
+                    QString *err = nullptr, const QString &title = QString());
     // 兼容旧名：等价于 addChannel（"显示某通道"=叠加它）。
     bool showChannel(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table, const QString &column,
                      QString *err = nullptr);
