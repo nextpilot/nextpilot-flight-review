@@ -1,11 +1,13 @@
 #pragma once
 
 #include "AppContext.h"
+#include "Recorder.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
 #include "OpDispatch.h"
 
 #include <map>
+#include <vector>
 #include <memory>
 
 #include <QElapsedTimer>
@@ -177,6 +179,28 @@ private:
     void pumpLive();
     std::unique_ptr<QTimer> m_pump;
     int m_pumpHz = 50;
+    // 录制（M2）：一个源可同时开多路（格式 × 后端正交）。
+    // 写入点只有一处——pumpLive 喂解析器的同一块字节，保证"看到的"与"录下的"是同一份。
+    struct RecordSession
+    {
+        int sourceId = -1;
+        QString formatId;
+        QString backendId;
+        QString endpoint;
+        QString topic;          // mcap 的通道名（raw 忽略）
+        std::shared_ptr<nextpilot::plotscope::rec::Recorder> recorder;
+        qint64 bytes = 0;
+        QElapsedTimer since;
+    };
+    bool writeRecordBytes(int sourceId, const QByteArray &bytes, quint64 timeNs);
+    std::vector<RecordSession> m_records;
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recordStart(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recordStop(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recordList(
+        const nextpilot::plotscope::intent::Intent &intent);
+
     // 泵与环的运行时配置（data.rate.set / data.config）。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setRate(
         const nextpilot::plotscope::intent::Intent &intent);

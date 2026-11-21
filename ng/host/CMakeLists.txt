@@ -18,5 +18,6 @@ add_library(ng_host STATIC
 )
 
 target_include_directories(ng_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(ng_host PUBLIC ng_context ng_registry Qt6::Core Qt6::Network)
+# 录制引擎（Recorder）：data.record.* 意图要直接创建它，故 host 公开链接。
+target_link_libraries(ng_host PUBLIC ng_context ng_registry ng_recording Qt6::Core Qt6::Network)
 set_target_properties(ng_host PROPERTIES AUTOMOC ON CXX_STANDARD 17)

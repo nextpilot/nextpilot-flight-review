@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QHostAddress>
 #include <QNetworkDatagram>
+#include <QDateTime>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUdpSocket>
@@ -43,6 +44,7 @@ using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
+namespace rec = nextpilot::plotscope::rec;
 
 namespace
 {
@@ -165,6 +167,9 @@ void DataCommandsHandler::buildDispatch()
     m_dispatch.reg(QStringLiteral("data.reconnect"), this, &DataCommandsHandler::reconnectLive);
     m_dispatch.reg(QStringLiteral("data.source.list"), this, &DataCommandsHandler::sourceList);
     m_dispatch.reg(QStringLiteral("data.rate.set"), this, &DataCommandsHandler::setRate);
+    m_dispatch.reg(QStringLiteral("data.record.start"), this, &DataCommandsHandler::recordStart);
+    m_dispatch.reg(QStringLiteral("data.record.stop"), this, &DataCommandsHandler::recordStop);
+    m_dispatch.reg(QStringLiteral("data.record.list"), this, &DataCommandsHandler::recordList);
     m_dispatch.reg(QStringLiteral("data.config"), this, &DataCommandsHandler::sourceConfig);
     m_dispatch.reg(QStringLiteral("data.time.align"), this, &DataCommandsHandler::alignTime);
     m_dispatch.reg(QStringLiteral("data.transform.set"), this, &DataCommandsHandler::setChannelTransform);
@@ -1267,6 +1272,18 @@ Result<IntentResult> DataCommandsHandler::disconnectLive(const Intent &intent)
         it->second.fedBytes += it->second.buf.size();
         it->second.buf.clear();
     }
+    // 断源前把该源的录制收口（不关就会留下没写尾记录的文件）。
+    for (auto rit = m_records.begin(); rit != m_records.end();)
+    {
+        if (rit->sourceId != sourceId)
+        {
+            ++rit;
+            continue;
+        }
+        if (rit->recorder)
+            rit->recorder->close();
+        rit = m_records.erase(rit);
+    }
     // 先 flush 尾半帧，再断 socket，最后落状态——顺序反了会丢最后一个包。
     m_app.ingest().finish(sourceId);
     if (it->second.socket)
@@ -1469,11 +1486,168 @@ void DataCommandsHandler::pumpLive()
         if (s.paused || s.buf.isEmpty())
             continue;
         const int take = int(std::min<qint64>(s.pumpBudget, s.buf.size()));
+        // 录制与解析吃同一块字节（顺序：先录后解析，录的是"进来的原样"）。
+        writeRecordBytes(kv.first, QByteArray(s.buf.constData(), take),
+                         quint64(s.since.nsecsElapsed()));
         m_app.ingest().feed(kv.first, reinterpret_cast<const uint8_t *>(s.buf.constData()),
                             take);
         s.buf.remove(0, take);
         s.fedBytes += take;
     }
+}
+
+bool DataCommandsHandler::writeRecordBytes(int sourceId, const QByteArray &bytes, quint64 timeNs)
+{
+    bool any = false;
+    for (RecordSession &rs : m_records)
+    {
+        if (rs.sourceId != sourceId || !rs.recorder || !rs.recorder->isOpen())
+            continue;
+        QString err;
+        // raw 只保真字节；mcap 需要 topic + 时间戳（相对会话起点）。
+        const bool ok = rs.formatId == QLatin1String("raw")
+                            ? rs.recorder->writeBytes(bytes, &err)
+                            : rs.recorder->writeMessage(rs.topic.isEmpty() ? QStringLiteral("bytes")
+                                                                           : rs.topic,
+                                                        bytes, timeNs, &err);
+        if (ok)
+        {
+            rs.bytes += bytes.size();
+            any = true;
+        }
+    }
+    return any;
+}
+
+Result<IntentResult> DataCommandsHandler::recordStart(const Intent &intent)
+{
+    int sourceId = intent.params.value(QStringLiteral("source"), -1).toInt();
+    if (sourceId < 0)
+        sourceId = m_app.activeSourceId();
+    const DataSourceInfo *info = m_app.sources().get(sourceId);
+    if (!info)
+        return fail(err::NoSource, QStringLiteral("数据源不存在: %1").arg(sourceId));
+
+    QString formatId = intent.params.value(QStringLiteral("format")).toString();
+    if (formatId.isEmpty())
+        formatId = QStringLiteral("raw");
+    QString backendId = intent.params.value(QStringLiteral("backend")).toString();
+    if (backendId.isEmpty())
+        backendId = QStringLiteral("file");
+    QString endpoint = intent.params.value(QStringLiteral("endpoint")).toString();
+    if (endpoint.isEmpty())
+    {
+        // 缺省落在当前目录：<源名>-<时间戳>.<格式后缀>。
+        const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+        const QString base = info->name.isEmpty() ? QStringLiteral("live") : info->name;
+        const QString suffix = formatId == QLatin1String("mcap") ? QStringLiteral("mcap")
+                                                                 : QStringLiteral("raw");
+        endpoint = QStringLiteral("%1-%2.%3").arg(base, stamp, suffix);
+    }
+
+    for (const RecordSession &rs : m_records)
+        if (rs.sourceId == sourceId && rs.formatId == formatId && rs.backendId == backendId)
+            return fail(err::State, QStringLiteral("该源已在用 %1/%2 录制").arg(formatId, backendId));
+
+    QString why;
+    auto created = rec::Recorder::create(formatId, backendId, endpoint, QByteArray(), &why);
+    if (!created)
+        return fail(err::Io, why.isEmpty() ? QStringLiteral("录制创建失败") : why);
+
+    RecordSession rs;
+    rs.sourceId = sourceId;
+    rs.formatId = formatId;
+    rs.backendId = backendId;
+    rs.endpoint = endpoint;
+    rs.topic = info->name.isEmpty() ? QStringLiteral("source") : info->name;
+    rs.recorder = created.value();
+    rs.since.start();
+    m_records.push_back(rs);
+
+    // 回写到源的录制配置（工作区保存/UI 展示都以它为准）。
+    DataSourceInfo copy = *info;
+    RecordingTarget target;
+    target.formatId = formatId;
+    target.backendId = backendId;
+    target.endpoint = endpoint;
+    copy.recordings.push_back(target);
+    m_app.sources().update(sourceId, copy);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("source"), sourceId},
+        {QStringLiteral("format"), formatId},
+        {QStringLiteral("backend"), backendId},
+        {QStringLiteral("endpoint"), endpoint},
+    };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::recordStop(const Intent &intent)
+{
+    int sourceId = intent.params.value(QStringLiteral("source"), -1).toInt();
+    if (sourceId < 0)
+        sourceId = m_app.activeSourceId();
+    const QString formatId = intent.params.value(QStringLiteral("format")).toString();
+
+    QVariantList stopped;
+    for (auto it = m_records.begin(); it != m_records.end();)
+    {
+        if (it->sourceId != sourceId || (!formatId.isEmpty() && it->formatId != formatId))
+        {
+            ++it;
+            continue;
+        }
+        QString err;
+        if (it->recorder)
+            it->recorder->close(&err);
+        stopped.append(QVariantMap{
+            {QStringLiteral("source"), it->sourceId},
+            {QStringLiteral("format"), it->formatId},
+            {QStringLiteral("backend"), it->backendId},
+            {QStringLiteral("endpoint"), it->endpoint},
+            {QStringLiteral("bytes"), QVariant::fromValue<qlonglong>(it->bytes)},
+            {QStringLiteral("error"), err},
+        });
+        it = m_records.erase(it);
+    }
+    if (stopped.isEmpty())
+        return fail(err::NoEnt, QStringLiteral("该源没有正在进行的录制"));
+
+    // 清掉源上的录制配置（关了就不要再显示"录制中"）。
+    if (const DataSourceInfo *info = m_app.sources().get(sourceId))
+    {
+        DataSourceInfo copy = *info;
+        copy.recordings.clear();
+        m_app.sources().update(sourceId, copy);
+    }
+
+    IntentResult r;
+    r.payload = stopped;
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::recordList(const Intent &intent)
+{
+    const int only = intent.params.value(QStringLiteral("source"), -1).toInt();
+    QVariantList rows;
+    for (const RecordSession &rs : m_records)
+    {
+        if (only >= 0 && rs.sourceId != only)
+            continue;
+        rows.append(QVariantMap{
+            {QStringLiteral("source"), rs.sourceId},
+            {QStringLiteral("format"), rs.formatId},
+            {QStringLiteral("backend"), rs.backendId},
+            {QStringLiteral("endpoint"), rs.endpoint},
+            {QStringLiteral("bytes"), QVariant::fromValue<qlonglong>(rs.bytes)},
+            {QStringLiteral("open"), rs.recorder && rs.recorder->isOpen()},
+            {QStringLiteral("uptime_s"), double(rs.since.elapsed()) / 1000.0},
+        });
+    }
+    IntentResult r;
+    r.payload = rows;
+    return r;
 }
 
 Result<IntentResult> DataCommandsHandler::setRate(const Intent &intent)

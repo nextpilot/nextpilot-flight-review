@@ -15,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QHostAddress>
 #include <QThread>
+#include <QFile>
 #include <QTcpSocket>
 #include <QUdpSocket>
 #include <QtEndian>
@@ -91,6 +92,27 @@ int main(int argc, char **argv)
     const int dsId = cmp.value(QStringLiteral("dataset")).toInt();
     CHECK(srcId >= 0 && dsId >= 0);
 
+    // 录制：raw + mcap 同时两路（正交组合的直接验收），写入 /tmp。
+    const QString rawPath = QStringLiteral("/tmp/ng_record_test.raw");
+    const QString mcapPath = QStringLiteral("/tmp/ng_record_test.mcap");
+    QFile::remove(rawPath);
+    QFile::remove(mcapPath);
+    Intent rs1;
+    rs1.op = QStringLiteral("data.record.start");
+    rs1.params[QStringLiteral("source")] = srcId;
+    rs1.params[QStringLiteral("format")] = QStringLiteral("raw");
+    rs1.params[QStringLiteral("backend")] = QStringLiteral("file");
+    rs1.params[QStringLiteral("endpoint")] = rawPath;
+    CHECK(app.host().execute(rs1));
+    Intent rs2 = rs1;
+    rs2.params[QStringLiteral("format")] = QStringLiteral("mcap");
+    rs2.params[QStringLiteral("endpoint")] = mcapPath;
+    const auto rr2 = app.host().execute(rs2);
+    CHECK(rr2);
+    if (rr2)
+        CHECK(rr2.value().payload.toMap().value(QStringLiteral("format")).toString()
+              == QLatin1String("mcap"));
+
     // 发 20 帧（0..1900ms，pitch 正弦）。
     QUdpSocket tx;
     for (int k = 0; k < 20; ++k)
@@ -147,6 +169,38 @@ int main(int argc, char **argv)
             CHECK(m.value(QStringLiteral("kb_s")).toDouble() > 0.0);
         }
     }
+
+    // 录制：两路（raw + mcap）× file 后端，落盘大小与 list 状态都要对。
+    Intent rl;
+    rl.op = QStringLiteral("data.record.list");
+    const auto rlr = app.host().execute(rl);
+    CHECK(rlr);
+    if (rlr)
+        CHECK(rlr.value().payload.toList().size() == 2);
+
+    Intent rsp;
+    rsp.op = QStringLiteral("data.record.stop");
+    rsp.params[QStringLiteral("source")] = srcId;
+    const auto rspr = app.host().execute(rsp);
+    CHECK(rspr);
+    if (rspr)
+    {
+        std::printf("record.stop list=%d\n", int(rspr.value().payload.toList().size()));
+        for (const QVariant &v : rspr.value().payload.toList())
+        {
+            const QVariantMap m = v.toMap();
+            const qlonglong wb = m.value(QStringLiteral("bytes")).toLongLong();
+            std::printf("record %s -> %s bytes=%lld\n",
+                        qPrintable(m.value(QStringLiteral("format")).toString()),
+                        qPrintable(m.value(QStringLiteral("endpoint")).toString()), wb);
+            CHECK(wb >= 160);
+        }
+    }
+    CHECK(QFile(rawPath).size() >= 160);
+    CHECK(QFile(mcapPath).size() > 0);
+    // 停止后源上的 recordings 应被清空（不再显示录制中）。
+    if (const DataSourceInfo *rinfo = ctx.sources().get(srcId))
+        CHECK(rinfo->recordings.isEmpty());
 
     // 源清单 + 重连（T1.4）：list 能看到 live 源；重连后继续收包（计数累计）
     Intent listIntent;
