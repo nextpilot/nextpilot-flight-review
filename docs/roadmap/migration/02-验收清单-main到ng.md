@@ -154,10 +154,13 @@ ctest --test-dir build-ng -j 1
 - 期望：第二次 `load` 耗时显著下降（≥5×）且 `hits>0`；清空后 `bytes` 归零、`hits/misses` 重置。
 - 判定：耗时与计数字段自动比对；输出 `load_ms` 对比。
 
-### AC-16 采样上限（T4.4）
+### AC-16 采样上限（T4.4）— ✅ 通过（`1298e57`）
 - 步骤：`settings.set {key:"export.csv.maxPoints", value:1000}` → 对 5 万点通道 `data.export`。
 - 期望：CSV 行数 ≈ 1000（±1），且是**均匀抽稀**（不截断尾部）；`0` 表示不限，设为 0 后行数回到全量。
 - 判定：行数断言 + 末点时间戳 ≈ 通道末点（证明抽稀非截断）。
+- 实况（`1298e57`，300 行探针 CSV）：全量 `rows=300 last=299`；`maxPoints=100` → `rows=100 last=299`（末点保留）；设回 0 → `rows=300`。
+- 说明：抽稀不能交给 `Dataset::channel` 的 cap——Rust 等步长取样会丢尾（实测 `last=297`）；改宿主 `floor(k*rows/n)` + 强制 `rows-1`。
+- 派生侧：`derive.maxPoints`（intent cap > settings > 默认 200000，0=不限），且输入通道按同一 cap 取（原先被 4096 默认卡住）；此项无单独行数断言，由既有派生回归覆盖。
 
 ### AC-17 设置对话框（T4.5）
 ```bash
