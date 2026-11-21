@@ -1233,3 +1233,30 @@ CLI 九入口实测可用；**CLI 无任何 GUI 依赖**（ldd 验证）；
 验收：`ng_test_lua_engine`（断点命中快照/三种单步/停止/暂停期 REPL 六组用例）+
 `ng_test_gui`（三侧栏、编辑器按需创建、Ribbon 贡献、runCurrent 同路径）；
 Release/Debug 均 25/25 全绿。
+
+## 附录 A.4 数据表格查看器（M2.2）
+
+**只读随机访问（libs/dataset，无 GUI 依赖）**：`Dataset::readTimeRows /
+readColumnRows` 按**行号**区间读取（区别于 readWindow 的按时间窗口+抽稀）——
+循环 `ps_dataset_value_at`（Rust 列存 O(1) 随机访问，null 返回码 2 → NaN 占位），
+时间轴经 µs 量化往返（测试用 1e-9 容差比对）。只取可见页，C++ 常驻 O(页大小)。
+
+**懒加载模型**：`ng_data_tablemodel`（纯 QtCore 静态库）——
+`DataTableModel` = QAbstractTableModel + QCache 页缓存（1024 行/页，64 页 LRU）；
+`data()` 只做查页+格式化，百万行翻页/跳转 <100ms 是硬验收线（实测 0ms）。
+时间列固定第 0 列，null 显示空串，竖向表头行号从 1 起。
+
+**面板与联动**：`DataTablePanel`（中央页签，按需创建）+ 两段式通道——
+模块层 `data.table.open`（DataModule 于 initialize 注册，经 m_ui 按需
+requestPanel 创建面板）→ 面板层 `data.table.show`（绑定数据集表）。
+数据树表节点/列右键"查看数据表格"进表格；表格右键"添加为曲线"走
+`setActiveChannel`（与树"画到当前画布"同路径，画布自动追加）；
+"列统计"全列读取 + kernel 单遍统计（总体标准差语义），底部摘要栏显示。
+
+**外壳去重**：`GuiContext::requestPanel` 按 (area, panelType) 缓存既有面板
+（QPointer 兜底：页签关闭后缓存失效可重建）——重复"打开"是聚焦语义，
+不再堆叠页签；脚本编辑器同样受益。
+
+验收：`ng_test_data_table`（新增，含 100 万行 <100ms 与统计一致性）+
+`ng_test_dataset_standalone` 扩展（随机区间=全量）+ `ng_test_gui` 5c-b
+（按需创建/同步/复用）；Release/Debug 均 26/26 全绿。

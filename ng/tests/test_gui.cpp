@@ -15,6 +15,7 @@
 #include "App.h"
 
 #include "DataManagerPanel.h"
+#include "DataTablePanel.h"
 #include "ImportDialog.h"
 #include "ScriptPanels.h"
 #include "GuiContext.h"
@@ -548,6 +549,40 @@ int main(int argc, char *argv[])
         panel->refresh();
         CHECK(panel->sourceNodeCount() == 1);
         OK("data.reload：按源 id 重载成功，数据集 id 稳定（绘图不失效）");
+    }
+
+    // --- 5c-b) 数据表格查看器（2.2.3）：树选表 → 中央页签按需创建 → 表格同步 ---
+    //
+    // 回归点：面板必须**按需创建**（初始中央区只有画布 + 已有的脚本编辑器页签），
+    // 绑定走 data.table.open → show 两段式，与画布平级不挤占。
+    {
+        const Dataset *loadedDs = application.data().get(loadedDsId);
+        CHECK(loadedDs != nullptr && loadedDs->tableCount() >= 1);
+        const QString firstTable = loadedDs->tableNames().first();
+
+        const int before = binder->centralWidgets().size();
+        QVariantMap p;
+        p.insert(QStringLiteral("datasetId"), loadedDsId);
+        p.insert(QStringLiteral("table"), firstTable);
+        Result<QVariant> out{QVariant()};
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("data.table.open"), p, out));
+        CHECK(binder->centralWidgets().size() == before + 1);
+
+        nextpilot::plotscope::data::DataTablePanel *tablePanel = nullptr;
+        for (QWidget *w : binder->centralWidgets())
+        {
+            if (!tablePanel)
+                tablePanel = qobject_cast<nextpilot::plotscope::data::DataTablePanel *>(w);
+        }
+        CHECK(tablePanel != nullptr);
+        CHECK(tablePanel->shownDatasetId() == loadedDsId);
+        CHECK(tablePanel->shownTable() == firstTable);
+        // 再开一次：面板复用（不重复创建页签）。
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("data.table.open"), p, out));
+        CHECK(binder->centralWidgets().size() == before + 1);
+        OK("数据表格查看器：按需创建中央页签、绑定数据同步、复用不重复");
     }
 
     // --- 5d) data.derive：Rust 实时派生 → 结果给 UI，原数据集零改动 ---

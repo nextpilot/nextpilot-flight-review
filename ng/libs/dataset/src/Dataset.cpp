@@ -33,6 +33,41 @@ QVector<quint8> packNulls(const QVector<bool> *flags, int n)
     return bits;
 }
 
+// 表格查看器的行区间读取：ps_dataset_value_at 逐值循环（Rust 列存 O(1) 随机访问）。
+// kernel 返回码：0 成功 / 1 越界（停止）/ 2 null（NaN 占位）。
+// values/timeSec 可空指针——调用方按需取其一或两者。
+int readColumnRowsImpl(PsDataset *native, const Table &t, const QString &columnName,
+                       int rowStart, int maxRows, QVector<double> *values,
+                       QVector<double> *timeSec)
+{
+    const int rows = qMin(maxRows, t.rows - rowStart);
+    if (rows <= 0)
+        return 0;
+    if (values)
+        values->resize(rows);
+    if (timeSec)
+        timeSec->resize(rows);
+
+    const QByteArray tableUtf8 = t.name.toUtf8();
+    const QByteArray colUtf8 = columnName.toUtf8();
+    double tv = 0.0;
+    double vv = 0.0;
+    for (int i = 0; i < rows; ++i)
+    {
+        const int rc = ps_dataset_value_at(
+            native, tableUtf8.constData(), colUtf8.constData(),
+            static_cast<quint64>(rowStart + i), &tv, &vv);
+        if (rc == 1)
+            return i; // 越界即停（ring 淘汰等场景行数比 schema 投影少）
+        const bool isNull = (rc == 2);
+        if (values)
+            (*values)[i] = isNull ? std::numeric_limits<double>::quiet_NaN() : vv;
+        if (timeSec)
+            (*timeSec)[i] = tv;
+    }
+    return rows;
+}
+
 // 从 Rust native 重建 C++ schema 投影。
 // 铁律：只读 O(1) 元数据（行数/首尾时间/列名/类型/单位），绝不复制时间轴或列值数组。
 // PsChannelInfo::time 指向 Rust 内部 f64 视图（秒），首/末元素 O(1) 可读；
@@ -491,6 +526,29 @@ QVector<LodTriple> Dataset::lodMinMax(const QString &tableName, const QString &c
                        triples.at(static_cast<int>(i) * 3 + 1),
                        triples.at(static_cast<int>(i) * 3 + 2)});
     return out;
+}
+
+int Dataset::readTimeRows(const QString &tableName, int rowStart, int maxRows,
+                          QVector<double> &timeSec) const
+{
+    // 时间轴取自该表首列：typed 表所有列共享同一时间轴（见 rebuildSchema 注释）。
+    const Table *t = table(tableName);
+    if (!t || !d->native || maxRows <= 0 || rowStart < 0 || t->columns.isEmpty())
+        return (t && d->native && rowStart >= 0 && maxRows > 0) ? 0 : -1;
+    return readColumnRowsImpl(d->native.get(), *t, t->columns.first().name, rowStart,
+                              maxRows, nullptr, &timeSec);
+}
+
+int Dataset::readColumnRows(const QString &tableName, const QString &columnName,
+                            int rowStart, int maxRows, QVector<double> &values) const
+{
+    const Table *t = table(tableName);
+    if (!t || !d->native || maxRows <= 0 || rowStart < 0)
+        return (t && d->native && rowStart >= 0 && maxRows > 0) ? 0 : -1;
+    if (!t->column(columnName))
+        return -1;
+    return readColumnRowsImpl(d->native.get(), *t, columnName, rowStart, maxRows,
+                              &values, nullptr);
 }
 
 int Dataset::applyFilter(const QString &filterId, const QJsonObject &params,

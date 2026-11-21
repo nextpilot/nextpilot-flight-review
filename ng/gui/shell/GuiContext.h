@@ -4,7 +4,9 @@
 #include "IModule.h"
 #include "UiSlotRegistry.h"
 
+#include <QHash>
 #include <QObject>
+#include <QPointer>
 
 class QMainWindow;
 
@@ -66,6 +68,11 @@ private:
     ShellBinder *m_binder = nullptr;
     nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::intent::IIntentExecutor *m_executor = nullptr;
+
+    // 面板去重（按 area/panelType）：重复 requestPanel 同一类型返回既有实例，
+    // 不再新建页签（脚本编辑器/数据表格的"再打开"都是复用语义）。
+    // QPointer 兜底：页签被用户关掉后自动清空，下次请求重新创建。
+    QHash<QString, QPointer<QWidget>> m_panels;
 };
 
 } // namespace nextpilot::plotscope::gui

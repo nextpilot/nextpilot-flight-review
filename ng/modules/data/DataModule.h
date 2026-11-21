@@ -17,4 +17,9 @@ public:
 
     // GUI 环境下请求自己的界面部件（headless 时宿主不调用）。
     void onAttach(nextpilot::plotscope::host::UiContext &ui) override;
+
+private:
+    // 数据表格查看器入口（data.table.open）在 initialize 注册，
+    // 运行时经 m_ui 按需创建中央页签面板（GUI 环境才有值）。
+    nextpilot::plotscope::host::UiContext *m_ui = nullptr;
 };

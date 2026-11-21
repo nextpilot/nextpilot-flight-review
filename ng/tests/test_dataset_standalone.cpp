@@ -11,6 +11,7 @@
 #include <QString>
 #include <QVector>
 
+#include <cmath>
 #include <cstdio>
 
 #define CHECK(cond)                                                            \
@@ -64,6 +65,69 @@ int main(int argc, char **argv)
     CHECK(repo.remove(id));
     CHECK(repo.count() == 0);
     CHECK(repo.get(id) == nullptr);
+
+    // 3. 表格查看器路径（M2.2 2.2.1）：按行号随机读取，区间取值与全量一致。
+    {
+        constexpr int N = 1000;
+        QVector<double> tt(N);
+        QVector<double> a(N);
+        QVector<double> b(N);
+        QVector<bool> nulls(N, false);
+        for (int i = 0; i < N; ++i)
+        {
+            tt[i] = i * 0.001;           // 1 kHz 采样
+            a[i] = i * 2.0 + 1.0;
+            b[i] = i % 7 == 3 ? 0.0 : i * 0.5; // 每 7 行埋一个 null
+            nulls[i] = (i % 7 == 3);
+        }
+        Dataset big = Dataset::create(QStringLiteral("big"), QStringLiteral("csv"));
+        CHECK(big.addTable(QStringLiteral("t1"), tt) >= 0);
+        CHECK(big.addF64Column(QStringLiteral("t1"), QStringLiteral("a"), QStringLiteral("m"), a));
+        CHECK(big.addF64Column(QStringLiteral("t1"), QStringLiteral("b"), QStringLiteral("m"), b, &nulls));
+
+        // 随机区间（页式读取，起点/长度都打乱）与全量逐一比对。
+        QVector<double> timeSec;
+        QVector<double> va;
+        QVector<double> vb;
+        const int starts[] = {0, 1, 37, 256, 500, 987, 999, 1000, 1234}
+        ;
+        for (const int start : starts)
+        {
+            const int gotT = big.readTimeRows(QStringLiteral("t1"), start, 64, timeSec);
+            QVector<double> vaPage;
+            const int gotA = big.readColumnRows(QStringLiteral("t1"), QStringLiteral("a"),
+                                                start, 64, vaPage);
+            va = vaPage;
+            QVector<double> vbPage;
+            const int gotB = big.readColumnRows(QStringLiteral("t1"), QStringLiteral("b"),
+                                                start, 64, vbPage);
+            vb = vbPage;
+            const int expect = qMax(0, qMin(64, N - start));
+            CHECK(gotT == expect);
+            CHECK(gotA == expect);
+            CHECK(gotB == expect);
+            for (int i = 0; i < expect; ++i)
+            {
+                const int row = start + i;
+                // 时间经 µs 量化往返（t*1e6 → int64 → ×1e-6），只要求 µs 级一致。
+                CHECK(std::fabs(timeSec.at(i) - tt.at(row)) < 1e-9);
+                CHECK(va.at(i) == a.at(row));
+                const bool isNull = (row % 7 == 3);
+                CHECK(std::isnan(vb.at(i)) == isNull);
+                if (!isNull)
+                    CHECK(vb.at(i) == b.at(row));
+            }
+        }
+        // 不存在的表/列返回 -1；参数非法回 0/-1 不崩。
+        CHECK(big.readColumnRows(QStringLiteral("nope"), QStringLiteral("a"), 0, 10, va) == -1);
+        CHECK(big.readColumnRows(QStringLiteral("t1"), QStringLiteral("nope"), 0, 10, va) == -1);
+        CHECK(big.readColumnRows(QStringLiteral("t1"), QStringLiteral("a"), 999, 10, va) == 1);
+        CHECK(big.readColumnRows(QStringLiteral("t1"), QStringLiteral("a"), 1001, 10, va) == 0);
+        CHECK(big.readColumnRows(QStringLiteral("t1"), QStringLiteral("a"), 5, 0, va) == -1);
+        CHECK(big.readTimeRows(QStringLiteral("nope"), 0, 10, timeSec) == -1);
+
+        fprintf(stdout, "[ok] 行区间随机读取与全量一致（null → NaN 占位）\n");
+    }
 
     fprintf(stdout, "[ok] ng_dataset 独立链接验收通过（未链接 ng_core）\n");
     return 0;

@@ -2,9 +2,13 @@
 
 #include "BuiltinModuleRegistry.h"
 #include "DatasetRegistry.h"
+#include "ErrorCodes.h"
 #include "Events.h"
 #include "Contribution.h"
 #include "IModule.h"
+#include "Result.h"
+
+#include <QVariantMap>
 
 #include <cstdio>
 
@@ -58,6 +62,26 @@ void DataModule::initialize(ModuleContext &ctx)
         else
             fprintf(stdout, "[data] 数据集已移除: #%d\n", id);
     });
+    // 数据表格查看器（M2.2 2.2.3）：树右键"查看数据表格" → data.table.open
+    // → 按需创建中央页签面板（不与画布争位）→ 转发 data.table.show 绑定数据。
+    // 面板实现由视图层自注册（DataTablePanel.cpp 的 NG_REGISTER_PANEL_T），
+    // 模块只发字符串 id，不依赖 Qt Widgets，headless 构建保持纯净。
+    // 注册在 initialize（ModuleContext 可用）；m_ui 在 onAttach 才有——
+    // 动作是运行时触发的，届时 GUI 已 attach。
+    AppContext &appCtx = ctx.app();
+    appCtx.interactions().registerViewAction(
+        QStringLiteral("data.table.open"),
+        [this, &appCtx](const QVariantMap &params) -> Result<QVariant> {
+            if (!m_ui)
+                return fail(err::Unsupported, QStringLiteral("数据表格需要 GUI 环境"));
+            if (!m_ui->requestPanel(QStringLiteral("canvas.center"),
+                                    QStringLiteral("data.table")))
+                return fail(err::Unsupported, QStringLiteral("数据表格面板不可用"));
+            Result<QVariant> out{QVariant()};
+            appCtx.interactions().dispatchViewAction(
+                QStringLiteral("data.table.show"), params, out);
+            return out;
+        });
 }
 
 void DataModule::onAttach(UiContext &ui)
@@ -66,9 +90,7 @@ void DataModule::onAttach(UiContext &ui)
     //
     // 模块只声明"我需要一个数据集树面板"，由 app 骨架的部件工厂决定用哪个实现——
     // 因此本模块不依赖 Qt Widgets，CLI（headless）构建保持纯净。
-    //
-    // 若将来新增另一个模块想自带界面，只需在这里 requestPanel + declareSlot，
-    // 无需改动数据模块、GUI 层或任何其他文件。
+    m_ui = &ui;
     ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("dataset-tree"));
 
     // 数据功能 ribbon 的"常用"动作（对应老代码 DataSourceRibbon 的常用组）。

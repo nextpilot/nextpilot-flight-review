@@ -8,6 +8,13 @@ target_link_libraries(ng_test_dataset_standalone PRIVATE ng_dataset Qt6::Core)
 set_target_properties(ng_test_dataset_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_dataset_standalone COMMAND ng_test_dataset_standalone)
 
+# === DataTableModel 验收（2.2.2）：懒加载分页 + 百万行 <100ms ===
+# 只链 ng_data_tablemodel + ng_dataset + Qt Core；模型碰 Widgets 即编译失败。
+add_executable(ng_test_data_table test_data_table.cpp)
+target_link_libraries(ng_test_data_table PRIVATE ng_data_tablemodel ng_dataset Qt6::Core)
+set_target_properties(ng_test_data_table PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_data_table COMMAND ng_test_data_table)
+
 # === ng_registry 独立链接验收（B3）===
 # 故意只链 ng_registry + Qt6::Core，不链 ng_context / host / module。
 # 任何注册表核对 core 业务类型/QWidget/Rust 的反向依赖都会在此编译或链接失败。

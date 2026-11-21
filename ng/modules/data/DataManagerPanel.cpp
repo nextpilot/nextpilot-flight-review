@@ -555,11 +555,28 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
         const QPoint global = m_tree->viewport()->mapToGlobal(pos);
         const QVariant sid = item->data(0, kRoleSourceId);
         if (sid.isValid() && item->data(0, kRoleNodeKind).toString() == QStringLiteral("source"))
+        {
             showSourceMenu(sid.toInt(), global);
+        }
+        else if (item->data(0, kRoleNodeKind).toString() == QStringLiteral("table"))
+        {
+            // 表节点（多表源才有）：查看数据表格（2.2.3 联动入口）。
+            QMenu menu(this);
+            QAction *viewTable = menu.addAction(QStringLiteral("查看数据表格"));
+            if (menu.exec(global) != viewTable)
+                return;
+            QVariantMap p;
+            p.insert(QStringLiteral("datasetId"), item->data(0, kRoleDatasetId));
+            p.insert(QStringLiteral("table"), item->data(0, kRoleTable));
+            Result<QVariant> out{QVariant()};
+            m_appCtx.interactions().dispatchViewAction(QStringLiteral("data.table.open"), p, out);
+        }
         else if (item->data(0, kRoleDatasetId).isValid()
                  && item->data(0, kRoleTable).isValid()
                  && item->data(0, kRoleColumn).isValid())
+        {
             showColumnMenu(item, global);
+        }
     });
 
     connect(&m_repo, &DatasetRegistry::datasetAdded, this, [this](DatasetId) { refresh(); });
@@ -1195,6 +1212,7 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
         return;
     QMenu menu(this);
     QAction *plot = menu.addAction(QStringLiteral("画到当前画布"));
+    QAction *viewTable = menu.addAction(QStringLiteral("查看数据表格"));
     QAction *delDerived = menu.addAction(QStringLiteral("删除派生通道…"));
     menu.addSeparator();
     QMenu *derive = menu.addMenu(QStringLiteral("添加变换…"));
@@ -1226,6 +1244,16 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
         if (sourceId >= 0) m_appCtx.setActiveSourceId(sourceId);
         m_appCtx.setActiveChannel(datasetId, tableName, columnName);
         emit channelActivated(datasetId, tableName, columnName);
+        return;
+    }
+    if (chosen == viewTable)
+    {
+        // 查看数据表格（2.2.3）：单表源没有表节点，列菜单兜底入口。
+        QVariantMap p;
+        p.insert(QStringLiteral("datasetId"), datasetId);
+        p.insert(QStringLiteral("table"), tableName);
+        Result<QVariant> out{QVariant()};
+        m_appCtx.interactions().dispatchViewAction(QStringLiteral("data.table.open"), p, out);
         return;
     }
     if (chosen == delDerived)

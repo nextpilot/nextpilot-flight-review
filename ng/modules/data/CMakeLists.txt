@@ -16,16 +16,25 @@ target_include_directories(ng_module_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_module_data PUBLIC ng_host)
 set_target_properties(ng_module_data PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
+# 表格查看模型（2.2.2）：纯 QtCore，懒加载分页。独立静态库——
+# ng_module_data_gui 链它出视图，headless 测试（ng_test_data_table）也只链它，
+# 不必拖 Widgets。无自注册，STATIC 不受硬线 #6 约束。
+add_library(ng_data_tablemodel STATIC DataTableModel.cpp DataTableModel.h)
+target_include_directories(ng_data_tablemodel PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ng_data_tablemodel PUBLIC ng_dataset Qt6::Core)
+set_target_properties(ng_data_tablemodel PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+
 # 功能专属视图：聚合在本功能目录，但独立 target、只被 GUI 可执行文件链接。
 # DataManagerPanel 通过 NG_REGISTER_PANEL("dataset-tree") 自注册到 core 的工厂表，
 # 与器官解耦（器官只发字符串 id，不 include 本头文件）。
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
-add_library(ng_module_data_gui OBJECT DataManagerPanel.cpp DataManagerPanel.h)
+add_library(ng_module_data_gui OBJECT DataManagerPanel.cpp DataManagerPanel.h
+                                      DataTablePanel.cpp DataTablePanel.h)
 target_include_directories(ng_module_data_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     # 通道拖拽协议（纯头文件）：数据树 encode、画布 decode，共享同一张约定。
     ${CMAKE_CURRENT_SOURCE_DIR}/../../gui/views/plot)
 # 主题是横向 GUI 基础设施（状态点等取色走它），单独成库，谁需要谁链——
 # 不必为此链接整个外壳库 ng_gui。
-target_link_libraries(ng_module_data_gui PUBLIC ng_context ng_gui_theme ng_gui_transform Qt6::Widgets Qt6::Gui Qt6::Core)
+target_link_libraries(ng_module_data_gui PUBLIC ng_context ng_data_tablemodel ng_gui_theme ng_gui_transform Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ng_module_data_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

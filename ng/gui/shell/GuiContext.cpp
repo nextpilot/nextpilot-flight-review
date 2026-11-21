@@ -89,10 +89,18 @@ void GuiContext::resetDynamicActions(const QString &provider)
 
 QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
 {
+    // 去重：同一 (area, panelType) 已有活着的面板就直接复用——
+    // "再打开脚本编辑器/数据表格"是**聚焦**语义，不该再堆一个页签。
+    // 页签可关闭（ADS closable），QPointer 保证关闭后缓存自动失效、可重建。
+    const QString key = QStringLiteral("%1/%2").arg(area, panelType);
+    if (QWidget *existing = m_panels.value(key))
+        return existing;
+
     // 部件由**视图层自注册**的工厂提供：外壳与器官都不认识具体实现。
     QWidget *widget = nextpilot::plotscope::registry::PanelFactoryRegistry::create(panelType, m_appCtx, executor(), m_window);
     if (!widget)
         return nullptr;
+    m_panels.insert(key, widget);
 
     // 中央画布区走 setCentralContent（首到者占位，后来者并成页签），其余区域走停靠。
     if (area == QStringLiteral("canvas.center"))

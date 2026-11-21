@@ -204,6 +204,15 @@ public:
     QVector<LodTriple> lodMinMax(const QString &table, const QString &column,
                                  TimeUs t0Us, TimeUs t1Us, int px) const;
 
+    // ---- 表格查看器路径：按行号随机读取（无抽稀；只取可见页，C++ 常驻 O(页大小)）----
+    // 读 [rowStart, rowStart+maxRows) 的行。返回实际读到的行数（0 = 起点越界），
+    // -1 = 表/列不存在。null 单元以 NaN 填充。timeSec 单位秒，与绘图时间轴一致。
+    // 实现走 ps_dataset_value_at 逐值循环（Rust 列存 O(1) 随机访问），页大小内微秒级。
+    int readTimeRows(const QString &table, int rowStart, int maxRows,
+                     QVector<double> &timeSec) const;
+    int readColumnRows(const QString &table, const QString &column, int rowStart,
+                       int maxRows, QVector<double> &values) const;
+
     // 分析算子（全部委托 Rust ps-ops）：滤波 / 抗混叠抽取 / 统计。
     // 结果写调用方缓冲；缓冲不足时返回需要的长度（>0），用该长度重试。
     // 返回 0 表示成功且长度见 out；负数表示错误码。
