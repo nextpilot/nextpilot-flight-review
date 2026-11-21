@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 
+#include <QElapsedTimer>
 #include <QUdpSocket>
 
 // 数据器官的"派生能力"：reload / export / recent / clearCache。
@@ -89,6 +90,9 @@ private:
         const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> disconnectLive(
         const nextpilot::plotscope::intent::Intent &intent);
+    // 实时源速率统计（T1.3）：packets/bytes 已有，这里按会话时长折算 Hz / KB/s。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> liveStats(
+        const nextpilot::plotscope::intent::Intent &intent);
     // 源级时间对齐（T3.2）：mode = base/start/end/center/reset。
     // 只改 Dataset 出口偏移（见 Dataset::setTimeOffsetUs），原始时间戳不动。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> alignTime(
@@ -124,6 +128,7 @@ private:
         bool paused = false;
         qint64 packets = 0;
         qint64 bytes = 0;
+        QElapsedTimer since;     // 会话起点（统计 Hz/KB/s 用）
     };
     std::map<int, LiveSession> m_live;
 };

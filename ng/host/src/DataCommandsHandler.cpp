@@ -153,6 +153,7 @@ void DataCommandsHandler::buildDispatch()
                    [this](const I &) { return workspaceRestore(); });
     m_dispatch.reg(QStringLiteral("data.connect"), this, &DataCommandsHandler::connectLive);
     m_dispatch.reg(QStringLiteral("data.disconnect"), this, &DataCommandsHandler::disconnectLive);
+    m_dispatch.reg(QStringLiteral("data.live.stats"), this, &DataCommandsHandler::liveStats);
     m_dispatch.reg(QStringLiteral("data.time.align"), this, &DataCommandsHandler::alignTime);
     m_dispatch.reg(QStringLiteral("data.transform.set"), this, &DataCommandsHandler::setChannelTransform);
     m_dispatch.reg(QStringLiteral("data.transform.clear"), this, &DataCommandsHandler::clearChannelTransform);
@@ -984,6 +985,7 @@ Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
                                 bytes.size());
         }
     });
+    session.since.start();
     session.socket = std::move(sock);
     m_live[sourceId] = std::move(session);
 
@@ -1020,6 +1022,40 @@ Result<IntentResult> DataCommandsHandler::disconnectLive(const Intent &intent)
         {QStringLiteral("packets"), QVariant::fromValue<qlonglong>(packets)},
         {QStringLiteral("bytes"), QVariant::fromValue<qlonglong>(bytes)},
     };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::liveStats(const Intent &intent)
+{
+    // 速率口径：整套会话的均值，不做滑动窗——先把"能看见"补齐，
+    // 滑动窗（1s/5s）属于 T1.3 的细化，等有真实流再定窗口。
+    const int only = intent.params.value(QStringLiteral("id"), -1).toInt();
+    QVariantList rows;
+    for (const auto &kv : m_live)
+    {
+        if (only >= 0 && kv.first != only)
+            continue;
+        const LiveSession &s = kv.second;
+        const double secs = qMax(1e-6, double(s.since.elapsed()) / 1000.0);
+        QVariantMap m{
+            {QStringLiteral("id"), kv.first},
+            {QStringLiteral("packets"), QVariant::fromValue<qlonglong>(s.packets)},
+            {QStringLiteral("bytes"), QVariant::fromValue<qlonglong>(s.bytes)},
+            {QStringLiteral("uptime_s"), secs},
+            {QStringLiteral("hz"), double(s.packets) / secs},
+            {QStringLiteral("kb_s"), double(s.bytes) / secs / 1024.0},
+            {QStringLiteral("paused"), s.paused},
+        };
+        if (const DataSourceInfo *info = m_app.sources().get(kv.first))
+        {
+            m.insert(QStringLiteral("name"), info->name);
+            m.insert(QStringLiteral("state"), int(info->state));
+            m.insert(QStringLiteral("error"), info->error);
+        }
+        rows.append(m);
+    }
+    IntentResult r;
+    r.payload = rows;
     return r;
 }
 

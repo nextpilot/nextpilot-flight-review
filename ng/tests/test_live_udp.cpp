@@ -121,6 +121,27 @@ int main(int argc, char **argv)
     pump(800);
     // 暂停期发的 5 帧只累 bytes、不计数 packets（下面用 packets==20 断言）。
 
+    // 速率统计（T1.3 起手）：20 包 / ~1s → hz>0 且 kb_s>0
+    Intent stats;
+    stats.op = QStringLiteral("data.live.stats");
+    const auto sr = app.host().execute(stats);
+    CHECK(sr);
+    if (sr)
+    {
+        const QVariantList rows = sr.value().payload.toList();
+        CHECK(rows.size() == 1);
+        if (!rows.isEmpty())
+        {
+            const QVariantMap m = rows.first().toMap();
+            std::printf("stats hz=%.2f kb_s=%.2f packets=%lld\n",
+                        m.value(QStringLiteral("hz")).toDouble(),
+                        m.value(QStringLiteral("kb_s")).toDouble(),
+                        m.value(QStringLiteral("packets")).toLongLong());
+            CHECK(m.value(QStringLiteral("hz")).toDouble() > 0.0);
+            CHECK(m.value(QStringLiteral("kb_s")).toDouble() > 0.0);
+        }
+    }
+
     Intent dis;
     dis.op = QStringLiteral("data.disconnect");
     dis.params[QStringLiteral("id")] = srcId;
