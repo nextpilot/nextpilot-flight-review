@@ -41,6 +41,8 @@ add_library(ng_gui_theme OBJECT
     theme/ThemeManager.h
     theme/PlotThumbnails.cpp
     theme/PlotThumbnails.h
+    theme/MenuIcons.cpp
+    theme/MenuIcons.h
 )
 target_include_directories(ng_gui_theme PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 target_link_libraries(ng_gui_theme PUBLIC ng_context Qt6::Gui Qt6::Widgets Qt6::Core)

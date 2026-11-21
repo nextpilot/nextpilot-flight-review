@@ -11,6 +11,7 @@
 #include "Intent.h"
 #include "PropertySchema.h"
 #include "TransformEditorDialog.h"
+#include "MenuIcons.h"
 #include "FilterEditorDialog.h"
 
 #include <QAbstractItemView>
@@ -1014,6 +1015,17 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     menu.addSeparator();
     QAction *remove = menu.addAction(QStringLiteral("移除数据源"));
     QAction *removeAll = menu.addAction(QStringLiteral("移除全部数据源"));
+    // 图标：源级动作各给一个语义图标（自绘，走主题色），比纯文字好扫。
+    if (pause)
+        pause->setIcon(MenuIcons::icon(paused ? QStringLiteral("play") : QStringLiteral("pause")));
+    reload->setIcon(MenuIcons::icon(QStringLiteral("reload")));
+    rename->setIcon(MenuIcons::icon(QStringLiteral("rename")));
+    exportCsv->setIcon(MenuIcons::icon(QStringLiteral("csv")));
+    clearCache->setIcon(MenuIcons::icon(QStringLiteral("undo")));
+    detail->setIcon(MenuIcons::icon(QStringLiteral("info")));
+    activate->setIcon(MenuIcons::icon(QStringLiteral("pin")));
+    remove->setIcon(MenuIcons::icon(QStringLiteral("trash")));
+    removeAll->setIcon(MenuIcons::icon(QStringLiteral("remove-all")));
     QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
