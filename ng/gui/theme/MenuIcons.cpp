@@ -84,8 +84,8 @@ void drawUndo(QPainter &p)
     arc.arcTo(QRectF(3.0, 4.0, 10.0, 9.0), 200.0, -220.0);
     p.drawPath(arc);
     // 起点的回头箭头（左下）。
-    p.drawLine(QPointF(3.2, 8.6), QPointF(5.6, 10.4));
-    p.drawLine(QPointF(3.2, 8.6), QPointF(2.4, 11.4));
+    p.drawLine(QPointF(3.0, 8.4), QPointF(6.4, 10.6));
+    p.drawLine(QPointF(3.0, 8.4), QPointF(1.9, 11.6));
 }
 
 void drawAddCurve(QPainter &p)
@@ -129,6 +129,16 @@ void drawCurve(QPainter &p)
 
 void drawSplit(QPainter &p, bool horizontal)
 {
+    // 新增的那一格用半透明填充标出来：光靠一条分隔线，16px 下"向右拆/向下拆"
+    // 两个图标几乎一样，用户得靠文案分辨。
+    QColor fill = p.pen().color();
+    fill.setAlpha(70);
+    p.setBrush(fill);
+    if (horizontal)
+        p.drawRect(QRectF(8.0, 3.0, 5.4, 10.0));
+    else
+        p.drawRect(QRectF(2.6, 8.0, 10.8, 5.0));
+    p.setBrush(Qt::NoBrush);
     p.drawRect(QRectF(2.6, 3.0, 10.8, 10.0));
     if (horizontal)
         p.drawLine(QPointF(8.0, 3.0), QPointF(8.0, 13.0));
@@ -172,6 +182,20 @@ void drawTrash(QPainter &p)
     p.drawPath(body);
     p.drawLine(QPointF(6.8, 6.6), QPointF(7.0, 11.4));
     p.drawLine(QPointF(9.2, 6.6), QPointF(9.0, 11.4));
+}
+
+void drawEraser(QPainter &p)
+{
+    // 橡皮：读作"擦掉/清空"，与"移除"（垃圾桶）区分开。
+    QPainterPath body;
+    body.moveTo(9.4, 3.2);
+    body.lineTo(13.0, 6.8);
+    body.lineTo(7.6, 12.2);
+    body.lineTo(4.0, 8.6);
+    body.closeSubpath();
+    p.drawPath(body);
+    p.drawLine(QPointF(6.6, 5.8), QPointF(10.2, 9.4));
+    p.drawLine(QPointF(2.6, 13.2), QPointF(13.4, 13.2));
 }
 
 void drawInfo(QPainter &p)
@@ -254,6 +278,7 @@ bool paint(QPainter &p, const QString &name)
     if (name == QLatin1String("pause")) { drawPause(p); return true; }
     if (name == QLatin1String("play")) { drawPlay(p); return true; }
     if (name == QLatin1String("remove-all")) { drawRemoveAll(p); return true; }
+    if (name == QLatin1String("eraser")) { drawEraser(p); return true; }
     return false;
 }
 

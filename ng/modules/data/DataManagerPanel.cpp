@@ -1021,7 +1021,7 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     reload->setIcon(MenuIcons::icon(QStringLiteral("reload")));
     rename->setIcon(MenuIcons::icon(QStringLiteral("rename")));
     exportCsv->setIcon(MenuIcons::icon(QStringLiteral("csv")));
-    clearCache->setIcon(MenuIcons::icon(QStringLiteral("undo")));
+    clearCache->setIcon(MenuIcons::icon(QStringLiteral("eraser")));
     detail->setIcon(MenuIcons::icon(QStringLiteral("info")));
     activate->setIcon(MenuIcons::icon(QStringLiteral("pin")));
     remove->setIcon(MenuIcons::icon(QStringLiteral("trash")));
