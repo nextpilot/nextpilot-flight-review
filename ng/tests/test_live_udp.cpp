@@ -262,6 +262,35 @@ int main(int argc, char **argv)
         }
     }
 
+    // ---- 非法参数：三条都要 fail 且不崩 ----
+    {
+        Intent bad1; // 端口越界
+        bad1.op = QStringLiteral("data.connect");
+        bad1.params[QStringLiteral("url")] = QStringLiteral("tcp://127.0.0.1:70000");
+        bad1.params[QStringLiteral("parser")] = QStringLiteral("custom-protocol");
+        CHECK(!app.host().execute(bad1));
+
+        Intent bad2; // 未知解析器
+        bad2.op = QStringLiteral("data.connect");
+        bad2.params[QStringLiteral("url")] = QStringLiteral("udp://0.0.0.0:14560");
+        bad2.params[QStringLiteral("parser")] = QStringLiteral("no-such-parser");
+        CHECK(!app.host().execute(bad2));
+
+        Intent bad3; // config 缺 value
+        bad3.op = QStringLiteral("data.config");
+        bad3.params[QStringLiteral("key")] = QStringLiteral("bufferBytes");
+        CHECK(!app.host().execute(bad3));
+
+        Intent bad4; // 不存在的 live 会话
+        bad4.op = QStringLiteral("data.live.stats");
+        bad4.params[QStringLiteral("id")] = 9999;
+        const auto r4 = app.host().execute(bad4);
+        CHECK(r4); // stats 只过滤不报错，返回空列表
+        if (r4)
+            CHECK(r4.value().payload.toList().isEmpty());
+        std::printf("bad-args: 3 rejected, 1 empty-list\n");
+    }
+
 #ifdef __linux__
     // ---- 串口前端：用 pty 对模拟 RS232（openpty 给一对 master/slave）----
     {
