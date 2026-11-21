@@ -64,6 +64,29 @@ void drawZoom(QPainter &p, bool plus)
         p.drawLine(QPointF(6.6, 4.2), QPointF(6.6, 8.8));
 }
 
+void drawCompare(QPainter &p)
+{
+    // 两条平行折线 + 中间双向箭头："拿两条同名通道比一比"。
+    QPainterPath a;
+    a.moveTo(2.4, 5.2);
+    a.lineTo(6.0, 3.4);
+    a.lineTo(9.6, 5.6);
+    a.lineTo(13.6, 3.6);
+    p.drawPath(a);
+    QPainterPath b;
+    b.moveTo(2.4, 12.4);
+    b.lineTo(6.0, 10.6);
+    b.lineTo(9.6, 12.6);
+    b.lineTo(13.6, 10.8);
+    p.drawPath(b);
+    // 竖直双向箭头，示意"对齐/比较"。
+    p.drawLine(QPointF(8.0, 6.6), QPointF(8.0, 9.4));
+    p.drawLine(QPointF(6.8, 8.2), QPointF(8.0, 9.4));
+    p.drawLine(QPointF(9.2, 8.2), QPointF(8.0, 9.4));
+    p.drawLine(QPointF(6.8, 7.0), QPointF(8.0, 6.6));
+    p.drawLine(QPointF(9.2, 7.0), QPointF(8.0, 6.6));
+}
+
 void drawFit(QPainter &p)
 {
     // 四角向内收的框，表示"自适应到可视区"。
@@ -262,6 +285,7 @@ bool paint(QPainter &p, const QString &name)
     if (name == QLatin1String("zoom-in")) { drawZoom(p, true); return true; }
     if (name == QLatin1String("zoom-out")) { drawZoom(p, false); return true; }
     if (name == QLatin1String("fit")) { drawFit(p); return true; }
+    if (name == QLatin1String("compare")) { drawCompare(p); return true; }
     if (name == QLatin1String("undo")) { drawUndo(p); return true; }
     if (name == QLatin1String("add-curve")) { drawAddCurve(p); return true; }
     if (name == QLatin1String("grid")) { drawGrid(p); return true; }
