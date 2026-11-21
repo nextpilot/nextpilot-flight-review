@@ -5,6 +5,11 @@
 #include "Intent.h"
 #include "OpDispatch.h"
 
+#include <map>
+#include <memory>
+
+#include <QUdpSocket>
+
 // 数据器官的"派生能力"：reload / export / recent / clearCache。
 //
 // 与 DataLoadHandler（系统级 data.load 入口）归口一致，都是宿主级 handler——
@@ -78,6 +83,12 @@ private:
     // 仅 SourceKind::Live 源可操作；文件源返回 enotsupported。幂等：已在目标状态直接成功。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setSourcePaused(
         const nextpilot::plotscope::intent::Intent &intent, bool paused);
+    // 实时源接入（M1/T1.1）：udp:// 接收 → 同一份字节扇出给已绑定解析器。
+    // 只做接收侧；录制由 recording 模块按源登记另行接线。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> connectLive(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> disconnectLive(
+        const nextpilot::plotscope::intent::Intent &intent);
     // 源级时间对齐（T3.2）：mode = base/start/end/center/reset。
     // 只改 Dataset 出口偏移（见 Dataset::setTimeOffsetUs），原始时间戳不动。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> alignTime(
@@ -103,4 +114,16 @@ private:
     nextpilot::plotscope::context::AppContext &m_app;
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;
     nextpilot::plotscope::intent::OpDispatch m_dispatch;
+
+    // 实时源会话：一个源一个 QUdpSocket（readyRead → pipeline.feed）。
+    // paused 时不喂解析器——字节仍被内核缓冲丢弃，恢复后从头继续（不做补帧，明确取舍）。
+    struct LiveSession
+    {
+        std::unique_ptr<QUdpSocket> socket;
+        int sourceId = -1;
+        bool paused = false;
+        qint64 packets = 0;
+        qint64 bytes = 0;
+    };
+    std::map<int, LiveSession> m_live;
 };

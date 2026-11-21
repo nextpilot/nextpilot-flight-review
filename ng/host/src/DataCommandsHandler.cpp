@@ -12,6 +12,9 @@
 #include "ChannelTransformConfig.h"
 
 #include <QFile>
+#include <QHostAddress>
+#include <QNetworkDatagram>
+#include <QUdpSocket>
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
@@ -22,6 +25,8 @@
 
 #include <cmath>
 #include <limits>
+#include <map>
+#include <memory>
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
@@ -146,6 +151,8 @@ void DataCommandsHandler::buildDispatch()
                    [this](const I &) { return workspaceSave(); });
     m_dispatch.reg(QStringLiteral("data.workspace.restore"),
                    [this](const I &) { return workspaceRestore(); });
+    m_dispatch.reg(QStringLiteral("data.connect"), this, &DataCommandsHandler::connectLive);
+    m_dispatch.reg(QStringLiteral("data.disconnect"), this, &DataCommandsHandler::disconnectLive);
     m_dispatch.reg(QStringLiteral("data.time.align"), this, &DataCommandsHandler::alignTime);
     m_dispatch.reg(QStringLiteral("data.transform.set"), this, &DataCommandsHandler::setChannelTransform);
     m_dispatch.reg(QStringLiteral("data.transform.clear"), this, &DataCommandsHandler::clearChannelTransform);
@@ -858,6 +865,9 @@ Result<IntentResult> DataCommandsHandler::setSourcePaused(const Intent &intent, 
     if (info->kind != SourceKind::Live)
         return fail(err::NotSupported,
                     QStringLiteral("仅实时(live)源支持暂停/继续，当前源不是实时源"));
+    // 套接字侧同步暂停态：暂停时把内核缓冲读空但不喂解析器（不做补帧）。
+    if (auto it = m_live.find(sourceId); it != m_live.end())
+        it->second.paused = paused;
 
     const SourceState target = paused ? SourceState::Paused : SourceState::Streaming;
     if (info->state != target)
@@ -871,6 +881,144 @@ Result<IntentResult> DataCommandsHandler::setSourcePaused(const Intent &intent, 
     r.payload = QVariantMap{
         {QStringLiteral("id"), sourceId},
         {QStringLiteral("paused"), paused},
+    };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
+{
+    // 只有一个前端：udp 套接字。解析器可多路（同一份字节扇出）——
+    // 这正是 IngestPipeline 的形态，宿主这里只负责"把字节送进去 + 记源"。
+    const QString url = intent.params.value(QStringLiteral("url")).toString();
+    if (url.isEmpty())
+        return fail(err::Args, QStringLiteral("缺少 url（例：udp://0.0.0.0:14550）"));
+    const QUrl qurl(url);
+    if (qurl.scheme() != QLatin1String("udp"))
+        return fail(err::Args, QStringLiteral("目前只支持 udp://（收到 %1）").arg(qurl.scheme()));
+    const int port = qurl.port(0);
+    if (port <= 0 || port > 65535)
+        return fail(err::Args, QStringLiteral("端口无效: %1").arg(qurl.port()));
+
+    const QString parserId = intent.params.value(QStringLiteral("parser")).toString();
+    if (parserId.isEmpty())
+        return fail(err::Args, QStringLiteral("请指定 parser（如 custom-protocol）"));
+
+    // 解析参数：template 内联 JSON 优先；templatePath 由宿主读成内联再注入
+    // （解析器不读文件，这条边界从协议模块起就一致）。
+    QByteArray parserOptions;
+    if (const QVariant tv = intent.params.value(QStringLiteral("template")); tv.isValid()
+        && !tv.toString().isEmpty())
+    {
+        parserOptions = QJsonDocument(QJsonObject{{QStringLiteral("template"), tv.toString()}})
+                            .toJson(QJsonDocument::Compact);
+    }
+    else if (const QString tp = intent.params.value(QStringLiteral("templatePath")).toString();
+             !tp.isEmpty())
+    {
+        QFile f(tp);
+        if (!f.open(QIODevice::ReadOnly))
+            return fail(err::Path, QStringLiteral("无法读取模板: %1").arg(tp));
+        parserOptions = QJsonDocument(QJsonObject{{QStringLiteral("template"),
+                                                   QString::fromUtf8(f.readAll())}})
+                            .toJson(QJsonDocument::Compact);
+    }
+
+    DataSourceInfo info;
+    info.name = intent.params.value(QStringLiteral("name")).toString();
+    if (info.name.isEmpty())
+        info.name = url;
+    info.origin = url;
+    info.kind = SourceKind::Live;
+    info.state = SourceState::Streaming;
+    ParserBinding binding;
+    binding.parserId = parserId;
+    binding.active = true;
+    binding.options = parserOptions;
+    info.parsers << binding;
+
+    const int sourceId = m_app.sources().add(info);
+    if (sourceId < 0)
+        return fail(err::Io, QStringLiteral("数据源登记失败"));
+
+    const auto bound = m_app.ingest().bindParser(sourceId, binding, kInvalidDataset);
+    if (!bound)
+    {
+        m_app.sources().remove(sourceId);
+        return bound.error();
+    }
+    m_app.sources().addDataset(sourceId, bound.value());
+
+    auto sock = std::make_unique<QUdpSocket>();
+    const QString host = qurl.host().isEmpty() ? QStringLiteral("0.0.0.0") : qurl.host();
+    if (!sock->bind(QHostAddress(host), quint16(port)))
+    {
+        m_app.sources().remove(sourceId);
+        return fail(err::Io, QStringLiteral("绑定 %1:%2 失败: %3")
+                                  .arg(host).arg(port).arg(sock->errorString()));
+    }
+
+    // 收包即喂：扇出由管道负责（多解析器共享同一份字节）。
+    LiveSession session;
+    session.sourceId = sourceId;
+    QUdpSocket *raw = sock.get();
+    QObject::connect(raw, &QUdpSocket::readyRead, raw, [this, raw, sourceId] {
+        auto it = m_live.find(sourceId);
+        if (it == m_live.end() || it->second.paused)
+        {
+            // 暂停态：把内核缓冲读空但不喂解析器（不做补帧，恢复后从新数据继续）。
+            while (raw->hasPendingDatagrams())
+            {
+                QNetworkDatagram dg = raw->receiveDatagram();
+                it->second.bytes += dg.data().size();
+            }
+            return;
+        }
+        while (raw->hasPendingDatagrams())
+        {
+            QNetworkDatagram dg = raw->receiveDatagram();
+            const QByteArray bytes = dg.data();
+            it->second.packets += 1;
+            it->second.bytes += bytes.size();
+            m_app.ingest().feed(sourceId,
+                                reinterpret_cast<const uint8_t *>(bytes.constData()),
+                                bytes.size());
+        }
+    });
+    session.socket = std::move(sock);
+    m_live[sourceId] = std::move(session);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("source"), sourceId},
+        {QStringLiteral("dataset"), bound.value()},
+        {QStringLiteral("url"), url},
+        {QStringLiteral("parser"), parserId},
+    };
+    return r;
+}
+
+Result<IntentResult> DataCommandsHandler::disconnectLive(const Intent &intent)
+{
+    int sourceId = intent.params.value(QStringLiteral("id"), -1).toInt();
+    if (sourceId < 0)
+        sourceId = m_app.activeSourceId();
+    auto it = m_live.find(sourceId);
+    if (it == m_live.end())
+        return fail(err::NoSource, QStringLiteral("该数据源不是活动的实时源: %1").arg(sourceId));
+
+    // 先 flush 尾半帧，再断 socket，最后落状态——顺序反了会丢最后一个包。
+    m_app.ingest().finish(sourceId);
+    it->second.socket->close();
+    const qint64 packets = it->second.packets;
+    const qint64 bytes = it->second.bytes;
+    m_live.erase(it);
+    m_app.sources().setState(sourceId, SourceState::Closed);
+
+    IntentResult r;
+    r.payload = QVariantMap{
+        {QStringLiteral("source"), sourceId},
+        {QStringLiteral("packets"), QVariant::fromValue<qlonglong>(packets)},
+        {QStringLiteral("bytes"), QVariant::fromValue<qlonglong>(bytes)},
     };
     return r;
 }
