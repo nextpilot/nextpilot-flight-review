@@ -45,8 +45,8 @@
 | T1.2 | 长流模式：后台泵、不阻塞、EOF 不关源 | **已完成** 2026-11-21 / `f032b81`：readyRead 只入环（默认 4MB/源），50Hz 泵按 256KB/tick 批量 feed；disconnect/reconnect 前先喂完积压再断；EOF 不关源（`atEnd` 语义未被引入） | T1.1 | AC-02 |
 | T1.3 | 流控与统计：pause / resume / reconnect / 速率 / 丢帧计数 | **已完成** 2026-11-21 / `f032b81`：pause/resume/reconnect + Hz/KB/s/packets/bytes/fed_bytes 已实测；丢帧计数分两层——`dropped_bytes`（环满丢最旧，应用层背压，实测可读）+ `parse_errors`（解析器通道错误）；内核 UDP 丢包仍在 socket 层递交给内核处理，不做自造补算 | T1.2 | AC-03 |
 | T1.4 | 意图 op：connect/disconnect/pause/resume/reconnect/rate.set/config/list | **已完成** 2026-11-21：`data.connect`（udp/serial/tcp）、`data.disconnect`、`data.pause/resume`、`data.reconnect`、`data.source.list`、`data.live.stats`、`data.rate.set`（hz 1..200 → 泵 interval）、`data.config`（bufferBytes / pumpBudget 热改）全部落地并单测 | T1.2 | AC-04 |
-| T1.5 | UI：数据页 sources gallery 增"实时源"分类 + 连接对话框（传输/端点/波特率/解析器多选） | M | T1.4 | AC-05 |
-| T1.6 | 数据面板状态行：源状态、速率、字节、错误；空态提示改为真实可用 | S | T1.5 | AC-06 |
+| T1.5 | UI：数据页入口 + 连接对话框 | **已完成** 2026-11-21 / `e32101c`：标题行「＋」菜单 + 空态按钮接真对话框；UDP/TCP/串口字段互斥显隐、解析器取自 ParserRegistry（默认 custom-protocol）；提交走 `data.connect`，失败就地红字。截图 `verify/ng_live_dlg_udp.png`、`ng_live_dlg_serial.png` | T1.4 | AC-05 |
+| T1.6 | 数据面板状态行：源状态、速率、字节、错误 | **部分完成** `e32101c`：底部状态行已实现（800ms 轮询 stats，●/⏸/⚠ 三态、无会话隐藏）；**缺有 live 会话窗口的截图确认**（左 dock 默认页被脚本库占用） | T1.5 | AC-06 |
 | **M2 录制** | | | | |
 | T2.1 | 录制编排器：`DataSourceInfo::recordings` → `Recorder::create` → 每帧 `writeMessage/writeBytes` | M | T1.2 | AC-07 |
 | T2.2 | 意图：`data.record.start/stop/list`（含 format×backend×endpoint 多路） | S | T2.1 | AC-08 |
@@ -86,11 +86,11 @@
 
 ## 1.1 完成进度总览（截至 2026-11-21，已推送 `3f4a72c`）
 
-33 张任务卡，**完成 11 + 部分完成 1，完成率 33%（含部分 36%）**；另含 1 项跨卡视觉增强（右键菜单图标）。所有已完成项都在 `nextgen-architecture` 上，编译 0 error、`ctest -j1` 27/27 全绿，已推送至 `f032b81`。
+33 张任务卡，**完成 12 + 部分完成 1，完成率 36%（含部分 39%）**；另含 1 项跨卡视觉增强（右键菜单图标）。所有已完成项都在 `nextgen-architecture` 上，编译 0 error、`ctest -j1` 27/27 全绿，已推送至 `e32101c`。
 
 | 里程碑 | 任务卡数 | 已完成 | 部分完成 | 未开始 | 完成率 | 说明 |
 |---|---|---|---|---|---|---|
-| M1 实时源 | 6 | 4 | 0 | 2 | 67% | T1.1 三前端 + T1.2 环/泵 + T1.3 统计 + T1.4 意图族全落地（`f032b81`）；T1.5 连接对话框、T1.6 状态行仍缺（UI 卡）；**流式解析器**只有 csv/custom-protocol/ulog（无 MAVLink，用户明确判定为“业务”不在底座范围） |
+| M1 实时源 | 6 | 5 | 1 | 0 | 83% | T1.1 三前端 + T1.2 环/泵 + T1.3 统计 + T1.4 意图族全落地（`f032b81`）；T1.5 连接对话框、T1.6 状态行仍缺（UI 卡）；**流式解析器**只有 csv/custom-protocol/ulog（无 MAVLink，用户明确判定为“业务”不在底座范围） |
 | M2 录制 | 3 | 0 | 0 | 3 | 0% | 引擎已存在，只差接线，可紧跟 M1 |
 | M3 时间对齐 | 5 | 5 | 0 | 0 | 100% | T3.1 偏移收敛 AppContext、T3.2 五策略、T3.3 意图+树右键、T3.4 CSV 导出叠加、T3.5 选格 |
 | M4 数据工程 | 5 | 0 | 0 | 5 | 0% | 依赖 T3.1 的 offset 语义，顺序上排在 T3 之后 |
@@ -98,7 +98,7 @@
 | M6 格式扩展 | 3 | 0 | 0 | 3 | 0% | 重写型任务，与本次移植解耦 |
 | M7 现场排障 | 2 | 0 | 0 | 2 | 0% | 依赖 T1.3 的流控统计 |
 | M8 绘图补口 | 2 | 0 | 0 | 2 | 0% | 低优先，按需 |
-| **合计** | **33** | **11** | **1** | **21** | **33%** | |
+| **合计** | **33** | **12** | **1** | **20** | **36%** | |
 
 ### 本轮（2026-11-21）实际落地的改动
 

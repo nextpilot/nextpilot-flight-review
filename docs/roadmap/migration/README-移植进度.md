@@ -12,11 +12,11 @@
 
 ## 进度看板（截至 `f032b81`，2026-11-21）
 
-33 张卡：**完成 11 · 部分完成 1 · 未开始 21 = 33%（含部分 36%）**。编译 0 error，`ctest -j1` **27/27 全绿**。
+33 张卡：**完成 12 · 部分完成 1 · 未开始 20 = 36%（含部分 39%）**。编译 0 error，`ctest -j1` **27/27 全绿**。
 
 | 里程碑 | 卡数 | 完成 | 部分 | 未开始 | 进度 | 状态一句话 |
 |---|---|---|---|---|---|---|
-| **M1 实时源** | 6 | 4 | 0 | 2 | **67%** | 三前端（UDP/串口/TCP）+ 字节环后台泵 + 统计 + 全套意图已通；只剩 T1.5 连接对话框、T1.6 状态行两张 UI 卡 |
+| **M1 实时源** | 6 | 5 | 1 | 0 | **83%** | 三前端 + 字节环后台泵 + 统计 + 全套意图 + 连接对话框已通；T1.6 状态行已实现但缺窗口截图 |
 | **M2 录制** | 3 | 0 | 0 | 3 | 0% | 录制引擎（Recorder/RawWriter/Mcap）已存在，差的是"谁喂它"的接线 |
 | **M3 时间对齐** | 5 | 5 | 0 | 0 | **100%** | 偏移收敛到 AppContext、5 策略、源右键入口、CSV 导出叠加、8×8 选格 |
 | **M4 数据工程** | 5 | 0 | 0 | 5 | 0% | 参数表/多表快照/缓存可观测/采样上限/设置对话框 |
@@ -33,8 +33,8 @@
 | T1.2 | 字节环 + 50Hz 后台泵、EOF 不关源 | ✅ | `f032b81`；readyRead 只入环，泵 256KB/tick |
 | T1.3 | pause/resume/reconnect、速率、丢帧 | ✅ | `f032b81`；`dropped_bytes` + `parse_errors` |
 | T1.4 | 意图族（含 `rate.set` / `config`） | ✅ | `f032b81`；`hz`→`interval_ms=200`、`bufferBytes=65536` 有断言 |
-| T1.5 | 数据页「实时源」分类 + 连接对话框 | ⬜ | 未开始（纯 UI，需按 dock 现有视觉语言设计） |
-| T1.6 | 面板状态行：状态/速率/字节/错误 | ⬜ | 未开始，与 T1.5 同批做 |
+| T1.5 | 数据页入口 + 连接对话框 | ✅ | `e32101c`；两态截图 `verify/ng_live_dlg_{udp,serial}.png` |
+| T1.6 | 面板状态行：状态/速率/字节/错误 | 🟡 | `e32101c` 已实现（800ms 轮询 stats）；缺窗口截图 |
 
 ## 口径与约定（避免下次又对不上）
 
@@ -55,6 +55,8 @@ LD_LIBRARY_PATH=/home/user/Doubao/tools/ng-deps/usr/lib/x86_64-linux-gnu \
 QT_QPA_PLATFORM_PLUGIN_PATH=/home/user/Doubao/tools/ng-deps/usr/lib/x86_64-linux-gnu/qt6/plugins \
 ctest --test-dir build-ng -j 1
 ```
+
+GUI 重启必须 `pkill -x plotscope-ng-gu`（进程名被内核截断为 15 字符，`-x plotscope-ng-gui` 匹配不到，会叠实例、截图拍到旧窗口）。
 
 无硬件验证走 `ng/tests/test_live_udp.cpp`：`QApplication(offscreen)` + `App::startup(false)` + `app.host().execute(intent)`，UDP 用 `QUdpSocket` 真发包、串口用 `openpty()` 造 pty 对，单次 3 秒出结果。
 

@@ -3,7 +3,7 @@
 > 配套 `移植清单-main到ng.md`。每条 AC 标注对应任务 ID、执行方式、判定标准、证据留存。
 > **无硬件的专项**：实时源验收一律用 UDP 打流替代真机；真机只在 AC-27 做附加确认。
 >
-> **当前进度（2026-11-21，`f032b81` 已推送）**：33 条验收项中 **6 条通过（AC-02、AC-03、AC-04、AC-10、AC-27、AC-29）、4 条部分通过（AC-10B、AC-11、AC-12、AC-28a）**，通过率 18%（含部分 30%）。M1（实时源）除两张 UI 卡外已全部有证据；M2/M4/M6/M7/M8 尚未开始。
+> **当前进度（2026-11-21，`f032b81` 已推送）**：33 条验收项中 **7 条通过（AC-02、AC-03、AC-04、AC-05、AC-10、AC-27、AC-29）、5 条部分通过（AC-06、AC-10B、AC-11、AC-12、AC-28a）**，通过率 21%（含部分 36%）。M1（实时源）除两张 UI 卡外已全部有证据；M2/M4/M6/M7/M8 尚未开始。
 > 编译 0 error，`ctest -j1` **27/27** 全绿（每次推送前必跑；27 条含脚本工作台用例与本轮新增 `ng_test_live_udp`）。
 
 
@@ -68,7 +68,7 @@ ctest --test-dir build-ng -j 1
 - 判定：`handles()` 白名单有全部 op；错误分支均走 `fail()`。
 - **结果**：8 个 op（connect/disconnect/pause/resume/reconnect/rate.set/config/source.list，另含 live.stats）全部可执行且返回 `ok`；4 条非法输入实测——`tcp://…:70000` 被拒、未知 parserId 被拒、`data.config` 缺 `value` 被拒、不存在的 `id` 在 stats 里回空列表而非崩溃，进程退出码正常。
 
-### AC-05 实时源入口 UI（T1.5）
+### AC-05 实时源入口 UI（T1.5）　✅ 已通过（`e32101c`）
 ```bash
 ./build-ng/gui/plotscope-ng-gui-shot ac05.png tests/fixture/demo_flight.ulg 1920 1080 --tab=数据
 ```
@@ -299,8 +299,8 @@ ctest --test-dir build-ng -j 1
 - [x] AC-02 长流不阻塞 — 三前端 20 帧→20 行，connect 立即返回，泵 50Hz 批量喂（`f032b81`）
 - [x] AC-03 pause/resume/reconnect/速率 — pause 期 packets 不增、reconnect 同 dataset、rate/config 断言（`f032b81`）
 - [x] AC-04 意图族 + 非法参数 — 9 op 全 ok；4 条非法输入全被拒且不崩（`f032b81`）
-- [ ] AC-05 实时源 gallery 分类
-- [ ] AC-06 源状态行
+- [x] AC-05 实时源入口 + 连接对话框 — 「＋」/空态按钮；UDP↔串口互斥无残留空行；真连接建源成功（`e32101c`）
+- [~] AC-06 源状态行 — 已实现（●/⏸/⚠ 三态），缺 live 会话窗口截图（`e32101c`）
 - [ ] AC-07 录制 mcap 回读自洽
 - [ ] AC-08 三路录制并存
 - [ ] AC-09 录制按钮两态
