@@ -74,6 +74,9 @@ public:
 
     // 面板内容与标题（诊断/测试用）。
     QWidget *panelWidget(const QString &area) const;
+    // 把面板页签**置前**（"再打开=聚焦"语义：重复 requestPanel 同一面板时调用；
+    // 调试暂停时编辑器/模块也会用它把调试面板顶到前台）。
+    void raisePanel(QWidget *panel);
     // 该停靠区**全部**面板（同侧页签化的每个成员；属性/脚本调试等并列时逐个可查）。
     QList<QWidget *> panelWidgets(const QString &area) const;
 
@@ -151,6 +154,10 @@ private:
     bool m_centralInstalled = false;
     QHash<QString, ads::CDockAreaWidget *> m_lastArea; // area -> 该侧最后一个 DockArea
     QHash<QString, ads::CDockWidget *> m_panels;      // area -> 该侧主 dock
+    // 面板内容 widget -> 持有它的 dock 页签（raisePanel 置前用；
+    // ADS 自带的 dockWidgetsMap 按 objectName 索引，撞名会互相覆盖不可靠）。
+    QHash<QWidget *, ads::CDockWidget *> m_dockByWidget;
+    int m_dockSeq = 0;                        // dock objectName 消歧序号
 
     // 动作
     QHash<QString, int> m_actionTriggers;    // actionId -> 触发次数

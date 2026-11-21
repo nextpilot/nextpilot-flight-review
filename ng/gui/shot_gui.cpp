@@ -430,13 +430,18 @@ int main(int argc, char *argv[])
 
     // --script=<lua>：通过 script.run 意图执行脚本，脚本内 app.call 可操作
     // 意图通道 + view action 通道，验证"脚本直接引用 app 操作整个应用"。
+    // 异步调度：脚本若触发调试暂停（嵌套事件循环挂起），后面已挂上的
+    // 截图定时器仍会在暂停期间触发——正好截到"断点暂停态"。
     if (!scriptArg.isEmpty())
     {
-        Intent sc;
-        sc.op = QStringLiteral("script.run");
-        sc.params[QStringLiteral("source")] = scriptArg.toUtf8();
-        const auto sr = application.host().execute(sc);
-        fprintf(stdout, "app 脚本: %s\n", sr ? "执行成功" : qPrintable(sr.error().message));
+        QByteArray source = scriptArg.toUtf8();
+        QTimer::singleShot(50, [&application, source]() {
+            Intent sc;
+            sc.op = QStringLiteral("script.run");
+            sc.params[QStringLiteral("source")] = source;
+            const auto sr = application.host().execute(sc);
+            fprintf(stdout, "app 脚本: %s\n", sr ? "执行成功" : qPrintable(sr.error().message));
+        });
     }
 
     // --marker=<lua规则>：执行 data.marker 意图，把 PlotMarker 画到画布后截图。

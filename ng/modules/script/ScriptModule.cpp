@@ -347,13 +347,19 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
                     up.insert(QStringLiteral("stack"), stack);
                     Result<QVariant> out{QVariant()};
                     dbgReg->dispatchViewAction(QStringLiteral("script.debug.update"), up, out);
+                    // 暂停时把调试面板顶到前台（re-request 复用 = 聚焦语义）；
+                    // 否则 dock.right 上并列的属性页签会挡住变量/调用栈。
+                    if (m_ui)
+                        m_ui->requestPanel(QStringLiteral("dock.right"),
+                                           QStringLiteral("script-debug"));
                     // 行号 → 编辑器（暂停行高亮跳转；update 的处理器归调试面板，不冲突）
                     QVariantMap pp;
                     pp.insert(QStringLiteral("name"), name);
                     pp.insert(QStringLiteral("line"), p.line);
                     Result<QVariant> out2{QVariant()};
                     dbgReg->dispatchViewAction(QStringLiteral("script.debug.pause"), pp, out2);
-                });
+                },
+                breakpoints.isEmpty()); // 有断点直接跑到首个断点；无断点才停在入口
             // 收尾：清调试面板快照 + 编辑器解除暂停高亮
             Result<QVariant> co{QVariant()};
             dbgReg->dispatchViewAction(QStringLiteral("script.debug.clear"), QVariantMap(), co);

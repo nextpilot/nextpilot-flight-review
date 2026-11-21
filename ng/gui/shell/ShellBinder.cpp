@@ -377,7 +377,10 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
         installCentral();
 
     auto *dock = new ads::CDockWidget(m_dock, title);
-    dock->setObjectName(QStringLiteral("ng.dock.%1").arg(area));
+    // objectName 必须唯一：dockWidgetsMap/findDockWidget 按名索引，同区多面板
+    // 撞名会让后面的覆盖前面的（"脚本调试"曾被"属性"顶掉）。加序号消歧。
+    dock->setObjectName(QStringLiteral("ng.dock.%1.%2").arg(area).arg(m_dockSeq++));
+    m_dockByWidget.insert(content, dock);
     // 标题栏图标：一眼区分"数据集/属性/日志"三块侧栏。
     static const struct { const char *area; const char *icon; } kDockIcons[] = {
         {"dock.left", "data_table"}, {"dock.right", "panel"}, {"dock.bottom", "history"}};
@@ -444,7 +447,8 @@ void ShellBinder::setCentralContent(QWidget *content, const QString &title)
         // 典型场景：脚本编辑器请求 canvas.center——写代码需要全宽，
         // 挤在侧栏（400px 上限）里没法用。ADS 页签机制现成，零新布局代码。
         auto *dock = new ads::CDockWidget(m_dock, title.isEmpty() ? QStringLiteral("视图") : title);
-        dock->setObjectName(QStringLiteral("ng.dock.central.tab"));
+        dock->setObjectName(QStringLiteral("ng.dock.central.tab.%1").arg(m_dockSeq++));
+        m_dockByWidget.insert(content, dock);
         content->setMinimumWidth(320);
         dock->setWidget(content);
         dock->setMinimumWidth(320);
@@ -550,6 +554,15 @@ QWidget *ShellBinder::panelWidget(const QString &area) const
 {
     ads::CDockWidget *dock = m_panels.value(area, nullptr);
     return dock ? dock->widget() : nullptr;
+}
+
+void ShellBinder::raisePanel(QWidget *panel)
+{
+    if (!panel)
+        return;
+    // 直查内容 widget -> dock 页签映射（ADS 自带 map 按 objectName 索引不可靠）。
+    if (ads::CDockWidget *dw = m_dockByWidget.value(panel, nullptr))
+        dw->raise();
 }
 
 QList<QWidget *> ShellBinder::panelWidgets(const QString &area) const
