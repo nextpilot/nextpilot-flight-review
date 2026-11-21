@@ -149,7 +149,7 @@ ctest --test-dir build-ng -j 1
 - 期望：树里"参数"节点可展开为表，含 `P*`/`Q*` 列与 `value` 列；属性面板能显示参数数量。
 - 判定：job 断言 `param` 表存在且 `rows == 参数条数`（fixture 已知值）。
 
-### AC-15 缓存可观测（T4.3）
+### AC-15（缓存可观测，`17fc74f` 已过 ✅） 缓存可观测（T4.3）
 - 步骤：同一文件连续 `data.load` 两次，第二次带 `useCache:true`；随后 `data.cache.stats` → `data.clearCache` → 再 `stats`。
 - 期望：第二次 `load` 耗时显著下降（≥5×）且 `hits>0`；清空后 `bytes` 归零、`hits/misses` 重置。
 - 判定：耗时与计数字段自动比对；输出 `load_ms` 对比。
