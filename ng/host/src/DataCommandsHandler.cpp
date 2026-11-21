@@ -249,7 +249,14 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
         return fail(err::Write, QStringLiteral("无法写入: %1").arg(outPath));
 
+    // 对齐参与导出（T3.4）：画布是在 push 副本上叠加源偏移渲染的，
+    // 导出必须同一口径，否则"画布看到的 X"与"导出的 time 列"差一个 offset。
+    const int alignSrc = m_app.sources().sourceOfDataset(dsId.value());
+    const double alignOffsetSec = alignSrc >= 0 ? m_app.sourceTimeOffset(alignSrc) : 0.0;
+
     QTextStream out(&file);
+    if (!qFuzzyIsNull(alignOffsetSec))
+        out << "# source_time_offset_s=" << alignOffsetSec << '\n';
     // 表头
     out << QStringLiteral("time");
     for (const QString &c : columns)
@@ -268,7 +275,7 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
     const int rows = views.isEmpty() ? 0 : views.first().size();
     for (int i = 0; i < rows; ++i)
     {
-        out << views.first().time.value(i);
+        out << (views.first().time.value(i) + alignOffsetSec);
         for (const ChannelView &v : views)
             out << ',' << v.value.value(i);
         out << '\n';
