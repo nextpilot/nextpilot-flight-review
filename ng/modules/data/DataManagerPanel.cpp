@@ -1128,6 +1128,37 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     QAction *alEnd = align->addAction(QStringLiteral("终点对齐到基准"));
     QAction *alCenter = align->addAction(QStringLiteral("中点对齐到基准"));
     QAction *alReset = align->addAction(QStringLiteral("重置偏移"));
+    // 对比同名（T5.6 收尾）：源上直接挂列，不必先去字段视图找列再右键。
+    // 只列数值列（前 12 项），bool/文本列没有可比性。
+    QMenu *compare = menu.addMenu(QStringLiteral("对比同名"));
+    QList<QAction *> cmpColActs;
+    int cmpDataset = -1;
+    QString cmpTable;
+    if (!info->datasetIds.isEmpty())
+    {
+        const int dsId = info->datasetIds.first();
+        if (const auto *ds = m_repo.get(dsId))
+        {
+            cmpDataset = dsId;
+            cmpTable = ds->tableNames().isEmpty() ? QString() : ds->tableNames().first();
+            if (const auto *tb = ds->table(cmpTable))
+            {
+                int shown = 0;
+                for (const Column &col : tb->columns)
+                {
+                    if (col.type == ValueType::Bool || col.type == ValueType::Text)
+                        continue;
+                    if (++shown > 12)
+                        break;
+                    QAction *a = compare->addAction(col.name);
+                    a->setData(col.name);
+                    cmpColActs << a;
+                }
+            }
+        }
+    }
+    if (cmpColActs.isEmpty())
+        compare->addAction(QStringLiteral("（该源没有可比数值列）"))->setEnabled(false);
     menu.addSeparator();
     QAction *detail = menu.addAction(QStringLiteral("数据源信息…"));
     QAction *activate = menu.addAction(QStringLiteral("设为活动数据源"));
@@ -1148,10 +1179,22 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     remove->setIcon(MenuIcons::icon(QStringLiteral("trash")));
     removeAll->setIcon(MenuIcons::icon(QStringLiteral("remove-all")));
     align->setIcon(MenuIcons::icon(QStringLiteral("fit")));
+    compare->setIcon(MenuIcons::icon(QStringLiteral("compare")));
     QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
 
+    if (cmpColActs.contains(chosen) && cmpDataset >= 0)
+    {
+        QVariantMap p;
+        p.insert(QStringLiteral("dataset"), cmpDataset);
+        p.insert(QStringLiteral("column"), chosen->data().toString());
+        Result<QVariant> out{QVariant()};
+        if (!m_appCtx.interactions().dispatchViewAction(
+                QStringLiteral("plot.compareSame"), p, out))
+            QMessageBox::information(this, QStringLiteral("对比同名"), out.error().message);
+        return;
+    }
     if (chosen == alBase || chosen == alStart || chosen == alEnd
         || chosen == alCenter || chosen == alReset)
     {
@@ -1166,9 +1209,10 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
         intent.params[QStringLiteral("source")] = sourceId;
         if (mode != QLatin1String("base") && mode != QLatin1String("reset"))
         {
-            // 基准 = 活动源；活动源就是自己时自动取另一个源，省得用户先去切活动源。
+            // 基准 = 活动源；活动源是自己**或还没设**时自动取另一个源，
+            // 省得用户先去切活动源（否则两个源都开着却报"需要另一个源"）。
             int base = m_appCtx.activeSourceId();
-            if (base == sourceId)
+            if (base == sourceId || base < 0)
             {
                 base = -1;
                 for (int id : m_sources.ids())

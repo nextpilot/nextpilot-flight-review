@@ -1829,6 +1829,7 @@ void CanvasWorkspace::registerViewActions()
             };
 
             QVariantList addedNames;
+            QString firstErr;
             int matched = 0;
             for (int srcId : m_appCtx.sources().ids())
             {
@@ -1866,14 +1867,27 @@ void CanvasWorkspace::registerViewActions()
                     ++matched;
                     const QString title =
                         QStringLiteral("%1:%2.%3").arg(srcName, hitTable, column);
+                    QString addErr;
                     if (activeChannelView())
-                        activeChannelView()->addChannel(d, hitTable, column, nullptr, title);
+                    {
+                        if (!activeChannelView()->addChannel(d, hitTable, column, &addErr, title))
+                        {
+                            // 取数失败不能静默：名字里有源和列，用户才追得住。
+                            if (firstErr.isEmpty())
+                                firstErr = QStringLiteral("%1.%2：%3")
+                                               .arg(hitTable, column, addErr);
+                            ++matched;
+                            continue;
+                        }
+                    }
                     addedNames.append(title);
                 }
             }
-            if (matched == 0)
+            if (addedNames.isEmpty())
                 return fail(err::NoEnt,
-                            QStringLiteral("没有其它源包含同名通道: %1").arg(column));
+                            firstErr.isEmpty()
+                                ? QStringLiteral("没有其它源包含同名通道: %1").arg(column)
+                                : firstErr);
             QVariantMap out;
             out.insert(QStringLiteral("matched"), matched);
             out.insert(QStringLiteral("added"), int(addedNames.size()));
@@ -1964,15 +1978,17 @@ void CanvasWorkspace::registerViewActions()
                 return fail(err::NoEnt, QStringLiteral("数据集已失效"));
 
             // 对比前先清掉当前画布的曲线：AC-19 要求"恰两条"，残留会让条数不对。
-            if (activeChannelView())
-                activeChannelView()->clearChannels();
-            if (activeChannelView())
-            {
-                activeChannelView()->addChannel(self.datasetId, self.table, column, nullptr,
-                                                QStringLiteral("%1:%2.%3").arg(self.srcName, self.table, column));
-                activeChannelView()->addChannel(other.datasetId, other.table, column, nullptr,
-                                                QStringLiteral("%1:%2.%3").arg(other.srcName, other.table, column));
-            }
+            ChannelView *view = activeChannelView();
+            if (!view)
+                return fail(err::NoEnt, QStringLiteral("无活动画布视图"));
+            view->clearChannels();
+            QString e1, e2;
+            const QString baseName = QStringLiteral("%1:%2.%3").arg(self.srcName, self.table, column);
+            const QString peerName = QStringLiteral("%1:%2.%3").arg(other.srcName, other.table, column);
+            if (!view->addChannel(self.datasetId, self.table, column, &e1, baseName))
+                return fail(err::NoEnt, QStringLiteral("基准曲线没画上：%1").arg(e1));
+            if (!view->addChannel(other.datasetId, other.table, column, &e2, peerName))
+                return fail(err::NoEnt, QStringLiteral("对照曲线没画上：%1").arg(e2));
 
             // offset 建议与 T3 同一口径：**终点对齐**（baseEnd - peerEnd）。
             const qint64 offsetUs =
