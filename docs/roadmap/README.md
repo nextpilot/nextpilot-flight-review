@@ -16,7 +16,7 @@
 | M2.6 | Python 脚本引擎（子进程桥） | 工作台里 numpy 分析 + ds↔ndarray 写回 v2 | ✅ 已完成 |
 | M2.5 | 数据编辑器（可写） | 编辑产生版本、派生自动重算、可撤销 | 🗄️ 搁置（用户决策：短期无收益、受众小；评审方案已备） |
 | **M2.7** | **Rust kernel 优化与功能补全** | 整列原始读取/LOD 金字塔/数据集切片等 | 规划中（评审产出，待挑条目开工） |
-| **M2.8** | **Registry 机制整改** | RegistryBase/RegistryHub（RT-Thread rt_object 范式），诊断面板可枚举全系统注册表 | ⬅️ **设计定稿，待执行**（详单含完整施工依据，可交接 agent） |
+| **M2.8** | **Registry 机制整改** | RegistryNodeBase/注册树（rt_object 节点范式：继承即注册，一棵树 (kind,name) 查找） | ⬅️ **v3 定稿锁定，待执行**（可交接 agent） |
 | M3 | 工具箱打包/安装 + 首批领域包 | 非开发者能装包用包 | 规划中（依赖 M2.3/M2.4 落地） |
 
 ## 各里程碑详单
@@ -27,7 +27,7 @@
 - [M2.5 数据编辑器（可写）](M2.5-数据编辑器.md)
 - [M2.6 Python 脚本引擎](M2.6-Python脚本引擎.md)
 - [M2.7 Rust kernel 优化与功能补全](M2.7-kernel优化.md)
-- [M2.8 Registry 机制整改](M2.8-Registry整改.md)
+- [M2.8 Registry 机制整改（注册树）](M2.8-Registry整改.md)
 - [M3 工具箱生态（首批）](M3-工具箱生态.md)
 
 ## 另一条线：main → ng 能力移植
