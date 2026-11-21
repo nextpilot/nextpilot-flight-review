@@ -18,6 +18,7 @@
 #include "DataTablePanel.h"
 #include "ImportDialog.h"
 #include "ScriptPanels.h"
+#include "BatchPanel.h"
 #include "GuiContext.h"
 #include "MainWindow.h"
 #include "views/PropertyPanel.h"
@@ -634,6 +635,67 @@ int main(int argc, char *argv[])
               && reportActs.first().action.id == QStringLiteral("report.workbench.export"));
         CHECK(reportActs.first().action.large); // 大按钮
         OK("报告导出：view action 同路径出 PDF、模板缺省报错、Ribbon 入口就位");
+    }
+
+    // --- 5c-d) 批量处理（2.4）：script.workbench.batch 全链路 → 汇总面板 ---
+    //
+    // 回归点：Ribbon/脚本同路径（view action 带参免对话框）；
+    // 每文件进度 upsert 成表行；收尾 summary 恢复按钮态并给成败计数。
+    {
+        auto *ui = window.context();
+        CHECK(ui != nullptr);
+
+        // 临时目录：2 个合法 csv + 1 个损坏文件（空解析 → load 阶段失败明细）
+        QTemporaryDir dir;
+        CHECK(dir.isValid());
+        const char *csvHead = "time_ms,engine_rpm[rpm]\n";
+        auto writeCsv = [&](const QString &name, int seed) {
+            QFile f(dir.filePath(name));
+            f.open(QIODevice::WriteOnly | QIODevice::Text);
+            QTextStream ts(&f);
+            ts << csvHead;
+            for (int i = 0; i < 20; ++i)
+                ts << (i * 10) << ',' << (1400 + i + seed) << '\n';
+        };
+        writeCsv(QStringLiteral("run1.csv"), 1);
+        writeCsv(QStringLiteral("run2.csv"), 2);
+        {
+            QFile f(dir.filePath(QStringLiteral("broken.csv")));
+            f.open(QIODevice::WriteOnly);
+            f.write("\x89PNG\x1a\n\r\nnot-a-csv");
+        }
+
+        // script.workbench.batch 带参直跑（pick 透传，不弹对话框）
+        QVariantMap bp;
+        bp.insert(QStringLiteral("dir"), dir.path());
+        bp.insert(QStringLiteral("source"),
+                  QByteArrayLiteral("local m = {}\nm.file = batch.file\nm.rpm = 42\nreturn m\n"));
+        Result<QVariant> bout{QVariant()};
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("script.workbench.batch"), bp, bout));
+        CHECK(bout.ok());
+
+        // 汇总面板就位且行数 == 文件数；收尾计数正确
+        nextpilot::plotscope::script::BatchSummaryPanel *batchPanel = nullptr;
+        for (QWidget *w : binder->centralWidgets())
+        {
+            if (!batchPanel)
+                batchPanel = qobject_cast<nextpilot::plotscope::script::BatchSummaryPanel *>(w);
+        }
+        CHECK(batchPanel != nullptr);
+        CHECK(batchPanel->resultRowCount() == 3);
+        const QVariantMap sm = batchPanel->lastSummary();
+        CHECK(sm.value(QStringLiteral("ok")).toInt() == 2);
+        CHECK(sm.value(QStringLiteral("failed")).toInt() == 1);
+        CHECK(!sm.value(QStringLiteral("cancelled")).toBool());
+
+        // Ribbon"批量"组就位（大按钮）
+        const auto batchActs = slotReg.actionsIn(QStringLiteral("ribbon.group.script.batch"));
+        CHECK(batchActs.size() == 1);
+        CHECK(!batchActs.isEmpty()
+              && batchActs.first().action.id == QStringLiteral("script.workbench.batch"));
+        CHECK(batchActs.first().action.large);
+        OK("批量处理：script.workbench.batch 全链路出汇总表（2 成功 1 失败），Ribbon 入口就位");
     }
 
     // --- 5d) data.derive：Rust 实时派生 → 结果给 UI，原数据集零改动 ---

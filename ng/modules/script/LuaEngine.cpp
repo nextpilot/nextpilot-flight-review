@@ -584,6 +584,33 @@ Result<void> LuaEngine::runString(const QByteArray &source, const QString &chunk
     return Result<void>();
 }
 
+Result<QVariant> LuaEngine::runStringResult(const QByteArray &source, const QString &chunkName)
+{
+    if (!m_lua)
+        return fail(err::NoLua, QStringLiteral("Lua 状态创建失败"));
+    const int status = luaL_loadbuffer(m_lua, source.constData(), source.size(),
+                                       chunkName.toUtf8().constData());
+    if (status != LUA_OK)
+    {
+        const char *err = lua_tostring(m_lua, -1);
+        const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("脚本编译失败");
+        lua_pop(m_lua, 1);
+        return fail(err::Syntax, msg);
+    }
+    // nresults=1：chunk 的 return 值落在栈顶（无 return 为 nil）。
+    const int callStatus = lua_pcall(m_lua, 0, 1, 0);
+    if (callStatus != LUA_OK)
+    {
+        const char *err = lua_tostring(m_lua, -1);
+        const QString msg = err ? QString::fromUtf8(err) : QStringLiteral("脚本运行失败");
+        lua_pop(m_lua, 1);
+        return fail(err::Runtime, msg);
+    }
+    const QVariant out = readVariant(m_lua, -1);
+    lua_pop(m_lua, 1);
+    return Result<QVariant>(out);
+}
+
 Result<void> LuaEngine::runFile(const QString &path)
 {
     QFile f(path);

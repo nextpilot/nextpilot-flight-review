@@ -76,6 +76,19 @@ target_link_libraries(ng_test_marker_engine PRIVATE
 set_target_properties(ng_test_marker_engine PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ng_marker_engine COMMAND ng_test_marker_engine)
 
+# M2.4 批量处理验收（headless，走真实执行路径）：
+# data.batch.run 失败明细 + 进度广播 + 分片边界取消 + keep 保留。
+add_executable(ng_test_batch test_batch.cpp)
+target_include_directories(ng_test_batch PRIVATE ${CMAKE_SOURCE_DIR}/app)
+target_link_libraries(ng_test_batch PRIVATE
+    ng_module_data ng_module_plot ng_module_script ng_module_protocol ng_module_analysis ng_module_settings ng_module_report
+    ng_ext_common ng_ext_autopilot ng_ext_automotive ng_ext_robotics ng_ext_gnss
+    ng_ext_registry ng_host ng_context ng_recording Qt6::Core)
+# 复用 CLI 里的 App 装配逻辑
+target_sources(ng_test_batch PRIVATE ${CMAKE_SOURCE_DIR}/app/App.cpp)
+set_target_properties(ng_test_batch PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ng_batch COMMAND ng_test_batch)
+
 # 状态视图 golden 验收（对齐 PJ4 StateColors/StateSeriesAdapter/StateTransitionsView）。
 add_executable(ng_test_state_view test_state_view.cpp)
 target_link_libraries(ng_test_state_view PRIVATE

@@ -39,6 +39,7 @@ static void printUsage()
             "  plotscope-ng --info <file.csv|file.ulg>   # 按扩展名选格式\n"
             "  plotscope-ng --run <job.json>\n"
             "  plotscope-ng --script <file.lua> [--record <out.json>]\n"
+            "  plotscope-ng --batch <dir> <script.lua> [--pattern \"*.csv;*.ulg\"] [--json out.json]\n"
             "  plotscope-ng --mcp-bridge        # MCP server（stdio JSON-RPC，供外部代理驱动）\n"
             "  plotscope-ng --dump-diagnostics  # 应用诊断 JSON（模块/知识包/数据面/工具目录）\n");
 }
@@ -324,6 +325,63 @@ int main(int argc, char **argv)
                 return 2;
             }
             fprintf(stdout, "已录制 %d 条意图 -> %s\n", application.recorder().size(), qPrintable(recordPath));
+        }
+        return 0;
+    }
+
+    if (command == QStringLiteral("--batch") && args.size() >= 4)
+    {
+        // --batch <dir> <script.lua> [--pattern "*.csv;*.ulg"] [--json out.json]
+        // M2.4 headless JSON 出口：汇总 payload 直接序列化打印/落盘。
+        const QString dir = args.at(2);
+        const QString script = args.at(3);
+        QString pattern;
+        QString jsonOut;
+        for (int i = 4; i + 1 < args.size(); ++i)
+        {
+            if (args.at(i) == QStringLiteral("--pattern"))
+                pattern = args.at(i + 1);
+            if (args.at(i) == QStringLiteral("--json"))
+                jsonOut = args.at(i + 1);
+        }
+
+        Intent bi;
+        bi.op = QStringLiteral("data.batch.run");
+        bi.params[QStringLiteral("dir")] = dir;
+        bi.params[QStringLiteral("script")] = script;
+        if (!pattern.isEmpty())
+            bi.params[QStringLiteral("pattern")] = pattern;
+
+        Result<IntentResult> r = application.host().execute(bi);
+        if (!r)
+        {
+            fprintf(stderr, "批量执行失败[%s]: %s\n",
+                    qPrintable(r.error().code), qPrintable(r.error().message));
+            return 1;
+        }
+        const QJsonDocument doc(QJsonObject::fromVariantMap(r.value().payload.toMap()));
+        if (!jsonOut.isEmpty())
+        {
+            QFile out(jsonOut);
+            if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
+            {
+                fprintf(stderr, "无法写入汇总 JSON: %s\n", qPrintable(jsonOut));
+                return 2;
+            }
+            out.write(doc.toJson(QJsonDocument::Indented));
+            fprintf(stdout, "汇总已写入 %s（%s 共 %d 个文件：%s）\n",
+                    qPrintable(jsonOut), qPrintable(dir),
+                    r.value().payload.toMap().value(QStringLiteral("total")).toInt(),
+                    qPrintable(QStringLiteral("%1 成功 / %2 失败")
+                                   .arg(r.value().payload.toMap()
+                                            .value(QStringLiteral("ok")).toInt())
+                                   .arg(r.value().payload.toMap()
+                                            .value(QStringLiteral("failed")).toInt())));
+        }
+        else
+        {
+            fprintf(stdout, "%s\n",
+                    qPrintable(QString::fromUtf8(doc.toJson(QJsonDocument::Indented))));
         }
         return 0;
     }

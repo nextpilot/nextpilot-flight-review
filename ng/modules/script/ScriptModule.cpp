@@ -1,6 +1,7 @@
 #include "ScriptModule.h"
 
 #include "BuiltinModuleRegistry.h"
+#include "BatchRunner.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
 #include "JobRecorder.h"
@@ -109,8 +110,70 @@ void ScriptModule::initialize(ModuleContext &ctx)
         [host](const QString &id, const QVariantMap &params, Result<QVariant> &out) {
             return host->dispatchViewAction(id, params, out);
         };
-    m_handler = new Handler(ctx.executor(), ctx.recorder(), std::move(viewDispatcher), this);
+    m_handler = new Handler(ctx.executor(), ctx.recorder(), viewDispatcher, this);
     ctx.registerIntentHandler(m_handler);
+
+    // ---- 批量处理（M2.4）：data.batch.run 意图 + 取消通道 ----
+    // 每文件 load→script 走与单文件完全相同的执行器路径；进度经 view action
+    // data.batch.progress 广播（GUI 汇总面板消费），取消经 data.batch.cancel 置标志。
+    m_batch = new nextpilot::plotscope::script::BatchHandler(
+        ctx.executor(), &ctx.app().interactions(), &ctx.app().data(), &ctx.app().sources(),
+        viewDispatcher, this);
+    ctx.registerIntentHandler(m_batch);
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("data.batch.cancel"),
+        [this](const QVariantMap &) -> Result<QVariant> {
+            if (!m_batch || !m_batch->running())
+                return fail(err::Args, QStringLiteral("没有进行中的批量运行"));
+            m_batch->requestCancel();
+            return Result<QVariant>(QVariant(true));
+        });
+
+    // script.workbench.batch：批量运行入口（Ribbon"批量运行"按钮 / 脚本同路径）。
+    // 先确保汇总面板存在，再经视图层 data.batch.pick 拿 {dir, script}
+    // （无参弹文件对话框；带参直接透传——脚本/测试可免对话框驱动），
+    // 然后执行 data.batch.run 意图，结束把汇总 payload 发给面板恢复按钮态。
+    nextpilot::plotscope::context::InteractionRegistry *batchReg = &ctx.app().interactions();
+    IIntentExecutor *batchExecutor = &ctx.executor();
+    ctx.app().interactions().registerViewAction(
+        QStringLiteral("script.workbench.batch"),
+        [this, batchReg, batchExecutor](const QVariantMap &params) -> Result<QVariant> {
+            if (!m_batch)
+                return fail(err::Unsupported, QStringLiteral("批量处理不可用"));
+            if (!m_ui)
+                return fail(err::Unsupported, QStringLiteral("批量汇总需要 GUI 环境"));
+            if (!m_ui->requestPanel(QStringLiteral("canvas.center"),
+                                    QStringLiteral("batch-summary")))
+                return fail(err::Unsupported, QStringLiteral("批量汇总面板不可用"));
+            QVariantMap picked = params;
+            if (!picked.contains(QStringLiteral("dir")))
+            {
+                Result<QVariant> po{QVariant()};
+                if (!batchReg->dispatchViewAction(QStringLiteral("data.batch.pick"),
+                                                  QVariantMap(), po)
+                    || !po.value().isValid())
+                    return fail(err::Args, QStringLiteral("未选择批量目录/脚本"));
+                picked = po.value().toMap();
+            }
+            if (!picked.contains(QStringLiteral("dir"))
+                || (!picked.contains(QStringLiteral("script"))
+                    && !picked.contains(QStringLiteral("source"))))
+                return fail(err::Args, QStringLiteral("批量运行需要 dir 与 script/source"));
+            Intent bi;
+            bi.op = QStringLiteral("data.batch.run");
+            bi.params = picked;
+            Result<IntentResult> r = batchExecutor->execute(bi);
+            // 结束汇总（面板据 cancelled/done 恢复按钮态、显示成败计数）
+            QVariantMap sm = r ? r.value().payload.toMap() : QVariantMap();
+            sm.insert(QStringLiteral("done"), true);
+            if (!r)
+                sm.insert(QStringLiteral("error"), r.error().message);
+            Result<QVariant> so{QVariant()};
+            batchReg->dispatchViewAction(QStringLiteral("data.batch.summary"), sm, so);
+            if (!r)
+                return fail(r.error().code, r.error().message);
+            return Result<QVariant>(r.value().payload);
+        });
 
     // 统一变换求值：注册进 AppContext，供 host(数据源衍生)/gui(曲线)/protocol(checksum)
     // 调用，而不必反向依赖 script 模块。builtin/expression 内部走 Rust，lua 走 C++。
@@ -480,6 +543,13 @@ void ScriptModule::onAttach(UiContext &ui)
               QStringLiteral("ribbon.group.script.run"), QString(), 0, true);
     addRibbon(QStringLiteral("script.workbench.debugRun"), QStringLiteral("调试运行"),
               QStringLiteral("ribbon.group.script.run"), QString(), 1, true);
+
+    // "批量"组（M2.4）：目录级批量运行——选目录+脚本 → 进度 → 汇总表
+    ui.declareSlot(QStringLiteral("ribbon.group.script.batch"), QStringLiteral("批量"),
+                   nextpilot::plotscope::registry::SlotKind::RibbonGroup,
+                   QStringLiteral("ribbon.page.script"));
+    addRibbon(QStringLiteral("script.workbench.batch"), QStringLiteral("批量运行"),
+              QStringLiteral("ribbon.group.script.batch"), QString(), 0, true);
 
     // "控制台"组：置前 REPL 控制台
     addRibbon(QStringLiteral("script.workbench.console"), QStringLiteral("控制台"),

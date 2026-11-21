@@ -8,6 +8,11 @@
 
 #include <memory>
 
+namespace nextpilot::plotscope::script
+{
+class BatchHandler;
+}
+
 // 脚本器官：注册 "script.run" 意图处理器。
 // 它不认识任何业务格式或绘图细节——只把门面 ps 注入 Lua，脚本的 ps.* 调用
 // 由门面翻译成普通意图，走与 GUI/CLI 完全相同的执行器。
@@ -27,6 +32,7 @@ public:
 private:
     class Handler;
     Handler *m_handler = nullptr; // parent=this，随模块析构自动回收
+    nextpilot::plotscope::script::BatchHandler *m_batch = nullptr; // data.batch.run（parent=this）
     // 脚本库有状态，模块实例持有；TransformRegistry 由 AppContext 注入（libs 不藏静态状态）。
     std::unique_ptr<nextpilot::plotscope::script::LuaScriptLibrary> m_scriptLib;
     std::shared_ptr<nextpilot::plotscope::script::FilterCatalogue> m_filterCatalogue; // 内置过滤器目录（注入 FilterOps）

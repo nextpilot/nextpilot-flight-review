@@ -18,6 +18,7 @@ configure_file(
 add_library(ng_module_script OBJECT
     ScriptModule.cpp
     LuaEngine.cpp
+    BatchRunner.cpp
     FilterEngine.cpp
     FilterCatalogue.cpp
     MarkerEngine.cpp
@@ -26,6 +27,7 @@ add_library(ng_module_script OBJECT
     ${CMAKE_CURRENT_BINARY_DIR}/BundledFilters.cpp
     ScriptModule.h
     LuaEngine.h
+    BatchRunner.h
     FilterEngine.h
     FilterCatalogue.h
     MarkerEngine.h
@@ -42,7 +44,8 @@ set_target_properties(ng_module_script PROPERTIES AUTOMOC ON CXX_STANDARD 17 POS
 # 层契约：不链接 ng_module_script（同层横向禁止）——执行/REPL 经 viewAction
 # script.workbench.* 回模块，面板只依赖 ng_context 的机制头。
 find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
-add_library(ng_module_script_gui OBJECT ScriptPanels.cpp ScriptPanels.h)
+add_library(ng_module_script_gui OBJECT ScriptPanels.cpp ScriptPanels.h
+    BatchPanel.cpp BatchPanel.h)
 target_include_directories(ng_module_script_gui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ng_module_script_gui PUBLIC ng_context Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ng_module_script_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

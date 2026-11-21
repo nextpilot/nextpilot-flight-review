@@ -41,6 +41,12 @@ public:
     // 执行一段脚本源码；失败时 Result 带 Lua 错误信息。
     nextpilot::plotscope::foundation::Result<void> runString(const QByteArray &source, const QString &chunkName = QStringLiteral("=script"));
 
+    // 执行一段脚本源码并捕获返回值：脚本末尾 `return {mean=..}` 之类的 table/标量
+    // 转 QVariant（无 return 或 nil → null QVariant）。data.batch.run 的每文件
+    // 指标出口——批量汇总表的数据源（2.4.1）。
+    nextpilot::plotscope::foundation::Result<QVariant> runStringResult(
+        const QByteArray &source, const QString &chunkName = QStringLiteral("=script"));
+
     // 执行脚本文件。
     nextpilot::plotscope::foundation::Result<void> runFile(const QString &path);
 
