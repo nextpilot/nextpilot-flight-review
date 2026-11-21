@@ -162,7 +162,7 @@ ctest --test-dir build-ng -j 1
 - 说明：抽稀不能交给 `Dataset::channel` 的 cap——Rust 等步长取样会丢尾（实测 `last=297`）；改宿主 `floor(k*rows/n)` + 强制 `rows-1`。
 - 派生侧：`derive.maxPoints`（intent cap > settings > 默认 200000，0=不限），且输入通道按同一 cap 取（原先被 4096 默认卡住）；此项无单独行数断言，由既有派生回归覆盖。
 
-### AC-17 设置对话框（T4.5）
+### AC-17 设置对话框（T4.5）— 🟡 部分（数据组已过，画布/时间轴组未做）
 ```bash
 ./build-ng/gui/plotscope-ng-gui-shot ac17.png tests/fixture/demo_flight.ulg 1280 800 --action=file.settings
 ```
