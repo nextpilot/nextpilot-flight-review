@@ -599,14 +599,42 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
         }
         else if (item->data(0, kRoleNodeKind).toString() == QStringLiteral("table"))
         {
-            // 表节点（多表源才有）：查看数据表格（2.2.3 联动入口）。
+            // 表节点（多表源才有）：查看数据表格（2.2.3 联动入口）+ 展开数据列。
             QMenu menu(this);
             QAction *viewTable = menu.addAction(QStringLiteral("查看数据表格"));
-            if (menu.exec(global) != viewTable)
+            QAction *expand = menu.addAction(QStringLiteral("展开数据列到画布（≤8 条）"));
+            expand->setToolTip(QStringLiteral("把该表数值列一次画进当前画布；bool/文本列不画"));
+            QAction *chosen = menu.exec(global);
+            if (!chosen)
                 return;
             QVariantMap p;
             p.insert(QStringLiteral("datasetId"), item->data(0, kRoleDatasetId));
             p.insert(QStringLiteral("table"), item->data(0, kRoleTable));
+            if (chosen == expand)
+            {
+                QVariantMap ep;
+                ep.insert(QStringLiteral("dataset"), p.value(QStringLiteral("datasetId")));
+                ep.insert(QStringLiteral("table"), p.value(QStringLiteral("table")));
+                Result<QVariant> eout{QVariant()};
+                if (!m_appCtx.interactions().dispatchViewAction(
+                        QStringLiteral("plot.expandColumns"), ep, eout))
+                {
+                    QMessageBox::information(this, QStringLiteral("展开数据列"),
+                                             eout.error().message);
+                    return;
+                }
+                // 截断要说清：静默只画 8 条会让人以为丢数据。
+                const QVariantMap m = eout.value().toMap();
+                if (m.value(QStringLiteral("truncated")).toBool())
+                    QMessageBox::information(
+                        this, QStringLiteral("展开数据列"),
+                        QStringLiteral("已画前 %1 列（共 %2 列数值列），其余请单独添加")
+                            .arg(m.value(QStringLiteral("drawn")).toInt())
+                            .arg(m.value(QStringLiteral("total")).toInt()));
+                return;
+            }
+            if (chosen != viewTable)
+                return;
             Result<QVariant> out{QVariant()};
             m_appCtx.interactions().dispatchViewAction(QStringLiteral("data.table.open"), p, out);
         }

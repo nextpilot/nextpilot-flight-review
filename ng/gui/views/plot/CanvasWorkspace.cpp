@@ -1713,6 +1713,51 @@ void CanvasWorkspace::registerViewActions()
                                     return QVariant(true);
                                 });
 
+    // —— 展开数据列（M5/T5.3）——
+    // 表节点右键一键把整张表的数值列画进当前画布；上限 8 条（再多就成毛线团），
+    // bool/文本列默认不画（bool 有专门的状态视图）。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.expandColumns"),
+        [this](const QVariantMap &params) -> Result<QVariant> {
+            PlotCanvas *c = activeCanvas();
+            if (!c)
+                return fail(err::NoEnt, QStringLiteral("无活动画布"));
+            const int dsId = params.value(QStringLiteral("dataset"), m_appCtx.activeDatasetId()).toInt();
+            const QString tableName = params.value(QStringLiteral("table")).toString();
+            const int limit = params.value(QStringLiteral("limit"), 8).toInt();
+            if (dsId < 0 || tableName.isEmpty())
+                return fail(err::Key, QStringLiteral("缺少 dataset / table"));
+            const nextpilot::plotscope::dataset::Dataset *ds = m_appCtx.data().get(dsId);
+            if (!ds)
+                return fail(err::NoEnt, QStringLiteral("数据集不存在"));
+            const nextpilot::plotscope::dataset::Table *t = ds->table(tableName);
+            if (!t)
+                return fail(err::NoEnt,
+                            QStringLiteral("表不存在: %1").arg(tableName));
+
+            QStringList numeric;
+            for (const nextpilot::plotscope::dataset::Column &col : t->columns)
+                if (col.type != nextpilot::plotscope::dataset::ValueType::Bool
+                    && col.type != nextpilot::plotscope::dataset::ValueType::Text)
+                    numeric << col.name;
+            if (numeric.isEmpty())
+                return fail(err::NoEnt,
+                            QStringLiteral("表 %1 没有可画的数值列").arg(tableName));
+
+            const int n = limit > 0 ? qMin(limit, int(numeric.size())) : int(numeric.size());
+            for (int i = 0; i < n; ++i)
+                if (activeChannelView())
+                    activeChannelView()->addChannel(dsId, tableName, numeric.at(i),
+                                                    nullptr,
+                                                    QStringLiteral("%1.%2")
+                                                        .arg(tableName, numeric.at(i)));
+            QVariantMap out;
+            out.insert(QStringLiteral("drawn"), n);
+            out.insert(QStringLiteral("total"), int(numeric.size()));
+            out.insert(QStringLiteral("truncated"), n < numeric.size());
+            out.insert(QStringLiteral("names"), numeric.mid(0, n));
+            return QVariant(out);
+        });
+
     // —— 多源同名叠加/对比（M5/T5.1、T5.2）——
     //
     // 判定口径：同名 = **列名相同**（表可以不同；一个源里多表更常见）。

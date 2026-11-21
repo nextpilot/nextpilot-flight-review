@@ -2448,6 +2448,112 @@ int main(int argc, char *argv[])
         }
     }
 
+    // --- 5c-e) 展开数据列（M5/T5.3）---
+    //
+    // 表节点右键一键画数值列：上限 8 条（再多成毛线团），bool/文本列不画，
+    // 截断必须显式告诉调用方（truncated），不能静默丢列。
+    {
+        auto *workspace2 = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        (void)workspace2;
+        // 要验证截断，需要一张**列数 > 8** 的表：现场造 12 列数值 csv。
+        const QString widePath = QStringLiteral("/tmp/ng_gui_wide.csv");
+        {
+            QFile f(widePath);
+            CHECK(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QTextStream ts(&f);
+            ts << QStringLiteral("time_ms");
+            for (int i = 0; i < 12; ++i)
+                ts << QStringLiteral(",ch") << i;
+            ts << QLatin1Char('\n');
+            for (int r = 0; r < 20; ++r)
+            {
+                ts << (r * 10);
+                for (int i = 0; i < 12; ++i)
+                    ts << QLatin1Char(',') << ((i + 1) * r);
+                ts << QLatin1Char('\n');
+            }
+        }
+        Intent wl;
+        wl.op = QStringLiteral("data.load");
+        wl.params[QStringLiteral("path")] = widePath;
+        const auto wr = application.host().execute(wl);
+        CHECK(wr);
+        const QVariant wpv = wr.value().payload;
+        const int wds = wpv.metaType().id() == QMetaType::QVariantMap
+                            ? wpv.toMap().value(QStringLiteral("dataset")).toInt()
+                            : wpv.toInt();
+        CHECK(wds >= 0);
+        const nextpilot::plotscope::dataset::Dataset *ds = application.data().get(wds);
+        CHECK(ds != nullptr && ds->tableCount() == 1);
+        const QString tn = ds->tableNames().first();
+        auto clearCanvas = [&] {
+            QVariant vl;
+            Result<QVariant> l(vl);
+            application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.series.list"), {}, l);
+            for (const QVariant &v : l.value().toList())
+            {
+                QVariantMap rp;
+                rp.insert(QStringLiteral("key"),
+                          v.toMap().value(QStringLiteral("key")).toString());
+                QVariant vr;
+                Result<QVariant> rm(vr);
+                application.context().interactions().dispatchViewAction(
+                    QStringLiteral("plot.series.remove"), rp, rm);
+            }
+        };
+        clearCanvas();
+
+        auto expand = [&](int limit) {
+            QVariantMap p;
+            p.insert(QStringLiteral("dataset"), wds);
+            p.insert(QStringLiteral("table"), tn);
+            p.insert(QStringLiteral("limit"), limit);
+            QVariant vr;
+            Result<QVariant> res(vr);
+            const bool ok = application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.expandColumns"), p, res);
+            CHECK(ok);
+            return res.value().toMap();
+        };
+
+        // 上限 8：12 列数值列必截断，且显式回 truncated / total（不静默丢列）。
+        const QVariantMap m8 = expand(8);
+        const int total = m8.value(QStringLiteral("total")).toInt();
+        CHECK(total == 12);
+        CHECK(m8.value(QStringLiteral("drawn")).toInt() == 8);
+        CHECK(m8.value(QStringLiteral("truncated")).toBool());
+        CHECK(m8.value(QStringLiteral("names")).toStringList().size() == 8);
+        // 真的画到画布上了（不是只回了个 map）。
+        {
+            QVariant vl;
+            Result<QVariant> l(vl);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.series.list"), {}, l));
+            CHECK(l.value().toList().size() == 8);
+        }
+        // limit=0 = 不设上限 → 全画、truncated=false。
+        clearCanvas();
+        const QVariantMap mall = expand(0);
+        CHECK(mall.value(QStringLiteral("drawn")).toInt() == total);
+        CHECK(!mall.value(QStringLiteral("truncated")).toBool());
+        // 表名不存在 → 明确失败（不是画一张空表）。
+        {
+            QVariantMap p;
+            p.insert(QStringLiteral("dataset"), wds);
+            p.insert(QStringLiteral("table"), QStringLiteral("__no_such_table__"));
+            QVariant vr;
+            Result<QVariant> res(vr);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("plot.expandColumns"), p, res));
+            CHECK(!res);
+        }
+        clearCanvas();
+        OK(QStringLiteral("展开数据列：12 列 → 上限 8 条 + 显式 truncated、limit=0 全画、缺表明确失败")
+               .toUtf8()
+               .constData());
+    }
+
     fprintf(stdout, "\nGUI 契约测试全部通过\n");
     return 0;
 }
