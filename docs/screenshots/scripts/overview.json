@@ -1,0 +1,8 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "settle", "ms": 600 },
+    { "op": "shot", "out": "PlotScope-Overview.png" }
+  ]
+}

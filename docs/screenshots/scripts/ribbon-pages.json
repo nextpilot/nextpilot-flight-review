@@ -1,0 +1,14 @@
+{
+  "steps": [
+    { "op": "page", "name": "开始" },    { "op": "settle", "ms": 150 }, { "op": "shot", "out": "ribbon-开始.png" },
+    { "op": "page", "name": "文件" },    { "op": "settle", "ms": 150 }, { "op": "shot", "out": "ribbon-文件.png" },
+    { "op": "page", "name": "数据" },
+    { "op": "raise-panel", "area": "dock.left", "class": "DataManagerPanel" },
+    { "op": "settle", "ms": 150 },       { "op": "shot", "out": "ribbon-数据.png" },
+    { "op": "page", "name": "绘图" },    { "op": "settle", "ms": 150 }, { "op": "shot", "out": "ribbon-绘图.png" },
+    { "op": "page", "name": "脚本" },    { "op": "settle", "ms": 150 }, { "op": "shot", "out": "ribbon-脚本.png" },
+    { "op": "page", "name": "协议" },    { "op": "settle", "ms": 150 }, { "op": "shot", "out": "ribbon-协议.png" },
+    { "op": "page", "name": "报告" },    { "op": "settle", "ms": 150 }, { "op": "shot", "out": "ribbon-报告.png" },
+    { "op": "page", "name": "视图" },    { "op": "settle", "ms": 150 }, { "op": "shot", "out": "ribbon-视图.png" }
+  ]
+}

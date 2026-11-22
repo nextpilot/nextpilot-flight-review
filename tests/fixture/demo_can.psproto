@@ -1,0 +1,43 @@
+{
+  "name": "demo_can",
+  "mode": "bin",
+  "layout": "sequential",
+  "endian": "little",
+  "maxsize": 64,
+  "segments": [
+    {
+      "name": "body",
+      "output": "none",
+      "type": "u8",
+      "count": 8
+    },
+    {
+      "name": "id",
+      "type": "rbit",
+      "count": "29@0"
+    },
+    {
+      "name": "rpm",
+      "unit": "rpm",
+      "type": "rbit",
+      "count": "16@8",
+      "transform": "self*0.25",
+      "expect": [
+        {
+          "op": "ge",
+          "value": 0
+        },
+        {
+          "op": "le",
+          "value": 8000
+        }
+      ]
+    },
+    {
+      "name": "temp",
+      "unit": "degC",
+      "type": "bit",
+      "count": "8@24"
+    }
+  ]
+}

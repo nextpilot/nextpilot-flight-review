@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.23)
+project(ps_sari_spike LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_AUTOMOC ON)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Svg)
+find_package(SARibbonBar REQUIRED)
+get_filename_component(REPO "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+add_executable(ps_sari_spike main.cpp ${REPO}/src/application/modules/plottisrc/widget/canvas/PlottingCanvas.cpp)
+target_include_directories(ps_sari_spike PRIVATE ${REPO}/src/application/modules/plottisrc/widget/canvas ${REPO}/src/application/kernel/include)
+target_link_libraries(ps_sari_spike PRIVATE SARibbonBar::SARibbonBar Qt6::Widgets
+  ${REPO}/src/application/kernel/target/release/libps_abi.a Threads::Threads ${CMAKE_DL_LIBS})

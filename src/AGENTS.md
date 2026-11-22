@@ -1,0 +1,115 @@
+# 工程硬约束与现状
+
+> **写新代码先看 [`LAYERS.md`](LAYERS.md)**——每个目录的定位、放什么/禁放什么、可依赖/禁依赖以它为准，是目录归属的唯一权威。三份文档分工：`LAYERS.md` 回答「这代码放哪、能依赖谁」，`ARCHITECTURE.md` 回答「机制怎么设计」，本文件回答「现状与红线」。
+>
+> **各层目录内有本层 `AGENTS.md`**（libs/ · libs/context/ · application/ · toolbox/ 等）——进入子目录工作前必读对应文件；子目录 AGENTS.md 与 LAYERS.md 冲突时以 LAYERS.md 为准并回改子文件。
+>
+> **术语以 `LAYERS.md` 词表为准，全库唯一**：Module=模块（app 基底功能，无业务，编译期固定）；Toolbox=工具箱（内部扩展，原厂，运行时 mount/unmount）；Plugin=插件（外部扩展，第三方 C ABI，扫描注册）；Toolbox+Plugin 统称**扩展**——扩展既是业务承载者也是内容单元，一份纯数据清单 + 解析器（代码载体为 `Pack` 结构与 `PS_REGISTER_PACK` 宏）。文档与代码注释禁止另造同义词。**命名亦然**："Registry" 前后缀归机制层专用（RegistryTree/RegistryNode/TypedRegistry/Registry<T>）；业务保管类一律 `<域>Hub : RegistryNode/TypedRegistry`，禁止 Store/Repo/List/Manager 等同义后缀——判定句见 `LAYERS.md` 命名定标表。
+
+> `ARCHITECTURE.md` 回答「应该怎么设计」——分层、核心抽象、模块与扩展、意图管道；
+> 本文件只记录现状判定与边界红线，不重复机制描述。两者冲突时：机制描述以 `ARCHITECTURE.md` 为准，
+> 现状与边界判定以本文件为准。
+
+---
+
+## 0. 协作要求（最高优先级）
+
+> **你是架构师，我是需求方。我提问不一定专业；你要作为架构师有判断能力，
+> 不能因为我的错误言论动摇你的架构方向，成为墙头草。**
+
+执行准则：
+
+- 需求方的提问用于**澄清意图**，不用于**推翻已论证的架构决策**。
+- 提问与架构判断冲突时，给出**有技术依据的判断**并说明为什么不改，而不是顺着提问改口。
+- 只有当需求方给出**具体事实或反例**（某场景失效、某需求明确要求相反设计）时，
+  才重新评估并调整；语气强弱、重复次数都不是改判依据。
+- **举证一针见血：用反例，不堆原则。** 质疑一个设计判断时，先给一个
+  「按这个方案做，明天具体会卡在哪」的画面，而不是先铺抽象话。
+
+### 0.1 写代码前置条件（强制，违反即返工）
+
+- **未经用户明确同意，禁止写代码**——源码（.h/.cpp）、构建脚本（CMake）、迁移、脚本一律在内。动手前先给方案（改哪些文件、影响面、验证方式），等用户明确表态后才可施工。
+- **方案没有讨论清楚前，禁止写代码**——存在歧义、未裁定的分叉、半成品讨论时，继续讨论或补齐事实；不得以"先做起来看看"为名动手。
+- **"明确同意"的判据**：用户的肯定表态（同意 / 执行 / 做吧 / 拍板）才算；沉默、未回复、话题转移、仅提问，都不算同意。
+- 例外仅限两类：用户明确指令的文档更新、只读操作（读代码、盘现状、跑测试验证既有行为）。
+
+---
+
+## 1. 现状要点
+
+| 条目 | 事实 |
+|---|---|
+| 单工程 | 仓库顶层薄壳 CMakeLists 只做 `project(PlotScope)` + 守卫 + `add_subdirectory`；`src/` 为唯一工程 |
+| 物理布局 | `src/application/{shell,gui,host,modules}` 为 App 基底；`src/libs`、`src/kernel`、`src/toolbox` 为机制/内核/扩展；`tests/`、`cmake/`、`deps/` 在仓库根 |
+| 格式通路 | 每种格式只有一份解析器实现，统一走 SPI 管道（设计见 `ARCHITECTURE.md` §3.2/§3.7） |
+| 格式实作 | ulog / csv / pspx / apbin / blf / mdf4 / rosbag2 / can.asc 等已在 toolbox 领域包内 |
+| 测试基线 | ctest 35/35 全绿（Debug） |
+
+## 2. 待办问题清单
+
+### P0 —— 现在不定，后面一定要返工
+
+**P0-2 属性编辑无归属 —— 契约已定，视图未接。**
+属性契约 `libs/uischema/PropertySchema.h` 已建（纯数据 `PropertySchema/PropObject/PropRow/PropKind` + `PropIntent` 常量 `prop.schema`/`prop.set`）：属性 schema 由提供者声明，属性表只做视图显示，两边通过 `Intent(prop.*)` 走同一条路。
+**仍待做**：通用属性面板 GUI 尚未接；plot 属性页与通用属性表尚未统一到该契约。
+协议编辑器是「整篇 JSON 文档」工具，与属性面板（少量键值行）形态不同，**不强行纳入** PropertySchema。
+
+**P0-3 文档级状态无归宿。**
+时标/书签这类文档级状态，`Intent`/`Dataset` 里没有明确位置；也没有 Document / Project 边界。
+处置：四类状态四个归宿，**不新增第五个概念**：
+
+| 状态 | 归属 | 生存期 |
+|---|---|---|
+时标 / 书签 | 工程文档 | 随工程 |
+活动通道 | 会话 | 随会话 |
+缩放 / 平移 / 选中 | 视图实例 | 随视图，序列化成 Spec |
+dock / ribbon 布局 | 工作区 | 跨会话 |
+
+### P1 —— 名实不符或埋雷
+
+| 编号 | 问题 | 说明 |
+|---|---|---|
+P1-1 | **外部插件只有入口** | `PluginScanner` 尚无 dlopen 与 ABI 校验。「插件可自定义格式」暂时是空的 |
+P1-2 | **Intent 无 schema** | `op` 是裸字符串、payload 是 `QVariant`，拼错只能运行时失败，无 op 白名单 |
+P1-3 | **`QWidget*` 是唯一耦合后门** | `requestPanel` 返回 `QWidget*`，模块一旦 `qobject_cast` 成具体视图类，耦合复活。**测试里可以，生产代码禁止** |
+P1-4 | **面板类型字符串静默失败** | 找不到工厂时 `requestPanel` 返回 `nullptr`，无日志无断言；类型名与模块声明之间没有对账机制 |
+P1-5 | **兼容入口未清** | `ModuleContext::data()/host()` 转发仍在，注释要求新代码用 `app()`；兼容入口留着，迟早长出第二条路径 |
+P1-6 | **幂等声明会静默丢弃后声明者** | `UiSlotHub::declareSlot` 是"先到者为准"。任何新增的幂等声明接口都要问"谁先谁后，后来的会不会被吞" |
+
+---
+
+## 3. 写代码必须守的硬线
+
+1. **不往 libs 加概念。** 核心抽象之外的新概念必须论证，且要删掉一个旧的做等价交换。
+2. **模块之间不 include。** 构建图已经禁止，不许用相对路径绕过。
+3. **不许 `new QWidget` 直挂窗口。** 只能 `requestPanel` 声明需求。
+4. **不许 `qobject_cast` 成具体视图类。** 模块只许用通用 `QWidget` 接口。
+5. **不许自建注册表。** 一张注册表 + 索引视图，模块私有 registry 一律不给。
+6. **OBJECT 库不得改成 STATIC。** 自注册依赖 TU 静态对象的构造函数，链接器会丢弃未引用目标文件 → 功能静默消失。**且 OBJECT 库必须被每个需要它的可执行文件显式链接（测试也算）**。headless 目标故意不链 GUI OBJECT 库，保持 CLI 纯净。
+7. **行数预算：** view ≤300、canvas ≤200、interaction ≤250、spec ≤150。
+8. **注释与说明文字遵守写作纪律（`.claude/rules/terse-writing.md`）。**
+   - 不引用：不写「见 xxx.md §7」「按 AGENTS §5」，文档会更新、引用会腐烂，直接写内容本身。
+   - 不追述：不讲历史、背景、原由、踩坑，除非不写就无法理解当前代码，且压到一两句。
+   - 注释只写做什么/怎么做/简单原因，一两行为主。
+
+### 3.1 libs 铁律
+
+> **libs 是无隐藏运行时状态的能力提供者——谁要用谁在上层实例化，生命周期归组合根。**
+
+| 类别 | 判定 |
+|---|---|
+| 函数 / 算法 / 模板、class/struct **定义**（含成员）、常量 / 枚举 / 别名 | 允许 |
+| **static 自注册对象**（OBJECT 库的 PS_REGISTER_*） | 允许——唯一的活实例例外 |
+| class 的成员对象（如 AppContext 的 `m_repo`，随实例生死） | 允许——不是独立存活 |
+| 命名空间级全局对象实例（跨调用存活的状态） | 禁止 |
+| 单例（Meyers、函数内 static 实例） | 禁止 |
+| 服务定位器式活实例被任意 include 取用 | 禁止 |
+| libs 内部 `new` / 持有跨调用存活对象 | 禁止 |
+| libs 依赖上层（application / toolbox 等） | 禁止——只能向下依赖 foundation / Qt / 系统库 |
+| libs 内 `#include "../"` 逃逸出库目录 | 禁止——物理隔离是硬线 |
+
+**AppContext 特别规定**：定义在 `libs/context`、唯一实例在组合根 `App`、`host/gui/modules` 一律**构造注入**拿引用，不许 include 全局 ctx。**不进 app/shell 文件夹**（可执行目标会被依赖倒挂）。
+
+**边界由构建期守卫强制**：`cmake/LibBoundaryGuard.cmake` 在 configure 期扫描，违反（逃逸 include / 单例 / 上层链接 / include application/）直接 `FATAL_ERROR`。正则不可靠的三项（普通全局对象、服务定位器取用、static 自注册例外）交给 code review 与 ctest。**守卫只许加严，不许为绕过而加豁免。**
+
+**命名空间纪律**：namespace 与所属库同名（`context`/`dataset`/…），不留目录与 namespace 不一致的中间态。

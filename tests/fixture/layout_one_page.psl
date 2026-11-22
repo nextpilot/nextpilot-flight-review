@@ -1,0 +1,7 @@
+{
+  "app": "PlotScope",
+  "version": 1,
+  "current": 0,
+  "pages": [{"type": "canvas"}],
+  "titles": ["恢复页"]
+}

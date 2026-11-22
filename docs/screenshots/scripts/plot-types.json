@@ -1,0 +1,13 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "settle", "ms": 300 },
+    { "op": "action", "action": "plot.type.timeseries" }, { "op": "settle", "ms": 300 }, { "op": "shot", "out": "plot-multicurve.png" },
+    { "op": "action", "action": "plot.type.scatter" },    { "op": "settle", "ms": 300 }, { "op": "shot", "out": "plot-scatter.png" },
+    { "op": "action", "action": "plot.type.bar" },        { "op": "settle", "ms": 300 }, { "op": "shot", "out": "plot-bar.png" },
+    { "op": "action", "action": "plot.type.histogram" },  { "op": "settle", "ms": 300 }, { "op": "shot", "out": "plot-histogram.png" },
+    { "op": "action", "action": "plot.type.fft" },        { "op": "settle", "ms": 300 }, { "op": "shot", "out": "plot-fft.png" },
+    { "op": "action", "action": "plot.type.gauge" },      { "op": "settle", "ms": 300 }, { "op": "shot", "out": "plot-gauge.png" }
+  ]
+}

@@ -1,0 +1,48 @@
+<RCC>
+  <!-- ng 的图标资源：外壳（ShellBinder）把动作的 icon 字段解析成这里的 QIcon。 -->
+  <qresource prefix="/icons">
+    <file alias="plot_refresh.svg">icons/plot_refresh.svg</file>
+    <file alias="data_table.svg">icons/data_table.svg</file>
+    <file alias="view_panel.svg">icons/view_panel.svg</file>
+    <file alias="file_open.svg">icons/file_open.svg</file>
+    <file alias="record.svg">icons/record.svg</file>
+    <file alias="theme_toggle.svg">icons/theme_toggle.svg</file>
+    <file alias="search.svg">icons/search.svg</file>
+    <file alias="settings.svg">icons/settings.svg</file>
+    <file alias="trash.svg">icons/trash.svg</file>
+    <file alias="box.svg">icons/box.svg</file>
+    <file alias="hand.svg">icons/hand.svg</file>
+    <file alias="play.svg">icons/play.svg</file>
+    <file alias="pause.svg">icons/pause.svg</file>
+    <file alias="loop.svg">icons/loop.svg</file>
+    <file alias="replay.svg">icons/replay.svg</file>
+    <file alias="step_fwd.svg">icons/step_fwd.svg</file>
+    <file alias="panel.svg">icons/panel.svg</file>
+    <file alias="import.svg">icons/import.svg</file>
+    <file alias="export.svg">icons/export.svg</file>
+    <file alias="export_cfg.svg">icons/export_cfg.svg</file>
+    <file alias="screenshot.svg">icons/screenshot.svg</file>
+    <file alias="open.svg">icons/open.svg</file>
+    <file alias="history.svg">icons/history.svg</file>
+    <file alias="reset.svg">icons/reset.svg</file>
+    <file alias="export_data.svg">icons/export_data.svg</file>
+    <file alias="datasource.svg">icons/datasource.svg</file>
+    <file alias="newpage.svg">icons/newpage.svg</file>
+    <file alias="grid.svg">icons/grid.svg</file>
+    <file alias="plus.svg">icons/plus.svg</file>
+    <file alias="split_h.svg">icons/split_h.svg</file>
+    <file alias="split_v.svg">icons/split_v.svg</file>
+    <file alias="legend.svg">icons/legend.svg</file>
+    <file alias="zoom_in.svg">icons/zoom_in.svg</file>
+    <file alias="zoom_out.svg">icons/zoom_out.svg</file>
+    <file alias="fit.svg">icons/fit.svg</file>
+    <file alias="check.svg">icons/check.svg</file>
+    <file alias="maximize.svg">icons/maximize.svg</file>
+    <file alias="close.svg">icons/close.svg</file>
+    <file alias="bookmark.svg">icons/bookmark.svg</file>
+    <file alias="ab.svg">icons/ab.svg</file>
+    <file alias="marker.svg">icons/marker.svg</file>
+    <file alias="ruler.svg">icons/ruler.svg</file>
+    <file alias="grid_lines.svg">icons/grid_lines.svg</file>
+  </qresource>
+</RCC>

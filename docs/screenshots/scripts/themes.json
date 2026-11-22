@@ -1,0 +1,10 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "intent", "intent": "theme.set", "params": { "theme": "dark" } },
+    { "op": "settle", "ms": 300 }, { "op": "shot", "out": "PlotScope-Theme-Dark.png" },
+    { "op": "intent", "intent": "theme.set", "params": { "theme": "light" } },
+    { "op": "settle", "ms": 300 }, { "op": "shot", "out": "PlotScope-Theme-Light.png" }
+  ]
+}

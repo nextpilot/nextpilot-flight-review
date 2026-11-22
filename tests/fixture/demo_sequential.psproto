@@ -1,0 +1,120 @@
+{
+  "name": "demo_seq",
+  "mode": "bin",
+  "description": "顺序段、元素个数、CRC 区间、timestamp、系列协议",
+  "layout": "sequential",
+  "endian": "little",
+  "maxsize": 64,
+  "segments": [
+    {
+      "name": "sync1",
+      "output": "none",
+      "type": "u8",
+      "count": 1,
+      "expect": [
+        {
+          "op": "eq",
+          "value": 170
+        }
+      ]
+    },
+    {
+      "name": "sync2",
+      "output": "none",
+      "type": "u8",
+      "count": 1,
+      "expect": [
+        {
+          "op": "eq",
+          "value": 85
+        }
+      ]
+    },
+    {
+      "name": "seq",
+      "type": "u8",
+      "count": 1
+    },
+    {
+      "name": "msgid",
+      "type": "u16",
+      "count": 1
+    },
+    {
+      "name": "length",
+      "output": "none",
+      "type": "u16",
+      "count": 1
+    },
+    {
+      "name": "time_s",
+      "type": "u32",
+      "count": 1
+    },
+    {
+      "name": "payload",
+      "type": "u8",
+      "count": "length"
+    },
+    {
+      "name": "crc",
+      "output": "none",
+      "type": "u8",
+      "count": 1,
+      "expect": [
+        {
+          "op": "crc8",
+          "over": "sync1:payload"
+        }
+      ]
+    }
+  ],
+  "series": {
+    "selector": "msgid",
+    "payload": "payload",
+    "fallback": "reject",
+    "variants": [
+      {
+        "value": 1,
+        "name": "att",
+        "segments": [
+          {
+            "name": "roll",
+            "unit": "rad",
+            "type": "i16",
+            "count": 1,
+            "transform": "self*0.01"
+          },
+          {
+            "name": "pitch",
+            "unit": "rad",
+            "type": "i16",
+            "count": 1,
+            "transform": "self*0.01"
+          }
+        ]
+      },
+      {
+        "values": [
+          2,
+          3
+        ],
+        "name": "env",
+        "segments": [
+          {
+            "name": "temp",
+            "unit": "C",
+            "type": "i16",
+            "count": 1,
+            "transform": "self*0.1"
+          }
+        ]
+      }
+    ]
+  },
+  "timestamp": {
+    "expr": "time_s",
+    "unit": "s",
+    "origin": "first_frame"
+  }
+}

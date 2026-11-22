@@ -1,0 +1,65 @@
+#pragma once
+
+#include "RecordingFormat.h"
+#include "Result.h"
+#include "Sink.h"
+
+#include <QByteArray>
+#include <QString>
+
+#include <memory>
+
+namespace nextpilot::plotscope::rec
+{
+
+class RawRecorder;
+class McapRecorder;
+
+// 一路录制：格式 × 后端的组合体。
+// 多路录制即多个 Recorder 实例，各自持有一套格式与后端。
+//
+// Recorder 内部两部分：
+//   成帧器：RawRecorder / McapRecorder，决定字节长什么样；
+//   输出端：FileSink / UdpSink，决定字节送到哪。
+// 两侧分别注册在 RecordingFormatHub / RecordingBackendHub，按 id 查表创建，
+// 新增格式或后端不需要改本类。
+class Recorder
+{
+public:
+    Recorder() = default;
+    ~Recorder();
+
+    // 按 (格式, 后端) 组合创建。
+    // 未知格式或后端返回 false，并在 err 里说明缺哪一个。
+    static nextpilot::plotscope::foundation::Result<std::shared_ptr<Recorder>> create(const QString &formatId,
+                                                    const QString &backendId,
+                                                    const QString &endpoint,
+                                                    const QByteArray &headerJson = QByteArray(),
+                                                    QString *err = nullptr);
+
+    // 写入一条消息（带通道名与时间戳）。
+    // raw 格式忽略通道与时间（它只保真字节流）；mcap 保留。
+    bool writeMessage(const QString &topic, const QByteArray &payload, quint64 timeNs,
+                      QString *err = nullptr);
+
+    // 写入原始字节（仅 raw 格式有意义）。
+    bool writeBytes(const QByteArray &data, QString *err = nullptr);
+
+    // 收尾（冲刷 + 写尾记录）。
+    bool close(QString *err = nullptr);
+
+    bool isOpen() const;
+    qint64 bytesWritten() const { return m_bytes; }
+    QString formatId() const { return m_formatId; }
+    QString backendId() const { return m_backendId; }
+
+private:
+    QString m_formatId;
+    QString m_backendId;
+    std::shared_ptr<IByteSink> m_sink;
+    std::shared_ptr<RawRecorder> m_raw;
+    std::shared_ptr<McapRecorder> m_mcap;
+    qint64 m_bytes = 0;
+};
+
+} // namespace nextpilot::plotscope::rec

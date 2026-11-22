@@ -1,0 +1,49 @@
+{
+  "steps": [
+    {
+      "op": "load",
+      "path": "tests/fixture/demo_flight.csv",
+      "format": "csv"
+    },
+    {
+      "op": "intent",
+      "intent": "data.connect",
+      "params": {
+        "url": "udp://0.0.0.0:14550",
+        "parser": "custom-protocol",
+        "templatePath": "tests/fixture/demo_sequential.psproto",
+        "name": "live-demo"
+      }
+    },
+    {
+      "op": "intent",
+      "intent": "data.record.start",
+      "params": {
+        "source": "$lastSource",
+        "format": "raw",
+        "endpoint": "/tmp/shot_record.raw"
+      }
+    },
+    {
+      "op": "settle",
+      "ms": 400
+    },
+    {
+      "op": "shot",
+      "out": "live-streaming.png"
+    },
+    {
+      "op": "demo-live",
+      "name": "live-paused-demo",
+      "paused": true
+    },
+    {
+      "op": "settle",
+      "ms": 200
+    },
+    {
+      "op": "shot",
+      "out": "live-paused.png"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "cursor", "t": 12.5 },
+    { "op": "settle", "ms": 300 },
+    { "op": "shot", "out": "cursor-ab-bookmark.png" }
+  ]
+}

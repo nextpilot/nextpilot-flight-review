@@ -1,0 +1,33 @@
+# 构建产物
+/build/
+# SARibbon 的 configure 会在其源码树里生成版本头（不要提交）
+src/3rdparty/saribbon/src/SARibbonBar/SARibbonBarVersionInfo.h
+/build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.user
+
+# Rust
+target/
+src/kernel/target/
+
+# 本地产物 / 抓取数据
+*.psl
+*.log
+# 解析缓存（data.load 落盘产物，运行时生成，不进版本库）
+*.psc
+refs/
+
+# 本地可搬移依赖（Qt/Lua）
+/deps/
+
+!src/tests/fixture/layout_one_page.psl
+
+# src 工程的构建产物
+/src/build/
+/src/build-*/
+
+# fastplot 契约测试的运行时截图产物（可视证据提交在 docs/screenshots/）
+fastplot_*.png

@@ -1,0 +1,28 @@
+{
+  "name": "demo_csv_blank",
+  "mode": "text",
+  "description": "无同步字的空白分隔文本（CSV 变体）：靠 term 分帧，blank 作为协议级分隔符类",
+  "layout": "sequential",
+  "maxsize": 128,
+  "segments": [
+    {
+      "name": "id",
+      "delimiter": "blank",
+      "format": "%f"
+    },
+    {
+      "name": "val",
+      "delimiter": "blank",
+      "format": "%f"
+    },
+    {
+      "name": "name",
+      "delimiter": "blank",
+      "format": "%s"
+    }
+  ],
+  "term": [
+    "\r\n",
+    "\n"
+  ]
+}

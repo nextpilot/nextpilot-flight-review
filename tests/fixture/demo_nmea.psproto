@@ -1,0 +1,90 @@
+{
+  "name": "demo_nmea",
+  "mode": "bin",
+  "description": "NMEA 字符串 msgid 系列选择",
+  "layout": "sequential",
+  "endian": "little",
+  "maxsize": 64,
+  "segments": [
+    {
+      "name": "dollar",
+      "output": "none",
+      "type": "u8",
+      "count": 1,
+      "expect": [
+        {
+          "op": "eq",
+          "value": 36
+        }
+      ]
+    },
+    {
+      "name": "msgid",
+      "type": "char",
+      "count": 5
+    },
+    {
+      "name": "comma",
+      "output": "none",
+      "type": "u8",
+      "count": 1,
+      "expect": [
+        {
+          "op": "eq",
+          "value": 44
+        }
+      ]
+    },
+    {
+      "name": "payload",
+      "type": "u8",
+      "count": 4
+    }
+  ],
+  "series": {
+    "selector": "msgid",
+    "payload": "payload",
+    "fallback": "reject",
+    "variants": [
+      {
+        "value": "GPGGA",
+        "name": "gga",
+        "segments": [
+          {
+            "name": "alt",
+            "unit": "m",
+            "type": "u16",
+            "count": 1,
+            "transform": "self*0.1"
+          },
+          {
+            "name": "hdop",
+            "type": "u16",
+            "count": 1,
+            "transform": "self*0.1"
+          }
+        ]
+      },
+      {
+        "value": "GPRMC",
+        "name": "rmc",
+        "segments": [
+          {
+            "name": "speed",
+            "unit": "kn",
+            "type": "u16",
+            "count": 1,
+            "transform": "self*0.1"
+          },
+          {
+            "name": "course",
+            "unit": "deg",
+            "type": "u16",
+            "count": 1,
+            "transform": "self*0.1"
+          }
+        ]
+      }
+    ]
+  }
+}

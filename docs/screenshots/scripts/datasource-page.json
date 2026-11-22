@@ -1,0 +1,10 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "load", "path": "tests/fixture/demo_apbin.bin" },
+    { "op": "page", "name": "数据" },
+    { "op": "raise-panel", "area": "dock.left", "class": "DataManagerPanel" },
+    { "op": "settle", "ms": 300 },
+    { "op": "shot", "out": "ds-full.png" }
+  ]
+}

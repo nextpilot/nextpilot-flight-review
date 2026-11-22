@@ -1,0 +1,45 @@
+{
+  "steps": [
+    {
+      "op": "load",
+      "path": "tests/fixture/demo_flight.csv",
+      "format": "csv"
+    },
+    {
+      "op": "plot-all-channels"
+    },
+    {
+      "op": "intent",
+      "intent": "script.run",
+      "params": {
+        "source": "app.call(\"plot.legend.fontZoom\", {steps=1})"
+      }
+    },
+    {
+      "op": "settle",
+      "ms": 300
+    },
+    {
+      "op": "shot",
+      "out": "script-app-control.png"
+    },
+    {
+      "op": "intent",
+      "intent": "data.marker",
+      "params": {
+        "dataset": 0,
+        "table": "demo_flight",
+        "column": "att.roll[deg]",
+        "code": "return function(v) return v > 0 end"
+      }
+    },
+    {
+      "op": "settle",
+      "ms": 300
+    },
+    {
+      "op": "shot",
+      "out": "script-marker-rule.png"
+    }
+  ]
+}

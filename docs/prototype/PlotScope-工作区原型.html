@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlotScope · 工作区原型 v2</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230d1013'/%3E%3Cpath d='M3 22 L8 14 L12 19 L16 9 L20 20 L24 13 L29 17' stroke='%23f2b134' stroke-width='2' fill='none'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg0:#0d1013;--bg1:#11151a;--panel:#161b20;--panel2:#1a2026;
+  --line:#232b33;--line2:#2d3841;
+  --tx:#c8d2da;--tx2:#8494a0;--tx3:#5d6c77;
+  --amber:#f2b134;--amber-dim:#7a5c1c;
+  --ok:#4fa87f;--warn:#d9a33c;--err:#c9665c;
+  --c-roll:#f2b134;--c-pitch:#7fa8c4;--c-yaw:#9bab6a;
+  --c-ax:#f2b134;--c-ay:#7fa8c4;--c-az:#b08b9b;
+  --c-rpm:#f2b134;--c-thr:#8fb27a;
+  --mono:"Cascadia Mono","Consolas",ui-monospace,monospace;
+  --ui:"Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg0);color:var(--tx);font:12px/1.45 var(--ui);overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2b353d;border:2px solid var(--bg1)}
+#app{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;height:100%}
+
+/* menubar */
+.menubar{display:flex;align-items:center;gap:2px;height:30px;padding:0 8px;background:var(--bg1);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:7px;padding-right:12px;margin-right:4px;border-right:1px solid var(--line);font-weight:600}
+.brand svg{width:15px;height:15px}
+.mbtn{padding:4px 9px;color:var(--tx2)}
+.mbtn:hover{background:var(--panel2);color:var(--tx)}
+.spacer{flex:1}
+.meter{display:flex;gap:14px;font:11px var(--mono);color:var(--tx3);padding-left:12px;border-left:1px solid var(--line)}
+.meter b{color:var(--tx2);font-weight:500}
+
+/* page bar */
+.pagebar{display:flex;align-items:stretch;height:29px;background:var(--bg1);border-bottom:1px solid var(--line);padding:0 6px;gap:1px;flex:none;min-width:0;overflow:hidden}
+.page{padding:0 13px;color:var(--tx3);border-bottom:2px solid transparent;font-size:12px;display:flex;align-items:center;gap:6px}
+.page:hover{color:var(--tx2);background:var(--panel)}
+.page.active{color:var(--amber);border-bottom-color:var(--amber);background:var(--panel)}
+.page .typ{font:9.5px var(--mono);color:var(--tx3)}
+.pagebar{scrollbar-width:thin}
+.page.active .typ{color:var(--amber-dim)}
+.newpage{padding:0 10px;color:var(--tx3);font-size:14px}
+.newpage:hover{color:var(--amber)}
+.phint{margin-left:auto;align-self:center;font-size:10.5px;color:var(--tx3);padding-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.phint b{color:var(--tx2);font-weight:500}
+
+/* workbench */
+#wb{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr) auto;gap:1px;background:var(--line);position:relative;min-height:0}
+.zone{display:flex;gap:1px;min-width:0}
+.zone.left{grid-column:1;grid-row:1}
+.zone.right{grid-column:3;grid-row:1}
+.zone.bottom{grid-column:1/4;grid-row:2;height:132px;min-height:0}
+.center{grid-column:2;grid-row:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:1px;background:var(--line)}
+.pgrid{flex:1;min-height:0;min-width:0;display:grid;gap:1px;background:var(--line)}
+.dock{background:var(--panel);display:flex;flex-direction:column;min-width:0;min-height:0;width:216px}
+.dock.wide{width:240px}
+.dock[data-zone="bottom"]{width:auto;flex:1;height:100%}
+.dock.floating{position:fixed;z-index:35;border:1px solid var(--line2);box-shadow:0 16px 40px rgba(0,0,0,.55);height:300px}
+.dock-h{display:flex;align-items:center;gap:7px;height:26px;padding:0 8px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:11px;color:var(--tx2);flex:none;cursor:grab;user-select:none}
+.grip{width:9px;height:12px;flex:none;background-image:radial-gradient(#4b5a65 1px,transparent 1px);background-size:3px 4px;opacity:.9}
+.dock-h .r{margin-left:auto;font:10px var(--mono);color:var(--tx3);display:flex;gap:6px;align-items:center}
+.flbtn{font:10px var(--mono);color:var(--tx3);padding:1px 4px;border:1px solid var(--line)}
+.flbtn:hover{color:var(--amber);border-color:var(--amber-dim)}
+.dock-b{overflow:auto;flex:1;min-height:0}
+
+/* source dock */
+.srcs{flex:none;border-bottom:1px solid var(--line)}
+.srcrow{display:grid;grid-template-columns:1fr auto auto;gap:1px 6px;padding:5px 8px;border-left:2px solid transparent;cursor:pointer}
+.srcrow:hover{background:#1d242a}
+.srcrow.act{border-left-color:var(--amber);background:#1a2127}
+.srcrow .s1{display:flex;align-items:center;gap:6px;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.srcrow .dot{width:6px;height:6px;border-radius:50%;flex:none}
+.srcrow .s2{font:10px var(--mono);color:var(--tx3);grid-row:2;grid-column:1/3;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.srcrow .sctl{grid-row:1;grid-column:2;display:flex;align-items:center;gap:4px}
+.srcrow .srate{font:9.5px var(--mono);color:var(--tx3);white-space:nowrap}
+.sbtn{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--line2);color:var(--tx2);background:var(--bg0);padding:0 4px;height:17px}
+.sbtn:hover{color:var(--amber);border-color:var(--amber-dim)}
+.sbtn .i3{width:10px;height:10px;fill:currentColor;stroke:none}
+.sbtn.wide{width:auto;height:19px;margin-right:6px;font:9.5px var(--mono)}
+.srcrow .cfg{grid-row:1/3;grid-column:3;align-self:center;font:10px var(--mono);color:var(--tx3);padding:1px 3px}
+.srcrow .cfg:hover{color:var(--amber)}
+.srctabs{display:flex;align-items:center;height:26px;border-bottom:1px solid var(--line);padding:0 6px;gap:1px;flex:none;background:var(--bg1)}
+.stab{padding:0 9px;height:100%;font-size:10.5px;color:var(--tx3);border-bottom:2px solid transparent}
+.stab:hover{color:var(--tx2)}
+.stab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.scount{margin-left:auto;font:10px var(--mono);color:var(--tx3);padding-right:4px}
+
+/* tree */
+.tree{font-size:11.5px}
+.tgrp{display:flex;align-items:center;gap:5px;padding:3px 8px;color:var(--tx2);cursor:pointer;user-select:none}
+.tgrp:hover{background:#1d242a}
+.tgrp .car{width:9px;color:var(--tx3)}
+.tgrp .cnt{margin-left:auto;font:10px var(--mono);color:var(--tx3)}
+.tleaf{display:flex;align-items:center;gap:6px;padding:2px 8px 2px 22px;cursor:pointer;border-left:2px solid transparent}
+.tleaf:hover{background:#1d242a}
+.tleaf.sel{background:#232a30;border-left-color:var(--amber)}
+.chk{width:11px;height:11px;border:1px solid var(--line2);flex:none;position:relative}
+.chk.on{border-color:transparent}
+.chk.on::after{content:"";position:absolute;inset:0;background:var(--chc,var(--amber))}
+.chip{width:3px;height:11px;flex:none}
+.tname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tval{margin-left:auto;font:10.5px var(--mono);color:var(--tx3)}
+.tleaf.ghost .tname{color:var(--tx3);text-decoration:line-through}
+
+/* param / msg lists */
+.tbl{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px}
+.tbl th{font:10px var(--mono);color:var(--tx3);text-align:left;padding:3px 8px;border-bottom:1px solid var(--line);font-weight:400}
+.tbl td{padding:3px 8px;border-bottom:1px solid #1b2127;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tbl tr:hover td{background:#1d242a;cursor:pointer}
+.tbl td.num{font-family:var(--mono);color:var(--tx2)}
+.mrow{display:grid;grid-template-columns:1fr auto;gap:1px 6px;padding:4px 8px;border-bottom:1px solid #1b2127;cursor:pointer;font-size:11px}
+.mrow:hover{background:#1d242a}
+.mrow .m1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow .m2{font:10px var(--mono);color:var(--tx3);grid-row:2;grid-column:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mrow .m3{grid-row:1/3;grid-column:2;align-self:center;font:10px var(--mono);color:var(--tx3)}
+
+/* plot cells */
+.cell{background:var(--bg1);display:flex;flex-direction:column;min-height:0;min-width:0}
+.cell.sel{outline:1px solid rgba(242,177,52,.5);outline-offset:-1px}
+.cell.dropping{outline:1px dashed var(--amber);outline-offset:-2px;background:#151c22}
+.cell-h{display:flex;align-items:center;gap:8px;height:24px;padding:0 8px;border-bottom:1px solid var(--line);flex:none;font-size:11px;color:var(--tx2)}
+.cell-h .ttl{color:var(--tx);font-weight:500}
+.cell-h .u{font:10px var(--mono);color:var(--tx3)}
+.pills{display:flex;gap:8px;margin-left:8px;overflow:hidden}
+.pill{display:flex;align-items:center;gap:4px;font:10.5px var(--mono);color:var(--tx2)}
+.pill i{width:7px;height:2px;display:block}
+.pill b{color:var(--tx);font-weight:500}
+.cvwrap{position:relative;flex:1;min-height:0}
+canvas{display:block;width:100%;height:100%}
+
+/* inspector */
+.prop .prow{display:grid;grid-template-columns:76px 1fr;align-items:center;gap:6px;padding:5px 8px;border-bottom:1px solid #1b2127;font-size:11.5px}
+.prow .k{color:var(--tx3);font-size:11px}
+.prow .v{font:11px var(--mono);overflow:hidden;text-overflow:ellipsis}
+.select{width:100%;background:var(--bg0);border:1px solid var(--line2);color:var(--tx);font:11px var(--mono);padding:3px 4px}
+.nin{width:76px;background:var(--bg0);border:1px solid var(--line2);color:var(--tx);font:11px var(--mono);padding:3px 5px;outline:none}
+.nin:focus{border-color:var(--amber-dim)}
+.sw{display:inline-block;width:9px;height:9px;margin-right:6px;vertical-align:middle;border:1px solid #2d3841}
+.note{padding:8px;font-size:10.5px;color:var(--tx3);border-top:1px solid var(--line);line-height:1.7}
+.note b{color:var(--tx2);font-weight:500}
+
+/* script & log */
+.scriptbar{padding:8px;display:flex;flex-direction:column;gap:7px}
+.expr{display:flex;align-items:center;gap:8px;background:var(--bg0);border:1px solid var(--line2);padding:5px 8px}
+.expr .fx{color:var(--amber);font:11px var(--mono)}
+.expr input{flex:1;background:none;border:none;outline:none;color:var(--tx);font:11.5px var(--mono);min-width:0}
+.derive{display:flex;gap:6px;flex-wrap:wrap;font:10.5px var(--mono)}
+.derive span{padding:2px 6px;border:1px solid var(--line2);color:var(--tx2);cursor:pointer}
+.derive span:hover{border-color:var(--amber-dim);color:var(--amber)}
+.log{overflow:auto;padding:6px 8px;font:10.5px/1.7 var(--mono);color:var(--tx3);flex:1;background:var(--bg1)}
+.log b{color:var(--ok);font-weight:400}
+.log i{color:var(--warn);font-style:normal}
+
+/* statusbar */
+.status{display:flex;align-items:center;gap:14px;height:26px;padding:0 10px;background:var(--bg1);border-top:1px solid var(--line);font-size:11px;color:var(--tx3);flex-wrap:nowrap;overflow:hidden}
+.status .seg{font:10.5px var(--mono);white-space:nowrap}
+.budget{display:flex;align-items:center;gap:6px;margin-left:auto;font:10px var(--mono);color:var(--tx3);white-space:nowrap}
+.bbar{display:flex;height:9px;width:170px;border:1px solid var(--line2)}
+.bbar div{height:100%}
+.bbar .b1{width:2.3%;background:#3d6a55}.bbar .b2{width:1.4%;background:#4a7a62}
+.bbar .b3{width:.9%;background:#568a6e}.bbar .b4{width:13.6%;background:#7a6a30}
+.bbar .b5{width:4.5%;background:#8a7038}.bbar .b6{width:77%;background:var(--amber-dim)}
+.bbar .b6 span{display:block;height:100%;width:62%;background:var(--amber);opacity:.85}
+
+/* lamps */
+.lamps{display:flex;align-items:center;gap:8px;padding:0 10px;flex-wrap:wrap;background:var(--panel)}
+.lamp{display:flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--line);font:10.5px var(--mono);color:var(--tx2)}
+.lamp .lt{width:7px;height:7px;border-radius:50%;background:#2b353d}
+.lamp.on{color:var(--tx);border-color:var(--line2)}
+.lamp.on .lt{background:var(--ok)}
+.lamp.warn .lt{background:var(--warn)}
+.lamp.err .lt{background:var(--err)}
+
+/* zone mask during drag */
+.zmask{position:absolute;display:none;background:rgba(242,177,52,.10);border:1px solid var(--amber-dim);pointer-events:none;z-index:20}
+.zmask.left{left:0;top:0;bottom:0;width:22%}
+.zmask.right{right:0;top:0;bottom:0;width:22%}
+.zmask.bottom{left:0;right:0;bottom:0;height:28%}
+.zmask.show{display:block}
+
+/* loader modal */
+.overlay{position:fixed;inset:0;background:rgba(6,8,10,.72);display:none;align-items:center;justify-content:center;z-index:45;padding:18px}
+.overlay.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line2);width:min(1040px,95vw);height:min(540px,88vh);display:flex;flex-direction:column;min-height:0;box-shadow:0 18px 50px rgba(0,0,0,.5)}
+.modal-h{display:flex;align-items:center;gap:10px;height:30px;padding:0 10px;background:var(--panel2);border-bottom:1px solid var(--line);flex:none}
+.modal-h .mtitle{font-size:11.5px;color:var(--tx)}
+.modal-h .mtag{font:10px var(--mono);color:var(--tx3)}
+.modal-h .mclose{margin-left:auto;color:var(--tx3);padding:2px 6px;font-size:12px}
+.modal-h .mclose:hover{color:var(--err)}
+.mtabs{display:flex;align-items:center;gap:2px;padding:0 8px;height:28px;border-bottom:1px solid var(--line);flex:none;background:var(--bg1)}
+.etab{padding:0 12px;height:100%;font-size:11px;color:var(--tx3);border-bottom:2px solid transparent}
+.etab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.mhint{margin-left:auto;font:10px var(--mono);color:var(--tx3);padding-right:4px}
+.mbody{flex:1;min-height:0;overflow:hidden;display:flex}
+.edframe{height:100%;width:100%;display:grid;grid-template-columns:220px 1fr 250px;gap:1px;background:var(--line)}
+.edcol{background:var(--panel);display:flex;flex-direction:column;min-height:0}
+.edcol .dock-h{cursor:default}
+.edopt{height:100%;width:100%;overflow:auto;background:var(--panel);padding:6px 14px;display:none}
+.edopt.show{display:block}
+.frow{display:grid;grid-template-columns:112px 1fr;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #1b2127}
+.fk{font-size:11px;color:var(--tx3)}
+.finput{width:100%;background:var(--bg0);border:1px solid var(--line2);color:var(--tx);font:11px var(--mono);padding:4px 6px;outline:none}
+.fhintbox{margin-top:12px;font-size:10.5px;color:var(--tx3);line-height:1.7;border-left:2px solid var(--line2);padding-left:9px}
+.modal-f{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border-top:1px solid var(--line);background:var(--panel2);flex:none}
+.modal-f .fhint{font-size:10.5px;color:var(--tx3)}
+.modal-f .btn{margin-left:auto;padding:4px 12px;border:1px solid var(--line2);color:var(--tx2);font-size:11px}
+.modal-f .btn.primary{margin-left:6px;border-color:var(--amber-dim);color:var(--amber)}
+.pfield{display:grid;grid-template-columns:1fr 54px 40px;gap:4px;padding:3px 8px;cursor:pointer;border-left:2px solid transparent;font-size:11px}
+.pfield:hover{background:#1d242a}
+.pfield.sel{background:#232a30;border-left-color:var(--amber)}
+.pfield .fo,.pfield .ft{font:10.5px var(--mono);color:var(--tx3);text-align:right}
+.hexwrap{padding:10px;overflow:auto}
+.hexhead{display:flex;gap:4px;font:10px var(--mono);color:var(--tx3);padding:0 0 4px 40px}
+.hexrow{display:flex;align-items:center;gap:4px;margin-bottom:3px}
+.hoff{width:32px;font:10.5px var(--mono);color:var(--tx3)}
+.hbyte{width:25px;height:22px;display:flex;align-items:center;justify-content:center;font:11.5px var(--mono);color:var(--tx2);border:1px solid var(--line);background:#0f1317;cursor:pointer}
+.hbyte:hover{color:var(--tx);border-color:var(--line2)}
+.hbyte.hl{border-color:var(--amber);color:var(--amber);background:rgba(242,177,52,.08)}
+.bits{margin-left:44px;color:var(--tx3);font:10px var(--mono);display:flex;gap:2px}
+.bits span{width:25px;text-align:center;border-top:1px solid var(--line)}
+.drow{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:4px 8px;border-bottom:1px solid #1b2127;font-size:11px}
+.drow .dk{color:var(--tx3)}
+.drow .dv{font-family:var(--mono);text-align:right;overflow:hidden;text-overflow:ellipsis}
+.hint{padding:8px 10px;font-size:10.5px;color:var(--tx3);line-height:1.6;border-top:1px solid var(--line)}
+
+.toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%) translateY(8px);background:#1e262d;border:1px solid var(--line2);border-left:2px solid var(--amber);padding:8px 14px;font-size:11.5px;color:var(--tx);opacity:0;pointer-events:none;transition:.18s;z-index:50;max-width:560px}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+
+/* ===== 右键菜单 ===== */
+.ctx{position:fixed;z-index:900;min-width:176px;background:#1b2228;border:1px solid #2b353d;box-shadow:0 10px 28px rgba(0,0,0,.5);padding:3px;display:none}
+.ctx.on{display:block}
+.ctx .ct{font:9.5px var(--mono);color:var(--tx3);padding:4px 8px 3px;letter-spacing:.03em}
+.ctx .ci{display:flex;align-items:center;gap:7px;padding:5px 9px;font-size:11.5px;color:var(--tx2);cursor:pointer}
+.ctx .ci:hover{background:#232c34;color:var(--tx)}
+.ctx .ci .k{margin-left:auto;font:9.5px var(--mono);color:var(--tx3)}
+.ctx .ci.dis{color:#495761;pointer-events:none}
+.ctx hr{border:0;border-top:1px solid #262f37;margin:3px 0}
+
+/* ===== ribbon ===== */
+.ribbon{background:#141a1f;border-bottom:1px solid var(--line);flex:none}
+.rb-top{display:flex;align-items:center;gap:3px;height:32px;padding:0 10px;border-bottom:1px solid #1b232a}
+.rb-tabs{display:flex;gap:1px;margin-left:10px}
+.rt{height:26px;padding:0 11px;font-size:11.5px;color:var(--tx3);border-bottom:2px solid transparent}
+.rt:hover{color:var(--tx);background:#1a2127}
+.rt.active{color:var(--amber);border-bottom-color:var(--amber)}
+.rb-qa{margin-left:auto;display:flex;align-items:center;gap:9px}
+.qchip{font:10px var(--mono);color:var(--tx3);white-space:nowrap}
+.qbtn{font-size:11px;color:var(--tx2);padding:3px 8px;border:1px solid var(--line);display:flex;align-items:center;gap:5px}
+.qbtn:hover{color:var(--tx);border-color:var(--tx3)}
+.qbtn .i2{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.6}
+.rb-body{height:74px;display:flex;align-items:stretch;padding:0 6px;overflow:hidden;transition:height .14s}
+.ribbon.collapsed .rb-body{height:0}
+.rpanel{display:none;align-items:stretch;width:100%;min-width:0}
+.rpanel.on{display:flex}
+.rgrp{display:flex;flex-direction:column;justify-content:space-between;padding:4px 9px 3px;border-right:1px solid #1b232a;min-width:0}
+.rgrp:last-child{border-right:none}
+.rgrp-b{display:flex;align-items:center;gap:3px;flex:1;min-width:0}
+.rgrp-l{font-size:9.5px;color:var(--tx3);text-align:center}
+.rbig{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:54px;height:54px;color:var(--tx2);border:1px solid transparent}
+.rbig:hover{background:#1b232a;color:var(--tx);border-color:#222b33}
+.rbig:active{background:#212a31}
+.rbig .i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.rbig span{font-size:10.5px;white-space:nowrap}
+.rsm{display:flex;flex-direction:column;gap:1px;justify-content:center}
+.rsm-b{display:flex;align-items:center;gap:6px;padding:3px 8px;font-size:10.5px;color:var(--tx2);border:1px solid transparent;white-space:nowrap}
+.rsm-b:hover{background:#1b232a;color:var(--tx);border-color:#222b33}
+.rsm-b .i2{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+
+@media (max-width:1100px){
+  .dock{width:190px}.dock.wide{width:200px}
+  .phint{display:none}
+  .edframe{grid-template-columns:1fr}
+  .modal{height:92vh}
+}
+@media (max-width:760px){
+  #wb{grid-template-columns:minmax(0,1fr)}
+  .zone.left,.zone.right{display:none!important}
+  .zone.bottom{height:96px}
+  .center{grid-column:1}
+  .rb-qa .qbtn:not(#rbCollapse){display:none}
+  .pgrid{grid-template-columns:1fr!important}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-open" viewBox="0 0 24 24"><path d="M3 6.5h6l2 2.5h10v10.5H3z"/></symbol><symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v4M15 3v4M7 7h10v4a5 5 0 0 1-10 0z"/><path d="M12 16v5"/></symbol><symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></symbol><symbol id="i-reload" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4h-4"/></symbol><symbol id="i-page" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18"/><path d="M9 8h6M9 12h6M9 16h4"/></symbol><symbol id="i-plot" viewBox="0 0 24 24"><path d="M3 20V4M3 20h18"/><polyline points="6,16 10,10 13,13 17,7 20,9"/></symbol><symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/><circle cx="12" cy="17" r="1"/></symbol><symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16"/><path d="M3 12h18"/></symbol><symbol id="i-cursor" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="3"/></symbol><symbol id="i-zoom" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol><symbol id="i-code" viewBox="0 0 24 24"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></symbol><symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16"/><path d="M7 10l3 2-3 2M12 14h5"/></symbol><symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4z"/><path d="M8 4v6h8V4"/><rect x="8" y="14" width="8" height="6"/></symbol><symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M4 15v5h16v-5"/></symbol><symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16"/><path d="M3 12h18M11 4v16"/></symbol><symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9l-2 5-5 2 2-5z"/></symbol><symbol id="i-lamp" viewBox="0 0 24 24"><path d="M12 4a5 5 0 0 1 5 5v5l2 3H5l2-3V9a5 5 0 0 1 5-5z"/><path d="M10 20h4"/></symbol><symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol><symbol id="i-collapse" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol><symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></symbol><symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></symbol><symbol id="i-pause" viewBox="0 0 24 24"><rect x="7" y="5" width="3.6" height="14"/><rect x="13.4" y="5" width="3.6" height="14"/></symbol></defs></svg>
+  <div class="ribbon" id="ribbon">
+    <div class="rb-top">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 22 L8 14 L12 19 L16 9 L20 20 L24 13 L29 17" stroke="#f2b134" stroke-width="2" fill="none"/></svg>
+        PlotScope
+      </div>
+      <div class="rb-tabs" id="rbTabs"><button class="rt active" data-r="file">文件</button><button class="rt" data-r="data">数据源</button><button class="rt" data-r="plot">绘图</button><button class="rt" data-r="inst">仪表</button><button class="rt" data-r="script">脚本</button><button class="rt" data-r="proto">协议</button><button class="rt" data-r="view">视图</button></div>
+      <div class="rb-qa">
+        <span class="qchip">吞吐 24.6 MB/s</span>
+        <span class="qchip">延迟 18.4 ms</span>
+        <span class="qchip">内存 412 MB</span>
+        <button class="qbtn" data-toast="Ctrl+L 打开 · Space 播放/暂停 · F 自适应 Y · Del 删曲线">快捷键</button>
+        <button class="qbtn" id="rbCollapse" title="折叠功能区"><svg class="i2"><use href="#i-collapse" xlink:href="#i-collapse"/></svg></button>
+      </div>
+    </div>
+    <div class="rb-body" id="rbBody">
+<div class="rpanel on" data-p="file"><div class="rgrp"><div class="rgrp-b"><button class="rbig" id="btnLoad"><svg class="i"><use href="#i-open" xlink:href="#i-open"/></svg><span>打开文件</span></button><button class="rbig" id="openLay"><svg class="i"><use href="#i-save" xlink:href="#i-save"/></svg><span>打开布局</span></button><button class="rbig" data-toast=".psc-settings 存全局偏好：主题/单位/内存上限/线程数/默认降采样"><svg class="i"><use href="#i-grid" xlink:href="#i-grid"/></svg><span>打开设置</span></button></div><div class="rgrp-l">打开</div></div><div class="rgrp"><div class="rgrp-b"><button class="rbig" id="expLay"><svg class="i"><use href="#i-save" xlink:href="#i-save"/></svg><span>导出布局</span></button><button class="rbig" id="expSet"><svg class="i"><use href="#i-grid" xlink:href="#i-grid"/></svg><span>导出设置</span></button><button class="rbig" data-toast="按当前窗口导出 CSV；全量走 .psl 里的通道列表 + 后台任务"><svg class="i"><use href="#i-export" xlink:href="#i-export"/></svg><span>导出数据</span></button></div><div class="rgrp-l">导出</div></div><div class="rgrp"><div class="rgrp-b"><button class="rbig" id="shotPage"><svg class="i"><use href="#i-page" xlink:href="#i-page"/></svg><span>截图当前页</span></button><button class="rbig" id="shotSave"><svg class="i"><use href="#i-export" xlink:href="#i-export"/></svg><span>图片另存为</span></button></div><div class="rgrp-l">图像</div></div><div class="rgrp"><div class="rsm"><button class="rsm-b" id="impLay"><svg class="i2"><use href="#i-open" xlink:href="#i-open"/></svg><span>导入 .psl</span></button><button class="rsm-b" data-toast="最近 5 个会话，按最后打开时间排序，悬停显示路径"><svg class="i2"><use href="#i-db" xlink:href="#i-db"/></svg><span>最近会话</span></button></div><div class="rgrp-l">文件</div></div></div><div class="rpanel" data-p="data"><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="同一窗口可并列多个源；打开文件走「文件」页签"><svg class="i"><use href="#i-open" xlink:href="#i-open"/></svg><span>打开源</span></button><button class="rbig" data-toast="串口 / TCP / UDP / MQTT / ZMQ / Foxglove 六个流入口，都是 Loader"><svg class="i"><use href="#i-plug" xlink:href="#i-plug"/></svg><span>连接</span></button><button class="rbig" data-toast="重载沿用同一 Loader 与同一份解帧模板，不清缓存"><svg class="i"><use href="#i-reload" xlink:href="#i-reload"/></svg><span>重载</span></button></div><div class="rgrp-l">数据</div></div><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="Arrow IPC + mmap；二次打开验收 ≤400 ms"><svg class="i"><use href="#i-db" xlink:href="#i-db"/></svg><span>缓存</span></button><button class="rbig" data-toast="可导出当前窗口或全量，CSV / Parquet"><svg class="i"><use href="#i-export" xlink:href="#i-export"/></svg><span>导出 CSV</span></button></div><div class="rgrp-l">缓存</div></div><div class="rgrp"><div class="rgrp-b"><div class="rsm"><button class="rsm-b" data-toast="同一窗口并列多个源，各有独立列存与 LOD"><svg class="i2"><use href="#i-layers" xlink:href="#i-layers"/></svg><span>添加源</span></button><button class="rsm-b" data-toast="断开只停增量，已有数据仍可看；绑定降级为幽灵"><svg class="i2"><use href="#i-plug" xlink:href="#i-plug"/></svg><span>断开</span></button></div><div class="rsm"><button class="rsm-b" data-toast="主源决定时间轴，其它源按就近/插值对齐"><svg class="i2"><use href="#i-check" xlink:href="#i-check"/></svg><span>设为主源</span></button><button class="rsm-b" data-toast="就近 / 线性 / 零阶保持，在源的编辑器里选"><svg class="i2"><use href="#i-check" xlink:href="#i-check"/></svg><span>对齐策略</span></button></div></div><div class="rgrp-l">源管理</div></div></div>
+<div class="rpanel" data-p="plot"><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="新页 = 空切分树，可从数据源拖字段或先放仪表"><svg class="i"><use href="#i-page" xlink:href="#i-page"/></svg><span>新建页</span></button><button class="rbig" data-toast="拖字段进画布即建曲线；也可先建空画布再绑"><svg class="i"><use href="#i-plot" xlink:href="#i-plot"/></svg><span>添加画布</span></button><button class="rbig" data-toast="横切 / 竖切：页内一棵 QSplitter 树，比例入库"><svg class="i"><use href="#i-split" xlink:href="#i-split"/></svg><span>切分</span></button></div><div class="rgrp-l">页</div></div><div class="rgrp"><div class="rgrp-b"><div class="rsm"><button class="rsm-b" data-toast="只调 Y 轴，X 保持当前窗口"><svg class="i2"><use href="#i-zoom" xlink:href="#i-zoom"/></svg><span>自适应 Y</span></button><button class="rsm-b" data-toast="十字游标，同页多画布同步读数"><svg class="i2"><use href="#i-cursor" xlink:href="#i-cursor"/></svg><span>游标</span></button><button class="rsm-b" data-toast="网格密度随像素密度降级"><svg class="i2"><use href="#i-grid" xlink:href="#i-grid"/></svg><span>网格</span></button></div></div><div class="rgrp-l">视图</div></div><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="仪表与 plot 同页混排，叶子类型二选一"><svg class="i"><use href="#i-gauge" xlink:href="#i-gauge"/></svg><span>添加仪表</span></button><button class="rbig" data-toast="罗盘/地平仪都 QPainter 自绘，不用 QML"><svg class="i"><use href="#i-compass" xlink:href="#i-compass"/></svg><span>罗盘</span></button></div><div class="rgrp-l">仪表</div></div></div>
+<div class="rpanel" data-p="inst"><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="AttitudeIndicator · QPainter + 属性动画"><svg class="i"><use href="#i-compass" xlink:href="#i-compass"/></svg><span>地平仪</span></button><button class="rbig" data-toast="Heading dial · 0.1° 分辨率"><svg class="i"><use href="#i-compass" xlink:href="#i-compass"/></svg><span>罗盘</span></button><button class="rbig" data-toast="三档量程：30 m/s / 400 m / 18~26 V"><svg class="i"><use href="#i-gauge" xlink:href="#i-gauge"/></svg><span>表盘</span></button></div><div class="rgrp-l">控件</div></div><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="状态灯绑定 kEnum 通道，状态段自动切色"><svg class="i"><use href="#i-lamp" xlink:href="#i-lamp"/></svg><span>告警灯</span></button><button class="rbig" data-toast="滚动事件条，点击跳到时刻"><svg class="i"><use href="#i-lamp" xlink:href="#i-lamp"/></svg><span>告警条</span></button></div><div class="rgrp-l">告警</div></div><div class="rgrp"><div class="rgrp-b"><div class="rsm"><button class="rsm-b" data-toast="仪表吸附 8px 网格"><svg class="i2"><use href="#i-grid" xlink:href="#i-grid"/></svg><span>网格对齐</span></button><button class="rsm-b" data-toast="独立 QQuickWindow 才允许 QML 动效"><svg class="i2"><use href="#i-layers" xlink:href="#i-layers"/></svg><span>全屏大屏</span></button></div></div><div class="rgrp-l">显示</div></div></div>
+<div class="rpanel" data-p="script"><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="Lua 5.4 逐块执行（10 毫秒/块）；一个脚本出错只灰掉自己那条派生通道"><svg class="i"><use href="#i-plot" xlink:href="#i-plot"/></svg><span>运行</span></button><button class="rbig" data-toast="停止只终止求值，已物化派生通道保留"><svg class="i"><use href="#i-stop" xlink:href="#i-stop"/></svg><span>停止</span></button></div><div class="rgrp-l">执行</div></div><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="非单调输出必须物化；单调算子可后置映射"><svg class="i"><use href="#i-layers" xlink:href="#i-layers"/></svg><span>物化</span></button><button class="rbig" data-toast="脚本只能读内核数据、不能碰 UI；日志给行号与单块耗时"><svg class="i"><use href="#i-term" xlink:href="#i-term"/></svg><span>日志</span></button></div><div class="rgrp-l">派生</div></div><div class="rgrp"><div class="rgrp-b"><div class="rsm"><button class="rsm-b" data-toast="L1 只改显示；L2 在降采样前应用"><svg class="i2"><use href="#i-check" xlink:href="#i-check"/></svg><span>单位 L1</span></button><button class="rsm-b" data-toast="先加工再降采样，反过来就是错的；优先用 ps.ch() 向量算子"><svg class="i2"><use href="#i-check" xlink:href="#i-check"/></svg><span>向量优先</span></button></div></div><div class="rgrp-l">铁律</div></div></div>
+<div class="rpanel" data-p="proto"><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast=".psproto；模板属 Loader，随 Loader 保存"><svg class="i"><use href="#i-page" xlink:href="#i-page"/></svg><span>打开模板</span></button><button class="rbig" data-toast="可从样例帧推字段，也可手写 YAML"><svg class="i"><use href="#i-page" xlink:href="#i-page"/></svg><span>新建模板</span></button><button class="rbig" data-toast="热编译成 Rust 状态机，失败回滚上一版"><svg class="i"><use href="#i-check" xlink:href="#i-check"/></svg><span>编译</span></button></div><div class="rgrp-l">模板</div></div><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="CRC-16/CCITT、CRC-32 自动试算并定位坏帧"><svg class="i"><use href="#i-check" xlink:href="#i-check"/></svg><span>CRC 试算</span></button><button class="rbig" data-toast="跨字节位域：起始位 + 位宽 + 字节序"><svg class="i"><use href="#i-grid" xlink:href="#i-grid"/></svg><span>位域标尺</span></button></div><div class="rgrp-l">校验</div></div><div class="rgrp"><div class="rgrp-b"><div class="rsm"><button class="rsm-b" data-toast="数据源每行的"配置"就是它"><svg class="i2"><use href="#i-plug" xlink:href="#i-plug"/></svg><span>从源打开</span></button><button class="rsm-b" data-toast="可分享、可进 git、可复用"><svg class="i2"><use href="#i-db" xlink:href="#i-db"/></svg><span>存为 .psproto</span></button></div></div><div class="rgrp-l">入口</div></div></div>
+<div class="rpanel" data-p="view"><div class="rgrp"><div class="rgrp-b"><button class="rbig" data-toast="四区：数据源/检查器/脚本/日志；绘图区永不停靠"><svg class="i"><use href="#i-grid" xlink:href="#i-grid"/></svg><span>重置停靠</span></button><button class="rbig" data-toast="双击页签也能折叠，省 74px 竖空间"><svg class="i"><use href="#i-collapse" xlink:href="#i-collapse"/></svg><span>折叠功能区</span></button><button class="rbig" data-toast="行高收 24，适合 1080p 笔记本"><svg class="i"><use href="#i-grid" xlink:href="#i-grid"/></svg><span>紧凑模式</span></button></div><div class="rgrp-l">停靠</div></div><div class="rgrp"><div class="rgrp-b"><div class="rsm"><button class="rsm-b" data-toast="workspace.docks[] + pages[].splitTree 两份都存"><svg class="i2"><use href="#i-save" xlink:href="#i-save"/></svg><span>保存 .psl</span></button><button class="rsm-b" data-toast="semantic 必留、view 可丢"><svg class="i2"><use href="#i-export" xlink:href="#i-export"/></svg><span>导出布局</span></button></div></div><div class="rgrp-l">布局</div></div></div>
+    </div>
+  </div>
+
+  <div id="wb">
+    <div class="zone left" id="z-left"></div>
+    <div class="center" id="center">
+      <div class="pagebar" id="pagebar"></div>
+      <div class="pgrid" id="stack"></div>
+    </div>
+    <div class="zone right" id="z-right"></div>
+    <div class="zone bottom" id="z-bottom"></div>
+    <div class="zmask left" id="zm-left"></div>
+    <div class="zmask right" id="zm-right"></div>
+    <div class="zmask bottom" id="zm-bottom"></div>
+  </div>
+
+  <!-- 停靠：数据源 -->
+  <div class="dock" id="d-src" data-home="left">
+    <div class="dock-h"><span class="grip"></span><span>数据源</span><div class="r"><button class="sbtn wide" id="allRun" title="全部开始 / 全部暂停"></button><span id="srcCnt">3 源 · 2 已连接</span><button class="flbtn" data-fl="d-src">浮动</button></div></div>
+    <div class="srcs" id="srcs"></div>
+    <div class="srctabs" id="srctabs">
+      <button class="stab active" data-t="field">字段</button>
+      <button class="stab" data-t="param">参数</button>
+      <button class="stab" data-t="msg">消息</button>
+      <span class="scount" id="scount">218</span>
+    </div>
+    <div class="dock-b" id="srcbody"></div>
+  </div>
+
+  <!-- 停靠：检查器 -->
+  <div class="dock wide" id="d-insp" data-home="right">
+    <div class="dock-h"><span class="grip"></span><span>属性面板</span><div class="r"><span id="inspTag">—</span><button class="flbtn" data-fl="d-insp">浮动</button></div></div>
+    <div class="dock-b"><div class="prop" id="insp"></div><div class="note" id="inspNote"></div></div>
+  </div>
+
+  <!-- 停靠：脚本 -->
+  <div class="dock" id="d-script" data-home="bottom">
+    <div class="dock-h"><span class="grip"></span><span>脚本 / 派生通道</span><div class="r"><span>Lua 5.4 · 4 条已物化</span><button class="flbtn" data-fl="d-script">浮动</button></div></div>
+    <div class="dock-b scriptbar">
+      <div class="expr"><span class="fx">lua</span><input value="out = ps.sqrt(ps.ch('acc_x')*ps.ch('acc_x') + ps.ch('acc_y'))" spellcheck="false"></div>
+      <div class="derive">
+        <span data-toast="ps.ch() 返回 userdata；运算符走元表，一次调用算一整块 10 毫秒，算术在 Rust 里">ps.ch() 向量句柄</span>
+        <span data-toast="逐样本 for 循环慢约 100 倍：日志只警告一次，并把脚本标成慢脚本">标量循环 = 慢 100×</span>
+        <span data-toast="derivative 非单调 → 物化；movingAvg 单调 → 可后置映射">derivative / movingAvg</span>
+        <span data-toast="沙箱：不开 io/os/package；指令预算 2 毫秒/块，内存 64 MB/脚本">沙箱 · 预算</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 停靠：日志 -->
+  <div class="dock" id="d-log" data-home="bottom">
+    <div class="dock-h"><span class="grip"></span><span>日志 / 诊断</span><div class="r"><span id="dropCnt">丢弃 0</span><button class="flbtn" data-fl="d-log">浮动</button></div></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="status">
+    <span class="seg" id="stRun">采集中</span><span class="seg" id="stSrc">2/3 源在线 · 主源 ulog</span>
+    <span class="seg" id="stPage">页 1/4</span>
+    <span class="seg" id="stWin">窗口 0.0–120.0 s</span>
+    <span class="seg" id="stLod">LOD 512</span>
+    <span class="seg">对齐 就近 · 12.6M 采样</span>
+    <div class="budget">
+      <span>预算 22 ms</span>
+      <div class="bbar"><div class="b1"></div><div class="b2"></div><div class="b3"></div><div class="b4"></div><div class="b5"></div><div class="b6"><span></span></div></div>
+      <span id="stFrame">6.8 ms/帧</span>
+    </div>
+  </div>
+</div>
+
+<!-- Loader 编辑器（属于某个 Loader 的 options 子窗口） -->
+<div class="overlay" id="loaderEditor">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-h">
+      <span class="mtitle" id="edTitle">CAN Loader · ENGINE_STATUS</span>
+      <span class="mtag" id="edTag">data_loader · dylib · abi 4 · dialog vtable</span>
+      <button class="mclose" id="edClose">✕</button>
+    </div>
+    <div class="mtabs">
+      <button class="etab active" data-ed="frame">帧模板</button>
+      <button class="etab" data-ed="opt">加载选项</button>
+      <span class="mhint" id="edHint">CAN ID 0x1A0 · 11 B · CRC-16/CCITT</span>
+    </div>
+    <div class="mbody">
+      <div class="edframe" id="edFrame">
+        <div class="edcol">
+          <div class="dock-h">字段<div class="r">ENGINE_STATUS</div></div>
+          <div class="dock-b" id="fields"></div>
+        </div>
+        <div class="edcol">
+          <div class="dock-h">帧预览 · hex<div class="r">11 B · CRC 通过</div></div>
+          <div class="dock-b hexwrap" id="hex"></div>
+        </div>
+        <div class="edcol">
+          <div class="dock-h">位域与解码<div class="r">bit ruler</div></div>
+          <div class="dock-b"><div class="prop" id="bitprop"></div><div id="decode"></div>
+            <div class="hint">变长帧 + 跨字节位域是超越点：JCom 只做固定帧长、字节级字段。</div>
+          </div>
+        </div>
+      </div>
+      <div class="edopt" id="edOpt">
+        <div class="frow"><span class="fk">时间基准</span><select class="finput"><option>启动时间（boot）</option><option>UTC</option><option>单调时钟</option></select></div>
+        <div class="frow"><span class="fk">通道白名单</span><input class="finput" value="uav.attitude.*, uav.imu0.*, can0.*"></div>
+        <div class="frow"><span class="fk">采样对齐</span><select class="finput"><option>按主题（不重采样）</option><option>统一重采样 250 Hz</option><option>按主时钟切片</option></select></div>
+        <div class="frow"><span class="fk">L2 单位源</span><select class="finput"><option>文件内元数据（推荐）</option><option>强制 SI</option><option>自定义 .psmeta</option></select></div>
+        <div class="frow"><span class="fk">回放速率</span><input class="finput" value="1.0×"></div>
+        <div class="frow"><span class="fk">缺失通道</span><select class="finput"><option>保留幽灵曲线</option><option>忽略</option></select></div>
+        <div class="fhintbox">这些选项属于 <b>该 Loader</b> 自己，随 Loader 保存；宿主只把配置 JSON 透传。换一个 Loader，这页就换一套。</div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <span class="fhint" id="edFootHint">模板存为 .psproto；编译成功才写回，失败回滚上一版</span>
+      <button class="btn" id="edCancel">取消</button>
+      <button class="btn primary" id="edApply">编译并应用</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="ctx" id="ctx" role="menu"></div>
+<input type="file" id="fileLay" accept=".psl,.json,application/json" hidden>
+<script>
+/* ===== 合成数据 ===== */
+const DUR=120,HZ=250,N=DUR*HZ;
+function rnd(s){let x=s>>>0;return()=>{x=(x*1664525+1013904223)>>>0;return x/4294967296;};}
+function mk(fn,seed,noise){const r=rnd(seed),a=new Float32Array(N);for(let i=0;i<N;i++){a[i]=fn(i/HZ)+(r()-.5)*noise;}return a;}
+const CH=[
+ {id:'att.roll',src:'ulog',ns:'uav.attitude',n:'roll',u:'deg',c:'var(--c-roll)',p:0,seed:11,noise:1.2,fn:t=>18*Math.sin(t*.42)+6*Math.sin(t*1.31+1.2)},
+ {id:'att.pitch',src:'ulog',ns:'uav.attitude',n:'pitch',u:'deg',c:'var(--c-pitch)',p:0,seed:12,noise:1,fn:t=>-9*Math.sin(t*.35+.6)+4*Math.sin(t*1.7)},
+ {id:'att.yaw',src:'ulog',ns:'uav.attitude',n:'yaw',u:'deg',c:'var(--c-yaw)',p:0,seed:13,noise:1.4,fn:t=>-150+40*Math.sin(t*.12)+8*Math.sin(t*2.1)},
+ {id:'acc_x',src:'ulog',ns:'uav.imu0',n:'acc_x',u:'m/s²',c:'var(--c-ax)',p:1,seed:21,noise:2.6,fn:t=>9*Math.sin(t*7.1)+3*Math.sin(t*19.4)},
+ {id:'acc_y',src:'ulog',ns:'uav.imu0',n:'acc_y',u:'m/s²',c:'var(--c-ay)',p:1,seed:22,noise:2.4,fn:t=>6*Math.sin(t*6.3+1.1)+2.4*Math.sin(t*23.7)},
+ {id:'acc_z',src:'ulog',ns:'uav.imu0',n:'acc_z',u:'m/s²',c:'var(--c-az)',p:1,seed:23,noise:2.2,fn:t=>4*Math.sin(t*5.2+2.2)+1.8*Math.sin(t*17.2)},
+ {id:'engine_rpm',src:'can',ns:'can0 · ENGINE_STATUS',n:'engine_rpm',u:'rpm',c:'var(--c-rpm)',p:2,seed:31,noise:14,fn:t=>1800+520*Math.sin(t*.21)+120*Math.sin(t*1.9)},
+ {id:'throttle',src:'can',ns:'can0 · ENGINE_STATUS',n:'throttle',u:'%',c:'var(--c-thr)',p:2,seed:32,noise:1.6,fn:t=>46+22*Math.sin(t*.19+.4)},
+ {id:'battery_v',src:'ulog',ns:'uav.battery',n:'battery_v',u:'V',c:'var(--c-roll)',p:2,seed:33,noise:.06,fn:t=>24.1-.9*(t/DUR)},
+ {id:'cpu_load',src:'ulog',ns:'systemview',n:'cpu_load',u:'%',c:'var(--tx3)',p:-1,ghost:true,seed:41,noise:1,fn:t=>45+8*Math.sin(t*.1)},
+ {id:'mav.roll',src:'mav',ns:'mavlink · ATTITUDE',n:'roll',u:'deg',c:'var(--c-yaw)',p:0,ghost:true,seed:51,noise:1,fn:t=>18*Math.sin(t*.42)}
+];
+CH.forEach(c=>{c.data=mk(c.fn,c.seed,c.noise);c.on=!c.ghost;});
+const SRC=[
+ {id:'ulog',uri:'ulog://uav_flight_2026-11-11',st:'on',kind:'file',run:'loaded',label:'已加载 · 离线',cls:'dylib · abi 4',cfg:'frame',rate:'—'},
+ {id:'can',uri:'can://can0',st:'on',kind:'replay',run:'paused',label:'已连接 · 只读回放',cls:'dylib · abi 4',cfg:'frame',rate:'1.4 MB/s'},
+ {id:'mav',uri:'mavlink://1',st:'off',kind:'stream',run:'idle',label:'未连接',cls:'builtin · 串口',cfg:'opt',rate:'—'}
+];
+const RUN_LABEL={loaded:'已加载',idle:'未连接',running:'运行中',paused:'已暂停'};
+function runColor(s){return s.run==='running'?'var(--ok)':(s.run==='paused'?'var(--amber)':(s.run==='loaded'?'var(--tx2)':'var(--tx3)'));}
+function cycleRun(s){
+  if(s.kind==='file'){toast('离线文件没有"运行"：播放/暂停走底部时间轴');return;}
+  if(s.run==='idle'){s.run='running';s.st='on';s.label='已连接 · 运行中';toast(s.uri+' 已连接，开始采集');}
+  else if(s.run==='running'){s.run='paused';s.label='已连接 · 已暂停';toast(s.uri+' 暂停：停止取数，环形缓冲保留最后 5 s；恢复时插一个缺口标');}
+  else{s.run='running';s.label='已连接 · 运行中';toast(s.uri+' 恢复采集（缺口已标记）');}
+  renderSrcs();renderInsp();updateStatus();
+}
+const PANELS=[
+ {t:'姿态角',u:'deg',ymin:-180,ymax:180,ids:['att.roll','att.pitch','att.yaw']},
+ {t:'IMU 加速度',u:'m/s²',ymin:-16,ymax:16,ids:['acc_x','acc_y','acc_z']},
+ {t:'车辆总线 · CAN',u:'rpm / % / V',ymin:0,ymax:2600,ids:['engine_rpm','throttle','battery_v']}
+];
+const BASE=PANELS.map(p=>[p.ymin,p.ymax]);
+const PAGES=[
+ {id:'p1',name:'姿态与振动',typ:'3 plot',cols:1,rows:3,cells:[{k:'plot',p:0},{k:'plot',p:1},{k:'plot',p:2}]},
+ {id:'p2',name:'车辆总线',typ:'2 plot',cols:1,rows:2,cells:[{k:'plot',p:2},{k:'plot',p:1}]},
+ {id:'p3',name:'混排 plot+仪表',typ:'2+2',cols:2,rows:2,cells:[{k:'plot',p:0},{k:'inst',i:'ai'},{k:'plot',p:2},{k:'inst',i:'g3'}]},
+ {id:'p4',name:'仪表大屏',typ:'4 仪表',cols:2,rows:3,cells:[{k:'inst',i:'ai'},{k:'inst',i:'cmps'},{k:'inst',i:'g2'},{k:'inst',i:'g3'},{k:'lamps',span:2}]}
+];
+
+let win={t0:0,t1:DUR},cursor=null,page='p1',sel={type:'channel',id:'att.roll'},srcTab='field',activeSrc='ulog';
+const cw={t:0};
+
+/* ===== 工具 ===== */
+const toastEl=document.getElementById('toast');let tmr;
+function toast(m){toastEl.textContent=m;toastEl.classList.add('show');clearTimeout(tmr);tmr=setTimeout(()=>toastEl.classList.remove('show'),2600);}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-toast]');if(t)toast(t.dataset.toast);});
+function fmt(v,u){return (Math.abs(v)>=100?v.toFixed(0):v.toFixed(1))+(u?' '+u:'');}
+function colorOf(c){const n=c.replace('var(--','').replace(')','');return getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#f2b134';}
+const UNITS={'att.roll':[{k:'deg',f:1},{k:'rad',f:Math.PI/180}],'att.pitch':[{k:'deg',f:1},{k:'rad',f:Math.PI/180}],'att.yaw':[{k:'deg',f:1},{k:'rad',f:Math.PI/180}]};
+let selUnit={};
+function disp(c,v){const u=UNITS[c.id];if(!u)return v;const i=selUnit[c.id]||0;return v*u[i].f;}
+
+/* ===== 停靠引擎 ===== */
+const wb=document.getElementById('wb');
+const Z={left:document.getElementById('z-left'),right:document.getElementById('z-right'),bottom:document.getElementById('z-bottom')};
+const masks={left:document.getElementById('zm-left'),right:document.getElementById('zm-right'),bottom:document.getElementById('zm-bottom')};
+function syncZones(){['left','right','bottom'].forEach(z=>{Z[z].style.display=Z[z].children.length?'':'none';});}
+function dockTo(el,zone){
+  el.classList.remove('floating');
+  el.style.left=el.style.top=el.style.width=el.style.height='';
+  Z[zone].appendChild(el);el.dataset.zone=zone;
+  const b=el.querySelector('.flbtn');if(b)b.textContent='浮动';
+  syncZones();redraw();
+}
+function floatDock(el,x,y,keepSize){
+  const w=keepSize?el.offsetWidth:264,h=keepSize?el.offsetHeight:300;
+  el.classList.add('floating');
+  document.body.appendChild(el);
+  el.style.width=w+'px';el.style.height=h+'px';
+  el.style.left=Math.min(Math.max(6,x-w/2),window.innerWidth-w-6)+'px';
+  el.style.top=Math.min(Math.max(34,y-14),window.innerHeight-h-30)+'px';
+  el.dataset.zone='float';syncZones();
+  const b=el.querySelector('.flbtn');if(b)b.textContent='归位';
+}
+function zoneAt(x,y){
+  const r=wb.getBoundingClientRect();
+  if(y>r.bottom-Math.max(80,r.height*.28))return 'bottom';
+  if(x<r.left+Math.max(110,r.width*.22))return 'left';
+  if(x>r.right-Math.max(110,r.width*.22))return 'right';
+  return null;
+}
+function paintMask(z){
+  Object.entries(masks).forEach(([k,m])=>m.classList.toggle('show',k===z));
+}
+let drag=null;
+document.querySelectorAll('.dock .dock-h').forEach(h=>{
+  h.addEventListener('mousedown',e=>{
+    if(e.target.closest('button'))return;
+    const el=h.closest('.dock');drag={el,moved:false,x:e.clientX,y:e.clientY};
+    e.preventDefault();
+  });
+});
+window.addEventListener('mousemove',e=>{
+  if(!drag)return;
+  const el=drag.el;
+  if(!drag.moved&&(Math.abs(e.clientX-drag.x)>5||Math.abs(e.clientY-drag.y)>5)){
+    drag.moved=true;
+    if(!el.classList.contains('floating'))floatDock(el,e.clientX,e.clientY,false);
+    document.body.style.cursor='grabbing';
+  }
+  if(el.classList.contains('floating')){
+    el.style.left=Math.min(Math.max(6,e.clientX-el.offsetWidth/2),window.innerWidth-el.offsetWidth-6)+'px';
+    el.style.top=Math.min(Math.max(34,e.clientY-14),window.innerHeight-el.offsetHeight-30)+'px';
+    const z=zoneAt(e.clientX,e.clientY);paintMask(z);
+  }
+});
+window.addEventListener('mouseup',e=>{
+  if(!drag){paintMask(null);return;}
+  const el=drag.el;const z=zoneAt(e.clientX,e.clientY);
+  if(drag.moved&&z)dockTo(el,z);
+  drag=null;document.body.style.cursor='';paintMask(null);
+});
+document.querySelectorAll('.flbtn').forEach(b=>b.addEventListener('click',e=>{
+  e.stopPropagation();
+  const el=document.getElementById(b.dataset.fl);
+  if(el.classList.contains('floating'))dockTo(el,el.dataset.home);
+  else floatDock(el,window.innerWidth-320,120,true);
+}));
+window.addEventListener('resize',()=>{if(window.innerWidth<760)redraw(window.innerWidth);else redraw(wb.offsetWidth);});
+
+/* ===== 数据源停靠 ===== */
+const srcsEl=document.getElementById('srcs');
+function renderSrcs(){
+  srcsEl.innerHTML='';
+  SRC.forEach(s=>{
+    const r=document.createElement('div');r.className='srcrow'+(s.id===activeSrc?' act':'');
+    r.innerHTML='<span class="s1"><span class="dot" style="background:'+runColor(s)+'"></span>'+s.uri+'</span>'
+      +'<span class="sctl"><button class="sbtn" title="'+(s.run==='idle'?'连接':'开始/暂停')+'">'
+        +'<svg class="i3"><use href="#i-'+(s.run==='idle'?'plug':(s.run==='running'?'pause':'play'))+'" xlink:href="#i-'+(s.run==='idle'?'plug':(s.run==='running'?'pause':'play'))+'"/></svg></button>'
+        +'<span class="srate">'+(s.kind==='file'?'离线':RUN_LABEL[s.run])+'</span></span>'
+      +'<span class="cfg">配置</span><span class="s2">'+s.label+' · '+s.cls+' · '+(s.rate||'—')+'</span>';
+    r.addEventListener('click',()=>{activeSrc=s.id;sel={type:'source',id:s.id};renderSrcs();renderBody();renderInsp();updateStatus();});
+    r.querySelector('.sbtn').addEventListener('click',ev=>{ev.stopPropagation();cycleRun(s);});
+    r.querySelector('.cfg').addEventListener('click',ev=>{ev.stopPropagation();openEditor(s);});
+    srcsEl.appendChild(r);
+  });
+  document.getElementById('srcCnt').textContent=SRC.length+' 源 · '+SRC.filter(s=>s.st==='on').length+' 已连接';
+}
+
+const PARAMS=[
+ {n:'MPC_XY_VEL_MAX',v:'1.20',u:'m/s',d:'水平最大速度',src:'ulog'},
+ {n:'MPC_Z_VEL_MAX_UP',v:'3.00',u:'m/s',d:'最大上升速度',src:'ulog'},
+ {n:'BAT1_N_CELLS',v:'6',u:'-',d:'电池串数',src:'ulog'},
+ {n:'EKF2_GPS_P_NOISE',v:'0.50',u:'-',d:'GPS 位置噪声',src:'ulog'},
+ {n:'COM_DISARM_PRFLT',v:'10.0',u:'s',d:'地面解锁超时',src:'ulog'}
+];
+const MSGS=[
+ {n:'vehicle_attitude',hz:'250 Hz',f:'q[4] · delta_q_reset · timestamp',src:'ulog'},
+ {n:'sensor_combined',hz:'250 Hz',f:'gyro_rad[3] · accel_m_s2[3] · temperature',src:'ulog'},
+ {n:'vehicle_local_position',hz:'50 Hz',f:'x,y,z · vx,vy,vz · xy_valid',src:'ulog'},
+ {n:'ENGINE_STATUS',hz:'1k Hz',f:'engine_rpm · throttle · coolant · flags',src:'can'},
+ {n:'ATTITUDE',hz:'50 Hz',f:'roll,pitch,yaw,rollspeed (MAVLink)',src:'mav'}
+];
+
+const srcbody=document.getElementById('srcbody');
+function renderBody(){
+  const s=SRC.find(x=>x.id===activeSrc)||SRC[0];
+  document.getElementById('scount').textContent=(srcTab==='field'?CH.filter(c=>c.src===s.id).length:(srcTab==='param'?PARAMS.length:MSGS.length))+'';
+  if(srcTab==='field'){renderTree(s);return;}
+  if(srcTab==='param'){
+    srcbody.innerHTML='<table class="tbl"><thead><tr><th style="width:52%">参数名</th><th style="width:20%">值</th><th>说明</th></tr></thead><tbody>'
+      +PARAMS.filter(p=>p.src===s.id).map((p,i)=>'<tr data-p="'+i+'"><td>'+p.n+'</td><td class="num">'+p.v+' '+p.u+'</td><td style="color:#5d6c77">'+p.d+'</td></tr>').join('')
+      +'</tbody></table>';
+    srcbody.querySelectorAll('tr[data-p]').forEach(tr=>tr.addEventListener('click',()=>{
+      const p=PARAMS.filter(x=>x.src===s.id)[+tr.dataset.p];sel={type:'param',obj:p};renderInsp();
+    }));
+    return;
+  }
+  srcbody.innerHTML=MSGS.filter(m=>m.src===s.id).map((m,i)=>
+    '<div class="mrow" data-m="'+i+'"><span class="m1">'+m.n+'</span><span class="m3">'+m.hz+'</span><span class="m2">'+m.f+'</span></div>').join('');
+  srcbody.querySelectorAll('.mrow').forEach(r=>r.addEventListener('click',()=>{
+    const m=MSGS.filter(x=>x.src===s.id)[+r.dataset.m];sel={type:'msg',obj:m};renderInsp();
+  }));
+}
+function renderTree(s){
+  const list=CH.filter(c=>c.src===s.id);
+  const groups={};list.forEach(c=>{(groups[c.ns]=groups[c.ns]||[]).push(c);});
+  srcbody.innerHTML='';
+  Object.entries(groups).forEach(([ns,arr])=>{
+    const g=document.createElement('div');g.className='tgrp';
+    g.innerHTML='<span class="car">▾</span><span>'+ns+'</span><span class="cnt">'+arr.length+'</span>';
+    const box=document.createElement('div');
+    arr.forEach(c=>{
+      const r=document.createElement('div');
+      r.className='tleaf'+(sel.type==='channel'&&sel.id===c.id?' sel':'')+(c.ghost?' ghost':'');
+      r.innerHTML='<span class="chk'+(c.on?' on':'')+'" style="--chc:'+c.c+'"></span>'
+        +'<span class="chip" style="background:'+c.c+'"></span>'
+        +'<span class="tname">'+c.n+'</span>'
+        +'<span class="tval">'+(c.ghost?'缺':fmt(disp(c,c.data[Math.floor(N*.42)]),c.u))+'</span>';
+      r.draggable=true;
+      r.addEventListener('dragstart',ev=>{dragCh=c.id;ev.dataTransfer.setData('text/plain',c.id);ev.dataTransfer.effectAllowed='copy';});
+      r.addEventListener('dragend',()=>{dragCh=null;});
+      r.addEventListener('click',ev=>{
+        if(ev.target.classList.contains('chk')){c.on=!c.on;renderBody();redraw();return;}
+        sel={type:'channel',id:c.id};renderBody();renderInsp();redraw();
+      });
+      r.addEventListener('dblclick',()=>{c.on=true;renderBody();redraw();toast('已加入当前页：'+s.uri.replace('://','://')+' › '+c.n);});
+      box.appendChild(r);
+    });
+    g.addEventListener('click',()=>{const hid=box.style.display==='none';box.style.display=hid?'block':'none';g.querySelector('.car').style.transform=hid?'':'rotate(-90deg)';});
+    srcbody.appendChild(g);srcbody.appendChild(box);
+  });
+  if(!list.length)srcbody.innerHTML='<div class="hint">该源未连接，无字段可列。连接后字段自动出现在这里。</div>';
+}
+
+/* ===== 属性面板（按选中对象换内容） ===== */
+function row(k,v){return '<div class="prow"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';}
+function renderInsp(){
+  const el=document.getElementById('insp'),note=document.getElementById('inspNote'),tag=document.getElementById('inspTag');
+  let body='',n='';
+  if(sel.type==='channel'){
+    const c=CH.find(x=>x.id===sel.id)||CH[0];tag.textContent='曲线';
+    const units=UNITS[c.id]||[{k:c.u,f:1}];const cur=selUnit[c.id]||0;
+    body =row('绑定键',c.src+'›'+c.ns+'›'+c.n)
+        +row('类型',c.id.indexOf('rpm')>=0?'kEnum':'kFloat32')
+        +row('单位 L1','<select class="select" id="unitSel">'+units.map((x,i)=>'<option value="'+i+'"'+(i===cur?' selected':'')+'>'+x.k+'</option>').join('')+'</select>')
+        +row('颜色','<span class="sw" style="background:'+c.c+'"></span>'+c.c.replace('var(--','').replace(')',''))
+        +row('线宽','<select class="select" id="wSel"><option value="1">1.0 px（细）</option><option value="1.5">1.5 px</option><option value="2" selected>2.0 px</option></select>')
+        +row('所属轴','<select class="select" id="axSel">'+PANELS.map((p,i)=>'<option value="'+i+'"'+(PANELS[i].ids.indexOf(c.id)>=0?' selected':'')+'>'+p.t+'</option>').join('')+'</select>')
+        +row('采样','250 Hz · 30000 点')
+        +row('幽灵',c.ghost?'是（源/字段缺失）':'否');
+    n='<b>L1 显示单位</b>只改坐标轴与读数，不动数据；<b>L2</b> factor/offset 来自文件元数据（ULog/DBC/MDF4），已在降采样前应用。';
+  }else if(sel.type==='axis'){
+    const p=PANELS[sel.panel];tag.textContent='坐标轴';
+    body =row('所属画布',p.t+'（'+p.ids.length+' 条曲线）')
+        +row('Y 最小','<input class="nin" id="yMin" value="'+(+p.ymin).toFixed(2)+'">')
+        +row('Y 最大','<input class="nin" id="yMax" value="'+(+p.ymax).toFixed(2)+'">')
+        +row('自动缩放','<select class="select" id="autoY"><option>关（固定范围）</option><option>开（按可见数据）</option></select>')
+        +row('刻度数','<select class="select"><option value="4" selected>4 格</option><option value="6">6 格</option><option value="10">10 格</option></select>')
+        +row('单位',p.u)
+        +row('对数轴','<select class="select"><option>关</option><option>开（>2 个数量级时）</option></select>');
+    n='轴是<b>独立对象</b>：同一画布上多条曲线可以各自绑定不同轴（多轴对齐），轴范围改动只影响自己的映射，不做全局 Y 自适应。';
+  }else if(sel.type==='canvas'){
+    const p=PANELS[sel.panel];tag.textContent='画布';
+    body =row('所属页',PAGES.find(x=>x.id===page).name)
+        +row('曲线',p.ids.length+' 条（'+p.ids.filter(id=>{const c=CH.find(z=>z.id===id);return c&&c.on;}).length+' 可见）')
+        +row('网格','<select class="select"><option>自动（按像素密度）</option><option>固定 4×5</option><option>关</option></select>')
+        +row('游标','<select class="select"><option>同页多画布同步</option><option>仅本画布</option></select>')
+        +row('Y 自适应','<select class="select"><option>关（轴固定）</option><option>双击画布触发</option></select>')
+        +row('LOD','桶 512 · 每像素 1 桶')
+        +row('绘制','6.8 ms / 帧');
+    n='画布自己不是数据容器，它只是<b>一组曲线 + 一根轴的视口</b>；双击画布复位时间窗，滚轮缩放锚在鼠标位置。';
+  }else if(sel.type==='inst'){
+    const k=sel.i;tag.textContent='仪表';
+    body =row('控件',INST[k].t+(k==='ai'?' · AttitudeIndicator':k==='cmps'?' · Compass':' · DialGauge'))
+        +row('绑定通道',k==='ai'?'uav.attitude / roll,pitch':k==='cmps'?'uav.attitude / yaw':(k==='g2'?'uav.local_position / z':'uav.battery / voltage_v'))
+        +row('刷新','30 Hz（数据 250 Hz，降频渲染）')
+        +row('量程',k==='g1'?'0~30 m/s':k==='g2'?'0~400 m':k==='g3'?'18~26 V':'—')
+        +row('动画','QPropertyAnimation 120 ms 缓动')
+        +row('QML','未启用（独立 QQuickWindow 才允许）');
+    n='仪表是<b>一个叶子控件</b>，和 plot 平级：同页可混排。刷新率与数据率解耦，否则 250 Hz 重绘会把 UI 线程吃满。';
+  }else if(sel.type==='page'){
+    const pg=PAGES.find(x=>x.id===sel.id)||PAGES[0];tag.textContent='页';
+    body =row('页名','<input class="nin" style="width:100%" value="'+pg.name+'">')
+        +row('切分树',pg.cols+' 列 × '+pg.rows+' 行 · '+pg.cells.length+' 个叶子')
+        +row('叶子',pg.cells.map(c=>c.k==='plot'?'plot':'仪表').join(' · '))
+        +row('时间窗','<select class="select"><option>独立（每页各自缩放）</option><option>跟随主源视窗</option></select>')
+        +row('跨页联动','<select class="select"><option>关（默认）</option><option>开（游标同步，4 页全重绘）</option></select>');
+    n='页 = 一棵 <b>QSplitter</b> 树，不是"多窗口"。默认<b>不联动</b>：4 页一起重绘等于白送 4 倍绘制成本。';
+  }else if(sel.type==='param'){
+    const p2=sel.obj;tag.textContent='参数';
+    body =row('参数',p2.n)+row('值',p2.v+' '+p2.u)+row('来源',p2.src+'› 参数表')
+        +row('可写','否（只读快照）')+row('用途','曲线对照');
+    n='参数是<b>只读快照</b>（ULog/DFLog 参数表、DBC 的 BA_、MAVLink PARAM_VALUE），回答"这条曲线当时的增益是多少"。';
+  }else if(sel.type==='msg'){
+    const m2=sel.obj;tag.textContent='消息';
+    const fs=m2.f.split('·').map(x=>x.trim());
+    body =row('消息',m2.n)+row('频率',m2.hz)+row('字段数',fs.length+1)
+        +row('来源',m2.src+'›')
+        +fs.map(f=>row('字段',f)).join('');
+    n='消息是<b>结构视图</b>：点一条把字段展开成曲线组，schema 来自 Loader，不是猜的。';
+  }else{
+    const so=SRC.find(x=>x.id===sel.id)||SRC[0];tag.textContent='数据源';
+    body =row('URI',so.uri)+row('Loader',so.cls)+row('状态',so.label)
+        +row('通道',CH.filter(c=>c.src===so.id).length+' 个（含幽灵）')
+        +row('对齐','就近 · 以主源 '+activeSrc+' 为基准')
+        +row('运行状态',RUN_LABEL[so.run]+' <button class="sbtn" id="srcRun" style="margin-left:8px"><svg class="i3"><use href="#i-'
+          +(so.run==='running'?'pause':'play')+'" xlink:href="#i-'+(so.run==='running'?'pause':'play')+'"/></svg></button>')
+        +row('速率',so.rate||'—')
+        +row('背压','环形缓冲 5 s · 满则丢最旧 · 丢帧累计 0')
+        +row('操作','<select class="select" id="srcOp"><option>设为主源</option><option>断开</option><option>打开编辑器</option></select>');
+    n='多源并列时只有<b>主源</b>决定时间轴；断开不删数据，绑定降级为幽灵曲线。';
+  }
+  el.innerHTML=body;note.innerHTML=n;
+  const u=document.getElementById('unitSel');
+  if(u)u.addEventListener('change',e=>{selUnit[sel.id]=+e.target.value;redraw();renderInsp();});
+  const sr=document.getElementById('srcRun');
+  if(sr)sr.addEventListener('click',()=>{const src=SRC.find(x=>x.id===sel.id);if(src)cycleRun(src);});
+  const so=document.getElementById('srcOp');
+  if(so)so.addEventListener('change',e=>{
+    const src=SRC.find(x=>x.id===sel.id);
+    if(e.target.value==='断开'&&src&&src.kind!=='file'){src.run='paused';src.label='已连接 · 已暂停';renderSrcs();renderInsp();updateStatus();}
+    else toast(e.target.value+' —— 只停增量或改时间基准，不删已加载数据');
+    e.target.selectedIndex=0;});
+  const a=document.getElementById('autoY');
+  if(a)a.addEventListener('change',()=>toast('演示原型：自动 Y 只在双击画布时触发一次，避免"看着看着轴在跳"'));
+  const y1=document.getElementById('yMin'),y2=document.getElementById('yMax');
+  if(y1&&y2){
+    const commit=()=>{
+      const p3=PANELS[sel.panel];const a1=parseFloat(y1.value),a2=parseFloat(y2.value);
+      if(isFinite(a1)&&isFinite(a2)&&a2>a1){p3.ymin=a1;p3.ymax=a2;redraw();}
+    };
+    y1.addEventListener('change',commit);y2.addEventListener('change',commit);
+  }
+}
+
+/* ===== 页与画布 ===== */
+const stack=document.getElementById('stack');
+const pagebar=document.getElementById('pagebar');
+function renderPageBar(){
+  pagebar.innerHTML=PAGES.map(p=>'<button class="page'+(p.id===page?' active':'')+'" data-p="'+p.id+'">'+p.name+'<span class="typ">'+p.typ+'</span></button>').join('')
+    +'<button class="newpage" id="addPage">+</button>'
+    +'<div class="phint">一页 = 一棵切分树：叶子是 <b>plot</b> 或 <b>仪表</b>；页签只切页，不切窗口</div>';
+  pagebar.querySelectorAll('.page').forEach(b=>b.addEventListener('click',()=>{
+    page=b.dataset.p;sel={type:'page',id:b.dataset.p};renderPageBar();renderPage();renderInsp();updateStatus();}));
+  const add=document.getElementById('addPage');
+  if(add)add.addEventListener('click',()=>toast('演示原型：新页 = 空切分树，从数据源拖字段进来，或先放一个仪表'));
+}
+let cells=[];
+function renderPage(){
+  const pg=PAGES.find(p=>p.id===page);
+  stack.innerHTML='';
+  stack.style.gridTemplateColumns='repeat('+pg.cols+',1fr)';
+  stack.style.gridTemplateRows='repeat('+pg.rows+',1fr)';
+  cells=[];
+  pg.cells.forEach((c,idx)=>{
+    const cell=document.createElement('div');cell.className='cell';
+    if(c.span)cell.style.gridColumn='span '+c.span;
+    if(c.k==='plot'){
+      const p=PANELS[c.p];
+      cell.innerHTML='<div class="cell-h"><span class="ttl">'+p.t+'</span><span class="u">'+p.u+'</span><div class="pills" id="pills'+idx+'"></div></div><div class="cvwrap"><canvas></canvas></div>';
+      stack.appendChild(cell);
+      const cv=cell.querySelector('canvas');
+      cells.push({k:'plot',cv,p:c.p,pills:document.getElementById('pills'+idx)});
+      attachPlot(cv,c.p);
+    }else if(c.k==='inst'){
+      cell.innerHTML='<div class="cell-h"><span class="ttl">'+INST[c.i].t+'</span><span class="u">QPainter</span></div><div class="cvwrap"><canvas></canvas></div>';
+      stack.appendChild(cell);
+      const cv=cell.querySelector('canvas');
+      cells.push({k:'inst',cv,i:c.i});
+      cell.addEventListener('click',()=>{sel={type:'inst',i:c.i};renderInsp();redraw();});
+    }else{
+      cell.innerHTML='<div class="lamps" style="height:100%;align-content:center">'
+        +'<div class="lamp on"><span class="lt"></span>ARMED</div><div class="lamp on"><span class="lt"></span>GPS 3D FIX</div>'
+        +'<div class="lamp warn"><span class="lt"></span>RTK FLOAT</div><div class="lamp on"><span class="lt"></span>EKF OK</div>'
+        +'<div class="lamp err"><span class="lt"></span>CAN BUS WARN</div><div class="lamp"><span class="lt"></span>LOW BAT</div></div>';
+      stack.appendChild(cell);
+    }
+  });
+  redraw();
+}
+const INST={ai:{t:'ATTITUDE'},cmps:{t:'HEADING'},g1:{t:'AIRSPEED'},g2:{t:'ALTITUDE AGL'},g3:{t:'BATTERY'}};
+
+function fit(cv){
+  const dpr=window.devicePixelRatio||1,r=cv.getBoundingClientRect();
+  cv.width=Math.max(1,Math.floor(r.width*dpr));cv.height=Math.max(1,Math.floor(r.height*dpr));
+  const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w:r.width,h:r.height};
+}
+function drawPlot(cv,pi,pillsEl){
+  const {ctx,w,h}=fit(cv);
+  const p=PANELS[pi];
+  if(w<10||h<10)return;
+  const L=42,R=8,T=6,B=16,pw=Math.max(1,w-L-R),ph=Math.max(1,h-T-B);
+  ctx.fillStyle='#11151a';ctx.fillRect(0,0,w,h);
+  const yOf=v=>T+ph-((v-p.ymin)/(p.ymax-p.ymin))*ph;
+  ctx.strokeStyle='#1e262d';ctx.lineWidth=1;ctx.font='10px var(--mono)';
+  for(let i=0;i<=4;i++){
+    const v=p.ymin+(p.ymax-p.ymin)*i/4,y=Math.round(yOf(v))+.5;
+    ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(w-R,y);ctx.stroke();
+    ctx.fillStyle='#5d6c77';ctx.fillText(String(Math.round(v)),5,y+3);
+  }
+  for(let i=0;i<=4;i++){
+    const t=win.t0+(win.t1-win.t0)*i/4,x=Math.round(L+pw*i/4)+.5;
+    ctx.strokeStyle='#1e262d';ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,T+ph);ctx.stroke();
+    ctx.fillStyle='#5d6c77';ctx.fillText(t.toFixed(0)+'s',Math.min(x+3,w-28),h-5);
+  }
+  const cols=Math.max(1,Math.floor(pw));
+  p.ids.forEach(id=>{
+    const c=CH.find(x=>x.id===id);if(!c||!c.on)return;
+    const i0=Math.max(0,Math.floor(win.t0*HZ)),i1=Math.min(N-1,Math.ceil(win.t1*HZ));
+    const bs=new Array(cols);
+    for(let x=0;x<cols;x++){
+      const a=i0+Math.floor((i1-i0)*x/cols),b=i0+Math.floor((i1-i0)*(x+1)/cols);
+      let mn=Infinity,mx=-Infinity,sm=0,n=0;
+      for(let i=a;i<b;i++){const v=disp(c,c.data[i]);if(v<mn)mn=v;if(v>mx)mx=v;sm+=v;n++;}
+      bs[x]=n?{mn,mx,mean:sm/n}:null;
+    }
+    const col=colorOf(c.c);
+    ctx.fillStyle=col;ctx.globalAlpha=.14;ctx.beginPath();let st=false;
+    for(let x=0;x<cols;x++){const b=bs[x];if(!b)continue;ctx.lineTo(L+x,yOf(Math.min(p.ymax,b.mx)));}
+    for(let x=cols-1;x>=0;x--){const b=bs[x];if(!b)continue;ctx.lineTo(L+x,yOf(Math.max(p.ymin,b.mn)));}
+    ctx.closePath();ctx.fill();
+    const picked=(sel.type==='channel'&&sel.id===c.id);
+    ctx.globalAlpha=1;ctx.strokeStyle=col;ctx.lineWidth=picked?2.3:1.1;ctx.beginPath();
+    for(let x=0;x<cols;x++){const b=bs[x];if(!b)continue;const y=yOf(Math.max(p.ymin,Math.min(p.ymax,b.mean)));
+      if(!st){ctx.moveTo(L+x,y);st=true;}else ctx.lineTo(L+x,y);}
+    ctx.stroke();
+  });
+  if(cursor!==null&&cursor>=win.t0&&cursor<=win.t1){
+    const x=L+(cursor-win.t0)/(win.t1-win.t0)*pw;
+    ctx.strokeStyle='#f2b134';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(Math.round(x)+.5,T);ctx.lineTo(Math.round(x)+.5,T+ph);ctx.stroke();
+    const rows=p.ids.map(id=>CH.find(c=>c.id===id)).filter(c=>c&&c.on).map(c=>{
+      const idx=Math.min(N-1,Math.floor(cursor*HZ));return c.n+' '+fmt(disp(c,c.data[idx]),c.u);});
+    if(rows.length){
+      ctx.font='10.5px var(--mono)';
+      const tw=Math.max.apply(null,rows.map(r=>ctx.measureText(r).width))+12;
+      const bx=Math.min(x+8,w-R-tw-2),by=T+5;
+      ctx.fillStyle='rgba(13,16,19,.94)';ctx.fillRect(bx,by,tw,rows.length*13+7);
+      ctx.strokeStyle='#2d3841';ctx.strokeRect(bx+.5,by+.5,tw,rows.length*13+7);
+      ctx.fillStyle='#c8d2da';rows.forEach((r,i)=>ctx.fillText(r,bx+6,by+14+i*13));
+    }
+  }
+  if(sel.type==='axis'&&sel.panel===pi){
+    ctx.fillStyle='rgba(242,177,52,.07)';ctx.fillRect(0,T,L-2,ph);
+    ctx.fillStyle='#f2b134';ctx.fillRect(L-3,T,1,ph);
+    ctx.strokeStyle='rgba(242,177,52,.55)';ctx.lineWidth=1;ctx.strokeRect(.5,T+.5,L-4,ph-1);
+  }
+  if(sel.type==='canvas'&&sel.panel===pi){
+    ctx.strokeStyle='rgba(242,177,52,.5)';ctx.lineWidth=1;ctx.strokeRect(L+.5,T+.5,pw-1,ph-1);
+  }
+  if(pillsEl){
+    const idx=cursor!==null?Math.min(N-1,Math.floor(cursor*HZ)):Math.floor(N*.42);
+    pillsEl.innerHTML=p.ids.map(id=>{const c=CH.find(x=>x.id===id);if(!c||!c.on)return '';
+      const pick=(sel.type==='channel'&&sel.id===c.id)?' style="outline:1px solid rgba(242,177,52,.5);outline-offset:3px"':'';
+      return '<span class="pill" data-ch="'+c.id+'"'+pick+'><i style="background:'+c.c+'"></i>'+c.n+' <b>'+fmt(disp(c,c.data[idx]),c.u)+'</b></span>';}).join('');
+    pillsEl.querySelectorAll('.pill').forEach(el=>{
+      el.addEventListener('contextmenu',ev=>{
+        ev.preventDefault();ev.stopPropagation();
+        const c=CH.find(z=>z.id===el.dataset.ch);if(!c)return;
+        showCtx(ev.clientX,ev.clientY,'曲线 · '+c.n,[
+          {t:'属性…',fn:()=>{sel={type:'channel',id:c.id};renderInsp();redraw();}},
+          {t:c.on?'隐藏这条曲线':'显示这条曲线',fn:()=>{c.on=!c.on;renderBody();redraw();}},
+          {t:'只按这条曲线自适应 Y',fn:()=>{autoY(pi,c.id);redraw();}}
+        ]);
+      });
+      el.addEventListener('click',ev=>{
+      ev.stopPropagation();sel={type:'channel',id:el.dataset.ch};renderInsp();redraw();
+    });
+    });
+  }
+}
+function attitudePaint(cv,t){
+  const {ctx,w,h}=fit(cv);if(w<20)return;
+  const cx=w/2,cy=h/2,R=Math.min(w,h)/2-6;
+  const roll=18*Math.sin(t*.02)+5*Math.sin(t*.07),pitch=-9*Math.sin(t*.016);
+  ctx.clearRect(0,0,w,h);
+  ctx.save();ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.clip();
+  ctx.translate(cx,cy);ctx.rotate(-roll*Math.PI/180);ctx.translate(0,pitch*2.2);
+  ctx.fillStyle='#3b4a52';ctx.fillRect(-R*2,-R*2,R*4,R*2);
+  ctx.fillStyle='#1d2a33';ctx.fillRect(-R*2,0,R*4,R*2);
+  ctx.strokeStyle='#e8eef2';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(-R*2,0);ctx.lineTo(R*2,0);ctx.stroke();
+  ctx.strokeStyle='rgba(200,210,218,.5)';ctx.lineWidth=1;ctx.font='9px var(--mono)';ctx.fillStyle='rgba(200,210,218,.6)';
+  for(let d=-30;d<=30;d+=10){if(!d)continue;const y=-d*2.2,wd=Math.abs(d)===30?14:7;
+    ctx.beginPath();ctx.moveTo(-wd,y);ctx.lineTo(wd,y);ctx.stroke();ctx.fillText(String(Math.abs(d)),wd+3,y+3);}
+  ctx.restore();
+  ctx.strokeStyle='#f2b134';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(cx-R*.42,cy);ctx.lineTo(cx-10,cy);ctx.lineTo(cx-4,cy+7);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx+R*.42,cy);ctx.lineTo(cx+10,cy);ctx.lineTo(cx+4,cy+7);ctx.stroke();
+  ctx.beginPath();ctx.arc(cx,cy,2.5,0,7);ctx.fillStyle='#f2b134';ctx.fill();
+  ctx.strokeStyle='#232b33';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.stroke();
+}
+function compassPaint(cv,t){
+  const {ctx,w,h}=fit(cv);if(w<20)return;
+  const cx=w/2,cy=h/2,R=Math.min(w,h)/2-8,hdg=(217+6*Math.sin(t*.01)+360)%360;
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='#232b33';ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.stroke();
+  ctx.strokeStyle='#1a2228';ctx.beginPath();ctx.arc(cx,cy,R*.72,0,7);ctx.stroke();
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(-hdg*Math.PI/180);ctx.textAlign='center';
+  for(let d=0;d<360;d+=10){
+    const a=d*Math.PI/180,r1=R-3,r2=d%30===0?R-11:R-7;
+    ctx.strokeStyle=d%90===0?'#8494a0':'#39454e';
+    ctx.beginPath();ctx.moveTo(Math.sin(a)*r1,-Math.cos(a)*r1);ctx.lineTo(Math.sin(a)*r2,-Math.cos(a)*r2);ctx.stroke();
+    if(d%90===0){ctx.fillStyle='#c8d2da';ctx.font='9px var(--mono)';ctx.fillText('NESW'[d/90],Math.sin(a)*(R-20),-Math.cos(a)*(R-20)+3);}
+  }
+  ctx.restore();
+  ctx.fillStyle='#f2b134';ctx.beginPath();
+  ctx.moveTo(cx,cy-R+13);ctx.lineTo(cx-4,cy-R+1);ctx.lineTo(cx+4,cy-R+1);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#c8d2da';ctx.font='11px var(--mono)';ctx.textAlign='center';ctx.fillText(String(Math.round(hdg)).padStart(3,'0')+'°',cx,cy+R*.42);
+}
+function gaugePaint(cv,val,min,max,unit,warn,t){
+  const {ctx,w,h}=fit(cv);if(w<20)return;
+  const cx=w/2,cy=h*.58,R=Math.min(w/2,h*.58)-12,a0=Math.PI*.78,a1=Math.PI*2.22;
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='#232b33';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,R,a0,a1);ctx.stroke();
+  const fr=Math.max(0,Math.min(1,(val-min)/(max-min)));
+  ctx.strokeStyle=warn?'#d9a33c':'#f2b134';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(cx,cy,R,a0,a0+(a1-a0)*fr);ctx.stroke();
+  ctx.font='9px var(--mono)';ctx.textAlign='center';ctx.fillStyle='#5d6c77';
+  for(let i=0;i<=4;i++){const a=a0+(a1-a0)*i/4;ctx.fillText(String(Math.round(min+(max-min)*i/4)),cx+Math.cos(a)*(R-9),cy+Math.sin(a)*(R-9)+3);}
+  const na=a0+(a1-a0)*fr;
+  ctx.strokeStyle='#c8d2da';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(na)*(R-2),cy+Math.sin(na)*(R-2));ctx.stroke();
+  ctx.fillStyle='#c8d2da';ctx.font='13px var(--mono)';ctx.fillText(val.toFixed(1),cx,cy+R*.55);
+  ctx.fillStyle='#5d6c77';ctx.font='9px var(--mono)';ctx.fillText(unit,cx,cy+R*.55+12);
+}
+function drawInst(cv,i,t){
+  if(i==='ai')attitudePaint(cv,t);
+  else if(i==='cmps')compassPaint(cv,t);
+  else if(i==='g1')gaugePaint(cv,14.6+.7*Math.sin(t*.05),0,30,'m/s',false,t);
+  else if(i==='g2')gaugePaint(cv,128+6*Math.sin(t*.03),0,400,'m',false,t);
+  else if(i==='g3')gaugePaint(cv,22.8-.02*(t%600),18,26,'V',true,t);
+}
+function redraw(){
+  cw.t+=1;
+  cells.forEach(c=>{if(c.k==='inst'){const cl=c.cv.closest('.cell');if(cl)cl.classList.toggle('sel',sel.type==='inst'&&sel.i===c.i);}});
+  cells.forEach(c=>{
+    if(c.k==='plot')drawPlot(c.cv,c.p,c.pills);
+    else drawInst(c.cv,c.i,cw.t);
+  });
+}
+function attachPlot(cv,pi){
+  const wrap=cv.parentElement;
+  cv.style.cursor='crosshair';
+  wrap.addEventListener('mousemove',e=>{
+    const r=cv.getBoundingClientRect(),L=42,R=8,pw=r.width-L-R,x=e.clientX-r.left;
+    cursor=(x<L||x>r.width-R)?null:win.t0+(x-L)/pw*(win.t1-win.t0);
+    redraw();
+  });
+  wrap.addEventListener('mouseleave',()=>{cursor=null;redraw();});
+  wrap.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const r=cv.getBoundingClientRect(),L=42,R=8,T=6,B=16,pw=r.width-L-R;
+    if(e.clientX-r.left<L){
+      const p=PANELS[pi],ph=r.height-T-B,f=e.deltaY>0?1.16:1/1.16;
+      const v=p.ymax-((e.clientY-r.top-T)/ph)*(p.ymax-p.ymin);
+      p.ymin=v+(p.ymin-v)*f;p.ymax=v+(p.ymax-v)*f;
+      if(p.ymax-p.ymin<1e-9){p.ymin=v-1;p.ymax=v+1;}
+      sel={type:'axis',panel:pi};renderInsp();redraw();return;
+    }
+    const anchor=Math.max(0,Math.min(1,(e.clientX-r.left-L)/pw)),span=win.t1-win.t0,k=e.deltaY>0?1.18:1/1.18;
+    let ns=Math.max(2,Math.min(DUR,span*k)),a=win.t0+anchor*span,t0=a-anchor*ns,t1=t0+ns;
+    if(t0<0){t0=0;t1=ns;}if(t1>DUR){t1=DUR;t0=DUR-ns;}
+    win={t0,t1};updateStatus();redraw();
+  },{passive:false});
+  wrap.addEventListener('mousedown',e=>{
+    const r=cv.getBoundingClientRect(),L=42,pw=r.width-L-8;
+    if(e.clientX-r.left<L){
+      ydrag={y:e.clientY,y0:PANELS[pi].ymin,y1:PANELS[pi].ymax,ph:r.height-22,moved:false,pi};
+      return;
+    }
+    pageDrag={x:e.clientX,y:e.clientY,x0:win.t0,x1:win.t1,k:pw/(win.t1-win.t0),moved:false,cv,pi};
+    cv.style.cursor='grabbing';
+  });
+  wrap.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();plotMenu(cv,pi,e);});
+  /* 拖字段到画布 = 直接建曲线 */
+  const cell=wrap.closest('.cell');
+  wrap.addEventListener('dragover',e=>{
+    if(!dragCh)return;e.preventDefault();e.dataTransfer.dropEffect='copy';cell.classList.add('dropping');
+  });
+  wrap.addEventListener('dragleave',()=>cell.classList.remove('dropping'));
+  wrap.addEventListener('drop',e=>{
+    e.preventDefault();cell.classList.remove('dropping');
+    const id=dragCh||e.dataTransfer.getData('text/plain');dragCh=null;
+    const c=CH.find(z=>z.id===id);if(!c)return;
+    const p=PANELS[pi];
+    if(!p.ids.includes(c.id))p.ids.push(c.id);
+    c.on=true;
+    sel={type:'channel',id:c.id};
+    renderBody();renderInsp();redraw();
+    toast('已加入「'+p.t+'」：'+c.n+'（'+c.src+'›'+c.ns+'）');
+  });
+  wrap.addEventListener('dblclick',()=>{win={t0:0,t1:DUR};updateStatus();redraw();});
+}
+let pageDrag=null,ydrag=null,dragCh=null;
+window.addEventListener('mousemove',e=>{
+  if(ydrag){
+    if(Math.abs(e.clientY-ydrag.y)>2)ydrag.moved=true;
+    if(!ydrag.moved)return;
+    const p=PANELS[ydrag.pi],d=(ydrag.y-e.clientY)/ydrag.ph*(ydrag.y1-ydrag.y0);
+    p.ymin=ydrag.y0+d;p.ymax=ydrag.y1+d;redraw();return;
+  }
+  if(!pageDrag)return;
+  if(Math.abs(e.clientX-pageDrag.x)>3||Math.abs(e.clientY-pageDrag.y)>3)pageDrag.moved=true;
+  if(!pageDrag.moved)return;
+  const dt=(pageDrag.x-e.clientX)/pageDrag.k,span=pageDrag.x1-pageDrag.x0;
+  let t0=pageDrag.x0+dt,t1=pageDrag.x1+dt;
+  if(t0<0){t0=0;t1=span;}if(t1>DUR){t1=DUR;t0=DUR-span;}
+  win={t0,t1};updateStatus();redraw();
+});
+window.addEventListener('mouseup',()=>{
+  if(ydrag){if(!ydrag.moved){sel={type:'axis',panel:ydrag.pi};renderInsp();redraw();}ydrag=null;}
+  if(pageDrag&&!pageDrag.moved)pickAt(pageDrag.cv,pageDrag.pi,{clientX:pageDrag.x,clientY:pageDrag.y});
+  pageDrag=null;
+});
+/* 命中优先级：轴刻度带 > 曲线(14px) > 画布 */
+function hitTest(cv,pi,e){
+  const r=cv.getBoundingClientRect(),L=42,R=8,T=6,B=16;
+  const w=r.width,h=r.height,pw=w-L-R,ph=h-T-B;
+  const x=e.clientX-r.left,y=e.clientY-r.top;
+  if(x<L&&y>T&&y<T+ph)return {type:'axis',panel:pi,x,y};
+  if(x>=L&&x<=w-R&&y>=T&&y<=T+ph){
+    const t=win.t0+(x-L)/pw*(win.t1-win.t0);
+    const p=PANELS[pi];let best=null,bd=14;
+    p.ids.forEach(id=>{
+      const c=CH.find(z=>z.id===id);if(!c||!c.on)return;
+      const idx=Math.min(N-1,Math.floor(t*HZ)),v=disp(c,c.data[idx]);
+      const yy=T+ph-((v-p.ymin)/(p.ymax-p.ymin))*ph,d=Math.abs(y-yy);
+      if(d<bd){bd=d;best={type:'channel',id:c.id,x,y};}
+    });
+    if(best)return best;
+  }
+  return {type:'canvas',panel:pi,x,y};
+}
+function pickAt(cv,pi,e){
+  const h=hitTest(cv,pi,e);
+  if(h.type==='channel')sel={type:'channel',id:h.id};
+  else if(h.type==='axis')sel={type:'axis',panel:pi};
+  else sel={type:'canvas',panel:pi};
+  renderInsp();redraw();
+}
+/* 自动 Y：按可见窗口内的真实数据 */
+function autoY(pi,only){
+  const p=PANELS[pi],i0=Math.max(0,Math.floor(win.t0*HZ)),i1=Math.min(N-1,Math.floor(win.t1*HZ));
+  let mn=Infinity,mx=-Infinity;
+  p.ids.forEach(id=>{
+    if(only&&id!==only)return;
+    const c=CH.find(z=>z.id===id);if(!c||!c.on)return;
+    for(let i=i0;i<=i1;i+=8){const v=disp(c,c.data[i]);if(v<mn)mn=v;if(v>mx)mx=v;}
+  });
+  if(!isFinite(mn)||!isFinite(mx))return false;
+  const pad=(mx-mn)*.08||1;p.ymin=mn-pad;p.ymax=mx+pad;return true;
+}
+function download(name,text,type){
+  const b=new Blob([text],{type:type||'text/plain;charset=utf-8'});
+  const u=URL.createObjectURL(b),a=document.createElement('a');
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),3000);
+}
+function downloadUrl(name,url){const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();}
+
+/* ===== 右键菜单 ===== */
+const ctxEl=document.getElementById('ctx');
+function hideCtx(){ctxEl.classList.remove('on');}
+function showCtx(x,y,title,items){
+  ctxEl.innerHTML='<div class="ct">'+title+'</div>'+items.map((it,i)=>it==='-'?'<hr>'
+    :'<div class="ci'+(it.dis?' dis':'')+'" data-i="'+i+'">'+it.t+(it.k?'<span class="k">'+it.k+'</span>':'')+'</div>').join('');
+  ctxEl.classList.add('on');
+  ctxEl.style.left=x+'px';ctxEl.style.top=y+'px';
+  const w=ctxEl.offsetWidth,hh=ctxEl.offsetHeight;
+  if(x+w>window.innerWidth-8)ctxEl.style.left=Math.max(8,x-w)+'px';
+  if(y+hh>window.innerHeight-8)ctxEl.style.top=Math.max(8,y-hh)+'px';
+  ctxEl.querySelectorAll('.ci').forEach(el=>el.addEventListener('click',ev=>{
+    ev.stopPropagation();const it=items[+el.dataset.i];hideCtx();if(it.fn)it.fn();
+  }));
+}
+document.addEventListener('click',hideCtx);
+window.addEventListener('keydown',e=>{if(e.key==='Escape')hideCtx();});
+function plotMenu(cv,pi,e){
+  const h=hitTest(cv,pi,e);
+  if(h.type==='axis'){
+    const p=PANELS[pi];
+    showCtx(e.clientX,e.clientY,'坐标轴 · '+p.t+' · '+p.u,[
+      {t:'Y 轴自适应',k:'F',fn:()=>{autoY(pi);sel={type:'axis',panel:pi};renderInsp();redraw();}},
+      {t:'固定为当前范围',fn:()=>toast('已固定：'+p.ymin.toFixed(1)+' ~ '+p.ymax.toFixed(1)+'，滚轮不再自动缩放')},
+      {t:'重置原始量程',fn:()=>{const b=BASE[pi];p.ymin=b[0];p.ymax=b[1];renderInsp();redraw();}},
+      '-',
+      {t:'对数轴',k:'L',fn:()=>toast('对数轴要求数据全为正，且 >2 个数量级才有收益')},
+      {t:'Y 轴反向',fn:()=>{const t0=p.ymin;p.ymin=p.ymax;p.ymax=t0;renderInsp();redraw();}},
+      {t:'复制范围到同页其它轴',fn:()=>toast('已复制 '+p.ymin.toFixed(1)+'~'+p.ymax.toFixed(1))},
+      '-',
+      {t:'滚轮缩放 Y · 拖动平移 · 双击复位',dis:true}
+    ]);
+  }else if(h.type==='channel'){
+    const c=CH.find(z=>z.id===h.id);
+    showCtx(e.clientX,e.clientY,'曲线 · '+c.n+' · '+c.u,[
+      {t:'属性…',k:'Enter',fn:()=>{sel={type:'channel',id:c.id};renderInsp();redraw();}},
+      {t:c.on?'隐藏这条曲线':'显示这条曲线',k:'H',fn:()=>{c.on=!c.on;renderBody();redraw();}},
+      {t:'换一个颜色',fn:()=>{const pal=['var(--c-roll)','var(--c-pitch)','var(--c-yaw)','var(--amber)','#58c7a8','#c77dd8'];
+        c.c=pal[(pal.indexOf(c.c)+1)%pal.length];renderInsp();redraw();}},
+      '-',
+      {t:'只按这条曲线自适应 Y',fn:()=>{autoY(pi,c.id);sel={type:'axis',panel:pi};renderInsp();redraw();}},
+      {t:'新建同单位坐标轴',k:'M1',fn:()=>toast('M1：同页第二根 Y 轴，各自量程，用于 rpm/温度混排')},
+      '-',
+      {t:'导出该通道 CSV',fn:()=>{
+        const step=Math.max(1,Math.floor((win.t1-win.t0)*HZ/800));
+        const i0=Math.floor(win.t0*HZ),i1=Math.floor(win.t1*HZ);
+        let txt='t_s,'+c.n+'\n';
+        for(let i=i0;i<=i1;i+=step)txt+=(i/HZ).toFixed(4)+','+c.data[i].toFixed(6)+'\n';
+        download(c.n+'.csv',txt,'text/csv;charset=utf-8');toast('已导出 '+c.n+'.csv（当前窗口）');}}
+    ]);
+  }else{
+    showCtx(e.clientX,e.clientY,'画布 · '+PANELS[pi].t,[
+      {t:'Y 自适应',fn:()=>{autoY(pi);renderInsp();redraw();}},
+      {t:'重置时间窗',k:'双击',fn:()=>{win={t0:0,t1:DUR};updateStatus();redraw();}},
+      {t:'隐藏本画布全部曲线',fn:()=>{PANELS[pi].ids.forEach(id=>{const c=CH.find(z=>z.id===id);if(c)c.on=false;});renderBody();redraw();}},
+      '-',
+      {t:'导出本画布 PNG',fn:()=>shotCell(cv,PANELS[pi].t)},
+      {t:'十字游标',dis:true,k:'Shift'},
+      {t:'滚轮缩放 X · 拖动平移',dis:true}
+    ]);
+  }
+}
+
+/* ===== 截图 / 布局序列化 ===== */
+function shotPage(){
+  const arr=cells.filter(c=>c.cv&&c.cv.tagName==='CANVAS');
+  const pv=document.getElementById('stack'),r0=pv.getBoundingClientRect();
+  if(!arr.length){toast('当前页没有 Canvas 画布，无法栅格截图');return null;}
+  const out=document.createElement('canvas');out.width=pv.offsetWidth;out.height=pv.offsetHeight;
+  const g=out.getContext('2d');g.fillStyle='#101519';g.fillRect(0,0,out.width,out.height);
+  arr.forEach(c=>{const r=c.cv.getBoundingClientRect();g.drawImage(c.cv,r.left-r0.left,r.top-r0.top,r.width,r.height);});
+  g.fillStyle='rgba(232,238,243,.5)';g.font='11px monospace';
+  const pg=PAGES.find(x=>x.id===page);
+  g.fillText('PlotScope · '+pg.name+' · '+win.t0.toFixed(1)+'–'+win.t1.toFixed(1)+' s',10,15);
+  return out.toDataURL('image/png');
+}
+function shotName(){return 'PlotScope-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.png';}
+function saveShot(){const d=shotPage();if(d){downloadUrl(shotName(),d);toast('已截图当前页并另存为 PNG');}}
+function shotCell(cv,name){downloadUrl('PlotScope-'+(name||'canvas')+'.png',cv.toDataURL('image/png'));toast('已导出本画布 PNG');}
+
+function layoutObj(){
+  return {kind:'psl',version:1,saved:new Date().toISOString(),
+    workspace:{docks:{left:['d-src'],right:['d-insp'],bottom:['d-log']},
+               win:{t0:+win.t0.toFixed(1),t1:+win.t1.toFixed(1)},page},
+    pages:PAGES.map(p=>({id:p.id,name:p.name,cols:p.cols,rows:p.rows,cells:p.cells})),
+    axes:PANELS.map(p=>({t:p.t,u:p.u,ymin:+p.ymin.toFixed(3),ymax:+p.ymax.toFixed(3),ids:p.ids})),
+    bindings:CH.filter(c=>!c.ghost).map(c=>({src:c.src,ns:c.ns,n:c.n,unit:c.u,on:c.on})),
+    semantic:{selected:sel}};
+}
+function exportLay(){
+  download('PlotScope-布局.psl',JSON.stringify(layoutObj(),null,2),'application/json');
+  toast('已导出 .psl：页 / 切分树 / 轴范围 / 绑定 / 停靠 全在里面');
+}
+function exportSet(){
+  download('PlotScope-settings.json',JSON.stringify({kind:'psc-settings',version:1,
+    theme:'dark-industrial',units:{angle:'deg',speed:'m/s'},
+    limits:{ringSec:5,memMB:4096,lod:512},threads:navigator.hardwareConcurrency||8,
+    drop:'oldest'},null,2),'application/json');
+  toast('已导出设置：主题 / 单位 / 缓冲 / 内存上限 / 线程数 / 丢帧策略');
+}
+function importLay(txt){
+  let o;try{o=JSON.parse(txt);}catch{toast('解析失败：不是合法 JSON');return;}
+  if(o.kind!=='psl'){toast('不是 .psl（kind='+(o.kind||'?')+'）');return;}
+  if(o.axes&&o.axes.length===PANELS.length){
+    o.axes.forEach((a,i)=>{PANELS[i].ymin=a.ymin;PANELS[i].ymax=a.ymax;
+      if(a.ids)PANELS[i].ids=a.ids.map(id=>CH.find(c=>c.id===id)).filter(Boolean).map(c=>c.id);});
+  }
+  if(o.workspace&&o.workspace.win){win={t0:o.workspace.win.t0,t1:o.workspace.win.t1};}
+  if(o.workspace&&o.workspace.page&&PAGES.some(p=>p.id===o.workspace.page))page=o.workspace.page;
+  if(o.bindings)o.bindings.forEach(b=>{const c=CH.find(x=>x.src===b.src&&x.ns===b.ns&&x.n===b.n);if(c)c.on=b.on;});
+  if(o.semantic&&o.semantic.selected)sel=o.semantic.selected;
+  renderPageBar();renderPage();renderSrcs();renderBody();renderInsp();updateStatus();
+  toast('布局已导入：页 / 轴范围 / 绑定 / 视窗都恢复了');
+}
+
+function updateStatus(){
+  const pg=PAGES.find(p=>p.id===page);
+  document.getElementById('stPage').textContent='页 '+(PAGES.indexOf(pg)+1)+'/'+PAGES.length+' · '+pg.name;
+  document.getElementById('stWin').textContent='窗口 '+win.t0.toFixed(1)+'–'+win.t1.toFixed(1)+' s';
+  const pxps=(wb.offsetWidth*(pg.cols>1?.5:1))/(win.t1-win.t0);
+  document.getElementById('stLod').textContent='LOD '+(pxps>200?'64':(pxps>40?'512':'2048'))+' · 每像素 '+(HZ/pxps).toFixed(0)+' 采样';
+  const on=SRC.filter(s=>s.st==='on').length;
+  document.getElementById('stSrc').textContent=on+'/'+SRC.length+' 源在线 · 主源 '+activeSrc;
+  const live=SRC.filter(s=>s.kind!=='file'),run=live.filter(s=>s.run==='running').length,
+        pause=live.filter(s=>s.run==='paused').length;
+  document.getElementById('stRun').innerHTML=(run?'<span style="color:var(--ok)">●</span> '+run+' 源采集中':'<span style="color:var(--amber)">⏸</span> 全部暂停')
+    +(pause?' · '+pause+' 暂停':'')+' · 背压 丢旧留新';
+  const ar=document.getElementById('allRun');
+  if(ar){
+    const anyRun=live.some(s=>s.run==='running');
+    ar.innerHTML='<svg class="i3"><use href="#i-'+(anyRun?'pause':'play')+'" xlink:href="#i-'+(anyRun?'pause':'play')+'"/></svg><span>'+(anyRun?'全部暂停':'全部开始')+'</span>';
+    ar.onclick=()=>{
+      const target=anyRun?'paused':'running';
+      live.forEach(s=>{if(target==='running'&&s.run==='idle')s.st='on';s.run=target;s.label=(target==='running'?'已连接 · 运行中':'已连接 · 已暂停');});
+      toast('全部'+(anyRun?'暂停':'开始')+'：'+live.length+' 个在线源');
+      renderSrcs();renderInsp();updateStatus();
+    };
+  }
+}
+
+/* ===== Loader 编辑器（子窗口） ===== */
+const FRAME={name:'ENGINE_STATUS · 0x1A0',
+  bytes:[0xAA,0x55,0x0B,0xA0,0x0E,0x71,0x2E,0x50,0x3A,0x8F,0x21],
+  fields:[
+    {n:'sync',off:0,len:2,t:'u16',d:'帧头 0x55AA'},
+    {n:'frame_len',off:2,len:1,t:'u8',d:'11 字节'},
+    {n:'msg_id',off:3,len:1,t:'u8',d:'0xA0 → CAN ID 0x1A0'},
+    {n:'engine_rpm',off:4,len:2,t:'u16',d:'factor 0.5 rpm/bit'},
+    {n:'throttle',off:6,len:1,t:'u8',d:'factor 0.4 %/bit'},
+    {n:'coolant',off:7,len:1,t:'i8',d:'有符号，°C'},
+    {n:'flags',off:8,len:1,t:'bitfield',d:'b0..b3 状态, b4 过温'},
+    {n:'crc16',off:9,len:2,t:'u16',d:'CRC-16/CCITT 试算通过'}]};
+let selField=0;
+function renderFields(){
+  const el=document.getElementById('fields');el.innerHTML='';
+  FRAME.fields.forEach((f,i)=>{
+    const r=document.createElement('div');r.className='pfield'+(i===selField?' sel':'');
+    r.innerHTML='<span>'+f.n+'</span><span class="fo">@'+f.off+'</span><span class="ft">'+f.len+'B</span>';
+    r.addEventListener('click',()=>{selField=i;renderFields();renderHex();renderBit();});
+    el.appendChild(r);
+  });
+}
+function renderHex(){
+  const el=document.getElementById('hex');el.innerHTML='';
+  const f=FRAME.fields[selField];
+  const head=document.createElement('div');head.className='hexhead';
+  head.innerHTML='<span style="width:32px">off</span>'+Array.from({length:8},(_,i)=>'<span style="width:25px;text-align:center">'+i.toString(16).toUpperCase()+'</span>').join('');
+  el.appendChild(head);
+  for(let row=0;row<Math.ceil(FRAME.bytes.length/8);row++){
+    const r=document.createElement('div');r.className='hexrow';
+    const off=document.createElement('div');off.className='hoff';off.textContent=(row*8).toString(16).toUpperCase().padStart(4,'0');
+    r.appendChild(off);
+    for(let i=0;i<8;i++){
+      const idx=row*8+i,b=document.createElement('div');b.className='hbyte';
+      if(idx<FRAME.bytes.length){
+        b.textContent=FRAME.bytes[idx].toString(16).toUpperCase().padStart(2,'0');
+        if(idx>=f.off&&idx<f.off+f.len)b.classList.add('hl');
+        b.addEventListener('click',()=>{
+          const hit=FRAME.fields.findIndex(x=>idx>=x.off&&idx<x.off+x.len);
+          if(hit>=0){selField=hit;renderFields();renderHex();renderBit();}
+          else toast('该字节不属于已声明字段（模板会标 reserved）');
+        });
+      }
+      r.appendChild(b);
+    }
+    el.appendChild(r);
+  }
+  const bits=document.createElement('div');bits.className='bits';
+  for(let i=0;i<8*f.len;i++){const s=document.createElement('span');s.textContent=7-(i%8);bits.appendChild(s);}
+  el.appendChild(bits);
+}
+function renderBit(){
+  const f=FRAME.fields[selField];let raw=0;
+  for(let i=0;i<f.len;i++)raw=(raw<<8)|FRAME.bytes[f.off+i];
+  document.getElementById('bitprop').innerHTML=
+   '<div class="prow"><span class="k">字段</span><span class="v">'+f.n+'</span></div>'
+  +'<div class="prow"><span class="k">类型</span><span class="v">'+f.t+'</span></div>'
+  +'<div class="prow"><span class="k">偏移</span><span class="v">byte '+f.off+' · '+f.len+' B</span></div>'
+  +'<div class="prow"><span class="k">原始</span><span class="v">0x'+raw.toString(16).toUpperCase().padStart(f.len*2,'0')+'</span></div>';
+  const v=f.n==='engine_rpm'?(raw*.5).toFixed(1)+' rpm'
+    :f.n==='throttle'?(raw*.4).toFixed(1)+' %'
+    :f.n==='coolant'?(raw>127?raw-256:raw)+' °C'
+    :f.n==='flags'?'状态 '+(raw&15)+' · 过温 '+((raw>>4)&1)
+    :'0x'+raw.toString(16).toUpperCase();
+  document.getElementById('decode').innerHTML='<div class="drow"><span class="dk">解码值</span><span class="dv">'+v+'</span></div>'
+   +'<div class="drow"><span class="dk">说明</span><span class="dv" style="color:#8494a0;font-size:10.5px">'+f.d+'</span></div>';
+}
+const ov=document.getElementById('loaderEditor');
+const edFrame=document.getElementById('edFrame'),edOpt=document.getElementById('edOpt');
+function setEdTab(k){
+  document.querySelectorAll('.etab').forEach(t=>t.classList.toggle('active',t.dataset.ed===k));
+  edFrame.style.display=k==='frame'?'grid':'none';
+  edOpt.classList.toggle('show',k==='opt');
+}
+function openEditor(src){
+  document.getElementById('edTitle').textContent=src.uri;
+  document.getElementById('edTag').textContent=src.cls+' · dialog vtable';
+  document.getElementById('edHint').textContent=src.cfg==='frame'?'CAN ID 0x1A0 · 11 B · CRC-16/CCITT':'配置随 Loader 保存，宿主不解释字段语义';
+  document.getElementById('edFootHint').textContent=src.cfg==='frame'?'模板存为 .psproto；编译成功才写回':'配置只透传，不参与布局';
+  setEdTab(src.cfg);ov.classList.add('show');
+  if(src.cfg==='frame'){renderFields();renderHex();renderBit();}
+}
+function closeEditor(){ov.classList.remove('show');}
+document.getElementById('edClose').addEventListener('click',closeEditor);
+document.getElementById('edCancel').addEventListener('click',closeEditor);
+document.getElementById('edApply').addEventListener('click',()=>{toast('编译通过：0 错误 · 8 字段 · CRC 自动试算 OK（演示不写回）');closeEditor();});
+ov.addEventListener('mousedown',e=>{if(e.target===ov)closeEditor();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ov.classList.contains('show'))closeEditor();});
+document.querySelectorAll('.etab').forEach(t=>t.addEventListener('click',()=>setEdTab(t.dataset.ed)));
+document.getElementById('btnLoad').addEventListener('click',()=>{
+  openEditor({uri:'新建数据源 · 选择 Loader',cls:'未绑定 · builtin 或 dylib',cfg:'opt'});
+  toast('先选 Loader，再由它自己的编辑器配置解帧规则');
+});
+
+/* ===== Ribbon ===== */
+const ribbon=document.getElementById('ribbon');
+document.getElementById('rbTabs').addEventListener('click',e=>{
+  const t=e.target.closest('.rt');if(!t)return;
+  document.querySelectorAll('.rt').forEach(x=>x.classList.toggle('active',x===t));
+  document.querySelectorAll('.rpanel').forEach(pp=>pp.classList.toggle('on',pp.dataset.p===t.dataset.r));
+});
+document.getElementById('rbCollapse').addEventListener('click',()=>ribbon.classList.toggle('collapsed'));
+/* 文件页签：布局/设置/截图 */
+document.getElementById('expLay').addEventListener('click',exportLay);
+document.getElementById('expSet').addEventListener('click',exportSet);
+document.getElementById('shotPage').addEventListener('click',saveShot);
+document.getElementById('shotSave').addEventListener('click',saveShot);
+document.getElementById('impLay').addEventListener('click',()=>document.getElementById('fileLay').click());
+document.getElementById('openLay').addEventListener('click',()=>document.getElementById('fileLay').click());
+document.getElementById('fileLay').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  const rd=new FileReader();rd.onload=()=>importLay(String(rd.result));rd.readAsText(f);
+  e.target.value='';
+});
+document.querySelectorAll('.rt').forEach(t=>t.addEventListener('dblclick',()=>ribbon.classList.toggle('collapsed')));
+
+/* ===== 初始化 ===== */
+document.getElementById('log').innerHTML=[
+ '<b>[load]</b> ulog://… · 12.6M 采样 · 218 通道 · 1.42 GB',
+ '<b>[cache]</b> Arrow IPC 命中 · mmap 96 段 · 打开 381 ms',
+ '<b>[lod]</b> 桶 512 · 16 桶/chunk · 建索引 214 ms',
+ '<i>[warn]</i> ulog/systemview.cpu_load 缺失 → 幽灵曲线保留',
+ '<b>[extension]</b> data_load_can v1.2 · abi 4 · 准入检查(子进程) 通过',
+ '<i>[warn]</i> can.coolant 1.5 装不进 int32 → null + 单次告警',
+ '<b>[draw]</b> 页 p1 · 3 画布 · 6.8 ms/帧 · 顶点 214k',
+ '<b>[dock]</b> 恢复 .psl：左=数据源 右=检查器 底=脚本/日志'
+].join('<br>');
+
+renderSrcs();renderBody();renderInsp();renderPageBar();renderPage();updateStatus();
+Z.left.appendChild(document.getElementById('d-src'));
+Z.right.appendChild(document.getElementById('d-insp'));
+Z.bottom.appendChild(document.getElementById('d-script'));
+Z.bottom.appendChild(document.getElementById('d-log'));
+document.getElementById('d-src').dataset.zone='left';
+document.getElementById('d-insp').dataset.zone='right';
+document.getElementById('d-script').dataset.zone='bottom';
+document.getElementById('d-log').dataset.zone='bottom';
+syncZones();
+setInterval(()=>{if(PAGES.find(p=>p.id===page).cells.some(c=>c.k==='inst')){cw.t+=1;cells.forEach(c=>{if(c.k==='inst')drawInst(c.cv,c.i,cw.t);});}},70);
+window.addEventListener('resize',()=>{redraw();});
+renderPage();
+</script>
+</body>
+</html>

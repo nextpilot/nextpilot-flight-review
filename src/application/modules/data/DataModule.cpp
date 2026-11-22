@@ -1,0 +1,141 @@
+#include "DataModule.h"
+
+#include "BuiltinModuleHub.h"
+#include "DatasetHub.h"
+#include "ErrorCodes.h"
+#include "Events.h"
+#include "Contribution.h"
+#include "IModule.h"
+#include "Result.h"
+
+#include <QVariantMap>
+
+#include <cstdio>
+
+using namespace nextpilot::plotscope::foundation;
+using namespace nextpilot::plotscope::dataset;
+using namespace nextpilot::plotscope::intent;
+using namespace nextpilot::plotscope::uischema;
+using namespace nextpilot::plotscope::registry;
+using namespace nextpilot::plotscope::parser;
+using namespace nextpilot::plotscope::context;
+using namespace nextpilot::plotscope::host;
+
+ModuleInfo DataModule::moduleInfo()
+{
+    return ModuleInfo{
+        QStringLiteral("mod.data"),
+        QStringLiteral("数据模块"),
+        QStringLiteral("1.0"),
+        {QStringLiteral("data.session")},
+        {}
+    };
+}
+
+IModule *DataModule::create()
+{
+    return new DataModule();
+}
+
+ModuleInfo DataModule::info() const
+{
+    return moduleInfo();
+}
+
+void DataModule::initialize(ModuleContext &ctx)
+{
+    // 只订阅仓库事件；不碰 UI、不认识格式。用 this 作 context object，
+    // 模块析构时连接自动断开——不需要手动解绑。
+    // PLOTSCOPE_QUIET_STDOUT：MCP stdio 桥等协议场景下 stdout 是协议通道，
+    // 提示打印必须让路（stderr 随便打，stdout 一个字节都不能混入）。
+    const bool quiet = !qEnvironmentVariableIsEmpty("PLOTSCOPE_QUIET_STDOUT");
+    connect(&ctx.app().data(), &DatasetHub::datasetAdded, this, [quiet](DatasetId id) {
+        if (quiet)
+            fprintf(stderr, "[data] 数据集已加入: #%d\n", id);
+        else
+            fprintf(stdout, "[data] 数据集已加入: #%d\n", id);
+    });
+    connect(&ctx.app().data(), &DatasetHub::datasetRemoved, this, [quiet](DatasetId id) {
+        if (quiet)
+            fprintf(stderr, "[data] 数据集已移除: #%d\n", id);
+        else
+            fprintf(stdout, "[data] 数据集已移除: #%d\n", id);
+    });
+    // 数据表格查看器：树右键"查看数据表格" → data.table.open
+    // → 按需创建中央页签面板（不与画布争位）→ 转发 data.table.show 绑定数据。
+    // 面板实现由视图层自注册（DataTablePanel.cpp 的 PS_REGISTER_PANEL_T），
+    // 模块只发字符串 id，不依赖 Qt Widgets，headless 构建保持纯净。
+    // 注册在 initialize（ModuleContext 可用）；m_ui 在 onAttach 才有——
+    // 动作是运行时触发的，届时 GUI 已 attach。
+    AppContext &appCtx = ctx.app();
+    appCtx.interactions().registerViewAction(
+        QStringLiteral("data.table.open"),
+        [this, &appCtx](const QVariantMap &params) -> Result<QVariant> {
+            if (!m_ui)
+                return fail(err::Unsupported, QStringLiteral("数据表格需要 GUI 环境"));
+            if (!m_ui->requestPanel(QStringLiteral("canvas.center"),
+                                    QStringLiteral("data.table")))
+                return fail(err::Unsupported, QStringLiteral("数据表格面板不可用"));
+            Result<QVariant> out{QVariant()};
+            appCtx.interactions().dispatchViewAction(
+                QStringLiteral("data.table.show"), params, out);
+            return out;
+        });
+}
+
+void DataModule::onAttach(UiContext &ui)
+{
+    // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
+    //
+    // 模块只声明"我需要一个数据集树面板"，由 app 骨架的部件工厂决定用哪个实现——
+    // 因此本模块不依赖 Qt Widgets，CLI（headless）构建保持纯净。
+    m_ui = &ui;
+    ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("dataset-tree"));
+
+    // 数据功能 ribbon 的"常用"动作。
+    // 每个都绑定**真实存在**的意图处理器（宿主级 data.* handler），不是空按钮。
+    // 打开数据在骨架里已有 app.action.openData（MainWindow 处理文件对话框），
+    // 这里补其余三个可用纯意图驱动的：重载 / 导出 / 清缓存。
+    // order 让组内顺序可控：骨架的"快速打开/最近"占 0/1（见 MainWindow），
+    // 这里从 10 起排 重载/导出/清缓存。
+    auto add = [&ui](const QString &id, const QString &label,
+                     const QString &op, const QString &icon, int order) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.area = QStringLiteral("ribbon.group.data.common");
+        a.intentOp = op;
+        a.icon = icon;
+        a.order = order;
+        ui.addAction(a);
+    };
+    add(QStringLiteral("data.action.reload"), QStringLiteral("重载"),
+        QStringLiteral("data.reload"), QStringLiteral("reset"), 10);
+    add(QStringLiteral("data.action.export"), QStringLiteral("导出 CSV"),
+        QStringLiteral("data.export"), QStringLiteral("export_data"), 11);
+    add(QStringLiteral("data.action.clearCache"), QStringLiteral("清解析缓存"),
+        QStringLiteral("data.clearCache"), QStringLiteral("trash"), 12);
+
+    // 录制组：两态按钮，参数全走缺省——活动源 + raw/file + 自动文件名，
+    // 点一下就录，不弹对话框（要选格式/后端属于高级用法，可走 CLI/脚本传参）。
+    auto addRec = [&ui](const QString &id, const QString &label, const QString &op,
+                        const QString &icon, int order) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.area = QStringLiteral("ribbon.group.data.record");
+        a.intentOp = op;
+        a.icon = icon;
+        a.order = order;
+        ui.addAction(a);
+    };
+    addRec(QStringLiteral("data.action.recordStart"), QStringLiteral("开始录制"),
+           QStringLiteral("data.record.start"), QStringLiteral("record"), 20);
+    addRec(QStringLiteral("data.action.recordStop"), QStringLiteral("停止录制"),
+           QStringLiteral("data.record.stop"), QStringLiteral("pause"), 21);
+}
+
+#include "DataModule.moc"
+
+// 编译期自注册：宿主启动时遍历全局表装载，新增模块无需改 App / 宿主。
+PS_REGISTER_MODULE(DataModule)

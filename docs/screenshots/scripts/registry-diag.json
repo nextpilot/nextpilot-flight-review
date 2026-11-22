@@ -1,0 +1,8 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "panel", "slot": "dock.diagnostics", "panel": "diagnostics" },
+    { "op": "settle", "ms": 200 },
+    { "op": "shot", "out": "registry.png" }
+  ]
+}

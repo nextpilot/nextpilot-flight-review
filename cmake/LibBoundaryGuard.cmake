@@ -1,0 +1,112 @@
+# LibBoundaryGuard.cmake —— configure 期扫描 libs 边界，违规直接报错。
+#
+# 只查三类能静态判定的破口，宁可漏报不可误报：
+#   1. libs 内 #include "../" 逃出库目录
+#   2. libs target 链接上层（host/gui/shell/modules/toolbox 等 application 形态）
+#   3. Meyers 单例 static T& instance()
+#   4. namespace nextpilot::plotscope::core 残留（B7 core 消亡后 FATAL）
+#   5. kernel/libs/toolbox 物理 include application/ 头（基底不可被下层与扩展反向依赖）
+
+get_filename_component(_PS_LIB_GUARD_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+
+function(_ps_lib_guard_sources)
+  file(GLOB_RECURSE _srcs
+    "${_PS_LIB_GUARD_ROOT}/libs/*.h"
+    "${_PS_LIB_GUARD_ROOT}/libs/*.cpp")
+  foreach(_f IN LISTS _srcs)
+    file(READ "${_f}" _txt)
+
+    # 先剥离注释再扫描，否则注释里提到的字面量会被当成代码误报。
+    # 用 file(READ) 全文而非 file(STRINGS)：后者切分含中文的 UTF-8 行会把字节流截断。
+    string(REGEX REPLACE "//[^\n\r]*" "" _scan "${_txt}")
+    string(REGEX REPLACE "/\\*[^\n\r]*\\*/" "" _scan "${_scan}")
+
+    # 破口 1：相对路径逃逸。libs 只能 include 自己的 public include 与 Qt/系统头。
+    if(_scan MATCHES "#[ \t]*include[ \t]*\"\\.\\./")
+      message(FATAL_ERROR
+        "[libs 边界] ${_f}\n"
+        "  libs 内禁止 #include \"../\" 逃出库目录。跨库/上层引用必须走公开 include 路径。")
+    endif()
+
+    # 破口 3：Meyers 单例——铁律禁止的全局活实例。
+    if(_scan MATCHES "static[ \t]+[A-Za-z_][A-Za-z0-9_:<>, \t]*&[ \t]*instance[ \t]*\\(")
+      message(FATAL_ERROR
+        "[libs 边界] ${_f}\n"
+        "  检测到 Meyers 单例 static T& instance()。libs 禁止全局活实例/单例；"
+        "请改用纯函数，或把实例交给上层组合根持有。")
+    endif()
+
+    # B7 core 已消亡：libs 内禁止任何 nextpilot::plotscope::core 命名空间残留。
+    if(_scan MATCHES "namespace[ \t]+nextpilot::plotscope::core")
+      message(FATAL_ERROR
+        "[libs 边界] ${_f} 仍用 nextpilot::plotscope::core 命名空间，"
+        "core 已随 B7 删除，必须收口为所属库名。")
+    endif()
+  endforeach()
+endfunction()
+
+function(_ps_lib_guard_targets)
+  # 上层靶标：libs 一旦链接这些就构成依赖倒挂或成环。
+  # （B7 core 消亡：移除 ps_core。ps_context 属 L1 libs 内部，同层互链合法，不拦截。）
+  set(_upper_rx "ps_host|ps_gui|plotscope|ps_module_|ps_toolbox_|ps_parser_|ps_recording")
+
+  # 自动收集 libs 下所有 add_library(NAME ...) 的 target 名——新增库无需登记。
+  file(GLOB_RECURSE _cmakes "${_PS_LIB_GUARD_ROOT}/libs/*/CMakeLists.txt")
+  set(_lib_targets "")
+  foreach(_c IN LISTS _cmakes)
+    file(READ "${_c}" _txt)
+    string(REGEX MATCHALL "add_library[ \t]*\\([ \t]*[A-Za-z0-9_]+" _hits "${_txt}")
+    foreach(_h IN LISTS _hits)
+      string(REGEX REPLACE "add_library[ \t]*\\([ \t]*" "" _name "${_h}")
+      list(APPEND _lib_targets "${_name}")
+    endforeach()
+  endforeach()
+  list(REMOVE_DUPLICATES _lib_targets)
+
+  foreach(_t IN LISTS _lib_targets)
+    if(NOT TARGET ${_t})
+      continue()
+    endif()
+    foreach(_prop IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+      get_target_property(_links ${_t} ${_prop})
+      if(_links)
+        foreach(_l IN LISTS _links)
+          if(_l MATCHES "${_upper_rx}")
+            message(FATAL_ERROR
+              "[libs 边界] target '${_t}' 通过 ${_prop} 链接上层 '${_l}'。\n"
+              "  libs 只能向下依赖 foundation / Qt / 系统库，"
+              "禁止依赖 host / gui / modules / app / extensions 等上层。")
+          endif()
+        endforeach()
+      endif()
+    endforeach()
+  endforeach()
+endfunction()
+
+function(_ps_lib_guard_application_sources)
+  # kernel/libs/toolbox 是可复用层与扩展层，物理上禁止 include application/ 基底。
+  foreach(_dir IN ITEMS kernel libs toolbox)
+    file(GLOB_RECURSE _srcs
+      "${_PS_LIB_GUARD_ROOT}/${_dir}/*.h"
+      "${_PS_LIB_GUARD_ROOT}/${_dir}/*.hpp"
+      "${_PS_LIB_GUARD_ROOT}/${_dir}/*.cpp")
+    foreach(_f IN LISTS _srcs)
+      file(READ "${_f}" _txt)
+      string(REGEX REPLACE "//[^\n\r]*" "" _scan "${_txt}")
+      string(REGEX REPLACE "/\\*[^\n\r]*\\*/" "" _scan "${_scan}")
+      if(_scan MATCHES "#[ \t]*include[ \t]*[\"<][^\n\"<>]*application/")
+        message(FATAL_ERROR
+          "[分层边界] ${_f}\n"
+          "  kernel/libs/toolbox 禁止 include application/ 下的基底头文件；"
+          "依赖只能自上而下（application → libs/kernel/toolbox）。")
+      endif()
+    endforeach()
+  endforeach()
+endfunction()
+
+function(ps_lib_guard_boundary)
+  _ps_lib_guard_sources()
+  _ps_lib_guard_targets()
+  _ps_lib_guard_application_sources()
+  message(STATUS "[libs 边界] 守卫通过：无逃逸 include / 单例 / 上层依赖 / application 反向依赖")
+endfunction()

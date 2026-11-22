@@ -1,0 +1,11 @@
+# tools — 开发与发布工具
+
+- `ps-plugin-check/`：Qt-free 子进程 `dlopen` 插件做准入检查（坏 .so 崩在子进程里）
+- `ps-bench/`：吞吐 / 延迟基准（10M 点 × 20 通道 × 60 fps）
+- `ps-pack/`：安装包 + 三方许可清单
+
+- `bootstrap-deps.sh`：下载 Qt 到 `~/.ps-dps/`
+- `build-local.sh`：只用 `~/.ps-dps/` 的 Qt 构建并跑 ctest
+- `nmea-metadata.py`：从 pynmea2 生成 `nmea_database.json`
+- `ubx-metadata.py`：从 pyubx2 字段字典生成 `ubx_database.json`
+- `mavlink-metadata.py`：从 MAVLink 头文件生成 `mavlink_metadata.json`

@@ -1,0 +1,9 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "view-action", "action": "page.grid", "params": { "rows": 2, "cols": 1 } },
+    { "op": "settle", "ms": 300 },
+    { "op": "shot", "out": "split-grid.png" }
+  ]
+}

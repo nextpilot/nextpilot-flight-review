@@ -1,0 +1,8 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "page", "name": "分析" },
+    { "op": "settle", "ms": 200 },
+    { "op": "shot", "out": "analysis-fav.png" }
+  ]
+}

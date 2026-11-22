@@ -1,0 +1,210 @@
+#pragma once
+
+#include "AppContext.h"
+#include "Recorder.h"
+#include "IIntentExecutor.h"
+#include "Intent.h"
+#include "OpDispatch.h"
+
+#include <map>
+#include <vector>
+#include <memory>
+
+#include <QElapsedTimer>
+#include <QSocketNotifier>
+#include <QCoreApplication>
+#include <QCoreApplication>
+#include <QTimer>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QUdpSocket>
+
+// 数据模块的派生能力：reload / export / recent / clearCache 等。
+// 与 DataLoadHandler（系统级 data.load 入口）同为宿主级 handler：都要访问
+// 宿主持有的 AppContext（repo / sources / settings），不归属任何可卸载模块，
+// 所有 data.* 意图集中一处。
+//
+// 能力清单（只实现底层有支撑的意图）：
+//   · data.reload      活动源重新走 data.load
+//   · data.export      活动通道经 Dataset::channel 取数写 CSV
+//   · data.recent      最近文件路径，存 settings
+//   · data.clearCache  删除各源的 .psc 解析缓存
+//   · data.remove      移除一个数据源及其全部数据集
+//   · data.derive      Rust 实时算派生序列（ps_preview_filter，只读）：
+//                      不写回数据集、不新增通道；payload 带 time/value，
+//                      并发 AppContext::derivedSeriesReady 供画布叠加
+//   · data.filter      有状态 Lua 过滤器作用到一条通道（FilterOps），
+//                      与 derive 同为只读叠加。参数 dataset/table/column/filter(id)/params/name
+//   · data.marker      Marker 规则（MarkerOps）扫通道产出 PlotMarker，
+//                      经 plot.markers.set 画到活动画布。参数 dataset/table/column/code/name
+//   · data.state       状态视图：bool/整型通道
+//                      游程编码成状态段，经 plot.state.set 画状态色带。浮点非整数值断段
+//   · data.series      读一条通道的 t/v 数组进 payload。dataset/table 缺省取唯一，
+//                      limit 缺省 4096、上限 200000
+//   · data.workspace.save/list/restore 工作区数据源配置的持久化与恢复，
+//                      恢复 = 重放 data.load + data.derive，不存数据本体
+//
+// 不提供：protocol.inspect（领域面板，归 toolbox/<域>/gui/）、
+// layout.save/import（已有 plot.layout.*）、file.open（已被 data.load 统一）。
+class DataCommandsHandler final : public nextpilot::plotscope::intent::IIntentHandler
+{
+public:
+    explicit DataCommandsHandler(nextpilot::plotscope::context::AppContext &appCtx,
+                                 nextpilot::plotscope::intent::IIntentExecutor &executor)
+        : m_app(appCtx), m_executor(executor)
+    {
+        buildDispatch();
+        // 泵：50Hz（20ms）批量 drain，单 tick 每源预算 256KB。
+        m_pump = std::make_unique<QTimer>();
+        m_pump->setTimerType(Qt::CoarseTimer);
+        m_pump->setInterval(1000 / m_pumpHz);
+        QObject::connect(m_pump.get(), &QTimer::timeout, m_pump.get(), [this] { pumpLive(); });
+        if (QCoreApplication::instance())
+            m_pump->start();
+    }
+
+    bool canHandle(const nextpilot::plotscope::intent::Intent &intent) const override;
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> execute(
+        const nextpilot::plotscope::intent::Intent &intent) override;
+
+    // 最近文件在 settings 中的键（data.load 与 data.recent 共用）。
+    static constexpr const char *kRecentKey = "data/recent";
+
+private:
+    // op → 成员函数注册表（机制唯一：OpDispatch，op 字符串只写一遍）。
+    void buildDispatch();
+
+    // 兜底解析（提前备好的资产，全 handler 共用，不再逐方法手抄）：
+    // dataset 缺省取唯一数据集 + 存在性校验。
+    nextpilot::plotscope::foundation::Result<int> resolveDataset(
+        const nextpilot::plotscope::intent::Intent &intent) const;
+    // table 缺省取唯一表 + 存在性校验。
+    nextpilot::plotscope::foundation::Result<QString> resolveTable(
+        const nextpilot::plotscope::dataset::Dataset &ds, const QString &table) const;
+
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> reload(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> exportCsv(const nextpilot::plotscope::intent::Intent &intent);
+    // 多表快照导出：选表 → 单簿多 sheet xlsx 或每表一个 csv。
+    // 列口径与 data.export 一致（time 列叠加源 offset，settings 的采样上限同样生效）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> exportSnapshot(
+        const nextpilot::plotscope::intent::Intent &intent);
+    // data.params：key-value 表（params / facts）的键值明细，脚本/CLI/属性面板共用。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> params(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recent(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearCache();
+    // 缓存可观测：磁盘上的 .psc 条目/字节 + 进程内命中/未命中计数。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> cacheStats();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> removeSource(const nextpilot::plotscope::intent::Intent &intent);
+    // live 源暂停/继续：切 SourceState::Streaming/Paused。
+    // 仅 SourceKind::Live 源可操作；文件源返回 enotsupported。幂等：已在目标状态直接成功。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setSourcePaused(
+        const nextpilot::plotscope::intent::Intent &intent, bool paused);
+    // 实时源接入：udp:// 接收 → 同一份字节扇出给已绑定解析器。
+    // 只做接收侧；录制由 recording 模块按源登记另行接线。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> connectLive(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> disconnectLive(
+        const nextpilot::plotscope::intent::Intent &intent);
+    // 实时源速率统计：packets/bytes 已有，这里按会话时长折算 Hz / KB/s。
+    // 串口前端（Linux termios）：serial:///dev/ttyUSB0:115200。
+    // 与 UDP 同一出口（登记源→绑定解析器→字节扇出），只是取字节的方式不同。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> connectSerial(
+        const nextpilot::plotscope::intent::Intent &intent);
+    // 重连：保留源与数据集，只重开前端（UDP 重新 bind / 串口重新 open）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> reconnectLive(
+        const nextpilot::plotscope::intent::Intent &intent);
+    // 源清单：给 CLI/脚本/UI 一致的源视图（含类型、状态、解析器、速率）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> sourceList(
+        const nextpilot::plotscope::intent::Intent &intent);
+    // TCP 前端：tcp://host:port（客户端）；host 为 0.0.0.0/空时按监听端处理。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> connectTcp(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> liveStats(
+        const nextpilot::plotscope::intent::Intent &intent);
+    // 源级时间对齐：mode = base/start/end/center/reset。
+    // 只改 Dataset 出口偏移（见 Dataset::setTimeOffsetUs），原始时间戳不动。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> alignTime(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> derive(const nextpilot::plotscope::intent::Intent &intent);
+    // MIMO 派生：四元数 → roll/pitch/yaw（独立派生字段，不写回 dataset）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> deriveMimoQuat(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> filterSeries(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> runMarker(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> stateSeries(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> series(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceList();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceSave();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceRestore();
+    // dataset 级通道变换配方（变换 = 非破坏视图，全后端生效；plot.channel / data.series 消费）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setChannelTransform(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearChannelTransform(const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> deriveList(const nextpilot::plotscope::intent::Intent &intent);
+    // MIMO 派生流式增量刷新：对该 dataset 全部 quat_to_rpy 派生按注册表配方指纹
+    // 重建 intent 逐组重发（同名重发 = 增量，见 deriveMimoQuat）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> refreshDerives(const nextpilot::plotscope::intent::Intent &intent);
+
+    nextpilot::plotscope::context::AppContext &m_app;
+    nextpilot::plotscope::intent::IIntentExecutor &m_executor;
+    nextpilot::plotscope::intent::OpDispatch m_dispatch;
+
+    // 实时源会话：一个源一个 QUdpSocket（readyRead → pipeline.feed）。
+    // paused 时不喂解析器——字节仍被内核缓冲丢弃，恢复后从头继续（不做补帧，明确取舍）。
+    struct LiveSession
+    {
+        std::unique_ptr<QUdpSocket> socket;
+        int sourceId = -1;
+        bool paused = false;
+        qint64 packets = 0;
+        qint64 bytes = 0;
+        QElapsedTimer since;     // 会话起点（统计 Hz/KB/s 用）
+        int fd = -1;             // 串口 fd（UDP 会话为 -1）
+        // 重连用的连接参数（断开时不丢：源与数据集还在，只换前端）。
+        QString url;
+        QString parserId;
+        QByteArray parserOptions;
+        std::unique_ptr<QSocketNotifier> notifier; // 串口可读通知（UDP 用 readyRead）
+        std::unique_ptr<QTcpSocket> tcp;           // TCP 客户端连接
+        std::unique_ptr<QTcpServer> tcpServer;      // TCP 监听端（host 为空/0.0.0.0）
+
+        // 收字节与解析解耦：readyRead 只入环，泵按预算 drain。
+        // 好处是慢解析器不会把事件循环堵死；环满则丢最旧并计入 dropped（背压可见）。
+        QByteArray buf;
+        qint64 bufCap = 4 * 1024 * 1024;   // 环上限（字节）
+        qint64 pumpBudget = 256 * 1024;    // 每 tick 最多喂多少字节
+        qint64 droppedBytes = 0;
+        qint64 fedBytes = 0;
+    };
+    // 入环（不解析）；泵定时器按预算 drain 到 ingest。
+    void enqueueLive(int sourceId, const QByteArray &bytes);
+    void pumpLive();
+    std::unique_ptr<QTimer> m_pump;
+    int m_pumpHz = 50;
+    // 录制：一个源可同时开多路（格式 × 后端正交）。
+    // 写入点只有一处——pumpLive 喂解析器的同一块字节，保证"看到的"与"录下的"是同一份。
+    struct RecordSession
+    {
+        int sourceId = -1;
+        QString formatId;
+        QString backendId;
+        QString endpoint;
+        QString topic;          // mcap 的通道名（raw 忽略）
+        std::shared_ptr<nextpilot::plotscope::rec::Recorder> recorder;
+        qint64 bytes = 0;
+        QElapsedTimer since;
+    };
+    bool writeRecordBytes(int sourceId, const QByteArray &bytes, quint64 timeNs);
+    std::vector<RecordSession> m_records;
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recordStart(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recordStop(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> recordList(
+        const nextpilot::plotscope::intent::Intent &intent);
+
+    // 泵与环的运行时配置（data.rate.set / data.config）。
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setRate(
+        const nextpilot::plotscope::intent::Intent &intent);
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> sourceConfig(
+        const nextpilot::plotscope::intent::Intent &intent);
+    std::map<int, LiveSession> m_live;
+};
