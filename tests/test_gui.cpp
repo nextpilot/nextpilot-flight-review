@@ -32,6 +32,7 @@
 #include "CanvasWorkspace.h"
 #include "chrome/CellTitleBar.h"
 #include "layout/PageDock.h"
+#include "layout/PageTabs.h"
 #include "layout/PlotCellDock.h"
 #include "DockAreaWidget.h"
 #include "DockWidget.h"
@@ -3072,6 +3073,41 @@ int main(int argc, char *argv[])
         CHECK(cellDock->dockAreaWidget()->dockAreaFlags()
               & ads::CDockAreaWidget::HideSingleWidgetTitleBar);
         OK("D2 页容器与格面板：PageDock 拥有 PlotCellDock，单格标题栏隐藏");
+    }
+
+    // --- D3：页签栏独立成 PageTabs，「＋」与索引换算不出 workspace ---
+    {
+        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        CHECK(ws != nullptr);
+        auto *tabs = ws->findChild<PageTabs *>();
+        CHECK(tabs != nullptr);
+        const int pages = tabs->pageCount();
+        CHECK(pages == ws->pageCount());
+        CHECK(tabs->currentPage() >= 0 && tabs->currentPage() < pages);
+
+        QVariant out;
+        Result<QVariant> rout(out);
+        // 新建页：页数 +1，且停在新建页。
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("page.new"), {}, rout));
+        CHECK(tabs->pageCount() == pages + 1);
+        CHECK(ws->pageCount() == pages + 1);
+        CHECK(tabs->currentPage() == pages);
+
+        // 改名：走 PageTabs 的 setPageTitle。
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("page.rename"),
+            QVariantMap{{QStringLiteral("index"), pages},
+                        {QStringLiteral("title"), QStringLiteral("校验页")}},
+            rout));
+        CHECK(tabs->pageTitle(pages) == QStringLiteral("校验页"));
+
+        // 关页：至少留一页（连关到只剩 1）。
+        while (tabs->pageCount() > 1)
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("page.closeCurrent"), {}, rout));
+        CHECK(tabs->pageCount() == 1);
+        OK("D3 页签栏：PageTabs 管「＋」与索引，新建/改名/关闭全走类接口且至少留一页");
     }
 
     // --- dock 页签：页签序与内容栈序必须一致（修"点页签内容不切"）---

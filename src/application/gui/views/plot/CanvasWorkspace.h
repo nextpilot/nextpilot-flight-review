@@ -10,7 +10,6 @@
 class QScrollArea;
 class QLabel;
 class QStackedWidget;
-class QTabWidget;
 class QTimer;
 class QEvent;
 
@@ -20,6 +19,7 @@ namespace nextpilot::plotscope::gui
 class CellTitleBar;
 class ChannelView;
 class PageDock;
+class PageTabs;
 class PlotCellDock;
 class InstrumentView;
 class PlotCanvas;
@@ -157,7 +157,7 @@ private:
     context::AppContext &m_appCtx;
     intent::IIntentExecutor &m_executor;
 
-    QTabWidget *m_tabs = nullptr;     // 页签容器（可关闭/可移动）
+    PageTabs *m_tabs = nullptr;       // 页签栏（末尾＋与改名归它）
     QVector<Page *> m_pages;
     int m_activePage = 0;
 

@@ -107,7 +107,9 @@ add_library(ps_gui OBJECT
     # --- plot/chrome：格框上的小部件 ---
     views/plot/chrome/CellTitleBar.cpp
     views/plot/chrome/CellTitleBar.h
-    # --- plot/layout：页内停靠容器与每格面板 ---
+    # --- plot/layout：页内停靠容器、每格面板与页签栏 ---
+    views/plot/layout/PageTabs.cpp
+    views/plot/layout/PageTabs.h
     views/plot/layout/PageDock.cpp
     views/plot/layout/PageDock.h
     views/plot/layout/PlotCellDock.cpp

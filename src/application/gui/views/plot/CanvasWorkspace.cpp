@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "chrome/CellTitleBar.h"
+#include "layout/PageTabs.h"
 #include "layout/PageDock.h"
 #include "layout/PlotCellDock.h"
 #include "ChannelView.h"
@@ -41,14 +42,10 @@
 #include <QToolTip>
 #include <QHBoxLayout>
 #include <QHash>
-#include <QInputDialog>
 #include <QLabel>
-#include <QLineEdit>
 #include <QSet>
 #include <QScrollBar>
 #include <QStyle>
-#include <QTabBar>
-#include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QJsonArray>
@@ -111,41 +108,28 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
     outer->setContentsMargins(0, 0, 0, 0);
     outer->setSpacing(0);
 
-    // 页签容器：一页 = 一套绘图布局（对齐老 PlottingTabs）。
-    // 可移动/可关闭，但至少保留一页（removePage 里挡）。
-    m_tabs = new QTabWidget(this);
-    m_tabs->setDocumentMode(true);
-    // 页序 = 绘图页序，拖拽改序会让页索引与页对象错位，故不可拖。
-    m_tabs->setMovable(false);
-    m_tabs->setTabsClosable(true);
-    m_tabs->setUsesScrollButtons(true);
-    m_tabs->tabBar()->setExpanding(false);
-    m_tabs->tabBar()->setElideMode(Qt::ElideRight);
+    // 页签栏：一页 = 一套绘图布局；末尾「＋」与改名都归 PageTabs，
+    // 这里只按真实页索引接信号。
+    m_tabs = new PageTabs(this);
     outer->addWidget(m_tabs, 1);
 
-    QObject::connect(m_tabs, &QTabWidget::currentChanged, this,
-                     [this](int index) { switchPage(index); });
-    QObject::connect(m_tabs, &QTabWidget::tabCloseRequested, this,
-                     [this](int index) {
-                         if (index >= m_pages.size())   // 末尾「＋」不参与关闭
-                             return;
-                         removePage(index);
+    QObject::connect(m_tabs, &PageTabs::pageSelected, this, [this](int index) { switchPage(index); });
+    QObject::connect(m_tabs, &PageTabs::pageCloseRequested, this,
+                     [this](int index) { removePage(index); });
+    QObject::connect(m_tabs, &PageTabs::titleEdited, this,
+                     [this](int index, const QString &title) {
+                         if (index >= 0 && index < m_pages.size())
+                             m_pages.at(index)->title = title;
                      });
-    // 双击页签改名（对齐老 PlottingTabs::tabBarDoubleClicked），「＋」不参与。
-    QObject::connect(m_tabs->tabBar(), &QTabBar::tabBarDoubleClicked, this,
-                     [this](int index) {
-                         if (index < 0 || index >= m_pages.size())
-                             return;
-                         bool ok = false;
-                         const QString name = QInputDialog::getText(
-                             this, QStringLiteral("重命名页签"), QStringLiteral("页名"),
-                             QLineEdit::Normal, m_tabs->tabText(index), &ok);
-                         const QString trimmed = name.trimmed();
-                         if (!ok || trimmed.isEmpty())
-                             return;
-                         m_pages.at(index)->title = trimmed;
-                         m_tabs->setTabText(index, trimmed);
-                     });
+    // 点「＋」：新建一页并切过去，页内先给一格空画布。
+    QObject::connect(m_tabs, &PageTabs::addPageRequested, this, [this]() {
+        const int created = addPage();
+        m_tabs->setCurrentPage(created);
+        if (m_cells.isEmpty())
+            addCell();
+        m_rows = 1;
+        m_cols = 1;
+    });
 
     // 会话级播放引擎 + 底部时间条。引擎驱动所有画布的播放头，时间条只是它的视图。
     m_playback = new PlaybackEngine(this);
@@ -165,19 +149,10 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
                                  c.canvas->refreshSourceOffsets();
                      });
 
-    // 末尾「＋」页签：老 PlottingTabs 的新建页入口（点一下＝加一页，不显示关闭按钮）。
-    // 建「＋」页签时屏蔽 currentChanged：count 0→1 会把 currentIndex 从 -1 变成 0，
-    // 若不屏蔽，switchPage 会把它当成"点了＋"而提前建页，和下面的 addPage 打架。
-    m_tabs->blockSignals(true);
-    const int plusIndex = m_tabs->addTab(new QWidget(m_tabs), QStringLiteral("＋"));
-    m_tabs->tabBar()->setTabToolTip(plusIndex, QStringLiteral("新建页"));
-    m_tabs->tabBar()->setTabButton(plusIndex, QTabBar::RightSide, nullptr);
-    m_tabs->blockSignals(false);
-
     // 默认一页，页内一个画布 cell。
     // insertTab 会把 current 留在原来的「＋」上，必须显式切回第 0 页。
     addPage(QStringLiteral("页 1"));
-    m_tabs->setCurrentIndex(0);
+    m_tabs->setCurrentPage(0);
     addCell();
     m_rows = 1;
     m_cols = 1;
@@ -722,29 +697,15 @@ int CanvasWorkspace::addPage(const QString &title)
     lay->setSpacing(3);
     m_pages.append(page);
 
-    // 永远排在末尾「＋」之前，保证 tab 索引 0..n-1 与 m_pages 一一对应。
-    const int plusIndex = qMax(0, m_tabs->count() - 1);
-    const int index = m_tabs->insertTab(plusIndex, page->host, page->title);
-    m_tabs->tabBar()->setTabToolTip(index, QStringLiteral("绘图页：双击页签可重命名"));
-    return index;
+    // 页签栏保证新页插在「＋」之前，tab 索引 0..n-1 与 m_pages 一一对应。
+    return m_tabs->insertPage(page->host, page->title);
 }
 
 void CanvasWorkspace::switchPage(int index)
 {
     if (index < 0)
         return;
-    if (index >= m_pages.size())
-    {
-        // 点到末尾「＋」：新建一页并切过去（老 PlottingTabs::appendPlusTab 的行为）。
-        const int created = addPage();
-        m_tabs->setCurrentIndex(created);   // 触发本函数处理新页
-        if (m_cells.isEmpty())
-            addCell();                       // 新页先给一格空画布
-        m_rows = 1;
-        m_cols = 1;
-        return;
-    }
-    if (index == m_activePage)
+    if (index >= m_pages.size() || index == m_activePage)
         return;
     // 切页前收起当前页的全屏：隐藏的面板属于旧页，留着切回来就是一片空白。
     if (m_fullscreenCell >= 0)
@@ -797,10 +758,8 @@ bool CanvasWorkspace::removePage(int index)
     {
         --m_activePage;
     }
-    m_tabs->blockSignals(true);
-    m_tabs->removeTab(index);
-    m_tabs->blockSignals(false);
-    m_tabs->setCurrentIndex(m_activePage);
+    m_tabs->removePageAt(index);
+    m_tabs->setCurrentPage(m_activePage);
 
     delete page->host;     // 连同页内 dock 容器与 cell 控件一起销毁
     delete page;
@@ -909,7 +868,7 @@ bool CanvasWorkspace::duplicatePage()
 
     // 新页先建好并切过去，再把源页的每一格按原顺序复制进来（曲线与视图状态一并带走）。
     const int pageIndex = addPage(QStringLiteral("页 %1 副本").arg(m_activePage + 1));
-    m_tabs->setCurrentIndex(pageIndex);
+    m_tabs->setCurrentPage(pageIndex);
     if (m_activePage != pageIndex)
     {
         // currentChanged 没触发（例如同索引）：显式切一次。
@@ -2202,7 +2161,7 @@ void CanvasWorkspace::registerViewActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.new"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     const int index = addPage();
-                                    m_tabs->setCurrentIndex(index);   // 触发 switchPage 载入新页
+                                    m_tabs->setCurrentPage(index);    // 触发 switchPage 载入新页
                                     switchPage(index);                // 兜底（同索引无副作用）
                                     if (m_cells.isEmpty())
                                         addCell();                    // 新页先给一格空画布
@@ -2221,7 +2180,7 @@ void CanvasWorkspace::registerViewActions()
                                     if (index < 0 || index >= m_pages.size() || title.isEmpty())
                                         return fail(err::Page, QStringLiteral("页签重命名参数非法"));
                                     m_pages.at(index)->title = title;
-                                    m_tabs->setTabText(index, title);
+                                    m_tabs->setPageTitle(index, title);
                                     return QVariant(title);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("page.select"),
@@ -2229,7 +2188,7 @@ void CanvasWorkspace::registerViewActions()
                                     const int index = params.value(QStringLiteral("index")).toInt();
                                     if (index < 0 || index >= m_pages.size())
                                         return fail(err::Page, QStringLiteral("页索引越界"));
-                                    m_tabs->setCurrentIndex(index);
+                                    m_tabs->setCurrentPage(index);
                                     switchPage(index);
                                     return QVariant(index);
                                 });
