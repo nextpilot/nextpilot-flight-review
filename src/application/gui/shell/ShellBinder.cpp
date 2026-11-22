@@ -748,14 +748,59 @@ void ShellBinder::installCentral()
 
 void ShellBinder::setPanelVisible(const QString &area, bool visible)
 {
-    if (ads::CDockWidget *dock = m_panels.value(area, nullptr))
+    // 同区可能并排多个面板：左侧=数据集树+脚本文件，右侧=属性+脚本调试，
+    // 底部=终端/输出/问题/调试控制台，诊断面板（dock.diagnostics）虽归并进
+    // 底部组但键是自己的。旧实现只取 m_panels（每区**第一个注册**的面板，
+    // 装配顺序决定谁入选），结果视图页的"数据集/属性/日志"实际切换的是
+    // 脚本模块先注册的面板，"诊断"则完全无效（其 dock 走 addDockWidget-
+    // TabToArea 分支，从没进过 m_panels）。改为按 m_docksByArea 操作该区
+    // **全部**面板，按钮语义与区级开关一致。
+    // dock.diagnostics 归并进底部组（与终端/输出等同一 dock 区），但键是自己的。
+    // 区级开关（"日志"按钮）必须把它算进组里，否则收起底部后诊断页签还挂着。
+    auto docks = m_docksByArea.value(area);
+    if (area == QStringLiteral("dock.bottom"))
+        docks += m_docksByArea.value(QStringLiteral("dock.diagnostics"));
+    for (ads::CDockWidget *dock : docks)
+    {
+        if (!dock)
+            continue;
         dock->toggleView(visible);
+        // 打开诊断时把底部页签同步切到诊断，否则只有高亮变化内容不跟
+        if (visible && area == QStringLiteral("dock.diagnostics"))
+            activateDockContent(dock);
+    }
 }
 
 bool ShellBinder::isPanelVisible(const QString &area) const
 {
-    ads::CDockWidget *dock = m_panels.value(area, nullptr);
-    return dock && !dock->isClosed();
+    // 与 setPanelVisible 同口径：该区任一面板可见即视为区可见
+    auto docks = m_docksByArea.value(area);
+    if (area == QStringLiteral("dock.bottom"))
+        docks += m_docksByArea.value(QStringLiteral("dock.diagnostics"));
+    for (const ads::CDockWidget *dock : docks)
+    {
+        if (!dock || dock->isClosed())
+            continue;
+        // ADS 对页签组里**非当前**页签的 dock 也返回 isVisible()=true，
+        // 但用户语义上那叫"没显示"。诊断面板是底部页签组里的单页，
+        // 只有"组可见且诊断是当前页签"才算显示，否则首次点击"诊断"
+        // 会被判成已显示而走隐藏分支（实测复现）。
+        if (area == QStringLiteral("dock.diagnostics"))
+        {
+            const ads::CDockAreaWidget *areaW = dock->dockAreaWidget();
+            if (areaW && areaW->isVisible() && areaW->currentDockWidget() == dock)
+                return true;
+            continue;
+        }
+        // ADS 的 CDockWidget::isVisible() 只在"自己是当前页签"时为 true——
+        // 区级开关不能用：底部组当前页签是诊断（dock.diagnostics 键）时，
+        // dock.bottom 的四个页签全是 false，点"日志"会误判整组隐藏。
+        // 区可见的正确口径：页签未关闭 && 所在 dock 区可见。
+        if (dock && !dock->isClosed() && dock->dockAreaWidget()
+            && dock->dockAreaWidget()->isVisible())
+            return true;
+    }
+    return false;
 }
 
 QWidget *ShellBinder::panelWidget(const QString &area) const

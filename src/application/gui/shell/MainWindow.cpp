@@ -505,10 +505,19 @@ void MainWindow::build(RuntimeHost &host)
         {
             const QString area = QStringLiteral("dock.")
                                + actionId.mid(QStringLiteral("view.toggleDock.").size());
-            // 诊断面板：内容按需创建（首次打开才 requestPanel），再走统一显隐切换。
+            // 诊断面板：内容按需创建（首次打开才 requestPanel）。
+            // 注意它不能走下面的通用 toggle：requestPanel 新建后 ADS 会把
+            // 新页签置为当前页（瞬时"已显示"），toggle 会把首次点击判成隐藏。
+            // 诊断按钮语义定为幂等的"显示并激活"，关闭交给页签 X 或"日志"整组开关。
             if (area == QStringLiteral("dock.diagnostics"))
+            {
                 m_context->requestPanel(QStringLiteral("dock.diagnostics"),
                                         QStringLiteral("diagnostics"));
+                m_binder->setPanelVisible(area, true);
+                statusBar()->showMessage(QStringLiteral("面板 %1: %2")
+                                             .arg(area, QStringLiteral("显示")));
+                return;
+            }
             const bool nowVisible = !m_binder->isPanelVisible(area);
             m_binder->setPanelVisible(area, nowVisible);
             statusBar()->showMessage(QStringLiteral("面板 %1: %2")
