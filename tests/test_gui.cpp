@@ -30,6 +30,7 @@
 #include "PanelFactoryHub.h"
 #include "PlotCanvas.h"
 #include "CanvasWorkspace.h"
+#include "chrome/CellTitleBar.h"
 #include "ShellBinder.h"
 #include "FilterEditorDialog.h"
 
@@ -3021,6 +3022,26 @@ int main(int argc, char *argv[])
         CHECK(wsT->activeCanvas()->timeFormatMode() == QStringLiteral("relative"));
 
         OK("T4.5 时间轴：relative/hms/utc 三态 + 负值 + 非法值回落 + settings→viewAction 全格生效");
+    }
+
+    // --- D1：格标题条独立成 CellTitleBar，挂在自己所属的停靠面板上 ---
+    {
+        CHECK(binder != nullptr);
+        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        CHECK(ws != nullptr);
+        auto *canvas = ws->activeCanvas(); // 当前活动格
+        CHECK(canvas != nullptr);
+        // 层次：canvas → stack → frame（竖排 [标题条, 画布]）。
+        QWidget *frame = canvas->parentWidget() ? canvas->parentWidget()->parentWidget() : nullptr;
+        CHECK(frame != nullptr);
+        auto *bar = frame->findChild<CellTitleBar *>(QStringLiteral("cellHoverBar"));
+        CHECK(bar != nullptr);
+        CHECK(bar->dockWidget() != nullptr); // 挂到自己所属面板才转得动拖动事件
+        CHECK(!bar->title().isEmpty());
+        CHECK(!bar->isShown());              // 无指针进入时只是占位，不显示
+        CHECK(bar->metaObject()->indexOfSignal("activated()") >= 0);
+        CHECK(bar->metaObject()->indexOfSignal("splitClicked(bool)") >= 0);
+        OK("D1 格标题条：独立类、挂靠所属面板、新建即暗、激活/拆分信号就位");
     }
 
     // --- dock 页签：页签序与内容栈序必须一致（修"点页签内容不切"）---
