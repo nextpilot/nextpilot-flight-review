@@ -292,10 +292,16 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
     IIntentExecutor &executor = ctx.executor();
     JobRecorder *recorder = ctx.recorder();
 
-    // 输出回显：经 InteractionHub 发 script.console.append（GUI 控制台面板注册的处理
-    // 器接收）。headless 下没有面板，viewAction 不存在——静默忽略，不影响执行。
+    // 输出回显有两条去向，互不替代：
+    //   ① script.console.append —— 终端面板增量回显（GUI 面板注册的处理器）；
+    //   ② AppContext 消息流 —— 输出/问题/调试控制台共用同一份数据。
+    // 在 ② 之前，"输出""问题"面板只能去偷终端面板的私有 widget，那是错的方向。
+    // headless 下两条都没有订阅者，append 只是入库，无副作用。
     nextpilot::plotscope::context::InteractionHub *inter = &ctx.app().interactions();
-    auto echo = [inter](const QString &text, bool error) {
+    nextpilot::plotscope::context::AppContext *app = &ctx.app();
+    auto echo = [inter, app](const QString &text, bool error) {
+        app->appendMessage(error ? QStringLiteral("error") : QStringLiteral("info"),
+                           QStringLiteral("脚本"), text);
         QVariantMap p;
         p.insert(QStringLiteral("text"), text);
         p.insert(QStringLiteral("error"), error);
@@ -412,7 +418,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
     nextpilot::plotscope::context::InteractionHub *dbgReg = &ctx.app().interactions();
     ctx.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.debug"),
-        [this, &executor, recorder, dispatcher, echo, dbgReg](const QVariantMap &params) -> Result<QVariant> {
+        [this, &executor, recorder, dispatcher, echo, app, dbgReg](const QVariantMap &params) -> Result<QVariant> {
             const QByteArray source = params.value(QStringLiteral("source")).toByteArray();
             const QString name = params.value(QStringLiteral("name")).toString();
             QSet<int> breakpoints;
@@ -427,7 +433,13 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
             m_dbgEngine = std::move(engine);
             const Result<void> r = m_dbgEngine->runStringDebug(
                 source, QStringLiteral("@%1").arg(name), breakpoints,
-                [this, name, dbgReg](const nextpilot::plotscope::script::LuaEngine::DebugPause &p) {
+                [this, app, name, dbgReg](const nextpilot::plotscope::script::LuaEngine::DebugPause &p) {
+                    // 调试事件同时进消息流：底部「调试控制台」按 level=debug 取它，
+                    // 于是它和终端是两个视图看同一份数据，而不是两套私有输出。
+                    app->appendMessage(QStringLiteral("debug"), QStringLiteral("调试"),
+                                       QStringLiteral("暂停 @ %1:%2（%3）")
+                                           .arg(name, QString::number(p.line), p.reason),
+                                       QStringLiteral("%1:%2").arg(name).arg(p.line));
                     // 快照 → 调试面板（stack+var 树）
                     QVariantMap up;
                     up.insert(QStringLiteral("paused"), true);
@@ -455,6 +467,8 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
                 },
                 breakpoints.isEmpty()); // 有断点直接跑到首个断点；无断点才停在入口
             // 收尾：清调试面板快照 + 编辑器解除暂停高亮
+            app->appendMessage(QStringLiteral("debug"), QStringLiteral("调试"),
+                               QStringLiteral("调试结束"));
             Result<QVariant> co{QVariant()};
             dbgReg->dispatchViewAction(QStringLiteral("script.debug.clear"), QVariantMap(), co);
             Result<QVariant> done{QVariant()};

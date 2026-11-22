@@ -69,4 +69,13 @@ void AppContext::clearSelection()
     Q_EMIT selectionChanged(m_selection.toJson());
 }
 
+void AppContext::appendMessage(const QString &level, const QString &source, const QString &text,
+                               const QString &locator)
+{
+    // 入库与通知绑定在一起：面板只订阅信号，谁 append 都走同一条路，
+    // 不存在"写了日志但没通知面板"的漏项。
+    m_messages.append(level, source, text, locator);
+    Q_EMIT messageAppended(level, source, text, locator);
+}
+
 } // namespace nextpilot::plotscope::context

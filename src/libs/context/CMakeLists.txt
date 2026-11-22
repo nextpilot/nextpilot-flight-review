@@ -11,6 +11,7 @@ add_library(ps_context STATIC
     src/DerivedSeriesHub.cpp
     src/IngestPipeline.cpp
     src/IngestOrchestrator.cpp
+    src/MessageLog.cpp
     include/AppContext.h
     include/InteractionHub.h
     include/SettingsStore.h
@@ -20,6 +21,7 @@ add_library(ps_context STATIC
     include/DerivedSeriesHub.h
     include/IngestPipeline.h
     include/IngestOrchestrator.h
+    include/MessageLog.h
 )
 target_include_directories(ps_context PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ps_context PUBLIC

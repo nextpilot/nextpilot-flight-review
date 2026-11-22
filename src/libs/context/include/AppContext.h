@@ -6,6 +6,7 @@
 #include "RegistryTree.h"
 #include "IngestPipeline.h"
 #include "InteractionHub.h"
+#include "MessageLog.h"
 #include "DerivedSeriesHub.h"
 #include "Result.h"
 #include "Selection.h"
@@ -102,6 +103,15 @@ public:
     DerivedSeriesHub &derivedHub() { return m_derivedHub; }
     const DerivedSeriesHub &derivedHub() const { return m_derivedHub; }
 
+    // 进程级消息流（终端 / 输出 / 问题 / 调试控制台的共同数据源）。
+    // 只存纯数据：级别 + 来源 + 正文 + 定位，无 QWidget、无第三方位图。
+    // appendMessage 走这里而不是直接 MessageLog::append，是为了统一发信号——
+    // 面板只订阅 messageAppended，不轮询、不互相引用。
+    MessageLog &messages() { return m_messages; }
+    const MessageLog &messages() const { return m_messages; }
+    void appendMessage(const QString &level, const QString &source, const QString &text,
+                       const QString &locator = QString());
+
     // === 当前活动视图（指针，不是副本）===
     //
     // "用户正在看哪个源、哪条通道"是跨前端共享的运行态：
@@ -170,6 +180,11 @@ Q_SIGNALS:
     // 统一选中对象变化：属性面板订阅它刷新。参数是选中对象的 JSON（跨线程安全）。
     void selectionChanged(const QJsonObject &selection);
 
+    // 新消息入库（终端 / 输出 / 问题 / 调试控制台订阅）。参数全为可序列化字符串，
+    // 面板据此增量追加一行，无需重读整条日志。
+    void messageAppended(const QString &level, const QString &source, const QString &text,
+                         const QString &locator);
+
     // 派生序列已算出（data.derive 的结果）。这是**事件**而非状态，参数是可序列化的
     // 数值数组（非 GUI 专属类型），故不违反"上下文不含 QWidget"的铁律。
     // 数据集本身零改动：画布订阅后作为 generated series 叠加显示，与活动通道体系并列。
@@ -186,6 +201,7 @@ private:
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
 
     InteractionHub m_interactions; // 交互注册表：AppContext owns，host 编排
+    MessageLog m_messages;        // 进程级消息流（纯数据，面板订阅后增量渲染）
     TransformHub m_transforms;
     DerivedSeriesHub m_derivedHub; // 派生序列注册表：独立派生字段
     Selection m_selection;       // 当前统一选中对象

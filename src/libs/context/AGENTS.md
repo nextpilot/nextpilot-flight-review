@@ -17,7 +17,7 @@
 - **任何 QWidget / Qt Widgets 类型**——CLI（headless）与 GUI 共用同一份 AppContext，混入 GUI 类型即破"纯 Core"承诺
 - 会话级/窗口级展示态（当前页签、视口缩放、面板显隐——归 gui，不可序列化者不入）
 - 编译期静态资产（ParserHub / RecordingFormat 等自注册对象——与进程同生共死，收进来会造成多实例重复初始化）
-- 对 application/（shell/gui/host/modules）与 toolbox/ 的任何依赖
+- 对 host / app / gui / modules / extensions 的任何依赖
 
 ## 铁律
 
