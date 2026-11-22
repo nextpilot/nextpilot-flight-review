@@ -114,6 +114,14 @@ add_library(ps_gui OBJECT
     views/plot/layout/PageDock.h
     views/plot/layout/PlotCellDock.cpp
     views/plot/layout/PlotCellDock.h
+
+    # --- plot/commands ---
+    views/plot/commands/PageActions.cpp
+    views/plot/commands/CanvasActions.cpp
+    views/plot/commands/SeriesActions.cpp
+    views/plot/commands/MarkupActions.cpp
+    views/plot/commands/PlaybackActions.cpp
+    views/plot/commands/PropertyProviders.cpp
     # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
     views/PropertyPanel.cpp
     views/PropertyPanel.h

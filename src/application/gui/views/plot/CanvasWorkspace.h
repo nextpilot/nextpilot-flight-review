@@ -138,7 +138,13 @@ private:
     void refreshTabSuppression();
 
     // 集中注册 view action（唯一注册点，路由到当前页的 active cell）。
+    // 各域实现分在 commands/，这里只保留入口。
     void registerViewActions();
+    void registerPageActions();
+    void registerCanvasActions();
+    void registerSeriesActions();
+    void registerMarkupActions();
+    void registerPlaybackActions();
     // 注册曲线/轴/画布的属性 provider 与 setter（属性面板按 kind 路由到这里）。
     void registerPropertyProviders();
     // 连接一个画布的选中请求信号 -> AppContext.selection。
