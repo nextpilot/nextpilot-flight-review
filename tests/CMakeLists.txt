@@ -1,6 +1,19 @@
 find_package(Qt6 REQUIRED COMPONENTS Core)
-find_package(ZLIB REQUIRED)
-find_package(SQLite3 REQUIRED)
+
+# zlib / sqlite3 由顶层 Dependencies 解析（ps_zlib / ps_sqlite3）。
+# 这里只做兜底：单独把 tests/ 当独立工程用时退回系统库。
+if(TARGET ps_zlib)
+    set(PS_TEST_ZLIB ps_zlib)
+else()
+    find_package(ZLIB REQUIRED)
+    set(PS_TEST_ZLIB ZLIB::ZLIB)
+endif()
+if(TARGET ps_sqlite3)
+    set(PS_TEST_SQLITE ps_sqlite3)
+else()
+    find_package(SQLite3 REQUIRED)
+    set(PS_TEST_SQLITE SQLite::SQLite3)
+endif()
 
 # === ps_dataset 独立链接验收（B2）===
 # 故意只链 ps_dataset + Qt6::Core，不链 ps_context / host / module / extension。
@@ -335,7 +348,11 @@ target_link_libraries(ps_test_live_udp PRIVATE
     ps_module_data ps_module_data_gui ps_module_plot ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_toolbox_automotive_gui
-    ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core util)
+    ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+# libutil 提供 pty.h 的 openpty，只有 Linux 有；Windows 侧该用例的 pty 分支已被 #ifdef 排除。
+if(UNIX)
+    target_link_libraries(ps_test_live_udp PRIVATE util)
+endif()
 set_target_properties(ps_test_live_udp PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_test_live_udp COMMAND ps_test_live_udp)
 
@@ -347,7 +364,7 @@ add_test(NAME ps_report_template COMMAND ps_test_report_template)
 
 # MDF 4.x 解析器（T6.1）：SPI 直连验收，headless；fixture 用 ##DZ 压缩文件。
 add_executable(ps_test_mdf_parser test_mdf_parser.cpp)
-target_link_libraries(ps_test_mdf_parser PRIVATE ps_parser_mdf ps_parser_rosbag2 Qt6::Core ZLIB::ZLIB)
+target_link_libraries(ps_test_mdf_parser PRIVATE ps_parser_mdf ps_parser_rosbag2 Qt6::Core ${PS_TEST_ZLIB})
 target_compile_definitions(ps_test_mdf_parser PRIVATE
     PS_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixture")
 set_target_properties(ps_test_mdf_parser PROPERTIES AUTOMOC ON CXX_STANDARD 17)
@@ -355,7 +372,7 @@ add_test(NAME ps_mdf_parser COMMAND ps_test_mdf_parser)
 
 # ROS2 bag 解析器（T6.2）：SPI 直连验收，headless；fixture 由 make_rosbag2_demo.py 生成。
 add_executable(ps_test_rosbag2_parser test_rosbag2_parser.cpp)
-target_link_libraries(ps_test_rosbag2_parser PRIVATE ps_parser_rosbag2 Qt6::Core SQLite::SQLite3)
+target_link_libraries(ps_test_rosbag2_parser PRIVATE ps_parser_rosbag2 Qt6::Core ${PS_TEST_SQLITE})
 target_compile_definitions(ps_test_rosbag2_parser PRIVATE
     PS_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixture")
 set_target_properties(ps_test_rosbag2_parser PROPERTIES AUTOMOC ON CXX_STANDARD 17)
@@ -363,7 +380,7 @@ add_test(NAME ps_rosbag2_parser COMMAND ps_test_rosbag2_parser)
 
 # Vector BLF 解析器（T6.3）：SPI 直连验收，headless；fixture 为仓库内 demo_can.blf。
 add_executable(ps_test_blf_parser test_blf_parser.cpp)
-target_link_libraries(ps_test_blf_parser PRIVATE ps_parser_blf Qt6::Core ZLIB::ZLIB)
+target_link_libraries(ps_test_blf_parser PRIVATE ps_parser_blf Qt6::Core ${PS_TEST_ZLIB})
 target_compile_definitions(ps_test_blf_parser PRIVATE
     PS_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixture")
 set_target_properties(ps_test_blf_parser PROPERTIES AUTOMOC ON CXX_STANDARD 17)

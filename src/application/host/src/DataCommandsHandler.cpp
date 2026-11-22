@@ -497,7 +497,23 @@ Result<IntentResult> DataCommandsHandler::exportSnapshot(const Intent &intent)
             return fail(err::Write, QStringLiteral("无法创建目录: %1").arg(path));
         for (const SnapshotTable &t : tables)
         {
-            const QString file = dir.filePath(t.sheet + QStringLiteral(".csv"));
+            QString base = t.sheet;
+#if defined(Q_OS_WIN)
+            // Windows 把 CON/PRN/AUX/NUL/COM1..9/LPT1..9 当设备名，直接用会打开失败；
+            // 表名恰好叫 aux 这类时补一个下划线，文件名与 sheet 名仍可对应。
+            static const QStringList kReservedDeviceNames{
+                QStringLiteral("con"),  QStringLiteral("prn"),  QStringLiteral("aux"),
+                QStringLiteral("nul"),  QStringLiteral("com1"), QStringLiteral("com2"),
+                QStringLiteral("com3"), QStringLiteral("com4"), QStringLiteral("com5"),
+                QStringLiteral("com6"), QStringLiteral("com7"), QStringLiteral("com8"),
+                QStringLiteral("com9"), QStringLiteral("lpt1"), QStringLiteral("lpt2"),
+                QStringLiteral("lpt3"), QStringLiteral("lpt4"), QStringLiteral("lpt5"),
+                QStringLiteral("lpt6"), QStringLiteral("lpt7"), QStringLiteral("lpt8"),
+                QStringLiteral("lpt9")};
+            if (kReservedDeviceNames.contains(base.toLower()))
+                base += QLatin1Char('_');
+#endif
+            const QString file = dir.filePath(base + QStringLiteral(".csv"));
             QFile f(file);
             if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
                 return fail(err::Write, QStringLiteral("无法写入: %1").arg(file));

@@ -8,10 +8,19 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <unistd.h>
+#include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
+
+// getpid 在 Windows 上走 <process.h> 的 _getpid。
+#if defined(_WIN32)
+#include <process.h>
+#define PS_GETPID() static_cast<long>(_getpid())
+#else
+#include <unistd.h>
+#define PS_GETPID() static_cast<long>(::getpid())
+#endif
 
 namespace nextpilot::plotscope::ext::rosbag2
 {
@@ -323,7 +332,12 @@ bool openDb(const std::vector<uint8_t> &bytes, Db &out, std::string &err)
         out.db = nullptr;
     }
     // 回退：写临时文件再打开（老 sqlite 构建没有 deserialize）。
-    const std::string path = "/tmp/plotscope_rosbag2_" + std::to_string(::getpid()) + ".db3";
+    std::error_code fsEc;
+    const std::filesystem::path tmpDir = std::filesystem::temp_directory_path(fsEc);
+    const std::string path =
+        ((fsEc ? std::filesystem::path(".") : tmpDir) /
+         ("plotscope_rosbag2_" + std::to_string(PS_GETPID()) + ".db3"))
+            .string();
     FILE *f = std::fopen(path.c_str(), "wb");
     if (!f)
     {

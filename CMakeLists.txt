@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.22)
 project(PlotScope VERSION 0.1.0 LANGUAGES C CXX)
 
+# 版本号与告警口径（Version 只读 Git describe，Warnings 只定义 ps_set_warnings 函数）。
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(Version)
+include(Warnings)
+
+# 第三方 C 依赖（zlib / sqlite3）：优先系统或 -DPS_DEPS_ROOT 前缀，
+# 都没有且 PS_DEPS_FETCH=ON 时按固定 URL 拉源码编静态库——Windows 上没有
+# 包管理器也能一次 configure 到位。必须在 src/ 之前：toolbox 里 mdf/rosbag2 要链它。
+include(Dependencies)
+
 # 顶层薄壳：src/ 工程本体 + 根 tests/ 测试。
 # 全部构建逻辑在 src/CMakeLists.txt（唯一事实源，源自原 ng 工程）。
 enable_testing()
