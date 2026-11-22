@@ -14,17 +14,13 @@ class QTabWidget;
 class QTimer;
 class QEvent;
 
-namespace ads
-{
-class CDockManager;
-class CDockWidget;
-} // namespace ads
-
 namespace nextpilot::plotscope::gui
 {
 
 class CellTitleBar;
 class ChannelView;
+class PageDock;
+class PlotCellDock;
 class InstrumentView;
 class PlotCanvas;
 class PlaybackEngine;
@@ -83,7 +79,7 @@ private:
         // 标题条：格名、拆分/最大化/书签/AB/关闭，并负责把鼠标事件转给 ADS 标题栏。
         CellTitleBar *bar = nullptr;
         // 这一格在 ADS 里的停靠面板。块的"壳"会在重排时重建，frame 始终复用（曲线不丢）。
-        ads::CDockWidget *dockWidget = nullptr;
+        PlotCellDock *dockWidget = nullptr;
     };
 
     // 一个绘图页：滚动容器 + 页内 dock 管理器 + 该页的 cell。
@@ -92,7 +88,7 @@ private:
     struct Page
     {
         QWidget *host = nullptr;           // 绘图页本体（dock manager 的父）
-        ads::CDockManager *dock = nullptr; // 页内布局容器：每格一个停靠面板
+        PageDock *dock = nullptr;      // 页内布局容器：每格一个停靠面板，摆格/等分都归它
         QVector<Cell> cells;
         int rows = 1;
         int cols = 1;
@@ -121,15 +117,10 @@ private:
     // 剔空 + 按容量算行后的重排：先丢掉没有任何曲线的格，再按「行 = max(rows, ceil(N/cols))」
     // 排满，不足的补空画布。返回实际使用的行数。
     int reflowGrid(int rows, int cols);
-    // 让页内所有分隔条恢复等分（点 m×n 即回到严格等分状态）。
-    void equalizeSplitters();
     // 装配一个 cell（画布 + 仪表 + 堆叠 + 信号），调用方负责放进布局。
     Cell makeCell(QWidget *parentForStack);
-    // 把 cell 装进停靠面板。side: 0=中心格 1=右侧 2=下方；intoContainer 为真时相对整页容器插入（用于换行）。
-    ads::CDockWidget *makeDockForCell(Cell &cell, int side, ads::CDockWidget *relative = nullptr,
-                                      bool intoContainer = false);
     // 停靠面板 → 当前页 cell 下标（-1 = 不属于本页）。
-    int indexOfDock(const ads::CDockWidget *dockWidget) const;
+    int indexOfDock(const PlotCellDock *dockWidget) const;
     // 把 cell 的 stack 从停靠面板里摘出（重建前必须先摘，否则删面板会连着删控件）。
     void detachStacks();
 
@@ -174,11 +165,9 @@ private:
     int m_active = 0;
     int m_fullscreenCell = -1;        // >=0 表示某 cell 处于全屏（其它 cell 面板被隐藏）
     // 全屏时被隐藏的其它面板：退出时只恢复这一批，用户自己关掉的不会被重新打开。
-    QVector<QPointer<ads::CDockWidget>> m_fullscreenHidden;
+    QVector<QPointer<PlotCellDock>> m_fullscreenHidden;
     int m_rows = 1;
     int m_cols = 1;
-    // 重建停靠树期间为真：此时 ADS 的 dockWidgetRemoved 是"我们在拆旧树"，不该当成用户关格。
-    bool m_rebuildingDock = false;
 
     PlaybackEngine *m_playback = nullptr;
     TimelineWidget *m_timeline = nullptr;

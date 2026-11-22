@@ -107,6 +107,11 @@ add_library(ps_gui OBJECT
     # --- plot/chrome：格框上的小部件 ---
     views/plot/chrome/CellTitleBar.cpp
     views/plot/chrome/CellTitleBar.h
+    # --- plot/layout：页内停靠容器与每格面板 ---
+    views/plot/layout/PageDock.cpp
+    views/plot/layout/PageDock.h
+    views/plot/layout/PlotCellDock.cpp
+    views/plot/layout/PlotCellDock.h
     # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
     views/PropertyPanel.cpp
     views/PropertyPanel.h

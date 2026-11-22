@@ -31,6 +31,10 @@
 #include "PlotCanvas.h"
 #include "CanvasWorkspace.h"
 #include "chrome/CellTitleBar.h"
+#include "layout/PageDock.h"
+#include "layout/PlotCellDock.h"
+#include "DockAreaWidget.h"
+#include "DockWidget.h"
 #include "ShellBinder.h"
 #include "FilterEditorDialog.h"
 
@@ -3042,6 +3046,32 @@ int main(int argc, char *argv[])
         CHECK(bar->metaObject()->indexOfSignal("activated()") >= 0);
         CHECK(bar->metaObject()->indexOfSignal("splitClicked(bool)") >= 0);
         OK("D1 格标题条：独立类、挂靠所属面板、新建即暗、激活/拆分信号就位");
+    }
+
+    // --- D2：页容器 PageDock / 每格面板 PlotCellDock 各自成类 ---
+    {
+        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        CHECK(ws != nullptr);
+        auto *canvas = ws->activeCanvas();
+        CHECK(canvas != nullptr);
+        QWidget *frame = canvas->parentWidget() ? canvas->parentWidget()->parentWidget() : nullptr;
+        CHECK(frame != nullptr);
+        // 从外框往上找到所属格面板。
+        PlotCellDock *cellDock = nullptr;
+        for (QWidget *w = frame->parentWidget(); w; w = w->parentWidget())
+            if (auto *d = qobject_cast<PlotCellDock *>(w))
+            {
+                cellDock = d;
+                break;
+            }
+        CHECK(cellDock != nullptr);
+        CHECK(qobject_cast<PageDock *>(cellDock->dockManager()) != nullptr);
+        CHECK(cellDock->titleBar() != nullptr);
+        // 单格停靠区藏起整条标题栏：页签条只在合并成多格时出现。
+        CHECK(cellDock->dockAreaWidget() != nullptr);
+        CHECK(cellDock->dockAreaWidget()->dockAreaFlags()
+              & ads::CDockAreaWidget::HideSingleWidgetTitleBar);
+        OK("D2 页容器与格面板：PageDock 拥有 PlotCellDock，单格标题栏隐藏");
     }
 
     // --- dock 页签：页签序与内容栈序必须一致（修"点页签内容不切"）---
