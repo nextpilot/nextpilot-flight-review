@@ -6,11 +6,13 @@
 
 #include <QApplication>
 #include <QCommandLineOption>
+#include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QPixmap>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QCommandLineParser>
 #include <QTimer>
@@ -78,13 +80,33 @@ int main(int argc, char *argv[])
                                          QStringLiteral("窗口就绪并完成载入后退出（退出码 0=成功/1=有失败）"),
                                          QStringLiteral("seconds"), QStringLiteral("3"));
     parser.addOption(exitAfterStartOpt);
+    QCommandLineOption settingsOpt(QStringLiteral("settings"),
+                                   QStringLiteral("设置文件路径（默认 <AppData>/plotscope/settings.json）"),
+                                   QStringLiteral("file"));
+    parser.addOption(settingsOpt);
     parser.process(app);
 
     // 诊断模式抑制模块提示，保证 stdout 是纯 JSON。
     if (parser.isSet(dumpDiagOpt))
         qputenv("PLOTSCOPE_QUIET_STDOUT", "1");
 
-    nextpilot::plotscope::app::App application;
+    // 设置落盘：App 作用域偏好（主题 / 时间轴刻度 / 导出与重算上限…）跨会话保留。
+    // 之前 GUI 全部用内存模式——"偏好设置"改完重启就丢，等于假开关。
+    // 路径取 <AppData>/plotscope/settings.json（AppDataLocation 已含 applicationName）；
+    // --settings 可覆盖，便于测试与便携部署，不污染真实配置。
+    QString settingsPath = parser.value(settingsOpt);
+    if (settingsPath.isEmpty())
+    {
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        if (!dir.isEmpty())
+        {
+            // SettingsStore 用 QSaveFile 原子写，但不会自己建目录（首次运行会失败）。
+            QDir().mkpath(dir);
+            settingsPath = dir + QStringLiteral("/settings.json");
+        }
+    }
+
+    nextpilot::plotscope::app::App application(settingsPath);
     nextpilot::plotscope::gui::MainWindow window(application.context());
     window.build(application.host());
 

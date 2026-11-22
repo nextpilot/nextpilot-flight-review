@@ -34,6 +34,7 @@ namespace nextpilot::plotscope::gui
 {
 
 class GuiContext;
+class PreferencesIntentHandler;
 class ShellBinder;
 class ThemeManager;
 
@@ -118,6 +119,8 @@ private:
     QMenu *m_gridMenu = nullptr;   // 「网格」大按钮的下拉（X/Y 网格线开关）
     GuiContext *m_context = nullptr;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
+    // 系统级 preferences.open handler（打开全局偏好对话框）；随窗口存亡。
+    PreferencesIntentHandler *m_preferencesHandler = nullptr;
     bool m_ribbonLaidOut = false; // 是否已按真实宽度重建过 ribbon
 };
 

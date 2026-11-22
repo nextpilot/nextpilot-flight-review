@@ -36,6 +36,7 @@
 #include "AppContext.h"
 #include "ChannelMime.h"
 #include "RegistryTree.h"
+#include "SettingsStore.h"
 
 #include <QProcess>
 #include "ChannelTransformConfig.h"
@@ -49,6 +50,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -59,6 +61,7 @@
 #include <QSet>
 #include <QStatusBar>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <cmath>
 
@@ -138,6 +141,88 @@ int main(int argc, char *argv[])
     window.build(application.host());
     // 先给窗口一个确定尺寸：画布按自身像素宽请求数据，尺寸确定后断言才可复现。
     window.resize(1280, 800);
+
+    // --- 0a) 「文件 → 设置」的接线契约：ribbon 动作绑的是 GUI 专属意图 ---
+    {
+        // 偏好对话框是 GUI 专属能力：动作必须绑 preferences.open（由外壳注册的
+        // 系统级 handler 处理），不能绑 settings.*——那是 modules/settings 的存取
+        // 域，模块不认识 QWidget，headless 里也不该出现任何界面语义。
+        const auto &slotReg2 = application.host().uiSlots();
+        const auto fileActs = slotReg2.actionsIn(QStringLiteral("ribbon.group.file.document"));
+        bool hasSettingsAction = false;
+        for (const auto &entry : fileActs)
+        {
+            if (entry.action.id == QStringLiteral("file.settings"))
+            {
+                hasSettingsAction = true;
+                CHECK(entry.action.intentOp == QStringLiteral("preferences.open"));
+            }
+        }
+        CHECK(hasSettingsAction);
+        OK("设置入口接线：ribbon file.settings → preferences.open（GUI 系统级 handler）");
+    }
+
+    // --- 0a2) 真跑一次 preferences.open：GUI 系统级 handler 必须弹得出、收得回 ---
+    {
+        // 模态对话框在 exec() 内跑事件循环，这里用一个重试定时器找到它并关闭，
+        // 证明「意图 → 系统级 handler → 对话框」这条链在 GUI 环境里真的闭合，
+        // 而不是只测了字符串绑定。
+        int dialogSeen = 0;
+        int tries = 0;
+        QTimer closer;
+        QObject::connect(&closer, &QTimer::timeout, [&]() {
+            if (++tries > 50)
+            {
+                closer.stop();
+                return;
+            }
+            for (QWidget *w : QApplication::topLevelWidgets())
+            {
+                if (w->isVisible() && w->windowTitle() == QStringLiteral("偏好设置"))
+                {
+                    ++dialogSeen;
+                    w->close();
+                    closer.stop();
+                    return;
+                }
+            }
+        });
+        closer.start(20);
+
+        Intent openIntent;
+        openIntent.op = QStringLiteral("preferences.open");
+        openIntent.params[QStringLiteral("section")] = QStringLiteral("data");
+        const auto openResult = application.host().execute(openIntent);
+        closer.stop();
+
+        CHECK(openResult);
+        CHECK(openResult.value().payload.toBool());
+        CHECK(dialogSeen == 1); // 确实弹过，而不是 handler 空转返回 true
+        OK("偏好对话框：preferences.open 经 GUI 系统级 handler 弹出并可关闭");
+    }
+
+    // --- 0b) App 作用域偏好的落盘往返（偏好对话框「保存」的核心链路）---
+    {
+        QTemporaryDir dir;
+        CHECK(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("settings.json"));
+        {
+            SettingsStore store(path);
+            CHECK(store.isPersistent());
+            store.setValue(QStringLiteral("plot.time.format"), QStringLiteral("hms"));
+            store.setValue(QStringLiteral("app/theme"), QStringLiteral("dark"));
+            QString err;
+            CHECK(store.flush(&err));
+        }
+        CHECK(QFileInfo::exists(path));
+        {
+            SettingsStore reloaded(path); // 构造即从磁盘读入
+            CHECK(reloaded.value(QStringLiteral("plot.time.format")).toString()
+                  == QStringLiteral("hms"));
+            CHECK(reloaded.value(QStringLiteral("app/theme")).toString() == QStringLiteral("dark"));
+        }
+        OK("App 作用域偏好落盘：flush 写盘 + 重新加载值一致");
+    }
 
     // --- 1) 模块在 GUI 环境下全部激活（静态自注册生效）---
     const auto active = application.host().activeIds();

@@ -1,7 +1,6 @@
 #include "DataManagerPanel.h"
 
 #include "LiveConnectDialog.h"
-#include "SettingsDialog.h"
 
 #include "PanelFactoryHub.h"
 #include "ThemeManager.h"
@@ -407,11 +406,7 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     addBtn->setMenu(addMenu);
     connect(addOpen, &QAction::triggered, this, &DataManagerPanel::openLogFile);
     connect(addLive, &QAction::triggered, this, &DataManagerPanel::openLiveConnect);
-    connect(addSettings, &QAction::triggered, this, [this]() {
-        SettingsDialog dlg(m_executor, this);
-        if (dlg.exec() == QDialog::Accepted)
-            notifyTimeFormatChanged();
-    });
+    connect(addSettings, &QAction::triggered, this, &DataManagerPanel::openSettingsDialog);
     headerLay->addWidget(addBtn);
     m_srcCount = new QLabel(QStringLiteral("0 源 · 0 已连接"), headerRow);
     m_srcCount->setObjectName(QStringLiteral("textDim"));
@@ -1479,9 +1474,7 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
     }
     else if (chosen == settingsAction)
     {
-        SettingsDialog dlg(m_executor, this);
-        if (dlg.exec() == QDialog::Accepted)
-            notifyTimeFormatChanged();
+        openSettingsDialog();
     }
     else if (chosen == clearCache)
     {
@@ -1493,16 +1486,22 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
         m_appCtx.setActiveSourceId(sourceId);
 }
 
-void DataManagerPanel::notifyTimeFormatChanged()
+// 设置对话框唯一实现：ribbon「文件→设置」(经 preferences.open 意图)、
+// 源列表「数据设置…」、源右键菜单三处都到这里。
+//
+// 本面板**不自己建对话框**：只发 preferences.open 意图 + section="data"，
+// 由外壳注册的系统级 handler 弹全局偏好对话框并定位到「数据」页。这样：
+//   · 面板不 include 外壳头文件（模块视图不反向依赖 shell）；
+//   · 落盘、主题、时间轴派发都在外壳一处，三处入口不会走散。
+void DataManagerPanel::openSettingsDialog()
 {
-    // 设置保存后立刻让画布换刻度文本：走 viewAction，不直接依赖画布模块。
-    const QString mode = m_appCtx.settings()
-                             .value(QStringLiteral("plot.time.format"), QStringLiteral("relative"))
-                             .toString();
-    QVariantMap params;
-    params[QStringLiteral("mode")] = mode;
-    Result<QVariant> out = fail(QStringLiteral("plot"), QStringLiteral("无画布可应用"));
-    m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.timeFormat"), params, out);
+    Intent intent;
+    intent.op = QStringLiteral("preferences.open");
+    intent.params[QStringLiteral("section")] = QStringLiteral("data");
+    const auto r = m_executor.execute(intent);
+    if (!r)
+        QMessageBox::warning(this, QStringLiteral("设置"),
+                             QStringLiteral("打开设置失败：%1").arg(r.error().message));
 }
 
 void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globalPos)
@@ -1936,6 +1935,6 @@ QWidget *createDatasetTreePanel(AppContext &appCtx, IIntentExecutor &exec, QWidg
 }
 
 // 视图层自注册：模块只声明类型字符串 "dataset-tree"，外壳据此装配本面板。
-PS_REGISTER_PANEL_T("dataset-tree", datasetTree, createDatasetTreePanel, "数据源")
+PS_REGISTER_PANEL_TI("dataset-tree", datasetTree, createDatasetTreePanel, "数据源", "datasource")
 
 } // namespace nextpilot::plotscope::gui

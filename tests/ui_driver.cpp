@@ -47,7 +47,7 @@
 #include "TransformEditorDialog.h"
 #include "Transform.h"
 #include "FilterEditorDialog.h"
-#include "SettingsDialog.h"
+#include "PreferencesDialog.h"
 #include "CanvasWorkspace.h"
 #include "PlotCanvas.h"
 #include "RuntimeHost.h"
@@ -239,8 +239,10 @@ bool dialogFilter(App &application, MainWindow &window, const QJsonObject &param
 
 bool dialogSettings(App &application, MainWindow &window, const QJsonObject &params, const QString &path)
 {
-    Q_UNUSED(params);
-    SettingsDialog dlg(application.host(), &window);
+    // 偏好设置（全局，App 作用域）：旧「数据设置」对话框已并入这里，
+    // 场景名沿用 "settings"，可用 section 指定首屏分组（appearance/timeline/data）。
+    const QString section = params.value(QStringLiteral("section")).toString();
+    PreferencesDialog dlg(application.context(), application.host(), section, &window);
     dlg.show();
     dlg.adjustSize();
     return shotDialog(dlg, path, 250);

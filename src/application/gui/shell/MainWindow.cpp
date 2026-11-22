@@ -4,6 +4,7 @@
 
 #include "GuiContext.h"
 #include "ImportDialog.h"
+#include "PreferencesIntentHandler.h"
 #include "ProtocolInspectorDialog.h"
 #include "ProtocolEditorDialog.h"
 #include "ReportExporter.h"
@@ -148,7 +149,7 @@ void MainWindow::declareStandardSlots()
                 QStringLiteral("ribbon.group.file.document"), QStringLiteral("layout.import"),
                 QStringLiteral("import"), QString(), 1);
     addSkeleton(QStringLiteral("file.settings"), QStringLiteral("设置"),
-                QStringLiteral("ribbon.group.file.document"), QStringLiteral("settings.flush"),
+                QStringLiteral("ribbon.group.file.document"), QStringLiteral("preferences.open"),
                 QStringLiteral("settings"), QStringLiteral("Ctrl+,"), 2);
     // 导出组：保存布局(0) / 导出设置(1) / 导出数据(2)
     addSkeleton(QStringLiteral("file.saveLayout"), QStringLiteral("保存布局"),
@@ -402,9 +403,19 @@ void MainWindow::build(RuntimeHost &host)
                      [this](ThemeManager::Theme theme) {
                          if (m_binder)
                              m_binder->applyTheme(theme == ThemeManager::Theme::Dark,
-                                                  m_theme->ribbonStyleSheet());
+                                                  m_theme->ribbonStyleSheet(),
+                                                  m_theme->dockStyleSheet());
                      });
     m_theme->applyCurrent(); // 把 settings 里的初始值落到全局 QSS 与 ribbon
+
+    // 2.2) 「文件 → 设置」的落地 = 全局偏好对话框（App 作用域，落盘）。
+    //   偏好界面是 GUI 专属能力，注册成**系统级 handler**（与 theme.* 同法），
+    //   模块层（modules/settings）只管存取、不认识 QWidget：
+    //   · ribbon 与脚本都发 preferences.open 意图，同一条执行路径；
+    //   · headless 没有这个 handler → "没有模块能处理意图"，不假装成功。
+    //   · 生命周期随窗口：模态对话框在 handler 内现构造现销毁。
+    m_preferencesHandler = new PreferencesIntentHandler(m_appCtx, host, this);
+    host.registerSystemHandler(QStringLiteral("@system/preferences"), m_preferencesHandler);
 
     // 3) 装模块（GUI 模式：会调用 onAttach，模块可自带界面入口）
     host.activate(QStringList(), m_context);
@@ -416,6 +427,32 @@ void MainWindow::build(RuntimeHost &host)
     // AppContext 的 Selection + PropertyProvider 决定，外壳不认识业务。
     if (m_context->requestPanel(QStringLiteral("dock.right"), QStringLiteral("property-panel")))
         statusBar()->showMessage(QStringLiteral("属性面板已就绪"));
+
+    // 3.0b) 底部面板条（VS Code 式）：终端 → 输出 → 问题 → 调试控制台 → 诊断。
+    //
+    // 顺序是按 requestPanel 的调用次序固定的（ADS 往同一 dock area 尾部追加页签）：
+    //   · 「终端」由 ScriptModule 在 onAttach 时请求（模块自带界面入口），
+    //     此时已在坞底占首位，故这里从「输出」开始；
+    //   · 「诊断」原先挂在右栏、按需创建，现在并入底部组——它内部仍是
+    //     diag.registries 的注册树全景视图，只是位置变了，取数通道不变。
+    // 四个面板共用 AppContext 消息流：输出收全量、问题只留 warn/error、
+    // 调试控制台只收 level=debug，互不重复实现取数。
+    const struct { const char *type; const char *area; } kBottomPanels[] = {
+        {"output-console", "dock.bottom"},   // 全量消息流
+        {"problems", "dock.bottom"},         // 只留 warn/error
+        {"debug-console", "dock.bottom"},    // 调试事件 + 求值
+        {"diagnostics", "dock.diagnostics"}, // 并入底部组，取数仍是 diag.registries
+    };
+    for (const auto &panel : kBottomPanels)
+        m_context->requestPanel(QString::fromLatin1(panel.area),
+                                QString::fromLatin1(panel.type));
+
+    // 底部默认停在「终端」：ADS 每加一个页签都会把新的置为当前，于是最后装配的
+    // 「诊断」会抢到选中态——底部面板条默认显示的应该是终端（可输入的那一个）。
+    // 走 re-request 复用（与调试暂停聚焦面板同一条语义），不新增外壳专用接口。
+    if (QWidget *terminal = m_context->requestPanel(QStringLiteral("dock.bottom"),
+                                                    QStringLiteral("script-console")))
+        m_binder->raisePanel(terminal);
 
     // 3.1) ribbon 动作 -> 意图：外壳只把动作 id 交出去，不解释语义。
     //
@@ -830,12 +867,21 @@ void MainWindow::showEvent(QShowEvent *event)
     {
         m_ribbonLaidOut = true;
         m_binder->rebuildRibbon();
+        // ribbon 页签：构造期只登记了目标页（那时页签栏没就位，切了也落空），
+        // 这里窗口已显示、内容已按真实宽度重建，才真正切过去。
+        m_binder->applyPendingRibbonPage();
         // ribbing 重排之后窗口才有真实宽度：同一帧末把 dock 比例定下来
         // （左右收窄、中央拿大头），之后不再干预以保留用户拖动。
         QTimer::singleShot(300, this, [this]() {
             if (!m_binder)
                 return;
-            m_binder->applyDockProportions();
+            // 有上次保存的布局就尊重它：adsLayout 已恢复，比例在里面；此时再套
+            // 默认 72:28 会把用户上次拖动的比例抹掉。只有首次运行才用默认比例。
+            if (!hasSavedState())
+                m_binder->applyDockProportions();
+            // 兜底再试一次 ribbon 页：首帧里页签栏偶尔还没完成布局，
+            // 前面那次可能没切成（切成功则这里是空操作）。
+            m_binder->applyPendingRibbonPage();
             // 初始面板显式指定为「数据源」：左栏两个页签谁先装配不该决定默认显示
             // （实测新增扩展包换了链接顺序后，启动落在「脚本文件」）。
             // 延时 300ms：ADS 的 tab 插入与布局收尾都在首帧之后，0ms 抢不过它。

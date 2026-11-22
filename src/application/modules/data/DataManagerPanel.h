@@ -100,8 +100,9 @@ private:
     int m_shownChip = 0;        // 0 字段 / 1 参数 / 2 消息
     int m_paramCount = 0;       // 诊断用
     int m_msgCount = 0;
-    // 设置保存后派发 plot.timeFormat（时间轴刻度三态）。
-    void notifyTimeFormatChanged();
+    // 弹设置对话框（「数据设置…」菜单项、源右键菜单都到这里；ribbon「文件→设置」
+    // 走同一意图）。面板只发意图，弹窗归外壳的常驻订阅者——面板不反向依赖 shell。
+    void openSettingsDialog();
 };
 
 QWidget *createDatasetTreePanel(nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &exec,

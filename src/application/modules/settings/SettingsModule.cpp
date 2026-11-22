@@ -45,6 +45,9 @@ SettingsScope scopeFromName(const QString &name)
 //
 // 这是"统一设置管理"的对外接口：GUI、CLI、脚本走同一条路径。
 // 键的语义由调用方与各贡献方约定，本处理器不做任何领域判断。
+// 边界：**不提供任何 UI 入口**——"打开设置对话框"是 GUI 专属意图
+// （preferences.open），由外壳注册系统级 handler 处理；本模块只做存取，
+// 这样 headless 里它永远不需要认识 QWidget。
 class SettingsModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
@@ -165,7 +168,8 @@ ModuleInfo SettingsModule::info() const
 
 void SettingsModule::initialize(ModuleContext &ctx)
 {
-    // 设置存储归宿主所有（GUI/CLI/脚本共用一份），模块只做门面。
+    // 设置存储归宿主所有（GUI/CLI/脚本共用一份），模块只做门面：
+    // 只登记存取类意图，不碰任何 UI（设置对话框属 GUI 外壳，见 preferences.open）。
     m_handler = new Handler(ctx.app().settings(), this);
     ctx.registerIntentHandler(m_handler);
 }

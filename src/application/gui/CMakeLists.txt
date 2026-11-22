@@ -79,6 +79,11 @@ add_library(ps_gui OBJECT
     shell/ProtocolInspectorDialog.h
     shell/ProtocolEditorDialog.cpp
     shell/ProtocolEditorDialog.h
+    # 全局偏好设置（App 作用域，跨工作区持久）：外壳级系统能力，不属于任何功能模块。
+    shell/PreferencesDialog.cpp
+    shell/PreferencesDialog.h
+    shell/PreferencesIntentHandler.cpp
+    shell/PreferencesIntentHandler.h
     shell/ReportExporter.cpp
     shell/ReportExporter.h
     # --- 通用绘图能力库 ---
