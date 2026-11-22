@@ -1,6 +1,7 @@
 #include "CanvasWorkspace.h"
 
 #include "AppContext.h"
+#include "chrome/CellTitleBar.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
@@ -26,7 +27,6 @@
 // 布局层：每格一个 ADS 停靠面板（拖动分屏 / 拖到中心合并 / 拖出浮动 / 拖回停靠全由 ADS 提供）。
 #include "DockAreaTitleBar.h"
 #include "DockAreaWidget.h"
-#include "DockComponentsFactory.h"
 #include "DockContainerWidget.h"
 #include "DockManager.h"
 #include "DockSplitter.h"
@@ -35,7 +35,6 @@
 #include <QEvent>
 #include <QCoreApplication>
 #include <QCursor>
-#include <QFile>
 #include <QGuiApplication>
 #include <QToolTip>
 #include <QHBoxLayout>
@@ -49,7 +48,6 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
-#include <QToolButton>
 #include <QVBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -101,33 +99,6 @@ QString toInstrumentKind(const QString &kind)
         return QStringLiteral("attitude");
     return kind;
 }
-
-// 每格标题条按钮的图标：资源缺失时返回空 QIcon（按钮退化为文字，不刷告警）。
-QIcon cellIcon(const char *name)
-{
-    const QString path = QStringLiteral(":/icons/%1.svg").arg(QLatin1String(name));
-    return QFile::exists(path) ? QIcon(path) : QIcon();
-}
-
-// 原生标题栏一律藏起来：标题与按钮由每格自己的标题条（makeHoverBar）承担，
-// 但对象仍要存在——拖动由鼠标事件转发给它，ADS 才会起拖（PJ4 的 DockToolbar 同一手法）。
-class HiddenCellTitleBar : public ads::CDockAreaTitleBar
-{
-public:
-    using ads::CDockAreaTitleBar::CDockAreaTitleBar;
-    void setVisible(bool) override { QWidget::setVisible(false); }
-};
-
-class HiddenCellTitleBarFactory : public ads::CDockComponentsFactory
-{
-public:
-    ads::CDockAreaTitleBar *createDockAreaTitleBar(ads::CDockAreaWidget *dockArea) const override
-    {
-        auto *titleBar = new HiddenCellTitleBar(dockArea);
-        titleBar->setVisible(false);
-        return titleBar;
-    }
-};
 } // namespace
 
 CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
@@ -323,12 +294,65 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
     cell.instrument = instrument;
     cell.stack = stack;
     cell.frame = frame;
-    // 每格的标题条：常显在格子顶部（不再"鼠标进才浮出"），按钮直接作用在"这一格"。
-    cell.hoverBar = makeHoverBar(cell, frame);
-    frameLay->addWidget(cell.hoverBar);
+    // 每格的标题条：常显在格子顶部，按钮直接作用在"这一格"。
+    cell.bar = new CellTitleBar(frame);
+    frameLay->addWidget(cell.bar);
     frameLay->addWidget(stack, 1);
     // 初始为"收起"态：鼠标进到这一格才亮出来。
-    setCellBarShown(cell, false);
+    cell.bar->setShown(false);
+
+    // 按钮只发信号，作用于哪一格由标题条反查——每格不再各连一套定位逻辑。
+    CellTitleBar *bar = cell.bar;
+    QObject::connect(bar, &CellTitleBar::activated, this, [this, bar]() {
+        const int index = indexOfBar(bar);
+        if (index >= 0)
+            setActive(index);
+    });
+    QObject::connect(bar, &CellTitleBar::splitClicked, this, [this, bar](bool horizontal) {
+        const int index = indexOfBar(bar);
+        if (index < 0)
+            return;
+        setActive(index);
+        split(horizontal);
+        showHoverBar(m_active);
+    });
+    QObject::connect(bar, &CellTitleBar::maximizeClicked, this, [this, bar]() {
+        const int index = indexOfBar(bar);
+        if (index < 0)
+            return;
+        setActive(index);
+        toggleFullscreen();
+        showHoverBar(m_active);
+    });
+    // 书签：以当前游标时刻为准；没有游标就取可见范围中点（总有明确落点）。
+    QObject::connect(bar, &CellTitleBar::bookmarkClicked, this, [this, bar]() {
+        const int index = indexOfBar(bar);
+        if (index < 0 || !m_cells[index].canvas)
+            return;
+        PlotCanvas *target = m_cells[index].canvas;
+        double t = 0.0;
+        if (target->cursorActiveForTest())
+            t = target->cursorTime();
+        else
+        {
+            double t0 = 0.0;
+            double t1 = 0.0;
+            if (target->visibleTimeRange(&t0, &t1))
+                t = (t0 + t1) / 2.0;
+        }
+        target->addBookmark(t, QStringLiteral("书签"));
+    });
+    // A/B：与画布右键/Ctrl+左键同一条实现（以游标为中心生成区间）。
+    QObject::connect(bar, &CellTitleBar::abClicked, this, [this, bar]() {
+        const int index = indexOfBar(bar);
+        if (index >= 0 && m_cells[index].canvas)
+            m_cells[index].canvas->toggleAB();
+    });
+    QObject::connect(bar, &CellTitleBar::closeClicked, this, [this, bar]() {
+        const int index = indexOfBar(bar);
+        if (index >= 0)
+            removeAt(index);
+    });
     // 图例从上往下让出标题条的高度，曲线不与标题条贴边。
     if (auto *ax = canvas->plotForTest())
         ax->setLegendTopInset(28.0);
@@ -362,130 +386,6 @@ int CanvasWorkspace::addCell()
     return m_active;
 }
 
-QWidget *CanvasWorkspace::makeHoverBar(Cell &cell, QWidget *parentStack)
-{
-    auto *bar = new QWidget(parentStack);
-    bar->setObjectName(QStringLiteral("cellHoverBar"));
-    bar->setAttribute(Qt::WA_StyledBackground, true);
-
-    // 底色跟 Axes 的标题栏同色（palette alternateBase），高度也取标题栏高度，
-    // 于是这一格顶部看起来就是一条标题栏：左端格名，右端按钮。
-    QColor barBg = parentStack->palette().alternateBase().color();
-    barBg.setAlpha(255);
-    bar->setFixedHeight(fastplot::Axes::kTitleBarHeight - 2);
-    bar->setStyleSheet(QStringLiteral(
-        "#cellHoverBar { background: %1; }"
-        // 鼠标不在这一格时整条只是"占位"，不显示底色/文字/按钮；这样进格出现时不跳布局。
-        "#cellHoverBar[dimmed=\"true\"] { background: transparent; }"
-        "#cellHoverBar[dimmed=\"true\"] QLabel { color: transparent; }"
-        " QToolButton { border: none; padding: 0px; border-radius: 2px; background: transparent; }"
-        " QToolButton:hover { background: rgba(127,127,127,0.28); }"
-        " QLabel { background: transparent; color: palette(text); }")
-        .arg(barBg.name(QColor::HexArgb)));
-
-    auto *lay = new QHBoxLayout(bar);
-    lay->setContentsMargins(6, 0, 2, 0);
-    lay->setSpacing(0);
-
-    // 标题条空白处也能拖这一格：条形本身接鼠标事件，再转给 ADS 起拖。
-    bar->installEventFilter(this);
-    // 格名：像 PJ4 的绘图标题一样常显；双击可改名，按住拖动就是搬这一格。
-    auto *title = new QLabel(QStringLiteral("图"), bar);
-    title->setToolTip(QStringLiteral("拖动这里可重新排列；双击改名"));
-    title->setCursor(Qt::OpenHandCursor);
-    title->installEventFilter(this);
-    cell.titleLabel = title;
-
-    auto makeBtn = [bar](const char *iconName, const QString &fallbackText, const QString &tip) {
-        auto *btn = new QToolButton(bar);
-        btn->setAutoRaise(true);
-        btn->setToolTip(tip);
-        btn->setIconSize(QSize(14, 14));
-        btn->setFixedSize(20, fastplot::Axes::kTitleBarHeight - 4);
-        btn->setCursor(Qt::PointingHandCursor);
-        const QIcon icon = cellIcon(iconName);
-        if (icon.isNull())
-            btn->setText(fallbackText);
-        else
-            btn->setIcon(icon);
-        return btn;
-    };
-
-    // 顺序按用户要求：左右 · 上下 · 全屏 · 书签 · AB · 删除。
-    QToolButton *leftRight = makeBtn("split_h", QStringLiteral("◫"), QStringLiteral("左右拆分"));
-    QToolButton *topBottom = makeBtn("split_v", QStringLiteral("◱"), QStringLiteral("上下拆分"));
-    QToolButton *maxBtn = makeBtn("maximize", QStringLiteral("⤢"), QStringLiteral("最大化 / 还原"));
-    QToolButton *bookmarkBtn = makeBtn("bookmark", QStringLiteral("◇"), QStringLiteral("在当前时刻加书签"));
-    QToolButton *abBtn = makeBtn("ab", QStringLiteral("AB"), QStringLiteral("A/B 区间测量"));
-    QToolButton *closeBtn = makeBtn("close", QStringLiteral("✕"), QStringLiteral("关闭这一格"));
-
-    auto cellFor = [this](QWidget *b) {
-        const int i = indexOfHoverBar(b);
-        return (i >= 0 && i < m_cells.size()) ? &m_cells[i] : nullptr;
-    };
-
-    QObject::connect(leftRight, &QToolButton::clicked, this, [this, bar]() {
-        const int i = indexOfHoverBar(bar);
-        if (i < 0)
-            return;
-        setActive(i);
-        split(true);
-        showHoverBar(m_active);
-    });
-    QObject::connect(topBottom, &QToolButton::clicked, this, [this, bar]() {
-        const int i = indexOfHoverBar(bar);
-        if (i < 0)
-            return;
-        setActive(i);
-        split(false);
-        showHoverBar(m_active);
-    });
-    QObject::connect(maxBtn, &QToolButton::clicked, this, [this, bar]() {
-        const int i = indexOfHoverBar(bar);
-        if (i < 0)
-            return;
-        setActive(i);
-        toggleFullscreen();
-        showHoverBar(m_active);
-    });
-    // 书签：以当前游标时刻为准；没有游标就取可见范围中点（总有明确落点）。
-    QObject::connect(bookmarkBtn, &QToolButton::clicked, this, [cellFor, bar]() {
-        Cell *c = cellFor(bar);
-        if (!c || !c->canvas)
-            return;
-        double t = c->canvas->cursorActiveForTest() ? c->canvas->cursorTime() : 0.0;
-        if (!c->canvas->cursorActiveForTest())
-        {
-            double t0 = 0.0;
-            double t1 = 0.0;
-            if (c->canvas->visibleTimeRange(&t0, &t1))
-                t = (t0 + t1) / 2.0;
-        }
-        c->canvas->addBookmark(t, QStringLiteral("书签"));
-    });
-    // A/B：与该画布右键/Ctrl+左键同一条实现（以游标为中心生成区间）。
-    QObject::connect(abBtn, &QToolButton::clicked, this, [cellFor, bar]() {
-        Cell *c = cellFor(bar);
-        if (c && c->canvas)
-            c->canvas->toggleAB();
-    });
-    QObject::connect(closeBtn, &QToolButton::clicked, this, [this, bar]() {
-        const int i = indexOfHoverBar(bar);
-        if (i >= 0)
-            removeAt(i);
-    });
-
-    lay->addWidget(title, 1);
-    lay->addWidget(leftRight);
-    lay->addWidget(topBottom);
-    lay->addWidget(maxBtn);
-    lay->addWidget(bookmarkBtn);
-    lay->addWidget(abBtn);
-    lay->addWidget(closeBtn);
-    // 标题条常显（与 PJ4 的 per-dock 工具条一致），不再靠鼠标进出控制显隐。
-    bar->setAttribute(Qt::WA_Hover, true);
-    return bar;
-}
 void CanvasWorkspace::flashToolbar(bool autoHide)
 {
     showHoverBar(m_active);
@@ -493,18 +393,12 @@ void CanvasWorkspace::flashToolbar(bool autoHide)
         m_hoverTimer->stop();
 }
 
-void CanvasWorkspace::layoutHoverBar(Cell &cell)
-{
-    // 标题条现在由外框的竖直布局摆放（固定在上沿），不再需要手工定位。
-    Q_UNUSED(cell);
-}
-
-int CanvasWorkspace::indexOfHoverBar(const QObject *bar) const
+int CanvasWorkspace::indexOfBar(const QObject *bar) const
 {
     if (!bar)
         return -1;
     for (int i = 0; i < m_cells.size(); ++i)
-        if (m_cells.at(i).hoverBar == bar || m_cells.at(i).titleLabel == bar)
+        if (m_cells.at(i).bar == bar)
             return i;
     return -1;
 }
@@ -516,31 +410,31 @@ void CanvasWorkspace::showHoverBar(int index)
         return;
     setActive(index);
     for (int i = 0; i < m_cells.size(); ++i)
-        setCellBarShown(m_cells[i], i == index);
+        if (m_cells[i].bar)
+            m_cells[i].bar->setShown(i == index);
     if (m_hoverTimer)
         m_hoverTimer->start();
-}
-
-void CanvasWorkspace::setCellBarShown(Cell &cell, bool shown)
-{
-    if (!cell.hoverBar)
-        return;
-    if (cell.hoverBar->property("dimmed").toBool() == !shown)
-        return;   // 状态没变，不做无谓的重新抛光
-    cell.hoverBar->setProperty("dimmed", !shown);
-    for (auto *btn : cell.hoverBar->findChildren<QToolButton *>())
-        btn->setVisible(shown);
-    // 属性变了要重新抛光，样式表里的 [dimmed="true"] 规则才会生效。
-    cell.hoverBar->style()->unpolish(cell.hoverBar);
-    cell.hoverBar->style()->polish(cell.hoverBar);
-    cell.hoverBar->update();
 }
 
 void CanvasWorkspace::hideHoverBars()
 {
     // 鼠标停下/离开一格后收起：所有格回到占位状态（控件仍在，不跳布局）。
     for (int i = 0; i < m_cells.size(); ++i)
-        setCellBarShown(m_cells[i], false);
+        if (m_cells[i].bar)
+            m_cells[i].bar->setShown(false);
+}
+
+void CanvasWorkspace::refreshTabSuppression()
+{
+    // 停靠区里合并了多格时，ADS 的页签条接管格名与关闭，各格标题条让位。
+    for (Cell &cell : m_cells)
+    {
+        if (!cell.bar)
+            continue;
+        const bool merged = cell.dockWidget && cell.dockWidget->dockAreaWidget()
+                             && cell.dockWidget->dockAreaWidget()->dockWidgets().size() > 1;
+        cell.bar->setSuppressed(merged);
+    }
 }
 
 bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
@@ -552,8 +446,7 @@ bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
     for (int i = 0; i < m_cells.size(); ++i)
     {
         const Cell &c = m_cells.at(i);
-        if (watched == c.frame || watched == c.stack || watched == c.canvas || watched == c.instrument
-            || (c.hoverBar && watched == c.hoverBar) || (c.titleLabel && watched == c.titleLabel))
+        if (watched == c.frame || watched == c.stack || watched == c.canvas || watched == c.instrument)
         {
             cellIndex = i;
             break;
@@ -562,41 +455,8 @@ bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
 
     if (cellIndex >= 0)
     {
-        const Cell &cell = m_cells.at(cellIndex);
-
-        if ((type == QEvent::MouseButtonPress || type == QEvent::MouseButtonRelease)
-            && (watched == cell.hoverBar || watched == cell.titleLabel))
-        {
-            setActive(cellIndex);
-            // 标题条就是拖动把手：按下/抬起都转给 ADS 隐藏的原生标题栏，由它起拖与落位。
-            // 位置给 (0,0)，浮动预览才会贴着光标而不是按你按在标题条的位置偏移。
-            ads::CDockWidget *dockWidget = cell.dockWidget;
-            if (dockWidget && dockWidget->dockAreaWidget() && dockWidget->dockAreaWidget()->titleBar())
-            {
-                auto *mouseEvent = static_cast<QMouseEvent *>(event);
-                QMouseEvent forwarded(type, QPointF(0, 0), mouseEvent->globalPosition(), mouseEvent->button(),
-                                      mouseEvent->buttons(), mouseEvent->modifiers());
-                QCoreApplication::sendEvent(dockWidget->dockAreaWidget()->titleBar(), &forwarded);
-                return true;
-            }
-        }
-        else if (type == QEvent::MouseButtonDblClick && watched == cell.titleLabel)
-        {
-            // 双击格名改名（与绘图页签双击改名同一习惯）。
-            bool ok = false;
-            const QString name = QInputDialog::getText(
-                this, QStringLiteral("重命名画布"), QStringLiteral("名称"), QLineEdit::Normal,
-                cell.titleLabel ? cell.titleLabel->text() : QString(), &ok);
-            const QString trimmed = name.trimmed();
-            if (ok && !trimmed.isEmpty() && cell.titleLabel)
-            {
-                cell.titleLabel->setText(trimmed);
-                if (cell.dockWidget)
-                    cell.dockWidget->setWindowTitle(trimmed);
-            }
-            return true;
-        }
-        else if (type == QEvent::MouseButtonPress)
+        // 标题条自有事件处理（见 CellTitleBar）：这里只回应格内其余区域的进出与按下。
+        if (type == QEvent::MouseButtonPress)
         {
             setActive(cellIndex);
             showHoverBar(cellIndex);
@@ -680,11 +540,11 @@ ads::CDockWidget *CanvasWorkspace::makeDockForCell(Cell &cell, int side, ads::CD
         }
     }
     // 用户改过名的格保留自己的名字，没改的跟着格序走。
-    const QString title = (cell.titleLabel && cell.titleLabel->text() != QStringLiteral("图"))
-                              ? cell.titleLabel->text()
+    const QString title = (cell.bar && cell.bar->title() != QStringLiteral("图"))
+                              ? cell.bar->title()
                               : QStringLiteral("图 %1").arg(ordinal);
-    if (cell.titleLabel)
-        cell.titleLabel->setText(title);
+    if (cell.bar)
+        cell.bar->setTitle(title);
 
     auto *dockWidget = new ads::CDockWidget(page->dock, title);
     dockWidget->setObjectName(QStringLiteral("plotCellDock"));
@@ -696,6 +556,9 @@ ads::CDockWidget *CanvasWorkspace::makeDockForCell(Cell &cell, int side, ads::CD
     // 装的是"外框"（标题条 + 画布），画布要填满面板，不让 ADS 再套一层滚动区。
     dockWidget->setWidget(cell.frame, ads::CDockWidget::ForceNoScrollArea);
     cell.dockWidget = dockWidget;
+    // 标题条要知道自己属于哪个面板：拖动要转给面板所在停靠区的原生标题栏。
+    if (cell.bar)
+        cell.bar->setDockWidget(dockWidget);
 
     const ads::DockWidgetArea area = (side == 0)  ? ads::CenterDockWidgetArea
                                     : (side == 1) ? ads::RightDockWidgetArea
@@ -715,7 +578,11 @@ ads::CDockWidget *CanvasWorkspace::makeDockForCell(Cell &cell, int side, ads::CD
         areaWidget = page->dock->addDockWidget(area, dockWidget);
     }
     if (areaWidget)
+    {
         areaWidget->setAllowedAreas(ads::OuterDockAreas);
+        // 单格时整条标题栏让位给每格自己的标题条；合并成页签时它才出现（页签条就是它）。
+        areaWidget->setDockAreaFlag(ads::CDockAreaWidget::HideSingleWidgetTitleBar, true);
+    }
 
     cell.frame->show();
     return dockWidget;
@@ -794,8 +661,11 @@ void CanvasWorkspace::rebuildPageLayout()
 
     page.dock = new ads::CDockManager(page.host);
     page.dock->setObjectName(QStringLiteral("plotPageDock"));
-    // 每格自己的标题条负责显示与按钮，ADS 原生标题栏一律藏起来（对象仍保留给拖动用）。
-    page.dock->setComponentsFactory(new HiddenCellTitleBarFactory());
+    // 新出现的停靠区一律先藏单格标题栏：它是页签条，只在合并成多格时才该出现。
+    QObject::connect(page.dock, &ads::CDockManager::dockAreaCreated, this, [](ads::CDockAreaWidget *area) {
+        if (area)
+            area->setDockAreaFlag(ads::CDockAreaWidget::HideSingleWidgetTitleBar, true);
+    });
     // 画布区自绘标题栏/样式由主题统一管，先关掉 ADS 自带样式表免得打架。
     page.dock->setStyleSheet(QString());
     if (auto *lay = qobject_cast<QVBoxLayout *>(page.host->layout()))
@@ -808,6 +678,11 @@ void CanvasWorkspace::rebuildPageLayout()
         lay2->addWidget(page.dock);
     }
 
+    // 拖动合并/拆出页签后重算各格标题条的去留：页签条接管时各格标题条必须先让位。
+    QObject::connect(page.dock, &ads::CDockManager::dockWidgetAdded, this,
+                     [this](ads::CDockWidget *) {
+                         QTimer::singleShot(0, this, [this]() { refreshTabSuppression(); });
+                     });
     // 点/拖动某格即成为活动格（view action 都路由到它）。
     QObject::connect(page.dock, &ads::CDockManager::focusedDockWidgetChanged, this,
                      [this](ads::CDockWidget *, ads::CDockWidget *now) {
@@ -843,6 +718,7 @@ void CanvasWorkspace::rebuildPageLayout()
                                      addCell();
                              });
                          syncPage();
+                         refreshTabSuppression();
                      });
 
     const int cols = std::max(1, m_cols);
@@ -876,6 +752,7 @@ void CanvasWorkspace::rebuildPageLayout()
     m_rebuildingDock = false;
     // 网格模式下每一级分隔器都等分：默认按 sizeHint 分配会让空白画布被挤成一条。
     equalizeSplitters();
+    refreshTabSuppression();
 }
 
 int CanvasWorkspace::reflowGrid(int rows, int cols)

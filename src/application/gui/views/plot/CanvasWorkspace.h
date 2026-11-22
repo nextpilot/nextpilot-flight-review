@@ -23,6 +23,7 @@ class CDockWidget;
 namespace nextpilot::plotscope::gui
 {
 
+class CellTitleBar;
 class ChannelView;
 class InstrumentView;
 class PlotCanvas;
@@ -77,10 +78,10 @@ private:
         ChannelView *view = nullptr;
         InstrumentView *instrument = nullptr;
         QStackedWidget *stack = nullptr;
-        // 每格的外框：竖排 [标题条, 画布]，标题条就是拖动把手与按钮区（PJ4 的 DockToolbar 形态）。
+        // 每格的外框：竖排 [标题条, 画布]，标题条是拖动把手与按钮区。
         QWidget *frame = nullptr;
-        QWidget *hoverBar = nullptr;   // 标题条（左右/上下拆分、最大化、书签、AB、关闭），frame 的第一行
-        QLabel *titleLabel = nullptr;  // 标题条上的格名，双击可改
+        // 标题条：格名、拆分/最大化/书签/AB/关闭，并负责把鼠标事件转给 ADS 标题栏。
+        CellTitleBar *bar = nullptr;
         // 这一格在 ADS 里的停靠面板。块的"壳"会在重排时重建，frame 始终复用（曲线不丢）。
         ads::CDockWidget *dockWidget = nullptr;
     };
@@ -138,14 +139,12 @@ private:
     ChannelView *viewOfCanvas(const PlotCanvas *canvas) const;
     int m_canvasSeq = 0;              // 画布 id 分配器（不持久化，进程内唯一即可）
 
-    // —— 每格标题条（对齐老 PlottingCanvas 的 m_hoverBar）——
-    QWidget *makeHoverBar(Cell &cell, QWidget *parentStack);
-    void layoutHoverBar(Cell &cell);
+    // —— 每格标题条（CellTitleBar 的显示与定位）——
     void showHoverBar(int index);
     void hideHoverBars();
-    // 亮/暗切换一格标题条：暗只是不显示，仍占位，进格出现时布局不跳。
-    void setCellBarShown(Cell &cell, bool shown);
-    int indexOfHoverBar(const QObject *bar) const;
+    int indexOfBar(const QObject *bar) const;
+    // 同一停靠区里出现多格（合并成页签）时，收起各格标题条，让位给 ADS 页签条。
+    void refreshTabSuppression();
 
     // 集中注册 view action（唯一注册点，路由到当前页的 active cell）。
     void registerViewActions();

@@ -104,6 +104,9 @@ add_library(ps_gui OBJECT
     views/plot/PlaybackEngine.h
     views/plot/TimelineWidget.cpp
     views/plot/TimelineWidget.h
+    # --- plot/chrome：格框上的小部件 ---
+    views/plot/chrome/CellTitleBar.cpp
+    views/plot/chrome/CellTitleBar.h
     # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
     views/PropertyPanel.cpp
     views/PropertyPanel.h
