@@ -45,6 +45,7 @@
 #include <QLineEdit>
 #include <QSet>
 #include <QScrollBar>
+#include <QStyle>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
@@ -326,6 +327,8 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
     cell.hoverBar = makeHoverBar(cell, frame);
     frameLay->addWidget(cell.hoverBar);
     frameLay->addWidget(stack, 1);
+    // 初始为"收起"态：鼠标进到这一格才亮出来。
+    setCellBarShown(cell, false);
     // 图例从上往下让出标题条的高度，曲线不与标题条贴边。
     if (auto *ax = canvas->plotForTest())
         ax->setLegendTopInset(28.0);
@@ -372,6 +375,9 @@ QWidget *CanvasWorkspace::makeHoverBar(Cell &cell, QWidget *parentStack)
     bar->setFixedHeight(fastplot::Axes::kTitleBarHeight - 2);
     bar->setStyleSheet(QStringLiteral(
         "#cellHoverBar { background: %1; }"
+        // 鼠标不在这一格时整条只是"占位"，不显示底色/文字/按钮；这样进格出现时不跳布局。
+        "#cellHoverBar[dimmed=\"true\"] { background: transparent; }"
+        "#cellHoverBar[dimmed=\"true\"] QLabel { color: transparent; }"
         " QToolButton { border: none; padding: 0px; border-radius: 2px; background: transparent; }"
         " QToolButton:hover { background: rgba(127,127,127,0.28); }"
         " QLabel { background: transparent; color: palette(text); }")
@@ -505,15 +511,36 @@ int CanvasWorkspace::indexOfHoverBar(const QObject *bar) const
 
 void CanvasWorkspace::showHoverBar(int index)
 {
-    // 标题条常显：这里只承担"把这一格设为活动"的语义（命令面板/截图调用时仍可定位到它）。
+    // 只有指针所在的这一格亮出标题条；其它格回到"占位不显示"。
     if (index < 0 || index >= m_cells.size())
         return;
     setActive(index);
+    for (int i = 0; i < m_cells.size(); ++i)
+        setCellBarShown(m_cells[i], i == index);
+    if (m_hoverTimer)
+        m_hoverTimer->start();
+}
+
+void CanvasWorkspace::setCellBarShown(Cell &cell, bool shown)
+{
+    if (!cell.hoverBar)
+        return;
+    if (cell.hoverBar->property("dimmed").toBool() == !shown)
+        return;   // 状态没变，不做无谓的重新抛光
+    cell.hoverBar->setProperty("dimmed", !shown);
+    for (auto *btn : cell.hoverBar->findChildren<QToolButton *>())
+        btn->setVisible(shown);
+    // 属性变了要重新抛光，样式表里的 [dimmed="true"] 规则才会生效。
+    cell.hoverBar->style()->unpolish(cell.hoverBar);
+    cell.hoverBar->style()->polish(cell.hoverBar);
+    cell.hoverBar->update();
 }
 
 void CanvasWorkspace::hideHoverBars()
 {
-    // 标题条常显，不再自动收起（收起来就没有拖动把手了）。
+    // 鼠标停下/离开一格后收起：所有格回到占位状态（控件仍在，不跳布局）。
+    for (int i = 0; i < m_cells.size(); ++i)
+        setCellBarShown(m_cells[i], false);
 }
 
 bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
@@ -572,10 +599,11 @@ bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
         else if (type == QEvent::MouseButtonPress)
         {
             setActive(cellIndex);
+            showHoverBar(cellIndex);
         }
-        else if (type == QEvent::Enter && watched == cell.stack)
+        else if (type == QEvent::Enter)
         {
-            setActive(cellIndex);          // 指针进到这一格 → 它成为活动格（标题条本来就常显）
+            showHoverBar(cellIndex);      // 指针进到这一格 → 亮出它的标题条（离开后由定时器收起）
         }
     }
 

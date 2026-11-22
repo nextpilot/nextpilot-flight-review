@@ -138,11 +138,13 @@ private:
     ChannelView *viewOfCanvas(const PlotCanvas *canvas) const;
     int m_canvasSeq = 0;              // 画布 id 分配器（不持久化，进程内唯一即可）
 
-    // —— 每格悬浮工具栏（对齐老 PlottingCanvas 的 m_hoverBar）——
+    // —— 每格标题条（对齐老 PlottingCanvas 的 m_hoverBar）——
     QWidget *makeHoverBar(Cell &cell, QWidget *parentStack);
     void layoutHoverBar(Cell &cell);
     void showHoverBar(int index);
     void hideHoverBars();
+    // 亮/暗切换一格标题条：暗只是不显示，仍占位，进格出现时布局不跳。
+    void setCellBarShown(Cell &cell, bool shown);
     int indexOfHoverBar(const QObject *bar) const;
 
     // 集中注册 view action（唯一注册点，路由到当前页的 active cell）。
