@@ -494,11 +494,6 @@ ScriptEditorPanel::ScriptEditorPanel(AppContext &appCtx, IIntentExecutor &execut
         "QTabWidget::pane { border: 1px solid #e5e7eb; }"));
     lay->addWidget(m_tabs, 1);
 
-    auto *empty = new QLabel(QStringLiteral(
-        "双击左侧脚本库打开脚本，或“新建”开始编写。\nF5 运行 · F7 调试 · Ctrl+S 保存"),
-        this);
-    empty->setAlignment(Qt::AlignCenter);
-    empty->setStyleSheet(QStringLiteral("color: #9ca3af;"));
     // 空标签页占位：加一个只读编辑器提示页
     auto *ph = new ScriptCodeEditor(this);
     ph->setReadOnly(true);
@@ -510,7 +505,6 @@ ScriptEditorPanel::ScriptEditorPanel(AppContext &appCtx, IIntentExecutor &execut
     auto *hl = new LuaHighlighter(ph->document());
     ph->highlighter = hl;
     m_tabs->addTab(ph, QStringLiteral("欢迎"));
-    Q_UNUSED(empty);
 
     // 快捷键（面板级）
     auto *f5 = new QShortcut(QKeySequence(Qt::Key_F5), this);
