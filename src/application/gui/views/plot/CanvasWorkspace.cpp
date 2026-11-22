@@ -23,6 +23,13 @@
 
 #include <limits>
 
+// 布局层：每格一个 ADS 停靠面板（拖动分屏 / 拖到中心合并 / 拖出浮动 / 拖回停靠全由 ADS 提供）。
+#include "DockAreaWidget.h"
+#include "DockContainerWidget.h"
+#include "DockManager.h"
+#include "DockSplitter.h"
+#include "DockWidget.h"
+
 #include <QEvent>
 #include <QCursor>
 #include <QFile>
@@ -32,10 +39,8 @@
 #include <QHash>
 #include <QInputDialog>
 #include <QLineEdit>
-#include <QScrollArea>
 #include <QSet>
 #include <QScrollBar>
-#include <QSplitter>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
@@ -554,15 +559,119 @@ ChannelView *CanvasWorkspace::viewOfCanvas(const PlotCanvas *canvas) const
 
 void CanvasWorkspace::detachStacks()
 {
-    // 重建 splitter 树前必须先把 cell 控件移出去：QSplitter 析构会删掉它持有的子控件，
+    // 重建停靠树前必须先把 cell 控件移出去：删面板会删掉它持有的子控件，
     // 而 cell 的 stack 归本类所有（还要复用），不能被连带删除。
-    for (const Cell &c : m_cells)
+    for (Cell &c : m_cells)
     {
         if (!c.stack)
             continue;
-        c.stack->setParent(nullptr);
-        c.stack->hide();
+        if (c.dockWidget)
+        {
+            // takeWidget 把控件从面板里摘出来（面板随后销毁不会再连带删它）。
+            if (QWidget *taken = c.dockWidget->takeWidget())
+            {
+                taken->setParent(nullptr);
+                taken->hide();
+            }
+        }
+        else
+        {
+            c.stack->setParent(nullptr);
+            c.stack->hide();
+        }
     }
+}
+
+ads::CDockWidget *CanvasWorkspace::makeDockForCell(Cell &cell, int side, ads::CDockWidget *relative,
+                                                  bool intoContainer)
+{
+    Page *page = m_pages.isEmpty() ? nullptr : m_pages.at(m_activePage);
+    if (!page || !page->dock || !cell.stack)
+        return nullptr;
+
+    // 面板标题按当前格序编号（"图 3"），拖动时在浮动窗标题栏上也看得见。
+    int ordinal = 1;
+    for (int i = 0; i < m_cells.size(); ++i)
+    {
+        if (m_cells.at(i).stack == cell.stack)
+        {
+            ordinal = i + 1;
+            break;
+        }
+    }
+
+    auto *dockWidget = new ads::CDockWidget(page->dock, QStringLiteral("图 %1").arg(ordinal));
+    dockWidget->setObjectName(QStringLiteral("plotCellDock"));
+    // 关闭入口留在悬浮工具栏上（面板自带关闭按钮会和它重复，还可能被误点）。
+    dockWidget->setFeature(ads::CDockWidget::DockWidgetClosable, false);
+    // 可拖、可浮动：拖动分屏 / 拖到中心合并 / 拖出成浮动窗 / 拖回停靠，全部由 ADS 提供。
+    dockWidget->setFeature(ads::CDockWidget::DockWidgetMovable, true);
+    dockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, true);
+    // 画布要填满面板，不让 ADS 再套一层滚动区（外层已有页级滚动）。
+    dockWidget->setWidget(cell.stack, ads::CDockWidget::ForceNoScrollArea);
+    cell.dockWidget = dockWidget;
+
+    const ads::DockWidgetArea area = (side == 0)  ? ads::CenterDockWidgetArea
+                                    : (side == 1) ? ads::RightDockWidgetArea
+                                                  : ads::BottomDockWidgetArea;
+    ads::CDockAreaWidget *areaWidget = nullptr;
+    if (intoContainer)
+    {
+        // 相对整个页容器插入：整宽换行（第一列之外的行靠它，行内再往右拆）。
+        areaWidget = page->dock->addDockWidgetToContainer(area, dockWidget, page->dock);
+    }
+    else if (relative)
+    {
+        areaWidget = page->dock->addDockWidget(area, dockWidget, relative->dockAreaWidget());
+    }
+    else
+    {
+        areaWidget = page->dock->addDockWidget(area, dockWidget);
+    }
+    if (areaWidget)
+        areaWidget->setAllowedAreas(ads::OuterDockAreas);
+
+    cell.stack->show();
+    return dockWidget;
+}
+
+int CanvasWorkspace::indexOfDock(const ads::CDockWidget *dockWidget) const
+{
+    if (!dockWidget)
+        return -1;
+    for (int i = 0; i < m_cells.size(); ++i)
+        if (m_cells.at(i).dockWidget == dockWidget)
+            return i;
+    return -1;
+}
+
+void CanvasWorkspace::equalizeSplitters()
+{
+    Page *page = m_pages.isEmpty() ? nullptr : m_pages.at(m_activePage);
+    if (!page || !page->dock)
+        return;
+
+    // 严格等分：ADS 的分隔器按相对权重分配空间，所有项给同一权重即等宽/等高
+    // （拖分隔条时权重被改写，点 m×n 后由这里重新抹平）。
+    auto apply = [page]() {
+        if (!page->dock)
+            return;
+        const auto splitters = page->dock->findChildren<ads::CDockSplitter *>();
+        for (auto *splitter : splitters)
+        {
+            const int count = splitter->count();
+            if (count <= 0)
+                continue;
+            QList<int> sizes;
+            sizes.reserve(count);
+            for (int i = 0; i < count; ++i)
+                sizes.append(1000000 / count);
+            splitter->setSizes(sizes);
+        }
+    };
+    // 首次布局时控件尺寸还是 0，等事件循环走完再抹平一次。
+    apply();
+    QTimer::singleShot(0, this, apply);
 }
 
 void CanvasWorkspace::rebuildPageLayout()
@@ -573,64 +682,170 @@ void CanvasWorkspace::rebuildPageLayout()
     if (!page.host)
         return;
 
+    // 重排会重建面板：全屏时被隐藏的其它面板先放回来，否则它们的隐藏记录就悬空了。
+    for (const QPointer<ads::CDockWidget> &dockWidget : m_fullscreenHidden)
+        if (dockWidget)
+            dockWidget->toggleView(true);
+    m_fullscreenHidden.clear();
+    m_fullscreenCell = -1;
+
     detachStacks();
     // 页内格数决定"删除此画布"是否可点：只剩一格时删无可删，
     // 菜单项直接置灰，别让用户点了才弹提示（每次重排后同步一次）。
     for (const Cell &c : m_cells)
         if (c.canvas)
             c.canvas->setCanvasRemovable(m_cells.size() > 1);
-    // 拆掉旧树（此时树里已经没有 cell，安全）。
-    if (page.root)
-    {
-        delete page.root;
-        page.root = nullptr;
-    }
 
-    // 对齐老 PlottingLayout：根=竖直 splitter（一行一个子项），行=水平 splitter（一格里一块画布）。
-    // 行高给下限，画布多到一屏放不下时由外层 QScrollArea 出竖直滚动条。
-    constexpr int kRowMinHeight = 200;
-    page.root = new QSplitter(Qt::Vertical, page.host);
-    page.root->setObjectName(QStringLiteral("plotPageRoot"));
-    page.root->setHandleWidth(6);
-    page.root->setChildrenCollapsible(false);
+    // 拆掉旧容器（此时里面已经没有 cell 内容）。
+    m_rebuildingDock = true;
+    if (page.dock)
+    {
+        delete page.dock;
+        page.dock = nullptr;
+    }
+    for (Cell &c : m_cells)
+        c.dockWidget = nullptr;
+
+    page.dock = new ads::CDockManager(page.host);
+    page.dock->setObjectName(QStringLiteral("plotPageDock"));
+    // 画布区自绘标题栏/样式由主题统一管，先关掉 ADS 自带样式表免得打架。
+    page.dock->setStyleSheet(QString());
     if (auto *lay = qobject_cast<QVBoxLayout *>(page.host->layout()))
-        lay->addWidget(page.root);
+        lay->addWidget(page.dock);
     else
     {
         auto *lay2 = new QVBoxLayout(page.host);
         lay2->setContentsMargins(0, 0, 0, 0);
         lay2->setSpacing(0);
-        lay2->addWidget(page.root);
+        lay2->addWidget(page.dock);
     }
+
+    // 点/拖动某格即成为活动格（view action 都路由到它）。
+    QObject::connect(page.dock, &ads::CDockManager::focusedDockWidgetChanged, this,
+                     [this](ads::CDockWidget *, ads::CDockWidget *now) {
+                         const int index = indexOfDock(now);
+                         if (index >= 0)
+                             setActive(index);
+                     });
+
+    // 用户点面板自带的关闭：把这一格一起收掉，别在 m_cells 里留空指针。
+    // 重建旧树时 ADS 也会发这个信号（m_rebuildingDock 期间一律忽略）。
+    QObject::connect(page.dock, &ads::CDockManager::dockWidgetRemoved, this,
+                     [this](ads::CDockWidget *removed) {
+                         if (m_rebuildingDock || !removed)
+                             return;
+                         const int index = indexOfDock(removed);
+                         if (index < 0)
+                             return;
+                         Cell cell = m_cells.takeAt(index);
+                         if (QWidget *taken = removed->takeWidget())
+                             taken->setParent(nullptr);
+                         removed->deleteLater();
+                         if (cell.stack)
+                         {
+                             cell.stack->setParent(nullptr);
+                             cell.stack->deleteLater();
+                         }
+                         if (m_active >= m_cells.size())
+                             m_active = std::max(0, static_cast<int>(m_cells.size()) - 1);
+                         // 关到一格不剩时补回来；延迟一拍，别在 ADS 自己的删除调用栈里重建容器。
+                         if (m_cells.isEmpty())
+                             QTimer::singleShot(0, this, [this]() {
+                                 if (m_cells.isEmpty())
+                                     addCell();
+                             });
+                         syncPage();
+                     });
 
     const int cols = std::max(1, m_cols);
     const int rows = std::max(1, m_rows);
+    // 对齐老 PlottingLayout：行=横向排列，行与行上下叠；行内每格等宽、各行等高
+    // （等分在布局完成后由 equalizeSplitters() 统一抹平）。
     int index = 0;
+    ads::CDockWidget *prevInRow = nullptr;
     for (int r = 0; r < rows; ++r)
     {
-        auto *rowSplitter = new QSplitter(Qt::Horizontal, page.root);
-        rowSplitter->setHandleWidth(6);
-        rowSplitter->setChildrenCollapsible(false);
-        rowSplitter->setMinimumHeight(kRowMinHeight);
-        page.root->addWidget(rowSplitter);
+        prevInRow = nullptr;
         for (int c = 0; c < cols && index < m_cells.size(); ++c, ++index)
         {
             Cell &cell = m_cells[index];
-            cell.stack->setParent(rowSplitter);
-            cell.stack->show();
-            rowSplitter->addWidget(cell.stack);
+            ads::CDockWidget *dockWidget = nullptr;
+            if (r == 0 && c == 0)
+                dockWidget = makeDockForCell(cell, 0);                       // 首格：占住整页
+            else if (r == 0)
+                dockWidget = makeDockForCell(cell, 1, prevInRow);            // 首行：往右排
+            else if (c == 0)
+                dockWidget = makeDockForCell(cell, 2, nullptr, true);        // 换行：整宽插入页容器下方
+            else
+                dockWidget = makeDockForCell(cell, 1, prevInRow);            // 行内往右
+            if (!dockWidget)
+                break;
+            prevInRow = dockWidget;
         }
     }
-    page.host->setMinimumHeight(rows * kRowMinHeight);
-    // 行内均分：QSplitter 默认按 sizeHint 分配，空白画布会被挤成 0 宽。
-    QTimer::singleShot(0, page.root, [rowsSplit = page.root, rows]() {
-        QList<int> sizes;
-        for (int i = 0; i < rowsSplit->count(); ++i)
-            sizes.append(1);
-        if (!sizes.isEmpty())
-            rowsSplit->setSizes(sizes);
-    });
+
     page.gridMode = true;
+    m_rebuildingDock = false;
+    // 网格模式下每一级分隔器都等分：默认按 sizeHint 分配会让空白画布被挤成一条。
+    equalizeSplitters();
+}
+
+int CanvasWorkspace::reflowGrid(int rows, int cols)
+{
+    rows = std::max(1, rows);
+    cols = std::max(1, cols);
+
+    // 1) 先剔掉没有任何曲线的空白格：空画布不该占一个网格位。
+    QVector<int> keepIndices;
+    keepIndices.reserve(m_cells.size());
+    for (int i = 0; i < m_cells.size(); ++i)
+    {
+        const Cell &cell = m_cells.at(i);
+        if (cell.canvas && cell.canvas->seriesCount() > 0)
+            keepIndices.append(i);
+    }
+
+    // 2) 容量不够就自动加行（列数固定）：8 个有曲线的格按 3×2 → 行 = max(3, ceil(8/2)) = 4。
+    const int requiredRows = (keepIndices.size() + cols - 1) / cols;
+    const int usedRows = std::max(rows, std::max(1, requiredRows));
+    const int capacity = usedRows * cols;
+
+    QVector<Cell> next;
+    next.reserve(capacity);
+    for (int i : keepIndices)
+        next.append(m_cells.at(i));
+
+    // 3) 被剔掉的格连控件一起销毁；不足容量的补空画布（空白格由用户随后填曲线）。
+    for (int i = 0; i < m_cells.size(); ++i)
+    {
+        if (keepIndices.contains(i))
+            continue;
+        Cell &dropped = m_cells[i];
+        if (dropped.dockWidget)
+        {
+            if (Page *page = m_pages.at(m_activePage); page != nullptr && page->dock)
+                page->dock->removeDockWidget(dropped.dockWidget);
+            if (QWidget *taken = dropped.dockWidget->takeWidget())
+                taken->setParent(nullptr);
+            dropped.dockWidget->deleteLater();
+            dropped.dockWidget = nullptr;
+        }
+        if (dropped.stack)
+        {
+            dropped.stack->setParent(nullptr);
+            dropped.stack->deleteLater();
+        }
+    }
+    while (next.size() < capacity)
+        next.append(makeCell(nullptr));
+
+    m_cells = next;
+    m_rows = usedRows;
+    m_cols = cols;
+    m_active = qBound(0, m_active, m_cells.size() - 1);
+    rebuildPageLayout();
+    syncPage();
+    return usedRows;
 }
 
 void CanvasWorkspace::syncPage()
@@ -648,23 +863,19 @@ int CanvasWorkspace::addPage(const QString &title)
     auto *page = new Page;
     page->title = title.isEmpty() ? QStringLiteral("页 %1").arg(m_pages.size() + 1) : title;
 
-    // 页容器：竖直滚动（对齐老 PlottingPage）——画布多到一屏放不下时往下滚，
-    // 而不是把每格压成一条。
-    page->scroll = new QScrollArea(this);
-    page->scroll->setObjectName(QStringLiteral("plotPage"));
-    page->scroll->setWidgetResizable(true);
-    page->scroll->setFrameShape(QFrame::NoFrame);
-    page->scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    page->host = new QWidget(page->scroll);
+    // 页容器：不再套滚动区——停靠面板要能被拖出/拖回、浮动窗也要对得准，
+    // 塞在滚动区里拖动会错位（PJ4 的画面区同样不滚动）。格子多时由分隔器压缩，
+    // 想看单格用最大化。
+    page->host = new QWidget(this);
+    page->host->setObjectName(QStringLiteral("plotPage"));
     auto *lay = new QVBoxLayout(page->host);
     lay->setContentsMargins(2, 2, 2, 2);
     lay->setSpacing(3);
-    page->scroll->setWidget(page->host);
     m_pages.append(page);
 
     // 永远排在末尾「＋」之前，保证 tab 索引 0..n-1 与 m_pages 一一对应。
     const int plusIndex = qMax(0, m_tabs->count() - 1);
-    const int index = m_tabs->insertTab(plusIndex, page->scroll, page->title);
+    const int index = m_tabs->insertTab(plusIndex, page->host, page->title);
     m_tabs->tabBar()->setTabToolTip(index, QStringLiteral("绘图页：双击页签可重命名"));
     return index;
 }
@@ -686,6 +897,15 @@ void CanvasWorkspace::switchPage(int index)
     }
     if (index == m_activePage)
         return;
+    // 切页前收起当前页的全屏：隐藏的面板属于旧页，留着切回来就是一片空白。
+    if (m_fullscreenCell >= 0)
+    {
+        for (const QPointer<ads::CDockWidget> &dockWidget : m_fullscreenHidden)
+            if (dockWidget)
+                dockWidget->toggleView(true);
+        m_fullscreenHidden.clear();
+        m_fullscreenCell = -1;
+    }
     // 旧页先把当前 cells/网格规格写回去，再载入目标页——两侧都不丢状态。
     syncPage();
     m_activePage = index;
@@ -695,12 +915,22 @@ void CanvasWorkspace::switchPage(int index)
     m_cols = page.cols;
     m_active = m_cells.isEmpty() ? 0 : qBound(0, m_active, m_cells.size() - 1);
     m_fullscreenCell = -1;
+    // 该页还没搭过停靠布局（新页/刚复制）：补一次。
+    if (!m_cells.isEmpty() && !page.dock)
+        rebuildPageLayout();
 }
 
 bool CanvasWorkspace::removePage(int index)
 {
     if (index < 0 || index >= m_pages.size() || m_pages.size() <= 1)
         return false;
+
+    // 关的是当前页且处于全屏：隐藏记录指向即将销毁的面板，直接清掉（不必再放回来）。
+    if (index == m_activePage && m_fullscreenCell >= 0)
+    {
+        m_fullscreenHidden.clear();
+        m_fullscreenCell = -1;
+    }
 
     Page *page = m_pages.takeAt(index);
     // 关的是当前页：先把"当前"落到相邻页上，避免 m_cells 指向被删页的控件。
@@ -723,7 +953,7 @@ bool CanvasWorkspace::removePage(int index)
     m_tabs->blockSignals(false);
     m_tabs->setCurrentIndex(m_activePage);
 
-    delete page->scroll;   // 连同 host 与页内 cell 控件一起销毁
+    delete page->host;     // 连同页内 dock 容器与 cell 控件一起销毁
     delete page;
     return true;
 }
@@ -733,6 +963,17 @@ bool CanvasWorkspace::removeAt(int index)
     if (index < 0 || index >= m_cells.size() || m_cells.size() <= 1)
         return false;
     Cell cell = m_cells.takeAt(index);
+    // 先把它从停靠树里摘掉（面板壳随删除一起销毁），再销毁内容。
+    if (cell.dockWidget)
+    {
+        if (!m_pages.isEmpty())
+            if (Page *page = m_pages.at(m_activePage); page != nullptr && page->dock)
+                page->dock->removeDockWidget(cell.dockWidget);
+        if (QWidget *taken = cell.dockWidget->takeWidget())
+            taken->setParent(nullptr);
+        cell.dockWidget->deleteLater();
+        cell.dockWidget = nullptr;
+    }
     if (cell.stack)
     {
         cell.stack->setParent(nullptr);
@@ -752,24 +993,27 @@ bool CanvasWorkspace::split(bool horizontal)
 {
     if (m_cells.isEmpty())
         return false;
-    // 拆分：在当前活动格之后插一块新画布。水平拆分往右长一列，垂直拆分往下长一行；
-    // 与老 PlottingLayout::split 的结果一致（同一格里对半、其它格尺寸不动），
-    // 差别只是本实现统一按网格重排，避免"拆分树"和"网格模式"两套几何互相打架。
+    const int anchorIndex = qBound(0, m_active, m_cells.size() - 1);
+    ads::CDockWidget *anchor = m_cells.at(anchorIndex).dockWidget;
+    if (!anchor)
+        return false;
+
+    // 真正的"格内再拆"（对齐 PJ4 的 splitHorizontal/splitVertical）：新面板停靠到
+    // 活动格的右/下方，只切这一块，其它格尺寸不动。
     Cell cell = makeCell(nullptr);
-    const int insertAt = qBound(0, m_active + 1, m_cells.size());
+    const int insertAt = anchorIndex + 1;
     m_cells.insert(insertAt, cell);
-    if (horizontal)
+    ads::CDockWidget *created = makeDockForCell(m_cells[insertAt], horizontal ? 1 : 2, anchor);
+    if (!created)
     {
-        m_cols = m_cells.size();
-        m_rows = 1;
-    }
-    else
-    {
-        m_cols = 1;
-        m_rows = m_cells.size();
+        // 停靠失败：回滚，不留半截状态。
+        Cell failed = m_cells.takeAt(insertAt);
+        if (failed.stack)
+            failed.stack->deleteLater();
+        return false;
     }
     m_active = insertAt;
-    rebuildPageLayout();
+    // 拆过之后不再是规整网格：网格规格交给「m×n」重排时重算。
     syncPage();
     return true;
 }
@@ -837,60 +1081,48 @@ bool CanvasWorkspace::duplicatePage()
 
 void CanvasWorkspace::toggleFullscreen()
 {
-    if (m_cells.isEmpty())
-        return;
-    // 退出：重建布局（rebuildPageLayout 会把所有格恢复可见）。
+    // 退出：把全屏时藏起来的其它面板放回来（只放这一批，用户自己关掉的不会被重开）。
     if (m_fullscreenCell >= 0)
     {
+        for (const QPointer<ads::CDockWidget> &dockWidget : m_fullscreenHidden)
+            if (dockWidget)
+                dockWidget->toggleView(true);
+        m_fullscreenHidden.clear();
         m_fullscreenCell = -1;
-        rebuildPageLayout();
-        syncPage();
         return;
     }
-    m_fullscreenCell = m_active;
-    rebuildPageLayout();
-    syncPage();
-    // 只留活动格可见；不含可见格的行随之隐藏，避免顶部/底部留下一条空 splitter。
-    for (int i = 0; i < m_cells.size(); ++i)
-        m_cells.at(i).stack->setVisible(i == m_fullscreenCell);
-    Page &page = *m_pages[m_activePage];
-    if (!page.root)
+    if (m_cells.isEmpty())
         return;
-    for (int i = 0; i < page.root->count(); ++i)
+
+    const int index = qBound(0, m_active, m_cells.size() - 1);
+    if (!m_cells.at(index).dockWidget)
     {
-        auto *row = qobject_cast<QSplitter *>(page.root->widget(i));
-        if (!row)
-            continue;
-        bool anyVisible = false;
-        for (int j = 0; j < row->count(); ++j)
-            if (row->widget(j)->isVisible())
-                anyVisible = true;
-        row->setVisible(anyVisible);
+        rebuildPageLayout();   // 还没入布局（少见）：先搭好再全屏
+        if (!m_cells.at(index).dockWidget)
+            return;
     }
+    // 只留这一格：ADS 的 toggleView(false) 会把空出来的分支折叠掉，
+    // 幸存的那格自动填满整页（直接 setVisible(false) 做不到这一点）。
+    for (int i = 0; i < m_cells.size(); ++i)
+    {
+        if (i == index)
+            continue;
+        ads::CDockWidget *other = m_cells.at(i).dockWidget;
+        if (!other)
+            continue;
+        other->toggleView(false);
+        m_fullscreenHidden.append(other);
+    }
+    m_fullscreenCell = index;
+    syncPage();
 }
 
 bool CanvasWorkspace::setGrid(int rows, int cols)
 {
     if (rows < 1 || cols < 1)
         return false;
-    const int want = rows * cols;
-    while (m_cells.size() < want)
-        m_cells.append(makeCell(nullptr));
-    while (m_cells.size() > want && m_cells.size() > 1)
-    {
-        Cell cell = m_cells.takeLast();
-        if (cell.stack)
-        {
-            cell.stack->setParent(nullptr);
-            cell.stack->deleteLater();
-        }
-    }
-    m_rows = rows;
-    m_cols = cols;
-    m_active = qBound(0, m_active, m_cells.size() - 1);
-    m_fullscreenCell = -1;
-    rebuildPageLayout();
-    syncPage();
+    // 一条命令解决三件事：剔掉没曲线的空白格、容量不够自动加行、按 m×n 严格等分重排。
+    reflowGrid(rows, cols);
     return true;
 }
 

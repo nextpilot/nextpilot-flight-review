@@ -2,16 +2,22 @@
 
 #include "AppContext.h"
 #include "IIntentExecutor.h"
+#include <QPointer>
 #include <QWidget>
 
 #include <QVector>
 
 class QScrollArea;
-class QSplitter;
 class QStackedWidget;
 class QTabWidget;
 class QTimer;
 class QEvent;
+
+namespace ads
+{
+class CDockManager;
+class CDockWidget;
+} // namespace ads
 
 namespace nextpilot::plotscope::gui
 {
@@ -71,20 +77,21 @@ private:
         InstrumentView *instrument = nullptr;
         QStackedWidget *stack = nullptr;
         QWidget *hoverBar = nullptr;   // 悬浮小工具栏（左右/上下拆分、最大化、关闭），stack 子控件
+        // 这一格在 ADS 里的停靠面板。块的"壳"会在重排时重建，stack 始终复用（曲线不丢）。
+        ads::CDockWidget *dockWidget = nullptr;
     };
 
-    // 一个绘图页：滚动容器 + 页内 splitter 树 + 该页的 cell。
+    // 一个绘图页：滚动容器 + 页内 dock 管理器 + 该页的 cell。
     // cells 在这里持久保存，切页时与 m_cells 交换——这样所有既有代码
     // 继续操作"当前页的 cell 列表"，不必到处带页索引。
     struct Page
     {
-        QWidget *host = nullptr;      // QScrollArea 的内容控件（splitter 树的父）
-        QScrollArea *scroll = nullptr;
-        QSplitter *root = nullptr;    // 垂直：一行一个子 splitter
+        QWidget *host = nullptr;           // 绘图页本体（dock manager 的父）
+        ads::CDockManager *dock = nullptr; // 页内布局容器：每格一个停靠面板
         QVector<Cell> cells;
         int rows = 1;
         int cols = 1;
-        bool gridMode = true;         // 手动拆分后置 false：重排不再抹平拆分结果
+        bool gridMode = true;            // 手动拆分后置 false：重排不再抹平拆分结果
         QString title;
     };
 
@@ -98,17 +105,27 @@ private:
     // —— cell 操作（view action 处理器调用）——
     int addCell();                    // 在当前页末尾追加一个画布并激活
     bool removeAt(int index);         // 删除 cell（至少保留一个）
-    bool split(bool horizontal);      // 拆分活动 cell：水平=左右，垂直=上下
+    bool split(bool horizontal);      // 拆分活动 cell：水平=左右，垂直=上下（格内再拆，不动其它格）
     bool duplicateActive();           // 复制活动画布（含曲线与样式）
     bool setGrid(int rows, int cols); // 当前页重排为 rows×cols 网格
     bool setCellType(int index, const QString &kind); // 指定格切换曲线/仪表类型
     void toggleFullscreen();          // 单画布全屏/退出
 
-    // 按 rows×cols 重建当前页的 splitter 树（cell 控件复用，不重建、不丢数据）。
+    // 按 rows×cols 重建当前页的停靠布局（cell 内容复用，不重建、不丢数据）。
     void rebuildPageLayout();
+    // 剔空 + 按容量算行后的重排：先丢掉没有任何曲线的格，再按「行 = max(rows, ceil(N/cols))」
+    // 排满，不足的补空画布。返回实际使用的行数。
+    int reflowGrid(int rows, int cols);
+    // 让页内所有分隔条恢复等分（点 m×n 即回到严格等分状态）。
+    void equalizeSplitters();
     // 装配一个 cell（画布 + 仪表 + 堆叠 + 信号），调用方负责放进布局。
     Cell makeCell(QWidget *parentForStack);
-    // 把 cell 的 stack 从布局摘出（重建树前必须先摘，否则 delete splitter 会连着删控件）。
+    // 把 cell 装进停靠面板。side: 0=中心格 1=右侧 2=下方；intoContainer 为真时相对整页容器插入（用于换行）。
+    ads::CDockWidget *makeDockForCell(Cell &cell, int side, ads::CDockWidget *relative = nullptr,
+                                      bool intoContainer = false);
+    // 停靠面板 → 当前页 cell 下标（-1 = 不属于本页）。
+    int indexOfDock(const ads::CDockWidget *dockWidget) const;
+    // 把 cell 的 stack 从停靠面板里摘出（重建前必须先摘，否则删面板会连着删控件）。
     void detachStacks();
 
     // —— 跨画布曲线移动——
@@ -150,9 +167,13 @@ private:
 
     QVector<Cell> m_cells;            // 当前页的 cell（与 m_pages[m_activePage]->cells 交换）
     int m_active = 0;
-    int m_fullscreenCell = -1;        // >=0 表示某 cell 处于全屏（其它 cell 隐藏）
+    int m_fullscreenCell = -1;        // >=0 表示某 cell 处于全屏（其它 cell 面板被隐藏）
+    // 全屏时被隐藏的其它面板：退出时只恢复这一批，用户自己关掉的不会被重新打开。
+    QVector<QPointer<ads::CDockWidget>> m_fullscreenHidden;
     int m_rows = 1;
     int m_cols = 1;
+    // 重建停靠树期间为真：此时 ADS 的 dockWidgetRemoved 是"我们在拆旧树"，不该当成用户关格。
+    bool m_rebuildingDock = false;
 
     PlaybackEngine *m_playback = nullptr;
     TimelineWidget *m_timeline = nullptr;
