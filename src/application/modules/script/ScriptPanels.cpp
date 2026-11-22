@@ -1349,12 +1349,14 @@ QWidget *createScriptDebugPanel(AppContext &app, IIntentExecutor &ex, QWidget *p
 
 } // namespace nextpilot::plotscope::script
 
-// 自注册四个停靠面板（标题作停靠/中央页签的显示文本）
-PS_REGISTER_PANEL_T("script-files", scriptFiles,
-                    nextpilot::plotscope::script::createScriptFilesPanel, "脚本文件")
-PS_REGISTER_PANEL_T("script-editor", scriptEditor,
-                    nextpilot::plotscope::script::createScriptEditorPanel, "脚本编辑器")
-PS_REGISTER_PANEL_T("script-console", scriptConsole,
-                    nextpilot::plotscope::script::createScriptConsolePanel, "脚本控制台")
-PS_REGISTER_PANEL_T("script-debug", scriptDebug,
-                    nextpilot::plotscope::script::createScriptDebugPanel, "脚本调试")
+// 自注册四个停靠面板（标题作停靠/中央页签的显示文本，图标按内容区分）
+PS_REGISTER_PANEL_TI("script-files", scriptFiles,
+                    nextpilot::plotscope::script::createScriptFilesPanel, "脚本文件", "script")
+PS_REGISTER_PANEL_TI("script-editor", scriptEditor,
+                    nextpilot::plotscope::script::createScriptEditorPanel, "编辑器", "script")
+// 「终端」而非「控制台」：它是交互式 REPL（能输入求值），与底部只读的
+// 「输出」「调试控制台」按 VS Code 的语义分开命名，避免三个面板都叫"控制台"。
+PS_REGISTER_PANEL_TI("script-console", scriptConsole,
+                    nextpilot::plotscope::script::createScriptConsolePanel, "终端", "terminal")
+PS_REGISTER_PANEL_TI("script-debug", scriptDebug,
+                    nextpilot::plotscope::script::createScriptDebugPanel, "调试", "script_debug")

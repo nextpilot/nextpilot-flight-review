@@ -59,12 +59,15 @@ public:
     void createRibbon(SARibbonBar *ribbon);
 
     // 按插槽数据把内容停靠到指定区域；同区域重复停靠合并成标签页。
-    void dock(const QString &area, const QString &title, QWidget *content);
+    // icon 为图标名（:/icons/<icon>.svg），空则用该区域的默认图标。
+    void dock(const QString &area, const QString &title, QWidget *content,
+              const QString &icon = QString());
 
     // 中央内容（画布区）。首个到达者占据中央 dock（画布）；之后到达的
     // （如脚本编辑器）并成同区页签、与画布平级——写代码需要全宽，
     // 这是"中央区页签化"（方案 A）的入口。title 为后续页签的显示文本。
-    void setCentralContent(QWidget *content, const QString &title = QString());
+    void setCentralContent(QWidget *content, const QString &title = QString(),
+                           const QString &icon = QString());
 
     // 重新绑定 ribbon（插槽或动作变化后调用）。
     void rebuildRibbon();
@@ -129,9 +132,18 @@ public:
     QJsonObject captureState() const;
     bool applyState(const QJsonObject &state);
 
-    // 应用 ribbon 主题（深浅）。主题状态归 ThemeManager，绑定器只负责把
-    // SARibbon 这一类第三方控件的换肤套上去——它是唯一知道 SARibbon 的地方。
-    void applyTheme(bool dark, const QString &ribbonQss);
+    // ribbon 页签的恢复必须等窗口真正显示之后再切：构造期 ribbon 页签栏还没
+    // 就位，setCurrentIndex 会落空（页签停在第一页），而快照却被写成目标页，
+    // 形成"每次启动都记着上一页、却永远回不去"的自锁。
+    // 所以 applyState 只登记待恢复页，由外壳在首次 showEvent 里调本方法。
+    int pendingRibbonPage() const { return m_pendingRibbonPage; }
+    bool applyPendingRibbonPage();
+
+    // 应用 ribbon + 停靠区主题（深浅）。主题状态归 ThemeManager，绑定器只负责
+    // 把 SARibbon / ADS 这两类第三方控件的换肤套上去——它是唯一知道它们的地方。
+    // dockQss 是 token 化的 ADS 页签条样式，必须每次换肤都重设：ADS 自带
+    // default_linux.css 是 palette 驱动的 linux 浅色规则，不随主题走。
+    void applyTheme(bool dark, const QString &ribbonQss, const QString &dockQss);
 
     // 意图执行回调：外壳把动作转成意图，交给宿主执行器。
     // 两个参数各司其职，不可混用：
@@ -163,9 +175,17 @@ private:
     // SARibbon
     SARibbonBar *m_ribbon = nullptr;
     int m_currentPage = 0;   // 当前页签下标（状态快照用）
+    int m_pendingRibbonPage = -1; // applyState 登记的待恢复页，-1 表示无
 
     // ADS
     ads::CDockManager *m_dock = nullptr;
+    // ADS 构造时装上的内建样式表（linux 浅色 palette 规则）。换肤时以它为底，
+    // 叠 dockQss，避免把 ADS 自己必须的选择器（关闭按钮图标等）一并冲掉。
+    QString m_adsBaseQss;
+    // ThemeManager 产出的停靠区页签样式。缓存是必需的：换肤信号可能在
+    // CDockManager 创建之前就到（MainWindow 构造早期），否则这次换肤被跳过、
+    // 页签退回 ADS 的 active 渐变。
+    QString m_dockQss;
     ads::CDockWidget *m_centralDock = nullptr; // 中央画布区的 dock
     QWidget *m_centralContent = nullptr;       // 装进中央区的面板
     bool m_centralInstalled = false;

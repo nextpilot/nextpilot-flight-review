@@ -40,7 +40,7 @@ void GuiContext::placePanel(QWidget *widget, const QString &area, const QString 
         if (const UiSlot *slot = m_slots.slot(area))
             title = slot->label;
     }
-    m_binder->dock(area, title, widget);
+    m_binder->dock(area, title, widget, m_panelIcon.take(widget));
 }
 
 void GuiContext::placeCanvas(QWidget *widget, const QString &titleOverride)
@@ -49,7 +49,7 @@ void GuiContext::placeCanvas(QWidget *widget, const QString &titleOverride)
         return;
     // 中央内容交给 ADS（画布区是不可关闭的中央 dock；后来的内容并成页签）。
     if (m_binder)
-        m_binder->setCentralContent(widget, titleOverride);
+        m_binder->setCentralContent(widget, titleOverride, m_panelIcon.take(widget));
     else
         m_window->setCentralWidget(widget);
 }
@@ -105,6 +105,10 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     if (!widget)
         return nullptr;
     m_panels.insert(key, widget);
+    // 图标随面板自注册而来（同一停靠区并列多个面板时靠它区分页签）。
+    const QString iconName = nextpilot::plotscope::registry::PanelFactoryHub::icon(panelType);
+    if (!iconName.isEmpty())
+        m_panelIcon.insert(widget, iconName);
 
     // 中央画布区走 setCentralContent（首到者占位，后来者并成页签），其余区域走停靠。
     // 标题用面板自注册的显示名（"脚本调试"/"数据源"…），不能用区域标签——
@@ -145,19 +149,23 @@ QWidget *GuiContext::requestDomainPanel(const QString &area, const QString &pane
     if (!widget)
         return nullptr;
 
-    // 标题优先用面板自己的描述（扩展包声明的"CAN 报文"），
+    // 标题与图标优先用面板自己的描述（扩展包声明的"CAN 报文"），
     // 否则退回插槽的 label。
     QString title;
+    QString iconName;
     for (const PanelSpec &spec : availableDomainPanels(Domain::General))
     {
         if (spec.id == panelId)
         {
             title = spec.label;
+            iconName = spec.icon;
             break;
         }
     }
     if (title.isEmpty())
         title = area;
+    if (!iconName.isEmpty())
+        m_panelIcon.insert(widget, iconName);
 
     // 中央画布区走 setCentralContent，其余区域走停靠。
     // 把面板自己的描述传给 placePanel 作标题——领域面板的形态（含标题）

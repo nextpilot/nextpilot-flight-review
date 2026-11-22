@@ -5,6 +5,7 @@
 // ADS（vendored）：用相对路径引入，避开与本目录同名文件的歧义。
 #include "../../../3rdparty/ads/src/DockAreaWidget.h"
 #include "../../../3rdparty/ads/src/DockManager.h"
+#include "../../../3rdparty/ads/src/DockSplitter.h"
 #include "../../../3rdparty/ads/src/DockWidget.h"
 #include "../../../3rdparty/ads/src/DockWidgetTab.h"
 #include "../../../3rdparty/ads/src/ads_globals.h"
@@ -23,6 +24,7 @@
 #include <QMenu>
 #include <QStackedWidget>
 #include <QToolButton>
+#include <QSplitter>
 
 #include <QAction>
 #include <QEvent>
@@ -54,7 +56,7 @@ ads::DockWidgetArea adsAreaFor(const QString &area)
     if (area == QStringLiteral("dock.top"))
         return ads::TopDockWidgetArea;
     if (area == QStringLiteral("dock.diagnostics"))
-        return ads::RightDockWidgetArea; // 诊断面板与属性面板同侧
+        return ads::BottomDockWidgetArea; // 诊断并入底部面板组（与终端/输出/问题并列）
     return ads::LeftDockWidgetArea;
 }
 
@@ -71,6 +73,20 @@ QIcon iconFor(const QString &name)
     if (!QFile::exists(path))
         return QIcon();
     return QIcon(path);
+}
+
+// 找到某个 area 在指定分割器里的**直接子控件**。
+//
+// ADS 按分割需要会把 area 再包一层 CDockSplitter，所以 QSplitter::indexOf(area)
+// 经常返回 -1；从 area 往上爬，直到父控件正好是目标分割器。
+QWidget *childOfSplitter(QWidget *widget, QSplitter *splitter)
+{
+    if (!widget || !splitter)
+        return nullptr;
+    QWidget *cur = widget;
+    while (cur && cur->parentWidget() != splitter)
+        cur = cur->parentWidget();
+    return (cur && cur->parentWidget() == splitter) ? cur : nullptr;
 }
 } // namespace
 
@@ -134,13 +150,13 @@ void ShellBinder::ensureDockManager()
     ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize);
     ads::CDockManager::setAutoHideConfigFlags(ads::CDockManager::DefaultAutoHideConfig);
     m_dock = new ads::CDockManager(m_window);
-    // ADS 构造时已装上自己的 linux 浅色样式表；其中 active 页签的标题用
-    // palette(foreground)，在本主题下解析成白字 → 选中页签"白底白字"看不清。
-    // 追加同等特异性、位置更靠后的规则覆盖它（QSS 后到者胜），标题一律深色。
-    m_dock->setStyleSheet(m_dock->styleSheet() +
-                          QStringLiteral("ads--CDockWidgetTab[activeTab=\"true\"] QLabel "
-                                         "{ color: #1f2328; }"
-                                         "ads--CDockWidgetTab QLabel { color: #3a3f45; }"));
+    // 保留 ADS 构造时装上的内建样式表：换肤时以它为底再叠停靠区样式。
+    // （内建表里有 ADS 必需的图标 url 规则，整体替换会把关闭/浮动按钮图标弄丢。）
+    m_adsBaseQss = m_dock->styleSheet();
+    // 换肤信号早于本函数时（m_dock 还不存在），applyTheme 只把样式缓存下来；
+    // 这里建完立刻补应用，保证第一帧就是统一外观。
+    if (!m_dockQss.isEmpty())
+        m_dock->setStyleSheet(m_adsBaseQss + m_dockQss);
 }
 
 void ShellBinder::createRibbon(SARibbonBar *ribbon)
@@ -174,15 +190,26 @@ void ShellBinder::createRibbon(SARibbonBar *ribbon)
     rebuildRibbon();
 }
 
-void ShellBinder::applyTheme(bool dark, const QString &ribbonQss)
+void ShellBinder::applyTheme(bool dark, const QString &ribbonQss, const QString &dockQss)
 {
-    if (!m_ribbon || !m_window)
-        return;
     Q_UNUSED(dark);
     // SARibbon 自绘，全局 QSS 压不住它的内建配色。把 token 化的覆盖 QSS
     // 直接设给 ribbonBar 本身——颜色由 ThemeManager 生成，这里只负责套用
     // （守 §7：绑定器是唯一知道 SARibbon 的地方）。
-    m_ribbon->setStyleSheet(ribbonQss);
+    if (m_ribbon)
+        m_ribbon->setStyleSheet(ribbonQss);
+    // ADS 页签条同理：它自带 linux 浅色 palette 规则，且旧版给每个页签塞的
+    // 内联 transparent 把 active 渐变也抹平了（四组外观分裂、看不出选中）。
+    // 这里以 ADS 内建表为底、叠 token 化的停靠区样式，四组统一。
+    //
+    // **必须缓存 dockQss**：MainWindow 是在构造早期发 themeChanged 的，那时
+    // 绑定器还没建 CDockManager（ensureDockManager 在首个面板请求时才建），
+    // 于是 m_dock 为空、样式被静默跳过——页签继续走 ADS 的 active 渐变
+    // （palette(window)→palette(light)），看起来就是"每组选中页签一块深灰"。
+    // 缓存后由 ensureDockManager 建完立刻补应用一次。
+    m_dockQss = dockQss;
+    if (m_dock && !dockQss.isEmpty())
+        m_dock->setStyleSheet(m_adsBaseQss + dockQss);
 }
 
 // 布局组大按钮：选出 m×n 后把按钮的缩略图与文字改成本页实际分格（对齐 main
@@ -402,7 +429,8 @@ void ShellBinder::rebuildRibbon()
         m_ribbon->setCurrentIndex(0);
 }
 
-void ShellBinder::dock(const QString &area, const QString &title, QWidget *content)
+void ShellBinder::dock(const QString &area, const QString &title, QWidget *content,
+                       const QString &icon)
 {
     if (!content)
         return;
@@ -422,32 +450,42 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     if (!m_centralInstalled)
         installCentral();
 
+    // 诊断面板并入底部面板组：它的骨架槽名是独立的 dock.diagnostics，但停靠
+    // 语义与 dock.bottom 是同一组（VS Code 式底部面板条）。归一化后走同一条
+    // addDockWidgetTabToArea 路径，五个页签才并成同级 tab；否则 ADS 会在底部
+    // 再叠出一个并列的 dock area，看起来是两个分栏而不是一组页签。
+    const QString groupArea = (area == QStringLiteral("dock.diagnostics"))
+                                  ? QStringLiteral("dock.bottom")
+                                  : area;
     auto *dock = new ads::CDockWidget(m_dock, title);
     // objectName 必须唯一：dockWidgetsMap/findDockWidget 按名索引，同区多面板
     // 撞名会让后面的覆盖前面的（"脚本调试"曾被"属性"顶掉）。加序号消歧。
     dock->setObjectName(QStringLiteral("ng.dock.%1.%2").arg(area).arg(m_dockSeq++));
     m_dockByWidget.insert(content, dock);
     m_docksByArea[area].append(dock); // 该区页签序列（panelTitles 断言/诊断用）
-    // 标题栏图标：一眼区分"数据集/属性/日志"三块侧栏。
+    // 标题栏图标：先认面板自己声明的图标（同一侧栏并列多个面板时才分得开），
+    // 没有声明才退回该区域的默认图标。
     static const struct { const char *area; const char *icon; } kDockIcons[] = {
         {"dock.left", "data_table"}, {"dock.right", "panel"}, {"dock.bottom", "history"}};
-    for (const auto &di : kDockIcons)
+    QString iconName = icon;
+    if (iconName.isEmpty())
     {
-        if (area == QLatin1String(di.area))
+        for (const auto &di : kDockIcons)
         {
-            dock->setIcon(iconFor(QString::fromLatin1(di.icon)));
-            break;
+            if (groupArea == QLatin1String(di.area))
+            {
+                iconName = QString::fromLatin1(di.icon);
+                break;
+            }
         }
     }
-    // 标题文字不再带一块异色底：ADS 的 tab 背景来自它自己的 palette，
-    // 全局 QSS 压不过，这里给 tab 控件自身设透明（控件级样式优先级最高，
-    // 也不怕 ADS 在 palette 变化时重载它自己的 stylesheet）。
+    dock->setIcon(iconFor(iconName));
+    // 标题文字不再带一块异色底——但**不写内联样式**：页签外观统一交给
+    // ThemeManager 的 dockStyleSheet()（token 化、四组一致）。内联样式优先级
+    // 高于 ADS 的 activeTab 选择器，写一条 `background: transparent` 就会把
+    // 选中底色与渐变一起抹平，四组页签从此看不出当前是哪一个（历史缺陷）。
     if (auto *tab = dock->tabWidget())
     {
-        // 容器透明；页签文字显式给深色——ADS 的 active 页签用浅色渐变底，
-        // 若沿用深色主题的文字角色就是"白底白字"，实测选中页签标题几乎看不见。
-        // ADS 的标题 QLabel objectName 固定为 dockWidgetTabLabel（DockWidgetTab.cpp:263）。
-        tab->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
         // 页签点击**在 clicked 上强制同步**，不依赖 ADS 的 setCurrentIndex 早退路径：
         // 该函数开头 `if (cw == nw && !nw->isHidden()) return;` 时 index 与内容栈的
         // currentWidget 可能已经错位（index=目标、栈里仍是别人），早退就吞掉切换，
@@ -461,11 +499,6 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
                 },
                 Qt::UniqueConnection);
         }
-        // 标题直接用内联样式压住：ADS 全局 stylesheet 里 active 页签走
-        // palette(foreground)，在浅色主题下会把标题刷成白字（白底白字看不清）。
-        // 内联样式优先级最高，且不受 QTabBar 选中态换 palette 的影响。
-        if (auto *label = dock->findChild<QLabel *>(QStringLiteral("dockWidgetTabLabel")))
-            label->setStyleSheet(QStringLiteral("color: #1f2328; background: transparent;"));
     }
     dock->setWidget(content);
     dock->setFeature(ads::CDockWidget::DockWidgetClosable, true);
@@ -477,26 +510,41 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     // 屏幕一大就更明显。这里给侧边内容一个上限（中央区在 installCentral 里
     // 已保证 minimumWidth 640），于是"中央最大、两侧窄"的比例由布局自己稳定下来，
     // 用户仍可在上限内拖宽。
+    //
+    // 底部面板不参与横向缩放：它只挂在编辑器区下方，宽度跟着中央区走，只约束高度。
     if (area.startsWith(QStringLiteral("dock.")))
     {
-        content->setMinimumWidth(200);
-        content->setMaximumWidth(400);
+        if (groupArea == QStringLiteral("dock.bottom"))
+        {
+            content->setMinimumHeight(120);
+        }
+        else
+        {
+            content->setMinimumWidth(170);
+            content->setMaximumWidth(520);
+        }
     }
 
     // 同侧第二个及以后的面板并成标签页，不向下堆叠。
     // firstOfArea = 该侧第一个面板：只有它负责"抢占初始焦点"。
     // 后续面板只加进 tab，不抢当前显示——否则启动后显示哪个面板取决于装配顺序
     // （谁最后装配谁露脸），注册顺序一变（例如新增扩展包改了链接顺序）默认面板就跟着变。
-    const bool firstOfArea = !m_lastArea.contains(area);
+    const bool firstOfArea = !m_lastArea.contains(groupArea);
     ads::CDockAreaWidget *dockArea = nullptr;
-    if (m_lastArea.contains(area))
+    if (m_lastArea.contains(groupArea))
     {
-        dockArea = m_dock->addDockWidgetTabToArea(dock, m_lastArea.value(area));
+        dockArea = m_dock->addDockWidgetTabToArea(dock, m_lastArea.value(groupArea));
     }
     else
     {
-        dockArea = m_dock->addDockWidget(adsAreaFor(area), dock);
-        m_lastArea.insert(area, dockArea);
+        // 底部面板挂在**编辑器区下方**（VS Code 式）：带参照 area 分割，底部宽度
+        // 天然等于中央区宽度，左右侧栏保持通栏全高。参照区为空（中央尚未装）时
+        // 退回 root 分割器，行为与旧版一致。
+        ads::CDockAreaWidget *refArea = nullptr;
+        if (groupArea == QStringLiteral("dock.bottom") && m_centralDock)
+            refArea = m_centralDock->dockAreaWidget();
+        dockArea = m_dock->addDockWidget(adsAreaFor(groupArea), dock, refArea);
+        m_lastArea.insert(groupArea, dockArea);
         m_panels.insert(area, dock);
     }
     // 新面板一律前置，并且**显式同步 tab 与内容**：
@@ -543,7 +591,7 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     // 多面板合并成 tab 时标题栏自然出现，无需在此另设。
 }
 
-void ShellBinder::setCentralContent(QWidget *content, const QString &title)
+void ShellBinder::setCentralContent(QWidget *content, const QString &title, const QString &icon)
 {
     if (!content)
         return;
@@ -559,6 +607,9 @@ void ShellBinder::setCentralContent(QWidget *content, const QString &title)
         // 挤在侧栏（400px 上限）里没法用。ADS 页签机制现成，零新布局代码。
         auto *dock = new ads::CDockWidget(m_dock, title.isEmpty() ? QStringLiteral("视图") : title);
         dock->setObjectName(QStringLiteral("ng.dock.central.tab.%1").arg(m_dockSeq++));
+        // 中央页签同样按面板声明给图标，空则留空（画布本体已有自己的图标语义）。
+        if (!icon.isEmpty())
+            dock->setIcon(iconFor(icon));
         m_dockByWidget.insert(content, dock);
         content->setMinimumWidth(320);
         dock->setWidget(content);
@@ -586,39 +637,82 @@ void ShellBinder::setCentralContent(QWidget *content, const QString &title)
 
 void ShellBinder::applyDockProportions()
 {
-    if (!m_dock || !m_centralDock || m_proportionsApplied)
+    if (!m_dock || !m_centralDock)
         return;
-    ads::CDockAreaWidget *area = m_centralDock->dockAreaWidget();
-    if (!area)
+    ads::CDockAreaWidget *centralArea = m_centralDock->dockAreaWidget();
+    if (!centralArea)
         return;
 
-    // 中央区所在的横向分割器：子项顺序与屏幕上从左到右一致。
-    const QList<int> sizes = m_dock->splitterSizes(area);
+    // ---- 1) 纵向：编辑器 | 底部面板 ----
+    // 底部面板挂在中央区下方后，中央 area 的 parentSplitter 就是这条纵向分割器。
+    // 左右侧栏不在这条链上，所以它们天然通栏全高。
+    if (ads::CDockSplitter *vsp = centralArea->parentSplitter())
+    {
+        if (vsp->count() == 2)
+        {
+            const QList<int> vs = vsp->sizes();
+            int totalH = 0;
+            for (int v : vs)
+                totalH += v;
+            if (totalH >= 400) // 窗口还没真正布局出来时别硬塞
+            {
+                QWidget *centerChild = childOfSplitter(centralArea, vsp);
+                QWidget *bottomChild = nullptr;
+                if (ads::CDockWidget *bd = m_panels.value(QStringLiteral("dock.bottom")))
+                    if (ads::CDockAreaWidget *ba = bd->dockAreaWidget())
+                        bottomChild = childOfSplitter(ba, vsp);
+                const int ci = centerChild ? vsp->indexOf(centerChild) : -1;
+                const int bi = bottomChild ? vsp->indexOf(bottomChild) : -1;
+                if (ci >= 0 && bi >= 0 && ci != bi)
+                {
+                    const int bottomPx = qBound(120, int(totalH * 0.28), qMax(120, totalH - 300));
+                    QList<int> want = vs;
+                    want[bi] = bottomPx;
+                    want[ci] = qMax(300, totalH - bottomPx);
+                    vsp->setSizes(want);
+                }
+            }
+        }
+    }
+
+    // ---- 2) 横向：左侧 256 | 编辑器 | 右侧 300 ----
+    // 从侧栏 area 取 root 水平分割器：中央 area 的 parentSplitter 此时已是纵向，
+    // 不能再用它算左右宽度（旧实现就是这么错的）。
+    ads::CDockWidget *sideDock = m_panels.value(QStringLiteral("dock.left"));
+    if (!sideDock)
+        sideDock = m_panels.value(QStringLiteral("dock.right"));
+    ads::CDockAreaWidget *sideArea = sideDock ? sideDock->dockAreaWidget() : nullptr;
+    ads::CDockSplitter *hsp = sideArea ? sideArea->parentSplitter() : nullptr;
+    if (!hsp)
+        return;
+    const QList<int> sizes = hsp->sizes();
     if (sizes.size() < 2)
-        return;                                   // 只有中央，没有侧边
+        return;
     int total = 0;
     for (int v : sizes)
         total += v;
     if (total < 800)
-        return;                                   // 窗口还没真正布局出来
+        return; // 窗口还没真正布局出来
 
-    // 最大的那块当作中央（初始它就应该最大），两侧各封顶 300px，余下全部归中央。
-    int centralIdx = 0;
-    for (int i = 1; i < sizes.size(); ++i)
-        if (sizes.at(i) > sizes.at(centralIdx))
-            centralIdx = i;
+    QWidget *centerChild = childOfSplitter(centralArea, hsp);
+    if (!centerChild)
+        return;
+    const int ci = hsp->indexOf(centerChild);
+    if (ci < 0)
+        return;
 
+    // 左侧 256px（VS Code 侧栏默认宽度）、右侧 300px；余下全部归中央。
     QList<int> want = sizes;
     int sides = 0;
     for (int i = 0; i < sizes.size(); ++i)
     {
-        if (i == centralIdx)
+        if (i == ci)
             continue;
-        want[i] = qMin(sizes.at(i), 300);
+        want[i] = (i < ci) ? qMin(sizes.at(i), 256) : qMin(sizes.at(i), 300);
         sides += want[i];
     }
-    want[centralIdx] = qMax(480, total - sides);
-    m_dock->setSplitterSizes(area, want);
+    want[ci] = qMax(480, total - sides);
+    hsp->setSizes(want);
 }
 
 void ShellBinder::installCentral()
@@ -633,8 +727,11 @@ void ShellBinder::installCentral()
     m_centralDock = new ads::CDockWidget(m_dock, QStringLiteral("主视图"));
     m_centralDock->setObjectName(QStringLiteral("ng.dock.canvas.center"));
     content->setMinimumWidth(320);
+    // 编辑器区高度下限：底部面板可拖高，但不能把画布挤成一条缝。
+    content->setMinimumHeight(300);
     m_centralDock->setWidget(content);
     m_centralDock->setMinimumWidth(320);
+    m_centralDock->setMinimumHeight(300);
     m_centralDock->setFeature(ads::CDockWidget::DockWidgetClosable, false);
     m_centralDock->setFeature(ads::CDockWidget::DockWidgetMovable, false);
     m_centralDock->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
@@ -825,8 +922,9 @@ QJsonObject ShellBinder::captureState() const
     // ADS 自带布局：dock 位置/标签合并/隐藏状态
     const QByteArray adsState = m_dock ? m_dock->saveState() : QByteArray();
     state.insert(QStringLiteral("adsLayout"), QString::fromLatin1(adsState.toBase64()));
-    // ribbon 当前页签
-    state.insert(QStringLiteral("ribbonPage"), m_currentPage);
+    // ribbon 当前页签：读控件真实下标，不读缓存字段——用户点页签时没有回写
+    // m_currentPage 的钩子，缓存值会和实际显示脱节，存下去就是假状态。
+    state.insert(QStringLiteral("ribbonPage"), m_ribbon ? m_ribbon->currentIndex() : m_currentPage);
     return state;
 }
 
@@ -853,14 +951,33 @@ bool ShellBinder::applyState(const QJsonObject &state)
     if (!ads.isEmpty() && m_dock)
         m_dock->restoreState(QByteArray::fromBase64(ads.toLatin1()));
 
-    // ribbon 页签：越界则忽略（安全降级）
+    // ribbon 页签：越界则忽略（安全降级）。这里是构造期，页签栏尚未就位，
+    // 当场切换会静默失败——只登记，等首次 showEvent 再切（见 applyPendingRibbonPage）。
     const int page = state.value(QStringLiteral("ribbonPage")).toInt(-1);
     if (page >= 0 && m_ribbon)
-    {
-        m_ribbon->setCurrentIndex(page);
-        m_currentPage = page;
-    }
+        m_pendingRibbonPage = page;
     return true;
+}
+
+bool ShellBinder::applyPendingRibbonPage()
+{
+    if (m_pendingRibbonPage < 0 || !m_ribbon)
+        return false;
+    const int page = m_pendingRibbonPage;
+    // 越界说明那一页这次没装配出来（扩展未装），安全降级：放弃，不再反复尝试。
+    if (page >= m_ribbon->categoryPages().size())
+    {
+        m_pendingRibbonPage = -1;
+        return false;
+    }
+    m_ribbon->setCurrentIndex(page);
+    // 只有真的切过去了才更新记录，否则保持实际页——避免把目标值当现状写进快照。
+    // 切不成就保留待恢复标记，交给下一次调用（showEvent 里还有一次 300ms 兜底）。
+    const int actual = m_ribbon->currentIndex();
+    m_currentPage = actual;
+    if (actual == page)
+        m_pendingRibbonPage = -1;
+    return actual == page;
 }
 
 QByteArray ShellBinder::saveLayout() const

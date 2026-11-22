@@ -170,5 +170,5 @@ void DataTablePanel::addColumnAsCurve(int columnIndex)
 } // namespace nextpilot::plotscope::data
 
 // 自注册（标题作中央页签显示文本）
-PS_REGISTER_PANEL_T("data.table", dataTable,
-                    nextpilot::plotscope::data::createDataTablePanel, "数据表格")
+PS_REGISTER_PANEL_TI("data.table", dataTable,
+                    nextpilot::plotscope::data::createDataTablePanel, "数据表格", "data_table")

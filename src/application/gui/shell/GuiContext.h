@@ -73,6 +73,11 @@ private:
     // 不再新建页签（脚本编辑器/数据表格的"再打开"都是复用语义）。
     // QPointer 兜底：页签被用户关掉后自动清空，下次请求重新创建。
     QHash<QString, QPointer<QWidget>> m_panels;
+
+    // 面板图标（widget -> 图标名）：requestPanel/requestDomainPanel 从
+    // PanelFactoryHub / PanelSpec 取到图标后先记这里，placePanel/placeCanvas
+    // 放下时消费掉（take），所以不会长期持有裸指针。
+    QHash<const QWidget *, QString> m_panelIcon;
 };
 
 } // namespace nextpilot::plotscope::gui

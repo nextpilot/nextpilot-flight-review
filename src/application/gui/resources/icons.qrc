@@ -44,5 +44,16 @@
     <file alias="marker.svg">icons/marker.svg</file>
     <file alias="ruler.svg">icons/ruler.svg</file>
     <file alias="grid_lines.svg">icons/grid_lines.svg</file>
+    <!-- 面板页签图标：同一停靠区并列多个面板时区分身份 -->
+    <file alias="script.svg">icons/script.svg</file>
+    <file alias="terminal.svg">icons/terminal.svg</file>
+    <file alias="script_debug.svg">icons/script_debug.svg</file>
+    <file alias="property.svg">icons/property.svg</file>
+    <file alias="diagnostics.svg">icons/diagnostics.svg</file>
+    <file alias="can_bus.svg">icons/can_bus.svg</file>
+    <!-- 底部面板条图标（输出 / 问题 / 调试控制台） -->
+    <file alias="output.svg">icons/output.svg</file>
+    <file alias="problems.svg">icons/problems.svg</file>
+    <file alias="debug_console.svg">icons/debug_console.svg</file>
   </qresource>
 </RCC>

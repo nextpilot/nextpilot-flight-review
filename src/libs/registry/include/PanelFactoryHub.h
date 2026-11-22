@@ -54,6 +54,10 @@ struct PanelEntry
 
     Factory fn;
     QString title; // 停靠/中央页签显示文本；可为空
+    // 图标名（可选），由外壳按 :/icons/<name>.svg 解析。
+    // 空则外壳退回"该停靠区的默认图标"——同一个 dock 里并列多个面板时，
+    // 每个面板的图标才分得开（都退回默认就会出现"四个页签一个图标"）。
+    QString icon;
 
     bool valid() const { return fn != nullptr; }
 };
@@ -65,9 +69,11 @@ public:
 
     // 注册一种部件类型。重复注册以先到者为准。
     // title：面板显示标题（停靠页签/中央页签用），纯数据，随注册一次给定。
-    static void registerPanel(const QString &type, Factory factory, const QString &title = QString())
+    // icon：图标名（可选），纯数据；外壳解析成 QIcon，空则用停靠区默认图标。
+    static void registerPanel(const QString &type, Factory factory, const QString &title = QString(),
+                              const QString &icon = QString())
     {
-        insert(type, PanelEntry{std::move(factory), title});
+        insert(type, PanelEntry{std::move(factory), title, icon});
     }
 
     // 按类型创建部件；未注册返回 nullptr。
@@ -83,6 +89,13 @@ public:
     {
         const PanelEntry *e = find(type);
         return e ? e->title : QString();
+    }
+
+    // 已注册部件类型的图标名；未注册/未给图标返回空串（外壳用区域默认图标兜底）。
+    static QString icon(const QString &type)
+    {
+        const PanelEntry *e = find(type);
+        return e ? e->icon : QString();
     }
 
     // 已注册的部件类型（诊断/测试用），字典序排序。
@@ -126,6 +139,31 @@ public:
     const bool g_ps_panel_reg_##VarName = [] {                                           \
         ::nextpilot::plotscope::registry::PanelFactoryHub::registerPanel(                \
             QStringLiteral(TypeId), &Fn, QStringLiteral(Title));                         \
+        return true;                                                                     \
+    }();                                                                                 \
+    }
+
+// 只带图标（不带标题）版本：用于标题另由 PanelSpec 等来源声明的领域面板。
+#define PS_REGISTER_PANEL_I(TypeId, VarName, Fn, Icon)                                   \
+    namespace                                                                            \
+    {                                                                                    \
+    const bool g_ps_panel_reg_##VarName = [] {                                           \
+        ::nextpilot::plotscope::registry::PanelFactoryHub::registerPanel(                \
+            QStringLiteral(TypeId), &Fn, QString(), QStringLiteral(Icon));                \
+        return true;                                                                     \
+    }();                                                                                 \
+    }
+
+// 标题 + 图标版本：图标名对应 :/icons/<Icon>.svg（文件缺失时外壳退回区域默认图标）。
+//
+// 同一停靠区并列多个面板时必须给图标——区域默认图标对每个页签都一样，
+// 页签一多就分不清谁是谁。
+#define PS_REGISTER_PANEL_TI(TypeId, VarName, Fn, Title, Icon)                           \
+    namespace                                                                            \
+    {                                                                                    \
+    const bool g_ps_panel_reg_##VarName = [] {                                           \
+        ::nextpilot::plotscope::registry::PanelFactoryHub::registerPanel(                \
+            QStringLiteral(TypeId), &Fn, QStringLiteral(Title), QStringLiteral(Icon));    \
         return true;                                                                     \
     }();                                                                                 \
     }

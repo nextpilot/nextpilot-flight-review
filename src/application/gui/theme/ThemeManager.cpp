@@ -171,6 +171,40 @@ SARibbonToolButton:hover { background: $(border); color: $(text); }
 SARibbonToolButton:checked { background: $(accent); color: $(accentText); }
 )");
 
+// 停靠区/页签条样式。
+//
+// 为什么必须单独一套：ADS 自带 default_linux.css 用 palette(window) 画容器与
+// 页签，active 页签是「window→light」渐变。ADS 的 palette 由 Fusion 主题给出，
+// 与 token 化的面板底色不同源——于是画布组和侧栏组看起来是两种皮。更糟的是
+// 旧代码给每个页签塞了内联 `background: transparent`，把 active 渐变也抹平了，
+// 结果四组页签「底色不一致 + 看不出当前是哪一个」，页签高度还被压塌到与内容行
+// 重叠。这里统一重写：容器与标题栏用 $(panel)，页签未选中 $(window)、选中
+// $(panel) + 主色下划线 + 加粗文字，并用 min-height 固定高度防止内容压行。
+const QString kDockQss = QStringLiteral(R"(
+ads--CDockContainerWidget { background: $(panel); }
+ads--CDockContainerWidget ads--CDockSplitter::handle { background: $(border); }
+ads--CDockAreaWidget { background: $(panel); }
+ads--CDockAreaTitleBar { background: $(panel); border-bottom: 1px solid $(border); }
+ads--CDockWidget { background: $(panel); border: none; }
+ads--CDockWidgetTab {
+    background: $(window);
+    border: none;
+    border-right: 1px solid $(border);
+    padding: 0 6px;
+    min-height: 28px;
+}
+ads--CDockWidgetTab[activeTab="true"] {
+    background: $(panel);
+    border-bottom: 2px solid $(accent);
+}
+ads--CDockWidgetTab QLabel { color: $(textMuted); background: transparent; }
+ads--CDockWidgetTab[activeTab="true"] QLabel {
+    color: $(text);
+    font-weight: 600;
+    background: transparent;
+}
+)");
+
 QString themeName(ThemeManager::Theme theme)
 {
     return theme == ThemeManager::Theme::Dark ? QStringLiteral("dark")
@@ -295,6 +329,11 @@ QString ThemeManager::styleSheet() const
 QString ThemeManager::ribbonStyleSheet() const
 {
     return mapStyleSheet(kRibbonQss);
+}
+
+QString ThemeManager::dockStyleSheet() const
+{
+    return mapStyleSheet(kDockQss);
 }
 
 QPalette ThemeManager::palette() const

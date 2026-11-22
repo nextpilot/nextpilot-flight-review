@@ -222,6 +222,6 @@ QWidget *createPropertyPanel(AppContext &appCtx, IIntentExecutor &exec, QWidget 
 }
 
 // 视图层自注册：模块只声明类型字符串 "property-panel"，外壳据此装配本面板。
-PS_REGISTER_PANEL_T("property-panel", propertyPanel, createPropertyPanel, "属性")
+PS_REGISTER_PANEL_TI("property-panel", propertyPanel, createPropertyPanel, "属性", "property")
 
 } // namespace nextpilot::plotscope::gui

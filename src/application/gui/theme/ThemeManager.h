@@ -76,6 +76,10 @@ public:
     // SARibbon 专属覆盖 QSS：设给 ribbonBar 本身，解决它自绘/内建主题压过
     // 全局 QSS 的问题。颜色同样全部来自 token。
     QString ribbonStyleSheet() const;
+    // ADS 停靠区页签条样式：ADS 自带的是 linux 浅色 palette 规则，与主题不符，
+    // 且各停靠组外观会分裂。这里用 token 重写一套，四个停靠组（画布/左/右/底）
+    // 统一为「未选中灰底、选中白底 + 主色下划线、选中文字加粗」。
+    QString dockStyleSheet() const;
     // 运行时内联样式：把 QSS 片段里的 $(token) 占位符替换成当前主题的实色。
     // §12.1：内联样式必须当场 map，不能依赖启动扫描（后加的控件才不会残留旧主题色）。
     QString mapStyleSheet(const QString &fragment) const;

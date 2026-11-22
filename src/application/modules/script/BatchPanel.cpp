@@ -189,5 +189,6 @@ QTreeWidgetItem *BatchSummaryPanel::upsertRow(const QString &file)
 } // namespace nextpilot::plotscope::script
 
 // 自注册中央区面板（标题即页签文本；与脚本编辑器/数据表格同机制，外壳零改动）
-PS_REGISTER_PANEL_T("batch-summary", batchSummary,
-                    nextpilot::plotscope::script::createBatchSummaryPanel, "批量汇总")
+PS_REGISTER_PANEL_TI("batch-summary", batchSummary,
+                    nextpilot::plotscope::script::createBatchSummaryPanel, "批量汇总",
+                    "grid")

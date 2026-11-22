@@ -87,4 +87,5 @@ QWidget *createCanBrowserPanel(nextpilot::plotscope::context::AppContext &appCtx
 } // namespace nextpilot::plotscope::ext::automotive
 
 // 注册进**同一张**工厂表：领域面板与通用面板共用，模块不区分。
-PS_REGISTER_PANEL("car.can-browser", canBrowserPanel, ::nextpilot::plotscope::ext::automotive::createCanBrowserPanel)
+PS_REGISTER_PANEL_I("car.can-browser", canBrowserPanel,
+                    ::nextpilot::plotscope::ext::automotive::createCanBrowserPanel, "can_bus")

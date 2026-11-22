@@ -105,6 +105,15 @@ add_library(ps_gui OBJECT
     # --- 诊断面板（dock.diagnostics）：注册树全景，走 diag.registries 取数（M2.8）---
     views/diagnostics/DiagnosticsPanel.cpp
     views/diagnostics/DiagnosticsPanel.h
+    # --- 底部页签（dock.bottom，VS Code 语义）：输出 / 问题 / 调试控制台 ---
+    # 三者都从 AppContext 的消息流取数据，不再各自维护缓冲。
+    views/output/OutputPanel.cpp
+    views/output/OutputPanel.h
+    views/problems/ProblemsPanel.cpp
+    views/problems/ProblemsPanel.h
+    # 调试控制台只收 level=debug 的调试事件并复用 script.workbench.repl 求值。
+    views/debugconsole/DebugConsolePanel.cpp
+    views/debugconsole/DebugConsolePanel.h
     # --- 资源 ---
     resources/icons.qrc
 )
@@ -137,7 +146,7 @@ target_link_libraries(plotscope-gui PRIVATE
     # AUTOMOC 产物一起进，故 moc 符号也一并满足）。
     ps_gui_theme
     ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_report
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
     ps_toolbox_automotive_gui
@@ -155,7 +164,7 @@ target_link_libraries(plotscope-gui-bench PRIVATE
     ps_gui
     ps_gui_theme
     ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_report
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_toolbox_automotive_gui
     ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
