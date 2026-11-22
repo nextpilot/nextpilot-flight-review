@@ -8,6 +8,7 @@
 #include <QVector>
 
 class QScrollArea;
+class QLabel;
 class QStackedWidget;
 class QTabWidget;
 class QTimer;
@@ -76,8 +77,11 @@ private:
         ChannelView *view = nullptr;
         InstrumentView *instrument = nullptr;
         QStackedWidget *stack = nullptr;
-        QWidget *hoverBar = nullptr;   // 悬浮小工具栏（左右/上下拆分、最大化、关闭），stack 子控件
-        // 这一格在 ADS 里的停靠面板。块的"壳"会在重排时重建，stack 始终复用（曲线不丢）。
+        // 每格的外框：竖排 [标题条, 画布]，标题条就是拖动把手与按钮区（PJ4 的 DockToolbar 形态）。
+        QWidget *frame = nullptr;
+        QWidget *hoverBar = nullptr;   // 标题条（左右/上下拆分、最大化、书签、AB、关闭），frame 的第一行
+        QLabel *titleLabel = nullptr;  // 标题条上的格名，双击可改
+        // 这一格在 ADS 里的停靠面板。块的"壳"会在重排时重建，frame 始终复用（曲线不丢）。
         ads::CDockWidget *dockWidget = nullptr;
     };
 
