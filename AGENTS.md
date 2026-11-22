@@ -29,13 +29,13 @@
 ## 2. 文档边界
 
 - `src/AGENTS.md`：src 工程的协作要求与硬线；`src/ARCHITECTURE.md`：架构机制与决策记录。二者是工程边界的权威来源，本文件不重复其内容。
-- `docs/roadmap/`：长期规划与里程碑设计文档（方案/思路）；**任务 plan 不写仓库文件**，一律建 gitee issue 跟踪，内容规范按 `.claude/skills/task-plan/`。
+- `docs/roadmap/`：长期规划与里程碑设计文档（方案/思路）；**任务 plan 不写仓库文件**，一律建 gitee issue 跟踪，内容规范与开发流程统一按 `.claude/skills/ai-develop-workflow/`。
 - `docs/manual/`：用户手册；`docs/develop/`：开发指南；给人看的文档去 AI 腔、只写事实。
 - 任何架构边界变化先改文档，再改代码；不能只改文档不改边界，也不能只改代码不改文档。
 
 ## 3. 分支约定（GitHub Flow）
 
-- `main`：唯一长期分支，始终可发布；所有改动经短命特性分支 + PR 合入，规则见 `.claude/skills/github-flow/`。
+- `main`：唯一长期分支，始终可发布；所有改动经短命特性分支 + PR 合入，规则见 `.claude/skills/ai-develop-workflow/`。
 - `legacy-v1` / `legacy-v2` / `legacy-v3`：**历史存档，冻结，禁止开发**；考古切这三个分支查，不合并、不 rebase、不推送。
 
 ## 4. 提交前检查

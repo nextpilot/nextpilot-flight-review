@@ -21,4 +21,4 @@
 
 ## 任务跟踪
 
-任务不写仓库 md，一律走 gitee issue：里程碑与 issue 列表见仓库首页 Issues 区，任务规范见根目录 `.claude/skills/task-plan`。开发流程采用 GitHub Flow（main 可发布 + 短命特性分支 + PR），见 `.claude/skills/github-flow`。
+任务不写仓库 md，一律走 gitee issue：里程碑与 issue 列表见仓库首页 Issues 区。任务规范与开发流程（Plan 内容 + GitHub Flow：先建 issue → 特性分支 → 回填 → PR → 合并后关 issue）统一见根目录 `.claude/skills/ai-develop-workflow`。
