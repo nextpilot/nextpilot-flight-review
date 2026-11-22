@@ -23,8 +23,7 @@ class PageTabs;
 class PlotCellDock;
 class InstrumentView;
 class PlotCanvas;
-class PlaybackEngine;
-class TimelineWidget;
+class PlaybackController;
 
 // 画布工作区：中央区域的组合容器。
 //
@@ -175,8 +174,7 @@ private:
     int m_rows = 1;
     int m_cols = 1;
 
-    PlaybackEngine *m_playback = nullptr;
-    TimelineWidget *m_timeline = nullptr;
+    PlaybackController *m_playback = nullptr;
 
     // 悬浮工具栏的自动隐藏计时（鼠标停止移动一段时间后收起，避免遮挡曲线）。
     QTimer *m_hoverTimer = nullptr;

@@ -12,6 +12,7 @@
 #include "PanelFactoryHub.h"
 #include "PlotCanvas.h"
 #include "PlaybackEngine.h"
+#include "playback/PlaybackController.h"
 #include "TimelineWidget.h"
 #include "DatasetHub.h"
 #include "Dataset.h"
@@ -75,40 +76,40 @@ void CanvasWorkspace::registerPlaybackActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.play"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!m_playback) return QVariant(false);
-                                    m_playback->play();
+                                    m_playback->engine()->play();
                                     return QVariant(true);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.pause"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!m_playback) return QVariant(false);
-                                    m_playback->pause();
+                                    m_playback->engine()->pause();
                                     return QVariant(true);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.toggle"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!m_playback) return QVariant(false);
-                                    m_playback->togglePlay();
-                                    return QVariant(m_playback->isPlaying());
+                                    m_playback->engine()->togglePlay();
+                                    return QVariant(m_playback->engine()->isPlaying());
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.seek"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     if (!m_playback) return QVariant(false);
-                                    m_playback->setCurrentTime(params.value(QStringLiteral("t")).toDouble());
-                                    return QVariant(m_playback->currentTime());
+                                    m_playback->engine()->setCurrentTime(params.value(QStringLiteral("t")).toDouble());
+                                    return QVariant(m_playback->engine()->currentTime());
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.rate"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     if (!m_playback) return QVariant(false);
-                                    m_playback->setRate(params.value(QStringLiteral("rate")).toDouble());
-                                    return QVariant(m_playback->rate());
+                                    m_playback->engine()->setRate(params.value(QStringLiteral("rate")).toDouble());
+                                    return QVariant(m_playback->engine()->rate());
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.loop"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     if (!m_playback) return QVariant(false);
                                     const bool on = params.contains(QStringLiteral("on"))
-                                        ? params.value(QStringLiteral("on")).toBool() : !m_playback->isLooping();
-                                    m_playback->setLooping(on);
-                                    return QVariant(m_playback->isLooping());
+                                        ? params.value(QStringLiteral("on")).toBool() : !m_playback->engine()->isLooping();
+                                    m_playback->engine()->setLooping(on);
+                                    return QVariant(m_playback->engine()->isLooping());
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.step"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
@@ -116,19 +117,19 @@ void CanvasWorkspace::registerPlaybackActions()
                                     bool dirOk = false;
                                     const int dir = params.value(QStringLiteral("dir")).toInt(&dirOk);
                                     const int stepDir = dirOk ? dir : 1;
-                                    m_playback->setCurrentTime(m_playback->currentTime() + stepDir * m_playback->step());
-                                    return QVariant(m_playback->currentTime());
+                                    m_playback->engine()->setCurrentTime(m_playback->engine()->currentTime() + stepDir * m_playback->engine()->step());
+                                    return QVariant(m_playback->engine()->currentTime());
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.state"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!m_playback) return QVariant(false);
                                     return QVariant(QVariantMap{
-                                        {QStringLiteral("t"), m_playback->currentTime()},
-                                        {QStringLiteral("min"), m_playback->rangeMin()},
-                                        {QStringLiteral("max"), m_playback->rangeMax()},
-                                        {QStringLiteral("rate"), m_playback->rate()},
-                                        {QStringLiteral("playing"), m_playback->isPlaying()},
-                                        {QStringLiteral("looping"), m_playback->isLooping()},
+                                        {QStringLiteral("t"), m_playback->engine()->currentTime()},
+                                        {QStringLiteral("min"), m_playback->engine()->rangeMin()},
+                                        {QStringLiteral("max"), m_playback->engine()->rangeMax()},
+                                        {QStringLiteral("rate"), m_playback->engine()->rate()},
+                                        {QStringLiteral("playing"), m_playback->engine()->isPlaying()},
+                                        {QStringLiteral("looping"), m_playback->engine()->isLooping()},
                                     });
                                 });
 }

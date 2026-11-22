@@ -11,8 +11,7 @@
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
 #include "PlotCanvas.h"
-#include "PlaybackEngine.h"
-#include "TimelineWidget.h"
+#include "playback/PlaybackController.h"
 #include "DatasetHub.h"
 #include "Dataset.h"
 #include "SourceHub.h"
@@ -131,14 +130,11 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
         m_cols = 1;
     });
 
-    // 会话级播放引擎 + 底部时间条。引擎驱动所有画布的播放头，时间条只是它的视图。
-    m_playback = new PlaybackEngine(this);
-    m_timeline = new TimelineWidget(m_playback, this);
-    m_timeline->setVisible(false); // 有数据载入 range 后才显示
-    outer->addWidget(m_timeline);
-
-    QObject::connect(m_playback, &PlaybackEngine::currentTimeChanged, this,
-                     [this](double t) { onPlayheadChanged(t); });
+    // 回放控制：引擎 + 底部时间条 + 播放头广播；这里只把它装进布局。
+    m_playback = new PlaybackController(this);
+    outer->addWidget(m_playback->timelineWidget());
+    QObject::connect(m_playback, &PlaybackController::playheadChanged, this,
+                     &CanvasWorkspace::onPlayheadChanged);
 
     // 源级时间 offset 变化（第二梯队 #204 多源时间对齐）：统一刷新所有画布。
     // offset 是宿主态配方，画布 LOO/原始数据不动，只重推 x 映射。
@@ -983,7 +979,6 @@ void CanvasWorkspace::syncPlaybackRange(int datasetId)
         return;
     // 回放区间 = 数据首末时间；重置游标到起点，显示底部时间条。
     m_playback->setRange(lo, hi);
-    m_timeline->setVisible(true);
 }
 
 void CanvasWorkspace::onActiveChannelChanged(int datasetId, const QString &t, const QString &c)
