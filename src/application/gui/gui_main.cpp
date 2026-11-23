@@ -18,6 +18,10 @@
 #include <QTimer>
 #include <WorkspaceDataConfig.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // GUI 入口：与 CLI 入口并列的可执行程序。
 //
 // CLI（plotscope）只链接 Qt Core，可在无显示环境跑批处理；
@@ -36,8 +40,21 @@
 //                           1=有载入失败。默认等待 3 秒。布局恢复是同步的，
 //                           show() 即就绪，无需 PJ4 那样的 settle 等待。
 //   --dump-diagnostics[=f]  就绪后输出诊断 JSON（无值走 stdout，有值写文件）
+namespace {
+// qPrintable 走系统 ANSI，和源码里的 UTF-8 字面量混流会乱码，这里统一按 UTF-8 输出
+const char *u8(const QString &s)
+{
+    return s.toUtf8().constData();
+}
+}
+
 int main(int argc, char *argv[])
 {
+#ifdef _WIN32
+    // 控制台代码页默认 936，切到 UTF-8 才能正常显示中文
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("plotscope"));
     QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
@@ -209,7 +226,7 @@ int main(int argc, char *argv[])
                 || out.write(doc.toJson(QJsonDocument::Indented)) < 0)
             {
                 ++diagFailures;
-                fprintf(stderr, "[diagnostics] 写入失败: %s\n", qPrintable(outPath));
+                fprintf(stderr, "[diagnostics] write failed: %s\n", u8(outPath));
             }
         }
     }
@@ -224,7 +241,7 @@ int main(int argc, char *argv[])
 
         if (pngPath.isEmpty())
         {
-            fprintf(stderr, "[screenshot] 缺少 --screenshot-output <png>\n");
+            fprintf(stderr, "[screenshot] missing --screenshot-output <png>\n");
             QTimer::singleShot(0, &window, [] { QApplication::exit(2); });
         }
         else
@@ -233,7 +250,7 @@ int main(int argc, char *argv[])
                 const QPixmap shot = window.grab();
                 if (shot.isNull() || !shot.save(pngPath))
                 {
-                    fprintf(stderr, "[screenshot] 截屏或保存失败: %s\n", qPrintable(pngPath));
+                    fprintf(stderr, "[screenshot] capture or save failed: %s\n", u8(pngPath));
                     QApplication::exit(2);
                 }
                 else

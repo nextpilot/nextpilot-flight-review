@@ -49,6 +49,13 @@ static long rssKb()
     return -1;
 }
 
+namespace {
+const char *u8(const QString &s)
+{
+    return s.toUtf8().constData();
+}
+}
+
 int main(int argc, char *argv[])
 {
     qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -56,7 +63,7 @@ int main(int argc, char *argv[])
 
     if (argc < 2)
     {
-        fprintf(stderr, "用法: %s <file.ulg>\n", argv[0]);
+        fprintf(stderr, "usage: %s <file.ulg>\n", argv[0]);
         return 2;
     }
     const QString path = QString::fromLocal8Bit(argv[1]);
@@ -78,18 +85,18 @@ int main(int argc, char *argv[])
     const qint64 loadMs = timer.elapsed();
     if (!loaded)
     {
-        fprintf(stderr, "载入失败: %s\n", qPrintable(loaded.error().message));
+        fprintf(stderr, "load failed: %s\n", u8(loaded.error().message));
         return 1;
     }
     const int dsId = loaded.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
-    fprintf(stdout, "载入 %s：%lld ms，RSS %ld KB\n", qPrintable(QFileInfo(path).fileName()),
+    fprintf(stdout, "载入 %s：%lld ms，RSS %ld KB\n", u8(QFileInfo(path).fileName()),
             loadMs, rssKb());
 
     // 找到第一张表的第一个数值列
     const Dataset *ds = application.data().get(dsId);
     if (!ds || ds->tableCount() == 0)
     {
-        fprintf(stderr, "数据集为空\n");
+        fprintf(stderr, "dataset is empty\n");
         return 1;
     }
     const Table *table = ds->table(0);
@@ -100,8 +107,8 @@ int main(int argc, char *argv[])
             column = c.name;
             break;
         }
-    fprintf(stdout, "表 %s：%d 行，绘制列 %s\n", qPrintable(table->name), table->rows,
-            qPrintable(column));
+    fprintf(stdout, "表 %s：%d 行，绘制列 %s\n", u8(table->name), table->rows,
+            u8(column));
 
     // 渲染：设活动通道 → 绘图视图订阅到变化 → 走 plot.channel 意图取数渲染。
     // 这与用户在数据集树双击是**同一条路径**。
@@ -114,7 +121,7 @@ int main(int argc, char *argv[])
         window.binder()->centralContent());
     if (!canvas)
     {
-        fprintf(stderr, "画布未创建\n");
+        fprintf(stderr, "canvas not created\n");
         return 1;
     }
     fprintf(stdout, "渲染：%lld ms，画布三元组 %d 个（像素宽 %d），RSS %ld KB\n", renderMs,

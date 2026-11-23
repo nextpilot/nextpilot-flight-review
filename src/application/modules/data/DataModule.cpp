@@ -52,15 +52,15 @@ void DataModule::initialize(RuntimeHost &host)
     const bool quiet = !qEnvironmentVariableIsEmpty("PLOTSCOPE_QUIET_STDOUT");
     connect(&host.app().data(), &DatasetHub::datasetAdded, this, [quiet](DatasetId id) {
         if (quiet)
-            fprintf(stderr, "[data] 数据集已加入: #%d\n", id);
+            fprintf(stderr, "[data] dataset added: #%d\n", id);
         else
-            fprintf(stdout, "[data] 数据集已加入: #%d\n", id);
+            fprintf(stdout, "[data] dataset added: #%d\n", id);
     });
     connect(&host.app().data(), &DatasetHub::datasetRemoved, this, [quiet](DatasetId id) {
         if (quiet)
-            fprintf(stderr, "[data] 数据集已移除: #%d\n", id);
+            fprintf(stderr, "[data] dataset removed: #%d\n", id);
         else
-            fprintf(stdout, "[data] 数据集已移除: #%d\n", id);
+            fprintf(stdout, "[data] dataset removed: #%d\n", id);
     });
     // 数据表格查看器：树右键"查看数据表格" → data.table.open
     // → 按需创建中央页签面板（不与画布争位）→ 转发 data.table.show 绑定数据。

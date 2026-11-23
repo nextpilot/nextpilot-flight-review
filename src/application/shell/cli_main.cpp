@@ -16,10 +16,22 @@
 
 #include <cstdio>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace nextpilot::plotscope::app;
 using namespace nextpilot::plotscope::mcp;
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
+
+namespace {
+// qPrintable 走系统 ANSI，和源码里的 UTF-8 字面量混流会乱码，这里统一按 UTF-8 输出
+const char *u8(const QString &s)
+{
+    return s.toUtf8().constData();
+}
+}
 using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
@@ -76,6 +88,11 @@ static bool writeJob(const QString &path, const Job &job)
 
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+    // 控制台代码页默认 936，切到 UTF-8 才能正常显示中文
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
     QCoreApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("PlotScope"));
 
@@ -94,7 +111,7 @@ int main(int argc, char **argv)
     App application;
     const auto errors = application.startup(/*headless=*/true);
     for (auto it = errors.constBegin(); it != errors.constEnd(); ++it)
-        fprintf(stderr, "[skip] %s: %s\n", qPrintable(it.key()), qPrintable(it.value()));
+        fprintf(stderr, "[skip] %s: %s\n", u8(it.key()), u8(it.value()));
 
     const QString command = args.at(1);
 
@@ -119,8 +136,8 @@ int main(int argc, char **argv)
     {
         for (const auto &info : application.host().availableModules())
         {
-            fprintf(stdout, "%-16s %s\n", qPrintable(info.id),
-                    qPrintable(info.provides.join(QLatin1Char(','))));
+            fprintf(stdout, "%-16s %s\n", u8(info.id),
+                    u8(info.provides.join(QLatin1Char(','))));
         }
         return 0;
     }
@@ -132,8 +149,8 @@ int main(int argc, char **argv)
         for (const auto &pack : toolbox.packs.values())
         {
             fprintf(stdout, "%-18s %-12s [%s]\n",
-                    qPrintable(pack.id), qPrintable(pack.name),
-                    qPrintable(QString::fromLatin1(nextpilot::plotscope::registry::domainKey(pack.domain))));
+                    u8(pack.id), u8(pack.name),
+                    u8(QString::fromLatin1(nextpilot::plotscope::registry::domainKey(pack.domain))));
         }
         return 0;
     }
@@ -159,9 +176,9 @@ int main(int argc, char **argv)
             fprintf(stdout, "[%s / %s] %d 项\n", kind, cn, table.count());
             for (const auto &c : table.values())
                 fprintf(stdout, "  %-26s %-18s %-10s <- %s\n",
-                        qPrintable(c.id), qPrintable(displayNameOf(c)),
-                        qPrintable(QString::fromLatin1(reg::domainKey(c.domain))),
-                        qPrintable(c.provider));
+                        u8(c.id), u8(displayNameOf(c)),
+                        u8(QString::fromLatin1(reg::domainKey(c.domain))),
+                        u8(c.provider));
         };
         listTable("ui", "界面", toolbox.uiActions);
         listTable("panel", "面板", toolbox.panels);
@@ -174,12 +191,12 @@ int main(int argc, char **argv)
             const auto list = toolbox.parsers();
             if (!list.isEmpty())
             {
-                fprintf(stdout, "[parser / 解析器] %d 项\n", list.size());
+                fprintf(stdout, "[parser / 解析器] %d 项\n", static_cast<int>(list.size()));
                 for (reg::IMessageParser *p : list)
                     fprintf(stdout, "  %-26s %-18s %-10s <- %s\n",
-                            qPrintable(p->id()), qPrintable(p->displayName()),
-                            qPrintable(QString::fromLatin1(reg::domainKey(p->domain()))),
-                            qPrintable(p->provider()));
+                            u8(p->id()), u8(p->displayName()),
+                            u8(QString::fromLatin1(reg::domainKey(p->domain()))),
+                            u8(p->provider()));
             }
         }
         return 0;
@@ -193,13 +210,13 @@ int main(int argc, char **argv)
         {
             const auto actions = slotReg.actionsIn(slot.area);
             fprintf(stdout, "[%s] %s (%s) <- %d 项\n",
-                    qPrintable(slot.area), qPrintable(slot.label),
-                    qPrintable(slot.owner), actions.size());
+                    u8(slot.area), u8(slot.label),
+                    u8(slot.owner), static_cast<int>(actions.size()));
             for (const nextpilot::plotscope::registry::BoundUiAction &b : actions)
                 fprintf(stdout, "    %-24s %-14s op=%s (来自 %s)\n",
-                        qPrintable(b.action.id), qPrintable(b.action.label),
-                        qPrintable(b.action.intentOp.isEmpty() ? QStringLiteral("-") : b.action.intentOp),
-                        qPrintable(b.provider));
+                        u8(b.action.id), u8(b.action.label),
+                        u8(b.action.intentOp.isEmpty() ? QStringLiteral("-") : b.action.intentOp),
+                        u8(b.provider));
         }
         return 0;
     }
@@ -218,12 +235,12 @@ int main(int argc, char **argv)
             const auto drivers = toolbox.driversByDomain(domain);
             if (drivers.isEmpty())
                 continue;
-            fprintf(stdout, "[%s]\n", qPrintable(nextpilot::plotscope::registry::domainName(domain)));
+            fprintf(stdout, "[%s]\n", u8(nextpilot::plotscope::registry::domainName(domain)));
             for (nextpilot::plotscope::parser::IMessageParser *driver : drivers)
                 fprintf(stdout, "  %-10s %-18s 后缀[%s]\n",
-                        qPrintable(driver->id()),
-                        qPrintable(driver->displayName()),
-                        qPrintable(driver->suffixes().join(QLatin1Char(','))));
+                        u8(driver->id()),
+                        u8(driver->displayName()),
+                        u8(driver->suffixes().join(QLatin1Char(','))));
         }
         return 0;
     }
@@ -233,21 +250,21 @@ int main(int argc, char **argv)
         Result<IntentResult> r = application.host().execute(makeLoadIntent(args.at(2)));
         if (!r)
         {
-            fprintf(stderr, "错误[%s]: %s\n", qPrintable(r.error().code), qPrintable(r.error().message));
+            fprintf(stderr, "error[%s]: %s\n", u8(r.error().code), u8(r.error().message));
             return 1;
         }
         const DatasetId id = r.value().payload.toInt();
         const Dataset *ds = application.data().get(id);
-        fprintf(stdout, "数据集 #%d: %s [%s]\n", id, qPrintable(ds->name()), qPrintable(ds->format()));
-        fprintf(stdout, "表 (%d): %s\n", ds->tableCount(), qPrintable(ds->tableNames().join(QLatin1Char(','))));
+        fprintf(stdout, "数据集 #%d: %s [%s]\n", id, u8(ds->name()), u8(ds->format()));
+        fprintf(stdout, "表 (%d): %s\n", ds->tableCount(), u8(ds->tableNames().join(QLatin1Char(','))));
         for (int ti = 0; ti < ds->tableCount(); ++ti)
         {
             const Table *t = ds->table(ti);
             QStringList cols;
             for (const Column &c : t->columns)
                 cols << QStringLiteral("%1(%2)").arg(c.name, QLatin1String(valueTypeName(c.type)));
-            fprintf(stdout, "  表 %s: %d 行, 列 [%s]\n", qPrintable(t->name), t->rowCount(),
-                    qPrintable(cols.join(QLatin1Char(','))));
+            fprintf(stdout, "  表 %s: %d 行, 列 [%s]\n", u8(t->name), t->rowCount(),
+                    u8(cols.join(QLatin1Char(','))));
         }
         fprintf(stdout, "时间范围: %.3f .. %.3f 秒\n", ds->timeMin(), ds->timeMax());
         return 0;
@@ -258,15 +275,15 @@ int main(int argc, char **argv)
         QFile f(args.at(2));
         if (!f.open(QIODevice::ReadOnly))
         {
-            fprintf(stderr, "无法读取 Job: %s\n", qPrintable(args.at(2)));
+            fprintf(stderr, "cannot read job file: %s\n", u8(args.at(2)));
             return 2;
         }
         Result<void> parseError;
         Job job = Job::fromJson(QJsonDocument::fromJson(f.readAll()).object(), &parseError);
         if (!parseError)
         {
-            fprintf(stderr, "Job 解析失败[%s]: %s\n", qPrintable(parseError.error().code),
-                    qPrintable(parseError.error().message));
+            fprintf(stderr, "job parse failed[%s]: %s\n", u8(parseError.error().code),
+                    u8(parseError.error().message));
             return 2;
         }
 
@@ -276,14 +293,14 @@ int main(int argc, char **argv)
             Result<IntentResult> r = application.host().execute(intent);
             if (!r)
             {
-                fprintf(stderr, "意图 %d (%s) 失败[%s]: %s\n", i, qPrintable(intent.op),
-                        qPrintable(r.error().code), qPrintable(r.error().message));
+                fprintf(stderr, "intent %d (%s) failed[%s]: %s\n", i, u8(intent.op),
+                        u8(r.error().code), u8(r.error().message));
                 return 1;
             }
             if (intent.op == QStringLiteral("plot.render"))
             {
                 const QJsonDocument doc(QJsonObject::fromVariantMap(r.value().payload.toMap()));
-                fprintf(stdout, "PlotSpec: %s\n", qPrintable(doc.toJson(QJsonDocument::Compact)));
+                fprintf(stdout, "PlotSpec: %s\n", u8(doc.toJson(QJsonDocument::Compact)));
             }
             else if (intent.op == QStringLiteral("data.load"))
             {
@@ -310,7 +327,7 @@ int main(int argc, char **argv)
         Result<IntentResult> r = application.host().execute(makeScriptIntent(args.at(2)));
         if (!r)
         {
-            fprintf(stderr, "脚本执行失败[%s]: %s\n", qPrintable(r.error().code), qPrintable(r.error().message));
+            fprintf(stderr, "script run failed[%s]: %s\n", u8(r.error().code), u8(r.error().message));
             return 1;
         }
         fprintf(stdout, "脚本执行完成\n");
@@ -320,10 +337,10 @@ int main(int argc, char **argv)
             application.recorder().setRecording(false);
             if (!writeJob(recordPath, application.recorder().toJob()))
             {
-                fprintf(stderr, "无法写入录制 Job: %s\n", qPrintable(recordPath));
+                fprintf(stderr, "cannot write recorded job: %s\n", u8(recordPath));
                 return 2;
             }
-            fprintf(stdout, "已录制 %d 条意图 -> %s\n", application.recorder().size(), qPrintable(recordPath));
+            fprintf(stdout, "已录制 %d 条意图 -> %s\n", application.recorder().size(), u8(recordPath));
         }
         return 0;
     }
@@ -354,8 +371,8 @@ int main(int argc, char **argv)
         Result<IntentResult> r = application.host().execute(bi);
         if (!r)
         {
-            fprintf(stderr, "批量执行失败[%s]: %s\n",
-                    qPrintable(r.error().code), qPrintable(r.error().message));
+            fprintf(stderr, "batch run failed[%s]: %s\n",
+                    u8(r.error().code), u8(r.error().message));
             return 1;
         }
         const QJsonDocument doc(QJsonObject::fromVariantMap(r.value().payload.toMap()));
@@ -364,14 +381,14 @@ int main(int argc, char **argv)
             QFile out(jsonOut);
             if (!out.open(QIODevice::WriteOnly | QIODevice::Text))
             {
-                fprintf(stderr, "无法写入汇总 JSON: %s\n", qPrintable(jsonOut));
+                fprintf(stderr, "cannot write summary json: %s\n", u8(jsonOut));
                 return 2;
             }
             out.write(doc.toJson(QJsonDocument::Indented));
             fprintf(stdout, "汇总已写入 %s（%s 共 %d 个文件：%s）\n",
-                    qPrintable(jsonOut), qPrintable(dir),
+                    u8(jsonOut), u8(dir),
                     r.value().payload.toMap().value(QStringLiteral("total")).toInt(),
-                    qPrintable(QStringLiteral("%1 成功 / %2 失败")
+                    u8(QStringLiteral("%1 成功 / %2 失败")
                                    .arg(r.value().payload.toMap()
                                             .value(QStringLiteral("ok")).toInt())
                                    .arg(r.value().payload.toMap()
@@ -380,7 +397,7 @@ int main(int argc, char **argv)
         else
         {
             fprintf(stdout, "%s\n",
-                    qPrintable(QString::fromUtf8(doc.toJson(QJsonDocument::Indented))));
+                    u8(QString::fromUtf8(doc.toJson(QJsonDocument::Indented))));
         }
         return 0;
     }
@@ -411,7 +428,7 @@ int main(int argc, char **argv)
             }
             if (resp.isEmpty())
                 continue; // notification：无响应
-            fprintf(stdout, "%s\n", qPrintable(QString::fromUtf8(QJsonDocument(resp).toJson(QJsonDocument::Compact))));
+            fprintf(stdout, "%s\n", u8(QString::fromUtf8(QJsonDocument(resp).toJson(QJsonDocument::Compact))));
             fflush(stdout); // 代理按行读，必须立即冲刷
         }
         return 0;

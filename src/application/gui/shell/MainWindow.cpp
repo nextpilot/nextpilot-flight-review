@@ -951,7 +951,7 @@ void MainWindow::showEvent(QShowEvent *event)
             // 延时 300ms：ADS 的 tab 插入与布局收尾都在首帧之后，0ms 抢不过它。
             const bool ok = m_binder->focusPanelByTitle(QStringLiteral("dock.left"),
                                                         QStringLiteral("数据源"));
-            std::fprintf(stderr, "[dock] 初始面板 focus(数据源)=%d\n", ok ? 1 : 0);
+            std::fprintf(stderr, "[dock] initial panel focus(data)=%d\n", ok ? 1 : 0);
         });
     }
 }
