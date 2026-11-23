@@ -28,6 +28,9 @@ class CDockWidget;
 namespace nextpilot::plotscope::gui
 {
 
+class ActivityBar;
+class SideBarStack;
+
 // GUI 外壳绑定器：**唯一知道 SARibbon / ADS 的地方**。
 //
 // 架构定位（见 ARCHITECTURE.md §7.1）：
@@ -82,6 +85,45 @@ public:
     bool isDockPageVisible(const QString &pageKey) const;
     // 诊断/状态栏用：pageKey 对应页签的标题（找不到返回空串）。
     QString dockPageTitle(const QString &pageKey) const;
+
+    // --- Activity Bar / Side Bar ---
+    // 按插槽表里已声明的 ActivitySpec 重建 Activity Bar（模块声明后调用）。
+    void rebuildActivityBar();
+    void setActivityBadge(const QString &activityId, int count);
+    int activityBadge(const QString &activityId) const;
+    bool setActiveActivity(const QString &activityId);
+    QString activeActivity() const { return m_activeActivity; }
+    QStringList activityIds() const;
+    void setActivityOrder(const QStringList &order);
+    QStringList activityOrder() const { return m_activityOrder; }
+    void setActivityBarVisible(bool visible);
+    bool activityBarVisible() const;
+    QWidget *activityBarWidget() const;
+
+    // 左栏整栏显隐（Ctrl+B），section 不单独浮动。
+    void setSideBarVisible(bool visible);
+    bool sideBarVisible() const;
+    bool toggleSideBar();
+    int sideBarWidth() const;
+    void setSideBarWidth(int width);
+
+    int sideBarSectionCount() const;
+    QStringList sideBarSectionIds() const;
+    QWidget *sideBarSectionWidget(const QString &id) const;
+    QString sideBarSectionActivity(const QString &id) const;
+    bool setSideBarSectionExpanded(const QString &id, bool expanded);
+    bool isSideBarSectionExpanded(const QString &id) const;
+
+    // Activity 点击后的中央面板请求（外壳拿到 ActivitySpec 后按类型请求）。
+    // 绑定器不认识具体面板类型，只把声明交回外壳。
+    using ActivityActivatedHandler = std::function<void(const nextpilot::plotscope::registry::ActivitySpec &)>;
+    void setActivityActivatedHandler(ActivityActivatedHandler handler) { m_activityHandler = std::move(handler); }
+    using SettingsHandler = std::function<void()>;
+    void setSettingsHandler(SettingsHandler handler) { m_settingsHandler = std::move(handler); }
+
+    // 按 ribbon 页 area 切页（Activity 与外部配置共用）。
+    bool setRibbonPage(const QString &area);
+    QString currentRibbonPageArea() const;
 
     // 面板内容与标题（诊断/测试用）。
     QWidget *panelWidget(const QString &area) const;
@@ -170,6 +212,11 @@ private:
 
     // 确保 ADS 停靠体系已建立（幂等）。
     void ensureDockManager();
+    void ensureActivityShell();
+    void activateActivity(const QString &activityId);
+    QString activityForPanel(const QString &pageKey) const;
+    bool ensureSideBar();
+    bool isSideBarSection(const QString &pageKey) const;
 
     // 装中央画布区。**必须早于任何侧边 dock**——ADS 的 addDockArea() 只在
     // "区域内 dock 数量 <= 1"时按插入参数重设根分割器方向，
@@ -200,6 +247,19 @@ private:
     ads::CDockWidget *m_centralDock = nullptr; // 中央画布区的 dock
     QWidget *m_centralContent = nullptr;       // 装进中央区的面板
     bool m_centralInstalled = false;
+
+    // Activity Bar + 左栏 section 栈：一个 ADS dock 承载整个左栏。
+    QWidget *m_shellFrame = nullptr;
+    ActivityBar *m_activityBar = nullptr;
+    SideBarStack *m_sidebar = nullptr;
+    ads::CDockWidget *m_leftDock = nullptr;
+    QString m_activeActivity;
+    QStringList m_activityOrder;
+    int m_sideBarWidth = 256;
+    bool m_sideBarVisible = true;
+    bool m_activityBarVisible = true;
+    ActivityActivatedHandler m_activityHandler;
+    SettingsHandler m_settingsHandler;
     QHash<QString, ads::CDockAreaWidget *> m_lastArea; // area -> 该侧最后一个 DockArea
     QHash<QString, ads::CDockWidget *> m_panels;      // area -> 该侧主 dock
     QHash<QString, QList<ads::CDockWidget *>> m_docksByArea; // area -> 全部页签（按放置顺序）

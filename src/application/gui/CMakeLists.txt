@@ -71,6 +71,10 @@ add_library(ps_gui OBJECT
     shell/MainWindow.h
     shell/ShellBinder.cpp
     shell/ShellBinder.h
+    shell/ActivityBar.cpp
+    shell/ActivityBar.h
+    shell/SideBarStack.cpp
+    shell/SideBarStack.h
     shell/GuiContext.cpp
     shell/GuiContext.h
     shell/ImportDialog.cpp

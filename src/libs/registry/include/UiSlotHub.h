@@ -84,6 +84,11 @@ public:
     // 模块直接登记的入口（不来自工具箱）。key 用于幂等覆盖。
     void bindLocal(const QString &area, const UiAction &action, const QString &provider);
 
+    // Activity Bar 入口（数据、脚本、分析、诊断）。同 id 重复声明以先到者为准。
+    void declareActivity(ActivitySpec activity);
+    QList<ActivitySpec> activities() const;
+    const ActivitySpec *activity(const QString &id) const;
+
     // 清除某提供者（包或模块）登记的所有本地入口——卸载时调用。
     void unbindProvider(const QString &provider);
 
@@ -104,6 +109,7 @@ private:
     QHash<QString, QList<BoundUiAction>> m_bound;       // area -> 动作（工具箱来源）
     QList<BoundUiAction> m_unbound;
     QHash<QString, QList<BoundUiAction>> m_local;        // area -> 动作（模块本地来源）
+    QList<ActivitySpec> m_activities;                   // 声明顺序；查询按 order 排序
 };
 
 } // namespace nextpilot::plotscope::registry

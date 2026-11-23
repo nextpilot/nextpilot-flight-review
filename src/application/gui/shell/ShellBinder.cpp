@@ -1,5 +1,8 @@
 #include "ShellBinder.h"
 
+#include "ActivityBar.h"
+#include "SideBarStack.h"
+
 #include "Intent.h"
 
 // ADS（vendored）：用相对路径引入，避开与本目录同名文件的歧义。
@@ -22,6 +25,7 @@
 #include "SARibbonToolButton.h"
 
 #include <QMenu>
+#include <QHBoxLayout>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QSplitter>
@@ -35,6 +39,8 @@
 #include <QMainWindow>
 #include <QObject>
 #include <QStatusBar>
+
+#include <algorithm>
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::intent;
@@ -158,6 +164,104 @@ void ShellBinder::ensureDockManager()
     // 这里建完立刻补应用，保证第一帧就是统一外观。
     if (!m_dockQss.isEmpty())
         m_dock->setStyleSheet(m_adsBaseQss + m_dockQss);
+
+    // ADS 构造时会把自身设为 QMainWindow 的 centralWidget。Activity Bar 要
+    // 占据左侧全高，必须把 ADS 放进一个普通横向布局：ActivityBar | DockManager。
+    // 状态栏仍由 QMainWindow 管，所以在状态栏之上、ribbon 之下的通栏布局。
+    ensureActivityShell();
+}
+
+void ShellBinder::ensureActivityShell()
+{
+    if (m_shellFrame || !m_window || !m_dock)
+        return;
+
+    if (m_window->centralWidget() == m_dock)
+        m_window->takeCentralWidget();
+
+    m_shellFrame = new QWidget(m_window);
+    m_shellFrame->setObjectName(QStringLiteral("plotscope.shellFrame"));
+    auto *layout = new QHBoxLayout(m_shellFrame);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    m_activityBar = new ActivityBar(m_shellFrame);
+    m_activityBar->setVisible(m_activityBarVisible);
+    layout->addWidget(m_activityBar, 0);
+    layout->addWidget(m_dock, 1);
+    m_window->setCentralWidget(m_shellFrame);
+
+    QObject::connect(m_activityBar, &ActivityBar::activityActivated, m_activityBar,
+                     [this](const QString &id) { activateActivity(id); });
+    QObject::connect(m_activityBar, &ActivityBar::settingsRequested, m_activityBar, [this]() {
+        if (m_settingsHandler)
+            m_settingsHandler();
+    });
+
+    rebuildActivityBar();
+}
+
+void ShellBinder::rebuildActivityBar()
+{
+    if (!m_activityBar)
+        return;
+
+    QList<ActivitySpec> specs = m_slots.activities();
+    if (!m_activityOrder.isEmpty())
+    {
+        QList<ActivitySpec> ordered;
+        QStringList orderedIds;
+        for (const QString &id : m_activityOrder)
+            for (const ActivitySpec &spec : specs)
+                if (spec.id == id && !orderedIds.contains(id))
+                {
+                    ordered.append(spec);
+                    orderedIds << id;
+                }
+        for (const ActivitySpec &spec : specs)
+            if (!orderedIds.contains(spec.id))
+            {
+                ordered.append(spec);
+                orderedIds << spec.id;
+            }
+        specs = ordered;
+    }
+
+    m_activityBar->setActivities(specs);
+    if (specs.isEmpty())
+        return;
+
+    if (m_activeActivity.isEmpty()
+        || std::none_of(specs.cbegin(), specs.cend(),
+                        [this](const ActivitySpec &s) { return s.id == m_activeActivity; }))
+        m_activeActivity = specs.first().id;
+    m_activityBar->setActiveActivity(m_activeActivity);
+    if (m_sidebar)
+        m_sidebar->setActiveActivity(m_activeActivity);
+}
+
+QString ShellBinder::activityForPanel(const QString &pageKey) const
+{
+    for (const ActivitySpec &spec : m_slots.activities())
+        if (spec.panelTypes.contains(pageKey))
+            return spec.id;
+    return m_activeActivity;
+}
+
+void ShellBinder::activateActivity(const QString &activityId)
+{
+    const ActivitySpec *spec = m_slots.activity(activityId);
+    if (!spec)
+        return;
+    m_activeActivity = activityId;
+    if (m_activityBar)
+        m_activityBar->setActiveActivity(activityId);
+    if (m_sidebar)
+        m_sidebar->setActiveActivity(activityId);
+    if (!spec->ribbonPage.isEmpty())
+        setRibbonPage(spec->ribbonPage);
+    if (m_activityHandler)
+        m_activityHandler(*spec);
 }
 
 void ShellBinder::createRibbon(SARibbonBar *ribbon)
@@ -465,6 +569,27 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     const QString groupArea = (area == QStringLiteral("dock.diagnostics"))
                                   ? QStringLiteral("dock.bottom")
                                   : area;
+
+    // 左栏不再是“同侧并成 tab”：整个左栏是一个 ADS dock，里面是可折叠 section 栈。
+    // section 不能单独浮动；整栏仍可由 ADS 拖拽/浮动。
+    if (groupArea == QStringLiteral("dock.left"))
+    {
+        ensureSideBar();
+        if (!m_sidebar)
+            return;
+        const QString sectionId = pageKey.isEmpty() ? title : pageKey;
+        const QString activity = activityForPanel(sectionId);
+        if (m_sidebar->addSection(sectionId, title, content, activity))
+        {
+            content->setMinimumWidth(170);
+            if (!m_activeActivity.isEmpty())
+                m_sidebar->setActiveActivity(m_activeActivity);
+            if (m_sidebar->activeSectionId().isEmpty())
+                m_sidebar->focusSection(sectionId);
+        }
+        return;
+    }
+
     auto *dock = new ads::CDockWidget(m_dock, title);
     // objectName 必须唯一：dockWidgetsMap/findDockWidget 按名索引，同区多面板
     // 撞名会让后面的覆盖前面的（"脚本调试"曾被"属性"顶掉）。加序号消歧。
@@ -756,8 +881,53 @@ void ShellBinder::installCentral()
     m_centralInstalled = true;
 }
 
+bool ShellBinder::ensureSideBar()
+{
+    if (m_sidebar)
+        return true;
+    if (!m_dock)
+        return false;
+
+    m_leftDock = new ads::CDockWidget(m_dock, QStringLiteral("侧栏"));
+    m_leftDock->setObjectName(QStringLiteral("ng.dock.sidebar"));
+    m_sidebar = new SideBarStack(m_leftDock);
+    m_leftDock->setWidget(m_sidebar);
+    m_leftDock->setMinimumWidth(170);
+    m_leftDock->setMaximumWidth(520);
+    m_leftDock->setFeature(ads::CDockWidget::DockWidgetClosable, false);
+    m_leftDock->setFeature(ads::CDockWidget::DockWidgetMovable, true);
+    m_leftDock->setFeature(ads::CDockWidget::DockWidgetFloatable, true);
+
+    auto *dockArea = m_dock->addDockWidget(ads::LeftDockWidgetArea, m_leftDock);
+    m_panels.insert(QStringLiteral("dock.left"), m_leftDock);
+    m_lastArea.insert(QStringLiteral("dock.left"), dockArea);
+    m_docksByArea[QStringLiteral("dock.left")].append(m_leftDock);
+    m_leftDock->toggleView(m_sideBarVisible);
+    return true;
+}
+
+bool ShellBinder::isSideBarSection(const QString &pageKey) const
+{
+    return m_sidebar && m_sidebar->hasSection(pageKey);
+}
+
 bool ShellBinder::setDockPageVisible(const QString &pageKey, bool visible)
 {
+    if (isSideBarSection(pageKey))
+    {
+        // 左栏 section：显示目标 section 时同步切到它所属 activity，
+        // 否则同一栏里的其它 activity 仍会把它藏回去。
+        m_sidebar->setSectionVisible(pageKey, visible);
+        if (visible)
+        {
+            const QString activity = m_sidebar->sectionActivity(pageKey);
+            if (!activity.isEmpty() && activity != m_activeActivity)
+                activateActivity(activity);
+            m_sidebar->focusSection(pageKey);
+        }
+        return true;
+    }
+
     ads::CDockWidget *dock = m_dockByKey.value(pageKey, nullptr);
     if (!dock)
         return false;
@@ -768,6 +938,8 @@ bool ShellBinder::setDockPageVisible(const QString &pageKey, bool visible)
 
 bool ShellBinder::isDockPageVisible(const QString &pageKey) const
 {
+    if (isSideBarSection(pageKey))
+        return m_sidebar->isSectionVisible(pageKey);
     ads::CDockWidget *dock = m_dockByKey.value(pageKey, nullptr);
     // 单页口径：页签未关闭即"显示"。不用 isVisible()——ADS 只对当前页签
     // 返回 true，页签组里非当前页会被误判成隐藏。
@@ -776,12 +948,24 @@ bool ShellBinder::isDockPageVisible(const QString &pageKey) const
 
 QString ShellBinder::dockPageTitle(const QString &pageKey) const
 {
+    if (isSideBarSection(pageKey))
+        return m_sidebar->sectionTitle(pageKey);
     ads::CDockWidget *dock = m_dockByKey.value(pageKey, nullptr);
     return dock ? dock->windowTitle() : QString();
 }
 
 QWidget *ShellBinder::panelWidget(const QString &area) const
 {
+    if (area == QStringLiteral("dock.left") && m_sidebar)
+    {
+        const QString active = m_sidebar->activeSectionId();
+        if (QWidget *w = m_sidebar->sectionWidget(active))
+            return w;
+        for (const QString &id : m_sidebar->sectionIds())
+            if (QWidget *w = m_sidebar->sectionWidget(id))
+                return w;
+        return m_sidebar;
+    }
     ads::CDockWidget *dock = m_panels.value(area, nullptr);
     return dock ? dock->widget() : nullptr;
 }
@@ -790,6 +974,19 @@ bool ShellBinder::focusPanel(QWidget *panel)
 {
     if (!panel)
         return false;
+    if (m_sidebar)
+    {
+        for (const QString &id : m_sidebar->sectionIds())
+        {
+            if (m_sidebar->sectionWidget(id) != panel)
+                continue;
+            const QString activity = m_sidebar->sectionActivity(id);
+            if (!activity.isEmpty() && activity != m_activeActivity)
+                activateActivity(activity);
+            m_sidebar->focusSection(id);
+            return true;
+        }
+    }
     // 直查内容 widget -> dock 页签映射（ADS 自带 map 按 objectName 索引不可靠）。
     // 不走 CDockWidget::raise()：它先判 isClosed()，面板曾关过页签（closed 但未销毁）时
     // raise 会被静默跳过——表现就是"点页签/请求聚焦，内容不跟着切"。
@@ -814,6 +1011,19 @@ bool ShellBinder::focusPanel(QWidget *panel)
 
 bool ShellBinder::focusPanelByTitle(const QString &area, const QString &title)
 {
+    if (area == QStringLiteral("dock.left") && m_sidebar)
+    {
+        for (const QString &id : m_sidebar->sectionIds())
+        {
+            if (m_sidebar->sectionTitle(id) != title)
+                continue;
+            const QString activity = m_sidebar->sectionActivity(id);
+            if (!activity.isEmpty() && activity != m_activeActivity)
+                activateActivity(activity);
+            return m_sidebar->focusSection(id);
+        }
+        return false;
+    }
     for (ads::CDockWidget *dw : m_docksByArea.value(area))
     {
         if (dw && dw->windowTitle() == title)
@@ -832,6 +1042,14 @@ void ShellBinder::raisePanel(QWidget *panel)
 
 QList<QWidget *> ShellBinder::panelWidgets(const QString &area) const
 {
+    if (area == QStringLiteral("dock.left") && m_sidebar)
+    {
+        QList<QWidget *> out;
+        for (const QString &id : m_sidebar->sectionIds())
+            if (QWidget *w = m_sidebar->sectionWidget(id))
+                out.append(w);
+        return out;
+    }
     ads::CDockWidget *first = m_panels.value(area, nullptr);
     if (!first)
         return {};
@@ -870,12 +1088,21 @@ QStringList ShellBinder::centralTitles() const
 
 QString ShellBinder::panelTitle(const QString &area) const
 {
+    if (area == QStringLiteral("dock.left") && m_sidebar)
+        return m_sidebar->activeSectionTitle();
     ads::CDockWidget *dock = m_panels.value(area, nullptr);
     return dock ? dock->windowTitle() : QString();
 }
 
 QStringList ShellBinder::panelTitles(const QString &area) const
 {
+    if (area == QStringLiteral("dock.left") && m_sidebar)
+    {
+        QStringList out;
+        for (const QString &id : m_sidebar->sectionIds())
+            out << m_sidebar->sectionTitle(id);
+        return out;
+    }
     QStringList out;
     for (ads::CDockWidget *dw : m_docksByArea.value(area))
         out << dw->windowTitle();
@@ -884,6 +1111,8 @@ QStringList ShellBinder::panelTitles(const QString &area) const
 
 QString ShellBinder::activePanelTitle(const QString &area) const
 {
+    if (area == QStringLiteral("dock.left") && m_sidebar)
+        return m_sidebar->activeSectionTitle();
     const QList<ads::CDockWidget *> docks = m_docksByArea.value(area);
     if (docks.isEmpty() || !docks.first())
         return QString();
@@ -896,6 +1125,8 @@ QString ShellBinder::activePanelTitle(const QString &area) const
 
 QString ShellBinder::visiblePanelTitle(const QString &area) const
 {
+    if (area == QStringLiteral("dock.left") && m_sidebar)
+        return m_sidebar->activeSectionTitle();
     for (ads::CDockWidget *dw : m_docksByArea.value(area))
     {
         if (!dw)
@@ -909,6 +1140,8 @@ QString ShellBinder::visiblePanelTitle(const QString &area) const
 
 QStringList ShellBinder::contentsOrder(const QString &area) const
 {
+    if (area == QStringLiteral("dock.left") && m_sidebar)
+        return panelTitles(area);
     QStringList out;
     const QList<ads::CDockWidget *> docks = m_docksByArea.value(area);
     if (docks.isEmpty() || !docks.first())
@@ -927,6 +1160,140 @@ QStringList ShellBinder::contentsOrder(const QString &area) const
 int ShellBinder::actionTriggerCount(const QString &actionId) const
 {
     return m_actionTriggers.value(actionId, 0);
+}
+
+void ShellBinder::setActivityBadge(const QString &activityId, int count)
+{
+    if (m_activityBar)
+        m_activityBar->setBadge(activityId, count);
+}
+
+int ShellBinder::activityBadge(const QString &activityId) const
+{
+    return m_activityBar ? m_activityBar->badge(activityId) : 0;
+}
+
+bool ShellBinder::setActiveActivity(const QString &activityId)
+{
+    if (!m_slots.activity(activityId))
+        return false;
+    activateActivity(activityId);
+    return true;
+}
+
+QStringList ShellBinder::activityIds() const
+{
+    return m_activityBar ? m_activityBar->activityIds() : QStringList();
+}
+
+void ShellBinder::setActivityOrder(const QStringList &order)
+{
+    m_activityOrder = order;
+    rebuildActivityBar();
+}
+
+void ShellBinder::setActivityBarVisible(bool visible)
+{
+    m_activityBarVisible = visible;
+    if (m_activityBar)
+        m_activityBar->setVisible(visible);
+}
+
+bool ShellBinder::activityBarVisible() const
+{
+    return m_activityBarVisible;
+}
+
+QWidget *ShellBinder::activityBarWidget() const
+{
+    return m_activityBar;
+}
+
+void ShellBinder::setSideBarVisible(bool visible)
+{
+    m_sideBarVisible = visible;
+    if (m_leftDock)
+        m_leftDock->toggleView(visible);
+}
+
+bool ShellBinder::sideBarVisible() const
+{
+    return m_sideBarVisible;
+}
+
+bool ShellBinder::toggleSideBar()
+{
+    setSideBarVisible(!m_sideBarVisible);
+    return m_sideBarVisible;
+}
+
+int ShellBinder::sideBarWidth() const
+{
+    if (m_leftDock && m_leftDock->dockAreaWidget())
+        return m_leftDock->dockAreaWidget()->width();
+    return m_sideBarWidth;
+}
+
+void ShellBinder::setSideBarWidth(int width)
+{
+    m_sideBarWidth = qMax(170, width);
+}
+
+int ShellBinder::sideBarSectionCount() const
+{
+    return m_sidebar ? m_sidebar->sectionCount() : 0;
+}
+
+QStringList ShellBinder::sideBarSectionIds() const
+{
+    return m_sidebar ? m_sidebar->sectionIds() : QStringList();
+}
+
+QWidget *ShellBinder::sideBarSectionWidget(const QString &id) const
+{
+    return m_sidebar ? m_sidebar->sectionWidget(id) : nullptr;
+}
+
+QString ShellBinder::sideBarSectionActivity(const QString &id) const
+{
+    return m_sidebar ? m_sidebar->sectionActivity(id) : QString();
+}
+
+bool ShellBinder::setSideBarSectionExpanded(const QString &id, bool expanded)
+{
+    return m_sidebar && m_sidebar->setSectionExpanded(id, expanded);
+}
+
+bool ShellBinder::isSideBarSectionExpanded(const QString &id) const
+{
+    return m_sidebar && m_sidebar->isSectionExpanded(id);
+}
+
+bool ShellBinder::setRibbonPage(const QString &area)
+{
+    if (!m_ribbon)
+        return false;
+    const QList<UiSlot> pages = m_slots.slotsOfKind(SlotKind::RibbonPage);
+    for (int i = 0; i < pages.size(); ++i)
+    {
+        if (pages.at(i).area != area)
+            continue;
+        if (i >= m_ribbon->categoryPages().size())
+            return false;
+        m_ribbon->setCurrentIndex(i);
+        m_currentPage = m_ribbon->currentIndex();
+        return m_currentPage == i;
+    }
+    return false;
+}
+
+QString ShellBinder::currentRibbonPageArea() const
+{
+    if (!m_ribbon)
+        return QString();
+    const QList<UiSlot> pages = m_slots.slotsOfKind(SlotKind::RibbonPage);
+    const int index = m_ribbon->currentIndex();
+    return index >= 0 && index < pages.size() ? pages.at(index).area : QString();
 }
 
 QJsonObject ShellBinder::captureState() const

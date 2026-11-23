@@ -25,6 +25,8 @@
 
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QAction>
+#include <QKeySequence>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QMenu>
@@ -357,6 +359,16 @@ void MainWindow::declareStandardSlots()
             ++n;
         }
     }
+
+    // 诊断归外壳：数据/脚本/分析由各自模块声明，绘图不进 Activity Bar。
+    ActivitySpec diagnostics;
+    diagnostics.id = QStringLiteral("diagnostics");
+    diagnostics.label = QStringLiteral("诊断");
+    diagnostics.icon = QStringLiteral("diagnostics");
+    diagnostics.order = 3;
+    diagnostics.ribbonPage = QStringLiteral("ribbon.page.view");
+    diagnostics.provider = QStringLiteral("app.skeleton");
+    slotReg.declareActivity(diagnostics);
 }
 
 void MainWindow::build(RuntimeHost &host)
@@ -367,6 +379,31 @@ void MainWindow::build(RuntimeHost &host)
     // 绑定器需要插槽表，构造时给。
     m_binder = new ShellBinder(this, slotReg);
     m_context = new GuiContext(this, slotReg, m_binder, m_appCtx, &host, this);
+
+    m_binder->setActivityActivatedHandler([this](const ActivitySpec &spec) {
+        // Activity 的侧栏切换由 ShellBinder 完成；这里只处理“要打开哪个面板”。
+        if (!spec.centralPanel.isEmpty()
+            && m_context->requestPanel(QStringLiteral("canvas.center"), spec.centralPanel))
+        {
+            // 请求成功即已置前；没有额外业务动作。
+        }
+        if (spec.id == QStringLiteral("diagnostics"))
+        {
+            m_context->requestPanel(QStringLiteral("dock.diagnostics"),
+                                    QStringLiteral("diagnostics"));
+        }
+    });
+    m_binder->setSettingsHandler([this]() {
+        Intent intent;
+        intent.op = QStringLiteral("preferences.open");
+        (void)m_host->execute(intent);
+    });
+
+    m_toggleSideBarAction = new QAction(this);
+    m_toggleSideBarAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+B")));
+    m_toggleSideBarAction->setShortcutContext(Qt::WindowShortcut);
+    addAction(m_toggleSideBarAction);
+    connect(m_toggleSideBarAction, &QAction::triggered, this, &MainWindow::toggleSideBar);
 
     // 报告导出同路径：脚本 app.call("report.export", {path,...}) 走
     // 与 Ribbon 按钮（report.workbench.export 特判）完全相同的 QPdfWriter 管线。
@@ -471,6 +508,13 @@ void MainWindow::build(RuntimeHost &host)
     if (QWidget *terminal = m_context->requestPanel(QStringLiteral("dock.bottom"),
                                                     QStringLiteral("script-console")))
         m_binder->raisePanel(terminal);
+
+    // 3.0c) Activity badge：诊断 activity 汇总 warn/error 条数。
+    connect(&m_appCtx, &AppContext::messageAppended, this,
+            [this](const QString &, const QString &, const QString &, const QString &) {
+                refreshActivityBadges();
+            });
+    refreshActivityBadges();
 
     // 3.1) ribbon 动作 -> 意图：外壳只把动作 id 交出去，不解释语义。
     //
@@ -912,6 +956,68 @@ void MainWindow::showEvent(QShowEvent *event)
     }
 }
 
+void MainWindow::applyWorkspaceUiConfig()
+{
+    if (!m_binder || !m_host)
+        return;
+    auto &settings = m_host->app().settings();
+
+    const QVariant order = settings.scopedValue(SettingsScope::Workspace,
+                                                QStringLiteral("ui.activityBar.order"));
+    if (order.isValid())
+        m_binder->setActivityOrder(order.toStringList());
+
+    const QVariant activityVisible = settings.scopedValue(
+        SettingsScope::Workspace, QStringLiteral("ui.activityBar.visible"));
+    if (activityVisible.isValid())
+        m_binder->setActivityBarVisible(activityVisible.toBool());
+
+    const QVariant sideVisible = settings.scopedValue(
+        SettingsScope::Workspace, QStringLiteral("ui.sideBar.visible"));
+    if (sideVisible.isValid())
+        m_binder->setSideBarVisible(sideVisible.toBool());
+
+    const QVariant sideWidth = settings.scopedValue(
+        SettingsScope::Workspace, QStringLiteral("ui.sideBar.width"));
+    if (sideWidth.isValid())
+        m_binder->setSideBarWidth(sideWidth.toInt());
+}
+
+void MainWindow::saveWorkspaceUiConfig()
+{
+    if (!m_binder || !m_host)
+        return;
+    auto &settings = m_host->app().settings();
+    settings.setScopedValue(SettingsScope::Workspace, QStringLiteral("ui.activityBar.order"),
+                            m_binder->activityIds());
+    settings.setScopedValue(SettingsScope::Workspace, QStringLiteral("ui.activityBar.visible"),
+                            m_binder->activityBarVisible());
+    settings.setScopedValue(SettingsScope::Workspace, QStringLiteral("ui.sideBar.visible"),
+                            m_binder->sideBarVisible());
+    settings.setScopedValue(SettingsScope::Workspace, QStringLiteral("ui.sideBar.width"),
+                            m_binder->sideBarWidth());
+}
+
+void MainWindow::refreshActivityBadges()
+{
+    if (!m_binder)
+        return;
+    int problems = 0;
+    for (const auto &message : m_appCtx.messages().all())
+        if (message.level == QStringLiteral("warn") || message.level == QStringLiteral("error"))
+            ++problems;
+    m_binder->setActivityBadge(QStringLiteral("diagnostics"), problems);
+}
+
+void MainWindow::toggleSideBar()
+{
+    if (!m_binder)
+        return;
+    const bool visible = m_binder->toggleSideBar();
+    statusBar()->showMessage(visible ? QStringLiteral("侧栏已显示")
+                                    : QStringLiteral("侧栏已隐藏"));
+}
+
 void MainWindow::saveState()
 {
     if (!m_binder || !m_host)
@@ -919,6 +1025,7 @@ void MainWindow::saveState()
     // 窗口状态属于 Workspace 作用域：跨会话可恢复，但不属于某个具体工作区。
     m_host->app().settings().setJson(SettingsScope::Workspace,
                                      QStringLiteral("window/state"), m_binder->captureState());
+    saveWorkspaceUiConfig();
     m_host->app().settings().flush();
 }
 
@@ -928,9 +1035,10 @@ void MainWindow::restoreState()
         return;
     const QJsonObject state = m_host->app().settings().json(SettingsScope::Workspace,
                                                             QStringLiteral("window/state"));
-    if (state.isEmpty())
-        return; // 首次运行：无状态可恢复，正常降级
-    m_binder->applyState(state);
+    if (!state.isEmpty())
+        m_binder->applyState(state);
+    // 首次运行也要应用 Workspace UI 配置的默认/显式值。
+    applyWorkspaceUiConfig();
 }
 
 bool MainWindow::hasSavedState() const

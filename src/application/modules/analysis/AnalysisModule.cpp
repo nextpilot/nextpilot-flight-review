@@ -290,6 +290,14 @@ void AnalysisModule::onAttach(UiContext &ui)
 {
     m_handler->attachUi(&ui);
 
+    ActivitySpec analysisActivity;
+    analysisActivity.id = QStringLiteral("analysis");
+    analysisActivity.label = QStringLiteral("分析");
+    analysisActivity.icon = QStringLiteral("plot_refresh");
+    analysisActivity.order = 2;
+    analysisActivity.ribbonPage = QStringLiteral("ribbon.page.analysis");
+    ui.declareActivity(analysisActivity);
+
     // 分析页"应用库"gallery："全部/最近/收藏"三组。
     const QString area = QStringLiteral("ribbon.group.analysis.apps");
     // gallery 分组出现顺序：全部应用(0..) → 最近使用(100+) → 收藏(200+)。

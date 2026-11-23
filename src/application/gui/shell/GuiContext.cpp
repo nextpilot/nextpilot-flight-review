@@ -70,6 +70,22 @@ void GuiContext::declareSlot(const QString &area, const QString &label, SlotKind
         m_binder->rebuildRibbon();
 }
 
+void GuiContext::declareActivity(const ActivitySpec &activity)
+{
+    ActivitySpec spec = activity;
+    if (spec.provider.isEmpty())
+        spec.provider = QStringLiteral("module");
+    m_slots.declareActivity(spec);
+    if (m_binder)
+        m_binder->rebuildActivityBar();
+}
+
+void GuiContext::setActivityBadge(const QString &activityId, int count)
+{
+    if (m_binder)
+        m_binder->setActivityBadge(activityId, count);
+}
+
 void GuiContext::addAction(const UiAction &action)
 {
     // 模块本地登记的入口，provider 记为 "module"，卸载时按 provider 清理。

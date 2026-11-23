@@ -41,6 +41,36 @@ void UiSlotHub::bindLocal(const QString &area, const UiAction &action, const QSt
         m_local[area].append(BoundUiAction{action, provider});
 }
 
+void UiSlotHub::declareActivity(ActivitySpec activity)
+{
+    if (activity.id.isEmpty())
+        return;
+    auto it = std::find_if(m_activities.begin(), m_activities.end(),
+                           [&activity](const ActivitySpec &a) { return a.id == activity.id; });
+    if (it != m_activities.end())
+        return; // 同 id 先到者为准
+    m_activities.append(std::move(activity));
+}
+
+QList<ActivitySpec> UiSlotHub::activities() const
+{
+    QList<ActivitySpec> out = m_activities;
+    std::stable_sort(out.begin(), out.end(), [](const ActivitySpec &a, const ActivitySpec &b) {
+        if (a.order != b.order)
+            return a.order < b.order;
+        return a.id < b.id;
+    });
+    return out;
+}
+
+const ActivitySpec *UiSlotHub::activity(const QString &id) const
+{
+    for (const ActivitySpec &a : m_activities)
+        if (a.id == id)
+            return &a;
+    return nullptr;
+}
+
 void UiSlotHub::unbindProvider(const QString &provider)
 {
     for (auto it = m_local.begin(); it != m_local.end();)

@@ -553,6 +553,15 @@ void ScriptModule::onAttach(UiContext &ui)
     // 面板实现由视图层自注册（ScriptPanels.cpp 的 PS_REGISTER_PANEL_T），
     // 模块只发字符串 id，不依赖 Qt Widgets，headless 构建保持纯净。
     m_ui = &ui;
+    ActivitySpec scriptActivity;
+    scriptActivity.id = QStringLiteral("script");
+    scriptActivity.label = QStringLiteral("脚本");
+    scriptActivity.icon = QStringLiteral("script");
+    scriptActivity.order = 1;
+    scriptActivity.ribbonPage = QStringLiteral("ribbon.page.script");
+    scriptActivity.panelTypes = {QStringLiteral("script-files")};
+    scriptActivity.centralPanel = QStringLiteral("script-editor");
+    ui.declareActivity(scriptActivity);
     ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("script-files"));
     ui.requestPanel(QStringLiteral("dock.bottom"), QStringLiteral("script-console"));
     ui.requestPanel(QStringLiteral("dock.right"), QStringLiteral("script-debug"));

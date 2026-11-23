@@ -76,10 +76,24 @@ struct PanelSpec
     Domain domain = Domain::General;
 };
 
+// 一个 Activity Bar 入口：点击后切左栏 section 栈并同步 Ribbon 页。
+// 纯数据，不持有 QWidget；实际控件由外壳按描述创建。
+struct ActivitySpec
+{
+    QString id;          // 稳定标识，如 "script"
+    QString label;       // 显示名，如 "脚本"
+    QString icon;        // 图标名，如 "script"
+    int order = 0;       // Activity Bar 排序
+    QString ribbonPage;  // 点击后切到的 ribbon 页 area，如 "ribbon.page.script"
+    QStringList panelTypes; // 左栏 section 栈里属于本 activity 的面板类型 id
+    QString centralPanel;   // 点击后请求的中央面板类型 id（空=不动中央）
+
+    QString provider; // mount() 自动写入
+};
+
 // 一个可复用脚本/自动化片段：以文本随包分发，由脚本模块按语言选引擎注入执行。
 struct ScriptSpec
-{
-    QString language;    // 脚本语言，如 "lua"；供脚本模块选择引擎
+{    QString language;    // 脚本语言，如 "lua"；供脚本模块选择引擎
     QString source;      // 脚本正文（可内联，也可 from-file 懒加载）
     QStringList exports; // 注入后暴露的全局符号（如 "ps.ap"），便于诊断与文档
 

@@ -29,6 +29,7 @@ class RuntimeHost;
 } // namespace nextpilot::plotscope::host
 
 class QMenu;
+class QAction;
 
 namespace nextpilot::plotscope::gui
 {
@@ -105,18 +106,19 @@ private:
     void rebuildGridMenu();
 
     // 窗口首次显示后：按真实宽度重排 ribbon。
-    //
-    // SARibbon 的面板是按 ribbon 的**当时宽度**算几何的。窗口显示前，
-    // ribbon 还挂在 QMainWindow 的 menuWidget 槽里没被布局，宽度是
-    // QWidget 默认的 100px——此时建好的 ribbon 内容只能挤在 100px 内，
-    // 窗口拉宽后也不会自动重排（SARibbon 只在窗口激活时重排）。
-    // 所以内容要在窗口布局完成之后再建一次。
     void showEvent(QShowEvent *event) override;
+
+    // Workspace 里的工作台 UI 配置（Activity 顺序/显隐、侧栏显隐/宽度）。
+    void applyWorkspaceUiConfig();
+    void saveWorkspaceUiConfig();
+    void refreshActivityBadges();
+    void toggleSideBar();
 
     nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::host::RuntimeHost *m_host = nullptr; // 用于取设置（状态持久化）
     ShellBinder *m_binder = nullptr;
     QMenu *m_gridMenu = nullptr;   // 「网格」大按钮的下拉（X/Y 网格线开关）
+    QAction *m_toggleSideBarAction = nullptr; // Ctrl+B
     GuiContext *m_context = nullptr;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     // 系统级 preferences.open handler（打开全局偏好对话框）；随窗口存亡。

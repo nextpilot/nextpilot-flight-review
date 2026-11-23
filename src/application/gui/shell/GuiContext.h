@@ -40,6 +40,8 @@ public:
     void placeCanvas(QWidget *widget, const QString &titleOverride = QString()) override;
     void declareSlot(const QString &area, const QString &label, nextpilot::plotscope::registry::SlotKind kind,
                      const QString &parentArea = QString()) override;
+    void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) override;
+    void setActivityBadge(const QString &activityId, int count) override;
     void addAction(const nextpilot::plotscope::registry::UiAction &action) override;
     void addDynamicAction(const nextpilot::plotscope::registry::UiAction &action,
                           const QString &provider) override;

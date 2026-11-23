@@ -49,6 +49,13 @@ public:
                              nextpilot::plotscope::registry::SlotKind kind,
                              const QString &parentArea = QString()) = 0;
 
+    // 声明 Activity Bar 入口。模块只描述 id/标签/图标/对应 ribbon 页/左栏 section，
+    // 控件由外壳创建；headless 下不调用 onAttach，声明仍可落表。
+    virtual void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) = 0;
+
+    // 更新 Activity Bar 徽标数量（0 表示不显示）。
+    virtual void setActivityBadge(const QString &activityId, int count) = 0;
+
     // 往已声明的插槽里放一个动作（ribbon 按钮 / 菜单项）。
     // 归属插槽由 action.area 单一来源给出——不另传 area 参数，
     // 杜绝"参数 area 与 action.area 不一致"的双源隐患。

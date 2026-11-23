@@ -90,6 +90,14 @@ void DataModule::onAttach(UiContext &ui)
     // 模块只声明"我需要一个数据集树面板"，由 app 骨架的部件工厂决定用哪个实现——
     // 因此本模块不依赖 Qt Widgets，CLI（headless）构建保持纯净。
     m_ui = &ui;
+    ActivitySpec dataActivity;
+    dataActivity.id = QStringLiteral("data");
+    dataActivity.label = QStringLiteral("数据");
+    dataActivity.icon = QStringLiteral("datasource");
+    dataActivity.order = 0;
+    dataActivity.ribbonPage = QStringLiteral("ribbon.page.data");
+    dataActivity.panelTypes = {QStringLiteral("dataset-tree")};
+    ui.declareActivity(dataActivity);
     ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("dataset-tree"));
 
     // 数据功能 ribbon 的"常用"动作。
