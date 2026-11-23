@@ -380,8 +380,8 @@ void Interaction::contextMenu(QContextMenuEvent *event)
     undoAct->setEnabled(m_axes->canUndoView());
     menu.addSeparator();
 
-    // 「添加曲线」：ng 还没有通道选择对话框，这里给禁用项 + 指路，
-    // 而不是放一个点了没反应的假入口（main 那版是弹 ChannelPicker，ng 暂缺）。
+    // 「添加曲线」：当前还没有通道选择对话框，这里给禁用项 + 指路，
+    // 而不是放一个点了没反应的假入口（main 那版是弹 ChannelPicker，当前暂缺）。
     auto *addSeries = menu.addAction(QStringLiteral("添加曲线…"));
     addSeries->setEnabled(false);
     addSeries->setToolTip(QStringLiteral("从左侧数据集面板拖入字段，或在字段右键选「画到当前画布」"));

@@ -23,4 +23,4 @@ private:
     Handler *m_handler = nullptr;
 };
 
-Q_DECLARE_INTERFACE(AnalysisModule, "nextpilot.ng.AnalysisModule/1.0")
+Q_DECLARE_INTERFACE(AnalysisModule, "nextpilot.ps.AnalysisModule/1.0")

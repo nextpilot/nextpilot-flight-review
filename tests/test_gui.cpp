@@ -37,6 +37,8 @@
 #include "DockAreaWidget.h"
 #include "DockWidget.h"
 #include "ShellBinder.h"
+#include "CommandRegistry.h"
+#include "KeybindingRegistry.h"
 #include "FilterEditorDialog.h"
 
 #include "AppContext.h"
@@ -707,7 +709,7 @@ int main(int argc, char *argv[])
         CHECK(binder->activityBarWidget()->isVisible() || !window.isVisible());
 
         // 停靠布局版本：旧快照没有新左栏 dock，必须跳过，避免启动后左栏被藏/面板漂浮。
-        CHECK(binder->captureState().value(QStringLiteral("layoutVersion")).toInt() == 2);
+        CHECK(binder->captureState().value(QStringLiteral("layoutVersion")).toInt() == 3);
 
         // badge 与 Activity 顺序配置可改、可读。
         binder->setActivityBadge(QStringLiteral("diagnostics"), 7);
@@ -3272,6 +3274,14 @@ int main(int argc, char *argv[])
         CHECK(leftOrder == leftTitles);
         CHECK(!act0.isEmpty());
         CHECK(leftTitles.contains(act0));
+
+        // 左栏 dock 标题跟随当前 Activity，而不是固定“侧栏”。
+        auto *leftDock = window.findChild<ads::CDockWidget *>(QStringLiteral("ps.dock.sidebar"));
+        CHECK(leftDock != nullptr);
+        CHECK(binder->setActiveActivity(QStringLiteral("script")));
+        CHECK(leftDock->windowTitle() == QStringLiteral("脚本"));
+        CHECK(binder->setActiveActivity(QStringLiteral("data")));
+        CHECK(leftDock->windowTitle() == QStringLiteral("数据"));
         // 聚焦：每个面板都能定位到自己的 dock 页签（focusPanel 返回 true），
         // 且聚焦后 active 落在该面板所在页签上。
         const QList<QWidget *> leftPanels = binder->panelWidgets(QStringLiteral("dock.left"));
@@ -3281,6 +3291,53 @@ int main(int argc, char *argv[])
         const QString act1 = binder->activePanelTitle(QStringLiteral("dock.left"));
         CHECK(leftTitles.contains(act1));
         OK("dock 页签：页签序=内容栈序、两个面板都可聚焦（修点页签内容不切换）");
+    }
+
+    {
+        CommandRegistry registry;
+        int hits = 0;
+        CommandDescriptor command;
+        command.id = QStringLiteral("test.exec");
+        command.title = QStringLiteral("测试执行");
+        command.handler = [&hits]() { ++hits; };
+        CHECK(registry.add(command));
+        CHECK(!registry.add(command));
+        CHECK(registry.execute(QStringLiteral("test.exec")));
+        CHECK(hits == 1);
+
+        CommandDescriptor gated = command;
+        gated.id = QStringLiteral("test.gated");
+        gated.when = QStringLiteral("ready == true && kind == \"series\"");
+        gated.handler = [&hits]() { hits += 10; };
+        CHECK(registry.add(gated));
+        registry.setContextValue(QStringLiteral("ready"), true);
+        registry.setContextValue(QStringLiteral("kind"), QStringLiteral("plot"));
+        QString error;
+        CHECK(!registry.execute(QStringLiteral("test.gated"), &error));
+        CHECK(error.contains(QStringLiteral("命令当前不可用")));
+        CHECK(hits == 1);
+
+        registry.setContextValue(QStringLiteral("kind"), QStringLiteral("series"));
+        bool ok = false;
+        CHECK(CommandRegistry::evaluateWhen(
+            QStringLiteral("(ready == true || nope == false) && kind == \"series\""),
+            registry.contextValues(), &ok));
+        CHECK(ok);
+
+        KeybindingRegistry bindings;
+        bindings.setDefault(QStringLiteral("one"), QStringLiteral("Ctrl+B"));
+        bindings.setDefault(QStringLiteral("two"), QStringLiteral("Ctrl+B"));
+        CHECK(bindings.sequenceFor(QStringLiteral("one")) == QStringLiteral("Ctrl+B"));
+        const QList<KeybindingConflict> conflicts = bindings.conflicts();
+        CHECK(conflicts.size() == 1);
+        CHECK(conflicts.first().commandIds.size() == 2);
+        CHECK(bindings.setOverride(QStringLiteral("two"), QStringLiteral("Ctrl+K, Ctrl+P")));
+        CHECK(bindings.sequenceFor(QStringLiteral("two")) == QStringLiteral("Ctrl+K, Ctrl+P"));
+        CHECK(KeybindingRegistry::isChord(bindings.sequenceFor(QStringLiteral("two"))));
+        CHECK(KeybindingRegistry::chordSteps(QStringLiteral("Ctrl+K, Ctrl+P")).size() == 2);
+        CHECK(bindings.clearOverride(QStringLiteral("two")));
+        CHECK(bindings.sequenceFor(QStringLiteral("two")) == QStringLiteral("Ctrl+B"));
+        OK("命令层：when 门控、重复 id 拒绝、键位冲突与 chord");
     }
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");

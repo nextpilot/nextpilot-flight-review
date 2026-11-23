@@ -539,12 +539,6 @@ ScriptEditorPanel::ScriptEditorPanel(AppContext &appCtx, IIntentExecutor &execut
     }
     auto *save = new QShortcut(QKeySequence::Save, this);
     connect(save, &QShortcut::activated, this, [this]() { saveCurrentDocument(); });
-    auto *ctrlW = new QShortcut(QKeySequence(QStringLiteral("Ctrl+W")), this);
-    connect(ctrlW, &QShortcut::activated, this, [this]() {
-        const int i = m_tabs->currentIndex();
-        if (i >= 0)
-            onTabCloseRequested(i);
-    });
     auto *ctrlTab = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Tab")), this);
     connect(ctrlTab, &QShortcut::activated, this, [this]() {
         const int n = m_tabs->count();

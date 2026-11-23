@@ -156,7 +156,7 @@ Result<void> exportReportPdf(AppContext &appCtx, const QList<QWidget *> &canvase
     writer.setPageMargins(QMarginsF(18, 18, 18, 18), QPageLayout::Millimeter);
     writer.setResolution(96);
     writer.setTitle(request.title.isEmpty() ? QStringLiteral("PlotScope 报告") : request.title);
-    writer.setCreator(QStringLiteral("PlotScope ng"));
+    writer.setCreator(QStringLiteral("PlotScope"));
 
     QPainter painter(&writer);
     if (!painter.isActive())

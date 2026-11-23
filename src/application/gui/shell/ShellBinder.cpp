@@ -54,9 +54,9 @@ namespace nextpilot::plotscope::gui
 namespace
 {
 // 插槽 area -> ADS 区域
-// 停靠布局版本：2 = W1b 起左栏改为单一 ng.dock.sidebar。
+// 停靠布局版本：3 = 左栏改为单一 ps.dock.sidebar。
 // 旧版本快照里的 dock 树不认识新栏，恢复会把左栏/面板藏掉或留成浮动。
-constexpr int kDockLayoutVersion = 2;
+constexpr int kDockLayoutVersion = 3;
 
 ads::DockWidgetArea adsAreaFor(const QString &area)
 {
@@ -184,7 +184,7 @@ void ShellBinder::ensureActivityShell()
         m_window->takeCentralWidget();
 
     m_shellFrame = new QWidget(m_window);
-    m_shellFrame->setObjectName(QStringLiteral("plotscope.shellFrame"));
+    m_shellFrame->setObjectName(QStringLiteral("ps.shellFrame"));
     auto *layout = new QHBoxLayout(m_shellFrame);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -242,6 +242,7 @@ void ShellBinder::rebuildActivityBar()
     m_activityBar->setActiveActivity(m_activeActivity);
     if (m_sidebar)
         m_sidebar->setActiveActivity(m_activeActivity);
+    updateSideBarTitle();
 }
 
 QString ShellBinder::activityForPanel(const QString &pageKey) const
@@ -262,10 +263,19 @@ void ShellBinder::activateActivity(const QString &activityId)
         m_activityBar->setActiveActivity(activityId);
     if (m_sidebar)
         m_sidebar->setActiveActivity(activityId);
+    updateSideBarTitle();
     if (!spec->ribbonPage.isEmpty())
         setRibbonPage(spec->ribbonPage);
     if (m_activityHandler)
         m_activityHandler(*spec);
+}
+
+void ShellBinder::updateSideBarTitle()
+{
+    if (!m_leftDock)
+        return;
+    const ActivitySpec *spec = m_slots.activity(m_activeActivity);
+    m_leftDock->setWindowTitle(spec ? spec->label : QStringLiteral("侧栏"));
 }
 
 void ShellBinder::createRibbon(SARibbonBar *ribbon)
@@ -590,6 +600,7 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
                 m_sidebar->setActiveActivity(m_activeActivity);
             if (m_sidebar->activeSectionId().isEmpty())
                 m_sidebar->focusSection(sectionId);
+            updateSideBarTitle();
         }
         return;
     }
@@ -597,7 +608,7 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     auto *dock = new ads::CDockWidget(m_dock, title);
     // objectName 必须唯一：dockWidgetsMap/findDockWidget 按名索引，同区多面板
     // 撞名会让后面的覆盖前面的（"脚本调试"曾被"属性"顶掉）。加序号消歧。
-    dock->setObjectName(QStringLiteral("ng.dock.%1.%2").arg(area).arg(m_dockSeq++));
+    dock->setObjectName(QStringLiteral("ps.dock.%1.%2").arg(area).arg(m_dockSeq++));
     m_dockByWidget.insert(content, dock);
     m_docksByArea[area].append(dock); // 该区页签序列（panelTitles 断言/诊断用）
     if (!pageKey.isEmpty())
@@ -745,7 +756,7 @@ void ShellBinder::setCentralContent(QWidget *content, const QString &title, cons
         // 典型场景：脚本编辑器请求 canvas.center——写代码需要全宽，
         // 挤在侧栏（400px 上限）里没法用。ADS 页签机制现成，零新布局代码。
         auto *dock = new ads::CDockWidget(m_dock, title.isEmpty() ? QStringLiteral("视图") : title);
-        dock->setObjectName(QStringLiteral("ng.dock.central.tab.%1").arg(m_dockSeq++));
+        dock->setObjectName(QStringLiteral("ps.dock.central.tab.%1").arg(m_dockSeq++));
         // 中央页签同样按面板声明给图标，空则留空（画布本体已有自己的图标语义）。
         if (!icon.isEmpty())
             dock->setIcon(iconFor(icon));
@@ -864,7 +875,7 @@ void ShellBinder::installCentral()
     // 保证后续所有侧边 dock 都排在它之后——顺序约束由外壳兜住。
     QWidget *content = m_centralContent ? m_centralContent : new QWidget();
     m_centralDock = new ads::CDockWidget(m_dock, QStringLiteral("主视图"));
-    m_centralDock->setObjectName(QStringLiteral("ng.dock.canvas.center"));
+    m_centralDock->setObjectName(QStringLiteral("ps.dock.canvas.center"));
     content->setMinimumWidth(320);
     // 编辑器区高度下限：底部面板可拖高，但不能把画布挤成一条缝。
     content->setMinimumHeight(300);
@@ -893,7 +904,7 @@ bool ShellBinder::ensureSideBar()
         return false;
 
     m_leftDock = new ads::CDockWidget(m_dock, QStringLiteral("侧栏"));
-    m_leftDock->setObjectName(QStringLiteral("ng.dock.sidebar"));
+    m_leftDock->setObjectName(QStringLiteral("ps.dock.sidebar"));
     m_sidebar = new SideBarStack(m_leftDock);
     m_leftDock->setWidget(m_sidebar);
     m_leftDock->setMinimumWidth(170);
@@ -928,6 +939,7 @@ bool ShellBinder::setDockPageVisible(const QString &pageKey, bool visible)
             if (!activity.isEmpty() && activity != m_activeActivity)
                 activateActivity(activity);
             m_sidebar->focusSection(pageKey);
+            updateSideBarTitle();
         }
         return true;
     }
@@ -1176,6 +1188,87 @@ QStringList ShellBinder::contentsOrder(const QString &area) const
 int ShellBinder::actionTriggerCount(const QString &actionId) const
 {
     return m_actionTriggers.value(actionId, 0);
+}
+
+bool ShellBinder::triggerAction(const QString &actionId)
+{
+    QAction *action = m_actionById.value(actionId, nullptr);
+    if (!action)
+        return false;
+    action->trigger();
+    return true;
+}
+
+bool ShellBinder::dispatchAction(const QString &actionId, const QString &intentOp,
+                                 const QString &data)
+{
+    if (triggerAction(actionId))
+        return true;
+    if (!m_dispatch || intentOp.isEmpty())
+        return false;
+    m_dispatch(actionId, intentOp, data);
+    return true;
+}
+
+bool ShellBinder::bottomPanelVisible() const
+{
+    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.bottom"));
+    if (!dock)
+        return false;
+    if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
+        return area->isVisible();
+    return dock->isVisible();
+}
+
+bool ShellBinder::toggleBottomPanel()
+{
+    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.bottom"));
+    if (!dock)
+        return false;
+    if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
+    {
+        area->setVisible(!area->isVisible());
+        return true;
+    }
+    return false;
+}
+
+int ShellBinder::currentCentralIndex() const
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return -1;
+    return m_centralDock->dockAreaWidget()->currentIndex();
+}
+
+bool ShellBinder::activateCentralIndex(int index)
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return false;
+    ads::CDockAreaWidget *area = m_centralDock->dockAreaWidget();
+    if (index < 0 || index >= area->dockWidgets().size())
+        return false;
+    area->setCurrentIndex(index);
+    return true;
+}
+
+QString ShellBinder::currentCentralTitle() const
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return QString();
+    ads::CDockWidget *current = m_centralDock->dockAreaWidget()->currentDockWidget();
+    return current ? current->windowTitle() : QString();
+}
+
+bool ShellBinder::closeCurrentEditor()
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return false;
+    ads::CDockAreaWidget *area = m_centralDock->dockAreaWidget();
+    ads::CDockWidget *current = area->currentDockWidget();
+    if (!current || current == m_centralDock)
+        return false;
+    current->closeDockWidget();
+    return true;
 }
 
 void ShellBinder::setActivityBadge(const QString &activityId, int count)

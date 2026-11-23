@@ -12,7 +12,7 @@ include(Warnings)
 include(Dependencies)
 
 # 顶层薄壳：src/ 工程本体 + 根 tests/ 测试。
-# 全部构建逻辑在 src/CMakeLists.txt（唯一事实源，源自原 ng 工程）。
+# 全部构建逻辑在 src/CMakeLists.txt（唯一事实源）。
 enable_testing()
 add_subdirectory(src)
 add_subdirectory(tests)

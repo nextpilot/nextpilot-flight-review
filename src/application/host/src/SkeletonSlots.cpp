@@ -50,7 +50,7 @@ void declareSkeletonSlots(UiSlotHub &registry)
     group(QStringLiteral("ribbon.group.home.view"), QStringLiteral("画布"),
           QStringLiteral("ribbon.page.home"), 9);
 
-    // 文件页：老 ShellComponent 文件/导出/截图/帮助（ng 补回独立的"截图"组）。
+    // 文件页：老 ShellComponent 文件/导出/截图/帮助（补回独立的"截图"组）。
     group(QStringLiteral("ribbon.group.file.document"), QStringLiteral("文件"),
           QStringLiteral("ribbon.page.file"), 0);
     group(QStringLiteral("ribbon.group.file.export"), QStringLiteral("导出"),

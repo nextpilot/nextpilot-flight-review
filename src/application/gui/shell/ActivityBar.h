@@ -50,6 +50,8 @@ signals:
     void settingsRequested();
 
 private:
+    void paintEvent(QPaintEvent *event) override;
+
     QVBoxLayout *m_layout = nullptr;
     QHash<QString, ActivityButton *> m_buttons;
     QStringList m_ids;

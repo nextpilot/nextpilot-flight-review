@@ -3,6 +3,10 @@
 #include <cstdio>
 
 #include "GuiContext.h"
+#include "CommandPalette.h"
+#include "CommandRegistry.h"
+#include "KeybindingDialog.h"
+#include "KeybindingRegistry.h"
 #include "ImportDialog.h"
 #include "PreferencesIntentHandler.h"
 #include "ProtocolInspectorDialog.h"
@@ -23,17 +27,20 @@
 
 #include "SARibbonMainWindow.h"
 
+#include <QApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QAction>
+#include <QKeyEvent>
 #include <QKeySequence>
 #include "WorkspaceDataConfig.h"
 
 #include <QCloseEvent>
 #include <QInputDialog>
 #include <QJsonArray>
+#include <QSet>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QJsonValue>
@@ -46,6 +53,7 @@
 #include <QTimer>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QTabWidget>
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
@@ -282,7 +290,7 @@ void MainWindow::declareStandardSlots()
         {"ribbon.group.plot.action", "plot.screenshot",    "截图",   "screenshot", 0, "",     false, false},
     };
     // 布局组大按钮：main 用 layoutThumb(r,c) 画分格缩略图、文字写 "r×c"，
-    // 点选后回写实际分格。ng 初始按当前页默认 1×1，选完由下面 dispatcher 更新。
+    // 点选后回写实际分格。初始按当前页默认 1×1，选完由下面 dispatcher 更新。
     QString layoutVisual = QStringLiteral("layout:2x1");
     for (const PlotToolDef &d : kPlotTools)
     {
@@ -417,12 +425,6 @@ void MainWindow::build(RuntimeHost &host)
         (void)m_host->execute(intent);
     });
 
-    m_toggleSideBarAction = new QAction(this);
-    m_toggleSideBarAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+B")));
-    m_toggleSideBarAction->setShortcutContext(Qt::WindowShortcut);
-    addAction(m_toggleSideBarAction);
-    connect(m_toggleSideBarAction, &QAction::triggered, this, &MainWindow::toggleSideBar);
-
     // 报告导出同路径：脚本 app.call("report.export", {path,...}) 走
     // 与 Ribbon 按钮（report.workbench.export 特判）完全相同的 QPdfWriter 管线。
     // path 必填；title/subtitle/notes/templateId 可选（templateId 查工具箱 reports 表）。
@@ -445,7 +447,7 @@ void MainWindow::build(RuntimeHost &host)
     // 1) 骨架插槽
     declareStandardSlots();
 
-    // 2) ribbon（SARibbon）——结构层交给第三方，ng 只提供插槽数据
+    // 2) ribbon（SARibbon）——结构层交给第三方，绑定器只提供插槽数据
     //
     // SARibbonMainWindow 已经在构造时把 ribbon 条装进了 menuWidget 槽
     // （见 setRibbonBar），这里只把它的**样式**调成我们要的样子，
@@ -818,7 +820,10 @@ void MainWindow::build(RuntimeHost &host)
     // 4) ribbon 重建：把工具箱的 UI 贡献 + 模块的本地入口一起渲染出来
     m_binder->rebuildRibbon();
 
-    // 5) 恢复上次的窗口状态（首次运行则安全跳过）
+    // 5) 命令层：统一命令、命令面板与键位（依赖 ribbon 动作已建好）
+    buildCommandLayer(host);
+
+    // 6) 恢复上次的窗口状态（首次运行则安全跳过）
     restoreState();
 }
 
@@ -1200,6 +1205,7 @@ void MainWindow::saveWorkspaceUiConfig()
                             m_binder->sideBarVisible());
     settings.setScopedValue(SettingsScope::Workspace, QStringLiteral("ui.sideBar.width"),
                             m_binder->sideBarWidth());
+    saveKeybindingConfig();
 }
 
 void MainWindow::refreshActivityBadges()
@@ -1220,6 +1226,475 @@ void MainWindow::toggleSideBar()
     const bool visible = m_binder->toggleSideBar();
     statusBar()->showMessage(visible ? QStringLiteral("侧栏已显示")
                                     : QStringLiteral("侧栏已隐藏"));
+}
+
+void MainWindow::buildCommandLayer(RuntimeHost &host)
+{
+    Q_UNUSED(host);
+    if (m_commands || !m_binder)
+        return;
+
+    m_commands = std::make_unique<CommandRegistry>();
+    m_keybindings = std::make_unique<KeybindingRegistry>();
+
+    m_commandPalette = new CommandPalette(this);
+    m_commandPalette->setActivationHandler([this](const QString &) {
+        // MRU 与关闭由 Palette 自己维护；这里留作后续埋点。
+    });
+
+    registerSlotCommands();
+    registerShellCommands();
+
+    struct DefaultBinding { const char *id; const char *sequence; };
+    static const DefaultBinding kDefaults[] = {
+        {"palette.show", "Ctrl+Shift+P"},
+        {"quick.switch", "Ctrl+P"},
+        {"view.toggleSideBar", "Ctrl+B"},
+        {"view.togglePanel", "Ctrl+J"},
+        {"editor.next", "Ctrl+Tab"},
+        {"editor.close", "Ctrl+W"},
+    };
+    for (const DefaultBinding &binding : kDefaults)
+        m_keybindings->setDefault(QString::fromLatin1(binding.id),
+                                  QString::fromLatin1(binding.sequence));
+
+    const QStringList activities = m_binder->activityIds();
+    for (int i = 0; i < activities.size() && i < 9; ++i)
+        m_keybindings->setDefault(QStringLiteral("activity.activate.%1").arg(activities.at(i)),
+                                  QStringLiteral("Ctrl+%1").arg(i + 1));
+
+    applyKeybindingConfig();
+    rebuildKeybindingActions();
+    qApp->installEventFilter(this);
+}
+
+void MainWindow::registerSlotCommands()
+{
+    QSet<QString> seen;
+    int added = 0;
+    for (const UiSlot &slot : m_context->slotHub().allSlots())
+    {
+        for (const BoundUiAction &bound : m_context->slotHub().actionsIn(slot.area))
+        {
+            const UiAction &ua = bound.action;
+            if (ua.id.isEmpty() || seen.contains(ua.id))
+                continue;
+            seen.insert(ua.id);
+
+            CommandDescriptor command;
+            command.id = ua.id;
+            command.title = ua.label;
+            command.category = slot.label;
+            command.icon = ua.icon;
+            command.shortcut = ua.shortcut;
+            command.provider = bound.provider;
+            const QString actionId = ua.id;
+            const QString intentOp = ua.intentOp;
+            const QString data = ua.data;
+            command.handler = [this, actionId, intentOp, data]() {
+                if (!m_binder->dispatchAction(actionId, intentOp, data))
+                    statusBar()->showMessage(QStringLiteral("命令无法执行: %1").arg(actionId));
+            };
+            if (m_commands->add(command))
+                ++added;
+        }
+    }
+    fprintf(stdout, "[cmd] 注册动作命令 %d 条\n", added);
+}
+
+void MainWindow::registerShellCommands()
+{
+    auto add = [this](const QString &id, const QString &title, const QString &category,
+                      const QString &shortcut, const QString &when,
+                      std::function<void()> handler) {
+        CommandDescriptor command;
+        command.id = id;
+        command.title = title;
+        command.category = category;
+        command.shortcut = shortcut;
+        command.when = when;
+        command.provider = QStringLiteral("app.shell");
+        command.handler = std::move(handler);
+        return m_commands->add(command);
+    };
+
+    add(QStringLiteral("palette.show"), QStringLiteral("命令面板"), QStringLiteral("视图"),
+        QStringLiteral("Ctrl+Shift+P"), QString(),
+        [this]() { showCommandPalette(); });
+    add(QStringLiteral("quick.switch"), QStringLiteral("快速切换"), QStringLiteral("导航"),
+        QStringLiteral("Ctrl+P"), QString(),
+        [this]() { showQuickSwitch(); });
+    add(QStringLiteral("view.toggleSideBar"), QStringLiteral("显示/隐藏左栏"),
+        QStringLiteral("视图"), QStringLiteral("Ctrl+B"), QString(),
+        [this]() { toggleSideBar(); });
+    add(QStringLiteral("view.togglePanel"), QStringLiteral("显示/隐藏底部面板"),
+        QStringLiteral("视图"), QStringLiteral("Ctrl+J"), QString(),
+        [this]() {
+            if (m_binder->toggleBottomPanel())
+                statusBar()->showMessage(m_binder->bottomPanelVisible()
+                                             ? QStringLiteral("底部面板已显示")
+                                             : QStringLiteral("底部面板已隐藏"));
+        });
+    add(QStringLiteral("editor.next"), QStringLiteral("下一个编辑器"),
+        QStringLiteral("导航"), QStringLiteral("Ctrl+Tab"), QString(),
+        [this]() {
+            const int count = m_binder->centralWidgets().size();
+            if (count <= 0)
+                return;
+            const int current = qMax(0, m_binder->currentCentralIndex());
+            m_binder->activateCentralIndex((current + 1) % count);
+        });
+    add(QStringLiteral("editor.close"), QStringLiteral("关闭当前编辑器"),
+        QStringLiteral("视图"), QStringLiteral("Ctrl+W"), QString(),
+        [this]() {
+            if (!m_binder->closeCurrentEditor())
+                statusBar()->showMessage(QStringLiteral("当前页签不可关闭"));
+        });
+    add(QStringLiteral("plot.series.removeSelected"), QStringLiteral("删除曲线"),
+        QStringLiteral("绘图"), QString(),
+        QStringLiteral("hasSelection == true && selectionKind == \"series\""),
+        [this]() {
+            const Selection &selection = m_appCtx.selection();
+            const QString key = selection.ids.value(QStringLiteral("seriesKey")).toString();
+            if (selection.kind != SelectionKind::Series || key.isEmpty())
+            {
+                statusBar()->showMessage(QStringLiteral("未选中曲线"));
+                return;
+            }
+            QVariantMap params;
+            params.insert(QStringLiteral("key"), key);
+            QVariant nullValue;
+            Result<QVariant> result(nullValue);
+            if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.series.remove"),
+                                                            params, result)
+                || !result)
+                statusBar()->showMessage(QStringLiteral("删除曲线失败"));
+        });
+    add(QStringLiteral("preferences.keybindings"), QStringLiteral("快捷键设置"),
+        QStringLiteral("设置"), QString(), QString(),
+        [this]() { openKeybindingDialog(); });
+
+    const QStringList activities = m_binder->activityIds();
+    for (const QString &activityId : activities)
+    {
+        const ActivitySpec *spec = m_context->slotHub().activity(activityId);
+        const QString label = spec ? spec->label : activityId;
+        add(QStringLiteral("activity.activate.%1").arg(activityId),
+            QStringLiteral("转到 %1").arg(label), QStringLiteral("导航"), QString(), QString(),
+            [this, activityId]() { m_binder->setActiveActivity(activityId); });
+    }
+}
+
+void MainWindow::updateCommandContext()
+{
+    if (!m_commands)
+        return;
+    m_commands->setContextValue(QStringLiteral("activeActivity"), m_binder->activeActivity());
+    m_commands->setContextValue(QStringLiteral("activeEditor"), m_binder->currentCentralTitle());
+    m_commands->setContextValue(QStringLiteral("activeGroup"), QString());
+    const Selection &selection = m_appCtx.selection();
+    m_commands->setContextValue(QStringLiteral("selectionKind"), selectionKindName(selection.kind));
+    m_commands->setContextValue(QStringLiteral("hasSelection"), !selection.empty());
+    m_commands->setContextValue(QStringLiteral("hasData"), !m_appCtx.data().ids().isEmpty());
+    m_commands->setContextValue(QStringLiteral("isScriptRunning"), false);
+    m_commands->setContextValue(QStringLiteral("focusArea"), QStringLiteral("editor"));
+}
+
+QList<CommandPalette::Item> MainWindow::buildCommandItems()
+{
+    QList<CommandPalette::Item> items;
+    if (!m_commands || !m_keybindings)
+        return items;
+
+    QHash<QString, QStringList> conflicts;
+    for (const KeybindingConflict &conflict : m_keybindings->conflicts())
+        for (const QString &id : conflict.commandIds)
+            conflicts[id] << conflict.sequence;
+
+    for (const CommandDescriptor &command : m_commands->commands())
+    {
+        CommandPalette::Item item;
+        item.id = command.id;
+        item.title = command.title;
+        item.category = command.category;
+        item.keywords = command.id;
+        item.shortcut = m_keybindings->sequenceFor(command.id);
+        if (conflicts.contains(command.id))
+            item.shortcut += QStringLiteral(" (冲突)");
+
+        if (!command.when.isEmpty())
+        {
+            bool ok = true;
+            if (!CommandRegistry::evaluateWhen(command.when, m_commands->contextValues(), &ok) || !ok)
+                item.reason = QStringLiteral("条件不满足：%1").arg(command.when);
+        }
+        if (item.reason.isEmpty() && command.disabledReason)
+            item.reason = command.disabledReason();
+
+        const QString id = command.id;
+        item.action = [this, id]() { (void)executeCommand(id); };
+        items.append(item);
+    }
+    return items;
+}
+
+QList<CommandPalette::Item> MainWindow::buildQuickItems() const
+{
+    QList<CommandPalette::Item> items;
+
+    const QList<QWidget *> central = m_binder->centralWidgets();
+    const QStringList centralTitles = m_binder->centralTitles();
+    for (int i = 0; i < central.size(); ++i)
+    {
+        CommandPalette::Item item;
+        item.id = QStringLiteral("quick.editor.%1").arg(i);
+        item.title = centralTitles.value(i, QStringLiteral("编辑器 %1").arg(i + 1));
+        item.category = QStringLiteral("编辑器");
+        item.keywords = QStringLiteral("editor central %1").arg(i);
+        const int index = i;
+        item.action = [this, index]() { m_binder->activateCentralIndex(index); };
+        items.append(item);
+    }
+
+    for (const QString &area : {QStringLiteral("dock.left"), QStringLiteral("dock.right"),
+                                QStringLiteral("dock.bottom")})
+    {
+        const QStringList titles = m_binder->panelTitles(area);
+        const QList<QWidget *> panels = m_binder->panelWidgets(area);
+        const int count = qMin(titles.size(), panels.size());
+        for (int i = 0; i < count; ++i)
+        {
+            CommandPalette::Item item;
+            item.id = QStringLiteral("quick.panel.%1.%2").arg(area, QString::number(i));
+            item.title = titles.at(i);
+            item.category = area == QStringLiteral("dock.left")
+                                ? QStringLiteral("左栏面板")
+                                : area == QStringLiteral("dock.right")
+                                      ? QStringLiteral("右侧面板")
+                                      : QStringLiteral("底部面板");
+            item.keywords = area;
+            QWidget *panel = panels.at(i);
+            item.action = [this, panel]() { m_binder->focusPanel(panel); };
+            items.append(item);
+        }
+    }
+
+    for (const QString &activityId : m_binder->activityIds())
+    {
+        const ActivitySpec *spec = m_context->slotHub().activity(activityId);
+        CommandPalette::Item item;
+        item.id = QStringLiteral("quick.activity.%1").arg(activityId);
+        item.title = spec ? spec->label : activityId;
+        item.category = QStringLiteral("Activity");
+        item.keywords = activityId;
+        item.action = [this, activityId]() { m_binder->setActiveActivity(activityId); };
+        items.append(item);
+    }
+    return items;
+}
+
+void MainWindow::showCommandPalette()
+{
+    if (!m_commandPalette)
+        return;
+    updateCommandContext();
+    m_commandPalette->openCommands(buildCommandItems());
+}
+
+void MainWindow::showQuickSwitch()
+{
+    if (!m_commandPalette)
+        return;
+    updateCommandContext();
+    m_commandPalette->openQuickSwitch(buildQuickItems());
+}
+
+bool MainWindow::executeCommand(const QString &id, QString *error)
+{
+    if (!m_commands)
+    {
+        if (error)
+            *error = QStringLiteral("命令层尚未初始化");
+        return false;
+    }
+    updateCommandContext();
+    QString reason;
+    const bool ok = m_commands->execute(id, &reason);
+    if (!ok && error)
+        *error = reason;
+    if (!ok && !reason.isEmpty())
+        statusBar()->showMessage(reason);
+    return ok;
+}
+
+void MainWindow::openKeybindingDialog()
+{
+    if (!m_commands || !m_keybindings)
+        return;
+    auto *dialog = new KeybindingDialog(*m_commands, *m_keybindings, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    dialog->setSaveHandler([this]() {
+        saveKeybindingConfig();
+        rebuildKeybindingActions();
+    });
+    dialog->exec();
+}
+
+void MainWindow::applyKeybindingConfig()
+{
+    if (!m_keybindings || !m_host)
+        return;
+    const QVariant raw = m_host->app().settings().scopedValue(
+        SettingsScope::Workspace, QStringLiteral("ui.keybindings"));
+    QJsonObject object = QJsonDocument::fromJson(raw.toString().toUtf8()).object();
+    QHash<QString, QString> overrides;
+    for (auto it = object.constBegin(); it != object.constEnd(); ++it)
+        overrides.insert(it.key(), it.value().toString());
+    m_keybindings->setOverrides(overrides);
+}
+
+void MainWindow::saveKeybindingConfig()
+{
+    if (!m_keybindings || !m_host)
+        return;
+    QJsonObject object;
+    const QHash<QString, QString> overrides = m_keybindings->overrides();
+    for (auto it = overrides.constBegin(); it != overrides.constEnd(); ++it)
+        object.insert(it.key(), it.value());
+    m_host->app().settings().setScopedValue(
+        SettingsScope::Workspace, QStringLiteral("ui.keybindings"),
+        QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)));
+}
+
+void MainWindow::rebuildKeybindingActions()
+{
+    if (!m_keybindings)
+        return;
+    auto oldActions = m_keybindingActions;
+    m_keybindingActions.clear();
+    for (QAction *action : oldActions)
+    {
+        removeAction(action);
+        action->deleteLater();
+    }
+
+    QSet<QString> used;
+    for (QAction *action : findChildren<QAction *>())
+    {
+        if (oldActions.contains(action) || action->shortcut().isEmpty())
+            continue;
+        used.insert(action->shortcut().toString(QKeySequence::PortableText));
+    }
+
+    const QStringList ids = m_keybindings->commandIds();
+    for (const QString &id : ids)
+    {
+        if (!m_commands->contains(id))
+            continue;
+        const QString sequence = m_keybindings->sequenceFor(id);
+        if (sequence.isEmpty() || KeybindingRegistry::isChord(sequence))
+            continue;
+        // Ctrl+Tab / Ctrl+W 在脚本编辑器内有面板级快捷键，交给 eventFilter 分流。
+        if (id == QStringLiteral("editor.next") || id == QStringLiteral("editor.close"))
+            continue;
+        if (used.contains(sequence))
+            continue; // 冲突的第二个绑定不注册；Palette 会标“(冲突)”
+        used.insert(sequence);
+
+        auto *action = new QAction(this);
+        action->setObjectName(QStringLiteral("command.action.%1").arg(id));
+        action->setShortcut(QKeySequence(sequence));
+        action->setShortcutContext(Qt::WindowShortcut);
+        addAction(action);
+        connect(action, &QAction::triggered, this, [this, id]() { (void)executeCommand(id); });
+        m_keybindingActions.append(action);
+    }
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    Q_UNUSED(watched);
+    if ((event->type() != QEvent::KeyPress && event->type() != QEvent::ShortcutOverride)
+        || !m_keybindings)
+        return QMainWindow::eventFilter(watched, event);
+
+    auto *key = static_cast<QKeyEvent *>(event);
+    const QString sequence = QKeySequence(key->keyCombination())
+                                 .toString(QKeySequence::PortableText);
+    if (sequence.isEmpty())
+        return QMainWindow::eventFilter(watched, event);
+
+    bool scriptTabs = false;
+    for (QWidget *w = QApplication::focusWidget(); w; w = w->parentWidget())
+    {
+        if (!QString::fromLatin1(w->metaObject()->className())
+                 .contains(QStringLiteral("ScriptEditorPanel")))
+            continue;
+        QTabWidget *tabs = w->findChild<QTabWidget *>();
+        scriptTabs = tabs && tabs->count() > 1;
+        break;
+    }
+
+    // 快捷键系统里仍有同键 QAction，先在 ShortcutOverride 阶段接管，避免歧义吞键。
+    if (event->type() == QEvent::ShortcutOverride)
+    {
+        if (sequence == QStringLiteral("Ctrl+W")
+            || (sequence == QStringLiteral("Ctrl+Tab") && !scriptTabs))
+        {
+            event->accept();
+            return true;
+        }
+        return QMainWindow::eventFilter(watched, event);
+    }
+
+    // 脚本编辑器内有多个脚本页签时，Ctrl+Tab 交给面板循环；
+    // 只有一个页签或焦点不在脚本编辑器时，切中央页签。Ctrl+W 统一关中央页签。
+    if (sequence == QStringLiteral("Ctrl+Tab") || sequence == QStringLiteral("Ctrl+W"))
+    {
+        if (sequence == QStringLiteral("Ctrl+Tab") && scriptTabs)
+            return QMainWindow::eventFilter(watched, event);
+        const QString id = sequence == QStringLiteral("Ctrl+Tab")
+                               ? QStringLiteral("editor.next")
+                               : QStringLiteral("editor.close");
+        if (m_commands->contains(id))
+        {
+            (void)executeCommand(id);
+            return true;
+        }
+    }
+
+    if (!m_pendingChordCommand.isEmpty())
+    {
+        const QString id = m_pendingChordCommand;
+        const QStringList steps = KeybindingRegistry::chordSteps(m_keybindings->sequenceFor(id));
+        m_pendingChordCommand.clear();
+        ++m_chordToken;
+        if (steps.size() == 2 && steps.at(1) == sequence)
+        {
+            (void)executeCommand(id);
+            return true;
+        }
+    }
+
+    const auto bindings = m_keybindings->bindings();
+    for (auto it = bindings.constBegin(); it != bindings.constEnd(); ++it)
+    {
+        if (!KeybindingRegistry::isChord(it.value()))
+            continue;
+        const QStringList steps = KeybindingRegistry::chordSteps(it.value());
+        if (steps.size() == 2 && steps.at(0) == sequence && m_commands->contains(it.key()))
+        {
+            m_pendingChordCommand = it.key();
+            const int token = ++m_chordToken;
+            QTimer::singleShot(1500, this, [this, token]() {
+                if (token == m_chordToken)
+                    m_pendingChordCommand.clear();
+            });
+            return true;
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::saveState()

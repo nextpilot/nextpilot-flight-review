@@ -74,20 +74,29 @@ void ActivityButton::paintEvent(QPaintEvent *event)
 
 ActivityBar::ActivityBar(QWidget *parent) : QWidget(parent)
 {
-    setObjectName(QStringLiteral("plotscope.activityBar"));
+    setObjectName(QStringLiteral("ps.activityBar"));
     setFixedWidth(48);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     setStyleSheet(QStringLiteral(
-        "QWidget#plotscope.activityBar{background:palette(window);"
-        "border-right:1px solid palette(mid);}"
         "QToolButton{border:0;border-radius:3px;}"
-        "QToolButton:hover{background:palette(alternate-base);}"
+        "QToolButton:hover{background:palette(base);}"
         "QToolButton:checked{background:palette(highlight);}"));
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(4, 6, 4, 6);
     m_layout->setSpacing(4);
     m_layout->addStretch(1);
+}
+
+void ActivityBar::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
+    QPainter painter(this);
+    QColor background = palette().color(QPalette::Window);
+    background = background.lightness() > 128 ? background.darker(112)
+                                              : background.lighter(112);
+    painter.fillRect(rect(), background);
+    painter.fillRect(QRect(width() - 2, 0, 2, height()), palette().color(QPalette::Mid));
 }
 
 void ActivityBar::setActivities(const QList<ActivitySpec> &activities)

@@ -149,7 +149,7 @@ struct Watchdog
 static void instructionHook(lua_State *L, lua_Debug *)
 {
     // registry 里取 watchdog 指针。
-    lua_getfield(L, LUA_REGISTRYINDEX, "ng.filter.watchdog");
+    lua_getfield(L, LUA_REGISTRYINDEX, "ps.filter.watchdog");
     auto *wd = static_cast<Watchdog *>(lua_touserdata(L, -1));
     lua_pop(L, 1);
     if (wd && wd->limit > 0)
@@ -300,7 +300,7 @@ private:
     {
         if (!m_lua)
             return nullptr;
-        lua_getfield(m_lua, LUA_REGISTRYINDEX, "ng.filter.watchdog");
+        lua_getfield(m_lua, LUA_REGISTRYINDEX, "ps.filter.watchdog");
         auto *wd = static_cast<Watchdog *>(lua_touserdata(m_lua, -1));
         lua_pop(m_lua, 1);
         return wd;
@@ -524,7 +524,7 @@ Result<std::unique_ptr<FilterInstance>> FilterEngine::createInstance(const Filte
     auto *wd = new Watchdog();
     wd->limit = m_instructionBudget;
     lua_pushlightuserdata(L, wd);
-    lua_setfield(L, LUA_REGISTRYINDEX, "ng.filter.watchdog");
+    lua_setfield(L, LUA_REGISTRYINDEX, "ps.filter.watchdog");
 
     const int st = luaL_loadbuffer(L, klass.source.toUtf8().constData(), klass.source.toUtf8().size(), "=filter_instance");
     if (st != LUA_OK)
