@@ -131,7 +131,11 @@ add_library(ps_gui OBJECT
     views/plot/axes/PlotSeries.h
     views/plot/axes/SeriesStore.cpp
     views/plot/axes/SeriesStore.h
+    views/plot/axes/ContextMenuDecor.cpp
+    views/plot/axes/ContextMenuDecor.h
     views/plot/axes/CursorReadout.cpp
+    views/plot/axes/Interaction.cpp
+    views/plot/axes/Interaction.h
     views/plot/axes/CursorReadout.h
     views/plot/axes/ViewState.cpp
     views/plot/axes/ViewState.h

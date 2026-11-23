@@ -1,9 +1,10 @@
 #include "AxesView.h"
 #include "axes/CursorReadout.h"
+#include "axes/Interaction.h"
 #include "axes/SeriesStore.h"
 #include "axes/ViewState.h"
 #include "ChannelMime.h"
-#include "MenuIcons.h"
+#include "axes/ContextMenuDecor.h"
 
 #include <fastplot/Panner.h>
 #include <fastplot/Picker.h>
@@ -59,73 +60,6 @@ QColor paletteSeriesColor(const QPalette &pal, int index)
     return QColor::fromHsl(hue, sat, lit);
 }
 
-// 右键菜单图标：文案 → MenuIcons 名字。
-// 集中成一张映射表，避免每个 addAction 后面再拖一行 setIcon；改菜单文案时
-// **必须同步这里**，否则图标会静默消失（不会崩，只是缺图标）。
-QString menuIconName(const QString &text)
-{
-    if (text.contains(QStringLiteral("时间书签")))
-        return QStringLiteral("bookmark");
-    if (text.contains(QStringLiteral("A/B")))
-        return QStringLiteral("measure-ab");
-    // "固定当前读数" / "取消固定读数" 都归到图钉。
-    if (text.contains(QStringLiteral("读数")))
-        return QStringLiteral("pin");
-    if (text.contains(QStringLiteral("放大")))
-        return QStringLiteral("zoom-in");
-    if (text.contains(QStringLiteral("缩小")))
-        return QStringLiteral("zoom-out");
-    if (text.contains(QStringLiteral("自适应")))
-        return QStringLiteral("fit");
-    if (text.contains(QStringLiteral("撤销视图")))
-        return QStringLiteral("undo");
-    if (text.contains(QStringLiteral("添加曲线")))
-        return QStringLiteral("add-curve");
-    if (text.contains(QStringLiteral("显示网格")))
-        return QStringLiteral("grid");
-    if (text.contains(QStringLiteral("显示图例")))
-        return QStringLiteral("legend");
-    if (text.contains(QStringLiteral("向右拆分")))
-        return QStringLiteral("split-h");
-    if (text.contains(QStringLiteral("向下拆分")))
-        return QStringLiteral("split-v");
-    if (text.contains(QStringLiteral("导出 PNG")))
-        return QStringLiteral("image");
-    if (text.contains(QStringLiteral("CSV")))
-        return QStringLiteral("csv");
-    if (text.contains(QStringLiteral("删除此画布")))
-        return QStringLiteral("trash");
-    if (text == QStringLiteral("属性") || text.contains(QStringLiteral("属性")))
-        return QStringLiteral("info");
-    if (text == QStringLiteral("曲线"))
-        return QStringLiteral("curve");
-    return QString();
-}
-
-void decorateMenu(QMenu *menu)
-{
-    for (QAction *a : menu->actions())
-    {
-        if (a->isSeparator())
-            continue;
-        if (QMenu *sub = a->menu())
-        {
-            decorateMenu(sub);
-            const QString n = menuIconName(sub->title());
-            if (!n.isEmpty())
-                a->setIcon(MenuIcons::icon(n));
-            // 曲线子菜单里每条曲线本身也是子菜单：统一给折线图标，读作"这是曲线组"。
-            if (sub->title() == QStringLiteral("曲线"))
-                for (QAction *inner : sub->actions())
-                    if (!inner->isSeparator() && inner->menu())
-                        inner->setIcon(MenuIcons::icon(QStringLiteral("curve")));
-            continue;
-        }
-        const QString n = menuIconName(a->text());
-        if (!n.isEmpty())
-            a->setIcon(MenuIcons::icon(n));
-    }
-}
 } // namespace
 
 AxesView::AxesView(QWidget *parent)
@@ -211,8 +145,9 @@ AxesView::AxesView(QWidget *parent)
 
     // 游标读数/A-B/书签交互：本类作为 m_plot 的事件过滤器，命中测量线/书签时优先处理，
     // 其余交回 Panner/Zoomer/Picker（后装先收，故在三者之后 install）。
-    m_plot->installEventFilter(this);
-    m_plot->setFocusPolicy(Qt::StrongFocus); // 键盘快捷键（P/Esc/Del/[]）需要焦点
+    // 交互出列：事件过滤器与鼠标状态机归 Interaction。
+    m_interaction = new Interaction(this);
+    m_interaction->attach();
 
     applyPalette(); // 颜色全部来自当前主题 palette，不留硬编码浅色
 }
@@ -430,11 +365,8 @@ bool AxesView::playheadActive() const
 void AxesView::refreshReadout()
 {
     // 书签数据留在交互侧，读数层只要"位置 + 文案 + 选中"。
-    QVector<CursorReadout::Mark> marks;
-    marks.reserve(m_bookmarks.size());
-    for (const Bookmark &bm : m_bookmarks)
-        marks.append({bm.id, bm.t, bm.label, bm.id == m_selectedBookmarkId});
-    m_readout->refresh(marks);
+    m_readout->refresh(m_interaction ? m_interaction->marksForReadout()
+                                     : QVector<CursorReadout::Mark>{});
 }
 void AxesView::setMarkers(const QJsonArray &markers)
 {
@@ -536,9 +468,8 @@ int AxesView::stateRowCount() const
 
 double AxesView::timeAtPixel(double px) const
 {
-    return m_plot ? m_plot->pixelToX(px) : 0.0;
+    return m_interaction ? m_interaction->timeAtPixel(px) : 0.0;
 }
-
 void AxesView::setCursorTime(double t, bool pinned)
 {
     m_readout->setCursorTime(t);
@@ -592,100 +523,23 @@ void AxesView::clearAB()
 }
 void AxesView::addBookmark(double t, const QString &label)
 {
-    // 同一时间点已有书签则选中它，不重复创建。
-    for (const Bookmark &bm : m_bookmarks)
-    {
-        if (std::fabs(bm.t - t) < 1e-9)
-        {
-            m_selectedBookmarkId = bm.id;
-            refreshReadout();
-            return;
-        }
-    }
-    Bookmark bm;
-    bm.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    bm.t = t;
-    bm.label = label.trimmed().isEmpty() ? QStringLiteral("B%1").arg(++m_bookmarkSeq) : label.trimmed();
-    m_bookmarks.append(bm);
-    m_selectedBookmarkId = bm.id;
-    std::sort(m_bookmarks.begin(), m_bookmarks.end(),
-              [](const Bookmark &a, const Bookmark &c) { return a.t < c.t; });
-    refreshReadout();
-    Q_EMIT bookmarksChanged();
+    if (m_interaction)
+        m_interaction->addBookmark(t, label);
 }
-
 void AxesView::removeBookmark(const QString &id)
 {
-    const int before = m_bookmarks.size();
-    m_bookmarks.erase(std::remove_if(m_bookmarks.begin(), m_bookmarks.end(),
-                                     [&](const Bookmark &bm) { return bm.id == id; }),
-                      m_bookmarks.end());
-    if (m_bookmarks.size() == before)
-        return;
-    if (m_selectedBookmarkId == id)
-        m_selectedBookmarkId.clear();
-    refreshReadout();
-    Q_EMIT bookmarksChanged();
+    if (m_interaction)
+        m_interaction->removeBookmark(id);
 }
-
 void AxesView::renameBookmark(const QString &id, const QString &label)
 {
-    if (label.trimmed().isEmpty())
-        return;
-    for (Bookmark &bm : m_bookmarks)
-    {
-        if (bm.id == id)
-        {
-            bm.label = label.trimmed();
-            refreshReadout();
-            Q_EMIT bookmarksChanged();
-            return;
-        }
-    }
+    if (m_interaction)
+        m_interaction->renameBookmark(id, label);
 }
-
 AxesView::HitResult AxesView::hitTest(const QPointF &pixel) const
 {
-    HitResult res;
-    if (!m_plot)
-        return res;
-    const QRectF plot = m_plot->plotRect();
-    if (!plot.contains(pixel))
-        return res;
-    constexpr double kTolPx = 10.0;
-
-    // 书签 chip 命中：竖线附近优先（选中/拖动）。
-    for (const Bookmark &bm : m_bookmarks)
-    {
-        const double x = m_plot->xToPixel(bm.t);
-        if (std::fabs(x - pixel.x()) <= kTolPx)
-        {
-            res.kind = Hit::Bookmark;
-            res.bookmarkId = bm.id;
-            return res;
-        }
-    }
-    if (m_readout->abEnabled())
-    {
-        if (std::fabs(m_plot->xToPixel(m_readout->abA()) - pixel.x()) <= kTolPx)
-        {
-            res.kind = Hit::AB_A;
-            return res;
-        }
-        if (m_readout->abHasB() && std::fabs(m_plot->xToPixel(m_readout->abB()) - pixel.x()) <= kTolPx)
-        {
-            res.kind = Hit::AB_B;
-            return res;
-        }
-    }
-    if (m_readout->active() && std::fabs(m_plot->xToPixel(m_readout->cursorTime()) - pixel.x()) <= kTolPx)
-    {
-        res.kind = Hit::CursorLine;
-        return res;
-    }
-    return res;
+    return m_interaction ? m_interaction->hitTest(pixel) : HitResult{};
 }
-
 void AxesView::setCanvasTitle(const QString &title)
 {
     m_viewState->setTitleOverride(title);
@@ -694,273 +548,21 @@ void AxesView::setCanvasTitle(const QString &title)
 }
 bool AxesView::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched != m_plot || !m_plot)
-        return QWidget::eventFilter(watched, event);
-
-    switch (event->type())
-    {
-    case QEvent::MouseMove:
-        onCanvasMouseMove(static_cast<QMouseEvent *>(event));
-        break;
-    case QEvent::MouseButtonDblClick:
-    {
-        // 双击标题栏 = 行内改名：
-        // 只认标题带那一行，画图区双击仍然给 Zoomer/Picker。
-        const QMouseEvent *me = static_cast<QMouseEvent *>(event);
-        if (me->position().y() <= fastplot::Axes::kTitleBarHeight + 2)
-        {
-            bool ok = false;
-            const QString name = QInputDialog::getText(
-                this, QStringLiteral("重命名画布"), QStringLiteral("标题"),
-                QLineEdit::Normal, canvasTitle(), &ok);
-            if (ok)
-            {
-                setCanvasTitle(name);
-                return true;   // 改名这一下不再落到双击缩放
-            }
-        }
-        break;
-    }
-    case QEvent::MouseButtonPress:
-        onCanvasMousePress(static_cast<QMouseEvent *>(event));
-        break;
-    case QEvent::MouseButtonRelease:
-        onCanvasMouseRelease(static_cast<QMouseEvent *>(event));
-        break;
-    case QEvent::Wheel:
-        onCanvasWheel(static_cast<QWheelEvent *>(event));
-        break;
-    default:
-        break;
-    }
-    // 始终不吞事件：本过滤器只"顺便"维护读数状态，导航仍交给 Panner/Zoomer。
+    if (m_interaction)
+        m_interaction->handlePlotEvent(watched, event);
+    // 始终不吞事件：读数状态只是"顺便"维护，导航仍交给 Panner/Zoomer。
     return QWidget::eventFilter(watched, event);
 }
 
-void AxesView::onCanvasMouseMove(QMouseEvent *event)
-{
-    if (!m_plot)
-        return;
 
-    // 图例上按住拖动 = 把这条曲线移到另一画布。
-    // 放在 plotRect 判断之前：图例可能画在绘图区边缘，拖出去不该被早退吃掉。
-    if (m_legendDragRow >= 0 && (event->buttons() & Qt::LeftButton)
-        && (event->pos() - m_pressPos).manhattanLength() > QApplication::startDragDistance()
-        && m_legendDragRow < m_seriesStore->all().size())
-    {
-        const PlotSeries sp = m_seriesStore->all().at(m_legendDragRow);
-        QMimeData *mime = new QMimeData;
-        mime->setData(QString::fromLatin1(series_mime::type()),
-                      series_mime::encode(m_canvasId, sp.key(), sp.datasetId, sp.table,
-                                          sp.column, sp.title).toUtf8());
-        QDrag *drag = new QDrag(this);
-        drag->setMimeData(mime);
-        m_legendDragRow = -1;   // 交给 QDrag：release 不再当点击处理
-        drag->exec(Qt::MoveAction);
-        return;
-    }
 
-    if (!m_plot->plotRect().contains(event->pos()))
-        return;
-
-    // 拖动进行中：更新被拖对象。
-    if (m_dragKind != 0)
-    {
-        const double t = timeAtPixel(event->pos().x());
-        if (m_dragKind == 1) m_readout->setABStart(t);
-        else if (m_dragKind == 2) m_readout->setABEnd(t);
-        else if (m_dragKind == 3)
-        {
-            for (Bookmark &bm : m_bookmarks)
-                if (bm.id == m_dragBookmarkId) bm.t = t;
-            std::sort(m_bookmarks.begin(), m_bookmarks.end(),
-                      [](const Bookmark &a, const Bookmark &c) { return a.t < c.t; });
-        }
-        else if (m_dragKind == 4) m_readout->setCursorTime(t);
-        if (std::fabs(event->pos().x() - m_pressPos.x()) > QApplication::startDragDistance())
-            m_pressMoved = true;
-        refreshReadout();
-        if (m_dragKind == 3) Q_EMIT bookmarksChanged();
-        if (m_dragKind == 4) Q_EMIT linkedTimeChanged(m_readout->cursorTime(), true, this);
-        return;
-    }
-
-    // 修饰键：Shift 拖 = 移动书签、Ctrl = A/B 编辑态；普通悬停 = 吸附最近样本时间。
-    const HitResult hit = hitTest(event->pos());
-    if ((event->buttons() & Qt::LeftButton) && hit.kind == Hit::Bookmark)
-    {
-        m_dragKind = 3;
-        m_dragBookmarkId = hit.bookmarkId;
-        m_pressPos = event->pos();
-        return;
-    }
-    if ((event->buttons() & Qt::LeftButton) && (hit.kind == Hit::AB_A || hit.kind == Hit::AB_B))
-    {
-        m_dragKind = hit.kind == Hit::AB_A ? 1 : 2;
-        m_pressPos = event->pos();
-        return;
-    }
-
-    // 悬停：取最近样本时间，更新读数（不 pinned）。联动只同步时间。
-    double sx = 0.0, sy = 0.0;
-    if (m_plot->nearestSample(event->pos(), &sx, &sy))
-        setCursorTime(sx, false);
-}
-
-void AxesView::onCanvasMousePress(QMouseEvent *event)
-{
-    if (!m_plot || !m_plot->plotRect().contains(event->pos()))
-        return;
-    m_pressPos = event->pos();
-    m_pressMoved = false;
-
-    if (event->button() != Qt::LeftButton)
-        return;
-    const Qt::KeyboardModifiers mods = event->modifiers();
-
-    // 图例命中：点击标题栏折叠/展开、点击行切显隐。
-    // 图例区优先于修饰键复合（Ctrl+点图例行 = 切显隐，不生成 A/B）。
-    {
-        const int legendHit = m_plot->legendHitTest(event->pos());
-        if (legendHit == -1)
-        {
-            m_plot->setLegendCollapsed(!m_plot->legendCollapsed());
-            return;
-        }
-        if (legendHit >= 0)
-        {
-            // 点击切显隐、拖动移动曲线——两者共用图例行，靠"是否移动过"区分。
-            m_legendDragRow = legendHit;
-            return;
-        }
-    }
-
-    // Ctrl+左键：直接生成一组 A/B。
-    if (mods & Qt::ControlModifier)
-    {
-        double sx = 0.0, sy = 0.0;
-        if (m_plot->nearestSample(event->pos(), &sx, &sy))
-            m_readout->setCursorTime(sx);
-        toggleAB();
-        return;
-    }
-    // Shift+左键：添加时间书签。
-    if (mods & Qt::ShiftModifier)
-    {
-        double sx = 0.0, sy = 0.0;
-        m_plot->nearestSample(event->pos(), &sx, &sy);
-        addBookmark(sx);
-        return;
-    }
-
-    const HitResult hit = hitTest(event->pos());
-    if (hit.kind == Hit::Bookmark)
-    {
-        m_selectedBookmarkId = hit.bookmarkId;
-        m_dragKind = 3;
-        m_dragBookmarkId = hit.bookmarkId;
-        refreshReadout();
-    }
-    else if (hit.kind == Hit::AB_A || hit.kind == Hit::AB_B)
-    {
-        m_dragKind = hit.kind == Hit::AB_A ? 1 : 2;
-    }
-    else if (hit.kind == Hit::CursorLine)
-    {
-        m_dragKind = 4;
-    }
-}
-
-void AxesView::onCanvasMouseRelease(QMouseEvent *event)
-{
-    if (event->button() != Qt::LeftButton)
-        return;
-    m_dragKind = 0;
-    m_dragBookmarkId.clear();
-    // 图例上"按下-松开"没有位移 = 点击切显隐（拖动已由 mouseMove 启动 QDrag 清掉候选）。
-    if (m_legendDragRow >= 0)
-    {
-        if (m_plot && !m_pressMoved)
-            m_plot->toggleLegendItem(m_legendDragRow);
-        m_legendDragRow = -1;
-    }
-}
-
-void AxesView::onCanvasWheel(QWheelEvent *event)
-{
-    // Alt+滚轮且悬停在图例区：图例字号步进。
-    // Ctrl+滚轮保留给 Y 轴缩放（canvas-interaction.md 既有约定）。
-    if ((event->modifiers() & Qt::AltModifier) && m_plot
-        && m_plot->legendHitTest(event->position().toPoint()) != -2)
-    {
-        m_plot->zoomLegendFont(event->angleDelta().y() > 0 ? 1 : -1);
-        event->accept();
-    }
-    // 缩放/平移后，固定读数要跟着时间映射重画；悬停读数由下一次 mouse move 刷新。
-    if (m_readout->pinned())
-        refreshReadout();
-}
 
 void AxesView::keyPressEvent(QKeyEvent *event)
 {
-    const int key = event->key();
-    const Qt::KeyboardModifiers mods = event->modifiers();
-
-    // Ctrl+Z：撤销上一次缩放/平移。
-    if (key == Qt::Key_Z && (mods & Qt::ControlModifier))
-    {
-        undoView();
-        return;
-    }
-    if (key == Qt::Key_P && !(mods & Qt::ControlModifier))
-    {
-        // P：固定/解除当前读数。
-        if (m_readout->active())
-            setCursorTime(m_readout->cursorTime(), !m_readout->pinned());
-        return;
-    }
-    if (key == Qt::Key_Escape)
-    {
-        // Esc 层级退出：拖动 > A/B > 书签选中 > 固定读数。
-        if (m_dragKind) { m_dragKind = 0; return; }
-        if (m_readout->abEnabled()) { clearAB(); return; }
-        if (!m_selectedBookmarkId.isEmpty()) { m_selectedBookmarkId.clear(); refreshReadout(); return; }
-        if (m_readout->pinned()) { m_readout->setPinned(false); refreshReadout(); return; }
-        clearCursor();
-        return;
-    }
-    if (key == Qt::Key_Delete || key == Qt::Key_Backspace)
-    {
-        if (!m_selectedBookmarkId.isEmpty())
-            removeBookmark(m_selectedBookmarkId);
-        return;
-    }
-    if (key == Qt::Key_BracketLeft || key == Qt::Key_BracketRight)
-    {
-        // [ / ]：上/下一个时间书签跳转。
-        if (m_bookmarks.isEmpty())
-            return;
-        const bool forward = key == Qt::Key_BracketRight;
-        if (m_selectedBookmarkId.isEmpty())
-        {
-            m_selectedBookmarkId = forward ? m_bookmarks.first().id : m_bookmarks.last().id;
-        }
-        else
-        {
-            int idx = -1;
-            for (int i = 0; i < m_bookmarks.size(); ++i)
-                if (m_bookmarks.at(i).id == m_selectedBookmarkId) { idx = i; break; }
-            idx = forward ? qMin(idx + 1, m_bookmarks.size() - 1) : qMax(idx - 1, 0);
-            m_selectedBookmarkId = m_bookmarks.at(idx).id;
-        }
-        for (const Bookmark &bm : m_bookmarks)
-            if (bm.id == m_selectedBookmarkId) { setCursorTime(bm.t, true); break; }
-        refreshReadout();
-        return;
-    }
+    if (m_interaction)
+        m_interaction->keyPress(event);
     QWidget::keyPressEvent(event);
 }
-
 bool AxesView::setPlotKind(const QString &kind)
 {
     // 本画布真正支持的图型：折线 / 散点 / XY 曲线（都是"曲线"模型，走 LOD 折线绘制）。
@@ -1330,150 +932,13 @@ void AxesView::dragLeaveEvent(QDragLeaveEvent *event)
 // 按曲线选轴：菜单、view action、脚本三条路同一语义（plot.series.axis）。
 void AxesView::contextMenuEvent(QContextMenuEvent *event)
 {
-    // 空画布与有曲线共用同一套菜单。
-    // 早先这里 `m_seriesStore->all().isEmpty()` 提前 return，只给 4 项（属性三项 + 清游标）——
-    // 于是空画布上想"显示网格 / 导出 / 加书签"全都没有入口（实测踩到）。main 同一位置 13 项。
-    QMenu menu(this);
-    menu.setTitle(QStringLiteral("画布操作"));
-
-    // 统一选中入口：把画布/轴选中交给上层 -> 属性面板。
-    QMenu *inspect = menu.addMenu(QStringLiteral("属性"));
-    inspect->addAction(QStringLiteral("画布属性"), this, [this] { Q_EMIT canvasSelectionRequested(); });
-    inspect->addAction(QStringLiteral("X 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("x")); });
-    inspect->addAction(QStringLiteral("左 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-left")); });
-    inspect->addAction(QStringLiteral("右 Y 轴属性"), this, [this] { Q_EMIT axisSelectionRequested(QStringLiteral("y-right")); });
-    menu.addSeparator();
-
-    // 读数测量（对齐老 PlottingCanvas 右键菜单）。
-    const HitResult hit = hitTest(event->pos());
-    const double clickT = timeAtPixel(event->pos().x());
-    if (hit.kind == Hit::Bookmark)
-    {
-        const QString id = hit.bookmarkId;
-        QMenu *bm = menu.addMenu(QStringLiteral("时间书签"));
-        bm->addAction(QStringLiteral("重命名…"), this, [this, id] {
-            bool ok = false;
-            QString cur;
-            for (const Bookmark &b : m_bookmarks) if (b.id == id) cur = b.label;
-            const QString text = QInputDialog::getText(this, QStringLiteral("重命名书签"),
-                QStringLiteral("标签："), QLineEdit::Normal, cur, &ok);
-            if (ok) renameBookmark(id, text);
-        });
-        bm->addAction(QStringLiteral("删除"), this, [this, id] { removeBookmark(id); });
-    }
-    else
-    {
-        // 文案带点击时刻（main 的"在 16.02 添加时间书签…"语义）：
-        // 用户不必先把游标挪过去，右键点在哪一刻就打到哪一刻。
-        menu.addAction(QStringLiteral("在 %1 s 添加时间书签").arg(QString::number(clickT, 'f', 2)),
-                       this, [this, clickT] { addBookmark(clickT); });
-    }
-    menu.addAction(m_readout->abEnabled() ? QStringLiteral("清除 A/B 测量") : QStringLiteral("A/B 游标测量（Δt/Δy）"),
-                   this, [this] { toggleAB(); });
-    if (m_readout->active() && m_readout->pinned())
-        menu.addAction(QStringLiteral("取消固定读数"), this, [this] { m_readout->setPinned(false); refreshReadout(); });
-    else
-        menu.addAction(QStringLiteral("固定当前读数"), this, [this, clickT] {
-            if (!m_readout->active()) setCursorTime(clickT, true);
-            else setCursorTime(m_readout->cursorTime(), true);
-        });
-    menu.addSeparator();
-
-    // 视图操作（右键菜单常用项）。
-    menu.addAction(QStringLiteral("放大"), this, [this] { zoomRange(0.5); });
-    menu.addAction(QStringLiteral("缩小"), this, [this] { zoomRange(2.0); });
-    menu.addAction(QStringLiteral("自适应"), this, [this] { autoScale(); });
-    auto *undoAct = menu.addAction(QStringLiteral("撤销视图 (Ctrl+Z)"), this, [this] { undoView(); });
-    undoAct->setEnabled(canUndoView());
-    menu.addSeparator();
-
-    // 「添加曲线」：ng 还没有通道选择对话框，这里给禁用项 + 指路，
-    // 而不是放一个点了没反应的假入口（main 那版是弹 ChannelPicker，ng 暂缺）。
-    auto *addSeries = menu.addAction(QStringLiteral("添加曲线…"));
-    addSeries->setEnabled(false);
-    addSeries->setToolTip(QStringLiteral("从左侧数据集面板拖入字段，或在字段右键选「画到当前画布」"));
-    menu.addSeparator();
-    // 显示网格 / 显示图例：主题里 QMenu::indicator 不绘制，单靠 setCheckable
-    // 用户看不出当前开关态，所以文案前置 ✓（与 main 同一位置、同一写法）。
-    auto *gridAction = menu.addAction(QString());
-    auto syncGridLabel = [gridAction](bool on) {
-        gridAction->setText(on ? QStringLiteral("✓ 显示网格") : QStringLiteral("显示网格"));
-    };
-    gridAction->setCheckable(true);
-    gridAction->setChecked(m_plot && m_plot->gridVisible());
-    syncGridLabel(gridAction->isChecked());
-    connect(gridAction, &QAction::triggered, this, [this, syncGridLabel](bool on) {
-        if (m_plot) { m_plot->grid(on); }
-        syncGridLabel(on);
-    });
-    auto *legendAction = menu.addAction(QString());
-    auto syncLegendLabel = [legendAction](bool on) {
-        legendAction->setText(on ? QStringLiteral("✓ 显示图例") : QStringLiteral("显示图例"));
-    };
-    legendAction->setCheckable(true);
-    legendAction->setChecked(legendVisible());
-    syncLegendLabel(legendAction->isChecked());
-    connect(legendAction, &QAction::triggered, this, [this, syncLegendLabel](bool on) {
-        setLegendVisible(on);
-        syncLegendLabel(on);
-    });
-    menu.addSeparator();
-
-    // 曲线子菜单：每条曲线 = 显隐 + 挂左/右轴 + 删除（老 showSeriesMenu 的体验）。
-    QMenu *seriesMenu = menu.addMenu(QStringLiteral("曲线"));
-    for (const PlotSeries &s : m_seriesStore->all())
-    {
-        const QString key = s.key();
-        QMenu *one = seriesMenu->addMenu(s.legendName());
-        auto *vis = one->addAction(QStringLiteral("显示"));
-        vis->setCheckable(true);
-        vis->setChecked(s.visible);
-        connect(vis, &QAction::triggered, this, [this, key](bool on) { setSeriesVisible(key, on); });
-        auto *right = one->addAction(QStringLiteral("挂右侧 Y 轴"));
-        right->setCheckable(true);
-        right->setChecked(s.rightAxis);
-        connect(right, &QAction::triggered, this, [this, key](bool on) { setSeriesAxis(key, on); });
-        one->addSeparator();
-        one->addAction(QStringLiteral("属性"), this, [this, key] { Q_EMIT seriesSelectionRequested(key); });
-        one->addAction(QStringLiteral("Y 轴变换…"), this, [this, key] { Q_EMIT seriesTransformRequested(key); });
-        one->addAction(QStringLiteral("删除"), this, [this, key] { removeSeries(key); });
-    }
-    menu.addSeparator();
-
-    // 画布级操作（页内）：本画布只发信号，由 PlotWorkspace 反查索引后执行——
-    // 保证"删的是你右键的那个画布"，而不是碰巧处于激活态的另一个。
-    menu.addAction(QStringLiteral("向右拆分"), this,
-                   [this] { Q_EMIT canvasActionRequested(QStringLiteral("splitHorizontal")); });
-    menu.addAction(QStringLiteral("向下拆分"), this,
-                   [this] { Q_EMIT canvasActionRequested(QStringLiteral("splitVertical")); });
-
-    // 导出本画布：自己开文件对话框（main 的"导出当前画布"在同一位置），
-    // 不绕回 MainWindow 的 action 路径，避免"导出的是当前激活画布而不是右键画布"。
-    menu.addAction(QStringLiteral("导出 PNG…"), this, [this] {
-        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("导出 PNG"), QString(),
-                                                          QStringLiteral("PNG 图片 (*.png)"));
-        if (!path.isEmpty())
-            exportPng(path);
-    });
-    menu.addAction(QStringLiteral("导出当前画布 CSV…"), this, [this] {
-        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("导出 CSV"), QString(),
-                                                          QStringLiteral("CSV 表格 (*.csv)"));
-        if (!path.isEmpty())
-            exportCsv(path);
-    });
-
-    menu.addSeparator();
-    // 单画布页删不到 0：置灰（由 workspace 重排时同步），而不是点了才弹提示。
-    auto *removeAct = menu.addAction(QStringLiteral("删除此画布"), this,
-                                     [this] { Q_EMIT canvasActionRequested(QStringLiteral("removeCanvas")); });
-    removeAct->setEnabled(m_canvasRemovable);
-    if (!m_canvasRemovable)
-        removeAct->setToolTip(QStringLiteral("页内至少保留一个画布"));
-
-    // 图标集中装饰（见文件头 decorateMenu）：文案是本地构造的，改文案要同步映射表。
-    decorateMenu(&menu);
-    menu.exec(event->globalPos());
-    event->accept();
+    if (m_interaction)
+        m_interaction->contextMenu(event);
+}
+const QVector<AxesView::Bookmark> &AxesView::bookmarks() const
+{
+    static const QVector<Bookmark> kEmpty;
+    return m_interaction ? m_interaction->bookmarks() : kEmpty;
 }
 
 } // namespace nextpilot::plotscope::gui

@@ -53,6 +53,8 @@ class Picker;
 namespace nextpilot::plotscope::gui
 {
 
+class Interaction;
+
 class AxesView : public QWidget
 {
     Q_OBJECT
@@ -159,7 +161,7 @@ public:
     void addBookmark(double t, const QString &label = QString());
     void removeBookmark(const QString &id);
     void renameBookmark(const QString &id, const QString &label);
-    const QVector<Bookmark> &bookmarks() const { return m_bookmarks; }
+    const QVector<Bookmark> &bookmarks() const;
 
     // Marker 规则产出：把 PlotMarker JSON 数组交给 fastplot 绘制（竖线/区间带/值带/label）。
     void setMarkers(const QJsonArray &markers);
@@ -280,6 +282,8 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
 
 private:
+    friend class Interaction; // 交互部件要读写画布内部状态（PJ4 DockWidget 同做法）
+
     void pushToPlot();
     void applyPalette();
     // 为新曲线分配主题色（按当前已有曲线条数轮换）。
@@ -289,13 +293,8 @@ private:
     // 源级时间 offset：datasetId 经 provider 反查（无 provider 返回 0）。
     double sourceOffsetFor(const PlotSeries &s) const;
     // 交互状态机入口。
-    void onCanvasMouseMove(class QMouseEvent *event);
-    void onCanvasMousePress(class QMouseEvent *event);
-    void onCanvasMouseRelease(class QMouseEvent *event);
-    void onCanvasWheel(class QWheelEvent *event);
     // 视图范围历史：记录每次缩放/平移"之前"的范围，供撤销恢复。
     void pushViewHistory();
-    int m_bookmarkSeq = 0;
 
     nextpilot::plotscope::fastplot::Axes *m_plot = nullptr;
     nextpilot::plotscope::fastplot::Zoomer *m_zoomer = nullptr;
@@ -307,18 +306,11 @@ private:
     SeriesStore *m_seriesStore = nullptr; // 曲线集合（数据与样式）
     ViewState *m_viewState = nullptr;     // 视图状态（范围历史/图型/刻度/标题/轴配方）
     CursorReadout *m_readout = nullptr;   // 读数（游标/A-B/书签标记的渲染）
+    Interaction *m_interaction = nullptr; // 交互（鼠标状态机/键盘/右键菜单/书签）
     // 游标读数/A-B/书签交互状态（对齐老 PlottingCanvas）。
     bool m_canvasRemovable = true;   // 见 setCanvasRemovable()
-    QVector<Bookmark> m_bookmarks;
-    QString m_selectedBookmarkId;
     QVector<fastplot::Axes::StateRowMark> m_stateRows; // 状态视图行（append 合并语义）
-    // 拖动状态：1=A 2=B 3=书签 4=游标线。
-    int m_dragKind = 0;
-    QString m_dragBookmarkId;
-    QPointF m_pressPos;
-    bool m_pressMoved = false;
     int m_canvasId = -1;
-    int m_legendDragRow = -1;   // 图例按下但还没拖动：release 未移动才算"点击切显隐"
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
     double m_t0 = 0.0;
     double m_t1 = 0.0;
