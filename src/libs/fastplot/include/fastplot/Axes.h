@@ -2,6 +2,7 @@
 
 #include "fastplot/Axis.h"
 #include "fastplot/Artist.h"
+#include "fastplot/Legend.h"
 #include "fastplot/Line.h"
 #include "fastplot/Viewport.h"
 
@@ -204,30 +205,30 @@ public:
     double pixelToX(double px) const;
     double xToPixel(double x) const;
 
-    // 图例：显示各曲线的名字 + 色块。
+    // 图例：独立组件（Legend 类）负责状态/布局/绘制/命中，Axes 组装快照并委托。
     // 图例顶部让位：图例块从 plotRect.top()+inset 起排（默认 0）。
     // 画布上方压着悬浮工具栏时，由上层设一个大于工具栏高度的值，图例就不会被按钮压住。
-    void setLegendTopInset(qreal px) { m_legendTopInset = std::max<qreal>(0.0, px); }
-    qreal legendTopInset() const { return m_legendTopInset; }
+    void setLegendTopInset(qreal px) { m_legend.setTopInset(px); }
+    qreal legendTopInset() const { return m_legend.topInset(); }
 
     void setLegendVisible(bool visible);
-    bool legendVisible() const { return m_legend; }
+    bool legendVisible() const { return m_legend.isVisible(); }
 
     // === 图例交互（第二梯队 #205，
     // 点击行切显隐（隐藏行灰显仍占位）、标题栏可折叠、Ctrl+滚轮改字号。
     // 命中检测基于最近一次 paint 缓存的行矩形（resize/paint 后自动更新）。
     int legendHitTest(const QPointF &pixel) const; // >=0 曲线行(m_curves 索引)；-1 标题栏；-2 未命中
-    bool legendCollapsed() const { return m_legendCollapsed; }
-    void setLegendCollapsed(bool collapsed);
-    double legendFontScale() const { return m_legendFontScale; }
+    bool legendCollapsed() const { return m_legend.isCollapsed(); }
+    void setLegendCollapsed(bool collapsed) { m_legend.setCollapsed(collapsed); }
+    double legendFontScale() const { return m_legend.fontScale(); }
     void zoomLegendFont(int steps); // Ctrl+滚轮步进：缩放因子 clamp [0.7, 2.0]
     void toggleLegendItem(int curveIndex);
 
     // 图例行被点击切换显隐（AxesView 同步 PlotSeries.visible，pushToPlot 重建不丢）。
+    // Legend::collapseChanged 转发为 legendCollapseChanged（构造时连接）。
 Q_SIGNALS:
     void legendItemToggled(int curveIndex, bool visible);
     void legendCollapseChanged(bool collapsed);
-    void legendTitleClicked();
 
 public:
     // 导出：PNG（所见即所得）/ CSV（可见数据，LOD 输出 x,min,max）。
@@ -273,20 +274,8 @@ private:
     double m_y2Lo = 0.0;
     double m_y2Hi = 1.0;
     bool m_secondAxis = false;
-    bool m_legend = false;
-    bool m_legendCollapsed = false;   // 图例折叠（只显示标题栏）
-    double m_legendFontScale = 1.0;   // 图例字号缩放因子（Ctrl+滚轮）
-    struct LegendRow
-    {
-        int curveIndex = -1;
-        QRectF rect;
-    };
-    QVector<LegendRow> m_legendRows;  // paintLegend 缓存的行矩形（命中检测）
-    QRectF m_legendTitleRect;         // 标题栏矩形（折叠按钮命中）
-    // 图例整块矩形（标题栏 + 所有行）：右上角贴边绘制，读数框据此避让，
-    // 不能再用"固定左上 + 估算行数下移"的老办法（图例换到右边后那条规则失效）。
-    QRectF m_legendBlockRect;
-    qreal m_legendTopInset = 0.0;     // 图例顶部让位（悬浮工具栏占位）
+    // 图例：状态/布局/命中全部在 Legend 类内，这里只留组件与绘制入口。
+    Legend m_legend;
     bool m_grid = false;
     bool m_box = false;            // 画布边框（对齐老界面显示组）
     QRect m_rubberBand;
