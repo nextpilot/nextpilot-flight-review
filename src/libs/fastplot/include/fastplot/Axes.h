@@ -7,6 +7,7 @@
 #include "fastplot/CursorReadoutOverlay.h"
 #include "fastplot/Legend.h"
 #include "fastplot/Line.h"
+#include "fastplot/MarkerOverlay.h"
 #include "fastplot/Overlay.h"
 #include "fastplot/Viewport.h"
 
@@ -156,20 +157,9 @@ public:
     void setBookmarks(const QVector<BookmarkMark> &marks);
 
     // Marker 规则产出：竖线事件 / 时间区间带 / 值区间带。
-    struct MarkerMark
-    {
-        enum class Kind { Event, Region, ValueBand } kind = Kind::Event;
-        enum class Severity { Info, Warning, Error, Critical } severity = Severity::Info;
-        double tStart = 0.0;
-        double tEnd = 0.0;
-        double valueLow = 0.0;
-        double valueHigh = 0.0;
-        bool hasValue = false;
-        QString label;
-        QColor color; // 无效则用 severity 色
-    };
+    using MarkerMark = ::nextpilot::plotscope::fastplot::MarkerMark;
     void setMarkers(const QVector<MarkerMark> &marks);
-    int markerCount() const { return m_markers.size(); }
+    int markerCount() const { return m_markerOverlay.marks().size(); }
 
     // 状态视图：每条通道一行色带，
     // 每段是一个连续不变的状态（label 为着色键，见 StateColors.h）。
@@ -281,7 +271,7 @@ private:
     CursorReadoutOverlay m_cursorReadout;   // 十字游标 + 逐曲线读数框
     ABMeasureOverlay m_abMeasure;           // A/B 双游标测量
     BookmarkOverlay m_bookmarkOverlay;      // 时间书签
-    QVector<MarkerMark> m_markers;
+    MarkerOverlay m_markerOverlay;          // Marker 规则产出
     QVector<StateRowMark> m_stateRows;
     QString m_overlayText;
     QColor m_titleColor{0x33, 0x33, 0x33};
