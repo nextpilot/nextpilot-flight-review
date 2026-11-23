@@ -34,6 +34,7 @@
 #include <QKeySequence>
 #include <QMainWindow>
 #include <QObject>
+#include <QStatusBar>
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::intent;
@@ -1009,6 +1010,49 @@ QByteArray ShellBinder::saveLayout() const
 bool ShellBinder::restoreLayout(const QByteArray &state)
 {
     return m_dock ? m_dock->restoreState(state) : false;
+}
+
+namespace
+{
+QJsonObject rectInWindow(QWidget *widget, QWidget *window)
+{
+    QJsonObject out;
+    if (!widget || !window)
+        return out;
+    const QPoint origin = widget->mapTo(window, QPoint(0, 0));
+    out.insert(QStringLiteral("x"), origin.x());
+    out.insert(QStringLiteral("y"), origin.y());
+    out.insert(QStringLiteral("w"), widget->width());
+    out.insert(QStringLiteral("h"), widget->height());
+    return out;
+}
+} // namespace
+
+QJsonObject ShellBinder::geometrySnapshot() const
+{
+    QJsonObject out;
+    if (!m_window)
+        return out;
+
+    // 中央区单独取：它是左右分栏与上下分栏的交点。
+    if (m_centralDock)
+        if (auto *area = m_centralDock->dockAreaWidget())
+            out.insert(QStringLiteral("editor"), rectInWindow(area, m_window));
+
+    for (const QString &area : {QStringLiteral("dock.left"), QStringLiteral("dock.right"),
+                                QStringLiteral("dock.bottom")})
+    {
+        ads::CDockWidget *dock = m_panels.value(area);
+        if (!dock)
+            continue;
+        if (auto *dockArea = dock->dockAreaWidget())
+            out.insert(area.mid(QStringLiteral("dock.").size()),
+                       rectInWindow(dockArea, m_window));
+    }
+
+    if (auto *status = m_window->statusBar())
+        out.insert(QStringLiteral("statusBar"), rectInWindow(status, m_window));
+    return out;
 }
 
 } // namespace nextpilot::plotscope::gui

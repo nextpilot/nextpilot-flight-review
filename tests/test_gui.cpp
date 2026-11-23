@@ -61,15 +61,19 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
+#include <QMainWindow>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
 #include <QSet>
 #include <QStatusBar>
 #include <QTemporaryDir>
+#include <QEventLoop>
 #include <QTimer>
 
 #include <cmath>
+#include <memory>
 
 #include <cstdio>
 #include <cstdlib>
@@ -523,6 +527,83 @@ int main(int argc, char *argv[])
     CHECK(binder->panelWidget(QStringLiteral("dock.left")) != nullptr);
     CHECK(!binder->panelTitle(QStringLiteral("dock.left")).isEmpty());
     OK("停靠区就位：左栏有数据集面板且标题正确");
+
+    // --- 4a) ADS 几何：左右全高、Panel 只挂 Editor 下方、状态栏全宽 ---
+    {
+        window.show();
+        QEventLoop waitLoop;
+        QTimer::singleShot(450, &waitLoop, &QEventLoop::quit);
+        waitLoop.exec();
+        QCoreApplication::processEvents();
+
+        const QJsonObject geo = binder->geometrySnapshot();
+        auto rect = [&geo](const QString &name) {
+            return geo.value(name).toObject();
+        };
+        auto x = [&rect](const QString &name) { return rect(name).value(QStringLiteral("x")).toInt(); };
+        auto y = [&rect](const QString &name) { return rect(name).value(QStringLiteral("y")).toInt(); };
+        auto w = [&rect](const QString &name) { return rect(name).value(QStringLiteral("w")).toInt(); };
+        auto h = [&rect](const QString &name) { return rect(name).value(QStringLiteral("h")).toInt(); };
+
+        CHECK(!rect(QStringLiteral("editor")).isEmpty());
+        CHECK(!rect(QStringLiteral("left")).isEmpty());
+        CHECK(!rect(QStringLiteral("right")).isEmpty());
+        CHECK(!rect(QStringLiteral("bottom")).isEmpty());
+        CHECK(!rect(QStringLiteral("statusBar")).isEmpty());
+
+        // 左/右栏与 Editor 顶边齐平，且高度覆盖 Editor + Panel。
+        CHECK(std::abs(y(QStringLiteral("left")) - y(QStringLiteral("editor"))) <= 2);
+        CHECK(std::abs(y(QStringLiteral("right")) - y(QStringLiteral("editor"))) <= 2);
+        CHECK(h(QStringLiteral("left")) >= h(QStringLiteral("editor")) + h(QStringLiteral("bottom")) - 4);
+        CHECK(h(QStringLiteral("right")) >= h(QStringLiteral("editor")) + h(QStringLiteral("bottom")) - 4);
+
+        // Panel 只在 Editor 下方：水平范围不越出 Editor。
+        CHECK(y(QStringLiteral("bottom")) >= y(QStringLiteral("editor")) + h(QStringLiteral("editor")) - 2);
+        CHECK(x(QStringLiteral("bottom")) >= x(QStringLiteral("editor")) - 2);
+        CHECK(x(QStringLiteral("bottom")) + w(QStringLiteral("bottom"))
+              <= x(QStringLiteral("editor")) + w(QStringLiteral("editor")) + 2);
+
+        // 状态栏全宽，位于所有停靠区下方。
+        fprintf(stdout, "[geom] win=%dx%d status=(%d,%d %dx%d) left=(%d,%d %dx%d) editor=(%d,%d %dx%d) bottom=(%d,%d %dx%d)\n",
+                window.width(), window.height(),
+                x(QStringLiteral("statusBar")), y(QStringLiteral("statusBar")),
+                w(QStringLiteral("statusBar")), h(QStringLiteral("statusBar")),
+                x(QStringLiteral("left")), y(QStringLiteral("left")),
+                w(QStringLiteral("left")), h(QStringLiteral("left")),
+                x(QStringLiteral("editor")), y(QStringLiteral("editor")),
+                w(QStringLiteral("editor")), h(QStringLiteral("editor")),
+                x(QStringLiteral("bottom")), y(QStringLiteral("bottom")),
+                w(QStringLiteral("bottom")), h(QStringLiteral("bottom")));
+        CHECK(y(QStringLiteral("statusBar")) >= y(QStringLiteral("left")) + h(QStringLiteral("left")) - 2);
+        CHECK(x(QStringLiteral("statusBar")) >= 0);
+        CHECK(w(QStringLiteral("statusBar")) >= window.width() - 40);
+        OK("ADS 几何：左右全高、Panel 只在 Editor 下方、StatusBar 全宽");
+    }
+
+    // --- 4a2) 底部先到：首个 dock 请求也必须先装中央，禁止退回 root ---
+    {
+        RegistryTree registryTree;
+        auto slotHub = std::make_unique<UiSlotHub>(registryTree);
+        QMainWindow isolated;
+        ShellBinder binder2{&isolated, *slotHub};
+        auto *bottom = new QLabel(QStringLiteral("底部面板"));
+        binder2.dock(QStringLiteral("dock.bottom"), QStringLiteral("底部"), bottom);
+        isolated.resize(900, 640);
+        isolated.show();
+        QEventLoop waitLoop;
+        QTimer::singleShot(100, &waitLoop, &QEventLoop::quit);
+        waitLoop.exec();
+
+        const QJsonObject geo = binder2.geometrySnapshot();
+        const QJsonObject editor = geo.value(QStringLiteral("editor")).toObject();
+        const QJsonObject bottomRect = geo.value(QStringLiteral("bottom")).toObject();
+        CHECK(!editor.isEmpty());
+        CHECK(!bottomRect.isEmpty());
+        CHECK(bottomRect.value(QStringLiteral("y")).toInt()
+              >= editor.value(QStringLiteral("y")).toInt()
+                     + editor.value(QStringLiteral("h")).toInt() - 2);
+        OK("底部先到：dock() 先安装中央，Panel 仍挂 Editor 下方");
+    }
 
     // --- 4b) 脚本工作台：侧栏面板就位 + 编辑器按需创建（中央区锚定画布）---
     {

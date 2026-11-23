@@ -133,6 +133,10 @@ public:
     QByteArray saveLayout() const;
     bool restoreLayout(const QByteArray &state);
 
+    // 停靠区几何快照（窗口坐标系，像素）：editor / left / right / bottom / statusBar。
+    // 用于无头回归断言：左右全高、Panel 只挂 Editor 下方、状态栏全宽。
+    QJsonObject geometrySnapshot() const;
+
     // --- 窗口状态快照（声明式）---
     // 捕获：窗口几何 + ADS 布局 + ribbon 当前页签。
     // 这些都是"结果长什么样"的描述，不含操作序列——恢复时缺失的部分安全降级。
