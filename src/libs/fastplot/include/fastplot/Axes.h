@@ -9,6 +9,7 @@
 #include "fastplot/Line.h"
 #include "fastplot/MarkerOverlay.h"
 #include "fastplot/Overlay.h"
+#include "fastplot/StateBandOverlay.h"
 #include "fastplot/Viewport.h"
 
 #include <QColor>
@@ -161,28 +162,13 @@ public:
     void setMarkers(const QVector<MarkerMark> &marks);
     int markerCount() const { return m_markerOverlay.marks().size(); }
 
-    // 状态视图：每条通道一行色带，
-    // 每段是一个连续不变的状态（label 为着色键，见 StateColors.h）。
-    // 绘制在绘图区顶部（每行 22px + 6px 间距），行名画在段带上方。
-    struct StateBandMark
-    {
-        double tStart = 0.0;
-        double tEnd = 0.0;
-        QString label; // 状态标签（bool→"true"/"false"、枚举→十进制串、string 原文）
-        QColor color;  // 无效则用 stateColor(label)
-        bool operator==(const StateBandMark &o) const
-        { return tStart == o.tStart && tEnd == o.tEnd && label == o.label && color == o.color; }
-    };
-    struct StateRowMark
-    {
-        QString channel; // 行名（"table.column"）
-        QVector<StateBandMark> segments;
-        bool operator==(const StateRowMark &o) const
-        { return channel == o.channel && segments == o.segments; }
-    };
+    // 状态视图：每条通道一行色带，每段是一个连续不变的状态
+    // （label 为着色键，见 StateColors.h）。绘制在绘图区顶部（每行 22px + 6px 间距）。
+    using StateBandMark = ::nextpilot::plotscope::fastplot::StateBandMark;
+    using StateRowMark = ::nextpilot::plotscope::fastplot::StateRowMark;
     void setStateBands(const QVector<StateRowMark> &rows);
     void clearStateBands() { setStateBands({}); }
-    int stateRowCount() const { return m_stateRows.size(); }
+    int stateRowCount() const { return m_stateBandOverlay.rowCount(); }
 
     // 像素/数据互转 + 命中：交互部件据此判断点到了哪条线/书签。
     double pixelToX(double px) const;
@@ -272,7 +258,7 @@ private:
     ABMeasureOverlay m_abMeasure;           // A/B 双游标测量
     BookmarkOverlay m_bookmarkOverlay;      // 时间书签
     MarkerOverlay m_markerOverlay;          // Marker 规则产出
-    QVector<StateRowMark> m_stateRows;
+    StateBandOverlay m_stateBandOverlay;    // 状态视图色带
     QString m_overlayText;
     QColor m_titleColor{0x33, 0x33, 0x33};
     QString m_title;

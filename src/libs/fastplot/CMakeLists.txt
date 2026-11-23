@@ -17,6 +17,7 @@ add_library(fastplot STATIC
     src/ABMeasureOverlay.cpp
     src/BookmarkOverlay.cpp
     src/MarkerOverlay.cpp
+    src/StateBandOverlay.cpp
     src/Line.cpp
     src/LodCache.cpp
     src/Zoomer.cpp
@@ -43,6 +44,7 @@ add_library(fastplot STATIC
     include/fastplot/ABMeasureOverlay.h
     include/fastplot/BookmarkOverlay.h
     include/fastplot/MarkerOverlay.h
+    include/fastplot/StateBandOverlay.h
     include/fastplot/Legend.h
     include/fastplot/StateColors.h
     include/fastplot/PlotWidget.h
