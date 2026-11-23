@@ -1,0 +1,13 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "click", "widget": "activity.script" },
+    { "op": "activity-badge", "id": "diagnostics", "count": 3 },
+    { "op": "settle", "ms": 600 },
+    { "op": "shot", "out": "PlotScope-ActivityBar-Script.png" },
+    { "op": "click", "widget": "sidebar.header.script-files" },
+    { "op": "settle", "ms": 300 },
+    { "op": "shot", "out": "PlotScope-ActivityBar-Collapsed.png" }
+  ]
+}

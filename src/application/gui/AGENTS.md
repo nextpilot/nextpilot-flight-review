@@ -23,6 +23,15 @@
 
 装载链：GUI 可执行文件链接各模块/扩展的 `*_gui` OBJECT 库 → 进程启动静态注册对象构造、PanelFactory 自动填好 → `host.activate()` → 模块 `onAttach` 请求面板 → **`GuiContext` 路由 → `PanelFactory::create` → `ShellBinder` 放置**。外壳只做路由与放置，**不认识任何业务面板**——新增功能视图靠工厂自注册，shell/ 零改动；发现 shell/ 要 include 某个业务面板头，就是装配违规。
 
+## Activity Bar 与 Side Bar
+
+- Activity Bar 固定 48px，只放数据、脚本、分析、诊断；绘图不进 Activity Bar。
+- 模块用 `UiContext::declareActivity` 声明入口：id、标签、图标、排序、对应 ribbon 页、左栏 section 面板类型、可选中央面板。
+- 点击 activity 由 ShellBinder 切换 Activity 选中态、左栏 section 与 ribbon 页；中央面板请求交回外壳，按面板类型走 PanelFactory。
+- 左栏是一个 ADS dock，内容为 SideBarStack：section 标题 24px、可折叠；section 不单独浮动，整栏可拖拽/浮动。
+- 左栏 section 与旧页签的区别：同栏面板不再互斥成 tab，由 activity 决定可见性。
+- `Ctrl+B` 只切整栏显隐。badge 走 `setActivityBadge`。配置键：`ui.activityBar.order`、`ui.activityBar.visible`、`ui.sideBar.visible`、`ui.sideBar.width`。
+
 ## 动手前自查
 
 1. 这段代码能 headless 跑吗？能 → 它可能不该在 gui（去 libs/modules）；不能 → 必须只活在本层

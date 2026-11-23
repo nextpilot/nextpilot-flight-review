@@ -70,6 +70,7 @@
 #include <QStatusBar>
 #include <QTemporaryDir>
 #include <QEventLoop>
+#include <QToolButton>
 #include <QTimer>
 
 #include <cmath>
@@ -658,6 +659,67 @@ int main(int argc, char *argv[])
                 QStringLiteral("script.workbench.runCurrent"), QVariantMap(), rc));
             OK("Ribbon 脚本页签：file/run 组动作就位；runCurrent 与 F5 同路径执行当前标签");
         }
+    }
+
+    // --- 4c) Activity Bar + 左栏 section 栈 ---
+    {
+        CHECK(binder->activityBarWidget() != nullptr);
+        CHECK(binder->activityBarWidget()->width() == 48);
+
+        const QStringList activityIds = binder->activityIds();
+        CHECK(activityIds.contains(QStringLiteral("data")));
+        CHECK(activityIds.contains(QStringLiteral("script")));
+        CHECK(activityIds.contains(QStringLiteral("analysis")));
+        CHECK(activityIds.contains(QStringLiteral("diagnostics")));
+        CHECK(!activityIds.contains(QStringLiteral("plot"))); // 绘图不进 Activity Bar
+
+        CHECK(binder->sideBarSectionCount() == 2);
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("data"));
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("script-files")) == QStringLiteral("script"));
+
+        // Activity Bar 不再把左栏做成互斥页签：两个面板同属一个 section 栈。
+        const QStringList leftTitles = binder->panelTitles(QStringLiteral("dock.left"));
+        CHECK(leftTitles.contains(QStringLiteral("数据源")));
+        CHECK(leftTitles.contains(QStringLiteral("脚本文件")));
+        CHECK(binder->panelWidgets(QStringLiteral("dock.left")).size() == 2);
+
+        // 点击 Script：左栏切到脚本 section，Ribbon 同步脚本页，中央聚焦编辑器。
+        auto *scriptButton = binder->activityBarWidget()->findChild<QToolButton *>(
+            QStringLiteral("activity.script"));
+        CHECK(scriptButton != nullptr);
+        scriptButton->click();
+        CHECK(binder->activeActivity() == QStringLiteral("script"));
+        CHECK(binder->currentRibbonPageArea() == QStringLiteral("ribbon.page.script"));
+        CHECK(binder->isDockPageVisible(QStringLiteral("script-files")));
+        CHECK(!binder->isDockPageVisible(QStringLiteral("dataset-tree")));
+        CHECK(binder->centralWidgets().size() >= 2); // 画布 + 脚本编辑器
+
+        // section 折叠与整栏显隐：Ctrl+B 只切左栏，不动 Activity Bar。
+        CHECK(binder->setSideBarSectionExpanded(QStringLiteral("script-files"), false));
+        CHECK(!binder->isSideBarSectionExpanded(QStringLiteral("script-files")));
+        CHECK(binder->setSideBarSectionExpanded(QStringLiteral("script-files"), true));
+
+        const bool wasSideBarVisible = binder->sideBarVisible();
+        binder->toggleSideBar();
+        CHECK(binder->sideBarVisible() != wasSideBarVisible);
+        binder->toggleSideBar();
+        CHECK(binder->sideBarVisible() == wasSideBarVisible);
+        CHECK(binder->activityBarWidget()->isVisible() || !window.isVisible());
+
+        // badge 与 Activity 顺序配置可改、可读。
+        binder->setActivityBadge(QStringLiteral("diagnostics"), 7);
+        CHECK(binder->activityBadge(QStringLiteral("diagnostics")) == 7);
+        binder->setActivityOrder({QStringLiteral("script"), QStringLiteral("data"),
+                                  QStringLiteral("analysis"), QStringLiteral("diagnostics")});
+        CHECK(binder->activityIds().first() == QStringLiteral("script"));
+        binder->setActivityOrder(activityIds);
+
+        // 左栏 section 也能按 pageKey 显隐，且不产生独立浮动 dock。
+        CHECK(binder->setDockPageVisible(QStringLiteral("script-files"), false));
+        CHECK(!binder->isDockPageVisible(QStringLiteral("script-files")));
+        CHECK(binder->setDockPageVisible(QStringLiteral("script-files"), true));
+        CHECK(binder->isDockPageVisible(QStringLiteral("script-files")));
+        OK("Activity Bar：四入口 + 点击切 section/Ribbon + 折叠 + Ctrl+B + badge + 顺序配置");
     }
 
     // --- 5) 数据源面板：源列表 + 详情树（源 → 数据集 → 表 → 列）---

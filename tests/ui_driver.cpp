@@ -23,6 +23,7 @@
 //     { "op": "hover-toolbar" },                           // 浮出活动格工具栏
 //     { "op": "demo-live", "name": "live-demo", "paused": false }, // 注册演示 live 源
 //     { "op": "click", "widget": "objectName" },
+//     { "op": "activity-badge", "id": "diagnostics", "count": 3 }, // Activity 徽标
 //     { "op": "key", "widget": "objectName", "keys": "Ctrl+S" },
 //     { "op": "type", "widget": "objectName", "text": "hello" },
 //     { "op": "action", "action": "plot.type.bar" },       // QAction（objectName/text/data 三匹配）
@@ -454,6 +455,12 @@ int main(int argc, char *argv[])
             }
             QApplication::processEvents();
             ok(QStringLiteral("view-action %1").arg(action));
+        }
+        else if (op == QStringLiteral("activity-badge"))
+        {
+            window.binder()->setActivityBadge(
+                step.value(QStringLiteral("id")).toString(),
+                step.value(QStringLiteral("count")).toInt());
         }
         else if (op == QStringLiteral("panel"))
         {
