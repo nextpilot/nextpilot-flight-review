@@ -4,7 +4,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 #
 # 架构定位（见 ARCHITECTURE.md §7）：
 #   外壳层不设 "DockManager" / "RibbonManager" 这类中转类——ADS 与 SARibbon 已提供
-#   对应能力，再包一层同名类只是零价值转发。ng 只保留**一个绑定器**：
+#   对应能力，再包一层同名类只是零价值转发。GUI 只保留**一个绑定器**：
 #
 #   shell/                       外壳层：只做装配，不认识任何业务
 #     MainWindow                  窗口骨架与装配

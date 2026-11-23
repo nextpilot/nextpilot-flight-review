@@ -1,9 +1,9 @@
 find_package(Qt6 REQUIRED COMPONENTS Core)
 
 # Lua 走仓库内的 3rdparty/lua-5.4（源码编库，目标 lua::lua）：
-# 路径由 ng 顶层的 PS_THIRDPARTY_DIR 统一给出，和平台、deps/ 布局都无关。
+# 路径由主工程顶层的 PS_THIRDPARTY_DIR 统一给出，和平台、deps/ 布局都无关。
 if(NOT TARGET lua)
-    message(FATAL_ERROR "缺少 lua::lua 目标：ng/CMakeLists.txt 需要先引入 3rdparty/lua-5.4")
+    message(FATAL_ERROR "缺少 lua::lua 目标：主工程 CMakeLists.txt 需要先引入 3rdparty/lua-5.4")
 endif()
 
 # 把 12 个内置过滤器的 Luau 源内嵌进二进制（raw string），无运行时文件/Qt resource 依赖。

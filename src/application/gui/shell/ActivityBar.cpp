@@ -74,11 +74,11 @@ void ActivityButton::paintEvent(QPaintEvent *event)
 
 ActivityBar::ActivityBar(QWidget *parent) : QWidget(parent)
 {
-    setObjectName(QStringLiteral("plotscope.activityBar"));
+    setObjectName(QStringLiteral("ps.activityBar"));
     setFixedWidth(48);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     setStyleSheet(QStringLiteral(
-        "QWidget#plotscope.activityBar{background:palette(window);"
+        "QWidget#ps.activityBar{background:palette(window);"
         "border-right:1px solid palette(mid);}"
         "QToolButton{border:0;border-radius:3px;}"
         "QToolButton:hover{background:palette(alternate-base);}"

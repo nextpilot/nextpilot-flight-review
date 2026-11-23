@@ -56,4 +56,4 @@ private:
     nextpilot::plotscope::host::IUiContext *m_ui = nullptr;
 };
 
-Q_DECLARE_INTERFACE(ScriptModule, "nextpilot.ng.ScriptModule/1.0")
+Q_DECLARE_INTERFACE(ScriptModule, "nextpilot.ps.ScriptModule/1.0")

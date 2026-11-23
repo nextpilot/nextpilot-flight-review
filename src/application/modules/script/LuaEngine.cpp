@@ -28,9 +28,9 @@ namespace nextpilot::plotscope::script
 {
 
 // 门面指针在 registry 中的 key。脚本拿不到它，只有 C 回调能取。
-static const char *kFacadeKey = "ng.script.facade";
+static const char *kFacadeKey = "ps.script.facade";
 // 引擎指针在 registry 中的 key：print/app.log 输出经它路由到 sink（REPL）。
-static const char *kEngineKey = "ng.script.engine";
+static const char *kEngineKey = "ps.script.engine";
 
 static ScriptFacade *facadeOf(lua_State *L)
 {

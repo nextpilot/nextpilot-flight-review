@@ -282,7 +282,7 @@ void MainWindow::declareStandardSlots()
         {"ribbon.group.plot.action", "plot.screenshot",    "截图",   "screenshot", 0, "",     false, false},
     };
     // 布局组大按钮：main 用 layoutThumb(r,c) 画分格缩略图、文字写 "r×c"，
-    // 点选后回写实际分格。ng 初始按当前页默认 1×1，选完由下面 dispatcher 更新。
+    // 点选后回写实际分格。初始按当前页默认 1×1，选完由下面 dispatcher 更新。
     QString layoutVisual = QStringLiteral("layout:2x1");
     for (const PlotToolDef &d : kPlotTools)
     {
@@ -445,7 +445,7 @@ void MainWindow::build(RuntimeHost &host)
     // 1) 骨架插槽
     declareStandardSlots();
 
-    // 2) ribbon（SARibbon）——结构层交给第三方，ng 只提供插槽数据
+    // 2) ribbon（SARibbon）——结构层交给第三方，绑定器只提供插槽数据
     //
     // SARibbonMainWindow 已经在构造时把 ribbon 条装进了 menuWidget 槽
     // （见 setRibbonBar），这里只把它的**样式**调成我们要的样子，

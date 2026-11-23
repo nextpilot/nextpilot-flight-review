@@ -47,7 +47,7 @@ namespace nextpilot::plotscope::gui
 // 权威源始终是 JSON 文本：控件在"落表"时机（切页签/校验/试算/保存）回写一次，
 // 不做双向实时同步，避免两处各写一份。
 //
-// 逻辑全部来自 ng/libs/protocol（validate / parseDocument / previewSequentialFrame），
+// 逻辑全部来自协议库（validate / parseDocument / previewSequentialFrame），
 // 对话框只是这些纯逻辑的 GUI 外壳——不复制任何解码规则。
 class ProtocolEditorDialog : public QDialog
 {

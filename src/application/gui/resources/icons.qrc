@@ -1,5 +1,5 @@
 <RCC>
-  <!-- ng 的图标资源：外壳（ShellBinder）把动作的 icon 字段解析成这里的 QIcon。 -->
+  <!-- 图标资源：外壳（ShellBinder）把动作的 icon 字段解析成这里的 QIcon。 -->
   <qresource prefix="/icons">
     <file alias="plot_refresh.svg">icons/plot_refresh.svg</file>
     <file alias="data_table.svg">icons/data_table.svg</file>

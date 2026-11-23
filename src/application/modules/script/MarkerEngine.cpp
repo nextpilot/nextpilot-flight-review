@@ -143,8 +143,8 @@ struct RunCtx
     QString error;
 };
 
-static const char *kCtxKey = "ng.marker.ctx";
-static const char *kSeriesMeta = "ng.marker.series";
+static const char *kCtxKey = "ps.marker.ctx";
+static const char *kSeriesMeta = "ps.marker.series";
 
 static RunCtx *ctxOf(lua_State *L)
 {
@@ -393,14 +393,14 @@ static int l_startMarker(lua_State *L)
     RunCtx *c = ctxOf(L);
     if (!c) return 0;
     lua_pushnumber(L, t);
-    lua_setfield(L, LUA_REGISTRYINDEX, "ng.marker.openT");
+    lua_setfield(L, LUA_REGISTRYINDEX, "ps.marker.openT");
     return 0;
 }
 
 static int l_closeMarker(lua_State *L)
 {
     const double t = luaL_checknumber(L, 1);
-    lua_getfield(L, LUA_REGISTRYINDEX, "ng.marker.openT");
+    lua_getfield(L, LUA_REGISTRYINDEX, "ps.marker.openT");
     if (!lua_isnumber(L, -1))
     {
         lua_pop(L, 1);
@@ -453,7 +453,7 @@ static int l_emitWhen(lua_State *L)
 
 static void instructionHook(lua_State *L, lua_Debug *)
 {
-    lua_getfield(L, LUA_REGISTRYINDEX, "ng.marker.wd");
+    lua_getfield(L, LUA_REGISTRYINDEX, "ps.marker.wd");
     auto *fuel = static_cast<int *>(lua_touserdata(L, -1));
     lua_pop(L, 1);
     if (!fuel) return;
@@ -662,7 +662,7 @@ Result<QVector<PlotMarker>> MarkerEngine::run(const QByteArray &code,
     // 看门狗
     int fuel = m_limits.instructionBudget;
     lua_pushlightuserdata(L, &fuel);
-    lua_setfield(L, LUA_REGISTRYINDEX, "ng.marker.wd");
+    lua_setfield(L, LUA_REGISTRYINDEX, "ps.marker.wd");
     lua_sethook(L, instructionHook, LUA_MASKCOUNT, 100);
 
     // 编译 + 执行规则

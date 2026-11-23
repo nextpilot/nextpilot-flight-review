@@ -2,7 +2,7 @@
 
 #include "IModule.h"
 
-// 协议模块：把 ng/libs/protocol 的纯逻辑能力（新建/打开/校验 .psproto +
+// 协议模块：把协议库 的纯逻辑能力（新建/打开/校验 .psproto +
 // SPI v2 自定义协议解析）以 UI 入口的形式贡献到"协议"Ribbon 页。
 //
 // 它不认识任何 Widgets：只声明 UiAction（纯数据）。真正的对话框由外壳按 action id
@@ -29,4 +29,4 @@ private:
     nextpilot::plotscope::host::ProtocolIntentHandler *m_handler = nullptr;
 };
 
-Q_DECLARE_INTERFACE(ProtocolModule, "nextpilot.ng.ProtocolModule/1.0")
+Q_DECLARE_INTERFACE(ProtocolModule, "nextpilot.ps.ProtocolModule/1.0")

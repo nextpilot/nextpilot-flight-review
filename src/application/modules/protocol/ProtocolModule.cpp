@@ -41,7 +41,7 @@ ModuleInfo ProtocolModule::info() const
 
 void ProtocolModule::initialize(RuntimeHost &host)
 {
-    // 纯逻辑在 ng/libs/protocol（ps_protocol）+ SPI v2 CustomProtocolParser；
+    // 纯逻辑在协议库（ps_protocol）+ SPI v2 CustomProtocolParser；
     // 模块负责把"模板校验/单帧试算/模板库"这三件界面之外也成立的事做成意图，
     // 让脚本与 CLI 不必复制一份校验逻辑，也不必经过任何对话框。
     m_handler = new ProtocolIntentHandler(this);

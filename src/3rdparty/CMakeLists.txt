@@ -13,7 +13,7 @@ add_subdirectory(saribbon EXCLUDE_FROM_ALL)
 add_subdirectory(mavlink)
 
 # Lua 5.4.4（MIT）—— 脚本后端，源码编库（目标 lua::lua）。
-# 与 ng 侧吃同一份输入：不依赖 deps/ 预编译产物，Linux/Windows 各自编译即可。
+# 与主工程吃同一份输入：不依赖 deps/ 预编译产物，Linux/Windows 各自编译即可。
 if(PS_ENABLE_LUA)
   add_subdirectory(lua-5.4 EXCLUDE_FROM_ALL)
 endif()
