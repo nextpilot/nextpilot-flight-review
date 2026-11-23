@@ -2138,6 +2138,80 @@ mod tests {
             ps_dataset_free(ds);
         }
     }
+
+    #[test]
+    fn column_encoding_roundtrip_via_abi() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("STATES").unwrap();
+            let name = CString::new("mode").unwrap();
+            let unit = CString::new("").unwrap();
+            let times = [0i64, 1_000_000, 2_000_000, 3_000_000];
+            assert_eq!(ps_dataset_add_table_typed(ds, table.as_ptr(), times.as_ptr(), times.len() as u32,
+                std::ptr::null_mut(), 0), 0);
+            // I32 状态码，低基数。
+            let vals: [i32; 4] = [7, 7, 3, 7];
+            assert_eq!(ps_dataset_add_table_column_typed(ds, table.as_ptr(), name.as_ptr(), unit.as_ptr(),
+                4, vals.as_ptr() as *const _, std::ptr::null(), vals.len() as u32,
+                std::ptr::null_mut(), 0), 0);
+
+            // 编码前：is_encoded=0，column_raw 可借出。
+            assert_eq!(ps_dataset_column_is_encoded(ds, table.as_ptr(), name.as_ptr()), 0);
+            let mut ptr = std::ptr::null();
+            let mut cnt = 0u64;
+            let mut ty = 0u32;
+            assert_eq!(ps_dataset_column_raw(ds, table.as_ptr(), name.as_ptr(),
+                &mut ptr, &mut cnt, &mut ty, std::ptr::null_mut()), 0);
+            assert_eq!(ty, 4);
+
+            // 开启字典编码（codec=2）。
+            let mut err = [0i8; 128];
+            assert_eq!(ps_dataset_column_encode(ds, table.as_ptr(), name.as_ptr(), 2,
+                err.as_mut_ptr(), err.len() as u32), 0);
+            assert_eq!(ps_dataset_column_is_encoded(ds, table.as_ptr(), name.as_ptr()), 1);
+            // 逻辑类型码不变（I32=4）。
+            assert_eq!(ps_dataset_column_type(ds, table.as_ptr(), name.as_ptr()), 4);
+            // 压缩列 column_raw 返回 3，不借出裸指针。
+            ptr = std::ptr::null(); cnt = 0; ty = 99;
+            assert_eq!(ps_dataset_column_raw(ds, table.as_ptr(), name.as_ptr(),
+                &mut ptr, &mut cnt, &mut ty, std::ptr::null_mut()), 3);
+            assert!(ptr.is_null(), "失败时不得写出指针");
+
+            // decode_f64 逐位一致。
+            let mut out = [0.0f64; 4];
+            assert_eq!(ps_dataset_column_decode_f64(ds, table.as_ptr(), name.as_ptr(), out.as_mut_ptr(), 4), 4);
+            assert_eq!(out, [7.0, 7.0, 3.0, 7.0]);
+
+            // 重复编码返回 3。
+            assert_eq!(ps_dataset_column_encode(ds, table.as_ptr(), name.as_ptr(), 2,
+                err.as_mut_ptr(), err.len() as u32), 3);
+            ps_dataset_free(ds);
+        }
+    }
+
+    #[test]
+    fn column_encode_rejects_bad_codec_and_unsuitable_column() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("T").unwrap();
+            let name = CString::new("v").unwrap();
+            let unit = CString::new("").unwrap();
+            let times = [0i64, 1_000_000];
+            assert_eq!(ps_dataset_add_table_typed(ds, table.as_ptr(), times.as_ptr(), 2,
+                std::ptr::null_mut(), 0), 0);
+            let vals = [1.5f64, 2.5];
+            assert_eq!(ps_dataset_add_table_column_typed(ds, table.as_ptr(), name.as_ptr(), unit.as_ptr(),
+                0, vals.as_ptr() as *const _, std::ptr::null(), 2, std::ptr::null_mut(), 0), 0);
+            let mut err = [0i8; 128];
+            // 非法 codec 返回 1。
+            assert_eq!(ps_dataset_column_encode(ds, table.as_ptr(), name.as_ptr(), 99,
+                err.as_mut_ptr(), err.len() as u32), 1);
+            // F64 列不适合 Constant（值不同）返回 4。
+            assert_eq!(ps_dataset_column_encode(ds, table.as_ptr(), name.as_ptr(), 0,
+                err.as_mut_ptr(), err.len() as u32), 4);
+            ps_dataset_free(ds);
+        }
+    }
 }
 
 
@@ -2326,7 +2400,8 @@ pub unsafe extern "C" fn ps_dataset_column_type(
     let cname = CStr::from_ptr(column).to_string_lossy();
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return -1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return -1; };
-    match c.value_type() {
+    // 压缩列对外仍暴露逻辑类型码（解码后类型不变），不新增公共编码类型码。
+    match c.data.value_type() {
         ps_ndf::typed::ValueType::F64 => 0,
         ps_ndf::typed::ValueType::F32 => 1,
         ps_ndf::typed::ValueType::I64 => 2,
@@ -2458,6 +2533,8 @@ pub unsafe extern "C" fn ps_dataset_column_raw(
         ps_ndf::typed::ColumnData::Text(_) => return 3,
         // 对象列不支持整列裸指针借出（句柄语义 + 悬垂防护），走 blob_get 逐句柄取。
         ps_ndf::typed::ColumnData::Object(_) => return 3,
+        // 压缩列无连续原生数组，不借出裸指针；走 ps_dataset_column_decode_f64。
+        ps_ndf::typed::ColumnData::Encoded { .. } => return 3,
     };
     *out_values = ptr;
     *out_count = c.len() as u64;
@@ -2466,6 +2543,85 @@ pub unsafe extern "C" fn ps_dataset_column_raw(
         *out_nulls = if c.nulls.has_any_null() { c.nulls.raw().as_ptr() } else { std::ptr::null() };
     }
     0
+}
+
+/* ===== S5 选择性列编码压缩 =====
+ * 编码按列显式开启，调用方决定哪些列压缩；F64 绘图主通道默认不动。
+ * 压缩列不借出裸指针（columnRaw 返回 3），经 decode_f64 取解码后的值。 */
+
+fn map_codec(raw: u32) -> Option<ps_ndf::typed::Codec> {
+    use ps_ndf::typed::Codec::*;
+    Some(match raw { 0 => Constant, 1 => For, 2 => Dictionary, 3 => BitPack, _ => return None })
+}
+
+/// 对指定列开启压缩编码。codec: 0=Constant,1=For,2=Dictionary,3=BitPack。
+/// 返回 0 成功；1 参数错误；2 表/列不存在；3 已编码；4 该列/数据不适合此 codec。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_column_encode(
+    ds: *mut PsDataset,
+    table: *const c_char,
+    column: *const c_char,
+    codec: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if ds.is_null() || table.is_null() || column.is_null() {
+        return 1;
+    }
+    let Some(cd) = map_codec(codec) else { return 1; };
+    let Ok(tname) = CStr::from_ptr(table).to_str() else { return 1; };
+    let Ok(cname) = CStr::from_ptr(column).to_str() else { return 1; };
+    let d = &mut *ds;
+    let Some(ti) = d.typed.table_index(tname) else { return 2; };
+    let Some(ci) = d.typed.tables[ti].columns.iter().position(|c| c.name == cname) else { return 2; };
+    if d.typed.tables[ti].columns[ci].data.codec().is_some() {
+        write_err(err, err_cap, "列已编码");
+        return 3;
+    }
+    let encoded = match d.typed.tables[ti].columns[ci].data.encode(cd) {
+        Ok(x) => x,
+        Err(e) => { write_err(err, err_cap, &e); return 4; }
+    };
+    d.typed.tables[ti].columns[ci].data = encoded;
+    d.infos_dirty = true;
+    0
+}
+
+/// 查询列是否压缩编码：0=原生，1=已编码，-1=表/列不存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_column_is_encoded(
+    ds: *const PsDataset,
+    table: *const c_char,
+    column: *const c_char,
+) -> i32 {
+    if ds.is_null() || table.is_null() || column.is_null() { return -1; }
+    let Ok(tname) = CStr::from_ptr(table).to_str() else { return -1; };
+    let Ok(cname) = CStr::from_ptr(column).to_str() else { return -1; };
+    let Some(t) = (*ds).typed.tables.iter().find(|t| t.name == tname) else { return -1; };
+    let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return -1; };
+    if c.data.codec().is_some() { 1 } else { 0 }
+}
+
+/// 取列解码后的数值（null 行写 NaN）。cap 为 out 容量；返回写入行数（≤cap），
+/// 表/列不存在或参数错误返回 0。供 UI/脚本读取压缩列，不经裸指针借出。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_column_decode_f64(
+    ds: *const PsDataset,
+    table: *const c_char,
+    column: *const c_char,
+    out: *mut f64,
+    cap: u32,
+) -> u32 {
+    if ds.is_null() || table.is_null() || column.is_null() || out.is_null() { return 0; }
+    let Ok(tname) = CStr::from_ptr(table).to_str() else { return 0; };
+    let Ok(cname) = CStr::from_ptr(column).to_str() else { return 0; };
+    let Some(t) = (*ds).typed.tables.iter().find(|t| t.name == tname) else { return 0; };
+    let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
+    let n = c.len().min(cap as usize);
+    for r in 0..n {
+        *out.add(r) = if c.is_null(r) { f64::NAN } else { c.data.value_as_f64(r).unwrap_or(f64::NAN) };
+    }
+    n as u32
 }
 
 /* ===== S4 对象列：不透明句柄 + 引用计数（RFC D4） =====
