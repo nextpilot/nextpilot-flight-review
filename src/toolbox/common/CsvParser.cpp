@@ -84,7 +84,7 @@ struct CsvCtx
     int valueCols = 0;
     bool headerDone = false;
 
-    std::vector<int64_t> times;                    // 当前批的时间（微秒）
+    std::vector<int64_t> times;                    // 当前批的时间（纳秒）
     std::vector<std::vector<double>> values;       // 当前批各列的值
     std::vector<QByteArray> nameBytes;             // 列名 UTF-8（指针有效期用）
     uint64_t consumed = 0;                          // 已消费字节数（进度上报）
@@ -165,7 +165,7 @@ bool parseCsvLine(CsvCtx *c, const QStringList &cells, std::vector<int64_t> &tim
                        ? cells.at(cellIdx).trimmed().toDouble() : 0.0;
         values[col].push_back(v);
     }
-    times.push_back(static_cast<int64_t>(tSec * 1000000.0));
+    times.push_back(static_cast<int64_t>(tSec * 1000000000.0));
     ++c->dataRowIndex;
     return true;
 }
@@ -197,7 +197,7 @@ bool emitBatch(CsvCtx *c, const PsParserSink *sink, PsError *err)
     // 表名固定 "csv"：解析器只认字节，不知道文件叫什么。
     // 最终表名由宿主按扩展层声明的策略映射（见 IMessageParser::preferredTableName）。
     batch.table = "csv";
-    batch.time_us = c->times.data();
+    batch.time_ns = c->times.data();
     batch.rows = static_cast<uint32_t>(c->times.size());
     batch.columns = static_cast<uint32_t>(cols.size());
     batch.column_data = cols.empty() ? nullptr : cols.data();

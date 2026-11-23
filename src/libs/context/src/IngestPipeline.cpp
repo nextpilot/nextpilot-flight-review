@@ -310,7 +310,7 @@ int32_t IngestPipeline::onFrameBatch(void *ctx, const PsFrameBatch *batch)
         table = sc->tableName;
 
     QString err;
-    if (!ds->appendFrame(table, batch->time_us, static_cast<int>(batch->rows), cols, &err))
+    if (!ds->appendFrame(table, batch->time_ns, static_cast<int>(batch->rows), cols, &err))
         return -1;
 
     // 数据已进 Rust，但 C++ 侧的 schema 投影尚未刷新。

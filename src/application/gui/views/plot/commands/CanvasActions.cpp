@@ -630,7 +630,7 @@ void PlotWorkspace::registerCanvasActions()
 
             // offset 建议与 T3 同一口径：**终点对齐**（baseEnd - peerEnd）。
             const qint64 offsetUs =
-                qRound64((base->timeMax() - peer->timeMax()) * 1000000.0);
+                qRound64((base->timeMax() - peer->timeMax()) * 1000000000.0);
             QVariantMap out;
             out.insert(QStringLiteral("series"), 2);
             out.insert(QStringLiteral("offset_us"), QVariant::fromValue<qlonglong>(offsetUs));

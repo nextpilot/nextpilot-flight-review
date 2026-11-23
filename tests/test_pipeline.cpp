@@ -70,11 +70,11 @@ struct Collector
     static int32_t onBatch(void *ctx, const PsFrameBatch *batch)
     {
         auto *self = static_cast<Collector *>(ctx);
-        if (!batch || !batch->table || !batch->time_us || !batch->column_data)
+        if (!batch || !batch->table || !batch->time_ns || !batch->column_data)
             return -1;
         Batch b;
         b.table = QString::fromUtf8(batch->table);
-        b.times.assign(batch->time_us, batch->time_us + batch->rows);
+        b.times.assign(batch->time_ns, batch->time_ns + batch->rows);
         const auto *col = &batch->column_data[0];
         if (col->type == PS_VALUE_F64 && col->values)
         {
@@ -216,7 +216,7 @@ const PsParserVtable *probeParserVtable()
                 col.nulls = nullptr;
                 PsFrameBatch batch{};
                 batch.table = "probe_table";
-                batch.time_us = times.data();
+                batch.time_ns = times.data();
                 batch.rows = static_cast<uint32_t>(times.size());
                 batch.columns = 1;
                 batch.column_data = &col;
@@ -1058,9 +1058,9 @@ int main()
                 CHECK(b.table == QStringLiteral("csv"));
                 CHECK(b.times.size() == 3);
                 CHECK(b.values.size() == 3);
-                // 首列是时间（秒 → 微秒）
+                // 首列是时间（秒 → 纳秒）
                 CHECK(b.times.size() == 3 && b.times[0] == 0);
-                CHECK(b.times.size() == 3 && b.times[2] == 2000000);
+                CHECK(b.times.size() == 3 && b.times[2] == 2000000000);
                 // 第一个数值列 = roll
                 CHECK(b.values.size() == 3 && std::fabs(b.values[1] - 1.5) < 1e-9);
             }
@@ -1102,9 +1102,9 @@ int main()
             if (!collector.batches.empty())
             {
                 const Collector::Batch &b = collector.batches.front();
-                // 时间 = 第 0 列（秒→微秒）
-                CHECK(b.times.size() == 3 && b.times[0] == 10000000);
-                CHECK(b.times.size() == 3 && b.times[2] == 30000000);
+                // 时间 = 第 0 列（秒→纳秒）
+                CHECK(b.times.size() == 3 && b.times[0] == 10000000000);
+                CHECK(b.times.size() == 3 && b.times[2] == 30000000000);
                 // 第一数据列 = 第 1 列（1.5/2.0/3.0），不是被当时间的第 0 列
                 CHECK(b.values.size() == 3 && std::fabs(b.values[0] - 1.5) < 1e-9);
                 CHECK(b.values.size() == 3 && std::fabs(b.values[2] - 3.0) < 1e-9);
@@ -1145,9 +1145,9 @@ int main()
                 CHECK(t && t->column(QStringLiteral("roll")) != nullptr);
                 CHECK(t && t->column(QStringLiteral("pitch")) != nullptr);
                 CHECK(t && t->column(QStringLiteral("roll"))->type == ValueType::F64);
-                // 时间轴：秒 → 微秒
-                CHECK(t && t->firstTimeUs == 0);
-                CHECK(t && t->lastTimeUs == 2000000);
+                // 时间轴：秒 → 纳秒
+                CHECK(t && t->firstTimeNs == 0);
+                CHECK(t && t->lastTimeNs == 2000000000);
                 // 值与旧语义一致
                 const auto ch = dsC->channel(QStringLiteral("demo"), QStringLiteral("roll"), 16);
                 CHECK(ch.has_value() && ch->size() == 3);

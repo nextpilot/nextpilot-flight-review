@@ -136,7 +136,7 @@ int main(int argc, char **argv)
     const int px = static_cast<int>(plot.viewport().plotRect().width());
     // 首次布局后才有 plotRect；先 resize 再取
     const QVector<LodTriple> lod =
-        ds->lodMinMax(tableName, columnName, table->firstTimeUs, table->lastTimeUs, px);
+        ds->lodMinMax(tableName, columnName, table->firstTimeNs, table->lastTimeNs, px);
     if (lod.isEmpty())
     {
         fprintf(stderr, "FAIL: lodMinMax 返回空\n");

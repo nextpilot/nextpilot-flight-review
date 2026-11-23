@@ -62,7 +62,7 @@ void writeError(PsError *err, const char *msg)
     err->message[sizeof(err->message) - 1] = '\0';
 }
 
-// 记录一条：i64 time_us + f64 value
+// 记录一条：i64 time_ns + f64 value
 constexpr uint32_t kRecordSize = 16;
 
 } // namespace
@@ -163,7 +163,7 @@ const PsParserVtable *PspxParser::parserVtable()
 
                 PsFrameBatch batch{};
                 batch.table = "pspx";
-                batch.time_us = times.data();
+                batch.time_ns = times.data();
                 batch.rows = static_cast<uint32_t>(times.size());
                 batch.columns = 1;
                 batch.column_data = &col;

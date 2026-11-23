@@ -102,9 +102,9 @@ int32_t              ps_dataset_add_table_channel(PsDataset *ds, const char *tab
                                                   const char *name, const char *unit,
                                                   const double *value, uint32_t count,
                                                   char *err, uint32_t err_cap);
-/* typed 表级构造：时间轴用 UTC 微秒；列值按 PsValueType 解释，nulls 可选位图（1=null）。 */
+/* typed 表级构造：时间轴用纳秒；列值按 PsValueType 解释，nulls 可选位图（1=null）。 */
 int32_t              ps_dataset_add_table_typed(PsDataset *ds, const char *table,
-                                                const int64_t *time_us, uint32_t count,
+                                                const int64_t *time_ns, uint32_t count,
                                                 char *err, uint32_t err_cap);
 int32_t              ps_dataset_add_table_column_typed(PsDataset *ds, const char *table,
                                                        const char *name, const char *unit,
@@ -113,7 +113,7 @@ int32_t              ps_dataset_add_table_column_typed(PsDataset *ds, const char
                                                        char *err, uint32_t err_cap);
 /* frame_batch 落库：表不存在则按首批列建表，存在则校验列顺序后追加；seq 表内自增。 */
 int32_t              ps_dataset_append_frame(PsDataset *ds, const char *table,
-                                             const int64_t *time_us, uint32_t rows,
+                                             const int64_t *time_ns, uint32_t rows,
                                              const PsFrameColumn *columns, uint32_t column_count,
                                              char *err, uint32_t err_cap);
 /* 设置 live ring 字节预算；table 为 NULL 表示 Dataset 默认预算，bytes=0 取消 ring。 */
@@ -123,7 +123,7 @@ int32_t              ps_dataset_set_ring_budget(PsDataset *ds, const char *table
 uint64_t             ps_dataset_table_rows(PsDataset *ds, const char *table);
 /* typed 表视口 LOD；out 为 (time_sec,min,max) 三元组，长度至少 cap*3，返回实际三元组数。 */
 uint32_t             ps_dataset_lod_minmax(PsDataset *ds, const char *table, const char *column,
-                                           int64_t t0_us, int64_t t1_us, uint32_t px,
+                                           int64_t t0_ns, int64_t t1_ns, uint32_t px,
                                            double *out, uint32_t cap);
 /* typed 表按行取值；out_time 为秒，out_value 为 f64 兼容值。返回 0 成功、1 越界、2 null。 */
 int32_t              ps_dataset_value_at(PsDataset *ds, const char *table, const char *column,
@@ -132,14 +132,14 @@ int32_t              ps_dataset_value_at(PsDataset *ds, const char *table, const
  * out_len 回填实际字节数（不含 NUL，可先传 out=NULL/cap=0 查询长度）。返回 0 成功、1 表/列/行不存在、2 非文本列或 null。 */
 int32_t              ps_dataset_text_at(PsDataset *ds, const char *table, const char *column,
                                         uint64_t row, char *out, uint32_t cap, uint32_t *out_len);
-/* typed 表按 UTC 微秒取最近行；返回 0 成功、1 空表/找不到。 */
+/* typed 表按纳秒取最近行；返回 0 成功、1 空表/找不到。 */
 int32_t              ps_dataset_value_near(PsDataset *ds, const char *table, const char *column,
-                                           int64_t t_us, double *out_time, double *out_value);
+                                           int64_t t_ns, double *out_time, double *out_value);
 /* 统一取值入口：旧通道读 f64 视图，typed 列走 ps_dataset_value_at。 */
 /* typed 表按时间窗口批量取值；out 为 time_sec/value 两个数组，cap 为各自容量。
  * 行数超过 cap 时等步长抽稀；返回写入行数。 */
 uint32_t             ps_dataset_read_window(PsDataset *ds, const char *table, const char *column,
-                                            int64_t t0_us, int64_t t1_us,
+                                            int64_t t0_ns, int64_t t1_ns,
                                             double *out_time, double *out_value, uint32_t cap);
 /* typed 表内 seq；不存在返回 UINT64_MAX。 */
 uint64_t             ps_dataset_seq_at(PsDataset *ds, const char *table, uint32_t row);
@@ -157,21 +157,21 @@ int32_t              ps_dataset_column_raw(const PsDataset *ds, const char *tabl
                                            const void **out_values, uint64_t *out_count, uint32_t *out_type,
                                            const uint8_t **out_nulls);
 
-/* 2.7.5 数据集切片：按时间范围 [t0_us, t1_us]（含端点）与列子集抽出新 PsDataset。
+/* 2.7.5 数据集切片：按时间范围 [t0_ns, t1_ns]（含端点）与列子集抽出新 PsDataset。
  * columns 为列名数组，NULL/0 取全部列；新数据集只含 typed 表，独立生命周期。
  * 返回 0 成功；1 参数错误；2 名字非法；3 表/列不存在；5 内部错误（见 err）。 */
 int32_t              ps_dataset_slice(const PsDataset *ds, const char *table,
                                       const char *const *columns, uint32_t column_count,
-                                      int64_t t0_us, int64_t t1_us,
+                                      int64_t t0_ns, int64_t t1_ns,
                                       PsDataset **out, char *err, uint32_t err_cap);
 
-/* 2.7.6 多列对齐读取：同表多列一次读完 [t0_us, t1_us] 的对齐行区间。
+/* 2.7.6 多列对齐读取：同表多列一次读完 [t0_ns, t1_ns] 的对齐行区间。
  * out_values 是长度 column_count 的指针数组，每元素指向 cap 大小 f64 缓冲；
  * 行数超 cap 时等步长抽稀，各列严格同行对齐；null 输出 NaN。
  * 返回实际写入行数（0 = 空窗口/参数错误）。 */
 uint32_t             ps_dataset_read_window_multi(const PsDataset *ds, const char *table,
                                                   const char *const *columns, uint32_t column_count,
-                                                  int64_t t0_us, int64_t t1_us,
+                                                  int64_t t0_ns, int64_t t1_ns,
                                                   double *out_time, const double *const *out_values,
                                                   uint32_t cap);
 

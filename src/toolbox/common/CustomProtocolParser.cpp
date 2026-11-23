@@ -31,7 +31,7 @@ struct Ctx
     std::vector<std::vector<uint8_t>> values;
     std::vector<std::vector<std::string>> textBytes; // TEXT 列的字符串本体
     std::vector<std::vector<const char *>> textPtrs; // TEXT 列给 SPI 的 const char* 数组
-    std::vector<int64_t> times;                     // 微秒
+    std::vector<int64_t> times;                     // 纳秒
 };
 
 void setErr(PsError *err, int32_t code, const char *msg)
@@ -80,11 +80,14 @@ bool emitBatch(const nextpilot::plotscope::protocol::ProtocolDecodeResult &decod
     c->textPtrs.clear();
     c->values.reserve(decoded.channels.size());
 
-    // 时间轴：ticks 按 ticksPerSecond 换成整数微秒，全程整数运算。
+    // 时间轴：ticks 按 ticksPerSecond 换成整数纳秒，全程整数运算。
+    // 先除后乘，避免大 tick 值 ×1e9 时溢出 int64。
     const auto &first = decoded.channels.first();
     c->times.resize(first.t.size());
     for (size_t i = 0; i < first.t.size(); ++i)
-        c->times[i] = static_cast<int64_t>(first.t[i]) * 1000000 / decoded.ticksPerSecond;
+        c->times[i] = static_cast<int64_t>(first.t[i]) / decoded.ticksPerSecond * 1000000000LL
+                    + static_cast<int64_t>(first.t[i]) % decoded.ticksPerSecond * 1000000000LL
+                      / decoded.ticksPerSecond;
 
     std::vector<PsFrameColumn> cols;
     cols.reserve(decoded.channels.size());
@@ -128,7 +131,7 @@ bool emitBatch(const nextpilot::plotscope::protocol::ProtocolDecodeResult &decod
 
     PsFrameBatch batch{};
     batch.table = "custom"; // 表名由宿主按驱动策略改写
-    batch.time_us = c->times.empty() ? nullptr : c->times.data();
+    batch.time_ns = c->times.empty() ? nullptr : c->times.data();
     batch.rows = static_cast<uint32_t>(c->times.size());
     batch.columns = static_cast<uint32_t>(cols.size());
     batch.column_data = cols.empty() ? nullptr : cols.data();

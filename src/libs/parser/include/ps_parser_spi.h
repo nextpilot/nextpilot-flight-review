@@ -78,11 +78,11 @@ typedef struct PsFrameColumn {
 
 #ifndef PS_FRAME_BATCH_DEFINED
 #define PS_FRAME_BATCH_DEFINED
-/* 一批行：同一批的所有列共享 time_us（UTC 微秒）。
- * 这正是 Rust ps_dataset_append_frame 的入参形状。 */
+/* 一批行：同一批的所有列共享 time_ns（纳秒，相对首帧/原生时间）。
+ * parser 负责把各数据源原始单位换算到纳秒；这正是 Rust ps_dataset_append_frame 的入参形状。 */
 typedef struct PsFrameBatch {
     const char          *table;    /* 表名（= topic / 通道组） */
-    const int64_t       *time_us;  /* 行时间戳，长度 = rows */
+    const int64_t       *time_ns;  /* 行时间戳，长度 = rows */
     uint32_t             rows;     /* 行数 */
     uint32_t             columns;  /* 列数 */
     const PsFrameColumn *column_data;

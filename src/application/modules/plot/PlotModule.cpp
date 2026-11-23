@@ -132,25 +132,25 @@ private:
 
         // 可见时间窗（微秒，可选）：缩放后画布只关心这一段。
         // 缺省用全表范围；越界一律夹回表范围，避免取空。
-        TimeUs t0Us = t->firstTimeUs;
-        TimeUs t1Us = t->lastTimeUs;
-        if (intent.params.contains(QStringLiteral("t0Us"))
-            && intent.params.contains(QStringLiteral("t1Us")))
+        TimeNs t0Ns = t->firstTimeNs;
+        TimeNs t1Ns = t->lastTimeNs;
+        if (intent.params.contains(QStringLiteral("t0Ns"))
+            && intent.params.contains(QStringLiteral("t1Ns")))
         {
-            const qint64 reqT0 = intent.params.value(QStringLiteral("t0Us")).toLongLong();
-            const qint64 reqT1 = intent.params.value(QStringLiteral("t1Us")).toLongLong();
+            const qint64 reqT0 = intent.params.value(QStringLiteral("t0Ns")).toLongLong();
+            const qint64 reqT1 = intent.params.value(QStringLiteral("t1Ns")).toLongLong();
             const qint64 lo = qMin(reqT0, reqT1);
             const qint64 hi = qMax(reqT0, reqT1);
-            t0Us = qMax<TimeUs>(t->firstTimeUs, TimeUs(lo));
-            t1Us = qMin<TimeUs>(t->lastTimeUs, TimeUs(hi));
-            if (t1Us <= t0Us)
+            t0Ns = qMax<TimeNs>(t->firstTimeNs, TimeNs(lo));
+            t1Ns = qMin<TimeNs>(t->lastTimeNs, TimeNs(hi));
+            if (t1Ns <= t0Ns)
             {
-                t0Us = t->firstTimeUs;
-                t1Us = t->lastTimeUs;
+                t0Ns = t->firstTimeNs;
+                t1Ns = t->lastTimeNs;
             }
         }
 
-        const QVector<LodTriple> lod = ds->lodMinMax(table, column, t0Us, t1Us, px);
+        const QVector<LodTriple> lod = ds->lodMinMax(table, column, t0Ns, t1Ns, px);
         if (lod.isEmpty())
             return fail(err::Chan, QStringLiteral("通道无数据: %1.%2").arg(table, column));
 
@@ -197,9 +197,9 @@ private:
             if (!ch)
                 return fail(err::Chan, QStringLiteral("读取通道失败: %1.%2").arg(table, column));
 
-            // 时间窗过滤（ChannelView.time 是秒；窗口 t0Us/t1Us 是微秒）。
+            // 时间窗过滤（ChannelView.time 是秒；窗口 t0Ns/t1Ns 是微秒）。
             QVector<double> wt, wv;
-            const double w0 = t0Us / 1000000.0, w1 = t1Us / 1000000.0;
+            const double w0 = t0Ns / 1000000000.0, w1 = t1Ns / 1000000000.0;
             wt.reserve(ch->size());
             wv.reserve(ch->size());
             for (int i = 0; i < ch->size(); ++i)
@@ -248,8 +248,8 @@ private:
                 {QStringLiteral("title"),
                  QStringLiteral("%1 / %2.%3").arg(ds->name(), table, column)},
                 {QStringLiteral("points"), lodT.size()},
-                {QStringLiteral("t0"), t0Us / 1000000.0},
-                {QStringLiteral("t1"), t1Us / 1000000.0},
+                {QStringLiteral("t0"), t0Ns / 1000000000.0},
+                {QStringLiteral("t1"), t1Ns / 1000000000.0},
                 {QStringLiteral("x"), xs2},
                 {QStringLiteral("min"), mins2},
                 {QStringLiteral("max"), maxs2},
@@ -276,8 +276,8 @@ private:
             {QStringLiteral("column"), column},
             {QStringLiteral("title"), QStringLiteral("%1 / %2.%3").arg(ds->name(), table, column)},
             {QStringLiteral("points"), lod.size()},
-            {QStringLiteral("t0"), t0Us / 1000000.0},
-            {QStringLiteral("t1"), t1Us / 1000000.0},
+            {QStringLiteral("t0"), t0Ns / 1000000000.0},
+            {QStringLiteral("t1"), t1Ns / 1000000000.0},
             {QStringLiteral("x"), xs},
             {QStringLiteral("min"), mins},
             {QStringLiteral("max"), maxs},
@@ -525,13 +525,13 @@ private:
         if (px > 0)
         {
             const QVector<LodTriple> lod = ds->lodMinMax(
-                tableName, columnName, t->firstTimeUs, t->lastTimeUs, px);
+                tableName, columnName, t->firstTimeNs, t->lastTimeNs, px);
             spec[QStringLiteral("mode")] = QStringLiteral("lod");
             spec[QStringLiteral("points")] = lod.size();
             spec[QStringLiteral("lodTriples")] = lod.size();
             spec[QStringLiteral("px")] = px;
-            spec[QStringLiteral("t0")] = t->firstTimeUs / 1000000.0;
-            spec[QStringLiteral("t1")] = t->lastTimeUs / 1000000.0;
+            spec[QStringLiteral("t0")] = t->firstTimeNs / 1000000000.0;
+            spec[QStringLiteral("t1")] = t->lastTimeNs / 1000000000.0;
         }
         else
         {
@@ -567,11 +567,11 @@ private:
 
         // 可选时间窗过滤（秒）。
         double w0 = -1e18, w1 = 1e18;
-        if (intent.params.contains(QStringLiteral("t0Us"))
-            && intent.params.contains(QStringLiteral("t1Us")))
+        if (intent.params.contains(QStringLiteral("t0Ns"))
+            && intent.params.contains(QStringLiteral("t1Ns")))
         {
-            w0 = intent.params.value(QStringLiteral("t0Us")).toLongLong() / 1000000.0;
-            w1 = intent.params.value(QStringLiteral("t1Us")).toLongLong() / 1000000.0;
+            w0 = intent.params.value(QStringLiteral("t0Ns")).toLongLong() / 1000000000.0;
+            w1 = intent.params.value(QStringLiteral("t1Ns")).toLongLong() / 1000000000.0;
         }
         QVector<double> wt, wv;
         wt.reserve(n);

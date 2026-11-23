@@ -184,7 +184,7 @@ std::string idText(const Frame &f)
 
 struct ColumnSet
 {
-    std::vector<int64_t> timeUs;
+    std::vector<int64_t> timeNs;
     std::map<size_t, std::vector<double>> bytes; // 字节位置 → 值列（缺字节置 NaN）
     std::vector<double> period;                 // ms，首行为 NaN
     std::vector<double> dlc;
@@ -245,7 +245,7 @@ void emitTables(const std::vector<Frame> &frames, const PsParserSink &sink, PsEr
         for (size_t k = 0; k < idx.size(); ++k)
         {
             const Frame &f = frames[idx[k]];
-            cs.timeUs.push_back(std::llround((f.t - t0) * 1e6));
+            cs.timeNs.push_back(std::llround((f.t - t0) * 1e9));
             cs.dlc.push_back(static_cast<double>(f.data.size()));
             cs.period.push_back(k == 0 ? nan
                                        : (frames[idx[k]].t - frames[idx[k - 1]].t) * 1000.0);
@@ -292,7 +292,7 @@ void emitTables(const std::vector<Frame> &frames, const PsParserSink &sink, PsEr
         }
         PsFrameBatch batch{};
         batch.table = tableName;
-        batch.time_us = cs.timeUs.data();
+        batch.time_ns = cs.timeNs.data();
         batch.rows = rows;
         batch.columns = cols;
         batch.column_data = colDefs.data();

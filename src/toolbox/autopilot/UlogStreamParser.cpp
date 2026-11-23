@@ -461,7 +461,7 @@ struct StreamTable
     std::optional<size_t> tsOff;
     std::vector<Leaf> leaves;             // 仅数值 leaf（hasPrim && keepValue）
     QVector<ColumnBuffer> buffers;
-    QVector<TimeUs> timeBuf;
+    QVector<TimeNs> timeBuf;
     int filled = 0;
 
     void init(std::optional<size_t> timestampOff)
@@ -496,7 +496,7 @@ struct Emitter
 
     // 方法名不能叫 emit：Qt 把 emit 定义成空宏（#define emit），
     // 写成成员函数会被展开成 "virtual bool (params)" —— 语法错误。
-    virtual bool emitBatch(const QString &table, const int64_t *timeUs, uint32_t rows,
+    virtual bool emitBatch(const QString &table, const int64_t *timeNs, uint32_t rows,
                            const std::vector<PsFrameColumn> &cols, QString &err) = 0;
 };
 
@@ -582,7 +582,7 @@ bool flushTable(StreamTable &st, Emitter &out, const std::map<std::string, uint8
         buf.clear();
     return true;
 }
-bool writeTextTable(Emitter &out, const QString &table, const QVector<TimeUs> &timeUs,
+bool writeTextTable(Emitter &out, const QString &table, const QVector<TimeNs> &timeNs,
                     const QString &col0, const std::vector<std::string> &c0,
                     const QString &col1, const std::vector<std::string> &c1, QString &err)
 {
@@ -599,7 +599,7 @@ bool writeTextTable(Emitter &out, const QString &table, const QVector<TimeUs> &t
     std::vector<PsFrameColumn> cols(2);
     cols[0].name = n0.constData(); cols[0].unit = ""; cols[0].type = PS_VALUE_TEXT; cols[0].values = p0.constData(); cols[0].nulls = nullptr;
     cols[1].name = n1.constData(); cols[1].unit = ""; cols[1].type = PS_VALUE_TEXT; cols[1].values = p1.constData(); cols[1].nulls = nullptr;
-    return out.emitBatch(table, timeUs.constData(), static_cast<uint32_t>(c0.size()), cols, err);
+    return out.emitBatch(table, timeNs.constData(), static_cast<uint32_t>(c0.size()), cols, err);
 }
 
 // ---------------------------------------------------------------------------
@@ -707,8 +707,9 @@ bool handleSegment(UlogState &st, uint8_t ty, const uint8_t *p, uint16_t size, E
             uint64_t tsUs = 0;
             if (!st.tsOff || !readTimestampUs(payload, plen, *st.tsOff, tsUs))
                 return true;
-            lastTimestamp = static_cast<double>(tsUs) / 1e6;
-            st.timeBuf[st.filled] = static_cast<TimeUs>(tsUs);
+            lastTimestamp = static_cast<double>(tsUs) / 1e6; // 秒视图（UI）保持微秒原生
+            // ULog 时间戳原生为微秒，内部时间轴统一纳秒：×1000。
+            st.timeBuf[st.filled] = static_cast<TimeNs>(tsUs) * 1000;
             for (size_t k = 0; k < st.leaves.size(); ++k)
             {
                 const Leaf &l = st.leaves[k];
@@ -826,7 +827,7 @@ struct SpiEmitter final : Emitter
 {
     const PsParserSink *sink = nullptr;
 
-    bool emitBatch(const QString &table, const int64_t *timeUs, uint32_t rows,
+    bool emitBatch(const QString &table, const int64_t *timeNs, uint32_t rows,
                    const std::vector<PsFrameColumn> &cols, QString &err) override
     {
         if (!sink || !sink->frame_batch)
@@ -835,7 +836,7 @@ struct SpiEmitter final : Emitter
         PsFrameBatch batch{};
         const QByteArray tableName = table.toUtf8();
         batch.table = tableName.constData();
-        batch.time_us = timeUs;
+        batch.time_ns = timeNs;
         batch.rows = rows;
         batch.columns = static_cast<uint32_t>(cols.size());
         batch.column_data = cols.empty() ? nullptr : cols.data();
@@ -967,11 +968,11 @@ bool flushMetaTables(UlogState &st, Emitter &out, QString &err)
     // 表现为 ULog 数据集只有 sensor/events（facts 消失）。这里补回。
     if (!params.rows.empty())
     {
-        QVector<TimeUs> t(params.rows.size());
+        QVector<TimeNs> t(params.rows.size());
         std::vector<std::string> names, values;
         for (size_t i = 0; i < params.rows.size(); ++i)
         {
-            t[static_cast<qsizetype>(i)] = static_cast<TimeUs>(i);
+            t[static_cast<qsizetype>(i)] = static_cast<TimeNs>(i);
             names.push_back(params.rows[i].first);
             values.push_back(params.rows[i].second);
         }
@@ -982,11 +983,11 @@ bool flushMetaTables(UlogState &st, Emitter &out, QString &err)
     }
     if (!facts.rows.empty())
     {
-        QVector<TimeUs> t(facts.rows.size());
+        QVector<TimeNs> t(facts.rows.size());
         std::vector<std::string> keys, values;
         for (size_t i = 0; i < facts.rows.size(); ++i)
         {
-            t[static_cast<qsizetype>(i)] = static_cast<TimeUs>(i);
+            t[static_cast<qsizetype>(i)] = static_cast<TimeNs>(i);
             keys.push_back(facts.rows[i].first);
             values.push_back(facts.rows[i].second);
         }
@@ -998,7 +999,7 @@ bool flushMetaTables(UlogState &st, Emitter &out, QString &err)
 
     if (!events.empty())
     {
-        QVector<TimeUs> t(events.size());
+        QVector<TimeNs> t(events.size());
         std::vector<PsFrameColumn> eventsCols(3);
         QByteArray levelBytes, tagBytes;
         QVector<QByteArray> textStore;
@@ -1008,7 +1009,7 @@ bool flushMetaTables(UlogState &st, Emitter &out, QString &err)
         textStore.reserve(static_cast<qsizetype>(events.size()));
         for (size_t i = 0; i < events.size(); ++i)
         {
-            t[static_cast<qsizetype>(i)] = static_cast<TimeUs>(std::llround(events[i].t * 1e6));
+            t[static_cast<qsizetype>(i)] = static_cast<TimeNs>(std::llround(events[i].t * 1e9));
             const uint8_t lv = events[i].level;
             levelBytes.append(reinterpret_cast<const char *>(&lv), 1);
             const uint16_t tg = events[i].tagged ? events[i].tag : 0;
@@ -1024,12 +1025,12 @@ bool flushMetaTables(UlogState &st, Emitter &out, QString &err)
     }
     if (!dropouts.empty())
     {
-        QVector<TimeUs> t(dropouts.size());
+        QVector<TimeNs> t(dropouts.size());
         QByteArray durBytes;
         durBytes.reserve(static_cast<qsizetype>(dropouts.size()) * 2);
         for (size_t i = 0; i < dropouts.size(); ++i)
         {
-            t[static_cast<qsizetype>(i)] = static_cast<TimeUs>(std::llround(dropouts[i].first * 1e6));
+            t[static_cast<qsizetype>(i)] = static_cast<TimeNs>(std::llround(dropouts[i].first * 1e9));
             const uint16_t d = dropouts[i].second;
             durBytes.append(reinterpret_cast<const char *>(&d), 2);
         }
@@ -1142,7 +1143,7 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
     {
         Dataset &ds;
         explicit DatasetEmitter(Dataset &d) : ds(d) {}
-        bool emitBatch(const QString &table, const int64_t *timeUs, uint32_t rows,
+        bool emitBatch(const QString &table, const int64_t *timeNs, uint32_t rows,
                        const std::vector<PsFrameColumn> &cols, QString &err) override
         {
             QVector<FrameColumn> frame;
@@ -1157,7 +1158,7 @@ bool parseUlogStream(const QString &path, Dataset &ds, QString &err)
                 f.nulls = c.nulls;
                 frame.push_back(f);
             }
-            return ds.appendFrame(table, timeUs, static_cast<int>(rows), frame, &err);
+            return ds.appendFrame(table, timeNs, static_cast<int>(rows), frame, &err);
         }
     } datasetEmitter(ds);
 

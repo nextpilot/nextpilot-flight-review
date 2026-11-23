@@ -59,8 +59,8 @@ struct Collector
             v.cols.push_back(batch->column_data[i].name ? batch->column_data[i].name : "");
         if (batch->rows)
         {
-            v.t0 = batch->time_us[0];
-            v.tLast = batch->time_us[batch->rows - 1];
+            v.t0 = batch->time_ns[0];
+            v.tLast = batch->time_ns[batch->rows - 1];
             if (batch->columns && batch->column_data[0].values)
                 v.firstCol.assign(static_cast<const double *>(batch->column_data[0].values),
                                   static_cast<const double *>(batch->column_data[0].values) +
@@ -68,7 +68,7 @@ struct Collector
             auto &last = lastByTable[v.table];
             for (uint32_t r = 0; r < batch->rows; ++r)
             {
-                const int64_t t = batch->time_us[r];
+                const int64_t t = batch->time_ns[r];
                 if (lastByTable.count(v.table) && last > 0 && t < last)
                     monotonic = false;
                 last = t;
@@ -137,7 +137,7 @@ int main()
                     b.cols.size(), (long long)b.t0, (long long)b.tLast);
 
     OK(col.batches.size() == 2, "两个 topic = 两批");
-    OK(col.monotonic, "时间轴微秒单调非降");
+    OK(col.monotonic, "时间轴纳秒单调非降");
 
     const BatchView *imu = nullptr, *speed = nullptr;
     for (const BatchView &b : col.batches)
@@ -151,7 +151,7 @@ int main()
     if (imu && speed)
     {
         OK(imu->rows == 100 && speed->rows == 100, "每个 topic 100 行");
-        OK(imu->t0 == 0 && imu->tLast == 990000, "imu 时间轴 0..990000 µs（10 ms）");
+        OK(imu->t0 == 0 && imu->tLast == 990000000, "imu 时间轴 0..990000000 ns（10 ms）");
         bool hasOrient = false, hasAng = false, hasAcc = false;
         for (const std::string &c : imu->cols)
         {

@@ -228,11 +228,11 @@ struct TopicBuf
     std::string type;
     std::vector<std::string> cols;
     std::vector<std::vector<double>> data; // data[列][行]
-    std::vector<int64_t> timeUs;
+    std::vector<int64_t> timeNs;
 
     void appendRow(int64_t t, const Fields &fields)
     {
-        timeUs.push_back(t);
+        timeNs.push_back(t);
         for (size_t i = 0; i < cols.size(); ++i)
             data[i].push_back(NAN); // 新行先填空，等字段命中再覆盖
         for (const auto &kv : fields)
@@ -246,7 +246,7 @@ struct TopicBuf
                 // 新列：之前所有行补 NAN，保持矩阵矩形。
                 cols.push_back(kv.first);
                 data.emplace_back();
-                data.back().assign(timeUs.size() - 1, NAN);
+                data.back().assign(timeNs.size() - 1, NAN);
                 data.back().push_back(kv.second);
                 continue;
             }
@@ -259,12 +259,12 @@ constexpr size_t kChunk = 16384;
 
 bool emitTopic(const TopicBuf &t, const PsParserSink *sink, std::string &err)
 {
-    if (t.timeUs.empty() || t.cols.empty())
+    if (t.timeNs.empty() || t.cols.empty())
         return true;
     std::vector<PsFrameColumn> cols(t.cols.size());
-    for (size_t start = 0; start < t.timeUs.size(); start += kChunk)
+    for (size_t start = 0; start < t.timeNs.size(); start += kChunk)
     {
-        const size_t rows = std::min(kChunk, t.timeUs.size() - start);
+        const size_t rows = std::min(kChunk, t.timeNs.size() - start);
         for (size_t c = 0; c < t.cols.size(); ++c)
         {
             PsFrameColumn &col = cols[c];
@@ -276,7 +276,7 @@ bool emitTopic(const TopicBuf &t, const PsParserSink *sink, std::string &err)
         }
         PsFrameBatch batch{};
         batch.table = t.table.c_str();
-        batch.time_us = t.timeUs.data() + start;
+        batch.time_ns = t.timeNs.data() + start;
         batch.rows = static_cast<uint32_t>(rows);
         batch.columns = static_cast<uint32_t>(cols.size());
         batch.column_data = cols.data();
@@ -483,16 +483,16 @@ bool parseDb(const std::vector<uint8_t> &bytes, const std::string &topicsFilter,
         Fields fields;
         decode(it->second.type, static_cast<const uint8_t *>(blob),
                static_cast<uint32_t>(blobSize), fields);
-        // 与 main 同口径：首条消息为 0 点，单位秒 → 微秒。
-        const int64_t tUs = static_cast<int64_t>(std::llround((ns - t0) / 1e3));
-        it->second.appendRow(tUs, fields);
+        // 首条消息为 0 点；rosbag2 timestamp 原生纳秒，内部轴同为纳秒，直接使用。
+        const int64_t tNs = ns - t0;
+        it->second.appendRow(tNs, fields);
     }
     sqlite3_finalize(mq);
 
     bool any = false;
     for (const auto &kv : bufs)
     {
-        if (kv.second.timeUs.empty())
+        if (kv.second.timeNs.empty())
             continue;
         any = true;
         if (!emitTopic(kv.second, sink, err))

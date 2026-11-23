@@ -117,8 +117,8 @@ impl PsDataset {
         for table in &self.typed.tables {
             let rows = table.row_count();
             let mut time = Vec::with_capacity(rows);
-            for &t in table.time_us.iter() {
-                time.push(t as f64 * 1e-6);
+            for &t in table.time_ns.iter() {
+                time.push(t as f64 * 1e-9);
             }
             for col in &table.columns {
                 let full = if col.name == "value" {
@@ -208,7 +208,7 @@ fn find_series(d: &PsDataset, name: &str) -> Option<(Vec<f64>, Vec<f64>, String,
             if full != name {
                 continue;
             }
-            let t = table.time_us.iter().map(|&us| us as f64 * 1e-6).collect();
+            let t = table.time_ns.iter().map(|&us| us as f64 * 1e-9).collect();
             let v = (0..table.row_count())
                 .map(|i| col.value_as_f64(i).unwrap_or(f64::NAN))
                 .collect();
@@ -820,13 +820,13 @@ pub unsafe extern "C" fn ps_dataset_add_table_channel(
     }
 }
 
-/// 表级 typed 构造：UTC 微秒时间轴，列类型由 `ps_dataset_add_table_column_typed` 决定。
+/// 表级 typed 构造：纳秒时间轴，列类型由 `ps_dataset_add_table_column_typed` 决定。
 /// 返回 0 成功；1 数据集为空；2 表名非法；3 时间数组为空；4 表已存在。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_add_table_typed(
     ds: *mut PsDataset,
     table: *const c_char,
-    time_us: *const i64,
+    time_ns: *const i64,
     count: u32,
     err: *mut c_char,
     err_cap: u32,
@@ -841,11 +841,11 @@ pub unsafe extern "C" fn ps_dataset_add_table_typed(
         Err(e) => { write_err(err, err_cap, &e); return 2; }
     };
     let n = count as usize;
-    if n > 0 && time_us.is_null() {
+    if n > 0 && time_ns.is_null() {
         write_err(err, err_cap, "时间数组为空");
         return 3;
     }
-    let t = if n == 0 { Vec::new() } else { std::slice::from_raw_parts(time_us, n).to_vec() };
+    let t = if n == 0 { Vec::new() } else { std::slice::from_raw_parts(time_ns, n).to_vec() };
     match (*ds).typed.add_table(name, t) {
         Ok(_) => { (*ds).infos_dirty = true; 0 }
         Err(e) => { write_err(err, err_cap, &e); 4 }
@@ -1059,15 +1059,15 @@ pub unsafe extern "C" fn ps_dataset_table_rows(ds: *mut PsDataset, table: *const
     (*ds).typed.find_table(name).map(|t| t.row_count() as u64).unwrap_or(0)
 }
 
-/// typed 表的视口 LOD：按列名取列，在 `[t0_us, t1_us]` 内分桶输出 `(time_sec, min, max)`。
+/// typed 表的视口 LOD：按列名取列，在 `[t0_ns, t1_ns]` 内分桶输出 `(time_sec, min, max)`。
 /// `out` 长度至少 `cap_triples * 3`；返回实际写入的三元组数。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_lod_minmax(
     ds: *mut PsDataset,
     table: *const c_char,
     column: *const c_char,
-    t0_us: i64,
-    t1_us: i64,
+    t0_ns: i64,
+    t1_ns: i64,
     px: u32,
     out: *mut f64,
     cap_triples: u32,
@@ -1090,7 +1090,7 @@ pub unsafe extern "C" fn ps_dataset_lod_minmax(
         return 0;
     }
     let mut tmp = vec![0.0f64; cap_triples as usize * 3];
-    let n = ds_ref.typed.tables[tidx].lod_minmax(col_idx, t0_us, t1_us, px as usize, &mut tmp);
+    let n = ds_ref.typed.tables[tidx].lod_minmax(col_idx, t0_ns, t1_ns, px as usize, &mut tmp);
     let take = n.min(cap_triples as usize);
     std::ptr::copy_nonoverlapping(tmp.as_ptr(), out, take * 3);
     take as u32
@@ -1102,7 +1102,7 @@ pub unsafe extern "C" fn ps_dataset_lod_minmax(
 pub unsafe extern "C" fn ps_dataset_append_frame(
     ds: *mut PsDataset,
     table: *const c_char,
-    time_us: *const i64,
+    time_ns: *const i64,
     rows: u32,
     columns: *const PsFrameColumn,
     column_count: u32,
@@ -1122,7 +1122,7 @@ pub unsafe extern "C" fn ps_dataset_append_frame(
         write_err(err, err_cap, "frame_batch 至少需要 1 行");
         return 4;
     }
-    if time_us.is_null() {
+    if time_ns.is_null() {
         write_err(err, err_cap, "时间数组为空");
         return 3;
     }
@@ -1130,7 +1130,7 @@ pub unsafe extern "C" fn ps_dataset_append_frame(
         write_err(err, err_cap, "列数组为空");
         return 2;
     }
-    let times = std::slice::from_raw_parts(time_us, rows as usize).to_vec();
+    let times = std::slice::from_raw_parts(time_ns, rows as usize).to_vec();
     let mut cols = Vec::with_capacity(column_count as usize);
     for i in 0..column_count as usize {
         let col = &*columns.add(i);
@@ -1638,7 +1638,7 @@ mod tests {
             let t = d.typed.find_table("ATTITUDE").unwrap();
             assert_eq!(t.row_count(), 3);
             assert_eq!(t.seq, vec![0, 1, 2]);
-            assert_eq!(t.time_us.as_slice(), &[0, 1_000, 2_000]);
+            assert_eq!(t.time_ns.as_slice(), &[0, 1_000, 2_000]);
             assert_eq!(t.columns[0].value_as_f64(0), Some(1.0));
             assert_eq!(t.columns[0].value_as_f64(1), None);
             assert_eq!(t.columns[0].value_as_f64(2), None);
@@ -1681,7 +1681,7 @@ mod tests {
             let d = &*ds;
             let t = d.typed.find_table("ATTITUDE").unwrap();
             assert_eq!(t.row_count(), 5);
-            assert_eq!(t.time_us.as_slice(), &[5_000, 6_000, 7_000, 8_000, 9_000]);
+            assert_eq!(t.time_ns.as_slice(), &[5_000, 6_000, 7_000, 8_000, 9_000]);
             assert_eq!(t.seq, vec![5, 6, 7, 8, 9]);
             assert_eq!(t.columns[0].value_as_f64(0), Some(5.0));
             ps_dataset_free(ds);
@@ -1793,7 +1793,7 @@ mod tests {
             let t = &sliced.typed.tables[0];
             assert_eq!(t.name, "ATTITUDE");
             assert_eq!(t.row_count(), 2);
-            assert_eq!(t.time_us.as_slice(), &[1_000, 2_000]);
+            assert_eq!(t.time_ns.as_slice(), &[1_000, 2_000]);
             assert_eq!(t.seq, vec![1, 2]); // seq 可溯源
             // 源 row1 是 null → 切片后仍为 null（None）。
             assert_eq!(t.columns[0].value_as_f64(0), None);
@@ -1936,7 +1936,7 @@ pub unsafe extern "C" fn ps_dataset_value_at(
         return 1;
     }
     if !out_time.is_null() {
-        *out_time = t.time_us[idx] as f64 * 1e-6;
+        *out_time = t.time_ns[idx] as f64 * 1e-9;
     }
     if !out_value.is_null() {
         *out_value = c.value_as_f64(idx).unwrap_or(f64::NAN);
@@ -1994,13 +1994,13 @@ pub unsafe extern "C" fn ps_dataset_text_at(
     0
 }
 
-/// typed 表按时间取最近行；t_us 为 UTC 微秒。返回 0 成功，1 空表/找不到。
+/// typed 表按时间取最近行；t_ns 为纳秒。返回 0 成功，1 空表/找不到。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_value_near(
     ds: *mut PsDataset,
     table: *const c_char,
     column: *const c_char,
-    t_us: i64,
+    t_ns: i64,
     out_time: *mut f64,
     out_value: *mut f64,
 ) -> i32 {
@@ -2012,19 +2012,19 @@ pub unsafe extern "C" fn ps_dataset_value_near(
     let cname = CStr::from_ptr(column).to_string_lossy();
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
-    if t.time_us.is_empty() {
+    if t.time_ns.is_empty() {
         return 1;
     }
-    let idx = match t.time_us.binary_search(&t_us) {
+    let idx = match t.time_ns.binary_search(&t_ns) {
         Ok(i) => i,
         Err(0) => 0,
-        Err(i) if i >= t.time_us.len() => t.time_us.len() - 1,
+        Err(i) if i >= t.time_ns.len() => t.time_ns.len() - 1,
         Err(i) => {
-            if (t.time_us[i] - t_us).abs() < (t.time_us[i - 1] - t_us).abs() { i } else { i - 1 }
+            if (t.time_ns[i] - t_ns).abs() < (t.time_ns[i - 1] - t_ns).abs() { i } else { i - 1 }
         }
     };
     if !out_time.is_null() {
-        *out_time = t.time_us[idx] as f64 * 1e-6;
+        *out_time = t.time_ns[idx] as f64 * 1e-9;
     }
     if !out_value.is_null() {
         *out_value = c.value_as_f64(idx).unwrap_or(f64::NAN);
@@ -2039,8 +2039,8 @@ pub unsafe extern "C" fn ps_dataset_read_window(
     ds: *mut PsDataset,
     table: *const c_char,
     column: *const c_char,
-    t0_us: i64,
-    t1_us: i64,
+    t0_ns: i64,
+    t1_ns: i64,
     out_time: *mut f64,
     out_value: *mut f64,
     cap: u32,
@@ -2053,8 +2053,8 @@ pub unsafe extern "C" fn ps_dataset_read_window(
     let cname = CStr::from_ptr(column).to_string_lossy();
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 0; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
-    let lo = t.time_us.partition_point(|&x| x < t0_us);
-    let hi = t.time_us.partition_point(|&x| x <= t1_us);
+    let lo = t.time_ns.partition_point(|&x| x < t0_ns);
+    let hi = t.time_ns.partition_point(|&x| x <= t1_ns);
     if hi <= lo {
         return 0;
     }
@@ -2063,7 +2063,7 @@ pub unsafe extern "C" fn ps_dataset_read_window(
     let mut n = 0u32;
     let mut i = lo;
     while i < hi && n < cap {
-        *out_time.add(n as usize) = t.time_us[i] as f64 * 1e-6;
+        *out_time.add(n as usize) = t.time_ns[i] as f64 * 1e-9;
         *out_value.add(n as usize) = c.value_as_f64(i).unwrap_or(f64::NAN);
         n += 1;
         i += step;
@@ -2235,7 +2235,7 @@ pub unsafe extern "C" fn ps_dataset_column_raw(
     0
 }
 
-/// 2.7.5 数据集切片：从源数据集按时间范围 `[t0_us, t1_us]`（含端点）与列子集
+/// 2.7.5 数据集切片：从源数据集按时间范围 `[t0_ns, t1_ns]`（含端点）与列子集
 /// 抽出一张新表，装进全新 PsDataset（独立生命周期，调用方 ps_dataset_free 释放）。
 ///
 /// `columns` 为列名数组（NULL/0 取全部列）；输出数据集只含 typed 表（旧式 f64 通道不复制）。
@@ -2252,8 +2252,8 @@ pub unsafe extern "C" fn ps_dataset_slice(
     table: *const c_char,
     columns: *const *const c_char,
     column_count: u32,
-    t0_us: i64,
-    t1_us: i64,
+    t0_ns: i64,
+    t1_ns: i64,
     out: *mut *mut PsDataset,
     err: *mut c_char,
     err_cap: u32,
@@ -2302,8 +2302,8 @@ pub unsafe extern "C" fn ps_dataset_slice(
         Some(idx)
     };
     // 时间范围 → 行区间（与 read_window 同口径：含端点）。
-    let lo = t.lower_bound(t0_us);
-    let hi = t.upper_bound(t1_us);
+    let lo = t.lower_bound(t0_ns);
+    let hi = t.upper_bound(t1_ns);
     let sliced = match t.slice(lo, hi, col_indices.as_deref()) {
         Ok(x) => x,
         Err(e) => { write_err(err, err_cap, &e); return 5; }
@@ -2315,7 +2315,7 @@ pub unsafe extern "C" fn ps_dataset_slice(
     0
 }
 
-/// 2.7.6 多列对齐读取：同表多列一次 FFI 读完 `[t0_us, t1_us]` 的对齐行区间。
+/// 2.7.6 多列对齐读取：同表多列一次 FFI 读完 `[t0_ns, t1_ns]` 的对齐行区间。
 ///
 /// `out_time` 容量 cap；`out_values` 是长度 column_count 的指针数组，
 /// 每个元素指向一块 cap 大小的 f64 缓冲。行数超 cap 时等步长抽稀（与
@@ -2332,8 +2332,8 @@ pub unsafe extern "C" fn ps_dataset_read_window_multi(
     table: *const c_char,
     columns: *const *const c_char,
     column_count: u32,
-    t0_us: i64,
-    t1_us: i64,
+    t0_ns: i64,
+    t1_ns: i64,
     out_time: *mut f64,
     out_values: *const *mut f64,
     cap: u32,
@@ -2357,8 +2357,8 @@ pub unsafe extern "C" fn ps_dataset_read_window_multi(
             None => return 0,
         }
     }
-    let lo = t.time_us.partition_point(|&x| x < t0_us);
-    let hi = t.time_us.partition_point(|&x| x <= t1_us);
+    let lo = t.time_ns.partition_point(|&x| x < t0_ns);
+    let hi = t.time_ns.partition_point(|&x| x <= t1_ns);
     if hi <= lo {
         return 0;
     }
@@ -2367,7 +2367,7 @@ pub unsafe extern "C" fn ps_dataset_read_window_multi(
     let mut written = 0u32;
     let mut i = lo;
     while i < hi && (written as usize) < cap as usize {
-        *out_time.add(written as usize) = t.time_us[i] as f64 * 1e-6;
+        *out_time.add(written as usize) = t.time_ns[i] as f64 * 1e-9;
         for (ci, c) in cols.iter().enumerate() {
             let buf = *out_values.add(ci);
             *buf.add(written as usize) = c.value_as_f64(i).unwrap_or(f64::NAN);

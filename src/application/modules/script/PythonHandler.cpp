@@ -21,7 +21,7 @@ using nextpilot::plotscope::dataset::Dataset;
 using nextpilot::plotscope::dataset::DatasetId;
 using nextpilot::plotscope::dataset::DatasetHub;
 using nextpilot::plotscope::dataset::kInvalidDataset;
-using nextpilot::plotscope::dataset::TimeUs;
+using nextpilot::plotscope::dataset::TimeNs;
 using nextpilot::plotscope::dataset::ValueType;
 using nextpilot::plotscope::foundation::fail;
 
@@ -326,8 +326,8 @@ Result<IntentResult> PythonHandler::doWriteback(const Intent &intent)
         if (c.type != ValueType::Text)
             keepCols << c.name;
     // 时间范围用极值：切片按整型微秒取行区间，避免经 f64 秒往返的舍入漂移。
-    constexpr TimeUs kAllTime = std::numeric_limits<TimeUs>::min();
-    constexpr TimeUs kEnd = std::numeric_limits<TimeUs>::max();
+    constexpr TimeNs kAllTime = std::numeric_limits<TimeNs>::min();
+    constexpr TimeNs kEnd = std::numeric_limits<TimeNs>::max();
     QString sliceErr;
     auto sliced = orig->slice(table->name, keepCols, kAllTime, kEnd, &sliceErr);
     if (!sliced)

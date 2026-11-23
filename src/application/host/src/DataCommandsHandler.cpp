@@ -294,7 +294,7 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
     QTextStream out(&file);
     if (!qFuzzyIsNull(alignOffsetSec))
         out << "# time_mode=offset, offset_us="
-            << QString::number(qRound64(alignOffsetSec * 1000000.0))
+            << QString::number(qRound64(alignOffsetSec * 1000000000.0))
             << ", offset_s=" << QString::number(alignOffsetSec, 'g', 12) << '\n';
     // 表头
     out << QStringLiteral("time");
@@ -886,19 +886,19 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
     {
         // === 增量分支：只读 [waterUs, now] 新样本窗口，只算新段 ===
         // 实时 appendFrame 不刷 C++ schema 投影（O(列数)，不能每批调）——
-        // 增量刷新是低频操作，先刷一次拿到最新 lastTimeUs。
+        // 增量刷新是低频操作，先刷一次拿到最新 lastTimeNs。
         Dataset *dsMut = m_app.data().getMutable(dsId);
         if (!dsMut)
             return fail(err::NoEnt, QStringLiteral("数据集不存在: %1").arg(dsId));
         dsMut->refreshSchema();
 
-        // 窗口右界 = 各输入表最新 lastTimeUs 的最大值（schema 投影，O(1)）。
-        TimeUs tNow = std::numeric_limits<TimeUs>::min();
+        // 窗口右界 = 各输入表最新 lastTimeNs 的最大值（schema 投影，O(1)）。
+        TimeNs tNow = std::numeric_limits<TimeNs>::min();
         for (const MimoInput &in : ins)
         {
             const Table *t = dsMut->table(in.table);
             if (t)
-                tNow = qMax(tNow, t->lastTimeUs);
+                tNow = qMax(tNow, t->lastTimeNs);
         }
         if (tNow <= waterUs)
         {
@@ -934,7 +934,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         time.clear();
         for (int i = 0; i < cols[0].time.size(); ++i)
         {
-            if (static_cast<qint64>(std::llround(cols[0].time.at(i) * 1000000.0))
+            if (static_cast<qint64>(std::llround(cols[0].time.at(i) * 1000000000.0))
                 > waterUs)
                 time.append(cols[0].time.at(i));
         }
@@ -959,7 +959,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
         baseV.reserve(n);
         for (int i = 0; i < cols[0].value.size(); ++i)
         {
-            if (static_cast<qint64>(std::llround(cols[0].time.at(i) * 1000000.0))
+            if (static_cast<qint64>(std::llround(cols[0].time.at(i) * 1000000000.0))
                 > waterUs)
                 baseV.append(cols[0].value.at(i));
         }
@@ -1006,7 +1006,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
 
         // 追加注册表缓存 + 水位推进到新段最大时间戳。
         const qint64 newWater =
-            static_cast<qint64>(std::llround(time.last() * 1000000.0));
+            static_cast<qint64>(std::llround(time.last() * 1000000000.0));
         const QVector<QVector<double>> vals = { r, p, yaw };
         QVariantList outPayload;
         const QString unit = degrees ? QStringLiteral("deg") : QStringLiteral("rad");
@@ -1123,7 +1123,7 @@ Result<IntentResult> DataCommandsHandler::deriveMimoQuat(const Intent &intent)
     const QString unit = degrees ? QStringLiteral("deg") : QStringLiteral("rad");
     // 全量登记时写配方指纹 + 水位（基准轴最大时间戳），为下次同名重发的增量做准备。
     const QByteArray recipeCopy = recipe;
-    const qint64 fullWater = static_cast<qint64>(std::llround(baseT.last() * 1000000.0));
+    const qint64 fullWater = static_cast<qint64>(std::llround(baseT.last() * 1000000000.0));
     for (int k = 0; k < 3; ++k)
     {
         // 登记（独立派生字段）+ 画布事件。
@@ -2172,18 +2172,18 @@ Result<IntentResult> DataCommandsHandler::alignTime(const Intent &intent)
         return fail(err::NoSource, QStringLiteral("该数据源没有可对齐的数据集"));
 
     // 源范围必须是"原始"范围：offset 是相对量，拿叠加后的范围去算会自我累积。
-    auto rangeOf = [this](int sourceId) -> std::optional<std::pair<TimeUs, TimeUs>> {
+    auto rangeOf = [this](int sourceId) -> std::optional<std::pair<TimeNs, TimeNs>> {
         const DataSourceInfo *info = m_app.sources().get(sourceId);
         if (!info)
             return std::nullopt;
-        std::optional<TimeUs> min;
-        std::optional<TimeUs> max;
+        std::optional<TimeNs> min;
+        std::optional<TimeNs> max;
         for (int dsId : info->datasetIds)
         {
             Dataset *ds = m_app.data().getMutable(dsId);
             if (!ds)
                 continue;
-            const auto r = ds->rawTimeRangeUs();
+            const auto r = ds->rawTimeRangeNs();
             if (!r)
                 continue;
             if (!min || r->first < *min)
@@ -2200,7 +2200,7 @@ Result<IntentResult> DataCommandsHandler::alignTime(const Intent &intent)
     if (!srcRange)
         return fail(err::State, QStringLiteral("该数据源没有时间数据（表为空）"));
 
-    TimeUs offset = 0;
+    TimeNs offset = 0;
     int baseId = srcId;
     if (mode == QLatin1String("base"))
     {
@@ -2227,15 +2227,15 @@ Result<IntentResult> DataCommandsHandler::alignTime(const Intent &intent)
             offset = baseRange->second - srcRange->second;
         else // center：中点对齐，整除不丢符号。
         {
-            const TimeUs srcMid = srcRange->first + (srcRange->second - srcRange->first) / 2;
-            const TimeUs baseMid = baseRange->first + (baseRange->second - baseRange->first) / 2;
+            const TimeNs srcMid = srcRange->first + (srcRange->second - srcRange->first) / 2;
+            const TimeNs baseMid = baseRange->first + (baseRange->second - baseRange->first) / 2;
             offset = baseMid - srcMid;
         }
     }
 
     // 偏移的唯一真值在宿主态 AppContext（画布订阅 sourceTimeOffsetChanged 重推 x）。
     // Dataset 只存原始时间戳，不存偏移——两处都存会双算，这是刻意收敛到一条路径。
-    m_app.setSourceTimeOffset(srcId, offset / 1000000.0);
+    m_app.setSourceTimeOffset(srcId, offset / 1000000000.0);
 
     IntentResult r;
     r.payload = QVariantMap{

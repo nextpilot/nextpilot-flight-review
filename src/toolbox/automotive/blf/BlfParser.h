@@ -15,7 +15,7 @@
  * 出口口径与 main 同源、形状改成本仓的「一表一批」：
  *   main 把所有帧拍平成 CANbus.ID.bN / .dlc / .period 三条曲线，
  *   这里按 **CAN ID 出一张表**（表名 CAN<bus>_<IDHEX>），列为变化过的字节
- *   （b0..b7）、dlc、period（周期 ms），时间轴 = 相对首帧的微秒。
+ *   （b0..b7）、dlc、period（周期 ms），时间轴 = 相对首帧的纳秒。
  *   只保留变化字节、跳过全常量帧 —— 与 main psCanFramesToChannels 一致。
  *
  * 随机访问格式：streaming=0，feed() 只累积字节，finish() 一次性解析。

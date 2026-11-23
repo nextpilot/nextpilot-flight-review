@@ -505,8 +505,8 @@ int main(int argc, char **argv)
     assert(t->column(QStringLiteral("pitch")) != nullptr);
     assert(t->column(QStringLiteral("roll"))->type == ValueType::F64);
     // 时间轴本体在 Rust；C++ 只存 O(1) 元数据（首/末时间），不复制整条数组。
-    assert(t->firstTimeUs == 0);
-    assert(t->lastTimeUs == 2000000);
+    assert(t->firstTimeNs == 0);
+    assert(t->lastTimeNs == 2000000000);
     fprintf(stdout, "[ok] Dataset = 多张二维表；C++ 仅存首尾时间元数据（时间轴本体在 Rust）\n");
 
     // 2b) 通道投影：table.column -> (秒,值) f64 序列
@@ -526,7 +526,7 @@ int main(int argc, char **argv)
     assert(ds->nativeHandle() != nullptr); // 数据本体由 Rust PsDataset 持有
     // LOD 抽稀：把 3 点压到 2 个像素桶，Rust 返回 (x,min,max) 三元组。
     const auto lod = ds->lodMinMax(QStringLiteral("demo"), QStringLiteral("roll"),
-                                   0, 2000000, 2);
+                                   0, 2000000000, 2);
     assert(!lod.isEmpty() && lod.size() <= 2);
     fprintf(stdout, "[ok] LOD 抽稀在 Rust 侧完成（%d 个三元组）\n", int(lod.size()));
     // 统计算子（ps_stats_series）：roll = 1.0/1.5/2.0，均值 1.5、最小 1、最大 2。
@@ -610,10 +610,10 @@ int main(int argc, char **argv)
         const Column *cy = sensor->column(QStringLiteral("y"));
         assert(cx != nullptr && cx->type == ValueType::F32);
         assert(cy != nullptr && cy->type == ValueType::U16);
-        // timestamp 走原生 U64 微秒，不经 double 中转——首尾时间精确
-        assert(sensor->firstTimeUs == firstUs);
-        assert(sensor->lastTimeUs == lastUs);
-        fprintf(stdout, "[ok] ULog 流式加载 %d 行（跨 3 批）：多表 + typed 列 F32/U16 + 微秒时间轴精确\n", rows);
+        // ULog 原生 U64 微秒，parser 入口 ×1000 转纳秒轴——首尾时间精确
+        assert(sensor->firstTimeNs == firstUs * 1000);
+        assert(sensor->lastTimeNs == lastUs * 1000);
+        fprintf(stdout, "[ok] ULog 流式加载 %d 行（跨 3 批）：多表 + typed 列 F32/U16 + 纳秒时间轴精确\n", rows);
 
         // 全量取值核对（cap 提到行数）：x=i*0.5、y=i%1000，首行/末行精确
         const auto xview = uds->channel(QStringLiteral("sensor"), QStringLiteral("x"), rows);
@@ -893,7 +893,7 @@ using namespace nextpilot::plotscope::context;
         constexpr qint64 kRows = 200000;
         constexpr int kBatch = 4096;
         Dataset big = Dataset::create(QStringLiteral("big"), QStringLiteral("stress"));
-        QVector<TimeUs> tbuf(kBatch);
+        QVector<TimeNs> tbuf(kBatch);
         QVector<double> vbuf(kBatch);
         QVector<FrameColumn> cols(1);
         cols[0].name = QStringLiteral("sig");
@@ -909,7 +909,7 @@ using namespace nextpilot::plotscope::context;
             for (int i = 0; i < n; ++i)
             {
                 const qint64 r = written + i;
-                tbuf[i] = static_cast<TimeUs>(r) * 1000; // 每行 1ms → 微秒
+                tbuf[i] = static_cast<TimeNs>(r) * 1000; // 每行 1ms → 微秒
                 vbuf[i] = static_cast<double>(r % 1000);
             }
             QString err;
@@ -923,10 +923,10 @@ using namespace nextpilot::plotscope::context;
         const Table *bt = big.table(QStringLiteral("trace"));
         assert(bt != nullptr && bt->rows == kRows);
         // 拷成局部值：Table* 指向 Dataset 内部 QVector，后续 channel() 等调用后不能假设仍有效。
-        const TimeUs traceFirstUs = bt->firstTimeUs;
-        const TimeUs traceLastUs = bt->lastTimeUs;
-        assert(traceFirstUs == 0);
-        assert(traceLastUs == (kRows - 1) * 1000);
+        const TimeNs traceFirstNs = bt->firstTimeNs;
+        const TimeNs traceLastNs = bt->lastTimeNs;
+        assert(traceFirstNs == 0);
+        assert(traceLastNs == (kRows - 1) * 1000);
         fprintf(stdout, "[ok] 流式灌入 %lld 行：schema 只存首尾时间，无 C++ 全量副本\n", kRows);
 
         // 有界读取：无论 20 万行，channel 默认只取 kDefaultWindowPoints（4096）点。
@@ -941,7 +941,7 @@ using namespace nextpilot::plotscope::context;
 
         // LOD：20 万行压到 800 个像素桶，三元组数恒定在 px 量级。
         const auto blod = big.lodMinMax(QStringLiteral("trace"), QStringLiteral("sig"),
-                                        traceFirstUs, traceLastUs, /*px=*/800);
+                                        traceFirstNs, traceLastNs, /*px=*/800);
         assert(!blod.isEmpty() && blod.size() <= 800);
         fprintf(stdout, "[ok] 20 万行 LOD 抽稀到 %d 个三元组（px 有界）\n", int(blod.size()));
     }

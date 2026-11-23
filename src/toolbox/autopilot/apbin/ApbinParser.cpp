@@ -302,7 +302,7 @@ void collectUnits(const std::vector<uint8_t> &buf,
 struct Table
 {
     std::string name;
-    std::vector<int64_t> timeUs;
+    std::vector<int64_t> timeNs;
     std::vector<std::string> colNames;
     std::vector<std::vector<double>> cols;
     std::vector<std::string> colUnits;
@@ -338,7 +338,7 @@ void emitTables(const std::vector<Table> &tables, const PsParserSink &sink)
 {
     for (const Table &t : tables)
     {
-        if (t.timeUs.empty() || t.cols.empty())
+        if (t.timeNs.empty() || t.cols.empty())
             continue;
         std::vector<PsFrameColumn> defs(t.cols.size());
         for (size_t c = 0; c < t.cols.size(); ++c)
@@ -351,8 +351,8 @@ void emitTables(const std::vector<Table> &tables, const PsParserSink &sink)
         }
         PsFrameBatch batch{};
         batch.table = t.name.c_str();
-        batch.time_us = t.timeUs.data();
-        batch.rows = static_cast<uint32_t>(t.timeUs.size());
+        batch.time_ns = t.timeNs.data();
+        batch.rows = static_cast<uint32_t>(t.timeNs.size());
         batch.columns = static_cast<uint32_t>(t.cols.size());
         batch.column_data = defs.data();
         if (sink.frame_batch && sink.frame_batch(sink.ctx, &batch) != 0)
@@ -452,7 +452,8 @@ int32_t finish(void *p, const PsParserSink *sink, PsError *err)
             if (instance > 0)
                 tbl.name += "_" + std::to_string(static_cast<unsigned>(instance));
         }
-        tbl.timeUs.push_back(std::llround((tUs - t0))); // DataFlash 的 TimeUS 本身即微秒
+        // DataFlash TimeUS 原生微秒；相对首帧后 ×1000 转内部纳秒轴。
+        tbl.timeNs.push_back(std::llround((tUs - t0) * 1000.0));
 
         for (size_t fi = 0; fi < fmt.fields.size(); ++fi)
         {
@@ -474,7 +475,7 @@ int32_t finish(void *p, const PsParserSink *sink, PsError *err)
                 const size_t row = idxMap.size();
                 tbl.colNames.push_back(f.name);
                 tbl.cols.emplace_back();
-                tbl.cols.back().assign(tbl.timeUs.size() - 1,
+                tbl.cols.back().assign(tbl.timeNs.size() - 1,
                                        std::numeric_limits<double>::quiet_NaN());
                 std::string unit;
                 if (fmtu.count(fmt.id) && fi < fmtu[fmt.id].units.size())
@@ -496,7 +497,7 @@ int32_t finish(void *p, const PsParserSink *sink, PsError *err)
                     v *= mit->second;
             }
             auto &col = tbl.cols[ci->second];
-            col.resize(tbl.timeUs.size() - 1, std::numeric_limits<double>::quiet_NaN());
+            col.resize(tbl.timeNs.size() - 1, std::numeric_limits<double>::quiet_NaN());
             col.push_back(v);
         }
         pos += fmt.length;
@@ -506,7 +507,7 @@ int32_t finish(void *p, const PsParserSink *sink, PsError *err)
     for (auto &kv : tables)
     {
         Table &t = kv.second;
-        if (t.timeUs.empty() || t.cols.empty())
+        if (t.timeNs.empty() || t.cols.empty())
             continue; // 只有时间没有数值字段的格式（如 MSG）不成表
         t.unitPtrs.clear();
         for (const std::string &u : t.colUnits)

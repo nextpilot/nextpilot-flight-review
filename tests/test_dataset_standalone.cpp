@@ -47,9 +47,9 @@ int main(int argc, char **argv)
     CHECK(table->rowCount() == 4);
     CHECK(table->columnIndex(QStringLiteral("y")) >= 0);
 
-    // readWindow 用微秒时间轴；[0s, 3s] 内应取回 4 点。
+    // readWindow 用纳秒时间轴；[0s, 3s] 内应取回 4 点。
     auto view = ds.readWindow(QStringLiteral("ch"), QStringLiteral("y"),
-                              0, 3'000'000, 4096);
+                              0, 3'000'000'000, 4096);
     CHECK(view.has_value());
     CHECK(view->size() == 4);
     CHECK(view->value.last() == 40.0);
@@ -111,7 +111,7 @@ int main(int argc, char **argv)
             for (int i = 0; i < expect; ++i)
             {
                 const int row = start + i;
-                // 时间经 µs 量化往返（t*1e6 → int64 → ×1e-6），只要求 µs 级一致。
+                // 时间经 ns 量化往返（t*1e9 → int64 → ×1e-9），只要求 ns 级一致。
                 CHECK(std::fabs(timeSec.at(i) - tt.at(row)) < 1e-9);
                 CHECK(va.at(i) == a.at(row));
                 const bool isNull = (row % 7 == 3);

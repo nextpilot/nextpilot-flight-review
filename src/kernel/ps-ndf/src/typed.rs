@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-/// 列值的原始类型。时间轴统一是 `i64` 微秒，不放在这里。
+/// 列值的原始类型。时间轴统一是 `i64` 纳秒，不放在这里。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueType {
     F64,
@@ -767,13 +767,13 @@ impl Column {
     }
 }
 
-/// 一张表：一份 UTC 微秒时间轴 + 表内序号 + 多列。
+/// 一张表：一份纳秒时间轴 + 表内序号 + 多列。
 #[derive(Debug, Clone)]
 pub struct Table {
     pub name: String,
     /// 所有列共享这一份时间轴。
-    pub time_us: Arc<Vec<i64>>,
-    /// 表内序号，从 0 开始；同一微秒内多条记录靠它排序。
+    pub time_ns: Arc<Vec<i64>>,
+    /// 表内序号，从 0 开始；同一纳秒内多条记录靠它排序。
     pub seq: Vec<u64>,
     pub columns: Vec<Column>,
     /// 该表的 ring 字节预算；`None` 表示不裁剪（离线 Dataset）。
@@ -783,19 +783,19 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(name: impl Into<String>, time_us: Vec<i64>) -> Result<Self, String> {
+    pub fn new(name: impl Into<String>, time_ns: Vec<i64>) -> Result<Self, String> {
         let name = name.into();
         if name.is_empty() {
             return Err("表名为空".into());
         }
-        if time_us.windows(2).any(|w| w[1] < w[0]) {
+        if time_ns.windows(2).any(|w| w[1] < w[0]) {
             return Err(format!("表 {name} 的时间轴不是单调非降"));
         }
-        let n = time_us.len();
+        let n = time_ns.len();
         let seq = (0..n as u64).collect();
         Ok(Self {
             name,
-            time_us: Arc::new(time_us),
+            time_ns: Arc::new(time_ns),
             seq,
             columns: Vec::new(),
             ring_budget_bytes: None,
@@ -829,7 +829,7 @@ impl Table {
             return;
         }
         let drop = rows - max_rows;
-        Arc::make_mut(&mut self.time_us).drain(0..drop);
+        Arc::make_mut(&mut self.time_ns).drain(0..drop);
         self.seq.drain(0..drop);
         for c in &mut self.columns {
             c.drop_prefix(drop);
@@ -842,11 +842,11 @@ impl Table {
     }
 
     pub fn row_count(&self) -> usize {
-        self.time_us.len()
+        self.time_ns.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.time_us.is_empty()
+        self.time_ns.is_empty()
     }
 
     pub fn add_column(&mut self, column: Column) -> Result<(), String> {
@@ -875,7 +875,7 @@ impl Table {
     /// 静默接受乱序会让窗口查询读错区间。
     pub fn append_rows(
         &mut self,
-        time_us: &[i64],
+        time_ns: &[i64],
         columns: Vec<(ColumnData, NullBits)>,
     ) -> Result<(), String> {
         if columns.len() != self.columns.len() {
@@ -886,16 +886,16 @@ impl Table {
                 self.columns.len()
             ));
         }
-        let rows = time_us.len();
+        let rows = time_ns.len();
         if rows == 0 {
             return Err("追加行数为 0".into());
         }
-        if let Some(last) = self.time_us.last() {
-            if time_us[0] < *last {
+        if let Some(last) = self.time_ns.last() {
+            if time_ns[0] < *last {
                 return Err(format!("表 {} 的时间轴不是单调非降", self.name));
             }
         }
-        if time_us.windows(2).any(|w| w[1] < w[0]) {
+        if time_ns.windows(2).any(|w| w[1] < w[0]) {
             return Err(format!("表 {} 的追加批次内时间轴乱序", self.name));
         }
         for (i, (data, _)) in columns.iter().enumerate() {
@@ -911,7 +911,7 @@ impl Table {
                 return Err(format!("列 {} 类型不一致", self.columns[i].name));
             }
         }
-        Arc::make_mut(&mut self.time_us).extend_from_slice(time_us);
+        Arc::make_mut(&mut self.time_ns).extend_from_slice(time_ns);
         let start_seq = self.next_seq;
         self.next_seq += rows as u64;
         self.seq.extend(start_seq..start_seq + rows as u64);
@@ -927,17 +927,17 @@ impl Table {
     }
 
     pub fn time_sec(&self, row: usize) -> Option<f64> {
-        self.time_us.get(row).map(|t| *t as f64 / 1_000_000.0)
+        self.time_ns.get(row).map(|t| *t as f64 / 1_000_000_000.0)
     }
 
-    /// 第一个 `time_us >= t` 的行。
-    pub fn lower_bound(&self, t_us: i64) -> usize {
-        self.time_us.partition_point(|x| *x < t_us)
+    /// 第一个 `time_ns >= t` 的行。
+    pub fn lower_bound(&self, t_ns: i64) -> usize {
+        self.time_ns.partition_point(|x| *x < t_ns)
     }
 
-    /// 第一个 `time_us > t` 的行。
-    pub fn upper_bound(&self, t_us: i64) -> usize {
-        self.time_us.partition_point(|x| *x <= t_us)
+    /// 第一个 `time_ns > t` 的行。
+    pub fn upper_bound(&self, t_ns: i64) -> usize {
+        self.time_ns.partition_point(|x| *x <= t_ns)
     }
 
     /// 2.7.5 数据集切片：按行区间 `[row_start, row_end)` 与列子集抽出新表。
@@ -978,7 +978,7 @@ impl Table {
                 out
             }
         };
-        let time = self.time_us[row_start..row_end].to_vec();
+        let time = self.time_ns[row_start..row_end].to_vec();
         let mut t = Table::new(self.name.clone(), time)?;
         t.seq = self.seq[row_start..row_end].to_vec();
         t.next_seq = self.next_seq;
@@ -1003,32 +1003,32 @@ impl Table {
     pub fn lod_minmax(
         &mut self,
         column: usize,
-        t0_us: i64,
-        t1_us: i64,
+        t0_ns: i64,
+        t1_ns: i64,
         px: usize,
         out: &mut [f64],
     ) -> usize {
         let cap = out.len() / 3;
-        if cap == 0 || t1_us <= t0_us {
+        if cap == 0 || t1_ns <= t0_ns {
             return 0;
         }
         if column >= self.columns.len() {
             return 0;
         }
-        let start = self.lower_bound(t0_us);
-        let end = self.upper_bound(t1_us);
+        let start = self.lower_bound(t0_ns);
+        let end = self.upper_bound(t1_ns);
         if start >= end {
             return 0;
         }
         // 建塔/续算在渲染路径上（惰性，一次性 O(n)）。
         self.columns[column].ensure_lod();
         let px = px.max(1).min(cap);
-        let span = (t1_us - t0_us) as f64;
-        let t0_f = t0_us as f64;
+        let span = (t1_ns - t0_ns) as f64;
+        let t0_f = t0_ns as f64;
         // 与旧逐行扫描同公式：bucket(t) = floor(((t-t0)/span)*px)。
         // 用它做二分谓词，行区间与逐行扫描逐行一致。
         let first_row_at_least_bucket = |b: usize| -> usize {
-            self.time_us.partition_point(|&t| {
+            self.time_ns.partition_point(|&t| {
                 let x = ((t as f64 - t0_f) / span) * px as f64;
                 (x.floor() as i64) < b as i64
             })
@@ -1041,7 +1041,7 @@ impl Table {
             // 若写"桶内第一行时间"，源数据的时间戳抖动（ULog 采样并不严格
             // 等间隔）会让相邻桶的 x 间距忽大忽小——画布按 x 定位像素时
             // 就会跳格，曲线被画成一根根孤立竖线而不是连续包络。
-            out[base] = (t0_f + span * (b as f64 + 0.5) / px as f64) / 1_000_000.0;
+            out[base] = (t0_f + span * (b as f64 + 0.5) / px as f64) / 1_000_000_000.0;
             match self.columns[column].lod.range_minmax(
                 &self.columns[column].data,
                 &self.columns[column].nulls,
@@ -1117,8 +1117,8 @@ impl Dataset {
         self.table_index(name).and_then(|i| self.tables.get(i))
     }
 
-    pub fn add_table(&mut self, name: impl Into<String>, time_us: Vec<i64>) -> Result<usize, String> {
-        let mut table = Table::new(name, time_us)?;
+    pub fn add_table(&mut self, name: impl Into<String>, time_ns: Vec<i64>) -> Result<usize, String> {
+        let mut table = Table::new(name, time_ns)?;
         table.ring_budget_bytes = self.default_ring_budget_bytes;
         if self.tables.iter().any(|t| t.name == table.name) {
             return Err(format!("表已存在：{}", table.name));
@@ -1131,10 +1131,10 @@ impl Dataset {
     pub fn add_table_with_columns(
         &mut self,
         name: impl Into<String>,
-        time_us: Vec<i64>,
+        time_ns: Vec<i64>,
         columns: Vec<Column>,
     ) -> Result<usize, String> {
-        let mut table = Table::new(name, time_us)?;
+        let mut table = Table::new(name, time_ns)?;
         table.ring_budget_bytes = self.default_ring_budget_bytes;
         for c in columns {
             table.add_column(c)?;
@@ -1184,10 +1184,10 @@ impl Dataset {
     pub fn append_frame(
         &mut self,
         table: &str,
-        time_us: Vec<i64>,
+        time_ns: Vec<i64>,
         columns: Vec<(String, String, ColumnData, NullBits)>,
     ) -> Result<(), String> {
-        if time_us.is_empty() {
+        if time_ns.is_empty() {
             return Err("frame_batch 至少需要 1 行".into());
         }
         if let Some(idx) = self.table_index(table) {
@@ -1201,13 +1201,13 @@ impl Dataset {
                 }
             }
             let rows = columns.into_iter().map(|(_, _, data, nulls)| (data, nulls)).collect();
-            self.tables[idx].append_rows(&time_us, rows)
+            self.tables[idx].append_rows(&time_ns, rows)
         } else {
             let mut cols = Vec::with_capacity(columns.len());
             for (name, unit, data, nulls) in columns {
                 cols.push(Column::with_nulls(name, unit, data, nulls)?);
             }
-            self.add_table_with_columns(table, time_us, cols).map(|_| ())
+            self.add_table_with_columns(table, time_ns, cols).map(|_| ())
         }
     }
 }
@@ -1306,7 +1306,7 @@ mod tests {
         let mut out = Vec::new();
         let mut cur: Option<(usize, f64, f64)> = None;
         for row in start..end {
-            let tt = t.time_us[row] as f64;
+            let tt = t.time_ns[row] as f64;
             let b = (((tt - t0 as f64) / span) * px as f64).floor();
             let b = if b < 0.0 { 0 } else { (b as usize).min(px - 1) };
             match cur {
@@ -1435,8 +1435,8 @@ mod tests {
                 }
             }
             t.add_column(c).unwrap();
-            let t_lo = t.time_us[0];
-            let t_hi = t.time_us[n - 1];
+            let t_lo = t.time_ns[0];
+            let t_hi = t.time_ns[n - 1];
             for _ in 0..8 {
                 let a = t_lo + (rnd() % (t_hi - t_lo + 1) as u64) as i64;
                 let b = t_lo + (rnd() % (t_hi - t_lo + 1) as u64) as i64;
@@ -1487,10 +1487,10 @@ mod tests {
             for col in &mut t.columns {
                 col.drop_prefix(drop);
             }
-            let n = t.time_us.len();
+            let n = t.time_ns.len();
             assert!(n > 0, "drop={drop} 裁空了表");
-            let t_lo = t.time_us[0];
-            let t_hi = t.time_us[n - 1];
+            let t_lo = t.time_ns[0];
+            let t_hi = t.time_ns[n - 1];
             let mut got = vec![0.0f64; 240 * 3];
             let k = t.lod_minmax(0, t_lo - 1, t_hi + 1, 240, &mut got);
             let want = lod_minmax_bruteforce(&t, 0, t_lo - 1, t_hi + 1, 240);
@@ -1529,8 +1529,8 @@ mod tests {
 
         // 释放后渲染仍正确。
         let mut got = vec![0.0f64; 64 * 3];
-        let k = t.lod_minmax(0, t.time_us[0] - 1, t.time_us[2047] + 1, 64, &mut got);
-        let want = lod_minmax_bruteforce(&t, 0, t.time_us[0] - 1, t.time_us[2047] + 1, 64);
+        let k = t.lod_minmax(0, t.time_ns[0] - 1, t.time_ns[2047] + 1, 64, &mut got);
+        let want = lod_minmax_bruteforce(&t, 0, t.time_ns[0] - 1, t.time_ns[2047] + 1, 64);
         assert_eq!(k, want.len());
         for i in 0..k {
             let (gmn, gmx) = (got[i * 3 + 1], got[i * 3 + 2]);
@@ -1557,15 +1557,15 @@ mod tests {
             t.append_rows(&st, vec![(ColumnData::F64(sv), NullBits::new(100))]).unwrap();
             // 每两轮渲染一次 + 裁剪 120 行（非 4 倍数，制造桶部分相交）。
             if round % 2 == 1 {
-                let n = t.time_us.len();
-                let k = t.lod_minmax(0, t.time_us[0] - 1, t.time_us[n - 1] + 1, 120, &mut out);
-                let want = lod_minmax_bruteforce(&t, 0, t.time_us[0] - 1, t.time_us[n - 1] + 1, 120);
+                let n = t.time_ns.len();
+                let k = t.lod_minmax(0, t.time_ns[0] - 1, t.time_ns[n - 1] + 1, 120, &mut out);
+                let want = lod_minmax_bruteforce(&t, 0, t.time_ns[0] - 1, t.time_ns[n - 1] + 1, 120);
                 assert_eq!(k, want.len(), "round {round}");
                 for col in &mut t.columns {
                     col.drop_prefix(120.min(col.len().saturating_sub(1)));
                 }
-                let drop_n = 120.min(t.time_us.len().saturating_sub(1));
-                Arc::make_mut(&mut t.time_us).drain(0..drop_n);
+                let drop_n = 120.min(t.time_ns.len().saturating_sub(1));
+                Arc::make_mut(&mut t.time_ns).drain(0..drop_n);
                 t.seq.drain(0..drop_n);
             }
         }
@@ -1630,7 +1630,7 @@ mod tests {
             .unwrap();
         let mut s = t.slice(1, 4, Some(&[1, 0])).unwrap();
         assert_eq!(s.row_count(), 3);
-        assert_eq!(s.time_us.as_slice(), &[1_000, 2_000, 3_000]);
+        assert_eq!(s.time_ns.as_slice(), &[1_000, 2_000, 3_000]);
         assert_eq!(s.seq, vec![1, 2, 3]);
         // 列顺序按给定索引（pitch 在前）。
         assert_eq!(s.columns[0].name, "pitch");
@@ -1713,7 +1713,7 @@ mod tests {
         let t = ds.find_table("ATTITUDE").unwrap();
         assert_eq!(t.row_count(), 3);
         assert_eq!(t.seq, vec![0, 1, 2]);
-        assert_eq!(t.time_us.as_slice(), &[0, 1_000, 2_000]);
+        assert_eq!(t.time_ns.as_slice(), &[0, 1_000, 2_000]);
         assert_eq!(t.columns[0].value_as_f64(0), Some(1.0));
         assert_eq!(t.columns[0].value_as_f64(1), None);
         assert_eq!(t.columns[0].value_as_f64(2), None);
@@ -1738,7 +1738,7 @@ mod tests {
         .unwrap();
         let t = ds.find_table("att").unwrap();
         assert_eq!(t.row_count(), 5);
-        assert_eq!(t.time_us.as_slice(), &[5_000, 6_000, 7_000, 8_000, 9_000]);
+        assert_eq!(t.time_ns.as_slice(), &[5_000, 6_000, 7_000, 8_000, 9_000]);
         assert_eq!(t.seq, vec![5, 6, 7, 8, 9]);
         assert_eq!(t.columns[0].value_as_f64(0), Some(5.0));
 
@@ -1756,7 +1756,7 @@ mod tests {
         .unwrap();
         let t = ds.find_table("att").unwrap();
         assert_eq!(t.row_count(), 5);
-        assert_eq!(t.time_us.as_slice(), &[8_000, 9_000, 10_000, 11_000, 12_000]);
+        assert_eq!(t.time_ns.as_slice(), &[8_000, 9_000, 10_000, 11_000, 12_000]);
         assert_eq!(t.seq, vec![8, 9, 10, 11, 12]);
     }
 

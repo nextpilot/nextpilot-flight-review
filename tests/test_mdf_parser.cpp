@@ -66,13 +66,13 @@ int32_t onBatch(void *ctx, const PsFrameBatch *batch)
     }
     if (batch->rows)
     {
-        v.t0 = batch->time_us[0];
-        v.tLast = batch->time_us[batch->rows - 1];
+        v.t0 = batch->time_ns[0];
+        v.tLast = batch->time_ns[batch->rows - 1];
         if (batch->columns && batch->column_data[0].values)
             v.v0 = static_cast<const double *>(batch->column_data[0].values)[0];
         for (uint32_t r = 0; r < batch->rows; ++r)
         {
-            const int64_t t = batch->time_us[r];
+            const int64_t t = batch->time_ns[r];
             if (!c->first && t < c->prev)
                 c->monotonic = false;
             c->prev = t;
@@ -147,7 +147,7 @@ int main()
 
     OK(!col.batches.empty(), "##DZ 压缩块解出至少一批");
     OK(col.totalRows > 0, "总行数 > 0");
-    OK(col.monotonic, "时间轴微秒单调非降");
+    OK(col.monotonic, "时间轴纳秒单调非降");
     bool hasUnit = false, hasTable = false, tableDup = false;
     std::vector<std::string> tables;
     for (const BatchView &b : col.batches)
@@ -171,8 +171,8 @@ int main()
        "一个通道组 = 一批 2 列（roll/pitch）");
     OK(col.batches[0].cols[0] == "roll" && col.batches[0].cols[1] == "pitch",
        "列名取 ##CN 通道名");
-    OK(col.batches[0].t0 == 0 && col.batches[0].tLast == 990000,
-       "时间轴 = master 通道秒 → 微秒（0 .. 990000）");
+    OK(col.batches[0].t0 == 0 && col.batches[0].tLast == 990000000,
+       "时间轴 = master 通道秒 → 纳秒（0 .. 990000000）");
 
     // ④ 重复 reset 后可用
     vt->reset(ctx);

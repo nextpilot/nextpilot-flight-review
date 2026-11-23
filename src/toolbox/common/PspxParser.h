@@ -16,7 +16,7 @@ namespace nextpilot::plotscope::ext
 // 只需把"产出端"从"自己建 Dataset"改成"通过 sink 吐批"。
 //
 // 这里用一种极简的二进制格式做验证载体：
-//   魔数 "PSPX" | u32 行数 | 重复 { i64 time_us, f64 value }
+//   魔数 "PSPX" | u32 行数 | 重复 { i64 time_ns, f64 value }
 class PspxParser final
 {
 public:

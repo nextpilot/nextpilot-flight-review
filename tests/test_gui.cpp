@@ -1639,12 +1639,12 @@ int main(int argc, char *argv[])
             // kernel 约束：列数/名称/单位必须与建表时完全一致——trace 已有
             // sig/q.w/q.x/q.y/q.z/qn.w 六列，追加帧必须按顺序全给。
             const int m2 = 20;
-            QVector<TimeUs> nts;
+            QVector<TimeNs> nts;
             QVector<double> nw2(m2, std::cos(half)), nx2(m2, std::sin(half)),
                 ny2(m2, 0.0), nz2(m2, 0.0), nsig2(m2, 0.0), nqn2(m2, std::cos(half));
             nts.reserve(m2);
             for (int i = 0; i < m2; ++i)
-                nts.append(static_cast<TimeUs>(std::llround((1.00 + i * 0.01) * 1000000.0)));
+                nts.append(static_cast<TimeNs>(std::llround((1.00 + i * 0.01) * 1000000000.0)));
             auto mkCol = [](const char *name, const QVector<double> &v) {
                 FrameColumn c;
                 c.name = QString::fromUtf8(name);
@@ -2890,7 +2890,7 @@ int main(int argc, char *argv[])
         }
         CHECK(sds.addTable(QStringLiteral("aux"), at) >= 0);
         CHECK(sds.addF64Column(QStringLiteral("aux"), QStringLiteral("speed"), QString(), spd));
-        // 注：Dataset::addTable 拒零行时间轴（timeUs.isEmpty() → -1），
+        // 注：Dataset::addTable 拒零行时间轴（timeNs.isEmpty() → -1），
         // 故 ng 侧不存在 0 行表，XlsxBook 的"空表只写表头"是防御分支，无法端到端构造。
         sds.refreshSchema();
         const int snapDs = application.data().add(sds);

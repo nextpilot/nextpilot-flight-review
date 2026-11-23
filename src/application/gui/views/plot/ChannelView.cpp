@@ -141,8 +141,8 @@ bool ChannelView::renderOne(PlotSeries &series, QString *err)
     intent.params[QStringLiteral("px")] = px;
     if (m_windowSet && m_winT1 > m_winT0)
     {
-        intent.params[QStringLiteral("t0Us")] = qint64(m_winT0 * 1e6);
-        intent.params[QStringLiteral("t1Us")] = qint64(m_winT1 * 1e6);
+        intent.params[QStringLiteral("t0Ns")] = qint64(m_winT0 * 1e9);
+        intent.params[QStringLiteral("t1Ns")] = qint64(m_winT1 * 1e9);
     }
 
     // plot 级 Y 变换（非破坏视图，只影响本曲线）：曲线配方经 plot.channel 的

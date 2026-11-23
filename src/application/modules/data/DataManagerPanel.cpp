@@ -809,7 +809,7 @@ void DataManagerPanel::registerPropertyProviders()
             o.rows << row(QStringLiteral("rows"), QStringLiteral("行数"), QString::number(t->rows));
             o.rows << row(QStringLiteral("columns"), QStringLiteral("列数"), QString::number(t->columns.size()));
             o.rows << row(QStringLiteral("span"), QStringLiteral("时间跨度(s)"),
-                          QString::number((t->lastTimeUs - t->firstTimeUs) / 1000000.0, 'f', 3));
+                          QString::number((t->lastTimeNs - t->firstTimeNs) / 1000000000.0, 'f', 3));
         }
         s.objects << o;
         return s.toJson();
@@ -1050,7 +1050,7 @@ void DataManagerPanel::rebuildTree()
                 {
                     auto *tItem = new QTreeWidgetItem(srcItem);
                     tItem->setText(0, ft.table->name);
-                    const double span = (ft.table->lastTimeUs - ft.table->firstTimeUs) / 1000000.0;
+                    const double span = (ft.table->lastTimeNs - ft.table->firstTimeNs) / 1000000000.0;
                     tItem->setText(1, QStringLiteral("%1 行 · %2 s").arg(ft.table->rows).arg(span, 0, 'f', 2));
                     tItem->setData(0, kRoleTable, ft.table->name);
                     tItem->setData(0, kRoleDatasetId, ft.dsId);
@@ -1154,7 +1154,7 @@ void DataManagerPanel::rebuildTree()
                     auto *mItem = new QTreeWidgetItem(srcItem);
                     mItem->setText(0, tbl->name);
                     mItem->setText(1, QStringLiteral("%1 字段 · %2 s").arg(tbl->columns.size())
-                                          .arg(tbl->firstTimeUs / 1000000.0, 0, 'f', 2));
+                                          .arg(tbl->firstTimeNs / 1000000000.0, 0, 'f', 2));
                     mItem->setData(0, kRoleNodeKind, QStringLiteral("msg"));
                     mItem->setData(0, kRoleDatasetId, dsId);
                     mItem->setFlags(mItem->flags() & ~Qt::ItemIsDragEnabled);

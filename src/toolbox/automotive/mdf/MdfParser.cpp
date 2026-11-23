@@ -20,7 +20,7 @@
  * 这里按 CG（通道组）出**一张表、多列**——正是 ng 数据集的口径。
  *
  * 时间轴：CG 里的 master 通道（channelType==2）经 CC 转换得到秒，
- * 落库时转 UTC 微秒；没有 master 时退回记录序号（与 main 一致）。
+ * 落库时转纳秒；没有 master 时退回记录序号（与 main 一致）。
  */
 namespace nextpilot::plotscope::ext::mdf
 {
@@ -266,14 +266,14 @@ struct GroupData
     uint32_t maxByte = 0;
 
     uint64_t written = 0;
-    std::vector<int64_t> timeUs;
+    std::vector<int64_t> timeNs;
     std::vector<std::vector<double>> values; // values[列][行]
 
     // 预分配：MDF 的 cycles 就是行数上界，先按它起量，避免逐行 realloc。
     void reserve()
     {
         const size_t n = static_cast<size_t>(std::min<uint64_t>(cycles, 50'000'000));
-        timeUs.reserve(n);
+        timeNs.reserve(n);
         values.assign(channels.size(), {});
         for (auto &v : values)
             v.reserve(n);
@@ -285,7 +285,7 @@ constexpr size_t kChunk = 16384;
 
 bool emitGroup(GroupData &g, const PsParserSink *sink, std::string &err)
 {
-    if (g.timeUs.empty() || g.channels.empty())
+    if (g.timeNs.empty() || g.channels.empty())
         return true;
 
     // 列名去重（MDF 允许同名通道）。
@@ -298,9 +298,9 @@ bool emitGroup(GroupData &g, const PsParserSink *sink, std::string &err)
     }
     const std::string &table = g.table;
     std::vector<PsFrameColumn> cols(g.channels.size());
-    for (size_t start = 0; start < g.timeUs.size(); start += kChunk)
+    for (size_t start = 0; start < g.timeNs.size(); start += kChunk)
     {
-        const size_t rows = std::min(kChunk, g.timeUs.size() - start);
+        const size_t rows = std::min(kChunk, g.timeNs.size() - start);
         for (size_t c = 0; c < g.channels.size(); ++c)
         {
             PsFrameColumn &col = cols[c];
@@ -312,7 +312,7 @@ bool emitGroup(GroupData &g, const PsParserSink *sink, std::string &err)
         }
         PsFrameBatch batch{};
         batch.table = table.c_str();
-        batch.time_us = g.timeUs.data() + start;
+        batch.time_ns = g.timeNs.data() + start;
         batch.rows = static_cast<uint32_t>(rows);
         batch.columns = static_cast<uint32_t>(cols.size());
         batch.column_data = cols.data();
@@ -378,7 +378,7 @@ void consumeBlock(const std::vector<uint8_t> &body, uint8_t recordIdSize,
         const double t = g->hasMaster
                              ? g->master.conversion.apply(readValue(rec + recordIdSize, g->master))
                              : static_cast<double>(g->written);
-        g->timeUs.push_back(static_cast<int64_t>(std::llround(t * 1e6)));
+        g->timeNs.push_back(static_cast<int64_t>(std::llround(t * 1e9)));
         for (size_t k = 0; k < g->channels.size(); ++k)
         {
             const Channel &ch = g->channels[k];

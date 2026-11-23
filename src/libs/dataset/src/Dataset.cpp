@@ -98,11 +98,11 @@ void rebuildSchema(const std::shared_ptr<PsDataset> &native, QVector<Table> &out
             Table t;
             t.name = tableName;
             t.rows = static_cast<int>(info->point_count);
-            // O(1) 读首尾时间：f64 秒 * 1e6 还原为 UTC 微秒。
+            // O(1) 读首尾时间：f64 秒 * 1e9 还原为纳秒。
             if (info->time && t.rows > 0)
             {
-                t.firstTimeUs = static_cast<TimeUs>(std::llround(info->time[0] * 1000000.0));
-                t.lastTimeUs = static_cast<TimeUs>(std::llround(info->time[t.rows - 1] * 1000000.0));
+                t.firstTimeNs = static_cast<TimeNs>(std::llround(info->time[0] * 1000000000.0));
+                t.lastTimeNs = static_cast<TimeNs>(std::llround(info->time[t.rows - 1] * 1000000000.0));
             }
             out.push_back(std::move(t));
             ti = out.size() - 1;
@@ -288,10 +288,10 @@ QStringList Dataset::tableNames() const
     return names;
 }
 
-bool Dataset::appendFrame(const QString &table, const TimeUs *timeUs, int count,
+bool Dataset::appendFrame(const QString &table, const TimeNs *timeNs, int count,
                           const QVector<FrameColumn> &columns, QString *err)
 {
-    if (!d->native || table.isEmpty() || !timeUs || count <= 0)
+    if (!d->native || table.isEmpty() || !timeNs || count <= 0)
         return false;
 
     const QByteArray tableUtf8 = table.toUtf8();
@@ -317,7 +317,7 @@ bool Dataset::appendFrame(const QString &table, const TimeUs *timeUs, int count,
 
     char errBuf[256] = {0};
     const int rc = ps_dataset_append_frame(
-        d->native.get(), tableUtf8.constData(), timeUs, static_cast<quint32>(count),
+        d->native.get(), tableUtf8.constData(), timeNs, static_cast<quint32>(count),
         nativeCols.constData(), static_cast<quint32>(nativeCols.size()),
         errBuf, sizeof(errBuf));
     if (rc != 0)
@@ -337,33 +337,33 @@ void Dataset::refreshSchema()
     rebuildSchema(d->native, d->schema);
 }
 
-int Dataset::addTable(const QString &name, const QVector<TimeUs> &timeUs)
+int Dataset::addTable(const QString &name, const QVector<TimeNs> &timeNs)
 {
-    if (!d->native || name.isEmpty() || timeUs.isEmpty() || tableIndex(name) >= 0)
+    if (!d->native || name.isEmpty() || timeNs.isEmpty() || tableIndex(name) >= 0)
         return -1;
     const QByteArray nameUtf8 = name.toUtf8();
     char err[256] = {0};
     const int rc = ps_dataset_add_table_typed(d->native.get(), nameUtf8.constData(),
-                                              timeUs.constData(),
-                                              static_cast<quint32>(timeUs.size()), err, sizeof(err));
+                                              timeNs.constData(),
+                                              static_cast<quint32>(timeNs.size()), err, sizeof(err));
     if (rc != 0)
         return -1;
     // 空表在 kernel 侧尚无 channel，无法投影；直接登记调用方已知的 O(1) 元数据。
     Table t;
     t.name = name;
-    t.rows = timeUs.size();
-    t.firstTimeUs = timeUs.first();
-    t.lastTimeUs = timeUs.last();
+    t.rows = timeNs.size();
+    t.firstTimeNs = timeNs.first();
+    t.lastTimeNs = timeNs.last();
     d->schema.push_back(std::move(t));
     return d->schema.size() - 1;
 }
 
 int Dataset::addTable(const QString &name, const QVector<double> &timeSec)
 {
-    QVector<TimeUs> us;
+    QVector<TimeNs> us;
     us.reserve(timeSec.size());
     for (double t : timeSec)
-        us.push_back(static_cast<TimeUs>(std::llround(t * 1000000.0)));
+        us.push_back(static_cast<TimeNs>(std::llround(t * 1000000000.0)));
     return addTable(name, us);
 }
 
@@ -393,18 +393,18 @@ bool Dataset::addColumnTyped(const QString &tableName, const QString &name, cons
     return true;
 }
 
-std::optional<std::pair<TimeUs, TimeUs>> Dataset::rawTimeRangeUs() const
+std::optional<std::pair<TimeNs, TimeNs>> Dataset::rawTimeRangeNs() const
 {
-    std::optional<TimeUs> min;
-    std::optional<TimeUs> max;
+    std::optional<TimeNs> min;
+    std::optional<TimeNs> max;
     for (const Table &t : d->schema)
     {
         if (t.rows <= 0)
             continue;
-        if (!min || t.firstTimeUs < *min)
-            min = t.firstTimeUs;
-        if (!max || t.lastTimeUs > *max)
-            max = t.lastTimeUs;
+        if (!min || t.firstTimeNs < *min)
+            min = t.firstTimeNs;
+        if (!max || t.lastTimeNs > *max)
+            max = t.lastTimeNs;
     }
     if (!min || !max)
         return std::nullopt;
@@ -413,30 +413,30 @@ std::optional<std::pair<TimeUs, TimeUs>> Dataset::rawTimeRangeUs() const
 
 double Dataset::timeMin() const
 {
-    std::optional<TimeUs> min;
+    std::optional<TimeNs> min;
     for (const Table &t : d->schema)
         if (t.rows > 0)
         {
-            if (!min || t.firstTimeUs < *min)
-                min = t.firstTimeUs;
+            if (!min || t.firstTimeNs < *min)
+                min = t.firstTimeNs;
         }
-    return min ? *min / 1000000.0 : 0.0;
+    return min ? *min / 1000000000.0 : 0.0;
 }
 
 double Dataset::timeMax() const
 {
-    std::optional<TimeUs> max;
+    std::optional<TimeNs> max;
     for (const Table &t : d->schema)
         if (t.rows > 0)
         {
-            if (!max || t.lastTimeUs > *max)
-                max = t.lastTimeUs;
+            if (!max || t.lastTimeNs > *max)
+                max = t.lastTimeNs;
         }
-    return max ? *max / 1000000.0 : 0.0;
+    return max ? *max / 1000000000.0 : 0.0;
 }
 
 std::optional<ChannelView> Dataset::readWindow(const QString &tableName, const QString &columnName,
-                                               TimeUs t0Us, TimeUs t1Us, int cap) const
+                                               TimeNs t0Ns, TimeNs t1Ns, int cap) const
 {
     if (!d->native || cap <= 0)
         return std::nullopt;
@@ -452,7 +452,7 @@ std::optional<ChannelView> Dataset::readWindow(const QString &tableName, const Q
     // 有界读：cap 由调用方给定，kernel 在行数超过 cap 时等步长抽稀。
     const quint32 got = ps_dataset_read_window(
         d->native.get(), tableUtf8.constData(), colUtf8.constData(),
-        t0Us, t1Us, time.data(), value.data(), static_cast<quint32>(n));
+        t0Ns, t1Ns, time.data(), value.data(), static_cast<quint32>(n));
     if (got == 0)
         return std::nullopt;
 
@@ -483,7 +483,7 @@ std::optional<ChannelView> Dataset::channel(const QString &tableName, const QStr
     if (!t)
         return std::nullopt;
     // 有界读：[首时间, 末时间] 窗口内最多 cap 点。
-    return readWindow(tableName, columnName, t->firstTimeUs, t->lastTimeUs, cap);
+    return readWindow(tableName, columnName, t->firstTimeNs, t->lastTimeNs, cap);
 }
 
 std::optional<ChannelView> Dataset::channel(const QString &qualifiedName, int cap) const
@@ -508,7 +508,7 @@ QVector<ChannelView> Dataset::allChannels(int cap) const
 }
 
 QVector<LodTriple> Dataset::lodMinMax(const QString &tableName, const QString &columnName,
-                                      TimeUs t0Us, TimeUs t1Us, int px) const
+                                      TimeNs t0Ns, TimeNs t1Ns, int px) const
 {
     QVector<LodTriple> out;
     if (!d->native || px <= 0)
@@ -517,7 +517,7 @@ QVector<LodTriple> Dataset::lodMinMax(const QString &tableName, const QString &c
     const QByteArray colUtf8 = columnName.toUtf8();
     QVector<double> triples(static_cast<qsizetype>(px) * 3);
     const quint32 n = ps_dataset_lod_minmax(d->native.get(), tableUtf8.constData(),
-                                            colUtf8.constData(), t0Us, t1Us,
+                                            colUtf8.constData(), t0Ns, t1Ns,
                                             static_cast<quint32>(px), triples.data(),
                                             static_cast<quint32>(px));
     out.reserve(n);
@@ -760,7 +760,7 @@ int Dataset::readColumnF64(const QString &tableName, const QString &columnName,
 
 std::optional<Dataset> Dataset::slice(const QString &tableName,
                                       const QVector<QString> &columns,
-                                      TimeUs t0Us, TimeUs t1Us,
+                                      TimeNs t0Ns, TimeNs t1Ns,
                                       QString *err) const
 {
     if (!d->native)
@@ -788,7 +788,7 @@ std::optional<Dataset> Dataset::slice(const QString &tableName,
         d->native.get(), tableUtf8.constData(),
         colPtrs.isEmpty() ? nullptr : colPtrs.constData(),
         static_cast<quint32>(colPtrs.size()),
-        t0Us, t1Us, &sliced, errBuf, sizeof(errBuf));
+        t0Ns, t1Ns, &sliced, errBuf, sizeof(errBuf));
     if (rc != 0)
     {
         if (err)
@@ -802,7 +802,7 @@ std::optional<Dataset> Dataset::slice(const QString &tableName,
 
 std::optional<QVector<ChannelView>> Dataset::readWindowMulti(const QString &tableName,
                                                              const QVector<QString> &columns,
-                                                             TimeUs t0Us, TimeUs t1Us,
+                                                             TimeNs t0Ns, TimeNs t1Ns,
                                                              int cap) const
 {
     if (!d->native || cap <= 0 || columns.isEmpty())
@@ -836,7 +836,7 @@ std::optional<QVector<ChannelView>> Dataset::readWindowMulti(const QString &tabl
     }
     const quint32 got = ps_dataset_read_window_multi(
         d->native.get(), tableUtf8.constData(), colPtrs.constData(),
-        static_cast<quint32>(colPtrs.size()), t0Us, t1Us,
+        static_cast<quint32>(colPtrs.size()), t0Ns, t1Ns,
         time.data(), const_cast<const double **>(valuePtrs.constData()),
         static_cast<quint32>(n));
     if (got == 0)

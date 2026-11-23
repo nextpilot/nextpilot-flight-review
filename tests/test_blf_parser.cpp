@@ -65,12 +65,12 @@ struct Collector
         }
         if (batch->rows)
         {
-            v.t0 = batch->time_us[0];
-            v.tLast = batch->time_us[batch->rows - 1];
+            v.t0 = batch->time_ns[0];
+            v.tLast = batch->time_ns[batch->rows - 1];
             auto &last = lastByTable[v.table];
             for (uint32_t r = 0; r < batch->rows; ++r)
             {
-                const int64_t t = batch->time_us[r];
+                const int64_t t = batch->time_ns[r];
                 if (t < last)
                     monotonic = false;
                 last = t;
@@ -151,7 +151,7 @@ int main()
 
     // 5 个 ID 里 0x4D0 全常量（20 帧同数据）→ 按 main 判据跳过，剩 4 张表
     OK(col.batches.size() == 4, "4 张表（常量 ID 跳过）");
-    OK(col.monotonic, "时间轴微秒单调非降");
+    OK(col.monotonic, "时间轴纳秒单调非降");
 
     std::set<std::string> tables;
     for (const BatchView &b : col.batches)
@@ -169,7 +169,7 @@ int main()
     {
         OK(a0->rows == 750, "CAN2_1A0 750 行");
         OK(a0->t0 == 0, "首帧对齐到 0");
-        OK(a0->tLast == 11984000, "末帧 11984000 µs（≈12 s）");
+        OK(a0->tLast == 11984000000, "末帧 11984000000 ns（≈12 s）");
         OK(a0->cols.size() == 4, "列 = b0,b1,dlc,period");
         OK(a0->cols[0] == "b0" && a0->cols[1] == "b1" && a0->cols[2] == "dlc" &&
                a0->cols[3] == "period",
@@ -197,7 +197,7 @@ int main()
     const BatchView *ext = find(col, "CAN3_18FEF100");
     OK(ext != nullptr && ext->rows == 750, "扩展帧表 CAN3_18FEF100 750 行");
     if (ext)
-        OK(ext->t0 == 4000, "扩展帧相对首帧的偏移 4000 µs（保留原始相对时间）");
+        OK(ext->t0 == 4000000, "扩展帧相对首帧的偏移 4000000 ns（保留原始相对时间）");
 
     vt->destroy(ctx);
 

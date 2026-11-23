@@ -8,7 +8,7 @@
 //   3. C++ 侧常驻内存 = O(列数 + 窗口上限)，与行数无关；绘图只读屏幕像素级数据。
 //
 // 因此：
-//   - Table 只存 schema 元数据（行数、首尾时间、列名/类型/单位），不存 QVector<TimeUs> 时间轴。
+//   - Table 只存 schema 元数据（行数、首尾时间、列名/类型/单位），不存 QVector<TimeNs> 时间轴。
 //   - 填充走 appendFrame() 流式灌入 Rust，不在 C++ 攒完整数据集。
 //   - 读走 readWindow(table, column, t0, t1, cap)：cap bounded，kernel 内等步长抽稀。
 //   - 视口抽稀走 lodMinMax(px)：无论多少行，只返回 px 个 (x,min,max) 三元组。
@@ -32,9 +32,10 @@ namespace nextpilot::plotscope::dataset
 using DatasetId = int;
 constexpr DatasetId kInvalidDataset = -1;
 
-// 时间轴统一 UTC 微秒，与 kernel ps_ndf::typed 的 i64 微秒一致。
+// 时间轴统一纳秒（相对首帧/上电的单调 i64），与 kernel ps_ndf::typed 的 i64 纳秒一致。
+// 各数据源原始单位（微秒/秒/ROS 纳秒）在 parser 入口统一换算到纳秒。
 // 用 int64_t（而非 qint64=long long）以匹配 C ABI 的 int64_t 指针签名。
-using TimeUs = int64_t;
+using TimeNs = int64_t;
 
 // 列值类型，数值与 kernel 的 PsValueType / ValueType 完全一致（可直接作为 ABI 码）。
 enum class ValueType : int
@@ -67,13 +68,13 @@ struct Column
 };
 
 // 表 schema：只有元数据，不持有时间轴数组。
-// 时间轴本体在 Rust（typed 表共享 i64 微秒轴）；这里仅存首尾时间供范围显示，O(1)。
+// 时间轴本体在 Rust（typed 表共享 i64 纳秒轴）；这里仅存首尾时间供范围显示，O(1)。
 struct Table
 {
     QString name;
     int rows = 0;             // 行数（= kernel point_count）
-    TimeUs firstTimeUs = 0;   // 首行时间（秒视图 * 1e6 还原），空表为 0
-    TimeUs lastTimeUs = 0;    // 末行时间
+    TimeNs firstTimeNs = 0;   // 首行时间（秒视图 * 1e9 还原），空表为 0
+    TimeNs lastTimeNs = 0;    // 末行时间
     QVector<Column> columns;
 
     int rowCount() const { return rows; }
@@ -166,12 +167,12 @@ public:
 
     // ---- 流式填充：全部委托 Rust kernel ----
     // 追加一批行；表不存在则按首批列建表，存在则校验列名/单位/类型后追加（ps_dataset_append_frame）。
-    // timeUs 与每列 values 长度必须 == count。这是百万数据加载的唯一入口：调用方分块喂，C++ 不攒全量。
-    bool appendFrame(const QString &table, const TimeUs *timeUs, int count,
+    // timeNs 与每列 values 长度必须 == count。这是百万数据加载的唯一入口：调用方分块喂，C++ 不攒全量。
+    bool appendFrame(const QString &table, const TimeNs *timeNs, int count,
                      const QVector<FrameColumn> &columns, QString *err = nullptr);
 
     // 便捷入口（小数据/测试用）：一次性建表并加 F64 列；内部仍流式委托 Rust，不留 C++ 副本。
-    int addTable(const QString &name, const QVector<TimeUs> &timeUs);
+    int addTable(const QString &name, const QVector<TimeNs> &timeNs);
     int addTable(const QString &name, const QVector<double> &timeSec);
     bool addF64Column(const QString &table, const QString &name, const QString &unit,
                       const QVector<double> &values, const QVector<bool> *nulls = nullptr);
@@ -181,9 +182,9 @@ public:
     // 刷新 schema 投影（append 后调用；只从 channel 读 O(1) 元数据）。
     void refreshSchema();
 
-    // 原始范围（微秒，精确整数）：对齐策略必须先在整数域算出 offset，
+    // 原始范围（纳秒，精确整数）：对齐策略必须先在整数域算出 offset，
     // 再交给 AppContext::setSourceTimeOffset()（宿主态唯一真值，不在 Dataset 里存偏移）。
-    std::optional<std::pair<TimeUs, TimeUs>> rawTimeRangeUs() const;
+    std::optional<std::pair<TimeNs, TimeNs>> rawTimeRangeNs() const;
 
     // 全库时间范围（秒，来自 schema 元数据）
     double timeMin() const;
@@ -193,7 +194,7 @@ public:
     // 默认上限 4096：即使百万行，一次也只读最多 4096 点。
     static constexpr int kDefaultWindowPoints = 4096;
     std::optional<ChannelView> readWindow(const QString &table, const QString &column,
-                                          TimeUs t0Us, TimeUs t1Us, int cap) const;
+                                          TimeNs t0Ns, TimeNs t1Ns, int cap) const;
     std::optional<ChannelView> channel(const QString &table, const QString &column,
                                        int cap = kDefaultWindowPoints) const;
     std::optional<ChannelView> channel(const QString &qualifiedName,
@@ -202,7 +203,7 @@ public:
 
     // Rust 侧视口 LOD：无论多少行，只返回 px 个 (x,min,max)——绘图路径的内存与行数无关。
     QVector<LodTriple> lodMinMax(const QString &table, const QString &column,
-                                 TimeUs t0Us, TimeUs t1Us, int px) const;
+                                 TimeNs t0Ns, TimeNs t1Ns, int px) const;
 
     // ---- 表格查看器路径：按行号随机读取（无抽稀；只取可见页，C++ 常驻 O(页大小)）----
     // 读 [rowStart, rowStart+maxRows) 的行。返回实际读到的行数（0 = 起点越界），
@@ -241,14 +242,14 @@ public:
     // columns 为空取全部列。切出的 Dataset 与源集零共享（释放源集不影响切片）。
     std::optional<Dataset> slice(const QString &table,
                                  const QVector<QString> &columns,
-                                 TimeUs t0Us, TimeUs t1Us,
+                                 TimeNs t0Ns, TimeNs t1Ns,
                                  QString *err = nullptr) const;
 
     // ---- M2.7.6 多列对齐读取：同表多列一趟 FFI 读完对齐窗口 ----
     // 返回值语义同 readWindow：行数超 cap 等步长抽稀，各列严格同行对齐，null = NaN。
     std::optional<QVector<ChannelView>> readWindowMulti(const QString &table,
                                                         const QVector<QString> &columns,
-                                                        TimeUs t0Us, TimeUs t1Us,
+                                                        TimeNs t0Ns, TimeNs t1Ns,
                                                         int cap) const;
 
     // 分析算子（全部委托 Rust ps-ops）：滤波 / 抗混叠抽取 / 统计。

@@ -65,14 +65,14 @@ struct Collector
         }
         if (batch->rows)
         {
-            v.t0 = batch->time_us[0];
-            v.tLast = batch->time_us[batch->rows - 1];
+            v.t0 = batch->time_ns[0];
+            v.tLast = batch->time_ns[batch->rows - 1];
             int64_t last = v.t0;
             for (uint32_t r = 0; r < batch->rows; ++r)
             {
-                if (batch->time_us[r] < last)
+                if (batch->time_ns[r] < last)
                     monotonic = false;
-                last = batch->time_us[r];
+                last = batch->time_ns[r];
             }
         }
         batches.push_back(std::move(v));
@@ -143,7 +143,7 @@ int main()
         std::printf("[apbin] 表=%s 行=%u 列=%zu t0=%lld tLast=%lld\n", b.table.c_str(), b.rows,
                     b.cols.size(), (long long)b.t0, (long long)b.tLast);
 
-    OK(col.monotonic, "时间轴微秒单调非降");
+    OK(col.monotonic, "时间轴纳秒单调非降");
     OK(find(col, "FMTU") == nullptr && find(col, "UNIT") == nullptr,
        "无 TimeUS 的消息（FMTU / UNIT）不成表");
 
@@ -155,8 +155,8 @@ int main()
         OK(att->cols.size() == 2 && att->cols[0] == "Roll" && att->cols[1] == "Pitch",
            "列 = Roll / Pitch（TimeUS 作时间轴不占列）");
         // 全文件首帧是 PARM(TimeUS=0)，ATT 从 1 s 开始 → 保留原始相对偏移
-        OK(att->t0 == 1000000 && att->tLast == 2000000,
-           "时间轴 1000000 / 2000000 µs（相对全文件首帧，保留偏移）");
+        OK(att->t0 == 1000000000 && att->tLast == 2000000000,
+           "时间轴 1000000000 / 2000000000 ns（相对全文件首帧，保留偏移）");
         if (att->values.size() == 2)
         {
             OK(std::fabs(att->values[0][0] - 1.5) < 1e-6 &&

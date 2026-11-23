@@ -804,10 +804,10 @@ void AxesView::renderFrom(const Dataset &dataset)
             continue;
         const int px = plotPixelWidth();
         const auto lod = dataset.lodMinMax(s->table, s->column,
-                                           table->firstTimeUs, table->lastTimeUs, px);
+                                           table->firstTimeNs, table->lastTimeNs, px);
         s->lod = lod;
-        s->t0 = table->firstTimeUs / 1000000.0;
-        s->t1 = table->lastTimeUs / 1000000.0;
+        s->t0 = table->firstTimeNs / 1000000000.0;
+        s->t1 = table->lastTimeNs / 1000000000.0;
     }
     pushToPlot();
 }

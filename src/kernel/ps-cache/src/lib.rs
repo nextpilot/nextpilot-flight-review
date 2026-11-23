@@ -94,7 +94,8 @@ pub fn load_params(path: &Path, expected_size: i64, expected_mtime: i64) -> Resu
 use ps_ndf::typed::{Column, ColumnData, Dataset as TypedDataset, NullBits, ValueType};
 
 const TYPED_MAGIC: u32 = 0x5053_4332; // PSC2
-const TYPED_VERSION: u32 = 2;
+// v3: 时间轴由微秒改为纳秒；旧 v2 缓存时间戳单位不符，load 时按版本号失效重建。
+const TYPED_VERSION: u32 = 3;
 const MAX_COLUMNS: u32 = 4096;
 
 fn write_u64(w: &mut impl Write, v: u64) -> Result<(), String> {
@@ -205,7 +206,7 @@ pub fn save_typed_dataset(path: &Path, ds: &TypedDataset, source_size: i64, sour
             write_u32(&mut w, table.row_count() as u32)?;
             write_u32(&mut w, table.columns.len() as u32)?;
             w.write_all(name).map_err(|e| e.to_string())?;
-            for t in table.time_us.iter() { write_i64(&mut w, *t)?; }
+            for t in table.time_ns.iter() { write_i64(&mut w, *t)?; }
             for s in &table.seq { write_u64(&mut w, *s)?; }
             for col in &table.columns { write_column(&mut w, col)?; }
         }
@@ -245,13 +246,13 @@ pub fn load_typed_dataset(path: &Path, expected_size: i64, expected_mtime: i64) 
         if cols > MAX_COLUMNS {
             return Err("列数超过缓存上限".into());
         }
-        let mut time_us = Vec::with_capacity(rows);
-        for _ in 0..rows { time_us.push(read_i64(&mut r)?); }
+        let mut time_ns = Vec::with_capacity(rows);
+        for _ in 0..rows { time_ns.push(read_i64(&mut r)?); }
         let mut seqs = Vec::with_capacity(rows);
         for _ in 0..rows { seqs.push(read_u64(&mut r)?); }
         let mut columns = Vec::with_capacity(cols as usize);
         for _ in 0..cols { columns.push(read_column(&mut r)?); }
-        let idx = ds.add_table_with_columns(&name, time_us, columns).map_err(|e| e.to_string())?;
+        let idx = ds.add_table_with_columns(&name, time_ns, columns).map_err(|e| e.to_string())?;
         if let Some(table) = ds.table_mut(idx) { table.seq = seqs; }
     }
     Ok(Some(ds))
@@ -277,7 +278,7 @@ mod typed_tests {
         let hit = load_typed_dataset(&path, 12, 34).unwrap().unwrap();
         assert_eq!(hit.tables.len(), 1);
         let t = &hit.tables[0];
-        assert_eq!(t.time_us.as_slice(), &[100, 200]);
+        assert_eq!(t.time_ns.as_slice(), &[100, 200]);
         assert_eq!(t.columns.len(), 2);
         assert_eq!(t.columns[0].value_as_f64(0), Some(1.0));
         assert!(t.columns[1].is_null(1));
