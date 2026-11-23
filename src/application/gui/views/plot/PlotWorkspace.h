@@ -87,6 +87,15 @@ public:
     bool applyDocumentSpec(const plot::PlotDocumentSpec &spec,
                            const dataset::SourceHub &sources);
 
+    // ---- 多数据集选择与重绑（#IKXD1N v4 条目 2.7，对标 PJ4）----
+    // planDatasetChoice：同一 origin 扇出/重复加载出多个数据集时，按"画布通道
+    // 可满足性"选最佳拟合（命中更多 table.column 者胜）；并列取第一个并报告。
+    // 单数据集直接返回，零开销。
+    int chooseDatasetFor(const dataset::DataSourceInfo &info, const QStringList &channels);
+    // rebindCurveKeys：数据集被替换（remove 后重载 / 扇出重建）后，把画布上
+    // 挂在失效 datasetId 的曲线按 table.column 接回新数据集。返回重绑条数。
+    int rebindStaleCurves();
+
     // ---- 晚到绑定（pending binder，对标 PJ4 PendingDisplayBinder）----
     //
     // 场景：布局先到、数据后到——layout 加载时 origin 对应的源还没载入
@@ -221,6 +230,13 @@ private:
     void dropPendingBinds();
     // 布局先到、数据晚到的挂起绑定条目（见 applyDocumentSpec 内的挂起分支）。
     QVector<PendingBind> m_pendingBinds;
+
+    // rebindCurveKeys 的三路解析：旧 id 仍有效→不动；失效但 table.column 在
+    // 唯一数据集→静默重绑；多个数据集都携带→取第一个并报告（PJ4 "take the
+    // first loaded candidate and says so"）。无处可绑返回 -1。
+    int resolveRebindTarget(int oldId, const QString &table, const QString &column);
+    // 数据集拓扑变化（源/数据集登记）时的统一入口：先重绑失效曲线，再接 pending。
+    void onDatasetTopologyChanged();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
