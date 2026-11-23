@@ -1227,11 +1227,24 @@ pub struct Dataset {
     pub tables: Vec<Table>,
     /// 新建表的默认 ring 字节预算；`None` 表示离线 Dataset 不裁剪。
     pub default_ring_budget_bytes: Option<usize>,
+    /// 数据代际：每次成功 append_frame 递增一次（建表也算一次）。
+    /// 读侧用它做 generation 快照隔离——代际未变则派生视图无需重算。
+    /// 单调不回绕（u64 溢出用 saturating_add 钳位，实际不可能达到）。
+    pub generation: u64,
 }
 
 impl Dataset {
     pub fn new() -> Self {
-        Self { tables: Vec::new(), default_ring_budget_bytes: None }
+        Self { tables: Vec::new(), default_ring_budget_bytes: None, generation: 0 }
+    }
+
+    /// 当前数据代际；供读侧快照比对，判断追加后是否需要刷新派生视图。
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    fn bump_generation(&mut self) {
+        self.generation = self.generation.saturating_add(1);
     }
 
     pub fn len(&self) -> usize {
@@ -1266,6 +1279,7 @@ impl Dataset {
         }
         table.trim_to_budget();
         self.tables.push(table);
+        self.bump_generation();
         Ok(self.tables.len() - 1)
     }
 
@@ -1365,17 +1379,25 @@ impl Dataset {
             }
             let rows = columns.into_iter().map(|(_, _, data, nulls)| (data, nulls)).collect();
             let is_backfill = t.time_ns.last().is_some_and(|last| time_ns[0] < *last);
-            if is_backfill {
+            let res = if is_backfill {
                 self.tables[idx].merge_sorted_rows(&time_ns, rows)
             } else {
                 self.tables[idx].append_rows(&time_ns, rows)
+            };
+            if res.is_ok() {
+                self.bump_generation();
             }
+            res
         } else {
             let mut cols = Vec::with_capacity(columns.len());
             for (name, unit, data, nulls) in columns {
                 cols.push(Column::with_nulls(name, unit, data, nulls)?);
             }
-            self.add_table_with_columns(table, time_ns, cols).map(|_| ())
+            let res = self.add_table_with_columns(table, time_ns, cols).map(|_| ());
+            if res.is_ok() {
+                self.bump_generation();
+            }
+            res
         }
     }
 }

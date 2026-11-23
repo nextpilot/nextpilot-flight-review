@@ -87,6 +87,8 @@ typedef struct PsFrameColumn {
 
 uint32_t             ps_dataset_channel_count(const PsDataset *ds);
 const PsChannelInfo *ps_dataset_channel(const PsDataset *ds, uint32_t index);
+/* 数据代际：每次成功追加（含建表）递增，读侧据此判断派生视图是否需要刷新。 */
+uint64_t             ps_dataset_generation(const PsDataset *ds);
 void                 ps_dataset_free(PsDataset *ds);
 
 /* 缓存层用：新建空数据集并追加通道，避免二次加载重新解析源文件。

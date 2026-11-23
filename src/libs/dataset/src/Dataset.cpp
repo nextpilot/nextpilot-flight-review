@@ -337,6 +337,31 @@ void Dataset::refreshSchema()
     rebuildSchema(d->native, d->schema);
 }
 
+quint64 Dataset::generation() const
+{
+    if (!d->native)
+        return 0;
+    return ps_dataset_generation(d->native.get());
+}
+
+bool Dataset::setRingBudget(const QString &table, quint64 bytes, QString *err)
+{
+    if (!d->native)
+    {
+        if (err)
+            *err = QStringLiteral("数据集为空");
+        return false;
+    }
+    const QByteArray tableUtf8 = table.toUtf8();
+    char errBuf[256] = {0};
+    const int rc = ps_dataset_set_ring_budget(
+        d->native.get(), table.isEmpty() ? nullptr : tableUtf8.constData(),
+        bytes, errBuf, sizeof(errBuf));
+    if (rc != 0 && err)
+        *err = QString::fromUtf8(errBuf);
+    return rc == 0;
+}
+
 int Dataset::addTable(const QString &name, const QVector<TimeNs> &timeNs)
 {
     if (!d->native || name.isEmpty() || timeNs.isEmpty() || tableIndex(name) >= 0)
