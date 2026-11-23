@@ -2212,6 +2212,65 @@ mod tests {
             ps_dataset_free(ds);
         }
     }
+
+    // S7：DAG 建图/循环检测/增量求值/输出 ABI。
+    #[test]
+    fn dag_incremental_via_abi() {
+        use std::ffi::CString;
+        unsafe {
+            let dag = ps_dag_create();
+            assert!(!dag.is_null());
+            let mut err = [0i8; 128];
+
+            let x = CString::new("x").unwrap();
+            let t = [0.0f64, 1.0, 2.0, 3.0];
+            let v = [-2.0f64, -1.0, 3.0, 4.0];
+            assert_eq!(ps_dag_set_input(dag, x.as_ptr(), t.as_ptr(), v.as_ptr(), 4), 0);
+
+            let n_abs = CString::new("abs").unwrap();
+            let f_abs = CString::new("absolute").unwrap();
+            let params = CString::new("{}").unwrap();
+            let id_abs = ps_dag_add_node(dag, n_abs.as_ptr(), f_abs.as_ptr(), params.as_ptr(),
+                x.as_ptr(), -1, err.as_mut_ptr(), err.len() as u32);
+            assert!(id_abs >= 0, "add abs failed: {}", cstr(err.as_ptr()));
+
+            let n_scale = CString::new("scale").unwrap();
+            let f_scale = CString::new("scale").unwrap();
+            let p_scale = CString::new("{\"value_scale\":2.0}").unwrap();
+            let id_scale = ps_dag_add_node(dag, n_scale.as_ptr(), f_scale.as_ptr(), p_scale.as_ptr(),
+                x.as_ptr(), id_abs, err.as_mut_ptr(), err.len() as u32);
+            assert!(id_scale >= 0);
+            assert_eq!(ps_dag_add_edge(dag, id_abs, id_scale, err.as_mut_ptr(), err.len() as u32), 0);
+            // 循环边被拒绝。
+            assert_eq!(ps_dag_add_edge(dag, id_scale, id_abs, err.as_mut_ptr(), err.len() as u32), 2);
+
+            assert_eq!(ps_dag_evaluate(dag, 1, err.as_mut_ptr(), err.len() as u32), 0);
+            assert_eq!(ps_dag_output_count(dag), 2);
+            let mut ot = [0f64; 8];
+            let mut ov = [0f64; 8];
+            let mut on = 0u32;
+            assert_eq!(ps_dag_output(dag, id_scale as u32, ot.as_mut_ptr(), ov.as_mut_ptr(), 8, &mut on), 0);
+            assert_eq!(on, 4);
+            assert_eq!(&ov[..4], &[4.0, 2.0, 6.0, 8.0]);
+
+            // generation 不变重求值，输出不变；追加新行 + bump generation，尾部增量更新。
+            let mut t2 = t.to_vec();
+            let mut v2 = v.to_vec();
+            t2.push(4.0); v2.push(-5.0);
+            assert_eq!(ps_dag_set_input(dag, x.as_ptr(), t2.as_ptr(), v2.as_ptr(), 5), 0);
+            assert_eq!(ps_dag_evaluate(dag, 2, err.as_mut_ptr(), err.len() as u32), 0);
+            assert_eq!(ps_dag_output(dag, id_scale as u32, ot.as_mut_ptr(), ov.as_mut_ptr(), 8, &mut on), 0);
+            assert_eq!(on, 5);
+            assert_eq!(&ov[..5], &[4.0, 2.0, 6.0, 8.0, 10.0]);
+
+            ps_dag_free(dag);
+        }
+    }
+
+    fn cstr(p: *const c_char) -> String {
+        if p.is_null() { return String::new(); }
+        unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() }
+    }
 }
 
 
@@ -2889,5 +2948,194 @@ pub unsafe extern "C" fn ps_stats_quantiles(
     for (i, q) in got.iter().enumerate() {
         *out.add(i) = *q;
     }
+    0
+}
+
+/* ===== S7 派生依赖图 IncrementalEngine（薄 C ABI）=====
+ * opaque handle + 显式喂数，不跨边界传 Rust 结构体。
+ * C 侧负责从 dataset 读通道再喂入；本层只做编排与增量调度。
+ */
+
+/// C 侧看到的不透明 DAG 句柄。
+pub struct PsDag {
+    engine: ps_dag::IncrementalEngine,
+    channels: std::collections::HashMap<String, ps_dag::Series>,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_create() -> *mut PsDag {
+    Box::into_raw(Box::new(PsDag {
+        engine: ps_dag::IncrementalEngine::new(ps_dag::Graph::new()),
+        channels: std::collections::HashMap::new(),
+    }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_free(dag: *mut PsDag) {
+    if !dag.is_null() {
+        drop(Box::from_raw(dag));
+    }
+}
+
+/// 喂入一条输入通道（复制 t/v，调用方可立即释放自己的缓冲）。
+/// 返回 0 成功，1 参数非法。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_set_input(
+    dag: *mut PsDag,
+    name: *const c_char,
+    t: *const f64,
+    v: *const f64,
+    n: u32,
+) -> i32 {
+    if dag.is_null() {
+        return 1;
+    }
+    let name = match require_name(name, "通道名") {
+        Ok(s) => s.to_string(),
+        Err(_) => return 1,
+    };
+    if n > 0 && (t.is_null() || v.is_null()) {
+        return 1;
+    }
+    let (ts, vs) = if n == 0 {
+        (Vec::new(), Vec::new())
+    } else {
+        (
+            std::slice::from_raw_parts(t, n as usize).to_vec(),
+            std::slice::from_raw_parts(v, n as usize).to_vec(),
+        )
+    };
+    (*dag).channels.insert(name, ps_dag::Series { t: ts, v: vs });
+    0
+}
+
+/// 加节点。input_node < 0 表示输入来自名为 input_channel 的通道；否则来自该上游节点。
+/// 返回节点 id（>=0）；失败返回 -1 并写 err。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_add_node(
+    dag: *mut PsDag,
+    name: *const c_char,
+    filter_id: *const c_char,
+    params_json: *const c_char,
+    input_channel: *const c_char,
+    input_node: i32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if dag.is_null() {
+        return -1;
+    }
+    let name = match require_name(name, "节点名") {
+        Ok(s) => s.to_string(),
+        Err(e) => { write_err(err, err_cap, &e); return -1; }
+    };
+    let filter = match require_name(filter_id, "算子") {
+        Ok(s) => s.to_string(),
+        Err(e) => { write_err(err, err_cap, &e); return -1; }
+    };
+    let params = if params_json.is_null() {
+        serde_json::Value::Object(Default::default())
+    } else {
+        match CStr::from_ptr(params_json).to_str() {
+            Ok(s) if s.trim().is_empty() => serde_json::Value::Object(Default::default()),
+            Ok(s) => match serde_json::from_str(s) {
+                Ok(v) => v,
+                Err(e) => { write_err(err, err_cap, &format!("参数 JSON：{e}")); return -1; }
+            },
+            Err(_) => { write_err(err, err_cap, "参数不是合法 UTF-8"); return -1; }
+        }
+    };
+    let source = if input_node < 0 {
+        let ch = match require_name(input_channel, "输入通道") {
+            Ok(s) => s.to_string(),
+            Err(e) => { write_err(err, err_cap, &e); return -1; }
+        };
+        ps_dag::Source::Channel(ch)
+    } else {
+        ps_dag::Source::Node(input_node as usize)
+    };
+    let node = ps_dag::Node::new(name, filter, params, source);
+    // graph 与 states 同步扩展；约定建图完成后再 evaluate。
+    ((*dag).engine.add_node(node)) as i32
+}
+
+/// 加依赖边。0 成功，1 参数非法，2 循环或重复。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_add_edge(dag: *mut PsDag, from: i32, to: i32, err: *mut c_char, err_cap: u32) -> i32 {
+    if dag.is_null() || from < 0 || to < 0 {
+        return 1;
+    }
+    match (*dag).engine.add_edge(from as usize, to as usize) {
+        Ok(()) => 0,
+        Err(ps_dag::GraphError::Cycle) => {
+            write_err(err, err_cap, "循环依赖被拒绝");
+            2
+        }
+        Err(ps_dag::GraphError::DuplicateEdge) => {
+            write_err(err, err_cap, "依赖边重复");
+            2
+        }
+        Err(e) => {
+            write_err(err, err_cap, &format!("{:?}", e));
+            2
+        }
+    }
+}
+
+/// 按 generation 增量求值。0 成功；2 图有环/缺通道；3 算子错误。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_evaluate(dag: *mut PsDag, generation: u64, err: *mut c_char, err_cap: u32) -> i32 {
+    if dag.is_null() {
+        return 1;
+    }
+    match (*dag).engine.evaluate(generation, &(*dag).channels) {
+        Ok(()) => 0,
+        Err(ps_dag::GraphError::Cycle) => {
+            write_err(err, err_cap, "图存在循环依赖");
+            2
+        }
+        Err(ps_dag::GraphError::ChannelMissing(n)) => {
+            write_err(err, err_cap, &format!("缺少输入通道：{n}"));
+            2
+        }
+        Err(e) => {
+            write_err(err, err_cap, &format!("{:?}", e));
+            3
+        }
+    }
+}
+
+/// 节点输出数量。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_output_count(dag: *const PsDag) -> u32 {
+    if dag.is_null() {
+        return 0;
+    }
+    (*dag).engine.graph.nodes.len() as u32
+}
+
+/// 读节点输出。0 成功；1 参数非法；2 未求值/越界；6 缓冲不足（out_n 仍给出实际长度）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_output(
+    dag: *const PsDag,
+    node: u32,
+    out_t: *mut f64,
+    out_v: *mut f64,
+    cap: u32,
+    out_n: *mut u32,
+) -> i32 {
+    if dag.is_null() || out_n.is_null() {
+        return 1;
+    }
+    let Some(s) = (*dag).engine.output(node as usize) else {
+        return 2;
+    };
+    let n = s.t.len().min(s.v.len()) as u32;
+    *out_n = n;
+    if out_t.is_null() || out_v.is_null() || n > cap {
+        return 6;
+    }
+    std::ptr::copy_nonoverlapping(s.t.as_ptr(), out_t, n as usize);
+    std::ptr::copy_nonoverlapping(s.v.as_ptr(), out_v, n as usize);
     0
 }

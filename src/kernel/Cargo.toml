@@ -5,6 +5,7 @@ members = [
     "ps-ndf",
     "ps-ops",
     "ps-cache",
+    "ps-dag",
 ]
 
 [workspace.package]
@@ -18,3 +19,4 @@ ps-abi = { path = "ps-abi" }
 ps-ndf = { path = "ps-ndf" }
 ps-ops = { path = "ps-ops" }
 ps-cache = { path = "ps-cache" }
+ps-dag = { path = "ps-dag" }
