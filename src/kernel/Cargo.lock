@@ -28,6 +28,7 @@ name = "ps-abi"
 version = "0.1.0"
 dependencies = [
  "ps-cache",
+ "ps-dag",
  "ps-ndf",
  "ps-ops",
  "serde_json",
@@ -38,6 +39,14 @@ name = "ps-cache"
 version = "0.1.0"
 dependencies = [
  "ps-ndf",
+]
+
+[[package]]
+name = "ps-dag"
+version = "0.1.0"
+dependencies = [
+ "ps-ops",
+ "serde_json",
 ]
 
 [[package]]

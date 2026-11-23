@@ -345,6 +345,37 @@ int32_t ps_cache_load_params(const char *path,
                              char *out, uint32_t cap,
                              char *err, uint32_t err_cap);
 
+/* ---- S7 派生依赖图 IncrementalEngine（opaque handle）---- */
+
+/* 不透明 DAG 句柄；用 ps_dag_create/free 管理，不跨边界传内部结构。 */
+typedef struct PsDag PsDag;
+
+PsDag *ps_dag_create(void);
+void   ps_dag_free(PsDag *dag);
+
+/* 喂入输入通道（复制 t/v，调用方可立即释放自己的缓冲）。0 成功；1 参数非法。 */
+int32_t ps_dag_set_input(PsDag *dag, const char *name,
+                         const double *t, const double *v, uint32_t n);
+
+/* 加节点：input_node<0 表示输入来自通道 input_channel，否则来自上游节点。
+ * 返回节点 id（>=0）；-1 失败并写 err。 */
+int32_t ps_dag_add_node(PsDag *dag, const char *name, const char *filter_id,
+                        const char *params_json, const char *input_channel,
+                        int32_t input_node, char *err, uint32_t err_cap);
+
+/* 加依赖边：0 成功；1 参数非法；2 循环或重复。 */
+int32_t ps_dag_add_edge(PsDag *dag, int32_t from, int32_t to,
+                        char *err, uint32_t err_cap);
+
+/* 按 generation 增量求值：0 成功；1 空句柄；2 图有环/缺通道；3 算子错误。 */
+int32_t ps_dag_evaluate(PsDag *dag, uint64_t generation, char *err, uint32_t err_cap);
+
+/* 输出：ps_dag_output_count 返回节点数；ps_dag_output 读某节点的 (t,v)。
+ * 返回 0 成功；1 参数非法；2 未求值/越界；6 缓冲不足（*out_n 仍给出实际长度）。 */
+uint32_t ps_dag_output_count(const PsDag *dag);
+int32_t  ps_dag_output(const PsDag *dag, uint32_t node,
+                       double *out_t, double *out_v, uint32_t cap, uint32_t *out_n);
+
 
 #ifdef __cplusplus
 }
