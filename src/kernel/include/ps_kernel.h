@@ -145,6 +145,27 @@ int32_t     ps_dataset_blob_get(const PsDataset *ds, uint64_t handle, void *out,
 int32_t     ps_dataset_blob_retain(PsDataset *ds, uint64_t handle);
 int32_t     ps_dataset_blob_release(PsDataset *ds, uint64_t handle);
 
+/* ---- BJ1 时间索引对象：按 topic/时间组织句柄 + 到达序 UID（借鉴 pj ObjectStore）----
+ * 与 blob_* 正交：blob 管 payload 字节/句柄生命周期，这里只管 (topic,time)->handle 映射。
+ * handle 必须先由 blob_put 取得；乱序到达不丢行、插入 O(log n)。 */
+/* 登记句柄到 topic 的时间点，返回到达序 UID(>0)；失败 0 并写 err。 */
+uint64_t    ps_object_insert(PsDataset *ds, const char *topic, uint64_t time_ns,
+                             uint64_t handle, char *err, uint32_t err_cap);
+/* 时间点查找 <=time_ns 的最新条，输出 (handle,uid)。0 成功；1 参数错；2 无匹配。 */
+int32_t     ps_object_latest_at(const PsDataset *ds, const char *topic, uint64_t time_ns,
+                                uint64_t *out_handle, uint64_t *out_uid);
+/* 到达序游标 uid>since，out 每元素 3 个 u64=(uid,time_ns,handle)，out_cap 为元素数。
+ * 0 成功；1 参数错；2 缓冲不足(*out_len 填所需)；3 topic 不存在。 */
+int32_t     ps_object_drain_new_since(const PsDataset *ds, const char *topic, uint64_t since,
+                                      uint64_t *out, uint32_t out_cap, uint32_t *out_len);
+/* 时间窗闭区间 [t0_ns,t1_ns]，按时间升序，out 格式同上。返回码同上。 */
+int32_t     ps_object_range_by_time(const PsDataset *ds, const char *topic,
+                                    uint64_t t0_ns, uint64_t t1_ns,
+                                    uint64_t *out, uint32_t out_cap, uint32_t *out_len);
+/* topic 数与条目总数，供容量预分配。0 成功；1 参数错。 */
+int32_t     ps_object_index_stats(const PsDataset *ds, uint32_t *out_topic_count,
+                                  uint32_t *out_entry_count);
+
 /* typed 表当前行数；表不存在返回 0。 */
 uint64_t             ps_dataset_table_rows(PsDataset *ds, const char *table);
 /* typed 表视口 LOD；out 为 (time_sec,min,max) 三元组，长度至少 cap*3，返回实际三元组数。 */

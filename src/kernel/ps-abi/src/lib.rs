@@ -85,6 +85,9 @@ pub struct PsDataset {
     typed_tables: Vec<CString>,
     typed_columns: Vec<CString>,
     infos_dirty: bool,
+    /// BJ1：按 topic 组织的时间索引对象集合。只存 (time, uid) -> handle，
+    /// payload 仍在 `typed.objects` 池里；与 blob API 正交，互不干扰。
+    object_index: ps_ndf::object_index::ObjectIndex,
 }
 
 impl PsDataset {
@@ -101,6 +104,7 @@ impl PsDataset {
             typed_tables: Vec::new(),
             typed_columns: Vec::new(),
             infos_dirty: true,
+            object_index: ps_ndf::object_index::ObjectIndex::new(),
         }
     }
 
@@ -2080,6 +2084,65 @@ mod tests {
         }
     }
 
+    // ---------- BJ1 时间索引对象 C ABI ----------
+    #[test]
+    fn object_index_abi_out_of_order_insert_and_cursors() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let topic = CString::new("/tf").unwrap();
+            let p = b"tf";
+            // 三个句柄（时间 300、100、200，故意乱序到达）。
+            let h1 = ps_dataset_blob_put(ds, p.as_ptr() as *const _, p.len() as u32, 1,
+                                         std::ptr::null_mut(), 0);
+            let h2 = ps_dataset_blob_put(ds, p.as_ptr() as *const _, p.len() as u32, 1,
+                                         std::ptr::null_mut(), 0);
+            let h3 = ps_dataset_blob_put(ds, p.as_ptr() as *const _, p.len() as u32, 1,
+                                         std::ptr::null_mut(), 0);
+            let u1 = ps_object_insert(ds, topic.as_ptr(), 300, h1, std::ptr::null_mut(), 0);
+            let u2 = ps_object_insert(ds, topic.as_ptr(), 100, h2, std::ptr::null_mut(), 0);
+            let u3 = ps_object_insert(ds, topic.as_ptr(), 200, h3, std::ptr::null_mut(), 0);
+            assert!(u1 > 0 && u2 > u1 && u3 > u2, "UID 按到达序递增");
+
+            // stats：1 topic / 3 条目。
+            let mut tc = 0u32;
+            let mut ec = 0u32;
+            assert_eq!(ps_object_index_stats(ds, &mut tc, &mut ec), 0);
+            assert_eq!((tc, ec), (1, 3));
+
+            // latest_at：时间为序，不是到达序——<=250 命中 time=200 的 h3。
+            let mut out_h = 0u64;
+            let mut out_u = 0u64;
+            assert_eq!(ps_object_latest_at(ds, topic.as_ptr(), 250, &mut out_h, &mut out_u), 0);
+            assert_eq!((out_h, out_u), (h3, u3));
+            // <=99 无匹配。
+            assert_eq!(ps_object_latest_at(ds, topic.as_ptr(), 99, &mut out_h, &mut out_u), 2);
+
+            // drain_new_since(u1)：到达序，取到 u2/u3（含时间更早的 h2）。
+            let mut rows = [0u64; 9];
+            let mut n = 0u32;
+            assert_eq!(ps_object_drain_new_since(ds, topic.as_ptr(), u1, rows.as_mut_ptr(), 3, &mut n), 0);
+            assert_eq!(n, 2);
+            assert_eq!((rows[0], rows[1], rows[2]), (u2, 100, h2));
+            assert_eq!((rows[3], rows[4], rows[5]), (u3, 200, h3));
+
+            // range_by_time：闭区间 [100,200]，按时间升序。
+            assert_eq!(ps_object_range_by_time(ds, topic.as_ptr(), 100, 200, rows.as_mut_ptr(), 3, &mut n), 0);
+            assert_eq!(n, 2);
+            assert_eq!((rows[0], rows[1], rows[2]), (u2, 100, h2));
+            assert_eq!((rows[3], rows[4], rows[5]), (u3, 200, h3));
+
+            // 缓冲不足：返回 2，out_len 填所需。
+            let mut tiny = [0u64; 3];
+            assert_eq!(ps_object_drain_new_since(ds, topic.as_ptr(), 0, tiny.as_mut_ptr(), 1, &mut n), 2);
+            assert_eq!(n, 3);
+
+            // 不存在的 topic。
+            let missing = CString::new("/none").unwrap();
+            assert_eq!(ps_object_latest_at(ds, missing.as_ptr(), 999, &mut out_h, &mut out_u), 2);
+            ps_dataset_free(ds);
+        }
+    }
+
     #[test]
     fn object_column_via_abi_aligned_with_scalar_and_typed_as_object() {
         unsafe {
@@ -2766,6 +2829,139 @@ pub unsafe extern "C" fn ps_dataset_blob_release(ds: *mut PsDataset, handle: u64
         return 1;
     }
     if (*ds).typed.objects.release(handle) { 0 } else { 2 }
+}
+
+/* ===== BJ1 时间索引对象：按 topic / 时间组织句柄，到达序 UID（借鉴 pj ObjectStore） =====
+ * 与上面的 blob_* 正交：blob_* 管 payload 字节与句柄生命周期，这里只管
+ * "(topic, time_ns) -> handle" 的有序映射与到达序。handle 必须先由 blob_put 取得。
+ * 解决 pj 踩过的两个坑：乱序到达不丢行、乱序插入 O(log n) 而非 O(n²)。 */
+
+/// 把已有对象句柄登记到某 topic 的时间点，返回到达序 UID（>0）；失败返回 0 并写 err。
+/// `handle` 必须是由 `ps_dataset_blob_put` 取得的有效句柄（内核不在此校验其存活）。
+/// `time_ns` 为时间戳（纳秒，u64 编码）；相等时间按到达序（UID）区分。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_insert(
+    ds: *mut PsDataset,
+    topic: *const c_char,
+    time_ns: u64,
+    handle: u64,
+    err: *mut c_char,
+    err_cap: u32,
+) -> u64 {
+    if ds.is_null() || topic.is_null() || handle == 0 {
+        write_err(err, err_cap, "参数为空或句柄为 0");
+        return 0;
+    }
+    let name = match std::ffi::CStr::from_ptr(topic).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            write_err(err, err_cap, "topic 名非法 UTF-8");
+            return 0;
+        }
+    };
+    (*ds).object_index.topic_mut(name).insert(time_ns, handle)
+}
+
+/// 时间点查找：`<= time_ns` 的最新一条，输出 `(handle, uid)`。
+/// 返回 0 成功；1 参数错；2 topic 不存在或无匹配条目。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_latest_at(
+    ds: *const PsDataset,
+    topic: *const c_char,
+    time_ns: u64,
+    out_handle: *mut u64,
+    out_uid: *mut u64,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out_handle.is_null() || out_uid.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some(t) = (*ds).object_index.topic(name) else { return 2; };
+    let Some((h, uid)) = t.latest_at(time_ns) else { return 2; };
+    *out_handle = h;
+    *out_uid = uid;
+    0
+}
+
+/// 到达序游标：取 `uid > since` 的条目，按到达序升序，写入 `out` 三元组 `(uid, time_ns, handle)`。
+/// 每条占 3 个 u64；`out_cap` 为元素容量（不是 u64 个数）。
+/// 返回 0 成功；1 参数错；2 缓冲不足（*out_len 填所需元素数）；3 topic 不存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_drain_new_since(
+    ds: *const PsDataset,
+    topic: *const c_char,
+    since: u64,
+    out: *mut u64,
+    out_cap: u32,
+    out_len: *mut u32,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out_len.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some(t) = (*ds).object_index.topic(name) else { return 3; };
+    let rows = t.drain_new_since(since);
+    if rows.len() > out_cap as usize {
+        *out_len = rows.len() as u32;
+        return if out.is_null() { 1 } else { 2 };
+    }
+    if !out.is_null() {
+        for (r, (uid, t_ns, h)) in rows.iter().enumerate() {
+            *out.add(r * 3) = *uid;
+            *out.add(r * 3 + 1) = *t_ns;
+            *out.add(r * 3 + 2) = *h;
+        }
+    }
+    *out_len = rows.len() as u32;
+    0
+}
+
+/// 时间窗遍历：闭区间 `[t0_ns, t1_ns]`，按时间升序，输出同上三元组。
+/// 返回 0 成功；1 参数错；2 缓冲不足（*out_len 填所需元素数）；3 topic 不存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_range_by_time(
+    ds: *const PsDataset,
+    topic: *const c_char,
+    t0_ns: u64,
+    t1_ns: u64,
+    out: *mut u64,
+    out_cap: u32,
+    out_len: *mut u32,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out_len.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some(t) = (*ds).object_index.topic(name) else { return 3; };
+    let rows = t.range_by_time(t0_ns, t1_ns);
+    if rows.len() > out_cap as usize {
+        *out_len = rows.len() as u32;
+        return if out.is_null() { 1 } else { 2 };
+    }
+    if !out.is_null() {
+        for (r, (t_ns, uid, h)) in rows.iter().enumerate() {
+            *out.add(r * 3) = *uid;
+            *out.add(r * 3 + 1) = *t_ns;
+            *out.add(r * 3 + 2) = *h;
+        }
+    }
+    *out_len = rows.len() as u32;
+    0
+}
+
+/// topic 数量 / 条目总数，供上层做容量预分配与观测。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_index_stats(
+    ds: *const PsDataset,
+    out_topic_count: *mut u32,
+    out_entry_count: *mut u32,
+) -> i32 {
+    if ds.is_null() || out_topic_count.is_null() || out_entry_count.is_null() {
+        return 1;
+    }
+    *out_topic_count = (*ds).object_index.topic_count() as u32;
+    *out_entry_count = (*ds).object_index.total_entries() as u32;
+    0
 }
 
 /// 2.7.5 数据集切片：从源数据集按时间范围 `[t0_ns, t1_ns]`（含端点）与列子集

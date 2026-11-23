@@ -1,6 +1,7 @@
 //! NDF（NextPilot Data Format）：按表组织的时间序列内存表示。
 //! 逻辑上 Dataset 是库、Table 是 topic 表、Column 是字段列；物理上 t 与 v 分列存储。
 
+pub mod object_index;
 pub mod typed;
 
 use std::sync::Arc;
