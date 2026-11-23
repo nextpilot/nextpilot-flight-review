@@ -153,11 +153,24 @@ PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWid
     m_rows = 1;
     m_cols = 1;
 
-    // 悬浮工具栏的自动收起：鼠标停止移动一会儿就隐藏，不让按钮常驻压住曲线。
+    // 悬浮工具栏的自动收起：鼠标离开这一格才隐藏，不让按钮常驻压住曲线。
     m_hoverTimer = new QTimer(this);
     m_hoverTimer->setSingleShot(true);
     m_hoverTimer->setInterval(1600);
-    QObject::connect(m_hoverTimer, &QTimer::timeout, this, [this]() { hideHoverBars(); });
+    QObject::connect(m_hoverTimer, &QTimer::timeout, this, [this]() {
+        // 鼠标停在这一格内（画布或浮在其上的工具栏）就续期，不收起。
+        const QPoint cursor = QCursor::pos();
+        for (int i = 0; i < m_cells.size(); ++i)
+        {
+            QWidget *frame = m_cells.at(i).frame;
+            if (frame && frame->isVisible() && frame->rect().contains(frame->mapFromGlobal(cursor)))
+            {
+                showHoverBar(i);
+                return;
+            }
+        }
+        hideHoverBars();
+    });
 
     // 活动通道只追加到当前 cell（"当前画布"语义）。
     QObject::connect(&m_appCtx, &AppContext::activeChannelChanged, this,
