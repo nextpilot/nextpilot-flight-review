@@ -166,6 +166,17 @@ int32_t     ps_object_range_by_time(const PsDataset *ds, const char *topic,
 int32_t     ps_object_index_stats(const PsDataset *ds, uint32_t *out_topic_count,
                                   uint32_t *out_entry_count);
 
+/* ---- BJ2 保留预算与跳跃驱逐（借鉴 pj RetentionBudget / RetentionJump）---- */
+/* 设置 topic 预算：time_window_ns / max_entries 各自独立，0=关闭。0 成功；1 参数错。 */
+int32_t     ps_object_set_retention(PsDataset *ds, const char *topic,
+                                    uint64_t time_window_ns, uint32_t max_entries);
+/* 应用预算跳跃驱逐，out 每元素一个 u64 handle（调用方须 blob_release）。
+ * out_cap 为元素数。0 成功；1 参数错；2 缓冲不足(*out_len 填所需)；3 topic 不存在。 */
+int32_t     ps_object_apply_retention(PsDataset *ds, const char *topic, uint64_t *out,
+                                      uint32_t out_cap, uint32_t *out_len);
+/* 驱逐水位：时间戳 < 此值已被回收。0 成功；1 参数错；3 topic 不存在。 */
+int32_t     ps_object_evicted_before(const PsDataset *ds, const char *topic, uint64_t *out_ns);
+
 /* typed 表当前行数；表不存在返回 0。 */
 uint64_t             ps_dataset_table_rows(PsDataset *ds, const char *table);
 /* typed 表视口 LOD；out 为 (time_sec,min,max) 三元组，长度至少 cap*3，返回实际三元组数。 */

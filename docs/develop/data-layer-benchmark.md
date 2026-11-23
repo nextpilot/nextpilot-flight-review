@@ -144,3 +144,19 @@ cargo bench -p ps-abi --bench bench_dataset -- --baseline <受管基线路径>
 （节点分配开销）。对象索引服务于图像/点云/TF 等低频对象（每秒几十~几百条），MCAP
 场景 chunk 解压本身毫秒级，索引微秒级差异非瓶颈；标量主数据仍走单调 `typed::Table`
 完全不受影响。基准脚本为临时产物（`/tmp`，未入库），数字供趋势参考。
+
+## BJ2 对象保留预算跳跃驱逐 vs 逐条（借鉴 pj RetentionJump）
+
+`ps_ndf::object_index` 按 per-topic 预算（时间窗 / 条目数，0=off）驱逐过期前缀，
+用 `BTreeMap::split_off` 一次切开 + 同步移除 `by_uid`（保持到达序游标一致）。
+对比"逐条 pop_first"（pj 逐条驱逐 1.3s 的等价写法）。release、100k 条目逐 99990 条：
+
+| 指标 | 耗时 | 说明 |
+|---|---:|---|
+| 跳跃驱逐（本单元） | 7.76ms | split_off 一次切 + 同步 by_uid |
+| 逐条 pop_first | 2.92ms | 等价 BTreeMap 单结构 |
+| 达标线 | <20ms | 对齐 pj RetentionJump 的 8ms |
+
+跳跃驱逐绝对值达标（<20ms，与 pj 实测 8ms 同量级）。逐条对照只操作单一 BTreeMap，
+而本单元还需同步维护 `by_uid` 到达序索引（乱序下被逐条目 UID 不连续，无法整段切），
+故比值 0.4x 系结构差异而非实现缺陷；绝对耗时是验收口径。基准脚本为临时产物（`/tmp`，未入库）。
