@@ -60,8 +60,11 @@ public:
 
     // 按插槽数据把内容停靠到指定区域；同区域重复停靠合并成标签页。
     // icon 为图标名（:/icons/<icon>.svg），空则用该区域的默认图标。
+    // pageKey 是该 dock 页签的**稳定键**（面板类型 id，如 "dataset-tree"），
+    // 视图页的面板开关按钮按它逐页定位——区级整组开关曾让按钮名称与
+    // 实际效果不符（历史缺陷），语义改为"一个按钮管一个页签"。
     void dock(const QString &area, const QString &title, QWidget *content,
-              const QString &icon = QString());
+              const QString &icon = QString(), const QString &pageKey = QString());
 
     // 中央内容（画布区）。首个到达者占据中央 dock（画布）；之后到达的
     // （如脚本编辑器）并成同区页签、与画布平级——写代码需要全宽，
@@ -72,9 +75,13 @@ public:
     // 重新绑定 ribbon（插槽或动作变化后调用）。
     void rebuildRibbon();
 
-    // 面板显隐。
-    void setPanelVisible(const QString &area, bool visible);
-    bool isPanelVisible(const QString &area) const;
+    // 单个 dock 页面的显隐：按 pageKey（面板类型 id）定位该页签。
+    // 点击一次出现、再点一次消失，只影响自己，不动同区其它页签。
+    // 返回 false 表示该 pageKey 没有对应的 dock（面板尚未创建）。
+    bool setDockPageVisible(const QString &pageKey, bool visible);
+    bool isDockPageVisible(const QString &pageKey) const;
+    // 诊断/状态栏用：pageKey 对应页签的标题（找不到返回空串）。
+    QString dockPageTitle(const QString &pageKey) const;
 
     // 面板内容与标题（诊断/测试用）。
     QWidget *panelWidget(const QString &area) const;
@@ -192,6 +199,8 @@ private:
     QHash<QString, ads::CDockAreaWidget *> m_lastArea; // area -> 该侧最后一个 DockArea
     QHash<QString, ads::CDockWidget *> m_panels;      // area -> 该侧主 dock
     QHash<QString, QList<ads::CDockWidget *>> m_docksByArea; // area -> 全部页签（按放置顺序）
+    // pageKey（面板类型 id）-> dock 页签：视图页逐页开关按钮的定位表。
+    QHash<QString, ads::CDockWidget *> m_dockByKey;
     // 面板内容 widget -> 持有它的 dock 页签（raisePanel 置前用；
     // ADS 自带的 dockWidgetsMap 按 objectName 索引，撞名会互相覆盖不可靠）。
     QHash<QWidget *, ads::CDockWidget *> m_dockByWidget;

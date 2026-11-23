@@ -30,17 +30,25 @@ GuiContext::GuiContext(QMainWindow *window, UiSlotHub &slotReg, ShellBinder *bin
 
 void GuiContext::placePanel(QWidget *widget, const QString &area, const QString &titleOverride)
 {
+    placePanelWithKey(widget, area, titleOverride, QString());
+}
+
+void GuiContext::placePanelWithKey(QWidget *widget, const QString &area, const QString &title,
+                                   const QString &pageKey)
+{
     if (!widget || !m_binder)
         return;
     // 标题优先级：调用方显式指定（领域面板自己的描述）> 插槽标签 > 区域名兜底。
-    QString title = titleOverride;
-    if (title.isEmpty())
+    QString resolved = title;
+    if (resolved.isEmpty())
     {
-        title = area;
+        resolved = area;
         if (const UiSlot *slot = m_slots.slot(area))
-            title = slot->label;
+            resolved = slot->label;
     }
-    m_binder->dock(area, title, widget, m_panelIcon.take(widget));
+    // pageKey = 面板类型 id：视图页逐页开关按钮按它定位页签（稳定键，
+    // 不随显示标题改动而失效）。领域面板等无类型 id 的调用方留空即可。
+    m_binder->dock(area, resolved, widget, m_panelIcon.take(widget), pageKey);
 }
 
 void GuiContext::placeCanvas(QWidget *widget, const QString &titleOverride)
@@ -116,7 +124,7 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     if (area == QStringLiteral("canvas.center"))
         placeCanvas(widget, PanelFactoryHub::title(panelType));
     else
-        placePanel(widget, area, PanelFactoryHub::title(panelType));
+        placePanelWithKey(widget, area, PanelFactoryHub::title(panelType), panelType);
     return widget;
 }
 

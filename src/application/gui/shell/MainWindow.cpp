@@ -189,20 +189,27 @@ void MainWindow::declareStandardSlots()
                 QStringLiteral("ribbon.group.script.run"), QStringLiteral("script.run"),
                 QStringLiteral("play"), QStringLiteral("Ctrl+F5"), 0);
 
-    // --- 视图页：面板开关（按 dock 顺序 left/right/bottom）---
-    addSkeleton(QStringLiteral("view.toggleDock.left"), QStringLiteral("数据集"),
-                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"),
-                QString(), 0);
-    addSkeleton(QStringLiteral("view.toggleDock.right"), QStringLiteral("属性"),
-                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"),
-                QString(), 1);
-    addSkeleton(QStringLiteral("view.toggleDock.bottom"), QStringLiteral("日志"),
-                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"),
-                QString(), 2);
-    // M2.8 诊断面板：注册树全景（diag.registries 取数），首次打开时按需创建。
-    addSkeleton(QStringLiteral("view.toggleDock.diagnostics"), QStringLiteral("诊断"),
-                QStringLiteral("ribbon.group.view.panels"), QString(), QStringLiteral("panel"),
-                QString(), 3);
+    // --- 视图页：面板开关（**每个 dock 页签一个按钮**，点击出现/再点消失）---
+    // 动作 id = "view.toggleDock." + 面板类型 id（稳定 pageKey，不随标题改动失效）；
+    // 标签与页签标题一致。曾按区做整组开关，按钮名称与实际效果不符（历史缺陷）。
+    static const struct { const char *type; const char *label; const char *icon; } kDockPageActions[] = {
+        {"dataset-tree",   "数据源",     "datasource"},    // 左栏
+        {"script-files",   "脚本文件",   "script"},        // 左栏
+        {"property-panel", "属性",       "property"},      // 右栏
+        {"script-debug",   "调试",       "script_debug"},  // 右栏
+        {"script-console", "终端",       "terminal"},      // 底部
+        {"output-console", "输出",       "output"},        // 底部
+        {"problems",       "问题",       "problems"},      // 底部
+        {"debug-console",  "调试控制台", "debug_console"}, // 底部
+        {"diagnostics",    "诊断",       "diagnostics"},   // 底部（归并页签）
+    };
+    for (int i = 0; i < (int)(sizeof(kDockPageActions) / sizeof(kDockPageActions[0])); ++i)
+    {
+        addSkeleton(QStringLiteral("view.toggleDock.") + QLatin1String(kDockPageActions[i].type),
+                    QLatin1String(kDockPageActions[i].label),
+                    QStringLiteral("ribbon.group.view.panels"), QString(),
+                    QLatin1String(kDockPageActions[i].icon), QString(), i);
+    }
 
     // --- 绘图页四组：面板划分与顺序 ---
     // 走 view action，由 CanvasWorkspace 集中处理（多画布/网格）。intentOp 留空：
@@ -500,28 +507,21 @@ void MainWindow::build(RuntimeHost &host)
                                        : QStringLiteral("导出失败: %1").arg(r.error().message));
             return;
         }
-        // 视图页面板开关：按 dock id 切换停靠面板显隐（view.toggleDock）。
+        // 视图页面板开关：动作 id = "view.toggleDock." + 面板类型 id（pageKey）。
+        // 语义是"一个按钮管一个页签"：点击一次出现、再点一次消失，只影响
+        // 自己，不动同区其它页签。所有底部页签（含诊断）在装配期就已创建，
+        // 不存在"首次点击才 requestPanel"的特判。
         if (actionId.startsWith(QStringLiteral("view.toggleDock.")))
         {
-            const QString area = QStringLiteral("dock.")
-                               + actionId.mid(QStringLiteral("view.toggleDock.").size());
-            // 诊断面板：内容按需创建（首次打开才 requestPanel）。
-            // 注意它不能走下面的通用 toggle：requestPanel 新建后 ADS 会把
-            // 新页签置为当前页（瞬时"已显示"），toggle 会把首次点击判成隐藏。
-            // 诊断按钮语义定为幂等的"显示并激活"，关闭交给页签 X 或"日志"整组开关。
-            if (area == QStringLiteral("dock.diagnostics"))
-            {
-                m_context->requestPanel(QStringLiteral("dock.diagnostics"),
-                                        QStringLiteral("diagnostics"));
-                m_binder->setPanelVisible(area, true);
+            const QString pageKey = actionId.mid(QStringLiteral("view.toggleDock.").size());
+            const bool nowVisible = !m_binder->isDockPageVisible(pageKey);
+            if (m_binder->setDockPageVisible(pageKey, nowVisible))
                 statusBar()->showMessage(QStringLiteral("面板 %1: %2")
-                                             .arg(area, QStringLiteral("显示")));
-                return;
-            }
-            const bool nowVisible = !m_binder->isPanelVisible(area);
-            m_binder->setPanelVisible(area, nowVisible);
-            statusBar()->showMessage(QStringLiteral("面板 %1: %2")
-                                         .arg(area, nowVisible ? QStringLiteral("显示") : QStringLiteral("隐藏")));
+                                             .arg(m_binder->dockPageTitle(pageKey),
+                                                  nowVisible ? QStringLiteral("显示")
+                                                             : QStringLiteral("隐藏")));
+            else
+                statusBar()->showMessage(QStringLiteral("面板 %1 尚未创建").arg(pageKey));
             return;
         }
         // 运行脚本：选 .lua/.py 文件 → script.run 意图（与 CLI --run 同一路径）。

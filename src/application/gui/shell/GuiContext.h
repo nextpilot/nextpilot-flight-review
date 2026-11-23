@@ -34,6 +34,9 @@ public:
     // nextpilot::plotscope::host::UiContext
     void placePanel(QWidget *widget, const QString &area,
                     const QString &titleOverride = QString()) override;
+    // 带稳定 pageKey 的放置（面板类型 id）：视图页逐页开关按钮按它定位页签。
+    void placePanelWithKey(QWidget *widget, const QString &area, const QString &title,
+                           const QString &pageKey);
     void placeCanvas(QWidget *widget, const QString &titleOverride = QString()) override;
     void declareSlot(const QString &area, const QString &label, nextpilot::plotscope::registry::SlotKind kind,
                      const QString &parentArea = QString()) override;
