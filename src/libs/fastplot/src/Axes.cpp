@@ -1085,8 +1085,15 @@ void Axes::paintLegend(QPainter &painter)
         {
             const Line &curve = m_curves.at(namedIdx.at(r));
             const QPointF origin(colX, topY + (r - c * lay.rowsPer + 1) * rowH);
+            // 行内裁剪：超宽的名字截在块底色内，不溢出（参照 PJ4 PlotLegend drawLegendData）。
+            painter.save();
+            painter.setClipRect(QRectF(colX, origin.y(), lay.w.at(c), rowH));
             painter.setPen(Qt::NoPen);
-            painter.setBrush(curve.isVisible() ? curve.ink() : gray);
+            // 隐藏行：色块降为约 45% 透明度但保留曲线色，颜色辨识不丢（同 PJ4）。
+            QColor ink = curve.ink();
+            if (!curve.isVisible())
+                ink.setAlpha(115);
+            painter.setBrush(ink);
             painter.drawRect(QRectF(origin.x(), origin.y() + 3, 10, 10));
             painter.setPen(curve.isVisible() ? labelColor : gray);
             painter.drawText(QPointF(origin.x() + 16, origin.y() + fm.ascent() + 1), curve.name());
@@ -1100,6 +1107,7 @@ void Axes::paintLegend(QPainter &painter)
                                  Qt::AlignVCenter | Qt::AlignLeft, val);
             }
             m_legendRows.append(LegendRow{namedIdx.at(r), QRectF(colX, origin.y(), lay.w.at(c), rowH)});
+            painter.restore();
         }
         colX += lay.w.at(c) + 16;
     }
