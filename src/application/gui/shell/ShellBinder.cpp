@@ -1178,6 +1178,87 @@ int ShellBinder::actionTriggerCount(const QString &actionId) const
     return m_actionTriggers.value(actionId, 0);
 }
 
+bool ShellBinder::triggerAction(const QString &actionId)
+{
+    QAction *action = m_actionById.value(actionId, nullptr);
+    if (!action)
+        return false;
+    action->trigger();
+    return true;
+}
+
+bool ShellBinder::dispatchAction(const QString &actionId, const QString &intentOp,
+                                 const QString &data)
+{
+    if (triggerAction(actionId))
+        return true;
+    if (!m_dispatch || intentOp.isEmpty())
+        return false;
+    m_dispatch(actionId, intentOp, data);
+    return true;
+}
+
+bool ShellBinder::bottomPanelVisible() const
+{
+    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.bottom"));
+    if (!dock)
+        return false;
+    if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
+        return area->isVisible();
+    return dock->isVisible();
+}
+
+bool ShellBinder::toggleBottomPanel()
+{
+    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.bottom"));
+    if (!dock)
+        return false;
+    if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
+    {
+        area->setVisible(!area->isVisible());
+        return true;
+    }
+    return false;
+}
+
+int ShellBinder::currentCentralIndex() const
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return -1;
+    return m_centralDock->dockAreaWidget()->currentIndex();
+}
+
+bool ShellBinder::activateCentralIndex(int index)
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return false;
+    ads::CDockAreaWidget *area = m_centralDock->dockAreaWidget();
+    if (index < 0 || index >= area->dockWidgets().size())
+        return false;
+    area->setCurrentIndex(index);
+    return true;
+}
+
+QString ShellBinder::currentCentralTitle() const
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return QString();
+    ads::CDockWidget *current = m_centralDock->dockAreaWidget()->currentDockWidget();
+    return current ? current->windowTitle() : QString();
+}
+
+bool ShellBinder::closeCurrentEditor()
+{
+    if (!m_centralDock || !m_centralDock->dockAreaWidget())
+        return false;
+    ads::CDockAreaWidget *area = m_centralDock->dockAreaWidget();
+    ads::CDockWidget *current = area->currentDockWidget();
+    if (!current || current == m_centralDock)
+        return false;
+    current->closeDockWidget();
+    return true;
+}
+
 void ShellBinder::setActivityBadge(const QString &activityId, int count)
 {
     if (m_activityBar)

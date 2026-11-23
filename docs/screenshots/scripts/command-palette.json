@@ -1,0 +1,19 @@
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "settle", "ms": 400 },
+    { "op": "key", "widget": "ps.shellFrame", "keys": "Ctrl+Shift+P" },
+    { "op": "settle", "ms": 250 },
+    { "op": "type", "widget": "commandPalette.input", "text": "palette.show" },
+    { "op": "settle", "ms": 200 },
+    { "op": "shot", "out": "command-palette.png" },
+    { "op": "key", "widget": "commandPalette.input", "keys": "Escape" },
+    { "op": "settle", "ms": 150 },
+    { "op": "key", "widget": "ps.shellFrame", "keys": "Ctrl+Shift+P" },
+    { "op": "settle", "ms": 200 },
+    { "op": "type", "widget": "commandPalette.input", "text": "removeSelected" },
+    { "op": "settle", "ms": 200 },
+    { "op": "shot", "out": "command-palette-disabled.png" }
+  ]
+}

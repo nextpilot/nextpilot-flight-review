@@ -77,6 +77,14 @@ add_library(ps_gui OBJECT
     shell/SideBarStack.h
     shell/GuiContext.cpp
     shell/GuiContext.h
+    shell/CommandRegistry.cpp
+    shell/CommandRegistry.h
+    shell/CommandPalette.cpp
+    shell/CommandPalette.h
+    shell/KeybindingRegistry.cpp
+    shell/KeybindingRegistry.h
+    shell/KeybindingDialog.cpp
+    shell/KeybindingDialog.h
     shell/ImportDialog.cpp
     shell/ImportDialog.h
     shell/ProtocolInspectorDialog.cpp

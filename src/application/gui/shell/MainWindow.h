@@ -1,7 +1,10 @@
 #pragma once
 
 #include "AppContext.h"
+#include "CommandPalette.h"
 #include <QJsonObject>
+
+#include <memory>
 
 // SARibbon（vendored，MIT）：提供**无边框窗体** + ribbon 条。
 //
@@ -28,8 +31,16 @@ namespace nextpilot::plotscope::host
 class RuntimeHost;
 } // namespace nextpilot::plotscope::host
 
+class QEvent;
 class QMenu;
 class QAction;
+
+namespace nextpilot::plotscope::gui
+{
+class CommandRegistry;
+class KeybindingRegistry;
+class KeybindingDialog;
+}
 
 namespace nextpilot::plotscope::gui
 {
@@ -75,6 +86,15 @@ public:
     ShellBinder *binder() const { return m_binder; }
     GuiContext *context() const { return m_context; }
     ThemeManager *themeManager() const { return m_theme; }
+    CommandRegistry *commandRegistry() const { return m_commands.get(); }
+    KeybindingRegistry *keybindingRegistry() const { return m_keybindings.get(); }
+    CommandPalette *commandPalette() const { return m_commandPalette; }
+
+    // 命令面板/快捷键（测试与 UI 驱动共用）。
+    void showCommandPalette();
+    void showQuickSwitch();
+    bool executeCommand(const QString &id, QString *error = nullptr);
+    void openKeybindingDialog();
 
 private:
     // 声明 app 骨架提供的标准插槽（ribbon 页签/分组、停靠区、菜单）。
@@ -127,11 +147,29 @@ private:
     void writeSessionSnapshot();
     void restoreSessionSnapshot();
 
+    // 命令层：统一命令 + Palette + keybinding。
+    void buildCommandLayer(nextpilot::plotscope::host::RuntimeHost &host);
+    void registerSlotCommands();
+    void registerShellCommands();
+    void updateCommandContext();
+    QList<CommandPalette::Item> buildCommandItems();
+    QList<CommandPalette::Item> buildQuickItems() const;
+    void rebuildKeybindingActions();
+    void applyKeybindingConfig();
+    void saveKeybindingConfig();
+
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
     nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::host::RuntimeHost *m_host = nullptr; // 用于取设置（状态持久化）
     ShellBinder *m_binder = nullptr;
     QMenu *m_gridMenu = nullptr;   // 「网格」大按钮的下拉（X/Y 网格线开关）
-    QAction *m_toggleSideBarAction = nullptr; // Ctrl+B
+    std::unique_ptr<CommandRegistry> m_commands;
+    std::unique_ptr<KeybindingRegistry> m_keybindings;
+    CommandPalette *m_commandPalette = nullptr;
+    QList<QAction *> m_keybindingActions;
+    QString m_pendingChordCommand;
+    int m_chordToken = 0;
     GuiContext *m_context = nullptr;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     // 系统级 preferences.open handler（打开全局偏好对话框）；随窗口存亡。

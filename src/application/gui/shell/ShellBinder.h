@@ -167,6 +167,21 @@ public:
 
     // 动作 id → 触发计数（测试用：验证点击确实路由到意图）。
     int actionTriggerCount(const QString &actionId) const;
+    // 按 id 触发 Ribbon 动作（命令面板与 ribbon 共用同一条意图路径）。
+    bool triggerAction(const QString &actionId);
+    // 无 Ribbon 按钮的动作/纯 op：直接走同一个意图调度器。
+    bool dispatchAction(const QString &actionId, const QString &intentOp,
+                        const QString &data = QString());
+
+    // 底部 Panel 整组显隐（Ctrl+J）。
+    bool bottomPanelVisible() const;
+    bool toggleBottomPanel();
+
+    // 中央区页签循环与关闭（Ctrl+Tab / Ctrl+W）。
+    int currentCentralIndex() const;
+    bool activateCentralIndex(int index);
+    QString currentCentralTitle() const;
+    bool closeCurrentEditor();
 
     // 首帧后把左右 dock 收窄、中央拿大头（用户之后仍可自由拖宽）。
     void applyDockProportions();

@@ -96,6 +96,35 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 
 改了界面后重新生成对应 PNG 并覆盖 `docs/screenshots/` 即可；新增界面图先在 scripts/ 加场景脚本。原 `plotscope-gui-shot` 已合并进本工具并删除（issue IKX638）。
 
+## 命令面板与快捷键
+
+`ps_ui_driver` 可直接验证命令层：
+
+```json
+{
+  "steps": [
+    { "op": "key", "widget": "ps.shellFrame", "keys": "Ctrl+Shift+P" },
+    { "op": "type", "widget": "commandPalette.input", "text": "palette.show" },
+    { "op": "shot", "out": "command-palette.png" }
+  ]
+}
+```
+
+覆盖口径：
+
+- `Ctrl+Shift+P` 打开命令面板；列表显示命令、快捷键、说明，输入按标题/id/分类模糊过滤。
+- `Ctrl+P` 打开快速切换；只列编辑器、面板、Activity，不进入文件搜索。
+- `Ctrl+B` 切左栏，`Ctrl+J` 切底部面板，`Ctrl+1..9` 按 Activity Bar 顺序切活动。
+- `Ctrl+Tab` 循环中央页签；脚本编辑器有多个脚本页签时先循环脚本页签。`Ctrl+W` 关闭当前中央页签，不可关闭时状态栏给原因。
+- 未选中曲线时“删除曲线”灰显并显示条件原因；快捷键冲突在面板中标“(冲突)”。
+- 快捷键覆盖写入 `ui.keybindings`；留空恢复默认，冲突回滚并提示。
+
+文档截图：
+
+```bash
+./build/tests/ps_ui_driver --script docs/screenshots/scripts/command-palette.json --out-dir docs/screenshots
+```
+
 ## GUI 冒烟（手工，Xvfb）
 
 真实显示服务器路径的冒烟检查（可选，需本机装 xvfb）：
