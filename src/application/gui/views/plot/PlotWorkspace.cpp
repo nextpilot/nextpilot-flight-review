@@ -4,6 +4,9 @@
 #include "chrome/AxesToolbar.h"
 #include "layout/TabbedFigure.h"
 #include "layout/PlotLayout.h"
+// 文档 spec 结构在模块层；与上面视图层的 layout/PlotLayout.h 同名不同物，
+// 靠路径区分：本文件读写的是"可存盘的布局声明"，不是 dock 布局容器。
+#include "../../../modules/plot/PlotLayout.h"
 #include "layout/DockedAxes.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
@@ -24,6 +27,8 @@
 #include <fastplot/Panner.h>
 #include <fastplot/Zoomer.h>
 
+#include <algorithm>
+#include <functional>
 #include <limits>
 
 // 布局层：每格一个 ADS 停靠面板（拖动分屏 / 拖到中心合并 / 拖出浮动 / 拖回停靠全由 ADS 提供）。
@@ -181,6 +186,58 @@ PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWid
 
     registerViewActions();
     registerPropertyProviders();
+
+    // 文档作用域登记：本工作区是 PlotDocumentSpec 的唯一生产者与消费者，
+    // 登记放这里而不是模块层——模块拿不到部件实例（面板由外壳按类型申请）。
+    // 工作区可能先于 AppContext 销毁，回调统一经 QPointer 判空。
+    QPointer<PlotWorkspace> self(this);
+    context::PersistentStateEntry entry;
+    entry.id = QStringLiteral("plot.document");
+    entry.scope = context::PersistentStateEntry::Document;
+    entry.version = 1;
+    entry.bestEffort = true;
+    entry.serialize = [self]() -> QJsonObject {
+        if (!self)
+            return {};
+        return self->toDocumentSpec().toJson();
+    };
+    entry.restore = [self](const QJsonObject &doc) {
+        if (!self)
+            return;
+        self->applyDocumentSpec(plot::PlotDocumentSpec::fromJson(doc), self->m_appCtx.sources());
+    };
+    m_appCtx.states().registerEntry(std::move(entry));
+
+    // 会话视图态：回到哪一页、哪一格。只存两个索引——页与格的实质内容
+    // 归 plot.document，这里再存一份会成为第二个真相来源。
+    context::PersistentStateEntry canvasEntry;
+    canvasEntry.id = QStringLiteral("canvas.session");
+    canvasEntry.scope = context::PersistentStateEntry::Session;
+    canvasEntry.version = 1;
+    canvasEntry.bestEffort = true;
+    canvasEntry.serialize = [self]() -> QJsonObject {
+        if (!self)
+            return {};
+        QJsonObject o;
+        o.insert(QStringLiteral("activePage"), self->m_activePage);
+        o.insert(QStringLiteral("activeCell"), self->m_active);
+        return o;
+    };
+    canvasEntry.restore = [self](const QJsonObject &doc) {
+        if (!self)
+            return;
+        const int page = doc.value(QStringLiteral("activePage")).toInt(0);
+        if (page >= 0 && page < self->m_pages.size())
+        {
+            if (self->m_tabs != nullptr)
+                self->m_tabs->setCurrentPage(page);
+            self->switchPage(page);
+        }
+        const int cell = doc.value(QStringLiteral("activeCell")).toInt(0);
+        if (cell >= 0 && cell < self->m_cells.size())
+            self->setActive(cell);
+    };
+    m_appCtx.states().registerEntry(std::move(canvasEntry));
 }
 
 PlotWorkspace::~PlotWorkspace()
@@ -1122,6 +1179,191 @@ void PlotWorkspace::registerViewActions()
     registerSeriesActions();
     registerMarkupActions();
     registerPlaybackActions();
+}
+
+// ---- 文档作用域双向通道 ----
+
+plot::PlotDocumentSpec PlotWorkspace::toDocumentSpec() const
+{
+    plot::PlotDocumentSpec spec;
+    spec.version = 1;
+    spec.name = QStringLiteral("plot");
+
+    // 单格导出：视图类型取"当前可见的那一支"，曲线按 origin 引用数据集，
+    // 样式与视图态交给视图自己的存取接口，这里不重新解释绘图语义。
+    auto canvasOf = [this](const Cell &cell) {
+        plot::CanvasSpec c;
+        if (!cell.canvas)
+            return c;
+        c.id = QString::number(cell.canvas->canvasId());
+        const bool instrumentShown = cell.stack != nullptr && cell.instrument != nullptr
+                                     && cell.stack->currentWidget() == cell.instrument;
+        c.viewType = instrumentShown ? cell.instrument->currentKind() : cell.canvas->plotKind();
+        c.title = cell.canvas->channelTitle();
+
+        const QVector<PlotSeries> &series = cell.canvas->series();
+        for (const PlotSeries &s : series)
+            c.channels.append(s.legendName());
+        if (!series.isEmpty())
+        {
+            const int sourceId = m_appCtx.sources().sourceOfDataset(series.first().datasetId);
+            if (const DataSourceInfo *info = m_appCtx.sources().get(sourceId))
+                c.datasetOrigin = info->origin;
+        }
+
+        QJsonArray styles;
+        for (const PlotSeries &s : series)
+        {
+            QJsonObject o;
+            o.insert(QStringLiteral("key"), s.key());
+            o.insert(QStringLiteral("color"), s.color.name());
+            o.insert(QStringLiteral("width"), s.lineWidth);
+            o.insert(QStringLiteral("visible"), s.visible);
+            o.insert(QStringLiteral("rightAxis"), s.rightAxis);
+            styles.append(o);
+        }
+        if (!styles.isEmpty())
+        {
+            QJsonObject style;
+            style.insert(QStringLiteral("series"), styles);
+            c.style = style;
+        }
+        c.state = cell.canvas->saveViewState();
+        return c;
+    };
+
+    for (int pi = 0; pi < m_pages.size(); ++pi)
+    {
+        const Page *page = m_pages.at(pi);
+        plot::PlotPageSpec ps;
+        ps.id = QStringLiteral("page-%1").arg(pi + 1);
+        ps.title = page->title;
+
+        // 当前页的格在 m_cells（与 page->cells 交换），其余页直接读页内副本。
+        const QVector<Cell> &cells = (pi == m_activePage) ? m_cells : page->cells;
+        const int rows = (pi == m_activePage) ? m_rows : page->rows;
+        const int cols = (pi == m_activePage) ? m_cols : page->cols;
+
+        QJsonObject pageState;
+        pageState.insert(QStringLiteral("rows"), rows);
+        pageState.insert(QStringLiteral("cols"), cols);
+        pageState.insert(QStringLiteral("gridMode"), page->gridMode);
+        pageState.insert(QStringLiteral("active"), pi == m_activePage ? m_active : 0);
+        ps.pageState = pageState;
+
+        // v1 只表达 m×n 等分：行 → 列 → 画布。手拆比例与 ADS 浮动/合并不在这里，
+        // 那是 dock 布局的持久化范围（两通道不混，避免同一件事两处写）。
+        plot::LayoutNode root;
+        root.direction = QStringLiteral("vertical");
+        for (int r = 0; r < rows; ++r)
+        {
+            plot::LayoutNode row;
+            row.direction = QStringLiteral("horizontal");
+            for (int c = 0; c < cols; ++c)
+            {
+                const int idx = r * cols + c;
+                plot::LayoutNode node;
+                node.isCanvas = true;
+                if (idx < cells.size())
+                    node.canvas = canvasOf(cells.at(idx));
+                row.children.append(node);
+            }
+            root.children.append(row);
+        }
+        ps.root = root;
+        spec.pages.append(ps);
+    }
+    return spec;
+}
+
+bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
+                                      const dataset::SourceHub &sources)
+{
+    if (spec.pages.isEmpty())
+        return false;
+
+    // 树序（行优先）即格子顺序，与 toDocumentSpec 的写出口径一致。
+    auto canvasesOf = [](const plot::LayoutNode &root) {
+        QVector<plot::CanvasSpec> out;
+        std::function<void(const plot::LayoutNode &)> walk = [&](const plot::LayoutNode &n) {
+            if (n.isCanvas)
+                out.append(n.canvas);
+            for (const plot::LayoutNode &child : n.children)
+                walk(child);
+        };
+        walk(root);
+        return out;
+    };
+
+    // 只保留第一页作底，其余页关掉；后续页面按 spec 顺序重建。
+    while (m_pages.size() > 1)
+        removePage(m_pages.size() - 1);
+    switchPage(0);
+
+    for (int pi = 0; pi < spec.pages.size(); ++pi)
+    {
+        const plot::PlotPageSpec &ps = spec.pages.at(pi);
+        if (pi > 0)
+        {
+            addPage(ps.title);
+            m_tabs->setCurrentPage(pi);
+            switchPage(pi);
+        }
+
+        const int rows = std::max(1, ps.pageState.value(QStringLiteral("rows")).toInt(1));
+        const int cols = std::max(1, ps.pageState.value(QStringLiteral("cols")).toInt(1));
+
+        // 清空当前页再按 rows×cols 补格：直接 makeCell 追加，不走 reflowGrid——
+        // 后者会剔掉"没有曲线的格"，而恢复时曲线还没加进来。
+        while (m_cells.size() > 1)
+            removeAt(m_cells.size() - 1);
+        const int need = rows * cols;
+        while (m_cells.size() < need)
+            m_cells.append(makeCell(nullptr));
+        m_rows = rows;
+        m_cols = cols;
+        m_active = 0;
+
+        const QVector<plot::CanvasSpec> canvases = canvasesOf(ps.root);
+        for (int i = 0; i < m_cells.size(); ++i)
+        {
+            Cell &cell = m_cells[i];
+            if (i >= canvases.size() || !cell.canvas)
+                continue;
+            const plot::CanvasSpec &c = canvases.at(i);
+
+            const QString kind = c.viewType.isEmpty() ? QStringLiteral("timeseries") : c.viewType;
+            setCellType(i, kind);
+            if (!c.state.isEmpty())
+                cell.canvas->restoreViewState(c.state);
+
+            // 数据集回绑：origin → 源 → 该源首个数据集。匹配不上留空态并记一条，不阻断。
+            const int sourceId = sources.sourceByOrigin(c.datasetOrigin);
+            const DataSourceInfo *info = sourceId >= 0 ? sources.get(sourceId) : nullptr;
+            if (info == nullptr || info->datasetIds.isEmpty())
+            {
+                if (!c.datasetOrigin.isEmpty())
+                    m_appCtx.messages().append(
+                        QStringLiteral("warn"), QStringLiteral("plot.document"),
+                        QStringLiteral("画布 %1 的数据源未找到：%2，已留空态")
+                            .arg(c.title.isEmpty() ? c.id : c.title, c.datasetOrigin));
+                continue;
+            }
+
+            const int datasetId = info->datasetIds.first();
+            for (const QString &channel : c.channels)
+            {
+                const int dot = channel.indexOf(QLatin1Char('.'));
+                const QString table = dot > 0 ? channel.left(dot) : QString();
+                const QString column = dot > 0 ? channel.mid(dot + 1) : channel;
+                cell.view->addChannel(datasetId, table, column);
+            }
+        }
+
+        rebuildPageLayout();
+        syncPage();
+    }
+    return true;
 }
 
 QWidget *createPlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)

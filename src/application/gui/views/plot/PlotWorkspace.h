@@ -13,6 +13,15 @@ class QStackedWidget;
 class QTimer;
 class QEvent;
 
+namespace nextpilot::plotscope::plot
+{
+struct PlotDocumentSpec;
+}
+namespace nextpilot::plotscope::dataset
+{
+class SourceHub;
+}
+
 namespace nextpilot::plotscope::gui
 {
 
@@ -65,6 +74,14 @@ public:
 
     // 设为活动 cell（点击/程序指定）。view action 处理器也用；测试需显式定位画布。
     void setActive(int index);
+
+    // ---- 文档作用域双向通道（R3）----
+    // 导出：遍历全部页的格，按视图读 viewType/channels/style/state，数据集按 origin 引用。
+    // 恢复：按 spec 建页建格（v1 按 rows×cols 等分），逐格回绑 origin 对应的数据集。
+    // 两条通道只覆盖"页/格/视图/曲线"，ADS 浮动与合并仍归 dock 布局持久化。
+    plot::PlotDocumentSpec toDocumentSpec() const;
+    bool applyDocumentSpec(const plot::PlotDocumentSpec &spec,
+                           const dataset::SourceHub &sources);
 
 private:
     struct Cell

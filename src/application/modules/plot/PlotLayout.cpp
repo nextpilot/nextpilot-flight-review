@@ -14,7 +14,8 @@ QJsonObject canvasToJson(const CanvasSpec &c)
     o.insert(QStringLiteral("id"), c.id);
     o.insert(QStringLiteral("viewType"), c.viewType);
     o.insert(QStringLiteral("title"), c.title);
-    o.insert(QStringLiteral("datasetId"), c.datasetId);
+    if (!c.datasetOrigin.isEmpty())
+        o.insert(QStringLiteral("datasetOrigin"), c.datasetOrigin);
     o.insert(QStringLiteral("channels"), QJsonArray::fromStringList(c.channels));
     if (!c.style.isEmpty())
         o.insert(QStringLiteral("style"), c.style);
@@ -29,6 +30,8 @@ CanvasSpec canvasFromJson(const QJsonObject &o)
     c.id = o.value(QStringLiteral("id")).toString();
     c.viewType = o.value(QStringLiteral("viewType")).toString();
     c.title = o.value(QStringLiteral("title")).toString();
+    // origin 优先；旧档没有 origin 时退回 datasetId 字段，由恢复方自行尝试解析。
+    c.datasetOrigin = o.value(QStringLiteral("datasetOrigin")).toString();
     c.datasetId = o.value(QStringLiteral("datasetId")).toString();
     const QJsonArray ch = o.value(QStringLiteral("channels")).toArray();
     for (const QJsonValue &v : ch)
