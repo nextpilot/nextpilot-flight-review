@@ -8,10 +8,12 @@
 #include "diagnostics.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QStandardPaths>
 #include <QTextStream>
 
 #include <cstdio>
@@ -53,7 +55,10 @@ static void printUsage()
             "  plotscope --script <file.lua> [--record <out.json>]\n"
             "  plotscope --batch <dir> <script.lua> [--pattern \"*.csv;*.ulg\"] [--json out.json]\n"
             "  plotscope --mcp-bridge        # MCP server（stdio JSON-RPC，供外部代理驱动）\n"
-            "  plotscope --dump-diagnostics  # 应用诊断 JSON（模块/扩展包/数据面/工具目录）\n");
+            "  plotscope --dump-diagnostics  # 应用诊断 JSON（模块/扩展包/数据面/工具目录）\n"
+            "\n"
+            "全局选项:\n"
+            "  --settings <path>   # 设置文件路径，缺省 <AppData>/plotscope/settings.json\n");
 }
 
 static Intent makeLoadIntent(const QString &path)
@@ -86,6 +91,16 @@ static bool writeJob(const QString &path, const Job &job)
     return true;
 }
 
+namespace {
+// CLI 是短命进程：settings 只在内存里改，退出前不 flush 就丢，GUI 侧读不到 CLI 写的键。
+struct SettingsFlushGuard
+{
+    explicit SettingsFlushGuard(App &application) : m_application(application) {}
+    ~SettingsFlushGuard() { m_application.context().settings().flush(); }
+    App &m_application;
+};
+} // namespace
+
 int main(int argc, char **argv)
 {
 #ifdef _WIN32
@@ -94,9 +109,32 @@ int main(int argc, char **argv)
     SetConsoleCP(CP_UTF8);
 #endif
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("PlotScope"));
+    QCoreApplication::setApplicationName(QStringLiteral("plotscope"));
 
-    const QStringList args = QCoreApplication::arguments();
+    QStringList args = QCoreApplication::arguments();
+
+    // --settings 与 GUI 同名同义，位置自由，先剥离后命令索引才是 --xxx 本身。
+    QString settingsPath;
+    for (int i = 1; i + 1 < args.size(); ++i)
+    {
+        if (args.at(i) != QStringLiteral("--settings"))
+            continue;
+        settingsPath = args.at(i + 1);
+        args.removeAt(i + 1);
+        args.removeAt(i);
+        --i;
+    }
+    if (settingsPath.isEmpty())
+    {
+        // 与 gui_main.cpp 同款：AppDataLocation 已含 applicationName，缺目录先建。
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        if (!dir.isEmpty())
+        {
+            QDir().mkpath(dir);
+            settingsPath = dir + QStringLiteral("/settings.json");
+        }
+    }
+
     if (args.size() < 2)
     {
         printUsage();
@@ -108,7 +146,8 @@ int main(int argc, char **argv)
     if (args.at(1) == QStringLiteral("--mcp-bridge"))
         qputenv("PLOTSCOPE_QUIET_STDOUT", "1");
 
-    App application;
+    App application(settingsPath);
+    SettingsFlushGuard flushGuard(application);
     const auto errors = application.startup(/*headless=*/true);
     for (auto it = errors.constBegin(); it != errors.constEnd(); ++it)
         fprintf(stderr, "[skip] %s: %s\n", u8(it.key()), u8(it.value()));
