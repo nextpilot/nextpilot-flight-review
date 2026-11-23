@@ -145,7 +145,7 @@ int main(int argc, char **argv)
         // 此时管道未 finish：行数可能还是 0（schema 待冲刷），先只看数据集存在
     }
 
-    // 暂停态不喂帧（发 5 帧后行数不涨）。
+    // S3 暂停语义：视图冻结，但帧照常进 kernel（发 5 帧后数据不丢）。
     Intent pause;
     pause.op = QStringLiteral("data.pause");
     pause.params[QStringLiteral("id")] = srcId;
@@ -159,7 +159,7 @@ int main(int argc, char **argv)
         pump(3);
     }
     pump(800);
-    // 暂停期发的 5 帧只累 bytes、不计数 packets（下面用 packets==20 断言）。
+    // S3：暂停期发的 5 帧照常进 kernel，packets/bytes/行数都会增长（数据不丢）。
 
     // 速率统计：20 包 / ~1s → hz>0 且 kb_s>0
     Intent stats;
@@ -226,8 +226,9 @@ int main(int argc, char **argv)
         std::printf("udp sink rx: %d 包 %d 字节\n", rxPkts, rxBytes);
         CHECK(rxBytes >= 160);
     }
-    // AC-07（字节级自洽）：mcap 回读出 20 条消息，拼接后与 raw 文件正文逐字节相同。
-    // 说明：raw 文件外面套了一层 PSRAW1 头（16B），故只比正文 160B。
+    // AC-07（字节级自洽）：mcap 回读出的消息拼接后与 raw 文件正文逐字节相同。
+    // 说明：raw 文件外面套了一层 PSRAW1 头（16B），故只比正文。
+    // S3 语义：暂停期 5 帧不再丢弃、照常录入，故正文为 25 帧 × 8B = 200B。
     {
         rec::McapPlayer player;
         CHECK(player.open(mcapPath));
@@ -245,9 +246,10 @@ int main(int argc, char **argv)
         QFile rf(rawPath);
         CHECK(rf.open(QIODevice::ReadOnly));
         const QByteArray rawAll = rf.readAll();
-        const QByteArray rawBody = rawAll.right(160);
-        std::printf("mcap back: msgs=%d joined=%d raw_file=%d (body=160)\n", msgs,
-                    int(joined.size()), int(rawAll.size()));
+        // PSRAW1 头固定 16B，其余为正文（20 正常帧 + 5 暂停期帧 = 200B）。
+        const QByteArray rawBody = rawAll.mid(16);
+        std::printf("mcap back: msgs=%d joined=%d raw_file=%d (body=%d)\n", msgs,
+                    int(joined.size()), int(rawAll.size()), int(rawBody.size()));
         // 自包含：Schema 里要写明"哪个解析器、什么模板"，否则回放无从下手。
         const QByteArray sj = player.schemaJson();
         std::printf("mcap schema=%s\n", sj.constData());
@@ -255,9 +257,9 @@ int main(int argc, char **argv)
         CHECK(sj.contains("custom-protocol"));
         CHECK(sj.contains("template"));
         // 注意：mcap 消息粒度是"泵批次"而非单帧（一条消息可含多帧），
-        // 所以这里断言的是字节级自洽；"回读成 20 行"要等 schema 自包含回放（另卡）。
+        // 所以这里断言的是字节级自洽；"回读成 25 行"由下面的 data.load 验证。
         CHECK(msgs >= 1);
-        CHECK(joined.size() == 160);             // 字节数一致
+        CHECK(joined.size() == 200);             // 25 帧 × 8B，字节数一致
         CHECK(joined == rawBody);                // 逐字节无损
         if (!perr.isEmpty())
             std::printf("mcap back err=%s\n", qPrintable(perr));
@@ -291,7 +293,7 @@ int main(int argc, char **argv)
                         rows = std::max(rows, t->rows);
                 std::printf("mcap reload rows=%d timeMax=%.3f tables=%d\n", rows,
                             rd->timeMax(), int(rd->tableNames().size()));
-                CHECK(rows == 20);
+                CHECK(rows == 25); // S3：暂停期 5 帧不丢，20 + 5 = 25
                 CHECK(rd->timeMax() > 1.5);
                 CHECK(ctx.data().count() > dsBefore);
             }

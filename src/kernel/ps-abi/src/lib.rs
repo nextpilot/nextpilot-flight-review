@@ -144,9 +144,10 @@ impl PsDataset {
             table: std::ptr::null(),
             column: std::ptr::null(),
             dataset: std::ptr::null(),
-            generation: 0,
+            generation: 0, // legacy 通道不参与 typed 追加代际，保持 0
         }).collect();
         let mut typed_infos = Vec::new();
+        let generation = self.typed.generation();
         for (ti, table) in self.typed.tables.iter().enumerate() {
             for _ in 0..table.columns.len() {
                 typed_infos.push(PsChannelInfo {
@@ -158,7 +159,7 @@ impl PsDataset {
                     table: self.typed_tables[typed_infos.len()].as_ptr(),
                     column: self.typed_columns[typed_infos.len()].as_ptr(),
                     dataset: self as *const PsDataset as *const std::ffi::c_void,
-                    generation: 0,
+                    generation, // typed 通道携带数据代际，读侧据此判断快照是否过期
                 });
             }
         }
@@ -532,6 +533,17 @@ pub unsafe extern "C" fn ps_dataset_channel(ds: *const PsDataset, index: u32) ->
     let ds = ds as *mut PsDataset;
     (*ds).ensure_infos();
     (&(*ds).infos).get(index as usize).map_or(std::ptr::null(), |i| i as *const _)
+}
+
+/// 数据代际：每次成功追加（含建表）递增，ds=NULL 返回 0。
+/// 读侧在追加会话前后比对，未变则派生视图无需重算（ generation 快照隔离）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_generation(ds: *const PsDataset) -> u64 {
+    if ds.is_null() {
+        return 0;
+    }
+    let ds = ds as *mut PsDataset;
+    (*ds).typed.generation()
 }
 
 #[no_mangle]
@@ -1905,6 +1917,119 @@ mod tests {
                 out.as_mut_ptr(), 1, std::ptr::null_mut(), 0,
             );
             assert_eq!(rc, 2);
+        }
+    }
+
+    // S3：generation 随追加单调递增；PsChannelInfo.generation 与查询一致。
+    #[test]
+    fn generation_increments_on_append() {
+        unsafe {
+            let ds = ps_dataset_new();
+            assert_eq!(ps_dataset_generation(ds), 0);
+
+            let table = CString::new("T").unwrap();
+            let name = CString::new("v").unwrap();
+            let unit = CString::new("").unwrap();
+            let times = [0i64, 1_000, 2_000];
+            let vals = [1.0f64, 2.0, 3.0];
+            let col = PsFrameColumn {
+                name: name.as_ptr(), unit: unit.as_ptr(), value_type: 0,
+                values: vals.as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+            };
+            // 建表 = 第 1 代。
+            assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), times.as_ptr(), 3,
+                &col, 1, std::ptr::null_mut(), 0), 0);
+            assert_eq!(ps_dataset_generation(ds), 1);
+            // info 的 generation 与查询一致。
+            let ch = ps_dataset_channel(ds, 0);
+            assert!(!ch.is_null());
+            assert_eq!((*ch).generation, 1);
+
+            // 第二次追加 = 第 2 代。
+            let times2 = [3_000i64, 4_000];
+            let vals2 = [4.0f64, 5.0];
+            let col2 = PsFrameColumn {
+                name: name.as_ptr(), unit: unit.as_ptr(), value_type: 0,
+                values: vals2.as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+            };
+            assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), times2.as_ptr(), 2,
+                &col2, 1, std::ptr::null_mut(), 0), 0);
+            assert_eq!(ps_dataset_generation(ds), 2);
+
+            // 失败的追加（列类型不一致）不应递增代际。
+            let ts3 = [5_000i64];
+            let vs3 = [6.0f64];
+            let bad = PsFrameColumn {
+                name: name.as_ptr(), unit: unit.as_ptr(), value_type: 4, // PS_VALUE_I32，与 F64 不符
+                values: vs3.as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+            };
+            let _ = ts3;
+            assert_ne!(ps_dataset_append_frame(ds, table.as_ptr(), ts3.as_ptr(), 1,
+                &bad, 1, std::ptr::null_mut(), 0), 0);
+            assert_eq!(ps_dataset_generation(ds), 2);
+            ps_dataset_free(ds);
+        }
+    }
+
+    // S3：generation 快照隔离——追加前后取到的代际不同，可据此判定派生视图需刷新。
+    #[test]
+    fn generation_snapshot_isolation() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("T").unwrap();
+            let name = CString::new("v").unwrap();
+            let unit = CString::new("").unwrap();
+            let col = PsFrameColumn {
+                name: name.as_ptr(), unit: unit.as_ptr(), value_type: 0,
+                values: [1.0f64].as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+            };
+            assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), [0i64].as_ptr(), 1,
+                &col, 1, std::ptr::null_mut(), 0), 0);
+            let snap_before = ps_dataset_generation(ds); // 读侧快照
+
+            let col2 = PsFrameColumn {
+                name: name.as_ptr(), unit: unit.as_ptr(), value_type: 0,
+                values: [2.0f64].as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+            };
+            assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), [1_000i64].as_ptr(), 1,
+                &col2, 1, std::ptr::null_mut(), 0), 0);
+            let snap_after = ps_dataset_generation(ds);
+            assert_eq!(snap_after, snap_before + 1);
+            ps_dataset_free(ds);
+        }
+    }
+
+    // S3：ring 长跑内存有界 + seq 单调不归零。
+    #[test]
+    fn ring_long_run_keeps_seq_monotonic() {
+        unsafe {
+            let ds = ps_dataset_new();
+            // 每行约 25B 预算，容纳约 4 行。
+            assert_eq!(ps_dataset_set_ring_budget(ds, std::ptr::null(), 100,
+                std::ptr::null_mut(), 0), 0);
+            let table = CString::new("T").unwrap();
+            let name = CString::new("v").unwrap();
+            let unit = CString::new("").unwrap();
+            // 连续追加 200 批，每批 1 行；内存始终有界，seq 单调递增。
+            let mut last_seq = 0u64;
+            for i in 0..200 {
+                let t = (i as i64) * 1_000;
+                let v = [i as f64];
+                let col = PsFrameColumn {
+                    name: name.as_ptr(), unit: unit.as_ptr(), value_type: 0,
+                    values: v.as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+                };
+                assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), &t, 1,
+                    &col, 1, std::ptr::null_mut(), 0), 0);
+                let d = &*ds;
+                let tb = d.typed.find_table("T").unwrap();
+                assert!(tb.row_count() <= 4, "行数为 {}，超出预算上限", tb.row_count());
+                let cur = *tb.seq.last().unwrap();
+                assert!(cur >= last_seq, "seq 回退: {} -> {}", last_seq, cur);
+                last_seq = cur;
+            }
+            assert_eq!(last_seq, 199); // 末行 seq = 总追加行数 - 1，从未归零
+            ps_dataset_free(ds);
         }
     }
 }

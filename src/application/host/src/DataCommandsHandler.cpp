@@ -1232,9 +1232,11 @@ Result<IntentResult> DataCommandsHandler::refreshDerives(const Intent &intent)
     return res;
 }
 
-// live 源暂停/继续：
-//   data.pause  → SourceState::Paused   （停止向数据集推送新样本）
-//   data.resume → SourceState::Streaming（恢复推送）
+// live 源暂停/继续（S3 语义）：
+//   data.pause  → SourceState::Paused   （冻结 UI 视图，数据仍持续进 kernel）
+//   data.resume → SourceState::Streaming（解冻，UI 从最新 generation 增量续读）
+// 暂停不再是"停止采集/丢字节"——enqueueLive/pumpLive 照常把字节喂进 kernel，
+// 不丢数据；"停快照"由 UI 侧按 generation 冻结在读水位线实现，恢复后曲线连续。
 // 边界：仅 SourceKind::Live 源可操作——文件/回放源没有"实时"语义，明确拒绝；
 // 幂等：已处于目标状态时直接成功（重复点击/脚本重试不报错）。
 // 状态变化经 SourceHub::setState 触发 sourceChanged 信号，面板与视图自行刷新。
@@ -1249,7 +1251,8 @@ Result<IntentResult> DataCommandsHandler::setSourcePaused(const Intent &intent, 
     if (info->kind != SourceKind::Live)
         return fail(err::NotSupported,
                     QStringLiteral("仅实时(live)源支持暂停/继续，当前源不是实时源"));
-    // 套接字侧同步暂停态：暂停时把内核缓冲读空但不喂解析器（不做补帧）。
+    // 同步暂停态给 UI：S3 下 paused 只表示"视图冻结"，不再阻断 enqueue/pump，
+    // 数据持续进 kernel（不丢）。UI 侧按 generation 快照停在当前读水位线。
     if (auto it = m_live.find(sourceId); it != m_live.end())
         it->second.paused = paused;
 
@@ -1335,6 +1338,7 @@ Result<IntentResult> DataCommandsHandler::connectLive(const Intent &intent)
         return bound.error();
     }
     m_app.sources().addDataset(sourceId, bound.value());
+    configureLiveRing(bound.value());
 
     auto sock = std::make_unique<QUdpSocket>();
     const QString host = qurl.host().isEmpty() ? QStringLiteral("0.0.0.0") : qurl.host();
@@ -1425,6 +1429,7 @@ Result<IntentResult> DataCommandsHandler::connectTcp(const Intent &intent)
         return bound.error();
     }
     m_app.sources().addDataset(sourceId, bound.value());
+    configureLiveRing(bound.value());
 
     LiveSession session;
     session.sourceId = sourceId;
@@ -1577,6 +1582,7 @@ Result<IntentResult> DataCommandsHandler::connectSerial(const Intent &intent)
         return bound.error();
     }
     m_app.sources().addDataset(sourceId, bound.value());
+    configureLiveRing(bound.value());
 
     LiveSession session;
     session.sourceId = sourceId;
@@ -1599,8 +1605,7 @@ Result<IntentResult> DataCommandsHandler::connectSerial(const Intent &intent)
                 break;
             it->second.bytes += n;
             it->second.packets += 1; // 口径：一次可读触发算一"批"（与 UDP 的 datagram 区分，见 stats 注释）
-            if (it->second.paused)
-                continue;
+            // S3：暂停只冻结 UI 视图，串口数据照常进 kernel，不丢。
             m_app.ingest().feed(sourceId, reinterpret_cast<const uint8_t *>(buf),
                                 qint64(n));
         }
@@ -1821,6 +1826,19 @@ Result<IntentResult> DataCommandsHandler::sourceList(const Intent &intent)
     return r;
 }
 
+void DataCommandsHandler::configureLiveRing(int datasetId)
+{
+    // S3：live 源长跑时若不限内存会无限增长。给数据集设一个 ring 字节预算上限，
+    // kernel 在每次 append 后自动裁掉最旧的行，seq 仍单调不归零。
+    // 设默认预算（table 为空）作用于现有+新建表；失败只记录，不影响建源流程。
+    Dataset *ds = m_app.data().getMutable(datasetId);
+    if (!ds)
+        return;
+    QString err;
+    if (!ds->setRingBudget(QString(), kLiveRingBudgetBytes, &err))
+        qWarning() << "live ring 预算设置失败:" << err;
+}
+
 void DataCommandsHandler::enqueueLive(int sourceId, const QByteArray &bytes)
 {
     auto it = m_live.find(sourceId);
@@ -1829,12 +1847,9 @@ void DataCommandsHandler::enqueueLive(int sourceId, const QByteArray &bytes)
     LiveSession &s = it->second;
     s.bytes += bytes.size();
     s.packets += 1; // 口径：一次可读/一报文算一包
-    if (s.paused)
-    {
-        // 暂停期不喂也不攒：直接丢，恢复后从新数据继续（明确取舍，不补帧）。
-        s.droppedBytes += bytes.size();
-        return;
-    }
+    // S3 语义：暂停只冻结 UI 视图，追加继续进 kernel（数据不丢）。
+    // 因此在 enqueue 层不再按 paused 丢弃——字节照常入环、由 pump 喂解析器；
+    // "停快照"由 SourceState::Paused + UI 侧 generation 快照保证，不在这里截断数据。
     s.buf.append(bytes);
     if (s.buf.size() > s.bufCap)
     {
@@ -1849,8 +1864,9 @@ void DataCommandsHandler::pumpLive()
     for (auto &kv : m_live)
     {
         LiveSession &s = kv.second;
-        if (s.paused || s.buf.isEmpty())
+        if (s.buf.isEmpty())
             continue;
+        // S3：暂停不再阻断喂数——字节持续进 kernel，UI 侧靠 generation 快照冻结视图。
         const int take = int(std::min<qint64>(s.pumpBudget, s.buf.size()));
         // 录制与解析吃同一块字节（顺序：先录后解析，录的是"进来的原样"）。
         writeRecordBytes(kv.first, QByteArray(s.buf.constData(), take),

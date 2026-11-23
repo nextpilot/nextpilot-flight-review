@@ -182,6 +182,15 @@ public:
     // 刷新 schema 投影（append 后调用；只从 channel 读 O(1) 元数据）。
     void refreshSchema();
 
+    // 数据代际：每次成功追加（含建表）递增。读侧在追加会话前后比对，
+    // 未变则派生视图（LOD/统计/频谱等）无需重算。空数据集返回 0。
+    quint64 generation() const;
+
+    // 设置 live ring 字节预算：table 为空设全库默认值并作用现有+新建表，
+    // bytes=0 取消裁剪。返回 false 表示句柄为空或表名不存在（err 带原因）。
+    // 长跑 live 会话应在灌数据前设一个上限，避免内存无界增长。
+    bool setRingBudget(const QString &table, quint64 bytes, QString *err = nullptr);
+
     // 原始范围（纳秒，精确整数）：对齐策略必须先在整数域算出 offset，
     // 再交给 AppContext::setSourceTimeOffset()（宿主态唯一真值，不在 Dataset 里存偏移）。
     std::optional<std::pair<TimeNs, TimeNs>> rawTimeRangeNs() const;
