@@ -1,10 +1,10 @@
-#include "KeybindingRegistry.h"
+#include "command/KeybindingRegistry.h"
 
 #include <QKeySequence>
 
 #include <algorithm>
 
-namespace nextpilot::plotscope::gui
+namespace nextpilot::plotscope::command
 {
 
 void KeybindingRegistry::setDefault(const QString &commandId, const QString &sequence)
@@ -129,4 +129,4 @@ QStringList KeybindingRegistry::chordSteps(const QString &sequence)
     return out;
 }
 
-} // namespace nextpilot::plotscope::gui
+} // namespace nextpilot::plotscope::command

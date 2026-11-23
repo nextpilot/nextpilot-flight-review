@@ -37,8 +37,8 @@
 #include "DockAreaWidget.h"
 #include "DockWidget.h"
 #include "ShellBinder.h"
-#include "CommandRegistry.h"
-#include "KeybindingRegistry.h"
+#include "command/CommandRegistry.h"
+#include "command/KeybindingRegistry.h"
 #include "FilterEditorDialog.h"
 
 #include "AppContext.h"
@@ -90,6 +90,7 @@ using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::gui;
+using namespace nextpilot::plotscope::command;
 using namespace nextpilot::plotscope::host;
 
 // Release 下 assert 被 NDEBUG 消除，用它做真实校验（失败即退出码非零）。

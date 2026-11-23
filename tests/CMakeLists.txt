@@ -36,6 +36,12 @@ target_link_libraries(ps_test_data_table PRIVATE ps_data_tablemodel ps_dataset Q
 set_target_properties(ps_test_data_table PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_data_table COMMAND ps_test_data_table)
 
+# === ps_command 验收（IKXGYH 基线 13）：when 白名单语法 / 编译缓存 / 三层作用域 / 键位冲突 ===
+add_executable(ps_test_command test_command.cpp)
+target_link_libraries(ps_test_command PRIVATE ps_command)
+set_target_properties(ps_test_command PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_command COMMAND ps_test_command)
+
 # === ps_registry 独立链接验收（B3）===
 # 故意只链 ps_registry + Qt6::Core，不链 ps_context / host / module。
 # 任何注册表核对 core 业务类型/QWidget/Rust 的反向依赖都会在此编译或链接失败。

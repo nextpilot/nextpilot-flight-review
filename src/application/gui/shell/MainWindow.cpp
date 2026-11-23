@@ -4,9 +4,9 @@
 
 #include "GuiContext.h"
 #include "CommandPalette.h"
-#include "CommandRegistry.h"
+#include "command/CommandRegistry.h"
 #include "KeybindingDialog.h"
-#include "KeybindingRegistry.h"
+#include "command/KeybindingRegistry.h"
 #include "ImportDialog.h"
 #include "PreferencesIntentHandler.h"
 #include "ProtocolInspectorDialog.h"

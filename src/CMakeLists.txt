@@ -95,6 +95,9 @@ add_subdirectory(libs/dataset)
 # 意图契约库：Intent/Job/执行器抽象，只依赖 foundation + Qt Core。
 add_subdirectory(libs/intent)
 
+# 命令/键位/when 求值：纯数据契约库，headless 与 GUI 共用（契约 D7/D15）。
+add_subdirectory(libs/command)
+
 # schema 契约与渲染：ParamSpec metadata -> FormSchema -> QWidget。
 add_subdirectory(libs/uischema)
 

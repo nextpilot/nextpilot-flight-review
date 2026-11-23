@@ -2,6 +2,8 @@
 
 #include "AppContext.h"
 #include "CommandPalette.h"
+#include "command/CommandRegistry.h"
+#include "command/KeybindingRegistry.h"
 #include <QJsonObject>
 
 #include <memory>
@@ -37,13 +39,17 @@ class QAction;
 
 namespace nextpilot::plotscope::gui
 {
-class CommandRegistry;
-class KeybindingRegistry;
 class KeybindingDialog;
 }
 
 namespace nextpilot::plotscope::gui
 {
+
+using command::CommandDescriptor;
+using command::CommandRegistry;
+using command::ContextScope;
+using command::KeybindingConflict;
+using command::KeybindingRegistry;
 
 class GuiContext;
 class PreferencesIntentHandler;

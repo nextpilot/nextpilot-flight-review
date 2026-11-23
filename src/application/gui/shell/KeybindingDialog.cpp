@@ -1,7 +1,5 @@
 #include "KeybindingDialog.h"
 
-#include "CommandRegistry.h"
-#include "KeybindingRegistry.h"
 
 #include <QDialogButtonBox>
 #include <QHeaderView>

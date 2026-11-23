@@ -1,11 +1,13 @@
 #pragma once
 
+// 键位：默认键位 + 用户覆盖 + 冲突检测。纯数据，无 Widgets（QKeySequence 属 QtGui）。
+
 #include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
 
-namespace nextpilot::plotscope::gui
+namespace nextpilot::plotscope::command
 {
 
 struct KeybindingConflict
@@ -43,4 +45,4 @@ private:
     QHash<QString, QString> m_overrides;
 };
 
-} // namespace nextpilot::plotscope::gui
+} // namespace nextpilot::plotscope::command

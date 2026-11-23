@@ -75,12 +75,8 @@ add_library(ps_gui OBJECT
     shell/ActivityBar.h
     shell/GuiContext.cpp
     shell/GuiContext.h
-    shell/CommandRegistry.cpp
-    shell/CommandRegistry.h
     shell/CommandPalette.cpp
     shell/CommandPalette.h
-    shell/KeybindingRegistry.cpp
-    shell/KeybindingRegistry.h
     shell/KeybindingDialog.cpp
     shell/KeybindingDialog.h
     shell/ImportDialog.cpp
@@ -175,7 +171,7 @@ target_include_directories(ps_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 # fastplot：独立绘图库（只依赖 Qt Widgets）。绘图视图通过它绘制，
 # 因此 GUI 侧公共依赖；CLI 不链它，保持 headless 纯净。
-target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_gui_theme ps_gui_transform ps_protocol ps_module_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
+target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme ps_gui_transform ps_protocol ps_module_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
                                     ads::ads SARibbonBar::SARibbonBar)
 set_target_properties(ps_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 

@@ -4,6 +4,9 @@
 #include <QString>
 #include <QStringList>
 
+#include "command/CommandRegistry.h"
+#include "command/KeybindingRegistry.h"
+
 #include <functional>
 
 class QLabel;
@@ -12,8 +15,10 @@ class QTableWidget;
 namespace nextpilot::plotscope::gui
 {
 
-class CommandRegistry;
-class KeybindingRegistry;
+using command::CommandDescriptor;
+using command::CommandRegistry;
+using command::KeybindingConflict;
+using command::KeybindingRegistry;
 
 // 快捷键编辑器：逐条命令改当前序列，留空恢复默认。
 class KeybindingDialog : public QDialog
