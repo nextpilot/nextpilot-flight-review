@@ -9,6 +9,7 @@
 #include <QTimer>
 #include <QString>
 #include <QColor>
+#include <functional>
 
 namespace nextpilot::plotscope::gui
 {
@@ -52,6 +53,13 @@ public:
 
     // 当前叠加的通道数。
     int channelCount() const;
+
+    // 数据集替换后的曲线重绑（对标 PJ4 rebindCurveKeys）：resolve(oldId, table,
+    // column) 返回新 datasetId（<0 = 无处可绑）。旧 id 的曲线改写到新 id 并重取
+    // 数据；显式颜色 / Y 变换配方等曲线属性原样保留（kept 语义）。返回重绑条数。
+    // 找不到新归属的曲线保持原样留在画布（数据取不到即空显），不删除。
+    int rebindDataset(const std::function<int(nextpilot::plotscope::dataset::DatasetId,
+                                              const QString &, const QString &)> &resolve);
 
     AxesView *canvas() const { return m_canvas; }
 

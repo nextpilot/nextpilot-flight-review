@@ -139,6 +139,42 @@ void ChannelView::clearChannels()
         m_canvas->clear();
 }
 
+int ChannelView::rebindDataset(
+    const std::function<int(DatasetId, const QString &, const QString &)> &resolve)
+{
+    int rebound = 0;
+    for (int i = 0; i < m_channels.size(); ++i)
+    {
+        PlotSeries &s = m_channels[i];
+        if (s.datasetId < 0)
+            continue;
+        const int oldId = s.datasetId;
+        const int newId = resolve(oldId, s.table, s.column);
+        if (newId < 0 || newId == oldId)
+            continue;
+
+        // 曲线属性（显式色、Y 变换配方、标题）都留在 s 上，跟着换 id——
+        // 对标 PJ4 kept_derived：派生对象的身份不随数据集消失而丢。
+        const QString oldKey = s.key();
+        s.datasetId = newId;
+        QString err;
+        if (renderOne(s, &err))
+        {
+            // 新 key 已由 renderOne 写进画布；旧 key 的条目摘掉，不留幽灵曲线。
+            if (m_canvas)
+                m_canvas->removeSeries(oldKey);
+            ++rebound;
+        }
+        else
+        {
+            // 新数据集取数失败（列没了/格式变了）：回滚到旧 id，曲线留原地
+            // 等下一次重绑机会，不静默丢曲线。
+            s.datasetId = oldId;
+        }
+    }
+    return rebound;
+}
+
 bool ChannelView::renderOne(PlotSeries &series, QString *err)
 {
     // 取数走意图层：GUI 与 CLI/脚本同一条路径，行为一致、可录制回放。

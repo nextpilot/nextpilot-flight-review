@@ -90,6 +90,8 @@ appCtx.states().registerEntry(std::move(entry));
 - `layout`：回填源条目 + 重建画布，**不读数据**。曲线留空态并挂入 pending binder（晚到绑定，对标 PJ4 PendingDisplayBinder）：数据源一登记（`sourceAdded`/`datasetAdded` 信号）就按 `datasetOrigin` 自动接回曲线、回放存盘视口。每个 pending 条目在 `SourceHub` 上持有按 origin 计数的 demand 引用（`demandOrigin/releaseOrigin`）——源被移除后需求仍在，同 origin 的源再次登记即自动接回；恢复前由 `preflightDocumentSpec` 报告 origin/channel 可满足性。
 - `full`：`layout` 的全部步骤 + 执行 `data.workspace.restore` 摄取。
 
+**数据集替换与重绑**（对标 PJ4 `rebindCurveKeys`/`planDatasetChoice`）：`reload` 用稳定 datasetId（曲线不失联）；`data.remove` 后重载会换 id——画布曲线不随之删除（kept 语义），`sourceAdded`/`datasetAdded` 信号触发按 `table.column` 三路解析自动接回（旧 id 仍有效→不动；唯一数据集携带→静默重绑；多个携带→取登记序第一个并报告）。同一 origin 带多个数据集（扇出/重复加载）时，`chooseDatasetFor` 按画布通道可满足性选最佳拟合，并列取登记序第一个并写诊断。
+
 **流式源在任何档位都只保留条目，不自动连接**。连流会卡住启动等网络，而"上次开着"不等于"这次授权重连"。
 
 ## 五、与意图层的分工

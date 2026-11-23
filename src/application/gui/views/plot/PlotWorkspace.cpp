@@ -184,15 +184,16 @@ PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWid
                          syncPlaybackRange(datasetId);
                      });
 
-    // 晚到绑定：源或数据集一登记就尝试接回 pending 条目。两个信号都要挂——
-    // 文件源是 sourceAdded（登记即带 datasetIds）；live 源是 connectLive 先
-    // 登记源、解析器吐数据后才 addDataset，只有 datasetAdded 才能补上。
+    // 数据集拓扑变化：先重绑失效曲线（数据集替换后 key 里的 datasetId 失效），
+    // 再尝试接回 pending 条目。两个信号都要挂——文件源是 sourceAdded（登记即带
+    // datasetIds）；live 源是 connectLive 先登记源、解析器吐数据后才 addDataset，
+    // 只有 datasetAdded 才能补上。
     QObject::connect(&m_appCtx.sources(), &dataset::SourceHub::sourceAdded,
-                     this, [this](int) { tryBindPending(); });
+                     this, [this](int) { onDatasetTopologyChanged(); });
     QObject::connect(&m_appCtx.sources(), &dataset::SourceHub::sourceChanged,
-                     this, [this](int) { tryBindPending(); });
+                     this, [this](int) { onDatasetTopologyChanged(); });
     QObject::connect(&m_appCtx.data(), &dataset::DatasetHub::datasetAdded,
-                     this, [this](int) { tryBindPending(); });
+                     this, [this](int) { onDatasetTopologyChanged(); });
 
     registerViewActions();
     registerPropertyProviders();
@@ -1379,7 +1380,9 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
             const DataSourceInfo *info = sourceId >= 0 ? sources.get(sourceId) : nullptr;
             if (info != nullptr && !info->datasetIds.isEmpty())
             {
-                const int datasetId = info->datasetIds.first();
+                // planDatasetChoice：同一 origin 带多个数据集（扇出解析/重复加载）
+                // 时按通道可满足性选最佳拟合，不盲取 first。
+                const int datasetId = chooseDatasetFor(*info, c.channels);
                 // 先绑全部曲线（显式色读回），再恢复视口——否则 addChannel→pushToPlot
                 // 的 setXRange(m_t0,m_t1) 会用数据全范围覆盖刚恢复的视口。
                 for (const QString &channel : c.channels)
@@ -1423,6 +1426,27 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
     }
     return true;
 }
+
+namespace {
+// planDatasetChoice 的拟合打分：channels 里有多少 table.column 在该数据集
+// 的 schema 里存在。ds 为空返回 -1（区分"没有数据集"和"0 条命中"）。
+int scoreDatasetFit(const dataset::Dataset *ds, const QStringList &channels)
+{
+    if (ds == nullptr)
+        return -1;
+    int score = 0;
+    for (const QString &channel : channels)
+    {
+        const int dot = channel.indexOf(QLatin1Char('.'));
+        const QString table = dot > 0 ? channel.left(dot) : QString();
+        const QString column = dot > 0 ? channel.mid(dot + 1) : channel;
+        const dataset::Table *t = ds->table(table);
+        if (t && t->column(column))
+            ++score;
+    }
+    return score;
+}
+} // namespace
 
 QStringList PlotWorkspace::preflightDocumentSpec(const plot::PlotDocumentSpec &spec,
                                                  const dataset::SourceHub &sources,
@@ -1468,8 +1492,19 @@ QStringList PlotWorkspace::preflightDocumentSpec(const plot::PlotDocumentSpec &s
             }
 
             // channel 可满足性：table/column 逐一比对数据集 schema。
-            // datasetId 会漂移，取该源首个数据集做校验（与绑定口径一致）。
-            const dataset::Dataset *ds = datasets.get(info->datasetIds.first());
+            // datasetId 会漂移，取通道拟合最佳的数据集做校验（与绑定口径一致）。
+            int bestDs = info->datasetIds.first();
+            int bestScore = scoreDatasetFit(datasets.get(bestDs), c.channels);
+            for (int k = 1; k < info->datasetIds.size(); ++k)
+            {
+                const int score = scoreDatasetFit(datasets.get(info->datasetIds.at(k)), c.channels);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestDs = info->datasetIds.at(k);
+                }
+            }
+            const dataset::Dataset *ds = datasets.get(bestDs);
             if (ds == nullptr)
                 continue;
             for (const QString &channel : c.channels)
@@ -1541,7 +1576,7 @@ void PlotWorkspace::tryBindPending()
         if (info == nullptr || info->datasetIds.isEmpty())
             continue; // 源还没到/还没数据，继续等下一个信号
 
-        const int datasetId = info->datasetIds.first();
+        const int datasetId = chooseDatasetFor(*info, p.channels);
         Cell &cell = m_cells[p.cell];
         if (cell.canvas == nullptr || cell.view == nullptr)
             continue;
@@ -1573,6 +1608,103 @@ void PlotWorkspace::tryBindPending()
         m_appCtx.sources().releaseOrigin(p.origin);
         m_pendingBinds.removeAt(k);
     }
+}
+
+int PlotWorkspace::chooseDatasetFor(const dataset::DataSourceInfo &info, const QStringList &channels)
+{
+    if (info.datasetIds.size() <= 1)
+        return info.datasetIds.value(0, -1);
+
+    // 对标 PJ4 layout_xml::planDatasetChoice："one dataset fitting best is
+    // pinned, unasked"；并列且无法询问时 "takes the first loaded candidate
+    // and says so"——我们取登记序第一个并写一条诊断。
+    int best = info.datasetIds.first();
+    int bestScore = scoreDatasetFit(m_appCtx.data().get(best), channels);
+    bool tie = false;
+    for (int k = 1; k < info.datasetIds.size(); ++k)
+    {
+        const int did = info.datasetIds.at(k);
+        const int score = scoreDatasetFit(m_appCtx.data().get(did), channels);
+        if (score > bestScore)
+        {
+            best = did;
+            bestScore = score;
+            tie = false;
+        }
+        else if (score == bestScore)
+        {
+            tie = true;
+        }
+    }
+    if (tie)
+        m_appCtx.messages().append(
+            QStringLiteral("warn"), QStringLiteral("plot.document"),
+            QStringLiteral("源 %1 有 %2 个数据集且通道拟合并列，绑定登记序第一个（datasetId=%3）")
+                .arg(info.origin)
+                .arg(info.datasetIds.size())
+                .arg(best));
+    return best;
+}
+
+void PlotWorkspace::onDatasetTopologyChanged()
+{
+    // 先重绑：数据集替换后画布上还有挂在旧 id 的曲线（reload 用稳定 id 不受
+    // 影响，remove 后重载才会换 id）；再接 pending（布局先到的晚到绑定）。
+    rebindStaleCurves();
+    tryBindPending();
+}
+
+int PlotWorkspace::rebindStaleCurves()
+{
+    int rebound = 0;
+    for (Cell &cell : m_cells)
+    {
+        if (cell.view == nullptr)
+            continue;
+        rebound += cell.view->rebindDataset(
+            [this](int oldId, const QString &table, const QString &column) {
+                return resolveRebindTarget(oldId, table, column);
+            });
+    }
+    if (rebound > 0)
+        m_appCtx.messages().append(
+            QStringLiteral("info"), QStringLiteral("plot.document"),
+            QStringLiteral("数据集重绑：%1 条曲线按 table.column 接到新数据集").arg(rebound));
+    return rebound;
+}
+
+int PlotWorkspace::resolveRebindTarget(int oldId, const QString &table, const QString &column)
+{
+    // 三路解析（对标 PJ4 rebindCurveKeys / CatalogModel::resolveCurveKey）：
+    // 1) 旧 datasetId 仍挂在某源上 → 不动；
+    // 2) 旧 id 失效但 table.column 在唯一数据集 → 静默重绑；
+    // 3) 多个数据集都携带 → 取第一个并报告。
+    if (oldId < 0 || m_appCtx.sources().sourceOfDataset(oldId) >= 0)
+        return oldId;
+    QVector<int> carriers;
+    for (const int sid : m_appCtx.sources().ids())
+    {
+        const dataset::DataSourceInfo *info = m_appCtx.sources().get(sid);
+        if (info == nullptr)
+            continue;
+        for (const int did : info->datasetIds)
+        {
+            const dataset::Dataset *ds = m_appCtx.data().get(did);
+            const dataset::Table *t = ds ? ds->table(table) : nullptr;
+            if (t && t->column(column))
+                carriers.append(did);
+        }
+    }
+    if (carriers.isEmpty())
+        return -1;
+    if (carriers.size() > 1)
+        m_appCtx.messages().append(
+            QStringLiteral("warn"), QStringLiteral("plot.document"),
+            QStringLiteral("通道 %1.%2 有 %3 个数据集可接，重绑到第一个（datasetId=%4）")
+                .arg(table, column)
+                .arg(carriers.size())
+                .arg(carriers.first()));
+    return carriers.first();
 }
 
 QWidget *createPlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)

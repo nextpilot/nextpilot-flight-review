@@ -557,6 +557,189 @@ int main(int argc, char *argv[])
         }
     }
 
+    // --- 11) 数据集替换重绑（rebindCurveKeys 对标）---
+    // 场景：曲线绑在 datasetId 上，源被 remove 后重载（换 origin 拷贝）会拿到
+    // 新 datasetId——曲线按 table.column 自动接回，显式色/配方保留，不删曲线。
+    {
+        // 专用独占通道（psReb.val 全仓唯一）：测试 9/10 遗留的 demo_flight
+        // 数据集不携带它，保证"无处可绑"与"唯一可绑"的断言确定性。
+        QTemporaryDir tmpA;
+        CHECK(tmpA.isValid());
+        const QString originA = tmpA.filePath(QStringLiteral("psReb.csv"));
+        {
+            QFile f(originA);
+            CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
+            f.write("time_ms,psReb.val\n0,1.0\n4,1.5\n8,2.0\n");
+            f.close();
+        }
+        Intent loadA;
+        loadA.op = QStringLiteral("data.load");
+        loadA.params[QStringLiteral("path")] = originA;
+        const auto la = application.host().execute(loadA);
+        CHECK(la);
+        const int srcA = application.context().sources().sourceByOrigin(originA);
+        CHECK(srcA >= 0);
+        const int dsA = application.context().sources().get(srcA)->datasetIds.first();
+        CHECK(dsA >= 0);
+
+        // 真实 table.column（schema 动态取，不写死表头）。
+        const Dataset *ds = application.context().data().get(dsA);
+        CHECK(ds != nullptr && !ds->tableNames().isEmpty());
+        const QString tbl = ds->tableNames().first();
+        const QString col = ds->table(tbl)->columns.first().name;
+        const QString channel = tbl + QLatin1Char('.') + col;
+
+        // 复位干净 1 格并清空，再经文档恢复绑一条显式色曲线。
+        {
+            QVariant nullV;
+            Result<QVariant> g(nullV);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("figure.grid"), {{QStringLiteral("rows"), 1}, {QStringLiteral("cols"), 1}}, g));
+        }
+        workspace->activeCanvas()->clear();
+
+        plot::PlotDocumentSpec doc;
+        doc.version = 1;
+        plot::PlotPageSpec page;
+        plot::LayoutNode node;
+        node.isCanvas = true;
+        plot::CanvasSpec cs;
+        cs.id = QStringLiteral("rebind-1");
+        cs.viewType = QStringLiteral("timeseries");
+        cs.datasetOrigin = originA;
+        cs.channels << channel;
+        const QColor rbColor(15, 130, 220);
+        QJsonObject so;
+        so.insert(QStringLiteral("key"), QStringLiteral("%1|%2|%3").arg(dsA).arg(tbl, col));
+        so.insert(QStringLiteral("color"), rbColor.name());
+        cs.style = QJsonObject{{QStringLiteral("series"), QJsonArray{so}}};
+        node.canvas = cs;
+        page.root = node;
+        doc.pages << page;
+        CHECK(workspace->applyDocumentSpec(doc, application.context().sources()));
+        workspace->setActive(0);
+        auto *rbCanvas = workspace->activeCanvas();
+        CHECK(rbCanvas && rbCanvas->seriesCount() == 1);
+        CHECK(rbCanvas->seriesAt(0)->datasetId == dsA);
+        CHECK(rbCanvas->seriesAt(0)->color == rbColor);
+
+        // 源被移除：曲线保留（kept 语义，不随数据集消失），重绑无处可去返回 0。
+        Intent rmA;
+        rmA.op = QStringLiteral("data.remove");
+        rmA.params[QStringLiteral("id")] = srcA;
+        application.host().execute(rmA);
+        CHECK(application.context().sources().sourceOfDataset(dsA) < 0);
+        CHECK(rbCanvas->seriesCount() == 1);
+        CHECK(workspace->rebindStaleCurves() == 0);
+
+        // 同内容拷贝换 origin 重载 → 新 datasetId；信号触发自动重绑。
+        QTemporaryDir tmpB;
+        CHECK(tmpB.isValid());
+        const QString originB = tmpB.filePath(QStringLiteral("psReb.csv"));
+        {
+            QFile f(originB);
+            CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
+            f.write("time_ms,psReb.val\n0,1.0\n4,1.5\n8,2.0\n");
+            f.close();
+        }
+        Intent loadB;
+        loadB.op = QStringLiteral("data.load");
+        loadB.params[QStringLiteral("path")] = originB;
+        const auto lb = application.host().execute(loadB);
+        CHECK(lb);
+        const int srcB = application.context().sources().sourceByOrigin(originB);
+        CHECK(srcB >= 0);
+        const int dsB = application.context().sources().get(srcB)->datasetIds.first();
+        CHECK(dsB >= 0 && dsB != dsA);
+        // 自动重绑（datasetAdded 信号）已接回；再调一次幂等返回 0。
+        CHECK(rbCanvas->seriesCount() == 1);
+        CHECK(rbCanvas->seriesAt(0)->datasetId == dsB);
+        CHECK(rbCanvas->seriesAt(0)->color == rbColor);
+        CHECK(workspace->rebindStaleCurves() == 0);
+        // 数据真的重新取到：时间范围有限且非零。
+        double r0 = 0.0, r1 = 0.0;
+        CHECK(rbCanvas->visibleTimeRange(&r0, &r1));
+        CHECK(std::isfinite(r0) && std::isfinite(r1));
+        OK("重绑 11：dataset 替换 → 曲线按 table.column 接回 + 显式色保留 + 幂等");
+    }
+
+    // --- 12) planDatasetChoice：同源多数据集按通道可满足性选最佳拟合 ---
+    {
+        // 造两个通道面不同的数据集：同名 stem（表名相同才有共享通道），
+        // A 少一列，B 多一列 extra.val。
+        QTemporaryDir tmp12;
+        CHECK(tmp12.isValid());
+        const QString dirA = tmp12.filePath(QStringLiteral("a"));
+        const QString dirB = tmp12.filePath(QStringLiteral("b"));
+        CHECK(QDir().mkpath(dirA) && QDir().mkpath(dirB));
+        const QString pA = QDir(dirA).filePath(QStringLiteral("psChX.csv"));
+        const QString pB = QDir(dirB).filePath(QStringLiteral("psChX.csv"));
+        {
+            QFile fa(pA), fb(pB);
+            CHECK(fa.open(QIODevice::WriteOnly | QIODevice::Text));
+            fa.write("time_ms,att.roll[deg]\n0,1.0\n4,1.5\n8,2.0\n");
+            fa.close();
+            CHECK(fb.open(QIODevice::WriteOnly | QIODevice::Text));
+            fb.write("time_ms,att.roll[deg],extra.val\n0,1.0,10\n4,1.5,11\n8,2.0,12\n");
+            fb.close();
+        }
+        Intent lA;
+        lA.op = QStringLiteral("data.load");
+        lA.params[QStringLiteral("path")] = pA;
+        const auto a = application.host().execute(lA);
+        CHECK(a);
+        const int srcA12 = application.context().sources().sourceByOrigin(pA);
+        CHECK(srcA12 >= 0);
+        const int dsA = application.context().sources().get(srcA12)->datasetIds.first();
+        Intent lB;
+        lB.op = QStringLiteral("data.load");
+        lB.params[QStringLiteral("path")] = pB;
+        const auto b = application.host().execute(lB);
+        CHECK(b);
+        const int srcB12 = application.context().sources().sourceByOrigin(pB);
+        CHECK(srcB12 >= 0);
+        const int dsB = application.context().sources().get(srcB12)->datasetIds.first();
+        CHECK(dsA >= 0 && dsB >= 0 && dsA != dsB);
+
+        const Dataset *dA = application.context().data().get(dsA);
+        const Dataset *dB = application.context().data().get(dsB);
+        CHECK(dA && dB && !dA->tableNames().isEmpty() && !dB->tableNames().isEmpty());
+        const QString tblA = dA->tableNames().first();
+        const QString tblB = dB->tableNames().first();
+        CHECK(tblA == tblB); // 同 stem → 表名相同，通道才有重叠
+        // 共享通道：A 有、B 也有；独占通道：只有 B 有。
+        QString chCommon, chOnlyB;
+        for (const auto &cd : dA->table(tblA)->columns)
+            if (dB->table(tblB)->column(cd.name))
+            { chCommon = tblA + QLatin1Char('.') + cd.name; break; }
+        for (const auto &cd : dB->table(tblB)->columns)
+            if (!dA->table(tblA)->column(cd.name))
+            { chOnlyB = tblB + QLatin1Char('.') + cd.name; break; }
+        CHECK(!chCommon.isEmpty() && !chOnlyB.isEmpty());
+
+        // 合成源：两个数据集挂在同一 origin 下。
+        DataSourceInfo synth;
+        synth.id = -1;
+        synth.origin = QStringLiteral("synthetic-choice");
+
+        // B 携带全部通道（2/2）、A 只有 1/2 → 无论登记序，最佳拟合都是 B。
+        synth.datasetIds = {dsA, dsB};
+        CHECK(workspace->chooseDatasetFor(synth, {chCommon, chOnlyB}) == dsB);
+        synth.datasetIds = {dsB, dsA};
+        CHECK(workspace->chooseDatasetFor(synth, {chCommon, chOnlyB}) == dsB);
+
+        // 单通道拟合并列（1/1）→ 取登记序第一个（PJ4 "take first and says so"）。
+        synth.datasetIds = {dsA, dsB};
+        CHECK(workspace->chooseDatasetFor(synth, {chCommon}) == dsA);
+        synth.datasetIds = {dsB, dsA};
+        CHECK(workspace->chooseDatasetFor(synth, {chCommon}) == dsB);
+
+        // 单数据集源零开销直通。
+        synth.datasetIds = {dsA};
+        CHECK(workspace->chooseDatasetFor(synth, {chCommon, chOnlyB}) == dsA);
+        OK("多数据集 12：planDatasetChoice 最佳拟合优先 / 并列取首 / 单集直通");
+    }
+
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");
     return 0;
 }
