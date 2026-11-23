@@ -441,6 +441,122 @@ int main(int argc, char *argv[])
         OK("恢复链 9b：存盘深缩放视口经 apply→save 往返精确");
     }
 
+    // --- 10) 晚到绑定（pending binder + demand reference）---
+    // 场景：布局先到（origin 还没加载）→ 画布空态挂 pending → data.load 晚到
+    // → sourceAdded 信号自动接回曲线 + 回放存盘视口 + 释放 demand。
+    {
+        // CSV 表名取自文件名 stem：拷贝必须保留文件名（换目录 = 换 origin）。
+        QTemporaryDir tmpDir;
+        CHECK(tmpDir.isValid());
+        const QString fixture = QStringLiteral(PS_TEST_FIXTURE_DIR "/demo_flight.csv");
+        const QString lateOrigin = tmpDir.filePath(QStringLiteral("demo_flight.csv"));
+        CHECK(QFile::copy(fixture, lateOrigin));
+
+        // 从已加载的源拿真实 table.column 口径（同内容拷贝 → schema 一致）。
+        const DataSourceInfo *anySrc = nullptr;
+        for (int id : application.context().sources().ids())
+        {
+            const DataSourceInfo *info = application.context().sources().get(id);
+            if (info && !info->datasetIds.isEmpty())
+            { anySrc = info; break; }
+        }
+        CHECK(anySrc != nullptr);
+        const Dataset *ds0 = application.context().data().get(anySrc->datasetIds.first());
+        CHECK(ds0 != nullptr && !ds0->tableNames().isEmpty());
+        const QString realTable = ds0->tableNames().first();
+        const Table *tbl0 = ds0->table(realTable);
+        CHECK(tbl0 != nullptr && !tbl0->columns.isEmpty());
+        const QString realColumn = tbl0->columns.first().name;
+        const QString realChannel = realTable + QLatin1Char('.') + realColumn;
+
+        // 复位到干净 1 格并清空，保证 pending 条目定位准确。
+        {
+            QVariant nullV;
+            Result<QVariant> g(nullV);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("figure.grid"), {{QStringLiteral("rows"), 1}, {QStringLiteral("cols"), 1}}, g));
+        }
+        workspace->activeCanvas()->clear();
+
+        // 布局先到：origin 尚未加载 → 空态 + pending + demand 引用。
+        plot::PlotDocumentSpec doc;
+        doc.version = 1;
+        plot::PlotPageSpec page;
+        page.id = QStringLiteral("page-late");
+        plot::LayoutNode canvasNode;
+        canvasNode.isCanvas = true;
+        plot::CanvasSpec cs;
+        cs.id = QStringLiteral("late-1");
+        cs.viewType = QStringLiteral("timeseries");
+        cs.datasetOrigin = lateOrigin;
+        cs.channels << realChannel;
+        const QColor lateColor(90, 40, 210);
+        QJsonObject so;
+        so.insert(QStringLiteral("key"), QStringLiteral("0|%1|%2").arg(realTable, realColumn));
+        so.insert(QStringLiteral("color"), lateColor.name());
+        cs.style = QJsonObject{{QStringLiteral("series"), QJsonArray{so}}};
+        cs.state = QJsonObject{{QStringLiteral("x"), QJsonArray{0.5, 1.5}}};
+        canvasNode.canvas = cs;
+        page.root = canvasNode;
+        doc.pages << page;
+
+        CHECK(workspace->applyDocumentSpec(doc, application.context().sources()));
+        CHECK(workspace->pendingBindCount() == 1);
+        CHECK(workspace->pendingBindOrigins().contains(lateOrigin));
+        CHECK(application.context().sources().demandCount(lateOrigin) == 1);
+        CHECK(application.context().sources().unsatisfiedDemands().contains(lateOrigin));
+        // 空态：曲线还没接上。
+        workspace->setActive(0);
+        CHECK(workspace->activeCanvas() != nullptr && workspace->activeCanvas()->seriesCount() == 0);
+        OK("晚到绑定 10a：布局先到 → 空态 + pending + demand 引用登记");
+
+        // preflight（2.8）：对同一份文档应报告 origin 未到。
+        const QStringList pf = PlotWorkspace::preflightDocumentSpec(
+            doc, application.context().sources(), application.context().data());
+        CHECK(pf.size() == 1 && pf.first().contains(lateOrigin));
+
+        // 数据晚到：加载同 origin 源 → sourceAdded/datasetAdded → 自动接回。
+        Intent loadLate;
+        loadLate.op = QStringLiteral("data.load");
+        loadLate.params[QStringLiteral("path")] = lateOrigin;
+        const auto lateLoaded = application.host().execute(loadLate);
+        CHECK(lateLoaded);
+
+        CHECK(workspace->pendingBindCount() == 0);
+        CHECK(application.context().sources().demandCount(lateOrigin) == 0);
+        CHECK(application.context().sources().unsatisfiedDemands().isEmpty());
+        // 曲线已接上，颜色 = 存盘色。
+        auto *lateCanvas = workspace->activeCanvas();
+        CHECK(lateCanvas != nullptr && lateCanvas->seriesCount() == 1);
+        CHECK(lateCanvas->seriesAt(0) != nullptr);
+        CHECK(lateCanvas->seriesAt(0)->color == lateColor);
+        // 视口回放：绑定后的视口 = 存盘 state，不被数据全范围覆盖。
+        double l0 = 0.0, l1 = 0.0;
+        CHECK(lateCanvas->visibleTimeRange(&l0, &l1));
+        CHECK(std::fabs(l0 - 0.5) < 1e-6 && std::fabs(l1 - 1.5) < 1e-6);
+        OK("晚到绑定 10b：数据晚到 → 自动接回 + 颜色/视口回放 + demand 释放");
+
+        // 10c：源被移除后 demand 仍在，同 origin 重新载入 → 源可被再次找回。
+        {
+            const int lateSrcId = application.context().sources().sourceByOrigin(lateOrigin);
+            CHECK(lateSrcId >= 0);
+            Intent rm;
+            rm.op = QStringLiteral("data.remove");
+            rm.params[QStringLiteral("id")] = lateSrcId;
+            application.host().execute(rm);
+            CHECK(application.context().sources().sourceByOrigin(lateOrigin) < 0);
+            // demand 语义：登记→源移除→需求仍在；源重新登记→需求不变
+            //（释放是绑定方职责，不由源生命周期自动清理）。
+            application.context().sources().demandOrigin(lateOrigin);
+            CHECK(application.context().sources().demandCount(lateOrigin) == 1);
+            application.host().execute(loadLate);
+            CHECK(application.context().sources().demandCount(lateOrigin) == 1);
+            application.context().sources().releaseOrigin(lateOrigin);
+            CHECK(application.context().sources().demandCount(lateOrigin) == 0);
+            OK("晚到绑定 10c：demand 引用计数（登记/释放/不受源增删影响）");
+        }
+    }
+
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");
     return 0;
 }

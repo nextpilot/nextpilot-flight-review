@@ -184,6 +184,16 @@ PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWid
                          syncPlaybackRange(datasetId);
                      });
 
+    // 晚到绑定：源或数据集一登记就尝试接回 pending 条目。两个信号都要挂——
+    // 文件源是 sourceAdded（登记即带 datasetIds）；live 源是 connectLive 先
+    // 登记源、解析器吐数据后才 addDataset，只有 datasetAdded 才能补上。
+    QObject::connect(&m_appCtx.sources(), &dataset::SourceHub::sourceAdded,
+                     this, [this](int) { tryBindPending(); });
+    QObject::connect(&m_appCtx.sources(), &dataset::SourceHub::sourceChanged,
+                     this, [this](int) { tryBindPending(); });
+    QObject::connect(&m_appCtx.data(), &dataset::DatasetHub::datasetAdded,
+                     this, [this](int) { tryBindPending(); });
+
     registerViewActions();
     registerPropertyProviders();
 
@@ -242,6 +252,8 @@ PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWid
 
 PlotWorkspace::~PlotWorkspace()
 {
+    // pending 条目持有的 demand 引用要释放，否则 SourceHub 的需求计数泄漏。
+    dropPendingBinds();
     // 页对象是裸指针（Page 里还持有 scroll/host 的父子关系），析构时显式释放。
     // cell 控件归 Qt 父子树管，随 scroll 一起销毁。
     qDeleteAll(m_pages);
@@ -1282,6 +1294,15 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
     if (spec.pages.isEmpty())
         return false;
 
+    // 新文档接管 pending 队列：旧文档挂起的绑定意图随旧文档作废。
+    dropPendingBinds();
+
+    // preflight 预检（2.8）：绑定前报告 origin/channel 可满足性。问题写诊断，
+    // 不阻断——origin 缺失走 pending 晚到绑定，channel 缺失留空态。
+    const QStringList issues = preflightDocumentSpec(spec, sources, m_appCtx.data());
+    for (const QString &issue : issues)
+        m_appCtx.messages().append(QStringLiteral("warn"), QStringLiteral("plot.document"), issue);
+
     // 树序（行优先）即格子顺序，与 toDocumentSpec 的写出口径一致。
     auto canvasesOf = [](const plot::LayoutNode &root) {
         QVector<plot::CanvasSpec> out;
@@ -1372,10 +1393,23 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
             }
             else if (!c.datasetOrigin.isEmpty())
             {
+                // 源未到：挂 pending 等晚到（对标 PJ4 PendingDisplayBinder）。
+                // demand reference：该格对"这个 origin 必须有源"持有需求引用，
+                // 源被移除后需求仍在，同 origin 的源再次登记即自动接回。
+                PendingBind p;
+                p.page = pi;
+                p.cell = i;
+                p.origin = c.datasetOrigin;
+                p.channels = c.channels;
+                p.colorByChannel = savedColorByChannel;
+                p.state = c.state;
+                p.title = c.title.isEmpty() ? c.id : c.title;
+                m_pendingBinds.append(p);
+                m_appCtx.sources().demandOrigin(c.datasetOrigin);
                 m_appCtx.messages().append(
-                    QStringLiteral("warn"), QStringLiteral("plot.document"),
-                    QStringLiteral("画布 %1 的数据源未找到：%2，已留空态")
-                        .arg(c.title.isEmpty() ? c.id : c.title, c.datasetOrigin));
+                    QStringLiteral("info"), QStringLiteral("plot.document"),
+                    QStringLiteral("画布 %1 的数据源未到：%2，已挂起等待晚到绑定")
+                        .arg(p.title, c.datasetOrigin));
             }
 
             // 视口属于视图、与数据无关：无论曲线是否绑成功都要恢复。restoreViewState
@@ -1388,6 +1422,157 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
         syncPage();
     }
     return true;
+}
+
+QStringList PlotWorkspace::preflightDocumentSpec(const plot::PlotDocumentSpec &spec,
+                                                 const dataset::SourceHub &sources,
+                                                 const dataset::DatasetHub &datasets)
+{
+    QStringList issues;
+
+    auto canvasesOf = [](const plot::LayoutNode &root) {
+        QVector<plot::CanvasSpec> out;
+        std::function<void(const plot::LayoutNode &)> walk = [&](const plot::LayoutNode &n) {
+            if (n.isCanvas)
+                out.append(n.canvas);
+            for (const plot::LayoutNode &child : n.children)
+                walk(child);
+        };
+        walk(root);
+        return out;
+    };
+
+    for (const plot::PlotPageSpec &ps : spec.pages)
+    {
+        const QVector<plot::CanvasSpec> canvases = canvasesOf(ps.root);
+        for (const plot::CanvasSpec &c : canvases)
+        {
+            if (c.datasetOrigin.isEmpty())
+                continue; // 空态画布是合法设计（origin 手动重绑），不报问题
+            const QString name = c.title.isEmpty() ? c.id : c.title;
+
+            const int sourceId = sources.sourceByOrigin(c.datasetOrigin);
+            const DataSourceInfo *info = sourceId >= 0 ? sources.get(sourceId) : nullptr;
+            if (info == nullptr)
+            {
+                // 不算失败：留空态 + 挂 pending，源到了自动接回；但必须报告。
+                issues << QStringLiteral("画布 %1 的数据源未到：%2（已挂 pending，源登记后自动绑定）")
+                                              .arg(name, c.datasetOrigin);
+                continue;
+            }
+            if (info->datasetIds.isEmpty())
+            {
+                issues << QStringLiteral("画布 %1 的源 %2 尚无数据集（live 流可能还没吐数据）")
+                                      .arg(name, c.datasetOrigin);
+                continue;
+            }
+
+            // channel 可满足性：table/column 逐一比对数据集 schema。
+            // datasetId 会漂移，取该源首个数据集做校验（与绑定口径一致）。
+            const dataset::Dataset *ds = datasets.get(info->datasetIds.first());
+            if (ds == nullptr)
+                continue;
+            for (const QString &channel : c.channels)
+            {
+                const int dot = channel.indexOf(QLatin1Char('.'));
+                const QString table = dot > 0 ? channel.left(dot) : QString();
+                const QString column = dot > 0 ? channel.mid(dot + 1) : channel;
+                const dataset::Table *t = ds->table(table);
+                if (t == nullptr)
+                {
+                    issues << QStringLiteral("画布 %1 的表 %2 在数据集里不存在（协议/表头可能变了）")
+                                          .arg(name, table);
+                    continue;
+                }
+                if (t->column(column) == nullptr)
+                    issues << QStringLiteral("画布 %1 的列 %2.%3 在数据集里不存在")
+                                          .arg(name, table, column);
+            }
+        }
+    }
+    return issues;
+}
+
+int PlotWorkspace::pendingBindCount() const
+{
+    return m_pendingBinds.size();
+}
+
+QStringList PlotWorkspace::pendingBindOrigins() const
+{
+    QStringList out;
+    for (const PendingBind &p : m_pendingBinds)
+        out << p.origin;
+    return out;
+}
+
+void PlotWorkspace::dropPendingBinds()
+{
+    for (const PendingBind &p : m_pendingBinds)
+        m_appCtx.sources().releaseOrigin(p.origin);
+    m_pendingBinds.clear();
+}
+
+void PlotWorkspace::tryBindPending()
+{
+    if (m_pendingBinds.isEmpty())
+        return;
+
+    // 逆序遍历便于摘除已接回的条目。
+    for (int k = m_pendingBinds.size() - 1; k >= 0; --k)
+    {
+        PendingBind &p = m_pendingBinds[k];
+
+        // 页/格位置仍然有效才接：页被关掉、格被重排销毁就丢弃并释放 demand
+        //（布局变化属于用户新意图，晚到数据不该强行复活已消失的画布）。
+        if (p.page < 0 || p.page >= m_pages.size())
+        {
+            m_appCtx.sources().releaseOrigin(p.origin);
+            m_pendingBinds.removeAt(k);
+            continue;
+        }
+        // 挂起条目记录的是页内格序；校验时临时切回那页（不改变用户所在页的话切换代价
+        // 大——改为只在当前页校验，非当前页的条目等它所在页成为活动页时再接）。
+        if (p.page != m_activePage || p.cell < 0 || p.cell >= m_cells.size())
+            continue;
+
+        const int sourceId = m_appCtx.sources().sourceByOrigin(p.origin);
+        const DataSourceInfo *info = sourceId >= 0 ? m_appCtx.sources().get(sourceId) : nullptr;
+        if (info == nullptr || info->datasetIds.isEmpty())
+            continue; // 源还没到/还没数据，继续等下一个信号
+
+        const int datasetId = info->datasetIds.first();
+        Cell &cell = m_cells[p.cell];
+        if (cell.canvas == nullptr || cell.view == nullptr)
+            continue;
+
+        bool boundAny = false;
+        for (const QString &channel : p.channels)
+        {
+            const int dot = channel.indexOf(QLatin1Char('.'));
+            const QString table = dot > 0 ? channel.left(dot) : QString();
+            const QString column = dot > 0 ? channel.mid(dot + 1) : channel;
+            if (cell.view->addChannel(datasetId, table, column, nullptr, QString(),
+                                      p.colorByChannel.value(channel)))
+                boundAny = true;
+        }
+        if (!boundAny)
+            continue; // 通道全没接上（表头变了）：条目保留，preflight 已报告原因
+
+        // 绑定后回放存盘视口（对标 PJ4 applySavedViewportOrZoom：bind 后重放，
+        // 防止 addChannel→pushToPlot 的数据全范围 setXRange 抢走视口）。
+        if (!p.state.isEmpty() && cell.canvas)
+            cell.canvas->restoreViewState(p.state);
+
+        m_appCtx.messages().append(
+            QStringLiteral("info"), QStringLiteral("plot.document"),
+            QStringLiteral("晚到绑定：画布 %1 的数据源 %2 已接上（%3 条通道）")
+                .arg(p.title, p.origin)
+                .arg(boundAny ? p.channels.size() : 0));
+
+        m_appCtx.sources().releaseOrigin(p.origin);
+        m_pendingBinds.removeAt(k);
+    }
 }
 
 QWidget *createPlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)

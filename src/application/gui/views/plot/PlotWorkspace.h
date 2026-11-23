@@ -2,7 +2,11 @@
 
 #include "AppContext.h"
 #include "IIntentExecutor.h"
+#include <QColor>
+#include <QHash>
+#include <QJsonObject>
 #include <QPointer>
+#include <QStringList>
 #include <QWidget>
 
 #include <QVector>
@@ -82,6 +86,31 @@ public:
     plot::PlotDocumentSpec toDocumentSpec() const;
     bool applyDocumentSpec(const plot::PlotDocumentSpec &spec,
                            const dataset::SourceHub &sources);
+
+    // ---- 晚到绑定（pending binder，对标 PJ4 PendingDisplayBinder）----
+    //
+    // 场景：布局先到、数据后到——layout 加载时 origin 对应的源还没载入
+    // （换数据文件 / live 流未连）。applyDocumentSpec 此时把画布留空态并把
+    // 该格的绑定意图挂进 pending 队列；源一登记（sourceAdded/datasetAdded
+    // 信号）就按 origin 自动接回曲线、回放存盘视口。
+    //
+    // demand reference：每个 pending 条目在 SourceHub 上按 origin 计一个
+    // 需求引用（见 SourceHub::demandOrigin）——源被移除后需求仍在，
+    // 同 origin 的源再次出现即自动接回。
+    int pendingBindCount() const;
+    // 挂起中等待的 origin（诊断/preflight 用）。
+    QStringList pendingBindOrigins() const;
+
+    // ---- preflight 预检（2.8）----
+    // 在绑定前检查文档里每个画布的 origin / channels 可满足性，返回问题清单
+    //（空 = 全部可满足）。applyDocumentSpec 每次恢复前调用并把问题写进诊断；
+    // 也可在恢复前独立调用（脚本/MCP 先验证再应用）。
+    //  · origin 缺失：画布留空态、挂 pending 等晚到——不算失败，但要报告；
+    //  · channel 缺失：源在但列对不上（换表头/协议变更）——绑定会静默跳过，
+    //    preflight 提前暴露。
+    static QStringList preflightDocumentSpec(const plot::PlotDocumentSpec &spec,
+                                             const dataset::SourceHub &sources,
+                                             const dataset::DatasetHub &datasets);
 
 private:
     struct Cell
@@ -171,6 +200,27 @@ private:
     void onPlayheadChanged(double t);
     // 活动数据集变化时把时间范围喂给播放引擎（回放区间 = 数据首末时间）。
     void syncPlaybackRange(int datasetId);
+
+    // —— 晚到绑定（pending binder）——
+    // 一条挂起的绑定意图：来源标识、要接的通道、存盘颜色、页/格位置与存盘视口。
+    // origin 找回源后按 channels 逐一接上（显式色直达），再 restoreViewState
+    // 回放视口（对标 PJ4 applySavedViewportOrZoom：bind 后重放，防 auto-fit 抢走）。
+    struct PendingBind
+    {
+        int page = 0;
+        int cell = 0;
+        QString origin;
+        QStringList channels;
+        QHash<QString, QColor> colorByChannel;
+        QJsonObject state; // 存盘视口等画布状态（绑定后回放）
+        QString title;     // 诊断信息用画布名
+    };
+    // 挂起队列 + 尝试接回（sourceAdded/datasetAdded 信号触发）。
+    void tryBindPending();
+    // 释放全部 pending 条目持有的 demand 引用（换文档/析构时调用）。
+    void dropPendingBinds();
+    // 布局先到、数据晚到的挂起绑定条目（见 applyDocumentSpec 内的挂起分支）。
+    QVector<PendingBind> m_pendingBinds;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
