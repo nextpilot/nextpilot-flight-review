@@ -282,33 +282,6 @@ void Axes::setBoxVisible(bool visible)
     invalidateStatic();
 }
 
-void Axes::setRubberBand(const QRect &pixels)
-{
-    m_rubberBand = pixels;
-    update();
-}
-
-void Axes::setHover(const QPointF &dataPoint, bool active)
-{
-    m_hoverPoint = dataPoint;
-    m_hoverActive = active;
-    update();
-}
-
-void Axes::setPlayhead(double x, bool active)
-{
-    m_playheadX = x;
-    m_playheadActive = active;
-    update();
-}
-
-void Axes::setLinkedCursor(double x, bool active)
-{
-    m_linkedX = x;
-    m_linkedActive = active;
-    update();
-}
-
 double Axes::pixelToX(double px) const
 {
     return m_vp.pixelToX(px);
@@ -353,20 +326,6 @@ void Axes::setStateBands(const QVector<StateRowMark> &rows)
         return; // 内容不变不重排（relayout 有开销）
     m_stateBandOverlay.setRows(rows);
     relayout(); // 顶部为状态行预留空间（行高 + 行名）
-    update();
-}
-
-void Axes::setOverlayText(const QString &text)
-{
-    m_overlayText = text;
-    update();
-}
-
-void Axes::clearOverlay()
-{
-    m_hoverActive = false;
-    m_overlayText.clear();
-    m_rubberBand = QRect();
     update();
 }
 
@@ -1015,105 +974,25 @@ void Axes::toggleLegendItem(int curveIndex)
 
 void Axes::paintOverlay(QPainter &painter)
 {
-    const QRectF plot = m_vp.plotRect();
-
-    // 叠加层公共上下文：一次组装，各 Overlay 只读（渲染在各自类里）。
+    // 叠加层调度：公共上下文组装一次，各 Overlay 只读（渲染在各自类里）。
+    // 顺序保持与抽取前一致：交叉线族 → 色带 → Marker → 书签 → A/B → 读数框
+    // （读数框画在最上）→ 橡皮筋（框选盖顶）。
     OverlayContext ctx;
     ctx.vp = &m_vp;
-    ctx.plotRect = plot;
+    ctx.plotRect = m_vp.plotRect();
     ctx.font = font();
     ctx.labelColor = m_axes[sideIndex(AxisSide::Left)].labelColor();
     ctx.axisInk = m_axes[sideIndex(AxisSide::Bottom)].ink();
     ctx.legendBlockRect = m_legend.blockRect();
     ctx.abActive = m_abMeasure.isEnabled();
 
-    if (!m_overlayText.isEmpty())
-    {
-        painter.save();
-        QFont f = font();
-        f.setPointSizeF(std::max(7.0, f.pointSizeF()));
-        painter.setFont(f);
-        const QFontMetrics fm(f);
-        const int pad = 6;
-        const QRectF textRect(plot.right() - fm.horizontalAdvance(m_overlayText) - 2 * pad,
-                              plot.top() + pad,
-                              fm.horizontalAdvance(m_overlayText) + 2 * pad,
-                              fm.height() + pad);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(0, 0, 0, 40));
-        painter.drawRoundedRect(textRect, 3, 3);
-        painter.setPen(m_axes[sideIndex(AxisSide::Left)].labelColor());
-        painter.drawText(textRect, Qt::AlignCenter, m_overlayText);
-        painter.restore();
-    }
-
-    if (m_hoverActive && m_vp.plotRect().contains(m_vp.toPixel(m_hoverPoint.x(), m_hoverPoint.y())))
-    {
-        const QPointF px = m_vp.toPixel(m_hoverPoint.x(), m_hoverPoint.y());
-        painter.save();
-        painter.setClipRect(plot);
-        QPen pen(QColor(0x88, 0x88, 0x88, 0xC0), 1.0, Qt::DashLine);
-        painter.setPen(pen);
-        painter.drawLine(QPointF(px.x(), plot.top()), QPointF(px.x(), plot.bottom()));
-        painter.drawLine(QPointF(plot.left(), px.y()), QPointF(plot.right(), px.y()));
-        painter.setBrush(QColor(0x1F, 0x6F, 0xC0));
-        painter.setPen(Qt::NoPen);
-        painter.drawEllipse(px, 3.0, 3.0);
-        painter.restore();
-    }
-
-    // 播放头竖线：跨整幅绘图区的醒目橙红竖线。
-    // 用数据 x 映射像素，落在可见范围外则不画（随播放推进自然进/出视野）。
-    if (m_playheadActive)
-    {
-        const QPointF px = m_vp.toPixel(m_playheadX, m_vp.yLower());
-        if (px.x() >= plot.left() && px.x() <= plot.right())
-        {
-            painter.save();
-            painter.setClipRect(plot);
-            painter.setPen(QPen(QColor(QStringLiteral("#f2b134")), 1.6, Qt::SolidLine));
-            painter.drawLine(QPointF(px.x(), plot.top()), QPointF(px.x(), plot.bottom()));
-            // 顶部小三角，便于在密集曲线中定位。
-            QPolygonF head;
-            head << QPointF(px.x() - 4, plot.top()) << QPointF(px.x() + 4, plot.top())
-                 << QPointF(px.x(), plot.top() + 6);
-            painter.setBrush(QColor(QStringLiteral("#f2b134")));
-            painter.setPen(Qt::NoPen);
-            painter.drawPolygon(head);
-            painter.restore();
-        }
-    }
-
-    // 联动游标竖线（同页其它画布同步的时间，只画竖线，对齐老 setLinkedCursor）。
-    if (m_linkedActive)
-    {
-        const double lx = m_vp.toPixel(m_linkedX, m_vp.yLower()).x();
-        if (lx >= plot.left() && lx <= plot.right())
-        {
-            painter.save();
-            painter.setClipRect(plot);
-            painter.setPen(QPen(QColor(0x5b, 0xc0, 0xf0, 0xB0), 1.0, Qt::DashLine));
-            painter.drawLine(QPointF(lx, plot.top()), QPointF(lx, plot.bottom()));
-            painter.restore();
-        }
-    }
-
-    // 读数叠加层：状态色带（顶部预留区）→ Marker 规则产出 → 书签 → A/B → 十字游标读数
-    // （后者画在最上，读数框不被遮挡）。
+    m_crosshair.paint(painter, ctx);
     m_stateBandOverlay.paint(painter, ctx);
     m_markerOverlay.paint(painter, ctx);
     m_bookmarkOverlay.paint(painter, ctx);
     m_abMeasure.paint(painter, ctx);
     m_cursorReadout.paint(painter, ctx);
-
-    if (!m_rubberBand.isNull())
-    {
-        painter.save();
-        painter.setPen(QPen(m_axes[sideIndex(AxisSide::Bottom)].ink(), 1.0));
-        painter.setBrush(QColor(0x1F, 0x6F, 0xC0, 40));
-        painter.drawRect(m_rubberBand);
-        painter.restore();
-    }
+    m_crosshair.paintRubberBand(painter, ctx);
 }
 
 QImage Axes::grabImage()

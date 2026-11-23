@@ -4,6 +4,7 @@
 #include "fastplot/Axis.h"
 #include "fastplot/Artist.h"
 #include "fastplot/BookmarkOverlay.h"
+#include "fastplot/CrosshairOverlay.h"
 #include "fastplot/CursorReadoutOverlay.h"
 #include "fastplot/Legend.h"
 #include "fastplot/Line.h"
@@ -120,22 +121,22 @@ public:
 
     QRectF plotRect() const { return m_vp.plotRect(); }
 
-    // ---- 交互叠加层（部件负责状态，画布只负责画）----
+    // ---- 交互叠加层（渲染由 CrosshairOverlay 负责，Axes 只委托）----
     // 框选橡皮筋（像素坐标）。空 QRect = 清除。
-    void setRubberBand(const QRect &pixels);
-    QRect rubberBand() const { return m_rubberBand; }
+    void setRubberBand(const QRect &pixels) { m_crosshair.setRubberBand(pixels); }
+    QRect rubberBand() const { return m_crosshair.rubberBand(); }
     // 十字光标：给一个数据坐标；active=false 时隐藏。
-    void setHover(const QPointF &dataPoint, bool active);
+    void setHover(const QPointF &dataPoint, bool active) { m_crosshair.setHover(dataPoint, active); }
     // 播放头竖线：给一个 x 数据坐标；active=false 时隐藏。
     // 画同色竖线。
-    void setPlayhead(double x, bool active);
-    bool playheadActive() const { return m_playheadActive; }
-    double playheadX() const { return m_playheadX; }
+    void setPlayhead(double x, bool active) { m_crosshair.setPlayhead(x, active); }
+    bool playheadActive() const { return m_crosshair.playheadActive(); }
+    double playheadX() const { return m_crosshair.playheadX(); }
     // 联动游标竖线：同页其它画布的时间同步，只画竖线不画读数框（对齐老 setLinkedCursor）。
-    void setLinkedCursor(double x, bool active);
+    void setLinkedCursor(double x, bool active) { m_crosshair.setLinkedCursor(x, active); }
     // 右上角读数文本（空串 = 不画）。
-    void setOverlayText(const QString &text);
-    void clearOverlay();
+    void setOverlayText(const QString &text) { m_crosshair.setOverlayText(text); }
+    void clearOverlay() { m_crosshair.clearTransient(); update(); }
 
     // ---- 读数叠加层（对齐老 PlottingCanvas 的打磨交互；渲染由 CursorReadoutOverlay 负责）----
     // 逐曲线读数行：曲线名 + 该时刻值 + 曲线色。取值/格式化都在 AxesView 做（库不依赖 Dataset）。
@@ -246,20 +247,13 @@ private:
     Legend m_legend;
     bool m_grid = false;
     bool m_box = false;            // 画布边框（对齐老界面显示组）
-    QRect m_rubberBand;
-    QPointF m_hoverPoint;
-    bool m_hoverActive = false;
-    double m_playheadX = 0.0;
-    bool m_playheadActive = false;
-    double m_linkedX = 0.0;
-    bool m_linkedActive = false;
     // 读数叠加层状态（"画什么"由各自 Overlay 类自持，Axes 只留组件）。
     CursorReadoutOverlay m_cursorReadout;   // 十字游标 + 逐曲线读数框
     ABMeasureOverlay m_abMeasure;           // A/B 双游标测量
     BookmarkOverlay m_bookmarkOverlay;      // 时间书签
     MarkerOverlay m_markerOverlay;          // Marker 规则产出
     StateBandOverlay m_stateBandOverlay;    // 状态视图色带
-    QString m_overlayText;
+    CrosshairOverlay m_crosshair;           // 悬浮十字/播放头/联动游标/橡皮筋/浮字
     QColor m_titleColor{0x33, 0x33, 0x33};
     QString m_title;
     QPixmap m_staticCache;

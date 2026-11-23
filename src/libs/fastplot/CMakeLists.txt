@@ -18,6 +18,7 @@ add_library(fastplot STATIC
     src/BookmarkOverlay.cpp
     src/MarkerOverlay.cpp
     src/StateBandOverlay.cpp
+    src/CrosshairOverlay.cpp
     src/Line.cpp
     src/LodCache.cpp
     src/Zoomer.cpp
@@ -45,6 +46,7 @@ add_library(fastplot STATIC
     include/fastplot/BookmarkOverlay.h
     include/fastplot/MarkerOverlay.h
     include/fastplot/StateBandOverlay.h
+    include/fastplot/CrosshairOverlay.h
     include/fastplot/Legend.h
     include/fastplot/StateColors.h
     include/fastplot/PlotWidget.h
