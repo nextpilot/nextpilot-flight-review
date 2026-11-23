@@ -7,9 +7,17 @@
 #include "Result.h"
 #include "ErrorCodes.h"
 
+#include <QApplication>
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
 #include <QEvent>
+#include <QFile>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -21,12 +29,17 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QSaveFile>
+#include <QScrollBar>
 #include <QShortcut>
+#include <QStandardPaths>
 #include <QSyntaxHighlighter>
 #include <QTabWidget>
 #include <QTextBlock>
 #include <QTreeWidget>
+#include <QTimer>
 #include <QToolButton>
+#include <QUuid>
 #include <QVBoxLayout>
 
 using namespace nextpilot::plotscope::foundation;
@@ -539,10 +552,204 @@ ScriptEditorPanel::ScriptEditorPanel(AppContext &appCtx, IIntentExecutor &execut
             m_tabs->setCurrentIndex((m_tabs->currentIndex() + 1) % n);
     });
 
+    // 会话条目：退出时把标签/光标/断点交给快照，重启时按名字回填。
+    // bestEffort：脚本面板的状态坏了不该拖住启动。
+    m_app->states().registerEntry(context::PersistentStateEntry{
+        QStringLiteral("script.editor.session"),
+        context::PersistentStateEntry::Session,
+        1,
+        [this]() { return serializeSession(); },
+        [this](const QJsonObject &state) { restoreSession(state); },
+        true});
+
+    // 草稿每 5 秒落一次，写盘量小且不阻塞编辑。
+    m_draftTimer = new QTimer(this);
+    m_draftTimer->setInterval(5000);
+    connect(m_draftTimer, &QTimer::timeout, this, [this]() { writeDrafts(); });
+    m_draftTimer->start();
+
+    // 正常退出清空草稿与索引；崩了来不及清，残留就是"上次没关好"的证据。
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() { clearDrafts(); });
+
     attachViewActions();
 }
 
 ScriptEditorPanel::~ScriptEditorPanel() = default;
+
+QString ScriptEditorPanel::draftDir() const
+{
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+           + QStringLiteral("/drafts");
+}
+
+QJsonObject ScriptEditorPanel::serializeSession() const
+{
+    QJsonObject out;
+    out.insert(QStringLiteral("current"), currentDocumentName());
+    QJsonArray docs;
+    for (const Document &doc : m_docs)
+    {
+        if (!doc.editor)
+            continue;
+        QJsonArray breakpoints;
+        for (int line : doc.editor->breakpoints())
+            breakpoints.append(line);
+        QJsonObject one;
+        one.insert(QStringLiteral("name"), doc.name);
+        one.insert(QStringLiteral("dirty"), doc.dirty);
+        one.insert(QStringLiteral("cursor"), doc.editor->textCursor().position());
+        one.insert(QStringLiteral("scroll"), doc.editor->verticalScrollBar()->value());
+        one.insert(QStringLiteral("breakpoints"), breakpoints);
+        one.insert(QStringLiteral("draftId"), doc.draftId);
+        docs.append(one);
+    }
+    out.insert(QStringLiteral("docs"), docs);
+    return out;
+}
+
+void ScriptEditorPanel::restoreSession(const QJsonObject &state)
+{
+    const QJsonArray docs = state.value(QStringLiteral("docs")).toArray();
+
+    // 先按名字把标签开回来，再回填每篇的光标与断点。
+    for (const QJsonValue &value : docs)
+    {
+        const QString name = value.toObject().value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue; // 未保存文档的正文在 drafts，走对账路径
+        if (!docByName(name))
+            openScript(name);
+    }
+
+    for (const QJsonValue &value : docs)
+    {
+        const QJsonObject one = value.toObject();
+        Document *doc = docByName(one.value(QStringLiteral("name")).toString());
+        if (!doc || !doc->editor)
+            continue;
+        const int cursor = one.value(QStringLiteral("cursor")).toInt();
+        QTextCursor cur = doc->editor->textCursor();
+        cur.setPosition(qBound(0, cursor, doc->editor->document()->characterCount() - 1));
+        doc->editor->setTextCursor(cur);
+        doc->editor->verticalScrollBar()->setValue(one.value(QStringLiteral("scroll")).toInt());
+        QSet<int> bps;
+        for (const QJsonValue &line : one.value(QStringLiteral("breakpoints")).toArray())
+            bps.insert(line.toInt());
+        doc->editor->setBreakpoints(bps);
+    }
+
+    const QString current = state.value(QStringLiteral("current")).toString();
+    if (!current.isEmpty())
+    {
+        if (Document *doc = docByName(current))
+            m_tabs->setCurrentWidget(doc->editor);
+    }
+
+    // 对账要弹模态框，放到事件循环里，别卡住首个 showEvent。
+    QTimer::singleShot(0, this, [this]() { reconcileDrafts(); });
+}
+
+void ScriptEditorPanel::writeDrafts()
+{
+    const QString dir = draftDir();
+    QDir().mkpath(dir);
+    const QString savedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+    QJsonArray index;
+
+    for (Document &doc : m_docs)
+    {
+        if (!doc.editor || !doc.dirty)
+            continue;
+        if (doc.draftId.isEmpty())
+            doc.draftId = QUuid::createUuid().toString(QUuid::Id128);
+        QSaveFile file(dir + QLatin1Char('/') + doc.draftId + QStringLiteral(".lua"));
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+            continue;
+        file.write(doc.editor->toPlainText().toUtf8());
+        if (!file.commit())
+            continue;
+        index.append(QJsonObject{{QStringLiteral("id"), doc.draftId},
+                                 {QStringLiteral("name"), doc.name},
+                                 {QStringLiteral("savedAt"), savedAt}});
+    }
+
+    // 索引整份重写：已保存的文档自然从索引里消失，不留陈旧条目。
+    QSaveFile idx(dir + QStringLiteral("/index.json"));
+    if (!idx.open(QIODevice::WriteOnly | QIODevice::Text))
+        return;
+    idx.write(QJsonDocument(QJsonObject{{QStringLiteral("version"), 1},
+                                       {QStringLiteral("docs"), index}})
+                  .toJson(QJsonDocument::Indented));
+    idx.commit();
+}
+
+void ScriptEditorPanel::clearDrafts()
+{
+    const QString dir = draftDir();
+    const QFileInfoList files = QDir(dir).entryInfoList({QStringLiteral("*.lua"),
+                                                        QStringLiteral("index.json")},
+                                                       QDir::Files);
+    for (const QFileInfo &info : files)
+        QFile::remove(info.absoluteFilePath());
+}
+
+void ScriptEditorPanel::reconcileDrafts()
+{
+    const QString dir = draftDir();
+    QFile idxFile(dir + QStringLiteral("/index.json"));
+    if (!idxFile.open(QIODevice::ReadOnly))
+        return;
+
+    QJsonArray list = QJsonDocument::fromJson(idxFile.readAll())
+                          .object()
+                          .value(QStringLiteral("docs"))
+                          .toArray();
+    idxFile.close();
+
+    QStringList ids;
+    QStringList names;
+    for (const QJsonValue &value : list)
+    {
+        const QJsonObject one = value.toObject();
+        const QString id = one.value(QStringLiteral("id")).toString();
+        if (id.isEmpty() || !QFile::exists(dir + QLatin1Char('/') + id + QStringLiteral(".lua")))
+            continue;
+        ids.append(id);
+        QString name = one.value(QStringLiteral("name")).toString();
+        names.append(name.isEmpty() ? QStringLiteral("recovered_%1").arg(ids.size()) : name);
+    }
+    if (ids.isEmpty())
+        return;
+
+    const auto answer = QMessageBox::question(
+        this, QStringLiteral("恢复草稿"),
+        QStringLiteral("发现 %1 份上次未正常退出时留下的草稿，是否还原？").arg(ids.size()),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes)
+    {
+        clearDrafts();
+        return;
+    }
+
+    for (int i = 0; i < ids.size(); ++i)
+    {
+        QFile draft(dir + QLatin1Char('/') + ids.at(i) + QStringLiteral(".lua"));
+        if (!draft.open(QIODevice::ReadOnly))
+            continue;
+        const QString text = QString::fromUtf8(draft.readAll());
+        draft.close();
+
+        // 名字可能和已有标签撞车：撞了就加后缀，正文优先还原。
+        QString name = names.at(i);
+        for (int n = 2; docByName(name); ++n)
+            name = QStringLiteral("%1_%2").arg(names.at(i)).arg(n);
+        if (!newDocument(name, text))
+            continue;
+        if (Document *doc = docByName(name))
+            markDirty(doc, true);
+    }
+    clearDrafts();
+}
 
 void ScriptEditorPanel::attachViewActions()
 {

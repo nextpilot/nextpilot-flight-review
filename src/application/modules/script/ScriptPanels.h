@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QJsonObject>
 #include <QPlainTextEdit>
 #include <QSet>
 #include <QSyntaxHighlighter>
@@ -13,6 +14,7 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QTabWidget;
 class QLineEdit;
+class QTimer;
 
 namespace nextpilot::plotscope::context
 {
@@ -69,6 +71,7 @@ public:
     void setErrorLine(int line); // -1 清除
     void setDebugLine(int line); // 调试暂停行高亮（黄），-1 清除
     void jumpToLine(int line);   // 滚动并置光标
+    void setBreakpoints(const QSet<int> &bps) { m_breakpoints = bps; update(); }
 
     std::function<void(int)> onBreakpointToggle; // gutter 点击切换断点
     QSyntaxHighlighter *highlighter = nullptr;   // 由面板按语言注入（Lua/Python）
@@ -126,6 +129,7 @@ private:
         ScriptCodeEditor *editor = nullptr;
         QString name; // 脚本库名（不含后缀）；空 = 未保存
         bool dirty = false;
+        QString draftId; // 未保存文档的草稿标识；首次落草稿时生成
     };
 
     Document *currentDoc();
@@ -140,6 +144,15 @@ private:
     void attachViewActions();
     void dispatchDebugCmd(const QString &cmd); // 调试控制经模块通道（continue/stepover/...）
 
+    // 会话与草稿：标签顺序/光标/滚动/断点进快照段；未保存正文落 drafts 目录，
+    // 崩溃后由 index.json 对账找回。
+    QJsonObject serializeSession() const;
+    void restoreSession(const QJsonObject &state);
+    QString draftDir() const;
+    void writeDrafts();       // 脏文档正文 + 索引整份重写
+    void clearDrafts();       // 正常退出时清空，残留即代表上次异常退出
+    void reconcileDrafts();   // 启动对账：index 里剩下的问用户是否还原
+
     context::AppContext *m_app = nullptr;
     nextpilot::plotscope::intent::IIntentExecutor *m_executor = nullptr;
 
@@ -149,6 +162,7 @@ private:
     // 调试状态（2.1.7-2.1.9 接线；v1 先备好结构）
     bool m_debugging = false;
     bool m_stopRequested = false;
+    QTimer *m_draftTimer = nullptr;
 };
 
 // ---------------------------------------------------------------------------
