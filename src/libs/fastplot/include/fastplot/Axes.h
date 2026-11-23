@@ -3,6 +3,7 @@
 #include "fastplot/ABMeasureOverlay.h"
 #include "fastplot/Axis.h"
 #include "fastplot/Artist.h"
+#include "fastplot/BookmarkOverlay.h"
 #include "fastplot/CursorReadoutOverlay.h"
 #include "fastplot/Legend.h"
 #include "fastplot/Line.h"
@@ -151,13 +152,7 @@ public:
     bool abEnabled() const { return m_abMeasure.isEnabled(); }
 
     // 时间书签：稳定 id + 时间 + 标签 + 是否选中。
-    struct BookmarkMark
-    {
-        QString id;
-        double t = 0.0;
-        QString label;
-        bool selected = false;
-    };
+    using BookmarkMark = ::nextpilot::plotscope::fastplot::BookmarkMark;
     void setBookmarks(const QVector<BookmarkMark> &marks);
 
     // Marker 规则产出：竖线事件 / 时间区间带 / 值区间带。
@@ -285,7 +280,7 @@ private:
     // 读数叠加层状态（"画什么"由各自 Overlay 类自持，Axes 只留组件）。
     CursorReadoutOverlay m_cursorReadout;   // 十字游标 + 逐曲线读数框
     ABMeasureOverlay m_abMeasure;           // A/B 双游标测量
-    QVector<BookmarkMark> m_bookmarks;
+    BookmarkOverlay m_bookmarkOverlay;      // 时间书签
     QVector<MarkerMark> m_markers;
     QVector<StateRowMark> m_stateRows;
     QString m_overlayText;

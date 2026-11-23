@@ -337,7 +337,7 @@ void Axes::setAB(bool enabled, double a, double b, bool hasB,
 
 void Axes::setBookmarks(const QVector<BookmarkMark> &marks)
 {
-    m_bookmarks = marks;
+    m_bookmarkOverlay.setMarks(marks);
     update();
 }
 
@@ -1102,7 +1102,7 @@ void Axes::paintOverlay(QPainter &painter)
     // （后者画在最上，读数框不被遮挡）。
     paintStateBands(painter, plot);
     paintMarkers(painter, plot);
-    paintBookmarks(painter, plot);
+    m_bookmarkOverlay.paint(painter, ctx);
     m_abMeasure.paint(painter, ctx);
     m_cursorReadout.paint(painter, ctx);
 
@@ -1114,41 +1114,6 @@ void Axes::paintOverlay(QPainter &painter)
         painter.drawRect(m_rubberBand);
         painter.restore();
     }
-}
-
-// 时间书签（对齐老 PlottingCanvas：竖线 + 顶部 chip + 视窗外边缘提示）。
-void Axes::paintBookmarks(QPainter &painter, const QRectF &plot)
-{
-    if (m_bookmarks.isEmpty())
-        return;
-    painter.save();
-    painter.setClipRect(plot);
-    QFont f = font();
-    f.setPointSizeF(std::max(7.0, f.pointSizeF()));
-    painter.setFont(f);
-    const QFontMetrics fm(f);
-    const QColor accent(QStringLiteral("#f2b134"));
-    int lane = 0;
-    for (const BookmarkMark &mk : m_bookmarks)
-    {
-        const double x = m_vp.toPixel(mk.t, m_vp.yLower()).x();
-        if (x < plot.left() || x > plot.right())
-            continue;
-        painter.setPen(QPen(QColor(0xf2, 0xb1, 0x34, 150), 1, Qt::DashLine));
-        painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
-        const QString text = fm.elidedText(mk.label, Qt::ElideRight, 180);
-        const int tw = fm.horizontalAdvance(text) + 10;
-        QRectF chip(x + 3, plot.top() + 2 + (lane % 3) * 17, tw, 16);
-        if (chip.right() > plot.right()) chip.moveLeft(x - 3 - tw);
-        if (chip.left() < plot.left()) chip.moveLeft(plot.left() + 3);
-        painter.setPen(QPen(mk.selected ? accent : QColor(0x4a, 0x52, 0x5c), mk.selected ? 2 : 1));
-        painter.setBrush(QColor(0x14, 0x1a, 0x20, mk.selected ? 255 : 235));
-        painter.drawRoundedRect(chip, 2, 2);
-        painter.setPen(accent);
-        painter.drawText(chip.adjusted(5, 0, -5, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
-        ++lane;
-    }
-    painter.restore();
 }
 
 // Marker 规则产出：事件竖线/点、时间区间带、值区间带。
