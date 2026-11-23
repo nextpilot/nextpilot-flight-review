@@ -177,6 +177,28 @@ int32_t     ps_object_apply_retention(PsDataset *ds, const char *topic, uint64_t
 /* 驱逐水位：时间戳 < 此值已被回收。0 成功；1 参数错；3 topic 不存在。 */
 int32_t     ps_object_evicted_before(const PsDataset *ds, const char *topic, uint64_t *out_ns);
 
+/* ---- BJ3 读语义：零拷贝视图 + warm cache + 高水位/迟到/内容身份 + 分池 ----
+ * 边界：pj 的 pushLazy(fetch 回调) 不跨 C ABI 传闭包；解压由上层 MCAP parser 驱动，
+ * 本层提供零拷贝视图 + 缓存 + 语义原语。 */
+/* 零拷贝 payload 视图：返回内核字节指针/长度/tag（不复制）。指针在 handle 存活且
+ * dataset 未释放期间有效，之后失效勿持有。0 成功；1 参数错；2 句柄无效/已释放。 */
+int32_t     ps_object_payload_view(const PsDataset *ds, uint64_t handle, const uint8_t **out_ptr,
+                                   uint32_t *out_len, uint32_t *out_type_tag);
+/* warm latestAt：同 UID 重复请求命中缓存。输出 (handle,uid,hit)。0 成功；1 参数错；2 无匹配。 */
+int32_t     ps_object_warm_latest_at(PsDataset *ds, const char *topic, uint64_t time_ns,
+                                     uint64_t *out_handle, uint64_t *out_uid, uint32_t *out_hit);
+/* 时间窗高水位 time<=t 的最大 UID（区别于 latestAt，避免迟到重检）。0 成功；1 参数错；2 无匹配。 */
+int32_t     ps_object_max_uid_at_or_before(const PsDataset *ds, const char *topic, uint64_t time_ns,
+                                           uint64_t *out_uid);
+/* 迟到检测 uid>after 的最早时间戳；无则 *out_found=0。0 成功；1 参数错；2 topic 不存在。 */
+int32_t     ps_object_oldest_arrival_after(const PsDataset *ds, const char *topic, uint64_t after,
+                                           uint64_t *out_ts, uint32_t *out_found);
+/* 内容身份：输出 (content,rewrite,removal) 三 u64。0 成功；1 参数错；2 topic 不存在。 */
+int32_t     ps_object_content_identity(const PsDataset *ds, const char *topic, uint64_t *out);
+/* 配置 ResidentPool（small/large 分 FIFO + small 保留份额，0 容量禁用）。0 成功；1 参数错。 */
+int32_t     ps_object_set_pool(PsDataset *ds, const char *topic, uint64_t capacity_bytes,
+                               uint64_t small_reserve_bytes);
+
 /* typed 表当前行数；表不存在返回 0。 */
 uint64_t             ps_dataset_table_rows(PsDataset *ds, const char *table);
 /* typed 表视口 LOD；out 为 (time_sec,min,max) 三元组，长度至少 cap*3，返回实际三元组数。 */

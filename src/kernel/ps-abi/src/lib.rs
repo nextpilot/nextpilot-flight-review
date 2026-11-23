@@ -85,9 +85,10 @@ pub struct PsDataset {
     typed_tables: Vec<CString>,
     typed_columns: Vec<CString>,
     infos_dirty: bool,
-    /// BJ1：按 topic 组织的时间索引对象集合。只存 (time, uid) -> handle，
+    /// BJ1/BJ2/BJ3：按 topic 组织的时间索引 + 读语义层。只存 (time, uid) -> handle，
     /// payload 仍在 `typed.objects` 池里；与 blob API 正交，互不干扰。
-    object_index: ps_ndf::object_index::ObjectIndex,
+    /// `ObjectReads` 内嵌 `ObjectIndex` 并转发其入口，BJ1/BJ2 的 ABI 调用不变。
+    object_reads: ps_ndf::object_read::ObjectReads,
 }
 
 impl PsDataset {
@@ -104,7 +105,7 @@ impl PsDataset {
             typed_tables: Vec::new(),
             typed_columns: Vec::new(),
             infos_dirty: true,
-            object_index: ps_ndf::object_index::ObjectIndex::new(),
+            object_reads: ps_ndf::object_read::ObjectReads::new(),
         }
     }
 
@@ -2206,6 +2207,70 @@ mod tests {
     }
 
     #[test]
+    fn object_read_abi_zero_copy_warm_cache_and_semantics() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let topic = CString::new("/img").unwrap();
+            let payload = b"packed-frame-bytes";
+            // 三个句柄，含乱序到达（time 100、300、200）。
+            let h1 = ps_dataset_blob_put(ds, payload.as_ptr() as *const _, payload.len() as u32,
+                                         7, std::ptr::null_mut(), 0);
+            let u1 = ps_object_insert(ds, topic.as_ptr(), 100, h1, std::ptr::null_mut(), 0);
+            let h2 = ps_dataset_blob_put(ds, payload.as_ptr() as *const _, payload.len() as u32,
+                                         7, std::ptr::null_mut(), 0);
+            let u2 = ps_object_insert(ds, topic.as_ptr(), 300, h2, std::ptr::null_mut(), 0);
+            let h3 = ps_dataset_blob_put(ds, payload.as_ptr() as *const _, payload.len() as u32,
+                                         7, std::ptr::null_mut(), 0);
+            let u3 = ps_object_insert(ds, topic.as_ptr(), 200, h3, std::ptr::null_mut(), 0);
+            assert!(u1 < u2 && u2 < u3);
+
+            // 零拷贝视图：指针直接指向内核字节，内容一致。
+            let mut vp: *const u8 = std::ptr::null();
+            let mut vlen = 0u32;
+            let mut vtag = 0u32;
+            assert_eq!(ps_object_payload_view(ds, h1, &mut vp, &mut vlen, &mut vtag), 0);
+            assert_eq!(vlen as usize, payload.len());
+            assert_eq!(vtag, 7);
+            assert_eq!(std::slice::from_raw_parts(vp, vlen as usize), payload);
+            // 无效句柄 → 2。
+            assert_eq!(ps_object_payload_view(ds, 99999, &mut vp, &mut vlen, &mut vtag), 2);
+
+            // warm latestAt：time<=250 命中 time200 的 h3，第一次 miss、第二次 hit。
+            let mut wh = 0u64;
+            let mut wu = 0u64;
+            let mut hit = 0u32;
+            assert_eq!(ps_object_warm_latest_at(ds, topic.as_ptr(), 250, &mut wh, &mut wu, &mut hit), 0);
+            assert_eq!((wh, wu, hit), (h3, u3, 0));
+            assert_eq!(ps_object_warm_latest_at(ds, topic.as_ptr(), 250, &mut wh, &mut wu, &mut hit), 0);
+            assert_eq!((wh, wu, hit), (h3, u3, 1), "同 UID 重复请求命中缓存");
+
+            // 高水位：time<=400 的最大 UID 是 u3（迟到但 uid 最大），非 latestAt 的 u2。
+            let mut high = 0u64;
+            assert_eq!(ps_object_max_uid_at_or_before(ds, topic.as_ptr(), 400, &mut high), 0);
+            assert_eq!(high, u3);
+
+            // 迟到检测：消费者算到 u2(time300) 后，u3(time200, uid 更大) 是迟到到达。
+            let mut ts = 0u64;
+            let mut found = 0u32;
+            assert_eq!(ps_object_oldest_arrival_after(ds, topic.as_ptr(), u2, &mut ts, &mut found), 0);
+            assert_eq!(found, 1);
+            assert_eq!(ts, 200, "u3 时间 200 < u2 的 300，属迟到");
+            // u3 之后无更多条目。
+            assert_eq!(ps_object_oldest_arrival_after(ds, topic.as_ptr(), u3, &mut ts, &mut found), 0);
+            assert_eq!(found, 0);
+
+            // 内容身份：append/insert 已推进 content 与 rewrite。
+            let mut id = [0u64; 3];
+            assert_eq!(ps_object_content_identity(ds, topic.as_ptr(), id.as_mut_ptr()), 0);
+            assert!(id[0] >= 3 && id[1] >= 1, "content 每次插入推进，rewrite 因乱序推进");
+
+            // 分池配置：容量 1MB、small 保留 256KB。
+            assert_eq!(ps_object_set_pool(ds, topic.as_ptr(), 1_000_000, 256_000), 0);
+            ps_dataset_free(ds);
+        }
+    }
+
+    #[test]
     fn object_column_via_abi_aligned_with_scalar_and_typed_as_object() {
         unsafe {
             let ds = ps_dataset_new();
@@ -2921,7 +2986,16 @@ pub unsafe extern "C" fn ps_object_insert(
             return 0;
         }
     };
-    (*ds).object_index.topic_mut(name).insert(time_ns, handle)
+    // 判断是否为时间序追加（>= 当前最大时间）；据此更新内容身份与 warm cache。
+    // 空 topic 的首条也视为 append（Followable）。
+    let is_append = (*ds)
+        .object_reads
+        .topic(name)
+        .and_then(|t| t.max_time_ns())
+        .map_or(true, |tmax| time_ns >= tmax);
+    let uid = (*ds).object_reads.topic_mut(name).insert(time_ns, handle);
+    (*ds).object_reads.on_insert(name, time_ns, is_append);
+    uid
 }
 
 /// 时间点查找：`<= time_ns` 的最新一条，输出 `(handle, uid)`。
@@ -2938,7 +3012,7 @@ pub unsafe extern "C" fn ps_object_latest_at(
         return 1;
     }
     let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
-    let Some(t) = (*ds).object_index.topic(name) else { return 2; };
+    let Some(t) = (*ds).object_reads.topic(name) else { return 2; };
     let Some((h, uid)) = t.latest_at(time_ns) else { return 2; };
     *out_handle = h;
     *out_uid = uid;
@@ -2961,7 +3035,7 @@ pub unsafe extern "C" fn ps_object_drain_new_since(
         return 1;
     }
     let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
-    let Some(t) = (*ds).object_index.topic(name) else { return 3; };
+    let Some(t) = (*ds).object_reads.topic(name) else { return 3; };
     let rows = t.drain_new_since(since);
     if rows.len() > out_cap as usize {
         *out_len = rows.len() as u32;
@@ -2994,7 +3068,7 @@ pub unsafe extern "C" fn ps_object_range_by_time(
         return 1;
     }
     let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
-    let Some(t) = (*ds).object_index.topic(name) else { return 3; };
+    let Some(t) = (*ds).object_reads.topic(name) else { return 3; };
     let rows = t.range_by_time(t0_ns, t1_ns);
     if rows.len() > out_cap as usize {
         *out_len = rows.len() as u32;
@@ -3021,8 +3095,8 @@ pub unsafe extern "C" fn ps_object_index_stats(
     if ds.is_null() || out_topic_count.is_null() || out_entry_count.is_null() {
         return 1;
     }
-    *out_topic_count = (*ds).object_index.topic_count() as u32;
-    *out_entry_count = (*ds).object_index.total_entries() as u32;
+    *out_topic_count = (*ds).object_reads.topic_count() as u32;
+    *out_entry_count = (*ds).object_reads.total_entries() as u32;
     0
 }
 
@@ -3042,7 +3116,7 @@ pub unsafe extern "C" fn ps_object_set_retention(
     }
     let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
     let budget = ps_ndf::object_index::RetentionBudget::new(time_window_ns, max_entries as usize);
-    (*ds).object_index.topic_mut(name).set_budget(budget);
+    (*ds).object_reads.topic_mut(name).set_budget(budget);
     0
 }
 
@@ -3061,14 +3135,17 @@ pub unsafe extern "C" fn ps_object_apply_retention(
         return 1;
     }
     let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
-    let Some(t) = (*ds).object_index.topic(name) else { return 3; };
+    let Some(t) = (*ds).object_reads.topic(name) else { return 3; };
     // 先预览：缓冲不足则不驱逐，避免 handle 交不出去造成 blob 引用泄漏。
     let will_evict = t.retention_evictable_count();
     if will_evict > out_cap as usize {
         *out_len = will_evict as u32;
         return if out.is_null() { 1 } else { 2 };
     }
-    let handles = (*ds).object_index.topic_mut(name).apply_retention();
+    let handles = (*ds).object_reads.topic_mut(name).apply_retention();
+    if !handles.is_empty() {
+        (*ds).object_reads.on_evict(name);
+    }
     if !out.is_null() {
         for (r, h) in handles.iter().enumerate() {
             *out.add(r) = *h;
@@ -3090,8 +3167,137 @@ pub unsafe extern "C" fn ps_object_evicted_before(
         return 1;
     }
     let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
-    let Some(t) = (*ds).object_index.topic(name) else { return 3; };
+    let Some(t) = (*ds).object_reads.topic(name) else { return 3; };
     *out_ns = t.evicted_before_ns();
+    0
+}
+
+/* ===== BJ3 读语义：零拷贝视图 + warm cache + 高水位/迟到/内容身份 + 分池 =====
+ * 边界：pj 的 pushLazy(fetch: LazyCallback) 惰性解压回调不跨 C ABI 传闭包；
+ * 解压由上层（MCAP parser）在读取时驱动，本层提供零拷贝视图 + 缓存 + 语义原语。 */
+
+/// 零拷贝 payload 视图：返回内核内字节指针与长度（不复制到 out）。
+/// 指针生命周期绑定 dataset 且 handle 仍存活期间；blob_release/dataset_free 后失效，
+/// 调用方不得跨这些操作持有。返回 0 成功；1 参数错；2 句柄无效/已释放。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_payload_view(
+    ds: *const PsDataset,
+    handle: u64,
+    out_ptr: *mut *const u8,
+    out_len: *mut u32,
+    out_type_tag: *mut u32,
+) -> i32 {
+    if ds.is_null() || out_ptr.is_null() || out_len.is_null() {
+        return 1;
+    }
+    let Some((bytes, tag)) = (*ds).typed.objects.get(handle) else {
+        return 2;
+    };
+    *out_ptr = bytes.as_ptr();
+    *out_len = bytes.len() as u32;
+    if !out_type_tag.is_null() {
+        *out_type_tag = tag;
+    }
+    0
+}
+
+/// warm latestAt：同 UID 重复请求命中缓存，不重复解析。输出 `(handle, uid, hit)`。
+/// 返回 0 成功/命中或未命中；1 参数错；2 topic 不存在或无匹配。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_warm_latest_at(
+    ds: *mut PsDataset,
+    topic: *const c_char,
+    time_ns: u64,
+    out_handle: *mut u64,
+    out_uid: *mut u64,
+    out_hit: *mut u32,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out_handle.is_null() || out_uid.is_null() || out_hit.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some((h, uid, hit)) = (*ds).object_reads.warm_latest_at(name, time_ns) else { return 2; };
+    *out_handle = h;
+    *out_uid = uid;
+    *out_hit = hit as u32;
+    0
+}
+
+/// 时间窗高水位：`time <= t` 的最大 UID（区别于 latestAt 的 UID，避免迟到重检）。
+/// 返回 0 成功；1 参数错；2 topic 不存在或无匹配。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_max_uid_at_or_before(
+    ds: *const PsDataset,
+    topic: *const c_char,
+    time_ns: u64,
+    out_uid: *mut u64,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out_uid.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some(t) = (*ds).object_reads.topic(name) else { return 2; };
+    let Some(uid) = t.max_uid_at_or_before(time_ns) else { return 2; };
+    *out_uid = uid;
+    0
+}
+
+/// 迟到检测：`uid > after` 的最早时间戳；无则 *out_found=0。
+/// 返回 0 成功；1 参数错；2 topic 不存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_oldest_arrival_after(
+    ds: *const PsDataset,
+    topic: *const c_char,
+    after: u64,
+    out_ts: *mut u64,
+    out_found: *mut u32,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out_ts.is_null() || out_found.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some(t) = (*ds).object_reads.topic(name) else { return 2; };
+    match t.oldest_arrival_after(after) {
+        Some(ts) => { *out_ts = ts; *out_found = 1; }
+        None => { *out_ts = 0; *out_found = 0; }
+    }
+    0
+}
+
+/// 内容身份：输出 `(content, rewrite, removal)` 三计数器。
+/// 返回 0 成功；1 参数错；2 topic 不存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_content_identity(
+    ds: *const PsDataset,
+    topic: *const c_char,
+    out: *mut u64,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some(id) = (*ds).object_reads.identity(name) else { return 2; };
+    *out = id.content;
+    *out.add(1) = id.rewrite;
+    *out.add(2) = id.removal;
+    0
+}
+
+/// 配置 topic 的 ResidentPool（按 payload 大小分 small/large，0 容量=禁用）。
+/// `small_reserve_bytes` 为 small 类保留份额，防大 payload 挤爆小对象。
+/// 返回 0 成功；1 参数错。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_set_pool(
+    ds: *mut PsDataset,
+    topic: *const c_char,
+    capacity_bytes: u64,
+    small_reserve_bytes: u64,
+) -> i32 {
+    if ds.is_null() || topic.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    (*ds).object_reads.set_pool(name, capacity_bytes, small_reserve_bytes);
     0
 }
 

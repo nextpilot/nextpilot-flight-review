@@ -160,3 +160,26 @@ cargo bench -p ps-abi --bench bench_dataset -- --baseline <受管基线路径>
 跳跃驱逐绝对值达标（<20ms，与 pj 实测 8ms 同量级）。逐条对照只操作单一 BTreeMap，
 而本单元还需同步维护 `by_uid` 到达序索引（乱序下被逐条目 UID 不连续，无法整段切），
 故比值 0.4x 系结构差异而非实现缺陷；绝对耗时是验收口径。基准脚本为临时产物（`/tmp`，未入库）。
+
+## BJ3 对象读取语义 + 分池命中率（借鉴 pj ResidentPayloadPool / 读语义）
+
+`ps_ndf::object_read` 提供 warm latestAt（UID 键控缓存）、时间窗高水位
+（`max_uid_at_or_before`，取 uid 最大而非时间最大）、迟到检测、内容身份
+（content/rewrite/removal 三计数器）；`ResidentPool` 按 payload 大小分 small/large
+双 FIFO + small 保留份额。分池命中率复刻 pj 场景（等比缩小：5000B 大点云 vs
+200B 小 TF，260k 预算，1000 个小 TF 先入、600 个大点云涌入）：
+
+| 策略 | 小 TF 存活率 |
+|---|---:|
+| 单 FIFO 无分池（pj 改造前） | 0.0%（0/1000） |
+| 分池 + 210k small 保留份额 | 100.0%（1000/1000） |
+
+对应 pj TECHNICAL_NOTES:50-54 的真实事故：单一 FIFO 池被点云挤爆致 32% TF 读取 miss。
+本实现的分池使小对象在大对象涌入时 100% 存活。
+
+**测试口径纠正（如实）**：首次 benchmark 误把"大对象"设为 600B（< 4096 small 阈值），
+导致大对象也进 small 池、对照两组均 0%（假阴性）；改用 5000B（> 阈值）后得到上表正确结果。
+
+**边界**：pj 的 `pushLazy(fetch: LazyCallback)` 惰性解压回调（C++ std::function）不跨
+C ABI 传闭包；MCAP chunk 解压由上层 parser 在读取时驱动，本层提供零拷贝视图 +
+warm cache + 读语义原语。基准脚本为临时产物（`/tmp`，未入库）。

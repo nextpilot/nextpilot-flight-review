@@ -112,9 +112,35 @@ impl TopicIndex {
             .collect()
     }
 
+    /// 当前最大时间戳（O(1) BTreeMap next_back）；空 topic 返回 None。
+    /// 供 insert 判断是否时间序追加，避免 O(n) 遍历。
+    pub fn max_time_ns(&self) -> Option<u64> {
+        self.by_time.keys().next_back().map(|(t, _)| *t)
+    }
+
     /// 当前最小到达序 UID；空 topic 返回 0。游标低于此值意味着错过了被驱逐的条目。
     pub fn first_uid(&self) -> u64 {
         self.by_uid.keys().next().copied().unwrap_or(0)
+    }
+
+    /// 时间窗高水位：`time <= t` 的最大 UID（BJ3）。
+    /// pj 坑：latestAt 的 UID 不能当时间窗游标——乱序插入后 newest UID 可能时间更早，
+    /// 用它会每步重新检测到同一条迟到（ARCHITECTURE:228-231）。
+    pub fn max_uid_at_or_before(&self, t: u64) -> Option<u64> {
+        // 必须取 uid 最大值，不能取时间最大值——乱序时 newest 时间的 uid 可能更小，
+        // 用它当高水位会每步重新检测到同一条迟到（pj ARCHITECTURE:228-231 的坑）。
+        // 复杂度 O(time<=t 的条目数)，与 pj 文档一致。
+        self.by_time.range(..=(t, u64::MAX)).map(|((_, uid), _)| *uid).max()
+    }
+
+    /// 迟到检测：`uid > after` 的最早时间戳（到达序靠后但时间更早/相同，BJ3）。
+    pub fn oldest_arrival_after(&self, after: u64) -> Option<u64> {
+        self.by_uid.range((after + 1)..).map(|(_, (t, _))| *t).min()
+    }
+
+    /// 免解析取 id：latestAt 会命中的 `(uid, handle)`，但不解析 payload（BJ3）。
+    pub fn latest_entry_id_at(&self, t: u64) -> Option<(u64, u64)> {
+        self.latest_at(t)
     }
 
     /// 设置保留预算。设置后不会立即驱逐，下次 `insert` 或显式 `apply_retention` 时生效。
@@ -305,7 +331,17 @@ mod tests {
         assert!(t.is_empty());
         assert_eq!(t.latest_at(0), None);
         assert_eq!(t.first_uid(), 0);
+        assert_eq!(t.max_time_ns(), None);
         assert!(t.range_by_time(10, 5).is_empty(), "倒置区间返回空");
+    }
+
+    #[test]
+    fn max_time_ns_is_time_not_arrival() {
+        let mut t = TopicIndex::new();
+        t.insert(300, 1);
+        t.insert(100, 2); // 乱序到达
+        t.insert(200, 3);
+        assert_eq!(t.max_time_ns(), Some(300), "最大时间而非最后到达");
     }
 
     #[test]
