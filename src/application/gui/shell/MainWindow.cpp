@@ -120,10 +120,20 @@ void MainWindow::declareStandardSlots()
         slotReg.bindLocal(area, a, QStringLiteral("app.skeleton"));
     };
 
+    // --- 开始页：落地页的高频入口聚合（打开 / 最近 / 新建绘图）---
     // "打开数据"：系统级意图 data.load，放"开始"页常用组（最高频入口）。
     addSkeleton(QStringLiteral("app.action.openData"), QStringLiteral("打开数据"),
                 QStringLiteral("ribbon.group.home.data"), QStringLiteral("data.load"),
-                QStringLiteral("file_open"), QStringLiteral("Ctrl+O"));
+                QStringLiteral("file_open"), QStringLiteral("Ctrl+O"), 0);
+    // "最近打开"：data.recent 意图，与打开数据同组相邻，符合"启动→打开或续开"的习惯。
+    addSkeleton(QStringLiteral("home.action.recent"), QStringLiteral("最近打开"),
+                QStringLiteral("ribbon.group.home.data"), QStringLiteral("data.recent"),
+                QStringLiteral("history"), QString(), 1);
+    // "新建绘图页"：id 直接用 figure.new，命中 PlotWorkspace 注册的 view action
+    // （dispatcher 按 id 派发），intentOp 留空。
+    addSkeleton(QStringLiteral("figure.new"), QStringLiteral("新建绘图页"),
+                QStringLiteral("ribbon.group.home.data"), QString(),
+                QStringLiteral("newpage"), QString(), 2);
     // 文件页也放一个"打开文件"（同一意图）。
     addSkeleton(QStringLiteral("file.open"), QStringLiteral("打开文件"),
                 QStringLiteral("ribbon.group.file.document"), QStringLiteral("data.load"),
@@ -179,10 +189,9 @@ void MainWindow::declareStandardSlots()
     addSkeleton(QStringLiteral("data.action.recent"), QStringLiteral("最近"),
                 QStringLiteral("ribbon.group.data.common"), QStringLiteral("data.recent"),
                 QStringLiteral("history"), QString(), 1);
-    // 数据页"调试"组（老 DataSourceRibbon 的 protocol.inspect）：复用协议检查器特判。
-    addSkeleton(QStringLiteral("app.action.protocolInspector"), QStringLiteral("协议检查"),
-                QStringLiteral("ribbon.group.data.debug"), QString(),
-                QStringLiteral("datasource"), QString(), 0);
+    // 数据页"调试"组曾复用协议检查器（与协议页的 app.action.protocolInspector 同 id，
+    // 两处声明导致同一功能重复、且按钮被甩到页面最右）。检查器统一归协议页，
+    // 这里不再重复声明；data.debug 空组自动不渲染。
 
     // --- 脚本页：运行脚本（选 .lua/.py 文件 → script.run 意图）---
     addSkeleton(QStringLiteral("app.action.runScript"), QStringLiteral("运行脚本"),
@@ -206,7 +215,9 @@ void MainWindow::declareStandardSlots()
     for (int i = 0; i < (int)(sizeof(kDockPageActions) / sizeof(kDockPageActions[0])); ++i)
     {
         addSkeleton(QStringLiteral("view.toggleDock.") + QLatin1String(kDockPageActions[i].type),
-                    QLatin1String(kDockPageActions[i].label),
+                    // label 是 UTF-8 中文，必须用 fromUtf8；QLatin1String 会按 Latin-1
+                    // 逐字节解析，把中文显示成 æ°æ®æº 之类的乱码（历史缺陷）。
+                    QString::fromUtf8(kDockPageActions[i].label),
                     QStringLiteral("ribbon.group.view.panels"), QString(),
                     QLatin1String(kDockPageActions[i].icon), QString(), i);
     }

@@ -371,10 +371,17 @@ void ShellBinder::rebuildRibbon()
                 auto *gallery = panel->addGallery();
                 gallery->setSingleRowMode(true);
                 SARibbonGalleryGroup *firstGroup = nullptr;
+                // 语义型图库（分析应用 / 数据来源）条目图标相似，必须带文字才能分辨；
+                // 图型库靠缩略图本身已可辨认，保留 IconOnly 避免文字挤占缩略图。
+                const bool semanticGallery =
+                    groupSlot.area == QLatin1String("ribbon.group.analysis.apps")
+                    || groupSlot.area == QLatin1String("ribbon.group.data.sources");
                 for (const QString &g : galleryOrder)
                 {
                     auto *grp = gallery->addCategoryActions(g, galleryActions.value(g));
-                    grp->setGalleryGroupStyle(SARibbonGalleryGroup::IconOnly);
+                    grp->setGalleryGroupStyle(semanticGallery
+                                                  ? SARibbonGalleryGroup::IconWithText
+                                                  : SARibbonGalleryGroup::IconOnly);
                     grp->setDisplayRow(SARibbonGalleryGroup::DisplayOneRow);
                     grp->setGridMinimumWidth(88);
                     grp->setGridMaximumWidth(96);

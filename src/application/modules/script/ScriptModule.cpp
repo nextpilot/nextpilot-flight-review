@@ -562,43 +562,40 @@ void ScriptModule::onAttach(UiContext &ui)
     // （处理器都在 registerWorkbenchActions 注册），与脚本 app.view(id) 同一条通道；
     // 未命中才回退意图层——保证 Ribbon 按钮、面板快捷键、脚本三者同路径。
     using nextpilot::plotscope::registry::UiAction;
+    // icon 必填：脚本页每个按钮都要有图标，避免只剩文字的空板观感。
     const auto addRibbon = [&ui](const QString &id, const QString &label, const QString &area,
-                                 const QString &data, int order, bool large = false) {
+                                 const QString &data, int order, const QString &icon,
+                                 bool large = false) {
         UiAction a;
         a.id = id;
         a.label = label;
         a.area = area;
         a.data = data; // 额外参数（JSON），经外壳透传给 view action
         a.order = order;
+        a.icon = icon;
         a.large = large;
         ui.addAction(a);
     };
 
-    // "文件"组：新建 / 打开（组由本模块声明——骨架只声明页，组随能力出现）
-    ui.declareSlot(QStringLiteral("ribbon.group.script.file"), QStringLiteral("文件"),
-                   nextpilot::plotscope::registry::SlotKind::RibbonGroup,
-                   QStringLiteral("ribbon.page.script"));
+    // "文件"组：新建 / 打开（组由骨架声明，order 在 SkeletonSlots 统一为 0）
     addRibbon(QStringLiteral("script.workbench.new"), QStringLiteral("新建脚本"),
-              QStringLiteral("ribbon.group.script.file"), QString(), 0);
+              QStringLiteral("ribbon.group.script.file"), QString(), 0, QStringLiteral("plus"));
     addRibbon(QStringLiteral("script.workbench.open"), QStringLiteral("打开脚本"),
-              QStringLiteral("ribbon.group.script.file"), QString(), 1);
+              QStringLiteral("ribbon.group.script.file"), QString(), 1, QStringLiteral("file_open"));
 
     // "运行"组：运行当前标签（与面板 F5 同路径）/ 调试运行（带断点、可单步）
     addRibbon(QStringLiteral("script.workbench.runCurrent"), QStringLiteral("运行当前"),
-              QStringLiteral("ribbon.group.script.run"), QString(), 0, true);
+              QStringLiteral("ribbon.group.script.run"), QString(), 0, QStringLiteral("play"), true);
     addRibbon(QStringLiteral("script.workbench.debugRun"), QStringLiteral("调试运行"),
-              QStringLiteral("ribbon.group.script.run"), QString(), 1, true);
+              QStringLiteral("ribbon.group.script.run"), QString(), 1, QStringLiteral("script_debug"), true);
 
     // "批量"组：目录级批量运行——选目录+脚本 → 进度 → 汇总表
-    ui.declareSlot(QStringLiteral("ribbon.group.script.batch"), QStringLiteral("批量"),
-                   nextpilot::plotscope::registry::SlotKind::RibbonGroup,
-                   QStringLiteral("ribbon.page.script"));
     addRibbon(QStringLiteral("script.workbench.batch"), QStringLiteral("批量运行"),
-              QStringLiteral("ribbon.group.script.batch"), QString(), 0, true);
+              QStringLiteral("ribbon.group.script.batch"), QString(), 0, QStringLiteral("replay"), true);
 
     // "控制台"组：置前 REPL 控制台
     addRibbon(QStringLiteral("script.workbench.console"), QStringLiteral("控制台"),
-              QStringLiteral("ribbon.group.script.console"), QString(), 0);
+              QStringLiteral("ribbon.group.script.console"), QString(), 0, QStringLiteral("terminal"));
 }
 
 #include "ScriptModule.moc"

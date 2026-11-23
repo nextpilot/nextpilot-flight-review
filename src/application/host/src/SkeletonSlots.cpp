@@ -14,7 +14,7 @@ void declareSkeletonSlots(UiSlotHub &registry)
     // app 骨架的标准插槽。
     // 声明者统一是 "app.skeleton"：它们不属于任何可卸载的模块或扩展包。
     //
-    // Ribbon 分 8 页：开始、文件、数据、绘图、脚本、协议、分析、视图。
+    // Ribbon 分 9 页：开始、文件、数据、绘图、脚本、协议、分析、报告、视图。
     // 每页是 RibbonPage，下面挂若干 RibbonGroup；各 module/工具箱把 action 填进对应页的 group。
     // order 决定页签顺序（UiSlotHub::slotsOfKind/childrenOf 按 order 升序）。
     const QString owner = QStringLiteral("app.skeleton");
@@ -40,17 +40,15 @@ void declareSkeletonSlots(UiSlotHub &registry)
     page(QStringLiteral("ribbon.page.view"),     QStringLiteral("视图"), 8);
 
     // 组（panel）顺序由声明 order 决定；group() 的 order 决定同页内的左右位置。
-    // 开始页：常用入口 + 外观；兼容空槽 plottype/view/sources 排在最后（无 action 时外壳不渲染）。
+    // 开始页 = 常用入口聚合：打开数据 / 最近 / 新建页 / 主题，作为启动后的落地页。
+    // plottype/sources 两个空槽从无 action，已移除；home.view 保留是因为骨架槽
+    // 完整性契约（tests/test_architecture.cpp）点名要求它存在——空组不渲染，无视觉影响。
     group(QStringLiteral("ribbon.group.home.data"), QStringLiteral("常用"),
           QStringLiteral("ribbon.page.home"), 0);
     group(QStringLiteral("ribbon.group.home.appearance"), QStringLiteral("外观"),
           QStringLiteral("ribbon.page.home"), 1);
-    group(QStringLiteral("ribbon.group.home.plottype"), QStringLiteral("图型"),
-          QStringLiteral("ribbon.page.home"), 8);
     group(QStringLiteral("ribbon.group.home.view"), QStringLiteral("画布"),
           QStringLiteral("ribbon.page.home"), 9);
-    group(QStringLiteral("ribbon.group.home.sources"), QStringLiteral("来源"),
-          QStringLiteral("ribbon.page.home"), 10);
 
     // 文件页：老 ShellComponent 文件/导出/截图/帮助（ng 补回独立的"截图"组）。
     group(QStringLiteral("ribbon.group.file.document"), QStringLiteral("文件"),
@@ -89,11 +87,19 @@ void declareSkeletonSlots(UiSlotHub &registry)
     group(QStringLiteral("ribbon.group.plot.series"), QStringLiteral("曲线与轴"),
           QStringLiteral("ribbon.page.plot"), 6);
 
-    // 脚本页：控制台 + 运行。
-    group(QStringLiteral("ribbon.group.script.console"), QStringLiteral("控制台"),
+    // 脚本页：按"先准备脚本 → 再运行 → 批量 → 看输出"的操作流排组。
+    // 组顺序：文件 → 运行 → 批量 → 控制台（原控制台在首位、顺序颠倒）。
+    // 注意 file/batch 组由 ScriptModule 在 onAttach 里声明，这里用相同 order
+    // 保证骨架与模块对组顺序的认知一致；"同 area 先到者为准"，若模块后声明
+    // 也不会覆盖这里的 order。
+    group(QStringLiteral("ribbon.group.script.file"), QStringLiteral("文件"),
           QStringLiteral("ribbon.page.script"), 0);
     group(QStringLiteral("ribbon.group.script.run"), QStringLiteral("运行"),
           QStringLiteral("ribbon.page.script"), 1);
+    group(QStringLiteral("ribbon.group.script.batch"), QStringLiteral("批量"),
+          QStringLiteral("ribbon.page.script"), 2);
+    group(QStringLiteral("ribbon.group.script.console"), QStringLiteral("控制台"),
+          QStringLiteral("ribbon.page.script"), 3);
 
     // 协议页：编辑器 + 检查。
     group(QStringLiteral("ribbon.group.protocol.editor"), QStringLiteral("编辑器"),
