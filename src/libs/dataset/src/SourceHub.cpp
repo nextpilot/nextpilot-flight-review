@@ -212,4 +212,61 @@ void SourceHub::clear()
         remove(id);
 }
 
+void SourceHub::demandOrigin(const QString &origin)
+{
+    if (origin.isEmpty())
+        return;
+    for (auto &d : m_demands)
+    {
+        if (d.first == origin)
+        {
+            ++d.second;
+            return;
+        }
+    }
+    m_demands.append({origin, 1});
+}
+
+void SourceHub::releaseOrigin(const QString &origin)
+{
+    for (int i = 0; i < m_demands.size(); ++i)
+    {
+        if (m_demands.at(i).first == origin)
+        {
+            if (--m_demands[i].second <= 0)
+                m_demands.removeAt(i);
+            return;
+        }
+    }
+}
+
+int SourceHub::demandCount(const QString &origin) const
+{
+    for (const auto &d : m_demands)
+    {
+        if (d.first == origin)
+            return d.second;
+    }
+    return 0;
+}
+
+QStringList SourceHub::demandedOrigins() const
+{
+    QStringList out;
+    for (const auto &d : m_demands)
+        out << d.first;
+    return out;
+}
+
+QStringList SourceHub::unsatisfiedDemands() const
+{
+    QStringList out;
+    for (const auto &d : m_demands)
+    {
+        if (sourceByOrigin(d.first) < 0)
+            out << d.first;
+    }
+    return out;
+}
+
 } // namespace nextpilot::plotscope::dataset

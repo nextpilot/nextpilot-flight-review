@@ -87,6 +87,30 @@ public:
     QVector<int> ids() const;
     void clear();
 
+    // ---- origin 需求引用（demand reference，对标 PJ4 PendingDisplayBinder 语义）----
+    //
+    // 为什么需要：恢复布局时数据源可能还没到（换文件前先加载 layout、live 流未连），
+    // pending binder 在工作区挂起等待。这些挂起条目对"某个 origin 的源必须存在"
+    // 构成**需求**——语义上等价于 PJ4 的 demand reference：谁持有需求，谁声明
+    // "这个源来了我要接上它，别把它当无人引用的资源丢弃/清走"。
+    //
+    // 我们的形态与 PJ4 不同：源是被动接收 + 建流即登记，不存在"不订阅就不发"的
+    // quiet stream，所以 demand 不驱动订阅，而是提供三件事：
+    //   1. 诊断口径：demandedOrigins() 报告尚未被满足的需求（preflight 用）；
+    //   2. 生命周期锚点：源被显式移除后，需求仍在——同 origin 的源再次登记
+    //      （重新载入同一文件 / 重连同一端点）时 pending 自动接回；
+    //   3. 未来接入资源预算时的保留依据（当前 clearCache 只清磁盘缓存，不驱逐源）。
+    //
+    // 计数语义：同一 origin 可被多个 pending 画布需求，按引用计数；release 减到 0 即消除。
+    void demandOrigin(const QString &origin);
+    void releaseOrigin(const QString &origin);
+    // 该 origin 当前被需求次数（0 = 无需求）。
+    int demandCount(const QString &origin) const;
+    // 全部被需求的 origin（含已满足与未满足的，按登记序）。
+    QStringList demandedOrigins() const;
+    // 被需求但当前没有对应源的 origin（preflight/诊断用）。
+    QStringList unsatisfiedDemands() const;
+
 Q_SIGNALS:
     void sourceAdded(int id);
     void sourceRemoved(int id);
@@ -96,6 +120,9 @@ private:
     // 容器本体委托泛型注册表（保序：登记顺序即遍历顺序）；本壳只保留领域语义：
     // id 分配、变更信号、解析器绑定关系、dataset 反查。
     nextpilot::plotscope::registry::Registry<DataSourceInfo, int> m_sources;
+    // origin → 需求引用计数（demand reference，保序便于诊断输出稳定）。
+    // 用 QVector<pair> 而非 QHash：需求集合通常很小，保序比 O(1) 查找重要。
+    QVector<QPair<QString, int>> m_demands;
     int m_nextId = 1;
 };
 
