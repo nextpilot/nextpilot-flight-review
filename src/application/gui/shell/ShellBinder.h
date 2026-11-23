@@ -232,6 +232,7 @@ private:
     QString activityForPanel(const QString &pageKey) const;
     bool ensureSideBar();
     bool isSideBarSection(const QString &pageKey) const;
+    void updateSideBarTitle();
 
     // 装中央画布区。**必须早于任何侧边 dock**——ADS 的 addDockArea() 只在
     // "区域内 dock 数量 <= 1"时按插入参数重设根分割器方向，

@@ -242,6 +242,7 @@ void ShellBinder::rebuildActivityBar()
     m_activityBar->setActiveActivity(m_activeActivity);
     if (m_sidebar)
         m_sidebar->setActiveActivity(m_activeActivity);
+    updateSideBarTitle();
 }
 
 QString ShellBinder::activityForPanel(const QString &pageKey) const
@@ -262,10 +263,19 @@ void ShellBinder::activateActivity(const QString &activityId)
         m_activityBar->setActiveActivity(activityId);
     if (m_sidebar)
         m_sidebar->setActiveActivity(activityId);
+    updateSideBarTitle();
     if (!spec->ribbonPage.isEmpty())
         setRibbonPage(spec->ribbonPage);
     if (m_activityHandler)
         m_activityHandler(*spec);
+}
+
+void ShellBinder::updateSideBarTitle()
+{
+    if (!m_leftDock)
+        return;
+    const ActivitySpec *spec = m_slots.activity(m_activeActivity);
+    m_leftDock->setWindowTitle(spec ? spec->label : QStringLiteral("侧栏"));
 }
 
 void ShellBinder::createRibbon(SARibbonBar *ribbon)
@@ -590,6 +600,7 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
                 m_sidebar->setActiveActivity(m_activeActivity);
             if (m_sidebar->activeSectionId().isEmpty())
                 m_sidebar->focusSection(sectionId);
+            updateSideBarTitle();
         }
         return;
     }
@@ -928,6 +939,7 @@ bool ShellBinder::setDockPageVisible(const QString &pageKey, bool visible)
             if (!activity.isEmpty() && activity != m_activeActivity)
                 activateActivity(activity);
             m_sidebar->focusSection(pageKey);
+            updateSideBarTitle();
         }
         return true;
     }

@@ -3274,6 +3274,14 @@ int main(int argc, char *argv[])
         CHECK(leftOrder == leftTitles);
         CHECK(!act0.isEmpty());
         CHECK(leftTitles.contains(act0));
+
+        // 左栏 dock 标题跟随当前 Activity，而不是固定“侧栏”。
+        auto *leftDock = window.findChild<ads::CDockWidget *>(QStringLiteral("ps.dock.sidebar"));
+        CHECK(leftDock != nullptr);
+        CHECK(binder->setActiveActivity(QStringLiteral("script")));
+        CHECK(leftDock->windowTitle() == QStringLiteral("脚本"));
+        CHECK(binder->setActiveActivity(QStringLiteral("data")));
+        CHECK(leftDock->windowTitle() == QStringLiteral("数据"));
         // 聚焦：每个面板都能定位到自己的 dock 页签（focusPanel 返回 true），
         // 且聚焦后 active 落在该面板所在页签上。
         const QList<QWidget *> leftPanels = binder->panelWidgets(QStringLiteral("dock.left"));
