@@ -134,7 +134,7 @@ private:
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> series(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceList();
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceSave();
-    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceRestore();
+    nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> workspaceRestore(bool includeLive = false);
     // dataset 级通道变换配方（变换 = 非破坏视图，全后端生效；plot.channel / data.series 消费）。
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> setChannelTransform(const nextpilot::plotscope::intent::Intent &intent);
     nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult> clearChannelTransform(const nextpilot::plotscope::intent::Intent &intent);

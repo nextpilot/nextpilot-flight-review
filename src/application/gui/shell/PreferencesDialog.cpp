@@ -199,6 +199,28 @@ QWidget *PreferencesDialog::buildDataPage()
     hint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     hint->setStyleSheet(QStringLiteral("color: palette(mid);"));
     lay->addWidget(hint);
+    // 启动恢复：三档的差别是"恢复多少"。off 什么都不恢复；layout 只还原
+    // 源条目与画布布局（不读数据，启动不被大文件拖住）；full 连数据一起加载。
+    auto *restoreBox = new QGroupBox(QStringLiteral("启动恢复"), page);
+    auto *restoreForm = new QFormLayout(restoreBox);
+    m_startupRecovery = new QComboBox(restoreBox);
+    m_startupRecovery->addItem(QStringLiteral("仅布局（推荐）"), QStringLiteral("layout"));
+    m_startupRecovery->addItem(QStringLiteral("完整（含数据）"), QStringLiteral("full"));
+    m_startupRecovery->addItem(QStringLiteral("关闭"), QStringLiteral("off"));
+    m_startupRecovery->setMinimumHeight(26);
+    m_startupRecovery->setMaximumWidth(220);
+    restoreForm->addRow(QStringLiteral("上次会话"), m_startupRecovery);
+    lay->addWidget(restoreBox);
+
+    auto *restoreHint = new QLabel(QStringLiteral("布局档只还原源条目与画布，曲线等你手动加载数据后自动重绑；"
+                                                  "完整档会在启动时读取数据，大文件会慢。"
+                                                  "流式源在任何档位都只保留条目，不自动连接。"),
+                                   page);
+    restoreHint->setWordWrap(true);
+    restoreHint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    restoreHint->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    lay->addWidget(restoreHint);
+
     lay->addStretch(1);
 
     connect(m_clearCache, &QPushButton::clicked, this, [this]() {
@@ -232,6 +254,15 @@ void PreferencesDialog::loadValues()
         const auto r = m_executor.execute(g);
         return r ? r.value().payload.toInt() : 0;
     };
+
+    // 启动恢复档位：默认 layout——恢复布局但不读数据，启动速度与现场续接折中。
+    if (m_startupRecovery != nullptr)
+    {
+        const QString mode = readString(QStringLiteral("app/startup.recovery"),
+                                        QStringLiteral("layout"));
+        const int idx = m_startupRecovery->findData(mode);
+        m_startupRecovery->setCurrentIndex(idx < 0 ? 0 : idx);
+    }
 
     // 主题走 theme.get（ThemeManager 的当前值），不硬编码 app/theme 键。
     {
@@ -269,6 +300,9 @@ void PreferencesDialog::save()
         err = writeValue(QStringLiteral("derive.maxPoints"), m_deriveMax->value());
     if (err.isEmpty())
         err = writeValue(QStringLiteral("plot.time.format"), m_timeFormat->currentData().toString());
+    if (err.isEmpty() && m_startupRecovery != nullptr)
+        err = writeValue(QStringLiteral("app/startup.recovery"),
+                         m_startupRecovery->currentData().toString());
 
     if (err.isEmpty())
     {

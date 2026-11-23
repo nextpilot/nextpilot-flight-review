@@ -64,6 +64,7 @@ private:
     QStackedWidget *m_pages = nullptr;
     QComboBox *m_theme = nullptr;
     QComboBox *m_timeFormat = nullptr;
+    QComboBox *m_startupRecovery = nullptr; // 启动恢复档位 off/layout/full
     QSpinBox *m_exportMax = nullptr;
     QSpinBox *m_deriveMax = nullptr;
     QLabel *m_cacheLabel = nullptr;

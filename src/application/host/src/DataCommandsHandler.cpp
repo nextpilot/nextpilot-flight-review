@@ -169,7 +169,10 @@ void DataCommandsHandler::buildDispatch()
     m_dispatch.reg(QStringLiteral("data.workspace.save"),
                    [this](const I &) { return workspaceSave(); });
     m_dispatch.reg(QStringLiteral("data.workspace.restore"),
-                   [this](const I &) { return workspaceRestore(); });
+                   [this](const I &intent) {
+                       // includeLive 默认 false：恢复可以重建条目，但不能替用户重连流。
+                       return workspaceRestore(intent.params.value(QStringLiteral("includeLive")).toBool());
+                   });
     m_dispatch.reg(QStringLiteral("data.connect"), this, &DataCommandsHandler::connectLive);
     m_dispatch.reg(QStringLiteral("data.disconnect"), this, &DataCommandsHandler::disconnectLive);
     m_dispatch.reg(QStringLiteral("data.live.stats"), this, &DataCommandsHandler::liveStats);
@@ -2871,7 +2874,7 @@ Result<IntentResult> DataCommandsHandler::workspaceSave()
     return r;
 }
 
-Result<IntentResult> DataCommandsHandler::workspaceRestore()
+Result<IntentResult> DataCommandsHandler::workspaceRestore(bool includeLive)
 {
     // 恢复 = 重放：对每个源发 data.load（record=false，避免重复记录），
     // 再对每条派生配方发 data.derive（Rust 重算，不写回数据）。
@@ -2879,10 +2882,21 @@ Result<IntentResult> DataCommandsHandler::workspaceRestore()
     int loadedSources = 0;
     int replayedDerives = 0;
 
+    int skippedLive = 0;
+
     for (const SourceSpec &s : cfg.sources)
     {
         if (!s.isValid())
             continue;
+
+        // live 源（stream/live/replay）永不自动连接：恢复只保留条目，等用户显式放行。
+        // 理由：连流会卡住启动等网络，而"上次开着"不等于"这次授权重连"。
+        if (!includeLive && (s.kind == QStringLiteral("stream") || s.kind == QStringLiteral("live")
+                             || s.kind == QStringLiteral("replay")))
+        {
+            ++skippedLive;
+            continue;
+        }
 
         Intent load;
         load.op = QStringLiteral("data.load");
@@ -2938,6 +2952,7 @@ Result<IntentResult> DataCommandsHandler::workspaceRestore()
     r.payload = QVariantMap{
         {QStringLiteral("sources"), loadedSources},
         {QStringLiteral("derives"), replayedDerives},
+        {QStringLiteral("skippedLive"), skippedLive},
     };
     return r;
 }

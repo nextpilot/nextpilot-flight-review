@@ -1,5 +1,7 @@
 #include "DataManagerPanel.h"
 
+#include <QPointer>
+
 #include "LiveConnectDialog.h"
 
 #include "PanelFactoryHub.h"
@@ -663,6 +665,32 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
 
     registerPropertyProviders();
     refresh();
+    // 会话态：上次选中的数据源。只按 origin 记——源 id 是进程内分配的，重启即失效。
+    QPointer<DataManagerPanel> self(this);
+    PersistentStateEntry stateEntry;
+    stateEntry.id = QStringLiteral("data.panel.session");
+    stateEntry.scope = PersistentStateEntry::Session;
+    stateEntry.version = 1;
+    stateEntry.bestEffort = true;
+    stateEntry.serialize = [self]() -> QJsonObject {
+        if (!self || self->m_shownSourceId < 0)
+            return {};
+        const DataSourceInfo *info = self->m_sources.get(self->m_shownSourceId);
+        if (info == nullptr)
+            return {};
+        return QJsonObject{{QStringLiteral("selectedOrigin"), info->origin}};
+    };
+    stateEntry.restore = [self](const QJsonObject &doc) {
+        if (!self)
+            return;
+        const QString origin = doc.value(QStringLiteral("selectedOrigin")).toString();
+        if (origin.isEmpty())
+            return;
+        const int id = self->m_sources.sourceByOrigin(origin);
+        if (id >= 0)
+            self->selectSource(id);
+    };
+    m_appCtx.states().registerEntry(std::move(stateEntry));
 }
 
 // 单击树节点 -> 统一选中对象。把稳定标识填进 ids，供属性 provider 反查。
