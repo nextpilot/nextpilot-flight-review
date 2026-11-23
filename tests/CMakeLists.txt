@@ -399,3 +399,9 @@ target_compile_definitions(ps_test_apbin_parser PRIVATE
     PS_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixture")
 set_target_properties(ps_test_apbin_parser PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_apbin_parser COMMAND ps_test_apbin_parser)
+
+# Arrow 导入导出通道（S6）：标准 nanoarrow IPC reader 消费 + 时间归一 + null 往返，headless。
+add_executable(ps_test_arrow test_arrow.cpp)
+target_link_libraries(ps_test_arrow PRIVATE ps_arrow ps_dataset ps_nanoarrow Qt6::Core)
+set_target_properties(ps_test_arrow PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
+add_test(NAME ps_arrow COMMAND ps_test_arrow)
