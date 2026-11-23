@@ -148,12 +148,13 @@ private:
     nextpilot::plotscope::intent::OpDispatch m_dispatch;
 
     // 实时源会话：一个源一个 QUdpSocket（readyRead → pipeline.feed）。
-    // paused 时不喂解析器——字节仍被内核缓冲丢弃，恢复后从头继续（不做补帧，明确取舍）。
+    // S3：paused 只冻结 UI 视图（SourceState），字节照常 enqueue/pump 进 kernel，
+    // 不丢数据；"停快照"由 UI 侧 generation 读水位线实现。
     struct LiveSession
     {
         std::unique_ptr<QUdpSocket> socket;
         int sourceId = -1;
-        bool paused = false;
+        bool paused = false; // 仅表示 UI 视图冻结，不阻断数据摄取
         qint64 packets = 0;
         qint64 bytes = 0;
         QElapsedTimer since;     // 会话起点（统计 Hz/KB/s 用）
@@ -174,6 +175,11 @@ private:
         qint64 droppedBytes = 0;
         qint64 fedBytes = 0;
     };
+    // S3：live 数据集灌数前设 ring 字节预算上限，长跑内存有界（默认 256MB/源）。
+    // 在 connectLive/connectTcp/connectSerial 建集后统一调用。
+    static constexpr quint64 kLiveRingBudgetBytes = 256ull * 1024 * 1024;
+    void configureLiveRing(int datasetId);
+
     // 入环（不解析）；泵定时器按预算 drain 到 ingest。
     void enqueueLive(int sourceId, const QByteArray &bytes);
     void pumpLive();
