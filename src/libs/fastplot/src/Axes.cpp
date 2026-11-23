@@ -182,6 +182,7 @@ QJsonObject Axes::saveState() const
     o[QStringLiteral("legend")] = m_legend.isVisible();
     o[QStringLiteral("legendCollapsed")] = m_legend.isCollapsed();   // #205
     o[QStringLiteral("legendFontScale")] = m_legend.fontScale();   // #205
+    o[QStringLiteral("legendCorner")] = static_cast<int>(m_legend.corner()); // 第3仗 3a：图例四角
     return o;
 }
 
@@ -218,6 +219,12 @@ bool Axes::restoreState(const QJsonObject &state)
             m_legend.setFontScale(scale);
             update();
         }
+    }
+    {
+        // 图例四角：0=右上 1=左上 2=左下 3=右下；越界回落默认右上。
+        const int corner = state.value(QStringLiteral("legendCorner")).toInt(0);
+        if (corner >= 0 && corner <= 3)
+            m_legend.setCorner(static_cast<Legend::Corner>(corner));
     }
     relayout();
     return true;
@@ -985,6 +992,18 @@ void Axes::toggleLegendItem(int curveIndex)
     invalidateStatic();
     update();
     Q_EMIT legendItemToggled(curveIndex, next);
+}
+
+void Axes::setLegendItemVisible(int curveIndex, bool visible)
+{
+    if (curveIndex < 0 || curveIndex >= m_curves.size())
+        return;
+    if (m_curves.at(curveIndex).isVisible() == visible)
+        return;
+    m_curves[curveIndex].setVisible(visible);
+    invalidateStatic();
+    update();
+    Q_EMIT legendItemToggled(curveIndex, visible);
 }
 
 void Axes::paintOverlay(QPainter &painter)

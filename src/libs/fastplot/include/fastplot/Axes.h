@@ -193,6 +193,15 @@ public:
     double legendFontScale() const { return m_legend.fontScale(); }
     void zoomLegendFont(int steps); // Ctrl+滚轮步进：缩放因子 clamp [0.7, 2.0]
     void toggleLegendItem(int curveIndex);
+    // set 版：直接置显隐并发出同一信号（legendItemToggled）。AxesView 的
+    // 单一出口 setSeriesVisible 用它同步 Line；toggle 是"取反"的语法糖路径。
+    void setLegendItemVisible(int curveIndex, bool visible);
+    bool legendItemVisible(int curveIndex) const
+    {
+        return curveIndex >= 0 && curveIndex < m_curves.size() && m_curves.at(curveIndex).isVisible();
+    }
+    Legend::Corner legendCorner() const { return m_legend.corner(); }
+    void setLegendCorner(Legend::Corner corner) { m_legend.setCorner(corner); update(); }
 
     // 图例行被点击切换显隐（AxesView 同步 PlotSeries.visible，pushToPlot 重建不丢）。
     // Legend::collapseChanged 转发为 legendCollapseChanged（构造时连接）。

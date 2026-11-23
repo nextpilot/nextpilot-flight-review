@@ -104,15 +104,15 @@ AxesView::AxesView(QWidget *parent)
     m_viewState->resetBaseline({vp0.xLower(), vp0.xUpper(), vp0.yLower(), vp0.yUpper()});
     connect(m_viewState, &ViewState::timeFormatChanged, this, &AxesView::applyTimeFormat);
 
-    // 图例行点击切显隐：Axes 只切 Line，这里同步 PlotSeries.visible，
+    // 图例行点击切显隐：一切显隐变更都收敛到 setSeriesVisible 单一出口
+    //（store 与 fastplot Line 双侧同步由出口负责，回声由 m_syncingVisibility 吞掉），
     // 否则 pushToPlot 的 clearCurves 重建会把显隐状态冲掉。
     connect(m_plot, &nextpilot::plotscope::fastplot::Axes::legendItemToggled, this,
             [this](int curveIndex, bool visible) {
                 const PlotSeries *s = m_seriesStore->at(curveIndex);
                 if (!s)
                     return;
-                m_seriesStore->setVisibleSilently(curveIndex, visible);
-                Q_EMIT seriesVisibilityChanged(s->key(), visible);
+                setSeriesVisible(s->key(), visible);
             });
 
     connect(m_zoomer, &nextpilot::plotscope::fastplot::Zoomer::zoomed, this, [this] {
@@ -193,7 +193,24 @@ bool AxesView::setSeriesAxis(const QString &key, bool rightAxis)
 }
 bool AxesView::setSeriesVisible(const QString &key, bool visible)
 {
-    return m_seriesStore->setVisible(key, visible);
+    const int i = m_seriesStore->indexOf(key);
+    if (i < 0)
+        return false;
+    const PlotSeries *s = m_seriesStore->at(i);
+    if (!s)
+        return false;
+    // 单一出口守卫：setLegendItemVisible 会发 legendItemToggled 回声，
+    // 回声进本函数时直接确认（不重复同步、不重复广播）。
+    if (m_syncingVisibility)
+        return s->visible == visible;
+    if (s->visible == visible)
+        return true;
+    m_syncingVisibility = true;
+    m_seriesStore->setVisibleSilently(i, visible); // store 先落（单一事实源）
+    m_plot->setLegendItemVisible(i, visible);      // Line 同步；回声被上面守卫吞掉
+    m_syncingVisibility = false;
+    Q_EMIT seriesVisibilityChanged(key, visible);
+    return true;
 }
 bool AxesView::setSeriesInk(const QString &key, const QColor &color)
 {
@@ -265,7 +282,7 @@ bool AxesView::toggleSeriesVisible(const QString &key)
     if (i < 0)
         return false;
     // Axes::toggleLegendItem 切 Line 并发 legendItemToggled；
-    // store 的 visible 由那条信号回写（单一事实源在 Axes）。
+    // 回声信号收敛进 setSeriesVisible 单一出口（store 与 Line 同步由出口负责）。
     m_plot->toggleLegendItem(i);
     return true;
 }
@@ -761,6 +778,19 @@ void AxesView::setLegendVisible(bool visible)
 bool AxesView::legendVisible() const
 {
     return m_plot && m_plot->legendVisible();
+}
+
+// 图例四角：0=右上 1=左上 2=左下 3=右下（Legend::Corner 序）；越界忽略。
+void AxesView::setLegendCorner(int corner)
+{
+    if (m_plot && corner >= 0 && corner <= 3)
+        m_plot->setLegendCorner(
+            static_cast<nextpilot::plotscope::fastplot::Legend::Corner>(corner));
+}
+
+int AxesView::legendCorner() const
+{
+    return m_plot ? static_cast<int>(m_plot->legendCorner()) : 0;
 }
 
 bool AxesView::visibleTimeRange(double *t0, double *t1) const

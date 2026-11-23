@@ -44,6 +44,15 @@ void Legend::setTopInset(qreal px)
     m_topInset = std::max<qreal>(0.0, px);
 }
 
+void Legend::setCorner(Corner c)
+{
+    if (c == m_corner)
+        return;
+    m_corner = c;
+    // 几何缓存（blockRect 等）在下一次 paint 时按新贴角重算；本类无 update 句柄，
+    // 重绘由调用方（Axes::setLegendCorner）触发。
+}
+
 void Legend::paint(QPainter &painter, const PaintInput &in)
 {
     const QRectF plot = in.plotRect;
@@ -113,18 +122,40 @@ void Legend::paint(QPainter &painter, const PaintInput &in)
     }
     const qreal widthCap = (nCols > 1 ? 0.75 : 0.45) * plot.width();
     const int legendW = std::max(96, std::min(lay.totalW, int(widthCap)));
-    const double legendX = plot.right() - 8 - legendW;
-    const int topY = int(plot.top() + 8 + m_topInset);
+    const qreal blockH = (lay.rowsPer + 1) * rowH;
+
+    // 贴角定位：四角任选（m_corner），8px 边距；m_topInset 只对上角生效。
+    qreal legendX = 0;
+    qreal legendY = 0;
+    switch (m_corner)
+    {
+    case Corner::TopRight:
+        legendX = plot.right() - 8 - legendW;
+        legendY = plot.top() + 8 + m_topInset;
+        break;
+    case Corner::TopLeft:
+        legendX = plot.left() + 8;
+        legendY = plot.top() + 8 + m_topInset;
+        break;
+    case Corner::BottomLeft:
+        legendX = plot.left() + 8;
+        legendY = plot.bottom() - 8 - blockH;
+        break;
+    case Corner::BottomRight:
+        legendX = plot.right() - 8 - legendW;
+        legendY = plot.bottom() - 8 - blockH;
+        break;
+    }
 
     // 整块底色要先行铺上，否则曲线会从字里穿过去，右上角窄块压在波形上时尤其难看。
-    const QRectF blockRect(legendX, topY, legendW, (lay.rowsPer + 1) * rowH);
+    const QRectF blockRect(legendX, legendY, legendW, blockH);
     QColor blockBg = in.windowColor;
     blockBg.setAlpha(232);
     painter.setPen(QPen(QColor(labelColor.red(), labelColor.green(), labelColor.blue(), 60), 1));
     painter.setBrush(blockBg);
     painter.drawRoundedRect(blockRect, 3, 3);
 
-    m_titleRect = QRectF(legendX, topY, legendW, rowH);
+    m_titleRect = QRectF(legendX, legendY, legendW, rowH);
     painter.setPen(Qt::NoPen);
     painter.setBrush(QColor(0, 0, 0, 36));
     painter.drawRoundedRect(m_titleRect, 2, 2);
@@ -150,7 +181,7 @@ void Legend::paint(QPainter &painter, const PaintInput &in)
         for (int r = c * lay.rowsPer; r < rEnd; ++r, ++row)
         {
             const Item &item = in.items.at(r);
-            const QPointF origin(colX, topY + (r - c * lay.rowsPer + 1) * rowH);
+            const QPointF origin(colX, legendY + (r - c * lay.rowsPer + 1) * rowH);
             // 行内裁剪：超宽的名字截在块底色内，不溢出（参照 PJ4 PlotLegend drawLegendData）。
             painter.save();
             painter.setClipRect(QRectF(colX, origin.y(), lay.w.at(c), rowH));
