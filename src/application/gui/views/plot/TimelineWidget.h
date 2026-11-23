@@ -15,7 +15,7 @@ class PlaybackEngine;
 
 // 底部时间条：一个只读引擎的视图。
 // 手势（播放/暂停/循环/拖动/速度/步进）调用引擎；引擎信号回写显示。
-// 所有画布的播放头由 CanvasWorkspace 订阅同一引擎的 currentTimeChanged 同步。
+// 所有画布的播放头由 PlotWorkspace 订阅同一引擎的 currentTimeChanged 同步。
 class TimelineWidget : public QWidget
 {
     Q_OBJECT

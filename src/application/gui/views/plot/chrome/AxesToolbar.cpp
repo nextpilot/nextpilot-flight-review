@@ -1,4 +1,4 @@
-#include "CellTitleBar.h"
+#include "AxesToolbar.h"
 
 #include "DockAreaTitleBar.h"
 #include "DockAreaWidget.h"
@@ -32,9 +32,9 @@ QIcon barIcon(const char *name)
 
 } // namespace
 
-CellTitleBar::CellTitleBar(QWidget *parent) : QWidget(parent)
+AxesToolbar::AxesToolbar(QWidget *parent) : QWidget(parent)
 {
-    setObjectName(QStringLiteral("cellHoverBar"));
+    setObjectName(QStringLiteral("axesToolbar"));
     setAttribute(Qt::WA_StyledBackground, true);
     setAttribute(Qt::WA_Hover, true);
 
@@ -42,9 +42,9 @@ CellTitleBar::CellTitleBar(QWidget *parent) : QWidget(parent)
     barBg.setAlpha(255);
     setFixedHeight(fastplot::Axes::kTitleBarHeight - 2);
     setStyleSheet(QStringLiteral(
-        "#cellHoverBar { background: %1; }"
-        "#cellHoverBar[dimmed=\"true\"] { background: transparent; }"
-        "#cellHoverBar[dimmed=\"true\"] QLabel { color: transparent; }"
+        "#axesToolbar { background: %1; }"
+        "#axesToolbar[dimmed=\"true\"] { background: transparent; }"
+        "#axesToolbar[dimmed=\"true\"] QLabel { color: transparent; }"
         " QToolButton { border: none; padding: 0px; border-radius: 2px; background: transparent; }"
         " QToolButton:hover { background: rgba(127,127,127,0.28); }"
         " QLabel { background: transparent; color: palette(text); }")
@@ -100,23 +100,23 @@ CellTitleBar::CellTitleBar(QWidget *parent) : QWidget(parent)
     lay->addWidget(close);
 }
 
-void CellTitleBar::setDockWidget(ads::CDockWidget *dockWidget)
+void AxesToolbar::setDockWidget(ads::CDockWidget *dockWidget)
 {
     m_dockWidget = dockWidget;
 }
 
-void CellTitleBar::setTitle(const QString &title)
+void AxesToolbar::setTitle(const QString &title)
 {
     if (m_title)
         m_title->setText(title);
 }
 
-QString CellTitleBar::title() const
+QString AxesToolbar::title() const
 {
     return m_title ? m_title->text() : QString();
 }
 
-void CellTitleBar::setShown(bool shown)
+void AxesToolbar::setShown(bool shown)
 {
     // 页签模式下格名与按钮由页签条承担，本条保持收起。
     if (m_suppressed && shown)
@@ -133,7 +133,7 @@ void CellTitleBar::setShown(bool shown)
     update();
 }
 
-void CellTitleBar::setSuppressed(bool suppressed)
+void AxesToolbar::setSuppressed(bool suppressed)
 {
     if (m_suppressed == suppressed)
         return;
@@ -142,7 +142,7 @@ void CellTitleBar::setSuppressed(bool suppressed)
         setShown(false);
 }
 
-bool CellTitleBar::eventFilter(QObject *watched, QEvent *event)
+bool AxesToolbar::eventFilter(QObject *watched, QEvent *event)
 {
     const bool onBar = (watched == this || watched == m_title);
     if (!onBar)
@@ -175,7 +175,7 @@ bool CellTitleBar::eventFilter(QObject *watched, QEvent *event)
     return QWidget::eventFilter(watched, event);
 }
 
-void CellTitleBar::forwardToTitleBar(QEvent *event, bool syntheticPress)
+void AxesToolbar::forwardToTitleBar(QEvent *event, bool syntheticPress)
 {
     if (!m_dockWidget)
         return;
@@ -197,7 +197,7 @@ void CellTitleBar::forwardToTitleBar(QEvent *event, bool syntheticPress)
     QCoreApplication::sendEvent(titleBar, event);
 }
 
-void CellTitleBar::rename()
+void AxesToolbar::rename()
 {
     bool ok = false;
     const QString name = QInputDialog::getText(this, QStringLiteral("重命名画布"), QStringLiteral("名称"),

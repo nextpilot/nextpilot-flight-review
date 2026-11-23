@@ -7,7 +7,7 @@
 //   · 变换是**非破坏视图**——原始 dataset 永不改动，字段名不变；
 //     plot 画布、data.series、导出等所有读数后端统一生效。
 //   · plot 级（曲线 yTransformId）是**视图局部**配方，只影响当前曲线，
-//     存在 PlotCanvas 的系列配方里，与本配置无关。
+//     存在 AxesView 的系列配方里，与本配置无关。
 // 定位键用 sourceOrigin（稳定）+ table + column——datasetId 会话间会变，
 // 持久化用会话期 id 重放必错（与 WorkspaceDataConfig 同一条裁决）。
 

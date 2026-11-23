@@ -214,7 +214,7 @@ bool execGridPick(QWidget *anchor, const QPoint &globalAnchor, int curRows, int 
     popup.setFocus();
 
     // 局部事件循环：等用户选完或取消。这是"同步语义 + 异步交互"的折中——
-    // 上层（MainWindow 的动作派发、脚本 page.grid.pick）仍拿得到同步返回值，
+    // 上层（MainWindow 的动作派发、脚本 figure.grid.pick）仍拿得到同步返回值，
     // 不用改回写链路（按钮缩略图与"r×c"文字）。
     QEventLoop loop;
     QObject::connect(&popup, &GridPickPopup::finished, &loop, &QEventLoop::quit);

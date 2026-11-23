@@ -1,16 +1,16 @@
-#include "CanvasWorkspace.h"
+#include "PlotWorkspace.h"
 
 #include "AppContext.h"
-#include "chrome/CellTitleBar.h"
-#include "layout/PageTabs.h"
-#include "layout/PageDock.h"
-#include "layout/PlotCellDock.h"
+#include "chrome/AxesToolbar.h"
+#include "layout/TabbedFigure.h"
+#include "layout/PlotLayout.h"
+#include "layout/DockedAxes.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "playback/PlaybackController.h"
 #include "TimelineWidget.h"
@@ -69,7 +69,7 @@ using namespace nextpilot::plotscope::context;
 
 namespace nextpilot::plotscope::gui
 {
-void CanvasWorkspace::registerPlaybackActions()
+void PlotWorkspace::registerPlaybackActions()
 {
 
     // 回放引擎：会话级时间游标的播放/暂停/定位/速率/循环/步进。

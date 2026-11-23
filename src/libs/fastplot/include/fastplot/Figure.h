@@ -16,7 +16,7 @@ namespace nextpilot::plotscope::fastplot
 //
 // 与老架构的关系：老的 PlotWidget 一个类兼了 figure 和 axes 两个角色；现在拆开——
 // Figure 负责"窗口里有几个坐标系、怎么摆"，Axes 负责"一个坐标系怎么画"。
-// PlotCanvas / CanvasWorkspace 仍可直接持有一个 Axes（单图场景无需 Figure）。
+// AxesView / PlotWorkspace 仍可直接持有一个 Axes（单图场景无需 Figure）。
 class Figure : public QWidget
 {
     Q_OBJECT

@@ -16,7 +16,7 @@
 //     { "op": "settle", "ms": 150 },
 //     { "op": "shot", "out": "data.png" },
 //     { "op": "intent", "intent": "theme.set", "params": { "theme": "dark" } },
-//     { "op": "view-action", "action": "page.grid", "params": { "rows": 2, "cols": 1 } },
+//     { "op": "view-action", "action": "figure.grid", "params": { "rows": 2, "cols": 1 } },
 //     { "op": "panel", "slot": "dock.diagnostics", "panel": "diagnostics" },
 //     { "op": "raise-panel", "area": "dock.left", "class": "DataManagerPanel" },
 //     { "op": "cursor", "t": 12.5 },                       // 游标读数 + A/B + 书签
@@ -48,8 +48,8 @@
 #include "Transform.h"
 #include "FilterEditorDialog.h"
 #include "PreferencesDialog.h"
-#include "CanvasWorkspace.h"
-#include "PlotCanvas.h"
+#include "PlotWorkspace.h"
+#include "AxesView.h"
 #include "RuntimeHost.h"
 #include "DataSource.h"
 #include "Source.h"
@@ -494,9 +494,9 @@ int main(int argc, char *argv[])
         }
         else if (op == QStringLiteral("cursor"))
         {
-            auto *ws = qobject_cast<CanvasWorkspace *>(
+            auto *ws = qobject_cast<PlotWorkspace *>(
                 window.binder() ? window.binder()->centralContent() : nullptr);
-            PlotCanvas *pc = ws ? ws->activeCanvas() : nullptr;
+            AxesView *pc = ws ? ws->activeCanvas() : nullptr;
             const double t = step.value(QStringLiteral("t")).toDouble();
             if (!pc)
             {
@@ -512,7 +512,7 @@ int main(int argc, char *argv[])
         }
         else if (op == QStringLiteral("hover-toolbar"))
         {
-            auto *ws = qobject_cast<CanvasWorkspace *>(
+            auto *ws = qobject_cast<PlotWorkspace *>(
                 window.binder() ? window.binder()->centralContent() : nullptr);
             if (!ws || !ws->activeCanvas())
             {

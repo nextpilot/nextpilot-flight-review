@@ -1,16 +1,16 @@
-#include "CanvasWorkspace.h"
+#include "PlotWorkspace.h"
 
 #include "AppContext.h"
-#include "chrome/CellTitleBar.h"
-#include "layout/PageTabs.h"
-#include "layout/PageDock.h"
-#include "layout/PlotCellDock.h"
+#include "chrome/AxesToolbar.h"
+#include "layout/TabbedFigure.h"
+#include "layout/PlotLayout.h"
+#include "layout/DockedAxes.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
 #include "DatasetHub.h"
@@ -68,39 +68,39 @@ using namespace nextpilot::plotscope::context;
 
 namespace nextpilot::plotscope::gui
 {
-void CanvasWorkspace::registerPageActions()
+void PlotWorkspace::registerPageActions()
 {
 
     // —— page.*：页面/画布布局操作 ——
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.addCanvas"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.addAxes"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(addCell());
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.removeCanvas"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.removeAxes"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(removeAt(m_active));
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.splitHorizontal"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.splitHorizontal"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(split(true));
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.splitVertical"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.splitVertical"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(split(false));
                                 });
     // 页签复制：对齐老 PlottingTabs 的"复制页"——整页搬走（页内每一格的曲线与视图状态一起）。
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.duplicate"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.duplicate"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!duplicatePage())
                                         return fail(err::Page, QStringLiteral("复制页失败"));
                                     return QVariant(pageCount());
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.fullscreen"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.fullscreen"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     toggleFullscreen();
                                     return QVariant(m_fullscreenCell >= 0);
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.grid"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.grid"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const int r = params.value(QStringLiteral("rows")).toInt();
                                     const int c = params.value(QStringLiteral("cols")).toInt();
@@ -116,14 +116,14 @@ void CanvasWorkspace::registerPageActions()
                                     return QVariant(out);
                                 });
     // 老 buildLayoutPicker 的 m×n 选择器：点「网格」弹 8×8 悬停选格（抄 main LayoutPickGrid），
-    // 选中即走 page.grid 重排；取消返回 false，不动当前布局。
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.grid.pick"),
+    // 选中即走 figure.grid 重排；取消返回 false，不动当前布局。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.grid.pick"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     // 无窗口平台（ctest 的 offscreen）弹不出弹层：明确失败并指路
-                                    // page.grid {rows,cols}，绝不阻塞事件循环（否则脚本/测试会挂死）。
+                                    // figure.grid {rows,cols}，绝不阻塞事件循环（否则脚本/测试会挂死）。
                                     if (QGuiApplication::platformName() == QLatin1String("offscreen"))
                                         return fail(QStringLiteral("egui"),
-                                                    QStringLiteral("无窗口环境下无法选格，请用 page.grid {rows, cols}"));
+                                                    QStringLiteral("无窗口环境下无法选格，请用 figure.grid {rows, cols}"));
                                     // 锚点取鼠标位置：点「网格」大按钮时光标正好在按钮上，
                                     // 等价于"贴按钮弹出"，不必让 MainWindow 传控件指针（少一层耦合）。
                                     const QPoint anchor = params.contains(QStringLiteral("anchor"))
@@ -141,7 +141,7 @@ void CanvasWorkspace::registerPageActions()
                                 });
     // 老 PlottingRibbon"页面"组的"新建页"：真加一个页签，页内先给一块空画布
     //（对齐老 appendPlusTab 的"+"页行为，而不是把当前页重置）。
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.new"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.new"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     const int index = addPage();
                                     m_tabs->setCurrentPage(index);    // 触发 switchPage 载入新页
@@ -150,11 +150,11 @@ void CanvasWorkspace::registerPageActions()
                                         addCell();                    // 新页先给一格空画布
                                     return QVariant(pageCount());
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.closeCurrent"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.closeCurrent"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     return QVariant(removePage(m_activePage));
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.rename"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.rename"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const int index = params.contains(QStringLiteral("index"))
                                         ? params.value(QStringLiteral("index")).toInt()
@@ -166,7 +166,7 @@ void CanvasWorkspace::registerPageActions()
                                     m_tabs->setPageTitle(index, title);
                                     return QVariant(title);
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.select"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.select"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const int index = params.value(QStringLiteral("index")).toInt();
                                     if (index < 0 || index >= m_pages.size())
@@ -175,7 +175,7 @@ void CanvasWorkspace::registerPageActions()
                                     switchPage(index);
                                     return QVariant(index);
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("page.state"),
+    m_appCtx.interactions().registerViewAction(QStringLiteral("figure.state"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     QVariantMap out{{QStringLiteral("cells"), m_cells.size()},
                                                     {QStringLiteral("active"), m_active},

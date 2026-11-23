@@ -131,7 +131,7 @@ public:
     void clearOverlay();
 
     // ---- 读数叠加层（对齐老 PlottingCanvas 的打磨交互；状态由上层持有，画布只画）----
-    // 一行读数：曲线名 + 该时刻值 + 曲线色。取值/格式化都在 PlotCanvas 做（库不依赖 Dataset）。
+    // 一行读数：曲线名 + 该时刻值 + 曲线色。取值/格式化都在 AxesView 做（库不依赖 Dataset）。
     struct ReadoutRow
     {
         QString label;
@@ -223,7 +223,7 @@ public:
     void zoomLegendFont(int steps); // Ctrl+滚轮步进：缩放因子 clamp [0.7, 2.0]
     void toggleLegendItem(int curveIndex);
 
-    // 图例行被点击切换显隐（PlotCanvas 同步 PlotSeries.visible，pushToPlot 重建不丢）。
+    // 图例行被点击切换显隐（AxesView 同步 PlotSeries.visible，pushToPlot 重建不丢）。
 Q_SIGNALS:
     void legendItemToggled(int curveIndex, bool visible);
     void legendCollapseChanged(bool collapsed);

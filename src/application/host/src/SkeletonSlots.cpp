@@ -74,7 +74,7 @@ void declareSkeletonSlots(UiSlotHub &registry)
           QStringLiteral("ribbon.page.data"), 3);
 
     // 绘图页：页面/布局/显示/画布操作/图表类型 gallery；另设"曲线与轴/操作"两组承载曲线操作。
-    group(QStringLiteral("ribbon.group.plot.page"), QStringLiteral("页面"),
+    group(QStringLiteral("ribbon.group.plot.figure"), QStringLiteral("页面"),
           QStringLiteral("ribbon.page.plot"), 0);
     group(QStringLiteral("ribbon.group.plot.layout"), QStringLiteral("布局"),
           QStringLiteral("ribbon.page.plot"), 1);

@@ -1,15 +1,15 @@
-#include "PlotCellDock.h"
+#include "DockedAxes.h"
 
-#include "chrome/CellTitleBar.h"
-#include "PageDock.h"
+#include "chrome/AxesToolbar.h"
+#include "PlotLayout.h"
 
 namespace nextpilot::plotscope::gui
 {
 
-PlotCellDock::PlotCellDock(PageDock *pageDock, const QString &title, QWidget *frame, CellTitleBar *bar)
+DockedAxes::DockedAxes(PlotLayout *pageDock, const QString &title, QWidget *frame, AxesToolbar *bar)
     : ads::CDockWidget(pageDock, title), m_frame(frame), m_bar(bar)
 {
-    setObjectName(QStringLiteral("plotCellDock"));
+    setObjectName(QStringLiteral("dockedAxes"));
     // 关闭入口在标题条上，面板自带的关闭按钮会和它重复，还可能被误点。
     setFeature(ads::CDockWidget::DockWidgetClosable, false);
     // 可拖、可浮动：拖分屏 / 拖中心合并 / 拖出浮动 / 拖回停靠全由 ADS 提供。
@@ -22,7 +22,7 @@ PlotCellDock::PlotCellDock(PageDock *pageDock, const QString &title, QWidget *fr
         m_bar->setDockWidget(this);
 }
 
-QWidget *PlotCellDock::takeCellWidget()
+QWidget *DockedAxes::takeCellWidget()
 {
     return takeWidget();
 }

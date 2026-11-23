@@ -16,21 +16,21 @@ class QEvent;
 namespace nextpilot::plotscope::gui
 {
 
-class CellTitleBar;
+class AxesToolbar;
 class ChannelView;
-class PageDock;
-class PageTabs;
-class PlotCellDock;
+class PlotLayout;
+class TabbedFigure;
+class DockedAxes;
 class InstrumentView;
-class PlotCanvas;
+class AxesView;
 class PlaybackController;
 
 // 画布工作区：中央区域的组合容器。
 //
 // 层次：Tab（绘图页）→ 页内 QSplitter 树（m×n 网格 / 手动拆分）→ Cell（一块画布）
 //
-// 为什么要这一层（而不是让外壳直接摆一个 PlotCanvas）：
-//   - page.new / 拆分 / 网格排布是"每页 N 个画布"，一个画布承载不了；
+// 为什么要这一层（而不是让外壳直接摆一个 AxesView）：
+//   - figure.new / 拆分 / 网格排布是"每页 N 个画布"，一个画布承载不了；
 //   - 页签是**工作视图**的单位：同一份数据可以按不同页看不同角度（总览/局部/仪表），
 //     切页不重新载入数据，也不复制数据；
 //   - view action（plot.*）若由每个画布各自注册，后建的会劫持先建的（QHash 覆盖）——
@@ -38,21 +38,21 @@ class PlaybackController;
 //   - 活动通道（数据集树双击/拖拽）只追加到活动 cell，符合"当前画布"语义。
 //
 // 分工：本类只做布局与路由（QWidget 组合），取数仍走 ChannelView→意图层，
-// 绘制仍是 PlotCanvas→fastplot。多画布不复制数据、不新增数据概念。
-class CanvasWorkspace : public QWidget
+// 绘制仍是 AxesView→fastplot。多画布不复制数据、不新增数据概念。
+class PlotWorkspace : public QWidget
 {
     Q_OBJECT
 public:
-    CanvasWorkspace(context::AppContext &appCtx, intent::IIntentExecutor &executor,
+    PlotWorkspace(context::AppContext &appCtx, intent::IIntentExecutor &executor,
                     QWidget *parent = nullptr);
-    ~CanvasWorkspace() override;
+    ~PlotWorkspace() override;
 
     // 当前页内的画布格数（老 cellCount 的语义收窄到"当前页"）。
     int cellCount() const;
     int pageCount() const;
     int activeIndex() const;
     // 当前活动画布（无画布时返回 nullptr）。仅供视图内部路由，不交给外壳。
-    PlotCanvas *activeCanvas() const;
+    AxesView *activeCanvas() const;
     ChannelView *activeChannelView() const;
 
     // 程序化浮出活动格的悬浮工具栏（命令面板/截图/自动化验收用）。
@@ -69,16 +69,16 @@ public:
 private:
     struct Cell
     {
-        PlotCanvas *canvas = nullptr;
+        AxesView *canvas = nullptr;
         ChannelView *view = nullptr;
         InstrumentView *instrument = nullptr;
         QStackedWidget *stack = nullptr;
         // 每格的外框：竖排 [标题条, 画布]，标题条是拖动把手与按钮区。
         QWidget *frame = nullptr;
         // 标题条：格名、拆分/最大化/书签/AB/关闭，并负责把鼠标事件转给 ADS 标题栏。
-        CellTitleBar *bar = nullptr;
+        AxesToolbar *bar = nullptr;
         // 这一格在 ADS 里的停靠面板。块的"壳"会在重排时重建，frame 始终复用（曲线不丢）。
-        PlotCellDock *dockWidget = nullptr;
+        DockedAxes *dockWidget = nullptr;
     };
 
     // 一个绘图页：滚动容器 + 页内 dock 管理器 + 该页的 cell。
@@ -87,7 +87,7 @@ private:
     struct Page
     {
         QWidget *host = nullptr;           // 绘图页本体（dock manager 的父）
-        PageDock *dock = nullptr;      // 页内布局容器：每格一个停靠面板，摆格/等分都归它
+        PlotLayout *dock = nullptr;      // 页内布局容器：每格一个停靠面板，摆格/等分都归它
         QVector<Cell> cells;
         int rows = 1;
         int cols = 1;
@@ -119,17 +119,17 @@ private:
     // 装配一个 cell（画布 + 仪表 + 堆叠 + 信号），调用方负责放进布局。
     Cell makeCell(QWidget *parentForStack);
     // 停靠面板 → 当前页 cell 下标（-1 = 不属于本页）。
-    int indexOfDock(const PlotCellDock *dockWidget) const;
+    int indexOfDock(const DockedAxes *dockWidget) const;
     // 把 cell 的 stack 从停靠面板里摘出（重建前必须先摘，否则删面板会连着删控件）。
     void detachStacks();
 
     // —— 跨画布曲线移动——
     // 按画布身份找 cell：拖拽的源画布只在 MIME 里留 id，这里是唯一的翻译层。
-    PlotCanvas *canvasById(int id) const;
-    ChannelView *viewOfCanvas(const PlotCanvas *canvas) const;
+    AxesView *canvasById(int id) const;
+    ChannelView *viewOfCanvas(const AxesView *canvas) const;
     int m_canvasSeq = 0;              // 画布 id 分配器（不持久化，进程内唯一即可）
 
-    // —— 每格标题条（CellTitleBar 的显示与定位）——
+    // —— 每格标题条（AxesToolbar 的显示与定位）——
     void showHoverBar(int index);
     void hideHoverBars();
     int indexOfBar(const QObject *bar) const;
@@ -147,7 +147,7 @@ private:
     // 注册曲线/轴/画布的属性 provider 与 setter（属性面板按 kind 路由到这里）。
     void registerPropertyProviders();
     // 连接一个画布的选中请求信号 -> AppContext.selection。
-    void connectCanvasSignals(PlotCanvas *canvas);
+    void connectCanvasSignals(AxesView *canvas);
 
     void onActiveChannelChanged(int datasetId, const QString &table, const QString &column);
     // 播放头同步：引擎时间 → 所有 cell 画布的竖线。
@@ -162,7 +162,7 @@ private:
     context::AppContext &m_appCtx;
     intent::IIntentExecutor &m_executor;
 
-    PageTabs *m_tabs = nullptr;       // 页签栏（末尾＋与改名归它）
+    TabbedFigure *m_tabs = nullptr;       // 页签栏（末尾＋与改名归它）
     QVector<Page *> m_pages;
     int m_activePage = 0;
 
@@ -170,7 +170,7 @@ private:
     int m_active = 0;
     int m_fullscreenCell = -1;        // >=0 表示某 cell 处于全屏（其它 cell 面板被隐藏）
     // 全屏时被隐藏的其它面板：退出时只恢复这一批，用户自己关掉的不会被重新打开。
-    QVector<QPointer<PlotCellDock>> m_fullscreenHidden;
+    QVector<QPointer<DockedAxes>> m_fullscreenHidden;
     int m_rows = 1;
     int m_cols = 1;
 
@@ -179,12 +179,12 @@ private:
     // 悬浮工具栏的自动隐藏计时（鼠标停止移动一段时间后收起，避免遮挡曲线）。
     QTimer *m_hoverTimer = nullptr;
 
-    friend QWidget *createCanvasWorkspace(context::AppContext &appCtx,
+    friend QWidget *createPlotWorkspace(context::AppContext &appCtx,
                                           intent::IIntentExecutor &executor, QWidget *parent);
 };
 
-// 工厂：注册进部件表，供 PlotModule::onAttach 申请（"canvas-workspace"）。
-QWidget *createCanvasWorkspace(context::AppContext &appCtx, intent::IIntentExecutor &executor,
+// 工厂：注册进部件表，供 PlotModule::onAttach 申请（"plot-workspace"）。
+QWidget *createPlotWorkspace(context::AppContext &appCtx, intent::IIntentExecutor &executor,
                                QWidget *parent = nullptr);
 
 } // namespace nextpilot::plotscope::gui

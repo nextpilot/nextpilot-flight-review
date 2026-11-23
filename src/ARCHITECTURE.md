@@ -674,7 +674,7 @@ gui/
 
 **plot 的演进方向**：绘图会被抽取成一个类似 Qwt 的独立库（`views/plot/` 是它的
 前身），所以它**不属于任何模块、不聚合进 `modules/`**——它是能力库，模块
-（`PlotModule`）只是通过 `requestPanel("canvas.center", "plot-canvas")` 使用它。
+（`PlotModule`）只是通过 `requestPanel("canvas.center", "plot-axes")` 使用它。
 这也决定了它必须留在 `gui/views/`（或未来的 `libs/plot/`），而非功能目录。
 
 #### 统一定则：物理位置与逻辑位置正交
@@ -720,7 +720,7 @@ modules/data/                     一个"数据"功能，物理聚合
 
 > **绘图内核已落地为 `libs/fastplot/`**（原"将来抽 Qwt-like 库"兑现）：纯 Qt Widgets、
 > 不依赖 core，含视口/刻度/轴/包络曲线/缩放平移读数/六仪表/频谱柱状等部件。
-> `gui/views/plot/PlotCanvas` 退化为**宿主**：只做取数（Rust LOD）+ 把 LOD 喂给 fastplot，
+> `gui/views/plot/AxesView` 退化为**宿主**：只做取数（Rust LOD）+ 把 LOD 喂给 fastplot，
 > **集成边界**：fastplot 库不认识主题/数据，
 > 颜色由宿主在 `applyPalette()` 里从 palette 注入，曲线色在 `pushToPlot` 时按当时主题取——
 > 库保持纯净，定制在宿主侧做。集成测试：`fastplot_*` 四套 + `ps_test_plot_io`。
@@ -833,7 +833,7 @@ headless 也能查到。
 |---|---|---|
 | `ThemeManager` | token 取色、双主题色表、QSS/palette 生成、当前主题状态与持久化、认领 `theme.set/toggle/get` | 十六进制色值**只在色表出现一次**；视图一律 `color(token)` / `styleSheet()` |
 | `ShellBinder::applyTheme` | 把 token QSS 套到 SARibbon | 绑定器是唯一知道 SARibbon 的地方；不碰 ThemeManager 具体类型 |
-| `PlotCanvas`（fastplot 画布宿主） | `changeEvent(PaletteChange)` 里调 `applyPalette()`，从 `palette()` 取色重设 fastplot 的画布/轴/标题 | fastplot 库内不认识主题、颜色在构造时定死；宿主侧用 palette 覆盖，库保持纯净；曲线色在 `pushToPlot` 时按当时 palette 取 |
+| `AxesView`（fastplot 画布宿主） | `changeEvent(PaletteChange)` 里调 `applyPalette()`，从 `palette()` 取色重设 fastplot 的画布/轴/标题 | fastplot 库内不认识主题、颜色在构造时定死；宿主侧用 palette 覆盖，库保持纯净；曲线色在 `pushToPlot` 时按当时 palette 取 |
 
 **三条设计判据**（都是踩过坑或守住红线的结果）：
 
@@ -921,7 +921,7 @@ headless 也能查到。
 
 - **数据树**只 `encode`，**画布**只 `decode`——两者唯一共享的是无依赖小头 `ChannelMime.h`，
   互不 include（星形解耦，不是网状）。
-- `PlotCanvas::dropEvent` 解码合法 MIME 后**只发 `channelDropped` 信号**，不认识意图层；
+- `AxesView::dropEvent` 解码合法 MIME 后**只发 `channelDropped` 信号**，不认识意图层；
   `ChannelView` 订阅后调 `setActiveChannel` → `activeChannelChanged` → `showChannel`
   → `plot.channel` 意图取数。**与双击同一条单一路径**，所以拖拽/双击/脚本三条入口
   行为必然一致，且可录制回放。
@@ -935,7 +935,7 @@ headless 也能查到。
 
 - 会话层与绘制内核分离：绘制内核为 `libs/fastplot`，会话层负责画布宿主、
   页面管理、LOD 取数与交互框架。
-- `PlotCanvas` 是 `QVector<PlotSeries>` 多曲线宿主，逐条
+- `AxesView` 是 `QVector<PlotSeries>` 多曲线宿主，逐条
   `addCurve(Curve::fromLod(...))`，全局 Y 范围取所有可见曲线的 min/max，
   颜色由 palette 黄金角色相偏移分配。
 - `ChannelView` 从"呈现一个通道"改为"叠加 N 条通道"：`addChannel` 按
@@ -976,7 +976,7 @@ headless 也能查到。
 - **plot 类型 gallery**（`ribbon.group.home.plottype`）：12 种图型缩略图
   与"常用/曲线/地图3D/仪表"分组。缩略图绘制在 `application/gui/theme/PlotThumbnails`，
   颜色走 `ThemeManager`（token 名 `panel`；未知 token 返回洋红 `#FF00FF`，误用即缩略图发紫）。
-  点击走 `plot.setType`：曲线/散点在 PlotCanvas 内切（`Curve::setScatter`）；
+  点击走 `plot.setType`：曲线/散点在 AxesView 内切（`Curve::setScatter`）；
   仪表/地图/3D 切到 `plot-instrument` 视图（`plot.instrument.setKind`）。
   数据绑定（把当前通道喂进仪表）属后续增量，gallery 切换本身已可用。
 - **parse 类型 gallery**（`ribbon.group.home.sources`）：由格式驱动动态生成图库项（CSV/ULOG/自定义协议…），点选按该驱动后缀弹文件对话框，
@@ -1021,7 +1021,7 @@ application/shell    组合根：App 装配 · CLI（纯 Core）· GUI 入口 ·
   ↓
 application/gui      GUI（仅 GUI 进程）
   shell/               外壳：MainWindow · ShellBinder · GuiContext · 对话框
-  views/               通用绘图能力（PlotCanvas 为 fastplot 宿主）
+  views/               通用绘图能力（AxesView 为 fastplot 宿主）
   ↓
 application/modules  模块（机制）：data / plot / script / protocol / analysis / settings / report
 toolbox/             扩展（领域知识）：common / autopilot / automotive / robotics / gnss

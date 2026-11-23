@@ -11,7 +11,7 @@
 #include "App.h"
 
 #include "MainWindow.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "PanelFactoryHub.h"
 #include "ShellBinder.h"
 
@@ -109,8 +109,8 @@ int main(int argc, char *argv[])
     application.context().setActiveChannel(dsId, table->name, column);
     const qint64 renderMs = timer.elapsed();
 
-    // 中央画布：从画布插槽取回（视图层自注册的 "plot-canvas" 部件）。
-    auto *canvas = qobject_cast<PlotCanvas *>(
+    // 中央画布：从画布插槽取回（视图层自注册的 "plot-axes" 部件）。
+    auto *canvas = qobject_cast<AxesView *>(
         window.binder()->centralContent());
     if (!canvas)
     {

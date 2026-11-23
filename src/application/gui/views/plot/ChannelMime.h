@@ -63,7 +63,7 @@ inline Decoded decode(const QMimeData *mime)
 
 // 画布间**曲线移动**的线协议。
 //
-// 与通道 MIME 同一条原则：只传逻辑标识，不传 PlotSeries*/PlotCanvas*。
+// 与通道 MIME 同一条原则：只传逻辑标识，不传 PlotSeries*/AxesView*。
 // 源画布只给 id；坐标三元组让它在新画布上走同一条 plot.channel 取数路径。
 // 用 \x1f 分隔（key 与 title 里可能有 '|' 与 '.'，不能用竖线）。
 namespace series_mime

@@ -1,4 +1,4 @@
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "ChannelMime.h"
 #include "MenuIcons.h"
 
@@ -125,7 +125,7 @@ void decorateMenu(QMenu *menu)
 }
 } // namespace
 
-PlotCanvas::PlotCanvas(QWidget *parent)
+AxesView::AxesView(QWidget *parent)
     : QWidget(parent)
 {
     setMinimumSize(320, 200);
@@ -196,14 +196,14 @@ PlotCanvas::PlotCanvas(QWidget *parent)
     applyPalette(); // 颜色全部来自当前主题 palette，不留硬编码浅色
 }
 
-PlotCanvas::~PlotCanvas() = default;
+AxesView::~AxesView() = default;
 
-const PlotSeries *PlotCanvas::seriesAt(int index) const
+const PlotSeries *AxesView::seriesAt(int index) const
 {
     return index >= 0 && index < m_series.size() ? &m_series.at(index) : nullptr;
 }
 
-void PlotCanvas::setLodData(const QVector<LodTriple> &lod, double t0, double t1)
+void AxesView::setLodData(const QVector<LodTriple> &lod, double t0, double t1)
 {
     // 兼容入口：更新首条曲线的 LOD。
     if (m_series.isEmpty())
@@ -216,12 +216,12 @@ void PlotCanvas::setLodData(const QVector<LodTriple> &lod, double t0, double t1)
     pushToPlot();
 }
 
-QColor PlotCanvas::nextSeriesColor() const
+QColor AxesView::nextSeriesColor() const
 {
     return paletteSeriesColor(palette(), m_series.size());
 }
 
-int PlotCanvas::setSeries(const PlotSeries &series)
+int AxesView::setSeries(const PlotSeries &series)
 {
     // 同 key 已存在则原地更新（重复拖入同一通道不叠加、只刷新数据）。
     for (int i = 0; i < m_series.size(); ++i)
@@ -264,7 +264,7 @@ int PlotCanvas::setSeries(const PlotSeries &series)
     return m_series.size() - 1;
 }
 
-void PlotCanvas::setChannel(DatasetId datasetId, const QString &table, const QString &column,
+void AxesView::setChannel(DatasetId datasetId, const QString &table, const QString &column,
                             const QString &title)
 {
     // 兼容入口：单条曲线替换全部（旧调用方/测试用）。
@@ -281,7 +281,7 @@ void PlotCanvas::setChannel(DatasetId datasetId, const QString &table, const QSt
     // 不在这里 pushToPlot：旧调用方随后会喂 LOD 数据触发绘制。
 }
 
-bool PlotCanvas::removeSeries(const QString &key)
+bool AxesView::removeSeries(const QString &key)
 {
     for (int i = 0; i < m_series.size(); ++i)
     {
@@ -296,7 +296,7 @@ bool PlotCanvas::removeSeries(const QString &key)
     return false;
 }
 
-bool PlotCanvas::setSeriesAxis(const QString &key, bool rightAxis)
+bool AxesView::setSeriesAxis(const QString &key, bool rightAxis)
 {
     for (PlotSeries &s : m_series)
     {
@@ -312,7 +312,7 @@ bool PlotCanvas::setSeriesAxis(const QString &key, bool rightAxis)
     return false;
 }
 
-bool PlotCanvas::setSeriesVisible(const QString &key, bool visible)
+bool AxesView::setSeriesVisible(const QString &key, bool visible)
 {
     for (PlotSeries &s : m_series)
     {
@@ -328,7 +328,7 @@ bool PlotCanvas::setSeriesVisible(const QString &key, bool visible)
     return false;
 }
 
-bool PlotCanvas::setSeriesInk(const QString &key, const QColor &color)
+bool AxesView::setSeriesInk(const QString &key, const QColor &color)
 {
     for (PlotSeries &s : m_series)
     {
@@ -342,7 +342,7 @@ bool PlotCanvas::setSeriesInk(const QString &key, const QColor &color)
     return false;
 }
 
-bool PlotCanvas::setSeriesWidth(const QString &key, double width)
+bool AxesView::setSeriesWidth(const QString &key, double width)
 {
     for (PlotSeries &s : m_series)
     {
@@ -356,7 +356,7 @@ bool PlotCanvas::setSeriesWidth(const QString &key, double width)
     return false;
 }
 
-const PlotSeries *PlotCanvas::seriesByKey(const QString &key) const
+const PlotSeries *AxesView::seriesByKey(const QString &key) const
 {
     for (const PlotSeries &s : m_series)
         if (s.key() == key)
@@ -364,7 +364,7 @@ const PlotSeries *PlotCanvas::seriesByKey(const QString &key) const
     return nullptr;
 }
 
-bool PlotCanvas::setSeriesXOffset(const QString &key, double offsetSec)
+bool AxesView::setSeriesXOffset(const QString &key, double offsetSec)
 {
     for (PlotSeries &s : m_series)
     {
@@ -379,20 +379,20 @@ bool PlotCanvas::setSeriesXOffset(const QString &key, double offsetSec)
     return false;
 }
 
-void PlotCanvas::setSourceOffsetProvider(
+void AxesView::setSourceOffsetProvider(
     std::function<double(nextpilot::plotscope::dataset::DatasetId)> provider)
 {
     m_sourceOffsetProvider = std::move(provider);
 }
 
-void PlotCanvas::setTimeFormatMode(const QString &mode)
+void AxesView::setTimeFormatMode(const QString &mode)
 {
     m_timeFormat = (mode == QStringLiteral("hms") || mode == QStringLiteral("utc"))
         ? mode : QStringLiteral("relative");
     applyTimeFormat();
 }
 
-void PlotCanvas::applyTimeFormat()
+void AxesView::applyTimeFormat()
 {
     if (!m_plot)
         return;
@@ -424,7 +424,7 @@ void PlotCanvas::applyTimeFormat()
     });
 }
 
-void PlotCanvas::refreshSourceOffsets()
+void AxesView::refreshSourceOffsets()
 {
     if (m_series.isEmpty())
         return;
@@ -432,7 +432,7 @@ void PlotCanvas::refreshSourceOffsets()
     pushToPlot();
 }
 
-bool PlotCanvas::toggleSeriesVisible(const QString &key)
+bool AxesView::toggleSeriesVisible(const QString &key)
 {
     for (int i = 0; i < m_series.size(); ++i)
     {
@@ -447,12 +447,12 @@ bool PlotCanvas::toggleSeriesVisible(const QString &key)
 }
 
 // 源级时间 offset：datasetId 反查源（provider），叠加在曲线 xTimeOffset 之上。
-double PlotCanvas::sourceOffsetFor(const PlotSeries &s) const
+double AxesView::sourceOffsetFor(const PlotSeries &s) const
 {
     return m_sourceOffsetProvider ? m_sourceOffsetProvider(s.datasetId) : 0.0;
 }
 
-bool PlotCanvas::setSeriesYTransform(const QString &key, const QString &descriptorId,
+bool AxesView::setSeriesYTransform(const QString &key, const QString &descriptorId,
                                      const QString &paramsJson)
 {
     for (PlotSeries &s : m_series)
@@ -469,7 +469,7 @@ bool PlotCanvas::setSeriesYTransform(const QString &key, const QString &descript
     return false;
 }
 
-void PlotCanvas::setAxisTransform(const QString &axis, const QString &descriptorId)
+void AxesView::setAxisTransform(const QString &axis, const QString &descriptorId)
 {
     // 轴级变换存视图配方（成员）；曲线级按 key 单独设置时优先。
     if (descriptorId.isEmpty())
@@ -478,12 +478,12 @@ void PlotCanvas::setAxisTransform(const QString &axis, const QString &descriptor
         m_axisTransforms.insert(axis, descriptorId);
 }
 
-QString PlotCanvas::axisTransform(const QString &axis) const
+QString AxesView::axisTransform(const QString &axis) const
 {
     return m_axisTransforms.value(axis);
 }
 
-void PlotCanvas::zoomRange(double factor)
+void AxesView::zoomRange(double factor)
 {
     if (!m_plot)
         return;
@@ -498,7 +498,7 @@ void PlotCanvas::zoomRange(double factor)
     m_plot->update();
 }
 
-void PlotCanvas::autoScale()
+void AxesView::autoScale()
 {
     if (!m_plot)
         return;
@@ -508,7 +508,7 @@ void PlotCanvas::autoScale()
     m_plot->update();
 }
 
-void PlotCanvas::pushViewHistory()
+void AxesView::pushViewHistory()
 {
     if (m_restoringView || !m_plot)
         return;
@@ -526,12 +526,12 @@ void PlotCanvas::pushViewHistory()
     m_lastViewRange = cur;
 }
 
-bool PlotCanvas::canUndoView() const
+bool AxesView::canUndoView() const
 {
     return !m_viewHistory.isEmpty();
 }
 
-void PlotCanvas::undoView()
+void AxesView::undoView()
 {
     if (m_viewHistory.isEmpty() || !m_plot)
         return;
@@ -546,19 +546,19 @@ void PlotCanvas::undoView()
         Q_EMIT rangeChanged(t0, t1);
 }
 
-int PlotCanvas::viewHistorySize() const
+int AxesView::viewHistorySize() const
 {
     return m_viewHistory.size();
 }
 
-void PlotCanvas::setPlayhead(double x, bool active)
+void AxesView::setPlayhead(double x, bool active)
 {
     if (!m_plot)
         return;
     m_plot->setPlayhead(x, active);
 }
 
-bool PlotCanvas::playheadActive() const
+bool AxesView::playheadActive() const
 {
     return m_plot && m_plot->playheadActive();
 }
@@ -566,7 +566,7 @@ bool PlotCanvas::playheadActive() const
 // ---- 游标读数 / A-B / 书签 交互 ----
 
 // 从一条曲线取 t 时刻的最近样本（有界窗口，不插值）。xTimeOffset 在窗口时间上抵消。
-PlotCanvas::SampledValue PlotCanvas::sampleSeries(const PlotSeries &s, double t) const
+AxesView::SampledValue AxesView::sampleSeries(const PlotSeries &s, double t) const
 {
     SampledValue out;
     if (s.lod.isEmpty())
@@ -593,7 +593,7 @@ PlotCanvas::SampledValue PlotCanvas::sampleSeries(const PlotSeries &s, double t)
 }
 
 // 把当前游标/A-B 状态换算成读数行，重写叠加层。
-void PlotCanvas::refreshReadout()
+void AxesView::refreshReadout()
 {
     if (!m_plot)
         return;
@@ -673,7 +673,7 @@ void PlotCanvas::refreshReadout()
     m_plot->setBookmarks(marks);
 }
 
-void PlotCanvas::setMarkers(const QJsonArray &markers)
+void AxesView::setMarkers(const QJsonArray &markers)
 {
     if (!m_plot)
         return;
@@ -707,12 +707,12 @@ void PlotCanvas::setMarkers(const QJsonArray &markers)
     m_plot->setMarkers(out);
 }
 
-int PlotCanvas::markerCount() const
+int AxesView::markerCount() const
 {
     return m_plot ? m_plot->markerCount() : 0;
 }
 
-bool PlotCanvas::setStateRows(const QJsonArray &rows, bool append)
+bool AxesView::setStateRows(const QJsonArray &rows, bool append)
 {
     if (!m_plot)
         return false;
@@ -766,17 +766,17 @@ bool PlotCanvas::setStateRows(const QJsonArray &rows, bool append)
     return true;
 }
 
-int PlotCanvas::stateRowCount() const
+int AxesView::stateRowCount() const
 {
     return m_plot ? m_plot->stateRowCount() : 0;
 }
 
-double PlotCanvas::timeAtPixel(double px) const
+double AxesView::timeAtPixel(double px) const
 {
     return m_plot ? m_plot->pixelToX(px) : 0.0;
 }
 
-void PlotCanvas::setCursorTime(double t, bool pinned)
+void AxesView::setCursorTime(double t, bool pinned)
 {
     m_cursorT = t;
     m_cursorActive = true;
@@ -785,7 +785,7 @@ void PlotCanvas::setCursorTime(double t, bool pinned)
     Q_EMIT linkedTimeChanged(t, true, this);
 }
 
-void PlotCanvas::clearCursor()
+void AxesView::clearCursor()
 {
     if (!m_cursorActive)
         return;
@@ -795,14 +795,14 @@ void PlotCanvas::clearCursor()
     Q_EMIT linkedTimeChanged(0.0, false, this);
 }
 
-void PlotCanvas::syncLinkedTime(double t, bool visible)
+void AxesView::syncLinkedTime(double t, bool visible)
 {
     // 静默：只画同页其它画布的联动竖线，不触发读数、不回广播。
     if (m_plot)
         m_plot->setLinkedCursor(t, visible);
 }
 
-void PlotCanvas::toggleAB()
+void AxesView::toggleAB()
 {
     // Ctrl+左键：以当前游标时间为中心生成一组 A/B，间距约视窗 10%。
     if (!m_plot)
@@ -823,7 +823,7 @@ void PlotCanvas::toggleAB()
     refreshReadout();
 }
 
-void PlotCanvas::clearAB()
+void AxesView::clearAB()
 {
     if (!m_abEnabled)
         return;
@@ -832,7 +832,7 @@ void PlotCanvas::clearAB()
     refreshReadout();
 }
 
-void PlotCanvas::addBookmark(double t, const QString &label)
+void AxesView::addBookmark(double t, const QString &label)
 {
     // 同一时间点已有书签则选中它，不重复创建。
     for (const Bookmark &bm : m_bookmarks)
@@ -856,7 +856,7 @@ void PlotCanvas::addBookmark(double t, const QString &label)
     Q_EMIT bookmarksChanged();
 }
 
-void PlotCanvas::removeBookmark(const QString &id)
+void AxesView::removeBookmark(const QString &id)
 {
     const int before = m_bookmarks.size();
     m_bookmarks.erase(std::remove_if(m_bookmarks.begin(), m_bookmarks.end(),
@@ -870,7 +870,7 @@ void PlotCanvas::removeBookmark(const QString &id)
     Q_EMIT bookmarksChanged();
 }
 
-void PlotCanvas::renameBookmark(const QString &id, const QString &label)
+void AxesView::renameBookmark(const QString &id, const QString &label)
 {
     if (label.trimmed().isEmpty())
         return;
@@ -886,7 +886,7 @@ void PlotCanvas::renameBookmark(const QString &id, const QString &label)
     }
 }
 
-PlotCanvas::HitResult PlotCanvas::hitTest(const QPointF &pixel) const
+AxesView::HitResult AxesView::hitTest(const QPointF &pixel) const
 {
     HitResult res;
     if (!m_plot)
@@ -928,13 +928,13 @@ PlotCanvas::HitResult PlotCanvas::hitTest(const QPointF &pixel) const
     return res;
 }
 
-void PlotCanvas::setCanvasTitle(const QString &title)
+void AxesView::setCanvasTitle(const QString &title)
 {
     m_titleOverride = title.trimmed();
     m_plot->setTitle(m_titleOverride.isEmpty() ? m_title : m_titleOverride);
 }
 
-bool PlotCanvas::eventFilter(QObject *watched, QEvent *event)
+bool AxesView::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched != m_plot || !m_plot)
         return QWidget::eventFilter(watched, event);
@@ -979,7 +979,7 @@ bool PlotCanvas::eventFilter(QObject *watched, QEvent *event)
     return QWidget::eventFilter(watched, event);
 }
 
-void PlotCanvas::onCanvasMouseMove(QMouseEvent *event)
+void AxesView::onCanvasMouseMove(QMouseEvent *event)
 {
     if (!m_plot)
         return;
@@ -1049,7 +1049,7 @@ void PlotCanvas::onCanvasMouseMove(QMouseEvent *event)
         setCursorTime(sx, false);
 }
 
-void PlotCanvas::onCanvasMousePress(QMouseEvent *event)
+void AxesView::onCanvasMousePress(QMouseEvent *event)
 {
     if (!m_plot || !m_plot->plotRect().contains(event->pos()))
         return;
@@ -1113,7 +1113,7 @@ void PlotCanvas::onCanvasMousePress(QMouseEvent *event)
     }
 }
 
-void PlotCanvas::onCanvasMouseRelease(QMouseEvent *event)
+void AxesView::onCanvasMouseRelease(QMouseEvent *event)
 {
     if (event->button() != Qt::LeftButton)
         return;
@@ -1128,7 +1128,7 @@ void PlotCanvas::onCanvasMouseRelease(QMouseEvent *event)
     }
 }
 
-void PlotCanvas::onCanvasWheel(QWheelEvent *event)
+void AxesView::onCanvasWheel(QWheelEvent *event)
 {
     // Alt+滚轮且悬停在图例区：图例字号步进。
     // Ctrl+滚轮保留给 Y 轴缩放（canvas-interaction.md 既有约定）。
@@ -1143,7 +1143,7 @@ void PlotCanvas::onCanvasWheel(QWheelEvent *event)
         refreshReadout();
 }
 
-void PlotCanvas::keyPressEvent(QKeyEvent *event)
+void AxesView::keyPressEvent(QKeyEvent *event)
 {
     const int key = event->key();
     const Qt::KeyboardModifiers mods = event->modifiers();
@@ -1203,7 +1203,7 @@ void PlotCanvas::keyPressEvent(QKeyEvent *event)
     QWidget::keyPressEvent(event);
 }
 
-bool PlotCanvas::setPlotKind(const QString &kind)
+bool AxesView::setPlotKind(const QString &kind)
 {
     // 本画布真正支持的图型：折线 / 散点 / XY 曲线（都是"曲线"模型，走 LOD 折线绘制）。
     // 柱状/直方/频谱是另一种模型（无时间轴、无 LOD），由 fastplot 的专用 Instrument
@@ -1218,7 +1218,7 @@ bool PlotCanvas::setPlotKind(const QString &kind)
     return true;
 }
 
-void PlotCanvas::pushToPlot()
+void AxesView::pushToPlot()
 {
     // 用户改过名的画布，重建曲线后标题仍是改名后的（不被首条曲线标题顶掉）。
     if (!m_titleOverride.isEmpty())
@@ -1301,17 +1301,17 @@ void PlotCanvas::pushToPlot()
     m_plot->update();
 }
 
-bool PlotCanvas::exportPng(const QString &path)
+bool AxesView::exportPng(const QString &path)
 {
     return m_plot && m_plot->exportPng(path);
 }
 
-bool PlotCanvas::exportCsv(const QString &path)
+bool AxesView::exportCsv(const QString &path)
 {
     return m_plot && m_plot->exportCsv(path);
 }
 
-QJsonObject PlotCanvas::saveViewState() const
+QJsonObject AxesView::saveViewState() const
 {
     QJsonObject state = m_plot ? m_plot->saveState() : QJsonObject();
     // 曲线的左右轴分配是"视图状态"（不是数据），随状态一起存。
@@ -1343,7 +1343,7 @@ QJsonObject PlotCanvas::saveViewState() const
     return state;
 }
 
-bool PlotCanvas::restoreViewState(const QJsonObject &state)
+bool AxesView::restoreViewState(const QJsonObject &state)
 {
     if (m_plot && !m_plot->restoreState(state))
         return false;
@@ -1386,18 +1386,18 @@ bool PlotCanvas::restoreViewState(const QJsonObject &state)
     return true;
 }
 
-void PlotCanvas::setLegendVisible(bool visible)
+void AxesView::setLegendVisible(bool visible)
 {
     if (m_plot)
         m_plot->setLegendVisible(visible);
 }
 
-bool PlotCanvas::legendVisible() const
+bool AxesView::legendVisible() const
 {
     return m_plot && m_plot->legendVisible();
 }
 
-bool PlotCanvas::visibleTimeRange(double *t0, double *t1) const
+bool AxesView::visibleTimeRange(double *t0, double *t1) const
 {
     if (!m_plot || m_series.isEmpty())
         return false;
@@ -1410,7 +1410,7 @@ bool PlotCanvas::visibleTimeRange(double *t0, double *t1) const
     return true;
 }
 
-int PlotCanvas::lodPointCount() const
+int AxesView::lodPointCount() const
 {
     int n = 0;
     for (const PlotSeries &s : m_series)
@@ -1418,27 +1418,27 @@ int PlotCanvas::lodPointCount() const
     return n;
 }
 
-int PlotCanvas::plotPixelWidth() const
+int AxesView::plotPixelWidth() const
 {
     if (!m_plot)
         return 1;
     return qMax(1, int(m_plot->plotRect().width()));
 }
 
-QString PlotCanvas::tickLabelForTest(double seconds) const
+QString AxesView::tickLabelForTest(double seconds) const
 {
     const fastplot::Axis &ax = m_plot->axis(fastplot::AxisSide::Bottom);
     const auto f = ax.tickLabelFormatter();
     return f ? f(seconds) : QString();
 }
 
-void PlotCanvas::applyTimeFormatToAxes()
+void AxesView::applyTimeFormatToAxes()
 {
     // setTickLabelFormatter 只改画法，不改 number；pushToPlot 重建轴范围时重设一次即可。
     applyTimeFormat();
 }
 
-void PlotCanvas::renderFrom(const Dataset &dataset)
+void AxesView::renderFrom(const Dataset &dataset)
 {
     // 用每条序列自己的 table.column 从 Dataset 重新取 LOD（便捷入口）。
     for (PlotSeries &s : m_series)
@@ -1458,7 +1458,7 @@ void PlotCanvas::renderFrom(const Dataset &dataset)
     pushToPlot();
 }
 
-void PlotCanvas::clear()
+void AxesView::clear()
 {
     m_series.clear();
     m_title.clear();
@@ -1469,7 +1469,7 @@ void PlotCanvas::clear()
     m_plot->update();
 }
 
-void PlotCanvas::resizeEvent(QResizeEvent *event)
+void AxesView::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     // 视口变了 → LOD 的像素分辨率该跟着变。
@@ -1478,7 +1478,7 @@ void PlotCanvas::resizeEvent(QResizeEvent *event)
     emit viewportChanged();
 }
 
-void PlotCanvas::changeEvent(QEvent *event)
+void AxesView::changeEvent(QEvent *event)
 {
     QWidget::changeEvent(event);
     // 主题切换时 ThemeManager 重设全局 palette，PaletteChange 传播到每个 widget。
@@ -1487,7 +1487,7 @@ void PlotCanvas::changeEvent(QEvent *event)
         applyPalette();
 }
 
-void PlotCanvas::applyPalette()
+void AxesView::applyPalette()
 {
     if (!m_plot)
         return;
@@ -1507,7 +1507,7 @@ void PlotCanvas::applyPalette()
 }
 
 // --- 拖拽画图：只认通道 MIME，解码后发信号，取数交给 ChannelView ---
-void PlotCanvas::dragEnterEvent(QDragEnterEvent *event)
+void AxesView::dragEnterEvent(QDragEnterEvent *event)
 {
     // 只接受本应用的通道 MIME（数据集树发的），不认文件路径/其它来源——
     // 打开文件有 data.load 意图那条正路，拖文件进来不该走画布。
@@ -1525,7 +1525,7 @@ void PlotCanvas::dragEnterEvent(QDragEnterEvent *event)
     QWidget::dragEnterEvent(event);
 }
 
-void PlotCanvas::dragMoveEvent(QDragMoveEvent *event)
+void AxesView::dragMoveEvent(QDragMoveEvent *event)
 {
     if (event->mimeData()
         && (channel_mime::decode(event->mimeData()).valid
@@ -1537,7 +1537,7 @@ void PlotCanvas::dragMoveEvent(QDragMoveEvent *event)
     QWidget::dragMoveEvent(event);
 }
 
-bool PlotCanvas::dropChannel(const QMimeData *mime)
+bool AxesView::dropChannel(const QMimeData *mime)
 {
     if (m_plot)
         m_plot->setOverlayText(QString()); // 清掉拖拽提示
@@ -1560,7 +1560,7 @@ bool PlotCanvas::dropChannel(const QMimeData *mime)
     return true;
 }
 
-void PlotCanvas::dropEvent(QDropEvent *event)
+void AxesView::dropEvent(QDropEvent *event)
 {
     if (dropChannel(event->mimeData()))
     {
@@ -1570,7 +1570,7 @@ void PlotCanvas::dropEvent(QDropEvent *event)
     QWidget::dropEvent(event);
 }
 
-void PlotCanvas::dragLeaveEvent(QDragLeaveEvent *event)
+void AxesView::dragLeaveEvent(QDragLeaveEvent *event)
 {
     m_plot->setOverlayText(QString());
     QWidget::dragLeaveEvent(event);
@@ -1578,7 +1578,7 @@ void PlotCanvas::dragLeaveEvent(QDragLeaveEvent *event)
 
 // 右键菜单：列出叠加的曲线，逐条勾选"挂右 Y 轴"——双 Y 轴的用户选择入口。
 // 按曲线选轴：菜单、view action、脚本三条路同一语义（plot.series.axis）。
-void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
+void AxesView::contextMenuEvent(QContextMenuEvent *event)
 {
     // 空画布与有曲线共用同一套菜单。
     // 早先这里 `m_series.isEmpty()` 提前 return，只给 4 项（属性三项 + 清游标）——
@@ -1690,7 +1690,7 @@ void PlotCanvas::contextMenuEvent(QContextMenuEvent *event)
     }
     menu.addSeparator();
 
-    // 画布级操作（页内）：本画布只发信号，由 CanvasWorkspace 反查索引后执行——
+    // 画布级操作（页内）：本画布只发信号，由 PlotWorkspace 反查索引后执行——
     // 保证"删的是你右键的那个画布"，而不是碰巧处于激活态的另一个。
     menu.addAction(QStringLiteral("向右拆分"), this,
                    [this] { Q_EMIT canvasActionRequested(QStringLiteral("splitHorizontal")); });

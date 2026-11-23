@@ -6,7 +6,7 @@
 // （centralWidgets/centralTitles），与协议编辑器等"外壳按 id 特判弹出的
 // GUI 能力"同一层——业务语义（报告内容）仍来自模板与数据集，本类只做拼版。
 //
-// 矢量管线：QPdfWriter（QtGui）+ QWidget::render(&painter) —— PlotCanvas/
+// 矢量管线：QPdfWriter（QtGui）+ QWidget::render(&painter) —— AxesView/
 // fastplot 走 QPainter 绘制，文字与线条直接以矢量写进 PDF，验收"不糊"免费。
 // 中文字体走 Qt 字体子系统（嵌 TrueType 子集），无需手工嵌字体文件。
 
@@ -35,7 +35,7 @@ struct ReportRequest
 };
 
 // 执行导出。canvases = 中央画布区页签内容（与 titles 一一对应）；实现里只取
-// CanvasWorkspace（qobject_cast，同库直链）——脚本编辑器等非画布页签自动跳过。
+// PlotWorkspace（qobject_cast，同库直链）——脚本编辑器等非画布页签自动跳过。
 nextpilot::plotscope::foundation::Result<void> exportReportPdf(
     nextpilot::plotscope::context::AppContext &appCtx,
     const QList<QWidget *> &canvases, const QStringList &titles,

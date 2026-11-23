@@ -1,16 +1,16 @@
-#include "CanvasWorkspace.h"
+#include "PlotWorkspace.h"
 
 #include "AppContext.h"
-#include "chrome/CellTitleBar.h"
-#include "layout/PageTabs.h"
-#include "layout/PageDock.h"
-#include "layout/PlotCellDock.h"
+#include "chrome/AxesToolbar.h"
+#include "layout/TabbedFigure.h"
+#include "layout/PlotLayout.h"
+#include "layout/DockedAxes.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
 #include "DatasetHub.h"
@@ -68,7 +68,7 @@ using namespace nextpilot::plotscope::context;
 
 namespace nextpilot::plotscope::gui
 {
-void CanvasWorkspace::registerPropertyProviders()
+void PlotWorkspace::registerPropertyProviders()
 {
     auto row = [](const QString &key, const QString &label, const QString &value,
                   PropKind kind = PropKind::ReadOnly, bool editable = false) {
@@ -84,7 +84,7 @@ void CanvasWorkspace::registerPropertyProviders()
     // --- 曲线 ---
     m_appCtx.interactions().registerPropertyProvider(SelectionKind::Series, [this, row](const Selection &sel) {
         const QString key = sel.ids.value(QStringLiteral("seriesKey")).toString();
-        PlotCanvas *canvas = activeCanvas();
+        AxesView *canvas = activeCanvas();
         const PlotSeries *s = canvas ? canvas->seriesByKey(key) : nullptr;
         PropertySchema schema;
         schema.title = sel.label;
@@ -131,7 +131,7 @@ void CanvasWorkspace::registerPropertyProviders()
     // --- 轴 ---
     m_appCtx.interactions().registerPropertyProvider(SelectionKind::Axis, [this, row](const Selection &sel) {
         const QString axis = sel.ids.value(QStringLiteral("axis")).toString();
-        PlotCanvas *canvas = activeCanvas();
+        AxesView *canvas = activeCanvas();
         PropertySchema schema;
         schema.title = sel.label;
         PropObject o;
@@ -167,7 +167,7 @@ void CanvasWorkspace::registerPropertyProviders()
 
     // --- 画布 ---
     m_appCtx.interactions().registerPropertyProvider(SelectionKind::Canvas, [this, row](const Selection &sel) {
-        PlotCanvas *canvas = activeCanvas();
+        AxesView *canvas = activeCanvas();
         PropertySchema schema;
         schema.title = QStringLiteral("画布属性");
         PropObject o;
@@ -187,7 +187,7 @@ void CanvasWorkspace::registerPropertyProviders()
     // --- setter：把属性写回活动画布 ---
     m_appCtx.interactions().registerPropertySetter(SelectionKind::Series,
         [this](const Selection &sel, const QString &, const QString &key, const QString &value, QString *err) {
-            PlotCanvas *canvas = activeCanvas();
+            AxesView *canvas = activeCanvas();
             if (!canvas)
             {
                 if (err) *err = QStringLiteral("没有活动画布");
@@ -212,7 +212,7 @@ void CanvasWorkspace::registerPropertyProviders()
 
     m_appCtx.interactions().registerPropertySetter(SelectionKind::Axis,
         [this](const Selection &sel, const QString &, const QString &key, const QString &value, QString *err) {
-            PlotCanvas *canvas = activeCanvas();
+            AxesView *canvas = activeCanvas();
             if (!canvas || !canvas->plotWidget())
             {
                 if (err) *err = QStringLiteral("没有活动画布");
@@ -240,7 +240,7 @@ void CanvasWorkspace::registerPropertyProviders()
 
     m_appCtx.interactions().registerPropertySetter(SelectionKind::Canvas,
         [this](const Selection &, const QString &, const QString &key, const QString &value, QString *err) {
-            PlotCanvas *canvas = activeCanvas();
+            AxesView *canvas = activeCanvas();
             if (!canvas)
             {
                 if (err) *err = QStringLiteral("没有活动画布");

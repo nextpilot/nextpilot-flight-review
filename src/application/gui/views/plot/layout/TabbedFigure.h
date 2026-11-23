@@ -8,11 +8,11 @@ namespace nextpilot::plotscope::gui
 
 // 绘图页的页签栏：末尾常驻一个「＋」，页索引永远落在 0..pageCount()-1。
 // 上层只按真实页索引说话，不再自己减「＋」哨兵。
-class PageTabs : public QTabWidget
+class TabbedFigure : public QTabWidget
 {
     Q_OBJECT
 public:
-    explicit PageTabs(QWidget *parent = nullptr);
+    explicit TabbedFigure(QWidget *parent = nullptr);
 
     int insertPage(QWidget *host, const QString &title); // 永远插在「＋」之前
     void removePageAt(int index);

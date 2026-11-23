@@ -2,7 +2,7 @@
 
 > 本文是 `libs/fastplot` 自绘方案（Rust min/max LOD + 折线渲染）的选型依据。
 > 文中的"自绘 `PlottingCanvas`"是当时基准原型名，对应现在的 fastplot 绘图部件与
-> `PlotCanvas` 画布宿主；结论未变——主画布自绘，不换通用绘图库。
+> `AxesView` 画布宿主；结论未变——主画布自绘，不换通用绘图库。
 
 ## 结论
 

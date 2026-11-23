@@ -16,11 +16,11 @@ namespace nextpilot::plotscope::gui
 
 // 每格顶部的标题条：格名、拆分/最大化/书签/A-B/关闭按钮，兼作拖动把手。
 // 拖动与落位由 ADS 的原生标题栏执行，本条只把条上的鼠标事件转给它。
-class CellTitleBar : public QWidget
+class AxesToolbar : public QWidget
 {
     Q_OBJECT
 public:
-    explicit CellTitleBar(QWidget *parent = nullptr);
+    explicit AxesToolbar(QWidget *parent = nullptr);
 
     // 本条属于哪个停靠面板。面板在停靠树重建时才创建，故装配后注入。
     void setDockWidget(ads::CDockWidget *dockWidget);

@@ -212,7 +212,7 @@ void MainWindow::declareStandardSlots()
     }
 
     // --- 绘图页四组：面板划分与顺序 ---
-    // 走 view action，由 CanvasWorkspace 集中处理（多画布/网格）。intentOp 留空：
+    // 走 view action，由 PlotWorkspace 集中处理（多画布/网格）。intentOp 留空：
     // dispatcher 先按 action id 查 view action，命中即执行，与脚本同路径。
     struct PlotToolDef { const char *area; const char *id; const char *label; const char *icon;
                          int order; const char *data; bool large; bool checkable; };
@@ -224,14 +224,14 @@ void MainWindow::declareStandardSlots()
     //   导出   截图 / 导出 PNG / 导出 CSV
     static const PlotToolDef kPlotTools[] = {
         // 页面组
-        {"ribbon.group.plot.page",   "page.new",           "新建页", "newpage", 0, "",        true,  false},
-        {"ribbon.group.plot.page",   "page.closeCurrent",  "删除页", "trash",   1, "",        true,  false},
+        {"ribbon.group.plot.figure",   "figure.new",           "新建页", "newpage", 0, "",        true,  false},
+        {"ribbon.group.plot.figure",   "figure.closeCurrent",  "删除页", "trash",   1, "",        true,  false},
         // 布局组（网格是 m×n 选择器：带缩略图的大按钮，点击弹行列选择）
-        {"ribbon.group.plot.layout", "page.grid",          "2×1",   "grid",    0, "pick",    true,  false},
-        {"ribbon.group.plot.layout", "page.addCanvas",     "添加",   "plus",    1, "",        false, false},
-        {"ribbon.group.plot.layout", "page.removeCanvas",  "删除",   "trash",   2, "",        false, false},
-        {"ribbon.group.plot.layout", "page.splitHorizontal","左右",  "split_h", 3, "",        false, false},
-        {"ribbon.group.plot.layout", "page.splitVertical", "上下",   "split_v", 4, "",        false, false},
+        {"ribbon.group.plot.layout", "figure.grid",          "2×1",   "grid",    0, "pick",    true,  false},
+        {"ribbon.group.plot.layout", "figure.addAxes",     "添加",   "plus",    1, "",        false, false},
+        {"ribbon.group.plot.layout", "figure.removeAxes",  "删除",   "trash",   2, "",        false, false},
+        {"ribbon.group.plot.layout", "figure.splitHorizontal","左右",  "split_h", 3, "",        false, false},
+        {"ribbon.group.plot.layout", "figure.splitVertical", "上下",   "split_v", 4, "",        false, false},
         // 显示组：网格做成一个大按钮 + 下拉菜单（X 网格线 / Y 网格线），
         // 下拉项由 MainWindow 的 menu provider 挂到按钮上（SARibbon 显示下拉箭头）。
         {"ribbon.group.plot.display","plot.grid.menu",     "网格",   "grid_lines", 1, "",     true,  false},
@@ -264,7 +264,7 @@ void MainWindow::declareStandardSlots()
         a.order = d.order;
         a.large = d.large;
         a.checkable = d.checkable;
-        if (a.id == QStringLiteral("page.grid"))
+        if (a.id == QStringLiteral("figure.grid"))
             a.visual = layoutVisual;
         slotReg.bindLocal(a.area, a, QStringLiteral("app.skeleton"));
     }
@@ -691,11 +691,11 @@ void MainWindow::build(RuntimeHost &host)
         }
         QVariant nullVariant;
         Result<QVariant> viewResult(nullVariant);
-        // 「网格」按钮（id 仍为 page.grid 以满足契约）：data="pick" 时弹 m×n 选择器，
+        // 「网格」按钮（id 仍为 figure.grid 以满足契约）：data="pick" 时弹 m×n 选择器，
         // 无 data（脚本/回放直接调）时保留原固定网格行为。
         QString dispatchId =
-            (actionId == QStringLiteral("page.grid") && actionData == QStringLiteral("pick"))
-                ? QStringLiteral("page.grid.pick") : actionId;
+            (actionId == QStringLiteral("figure.grid") && actionData == QStringLiteral("pick"))
+                ? QStringLiteral("figure.grid.pick") : actionId;
         // 「显示」组把总网格开关拆成 X / Y 两个（plot.grid.x / .y）：参数在 data 里，
         // 归一到一个 view action 上，脚本仍可直接调 plot.grid {"axis":"x"}。
         if (actionId.startsWith(QStringLiteral("plot.grid.")))
@@ -703,13 +703,13 @@ void MainWindow::build(RuntimeHost &host)
         if (m_appCtx.interactions().dispatchViewAction(dispatchId, params, viewResult))
         {
             // 「网格」大按钮：回写缩略图与 "r×c" 文字（对齐 main buildLayoutPicker）。
-            if (actionId == QStringLiteral("page.grid") && viewResult)
+            if (actionId == QStringLiteral("figure.grid") && viewResult)
             {
                 const QVariantMap g = viewResult.value().toMap();
                 const int gr = g.value(QStringLiteral("rows")).toInt();
                 const int gc = g.value(QStringLiteral("cols")).toInt();
                 if (gr > 0 && gc > 0)
-                    m_binder->updateActionStyle(QStringLiteral("page.grid"),
+                    m_binder->updateActionStyle(QStringLiteral("figure.grid"),
                                                 PlotThumbnails::layout(gr, gc),
                                                 QStringLiteral("%1×%2").arg(gr).arg(gc));
             }

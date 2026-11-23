@@ -24,7 +24,7 @@ using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 
 ChannelView::ChannelView(const TransformHub &transforms, IIntentExecutor &executor,
-                         PlotCanvas *canvas, QObject *parent)
+                         AxesView *canvas, QObject *parent)
     : m_transforms(transforms), QObject(parent), m_executor(executor), m_canvas(canvas)
 {
     if (!m_canvas)
@@ -36,7 +36,7 @@ ChannelView::ChannelView(const TransformHub &transforms, IIntentExecutor &execut
     connect(&m_refreshTimer, &QTimer::timeout, this, [this] { refresh(); });
 
     // 缩放/平移改变可见时间窗 → 按新窗口重取全部曲线（带合并定时器）。
-    connect(m_canvas, &PlotCanvas::rangeChanged, this, [this](double t0, double t1) {
+    connect(m_canvas, &AxesView::rangeChanged, this, [this](double t0, double t1) {
         m_windowSet = true;
         m_winT0 = t0;
         m_winT1 = t1;
@@ -44,7 +44,7 @@ ChannelView::ChannelView(const TransformHub &transforms, IIntentExecutor &execut
     });
 
     // 视口尺寸变化 → 按新像素宽重新取 LOD（分辨率正确性）。
-    connect(m_canvas, &PlotCanvas::viewportChanged, this, [this] {
+    connect(m_canvas, &AxesView::viewportChanged, this, [this] {
         m_refreshTimer.start();
     });
 }
@@ -224,10 +224,10 @@ void ChannelView::refresh()
     renderAll(nullptr);
 }
 
-QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
+QWidget *createAxesView(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
 {
     // 画布：纯绘制，不认识数据。
-    auto *canvas = new PlotCanvas(parent);
+    auto *canvas = new AxesView(parent);
 
     // 通道视图：负责"取数 + 填画布"，走意图层。
     auto *view = new ChannelView(appCtx.transforms(), executor, canvas, canvas);
@@ -241,7 +241,7 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
 
     // 数据集树的"列"节点拖到画布：画布只解码 MIME 发信号，这里接住后
     // 走与双击完全相同的 addChannel（→ plot.channel 意图）取数渲染。
-    QObject::connect(canvas, &PlotCanvas::channelDropped, view,
+    QObject::connect(canvas, &AxesView::channelDropped, view,
                      [&appCtx](int datasetId, const QString &t, const QString &c) {
                          appCtx.setActiveChannel(datasetId, t, c);
                      });
@@ -331,6 +331,6 @@ QWidget *createPlotCanvas(AppContext &appCtx, IIntentExecutor &executor, QWidget
 }
 
 // 视图层自注册：绘图视图的工厂登记。外壳与其它功能都不认识它。
-PS_REGISTER_PANEL("plot-canvas", plotCanvas, createPlotCanvas)
+PS_REGISTER_PANEL("plot-axes", axesView, createAxesView)
 
 } // namespace nextpilot::plotscope::gui

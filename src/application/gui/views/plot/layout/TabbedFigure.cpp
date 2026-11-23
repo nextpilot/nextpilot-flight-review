@@ -1,4 +1,4 @@
-#include "PageTabs.h"
+#include "TabbedFigure.h"
 
 #include <QInputDialog>
 #include <QLineEdit>
@@ -10,7 +10,7 @@
 namespace nextpilot::plotscope::gui
 {
 
-PageTabs::PageTabs(QWidget *parent) : QTabWidget(parent)
+TabbedFigure::TabbedFigure(QWidget *parent) : QTabWidget(parent)
 {
     setDocumentMode(true);
     // 页序 = 绘图页序，拖拽改序会让页索引与页对象错位，故不可拖。
@@ -58,19 +58,19 @@ PageTabs::PageTabs(QWidget *parent) : QTabWidget(parent)
     });
 }
 
-int PageTabs::plusIndex() const
+int TabbedFigure::plusIndex() const
 {
     return std::max(0, count() - 1);
 }
 
-int PageTabs::insertPage(QWidget *host, const QString &title)
+int TabbedFigure::insertPage(QWidget *host, const QString &title)
 {
     const int index = QTabWidget::insertTab(plusIndex(), host, title);
     tabBar()->setTabToolTip(index, QStringLiteral("绘图页：双击页签可重命名"));
     return index;
 }
 
-void PageTabs::removePageAt(int index)
+void TabbedFigure::removePageAt(int index)
 {
     if (index < 0 || index >= pageCount())
         return;
@@ -80,22 +80,22 @@ void PageTabs::removePageAt(int index)
     blockSignals(false);
 }
 
-int PageTabs::pageCount() const
+int TabbedFigure::pageCount() const
 {
     return std::max(0, count() - 1);
 }
 
-int PageTabs::currentPage() const
+int TabbedFigure::currentPage() const
 {
     return currentIndex();
 }
 
-void PageTabs::setCurrentPage(int index)
+void TabbedFigure::setCurrentPage(int index)
 {
     setCurrentIndex(index);
 }
 
-void PageTabs::setPageTitle(int index, const QString &title)
+void TabbedFigure::setPageTitle(int index, const QString &title)
 {
     if (index >= 0 && index < pageCount())
         setTabText(index, title);

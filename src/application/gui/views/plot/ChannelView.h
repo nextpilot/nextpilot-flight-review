@@ -3,7 +3,7 @@
 #include "AppContext.h"
 #include "Transform.h"
 #include "IIntentExecutor.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 
 #include <QObject>
 #include <QTimer>
@@ -31,7 +31,7 @@ class ChannelView : public QObject
     Q_OBJECT
 public:
     ChannelView(const nextpilot::plotscope::uischema::TransformHub &transforms,
-                nextpilot::plotscope::intent::IIntentExecutor &executor, PlotCanvas *canvas,
+                nextpilot::plotscope::intent::IIntentExecutor &executor, AxesView *canvas,
                 QObject *parent = nullptr);
 
     // 追加一条通道并渲染（同 dataset+table+column 已存在则只刷新，不重复叠加）。
@@ -51,7 +51,7 @@ public:
     // 当前叠加的通道数。
     int channelCount() const;
 
-    PlotCanvas *canvas() const { return m_canvas; }
+    AxesView *canvas() const { return m_canvas; }
 
 private:
     const nextpilot::plotscope::uischema::TransformHub &m_transforms;
@@ -65,7 +65,7 @@ private:
                            const QString &column);
 
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;
-    PlotCanvas *m_canvas = nullptr;
+    AxesView *m_canvas = nullptr;
     QTimer m_refreshTimer;
 
     // 所有叠加通道（含各自的 LOD/颜色；与画布 series 一一对应）。
@@ -78,7 +78,7 @@ private:
 };
 
 // 绘图视图的工厂：创建画布 + 通道视图，并让视图订阅共享的"活动通道"。
-QWidget *createPlotCanvas(nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
+QWidget *createAxesView(nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
                           QWidget *parent);
 
 } // namespace nextpilot::plotscope::gui

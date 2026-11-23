@@ -1,12 +1,12 @@
 // 画布导出 / 视图状态 / 图例开关 契约测试（fastplot 库能力接进 ng 后的视图薄包装）。
 //
-// 验证：PlotCanvas 把库的 exportPng/exportCsv/saveState/restoreState/legend
+// 验证：AxesView 把库的 exportPng/exportCsv/saveState/restoreState/legend
 // 正确暴露出来；导出文件真实落盘且非空；视图状态可 round-trip。
 
 #include "App.h"
 #include "MainWindow.h"
-#include "PlotCanvas.h"
-#include "CanvasWorkspace.h"
+#include "AxesView.h"
+#include "PlotWorkspace.h"
 #include "ShellBinder.h"
 
 #include "Dataset.h"
@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
 
     ShellBinder *binder = window.binder();
     CHECK(binder != nullptr);
-    auto *workspace = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+    auto *workspace = qobject_cast<PlotWorkspace *>(binder->centralContent());
     CHECK(workspace != nullptr);
     auto *canvas = workspace ? workspace->activeCanvas() : nullptr;
     CHECK(canvas != nullptr);
@@ -250,7 +250,7 @@ int main(int argc, char *argv[])
         auto stateOf = [&]() -> QVariantMap {
             Result<QVariant> st(nullV);
             CHECK(application.context().interactions().dispatchViewAction(
-                QStringLiteral("page.state"), {}, st));
+                QStringLiteral("figure.state"), {}, st));
             return st.value().toMap();
         };
         // 前一段 setType(gauge) 只切了 cell 内页，cell 数不变；本段从 1 起。
@@ -258,17 +258,17 @@ int main(int argc, char *argv[])
 
         Result<QVariant> add(nullV);
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.addCanvas"), {}, add));
+            QStringLiteral("figure.addAxes"), {}, add));
         CHECK(stateOf().value(QStringLiteral("cells")).toInt() == 2);
 
         Result<QVariant> split(nullV);
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.splitHorizontal"), {}, split));
+            QStringLiteral("figure.splitHorizontal"), {}, split));
         CHECK(stateOf().value(QStringLiteral("cells")).toInt() == 3);
 
         Result<QVariant> grid(nullV);
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.grid"),
+            QStringLiteral("figure.grid"),
             {{QStringLiteral("rows"), 2}, {QStringLiteral("cols"), 2}}, grid));
         CHECK(grid.value().toMap().value(QStringLiteral("cells")).toInt() == 4);
         CHECK(workspace->rows() == 2 && workspace->cols() == 2);
@@ -278,7 +278,7 @@ int main(int argc, char *argv[])
 
         Result<QVariant> rm(nullV);
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.removeCanvas"), {}, rm));
+            QStringLiteral("figure.removeAxes"), {}, rm));
         CHECK(workspace->cellCount() == 3);
         OK("多画布工作区：添加/拆分/2×2 网格/删除 + 活动画布路由全部通过");
     }

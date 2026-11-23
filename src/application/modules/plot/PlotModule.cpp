@@ -654,10 +654,10 @@ void PlotModule::onAttach(UiContext &ui)
     ui.declareSlot(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("导出"),
                    SlotKind::RibbonGroup, QStringLiteral("ribbon.page.plot"));
 
-    // 申请中央画布工作区：实现由绘图视图层自注册（"canvas-workspace" 类型），
+    // 申请中央画布工作区：实现由绘图视图层自注册（"plot-workspace" 类型），
     // 它内部管理 N 个画布 cell（多曲线/拆分/网格），并集中路由 plot.* view action。
     // 本模块不依赖 Qt Widgets——CLI 构建保持纯净。
-    ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("canvas-workspace"));
+    ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("plot-workspace"));
 
     UiAction action;
     action.id = QStringLiteral("plot.action.redraw");

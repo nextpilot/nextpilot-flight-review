@@ -1,16 +1,16 @@
-#include "CanvasWorkspace.h"
+#include "PlotWorkspace.h"
 
 #include "AppContext.h"
-#include "chrome/CellTitleBar.h"
-#include "layout/PageTabs.h"
-#include "layout/PageDock.h"
-#include "layout/PlotCellDock.h"
+#include "chrome/AxesToolbar.h"
+#include "layout/TabbedFigure.h"
+#include "layout/PlotLayout.h"
+#include "layout/DockedAxes.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
 #include "DatasetHub.h"
@@ -68,13 +68,13 @@ using namespace nextpilot::plotscope::context;
 
 namespace nextpilot::plotscope::gui
 {
-void CanvasWorkspace::registerMarkupActions()
+void PlotWorkspace::registerMarkupActions()
 {
 
     // 读数游标 / A-B / 书签（对齐老 PlottingCanvas 交互，view action 供菜单/快捷键/测试统一触发）。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.cursor.pinned"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c)
                                         return QVariant(false);
                                     c->setCursorTime(c->cursorTime(), !c->cursorPinned());
@@ -82,12 +82,12 @@ void CanvasWorkspace::registerMarkupActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.cursor.clear"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    if (PlotCanvas *c = activeCanvas()) { c->clearCursor(); c->clearAB(); }
+                                    if (AxesView *c = activeCanvas()) { c->clearCursor(); c->clearAB(); }
                                     return QVariant(true);
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.ab.toggle"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c)
                                         return QVariant(false);
                                     c->toggleAB();
@@ -97,7 +97,7 @@ void CanvasWorkspace::registerMarkupActions()
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     // 「标记」：在**当前页所有画布**的同一时刻各画一条竖线
                                     // （用户要求：绘制时所有 axes 同步添加），而不是只加活动那格。
-                                    PlotCanvas *ref = activeCanvas();
+                                    AxesView *ref = activeCanvas();
                                     for (const Cell &cell : m_cells)
                                         if (cell.canvas && !ref)
                                             ref = cell.canvas;
@@ -121,8 +121,8 @@ void CanvasWorkspace::registerMarkupActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.bookmark.list"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     QVariantList list;
-                                    if (PlotCanvas *c = activeCanvas())
-                                        for (const PlotCanvas::Bookmark &bm : c->bookmarks())
+                                    if (AxesView *c = activeCanvas())
+                                        for (const AxesView::Bookmark &bm : c->bookmarks())
                                             list.append(QVariantMap{
                                                 {QStringLiteral("id"), bm.id},
                                                 {QStringLiteral("t"), bm.t},
@@ -134,7 +134,7 @@ void CanvasWorkspace::registerMarkupActions()
     // Marker 规则产出：把 PlotMarker 列表画到活动画布（竖线/区间带/值带/label）。
     // params["markers"] 为 QVariantList<QVariantMap>（每项是 PlotMarker::toJson 的 map）。
     auto applyMarkers = [this](const QVariantMap &params) -> Result<QVariant> {
-        PlotCanvas *c = activeCanvas();
+        AxesView *c = activeCanvas();
         if (!c)
             return QVariant(false);
         QJsonArray arr = QJsonArray::fromVariantList(
@@ -145,7 +145,7 @@ void CanvasWorkspace::registerMarkupActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.markers.set"), applyMarkers);
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.markers.clear"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    if (PlotCanvas *c = activeCanvas())
+                                    if (AxesView *c = activeCanvas())
                                         c->setMarkers(QJsonArray());
                                     return QVariant(true);
                                 });
@@ -155,7 +155,7 @@ void CanvasWorkspace::registerMarkupActions()
     // params["mode"]=="append" 时按 channel 名合并（多通道多行叠加）。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.state.set"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c)
                                         return QVariant(false);
                                     QJsonArray arr = QJsonArray::fromVariantList(
@@ -167,7 +167,7 @@ void CanvasWorkspace::registerMarkupActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.state.clear"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    if (PlotCanvas *c = activeCanvas())
+                                    if (AxesView *c = activeCanvas())
                                         c->setStateRows(QJsonArray());
                                     return QVariant(true);
                                 });}

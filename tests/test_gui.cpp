@@ -28,12 +28,12 @@
 #include "ToolboxHub.h"
 #include "Contribution.h"
 #include "PanelFactoryHub.h"
-#include "PlotCanvas.h"
-#include "CanvasWorkspace.h"
-#include "chrome/CellTitleBar.h"
-#include "layout/PageDock.h"
-#include "layout/PageTabs.h"
-#include "layout/PlotCellDock.h"
+#include "AxesView.h"
+#include "PlotWorkspace.h"
+#include "chrome/AxesToolbar.h"
+#include "layout/PlotLayout.h"
+#include "layout/TabbedFigure.h"
+#include "layout/DockedAxes.h"
 #include "DockAreaWidget.h"
 #include "DockWidget.h"
 #include "ShellBinder.h"
@@ -343,11 +343,11 @@ int main(int argc, char *argv[])
                 ids << b.action.id;
             return ids;
         };
-        CHECK(idsIn(QStringLiteral("ribbon.group.plot.page")).contains(QStringLiteral("page.new")));
+        CHECK(idsIn(QStringLiteral("ribbon.group.plot.figure")).contains(QStringLiteral("figure.new")));
         const auto layoutIds = idsIn(QStringLiteral("ribbon.group.plot.layout"));
-        CHECK(layoutIds.contains(QStringLiteral("page.grid")));
-        CHECK(layoutIds.contains(QStringLiteral("page.addCanvas")));
-        CHECK(layoutIds.contains(QStringLiteral("page.splitHorizontal")));
+        CHECK(layoutIds.contains(QStringLiteral("figure.grid")));
+        CHECK(layoutIds.contains(QStringLiteral("figure.addAxes")));
+        CHECK(layoutIds.contains(QStringLiteral("figure.splitHorizontal")));
         const auto displayIds = idsIn(QStringLiteral("ribbon.group.plot.display"));
         // 网格改成一个大按钮 + 下拉（X/Y 网格线在菜单里选）；脚本仍可直调 plot.grid。
         CHECK(displayIds.contains(QStringLiteral("plot.grid.menu")));
@@ -363,7 +363,7 @@ int main(int argc, char *argv[])
         CHECK(idsIn(QStringLiteral("ribbon.group.file.screenshot")).contains(QStringLiteral("file.screenshot")));
         CHECK(!idsIn(QStringLiteral("ribbon.group.file.export")).contains(QStringLiteral("file.screenshot")));
         // 页面组除新建页还有删除页（用户要求）。
-        CHECK(idsIn(QStringLiteral("ribbon.group.plot.page")).contains(QStringLiteral("page.closeCurrent")));
+        CHECK(idsIn(QStringLiteral("ribbon.group.plot.figure")).contains(QStringLiteral("figure.closeCurrent")));
         // 导出组：截图 + 导出 PNG/CSV。
         const auto exportIds = idsIn(QStringLiteral("ribbon.group.plot.action"));
         CHECK(exportIds.contains(QStringLiteral("plot.screenshot")));
@@ -378,9 +378,9 @@ int main(int argc, char *argv[])
         const auto layout = slotReg.actionsIn(QStringLiteral("ribbon.group.plot.layout"));
         for (int i = 1; i < layout.size(); ++i)
             CHECK(layout.at(i - 1).action.order <= layout.at(i).action.order);
-        // 老布局组首项是"网格"（page.grid, order 0）。
+        // 老布局组首项是"网格"（figure.grid, order 0）。
         CHECK(!layout.isEmpty());
-        CHECK(layout.first().action.id == QStringLiteral("page.grid"));
+        CHECK(layout.first().action.id == QStringLiteral("figure.grid"));
         // gallery 分类出现顺序：plot 类型 = 常用→曲线→地图/3D→仪表。
         const auto plots = slotReg.actionsIn(QStringLiteral("ribbon.group.plot.type"));
         QStringList catOrder;
@@ -433,7 +433,7 @@ int main(int argc, char *argv[])
     // 所以这里显式断言两个视图都已登记。
     CHECK(!nextpilot::plotscope::registry::PanelFactoryHub::types().isEmpty());
     CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("dataset-tree")));
-    CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("plot-canvas")));
+    CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("plot-axes")));
     OK("视图层自注册生效：dataset-tree / plot-canvas 均已登记（OBJECT 库保证 TU 不被丢弃）");
 
     // --- 3b) 领域面板：形态随领域变时的解法 ---
@@ -1735,7 +1735,7 @@ int main(int argc, char *argv[])
     // --- 7) 画布消费 LOD 并渲染 ---
     // 画布按**自身像素宽度**请求数据（像素级渲染的应有行为），
     // 因此点数与画布宽度挂钩，但与数据行数无关。
-    auto *workspace = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+    auto *workspace = qobject_cast<PlotWorkspace *>(binder->centralContent());
     CHECK(workspace != nullptr);
     auto *canvas = workspace ? workspace->activeCanvas() : nullptr;
     CHECK(canvas != nullptr);
@@ -1881,10 +1881,10 @@ int main(int argc, char *argv[])
         CHECK(dispatchOk(QStringLiteral("plot.overlay"), {{QStringLiteral("text"), QStringLiteral("A/B: 0.5")}}));
         CHECK(dispatchOk(QStringLiteral("plot.legend.toggle")));
         CHECK(dispatchOk(QStringLiteral("plot.export.png")));
-        CHECK(dispatchOk(QStringLiteral("page.addCanvas")));
-        CHECK(dispatchOk(QStringLiteral("page.splitHorizontal")));
-        CHECK(dispatchOk(QStringLiteral("page.splitVertical")));
-        CHECK(dispatchOk(QStringLiteral("page.grid")));
+        CHECK(dispatchOk(QStringLiteral("figure.addAxes")));
+        CHECK(dispatchOk(QStringLiteral("figure.splitHorizontal")));
+        CHECK(dispatchOk(QStringLiteral("figure.splitVertical")));
+        CHECK(dispatchOk(QStringLiteral("figure.grid")));
         // 布局选格：8×8 悬停选格（GridPickPopup，抄 main LayoutPickGrid）已取代手输对话框。
         // offscreen 下弹不出弹层 → 必须明确失败，而不是卡在局部事件循环里把测试挂死。
         if (QGuiApplication::platformName() == QLatin1String("offscreen"))
@@ -1892,7 +1892,7 @@ int main(int argc, char *argv[])
             QVariant vr;
             Result<QVariant> res(vr);
             CHECK(application.context().interactions().dispatchViewAction(
-                QStringLiteral("page.grid.pick"), QVariantMap{}, res));
+                QStringLiteral("figure.grid.pick"), QVariantMap{}, res));
             CHECK(!res);
         }
         // 行列上限 8×8：越界必须拒绝（否则 100×100 会一次造出上万个画布控件）。
@@ -1901,7 +1901,7 @@ int main(int argc, char *argv[])
             Result<QVariant> res(vr);
             const QVariantMap bad{{QStringLiteral("rows"), 100}, {QStringLiteral("cols"), 100}};
             CHECK(application.context().interactions().dispatchViewAction(
-                QStringLiteral("page.grid"), bad, res));
+                QStringLiteral("figure.grid"), bad, res));
             CHECK(!res);
         }
         // view action（游标/A-B/书签/联动）。
@@ -1911,8 +1911,8 @@ int main(int argc, char *argv[])
         CHECK(dispatchOk(QStringLiteral("plot.bookmark.add"), {{QStringLiteral("t"), 0.5}}));
         CHECK(dispatchOk(QStringLiteral("plot.bookmark.list")));
         // PJ4 对齐新增：页签复制/全屏/视图撤销。
-        CHECK(dispatchOk(QStringLiteral("page.duplicate")));
-        CHECK(dispatchOk(QStringLiteral("page.fullscreen")));
+        CHECK(dispatchOk(QStringLiteral("figure.duplicate")));
+        CHECK(dispatchOk(QStringLiteral("figure.fullscreen")));
         CHECK(dispatchOk(QStringLiteral("plot.view.undo")));
 
         // 「网格」下拉的勾选态查询（plot.grid.query）：返回值要能驱动菜单勾选，
@@ -2000,20 +2000,20 @@ int main(int argc, char *argv[])
 
     // --- PJ4 对齐：页签复制 / 单画布全屏 / 视图撤销 的真实行为 ---
     {
-        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        auto *ws = qobject_cast<PlotWorkspace *>(binder->centralContent());
         CHECK(ws != nullptr);
         // 页签复制：多出一页（整页复制，页内 cell 数不变）。
         const int p0 = ws->pageCount();
         QVariant vr;
         Result<QVariant> res(vr);
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.duplicate"), {}, res));
+            QStringLiteral("figure.duplicate"), {}, res));
         CHECK(ws->pageCount() == p0 + 1);
         // 全屏切换：开→关两次回到正常（避免影响后续）。
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.fullscreen"), {}, res));
+            QStringLiteral("figure.fullscreen"), {}, res));
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.fullscreen"), {}, res));
+            QStringLiteral("figure.fullscreen"), {}, res));
         // 视图撤销：缩放产生历史 → undo 回退。
         CHECK(canvas != nullptr);
         const int h0 = canvas->viewHistorySize();
@@ -2076,11 +2076,11 @@ int main(int argc, char *argv[])
         QVariant vr;
         Result<QVariant> res(vr);
         // 页签复制段把活动页/活动 cell 漂到了复制品上；view action 作用于当前页的活动画布，
-        // 先用 page.select 切回第 0 页，再 setActive(0) 定位到本段 canvas 所在 cell。
+        // 先用 figure.select 切回第 0 页，再 setActive(0) 定位到本段 canvas 所在 cell。
         {
-            auto *wsBefore = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+            auto *wsBefore = qobject_cast<PlotWorkspace *>(binder->centralContent());
             CHECK(application.context().interactions().dispatchViewAction(
-                QStringLiteral("page.select"), {{QStringLiteral("index"), 0}}, res));
+                QStringLiteral("figure.select"), {{QStringLiteral("index"), 0}}, res));
             wsBefore->setActive(0);
         }
         const QString key0 = canvas->seriesAtForTest(0).key();
@@ -2116,7 +2116,7 @@ int main(int argc, char *argv[])
 
     // --- 脚本 app 全局：Lua 直接操作整个应用（意图 + view action 双通道） ---
     {
-        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        auto *ws = qobject_cast<PlotWorkspace *>(binder->centralContent());
         CHECK(ws != nullptr);
 
         // (1) 意图通道：脚本 app.call("data.load", {...}) 真的加载数据。
@@ -2136,12 +2136,12 @@ int main(int argc, char *argv[])
         CHECK(static_cast<bool>(sr));
         CHECK(application.context().data().count() == dsBefore + 1);
 
-        // (2) view action 回退通道：脚本 app.call("page.duplicate") 在意图通道
+        // (2) view action 回退通道：脚本 app.call("figure.duplicate") 在意图通道
         // eunsupported 后回退到 view action，页数 +1。
         const int pagesBefore = ws->pageCount();
         Intent sc2;
         sc2.op = QStringLiteral("script.run");
-        sc2.params[QStringLiteral("source")] = QByteArray("app.call(\"page.duplicate\")");
+        sc2.params[QStringLiteral("source")] = QByteArray("app.call(\"figure.duplicate\")");
         const auto sr2 = application.host().execute(sc2);
         CHECK(static_cast<bool>(sr2));
         CHECK(ws->pageCount() == pagesBefore + 1);
@@ -2548,7 +2548,7 @@ int main(int argc, char *argv[])
     // 表节点右键一键画数值列：上限 8 条（再多成毛线团），bool/文本列不画，
     // 截断必须显式告诉调用方（truncated），不能静默丢列。
     {
-        auto *workspace2 = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        auto *workspace2 = qobject_cast<PlotWorkspace *>(binder->centralContent());
         (void)workspace2;
         // 要验证截断，需要一张**列数 > 8** 的表：现场造 12 列数值 csv。
         const QString widePath = QStringLiteral("/tmp/ps_gui_wide.csv");
@@ -2654,29 +2654,29 @@ int main(int argc, char *argv[])
     // 语义：**移动不是复制**。先让目标画布加上，成功后才从源摘——目标失败时
     // 源保持原样（不会出现"两边都没有"的半截状态）。拖回自己/垃圾负载一律拒绝。
     {
-        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        auto *ws = qobject_cast<PlotWorkspace *>(binder->centralContent());
         CHECK(ws != nullptr);
         // 用**两块全新画布**（前面的段往旧画布堆了十几条曲线，ChannelView 的
         // m_channels 仍在，clear() 只清画布不 SVG 不了，会污染计数）。
-        auto addCellNow = [&]() -> PlotCanvas * {
+        auto addCellNow = [&]() -> AxesView * {
             QVariant vr;
             Result<QVariant> r(vr);
             CHECK(application.context().interactions().dispatchViewAction(
-                QStringLiteral("page.addCanvas"), {}, r));
+                QStringLiteral("figure.addAxes"), {}, r));
             CHECK(r);
             return ws->activeCanvas();
         };
-        PlotCanvas *c0 = addCellNow();
+        AxesView *c0 = addCellNow();
         const int idx0 = ws->cellCount() - 1;
         CHECK(c0 != nullptr);
-        PlotCanvas *c1 = addCellNow();
+        AxesView *c1 = addCellNow();
         CHECK(c1 != nullptr && c1 != c0);
 
         ws->setActive(idx0);
         CHECK(ws->activeCanvas() == c0);
         c0->clear();
 
-        // 在全新的 c0 上画一条：走共享活动通道（CanvasWorkspace 路由到活动 cell）。
+        // 在全新的 c0 上画一条：走共享活动通道（PlotWorkspace 路由到活动 cell）。
         const nextpilot::plotscope::dataset::Dataset *ds = application.data().get(loadedDsId);
         CHECK(ds != nullptr && ds->tableCount() >= 1);
         const QString tbl = ds->tableNames().first();
@@ -3003,14 +3003,14 @@ int main(int argc, char *argv[])
         Result<QVariant> rout(outv);
         CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("plot.timeFormat"), {}, rout));
-        auto *wsT = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        auto *wsT = qobject_cast<PlotWorkspace *>(binder->centralContent());
         CHECK(wsT != nullptr);
         CHECK(canvas->timeFormatMode() == QStringLiteral("hms"));
         CHECK(canvas->tickLabelForTest(3661.0) == QStringLiteral("1:01:01"));
         // ⑥ 新格沿用全局偏好（makeCell 里读 settings）：重排成 2×2，4 个新格都是 hms。
-        //    page.grid 会销毁旧 cell —— 之后不得再触碰裸 canvas 指针（那是悬空引用）。
+        //    figure.grid 会销毁旧 cell —— 之后不得再触碰裸 canvas 指针（那是悬空引用）。
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.grid"), QVariantMap{{QStringLiteral("rows"), 2},
+            QStringLiteral("figure.grid"), QVariantMap{{QStringLiteral("rows"), 2},
                                                        {QStringLiteral("cols"), 2}}, rout));
         CHECK(wsT->cellCount() == 4);
         CHECK(wsT->activeCanvas() != nullptr);
@@ -3029,17 +3029,17 @@ int main(int argc, char *argv[])
         OK("T4.5 时间轴：relative/hms/utc 三态 + 负值 + 非法值回落 + settings→viewAction 全格生效");
     }
 
-    // --- D1：格标题条独立成 CellTitleBar，挂在自己所属的停靠面板上 ---
+    // --- D1：格标题条独立成 AxesToolbar，挂在自己所属的停靠面板上 ---
     {
         CHECK(binder != nullptr);
-        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        auto *ws = qobject_cast<PlotWorkspace *>(binder->centralContent());
         CHECK(ws != nullptr);
         auto *canvas = ws->activeCanvas(); // 当前活动格
         CHECK(canvas != nullptr);
         // 层次：canvas → stack → frame（竖排 [标题条, 画布]）。
         QWidget *frame = canvas->parentWidget() ? canvas->parentWidget()->parentWidget() : nullptr;
         CHECK(frame != nullptr);
-        auto *bar = frame->findChild<CellTitleBar *>(QStringLiteral("cellHoverBar"));
+        auto *bar = frame->findChild<AxesToolbar *>(QStringLiteral("axesToolbar"));
         CHECK(bar != nullptr);
         CHECK(bar->dockWidget() != nullptr); // 挂到自己所属面板才转得动拖动事件
         CHECK(!bar->title().isEmpty());
@@ -3049,37 +3049,37 @@ int main(int argc, char *argv[])
         OK("D1 格标题条：独立类、挂靠所属面板、新建即暗、激活/拆分信号就位");
     }
 
-    // --- D2：页容器 PageDock / 每格面板 PlotCellDock 各自成类 ---
+    // --- D2：页容器 PlotLayout / 每格面板 DockedAxes 各自成类 ---
     {
-        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        auto *ws = qobject_cast<PlotWorkspace *>(binder->centralContent());
         CHECK(ws != nullptr);
         auto *canvas = ws->activeCanvas();
         CHECK(canvas != nullptr);
         QWidget *frame = canvas->parentWidget() ? canvas->parentWidget()->parentWidget() : nullptr;
         CHECK(frame != nullptr);
         // 从外框往上找到所属格面板。
-        PlotCellDock *cellDock = nullptr;
+        DockedAxes *cellDock = nullptr;
         for (QWidget *w = frame->parentWidget(); w; w = w->parentWidget())
-            if (auto *d = qobject_cast<PlotCellDock *>(w))
+            if (auto *d = qobject_cast<DockedAxes *>(w))
             {
                 cellDock = d;
                 break;
             }
         CHECK(cellDock != nullptr);
-        CHECK(qobject_cast<PageDock *>(cellDock->dockManager()) != nullptr);
+        CHECK(qobject_cast<PlotLayout *>(cellDock->dockManager()) != nullptr);
         CHECK(cellDock->titleBar() != nullptr);
         // 单格停靠区藏起整条标题栏：页签条只在合并成多格时出现。
         CHECK(cellDock->dockAreaWidget() != nullptr);
         CHECK(cellDock->dockAreaWidget()->dockAreaFlags()
               & ads::CDockAreaWidget::HideSingleWidgetTitleBar);
-        OK("D2 页容器与格面板：PageDock 拥有 PlotCellDock，单格标题栏隐藏");
+        OK("D2 页容器与格面板：PlotLayout 拥有 DockedAxes，单格标题栏隐藏");
     }
 
-    // --- D3：页签栏独立成 PageTabs，「＋」与索引换算不出 workspace ---
+    // --- D3：页签栏独立成 TabbedFigure，「＋」与索引换算不出 workspace ---
     {
-        auto *ws = qobject_cast<CanvasWorkspace *>(binder->centralContent());
+        auto *ws = qobject_cast<PlotWorkspace *>(binder->centralContent());
         CHECK(ws != nullptr);
-        auto *tabs = ws->findChild<PageTabs *>();
+        auto *tabs = ws->findChild<TabbedFigure *>();
         CHECK(tabs != nullptr);
         const int pages = tabs->pageCount();
         CHECK(pages == ws->pageCount());
@@ -3089,14 +3089,14 @@ int main(int argc, char *argv[])
         Result<QVariant> rout(out);
         // 新建页：页数 +1，且停在新建页。
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.new"), {}, rout));
+            QStringLiteral("figure.new"), {}, rout));
         CHECK(tabs->pageCount() == pages + 1);
         CHECK(ws->pageCount() == pages + 1);
         CHECK(tabs->currentPage() == pages);
 
-        // 改名：走 PageTabs 的 setPageTitle。
+        // 改名：走 TabbedFigure 的 setPageTitle。
         CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("page.rename"),
+            QStringLiteral("figure.rename"),
             QVariantMap{{QStringLiteral("index"), pages},
                         {QStringLiteral("title"), QStringLiteral("校验页")}},
             rout));
@@ -3105,9 +3105,9 @@ int main(int argc, char *argv[])
         // 关页：至少留一页（连关到只剩 1）。
         while (tabs->pageCount() > 1)
             CHECK(application.context().interactions().dispatchViewAction(
-                QStringLiteral("page.closeCurrent"), {}, rout));
+                QStringLiteral("figure.closeCurrent"), {}, rout));
         CHECK(tabs->pageCount() == 1);
-        OK("D3 页签栏：PageTabs 管「＋」与索引，新建/改名/关闭全走类接口且至少留一页");
+        OK("D3 页签栏：TabbedFigure 管「＋」与索引，新建/改名/关闭全走类接口且至少留一页");
     }
 
     // --- dock 页签：页签序与内容栈序必须一致（修"点页签内容不切"）---

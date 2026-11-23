@@ -82,12 +82,12 @@ struct PlotSeries
     }
 };
 
-class PlotCanvas : public QWidget
+class AxesView : public QWidget
 {
     Q_OBJECT
 public:
-    explicit PlotCanvas(QWidget *parent = nullptr);
-    ~PlotCanvas() override;
+    explicit AxesView(QWidget *parent = nullptr);
+    ~AxesView() override;
 
     // 追加/替换一条曲线的 LOD 数据（按 dataset+table+column 匹配，存在则更新）。
     // 返回曲线在序列中的索引。
@@ -124,7 +124,7 @@ public:
                              const QString &paramsJson = QString());
     // 源级时间 offset provider（第二梯队 #204 多源时间对齐）：
     // 画布把 datasetId 反查到源，取源 offset 叠加到曲线 x 上。
-    // 由上层注入（CanvasWorkspace 用 AppContext），画布不依赖 AppContext。
+    // 由上层注入（PlotWorkspace 用 AppContext），画布不依赖 AppContext。
     void setSourceOffsetProvider(std::function<double(nextpilot::plotscope::dataset::DatasetId)> provider);
     // 源 offset 变化后重推曲线（LOD 不变，只重算 x 映射）。
     void refreshSourceOffsets();
@@ -235,7 +235,7 @@ public:
     void setLegendVisible(bool visible);
     bool legendVisible() const;
 
-    // "删除此画布"是否可点：页内只剩一格时删无可删，由 CanvasWorkspace 重排后同步。
+    // "删除此画布"是否可点：页内只剩一格时删无可删，由 PlotWorkspace 重排后同步。
     void setCanvasRemovable(bool on) { m_canvasRemovable = on; }
     bool canvasRemovable() const { return m_canvasRemovable; }
 
@@ -262,7 +262,7 @@ public:
     bool dropChannel(const QMimeData *mime);
 
     // 画布身份：跨画布移动曲线时用来判断"拖回自己"和找回源画布。
-    // id 由 CanvasWorkspace 分配（全进程单调递增），不参与持久化。
+    // id 由 PlotWorkspace 分配（全进程单调递增），不参与持久化。
     void setCanvasId(int id) { m_canvasId = id; }
     int canvasId() const { return m_canvasId; }
 
@@ -276,7 +276,7 @@ Q_SIGNALS:
     // 请求编辑曲线 Y 变换（上层打开变换编辑器后回写配方）。
     void seriesTransformRequested(const QString &seriesKey);
     // 画布级命令（拆分 / 删除本画布）。画布自己不知道自己在页里的索引，
-    // 交给 CanvasWorkspace 按指针反查后再 setActive + split/removeAt——
+    // 交给 PlotWorkspace 按指针反查后再 setActive + split/removeAt——
     // 这样右键"删除此画布"删的是你点的那个，而不是"碰巧激活"的另一个。
     void canvasActionRequested(const QString &op);
     // 有通道被拖到画布上（数据集树 → 画布）。画布只解码 MIME 发信号，
@@ -288,7 +288,7 @@ Q_SIGNALS:
                                  const QString &table, const QString &column,
                                  const QString &title);
     // 联动：本画布时间变化通知同页其它画布（source 用于避免回环，只同步竖线不复制读数）。
-    void linkedTimeChanged(double t, bool visible, PlotCanvas *source);
+    void linkedTimeChanged(double t, bool visible, AxesView *source);
     // 书签集合变化（上层存进布局）。
     void bookmarksChanged();
     // 图例点击切换曲线显隐：上层可同步图例面板/属性面板状态。

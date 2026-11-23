@@ -1,8 +1,8 @@
-#include "PageDock.h"
+#include "PlotLayout.h"
 
 #include "DockAreaWidget.h"
 #include "DockSplitter.h"
-#include "PlotCellDock.h"
+#include "DockedAxes.h"
 
 #include <QTimer>
 #include <QVBoxLayout>
@@ -12,9 +12,9 @@
 namespace nextpilot::plotscope::gui
 {
 
-PageDock::PageDock(QWidget *host) : ads::CDockManager(host)
+PlotLayout::PlotLayout(QWidget *host) : ads::CDockManager(host)
 {
-    setObjectName(QStringLiteral("plotPageDock"));
+    setObjectName(QStringLiteral("plotPlotLayout"));
     // 画布区的标题栏与样式由主题统一管，先关掉 ADS 自带样式表免得打架。
     setStyleSheet(QString());
 
@@ -37,22 +37,22 @@ PageDock::PageDock(QWidget *host) : ads::CDockManager(host)
 
     // 面板增删统一转成"格面板"信号，上层不必再认识 ADS 的 dock widget 类型。
     QObject::connect(this, &ads::CDockManager::dockWidgetAdded, this, [this](ads::CDockWidget *dock) {
-        if (auto *cellDock = qobject_cast<PlotCellDock *>(dock))
+        if (auto *cellDock = qobject_cast<DockedAxes *>(dock))
             Q_EMIT cellDockAdded(cellDock);
     });
     QObject::connect(this, &ads::CDockManager::dockWidgetRemoved, this, [this](ads::CDockWidget *dock) {
-        if (auto *cellDock = qobject_cast<PlotCellDock *>(dock))
+        if (auto *cellDock = qobject_cast<DockedAxes *>(dock))
             Q_EMIT cellDockRemoved(cellDock);
     });
 }
 
-PlotCellDock *PageDock::addCellDock(const CellSlot &slot, int side, PlotCellDock *relative,
+DockedAxes *PlotLayout::addCellDock(const CellSlot &slot, int side, DockedAxes *relative,
                                    bool intoContainer)
 {
     if (!slot.frame)
         return nullptr;
 
-    auto *dock = new PlotCellDock(this, slot.title, slot.frame, slot.bar);
+    auto *dock = new DockedAxes(this, slot.title, slot.frame, slot.bar);
     const ads::DockWidgetArea area = (side == 0)   ? ads::CenterDockWidgetArea
                                     : (side == 1) ? ads::RightDockWidgetArea
                                                   : ads::BottomDockWidgetArea;
@@ -74,9 +74,9 @@ PlotCellDock *PageDock::addCellDock(const CellSlot &slot, int side, PlotCellDock
     return dock;
 }
 
-QVector<PlotCellDock *> PageDock::layoutGrid(const QVector<CellSlot> &cellSlots, int rows, int cols)
+QVector<DockedAxes *> PlotLayout::layoutGrid(const QVector<CellSlot> &cellSlots, int rows, int cols)
 {
-    QVector<PlotCellDock *> docks;
+    QVector<DockedAxes *> docks;
     docks.reserve(cellSlots.size());
     if (cellSlots.isEmpty())
         return docks;
@@ -86,10 +86,10 @@ QVector<PlotCellDock *> PageDock::layoutGrid(const QVector<CellSlot> &cellSlots,
     int index = 0;
     for (int r = 0; r < rows; ++r)
     {
-        PlotCellDock *prevInRow = nullptr;
+        DockedAxes *prevInRow = nullptr;
         for (int c = 0; c < cols && index < cellSlots.size(); ++c, ++index)
         {
-            PlotCellDock *dock = nullptr;
+            DockedAxes *dock = nullptr;
             if (r == 0 && c == 0)
                 dock = addCellDock(cellSlots[index], 0);                // 首格占住整页
             else if (r == 0)
@@ -107,7 +107,7 @@ QVector<PlotCellDock *> PageDock::layoutGrid(const QVector<CellSlot> &cellSlots,
     return docks;
 }
 
-void PageDock::equalizeSplitters()
+void PlotLayout::equalizeSplitters()
 {
     // 严格等分：分隔器按相对权重分配空间，所有项给同一权重即等宽/等高
     // （拖分隔条时权重被改写，点 m×n 后由这里重新抹平）。

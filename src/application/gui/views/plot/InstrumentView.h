@@ -30,7 +30,7 @@ namespace nextpilot::plotscope::gui
 
 // 仪表视图：按 kind 在六个 fastplot 仪表之间切换，取数走 `plot.instrument` 意图。
 //
-// 分工和 PlotCanvas 一致：
+// 分工和 AxesView 一致：
 //   - 本类只做"意图 → 填仪表"的适配，不知道数据怎么解析、怎么抽稀；
 //   - 仪表在 fastplot 库里，本类不画圆、不画刻度；
 //   - 数组缓冲由本类持有，仪表只持指针（零拷贝），缓冲地址在视图存活期内稳定。

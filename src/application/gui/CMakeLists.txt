@@ -90,14 +90,14 @@ add_library(ps_gui OBJECT
     # 数据集视图已聚合进 modules/data/（功能专属，见该目录 CMakeLists）；
     # 这里只剩**通用绘图库**（将来抽成 Qwt-like 独立库，不属于任何器官/领域）：
     # PlotModule 用它，bench/shot 工具也直接用它。
-    views/plot/PlotCanvas.cpp
-    views/plot/PlotCanvas.h
+    views/plot/AxesView.cpp
+    views/plot/AxesView.h
     views/plot/ChannelView.cpp
     views/plot/ChannelView.h
     views/plot/InstrumentView.cpp
     views/plot/InstrumentView.h
-    views/plot/CanvasWorkspace.cpp
-    views/plot/CanvasWorkspace.h
+    views/plot/PlotWorkspace.cpp
+    views/plot/PlotWorkspace.h
     views/plot/GridPickPopup.cpp
     views/plot/GridPickPopup.h
     views/plot/PlaybackEngine.cpp
@@ -105,15 +105,15 @@ add_library(ps_gui OBJECT
     views/plot/TimelineWidget.cpp
     views/plot/TimelineWidget.h
     # --- plot/chrome：格框上的小部件 ---
-    views/plot/chrome/CellTitleBar.cpp
-    views/plot/chrome/CellTitleBar.h
+    views/plot/chrome/AxesToolbar.cpp
+    views/plot/chrome/AxesToolbar.h
     # --- plot/layout：页内停靠容器、每格面板与页签栏 ---
-    views/plot/layout/PageTabs.cpp
-    views/plot/layout/PageTabs.h
-    views/plot/layout/PageDock.cpp
-    views/plot/layout/PageDock.h
-    views/plot/layout/PlotCellDock.cpp
-    views/plot/layout/PlotCellDock.h
+    views/plot/layout/TabbedFigure.cpp
+    views/plot/layout/TabbedFigure.h
+    views/plot/layout/PlotLayout.cpp
+    views/plot/layout/PlotLayout.h
+    views/plot/layout/DockedAxes.cpp
+    views/plot/layout/DockedAxes.h
 
     # --- plot/commands ---
     views/plot/commands/PageActions.cpp

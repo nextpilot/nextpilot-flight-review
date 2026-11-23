@@ -1,16 +1,16 @@
-#include "CanvasWorkspace.h"
+#include "PlotWorkspace.h"
 
 #include "AppContext.h"
-#include "chrome/CellTitleBar.h"
-#include "layout/PageTabs.h"
-#include "layout/PageDock.h"
-#include "layout/PlotCellDock.h"
+#include "chrome/AxesToolbar.h"
+#include "layout/TabbedFigure.h"
+#include "layout/PlotLayout.h"
+#include "layout/DockedAxes.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
 #include "DatasetHub.h"
@@ -68,7 +68,7 @@ using namespace nextpilot::plotscope::context;
 
 namespace nextpilot::plotscope::gui
 {
-void CanvasWorkspace::registerSeriesActions()
+void PlotWorkspace::registerSeriesActions()
 {
 
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.clear"),
@@ -80,7 +80,7 @@ void CanvasWorkspace::registerSeriesActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.list"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     QVariantList list;
-                                    if (PlotCanvas *c = activeCanvas())
+                                    if (AxesView *c = activeCanvas())
                                         for (const PlotSeries &s : c->series())
                                             list.append(QVariantMap{
                                                 {QStringLiteral("key"), s.key()},
@@ -104,7 +104,7 @@ void CanvasWorkspace::registerSeriesActions()
                                 });
 
     // —— plotting 全套操作意图 ——
-    // 全部落到 active cell 的 PlotCanvas 真实能力，不造空按钮。
+    // 全部落到 active cell 的 AxesView 真实能力，不造空按钮。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.visible"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString key = params.value(QStringLiteral("key")).toString();

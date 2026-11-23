@@ -1,7 +1,7 @@
 #include "ReportExporter.h"
 
 #include "AppContext.h"
-#include "CanvasWorkspace.h"
+#include "PlotWorkspace.h"
 #include "Contribution.h"
 #include "Dataset.h"
 #include "DatasetHub.h"
@@ -145,9 +145,9 @@ Result<void> exportReportPdf(AppContext &appCtx, const QList<QWidget *> &canvase
     }
 
     // 找画布工作区（中央区可能混有脚本编辑器等页签，qobject_cast 过滤）。
-    CanvasWorkspace *workspace = nullptr;
+    PlotWorkspace *workspace = nullptr;
     for (QWidget *w : canvases)
-        if ((workspace = qobject_cast<CanvasWorkspace *>(w)))
+        if ((workspace = qobject_cast<PlotWorkspace *>(w)))
             break;
     const bool hasCanvas = workspace != nullptr && workspace->cellCount() > 0;
 

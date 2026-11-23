@@ -1,16 +1,16 @@
-#include "CanvasWorkspace.h"
+#include "PlotWorkspace.h"
 
 #include "AppContext.h"
-#include "chrome/CellTitleBar.h"
-#include "layout/PageTabs.h"
-#include "layout/PageDock.h"
-#include "layout/PlotCellDock.h"
+#include "chrome/AxesToolbar.h"
+#include "layout/TabbedFigure.h"
+#include "layout/PlotLayout.h"
+#include "layout/DockedAxes.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
 #include "DatasetHub.h"
@@ -68,7 +68,7 @@ using namespace nextpilot::plotscope::context;
 
 namespace nextpilot::plotscope::gui
 {
-void CanvasWorkspace::registerCanvasActions()
+void PlotWorkspace::registerCanvasActions()
 {
     // 所有 plot.* 只在这里注册一次，路由到 active cell —— 多画布不会被后建者劫持。
     // 时间轴刻度三态：设置保存后外壳派发一次，所有格的画布立即按新格式重绘。
@@ -83,7 +83,7 @@ void CanvasWorkspace::registerCanvasActions()
                                     // 遍历**所有页**的 cell：非当前页的 cells 存在 Page 里，
                                     // 只扫 m_cells 会让切页后的画布沿用旧刻度（用户会当成"设置没生效"）。
                                     int applied = 0;
-                                    QSet<PlotCanvas *> seen;
+                                    QSet<AxesView *> seen;
                                     auto applyOne = [&](const Cell &c) {
                                         if (!c.canvas || seen.contains(c.canvas))
                                             return;
@@ -145,7 +145,7 @@ void CanvasWorkspace::registerCanvasActions()
     // 点击条目切显隐 / 折叠 / 字号缩放的脚本与菜单入口（GUI 点击直接走画布命中）。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.toggleItem"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     const QString key = params.value(QStringLiteral("key")).toString();
                                     if (!c || key.isEmpty())
                                         return QVariant(false);
@@ -153,7 +153,7 @@ void CanvasWorkspace::registerCanvasActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.collapse"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c)
                                         return QVariant(false);
                                     const bool target = params.contains(QStringLiteral("collapsed"))
@@ -164,7 +164,7 @@ void CanvasWorkspace::registerCanvasActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.legend.fontZoom"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c)
                                         return QVariant(false);
                                     const int steps = params.value(QStringLiteral("steps")).toInt();
@@ -281,7 +281,7 @@ void CanvasWorkspace::registerCanvasActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.view.undo"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c || !c->canUndoView())
                                         return QVariant(false);
                                     c->undoView();
@@ -296,7 +296,7 @@ void CanvasWorkspace::registerCanvasActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.grid"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c || !c->plotWidget())
                                         return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     // axis 省略=整体开关；"x"=竖网格（Bottom 轴刻度）；"y"=横网格。
@@ -319,7 +319,7 @@ void CanvasWorkspace::registerCanvasActions()
     // 显示组「网格」下拉的勾选态：返回当前活动画布的 X/Y 网格线可见性。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.grid.query"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c || !c->plotWidget())
                                         return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     auto *ax = c->plotWidget();
@@ -332,7 +332,7 @@ void CanvasWorkspace::registerCanvasActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.box"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c || !c->plotWidget())
                                         return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     const bool on = params.contains(QStringLiteral("on"))
@@ -347,7 +347,7 @@ void CanvasWorkspace::registerCanvasActions()
                                     const int tool = params.value(QStringLiteral("tool"), -1).toInt();
                                     for (const Cell &cell : m_cells)
                                     {
-                                        PlotCanvas *c = cell.canvas;
+                                        AxesView *c = cell.canvas;
                                         if (!c || !c->zoomer() || !c->panner())
                                             continue;
                                         auto *z = c->zoomer();
@@ -360,7 +360,7 @@ void CanvasWorkspace::registerCanvasActions()
                                 });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.axis.range"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c || !c->plotWidget())
                                         return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     const QString axis = params.value(QStringLiteral("axis"), QStringLiteral("x")).toString();
@@ -381,7 +381,7 @@ void CanvasWorkspace::registerCanvasActions()
     // （交互式拖拽游标未实现，此处仅做读数条）。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.overlay"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
-                                    PlotCanvas *c = activeCanvas();
+                                    AxesView *c = activeCanvas();
                                     if (!c || !c->plotWidget())
                                         return fail(err::NoEnt, QStringLiteral("无活动画布"));
                                     const QString text = params.value(QStringLiteral("text")).toString();
@@ -397,7 +397,7 @@ void CanvasWorkspace::registerCanvasActions()
     // bool/文本列默认不画（bool 有专门的状态视图）。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.expandColumns"),
         [this](const QVariantMap &params) -> Result<QVariant> {
-            PlotCanvas *c = activeCanvas();
+            AxesView *c = activeCanvas();
             if (!c)
                 return fail(err::NoEnt, QStringLiteral("无活动画布"));
             const int dsId = params.value(QStringLiteral("dataset"), m_appCtx.activeDatasetId()).toInt();
@@ -443,7 +443,7 @@ void CanvasWorkspace::registerCanvasActions()
     // 曲线名统一「源名:table.column」，否则 N 条曲线挤在一起分不清谁是谁。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.overlaySame"),
         [this](const QVariantMap &params) -> Result<QVariant> {
-            PlotCanvas *c = activeCanvas();
+            AxesView *c = activeCanvas();
             if (!c)
                 return fail(err::NoEnt, QStringLiteral("无活动画布"));
             int dsId = params.value(QStringLiteral("dataset"), m_appCtx.activeDatasetId()).toInt();
@@ -535,7 +535,7 @@ void CanvasWorkspace::registerCanvasActions()
 
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.compareSame"),
         [this](const QVariantMap &params) -> Result<QVariant> {
-            PlotCanvas *c = activeCanvas();
+            AxesView *c = activeCanvas();
             if (!c)
                 return fail(err::NoEnt, QStringLiteral("无活动画布"));
             const int dsId = params.value(QStringLiteral("dataset"), m_appCtx.activeDatasetId()).toInt();

@@ -1,16 +1,16 @@
-#include "CanvasWorkspace.h"
+#include "PlotWorkspace.h"
 
 #include "AppContext.h"
-#include "chrome/CellTitleBar.h"
-#include "layout/PageTabs.h"
-#include "layout/PageDock.h"
-#include "layout/PlotCellDock.h"
+#include "chrome/AxesToolbar.h"
+#include "layout/TabbedFigure.h"
+#include "layout/PlotLayout.h"
+#include "layout/DockedAxes.h"
 #include "ChannelView.h"
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
-#include "PlotCanvas.h"
+#include "AxesView.h"
 #include "playback/PlaybackController.h"
 #include "DatasetHub.h"
 #include "Dataset.h"
@@ -68,7 +68,7 @@ namespace nextpilot::plotscope::gui
 
 namespace
 {
-// 曲线类图型：在 PlotCanvas 内切（都是"曲线"模型，走 LOD 折线）。
+// 曲线类图型：在 AxesView 内切（都是"曲线"模型，走 LOD 折线）。
 bool isCurveKind(const QString &kind)
 {
     return kind == QStringLiteral("timeseries") || kind == QStringLiteral("scatter")
@@ -99,7 +99,7 @@ QString toInstrumentKind(const QString &kind)
 }
 } // namespace
 
-CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
+PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
     : QWidget(parent), m_appCtx(appCtx), m_executor(executor)
 {
     // 外层纵向布局：网格画布区 + 底部时间条。
@@ -107,21 +107,21 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
     outer->setContentsMargins(0, 0, 0, 0);
     outer->setSpacing(0);
 
-    // 页签栏：一页 = 一套绘图布局；末尾「＋」与改名都归 PageTabs，
+    // 页签栏：一页 = 一套绘图布局；末尾「＋」与改名都归 TabbedFigure，
     // 这里只按真实页索引接信号。
-    m_tabs = new PageTabs(this);
+    m_tabs = new TabbedFigure(this);
     outer->addWidget(m_tabs, 1);
 
-    QObject::connect(m_tabs, &PageTabs::pageSelected, this, [this](int index) { switchPage(index); });
-    QObject::connect(m_tabs, &PageTabs::pageCloseRequested, this,
+    QObject::connect(m_tabs, &TabbedFigure::pageSelected, this, [this](int index) { switchPage(index); });
+    QObject::connect(m_tabs, &TabbedFigure::pageCloseRequested, this,
                      [this](int index) { removePage(index); });
-    QObject::connect(m_tabs, &PageTabs::titleEdited, this,
+    QObject::connect(m_tabs, &TabbedFigure::titleEdited, this,
                      [this](int index, const QString &title) {
                          if (index >= 0 && index < m_pages.size())
                              m_pages.at(index)->title = title;
                      });
     // 点「＋」：新建一页并切过去，页内先给一格空画布。
-    QObject::connect(m_tabs, &PageTabs::addPageRequested, this, [this]() {
+    QObject::connect(m_tabs, &TabbedFigure::addPageRequested, this, [this]() {
         const int created = addPage();
         m_tabs->setCurrentPage(created);
         if (m_cells.isEmpty())
@@ -134,7 +134,7 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
     m_playback = new PlaybackController(this);
     outer->addWidget(m_playback->timelineWidget());
     QObject::connect(m_playback, &PlaybackController::playheadChanged, this,
-                     &CanvasWorkspace::onPlayheadChanged);
+                     &PlotWorkspace::onPlayheadChanged);
 
     // 源级时间 offset 变化（第二梯队 #204 多源时间对齐）：统一刷新所有画布。
     // offset 是宿主态配方，画布 LOO/原始数据不动，只重推 x 映射。
@@ -170,7 +170,7 @@ CanvasWorkspace::CanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, 
     registerPropertyProviders();
 }
 
-CanvasWorkspace::~CanvasWorkspace()
+PlotWorkspace::~PlotWorkspace()
 {
     // 页对象是裸指针（Page 里还持有 scroll/host 的父子关系），析构时显式释放。
     // cell 控件归 Qt 父子树管，随 scroll 一起销毁。
@@ -178,34 +178,34 @@ CanvasWorkspace::~CanvasWorkspace()
     m_pages.clear();
 }
 
-int CanvasWorkspace::cellCount() const
+int PlotWorkspace::cellCount() const
 {
     return m_cells.size();
 }
 
-int CanvasWorkspace::pageCount() const
+int PlotWorkspace::pageCount() const
 {
     return m_pages.size();
 }
 
-int CanvasWorkspace::activeIndex() const
+int PlotWorkspace::activeIndex() const
 {
     return m_active;
 }
 
-PlotCanvas *CanvasWorkspace::activeCanvas() const
+AxesView *PlotWorkspace::activeCanvas() const
 {
     return m_cells.isEmpty() ? nullptr : m_cells.at(qBound(0, m_active, m_cells.size() - 1)).canvas;
 }
 
-ChannelView *CanvasWorkspace::activeChannelView() const
+ChannelView *PlotWorkspace::activeChannelView() const
 {
     return m_cells.isEmpty() ? nullptr : m_cells.at(qBound(0, m_active, m_cells.size() - 1)).view;
 }
 
 // 装配一块画布 cell：画布 + 仪表 + 堆叠容器，并把所有信号接好。
 // addCell / split / duplicateActive 共用它，避免三份重复的装配代码各自漂移。
-CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
+PlotWorkspace::Cell PlotWorkspace::makeCell(QWidget *parentForStack)
 {
     // 每格一个外框：竖排 [标题条, 画布堆叠]。停靠面板装的是这个外框，
     // 标题条因此固定在格子顶部，既是按钮区也是拖动把手（PJ4 DockToolbar 的形态）。
@@ -216,7 +216,7 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
     frameLay->setSpacing(0);
 
     auto *stack = new QStackedWidget(frame);
-    auto *canvas = new PlotCanvas(stack);
+    auto *canvas = new AxesView(stack);
     canvas->setCanvasId(++m_canvasSeq);
     auto *view = new ChannelView(m_appCtx.transforms(), m_executor, canvas, canvas);
 
@@ -230,21 +230,21 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
     stack->installEventFilter(this);
     // 列节点拖到画布 → 画布只解码 MIME 发信号 → 这里切活动通道
     // （与数据集树双击同一路径，activity 路由回当前 cell）。
-    QObject::connect(canvas, &PlotCanvas::channelDropped, this,
+    QObject::connect(canvas, &AxesView::channelDropped, this,
                      [this](int datasetId, const QString &t, const QString &c) {
                          m_appCtx.setActiveChannel(datasetId, t, c);
                      });
     // 曲线从一个画布拖到另一个画布：目标是"接收方"，源按 MIME 里的 canvasId 回找。
     // 先让目标加上，成功后才删源——目标失败（比如数据集已卸载）时源不受影响，
     // 也就不会出现"两边都没有"的半截状态。
-    QObject::connect(canvas, &PlotCanvas::seriesTransferRequested, this,
+    QObject::connect(canvas, &AxesView::seriesTransferRequested, this,
                      [this](int srcCanvasId, const QString &key, int datasetId,
                             const QString &table, const QString &column, const QString &title) {
-                         auto *targetCanvas = qobject_cast<PlotCanvas *>(sender());
+                         auto *targetCanvas = qobject_cast<AxesView *>(sender());
                          if (!targetCanvas || targetCanvas->canvasId() == srcCanvasId)
                              return;
                          ChannelView *targetView = viewOfCanvas(targetCanvas);
-                         PlotCanvas *srcCanvas = canvasById(srcCanvasId);
+                         AxesView *srcCanvas = canvasById(srcCanvasId);
                          ChannelView *srcView = viewOfCanvas(srcCanvas);
                          if (!targetView || !srcView)
                              return; // 源不在当前页（跨页移动未支持）：拒绝，源保持原样
@@ -268,20 +268,20 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
     cell.stack = stack;
     cell.frame = frame;
     // 每格的标题条：常显在格子顶部，按钮直接作用在"这一格"。
-    cell.bar = new CellTitleBar(frame);
+    cell.bar = new AxesToolbar(frame);
     frameLay->addWidget(cell.bar);
     frameLay->addWidget(stack, 1);
     // 初始为"收起"态：鼠标进到这一格才亮出来。
     cell.bar->setShown(false);
 
     // 按钮只发信号，作用于哪一格由标题条反查——每格不再各连一套定位逻辑。
-    CellTitleBar *bar = cell.bar;
-    QObject::connect(bar, &CellTitleBar::activated, this, [this, bar]() {
+    AxesToolbar *bar = cell.bar;
+    QObject::connect(bar, &AxesToolbar::activated, this, [this, bar]() {
         const int index = indexOfBar(bar);
         if (index >= 0)
             setActive(index);
     });
-    QObject::connect(bar, &CellTitleBar::splitClicked, this, [this, bar](bool horizontal) {
+    QObject::connect(bar, &AxesToolbar::splitClicked, this, [this, bar](bool horizontal) {
         const int index = indexOfBar(bar);
         if (index < 0)
             return;
@@ -289,7 +289,7 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
         split(horizontal);
         showHoverBar(m_active);
     });
-    QObject::connect(bar, &CellTitleBar::maximizeClicked, this, [this, bar]() {
+    QObject::connect(bar, &AxesToolbar::maximizeClicked, this, [this, bar]() {
         const int index = indexOfBar(bar);
         if (index < 0)
             return;
@@ -298,11 +298,11 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
         showHoverBar(m_active);
     });
     // 书签：以当前游标时刻为准；没有游标就取可见范围中点（总有明确落点）。
-    QObject::connect(bar, &CellTitleBar::bookmarkClicked, this, [this, bar]() {
+    QObject::connect(bar, &AxesToolbar::bookmarkClicked, this, [this, bar]() {
         const int index = indexOfBar(bar);
         if (index < 0 || !m_cells[index].canvas)
             return;
-        PlotCanvas *target = m_cells[index].canvas;
+        AxesView *target = m_cells[index].canvas;
         double t = 0.0;
         if (target->cursorActiveForTest())
             t = target->cursorTime();
@@ -316,12 +316,12 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
         target->addBookmark(t, QStringLiteral("书签"));
     });
     // A/B：与画布右键/Ctrl+左键同一条实现（以游标为中心生成区间）。
-    QObject::connect(bar, &CellTitleBar::abClicked, this, [this, bar]() {
+    QObject::connect(bar, &AxesToolbar::abClicked, this, [this, bar]() {
         const int index = indexOfBar(bar);
         if (index >= 0 && m_cells[index].canvas)
             m_cells[index].canvas->toggleAB();
     });
-    QObject::connect(bar, &CellTitleBar::closeClicked, this, [this, bar]() {
+    QObject::connect(bar, &AxesToolbar::closeClicked, this, [this, bar]() {
         const int index = indexOfBar(bar);
         if (index >= 0)
             removeAt(index);
@@ -334,7 +334,7 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
     instrument->installEventFilter(this);
     // fastplot 的 Picker 吃掉了鼠标事件，父控件收不到 MouseMove；
     // 走画布自己的 pointerHovered 信号（每帧悬停回调）来浮出本格工具栏。
-    QObject::connect(canvas, &PlotCanvas::pointerHovered, this, [this, canvas]() {
+    QObject::connect(canvas, &AxesView::pointerHovered, this, [this, canvas]() {
         for (int i = 0; i < m_cells.size(); ++i)
         {
             if (m_cells.at(i).canvas == canvas)
@@ -347,7 +347,7 @@ CanvasWorkspace::Cell CanvasWorkspace::makeCell(QWidget *parentForStack)
     return cell;
 }
 
-int CanvasWorkspace::addCell()
+int PlotWorkspace::addCell()
 {
     m_cells.append(makeCell(nullptr));
     m_active = m_cells.size() - 1;
@@ -359,14 +359,14 @@ int CanvasWorkspace::addCell()
     return m_active;
 }
 
-void CanvasWorkspace::flashToolbar(bool autoHide)
+void PlotWorkspace::flashToolbar(bool autoHide)
 {
     showHoverBar(m_active);
     if (!autoHide && m_hoverTimer)
         m_hoverTimer->stop();
 }
 
-int CanvasWorkspace::indexOfBar(const QObject *bar) const
+int PlotWorkspace::indexOfBar(const QObject *bar) const
 {
     if (!bar)
         return -1;
@@ -376,7 +376,7 @@ int CanvasWorkspace::indexOfBar(const QObject *bar) const
     return -1;
 }
 
-void CanvasWorkspace::showHoverBar(int index)
+void PlotWorkspace::showHoverBar(int index)
 {
     // 只有指针所在的这一格亮出标题条；其它格回到"占位不显示"。
     if (index < 0 || index >= m_cells.size())
@@ -389,7 +389,7 @@ void CanvasWorkspace::showHoverBar(int index)
         m_hoverTimer->start();
 }
 
-void CanvasWorkspace::hideHoverBars()
+void PlotWorkspace::hideHoverBars()
 {
     // 鼠标停下/离开一格后收起：所有格回到占位状态（控件仍在，不跳布局）。
     for (int i = 0; i < m_cells.size(); ++i)
@@ -397,7 +397,7 @@ void CanvasWorkspace::hideHoverBars()
             m_cells[i].bar->setShown(false);
 }
 
-void CanvasWorkspace::refreshTabSuppression()
+void PlotWorkspace::refreshTabSuppression()
 {
     // 停靠区里合并了多格时，ADS 的页签条接管格名与关闭，各格标题条让位。
     for (Cell &cell : m_cells)
@@ -410,7 +410,7 @@ void CanvasWorkspace::refreshTabSuppression()
     }
 }
 
-bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
+bool PlotWorkspace::eventFilter(QObject *watched, QEvent *event)
 {
     const QEvent::Type type = event->type();
 
@@ -428,7 +428,7 @@ bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
 
     if (cellIndex >= 0)
     {
-        // 标题条自有事件处理（见 CellTitleBar）：这里只回应格内其余区域的进出与按下。
+        // 标题条自有事件处理（见 AxesToolbar）：这里只回应格内其余区域的进出与按下。
         if (type == QEvent::MouseButtonPress)
         {
             setActive(cellIndex);
@@ -443,14 +443,14 @@ bool CanvasWorkspace::eventFilter(QObject *watched, QEvent *event)
     return QWidget::eventFilter(watched, event);
 }
 
-void CanvasWorkspace::setActive(int index)
+void PlotWorkspace::setActive(int index)
 {
     if (index < 0 || index >= m_cells.size() || m_active == index)
         return;
     m_active = index;
 }
 
-PlotCanvas *CanvasWorkspace::canvasById(int id) const
+AxesView *PlotWorkspace::canvasById(int id) const
 {
     if (id < 0)
         return nullptr;
@@ -460,7 +460,7 @@ PlotCanvas *CanvasWorkspace::canvasById(int id) const
     return nullptr;
 }
 
-ChannelView *CanvasWorkspace::viewOfCanvas(const PlotCanvas *canvas) const
+ChannelView *PlotWorkspace::viewOfCanvas(const AxesView *canvas) const
 {
     if (!canvas)
         return nullptr;
@@ -470,7 +470,7 @@ ChannelView *CanvasWorkspace::viewOfCanvas(const PlotCanvas *canvas) const
     return nullptr;
 }
 
-void CanvasWorkspace::detachStacks()
+void PlotWorkspace::detachStacks()
 {
     // 重建停靠树前必须先把每格的外框移出去：删面板会删掉它持有的子控件，
     // 而外框（含标题条与画布）归本类所有（还要复用），不能被连带删除。
@@ -495,7 +495,7 @@ void CanvasWorkspace::detachStacks()
     }
 }
 
-int CanvasWorkspace::indexOfDock(const PlotCellDock *dockWidget) const
+int PlotWorkspace::indexOfDock(const DockedAxes *dockWidget) const
 {
     if (!dockWidget)
         return -1;
@@ -505,7 +505,7 @@ int CanvasWorkspace::indexOfDock(const PlotCellDock *dockWidget) const
     return -1;
 }
 
-void CanvasWorkspace::rebuildPageLayout()
+void PlotWorkspace::rebuildPageLayout()
 {
     if (m_pages.isEmpty())
         return;
@@ -514,7 +514,7 @@ void CanvasWorkspace::rebuildPageLayout()
         return;
 
     // 重排会重建面板：全屏时被隐藏的其它面板先放回来，否则它们的隐藏记录就悬空了。
-    for (const QPointer<PlotCellDock> &dockWidget : m_fullscreenHidden)
+    for (const QPointer<DockedAxes> &dockWidget : m_fullscreenHidden)
         if (dockWidget)
             dockWidget->toggleView(true);
     m_fullscreenHidden.clear();
@@ -536,24 +536,24 @@ void CanvasWorkspace::rebuildPageLayout()
     for (Cell &c : m_cells)
         c.dockWidget = nullptr;
 
-    page.dock = new PageDock(page.host);
+    page.dock = new PlotLayout(page.host);
     page.dock->setRebuilding(true);
 
     // 合并/拆出页签后重算标题条的去留：页签条接管时各格标题条先让位。
-    QObject::connect(page.dock, &PageDock::cellDockAdded, this, [this](PlotCellDock *) {
+    QObject::connect(page.dock, &PlotLayout::cellDockAdded, this, [this](DockedAxes *) {
         QTimer::singleShot(0, this, [this]() { refreshTabSuppression(); });
     });
     // 点/拖动某格即成为活动格（view action 都路由到它）。
-    QObject::connect(page.dock, &PageDock::focusedDockWidgetChanged, this,
+    QObject::connect(page.dock, &PlotLayout::focusedDockWidgetChanged, this,
                      [this](ads::CDockWidget *, ads::CDockWidget *now) {
-                         const int index = indexOfDock(qobject_cast<PlotCellDock *>(now));
+                         const int index = indexOfDock(qobject_cast<DockedAxes *>(now));
                          if (index >= 0)
                              setActive(index);
                      });
     // 用户点面板自带的关闭：把这一格一起收掉，别在 m_cells 里留空指针。
     // 重建旧树时容器自己也会发同样的信号（isRebuilding 期间一律忽略）。
-    QObject::connect(page.dock, &PageDock::cellDockRemoved, this, [this](PlotCellDock *removed) {
-        auto *dock = qobject_cast<PageDock *>(sender());
+    QObject::connect(page.dock, &PlotLayout::cellDockRemoved, this, [this](DockedAxes *removed) {
+        auto *dock = qobject_cast<PlotLayout *>(sender());
         if (!removed || (dock && dock->isRebuilding()))
             return;
         const int index = indexOfDock(removed);
@@ -598,7 +598,7 @@ void CanvasWorkspace::rebuildPageLayout()
         cellSlots.append(slot);
     }
 
-    const QVector<PlotCellDock *> docks =
+    const QVector<DockedAxes *> docks =
         page.dock->layoutGrid(cellSlots, std::max(1, m_rows), std::max(1, m_cols));
     for (int i = 0; i < docks.size() && i < m_cells.size(); ++i)
         m_cells[i].dockWidget = docks.at(i);
@@ -610,7 +610,7 @@ void CanvasWorkspace::rebuildPageLayout()
     refreshTabSuppression();
 }
 
-int CanvasWorkspace::reflowGrid(int rows, int cols)
+int PlotWorkspace::reflowGrid(int rows, int cols)
 {
     rows = std::max(1, rows);
     cols = std::max(1, cols);
@@ -668,7 +668,7 @@ int CanvasWorkspace::reflowGrid(int rows, int cols)
     return usedRows;
 }
 
-void CanvasWorkspace::syncPage()
+void PlotWorkspace::syncPage()
 {
     if (m_pages.isEmpty())
         return;
@@ -678,7 +678,7 @@ void CanvasWorkspace::syncPage()
     page.cols = m_cols;
 }
 
-int CanvasWorkspace::addPage(const QString &title)
+int PlotWorkspace::addPage(const QString &title)
 {
     auto *page = new Page;
     page->title = title.isEmpty() ? QStringLiteral("页 %1").arg(m_pages.size() + 1) : title;
@@ -697,7 +697,7 @@ int CanvasWorkspace::addPage(const QString &title)
     return m_tabs->insertPage(page->host, page->title);
 }
 
-void CanvasWorkspace::switchPage(int index)
+void PlotWorkspace::switchPage(int index)
 {
     if (index < 0)
         return;
@@ -706,7 +706,7 @@ void CanvasWorkspace::switchPage(int index)
     // 切页前收起当前页的全屏：隐藏的面板属于旧页，留着切回来就是一片空白。
     if (m_fullscreenCell >= 0)
     {
-        for (const QPointer<PlotCellDock> &dockWidget : m_fullscreenHidden)
+        for (const QPointer<DockedAxes> &dockWidget : m_fullscreenHidden)
             if (dockWidget)
                 dockWidget->toggleView(true);
         m_fullscreenHidden.clear();
@@ -726,7 +726,7 @@ void CanvasWorkspace::switchPage(int index)
         rebuildPageLayout();
 }
 
-bool CanvasWorkspace::removePage(int index)
+bool PlotWorkspace::removePage(int index)
 {
     if (index < 0 || index >= m_pages.size() || m_pages.size() <= 1)
         return false;
@@ -762,7 +762,7 @@ bool CanvasWorkspace::removePage(int index)
     return true;
 }
 
-bool CanvasWorkspace::removeAt(int index)
+bool PlotWorkspace::removeAt(int index)
 {
     if (index < 0 || index >= m_cells.size() || m_cells.size() <= 1)
         return false;
@@ -793,12 +793,12 @@ bool CanvasWorkspace::removeAt(int index)
     return true;
 }
 
-bool CanvasWorkspace::split(bool horizontal)
+bool PlotWorkspace::split(bool horizontal)
 {
     if (m_cells.isEmpty())
         return false;
     const int anchorIndex = qBound(0, m_active, m_cells.size() - 1);
-    PlotCellDock *anchor = m_cells.at(anchorIndex).dockWidget;
+    DockedAxes *anchor = m_cells.at(anchorIndex).dockWidget;
     Page *page = m_pages.isEmpty() ? nullptr : m_pages.at(m_activePage);
     if (!anchor || !page || !page->dock)
         return false;
@@ -814,7 +814,7 @@ bool CanvasWorkspace::split(bool horizontal)
     slot.title = title;
     slot.frame = cell.frame;
     slot.bar = cell.bar;
-    PlotCellDock *created = page->dock->addCellDock(slot, horizontal ? 1 : 2, anchor);
+    DockedAxes *created = page->dock->addCellDock(slot, horizontal ? 1 : 2, anchor);
     if (!created)
     {
         // 停靠失败：回滚，不留半截状态。
@@ -830,9 +830,9 @@ bool CanvasWorkspace::split(bool horizontal)
     return true;
 }
 
-bool CanvasWorkspace::duplicateActive()
+bool PlotWorkspace::duplicateActive()
 {
-    PlotCanvas *src = activeCanvas();
+    AxesView *src = activeCanvas();
     if (!src)
         return false;
 
@@ -854,7 +854,7 @@ bool CanvasWorkspace::duplicateActive()
     return true;
 }
 
-bool CanvasWorkspace::duplicatePage()
+bool PlotWorkspace::duplicatePage()
 {
     if (m_pages.isEmpty())
         return false;
@@ -891,12 +891,12 @@ bool CanvasWorkspace::duplicatePage()
     return true;
 }
 
-void CanvasWorkspace::toggleFullscreen()
+void PlotWorkspace::toggleFullscreen()
 {
     // 退出：把全屏时藏起来的其它面板放回来（只放这一批，用户自己关掉的不会被重开）。
     if (m_fullscreenCell >= 0)
     {
-        for (const QPointer<PlotCellDock> &dockWidget : m_fullscreenHidden)
+        for (const QPointer<DockedAxes> &dockWidget : m_fullscreenHidden)
             if (dockWidget)
                 dockWidget->toggleView(true);
         m_fullscreenHidden.clear();
@@ -919,7 +919,7 @@ void CanvasWorkspace::toggleFullscreen()
     {
         if (i == index)
             continue;
-        PlotCellDock *other = m_cells.at(i).dockWidget;
+        DockedAxes *other = m_cells.at(i).dockWidget;
         if (!other)
             continue;
         other->toggleView(false);
@@ -929,7 +929,7 @@ void CanvasWorkspace::toggleFullscreen()
     syncPage();
 }
 
-bool CanvasWorkspace::setGrid(int rows, int cols)
+bool PlotWorkspace::setGrid(int rows, int cols)
 {
     if (rows < 1 || cols < 1)
         return false;
@@ -938,7 +938,7 @@ bool CanvasWorkspace::setGrid(int rows, int cols)
     return true;
 }
 
-bool CanvasWorkspace::setCellType(int index, const QString &kind)
+bool PlotWorkspace::setCellType(int index, const QString &kind)
 {
     if (index < 0 || index >= m_cells.size())
         return false;
@@ -959,14 +959,14 @@ bool CanvasWorkspace::setCellType(int index, const QString &kind)
     return false;
 }
 
-void CanvasWorkspace::onPlayheadChanged(double t)
+void PlotWorkspace::onPlayheadChanged(double t)
 {
     for (const Cell &c : m_cells)
         if (c.canvas)
             c.canvas->setPlayhead(t, true);
 }
 
-void CanvasWorkspace::syncPlaybackRange(int datasetId)
+void PlotWorkspace::syncPlaybackRange(int datasetId)
 {
     if (!m_playback || datasetId < 0)
         return;
@@ -981,7 +981,7 @@ void CanvasWorkspace::syncPlaybackRange(int datasetId)
     m_playback->setRange(lo, hi);
 }
 
-void CanvasWorkspace::onActiveChannelChanged(int datasetId, const QString &t, const QString &c)
+void PlotWorkspace::onActiveChannelChanged(int datasetId, const QString &t, const QString &c)
 {
     if (m_cells.isEmpty())
         return;
@@ -993,7 +993,7 @@ void CanvasWorkspace::onActiveChannelChanged(int datasetId, const QString &t, co
         cell.view->addChannel(datasetId, t, c, nullptr);
 }
 
-void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
+void PlotWorkspace::connectCanvasSignals(AxesView *canvas)
 {
     if (!canvas)
         return;
@@ -1007,13 +1007,13 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
     });
     // 同页联动游标：任一画布时间变化 → 其它画布画联动竖线（只同步时间，不复制读数）。
     // source 指针避免回环；syncLinkedTime 静默不回广播。
-    QObject::connect(canvas, &PlotCanvas::linkedTimeChanged, this,
-                     [this](double t, bool visible, PlotCanvas *source) {
+    QObject::connect(canvas, &AxesView::linkedTimeChanged, this,
+                     [this](double t, bool visible, AxesView *source) {
                          for (const Cell &c : m_cells)
                              if (c.canvas && c.canvas != source)
                                  c.canvas->syncLinkedTime(t, visible);
                      });
-    QObject::connect(canvas, &PlotCanvas::seriesSelectionRequested, this, [this, canvas](const QString &key) {
+    QObject::connect(canvas, &AxesView::seriesSelectionRequested, this, [this, canvas](const QString &key) {
         const PlotSeries *s = canvas->seriesByKey(key);
         if (!s)
             return;
@@ -1026,7 +1026,7 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
         sel.ids.insert(QStringLiteral("column"), s->column);
         m_appCtx.setSelection(sel);
     });
-    QObject::connect(canvas, &PlotCanvas::axisSelectionRequested, this, [this](const QString &axis) {
+    QObject::connect(canvas, &AxesView::axisSelectionRequested, this, [this](const QString &axis) {
         Selection sel;
         sel.kind = SelectionKind::Axis;
         sel.label = axis == QStringLiteral("x") ? QStringLiteral("X 轴")
@@ -1035,7 +1035,7 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
         sel.ids.insert(QStringLiteral("axis"), axis);
         m_appCtx.setSelection(sel);
     });
-    QObject::connect(canvas, &PlotCanvas::canvasSelectionRequested, this, [this] {
+    QObject::connect(canvas, &AxesView::canvasSelectionRequested, this, [this] {
         Selection sel;
         sel.kind = SelectionKind::Canvas;
         sel.label = QStringLiteral("画布");
@@ -1045,7 +1045,7 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
     // 右键"拆分 / 删除此画布"：按指针反查所在格再执行。
     // 先 setActive 是必须的——右键的画布很可能不是当前激活格，
     // 直接调 split()/removeAt(m_active) 会作用到别的画布上。
-    QObject::connect(canvas, &PlotCanvas::canvasActionRequested, this,
+    QObject::connect(canvas, &AxesView::canvasActionRequested, this,
                      [this, canvas](const QString &op) {
                          int idx = -1;
                          for (int i = 0; i < m_cells.size(); ++i)
@@ -1072,7 +1072,7 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
                          }
                      });
     // 曲线 Y 变换：打开统一编辑器（按 CapAxisY 过滤 + 在线调试），回写配方。
-    QObject::connect(canvas, &PlotCanvas::seriesTransformRequested, this, [this, canvas](const QString &key) {
+    QObject::connect(canvas, &AxesView::seriesTransformRequested, this, [this, canvas](const QString &key) {
         const PlotSeries *s = canvas->seriesByKey(key);
         QJsonObject initial;
         if (s && !s->yTransformId.isEmpty())
@@ -1099,7 +1099,7 @@ void CanvasWorkspace::connectCanvasSignals(PlotCanvas *canvas)
 // 属性 provider 注册见 commands/PropertyProviders.cpp。
 
 
-void CanvasWorkspace::registerViewActions()
+void PlotWorkspace::registerViewActions()
 {
     // 各域动作分文件注册（commands/），这里保留唯一注册点；路由仍按 active cell。
     registerPageActions();
@@ -1109,13 +1109,13 @@ void CanvasWorkspace::registerViewActions()
     registerPlaybackActions();
 }
 
-QWidget *createCanvasWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
+QWidget *createPlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
 {
-    return new CanvasWorkspace(appCtx, executor, parent);
+    return new PlotWorkspace(appCtx, executor, parent);
 }
 
 // 视图层自注册：中央工作区，替代单画布承载多画布 grid。
-PS_REGISTER_PANEL("canvas-workspace", canvasWorkspace, createCanvasWorkspace)
+PS_REGISTER_PANEL("plot-workspace", plotWorkspace, createPlotWorkspace)
 
 } // namespace nextpilot::plotscope::gui
 
