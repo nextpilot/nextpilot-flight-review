@@ -314,6 +314,13 @@ private:
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
     double m_t0 = 0.0;
     double m_t1 = 0.0;
+
+    // 恢复链：对标 PJ4 applySavedViewportOrZoom 在 bind/drain 后重放视口。
+    // m_restoreInProgress 覆盖 restoreViewState 全程（其内部的 setAxis/配方恢复
+    // 会多次触发 pushToPlot），期间一律不用数据全范围覆盖视口；
+    // m_preserveRangeOnNextPush 在恢复末尾置位，保住"恢复后紧随的一次绑定重建"。
+    bool m_restoreInProgress = false;
+    bool m_preserveRangeOnNextPush = false;
 };
 
 } // namespace nextpilot::plotscope::gui

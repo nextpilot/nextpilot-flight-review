@@ -643,8 +643,13 @@ void AxesView::pushToPlot()
     }
 
     // 横轴按真实时间定界（不是按序号）：数据可能不等间隔。
-    if (haveTime && m_t1 > m_t0)
+    // 恢复链里刚 restoreState 的视口优先：若本帧是恢复触发的重建，跳过覆盖，
+    // 并消费一次性标志。对标 PJ4 applySavedViewportOrZoom 在 bind 后重放视口。
+    if (haveTime && m_t1 > m_t0 && !m_preserveRangeOnNextPush && !m_restoreInProgress)
         m_plot->setXRange(m_t0, m_t1);
+    // 恢复全程（m_restoreInProgress）不消费一次性标志；只有恢复后的常规重建才消费。
+    if (!m_restoreInProgress)
+        m_preserveRangeOnNextPush = false;
     // 每条轴按自己那条曲线的 min/max 留 5% 余量。
     auto padRange = [](double lo, double hi) -> QPair<double, double> {
         if (!std::isfinite(lo) || !std::isfinite(hi) || hi <= lo)
@@ -707,6 +712,9 @@ bool AxesView::restoreViewState(const QJsonObject &state)
 {
     if (m_plot && !m_plot->restoreState(state))
         return false;
+    // restoreState 已把存盘视口写进 Axes。接下来的 setAxis/变换配方恢复会多次
+    // 触发 pushToPlot，全程用 m_restoreInProgress 保护，不让数据全范围覆盖视口。
+    m_restoreInProgress = true;
     const QJsonArray axes = state.value(QStringLiteral("seriesAxes")).toArray();
     for (const QJsonValue &v : axes)
     {
@@ -735,6 +743,10 @@ bool AxesView::restoreViewState(const QJsonObject &state)
     // 这里再把保存时的图例可见性精确恢复。
     if (!axes.isEmpty() || !tfArr.isEmpty())
         pushToPlot();
+    // 恢复全程结束：解除保护，并给"恢复后紧随的一次绑定重建"（late-bind /
+    // applyDocumentSpec 之后的 addChannel）留一次性保护，对标 PJ4 渐进重放。
+    m_restoreInProgress = false;
+    m_preserveRangeOnNextPush = true;
     if (state.contains(QStringLiteral("legendVisible")))
         setLegendVisible(state.value(QStringLiteral("legendVisible")).toBool());
     return true;

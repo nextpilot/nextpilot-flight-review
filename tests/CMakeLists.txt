@@ -322,6 +322,7 @@ target_link_libraries(ps_test_plot_io PRIVATE
     ps_recording
     ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 target_sources(ps_test_plot_io PRIVATE ${CMAKE_SOURCE_DIR}/src/application/shell/App.cpp)
+target_compile_definitions(ps_test_plot_io PRIVATE PS_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixture")
 set_target_properties(ps_test_plot_io PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_plot_io COMMAND ps_test_plot_io)
 set_tests_properties(ps_plot_io PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

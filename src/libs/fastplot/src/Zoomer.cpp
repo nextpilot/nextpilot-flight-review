@@ -10,9 +10,31 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace nextpilot::plotscope::fastplot
 {
+namespace
+{
+// 深缩放 X 轴下限（对标 PJ4 ulpAwareMinTimeXWidthSec + 折叠边 nudge）。
+// 我们的时间真值是相对首帧的整数 ns（Dataset::TimeNs），绘图副本是相对秒；
+// 1ns = 1e-9s 是语义最小可分辨宽度，另按中心值的 double ULP 兜底（相对秒
+// 值域小、ULP≈0.002ns，通常不触发，但保留 PJ4 的 ULP 语义以防值域增大）。
+// 当 hi-lo 小于下限：以 center 为中心撑开；完全相等时两边各 nudge 半格。
+void clampMinTimeXWidth(double &lo, double &hi)
+{
+    const double center = (lo + hi) * 0.5;
+    const double ulp = std::nextafter(std::fabs(center) + 1.0,
+                                      std::numeric_limits<double>::infinity())
+                       - (std::fabs(center) + 1.0);
+    const double minWidth = std::max(1e-9, ulp * 2.0); // 1ns 或 2 ULP，取大者
+    if (hi > lo && (hi - lo) >= minWidth)
+        return;
+    const double half = minWidth * 0.5;
+    lo = center - half;
+    hi = center + half;
+}
+} // namespace
 
 Zoomer::Zoomer(Axes *plot, QObject *parent)
     : QObject(parent)
@@ -56,7 +78,10 @@ void Zoomer::zoomBy(double factorX, double factorY, const QPointF &anchorPixel)
     const double ay = vp.pixelToY(anchorPixel.y());
 
     // 锚点不动：缩放前后 anchor 的数据坐标与像素位置都不变。
-    m_plot->setXRange(ax - (ax - vp.xLower()) * factorX, ax + (vp.xUpper() - ax) * factorX);
+    double nx0 = ax - (ax - vp.xLower()) * factorX;
+    double nx1 = ax + (vp.xUpper() - ax) * factorX;
+    clampMinTimeXWidth(nx0, nx1);
+    m_plot->setXRange(nx0, nx1);
     m_plot->setYRange(ay - (ay - vp.yLower()) * factorY, ay + (vp.yUpper() - ay) * factorY);
     Q_EMIT zoomed();
 }
@@ -75,7 +100,9 @@ void Zoomer::zoomToPixels(const QRect &pixels)
     const double y0 = vp.pixelToY(r.bottom());
     const double y1 = vp.pixelToY(r.top());
     m_plot->setRubberBand(QRect());
-    m_plot->setXRange(x0, x1);
+    double cx0 = x0, cx1 = x1;
+    clampMinTimeXWidth(cx0, cx1);
+    m_plot->setXRange(cx0, cx1);
     m_plot->setYRange(y0, y1);
     Q_EMIT zoomed();
 }

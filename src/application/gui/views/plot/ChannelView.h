@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QTimer>
 #include <QString>
+#include <QColor>
 
 namespace nextpilot::plotscope::gui
 {
@@ -38,8 +39,9 @@ public:
     // 返回 false 表示该通道取数失败（err 里说明原因）。
     // title 非空时作为曲线显示名（叠加/对比要带源前缀，如「源A:attitude.pitch」）；
     // 空则沿用默认「datasetId / table.column」。
+    // color 非空时作为曲线显式颜色（恢复链读回存盘 color 用），空则走 palette 分配。
     bool addChannel(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table, const QString &column,
-                    QString *err = nullptr, const QString &title = QString());
+                    QString *err = nullptr, const QString &title = QString(), const QColor &color = QColor());
     // 兼容旧名：等价于 addChannel（"显示某通道"=叠加它）。
     bool showChannel(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table, const QString &column,
                      QString *err = nullptr);
