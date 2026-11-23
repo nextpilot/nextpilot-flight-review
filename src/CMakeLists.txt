@@ -81,6 +81,9 @@ add_subdirectory("${PS_THIRDPARTY_DIR}/lua-5.4" "${CMAKE_CURRENT_BINARY_DIR}/3rd
 
 add_subdirectory(libs/foundation)
 
+# Arrow 导入导出通道（nanoarrow，纯转换库；不依赖 Qt/kernel/上层）。
+add_subdirectory(libs/arrow)
+
 # === 注册表最小核（header-only，先于 core 定义）===
 add_subdirectory(libs/registry)
 
