@@ -23,7 +23,7 @@ main 是唯一长期分支、始终可发布可回退。所有改动以 **issue 
 | ④ 开发+验证 | 在特性分支编码、编译、跑测试，全部通过 | ctest/测试全绿、构建无 error |
 | ⑤ 回填 issue | 在本 issue 评论写「完成情况」（提交号、变更、测试结果、偏差，见 §2.4） | issue 中有完成记录评论 |
 | ⑥ 推送+建 PR | rebase 至最新 main 后推送特性分支（细节见 §4），建 PR（见 §6） | PR 创建成功（拿到 PR 号） |
-| ⑦ 关 issue+收尾 | **轮询 PR 状态直到 merged**，随后自动关闭 issue（见 §5.3）、删除特性分支 | issue `state=closed`，分支已删 |
+| ⑦ 关 issue+收尾 | **轮询 PR 状态直到 merged**，随后在 issue 回填完成说明评论、自动关闭 issue（见 §5.3）、删除特性分支 | issue 有完成记录评论且 `state=closed`，分支已删 |
 
 **关键约束：**
 
@@ -174,30 +174,63 @@ git push origin <特性分支>
 
 本仓库是**企业 `nextpilot` 下的仓库**，main 为**保护分支**，普通个人仓库的 API 路径大多不可用。
 
-### 5.1 认证与令牌
+### 5.1 认证与令牌（三种方式，均已实测）
 
-- API 用 header：`Authorization: token <TOKEN>`。
-- git 推送用 URL 内嵌令牌：`https://oauth2:<TOKEN>@gitee.com/nextpilot/nextpilot-advance-plotscope.git`（或 `latercomer:<TOKEN>`）。
-- **令牌运行时从用户获取，严禁写入仓库任何文件**。需要 `issues`（建/关 issue）、`notes`（评论）、`pull_requests`（PR）scope。
+令牌是**仓库级私人令牌**，所属账号 `latercomer`。**令牌运行时从用户获取，严禁写入仓库任何文件**（包括本 skill）。
+
+**① git 推送**——URL 内嵌令牌：
+
+```bash
+# 用户名必须是"令牌所属账号"，不是仓库属主！
+git push https://latercomer:<TOKEN>@gitee.com/nextpilot/nextpilot-advance-plotscope.git <refspec>
+```
+
+⚠️ 写 `nextpilot:<TOKEN>` 会报 403 `The token username invalid`——即令牌有效，用户名对不上账号也不行（实测踩坑）。拿不准所属账号时先查：`GET /api/v5/user?access_token=<TOKEN>` 返回的 `login` 字段就是正确用户名。
+
+**② API 调用**——推荐 **body/query 带 `access_token` 参数**（所有已验证端点均用此形式，最稳）：
+
+```bash
+# JSON 形式（建 PR 等）
+curl -s -X POST "https://gitee.com/api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls" \
+  -H "Content-Type: application/json" \
+  -d '{"access_token": "<TOKEN>", "title": "...", ...}'
+
+# 表单形式（建 issue/评论/关 issue 等，--data-urlencode 自动转义）
+curl -s -X POST "https://gitee.com/api/v5/repos/nextpilot/issues" \
+  --data-urlencode "access_token=<TOKEN>" \
+  --data-urlencode "repo=nextpilot-advance-plotscope" \
+  --data-urlencode "title=..."
+```
+
+**③ header 形式**（部分端点可用，不如 ② 可靠，不推荐首选）：
+
+```bash
+curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
+```
+
+所需 scope：`issues`（建/关 issue）、`notes`（评论）、`pull_requests`（PR）。企业级操作（`/enterprises/...` 路径）仓库级令牌无权，一律走 §5.2 的 repos 扁平路径。
 
 ### 5.2 关键 API 端点（均已验证）
 
 | 操作 | 方法 + 路径 | 备注 |
 |---|---|---|
-| 建 issue | `POST /api/v5/repos/nextpilot/issues` | body 带 `repo=nextpilot-advance-plotscope` + `title`/`body`（企业扁平路径） |
+| 建 issue | `POST /api/v5/repos/nextpilot/issues` | 表单参数：`repo=nextpilot-advance-plotscope` + `title`/`body` + `issue_type=任务`（企业扁平路径，**路径里不带仓库名**） |
 | 读/列 issue | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues` | `number` 形如 `IKX6N2` |
-| 追加评论（回填） | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | body 带 `body`（Markdown） |
+| 追加评论（回填） | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | 表单参数 `body`（Markdown） |
 | 读评论 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | enterprises 路径会因仓库级令牌报 403，用 repos 路径 |
-| 建 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls` | body：`head`/`base`/`title`/`body` |
+| 建 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls` | JSON body：`head`/`base`/`title`/`body` |
+| 更新 PR 描述 | `PATCH /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | JSON body：`body`（新描述全文）；关联 issue 用 `Closes IKxxxxx` 写进描述首行 |
 | 审批 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review` | body 带 `event=APPROVE`；成功返回 204 |
 | 查 PR 状态 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | 看 `state`（`open`/`merged`/`closed`）、`mergeable` |
 | 合并 PR | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge` | body 带 `merge_method=merge` |
-| 关闭 issue | `PATCH /api/v5/repos/nextpilot/issues/<num>` | **必须** body 带 `repo=nextpilot-advance-plotscope` + `state=closed`，返回 `state: closed` |
+| 关闭 issue | `PATCH /api/v5/repos/nextpilot/issues/<num>` | **必须** 表单参数带 `repo=nextpilot-advance-plotscope` + `state=closed`，返回 `state: closed` |
 | 删文件（免强推） | `DELETE /api/v5/repos/nextpilot/nextpilot-advance-plotscope/contents/<path>` | body 带 `sha`/`branch`/`message`；清理误传文件用，绕过保护分支 |
 
 **踩坑提示：**
 
-- 关闭 issue **只能**用 `PATCH /repos/nextpilot/issues/<num>` + `repo=`。`PATCH /enterprises/nextpilot/issues/<num>` → 403「仓库级私人令牌无权」；`PATCH /repos/nextpilot/nextpilot-advance-plotscope/issues/<num>` → 404「Not Found Project」。
+- **git 推送用户名 = 令牌所属账号**：`https://nextpilot:<TOKEN>@...` → 403 `The token username invalid`（令牌本身有效也没用）；改 `https://latercomer:<TOKEN>@...` 即成功。不确定所属账号先 `GET /api/v5/user?access_token=<TOKEN>` 看 `login`。
+- **项目型仓库 issue 只走扁平路径**：`POST/PATCH /repos/nextpilot/issues`（仓库名放表单参数 `repo`）。标准路径 `POST/PATCH /repos/nextpilot/nextpilot-advance-plotscope/issues/<num>` → 404/「project or enterprise」——项目型仓库的 issue 编号是 `IKxxxxx` 标识串，不是纯数字。
+- 关闭 issue **只能**用 `PATCH /repos/nextpilot/issues/<num>` + `repo=`。`PATCH /enterprises/nextpilot/issues/<num>` → 403「仓库级私人令牌无权」。
 - main 是保护分支：**任何直推**（哪怕带令牌）都返回 `No permission to push this protected branch`。改动只能经 PR；清理误传文件用 contents API（见上表），不强推。
 - PR 合并可能被门禁拦截：`未通过设置的审查`（需先 approve）或 `未通过设置的测试`（CI 门禁）。遇此先排查 review 与 status，不绕过。
 - **不要把调试/截图图片传进仓库**。评论框「上传图片」是图床（存服务器、不进仓库），但只认网页登录 cookie，令牌调用返回 401；v5 API 无开放图床上传端点。需要内嵌图片时用网页登录后上传或外链，禁止 `git add` 截图。
@@ -208,6 +241,9 @@ git push origin <特性分支>
 loop（每隔一段时间，设上限避免无限等待）：
     GET PR 状态
     if state == "merged":
+        POST /repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments
+            # 先在 issue 上回填「完成情况」评论：PR 号、提交号、变更摘要、
+            # 测试结果（数字）、与 plan 的偏差——关闭前 issue 里必须有完成记录
         PATCH /repos/nextpilot/issues/<issue编号>  { repo, state=closed }   # 关闭 issue
         git push origin --delete <特性分支>；git branch -D <特性分支>        # 删分支
         结束
