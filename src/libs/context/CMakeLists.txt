@@ -12,6 +12,7 @@ add_library(ps_context STATIC
     src/IngestPipeline.cpp
     src/IngestOrchestrator.cpp
     src/MessageLog.cpp
+    src/PersistentStateHub.cpp
     include/AppContext.h
     include/InteractionHub.h
     include/SettingsStore.h

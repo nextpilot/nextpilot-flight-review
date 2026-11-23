@@ -23,6 +23,12 @@ target_link_libraries(ps_test_dataset_standalone PRIVATE ps_dataset Qt6::Core)
 set_target_properties(ps_test_dataset_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_dataset_standalone COMMAND ps_test_dataset_standalone)
 
+# === PersistentStateHub 验收（M4-R2）：往返 / 分段 / 登记序 / bestEffort ===
+add_executable(ps_test_persistent_state test_persistent_state.cpp)
+target_link_libraries(ps_test_persistent_state PRIVATE ps_context Qt6::Core)
+set_target_properties(ps_test_persistent_state PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_persistent_state COMMAND ps_test_persistent_state)
+
 # === DataTableModel 验收（2.2.2）：懒加载分页 + 百万行 <100ms ===
 # 只链 ps_data_tablemodel + ps_dataset + Qt Core；模型碰 Widgets 即编译失败。
 add_executable(ps_test_data_table test_data_table.cpp)

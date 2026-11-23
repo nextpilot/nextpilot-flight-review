@@ -35,6 +35,12 @@ QJsonObject collect(App &application)
     }
     root[QStringLiteral("modules")] = modules;
 
+    // 结构化状态条目（登记序；会话快照与工作区预设的内容来源）。
+    QJsonArray states;
+    for (const QString &id : application.context().states().ids())
+        states.append(id);
+    root[QStringLiteral("states")] = states;
+
     // 扩展包
     QJsonArray packs;
     const auto &toolbox = application.host().toolbox();

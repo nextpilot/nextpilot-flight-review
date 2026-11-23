@@ -7,6 +7,7 @@
 #include "IngestPipeline.h"
 #include "InteractionHub.h"
 #include "MessageLog.h"
+#include "PersistentStateHub.h"
 #include "DerivedSeriesHub.h"
 #include "Result.h"
 #include "Selection.h"
@@ -109,6 +110,10 @@ public:
     // 面板只订阅 messageAppended，不轮询、不互相引用。
     MessageLog &messages() { return m_messages; }
     const MessageLog &messages() const { return m_messages; }
+
+    // 结构化状态的登记/收集（会话快照与工作区预设的内容来源）。
+    PersistentStateHub &states() { return m_states; }
+    const PersistentStateHub &states() const { return m_states; }
     void appendMessage(const QString &level, const QString &source, const QString &text,
                        const QString &locator = QString());
 
@@ -202,6 +207,7 @@ private:
 
     InteractionHub m_interactions; // 交互注册表：AppContext owns，host 编排
     MessageLog m_messages;        // 进程级消息流（纯数据，面板订阅后增量渲染）
+    PersistentStateHub m_states;  // 结构化状态的登记表（收集/恢复由外壳驱动）
     TransformHub m_transforms;
     DerivedSeriesHub m_derivedHub; // 派生序列注册表：独立派生字段
     Selection m_selection;       // 当前统一选中对象
