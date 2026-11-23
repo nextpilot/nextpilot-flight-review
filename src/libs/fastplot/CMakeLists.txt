@@ -13,6 +13,7 @@ add_library(fastplot STATIC
     src/Axis.cpp
     src/Axes.cpp
     src/Legend.cpp
+    src/CursorReadoutOverlay.cpp
     src/Line.cpp
     src/LodCache.cpp
     src/Zoomer.cpp
@@ -34,6 +35,8 @@ add_library(fastplot STATIC
     include/fastplot/ScaleDiv.h
     include/fastplot/Axis.h
     include/fastplot/Axes.h
+    include/fastplot/Overlay.h
+    include/fastplot/CursorReadoutOverlay.h
     include/fastplot/Legend.h
     include/fastplot/StateColors.h
     include/fastplot/PlotWidget.h

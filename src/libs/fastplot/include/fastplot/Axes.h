@@ -2,8 +2,10 @@
 
 #include "fastplot/Axis.h"
 #include "fastplot/Artist.h"
+#include "fastplot/CursorReadoutOverlay.h"
 #include "fastplot/Legend.h"
 #include "fastplot/Line.h"
+#include "fastplot/Overlay.h"
 #include "fastplot/Viewport.h"
 
 #include <QColor>
@@ -131,19 +133,14 @@ public:
     void setOverlayText(const QString &text);
     void clearOverlay();
 
-    // ---- 读数叠加层（对齐老 PlottingCanvas 的打磨交互；状态由上层持有，画布只画）----
-    // 一行读数：曲线名 + 该时刻值 + 曲线色。取值/格式化都在 AxesView 做（库不依赖 Dataset）。
-    struct ReadoutRow
-    {
-        QString label;
-        QString value;
-        QColor color;
-    };
+    // ---- 读数叠加层（对齐老 PlottingCanvas 的打磨交互；渲染由 CursorReadoutOverlay 负责）----
+    // 逐曲线读数行：曲线名 + 该时刻值 + 曲线色。取值/格式化都在 AxesView 做（库不依赖 Dataset）。
+    using ReadoutRow = ::nextpilot::plotscope::fastplot::ReadoutRow;
     // 十字游标 + 逐曲线读数框。x 为数据时间；pinned=固定读数（标题不同+高亮边框）。
     void setCursorReadout(double x, bool active, bool pinned,
                           const QString &header, const QVector<ReadoutRow> &rows);
-    bool cursorReadoutActive() const { return m_cursorActive; }
-    double cursorReadoutX() const { return m_cursorX; }
+    bool cursorReadoutActive() const { return m_cursorReadout.isActive(); }
+    double cursorReadoutX() const { return m_cursorReadout.x(); }
 
     // A/B 双游标测量：a/b 为数据时间，hasB=false 时只画 A 和提示。
     // rows 为每曲线 "Δy / 斜率" 读数；firstDelta 为首条可见曲线在 A→B 间的 Δy（画直角三角形）。
@@ -256,7 +253,6 @@ private:
     void paintCurves(QPainter &painter);
     void paintOverlay(QPainter &painter);
     void paintLegend(QPainter &painter);
-    void paintCursorReadout(QPainter &painter, const QRectF &plot);
     void paintAB(QPainter &painter, const QRectF &plot);
     void paintBookmarks(QPainter &painter, const QRectF &plot);
     void paintMarkers(QPainter &painter, const QRectF &plot);
@@ -285,12 +281,8 @@ private:
     bool m_playheadActive = false;
     double m_linkedX = 0.0;
     bool m_linkedActive = false;
-    // 读数叠加层状态（只存"画什么"，不存"是什么数据"）。
-    double m_cursorX = 0.0;
-    bool m_cursorActive = false;
-    bool m_cursorPinned = false;
-    QString m_cursorHeader;
-    QVector<ReadoutRow> m_cursorRows;
+    // 读数叠加层状态（"画什么"由各自 Overlay 类自持，Axes 只留组件）。
+    CursorReadoutOverlay m_cursorReadout;   // 十字游标 + 逐曲线读数框
     bool m_abEnabled = false;
     double m_abA = 0.0;
     double m_abB = 0.0;
