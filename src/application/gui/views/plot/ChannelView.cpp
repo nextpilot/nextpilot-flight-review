@@ -60,7 +60,7 @@ int ChannelView::channelCount() const
 }
 
 bool ChannelView::addChannel(DatasetId datasetId, const QString &table, const QString &column,
-                             QString *err, const QString &title)
+                             QString *err, const QString &title, const QColor &color)
 {
     if (!m_canvas)
         return false;
@@ -70,7 +70,15 @@ bool ChannelView::addChannel(DatasetId datasetId, const QString &table, const QS
     for (PlotSeries &s : m_channels)
     {
         if (s.key() == key)
+        {
+            // 恢复链显式带色时，即便曲线已存在也要把存盘色写回（覆盖 palette 色）。
+            if (color.isValid())
+            {
+                s.color = color;
+                m_canvas->setSeriesInk(s.key(), color);
+            }
             return renderOne(s, err);
+        }
     }
 
     PlotSeries s;
@@ -78,7 +86,9 @@ bool ChannelView::addChannel(DatasetId datasetId, const QString &table, const QS
     s.table = table;
     s.column = column;
     s.title = title.isEmpty() ? QStringLiteral("%1 / %2.%3").arg(datasetId).arg(table, column) : title;
-    // 颜色由画布按当前已有条数分配；这里留空，renderOne 会补上。
+    // 显式色（恢复链读回的存盘色）优先；否则留空由画布 palette 分配。
+    if (color.isValid())
+        s.color = color;
     if (!renderOne(s, err))
         return false;
     m_channels.append(s);

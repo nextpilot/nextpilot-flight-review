@@ -7,6 +7,7 @@
 #include "MainWindow.h"
 #include "AxesView.h"
 #include "PlotWorkspace.h"
+#include "PlotLayout.h"
 #include "ShellBinder.h"
 
 #include "Dataset.h"
@@ -31,6 +32,7 @@ using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::gui;
 using namespace nextpilot::plotscope::host;
+namespace plot = nextpilot::plotscope::plot;
 
 #define CHECK(cond)                                                                      \
     do {                                                                                 \
@@ -281,6 +283,162 @@ int main(int argc, char *argv[])
             QStringLiteral("figure.removeAxes"), {}, rm));
         CHECK(workspace->cellCount() == 3);
         OK("多画布工作区：添加/拆分/2×2 网格/删除 + 活动画布路由全部通过");
+    }
+
+    // --- 8) 第2仗恢复链：视口不被绑曲线覆盖 + 颜色显式回读 ---
+    {
+        // 8a. 视口保护：存盘一个"深缩放"视口，恢复后紧接着绑一条全量曲线，
+        //     视口必须停在存盘值，不被 pushToPlot 的 setXRange(m_t0,m_t1) 覆盖。
+        auto mkSeries = [](DatasetId id, const QString &col, double t1) {
+            PlotSeries s;
+            s.datasetId = id;
+            s.table = QStringLiteral("t");
+            s.column = col;
+            s.title = col;
+            QVector<LodTriple> l;
+            for (int i = 0; i < 40; ++i)
+                l.push_back(LodTriple{i * (t1 / 40.0), std::sin(i * 0.1), std::sin(i * 0.1)});
+            s.lod = l;
+            s.t0 = 0.0;
+            s.t1 = t1;
+            return s;
+        };
+        canvas->clear();
+        // 先绑一条全量 0..10 的曲线，拿到含 seriesAxes 的完整 viewState。
+        canvas->setSeries(mkSeries(1, QStringLiteral("roll"), 10.0));
+        QJsonObject view = canvas->saveViewState();
+        // 模拟存盘的深缩放视口 [2,3]（远小于数据全量 [0,10]）。
+        view.insert(QStringLiteral("x"), QJsonArray{2.0, 3.0});
+        CHECK(canvas->restoreViewState(view));
+        double vx0 = 0.0, vx1 = 0.0;
+        CHECK(canvas->visibleTimeRange(&vx0, &vx1));
+        CHECK(std::fabs(vx0 - 2.0) < 1e-9 && std::fabs(vx1 - 3.0) < 1e-9);
+        // 恢复后紧接着绑一条新曲线（触发 pushToPlot）——视口必须仍是 [2,3]。
+        canvas->setSeries(mkSeries(1, QStringLiteral("pitch"), 10.0));
+        CHECK(canvas->visibleTimeRange(&vx0, &vx1));
+        CHECK(std::fabs(vx0 - 2.0) < 1e-9 && std::fabs(vx1 - 3.0) < 1e-9);
+        OK("恢复链 8a：存盘视口不被绑曲线 pushToPlot 覆盖（preserveRange）");
+
+        // 8b. 显式颜色回读：setSeriesInk 写入的颜色经 save/restore 稳定保留，
+        //     且显式色不会被 palette 重新分配覆盖。
+        canvas->clear();
+        PlotSeries colored = mkSeries(2, QStringLiteral("yaw"), 5.0);
+        canvas->setSeries(colored);
+        const QColor savedColor(200, 40, 90);
+        canvas->setSeriesInk(colored.key(), savedColor);
+        CHECK(canvas->seriesAt(0)->color == savedColor);
+        // 再写一条不同曲线，palette 分配不能改动第一条的显式色。
+        canvas->setSeries(mkSeries(2, QStringLiteral("roll"), 5.0));
+        CHECK(canvas->seriesAt(0)->color == savedColor);
+        OK("恢复链 8b：显式颜色稳定保留，不被 palette 重分配覆盖");
+
+        // 8c. offset 不进存盘：设置曲线 X 偏移后，saveViewState 的视口 x 不含 offset
+        //     （offset 只叠加绘图副本，不改轴范围/存盘）。
+        canvas->clear();
+        canvas->setSeries(mkSeries(3, QStringLiteral("sig"), 8.0));
+        QJsonObject base = canvas->saveViewState();
+        const QJsonArray xBefore = base.value(QStringLiteral("x")).toArray();
+        canvas->setSeriesXOffset(mkSeries(3, QStringLiteral("sig"), 8.0).key(), 3.5);
+        QJsonObject shifted = canvas->saveViewState();
+        const QJsonArray xAfter = shifted.value(QStringLiteral("x")).toArray();
+        CHECK(xBefore.size() == 2 && xAfter.size() == 2);
+        CHECK(std::fabs(xBefore.at(0).toDouble() - xAfter.at(0).toDouble()) < 1e-12);
+        CHECK(std::fabs(xBefore.at(1).toDouble() - xAfter.at(1).toDouble()) < 1e-12);
+        OK("恢复链 8c：曲线 X offset 不进存盘视口（不漂移）");
+    }
+
+    // --- 9) 端到端：toDocumentSpec/applyDocumentSpec 的颜色 + 视口 round-trip ---
+    {
+        // 走真实 data.load 造出源+数据集（origin 才有意义）。
+        const QString fixture = QStringLiteral(PS_TEST_FIXTURE_DIR "/demo_flight.csv");
+        Intent load;
+        load.op = QStringLiteral("data.load");
+        load.params[QStringLiteral("path")] = fixture;
+        const auto loaded = application.host().execute(load);
+        CHECK(loaded);
+        const int dsId = loaded.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
+        CHECK(dsId >= 0);
+        const int srcId = application.context().sources().sourceOfDataset(dsId);
+        CHECK(srcId >= 0);
+        const DataSourceInfo *srcInfo = application.context().sources().get(srcId);
+        CHECK(srcInfo != nullptr && !srcInfo->datasetIds.isEmpty());
+
+        // 动态取真实的 table.column（CSV 解析后 table 名不一定是 att）。
+        const Dataset *ds = application.context().data().get(dsId);
+        CHECK(ds != nullptr && !ds->tableNames().isEmpty());
+        const QString realTable = ds->tableNames().first();
+        const Table *tbl = ds->table(realTable);
+        CHECK(tbl != nullptr && !tbl->columns.isEmpty());
+        const QString realColumn = tbl->columns.first().name;
+        const QString realChannel = realTable + QLatin1Char('.') + realColumn;
+
+        // 用 grid 复位到干净 1 格，清掉前几段遗留的曲线/格子。
+        {
+            QVariant nullV;
+            Result<QVariant> g(nullV);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("figure.grid"), {{QStringLiteral("rows"), 1}, {QStringLiteral("cols"), 1}}, g));
+        }
+        workspace->activeCanvas()->clear();
+        // 构造一个只含 1 页 1 格的文档，手动填 CanvasSpec（避免依赖 UI 交互）。
+        plot::PlotDocumentSpec doc;
+        doc.version = 1;
+        plot::PlotPageSpec page;
+        page.id = QStringLiteral("page-1");
+        plot::LayoutNode canvasNode;
+        canvasNode.isCanvas = true;
+        plot::CanvasSpec cs;
+        cs.id = QStringLiteral("c1");
+        cs.viewType = QStringLiteral("timeseries");
+        cs.datasetOrigin = srcInfo->origin;
+        cs.channels << realChannel;
+        // 存盘色 + 深缩放视口。style key 末两段须为 table|column（apply 按此匹配）。
+        const QColor docColor(10, 200, 130);
+        QJsonObject so;
+        so.insert(QStringLiteral("key"), QStringLiteral("%1|%2|%3").arg(dsId).arg(realTable, realColumn));
+        so.insert(QStringLiteral("color"), docColor.name());
+        QJsonArray styleArr{so};
+        QJsonObject styleObj;
+        styleObj.insert(QStringLiteral("series"), styleArr);
+        cs.style = styleObj;
+        QJsonObject st;
+        st.insert(QStringLiteral("x"), QJsonArray{1.0, 2.0});
+        cs.state = st;
+        canvasNode.canvas = cs;
+        page.root = canvasNode;
+        doc.pages << page;
+
+        // 应用 → 曲线绑上、颜色/视口就位。
+        CHECK(workspace->applyDocumentSpec(doc, application.context().sources()));
+        // 通过 toDocumentSpec 回读验证（不依赖 active 指向哪个 cell）。
+        plot::PlotDocumentSpec round = workspace->toDocumentSpec();
+        CHECK(round.pages.size() >= 1);
+        QVector<plot::CanvasSpec> allCanvases;
+        {
+            std::function<void(const plot::LayoutNode &)> grab = [&](const plot::LayoutNode &n) {
+                if (n.isCanvas) allCanvases.append(n.canvas);
+                for (const auto &ch : n.children) grab(ch);
+            };
+            grab(round.pages.first().root);
+        }
+        // 找到绑上目标通道的那张画布。
+        plot::CanvasSpec rc;
+        for (const auto &cv : allCanvases)
+            if (cv.channels.contains(realChannel))
+            { rc = cv; break; }
+        CHECK(rc.channels.size() == 1);
+        CHECK(rc.channels.first() == realChannel);
+        // 回读的颜色应等于存盘色。
+        const QJsonArray rseries = rc.style.value(QStringLiteral("series")).toArray();
+        CHECK(rseries.size() == 1);
+        CHECK(QColor(rseries.at(0).toObject().value(QStringLiteral("color")).toString()) == docColor);
+        OK("恢复链 9：applyDocumentSpec 读回存盘颜色 + 通道（端到端）");
+        // 视口回读。
+        const QJsonArray rx = rc.state.value(QStringLiteral("x")).toArray();
+        CHECK(rx.size() == 2);
+        CHECK(std::fabs(rx.at(0).toDouble() - 1.0) < 1e-6);
+        CHECK(std::fabs(rx.at(1).toDouble() - 2.0) < 1e-6);
+        OK("恢复链 9b：存盘深缩放视口经 apply→save 往返精确");
     }
 
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");

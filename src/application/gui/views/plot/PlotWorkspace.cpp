@@ -1334,30 +1334,54 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
 
             const QString kind = c.viewType.isEmpty() ? QStringLiteral("timeseries") : c.viewType;
             setCellType(i, kind);
-            if (!c.state.isEmpty())
-                cell.canvas->restoreViewState(c.state);
+
+            // 读回存盘颜色：c.style.series[] 里每条的 key 形如 "datasetId|table|column"，
+            // 末两段即 table.column（与 CanvasSpec.channels 的 legendName 同口径）。
+            // datasetId 是进程内 id、恢复后可能漂移，故按 table.column 匹配，不按整 key。
+            QHash<QString, QColor> savedColorByChannel;
+            const QJsonArray styleSeries = c.style.value(QStringLiteral("series")).toArray();
+            for (const QJsonValue &sv : styleSeries)
+            {
+                const QJsonObject so = sv.toObject();
+                const QStringList parts = so.value(QStringLiteral("key")).toString().split(QLatin1Char('|'));
+                if (parts.size() >= 3)
+                {
+                    const QString ch = QStringLiteral("%1.%2").arg(parts.at(1), parts.at(2));
+                    const QColor col(so.value(QStringLiteral("color")).toString());
+                    if (col.isValid())
+                        savedColorByChannel.insert(ch, col);
+                }
+            }
 
             // 数据集回绑：origin → 源 → 该源首个数据集。匹配不上留空态并记一条，不阻断。
             const int sourceId = sources.sourceByOrigin(c.datasetOrigin);
             const DataSourceInfo *info = sourceId >= 0 ? sources.get(sourceId) : nullptr;
-            if (info == nullptr || info->datasetIds.isEmpty())
+            if (info != nullptr && !info->datasetIds.isEmpty())
             {
-                if (!c.datasetOrigin.isEmpty())
-                    m_appCtx.messages().append(
-                        QStringLiteral("warn"), QStringLiteral("plot.document"),
-                        QStringLiteral("画布 %1 的数据源未找到：%2，已留空态")
-                            .arg(c.title.isEmpty() ? c.id : c.title, c.datasetOrigin));
-                continue;
+                const int datasetId = info->datasetIds.first();
+                // 先绑全部曲线（显式色读回），再恢复视口——否则 addChannel→pushToPlot
+                // 的 setXRange(m_t0,m_t1) 会用数据全范围覆盖刚恢复的视口。
+                for (const QString &channel : c.channels)
+                {
+                    const int dot = channel.indexOf(QLatin1Char('.'));
+                    const QString table = dot > 0 ? channel.left(dot) : QString();
+                    const QString column = dot > 0 ? channel.mid(dot + 1) : channel;
+                    cell.view->addChannel(datasetId, table, column, nullptr, QString(),
+                                          savedColorByChannel.value(channel));
+                }
+            }
+            else if (!c.datasetOrigin.isEmpty())
+            {
+                m_appCtx.messages().append(
+                    QStringLiteral("warn"), QStringLiteral("plot.document"),
+                    QStringLiteral("画布 %1 的数据源未找到：%2，已留空态")
+                        .arg(c.title.isEmpty() ? c.id : c.title, c.datasetOrigin));
             }
 
-            const int datasetId = info->datasetIds.first();
-            for (const QString &channel : c.channels)
-            {
-                const int dot = channel.indexOf(QLatin1Char('.'));
-                const QString table = dot > 0 ? channel.left(dot) : QString();
-                const QString column = dot > 0 ? channel.mid(dot + 1) : channel;
-                cell.view->addChannel(datasetId, table, column);
-            }
+            // 视口属于视图、与数据无关：无论曲线是否绑成功都要恢复。restoreViewState
+            // 会置位 preserveRange 标志，紧随其后的重建不再用数据范围覆盖视口。
+            if (!c.state.isEmpty())
+                cell.canvas->restoreViewState(c.state);
         }
 
         rebuildPageLayout();

@@ -511,6 +511,23 @@ int main(int argc, char **argv)
         }
     }
 
+    // 深缩放下限：连续极端 zoom 不得让 X 视口塌缩（对标 PJ4 ULP 下限 + nudge）。
+    {
+        nextpilot::plotscope::fastplot::Axes plot;
+        plot.resize(400, 300);
+        plot.setXRange(0.0, 1.0);
+        nextpilot::plotscope::fastplot::Zoomer zoomer(&plot);
+        const QPointF anchor(plot.plotRect().center());
+        for (int i = 0; i < 40; ++i)
+            zoomer.zoomBy(1e-6, anchor); // 每次把窗口缩到百万分之一
+        const auto &vp = plot.viewport();
+        const double w = vp.xUpper() - vp.xLower();
+        CHECK(w > 0.0);                 // 不塌缩为 0
+        CHECK(w >= 1e-9 * 0.99);        // 不低于 1ns 语义下限（容 double 表示误差）
+        CHECK(std::isfinite(vp.xLower()) && std::isfinite(vp.xUpper()));
+        fprintf(stdout, "[ok] 深缩放下限：40 次极端 zoom 后 X 宽度仍 >=1ns（%.3g）\n", w);
+    }
+
     fprintf(stdout, "[ok] fastplot P1~P4 全部通过\n");
     return 0;
 }
