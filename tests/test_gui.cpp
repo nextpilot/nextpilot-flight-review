@@ -715,6 +715,13 @@ int main(int argc, char *argv[])
         CHECK(binder->sideBarVisible() == wasSideBarVisible);
         CHECK(binder->activityBarWidget()->isVisible() || !window.isVisible());
 
+        // 三个区位各自收起：左栏、右侧辅助栏、底部 Panel。
+        const bool wasAuxVisible = binder->auxZoneVisible();
+        CHECK(binder->toggleAuxZone());
+        CHECK(binder->auxZoneVisible() != wasAuxVisible);
+        CHECK(binder->toggleAuxZone());
+        CHECK(binder->auxZoneVisible() == wasAuxVisible);
+
         // 停靠布局版本：旧快照没有新左栏 dock，必须跳过，避免启动后左栏被藏/面板漂浮。
         CHECK(binder->captureState().value(QStringLiteral("layoutVersion")).toInt() == 4);
 

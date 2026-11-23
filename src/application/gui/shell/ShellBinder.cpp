@@ -1261,6 +1261,29 @@ bool ShellBinder::toggleBottomPanel()
     return false;
 }
 
+bool ShellBinder::auxZoneVisible() const
+{
+    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.right"));
+    if (!dock)
+        return false;
+    if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
+        return area->isVisible();
+    return dock->isVisible();
+}
+
+bool ShellBinder::toggleAuxZone()
+{
+    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.right"));
+    if (!dock)
+        return false;
+    if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
+    {
+        area->setVisible(!area->isVisible());
+        return true;
+    }
+    return false;
+}
+
 int ShellBinder::currentCentralIndex() const
 {
     if (!m_centralDock || !m_centralDock->dockAreaWidget())

@@ -179,6 +179,9 @@ public:
     // 底部 Panel 整组显隐（Ctrl+J）。
     bool bottomPanelVisible() const;
     bool toggleBottomPanel();
+    // 右侧 Secondary Side Bar 整组显隐（Ctrl+Alt+B）。
+    bool auxZoneVisible() const;
+    bool toggleAuxZone();
 
     // 中央区页签循环与关闭（Ctrl+Tab / Ctrl+W）。
     int currentCentralIndex() const;

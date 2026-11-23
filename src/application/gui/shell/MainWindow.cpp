@@ -1250,6 +1250,7 @@ void MainWindow::buildCommandLayer(RuntimeHost &host)
         {"palette.show", "Ctrl+Shift+P"},
         {"quick.switch", "Ctrl+P"},
         {"view.toggleSideBar", "Ctrl+B"},
+        {"view.toggleAuxZone", "Ctrl+Alt+B"},
         {"view.togglePanel", "Ctrl+J"},
         {"editor.next", "Ctrl+Tab"},
         {"editor.close", "Ctrl+W"},
@@ -1327,6 +1328,14 @@ void MainWindow::registerShellCommands()
     add(QStringLiteral("view.toggleSideBar"), QStringLiteral("显示/隐藏左栏"),
         QStringLiteral("视图"), QStringLiteral("Ctrl+B"), QString(),
         [this]() { toggleSideBar(); });
+    add(QStringLiteral("view.toggleAuxZone"), QStringLiteral("显示/隐藏辅助栏"),
+        QStringLiteral("视图"), QStringLiteral("Ctrl+Alt+B"), QString(),
+        [this]() {
+            if (m_binder->toggleAuxZone())
+                statusBar()->showMessage(m_binder->auxZoneVisible()
+                                             ? QStringLiteral("辅助栏已显示")
+                                             : QStringLiteral("辅助栏已隐藏"));
+        });
     add(QStringLiteral("view.togglePanel"), QStringLiteral("显示/隐藏底部面板"),
         QStringLiteral("视图"), QStringLiteral("Ctrl+J"), QString(),
         [this]() {
