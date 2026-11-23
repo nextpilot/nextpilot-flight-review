@@ -130,6 +130,73 @@ int main()
         OK(calls == 0, "缺失的条目跳过恢复");
     }
 
+    // revision 短路（第1仗 1.4）：版本未变复用序列化结果，但仍写入全量文档。
+    {
+        PersistentStateHub hub;
+        quint64 version = 1;
+        int serializeCalls = 0;
+        PersistentStateEntry entry;
+        entry.id = QStringLiteral("plot.document");
+        entry.scope = PersistentStateEntry::Document;
+        entry.serialize = [&]() {
+            ++serializeCalls;
+            return QJsonObject{{QStringLiteral("v"), static_cast<int>(version)}};
+        };
+        entry.revision = [&]() { return version; };
+        hub.registerEntry(entry);
+
+        const QJsonObject first = hub.collect();
+        OK(serializeCalls == 1, "首次 collect 调用 serialize");
+        OK(hub.lastCacheHits() == 0, "首次无缓存命中");
+        OK(first.value(QStringLiteral("document"))
+                   .toObject()
+                   .value(QStringLiteral("plot.document"))
+                   .toObject()
+                   .value(QStringLiteral("v"))
+                   .toInt() == 1,
+           "首次写入版本 1");
+
+        // 版本未变：serialize 不重算，但文档仍完整（不丢条目）。
+        const QJsonObject second = hub.collect();
+        OK(serializeCalls == 1, "版本未变时不重算 serialize");
+        OK(hub.lastCacheHits() == 1, "命中 revision 缓存");
+        OK(second.value(QStringLiteral("document"))
+                   .toObject()
+                   .value(QStringLiteral("plot.document"))
+                   .toObject()
+                   .value(QStringLiteral("v"))
+                   .toInt() == 1,
+           "复用缓存但条目仍在文档中（全量完整）");
+
+        // 版本变化：重算并更新缓存。
+        version = 2;
+        const QJsonObject third = hub.collect();
+        OK(serializeCalls == 2, "版本变化后重算 serialize");
+        OK(hub.lastCacheHits() == 0, "版本变化不命中缓存");
+        OK(third.value(QStringLiteral("document"))
+                   .toObject()
+                   .value(QStringLiteral("plot.document"))
+                   .toObject()
+                   .value(QStringLiteral("v"))
+                   .toInt() == 2,
+           "写入新版本 2");
+
+        // 未设 revision 的条目：每次都重算（默认行为不变）。
+        PersistentStateHub hub2;
+        int plainCalls = 0;
+        PersistentStateEntry plain;
+        plain.id = QStringLiteral("plain");
+        plain.scope = PersistentStateEntry::Session;
+        plain.serialize = [&]() {
+            ++plainCalls;
+            return QJsonObject{};
+        };
+        hub2.registerEntry(plain);
+        hub2.collect();
+        hub2.collect();
+        OK(plainCalls == 2, "无 revision 的条目每次都重算（兼容默认）");
+    }
+
     std::printf(g_fail == 0 ? "全部通过\n" : "失败 %d 项\n", g_fail);
     return g_fail == 0 ? 0 : 1;
 }

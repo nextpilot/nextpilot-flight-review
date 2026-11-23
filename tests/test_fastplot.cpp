@@ -206,7 +206,18 @@ int main(int argc, char **argv)
         vp.setXRange(0.0, 1.5);
         cache.points(data, vp);
         CHECK(cache.rebuilds() == rebuildsBefore + 1);
-        fprintf(stdout, "[ok] LodCache：3000 点 → %d 列，命中缓存不重扫\n", int(pts.size()));
+
+        // 1.3 revision 传导：同一数组、revision 变化也必须重算（内容变了就失效）。
+        // 这证明 LodCache 用的是 IPlotData::revision() 而非指针身份做缓存键。
+        const int revRebuildsBefore = cache.rebuilds();
+        nextpilot::plotscope::fastplot::ArrayData dataNewRev(xs.data(), ys.data(), n, 99);
+        cache.points(dataNewRev, vp);
+        CHECK(cache.rebuilds() == revRebuildsBefore + 1);
+        // 新 revision 再次命中，不重算
+        cache.points(dataNewRev, vp);
+        CHECK(cache.rebuilds() == revRebuildsBefore + 1);
+        fprintf(stdout, "[ok] LodCache：3000 点 → %d 列，命中缓存不重扫，revision 变化触发重算\n",
+                int(pts.size()));
     }
 
     // 6) 曲线渲染：画出来的确实是数据（不是空坐标系）
@@ -526,6 +537,73 @@ int main(int argc, char **argv)
         CHECK(w >= 1e-9 * 0.99);        // 不低于 1ns 语义下限（容 double 表示误差）
         CHECK(std::isfinite(vp.xLower()) && std::isfinite(vp.xUpper()));
         fprintf(stdout, "[ok] 深缩放下限：40 次极端 zoom 后 X 宽度仍 >=1ns（%.3g）\n", w);
+    }
+
+    // 8) 第1仗脏调度（P-2 渲染侧）：稳态叠加层缓存，游标移动不触发重建。
+    {
+        using namespace nextpilot::plotscope::fastplot;
+        PlotWidget plot;
+        plot.resize(800, 400);
+
+        // 先给一个数据范围，marker 竖线才落在可视区
+        std::vector<double> xs{0.0, 1.0}, ys{0.0, 1.0};
+        ArrayData data(xs.data(), ys.data(), 2, 1);
+        plot.addCurve(Curve::fromData(&data, QColor(0x5b, 0xc0, 0xf0), 1.4));
+        plot.setXRange(0.0, 1.0);
+        plot.setYRange(0.0, 1.0);
+
+        // 首次渲染（无 marker）：稳态缓存建立，记录基线像素
+        const QImage before = plot.grabImage();
+        const int base = plot.overlayCacheRebuilds();
+        CHECK(base >= 1);
+
+        // 稳态层内容变化 → 标脏 → 下次渲染重建
+        QVector<MarkerMark> marks;
+        MarkerMark m;
+        m.tStart = 0.5;
+        m.tEnd = 0.5;
+        m.color = QColor(0xff, 0x00, 0x00); // 醒目红色竖线
+        marks.append(m);
+        plot.setMarkers(marks);
+        const QImage after = plot.grabImage();
+        const int afterMarkers = plot.overlayCacheRebuilds();
+        CHECK(afterMarkers == base + 1);
+
+        // 渲染语义断言：稳态层缓存被正确贴出——marker 红色竖线必须出现在图里。
+        // 若 drawPixmap 漏贴，层会"消失"而 rebuild 计数仍对，此断言兜住该风险。
+        int redPixels = 0;
+        for (int y = 0; y < after.height(); ++y)
+            for (int x = 0; x < after.width(); ++x)
+                if (after.pixelColor(x, y).red() > 200
+                    && after.pixelColor(x, y).green() < 80
+                    && after.pixelColor(x, y).blue() < 80)
+                    ++redPixels;
+        CHECK(redPixels > 10);
+        // 基线图（无 marker）不应有这么多红像素
+        int redBefore = 0;
+        for (int y = 0; y < before.height(); ++y)
+            for (int x = 0; x < before.width(); ++x)
+                if (before.pixelColor(x, y).red() > 200
+                    && before.pixelColor(x, y).green() < 80
+                    && before.pixelColor(x, y).blue() < 80)
+                    ++redBefore;
+        CHECK(redPixels > redBefore + 10);
+
+        // 游标连续移动：只走实时层，稳态层不重建（核心断言 P-2）
+        for (int i = 0; i < 20; ++i)
+        {
+            plot.setCursorReadout(0.1 + i * 0.01, true, false,
+                                  QStringLiteral("t"), QVector<ReadoutRow>{});
+            plot.grabImage();
+        }
+        CHECK(plot.overlayCacheRebuilds() == afterMarkers);
+
+        // 视口变化：稳态层按世界坐标绘制，缓存必须失效重建
+        plot.setXRange(0.0, 0.5);
+        plot.grabImage();
+        CHECK(plot.overlayCacheRebuilds() == afterMarkers + 1);
+
+        fprintf(stdout, "[ok] 脏调度：20 次游标移动稳态层重建=0，稳态/视口变化正确重建\n");
     }
 
     fprintf(stdout, "[ok] fastplot P1~P4 全部通过\n");
