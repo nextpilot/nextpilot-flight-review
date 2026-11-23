@@ -77,7 +77,12 @@ next: <解除阻塞后的下一步>
 4. issue 中已有完成记录评论：PR 号、commit、变更摘要、测试数字、偏差说明。
 5. 需要同步的文档、配置、迁移说明已完成。
 
-关闭动作由 PM 执行；Dev 不关闭 issue。关闭后由 Dev 删除本地和远端特性分支。
+关闭动作由 PM 负责，Dev 不关闭 issue。平台通常在 PR 合并时已按 `Closes #IKxxxxx` 自动关闭，PM 仍须核实：
+
+- 已 `closed`：补验收结论评论即可，无需重复关闭。
+- 仍 open：手动 `PATCH /repos/nextpilot/issues/<num>`（带 `repo` + `state=closed`）兜底。
+
+收尾时确认远端分支是否已自动删除（取决于仓库设置），仍在则手动删；本地分支始终手动删。
 
 ## 重开 issue
 

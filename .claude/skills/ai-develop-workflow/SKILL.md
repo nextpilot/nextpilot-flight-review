@@ -1,6 +1,6 @@
 ---
 name: ai-develop-workflow
-description: 本仓库双角色 AI 开发工作流（产品经理 Agent + 开发者 Agent）。产品经理负责需求、issue、验收与关闭；开发者负责实现、验证、分支与 PR。标准任务走 issue → 分支 → PR → 合并 → 关闭 issue；简单低风险修改可免 issue，但仍必须走分支、PR 和验证。含修改前确认、issue 规范、状态机、多 Agent 交接、分支提交、Gitee 平台操作与 PR 门槛。触发词：开发任务、修 bug、新建功能、任务计划、Plan、派发、回填、issue、PR、分支、github flow、commit、push、提交、推送、合代码、产品经理、开发者、验收、修改前确认、复述。
+description: 本仓库双角色 AI 开发工作流（产品经理 Agent + 开发者 Agent）。产品经理负责需求、issue、验收与关闭；开发者负责实现、验证、分支与 PR。标准任务走 issue → 分支 → PR → 合并 → 平台自动关闭 issue；简单低风险修改可免 issue，但仍必须走分支、PR 和验证。含修改前确认、issue 规范、状态机、多 Agent 交接、分支提交、PR 描述随提交同步（多提交全列）、Gitee 平台操作、合并后兜底校验与 PR 门槛。触发词：开发任务、修 bug、新建功能、任务计划、Plan、派发、回填、issue、PR、分支、github flow、commit、push、提交、推送、合代码、产品经理、开发者、验收、修改前确认、复述、更新 PR 描述。
 ---
 
 # 开发工作流（PM/Dev 双角色 + GitHub Flow）
@@ -46,7 +46,7 @@ main 是唯一长期分支，始终可发布、可回退。所有改动经短命
 - 负责定义目标、范围、排除项和验收标准。
 - 负责跟踪 issue 进度，处理阻塞、范围变更和验收争议。
 - 负责审查 PR 是否满足 issue 的验收标准。
-- PR 合并后，负责回填验收结论并关闭 issue。
+- PR 合并后，负责回填验收结论，并核实平台是否已自动关闭 issue（仍未关才兜底关闭）。
 - 不直接修改业务代码；不替开发者决定实现细节。
 - 不关闭未合并 PR 对应的 issue；不把“已提交 PR”当成“已完成”。
 
@@ -79,8 +79,8 @@ PM 建 issue
   → Dev 推送并创建 PR，关联 issue
   → Dev 标记 in-review，请求 PM 验收
   → PM 审查：通过则合并；不通过则退回 Dev
-  → PR merged 后，PM 回填验收结论并关闭 issue
-  → Dev 删除特性分支
+  → PR merged 后，PM 回填验收结论；平台自动关闭 issue、自动删源分支
+  → PM 校验平台是否真的闭环，缺失项手动兜底；Dev 删本地分支
 ```
 
 | 步骤 | 负责人 | 动作 | 完成标志 | 必读 |
@@ -91,15 +91,16 @@ PM 建 issue
 | ④ 开发验证 | Dev | 编码、编译、跑测试，全部通过 | 构建无 error，测试全绿 | — |
 | ⑤ 提交 PR | Dev | rebase 最新 main 后推送并建 PR | PR 创建成功，关联 issue | `git-pr-delivery.md`、`gitee-operations.md` |
 | ⑥ 评审验收 | PM | 按验收标准审查；不通过退回 | `in-review` → 通过或退回 | `issue-lifecycle.md` |
-| ⑦ 合并关闭 | PM/用户 | 合并 PR，回填验收结论，关闭 issue | PR `merged`，issue `closed` | `issue-lifecycle.md`、`gitee-operations.md` |
-| ⑧ 收尾 | Dev | 删除本地和远端特性分支 | 分支已删 | — |
+| ⑦ 合并 | PM/用户 | 合并 PR，回填验收结论评论 | PR `merged`，issue 有验收评论 | `issue-lifecycle.md`、`gitee-operations.md` |
+| ⑧ 收尾校验 | PM/Dev | 校验平台已自动关闭 issue、已自动删除源分支；缺失项手动兜底，Dev 删本地分支 | issue `closed`，远端与本地分支均不存在 | `gitee-operations.md` |
 
 **关键约束：**
 
 - PM 建 issue 前先查重。同一问题已有 open issue 的，更新原 issue，不重复创建。
 - Dev 领取 issue 后才开工。同一 issue 同时只允许一个 Dev 负责。
 - 分支必须从最新 `main` 切出；提交信息必须引用 issue 编号。
-- PR 描述首行写 `Closes <issue-id>`，并附 issue 链接。不依赖平台自动关闭；最终以 PM 核实后手动关闭为准。
+- PR 描述首行写 `Closes #<issue-id>`。Gitee 在 PR **合并**时自动关闭关联 issue，并按仓库设置自动删除源分支；PM 合并后必须校验实际状态，`state` 仍为 open 或分支仍在时才手动兜底。
+- PR 描述随提交演进：分支每新增一个提交，都要按最新状态刷新描述，多提交必须逐条列出（见 `references/git-pr-delivery.md`）。
 - PR 合并由 PM 或用户执行。Dev 只负责提交 PR 和响应评审。
 - issue 只能由 PM 关闭。Dev 完成工作时标记 `in-review`，不能自行关闭。
 
@@ -149,6 +150,7 @@ Verification: <编译与测试结果>
 ```
 
 - 不写 `Closes`，不关联不存在的 issue。
+- 分支追加提交后立即刷新描述：`Verification` 换成最新一次的结果，并补提交清单（见 `references/git-pr-delivery.md`）。
 - 一旦发现改动触及契约、数据、依赖或范围扩大，立即停止免 issue 流程：由 PM 补建 issue，PR 改为关联该 issue，或关闭后重走标准流程。
 
 ## 5. 完成判定
@@ -159,7 +161,8 @@ Verification: <编译与测试结果>
 - 关联 PR 为 `merged`；
 - 验收标准全部通过；
 - 完成记录已回填；
-- 特性分支已删除；
+- PR 描述与实际提交一致（多提交逐条列出）；
+- 特性分支已删除（远端与本地）；
 - 文档/配置同步已完成。
 
 简单修改流程同时满足才算完成：
@@ -167,6 +170,7 @@ Verification: <编译与测试结果>
 - PR 为 `merged`；
 - 编译与测试通过；
 - PR 中 `No-Issue` 理由成立；
+- PR 描述与实际提交一致（多提交逐条列出）；
 - 分支已删除。
 
 ## 6. AI 执行纪律
@@ -174,7 +178,8 @@ Verification: <编译与测试结果>
 - AI 不直接 push `main`；标准任务走「issue → 特性分支 → PR → 合并 → 关 issue」全流程。
 - 简单修改可按 §4 免 issue，但必须走「特性分支 → PR → 验证 → 合并」。
 - 用户显式说「直接推 main / 强推」时可例外，但本项目 `main` 为保护分支，技术上大概率被拒，应提前说明。
-- PR 验证失败：修复后追加提交再推，不 amend 已推送的提交。
+- PR 验证失败：修复后追加提交再推，不 amend 已推送的提交；推送后同步刷新 PR 描述。
+- 合并后先校验平台自动闭环（issue 是否已关、源分支是否已删），不以“平台应该会关”的推断代替校验；缺什么补什么。
 - 迁移期例外：结构性大改（目录重组、历史清理）经用户拍板可单节点强推 `main` 或用 contents API 清理；迁移定稿后本例外作废，一律按本闭环。
 - 全程不把令牌、截图、调试产物写进仓库。
 - 危险操作（force push、历史改写、绕过保护分支）先按 `references/change-confirmation.md` 复述并取得用户确认。
@@ -187,6 +192,6 @@ Verification: <编译与测试结果>
 | `references/issue-authoring.md` | issue 载体、9 章节、模板、质量标准 |
 | `references/issue-lifecycle.md` | 状态机、交接模板、关闭与重开 |
 | `references/git-pr-delivery.md` | 分支、提交、rebase、推送、PR、合并门槛 |
-| `references/gitee-operations.md` | 令牌、API 端点、平台踩坑、合并后关闭 issue |
+| `references/gitee-operations.md` | 令牌、API 端点、平台踩坑、合并后自动闭环与兜底 |
 
 写作规范不在 `references/` 下，唯一正文是 `.claude/rules/terse-writing.md`。
