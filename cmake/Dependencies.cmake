@@ -305,7 +305,17 @@ function(ps_resolve_sqlite3)
     target_include_directories(ps_sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
     # 默认单线程库够用；rosbag2 只在解析线程内串行读库。
     target_compile_definitions(ps_sqlite3 PUBLIC SQLITE_THREADSAFE=1 SQLITE_OMIT_LOAD_EXTENSION=1)
-    set_target_properties(ps_sqlite3 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set_target_properties(ps_sqlite3 PROPERTIES POSITION_INDEPENDENT_CODE ON OUTPUT_NAME sqlite3)
+
+    # 与 zlib 一致：由本工程编出的静态库才能保证 MSVC 运行库与顶层目标同为 /MD。
+    if(PS_DEPS_INSTALL)
+        install(FILES "$<TARGET_FILE:ps_sqlite3>"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT ps_deps)
+        install(FILES ${sqlite3_SOURCE_DIR}/sqlite3.h
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+            COMPONENT ps_deps)
+    endif()
 endfunction()
 
 # 只有仓库当前真正使用的依赖才在这里解析。
