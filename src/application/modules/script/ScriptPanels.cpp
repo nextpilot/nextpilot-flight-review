@@ -1095,18 +1095,6 @@ ScriptFilesPanel::ScriptFilesPanel(AppContext &appCtx, IIntentExecutor &executor
     lay->setSpacing(4);
 
     auto *bar = new QHBoxLayout();
-    auto addBtn = [&bar, this](const QString &text, const QString &tip, auto slot) {
-        auto *b = new QToolButton(this);
-        b->setText(text);
-        b->setToolTip(tip);
-        b->setAutoRaise(true);
-        connect(b, &QToolButton::clicked, this, slot);
-        bar->addWidget(b);
-    };
-    addBtn(QStringLiteral("＋新建"), QStringLiteral("新建脚本"), []() {});
-    // 上面 lambda 占位，下面重新连接到成员（Qt 连接成员函数更直观）
-    for (int i = 0; i < bar->count(); ++i)
-        bar->takeAt(0); // 清空重来，简单直接
     auto *newBtn = new QToolButton(this);
     newBtn->setText(QStringLiteral("＋新建"));
     newBtn->setToolTip(QStringLiteral("新建脚本"));
