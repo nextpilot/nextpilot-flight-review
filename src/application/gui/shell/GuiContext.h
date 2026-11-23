@@ -23,7 +23,7 @@ class ShellBinder;
 //
 // 它**不认识任何功能视图**（views/ 下的类）：视图通过 PanelFactoryHub
 // 自注册自己，模块只声明类型字符串。
-class GuiContext final : public QObject, public nextpilot::plotscope::host::UiContext
+class GuiContext final : public QObject, public nextpilot::plotscope::host::IUiContext
 {
     Q_OBJECT
 public:
@@ -31,7 +31,7 @@ public:
                nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor *executor = nullptr,
                QObject *parent = nullptr);
 
-    // nextpilot::plotscope::host::UiContext
+    // nextpilot::plotscope::host::IUiContext
     void placePanel(QWidget *widget, const QString &area,
                     const QString &titleOverride = QString()) override;
     // 带稳定 pageKey 的放置（面板类型 id）：视图页逐页开关按钮按它定位页签。

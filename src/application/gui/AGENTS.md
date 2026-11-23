@@ -4,12 +4,12 @@
 
 ## 本目录是什么
 
-**唯一的 Qt Widgets 装配层**：shell/（MainWindow、Ribbon/Dock 容器、外壳装配、UiContext 实现）、views/（绘图视图与功能视图）、其余共享 UI 基础设施。
+**唯一的 Qt Widgets 装配层**：shell/（MainWindow、Ribbon/Dock 容器、外壳装配、IUiContext 实现）、views/（绘图视图与功能视图）、其余共享 UI 基础设施。
 
 ## 允许放
 
 - 窗口/停靠/页签/主题/参数表单渲染（uischema_widgets 消费方）
-- UiContext 与 PanelFactory 的实现（模块经它们放置面板，GUI 反向不知业务）
+- IUiContext 与 PanelFactory 的实现（模块经它们放置面板，GUI 反向不知业务）
 - 各功能视图：读注册表数据、发意图，不自持业务状态
 
 ## 禁止放
@@ -17,7 +17,7 @@
 - 业务格式解析、数据源生命周期、领域判断逻辑（那些在 modules/toolbox/libs）
 - 对 shell/ 的依赖（gui 由其自身入口构造 App，方向只能 shell→gui 装配，不许反向）
 - 把运行态藏进窗口对象（状态归 AppContext/SettingsStore，GUI 只展示与发意图）
-- 绕过 UiContext/PanelFactory 直接 new 模块的面板（面板类型经工厂表解析）
+- 绕过 IUiContext/PanelFactory 直接 new 模块的面板（面板类型经工厂表解析）
 
 ## 外壳在装载链里的位置（契约见 `../LAYERS.md`「UI 归属与装载契约」）
 

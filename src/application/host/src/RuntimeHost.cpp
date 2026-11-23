@@ -11,22 +11,6 @@ namespace nextpilot::plotscope::host
 {
 namespace err = nextpilot::plotscope::foundation::err;
 
-void ModuleContext::registerIntentHandler(nextpilot::plotscope::intent::IIntentHandler *handler)
-{
-    // 依赖具体宿主实现：通过 host 转发注册。
-    m_host.registerIntentHandler(handler);
-}
-
-nextpilot::plotscope::intent::IIntentExecutor &ModuleContext::executor()
-{
-    return m_host; // RuntimeHost 实现了 IIntentExecutor
-}
-
-nextpilot::plotscope::intent::JobRecorder *ModuleContext::recorder()
-{
-    return m_host.recorder();
-}
-
 RuntimeHost::RuntimeHost(nextpilot::plotscope::context::AppContext &appCtx, QObject *parent)
     : QObject(parent), m_appCtx(appCtx),
       // UI 插槽注册表构造即上树。
@@ -120,7 +104,7 @@ void RuntimeHost::registerSystemHandler(const QString &key, nextpilot::plotscope
     m_handlers.insert(key, handler);
 }
 
-QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, UiContext *ui)
+QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, IUiContext *ui)
 {
     QHash<QString, QString> errors;
 
@@ -136,7 +120,6 @@ QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, Ui
 
     m_order = resolveOrder(provides, errors);
 
-    ModuleContext ctx(m_appCtx, *this);
     for (const QString &id : m_order)
     {
         Node &node = m_nodes[id];
@@ -154,7 +137,7 @@ QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, Ui
         module->setParent(this); // 所有权归宿主，delete 时整棵子树回收
         node.instance = module;
         m_initializing = id;
-        module->initialize(ctx);
+        module->initialize(*this);
         m_initializing.clear();
         node.active = true;
         if (ui)

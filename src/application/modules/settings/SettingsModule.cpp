@@ -166,12 +166,12 @@ ModuleInfo SettingsModule::info() const
     return moduleInfo();
 }
 
-void SettingsModule::initialize(ModuleContext &ctx)
+void SettingsModule::initialize(RuntimeHost &host)
 {
     // 设置存储归宿主所有（GUI/CLI/脚本共用一份），模块只做门面：
     // 只登记存取类意图，不碰任何 UI（设置对话框属 GUI 外壳，见 preferences.open）。
-    m_handler = new Handler(ctx.app().settings(), this);
-    ctx.registerIntentHandler(m_handler);
+    m_handler = new Handler(host.app().settings(), this);
+    host.registerIntentHandler(m_handler);
 }
 
 #include "SettingsModule.moc"

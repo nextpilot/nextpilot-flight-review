@@ -64,7 +64,7 @@ QJsonObject stringListToJson(const QStringList &list)
 //   - 其它 application：由领域扩展贡献，未注册时明确提示，绝不假装可用。
 //   - analysis.favorite：切换收藏（Workspace settings 持久化），仅收藏已知应用。
 // 最近使用在 run 成功后自动记录（MRU，最多 5 条）；最近/收藏两组条目
-// 经 UiContext 动态 provider 重置重建，外壳 rebuildRibbon 后 gallery 即时更新。
+// 经 IUiContext 动态 provider 重置重建，外壳 rebuildRibbon 后 gallery 即时更新。
 class AnalysisModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
@@ -72,7 +72,7 @@ public:
     explicit Handler(AppContext &app, QObject *parent)
         : QObject(parent), m_app(app) {}
 
-    void attachUi(UiContext *ui) { m_ui = ui; }
+    void attachUi(IUiContext *ui) { m_ui = ui; }
 
     // onAttach 登记"全部应用"目录（也是收藏合法性的校验来源）。
     void setCatalog(const QStringList &catalog) { m_catalog = catalog; }
@@ -96,7 +96,7 @@ public:
 private:
     // 应用目录（onAttach 时登记）：全部应用组展示的清单，也是收藏合法性校验的来源。
     QStringList m_catalog;
-    UiContext *m_ui = nullptr;
+    IUiContext *m_ui = nullptr;
 
     Result<IntentResult> run(const Intent &intent)
     {
@@ -280,13 +280,13 @@ ModuleInfo AnalysisModule::info() const
     return moduleInfo();
 }
 
-void AnalysisModule::initialize(ModuleContext &ctx)
+void AnalysisModule::initialize(RuntimeHost &host)
 {
-    m_handler = new Handler(ctx.app(), this);
-    ctx.registerIntentHandler(m_handler);
+    m_handler = new Handler(host.app(), this);
+    host.registerIntentHandler(m_handler);
 }
 
-void AnalysisModule::onAttach(UiContext &ui)
+void AnalysisModule::onAttach(IUiContext &ui)
 {
     m_handler->attachUi(&ui);
 

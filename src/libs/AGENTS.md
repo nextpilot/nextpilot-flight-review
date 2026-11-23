@@ -8,7 +8,7 @@
 
 ## 允许放
 
-- 纯接口与数据契约（无方法体、无状态；如 `libs/module` 的 IModule/UiContext）
+- 纯接口与数据契约（无方法体、无状态；如 `libs/module` 的 IModule/IUiContext）
 - 数据结构与算法、格式编解码、纯 metadata
 - 无状态模板与工具（Result、OpDispatch）
 - AppContext 运行态容器（仅 `libs/context`，唯一实例在 app 构造）

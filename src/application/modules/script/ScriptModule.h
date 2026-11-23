@@ -26,8 +26,8 @@ public:
     static nextpilot::plotscope::host::IModule *create();
 
     nextpilot::plotscope::host::ModuleInfo info() const override;
-    void initialize(nextpilot::plotscope::host::ModuleContext &ctx) override;
-    void onAttach(nextpilot::plotscope::host::UiContext &ui) override;
+    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override;
+    void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
     ~ScriptModule() override;
 
 private:
@@ -44,7 +44,7 @@ private:
     //   script.workbench.run  {source, name}   运行编辑器当前文档（引擎每次新建，与 script.run 同路径）
     //   script.workbench.repl {code}           控制台 REPL 求值（持久 VM，进程期共享全局状态）
     void registerWorkbenchActions(
-        nextpilot::plotscope::host::ModuleContext &ctx,
+        nextpilot::plotscope::host::RuntimeHost &host,
         nextpilot::plotscope::context::ScriptFacade::ViewActionDispatcher dispatcher);
     std::unique_ptr<nextpilot::plotscope::context::ScriptFacade> m_replFacade;
     std::unique_ptr<nextpilot::plotscope::script::LuaEngine> m_replEngine;
@@ -53,7 +53,7 @@ private:
     std::unique_ptr<nextpilot::plotscope::script::LuaEngine> m_dbgEngine;
     // GUI 上下文（onAttach 时注入；headless 恒空）。编辑器面板**按需创建**：
     // 中央区永远锚定画布（模块激活顺序不定，不能让编辑器抢先占位）。
-    nextpilot::plotscope::host::UiContext *m_ui = nullptr;
+    nextpilot::plotscope::host::IUiContext *m_ui = nullptr;
 };
 
 Q_DECLARE_INTERFACE(ScriptModule, "nextpilot.ng.ScriptModule/1.0")

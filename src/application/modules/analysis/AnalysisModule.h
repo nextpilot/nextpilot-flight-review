@@ -15,8 +15,8 @@ public:
     static nextpilot::plotscope::host::IModule *create();
 
     nextpilot::plotscope::host::ModuleInfo info() const override;
-    void initialize(nextpilot::plotscope::host::ModuleContext &ctx) override;
-    void onAttach(nextpilot::plotscope::host::UiContext &ui) override;
+    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override;
+    void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
 
 private:
     class Handler;

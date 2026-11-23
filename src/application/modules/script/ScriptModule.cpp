@@ -101,33 +101,33 @@ ModuleInfo ScriptModule::info() const
     return moduleInfo();
 }
 
-void ScriptModule::initialize(ModuleContext &ctx)
+void ScriptModule::initialize(RuntimeHost &host)
 {
     // view action 派发器：脚本 app.call 在意图通道 eunsupported 时回退到这里，
     // 从而能触发 plot.*/page.*/playback.* 等 GUI 视图能力（headless 下也可注册但通常无视图）。
-    RuntimeHost *host = &ctx.host();
+    RuntimeHost *hostPtr = &host;
     ScriptFacade::ViewActionDispatcher viewDispatcher =
-        [host](const QString &id, const QVariantMap &params, Result<QVariant> &out) {
-            return host->dispatchViewAction(id, params, out);
+        [hostPtr](const QString &id, const QVariantMap &params, Result<QVariant> &out) {
+            return hostPtr->dispatchViewAction(id, params, out);
         };
-    m_handler = new Handler(ctx.executor(), ctx.recorder(), viewDispatcher, this);
-    ctx.registerIntentHandler(m_handler);
+    m_handler = new Handler(host, host.recorder(), viewDispatcher, this);
+    host.registerIntentHandler(m_handler);
 
     // ---- 批量处理：data.batch.run 意图 + 取消通道 ----
     // 每文件 load→script 走与单文件完全相同的执行器路径；进度经 view action
     // data.batch.progress 广播（GUI 汇总面板消费），取消经 data.batch.cancel 置标志。
     m_batch = new nextpilot::plotscope::script::BatchHandler(
-        ctx.executor(), &ctx.app().interactions(), &ctx.app().data(), &ctx.app().sources(),
+        host, &host.app().interactions(), &host.app().data(), &host.app().sources(),
         viewDispatcher, this);
-    ctx.registerIntentHandler(m_batch);
+    host.registerIntentHandler(m_batch);
 
     // ---- Python 子进程桥：script.py.* 意图族 ----
     // 常驻桥进程按需拉起（首个 script.py.* 调用时启动）；找不到解释器时
     // 每条意图返回明确错误（优雅降级，不弹窗轰炸）。
     m_py = new nextpilot::plotscope::script::PythonHandler(
-        ctx.executor(), &ctx.app().data(), this);
-    ctx.registerIntentHandler(m_py);
-    ctx.app().interactions().registerViewAction(
+        host, &host.app().data(), this);
+    host.registerIntentHandler(m_py);
+    host.app().interactions().registerViewAction(
         QStringLiteral("data.batch.cancel"),
         [this](const QVariantMap &) -> Result<QVariant> {
             if (!m_batch || !m_batch->running())
@@ -140,9 +140,9 @@ void ScriptModule::initialize(ModuleContext &ctx)
     // 先确保汇总面板存在，再经视图层 data.batch.pick 拿 {dir, script}
     // （无参弹文件对话框；带参直接透传——脚本/测试可免对话框驱动），
     // 然后执行 data.batch.run 意图，结束把汇总 payload 发给面板恢复按钮态。
-    nextpilot::plotscope::context::InteractionHub *batchReg = &ctx.app().interactions();
-    IIntentExecutor *batchExecutor = &ctx.executor();
-    ctx.app().interactions().registerViewAction(
+    nextpilot::plotscope::context::InteractionHub *batchReg = &host.app().interactions();
+    IIntentExecutor *batchExecutor = &host;
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.batch"),
         [this, batchReg, batchExecutor](const QVariantMap &params) -> Result<QVariant> {
             if (!m_batch)
@@ -185,8 +185,8 @@ void ScriptModule::initialize(ModuleContext &ctx)
     // 统一变换求值：注册进 AppContext，供 host(数据源衍生)/gui(曲线)/protocol(checksum)
     // 调用，而不必反向依赖 script 模块。builtin/expression 内部走 Rust，lua 走 C++。
     // 捕获 AppContext 指针（其生命周期 = 进程运行期，长于回调）。
-    nextpilot::plotscope::context::AppContext *appCtx = &ctx.app();
-    ctx.host().registerTransformEvaluator(
+    nextpilot::plotscope::context::AppContext *appCtx = &host.app();
+    host.registerTransformEvaluator(
         [appCtx](const QJsonObject &request, uint32_t cap,
                  const QVector<double> &t, const QVector<double> &v) {
             return nextpilot::plotscope::script::TransformEvaluator::evalSeries(
@@ -215,7 +215,7 @@ void ScriptModule::initialize(ModuleContext &ctx)
                                   const QVector<double> &t, const QVector<double> &v) {
         return cat->applySeries(id, params, t, v);
     };
-    ctx.host().registerFilterOps(std::move(filterOps));
+    host.registerFilterOps(std::move(filterOps));
 
     // Marker 规则能力：run(code, seriesJson) -> markers JSON。用一次性 MarkerEngine 执行，
     // seriesJson 里的序列在本 lambda 栈上构造，provider 的 get 返回它们的地址（调用期有效）。
@@ -250,12 +250,12 @@ void ScriptModule::initialize(ModuleContext &ctx)
             return fail(r.error().code, r.error().message);
         return Result<QJsonArray>(markersToJson(r.value()));
     };
-    ctx.host().registerMarkerOps(std::move(markerOps));
+    host.registerMarkerOps(std::move(markerOps));
 
     // Lua 脚本库：目录可用 PS_SCRIPTS_DIR 覆盖（部署/测试），默认 scripts/ops。
     // 注册表注入：脚本算子登记进 AppContext 持有的 TransformHub 实例。
     const QByteArray dirOverride = qgetenv("PS_SCRIPTS_DIR");
-    m_scriptLib = std::make_unique<nextpilot::plotscope::script::LuaScriptLibrary>(ctx.app().transforms());
+    m_scriptLib = std::make_unique<nextpilot::plotscope::script::LuaScriptLibrary>(host.app().transforms());
     m_scriptLib->setOpsDir(dirOverride.isEmpty() ? QStringLiteral("scripts/ops")
                                                   : QString::fromLocal8Bit(dirOverride.constData()));
     m_scriptLib->loadAll();
@@ -272,33 +272,32 @@ void ScriptModule::initialize(ModuleContext &ctx)
     };
     ops.list = [this]() { return m_scriptLib->list(); };
     ops.remove = [this](const QString &name) { return m_scriptLib->remove(name); };
-    ctx.host().registerTransformScriptOps(ops);
+    host.registerTransformScriptOps(ops);
 
     // op 目录：工作台速查面板的数据源。存 provider 实时拉取，与实际可执行意图一致
     // （handler 是各模块 initialize 陆续注册的，快照会漏后注册者）。
-    RuntimeHost *hostPtr = &ctx.host();
-    ctx.app().interactions().registerOpCatalogue([hostPtr]() {
+    host.app().interactions().registerOpCatalogue([hostPtr]() {
         return hostPtr->registeredOps();
     });
 
     // 工作台执行通道：GUI 面板（编辑器/控制台）经 viewAction 调用，引擎归模块——
     // GUI 层不直接依赖 script 模块内部类（层契约：ps_module_script_gui 禁止横向
     // 依赖 ps_module_script），输出回显经 script.console.append 回面板。
-    registerWorkbenchActions(ctx, std::move(viewDispatcher));
+    registerWorkbenchActions(host, std::move(viewDispatcher));
 }
 
-void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::ViewActionDispatcher dispatcher)
+void ScriptModule::registerWorkbenchActions(RuntimeHost &host, ScriptFacade::ViewActionDispatcher dispatcher)
 {
-    IIntentExecutor &executor = ctx.executor();
-    JobRecorder *recorder = ctx.recorder();
+    IIntentExecutor &executor = host;
+    JobRecorder *recorder = host.recorder();
 
     // 输出回显有两条去向，互不替代：
     //   ① script.console.append —— 终端面板增量回显（GUI 面板注册的处理器）；
     //   ② AppContext 消息流 —— 输出/问题/调试控制台共用同一份数据。
     // 在 ② 之前，"输出""问题"面板只能去偷终端面板的私有 widget，那是错的方向。
     // headless 下两条都没有订阅者，append 只是入库，无副作用。
-    nextpilot::plotscope::context::InteractionHub *inter = &ctx.app().interactions();
-    nextpilot::plotscope::context::AppContext *app = &ctx.app();
+    nextpilot::plotscope::context::InteractionHub *inter = &host.app().interactions();
+    nextpilot::plotscope::context::AppContext *app = &host.app();
     auto echo = [inter, app](const QString &text, bool error) {
         app->appendMessage(error ? QStringLiteral("error") : QStringLiteral("info"),
                            QStringLiteral("脚本"), text);
@@ -310,7 +309,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
     };
 
     // script.workbench.run：运行编辑器当前文档。引擎每次新建（与 script.run 同路径）。
-    ctx.app().interactions().registerViewAction(
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.run"),
         [&executor, recorder, dispatcher, echo](const QVariantMap &params) -> Result<QVariant> {
             const QByteArray source = params.value(QStringLiteral("source")).toByteArray();
@@ -350,7 +349,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
 
     // script.workbench.repl：控制台求值。持久 VM 归模块持有，进程期共享全局状态。
     // 调试暂停期自动切换到调试会话的暂停期 REPL（新协程求值，同一 VM 全局表）。
-    ctx.app().interactions().registerViewAction(
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.repl"),
         [this, &executor, dispatcher, echo](const QVariantMap &params) -> Result<QVariant> {
             const QString code = params.value(QStringLiteral("code")).toString();
@@ -390,8 +389,8 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
         return m_ui->requestPanel(QStringLiteral("canvas.center"),
                                   QStringLiteral("script-editor")) != nullptr;
     };
-    nextpilot::plotscope::context::InteractionHub *reg = &ctx.app().interactions();
-    ctx.app().interactions().registerViewAction(
+    nextpilot::plotscope::context::InteractionHub *reg = &host.app().interactions();
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.open"),
         [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
             Result<QVariant> out{QVariant()};
@@ -400,7 +399,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
             reg->dispatchViewAction(QStringLiteral("script.open"), params, out);
             return out;
         });
-    ctx.app().interactions().registerViewAction(
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.new"),
         [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
             Result<QVariant> out{QVariant()};
@@ -415,8 +414,8 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
     // script.workbench.debug {source, name, breakpoints:[int]}：调试运行。
     // 引擎归模块（m_dbgEngine），暂停时上报快照（调试面板 + 编辑器行高亮），
     // 嵌套事件循环等控制指令（.continue/.stepover/...），结束后清快照。
-    nextpilot::plotscope::context::InteractionHub *dbgReg = &ctx.app().interactions();
-    ctx.app().interactions().registerViewAction(
+    nextpilot::plotscope::context::InteractionHub *dbgReg = &host.app().interactions();
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.debug"),
         [this, &executor, recorder, dispatcher, echo, app, dbgReg](const QVariantMap &params) -> Result<QVariant> {
             const QByteArray source = params.value(QStringLiteral("source")).toByteArray();
@@ -492,7 +491,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
     {
         const QString id = QString::fromLatin1(cmd.id);
         const bool isStop = cmd.fn == &nextpilot::plotscope::script::LuaEngine::debugStop;
-        ctx.app().interactions().registerViewAction(
+        host.app().interactions().registerViewAction(
             id, [this, fn = cmd.fn, isStop](const QVariantMap &) -> Result<QVariant> {
                 if (!m_dbgEngine)
                     return fail(err::Args, QStringLiteral("没有进行中的调试会话"));
@@ -505,7 +504,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
 
     // script.workbench.runCurrent {debug?}：执行编辑器**当前标签**（Ribbon"运行"与
     // 面板 F5 同路径）。转发给编辑器面板的 script.editor.run；headless/无面板时报错明确。
-    ctx.app().interactions().registerViewAction(
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.runCurrent"),
         [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
             Result<QVariant> out{QVariant()};
@@ -516,7 +515,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
         });
 
     // script.workbench.debugRun：调试模式执行当前标签（Ribbon"调试运行"，带断点单步）。
-    ctx.app().interactions().registerViewAction(
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.debugRun"),
         [this, ensureEditor, reg](const QVariantMap &) -> Result<QVariant> {
             Result<QVariant> out{QVariant()};
@@ -529,7 +528,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
         });
 
     // script.workbench.console：确保控制台面板存在（常驻 dock.bottom，请求即置前）。
-    ctx.app().interactions().registerViewAction(
+    host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.console"),
         [this](const QVariantMap &) -> Result<QVariant> {
             if (!m_ui)
@@ -542,7 +541,7 @@ void ScriptModule::registerWorkbenchActions(ModuleContext &ctx, ScriptFacade::Vi
 
 ScriptModule::~ScriptModule() = default;
 
-void ScriptModule::onAttach(UiContext &ui)
+void ScriptModule::onAttach(IUiContext &ui)
 {
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
     //

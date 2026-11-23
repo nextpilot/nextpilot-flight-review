@@ -638,13 +638,13 @@ ModuleInfo PlotModule::info() const
     return moduleInfo();
 }
 
-void PlotModule::initialize(ModuleContext &ctx)
+void PlotModule::initialize(RuntimeHost &host)
 {
-    m_handler = new Handler(ctx.app(), this);
-    ctx.registerIntentHandler(m_handler);
+    m_handler = new Handler(host.app(), this);
+    host.registerIntentHandler(m_handler);
 }
 
-void PlotModule::onAttach(UiContext &ui)
+void PlotModule::onAttach(IUiContext &ui)
 {
     // GUI 环境下：声明本模块的界面入口。
     //

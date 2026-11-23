@@ -9,13 +9,13 @@
 ## 允许放
 
 - 实现 IModule 的模块代码（initialize 声明能力/意图处理器、onAttach 建面板）
-- 本模块的意图处理器、面板工厂、专属视图逻辑（UI 经 UiContext 请求，不直接建窗）
+- 本模块的意图处理器、面板工厂、专属视图逻辑（UI 经 IUiContext 请求，不直接建窗）
 - 本模块目录内的子结构（子目录私有，不外泄）
 
 ## 禁止放
 
 - **include 其他模块或扩展的任何头**（同层横向，硬线）——模块间只经 host 的注册与意图协作
-- include `../gui/`、`../shell/` 的任何头（UI 经 UiContext；面板经 PanelFactoryHub 按类型请求）
+- include `../gui/`、`../shell/` 的任何头（UI 经 IUiContext；面板经 PanelFactoryHub 按类型请求）
 - 运行态自持（数据/设置一律经 `ctx.app()`；发现自己在模块里 new DatasetHub 就是违规）
 - 新建"共享工具"目录（跨模块共用 → 下方 libs，禁止在 modules/ 里造公共层）
 - 通用机制（算法、格式、契约）——放 libs 才能被复用
@@ -32,5 +32,5 @@
 ## 动手前自查
 
 1. 新意图 op：别的模块也会处理它吗？会 → 归 host 系统级处理器；只本模块 → 放这里
-2. 需要一个新面板：经 UiContext.placePanel/requestPanel 声明，不直接操作 MainWindow
+2. 需要一个新面板：经 IUiContext.placePanel/requestPanel 声明，不直接操作 MainWindow
 3. 想链接另一个模块？停下来，用意图或 host 注册机制重新设计

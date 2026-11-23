@@ -24,12 +24,12 @@ IModule *ReportModule::create()
     return new ReportModule();
 }
 
-void ReportModule::initialize(ModuleContext &)
+void ReportModule::initialize(RuntimeHost &)
 {
     // 报告模块无需运行时装配：入口声明在 onAttach，导出管线在外壳层。
 }
 
-void ReportModule::onAttach(UiContext &ui)
+void ReportModule::onAttach(IUiContext &ui)
 {
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
     //

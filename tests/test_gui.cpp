@@ -475,7 +475,7 @@ int main(int argc, char *argv[])
     // gui/views 并不知道。模块只认**领域**，先问 availableDomainPanels(domain)，
     // 再按 id 请求；面板从哪来、长什么样，全由扩展包决定。
     {
-        auto *ui = window.context(); // 模块 onAttach 拿到的就是这个 UiContext
+        auto *ui = window.context(); // 模块 onAttach 拿到的就是这个 IUiContext
         CHECK(ui != nullptr);
 
         // 模块按领域查清单（不写死 id）。
@@ -3016,7 +3016,7 @@ int main(int argc, char *argv[])
         if (!panel)
             for (QWidget *w : window.findChildren<QWidget *>())
                 if (auto *dp = qobject_cast<DataManagerPanel *>(w)) { panel = dp; break; }
-        // 外壳按 UiContext 的 requestPanel 建 dock 面板，装配时机在 build 之后的
+        // 外壳按 IUiContext 的 requestPanel 建 dock 面板，装配时机在 build 之后的
         // 事件循环里；这里若还没到就显式建一个同构实例（同一构造函数、同一意图
         // 通道），断言仍然打在真实面板实现上，而不是绕过UI。
         if (!panel)

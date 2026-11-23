@@ -4,6 +4,7 @@
 #include "BuiltinModuleHub.h"
 #include "Contribution.h"
 #include "IModule.h"
+#include "RuntimeHost.h"
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
@@ -38,16 +39,16 @@ ModuleInfo ProtocolModule::info() const
     return moduleInfo();
 }
 
-void ProtocolModule::initialize(ModuleContext &ctx)
+void ProtocolModule::initialize(RuntimeHost &host)
 {
     // 纯逻辑在 ng/libs/protocol（ps_protocol）+ SPI v2 CustomProtocolParser；
     // 模块负责把"模板校验/单帧试算/模板库"这三件界面之外也成立的事做成意图，
     // 让脚本与 CLI 不必复制一份校验逻辑，也不必经过任何对话框。
     m_handler = new ProtocolIntentHandler(this);
-    ctx.registerIntentHandler(m_handler);
+    host.registerIntentHandler(m_handler);
 }
 
-void ProtocolModule::onAttach(UiContext &ui)
+void ProtocolModule::onAttach(IUiContext &ui)
 {
     // 协议页"编辑器"组：新建 / 打开 / 校验协议 + 编辑器入口。
     // 这些是 GUI 工具，按 action id 由外壳特判弹对话框（同 openData 的模式），

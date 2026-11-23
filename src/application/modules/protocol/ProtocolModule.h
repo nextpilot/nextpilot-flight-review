@@ -21,8 +21,8 @@ public:
     static nextpilot::plotscope::host::IModule *create();
 
     nextpilot::plotscope::host::ModuleInfo info() const override;
-    void initialize(nextpilot::plotscope::host::ModuleContext &ctx) override;
-    void onAttach(nextpilot::plotscope::host::UiContext &ui) override;
+    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override;
+    void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
 
 private:
     // 协议意图处理器（校验/试算/模板库）：headless 也注册，GUI 按钮最终也走它。

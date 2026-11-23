@@ -19,7 +19,7 @@ namespace nextpilot::plotscope::app
 // 它**不持有**业务状态——数据集、设置、工具箱都在 AppContext 里。
 // 这样"谁拥有状态"只有一个答案，避免状态在 App / RuntimeHost 两处分叉。
 //
-// GUI 与 CLI 共用这一个类；区别只在是否传入 UiContext。
+// GUI 与 CLI 共用这一个类；区别只在是否传入 IUiContext。
 class App : public QObject
 {
     Q_OBJECT

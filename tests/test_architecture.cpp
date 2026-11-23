@@ -93,9 +93,9 @@ public:
 
     nextpilot::plotscope::host::ModuleInfo info() const override { return moduleInfo(); }
 
-    void initialize(nextpilot::plotscope::host::ModuleContext &ctx) override
+    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override
     {
-        ctx.registerIntentHandler(new ProbeHandler);
+        host.registerIntentHandler(new ProbeHandler);
     }
 };
 

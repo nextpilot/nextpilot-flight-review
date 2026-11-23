@@ -45,13 +45,14 @@ public:
 
     // 按依赖拓扑顺序激活；失败隔离，返回被跳过的模块及原因。
     QHash<QString, QString> activate(const QStringList &disabledIds = {},
-                                     UiContext *ui = nullptr);
+                                     IUiContext *ui = nullptr);
 
     // 卸载模块：delete 对象，Qt 父子树自动回收其创建的 UI 与连接。
     bool deactivate(const QString &moduleId);
     void deactivateAll();
 
-    // 模块注册自己能处理的意图 op（由 ModuleContext 转发，归属到当前初始化的模块）。
+    // 模块注册自己能处理的意图 op（归属到当前初始化的模块）。
+    // 模块在 initialize(host) 里直接调用 host.registerIntentHandler(...)。
     void registerIntentHandler(nextpilot::plotscope::intent::IIntentHandler *handler);
 
     // 注册**系统级**意图处理器：不归属任何可卸载模块，用保留 key 直接入池。
@@ -78,7 +79,7 @@ public:
     const nextpilot::plotscope::context::AppContext &app() const { return m_appCtx; }
 
     // 交互注册表：逻辑归 host 编排，实例由 AppContext owns。
-    // module 经 ModuleContext::host() 到这里注册；GUI 经 app().interactions() 取用。
+    // module 在 initialize(host) 里经 host 到这里注册；GUI 经 app().interactions() 取用。
     nextpilot::plotscope::context::InteractionHub &interactions() { return m_appCtx.interactions(); }
     const nextpilot::plotscope::context::InteractionHub &interactions() const { return m_appCtx.interactions(); }
     // 派生序列注册表：独立派生字段（不写回 dataset），data.derive 登记、
@@ -118,7 +119,7 @@ public:
     void registerMarkerOps(nextpilot::plotscope::uischema::MarkerOps ops)
     { m_appCtx.interactions().registerMarkerOps(std::move(ops)); }
 
-    // 便捷转发（内部使用；模块请通过 ModuleContext::app() 取）。
+    // 便捷转发（内部使用；模块请通过 host.app() 取）。
     nextpilot::plotscope::dataset::DatasetHub &data() { return m_appCtx.data(); }
     nextpilot::plotscope::context::SettingsStore &settings() { return m_appCtx.settings(); }
     nextpilot::plotscope::registry::ToolboxHub &toolbox() { return m_appCtx.toolbox(); }

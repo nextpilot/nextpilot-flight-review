@@ -1,8 +1,12 @@
 #pragma once
 
-// 模块契约（居 libs/module）：IModule / ModuleInfo / UiContext / ModuleContext。
-// 纯接口面——运行时（装载、生命周期、ModuleContext 方法体）在 host/RuntimeHost，
+// 模块契约（居 libs/module）：IModule / ModuleInfo / IUiContext。
+// 纯接口面——运行时（装载、生命周期）在 host/RuntimeHost，
 // 与 IIntentExecutor 居 libs/intent 同一先例：契约在 libs，进程层只做实例化与运行。
+//
+// 模块初始化只拿 RuntimeHost&：它既是执行器（IIntentExecutor），又持有 AppContext
+// （app()/data()/settings()/recorder()/registerIntentHandler() 全在它上面）。
+// 不再有一张"档案室钥匙 + 管家热线"的介绍信——递给模块的就是管家本人。
 
 #include "AppContext.h"
 #include "DatasetHub.h"
@@ -27,10 +31,10 @@ class RuntimeHost;
 //
 // 它只提供"放置"能力，不接管 UI 对象的所有权——所有权始终在模块。
 // QWidget 只做前置声明：host 层不链接 Qt Widgets，headless 构建保持轻量。
-class UiContext
+class IUiContext
 {
 public:
-    virtual ~UiContext() = default;
+    virtual ~IUiContext() = default;
 
     // 把一个面板停靠到指定区域（dock.left / dock.right / dock.bottom / dock.top）。
     // titleOverride 非空时用它作停靠标题（领域面板用自己的描述覆盖通用插槽标签）。
@@ -108,45 +112,13 @@ public:
 
     // 选取一个文件路径（GUI 交互能力，由外壳实现）。
     //
-    // 为什么放在 UiContext 而不是让模块自己开对话框：
+    // 为什么放在 IUiContext 而不是让模块自己开对话框：
     //   - 模块层不链接 Qt Widgets（headless 构建保持纯净），开不了 QFileDialog；
     //   - 文件对话框是**外壳**的交互能力，不是业务语义；
     //   - 模块只拿到"一个路径"，拿到之后照样走 data.load 意图——
     //     于是 GUI 与 CLI/脚本加载数据走的是同一条路径，行为一致。
     // 返回空串表示用户取消。
     virtual QString pickFilePath(const QString &title, const QString &filter) = 0;
-};
-
-// 模块拿到的运行时上下文：只有能力，没有全局单例、没有 MainWindow*。
-class ModuleContext
-{
-public:
-    ModuleContext(nextpilot::plotscope::context::AppContext &appCtx, RuntimeHost &host)
-        : m_appCtx(appCtx), m_host(host) {}
-
-    // 进程级运行态的**唯一入口**：数据集、设置、工具箱、数据源、摄取管道都在这里。
-    //
-    // 架构约定（重要）：模块只通过 ctx.app() 取 app 级状态，
-    // 不再混用 ctx.data() 与 ctx.host().settings() 两条路径——
-    // 那两条路径正是"状态分散持有"的症状。
-    nextpilot::plotscope::context::AppContext &app() { return m_appCtx; }
-    const nextpilot::plotscope::context::AppContext &app() const { return m_appCtx; }
-
-    // 便捷转发（保留以兼容既有模块代码；新代码请用 app()）。
-    nextpilot::plotscope::dataset::DatasetHub &data() { return m_appCtx.data(); }
-    RuntimeHost &host() { return m_host; }
-
-    // 脚本/自动化能力：拿到意图执行器与可选录制器。
-    // 返回的是宿主实现的执行器抽象，模块只依赖接口不依赖宿主内部。
-    nextpilot::plotscope::intent::IIntentExecutor &executor();
-    nextpilot::plotscope::intent::JobRecorder *recorder();
-
-    // 模块注册自己能处理的意图 op。
-    void registerIntentHandler(nextpilot::plotscope::intent::IIntentHandler *handler);
-
-private:
-    nextpilot::plotscope::context::AppContext &m_appCtx;
-    RuntimeHost &m_host;
 };
 
 // 统一模块接口。模块与扩展包都实现它，宿主一视同仁地装载。
@@ -160,11 +132,12 @@ public:
     virtual nextpilot::plotscope::host::ModuleInfo info() const = 0;
 
     // 阶段一：声明能力、订阅事件、注册意图处理器。不碰 UI。
-    virtual void initialize(ModuleContext &ctx) = 0;
+    // host 既是执行器，又持有 AppContext（app()/data()/settings()/recorder()/...）。
+    virtual void initialize(RuntimeHost &host) = 0;
 
     // 阶段二：创建 UI 并 parent 给自己，然后请求宿主放置。
     // headless 时宿主不调用；默认空实现。
-    virtual void onAttach(UiContext &) {}
+    virtual void onAttach(IUiContext &) {}
 
     // 阶段三：可选，模块被卸载前的清理。QObject 析构负责资源回收。
     virtual void onDetach() {}

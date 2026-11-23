@@ -13,10 +13,10 @@ public:
     static nextpilot::plotscope::host::IModule *create();
 
     nextpilot::plotscope::host::ModuleInfo info() const override;
-    void initialize(nextpilot::plotscope::host::ModuleContext &ctx) override;
+    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override;
 
     // GUI 环境下声明本模块的界面入口（headless 时宿主不调用）。
-    void onAttach(nextpilot::plotscope::host::UiContext &ui) override;
+    void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
 
 private:
     class Handler;

@@ -6,6 +6,7 @@
 #include "Events.h"
 #include "Contribution.h"
 #include "IModule.h"
+#include "RuntimeHost.h"
 #include "Result.h"
 
 #include <QVariantMap>
@@ -42,20 +43,20 @@ ModuleInfo DataModule::info() const
     return moduleInfo();
 }
 
-void DataModule::initialize(ModuleContext &ctx)
+void DataModule::initialize(RuntimeHost &host)
 {
     // 只订阅仓库事件；不碰 UI、不认识格式。用 this 作 context object，
     // 模块析构时连接自动断开——不需要手动解绑。
     // PLOTSCOPE_QUIET_STDOUT：MCP stdio 桥等协议场景下 stdout 是协议通道，
     // 提示打印必须让路（stderr 随便打，stdout 一个字节都不能混入）。
     const bool quiet = !qEnvironmentVariableIsEmpty("PLOTSCOPE_QUIET_STDOUT");
-    connect(&ctx.app().data(), &DatasetHub::datasetAdded, this, [quiet](DatasetId id) {
+    connect(&host.app().data(), &DatasetHub::datasetAdded, this, [quiet](DatasetId id) {
         if (quiet)
             fprintf(stderr, "[data] 数据集已加入: #%d\n", id);
         else
             fprintf(stdout, "[data] 数据集已加入: #%d\n", id);
     });
-    connect(&ctx.app().data(), &DatasetHub::datasetRemoved, this, [quiet](DatasetId id) {
+    connect(&host.app().data(), &DatasetHub::datasetRemoved, this, [quiet](DatasetId id) {
         if (quiet)
             fprintf(stderr, "[data] 数据集已移除: #%d\n", id);
         else
@@ -65,9 +66,9 @@ void DataModule::initialize(ModuleContext &ctx)
     // → 按需创建中央页签面板（不与画布争位）→ 转发 data.table.show 绑定数据。
     // 面板实现由视图层自注册（DataTablePanel.cpp 的 PS_REGISTER_PANEL_T），
     // 模块只发字符串 id，不依赖 Qt Widgets，headless 构建保持纯净。
-    // 注册在 initialize（ModuleContext 可用）；m_ui 在 onAttach 才有——
+    // 注册在 initialize（host 可用）；m_ui 在 onAttach 才有——
     // 动作是运行时触发的，届时 GUI 已 attach。
-    AppContext &appCtx = ctx.app();
+    AppContext &appCtx = host.app();
     appCtx.interactions().registerViewAction(
         QStringLiteral("data.table.open"),
         [this, &appCtx](const QVariantMap &params) -> Result<QVariant> {
@@ -83,7 +84,7 @@ void DataModule::initialize(ModuleContext &ctx)
         });
 }
 
-void DataModule::onAttach(UiContext &ui)
+void DataModule::onAttach(IUiContext &ui)
 {
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
     //

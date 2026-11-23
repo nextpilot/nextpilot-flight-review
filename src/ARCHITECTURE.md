@@ -664,7 +664,7 @@ gui/
   shell/                    外壳层：只做装配，零业务
     MainWindow               窗口骨架：建 ribbon/dock、装模块、存取状态
     ShellBinder              唯一知道 SARibbon / ADS 的地方
-    GuiContext               host::UiContext 的实现，把模块的 UI 需求路由出去
+    GuiContext               host::IUiContext 的实现，把模块的 UI 需求路由出去
     PanelFactory     部件类型 → QWidget 工厂（视图层自注册进这里）
 
   views/                    通用绘图能力（将来抽成独立绘图库，类似 Qwt）
@@ -1059,7 +1059,7 @@ kernel/              Rust：typed 表 · LOD · 缓存 · 算子（只经 includ
 | `uischema` | 变换契约（能力位 + 自描述）、Form/Property/Marker schema | 新算子先登记能力位；禁止无自描述的算子 |
 | `fastplot` | 视口/刻度/轴/曲线/仪表等绘图部件 | 画布宿主经 LOD 取数后喂 fastplot；禁止在部件里认数据/主题 |
 | `recording` | Recorder / RecordingFormat / RecordingBackend / Sink | 流录制能力登记与组合；禁止各处自写落盘循环 |
-| `module` | `IModule`/`ModuleInfo`/`UiContext`/`ModuleContext`（模块契约，纯接口面） | 实现模块只链本库（运行时在 host）；契约头禁止写实现体、禁止持有运行态 |
+| `module` | `IModule`/`ModuleInfo`/`IUiContext`（模块契约，纯接口面） | 实现模块只链本库（运行时在 host）；契约头禁止写实现体、禁止持有运行态 |
 
 新增机制的流程（三步，缺一不可）：
 1. 本清单加一行（机制名 + 一句话能力 + 使用纪律）；
