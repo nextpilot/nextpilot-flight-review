@@ -1,6 +1,6 @@
 ---
 name: ai-develop-workflow
-description: 本仓库双角色 AI 开发工作流（产品经理 Agent + 开发者 Agent）。产品经理负责需求、issue、验收与关闭；开发者负责实现、验证、分支与 PR。标准任务走 issue → 分支 → PR → 合并 → 平台自动关闭 issue；简单低风险修改可免 issue，但仍必须走分支、PR 和验证。含修改前确认、issue 规范、状态机、多 Agent 交接、分支提交、PR 描述随提交同步（多提交全列）、Gitee 平台操作、合并后兜底校验与 PR 门槛。触发词：开发任务、修 bug、新建功能、任务计划、Plan、派发、回填、issue、PR、分支、github flow、commit、push、提交、推送、合代码、产品经理、开发者、验收、修改前确认、复述、更新 PR 描述。
+description: 本仓库双角色 AI 开发工作流（产品经理 Agent + 开发者 Agent）。产品经理负责需求、issue、验收与关闭；开发者负责实现、验证、分支与 PR。标准任务走 issue → 分支 → PR → 合并 → 平台自动关闭 issue；简单低风险修改可免 issue，但仍必须走分支、PR 和验证。含修改前确认、issue 规范、状态机、多 Agent 交接、分支提交、提交信息格式（Conventional Commits + `Refs` 追溯）、PR 描述随提交同步（多提交全列）、Gitee 平台操作、合并后兜底校验与 PR 门槛。触发词：开发任务、修 bug、新建功能、任务计划、Plan、派发、回填、issue、PR、分支、github flow、commit、push、提交、推送、合代码、产品经理、开发者、验收、修改前确认、复述、更新 PR 描述、提交信息格式、commit 规范。
 ---
 
 # 开发工作流（PM/Dev 双角色 + GitHub Flow）
@@ -98,7 +98,7 @@ PM 建 issue
 
 - PM 建 issue 前先查重。同一问题已有 open issue 的，更新原 issue，不重复创建。
 - Dev 领取 issue 后才开工。同一 issue 同时只允许一个 Dev 负责。
-- 分支必须从最新 `main` 切出；提交信息必须引用 issue 编号。
+- 分支必须从最新 `main` 切出；提交信息按 Conventional Commits 写（`type(scope): 摘要` + footer `Refs:`），简单流程写 `Refs: none`，破坏性变更加 `!` 与 `BREAKING CHANGE:`（见 `references/git-pr-delivery.md`）。
 - PR 描述首行写 `Closes #<issue-id>`。Gitee 在 PR **合并**时自动关闭关联 issue，并按仓库设置自动删除源分支；PM 合并后必须校验实际状态，`state` 仍为 open 或分支仍在时才手动兜底。
 - PR 描述随提交演进：分支每新增一个提交，都要按最新状态刷新描述，多提交必须逐条列出（见 `references/git-pr-delivery.md`）。
 - PR 合并由 PM 或用户执行。Dev 只负责提交 PR 和响应评审。
@@ -161,6 +161,7 @@ Verification: <编译与测试结果>
 - 关联 PR 为 `merged`；
 - 验收标准全部通过；
 - 完成记录已回填；
+- 提交信息符合 Conventional Commits 且含 `Refs:`；
 - PR 描述与实际提交一致（多提交逐条列出）；
 - 特性分支已删除（远端与本地）；
 - 文档/配置同步已完成。
@@ -170,6 +171,7 @@ Verification: <编译与测试结果>
 - PR 为 `merged`；
 - 编译与测试通过；
 - PR 中 `No-Issue` 理由成立；
+- 提交信息符合 Conventional Commits 且含 `Refs: none`；
 - PR 描述与实际提交一致（多提交逐条列出）；
 - 分支已删除。
 

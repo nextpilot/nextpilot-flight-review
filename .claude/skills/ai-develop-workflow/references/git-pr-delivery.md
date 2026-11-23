@@ -14,10 +14,59 @@
 
 - 三阶段：**开发期**（编码与本地验证，不受分支限制）、**提交期**（git commit）、**推送期**（git push）受纪律约束。
 - 一个提交一个完整语义单元（编译通过、不破坏测试）；禁止“临时存一版”的废提交。
-- 提交信息：`<type>: <动宾短语>`（type 同分支前缀），正文写清做了什么、为什么；禁止 `update`/`fix` 等无信息量表述。
-- 标准流程的提交信息引用 issue 编号（如 `IKX6N2`），便于自动关联。
-- 作者身份按项目约定设置（本项目 `latercomer <latercomer@qq.com>`），用 `git -c user.name=... -c user.email=... commit` 逐次指定，不改全局配置。
 - 禁止在主干分支上先 `git commit` 再迁移；应先检出特性分支，后提交。
+- 作者身份按项目约定设置（本项目 `latercomer <latercomer@qq.com>`），用 `git -c user.name=... -c user.email=... commit` 逐次指定，不改全局配置。
+
+### 提交信息格式（Conventional Commits）
+
+采用 [Conventional Commits 1.0.0](https://www.conventionalcommits.org/zh-hans/v1.0.0/)，footer 承载追溯字段：
+
+```text
+<type>(<scope>)!: <摘要>
+
+<正文：为什么改 / 改了什么 / 影响面>
+
+Refs: <issue-id>
+PR: #<n>
+BREAKING CHANGE: <影响与迁移方式>
+```
+
+| 部分 | 规则 |
+|---|---|
+| `type` | 必填，与分支前缀一致：`feat` 新增功能 / `fix` 缺陷修复 / `docs` 文档 / `style` 仅格式 / `refactor` 重构 / `perf` 性能 / `test` 测试 / `build` 构建依赖 / `ci` 流水线 / `chore` 杂务 / `revert` 回滚。分支前缀不在表内（如 `legacy/`）取最贴近的 type |
+| `scope` | 可选，模块名（`gui`、`registry`、`workflow`）；跨模块或全局改动省略括号 |
+| `!` | 破坏性变更标记：`feat(api)!: 移除 v1 接口`，同时必须在 footer 写 `BREAKING CHANGE:` |
+| 摘要 | ≤72 字符，动宾短语，不带句号；禁止 `update`/`fix` 这类无信息量表述 |
+| 正文 | 与标题空一行；每行 ≤72 字符；写为什么、改了什么、影响面 |
+| footer | 与正文空一行，每行一条 `Token: value`。`Refs:` **必填**（标准流程填 issue 编号 `IKX79J`，简单流程填 `Refs: none`）；`PR:` 可选；`BREAKING CHANGE:` 按需 |
+
+- type 表达改动性质而非分支归属：`fix/` 分支上顺手补的文档用 `docs`，不硬写成 `fix`。
+- `Refs:` 开工前就已确定，所以能强制；`PR:` 提交时不可预知，**禁止为补它而 amend 已推送提交或强推**。
+- PR ↔ 提交的完整映射由 PR 描述的「提交清单」承担，不靠 commit 单点承载；issue ↔ PR 由 `Closes #IKxxxxx` 关联，形成三方可回溯。
+- 本规范只约束之后的提交；历史提交不回改（改写历史禁止）。
+
+推送前格式自查：
+
+```bash
+# ① 标题行：type 在白名单内，摘要非空
+git log origin/main..HEAD --format='%h %s' \
+  | grep -vE '[0-9a-f]{7,} (feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._-]+\))?!?: .' \
+  || echo "标题行全部合规"
+
+# ② 追溯字段：每个提交必须有 Refs
+for c in $(git rev-list origin/main..HEAD); do
+  git log -1 --format=%B "$c" | grep -q '^Refs: ' \
+    || echo "缺 Refs: $(git log -1 --format='%h %s' "$c")"
+done
+
+# ③ 破坏性变更：标题带 ! 的必须有 BREAKING CHANGE footer
+for c in $(git rev-list origin/main..HEAD); do
+  if git log -1 --format=%s "$c" | grep -qE '^[a-z]+(\([^)]+\))?!: '; then
+    git log -1 --format=%B "$c" | grep -q '^BREAKING CHANGE: ' \
+      || echo "缺 BREAKING CHANGE: $(git log -1 --format='%h %s' "$c")"
+  fi
+done
+```
 
 ## 判定与检出
 
@@ -55,7 +104,7 @@ git push origin <特性分支>
 - rebase 冲突逐个解决后 `git rebase --continue`；无法解决则 `git rebase --abort` 回滚并报告。禁止为绕过冲突改用 merge 提交或强推。
 - 推送被拒（远端有新提交）→ 重新执行本步骤；禁止 `--force`。
 - `--force`、`--no-verify` 仅在用户明确要求时使用；hook 失败表明真实问题，应修根因。
-- 推送前自检：待推 ref 非主干；`git log origin/main..HEAD` 仅含本次 feature 提交；测试全绿；已 rebase 至远端最新。
+- 推送前自检：待推 ref 非主干；`git log origin/main..HEAD` 仅含本次 feature 提交；测试全绿；已 rebase 至远端最新；提交信息通过“提交信息格式”的两项自查。
 - PR 已存在时，推送成功后立即按新提交刷新 PR 描述（见“PR 描述随提交同步更新”）。
 
 ## PR 规则
@@ -77,6 +126,8 @@ git push origin <特性分支>
    - 全量编译无 error；ctest 全绿（口径见 `docs/develop/testing.md`）；
    - 无越层依赖（分层守卫随 configure 强制）；
    - 涉及架构/契约/文档的改动已同步对应文档；
+   - PR 内每个提交符合 Conventional Commits 且 footer 含 `Refs:`（自查见“提交信息格式”）；
+   - PR 描述与实际提交一致（多提交逐条列出）；
    - Gitee 侧 review 已通过、CI 门禁已过（操作见 `references/gitee-operations.md`）。
 5. 合并方式：普通 merge 或 squash（保持 `main` 历史线性、每节点语义完整）。
 6. 合并由 PM 或用户执行；Dev 不自行合并。
