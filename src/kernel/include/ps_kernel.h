@@ -71,6 +71,17 @@ typedef enum PsValueType {
 } PsValueType;
 #endif
 
+/* 列压缩编解码器；ps_dataset_column_encode 的 codec 参数。 */
+#ifndef PS_CODEC_DEFINED
+#define PS_CODEC_DEFINED
+typedef enum PsCodec {
+    PS_CODEC_CONSTANT = 0,  /* 全列同值 */
+    PS_CODEC_FOR = 1,       /* 基值 + 定长偏移，适合小范围整数 */
+    PS_CODEC_DICTIONARY = 2,/* 去重值表 + 行索引，适合低基数/文本 */
+    PS_CODEC_BITPACK = 3    /* 布尔按位打包 */
+} PsCodec;
+#endif
+
 /* 一帧/一批行里的单列。values 按 type 解释；nulls 长度 (rows+7)/8，NULL=全有效。 */
 #ifndef PS_FRAME_COLUMN_DEFINED
 #define PS_FRAME_COLUMN_DEFINED
@@ -171,6 +182,17 @@ int32_t              ps_dataset_column_type(PsDataset *ds, const char *table, co
 int32_t              ps_dataset_column_raw(const PsDataset *ds, const char *table, const char *column,
                                            const void **out_values, uint64_t *out_count, uint32_t *out_type,
                                            const uint8_t **out_nulls);
+
+/* ---- S5 选择性列编码压缩 ---- */
+/* 对指定列开启压缩编码，按列显式选择；F64 绘图主通道不调用即保零拷贝。
+ * codec 取 PsCodec；返回 0 成功，1 参数错误，2 表/列不存在，3 已编码，4 不适合该 codec。 */
+int32_t              ps_dataset_column_encode(PsDataset *ds, const char *table, const char *column,
+                                              uint32_t codec, char *err, uint32_t err_cap);
+/* 列是否编码：0=原生，1=已编码，-1=表/列不存在。 */
+int32_t              ps_dataset_column_is_encoded(const PsDataset *ds, const char *table, const char *column);
+/* 取列解码后的数值（null 行写 NaN）到调用方 f64 缓冲，返回写入行数（<=cap）。 */
+uint32_t             ps_dataset_column_decode_f64(const PsDataset *ds, const char *table, const char *column,
+                                                  double *out, uint32_t cap);
 
 /* 2.7.5 数据集切片：按时间范围 [t0_ns, t1_ns]（含端点）与列子集抽出新 PsDataset。
  * columns 为列名数组，NULL/0 取全部列；新数据集只含 typed 表，独立生命周期。

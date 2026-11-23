@@ -143,7 +143,13 @@ fn write_column(w: &mut impl Write, col: &Column) -> Result<(), String> {
     write_u32(w, col.len() as u32)?;
     w.write_all(name).map_err(|e| e.to_string())?;
     w.write_all(unit).map_err(|e| e.to_string())?;
-    match &col.data {
+    // 压缩列解码后按原生类型落盘，缓存格式与版本不变。
+    let decoded = match &col.data {
+        ColumnData::Encoded { .. } => Some(col.data.decode()?),
+        _ => None,
+    };
+    let data = decoded.as_ref().unwrap_or(&col.data);
+    match data {
         ColumnData::F64(v) => for x in v { w.write_all(&x.to_le_bytes()).map_err(|e| e.to_string())?; },
         ColumnData::F32(v) => for x in v { w.write_all(&x.to_le_bytes()).map_err(|e| e.to_string())?; },
         ColumnData::I64(v) => for x in v { w.write_all(&x.to_le_bytes()).map_err(|e| e.to_string())?; },
@@ -162,6 +168,8 @@ fn write_column(w: &mut impl Write, col: &Column) -> Result<(), String> {
         },
         // 运行时句柄不可持久化；save_typed_dataset 入口已拦截，这里仅防御性拒绝。
         ColumnData::Object(_) => return Err("对象列不可写入缓存（句柄为运行时值）".into()),
+        // 上方已解码；若仍见到编码列说明解码未生效，明确拒绝而非静默写错字节。
+        ColumnData::Encoded { .. } => return Err("编码列须先解码再写入缓存".into()),
     }
     let bits = col.len().div_ceil(8);
     w.write_all(&col.nulls.raw()[..bits]).map_err(|e| e.to_string())

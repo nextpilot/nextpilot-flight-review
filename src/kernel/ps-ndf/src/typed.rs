@@ -130,6 +130,215 @@ impl ObjectStore {
     }
 }
 
+/// 列压缩编解码器。调用方按列或按表显式选用；绘图主通道 F64 默认不压。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Codec {
+    /// 全列同值，只存一个值。
+    Constant,
+    /// 帧内引用：基值 + 每行定长偏移，适合小范围整数状态码。
+    For,
+    /// 字典：去重值表 + 每行索引，适合低基数枚举与文本。
+    Dictionary,
+    /// 布尔按位打包，8 行 1 字节。
+    BitPack,
+}
+
+/// 编码单元。数值保留位模式，保证解压逐位一致。
+#[derive(Debug, Clone, PartialEq)]
+pub enum Atom {
+    Bits(u64),
+    I64(i64),
+    U64(u64),
+    Text(String),
+}
+
+impl Atom {
+    fn as_f64(&self) -> Option<f64> {
+        match self {
+            Atom::Bits(b) => Some(f64::from_bits(*b)),
+            Atom::I64(v) => Some(*v as f64),
+            Atom::U64(v) => Some(*v as f64),
+            Atom::Text(_) => None,
+        }
+    }
+
+    fn as_text(&self) -> String {
+        match self {
+            Atom::Bits(b) => f64::from_bits(*b).to_string(),
+            Atom::I64(v) => v.to_string(),
+            Atom::U64(v) => v.to_string(),
+            Atom::Text(s) => s.clone(),
+        }
+    }
+
+    fn as_i64(&self) -> Option<i64> {
+        match self {
+            Atom::I64(v) => Some(*v),
+            Atom::U64(v) => i64::try_from(*v).ok(),
+            Atom::Bits(b) => Some(f64::from_bits(*b) as i64),
+            Atom::Text(_) => None,
+        }
+    }
+
+    fn as_u64(&self) -> Option<u64> {
+        match self {
+            Atom::U64(v) => Some(*v),
+            Atom::I64(v) => u64::try_from(*v).ok(),
+            Atom::Bits(b) => Some(f64::from_bits(*b) as u64),
+            Atom::Text(_) => None,
+        }
+    }
+
+    fn size_bytes(&self) -> usize {
+        match self {
+            Atom::Bits(_) | Atom::I64(_) | Atom::U64(_) => 8,
+            Atom::Text(s) => s.len(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EncodedPayload {
+    Constant(Atom),
+    For { base: i64, deltas: Vec<u32> },
+    Dictionary { atoms: Vec<Atom>, indices: Vec<u32> },
+    BitPack(Vec<u8>),
+}
+
+impl EncodedPayload {
+    fn atom_at(&self, row: usize) -> Option<Atom> {
+        match self {
+            EncodedPayload::Constant(a) => Some(a.clone()),
+            EncodedPayload::For { base, deltas } => {
+                deltas.get(row).map(|d| Atom::I64(base.saturating_add(*d as i64)))
+            }
+            EncodedPayload::Dictionary { atoms, indices } => {
+                indices.get(row).and_then(|i| atoms.get(*i as usize)).cloned()
+            }
+            EncodedPayload::BitPack(bits) => bits
+                .get(row / 8)
+                .map(|b| Atom::I64(((b >> (row % 8)) & 1) as i64)),
+        }
+    }
+
+    fn atoms(&self, len: usize) -> Vec<Atom> {
+        match self {
+            EncodedPayload::Constant(a) => vec![a.clone(); len],
+            EncodedPayload::For { base, deltas } => deltas
+                .iter()
+                .map(|d| Atom::I64(base.saturating_add(*d as i64)))
+                .collect(),
+            EncodedPayload::Dictionary { atoms, indices } => indices
+                .iter()
+                .map(|i| atoms[*i as usize].clone())
+                .collect(),
+            EncodedPayload::BitPack(bits) => (0..len)
+                .map(|r| Atom::I64(((bits[r / 8] >> (r % 8)) & 1) as i64))
+                .collect(),
+        }
+    }
+
+    fn size_bytes(&self) -> usize {
+        match self {
+            EncodedPayload::Constant(a) => a.size_bytes(),
+            EncodedPayload::For { deltas, .. } => 8 + deltas.len() * 4,
+            EncodedPayload::Dictionary { atoms, indices } => {
+                8 + atoms.iter().map(|a| 4 + a.size_bytes()).sum::<usize>() + indices.len() * 4
+            }
+            EncodedPayload::BitPack(bits) => bits.len(),
+        }
+    }
+}
+
+fn encode_payload(codec: Codec, logical: ValueType, atoms: &[Atom]) -> Result<EncodedPayload, String> {
+    match codec {
+        Codec::Constant => {
+            if atoms.is_empty() {
+                return Ok(EncodedPayload::Constant(Atom::I64(0)));
+            }
+            if atoms.iter().all(|a| a == &atoms[0]) {
+                Ok(EncodedPayload::Constant(atoms[0].clone()))
+            } else {
+                Err("常数列要求所有行同值".into())
+            }
+        }
+        Codec::For => {
+            if !matches!(logical, ValueType::I8 | ValueType::I16 | ValueType::I32 | ValueType::I64
+                | ValueType::U8 | ValueType::U16 | ValueType::U32 | ValueType::U64 | ValueType::Bool)
+            {
+                return Err("FOR 编码仅适用整数与布尔列".into());
+            }
+            let mut base = i64::MAX;
+            for a in atoms {
+                base = base.min(a.as_i64().ok_or("FOR 编码遇非整数值")?);
+            }
+            if atoms.is_empty() {
+                return Ok(EncodedPayload::For { base: 0, deltas: Vec::new() });
+            }
+            let mut deltas = Vec::with_capacity(atoms.len());
+            for a in atoms {
+                let d = a.as_i64().ok_or("FOR 编码遇非整数值")? - base;
+                deltas.push(u32::try_from(d).map_err(|_| "FOR 编码跨度超过 u32 范围")?);
+            }
+            Ok(EncodedPayload::For { base, deltas })
+        }
+        Codec::Dictionary => {
+            let mut dict: Vec<Atom> = Vec::new();
+            let mut indices = Vec::with_capacity(atoms.len());
+            for a in atoms {
+                let idx = match dict.iter().position(|x| x == a) {
+                    Some(i) => i,
+                    None => { dict.push(a.clone()); dict.len() - 1 }
+                };
+                indices.push(idx as u32);
+            }
+            Ok(EncodedPayload::Dictionary { atoms: dict, indices })
+        }
+        Codec::BitPack => {
+            if logical != ValueType::Bool {
+                return Err("位打包仅适用布尔列".into());
+            }
+            let mut bits = vec![0u8; atoms.len().div_ceil(8)];
+            for (r, a) in atoms.iter().enumerate() {
+                if a.as_i64().unwrap_or(0) != 0 {
+                    bits[r / 8] |= 1 << (r % 8);
+                }
+            }
+            Ok(EncodedPayload::BitPack(bits))
+        }
+    }
+}
+
+fn atoms_to_column(atoms: &[Atom], vt: ValueType) -> Result<ColumnData, String> {
+    use ValueType as V;
+    let col = match vt {
+        V::F64 => ColumnData::F64(atoms.iter().map(|a| match a {
+            Atom::Bits(b) => f64::from_bits(*b),
+            Atom::I64(x) => *x as f64,
+            Atom::U64(x) => *x as f64,
+            Atom::Text(_) => f64::NAN,
+        }).collect()),
+        V::F32 => ColumnData::F32(atoms.iter().map(|a| match a {
+            Atom::Bits(b) => f64::from_bits(*b) as f32,
+            Atom::I64(x) => *x as f32,
+            Atom::U64(x) => *x as f32,
+            Atom::Text(_) => f32::NAN,
+        }).collect()),
+        V::I64 => ColumnData::I64(atoms.iter().map(|a| a.as_i64().unwrap_or(0)).collect()),
+        V::U64 => ColumnData::U64(atoms.iter().map(|a| a.as_u64().unwrap_or(0)).collect()),
+        V::I32 => ColumnData::I32(atoms.iter().map(|a| a.as_i64().unwrap_or(0) as i32).collect()),
+        V::U32 => ColumnData::U32(atoms.iter().map(|a| a.as_u64().unwrap_or(0) as u32).collect()),
+        V::I16 => ColumnData::I16(atoms.iter().map(|a| a.as_i64().unwrap_or(0) as i16).collect()),
+        V::U16 => ColumnData::U16(atoms.iter().map(|a| a.as_u64().unwrap_or(0) as u16).collect()),
+        V::I8 => ColumnData::I8(atoms.iter().map(|a| a.as_i64().unwrap_or(0) as i8).collect()),
+        V::U8 => ColumnData::U8(atoms.iter().map(|a| a.as_u64().unwrap_or(0) as u8).collect()),
+        V::Bool => ColumnData::Bool(atoms.iter().map(|a| a.as_i64().unwrap_or(0) != 0).collect()),
+        V::Text => ColumnData::Text(atoms.iter().map(|a| a.as_text()).collect()),
+        V::Object => return Err("对象列不参与压缩编码".into()),
+    };
+    Ok(col)
+}
+
 /// 一列的物理存储。列式布局，所有变体长度必须一致。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ColumnData {
@@ -147,6 +356,9 @@ pub enum ColumnData {
     Text(Vec<String>),
     /// 每行一个 ObjectStore 句柄；payload 在数据集的 ObjectStore 里（S4）。
     Object(Vec<u64>),
+    /// 压缩列：逻辑类型 + codec + 载荷 + 行数。列内无连续原生数组，
+    /// columnRaw 不支持整列裸借出；LOD 经单行解码聚合。
+    Encoded { logical: ValueType, codec: Codec, payload: EncodedPayload, len: usize },
 }
 
 impl ColumnData {
@@ -165,6 +377,7 @@ impl ColumnData {
             ColumnData::Bool(_) => ValueType::Bool,
             ColumnData::Text(_) => ValueType::Text,
             ColumnData::Object(_) => ValueType::Object,
+            ColumnData::Encoded { logical, .. } => *logical,
         }
     }
 
@@ -183,6 +396,7 @@ impl ColumnData {
             ColumnData::Bool(v) => v.len(),
             ColumnData::Text(v) => v.len(),
             ColumnData::Object(v) => v.len(),
+            ColumnData::Encoded { len, .. } => *len,
         }
     }
 
@@ -205,6 +419,10 @@ impl ColumnData {
             ColumnData::Bool(v) => v.clear(),
             ColumnData::Text(v) => v.clear(),
             ColumnData::Object(v) => v.clear(),
+            ColumnData::Encoded { payload, len, .. } => {
+                *payload = EncodedPayload::Constant(Atom::I64(0));
+                *len = 0;
+            }
         }
     }
 
@@ -230,6 +448,24 @@ impl ColumnData {
             ColumnData::Bool(v) => { v.drain(0..rows); }
             ColumnData::Text(v) => { v.drain(0..rows); }
             ColumnData::Object(v) => { v.drain(0..rows); }
+            ColumnData::Encoded { logical, codec, payload, len } => {
+                let atoms = payload.atoms(*len);
+                let kept = if rows >= atoms.len() { Vec::new() } else { atoms[rows..].to_vec() };
+                if let Ok(p) = encode_payload(*codec, *logical, &kept) {
+                    *payload = p;
+                    *len = kept.len();
+                } else {
+                    // 降级为字典编码（Constant/For 可能因裁剪后数据失配）。
+                    if let Ok(p) = encode_payload(Codec::Dictionary, *logical, &kept) {
+                        *payload = p;
+                        *codec = Codec::Dictionary;
+                        *len = kept.len();
+                    } else {
+                        *payload = EncodedPayload::Constant(Atom::I64(0));
+                        *len = 0;
+                    }
+                }
+            }
         }
     }
 
@@ -253,6 +489,16 @@ impl ColumnData {
             ColumnData::Bool(v) => ColumnData::Bool(gather(v, order)),
             ColumnData::Text(v) => ColumnData::Text(gather(v, order)),
             ColumnData::Object(v) => ColumnData::Object(gather(v, order)),
+            ColumnData::Encoded { logical, codec, payload, len } => {
+                let atoms = payload.atoms(*len);
+                let picked: Vec<Atom> = order.iter().map(|&i| atoms[i].clone()).collect();
+                Self::encode_from_atoms(*logical, *codec, &picked)
+                    .or_else(|_| Self::encode_from_atoms(*logical, Codec::Dictionary, &picked))
+                    .unwrap_or_else(|_| {
+                        Self::Encoded { logical: *logical, codec: Codec::Dictionary,
+                            payload: EncodedPayload::Dictionary { atoms: Vec::new(), indices: picked.iter().map(|_| 0).collect() }, len: picked.len() }
+                    })
+            }
         }
     }
 
@@ -260,6 +506,20 @@ impl ColumnData {
     pub fn merge_gather(&self, new: &ColumnData, order: &[(bool, usize)]) -> ColumnData {
         fn g<T: Clone>(a: &[T], b: &[T], order: &[(bool, usize)]) -> Vec<T> {
             order.iter().map(|&(is_new, k)| if is_new { b[k].clone() } else { a[k].clone() }).collect()
+        }
+        if let ColumnData::Encoded { logical, codec, payload, len } = self {
+            let a = payload.atoms(*len);
+            let b = new.to_atoms();
+            let picked: Vec<Atom> = order.iter()
+                .map(|&(is_new, k)| if is_new { b[k].clone() } else { a[k].clone() })
+                .collect();
+            return Self::encode_from_atoms(*logical, *codec, &picked)
+                .or_else(|_| Self::encode_from_atoms(*logical, Codec::Dictionary, &picked))
+                .unwrap_or_else(|_| Self::Encoded {
+                    logical: *logical, codec: Codec::Dictionary,
+                    payload: EncodedPayload::Dictionary { atoms: Vec::new(), indices: picked.iter().map(|_| 0).collect() },
+                    len: picked.len(),
+                });
         }
         match (self, new) {
             (ColumnData::F64(a), ColumnData::F64(b)) => ColumnData::F64(g(a, b, order)),
@@ -282,6 +542,26 @@ impl ColumnData {
     pub fn append(&mut self, other: ColumnData) -> Result<(), String> {
         if self.value_type() != other.value_type() {
             return Err("列类型不一致".into());
+        }
+        let self_codec = match self {
+            ColumnData::Encoded { codec, .. } => Some(*codec),
+            _ => None,
+        };
+        let logical = self.value_type();
+        let other_encoded = matches!(other, ColumnData::Encoded { .. });
+        if self_codec.is_some() || other_encoded {
+            let mut a = self.to_atoms();
+            let b = other.to_atoms();
+            a.extend(b);
+            let enc = if let Some(codec) = self_codec {
+                Self::encode_from_atoms(logical, codec, &a)
+                    .or_else(|_| Self::encode_from_atoms(logical, Codec::Dictionary, &a))?
+            } else {
+                // self 是原生、other 是编码：追加后仍以原生列落库，避免无谓改变主通道布局。
+                return atoms_to_column(&a, logical).map(|c| *self = c);
+            };
+            *self = enc;
+            return Ok(());
         }
         match (self, other) {
             (ColumnData::F64(a), ColumnData::F64(b)) => a.extend(b),
@@ -320,6 +600,17 @@ impl ColumnData {
             ColumnData::Bool(v) => ColumnData::Bool(v[start..end].to_vec()),
             ColumnData::Text(v) => ColumnData::Text(v[start..end].to_vec()),
             ColumnData::Object(v) => ColumnData::Object(v[start..end].to_vec()),
+            ColumnData::Encoded { logical, codec, payload, len } => {
+                let atoms = payload.atoms(*len);
+                let picked = atoms[start..end].to_vec();
+                Self::encode_from_atoms(*logical, *codec, &picked)
+                    .or_else(|_| Self::encode_from_atoms(*logical, Codec::Dictionary, &picked))
+                    .unwrap_or_else(|_| Self::Encoded {
+                        logical: *logical, codec: Codec::Dictionary,
+                        payload: EncodedPayload::Dictionary { atoms: Vec::new(), indices: picked.iter().map(|_| 0).collect() },
+                        len: picked.len(),
+                    })
+            }
         }
     }
 
@@ -340,6 +631,10 @@ impl ColumnData {
             ColumnData::Text(v) => v.get(row).and_then(|x| x.parse::<f64>().ok()),
             // 对象列无标量数值语义；曲线/光标不应把它当数值画。
             ColumnData::Object(_) => None,
+            // 单行 O(1) 解码；文本编码列无数值语义。
+            ColumnData::Encoded { payload, len, .. } => {
+                if row >= *len { None } else { payload.atom_at(row).and_then(|a| a.as_f64()) }
+            }
         }
     }
 
@@ -359,7 +654,68 @@ impl ColumnData {
             ColumnData::Text(v) => v.get(row).cloned(),
             // 对象列显示成 `obj#<handle>`，仅用于占位提示；真实 payload 走 blob_get。
             ColumnData::Object(v) => v.get(row).map(|h| format!("obj#{h}")),
+            ColumnData::Encoded { payload, len, .. } => {
+                if row >= *len { None } else { payload.atom_at(row).map(|a| a.as_text()) }
+            }
         }
+    }
+
+    /// 显式编码当前列。调用方按需对低基数/布尔/文本列调用；F64 主通道不调用即保零拷贝。
+    pub fn encode(&self, codec: Codec) -> Result<ColumnData, String> {
+        if matches!(self, ColumnData::Encoded { .. }) {
+            return Err("列已编码".into());
+        }
+        let logical = self.value_type();
+        let atoms = self.to_atoms();
+        Self::encode_from_atoms(logical, codec, &atoms)
+    }
+
+    /// 解码编码列为原生列；原生列原样返回。
+    pub fn decode(&self) -> Result<ColumnData, String> {
+        match self {
+            ColumnData::Encoded { logical, payload, len, .. } => atoms_to_column(&payload.atoms(*len), *logical),
+            _ => Ok(self.clone()),
+        }
+    }
+
+    /// 编码列返回 codec，原生列返回 None。
+    pub fn codec(&self) -> Option<Codec> {
+        match self { ColumnData::Encoded { codec, .. } => Some(*codec), _ => None }
+    }
+
+    /// 估算列的内存占用字节数（编码列取载荷实际占用），用于压缩前后对比。
+    pub fn memory_bytes(&self) -> usize {
+        match self {
+            ColumnData::Encoded { payload, .. } => payload.size_bytes(),
+            _ => self.len() * self.value_type().value_bytes()
+                + if matches!(self, ColumnData::Text(_)) {
+                    match self { ColumnData::Text(v) => v.iter().map(|s| s.len()).sum(), _ => 0 }
+                } else { 0 },
+        }
+    }
+
+    fn to_atoms(&self) -> Vec<Atom> {
+        match self {
+            ColumnData::F64(v) => v.iter().map(|x| Atom::Bits(x.to_bits())).collect(),
+            ColumnData::F32(v) => v.iter().map(|x| Atom::Bits((*x as f64).to_bits())).collect(),
+            ColumnData::I64(v) => v.iter().map(|x| Atom::I64(*x)).collect(),
+            ColumnData::U64(v) => v.iter().map(|x| Atom::U64(*x)).collect(),
+            ColumnData::I32(v) => v.iter().map(|x| Atom::I64(*x as i64)).collect(),
+            ColumnData::U32(v) => v.iter().map(|x| Atom::U64(*x as u64)).collect(),
+            ColumnData::I16(v) => v.iter().map(|x| Atom::I64(*x as i64)).collect(),
+            ColumnData::U16(v) => v.iter().map(|x| Atom::U64(*x as u64)).collect(),
+            ColumnData::I8(v) => v.iter().map(|x| Atom::I64(*x as i64)).collect(),
+            ColumnData::U8(v) => v.iter().map(|x| Atom::U64(*x as u64)).collect(),
+            ColumnData::Bool(v) => v.iter().map(|x| Atom::I64(if *x { 1 } else { 0 })).collect(),
+            ColumnData::Text(v) => v.iter().map(|x| Atom::Text(x.clone())).collect(),
+            ColumnData::Object(v) => v.iter().map(|x| Atom::U64(*x)).collect(),
+            ColumnData::Encoded { payload, len, .. } => payload.atoms(*len),
+        }
+    }
+
+    fn encode_from_atoms(logical: ValueType, codec: Codec, atoms: &[Atom]) -> Result<ColumnData, String> {
+        let payload = encode_payload(codec, logical, atoms)?;
+        Ok(ColumnData::Encoded { logical, codec, payload, len: atoms.len() })
     }
 }
 
@@ -2225,5 +2581,126 @@ mod tests {
         assert_eq!(f64_col(t, "v")[0], 1.0);
         // 对象列无数值语义，value_as_f64 返回 None（不会被当曲线画）。
         assert_eq!(t.column("obj").unwrap().value_as_f64(0), None);
+    }
+
+    // ===== S5 选择性列编码压缩 =====
+
+    fn decode_to_f64(enc: &ColumnData) -> Vec<Option<f64>> {
+        let n = enc.len();
+        (0..n).map(|r| enc.value_as_f64(r)).collect()
+    }
+
+    #[test]
+    fn codec_constant_roundtrip_and_memory_drop() {
+        let raw = ColumnData::I64(vec![42; 1000]);
+        let raw_bytes = raw.memory_bytes();
+        let enc = raw.encode(Codec::Constant).unwrap();
+        assert_eq!(enc.value_type(), ValueType::I64);
+        assert_eq!(enc.codec(), Some(Codec::Constant));
+        assert_eq!(enc.len(), 1000);
+        assert_eq!(decode_to_f64(&enc), vec![Some(42.0); 1000]);
+        let dec = enc.decode().unwrap();
+        assert_eq!(dec, raw, "解压逐位一致");
+        assert!(enc.memory_bytes() < raw_bytes / 10, "常数列内存应显著下降");
+    }
+
+    #[test]
+    fn codec_for_roundtrip_low_cardinality_status() {
+        // 状态码小范围整数：FOR 基值 + u32 偏移。
+        let vals: Vec<i64> = (0..1000).map(|i| 100 + (i % 5) as i64).collect();
+        let raw = ColumnData::I64(vals.clone());
+        let enc = raw.encode(Codec::For).unwrap();
+        assert_eq!(enc.codec(), Some(Codec::For));
+        let dec = enc.decode().unwrap();
+        assert_eq!(dec, raw, "FOR 解码逐位一致");
+        for (i, v) in vals.iter().enumerate() {
+            assert_eq!(enc.value_as_f64(i), Some(*v as f64));
+        }
+        assert!(enc.memory_bytes() < raw.memory_bytes(), "FOR 应比原生 i64 省内存");
+    }
+
+    #[test]
+    fn codec_dictionary_roundtrip_text_and_null_bitmap() {
+        let cats = ["alpha", "beta", "gamma"];
+        let vals: Vec<String> = (0..900).map(|i| cats[i % 3].to_string()).collect();
+        let raw = ColumnData::Text(vals.clone());
+        let enc = raw.encode(Codec::Dictionary).unwrap();
+        assert_eq!(enc.codec(), Some(Codec::Dictionary));
+        let dec = enc.decode().unwrap();
+        assert_eq!(dec, raw, "字典解码逐位一致（含文本）");
+        // null 位图独立于列存储，编码不改变它。
+        let mut nulls = NullBits::new(900);
+        nulls.set_null(5, true);
+        nulls.set_null(500, true);
+        let col = Column::with_nulls("cat", "", enc, nulls.clone()).unwrap();
+        assert!(col.is_null(5));
+        assert!(col.is_null(500));
+        assert_eq!(col.value_text(0).as_deref(), Some("alpha"));
+        assert_eq!(col.value_text(6).as_deref(), Some("alpha")); // 6%3==0
+        assert_eq!(col.value_text(2).as_deref(), Some("gamma")); // 2%3==2，非 null
+        assert_eq!(col.value_text(500), None, "null 行不返回文本值");
+    }
+
+    #[test]
+    fn codec_bitpack_roundtrip_bool() {
+        let vals: Vec<bool> = (0..1000).map(|i| i % 3 == 0).collect();
+        let raw = ColumnData::Bool(vals.clone());
+        let enc = raw.encode(Codec::BitPack).unwrap();
+        assert_eq!(enc.codec(), Some(Codec::BitPack));
+        let dec = enc.decode().unwrap();
+        assert_eq!(dec, raw, "位打包解码逐位一致");
+        for (i, v) in vals.iter().enumerate() {
+            assert_eq!(enc.value_as_f64(i), Some(if *v { 1.0 } else { 0.0 }));
+        }
+        assert!(enc.memory_bytes() <= raw.memory_bytes() / 8 + 1, "布尔位打包应约 1/8 内存");
+    }
+
+    #[test]
+    fn codec_encoded_column_lod_matches_raw() {
+        // 编码列的 LOD 建塔经 value_as_f64 单行解码，须与原生列结果一致（对拍基线）。
+        let vals: Vec<f64> = (0..1000).map(|i| (i % 100) as f64).collect();
+        let mut raw_col = column("v", ColumnData::F64(vals.clone()));
+        let enc_data = ColumnData::F64(vals).encode(Codec::Dictionary).unwrap();
+        let mut enc_col = column("v", enc_data);
+        raw_col.ensure_lod();
+        enc_col.ensure_lod();
+        // 逐点取值一致
+        for r in 0..1000 {
+            assert_eq!(raw_col.value_as_f64(r), enc_col.value_as_f64(r), "行 {r} 解码值须与原生一致");
+        }
+        // 多区间 LOD 查询一致
+        for &(lo, hi) in &[(0usize, 1000usize), (10, 50), (333, 999), (997, 1000)] {
+            let a = raw_col.lod.range_minmax(&raw_col.data, &raw_col.nulls, 0, lo, hi);
+            let b = enc_col.lod.range_minmax(&enc_col.data, &enc_col.nulls, 0, lo, hi);
+            assert_eq!(a, b, "LOD 区间 [{lo},{hi}) 须一致");
+        }
+    }
+
+    #[test]
+    fn codec_append_decode_append_reencode() {
+        let mut enc = ColumnData::I64(vec![10, 20, 30]).encode(Codec::For).unwrap();
+        let add = ColumnData::I64(vec![40, 50]);
+        enc.append(add).unwrap();
+        assert_eq!(enc.len(), 5);
+        assert_eq!(enc.decode().unwrap(), ColumnData::I64(vec![10, 20, 30, 40, 50]));
+    }
+
+    #[test]
+    fn codec_reorder_and_slice_keep_values() {
+        let enc = ColumnData::I64(vec![5, 1, 3, 9]).encode(Codec::Dictionary).unwrap();
+        let reordered = enc.reorder_by(&[3, 0, 2, 1]);
+        assert_eq!(reordered.decode().unwrap(), ColumnData::I64(vec![9, 5, 3, 1]));
+        let sliced = enc.slice_rows(1, 3);
+        assert_eq!(sliced.decode().unwrap(), ColumnData::I64(vec![1, 3]));
+    }
+
+    #[test]
+    fn codec_primary_f64_channel_unchanged() {
+        // 不调用 encode 时 F64 走原生零拷贝路径，value_type/len/columnRaw 语义不变。
+        let raw = ColumnData::F64(vec![1.5, 2.5, 3.5]);
+        assert_eq!(raw.codec(), None);
+        assert_eq!(raw.value_type(), ValueType::F64);
+        assert_eq!(raw.memory_bytes(), 3 * 8);
+        assert_eq!(raw.value_as_f64(1), Some(2.5));
     }
 }
