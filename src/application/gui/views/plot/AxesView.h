@@ -2,6 +2,7 @@
 
 #include "Dataset.h"
 #include "axes/PlotSeries.h"
+#include "axes/CursorReadout.h"
 #include "axes/SeriesStore.h"
 #include "axes/ViewState.h"
 #include "fastplot/Axes.h"
@@ -136,9 +137,9 @@ public:
     void clearCursor();
     // 联动：静默同步同页其它画布的时间竖线（不复制读数、不回广播），避免信号回环。
     void syncLinkedTime(double t, bool visible);
-    bool cursorPinned() const { return m_cursorPinned; }
-    double cursorTime() const { return m_cursorT; }
-    bool cursorActiveForTest() const { return m_cursorActive; }
+    bool cursorPinned() const { return m_readout->pinned(); }
+    double cursorTime() const { return m_readout->cursorTime(); }
+    bool cursorActiveForTest() const { return m_readout->active(); }
 
     // 图例交互测试辅助：直接暴露 fastplot Axes 与 series 快照。
     nextpilot::plotscope::fastplot::Axes *plotForTest() const { return m_plot; }
@@ -147,7 +148,7 @@ public:
 
     void toggleAB();                                // Ctrl+左键 / view action：以当前游标为中心生成一组 A/B
     void clearAB();
-    bool abActive() const { return m_abEnabled; }
+    bool abActive() const { return m_readout->abEnabled(); }
 
     struct Bookmark
     {
@@ -287,8 +288,6 @@ private:
     void refreshReadout();
     // 源级时间 offset：datasetId 经 provider 反查（无 provider 返回 0）。
     double sourceOffsetFor(const PlotSeries &s) const;
-    struct SampledValue { bool ok = false; double value = 0.0; };
-    SampledValue sampleSeries(const PlotSeries &s, double t) const;
     // 交互状态机入口。
     void onCanvasMouseMove(class QMouseEvent *event);
     void onCanvasMousePress(class QMouseEvent *event);
@@ -307,15 +306,9 @@ private:
 
     SeriesStore *m_seriesStore = nullptr; // 曲线集合（数据与样式）
     ViewState *m_viewState = nullptr;     // 视图状态（范围历史/图型/刻度/标题/轴配方）
+    CursorReadout *m_readout = nullptr;   // 读数（游标/A-B/书签标记的渲染）
     // 游标读数/A-B/书签交互状态（对齐老 PlottingCanvas）。
-    double m_cursorT = 0.0;
-    bool m_cursorActive = false;
-    bool m_cursorPinned = false;
     bool m_canvasRemovable = true;   // 见 setCanvasRemovable()
-    bool m_abEnabled = false;
-    double m_abA = 0.0;
-    double m_abB = 0.0;
-    bool m_abHasB = false;
     QVector<Bookmark> m_bookmarks;
     QString m_selectedBookmarkId;
     QVector<fastplot::Axes::StateRowMark> m_stateRows; // 状态视图行（append 合并语义）

@@ -131,6 +131,8 @@ add_library(ps_gui OBJECT
     views/plot/axes/PlotSeries.h
     views/plot/axes/SeriesStore.cpp
     views/plot/axes/SeriesStore.h
+    views/plot/axes/CursorReadout.cpp
+    views/plot/axes/CursorReadout.h
     views/plot/axes/ViewState.cpp
     views/plot/axes/ViewState.h
     # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---

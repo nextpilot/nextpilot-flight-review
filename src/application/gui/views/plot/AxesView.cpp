@@ -1,4 +1,5 @@
 #include "AxesView.h"
+#include "axes/CursorReadout.h"
 #include "axes/SeriesStore.h"
 #include "axes/ViewState.h"
 #include "ChannelMime.h"
@@ -139,6 +140,8 @@ AxesView::AxesView(QWidget *parent)
 
     // 曲线集合出列：数据与样式归 store，这里只接变化信号重推。
     m_seriesStore = new SeriesStore(this);
+    m_readout = new CursorReadout(m_seriesStore, this);
+    m_readout->setPlot(m_plot);
     m_seriesStore->setColorProvider([this](int i) { return paletteSeriesColor(palette(), i); });
     connect(m_seriesStore, &SeriesStore::changed, this, &AxesView::pushToPlot);
     connect(m_seriesStore, &SeriesStore::titleChanged, this,
@@ -422,113 +425,17 @@ bool AxesView::playheadActive() const
 // ---- 游标读数 / A-B / 书签 交互 ----
 
 // 从一条曲线取 t 时刻的最近样本（有界窗口，不插值）。xTimeOffset 在窗口时间上抵消。
-AxesView::SampledValue AxesView::sampleSeries(const PlotSeries &s, double t) const
-{
-    SampledValue out;
-    if (s.lod.isEmpty())
-        return out;
-    // LOD 三元组按 x 升序，二分找最近列。x 已含 xTimeOffset 与源 offset，故目标要加偏移。
-    const double target = t + s.xTimeOffset + sourceOffsetFor(s);
-    const QVector<LodTriple> &lod = s.lod;
-    int lo = 0, hi = lod.size() - 1;
-    while (lo < hi)
-    {
-        const int mid = (lo + hi) / 2;
-        if (lod.at(mid).x < target)
-            lo = mid + 1;
-        else
-            hi = mid;
-    }
-    int idx = lo;
-    if (idx > 0 && std::fabs(lod.at(idx - 1).x - target) <= std::fabs(lod.at(idx).x - target))
-        --idx;
-    const LodTriple &p = lod.at(idx);
-    out.ok = true;
-    out.value = (p.min + p.max) / 2.0; // LOD 桶的代表值（与 fastplot nearestSample 一致）
-    return out;
-}
 
 // 把当前游标/A-B 状态换算成读数行，重写叠加层。
 void AxesView::refreshReadout()
 {
-    if (!m_plot)
-        return;
-
-    // 十字游标读数框。
-    if (m_cursorActive)
-    {
-        QVector<fastplot::Axes::ReadoutRow> rows;
-        for (const PlotSeries &s : m_seriesStore->all())
-        {
-            if (!s.visible || rows.size() >= 8)
-                continue;
-            const SampledValue v = sampleSeries(s, m_cursorT);
-            rows.append({s.legendName(),
-                         v.ok ? QString::number(v.value, 'g', 6) : QStringLiteral("--"),
-                         s.color});
-        }
-        const QString header = m_cursorPinned
-            ? QStringLiteral("固定 t = %1 s").arg(m_cursorT, 0, 'f', 3)
-            : QStringLiteral("t = %1 s").arg(m_cursorT, 0, 'f', 3);
-        m_plot->setCursorReadout(m_cursorT, true, m_cursorPinned, header, rows);
-    }
-    else
-    {
-        m_plot->setCursorReadout(0.0, false, false, QString(), {});
-    }
-
-    // A/B 读数：Δt + 每曲线 Δy 与斜率。
-    if (m_abEnabled)
-    {
-        const double dt = m_abB - m_abA;
-        QVector<fastplot::Axes::ReadoutRow> rows;
-        bool triangle = false;
-        double ayPix = 0.0, byPix = 0.0;
-        for (const PlotSeries &s : m_seriesStore->all())
-        {
-            if (!s.visible || rows.size() >= 6)
-                continue;
-            const SampledValue va = sampleSeries(s, m_abA);
-            const SampledValue vb = m_abHasB ? sampleSeries(s, m_abB) : SampledValue{};
-            const QString dy = (va.ok && vb.ok) ? QString::number(vb.value - va.value, 'g', 6) : QStringLiteral("--");
-            const QString k = (va.ok && vb.ok && std::fabs(dt) > 1e-12)
-                ? QString::number((vb.value - va.value) / dt, 'g', 5) + QStringLiteral("/s")
-                : QStringLiteral("--");
-            rows.append({s.legendName(), QStringLiteral("Δy %1  k %2").arg(dy, k), s.color});
-            // 首条可见曲线画直角三角形：把 A/B 两点 y 数据换算成像素。
-            if (!triangle && va.ok && vb.ok && s.rightAxis == false)
-            {
-                const QRectF plot = m_plot->plotRect();
-                const double lo = m_plot->viewport().yLower();
-                const double hi = m_plot->viewport().yUpper();
-                if (hi > lo)
-                {
-                    ayPix = plot.bottom() - plot.height() * (va.value - lo) / (hi - lo);
-                    byPix = plot.bottom() - plot.height() * (vb.value - lo) / (hi - lo);
-                    triangle = true;
-                }
-            }
-        }
-        const QString header = QStringLiteral("Δx = %1 s（时间轴）").arg(dt, 0, 'f', 4);
-        m_plot->setAB(true, m_abA, m_abB, m_abHasB, header, rows, triangle, ayPix, byPix, 0.0);
-    }
-    else
-    {
-        m_plot->setAB(false, 0, 0, false, QString(), {}, false, 0, 0, 0.0);
-    }
-
-    // 书签。
-    QVector<fastplot::Axes::BookmarkMark> marks;
+    // 书签数据留在交互侧，读数层只要"位置 + 文案 + 选中"。
+    QVector<CursorReadout::Mark> marks;
+    marks.reserve(m_bookmarks.size());
     for (const Bookmark &bm : m_bookmarks)
-    {
-        const QString label = bm.label.trimmed().isEmpty()
-            ? QStringLiteral("t=%1").arg(bm.t, 0, 'f', 3)
-            : bm.label;
-        marks.append({bm.id, bm.t, label, bm.id == m_selectedBookmarkId});
-    }
-    m_plot->setBookmarks(marks);
+        marks.append({bm.id, bm.t, bm.label, bm.id == m_selectedBookmarkId});
+    m_readout->refresh(marks);
 }
-
 void AxesView::setMarkers(const QJsonArray &markers)
 {
     if (!m_plot)
@@ -634,23 +541,21 @@ double AxesView::timeAtPixel(double px) const
 
 void AxesView::setCursorTime(double t, bool pinned)
 {
-    m_cursorT = t;
-    m_cursorActive = true;
-    m_cursorPinned = pinned;
+    m_readout->setCursorTime(t);
+    m_readout->setActive(true);
+    m_readout->setPinned(pinned);
     refreshReadout();
     Q_EMIT linkedTimeChanged(t, true, this);
 }
-
 void AxesView::clearCursor()
 {
-    if (!m_cursorActive)
+    if (!m_readout->active())
         return;
-    m_cursorActive = false;
-    m_cursorPinned = false;
+    m_readout->setActive(false);
+    m_readout->setPinned(false);
     refreshReadout();
     Q_EMIT linkedTimeChanged(0.0, false, this);
 }
-
 void AxesView::syncLinkedTime(double t, bool visible)
 {
     // 静默：只画同页其它画布的联动竖线，不触发读数、不回广播。
@@ -663,31 +568,28 @@ void AxesView::toggleAB()
     // Ctrl+左键：以当前游标时间为中心生成一组 A/B，间距约视窗 10%。
     if (!m_plot)
         return;
-    if (m_abEnabled)
+    if (m_readout->abEnabled())
     {
         clearAB();
         return;
     }
-    m_abEnabled = true;
-    m_abHasB = true;
-    const double center = m_cursorActive ? m_cursorT : m_plot->viewport().xLower();
+    const double center = m_readout->active() ? m_readout->cursorTime()
+                                              : m_plot->viewport().xLower();
     double t0 = 0.0, t1 = 0.0;
     visibleTimeRange(&t0, &t1);
     const double span = qMax(1e-9, t1 - t0) * 0.10;
-    m_abA = center - span * 0.5;
-    m_abB = center + span * 0.5;
+    m_readout->setABEnabled(true);
+    m_readout->setABRange(center - span * 0.5, center + span * 0.5, true);
     refreshReadout();
 }
-
 void AxesView::clearAB()
 {
-    if (!m_abEnabled)
+    if (!m_readout->abEnabled())
         return;
-    m_abEnabled = false;
-    m_abHasB = false;
+    m_readout->setABEnabled(false);
+    m_readout->setABRange(m_readout->abA(), m_readout->abB(), false);
     refreshReadout();
 }
-
 void AxesView::addBookmark(double t, const QString &label)
 {
     // 同一时间点已有书签则选中它，不重复创建。
@@ -763,20 +665,20 @@ AxesView::HitResult AxesView::hitTest(const QPointF &pixel) const
             return res;
         }
     }
-    if (m_abEnabled)
+    if (m_readout->abEnabled())
     {
-        if (std::fabs(m_plot->xToPixel(m_abA) - pixel.x()) <= kTolPx)
+        if (std::fabs(m_plot->xToPixel(m_readout->abA()) - pixel.x()) <= kTolPx)
         {
             res.kind = Hit::AB_A;
             return res;
         }
-        if (m_abHasB && std::fabs(m_plot->xToPixel(m_abB) - pixel.x()) <= kTolPx)
+        if (m_readout->abHasB() && std::fabs(m_plot->xToPixel(m_readout->abB()) - pixel.x()) <= kTolPx)
         {
             res.kind = Hit::AB_B;
             return res;
         }
     }
-    if (m_cursorActive && std::fabs(m_plot->xToPixel(m_cursorT) - pixel.x()) <= kTolPx)
+    if (m_readout->active() && std::fabs(m_plot->xToPixel(m_readout->cursorTime()) - pixel.x()) <= kTolPx)
     {
         res.kind = Hit::CursorLine;
         return res;
@@ -865,8 +767,8 @@ void AxesView::onCanvasMouseMove(QMouseEvent *event)
     if (m_dragKind != 0)
     {
         const double t = timeAtPixel(event->pos().x());
-        if (m_dragKind == 1) m_abA = t;
-        else if (m_dragKind == 2) m_abB = t;
+        if (m_dragKind == 1) m_readout->setABStart(t);
+        else if (m_dragKind == 2) m_readout->setABEnd(t);
         else if (m_dragKind == 3)
         {
             for (Bookmark &bm : m_bookmarks)
@@ -874,12 +776,12 @@ void AxesView::onCanvasMouseMove(QMouseEvent *event)
             std::sort(m_bookmarks.begin(), m_bookmarks.end(),
                       [](const Bookmark &a, const Bookmark &c) { return a.t < c.t; });
         }
-        else if (m_dragKind == 4) m_cursorT = t;
+        else if (m_dragKind == 4) m_readout->setCursorTime(t);
         if (std::fabs(event->pos().x() - m_pressPos.x()) > QApplication::startDragDistance())
             m_pressMoved = true;
         refreshReadout();
         if (m_dragKind == 3) Q_EMIT bookmarksChanged();
-        if (m_dragKind == 4) Q_EMIT linkedTimeChanged(m_cursorT, true, this);
+        if (m_dragKind == 4) Q_EMIT linkedTimeChanged(m_readout->cursorTime(), true, this);
         return;
     }
 
@@ -938,7 +840,7 @@ void AxesView::onCanvasMousePress(QMouseEvent *event)
     {
         double sx = 0.0, sy = 0.0;
         if (m_plot->nearestSample(event->pos(), &sx, &sy))
-            m_cursorT = sx;
+            m_readout->setCursorTime(sx);
         toggleAB();
         return;
     }
@@ -995,7 +897,7 @@ void AxesView::onCanvasWheel(QWheelEvent *event)
         event->accept();
     }
     // 缩放/平移后，固定读数要跟着时间映射重画；悬停读数由下一次 mouse move 刷新。
-    if (m_cursorPinned)
+    if (m_readout->pinned())
         refreshReadout();
 }
 
@@ -1013,17 +915,17 @@ void AxesView::keyPressEvent(QKeyEvent *event)
     if (key == Qt::Key_P && !(mods & Qt::ControlModifier))
     {
         // P：固定/解除当前读数。
-        if (m_cursorActive)
-            setCursorTime(m_cursorT, !m_cursorPinned);
+        if (m_readout->active())
+            setCursorTime(m_readout->cursorTime(), !m_readout->pinned());
         return;
     }
     if (key == Qt::Key_Escape)
     {
         // Esc 层级退出：拖动 > A/B > 书签选中 > 固定读数。
         if (m_dragKind) { m_dragKind = 0; return; }
-        if (m_abEnabled) { clearAB(); return; }
+        if (m_readout->abEnabled()) { clearAB(); return; }
         if (!m_selectedBookmarkId.isEmpty()) { m_selectedBookmarkId.clear(); refreshReadout(); return; }
-        if (m_cursorPinned) { m_cursorPinned = false; refreshReadout(); return; }
+        if (m_readout->pinned()) { m_readout->setPinned(false); refreshReadout(); return; }
         clearCursor();
         return;
     }
@@ -1466,14 +1368,14 @@ void AxesView::contextMenuEvent(QContextMenuEvent *event)
         menu.addAction(QStringLiteral("在 %1 s 添加时间书签").arg(QString::number(clickT, 'f', 2)),
                        this, [this, clickT] { addBookmark(clickT); });
     }
-    menu.addAction(m_abEnabled ? QStringLiteral("清除 A/B 测量") : QStringLiteral("A/B 游标测量（Δt/Δy）"),
+    menu.addAction(m_readout->abEnabled() ? QStringLiteral("清除 A/B 测量") : QStringLiteral("A/B 游标测量（Δt/Δy）"),
                    this, [this] { toggleAB(); });
-    if (m_cursorActive && m_cursorPinned)
-        menu.addAction(QStringLiteral("取消固定读数"), this, [this] { m_cursorPinned = false; refreshReadout(); });
+    if (m_readout->active() && m_readout->pinned())
+        menu.addAction(QStringLiteral("取消固定读数"), this, [this] { m_readout->setPinned(false); refreshReadout(); });
     else
         menu.addAction(QStringLiteral("固定当前读数"), this, [this, clickT] {
-            if (!m_cursorActive) setCursorTime(clickT, true);
-            else setCursorTime(m_cursorT, true);
+            if (!m_readout->active()) setCursorTime(clickT, true);
+            else setCursorTime(m_readout->cursorTime(), true);
         });
     menu.addSeparator();
 
