@@ -119,6 +119,8 @@ fn type_code(t: ValueType) -> u32 {
         ValueType::F64 => 0, ValueType::F32 => 1, ValueType::I64 => 2, ValueType::U64 => 3,
         ValueType::I32 => 4, ValueType::U32 => 5, ValueType::I16 => 6, ValueType::U16 => 7,
         ValueType::I8 => 8, ValueType::U8 => 9, ValueType::Bool => 10, ValueType::Text => 11,
+        // Object 列的句柄是运行时句柄，不可持久化（save 入口已拒绝含对象列的数据集）。
+        ValueType::Object => 12,
     }
 }
 
@@ -127,6 +129,7 @@ fn code_type(c: u32) -> Option<ValueType> {
         0 => ValueType::F64, 1 => ValueType::F32, 2 => ValueType::I64, 3 => ValueType::U64,
         4 => ValueType::I32, 5 => ValueType::U32, 6 => ValueType::I16, 7 => ValueType::U16,
         8 => ValueType::I8, 9 => ValueType::U8, 10 => ValueType::Bool, 11 => ValueType::Text,
+        12 => ValueType::Object,
         _ => return None,
     })
 }
@@ -157,6 +160,8 @@ fn write_column(w: &mut impl Write, col: &Column) -> Result<(), String> {
             write_u32(w, bytes.len() as u32)?;
             w.write_all(bytes).map_err(|e| e.to_string())?;
         },
+        // 运行时句柄不可持久化；save_typed_dataset 入口已拦截，这里仅防御性拒绝。
+        ColumnData::Object(_) => return Err("对象列不可写入缓存（句柄为运行时值）".into()),
     }
     let bits = col.len().div_ceil(8);
     w.write_all(&col.nulls.raw()[..bits]).map_err(|e| e.to_string())
@@ -182,6 +187,8 @@ fn read_column(r: &mut impl Read) -> Result<Column, String> {
         ValueType::U8 => ColumnData::U8(read_bytes(r, n)?),
         ValueType::Bool => { let b = read_bytes(r, n)?; ColumnData::Bool(b.into_iter().map(|x| x != 0).collect()) }
         ValueType::Text => { let mut v = Vec::with_capacity(n); for _ in 0..n { let len = read_u32(r)? as usize; v.push(String::from_utf8(read_bytes(r, len)?).map_err(|e| e.to_string())?); } ColumnData::Text(v) }
+        // 合法缓存不含对象列（save 已拒绝）；读到 12 说明缓存损坏/版本不符，明确报错。
+        ValueType::Object => return Err("缓存中不应存在对象列".into()),
     };
     let bits = read_bytes(r, n.div_ceil(8))?;
     Column::with_nulls(name, unit, data, NullBits::from_raw(&bits, n))
@@ -190,6 +197,11 @@ fn read_column(r: &mut impl Read) -> Result<Column, String> {
 pub fn save_typed_dataset(path: &Path, ds: &TypedDataset, source_size: i64, source_mtime: i64) -> Result<(), String> {
     if ds.tables.len() > MAX_CHANNELS as usize {
         return Err("表数超过缓存上限".into());
+    }
+    // 对象列的句柄只在本次进程内有效，持久化后重建即为悬垂句柄。
+    // 明确拒绝，让调用方退化为下次重新解析源文件（缓存未命中），不写入半成品。
+    if ds.tables.iter().any(|t| t.columns.iter().any(|c| c.value_type() == ValueType::Object)) {
+        return Err("数据集含对象列，不可缓存（运行时句柄无法持久化）".into());
     }
     let tmp = temp_path(path);
     {

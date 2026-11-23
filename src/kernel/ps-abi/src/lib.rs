@@ -879,6 +879,7 @@ fn map_value_type(raw: u32) -> Option<ps_ndf::typed::ValueType> {
         9 => U8,
         10 => Bool,
         11 => Text,
+        12 => Object,
         _ => return None,
     })
 }
@@ -906,6 +907,7 @@ unsafe fn typed_column_data(
             9 => ColumnData::U8(Vec::new()),
             10 => ColumnData::Bool(Vec::new()),
             11 => ColumnData::Text(Vec::new()),
+            12 => ColumnData::Object(Vec::new()),
             _ => return Err("未知列类型".into()),
         });
     }
@@ -938,6 +940,11 @@ unsafe fn typed_column_data(
                 });
             }
             ColumnData::Text(out)
+        }
+        12 => {
+            // 对象列：values 是 u64 句柄数组（由 ps_dataset_blob_put 先写入池获得）。
+            // 这里只复制句柄；句柄有效性由 ObjectStore 在 get 时校验，不在此处裸指针解引用。
+            ColumnData::Object(std::slice::from_raw_parts(values as *const u64, n).to_vec())
         }
         _ => return Err("未知列类型".into()),
     };
@@ -2032,6 +2039,105 @@ mod tests {
             ps_dataset_free(ds);
         }
     }
+
+    // ---------- S4 对象列 C ABI 句柄 ----------
+    #[test]
+    fn blob_handle_cross_boundary_roundtrip_and_no_dangle() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let payload = b"point-cloud-bytes";
+            let h = ps_dataset_blob_put(ds, payload.as_ptr() as *const _, payload.len() as u32,
+                                        42, std::ptr::null_mut(), 0);
+            assert!(h > 0, "blob_put 应返回正句柄");
+
+            // get：字节级一致 + type_tag 透传。
+            let mut out = [0u8; 64];
+            let mut out_len = 0u32;
+            let mut tag = 0u32;
+            assert_eq!(ps_dataset_blob_get(ds, h, out.as_mut_ptr() as *mut _, out.len() as u32,
+                                           &mut out_len, &mut tag), 0);
+            assert_eq!(out_len as usize, payload.len());
+            assert_eq!(tag, 42);
+            assert_eq!(&out[..out_len as usize], payload);
+
+            // 缓冲区不足：返回 3，out_len 填所需字节数。
+            let mut small = [0u8; 4];
+            assert_eq!(ps_dataset_blob_get(ds, h, small.as_mut_ptr() as *mut _, small.len() as u32,
+                                           &mut out_len, std::ptr::null_mut()), 3);
+            assert_eq!(out_len as usize, payload.len());
+
+            // retain 后 release 一次仍有效；再 release 归零后句柄失效（无悬垂）。
+            assert_eq!(ps_dataset_blob_retain(ds, h), 0);
+            assert_eq!(ps_dataset_blob_release(ds, h), 0);
+            let mut o2 = [0u8; 64];
+            assert_eq!(ps_dataset_blob_get(ds, h, o2.as_mut_ptr() as *mut _, o2.len() as u32,
+                                           &mut out_len, std::ptr::null_mut()), 0);
+            assert_eq!(ps_dataset_blob_release(ds, h), 0);
+            assert_eq!(ps_dataset_blob_get(ds, h, o2.as_mut_ptr() as *mut _, o2.len() as u32,
+                                           &mut out_len, std::ptr::null_mut()), 2, "释放后必须读不到");
+            assert_eq!(ps_dataset_blob_release(ds, h), 2, "重复释放应失败");
+            ps_dataset_free(ds);
+        }
+    }
+
+    #[test]
+    fn object_column_via_abi_aligned_with_scalar_and_typed_as_object() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("lidar").unwrap();
+            let vname = CString::new("intensity").unwrap();
+            let oname = CString::new("frame").unwrap();
+            let unit = CString::new("").unwrap();
+            let p0 = b"frame0";
+            let p1 = b"frame1";
+            let h0 = ps_dataset_blob_put(ds, p0.as_ptr() as *const _, p0.len() as u32, 1,
+                                         std::ptr::null_mut(), 0);
+            let h1 = ps_dataset_blob_put(ds, p1.as_ptr() as *const _, p1.len() as u32, 1,
+                                         std::ptr::null_mut(), 0);
+            let times = [1_000i64, 2_000];
+            let vals = [10.0f64, 20.0];
+            let handles = [h0, h1];
+            let cv = PsFrameColumn {
+                name: vname.as_ptr(), unit: unit.as_ptr(), value_type: 0,
+                values: vals.as_ptr() as *const _, nulls: std::ptr::null(),
+            };
+            let co = PsFrameColumn {
+                name: oname.as_ptr(), unit: unit.as_ptr(), value_type: 12,
+                values: handles.as_ptr() as *const _, nulls: std::ptr::null(),
+            };
+            let cols = [cv, co];
+            assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), times.as_ptr(), 2,
+                cols.as_ptr(), 2, std::ptr::null_mut(), 0), 0);
+
+            // 对象列类型码 = 12；整列裸读被拒（返回 3）。
+            assert_eq!(ps_dataset_column_type(ds, table.as_ptr(), oname.as_ptr()), 12);
+            let mut ptr = std::ptr::null();
+            let mut cnt = 0u64;
+            let mut ty = 0u32;
+            assert_eq!(ps_dataset_column_raw(ds, table.as_ptr(), oname.as_ptr(),
+                &mut ptr, &mut cnt, &mut ty, std::ptr::null_mut()), 3);
+
+            // 同一 t 双取：t=2ms 行，标量=20.0，对象=frame1。
+            let mut tv = 0.0f64;
+            let mut vv = 0.0f64;
+            assert_eq!(ps_dataset_value_at(ds, table.as_ptr(), vname.as_ptr(), 1, &mut tv, &mut vv), 0);
+            assert_eq!(vv, 20.0);
+            let obj_handles = {
+                let d = &*ds;
+                let t = d.typed.find_table("lidar").unwrap();
+                match &t.column("frame").unwrap().data {
+                    ps_ndf::typed::ColumnData::Object(v) => v.clone(),
+                    _ => panic!("期望 Object 列"),
+                }
+            };
+            let mut out = [0u8; 32];
+            let mut out_len = 0u32;
+            assert_eq!(ps_dataset_blob_get(ds, obj_handles[1], out.as_mut_ptr() as *mut _,
+                out.len() as u32, &mut out_len, std::ptr::null_mut()), 0);
+            assert_eq!(&out[..out_len as usize], p1);
+            ps_dataset_free(ds);
+        }
+    }
 }
 
 
@@ -2233,6 +2339,7 @@ pub unsafe extern "C" fn ps_dataset_column_type(
         ps_ndf::typed::ValueType::U8 => 9,
         ps_ndf::typed::ValueType::Bool => 10,
         ps_ndf::typed::ValueType::Text => 11,
+        ps_ndf::typed::ValueType::Object => 12,
     }
 }
 
@@ -2349,6 +2456,8 @@ pub unsafe extern "C" fn ps_dataset_column_raw(
         // Vec<bool> 每元素 1 字节（0/1），可按 U8 布局借出。
         ps_ndf::typed::ColumnData::Bool(v) => (v.as_ptr() as *const std::ffi::c_void, 10),
         ps_ndf::typed::ColumnData::Text(_) => return 3,
+        // 对象列不支持整列裸指针借出（句柄语义 + 悬垂防护），走 blob_get 逐句柄取。
+        ps_ndf::typed::ColumnData::Object(_) => return 3,
     };
     *out_values = ptr;
     *out_count = c.len() as u64;
@@ -2357,6 +2466,91 @@ pub unsafe extern "C" fn ps_dataset_column_raw(
         *out_nulls = if c.nulls.has_any_null() { c.nulls.raw().as_ptr() } else { std::ptr::null() };
     }
     0
+}
+
+/* ===== S4 对象列：不透明句柄 + 引用计数（RFC D4） =====
+ * payload 存内核 ObjectStore，跨 C ABI 只传 u64 句柄，不传裸指针。
+ * 句柄 = slot 索引 + 1，slot 只增不复用，故不会因池 realloc/reuse 而悬垂或串位。
+ * 句柄生命周期绑定数据集：数据集 free 后所有句柄失效，调用方不得跨数据集持有。 */
+
+/// 写入一段 payload 到对象池，返回稳定句柄（>0）；失败返回 0 并写 err。
+/// `type_tag` 由调用方约定（如 1=点云、2=图像、3=TF），内核只透传不解释。
+/// 数据集自身持有第 1 个引用；调用方需要独立生命周期时用 blob_retain。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_blob_put(
+    ds: *mut PsDataset,
+    payload: *const std::ffi::c_void,
+    len: u32,
+    type_tag: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> u64 {
+    if ds.is_null() {
+        write_err(err, err_cap, "数据集为空");
+        return 0;
+    }
+    if len > 0 && payload.is_null() {
+        write_err(err, err_cap, "payload 为空");
+        return 0;
+    }
+    let bytes: &[u8] = if len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(payload as *const u8, len as usize)
+    };
+    (*ds).typed.objects.put(bytes, type_tag)
+}
+
+/// 按句柄读 payload：字节级拷贝到 out。返回 0 成功；1 参数错；
+/// 2 句柄无效/已释放（悬垂被拦截）；3 out_cap 不足（*out_len 填所需字节数）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_blob_get(
+    ds: *const PsDataset,
+    handle: u64,
+    out: *mut std::ffi::c_void,
+    out_cap: u32,
+    out_len: *mut u32,
+    out_type_tag: *mut u32,
+) -> i32 {
+    if ds.is_null() || out_len.is_null() {
+        return 1;
+    }
+    let Some((bytes, tag)) = (*ds).typed.objects.get(handle) else {
+        return 2;
+    };
+    if !out_type_tag.is_null() {
+        *out_type_tag = tag;
+    }
+    if bytes.len() > out_cap as usize {
+        *out_len = bytes.len() as u32;
+        return if out.is_null() { 1 } else { 3 };
+    }
+    if !bytes.is_empty() {
+        if out.is_null() {
+            return 1;
+        }
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out as *mut u8, bytes.len());
+    }
+    *out_len = bytes.len() as u32;
+    0
+}
+
+/// 增加一个外部引用。返回 0 成功；2 句柄无效/已释放。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_blob_retain(ds: *mut PsDataset, handle: u64) -> i32 {
+    if ds.is_null() {
+        return 1;
+    }
+    if (*ds).typed.objects.retain(handle) { 0 } else { 2 }
+}
+
+/// 释放一个引用，归零则失效。返回 0 成功；2 句柄无效/引用已尽。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dataset_blob_release(ds: *mut PsDataset, handle: u64) -> i32 {
+    if ds.is_null() {
+        return 1;
+    }
+    if (*ds).typed.objects.release(handle) { 0 } else { 2 }
 }
 
 /// 2.7.5 数据集切片：从源数据集按时间范围 `[t0_ns, t1_ns]`（含端点）与列子集
