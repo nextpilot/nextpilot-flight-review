@@ -11,6 +11,7 @@
 | [测试](testing.md) | 单元测试、GUI 冒烟、契约测试 |
 | [协议规范](../../src/libs/protocol/SPEC.md) | psproto v3 语义权威（速览见同目录 README） |
 | [uischema 语法](uischema-syntax.md) | 属性/表单 schema 的字段语法与渲染约定 |
+| [持久化与会话恢复](persistence.md) | 三分法判据、状态 hub 契约、三份文件格式、恢复档位、与意图层分工 |
 | [绘图后端对比](plot-backends-benchmark.md) | 自绘 vs QCustomPlot/Qwt 等后端的性能与功能结论（fastplot 选型依据） |
 
 ## 先看哪篇
