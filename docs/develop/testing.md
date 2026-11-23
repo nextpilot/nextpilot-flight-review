@@ -114,7 +114,7 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 
 - `Ctrl+Shift+P` 打开命令面板；列表显示命令、快捷键、说明，输入按标题/id/分类模糊过滤。
 - `Ctrl+P` 打开快速切换；只列编辑器、面板、Activity，不进入文件搜索。
-- `Ctrl+B` 切左栏，`Ctrl+J` 切底部面板，`Ctrl+1..9` 按 Activity Bar 顺序切活动。
+- `Ctrl+B` 切左栏，`Ctrl+Alt+B` 切右侧辅助栏，`Ctrl+J` 切底部面板，`Ctrl+1..9` 按 Activity Bar 顺序切活动。
 - `Ctrl+Tab` 循环中央页签；脚本编辑器有多个脚本页签时先循环脚本页签。`Ctrl+W` 关闭当前中央页签，不可关闭时状态栏给原因。
 - 未选中曲线时“删除曲线”灰显并显示条件原因；快捷键冲突在面板中标“(冲突)”。
 - 快捷键覆盖写入 `ui.keybindings`；留空恢复默认，冲突回滚并提示。
@@ -124,6 +124,30 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 ```bash
 ./build/tests/ps_ui_driver --script docs/screenshots/scripts/command-palette.json --out-dir docs/screenshots
 ```
+
+## 视图停靠与 Activity Bar 拖放
+
+`ps_ui_driver` 可验证视图跨槽移动和 Activity Bar 接收 dock：
+
+```json
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "drag-view-to-activity", "title": "终端", "activity": "data" },
+    { "op": "shot", "out": "activity-drop.png" }
+  ]
+}
+```
+
+覆盖口径：
+
+- 数据源、脚本文件各自是独立 dock，标题只有视图名，不再出现“数据”套“数据源”。
+- 视图可在 Primary Side Bar、Secondary Side Bar、Panel 之间拖动并浮动；不能停入 Editor Area。
+- 把视图拖到 Activity Bar 已有图标：并入该 Activity；拖到空白：新建图标。内容落回 Primary Side Bar。
+- Activity 点击在视图当前所在区或浮动窗口聚焦，不强制搬回左栏。
+- 布局版本 4；旧 `ps.dock.sidebar` 快照跳过，回退默认布局。
+
 
 ## GUI 冒烟（手工，Xvfb）
 

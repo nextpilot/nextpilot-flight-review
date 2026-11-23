@@ -685,6 +685,13 @@ int main(int argc, char *argv[])
         CHECK(leftTitles.contains(QStringLiteral("脚本文件")));
         CHECK(binder->panelWidgets(QStringLiteral("dock.left")).size() == 2);
 
+        // 视图可挂到 Activity Bar：映射改到目标 Activity，视图仍在左槽。
+        CHECK(binder->pinViewToActivity(QStringLiteral("dataset-tree"), QStringLiteral("analysis")));
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("analysis"));
+        CHECK(binder->panelTitles(QStringLiteral("dock.left")).contains(QStringLiteral("数据源")));
+        CHECK(binder->pinViewToActivity(QStringLiteral("dataset-tree"), QStringLiteral("data")));
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("data"));
+
         // 点击 Script：左栏切到脚本 section，Ribbon 同步脚本页，中央聚焦编辑器。
         auto *scriptButton = binder->activityBarWidget()->findChild<QToolButton *>(
             QStringLiteral("activity.script"));
@@ -708,8 +715,15 @@ int main(int argc, char *argv[])
         CHECK(binder->sideBarVisible() == wasSideBarVisible);
         CHECK(binder->activityBarWidget()->isVisible() || !window.isVisible());
 
+        // 三个区位各自收起：左栏、右侧辅助栏、底部 Panel。
+        const bool wasAuxVisible = binder->auxZoneVisible();
+        CHECK(binder->toggleAuxZone());
+        CHECK(binder->auxZoneVisible() != wasAuxVisible);
+        CHECK(binder->toggleAuxZone());
+        CHECK(binder->auxZoneVisible() == wasAuxVisible);
+
         // 停靠布局版本：旧快照没有新左栏 dock，必须跳过，避免启动后左栏被藏/面板漂浮。
-        CHECK(binder->captureState().value(QStringLiteral("layoutVersion")).toInt() == 3);
+        CHECK(binder->captureState().value(QStringLiteral("layoutVersion")).toInt() == 4);
 
         // badge 与 Activity 顺序配置可改、可读。
         binder->setActivityBadge(QStringLiteral("diagnostics"), 7);
@@ -3275,13 +3289,11 @@ int main(int argc, char *argv[])
         CHECK(!act0.isEmpty());
         CHECK(leftTitles.contains(act0));
 
-        // 左栏 dock 标题跟随当前 Activity，而不是固定“侧栏”。
-        auto *leftDock = window.findChild<ads::CDockWidget *>(QStringLiteral("ps.dock.sidebar"));
-        CHECK(leftDock != nullptr);
-        CHECK(binder->setActiveActivity(QStringLiteral("script")));
-        CHECK(leftDock->windowTitle() == QStringLiteral("脚本"));
-        CHECK(binder->setActiveActivity(QStringLiteral("data")));
-        CHECK(leftDock->windowTitle() == QStringLiteral("数据"));
+        // 每个视图各自是 dock 页签，标题就是视图名；不再有“侧栏”这种容器标题，
+        // 也不会出现“数据”套“数据源”的重复层级。
+        CHECK(binder->dockPageTitle(QStringLiteral("dataset-tree")) == QStringLiteral("数据源"));
+        CHECK(binder->dockPageTitle(QStringLiteral("script-files")) == QStringLiteral("脚本文件"));
+        CHECK(binder->dockPageTitle(QStringLiteral("dataset-tree")) != QStringLiteral("侧栏"));
         // 聚焦：每个面板都能定位到自己的 dock 页签（focusPanel 返回 true），
         // 且聚焦后 active 落在该面板所在页签上。
         const QList<QWidget *> leftPanels = binder->panelWidgets(QStringLiteral("dock.left"));

@@ -3,6 +3,7 @@
 #include "UiSlotHub.h"
 
 #include <QHash>
+#include <QSet>
 #include <QStringList>
 #include <QJsonObject>
 #include <QString>
@@ -29,7 +30,6 @@ namespace nextpilot::plotscope::gui
 {
 
 class ActivityBar;
-class SideBarStack;
 
 // GUI 外壳绑定器：**唯一知道 SARibbon / ADS 的地方**。
 //
@@ -94,6 +94,9 @@ public:
     bool setActiveActivity(const QString &activityId);
     QString activeActivity() const { return m_activeActivity; }
     QStringList activityIds() const;
+    // 把视图拖/命令挂到 Activity Bar：activityId 为空则新建图标。
+    // 视图回到 Primary Side Bar，之后点击 Activity 仍能定位它。
+    bool pinViewToActivity(const QString &pageKey, const QString &activityId = QString());
     void setActivityOrder(const QStringList &order);
     QStringList activityOrder() const { return m_activityOrder; }
     void setActivityBarVisible(bool visible);
@@ -176,6 +179,9 @@ public:
     // 底部 Panel 整组显隐（Ctrl+J）。
     bool bottomPanelVisible() const;
     bool toggleBottomPanel();
+    // 右侧 Secondary Side Bar 整组显隐（Ctrl+Alt+B）。
+    bool auxZoneVisible() const;
+    bool toggleAuxZone();
 
     // 中央区页签循环与关闭（Ctrl+Tab / Ctrl+W）。
     int currentCentralIndex() const;
@@ -230,9 +236,12 @@ private:
     void ensureActivityShell();
     void activateActivity(const QString &activityId);
     QString activityForPanel(const QString &pageKey) const;
-    bool ensureSideBar();
-    bool isSideBarSection(const QString &pageKey) const;
-    void updateSideBarTitle();
+    bool isLeftPage(const QString &pageKey) const;
+    QList<ads::CDockWidget *> leftDocks() const;
+    void syncActivityViews(const QString &activityId);
+    void applyViewDockFeatures(ads::CDockWidget *dock);
+    void pinDockToActivity(ads::CDockWidget *dock, const QString &activityId);
+    QString pageKeyForDock(ads::CDockWidget *dock) const;
 
     // 装中央画布区。**必须早于任何侧边 dock**——ADS 的 addDockArea() 只在
     // "区域内 dock 数量 <= 1"时按插入参数重设根分割器方向，
@@ -264,11 +273,12 @@ private:
     QWidget *m_centralContent = nullptr;       // 装进中央区的面板
     bool m_centralInstalled = false;
 
-    // Activity Bar + 左栏 section 栈：一个 ADS dock 承载整个左栏。
+    // Activity Bar + 视图 dock：每个视图一个 CDockWidget，可跨左/右/底停靠。
     QWidget *m_shellFrame = nullptr;
     ActivityBar *m_activityBar = nullptr;
-    SideBarStack *m_sidebar = nullptr;
-    ads::CDockWidget *m_leftDock = nullptr;
+    QStringList m_leftPageKeys; // 初始停靠在左槽的视图 pageKey
+    QSet<QString> m_collapsedViews; // 用户收起的视图 pageKey
+    QHash<QString, QString> m_viewActivity; // pageKey -> 用户拖到 Activity Bar 后的归属
     QString m_activeActivity;
     QStringList m_activityOrder;
     int m_sideBarWidth = 256;

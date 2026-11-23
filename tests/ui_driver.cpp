@@ -24,6 +24,8 @@
 //     { "op": "demo-live", "name": "live-demo", "paused": false }, // 注册演示 live 源
 //     { "op": "click", "widget": "objectName" },
 //     { "op": "activity-badge", "id": "diagnostics", "count": 3 }, // Activity 徽标
+//     { "op": "pin-view", "view": "terminal", "activity": "data" },  // 视图挂到 Activity Bar
+//     { "op": "drag-view-to-activity", "title": "终端", "activity": "data" }, // 真实鼠标拖放
 //     { "op": "key", "widget": "objectName", "keys": "Ctrl+S" },
 //     { "op": "type", "widget": "objectName", "text": "hello" },
 //     { "op": "action", "action": "plot.type.bar" },       // QAction（objectName/text/data 三匹配）
@@ -57,6 +59,8 @@
 
 #include <QAction>
 #include <QApplication>
+#include <DockWidget.h>
+#include <DockWidgetTab.h>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -461,6 +465,54 @@ int main(int argc, char *argv[])
             window.binder()->setActivityBadge(
                 step.value(QStringLiteral("id")).toString(),
                 step.value(QStringLiteral("count")).toInt());
+        }
+        else if (op == QStringLiteral("pin-view"))
+        {
+            const QString view = step.value(QStringLiteral("view")).toString();
+            const QString activity = step.value(QStringLiteral("activity")).toString();
+            if (!window.binder()->pinViewToActivity(view, activity))
+            {
+                fail(op, QStringLiteral("视图或 Activity 不存在: %1 -> %2").arg(view, activity));
+                continue;
+            }
+            QApplication::processEvents();
+            ok(QStringLiteral("pin-view %1 -> %2").arg(view, activity.isEmpty()
+                                                                  ? QStringLiteral("新建")
+                                                                  : activity));
+        }
+        else if (op == QStringLiteral("drag-view-to-activity"))
+        {
+            const QString title = step.value(QStringLiteral("title")).toString();
+            const QString activity = step.value(QStringLiteral("activity")).toString();
+            ads::CDockWidget *dock = nullptr;
+            for (ads::CDockWidget *d : window.findChildren<ads::CDockWidget *>())
+                if (d->windowTitle() == title)
+                {
+                    dock = d;
+                    break;
+                }
+            auto *button = window.findChild<QToolButton *>(QStringLiteral("activity.") + activity);
+            auto *tab = dock ? dock->tabWidget() : nullptr;
+            if (!dock || !tab || !button)
+            {
+                fail(op, QStringLiteral("找不到视图页签或 Activity 按钮: %1").arg(title));
+                continue;
+            }
+            const QPoint fromGlobal = tab->mapToGlobal(tab->rect().center());
+            const QPoint toGlobal = button->mapToGlobal(button->rect().center());
+            QTest::mousePress(tab, Qt::LeftButton, Qt::NoModifier, tab->rect().center());
+            QMouseEvent move(QEvent::MouseMove, tab->mapFromGlobal(toGlobal), toGlobal,
+                             Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(tab, &move);
+            QApplication::processEvents();
+            QMouseEvent release(QEvent::MouseButtonRelease, tab->mapFromGlobal(toGlobal), toGlobal,
+                                Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(tab, &release);
+            QApplication::processEvents();
+            ok(QStringLiteral("drag-view-to-activity %1 -> %2 (%3 -> %4)")
+                   .arg(title, activity)
+                   .arg(fromGlobal.x())
+                   .arg(toGlobal.x()));
         }
         else if (op == QStringLiteral("panel"))
         {
