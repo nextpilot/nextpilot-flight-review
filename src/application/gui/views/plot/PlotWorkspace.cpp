@@ -838,6 +838,8 @@ bool PlotWorkspace::split(bool horizontal)
     }
     m_cells[insertAt].dockWidget = created;
     m_active = insertAt;
+    // 格内拆分出来的两块等分，别让新画布按 sizeHint 被挤成一条。
+    page->dock->equalizeSplitters();
     // 拆过之后不再是规整网格：网格规格交给「m×n」重排时重算。
     syncPage();
     return true;
