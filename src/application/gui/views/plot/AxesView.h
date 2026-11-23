@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Dataset.h"
+#include "axes/PlotSeries.h"
+#include "axes/SeriesStore.h"
 #include "fastplot/Axes.h"
 
 #include <QColor>
@@ -48,39 +50,6 @@ class Picker;
 // 让上层按新的像素宽度重新取数（否则窄屏取的 LOD 会被拉伸成锯齿）。
 namespace nextpilot::plotscope::gui
 {
-
-// 画布上的一条曲线：逻辑标识 + 有界 LOD + 样式。
-struct PlotSeries
-{
-    nextpilot::plotscope::dataset::DatasetId datasetId = nextpilot::plotscope::dataset::kInvalidDataset;
-    QString table;
-    QString column;
-    QString title;             // 完整标题（数据集 / table.column）
-    QColor color;              // 曲线色（由上层按主题分配）
-    QVector<nextpilot::plotscope::dataset::LodTriple> lod;
-    double t0 = 0.0;
-    double t1 = 0.0;
-    bool visible = true;
-    bool rightAxis = false;    // 挂右 y 轴
-    qreal lineWidth = 1.4;
-
-    // 曲线内变换（对齐需求：X 轴时间 offset，Y 轴算子/表达式/Lua）。
-    // 执行位置：builtin/expression 走 Rust kernel，lua 走 C++ TransformEvaluator
-    // （由 ChannelView/数据取数层在喂给画布前施加；这里只存配方与展示结果）。
-    double xTimeOffset = 0.0;      // X 轴时间偏移（秒）
-    QString yTransformId;          // Y 轴变换 descriptor id（TransformHub）
-    QString yTransformParamsJson;  // 变换参数/表达式/Lua 源码（JSON 载荷）
-
-    // 稳定键：同一通道重复拖入时据此去重（不重复叠加）。
-    QString key() const
-    {
-        return QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column);
-    }
-    QString legendName() const
-    {
-        return table.isEmpty() ? column : QStringLiteral("%1.%2").arg(table, column);
-    }
-};
 
 class AxesView : public QWidget
 {
@@ -172,7 +141,7 @@ public:
 
     // 图例交互测试辅助：直接暴露 fastplot Axes 与 series 快照。
     nextpilot::plotscope::fastplot::Axes *plotForTest() const { return m_plot; }
-    const PlotSeries &seriesAtForTest(int index) const { return m_series.at(index); }
+    const PlotSeries &seriesAtForTest(int index) const { return m_seriesStore->all().at(index); }
     void refreshSeriesForTest() { pushToPlot(); }
 
     void toggleAB();                                // Ctrl+左键 / view action：以当前游标为中心生成一组 A/B
@@ -217,8 +186,8 @@ public:
     QString plotKind() const { return m_plotKind; }
 
     // 曲线表（只读）。
-    const QVector<PlotSeries> &series() const { return m_series; }
-    int seriesCount() const { return m_series.size(); }
+    const QVector<PlotSeries> &series() const { return m_seriesStore->all(); }
+    int seriesCount() const { return m_seriesStore->count(); }
     const PlotSeries *seriesAt(int index) const;
 
     // 绘图区（不含坐标轴留白）的像素宽度。
@@ -340,7 +309,7 @@ private:
     std::function<double(nextpilot::plotscope::dataset::DatasetId)> m_sourceOffsetProvider;
     QString m_timeFormat = QStringLiteral("relative");
 
-    QVector<PlotSeries> m_series; // 叠加的多条曲线
+    SeriesStore *m_seriesStore = nullptr; // 曲线集合（数据与样式）
     // 游标读数/A-B/书签交互状态（对齐老 PlottingCanvas）。
     double m_cursorT = 0.0;
     bool m_cursorActive = false;

@@ -1,4 +1,5 @@
 #include "AxesView.h"
+#include "axes/SeriesStore.h"
 #include "ChannelMime.h"
 #include "MenuIcons.h"
 
@@ -134,6 +135,20 @@ AxesView::AxesView(QWidget *parent)
 
     // 绘制全部委托给 fastplot：本类不再自己算坐标、画网格、画包络。
     m_plot = new nextpilot::plotscope::fastplot::Axes(this);
+
+    // 曲线集合出列：数据与样式归 store，这里只接变化信号重推。
+    m_seriesStore = new SeriesStore(this);
+    m_seriesStore->setColorProvider([this](int i) { return paletteSeriesColor(palette(), i); });
+    connect(m_seriesStore, &SeriesStore::changed, this, &AxesView::pushToPlot);
+    connect(m_seriesStore, &SeriesStore::titleChanged, this,
+            [this](const QString &title, bool first) {
+                m_title = title;
+                if (!m_plot)
+                    return;
+                m_plot->setTitle(title);
+                if (first)
+                    m_plot->setLegendVisible(true); // 首条曲线：默认显示图例
+            });
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -153,11 +168,11 @@ AxesView::AxesView(QWidget *parent)
     // 否则 pushToPlot 的 clearCurves 重建会把显隐状态冲掉。
     connect(m_plot, &nextpilot::plotscope::fastplot::Axes::legendItemToggled, this,
             [this](int curveIndex, bool visible) {
-                if (curveIndex >= 0 && curveIndex < m_series.size())
-                {
-                    m_series[curveIndex].visible = visible;
-                    Q_EMIT seriesVisibilityChanged(m_series[curveIndex].key(), visible);
-                }
+                const PlotSeries *s = m_seriesStore->at(curveIndex);
+                if (!s)
+                    return;
+                m_seriesStore->setVisibleSilently(curveIndex, visible);
+                Q_EMIT seriesVisibilityChanged(s->key(), visible);
             });
 
     connect(m_zoomer, &nextpilot::plotscope::fastplot::Zoomer::zoomed, this, [this] {
@@ -200,191 +215,65 @@ AxesView::~AxesView() = default;
 
 const PlotSeries *AxesView::seriesAt(int index) const
 {
-    return index >= 0 && index < m_series.size() ? &m_series.at(index) : nullptr;
+    return m_seriesStore->at(index);
 }
-
-void AxesView::setLodData(const QVector<LodTriple> &lod, double t0, double t1)
+void AxesView::setLodData(const QVector<nextpilot::plotscope::dataset::LodTriple> &lod,
+                          double t0, double t1)
 {
-    // 兼容入口：更新首条曲线的 LOD。
-    if (m_series.isEmpty())
-        return;
-    m_series[0].lod = lod;
-    m_series[0].t0 = t0;
-    m_series[0].t1 = t1;
-    m_t0 = t0;
-    m_t1 = t1;
-    pushToPlot();
+    m_seriesStore->setFirstLod(lod, t0, t1);
 }
-
 QColor AxesView::nextSeriesColor() const
 {
-    return paletteSeriesColor(palette(), m_series.size());
+    return paletteSeriesColor(palette(), m_seriesStore->count());
 }
-
 int AxesView::setSeries(const PlotSeries &series)
 {
-    // 同 key 已存在则原地更新（重复拖入同一通道不叠加、只刷新数据）。
-    for (int i = 0; i < m_series.size(); ++i)
-    {
-        if (m_series.at(i).key() == series.key())
-        {
-            PlotSeries updated = series;
-            if (updated.color.isValid() && !updated.color.name().isEmpty())
-            {
-                // 保留已有颜色（上层未显式指定时不要因刷新而换色）。
-                if (updated.color == m_series.at(i).color)
-                {
-                    // 保持不变
-                }
-            }
-            updated.color = m_series.at(i).color;
-            // 变换配方是视图态：重新取数刷新时不丢（外部 series 不带这些字段）。
-            updated.xTimeOffset = m_series.at(i).xTimeOffset;
-            updated.yTransformId = m_series.at(i).yTransformId;
-            updated.yTransformParamsJson = m_series.at(i).yTransformParamsJson;
-            m_series[i] = updated;
-            m_title = updated.title;
-            m_plot->setTitle(updated.title);
-            pushToPlot();
-            return i;
-        }
-    }
-
-    PlotSeries s = series;
-    if (!s.color.isValid())
-        s.color = nextSeriesColor();
-    m_series.append(s);
-    if (m_series.size() == 1)
-    {
-        m_title = s.title;
-        m_plot->setTitle(s.title);
-        m_plot->setLegendVisible(true); // 首条曲线：默认显示图例（之后归用户开关）
-    }
-    pushToPlot();
-    return m_series.size() - 1;
+    return m_seriesStore->upsert(series);
 }
-
 void AxesView::setChannel(DatasetId datasetId, const QString &table, const QString &column,
-                            const QString &title)
+                          const QString &title)
 {
-    // 兼容入口：单条曲线替换全部（旧调用方/测试用）。
-    m_series.clear();
+    // 兼容入口：单条曲线替换全部（旧调用方随后会喂 LOD，故不重推）。
     PlotSeries s;
     s.datasetId = datasetId;
     s.table = table;
     s.column = column;
     s.title = title;
-    s.color = paletteSeriesColor(palette(), 0);
-    m_series.append(s);
+    m_seriesStore->replaceWith(s);
     m_title = title;
-    m_plot->setTitle(title);
-    // 不在这里 pushToPlot：旧调用方随后会喂 LOD 数据触发绘制。
 }
-
 bool AxesView::removeSeries(const QString &key)
 {
-    for (int i = 0; i < m_series.size(); ++i)
-    {
-        if (m_series.at(i).key() == key)
-        {
-            m_series.removeAt(i);
-            m_title = m_series.isEmpty() ? QString() : m_series.first().title;
-            pushToPlot();
-            return true;
-        }
-    }
-    return false;
+    return m_seriesStore->remove(key);
 }
-
 bool AxesView::setSeriesAxis(const QString &key, bool rightAxis)
 {
-    for (PlotSeries &s : m_series)
-    {
-        if (s.key() == key)
-        {
-            if (s.rightAxis == rightAxis)
-                return true;
-            s.rightAxis = rightAxis;
-            pushToPlot(); // 重算左右轴各自的 range（见 pushToPlot 分轴逻辑）
-            return true;
-        }
-    }
-    return false;
+    return m_seriesStore->setAxis(key, rightAxis);
 }
-
 bool AxesView::setSeriesVisible(const QString &key, bool visible)
 {
-    for (PlotSeries &s : m_series)
-    {
-        if (s.key() == key)
-        {
-            if (s.visible == visible)
-                return true;
-            s.visible = visible;
-            pushToPlot();
-            return true;
-        }
-    }
-    return false;
+    return m_seriesStore->setVisible(key, visible);
 }
-
 bool AxesView::setSeriesInk(const QString &key, const QColor &color)
 {
-    for (PlotSeries &s : m_series)
-    {
-        if (s.key() == key)
-        {
-            s.color = color;
-            pushToPlot();
-            return true;
-        }
-    }
-    return false;
+    return m_seriesStore->setInk(key, color);
 }
-
 bool AxesView::setSeriesWidth(const QString &key, double width)
 {
-    for (PlotSeries &s : m_series)
-    {
-        if (s.key() == key)
-        {
-            s.lineWidth = width;
-            pushToPlot();
-            return true;
-        }
-    }
-    return false;
+    return m_seriesStore->setWidth(key, width);
 }
-
 const PlotSeries *AxesView::seriesByKey(const QString &key) const
 {
-    for (const PlotSeries &s : m_series)
-        if (s.key() == key)
-            return &s;
-    return nullptr;
+    return m_seriesStore->byKey(key);
 }
-
 bool AxesView::setSeriesXOffset(const QString &key, double offsetSec)
 {
-    for (PlotSeries &s : m_series)
-    {
-        if (s.key() == key)
-        {
-            // offset 是配方（绝对值），pushToPlot 时对副本施加，原始数据不动。
-            s.xTimeOffset = offsetSec;
-            pushToPlot();
-            return true;
-        }
-    }
-    return false;
+    return m_seriesStore->setXOffset(key, offsetSec);
 }
-
-void AxesView::setSourceOffsetProvider(
-    std::function<double(nextpilot::plotscope::dataset::DatasetId)> provider)
+void AxesView::setSourceOffsetProvider(std::function<double(DatasetId)> provider)
 {
-    m_sourceOffsetProvider = std::move(provider);
+    m_seriesStore->setSourceOffsetProvider(std::move(provider));
 }
-
 void AxesView::setTimeFormatMode(const QString &mode)
 {
     m_timeFormat = (mode == QStringLiteral("hms") || mode == QStringLiteral("utc"))
@@ -426,49 +315,31 @@ void AxesView::applyTimeFormat()
 
 void AxesView::refreshSourceOffsets()
 {
-    if (m_series.isEmpty())
+    if (m_seriesStore->isEmpty())
         return;
     // LOD 不变，只重推 x 映射（源 offset 在 pushToPlot 的副本上施加）。
     pushToPlot();
 }
-
 bool AxesView::toggleSeriesVisible(const QString &key)
 {
-    for (int i = 0; i < m_series.size(); ++i)
-    {
-        if (m_series.at(i).key() != key)
-            continue;
-        // Axes::toggleLegendItem 切 Line 并发 legendItemToggled →
-        // 构造里的 lambda 同步 m_series.visible（单一事实源在 Axes）。
-        m_plot->toggleLegendItem(i);
-        return true;
-    }
-    return false;
+    const int i = m_seriesStore->indexOf(key);
+    if (i < 0)
+        return false;
+    // Axes::toggleLegendItem 切 Line 并发 legendItemToggled；
+    // store 的 visible 由那条信号回写（单一事实源在 Axes）。
+    m_plot->toggleLegendItem(i);
+    return true;
 }
-
 // 源级时间 offset：datasetId 反查源（provider），叠加在曲线 xTimeOffset 之上。
 double AxesView::sourceOffsetFor(const PlotSeries &s) const
 {
-    return m_sourceOffsetProvider ? m_sourceOffsetProvider(s.datasetId) : 0.0;
+    return m_seriesStore->sourceOffsetFor(s);
 }
-
 bool AxesView::setSeriesYTransform(const QString &key, const QString &descriptorId,
-                                     const QString &paramsJson)
+                                   const QString &paramsJson)
 {
-    for (PlotSeries &s : m_series)
-    {
-        if (s.key() == key)
-        {
-            s.yTransformId = descriptorId;
-            s.yTransformParamsJson = paramsJson;
-            // Y 变换的实际数值施加发生在取数层（ChannelView -> TransformEvaluator），
-            // 这里只更新配方；下次 setSeries 会把新结果喂进来。
-            return true;
-        }
-    }
-    return false;
+    return m_seriesStore->setYTransform(key, descriptorId, paramsJson);
 }
-
 void AxesView::setAxisTransform(const QString &axis, const QString &descriptorId)
 {
     // 轴级变换存视图配方（成员）；曲线级按 key 单独设置时优先。
@@ -602,7 +473,7 @@ void AxesView::refreshReadout()
     if (m_cursorActive)
     {
         QVector<fastplot::Axes::ReadoutRow> rows;
-        for (const PlotSeries &s : m_series)
+        for (const PlotSeries &s : m_seriesStore->all())
         {
             if (!s.visible || rows.size() >= 8)
                 continue;
@@ -628,7 +499,7 @@ void AxesView::refreshReadout()
         QVector<fastplot::Axes::ReadoutRow> rows;
         bool triangle = false;
         double ayPix = 0.0, byPix = 0.0;
-        for (const PlotSeries &s : m_series)
+        for (const PlotSeries &s : m_seriesStore->all())
         {
             if (!s.visible || rows.size() >= 6)
                 continue;
@@ -988,9 +859,9 @@ void AxesView::onCanvasMouseMove(QMouseEvent *event)
     // 放在 plotRect 判断之前：图例可能画在绘图区边缘，拖出去不该被早退吃掉。
     if (m_legendDragRow >= 0 && (event->buttons() & Qt::LeftButton)
         && (event->pos() - m_pressPos).manhattanLength() > QApplication::startDragDistance()
-        && m_legendDragRow < m_series.size())
+        && m_legendDragRow < m_seriesStore->all().size())
     {
-        const PlotSeries sp = m_series.at(m_legendDragRow);
+        const PlotSeries sp = m_seriesStore->all().at(m_legendDragRow);
         QMimeData *mime = new QMimeData;
         mime->setData(QString::fromLatin1(series_mime::type()),
                       series_mime::encode(m_canvasId, sp.key(), sp.datasetId, sp.table,
@@ -1224,7 +1095,7 @@ void AxesView::pushToPlot()
     if (!m_titleOverride.isEmpty())
         m_plot->setTitle(m_titleOverride);
     m_plot->clearCurves();
-    if (m_series.isEmpty())
+    if (m_seriesStore->all().isEmpty())
     {
         // 图例可见性归用户/状态管理，pushToPlot 只管曲线，不在这里改图例开关。
         m_plot->update();
@@ -1239,7 +1110,7 @@ void AxesView::pushToPlot()
     double rightHi = -std::numeric_limits<double>::infinity();
     bool haveTime = false;
 
-    for (const PlotSeries &s : m_series)
+    for (const PlotSeries &s : m_seriesStore->all())
     {
         if (s.lod.isEmpty())
             continue;
@@ -1316,7 +1187,7 @@ QJsonObject AxesView::saveViewState() const
     QJsonObject state = m_plot ? m_plot->saveState() : QJsonObject();
     // 曲线的左右轴分配是"视图状态"（不是数据），随状态一起存。
     QJsonArray axes;
-    for (const PlotSeries &s : m_series)
+    for (const PlotSeries &s : m_seriesStore->all())
     {
         QJsonObject o;
         o.insert(QStringLiteral("key"), s.key());
@@ -1326,7 +1197,7 @@ QJsonObject AxesView::saveViewState() const
     state.insert(QStringLiteral("seriesAxes"), axes);
     // 曲线变换配方与 X 偏移：随视图状态持久化（重开后变换仍在）。
     QJsonArray tfArr;
-    for (const PlotSeries &s : m_series)
+    for (const PlotSeries &s : m_seriesStore->all())
         tfArr.append(QJsonObject{
             {QStringLiteral("key"), s.key()},
             {QStringLiteral("xOffset"), s.xTimeOffset},
@@ -1353,9 +1224,7 @@ bool AxesView::restoreViewState(const QJsonObject &state)
         const QJsonObject o = v.toObject();
         const QString key = o.value(QStringLiteral("key")).toString();
         const bool right = o.value(QStringLiteral("right")).toBool();
-        for (int i = 0; i < m_series.size(); ++i)
-            if (m_series.at(i).key() == key)
-                m_series[i].rightAxis = right;
+        m_seriesStore->setAxis(key, right);
     }
     // 变换配方恢复：曲线 X 偏移 / Y 变换。
     const QJsonArray tfArr = state.value(QStringLiteral("seriesTransforms")).toArray();
@@ -1363,14 +1232,9 @@ bool AxesView::restoreViewState(const QJsonObject &state)
     {
         const QJsonObject o = v.toObject();
         const QString key = o.value(QStringLiteral("key")).toString();
-        for (int i = 0; i < m_series.size(); ++i)
-        {
-            if (m_series.at(i).key() != key)
-                continue;
-            m_series[i].xTimeOffset = o.value(QStringLiteral("xOffset")).toDouble();
-            m_series[i].yTransformId = o.value(QStringLiteral("yId")).toString();
-            m_series[i].yTransformParamsJson = o.value(QStringLiteral("yParams")).toString();
-        }
+        m_seriesStore->setXOffset(key, o.value(QStringLiteral("xOffset")).toDouble());
+        m_seriesStore->setYTransform(key, o.value(QStringLiteral("yId")).toString(),
+                                     o.value(QStringLiteral("yParams")).toString());
     }
     const QJsonObject axisTf = state.value(QStringLiteral("axisTransform")).toObject();
     m_axisTransforms.clear();
@@ -1399,7 +1263,7 @@ bool AxesView::legendVisible() const
 
 bool AxesView::visibleTimeRange(double *t0, double *t1) const
 {
-    if (!m_plot || m_series.isEmpty())
+    if (!m_plot || m_seriesStore->all().isEmpty())
         return false;
     const auto &vp = m_plot->viewport();
     // 只认时间轴（x）；数据为空时 viewport 仍是默认 0..1，不能拿来当时间窗。
@@ -1413,11 +1277,10 @@ bool AxesView::visibleTimeRange(double *t0, double *t1) const
 int AxesView::lodPointCount() const
 {
     int n = 0;
-    for (const PlotSeries &s : m_series)
+    for (const PlotSeries &s : m_seriesStore->all())
         n += s.lod.size();
     return n;
 }
-
 int AxesView::plotPixelWidth() const
 {
     if (!m_plot)
@@ -1441,26 +1304,26 @@ void AxesView::applyTimeFormatToAxes()
 void AxesView::renderFrom(const Dataset &dataset)
 {
     // 用每条序列自己的 table.column 从 Dataset 重新取 LOD（便捷入口）。
-    for (PlotSeries &s : m_series)
+    for (int i = 0; i < m_seriesStore->count(); ++i)
     {
-        if (s.table.isEmpty() || s.column.isEmpty())
+        PlotSeries *s = m_seriesStore->mutableAt(i);
+        if (!s || s->table.isEmpty() || s->column.isEmpty())
             continue;
-        const Table *table = dataset.table(s.table);
+        const Table *table = dataset.table(s->table);
         if (!table)
             continue;
         const int px = plotPixelWidth();
-        const auto lod = dataset.lodMinMax(s.table, s.column,
+        const auto lod = dataset.lodMinMax(s->table, s->column,
                                            table->firstTimeUs, table->lastTimeUs, px);
-        s.lod = lod;
-        s.t0 = table->firstTimeUs / 1000000.0;
-        s.t1 = table->lastTimeUs / 1000000.0;
+        s->lod = lod;
+        s->t0 = table->firstTimeUs / 1000000.0;
+        s->t1 = table->lastTimeUs / 1000000.0;
     }
     pushToPlot();
 }
-
 void AxesView::clear()
 {
-    m_series.clear();
+    m_seriesStore->clear();
     m_title.clear();
     m_t0 = m_t1 = 0.0;
     m_plot->clearCurves();
@@ -1468,7 +1331,6 @@ void AxesView::clear()
     m_plot->setLegendVisible(false);
     m_plot->update();
 }
-
 void AxesView::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
@@ -1581,7 +1443,7 @@ void AxesView::dragLeaveEvent(QDragLeaveEvent *event)
 void AxesView::contextMenuEvent(QContextMenuEvent *event)
 {
     // 空画布与有曲线共用同一套菜单。
-    // 早先这里 `m_series.isEmpty()` 提前 return，只给 4 项（属性三项 + 清游标）——
+    // 早先这里 `m_seriesStore->all().isEmpty()` 提前 return，只给 4 项（属性三项 + 清游标）——
     // 于是空画布上想"显示网格 / 导出 / 加书签"全都没有入口（实测踩到）。main 同一位置 13 项。
     QMenu menu(this);
     menu.setTitle(QStringLiteral("画布操作"));
@@ -1671,7 +1533,7 @@ void AxesView::contextMenuEvent(QContextMenuEvent *event)
 
     // 曲线子菜单：每条曲线 = 显隐 + 挂左/右轴 + 删除（老 showSeriesMenu 的体验）。
     QMenu *seriesMenu = menu.addMenu(QStringLiteral("曲线"));
-    for (const PlotSeries &s : m_series)
+    for (const PlotSeries &s : m_seriesStore->all())
     {
         const QString key = s.key();
         QMenu *one = seriesMenu->addMenu(s.legendName());

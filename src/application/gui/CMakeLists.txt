@@ -126,6 +126,11 @@ add_library(ps_gui OBJECT
     # --- plot/playback ---
     views/plot/playback/PlaybackController.cpp
     views/plot/playback/PlaybackController.h
+
+    # --- plot/axes ---
+    views/plot/axes/PlotSeries.h
+    views/plot/axes/SeriesStore.cpp
+    views/plot/axes/SeriesStore.h
     # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
     views/PropertyPanel.cpp
     views/PropertyPanel.h
