@@ -7,6 +7,7 @@
 #include "PersistentStateHub.h"
 #include "SettingsStore.h"
 #include "WorkspaceDataConfig.h"
+#include "RuntimeHost.h"
 #include "WorkspacePreset.h"
 
 #include <QDateTime>
@@ -113,8 +114,8 @@ class WorkspaceModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(ModuleContext &ctx, QObject *parent)
-        : QObject(parent), m_ctx(ctx) {}
+    explicit Handler(RuntimeHost &host, QObject *parent)
+        : QObject(parent), m_host(host) {}
 
     bool canHandle(const Intent &intent) const override
     {
@@ -148,11 +149,11 @@ private:
         preset.savedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
 
         // 源清单取 settings 里的原文——保存不重新解释解析配置。
-        const WorkspaceDataConfig cfg = WorkspaceDataConfig::load(m_ctx.app().settings());
+        const WorkspaceDataConfig cfg = WorkspaceDataConfig::load(m_host.app().settings());
         preset.sources = cfg.toJson().value(QStringLiteral("sources")).toArray();
 
         // 画布布局取 document 段里 plot.document 的产出（R3 登记的条目）。
-        const QJsonObject doc = m_ctx.app().states().collect().value(QStringLiteral("document")).toObject();
+        const QJsonObject doc = m_host.app().states().collect().value(QStringLiteral("document")).toObject();
         preset.plots = doc.value(QStringLiteral("plot.document")).toObject();
 
         if (generic)
@@ -227,14 +228,14 @@ private:
         sourcesDoc.insert(QStringLiteral("sources"), preset.sources);
         WorkspaceDataConfig cfg = WorkspaceDataConfig::fromJson(sourcesDoc);
         QString saveError;
-        if (!cfg.save(m_ctx.app().settings(), &saveError))
+        if (!cfg.save(m_host.app().settings(), &saveError))
             return fail(err::Io, saveError);
 
         // generic 档只登记条目不自动导入：在没有对应解析器的机器上强制导入会失败。
         if (preset.sourceBinding == QStringLiteral("bound"))
         {
             const Result<IntentResult> restored =
-                m_ctx.executor().execute(Intent{QStringLiteral("data.workspace.restore"), {}});
+                m_host.execute(Intent{QStringLiteral("data.workspace.restore"), {}});
             if (!restored)
                 return restored;
         }
@@ -243,7 +244,7 @@ private:
         {
             QJsonObject document;
             document.insert(QStringLiteral("plot.document"), preset.plots);
-            m_ctx.app().states().restore(QJsonObject{{QStringLiteral("document"), document}});
+            m_host.app().states().restore(QJsonObject{{QStringLiteral("document"), document}});
         }
 
         IntentResult r;
@@ -254,7 +255,7 @@ private:
         return r;
     }
 
-    ModuleContext &m_ctx;
+    RuntimeHost &m_host;
 };
 
 ModuleInfo WorkspaceModule::moduleInfo()
@@ -276,10 +277,10 @@ ModuleInfo WorkspaceModule::info() const
     return moduleInfo();
 }
 
-void WorkspaceModule::initialize(ModuleContext &ctx)
+void WorkspaceModule::initialize(RuntimeHost &host)
 {
-    m_handler = new Handler(ctx, this);
-    ctx.registerIntentHandler(m_handler);
+    m_handler = new Handler(host, this);
+    host.registerIntentHandler(m_handler);
 }
 
 #include "WorkspaceModule.moc"
