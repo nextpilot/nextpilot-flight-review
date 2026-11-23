@@ -125,6 +125,30 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 ./build/tests/ps_ui_driver --script docs/screenshots/scripts/command-palette.json --out-dir docs/screenshots
 ```
 
+## 视图停靠与 Activity Bar 拖放
+
+`ps_ui_driver` 可验证视图跨槽移动和 Activity Bar 接收 dock：
+
+```json
+{
+  "steps": [
+    { "op": "load", "path": "tests/fixture/demo_flight.csv", "format": "csv" },
+    { "op": "plot-all-channels" },
+    { "op": "drag-view-to-activity", "title": "终端", "activity": "data" },
+    { "op": "shot", "out": "activity-drop.png" }
+  ]
+}
+```
+
+覆盖口径：
+
+- 数据源、脚本文件各自是独立 dock，标题只有视图名，不再出现“数据”套“数据源”。
+- 视图可在 Primary Side Bar、Secondary Side Bar、Panel 之间拖动并浮动；不能停入 Editor Area。
+- 把视图拖到 Activity Bar 已有图标：并入该 Activity；拖到空白：新建图标。内容落回 Primary Side Bar。
+- Activity 点击在视图当前所在区或浮动窗口聚焦，不强制搬回左栏。
+- 布局版本 4；旧 `ps.dock.sidebar` 快照跳过，回退默认布局。
+
+
 ## GUI 冒烟（手工，Xvfb）
 
 真实显示服务器路径的冒烟检查（可选，需本机装 xvfb）：

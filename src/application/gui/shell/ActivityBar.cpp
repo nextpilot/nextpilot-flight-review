@@ -1,11 +1,18 @@
 #include "ActivityBar.h"
 
+#include <DockAreaWidget.h>
+#include <DockWidget.h>
+#include <DockWidgetTab.h>
+
+#include <QApplication>
 #include <QFile>
 #include <QFontMetrics>
 #include <QIcon>
 #include <QLayoutItem>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QStyleOption>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -86,6 +93,72 @@ ActivityBar::ActivityBar(QWidget *parent) : QWidget(parent)
     m_layout->setContentsMargins(4, 6, 4, 6);
     m_layout->setSpacing(4);
     m_layout->addStretch(1);
+
+    // ADS 的页签拖动是内部状态机，不走 QDrag；这里观察全局鼠标事件，
+    // 在指针落到 Activity Bar 时把被拖 dock 交给外壳重新挂载。
+    qApp->installEventFilter(this);
+}
+
+bool ActivityBar::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::MouseButtonPress)
+    {
+        auto *me = static_cast<QMouseEvent *>(event);
+        if (me->button() != Qt::LeftButton)
+            return false;
+        m_dragDock = nullptr;
+        m_dragging = false;
+        QWidget *w = qobject_cast<QWidget *>(watched);
+        if (!w)
+            w = QApplication::widgetAt(me->globalPosition().toPoint());
+        while (w)
+        {
+            if (auto *tab = qobject_cast<ads::CDockWidgetTab *>(w))
+            {
+                m_dragDock = tab->dockWidget();
+                break;
+            }
+            if (auto *area = qobject_cast<ads::CDockAreaWidget *>(w))
+            {
+                m_dragDock = area->currentDockWidget();
+                break;
+            }
+            w = w->parentWidget();
+        }
+        if (m_dragDock)
+            m_pressPos = me->globalPosition().toPoint();
+        return false;
+    }
+    if (event->type() == QEvent::MouseMove && m_dragDock)
+    {
+        auto *me = static_cast<QMouseEvent *>(event);
+        if ((me->buttons() & Qt::LeftButton)
+            && (me->globalPosition().toPoint() - m_pressPos).manhattanLength()
+                   >= QApplication::startDragDistance())
+            m_dragging = true;
+        return false;
+    }
+    if (event->type() == QEvent::MouseButtonRelease && m_dragDock)
+    {
+        auto *me = static_cast<QMouseEvent *>(event);
+        const QPoint global = me->globalPosition().toPoint();
+        const bool overBar = rect().contains(mapFromGlobal(global));
+        QPointer<ads::CDockWidget> dock = m_dragDock;
+        const QString target = overBar ? activityAt(global) : QString();
+        const bool dropped = overBar && m_dragging;
+        m_dragDock = nullptr;
+        m_dragging = false;
+        if (dropped)
+        {
+            // 等 ADS 先处理完自己的 release，再移动 dock，避免和拖动状态机抢生命周期。
+            QTimer::singleShot(0, this, [this, dock, target]() {
+                if (dock)
+                    Q_EMIT dockDropped(dock, target);
+            });
+        }
+        return false;
+    }
+    return false;
 }
 
 void ActivityBar::paintEvent(QPaintEvent *event)
@@ -172,6 +245,14 @@ int ActivityBar::badge(const QString &id) const
 {
     auto *button = m_buttons.value(id, nullptr);
     return button ? button->badge() : 0;
+}
+
+QString ActivityBar::activityAt(const QPoint &globalPos) const
+{
+    for (auto it = m_buttons.constBegin(); it != m_buttons.constEnd(); ++it)
+        if (it.value()->rect().contains(it.value()->mapFromGlobal(globalPos)))
+            return it.key();
+    return QString();
 }
 
 } // namespace nextpilot::plotscope::gui

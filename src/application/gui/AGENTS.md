@@ -28,7 +28,7 @@
 - Activity Bar 固定 48px，只放数据、脚本、分析、诊断；绘图不进 Activity Bar。
 - 模块用 `UiContext::declareActivity` 声明入口：id、标签、图标、排序、对应 ribbon 页、左栏 section 面板类型、可选中央面板。
 - 点击 activity 由 ShellBinder 切换 Activity 选中态、左栏 section 与 ribbon 页；中央面板请求交回外壳，按面板类型走 PanelFactory。
-- 左栏是一个 ADS dock，内容为 SideBarStack：section 标题 24px、可折叠；section 不单独浮动，整栏可拖拽/浮动。
+- 左侧视图各自是独立 dock（数据源、脚本文件…），可在 Primary Side Bar、Secondary Side Bar、Panel 之间拖动并浮动；Activity Bar 接收视图拖入后生成图标并从左槽聚焦。
 - 左栏 section 与旧页签的区别：同栏面板不再互斥成 tab，由 activity 决定可见性。
 - `Ctrl+B` 只切整栏显隐。badge 走 `setActivityBadge`。配置键：`ui.activityBar.order`、`ui.activityBar.visible`、`ui.sideBar.visible`、`ui.sideBar.width`。
 

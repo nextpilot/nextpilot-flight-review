@@ -3,10 +3,16 @@
 #include "Contribution.h"
 
 #include <QHash>
+#include <QPointer>
 #include <QToolButton>
 #include <QWidget>
 
 class QVBoxLayout;
+
+namespace ads
+{
+class CDockWidget;
+}
 
 namespace nextpilot::plotscope::gui
 {
@@ -44,10 +50,17 @@ public:
 
     void setBadge(const QString &id, int count);
     int badge(const QString &id) const;
+    QString activityAt(const QPoint &globalPos) const;
 
 signals:
     void activityActivated(const QString &id);
     void settingsRequested();
+    // 用户把视图页签拖到 Activity Bar：activityId 为空表示落在空白处，
+    // 由外壳新建一个 Activity Bar 图标。
+    void dockDropped(ads::CDockWidget *dock, const QString &activityId);
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void paintEvent(QPaintEvent *event) override;
@@ -57,6 +70,9 @@ private:
     QStringList m_ids;
     QString m_activeId;
     QToolButton *m_settings = nullptr;
+    QPointer<ads::CDockWidget> m_dragDock;
+    QPoint m_pressPos;
+    bool m_dragging = false;
 };
 
 } // namespace nextpilot::plotscope::gui

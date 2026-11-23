@@ -73,8 +73,6 @@ add_library(ps_gui OBJECT
     shell/ShellBinder.h
     shell/ActivityBar.cpp
     shell/ActivityBar.h
-    shell/SideBarStack.cpp
-    shell/SideBarStack.h
     shell/GuiContext.cpp
     shell/GuiContext.h
     shell/CommandRegistry.cpp

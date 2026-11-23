@@ -379,14 +379,11 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
 
-    // 标题行：左「数据源」+ 右「N源 · N已连接」，对齐老界面两段式。
+    // 标题由左栏 section header 承担；这里只放加号与计数，避免同名标题重复。
     auto *headerRow = new QWidget(this);
     auto *headerLay = new QHBoxLayout(headerRow);
     headerLay->setContentsMargins(8, 6, 8, 4);
     headerLay->setSpacing(6);
-    m_header = new QLabel(QStringLiteral("数据源"), headerRow);
-    m_header->setObjectName(QStringLiteral("sectionTitle"));
-    headerLay->addWidget(m_header);
     headerLay->addStretch(1);
     // 加号：数据页加源只有两条路——打开日志、连接实时源。
     // 挂在标题行而不是树菜单里：源菜单是对"已存在的源"的动作，新开一个源不属于它。

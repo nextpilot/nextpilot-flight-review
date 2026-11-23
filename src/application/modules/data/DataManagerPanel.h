@@ -87,7 +87,6 @@ private:
     nextpilot::plotscope::dataset::SourceHub &m_sources;
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;
 
-    QLabel *m_header = nullptr;
     QLabel *m_srcCount = nullptr;            // 标题右侧「N源 · N已连接」
     QToolButton *m_chips[3] = {nullptr, nullptr, nullptr};
     QLineEdit *m_filter = nullptr;
