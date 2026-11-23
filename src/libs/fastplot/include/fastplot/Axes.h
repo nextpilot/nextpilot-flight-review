@@ -215,6 +215,9 @@ public:
     // 离屏渲染，导出与测试用。
     QImage grabImage();
 
+    // 诊断计数（第1仗脏调度）：稳态叠加层缓存重建次数。游标移动不应使其增长。
+    int overlayCacheRebuilds() const { return m_overlayCacheRebuilds; }
+
     QSize minimumSizeHint() const override { return QSize(240, 160); }
 
 protected:
@@ -258,6 +261,14 @@ private:
     QString m_title;
     QPixmap m_staticCache;
     bool m_staticDirty = true;
+    // 稳态叠加层缓存（第1仗脏调度）：StateBand/Marker/Bookmark/AB 内容不随游标变化，
+    // 缓存成透明层复用；游标层（Crosshair/CursorReadout）每帧实时画在其上。
+    // 游标移动只走实时层，稳态层不重建——这是 P-2「游标移动不重算」的渲染侧保证。
+    QPixmap m_overlayCache;
+    bool m_overlayDirty = true;
+    int m_overlayCacheRebuilds = 0;  // 诊断：稳态层缓存重建次数
+    void markOverlayDirty(quint32 layers);  // 标脏指定层；命中稳态组则触发缓存重建
+    quint32 m_overlayDirtyLayers = OverlayLayerAll;  // 本帧脏层（供层内部优化）
     QVector<Line> m_curves;
     // 画在坐标系里的 artist 图元。bar/hist/spectrum 创建的实例由本 Axes 以父子所有权持有；
     // addArtist 挂载的外部实例不拥有，clearArtists 只清空不 delete。

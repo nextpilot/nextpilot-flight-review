@@ -305,18 +305,21 @@ void Axes::setAB(bool enabled, double a, double b, bool hasB,
 {
     m_abMeasure.set(enabled, a, b, hasB, header, rows, drawTriangle, ay, by);
     (void)ayPixelData; // 预留：A 点的 y 像素，供未来精确画直角顶点
+    markOverlayDirty(OverlayLayerABMeasure);
     update();
 }
 
 void Axes::setBookmarks(const QVector<BookmarkMark> &marks)
 {
     m_bookmarkOverlay.setMarks(marks);
+    markOverlayDirty(OverlayLayerBookmark);
     update();
 }
 
 void Axes::setMarkers(const QVector<MarkerMark> &marks)
 {
     m_markerOverlay.setMarks(marks);
+    markOverlayDirty(OverlayLayerMarker);
     update();
 }
 
@@ -325,6 +328,7 @@ void Axes::setStateBands(const QVector<StateRowMark> &rows)
     if (rows.size() == m_stateBandOverlay.rowCount() && rows == m_stateBandOverlay.rows())
         return; // 内容不变不重排（relayout 有开销）
     m_stateBandOverlay.setRows(rows);
+    markOverlayDirty(OverlayLayerStateBand);
     relayout(); // 顶部为状态行预留空间（行高 + 行名）
     update();
 }
@@ -830,9 +834,20 @@ void Axes::refreshScaleDivs()
                                                  m_secondAxis ? m_y2Hi : m_vp.yUpper());
 }
 
+void Axes::markOverlayDirty(quint32 layers)
+{
+    m_overlayDirtyLayers |= layers;
+    // 只有稳态组（StateBand/Marker/Bookmark/AB）内容变化才需要重建缓存；
+    // 游标层（Crosshair/CursorReadout）每帧实时画，不影响稳态缓存。
+    if (layers & OverlayLayerStableMask)
+        m_overlayDirty = true;
+}
+
 void Axes::invalidateStatic()
 {
     m_staticDirty = true;
+    // 稳态叠加层按世界坐标绘制，视口/几何变了像素位置就变，缓存必须一起失效。
+    m_overlayDirty = true;
     update();
 }
 
@@ -974,9 +989,12 @@ void Axes::toggleLegendItem(int curveIndex)
 
 void Axes::paintOverlay(QPainter &painter)
 {
-    // 叠加层调度：公共上下文组装一次，各 Overlay 只读（渲染在各自类里）。
-    // 顺序保持与抽取前一致：交叉线族 → 色带 → Marker → 书签 → A/B → 读数框
-    // （读数框画在最上）→ 橡皮筋（框选盖顶）。
+    // 叠加层调度（第1仗脏标记分层，自研 QPainter 方案，非 PJ4 GPU retained layer 等价物）：
+    //   - 稳态组（StateBand/Marker/Bookmark/AB）：内容只在 setXxx 或视口变化时改变，
+    //     缓存到透明 QPixmap，游标移动时不重建（P-2 的渲染侧保证）。
+    //   - 游标组（Crosshair/CursorReadout/橡皮筋）：随鼠标每帧变化，实时画在稳态层之上。
+    // 注意 paintEvent 每帧用 staticCache 覆盖全画布，所以两组都必须每帧"贴/画"一遍——
+    // 缓存的是稳态层的"绘制结果"，跳过的是它的重算，而不是跳过把它显示出来。
     OverlayContext ctx;
     ctx.vp = &m_vp;
     ctx.plotRect = m_vp.plotRect();
@@ -986,11 +1004,33 @@ void Axes::paintOverlay(QPainter &painter)
     ctx.legendBlockRect = m_legend.blockRect();
     ctx.abActive = m_abMeasure.isEnabled();
 
+    // ---- 稳态组：脏时重建透明缓存 ----
+    const QSize cacheSize = size() * devicePixelRatioF();
+    if (m_overlayDirty || m_overlayCache.size() != cacheSize)
+    {
+        m_overlayCache = QPixmap(cacheSize);
+        m_overlayCache.setDevicePixelRatio(devicePixelRatioF());
+        m_overlayCache.fill(Qt::transparent);
+
+        OverlayContext stableCtx = ctx;
+        stableCtx.dirtyLayers = m_overlayDirtyLayers;
+        QPainter cp(&m_overlayCache);
+        // 稳态层内部顺序：色带 → Marker → 书签 → A/B。
+        m_stateBandOverlay.paint(cp, stableCtx);
+        m_markerOverlay.paint(cp, stableCtx);
+        m_bookmarkOverlay.paint(cp, stableCtx);
+        m_abMeasure.paint(cp, stableCtx);
+        cp.end();
+
+        m_overlayDirty = false;
+        m_overlayDirtyLayers = OverlayLayerNone;
+        ++m_overlayCacheRebuilds;
+    }
+    painter.drawPixmap(0, 0, m_overlayCache);
+
+    // ---- 游标组：每帧实时绘制（画在稳态层之上）----
+    ctx.dirtyLayers = OverlayLayerCrosshair | OverlayLayerCursorRead;
     m_crosshair.paint(painter, ctx);
-    m_stateBandOverlay.paint(painter, ctx);
-    m_markerOverlay.paint(painter, ctx);
-    m_bookmarkOverlay.paint(painter, ctx);
-    m_abMeasure.paint(painter, ctx);
     m_cursorReadout.paint(painter, ctx);
     m_crosshair.paintRubberBand(painter, ctx);
 }
