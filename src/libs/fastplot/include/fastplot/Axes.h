@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fastplot/ABMeasureOverlay.h"
 #include "fastplot/Axis.h"
 #include "fastplot/Artist.h"
 #include "fastplot/CursorReadoutOverlay.h"
@@ -147,7 +148,7 @@ public:
     void setAB(bool enabled, double a, double b, bool hasB,
                const QString &header, const QVector<ReadoutRow> &rows,
                bool drawTriangle, double ay, double by, double ayPixelData);
-    bool abEnabled() const { return m_abEnabled; }
+    bool abEnabled() const { return m_abMeasure.isEnabled(); }
 
     // 时间书签：稳定 id + 时间 + 标签 + 是否选中。
     struct BookmarkMark
@@ -283,15 +284,7 @@ private:
     bool m_linkedActive = false;
     // 读数叠加层状态（"画什么"由各自 Overlay 类自持，Axes 只留组件）。
     CursorReadoutOverlay m_cursorReadout;   // 十字游标 + 逐曲线读数框
-    bool m_abEnabled = false;
-    double m_abA = 0.0;
-    double m_abB = 0.0;
-    bool m_abHasB = false;
-    QString m_abHeader;
-    QVector<ReadoutRow> m_abRows;
-    bool m_abTriangle = false;
-    double m_abAy = 0.0;
-    double m_abBy = 0.0;
+    ABMeasureOverlay m_abMeasure;           // A/B 双游标测量
     QVector<BookmarkMark> m_bookmarks;
     QVector<MarkerMark> m_markers;
     QVector<StateRowMark> m_stateRows;
