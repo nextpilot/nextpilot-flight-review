@@ -3,6 +3,7 @@
 #include "Dataset.h"
 #include "axes/PlotSeries.h"
 #include "axes/SeriesStore.h"
+#include "axes/ViewState.h"
 #include "fastplot/Axes.h"
 
 #include <QColor>
@@ -101,7 +102,7 @@ public:
     // "hms"（H:MM:SS，从 0 秒起算）/ "utc"（无 UTC 基准，暂与 hms 同形并注明）。
     // 只改刻度文本，不动刻度位置与取数；每次 renderAll 前按 settings 重设。
     void setTimeFormatMode(const QString &mode);
-    QString timeFormatMode() const { return m_timeFormat; }
+    QString timeFormatMode() const { return m_viewState->timeFormat(); }
     void applyTimeFormat();
     void applyTimeFormatToAxes();
     // 测试用：按当前时间格式把秒值翻成 X 轴刻度文本（无 formatter 时返回空串）。
@@ -183,7 +184,7 @@ public:
     // 图型：timeseries（折线）/ scatter（散点）等在画布内切换；
     // 返回 false 表示该 kind 不属于本画布（如仪表，需切到 InstrumentView）。
     bool setPlotKind(const QString &kind);
-    QString plotKind() const { return m_plotKind; }
+    QString plotKind() const { return m_viewState->plotKind(); }
 
     // 曲线表（只读）。
     const QVector<PlotSeries> &series() const { return m_seriesStore->all(); }
@@ -215,8 +216,8 @@ public:
     // 画布标题（axes 标题栏）。双击标题栏改名走这里：override 非空时优先于
     // "首条曲线标题"，空串=恢复自动标题。与 PJ4 的标题双击改名同一语义。
     void setCanvasTitle(const QString &title);
-    QString canvasTitle() const { return m_titleOverride.isEmpty() ? m_title : m_titleOverride; }
-    bool hasTitleOverride() const { return !m_titleOverride.isEmpty(); }
+    QString canvasTitle() const { return m_viewState->titleOverride().isEmpty() ? m_title : m_viewState->titleOverride(); }
+    bool hasTitleOverride() const { return !m_viewState->titleOverride().isEmpty(); }
 
     // 需要直接操作画布能力（缩放/导出等）时用；正常情况下上层不要碰它。
     nextpilot::plotscope::fastplot::Axes *plotWidget() const { return m_plot; }
@@ -294,11 +295,7 @@ private:
     void onCanvasMouseRelease(class QMouseEvent *event);
     void onCanvasWheel(class QWheelEvent *event);
     // 视图范围历史：记录每次缩放/平移"之前"的范围，供撤销恢复。
-    struct ViewRange { double xLo = 0, xHi = 1, yLo = 0, yHi = 1; };
     void pushViewHistory();
-    QVector<ViewRange> m_viewHistory;
-    ViewRange m_lastViewRange;
-    bool m_restoringView = false; // 撤销恢复时避免再次入栈
     int m_bookmarkSeq = 0;
 
     nextpilot::plotscope::fastplot::Axes *m_plot = nullptr;
@@ -307,9 +304,9 @@ private:
     nextpilot::plotscope::fastplot::Picker *m_picker = nullptr;
     // 源级时间 offset provider：datasetId -> 源 offset（秒）。空 = 无源 offset。
     std::function<double(nextpilot::plotscope::dataset::DatasetId)> m_sourceOffsetProvider;
-    QString m_timeFormat = QStringLiteral("relative");
 
     SeriesStore *m_seriesStore = nullptr; // 曲线集合（数据与样式）
+    ViewState *m_viewState = nullptr;     // 视图状态（范围历史/图型/刻度/标题/轴配方）
     // 游标读数/A-B/书签交互状态（对齐老 PlottingCanvas）。
     double m_cursorT = 0.0;
     bool m_cursorActive = false;
@@ -329,10 +326,7 @@ private:
     bool m_pressMoved = false;
     int m_canvasId = -1;
     int m_legendDragRow = -1;   // 图例按下但还没拖动：release 未移动才算"点击切显隐"
-    QHash<QString, QString> m_axisTransforms; // axis -> transform descriptor id（视图配方）
     QString m_title;              // 画布标题（首条曲线标题，供状态显示）
-    QString m_titleOverride;      // 用户双击标题栏改的名字（非空时压过自动标题）
-    QString m_plotKind = QStringLiteral("timeseries"); // 当前图型（画布内可切的）
     double m_t0 = 0.0;
     double m_t1 = 0.0;
 };

@@ -1,5 +1,6 @@
 #include "AxesView.h"
 #include "axes/SeriesStore.h"
+#include "axes/ViewState.h"
 #include "ChannelMime.h"
 #include "MenuIcons.h"
 
@@ -162,7 +163,9 @@ AxesView::AxesView(QWidget *parent)
 
     // 记录初始范围作为历史基线（撤销可回到初始视图）。
     const fastplot::Viewport &vp0 = m_plot->viewport();
-    m_lastViewRange = {vp0.xLower(), vp0.xUpper(), vp0.yLower(), vp0.yUpper()};
+    m_viewState = new ViewState(this);
+    m_viewState->resetBaseline({vp0.xLower(), vp0.xUpper(), vp0.yLower(), vp0.yUpper()});
+    connect(m_viewState, &ViewState::timeFormatChanged, this, &AxesView::applyTimeFormat);
 
     // 图例行点击切显隐：Axes 只切 Line，这里同步 PlotSeries.visible，
     // 否则 pushToPlot 的 clearCurves 重建会把显隐状态冲掉。
@@ -276,11 +279,9 @@ void AxesView::setSourceOffsetProvider(std::function<double(DatasetId)> provider
 }
 void AxesView::setTimeFormatMode(const QString &mode)
 {
-    m_timeFormat = (mode == QStringLiteral("hms") || mode == QStringLiteral("utc"))
-        ? mode : QStringLiteral("relative");
+    m_viewState->setTimeFormat(mode);
     applyTimeFormat();
 }
-
 void AxesView::applyTimeFormat()
 {
     if (!m_plot)
@@ -289,12 +290,12 @@ void AxesView::applyTimeFormat()
 #endif
     nextpilot::plotscope::fastplot::Axis &x =
         m_plot->axis(nextpilot::plotscope::fastplot::AxisSide::Bottom);
-    if (m_timeFormat == QStringLiteral("relative"))
+    if (m_viewState->timeFormat() == QStringLiteral("relative"))
     {
         x.setTickLabelFormatter(nullptr);
         return;
     }
-    const bool utcLike = m_timeFormat == QStringLiteral("utc");
+    const bool utcLike = m_viewState->timeFormat() == QStringLiteral("utc");
     x.setTickLabelFormatter([utcLike](double v) {
         // 负值（对齐后左移的数据）保留负号，别让 -0:03 变成 0:03。
         const bool neg = v < 0.0;
@@ -342,16 +343,13 @@ bool AxesView::setSeriesYTransform(const QString &key, const QString &descriptor
 }
 void AxesView::setAxisTransform(const QString &axis, const QString &descriptorId)
 {
-    // 轴级变换存视图配方（成员）；曲线级按 key 单独设置时优先。
-    if (descriptorId.isEmpty())
-        m_axisTransforms.remove(axis);
-    else
-        m_axisTransforms.insert(axis, descriptorId);
+    // 轴级变换存视图配方；曲线级按 key 单独设置时优先。
+    m_viewState->setAxisTransform(axis, descriptorId);
 }
 
 QString AxesView::axisTransform(const QString &axis) const
 {
-    return m_axisTransforms.value(axis);
+    return m_viewState->axisTransforms().value(axis);
 }
 
 void AxesView::zoomRange(double factor)
@@ -381,47 +379,34 @@ void AxesView::autoScale()
 
 void AxesView::pushViewHistory()
 {
-    if (m_restoringView || !m_plot)
+    if (!m_plot)
         return;
     const fastplot::Viewport &vp = m_plot->viewport();
-    const ViewRange cur{vp.xLower(), vp.xUpper(), vp.yLower(), vp.yUpper()};
-    // 变化后才发信号，故 m_lastViewRange 是"变化前"的范围——把它压栈作为撤销目标。
-    const auto same = [](double a, double b) { return std::fabs(a - b) < 1e-9; };
-    if (!(same(cur.xLo, m_lastViewRange.xLo) && same(cur.xHi, m_lastViewRange.xHi) &&
-          same(cur.yLo, m_lastViewRange.yLo) && same(cur.yHi, m_lastViewRange.yHi)))
-    {
-        m_viewHistory.push_back(m_lastViewRange);
-        if (m_viewHistory.size() > 64)
-            m_viewHistory.removeFirst();
-    }
-    m_lastViewRange = cur;
+    m_viewState->record({vp.xLower(), vp.xUpper(), vp.yLower(), vp.yUpper()});
 }
-
 bool AxesView::canUndoView() const
 {
-    return !m_viewHistory.isEmpty();
+    return m_viewState->canUndo();
 }
-
 void AxesView::undoView()
 {
-    if (m_viewHistory.isEmpty() || !m_plot)
+    if (!m_viewState->canUndo() || !m_plot)
         return;
-    const ViewRange prev = m_viewHistory.takeLast();
-    m_restoringView = true;
+    ViewState::Range prev;
+    m_viewState->takeUndo(&prev);
+    m_viewState->setRestoring(true);
     m_plot->setXRange(prev.xLo, prev.xHi);
     m_plot->setYRange(prev.yLo, prev.yHi);
-    m_restoringView = false;
-    m_lastViewRange = prev;
+    m_viewState->setRestoring(false);
+    m_viewState->setBaseline(prev);
     double t0 = 0.0, t1 = 0.0;
     if (visibleTimeRange(&t0, &t1))
         Q_EMIT rangeChanged(t0, t1);
 }
-
 int AxesView::viewHistorySize() const
 {
-    return m_viewHistory.size();
+    return m_viewState->historySize();
 }
-
 void AxesView::setPlayhead(double x, bool active)
 {
     if (!m_plot)
@@ -801,10 +786,10 @@ AxesView::HitResult AxesView::hitTest(const QPointF &pixel) const
 
 void AxesView::setCanvasTitle(const QString &title)
 {
-    m_titleOverride = title.trimmed();
-    m_plot->setTitle(m_titleOverride.isEmpty() ? m_title : m_titleOverride);
+    m_viewState->setTitleOverride(title);
+    m_plot->setTitle(m_viewState->titleOverride().isEmpty() ? m_title
+                                                           : m_viewState->titleOverride());
 }
-
 bool AxesView::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched != m_plot || !m_plot)
@@ -1084,7 +1069,7 @@ bool AxesView::setPlotKind(const QString &kind)
                                       QStringLiteral("xy")};
     if (!kHere.contains(kind))
         return false;
-    m_plotKind = kind;
+    m_viewState->setPlotKind(kind);
     pushToPlot(); // 按新图型重建曲线（scatter 决定画不画线）
     return true;
 }
@@ -1092,8 +1077,8 @@ bool AxesView::setPlotKind(const QString &kind)
 void AxesView::pushToPlot()
 {
     // 用户改过名的画布，重建曲线后标题仍是改名后的（不被首条曲线标题顶掉）。
-    if (!m_titleOverride.isEmpty())
-        m_plot->setTitle(m_titleOverride);
+    if (!m_viewState->titleOverride().isEmpty())
+        m_plot->setTitle(m_viewState->titleOverride());
     m_plot->clearCurves();
     if (m_seriesStore->all().isEmpty())
     {
@@ -1127,7 +1112,7 @@ void AxesView::pushToPlot()
         curve.setName(s.legendName());
         curve.setYAxis(s.rightAxis ? nextpilot::plotscope::fastplot::AxisSide::Right : nextpilot::plotscope::fastplot::AxisSide::Left);
         // 散点图：只画符号不连线（fastplot 库能力，老 Scatter 模式的体验）。
-        if (m_plotKind == QStringLiteral("scatter"))
+        if (m_viewState->plotKind() == QStringLiteral("scatter"))
         {
             curve.setScatter(true);
             curve.setSymbol(nextpilot::plotscope::fastplot::Symbol::Circle);
@@ -1206,7 +1191,7 @@ QJsonObject AxesView::saveViewState() const
         });
     state.insert(QStringLiteral("seriesTransforms"), tfArr);
     QJsonObject axisTf;
-    for (auto it = m_axisTransforms.constBegin(); it != m_axisTransforms.constEnd(); ++it)
+    for (auto it = m_viewState->axisTransforms().constBegin(); it != m_viewState->axisTransforms().constEnd(); ++it)
         axisTf.insert(it.key(), it.value());
     state.insert(QStringLiteral("axisTransform"), axisTf);
     // 图例可见性是视图状态（用户在"显示"里开关的），必须随状态 round-trip。
@@ -1237,9 +1222,10 @@ bool AxesView::restoreViewState(const QJsonObject &state)
                                      o.value(QStringLiteral("yParams")).toString());
     }
     const QJsonObject axisTf = state.value(QStringLiteral("axisTransform")).toObject();
-    m_axisTransforms.clear();
+    QHash<QString, QString> tfMap;
     for (auto it = axisTf.begin(); it != axisTf.end(); ++it)
-        m_axisTransforms.insert(it.key(), it.value().toString());
+        tfMap.insert(it.key(), it.value().toString());
+    m_viewState->replaceAxisTransforms(tfMap);
 
     // 重设了挂轴/偏移就得重算 range；pushToPlot 内部会保留图例现状（不再强制打开），
     // 这里再把保存时的图例可见性精确恢复。
