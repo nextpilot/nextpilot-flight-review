@@ -740,6 +740,99 @@ int main(int argc, char *argv[])
         OK("多数据集 12：planDatasetChoice 最佳拟合优先 / 并列取首 / 单集直通");
     }
 
+    // --- 13) visibility 单一出口：五路径收敛 + 双侧一致 + 图例四角持久化（第3仗 3a）---
+    {
+        canvas->clear();
+        QVector<LodTriple> lod13;
+        lod13.reserve(100);
+        for (int i = 0; i < 100; ++i)
+        {
+            const double x = i * 0.01;
+            const double y = std::sin(i * 0.3);
+            lod13.push_back(LodTriple{x, y - 0.02, y + 0.02});
+        }
+        canvas->setChannel(0, QStringLiteral("trace"), QStringLiteral("sig"),
+                           QStringLiteral("trace.sig"));
+        canvas->setLodData(lod13, 0.0, 0.99);
+        // 稳定键 = datasetId|table|column（datasetId=0 → "0|trace|sig"）
+        const QString key13 = QStringLiteral("0|trace|sig");
+        auto *fp13 = canvas->plotForTest();
+        CHECK(fp13 != nullptr);
+        int visEmits13 = 0;
+        QString visKey13;
+        bool visVal13 = false;
+        QObject::connect(canvas, &AxesView::seriesVisibilityChanged,
+                         [&](const QString &k, bool v) {
+                             ++visEmits13;
+                             visKey13 = k;
+                             visVal13 = v;
+                         });
+
+        // 一致性：store（单一事实源）与 fastplot Line 必须同值。
+        auto consistent13 = [&]() {
+            const PlotSeries *s = canvas->seriesByKey(key13);
+            CHECK(s != nullptr);
+            CHECK(s->visible == fp13->legendItemVisible(0));
+            return s->visible;
+        };
+
+        // 路径①（右键菜单 Interaction:424 / 属性面板 PropertyProviders:198 /
+        //         曲线动作 SeriesActions:114 → setSeriesVisible）：
+        visEmits13 = 0;
+        CHECK(canvas->setSeriesVisible(key13, false));
+        CHECK(consistent13() == false);
+        CHECK(visEmits13 == 1); // 恰好一次广播
+        CHECK(visKey13 == key13 && visVal13 == false);
+
+        // 同值重复置：无广播、返回 true
+        CHECK(canvas->setSeriesVisible(key13, false));
+        CHECK(visEmits13 == 1);
+
+        // 路径②（图例行点击 / 拖拽 Interaction:244 → Axes::toggleLegendItem）：
+        // Line 先被 Axes 切换，回声信号收敛进 setSeriesVisible 同步 store。
+        visEmits13 = 0;
+        fp13->toggleLegendItem(0);
+        CHECK(consistent13() == true);
+        CHECK(visEmits13 == 1 && visVal13 == true);
+
+        // 路径③（出口内部同步用的 set 版 Axes::setLegendItemVisible）：
+        visEmits13 = 0;
+        fp13->setLegendItemVisible(0, false);
+        CHECK(consistent13() == false);
+        CHECK(visEmits13 == 1);
+
+        // 路径④（toggleSeriesVisible：仍经 toggleLegendItem 收敛，不漂移）
+        visEmits13 = 0;
+        CHECK(canvas->toggleSeriesVisible(key13));
+        CHECK(consistent13() == true);
+        CHECK(visEmits13 == 1);
+
+        // 五路径无漂移兜底：无论从哪条进，store/Line/广播三方恒一致。
+        for (int round = 0; round < 2; ++round)
+        {
+            const bool expect = (round % 2 == 0) ? false : true;
+            CHECK(canvas->setSeriesVisible(key13, expect));
+            CHECK(consistent13() == expect);
+        }
+        OK("visibility 单一出口：菜单/属性/动作/图例点击/set 版 五路径三方一致");
+
+        // 图例四角：AxesView 转发 + saveViewState/restoreViewState round-trip
+        //（经 Axes::saveState 的 legendCorner 键走既有通道，不自建第二通道）。
+        CHECK(canvas->legendCorner() == 0); // 默认右上
+        canvas->setLegendCorner(2);        // 左下
+        CHECK(canvas->legendCorner() == 2);
+        const QJsonObject st13 = canvas->saveViewState();
+        CHECK(st13.contains(QStringLiteral("legendCorner")));
+        canvas->setLegendCorner(0);
+        CHECK(canvas->restoreViewState(st13));
+        CHECK(canvas->legendCorner() == 2);
+        // 越界值忽略
+        canvas->setLegendCorner(7);
+        CHECK(canvas->legendCorner() == 2);
+        OK("图例四角：saveViewState/restoreViewState round-trip，越界忽略");
+        canvas->clear();
+    }
+
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");
     return 0;
 }

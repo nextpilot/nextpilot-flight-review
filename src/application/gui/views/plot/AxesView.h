@@ -207,6 +207,9 @@ public:
 
     void setLegendVisible(bool visible);
     bool legendVisible() const;
+    // 图例四角：0=右上 1=左上 2=左下 3=右下（Legend::Corner 序）；越界忽略。
+    void setLegendCorner(int corner);
+    int legendCorner() const;
 
     // "删除此画布"是否可点：页内只剩一格时删无可删，由 PlotWorkspace 重排后同步。
     void setCanvasRemovable(bool on) { m_canvasRemovable = on; }
@@ -321,6 +324,9 @@ private:
     // m_preserveRangeOnNextPush 在恢复末尾置位，保住"恢复后紧随的一次绑定重建"。
     bool m_restoreInProgress = false;
     bool m_preserveRangeOnNextPush = false;
+    // 显隐单一出口回声守卫：setSeriesVisible → setLegendItemVisible 会发回声信号，
+    // 回声重入本出口时被吞，避免重复同步/重复广播（第3仗 3a）。
+    bool m_syncingVisibility = false;
 };
 
 } // namespace nextpilot::plotscope::gui

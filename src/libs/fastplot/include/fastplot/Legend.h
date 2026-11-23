@@ -25,6 +25,14 @@ class Legend : public QObject
 {
     Q_OBJECT
 public:
+    // 图例贴角（四角任选；右上为默认——历史行为）。int 序供 saveState 持久化。
+    enum class Corner
+    {
+        TopRight = 0,
+        TopLeft = 1,
+        BottomLeft = 2,
+        BottomRight = 3,
+    };
     explicit Legend(QObject *parent = nullptr);
 
     // 一条图例行（Axes 从曲线列表组装；名字为空的曲线不进图例）。
@@ -72,6 +80,8 @@ public:
     void zoomFont(int steps);          // Ctrl+滚轮步进：±0.1
     qreal topInset() const { return m_topInset; }
     void setTopInset(qreal px);        // 顶部让位（悬浮工具栏占位），clamp >= 0
+    Corner corner() const { return m_corner; }
+    void setCorner(Corner c);          // 变化时 update 由 Axes 侧负责（本类无 paint 句柄）
 
 Q_SIGNALS:
     void collapseChanged(bool collapsed);
@@ -81,6 +91,7 @@ private:
     bool m_collapsed = false;
     double m_fontScale = 1.0;          // 字号缩放因子（Ctrl+滚轮）
     qreal m_topInset = 0.0;
+    Corner m_corner = Corner::TopRight;
     struct RowRect
     {
         int curveIndex = -1;

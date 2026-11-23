@@ -70,6 +70,12 @@ namespace nextpilot::plotscope::gui
 {
 void PlotWorkspace::registerPropertyProviders()
 {
+    // 图例四角 ↔ 属性面板枚举值：0=右上 1=左上 2=左下 3=右下（Legend::Corner 序）。
+    static const QStringList kCornerLabels = {QStringLiteral("右上"), QStringLiteral("左上"),
+                                              QStringLiteral("左下"), QStringLiteral("右下")};
+    auto cornerLabel = [](int corner) {
+        return kCornerLabels.value(qBound(0, corner, 3), kCornerLabels.first());
+    };
     auto row = [](const QString &key, const QString &label, const QString &value,
                   PropKind kind = PropKind::ReadOnly, bool editable = false) {
         PropRow r;
@@ -166,7 +172,7 @@ void PlotWorkspace::registerPropertyProviders()
     });
 
     // --- 画布 ---
-    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Canvas, [this, row](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Canvas, [this, row, cornerLabel](const Selection &sel) {
         AxesView *canvas = activeCanvas();
         PropertySchema schema;
         schema.title = QStringLiteral("画布属性");
@@ -180,6 +186,12 @@ void PlotWorkspace::registerPropertyProviders()
         o.rows << row(QStringLiteral("legend"), QStringLiteral("图例"),
                       canvas && canvas->legendVisible() ? QStringLiteral("true") : QStringLiteral("false"),
                       PropKind::Bool, true);
+        o.rows << row(QStringLiteral("legendCorner"), QStringLiteral("图例位置"),
+                      canvas ? cornerLabel(canvas->legendCorner()) : cornerLabel(0),
+                      PropKind::Enum, true);
+        if (canvas)
+            o.rows[o.rows.size() - 1].options = {QStringLiteral("右上"), QStringLiteral("左上"),
+                                                 QStringLiteral("左下"), QStringLiteral("右下")};
         schema.objects << o;
         return schema.toJson();
     });
@@ -239,7 +251,7 @@ void PlotWorkspace::registerPropertyProviders()
         });
 
     m_appCtx.interactions().registerPropertySetter(SelectionKind::Canvas,
-        [this](const Selection &, const QString &, const QString &key, const QString &value, QString *err) {
+        [this, cornerLabel](const Selection &, const QString &, const QString &key, const QString &value, QString *err) {
             AxesView *canvas = activeCanvas();
             if (!canvas)
             {
@@ -249,6 +261,17 @@ void PlotWorkspace::registerPropertyProviders()
             if (key == QStringLiteral("legend"))
             {
                 canvas->setLegendVisible(value == QStringLiteral("true"));
+                return true;
+            }
+            if (key == QStringLiteral("legendCorner"))
+            {
+                const int idx = kCornerLabels.indexOf(value);
+                if (idx < 0)
+                {
+                    if (err) *err = QStringLiteral("属性未生效：未知图例位置 %1").arg(value);
+                    return false;
+                }
+                canvas->setLegendCorner(idx);
                 return true;
             }
             if (err) *err = QStringLiteral("未知属性: %1").arg(key);

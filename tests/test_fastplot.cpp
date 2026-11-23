@@ -15,6 +15,7 @@
 #include <QDir>
 #include <QImage>
 #include <QJsonObject>
+#include <QPainter>
 
 #include <cmath>
 #include <cstdio>
@@ -604,6 +605,88 @@ int main(int argc, char **argv)
         CHECK(plot.overlayCacheRebuilds() == afterMarkers + 1);
 
         fprintf(stdout, "[ok] 脏调度：20 次游标移动稳态层重建=0，稳态/视口变化正确重建\n");
+    }
+
+    // 9) 第3仗 3a：图例四角 + 显隐 set 版（单一出口地基）
+    {
+        using namespace nextpilot::plotscope::fastplot;
+
+        // --- 四角几何：Legend 直接 paint 到离屏图，blockRect 必须落到对应角 ---
+        Legend legend;
+        legend.setVisible(true);
+        QImage img(400, 300, QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::white);
+        Legend::PaintInput in;
+        in.plotRect = QRectF(0, 0, 400, 300);
+        in.baseFont = QFont();
+        in.labelColor = QColor(0x20, 0x20, 0x20);
+        in.windowColor = QColor(0xff, 0xff, 0xff);
+        Legend::Item it;
+        it.curveIndex = 0;
+        it.name = QStringLiteral("roll");
+        it.ink = QColor(0x5b, 0xc0, 0xf0);
+        it.visible = true;
+        in.items.append(it);
+        CHECK(legend.corner() == Legend::Corner::TopRight); // 默认右上（历史行为）
+        auto paintAt = [&](Legend::Corner c) {
+            legend.setCorner(c);
+            QPainter p(&img);
+            legend.paint(p, in);
+            p.end();
+            return legend.blockRect();
+        };
+        const QRectF rTR = paintAt(Legend::Corner::TopRight);
+        CHECK(rTR.left() > 200 && rTR.top() >= 0 && rTR.top() < 60);
+        const QRectF rTL = paintAt(Legend::Corner::TopLeft);
+        CHECK(rTL.left() >= 0 && rTL.left() < 60 && rTL.top() < 60);
+        const QRectF rBL = paintAt(Legend::Corner::BottomLeft);
+        CHECK(rBL.left() < 60 && rBL.bottom() > 240);
+        const QRectF rBR = paintAt(Legend::Corner::BottomRight);
+        CHECK(rBR.left() > 200 && rBR.bottom() > 240);
+        fprintf(stdout, "[ok] 图例四角：blockRect 随 corner 贴右上/左上/左下/右下\n");
+
+        // --- 四角随 saveState/restoreState round-trip；旧存档缺键回落默认右上 ---
+        PlotWidget cornerPlot;
+        cornerPlot.resize(400, 300);
+        cornerPlot.setLegendVisible(true);
+        cornerPlot.setLegendCorner(Legend::Corner::BottomLeft);
+        const QJsonObject cornerState = cornerPlot.saveState();
+        PlotWidget cornerRestored;
+        cornerRestored.resize(400, 300);
+        CHECK(cornerRestored.restoreState(cornerState));
+        CHECK(cornerRestored.legendCorner() == Legend::Corner::BottomLeft);
+        // 缺键（第1仗之前的旧存档）：保持默认右上，不误复原
+        QJsonObject legacyState = cornerState;
+        legacyState.remove(QStringLiteral("legendCorner"));
+        PlotWidget legacyRestored;
+        legacyRestored.resize(400, 300);
+        legacyRestored.setLegendCorner(Legend::Corner::TopLeft);
+        CHECK(legacyRestored.restoreState(legacyState));
+        CHECK(legacyRestored.legendCorner() == Legend::Corner::TopRight);
+        fprintf(stdout, "[ok] 图例四角：save/restore round-trip，缺键回落默认右上\n");
+
+        // --- 显隐 set 版：setLegendItemVisible 与 toggle 发同一信号；同值重复置不发 ---
+        PlotWidget plot;
+        plot.resize(400, 300);
+        std::vector<double> xs{0.0, 1.0}, ys{0.0, 1.0};
+        ArrayData data(xs.data(), ys.data(), 2, 1);
+        plot.addCurve(Line::fromData(&data, QColor(0x5b, 0xc0, 0xf0), 1.4)).setName(QStringLiteral("roll"));
+        int toggles = 0, lastIdx = -1;
+        bool lastVis = false;
+        QObject::connect(&plot, &PlotWidget::legendItemToggled,
+                         [&](int idx, bool vis) { ++toggles; lastIdx = idx; lastVis = vis; });
+        plot.setLegendItemVisible(0, false);
+        CHECK(!plot.legendItemVisible(0));
+        CHECK(toggles == 1 && lastIdx == 0 && lastVis == false);
+        plot.setLegendItemVisible(0, false); // 同值重复置：不发信号
+        CHECK(toggles == 1);
+        plot.setLegendItemVisible(0, true);
+        CHECK(plot.legendItemVisible(0));
+        CHECK(toggles == 2 && lastVis == true);
+        plot.toggleLegendItem(0); // toggle 与 set 版同信号（AxesView 单一出口收敛依赖）
+        CHECK(!plot.legendItemVisible(0));
+        CHECK(toggles == 3 && lastIdx == 0 && lastVis == false);
+        fprintf(stdout, "[ok] 显隐 set 版：set/toggle 同信号、同值静默、索引与值正确\n");
     }
 
     fprintf(stdout, "[ok] fastplot P1~P4 全部通过\n");
