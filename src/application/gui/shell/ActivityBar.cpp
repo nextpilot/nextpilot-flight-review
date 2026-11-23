@@ -75,13 +75,14 @@ void ActivityButton::paintEvent(QPaintEvent *event)
 ActivityBar::ActivityBar(QWidget *parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("ps.activityBar"));
+    setAttribute(Qt::WA_StyledBackground, true);
     setFixedWidth(48);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     setStyleSheet(QStringLiteral(
-        "QWidget#ps.activityBar{background:palette(window);"
+        "QWidget#ps.activityBar{background:palette(alternate-base);"
         "border-right:1px solid palette(mid);}"
         "QToolButton{border:0;border-radius:3px;}"
-        "QToolButton:hover{background:palette(alternate-base);}"
+        "QToolButton:hover{background:palette(base);}"
         "QToolButton:checked{background:palette(highlight);}"));
 
     m_layout = new QVBoxLayout(this);
