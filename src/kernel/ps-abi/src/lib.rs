@@ -2144,6 +2144,68 @@ mod tests {
     }
 
     #[test]
+    fn object_retention_abi_jump_eviction_and_handle_release() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let topic = CString::new("/tf").unwrap();
+            let p = b"tf";
+            // 5 个 blob 句柄登记到 t=0..400。
+            let mut handles = Vec::new();
+            let mut uids = Vec::new();
+            for i in 0..5u64 {
+                let h = ps_dataset_blob_put(ds, p.as_ptr() as *const _, p.len() as u32, 1,
+                                            std::ptr::null_mut(), 0);
+                handles.push(h);
+                uids.push(ps_object_insert(ds, topic.as_ptr(), i * 100, h, std::ptr::null_mut(), 0));
+            }
+            // 设 max_entries=3，应用驱逐 → 逐最旧 2 条。
+            assert_eq!(ps_object_set_retention(ds, topic.as_ptr(), 0, 3), 0);
+            let mut evicted = [0u64; 8];
+            let mut n = 0u32;
+            assert_eq!(ps_object_apply_retention(ds, topic.as_ptr(), evicted.as_mut_ptr(), 8, &mut n), 0);
+            assert_eq!(n, 2);
+            assert_eq!(&evicted[..2], &handles[..2], "逐最旧两个 handle");
+
+            // 被逐 handle 仍有效（索引驱逐 ≠ 销毁 payload），可显式 release。
+            let mut out = [0u8; 8];
+            let mut out_len = 0u32;
+            assert_eq!(ps_dataset_blob_get(ds, evicted[0], out.as_mut_ptr() as *mut _, 8,
+                                           &mut out_len, std::ptr::null_mut()), 0);
+            assert_eq!(ps_dataset_blob_release(ds, evicted[0]), 0);
+
+            // 缓冲不足：返回 2，out_len 填所需，且不驱逐（handle 不丢失）。
+            assert_eq!(ps_object_set_retention(ds, topic.as_ptr(), 0, 1), 0);
+            let mut tiny = [0u64; 1];
+            assert_eq!(ps_object_apply_retention(ds, topic.as_ptr(), tiny.as_mut_ptr(), 1, &mut n), 2);
+            assert_eq!(n, 2, "需逐 2 条（3→1），缓冲只够 1");
+            // 确认未驱逐：仍有 3 条。
+            let mut tc = 0u32;
+            let mut ec = 0u32;
+            ps_object_index_stats(ds, &mut tc, &mut ec);
+            assert_eq!(ec, 3, "缓冲不足时索引不变，避免 handle 泄漏");
+
+            // 缓冲充足再逐：逐 2 条成功。
+            assert_eq!(ps_object_apply_retention(ds, topic.as_ptr(), evicted.as_mut_ptr(), 8, &mut n), 0);
+            assert_eq!(n, 2);
+            ps_object_index_stats(ds, &mut tc, &mut ec);
+            assert_eq!(ec, 1, "3→1 剩 1 条");
+
+            // 驱逐水位 + 游标检测：first_uid 前进。
+            let mut water = 0u64;
+            assert_eq!(ps_object_evicted_before(ds, topic.as_ptr(), &mut water), 0);
+            assert!(water >= 300, "水位应反映被逐最大时间");
+
+            // 幂等：再逐一次为空。
+            assert_eq!(ps_object_apply_retention(ds, topic.as_ptr(), evicted.as_mut_ptr(), 8, &mut n), 0);
+            assert_eq!(n, 0);
+            // 不存在 topic → 3。
+            let missing = CString::new("/none").unwrap();
+            assert_eq!(ps_object_apply_retention(ds, missing.as_ptr(), evicted.as_mut_ptr(), 8, &mut n), 3);
+            ps_dataset_free(ds);
+        }
+    }
+
+    #[test]
     fn object_column_via_abi_aligned_with_scalar_and_typed_as_object() {
         unsafe {
             let ds = ps_dataset_new();
@@ -2961,6 +3023,75 @@ pub unsafe extern "C" fn ps_object_index_stats(
     }
     *out_topic_count = (*ds).object_index.topic_count() as u32;
     *out_entry_count = (*ds).object_index.total_entries() as u32;
+    0
+}
+
+/* ===== BJ2 保留预算与跳跃驱逐（借鉴 pj RetentionBudget / RetentionJump） ===== */
+
+/// 设置 topic 的保留预算。time_window_ns / max_entries 各自独立，0=关闭该维。
+/// 设置后不立即驱逐，下次 `ps_object_apply_retention` 生效。返回 0 成功；1 参数错。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_set_retention(
+    ds: *mut PsDataset,
+    topic: *const c_char,
+    time_window_ns: u64,
+    max_entries: u32,
+) -> i32 {
+    if ds.is_null() || topic.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let budget = ps_ndf::object_index::RetentionBudget::new(time_window_ns, max_entries as usize);
+    (*ds).object_index.topic_mut(name).set_budget(budget);
+    0
+}
+
+/// 对 topic 应用保留预算，跳跃驱逐过期前缀，输出被逐 handle 数组（调用方须逐一 blob_release 释放引用）。
+/// `out` 每元素一个 u64 handle；`out_cap` 为元素数。返回 0 成功；1 参数错；
+/// 2 缓冲不足（*out_len 填所需）；3 topic 不存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_apply_retention(
+    ds: *mut PsDataset,
+    topic: *const c_char,
+    out: *mut u64,
+    out_cap: u32,
+    out_len: *mut u32,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out_len.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some(t) = (*ds).object_index.topic(name) else { return 3; };
+    // 先预览：缓冲不足则不驱逐，避免 handle 交不出去造成 blob 引用泄漏。
+    let will_evict = t.retention_evictable_count();
+    if will_evict > out_cap as usize {
+        *out_len = will_evict as u32;
+        return if out.is_null() { 1 } else { 2 };
+    }
+    let handles = (*ds).object_index.topic_mut(name).apply_retention();
+    if !out.is_null() {
+        for (r, h) in handles.iter().enumerate() {
+            *out.add(r) = *h;
+        }
+    }
+    *out_len = handles.len() as u32;
+    0
+}
+
+/// topic 的驱逐水位（时间戳 < 此值已被回收），供读侧缓存失效判断。
+/// 返回 0 成功；1 参数错；3 topic 不存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_object_evicted_before(
+    ds: *const PsDataset,
+    topic: *const c_char,
+    out_ns: *mut u64,
+) -> i32 {
+    if ds.is_null() || topic.is_null() || out_ns.is_null() {
+        return 1;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(topic).to_str() else { return 1; };
+    let Some(t) = (*ds).object_index.topic(name) else { return 3; };
+    *out_ns = t.evicted_before_ns();
     0
 }
 

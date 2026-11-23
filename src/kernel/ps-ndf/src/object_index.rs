@@ -30,6 +30,28 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// 与 pj 的 `SequentialUID` 同语义：UID 序 = 到达序，独立于时间戳序。
 static NEXT_UID: AtomicU64 = AtomicU64::new(1);
 
+/// 单个 topic 的保留预算（BJ2，借鉴 pj `RetentionBudget`）。
+/// 三个上限各自独立、可被动态修改；`0` 表示该维关闭。
+/// - `time_window_ns`：仅保留 `[newest - window, +∞)` 的条目（按时间戳）；
+/// - `max_entries`：仅保留最新的 N 条（按 (time_ns, uid) 序）。
+/// `max_memory_bytes` 属 payload 池职责，不在索引层（见 BJ3）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RetentionBudget {
+    pub time_window_ns: u64,
+    pub max_entries: usize,
+}
+
+impl RetentionBudget {
+    pub fn new(time_window_ns: u64, max_entries: usize) -> Self {
+        Self { time_window_ns, max_entries }
+    }
+
+    /// 三维是否全关（每维 0 = off）。
+    pub fn is_disabled(&self) -> bool {
+        self.time_window_ns == 0 && self.max_entries == 0
+    }
+}
+
 /// 单个 topic 的时间索引。
 ///
 /// `by_time` 以 `(time_ns, uid)` 为 key：
@@ -41,6 +63,9 @@ static NEXT_UID: AtomicU64 = AtomicU64::new(1);
 pub struct TopicIndex {
     by_time: BTreeMap<(u64, u64), u64>, // (time_ns, uid) -> object handle
     by_uid: BTreeMap<u64, (u64, u64)>,  // uid -> (time_ns, handle)
+    budget: RetentionBudget,
+    /// 被驱逐条目的时间下界：时间戳 < 此值的条目已被回收（供时间窗缓存失效判断）。
+    evicted_before_ns: u64,
 }
 
 impl TopicIndex {
@@ -90,6 +115,77 @@ impl TopicIndex {
     /// 当前最小到达序 UID；空 topic 返回 0。游标低于此值意味着错过了被驱逐的条目。
     pub fn first_uid(&self) -> u64 {
         self.by_uid.keys().next().copied().unwrap_or(0)
+    }
+
+    /// 设置保留预算。设置后不会立即驱逐，下次 `insert` 或显式 `apply_retention` 时生效。
+    pub fn set_budget(&mut self, budget: RetentionBudget) {
+        self.budget = budget;
+    }
+
+    pub fn budget(&self) -> RetentionBudget {
+        self.budget
+    }
+
+    /// 被驱逐条目的时间下界：时间戳 < 此值的条目已被回收。
+    /// 供时间窗缓存判断"是否因驱逐而失效"（对应 pj 的 evicted_through_chunk_id）。
+    pub fn evicted_before_ns(&self) -> u64 {
+        self.evicted_before_ns
+    }
+
+    /// 预览当前预算下将被驱逐的条目数（不修改索引）。
+    /// 供 C ABI 在缓冲不足时提前判定并返回，避免"驱逐已发生但 handle 未交出"的引用泄漏。
+    pub fn retention_evictable_count(&self) -> usize {
+        let Some(cut) = self.retention_cutoff() else { return 0; };
+        self.by_time.range(..=(cut, u64::MAX)).count()
+    }
+
+    /// 计算需驱逐的时间阈值（最后一个要逐的时间）。无条目需逐时返回 None。
+    fn retention_cutoff(&self) -> Option<u64> {
+        if self.budget.is_disabled() || self.by_time.is_empty() {
+            return None;
+        }
+        let newest_ns = self.by_time.keys().next_back().map(|(t, _)| *t).unwrap_or(0);
+        let mut cutoff: Option<u64> = None;
+        if self.budget.time_window_ns > 0 && newest_ns >= self.budget.time_window_ns {
+            cutoff = Some(newest_ns - self.budget.time_window_ns - 1);
+        }
+        if self.budget.max_entries > 0 {
+            let excess = self.by_time.len().saturating_sub(self.budget.max_entries);
+            if excess > 0 {
+                if let Some((t, _)) = self.by_time.keys().nth(excess - 1).copied() {
+                    cutoff = Some(cutoff.map_or(t, |c| c.max(t)));
+                }
+            }
+        }
+        cutoff
+    }
+
+    /// 应用保留预算，驱逐过期前缀，返回被逐条目的 handle 列表（调用方须 release 以释放 blob 引用）。
+    ///
+    /// **跳跃驱逐**：用 `split_off` 一次切开时间前缀（O(log n) 定位 + O(逐条移动被逐部分)），
+    /// 而非对每条单独 `remove`。pj 实测逐条驱逐 100k 条目需 1.3s（持锁），一次跳过 8ms
+    /// （TECHNICAL_NOTES:43-46）。这里对 BTreeMap 用 split_off 达到同等"一次跳过"效果。
+    ///
+    /// 两个上限取"并集"：凡违反任一条的条目都被逐，按 `(time_ns, uid)` 前缀一起切掉。
+    pub fn apply_retention(&mut self) -> Vec<u64> {
+        let Some(cut) = self.retention_cutoff() else { return Vec::new(); };
+
+        // 要逐 `<= cut` 的前缀 ⇒ 保留 `> cut` ⇒ split_off 在 key=(cut+1, 0) 处切开：
+        // split_off 返回 `>= key` 的部分（保留），self 留下 `< key` 的部分（被逐）。
+        // cut 已是"最后一个要逐的时间"，cut+1 用 saturating 防溢出。
+        let keep_key = (cut.saturating_add(1), 0);
+        let retained = self.by_time.split_off(&keep_key);
+        let evicted_front = std::mem::replace(&mut self.by_time, retained);
+
+        let mut handles = Vec::with_capacity(evicted_front.len());
+        for ((t, uid), handle) in evicted_front {
+            self.by_uid.remove(&uid);
+            if t > self.evicted_before_ns {
+                self.evicted_before_ns = t;
+            }
+            handles.push(handle);
+        }
+        handles
     }
 
     pub fn len(&self) -> usize {
@@ -210,6 +306,81 @@ mod tests {
         assert_eq!(t.latest_at(0), None);
         assert_eq!(t.first_uid(), 0);
         assert!(t.range_by_time(10, 5).is_empty(), "倒置区间返回空");
+    }
+
+    #[test]
+    fn retention_by_max_entries_drops_oldest_prefix() {
+        let mut t = TopicIndex::new();
+        t.set_budget(RetentionBudget::new(0, 3));
+        let mut uids = Vec::new();
+        for i in 0..5 {
+            uids.push(t.insert(i * 100, i + 1));
+        }
+        assert_eq!(t.len(), 5);
+        let evicted = t.apply_retention();
+        // 超限 2 条 → 逐最旧的时间前缀（t=0,100）。
+        assert_eq!(evicted, vec![1, 2]);
+        assert_eq!(t.len(), 3);
+        assert_eq!(t.range_by_time(0, u64::MAX).iter().map(|(_, _, h)| *h).collect::<Vec<_>>(),
+                   vec![3, 4, 5]);
+        assert_eq!(t.evicted_before_ns(), 100, "驱逐水位应为被逐最大时间");
+        // first_uid 前进：老游标 uids[0] 已低于首 UID，可检测漏读。
+        assert!(uids[0] < t.first_uid());
+    }
+
+    #[test]
+    fn retention_by_time_window() {
+        let mut t = TopicIndex::new();
+        // 窗口 300ns：newest=500 → 保留 t >= 500-300 = 200（含端点，逐 t<200）。
+        t.set_budget(RetentionBudget::new(300, 0));
+        for i in 0..6 {
+            t.insert(i * 100, i + 1); // t = 0,100,...,500
+        }
+        let evicted = t.apply_retention();
+        assert_eq!(evicted, vec![1, 2], "逐 t=0,100");
+        let times: Vec<u64> = t.range_by_time(0, u64::MAX).iter().map(|(ts, _, _)| *ts).collect();
+        assert_eq!(times, vec![200, 300, 400, 500]);
+    }
+
+    #[test]
+    fn retention_union_of_both_limits() {
+        let mut t = TopicIndex::new();
+        // 窗口保留 t>=300；条目上限 2 → 按时间逐到只剩 2 条。取两者并集（逐更多）。
+        t.set_budget(RetentionBudget::new(300, 2));
+        for i in 0..6 {
+            t.insert(i * 100, i + 1);
+        }
+        t.apply_retention();
+        assert_eq!(t.len(), 2, "条目上限更紧，逐到 2 条");
+        assert_eq!(t.range_by_time(0, u64::MAX).iter().map(|(_, _, h)| *h).collect::<Vec<_>>(),
+                   vec![5, 6]);
+    }
+
+    #[test]
+    fn retention_disabled_and_idempotent() {
+        let mut t = TopicIndex::new();
+        for i in 0..5 { t.insert(i, i + 1); }
+        assert_eq!(t.apply_retention(), Vec::<u64>::new(), "0 预算不驱逐");
+        t.set_budget(RetentionBudget::new(0, 2));
+        let first = t.apply_retention();
+        assert_eq!(first.len(), 3);
+        let second = t.apply_retention();
+        assert!(second.is_empty(), "已达上限后幂等，不重复逐");
+        assert_eq!(t.len(), 2);
+    }
+
+    #[test]
+    fn retention_evicts_out_of_order_entries_by_time_not_arrival() {
+        let mut t = TopicIndex::new();
+        t.set_budget(RetentionBudget::new(0, 2));
+        // 乱序到达：晚到的时间更早，应按时间逐它而非按到达序。
+        t.insert(300, 33); // uid1
+        t.insert(100, 11); // uid2 时间最早
+        t.insert(200, 22); // uid3
+        let evicted = t.apply_retention();
+        assert_eq!(evicted, vec![11], "逐时间最早的（晚到的 t=100），不是到达最早的");
+        assert_eq!(t.range_by_time(0, u64::MAX).iter().map(|(_, _, h)| *h).collect::<Vec<_>>(),
+                   vec![22, 33]);
     }
 
     #[test]
