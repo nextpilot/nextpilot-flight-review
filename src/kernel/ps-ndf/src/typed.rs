@@ -20,13 +20,16 @@ pub enum ValueType {
     U8,
     Bool,
     Text,
+    /// 对象引用：列内每行存一个 u64 句柄，payload 在 ObjectStore 里（S4）。
+    Object,
 }
 
 impl ValueType {
     /// 单值在内存中的字节数；`Text` 是变长，返回 0 由调用方单独计算。
+    /// `Object` 列内是 u64 句柄，故返回 8（payload 不在列内）。
     pub fn value_bytes(self) -> usize {
         match self {
-            ValueType::F64 | ValueType::I64 | ValueType::U64 => 8,
+            ValueType::F64 | ValueType::I64 | ValueType::U64 | ValueType::Object => 8,
             ValueType::F32 | ValueType::I32 | ValueType::U32 => 4,
             ValueType::I16 | ValueType::U16 => 2,
             ValueType::I8 | ValueType::U8 | ValueType::Bool => 1,
@@ -35,7 +38,95 @@ impl ValueType {
     }
 
     pub fn is_numeric(self) -> bool {
-        self != ValueType::Text
+        matches!(self, ValueType::F64 | ValueType::F32 | ValueType::I64 | ValueType::U64
+            | ValueType::I32 | ValueType::U32 | ValueType::I16 | ValueType::U16
+            | ValueType::I8 | ValueType::U8 | ValueType::Bool)
+    }
+}
+
+/// 对象列 payload 存储：连续字节池 + 稳定句柄表。
+///
+/// 句柄 = slot 索引 + 1（`0` 保留为 null）。slot 只增不复用，因此一个句柄
+/// 永远标识同一个 payload；字节池 realloc 或后续追加都不会让已发出的句柄
+/// 悬垂或串位——这是对象跨 C ABI 用句柄而非裸指针的核心（RFC D4）。
+/// `refs` 是引用计数：dataset 自身持有第 1 个引用，C 侧可 retain/release 额外引用。
+#[derive(Debug, Clone, Default)]
+pub struct ObjectStore {
+    bytes: Vec<u8>,
+    entries: Vec<BlobEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct BlobEntry {
+    offset: usize,
+    len: usize,
+    type_tag: u32,
+    refs: u32,
+    alive: bool,
+}
+
+impl ObjectStore {
+    fn slot(handle: u64) -> Option<usize> {
+        if handle == 0 { None } else { Some(handle as usize - 1) }
+    }
+
+    /// 写入 payload，返回稳定句柄（>0）。dataset 自身持有第 1 个引用。
+    pub fn put(&mut self, payload: &[u8], type_tag: u32) -> u64 {
+        let offset = self.bytes.len();
+        self.bytes.extend_from_slice(payload);
+        self.entries.push(BlobEntry {
+            offset,
+            len: payload.len(),
+            type_tag,
+            refs: 1,
+            alive: true,
+        });
+        self.entries.len() as u64
+    }
+
+    /// 按句柄读 payload 与 type_tag。句柄无效或已释放返回 None（无悬垂读）。
+    pub fn get(&self, handle: u64) -> Option<(&[u8], u32)> {
+        let e = self.entries.get(Self::slot(handle)?)?;
+        if !e.alive || e.refs == 0 {
+            return None;
+        }
+        Some((&self.bytes[e.offset..e.offset + e.len], e.type_tag))
+    }
+
+    /// 增加一个外部引用。句柄无效/已释放返回 false。
+    pub fn retain(&mut self, handle: u64) -> bool {
+        let Some(i) = Self::slot(handle) else { return false; };
+        match self.entries.get_mut(i) {
+            Some(e) if e.alive && e.refs > 0 => {
+                e.refs = e.refs.saturating_add(1);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// 释放一个引用，归零则标记失效。释放不属于自己的引用返回 false。
+    pub fn release(&mut self, handle: u64) -> bool {
+        let Some(i) = Self::slot(handle) else { return false; };
+        match self.entries.get_mut(i) {
+            Some(e) if e.refs > 0 => {
+                e.refs -= 1;
+                if e.refs == 0 {
+                    e.alive = false;
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// 池内 blob 数量（含已释放的槽位；slot 不复用）。
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 
@@ -54,6 +145,8 @@ pub enum ColumnData {
     U8(Vec<u8>),
     Bool(Vec<bool>),
     Text(Vec<String>),
+    /// 每行一个 ObjectStore 句柄；payload 在数据集的 ObjectStore 里（S4）。
+    Object(Vec<u64>),
 }
 
 impl ColumnData {
@@ -71,6 +164,7 @@ impl ColumnData {
             ColumnData::U8(_) => ValueType::U8,
             ColumnData::Bool(_) => ValueType::Bool,
             ColumnData::Text(_) => ValueType::Text,
+            ColumnData::Object(_) => ValueType::Object,
         }
     }
 
@@ -88,6 +182,7 @@ impl ColumnData {
             ColumnData::U8(v) => v.len(),
             ColumnData::Bool(v) => v.len(),
             ColumnData::Text(v) => v.len(),
+            ColumnData::Object(v) => v.len(),
         }
     }
 
@@ -109,6 +204,7 @@ impl ColumnData {
             ColumnData::U8(v) => v.clear(),
             ColumnData::Bool(v) => v.clear(),
             ColumnData::Text(v) => v.clear(),
+            ColumnData::Object(v) => v.clear(),
         }
     }
 
@@ -133,6 +229,7 @@ impl ColumnData {
             ColumnData::U8(v) => { v.drain(0..rows); }
             ColumnData::Bool(v) => { v.drain(0..rows); }
             ColumnData::Text(v) => { v.drain(0..rows); }
+            ColumnData::Object(v) => { v.drain(0..rows); }
         }
     }
 
@@ -155,6 +252,7 @@ impl ColumnData {
             ColumnData::U8(v) => ColumnData::U8(gather(v, order)),
             ColumnData::Bool(v) => ColumnData::Bool(gather(v, order)),
             ColumnData::Text(v) => ColumnData::Text(gather(v, order)),
+            ColumnData::Object(v) => ColumnData::Object(gather(v, order)),
         }
     }
 
@@ -176,6 +274,7 @@ impl ColumnData {
             (ColumnData::U8(a), ColumnData::U8(b)) => ColumnData::U8(g(a, b, order)),
             (ColumnData::Bool(a), ColumnData::Bool(b)) => ColumnData::Bool(g(a, b, order)),
             (ColumnData::Text(a), ColumnData::Text(b)) => ColumnData::Text(g(a, b, order)),
+            (ColumnData::Object(a), ColumnData::Object(b)) => ColumnData::Object(g(a, b, order)),
             _ => unreachable!("列类型已校验一致"),
         }
     }
@@ -197,6 +296,7 @@ impl ColumnData {
             (ColumnData::U8(a), ColumnData::U8(b)) => a.extend(b),
             (ColumnData::Bool(a), ColumnData::Bool(b)) => a.extend(b),
             (ColumnData::Text(a), ColumnData::Text(b)) => a.extend(b),
+            (ColumnData::Object(a), ColumnData::Object(b)) => a.extend(b),
             _ => return Err("列类型不一致".into()),
         }
         Ok(())
@@ -219,6 +319,7 @@ impl ColumnData {
             ColumnData::U8(v) => ColumnData::U8(v[start..end].to_vec()),
             ColumnData::Bool(v) => ColumnData::Bool(v[start..end].to_vec()),
             ColumnData::Text(v) => ColumnData::Text(v[start..end].to_vec()),
+            ColumnData::Object(v) => ColumnData::Object(v[start..end].to_vec()),
         }
     }
 
@@ -237,6 +338,8 @@ impl ColumnData {
             ColumnData::U8(v) => v.get(row).map(|x| *x as f64),
             ColumnData::Bool(v) => v.get(row).map(|x| if *x { 1.0 } else { 0.0 }),
             ColumnData::Text(v) => v.get(row).and_then(|x| x.parse::<f64>().ok()),
+            // 对象列无标量数值语义；曲线/光标不应把它当数值画。
+            ColumnData::Object(_) => None,
         }
     }
 
@@ -254,6 +357,8 @@ impl ColumnData {
             ColumnData::U8(v) => v.get(row).map(|x| x.to_string()),
             ColumnData::Bool(v) => v.get(row).map(|x| x.to_string()),
             ColumnData::Text(v) => v.get(row).cloned(),
+            // 对象列显示成 `obj#<handle>`，仅用于占位提示；真实 payload 走 blob_get。
+            ColumnData::Object(v) => v.get(row).map(|h| format!("obj#{h}")),
         }
     }
 }
@@ -1231,11 +1336,13 @@ pub struct Dataset {
     /// 读侧用它做 generation 快照隔离——代际未变则派生视图无需重算。
     /// 单调不回绕（u64 溢出用 saturating_add 钳位，实际不可能达到）。
     pub generation: u64,
+    /// 对象列 payload 池（S4）。对象列只存句柄，payload 在这里按稳定句柄寻址。
+    pub objects: ObjectStore,
 }
 
 impl Dataset {
     pub fn new() -> Self {
-        Self { tables: Vec::new(), default_ring_budget_bytes: None, generation: 0 }
+        Self { tables: Vec::new(), default_ring_budget_bytes: None, generation: 0, objects: ObjectStore::default() }
     }
 
     /// 当前数据代际；供读侧快照比对，判断追加后是否需要刷新派生视图。
@@ -2053,5 +2160,70 @@ mod tests {
         assert_eq!(t.lower_bound(25_000), 3);
         assert_eq!(t.upper_bound(25_000), 4);
         assert_eq!(t.time_sec(0), Some(0.000005));
+    }
+
+    // ---------- S4 对象列 ObjectStore ----------
+
+    #[test]
+    fn object_store_handle_is_stable_across_growth_and_bytes_roundtrip() {
+        let mut store = ObjectStore::default();
+        let h1 = store.put(&[1, 2, 3, 4], 7);
+        assert_eq!(h1, 1);
+        // 再写几条，触发 bytes Vec 扩容；h1 必须仍指向原 payload。
+        let h2 = store.put(&[9, 8, 7, 6, 5], 8);
+        let _h3 = store.put(&[0, 0], 9);
+        let (b, tag) = store.get(h1).unwrap();
+        assert_eq!(b, &[1, 2, 3, 4]);
+        assert_eq!(tag, 7);
+        let (b2, tag2) = store.get(h2).unwrap();
+        assert_eq!(b2, &[9, 8, 7, 6, 5]);
+        assert_eq!(tag2, 8);
+    }
+
+    #[test]
+    fn object_store_refcount_prevents_dangling_and_rejects_double_release() {
+        let mut store = ObjectStore::default();
+        let h = store.put(b"cloud", 1);
+        // 数据集自持 1 引用；retain 后 2。
+        assert!(store.retain(h));
+        assert!(store.release(h)); // 剩 1（dataset 自持），仍有效
+        assert_eq!(store.get(h).unwrap().0, b"cloud");
+        assert!(store.release(h)); // 归零，失效
+        assert!(store.get(h).is_none(), "释放后句柄必须读不到（无悬垂）");
+        assert!(!store.release(h), "重复释放应失败");
+        assert!(!store.retain(h), "已失效句柄不可再 retain");
+        // 句柄 0 与越界句柄都读不到。
+        assert!(store.get(0).is_none());
+        assert!(store.get(9999).is_none());
+    }
+
+    #[test]
+    fn object_column_aligned_with_scalar_on_same_timeline() {
+        // 一张表同时有标量 v 与对象列 obj，共享 time_ns；reorder 后两者仍按同一 t 对齐。
+        let mut ds = Dataset::new();
+        let h_a = ds.objects.put(b"payload-a", 1);
+        let h_b = ds.objects.put(b"payload-b", 1);
+        let h_c = ds.objects.put(b"payload-c", 1);
+        let cols = vec![
+            ("v".into(), "".into(), ColumnData::F64(vec![3.0, 1.0, 2.0]), NullBits::new(3)),
+            ("obj".into(), "".into(), ColumnData::Object(vec![h_a, h_b, h_c]), NullBits::new(3)),
+        ];
+        // 到达乱序：t=30,10,20；reorder 后应为 (10,1,h_b),(20,2,h_c),(30,3,h_a)。
+        ds.append_frame("topic", vec![30_000, 10_000, 20_000], cols).unwrap();
+        let t = ds.find_table("topic").unwrap();
+        assert_eq!(t.time_ns.as_slice(), &[10_000, 20_000, 30_000]);
+        assert_eq!(f64_col(t, "v"), vec![1.0, 2.0, 3.0]);
+        let handles = match &t.column("obj").unwrap().data {
+            ColumnData::Object(v) => v.clone(),
+            _ => panic!("期望 Object 列"),
+        };
+        assert_eq!(handles, vec![h_b, h_c, h_a], "对象句柄必须随标量一起按 t 重排");
+        // 同一 t 同时取到标量值与对象 payload：t=10ms 行 → v=1.0, obj=payload-b。
+        let (bytes, tag) = ds.objects.get(handles[0]).unwrap();
+        assert_eq!(bytes, b"payload-b");
+        assert_eq!(tag, 1);
+        assert_eq!(f64_col(t, "v")[0], 1.0);
+        // 对象列无数值语义，value_as_f64 返回 None（不会被当曲线画）。
+        assert_eq!(t.column("obj").unwrap().value_as_f64(0), None);
     }
 }

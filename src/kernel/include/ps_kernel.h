@@ -66,7 +66,8 @@ typedef enum PsValueType {
     PS_VALUE_I8 = 8,
     PS_VALUE_U8 = 9,
     PS_VALUE_BOOL = 10,
-    PS_VALUE_TEXT = 11
+    PS_VALUE_TEXT = 11,
+    PS_VALUE_OBJECT = 12  /* 每行一个 uint64 对象句柄，payload 走 blob_put/get */
 } PsValueType;
 #endif
 
@@ -121,6 +122,18 @@ int32_t              ps_dataset_append_frame(PsDataset *ds, const char *table,
 /* 设置 live ring 字节预算；table 为 NULL 表示 Dataset 默认预算，bytes=0 取消 ring。 */
 int32_t              ps_dataset_set_ring_budget(PsDataset *ds, const char *table, uint64_t bytes,
                                                 char *err, uint32_t err_cap);
+/* ---- S4 对象列：payload 存内核池，跨 C ABI 只传不透明句柄（RFC D4，禁裸指针） ----
+ * 句柄 = slot+1，slot 只增不复用；句柄生命周期绑定数据集，free 后失效，勿跨集持有。 */
+/* 写入 payload 返回句柄（>0），失败返回 0；type_tag 由调用方约定，内核只透传。 */
+uint64_t    ps_dataset_blob_put(PsDataset *ds, const void *payload, uint32_t len,
+                                uint32_t type_tag, char *err, uint32_t err_cap);
+/* 按句柄读，字节级拷贝到 out。返回 0 成功；1 参数错；2 句柄无效/已释放；3 out 不足。 */
+int32_t     ps_dataset_blob_get(const PsDataset *ds, uint64_t handle, void *out,
+                                uint32_t out_cap, uint32_t *out_len, uint32_t *out_type_tag);
+/* 增加/释放外部引用。0 成功；2 句柄无效/引用已尽。 */
+int32_t     ps_dataset_blob_retain(PsDataset *ds, uint64_t handle);
+int32_t     ps_dataset_blob_release(PsDataset *ds, uint64_t handle);
+
 /* typed 表当前行数；表不存在返回 0。 */
 uint64_t             ps_dataset_table_rows(PsDataset *ds, const char *table);
 /* typed 表视口 LOD；out 为 (time_sec,min,max) 三元组，长度至少 cap*3，返回实际三元组数。 */
