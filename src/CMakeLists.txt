@@ -117,6 +117,7 @@ add_subdirectory(application/modules/script)
 add_subdirectory(application/modules/protocol)
 add_subdirectory(application/modules/analysis)
 add_subdirectory(application/modules/settings)
+add_subdirectory(application/modules/workspace)
 add_subdirectory(application/modules/report)
 # 工具箱按业务领域组织：common / autopilot / automotive / robotics / gnss。
 # 每个领域一个包，静态自注册（PS_REGISTER_PACK）。

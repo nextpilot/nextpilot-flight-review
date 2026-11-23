@@ -251,13 +251,14 @@ int main(int argc, char **argv)
     App application;
     const auto errors = application.startup(true);
     CHECK(errors.isEmpty());
-    CHECK(application.host().activeIds().size() == 8); // 7 内置（含 mod.report）+ 1 探针
+    CHECK(application.host().activeIds().size() == 9); // 8 内置（含 mod.report / mod.workspace）+ 1 探针
     CHECK(application.host().isActive(QStringLiteral("mod.probe")));
     // 内置模块：数据/绘图/脚本/设置 + 本轮补齐的协议/分析/报告。
     CHECK(application.host().isActive(QStringLiteral("mod.settings")));
     CHECK(application.host().isActive(QStringLiteral("mod.protocol")));
     CHECK(application.host().isActive(QStringLiteral("mod.analysis")));
     CHECK(application.host().isActive(QStringLiteral("mod.report")));
+    CHECK(application.host().isActive(QStringLiteral("mod.workspace")));
 
     // 探针模块提供的能力可用（它自带的意图处理器已被注册）。
     {
