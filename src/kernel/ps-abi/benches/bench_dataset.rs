@@ -301,6 +301,47 @@ unsafe fn run_all() -> Vec<(&'static str, Stat)> {
     out.push(("append_batch", summarize(append_samples)));
     ps_dataset_free(ads);
 
+    // ---- 7. 乱序批追加（S2 reorder 入口）----
+    // 每批内时间反转（最坏情况的乱序），但整批窗口仍递增，不触发 backfill 合并。
+    // 有序追加路径走 order=None 零开销直通；本基准度量乱序时的 O(k log k) 排序成本。
+    let uds = ps_dataset_new();
+    let utable = CString::new("LOGU").unwrap();
+    let uname = CString::new("x").unwrap();
+    let uunit = CString::new("").unwrap();
+    let ubase = now_ns();
+    let mut unordered_samples = Vec::new();
+    for b in 0..APPEND_BATCHES {
+        let start = (b * APPEND_BATCH_ROWS) as i64;
+        let times: Vec<i64> = (0..APPEND_BATCH_ROWS)
+            .map(|i| ubase + (start + (APPEND_BATCH_ROWS - 1 - i) as i64) * PERIOD_NS)
+            .collect(); // 批内时间逆序
+        let values: Vec<f64> = (0..APPEND_BATCH_ROWS)
+            .map(|i| (i as f64).sin())
+            .collect();
+        let col = PsFrameColumn {
+            name: uname.as_ptr(),
+            unit: uunit.as_ptr(),
+            value_type: 0,
+            values: values.as_ptr() as *const c_void,
+            nulls: std::ptr::null(),
+        };
+        let s = Instant::now();
+        let rc = ps_dataset_append_frame(
+            uds,
+            utable.as_ptr(),
+            times.as_ptr(),
+            APPEND_BATCH_ROWS as u32,
+            &col,
+            1,
+            std::ptr::null_mut(),
+            0,
+        );
+        assert_eq!(rc, 0, "乱序批追加失败");
+        unordered_samples.push(us(s.elapsed()));
+    }
+    out.push(("append_batch_unordered", summarize(unordered_samples)));
+    ps_dataset_free(uds);
+
     out
 }
 
