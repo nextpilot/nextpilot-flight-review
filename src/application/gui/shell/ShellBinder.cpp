@@ -54,6 +54,10 @@ namespace nextpilot::plotscope::gui
 namespace
 {
 // 插槽 area -> ADS 区域
+// 停靠布局版本：2 = W1b 起左栏改为单一 ng.dock.sidebar。
+// 旧版本快照里的 dock 树不认识新栏，恢复会把左栏/面板藏掉或留成浮动。
+constexpr int kDockLayoutVersion = 2;
+
 ads::DockWidgetArea adsAreaFor(const QString &area)
 {
     if (area == QStringLiteral("dock.right"))
@@ -931,6 +935,18 @@ bool ShellBinder::setDockPageVisible(const QString &pageKey, bool visible)
     ads::CDockWidget *dock = m_dockByKey.value(pageKey, nullptr);
     if (!dock)
         return false;
+    // 旧布局可能把面板留成浮动窗口；打开时先收回所属停靠区，再切显隐。
+    if (visible && dock->isFloating())
+    {
+        for (auto it = m_docksByArea.constBegin(); it != m_docksByArea.constEnd(); ++it)
+        {
+            if (it.value().contains(dock))
+            {
+                m_dock->addDockWidget(adsAreaFor(it.key()), dock);
+                break;
+            }
+        }
+    }
     // 只动这一个页签：同区其它页签（以及所在 dock 区本身）不受影响。
     dock->toggleView(visible);
     return true;
@@ -1301,6 +1317,7 @@ QJsonObject ShellBinder::captureState() const
     // 声明式快照：只描述"结果长什么样"，不含任何操作序列。
     // 于是恢复时缺失的部分可以安全降级（数据没打开、扩展没装上……）。
     QJsonObject state;
+    state.insert(QStringLiteral("layoutVersion"), kDockLayoutVersion);
     if (m_window)
     {
         state.insert(QStringLiteral("windowGeometry"),
@@ -1335,9 +1352,11 @@ bool ShellBinder::applyState(const QJsonObject &state)
             m_window->restoreState(QByteArray::fromBase64(ws.toLatin1()));
     }
 
-    // ADS 布局：缺失或版本不符时安全降级（保持当前布局）
+    // ADS 布局：缺失或版本不符时安全降级（保持当前默认布局）。
+    // W1b 改变了左栏 dock 树，旧快照必须跳过，否则会恢复出没有数据源入口的布局。
+    const int layoutVersion = state.value(QStringLiteral("layoutVersion")).toInt(0);
     const QString ads = state.value(QStringLiteral("adsLayout")).toString();
-    if (!ads.isEmpty() && m_dock)
+    if (layoutVersion >= kDockLayoutVersion && !ads.isEmpty() && m_dock)
         m_dock->restoreState(QByteArray::fromBase64(ads.toLatin1()));
 
     // ribbon 页签：越界则忽略（安全降级）。这里是构造期，页签栏尚未就位，
