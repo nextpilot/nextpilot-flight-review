@@ -1,279 +1,192 @@
 ---
 name: ai-develop-workflow
-description: 本仓库统一开发工作流（任务计划 + GitHub Flow + 提交推送）。任何开发任务、派发/编写 Plan、回填完成情况、commit/push 都必须遵循：先建 issue → 从 remote main 拉最新并建特性分支 → 开发验证 → 回填 issue → 建 PR → 待 PR 合并后自动关闭 issue → 结束。含 Plan 内容规范、分支命名、提交纪律、Gitee API 实操、PR 门槛。触发词：开发任务、修 bug、新建功能、任务计划、Plan、派发、回填、issue、PR、分支、github flow、commit、push、提交、推送、合代码。
+description: 本仓库双角色 AI 开发工作流（产品经理 Agent + 开发者 Agent）。产品经理负责需求、issue、验收与关闭；开发者负责实现、验证、分支与 PR。标准任务走 issue → 分支 → PR → 合并 → 关闭 issue；简单低风险修改可免 issue，但仍必须走分支、PR 和验证。含修改前确认、issue 规范、状态机、多 Agent 交接、分支提交、Gitee 平台操作与 PR 门槛。触发词：开发任务、修 bug、新建功能、任务计划、Plan、派发、回填、issue、PR、分支、github flow、commit、push、提交、推送、合代码、产品经理、开发者、验收、修改前确认、复述。
 ---
 
-# 开发工作流（Plan + GitHub Flow + 提交推送）
+# 开发工作流（PM/Dev 双角色 + GitHub Flow）
 
-main 是唯一长期分支、始终可发布可回退。所有改动以 **issue 为任务载体**，经短命特性分支 + PR 进入 main，不设 develop 等中间分支。
+main 是唯一长期分支，始终可发布、可回退。所有改动经短命特性分支 + PR 进入 main，不设 develop 等中间分支。
 
-**一个任务 = 一个 issue = 一个特性分支 = 一个 PR。** 四者一一对应，缺一不可，顺序不可颠倒。
+本工作流模拟多个 Agent 协同开发。**issue 是需求与验收的载体，PR 是代码与验证的载体。** 两个角色、两条流程，不允许互相越权。
 
-## 1. 端到端闭环（每个任务严格按此顺序）
+## 0. 前置纪律与必读索引
 
+`references/` 下的文件不会自动全文注入。到对应步骤时，必须 `Read` 对应文件后再执行。
+
+| 场景 | 必读 |
+|---|---|
+| 收到任何修改类指令，动手前 | `references/change-confirmation.md` |
+| 写代码注释、文档、提交信息、PR 描述、回复文字 | `.claude/rules/terse-writing.md` |
+| PM 建 issue / 更新 issue 正文 | `references/issue-authoring.md` |
+| Dev 领取、交接、PM 验收、关闭或重开 issue | `references/issue-lifecycle.md` |
+| 建分支、提交、rebase、推送、建 PR、合并 | `references/git-pr-delivery.md` |
+| 调用 Gitee API、排查平台错误 | `references/gitee-operations.md` |
+
+**修改前确认的硬要求：** 先复述“改什么、怎么改、哪里含糊”，等用户明确同意后才动手。沉默、未回复、话题转移、仅提问都不算同意。
+
+**写作的硬要求：** 不引用出处，不追述历史；注释只写做什么、怎么做、必要的简单原因。完整规则以 `.claude/rules/terse-writing.md` 为准。
+
+## 1. 核心原则
+
+- **PM 决定“做什么、算不算完成”，Dev 负责“怎么改、有没有验证”。**
+- 标准任务：**一个 issue = 一个特性分支 = 一个 PR**，顺序不可颠倒。
+- 简单修改：允许免 issue，但**不允许免分支、免 PR、免验证**。
+- 所有跨 Agent 的信息必须写回 issue 或 PR，不能只存在于对话上下文里。
+- 一个 PR 只承载一个语义单元；相互独立的改动拆成多个 PR。
+- 拿不准是否“简单”时，一律按标准流程建 issue。
+
+## 2. 角色与职责
+
+同一 Agent 可以在不同任务中扮演不同角色，但同一任务内不得混用。**每次接手任务时，先声明当前角色。**
+
+### 2.1 产品经理 Agent（PM）
+
+- 负责需求澄清、拆解和优先级判断。
+- 负责创建、更新、重开和关闭 issue。
+- 负责定义目标、范围、排除项和验收标准。
+- 负责跟踪 issue 进度，处理阻塞、范围变更和验收争议。
+- 负责审查 PR 是否满足 issue 的验收标准。
+- PR 合并后，负责回填验收结论并关闭 issue。
+- 不直接修改业务代码；不替开发者决定实现细节。
+- 不关闭未合并 PR 对应的 issue；不把“已提交 PR”当成“已完成”。
+
+### 2.2 开发者 Agent（Dev）
+
+- 负责领取 issue，按 issue 正文实现。
+- 负责从最新 `main` 切出短命特性分支。
+- 负责编码、编译、测试和自检。
+- 负责提交 commit、推送分支、创建 PR。
+- 负责在 PR 中关联 issue，写清变更内容和验证结果。
+- 负责响应 review 和 CI 失败，在同一分支继续修复。
+- 不擅自修改需求、验收标准或扩大范围；发现问题回报 PM。
+- 不直接 push `main`，不自行关闭 issue，不自行合并 PR。
+
+### 2.3 用户
+
+- 最终验收人。
+- 对高风险操作、强推、历史改写、绕过保护分支拥有最终授权。
+- 可代替 PM 执行合并；合并后仍由 PM 关闭 issue。
+
+## 3. 流程 A：标准 issue 流程
+
+适用于新功能、缺陷修复、重构、契约/数据/构建/架构变更，以及任何拿不准是否“简单”的修改。
+
+```text
+PM 建 issue
+  → Dev 领取并标记 in-progress
+  → Dev 从最新 main 建分支
+  → Dev 开发、测试、提交
+  → Dev 推送并创建 PR，关联 issue
+  → Dev 标记 in-review，请求 PM 验收
+  → PM 审查：通过则合并；不通过则退回 Dev
+  → PR merged 后，PM 回填验收结论并关闭 issue
+  → Dev 删除特性分支
 ```
-①建 issue → ②同步 remote main → ③建特性分支 → ④开发+验证 → ⑤回填 issue → ⑥推送+建 PR → ⑦PR 合并后自动关 issue → 结束
-```
 
-| 步骤 | 动作 | 完成标志 |
-|---|---|---|
-| ① 建 issue | 收到任务**第一件事**就是建 issue，正文内容按 §2 写（目标/范围/验收标准） | 拿到 issue 编号（如 `IKX6N2`） |
-| ② 同步 main | `git fetch origin` → `git checkout main` → `git reset --hard origin/main`（或 `pull --ff-only`） | 本地 main == origin/main |
-| ③ 建特性分支 | 从**最新** main 切出 `<类型>/<简述>` 分支（规则见 §3） | `git branch --show-current` 为特性分支 |
-| ④ 开发+验证 | 在特性分支编码、编译、跑测试，全部通过 | ctest/测试全绿、构建无 error |
-| ⑤ 回填 issue | 在本 issue 评论写「完成情况」（提交号、变更、测试结果、偏差，见 §2.4） | issue 中有完成记录评论 |
-| ⑥ 推送+建 PR | rebase 至最新 main 后推送特性分支（细节见 §4），建 PR（见 §6） | PR 创建成功（拿到 PR 号） |
-| ⑦ 关 issue+收尾 | **轮询 PR 状态直到 merged**，随后在 issue 回填完成说明评论、自动关闭 issue（见 §5.3）、删除特性分支 | issue 有完成记录评论且 `state=closed`，分支已删 |
+| 步骤 | 负责人 | 动作 | 完成标志 | 必读 |
+|---|---|---|---|---|
+| ① 建 issue | PM | 查重后写 issue | 拿到 issue 编号（如 `IKX6N2`） | `issue-authoring.md` |
+| ② 领取 | Dev | 在 issue 评论领取，声明分支和计划 | issue 状态为 `in-progress` | `issue-lifecycle.md` |
+| ③ 建分支 | Dev | 从最新 `main` 切出 `<类型>/<简述>` | 当前分支为特性分支 | `git-pr-delivery.md` |
+| ④ 开发验证 | Dev | 编码、编译、跑测试，全部通过 | 构建无 error，测试全绿 | — |
+| ⑤ 提交 PR | Dev | rebase 最新 main 后推送并建 PR | PR 创建成功，关联 issue | `git-pr-delivery.md`、`gitee-operations.md` |
+| ⑥ 评审验收 | PM | 按验收标准审查；不通过退回 | `in-review` → 通过或退回 | `issue-lifecycle.md` |
+| ⑦ 合并关闭 | PM/用户 | 合并 PR，回填验收结论，关闭 issue | PR `merged`，issue `closed` | `issue-lifecycle.md`、`gitee-operations.md` |
+| ⑧ 收尾 | Dev | 删除本地和远端特性分支 | 分支已删 | — |
 
 **关键约束：**
 
-- **先有 issue 再动手**。禁止"先写代码后补 issue"；任务再小（含文档、配置）也先建 issue。
-- **⑦ 必须自动关闭**：建完 PR 不是终点。要持续跟踪 PR 状态，一旦合并立即关闭 issue，形成闭环；禁止 PR 合并后把 issue 晾着 open。
-- 任一步未达标不得进入下一步；验证失败在步骤 ④ 内修复后重跑，不携带失败状态前进。
+- PM 建 issue 前先查重。同一问题已有 open issue 的，更新原 issue，不重复创建。
+- Dev 领取 issue 后才开工。同一 issue 同时只允许一个 Dev 负责。
+- 分支必须从最新 `main` 切出；提交信息必须引用 issue 编号。
+- PR 描述首行写 `Closes <issue-id>`，并附 issue 链接。不依赖平台自动关闭；最终以 PM 核实后手动关闭为准。
+- PR 合并由 PM 或用户执行。Dev 只负责提交 PR 和响应评审。
+- issue 只能由 PM 关闭。Dev 完成工作时标记 `in-review`，不能自行关闭。
 
-## 2. 任务计划（Plan / issue）内容规范
+**PR 不通过时：**
 
-Plan 是设计师与执行 agent 之间的**完整工作契约**：执行 agent 不依赖对话历史，仅凭 issue 正文即可正确开工并交付。
+- 实现缺陷、测试失败、CI 失败：Dev 在同一分支追加提交修复，不另开 PR。
+- 验收标准不清或需要变更：PM 更新 issue 正文，Dev 按新标准继续。
+- 范围明显扩大：PM 拆出新 issue，原 issue 只保留原范围；新工作走新分支、新 PR。
+- 无法继续：PM 标记 `blocked`，写明阻塞原因、需要谁决策、下一步动作。
 
-### 2.1 载体管理
+## 4. 流程 B：简单修改，免 issue
 
-- **唯一载体**：gitee issue；禁止在仓库写 plan md 文件（避免污染仓库）。
-- **平台**：`nextpilot/nextpilot-advance-plotscope`；后续迁 GitHub 随仓库一起搬。
-- **组织**：大阶段建一个**父 issue**（总 Plan + 任务清单）+ 同名里程碑；每个工作单元一个**子 issue**，独立派发、评论、关闭。
-- **标题**：`[<阶段字母><步骤号><子步骤字母>] <动宾标题>`，如 `[P1a] 机制库 libs/archive：ZipReader 读端`（阶段字母自选但同主题一致；步骤号对应里程碑条目；子步骤字母可选）。
-- **标签**：主题标签（如 `M3`、`toolbox`）+ 归属里程碑。
-- **粒度**：一个 issue = 一个可独立验收的工作单元，禁止多个工作单元合并。
-- **状态**：open = 待执行/进行中；评论回填后 closed = 完成，永久可查。
-- **职责**：设计师定稿方案并建 issue、验收；执行 agent 按正文实施、遇缺陷中止报告（不得自行变更方案）；用户验收批准。
+适用于明确、低风险、可一次验证完成的修改。免 issue 不等于免流程。
 
-### 2.2 内容构成（6 问 → 9 章节，顺序固定不得增删合并）
+### 4.1 适用条件
 
-| 问题 | 章节 | 要点 |
-|---|---|---|
-| 为什么做 | ① 任务标识 ② 背景与依据 | ①编号/动宾标题/状态行（状态/执行agent/验收人/里程碑条目）；②问题陈述、现状盘点（给代码路径、可复用机制禁止重造）、依赖声明（前置 issue 链接 + 设计文档章节锚点） |
-| 做什么 | ③ 目标与范围 | 目标用**可观测结果**表述（不用"完善/优化"单独成条）；**排除项必须显式列出** |
-| 怎么做 | ④ 设计方案 | 只记本单元新决策（接口草图/数据格式/理由）；与里程碑文档重复处用锚点引用，禁止复制全文；临时决定标注"本单元拍板" |
-| 在哪做 | ⑤ 变更清单 | 精确到文件路径：新增/修改/禁止触碰（后者给原因），禁用"相关模块"等模糊表述 |
-| 怎么做对 | ⑥ 实施步骤 ⑦ 验收标准 | ⑥按施工顺序编号、每步附验证方式、末步固定全量回归（写清配置×命令×通过标准）；⑦逐条可判定（测试名/行为断言/量化指标/产物），禁止"基本可用"等表述 |
-| 怎么算做完 | ⑧ 完成记录 ⑨ 交付后义务 | ⑧由执行 agent **完成后回填**、禁止预填，只记事实；⑨完成即须同步的文档/代码清单，未执行不算完成 |
+同时满足以下条件才算简单修改：
 
-### 2.3 质量标准
+- 不新增功能，只修复明确缺陷，或修改文档、注释、格式、文案、单点小重构。
+- 不改变公共 API、ABI、数据结构、持久化格式、构建依赖或架构边界。
+- 不涉及权限、安全、数据迁移、兼容性策略。
+- 改动集中在一个模块内，可在一个 PR 内完成并跑完回归。
+- 不需要 PM 做需求取舍。
 
-1. **自包含**：不读对话历史即可开工；
-2. **可判定**：验收标准每条可机械判定，步骤每步有验证方式；
-3. **单一事实来源**：设计内容只在设计文档或 plan 一处完整存在，另一处用锚点引用；
-4. **边界明确**：排除项与禁止触碰清单完备；
-5. **最小必要**：不含无关内容，超范围需求记入后续 plan。
+**拿不准时一律建 issue。** 不允许开发者先写代码，再倒推判断“这算简单修改”。
 
-### 2.4 完成记录回填（步骤 ⑤）
+### 4.2 流程
 
-仅记事实：提交号、实际变更文件（与⑤对照，超出须说明原因）、测试结果（数字）、与 plan 的偏差（做了什么 plan 未写的、什么未做、原因）。禁止"基本完成"一类不可判定结论。
-
-### 2.5 标准模板
-
-```markdown
-# [<阶段字母><步骤号><子步骤字母>] <动宾标题>
-
-> 状态：待执行｜执行 agent：（领取后填写）｜验收人：（用户）
-> 关联：里程碑条目 <Mx.y>｜设计依据 <设计文档 §锚点>
-
-## ① 任务标识
-<编号、标题、状态行；一句话任务陈述>
-
-## ② 背景与依据
-- 问题陈述：<为何需要本单元>
-- 现状盘点：<已有底座（代码路径）/ 缺口>
-- 依赖：<前置 plan 链接 / 设计文档锚点>
-
-## ③ 目标与范围
-- 目标：<可观测结果>
-- 排除项：<本单元明确不做>
-
-## ④ 设计方案
-<本单元新增决策：接口草图 / 数据格式 / 理由；重复内容给锚点>
-
-## ⑤ 变更清单
-- 新增：`path`（说明）
-- 修改：`path`（变更内容）
-- 禁止触碰：`path`（原因）
-
-## ⑥ 实施步骤
-1. <步骤>（验证：<判定方式>）
-N. 全量回归（口径：<配置 × 命令 × 通过标准>）
-
-## ⑦ 验收标准
-- [ ] <测试名 / 行为断言 / 量化指标 / 产物>
-- [ ] 回归：<口径>
-
-## ⑧ 完成记录
-（执行 agent 回填：提交号 / 实际变更 / 测试结果 / 偏差）
-
-## ⑨ 交付后义务
-- [ ] <文档/代码同步项>
+```text
+Dev 自检符合简单修改条件
+  → 从最新 main 建分支
+  → 开发、测试、提交
+  → 创建 PR，声明 No-Issue
+  → PM/用户评审并合并
+  → 删除分支，结束
 ```
 
-## 3. 分支与提交纪律
+### 4.3 PR 要求
 
-### 3.1 分支规则
+- 标题使用常规 `<type>: <动宾短语>`。
+- 描述中必须写明：
 
-| 规则 | 内容 |
-|---|---|
-| 命名 | `<类型>/<简述>`：`feat/`、`fix/`、`docs/`、`refactor/`、`chore/`（如 `fix/script-panel-overlap`）；功能用 `feat/`、缺陷用 `fix/` |
-| 寿命 | 短命：一个分支只承载一个工作单元（对应一个 issue），合并后即删 |
-| 起点 | 一律从**最新** main 切出；开工前先 fetch + 对齐 origin/main |
-| 禁止 | 直接向 main push（保护分支会拒绝，见 §5）；复用已合并分支；一个分支夹带多个不相关改动 |
-| 对应 | 分支名/提交信息/PR 描述都要能反查到 issue 编号 |
-
-### 3.2 提交纪律
-
-- 三阶段：**开发期**（编码与本地验证，不受分支限制）、**提交期**（git commit）、**推送期**（git push）受纪律约束。
-- 一个提交一个完整语义单元（编译通过、不破坏测试）；禁止"临时存一版"的废提交。
-- 提交信息：`<type>: <动宾短语>`（type 同分支前缀），正文写清做了什么、为什么；禁止 `update`/`fix` 等无信息量表述。
-- 提交信息引用 issue 编号（如 `IKX6N2`），便于自动关联。
-- 作者身份按项目约定设置（本项目 `latercomer <latercomer@qq.com>`），用 `git -c user.name=... -c user.email=... commit` 逐次指定，不改全局配置。
-- 禁止在主干分支上先 `git commit` 再迁移；应先检出特性分支，后提交。
-
-## 4. git 提交与推送执行（步骤 ④→⑥）
-
-### 4.1 判定与检出
-
-```bash
-git branch --show-current
+```text
+No-Issue: <为什么不需要 issue，例如 docs-only / 单文件文案修正 / 无行为变化>
+Change-Type: docs | fix | chore | refactor
+Verification: <编译与测试结果>
 ```
 
-- 当前为特性分支 → 转 §4.2。
-- 当前为主干分支且有 feature 改动 → 从最新 main 检出特性分支：
-  ```bash
-  git fetch origin
-  git checkout main && git reset --hard origin/main
-  git checkout -b <类型>/<简述>
-  ```
-  未提交改动随检出自动携带，无需 stash；主干上未推送的本地 feature 提交随分支一并携带，主干回退至远端原点。
-- HEAD 游离或仓库无提交 → 先与用户确认再操作。
+- 不写 `Closes`，不关联不存在的 issue。
+- 一旦发现改动触及契约、数据、依赖或范围扩大，立即停止免 issue 流程：由 PM 补建 issue，PR 改为关联该 issue，或关闭后重走标准流程。
 
-### 4.2 提交与本地测试
+## 5. 完成判定
 
-1. `git add` 相关文件后提交（遵循 §3.2，作者用 `git -c` 指定）。
-2. 推送前测试必须通过：编译、ctest/项目测试全绿；失败先修复；无测试条件须在提交说明注明。
-3. 相互独立的改动拆成多个提交，禁止合并为单一提交。
+标准 issue 流程同时满足才算完成：
 
-### 4.3 rebase 后推送
+- issue 状态为 `closed`；
+- 关联 PR 为 `merged`；
+- 验收标准全部通过；
+- 完成记录已回填；
+- 特性分支已删除；
+- 文档/配置同步已完成。
 
-```bash
-git fetch origin
-git rebase origin/main
-git push origin <特性分支>
-```
+简单修改流程同时满足才算完成：
 
-- rebase 冲突逐个解决后 `git rebase --continue`；无法解决则 `git rebase --abort` 回滚并报告。禁止为绕过冲突改用 merge 提交或强推。
-- 推送被拒（远端有新提交）→ 重新执行本步骤；禁止 `--force`。
-- `--force`、`--no-verify` 仅在用户明确要求时使用；hook 失败表明真实问题，应修根因。
-- 推送前自检：待推 ref 非主干；`git log origin/main..HEAD` 仅含本次 feature 提交；测试全绿；已 rebase 至远端最新。
+- PR 为 `merged`；
+- 编译与测试通过；
+- PR 中 `No-Issue` 理由成立；
+- 分支已删除。
 
-## 5. Gitee 平台实操（本项目专属，务必按此执行）
+## 6. AI 执行纪律
 
-本仓库是**企业 `nextpilot` 下的仓库**，main 为**保护分支**，普通个人仓库的 API 路径大多不可用。
-
-### 5.1 认证与令牌（三种方式，均已实测）
-
-令牌是**仓库级私人令牌**，所属账号 `latercomer`。**令牌运行时从用户获取，严禁写入仓库任何文件**（包括本 skill）。
-
-**① git 推送**——URL 内嵌令牌：
-
-```bash
-# 用户名必须是"令牌所属账号"，不是仓库属主！
-git push https://latercomer:<TOKEN>@gitee.com/nextpilot/nextpilot-advance-plotscope.git <refspec>
-```
-
-⚠️ 写 `nextpilot:<TOKEN>` 会报 403 `The token username invalid`——即令牌有效，用户名对不上账号也不行（实测踩坑）。拿不准所属账号时先查：`GET /api/v5/user?access_token=<TOKEN>` 返回的 `login` 字段就是正确用户名。
-
-**② API 调用**——推荐 **body/query 带 `access_token` 参数**（所有已验证端点均用此形式，最稳）：
-
-```bash
-# JSON 形式（建 PR 等）
-curl -s -X POST "https://gitee.com/api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls" \
-  -H "Content-Type: application/json" \
-  -d '{"access_token": "<TOKEN>", "title": "...", ...}'
-
-# 表单形式（建 issue/评论/关 issue 等，--data-urlencode 自动转义）
-curl -s -X POST "https://gitee.com/api/v5/repos/nextpilot/issues" \
-  --data-urlencode "access_token=<TOKEN>" \
-  --data-urlencode "repo=nextpilot-advance-plotscope" \
-  --data-urlencode "title=..."
-```
-
-**③ header 形式**（部分端点可用，不如 ② 可靠，不推荐首选）：
-
-```bash
-curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
-```
-
-所需 scope：`issues`（建/关 issue）、`notes`（评论）、`pull_requests`（PR）。企业级操作（`/enterprises/...` 路径）仓库级令牌无权，一律走 §5.2 的 repos 扁平路径。
-
-### 5.2 关键 API 端点（均已验证）
-
-| 操作 | 方法 + 路径 | 备注 |
-|---|---|---|
-| 建 issue | `POST /api/v5/repos/nextpilot/issues` | 表单参数：`repo=nextpilot-advance-plotscope` + `title`/`body` + `issue_type=任务`（企业扁平路径，**路径里不带仓库名**） |
-| 读/列 issue | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues` | `number` 形如 `IKX6N2` |
-| 追加评论（回填） | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | 表单参数 `body`（Markdown） |
-| 读评论 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | enterprises 路径会因仓库级令牌报 403，用 repos 路径 |
-| 建 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls` | JSON body：`head`/`base`/`title`/`body` |
-| 更新 PR 描述 | `PATCH /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | JSON body：`body`（新描述全文）；关联 issue 用 `Closes IKxxxxx` 写进描述首行 |
-| 审批 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review` | body 带 `event=APPROVE`；成功返回 204 |
-| 查 PR 状态 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | 看 `state`（`open`/`merged`/`closed`）、`mergeable` |
-| 合并 PR | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge` | body 带 `merge_method=merge` |
-| 关闭 issue | `PATCH /api/v5/repos/nextpilot/issues/<num>` | **必须** 表单参数带 `repo=nextpilot-advance-plotscope` + `state=closed`，返回 `state: closed` |
-| 删文件（免强推） | `DELETE /api/v5/repos/nextpilot/nextpilot-advance-plotscope/contents/<path>` | body 带 `sha`/`branch`/`message`；清理误传文件用，绕过保护分支 |
-
-**踩坑提示：**
-
-- **git 推送用户名 = 令牌所属账号**：`https://nextpilot:<TOKEN>@...` → 403 `The token username invalid`（令牌本身有效也没用）；改 `https://latercomer:<TOKEN>@...` 即成功。不确定所属账号先 `GET /api/v5/user?access_token=<TOKEN>` 看 `login`。
-- **项目型仓库 issue 只走扁平路径**：`POST/PATCH /repos/nextpilot/issues`（仓库名放表单参数 `repo`）。标准路径 `POST/PATCH /repos/nextpilot/nextpilot-advance-plotscope/issues/<num>` → 404/「project or enterprise」——项目型仓库的 issue 编号是 `IKxxxxx` 标识串，不是纯数字。
-- 关闭 issue **只能**用 `PATCH /repos/nextpilot/issues/<num>` + `repo=`。`PATCH /enterprises/nextpilot/issues/<num>` → 403「仓库级私人令牌无权」。
-- main 是保护分支：**任何直推**（哪怕带令牌）都返回 `No permission to push this protected branch`。改动只能经 PR；清理误传文件用 contents API（见上表），不强推。
-- PR 合并可能被门禁拦截：`未通过设置的审查`（需先 approve）或 `未通过设置的测试`（CI 门禁）。遇此先排查 review 与 status，不绕过。
-- **不要把调试/截图图片传进仓库**。评论框「上传图片」是图床（存服务器、不进仓库），但只认网页登录 cookie，令牌调用返回 401；v5 API 无开放图床上传端点。需要内嵌图片时用网页登录后上传或外链，禁止 `git add` 截图。
-
-### 5.3 PR 合并后自动关闭 issue（步骤 ⑦ 的实现）
-
-```
-loop（每隔一段时间，设上限避免无限等待）：
-    GET PR 状态
-    if state == "merged":
-        POST /repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments
-            # 先在 issue 上回填「完成情况」评论：PR 号、提交号、变更摘要、
-            # 测试结果（数字）、与 plan 的偏差——关闭前 issue 里必须有完成记录
-        PATCH /repos/nextpilot/issues/<issue编号>  { repo, state=closed }   # 关闭 issue
-        git push origin --delete <特性分支>；git branch -D <特性分支>        # 删分支
-        结束
-    elif state == "closed":   # PR 被关但未合并
-        报告用户，不关 issue，查明原因
-    else:                     # open
-        继续等待；若有 CI/review 未过则先修复
-```
-
-- 关闭前确认 PR 确实 `merged`，**不要根据"已提交 PR"就提前关闭**。
-- 若 CLI 会话无法持续轮询，交付说明中明确写下「PR 号 + 待合并后关闭 issue IKXxxxx」待办，由下次会话接续，不能默认已完成。
-
-## 6. PR 规则
-
-1. 推送特性分支后建 PR：`base: main ← compare: 特性分支`。
-2. PR 描述必含：做什么、关联 issue（`#<编号>` 或链接）、验证方式与结果（测试数字）。
-3. 合并门槛（全部满足才能合）：
-   - 全量编译无 error；ctest 全绿（口径见 `docs/develop/testing.md`）；
-   - 无越层依赖（分层守卫随 configure 强制）；
-   - 涉及架构/契约/文档的改动已同步对应文档；
-   - Gitee 侧 review 已通过、CI 门禁已过（见 §5.2）。
-4. 合并方式：普通 merge 或 squash（保持 main 历史线性、每节点语义完整）。
-5. 合并后按 §5.3 立即关闭 issue 并删除特性分支（本地+远端）。
-
-## 7. AI 执行纪律与完成判定
-
-- AI 不直接 push main；即使是文档小改也走「建 issue → 特性分支 → PR → 关 issue」全流程。
-- 用户显式说「直接推 main / 强推」时可例外，但本项目 main 为保护分支，技术上大概率被拒，应提前说明。
+- AI 不直接 push `main`；标准任务走「issue → 特性分支 → PR → 合并 → 关 issue」全流程。
+- 简单修改可按 §4 免 issue，但必须走「特性分支 → PR → 验证 → 合并」。
+- 用户显式说「直接推 main / 强推」时可例外，但本项目 `main` 为保护分支，技术上大概率被拒，应提前说明。
 - PR 验证失败：修复后追加提交再推，不 amend 已推送的提交。
-- 迁移期例外：结构性大改（目录重组、历史清理）经用户拍板可单节点强推 main 或用 contents API 清理；迁移定稿后本例外作废，一律本闭环。
+- 迁移期例外：结构性大改（目录重组、历史清理）经用户拍板可单节点强推 `main` 或用 contents API 清理；迁移定稿后本例外作废，一律按本闭环。
 - 全程不把令牌、截图、调试产物写进仓库。
-- 危险操作（force push、历史改写、绕过保护分支）按 `confirm-first` skill 先向用户确认。
-- **完成判定**：⑦ 全部达成（issue closed ∧ PR merged ∧ 特性分支已删 ∧ 验证全绿 ∧ §2.2 的⑨交付后义务已执行）才算「任务结束」。
+- 危险操作（force push、历史改写、绕过保护分支）先按 `references/change-confirmation.md` 复述并取得用户确认。
+
+## 7. Reference 索引
+
+| 文件 | 内容 |
+|---|---|
+| `references/change-confirmation.md` | 修改前复述、等待同意、执行流程、自查 |
+| `references/issue-authoring.md` | issue 载体、9 章节、模板、质量标准 |
+| `references/issue-lifecycle.md` | 状态机、交接模板、关闭与重开 |
+| `references/git-pr-delivery.md` | 分支、提交、rebase、推送、PR、合并门槛 |
+| `references/gitee-operations.md` | 令牌、API 端点、平台踩坑、合并后关闭 issue |
+
+写作规范不在 `references/` 下，唯一正文是 `.claude/rules/terse-writing.md`。
