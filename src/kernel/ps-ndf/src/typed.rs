@@ -137,6 +137,49 @@ impl ColumnData {
     }
 
     /// 追加同类型数据；类型不一致返回错误，调用方负责回滚。
+    /// 按行置换重排列值：`out[i] = self[order[i]]`（S2 乱序入口 reorder 用）。
+    pub fn reorder_by(&self, order: &[usize]) -> ColumnData {
+        fn gather<T: Clone>(v: &[T], order: &[usize]) -> Vec<T> {
+            order.iter().map(|&i| v[i].clone()).collect()
+        }
+        match self {
+            ColumnData::F64(v) => ColumnData::F64(gather(v, order)),
+            ColumnData::F32(v) => ColumnData::F32(gather(v, order)),
+            ColumnData::I64(v) => ColumnData::I64(gather(v, order)),
+            ColumnData::U64(v) => ColumnData::U64(gather(v, order)),
+            ColumnData::I32(v) => ColumnData::I32(gather(v, order)),
+            ColumnData::U32(v) => ColumnData::U32(gather(v, order)),
+            ColumnData::I16(v) => ColumnData::I16(gather(v, order)),
+            ColumnData::U16(v) => ColumnData::U16(gather(v, order)),
+            ColumnData::I8(v) => ColumnData::I8(gather(v, order)),
+            ColumnData::U8(v) => ColumnData::U8(gather(v, order)),
+            ColumnData::Bool(v) => ColumnData::Bool(gather(v, order)),
+            ColumnData::Text(v) => ColumnData::Text(gather(v, order)),
+        }
+    }
+
+    /// 按归并序列合并两列：`out[t] = is_new[t] ? new[order[t].1] : old[order[t].1]`。
+    pub fn merge_gather(&self, new: &ColumnData, order: &[(bool, usize)]) -> ColumnData {
+        fn g<T: Clone>(a: &[T], b: &[T], order: &[(bool, usize)]) -> Vec<T> {
+            order.iter().map(|&(is_new, k)| if is_new { b[k].clone() } else { a[k].clone() }).collect()
+        }
+        match (self, new) {
+            (ColumnData::F64(a), ColumnData::F64(b)) => ColumnData::F64(g(a, b, order)),
+            (ColumnData::F32(a), ColumnData::F32(b)) => ColumnData::F32(g(a, b, order)),
+            (ColumnData::I64(a), ColumnData::I64(b)) => ColumnData::I64(g(a, b, order)),
+            (ColumnData::U64(a), ColumnData::U64(b)) => ColumnData::U64(g(a, b, order)),
+            (ColumnData::I32(a), ColumnData::I32(b)) => ColumnData::I32(g(a, b, order)),
+            (ColumnData::U32(a), ColumnData::U32(b)) => ColumnData::U32(g(a, b, order)),
+            (ColumnData::I16(a), ColumnData::I16(b)) => ColumnData::I16(g(a, b, order)),
+            (ColumnData::U16(a), ColumnData::U16(b)) => ColumnData::U16(g(a, b, order)),
+            (ColumnData::I8(a), ColumnData::I8(b)) => ColumnData::I8(g(a, b, order)),
+            (ColumnData::U8(a), ColumnData::U8(b)) => ColumnData::U8(g(a, b, order)),
+            (ColumnData::Bool(a), ColumnData::Bool(b)) => ColumnData::Bool(g(a, b, order)),
+            (ColumnData::Text(a), ColumnData::Text(b)) => ColumnData::Text(g(a, b, order)),
+            _ => unreachable!("列类型已校验一致"),
+        }
+    }
+
     pub fn append(&mut self, other: ColumnData) -> Result<(), String> {
         if self.value_type() != other.value_type() {
             return Err("列类型不一致".into());
@@ -302,6 +345,17 @@ impl NullBits {
     /// 位图里是否存在任何 null。全 0（全有效）时 C ABI 可以省掉位图借用。
     pub fn has_any_null(&self) -> bool {
         self.bits.iter().any(|b| *b != 0)
+    }
+
+    /// 按行置换重排 null 位图：`out[i] = self[order[i]]`（S2 乱序入口 reorder 用）。
+    pub fn reorder_by(&self, order: &[usize]) -> Self {
+        let mut out = Self::new(order.len());
+        for (i, &src) in order.iter().enumerate() {
+            if self.is_null(src) {
+                out.set_null(i, true);
+            }
+        }
+        out
     }
 }
 
@@ -922,6 +976,93 @@ impl Table {
         Ok(())
     }
 
+    /// 断线补传：把一段已按 time_ns 排序的历史行有序合并进单调表。
+    /// 内核时间轴仍保持单调非降，二分查询的前提不被放宽。
+    /// 合并点可能在表中部，LOD 金字塔的全局行锚定会被打乱，故整塔重建。
+    pub fn merge_sorted_rows(
+        &mut self,
+        time_ns: &[i64],
+        columns: Vec<(ColumnData, NullBits)>,
+    ) -> Result<(), String> {
+        if columns.len() != self.columns.len() {
+            return Err(format!(
+                "列数 {} 与表 {} 已有列数 {} 不一致",
+                columns.len(), self.name, self.columns.len()
+            ));
+        }
+        let m = time_ns.len();
+        if m == 0 {
+            return Ok(());
+        }
+        if time_ns.windows(2).any(|w| w[1] < w[0]) {
+            return Err(format!("表 {} 的补传批次内时间轴乱序", self.name));
+        }
+        for (i, (data, _)) in columns.iter().enumerate() {
+            if data.len() != m {
+                return Err(format!(
+                    "列 {} 长度 {} 与补传行数 {} 不一致",
+                    self.columns[i].name, data.len(), m
+                ));
+            }
+            if data.value_type() != self.columns[i].value_type() {
+                return Err(format!("列 {} 类型不一致", self.columns[i].name));
+            }
+        }
+        // 归并索引：现有 [0,n) 与新 [0,m) 两条有序序列，按 time_ns 稳定合并（相等时旧行在前）。
+        let old_times = self.time_ns.as_slice();
+        let n = old_times.len();
+        let mut order: Vec<(bool, usize)> = Vec::with_capacity(n + m);
+        let (mut i, mut j) = (0usize, 0usize);
+        while i < n && j < m {
+            if old_times[i] <= time_ns[j] {
+                order.push((false, i));
+                i += 1;
+            } else {
+                order.push((true, j));
+                j += 1;
+            }
+        }
+        while i < n { order.push((false, i)); i += 1; }
+        while j < m { order.push((true, j)); j += 1; }
+
+        let merged_time: Vec<i64> = order.iter()
+            .map(|(is_new, k)| if *is_new { time_ns[*k] } else { old_times[*k] })
+            .collect();
+        // seq：旧行保留原 seq，新行从 next_seq 起按补传顺序编号；再按合并顺序重排。
+        let old_seq = self.seq.as_slice();
+        let mut merged_seq: Vec<u64> = Vec::with_capacity(n + m);
+        let mut next = self.next_seq;
+        for (is_new, k) in &order {
+            if *is_new {
+                merged_seq.push(next);
+                next += 1;
+            } else {
+                merged_seq.push(old_seq[*k]);
+            }
+        }
+        self.next_seq = next;
+
+        // 逐列重建：data 用 merge_gather；nulls 按同一 order 逐位取；LOD 整塔失效、行偏移归零。
+        for (ci, (new_data, new_nulls)) in columns.into_iter().enumerate() {
+            let col = &mut self.columns[ci];
+            let old_data = col.data.clone();
+            let old_nulls = col.nulls.clone();
+            col.data = old_data.merge_gather(&new_data, &order);
+            let mut merged_nulls = NullBits::new(order.len());
+            for (dst, (is_new, k)) in order.iter().enumerate() {
+                let src_null = if *is_new { new_nulls.is_null(*k) } else { old_nulls.is_null(*k) };
+                if src_null { merged_nulls.set_null(dst, true); }
+            }
+            col.nulls = merged_nulls;
+            col.lod = LodPyramid::default();
+            col.dropped = 0;
+        }
+        self.time_ns = Arc::new(merged_time);
+        self.seq = merged_seq;
+        self.trim_to_budget();
+        Ok(())
+    }
+
     pub fn column(&self, name: &str) -> Option<&Column> {
         self.column_index(name).and_then(|i| self.columns.get(i))
     }
@@ -1181,6 +1322,9 @@ impl Dataset {
 
     /// frame_batch 的宿主落库入口：表不存在则按首批列建表，存在则校验列顺序后追加行。
     /// `columns` 依次为 `(name, unit, data, nulls)`；nulls 只描述本批行。
+    ///
+    /// S2 乱序入口 reorder：上层"append 不管顺序"，本层按 time_ns 稳定排序后再灌入内核，
+    /// 内核单调校验与二分地基不变。批首早于表尾时按断线补传走有序合并。
     pub fn append_frame(
         &mut self,
         table: &str,
@@ -1190,6 +1334,25 @@ impl Dataset {
         if time_ns.is_empty() {
             return Err("frame_batch 至少需要 1 行".into());
         }
+        // 只在本批非单调时计算置换；已单调时 None，零开销直通。
+        let order = if time_ns.windows(2).any(|w| w[1] < w[0]) {
+            let mut ord: Vec<usize> = (0..time_ns.len()).collect();
+            ord.sort_by_key(|&i| time_ns[i]); // stable：相等时间保持到达顺序
+            Some(ord)
+        } else {
+            None
+        };
+        let (time_ns, columns) = match order {
+            Some(ord) => {
+                let sorted_t = ord.iter().map(|&i| time_ns[i]).collect();
+                let sorted_c = columns.into_iter()
+                    .map(|(n, u, d, nl)| (n, u, d.reorder_by(&ord), nl.reorder_by(&ord)))
+                    .collect();
+                (sorted_t, sorted_c)
+            }
+            None => (time_ns, columns),
+        };
+
         if let Some(idx) = self.table_index(table) {
             let t = &self.tables[idx];
             if columns.len() != t.columns.len() {
@@ -1201,7 +1364,12 @@ impl Dataset {
                 }
             }
             let rows = columns.into_iter().map(|(_, _, data, nulls)| (data, nulls)).collect();
-            self.tables[idx].append_rows(&time_ns, rows)
+            let is_backfill = t.time_ns.last().is_some_and(|last| time_ns[0] < *last);
+            if is_backfill {
+                self.tables[idx].merge_sorted_rows(&time_ns, rows)
+            } else {
+                self.tables[idx].append_rows(&time_ns, rows)
+            }
         } else {
             let mut cols = Vec::with_capacity(columns.len());
             for (name, unit, data, nulls) in columns {
@@ -1284,9 +1452,8 @@ mod tests {
         let mut out = [0.0; 3];
         let n = t.lod_minmax(0, 1_000_000, 2_000_000, 1, &mut out);
         assert_eq!(n, 1);
-        // x = 桶几何中心：窗口 [1e6,2e6] px=1 → 中心 1.5e6 us = 1.5 秒。
-        // （旧测试误写 1.0，基线上即失败；见 M2.7 交付说明。）
-        assert_eq!(out[0], 1.5);
+        // x = 桶几何中心：时间轴为纳秒，窗口 [1e6,2e6] ns px=1 → 中心 1.5e6 ns = 0.0015 秒。
+        assert_eq!(out[0], 0.0015);
         assert_eq!(out[1], 1.0);
         assert_eq!(out[2], 2.0);
     }
@@ -1783,5 +1950,86 @@ mod tests {
         assert!(!t.columns[0].is_null(0));
         assert!(t.columns[0].is_null(2));
         assert_eq!(t.columns[0].value_as_f64(2), None);
+    }
+
+    // ---------- S2 乱序入口 reorder ----------
+
+    fn frame(times: &[i64], vals: &[f64]) -> Vec<(String, String, ColumnData, NullBits)> {
+        vec![(
+            "v".into(), "".into(),
+            ColumnData::F64(vals.to_vec()),
+            NullBits::new(vals.len()),
+        )]
+    }
+
+    fn f64_col(t: &Table, name: &str) -> Vec<f64> {
+        match &t.column(name).unwrap().data {
+            ColumnData::F64(v) => v.clone(),
+            _ => panic!("期望 F64 列"),
+        }
+    }
+
+    #[test]
+    fn reorder_out_of_order_batch_keeps_time_monotonic_and_values_aligned() {
+        let mut ds = Dataset::new();
+        // 到达顺序时间乱序：t=30,10,20 对应值 3,1,2；reorder 后应为 (10,1),(20,2),(30,3)。
+        ds.append_frame("att", vec![30_000, 10_000, 20_000], frame(&[], &[3.0, 1.0, 2.0])).unwrap();
+        let t = ds.find_table("att").unwrap();
+        assert_eq!(t.time_ns.as_slice(), &[10_000, 20_000, 30_000]);
+        assert_eq!(f64_col(t, "v"), vec![1.0, 2.0, 3.0]);
+        assert_eq!(t.lower_bound(20_000), 1);
+    }
+
+    #[test]
+    fn reorder_matches_ordered_ingest_window_query() {
+        let mut a = Dataset::new();
+        let mut b = Dataset::new();
+        let times = vec![50_000i64, 10_000, 40_000, 20_000, 30_000];
+        let vals = vec![5.0f64, 1.0, 4.0, 2.0, 3.0];
+        // a 乱序灌入；b 有序灌入作为对拍基准。
+        a.append_frame("t", times.clone(), frame(&[], &vals)).unwrap();
+        let (ot, ov) = (vec![10_000i64, 20_000, 30_000, 40_000, 50_000], vec![1.0f64, 2.0, 3.0, 4.0, 5.0]);
+        b.append_frame("t", ot, frame(&[], &ov)).unwrap();
+        let ta = a.find_table("t").unwrap();
+        let tb = b.find_table("t").unwrap();
+        assert_eq!(ta.time_ns.as_slice(), tb.time_ns.as_slice());
+        assert_eq!(f64_col(ta, "v"), f64_col(tb, "v"));
+        // 窗口查询对拍：[15ms, 45ms]，用 lower_bound/upper_bound 取区间
+        let (s, e) = (ta.lower_bound(15_000), ta.upper_bound(45_000));
+        let (s2, e2) = (tb.lower_bound(15_000), tb.upper_bound(45_000));
+        assert_eq!((s, e), (s2, e2));
+        assert_eq!(&f64_col(ta, "v")[s..e], &f64_col(tb, "v")[s2..e2]);
+    }
+
+    #[test]
+    fn reorder_preserves_null_alignment() {
+        let mut ds = Dataset::new();
+        let mut nulls = NullBits::new(3);
+        nulls.set_null(0, true); // 到达行 0（t=30）为 null
+        ds.append_frame(
+            "t",
+            vec![30_000, 10_000, 20_000],
+            vec![("v".into(), "".into(), ColumnData::F64(vec![3.0, 1.0, 2.0]), nulls)],
+        ).unwrap();
+        let t = ds.find_table("t").unwrap();
+        // 原到达行 0 现在是排序后第 2 行（t=30）。
+        assert_eq!(t.time_ns.as_slice(), &[10_000, 20_000, 30_000]);
+        assert!(!t.column("v").unwrap().is_null(0));
+        assert!(!t.column("v").unwrap().is_null(1));
+        assert!(t.column("v").unwrap().is_null(2));
+    }
+
+    #[test]
+    fn backfill_history_segment_merges_and_keeps_binary_search_correct() {
+        let mut ds = Dataset::new();
+        ds.append_frame("t", vec![10_000, 20_000, 30_000], frame(&[], &[1.0, 3.0, 5.0])).unwrap();
+        // 断线补传一段更早的历史：5ms、25ms（补传内部也乱序到达 25 先到）。
+        ds.append_frame("t", vec![25_000, 5_000], frame(&[], &[4.0, 0.0])).unwrap();
+        let t = ds.find_table("t").unwrap();
+        assert_eq!(t.time_ns.as_slice(), &[5_000, 10_000, 20_000, 25_000, 30_000]);
+        assert_eq!(f64_col(t, "v"), vec![0.0, 1.0, 3.0, 4.0, 5.0]);
+        assert_eq!(t.lower_bound(25_000), 3);
+        assert_eq!(t.upper_bound(25_000), 4);
+        assert_eq!(t.time_sec(0), Some(0.000005));
     }
 }

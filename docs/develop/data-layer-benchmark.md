@@ -31,7 +31,7 @@ cargo bench -p ps-abi --bench bench_dataset -- --baseline /path/to/baseline.json
 
 注意：cargo bench 的工作目录是 crate 根目录 `ps-abi/`，路径参数据此解析。
 
-## 五类指标
+## 指标
 
 全部在 **100 万行 F64 列、纳秒时间轴、100Hz 递增** 上测，每类多轮取 p50/p99。
 
@@ -42,9 +42,11 @@ cargo bench -p ps-abi --bench bench_dataset -- --baseline /path/to/baseline.json
 | `window_read` | `readWindow` 有界读 | cap=4096，等步长抽稀 |
 | `column_raw` | `columnRaw` 整列借出 + memcpy | 零拷贝借出内部缓冲 |
 | `value_at` | 随机行号访问 | 逐元素 FFI，每轮 1000 次取均值 |
-| `append_batch` | 批追加吞吐 | 每批 5 万行 × 20 批，含增量建塔 |
+| `append_batch` | 批追加吞吐（批内有序） | 每批 5 万行 × 20 批，含增量建塔；走零开销直通 |
+| `append_batch_unordered` | 乱序批追加吞吐（S2 reorder） | 同上但批内时间逆序，度量入口 stable_sort 成本 |
 
-单位统一为微秒（us）。
+单位统一为微秒（us）。`append_batch` 与 `append_batch_unordered` 对拍可量化 reorder
+开销：批内有序时检测为 None、零开销直通；乱序时才付 O(k log k) 稳定排序。
 
 ## 判据设计
 
@@ -86,6 +88,10 @@ cargo bench -p ps-abi --bench bench_dataset -- --baseline <受管基线路径>
 | column_raw | ~300 | ~1,700 |
 | value_at | ~0.12 | ~0.17 |
 | append_batch | ~275 | ~3,500 |
+| append_batch_unordered | ~264 | ~3,300 |
+
+`append_batch_unordered` 与有序路径 p50 差异在噪声范围内（<10%），符合 S2 验收：
+乱序 reorder 的相对追加吞吐下降 <10%；且有序追加完全不受影响（走零开销直通）。
 
 注：本环境 `column_raw` p50 在 265~308us 间波动、`lod_build` 在 5.3~6.0ms 间波动，
 是共享 CPU 噪声，不是代码退化。

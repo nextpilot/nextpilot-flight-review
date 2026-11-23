@@ -1713,9 +1713,8 @@ mod tests {
                 ds, table.as_ptr(), name.as_ptr(), 0, 3_000, 2, out.as_mut_ptr(), 2
             );
             assert_eq!(n, 2);
-            // x = 桶几何中心：第二桶中心 2250us = 0.00225s
-            // （旧测试误写 0.002，基线上即失败；见 M2.7 交付说明）。
-            assert_eq!(out[3], 0.00225);
+            // x = 桶几何中心：时间轴为纳秒，第二桶中心 2250ns = 2.25e-6s。
+            assert_eq!(out[3], 2.25e-6);
             assert_eq!(out[4], 2.0);
             assert_eq!(out[5], 3.0);
             ps_dataset_free(ds);
@@ -1877,8 +1876,8 @@ mod tests {
                 time.as_mut_ptr(), out_bufs.as_ptr(), 6,
             );
             assert_eq!(n, 6);
-            // 行严格对齐：第 2 行 time=0.002，a=2，b=20；null → NaN。
-            assert!((time[2] - 0.002).abs() < 1e-9);
+            // 行严格对齐：第 2 行 time=2000ns=2e-6s，a=2，b=20；null → NaN。
+            assert!((time[2] - 2e-6).abs() < 1e-9);
             assert!((bufa[2] - 2.0).abs() < 1e-9);
             assert!((bufb[2] - 20.0).abs() < 1e-9);
             assert!(bufa[1].is_nan());
