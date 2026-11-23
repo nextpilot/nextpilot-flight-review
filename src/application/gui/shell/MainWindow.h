@@ -98,6 +98,11 @@ private:
     // 与"打开数据"同级处理；不占用任何可卸载模块。
     void openProtocolInspector();
 
+    // 工作区预设：保存 = 输入名字后把源清单与画布布局写进 .psw；
+    // 打开 = 列出现有预设选一个，按名整体重建。两步都落到 mod.workspace 的意图。
+    void saveWorkspacePreset(nextpilot::plotscope::host::RuntimeHost &host);
+    void openWorkspacePreset(nextpilot::plotscope::host::RuntimeHost &host);
+
     // 骨架自带的"协议编辑器"入口：创建/编辑/校验 .psproto 模板并试算单帧。
     // 纯 GUI 工具（编辑配置文档，不入 Dataset），按 id 特判弹对话框。
     void openProtocolEditor();
@@ -113,6 +118,14 @@ private:
     void saveWorkspaceUiConfig();
     void refreshActivityBadges();
     void toggleSideBar();
+    // 退出钩子：把当前现场（源清单 + 画布布局 + 各面板会话态）写成会话快照。
+    // 落盘失败只提示不阻断——退出路径不该因为磁盘问题卡住用户。
+    void closeEvent(QCloseEvent *event) override;
+
+    // 会话快照的写与读。config 段（sources+plots）是恢复数据现场的唯一依据，
+    // session 段是各面板自述的运行态；两段各自降级，互不牵连。
+    void writeSessionSnapshot();
+    void restoreSessionSnapshot();
 
     nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::host::RuntimeHost *m_host = nullptr; // 用于取设置（状态持久化）
@@ -123,6 +136,7 @@ private:
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     // 系统级 preferences.open handler（打开全局偏好对话框）；随窗口存亡。
     PreferencesIntentHandler *m_preferencesHandler = nullptr;
+    bool m_sessionRestored = false;   // 会话恢复只跑一次（首次显示后）
     bool m_ribbonLaidOut = false; // 是否已按真实宽度重建过 ribbon
 };
 

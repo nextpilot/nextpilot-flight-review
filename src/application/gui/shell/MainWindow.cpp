@@ -23,18 +23,28 @@
 
 #include "SARibbonMainWindow.h"
 
+#include <QDateTime>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QAction>
 #include <QKeySequence>
+#include "WorkspaceDataConfig.h"
+
+#include <QCloseEvent>
+#include <QInputDialog>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
+#include <QJsonValue>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QResource>
+#include <QSaveFile>
 #include <QShowEvent>
 #include <QTimer>
+#include <QStandardPaths>
 #include <QStatusBar>
 
 using namespace nextpilot::plotscope::foundation;
@@ -163,6 +173,14 @@ void MainWindow::declareStandardSlots()
     addSkeleton(QStringLiteral("file.settings"), QStringLiteral("设置"),
                 QStringLiteral("ribbon.group.file.document"), QStringLiteral("preferences.open"),
                 QStringLiteral("settings"), QStringLiteral("Ctrl+,"), 2);
+    // 工作区预设：整份"源清单 + 画布布局"存成 .psw，或按名字整体打开。
+    // 需要选名字/输入名字的交互，外壳按 id 特判弹窗，仍然落到 workspace.preset.* 意图。
+    addSkeleton(QStringLiteral("workspace.open"), QStringLiteral("打开工作区"),
+                QStringLiteral("ribbon.group.file.document"), QString(),
+                QStringLiteral("file_open"), QString(), 3);
+    addSkeleton(QStringLiteral("workspace.save"), QStringLiteral("保存工作区"),
+                QStringLiteral("ribbon.group.file.document"), QString(),
+                QStringLiteral("export"), QString(), 4);
     // 导出组：保存布局(0) / 导出设置(1) / 导出数据(2)
     addSkeleton(QStringLiteral("file.saveLayout"), QStringLiteral("保存布局"),
                 QStringLiteral("ribbon.group.file.export"), QStringLiteral("layout.save"),
@@ -535,6 +553,17 @@ void MainWindow::build(RuntimeHost &host)
             openProtocolInspector();
             return;
         }
+        // 工作区预设：需要输入/选择预设名，外壳按 id 特判，落盘与重建仍走意图层。
+        if (actionId == QStringLiteral("workspace.open"))
+        {
+            openWorkspacePreset(host);
+            return;
+        }
+        if (actionId == QStringLiteral("workspace.save"))
+        {
+            saveWorkspacePreset(host);
+            return;
+        }
         if (actionId == QStringLiteral("app.action.protocolEditor")
             || actionId == QStringLiteral("protocol.new")
             || actionId == QStringLiteral("protocol.open")
@@ -861,6 +890,70 @@ void MainWindow::openDataFile(RuntimeHost &host)
     statusBar()->showMessage(QStringLiteral("已载入数据集 #%1").arg(dsId));
 }
 
+void MainWindow::saveWorkspacePreset(RuntimeHost &host)
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, QStringLiteral("保存工作区"),
+                                               QStringLiteral("预设名（源清单 + 画布布局）"),
+                                               QLineEdit::Normal, QString(), &ok)
+                             .trimmed();
+    if (!ok || name.isEmpty())
+        return;
+
+    Intent intent;
+    intent.op = QStringLiteral("workspace.preset.save");
+    intent.params[QStringLiteral("name")] = name;
+    const Result<IntentResult> r = host.execute(intent);
+    if (!r)
+    {
+        statusBar()->showMessage(QStringLiteral("保存失败: %1").arg(r.error().message));
+        return;
+    }
+    const QVariantMap payload = r.value().payload.toMap();
+    statusBar()->showMessage(QStringLiteral("已保存工作区 %1（源 %2，页 %3）")
+                                 .arg(name)
+                                 .arg(payload.value(QStringLiteral("sources")).toInt())
+                                 .arg(payload.value(QStringLiteral("pages")).toInt()));
+}
+
+void MainWindow::openWorkspacePreset(RuntimeHost &host)
+{
+    // 先问有哪些预设（同一份目录由模块扫），再让用户选，最后按名整体打开。
+    Intent listIntent;
+    listIntent.op = QStringLiteral("workspace.preset.list");
+    const Result<IntentResult> listed = host.execute(listIntent);
+    if (!listed)
+    {
+        statusBar()->showMessage(QStringLiteral("读取预设列表失败: %1").arg(listed.error().message));
+        return;
+    }
+    QStringList names;
+    for (const QJsonValue &v : listed.value().payload.toJsonArray())
+        names.append(v.toObject().value(QStringLiteral("name")).toString());
+    if (names.isEmpty())
+    {
+        statusBar()->showMessage(QStringLiteral("还没有保存过工作区"));
+        return;
+    }
+
+    bool ok = false;
+    const QString name = QInputDialog::getItem(this, QStringLiteral("打开工作区"),
+                                               QStringLiteral("选择预设"), names, 0, false, &ok);
+    if (!ok || name.isEmpty())
+        return;
+
+    Intent intent;
+    intent.op = QStringLiteral("workspace.preset.open");
+    intent.params[QStringLiteral("name")] = name;
+    const Result<IntentResult> r = host.execute(intent);
+    if (!r)
+    {
+        statusBar()->showMessage(QStringLiteral("打开失败: %1").arg(r.error().message));
+        return;
+    }
+    statusBar()->showMessage(QStringLiteral("已打开工作区 %1").arg(name));
+}
+
 void MainWindow::openDataWithFormat(RuntimeHost &host, const QString &formatId)
 {
     // 点图库里的加载器，直接弹该格式的文件对话框。
@@ -913,6 +1006,110 @@ void MainWindow::openProtocolEditor()
     ProtocolEditorDialog::run(this, &m_appCtx, m_host);
 }
 
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    writeSessionSnapshot();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::writeSessionSnapshot()
+{
+    // 快照 = config 段（源清单 + 画布布局，恢复数据现场的唯一依据）
+    //      + session 段（各面板自述的运行态，hub 按登记序收集）。
+    const QJsonObject collected = m_appCtx.states().collect();
+
+    QJsonObject root;
+    root.insert(QStringLiteral("version"), 1);
+    root.insert(QStringLiteral("kind"), QStringLiteral("session"));
+    root.insert(QStringLiteral("savedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+    QJsonObject config;
+    WorkspaceDataConfig cfg = WorkspaceDataConfig::load(m_appCtx.settings());
+    config.insert(QStringLiteral("sources"),
+                  cfg.toJson().value(QStringLiteral("sources")).toArray());
+    config.insert(QStringLiteral("plots"),
+                  collected.value(QStringLiteral("document"))
+                      .toObject()
+                      .value(QStringLiteral("plot.document"))
+                      .toObject());
+    root.insert(QStringLiteral("config"), config);
+    root.insert(QStringLiteral("session"), collected.value(QStringLiteral("session")).toObject());
+
+    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
+                            .filePath(QStringLiteral("session"));
+    QDir().mkpath(dir);
+    // QSaveFile：写临时文件再原子替换，崩溃不会留下半截快照。
+    QSaveFile file(QDir(dir).filePath(QStringLiteral("last-session")));
+    if (!file.open(QIODevice::WriteOnly))
+    {
+        statusBar()->showMessage(QStringLiteral("会话快照写入失败: %1").arg(file.errorString()));
+        return;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    if (!file.commit())
+        statusBar()->showMessage(QStringLiteral("会话快照提交失败: %1").arg(file.errorString()));
+}
+
+void MainWindow::restoreSessionSnapshot()
+{
+    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
+                            .filePath(QStringLiteral("session"));
+    QFile file(QDir(dir).filePath(QStringLiteral("last-session")));
+    if (!file.exists() || !file.open(QIODevice::ReadOnly))
+        return;
+
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    file.close();
+    if (!doc.isObject())
+    {
+        // 快照损坏：整份丢弃照常启动——恢复是锦上添花，不能挡在启动路径上。
+        statusBar()->showMessage(QStringLiteral("会话快照损坏，已跳过恢复"), 5000);
+        return;
+    }
+
+    // 档位（app/startup.recovery，默认 layout）：
+    //   off    什么都不恢复；
+    //   layout 只还原源条目与画布，不读数据——启动不被大文件拖住；
+    //   full   layout + 真正摄取（data.workspace.restore）。
+    // 流式源在任何档位都只保留条目：连接要用户显式放行。
+    const QString mode = m_appCtx.settings()
+                             .value(QStringLiteral("app/startup.recovery"),
+                                    QStringLiteral("layout"))
+                             .toString();
+    if (mode == QStringLiteral("off"))
+        return;
+
+    const QJsonObject root = doc.object();
+    const QJsonObject config = root.value(QStringLiteral("config")).toObject();
+
+    const QJsonArray sources = config.value(QStringLiteral("sources")).toArray();
+    if (!sources.isEmpty())
+    {
+        QJsonObject sourcesDoc;
+        sourcesDoc.insert(QStringLiteral("schemaVersion"), WorkspaceDataConfig::kSchemaVersion);
+        sourcesDoc.insert(QStringLiteral("sources"), sources);
+        WorkspaceDataConfig cfg = WorkspaceDataConfig::fromJson(sourcesDoc);
+        QString err;
+        if (cfg.save(m_appCtx.settings(), &err) && mode == QStringLiteral("full") && m_host != nullptr)
+        {
+            Intent restore;
+            restore.op = QStringLiteral("data.workspace.restore");
+            restore.params[QStringLiteral("includeLive")] = false;
+            m_host->execute(restore);
+        }
+    }
+
+    // 布局与面板会话态一起交给 hub：document 段只放 plot.document，其余在 session 段。
+    QJsonObject document;
+    document.insert(QStringLiteral("plot.document"), config.value(QStringLiteral("plots")).toObject());
+    QJsonObject hubDoc;
+    hubDoc.insert(QStringLiteral("document"), document);
+    hubDoc.insert(QStringLiteral("session"),
+                  root.value(QStringLiteral("session")).toObject());
+    m_appCtx.states().restore(hubDoc);
+}
+
 void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
@@ -953,6 +1150,13 @@ void MainWindow::showEvent(QShowEvent *event)
                                                         QStringLiteral("数据源"));
             std::fprintf(stderr, "[dock] initial panel focus(data)=%d\n", ok ? 1 : 0);
         });
+    }
+    // 首次显示后才恢复会话：此时各面板（含画布工作区）已创建，条目的 restore 才有落点。
+    // 只跑一次——重新显示窗口不该二次恢复，把用户当前的操作覆盖回去。
+    if (!m_sessionRestored)
+    {
+        m_sessionRestored = true;
+        restoreSessionSnapshot();
     }
 }
 
