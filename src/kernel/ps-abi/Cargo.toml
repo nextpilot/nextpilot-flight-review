@@ -17,3 +17,7 @@ serde_json = "1.0.154"
 [[bench]]
 name = "bench_m27"
 harness = false
+
+[[bench]]
+name = "bench_dataset"
+harness = false
