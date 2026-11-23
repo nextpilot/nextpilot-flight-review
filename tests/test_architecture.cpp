@@ -125,7 +125,8 @@ static QString writeCsv(const QTemporaryDir &dir)
 {
     const QString path = dir.filePath(QStringLiteral("demo.csv"));
     QFile f(path);
-    f.open(QIODevice::WriteOnly | QIODevice::Text);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+        return {};
     QTextStream out(&f);
     out << "time,roll,pitch\n"
         << "0,1.0,2.0\n"
@@ -207,7 +208,8 @@ static QString writeUlog(const QTemporaryDir &dir, int rows, qint64 *firstUs, qi
     addUlogMessage(out, 'L', l);
 
     QFile file(path);
-    file.open(QIODevice::WriteOnly);
+    if (!file.open(QIODevice::WriteOnly))
+        return {};
     file.write(out);
     file.close();
     return path;

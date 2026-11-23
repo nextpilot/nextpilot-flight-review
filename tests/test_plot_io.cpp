@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
     CHECK(canvas->exportCsv(csvPath));
     QFile csv(csvPath);
     CHECK(csv.exists() && csv.size() > 0);
-    csv.open(QIODevice::ReadOnly);
+    CHECK(csv.open(QIODevice::ReadOnly));
     const QByteArray csvBody = csv.readAll();
     CHECK(csvBody.contains("x,min,max"));
     OK(QStringLiteral("导出 CSV：%1 字节，含 x,min,max 表头").arg(csv.size()).toUtf8().constData());

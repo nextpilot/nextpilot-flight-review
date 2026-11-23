@@ -942,7 +942,7 @@ int main()
         const QString path = dir.filePath(QStringLiteral("dual.ulg"));
         {
             QFile f(path);
-            f.open(QIODevice::WriteOnly);
+            CHECK(f.open(QIODevice::WriteOnly));
             f.write(ulg);
         }
 
@@ -955,7 +955,7 @@ int main()
         CHECK(bound);
         {
             QFile f(path);
-            f.open(QIODevice::ReadOnly);
+            CHECK(f.open(QIODevice::ReadOnly));
             QByteArray chunk;
             while (!f.atEnd())
             {
@@ -1036,7 +1036,7 @@ int main()
                                   "2,2.0,3.0\n");
         {
             QFile f(csvPath);
-            f.open(QIODevice::WriteOnly | QIODevice::Text);
+            CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
             f.write(csvBytes);
         }
 

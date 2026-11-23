@@ -894,7 +894,7 @@ int main(int argc, char *argv[])
         const char *csvHead = "time_ms,engine_rpm[rpm]\n";
         auto writeCsv = [&](const QString &name, int seed) {
             QFile f(dir.filePath(name));
-            f.open(QIODevice::WriteOnly | QIODevice::Text);
+            CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
             QTextStream ts(&f);
             ts << csvHead;
             for (int i = 0; i < 20; ++i)
@@ -904,7 +904,7 @@ int main(int argc, char *argv[])
         writeCsv(QStringLiteral("run2.csv"), 2);
         {
             QFile f(dir.filePath(QStringLiteral("broken.csv")));
-            f.open(QIODevice::WriteOnly);
+            CHECK(f.open(QIODevice::WriteOnly));
             f.write("\x89PNG\x1a\n\r\nnot-a-csv");
         }
 
