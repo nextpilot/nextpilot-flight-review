@@ -551,21 +551,21 @@ int main(int argc, char *argv[])
         auto h = [&rect](const QString &name) { return rect(name).value(QStringLiteral("h")).toInt(); };
 
         CHECK(!rect(QStringLiteral("editor")).isEmpty());
-        CHECK(!rect(QStringLiteral("left")).isEmpty());
-        CHECK(!rect(QStringLiteral("right")).isEmpty());
-        CHECK(!rect(QStringLiteral("bottom")).isEmpty());
+        CHECK(!rect(QStringLiteral("primarySidebar")).isEmpty());
+        CHECK(!rect(QStringLiteral("secondarySidebar")).isEmpty());
+        CHECK(!rect(QStringLiteral("panel")).isEmpty());
         CHECK(!rect(QStringLiteral("statusBar")).isEmpty());
 
         // 左/右栏与 Editor 顶边齐平，且高度覆盖 Editor + Panel。
-        CHECK(std::abs(y(QStringLiteral("left")) - y(QStringLiteral("editor"))) <= 2);
-        CHECK(std::abs(y(QStringLiteral("right")) - y(QStringLiteral("editor"))) <= 2);
-        CHECK(h(QStringLiteral("left")) >= h(QStringLiteral("editor")) + h(QStringLiteral("bottom")) - 4);
-        CHECK(h(QStringLiteral("right")) >= h(QStringLiteral("editor")) + h(QStringLiteral("bottom")) - 4);
+        CHECK(std::abs(y(QStringLiteral("primarySidebar")) - y(QStringLiteral("editor"))) <= 2);
+        CHECK(std::abs(y(QStringLiteral("secondarySidebar")) - y(QStringLiteral("editor"))) <= 2);
+        CHECK(h(QStringLiteral("primarySidebar")) >= h(QStringLiteral("editor")) + h(QStringLiteral("panel")) - 4);
+        CHECK(h(QStringLiteral("secondarySidebar")) >= h(QStringLiteral("editor")) + h(QStringLiteral("panel")) - 4);
 
         // Panel 只在 Editor 下方：水平范围不越出 Editor。
-        CHECK(y(QStringLiteral("bottom")) >= y(QStringLiteral("editor")) + h(QStringLiteral("editor")) - 2);
-        CHECK(x(QStringLiteral("bottom")) >= x(QStringLiteral("editor")) - 2);
-        CHECK(x(QStringLiteral("bottom")) + w(QStringLiteral("bottom"))
+        CHECK(y(QStringLiteral("panel")) >= y(QStringLiteral("editor")) + h(QStringLiteral("editor")) - 2);
+        CHECK(x(QStringLiteral("panel")) >= x(QStringLiteral("editor")) - 2);
+        CHECK(x(QStringLiteral("panel")) + w(QStringLiteral("panel"))
               <= x(QStringLiteral("editor")) + w(QStringLiteral("editor")) + 2);
 
         // 状态栏全宽，位于所有停靠区下方。
@@ -573,13 +573,13 @@ int main(int argc, char *argv[])
                 window.width(), window.height(),
                 x(QStringLiteral("statusBar")), y(QStringLiteral("statusBar")),
                 w(QStringLiteral("statusBar")), h(QStringLiteral("statusBar")),
-                x(QStringLiteral("left")), y(QStringLiteral("left")),
-                w(QStringLiteral("left")), h(QStringLiteral("left")),
+                x(QStringLiteral("primarySidebar")), y(QStringLiteral("primarySidebar")),
+                w(QStringLiteral("primarySidebar")), h(QStringLiteral("primarySidebar")),
                 x(QStringLiteral("editor")), y(QStringLiteral("editor")),
                 w(QStringLiteral("editor")), h(QStringLiteral("editor")),
-                x(QStringLiteral("bottom")), y(QStringLiteral("bottom")),
-                w(QStringLiteral("bottom")), h(QStringLiteral("bottom")));
-        CHECK(y(QStringLiteral("statusBar")) >= y(QStringLiteral("left")) + h(QStringLiteral("left")) - 2);
+                x(QStringLiteral("panel")), y(QStringLiteral("panel")),
+                w(QStringLiteral("panel")), h(QStringLiteral("panel")));
+        CHECK(y(QStringLiteral("statusBar")) >= y(QStringLiteral("primarySidebar")) + h(QStringLiteral("primarySidebar")) - 2);
         CHECK(x(QStringLiteral("statusBar")) >= 0);
         CHECK(w(QStringLiteral("statusBar")) >= window.width() - 40);
         OK("ADS 几何：左右全高、Panel 只在 Editor 下方、StatusBar 全宽");
@@ -601,7 +601,7 @@ int main(int argc, char *argv[])
 
         const QJsonObject geo = binder2.geometrySnapshot();
         const QJsonObject editor = geo.value(QStringLiteral("editor")).toObject();
-        const QJsonObject bottomRect = geo.value(QStringLiteral("bottom")).toObject();
+        const QJsonObject bottomRect = geo.value(QStringLiteral("panel")).toObject();
         CHECK(!editor.isEmpty());
         CHECK(!bottomRect.isEmpty());
         CHECK(bottomRect.value(QStringLiteral("y")).toInt()
@@ -2028,7 +2028,7 @@ int main(int argc, char *argv[])
         };
         CHECK(dispatchOk(QStringLiteral("plot.series.list")));
         CHECK(dispatchOk(QStringLiteral("plot.series.axis"),
-                         {{QStringLiteral("key"), QStringLiteral("x")}, {QStringLiteral("right"), true}}));
+                         {{QStringLiteral("key"), QStringLiteral("x")}, {QStringLiteral("secondarySidebar"), true}}));
         CHECK(dispatchOk(QStringLiteral("plot.series.visible"),
                          {{QStringLiteral("key"), QStringLiteral("x")}, {QStringLiteral("visible"), false}}));
         CHECK(dispatchOk(QStringLiteral("plot.series.remove"),
