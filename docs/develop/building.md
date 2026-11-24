@@ -40,6 +40,12 @@ cmake --preset debug                            # Debug + 断言，落在 build-
 PS_JOBS=2 cmake --build --preset default
 ```
 
+> **生成器是 Ninja**（`CMakePresets.json` 里 `"generator": "Ninja"`）。从 Unix
+> Makefiles 切换过来时，旧的 `build/`、`build-debug/` 必须删掉重建：CMake 会拒绝
+> 在生成器不同的目录上 configure（报 `Generator ... does not match the generator
+> used previously`）。缓存本身仍然有效，Ninja 下 ccache 增量命中实测 100%，
+> 数据与机制见 `build-performance.md` §9。
+
 `~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install --qt`。Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
 
 ## Windows / MSVC

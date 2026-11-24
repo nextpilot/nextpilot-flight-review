@@ -21,6 +21,9 @@
 3. 加上 `CCACHE_SLOPPINESS=pch_defines,time_macros` 后 ccache 恢复（命中 95.45%），
    但**热全量与"仅 ccache"完全打平（103 s）**：命中路径上 ccache 直接拿现成
    `.o`，根本不调用编译器，PCH 在这里零收益。
+4. **生成器换成 Ninja 是当前性价比最高的手段**：Unix Makefiles 每次构建先付一笔
+   解析税（`make help` 单独实测 4.71–5.68 s），Ninja 为 55–76 ms；ccache 在 Ninja
+   下增量命中实测 100%。详见 §9。
 
 ## 2. 测试口径
 
@@ -108,5 +111,56 @@ cmake --build build -j"$(nproc)"
 - **全量工程矩阵**（264 个 `.cpp`、84 份 `mocs_compilation.cpp`、`App.cpp` 被
   11 个测试 target 引用）未在本机跑完，冷构成本机需 80 分钟量级；建议交给
   5 核 8 GB 机器，那里已有基线：冷 403 s、热全量 18.24 s / 稳态 17.79 s（22.6 倍）。
-- **`App.cpp` OBJECT 库化**（`PS_APP_OBJECT`）未实现：它是"被 11 个 target
-  重复编译"的直接解法，收益独立于 PCH/ccache，应优先于 Unity build 评估。
+- **`App.cpp` 重复编译已解决**：原先被 11 个测试 target 各自 `target_sources`
+  引入，现统一链 `ps_app`（PR #78）。`PS_APP_OBJECT` 方案因此不再需要。
+- Unity build 仍不评估：91 处 `Q_OBJECT` 意味着大量 moc 产物，合并 TU 后与
+  AUTOMOC 的包含关系、匿名命名空间与宏冲突风险都很高。
+
+## 9. 生成器：Unix Makefiles → Ninja
+
+口径：2 核 3 GB，GCC 11.4，CMake 4.4.4，ccache 4.5.1，Release，143 个编译单元。
+
+### 9.1 收益从哪来
+
+Make 是递归生成：每个子目录一份 Makefile，跨目录目标要逐层解析。
+**这笔开销与"编不编东西"无关**，是每次构建的固定税：
+
+| 项 | Unix Makefiles | Ninja |
+|---|---:|---:|
+| 构建图解析（`make help` / `ninja -t targets all`） | 4713 / 5678 ms | **55 / 58 / 76 ms** |
+| `ps_command_autogen`（0 moc 汇总） | 800 ms | **108–124 ms** |
+| `ps_host_autogen`（1 moc） | 4752 ms | **467–476 ms** |
+
+autogen 那 4.75 s 的主体不是 moc，而是递归解析：`make -n ps_host_autogen`
+单独测 1.50–1.74 s，`make help` 4.71–5.68 s。
+
+### 9.2 ccache 仍有效（实测，不是推断）
+
+- **官方支持**：CMake `<LANG>_COMPILER_LAUNCHER` 文档写明 Makefile 与 Ninja 生成器
+  都会把编译器及其参数交给 launcher，示例工具即 ccache。
+- **单文件增量**：不 reconfigure，`touch src/libs/fastplot/src/Axis.cpp` 后
+  `cmake --build --preset default --target fastplot` → `1 hit / 1 = 100%`，连续两轮稳定。
+- **autogen 汇总 TU**：删除 `mocs_compilation.cpp.o` 重编 → `1 hit / 1 = 100%`，
+  连续两轮稳定（`mocs_compilation.cpp` md5 不变）。
+- **多文件**：`touch` 3 个源文件 → `3 hit / 3 = 100%`，4.17 s 完成。
+
+### 9.3 一次性成本
+
+- **旧缓存不复用**：ccache direct mode 把 `-I` / `-include` / `-D` 计入哈希，
+  `build/` 与 `build-ninja/` 的 autogen 路径不同，实测 28 个单元只命中 1 个；
+  即使目录同名，`-MT` / `-MF` 等生成器相关参数仍有差异。
+- 但**换生成器本来就必须重建构建树**（CMake 拒绝在生成器不匹配的目录上 configure），
+  所以这次全量重编不构成额外代价。
+- **每次重新 configure 后当轮会 miss 一次**，之后恢复。日常是"configure 一次 +
+  反复 build"，不受影响。
+
+### 9.4 迁移步骤
+
+```bash
+rm -rf build build-debug         # 生成器不匹配，必须重建
+cmake --preset default           # 现在落到 Ninja
+cmake --build --preset default -j"$(nproc)"
+```
+
+`tools/ubuntu-setup.sh --warm-cache` 不用改：它通过 preset 驱动 configure + build，
+生成器随 preset 走。
