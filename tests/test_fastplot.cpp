@@ -299,10 +299,12 @@ int main(int argc, char **argv)
         const QColor ink(0xE4, 0x57, 0x2E); // 独占色，避免与其他元素混淆
 
         // 缺测像素检查：只统计 (x0,x1) 开区间内、曲线色带 y 邻域里的曲线像素。
+        // 端点各让 3px：线宽 1.4 的半宽 0.7px + 抗锯齿外溢约 1px + 1px 安全余量 ≈ 3px，
+        // 仅排除端点合法样本自身的色带；gap 内部一列都不让，避免把真断线漏过去。
         auto inkPixelsBetween = [&](const QImage &img, double xa, double xb, double yLo, double yHi) {
             int hits = 0;
-            const int colA = int(std::ceil(std::min(xa, xb))) + 1; // 端点各让 1px
-            const int colB = int(std::floor(std::max(xa, xb))) - 1;
+            const int colA = int(std::ceil(std::min(xa, xb))) + 3; // 端点各让 3px
+            const int colB = int(std::floor(std::max(xa, xb))) - 3;
             for (int x = colA; x <= colB; ++x)
                 for (int y = int(yLo); y <= int(yHi); ++y)
                     if (img.pixelColor(x, y) == ink)
@@ -332,6 +334,20 @@ int main(int argc, char **argv)
             const int hits = inkPixelsBetween(img, vp.xToPixel(1.0), vp.xToPixel(1.1),
                                               vp.plotRect().top(), vp.plotRect().bottom());
             CHECK(hits == 0);
+            // 更硬的内部断言：不经 helper 让位，直接扫 gap 内部子区间 [1.02,1.08]。
+            // 该子区间完全落在 gap 内，任何 ink 都意味着断线逻辑把缺测区间连成了线。
+            const int innerA = int(std::ceil(vp.xToPixel(1.02)));
+            const int innerB = int(std::floor(vp.xToPixel(1.08)));
+            const int innerWidth = innerB - innerA + 1;
+            int innerHits = 0;
+            for (int x = innerA; x <= innerB; ++x)
+                for (int y = int(vp.plotRect().top()); y <= int(vp.plotRect().bottom()); ++y)
+                    if (img.pixelColor(x, y) == ink)
+                        ++innerHits;
+            fprintf(stdout, "[ok] A 组 gap 内部子区间 [1.02,1.08]：宽 %d 列，ink=%d\n",
+                    innerWidth, innerHits);
+            CHECK(innerWidth >= 10);
+            CHECK(innerHits == 0);
             // 两侧曲线本体还在
             int body = 0;
             for (int x = 0; x < img.width(); ++x)
