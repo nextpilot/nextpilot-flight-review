@@ -6,6 +6,7 @@
 #include "RegistryTree.h"
 #include "IngestPipeline.h"
 #include "InteractionHub.h"
+#include "StatusHub.h"
 #include "MessageLog.h"
 #include "PersistentStateHub.h"
 #include "DerivedSeriesHub.h"
@@ -91,6 +92,9 @@ public:
     // 这是运行时路由行为，与上面的静态运行态数据分开：AppContext 只 owns
     // 这个成员对象、不实现任何 register*/dispatch* 方法；逻辑归 RuntimeHost 编排。
     InteractionHub &interactions() { return m_interactions; }
+    // 状态栏登记处（验收 7 / D8 推模式）：模块只推文案，壳订阅渲染。
+    StatusHub &status() { return m_status; }
+    const StatusHub &status() const { return m_status; }
     const InteractionHub &interactions() const { return m_interactions; }
 
     // 全系统注册树：RegistryNode 继承即上树，(kind,name) 定位。
@@ -214,6 +218,12 @@ Q_SIGNALS:
     void derivedSeriesReady(const QString &name, const QVector<double> &time,
                             const QVector<double> &value);
 
+    // 数据加载生命周期（data.load 真实摄取入口驱动，非定时器刷值）：
+    // dataLoadStarted 在进入摄取管道前发；dataLoadFinished 在摄取返回后发，
+    // ok 表示成功。状态栏/面板订阅后推常驻文案；headless 下无订阅者亦无副作用。
+    void dataLoadStarted();
+    void dataLoadFinished(bool ok);
+
 private:
     // 注册树必须先声明（成员逆序析构：后声明的节点先亡、向仍活着的树摘除自身）。
     RegistryTree m_registryTree;
@@ -223,7 +233,8 @@ private:
     SourceHub m_sources;
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
 
-    InteractionHub m_interactions; // 交互注册表：AppContext owns，host 编排
+    InteractionHub m_interactions;
+    StatusHub m_status; // 状态栏登记处：模块推文案，壳订阅渲染（不含 QWidget）
     MessageLog m_messages;        // 进程级消息流（纯数据，面板订阅后增量渲染）
     PersistentStateHub m_states;  // 结构化状态的登记表（收集/恢复由外壳驱动）
     TransformHub m_transforms;

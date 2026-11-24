@@ -13,6 +13,7 @@ add_library(ps_context STATIC
     src/IngestOrchestrator.cpp
     src/MessageLog.cpp
     src/PersistentStateHub.cpp
+    src/StatusHub.cpp
     src/WorkspacePreset.cpp
     include/AppContext.h
     include/InteractionHub.h
@@ -24,6 +25,7 @@ add_library(ps_context STATIC
     include/IngestPipeline.h
     include/IngestOrchestrator.h
     include/MessageLog.h
+    include/StatusHub.h
 )
 target_include_directories(ps_context PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ps_context PUBLIC
