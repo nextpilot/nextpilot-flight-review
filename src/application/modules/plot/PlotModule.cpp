@@ -659,13 +659,28 @@ void PlotModule::onAttach(IUiContext &ui)
     plotActivity.centralPanel = QStringLiteral("plot.workspace");
     ui.declareActivity(plotActivity);
 
-    // Ribbon 页/组槽容器仍由骨架 SkeletonSlots 声明（槽容器解散归 c7）；
-    // 本模块只往这些组里贡献动作声明（c4c）。
+    // 本域 Ribbon 页/组自声明（D13）：壳不再预置绘图页容器。
+    ui.declareRibbonPage(QStringLiteral("ribbon.page.plot"), QStringLiteral("绘图"), 3);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.figure"), QStringLiteral("页面"),
+                          QStringLiteral("ribbon.page.plot"), 0);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.layout"), QStringLiteral("布局"),
+                          QStringLiteral("ribbon.page.plot"), 1);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.display"), QStringLiteral("显示"),
+                          QStringLiteral("ribbon.page.plot"), 2);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.tool"), QStringLiteral("交互"),
+                          QStringLiteral("ribbon.page.plot"), 3);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("导出"),
+                          QStringLiteral("ribbon.page.plot"), 4);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.type"), QStringLiteral("图表类型"),
+                          QStringLiteral("ribbon.page.plot"), 5);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.series"), QStringLiteral("曲线与轴"),
+                          QStringLiteral("ribbon.page.plot"), 6);
 
     // 申请中央画布工作区：实现由绘图视图层自注册（"plot.workspace" 类型），
     // 它内部管理 N 个画布 cell（多曲线/拆分/网格），并集中路由 plot.* view action。
     // 本模块不依赖 Qt Widgets——CLI 构建保持纯净。
-    ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("plot.workspace"));
+    ui.requestPanel(nextpilot::plotscope::registry::Region::Editor,
+                    QStringLiteral("plot.workspace"));
 
     // 动作声明全是纯数据：处理器由画布视图登记到 AppContext（registerViewAction），
     // 外壳按 action id 查 view action、未命中再回落意图层；模块不持有 QWidget。

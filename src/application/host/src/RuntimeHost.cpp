@@ -2,7 +2,7 @@
 #include "ErrorCodes.h"
 #include "RegistryNode.h"
 #include "RegistryTree.h"
-#include "SkeletonSlots.h"
+#include "ShellContributions.h"
 #include "StaticRegistryNodes.h"
 
 #include <QSet>
@@ -33,10 +33,10 @@ RuntimeHost::RuntimeHost(nextpilot::plotscope::context::AppContext &appCtx, QObj
     // AI/MCP 工具层：ai.* 系统级 handler，暴露工具目录与调用入口，供后续 MCP bridge 接。
     m_handlers.insert(QStringLiteral("@system/ai.tools"), &m_aiToolsHandler);
 
-    // app 骨架的标准 UI 插槽（容器）在**唯一一处**声明：SkeletonSlots（host 层）。
-    // 骨架槽清单是 app 的配置，不写死在 core——core 只有 declareSlot 机制。
+    // 壳级 Ribbon 页/组在**唯一一处**声明：ShellContributions（host 层）。
+    // 业务页/组由各模块 onAttach 自声明；区域是壳代码常量（Region 枚举），不进注册表。
     // headless 下这些槽也是纯数据，不创建 QWidget。
-    declareSkeletonSlots(m_uiSlotHub);
+    declareShellContributions(m_uiSlotHub);
 
     // M2.8 R4：static 注册表的节点宿主在装配期显式构造上树（QPointer 弱引用，
     // 析构自动摘除；节点实例归 RuntimeHost 父子树——树不托管 static 节点生命周期，

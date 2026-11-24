@@ -36,11 +36,9 @@ void ReportModule::onAttach(IUiContext &ui)
     // 「报告」页 = "导出"组：一键导出 PDF（多画布 + 元数据 + 结论）。
     // action id 由外壳特判（弹保存路径 → QPdfWriter 矢量管线）；脚本侧
     // app.call("report.export", {...}) 走同一管线（MainWindow 注册 view action）。
-    ui.declareSlot(QStringLiteral("ribbon.page.report"), QStringLiteral("报告"),
-                   SlotKind::RibbonPage);
-    ui.declareSlot(QStringLiteral("ribbon.group.report.export"), QStringLiteral("导出"),
-                   SlotKind::RibbonGroup,
-                   QStringLiteral("ribbon.page.report"));
+    ui.declareRibbonPage(QStringLiteral("ribbon.page.report"), QStringLiteral("报告"), 7);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.report.export"), QStringLiteral("导出"),
+                          QStringLiteral("ribbon.page.report"), 0);
 
     UiAction a;
     a.id = QStringLiteral("report.workbench.export");

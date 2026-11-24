@@ -18,7 +18,7 @@
 
 #include "AppContext.h"
 #include "RuntimeHost.h"
-#include "SkeletonSlots.h"
+#include "ShellContributions.h"
 #include "Intent.h"
 #include "Result.h"
 #include "UiSlotHub.h"
@@ -45,7 +45,6 @@
 #include <QJsonParseError>
 #include <QJsonValue>
 #include <QMenu>
-#include <QMenuBar>
 #include <QMessageBox>
 #include <QStyle>
 #include <QResource>
@@ -117,11 +116,11 @@ MainWindow::~MainWindow()
 
 void MainWindow::declareStandardSlots()
 {
-    // app 骨架提供的标准插槽，声明清单在 host 层 SkeletonSlots（不写死在 core）。
+    // app 骨架的壳级 Ribbon 页/组，声明清单在 host 层 ShellContributions（不写死在 core）。
     // 这里只做 GUI 侧的**幂等确认**（宿主已声明过，重复声明不会产生副本），
     // 保证即便脱离宿主单独使用 MainWindow，槽也齐备。
     UiSlotHub &slotReg = m_context->slotHub();
-    nextpilot::plotscope::host::declareSkeletonSlots(slotReg);
+    nextpilot::plotscope::host::declareShellContributions(slotReg);
 
     // 骨架自带的**标准动作**：往标准插槽里放内容。
     //
@@ -145,33 +144,12 @@ void MainWindow::declareStandardSlots()
         slotReg.bindLocal(area, a, QStringLiteral("app.skeleton"));
     };
 
-    // --- 开始页：落地页的高频入口聚合（打开 / 最近 / 新建绘图）---
-    // "打开数据"：系统级意图 data.load，放"开始"页常用组（最高频入口）。
-    addSkeleton(QStringLiteral("app.action.openData"), QStringLiteral("打开数据"),
-                QStringLiteral("ribbon.group.home.data"), QStringLiteral("data.load"),
-                QStringLiteral("file_open"), QStringLiteral("Ctrl+O"), 0);
-    // "最近打开"：data.recent 意图，与打开数据同组相邻，符合"启动→打开或续开"的习惯。
-    addSkeleton(QStringLiteral("home.action.recent"), QStringLiteral("最近打开"),
-                QStringLiteral("ribbon.group.home.data"), QStringLiteral("data.recent"),
-                QStringLiteral("history"), QString(), 1);
-    // "新建绘图页"：id 直接用 figure.new，命中 PlotWorkspace 注册的 view action
-    // （dispatcher 按 id 派发），intentOp 留空。
-    addSkeleton(QStringLiteral("figure.new"), QStringLiteral("新建绘图页"),
-                QStringLiteral("ribbon.group.home.data"), QString(),
-                QStringLiteral("newpage"), QString(), 2);
+    // 开始页 / 数据页 / 协议页 / 脚本页的业务入口已随各模块 onAttach 自声明
+    // （D13）；壳这里只保留文件页与视图页的壳级能力。
     // 文件页也放一个"打开文件"（同一意图）。
     addSkeleton(QStringLiteral("file.open"), QStringLiteral("打开文件"),
                 QStringLiteral("ribbon.group.file.document"), QStringLiteral("data.load"),
                 QStringLiteral("file_open"), QStringLiteral("Ctrl+O"), 0);
-
-    // "协议检查器"：消费 IMessageParser 自述逐帧看字段，按 id 特判弹窗 → 协议页"检查"组。
-    addSkeleton(QStringLiteral("app.action.protocolInspector"), QStringLiteral("协议检查器"),
-                QStringLiteral("ribbon.group.protocol.debug"), QString(),
-                QStringLiteral("file_open"), QString(), 0);
-    // "协议编辑器"：创建/编辑/校验 .psproto，按 id 特判弹窗 → 协议页"编辑器"组。
-    addSkeleton(QStringLiteral("app.action.protocolEditor"), QStringLiteral("协议编辑器"),
-                QStringLiteral("ribbon.group.protocol.editor"), QString(),
-                QStringLiteral("file_open"), QString(), 0);
 
     // "切换主题"：GUI 展示态，声明 intentOp=theme.toggle → 视图页"外观"组。
     addSkeleton(QStringLiteral("app.action.toggleTheme"), QStringLiteral("切换主题"),
@@ -213,23 +191,8 @@ void MainWindow::declareStandardSlots()
                 QStringLiteral("ribbon.group.file.help"), QStringLiteral("help.about"),
                 QStringLiteral("settings"), QString(), 0);
 
-    // --- 数据页"常用"组前两项：快速打开 / 最近 ---
-    // 快速打开与"打开数据"同为 data.load（走同一对话框/意图），最近走 data.recent。
-    // 其余 重载/导出/清缓存 由 DataModule 贡献（order 10+）。
-    addSkeleton(QStringLiteral("data.action.quickOpen"), QStringLiteral("快速打开"),
-                QStringLiteral("ribbon.group.data.common"), QStringLiteral("data.load"),
-                QStringLiteral("open"), QString(), 0);
-    addSkeleton(QStringLiteral("data.action.recent"), QStringLiteral("最近"),
-                QStringLiteral("ribbon.group.data.common"), QStringLiteral("data.recent"),
-                QStringLiteral("history"), QString(), 1);
-    // 数据页"调试"组曾复用协议检查器（与协议页的 app.action.protocolInspector 同 id，
-    // 两处声明导致同一功能重复、且按钮被甩到页面最右）。检查器统一归协议页，
-    // 这里不再重复声明；data.debug 空组自动不渲染。
-
-    // --- 脚本页：运行脚本（选 .lua/.py 文件 → script.run 意图）---
-    addSkeleton(QStringLiteral("app.action.runScript"), QStringLiteral("运行脚本"),
-                QStringLiteral("ribbon.group.script.run"), QStringLiteral("script.run"),
-                QStringLiteral("play"), QStringLiteral("Ctrl+F5"), 0);
+    // 数据页常用组的快速打开/最近由 DataModule 贡献；协议检查器/编辑器归 ProtocolModule；
+    // 运行脚本归 ScriptModule。壳不再预置业务页动作。
 
     // --- 视图页：面板开关（**每个 dock 页签一个按钮**，点击出现/再点消失）---
     // 动作 id = "view.toggleDock." + 面板类型 id（稳定 pageKey，不随标题改动失效）；
@@ -358,13 +321,14 @@ void MainWindow::build(RuntimeHost &host)
     m_binder->setActivityActivatedHandler([this](const ActivitySpec &spec) {
         // Activity 的侧栏切换由 ShellBinder 完成；这里只处理“要打开哪个面板”。
         if (!spec.centralPanel.isEmpty()
-            && m_context->requestPanel(QStringLiteral("canvas.center"), spec.centralPanel))
+            && m_context->requestPanel(nextpilot::plotscope::registry::Region::Editor,
+                                       spec.centralPanel))
         {
             // 请求成功即已置前；没有额外业务动作。
         }
         if (spec.id == QStringLiteral("diagnostics"))
         {
-            m_context->requestPanel(QStringLiteral("dock.diagnostics"),
+            m_context->requestPanel(nextpilot::plotscope::registry::Region::Panel,
                                     QStringLiteral("diagnostics"));
         }
     });
@@ -451,7 +415,8 @@ void MainWindow::build(RuntimeHost &host)
     // 具体 QWidget 由视图层自注册（PS_REGISTER_PANEL("property-panel")）。
     // 属性面板是 PropertySchema 契约的通用视图：选中什么、显示什么全由
     // AppContext 的 Selection + PropertyProvider 决定，外壳不认识业务。
-    if (m_context->requestPanel(QStringLiteral("dock.right"), QStringLiteral("property-panel")))
+    if (m_context->requestPanel(nextpilot::plotscope::registry::Region::SecondarySidebar,
+                                QStringLiteral("property-panel")))
         statusBar()->showMessage(QStringLiteral("属性面板已就绪"));
 
     // 3.0b) 底部面板条（VS Code 式）：终端 → 输出 → 问题 → 调试控制台 → 诊断。
@@ -463,20 +428,19 @@ void MainWindow::build(RuntimeHost &host)
     //     diag.registries 的注册树全景视图，只是位置变了，取数通道不变。
     // 四个面板共用 AppContext 消息流：输出收全量、问题只留 warn/error、
     // 调试控制台只收 level=debug，互不重复实现取数。
-    const struct { const char *type; const char *area; } kBottomPanels[] = {
-        {"output-console", "dock.bottom"},   // 全量消息流
-        {"problems", "dock.bottom"},         // 只留 warn/error
-        {"debug-console", "dock.bottom"},    // 调试事件 + 求值
-        {"diagnostics", "dock.diagnostics"}, // 并入底部组，取数仍是 diag.registries
+    const struct { const char *type; nextpilot::plotscope::registry::Region region; } kBottomPanels[] = {
+        {"output-console", nextpilot::plotscope::registry::Region::Panel},   // 全量消息流
+        {"problems", nextpilot::plotscope::registry::Region::Panel},         // 只留 warn/error
+        {"debug-console", nextpilot::plotscope::registry::Region::Panel},    // 调试事件 + 求值
+        {"diagnostics", nextpilot::plotscope::registry::Region::Panel},      // 并入底部组，取数仍是 diag.registries
     };
     for (const auto &panel : kBottomPanels)
-        m_context->requestPanel(QString::fromLatin1(panel.area),
-                                QString::fromLatin1(panel.type));
+        m_context->requestPanel(panel.region, QString::fromLatin1(panel.type));
 
     // 底部默认停在「终端」：ADS 每加一个页签都会把新的置为当前，于是最后装配的
     // 「诊断」会抢到选中态——底部面板条默认显示的应该是终端（可输入的那一个）。
     // 走 re-request 复用（与调试暂停聚焦面板同一条语义），不新增外壳专用接口。
-    if (QWidget *terminal = m_context->requestPanel(QStringLiteral("dock.bottom"),
+    if (QWidget *terminal = m_context->requestPanel(nextpilot::plotscope::registry::Region::Panel,
                                                     QStringLiteral("script-console")))
         m_binder->raisePanel(terminal);
 
@@ -665,7 +629,7 @@ void MainWindow::build(RuntimeHost &host)
                 const QString instrKind = kInstrumentKind.value(kind);
                 if (!instrKind.isEmpty() && m_context)
                 {
-                    QWidget *w = m_context->requestPanel(QStringLiteral("canvas.center"),
+                    QWidget *w = m_context->requestPanel(nextpilot::plotscope::registry::Region::Editor,
                                                          QStringLiteral("plot.instrument"));
                     if (w)
                     {
@@ -1102,7 +1066,7 @@ void MainWindow::showEvent(QShowEvent *event)
             // 初始面板显式指定为「数据源」：左栏两个页签谁先装配不该决定默认显示
             // （实测新增扩展包换了链接顺序后，启动落在「脚本文件」）。
             // 延时 300ms：ADS 的 tab 插入与布局收尾都在首帧之后，0ms 抢不过它。
-            const bool ok = m_binder->focusPanelByTitle(QStringLiteral("dock.left"),
+            const bool ok = m_binder->focusPanelByTitle(nextpilot::plotscope::registry::Region::PrimarySidebar,
                                                         QStringLiteral("数据源"));
             std::fprintf(stderr, "[dock] initial panel focus(data)=%d\n", ok ? 1 : 0);
         });
@@ -1435,23 +1399,24 @@ QList<CommandPalette::Item> MainWindow::buildQuickItems() const
         items.append(item);
     }
 
-    for (const QString &area : {QStringLiteral("dock.left"), QStringLiteral("dock.right"),
-                                QStringLiteral("dock.bottom")})
+    const struct { nextpilot::plotscope::registry::Region region; const char *category; } kPaletteAreas[] = {
+        {nextpilot::plotscope::registry::Region::PrimarySidebar, "左栏面板"},
+        {nextpilot::plotscope::registry::Region::SecondarySidebar, "右侧面板"},
+        {nextpilot::plotscope::registry::Region::Panel, "底部面板"},
+    };
+    for (const auto &entry : kPaletteAreas)
     {
-        const QStringList titles = m_binder->panelTitles(area);
-        const QList<QWidget *> panels = m_binder->panelWidgets(area);
+        const QStringList titles = m_binder->panelTitles(entry.region);
+        const QList<QWidget *> panels = m_binder->panelWidgets(entry.region);
         const int count = qMin(titles.size(), panels.size());
+        const QString regionKey = regionName(entry.region);
         for (int i = 0; i < count; ++i)
         {
             CommandPalette::Item item;
-            item.id = QStringLiteral("quick.panel.%1.%2").arg(area, QString::number(i));
+            item.id = QStringLiteral("quick.panel.%1.%2").arg(regionKey, QString::number(i));
             item.title = titles.at(i);
-            item.category = area == QStringLiteral("dock.left")
-                                ? QStringLiteral("左栏面板")
-                                : area == QStringLiteral("dock.right")
-                                      ? QStringLiteral("右侧面板")
-                                      : QStringLiteral("底部面板");
-            item.keywords = area;
+            item.category = QString::fromLatin1(entry.category);
+            item.keywords = regionKey;
             QWidget *panel = panels.at(i);
             item.action = [this, panel]() { m_binder->focusPanel(panel); };
             items.append(item);

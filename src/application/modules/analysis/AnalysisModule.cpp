@@ -28,7 +28,7 @@ using namespace nextpilot::plotscope::host;
 namespace
 {
 
-// 动态组条目挂在独立 provider 下：重置时只清这一组，不影响其它模块动作。
+// 动态组条目挂在独立 provider 下：提供器按 id 归属，卸载/诊断只清这一组。
 const QString kDynamicProvider = QStringLiteral("module:analysis-dynamic");
 // settings（Workspace 作用域）持久化键：跨会话恢复"最近使用/收藏"。
 const QString kRecentsKey = QStringLiteral("analysis/recents");
@@ -63,8 +63,9 @@ QJsonObject stringListToJson(const QStringList &list)
 //   - application="default"：把活动数据源的全部数值通道铺成默认曲线（真实可用）；
 //   - 其它 application：由领域扩展贡献，未注册时明确提示，绝不假装可用。
 //   - analysis.favorite：切换收藏（Workspace settings 持久化），仅收藏已知应用。
-// 最近使用在 run 成功后自动记录（MRU，最多 5 条）；最近/收藏两组条目
-// 经 IUiContext 动态 provider 重置重建，外壳 rebuildRibbon 后 gallery 即时更新。
+// 最近使用在 run 成功后自动记录（MRU，最多 5 条）；最近/收藏两组条目由
+// **动作提供器**在 ribbon 装配时实时从 settings 取数（契约 §3.3 / D10），
+// 内容变化后调 refreshActions() 触发外壳重建，不再走"清空再全量重注册"的动态通道。
 class AnalysisModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
@@ -77,8 +78,18 @@ public:
     // onAttach 登记"全部应用"目录（也是收藏合法性的校验来源）。
     void setCatalog(const QStringList &catalog) { m_catalog = catalog; }
 
-    // onAttach 阶段恢复持久化的"最近使用/收藏"两组（跨会话）。
-    void rebuildDynamicGroupsForAttach() { rebuildDynamicGroups(); }
+    // 动作提供器回调：每次 ribbon 装配时实时取当前"最近使用/收藏"条目（纯数据）。
+    QList<UiAction> currentEntries() const
+    {
+        QList<UiAction> out;
+        int order = 100;
+        for (const QString &app : recents())
+            out << makeEntry(app, QStringLiteral("最近使用"), order++);
+        order = 200;
+        for (const QString &app : favorites())
+            out << makeEntry(app, QStringLiteral("收藏"), order++);
+        return out;
+    }
 
     bool canHandle(const Intent &intent) const override
     {
@@ -132,7 +143,8 @@ private:
         else
             favs << app;
         m_app.settings().setJson(SettingsScope::Workspace, kFavoritesKey, stringListToJson(favs));
-        rebuildDynamicGroups();
+        if (m_ui)
+            m_ui->refreshActions();
         m_app.settings().flush();
 
         IntentResult r;
@@ -165,28 +177,8 @@ private:
             rec.removeLast();
         m_app.settings().setJson(SettingsScope::Workspace, kRecentsKey, stringListToJson(rec));
         m_app.settings().flush();
-        rebuildDynamicGroups();
-    }
-
-    // 重置"最近使用/收藏"两组动态条目（无 UI 时只更新 settings，headless 降级）。
-    void rebuildDynamicGroups()
-    {
-        if (!m_ui)
-            return;
-        m_ui->resetDynamicActions(kDynamicProvider);
-        const QString area = QStringLiteral("ribbon.group.analysis.apps");
-        int order = 100;
-        for (const QString &app : recents())
-        {
-            UiAction a = makeEntry(app, QStringLiteral("最近使用"), order++);
-            m_ui->addDynamicAction(a, kDynamicProvider);
-        }
-        order = 200;
-        for (const QString &app : favorites())
-        {
-            UiAction a = makeEntry(app, QStringLiteral("收藏"), order++);
-            m_ui->addDynamicAction(a, kDynamicProvider);
-        }
+        if (m_ui)
+            m_ui->refreshActions();
     }
 
     UiAction makeEntry(const QString &app, const QString &group, int order) const
@@ -290,6 +282,11 @@ void AnalysisModule::onAttach(IUiContext &ui)
 {
     m_handler->attachUi(&ui);
 
+    // 本域 Ribbon 页/组自声明（D13）。
+    ui.declareRibbonPage(QStringLiteral("ribbon.page.analysis"), QStringLiteral("分析"), 6);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.analysis.apps"), QStringLiteral("应用库"),
+                          QStringLiteral("ribbon.page.analysis"), 0);
+
     ActivitySpec analysisActivity;
     analysisActivity.id = QStringLiteral("analysis");
     analysisActivity.label = QStringLiteral("分析");
@@ -299,14 +296,14 @@ void AnalysisModule::onAttach(IUiContext &ui)
     ui.declareActivity(analysisActivity);
 
     // 分析页"应用库"gallery："全部/最近/收藏"三组。
-    const QString area = QStringLiteral("ribbon.group.analysis.apps");
+    const QString slotId = QStringLiteral("ribbon.group.analysis.apps");
     // gallery 分组出现顺序：全部应用(0..) → 最近使用(100+) → 收藏(200+)。
-    auto entry = [&ui, &area](const QString &id, const QString &label,
+    auto entry = [&ui, &slotId](const QString &id, const QString &label,
                               const QString &app, const QString &group, int order) {
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = area;
+        a.area = slotId;
         a.intentOp = QStringLiteral("analysis.run");
         a.data = app;
         a.icon = QStringLiteral("chart");
@@ -331,8 +328,10 @@ void AnalysisModule::onAttach(IUiContext &ui)
     entry(QStringLiteral("analysis.app.review"), QStringLiteral("飞控复盘"),
           QStringLiteral("autopilot.review.app"), QStringLiteral("全部应用"), 2);
 
-    // "最近使用/收藏"两组由 Handler 从 Workspace settings 恢复（跨会话持久）。
-    m_handler->rebuildDynamicGroupsForAttach();
+    // "最近使用/收藏"两组：提供器在 ribbon 装配时实时从 Workspace settings 取数
+    // （跨会话持久），条目变化由 Handler 经 refreshActions() 触发重建。
+    ui.bindActionProvider(slotId, kDynamicProvider,
+                          [handler = m_handler]() { return handler->currentEntries(); });
 }
 
 #include "AnalysisModule.moc"

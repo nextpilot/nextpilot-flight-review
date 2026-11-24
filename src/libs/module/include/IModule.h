@@ -36,12 +36,13 @@ class IUiContext
 public:
     virtual ~IUiContext() = default;
 
-    // 声明一个 UI 插槽（ribbon 页签/分组、停靠区、菜单）。
-    // 模块用它声明自己的容器，再往里放动作——这样新增模块能自带界面入口，
-    // 而 app 骨架与其他模块代码都不必修改。
-    virtual void declareSlot(const QString &area, const QString &label,
-                             nextpilot::plotscope::registry::SlotKind kind,
-                             const QString &parentArea = QString()) = 0;
+    // 声明 Ribbon 页签（纯数据容器）：模块把自己的业务页登记进壳的 Ribbon，
+    // 壳不再预置业务页（D13）。同 id 重复声明先到者为准。
+    virtual void declareRibbonPage(const QString &id, const QString &label, int order) = 0;
+
+    // 声明 Ribbon 分组，挂到指定页签下；order 决定同页内左右位置。
+    virtual void declareRibbonGroup(const QString &id, const QString &label,
+                                    const QString &pageId, int order = 0) = 0;
 
     // 声明 Activity Bar 入口。模块只描述 id/标签/图标/对应 ribbon 页/左栏 section，
     // 控件由外壳创建；headless 下不调用 onAttach，声明仍可落表。
@@ -50,20 +51,22 @@ public:
     // 更新 Activity Bar 徽标数量（0 表示不显示）。
     virtual void setActivityBadge(const QString &activityId, int count) = 0;
 
-    // 往已声明的插槽里放一个动作（ribbon 按钮 / 菜单项）。
+    // 往已声明的插槽里放一个动作（ribbon 按钮 / 图库项）。
     // 归属插槽由 action.area 单一来源给出——不另传 area 参数，
     // 杜绝"参数 area 与 action.area 不一致"的双源隐患。
+    // 动态可见性用 action.when 表达（命令层 when 求值器），不再设动态 provider 通道。
     virtual void addAction(const nextpilot::plotscope::registry::UiAction &action) = 0;
 
-    // 以**可整体重置**的动态 provider 注册动作（分析 gallery 的"最近使用/收藏"组）。
-    // 与 addAction（固定 provider "module"，终身有效）不同：动态条目随运行状态变化，
-    // 需要成组刷新——先 resetDynamicActions 清掉该 provider 的旧条目，再全量重注册。
-    virtual void addDynamicAction(const nextpilot::plotscope::registry::UiAction &action,
-                                  const QString &provider) = 0;
-    // 清空某动态 provider 的全部动作（外壳随后自动重建 ribbon）。
-    virtual void resetDynamicActions(const QString &provider) = 0;
+    // 注册动作提供器：ribbon 装配时实时回调取当前条目（MRU / 收藏等运行期变化的清单）。
+    // 提供器只返回纯数据 UiAction；条目内容变化后调 refreshActions() 触发重建。
+    virtual void bindActionProvider(
+        const QString &area, const QString &provider,
+        std::function<QList<nextpilot::plotscope::registry::UiAction>()> providerFn) = 0;
 
-    // 请求 app 骨架提供一个部件，放到指定区域——通用面板与扩展包领域面板的唯一入口。
+    // 提供器内容已变化：通知外壳重建 ribbon（不直接碰控件）。
+    virtual void refreshActions() = 0;
+
+    // 请求 app 骨架提供一个部件，放到指定逻辑区域——通用面板与扩展包领域面板的唯一入口。
     //
     // 模块只描述"我需要什么部件"（用部件类型标识，如 "dataset-tree" / "car.can-browser"），
     // 由 app 骨架决定用哪个 QWidget 实现并停靠。实现先查模块/视图工厂表，
@@ -71,7 +74,8 @@ public:
     //   - 模块不依赖 Qt Widgets，headless（CLI）构建保持纯净；
     //   - 新增模块自带界面 = 声明一个部件类型 + 动作，无需改 GUI 层。
     // 返回部件的宿主引用（QWidget 前置声明），模块可用它设置数据/标题等。
-    virtual QWidget *requestPanel(const QString &area, const QString &panelType) = 0;
+    virtual QWidget *requestPanel(nextpilot::plotscope::registry::Region region,
+                                  const QString &panelType) = 0;
 
     // 查询当前可用的领域面板清单（纯数据，headless 也能问）。
     //

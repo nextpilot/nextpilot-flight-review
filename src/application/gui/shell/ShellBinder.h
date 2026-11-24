@@ -61,12 +61,12 @@ public:
     // 传入的 ribbon 由 SARibbonMainWindow 持有，本类只负责往里填内容。
     void createRibbon(SARibbonBar *ribbon);
 
-    // 按插槽数据把内容停靠到指定区域；同区域重复停靠合并成标签页。
+    // 按插槽数据把内容停靠到指定逻辑区域；同区域重复停靠合并成标签页。
     // icon 为图标名（:/icons/<icon>.svg），空则用该区域的默认图标。
     // pageKey 是该 dock 页签的**稳定键**（面板类型 id，如 "dataset-tree"），
     // 视图页的面板开关按钮按它逐页定位——区级整组开关曾让按钮名称与
     // 实际效果不符（历史缺陷），语义改为"一个按钮管一个页签"。
-    void dock(const QString &area, const QString &title, QWidget *content,
+    void dock(nextpilot::plotscope::registry::Region area, const QString &title, QWidget *content,
               const QString &icon = QString(), const QString &pageKey = QString());
 
     // 中央内容（画布区）。首个到达者占据中央 dock（画布）；之后到达的
@@ -143,16 +143,16 @@ public:
     QString currentRibbonPageArea() const;
 
     // 面板内容与标题（诊断/测试用）。
-    QWidget *panelWidget(const QString &area) const;
+    QWidget *panelWidget(nextpilot::plotscope::registry::Region area) const;
     // 把面板页签**置前**（"再打开=聚焦"语义：重复 requestPanel 同一面板时调用；
     // 调试暂停时编辑器/模块也会用它把调试面板顶到前台）。
     void raisePanel(QWidget *panel);
     // 按区域+页签标题聚焦（用于启动默认面板：面板装配顺序不该决定初始显示）。
-    bool focusPanelByTitle(const QString &area, const QString &title);
+    bool focusPanelByTitle(nextpilot::plotscope::registry::Region area, const QString &title);
     // 聚焦面板并返回是否找到对应页签（诊断/测试用；raisePanel 走它）。
     bool focusPanel(QWidget *panel);
     // 该停靠区**全部**面板（同侧页签化的每个成员；属性/脚本调试等并列时逐个可查）。
-    QList<QWidget *> panelWidgets(const QString &area) const;
+    QList<QWidget *> panelWidgets(nextpilot::plotscope::registry::Region area) const;
 
     // 中央内容（画布区）——不在 dock 体系里，故单独暴露。
     QWidget *centralContent() const { return m_centralContent; }
@@ -160,18 +160,18 @@ public:
     QList<QWidget *> centralWidgets() const;
     // 与 centralWidgets() 一一对应的页签标题（报告导出的节标题来源）。
     QStringList centralTitles() const;
-    QString panelTitle(const QString &area) const;
+    QString panelTitle(nextpilot::plotscope::registry::Region area) const;
     // 该停靠区**全部**页签标题（按放置顺序）——同区多面板时主位概念不成立，
     // 断言/诊断用列表。
-    QStringList panelTitles(const QString &area) const;
+    QStringList panelTitles(nextpilot::plotscope::registry::Region area) const;
     // 诊断：该区"页签选中的面板"与"当前真正显示的面板"的标题。
     // 实测出现过二者不一致（tab 高亮『脚本文件』、内容却是『数据源』），
     // 用来在无头测试里把"看起来没切换"钉成可断言的事实。
-    QString activePanelTitle(const QString &area) const;
-    QString visiblePanelTitle(const QString &area) const;
+    QString activePanelTitle(nextpilot::plotscope::registry::Region area) const;
+    QString visiblePanelTitle(nextpilot::plotscope::registry::Region area) const;
     // 诊断：停靠区**内容栈**的页序（与 panelTitles 的"添加顺序"对比，
     // 二者不一致就是"点页签切错/不切"的结构性原因）。
-    QStringList contentsOrder(const QString &area) const;
+    QStringList contentsOrder(nextpilot::plotscope::registry::Region area) const;
     int panelCount() const { return m_panels.size(); }
 
     // 动作 id → 按钮下拉菜单（由外壳之外提供内容，绑定器只负责挂到按钮上）。
@@ -304,9 +304,9 @@ private:
     bool m_activityBarVisible = true;
     ActivityActivatedHandler m_activityHandler;
     SettingsHandler m_settingsHandler;
-    QHash<QString, ads::CDockAreaWidget *> m_lastArea; // area -> 该侧最后一个 DockArea
-    QHash<QString, ads::CDockWidget *> m_panels;      // area -> 该侧主 dock
-    QHash<QString, QList<ads::CDockWidget *>> m_docksByArea; // area -> 全部页签（按放置顺序）
+    QHash<nextpilot::plotscope::registry::Region, ads::CDockAreaWidget *> m_lastArea; // region -> 该侧最后一个 DockArea
+    QHash<nextpilot::plotscope::registry::Region, ads::CDockWidget *> m_panels;      // region -> 该侧主 dock
+    QHash<nextpilot::plotscope::registry::Region, QList<ads::CDockWidget *>> m_docksByArea; // region -> 全部页签（按放置顺序）
     // pageKey（面板类型 id）-> dock 页签：视图页逐页开关按钮的定位表。
     QHash<QString, ads::CDockWidget *> m_dockByKey;
     // 面板内容 widget -> 持有它的 dock 页签（raisePanel 置前用；

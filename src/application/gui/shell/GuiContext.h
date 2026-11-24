@@ -32,17 +32,20 @@ public:
                QObject *parent = nullptr);
 
     // nextpilot::plotscope::host::IUiContext
-    void declareSlot(const QString &area, const QString &label, nextpilot::plotscope::registry::SlotKind kind,
-                     const QString &parentArea = QString()) override;
+    void declareRibbonPage(const QString &id, const QString &label, int order) override;
+    void declareRibbonGroup(const QString &id, const QString &label,
+                            const QString &pageId, int order = 0) override;
     void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) override;
     void setActivityBadge(const QString &activityId, int count) override;
     void addAction(const nextpilot::plotscope::registry::UiAction &action) override;
-    void addDynamicAction(const nextpilot::plotscope::registry::UiAction &action,
-                          const QString &provider) override;
-    void resetDynamicActions(const QString &provider) override;
+    void bindActionProvider(
+        const QString &area, const QString &provider,
+        std::function<QList<nextpilot::plotscope::registry::UiAction>()> providerFn) override;
+    void refreshActions() override;
 
-    // 请求 app 外壳提供一个部件，放到指定区域（通用面板与扩展包领域面板同一入口）。
-    QWidget *requestPanel(const QString &area, const QString &panelType) override;
+    // 请求 app 外壳提供一个部件，放到指定逻辑区域（通用面板与扩展包领域面板同一入口）。
+    QWidget *requestPanel(nextpilot::plotscope::registry::Region region,
+                          const QString &panelType) override;
 
     // 领域面板清单查询（纯数据）：请求仍走 requestPanel。
     QList<nextpilot::plotscope::registry::PanelSpec> availableDomainPanels(
@@ -64,8 +67,8 @@ private:
     // 壳内部装配路径（不进 IUiContext 接口面）：模块只能经 requestPanel 走工厂表，
     // 不允许自己造 QWidget 直接递进来。
     // dockWidget：停靠到指定区域；pageKey = 面板类型 id（视图页开关按钮按它定位页签）。
-    void dockWidget(QWidget *widget, const QString &area, const QString &title,
-                    const QString &pageKey);
+    void dockWidget(QWidget *widget, nextpilot::plotscope::registry::Region region,
+                    const QString &title, const QString &pageKey);
     // dockCentral：放进中央画布区（首到者占位，后来者并成页签）。
     void dockCentral(QWidget *widget, const QString &titleOverride = QString());
 

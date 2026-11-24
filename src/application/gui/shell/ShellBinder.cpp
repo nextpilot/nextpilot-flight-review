@@ -58,17 +58,21 @@ namespace
 // 旧版本快照里的 dock 树不认识新栏，恢复会把左栏/面板藏掉或留成浮动。
 constexpr int kDockLayoutVersion = 4;
 
-ads::DockWidgetArea adsAreaFor(const QString &area)
+ads::DockWidgetArea adsAreaFor(nextpilot::plotscope::registry::Region region)
 {
-    if (area == QStringLiteral("dock.right"))
+    using nextpilot::plotscope::registry::Region;
+    switch (region)
+    {
+    case Region::SecondarySidebar:
         return ads::RightDockWidgetArea;
-    if (area == QStringLiteral("dock.bottom"))
+    case Region::Panel:
         return ads::BottomDockWidgetArea;
-    if (area == QStringLiteral("dock.top"))
-        return ads::TopDockWidgetArea;
-    if (area == QStringLiteral("dock.diagnostics"))
-        return ads::BottomDockWidgetArea; // 诊断并入底部面板组（与终端/输出/问题并列）
-    return ads::LeftDockWidgetArea;
+    case Region::PrimarySidebar:
+    case Region::ActivityBar:
+    case Region::Editor:
+    default:
+        return ads::LeftDockWidgetArea;
+    }
 }
 
 // 图标名 -> QIcon。资源由外壳统一管理（:/icons/<name>.svg）。
@@ -368,7 +372,7 @@ void ShellBinder::pinDockToActivity(ads::CDockWidget *dock, const QString &activ
     m_viewActivity.insert(pageKey, target);
 
     // 拖到 Activity Bar = 该视图归入对应容器，并回到 Primary Side Bar。
-    ads::CDockAreaWidget *leftArea = m_lastArea.value(QStringLiteral("dock.left"), nullptr);
+    ads::CDockAreaWidget *leftArea = m_lastArea.value(Region::PrimarySidebar, nullptr);
     ads::CDockAreaWidget *newArea = nullptr;
     if (leftArea)
         newArea = m_dock->addDockWidgetTabToArea(dock, leftArea);
@@ -378,23 +382,23 @@ void ShellBinder::pinDockToActivity(ads::CDockWidget *dock, const QString &activ
     {
         newArea->setAllowedAreas(ads::LeftDockWidgetArea | ads::RightDockWidgetArea |
                                   ads::BottomDockWidgetArea);
-        m_lastArea.insert(QStringLiteral("dock.left"), newArea);
-        if (!m_panels.contains(QStringLiteral("dock.left")))
-            m_panels.insert(QStringLiteral("dock.left"), dock);
+        m_lastArea.insert(Region::PrimarySidebar, newArea);
+        if (!m_panels.contains(Region::PrimarySidebar))
+            m_panels.insert(Region::PrimarySidebar, dock);
     }
 
     for (auto it = m_docksByArea.begin(); it != m_docksByArea.end(); ++it)
         it.value().removeAll(dock);
-    m_docksByArea[QStringLiteral("dock.left")].append(dock);
+    m_docksByArea[Region::PrimarySidebar].append(dock);
     for (auto it = m_panels.begin(); it != m_panels.end(); ++it)
     {
-        if (it.value() != dock || it.key() == QStringLiteral("dock.left"))
+        if (it.value() != dock || it.key() == Region::PrimarySidebar)
             continue;
         const QList<ads::CDockWidget *> rest = m_docksByArea.value(it.key());
         it.value() = rest.isEmpty() ? nullptr : rest.first();
     }
-    m_panels.remove(QStringLiteral("dock.left"));
-    m_panels.insert(QStringLiteral("dock.left"), dock);
+    m_panels.remove(Region::PrimarySidebar);
+    m_panels.insert(Region::PrimarySidebar, dock);
     if (!m_leftPageKeys.contains(pageKey))
         m_leftPageKeys << pageKey;
     m_collapsedViews.remove(pageKey);
@@ -589,6 +593,11 @@ void ShellBinder::rebuildRibbon()
             {
                 const nextpilot::plotscope::registry::UiAction &ua = bound.action;
 
+                // 动作级可见性：先按页/组过滤，再按 when 求值（求值走命令层注入的
+                // 求值器，binder 不解析表达式；空 when = 恒真）。
+                if (!whenVisible(ua.when))
+                    continue;
+
                 // 缩略图：优先按 visual 画（图型/格式），否则退回图标名。
                 // 布局组的大按钮用"分格缩略图"（visual="layout:RxC"），其余按图型/格式画。
                 QIcon ico;
@@ -737,7 +746,7 @@ void ShellBinder::rebuildRibbon()
     m_lastVisiblePages = visiblePages;
 }
 
-void ShellBinder::dock(const QString &area, const QString &title, QWidget *content,
+void ShellBinder::dock(Region region, const QString &title, QWidget *content,
                        const QString &icon, const QString &pageKey)
 {
     if (!content)
@@ -758,20 +767,14 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     if (!m_centralInstalled)
         installCentral();
 
-    // 诊断面板并入底部面板组：它的骨架槽名是独立的 dock.diagnostics，但停靠
-    // 语义与 dock.bottom 是同一组（VS Code 式底部面板条）。归一化后走同一条
-    // addDockWidgetTabToArea 路径，五个页签才并成同级 tab；否则 ADS 会在底部
-    // 再叠出一个并列的 dock area，看起来是两个分栏而不是一组页签。
-    const QString groupArea = (area == QStringLiteral("dock.diagnostics"))
-                                  ? QStringLiteral("dock.bottom")
-                                  : area;
+    // 诊断并入底部面板组（Region::Panel）：归一化在边界完成，进程内只传枚举。
 
     // 左栏不再是一个承载 section 栈的 dock：数据源、脚本文件等各自是独立
     // CDockWidget，才能像 VS Code 一样跨左/右/底拖动。
     auto *dock = new ads::CDockWidget(m_dock, title);
     // objectName 必须唯一：dockWidgetsMap/findDockWidget 按名索引，同区多面板
     // 撞名会让后面的覆盖前面的（"脚本调试"曾被"属性"顶掉）。加序号消歧。
-    dock->setObjectName(QStringLiteral("ps.dock.%1.%2").arg(area).arg(m_dockSeq++));
+    dock->setObjectName(QStringLiteral("ps.dock.%1.%2").arg(regionName(region)).arg(m_dockSeq++));
     // 视图标题栏动作（VS Code 的 view/title）：只认面板类型 id，不看区域名——
     // 模块在哪个区开面板不改变"这是哪个视图"的语义。
     if (m_viewTitleProvider && !pageKey.isEmpty())
@@ -784,27 +787,24 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
         }
     }
     m_dockByWidget.insert(content, dock);
-    m_docksByArea[area].append(dock); // 该区页签序列（panelTitles 断言/诊断用）
-    if (groupArea == QStringLiteral("dock.left") && !pageKey.isEmpty()
+    m_docksByArea[region].append(dock); // 该区页签序列（panelTitles 断言/诊断用）
+    if (region == Region::PrimarySidebar && !pageKey.isEmpty()
         && !m_leftPageKeys.contains(pageKey))
         m_leftPageKeys << pageKey;
     if (!pageKey.isEmpty())
         m_dockByKey.insert(pageKey, dock); // 视图页逐页开关按钮的定位表
     // 标题栏图标：先认面板自己声明的图标（同一侧栏并列多个面板时才分得开），
     // 没有声明才退回该区域的默认图标。
-    static const struct { const char *area; const char *icon; } kDockIcons[] = {
-        {"dock.left", "data_table"}, {"dock.right", "panel"}, {"dock.bottom", "history"}};
+    static const QHash<Region, const char *> kDockIcons = {
+        {Region::PrimarySidebar, "data_table"},
+        {Region::SecondarySidebar, "panel"},
+        {Region::Panel, "history"}};
     QString iconName = icon;
     if (iconName.isEmpty())
     {
-        for (const auto &di : kDockIcons)
-        {
-            if (groupArea == QLatin1String(di.area))
-            {
-                iconName = QString::fromLatin1(di.icon);
-                break;
-            }
-        }
+        const auto it = kDockIcons.constFind(region);
+        if (it != kDockIcons.constEnd())
+            iconName = QString::fromLatin1(it.value());
     }
     dock->setIcon(iconFor(iconName));
     // 标题文字不再带一块异色底——但**不写内联样式**：页签外观统一交给
@@ -830,35 +830,26 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     dock->setWidget(content);
     applyViewDockFeatures(dock);
 
-    // 侧边栏宽度约束：ADS 按内容的 sizeHint 分配初始宽度，而数据集树/属性面板
-    // 的 sizeHint 会随内容（长列名、长字段说明）一直涨，结果中央画布被挤到不足一半，
-    // 屏幕一大就更明显。这里给侧边内容一个上限（中央区在 installCentral 里
-    // 已保证 minimumWidth 640），于是"中央最大、两侧窄"的比例由布局自己稳定下来，
-    // 用户仍可在上限内拖宽。
-    //
     // 底部面板不参与横向缩放：它只挂在编辑器区下方，宽度跟着中央区走，只约束高度。
-    if (area.startsWith(QStringLiteral("dock.")))
+    if (region == Region::Panel)
     {
-        if (groupArea == QStringLiteral("dock.bottom"))
-        {
-            content->setMinimumHeight(120);
-        }
-        else
-        {
-            content->setMinimumWidth(170);
-            content->setMaximumWidth(520);
-        }
+        content->setMinimumHeight(120);
+    }
+    else
+    {
+        content->setMinimumWidth(170);
+        content->setMaximumWidth(520);
     }
 
     // 同侧第二个及以后的面板并成标签页，不向下堆叠。
     // firstOfArea = 该侧第一个面板：只有它负责"抢占初始焦点"。
     // 后续面板只加进 tab，不抢当前显示——否则启动后显示哪个面板取决于装配顺序
     // （谁最后装配谁露脸），注册顺序一变（例如新增扩展包改了链接顺序）默认面板就跟着变。
-    const bool firstOfArea = !m_lastArea.contains(groupArea);
+    const bool firstOfArea = !m_lastArea.contains(region);
     ads::CDockAreaWidget *dockArea = nullptr;
-    if (m_lastArea.contains(groupArea))
+    if (m_lastArea.contains(region))
     {
-        dockArea = m_dock->addDockWidgetTabToArea(dock, m_lastArea.value(groupArea));
+        dockArea = m_dock->addDockWidgetTabToArea(dock, m_lastArea.value(region));
     }
     else
     {
@@ -866,12 +857,12 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
         // 天然等于中央区宽度，左右侧栏保持通栏全高。参照区为空（中央尚未装）时
         // 退回 root 分割器，行为与旧版一致。
         ads::CDockAreaWidget *refArea = nullptr;
-        if (groupArea == QStringLiteral("dock.bottom") && m_centralDock)
+        if (region == Region::Panel && m_centralDock)
             refArea = m_centralDock->dockAreaWidget();
-        dockArea = m_dock->addDockWidget(adsAreaFor(groupArea), dock, refArea);
-        m_lastArea.insert(groupArea, dockArea);
-        if (!m_panels.contains(area))
-            m_panels.insert(area, dock);
+        dockArea = m_dock->addDockWidget(adsAreaFor(region), dock, refArea);
+        m_lastArea.insert(region, dockArea);
+        if (!m_panels.contains(region))
+            m_panels.insert(region, dock);
     }
     // 新面板一律前置，并且**显式同步 tab 与内容**：
     // ADS 的 addDockWidgetTabToArea 只保证"加进去了"，不保证 tab 高亮跟着走；
@@ -919,7 +910,7 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     // 那样 ADS 的停靠/浮动能力就失效了。只对中央区设这个 flag，侧边区一律保留标题栏。
     // 多面板合并成 tab 时标题栏自然出现，无需在此另设。
 
-    if (groupArea == QStringLiteral("dock.left"))
+    if (region == Region::PrimarySidebar)
     {
         if (!m_sideBarVisible)
             dock->toggleView(false);
@@ -940,7 +931,7 @@ void ShellBinder::setCentralContent(QWidget *content, const QString &title, cons
     if (m_centralContent)
     {
         // 中央区已有真实内容（画布已就位）：后来者并成**页签**，与画布平级。
-        // 典型场景：脚本编辑器请求 canvas.center——写代码需要全宽，
+        // 典型场景：脚本编辑器请求 Editor 区——写代码需要全宽，
         // 挤在侧栏（400px 上限）里没法用。ADS 页签机制现成，零新布局代码。
         auto *dock = new ads::CDockWidget(m_dock, title.isEmpty() ? QStringLiteral("视图") : title);
         dock->setObjectName(QStringLiteral("ps.dock.central.tab.%1").arg(m_dockSeq++));
@@ -995,7 +986,7 @@ void ShellBinder::applyDockProportions()
             {
                 QWidget *centerChild = childOfSplitter(centralArea, vsp);
                 QWidget *bottomChild = nullptr;
-                if (ads::CDockWidget *bd = m_panels.value(QStringLiteral("dock.bottom")))
+                if (ads::CDockWidget *bd = m_panels.value(Region::Panel))
                     if (ads::CDockAreaWidget *ba = bd->dockAreaWidget())
                         bottomChild = childOfSplitter(ba, vsp);
                 const int ci = centerChild ? vsp->indexOf(centerChild) : -1;
@@ -1015,9 +1006,9 @@ void ShellBinder::applyDockProportions()
     // ---- 2) 横向：左侧 256 | 编辑器 | 右侧 300 ----
     // 从侧栏 area 取 root 水平分割器：中央 area 的 parentSplitter 此时已是纵向，
     // 不能再用它算左右宽度（旧实现就是这么错的）。
-    ads::CDockWidget *sideDock = m_panels.value(QStringLiteral("dock.left"));
+    ads::CDockWidget *sideDock = m_panels.value(Region::PrimarySidebar);
     if (!sideDock)
-        sideDock = m_panels.value(QStringLiteral("dock.right"));
+        sideDock = m_panels.value(Region::SecondarySidebar);
     ads::CDockAreaWidget *sideArea = sideDock ? sideDock->dockAreaWidget() : nullptr;
     ads::CDockSplitter *hsp = sideArea ? sideArea->parentSplitter() : nullptr;
     if (!hsp)
@@ -1062,7 +1053,7 @@ void ShellBinder::installCentral()
     // 保证后续所有侧边 dock 都排在它之后——顺序约束由外壳兜住。
     QWidget *content = m_centralContent ? m_centralContent : new QWidget();
     m_centralDock = new ads::CDockWidget(m_dock, QStringLiteral("主视图"));
-    m_centralDock->setObjectName(QStringLiteral("ps.dock.canvas.center"));
+    m_centralDock->setObjectName(QStringLiteral("ps.dock.editor"));
     content->setMinimumWidth(320);
     // 编辑器区高度下限：底部面板可拖高，但不能把画布挤成一条缝。
     content->setMinimumHeight(300);
@@ -1131,9 +1122,9 @@ QString ShellBinder::dockPageTitle(const QString &pageKey) const
     return dock ? dock->windowTitle() : QString();
 }
 
-QWidget *ShellBinder::panelWidget(const QString &area) const
+QWidget *ShellBinder::panelWidget(Region region) const
 {
-    ads::CDockWidget *dock = m_panels.value(area, nullptr);
+    ads::CDockWidget *dock = m_panels.value(region, nullptr);
     return dock ? dock->widget() : nullptr;
 }
 
@@ -1163,9 +1154,9 @@ bool ShellBinder::focusPanel(QWidget *panel)
     return false;
 }
 
-bool ShellBinder::focusPanelByTitle(const QString &area, const QString &title)
+bool ShellBinder::focusPanelByTitle(Region region, const QString &title)
 {
-    for (ads::CDockWidget *dw : m_docksByArea.value(area))
+    for (ads::CDockWidget *dw : m_docksByArea.value(region))
     {
         if (dw && dw->windowTitle() == title)
         {
@@ -1181,19 +1172,19 @@ void ShellBinder::raisePanel(QWidget *panel)
     focusPanel(panel);
 }
 
-QList<QWidget *> ShellBinder::panelWidgets(const QString &area) const
+QList<QWidget *> ShellBinder::panelWidgets(Region region) const
 {
-    ads::CDockWidget *first = m_panels.value(area, nullptr);
+    ads::CDockWidget *first = m_panels.value(region, nullptr);
     if (!first)
         return {};
     QList<QWidget *> out;
-    ads::CDockAreaWidget *areaWidget = first->dockAreaWidget();
-    if (!areaWidget)
+    ads::CDockAreaWidget *dockAreaWidget = first->dockAreaWidget();
+    if (!dockAreaWidget)
     {
         out.append(first->widget());
         return out;
     }
-    const QList<ads::CDockWidget *> docks = areaWidget->dockWidgets();
+    const QList<ads::CDockWidget *> docks = dockAreaWidget->dockWidgets();
     for (ads::CDockWidget *dw : docks)
         out.append(dw->widget());
     return out;
@@ -1219,23 +1210,23 @@ QStringList ShellBinder::centralTitles() const
     return out;
 }
 
-QString ShellBinder::panelTitle(const QString &area) const
+QString ShellBinder::panelTitle(Region region) const
 {
-    ads::CDockWidget *dock = m_panels.value(area, nullptr);
+    ads::CDockWidget *dock = m_panels.value(region, nullptr);
     return dock ? dock->windowTitle() : QString();
 }
 
-QStringList ShellBinder::panelTitles(const QString &area) const
+QStringList ShellBinder::panelTitles(Region region) const
 {
     QStringList out;
-    for (ads::CDockWidget *dw : m_docksByArea.value(area))
+    for (ads::CDockWidget *dw : m_docksByArea.value(region))
         out << dw->windowTitle();
     return out;
 }
 
-QString ShellBinder::activePanelTitle(const QString &area) const
+QString ShellBinder::activePanelTitle(Region region) const
 {
-    const QList<ads::CDockWidget *> docks = m_docksByArea.value(area);
+    const QList<ads::CDockWidget *> docks = m_docksByArea.value(region);
     if (docks.isEmpty() || !docks.first())
         return QString();
     ads::CDockAreaWidget *dockArea = docks.first()->dockAreaWidget();
@@ -1245,9 +1236,9 @@ QString ShellBinder::activePanelTitle(const QString &area) const
     return cur ? cur->windowTitle() : QString();
 }
 
-QString ShellBinder::visiblePanelTitle(const QString &area) const
+QString ShellBinder::visiblePanelTitle(Region region) const
 {
-    for (ads::CDockWidget *dw : m_docksByArea.value(area))
+    for (ads::CDockWidget *dw : m_docksByArea.value(region))
     {
         if (!dw)
             continue;
@@ -1258,10 +1249,10 @@ QString ShellBinder::visiblePanelTitle(const QString &area) const
     return QString();
 }
 
-QStringList ShellBinder::contentsOrder(const QString &area) const
+QStringList ShellBinder::contentsOrder(Region region) const
 {
     QStringList out;
-    const QList<ads::CDockWidget *> docks = m_docksByArea.value(area);
+    const QList<ads::CDockWidget *> docks = m_docksByArea.value(region);
     if (docks.isEmpty() || !docks.first())
         return out;
     ads::CDockAreaWidget *dockArea = docks.first()->dockAreaWidget();
@@ -1302,7 +1293,7 @@ bool ShellBinder::dispatchAction(const QString &actionId, const QString &intentO
 
 bool ShellBinder::bottomPanelVisible() const
 {
-    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.bottom"));
+    ads::CDockWidget *dock = m_panels.value(Region::Panel);
     if (!dock)
         return false;
     if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
@@ -1312,7 +1303,7 @@ bool ShellBinder::bottomPanelVisible() const
 
 bool ShellBinder::toggleBottomPanel()
 {
-    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.bottom"));
+    ads::CDockWidget *dock = m_panels.value(Region::Panel);
     if (!dock)
         return false;
     if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
@@ -1325,7 +1316,7 @@ bool ShellBinder::toggleBottomPanel()
 
 bool ShellBinder::auxZoneVisible() const
 {
-    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.right"));
+    ads::CDockWidget *dock = m_panels.value(Region::SecondarySidebar);
     if (!dock)
         return false;
     if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
@@ -1335,7 +1326,7 @@ bool ShellBinder::auxZoneVisible() const
 
 bool ShellBinder::toggleAuxZone()
 {
-    ads::CDockWidget *dock = m_panels.value(QStringLiteral("dock.right"));
+    ads::CDockWidget *dock = m_panels.value(Region::SecondarySidebar);
     if (!dock)
         return false;
     if (ads::CDockAreaWidget *area = dock->dockAreaWidget())
@@ -1657,15 +1648,14 @@ QJsonObject ShellBinder::geometrySnapshot() const
         if (auto *area = m_centralDock->dockAreaWidget())
             out.insert(QStringLiteral("editor"), rectInWindow(area, m_window));
 
-    for (const QString &area : {QStringLiteral("dock.left"), QStringLiteral("dock.right"),
-                                QStringLiteral("dock.bottom")})
+    for (const Region region : {Region::PrimarySidebar, Region::SecondarySidebar,
+                                Region::Panel})
     {
-        ads::CDockWidget *dock = m_panels.value(area);
+        ads::CDockWidget *dock = m_panels.value(region);
         if (!dock)
             continue;
         if (auto *dockArea = dock->dockAreaWidget())
-            out.insert(area.mid(QStringLiteral("dock.").size()),
-                       rectInWindow(dockArea, m_window));
+            out.insert(regionName(region), rectInWindow(dockArea, m_window));
     }
 
     if (auto *status = m_window->statusBar())

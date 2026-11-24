@@ -74,7 +74,7 @@ void DataModule::initialize(RuntimeHost &host)
         [this, &appCtx](const QVariantMap &params) -> Result<QVariant> {
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("数据表格需要 GUI 环境"));
-            if (!m_ui->requestPanel(QStringLiteral("canvas.center"),
+            if (!m_ui->requestPanel(nextpilot::plotscope::registry::Region::Editor,
                                     QStringLiteral("data.table")))
                 return fail(err::Unsupported, QStringLiteral("数据表格面板不可用"));
             Result<QVariant> out{QVariant()};
@@ -91,6 +91,22 @@ void DataModule::onAttach(IUiContext &ui)
     // 模块只声明"我需要一个数据集树面板"，由 app 骨架的部件工厂决定用哪个实现——
     // 因此本模块不依赖 Qt Widgets，CLI（headless）构建保持纯净。
     m_ui = &ui;
+
+    // 本域 Ribbon 页/组自声明（D13）：壳不再预置业务页。
+    // 开始页作为落地聚合页归数据域（高频入口：打开 / 最近）。
+    ui.declareRibbonPage(QStringLiteral("ribbon.page.home"), QStringLiteral("开始"), 0);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.home.data"), QStringLiteral("常用"),
+                          QStringLiteral("ribbon.page.home"), 0);
+    ui.declareRibbonPage(QStringLiteral("ribbon.page.data"), QStringLiteral("数据"), 2);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.common"), QStringLiteral("常用"),
+                          QStringLiteral("ribbon.page.data"), 0);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.record"), QStringLiteral("录制"),
+                          QStringLiteral("ribbon.page.data"), 1);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.sources"), QStringLiteral("来源"),
+                          QStringLiteral("ribbon.page.data"), 2);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.debug"), QStringLiteral("调试"),
+                          QStringLiteral("ribbon.page.data"), 3);
+
     ActivitySpec dataActivity;
     dataActivity.id = QStringLiteral("data");
     dataActivity.label = QStringLiteral("数据");
@@ -99,14 +115,30 @@ void DataModule::onAttach(IUiContext &ui)
     dataActivity.ribbonPage = QStringLiteral("ribbon.page.data");
     dataActivity.panelTypes = {QStringLiteral("dataset-tree")};
     ui.declareActivity(dataActivity);
-    ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("dataset-tree"));
+    ui.requestPanel(nextpilot::plotscope::registry::Region::PrimarySidebar,
+                    QStringLiteral("dataset-tree"));
+
+    // 开始页"常用"组：打开 / 最近（落地页高频入口，id 与外壳文件对话框特判对齐）。
+    auto addHome = [&ui](const QString &id, const QString &label, const QString &op,
+                         const QString &icon, const QString &shortcut, int order) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.area = QStringLiteral("ribbon.group.home.data");
+        a.intentOp = op;
+        a.icon = icon;
+        a.shortcut = shortcut;
+        a.order = order;
+        ui.addAction(a);
+    };
+    addHome(QStringLiteral("app.action.openData"), QStringLiteral("打开数据"),
+            QStringLiteral("data.load"), QStringLiteral("file_open"), QStringLiteral("Ctrl+O"), 0);
+    addHome(QStringLiteral("home.action.recent"), QStringLiteral("最近打开"),
+            QStringLiteral("data.recent"), QStringLiteral("history"), QString(), 1);
 
     // 数据功能 ribbon 的"常用"动作。
     // 每个都绑定**真实存在**的意图处理器（宿主级 data.* handler），不是空按钮。
-    // 打开数据在骨架里已有 app.action.openData（MainWindow 处理文件对话框），
-    // 这里补其余三个可用纯意图驱动的：重载 / 导出 / 清缓存。
-    // order 让组内顺序可控：骨架的"快速打开/最近"占 0/1（见 MainWindow），
-    // 这里从 10 起排 重载/导出/清缓存。
+    // 快速打开/最近占 0/1，重载/导出/清缓存从 10 起排。
     auto add = [&ui](const QString &id, const QString &label,
                      const QString &op, const QString &icon, int order) {
         UiAction a;
@@ -118,6 +150,10 @@ void DataModule::onAttach(IUiContext &ui)
         a.order = order;
         ui.addAction(a);
     };
+    add(QStringLiteral("data.action.quickOpen"), QStringLiteral("快速打开"),
+        QStringLiteral("data.load"), QStringLiteral("open"), 0);
+    add(QStringLiteral("data.action.recent"), QStringLiteral("最近"),
+        QStringLiteral("data.recent"), QStringLiteral("history"), 1);
     add(QStringLiteral("data.action.reload"), QStringLiteral("重载"),
         QStringLiteral("data.reload"), QStringLiteral("reset"), 10);
     add(QStringLiteral("data.action.export"), QStringLiteral("导出 CSV"),

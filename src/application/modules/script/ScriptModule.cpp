@@ -149,7 +149,7 @@ void ScriptModule::initialize(RuntimeHost &host)
                 return fail(err::Unsupported, QStringLiteral("批量处理不可用"));
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("批量汇总需要 GUI 环境"));
-            if (!m_ui->requestPanel(QStringLiteral("canvas.center"),
+            if (!m_ui->requestPanel(nextpilot::plotscope::registry::Region::Editor,
                                     QStringLiteral("batch-summary")))
                 return fail(err::Unsupported, QStringLiteral("批量汇总面板不可用"));
             QVariantMap picked = params;
@@ -386,7 +386,7 @@ void ScriptModule::registerWorkbenchActions(RuntimeHost &host, ScriptFacade::Vie
             out = fail(err::Unsupported, QStringLiteral("脚本编辑器需要 GUI 环境"));
             return false;
         }
-        return m_ui->requestPanel(QStringLiteral("canvas.center"),
+        return m_ui->requestPanel(nextpilot::plotscope::registry::Region::Editor,
                                   QStringLiteral("script-editor")) != nullptr;
     };
     nextpilot::plotscope::context::InteractionHub *reg = &host.app().interactions();
@@ -455,7 +455,7 @@ void ScriptModule::registerWorkbenchActions(RuntimeHost &host, ScriptFacade::Vie
                     // 暂停时把调试面板顶到前台（re-request 复用 = 聚焦语义）；
                     // 否则 dock.right 上并列的属性页签会挡住变量/调用栈。
                     if (m_ui)
-                        m_ui->requestPanel(QStringLiteral("dock.right"),
+                        m_ui->requestPanel(nextpilot::plotscope::registry::Region::SecondarySidebar,
                                            QStringLiteral("script-debug"));
                     // 行号 → 编辑器（暂停行高亮跳转；update 的处理器归调试面板，不冲突）
                     QVariantMap pp;
@@ -534,7 +534,7 @@ void ScriptModule::registerWorkbenchActions(RuntimeHost &host, ScriptFacade::Vie
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("脚本控制台需要 GUI 环境"));
             return Result<QVariant>(
-                QVariant(m_ui->requestPanel(QStringLiteral("dock.bottom"),
+                QVariant(m_ui->requestPanel(nextpilot::plotscope::registry::Region::Panel,
                                             QStringLiteral("script-console")) != nullptr));
         });
 }
@@ -552,6 +552,18 @@ void ScriptModule::onAttach(IUiContext &ui)
     // 面板实现由视图层自注册（ScriptPanels.cpp 的 PS_REGISTER_PANEL_T），
     // 模块只发字符串 id，不依赖 Qt Widgets，headless 构建保持纯净。
     m_ui = &ui;
+
+    // 本域 Ribbon 页/组自声明（D13）。
+    ui.declareRibbonPage(QStringLiteral("ribbon.page.script"), QStringLiteral("脚本"), 4);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.script.file"), QStringLiteral("文件"),
+                          QStringLiteral("ribbon.page.script"), 0);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.script.run"), QStringLiteral("运行"),
+                          QStringLiteral("ribbon.page.script"), 1);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.script.batch"), QStringLiteral("批量"),
+                          QStringLiteral("ribbon.page.script"), 2);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.script.console"), QStringLiteral("控制台"),
+                          QStringLiteral("ribbon.page.script"), 3);
+
     ActivitySpec scriptActivity;
     scriptActivity.id = QStringLiteral("script");
     scriptActivity.label = QStringLiteral("脚本");
@@ -561,9 +573,12 @@ void ScriptModule::onAttach(IUiContext &ui)
     scriptActivity.panelTypes = {QStringLiteral("script-files")};
     scriptActivity.centralPanel = QStringLiteral("script-editor");
     ui.declareActivity(scriptActivity);
-    ui.requestPanel(QStringLiteral("dock.left"), QStringLiteral("script-files"));
-    ui.requestPanel(QStringLiteral("dock.bottom"), QStringLiteral("script-console"));
-    ui.requestPanel(QStringLiteral("dock.right"), QStringLiteral("script-debug"));
+    ui.requestPanel(nextpilot::plotscope::registry::Region::PrimarySidebar,
+                    QStringLiteral("script-files"));
+    ui.requestPanel(nextpilot::plotscope::registry::Region::Panel,
+                    QStringLiteral("script-console"));
+    ui.requestPanel(nextpilot::plotscope::registry::Region::SecondarySidebar,
+                    QStringLiteral("script-debug"));
 
     // ---- Ribbon"脚本"页签（2.1.10）----
     // 文件/运行/控制台三组动作。intentOp 留空：外壳按 **action id** 查 view action
@@ -585,7 +600,7 @@ void ScriptModule::onAttach(IUiContext &ui)
         ui.addAction(a);
     };
 
-    // "文件"组：新建 / 打开（组由骨架声明，order 在 SkeletonSlots 统一为 0）
+    // "文件"组：新建 / 打开（组由本模块 onAttach 自声明）
     addRibbon(QStringLiteral("script.workbench.new"), QStringLiteral("新建脚本"),
               QStringLiteral("ribbon.group.script.file"), QString(), 0, QStringLiteral("plus"));
     addRibbon(QStringLiteral("script.workbench.open"), QStringLiteral("打开脚本"),
@@ -596,6 +611,18 @@ void ScriptModule::onAttach(IUiContext &ui)
               QStringLiteral("ribbon.group.script.run"), QString(), 0, QStringLiteral("play"), true);
     addRibbon(QStringLiteral("script.workbench.debugRun"), QStringLiteral("调试运行"),
               QStringLiteral("ribbon.group.script.run"), QString(), 1, QStringLiteral("script_debug"), true);
+    // 选 .lua/.py 文件 → script.run 意图（外壳文件对话框特判）。
+    {
+        UiAction runFile;
+        runFile.id = QStringLiteral("app.action.runScript");
+        runFile.label = QStringLiteral("运行脚本");
+        runFile.area = QStringLiteral("ribbon.group.script.run");
+        runFile.intentOp = QStringLiteral("script.run");
+        runFile.icon = QStringLiteral("play");
+        runFile.shortcut = QStringLiteral("Ctrl+F5");
+        runFile.order = 2;
+        ui.addAction(runFile);
+    }
 
     // "批量"组：目录级批量运行——选目录+脚本 → 进度 → 汇总表
     addRibbon(QStringLiteral("script.workbench.batch"), QStringLiteral("批量运行"),

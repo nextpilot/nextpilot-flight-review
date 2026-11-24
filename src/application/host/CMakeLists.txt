@@ -6,7 +6,7 @@ add_library(ps_host STATIC
     src/DataCommandsHandler.cpp
     src/XlsxBook.cpp
     src/AIToolsHandler.cpp
-    src/SkeletonSlots.cpp
+    src/ShellContributions.cpp
     src/StaticRegistryNodes.cpp
     src/Toolbox.cpp
     src/PluginScanner.cpp
@@ -15,7 +15,7 @@ add_library(ps_host STATIC
     include/DataCommandsHandler.h
     include/XlsxBook.h
     include/AIToolsHandler.h
-    include/SkeletonSlots.h
+    include/ShellContributions.h
     include/BuiltinModuleHub.h
     include/StaticRegistryNodes.h
     include/Toolbox.h

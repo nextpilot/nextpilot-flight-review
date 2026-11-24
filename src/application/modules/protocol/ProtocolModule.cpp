@@ -50,6 +50,13 @@ void ProtocolModule::initialize(RuntimeHost &host)
 
 void ProtocolModule::onAttach(IUiContext &ui)
 {
+    // 本域 Ribbon 页/组自声明（D13）。
+    ui.declareRibbonPage(QStringLiteral("ribbon.page.protocol"), QStringLiteral("协议"), 5);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.protocol.editor"), QStringLiteral("编辑器"),
+                          QStringLiteral("ribbon.page.protocol"), 0);
+    ui.declareRibbonGroup(QStringLiteral("ribbon.group.protocol.debug"), QStringLiteral("检查"),
+                          QStringLiteral("ribbon.page.protocol"), 1);
+
     // 协议页"编辑器"组：新建 / 打开 / 校验协议 + 编辑器入口。
     // 这些是 GUI 工具，按 action id 由外壳特判弹对话框（同 openData 的模式），
     // intentOp 留空但 id 语义明确，CLI/脚本不依赖它们。
@@ -70,6 +77,12 @@ void ProtocolModule::onAttach(IUiContext &ui)
     add(QStringLiteral("protocol.open"), QStringLiteral("打开编辑"), editor, QStringLiteral("file_open"), 1);
     add(QStringLiteral("protocol.validate"), QStringLiteral("校验协议"), editor, QStringLiteral("check"), 2);
     add(QStringLiteral("protocol.editor"), QStringLiteral("协议编辑器"), editor, QStringLiteral("settings"), 3);
+    // 外壳按 id 特判弹窗的两个入口（与 openData 同一模式），intentOp 留空。
+    add(QStringLiteral("app.action.protocolEditor"), QStringLiteral("协议编辑器"),
+        editor, QStringLiteral("file_open"), 4);
+    const QString debug = QStringLiteral("ribbon.group.protocol.debug");
+    add(QStringLiteral("app.action.protocolInspector"), QStringLiteral("协议检查器"),
+        debug, QStringLiteral("file_open"), 0);
 }
 
 #include "ProtocolModule.moc"

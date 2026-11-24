@@ -30,22 +30,18 @@ GuiContext::GuiContext(QMainWindow *window, UiSlotHub &slotReg, ShellBinder *bin
       m_executor(executor)
 {}
 
-void GuiContext::dockWidget(QWidget *widget, const QString &area, const QString &title,
-                            const QString &pageKey)
+void GuiContext::dockWidget(QWidget *widget, nextpilot::plotscope::registry::Region region,
+                            const QString &title, const QString &pageKey)
 {
     if (!widget || !m_binder)
         return;
-    // 标题优先级：调用方显式指定（领域面板自己的描述）> 插槽标签 > 区域名兜底。
-    QString resolved = title;
-    if (resolved.isEmpty())
-    {
-        resolved = area;
-        if (const UiSlot *slot = m_slots.slot(area))
-            resolved = slot->label;
-    }
+    // 标题优先级：调用方显式指定（领域面板自己的描述）> 区域规范名兜底。
+    const QString resolved = title.isEmpty()
+                                 ? nextpilot::plotscope::registry::regionName(region)
+                                 : title;
     // pageKey = 面板类型 id：视图页逐页开关按钮按它定位页签（稳定键，
     // 不随显示标题改动而失效）。
-    m_binder->dock(area, resolved, widget, m_panelIcon.take(widget), pageKey);
+    m_binder->dock(region, resolved, widget, m_panelIcon.take(widget), pageKey);
 }
 
 void GuiContext::dockCentral(QWidget *widget, const QString &titleOverride)
@@ -59,10 +55,19 @@ void GuiContext::dockCentral(QWidget *widget, const QString &titleOverride)
         m_window->setCentralWidget(widget);
 }
 
-void GuiContext::declareSlot(const QString &area, const QString &label, SlotKind kind,
-                             const QString &parentArea)
+void GuiContext::declareRibbonPage(const QString &id, const QString &label, int order)
 {
-    m_slots.declareSlot(area, label, QStringLiteral("module"), kind, parentArea);
+    m_slots.declareSlot(id, label, QStringLiteral("module"), SlotKind::RibbonPage,
+                        QString(), order);
+    if (m_binder)
+        m_binder->rebuildRibbon();
+}
+
+void GuiContext::declareRibbonGroup(const QString &id, const QString &label,
+                                    const QString &pageId, int order)
+{
+    m_slots.declareSlot(id, label, QStringLiteral("module"), SlotKind::RibbonGroup,
+                        pageId, order);
     if (m_binder)
         m_binder->rebuildRibbon();
 }
@@ -92,23 +97,22 @@ void GuiContext::addAction(const UiAction &action)
         m_binder->rebuildRibbon();
 }
 
-void GuiContext::addDynamicAction(const UiAction &action, const QString &provider)
+void GuiContext::bindActionProvider(const QString &area, const QString &provider,
+                                    std::function<QList<UiAction>()> providerFn)
 {
-    // 动态条目挂在调用方给的 provider 下（如 "module:analysis-dynamic"），
-    // 与终身有效的 "module" 条目隔离——重置只影响动态组。
-    m_slots.bindLocal(action.area, action, provider);
+    m_slots.bindActionProvider(area, provider, std::move(providerFn));
     if (m_binder)
         m_binder->rebuildRibbon();
 }
 
-void GuiContext::resetDynamicActions(const QString &provider)
+void GuiContext::refreshActions()
 {
-    m_slots.unbindProvider(provider);
     if (m_binder)
         m_binder->rebuildRibbon();
 }
 
-QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
+QWidget *GuiContext::requestPanel(nextpilot::plotscope::registry::Region region,
+                                  const QString &panelType)
 {
     // 去重由**工厂登记**决定，不在这里一刀切：
     //   singleton=true（默认）：同一类型已有活着的实例就聚焦它（"再打开"=置前），
@@ -150,13 +154,13 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     if (!iconName.isEmpty())
         m_panelIcon.insert(widget, iconName);
 
-    // 中央画布区走 setCentralContent（首到者占位，后来者并成页签），其余区域走停靠。
+    // 编辑器区走 setCentralContent（首到者占位，后来者并成页签），其余区域走停靠。
     // 标题用面板自注册的显示名（"脚本调试"/"数据源"…），不能用区域标签——
     // 否则同区多面板全是"属性"/"数据源"，页签没法分辨。
-    if (area == QStringLiteral("canvas.center"))
+    if (region == nextpilot::plotscope::registry::Region::Editor)
         dockCentral(widget, title);
     else
-        dockWidget(widget, area, title, panelType);
+        dockWidget(widget, region, title, panelType);
     return widget;
 }
 
