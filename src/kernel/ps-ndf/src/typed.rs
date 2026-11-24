@@ -1425,6 +1425,11 @@ impl Table {
     }
 
     pub fn add_column(&mut self, column: Column) -> Result<(), String> {
+        // 补传段（pending）里的 `columns`/`nulls` 是建段时的列快照，不含新列；
+        // 若带着段直接 push，下次 materialize 会按新的列数遍历段内数组而越界。
+        // 加列是低频 schema 操作，先把段归并进主表，付一次 O(N) 换取不变量：
+        // 「pending 非空 ⇒ 段列数与主表列数一致」。无 pending 时零开销。
+        self.materialize();
         if column.len() != self.row_count() {
             return Err(format!(
                 "列 {} 长度 {} 与表 {} 行数 {} 不一致",
@@ -2292,7 +2297,7 @@ mod tests {
         let mut out = vec![0.0f64; 120 * 3];
         for round in 0..30u64 {
             // 每轮追加 100 行。
-            let times: Vec<i64> = (0..100).map(|i| { next_t += 1000; next_t - 1000 }).collect();
+            let times: Vec<i64> = (0..100).map(|_i| { next_t += 1000; next_t - 1000 }).collect();
             let vals: Vec<f64> = (0..100)
                 .map(|i| { seq_val += 1.0; if (round * 100 + i) % 29 == 0 { f64::NAN } else { seq_val } })
                 .collect();
@@ -2530,7 +2535,7 @@ mod tests {
 
     // ---------- S2 乱序入口 reorder ----------
 
-    fn frame(times: &[i64], vals: &[f64]) -> Vec<(String, String, ColumnData, NullBits)> {
+    fn frame(_times: &[i64], vals: &[f64]) -> Vec<(String, String, ColumnData, NullBits)> {
         vec![(
             "v".into(), "".into(),
             ColumnData::F64(vals.to_vec()),

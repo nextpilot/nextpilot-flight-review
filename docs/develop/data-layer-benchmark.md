@@ -203,6 +203,11 @@ push 一个 `PendingSegment`（段内按 `time_ns` 单调），到达阈值或�
 "批量补传 → 单次渲染"场景：O(N) 重建只在读取前付一次，而非每批都付。
 段数上限 64，达到即强制归并，避免段数无界拖慢单次归并。
 
+物化时机（BJ4-fix）：除读取入口外，`Table::add_column`（schema 变更）、`ps_dataset_table_rows`、
+派生输入（`apply_filter` / `apply_quat_rpy`）、`ps_dataset_column_encode` 也会先归并 pending。
+这几条都是低频路径，各付一次 O(N)，换来不变量「pending 非空 ⇒ 段内列数与主表列数一致」——
+否则加列后按新列数遍历旧段数组会越界（跨 C ABI panic 不可 unwind，直接 abort 宿主进程）。
+
 **边界**：写入进段后若立刻按行号/裸缓冲读取，读取入口会先归并，此时仍付
 一次 O(N)（与旧行为一致，换来了对外语义完全不变）。真正的收益在连续多批
 补传中间不读的场景——MCAP/rosbag 批量导入后渲染正是此形态。逐条 backfill

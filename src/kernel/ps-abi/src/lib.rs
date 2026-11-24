@@ -115,11 +115,16 @@ impl PsDataset {
         self.typed.materialize_table(name);
     }
 
-    fn rebuild_infos(&mut self) {
-        // infos 的 point_count/时间轴来自物理主表；先把补传段归并，避免少算。
+    /// 表名无法预先确定时（通道名可能是 `T.col`，也可能落在旧 data 通道上）全表物化。
+    fn materialize_all(&mut self) {
         for t in &mut self.typed.tables {
             t.materialize();
         }
+    }
+
+    fn rebuild_infos(&mut self) {
+        // infos 的 point_count/时间轴来自物理主表；先把补传段归并，避免少算。
+        self.materialize_all();
         self.names = self.data.channels.iter().map(|c| CString::new(c.name.as_str()).unwrap_or_default()).collect();
         self.units = self.data.channels.iter().map(|c| CString::new(c.unit.as_str()).unwrap_or_default()).collect();
 
@@ -301,6 +306,8 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
         }
     };
     let d = &mut *ds;
+    // find_series 直接按主表行取值；补传段未归并时会漏掉补传行，派生结果少行（BJ4-fix）。
+    d.materialize_all();
     let Some((t, v, unit, input_nulls)) = find_series(d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
@@ -474,6 +481,8 @@ pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
         return 1;
     }
     let names = [("w", w), ("x", x), ("y", y), ("z", z)];
+    // 四路序列都经 find_series 读主表；补传段未归并会导致时间轴/点数不全（BJ4-fix）。
+    (*ds).materialize_all();
     let d = &*ds;
     let mut series = Vec::new();
     for (label, ptr) in names {
@@ -1111,6 +1120,8 @@ pub unsafe extern "C" fn ps_dataset_table_rows(ds: *mut PsDataset, table: *const
     let Ok(name) = CStr::from_ptr(table).to_str() else {
         return 0;
     };
+    // 行数必须含补传段里的行；否则调用方拿它作循环上界会漏读（BJ4-fix）。
+    (*ds).materialize(name);
     (*ds).typed.find_table(name).map(|t| t.row_count() as u64).unwrap_or(0)
 }
 
@@ -1616,6 +1627,103 @@ mod tests {
             assert_eq!(ps_dataset_value_at(ds, table.as_ptr(), col.as_ptr(), 1, &mut t, &mut v), 0);
             assert!((v - 1.5).abs() < 1e-9, "value_at 应看到归并后的第 1 行 1.5，实际 {v}");
             assert!((t - 150e-9).abs() < 1e-12);
+            ps_dataset_free(ds);
+        }
+    }
+
+    /// BJ4-fix 回归：补传段未归并时加列，曾让后续 materialize 按新列数遍历段内数组而越界
+    /// （`extern "C"` 不可 unwind → 整个进程 abort）。加列前先归并即消除该不变量破坏。
+    #[test]
+    fn backfill_then_add_column_does_not_abort_on_next_read() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("t").unwrap();
+            let col = CString::new("v").unwrap();
+            let append = |times: &[i64], vals: &[f64]| {
+                let c = PsFrameColumn {
+                    name: col.as_ptr(), unit: std::ptr::null(), value_type: 0,
+                    values: vals.as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+                };
+                assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), times.as_ptr(),
+                    times.len() as u32, &c, 1, std::ptr::null_mut(), 0), 0);
+            };
+            append(&[100, 300, 500], &[1.0, 3.0, 5.0]);
+            append(&[400, 200], &[4.0, 2.0]);
+            assert_eq!((*ds).typed.find_table("t").unwrap().pending_stats(), (1, 2));
+
+            // 行数必须含补传行，调用方据此构造新列长度。
+            let rows = ps_dataset_table_rows(ds, table.as_ptr());
+            assert_eq!(rows, 5, "table_rows 应含补传行");
+
+            // 按真实行数加一列（5 行），加列会先归并 pending。
+            let abs = CString::new("abs").unwrap();
+            let extra = [10.0f64, 20.0, 30.0, 40.0, 50.0];
+            let mut err = [0i8; 256];
+            let rc = ps_dataset_add_table_column_typed(
+                ds, table.as_ptr(), abs.as_ptr(), std::ptr::null(), 0,
+                extra.as_ptr() as *const std::ffi::c_void, std::ptr::null(), 5,
+                err.as_mut_ptr(), 256,
+            );
+            assert_eq!(rc, 0, "加列应成功");
+            assert_eq!((*ds).typed.find_table("t").unwrap().pending_stats(), (0, 0),
+                "加列后不应残留未归并段");
+
+            // 关键：读新列（旧实现此处 abort）。
+            let abs_col = CString::new("abs").unwrap();
+            let mut ot = [0.0f64; 8];
+            let mut ov = [0.0f64; 8];
+            let n = ps_dataset_read_window(ds, table.as_ptr(), abs_col.as_ptr(),
+                0, 1_000_000_000, ot.as_mut_ptr(), ov.as_mut_ptr(), 8);
+            assert_eq!(n, 5);
+            assert_eq!(ov[..5], [10.0, 20.0, 30.0, 40.0, 50.0]);
+
+            // 原列仍是归并后的完整有序序列。
+            let mut ov2 = [0.0f64; 8];
+            let n2 = ps_dataset_read_window(ds, table.as_ptr(), col.as_ptr(),
+                0, 1_000_000_000, ot.as_mut_ptr(), ov2.as_mut_ptr(), 8);
+            assert_eq!(n2, 5);
+            assert_eq!(ov2[..5], [1.0, 2.0, 3.0, 4.0, 5.0]);
+
+            ps_dataset_free(ds);
+        }
+    }
+
+    /// BJ4-fix 回归：`find_series` 走主表行，补传段未归并时派生结果会少行。
+    #[test]
+    fn backfill_then_apply_filter_covers_pending_rows() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("t").unwrap();
+            let col = CString::new("v").unwrap();
+            let append = |times: &[i64], vals: &[f64]| {
+                let c = PsFrameColumn {
+                    name: col.as_ptr(), unit: std::ptr::null(), value_type: 0,
+                    values: vals.as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+                };
+                assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), times.as_ptr(),
+                    times.len() as u32, &c, 1, std::ptr::null_mut(), 0), 0);
+            };
+            append(&[100, 300, 500], &[1.0, 3.0, 5.0]);
+            append(&[400, 200], &[4.0, 2.0]);
+
+            let input = CString::new("t.v").unwrap();
+            let filt = CString::new("absolute").unwrap();
+            let out = CString::new("t.abs").unwrap();
+            let params = CString::new("{}").unwrap();
+            let mut err = [0i8; 256];
+            let rc = ps_dataset_apply_filter(ds, input.as_ptr(), filt.as_ptr(),
+                params.as_ptr(), out.as_ptr(), err.as_mut_ptr(), 256);
+            assert_eq!(rc, 0, "过滤应成功");
+            assert_eq!(ps_dataset_table_rows(ds, table.as_ptr()), 5);
+
+            let abs = CString::new("abs").unwrap();
+            let mut ot = [0.0f64; 8];
+            let mut ov = [0.0f64; 8];
+            let n = ps_dataset_read_window(ds, table.as_ptr(), abs.as_ptr(),
+                0, 1_000_000_000, ot.as_mut_ptr(), ov.as_mut_ptr(), 8);
+            assert_eq!(n, 5, "派生列应覆盖补传行");
+            assert_eq!(ov[..5], [1.0, 2.0, 3.0, 4.0, 5.0]);
+
             ps_dataset_free(ds);
         }
     }
@@ -3147,6 +3255,8 @@ pub unsafe extern "C" fn ps_dataset_column_encode(
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 1; };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return 1; };
     let d = &mut *ds;
+    // 编码只覆盖主表列；若段里还有未归并行，会留下「已编码列 + 未编码段」的混态（BJ4-fix）。
+    d.materialize(tname);
     let Some(ti) = d.typed.table_index(tname) else { return 2; };
     let Some(ci) = d.typed.tables[ti].columns.iter().position(|c| c.name == cname) else { return 2; };
     if d.typed.tables[ti].columns[ci].data.codec().is_some() {
