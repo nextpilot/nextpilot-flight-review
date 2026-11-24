@@ -34,3 +34,6 @@ ps-deps-download-cache/
 
 # fastplot 契约测试的运行时截图产物（可视证据提交在 docs/screenshots/）
 fastplot_*.png
+
+# AppImage 打包工具缓存（linuxdeploy/appimagetool，约 47 MB）
+.tools/

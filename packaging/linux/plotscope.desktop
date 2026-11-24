@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=PlotScope
+GenericName=Flight Data Analysis
+Comment=NextPilot flight data analysis and plotting
+Exec=plotscope-gui
+Icon=plotscope
+Terminal=false
+Categories=Science;Engineering;DataVisualization;
+Keywords=flight;telemetry;plot;uav;px4;
+StartupNotify=true
+StartupWMClass=plotscope-gui
