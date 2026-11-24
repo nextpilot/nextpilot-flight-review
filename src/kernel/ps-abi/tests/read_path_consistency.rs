@@ -11,8 +11,10 @@ use std::ffi::CString;
 use std::os::raw::c_void;
 
 use ps_abi::{
-    ps_dataset_append_frame, ps_dataset_column_raw, ps_dataset_free, ps_dataset_lod_minmax,
-    ps_dataset_new, ps_dataset_read_window, ps_dataset_read_window_multi, ps_dataset_table_rows,
+    ps_cache_load_dataset, ps_cache_save_dataset, ps_dataset_add_table_column_typed,
+    ps_dataset_append_frame, ps_dataset_column_raw,
+    ps_dataset_free, ps_dataset_lod_minmax, ps_dataset_new, ps_preview_filter,
+    ps_dataset_read_window, ps_dataset_read_window_multi, ps_dataset_table_rows,
     ps_dataset_value_at, PsDataset, PsFrameColumn,
 };
 
@@ -382,5 +384,110 @@ fn duplicate_timestamps_are_all_retained() {
         );
         assert_eq!(n, 8);
         ps_dataset_free(ds);
+    }
+}
+
+/// D6：补传后存盘必须含补传行。
+///
+/// `ps_cache_save_dataset` 直接把 `&typed` 交给 `save_typed_dataset`，而后者按
+/// `row_count()` 写行。若不先归并，pending 段里的补传行不会落盘——缓存静默缺数据，
+/// 且下次打开时无从发现。本用例**不做任何读取**就直接存盘，专测这条路径。
+#[test]
+fn cache_save_includes_pending_rows() {
+    unsafe {
+        let mut f = Fixture::new(5);
+        f.backfill(2, 1); // 落在主表中部，进 pending
+
+        let dir = std::env::temp_dir().join(format!("ps_d6_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("d6.psc");
+        let cpath = CString::new(path.to_str().unwrap()).unwrap();
+        let mut err = [0i8; 256];
+
+        let rc = ps_cache_save_dataset(f.ds, cpath.as_ptr(), 0, 0, err.as_mut_ptr(), 256);
+        assert_eq!(rc, 0, "存盘失败：{}", cstr(&err));
+
+        let mut loaded: *mut PsDataset = std::ptr::null_mut();
+        let rc = ps_cache_load_dataset(cpath.as_ptr(), 0, 0, &mut loaded, err.as_mut_ptr(), 256);
+        assert_eq!(rc, 0, "读回失败：{}", cstr(&err));
+
+        let rows = ps_dataset_table_rows(loaded, f.table.as_ptr());
+        assert_eq!(rows, 7, "存盘应含补传行（5 主表 + 2 补传），实际 {rows}");
+
+        ps_dataset_free(loaded);
+        // f 由 Drop 释放
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+/// D7：预览过滤必须覆盖补传行。
+///
+/// `ps_preview_filter` 走 `find_series` 读主表，未归并时输出点数少补传行，
+/// 用户看到的是「预览与最终曲线点数/形状不一致」。
+#[test]
+fn preview_filter_includes_pending_rows() {
+    unsafe {
+        let mut f = Fixture::new(5);
+        f.backfill(2, 1);
+
+        let input = CString::new("T.v").unwrap();
+        let fid = CString::new("none").unwrap();
+        let mut out_t = vec![0f64; 16];
+        let mut out_v = vec![0f64; 16];
+        let mut n: u32 = 0;
+        let mut err = [0i8; 256];
+
+        let rc = ps_preview_filter(
+            f.ds,
+            input.as_ptr(),
+            fid.as_ptr(),
+            std::ptr::null(),
+            out_t.as_mut_ptr(),
+            out_v.as_mut_ptr(),
+            16,
+            &mut n,
+            err.as_mut_ptr(),
+            256,
+        );
+        assert_eq!(rc, 0, "预览失败：{}", cstr(&err));
+        assert_eq!(n, 7, "预览点数应含补传行（5 主表 + 2 补传），实际 {n}");
+        // f 由 Drop 释放
+    }
+}
+
+unsafe fn cstr(buf: &[i8]) -> String {
+    std::ffi::CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
+}
+
+/// D8：补传后按「真实行数」加列必须成功。
+///
+/// `ps_dataset_add_table_column_typed` 先用 `row_count()` 校验列长，但这个校验此前
+/// 读的是主表行数（不含补传段）。调用方若先查 `table_rows`（已归并，得到真实行数）
+/// 再按它构造列，就会拿到「列点数与表行数不一致」的错误码——把正确调用判成错误。
+#[test]
+fn add_column_after_backfill_uses_real_row_count() {
+    unsafe {
+        let mut f = Fixture::new(5);
+        f.backfill(2, 1);
+
+        let name = CString::new("b").unwrap();
+        let unit = CString::new("").unwrap();
+        let vals: Vec<f64> = (0..7).map(|i| i as f64 + 0.5).collect();
+        let mut err = [0i8; 256];
+
+        let rc = ps_dataset_add_table_column_typed(
+            f.ds,
+            f.table.as_ptr(),
+            name.as_ptr(),
+            unit.as_ptr(),
+            0,
+            vals.as_ptr() as *const c_void,
+            std::ptr::null(),
+            7,
+            err.as_mut_ptr(),
+            256,
+        );
+        assert_eq!(rc, 0, "按真实行数（7）加列应成功：{}", cstr(&err));
+        assert_eq!(ps_dataset_table_rows(f.ds, f.table.as_ptr()), 7);
     }
 }

@@ -97,8 +97,16 @@ typedef struct PsFrameColumn {
 
 /* ---- 数据集只由扩展/缓存通过通用构造 API 生成 ---- */
 
-uint32_t             ps_dataset_channel_count(const PsDataset *ds);
-const PsChannelInfo *ps_dataset_channel(const PsDataset *ds, uint32_t index);
+/* 关于 ds 的 const 语义：
+ * 凡是要读「表数据」的入口（channel_count / channel / table_rows / column_* /
+ * value_at / lod_minmax / read_window* / slice / preview_filter / cache_save）
+ * 都会在内部把补传段（pending）归并回物理主表，再交出数据，因此 ds 为非 const。
+ * 这是「任何读路径都看到完整有序数据」的代价：读操作带有内部整理，不是纯只读，
+ * 也因此**不能并发调用**（同一 PsDataset 需由调用方串行化）。
+ * 纯标量/对象层查询（generation、object_*、blob_get）仍是 const。 */
+
+uint32_t             ps_dataset_channel_count(PsDataset *ds);
+const PsChannelInfo *ps_dataset_channel(PsDataset *ds, uint32_t index);
 /* 数据代际：每次成功追加（含建表）递增，读侧据此判断派生视图是否需要刷新。 */
 uint64_t             ps_dataset_generation(const PsDataset *ds);
 void                 ps_dataset_free(PsDataset *ds);
@@ -233,7 +241,7 @@ int32_t              ps_dataset_column_type(PsDataset *ds, const char *table, co
  * out_nulls 可空：非空时指向 null 位图（(count+7)/8 字节，1=null）。
  * 指针只在数据集只读期间有效（append/remove/free 后失效）。
  * 返回 0 成功；1 参数错误；3 Text 列不支持；4 表/列不存在。 */
-int32_t              ps_dataset_column_raw(const PsDataset *ds, const char *table, const char *column,
+int32_t              ps_dataset_column_raw(PsDataset *ds, const char *table, const char *column,
                                            const void **out_values, uint64_t *out_count, uint32_t *out_type,
                                            const uint8_t **out_nulls);
 
@@ -243,15 +251,15 @@ int32_t              ps_dataset_column_raw(const PsDataset *ds, const char *tabl
 int32_t              ps_dataset_column_encode(PsDataset *ds, const char *table, const char *column,
                                               uint32_t codec, char *err, uint32_t err_cap);
 /* 列是否编码：0=原生，1=已编码，-1=表/列不存在。 */
-int32_t              ps_dataset_column_is_encoded(const PsDataset *ds, const char *table, const char *column);
+int32_t              ps_dataset_column_is_encoded(PsDataset *ds, const char *table, const char *column);
 /* 取列解码后的数值（null 行写 NaN）到调用方 f64 缓冲，返回写入行数（<=cap）。 */
-uint32_t             ps_dataset_column_decode_f64(const PsDataset *ds, const char *table, const char *column,
+uint32_t             ps_dataset_column_decode_f64(PsDataset *ds, const char *table, const char *column,
                                                   double *out, uint32_t cap);
 
 /* 2.7.5 数据集切片：按时间范围 [t0_ns, t1_ns]（含端点）与列子集抽出新 PsDataset。
  * columns 为列名数组，NULL/0 取全部列；新数据集只含 typed 表，独立生命周期。
  * 返回 0 成功；1 参数错误；2 名字非法；3 表/列不存在；5 内部错误（见 err）。 */
-int32_t              ps_dataset_slice(const PsDataset *ds, const char *table,
+int32_t              ps_dataset_slice(PsDataset *ds, const char *table,
                                       const char *const *columns, uint32_t column_count,
                                       int64_t t0_ns, int64_t t1_ns,
                                       PsDataset **out, char *err, uint32_t err_cap);
@@ -260,7 +268,7 @@ int32_t              ps_dataset_slice(const PsDataset *ds, const char *table,
  * out_values 是长度 column_count 的指针数组，每元素指向 cap 大小 f64 缓冲；
  * 行数超 cap 时等步长抽稀，各列严格同行对齐；null 输出 NaN。
  * 返回实际写入行数（0 = 空窗口/参数错误）。 */
-uint32_t             ps_dataset_read_window_multi(const PsDataset *ds, const char *table,
+uint32_t             ps_dataset_read_window_multi(PsDataset *ds, const char *table,
                                                   const char *const *columns, uint32_t column_count,
                                                   int64_t t0_ns, int64_t t1_ns,
                                                   double *out_time, const double *const *out_values,
@@ -303,7 +311,7 @@ int32_t              ps_dataset_apply_filter(PsDataset *ds, const char *input, c
                                              const char *params_json, const char *output,
                                              char *err, uint32_t err_cap);
 /* 只读预览：结果写进 out_t/out_v，不改数据集。cap 不足返回 6，out_n 仍为实际长度。 */
-int32_t              ps_preview_filter(const PsDataset *ds, const char *input, const char *filter_id,
+int32_t              ps_preview_filter(PsDataset *ds, const char *input, const char *filter_id,
                                        const char *params_json, double *out_t, double *out_v,
                                        uint32_t cap, uint32_t *out_n, char *err, uint32_t err_cap);
 /* 曲线级滤波：直接对内存序列应用同一套算子，不改数据集。
@@ -380,7 +388,7 @@ uint32_t ps_lod_minmax_many(const double *const *time,
 
 /* 按源文件指纹写数据集缓存；原子写（临时文件 + rename）。
  * 返回 0 成功；1 参数错误；2 IO/格式错误。 */
-int32_t ps_cache_save_dataset(const PsDataset *ds, const char *path,
+int32_t ps_cache_save_dataset(PsDataset *ds, const char *path,
                               int64_t source_size, int64_t source_mtime,
                               char *err, uint32_t err_cap);
 

@@ -122,6 +122,41 @@ impl PsDataset {
         }
     }
 
+    /// 读取视图的统一入口：先归并 pending 补传段，再交出只读借用。
+    ///
+    /// 这是「忘记物化」的唯一防线——所有读 ABI 都必须经此拿 `&Self`，
+    /// 而不是自己写 `let d = &*ds;` 再祈祷前面调过 materialize。
+    /// 历史教训：D2（table_rows 少报）、D3（find_series 少行）、
+    /// D6（cache 存盘丢行）、D7（preview 少行）全部是漏调物化导致。
+    #[inline]
+    fn read(&mut self) -> &Self {
+        self.materialize_all();
+        self
+    }
+
+    /// 同上，只归并指定表。有表名的读入口用它，省掉全表遍历。
+    #[inline]
+    fn read_table(&mut self, name: &str) -> &Self {
+        self.materialize(name);
+        self
+    }
+
+    /// 需要通道信息（infos）的读入口用它：归并 + 按需重建 infos。
+    /// infos 本身也要读主表行数/时间轴，所以必须先归并。
+    #[inline]
+    fn read_infos(&mut self) -> &Self {
+        self.materialize_all();
+        self.ensure_infos();
+        self
+    }
+
+    /// 读取过程中需要惰性建缓存（LOD 金字塔等，内部要 `&mut`）的入口用它。
+    #[inline]
+    fn read_table_mut(&mut self, name: &str) -> &mut Self {
+        self.materialize(name);
+        self
+    }
+
     fn rebuild_infos(&mut self) {
         // infos 的 point_count/时间轴来自物理主表；先把补传段归并，避免少算。
         self.materialize_all();
@@ -305,9 +340,7 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
             }
         }
     };
-    let d = &mut *ds;
-    // find_series 直接按主表行取值；补传段未归并时会漏掉补传行，派生结果少行（BJ4-fix）。
-    d.materialize_all();
+    let d = (*ds).read();
     let Some((t, v, unit, input_nulls)) = find_series(d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
@@ -321,6 +354,8 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
         Ok(x) => x,
         Err(e) => { write_err(err, err_cap, &e); return 5; }
     };
+    // 输入序列已拷出，读借用在此结束；写回新列需要可变引用。
+    let d = &mut *ds;
     let typed_ok = if let Some((table_name, _)) = input.rsplit_once('.') {
         if let Some(tidx) = d.typed.table_index(table_name) {
             let out_col = out_name.strip_prefix(&format!("{table_name}.")).unwrap_or(&out_name).to_string();
@@ -349,7 +384,7 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
 /// 返回 0 成功；6 缓冲区不足（out_n 仍给出实际长度）；其余同 apply_filter。
 #[no_mangle]
 pub unsafe extern "C" fn ps_preview_filter(
-    ds: *const PsDataset,
+    ds: *mut PsDataset,
     input: *const c_char,
     filter_id: *const c_char,
     params_json: *const c_char,
@@ -386,7 +421,8 @@ pub unsafe extern "C" fn ps_preview_filter(
             }
         }
     };
-    let d = &*ds;
+    // 预览走 find_series（读主表）；未归并会漏掉补传行（D7）。
+    let d = (*ds).read();
     let Some((time, values, _, _)) = find_series(d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
@@ -481,9 +517,7 @@ pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
         return 1;
     }
     let names = [("w", w), ("x", x), ("y", y), ("z", z)];
-    // 四路序列都经 find_series 读主表；补传段未归并会导致时间轴/点数不全（BJ4-fix）。
-    (*ds).materialize_all();
-    let d = &*ds;
+    let d = (*ds).read();
     let mut series = Vec::new();
     for (label, ptr) in names {
         let name = match require_name(ptr, label) {
@@ -561,33 +595,31 @@ pub unsafe extern "C" fn ps_dataset_remove_channel(ds: *mut PsDataset, name: *co
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ps_dataset_channel_count(ds: *const PsDataset) -> u32 {
+pub unsafe extern "C" fn ps_dataset_channel_count(ds: *mut PsDataset) -> u32 {
     if ds.is_null() {
         return 0;
     }
-    let ds = ds as *mut PsDataset;
-    (*ds).ensure_infos();
-    (*ds).infos.len() as u32
+    let d = (*ds).read_infos();
+    d.infos.len() as u32
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ps_dataset_channel(ds: *const PsDataset, index: u32) -> *const PsChannelInfo {
+pub unsafe extern "C" fn ps_dataset_channel(ds: *mut PsDataset, index: u32) -> *const PsChannelInfo {
     if ds.is_null() {
         return std::ptr::null();
     }
-    let ds = ds as *mut PsDataset;
-    (*ds).ensure_infos();
-    (&(*ds).infos).get(index as usize).map_or(std::ptr::null(), |i| i as *const _)
+    let d = (*ds).read_infos();
+    d.infos.get(index as usize).map_or(std::ptr::null(), |i| i as *const _)
 }
 
 /// 数据代际：每次成功追加（含建表）递增，ds=NULL 返回 0。
 /// 读侧在追加会话前后比对，未变则派生视图无需重算（ generation 快照隔离）。
+/// 纯标量读，不触碰表数据，因此保持 `*const` 且不物化。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_generation(ds: *const PsDataset) -> u64 {
     if ds.is_null() {
         return 0;
     }
-    let ds = ds as *mut PsDataset;
     (*ds).typed.generation()
 }
 
@@ -624,7 +656,7 @@ fn c_name(ptr: *const c_char) -> String {
 /// 把数据集按源文件指纹写入 `path`。0 成功；1 参数错误；2 IO/格式错误。
 #[no_mangle]
 pub unsafe extern "C" fn ps_cache_save_dataset(
-    ds: *const PsDataset,
+    ds: *mut PsDataset,
     path: *const c_char,
     source_size: i64,
     source_mtime: i64,
@@ -639,11 +671,13 @@ pub unsafe extern "C" fn ps_cache_save_dataset(
         Ok(p) => p,
         Err(e) => { write_err(err, err_cap, &e); return 1; }
     };
-    if (*ds).typed.tables.is_empty() {
+    // 存盘前必须归并：save_typed_dataset 按 row_count() 写行，补传段未归并会丢行（D6）。
+    let d = (*ds).read();
+    if d.typed.tables.is_empty() {
         write_err(err, err_cap, "数据集没有 typed 表，不能写 PSC1");
         return 2;
     }
-    match ps_cache::save_typed_dataset(&p, &(*ds).typed, source_size, source_mtime) {
+    match ps_cache::save_typed_dataset(&p, &d.typed, source_size, source_mtime) {
         Ok(()) => 0,
         Err(e) => { write_err(err, err_cap, &e); 2 }
     }
@@ -1034,11 +1068,16 @@ pub unsafe extern "C" fn ps_dataset_add_table_column_typed(
         return 2;
     };
     let n = count as usize;
-    let Some(table_idx) = (*ds).typed.table_index(&table) else {
-        write_err(err, err_cap, &format!("表不存在：{table}"));
-        return 4;
+    // 行数校验必须看归并后的真实行数：否则补传后调用方按真实行数构造列会被误判不一致（D8）。
+    let (table_idx, rows) = {
+        let d = (*ds).read_table(&table);
+        let Some(ti) = d.typed.table_index(&table) else {
+            write_err(err, err_cap, &format!("表不存在：{table}"));
+            return 4;
+        };
+        (ti, d.typed.tables[ti].row_count())
     };
-    if (&(*ds).typed.tables)[table_idx].row_count() != n {
+    if rows != n {
         write_err(err, err_cap, "列点数与表行数不一致");
         return 5;
     }
@@ -1120,9 +1159,9 @@ pub unsafe extern "C" fn ps_dataset_table_rows(ds: *mut PsDataset, table: *const
     let Ok(name) = CStr::from_ptr(table).to_str() else {
         return 0;
     };
-    // 行数必须含补传段里的行；否则调用方拿它作循环上界会漏读（BJ4-fix）。
-    (*ds).materialize(name);
-    (*ds).typed.find_table(name).map(|t| t.row_count() as u64).unwrap_or(0)
+    // 行数必须含补传段里的行；否则调用方拿它作循环上界会漏读（BJ4-fix / D2）。
+    let d = (*ds).read_table(name);
+    d.typed.find_table(name).map(|t| t.row_count() as u64).unwrap_or(0)
 }
 
 /// typed 表的视口 LOD：按列名取列，在 `[t0_ns, t1_ns]` 内分桶输出 `(time_sec, min, max)`。
@@ -1145,8 +1184,7 @@ pub unsafe extern "C" fn ps_dataset_lod_minmax(
         return 0;
     };
     // lod_minmax 需要可变引用（惰性建金字塔 + pending 归并）。
-    let ds_ref = &mut *ds;
-    ds_ref.materialize(table_name);
+    let ds_ref = (*ds).read_table_mut(table_name);
     let Some(tidx) = ds_ref.typed.table_index(table_name) else {
         return 0;
     };
@@ -2907,8 +2945,7 @@ pub unsafe extern "C" fn ps_dataset_value_at(
     }
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
-    (*ds).materialize(tname.as_ref());
-    let ds = &*ds;
+    let ds = (*ds).read_table(tname.as_ref());
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     let idx = row as usize;
@@ -2947,8 +2984,7 @@ pub unsafe extern "C" fn ps_dataset_text_at(
     }
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
-    (*ds).materialize(tname.as_ref());
-    let ds = &*ds;
+    let ds = (*ds).read_table(tname.as_ref());
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     let idx = row as usize;
@@ -2990,8 +3026,7 @@ pub unsafe extern "C" fn ps_dataset_value_near(
     }
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
-    (*ds).materialize(tname.as_ref());
-    let ds = &*ds;
+    let ds = (*ds).read_table(tname.as_ref());
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     if t.time_ns.is_empty() {
@@ -3032,8 +3067,7 @@ pub unsafe extern "C" fn ps_dataset_read_window(
     }
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
-    (*ds).materialize(tname.as_ref());
-    let ds = &*ds;
+    let ds = (*ds).read_table(tname.as_ref());
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 0; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
     let lo = t.time_ns.partition_point(|&x| x < t0_ns);
@@ -3059,8 +3093,7 @@ pub unsafe extern "C" fn ps_dataset_read_window(
 pub unsafe extern "C" fn ps_dataset_seq_at(ds: *mut PsDataset, table: *const c_char, row: u32) -> u64 {
     if ds.is_null() || table.is_null() { return u64::MAX; }
     let name = CStr::from_ptr(table).to_string_lossy();
-    (*ds).materialize(name.as_ref());
-    let ds = &*ds;
+    let ds = (*ds).read_table(name.as_ref());
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == name) else { return u64::MAX; };
     t.seq.get(row as usize).copied().unwrap_or(u64::MAX)
 }
@@ -3075,9 +3108,9 @@ pub unsafe extern "C" fn ps_dataset_column_type(
     if ds.is_null() || table.is_null() || column.is_null() {
         return -1;
     }
-    let ds = &*ds;
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
+    let ds = (*ds).read_table(tname.as_ref());
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return -1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return -1; };
     // 压缩列对外仍暴露逻辑类型码（解码后类型不变），不新增公共编码类型码。
@@ -3179,7 +3212,7 @@ pub unsafe fn __m27_invalidate_lod_for_bench(
 /// `out_*` 必须为可写指针，且在数据集只读期间解引用借出的指针。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_column_raw(
-    ds: *const PsDataset,
+    ds: *mut PsDataset,
     table: *const c_char,
     column: *const c_char,
     out_values: *mut *const std::ffi::c_void,
@@ -3194,10 +3227,9 @@ pub unsafe extern "C" fn ps_dataset_column_raw(
     }
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 1 };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return 1 };
-    // ds 由 C++ 侧以可写堆对象持有；此处取可变引用仅为归并 pending，
-    // 签名保持 const 不变，借出的裸指针在物化后的只读期间有效。
-    (*(ds as *mut PsDataset)).materialize(tname);
-    let d = &*ds;
+    // 归并会整体替换列的 Vec，因此借出的裸指针在物化后的只读期间有效；
+    // 任何后续 append/backfill/加列都会使其失效（头文件已声明）。
+    let d = (*ds).read_table(tname);
     let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return 4 };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 4 };
     let (ptr, ty): (*const std::ffi::c_void, u32) = match &c.data {
@@ -3254,15 +3286,15 @@ pub unsafe extern "C" fn ps_dataset_column_encode(
     let Some(cd) = map_codec(codec) else { return 1; };
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 1; };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return 1; };
-    let d = &mut *ds;
-    // 编码只覆盖主表列；若段里还有未归并行，会留下「已编码列 + 未编码段」的混态（BJ4-fix）。
-    d.materialize(tname);
+    // 编码只覆盖主表列；若段里还有未归并行，会留下「已编码列 + 未编码段」的混态。
+    let d = (*ds).read_table(tname);
     let Some(ti) = d.typed.table_index(tname) else { return 2; };
     let Some(ci) = d.typed.tables[ti].columns.iter().position(|c| c.name == cname) else { return 2; };
     if d.typed.tables[ti].columns[ci].data.codec().is_some() {
         write_err(err, err_cap, "列已编码");
         return 3;
     }
+    let d = &mut *ds;
     let encoded = match d.typed.tables[ti].columns[ci].data.encode(cd) {
         Ok(x) => x,
         Err(e) => { write_err(err, err_cap, &e); return 4; }
@@ -3275,15 +3307,15 @@ pub unsafe extern "C" fn ps_dataset_column_encode(
 /// 查询列是否压缩编码：0=原生，1=已编码，-1=表/列不存在。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_column_is_encoded(
-    ds: *const PsDataset,
+    ds: *mut PsDataset,
     table: *const c_char,
     column: *const c_char,
 ) -> i32 {
     if ds.is_null() || table.is_null() || column.is_null() { return -1; }
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return -1; };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return -1; };
-    (*(ds as *mut PsDataset)).materialize(tname);
-    let Some(t) = (*ds).typed.tables.iter().find(|t| t.name == tname) else { return -1; };
+    let d = (*ds).read_table(tname);
+    let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return -1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return -1; };
     if c.data.codec().is_some() { 1 } else { 0 }
 }
@@ -3292,7 +3324,7 @@ pub unsafe extern "C" fn ps_dataset_column_is_encoded(
 /// 表/列不存在或参数错误返回 0。供 UI/脚本读取压缩列，不经裸指针借出。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_column_decode_f64(
-    ds: *const PsDataset,
+    ds: *mut PsDataset,
     table: *const c_char,
     column: *const c_char,
     out: *mut f64,
@@ -3301,8 +3333,8 @@ pub unsafe extern "C" fn ps_dataset_column_decode_f64(
     if ds.is_null() || table.is_null() || column.is_null() || out.is_null() { return 0; }
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 0; };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return 0; };
-    (*(ds as *mut PsDataset)).materialize(tname);
-    let Some(t) = (*ds).typed.tables.iter().find(|t| t.name == tname) else { return 0; };
+    let d = (*ds).read_table(tname);
+    let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return 0; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
     let n = c.len().min(cap as usize);
     for r in 0..n {
@@ -3752,7 +3784,7 @@ pub unsafe extern "C" fn ps_object_set_pool(
 /// `out`/`err` 必须为可写指针，`err` 缓冲容量 `err_cap` 字节。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_slice(
-    ds: *const PsDataset,
+    ds: *mut PsDataset,
     table: *const c_char,
     columns: *const *const c_char,
     column_count: u32,
@@ -3771,8 +3803,7 @@ pub unsafe extern "C" fn ps_dataset_slice(
         write_err(err, err_cap, "表名不是合法 UTF-8");
         return 2;
     };
-    (*(ds as *mut PsDataset)).materialize(tname);
-    let d = &*ds;
+    let d = (*ds).read_table(tname);
     let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else {
         write_err(err, err_cap, &format!("表不存在：{tname}"));
         return 3;
@@ -3833,7 +3864,7 @@ pub unsafe extern "C" fn ps_dataset_slice(
 /// `out_values` 含 `column_count` 个指向 cap 大小 f64 缓冲的可写指针。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_read_window_multi(
-    ds: *const PsDataset,
+    ds: *mut PsDataset,
     table: *const c_char,
     columns: *const *const c_char,
     column_count: u32,
@@ -3847,8 +3878,7 @@ pub unsafe extern "C" fn ps_dataset_read_window_multi(
         return 0;
     }
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 0 };
-    (*(ds as *mut PsDataset)).materialize(tname);
-    let d = &*ds;
+    let d = (*ds).read_table(tname);
     let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return 0 };
     let n = column_count as usize;
     let mut cols: Vec<&ps_ndf::typed::Column> = Vec::with_capacity(n);
