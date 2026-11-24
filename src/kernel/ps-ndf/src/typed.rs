@@ -1813,15 +1813,17 @@ impl Table {
 /// Dataset = 库，Table = 表；表名在 Dataset 内唯一。
 #[derive(Debug, Clone, Default)]
 pub struct Dataset {
-    pub tables: Vec<Table>,
+    // BJ4a：表数据字段全部私有化——数据视图只能经 read() 守卫发放，
+    // 外部 crate 无法再 `let d = &*ds;` 绕过统一读入口（D5 类缺陷编译期封死）。
+    tables: Vec<Table>,
     /// 新建表的默认 ring 字节预算；`None` 表示离线 Dataset 不裁剪。
-    pub default_ring_budget_bytes: Option<usize>,
+    default_ring_budget_bytes: Option<usize>,
     /// 数据代际：每次成功 append_frame 递增一次（建表也算一次）。
     /// 读侧用它做 generation 快照隔离——代际未变则派生视图无需重算。
     /// 单调不回绕（u64 溢出用 saturating_add 钳位，实际不可能达到）。
-    pub generation: u64,
+    generation: u64,
     /// 对象列 payload 池（S4）。对象列只存句柄，payload 在这里按稳定句柄寻址。
-    pub objects: ObjectStore,
+    objects: ObjectStore,
 }
 
 impl Dataset {
@@ -1846,6 +1848,40 @@ impl Dataset {
         }
     }
 
+    /// 归并全部表的 pending 段（幂等：已归并的表零开销跳过）。
+    pub fn materialize_all(&mut self) {
+        for t in &mut self.tables {
+            t.materialize();
+        }
+    }
+
+    /// 唯一读入口：先归并全部 pending，再发放只读视图。
+    ///
+    /// BJ4a 契约：跨 crate 只能经此取得表数据视图，`MatRef` 无法手工构造，
+    /// 所以「忘记物化」在编译期不可能发生（D5 类缺陷的最终封死）。
+    pub fn read(&mut self) -> MatRef<'_> {
+        self.materialize_all();
+        MatRef { ds: self }
+    }
+
+    /// 同 [`Dataset::read`]，但只归并指定表（表名不存在时无操作）。
+    /// 有明确目标表的读路径用它省掉全表遍历；其余表的 pending 状态不变。
+    pub fn read_table(&mut self, name: &str) -> MatRef<'_> {
+        self.materialize_table(name);
+        MatRef { ds: self }
+    }
+
+    /// 对象池写入口（put/retain/release）。对象池不受 pending 归并影响，单独开放。
+    pub fn objects_mut(&mut self) -> &mut ObjectStore {
+        &mut self.objects
+    }
+
+    /// 对象池只读访问。payload 在写入时就已入池，与 pending 归并无关，
+    /// 所以开放 `&self` 直访不构成「漏物化」绕过面。
+    pub fn objects(&self) -> &ObjectStore {
+        &self.objects
+    }
+
     pub fn len(&self) -> usize {
         self.tables.len()
     }
@@ -1854,20 +1890,26 @@ impl Dataset {
         self.tables.is_empty()
     }
 
-    pub fn table(&self, index: usize) -> Option<&Table> {
-        self.tables.get(index)
-    }
-
-    pub fn table_mut(&mut self, index: usize) -> Option<&mut Table> {
-        self.tables.get_mut(index)
+    /// 指定表的 pending 概况（段数, 段内总行数）。元数据，不暴露数据视图。
+    pub fn pending_stats(&self, name: &str) -> Option<(usize, usize)> {
+        self.table_index(name).map(|i| self.tables[i].pending_stats())
     }
 
     pub fn table_index(&self, name: &str) -> Option<usize> {
         self.tables.iter().position(|t| t.name == name)
     }
 
-    pub fn find_table(&self, name: &str) -> Option<&Table> {
+    /// 按名取表（仅 crate 内部使用；外部走 read() 守卫）。
+    pub(crate) fn find_table(&self, name: &str) -> Option<&Table> {
         self.table_index(name).and_then(|i| self.tables.get(i))
+    }
+
+    /// 取可变表：先归并该表 pending，再交出可变引用——写路径同样不漏归并。
+    pub fn table_mut(&mut self, index: usize) -> Option<&mut Table> {
+        self.tables.get_mut(index).map(|t| {
+            t.materialize();
+            t
+        })
     }
 
     pub fn add_table(&mut self, name: impl Into<String>, time_ns: Vec<i64>) -> Result<usize, String> {
@@ -1919,18 +1961,14 @@ impl Dataset {
         self.tables.get_mut(table).ok_or_else(|| "表不存在".to_string())?.add_column(column)
     }
 
-    /// 2.7.5 数据集切片：按表序号 + 行区间 + 列子集抽出新表（独立于源集）。
-    pub fn slice_table(
-        &self,
-        table: usize,
-        row_start: usize,
-        row_end: usize,
-        columns: Option<&[usize]>,
-    ) -> Result<Table, String> {
-        self.tables
-            .get(table)
-            .ok_or_else(|| "表不存在".to_string())?
-            .slice(row_start, row_end, columns)
+    /// 压入一张已构建好的表（数据集切片等内部用途）；重名报错。
+    pub fn push_table(&mut self, table: Table) -> Result<usize, String> {
+        if self.tables.iter().any(|t| t.name == table.name) {
+            return Err(format!("表已存在：{}", table.name));
+        }
+        self.tables.push(table);
+        self.bump_generation();
+        Ok(self.tables.len() - 1)
     }
 
     /// frame_batch 的宿主落库入口：表不存在则按首批列建表，存在则校验列顺序后追加行。
@@ -1998,6 +2036,47 @@ impl Dataset {
             }
             res
         }
+    }
+}
+
+/// 只读数据视图：仅可由 [`Dataset::read`] 构造（内部先归并全部 pending）。
+///
+/// 无法手工构造（字段私有、无 pub 构造器），所以拿到它就等于拿到了
+/// 「已归并、完整有序」的保证。暴露面只有只读访问器，无任何写路径。
+pub struct MatRef<'a> {
+    ds: &'a Dataset,
+}
+
+impl<'a> MatRef<'a> {
+    /// 全部物理表（已归并视图）。
+    pub fn tables(&self) -> &[Table] {
+        &self.ds.tables
+    }
+
+    pub fn find_table(&self, name: &str) -> Option<&Table> {
+        self.ds.find_table(name)
+    }
+
+    pub fn table_index(&self, name: &str) -> Option<usize> {
+        self.ds.table_index(name)
+    }
+
+    /// 对象池只读视图（payload 寻址）。
+    pub fn objects(&self) -> &ObjectStore {
+        &self.ds.objects
+    }
+
+    /// 数据代际（append_frame 递增；读侧快照隔离用）。
+    pub fn generation(&self) -> u64 {
+        self.ds.generation
+    }
+
+    pub fn len(&self) -> usize {
+        self.ds.tables.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ds.tables.is_empty()
     }
 }
 

@@ -103,7 +103,10 @@ typedef struct PsFrameColumn {
  * 都会在内部把补传段（pending）归并回物理主表，再交出数据，因此 ds 为非 const。
  * 这是「任何读路径都看到完整有序数据」的代价：读操作带有内部整理，不是纯只读，
  * 也因此**不能并发调用**（同一 PsDataset 需由调用方串行化）。
- * 纯标量/对象层查询（generation、object_*、blob_get）仍是 const。 */
+ * 纯标量/对象层查询（generation、object_*、blob_get）仍是 const。
+ *
+ * BJ4a：该契约已下探到 Rust 类型层——ps-ndf 表数据字段私有化，数据视图只能
+ * 经「先归并、后发放」的 MatRef 读守卫取得，绕过读入口在编译期不可能。 */
 
 uint32_t             ps_dataset_channel_count(PsDataset *ds);
 const PsChannelInfo *ps_dataset_channel(PsDataset *ds, uint32_t index);

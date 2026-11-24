@@ -60,8 +60,9 @@ fn to_column(vals: &[Option<f64>]) -> (ColumnData, NullBits) {
     (ColumnData::F64(data), nulls)
 }
 
-fn check(ds: &Dataset, model: &[ModelRow], tag: &str) {
-    let Some(t) = ds.find_table("t") else {
+fn check(ds: &mut Dataset, model: &[ModelRow], tag: &str) {
+    let view = ds.read();
+    let Some(t) = view.find_table("t") else {
         assert!(model.is_empty(), "{tag}: 表不存在但模型有 {} 行", model.len());
         return;
     };
@@ -179,7 +180,7 @@ fn run_seed(seed: u64) {
             // 7..=8 模拟读取：触发物化
             7..=8 => {
                 ds.materialize_table("t");
-                check(&ds, &model, &tag);
+                check(&mut ds, &model, &tag);
             }
             // 9 加列（只在还没加过时）
             _ => {
@@ -188,7 +189,7 @@ fn run_seed(seed: u64) {
                 }
                 // 加列要求列长 == 真实行数，先物化再取
                 ds.materialize_table("t");
-                let rows = ds.find_table("t").unwrap().row_count();
+                let rows = ds.read().find_table("t").unwrap().row_count();
                 let extra: Vec<Option<f64>> = (0..rows).map(|i| Some(i as f64 + 0.25)).collect();
                 let (d, n) = to_column(&extra);
                 let col = Column::with_nulls("b", "", d, n).expect("构造列失败");
@@ -201,21 +202,21 @@ fn run_seed(seed: u64) {
                 }
                 col_count = 2;
                 ds.materialize_table("t");
-                check(&ds, &model, &tag);
+                check(&mut ds, &model, &tag);
                 continue;
             }
         }
         if rng.below(3) == 0 {
             ds.materialize_table("t");
-            check(&ds, &model, &tag);
+            check(&mut ds, &model, &tag);
         }
     }
 
     // 收尾：完整对拍
     ds.materialize_table("t");
-    check(&ds, &model, &format!("seed={seed} final"));
+    check(&mut ds, &model, &format!("seed={seed} final"));
     assert_eq!(
-        ds.find_table("t").unwrap().pending_stats(),
+        ds.pending_stats("t").unwrap(),
         (0, 0),
         "seed={seed}: 物化后不应残留 pending 段"
     );
@@ -261,7 +262,8 @@ fn backfill_fuzz_table_shape_invariants() {
         }
     }
     ds.materialize_table("t");
-    let t = ds.find_table("t").unwrap();
+    let view = ds.read();
+    let t = view.find_table("t").unwrap();
     assert!(t.time_ns.windows(2).all(|w| w[0] <= w[1]));
     let mut s = t.seq.clone();
     s.sort_unstable();

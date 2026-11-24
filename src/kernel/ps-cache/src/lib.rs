@@ -91,7 +91,7 @@ pub fn load_params(path: &Path, expected_size: i64, expected_mtime: i64) -> Resu
 
 // ===== PSC2：typed Table/Column 缓存 =====
 
-use ps_ndf::typed::{Column, ColumnData, Dataset as TypedDataset, NullBits, ValueType};
+use ps_ndf::typed::{Column, ColumnData, Dataset as TypedDataset, MatRef, NullBits, ValueType};
 
 const TYPED_MAGIC: u32 = 0x5053_4332; // PSC2
 // v3: 时间轴由微秒改为纳秒；旧 v2 缓存时间戳单位不符，load 时按版本号失效重建。
@@ -202,13 +202,15 @@ fn read_column(r: &mut impl Read) -> Result<Column, String> {
     Column::with_nulls(name, unit, data, NullBits::from_raw(&bits, n))
 }
 
-pub fn save_typed_dataset(path: &Path, ds: &TypedDataset, source_size: i64, source_mtime: i64) -> Result<(), String> {
-    if ds.tables.len() > MAX_CHANNELS as usize {
+/// 存盘入参是 [`MatRef`] 读守卫：类型上保证写入的是已归并的完整视图（BJ4a/D6 契约）。
+pub fn save_typed_dataset(path: &Path, view: &MatRef<'_>, source_size: i64, source_mtime: i64) -> Result<(), String> {
+    let tables = view.tables();
+    if tables.len() > MAX_CHANNELS as usize {
         return Err("表数超过缓存上限".into());
     }
     // 对象列的句柄只在本次进程内有效，持久化后重建即为悬垂句柄。
     // 明确拒绝，让调用方退化为下次重新解析源文件（缓存未命中），不写入半成品。
-    if ds.tables.iter().any(|t| t.columns.iter().any(|c| c.value_type() == ValueType::Object)) {
+    if tables.iter().any(|t| t.columns.iter().any(|c| c.value_type() == ValueType::Object)) {
         return Err("数据集含对象列，不可缓存（运行时句柄无法持久化）".into());
     }
     let tmp = temp_path(path);
@@ -219,8 +221,8 @@ pub fn save_typed_dataset(path: &Path, ds: &TypedDataset, source_size: i64, sour
         write_u32(&mut w, TYPED_VERSION)?;
         write_i64(&mut w, source_size)?;
         write_i64(&mut w, source_mtime)?;
-        write_u32(&mut w, ds.tables.len() as u32)?;
-        for table in &ds.tables {
+        write_u32(&mut w, tables.len() as u32)?;
+        for table in tables {
             let name = table.name.as_bytes();
             write_u32(&mut w, name.len() as u32)?;
             write_u32(&mut w, table.row_count() as u32)?;
@@ -294,10 +296,11 @@ mod typed_tests {
         let mut nulls = NullBits::new(2);
         nulls.set_null(1, true);
         ds.add_column(idx, Column::with_nulls("flag", "", ColumnData::I32(vec![7, 0]), nulls).unwrap()).unwrap();
-        save_typed_dataset(&path, &ds, 12, 34).unwrap();
-        let hit = load_typed_dataset(&path, 12, 34).unwrap().unwrap();
-        assert_eq!(hit.tables.len(), 1);
-        let t = &hit.tables[0];
+        save_typed_dataset(&path, &ds.read(), 12, 34).unwrap();
+        let mut hit = load_typed_dataset(&path, 12, 34).unwrap().unwrap();
+        let view = hit.read();
+        assert_eq!(view.tables().len(), 1);
+        let t = &view.tables()[0];
         assert_eq!(t.time_ns.as_slice(), &[100, 200]);
         assert_eq!(t.columns.len(), 2);
         assert_eq!(t.columns[0].value_as_f64(0), Some(1.0));

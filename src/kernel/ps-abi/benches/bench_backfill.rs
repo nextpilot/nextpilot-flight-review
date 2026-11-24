@@ -12,7 +12,7 @@
 //! 运行：`cargo bench -p ps-abi --bench bench_backfill`
 
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_void;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ps_abi::{

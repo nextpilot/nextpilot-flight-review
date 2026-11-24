@@ -86,10 +86,19 @@ pub struct PsDataset {
     typed_columns: Vec<CString>,
     infos_dirty: bool,
     /// BJ1/BJ2/BJ3：按 topic 组织的时间索引 + 读语义层。只存 (time, uid) -> handle，
-    /// payload 仍在 `typed.objects` 池里；与 blob API 正交，互不干扰。
+    /// payload 仍在 `typed.objects()` 池里；与 blob API 正交，互不干扰。
     /// `ObjectReads` 内嵌 `ObjectIndex` 并转发其入口，BJ1/BJ2 的 ABI 调用不变。
     object_reads: ps_ndf::object_read::ObjectReads,
 }
+
+/// 读守卫：`typed` 只能是 [`MatRef`]——ps-ndf 已保证「先归并、后发放」，
+/// 所以拿着 Read 就等于拿着完整有序数据。其余字段为拆借用只读视图。
+pub(crate) struct Read<'a> {
+    pub typed: ps_ndf::typed::MatRef<'a>,
+    pub data: &'a ps_ndf::Dataset,
+    pub infos: &'a [PsChannelInfo],
+}
+
 
 impl PsDataset {
     fn new() -> Self {
@@ -109,51 +118,58 @@ impl PsDataset {
         }
     }
 
-    /// 读取前把指定表的 pending 补传段归并回物理主表。
-    /// 这样按行号直连、裸缓冲借出、LOD 全局行锚定都看到完整有序数据。
-    fn materialize(&mut self, name: &str) {
-        self.typed.materialize_table(name);
-    }
-
     /// 表名无法预先确定时（通道名可能是 `T.col`，也可能落在旧 data 通道上）全表物化。
     fn materialize_all(&mut self) {
-        for t in &mut self.typed.tables {
-            t.materialize();
-        }
+        self.typed.materialize_all();
     }
 
-    /// 读取视图的统一入口：先归并 pending 补传段，再交出只读借用。
+    /// 读取视图的统一入口：先归并 pending 补传段，再交出只读守卫。
     ///
-    /// 这是「忘记物化」的唯一防线——所有读 ABI 都必须经此拿 `&Self`，
-    /// 而不是自己写 `let d = &*ds;` 再祈祷前面调过 materialize。
+    /// 这是「忘记物化」的唯一防线——所有读 ABI 都必须经此拿守卫，
+    /// 而不是自己写 `let d = (*ds).read();` 再祈祷前面调过 materialize。
     /// 历史教训：D2（table_rows 少报）、D3（find_series 少行）、
     /// D6（cache 存盘丢行）、D7（preview 少行）全部是漏调物化导致。
+    /// BJ4a：守卫内 `typed` 是 `MatRef`，表数据无 `&self` 绕过面。
     #[inline]
-    fn read(&mut self) -> &Self {
-        self.materialize_all();
-        self
+    fn read(&mut self) -> Read<'_> {
+        let typed = self.typed.read();
+        // 拆借用：typed 已可变借用，其余字段逐字段只读借用，互不相交。
+        Read {
+            typed,
+            data: &self.data,
+            infos: &self.infos,
+        }
     }
 
     /// 同上，只归并指定表。有表名的读入口用它，省掉全表遍历。
     #[inline]
-    fn read_table(&mut self, name: &str) -> &Self {
-        self.materialize(name);
-        self
+    fn read_table(&mut self, name: &str) -> Read<'_> {
+        let typed = self.typed.read_table(name);
+        Read {
+            typed,
+            data: &self.data,
+            infos: &self.infos,
+        }
     }
 
     /// 需要通道信息（infos）的读入口用它：归并 + 按需重建 infos。
     /// infos 本身也要读主表行数/时间轴，所以必须先归并。
     #[inline]
-    fn read_infos(&mut self) -> &Self {
-        self.materialize_all();
+    fn read_infos(&mut self) -> Read<'_> {
+        self.typed.materialize_all();
         self.ensure_infos();
-        self
+        let typed = self.typed.read();
+        Read {
+            typed,
+            data: &self.data,
+            infos: &self.infos,
+        }
     }
 
     /// 读取过程中需要惰性建缓存（LOD 金字塔等，内部要 `&mut`）的入口用它。
     #[inline]
     fn read_table_mut(&mut self, name: &str) -> &mut Self {
-        self.materialize(name);
+        self.typed.materialize_table(name);
         self
     }
 
@@ -169,7 +185,8 @@ impl PsDataset {
         self.typed_units.clear();
         self.typed_tables.clear();
         self.typed_columns.clear();
-        for table in &self.typed.tables {
+        let typed = self.typed.read();
+        for table in typed.tables() {
             let rows = table.row_count();
             let mut time = Vec::with_capacity(rows);
             for &t in table.time_ns.iter() {
@@ -203,7 +220,9 @@ impl PsDataset {
         }).collect();
         let mut typed_infos = Vec::new();
         let generation = self.typed.generation();
-        for (ti, table) in self.typed.tables.iter().enumerate() {
+        let self_ptr = self as *const PsDataset as *const std::ffi::c_void;
+        let typed_view = self.typed.read();
+        for (ti, table) in typed_view.tables().iter().enumerate() {
             for _ in 0..table.columns.len() {
                 typed_infos.push(PsChannelInfo {
                     name: self.typed_names[typed_infos.len()].as_ptr(),
@@ -213,7 +232,7 @@ impl PsDataset {
                     value: std::ptr::null(),
                     table: self.typed_tables[typed_infos.len()].as_ptr(),
                     column: self.typed_columns[typed_infos.len()].as_ptr(),
-                    dataset: self as *const PsDataset as *const std::ffi::c_void,
+                    dataset: self_ptr,
                     generation, // typed 通道携带数据代际，读侧据此判断快照是否过期
                 });
             }
@@ -247,12 +266,12 @@ fn add_channel(d: &mut PsDataset, name: &str, unit: &str, t: Vec<f64>, v: Vec<f6
 }
 
 /// 按通道全名取序列：先查派生/旧通道，再查 typed 表列。null → NaN。
-fn find_series(d: &PsDataset, name: &str) -> Option<(Vec<f64>, Vec<f64>, String, Vec<bool>)> {
+fn find_series(d: &Read<'_>, name: &str) -> Option<(Vec<f64>, Vec<f64>, String, Vec<bool>)> {
     if let Some((_, ch)) = d.data.find(name) {
         return Some((ch.t.as_ref().clone(), ch.v.clone(), ch.unit.clone(),
                      vec![false; ch.v.len()]));
     }
-    for table in &d.typed.tables {
+    for table in d.typed.tables() {
         for col in &table.columns {
             let full = if table.name.is_empty() {
                 col.name.clone()
@@ -341,7 +360,7 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
         }
     };
     let d = (*ds).read();
-    let Some((t, v, unit, input_nulls)) = find_series(d, &input) else {
+    let Some((t, v, unit, input_nulls)) = find_series(&d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
@@ -370,7 +389,7 @@ pub unsafe extern "C" fn ps_dataset_apply_filter(
                 Ok(c) => c,
                 Err(e) => { write_err(err, err_cap, &e); return 4; }
             };
-            d.typed.tables[tidx].add_column(col).map_err(|e| write_err(err, err_cap, &e)).is_ok()
+            d.typed.table_mut(tidx).map(|t| t.add_column(col).map_err(|e| write_err(err, err_cap, &e)).is_ok()).unwrap_or(false)
         } else { false }
     } else { false };
     if typed_ok { return 0; }
@@ -423,7 +442,7 @@ pub unsafe extern "C" fn ps_preview_filter(
     };
     // 预览走 find_series（读主表）；未归并会漏掉补传行（D7）。
     let d = (*ds).read();
-    let Some((time, values, _, _)) = find_series(d, &input) else {
+    let Some((time, values, _, _)) = find_series(&d, &input) else {
         write_err(err, err_cap, &format!("找不到输入通道：{input}"));
         return 3;
     };
@@ -524,7 +543,7 @@ pub unsafe extern "C" fn ps_dataset_apply_quat_rpy(
             Ok(s) => s,
             Err(e) => { write_err(err, err_cap, &e); return 2; }
         };
-        let Some(s) = find_series(d, name) else {
+        let Some(s) = find_series(&d, name) else {
             write_err(err, err_cap, &format!("找不到四元数通道：{name}"));
             return 3;
         };
@@ -673,7 +692,7 @@ pub unsafe extern "C" fn ps_cache_save_dataset(
     };
     // 存盘前必须归并：save_typed_dataset 按 row_count() 写行，补传段未归并会丢行（D6）。
     let d = (*ds).read();
-    if d.typed.tables.is_empty() {
+    if d.typed.tables().is_empty() {
         write_err(err, err_cap, "数据集没有 typed 表，不能写 PSC1");
         return 2;
     }
@@ -1075,7 +1094,7 @@ pub unsafe extern "C" fn ps_dataset_add_table_column_typed(
             write_err(err, err_cap, &format!("表不存在：{table}"));
             return 4;
         };
-        (ti, d.typed.tables[ti].row_count())
+        (ti, d.typed.tables()[ti].row_count())
     };
     if rows != n {
         write_err(err, err_cap, "列点数与表行数不一致");
@@ -1185,17 +1204,16 @@ pub unsafe extern "C" fn ps_dataset_lod_minmax(
     };
     // lod_minmax 需要可变引用（惰性建金字塔 + pending 归并）。
     let ds_ref = (*ds).read_table_mut(table_name);
-    let Some(tidx) = ds_ref.typed.table_index(table_name) else {
-        return 0;
-    };
-    let Some(col_idx) = ds_ref.typed.tables[tidx].column_index(column_name) else {
+    let Some(tidx) = ds_ref.typed.table_index(table_name) else { return 0; };
+    let Some(t) = ds_ref.typed.table_mut(tidx) else { return 0; };
+    let Some(col_idx) = t.column_index(column_name) else {
         return 0;
     };
     if cap_triples == 0 {
         return 0;
     }
     let mut tmp = vec![0.0f64; cap_triples as usize * 3];
-    let n = ds_ref.typed.tables[tidx].lod_minmax(col_idx, t0_ns, t1_ns, px as usize, &mut tmp);
+    let n = t.lod_minmax(col_idx, t0_ns, t1_ns, px as usize, &mut tmp);
     let take = n.min(cap_triples as usize);
     std::ptr::copy_nonoverlapping(tmp.as_ptr(), out, take * 3);
     take as u32
@@ -1625,6 +1643,7 @@ pub unsafe extern "C" fn ps_decimate_series(
 mod tests {
     use super::*;
 
+
     #[test]
     fn selftest_passes() {
         assert_eq!(ps_abi_selftest(), 0);
@@ -1647,7 +1666,7 @@ mod tests {
             append(&[100, 300, 500], &[1.0, 3.0, 5.0]);
             // 中部补传：批首 200 < 表尾 500，写入进 pending 段。
             append(&[400, 200], &[4.0, 2.0]);
-            assert_eq!((*ds).typed.find_table("t").unwrap().pending_stats(), (1, 2));
+            assert_eq!((*ds).typed.pending_stats("t").unwrap(), (1, 2));
 
             // read_window 读全区间：应归并 pending，返回完整有序 5 行。
             let mut ot = [0.0f64; 8];
@@ -1656,7 +1675,7 @@ mod tests {
                 ot.as_mut_ptr(), ov.as_mut_ptr(), 8);
             assert_eq!(n, 5);
             assert_eq!(ov[..5], [1.0, 2.0, 3.0, 4.0, 5.0]);
-            assert_eq!((*ds).typed.find_table("t").unwrap().pending_stats(), (0, 0));
+            assert_eq!((*ds).typed.pending_stats("t").unwrap(), (0, 0));
 
             // 再补一段后按行号直读：value_at 也应先物化再返回。
             append(&[150], &[1.5]);
@@ -1687,7 +1706,7 @@ mod tests {
             };
             append(&[100, 300, 500], &[1.0, 3.0, 5.0]);
             append(&[400, 200], &[4.0, 2.0]);
-            assert_eq!((*ds).typed.find_table("t").unwrap().pending_stats(), (1, 2));
+            assert_eq!((*ds).typed.pending_stats("t").unwrap(), (1, 2));
 
             // 行数必须含补传行，调用方据此构造新列长度。
             let rows = ps_dataset_table_rows(ds, table.as_ptr());
@@ -1703,7 +1722,7 @@ mod tests {
                 err.as_mut_ptr(), 256,
             );
             assert_eq!(rc, 0, "加列应成功");
-            assert_eq!((*ds).typed.find_table("t").unwrap().pending_stats(), (0, 0),
+            assert_eq!((*ds).typed.pending_stats("t").unwrap(), (0, 0),
                 "加列后不应残留未归并段");
 
             // 关键：读新列（旧实现此处 abort）。
@@ -1807,9 +1826,9 @@ mod tests {
             );
             assert_eq!(rc, 0);
 
-            let d = &*ds;
-            assert_eq!(d.typed.tables.len(), 1);
-            let t = &d.typed.tables[0];
+            let d = (*ds).read();
+            assert_eq!(d.typed.tables().len(), 1);
+            let t = &d.typed.tables()[0];
             assert_eq!(t.name, "ATTITUDE");
             assert_eq!(t.row_count(), 3);
             assert_eq!(t.columns.len(), 1);
@@ -1875,7 +1894,7 @@ mod tests {
             );
             assert_eq!(rc, 0);
 
-            let d = &*ds;
+            let d = (*ds).read();
             let t = d.typed.find_table("ATTITUDE").unwrap();
             assert_eq!(t.row_count(), 3);
             assert_eq!(t.seq, vec![0, 1, 2]);
@@ -1919,7 +1938,7 @@ mod tests {
             );
             assert_eq!(rc, 0);
 
-            let d = &*ds;
+            let d = (*ds).read();
             let t = d.typed.find_table("ATTITUDE").unwrap();
             assert_eq!(t.row_count(), 5);
             assert_eq!(t.time_ns.as_slice(), &[5_000, 6_000, 7_000, 8_000, 9_000]);
@@ -2028,9 +2047,9 @@ mod tests {
                 std::ptr::null_mut(), 0,
             );
             assert_eq!(rc, 0);
-            let sliced = &*out;
-            assert_eq!(sliced.typed.tables.len(), 1);
-            let t = &sliced.typed.tables[0];
+            let sliced = (*out).read();
+            assert_eq!(sliced.typed.tables().len(), 1);
+            let t = &sliced.typed.tables()[0];
             assert_eq!(t.name, "ATTITUDE");
             assert_eq!(t.row_count(), 2);
             assert_eq!(t.time_ns.as_slice(), &[1_000, 2_000]);
@@ -2056,7 +2075,7 @@ mod tests {
                                  std::ptr::null_mut(), 0),
                 0
             );
-            assert_eq!((&*out).typed.tables[0].columns.len(), 1);
+            assert_eq!((*out).read().typed.tables()[0].columns.len(), 1);
             ps_dataset_free(out);
             // 空窗口（t0 > t1 区间无行）→ 空表，仍成功。
             assert_eq!(
@@ -2064,7 +2083,7 @@ mod tests {
                                  std::ptr::null_mut(), 0),
                 0
             );
-            assert_eq!((&*out).typed.tables[0].row_count(), 0);
+            assert_eq!((*out).read().typed.tables()[0].row_count(), 0);
             ps_dataset_free(out);
             // 不存在的列名。
             let bad = CString::new("nope").unwrap();
@@ -2250,7 +2269,7 @@ mod tests {
                 };
                 assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), &t, 1,
                     &col, 1, std::ptr::null_mut(), 0), 0);
-                let d = &*ds;
+                let d = (*ds).read();
                 let tb = d.typed.find_table("T").unwrap();
                 assert!(tb.row_count() <= 4, "行数为 {}，超出预算上限", tb.row_count());
                 let cur = *tb.seq.last().unwrap();
@@ -2530,7 +2549,7 @@ mod tests {
             assert_eq!(ps_dataset_value_at(ds, table.as_ptr(), vname.as_ptr(), 1, &mut tv, &mut vv), 0);
             assert_eq!(vv, 20.0);
             let obj_handles = {
-                let d = &*ds;
+                let d = (*ds).read();
                 let t = d.typed.find_table("lidar").unwrap();
                 match &t.column("frame").unwrap().data {
                     ps_ndf::typed::ColumnData::Object(v) => v.clone(),
@@ -2946,7 +2965,7 @@ pub unsafe extern "C" fn ps_dataset_value_at(
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
     let ds = (*ds).read_table(tname.as_ref());
-    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
+    let Some(t) = ds.typed.tables().iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     let idx = row as usize;
     if idx >= t.row_count() || idx >= c.len() {
@@ -2985,7 +3004,7 @@ pub unsafe extern "C" fn ps_dataset_text_at(
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
     let ds = (*ds).read_table(tname.as_ref());
-    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
+    let Some(t) = ds.typed.tables().iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     let idx = row as usize;
     if idx >= t.row_count() || idx >= c.len() {
@@ -3027,7 +3046,7 @@ pub unsafe extern "C" fn ps_dataset_value_near(
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
     let ds = (*ds).read_table(tname.as_ref());
-    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
+    let Some(t) = ds.typed.tables().iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     if t.time_ns.is_empty() {
         return 1;
@@ -3068,7 +3087,7 @@ pub unsafe extern "C" fn ps_dataset_read_window(
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
     let ds = (*ds).read_table(tname.as_ref());
-    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 0; };
+    let Some(t) = ds.typed.tables().iter().find(|t| t.name == tname) else { return 0; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
     let lo = t.time_ns.partition_point(|&x| x < t0_ns);
     let hi = t.time_ns.partition_point(|&x| x <= t1_ns);
@@ -3094,7 +3113,7 @@ pub unsafe extern "C" fn ps_dataset_seq_at(ds: *mut PsDataset, table: *const c_c
     if ds.is_null() || table.is_null() { return u64::MAX; }
     let name = CStr::from_ptr(table).to_string_lossy();
     let ds = (*ds).read_table(name.as_ref());
-    let Some(t) = ds.typed.tables.iter().find(|t| t.name == name) else { return u64::MAX; };
+    let Some(t) = ds.typed.tables().iter().find(|t| t.name == name) else { return u64::MAX; };
     t.seq.get(row as usize).copied().unwrap_or(u64::MAX)
 }
 
@@ -3111,7 +3130,7 @@ pub unsafe extern "C" fn ps_dataset_column_type(
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
     let ds = (*ds).read_table(tname.as_ref());
-    let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return -1; };
+    let Some(t) = ds.typed.tables().iter().find(|t| t.name == tname) else { return -1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return -1; };
     // 压缩列对外仍暴露逻辑类型码（解码后类型不变），不新增公共编码类型码。
     match c.data.value_type() {
@@ -3191,9 +3210,11 @@ pub unsafe fn __m27_invalidate_lod_for_bench(
     }
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return };
-    if let Some(t) = (*ds).typed.tables.iter_mut().find(|t| t.name == tname) {
-        if let Some(ci) = t.column_index(cname) {
-            t.columns[ci].lod = ps_ndf::typed::LodPyramid::default();
+    if let Some(ti) = (*ds).typed.table_index(tname) {
+        if let Some(t) = (*ds).typed.table_mut(ti) {
+            if let Some(ci) = t.column_index(cname) {
+                t.columns[ci].lod = ps_ndf::typed::LodPyramid::default();
+            }
         }
     }
 }
@@ -3230,7 +3251,7 @@ pub unsafe extern "C" fn ps_dataset_column_raw(
     // 归并会整体替换列的 Vec，因此借出的裸指针在物化后的只读期间有效；
     // 任何后续 append/backfill/加列都会使其失效（头文件已声明）。
     let d = (*ds).read_table(tname);
-    let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return 4 };
+    let Some(t) = d.typed.tables().iter().find(|t| t.name == tname) else { return 4 };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 4 };
     let (ptr, ty): (*const std::ffi::c_void, u32) = match &c.data {
         ps_ndf::typed::ColumnData::F64(v) => (v.as_ptr() as *const std::ffi::c_void, 0),
@@ -3289,17 +3310,19 @@ pub unsafe extern "C" fn ps_dataset_column_encode(
     // 编码只覆盖主表列；若段里还有未归并行，会留下「已编码列 + 未编码段」的混态。
     let d = (*ds).read_table(tname);
     let Some(ti) = d.typed.table_index(tname) else { return 2; };
-    let Some(ci) = d.typed.tables[ti].columns.iter().position(|c| c.name == cname) else { return 2; };
-    if d.typed.tables[ti].columns[ci].data.codec().is_some() {
+    let Some(ci) = d.typed.tables()[ti].columns.iter().position(|c| c.name == cname) else { return 2; };
+    if d.typed.tables()[ti].columns[ci].data.codec().is_some() {
         write_err(err, err_cap, "列已编码");
         return 3;
     }
     let d = &mut *ds;
-    let encoded = match d.typed.tables[ti].columns[ci].data.encode(cd) {
+    let Some(t) = d.typed.table_mut(ti) else { return 2 };
+    let Some(col) = t.columns.get_mut(ci) else { return 2 };
+    let encoded = match col.data.encode(cd) {
         Ok(x) => x,
         Err(e) => { write_err(err, err_cap, &e); return 4; }
     };
-    d.typed.tables[ti].columns[ci].data = encoded;
+    col.data = encoded;
     d.infos_dirty = true;
     0
 }
@@ -3315,7 +3338,7 @@ pub unsafe extern "C" fn ps_dataset_column_is_encoded(
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return -1; };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return -1; };
     let d = (*ds).read_table(tname);
-    let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return -1; };
+    let Some(t) = d.typed.tables().iter().find(|t| t.name == tname) else { return -1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return -1; };
     if c.data.codec().is_some() { 1 } else { 0 }
 }
@@ -3334,7 +3357,7 @@ pub unsafe extern "C" fn ps_dataset_column_decode_f64(
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 0; };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return 0; };
     let d = (*ds).read_table(tname);
-    let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return 0; };
+    let Some(t) = d.typed.tables().iter().find(|t| t.name == tname) else { return 0; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
     let n = c.len().min(cap as usize);
     for r in 0..n {
@@ -3373,7 +3396,7 @@ pub unsafe extern "C" fn ps_dataset_blob_put(
     } else {
         std::slice::from_raw_parts(payload as *const u8, len as usize)
     };
-    (*ds).typed.objects.put(bytes, type_tag)
+    (*ds).typed.objects_mut().put(bytes, type_tag)
 }
 
 /// 按句柄读 payload：字节级拷贝到 out。返回 0 成功；1 参数错；
@@ -3390,7 +3413,7 @@ pub unsafe extern "C" fn ps_dataset_blob_get(
     if ds.is_null() || out_len.is_null() {
         return 1;
     }
-    let Some((bytes, tag)) = (*ds).typed.objects.get(handle) else {
+    let Some((bytes, tag)) = (*ds).typed.objects().get(handle) else {
         return 2;
     };
     if !out_type_tag.is_null() {
@@ -3416,7 +3439,7 @@ pub unsafe extern "C" fn ps_dataset_blob_retain(ds: *mut PsDataset, handle: u64)
     if ds.is_null() {
         return 1;
     }
-    if (*ds).typed.objects.retain(handle) { 0 } else { 2 }
+    if (*ds).typed.objects_mut().retain(handle) { 0 } else { 2 }
 }
 
 /// 释放一个引用，归零则失效。返回 0 成功；2 句柄无效/引用已尽。
@@ -3425,7 +3448,7 @@ pub unsafe extern "C" fn ps_dataset_blob_release(ds: *mut PsDataset, handle: u64
     if ds.is_null() {
         return 1;
     }
-    if (*ds).typed.objects.release(handle) { 0 } else { 2 }
+    if (*ds).typed.objects_mut().release(handle) { 0 } else { 2 }
 }
 
 /* ===== BJ1 时间索引对象：按 topic / 时间组织句柄，到达序 UID（借鉴 pj ObjectStore） =====
@@ -3660,7 +3683,7 @@ pub unsafe extern "C" fn ps_object_payload_view(
     if ds.is_null() || out_ptr.is_null() || out_len.is_null() {
         return 1;
     }
-    let Some((bytes, tag)) = (*ds).typed.objects.get(handle) else {
+    let Some((bytes, tag)) = (*ds).typed.objects().get(handle) else {
         return 2;
     };
     *out_ptr = bytes.as_ptr();
@@ -3804,7 +3827,7 @@ pub unsafe extern "C" fn ps_dataset_slice(
         return 2;
     };
     let d = (*ds).read_table(tname);
-    let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else {
+    let Some(t) = d.typed.tables().iter().find(|t| t.name == tname) else {
         write_err(err, err_cap, &format!("表不存在：{tname}"));
         return 3;
     };
@@ -3845,7 +3868,7 @@ pub unsafe extern "C" fn ps_dataset_slice(
         Err(e) => { write_err(err, err_cap, &e); return 5; }
     };
     let mut nd = PsDataset::new();
-    nd.typed.tables.push(sliced);
+    if let Err(e) = nd.typed.push_table(sliced) { write_err(err, err_cap, &e); return 5; }
     nd.rebuild_infos();
     *out = Box::into_raw(Box::new(nd));
     0
@@ -3879,7 +3902,7 @@ pub unsafe extern "C" fn ps_dataset_read_window_multi(
     }
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 0 };
     let d = (*ds).read_table(tname);
-    let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return 0 };
+    let Some(t) = d.typed.tables().iter().find(|t| t.name == tname) else { return 0 };
     let n = column_count as usize;
     let mut cols: Vec<&ps_ndf::typed::Column> = Vec::with_capacity(n);
     for i in 0..n {
