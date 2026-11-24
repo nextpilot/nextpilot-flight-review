@@ -6,7 +6,7 @@
 
 | 物理目录 | 层 | 内容 |
 |---|---|---|
-| `application/app/` | L6 | 组合根：`core/` App 装配 · `cli/` 批处理入口 · `mcp/` MCP 桥 · `diag/` 诊断快照 |
+| `application/app/` | L6（入口）/ L3（`ps_app`） | 组合根：`core/` App 装配 · `cli/` 批处理入口 · `mcp/` MCP 桥 · `diag/` 诊断快照；`ps_app` 静态库把三者收成一份源码，无 Widgets、不链模块 |
 | `application/gui/shell/` | L5 | 外壳装配：MainWindow、ShellBinder、GuiContext、共享对话框 |
 | `application/gui/` | L5 | GUI 外壳 + 功能视图（views/ 等） |
 | `application/host/` | L3 | 运行时编排 |
