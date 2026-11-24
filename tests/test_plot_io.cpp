@@ -971,6 +971,101 @@ int main(int argc, char *argv[])
         workspace->activeCanvas()->clear();
     }
 
+    // --- 16) 4.2 双向通道全量 round-trip：toDocumentSpec → apply → toDocumentSpec 全等 ---
+    // M4 之前这里零覆盖。画布 id 是运行期分配（apply 重建画布必换 id），
+    // 比较前按位置归一化 id；其余字段（页/格/通道/style/state）要求逐位全等。
+    {
+        std::function<QJsonObject(const QJsonObject &, int &)> normNode =
+            [&](const QJsonObject &node, int &counter) -> QJsonObject {
+            QJsonObject out = node;
+            if (out.value(QStringLiteral("isCanvas")).toBool())
+            {
+                QJsonObject cv = out.value(QStringLiteral("canvas")).toObject();
+                cv.insert(QStringLiteral("id"), QStringLiteral("C%1").arg(counter++));
+                out.insert(QStringLiteral("canvas"), cv);
+            }
+            else
+            {
+                QJsonArray ch;
+                for (const QJsonValue &v : out.value(QStringLiteral("children")).toArray())
+                    ch.append(normNode(v.toObject(), counter));
+                out.insert(QStringLiteral("children"), ch);
+            }
+            return out;
+        };
+        auto normDoc = [&](const QJsonObject &doc) {
+            QJsonObject out = doc;
+            QJsonArray pages;
+            for (const QJsonValue &pv : out.value(QStringLiteral("pages")).toArray())
+            {
+                QJsonObject page = pv.toObject();
+                int counter = 0;
+                page.insert(QStringLiteral("root"),
+                            normNode(page.value(QStringLiteral("root")).toObject(), counter));
+                pages.append(page);
+            }
+            out.insert(QStringLiteral("pages"), pages);
+            return out;
+        };
+
+        // 干净 1 页 1 格 + 富状态：显式色 + 隐藏 + 图例四角 + 深缩放视口。
+        QVariant nullV16;
+        Result<QVariant> g16(nullV16);
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("figure.grid"),
+            {{QStringLiteral("rows"), 1}, {QStringLiteral("cols"), 1}}, g16));
+        auto *c16 = workspace->activeCanvas();
+        CHECK(c16 != nullptr);
+        c16->clear();
+        QVector<LodTriple> lod16;
+        lod16.reserve(200);
+        for (int i = 0; i < 200; ++i)
+        {
+            const double x = i * 0.01;
+            const double y = std::sin(i * 0.21);
+            lod16.push_back(LodTriple{x, y - 0.03, y + 0.03});
+        }
+        c16->setChannel(0, QStringLiteral("trace"), QStringLiteral("sig"),
+                        QStringLiteral("trace.sig"));
+        c16->setLodData(lod16, 0.0, 1.99);
+        const QString key16 = QStringLiteral("0|trace|sig");
+        const QColor color16(60, 180, 75);
+        CHECK(c16->setSeriesInk(key16, color16));
+        CHECK(c16->setSeriesVisible(key16, false)); // 显隐随布局存取（PR 3b 补齐）
+        // 注意顺序：restoreViewState 是全量状态恢复，缺键的 legendCorner 会回落默认
+        // 右上——先恢复视口，再设四角（真实存档 state 是 saveViewState 全量，无此问题）。
+        QJsonObject vp16;
+        vp16.insert(QStringLiteral("x"), QJsonArray{0.4, 0.9}); // 深缩放（相对秒视口）
+        CHECK(c16->restoreViewState(vp16));
+        c16->setLegendCorner(2);                    // 左下（PR 3a）
+
+        // round-trip ×2：第一次 apply 落运行时，第二次验证幂等（不再丢字段）。
+        const QJsonObject doc1 = workspace->toDocumentSpec().toJson();
+        CHECK(workspace->applyDocumentSpec(plot::PlotDocumentSpec::fromJson(doc1),
+                                           application.context().sources()));
+        const QJsonObject doc2 = workspace->toDocumentSpec().toJson();
+        CHECK(workspace->applyDocumentSpec(plot::PlotDocumentSpec::fromJson(doc2),
+                                           application.context().sources()));
+        const QJsonObject doc3 = workspace->toDocumentSpec().toJson();
+
+        CHECK(normDoc(doc1) == normDoc(doc2)); // 富状态全量无损往返
+        CHECK(normDoc(doc2) == normDoc(doc3)); // apply 幂等
+
+        // 运行时逐项复核：不看 JSON 字符串，验证恢复出来的对象真的就位。
+        auto *c16b = workspace->activeCanvas();
+        CHECK(c16b != nullptr);
+        const PlotSeries *s16 = c16b->seriesByKey(key16);
+        CHECK(s16 != nullptr);
+        CHECK(s16->color == color16);
+        CHECK(s16->visible == false);
+        CHECK(c16b->legendCorner() == 2);
+        double vx0 = 0.0, vx1 = 0.0;
+        CHECK(c16b->visibleTimeRange(&vx0, &vx1));
+        CHECK(std::fabs(vx0 - 0.4) < 1e-9 && std::fabs(vx1 - 0.9) < 1e-9);
+        OK("双向通道 16：toDocumentSpec→applyDocumentSpec 全量 round-trip（色/显隐/四角/视口）+ 幂等");
+        workspace->activeCanvas()->clear();
+    }
+
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");
     return 0;
 }
