@@ -81,3 +81,8 @@ set_target_properties(fastplot PROPERTIES
     CXX_STANDARD 17
     POSITION_INDEPENDENT_CODE ON
 )
+
+# 手动基准（不进 ctest）：追平优化前后对比数据采集（#IKXD1R 4.4）。
+add_executable(fastplot-bench bench/fastplot_bench.cpp)
+target_link_libraries(fastplot-bench PRIVATE fastplot)
+set_target_properties(fastplot-bench PROPERTIES AUTOMOC ON CXX_STANDARD 17)

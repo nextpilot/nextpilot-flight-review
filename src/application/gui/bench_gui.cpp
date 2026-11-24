@@ -12,6 +12,8 @@
 
 #include "MainWindow.h"
 #include "AxesView.h"
+#include "PlotWorkspace.h"
+#include "../modules/plot/PlotDocument.h"
 #include "PanelFactoryHub.h"
 #include "ShellBinder.h"
 
@@ -21,6 +23,8 @@
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <algorithm>
+#include <vector>
 #include <QFileInfo>
 
 #include <cstdio>
@@ -34,6 +38,7 @@ using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::gui;
+namespace plot = nextpilot::plotscope::plot;
 
 static long rssKb()
 {
@@ -50,6 +55,15 @@ static long rssKb()
 }
 
 namespace {
+#define CHECK_APPLY(stmt, tag) \
+    do { \
+        if (!(stmt)) \
+        { \
+            fprintf(stderr, "applyDocumentSpec #%d failed\n", (tag)); \
+            return 1; \
+        } \
+    } while (0)
+
 const char *u8(const QString &s)
 {
     return s.toUtf8().constData();
@@ -63,10 +77,12 @@ int main(int argc, char *argv[])
 
     if (argc < 2)
     {
-        fprintf(stderr, "usage: %s <file.ulg>\n", argv[0]);
+        fprintf(stderr, "usage: %s <file> [--workspace]\n", argv[0]);
         return 2;
     }
     const QString path = QString::fromLocal8Bit(argv[1]);
+    const bool workspaceBench =
+        argc > 2 && QLatin1String(argv[2]) == QLatin1String("--workspace");
 
     fprintf(stdout, "起始 RSS: %ld KB\n", rssKb());
 
@@ -74,6 +90,8 @@ int main(int argc, char *argv[])
     MainWindow window(application.context());
     window.build(application.host());
     window.resize(1600, 900);
+    window.show();
+    QApplication::processEvents();
 
     // 走真实 data.load 路径（与 CLI 完全相同）
     QElapsedTimer timer;
@@ -116,17 +134,104 @@ int main(int argc, char *argv[])
     application.context().setActiveChannel(dsId, table->name, column);
     const qint64 renderMs = timer.elapsed();
 
-    // 中央画布：从画布插槽取回（视图层自注册的 "plot-axes" 部件）。
-    auto *canvas = qobject_cast<AxesView *>(
-        window.binder()->centralContent());
-    if (!canvas)
+    // 中央画布：从主窗口树下取（画布由 workspace 的 cell 创建）。
+    auto *canvas = window.findChild<AxesView *>();
+    if (!canvas && !workspaceBench)
     {
         fprintf(stderr, "canvas not created\n");
         return 1;
     }
-    fprintf(stdout, "渲染：%lld ms，画布三元组 %d 个（像素宽 %d），RSS %ld KB\n", renderMs,
-            canvas->lodPointCount(), canvas->width(), rssKb());
-    fprintf(stdout, "结论：三元组数与行数无关（%d 行 -> %d 点），内存有界。\n", table->rows,
-            canvas->lodPointCount());
+    if (canvas)
+    {
+        fprintf(stdout, "渲染：%lld ms，画布三元组 %d 个（像素宽 %d），RSS %ld KB\n", renderMs,
+                canvas->lodPointCount(), canvas->width(), rssKb());
+        fprintf(stdout, "结论：三元组数与行数无关（%d 行 -> %d 点），内存有界。\n", table->rows,
+                canvas->lodPointCount());
+    }
+
+    if (workspaceBench)
+    {
+        // 主窗口树下找 PlotWorkspace（中央画布在 workspace 的 cell 里）。
+        auto *ws = window.findChild<PlotWorkspace *>();
+        if (!ws)
+        {
+            fprintf(stderr, "workspace not found\n");
+            return 1;
+        }
+        // 构造 2 页 × 2x2 网格（8 画布）× 4 通道 + 显式色 + 深缩放视口的文档，
+        // 计时 applyDocumentSpec（布局先到 → 数据回绑 → 视口回放的完整恢复链）。
+        const QStringList cols = [&] {
+            QStringList out;
+            for (const Column &c : table->columns)
+                if (c.type != ValueType::Text && out.size() < 4)
+                    out << c.name;
+            return out;
+        }();
+        const int srcId = application.context().sources().sourceOfDataset(dsId);
+        const DataSourceInfo *src = application.context().sources().get(srcId);
+        if (!src || cols.size() < 4)
+        {
+            fprintf(stderr, "not enough columns / source\n");
+            return 1;
+        }
+        plot::PlotDocumentSpec doc;
+        doc.version = 1;
+        const QColor palette[4] = {{0x5b, 0xc0, 0xf0}, {0x8a, 0xd8, 0x6e},
+                                   {0xe4, 0x57, 0x2e}, {0xf2, 0xb1, 0x34}};
+        for (int p = 0; p < 2; ++p)
+        {
+            plot::PlotPageSpec page;
+            page.id = QStringLiteral("bench-page-%1").arg(p);
+            plot::LayoutNode grid;
+            grid.isCanvas = false;
+            grid.direction = QStringLiteral("horizontal");
+            for (int cell = 0; cell < 4; ++cell)
+            {
+                plot::LayoutNode node;
+                node.isCanvas = true;
+                plot::CanvasSpec cs;
+                cs.id = QStringLiteral("bench-c%1-%2").arg(p).arg(cell);
+                cs.viewType = QStringLiteral("timeseries");
+                cs.datasetOrigin = src->origin;
+                for (int k = 0; k < 4; ++k)
+                    cs.channels << table->name + QLatin1Char('.') + cols[k];
+                QJsonArray series;
+                for (int k = 0; k < 4; ++k)
+                {
+                    QJsonObject so;
+                    so.insert(QStringLiteral("key"),
+                              QStringLiteral("%1|%2|%3").arg(dsId).arg(table->name, cols[k]));
+                    so.insert(QStringLiteral("color"), palette[k].name(QColor::HexRgb));
+                    series.append(so);
+                }
+                QJsonObject style;
+                style.insert(QStringLiteral("series"), series);
+                cs.style = style;
+                QJsonObject st;
+                const double lo = 10.0 * cell + p;
+                st.insert(QStringLiteral("x"), QJsonArray{lo, lo + 5.0});
+                cs.state = st;
+                node.canvas = cs;
+                grid.children.append(node);
+            }
+            page.root = grid;
+            doc.pages.append(page);
+        }
+
+        // 预热一次（首开含 widget/画布创建的冷路径），再计 3 次热打开。
+        QElapsedTimer t;
+        t.start();
+        CHECK_APPLY(ws->applyDocumentSpec(doc, application.context().sources()), 1);
+        fprintf(stdout, "工作区打开（8格x4通道，冷）：%.1f ms\n", t.elapsed() / 1.0);
+        std::vector<double> ms;
+        for (int i = 0; i < 3; ++i)
+        {
+            t.restart();
+            CHECK_APPLY(ws->applyDocumentSpec(doc, application.context().sources()), 2);
+            ms.push_back(t.elapsed() / 1.0);
+        }
+        std::sort(ms.begin(), ms.end());
+        fprintf(stdout, "工作区打开（8格x4通道，热）：中位 %.1f ms\n", ms[1]);
+    }
     return 0;
 }
