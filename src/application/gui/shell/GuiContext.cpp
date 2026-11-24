@@ -10,6 +10,8 @@
 
 #include <QFileDialog>
 #include <QMainWindow>
+#include <QDateTime>
+#include <QSet>
 
 #include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
@@ -92,6 +94,51 @@ void GuiContext::declareThemeToken(const ThemeTokenSpec &token)
         if (existing.id == spec.id)
             return;
     m_moduleTokens.append(spec);
+}
+
+void GuiContext::declareStatus(const StatusSpec &status)
+{
+    StatusSpec spec = status;
+    if (spec.provider.isEmpty())
+        spec.provider = QStringLiteral("module");
+    // 按 id 去重：先声明者优先。
+    for (const StatusSpec &existing : m_statusSpecs)
+        if (existing.id == spec.id)
+            return;
+    m_statusSpecs.append(spec);
+    m_statusText.insert(spec.id, spec.text);
+    Q_EMIT statusSpecDeclared(spec);
+}
+
+void GuiContext::updateStatus(const QString &id, const QString &text)
+{
+    if (!m_statusText.contains(id))
+        return; // 未声明的 id 忽略：避免模块推野键污染状态栏
+
+    // D2 游标 10Hz 节流：高频推送的项在 100ms 窗口内只发射一次。
+    // 仍更新缓存文本，保证下一次窗口发射的是最新值。
+    static const QSet<QString> kThrottled = { QStringLiteral("plot.axes.cursor") };
+    if (kThrottled.contains(id))
+    {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const qint64 last = m_statusLastEmitMs.value(id, -1000);
+        m_statusText.insert(id, text);
+        if (now - last < 100)
+            return;
+        m_statusLastEmitMs.insert(id, now);
+        Q_EMIT statusTextChanged(id, text);
+        return;
+    }
+
+    if (m_statusText.value(id) == text)
+        return; // 文本未变不刷新
+    m_statusText.insert(id, text);
+    Q_EMIT statusTextChanged(id, text);
+}
+
+void GuiContext::flashStatus(const QString &text)
+{
+    Q_EMIT statusFlashed(text);
 }
 
 void GuiContext::setActivityBadge(const QString &activityId, int count)

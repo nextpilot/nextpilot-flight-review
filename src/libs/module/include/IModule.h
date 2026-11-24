@@ -53,6 +53,17 @@ public:
     // 故模块 token 只在 GUI 装配路径出现，不影响 CLI 纯净。
     virtual void declareThemeToken(const nextpilot::plotscope::registry::ThemeTokenSpec &token) = 0;
 
+    // 声明状态栏项（验收 7 / D8 推模式）：模块只描述 id/side/priority/when 等元数据，
+    // 控件由壳按 side/priority 排布；同 id 重复声明先到者为准。
+    virtual void declareStatus(const nextpilot::plotscope::registry::StatusSpec &status) = 0;
+
+    // 推送状态文本（不轮询）：模块在数据变化时调用，壳更新对应项的显示。
+    // 未声明的 id 被忽略（headless 下无实现，声明/推送都不影响 CLI 纯净）。
+    virtual void updateStatus(const QString &id, const QString &text) = 0;
+
+    // 瞬时消息（对应 QStatusBar::showMessage 的短时提示），壳统一呈现。
+    virtual void flashStatus(const QString &text) = 0;
+
     // 更新 Activity Bar 徽标数量（0 表示不显示）。
     virtual void setActivityBadge(const QString &activityId, int count) = 0;
 

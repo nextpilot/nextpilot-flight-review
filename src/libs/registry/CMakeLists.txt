@@ -11,6 +11,7 @@ add_library(ps_registry STATIC
     src/RegistryTree.cpp
     include/Domain.h
     include/Contribution.h
+    include/NullContributionSink.h
     include/ProductSpec.h
     include/Region.h
     include/ToolboxHub.h

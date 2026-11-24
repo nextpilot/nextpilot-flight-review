@@ -8,6 +8,9 @@
 #include "PluginScanner.h"
 #include "Toolbox.h"
 #include "Contribution.h"
+#include "Registry.h"
+#include "NullContributionSink.h"
+#include "ServiceLocator.h"
 #include "BuiltinModuleHub.h"
 #include "ToolboxHub.h"
 #include "IModule.h"
@@ -1108,6 +1111,54 @@ using namespace nextpilot::plotscope::context;
         CHECK(toolbox.settingsPagesSorted().isEmpty());
         CHECK(toolbox.themeTokensAll().isEmpty());
         fprintf(stdout, "[ok] c3 四个贡献点：随包原子装卸、按视图裁剪、order 排序、令牌兜底色可查\n");
+    }
+
+    // === N5-N7 / D10-D12 三项架构裁定落地 ===
+    {
+        using nextpilot::plotscope::registry::Registry;
+        // D10 贡献点启动期冻结：freeze 后写操作全拒，查询仍可用。
+        Registry<int> reg;
+        CHECK(reg.insert(QStringLiteral("a"), 1));
+        CHECK(reg.insert(QStringLiteral("b"), 2));
+        CHECK(!reg.isFrozen());
+        reg.freeze();
+        CHECK(reg.isFrozen());
+        CHECK(!reg.insert(QStringLiteral("c"), 3));
+        CHECK(!reg.remove(QStringLiteral("a")));
+        reg.clear();
+        CHECK(reg.count() == 2);              // clear 被冻结拒绝
+        CHECK(reg.value(QStringLiteral("a"), 0) == 1);
+        CHECK(reg.keys().size() == 2);
+
+        // D11 服务定位 domain.service：<域>.<名> id 命名 + 类型安全查询。
+        using nextpilot::plotscope::intent::ServiceLocator;
+        CHECK(ServiceLocator::isValidId(QStringLiteral("domain.service.plot.axes")));
+        CHECK(!ServiceLocator::isValidId(QStringLiteral("plot.axes")));
+        ServiceLocator svc;
+        int dummy = 42;
+        CHECK(svc.registerService(QStringLiteral("domain.service.test.value"), &dummy, QStringLiteral("int")));
+        CHECK(!svc.registerService(QStringLiteral("domain.service.test.value"), &dummy, QStringLiteral("int"))); // 重复拒绝
+        CHECK(svc.service<int>(QStringLiteral("domain.service.test.value"), QStringLiteral("int")) == &dummy);
+        CHECK(svc.service<int>(QStringLiteral("domain.service.test.value"), QStringLiteral("double")) == nullptr); // 类型不符
+        CHECK(svc.count() == 1);
+
+        // D12 headless NullContributionSink：只校验不呈现。合法包零错误；坏包暴露问题。
+        using nextpilot::plotscope::registry::NullContributionSink;
+        using nextpilot::plotscope::registry::Pack;
+        using nextpilot::plotscope::registry::UiAction;
+        Pack good;
+        good.id = QStringLiteral("pack.null-test");
+        UiAction ua; ua.id = QStringLiteral("a.test"); ua.label = QStringLiteral("测试");
+        good.uiActions << ua;
+        QStringList errs;
+        CHECK(NullContributionSink::accept(good, &errs));
+        CHECK(errs.isEmpty());
+        Pack bad;                                    // 无 id + 空 id 贡献 → 应被拒
+        UiAction badUa; badUa.id.clear();
+        bad.uiActions << badUa;
+        CHECK(!NullContributionSink::accept(bad, &errs));
+        CHECK(errs.size() >= 2);
+        fprintf(stdout, "[ok] D10 冻结 / D11 domain.service 服务定位 / D12 NullContributionSink 校验\n");
     }
 
     fprintf(stdout, "\n全部架构契约测试通过\n");

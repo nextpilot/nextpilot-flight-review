@@ -10,6 +10,7 @@ add_library(ps_command STATIC
     include/command/CommandRegistry.h
     include/command/ContextStack.h
     include/command/WhenExpression.h
+    include/command/WhenKeys.h
     include/command/KeybindingRegistry.h
 )
 target_include_directories(ps_command PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -21,19 +21,26 @@ public:
     using value_type = T;
     using key_type   = Key;
 
-    // 登记条目；重复 id 返回 false（先到者为准）。登记顺序被记录。
+    // D10 启动期冻结：贡献点收集完成后调用，此后所有写操作被拒（先到者为准的顺序不再变）。
+    // 默认不冻结——纯数据容器行为不变，只有显式 freeze() 的表才锁定。
+    void freeze() { m_frozen = true; }
+    bool isFrozen() const { return m_frozen; }
+
+    // 登记条目；重复 id 或已冻结返回 false（先到者为准）。登记顺序被记录。
     bool insert(const Key &id, T entry)
     {
-        if (m_map.contains(id))
+        if (m_frozen || m_map.contains(id))
             return false;
         m_map.insert(id, std::move(entry));
         m_order.append(id);
         return true;
     }
 
-    // 移除条目，返回是否存在并被移除。
+    // 移除条目，返回是否存在并被移除；已冻结拒绝。
     bool remove(const Key &id)
     {
+        if (m_frozen)
+            return false;
         if (m_map.remove(id) == 0)
             return false;
         m_order.removeOne(id);
@@ -73,11 +80,18 @@ public:
 
     int count() const { return m_map.size(); }
     bool isEmpty() const { return m_map.isEmpty(); }
-    void clear() { m_map.clear(); m_order.clear(); }
+    void clear()
+    {
+        if (m_frozen)
+            return;
+        m_map.clear();
+        m_order.clear();
+    }
 
 private:
     QHash<Key, T> m_map;
     QList<Key> m_order; // 插入顺序（保序视图）
+    bool m_frozen = false;
 };
 
 } // namespace nextpilot::plotscope::registry

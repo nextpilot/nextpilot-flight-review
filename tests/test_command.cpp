@@ -6,6 +6,7 @@
 //   · 三层作用域：View 层键覆盖 Shell 层同名键
 
 #include "command/CommandRegistry.h"
+#include "command/WhenKeys.h"
 #include "command/ContextStack.h"
 #include "command/KeybindingRegistry.h"
 #include "command/WhenExpression.h"
@@ -141,6 +142,10 @@ static void testCache()
 {
     CommandRegistry registry;
     int hits = 0;
+    registry.setExecutor([&hits](const CommandDescriptor &, QString *) {
+        ++hits;
+        return true;
+    });
 
     const QString when = QStringLiteral("selection.kind == \"series\" && dataset.count > 0");
     for (int i = 0; i < 5; ++i)
@@ -149,7 +154,7 @@ static void testCache()
         command.id = QStringLiteral("plot.cursor.%1").arg(i);
         command.title = QStringLiteral("游标动作 %1").arg(i);
         command.when = when;                       // 同一串：只应解析一次
-        command.handler = [&hits]() { ++hits; };
+        command.intentOp = QStringLiteral("plot.cursor.test");
         CHECK(registry.add(command));
     }
     CHECK(registry.whenParseCount() == 1);
@@ -176,7 +181,7 @@ static void testCache()
     other.id = QStringLiteral("plot.other");
     other.title = QStringLiteral("别的动作");
     other.when = QStringLiteral("document.kind == \"script\"");
-    other.handler = []() {};
+    other.intentOp = QStringLiteral("plot.other.test");
     CHECK(registry.add(other));
     CHECK(registry.whenParseCount() == before + 1);
 }
@@ -211,6 +216,39 @@ static void testKeybindings()
     CHECK(KeybindingRegistry::normalize(QStringLiteral("ctrl+s")) == QStringLiteral("Ctrl+S"));
 }
 
+static void testWhenKeys()
+{
+    // N3：契约唯一键表（点号命名），生产键必须在表内。
+    const QStringList contract = {
+        QStringLiteral("region.active"), QStringLiteral("view.active"),
+        QStringLiteral("selection.kind"), QStringLiteral("selection.count"),
+        QStringLiteral("activity.active"), QStringLiteral("dataset.count"),
+        QStringLiteral("source.count"), QStringLiteral("playback.state"),
+        QStringLiteral("item.kind"), QStringLiteral("item.id"),
+        QStringLiteral("item.multiSelect"),
+    };
+    for (const QString &key : contract)
+        CHECK(WhenKeys::isKnown(key));
+
+    // 历史驼峰键不在表内，但给出点号建议（诊断用）。
+    CHECK(!WhenKeys::isKnown(QStringLiteral("selectionKind")));
+    CHECK(WhenKeys::suggest(QStringLiteral("selectionKind")) == QStringLiteral("selection.kind"));
+    CHECK(WhenKeys::suggest(QStringLiteral("hasData")) == QStringLiteral("dataset.count"));
+    CHECK(WhenKeys::suggest(QStringLiteral("no.such.key")).isEmpty());
+
+    // D19：item.* 只在 View 作用域解析。
+    CHECK(WhenKeys::isViewScoped(QStringLiteral("item.kind")));
+    CHECK(!WhenKeys::isViewScoped(QStringLiteral("selection.kind")));
+
+    // setContextValue 对未知键计数警告，对契约键不计。
+    CommandRegistry registry;
+    registry.setContextValue(QStringLiteral("selection.kind"), QStringLiteral("series"));
+    CHECK(registry.unknownKeyCount() == 0);
+    registry.setContextValue(QStringLiteral("selectionKind"), QStringLiteral("series"));
+    CHECK(registry.unknownKeyCount() == 1);
+    CHECK(registry.lastUnknownKey() == QStringLiteral("selectionKind"));
+}
+
 int main()
 {
     testGrammar();
@@ -218,6 +256,7 @@ int main()
     testThreeLayerScope();
     testCache();
     testKeybindings();
+    testWhenKeys();
 
     if (g_failed == 0)
         std::printf("ps_command: all checks passed\n");

@@ -5,6 +5,7 @@ add_library(ps_intent STATIC
     include/IIntentExecutor.h
     include/JobRecorder.h
     include/OpDispatch.h
+    include/ServiceLocator.h
 )
 
 target_include_directories(ps_intent PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

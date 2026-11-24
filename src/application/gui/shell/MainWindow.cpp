@@ -21,6 +21,7 @@
 #include "ShellContributions.h"
 #include "Intent.h"
 #include "Result.h"
+#include "ErrorCodes.h"
 #include "UiSlotHub.h"
 #include "IMessageParser.h"
 #include "Contribution.h"
@@ -35,6 +36,8 @@
 #include <QAction>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QLabel>
+#include <algorithm>
 #include "WorkspaceDataConfig.h"
 
 #include <QCloseEvent>
@@ -81,6 +84,50 @@ static void initSaribbonResources()
 
 namespace nextpilot::plotscope::gui
 {
+
+namespace {
+
+// 轻量意图处理器适配器：shell UI 命令的 op → MainWindow::runShellAction。
+// canHandle 用精确 op 集合（含 activity.activate.* 前缀），不与模块业务意图冲突。
+class ShellIntentHandler final : public QObject, public intent::IIntentHandler
+{
+public:
+    using Action = std::function<bool(const QString &op, QString *error)>;
+
+    explicit ShellIntentHandler(Action action, QObject *parent = nullptr)
+        : QObject(parent), m_action(std::move(action)) {}
+
+    bool canHandle(const intent::Intent &i) const override
+    {
+        const QString &op = i.op;
+        static const QSet<QString> kShellOps = {
+            QStringLiteral("palette.show"), QStringLiteral("quick.switch"),
+            QStringLiteral("view.toggleSideBar"), QStringLiteral("view.toggleAuxZone"),
+            QStringLiteral("view.togglePanel"), QStringLiteral("editor.next"),
+            QStringLiteral("editor.close"), QStringLiteral("plot.series.removeSelected"),
+            QStringLiteral("preferences.keybindings"),
+        };
+        return kShellOps.contains(op) || op.startsWith(QStringLiteral("activity.activate."));
+    }
+
+    foundation::Result<intent::IntentResult> execute(const intent::Intent &i) override
+    {
+        QString error;
+        if (m_action(i.op, &error))
+        {
+            intent::IntentResult r;
+            return foundation::Result<intent::IntentResult>(r);
+        }
+        return foundation::fail(err::Unsupported, error.isEmpty()
+                                    ? QStringLiteral("shell 命令执行失败: %1").arg(i.op)
+                                    : error);
+    }
+
+private:
+    Action m_action;
+};
+
+} // namespace
 
 MainWindow::MainWindow(AppContext &appCtx, const registry::ProductSpec &spec, QWidget *parent)
     : SARibbonMainWindow(parent,
@@ -283,6 +330,8 @@ void MainWindow::build(RuntimeHost &host)
         return actions;
     });
     m_context = new GuiContext(this, slotReg, m_binder, m_appCtx, &host, this);
+    // 状态栏：先接好信号，模块 onAttach（activate 内）声明状态项时即可排布（验收 7）。
+    setupStatusBar();
 
     m_binder->setActivityActivatedHandler([this](const ActivitySpec &spec) {
         // Activity 的侧栏切换由 ShellBinder 完成；这里只处理“要打开哪个面板”。
@@ -1125,11 +1174,24 @@ void MainWindow::toggleSideBar()
 
 void MainWindow::buildCommandLayer(RuntimeHost &host)
 {
-    Q_UNUSED(host);
     if (m_commands || !m_binder)
         return;
 
     m_commands = std::make_unique<CommandRegistry>();
+
+    // D7 收口：命令只带数据，执行交给注入的回调。回调先试本地 Ribbon 动作，
+    // 再按 intentOp 走意图执行器（模块业务意图 + @system/shell 的 UI 意图）。
+    m_commands->setExecutor(
+        [this](const command::CommandDescriptor &command, QString *error) {
+            return executeCommand(command, error);
+        });
+
+    // shell UI 命令 op 注册为系统级意图，与模块业务意图走同一条执行路径。
+    host.registerSystemHandler(QStringLiteral("@system/shell"),
+                               new ShellIntentHandler(
+                                   [this](const QString &op, QString *error) {
+                                       return runShellAction(op, error);
+                                   }, this));
 
     // 命令接缝注入上下文：模块呈现层（右键/标题栏/设置页）没法反向依赖外壳，
     // 由外壳把"执行"与"when 求值"两个能力挂到 AppContext 上。
@@ -1180,6 +1242,186 @@ void MainWindow::buildCommandLayer(RuntimeHost &host)
     qApp->installEventFilter(this);
 }
 
+bool MainWindow::executeCommand(const command::CommandDescriptor &command, QString *error)
+{
+    // 1) 本地 Ribbon 动作：模块动作走 ShellBinder 的 trigger/意图双路径。
+    if (!command.localActionId.isEmpty())
+    {
+        const QString data = command.data;
+        const QString op = command.intentOp;
+        // dispatchAction 内部先试 triggerAction，失败再发意图；这里保留其语义。
+        if (m_binder->dispatchAction(command.localActionId, op, data))
+            return true;
+        // 本地动作存在但 intentOp 为空 → 无法进一步派发。
+        if (op.isEmpty())
+        {
+            if (error)
+                *error = QStringLiteral("命令无法执行: %1").arg(command.localActionId);
+            return false;
+        }
+    }
+
+    // 2) 意图 op：交给宿主执行器（模块业务意图 + @system/shell 的 UI 意图）。
+    if (!command.intentOp.isEmpty())
+    {
+        Intent intent;
+        intent.op = command.intentOp;
+        if (!command.data.isEmpty())
+            intent.params.insert(QStringLiteral("data"), command.data);
+        if (m_host && m_host->execute(intent))
+            return true;
+        if (error)
+            *error = QStringLiteral("命令无法执行: %1").arg(command.intentOp);
+        return false;
+    }
+
+    if (error)
+        *error = QStringLiteral("命令无可执行的载荷: %1").arg(command.id);
+    return false;
+}
+
+bool MainWindow::runShellAction(const QString &op, QString *error)
+{
+    // shell 命令 op → GUI 动作的集中分派（D7：命令层无代码，这里是壳的 UI 实现）。
+    if (op == QStringLiteral("palette.show"))         { showCommandPalette(); return true; }
+    if (op == QStringLiteral("quick.switch"))         { showQuickSwitch(); return true; }
+    if (op == QStringLiteral("view.toggleSideBar"))   { toggleSideBar(); return true; }
+    if (op == QStringLiteral("view.toggleAuxZone"))
+    {
+        if (m_binder->toggleAuxZone())
+            statusBar()->showMessage(m_binder->auxZoneVisible()
+                                         ? QStringLiteral("辅助栏已显示")
+                                         : QStringLiteral("辅助栏已隐藏"));
+        return true;
+    }
+    if (op == QStringLiteral("view.togglePanel"))
+    {
+        if (m_binder->toggleBottomPanel())
+            statusBar()->showMessage(m_binder->bottomPanelVisible()
+                                         ? QStringLiteral("底部面板已显示")
+                                         : QStringLiteral("底部面板已隐藏"));
+        return true;
+    }
+    if (op == QStringLiteral("editor.next"))
+    {
+        const int count = m_binder->centralWidgets().size();
+        if (count <= 0)
+            return true;
+        const int current = qMax(0, m_binder->currentCentralIndex());
+        m_binder->activateCentralIndex((current + 1) % count);
+        return true;
+    }
+    if (op == QStringLiteral("editor.close"))
+    {
+        if (!m_binder->closeCurrentEditor())
+            statusBar()->showMessage(QStringLiteral("当前页签不可关闭"));
+        return true;
+    }
+    if (op == QStringLiteral("plot.series.removeSelected"))
+    {
+        const Selection &selection = m_appCtx.selection();
+        const QString key = selection.ids.value(QStringLiteral("seriesKey")).toString();
+        if (selection.kind != SelectionKind::Series || key.isEmpty())
+        {
+            statusBar()->showMessage(QStringLiteral("未选中曲线"));
+            return true;
+        }
+        QVariantMap params;
+        params.insert(QStringLiteral("key"), key);
+        QVariant nullValue;
+        Result<QVariant> result(nullValue);
+        if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.series.remove"),
+                                                        params, result) || !result)
+            statusBar()->showMessage(QStringLiteral("删除曲线失败"));
+        return true;
+    }
+    if (op == QStringLiteral("preferences.keybindings"))
+    {
+        openKeybindingDialog();
+        return true;
+    }
+    if (op.startsWith(QStringLiteral("activity.activate.")))
+    {
+        const QString activityId = op.mid(QStringLiteral("activity.activate.").size());
+        m_binder->setActiveActivity(activityId);
+        return true;
+    }
+    if (error)
+        *error = QStringLiteral("未知 shell 命令: %1").arg(op);
+    return false;
+}
+
+void MainWindow::setupStatusBar()
+{
+    // 订阅模块声明与推送（D8 推模式）：声明建控件，文本变化只改 QLabel。
+    connect(m_context, &GuiContext::statusSpecDeclared,
+            this, &MainWindow::onStatusSpecDeclared);
+    connect(m_context, &GuiContext::statusTextChanged,
+            this, &MainWindow::onStatusTextChanged);
+    connect(m_context, &GuiContext::statusFlashed,
+            this, &MainWindow::onStatusFlashed);
+    // 装配前模块可能已声明（取决于 activate 顺序），补建一次。
+    for (const StatusSpec &spec : m_context->statusSpecs())
+        onStatusSpecDeclared(spec);
+    rebuildStatusBarLayout();
+}
+
+void MainWindow::onStatusSpecDeclared(const StatusSpec &spec)
+{
+    if (m_statusLabels.contains(spec.id))
+        return;
+    QLabel *label = new QLabel(this);
+    label->setObjectName(QStringLiteral("status.item.%1").arg(spec.id));
+    if (!spec.tooltip.isEmpty())
+        label->setToolTip(spec.tooltip);
+    label->setText(m_context->statusText(spec.id));
+    m_statusLabels.insert(spec.id, label);
+    rebuildStatusBarLayout();
+}
+
+void MainWindow::onStatusTextChanged(const QString &id, const QString &text)
+{
+    if (QLabel *label = m_statusLabels.value(id, nullptr))
+        label->setText(text);
+}
+
+void MainWindow::onStatusFlashed(const QString &text)
+{
+    statusBar()->showMessage(text);
+}
+
+void MainWindow::rebuildStatusBarLayout()
+{
+    // 按 side 分组、priority 升序：左项永久部件（左侧），右项普通部件（右侧）。
+    // 先移除全部再按序加回，项数很少（≈4），重建成本可忽略。
+    for (QLabel *label : m_statusLabels)
+        statusBar()->removeWidget(label);
+    QList<QLabel *> left;
+    QList<QLabel *> right;
+    for (const StatusSpec &spec : m_context->statusSpecs())
+    {
+        QLabel *label = m_statusLabels.value(spec.id, nullptr);
+        if (!label)
+            continue;
+        (spec.side == StatusSide::Left ? left : right).append(label);
+    }
+    auto priorityLess = [this](QLabel *a, QLabel *b) {
+        int pa = 0, pb = 0;
+        for (const StatusSpec &s : m_context->statusSpecs())
+        {
+            if (s.id == a->objectName().mid(QStringLiteral("status.item.").size())) pa = s.priority;
+            if (s.id == b->objectName().mid(QStringLiteral("status.item.").size())) pb = s.priority;
+        }
+        return pa < pb;
+    };
+    std::sort(left.begin(), left.end(), priorityLess);
+    std::sort(right.begin(), right.end(), priorityLess);
+    for (QLabel *label : left)
+        statusBar()->addWidget(label, 1);
+    for (QLabel *label : right)
+        statusBar()->addPermanentWidget(label, 0);
+}
+
 void MainWindow::registerSlotCommands()
 {
     QSet<QString> seen;
@@ -1200,13 +1442,11 @@ void MainWindow::registerSlotCommands()
             command.icon = ua.icon;
             command.shortcut = ua.shortcut;
             command.provider = bound.provider;
-            const QString actionId = ua.id;
-            const QString intentOp = ua.intentOp;
-            const QString data = ua.data;
-            command.handler = [this, actionId, intentOp, data]() {
-                if (!m_binder->dispatchAction(actionId, intentOp, data))
-                    statusBar()->showMessage(QStringLiteral("命令无法执行: %1").arg(actionId));
-            };
+            // D7：命令只携带纯数据。本地 Ribbon 动作 id + 意图 op + 参数，
+            // 执行时由 executeCommand 按此顺序派发（无 handler 回调）。
+            command.localActionId = ua.id;
+            command.intentOp = ua.intentOp;
+            command.data = ua.data;
             if (m_commands->add(command))
                 ++added;
         }
@@ -1216,9 +1456,10 @@ void MainWindow::registerSlotCommands()
 
 void MainWindow::registerShellCommands()
 {
+    // D7：shell 命令只登记"id + 标题 + op"，不含 lambda。
+    // op 即命令 id；执行时由 executeCommand → runShellAction 分派到 GUI 动作。
     auto add = [this](const QString &id, const QString &title, const QString &category,
-                      const QString &shortcut, const QString &when,
-                      std::function<void()> handler) {
+                      const QString &shortcut, const QString &when) {
         CommandDescriptor command;
         command.id = id;
         command.title = title;
@@ -1226,82 +1467,38 @@ void MainWindow::registerShellCommands()
         command.shortcut = shortcut;
         command.when = when;
         command.provider = QStringLiteral("app.shell");
-        command.handler = std::move(handler);
+        command.intentOp = id;   // shell 命令的 op 就是它自己的 id
         return m_commands->add(command);
     };
 
     add(QStringLiteral("palette.show"), QStringLiteral("命令面板"), QStringLiteral("视图"),
-        QStringLiteral("Ctrl+Shift+P"), QString(),
-        [this]() { showCommandPalette(); });
+        QStringLiteral("Ctrl+Shift+P"), QString());
     add(QStringLiteral("quick.switch"), QStringLiteral("快速切换"), QStringLiteral("导航"),
-        QStringLiteral("Ctrl+P"), QString(),
-        [this]() { showQuickSwitch(); });
+        QStringLiteral("Ctrl+P"), QString());
     add(QStringLiteral("view.toggleSideBar"), QStringLiteral("显示/隐藏左栏"),
-        QStringLiteral("视图"), QStringLiteral("Ctrl+B"), QString(),
-        [this]() { toggleSideBar(); });
+        QStringLiteral("视图"), QStringLiteral("Ctrl+B"), QString());
     add(QStringLiteral("view.toggleAuxZone"), QStringLiteral("显示/隐藏辅助栏"),
-        QStringLiteral("视图"), QStringLiteral("Ctrl+Alt+B"), QString(),
-        [this]() {
-            if (m_binder->toggleAuxZone())
-                statusBar()->showMessage(m_binder->auxZoneVisible()
-                                             ? QStringLiteral("辅助栏已显示")
-                                             : QStringLiteral("辅助栏已隐藏"));
-        });
+        QStringLiteral("视图"), QStringLiteral("Ctrl+Alt+B"), QString());
     add(QStringLiteral("view.togglePanel"), QStringLiteral("显示/隐藏底部面板"),
-        QStringLiteral("视图"), QStringLiteral("Ctrl+J"), QString(),
-        [this]() {
-            if (m_binder->toggleBottomPanel())
-                statusBar()->showMessage(m_binder->bottomPanelVisible()
-                                             ? QStringLiteral("底部面板已显示")
-                                             : QStringLiteral("底部面板已隐藏"));
-        });
+        QStringLiteral("视图"), QStringLiteral("Ctrl+J"), QString());
     add(QStringLiteral("editor.next"), QStringLiteral("下一个编辑器"),
-        QStringLiteral("导航"), QStringLiteral("Ctrl+Tab"), QString(),
-        [this]() {
-            const int count = m_binder->centralWidgets().size();
-            if (count <= 0)
-                return;
-            const int current = qMax(0, m_binder->currentCentralIndex());
-            m_binder->activateCentralIndex((current + 1) % count);
-        });
+        QStringLiteral("导航"), QStringLiteral("Ctrl+Tab"), QString());
     add(QStringLiteral("editor.close"), QStringLiteral("关闭当前编辑器"),
-        QStringLiteral("视图"), QStringLiteral("Ctrl+W"), QString(),
-        [this]() {
-            if (!m_binder->closeCurrentEditor())
-                statusBar()->showMessage(QStringLiteral("当前页签不可关闭"));
-        });
+        QStringLiteral("视图"), QStringLiteral("Ctrl+W"), QString());
     add(QStringLiteral("plot.series.removeSelected"), QStringLiteral("删除曲线"),
         QStringLiteral("绘图"), QString(),
-        QStringLiteral("hasSelection == true && selectionKind == \"series\""),
-        [this]() {
-            const Selection &selection = m_appCtx.selection();
-            const QString key = selection.ids.value(QStringLiteral("seriesKey")).toString();
-            if (selection.kind != SelectionKind::Series || key.isEmpty())
-            {
-                statusBar()->showMessage(QStringLiteral("未选中曲线"));
-                return;
-            }
-            QVariantMap params;
-            params.insert(QStringLiteral("key"), key);
-            QVariant nullValue;
-            Result<QVariant> result(nullValue);
-            if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.series.remove"),
-                                                            params, result)
-                || !result)
-                statusBar()->showMessage(QStringLiteral("删除曲线失败"));
-        });
+        QStringLiteral("selection.count > 0 && selection.kind == \"series\""));
     add(QStringLiteral("preferences.keybindings"), QStringLiteral("快捷键设置"),
-        QStringLiteral("设置"), QString(), QString(),
-        [this]() { openKeybindingDialog(); });
+        QStringLiteral("设置"), QString(), QString());
 
+    // activity.activate.* 是数据驱动的动态命令，op 同样用命令 id。
     const QStringList activities = m_binder->activityIds();
     for (const QString &activityId : activities)
     {
         const ActivitySpec *spec = m_context->slotHub().activity(activityId);
         const QString label = spec ? spec->label : activityId;
         add(QStringLiteral("activity.activate.%1").arg(activityId),
-            QStringLiteral("转到 %1").arg(label), QStringLiteral("导航"), QString(), QString(),
-            [this, activityId]() { m_binder->setActiveActivity(activityId); });
+            QStringLiteral("转到 %1").arg(label), QStringLiteral("导航"), QString(), QString());
     }
 }
 
@@ -1309,15 +1506,17 @@ void MainWindow::updateCommandContext()
 {
     if (!m_commands)
         return;
-    m_commands->setContextValue(QStringLiteral("activeActivity"), m_binder->activeActivity());
-    m_commands->setContextValue(QStringLiteral("activeEditor"), m_binder->currentCentralTitle());
-    m_commands->setContextValue(QStringLiteral("activeGroup"), QString());
+    // N3：when 键统一到契约点号表（WhenKeys），禁止裸驼峰键。
+    m_commands->setContextValue(QStringLiteral("activity.active"), m_binder->activeActivity());
+    m_commands->setContextValue(QStringLiteral("editor.active"), m_binder->currentCentralTitle());
+    m_commands->setContextValue(QStringLiteral("group.active"), QString());
     const Selection &selection = m_appCtx.selection();
-    m_commands->setContextValue(QStringLiteral("selectionKind"), selectionKindName(selection.kind));
-    m_commands->setContextValue(QStringLiteral("hasSelection"), !selection.empty());
-    m_commands->setContextValue(QStringLiteral("hasData"), !m_appCtx.data().ids().isEmpty());
-    m_commands->setContextValue(QStringLiteral("isScriptRunning"), false);
-    m_commands->setContextValue(QStringLiteral("focusArea"), QStringLiteral("editor"));
+    m_commands->setContextValue(QStringLiteral("selection.kind"), selectionKindName(selection.kind));
+    m_commands->setContextValue(QStringLiteral("selection.count"),
+                                selection.empty() ? 0 : qMax(1, selection.ids.size()));
+    m_commands->setContextValue(QStringLiteral("dataset.count"), m_appCtx.data().ids().size());
+    m_commands->setContextValue(QStringLiteral("script.running"), false);
+    m_commands->setContextValue(QStringLiteral("focus.area"), QStringLiteral("editor"));
     // 上下文变了，Ribbon 上下文页签要跟着收起/展开（只在可见集合变化时重建）。
     if (m_binder)
         m_binder->applyWhenVisibility();

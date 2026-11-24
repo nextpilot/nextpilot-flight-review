@@ -654,6 +654,18 @@ void PlotModule::onAttach(IUiContext &ui)
         t.description = QStringLiteral("绘图游标线颜色");
         ui.declareThemeToken(t);
     }
+
+    // 状态栏项（验收 7 / D2）：游标时间由 plot 推（10Hz 节流在 GuiContext 侧）。
+    {
+        StatusSpec s;
+        s.id = QStringLiteral("plot.axes.cursor");
+        s.side = StatusSide::Right;
+        s.priority = 20;
+        s.tooltip = QStringLiteral("当前游标时间");
+        s.provider = QStringLiteral("plot");
+        s.text = QStringLiteral("游标: --");
+        ui.declareStatus(s);
+    }
     // GUI 环境下：声明本模块的 Activity 与界面入口。
     //
     // Activity：plot 域的 Activity Bar 入口；工作区是中央画布（centralPanel），

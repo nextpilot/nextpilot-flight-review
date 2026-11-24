@@ -231,6 +231,46 @@ int main(int argc, char *argv[])
         OK("模块语义 token：plot/data/script 各贡献 1 个，兜底色合法且进主题");
     }
 
+    // --- 0a1b) 状态栏契约（验收 7）：≥4 项状态在跑，推模式 + 游标节流 ---
+    {
+        auto *ui = window.context();
+        const auto &specs = ui->statusSpecs();
+        QStringList ids;
+        for (const auto &s : specs)
+            ids << s.id;
+        CHECK(specs.size() >= 4);
+        CHECK(ids.contains(QStringLiteral("data.source.count")));
+        CHECK(ids.contains(QStringLiteral("data.loading.progress")));
+        CHECK(ids.contains(QStringLiteral("plot.axes.cursor")));
+        CHECK(ids.contains(QStringLiteral("playback.state")));
+        // 每项都有初始文本，且 side/priority 合法。
+        for (const auto &s : specs)
+        {
+            CHECK(!ui->statusText(s.id).isEmpty());
+            CHECK(s.priority >= 0);
+        }
+
+        // 推模式：未声明的野键被忽略；已声明项更新可见。
+        ui->updateStatus(QStringLiteral("no.such.status"), QStringLiteral("野键"));
+        CHECK(ui->statusText(QStringLiteral("no.such.status")).isEmpty());
+        ui->updateStatus(QStringLiteral("data.loading.progress"), QStringLiteral("加载中 42%"));
+        CHECK(ui->statusText(QStringLiteral("data.loading.progress")) == QStringLiteral("加载中 42%"));
+
+        // D2 游标 10Hz 节流：窗口内连推只更新缓存文本，信号最多发一次。
+        int cursorSignals = 0;
+        QObject::connect(ui, &GuiContext::statusTextChanged, &window,
+                         [&cursorSignals](const QString &id, const QString &) {
+                             if (id == QStringLiteral("plot.axes.cursor"))
+                                 ++cursorSignals;
+                         });
+        for (int i = 0; i < 20; ++i)
+            ui->updateStatus(QStringLiteral("plot.axes.cursor"),
+                             QStringLiteral("游标: %1").arg(i));
+        CHECK(cursorSignals <= 1); // 100ms 窗口内只发射一次
+        CHECK(ui->statusText(QStringLiteral("plot.axes.cursor")).contains(QStringLiteral("19")));
+        OK("状态栏契约：4 项在跑 + 推模式 + 游标 10Hz 节流");
+    }
+
     // --- 0a2) 真跑一次 preferences.open：GUI 系统级 handler 必须弹得出、收得回 ---
     {
         // 模态对话框在 exec() 内跑事件循环，这里用一个重试定时器找到它并关闭，
@@ -3524,10 +3564,14 @@ int main(int argc, char *argv[])
     {
         CommandRegistry registry;
         int hits = 0;
+        registry.setExecutor([&hits](const CommandDescriptor &, QString *) {
+            ++hits;
+            return true;
+        });
         CommandDescriptor command;
         command.id = QStringLiteral("test.exec");
         command.title = QStringLiteral("测试执行");
-        command.handler = [&hits]() { ++hits; };
+        command.intentOp = QStringLiteral("test.exec.op");
         CHECK(registry.add(command));
         CHECK(!registry.add(command));
         CHECK(registry.execute(QStringLiteral("test.exec")));
@@ -3536,7 +3580,7 @@ int main(int argc, char *argv[])
         CommandDescriptor gated = command;
         gated.id = QStringLiteral("test.gated");
         gated.when = QStringLiteral("ready == true && kind == \"series\"");
-        gated.handler = [&hits]() { hits += 10; };
+        gated.intentOp = QStringLiteral("test.gated.op");
         CHECK(registry.add(gated));
         registry.setContextValue(QStringLiteral("ready"), true);
         registry.setContextValue(QStringLiteral("kind"), QStringLiteral("plot"));

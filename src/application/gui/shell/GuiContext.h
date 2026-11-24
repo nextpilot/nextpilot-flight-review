@@ -37,6 +37,9 @@ public:
                             const QString &pageId, int order = 0) override;
     void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) override;
     void declareThemeToken(const nextpilot::plotscope::registry::ThemeTokenSpec &token) override;
+    void declareStatus(const nextpilot::plotscope::registry::StatusSpec &status) override;
+    void updateStatus(const QString &id, const QString &text) override;
+    void flashStatus(const QString &text) override;
     void setActivityBadge(const QString &activityId, int count) override;
     void addAction(const nextpilot::plotscope::registry::UiAction &action) override;
     void bindActionProvider(
@@ -68,8 +71,23 @@ public:
         return m_moduleTokens;
     }
 
+    // 模块声明的状态栏项与当前文本（验收 7）：MainWindow 装配后据此排布。
+    const QList<nextpilot::plotscope::registry::StatusSpec> &statusSpecs() const
+    {
+        return m_statusSpecs;
+    }
+    QString statusText(const QString &id) const { return m_statusText.value(id); }
+
     // 应用上下文（视图用它取数据与共享状态）。
     nextpilot::plotscope::context::AppContext &app() { return m_appCtx; }
+
+signals:
+    // 状态栏项文本变化（D8 推模式）：壳订阅后刷新对应 QLabel。
+    void statusTextChanged(const QString &id, const QString &text);
+    // 新的状态栏项声明（装配期/运行期均可）：壳按 spec 创建控件。
+    void statusSpecDeclared(const nextpilot::plotscope::registry::StatusSpec &spec);
+    // 瞬时消息（原 QStatusBar::showMessage 的契约化入口）。
+    void statusFlashed(const QString &text);
 
 private:
     // 壳内部装配路径（不进 IUiContext 接口面）：模块只能经 requestPanel 走工厂表，
@@ -88,6 +106,12 @@ private:
 
     // 模块贡献的语义色 token（验收 8）：onAttach 期间声明，装配后供主题汇总。
     QList<nextpilot::plotscope::registry::ThemeTokenSpec> m_moduleTokens;
+
+    // 状态栏项（验收 7）：onAttach 声明 spec，updateStatus 推文本；壳只读。
+    QList<nextpilot::plotscope::registry::StatusSpec> m_statusSpecs;
+    QHash<QString, QString> m_statusText;
+    // 状态推送节流（D2：游标 10Hz）：记录上次发射时刻，窗口内合并为一次。
+    QHash<QString, qint64> m_statusLastEmitMs;
 
     // 面板去重（按 area/panelType）：重复 requestPanel 同一类型返回既有实例，
     // 不再新建页签（脚本编辑器/数据表格的"再打开"都是复用语义）。

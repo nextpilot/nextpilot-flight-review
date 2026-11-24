@@ -135,11 +135,58 @@ void DataModule::onAttach(IUiContext &ui)
         t.description = QStringLiteral("数据源标识颜色");
         ui.declareThemeToken(t);
     }
+
+    m_ui = &ui;
+
+    // 状态栏项（验收 7 / D8）：数据源数量、加载进度、回放状态。
+    // 壳按 side/priority 排布；文本由本模块在数据变化时经 updateStatus 推送。
+    {
+        StatusSpec s;
+        s.id = QStringLiteral("data.source.count");
+        s.side = StatusSide::Left;
+        s.priority = 10;
+        s.tooltip = QStringLiteral("已载入数据源数量");
+        s.provider = QStringLiteral("data");
+        s.text = QStringLiteral("数据源: 0");
+        ui.declareStatus(s);
+
+        StatusSpec p;
+        p.id = QStringLiteral("data.loading.progress");
+        p.side = StatusSide::Left;
+        p.priority = 20;
+        p.tooltip = QStringLiteral("数据加载进度");
+        p.provider = QStringLiteral("data");
+        p.text = QStringLiteral("空闲");
+        ui.declareStatus(p);
+
+        StatusSpec play;
+        play.id = QStringLiteral("playback.state");
+        play.side = StatusSide::Right;
+        play.priority = 10;
+        play.tooltip = QStringLiteral("回放状态");
+        play.provider = QStringLiteral("data");
+        play.text = QStringLiteral("停止");
+        ui.declareStatus(play);
+    }
+    // 数据源数量：订阅 DatasetHub 增删信号，推模式更新（不轮询）。
+    if (m_host)
+    {
+        DatasetHub &hub = m_host->app().data();
+        const auto refreshCount = [this, &hub]() {
+            if (m_ui)
+                m_ui->updateStatus(QStringLiteral("data.source.count"),
+                                   QStringLiteral("数据源: %1").arg(hub.ids().size()));
+        };
+        QObject::connect(&hub, &DatasetHub::datasetAdded, this,
+                         [refreshCount](DatasetId) { refreshCount(); });
+        QObject::connect(&hub, &DatasetHub::datasetRemoved, this,
+                         [refreshCount](DatasetId) { refreshCount(); });
+        refreshCount();
+    }
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
     //
     // 模块只声明"我需要一个数据集树面板"，由 app 骨架的部件工厂决定用哪个实现——
     // 因此本模块不依赖 Qt Widgets，CLI（headless）构建保持纯净。
-    m_ui = &ui;
 
     // 本域 Ribbon 页/组自声明（D13）：壳不再预置业务页。
     // 注：开始页 ribbon.page.home 是产品级聚合页，暂由壳 ShellContributions 声明；

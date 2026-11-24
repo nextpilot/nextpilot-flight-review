@@ -6,6 +6,9 @@
 #include "command/CommandRegistry.h"
 #include "command/KeybindingRegistry.h"
 #include <QJsonObject>
+#include <QHash>
+
+class QLabel;
 
 #include <memory>
 
@@ -162,7 +165,19 @@ private:
     // 命令层：统一命令 + Palette + keybinding。
     void buildCommandLayer(nextpilot::plotscope::host::RuntimeHost &host);
     void registerSlotCommands();
+    // 状态栏（验收 7 / D8 推模式）：订阅 GuiContext 的信号，按 side/priority 排布 QLabel。
+    void setupStatusBar();
+    void onStatusSpecDeclared(const registry::StatusSpec &spec);
+    void onStatusTextChanged(const QString &id, const QString &text);
+    void onStatusFlashed(const QString &text);
+    void rebuildStatusBarLayout();
+
     void registerShellCommands();
+    // 命令执行回调（D7）：把 CommandDescriptor 的纯数据载荷派发到 GUI 动作——
+    // 先试本地 Ribbon trigger，再按 intentOp 走意图执行器。命令层本身不含代码。
+    bool executeCommand(const command::CommandDescriptor &command, QString *error);
+    // shell 命令 op → GUI 动作分派（壳的 UI 实现，与 PreferencesIntentHandler 同类）。
+    bool runShellAction(const QString &op, QString *error);
     void updateCommandContext();
     QList<CommandPalette::Item> buildCommandItems();
     QList<CommandPalette::Item> buildQuickItems() const;
@@ -185,6 +200,8 @@ private:
     QString m_pendingChordCommand;
     int m_chordToken = 0;
     GuiContext *m_context = nullptr;
+    // 状态栏项控件（验收 7）：id → QLabel，按 StatusSpec.side/priority 排布。
+    QHash<QString, QLabel *> m_statusLabels;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     // 系统级 preferences.open handler（打开全局偏好对话框）；随窗口存亡。
     PreferencesIntentHandler *m_preferencesHandler = nullptr;

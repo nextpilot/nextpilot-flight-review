@@ -171,6 +171,25 @@ struct ThemeTokenSpec
     Domain domain = Domain::General;
 };
 
+// 状态栏项（VS Code 的 `statusbar`，D8 推模式）：模块声明一项，壳按 side/priority 排布。
+// 文本由模块经 IUiContext::updateStatus(id,text) 推送，壳不轮询业务数据。
+// provider 由声明方（模块 id / pack id）填写，仅用于诊断。
+enum class StatusSide { Left, Right };
+
+struct StatusSpec
+{
+    QString id;          // 稳定标识，如 "data.source.count"
+    StatusSide side = StatusSide::Left;
+    int priority = 0;    // 同侧内升序排布（小的靠边）
+    QString when;        // 可见性表达式（空=总是显示）
+    QString icon;
+    QString tooltip;
+    QString commandId;   // 点击触发的命令 id（空=不可点击）
+    QString provider;    // 声明方 id
+
+    QString text;        // 当前显示文本（updateStatus 更新，壳只读）
+};
+
 // 一个 Activity Bar 入口：点击后切左栏 section 栈并同步 Ribbon 页。
 // 纯数据，不持有 QWidget；实际控件由外壳按描述创建。
 struct ActivitySpec

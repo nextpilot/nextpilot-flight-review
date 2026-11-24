@@ -1,11 +1,16 @@
 #include "command/CommandRegistry.h"
 
+#include <QDebug>
+
 namespace nextpilot::plotscope::command
 {
 
 bool CommandRegistry::add(const CommandDescriptor &command)
 {
-    if (command.id.isEmpty() || command.title.isEmpty() || !command.handler)
+    // D7：命令必须携带可执行载荷（本地动作 id 或意图 op 至少其一），
+    // 但载荷是数据不是代码——handler 已彻底移除。
+    if (command.id.isEmpty() || command.title.isEmpty() ||
+        (command.localActionId.isEmpty() && command.intentOp.isEmpty()))
         return false;
     for (const CommandDescriptor &existing : m_commands)
         if (existing.id == command.id)
@@ -47,12 +52,27 @@ const CommandDescriptor *CommandRegistry::find(const QString &id) const
 
 void CommandRegistry::setContextValue(const QString &key, const QVariant &value)
 {
+    checkKey(key);
     m_context.set(ContextScope::Shell, key, value);
 }
 
 void CommandRegistry::setContextValue(ContextScope scope, const QString &key, const QVariant &value)
 {
+    checkKey(key);
     m_context.set(scope, key, value);
+}
+
+void CommandRegistry::checkKey(const QString &key)
+{
+    // N3：键必须登记在 WhenKeys 唯一表。未知键警告 + 计数（不硬拒绝，兼容
+    // 运行期扩展与测试），生产代码写入未知键时测试据 unknownKeyCount 断言为 0。
+    if (WhenKeys::isKnown(key))
+        return;
+    ++m_unknownKeys;
+    m_lastUnknownKey = key;
+    const QString hint = WhenKeys::suggest(key);
+    qWarning("[when] 未登记的上下文键 '%s'%s", qPrintable(key),
+             hint.isEmpty() ? "" : qPrintable(QStringLiteral("（应为 '%1'）").arg(hint)));
 }
 
 QVariant CommandRegistry::contextValue(const QString &key) const
@@ -110,9 +130,15 @@ bool CommandRegistry::execute(const QString &id, QString *error)
     if (!isAvailable(id, error))
         return false;
 
+    if (!m_executor)
+    {
+        if (error)
+            *error = QStringLiteral("命令执行器未注入: %1").arg(id);
+        return false;
+    }
+
     const CommandDescriptor *command = find(id);
-    command->handler();
-    return true;
+    return m_executor(*command, error);
 }
 
 bool CommandRegistry::evaluateWhen(const QString &expression, const QHash<QString, QVariant> &context,
