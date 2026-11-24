@@ -164,7 +164,11 @@ void Interaction::onMouseMove(QMouseEvent *event)
     // 悬停：取最近样本时间，更新读数（不 pinned）。联动只同步时间。
     double sx = 0.0, sy = 0.0;
     if (m_plot->nearestSample(event->pos(), &sx, &sy))
+    {
         m_axes->setCursorTime(sx, false);
+        // 读数框纵向锚点（第3仗 3c / E-4）：框跟随游标 Y 限速滑动，越界钳制。
+        m_axes->setCursorPixelY(event->position().y());
+    }
 }
 
 void Interaction::onMousePress(QMouseEvent *event)
@@ -363,6 +367,12 @@ void Interaction::contextMenu(QContextMenuEvent *event)
     }
     menu.addAction(m_readout->abEnabled() ? QStringLiteral("清除 A/B 测量") : QStringLiteral("A/B 游标测量（Δt/Δy）"),
                    this, [this] { m_axes->toggleAB(); });
+    // 参考线（第3仗 3c / F-2）：右键点哪一刻，参考线就落在哪一刻；读数框显示相对 Δ。
+    if (m_axes->hasReference())
+        menu.addAction(QStringLiteral("清除参考线"), this, [this] { m_axes->clearReference(); });
+    else
+        menu.addAction(QStringLiteral("在 %1 s 设参考线").arg(QString::number(clickT, 'f', 2)),
+                       this, [this, clickT] { m_axes->setReferenceTime(clickT); });
     if (m_readout->active() && m_readout->pinned())
         menu.addAction(QStringLiteral("取消固定读数"), this, [this] { m_readout->setPinned(false); m_axes->refreshReadout(); });
     else

@@ -183,6 +183,8 @@ QJsonObject Axes::saveState() const
     o[QStringLiteral("legendCollapsed")] = m_legend.isCollapsed();   // #205
     o[QStringLiteral("legendFontScale")] = m_legend.fontScale();   // #205
     o[QStringLiteral("legendCorner")] = static_cast<int>(m_legend.corner()); // 第3仗 3a：图例四角
+    // 参考线（第3仗 3c / F-2）：存相对时间轴值（天然抗 offset）。
+    o[QStringLiteral("referenceT")] = m_referenceT.has_value() ? *m_referenceT : -1.0;
     return o;
 }
 
@@ -225,6 +227,17 @@ bool Axes::restoreState(const QJsonObject &state)
         const int corner = state.value(QStringLiteral("legendCorner")).toInt(0);
         if (corner >= 0 && corner <= 3)
             m_legend.setCorner(static_cast<Legend::Corner>(corner));
+    }
+    {
+        // 参考线（第3仗 3c / F-2）：-1 = 无；缺键（旧存档）不动现状。
+        if (state.contains(QStringLiteral("referenceT")))
+        {
+            const double ref = state.value(QStringLiteral("referenceT")).toDouble(-1.0);
+            if (ref >= 0)
+                m_referenceT = ref;
+            else
+                m_referenceT.reset();
+        }
     }
     relayout();
     return true;
@@ -1049,6 +1062,22 @@ void Axes::paintOverlay(QPainter &painter)
 
     // ---- 游标组：每帧实时绘制（画在稳态层之上）----
     ctx.dirtyLayers = OverlayLayerCrosshair | OverlayLayerCursorRead;
+    // 参考线（第3仗 3c / F-2）：竖直虚线 + 顶部 Δ 标注，画在游标层。
+    if (m_referenceT.has_value())
+    {
+        const double rx = ctx.vp->toPixel(*m_referenceT, ctx.vp->yLower()).x();
+        if (rx >= ctx.plotRect.left() && rx <= ctx.plotRect.right())
+        {
+            QPen refPen(QColor(0xc0, 0x50, 0x20, 0xD0), 1.0, Qt::DashLine); // 橙棕虚线，区别于游标灰
+            painter.setPen(refPen);
+            painter.drawLine(QPointF(rx, ctx.plotRect.top()),
+                             QPointF(rx, ctx.plotRect.bottom()));
+            painter.setPen(QColor(0xc0, 0x50, 0x20));
+            painter.drawText(QRectF(rx + 4, ctx.plotRect.top() + 2, 90, 16),
+                             Qt::AlignLeft | Qt::AlignVCenter,
+                             QStringLiteral("参考"));
+        }
+    }
     m_crosshair.paint(painter, ctx);
     m_cursorReadout.paint(painter, ctx);
     m_crosshair.paintRubberBand(painter, ctx);

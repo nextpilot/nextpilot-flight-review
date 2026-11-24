@@ -19,6 +19,8 @@
 #include <QPointF>
 #include <QRect>
 #include <QJsonObject>
+
+#include <optional>
 #include <QString>
 #include <QWidget>
 
@@ -210,6 +212,28 @@ Q_SIGNALS:
     void legendCollapseChanged(bool collapsed);
 
 public:
+    // ---- 参考线（第3仗 3c / F-2，对标 PJ4 参考线 + CurveTracker 相对 Δ）----
+    // 存**相对时间轴值**：我们的 x 天然抗 offset（offset 只在绘图副本，不进轴范围/存盘）。
+    // 参考线随视图状态持久化（saveState/restoreState 的 referenceT 键）。
+    void setReferenceTime(double tSec)
+    {
+        m_referenceT = tSec;
+        update();
+    }
+    void clearReference()
+    {
+        m_referenceT.reset();
+        update();
+    }
+    bool hasReference() const { return m_referenceT.has_value(); }
+    double referenceTime() const { return m_referenceT.value_or(0.0); }
+    // 游标像素 Y（读数框纵向锚点，第3仗 3c / E-4）。<0 = 无锚点回顶部锚位。
+    void setCursorPixelY(double pixelY)
+    {
+        m_cursorReadout.setCursorPixelY(pixelY);
+        update();
+    }
+    QRectF cursorReadoutBoxForTest() const { return m_cursorReadout.boxRectForTest(); }
     // 导出：PNG（所见即所得）/ CSV（可见数据，LOD 输出 x,min,max）。
     bool exportPng(const QString &path);
     bool exportCsv(const QString &path);
@@ -261,6 +285,8 @@ private:
     bool m_box = false;            // 画布边框（对齐老界面显示组）
     // 读数叠加层状态（"画什么"由各自 Overlay 类自持，Axes 只留组件）。
     CursorReadoutOverlay m_cursorReadout;   // 十字游标 + 逐曲线读数框
+    // 参考线：相对时间轴值（第3仗 3c / F-2）。
+    std::optional<double> m_referenceT;
     ABMeasureOverlay m_abMeasure;           // A/B 双游标测量
     BookmarkOverlay m_bookmarkOverlay;      // 时间书签
     MarkerOverlay m_markerOverlay;          // Marker 规则产出

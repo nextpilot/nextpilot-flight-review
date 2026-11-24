@@ -3,9 +3,11 @@
 #include "fastplot/Axes.h"
 #include "fastplot/Viewport.h"
 
+#include <QCoreApplication>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -34,6 +36,60 @@ void clampMinTimeXWidth(double &lo, double &hi)
     lo = center - half;
     hi = center + half;
 }
+
+// 应用级 X/Y 键监听（对标 PJ4 PlotMagnifier::AxisZoomKeys，第3仗 3c / E-3）：
+// 键盘焦点与悬浮画布可能不一致，按住的单轴缩放键必须归属应用而非某个画布。
+// X 或 Y 无修饰键按下时，滚轮缩放只作用于该轴；两键同按/都没按走修饰键回落。
+// 每个应用一份，随事件循环自动消亡（QPointer 防重入）；过滤返回 false，
+// 文本输入与快捷键照常收到按键。
+class AxisZoomKeys : public QObject
+{
+public:
+    explicit AxisZoomKeys(QObject *parent) : QObject(parent) {}
+
+    bool xDown() const { return m_xDown; }
+    bool yDown() const { return m_yDown; }
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (event->type() == QEvent::ApplicationDeactivate)
+        {
+            m_xDown = m_yDown = false;
+        }
+        else if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease)
+        {
+            const auto *key = static_cast<QKeyEvent *>(event);
+            if (!key->isAutoRepeat())
+            {
+                const bool down =
+                    event->type() == QEvent::KeyPress && key->modifiers() == Qt::NoModifier;
+                if (key->key() == Qt::Key_X)
+                    m_xDown = down;
+                else if (key->key() == Qt::Key_Y)
+                    m_yDown = down;
+            }
+        }
+        return false;
+    }
+
+private:
+    bool m_xDown = false;
+    bool m_yDown = false;
+};
+
+AxisZoomKeys &axisZoomKeys()
+{
+    static QPointer<AxisZoomKeys> keys;
+    if (keys.isNull())
+    {
+        auto *app = QCoreApplication::instance();
+        keys = new AxisZoomKeys(app);
+        if (app)
+            app->installEventFilter(keys);
+    }
+    return *keys;
+}
 } // namespace
 
 Zoomer::Zoomer(Axes *plot, QObject *parent)
@@ -44,6 +100,9 @@ Zoomer::Zoomer(Axes *plot, QObject *parent)
     {
         m_plot->setFocusPolicy(Qt::StrongFocus);
         m_plot->installEventFilter(this);
+        // 应用级 X/Y 键监听在此确保安装（对齐 PJ4）：滚轮处理时才装会漏掉
+        // 先于首个滚轮到来的按键（安装顺序"后装先跑"，晚装的也在先按键之后）。
+        axisZoomKeys();
         // 复位基准 = 接手时的视口（"回到全量视图"）。
         const Viewport &vp = m_plot->viewport();
         m_home = QRectF(QPointF(vp.xLower(), vp.yLower()), QPointF(vp.xUpper(), vp.yUpper()));
@@ -120,10 +179,18 @@ bool Zoomer::eventFilter(QObject *watched, QEvent *event)
         // Alt+滚轮保留给图例字号，吞掉但不做视图缩放。
         if (w->modifiers() & Qt::AltModifier)
             return true;
-        // 滚轮一格 120；上滚放大。
+        // 滚轮一格 120；上滚放大。优先级：应用级 X/Y 键（E-3）> Shift/Ctrl 修饰键。
         const double factor = std::pow(1.2, -w->angleDelta().y() / 120.0);
-        const bool xOnly = w->modifiers() & Qt::ShiftModifier;
-        const bool yOnly = w->modifiers() & Qt::ControlModifier;
+        bool xOnly = w->modifiers() & Qt::ShiftModifier;
+        bool yOnly = w->modifiers() & Qt::ControlModifier;
+        {
+            const AxisZoomKeys &keys = axisZoomKeys();
+            if (keys.xDown() != keys.yDown()) // 两键同按 = 双轴，回落修饰键语义
+            {
+                xOnly = keys.xDown();
+                yOnly = keys.yDown();
+            }
+        }
         if (xOnly)
             zoomBy(factor, 1.0, w->position());
         else if (yOnly)

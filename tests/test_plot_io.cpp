@@ -908,6 +908,69 @@ int main(int argc, char *argv[])
         workspace->activeCanvas()->clear();
     }
 
+    // --- 15) XY 手势建图 + 参考线 view action（第3仗 3c）---
+    {
+        // XY：demo 数据集两列（roll 作 X、pitch 作 Y）。复用测试 14 已加载的源。
+        const QString fixture15 = QStringLiteral(PS_TEST_FIXTURE_DIR "/demo_flight.csv");
+        int src15 = application.context().sources().sourceByOrigin(fixture15);
+        CHECK(src15 >= 0);
+        const int ds15 = application.context().sources().get(src15)->datasetIds.first();
+        const Dataset *d15 = application.context().data().get(ds15);
+        CHECK(d15 != nullptr && !d15->tableNames().isEmpty());
+        const QString tbl15 = d15->tableNames().first();
+        const auto *t15 = d15->table(tbl15);
+        CHECK(t15 != nullptr && t15->columns.size() >= 3);
+        const QString colX = QStringLiteral("att.roll[deg]");
+        const QString colY = QStringLiteral("att.pitch[deg]");
+        CHECK(t15->column(colX) != nullptr && t15->column(colY) != nullptr);
+
+        auto *c15 = workspace->activeCanvas();
+        CHECK(c15 != nullptr);
+        c15->clear();
+        // X 源：画布上先放一条曲线（首曲线作 X 通道）
+        c15->setChannel(ds15, tbl15, colX, QStringLiteral("xy.src"));
+        QVector<LodTriple> lod15;
+        for (int i = 0; i < 100; ++i)
+            lod15.push_back(LodTriple{i * 0.01, 0.0, 0.0});
+        c15->setLodData(lod15, 0.0, 0.99);
+        const int cellsBefore = workspace->cellCount();
+        CHECK(workspace->createXyCanvasFor(ds15, tbl15, colY));
+        CHECK(workspace->cellCount() == cellsBefore + 1); // 新格
+        auto *xy = workspace->activeCanvas();
+        CHECK(xy != nullptr && xy != c15);
+        CHECK(xy->plotKind() == QStringLiteral("xy"));
+        CHECK(xy->seriesCount() == 1);
+        // 落点通道身份保留（重绑/样式通道沿用）：key = ds|tbl|colY
+        CHECK(xy->seriesByKey(QStringLiteral("%1|%2|%3").arg(ds15).arg(tbl15, colY)) != nullptr);
+        // 撤销一步 = 回到 XY 建图前（全局 undo 覆盖建图手势）
+        CHECK(workspace->undoHistory());
+        CHECK(workspace->cellCount() == cellsBefore);
+        OK("XY 手势建图 15：Ctrl 拖通道 → 独立 XY 格（值-值曲线）+ 全局 undo 可回退");
+
+        // 参考线：view action 设定/清除 + 读数 Δ + 随视图状态持久化
+        auto *c15b = workspace->activeCanvas();
+        CHECK(c15b != nullptr);
+        QVariant nullV15;
+        Result<QVariant> refRes(nullV15);
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.reference.set"),
+            {{QStringLiteral("t"), 0.35}}, refRes));
+        CHECK(c15b->hasReference());
+        const QJsonObject st15 = c15b->saveViewState();
+        CHECK(st15.contains(QStringLiteral("referenceT")));
+        c15b->clearReference();
+        CHECK(!c15b->hasReference());
+        CHECK(c15b->restoreViewState(st15));
+        CHECK(c15b->hasReference());
+        CHECK(std::abs(c15b->plotForTest()->referenceTime() - 0.35) < 1e-12);
+        Result<QVariant> refClear(nullV15);
+        CHECK(application.context().interactions().dispatchViewAction(
+            QStringLiteral("plot.reference.clear"), {}, refClear));
+        CHECK(!c15b->hasReference());
+        OK("参考线 15：view action 设定/清除 + saveViewState round-trip（相对轴值）");
+        workspace->activeCanvas()->clear();
+    }
+
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");
     return 0;
 }

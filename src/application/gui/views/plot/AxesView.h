@@ -210,6 +210,12 @@ public:
     // 图例四角：0=右上 1=左上 2=左下 3=右下（Legend::Corner 序）；越界忽略。
     void setLegendCorner(int corner);
     int legendCorner() const;
+    // 参考线（第3仗 3c / F-2）：存相对时间轴值；读数框显示相对 Δ；随视图状态持久化。
+    void setReferenceTime(double tSec);
+    void clearReference();
+    bool hasReference() const;
+    // 读数框纵向锚点（第3仗 3c / E-4）：游标像素 Y，框限速滑动跟随；<0 回顶部锚位。
+    void setCursorPixelY(double pixelY);
 
     // "删除此画布"是否可点：页内只剩一格时删无可删，由 PlotWorkspace 重排后同步。
     void setCanvasRemovable(bool on) { m_canvasRemovable = on; }
@@ -235,7 +241,7 @@ public:
 
     // 处理一路通道拖拽负载：解码合法则发 channelDropped，返回 true。
     // 若负载是"画布间曲线移动"（series_mime），发 seriesTransferRequested。
-    bool dropChannel(const QMimeData *mime);
+    bool dropChannel(const QMimeData *mime, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
 
     // 画布身份：跨画布移动曲线时用来判断"拖回自己"和找回源画布。
     // id 由 PlotWorkspace 分配（全进程单调递增），不参与持久化。
@@ -259,6 +265,10 @@ Q_SIGNALS:
     // 取数由 ChannelView 订阅后走 plot.channel 意图——与双击同一路径。
     void channelDropped(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table,
                         const QString &column);
+    // Ctrl+拖通道 = XY 建图手势（第3仗 3c / F-1）：本画布首曲线作 X，落下的通道作 Y，
+    // 工作区建独立 XY 画布（对齐 PJ4 createCurveXYInteractive 的"拖两通道"体验）。
+    void xyDropRequested(nextpilot::plotscope::dataset::DatasetId datasetId, const QString &table,
+                         const QString &column);
     // 曲线被拖到别的画布：由工作区执行"目标加一条、源删一条"（移动不是复制）。
     void seriesTransferRequested(int srcCanvasId, const QString &key, int datasetId,
                                  const QString &table, const QString &column,
