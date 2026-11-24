@@ -5,10 +5,12 @@ add_library(ps_registry STATIC
     src/Domain.cpp
     src/ToolboxHub.cpp
     src/UiSlotHub.cpp
+    src/Region.cpp
     src/RegistryNode.cpp
     src/RegistryTree.cpp
     include/Domain.h
     include/Contribution.h
+    include/Region.h
     include/ToolboxHub.h
     include/UiSlotHub.h
     include/PanelFactoryHub.h

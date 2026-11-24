@@ -42,6 +42,13 @@ void UiSlotHub::bindLocal(const QString &area, const UiAction &action, const QSt
         m_local[area].append(BoundUiAction{action, provider});
 }
 
+void UiSlotHub::bindActionProvider(const QString &area, const QString &provider, ActionProvider fn)
+{
+    if (area.isEmpty() || !fn)
+        return;
+    m_providers[area].insert(provider, std::move(fn));
+}
+
 void UiSlotHub::declareActivity(ActivitySpec activity)
 {
     if (activity.id.isEmpty())
@@ -82,6 +89,14 @@ void UiSlotHub::unbindProvider(const QString &provider)
                    list.end());
         if (list.isEmpty())
             it = m_local.erase(it);
+        else
+            ++it;
+    }
+    for (auto it = m_providers.begin(); it != m_providers.end();)
+    {
+        it.value().remove(provider);
+        if (it.value().isEmpty())
+            it = m_providers.erase(it);
         else
             ++it;
     }
@@ -139,6 +154,17 @@ QList<BoundUiAction> UiSlotHub::actionsIn(const QString &area) const
 {
     QList<BoundUiAction> out = m_bound.value(area, {});
     out += m_local.value(area, {});
+    // 提供器条目：装配时实时取数，provider 记为提供器 id（卸载/诊断按它归属）。
+    const auto pit = m_providers.constFind(area);
+    if (pit != m_providers.constEnd())
+    {
+        for (auto lit = pit.value().constBegin(); lit != pit.value().constEnd(); ++lit)
+        {
+            const QList<UiAction> supplied = lit.value() ? lit.value() : QList<UiAction>{};
+            for (const UiAction &action : supplied)
+                out.append(BoundUiAction{action, lit.key()});
+        }
+    }
     // 组内动作顺序：先按 order 升序，同权重按 id 字典序，保证与模块/工具箱装载
     // 顺序完全解耦（顺序由 order 显式表达，不依赖数组序）。
     // gallery 的分组出现顺序由 ShellBinder 按这里返回的动作顺序聚合，因此也稳定。

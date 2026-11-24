@@ -24,14 +24,13 @@ std::unique_ptr<Pack> AutopilotPack::build()
     // ① 格式：ULog -> Dataset（复用流式解析器）
     pack->parsers.push_back(std::make_unique<UlogFormatParser>());
 
-    // ② UI：往 app 骨架提供的插槽里填飞控专属入口（纯数据，headless 也能查询）
+    // ② UI：往绘图页"曲线与轴"组填飞控专属入口（纯数据，headless 也能查询）。
+    // 旧 menu.plot / dock.left / canvas.tool 挂载点已随死槽删除（D13）：
+    // 调参面板与航迹工具暂无有效挂载点，不再作为占位动作贡献，待对应视图落地后回归。
     pack->uiActions.append({
-        {QStringLiteral("ap.plot.attitude"), QStringLiteral("姿态曲线"), QStringLiteral("menu.plot"),
-         QStringLiteral("plot.render"), QStringLiteral("{\"table\":\"vehicle_attitude\"}")},
-        {QStringLiteral("ap.dock.tuning"), QStringLiteral("调参面板"), QStringLiteral("dock.left"),
-         QString(), QString()},
-        {QStringLiteral("ap.canvas.trajectory"), QStringLiteral("航迹工具"), QStringLiteral("canvas.tool"),
-         QString(), QString()}});
+        {QStringLiteral("ap.plot.attitude"), QStringLiteral("姿态曲线"),
+         QStringLiteral("ribbon.group.plot.series"),
+         QStringLiteral("plot.render"), QStringLiteral("{\"table\":\"vehicle_attitude\"}")}});
 
     // ③ 脚本：随包分发的飞控分析脚本（由脚本模块注入执行）
     pack->scripts.append({

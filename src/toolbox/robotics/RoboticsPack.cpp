@@ -21,7 +21,8 @@ std::unique_ptr<Pack> RoboticsPack::build()
     pack->domain = Domain::Robotics;
 
     pack->uiActions.append({
-        {QStringLiteral("rob.plot.tf"), QStringLiteral("TF 树可视化"), QStringLiteral("menu.plot"),
+        {QStringLiteral("rob.plot.tf"), QStringLiteral("TF 树可视化"),
+         QStringLiteral("ribbon.group.plot.series"),
          QString(), QString()}});
 
     pack->docs.append({

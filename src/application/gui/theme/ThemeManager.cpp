@@ -46,7 +46,7 @@ QWidget#dockPanel, QFrame#panel {
     background: $(panel);
     color: $(text);
 }
-QMenuBar, QMenu, QToolTip {
+QMenu, QToolTip {
     background: $(panel);
     color: $(text);
     border: 1px solid $(border);

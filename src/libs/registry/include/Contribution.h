@@ -14,6 +14,7 @@
 // 查询方只做一件事：按类型读表——registry.uiActions / panels / docs / ...
 
 #include "Domain.h"
+#include "Region.h"
 
 #include <functional>
 
@@ -33,7 +34,8 @@ struct UiAction
 {
     QString id;        // 稳定标识，如 "ap.plot.attitude"
     QString label;     // 显示文本，如 "姿态曲线"
-    QString area;      // 目标插槽：如 "menu.plot" / "dock.left" / "ribbon.home" / "canvas.tool"
+    QString area;      // 目标插槽 id（Ribbon 页/组等挂载点），如 "ribbon.group.plot.series"
+    QString when;      // 可见条件（空=恒真）：与命令层同一套白名单语法；registry 只存串，求值归外壳
     QString intentOp;  // 点击后发射的意图 op（空=仅占位）；如 "plot.render"
     QString data;      // 附加数据（可选，如预置的 PlotSpec JSON）
     QString icon;      // 图标名（可选），如 "plot.refresh"；由外壳解析成 QIcon
@@ -80,7 +82,7 @@ struct PanelSpec
 {
     QString id;       // 面板类型标识（唯一），如 "car.can-browser"
     QString label;    // 显示文本，如 "CAN 报文"
-    QString area;     // 建议放置的区域，如 "dock.left"（空 = 由调用方决定）
+    Region area = Region::Editor;  // 逻辑位置（编译期枚举，D17）；不再有 "dock.left" 方位名
     PanelKind kind = PanelKind::Dock;
     QString icon;     // 图标名（可选）
     QString data;     // 附加数据（可选，如预置参数 JSON）

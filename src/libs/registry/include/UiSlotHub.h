@@ -15,23 +15,20 @@ namespace nextpilot::plotscope::registry
 
 // 插槽的语义类别：决定 GUI 层把内容放到哪里、怎么呈现。
 //
-// 这是"插槽"从字符串升级为结构化描述的关键一步：插槽不再只是"一个名字"，
-// 而是声明了它的**容器语义**（ribbon 页签 / 停靠面板 / 中央画布 / 菜单），
-// 于是 GUI 层可以按类别自动布局，而贡献方只需说明"我要什么"。
+// 插槽注册表只承载**有真实消费者**的容器：Ribbon 页签与分组。区域
+// （ActivityBar / PrimarySidebar / SecondarySidebar / Panel / Editor）是壳的
+// 代码常量，见 `Region.h`，不进本注册表（D13 / D17）。
 enum class SlotKind
 {
     RibbonPage,  // ribbon 的一个页签（下面再分组）
     RibbonGroup, // ribbon 页签内的一个分组
-    DockPanel,   // 停靠面板（left/right/bottom）
-    Canvas,      // 中央画布
-    Menu         // 菜单栏下的一个菜单
 };
 
-// 一个 UI 插槽：由"app 骨架"声明（容器），由模块或工具箱贡献填充（内容）。
+// 一个 UI 插槽：由壳或模块声明（容器），由模块或工具箱贡献填充（内容）。
 //
-// 例如骨架声明：
-//   ribbon.page.home  /  ribbon.group.home.data  /  dock.left  /  canvas.center
-// 飞控包贡献一个 "姿态曲线" 按钮，填进 ribbon.group.home.data。
+// 例如壳声明：
+//   ribbon.page.file  /  ribbon.group.file.document
+// 飞控包贡献一个 "姿态曲线" 按钮，填进 ribbon.group.plot.series。
 //
 // 业务 UI 随扩展包装卸，而骨架与模块代码永不改动。
 struct UiSlot
@@ -39,7 +36,7 @@ struct UiSlot
     QString area;   // 插槽标识（唯一）
     QString label;  // 展示名
     QString owner;  // 声明者（模块/骨架 id），便于归属诊断
-    SlotKind kind = SlotKind::DockPanel;
+    SlotKind kind = SlotKind::RibbonGroup;
     QString parentArea; // 上级插槽（ribbon group 的父页签等）；空=顶层
     int order = 0;       // 同级排序
     QString when;        // 上下文可见性（空=恒真）：Ribbon 上下文页签靠它收起/展开
@@ -73,9 +70,9 @@ public:
 
     // 声明一个插槽；同 area 重复声明以先到者为准。
     // 注意：core 只提供这个机制，不认识"app 具体有哪些槽"——
-    // 骨架槽清单归 host 层的 SkeletonSlots 声明。
+    // 壳级页/组清单归 host 层 ShellContributions，业务页/组归各模块 onAttach。
     void declareSlot(const QString &area, const QString &label, const QString &owner,
-                     SlotKind kind = SlotKind::DockPanel,
+                     SlotKind kind = SlotKind::RibbonGroup,
                      const QString &parentArea = QString(), int order = 0,
                      const QString &when = QString());
 
@@ -85,6 +82,12 @@ public:
 
     // 模块直接登记的入口（不来自工具箱）。key 用于幂等覆盖。
     void bindLocal(const QString &area, const UiAction &action, const QString &provider);
+
+    // 动作提供器：装配时实时回调取当前条目（MRU / 收藏等随运行状态变化的清单）。
+    // 与一次性登记的固定条目不同：提供器是**声明式来源**，每次 ribbon 重建时重新取数，
+    // 不再走"清空 provider 再全量重注册"的隐藏状态通道（契约 §3.3 / D10）。
+    using ActionProvider = std::function<QList<UiAction>()>;
+    void bindActionProvider(const QString &area, const QString &provider, ActionProvider fn);
 
     // Activity Bar 入口（数据、脚本、分析、诊断）。同 id 重复声明以先到者为准。
     void declareActivity(ActivitySpec activity);
@@ -111,6 +114,7 @@ private:
     QHash<QString, QList<BoundUiAction>> m_bound;       // area -> 动作（工具箱来源）
     QList<BoundUiAction> m_unbound;
     QHash<QString, QList<BoundUiAction>> m_local;        // area -> 动作（模块本地来源）
+    QHash<QString, QHash<QString, ActionProvider>> m_providers; // area -> providerId -> 提供器
     QList<ActivitySpec> m_activities;                   // 声明顺序；查询按 order 排序
 };
 
