@@ -24,7 +24,7 @@
 - 测试：根 `tests/`（`ctest`，fixture 在 `tests/fixture/`）
 - Rust 内核：`src/kernel`（cargo 编 `ps-abi`，构建入口在顶层 CMake）
 - 第三方锁版本库：`src/3rdparty`（lua-5.4 / saribbon / ads / mavlink）
-- 本地依赖前缀：`~/.ps-dps`（仓库外；由 `tools/bootstrap-deps.sh` 生成）
+- 本地依赖前缀：`~/.ps-deps`（仓库外；由 `tools/ubuntu-setup.sh --install --qt` 生成）
 
 ## 2. 文档边界
 

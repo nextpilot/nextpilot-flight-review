@@ -6,7 +6,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # 依赖前缀：用 PS_DEPS_PREFIX（可持久化的独立 Qt/Lua 安装，不被系统镜像恢复）。
 # 该前缀下是标准 usr/ 布局（include、lib、lib/cmake、lib/qt6/plugins），
-# 一次性铺好后重装系统也不用重新 apt install。前缀由 tools/bootstrap-deps.sh 生成。
+# 一次性铺好后重装系统也不用重新 apt install。前缀由 tools/ubuntu-setup.sh --install --qt 生成。
 if(DEFINED ENV{PS_DEPS_PREFIX} AND EXISTS "$ENV{PS_DEPS_PREFIX}")
   set(PS_DEPS_PREFIX "$ENV{PS_DEPS_PREFIX}")
 endif()

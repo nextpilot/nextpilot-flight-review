@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.24)
 project(PlotScope VERSION 0.1.0 LANGUAGES C CXX)
 
 # 版本号与告警口径（Version 只读 Git describe，Warnings 只定义 ps_set_warnings 函数）。
@@ -15,7 +15,9 @@ include(Dependencies)
 # 探测不到就静默跳过——没装 ccache 的机器必须照常可编。
 option(PS_USE_CCACHE "探测 ccache 并启用编译缓存" ON)
 if(PS_USE_CCACHE)
-    find_program(CCACHE_PROGRAM ccache)
+    # 不写 cache：旧 build 目录里残留的绝对路径在换机/换 HOME 后失效，
+    # 会让 launcher 指向不存在的文件（表现为 /bin/sh: ccache: not found）。
+    find_program(CCACHE_PROGRAM ccache NO_CACHE)
     if(CCACHE_PROGRAM)
         set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
         set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")

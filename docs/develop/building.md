@@ -2,37 +2,39 @@
 
 ## 依赖
 
-- CMake ≥ 3.22
+- CMake ≥ 3.24（3.22.x 处理 `URL_HASH` 会失败，版本门槛见 `versions.json`）
 - Qt 6（Core / Widgets / Gui / Svg）
 - C++17 编译器
 - Rust 工具链（`cargo` 在 `PATH`）
 - Python 3（仅部分 `tools/` 脚本需要）
 
-依赖版本（zlib / zstd / lz4 / nanoarrow 的版本、镜像地址与 SHA256）以仓库根 `versions.json` 为唯一来源，`cmake/deps-versions.cmake` 只做解析。升级依赖改 `versions.json`，构建脚本与 CMake 不必同步改。
+`versions.json` 分两段：`toolchains`（gcc / cmake / ninja / ccache / python / rust / qt，由 `tools/ubuntu-setup.sh` 体检与获取）与 `packages`（zlib / zstd / lz4 / nanoarrow，构建期由 `FetchContent` 拉源码，统一走 `mirror` + SHA256）。`cmake/deps-versions.cmake` 只解析 `packages` 段。升级依赖改 `versions.json`，脚本与 CMake 不必同步改。
 
-Qt 可固定到用户目录 `~/.ps-dps`（在仓库与系统之外，不随提交走、不受仓库迁移影响），避免系统包被环境快照回退。
+Qt 可固定到用户目录 `~/.ps-deps`（在仓库与系统之外，不随提交走、不受仓库迁移影响），避免系统包被环境快照回退。
 
 ## Linux / 云主机
 
-Qt 固定在 `~/.ps-dps/Qt/`，不依赖系统包——云主机的 apt 包会被环境快照回滚，`~/.ps-dps` 随用户目录留存。首次：
+一条命令装齐工具链、Qt、Rust 与 Python venv，版本全部取自仓库根 `versions.json`：
 
 ```bash
-tools/bootstrap-deps.sh          # Qt 6.2.4 到 ~/.ps-dps/（Lua 内置于 src/3rdparty/lua-5.4，无需下载）
+tools/ubuntu-setup.sh --check     # 体检：每项显示 实测 / 要求 / 来源(system|managed)
+tools/ubuntu-setup.sh --install   # 补齐缺项并写入 shell 变量
 ```
 
-之后用系统 Qt 或 `~/.ps-dps` 里的 Qt 配置构建：
+装到 `~/.ps-deps`（仓库外、随用户目录留存，不受 apt 快照回滚影响）。系统自带且版本达标的工具不重复安装，只有不达标的才落进统一目录。
+
+之后构建不需要任何 `-D` 参数：
 
 ```bash
-cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.ps-dps/Qt/6.2.4/gcc_64"
-cmake --build build -j4
-ctest --test-dir build --output-on-failure        # 无显示器环境自动走 offscreen
+cmake --preset default                          # Release
+cmake --build --preset default -j2
+ctest --test-dir build --output-on-failure      # 无显示器环境自动走 offscreen
+
+cmake --preset fast                             # 关掉 37 个测试目标，改代码只编主程序
+cmake --preset debug                            # Debug + 断言，落在 build-debug/
 ```
 
-`~/.ps-dps` 不完整时配置会直接报找不到 Qt6，先跑 `bootstrap-deps.sh`。Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
-
-系统 Qt（`qt6-base-dev` / `qt6-tools-dev` / `libqt6svg6-dev` / `qt6-l10n-tools`）也能直接 `cmake -S . -B build` 配起来，但不要把它当云主机上的持久方案。
-
-`cargo` 不在默认 PATH 时（如 rustup 安装），构建前 `export PATH="$HOME/.cargo/bin:$PATH"`。
+`~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install --qt`。Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
 
 ## Windows / MSVC
 

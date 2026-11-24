@@ -1,0 +1,34 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Release（日常构建）",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PS_DEPS_FETCH": "ON",
+        "CMAKE_PREFIX_PATH": "$env{PS_QT_DIR}"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug（调试与断言）",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "fast",
+      "displayName": "Fast（关测试目标，改代码只编主程序）",
+      "inherits": "default",
+      "cacheVariables": { "PS_BUILD_TESTS": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "default", "configurePreset": "default" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "fast", "configurePreset": "fast" }
+  ]
+}

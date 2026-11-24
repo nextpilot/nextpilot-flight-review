@@ -3,8 +3,8 @@
 首次搭建环境（工具链体检 + Qt + ccache 全部就位）：
 
 ```bash
-tools/setup-dev-env.sh --check     # 只体检
-tools/setup-dev-env.sh --install   # 补齐并写入 shell 变量
+tools/ubuntu-setup.sh --check     # 只体检
+tools/ubuntu-setup.sh --install   # 补齐并写入 shell 变量
 ```
 
 跑完新开终端即可；没跑脚本的机器仍按下文手工带 `LD_LIBRARY_PATH`。
@@ -12,14 +12,14 @@ tools/setup-dev-env.sh --install   # 补齐并写入 shell 变量
 ## 运行全量测试
 
 ```bash
-LD_LIBRARY_PATH="$HOME/.ps-dps/Qt/6.2.4/gcc_64/lib" \
+LD_LIBRARY_PATH="${PS_QT_DIR:-$HOME/.ps-deps/toolchain/qt/6.2.4/gcc_64}/lib" \
   ctest --test-dir build --output-on-failure
 ```
 
 只跑单个测试：
 
 ```bash
-LD_LIBRARY_PATH="$HOME/.ps-dps/Qt/6.2.4/gcc_64/lib" \
+LD_LIBRARY_PATH="${PS_QT_DIR:-$HOME/.ps-deps/toolchain/qt/6.2.4/gcc_64}/lib" \
   ctest --test-dir build -R ps_test_gui --output-on-failure
 ```
 
@@ -42,14 +42,14 @@ cmake --build build -j2 && ctest --test-dir build --output-on-failure
 **编译缓存**。先跑一次环境脚本，把 ccache 装到持久目录 `~/.ps-deps/` 并写进 `~/.bashrc`、`~/.profile`：
 
 ```bash
-tools/setup-build-env.sh            # 安装/更新，幂等
-tools/setup-build-env.sh --check    # 只看状态
-tools/setup-build-env.sh --uninstall
+tools/ubuntu-setup.sh --install  # 安装/更新，幂等
+tools/ubuntu-setup.sh --check    # 只看状态
+tools/ubuntu-setup.sh --uninstall
 ```
 
 之后新开终端，cmake configure 会打印 `[ccache] 已启用`。configure 时自动探测 ccache 并写入 `CMAKE_CXX_COMPILER_LAUNCHER`，探测不到则静默退化为直连编译器。
 
-**路径不在仓库里写死**：`CMakeLists.txt` 只用裸 `find_program(ccache)`，搜索范围由 shell 的 `PATH` 决定。换机器、换 HOME、多套工具链都不要改仓库，重跑一次 `tools/setup-build-env.sh` 即可，CMake 侧零改动。
+**路径不在仓库里写死**：`CMakeLists.txt` 只用裸 `find_program(ccache)`，搜索范围由 shell 的 `PATH` 决定。换机器、换 HOME、多套工具链都不要改仓库，重跑一次 `tools/ubuntu-setup.sh` 即可，CMake 侧零改动。
 
 缓存容量与命中率：
 
@@ -201,7 +201,7 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 
 ```bash
 xvfb-run -a -s '-screen 0 1600x1000x24' bash -c '
-  LD_LIBRARY_PATH="$HOME/.ps-dps/Qt/6.2.4/gcc_64/lib" QT_QPA_PLATFORM=xcb \
+  LD_LIBRARY_PATH="${PS_QT_DIR:-$HOME/.ps-deps/toolchain/qt/6.2.4/gcc_64}/lib" QT_QPA_PLATFORM=xcb \
   ./build/src/application/gui/plotscope-gui tests/fixture/demo_flight.csv
 '
 ```
