@@ -282,14 +282,21 @@ install_toolchain() {
       ln -sf "$alt" "$entry"
       ln -sf "$entry" "$PS_DEPS_ROOT/bin/cmake"
       log "cmake 软链：bin/cmake → toolchain/cmake/bin/cmake → $alt"
-    elif [ -x "$pip" ] && "$pip" install --quiet --disable-pip-version-check cmake; then
+    elif [ -x "$pip" ] && pip_install "$pip" cmake; then
       ln -sf "$PS_DEPS_ROOT/toolchain/python/venv/bin/cmake" "$entry"
       ln -sf "$entry" "$PS_DEPS_ROOT/bin/cmake"
       log "cmake 由 pip 装入 venv：bin/cmake → toolchain/cmake/bin/cmake → venv（$("$PS_DEPS_ROOT/bin/cmake" --version | head -1)）"
     elif [ -z "$(probe_cmake)" ]; then
       pkgs+=(cmake)
     else
-      log "系统 cmake $(probe_cmake) 低于 $V_CMAKE_MIN，且 venv/pip 未就绪：先跑 --install --python，或自行安装 ≥$V_CMAKE_MIN 的 cmake"
+      # 走到这里说明：无持久软链、~/.local 不达标、pip 也失败，但系统有 cmake。
+      # 系统版本可能达标（如 3.28.3 ≥ 3.24），此时只是「pip 没备好」，不是版本低，
+      # 系统 cmake 已足以构建；只有确实低于门槛才需要升级。切勿一律报「低于」。
+      if ver_ge "$(probe_cmake)" "$V_CMAKE_MIN"; then
+        log "cmake 由系统提供 $(probe_cmake)（≥$V_CMAKE_MIN，够用）；pip 托管的 cmake 未就绪，可先跑 --install --python 统一版本"
+      else
+        log "系统 cmake $(probe_cmake) 低于 $V_CMAKE_MIN，且 venv/pip 未就绪：先跑 --install --python，或自行安装 ≥$V_CMAKE_MIN 的 cmake"
+      fi
     fi
   fi
 
@@ -577,6 +584,52 @@ warm_cache() {
   return 0
 }
 
+# pip 安装的自适应包装：应对「企业内网/沙箱 HTTPS 代理注入自签根 CA，venv 自带
+# certifi 不认、导致所有源都报 CERTIFICATE_VERIFY_FAILED」的环境。按代价从小到大
+# 依次尝试，任何一档成功即返回；完全正常的机器第一档就过，零额外开销：
+#   1) 原样安装（默认，绝大多数机器走这里）；
+#   2) 仅当错误确为证书问题时，改用系统 CA bundle（/etc/ssl/certs/ca-certificates.crt，
+#      已含本地注入的根 CA）——保留证书校验，安全；
+#   3) 仍失败才降级到 --trusted-host（关闭校验），且只信任当前 index 的 host，
+#      不引入新的 host、不放宽其他源；并用 PIP_PIP_INSECURE=1 显式记录这次降级。
+# 用法：pip_install <pip绝对路径> <pip install 的其余参数...>
+PIP_CA=""  # 惰性探测，系统 CA bundle 存在才用
+pip_install() {
+  local pip="$1"; shift
+  local err; err="$(mktemp)"
+  if "$pip" install --quiet --disable-pip-version-check "$@" 2>"$err"; then
+    rm -f "$err"; return 0
+  fi
+  # 只在确认是证书校验问题时才降级，网络超时/404 等原样报错，不掩盖真实故障
+  if grep -qiE 'CERTIFICATE_VERIFY_FAILED|certificate verify failed|unable to get local issuer certificate' "$err"; then
+    if [ -z "$PIP_CA" ]; then
+      local ca="/etc/ssl/certs/ca-certificates.crt"
+      [ -r "$ca" ] && PIP_CA="$ca"
+    fi
+    if [ -n "$PIP_CA" ]; then
+      log "pip 证书校验失败，尝试系统 CA bundle：$PIP_CA（保留校验）"
+      : >"$err"
+      if "$pip" install --quiet --disable-pip-version-check --cert "$PIP_CA" "$@" 2>"$err"; then
+        rm -f "$err"; return 0
+      fi
+    fi
+    # 最后手段：仅信任当前 index 的 host，不改全局、不新增来源
+    local host
+    host="$("$pip" config list 2>/dev/null | sed -n 's/^global.index-url=.*:\/\/\([^/]*\).*/\1/p' | head -1)"
+    [ -z "$host" ] && host="${PIP_TRUSTED_HOST:-}"
+    if [ -n "$host" ]; then
+      log "系统 CA 仍失败，降级为仅信任当前源 host：$host（关闭该 host 校验，仅此环境）"
+      : >"$err"
+      if PIP_PIP_INSECURE=1 "$pip" install --quiet --disable-pip-version-check --trusted-host "$host" "$@" 2>"$err"; then
+        rm -f "$err"; return 0
+      fi
+    fi
+  fi
+  cat "$err" >&2
+  rm -f "$err"
+  return 1
+}
+
 install_python() {
   mkdir -p "$PS_DEPS_ROOT"
   if [ ! -x "$PS_DEPS_ROOT/toolchain/python/venv/bin/python" ]; then
@@ -606,7 +659,7 @@ install_python() {
   fi
   local req="$ROOT/${V_PY_REQ:-tools/requirements.txt}"
   if [ -f "$req" ]; then
-    if "$PS_DEPS_ROOT/toolchain/python/venv/bin/pip" install --quiet --disable-pip-version-check -r "$req"; then
+    if pip_install "$PS_DEPS_ROOT/toolchain/python/venv/bin/pip" -r "$req"; then
       log "pip 依赖已安装：$req"
     else
       log "pip 依赖安装失败：$req"
@@ -623,7 +676,7 @@ install_qt() {
 
   local aqt="$PS_DEPS_ROOT/toolchain/python/venv/bin/aqt"
   if [ ! -x "$aqt" ]; then
-    if "$PS_DEPS_ROOT/toolchain/python/venv/bin/pip" install --quiet --disable-pip-version-check aqtinstall 2>/dev/null; then
+    if pip_install "$PS_DEPS_ROOT/toolchain/python/venv/bin/pip" aqtinstall; then
       log "aqtinstall 已装入 venv"
     else
       aqt="$(command -v aqt || true)"
