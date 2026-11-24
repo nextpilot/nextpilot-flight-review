@@ -275,6 +275,9 @@ Q_SIGNALS:
                                  const QString &title);
     // 联动：本画布时间变化通知同页其它画布（source 用于避免回环，只同步竖线不复制读数）。
     void linkedTimeChanged(double t, bool visible, AxesView *source);
+    // 游标时间变化（本画布自己的游标，含固定读数拖动）：工作区据此推状态栏
+    // `plot.axes.cursor`。节流在**工作区/模块侧**做（D2：游标属 plot 域）。
+    void cursorTimeChanged(double t);
     // 书签集合变化（上层存进布局）。
     void bookmarksChanged();
     // 图例点击切换曲线显隐：上层可同步图例面板/属性面板状态。

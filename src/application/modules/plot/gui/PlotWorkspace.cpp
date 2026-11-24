@@ -1,5 +1,7 @@
 #include "PlotWorkspace.h"
 
+#include <QDateTime>
+
 #include "AppContext.h"
 #include "chrome/AxesToolbar.h"
 #include "layout/TabbedFigure.h"
@@ -16,6 +18,7 @@
 #include "AxesView.h"
 #include "WorkspaceHistory.h"
 #include "playback/PlaybackController.h"
+#include "PlaybackEngine.h"
 #include "DatasetHub.h"
 #include "Dataset.h"
 #include "SourceHub.h"
@@ -109,6 +112,16 @@ QString toInstrumentKind(const QString &kind)
 PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
     : QWidget(parent), m_appCtx(appCtx), m_executor(executor)
 {
+    // 游标状态栏尾沿补发（10Hz 节流在 plot 域，见 pushCursorStatus）。
+    m_cursorFlush.setSingleShot(true);
+    QObject::connect(&m_cursorFlush, &QTimer::timeout, this, [this]() {
+        if (!m_cursorPendingValid)
+            return;
+        m_cursorPendingValid = false;
+        m_cursorStatusEmitMs = QDateTime::currentMSecsSinceEpoch();
+        emitCursorStatus(m_cursorPending);
+    });
+
     // 全工作区快照 undo（第3仗 3b）：最先创建——结构方法与信号都会打进动作流。
     m_history = new WorkspaceHistory(this, this);
 
@@ -145,6 +158,9 @@ PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWid
     outer->addWidget(m_playback->timelineWidget());
     QObject::connect(m_playback, &PlaybackController::playheadChanged, this,
                      &PlotWorkspace::onPlayheadChanged);
+    // 回放状态 → 状态栏 `playback.state`：引擎 playingChanged 驱动，不在壳里猜业务键。
+    QObject::connect(m_playback->engine(), &PlaybackEngine::playingChanged, this,
+                     [this](bool playing) { pushPlaybackStatus(playing); });
 
     // 源级时间 offset 变化（第二梯队 #204 多源时间对齐）：统一刷新所有画布。
     // offset 是宿主态配方，画布 LOO/原始数据不动，只重推 x 映射。
@@ -311,6 +327,12 @@ PlotWorkspace::Cell PlotWorkspace::makeCell(QWidget *parentForStack)
     auto *instrument = new InstrumentView(m_executor, stack);
     instrument->setAppContext(&m_appCtx);
 
+    // 游标变化 → 状态栏 `plot.axes.cursor`（只推当前活动格，避免多格互相覆盖）。
+    QObject::connect(canvas, &AxesView::cursorTimeChanged, this,
+                     [this, canvas, stack](double t) {
+                         if (stack->currentWidget() == canvas)
+                             pushCursorStatus(t);
+                     });
     stack->addWidget(canvas);
     stack->addWidget(instrument);
     stack->setCurrentWidget(canvas);
@@ -547,6 +569,40 @@ void PlotWorkspace::setActive(int index)
     if (index < 0 || index >= m_cells.size() || m_active == index)
         return;
     m_active = index;
+}
+
+void PlotWorkspace::pushCursorStatus(double t)
+{
+    // 10Hz 窗口（D2：游标节流归 plot 域，壳与 hub 不认识这个业务键）。
+    // 窗口内只**暂存最新值**，由 m_cursorFlush 在窗口结束后补发一次尾沿，
+    // 所以连续拖动停手后状态栏一定落到最终位置，不会停在中途值。
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 since = now - m_cursorStatusEmitMs;
+    if (since >= 100)
+    {
+        m_cursorStatusEmitMs = now;
+        m_cursorPendingValid = false;
+        emitCursorStatus(t);
+        return;
+    }
+    m_cursorPending = t;
+    m_cursorPendingValid = true;
+    if (!m_cursorFlush.isActive())
+        m_cursorFlush.start(int(100 - since) + 1); // 窗口一结束就补发
+}
+
+void PlotWorkspace::emitCursorStatus(double t)
+{
+    m_appCtx.status().updateStatus(QStringLiteral("plot.axes.cursor"),
+                                   QStringLiteral("游标: %1 s").arg(t, 0, 'f', 2));
+}
+
+void PlotWorkspace::pushPlaybackStatus(bool playing)
+{
+    // 引擎只区分播放/暂停两态；初始"停止"由 spec.text 给初值，这里不回写。
+    m_appCtx.status().updateStatus(QStringLiteral("playback.state"),
+                                   playing ? QStringLiteral("播放中")
+                                           : QStringLiteral("已暂停"));
 }
 
 AxesView *PlotWorkspace::canvasById(int id) const

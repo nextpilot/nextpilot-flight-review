@@ -497,6 +497,7 @@ void AxesView::setCursorTime(double t, bool pinned)
     m_readout->setPinned(pinned);
     refreshReadout();
     Q_EMIT linkedTimeChanged(t, true, this);
+    Q_EMIT cursorTimeChanged(t);
 }
 void AxesView::clearCursor()
 {

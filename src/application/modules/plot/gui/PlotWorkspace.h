@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QJsonObject>
 #include <QPointer>
+#include <QTimer>
 #include <QStringList>
 #include <QWidget>
 
@@ -259,6 +260,14 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    // 游标状态推送（验收 7 / D2）：10Hz 节流在**这里**，不在壳里——
+    // 游标是 plot 域的状态，壳不该认识 `plot.axes.cursor` 这个业务键。
+    void pushCursorStatus(double t);
+    // 真正落文案（节流已判定可发/补发时调用），把秒数格式化进 `plot.axes.cursor`。
+    void emitCursorStatus(double t);
+    // 回放状态推送：引擎 playingChanged 驱动（播放中 / 已暂停），初始"停止"由声明给初值。
+    void pushPlaybackStatus(bool playing);
+
     context::AppContext &m_appCtx;
     intent::IIntentExecutor &m_executor;
 
@@ -268,6 +277,12 @@ private:
 
     QVector<Cell> m_cells;            // 当前页的 cell（与 m_pages[m_activePage]->cells 交换）
     int m_active = 0;
+    qint64 m_cursorStatusEmitMs = -1000; // 上次推状态栏的时刻（10Hz 窗口）
+    // 尾沿补发：节流窗口内来的最后一次游标值先存着，窗口一结束由定时器补出去，
+    // 否则连续拖动停手后状态栏会永远停在拖动前/中途的值。
+    QTimer m_cursorFlush;
+    double m_cursorPending = 0.0;
+    bool m_cursorPendingValid = false;
     int m_fullscreenCell = -1;        // >=0 表示某 cell 处于全屏（其它 cell 面板被隐藏）
     // 全屏时被隐藏的其它面板：退出时只恢复这一批，用户自己关掉的不会被重新打开。
     QVector<QPointer<DockedAxes>> m_fullscreenHidden;
