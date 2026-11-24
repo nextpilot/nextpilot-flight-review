@@ -112,13 +112,37 @@ target_include_directories(ps_gui PUBLIC
 # fastplot：独立绘图库（只依赖 Qt Widgets）。绘图视图通过它绘制，
 # 因此 GUI 侧公共依赖；CLI 不链它，保持 headless 纯净。
 #
-# 注：ReportExporter 仍按 PlotWorkspace 类型 qobject_cast（c4 前的存量直链），
-# 故 ps_gui 暂以 PRIVATE 引用 ps_module_plot_gui 取其头文件包含路径；
-# shell→module 的编译依赖剥离归 c8（D18），本轮不处理。
-target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme ps_gui_transform ps_protocol ps_module_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
+# c8（契约 §11 链接关 / 验收 6）：ps_gui 的链接依赖**只许**是 libs 层
+# （ps_host / ps_context / ps_command / ps_gui_theme / ps_gui_transform /
+# ps_protocol / 其余 libs/*）、Qt 与 fastplot；不许出现任何
+# ps_module_* / ps_toolbox_* / ps_parser_*。装配权上移到组合根（exe / 装配层），
+# 壳只接收"已装配好的 Pack + ToolboxHub"。下方护栏在 configure 期硬拦。
+target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme ps_gui_transform ps_protocol fastplot
                                     ads::ads SARibbonBar::SARibbonBar
-    PRIVATE ps_module_plot_gui)
+                                    Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
+
+# 壳链接护栏（契约 §11 链接关 / 验收 6）：
+# 壳 target（ps_gui 与裸壳 ps_shell_bare）的 PUBLIC/PRIVATE 依赖里一旦命中
+# ps_module_* / ps_toolbox_* / ps_parser_*，configure 期即 FATAL_ERROR。
+# 护栏比纪律可靠：后来者把模块塞回壳链接面，编译还没开始就红。
+function(ps_guard_shell_links _target)
+    foreach(_prop IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+        get_target_property(_links ${_target} ${_prop})
+        if(NOT _links)
+            continue()
+        endif()
+        foreach(_l IN LISTS _links)
+            if(_l MATCHES "^ps_module_|^ps_toolbox_|^ps_parser_")
+                message(FATAL_ERROR
+                    "${_target} 链了业务模块 ${_l}：壳只许依赖 libs 层 + Qt + fastplot"
+                    "（契约 §11 链接关 / 验收 6），装配权归组合根。")
+            endif()
+        endforeach()
+    endforeach()
+endfunction()
+
+ps_guard_shell_links(ps_gui)
 
 # 图形界面可执行文件：与 headless 入口（src/application/app 的 plotscope）并列，
 # App/诊断/MCP 桥来自同一个 ps_app，不再各编一份源码。
