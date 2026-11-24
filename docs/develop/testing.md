@@ -30,11 +30,23 @@ cmake --build build -j2 && ctest --test-dir build --output-on-failure
 
 关闭测试后 `ctest` 无任何用例，报告 `0 tests` 是预期行为，不是失败。
 
-**编译缓存**。configure 时自动探测 ccache 并写入 `CMAKE_CXX_COMPILER_LAUNCHER`，探测不到则静默退化为直连编译器。缓存容量与命中率：
+**编译缓存**。先跑一次环境脚本，把 ccache 装到持久目录 `~/.ps-deps/` 并写进 `~/.bashrc`、`~/.profile`：
 
 ```bash
-ccache --max-size 5G   # 缓存目录 <~/.cache/ccache>；容量给足，命中率才稳
-ccache -s              # 看 direct/预处理器命中与缓存占用
+tools/setup-build-env.sh            # 安装/更新，幂等
+tools/setup-build-env.sh --check    # 只看状态
+tools/setup-build-env.sh --uninstall
+```
+
+之后新开终端，cmake configure 会打印 `[ccache] 已启用`。configure 时自动探测 ccache 并写入 `CMAKE_CXX_COMPILER_LAUNCHER`，探测不到则静默退化为直连编译器。
+
+**路径不在仓库里写死**：`CMakeLists.txt` 只用裸 `find_program(ccache)`，搜索范围由 shell 的 `PATH` 决定。换机器、换 HOME、多套工具链都不要改仓库，重跑一次 `tools/setup-build-env.sh` 即可，CMake 侧零改动。
+
+缓存容量与命中率：
+
+```bash
+ccache -s              # 命中率与占用；缓存目录 <~/.ps-deps/ccache-cache>，上限 5G 已由脚本设好
+ccache -z              # 清零统计，用来测一轮改动的真实命中率
 ```
 
 只有编到同内容的源文件才命中：切分支、清理重建、多个 target 重复编同一文件（如 `App.cpp` 被 11 个测试目标各编一遍）收益最大；改着头文件后的首次构建仍需真编。想强制不用缓存时加 `-DPS_USE_CCACHE=OFF`。
