@@ -69,6 +69,25 @@ PS_JOBS=2 cmake --build --preset default
 
 `~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install --qt`。Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
 
+## 构建加速开关
+
+开关的作用与实测数据见 `build-performance.md`，这里只列默认值与适用场景。**三个开关的默认值都偏向"日常热迭代"**：缓存与增量优先，冷建优化留给 CI。
+
+| 开关 | 默认 | 作用 | 适用场景 |
+|---|---|---|---|
+| `PS_USE_CCACHE` | `ON` | 以 `CMAKE_CXX_COMPILER_LAUNCHER` 接入 ccache，命中即跳过整段编译 | 所有日常构建。PATH 里找不到 ccache 时只打印一行提示并直连编译器，不会失败 |
+| `PS_USE_PCH` + `PS_PCH_TARGETS` | `OFF` / 空 | 给指定 target 挂 `cmake/pch.hpp` 预编译头（分号分隔 target 名） | **只建议 CI 冷构建**。与 ccache 同开时，默认 sloppiness 下 ccache 会把全部调用判为不可缓存并整体旁路（实测 `Hits 0/0`），净负收益；确需同开必须放行 `CCACHE_SLOPPINESS=pch_defines,time_macros`，且热全量与"仅 ccache"打平 |
+| `PS_BUILD_TESTS` | `ON` | 是否构建测试目标 | 只编主程序时用 `cmake --preset fast`（已设 OFF） |
+
+PCH 与 ccache 互斥会被 configure 拦住：开了 `PS_USE_PCH` 而 `CCACHE_SLOPPINESS` 不含 `pch_defines` 时直接 `FATAL_ERROR`，并给出两条出路。CI 冷建通常不用缓存，关掉 ccache 最省事：
+
+```bash
+# CI 冷构建：开 PCH、关 ccache，避免二者互斥
+cmake --preset default -DPS_USE_PCH=ON -DPS_PCH_TARGETS="SARibbonBar;fastplot" -DPS_USE_CCACHE=OFF
+```
+
+本地要预热缓存用 `tools/ubuntu-setup.sh --warm-cache`（Release + Debug 各跑一次全量，幂等，已预热则跳过），机制见 `build-acceleration.md`。
+
 ## Windows / MSVC
 
 用 Visual Studio 2022 + Qt 6（按本机安装路径改 `CMAKE_PREFIX_PATH`）：
