@@ -11,7 +11,7 @@
 `deps-version.json` 分两段，每个条目把版本、镜像和附加配置写在一起：
 
 - `toolchains`（gcc / cmake / ninja / ccache / python / rust / qt / apt）：由 `tools/ubuntu-setup.sh` 体检与获取。`version` 用带运算符的表达式表达要求（`">=3.24"` 最低版本、`"=6.2.4"` 精确版本）；`mirrors` 是该工具的下载镜像数组。
-- `packages`（zlib / zstd / lz4 / nanoarrow）：构建期由 `FetchContent` 拉源码。每个包自带 `mirrors` 数组，元素为 `{url, sha256}`，哈希与 URL 绑定。`cmake/deps-versions.cmake` 只解析这一段。
+- `packages`（zlib / zstd / lz4 / nanoarrow）：构建期由 `FetchContent` 拉源码。每个包自带 `mirrors` 数组，元素为 `{url, sha256}`，哈希与 URL 绑定。`cmake/DepsVersion.cmake` 只解析这一段。
 
 升级依赖、换镜像都只改 `deps-version.json`，脚本与 CMake 不必同步改。
 
@@ -42,7 +42,7 @@ tools/ubuntu-setup.sh --install   # 补齐缺项并写入 shell 变量
 - 换源/调优先级只需改 `deps-version.json` 的数组顺序，脚本无需改动；某工具未配 `mirrors` 时沿用原行为。
 - pip 若已在 `pip.conf` 显式配置了 index，脚本不覆盖用户配置；apt 仅对 Ubuntu 生成临时源，不改系统 `/etc/apt`。
 
-**源码包镜像**：`packages.<pkg>.mirrors` 每个元素自带 `{url, sha256}`（国内 gitee 归档在前、GitHub 官方 tar.gz 兜底）。由于 gitee 的 zip 与 GitHub 的 tar.gz 内容不同、哈希不同，CMake 的 `URL_HASH` 无法共用，构建期 `deps-versions.cmake` 用 for 循环逐个探测下载并按各自哈希校验，选第一个通过的交给 `FetchContent`（下载结果缓存在 build 目录，重复 configure 不再联网）；系统已有该库时完全不触发网络。换源/加源只改 JSON 数组。
+**源码包镜像**：`packages.<pkg>.mirrors` 每个元素自带 `{url, sha256}`（国内 gitee 归档在前、GitHub 官方 tar.gz 兜底）。由于 gitee 的 zip 与 GitHub 的 tar.gz 内容不同、哈希不同，CMake 的 `URL_HASH` 无法共用，构建期 `DepsVersion.cmake` 用 for 循环逐个探测下载并按各自哈希校验，选第一个通过的交给 `FetchContent`（下载结果缓存在 build 目录，重复 configure 不再联网）；系统已有该库时完全不触发网络。换源/加源只改 JSON 数组。
 
 之后构建不需要任何 `-D` 参数：
 

@@ -4,7 +4,7 @@ include(FetchContent)
 include(GNUInstallDirs)
 
 # deps-version.json → CMake 变量：唯一版本源，本文件不再存版本常量
-include("${CMAKE_CURRENT_LIST_DIR}/deps-versions.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/DepsVersion.cmake")
 
 option(PS_DEPS_FETCH "缺少 zlib/sqlite3/zstd/lz4/nanoarrow 时自动拉源码构建" ON)
 option(PS_DEPS_PREFER_SYSTEM "优先使用系统或 vcpkg 已安装的库" ON)

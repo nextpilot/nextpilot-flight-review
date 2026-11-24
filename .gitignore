@@ -23,6 +23,9 @@ refs/
 # 本地可搬移依赖（Qt/Lua）
 /deps/
 
+# CMake FetchContent 的镜像下载缓存（configure 副产物，不进版本库）
+ps-deps-download-cache/
+
 !src/tests/fixture/layout_one_page.psl
 
 # src 工程的构建产物
