@@ -82,18 +82,20 @@ static void initSaribbonResources()
 namespace nextpilot::plotscope::gui
 {
 
-MainWindow::MainWindow(AppContext &appCtx, QWidget *parent)
+MainWindow::MainWindow(AppContext &appCtx, const registry::ProductSpec &spec, QWidget *parent)
     : SARibbonMainWindow(parent,
                          // UseRibbonFrame    = 无边框（framelesshelper 接管拖拽/缩放/贴边，
                          //                     并由 SARibbon 自绘窗口按钮）
                          // UseRibbonMenuBar = 用 ribbon 条取代系统菜单栏
                          SARibbonMainWindowStyleFlag::UseRibbonFrame
                              | SARibbonMainWindowStyleFlag::UseRibbonMenuBar),
-      m_appCtx(appCtx)
+      m_appCtx(appCtx),
+      m_spec(spec)
 {
     initSaribbonResources();
 
-    setWindowTitle(QStringLiteral("PlotScope"));
+    // 窗口标题来自产品 spec；壳内不写死任何产品名（契约 §19/§20）。
+    setWindowTitle(m_spec.displayName);
     resize(1280, 800);
 
     // 菜单栏说明：SARibbonMainWindow 已经把 **ribbon 条**装进了 QMainWindow 的
@@ -311,6 +313,9 @@ void MainWindow::build(RuntimeHost &host)
             gui::ReportRequest req;
             req.path = params.value(QStringLiteral("path")).toString();
             req.title = params.value(QStringLiteral("title")).toString();
+            if (req.title.isEmpty())
+                req.title = !m_spec.reportTitle.isEmpty() ? m_spec.reportTitle : m_spec.displayName;
+            req.creator = m_spec.displayName;
             req.subtitle = params.value(QStringLiteral("subtitle")).toString();
             req.notes = params.value(QStringLiteral("notes")).toString();
             req.templateId = params.value(QStringLiteral("template")).toString();
@@ -374,39 +379,18 @@ void MainWindow::build(RuntimeHost &host)
     // 3) 装模块（GUI 模式：会调用 onAttach，模块可自带界面入口）
     host.activate(QStringList(), m_context);
 
-    // 3.0) 属性面板占 SecondarySidebar（替换原 CAN 面板的默认占用）。
+    // 3.0) 默认面板布局：清单来自产品 spec（完整产品 / 裸壳各一份）。
     // 外壳只用**部件类型字符串**请求，不 include 任何 views/ 头文件——
-    // 具体 QWidget 由视图层自注册（PS_REGISTER_PANEL("property-panel")）。
-    // 属性面板是 PropertySchema 契约的通用视图：选中什么、显示什么全由
-    // AppContext 的 Selection + PropertyProvider 决定，外壳不认识业务。
-    if (m_context->requestPanel(nextpilot::plotscope::registry::Region::SecondarySidebar,
-                                QStringLiteral("property-panel")))
-        statusBar()->showMessage(QStringLiteral("属性面板已就绪"));
-
-    // 3.0b) 底部面板条（VS Code 式）：终端 → 输出 → 问题 → 调试控制台 → 诊断。
-    //
-    // 顺序是按 requestPanel 的调用次序固定的（ADS 往同一 dock area 尾部追加页签）：
-    //   · 「终端」由 ScriptModule 在 onAttach 时请求（模块自带界面入口），
-    //     此时已在坞底占首位，故这里从「输出」开始；
-    //   · 「诊断」原先挂在右栏、按需创建，现在并入底部组——它内部仍是
-    //     diag.registries 的注册树全景视图，只是位置变了，取数通道不变。
-    // 四个面板共用 AppContext 消息流：输出收全量、问题只留 warn/error、
-    // 调试控制台只收 level=debug，互不重复实现取数。
-    const struct { const char *type; nextpilot::plotscope::registry::Region region; } kBottomPanels[] = {
-        {"output-console", nextpilot::plotscope::registry::Region::Panel},   // 全量消息流
-        {"problems", nextpilot::plotscope::registry::Region::Panel},         // 只留 warn/error
-        {"debug-console", nextpilot::plotscope::registry::Region::Panel},    // 调试事件 + 求值
-        {"diagnostics", nextpilot::plotscope::registry::Region::Panel},      // 并入底部组，取数仍是 diag.registries
-    };
-    for (const auto &panel : kBottomPanels)
-        m_context->requestPanel(panel.region, QString::fromLatin1(panel.type));
-
-    // 底部默认停在「终端」：ADS 每加一个页签都会把新的置为当前，于是最后装配的
-    // 「诊断」会抢到选中态——底部面板条默认显示的应该是终端（可输入的那一个）。
-    // 走 re-request 复用（与调试暂停聚焦面板同一条语义），不新增外壳专用接口。
-    if (QWidget *terminal = m_context->requestPanel(nextpilot::plotscope::registry::Region::Panel,
-                                                    QStringLiteral("script-console")))
-        m_binder->raisePanel(terminal);
+    // 具体 QWidget 由视图层自注册（PS_REGISTER_PANEL）。工厂未注册的类型
+    // （裸壳无模块面板）requestPanel 返回 nullptr，这里安全跳过，不算错误。
+    for (const auto &placement : m_spec.defaultPanels)
+    {
+        if (placement.panelType.isEmpty())
+            continue;
+        QWidget *panel = m_context->requestPanel(placement.region, placement.panelType);
+        if (panel && placement.raiseAfter)
+            m_binder->raisePanel(panel);
+    }
 
     // 3.0c) Activity badge：诊断 activity 汇总 warn/error 条数。
     connect(&m_appCtx, &AppContext::messageAppended, this,
@@ -465,7 +449,8 @@ void MainWindow::build(RuntimeHost &host)
                 return;
             gui::ReportRequest req;
             req.path = path;
-            req.title = QStringLiteral("PlotScope 报告");
+            req.title = !m_spec.reportTitle.isEmpty() ? m_spec.reportTitle : m_spec.displayName;
+            req.creator = m_spec.displayName;
             const auto r = gui::exportReportPdf(
                 m_appCtx, m_binder->centralWidgets(), m_binder->centralTitles(), req);
             statusBar()->showMessage(r ? QStringLiteral("报告已导出: %1").arg(path)
@@ -512,7 +497,7 @@ void MainWindow::build(RuntimeHost &host)
             || actionId == QStringLiteral("plot.screenshot"))
         {
             const QString path = QFileDialog::getSaveFileName(
-                this, QStringLiteral("截图"), QStringLiteral("plotscope.png"),
+                this, QStringLiteral("截图"), m_spec.id + QStringLiteral(".png"),
                 QStringLiteral("PNG 图片 (*.png)"));
             if (!path.isEmpty())
                 grab().save(path);
@@ -522,7 +507,7 @@ void MainWindow::build(RuntimeHost &host)
         if (actionId == QStringLiteral("file.exportSettings"))
         {
             const QString path = QFileDialog::getSaveFileName(
-                this, QStringLiteral("导出设置"), QStringLiteral("plotscope-settings.json"),
+                this, QStringLiteral("导出设置"), m_spec.id + QStringLiteral("-settings.json"),
                 QStringLiteral("JSON (*.json)"));
             if (path.isEmpty())
                 return;
@@ -541,10 +526,14 @@ void MainWindow::build(RuntimeHost &host)
         // 关于：版本与用途说明（help.about）。
         if (actionId == QStringLiteral("help.about"))
         {
-            QMessageBox::about(this, QStringLiteral("关于 PlotScope"),
-                QStringLiteral("PlotScope — 数据 / 绘图 / 分析软件\n"
+            const QString aboutName = m_spec.displayName;
+            const QString aboutVersion = m_spec.version.isEmpty()
+                ? QString() : QStringLiteral(" v%1").arg(m_spec.version);
+            QMessageBox::about(this, tr("关于 %1").arg(aboutName),
+                QStringLiteral("%1%2 — 数据 / 绘图 / 分析软件\n"
                                "架构底座：Dataset / Intent / Contribution / Module / Pack\n"
-                               "绘图库：fastplot（Figure / Axes / Line / Artist）"));
+                               "绘图库：fastplot（Figure / Axes / Line / Artist）")
+                    .arg(aboutName, aboutVersion));
             return;
         }
         // 保存/导入布局：窗口状态写入/读出 Workspace 作用域 settings（layout.save/import）。

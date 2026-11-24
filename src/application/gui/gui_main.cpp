@@ -2,6 +2,7 @@
 #include "ShellBinder.h"
 
 #include "App.h"
+#include "ProductSpec.h"
 #include "diagnostics.h"
 
 #include <QApplication>
@@ -46,6 +47,34 @@ const char *u8(const QString &s)
 {
     return s.toUtf8().constData();
 }
+
+// 完整产品的身份清单（装配层唯一事实源；壳代码不出现产品常量）。
+// moduleIds 为声明式清单：当前装配仍由组合根链接全部模块，后续按清单过滤装载。
+nextpilot::plotscope::registry::ProductSpec plotscopeProductSpec()
+{
+    using nextpilot::plotscope::registry::ProductPanelPlacement;
+    using nextpilot::plotscope::registry::ProductSpec;
+    using nextpilot::plotscope::registry::Region;
+    ProductSpec spec;
+    spec.id = QStringLiteral("plotscope");
+    spec.displayName = QStringLiteral("PlotScope");
+    spec.version = QStringLiteral("0.1.0");
+    spec.reportTitle = QStringLiteral("PlotScope 报告");
+    spec.defaultPanels = {
+        {Region::SecondarySidebar, QStringLiteral("property-panel"), QString(), false},
+        {Region::Panel, QStringLiteral("output-console"), QString(), false},
+        {Region::Panel, QStringLiteral("problems"), QString(), false},
+        {Region::Panel, QStringLiteral("debug-console"), QString(), false},
+        {Region::Panel, QStringLiteral("diagnostics"), QString(), false},
+        {Region::Panel, QStringLiteral("script-console"), QString(), true},
+    };
+    spec.moduleIds = {
+        QStringLiteral("mod.data"), QStringLiteral("mod.plot"), QStringLiteral("mod.script"),
+        QStringLiteral("mod.protocol"), QStringLiteral("mod.analysis"), QStringLiteral("mod.settings"),
+        QStringLiteral("mod.report"), QStringLiteral("mod.workspace"),
+    };
+    return spec;
+}
 }
 
 int main(int argc, char *argv[])
@@ -55,13 +84,15 @@ int main(int argc, char *argv[])
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 #endif
+    const nextpilot::plotscope::registry::ProductSpec productSpec = plotscopeProductSpec();
+
     QApplication app(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("plotscope"));
-    QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QApplication::setApplicationName(productSpec.id);
+    QApplication::setApplicationVersion(productSpec.version);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
-        QStringLiteral("PlotScope —— 数据绘图分析软件（图形界面）"));
+        QStringLiteral("%1 —— 数据绘图分析软件（图形界面）").arg(productSpec.displayName));
     parser.addHelpOption();
     parser.addVersionOption();
 
@@ -98,7 +129,8 @@ int main(int argc, char *argv[])
                                          QStringLiteral("seconds"), QStringLiteral("3"));
     parser.addOption(exitAfterStartOpt);
     QCommandLineOption settingsOpt(QStringLiteral("settings"),
-                                   QStringLiteral("设置文件路径（默认 <AppData>/plotscope/settings.json）"),
+                                   QStringLiteral("设置文件路径（默认 <AppData>/%1/settings.json）")
+                                       .arg(productSpec.id),
                                    QStringLiteral("file"));
     parser.addOption(settingsOpt);
     parser.process(app);
@@ -124,7 +156,7 @@ int main(int argc, char *argv[])
     }
 
     nextpilot::plotscope::app::App application(settingsPath);
-    nextpilot::plotscope::gui::MainWindow window(application.context());
+    nextpilot::plotscope::gui::MainWindow window(application.context(), productSpec);
     window.build(application.host());
 
     int loadFailures = 0;

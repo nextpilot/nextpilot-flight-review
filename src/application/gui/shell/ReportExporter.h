@@ -28,7 +28,8 @@ namespace nextpilot::plotscope::gui
 struct ReportRequest
 {
     QString path;        // 输出 PDF 路径
-    QString title;       // 封面标题（空 = "PlotScope 报告"）
+    QString title;       // 封面标题（空 = 调用方按产品 spec 兜底）
+    QString creator;     // PDF creator 元数据（产品显示名，空 = 不写）
     QString subtitle;    // 封面副标题/摘要（可空）
     QString notes;       // 结论/备注文本（可空）
     QString templateId;  // 工具箱贡献的模板 id（空 = 内置默认）

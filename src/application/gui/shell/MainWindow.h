@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "CommandPalette.h"
+#include "ProductSpec.h"
 #include "command/CommandRegistry.h"
 #include "command/KeybindingRegistry.h"
 #include <QJsonObject>
@@ -75,7 +76,10 @@ class MainWindow : public SARibbonMainWindow
 public:
     // 无边框窗体：UseRibbonFrame = SARibbon 自绘边框（ framelesshelper 接管
     // 拖拽/缩放/贴边），UseRibbonMenuBar = 用 ribbon 条而不是系统菜单栏。
-    explicit MainWindow(nextpilot::plotscope::context::AppContext &appCtx, QWidget *parent = nullptr);
+    // spec：产品身份（标题/默认布局/模块清单）；壳不按产品名分支，全部从 spec 取。
+    explicit MainWindow(nextpilot::plotscope::context::AppContext &appCtx,
+                        const nextpilot::plotscope::registry::ProductSpec &spec = {},
+                        QWidget *parent = nullptr);
     ~MainWindow() override;
 
     // 启动装配：建骨架、声明插槽、装载模块（GUI 模式）。
@@ -167,6 +171,8 @@ private:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
     nextpilot::plotscope::context::AppContext &m_appCtx;
+    // 产品身份快照：装配层注入，壳只读；不含任何产品分支判断。
+    const nextpilot::plotscope::registry::ProductSpec m_spec;
     nextpilot::plotscope::host::RuntimeHost *m_host = nullptr; // 用于取设置（状态持久化）
     ShellBinder *m_binder = nullptr;
     QMenu *m_gridMenu = nullptr;   // 「网格」大按钮的下拉（X/Y 网格线开关）
