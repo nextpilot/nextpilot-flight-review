@@ -75,8 +75,20 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 
   三道门禁的报错分别是 405「未通过设置的审查」（缺第 1 步）、405「未通过设置的测试」（缺第 2 或第 3 步）。第 2 步是「指定测试人」、第 3 步是「测试通过」，**两者都要做**，只做其一时 `can_merge_check` 仍为 `False`。
   合并参数用 `merge_style=merge`（保留原始提交与 `Refs:` footer）；用 squash 会把各提交的 `Refs:` 吃掉，历史里查不到追溯线索。
-- **⚠️ 描述里的 `#IKxxxxx` 字样会被连带关闭**：本仓库 `close_related_issue=1`，PR 合并时会把描述中**所有**带 `#` 的 issue ident 一并关闭——不只 `Closes #` 那一个。踩坑实录（连踩两次）：PR !45 只打算关 `#IKXG0M`，但描述正文里为说明来源写了「按 `#IKXGYH` 评审裁定」，IKXGYH 在合并同一秒被误关；修正后 PR !47 又在正文里出现 `#IKXGYH`，再次误关。**规则（强约束）**：PR 描述里**只允许出现要关闭的那个 issue 的 `#`**；其余任何 issue 一律去掉 `#` 写成纯文本（`IKXGYH`），最好连编号都不写在正文里（改写「按另一个 issue 的评审裁定」）。
-  合并后若发现 issue 被误关（`updated_at` 与合并时刻同秒），用 `PATCH /repos/nextpilot/issues/<num>` + `repo=` + `state=open` 重新打开，并同步 `PATCH` 该 PR 的描述去掉多余的 `#`。
+- **⚠️ 描述里的 `#IKxxxxx` 字样会被连带关闭（本仓库最高频的坑，连踩三次）**：本仓库 `close_related_issue=1`，PR 合并时会把描述中**所有**带 `#` 的 issue ident 一并关闭——不只 `Closes #` 那一个。踩坑实录：PR !45 正文写了「按 `#IKXGYH` 评审裁定」→ 误关；PR !47 正文引用了 `#IKXGYH` → 又误关；**PR !48 连「文档里记录了这个坑」这句话本身都带着 `#IKXGYH`，于是第三次误关**。连写文档复盘都会被同一个坑绊倒，说明它必须靠机制拦，不能靠记性。
+
+  **规则**：PR 描述里**只允许出现要关闭的那个 issue 的 `#`**。其余 issue 一律去掉 `#`，并且**连编号都不要出现在正文里**——改写成「按另一个 issue 的评审裁定」「按前序 issue 的裁定」，避免为了说明出处而留下 ident。
+
+  **机制（合并前必跑）**：描述写完后、建 PR 之前，先用下面这段自检，确认描述里出现的 `#IKxxxxx` 恰好只有目标 issue 一个：
+
+  ```bash
+  # 目标 issue 作为唯一参数传入；期望输出为空
+  grep -oE '#IKX[0-9A-Z]+' pr_body.md | grep -v '^#IKXG0M$'
+  ```
+
+  输出非空就说明有多余 ident，去掉 `#` 或整段改写后再提交。合并完成后，另需 `GET` 一次相关 issue 的 `state` 与 `updated_at`，若 `updated_at` 与合并时刻同秒则说明又被连带关了，按下条恢复。
+
+  **误关的识别与恢复**：识别——`updated_at` 与 PR 合并时刻同秒（秒级一致）、`closed_at`/`closed_by` 为空。恢复——`PATCH /repos/nextpilot/issues/<num>` + `repo=nextpilot-advance-plotscope` + `state=open`；同时 `PATCH` 该 PR 的描述去掉多余的 `#`，否则下次合并会再关一次。
 - **自动关闭只认 `merged`**：PR 描述写 `Closes #IKxxxxx`（ident 带 `#`）后，合并时 issue 自动变 `closed`；PR 被**关闭但未合并**不触发，issue 保持 open。合并后仍要 `GET` 核实，未关才手动 PATCH。
 - **源分支自动删除看仓库设置**：设置「合并后删除源分支」开启才会自动删；未开启时远端分支仍在，需手动 `git push origin --delete`。本地分支任何情况下都手动删。
 - **不要把调试/截图图片传进仓库**。评论框「上传图片」是图床（存服务器、不进仓库），但只认网页登录 cookie，令牌调用返回 401；v5 API 无开放图床上传端点。需要内嵌图片时用网页登录后上传或外链，禁止 `git add` 截图。
