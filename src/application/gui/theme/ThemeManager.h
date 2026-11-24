@@ -15,12 +15,17 @@ namespace nextpilot::plotscope::gui
 
 // 主题管理：语义 token -> 双主题色值 -> QSS，一条链收口。
 //
+// 边界（契约 D6 / c6）：
+//   · **纯 token 层在 libs/uischema**（ThemeTokens）：双主题色表、纯取色函数、
+//     系列分类色与可读性适配——无状态、无 Widgets，只依赖 QtGui 值类型。
+//   · **本类留在 gui**：当前主题状态与 Settings 持久化、扩展包兜底色、
+//     QSS/palette 生成、themeChanged 信号与 theme.* 意图认领；静态取色入口
+//     仅作委托转发，供既有调用方按原口径取色。
+//
 // 设计：
 //   · **token 化**：颜色以语义 token 表达（text / textDim / accent ...），
-//     十六进制色值只在 ThemeManager.cpp 的**唯一色表**里出现一次；
+//     十六进制色值只在 uischema 色表里出现一次；
 //     视图代码一律 ThemeManager::color(token) / styleSheet()，符合根 AGENTS §12.1。
-//   · **无状态渲染 + 有状态管理合一**：色表是纯函数（给 theme+token 出 QColor），
-//     当前主题状态与持久化是实例职责；拆成两个类只会为传 theme 参数互相纠缠。
 //   · **不认识第三方**：ThemeManager 只产出 token/色/QSS 并发 themeChanged；
 //     SARibbon / ADS 的换肤由绑定器订阅 themeChanged 自己套用（ARCHITECTURE §7：
 //     只有绑定器知道 SARibbon/ADS）。于是 core/host 与 GUI 第三方都不污染。
@@ -59,8 +64,9 @@ public:
     void applyCurrent();
 
     // --- token 取色（§12.1：UI 颜色的唯一来源）---
-    QColor color(const QString &token) const;         // 当前主题
-    static QColor color(Theme theme, const QString &token); // 指定主题（纯函数，可测试）
+    QColor color(const QString &token) const;         // 当前主题（含扩展包兜底色）
+    // 以下三个静态入口委托 uischema::ThemeTokens（纯函数，可测试）。
+    static QColor color(Theme theme, const QString &token); // 指定主题
     static QColor seriesColor(int index, Theme theme);      // 数据语义色集中定义
     static QColor adaptColor(const QColor &c, Theme theme); // 按主题微调色，保证可读
 

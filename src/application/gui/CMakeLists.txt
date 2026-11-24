@@ -38,7 +38,9 @@ add_library(ps_gui_theme OBJECT
     theme/MenuIcons.h
 )
 target_include_directories(ps_gui_theme PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/theme)
-target_link_libraries(ps_gui_theme PUBLIC ps_context Qt6::Gui Qt6::Widgets Qt6::Core)
+# ps_uischema：纯 token 色表 / 取色函数在 libs/uischema（ThemeTokens），本库只留
+# 状态、QSS/palette 生成与图标/缩略图渲染。
+target_link_libraries(ps_gui_theme PUBLIC ps_context ps_uischema Qt6::Gui Qt6::Widgets Qt6::Core)
 set_target_properties(ps_gui_theme PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
 # 变换编辑器 + 在线调试对话框：独立 OBJECT 库，被 gui（曲线/协议）与 data_gui
