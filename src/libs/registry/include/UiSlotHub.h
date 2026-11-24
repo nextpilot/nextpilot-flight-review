@@ -42,6 +42,7 @@ struct UiSlot
     SlotKind kind = SlotKind::DockPanel;
     QString parentArea; // 上级插槽（ribbon group 的父页签等）；空=顶层
     int order = 0;       // 同级排序
+    QString when;        // 上下文可见性（空=恒真）：Ribbon 上下文页签靠它收起/展开
 };
 
 // 已绑定到某插槽的一个动作 + 它来自哪个扩展包。
@@ -75,7 +76,8 @@ public:
     // 骨架槽清单归 host 层的 SkeletonSlots 声明。
     void declareSlot(const QString &area, const QString &label, const QString &owner,
                      SlotKind kind = SlotKind::DockPanel,
-                     const QString &parentArea = QString(), int order = 0);
+                     const QString &parentArea = QString(), int order = 0,
+                     const QString &when = QString());
 
     // 从工具箱 uiActions 表重新扫描，按 area 绑定到已声明插槽。
     // 每次扩展包装卸后调用一次即可（O(贡献数)，与数据量无关）。

@@ -478,6 +478,33 @@ void ShellBinder::updateActionStyle(const QString &actionId, const QIcon &icon, 
     }
 }
 
+void ShellBinder::setWhenEvaluator(std::function<bool(const QString &)> evaluator)
+{
+    m_whenEval = std::move(evaluator);
+}
+
+void ShellBinder::applyWhenVisibility()
+{
+    // 只有可见集合真的变了才重建：上下文每改一个键都重建 ribbon 会闪。
+    if (!m_ribbon)
+        return;
+    if (visibleRibbonPageLabels() == m_lastVisiblePages)
+        return;
+    rebuildRibbon();
+}
+
+QStringList ShellBinder::visibleRibbonPageLabels() const
+{
+    QStringList out;
+    for (const nextpilot::plotscope::registry::UiSlot &slot :
+         m_slots.slotsOfKind(nextpilot::plotscope::registry::SlotKind::RibbonPage))
+    {
+        if (slot.when.isEmpty() || !m_whenEval || m_whenEval(slot.when))
+            out << slot.label;
+    }
+    return out;
+}
+
 void ShellBinder::rebuildRibbon()
 {
     if (!m_ribbon)
@@ -501,8 +528,16 @@ void ShellBinder::rebuildRibbon()
 
     // 插槽三级映射：RibbonPage → Category，RibbonGroup → Panel，UiAction → QAction
     QVector<SARibbonCategory *> built;
+    QStringList visiblePages;
+    const auto whenVisible = [this](const QString &when) {
+        // 空表达式=恒真；没有求值器时一律可见（headless/测试环境不崩）。
+        return when.isEmpty() || !m_whenEval || m_whenEval(when);
+    };
     for (const nextpilot::plotscope::registry::UiSlot &pageSlot : m_slots.slotsOfKind(nextpilot::plotscope::registry::SlotKind::RibbonPage))
     {
+        if (!whenVisible(pageSlot.when))
+            continue;
+        visiblePages << pageSlot.label;
         SARibbonCategory *category = m_ribbon->addCategoryPage(pageSlot.label);
         if (!category)
             continue;
@@ -511,6 +546,8 @@ void ShellBinder::rebuildRibbon()
         for (const nextpilot::plotscope::registry::UiSlot &groupSlot : m_slots.childrenOf(pageSlot.area))
         {
             if (groupSlot.kind != nextpilot::plotscope::registry::SlotKind::RibbonGroup)
+                continue;
+            if (!whenVisible(groupSlot.when))
                 continue;
             const auto actions = m_slots.actionsIn(groupSlot.area);
             // 空分组不渲染：兼容保留的旧 area（如 home 下的 plottype/sources）
@@ -684,6 +721,9 @@ void ShellBinder::rebuildRibbon()
     // 可能还停在已被移除的孤儿上，新页就显示不出来。
     if (!built.isEmpty())
         m_ribbon->setCurrentIndex(0);
+
+    // 记下本次实际建出来的页集合：applyWhenVisibility 靠它判断"要不要重建"。
+    m_lastVisiblePages = visiblePages;
 }
 
 void ShellBinder::dock(const QString &area, const QString &title, QWidget *content,

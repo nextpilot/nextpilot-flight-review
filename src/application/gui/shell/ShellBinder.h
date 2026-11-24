@@ -78,6 +78,13 @@ public:
     // 重新绑定 ribbon（插槽或动作变化后调用）。
     void rebuildRibbon();
 
+    // when 求值器：由外壳注入（binder 不认识命令库）。空=所有 when 视为真。
+    void setWhenEvaluator(std::function<bool(const QString &)> evaluator);
+    // 上下文变化后重算可见页：只有"可见集合"真的变了才重建 ribbon（避免抖动）。
+    void applyWhenVisibility();
+    // 当前可见的 ribbon 页标签（诊断/测试用，口径与 rebuildRibbon 一致）。
+    QStringList visibleRibbonPageLabels() const;
+
     // 单个 dock 页面的显隐：按 pageKey（面板类型 id）定位该页签。
     // 点击一次出现、再点一次消失，只影响自己，不动同区其它页签。
     // 返回 false 表示该 pageKey 没有对应的 dock（面板尚未创建）。
@@ -254,6 +261,8 @@ private:
 
     QMainWindow *m_window = nullptr;
     nextpilot::plotscope::registry::UiSlotHub &m_slots;
+    std::function<bool(const QString &)> m_whenEval;
+    QStringList m_lastVisiblePages;
 
     // SARibbon
     SARibbonBar *m_ribbon = nullptr;

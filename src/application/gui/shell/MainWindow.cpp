@@ -404,6 +404,13 @@ void MainWindow::build(RuntimeHost &host)
 
     // 绑定器需要插槽表，构造时给。
     m_binder = new ShellBinder(this, slotReg);
+    // Ribbon 上下文页签：binder 不认识命令库，求值器由外壳注入。
+    // 用当前上下文快照求值；上下文一改，updateCommandContext 会触发重算。
+    m_binder->setWhenEvaluator([this](const QString &when) {
+        if (!m_commands)
+            return true;
+        return CommandRegistry::evaluateWhen(when, m_commands->contextValues());
+    });
     m_context = new GuiContext(this, slotReg, m_binder, m_appCtx, &host, this);
 
     m_binder->setActivityActivatedHandler([this](const ActivitySpec &spec) {
@@ -1407,6 +1414,9 @@ void MainWindow::updateCommandContext()
     m_commands->setContextValue(QStringLiteral("hasData"), !m_appCtx.data().ids().isEmpty());
     m_commands->setContextValue(QStringLiteral("isScriptRunning"), false);
     m_commands->setContextValue(QStringLiteral("focusArea"), QStringLiteral("editor"));
+    // 上下文变了，Ribbon 上下文页签要跟着收起/展开（只在可见集合变化时重建）。
+    if (m_binder)
+        m_binder->applyWhenVisibility();
 }
 
 QList<CommandPalette::Item> MainWindow::buildCommandItems()

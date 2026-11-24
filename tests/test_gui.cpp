@@ -3136,6 +3136,29 @@ int main(int argc, char *argv[])
         CHECK(diag->refresh() == application.context().registryTree().nodes().size());
         OK("诊断面板：注册树 11 类节点齐全，面板行数==树上节点数（diag.registries 同路）");
     }
+    // --- c3b Ribbon 上下文页签：when 不命中整页收起，命中再展开 ---
+    {
+        using nextpilot::plotscope::registry::SlotKind;
+        bool hoverTest = false;
+        auto *binder = window.binder();
+        CHECK(binder != nullptr);
+        binder->setWhenEvaluator([&hoverTest](const QString &when) {
+            return when == QStringLiteral("hoverTest == true") ? hoverTest : true;
+        });
+        window.context()->slotHub().declareSlot(
+            QStringLiteral("ribbon.page.c3test"), QStringLiteral("C3 测试页"), QStringLiteral("test"),
+            SlotKind::RibbonPage, QString(), 0, QStringLiteral("hoverTest == true"));
+        binder->rebuildRibbon();
+        CHECK(!binder->visibleRibbonPageLabels().contains(QStringLiteral("C3 测试页")));
+        hoverTest = true;
+        binder->applyWhenVisibility();
+        CHECK(binder->visibleRibbonPageLabels().contains(QStringLiteral("C3 测试页")));
+        hoverTest = false;
+        binder->applyWhenVisibility();
+        CHECK(!binder->visibleRibbonPageLabels().contains(QStringLiteral("C3 测试页")));
+        OK("Ribbon when 页签：不命中收起、命中展开，只有可见集合变化才重建");
+    }
+
     // --- c2 面板单例语义：由工厂登记决定，不由外壳一刀切 ---
     {
         using nextpilot::plotscope::registry::PanelFactoryHub;

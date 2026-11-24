@@ -6,13 +6,14 @@ namespace nextpilot::plotscope::registry
 {
 
 void UiSlotHub::declareSlot(const QString &area, const QString &label, const QString &owner,
-                                 SlotKind kind, const QString &parentArea, int order)
+                                 SlotKind kind, const QString &parentArea, int order,
+                                 const QString &when)
 {
     auto it = std::find_if(m_slots.begin(), m_slots.end(),
                            [&area](const UiSlot &s) { return s.area == area; });
     if (it != m_slots.end())
         return; // 已声明，先到者为准
-    m_slots.append(UiSlot{area, label, owner, kind, parentArea, order});
+    m_slots.append(UiSlot{area, label, owner, kind, parentArea, order, when});
     Q_EMIT objectAdded(area); // M2.8：统一节点信号（带 key）
 }
 
