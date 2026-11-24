@@ -833,6 +833,81 @@ int main(int argc, char *argv[])
         canvas->clear();
     }
 
+    // --- 14) 全工作区快照 undo：连续手势=1 步 + 结构变更可回退（第3仗 3b）---
+    {
+        auto *hist = workspace->history();
+        CHECK(hist != nullptr);
+        hist->flushPending(); // 结算遗留脏标记：首个结算只立基线，不产生步数
+        const int baselineSteps = hist->stepCount();
+
+        // 真实加载数据集（undo 恢复链经 origin 回绑，虚拟 datasetId 无源可绑）。
+        const QString fixture14 = QStringLiteral(PS_TEST_FIXTURE_DIR "/demo_flight.csv");
+        int src14 = application.context().sources().sourceByOrigin(fixture14);
+        if (src14 < 0)
+        {
+            Intent load14;
+            load14.op = QStringLiteral("data.load");
+            load14.params[QStringLiteral("path")] = fixture14;
+            CHECK(application.host().execute(load14));
+            src14 = application.context().sources().sourceByOrigin(fixture14);
+        }
+        CHECK(src14 >= 0);
+        const int ds14 = application.context().sources().get(src14)->datasetIds.first();
+        const Dataset *d14 = application.context().data().get(ds14);
+        CHECK(d14 != nullptr && !d14->tableNames().isEmpty());
+        const QString tbl14 = d14->tableNames().first();
+        const auto *t14 = d14->table(tbl14);
+        CHECK(t14 != nullptr && !t14->columns.isEmpty());
+        const QString col14 = t14->columns.first().name;
+
+        auto *c14 = workspace->activeCanvas();
+        CHECK(c14 != nullptr);
+        c14->clear();
+        c14->setChannel(ds14, tbl14, col14, QStringLiteral("undo.demo"));
+        QVector<LodTriple> lod14;
+        lod14.reserve(100);
+        for (int i = 0; i < 100; ++i)
+        {
+            const double x = i * 0.01;
+            const double y = std::sin(i * 0.3);
+            lod14.push_back(LodTriple{x, y - 0.02, y + 0.02});
+        }
+        c14->setLodData(lod14, 0.0, 0.99);
+        const QString key14 = QStringLiteral("%1|%2|%3").arg(ds14).arg(tbl14, col14);
+        CHECK(c14->seriesByKey(key14) != nullptr);
+        // 结算曲线添加（本身也是一步；首个基线建立时可能被吸收为 0 步）
+        hist->flushPending();
+        const int stepsAfterAdd = hist->stepCount();
+        CHECK(stepsAfterAdd >= baselineSteps);
+
+        // burst：连续三次显隐切换（连续手势）→ 一次 undo 应整体回到"可见"基线
+        CHECK(c14->setSeriesVisible(key14, false));
+        CHECK(c14->setSeriesVisible(key14, true));
+        CHECK(c14->setSeriesVisible(key14, false));
+        CHECK(hist->canUndo());
+        CHECK(workspace->undoHistory());
+        auto *c14b = workspace->activeCanvas(); // applyDocumentSpec 后重取
+        const PlotSeries *s14 = c14b ? c14b->seriesByKey(key14) : nullptr;
+        CHECK(s14 != nullptr);
+        CHECK(s14->visible == true); // 回到 burst 前（经 style.series[].visible 回放）
+        CHECK(hist->stepCount() == stepsAfterAdd); // 连续手势 = 1 步
+
+        // 结构变更可回退：拆分（经 view action，与 ribbon 同路径）→ undo 回到拆分前
+        const QJsonObject beforeSplit = workspace->toDocumentSpec().toJson();
+        {
+            QVariant nullV14;
+            Result<QVariant> splitRes(nullV14);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("figure.splitHorizontal"), {}, splitRes));
+            CHECK(splitRes.value().toBool());
+        }
+        CHECK(workspace->toDocumentSpec().toJson() != beforeSplit);
+        CHECK(workspace->undoHistory());
+        CHECK(workspace->toDocumentSpec().toJson() == beforeSplit);
+        OK("全局 undo 14：连续显隐=1 步回放 + 拆分回退 + 步数断言");
+        workspace->activeCanvas()->clear();
+    }
+
     fprintf(stdout, "\n画布导出/状态/图例测试全部通过\n");
     return 0;
 }

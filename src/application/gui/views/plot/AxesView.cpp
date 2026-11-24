@@ -78,6 +78,8 @@ AxesView::AxesView(QWidget *parent)
     m_readout->setPlot(m_plot);
     m_seriesStore->setColorProvider([this](int i) { return paletteSeriesColor(palette(), i); });
     connect(m_seriesStore, &SeriesStore::changed, this, &AxesView::pushToPlot);
+    // 全局 undo 动作流转发（第3仗 3b）：任何曲线增删/样式/挂轴变更都通知工作区。
+    connect(m_seriesStore, &SeriesStore::changed, this, &AxesView::seriesMutated);
     connect(m_seriesStore, &SeriesStore::titleChanged, this,
             [this](const QString &title, bool first) {
                 m_title = title;

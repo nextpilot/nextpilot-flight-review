@@ -107,6 +107,7 @@ add_library(ps_gui OBJECT
     views/plot/InstrumentView.cpp
     views/plot/InstrumentView.h
     views/plot/PlotWorkspace.cpp
+    views/plot/WorkspaceHistory.cpp
     views/plot/PlotWorkspace.h
     views/plot/GridPickPopup.cpp
     views/plot/GridPickPopup.h

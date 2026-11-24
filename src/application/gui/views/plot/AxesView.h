@@ -269,6 +269,8 @@ Q_SIGNALS:
     void bookmarksChanged();
     // 图例点击切换曲线显隐：上层可同步图例面板/属性面板状态。
     void seriesVisibilityChanged(const QString &seriesKey, bool visible);
+    // 曲线增删/样式/挂轴变更（SeriesStore::changed 转发）：全局 undo 动作流入口之一。
+    void seriesMutated();
     // 鼠标在绘图区内移动（fastplot Picker 每帧回调）：上层据此浮出该格的悬浮工具栏。
     // 用信号而不是事件过滤器——鼠标事件被 Axes/Picker 吃掉，父控件收不到 MouseMove。
     void pointerHovered();
