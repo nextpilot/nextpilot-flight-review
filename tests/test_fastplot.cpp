@@ -786,6 +786,96 @@ int main(int argc, char **argv)
         fprintf(stdout, "[ok] 脏调度：20 次游标移动稳态层重建=0，稳态/视口变化正确重建\n");
     }
 
+    // 8b) 性能后续 IKXNDM：曲线层像素缓存。游标移动/悬停不重建曲线层，
+    // 视口/样式/数据变化正确重建；缓存命中时曲线像素仍完整贴出。
+    {
+        using namespace nextpilot::plotscope::fastplot;
+        PlotWidget plot;
+        plot.resize(800, 400);
+
+        std::vector<double> xs(200), ys(200);
+        for (int i = 0; i < 200; ++i)
+        {
+            xs[i] = i * 0.01;
+            ys[i] = std::sin(i * 0.21);
+        }
+        ArrayData data(xs.data(), ys.data(), 200, 1);
+        plot.addCurve(Curve::fromData(&data, QColor(0xE4, 0x57, 0x2E), 1.4));
+        plot.setXRange(0.0, 1.99);
+        plot.setYRange(-1.2, 1.2);
+
+        const QImage baseline = plot.grabImage();
+        const int base = plot.curveCacheRebuilds();
+        CHECK(base >= 1);
+
+        // 曲线像素基线：曲线色带的像素数（缓存命中后必须保持）
+        auto inkCount = [](const QImage &img) {
+            int n = 0;
+            const QColor ink(0xE4, 0x57, 0x2E);
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x)
+                    if (img.pixelColor(x, y) == ink)
+                        ++n;
+            return n;
+        };
+        const int inkBase = inkCount(baseline);
+        CHECK(inkBase > 100);
+
+        // 游标连续移动 20 次：曲线层零重建（核心不变量），像素不变
+        for (int i = 0; i < 20; ++i)
+        {
+            plot.setCursorReadout(0.1 + i * 0.01, true, false,
+                                  QStringLiteral("t"), QVector<ReadoutRow>{});
+            const QImage img = plot.grabImage();
+            CHECK(plot.curveCacheRebuilds() == base);
+            // 命中缓存曲线层仍完整贴出；游标十字线会盖掉少量曲线像素，留 10% 容差
+            CHECK(inkCount(img) >= inkBase * 90 / 100);
+        }
+
+        // 视口变化 → 曲线层重建一次
+        plot.setXRange(0.0, 1.0);
+        plot.grabImage();
+        CHECK(plot.curveCacheRebuilds() == base + 1);
+        const int afterVp = plot.curveCacheRebuilds();
+
+        // 样式变化（图例显隐切换走 setVisible → styleRevision 递增）→ 曲线层重建一次
+        plot.setLegendItemVisible(0, false);
+        plot.grabImage();
+        CHECK(plot.curveCacheRebuilds() == afterVp + 1);
+
+        // 数据版本变化 → 曲线层重建一次（用可变 revision 的 IPlotData 子类）
+        // revision 变化不改变曲线数，只靠签名里的数据版本项识别——这是最关键的一路。
+        struct MutableData : nextpilot::plotscope::fastplot::IPlotData
+        {
+            const double *x, *y;
+            qsizetype n;
+            quint64 rev;
+            MutableData(const double *xx, const double *yy, qsizetype nn)
+                : x(xx), y(yy), n(nn), rev(1) {}
+            qsizetype size() const override { return n; }
+            double xAt(qsizetype i) const override { return x[i]; }
+            double yAt(qsizetype i) const override { return y[i]; }
+            bool directAccess(const double **px, const double **py) const override
+            {
+                *px = x;
+                *py = y;
+                return true;
+            }
+            quint64 revision() const override { return rev; }
+        } mutData(xs.data(), ys.data(), 200);
+        plot.clearCurves(); // 换曲线会重建一次
+        plot.addCurve(Curve::fromData(&mutData, QColor(0x30, 0xB4, 0x4B), 1.4));
+        plot.setXRange(0.0, 1.99);
+        plot.setYRange(-1.2, 1.2);
+        plot.grabImage();
+        const int afterSwap = plot.curveCacheRebuilds();
+        mutData.rev = 2; // 仅版本变，曲线集合/视口/样式都不变
+        plot.grabImage();
+        CHECK(plot.curveCacheRebuilds() == afterSwap + 1);
+
+        fprintf(stdout, "[ok] 曲线层缓存 IKXNDM：游标移动零重建+像素不变，视口/样式/数据变化各重建1次\n");
+    }
+
     // 9) 第3仗 3a：图例四角 + 显隐 set 版（单一出口地基）
     {
         using namespace nextpilot::plotscope::fastplot;

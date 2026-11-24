@@ -75,11 +75,15 @@
 这是第1仗分层地基上的自然延伸，不属于追平范围。已钉入
 [Plot 性能-后续 issue](https://gitee.com/nextpilot/nextpilot-advance-plotscope/issues/IKXNDM)。
 
-随该优化一并处理（不单独做，单独做测不出收益）的还有 **LOD gap 阈值缓存**：
-`drawEnvelope` 每帧对每条曲线 sort 相邻间距求中位数（O(n log n)，20 曲线 × 800 桶
-约 160 万比较/帧）。注意两条路径可缓存性不同：
+**已落地（IKXNDM，2026-11）**：曲线层已引入整层 QPixmap 缓存（签名 = 视口 +
+尺寸/DPR + 曲线集合 stamp + 每条曲线数据/样式版本），游标移动命中缓存跳过
+`paintCurves`，实测 ~199 ms → ~0.2 ms；LOD gap 阈值同步改为按数据版本预计算缓存。
+pan 路径因视口键控缓存天然失效、暂无收益，仍是下一步方向。实测见
+[plot-backends-benchmark.md](plot-backends-benchmark.md) 的 D 节。
+
+两条路径的缓存性差异（实现时遵循）：
 
 - **内核 LOD 路径**（`c.m_lod`）：桶随数据 revision 分桶、x 序列不随视口变化，
-  阈值可按 revision 缓存。
-- **像素列路径**（`m_cache.points()`）：LodCache 输出随视口每帧重算，阈值不可跨帧
-  缓存；如需优化应在聚合时顺带输出相邻列距统计，避免独立 sort。
+  阈值（`Line::gapThreshold()`）按数据版本预计算并缓存。
+- **像素列路径**（`m_cache.points()`）：LodCache 输出随视口每帧重算，阈值仍在
+  `drawEnvelope` 中现算（传 -1 触发）——但曲线层缓存命中时整条路径被跳过。

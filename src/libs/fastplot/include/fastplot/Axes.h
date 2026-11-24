@@ -250,6 +250,9 @@ public:
 
     // 诊断计数（第1仗脏调度）：稳态叠加层缓存重建次数。游标移动不应使其增长。
     int overlayCacheRebuilds() const { return m_overlayCacheRebuilds; }
+    // 诊断计数（性能后续 IKXNDM）：曲线层像素缓存重建次数。
+    // 游标移动/悬停不应使其增长；pan/缩放/数据或样式变化应使其增长。
+    int curveCacheRebuilds() const { return m_curveCacheRebuilds; }
 
     QSize minimumSizeHint() const override { return QSize(240, 160); }
 
@@ -271,6 +274,10 @@ private:
     void relayout();       // 边距 → 绘图区 → 刻度划分（三者必须一起算）
     void refreshScaleDivs();
     void invalidateStatic();
+    // 曲线层像素缓存（IKXNDM）：签名覆盖视口/尺寸/曲线数据版本/样式。
+    // 游标移动不改视口与曲线 → 签名不变 → 直接贴缓存，跳过 paintCurves。
+    quint64 curveLayerSignature() const;
+    void invalidateCurveLayer();
 
     Viewport m_vp;
     Axis m_axes[4];        // 索引 = AxisSide
@@ -296,6 +303,13 @@ private:
     QString m_title;
     QPixmap m_staticCache;
     bool m_staticDirty = true;
+    // 曲线层像素缓存（IKXNDM）：整层 QPixmap，命中即跳过 paintCurves。
+    // 签名（curveLayerSignature）每帧计算——视口/曲线数/样式/数据版本任一变化即失效。
+    QPixmap m_curveCache;
+    quint64 m_curveCacheSig = 0;   // 上次重建时的签名
+    bool m_curveCacheValid = false;
+    int m_curveCacheRebuilds = 0;  // 诊断：曲线层缓存重建次数
+    quint64 m_curveStamp = 0;      // addCurve/clearCurves 递增，纳入签名
     // 稳态叠加层缓存（第1仗脏调度）：StateBand/Marker/Bookmark/AB 内容不随游标变化，
     // 缓存成透明层复用；游标层（Crosshair/CursorReadout）每帧实时画在其上。
     // 游标移动只走实时层，稳态层不重建——这是 P-2「游标移动不重算」的渲染侧保证。

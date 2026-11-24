@@ -107,6 +107,7 @@ int main(int argc, char *argv[])
     // ---- B0) 轻稳态负载的游标移动（叠加层为空，纯画曲线+实时层）----
     {
         const int rebuildsBefore = plot.overlayCacheRebuilds();
+        const int curveRebuildsBefore = plot.curveCacheRebuilds();
         std::vector<double> ms;
         for (int step = 0; step < 60; ++step)
         {
@@ -122,9 +123,10 @@ int main(int argc, char *argv[])
             ms.push_back(e);
         }
         const int rebuildsDelta = plot.overlayCacheRebuilds() - rebuildsBefore;
+        const int curveDelta = plot.curveCacheRebuilds() - curveRebuildsBefore;
         std::sort(ms.begin(), ms.end());
-        fprintf(stdout, "[B0] 轻稳态游标移动 60步：中位 %.1f ms（%.1f fps） 稳态层重建 delta=%d\n",
-                median(ms), 1000.0 / median(ms), rebuildsDelta);
+        fprintf(stdout, "[B0] 轻稳态游标移动 60步：中位 %.1f ms（%.1f fps） 稳态层重建 delta=%d 曲线层重建 delta=%d\n",
+                median(ms), 1000.0 / median(ms), rebuildsDelta, curveDelta);
     }
 
     // ---- B) 重稳态负载游标移动：AB 测量 + 40 书签 + 20 状态带常驻，
@@ -139,6 +141,7 @@ int main(int argc, char *argv[])
         plot.repaint(); // 预热：稳态层重建一次
 
         const int rebuildsBefore2 = plot.overlayCacheRebuilds();
+        const int curveRebuildsBefore2 = plot.curveCacheRebuilds();
         std::vector<double> ms;
         for (int step = 0; step < 60; ++step)
         {
@@ -154,9 +157,10 @@ int main(int argc, char *argv[])
             ms.push_back(e);
         }
         const int rebuildsDelta2 = plot.overlayCacheRebuilds() - rebuildsBefore2;
+        const int curveDelta2 = plot.curveCacheRebuilds() - curveRebuildsBefore2;
         std::sort(ms.begin(), ms.end());
-        fprintf(stdout, "[B] 重稳态游标移动 60步：中位 %.1f ms（%.1f fps） 稳态层重建 delta=%d\n",
-                median(ms), 1000.0 / median(ms), rebuildsDelta2);
+        fprintf(stdout, "[B] 重稳态游标移动 60步：中位 %.1f ms（%.1f fps） 稳态层重建 delta=%d 曲线层重建 delta=%d\n",
+                median(ms), 1000.0 / median(ms), rebuildsDelta2, curveDelta2);
         plot.setAB(false, 0, 0, false, QString(), {}, false, 0, 0, 0);
         plot.setBookmarks({});
     }

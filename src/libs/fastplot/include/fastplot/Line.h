@@ -38,34 +38,41 @@ public:
     // 曲线带多少点（LOD 是桶数，数据是行数）。缓存/自检用。
     qsizetype pointCount() const { return isLod() ? m_lod.size() : (m_data ? m_data->size() : 0); }
 
+    // 样式版本：影响曲线层像素的 setter 都会递增，供 Axes 曲线层缓存签名识别。
+    quint64 styleRevision() const { return m_styleRevision; }
+
     QColor ink() const { return m_ink; }
-    void setInk(const QColor &color) { m_ink = color; }
+    void setInk(const QColor &color) { m_ink = color; ++m_styleRevision; }
 
     qreal lineWidth() const { return m_lineWidth; }
-    void setLineWidth(qreal w) { m_lineWidth = w; }
+    void setLineWidth(qreal w) { m_lineWidth = w; ++m_styleRevision; }
 
     bool isVisible() const { return m_visible; }
-    void setVisible(bool visible) { m_visible = visible; }
+    void setVisible(bool visible) { m_visible = visible; ++m_styleRevision; }
 
     // 该曲线挂在哪条 y 轴（双轴不需要任何特判）。
     AxisSide yAxis() const { return m_yAxis; }
-    void setYAxis(AxisSide side) { m_yAxis = side; }
+    void setYAxis(AxisSide side) { m_yAxis = side; ++m_styleRevision; }
 
     // 散点模式：true = 不连线，只画符号（对应老画布 Scatter 模式）。
     bool scatter() const { return m_scatter; }
-    void setScatter(bool on) { m_scatter = on; }
+    void setScatter(bool on) { m_scatter = on; ++m_styleRevision; }
 
     Symbol symbol() const { return m_symbol; }
-    void setSymbol(Symbol symbol) { m_symbol = symbol; }
+    void setSymbol(Symbol symbol) { m_symbol = symbol; ++m_styleRevision; }
     qreal symbolSize() const { return m_symbolSize; }
-    void setSymbolSize(qreal size) { m_symbolSize = size; }
+    void setSymbolSize(qreal size) { m_symbolSize = size; ++m_styleRevision; }
 
     bool isLod() const { return m_data == nullptr; }
     const IPlotData *data() const { return m_data; }
     const QVector<LodPoint> &lod() const { return m_lod; }
 
     // 数据内容变了（revision 也变了）就调这个，强制重建聚合。
-    void invalidate() { m_cache.clear(); }
+    void invalidate() { m_cache.clear(); m_lodGapThreshold = -1.0; }
+
+    // LOD 路径的缺测断线阈值（相邻 x 间距中位数 × 3，IKXNDM）。
+    // LOD 桶不随视口变化 → 阈值只需算一次，缓存复用；-1 表示尚未计算。
+    double gapThreshold() const;
 
 private:
     Line() = default;
@@ -79,6 +86,8 @@ private:
     Symbol m_symbol = Symbol::Circle;
     qreal m_symbolSize = 5.0;
     AxisSide m_yAxis = AxisSide::Left;
+    quint64 m_styleRevision = 0;  // 影响像素的样式 setter 递增
+    mutable double m_lodGapThreshold = -1.0;  // LOD 断线阈值缓存（惰性计算）
     LodCache m_cache;
 
     friend class Axes;

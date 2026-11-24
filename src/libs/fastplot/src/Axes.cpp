@@ -418,9 +418,50 @@ void Axes::replot()
     relayout();
 }
 
+// 曲线层像素缓存签名（IKXNDM）：视口 + 尺寸/DPR + 曲线集合 stamp + 每条曲线
+// 的数据版本/样式版本。任一项变化都使缓存失效。游标移动不改变其中任何一项，
+// 因此签名不变 → paintEvent 直接贴缓存，跳过 paintCurves（当前每帧成本大头）。
+quint64 Axes::curveLayerSignature() const
+{
+    quint64 h = m_curveStamp;
+    const auto mix = [&h](quint64 v) {
+        // 64-bit FNV-1a 风格混合，顺序敏感。
+        h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    };
+    // 视口四边界（像素映射全靠它们）
+    mix(quint64(m_vp.xLower() * 1000.0));
+    mix(quint64(m_vp.xUpper() * 1000.0));
+    mix(quint64(m_vp.yLower() * 1000.0));
+    mix(quint64(m_vp.yUpper() * 1000.0));
+    mix(quint64(m_y2Lo * 1000.0));
+    mix(quint64(m_y2Hi * 1000.0));
+    // 尺寸（plotRect 随 resize/relayout 变化）
+    const QRectF pr = m_vp.plotRect();
+    mix(quint64(pr.width() * 100.0));
+    mix(quint64(pr.height() * 100.0));
+    mix(quint64(devicePixelRatioF() * 100.0));
+    // 每条曲线：样式版本 + 数据版本（fromData 用 IPlotData::revision，
+    // fromLod 用点数——LOD 副本由 pushToPlot 重建，集合 stamp 已覆盖增删）
+    for (const Line &c : m_curves)
+    {
+        mix(c.styleRevision());
+        mix(quint64(c.pointCount()));
+        mix(quint64(c.isVisible()));
+        mix(c.data() ? c.data()->revision() : 0ULL);
+    }
+    return h;
+}
+
+void Axes::invalidateCurveLayer()
+{
+    m_curveCacheValid = false;
+}
+
 Line &Axes::addCurve(Line curve)
 {
     m_curves.push_back(curve);
+    ++m_curveStamp;
+    invalidateCurveLayer();
     update();
     return m_curves.last();
 }
@@ -428,6 +469,8 @@ Line &Axes::addCurve(Line curve)
 void Axes::clearCurves()
 {
     m_curves.clear();
+    ++m_curveStamp;
+    invalidateCurveLayer();
     update();
 }
 
@@ -658,29 +701,35 @@ void Axes::paintCurves(QPainter &painter)
     // 每列一条竖线 + 相邻中点连线：密集数据看起来是一条实心带（正确的视觉语义），
     // 稀疏数据退回普通折线（见下面 data 分支）。
     // y 映射按曲线自己的轴走——双轴就是两套映射，不需要在曲线里做任何特判。
-    auto drawEnvelope = [&](const QVector<LodPoint> &pts, AxisSide side) {
+    auto drawEnvelope = [&](const QVector<LodPoint> &pts, AxisSide side,
+                            double gapThreshold) {
         if (pts.isEmpty())
             return;
 
         // 缺测信号②（空桶 gap）的时间阈值：相邻 LOD 点 x 间距的中位数 × 3。
         // 自适应采样间隔（1kHz 流和 10Hz 流各自的"正常间隔"差 100 倍，固定阈值必误判）。
-        double gapThreshold = 0.0;
-        if (pts.size() > 2)
+        // LOD 路径由 Line::gapThreshold() 预计算并缓存（IKXNDM）；
+        // 像素列路径（m_cache.points()）随视口变化，仍在此现算。
+        if (gapThreshold < 0.0)
         {
-            std::vector<double> gaps;
-            gaps.reserve(size_t(pts.size() - 1));
-            for (int i = 1; i < pts.size(); ++i)
+            gapThreshold = 0.0;
+            if (pts.size() > 2)
             {
-                const double g = pts[i].x - pts[i - 1].x;
-                if (g > 0.0)
-                    gaps.push_back(g);
-            }
-            if (!gaps.empty())
-            {
-                std::sort(gaps.begin(), gaps.end());
-                const double median = gaps[gaps.size() / 2];
-                if (median > 0.0)
-                    gapThreshold = median * 3.0;
+                std::vector<double> gaps;
+                gaps.reserve(size_t(pts.size() - 1));
+                for (int i = 1; i < pts.size(); ++i)
+                {
+                    const double g = pts[i].x - pts[i - 1].x;
+                    if (g > 0.0)
+                        gaps.push_back(g);
+                }
+                if (!gaps.empty())
+                {
+                    std::sort(gaps.begin(), gaps.end());
+                    const double median = gaps[gaps.size() / 2];
+                    if (median > 0.0)
+                        gapThreshold = median * 3.0;
+                }
             }
         }
 
@@ -780,7 +829,7 @@ void Axes::paintCurves(QPainter &painter)
             }
             else
             {
-                drawEnvelope(c.m_lod, c.m_yAxis);
+                drawEnvelope(c.m_lod, c.m_yAxis, c.gapThreshold());
             }
             continue;
         }
@@ -871,7 +920,7 @@ void Axes::paintCurves(QPainter &painter)
         }
         else
         {
-            drawEnvelope(pts, c.m_yAxis);
+            drawEnvelope(pts, c.m_yAxis, -1.0); // 像素列路径随视口变化，阈值现算
         }
     }
 
@@ -1013,9 +1062,23 @@ void Axes::paintEvent(QPaintEvent *event)
 
     QPainter painter(this);
     painter.drawPixmap(0, 0, m_staticCache);
-    // 曲线画在静态图层之上；聚合结果按（数据版本, 视口, 列数）缓存，
-    // 悬停/重绘不重扫数据。
-    paintCurves(painter);
+    // 曲线层像素缓存（IKXNDM）：签名覆盖视口/尺寸/曲线数据与样式版本。
+    // 游标移动/悬停时签名不变 → 直接贴缓存，跳过 paintCurves。
+    // pan/缩放/数据或样式变化 → 签名变 → 重画到离屏 QPixmap 并缓存。
+    const quint64 sig = curveLayerSignature();
+    if (!m_curveCacheValid || m_curveCache.size() != cacheSize || sig != m_curveCacheSig)
+    {
+        m_curveCache = QPixmap(cacheSize);
+        m_curveCache.setDevicePixelRatio(devicePixelRatioF());
+        m_curveCache.fill(Qt::transparent);
+        QPainter cp(&m_curveCache);
+        paintCurves(cp);
+        cp.end();
+        m_curveCacheSig = sig;
+        m_curveCacheValid = true;
+        ++m_curveCacheRebuilds;
+    }
+    painter.drawPixmap(0, 0, m_curveCache);
     // artist 图元（bar/hist/spectrum...）画在曲线之上、图例之下。
     // 用绘图区作为像素画布；曲线类 artist 走 paint(axes) 保留坐标映射能力。
     if (!m_artists.isEmpty())
