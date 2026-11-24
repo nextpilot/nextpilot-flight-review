@@ -7,6 +7,7 @@
 #include "command/KeybindingRegistry.h"
 #include <QJsonObject>
 #include <QHash>
+#include <QStringList>
 
 class QLabel;
 
@@ -102,6 +103,9 @@ public:
     CommandRegistry *commandRegistry() const { return m_commands.get(); }
     KeybindingRegistry *keybindingRegistry() const { return m_keybindings.get(); }
     CommandPalette *commandPalette() const { return m_commandPalette; }
+    // 诊断/测试：启动期面板引用校验未命中清单（空 = 全部命中工厂表）。
+    // 三源：包 PanelSpec / Activity panelTypes+centralPanel / 产品默认布局。
+    QStringList panelReferenceIssues() const { return m_panelReferenceIssues; }
 
     // 命令面板/快捷键（测试与 UI 驱动共用）。
     void showCommandPalette();
@@ -202,6 +206,8 @@ private:
     GuiContext *m_context = nullptr;
     // 状态栏项控件（验收 7）：id → QLabel，按 StatusSpec.side/priority 排布。
     QHash<QString, QLabel *> m_statusLabels;
+    // 启动期面板引用校验未命中清单（诊断/测试回读；空 = 全部命中工厂表）。
+    QStringList m_panelReferenceIssues;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     // 系统级 preferences.open handler（打开全局偏好对话框）；随窗口存亡。
     PreferencesIntentHandler *m_preferencesHandler = nullptr;

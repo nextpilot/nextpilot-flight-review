@@ -435,6 +435,18 @@ void MainWindow::build(RuntimeHost &host)
     // 3) 装模块（GUI 模式：会调用 onAttach，模块可自带界面入口）
     host.activate(QStringList(), m_context);
 
+    // 3.0a) 面板引用启动期校验（验收 4）：三源（包 PanelSpec / Activity panelTypes、
+    // centralPanel / 产品 defaultPanels）必须在工厂表命中。binder 只收集，这里统一进
+    // AppContext error 诊断 + stderr，同一问题不打两遍；不 abort。缺失列表由 test_gui 断言为空。
+    m_binder->setPanelReferenceContext(&m_appCtx.toolbox(), m_spec.defaultPanels);
+    m_panelReferenceIssues = m_binder->missingPanelTypes();
+    for (const QString &entry : m_panelReferenceIssues)
+    {
+        m_appCtx.appendMessage(QStringLiteral("error"), QStringLiteral("panel-ref"),
+                               QStringLiteral("[panelTypes] 未命中工厂表: %1").arg(entry));
+        fprintf(stderr, "[panelTypes] 未命中工厂表: %s\n", entry.toUtf8().constData());
+    }
+
     // 3.0-) 模块 onAttach 已完成声明，把模块贡献的语义色合并进主题（验收 8）。
     refreshThemeTokens();
 

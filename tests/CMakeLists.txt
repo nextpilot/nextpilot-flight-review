@@ -50,6 +50,13 @@ target_link_libraries(ps_test_registry_standalone PRIVATE ps_registry Qt6::Core)
 set_target_properties(ps_test_registry_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_registry_standalone COMMAND ps_test_registry_standalone)
 
+# 验收 4：面板引用三源启动期校验（包 PanelSpec / Activity panelTypes+centralPanel /
+# 产品 defaultPanels）；负向用例故意声明不存在的面板类型，断言校验器真的报错。
+add_executable(ps_test_panel_ref test_panel_ref.cpp)
+target_link_libraries(ps_test_panel_ref PRIVATE ps_registry Qt6::Core)
+set_target_properties(ps_test_panel_ref PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_panel_ref COMMAND ps_test_panel_ref)
+
 # 意图契约独立验收：只链 ps_intent + foundation + Qt Core，不链 ps_context。
 add_executable(ps_test_intent_standalone test_intent_standalone.cpp)
 target_link_libraries(ps_test_intent_standalone PRIVATE ps_intent ps_foundation Qt6::Core)

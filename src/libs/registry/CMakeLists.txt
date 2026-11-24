@@ -9,6 +9,7 @@ add_library(ps_registry STATIC
     src/ProductSpec.cpp
     src/RegistryNode.cpp
     src/RegistryTree.cpp
+    src/PanelReferenceValidator.cpp
     include/Domain.h
     include/Contribution.h
     include/NullContributionSink.h
@@ -17,6 +18,7 @@ add_library(ps_registry STATIC
     include/ToolboxHub.h
     include/UiSlotHub.h
     include/PanelFactoryHub.h
+    include/PanelReferenceValidator.h
     include/RegistryNode.h
     include/RegistryTree.h
 )

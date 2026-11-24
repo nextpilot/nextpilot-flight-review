@@ -4,6 +4,8 @@
 #include "ShellBinder.h"
 
 #include "PanelFactoryHub.h"
+#include "PanelReferenceValidator.h"
+#include "ToolboxHub.h"
 
 #include "Intent.h"
 
@@ -221,11 +223,11 @@ void ShellBinder::rebuildActivityBar()
     if (!m_activityBar)
         return;
 
-    // 启动期校验（验收 4）：panelTypes 必须在工厂表命中，否则布局会引用不存在的面板。
-    // 这里只诊断不 abort——abort 会让整个产品起不来；缺失列表由 test_gui 断言为空。
+    // 启动期校验（验收 4）：声明侧面板类型必须在工厂表命中，否则布局会引用不存在的面板。
+    // 这里只收集不打印——统一诊断由 MainWindow 装配入口输出，同一问题不打两遍；
+    // 不 abort：abort 会让整个产品起不来。缺失列表由 test_gui 断言为空。
     const QStringList missing = missingPanelTypes();
-    for (const QString &entry : missing)
-        qCritical().noquote() << QStringLiteral("[panelTypes] 未命中工厂表: %1").arg(entry);
+    Q_UNUSED(missing);
 
     QList<ActivitySpec> specs = m_slots.activities();
     if (!m_activityOrder.isEmpty())
@@ -262,10 +264,28 @@ void ShellBinder::rebuildActivityBar()
     syncActivityViews(m_activeActivity);
 }
 
+void ShellBinder::setPanelReferenceContext(
+    const nextpilot::plotscope::registry::ToolboxHub *toolbox,
+    const QList<nextpilot::plotscope::registry::ProductPanelPlacement> &placements)
+{
+    m_toolbox = toolbox;
+    m_placements = placements;
+}
+
 QStringList ShellBinder::missingPanelTypes() const
 {
-    QStringList missing;
     using namespace nextpilot::plotscope::registry;
+    QStringList missing;
+
+    // 已注入工具箱与产品布局时走 lib 级三源校验器；否则退化为只查 Activity panelTypes。
+    if (m_toolbox)
+    {
+        const auto issues = validatePanelReferences(*m_toolbox, m_slots, m_placements);
+        for (const PanelReferenceIssue &issue : issues)
+            missing << QStringLiteral("%1:%2").arg(issue.source, issue.type);
+        return missing;
+    }
+
     for (const ActivitySpec &spec : m_slots.activities())
         for (const QString &type : spec.panelTypes)
             if (!PanelFactoryHub::find(type))

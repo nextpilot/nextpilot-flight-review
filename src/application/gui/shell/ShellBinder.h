@@ -1,6 +1,7 @@
 #pragma once
 
 #include "UiSlotHub.h"
+#include "ProductSpec.h"
 
 #include <QHash>
 #include <QSet>
@@ -24,6 +25,11 @@ namespace ads
 class CDockAreaWidget;
 class CDockManager;
 class CDockWidget;
+}
+
+namespace nextpilot::plotscope::registry
+{
+class ToolboxHub;
 }
 
 namespace nextpilot::plotscope::gui
@@ -100,10 +106,16 @@ public:
     // 诊断/状态栏用：pageKey 对应页签的标题（找不到返回空串）。
     QString dockPageTitle(const QString &pageKey) const;
 
+    // 注入面板引用校验所需的另外两源：工具箱（包 PanelSpec）与产品默认布局。
+    // 由外壳在模块 onAttach 完成后注入；未注入时退化为只查 Activity panelTypes。
+    void setPanelReferenceContext(const registry::ToolboxHub *toolbox,
+                                  const QList<registry::ProductPanelPlacement> &placements);
+
     // --- Activity Bar / Side Bar ---
-    // 启动期校验（验收 4）：所有 ActivitySpec.panelTypes 必须在面板工厂表命中。
-    // 返回未命中的 "activityId:panelType" 列表；空 = 全部命中。rebuildActivityBar
-    // 装配时自动调用并 qCritical 报警，测试直接断言此列表为空。
+    // 启动期校验（验收 4）：声明侧引用的面板类型必须在面板工厂表命中。
+    // 三源：包 PanelSpec / Activity panelTypes+centralPanel / 产品 defaultPanels。
+    // 返回未命中的 "source:panelType" 列表；空 = 全部命中。本方法只收集不打印，
+    // 统一诊断由外壳 MainWindow 入口输出，同一问题不打两遍。测试直接断言此列表为空。
     QStringList missingPanelTypes() const;
 
     // 按插槽表里已声明的 ActivitySpec 重建 Activity Bar（模块声明后调用）。
@@ -273,6 +285,9 @@ private:
 
     QMainWindow *m_window = nullptr;
     nextpilot::plotscope::registry::UiSlotHub &m_slots;
+    // 面板引用校验的另外两源（外壳注入；空 = 退化为只查 Activity panelTypes）。
+    const nextpilot::plotscope::registry::ToolboxHub *m_toolbox = nullptr;
+    QList<nextpilot::plotscope::registry::ProductPanelPlacement> m_placements;
     std::function<bool(const QString &)> m_whenEval;
     std::function<QList<QAction *>(QWidget *, const QString &)> m_viewTitleProvider;
     QHash<QString, QList<QAction *>> m_viewTitleActions;
