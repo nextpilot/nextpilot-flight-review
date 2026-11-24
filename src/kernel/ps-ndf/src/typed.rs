@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use crate::segments::{merge_order, PendingSegment};
+
 /// 列值的原始类型。时间轴统一是 `i64` 纳秒，不放在这里。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueType {
@@ -536,6 +538,56 @@ impl ColumnData {
             (ColumnData::Text(a), ColumnData::Text(b)) => ColumnData::Text(g(a, b, order)),
             (ColumnData::Object(a), ColumnData::Object(b)) => ColumnData::Object(g(a, b, order)),
             _ => unreachable!("列类型已校验一致"),
+        }
+    }
+
+    /// 多源归并收集：`out[t] = sources[order[t].0][order[t].1]`。
+    /// 所有源类型一致；任一源为 Encoded 时统一走 atoms 再编码。
+    pub fn gather_from_sources(sources: &[&ColumnData], order: &[(usize, usize)]) -> ColumnData {
+        if sources.is_empty() {
+            return ColumnData::F64(Vec::new());
+        }
+        if sources.iter().any(|s| matches!(s, ColumnData::Encoded { .. })) {
+            let atoms: Vec<Vec<Atom>> = sources.iter().map(|s| s.to_atoms()).collect();
+            let picked: Vec<Atom> = order.iter()
+                .map(|&(src, i)| atoms[src][i].clone())
+                .collect();
+            let logical = sources[0].value_type();
+            return Self::encode_from_atoms(logical, Codec::Dictionary, &picked)
+                .unwrap_or_else(|_| Self::Encoded {
+                    logical,
+                    codec: Codec::Dictionary,
+                    payload: EncodedPayload::Dictionary {
+                        atoms: Vec::new(),
+                        indices: picked.iter().map(|_| 0).collect(),
+                    },
+                    len: picked.len(),
+                });
+        }
+        macro_rules! g {
+            ($var:ident, $ty:ty) => {{
+                let slices: Vec<&[$ty]> = sources.iter().map(|s| match s {
+                    ColumnData::$var(v) => v.as_slice(),
+                    _ => unreachable!("列类型已校验一致"),
+                }).collect();
+                ColumnData::$var(order.iter().map(|&(src, i)| slices[src][i].clone()).collect())
+            }};
+        }
+        match sources[0] {
+            ColumnData::F64(_) => g!(F64, f64),
+            ColumnData::F32(_) => g!(F32, f32),
+            ColumnData::I64(_) => g!(I64, i64),
+            ColumnData::U64(_) => g!(U64, u64),
+            ColumnData::I32(_) => g!(I32, i32),
+            ColumnData::U32(_) => g!(U32, u32),
+            ColumnData::I16(_) => g!(I16, i16),
+            ColumnData::U16(_) => g!(U16, u16),
+            ColumnData::I8(_) => g!(I8, i8),
+            ColumnData::U8(_) => g!(U8, u8),
+            ColumnData::Bool(_) => g!(Bool, bool),
+            ColumnData::Text(_) => g!(Text, String),
+            ColumnData::Object(_) => g!(Object, u64),
+            ColumnData::Encoded { .. } => unreachable!("Encoded 已在上方处理"),
         }
     }
 
@@ -1295,6 +1347,12 @@ pub struct Table {
     pub ring_budget_bytes: Option<usize>,
     /// 下一个 seq。ring 裁剪后仍保持表内单调递增，不归零。
     next_seq: u64,
+    /// 尚未归并进主表的乱序补传段。写入只 push 段（O(批)），
+    /// 读取前由 materialize 归并回主表。主表始终代表完整有序数据，
+    /// 按行号直连的 ABI 与 LOD 全局行锚定都不受影响。
+    pending: Vec<PendingSegment>,
+    /// 段数阈值：达到则强制归并，避免段数无界导致每次读取归并退化。
+    pending_limit: usize,
 }
 
 impl Table {
@@ -1315,6 +1373,8 @@ impl Table {
             columns: Vec::new(),
             ring_budget_bytes: None,
             next_seq: n as u64,
+            pending: Vec::new(),
+            pending_limit: 64,
         })
     }
 
@@ -1437,9 +1497,9 @@ impl Table {
         Ok(())
     }
 
-    /// 断线补传：把一段已按 time_ns 排序的历史行有序合并进单调表。
-    /// 内核时间轴仍保持单调非降，二分查询的前提不被放宽。
-    /// 合并点可能在表中部，LOD 金字塔的全局行锚定会被打乱，故整塔重建。
+    /// 断线补传：把一段已按 time_ns 排序的历史行保留为 pending 段。
+    /// 写入只付 O(批)——校验 + 分配 seq + push 段；真正的有序归并推迟到
+    /// 读取前的 `materialize`。段数达阈值时就地归并，避免段数无界。
     pub fn merge_sorted_rows(
         &mut self,
         time_ns: &[i64],
@@ -1469,59 +1529,81 @@ impl Table {
                 return Err(format!("列 {} 类型不一致", self.columns[i].name));
             }
         }
-        // 归并索引：现有 [0,n) 与新 [0,m) 两条有序序列，按 time_ns 稳定合并（相等时旧行在前）。
-        let old_times = self.time_ns.as_slice();
-        let n = old_times.len();
-        let mut order: Vec<(bool, usize)> = Vec::with_capacity(n + m);
-        let (mut i, mut j) = (0usize, 0usize);
-        while i < n && j < m {
-            if old_times[i] <= time_ns[j] {
-                order.push((false, i));
-                i += 1;
-            } else {
-                order.push((true, j));
-                j += 1;
-            }
+        let seq: Vec<u64> = (self.next_seq..self.next_seq + m as u64).collect();
+        self.next_seq += m as u64;
+        let mut seg_columns = Vec::with_capacity(columns.len());
+        let mut seg_nulls = Vec::with_capacity(columns.len());
+        for (data, nulls) in columns {
+            seg_columns.push(data);
+            seg_nulls.push(nulls);
         }
-        while i < n { order.push((false, i)); i += 1; }
-        while j < m { order.push((true, j)); j += 1; }
+        self.pending.push(PendingSegment {
+            time_ns: time_ns.to_vec(),
+            seq,
+            columns: seg_columns,
+            nulls: seg_nulls,
+        });
+        if self.pending.len() >= self.pending_limit {
+            self.materialize();
+        }
+        Ok(())
+    }
+
+    /// 把主表与全部 pending 段按 `(time_ns, seq)` 归并回单一有序主表。
+    /// 无 pending 时零开销；归并后 LOD 整塔失效、行偏移归零，保持全局行锚定语义。
+    pub fn materialize(&mut self) {
+        if self.pending.is_empty() {
+            return;
+        }
+        let order = merge_order(&self.time_ns, &self.seq, &self.pending);
+        let total = order.len();
 
         let merged_time: Vec<i64> = order.iter()
-            .map(|(is_new, k)| if *is_new { time_ns[*k] } else { old_times[*k] })
+            .map(|&(src, i)| if src == 0 { self.time_ns[i] } else { self.pending[src - 1].time_ns[i] })
             .collect();
-        // seq：旧行保留原 seq，新行从 next_seq 起按补传顺序编号；再按合并顺序重排。
-        let old_seq = self.seq.as_slice();
-        let mut merged_seq: Vec<u64> = Vec::with_capacity(n + m);
-        let mut next = self.next_seq;
-        for (is_new, k) in &order {
-            if *is_new {
-                merged_seq.push(next);
-                next += 1;
-            } else {
-                merged_seq.push(old_seq[*k]);
-            }
-        }
-        self.next_seq = next;
+        let merged_seq: Vec<u64> = order.iter()
+            .map(|&(src, i)| if src == 0 { self.seq[i] } else { self.pending[src - 1].seq[i] })
+            .collect();
 
-        // 逐列重建：data 用 merge_gather；nulls 按同一 order 逐位取；LOD 整塔失效、行偏移归零。
-        for (ci, (new_data, new_nulls)) in columns.into_iter().enumerate() {
-            let col = &mut self.columns[ci];
-            let old_data = col.data.clone();
-            let old_nulls = col.nulls.clone();
-            col.data = old_data.merge_gather(&new_data, &order);
-            let mut merged_nulls = NullBits::new(order.len());
-            for (dst, (is_new, k)) in order.iter().enumerate() {
-                let src_null = if *is_new { new_nulls.is_null(*k) } else { old_nulls.is_null(*k) };
-                if src_null { merged_nulls.set_null(dst, true); }
+        let col_count = self.columns.len();
+        for ci in 0..col_count {
+            let mut sources: Vec<&ColumnData> = Vec::with_capacity(self.pending.len() + 1);
+            sources.push(&self.columns[ci].data);
+            for seg in &self.pending {
+                sources.push(&seg.columns[ci]);
             }
+            let merged_data = ColumnData::gather_from_sources(&sources, &order);
+            let mut merged_nulls = NullBits::new(total);
+            for (dst, &(src, i)) in order.iter().enumerate() {
+                let is_null = if src == 0 {
+                    self.columns[ci].nulls.is_null(i)
+                } else {
+                    self.pending[src - 1].nulls[ci].is_null(i)
+                };
+                if is_null {
+                    merged_nulls.set_null(dst, true);
+                }
+            }
+            let col = &mut self.columns[ci];
+            col.data = merged_data;
             col.nulls = merged_nulls;
             col.lod = LodPyramid::default();
             col.dropped = 0;
         }
         self.time_ns = Arc::new(merged_time);
         self.seq = merged_seq;
+        self.pending.clear();
         self.trim_to_budget();
-        Ok(())
+    }
+
+    /// 是否有未归并的补传段。`table_data` 等只读视图据此判断是否需先归并。
+    pub fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// 待归并段数与行数（benchmark / 诊断用）。
+    pub fn pending_stats(&self) -> (usize, usize) {
+        (self.pending.len(), self.pending.iter().map(|s| s.len()).sum())
     }
 
     pub fn column(&self, name: &str) -> Option<&Column> {
@@ -1710,6 +1792,14 @@ impl Dataset {
         self.generation = self.generation.saturating_add(1);
     }
 
+    /// 归并指定表的所有 pending 段。读取 ABI 在访问物理视图前调用，
+    /// 保证按行号/裸缓冲/LOD 的读取看到完整有序数据。表名不存在时无操作。
+    pub fn materialize_table(&mut self, name: &str) {
+        if let Some(i) = self.table_index(name) {
+            self.tables[i].materialize();
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.tables.len()
     }
@@ -1868,6 +1958,7 @@ impl Dataset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     fn column(name: &str, data: ColumnData) -> Column {
         Column::new(name, "", data).unwrap()
@@ -2510,12 +2601,146 @@ mod tests {
         ds.append_frame("t", vec![10_000, 20_000, 30_000], frame(&[], &[1.0, 3.0, 5.0])).unwrap();
         // 断线补传一段更早的历史：5ms、25ms（补传内部也乱序到达 25 先到）。
         ds.append_frame("t", vec![25_000, 5_000], frame(&[], &[4.0, 0.0])).unwrap();
+        // 写入先进 pending 段；读取前物化回主表，行为与整表重建一致。
+        assert_eq!(ds.find_table("t").unwrap().pending_stats(), (1, 2));
+        ds.materialize_table("t");
         let t = ds.find_table("t").unwrap();
+        assert_eq!(t.pending_stats(), (0, 0));
         assert_eq!(t.time_ns.as_slice(), &[5_000, 10_000, 20_000, 25_000, 30_000]);
         assert_eq!(f64_col(t, "v"), vec![0.0, 1.0, 3.0, 4.0, 5.0]);
         assert_eq!(t.lower_bound(25_000), 3);
         assert_eq!(t.upper_bound(25_000), 4);
         assert_eq!(t.time_sec(0), Some(0.000005));
+    }
+
+    #[test]
+    fn backfill_segments_merge_matches_full_sort_bitwise() {
+        // 多批重叠补传 + 重复时间：归并结果与全量排序逐位一致。
+        let mut ds = Dataset::new();
+        ds.append_frame("t", vec![100, 300, 500], frame(&[], &[1.0, 3.0, 5.0])).unwrap();
+        ds.append_frame("t", vec![200, 400], frame(&[], &[2.0, 4.0])).unwrap();
+        ds.append_frame("t", vec![150, 350], frame(&[], &[1.5, 3.5])).unwrap();
+        ds.append_frame("t", vec![300, 50], frame(&[], &[30.0, 0.5])).unwrap();
+        assert_eq!(ds.find_table("t").unwrap().pending_stats().0, 3);
+        ds.materialize_table("t");
+        let t = ds.find_table("t").unwrap();
+        assert_eq!(t.time_ns.as_slice(), &[50, 100, 150, 200, 300, 300, 350, 400, 500]);
+        // 重复时间 300：先到达的 seq 小、值 3.0 在前，后补传的 30.0 在后。
+        assert_eq!(f64_col(t, "v"), vec![0.5, 1.0, 1.5, 2.0, 3.0, 30.0, 3.5, 4.0, 5.0]);
+        // seq 是到达序，按时间归并后不单调，但必须唯一。
+        let seq = &t.seq;
+        let mut sorted = seq.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), seq.len());
+        assert_eq!(seq.len(), 9);
+    }
+
+    #[test]
+    fn backfill_then_ring_trim_keeps_seq_and_null_aligned() {
+        // 补传段物化后再 ring 裁剪：时间单调、seq 唯一、null 位图对齐。
+        let mut ds = Dataset::new();
+        let times: Vec<i64> = (0..1000).map(|i| i * 10).collect();
+        let vals: Vec<f64> = (0..1000).map(|i| i as f64).collect();
+        let mut nulls = NullBits::new(1000);
+        for i in (0..1000).step_by(7) { nulls.set_null(i, true); }
+        let cols = vec![("v".into(), "".into(), ColumnData::F64(vals), nulls)];
+        ds.append_frame("t", times, cols).unwrap();
+        let ti = ds.table_index("t").unwrap();
+        ds.table_mut(ti).unwrap().set_ring_budget(Some(6000));
+        // 补传更早的行后物化。
+        ds.append_frame("t", vec![5, 15], frame(&[], &[-1.0, -2.0])).unwrap();
+        ds.materialize_table("t");
+        let t = ds.find_table("t").unwrap();
+        assert!(t.time_ns.windows(2).all(|w| w[0] <= w[1]));
+        let seq = &t.seq;
+        let mut sorted = seq.clone(); sorted.sort_unstable(); sorted.dedup();
+        assert_eq!(sorted.len(), seq.len(), "seq 必须唯一");
+        let c = t.column("v").unwrap();
+        assert_eq!(c.len(), t.row_count());
+        // 时钟裁剪后行数受预算约束（含补传行）。
+        assert!(t.row_count() <= 1002);
+    }
+
+    #[test]
+    fn bench_backfill_batched_vs_per_batch_merge() {
+        // 批量补传基准：主表 5 万行，分 20 批各 1000 行补到表中部。
+        // 旧路径=每批立即归并（O(N)/批）；新路径=攒段最后归并一次（O(m)/批 + O(N)）。
+        const BASE: usize = 50_000;
+        const BATCHES: usize = 20;
+        const BATCH: usize = 1_000;
+        let make_base = || {
+            let times: Vec<i64> = (0..BASE).map(|i| i as i64 * 10).collect();
+            let vals: Vec<f64> = (0..BASE).map(|i| i as f64).collect();
+            let mut ds = Dataset::new();
+            ds.append_frame("t", times, frame(&[], &vals)).unwrap();
+            ds
+        };
+        // 20 批补传，时间均匀落在表中部 [BASE/4*10, BASE/2*10)。
+        let batches: Vec<(Vec<i64>, Vec<f64>)> = (0..BATCHES).map(|b| {
+            let times: Vec<i64> = (0..BATCH).map(|i| (BASE / 4 * 10) as i64 + (b * BATCH + i) as i64).collect();
+            let vals: Vec<f64> = (0..BATCH).map(|i| (b * BATCH + i) as f64 + 0.5).collect();
+            (times, vals)
+        }).collect();
+
+        // 旧路径：每批 backfill 后立即 materialize。
+        let t0 = Instant::now();
+        {
+            let mut ds = make_base();
+            for (times, vals) in &batches {
+                ds.append_frame("t", times.clone(), frame(&[], vals)).unwrap();
+                ds.materialize_table("t"); // 模拟旧实现每批整表重建
+            }
+        }
+        let per_batch = t0.elapsed();
+
+        // 新路径：攒段，最后归并一次。
+        let t1 = Instant::now();
+        {
+            let mut ds = make_base();
+            for (times, vals) in &batches {
+                ds.append_frame("t", times.clone(), frame(&[], vals)).unwrap();
+            }
+            assert_eq!(ds.find_table("t").unwrap().pending_stats().0, BATCHES);
+            ds.materialize_table("t");
+        }
+        let batched = t1.elapsed();
+
+        println!("\n[bench BJ4] base={BASE} batches={BATCHES}x{BATCH}");
+        println!("  逐批立即归并(旧 O(N)): {:?}", per_batch);
+        println!("  攒段最后归并(新 O(m)): {:?}", batched);
+        println!("  加速比: {:.2}x", per_batch.as_secs_f64() / batched.as_secs_f64().max(1e-9));
+
+        // 两条路径结果必须逐位一致（行为保持）。
+        let mut a = make_base();
+        for (times, vals) in &batches { a.append_frame("t", times.clone(), frame(&[], vals)).unwrap(); a.materialize_table("t"); }
+        let mut b = make_base();
+        for (times, vals) in &batches { b.append_frame("t", times.clone(), frame(&[], vals)).unwrap(); }
+        b.materialize_table("t");
+        let ta = a.find_table("t").unwrap();
+        let tb = b.find_table("t").unwrap();
+        assert_eq!(ta.time_ns, tb.time_ns);
+        assert_eq!(f64_col(ta, "v"), f64_col(tb, "v"));
+
+        // 批大小远小于主表时，攒段应显著快于逐批归并。
+        assert!(batched < per_batch, "攒段归并应快于逐批 O(N) 重建");
+    }
+
+    #[test]
+    fn backfill_segment_limit_forces_materialize() {
+        // 段数达阈值自动归并，避免段数无界。
+        let mut ds = Dataset::new();
+        ds.append_frame("t", vec![0], frame(&[], &[0.0])).unwrap();
+        let limit = ds.find_table("t").unwrap().pending_limit;
+        for i in 1..=limit {
+            ds.append_frame("t", vec![i as i64 * 10 - 5], frame(&[], &[i as f64])).unwrap();
+        }
+        // 达到阈值时触发归并，pending 清零。
+        assert_eq!(ds.find_table("t").unwrap().pending_stats().0, 0);
+        let t = ds.find_table("t").unwrap();
+        assert_eq!(t.row_count(), limit + 1);
+        // 时间轴仍单调。
+        assert!(t.time_ns.windows(2).all(|w| w[0] <= w[1]));
     }
 
     // ---------- S4 对象列 ObjectStore ----------

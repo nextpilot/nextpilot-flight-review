@@ -183,3 +183,28 @@ cargo bench -p ps-abi --bench bench_dataset -- --baseline <受管基线路径>
 **边界**：pj 的 `pushLazy(fetch: LazyCallback)` 惰性解压回调（C++ std::function）不跨
 C ABI 传闭包；MCAP chunk 解压由上层 parser 在读取时驱动，本层提供零拷贝视图 +
 warm cache + 读语义原语。基准脚本为临时产物（`/tmp`，未入库）。
+
+## BJ4 乱序补传段式缓冲 vs 逐批整表重建（借鉴 pj 重叠 chunk + 读时归并）
+
+`ps_ndf::segments` + `Table.pending` 让乱序补传写入只付批大小成本：批内排序后
+push 一个 `PendingSegment`（段内按 `time_ns` 单调），到达阈值或读取前由
+`Table::materialize` 用 k 路小顶堆按 `(time_ns, seq)` 归并回物理主表。主表始终
+代表完整有序数据，故按行号直连 ABI、裸缓冲借出、LOD 全局行锚定全部不变。
+
+批量补传基准（`bench_backfill_batched_vs_per_batch_merge`）：主表 5 万行，分
+20 批各 1000 行补到表中部，多轮复测：
+
+| 策略 | 20 批总耗时 | 加速比 |
+|---|---:|---:|
+| 逐批立即整表归并（旧 O(N)/批） | ~195ms | 1.0x |
+| 攒段最后归并一次（O(m)/批 + O(N)） | ~19.8ms | ~9.5x |
+
+两条路径输出逐位一致（时间轴、列值），加速比稳定在 9.5–9.9x。收益来自
+"批量补传 → 单次渲染"场景：O(N) 重建只在读取前付一次，而非每批都付。
+段数上限 64，达到即强制归并，避免段数无界拖慢单次归并。
+
+**边界**：写入进段后若立刻按行号/裸缓冲读取，读取入口会先归并，此时仍付
+一次 O(N)（与旧行为一致，换来了对外语义完全不变）。真正的收益在连续多批
+补传中间不读的场景——MCAP/rosbag 批量导入后渲染正是此形态。逐条 backfill
+且每条后紧跟读取时，段式不优于逐批归并。基准为 `ps-ndf` 单元测试内可复现
+计时，非独立 criterion bench。

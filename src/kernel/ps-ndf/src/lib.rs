@@ -3,6 +3,7 @@
 
 pub mod object_index;
 pub mod object_read;
+pub mod segments;
 pub mod typed;
 
 use std::sync::Arc;

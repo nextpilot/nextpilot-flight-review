@@ -109,7 +109,17 @@ impl PsDataset {
         }
     }
 
+    /// 读取前把指定表的 pending 补传段归并回物理主表。
+    /// 这样按行号直连、裸缓冲借出、LOD 全局行锚定都看到完整有序数据。
+    fn materialize(&mut self, name: &str) {
+        self.typed.materialize_table(name);
+    }
+
     fn rebuild_infos(&mut self) {
+        // infos 的 point_count/时间轴来自物理主表；先把补传段归并，避免少算。
+        for t in &mut self.typed.tables {
+            t.materialize();
+        }
         self.names = self.data.channels.iter().map(|c| CString::new(c.name.as_str()).unwrap_or_default()).collect();
         self.units = self.data.channels.iter().map(|c| CString::new(c.unit.as_str()).unwrap_or_default()).collect();
 
@@ -1102,8 +1112,9 @@ pub unsafe extern "C" fn ps_dataset_lod_minmax(
     let (Ok(table_name), Ok(column_name)) = (CStr::from_ptr(table).to_str(), CStr::from_ptr(column).to_str()) else {
         return 0;
     };
-    // lod_minmax 需要可变引用（惰性建金字塔）。
+    // lod_minmax 需要可变引用（惰性建金字塔 + pending 归并）。
     let ds_ref = &mut *ds;
+    ds_ref.materialize(table_name);
     let Some(tidx) = ds_ref.typed.table_index(table_name) else {
         return 0;
     };
@@ -1547,6 +1558,45 @@ mod tests {
     #[test]
     fn selftest_passes() {
         assert_eq!(ps_abi_selftest(), 0);
+    }
+
+    #[test]
+    fn backfill_segments_are_materialized_before_abi_reads() {
+        unsafe {
+            let ds = ps_dataset_new();
+            let table = CString::new("t").unwrap();
+            let col = CString::new("v").unwrap();
+            let append = |times: &[i64], vals: &[f64]| {
+                let c = PsFrameColumn {
+                    name: col.as_ptr(), unit: std::ptr::null(), value_type: 0,
+                    values: vals.as_ptr() as *const std::ffi::c_void, nulls: std::ptr::null(),
+                };
+                assert_eq!(ps_dataset_append_frame(ds, table.as_ptr(), times.as_ptr(),
+                    times.len() as u32, &c, 1, std::ptr::null_mut(), 0), 0);
+            };
+            append(&[100, 300, 500], &[1.0, 3.0, 5.0]);
+            // 中部补传：批首 200 < 表尾 500，写入进 pending 段。
+            append(&[400, 200], &[4.0, 2.0]);
+            assert_eq!((*ds).typed.find_table("t").unwrap().pending_stats(), (1, 2));
+
+            // read_window 读全区间：应归并 pending，返回完整有序 5 行。
+            let mut ot = [0.0f64; 8];
+            let mut ov = [0.0f64; 8];
+            let n = ps_dataset_read_window(ds, table.as_ptr(), col.as_ptr(), 0, 1_000_000_000,
+                ot.as_mut_ptr(), ov.as_mut_ptr(), 8);
+            assert_eq!(n, 5);
+            assert_eq!(ov[..5], [1.0, 2.0, 3.0, 4.0, 5.0]);
+            assert_eq!((*ds).typed.find_table("t").unwrap().pending_stats(), (0, 0));
+
+            // 再补一段后按行号直读：value_at 也应先物化再返回。
+            append(&[150], &[1.5]);
+            let mut t = 0.0f64;
+            let mut v = 0.0f64;
+            assert_eq!(ps_dataset_value_at(ds, table.as_ptr(), col.as_ptr(), 1, &mut t, &mut v), 0);
+            assert!((v - 1.5).abs() < 1e-9, "value_at 应看到归并后的第 1 行 1.5，实际 {v}");
+            assert!((t - 150e-9).abs() < 1e-12);
+            ps_dataset_free(ds);
+        }
     }
 
     #[test]
@@ -2479,9 +2529,10 @@ pub unsafe extern "C" fn ps_dataset_value_at(
     if ds.is_null() || table.is_null() || column.is_null() {
         return 1;
     }
-    let ds = &*ds;
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
+    (*ds).materialize(tname.as_ref());
+    let ds = &*ds;
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     let idx = row as usize;
@@ -2518,9 +2569,10 @@ pub unsafe extern "C" fn ps_dataset_text_at(
     if ds.is_null() || table.is_null() || column.is_null() {
         return 1;
     }
-    let ds = &*ds;
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
+    (*ds).materialize(tname.as_ref());
+    let ds = &*ds;
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     let idx = row as usize;
@@ -2560,9 +2612,10 @@ pub unsafe extern "C" fn ps_dataset_value_near(
     if ds.is_null() || table.is_null() || column.is_null() {
         return 1;
     }
-    let ds = &*ds;
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
+    (*ds).materialize(tname.as_ref());
+    let ds = &*ds;
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 1; };
     if t.time_ns.is_empty() {
@@ -2601,9 +2654,10 @@ pub unsafe extern "C" fn ps_dataset_read_window(
     if ds.is_null() || table.is_null() || column.is_null() || out_time.is_null() || out_value.is_null() || cap == 0 {
         return 0;
     }
-    let ds = &*ds;
     let tname = CStr::from_ptr(table).to_string_lossy();
     let cname = CStr::from_ptr(column).to_string_lossy();
+    (*ds).materialize(tname.as_ref());
+    let ds = &*ds;
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == tname) else { return 0; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
     let lo = t.time_ns.partition_point(|&x| x < t0_ns);
@@ -2628,8 +2682,9 @@ pub unsafe extern "C" fn ps_dataset_read_window(
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_seq_at(ds: *mut PsDataset, table: *const c_char, row: u32) -> u64 {
     if ds.is_null() || table.is_null() { return u64::MAX; }
-    let ds = &*ds;
     let name = CStr::from_ptr(table).to_string_lossy();
+    (*ds).materialize(name.as_ref());
+    let ds = &*ds;
     let Some(t) = ds.typed.tables.iter().find(|t| t.name == name) else { return u64::MAX; };
     t.seq.get(row as usize).copied().unwrap_or(u64::MAX)
 }
@@ -2761,9 +2816,12 @@ pub unsafe extern "C" fn ps_dataset_column_raw(
     {
         return 1;
     }
-    let d = &*ds;
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 1 };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return 1 };
+    // ds 由 C++ 侧以可写堆对象持有；此处取可变引用仅为归并 pending，
+    // 签名保持 const 不变，借出的裸指针在物化后的只读期间有效。
+    (*(ds as *mut PsDataset)).materialize(tname);
+    let d = &*ds;
     let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return 4 };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 4 };
     let (ptr, ty): (*const std::ffi::c_void, u32) = match &c.data {
@@ -2846,6 +2904,7 @@ pub unsafe extern "C" fn ps_dataset_column_is_encoded(
     if ds.is_null() || table.is_null() || column.is_null() { return -1; }
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return -1; };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return -1; };
+    (*(ds as *mut PsDataset)).materialize(tname);
     let Some(t) = (*ds).typed.tables.iter().find(|t| t.name == tname) else { return -1; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return -1; };
     if c.data.codec().is_some() { 1 } else { 0 }
@@ -2864,6 +2923,7 @@ pub unsafe extern "C" fn ps_dataset_column_decode_f64(
     if ds.is_null() || table.is_null() || column.is_null() || out.is_null() { return 0; }
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 0; };
     let Ok(cname) = CStr::from_ptr(column).to_str() else { return 0; };
+    (*(ds as *mut PsDataset)).materialize(tname);
     let Some(t) = (*ds).typed.tables.iter().find(|t| t.name == tname) else { return 0; };
     let Some(c) = t.columns.iter().find(|c| c.name == cname) else { return 0; };
     let n = c.len().min(cap as usize);
@@ -3329,11 +3389,12 @@ pub unsafe extern "C" fn ps_dataset_slice(
         return 1;
     }
     *out = std::ptr::null_mut();
-    let d = &*ds;
     let Ok(tname) = CStr::from_ptr(table).to_str() else {
         write_err(err, err_cap, "表名不是合法 UTF-8");
         return 2;
     };
+    (*(ds as *mut PsDataset)).materialize(tname);
+    let d = &*ds;
     let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else {
         write_err(err, err_cap, &format!("表不存在：{tname}"));
         return 3;
@@ -3407,8 +3468,9 @@ pub unsafe extern "C" fn ps_dataset_read_window_multi(
     if ds.is_null() || table.is_null() || out_time.is_null() || out_values.is_null() || cap == 0 {
         return 0;
     }
-    let d = &*ds;
     let Ok(tname) = CStr::from_ptr(table).to_str() else { return 0 };
+    (*(ds as *mut PsDataset)).materialize(tname);
+    let d = &*ds;
     let Some(t) = d.typed.tables.iter().find(|t| t.name == tname) else { return 0 };
     let n = column_count as usize;
     let mut cols: Vec<&ps_ndf::typed::Column> = Vec::with_capacity(n);
