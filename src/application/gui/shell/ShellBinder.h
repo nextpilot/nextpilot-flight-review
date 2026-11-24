@@ -85,6 +85,13 @@ public:
     // 当前可见的 ribbon 页标签（诊断/测试用，口径与 rebuildRibbon 一致）。
     QStringList visibleRibbonPageLabels() const;
 
+    // 视图标题栏动作：模块/包声明（ViewTitleActionSpec），外壳把描述变成 QAction。
+    // 提供者是外壳注入的 lambda（binder 不认识命令库与工具箱），返回已接好线的动作。
+    void setViewTitleActionProvider(
+        std::function<QList<QAction *>(QWidget *parent, const QString &viewId)> provider);
+    // 某视图已挂上的标题栏动作数（诊断/测试口径）。
+    int viewTitleActionCount(const QString &viewId) const;
+
     // 单个 dock 页面的显隐：按 pageKey（面板类型 id）定位该页签。
     // 点击一次出现、再点一次消失，只影响自己，不动同区其它页签。
     // 返回 false 表示该 pageKey 没有对应的 dock（面板尚未创建）。
@@ -262,6 +269,8 @@ private:
     QMainWindow *m_window = nullptr;
     nextpilot::plotscope::registry::UiSlotHub &m_slots;
     std::function<bool(const QString &)> m_whenEval;
+    std::function<QList<QAction *>(QWidget *, const QString &)> m_viewTitleProvider;
+    QHash<QString, QList<QAction *>> m_viewTitleActions;
     QStringList m_lastVisiblePages;
 
     // SARibbon

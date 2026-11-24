@@ -478,6 +478,17 @@ void ShellBinder::updateActionStyle(const QString &actionId, const QIcon &icon, 
     }
 }
 
+void ShellBinder::setViewTitleActionProvider(
+    std::function<QList<QAction *>(QWidget *parent, const QString &viewId)> provider)
+{
+    m_viewTitleProvider = std::move(provider);
+}
+
+int ShellBinder::viewTitleActionCount(const QString &viewId) const
+{
+    return m_viewTitleActions.value(viewId).size();
+}
+
 void ShellBinder::setWhenEvaluator(std::function<bool(const QString &)> evaluator)
 {
     m_whenEval = std::move(evaluator);
@@ -761,6 +772,17 @@ void ShellBinder::dock(const QString &area, const QString &title, QWidget *conte
     // objectName 必须唯一：dockWidgetsMap/findDockWidget 按名索引，同区多面板
     // 撞名会让后面的覆盖前面的（"脚本调试"曾被"属性"顶掉）。加序号消歧。
     dock->setObjectName(QStringLiteral("ps.dock.%1.%2").arg(area).arg(m_dockSeq++));
+    // 视图标题栏动作（VS Code 的 view/title）：只认面板类型 id，不看区域名——
+    // 模块在哪个区开面板不改变"这是哪个视图"的语义。
+    if (m_viewTitleProvider && !pageKey.isEmpty())
+    {
+        QList<QAction *> actions = m_viewTitleProvider(dock, pageKey);
+        if (!actions.isEmpty())
+        {
+            dock->setTitleBarActions(actions);
+            m_viewTitleActions.insert(pageKey, actions);
+        }
+    }
     m_dockByWidget.insert(content, dock);
     m_docksByArea[area].append(dock); // 该区页签序列（panelTitles 断言/诊断用）
     if (groupArea == QStringLiteral("dock.left") && !pageKey.isEmpty()

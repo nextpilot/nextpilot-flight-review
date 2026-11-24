@@ -3136,6 +3136,37 @@ int main(int argc, char *argv[])
         CHECK(diag->refresh() == application.context().registryTree().nodes().size());
         OK("诊断面板：注册树 11 类节点齐全，面板行数==树上节点数（diag.registries 同路）");
     }
+    // --- c3b-2a 视图标题栏动作：声明 → QAction → ADS 标题栏 ---
+    {
+        using nextpilot::plotscope::registry::Pack;
+        using nextpilot::plotscope::registry::ViewTitleActionSpec;
+        using nextpilot::plotscope::context::AppContext;
+        using nextpilot::plotscope::intent::IIntentExecutor;
+        nextpilot::plotscope::registry::PanelFactoryHub::registerPanel(
+            QStringLiteral("test.title-view"),
+            [](AppContext &, IIntentExecutor &, QWidget *parent) { return new QWidget(parent); },
+            QStringLiteral("标题栏视图"), QStringLiteral("plot.refresh"));
+        Pack pack;
+        pack.id = QStringLiteral("pack.c3b-title");
+        ViewTitleActionSpec shown;
+        shown.viewId = QStringLiteral("test.title-view");
+        shown.commandId = QStringLiteral("figure.addAxes");
+        shown.order = 1;
+        ViewTitleActionSpec hidden = shown;
+        hidden.commandId = QStringLiteral("figure.removeAxes");
+        hidden.when = QStringLiteral("neverTrue == true");
+        pack.viewTitleActions << shown << hidden;
+        auto &toolbox = application.context().toolbox();
+        CHECK(toolbox.mount(std::move(pack)));
+        QWidget *panel = window.context()->requestPanel(QStringLiteral("dock.left"),
+                                                       QStringLiteral("test.title-view"));
+        CHECK(panel != nullptr);
+        // when 不命中的那条不挂；命中的挂上去（数量是唯一可断言的口径）
+        CHECK(window.binder()->viewTitleActionCount(QStringLiteral("test.title-view")) == 1);
+        CHECK(toolbox.unmount(QStringLiteral("pack.c3b-title")));
+        OK("视图标题栏动作：命中的挂到 ADS 标题栏，when 不命中的不进列表");
+    }
+
     // --- c3b Ribbon 上下文页签：when 不命中整页收起，命中再展开 ---
     {
         using nextpilot::plotscope::registry::SlotKind;

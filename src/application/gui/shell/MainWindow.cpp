@@ -47,6 +47,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QStyle>
 #include <QResource>
 #include <QSaveFile>
 #include <QShowEvent>
@@ -410,6 +411,39 @@ void MainWindow::build(RuntimeHost &host)
         if (!m_commands)
             return true;
         return CommandRegistry::evaluateWhen(when, m_commands->contextValues());
+    });
+    // 视图标题栏动作：工具箱声明（ViewTitleActionSpec）→ 外壳造 QAction → ADS 标题栏。
+    // 三条约束写在这里，不给 binder 加业务知识：
+    //   1) when 用命令层求值器判，不自己发明语法；
+    //   2) 标签/图标取命令描述（同一个命令在 Ribbon、标题栏、命令面板显示一致）；
+    //   3) 点击走 m_commands->execute，和按钮/快捷键同一条路径。
+    m_binder->setViewTitleActionProvider([this](QWidget *parent, const QString &viewId) {
+        QList<QAction *> actions;
+        if (!m_commands)
+            return actions;
+        const QHash<QString, QVariant> ctx = m_commands->contextValues();
+        for (const ViewTitleActionSpec &spec : m_appCtx.toolbox().titleActionsFor(viewId))
+        {
+            if (!spec.when.isEmpty() && !CommandRegistry::evaluateWhen(spec.when, ctx))
+                continue;
+            const CommandDescriptor *cmd = m_commands->find(spec.commandId);
+            auto *action = new QAction(parent);
+            action->setText(cmd ? cmd->title : spec.commandId);
+            action->setToolTip(action->text());
+            if (cmd && !cmd->icon.isEmpty())
+                action->setIcon(QIcon(QStringLiteral(":/icons/%1.svg").arg(cmd->icon)));
+            else
+                action->setIcon(parent ? parent->style()->standardIcon(QStyle::SP_BrowserReload)
+                                       : QIcon());
+            const QString commandId = spec.commandId;
+            connect(action, &QAction::triggered, this, [this, commandId]() {
+                QString error;
+                if (m_commands)
+                    m_commands->execute(commandId, &error);
+            });
+            actions << action;
+        }
+        return actions;
     });
     m_context = new GuiContext(this, slotReg, m_binder, m_appCtx, &host, this);
 
