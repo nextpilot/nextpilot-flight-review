@@ -13,6 +13,7 @@
       },
       "environment": {
         "PATH": "$env{HOME}/.ps-deps/toolchain/ccache/bin:$penv{PATH}",
+        "CCACHE_DIR": "$env{HOME}/.ps-deps/caches/ccache",
         "CCACHE_BASEDIR": "${sourceDir}"
       }
     },
