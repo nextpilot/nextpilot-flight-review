@@ -22,9 +22,6 @@ add_library(ps_module_data_gui OBJECT
 )
 target_include_directories(ps_module_data_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    # 通道拖拽协议（纯头文件）：数据树 encode、画布 decode，共享同一张约定。
-    # 暂挂 plot 呈现层目录（c6 计划下沉 libs/dataset，本轮不动）。
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../plot/gui
 )
 # 主题是横向 GUI 基础设施（状态点等取色走它），单独成库，谁需要谁链——
 # 不必为此链接整个外壳库 ps_gui。

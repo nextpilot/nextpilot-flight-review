@@ -16,7 +16,6 @@ add_library(ps_module_plot_gui OBJECT
     AxesView.h
     ChannelView.cpp
     ChannelView.h
-    ChannelMime.h
     InstrumentView.cpp
     InstrumentView.h
     PlotWorkspace.cpp

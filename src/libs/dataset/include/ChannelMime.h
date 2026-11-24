@@ -10,14 +10,14 @@
 // 画布拿到后发 plot.channel 意图取数，与双击走完全相同的路径。
 //
 // 视图之间仍互不 include：数据树只 encode，画布只 decode，
-// 两者唯一共享的是这张无依赖的小头文件。
+// 两者唯一共享的是这张无依赖的小头文件（c6 下沉 libs/dataset，纯数据协议，无 Widgets）。
 
 #include "Dataset.h"
 
 #include <QMimeData>
 #include <QString>
 
-namespace nextpilot::plotscope::gui
+namespace nextpilot::plotscope::dataset
 {
 namespace channel_mime
 {
@@ -118,4 +118,4 @@ inline Decoded decode(const QMimeData *mime)
 }
 
 } // namespace series_mime
-} // namespace nextpilot::plotscope::gui
+} // namespace nextpilot::plotscope::dataset

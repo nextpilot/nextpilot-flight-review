@@ -12,9 +12,11 @@ add_library(ps_dataset STATIC
     include/Source.h
     include/DataSource.h
     include/SourceHub.h
+    include/ChannelMime.h
 )
 
 target_include_directories(ps_dataset PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # ps_kernel: Rust ps-abi（Dataset 的 C ABI 门）；ps_foundation: Result.h（DataRepository 返回类型）。
-target_link_libraries(ps_dataset PUBLIC ps_kernel ps_registry ps_foundation Qt6::Core)
+# Qt6::Gui：ChannelMime.h 的 QMimeData 属 QtGui 值类型，不是 Widgets，headless 亦可链。
+target_link_libraries(ps_dataset PUBLIC ps_kernel ps_registry ps_foundation Qt6::Core Qt6::Gui)
 set_target_properties(ps_dataset PROPERTIES AUTOMOC ON CXX_STANDARD 17)
