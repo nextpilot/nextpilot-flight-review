@@ -30,7 +30,7 @@ const QString kStateWarn   = QStringLiteral("stateWarn");    // 警告/暂停
 // 色表：全工程**唯一**允许出现色值的地方（本表即色源）。
 // 两套主题各一份，token 名一一对应。新增 token 必须同时填两套，
 // 否则 color() 会给出醒目的洋红告警色——测试里也断言了这点。
-const QHash<QString, QColor> &table(ThemeTokens::Theme theme)
+const QHash<QString, QColor> &colorTable(ThemeTokens::Theme theme)
 {
     static const QHash<QString, QColor> light = {
         {kWindow,      QColor(QStringLiteral("#F5F6F8"))},
@@ -74,12 +74,12 @@ const QHash<QString, QColor> &table(ThemeTokens::Theme theme)
 
 const QHash<QString, QColor> &ThemeTokens::table(Theme theme)
 {
-    return ::table(theme);
+    return colorTable(theme);
 }
 
 QColor ThemeTokens::color(Theme theme, const QString &token)
 {
-    const auto &t = ::table(theme);
+    const auto &t = colorTable(theme);
     auto it = t.constFind(token);
     if (it != t.constEnd())
         return it.value();
