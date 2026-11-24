@@ -1,6 +1,6 @@
 ---
 name: ai-develop-workflow
-description: 本仓库双角色 AI 开发工作流（产品经理 Agent + 开发者 Agent）。产品经理负责需求、issue、验收与关闭；开发者负责实现、验证、分支与 PR。标准任务走 issue → 分支 → PR → 合并 → 显式关闭 issue；简单低风险修改可免 issue，但仍必须走分支、PR 和验证。含修改前确认、issue 规范、状态机、多 Agent 交接、分支提交、提交信息格式（Conventional Commits + `Refs` 追溯）、PR 描述随提交同步（多提交全列）、Gitee 平台操作、合并后闭环校验与 PR 门槛。触发词：开发任务、修 bug、新建功能、任务计划、Plan、派发、回填、issue、PR、分支、github flow、commit、push、提交、推送、合代码、产品经理、开发者、验收、修改前确认、复述、更新 PR 描述、提交信息格式、commit 规范。
+description: 本仓库双角色 AI 开发工作流（产品经理 Agent + 开发者 Agent）。产品经理负责需求、issue、验收与关闭；开发者负责实现、验证、分支与 PR。标准任务走 issue → 分支 → PR → 合并 → 显式关闭 issue；简单低风险修改可免 issue，但仍必须走分支、PR 和验证。含修改前确认、issue 规范、issue 配图图床、状态机、多 Agent 交接、分支提交、提交信息格式（Conventional Commits + `Refs` 追溯）、PR 描述随提交同步（多提交全列）、Gitee 平台操作、合并后闭环校验与 PR 门槛。触发词：开发任务、修 bug、新建功能、任务计划、Plan、派发、回填、issue、PR、分支、github flow、commit、push、提交、推送、合代码、产品经理、开发者、验收、修改前确认、复述、更新 PR 描述、提交信息格式、commit 规范、截图、图床、配图。
 ---
 
 # 开发工作流（PM/Dev 双角色 + GitHub Flow）
@@ -18,6 +18,7 @@ main 是唯一长期分支，始终可发布、可回退。所有改动经短命
 | 收到任何修改类指令，动手前 | `references/change-confirmation.md` |
 | 写代码注释、文档、提交信息、PR 描述、回复文字 | `.claude/rules/terse-writing.md` |
 | PM 建 issue / 更新 issue 正文 | `references/issue-authoring.md` |
+| issue 里要放截图、给 issue 配图 | `references/issue-image-hosting.md` |
 | Dev 领取、交接、PM 验收、关闭或重开 issue | `references/issue-lifecycle.md` |
 | 建分支、提交、rebase、推送、建 PR、合并 | `references/git-pr-delivery.md` |
 | 调用 Gitee API、排查平台错误 | `references/gitee-operations.md` |
@@ -185,7 +186,7 @@ Verification: <编译与测试结果>
 - PR 验证失败：修复后追加提交再推，不 amend 已推送的提交；推送后同步刷新 PR 描述。
 - 合并后先校验闭环（目标 issue 是否已关、源分支是否已删），不以推断代替校验；缺什么补什么。
 - 迁移期例外：结构性大改（目录重组、历史清理）经用户拍板可单节点强推 `main` 或用 contents API 清理；迁移定稿后本例外作废，一律按本闭环。
-- 全程不把令牌、截图、调试产物写进仓库。
+- 全程不把令牌、截图、调试产物写进仓库。issue 配图上传到图床仓库，不进业务仓（见 `references/issue-image-hosting.md`）。
 - 危险操作（force push、历史改写、绕过保护分支）先按 `references/change-confirmation.md` 复述并取得用户确认。
 
 ## 7. Reference 索引
@@ -194,6 +195,7 @@ Verification: <编译与测试结果>
 |---|---|
 | `references/change-confirmation.md` | 修改前复述、等待同意、执行流程、自查 |
 | `references/issue-authoring.md` | issue 载体、9 章节、模板、质量标准 |
+| `references/issue-image-hosting.md` | issue 配图：图床仓库、目录约定、上传与引用、排错 |
 | `references/issue-lifecycle.md` | 状态机、交接模板、关闭与重开 |
 | `references/git-pr-delivery.md` | 分支、提交、rebase、推送、PR、合并门槛 |
 | `references/gitee-operations.md` | 令牌、API 端点、平台踩坑、合并后闭环校验 |
