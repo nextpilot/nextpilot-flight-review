@@ -53,11 +53,16 @@ L2  ——（已消亡）core 过渡层已整体删除，编号保留以免历�
 L3  host                   运行时编排：模块生命周期 + 意图路由 + 交互总线
      ↑
 L4  modules  toolbox        模块（机制提供者）· 扩展（领域业务）
-     ↑
-L5  gui                    GUI 外壳 + 功能视图
-     ↑
-L6  app                    组合根：创建并装配 AppContext + RuntimeHost + 模块
+     ↑                         ↑
+L5  gui                    GUI 外壳（只链 L0–L3 + libs/* + Qt + fastplot）
+     ↑                         ↑
+L6  app / 装配根            组合根：创建 AppContext + RuntimeHost，装配模块 + 壳
 ```
+
+> c8 链接关（契约 §11 / 验收 6）：**L5 `ps_gui` 不许链任何 `ps_module_*` /
+> `ps_toolbox_*` / `ps_parser_*`**；模块与工具箱只由 L6 装配根（exe / 装配层
+> target）链接。壳只接收"已装配好的 Pack + ToolboxHub"，编译期由
+> `cmake/ShellLinkGuard.cmake` 护栏硬拦。L4 之间仍然互不链接（同层横向硬线）。
 
 箭头向上表示"可以被谁依赖"。依赖只能从上往下（上层依赖下层），**禁止下层依赖上层、禁止同层横向依赖**。
 
@@ -137,12 +142,17 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 
 | 项 | 内容 |
 |---|---|
-| 定位 | GUI 外壳 + 功能视图——Widgets 装配层（模块 `*_gui` 与 `uischema_widgets`/`fastplot` 同样构造控件，本层不是唯一控件来源） |
-| 放什么 | MainWindow、Ribbon/Dock 容器、主题状态与图标/缩略图渲染、参数表单渲染、视图工厂、各功能视图 |
-| 禁放什么 | 业务格式解析、数据源生命周期、领域判断逻辑 |
-| 可依赖 | L0–L4、Qt Widgets/Gui/Core |
-| 禁依赖 | L6 app |
+| 定位 | GUI 外壳 + 通用视图——Widgets 骨架（模块 `*_gui` 与 `uischema_widgets`/`fastplot` 同样构造控件，本层不是唯一控件来源） |
+| 放什么 | MainWindow、Ribbon/Dock 容器、主题状态与图标/缩略图渲染、参数表单渲染、通用面板工厂 |
+| 禁放什么 | 业务格式解析、数据源生命周期、领域判断逻辑、**任何模块/工具箱/解析器头文件与链接** |
+| 可依赖 | L0–L3、`libs/*` 其余机制库、Qt Widgets/Gui/Core、fastplot |
+| 禁依赖 | L4 modules/toolbox/parser（链接关，护栏硬拦）、L6 app |
 | 结构 | `shell/` 外壳装配 · `views/` 通用面板 · 其余为共享 UI 基础设施 |
+
+> **产品身份唯一来源 `registry::ProductSpec`**：窗口标题、关于页、报告默认标题、
+> 默认 Region 布局、模块清单全部来自装配层注入的 spec；壳代码内不写产品常量、
+> 不按产品名分支。完整产品与裸壳（`ps_shell_bare`，零模块第二产品）共用同一份
+> `ps_gui`，差别只在装配层给哪份 spec、链哪些模块。
 
 > 留在 gui 的共享 UI 基础设施：`ps_gui_theme`（主题状态、QSS/palette 生成、图标与缩略图渲染）与 `ps_gui_transform`（`TransformEditorDialog`/`FilterEditorDialog` 等变换/过滤对话框）。它们直接构造 QWidget/对话框并依赖 `ps_uischema_widgets`，下沉 libs 会把 Widgets 带进机制层；纯 token 色表已下沉 `uischema`（`ThemeTokens`），拖拽 MIME 协议头已下沉 `dataset`（`ChannelMime.h`）。
 
@@ -150,11 +160,15 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 
 | 项 | 内容 |
 |---|---|
-| 定位 | 组合根——创建唯一实例、注册模块与扩展、装配启动 |
-| 放什么 | `App`（持有 AppContext + RuntimeHost）、main 入口、启动顺序、命令行解析 |
+| 定位 | 组合根——创建唯一实例、注册模块与扩展、装配壳与产品 spec、启动 |
+| 放什么 | `App`（持有 AppContext + RuntimeHost）、main 入口、启动顺序、命令行解析、产品 `ProductSpec` 实例、模块/工具箱链接清单 |
 | 禁放什么 | 业务逻辑、格式分支、具体 UI 构建 |
-| 可依赖 | 全部下层 |
+| 可依赖 | 全部下层 + L4 模块/工具箱/解析器（**唯一**允许链 L4 的一层） |
 | 禁依赖 | 无（最顶层） |
+
+> 装配层产物：`plotscope-gui`（完整产品，链全部模块）、`ps_shell_bare`
+> （裸壳，`PS_BUILD_BARE` 默认 ON，只链 `ps_gui` + libs + Qt，零模块）、
+> `plotscope-gui-bench`（装配层基准，源码在 `application/tools/`）。
 
 ---
 
@@ -218,7 +232,7 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 | L1 libs | ✓ | 同层受限 | ✗ | ✗ | ✗ | ✗ |
 | L3 host | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
 | L4 mod/ext | ✓ | ✓ | ✓ | ✗ 横向 | ✗ | ✗ |
-| L5 gui | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+| L5 gui | ✓ | ✓ | ✓ | ✗ 链接关 | ✓ | ✗ |
 | L6 app | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 L1 同层依赖按库定位单向：uischema_widgets → uischema、dataset → foundation 等，不允许反向。

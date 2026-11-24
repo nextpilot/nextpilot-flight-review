@@ -17,6 +17,7 @@
 #include <QRectF>
 #include <QStringList>
 #include <QVariant>
+#include <QWidget>
 
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;

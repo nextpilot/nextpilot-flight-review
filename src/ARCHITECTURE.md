@@ -1031,14 +1031,12 @@ UI 排布顺序不依赖绑定/装载先后，全部由 order 字段显式表达
 ## 8. 分层与依赖
 
 ```
-application/app      组合根：App 装配(core) · CLI(cli) · MCP 桥(mcp) · 诊断(diag)
-  ↓
-application/gui      GUI（仅 GUI 进程）
+装配根（exe / application/app · application/bare · application/tools）
+  创建 AppContext + RuntimeHost；链接模块 + 壳；持有产品 ProductSpec 实例
+  ↓                                        ↓（唯一允许链 L4 的一层）
+application/gui      ps_gui 壳（仅 GUI 进程，链接关：零 ps_module_*/ps_toolbox_*/ps_parser_*）
   shell/               外壳：MainWindow · ShellBinder · GuiContext · 对话框
-  views/               通用绘图能力（AxesView 为 fastplot 宿主）
-  ↓
-application/modules  模块（机制）：data / plot / script / protocol / analysis / settings / report
-toolbox/             扩展（领域知识）：common / autopilot / automotive / robotics / gnss
+  views/               通用面板（属性 / 输出 / 问题 / 调试 / 诊断）
   ↓
 application/host     运行时编排：模块生命周期 · 意图执行 · 扩展装配（Toolbox/PluginScanner）
   ↓
@@ -1046,10 +1044,24 @@ libs/                机制库：foundation（L0）+ dataset / registry / intent
                      protocol / uischema / fastplot / context / module / recording（L1）
   ↓
 kernel/              Rust：typed 表 · LOD · 缓存 · 算子（只经 include/ps_kernel.h）
+
+application/modules  模块（机制）：data / plot / script / protocol / analysis / settings / report
+toolbox/             扩展（领域知识）：common / autopilot / automotive / robotics / gnss
+  —— 只被装配根链接；模块之间互不链接，彼此只经 host 注册与意图协作。
 ```
 
 依赖严格向下。**libs 与 kernel 无 Qt Widgets、无第三方 GUI 库**——headless 纯净的保证，
 也是 CLI 与 GUI 行为一致的前提。
+
+> **c8 链接关（契约 §11 / 验收 6）**：`ps_gui` 只依赖 libs 层 + Qt + fastplot，
+> 不链任何模块/工具箱/解析器；装配权在组合根，壳只接收已装配好的 Pack + ToolboxHub。
+> configure 期护栏见 `cmake/ShellLinkGuard.cmake`（同时罩 `ps_gui` 与裸壳
+> `ps_shell_bare`）。
+>
+> **产品身份唯一来源 `registry::ProductSpec`**：产品 id、显示名、默认 Region 布局、
+> 模块清单由装配层填好注入壳；壳内无产品常量、无产品分支。完整产品与裸壳
+> （`ps_shell_bare`，空模块清单第二产品）共用同一份 `ps_gui`——换一份 spec 起第二套
+> 产品，壳代码零改动（验收 19/20）。
 
 > 上述分层是机制视角。各目录的**定位、放什么/禁放什么、可依赖/禁依赖**以 [`LAYERS.md`](LAYERS.md) 为准——新增代码先在那里判归属。跨层依赖由 `cmake/LayerContractGuard.cmake` 在 configure 期强制，物理 include 边界由 `cmake/LibBoundaryGuard.cmake` 强制。
 

@@ -7,8 +7,10 @@
 ```
 src/
 ├── application/   App 基底（不可复用，绑死产品形态）
-│   ├── shell/         入口与装配（plotscope CLI / plotscope-gui）
-│   ├── gui/           视图：主窗、画布、面板、主题
+│   ├── app/           组合根：App 装配（CLI / GUI / MCP 桥 / 诊断）
+│   ├── gui/           壳：主窗、绑定器、通用面板、主题（链接关：零模块）
+│   ├── bare/          裸壳独立产物 ps_shell_bare（零模块第二产品）
+│   ├── tools/         装配层工具 / 基准产物（可链模块与工具箱）
 │   ├── host/          宿主服务：意图处理、数据面、录制、装配
 │   └── modules/       功能模块：data / plot / script / protocol / analysis / settings / report
 ├── libs/          机制库（可复用）
@@ -35,6 +37,8 @@ src/
 
 - **kernel / libs / toolbox 禁止 include `application/` 下的任何头文件**——机制不反向依赖基底。
 - libs 内禁止逃逸 include、禁止单例、禁止链接上层 target。
+- **壳 `ps_gui` 链接关**：只链 libs 层 + Qt + fastplot，不链任何 `ps_module_*` / `ps_toolbox_*` / `ps_parser_*`；模块与工具箱只由装配根（exe）链接。护栏：`cmake/ShellLinkGuard.cmake`。
+- 模块之间互不链接，只经 host 注册与意图协作。
 
 ## 核心抽象
 
@@ -78,6 +82,7 @@ src/
 - UI 顺序是纯数据契约：所有槽/组/动作带 `order` 字段，与模块装载顺序解耦。
 - 视图自注册（`PS_REGISTER_PANEL`），领域自带面板形态归 toolbox 的 `gui/`。
 - 主题走 token 化配色（`ThemeManager`），未知 token 返回洋红 `#FF00FF`，便于暴露误用。
+- 产品身份唯一来源 `registry::ProductSpec`（id / 显示名 / 默认 Region 布局 / 模块清单），由装配层注入壳；壳内无产品常量、无产品分支。完整产品与裸壳 `ps_shell_bare`（零模块第二产品，`PS_BUILD_BARE` 默认 ON）共用同一份 `ps_gui`。
 
 ## 构建入口
 
