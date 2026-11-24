@@ -1,4 +1,4 @@
-#include "ProtocolTemplateStore.h"
+#include "protocol/ProtocolTemplateStore.h"
 
 #include "protocol/ProtocolSpec.h"
 
