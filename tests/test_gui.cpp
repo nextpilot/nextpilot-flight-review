@@ -29,6 +29,7 @@
 #include "Contribution.h"
 #include "PanelFactoryHub.h"
 #include "AxesView.h"
+#include "fastplot/SemanticColors.h"
 #include "axes/SeriesStore.h"
 #include "PlotWorkspace.h"
 #include "chrome/AxesToolbar.h"
@@ -3682,6 +3683,164 @@ int main(int argc, char *argv[])
         CHECK(!series_mime::decode(&bad).valid);
 
         OK("SeriesStore 专项：增删、顺序紧凑、跨图移动 mime 往返");
+    }
+
+    // --- 语义色消费面（验收 8）+ ViewState / Interaction 专项（验收 10）---
+    //
+    // 上一条（!101）只把 ThemeTokenSpec 声明进主题表，绘制路径仍读硬编码色，
+    // 判据是"token 有声明"而不是"像素吃到 token"。这一段把判据落在**消费端**：
+    // fastplot 经 SemanticColors 接缝拿到实色，叠加层/网格从那里取；ViewState 与
+    // Interaction 各补 ≥3 组行为用例（同在原 gui offscreen runner `ps_gui` 里）。
+    {
+        namespace fp = nextpilot::plotscope::fastplot;
+
+        // (1) 语义色：装配后 plot.cursor / plot.abMeasure 已被主题推送下来，
+        //     值等于模块声明的兜底（#f2b134，刻意对齐历史实色，接管不改变外观）。
+        const QColor expCursor(QStringLiteral("#f2b134"));
+        CHECK(fp::hasSemanticColor(QStringLiteral("plot.cursor")));
+        CHECK(fp::semanticColor(QStringLiteral("plot.cursor"), QColor()) == expCursor);
+        CHECK(fp::hasSemanticColor(QStringLiteral("plot.abMeasure")));
+        CHECK(fp::semanticColor(QStringLiteral("plot.abMeasure"), QColor()) == expCursor);
+        // 未推送的 id 必须走调用点兜底（不能返回无效色/洋红）。
+        CHECK(!fp::hasSemanticColor(QStringLiteral("plot.not_a_token")));
+        CHECK(fp::semanticColor(QStringLiteral("plot.not_a_token"), QColor("#123456"))
+              == QColor("#123456"));
+        // 网格色必须仍跟随平台调色板：未推送 → 兜底生效（不写死明暗单值）。
+        CHECK(!fp::hasSemanticColor(QStringLiteral("plot.grid")));
+        // 换肤后必须重推（否则绘制路径停在旧主题实色上）：切到深色再验一遍。
+        CHECK(window.themeManager() != nullptr);
+        const auto beforeTheme = window.themeManager()->current();
+        window.themeManager()->setTheme(beforeTheme == ThemeManager::Theme::Dark
+                                            ? ThemeManager::Theme::Light
+                                            : ThemeManager::Theme::Dark);
+        CHECK(fp::hasSemanticColor(QStringLiteral("plot.cursor")));
+        CHECK(fp::semanticColor(QStringLiteral("plot.cursor"), QColor()) == expCursor);
+        window.themeManager()->setTheme(beforeTheme); // 还原，别污染后续用例
+        OK("语义色消费面：plot.cursor / plot.abMeasure 已推送进 fastplot，网格色留平台兜底");
+
+        // (2) ViewState 专项 1/3：范围撤销历史（record/压栈、撤销到底返回 false）。
+        {
+            auto *ws = qobject_cast<PlotWorkspace *>(binder->centralContent());
+            CHECK(ws != nullptr);
+            QVariant vr;
+            Result<QVariant> r(vr);
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("figure.addAxes"), {}, r));
+            CHECK(r);
+            // addAxes 后要显式切到新建的那一格：上一条用例（5c-f）也是这么做的，
+            // 否则 setActiveChannel 会路由到别的格，本格仍是空的。
+            const int idxNew = ws->cellCount() - 1;
+            ws->setActive(idxNew);
+            AxesView *v = ws->activeCanvas();
+            CHECK(v != nullptr);
+            // 空画布没有有效时间范围，zoomRange 会早退；直接给这一格挂一条曲线让范围成立
+            // （不走 setActiveChannel——那是"往当前活动格丢通道"的共享入口，多格场景下
+            //  路由目标未必是本格，容易让用例假红）。
+            const nextpilot::plotscope::dataset::Dataset *ds = application.data().get(loadedDsId);
+            CHECK(ds != nullptr && ds->tableCount() >= 1);
+            PlotSeries seed;
+            seed.datasetId = loadedDsId;
+            seed.table = ds->tableNames().first();
+            seed.column = QStringLiteral("att.pitch[deg]");
+            seed.title = seed.column;
+            CHECK(v->setSeries(seed) == 0);
+            CHECK(v->seriesCount() == 1);
+            const int h0 = v->viewHistorySize();
+            v->zoomRange(0.7); // 放大
+            v->zoomRange(1.4); // 缩小
+            CHECK(v->viewHistorySize() >= h0 + 1);
+            CHECK(v->canUndoView());
+            double a0 = 0, a1 = 0;
+            CHECK(v->visibleTimeRange(&a0, &a1));
+            v->undoView();
+            double b0 = 0, b1 = 0;
+            CHECK(v->visibleTimeRange(&b0, &b1));
+            CHECK(b0 != a0 || b1 != a1); // 撤销真的回退了范围
+            while (v->canUndoView())
+                v->undoView();
+            CHECK(!v->canUndoView());
+        }
+        OK("ViewState 1/3：范围撤销历史压栈、undoView 回退范围、撤到底 canUndoView=false");
+
+        // (3) ViewState 2/3：时间刻度三态（相对秒 / H:MM:SS），互斥切换后读数跟着变。
+        {
+            auto *v = qobject_cast<PlotWorkspace *>(binder->centralContent())->activeCanvas();
+            CHECK(v != nullptr);
+            CHECK(v->timeFormatMode() == QStringLiteral("relative"));
+            // relative：不装 formatter，走轴自带的数字刻度（故这里没有自定文案）。
+            CHECK(v->tickLabelForTest(90.0).isEmpty());
+            v->setTimeFormatMode(QStringLiteral("hms"));
+            CHECK(v->timeFormatMode() == QStringLiteral("hms"));
+            const QString hms = v->tickLabelForTest(90.0);
+            CHECK(hms.contains(QLatin1Char(':'))); // 0:01:30
+            v->setTimeFormatMode(QStringLiteral("relative"));
+            CHECK(v->timeFormatMode() == QStringLiteral("relative"));
+            CHECK(v->tickLabelForTest(90.0).isEmpty()); // 装回 nullptr，可逆
+        }
+        OK("ViewState 2/3：时间刻度 relative/hms 切换生效且可逆");
+
+        // (4) ViewState 3/3：轴变换配方与图型（记录-读回、非法图型拒绝）。
+        {
+            auto *v = qobject_cast<PlotWorkspace *>(binder->centralContent())->activeCanvas();
+            CHECK(v != nullptr);
+            CHECK(v->axisTransform(QStringLiteral("left")).isEmpty());
+            v->setAxisTransform(QStringLiteral("left"), QStringLiteral("log10"));
+            CHECK(v->axisTransform(QStringLiteral("left")) == QStringLiteral("log10"));
+            v->setAxisTransform(QStringLiteral("left"), QString()); // 清空
+            CHECK(v->axisTransform(QStringLiteral("left")).isEmpty());
+            CHECK(v->plotKind() == QStringLiteral("timeseries"));
+            CHECK(v->setPlotKind(QStringLiteral("scatter")));
+            CHECK(v->plotKind() == QStringLiteral("scatter"));
+            CHECK(v->setPlotKind(QStringLiteral("timeseries")));
+            CHECK(!v->setPlotKind(QStringLiteral("gauge"))); // 仪表不属画布
+            CHECK(v->plotKind() == QStringLiteral("timeseries"));
+        }
+        OK("ViewState 3/3：轴变换记录/清空、图型 timeseries<->scatter、gauge 拒绝");
+
+        // (5) Interaction 专项 1/3：书签新增——默认命名、时间序、同刻去重。
+        {
+            auto *v = qobject_cast<PlotWorkspace *>(binder->centralContent())->activeCanvas();
+            CHECK(v != nullptr);
+            v->addBookmark(3.0);
+            v->addBookmark(1.0);
+            v->addBookmark(2.0);
+            CHECK(v->bookmarks().size() == 3);
+            CHECK(v->bookmarks().at(0).t == 1.0); // 按时间升序，不按插入序
+            CHECK(v->bookmarks().at(2).t == 3.0);
+            // 默认名按**插入序**编号（3.0 先插 → B1），排序只影响列表位置，不改名。
+            CHECK(v->bookmarks().at(2).label == QStringLiteral("B1")); // t=3.0
+            CHECK(v->bookmarks().at(0).label == QStringLiteral("B2")); // t=1.0
+            v->addBookmark(2.0); // 同一时间点：选中已有，不重复创建
+            CHECK(v->bookmarks().size() == 3);
+        }
+        OK("Interaction 1/3：书签新增按时间排序、默认 Bn 命名、同刻去重");
+
+        // (6) Interaction 2/3：删除——删存在的生效、删不存在无害、不留空洞。
+        {
+            auto *v = qobject_cast<PlotWorkspace *>(binder->centralContent())->activeCanvas();
+            CHECK(v != nullptr);
+            const QString idMid = v->bookmarks().at(1).id;
+            v->removeBookmark(idMid);
+            CHECK(v->bookmarks().size() == 2);
+            for (const auto &bm : v->bookmarks())
+                CHECK(bm.id != idMid);
+            v->removeBookmark(QStringLiteral("no-such-bookmark"));
+            CHECK(v->bookmarks().size() == 2);
+        }
+        OK("Interaction 2/3：删除书签生效、删不存在 id 无害");
+
+        // (7) Interaction 3/3：改名——正常改名生效、空白名被忽略（不留空标签）。
+        {
+            auto *v = qobject_cast<PlotWorkspace *>(binder->centralContent())->activeCanvas();
+            CHECK(v != nullptr);
+            const QString idLast = v->bookmarks().last().id;
+            v->renameBookmark(idLast, QStringLiteral(" 起飞点 "));
+            CHECK(v->bookmarks().last().label == QStringLiteral("起飞点")); // 去空白
+            const QString kept = v->bookmarks().last().label;
+            v->renameBookmark(idLast, QStringLiteral("   "));
+            CHECK(v->bookmarks().last().label == kept); // 空白名不覆盖
+        }
+        OK("Interaction 3/3：改名生效并去空白，空白名被忽略");
     }
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");

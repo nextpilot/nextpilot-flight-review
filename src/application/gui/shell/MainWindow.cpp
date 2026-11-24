@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 
+#include "fastplot/SemanticColors.h"
+
 #include <cstdio>
 
 #include "GuiContext.h"
@@ -415,6 +417,9 @@ void MainWindow::build(RuntimeHost &host)
                              m_binder->applyTheme(theme == ThemeManager::Theme::Dark,
                                                   m_theme->ribbonStyleSheet(),
                                                   m_theme->dockStyleSheet());
+                         // 换肤后把语义色重推一遍：绘制路径读的是这份表，
+                         // 不重推就会停在旧主题的实色上（验收 8 的消费面）。
+                         refreshThemeTokens();
                      });
     m_theme->applyCurrent(); // 把 settings 里的初始值落到全局 QSS 与 ribbon
 
@@ -1150,6 +1155,17 @@ void MainWindow::refreshThemeTokens()
         }
     }
     m_theme->setExtensionTokens(allTokens);
+
+    // 把绘制路径真正要读的两个语义色推给 fastplot（验收 8 的"消费"一半）：
+    // 库层不认识 token 表，故经 SemanticColors 接缝下发实色。plot.grid 不在此列——
+    // 它必须跟随明暗主题，由 AxesView 以平台调色板作兜底就地取（见那处注释）。
+    for (const char *id : {"plot.cursor", "plot.abMeasure"})
+    {
+        const QString key = QString::fromLatin1(id);
+        const QColor c = m_theme->color(key);
+        if (c.isValid())
+            nextpilot::plotscope::fastplot::setSemanticColor(key, c);
+    }
 }
 
 void MainWindow::refreshActivityBadges()

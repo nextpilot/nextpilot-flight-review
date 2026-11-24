@@ -1,4 +1,5 @@
 #include "fastplot/CursorReadoutOverlay.h"
+#include "fastplot/SemanticColors.h"
 
 #include <algorithm>
 #include <cmath>
@@ -67,7 +68,9 @@ void CursorReadoutOverlay::paint(QPainter &painter, const OverlayContext &ctx)
     const QFontMetrics fm(f);
 
     // 竖线：固定读数用实线 accent，普通悬停用虚线灰。
-    const QColor accent(QStringLiteral("#f2b134"));
+    // 固定读数用语义色 plot.cursor（主题 token），兜底沿用历史橙。
+    const QColor accent = semanticColor(QStringLiteral("plot.cursor"),
+                                        QColor(QStringLiteral("#f2b134")));
     painter.setPen(m_pinned ? QPen(accent, 1.2, Qt::SolidLine)
                             : QPen(QColor(0x88, 0x88, 0x88, 0xC0), 1.0, Qt::DashLine));
     painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));

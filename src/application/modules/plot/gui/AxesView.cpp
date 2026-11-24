@@ -10,6 +10,7 @@
 #include <fastplot/Picker.h>
 #include <fastplot/Axes.h>
 #include <fastplot/Zoomer.h>
+#include <fastplot/SemanticColors.h>
 
 #include <QContextMenuEvent>
 #include <QFileDialog>
@@ -919,7 +920,9 @@ void AxesView::applyPalette()
         auto &axis = m_plot->axis(side);
         axis.setInk(pal.color(QPalette::Mid));
         axis.setLabelColor(pal.color(QPalette::WindowText));
-        axis.setGridInk(pal.color(QPalette::Light));
+        // 网格色走语义色 plot.grid：上层未推送时跟随平台调色板（保持明暗主题自适应）。
+        axis.setGridInk(nextpilot::plotscope::fastplot::semanticColor(
+            QStringLiteral("plot.grid"), pal.color(QPalette::Light)));
     }
     // 曲线色在 pushToPlot 时按当时主题 palette 取（见 pushToPlot），
     // 主题切换后的下一次重取数会用新色；这里不重建曲线，避免丢失 LOD。

@@ -1,4 +1,5 @@
 #include "fastplot/CrosshairOverlay.h"
+#include "fastplot/SemanticColors.h"
 
 #include <algorithm>
 
@@ -54,13 +55,16 @@ void CrosshairOverlay::paint(QPainter &painter, const OverlayContext &ctx)
         {
             painter.save();
             painter.setClipRect(plot);
-            painter.setPen(QPen(QColor(QStringLiteral("#f2b134")), 1.6, Qt::SolidLine));
+            painter.setPen(QPen(semanticColor(QStringLiteral("plot.cursor"),
+                                              QColor(QStringLiteral("#f2b134"))),
+                                 1.6, Qt::SolidLine));
             painter.drawLine(QPointF(px.x(), plot.top()), QPointF(px.x(), plot.bottom()));
             // 顶部小三角，便于在密集曲线中定位。
             QPolygonF head;
             head << QPointF(px.x() - 4, plot.top()) << QPointF(px.x() + 4, plot.top())
                  << QPointF(px.x(), plot.top() + 6);
-            painter.setBrush(QColor(QStringLiteral("#f2b134")));
+            painter.setBrush(semanticColor(QStringLiteral("plot.cursor"),
+                                           QColor(QStringLiteral("#f2b134"))));
             painter.setPen(Qt::NoPen);
             painter.drawPolygon(head);
             painter.restore();

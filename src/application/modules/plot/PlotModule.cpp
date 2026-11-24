@@ -650,12 +650,15 @@ void PlotModule::onAttach(IUiContext &ui)
     {
         ThemeTokenSpec t;
         t.id = QStringLiteral("plot.cursor");
-        t.fallback = QStringLiteral("#FFB454");
+        // 兜底刻意对齐历史上硬编码的实色 #f2b134：token 接管绘制后不得改变外观，
+        // 否则"接上 token"本身就是一次静默视觉回归（原写 #FFB454 从未被对照验证）。
+        t.fallback = QStringLiteral("#f2b134");
         t.description = QStringLiteral("绘图游标线颜色");
         ui.declareThemeToken(t);
     }
 
-    // 状态栏项（验收 7 / D2）：游标时间由 plot 推（10Hz 节流在 GuiContext 侧）。
+    // 状态栏项（验收 7 / D2）：游标时间由 plot 推；**节流归本模块**（D2 的"谁的状态谁节流"），
+    // 壳只负责渲染，不认识 plot 的业务键。
     {
         StatusSpec s;
         s.id = QStringLiteral("plot.axes.cursor");
@@ -665,6 +668,23 @@ void PlotModule::onAttach(IUiContext &ui)
         s.provider = QStringLiteral("plot");
         s.text = QStringLiteral("游标: --");
         ui.declareStatus(s);
+    }
+    {
+        ThemeTokenSpec t;
+        t.id = QStringLiteral("plot.abMeasure");
+        t.fallback = QStringLiteral("#f2b134");
+        t.description = QStringLiteral("A-B 测量线颜色");
+        ui.declareThemeToken(t);
+    }
+    {
+        // 网格色是唯一"必须跟随明暗主题"的语义色：上层不推送，绘制点直接以平台
+        // 调色板取默认值（见 AxesView 里 semanticColor 的 fallback），本 token 只提供
+        // 显式覆盖位——将来主题真要固定网格色时，推送即可生效。
+        ThemeTokenSpec t;
+        t.id = QStringLiteral("plot.grid");
+        t.fallback = QStringLiteral("#c8c8c8");
+        t.description = QStringLiteral("绘图网格线颜色");
+        ui.declareThemeToken(t);
     }
     // GUI 环境下：声明本模块的 Activity 与界面入口。
     //

@@ -14,6 +14,7 @@ add_library(fastplot STATIC
     src/Axes.cpp
     src/Legend.cpp
     src/CursorReadoutOverlay.cpp
+    src/SemanticColors.cpp
     src/ABMeasureOverlay.cpp
     src/BookmarkOverlay.cpp
     src/MarkerOverlay.cpp
@@ -49,6 +50,7 @@ add_library(fastplot STATIC
     include/fastplot/CrosshairOverlay.h
     include/fastplot/Legend.h
     include/fastplot/StateColors.h
+    include/fastplot/SemanticColors.h
     include/fastplot/PlotWidget.h
     include/fastplot/PlotData.h
     include/fastplot/Artist.h

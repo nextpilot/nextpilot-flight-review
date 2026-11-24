@@ -1,4 +1,5 @@
 #include "fastplot/ABMeasureOverlay.h"
+#include "fastplot/SemanticColors.h"
 
 #include <algorithm>
 
@@ -25,7 +26,9 @@ void ABMeasureOverlay::paint(QPainter &painter, const OverlayContext &ctx)
         return;
     const QRectF &plot = ctx.plotRect;
     const Viewport &vp = *ctx.vp;
-    const QColor accent(QStringLiteral("#f2b134"));
+    // A 线取自语义色 plot.abMeasure（上层按主题 token 推送），兜底沿用历史橙。
+    const QColor accent = semanticColor(QStringLiteral("plot.abMeasure"),
+                                        QColor(QStringLiteral("#f2b134")));
     const QColor bColor(QStringLiteral("#5bc0f0"));
     painter.save();
     painter.setClipRect(plot);
