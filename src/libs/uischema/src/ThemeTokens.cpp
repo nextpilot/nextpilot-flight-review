@@ -1,5 +1,7 @@
 #include "ThemeTokens.h"
 
+#include <QList>
+
 namespace nextpilot::plotscope::uischema
 {
 
