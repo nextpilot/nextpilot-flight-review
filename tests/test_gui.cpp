@@ -252,7 +252,7 @@ int main(int argc, char *argv[])
     CHECK(window.menuWidget() != nullptr);
     // 插槽声明了页签/分组；动作由模块在 onAttach 里登记
     const auto &slotReg = application.host().uiSlots();
-    // Ribbon 分 8 页：开始/文件/数据/绘图/脚本/协议/分析/视图。
+    // Ribbon 分 9 页：开始/文件/数据/绘图/脚本/协议/分析/报告/视图。
     CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 9);
     CHECK(slotReg.slotsOfKind(SlotKind::RibbonGroup).size() >= 8);
     // 绘图模块 onAttach 往绘图页"操作"分组放了"重绘"动作
