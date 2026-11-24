@@ -49,6 +49,13 @@ void smokeMessageHandler(QtMsgType type, const QMessageLogContext &, const QStri
     switch (type)
     {
     case QtWarningMsg:
+        // offscreen 平台插件自身的提示（非本产品代码）：如实打印但不计入判据，
+        // 否则无头环境下冒烟永远不可能"干净通过"。
+        if (msg.contains(QStringLiteral("does not support propagateSizeHints")))
+        {
+            std::fprintf(stderr, "[bare-smoke][plat] %s\n", msg.toUtf8().constData());
+            break;
+        }
         ++g_warnings;
         std::fprintf(stderr, "[bare-smoke][warn] %s\n", msg.toUtf8().constData());
         break;
