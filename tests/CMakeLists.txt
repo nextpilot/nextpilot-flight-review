@@ -110,9 +110,8 @@ target_include_directories(ps_test_python PRIVATE ${CMAKE_SOURCE_DIR}/src/applic
 target_link_libraries(ps_test_python PRIVATE
     ps_module_data ps_module_plot ps_module_script ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
-    ps_host ps_context ps_recording Qt6::Core)
-# 复用 CLI 里的 App 装配逻辑
-target_sources(ps_test_python PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    # ps_app 已包含 App.cpp 且只编译一次；这里只链接，不再重复吃源码
+    ps_app ps_host ps_context ps_recording Qt6::Core)
 set_target_properties(ps_test_python PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_python COMMAND ps_test_python)
 
@@ -123,9 +122,7 @@ target_include_directories(ps_test_batch PRIVATE ${CMAKE_SOURCE_DIR}/src/applica
 target_link_libraries(ps_test_batch PRIVATE
     ps_module_data ps_module_plot ps_module_script ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
-    ps_host ps_context ps_recording Qt6::Core)
-# 复用 CLI 里的 App 装配逻辑
-target_sources(ps_test_batch PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    ps_app ps_host ps_context ps_recording Qt6::Core)
 set_target_properties(ps_test_batch PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_batch COMMAND ps_test_batch)
 
@@ -136,9 +133,7 @@ target_include_directories(ps_test_registry_node PRIVATE ${CMAKE_SOURCE_DIR}/src
 target_link_libraries(ps_test_registry_node PRIVATE
     ps_module_data ps_module_plot ps_module_script ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
-    ps_registry ps_host ps_context ps_recording Qt6::Core)
-# 复用 CLI 里的 App 装配逻辑
-target_sources(ps_test_registry_node PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    ps_registry ps_app ps_host ps_context ps_recording Qt6::Core)
 set_target_properties(ps_test_registry_node PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_registry_node COMMAND ps_test_registry_node)
 
@@ -182,9 +177,7 @@ target_include_directories(ps_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/src/
 target_link_libraries(ps_test_architecture PRIVATE
     ps_module_data ps_module_plot ps_module_script ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
-    ps_host ps_context ps_recording Qt6::Core)
-# 复用 CLI 里的 App 装配逻辑
-target_sources(ps_test_architecture PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    ps_app ps_host ps_context ps_recording Qt6::Core)
 set_target_properties(ps_test_architecture PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_architecture COMMAND ps_test_architecture)
 
@@ -195,8 +188,7 @@ target_include_directories(ps_test_transform PRIVATE ${CMAKE_SOURCE_DIR}/src/app
 target_link_libraries(ps_test_transform PRIVATE
     ps_module_data ps_module_plot ps_module_script ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
-    ps_host ps_context ps_recording Qt6::Core)
-target_sources(ps_test_transform PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    ps_app ps_host ps_context ps_recording Qt6::Core)
 set_target_properties(ps_test_transform PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_transform COMMAND ps_test_transform)
 
@@ -214,8 +206,7 @@ target_link_libraries(ps_ui_driver PRIVATE
     ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_toolbox_automotive_gui
-    ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Test)
-target_sources(ps_ui_driver PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Test)
 set_target_properties(ps_ui_driver PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
 add_executable(ps_test_gui test_gui.cpp)
@@ -232,8 +223,7 @@ target_link_libraries(ps_test_gui PRIVATE
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     # 领域面板呈现层（OBJECT 库）：自注册 TU 必须显式链接进来。
     ps_toolbox_automotive_gui
-    ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
-target_sources(ps_test_gui PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 # 测试数据目录：仓库根 tests/fixture（ng 自带 fixture 会重复同一批样本）。
 # 数据源面板的契约测试必须走**真实加载路径**（data.load 意图），
 # 因为"数据集归属哪个源"只有走摄取管道才会产生——直接往仓库塞数据集测不到。
@@ -309,8 +299,7 @@ target_link_libraries(ps_test_instrument PRIVATE
     ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_recording
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
-    ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
-target_sources(ps_test_instrument PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_test_instrument PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_instrument COMMAND ps_test_instrument)
 set_tests_properties(ps_instrument PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -326,8 +315,7 @@ target_link_libraries(ps_test_plot_io PRIVATE
     ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_recording
-    ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
-target_sources(ps_test_plot_io PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+    ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 target_compile_definitions(ps_test_plot_io PRIVATE PS_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixture")
 set_target_properties(ps_test_plot_io PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_plot_io COMMAND ps_test_plot_io)
@@ -343,25 +331,23 @@ ps_deploy_windows_runtime_all()
 # notification 静默/错误响应构造；同时验证 #215 的 read_series 工具在目录里。
 add_executable(ps_test_mcp_bridge test_mcp_bridge.cpp)
 target_include_directories(ps_test_mcp_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core ${CMAKE_SOURCE_DIR}/src/application/app/mcp)
-target_sources(ps_test_mcp_bridge PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/application/app/mcp/mcp_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+# App.cpp 与 mcp_bridge.cpp 都已在 ps_app 里（各自只编一次），链接即可
 target_link_libraries(ps_test_mcp_bridge PRIVATE
     ps_module_data ps_module_plot ps_module_script ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
-    ps_host ps_context ps_recording Qt6::Core)
+    ps_app ps_host ps_context ps_recording Qt6::Core)
 target_compile_definitions(ps_test_mcp_bridge PRIVATE
     PS_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixture")
 set_target_properties(ps_test_mcp_bridge PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_mcp_bridge COMMAND ps_test_mcp_bridge)
-add_executable(ps_test_live_udp test_live_udp.cpp ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp)
+add_executable(ps_test_live_udp test_live_udp.cpp)
 target_include_directories(ps_test_live_udp PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core)
 target_link_libraries(ps_test_live_udp PRIVATE
     ps_gui ps_gui_theme ps_gui_transform
     ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_toolbox_automotive_gui
-    ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
+    ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
 # libutil 提供 pty.h 的 openpty，只有 Linux 有；Windows 侧该用例的 pty 分支已被 #ifdef 排除。
 if(UNIX)
     target_link_libraries(ps_test_live_udp PRIVATE util)

@@ -198,8 +198,6 @@ write_block() {
         echo 'export LD_LIBRARY_PATH="$PS_QT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"'
       }
       echo "export CCACHE_DIR=\"$PS_DEPS_ROOT/caches/ccache\""
-      echo "export CCACHE_MAXSIZE=5G"
-      echo "export CCACHE_BASEDIR=\"$ROOT\""
       rust_env
       echo "$MARK_END"
     } >>"$f" 2>/dev/null; then
@@ -225,8 +223,6 @@ print_env() {
     echo 'export LD_LIBRARY_PATH="$PS_QT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"'
   }
   echo "export CCACHE_DIR=\"$PS_DEPS_ROOT/caches/ccache\""
-  echo "export CCACHE_MAXSIZE=5G"
-  echo "export CCACHE_BASEDIR=\"$ROOT\""
   rust_env
 }
 
@@ -298,6 +294,39 @@ install_toolchain() {
   # 工具链步骤的成败只看 cmake 是否真可用（其余项已由体检兜底）
   if [ ! -x "$PS_DEPS_ROOT/bin/cmake" ] && ! { [ -n "$(probe_cmake)" ] && ver_ge "$(probe_cmake)" "$V_CMAKE_MIN"; }; then
     log "cmake 未就绪（需 ≥$V_CMAKE_MIN）"
+    return 1
+  fi
+}
+
+# ccache 策略落配置文件，不落环境变量。
+# 分层理由：与路径无关的策略写 ccache.conf（$CCACHE_DIR 指到哪就跟着走，CI 与 IDE 都认，
+# 不受 .bashrc 只对交互式 shell 生效的限制）；与仓库绝对路径绑定的 base_dir 放在
+# CMakePresets.json 的 environment 里，由 ${sourceDir} 动态展开，换目录不用改配置。
+write_ccache_conf() {
+  local dir="$PS_DEPS_ROOT/caches/ccache"
+  local conf="$dir/ccache.conf"
+  mkdir -p "$dir" 2>/dev/null || { log "缓存目录不可写：$dir（跳过 ccache 配置）"; return 1; }
+  if cat >"$conf" <<'EOF'
+# 由 tools/ubuntu-setup.sh 生成，重跑 --install 会覆盖，不要手改。
+# 与路径无关的策略在此；base_dir 与仓库位置绑定，见 CMakePresets.json 的 environment。
+max_size = 5G
+
+# 忽略编译发生的工作目录，让 build/ 与 build-debug/ 共用同一份缓存。
+# 前提是产物里不嵌绝对路径；若代码把 __FILE__ 写进日志或错误串，
+# 需同时配 -ffile-prefix-map 再保留此项，否则命中会拿到旧路径。
+hash_dir = false
+
+# depend mode：用编译器 -MD 产出的依赖信息判命中，跳过完整预处理。
+# CMake 默认就生成 .d，无需额外开关；依赖文件缺失时会自动退化。
+depend_mode = true
+
+compression = true
+compression_level = 5
+EOF
+  then
+    log "ccache 策略写入 $conf"
+  else
+    log "写入 $conf 失败"
     return 1
   fi
 }
@@ -423,6 +452,7 @@ case "$MODE" in
     ;;
   --install)
     mkdir -p "$PS_DEPS_ROOT/bin" "$PS_DEPS_ROOT/caches/ccache"
+    write_ccache_conf
     fails=0
     [ -n "$V_RUST_CHANNEL" ] && ! ver_ge "$V_RUST_CHANNEL" "$V_RUST_MIN" && log "警告：$RUST_TOML channel($V_RUST_CHANNEL) < versions.json 门槛($V_RUST_MIN)"
     if [ "$DO_PYTHON" = 1 ]; then install_python || fails=$((fails + 1)); fi

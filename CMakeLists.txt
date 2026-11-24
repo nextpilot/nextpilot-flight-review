@@ -6,6 +6,26 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(Version)
 include(Warnings)
 
+# 可复现路径前缀：把源码树与构建目录的绝对路径规整成稳定值。
+# 目的有两个：
+#   1. ccache 的哈希里带 -I / -o / __FILE__ 的绝对路径。换 checkout 目录、
+#      或换 build 与 build-debug 时这些前缀就变，缓存立刻全 miss。
+#      CCACHE_BASEDIR（见 CMakePresets.json）只能相对化工作目录相关部分，
+#      编译期真写进产物的路径仍要靠这里抹平。
+#   2. Debug 的 DWARF 不再嵌机器相关前缀，换机器后调试器仍能定位到源码。
+# -ffile-prefix-map 同时作用于 __FILE__ 与调试信息（GCC 8+ / Clang 10+）。
+# 两个 build 目录统一映射成 "build"，正是为了让 Release 与 Debug 共用缓存条目之外
+# 的路径前缀保持一致——注意编译类型不同（-O2 vs -g）仍各是一套哈希，不能互相命中。
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(
+        "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=."
+        "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
+elseif(MSVC)
+    add_compile_options(
+        "/pathmap:${CMAKE_SOURCE_DIR}=."
+        "/pathmap:${CMAKE_BINARY_DIR}=build")
+endif()
+
 # 第三方 C 依赖（zlib / sqlite3）：优先系统或 -DPS_DEPS_ROOT 前缀，
 # 都没有且 PS_DEPS_FETCH=ON 时按固定 URL 拉源码编静态库——Windows 上没有
 # 包管理器也能一次 configure 到位。必须在 src/ 之前：toolbox 里 mdf/rosbag2 要链它。
@@ -39,6 +59,22 @@ if(PS_BUILD_TESTS)
     add_subdirectory(tests)
 else()
     message(STATUS "[tests] PS_BUILD_TESTS=OFF，跳过测试目标")
+endif()
+
+# 预编译头（PCH）：实验开关，产品默认关闭。
+# 与 ccache 存在耦合（可能负收益），是否启用待 [I4] 实测数据决定。
+# PS_PCH_TARGETS 决定开在哪些 target 上，默认空——即默认行为完全不变。
+option(PS_USE_PCH "为目标启用预编译头（实验开关）" OFF)
+set(PS_PCH_TARGETS "" CACHE STRING "应用 PCH 的目标列表（分号分隔，实验用）")
+if(PS_USE_PCH)
+    include(Pch)
+    if(PS_PCH_TARGETS)
+        foreach(_pch_target IN LISTS PS_PCH_TARGETS)
+            ps_enable_pch(${_pch_target})
+        endforeach()
+    else()
+        message(WARNING "[pch] PS_USE_PCH=ON 但 PS_PCH_TARGETS 为空，未启用任何 target")
+    endif()
 endif()
 
 # === 边界守卫（configure 期硬失败）===
