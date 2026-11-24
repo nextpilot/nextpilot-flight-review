@@ -430,6 +430,31 @@ uint32_t ps_dag_output_count(const PsDag *dag);
 int32_t  ps_dag_output(const PsDag *dag, uint32_t node,
                        double *out_t, double *out_v, uint32_t cap, uint32_t *out_n);
 
+/* ---- BJ6 输入 retention gap（按段 id 跳号判定，不看时间戳）---- */
+
+/* 上报一处缺口：channel 上段 id [from_id, to_id] 未到达即被丢弃。
+ * t_lo/t_hi 仅作定位提示；sparse / 全 null 输入不会误判。
+ * 返回 0 成功；1 参数非法（空句柄 / 非法通道名 / to_id < from_id）。 */
+int32_t ps_dag_report_gap(PsDag *dag, const char *channel,
+                          uint64_t from_id, uint64_t to_id,
+                          double t_lo, double t_hi);
+
+/* 当前保留的缺口条数（<= 容量上限）。 */
+uint32_t ps_dag_gap_count(const PsDag *dag);
+
+/* 累计检测到的缺口数（含已被挤出保留窗口的）。 */
+uint64_t ps_dag_gap_total(const PsDag *dag);
+
+/* 读第 idx 条缺口（0 为最旧）。channel_out 写 NUL 结尾通道名，超 cap-1 截断；
+ * 任一输出指针可为 NULL 表示不需要。返回 0 成功；1 参数非法或 idx 越界。 */
+int32_t ps_dag_gap_at(const PsDag *dag, uint32_t idx,
+                      char *channel_out, uint32_t channel_cap,
+                      uint64_t *from_id, uint64_t *to_id,
+                      double *t_lo, double *t_hi);
+
+/* 设置缺口保留上限；0 表示只累计总数、不保留明细。 */
+void ps_dag_set_gap_capacity(PsDag *dag, uint32_t cap);
+
 
 #ifdef __cplusplus
 }

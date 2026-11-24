@@ -2507,6 +2507,71 @@ mod tests {
         }
     }
 
+    // BJ6：gap 上报与只读导出（段 id 水位，不看时间戳）。
+    #[test]
+    fn dag_gap_report_and_read_via_abi() {
+        use std::ffi::CString;
+        unsafe {
+            let dag = ps_dag_create();
+            assert!(!dag.is_null());
+            let ch = CString::new("tf").unwrap();
+
+            // 首报 [1,3]，水位 0 → 记录。
+            assert_eq!(ps_dag_report_gap(dag, ch.as_ptr(), 1, 3, 0.5, 3.5), 0);
+            assert_eq!(ps_dag_gap_count(dag), 1);
+            assert_eq!(ps_dag_gap_total(dag), 1);
+
+            // 重复上报同一区间：已在水位内，不再记录。
+            assert_eq!(ps_dag_report_gap(dag, ch.as_ptr(), 1, 3, 0.5, 3.5), 0);
+            assert_eq!(ps_dag_gap_total(dag), 1);
+
+            // 后续区间 [4,5]：from=4 > 水位 3 → 记录。
+            assert_eq!(ps_dag_report_gap(dag, ch.as_ptr(), 4, 5, 4.0, 5.0), 0);
+            assert_eq!(ps_dag_gap_count(dag), 2);
+
+            // 反向区间非法。
+            assert_eq!(ps_dag_report_gap(dag, ch.as_ptr(), 9, 5, 0.0, 0.0), 1);
+            assert_eq!(ps_dag_report_gap(dag, std::ptr::null(), 1, 2, 0.0, 0.0), 1);
+
+            // 读回第 0 条：通道名 / 段 id 区间 / 时间提示。
+            let mut buf = [0i8; 16];
+            let (mut f, mut t2, mut lo, mut hi) = (0u64, 0u64, 0f64, 0f64);
+            assert_eq!(
+                ps_dag_gap_at(dag, 0, buf.as_mut_ptr(), buf.len() as u32, &mut f, &mut t2, &mut lo, &mut hi),
+                0
+            );
+            assert_eq!(cstr(buf.as_ptr()), "tf");
+            assert_eq!((f, t2), (1, 3));
+            assert_eq!((lo, hi), (0.5, 3.5));
+
+            // 越界读失败。
+            assert_eq!(
+                ps_dag_gap_at(dag, 9, buf.as_mut_ptr(), buf.len() as u32, &mut f, &mut t2, &mut lo, &mut hi),
+                1
+            );
+
+            // 通道名缓冲不足：安全截断且仍 NUL 结尾。
+            let mut small = [0x7fi8; 3];
+            assert_eq!(
+                ps_dag_gap_at(dag, 0, small.as_mut_ptr(), 3, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()),
+                0
+            );
+            assert_eq!(cstr(small.as_ptr()), "tf");
+
+            // 容量压到 1：只留最近 1 条，累计数不变。
+            ps_dag_set_gap_capacity(dag, 1);
+            assert_eq!(ps_dag_gap_count(dag), 1);
+            assert_eq!(ps_dag_gap_total(dag), 2);
+            assert_eq!(
+                ps_dag_gap_at(dag, 0, std::ptr::null_mut(), 0, &mut f, &mut t2, &mut lo, &mut hi),
+                0
+            );
+            assert_eq!((f, t2), (4, 5), "保留的是最近的缺口");
+
+            ps_dag_free(dag);
+        }
+    }
+
     fn cstr(p: *const c_char) -> String {
         if p.is_null() { return String::new(); }
         unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() }
@@ -3733,4 +3798,100 @@ pub unsafe extern "C" fn ps_dag_output(
     std::ptr::copy_nonoverlapping(s.t.as_ptr(), out_t, n as usize);
     std::ptr::copy_nonoverlapping(s.v.as_ptr(), out_v, n as usize);
     0
+}
+
+/* ===== BJ6 输入 retention gap（段 id 水位，不看时间戳） ===== */
+
+/// 上报一处输入缺口：`channel` 上段 id `[from_id, to_id]` 未到达即被丢弃。
+///
+/// 判定缺口存在与否只比较段 id 是否跳号，`t_lo/t_hi` 仅作定位提示——因此
+/// sparse / 全 null（时间不推进）的输入不会被误判成缺口。
+/// 已在水位之内的重复上报会被忽略（返回 0 但不再记录）。
+/// 返回 0 成功；1 参数非法（空句柄、非法通道名、`to_id < from_id`）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_report_gap(
+    dag: *mut PsDag,
+    channel: *const c_char,
+    from_id: u64,
+    to_id: u64,
+    t_lo: f64,
+    t_hi: f64,
+) -> i32 {
+    if dag.is_null() || to_id < from_id {
+        return 1;
+    }
+    let ch = match require_name(channel, "通道名") {
+        Ok(s) => s,
+        Err(_) => return 1,
+    };
+    (*dag).engine.report_gap(ch, from_id, to_id, t_lo, t_hi);
+    0
+}
+
+/// 当前保留的缺口条数（≤ 容量上限）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_gap_count(dag: *const PsDag) -> u32 {
+    if dag.is_null() {
+        return 0;
+    }
+    (*dag).engine.gaps().len() as u32
+}
+
+/// 累计检测到的缺口数（含已被挤出保留窗口的）。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_gap_total(dag: *const PsDag) -> u64 {
+    if dag.is_null() {
+        return 0;
+    }
+    (*dag).engine.gap_tracker().total()
+}
+
+/// 读第 `idx` 条缺口（0 为最旧）。`channel_out` 写 NUL 结尾通道名，
+/// 超出 `channel_cap - 1` 截断。任一输出指针可为空（表示不需要该字段）。
+/// 返回 0 成功；1 参数非法或 `idx` 越界。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_gap_at(
+    dag: *const PsDag,
+    idx: u32,
+    channel_out: *mut c_char,
+    channel_cap: u32,
+    from_id: *mut u64,
+    to_id: *mut u64,
+    t_lo: *mut f64,
+    t_hi: *mut f64,
+) -> i32 {
+    if dag.is_null() {
+        return 1;
+    }
+    let Some(g) = (*dag).engine.gaps().get(idx as usize) else {
+        return 1;
+    };
+    if !channel_out.is_null() && channel_cap > 0 {
+        let bytes = g.channel.as_bytes();
+        let n = bytes.len().min(channel_cap as usize - 1);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), channel_out as *mut u8, n);
+        *channel_out.add(n) = 0;
+    }
+    if !from_id.is_null() {
+        *from_id = g.from_id;
+    }
+    if !to_id.is_null() {
+        *to_id = g.to_id;
+    }
+    if !t_lo.is_null() {
+        *t_lo = g.t_lo;
+    }
+    if !t_hi.is_null() {
+        *t_hi = g.t_hi;
+    }
+    0
+}
+
+/// 设置缺口保留上限；0 表示只累计总数、不保留明细。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_set_gap_capacity(dag: *mut PsDag, cap: u32) {
+    if dag.is_null() {
+        return;
+    }
+    (*dag).engine.set_gap_capacity(cap as usize);
 }

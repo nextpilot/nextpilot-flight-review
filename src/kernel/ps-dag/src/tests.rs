@@ -351,3 +351,47 @@ fn failed_downstream_rolls_back_upstream_too() {
     assert_series_bitwise(eng.output(a).unwrap(), &up_before, "upstream rolled back");
     assert_series_bitwise(eng.output(b).unwrap(), &down_before, "downstream rolled back");
 }
+
+// ---- BJ6：gap 台账只做检测，不参与求值 ----
+
+/// 上报缺口只影响台账，不改变求值输出（issue 范围约束：只加检测、不改求值）。
+#[test]
+fn gap_reporting_does_not_alter_evaluation() {
+    let mut eng = IncrementalEngine::new(Graph::new());
+    let a = eng.add_node(node("abs", "absolute", json!({}), Source::Channel("x".into())));
+    let t = vec![0.0, 1.0, 2.0];
+    let v = vec![-1.0, 2.0, -3.0];
+    let input = channels_from(vec![ch("x", t, v)]);
+    eng.evaluate(1, &input).unwrap();
+    let baseline = eng.output(a).unwrap().clone();
+
+    // 上游丢了段 5..=6：记缺口。
+    let g = eng.report_gap("x", 5, 6, 1.0, 2.0).expect("应记录缺口");
+    assert_eq!((g.from_id, g.to_id), (5, 6));
+    assert_eq!(eng.gaps().len(), 1);
+
+    // 同样输入再求值（generation 前进）：输出与基线逐位一致。
+    eng.evaluate(2, &input).unwrap();
+    assert_series_bitwise(eng.output(a).unwrap(), &baseline, "gap must not affect eval");
+}
+
+/// observe_segment 自动检测跳号，与显式上报共用同一台账。
+#[test]
+fn observe_segment_detects_jump_and_shares_ledger() {
+    let mut eng = IncrementalEngine::new(Graph::new());
+    assert!(eng.observe_segment("tf", 1, 0.0, 0.1).is_none());
+    assert!(eng.observe_segment("tf", 2, 0.1, 0.2).is_none());
+    let g = eng.observe_segment("tf", 5, 0.5, 0.6).expect("跳号应生成缺口");
+    assert_eq!((g.from_id, g.to_id), (3, 4));
+    assert_eq!(eng.gaps().len(), 1);
+    assert_eq!(eng.gap_tracker().total(), 1);
+
+    // 显式上报继续累积到同一台账。
+    eng.report_gap("tf", 8, 9, 0.9, 1.0);
+    assert_eq!(eng.gap_tracker().total(), 2);
+    assert_eq!(eng.gaps().len(), 2);
+
+    // 时间稀疏但段 id 连续：不产生新缺口（pj 的坑）。
+    assert!(eng.observe_segment("tf", 10, 1e9, 1e9 + 1.0).is_none());
+    assert_eq!(eng.gap_tracker().total(), 2);
+}

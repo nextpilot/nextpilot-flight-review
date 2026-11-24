@@ -9,7 +9,9 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 
+mod gap;
 mod watermark;
+pub use gap::{DEFAULT_GAP_CAPACITY, Gap, GapTracker};
 pub use watermark::{Verdict, Watermark, classify};
 
 /// 一段派生序列：时间轴（秒）+ 值。与 ps-ops filter 的 (t, v) 输出同构。
@@ -278,12 +280,52 @@ pub struct IncrementalEngine {
     states: Vec<NodeState>,
     /// 累计重算行数（用于验证「耗时与增量行数成正比」）。
     pub recomputed_rows: usize,
+    /// 输入段缺口台账（不参与求值）。
+    gaps: GapTracker,
 }
 
 impl IncrementalEngine {
     pub fn new(graph: Graph) -> Self {
         let states = graph.nodes.iter().map(|_| NodeState::default_state()).collect();
-        Self { graph, states, recomputed_rows: 0 }
+        Self { graph, states, recomputed_rows: 0, gaps: GapTracker::new() }
+    }
+
+    /// 上报「收到了一个段」，段 id 跳号时自动记缺口。返回新记录的缺口。
+    pub fn observe_segment(
+        &mut self,
+        channel: &str,
+        seg_id: u64,
+        t_lo: f64,
+        t_hi: f64,
+    ) -> Option<Gap> {
+        self.gaps.observe_segment(channel, seg_id, t_lo, t_hi)
+    }
+
+    /// 显式上报一处已知缺口（段 id 区间 + 时间提示）。
+    pub fn report_gap(
+        &mut self,
+        channel: &str,
+        from_id: u64,
+        to_id: u64,
+        t_lo: f64,
+        t_hi: f64,
+    ) -> Option<Gap> {
+        self.gaps.report_gap(channel, from_id, to_id, t_lo, t_hi)
+    }
+
+    /// 最近缺口（最旧在前，长度 ≤ 容量上限）。
+    pub fn gaps(&self) -> &[Gap] {
+        self.gaps.gaps()
+    }
+
+    /// 缺口台账只读访问（累计数、被挤出条数、容量）。
+    pub fn gap_tracker(&self) -> &GapTracker {
+        &self.gaps
+    }
+
+    /// 设置缺口保留上限。
+    pub fn set_gap_capacity(&mut self, cap: usize) {
+        self.gaps.set_capacity(cap);
     }
 
     pub fn output(&self, id: usize) -> Option<&Series> {
