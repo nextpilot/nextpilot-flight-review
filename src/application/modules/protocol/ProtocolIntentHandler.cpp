@@ -1,7 +1,7 @@
 #include "ProtocolIntentHandler.h"
 #include "ErrorCodes.h"
 
-#include "ProtocolTemplateStore.h"
+#include "protocol/ProtocolTemplateStore.h"
 
 #include "protocol/CompiledProgram.h"
 #include "protocol/ProtocolDocument.h"
@@ -22,6 +22,7 @@ namespace
 using nextpilot::plotscope::foundation::Error;
 using nextpilot::plotscope::intent::IntentResult;
 using nextpilot::plotscope::foundation::Result;
+using nextpilot::plotscope::protocol::ProtocolTemplateStore;
 namespace err = nextpilot::plotscope::foundation::err;
 
 Result<IntentResult> ok(const QVariantMap &payload)

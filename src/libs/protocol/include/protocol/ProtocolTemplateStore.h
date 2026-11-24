@@ -6,12 +6,12 @@
 #include <QStringList>
 #include <QVector>
 
-namespace nextpilot::plotscope::host
+namespace nextpilot::plotscope::protocol
 {
 
 // 协议模板库：.psproto 文本的唯一读写入口（headless 与 GUI 共用同一份目录约定）。
 //
-// 为什么放在模块层而不是 gui：
+// 为什么放在协议逻辑库（ps_protocol）而不是模块 / gui：
 //   目录约定（"用户配置目录/protocols"）是业务事实，不是界面事实。GUI 的
 //   新建/打开/保存、脚本的批量校验、CLI 的模板列举如果要各写一份路径拼接，
 //   迟早出现"GUI 存到 A、脚本读 B"的分裂。这里定一次，两侧都问它。
@@ -49,4 +49,4 @@ public:
     static constexpr int kMaxTemplateBytes = 8 * 1024 * 1024;
 };
 
-} // namespace nextpilot::plotscope::host
+} // namespace nextpilot::plotscope::protocol

@@ -160,3 +160,5 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/libs/fastplot" "${CMAKE_CURRENT_BI
 add_subdirectory(application/gui)
 # 裸壳独立产物：只链 ps_gui + libs + Qt，零模块（PS_BUILD_BARE 默认 ON）。
 add_subdirectory(application/bare)
+# 装配层工具 / 基准产物（可链模块与工具箱）。
+add_subdirectory(application/tools)

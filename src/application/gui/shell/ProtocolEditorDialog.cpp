@@ -5,8 +5,8 @@
 #include "AppContext.h"
 #include "Transform.h"
 
-#include "ProtocolIntentHandler.h"
-#include "ProtocolTemplateStore.h"
+#include "ErrorCodes.h"
+#include "protocol/ProtocolTemplateStore.h"
 
 #include "IIntentExecutor.h"
 #include "Intent.h"
@@ -2844,14 +2844,14 @@ void ProtocolEditorDialog::newDoc()
 void ProtocolEditorDialog::openDoc()
 {
     const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("打开协议"), nextpilot::plotscope::host::ProtocolTemplateStore::directory(),
-        QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json);;所有文件 (*.*)"));
+        this, QStringLiteral("打开协议"), nextpilot::plotscope::protocol::ProtocolTemplateStore::directory(),
+        QStringLiteral("协议 (*.psproto);;JSON (*.json);;所有文件 (*.*)"));
     if (path.isEmpty())
         return;
     QByteArray content;
     QString err;
     // 允许 .json 草稿，但仍受大小上限约束（8 MiB）——打开动作不该把数据文件当模板吞进去。
-    if (!nextpilot::plotscope::host::ProtocolTemplateStore::read(path, &content, &err, false))
+    if (!nextpilot::plotscope::protocol::ProtocolTemplateStore::read(path, &content, &err, false))
     {
         QMessageBox::warning(this, QStringLiteral("打开协议"), err);
         return;
@@ -2869,14 +2869,14 @@ void ProtocolEditorDialog::saveDoc()
     {
         path = QFileDialog::getSaveFileName(
             this, QStringLiteral("保存协议"),
-            nextpilot::plotscope::host::ProtocolTemplateStore::directory() + QStringLiteral("/new.psproto"),
-            QStringLiteral("PlotScope 协议 (*.psproto);;JSON (*.json)"));
+            nextpilot::plotscope::protocol::ProtocolTemplateStore::directory() + QStringLiteral("/new.psproto"),
+            QStringLiteral("协议 (*.psproto);;JSON (*.json)"));
         if (path.isEmpty())
             return;
     }
     QString err;
     // 保存前先过校验：不能让一份编译不了的模板落盘，之后被解析器当配置读进来。
-    if (!nextpilot::plotscope::host::ProtocolTemplateStore::saveToPath(
+    if (!nextpilot::plotscope::protocol::ProtocolTemplateStore::saveToPath(
             path, m_json->toPlainText().toUtf8(), &err))
     {
         QMessageBox::warning(this, QStringLiteral("保存协议"), err);
@@ -3061,10 +3061,12 @@ ProtocolEditorDialog::runOp(const QString &op, const QVariantMap &params)
     intent.params = params;
     if (m_executor)
         return m_executor->execute(intent);
-    // 没有宿主执行器（独立打开/截图场景）：用同一模块的 handler 直连，
-    // 逻辑与模块注册的那份完全相同，不复制任何校验规则。
-    static nextpilot::plotscope::host::ProtocolIntentHandler local;
-    return local.execute(intent);
+    // 没有宿主执行器（独立打开/截图场景）：壳不再直连模块 handler（c8b 剥离
+    // shell→module 编译依赖）。无执行器时回退为不支持，由调用方决定提示。
+    return nextpilot::plotscope::foundation::Result<nextpilot::plotscope::intent::IntentResult>(
+        nextpilot::plotscope::foundation::fail(
+            nextpilot::plotscope::foundation::err::Unsupported,
+            QStringLiteral("协议意图无宿主执行器")));
 }
 
 } // namespace nextpilot::plotscope::gui

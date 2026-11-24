@@ -11,7 +11,7 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
-namespace nextpilot::plotscope::host
+namespace nextpilot::plotscope::protocol
 {
 
 QString ProtocolTemplateStore::suffix()
@@ -183,4 +183,4 @@ bool ProtocolTemplateStore::saveToPath(const QString &path, const QByteArray &co
     return true;
 }
 
-} // namespace nextpilot::plotscope::host
+} // namespace nextpilot::plotscope::protocol

@@ -1,7 +1,6 @@
 #include "ReportExporter.h"
 
 #include "AppContext.h"
-#include "PlotWorkspace.h"
 #include "Contribution.h"
 #include "Dataset.h"
 #include "DatasetHub.h"
@@ -144,19 +143,26 @@ Result<void> exportReportPdf(AppContext &appCtx, const QList<QWidget *> &canvase
         };
     }
 
-    // 找画布工作区（中央区可能混有脚本编辑器等页签，qobject_cast 过滤）。
-    PlotWorkspace *workspace = nullptr;
+    // 选第一个有真实尺寸的中央页签作为画布：通用 QWidget 路径，不 qobject_cast
+    // 任何模块呈现层类型（c8b 壳→模块编译依赖剥离；画布类型识别若需细分，
+    // 后续走 AppContext 注入的分类 provider 接缝）。
+    QWidget *canvas = nullptr;
     for (QWidget *w : canvases)
-        if ((workspace = qobject_cast<PlotWorkspace *>(w)))
+    {
+        if (w && w->width() > 1 && w->height() > 1)
+        {
+            canvas = w;
             break;
-    const bool hasCanvas = workspace != nullptr && workspace->cellCount() > 0;
+        }
+    }
+    const bool hasCanvas = canvas != nullptr;
 
     QPdfWriter writer(request.path);
     writer.setPageSize(QPageSize(QPageSize::A4));
     writer.setPageMargins(QMarginsF(18, 18, 18, 18), QPageLayout::Millimeter);
     writer.setResolution(96);
-    writer.setTitle(request.title.isEmpty() ? QStringLiteral("PlotScope 报告") : request.title);
-    writer.setCreator(QStringLiteral("PlotScope"));
+    writer.setTitle(request.title);
+    writer.setCreator(request.creator);
 
     QPainter painter(&writer);
     if (!painter.isActive())
@@ -175,9 +181,7 @@ Result<void> exportReportPdf(AppContext &appCtx, const QList<QWidget *> &canvase
     {
         if (sec.kind == QStringLiteral("title"))
         {
-            writeTitlePage(writer, painter,
-                           request.title.isEmpty() ? QStringLiteral("PlotScope 报告")
-                                                   : request.title,
+            writeTitlePage(writer, painter, request.title,
                            sec.content.isEmpty() ? request.subtitle : sec.content);
             y = page.height() * 0.08;
         }
@@ -195,7 +199,7 @@ Result<void> exportReportPdf(AppContext &appCtx, const QList<QWidget *> &canvase
             // 节标题 = 页签名（titles 与 canvases 一一对应）。
             QString secTitle = QStringLiteral("画布");
             for (int i = 0; i < canvases.size(); ++i)
-                if (canvases.at(i) == workspace && i < titles.size() && !titles.at(i).isEmpty())
+                if (canvases.at(i) == canvas && i < titles.size() && !titles.at(i).isEmpty())
                     secTitle = titles.at(i);
 
             // 矢量渲染：widget->render 进 QPainter，线条/文字按矢量写入 PDF。
@@ -211,7 +215,7 @@ Result<void> exportReportPdf(AppContext &appCtx, const QList<QWidget *> &canvase
 
             const QRectF body(page.left(), page.height() * 0.10, page.width(),
                               page.height() * 0.84);
-            const QSizeF ws(workspace->width(), workspace->height());
+            const QSizeF ws(canvas->width(), canvas->height());
             if (ws.width() > 1 && ws.height() > 1)
             {
                 // 等比缩放居中（画布纵横比通常与 A4 不同）。
@@ -221,9 +225,9 @@ Result<void> exportReportPdf(AppContext &appCtx, const QList<QWidget *> &canvase
                 painter.translate(body.left() + (body.width() - w) / 2,
                                   body.top() + (body.height() - h) / 2);
                 painter.scale(scale, scale);
-                workspace->render(&painter, QPoint(0, 0),
-                                  QRegion(0, 0, workspace->width(), workspace->height()),
-                                  QWidget::DrawChildren | QWidget::DrawWindowBackground);
+                canvas->render(&painter, QPoint(0, 0),
+                               QRegion(0, 0, canvas->width(), canvas->height()),
+                               QWidget::DrawChildren | QWidget::DrawWindowBackground);
                 painter.restore();
             }
             y = page.height() * 0.96;

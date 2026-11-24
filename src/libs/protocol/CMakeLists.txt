@@ -12,6 +12,7 @@ add_library(ps_protocol STATIC
     src/bin/BinSpec.cpp
     src/text/TextFormat.cpp
     src/CompiledProgram.cpp
+    src/ProtocolTemplateStore.cpp
     src/SequentialCodec.cpp
     src/DigestEngine.cpp
     src/StreamDecoder.cpp
@@ -20,6 +21,7 @@ add_library(ps_protocol STATIC
     include/protocol/ProtocolSpec.h
     include/protocol/SequentialCodec.h
     include/protocol/CompiledProgram.h
+    include/protocol/ProtocolTemplateStore.h
     include/protocol/DigestEngine.h
     include/protocol/StreamDecoder.h
     include/protocol/TextFormat.h

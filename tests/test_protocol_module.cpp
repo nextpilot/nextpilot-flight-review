@@ -1,6 +1,6 @@
 // 断言处理：Release(NDEBUG) 下 assert 失效，统一用 CHECK。
 #include "ProtocolIntentHandler.h"
-#include "ProtocolTemplateStore.h"
+#include "protocol/ProtocolTemplateStore.h"
 
 #include "Intent.h"
 
@@ -27,6 +27,7 @@
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::host;
+using namespace nextpilot::plotscope::protocol;
 
 namespace
 {

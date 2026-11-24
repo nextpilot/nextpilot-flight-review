@@ -46,7 +46,7 @@
 #include "DataManagerPanel.h"
 #include "ImportDialog.h"
 #include "ProtocolEditorDialog.h"
-#include "ProtocolTemplateStore.h"
+#include "protocol/ProtocolTemplateStore.h"
 #include "TransformEditorDialog.h"
 #include "Transform.h"
 #include "FilterEditorDialog.h"
@@ -82,6 +82,7 @@ using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::gui;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::host;
+using namespace nextpilot::plotscope::protocol;
 
 namespace
 {

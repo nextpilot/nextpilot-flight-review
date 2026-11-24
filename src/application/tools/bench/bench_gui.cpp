@@ -8,12 +8,14 @@
 //   2) 画布绘制的三元组数 <= 像素宽（与行数无关）；
 //   3) 渲染耗时是像素级，不是行级。
 
+// 装配层基准产物：可直接引用模块呈现层头文件（ps_module_plot_gui 等），
+// 与壳 ps_gui 的"零模块链接"约束无关。目录定位见 src/LAYERS.md。
 #include "App.h"
 
 #include "MainWindow.h"
 #include "AxesView.h"
 #include "PlotWorkspace.h"
-#include "../modules/plot/PlotDocument.h"
+#include "PlotDocument.h"
 #include "PanelFactoryHub.h"
 #include "ShellBinder.h"
 
