@@ -22,6 +22,7 @@
 #include "PropertySchema.h"
 #include "Result.h"
 #include "ErrorCodes.h"
+#include <cmath>
 #include "Transform.h"
 #include "TransformEditorDialog.h"
 #include <fastplot/Axes.h>
@@ -340,6 +341,11 @@ PlotWorkspace::Cell PlotWorkspace::makeCell(QWidget *parentForStack)
                          // 移动不是复制：目标成功后才摘源。
                          srcView->removeChannel(datasetId, table, column);
                          Q_UNUSED(key);
+                     });
+    // Ctrl+拖通道到画布 = XY 建图手势（第3仗 3c / F-1）：首曲线作 X、落下通道作 Y。
+    QObject::connect(canvas, &AxesView::xyDropRequested, this,
+                     [this](int datasetId, const QString &t, const QString &c) {
+                         createXyCanvasFor(datasetId, t, c);
                      });
     // 画布选中请求 -> 统一 selection（属性面板据此刷新）。
     connectCanvasSignals(canvas);
@@ -889,6 +895,69 @@ bool PlotWorkspace::removeAt(int index)
     return true;
 }
 
+bool PlotWorkspace::createXyCanvasFor(dataset::DatasetId dsY, const QString &tY,
+                                      const QString &cY)
+{
+    // X 通道 = 活动画布首条曲线（PJ4 语义：拖两通道，第一条已在本画布上）。
+    AxesView *src = activeCanvas();
+    if (!src || src->series().isEmpty())
+        return false;
+    const PlotSeries &x = src->series().first();
+    const dataset::Dataset *dx = m_appCtx.data().get(x.datasetId);
+    const dataset::Dataset *dy = m_appCtx.data().get(dsY);
+    if (!dx || !dy || !dx->table(x.table) || !dy->table(tY))
+        return false;
+
+    // 整列读值 + 读时间轴（走 2.2.1 随机访问/整列 FFI，不经 LOD 意图）。
+    QVector<double> xVals, yVals, xTime, yTime;
+    if (dx->readColumnF64(x.table, x.column, xVals) <= 0)
+        return false;
+    if (dy->readColumnF64(tY, cY, yVals) <= 0)
+        return false;
+    if (dx->readTimeRows(x.table, 0, xVals.size(), xTime) <= 0
+        || dy->readTimeRows(tY, 0, yVals.size(), yTime) <= 0)
+        return false;
+
+    // 时间最近邻对齐：以 X 时间轴为主遍历，Y 取最近样本（双指针，两轴均升序）。
+    // 上限 4096 点等步抽稀——XY 图是形状预览，百万点全画没有信息增益。
+    constexpr int kMaxPoints = 4096;
+    const int xStep = std::max(1, int(xVals.size()) / kMaxPoints);
+    QVector<nextpilot::plotscope::dataset::LodTriple> xy;
+    xy.reserve(std::min<int>(xVals.size(), kMaxPoints));
+    size_t j = 0;
+    for (int i = 0; i < xVals.size(); i += xStep)
+    {
+        while (j + 1 < yTime.size()
+               && std::fabs(double(yTime.at(j + 1)) - xTime.at(i))
+                      <= std::fabs(double(yTime.at(j)) - xTime.at(i)))
+            ++j;
+        if (yVals.at(int(j)) != yVals.at(int(j))) // NaN（null 单元）跳过
+            continue;
+        xy.append({xVals.at(i), yVals.at(int(j)), yVals.at(int(j))});
+    }
+    if (xy.size() < 2)
+        return false;
+
+    // 新画布：追加一格并激活，单曲线 kind=xy；series 挂 Y 通道身份（key/重绑沿用），
+    // LOD 的 x 直接是 X 通道的值——pushToPlot 原样画"值-值"折线，无需特判渲染。
+    const int cellIdx = addCell();
+    AxesView *canvas = m_cells.at(cellIdx).canvas;
+    canvas->clear();
+    const QString title =
+        QStringLiteral("%1 vs %2").arg(x.column, cY);
+    canvas->setChannel(dsY, tY, cY, title);
+    canvas->setLodData(xy, xy.first().x, xy.last().x);
+    canvas->setPlotKind(QStringLiteral("xy"));
+    setActive(cellIdx);
+    m_appCtx.messages().append(
+        QStringLiteral("info"), QStringLiteral("plot.canvas"),
+        QStringLiteral("XY 图：X=%1.%2（%3 点），Y=%4.%5")
+            .arg(x.table, x.column)
+            .arg(xy.size())
+            .arg(tY, cY));
+    return true;
+}
+
 bool PlotWorkspace::split(bool horizontal)
 {
     notifyHistoryMutation();
@@ -1215,6 +1284,25 @@ void PlotWorkspace::registerViewActions()
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.workspace.undo"),
         [this](const QVariantMap &) -> Result<QVariant> {
             return QVariant(undoHistory());
+        });
+
+    // 参考线（第3仗 3c / F-2）：脚本/快捷键与右键菜单同一语义；存相对时间轴值。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.reference.set"),
+        [this](const QVariantMap &params) -> Result<QVariant> {
+            AxesView *c = activeCanvas();
+            if (!c)
+                return fail(err::NoEnt, QStringLiteral("无活动画布"));
+            const double t = params.value(QStringLiteral("t")).toDouble();
+            c->setReferenceTime(t);
+            return QVariant(true);
+        });
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.reference.clear"),
+        [this](const QVariantMap &) -> Result<QVariant> {
+            AxesView *c = activeCanvas();
+            if (!c)
+                return fail(err::NoEnt, QStringLiteral("无活动画布"));
+            c->clearReference();
+            return QVariant(true);
         });
 }
 

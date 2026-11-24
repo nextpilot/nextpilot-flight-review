@@ -13,9 +13,12 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QEvent>
 #include <QImage>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QPainter>
+#include <QWheelEvent>
 
 #include <cmath>
 #include <cstdio>
@@ -687,6 +690,140 @@ int main(int argc, char **argv)
         CHECK(!plot.legendItemVisible(0));
         CHECK(toggles == 3 && lastIdx == 0 && lastVis == false);
         fprintf(stdout, "[ok] 显隐 set 版：set/toggle 同信号、同值静默、索引与值正确\n");
+    }
+
+    // 10) 第3仗 3c：X/Y 键单轴缩放 + 参考线 + 读数框跟随
+    {
+        using namespace nextpilot::plotscope::fastplot;
+
+        // --- E-3：应用级 X/Y 键单轴缩放（Key_X 按住 = 滚轮只缩 X 轴）---
+        {
+            PlotWidget plot;
+            plot.resize(400, 300);
+            plot.setXRange(0.0, 1.0);
+            plot.setYRange(0.0, 1.0);
+            Zoomer zoomer(&plot);
+            const QPointF center(plot.plotRect().center());
+
+            auto sendKey = [&plot](QEvent::Type type, Qt::Key key) {
+                QKeyEvent k(type, key, Qt::NoModifier);
+                // 生产路径：按键经事件队列 → QApplication::notify → 应用级过滤器。
+                QCoreApplication::postEvent(&plot,
+                                            new QKeyEvent(type, key, Qt::NoModifier));
+                QCoreApplication::processEvents();
+            };
+            auto sendWheel = [&plot, &center](int degrees) {
+                QWheelEvent wheel(center, QPointF(), QPoint(), QPoint(0, degrees),
+                                  Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+                QCoreApplication::sendEvent(&plot, &wheel);
+            };
+
+            // 探针：确认应用级过滤器链真的会被按键事件触发
+            struct Probe : QObject
+            {
+                int hits = 0;
+                bool eventFilter(QObject *, QEvent *e) override
+                {
+                    if (e->type() == QEvent::KeyPress)
+                        ++hits;
+                    return false;
+                }
+            } probe;
+            QCoreApplication::instance()->installEventFilter(&probe);
+            sendKey(QEvent::KeyPress, Qt::Key_X);
+            fprintf(stderr, "[dbg-probe] hits=%d\n", probe.hits);
+            QCoreApplication::instance()->removeEventFilter(&probe);
+            sendWheel(120); // 放大
+            const double xSpanX = plot.viewport().xUpper() - plot.viewport().xLower();
+            const double ySpanX = plot.viewport().yUpper() - plot.viewport().yLower();
+            fprintf(stderr, "[dbg] xSpan=%.12g ySpan=%.12g\n", xSpanX, ySpanX);
+            CHECK(xSpanX < 1.0);               // X 轴缩了
+            CHECK(std::abs(ySpanX - 1.0) < 1e-9); // Y 轴没动
+
+            sendKey(QEvent::KeyRelease, Qt::Key_X);
+            sendKey(QEvent::KeyPress, Qt::Key_Y);
+            sendWheel(-120); // 缩小
+            const double xSpanY = plot.viewport().xUpper() - plot.viewport().xLower();
+            const double ySpanY = plot.viewport().yUpper() - plot.viewport().yLower();
+            CHECK(std::abs(xSpanY - xSpanX) < 1e-12);  // X 轴没动
+            CHECK(ySpanY > ySpanX);                    // Y 轴缩放生效
+            sendKey(QEvent::KeyRelease, Qt::Key_Y);
+            // 两键释放后滚轮恢复双轴
+            sendWheel(120);
+            CHECK(plot.viewport().xUpper() - plot.viewport().xLower() < xSpanY);
+            CHECK(plot.viewport().yUpper() - plot.viewport().yLower() < ySpanY);
+            fprintf(stdout, "[ok] X/Y 键单轴缩放：应用级键监听优先于修饰键，释放回落双轴\n");
+        }
+
+        // --- F-2：参考线（相对时间轴值）随状态 round-trip ---
+        {
+            PlotWidget plot;
+            plot.resize(400, 300);
+            plot.setXRange(0.0, 1.0);
+            CHECK(!plot.hasReference());
+            plot.setReferenceTime(0.42);
+            CHECK(plot.hasReference() && plot.referenceTime() == 0.42);
+            const QImage withRef = plot.grabImage();
+            plot.clearReference();
+            CHECK(!plot.hasReference());
+            // 存档 round-trip：referenceT 随视图状态持久化；-1 表示清除
+            plot.setReferenceTime(0.42);
+            const QJsonObject refState = plot.saveState();
+            CHECK(refState.contains(QStringLiteral("referenceT")));
+            PlotWidget refRestored;
+            refRestored.resize(400, 300);
+            CHECK(refRestored.restoreState(refState));
+            CHECK(refRestored.hasReference()
+                  && std::abs(refRestored.referenceTime() - 0.42) < 1e-12);
+            QJsonObject clearedState = refState;
+            clearedState.insert(QStringLiteral("referenceT"), -1.0);
+            CHECK(refRestored.restoreState(clearedState));
+            CHECK(!refRestored.hasReference());
+            // 旧存档缺键：保持现状（不误清）
+            QJsonObject legacy = refState;
+            legacy.remove(QStringLiteral("referenceT"));
+            PlotWidget legacyRef;
+            legacyRef.resize(400, 300);
+            legacyRef.setReferenceTime(0.9);
+            CHECK(legacyRef.restoreState(legacy));
+            CHECK(legacyRef.hasReference() && legacyRef.referenceTime() == 0.9);
+            fprintf(stdout, "[ok] 参考线：存相对轴值 round-trip，缺键保持现状\n");
+        }
+
+        // --- E-4：读数框纵向跟随（clamp + 大跳 snap + 限速）---
+        {
+            PlotWidget plot;
+            plot.resize(400, 300);
+            std::vector<double> xs{0.0, 1.0}, ys{0.0, 1.0};
+            ArrayData data(xs.data(), ys.data(), 2, 1);
+            plot.addCurve(Line::fromData(&data, QColor(0x5b, 0xc0, 0xf0), 1.4));
+            plot.setXRange(0.0, 1.0);
+            plot.setYRange(0.0, 1.0);
+            plot.setCursorReadout(0.5, true, false, QStringLiteral("t"),
+                                  QVector<ReadoutRow>{{QStringLiteral("roll"),
+                                                       QStringLiteral("1.0"),
+                                                       QColor(0x5b, 0xc0, 0xf0)}});
+            // 锚点在顶部：boxAnchorY 钳制，框整体不出画布
+            plot.setCursorPixelY(2.0);
+            plot.grabImage();
+            const QRectF topBox = plot.cursorReadoutBoxForTest();
+            CHECK(topBox.top() >= 0.0); // 画布坐标从 0 起：钳后不可能为负
+            // 大跳（>20px）直接 snap：框中心贴合锚点（锚点在画布边缘时钳制到界内）
+            const QRectF pr10 = plot.plotRect();
+            plot.setCursorPixelY(250.0);
+            plot.grabImage();
+            const QRectF midBox = plot.cursorReadoutBoxForTest();
+            const double targetCenter =
+                qBound(pr10.top() + 4.0 + midBox.height() / 2.0, 250.0,
+                       pr10.bottom() - 4.0 - midBox.height() / 2.0);
+            CHECK(std::abs(midBox.center().y() - targetCenter) <= 4.0 + 1e-6);
+            // 小步（限速）：同帧内移动量被 200px/s * dt 限制（dt≈0 → 基本不动）
+            plot.setCursorPixelY(250.0 + 10.0);
+            plot.grabImage();
+            const QRectF after = plot.cursorReadoutBoxForTest();
+            CHECK(std::abs(after.top() - midBox.top()) < 10.0); // 未瞬移
+            fprintf(stdout, "[ok] 读数框跟随：大跳 snap、限速滑动、出界钳制\n");
+        }
     }
 
     fprintf(stdout, "[ok] fastplot P1~P4 全部通过\n");

@@ -65,8 +65,16 @@ void CursorReadout::refresh(const QVector<Mark> &marks)
                          v.ok ? QString::number(v.value, 'g', 6) : QStringLiteral("--"),
                          s.color});
         }
-        const QString header = m_pinned ? QStringLiteral("固定 t = %1 s").arg(m_t, 0, 'f', 3)
-                                        : QStringLiteral("t = %1 s").arg(m_t, 0, 'f', 3);
+        // 参考线相对 Δ（第3仗 3c / F-2）：参考线激活时标题栏追加 "Δ +x.xxx s"。
+        QString header = m_pinned ? QStringLiteral("固定 t = %1 s").arg(m_t, 0, 'f', 3)
+                                  : QStringLiteral("t = %1 s").arg(m_t, 0, 'f', 3);
+        if (m_plot->hasReference())
+        {
+            const double delta = m_t - m_plot->referenceTime();
+            header += QStringLiteral("   Δ %1%2 s")
+                          .arg(delta >= 0 ? QStringLiteral("+") : QStringLiteral("-"))
+                          .arg(std::fabs(delta), 0, 'f', 3);
+        }
         m_plot->setCursorReadout(m_t, true, m_pinned, header, rows);
     }
     else

@@ -97,6 +97,12 @@ public:
     // 撤销一步（未决手势先结算）。view action plot.workspace.undo / 测试共用。
     bool undoHistory() { return m_history->undo(); }
 
+    // ---- XY 手势建图（第3仗 3c / F-1，对标 PJ4 createCurveXYInteractive）----
+    // Ctrl+拖通道到画布：本画布首曲线作 X、落下通道作 Y，按时间最近邻对齐后
+    // 生成新 XY 画布（独立格、kind=xy、单曲线，x 轴为 X 通道的值域）。
+    // 成功返回 true（无曲线可作 X / 取数失败返回 false 并写诊断）。
+    bool createXyCanvasFor(dataset::DatasetId dsY, const QString &tY, const QString &cY);
+
     // ---- 多数据集选择与重绑（#IKXD1N v4 条目 2.7，对标 PJ4）----
     // planDatasetChoice：同一 origin 扇出/重复加载出多个数据集时，按"画布通道
     // 可满足性"选最佳拟合（命中更多 table.column 者胜）；并列取第一个并报告。

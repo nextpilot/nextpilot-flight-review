@@ -795,6 +795,30 @@ int AxesView::legendCorner() const
     return m_plot ? static_cast<int>(m_plot->legendCorner()) : 0;
 }
 
+// 参考线（第3仗 3c / F-2）：转发 fastplot Axes；存相对时间轴值。
+void AxesView::setReferenceTime(double tSec)
+{
+    if (m_plot)
+        m_plot->setReferenceTime(tSec);
+}
+
+void AxesView::clearReference()
+{
+    if (m_plot)
+        m_plot->clearReference();
+}
+
+bool AxesView::hasReference() const
+{
+    return m_plot && m_plot->hasReference();
+}
+
+void AxesView::setCursorPixelY(double pixelY)
+{
+    if (m_plot)
+        m_plot->setCursorPixelY(pixelY);
+}
+
 bool AxesView::visibleTimeRange(double *t0, double *t1) const
 {
     if (!m_plot || m_seriesStore->all().isEmpty())
@@ -933,7 +957,7 @@ void AxesView::dragMoveEvent(QDragMoveEvent *event)
     QWidget::dragMoveEvent(event);
 }
 
-bool AxesView::dropChannel(const QMimeData *mime)
+bool AxesView::dropChannel(const QMimeData *mime, Qt::KeyboardModifiers modifiers)
 {
     if (m_plot)
         m_plot->setOverlayText(QString()); // 清掉拖拽提示
@@ -950,6 +974,12 @@ bool AxesView::dropChannel(const QMimeData *mime)
     const channel_mime::Decoded ch = channel_mime::decode(mime);
     if (!ch.valid)
         return false;
+    // Ctrl+拖通道 = XY 建图手势（第3仗 3c / F-1，对标 PJ4 createCurveXYInteractive）。
+    if (modifiers & Qt::ControlModifier)
+    {
+        Q_EMIT xyDropRequested(ch.datasetId, ch.table, ch.column);
+        return true;
+    }
     // 画布不知道"取数"这回事——只发信号。ChannelView 订阅后走
     // plot.channel 意图（与数据集树双击完全同一条路径）。
     Q_EMIT channelDropped(ch.datasetId, ch.table, ch.column);
@@ -958,7 +988,7 @@ bool AxesView::dropChannel(const QMimeData *mime)
 
 void AxesView::dropEvent(QDropEvent *event)
 {
-    if (dropChannel(event->mimeData()))
+    if (dropChannel(event->mimeData(), event->modifiers()))
     {
         event->acceptProposedAction();
         return;
