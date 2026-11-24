@@ -363,6 +363,24 @@ pub enum ColumnData {
     Encoded { logical: ValueType, codec: Codec, payload: EncodedPayload, len: usize },
 }
 
+/// 把归并顺序压缩成"同源连续递增"的 run：`(source, start, len)`。
+/// `order` 来自 k 路归并，本身已是"每次从某个源取下一个元素"的形态，
+/// 因此同源且下标连续的一段可以直接整块拷贝，省掉逐元素的双层索引。
+fn compress_runs(order: &[(usize, usize)]) -> Vec<(usize, usize, usize)> {
+    let mut runs: Vec<(usize, usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < order.len() {
+        let (src, start) = order[i];
+        let mut j = i + 1;
+        while j < order.len() && order[j].0 == src && order[j].1 == order[j - 1].1 + 1 {
+            j += 1;
+        }
+        runs.push((src, start, j - i));
+        i = j;
+    }
+    runs
+}
+
 impl ColumnData {
     pub fn value_type(&self) -> ValueType {
         match self {
@@ -564,13 +582,22 @@ impl ColumnData {
                     len: picked.len(),
                 });
         }
+        // 归并输出天然是"同源的连续 run"：补传 1 万行插进 100 万行时，run 长度约 100。
+        // 逐元素 `slices[src][i]` 每行要做一次双层间接索引，编译器无法向量化，
+        // 实测 109 万行 / 单列要 11ms。按 run 批量 extend_from_slice 可走 memcpy，
+        // 代价是多一次 order 扫描（顺序访问，很轻）。
+        let runs = compress_runs(order);
         macro_rules! g {
             ($var:ident, $ty:ty) => {{
                 let slices: Vec<&[$ty]> = sources.iter().map(|s| match s {
                     ColumnData::$var(v) => v.as_slice(),
                     _ => unreachable!("列类型已校验一致"),
                 }).collect();
-                ColumnData::$var(order.iter().map(|&(src, i)| slices[src][i].clone()).collect())
+                let mut out: Vec<$ty> = Vec::with_capacity(order.len());
+                for &(src, start, len) in &runs {
+                    out.extend_from_slice(&slices[src][start..start + len]);
+                }
+                ColumnData::$var(out)
             }};
         }
         match sources[0] {
@@ -1562,13 +1589,21 @@ impl Table {
         }
         let order = merge_order(&self.time_ns, &self.seq, &self.pending);
         let total = order.len();
+        // 归并顺序天然是"同源连续 run"，时间轴/序号/列值都按 run 批量搬，走 memcpy。
+        let runs = compress_runs(&order);
 
-        let merged_time: Vec<i64> = order.iter()
-            .map(|&(src, i)| if src == 0 { self.time_ns[i] } else { self.pending[src - 1].time_ns[i] })
-            .collect();
-        let merged_seq: Vec<u64> = order.iter()
-            .map(|&(src, i)| if src == 0 { self.seq[i] } else { self.pending[src - 1].seq[i] })
-            .collect();
+        let mut merged_time: Vec<i64> = Vec::with_capacity(total);
+        let mut merged_seq: Vec<u64> = Vec::with_capacity(total);
+        for &(src, start, len) in &runs {
+            if src == 0 {
+                merged_time.extend_from_slice(&self.time_ns[start..start + len]);
+                merged_seq.extend_from_slice(&self.seq[start..start + len]);
+            } else {
+                let seg = &self.pending[src - 1];
+                merged_time.extend_from_slice(&seg.time_ns[start..start + len]);
+                merged_seq.extend_from_slice(&seg.seq[start..start + len]);
+            }
+        }
 
         let col_count = self.columns.len();
         for ci in 0..col_count {
@@ -1578,15 +1613,21 @@ impl Table {
                 sources.push(&seg.columns[ci]);
             }
             let merged_data = ColumnData::gather_from_sources(&sources, &order);
+            // null 位图：全部源都没有 null 时直接留空位图（空位图语义 = 全有效），
+            // 省掉逐行 is_null（109 万行实测占归并耗时的相当一部分）。
+            let any_null = self.columns[ci].nulls.has_any_null()
+                || self.pending.iter().any(|s| s.nulls[ci].has_any_null());
             let mut merged_nulls = NullBits::new(total);
-            for (dst, &(src, i)) in order.iter().enumerate() {
-                let is_null = if src == 0 {
-                    self.columns[ci].nulls.is_null(i)
-                } else {
-                    self.pending[src - 1].nulls[ci].is_null(i)
-                };
-                if is_null {
-                    merged_nulls.set_null(dst, true);
+            if any_null {
+                for (dst, &(src, i)) in order.iter().enumerate() {
+                    let is_null = if src == 0 {
+                        self.columns[ci].nulls.is_null(i)
+                    } else {
+                        self.pending[src - 1].nulls[ci].is_null(i)
+                    };
+                    if is_null {
+                        merged_nulls.set_null(dst, true);
+                    }
                 }
             }
             let col = &mut self.columns[ci];

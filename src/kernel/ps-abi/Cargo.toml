@@ -22,3 +22,7 @@ harness = false
 [[bench]]
 name = "bench_dataset"
 harness = false
+
+[[bench]]
+name = "bench_backfill"
+harness = false
