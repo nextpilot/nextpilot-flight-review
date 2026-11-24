@@ -135,7 +135,7 @@ add_subdirectory(toolbox/robotics/rosbag2)
 add_subdirectory(toolbox/gnss)
 # 工具箱装配层（Toolbox/PluginScanner）已并入 host：装配是组合根能力，
 # 不属领域包。见 host/CMakeLists.txt。
-add_subdirectory(application/shell)
+add_subdirectory(application/app)
 
 # === GUI 第三方组件（复用仓库已 vendored 的源码，不联网、不引新依赖）===
 # SARibbon（MIT）—— ribbon 结构层

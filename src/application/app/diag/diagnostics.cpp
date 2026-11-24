@@ -1,5 +1,5 @@
 #include "diagnostics.h"
-#include "App.h"
+#include "../core/App.h"
 #include "RuntimeHost.h"
 
 #include <QCoreApplication>

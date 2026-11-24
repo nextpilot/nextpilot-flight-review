@@ -182,12 +182,12 @@ set_target_properties(ps_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 # 图形界面可执行文件：与 CLI 并列，共用同一套 app/host/core。
 add_executable(plotscope-gui
     gui_main.cpp
-    ${CMAKE_SOURCE_DIR}/src/application/shell/App.cpp
-    ${CMAKE_SOURCE_DIR}/src/application/shell/App.h
-    ${CMAKE_SOURCE_DIR}/src/application/shell/diagnostics.cpp
-    ${CMAKE_SOURCE_DIR}/src/application/shell/diagnostics.h
+    ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/app/core/App.h
+    ${CMAKE_SOURCE_DIR}/src/application/app/diag/diagnostics.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/app/diag/diagnostics.h
 )
-target_include_directories(plotscope-gui PRIVATE ${CMAKE_SOURCE_DIR}/src/application/shell)
+target_include_directories(plotscope-gui PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core ${CMAKE_SOURCE_DIR}/src/application/app/diag)
 # OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。
 target_link_libraries(plotscope-gui PRIVATE
     ps_gui
@@ -207,10 +207,10 @@ set_target_properties(plotscope-gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 # GUI 百万行实测（手动基准，不进 ctest）：验证大数据量下渲染路径的内存与速度。
 add_executable(plotscope-gui-bench
     bench_gui.cpp
-    ${CMAKE_SOURCE_DIR}/src/application/shell/App.cpp
-    ${CMAKE_SOURCE_DIR}/src/application/shell/App.h
+    ${CMAKE_SOURCE_DIR}/src/application/app/core/App.cpp
+    ${CMAKE_SOURCE_DIR}/src/application/app/core/App.h
 )
-target_include_directories(plotscope-gui-bench PRIVATE ${CMAKE_SOURCE_DIR}/src/application/shell)
+target_include_directories(plotscope-gui-bench PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core)
 target_link_libraries(plotscope-gui-bench PRIVATE
     ps_gui
     ps_gui_theme

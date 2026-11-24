@@ -17,7 +17,7 @@
 - **装配/registry 目录**——装配是组合根能力（Toolbox/PluginScanner 在 `application/host`），禁止在 toolbox/ 下重建任何装配、注册、扫描类目录
 - 跨包业务逻辑、其他包的私有头（同层横向，硬线）
 - 通用机制（通用格式解析归 common 包，通用算法归 libs）
-- 对 application/gui/、application/shell/ 的依赖
+- 对 application/gui/、application/app/ 的依赖
 
 ## 领域面板怎么写（契约见 `../LAYERS.md`「UI 归属与装载契约」）
 

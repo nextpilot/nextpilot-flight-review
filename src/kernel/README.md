@@ -69,7 +69,7 @@ ps-abi ──> ps-ndf
 - 实时 TCP/UDP 连接、设备命令；
 - 缓存 key 计算、缓存目录选择、何时删除（在 `libs/dataset`）。
 
-判断方法：**要遍历、变换、派生、缓冲、降采样数据 -> kernel；数据从哪来 -> extension；只在屏幕上存在 -> application/shell。**
+判断方法：**要遍历、变换、派生、缓冲、降采样数据 -> kernel；数据从哪来 -> extension；只在屏幕上存在 -> application/app。**
 
 ## 构建与测试
 

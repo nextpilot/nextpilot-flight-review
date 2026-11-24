@@ -6,17 +6,17 @@
 
 | 物理目录 | 层 | 内容 |
 |---|---|---|
-| `application/shell/` | L6 | 组合根：App 装配、CLI/GUI 入口、MCP 桥 |
+| `application/app/` | L6 | 组合根：`core/` App 装配 · `cli/` 批处理入口 · `mcp/` MCP 桥 · `diag/` 诊断快照 |
 | `application/gui/shell/` | L5 | 外壳装配：MainWindow、ShellBinder、GuiContext、共享对话框 |
 | `application/gui/` | L5 | GUI 外壳 + 功能视图（views/ 等） |
 | `application/host/` | L3 | 运行时编排 |
-| `application/modules/` | L4 | 模块（机制提供者） |
+| `application/modules/` | L4 | 模块（机制提供者）；每个模块内 headless 平铺 + `gui/` 呈现层子目录 |
 | `libs/` | L0+L1 | 机制能力库（含 `libs/recording/` 录制实现） |
 | `toolbox/` | L4 | 工具箱（内部扩展，领域知识） |
 | `kernel/` | —— | Rust 数据平面（同进程，只经 C ABI） |
 | `3rdparty/` | —— | 第三方源码（vendored，SARibbon/ADS 等） |
 
-正文各处 `shell`（L6 组合根）、`gui/shell`（外壳装配）、`gui`、`host`、`modules` 等短名按上表读取。kernel/libs/toolbox 禁止 include `application/`，由 `LibBoundaryGuard` 在 configure 期强制。
+正文各处 `app`（L6 组合根）、`gui/shell`（L5 外壳装配）、`gui`、`host`、`modules` 等短名按上表读取。**`app` 与 `gui/shell` 不同名不同义**：`app` 是进程级组合根，`gui/shell` 是窗口外壳装配。kernel/libs/toolbox 禁止 include `application/`，由 `LibBoundaryGuard` 在 configure 期强制。
 
 ## 术语定标（全库唯一词表，文档与代码注释不得另造同义词）
 
