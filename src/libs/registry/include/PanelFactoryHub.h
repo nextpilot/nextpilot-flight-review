@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <algorithm>
 #include <functional>
 
 class QWidget;
@@ -58,6 +59,13 @@ struct PanelEntry
     // 空则外壳退回"该停靠区的默认图标"——同一个 dock 里并列多个面板时，
     // 每个面板的图标才分得开（都退回默认就会出现"四个页签一个图标"）。
     QString icon;
+    // 同区域的页签排序（小的靠前，同权重按 type 字典序）：与注册/装载顺序解耦。
+    int order = 0;
+    // 单例：true="再打开"只聚焦既有实例；false=每次新建（多文档/对比视图）。
+    bool singleton = true;
+    // 上下文可见性（when 表达式，空=恒真）：外壳按命令层的求值器判；
+    // 本表只存字符串，不在机制库里解释业务语义。
+    QString when;
 
     bool valid() const { return fn != nullptr; }
 };
@@ -71,9 +79,10 @@ public:
     // title：面板显示标题（停靠页签/中央页签用），纯数据，随注册一次给定。
     // icon：图标名（可选），纯数据；外壳解析成 QIcon，空则用停靠区默认图标。
     static void registerPanel(const QString &type, Factory factory, const QString &title = QString(),
-                              const QString &icon = QString())
+                              const QString &icon = QString(), int order = 0, bool singleton = true,
+                              const QString &when = QString())
     {
-        insert(type, PanelEntry{std::move(factory), title, icon});
+        insert(type, PanelEntry{std::move(factory), title, icon, order, singleton, when});
     }
 
     // 按类型创建部件；未注册返回 nullptr。
@@ -98,13 +107,32 @@ public:
         return e ? e->icon : QString();
     }
 
+    // 已注册部件类型的排序权重；未注册返回 0。
+    static int order(const QString &type)
+    {
+        const PanelEntry *e = find(type);
+        return e ? e->order : 0;
+    }
+
+    // 该类型是否单例；未注册按单例处理（安全默认：不无限复制面板）。
+    static bool singleton(const QString &type)
+    {
+        const PanelEntry *e = find(type);
+        return e ? e->singleton : true;
+    }
+
     // 已注册的部件类型（诊断/测试用），字典序排序。
     static QStringList types()
     {
         QStringList out;
         for (const QString &key : keys())
             out.append(key);
-        out.sort();
+        // 按 order 升序、同权重按 type 字典序：与注册顺序解耦。
+        std::stable_sort(out.begin(), out.end(), [](const QString &a, const QString &b) {
+            const int oa = order(a);
+            const int ob = order(b);
+            return oa != ob ? oa < ob : a < b;
+        });
         return out;
     }
 };

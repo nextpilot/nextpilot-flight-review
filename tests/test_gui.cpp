@@ -3136,6 +3136,48 @@ int main(int argc, char *argv[])
         CHECK(diag->refresh() == application.context().registryTree().nodes().size());
         OK("诊断面板：注册树 11 类节点齐全，面板行数==树上节点数（diag.registries 同路）");
     }
+    // --- c2 面板单例语义：由工厂登记决定，不由外壳一刀切 ---
+    {
+        using nextpilot::plotscope::registry::PanelFactoryHub;
+        using nextpilot::plotscope::context::AppContext;
+        using nextpilot::plotscope::intent::IIntentExecutor;
+        // singleton=false：每次新建，"多文档/对比视图"才有活路
+        PanelFactoryHub::registerPanel(
+            QStringLiteral("test.multi"),
+            [](AppContext &, IIntentExecutor &, QWidget *parent) { return new QWidget(parent); },
+            QStringLiteral("多实例"), QString(), 0, false);
+        QWidget *m1 = window.context()->requestPanel(QStringLiteral("dock.diagnostics"),
+                                                     QStringLiteral("test.multi"));
+        QWidget *m2 = window.context()->requestPanel(QStringLiteral("dock.diagnostics"),
+                                                     QStringLiteral("test.multi"));
+        CHECK(m1 != nullptr);
+        CHECK(m2 != nullptr);
+        CHECK(m1 != m2);
+        // 默认（singleton=true）：再打开只聚焦既有实例，不新建页签
+        PanelFactoryHub::registerPanel(
+            QStringLiteral("test.single"),
+            [](AppContext &, IIntentExecutor &, QWidget *parent) { return new QWidget(parent); },
+            QStringLiteral("单例"));
+        QWidget *s1 = window.context()->requestPanel(QStringLiteral("dock.diagnostics"),
+                                                     QStringLiteral("test.single"));
+        QWidget *s2 = window.context()->requestPanel(QStringLiteral("dock.diagnostics"),
+                                                     QStringLiteral("test.single"));
+        CHECK(s1 != nullptr);
+        CHECK(s1 == s2);
+        // order 落到了查询出口：同权重按 type，order 小的靠前
+        PanelFactoryHub::registerPanel(
+            QStringLiteral("test.order-a"),
+            [](AppContext &, IIntentExecutor &, QWidget *parent) { return new QWidget(parent); },
+            QStringLiteral("A"), QString(), 10);
+        PanelFactoryHub::registerPanel(
+            QStringLiteral("test.order-b"),
+            [](AppContext &, IIntentExecutor &, QWidget *parent) { return new QWidget(parent); },
+            QStringLiteral("B"), QString(), -5);
+        const QStringList types = PanelFactoryHub::types();
+        CHECK(types.indexOf(QStringLiteral("test.order-b")) < types.indexOf(QStringLiteral("test.order-a")));
+        OK("面板单例/排序：singleton=false 允许多实例，默认聚焦；order 进入 types() 出口");
+    }
+
     // --- T4.5 时间轴刻度三态（relative / hms / utc）---
     {
         CHECK(canvas != nullptr);

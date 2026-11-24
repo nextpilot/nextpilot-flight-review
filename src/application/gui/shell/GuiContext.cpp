@@ -6,6 +6,8 @@
 #include "AppContext.h"
 #include "ToolboxHub.h"
 
+#include <algorithm>
+
 #include <QFileDialog>
 #include <QMainWindow>
 
@@ -113,22 +115,28 @@ void GuiContext::resetDynamicActions(const QString &provider)
 
 QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
 {
-    // 去重：同一 (area, panelType) 已有活着的面板就直接复用——
-    // "再打开脚本编辑器/数据表格"是**聚焦**语义：页签置前，不再新建。
+    // 去重由**工厂登记**决定，不在这里一刀切：
+    //   singleton=true（默认）：同一类型已有活着的实例就聚焦它（"再打开"=置前），
+    //     键只用 panelType——同类面板只该有一个家，换区请求也是聚焦既有实例。
+    //   singleton=false：每次新建（多文档/对比视图）。
     // 页签可关闭（ADS closable），QPointer 保证关闭后缓存自动失效、可重建。
-    const QString key = QStringLiteral("%1/%2").arg(area, panelType);
-    if (QWidget *existing = m_panels.value(key))
+    const bool singleton = nextpilot::plotscope::registry::PanelFactoryHub::singleton(panelType);
+    if (singleton)
     {
-        if (m_binder)
-            m_binder->raisePanel(existing);
-        return existing;
+        if (QWidget *existing = m_panels.value(panelType))
+        {
+            if (m_binder)
+                m_binder->raisePanel(existing);
+            return existing;
+        }
     }
 
     // 部件由**视图层自注册**的工厂提供：外壳与模块都不认识具体实现。
     QWidget *widget = nextpilot::plotscope::registry::PanelFactoryHub::create(panelType, m_appCtx, executor(), m_window);
     if (!widget)
         return nullptr;
-    m_panels.insert(key, widget);
+    if (singleton)
+        m_panels.insert(panelType, widget);
     // 图标随面板自注册而来（同一停靠区并列多个面板时靠它区分页签）。
     const QString iconName = nextpilot::plotscope::registry::PanelFactoryHub::icon(panelType);
     if (!iconName.isEmpty())
@@ -159,6 +167,10 @@ QList<PanelSpec> GuiContext::availableDomainPanels(Domain domain) const
             continue;
         out.append(spec);
     }
+    // 顺序由声明决定：order 升序、同权重按 id 字典序（与包装载顺序解耦）。
+    std::stable_sort(out.begin(), out.end(), [](const PanelSpec &a, const PanelSpec &b) {
+        return a.order != b.order ? a.order < b.order : a.id < b.id;
+    });
     return out;
 }
 

@@ -64,13 +64,38 @@ struct UiAction
 // 形态属于扩展包（CAN 报文浏览器长什么样取决于 DBC），通用视图层不认识它；
 // 描述（本结构，headless 可查）与实现（GUI 侧工厂，注册进 PanelFactoryHub）
 // 用同一个 id 关联。
+// 面板形态：VS Code 里"视图（view）"与"编辑器（editor）"的二分。
+// 位置由外壳的 Region 决定，形态由本枚举决定——两者都不该由包随手写字符串。
+enum class PanelKind
+{
+    Dock,   // 停靠视图：落在左/右/下区域的页签里，可被用户拖动
+    Canvas, // 中央文档：占编辑区，多页签并排
+};
+
 struct PanelSpec
 {
     QString id;       // 面板类型标识（唯一），如 "car.can-browser"
     QString label;    // 显示文本，如 "CAN 报文"
     QString area;     // 建议放置的区域，如 "dock.left"（空 = 由调用方决定）
+    PanelKind kind = PanelKind::Dock;
     QString icon;     // 图标名（可选）
     QString data;     // 附加数据（可选，如预置参数 JSON）
+
+    // 同区域内的排序（VS Code 的 views 顺序）：小的靠前，同权重按 id 稳定。
+    // 不写就按 id 字典序——与装载顺序解耦，这是"顺序可控"的唯一来源。
+    int order = 0;
+
+    // 上下文可见性：空=恒真；否则是 when 表达式（与命令层同一套白名单语法）。
+    // **本层只存字符串**：求值由外壳用命令层的 when 求值器做（registry 不认识命令库）。
+    QString when;
+
+    // 归属的 Activity Bar 项（空=不绑定）：决定它出现在哪一组左栏 section 栈里。
+    // 与 ActivitySpec::panelTypes 互为索引，两处都写时以本字段为准。
+    QString activity;
+
+    // 是否单例：true=同一类型只允许一个实例，"再打开"是聚焦语义；
+    // false=允许并排多实例（多文档视图、对比视图）。
+    bool singleton = true;
 
     QString provider;                 // mount() 自动写入
     Domain domain = Domain::General;
