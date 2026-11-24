@@ -8,6 +8,8 @@
 - Rust 工具链（`cargo` 在 `PATH`）
 - Python 3（仅部分 `tools/` 脚本需要）
 
+依赖版本（zlib / zstd / lz4 / nanoarrow 的版本、镜像地址与 SHA256）以仓库根 `versions.json` 为唯一来源，`cmake/deps-versions.cmake` 只做解析。升级依赖改 `versions.json`，构建脚本与 CMake 不必同步改。
+
 Qt 可固定到用户目录 `~/.ps-dps`（在仓库与系统之外，不随提交走、不受仓库迁移影响），避免系统包被环境快照回退。
 
 ## Linux / 云主机

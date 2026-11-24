@@ -1,0 +1,41 @@
+{
+  "mirror": "https://gitee.com/nphelper",
+
+  "qt": {
+    "version": "6.2.4",
+    "abi": "gcc_64"
+  },
+
+  "toolchain": {
+    "gcc": { "min": "9", "verified": "11.4" },
+    "cmake": { "min": "3.22", "verified": "4.4.4" },
+    "ninja": { "min": "1.10", "verified": "1.10.1" },
+    "rust": { "pin": "1.100.0" },
+    "ccache": { "min": "4.5", "verified": "4.5.1" },
+    "python": { "min": "3.10", "verified": "3.12.11" }
+  },
+
+  "cpp": {
+    "zlib": {
+      "version": "1.3.1",
+      "sha256": "7c31009abc4e76ddc32e1448b6051bafe5f606aac158bb36166100a21ec170c6"
+    },
+    "zstd": {
+      "version": "1.5.7",
+      "sha256": "847e3897fe0e3b42139f5c93218b5209bb9e7c513231869d7746ed8c7906900c"
+    },
+    "lz4": {
+      "version": "1.10.0",
+      "sha256": "39899812e1ecbe5c126b3b360ca3e93e440493424c108c4db98d7502da0ebe43"
+    },
+    "nanoarrow": {
+      "archive_tag": "apache-arrow-nanoarrow-0.9.0",
+      "version": "0.9.0",
+      "sha256": "c38c77e982f41f8be2c5bf8c6194e5239be59d135ec8d743d137c4b89171f343"
+    }
+  },
+
+  "python": {
+    "requirements": "tools/requirements.txt"
+  }
+}

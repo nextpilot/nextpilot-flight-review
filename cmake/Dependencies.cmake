@@ -3,26 +3,24 @@ include_guard(GLOBAL)
 include(FetchContent)
 include(GNUInstallDirs)
 
+# versions.json → CMake 变量：唯一版本源，本文件不再存版本常量
+include("${CMAKE_CURRENT_LIST_DIR}/deps-versions.cmake")
+
 option(PS_DEPS_FETCH "缺少 zlib/sqlite3/zstd/lz4/nanoarrow 时自动拉源码构建" ON)
 option(PS_DEPS_PREFER_SYSTEM "优先使用系统或 vcpkg 已安装的库" ON)
 option(PS_DEPS_INSTALL "为源码构建的依赖生成 install 规则（component=ps_deps）" OFF)
 set(PS_DEPS_ROOT "" CACHE PATH "已安装 zlib/sqlite3/zstd/lz4 的前缀，含 include 和 lib")
-set(PS_DEPS_ZLIB_URL "https://gitee.com/nphelper/zlib/repository/archive/v1.3.1.zip" CACHE STRING "zlib 源码包")
-set(PS_DEPS_ZSTD_URL "https://gitee.com/nphelper/zstd/repository/archive/v1.5.7.zip" CACHE STRING "zstd 源码包")
-set(PS_DEPS_LZ4_URL "https://gitee.com/nphelper/lz4/repository/archive/v1.10.0.zip" CACHE STRING "lz4 源码包")
-# nanoarrow 走 gitee 镜像（nphelper/nanoarrow），避免从 GitHub release 拉包时网络超时。
-# 第一个 URL 是 gitee 镜像的 tag 归档，与 zlib/zstd/lz4 的写法一致；
-# 第二个 URL 是上游 GitHub release 包，作为镜像未同步时的兜底。
-# 镜像仓库：https://gitee.com/nphelper/nanoarrow  tag：apache-arrow-nanoarrow-0.9.0
-set(PS_DEPS_NANOARROW_URL
-    "https://gitee.com/nphelper/nanoarrow/repository/archive/apache-arrow-nanoarrow-0.9.0.zip"
-    "https://github.com/apache/arrow-nanoarrow/releases/download/apache-arrow-nanoarrow-0.9.0/apache-arrow-nanoarrow-0.9.0.tar.gz"
-    CACHE STRING "nanoarrow 源码包")
-# 源码包校验哈希。留空表示不校验（与 zlib/zstd/lz4 一致）。
-# 注意：多个候选 URL 只能共用一个哈希值，而 gitee 归档 zip 是重新打包的、
-# 与上游 release tar.gz 哈希不同，因此同步镜像后需填入 gitee zip 的实际哈希，
-# 或直接留空。填错会导致下载成功但哈希校验失败，构建中断。
-set(PS_DEPS_NANOARROW_SHA256 "" CACHE STRING "nanoarrow 源码包 SHA256（留空不校验）")
+# 镜像仓库是 nphelper/arrow-nanoarrow（不是 nanoarrow，后者 404），归档为 gitee 重新打包的 zip。
+# 只有单一镜像 URL + 强制哈希：多候选 URL 无法共用同一哈希，兜底与可复现性互斥，这里取可复现。
+# URL 与哈希全部由 versions.json 派生；FORCE 用于刷新旧 build 目录里残留的 GitHub 时期缓存。
+set(PS_DEPS_ZLIB_URL "${PS_MIRROR_BASE}/zlib/repository/archive/v${PS_VER_ZLIB}.zip" CACHE STRING "zlib 源码包（版本见 versions.json）" FORCE)
+set(PS_DEPS_ZLIB_SHA256 "${PS_SHA_ZLIB}" CACHE STRING "zlib 源码包 SHA256" FORCE)
+set(PS_DEPS_ZSTD_URL "${PS_MIRROR_BASE}/zstd/repository/archive/v${PS_VER_ZSTD}.zip" CACHE STRING "zstd 源码包（版本见 versions.json）" FORCE)
+set(PS_DEPS_ZSTD_SHA256 "${PS_SHA_ZSTD}" CACHE STRING "zstd 源码包 SHA256" FORCE)
+set(PS_DEPS_LZ4_URL "${PS_MIRROR_BASE}/lz4/repository/archive/v${PS_VER_LZ4}.zip" CACHE STRING "lz4 源码包（版本见 versions.json）" FORCE)
+set(PS_DEPS_LZ4_SHA256 "${PS_SHA_LZ4}" CACHE STRING "lz4 源码包 SHA256" FORCE)
+set(PS_DEPS_NANOARROW_URL "${PS_MIRROR_BASE}/arrow-nanoarrow/repository/archive/${PS_TAG_NANOARROW}.zip" CACHE STRING "nanoarrow 源码包（版本见 versions.json）" FORCE)
+set(PS_DEPS_NANOARROW_SHA256 "${PS_SHA_NANOARROW}" CACHE STRING "nanoarrow 源码包 SHA256" FORCE)
 
 if(PS_DEPS_ROOT)
     list(APPEND CMAKE_PREFIX_PATH "${PS_DEPS_ROOT}")
@@ -92,6 +90,7 @@ function(ps_resolve_zlib)
     message(STATUS "PlotScope deps: zlib = FetchContent Gitee")
     FetchContent_Declare(zlib
         URL ${PS_DEPS_ZLIB_URL}
+        URL_HASH SHA256=${PS_DEPS_ZLIB_SHA256}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(ZLIB_BUILD_TESTING OFF CACHE BOOL "" FORCE)
@@ -147,6 +146,7 @@ function(ps_resolve_zstd)
     message(STATUS "PlotScope deps: zstd = FetchContent Gitee")
     FetchContent_Declare(zstd
         URL ${PS_DEPS_ZSTD_URL}
+        URL_HASH SHA256=${PS_DEPS_ZSTD_SHA256}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     FetchContent_GetProperties(zstd)
     if(NOT zstd_POPULATED)
@@ -229,6 +229,7 @@ function(ps_resolve_lz4)
     message(STATUS "PlotScope deps: lz4 = FetchContent Gitee")
     FetchContent_Declare(lz4
         URL ${PS_DEPS_LZ4_URL}
+        URL_HASH SHA256=${PS_DEPS_LZ4_SHA256}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     FetchContent_GetProperties(lz4)
     if(NOT lz4_POPULATED)
@@ -333,7 +334,7 @@ endfunction()
 
 function(ps_resolve_nanoarrow)
     if(PS_DEPS_PREFER_SYSTEM)
-        find_package(nanoarrow 0.9 CONFIG QUIET)
+        find_package(nanoarrow ${PS_VER_NANOARROW} CONFIG QUIET)
         if(nanoarrow_FOUND)
             ps_make_interface_target(ps_nanoarrow)
             target_link_libraries(ps_nanoarrow INTERFACE nanoarrow::nanoarrow)
@@ -346,7 +347,7 @@ function(ps_resolve_nanoarrow)
     endif()
 
     ps_dep_missing("nanoarrow" "nanoarrow")
-    message(STATUS "PlotScope deps: nanoarrow = FetchContent 0.9.0 (含 IPC)")
+    message(STATUS "PlotScope deps: nanoarrow = FetchContent ${PS_VER_NANOARROW} (含 IPC)")
     if(POLICY CMP0135)
         cmake_policy(SET CMP0135 NEW)
     endif()
