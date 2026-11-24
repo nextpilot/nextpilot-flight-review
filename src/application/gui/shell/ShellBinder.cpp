@@ -3,6 +3,8 @@
 #include "ActivityBar.h"
 #include "ShellBinder.h"
 
+#include "PanelFactoryHub.h"
+
 #include "Intent.h"
 
 // ADS（vendored）：用相对路径引入，避开与本目录同名文件的歧义。
@@ -219,6 +221,12 @@ void ShellBinder::rebuildActivityBar()
     if (!m_activityBar)
         return;
 
+    // 启动期校验（验收 4）：panelTypes 必须在工厂表命中，否则布局会引用不存在的面板。
+    // 这里只诊断不 abort——abort 会让整个产品起不来；缺失列表由 test_gui 断言为空。
+    const QStringList missing = missingPanelTypes();
+    for (const QString &entry : missing)
+        qCritical().noquote() << QStringLiteral("[panelTypes] 未命中工厂表: %1").arg(entry);
+
     QList<ActivitySpec> specs = m_slots.activities();
     if (!m_activityOrder.isEmpty())
     {
@@ -252,6 +260,17 @@ void ShellBinder::rebuildActivityBar()
     // 重建只同步视图显隐，不触发 Activity 的中央面板请求；
     // 否则启动装配阶段会把脚本编辑器提前创建出来。
     syncActivityViews(m_activeActivity);
+}
+
+QStringList ShellBinder::missingPanelTypes() const
+{
+    QStringList missing;
+    using namespace nextpilot::plotscope::registry;
+    for (const ActivitySpec &spec : m_slots.activities())
+        for (const QString &type : spec.panelTypes)
+            if (!PanelFactoryHub::find(type))
+                missing << QStringLiteral("%1:%2").arg(spec.id, type);
+    return missing;
 }
 
 QString ShellBinder::activityForPanel(const QString &pageKey) const

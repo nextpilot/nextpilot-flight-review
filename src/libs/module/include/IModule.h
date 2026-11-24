@@ -48,6 +48,11 @@ public:
     // 控件由外壳创建；headless 下不调用 onAttach，声明仍可落表。
     virtual void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) = 0;
 
+    // 声明模块贡献的语义色 token（验收 8 / VS Code 对位）：模块说自己需要哪些语义色
+    // 及兜底色，壳汇总后灌进主题；内置主题未定义的键才用兜底色。headless 不调 onAttach，
+    // 故模块 token 只在 GUI 装配路径出现，不影响 CLI 纯净。
+    virtual void declareThemeToken(const nextpilot::plotscope::registry::ThemeTokenSpec &token) = 0;
+
     // 更新 Activity Bar 徽标数量（0 表示不显示）。
     virtual void setActivityBadge(const QString &activityId, int count) = 0;
 

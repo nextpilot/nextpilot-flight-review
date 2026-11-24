@@ -29,6 +29,7 @@
 #include "Contribution.h"
 #include "PanelFactoryHub.h"
 #include "AxesView.h"
+#include "axes/SeriesStore.h"
 #include "PlotWorkspace.h"
 #include "chrome/AxesToolbar.h"
 #include "layout/PlotLayout.h"
@@ -174,6 +175,60 @@ int main(int argc, char *argv[])
         }
         CHECK(hasSettingsAction);
         OK("设置入口接线：ribbon file.settings → preferences.open（GUI 系统级 handler）");
+    }
+
+    // --- 死插槽零消费者检查（验收 15 / D13，GUI 全装配后）---
+    // headless 只查槽 kind/area 白名单（模块未 onAttach，查不到消费者）；
+    // 真正的"声明了槽却无人消费"必须在 GUI 装配后查——此刻模块已自声明页/组并绑定动作。
+    {
+        const auto &slotReg = application.host().uiSlots();
+        for (const UiSlot &s : slotReg.allSlots())
+        {
+            if (s.kind == SlotKind::RibbonPage)
+            {
+                // 页必须至少有一个分组，否则是空页（死槽）。
+                CHECK(!slotReg.childrenOf(s.area).isEmpty());
+            }
+            else // RibbonGroup
+            {
+                // 组要么有动作，要么有子组（嵌套画廊），否则是死槽。
+                const bool hasActions = !slotReg.actionsIn(s.area).isEmpty();
+                const bool hasChildren = !slotReg.childrenOf(s.area).isEmpty();
+                if (!(hasActions || hasChildren))
+                    fprintf(stderr, "[死槽] area=%s owner=%s（声明了却无动作/子组）\n",
+                            qPrintable(s.area), qPrintable(s.owner));
+                CHECK(hasActions || hasChildren);
+            }
+        }
+        // 旧方位名 / 菜单名不得再作为槽存在。
+        for (const char *dead : {"dock.left", "dock.right", "dock.bottom", "canvas.center",
+                                 "canvas.tool", "menu.plot"})
+            CHECK(slotReg.slot(QString::fromLatin1(dead)) == nullptr);
+        OK("死插槽零消费者检查：每个声明的页有分组、每个组有动作或子组");
+
+        // 启动期 panelTypes 工厂命中（验收 4）：装配完成后不得有未命中的面板类型。
+        const QStringList missing = window.binder()->missingPanelTypes();
+        if (!missing.isEmpty())
+            fprintf(stderr, "[panelTypes] 未命中: %s\n", qPrintable(missing.join(QLatin1Char(','))));
+        CHECK(missing.isEmpty());
+        OK("panelTypes 启动期校验：所有 activity 面板类型均命中工厂表");
+
+        // 模块贡献语义 token（验收 8）：≥3 模块各声明 ≥1 个 ThemeTokenSpec。
+        const auto &moduleTokens = window.context()->moduleThemeTokens();
+        QStringList tokenIds;
+        for (const auto &t : moduleTokens)
+            tokenIds << t.id;
+        CHECK(moduleTokens.size() >= 3);
+        CHECK(tokenIds.contains(QStringLiteral("plot.cursor")));
+        CHECK(tokenIds.contains(QStringLiteral("data.source")));
+        CHECK(tokenIds.contains(QStringLiteral("script.breakpoint")));
+        // 模块声明的 token 有合法兜底色，且能进主题（ThemeManager 取到非洋红）。
+        for (const auto &t : moduleTokens)
+        {
+            CHECK(QColor(t.fallback).isValid());
+            CHECK(ThemeManager::themeColor(t.id).isValid());
+        }
+        OK("模块语义 token：plot/data/script 各贡献 1 个，兜底色合法且进主题");
     }
 
     // --- 0a2) 真跑一次 preferences.open：GUI 系统级 handler 必须弹得出、收得回 ---
@@ -3511,6 +3566,78 @@ int main(int argc, char *argv[])
         CHECK(bindings.clearOverride(QStringLiteral("two")));
         CHECK(bindings.sequenceFor(QStringLiteral("two")) == QStringLiteral("Ctrl+B"));
         OK("命令层：when 门控、重复 id 拒绝、键位冲突与 chord");
+    }
+
+    // --- SeriesStore 专项（验收 10）：增删 / 顺序 / 跨图移动 mime 往返 ---
+    {
+        SeriesStore store;
+
+        // 造三条曲线（datasetId 固定，靠 table.column 区分 key）。
+        auto make = [](int dsId, const QString &col) {
+            PlotSeries s;
+            s.datasetId = dsId;
+            s.table = QStringLiteral("t");
+            s.column = col;
+            s.title = col;
+            return s;
+        };
+        const PlotSeries a = make(7, QStringLiteral("a"));
+        const PlotSeries b = make(7, QStringLiteral("b"));
+        const PlotSeries c = make(7, QStringLiteral("c"));
+
+        // (1) 增删：upsert 追加 / 同 key 原地更新不增数 / remove 删一条 / 缺失 key 无害。
+        CHECK(store.isEmpty());
+        CHECK(store.upsert(a) == 0);
+        CHECK(store.upsert(b) == 1);
+        CHECK(store.count() == 2);
+        PlotSeries a2 = a;
+        a2.title = QStringLiteral("a-renamed");
+        CHECK(store.upsert(a2) == 0);          // 同 key 返回原索引
+        CHECK(store.count() == 2);             // 不增数
+        CHECK(store.at(0)->title == QStringLiteral("a-renamed"));
+        CHECK(!store.remove(QStringLiteral("no.such.key")));
+        CHECK(store.remove(a.key()));
+        CHECK(store.count() == 1);
+        CHECK(store.byKey(b.key()) != nullptr);
+        CHECK(store.byKey(a.key()) == nullptr);
+
+        // (2) 顺序：追加保序、删除后索引紧凑、indexOf 与 at 一致。
+        store.clear();
+        CHECK(store.isEmpty());
+        CHECK(store.upsert(c) == 0);
+        CHECK(store.upsert(a) == 1);
+        CHECK(store.upsert(b) == 2);
+        CHECK(store.at(0)->key() == c.key());
+        CHECK(store.at(1)->key() == a.key());
+        CHECK(store.at(2)->key() == b.key());
+        CHECK(store.indexOf(a.key()) == 1);
+        CHECK(store.remove(a.key()));
+        CHECK(store.count() == 2);
+        CHECK(store.at(0)->key() == c.key());
+        CHECK(store.at(1)->key() == b.key());   // 删除后紧凑，不残留空洞
+        CHECK(store.indexOf(b.key()) == 1);
+        CHECK(store.indexOf(a.key()) == -1);
+
+        // (3) 跨图移动 mime 往返：plotSeries → encode → decode 还原逻辑标识。
+        const PlotSeries moved = *store.at(1);
+        QMimeData mime;
+        mime.setData(QString::fromLatin1(series_mime::type()),
+                     series_mime::encode(42, moved.key(), moved.datasetId, moved.table,
+                                         moved.column, moved.title).toUtf8());
+        const series_mime::Decoded decoded = series_mime::decode(&mime);
+        CHECK(decoded.valid);
+        CHECK(decoded.srcCanvasId == 42);
+        CHECK(decoded.datasetId == moved.datasetId);
+        CHECK(decoded.table == moved.table);
+        CHECK(decoded.column == moved.column);
+        CHECK(decoded.key == moved.key());
+        CHECK(decoded.title == moved.title);
+        // 垃圾负载拒绝
+        QMimeData bad;
+        bad.setData(QString::fromLatin1(series_mime::type()), QByteArray("garbage"));
+        CHECK(!series_mime::decode(&bad).valid);
+
+        OK("SeriesStore 专项：增删、顺序紧凑、跨图移动 mime 往返");
     }
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");

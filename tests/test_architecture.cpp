@@ -490,10 +490,12 @@ int main(int argc, char **argv)
                                  "canvas.center", "canvas.tool", "menu.plot"})
             CHECK(slotReg.slot(QString::fromLatin1(dead)) == nullptr);
 
-        // 注：headless 不调模块 onAttach，业务组槽未声明，工具箱动作在此计入未归属；
-        // 归属完整性在 GUI 装配测试（test_gui）里校验。
+        // 注：headless 不调模块 onAttach，业务组槽未声明，工具箱动作在此计入未归属，
+        // 故这里只能查"槽 kind/area 白名单 + 旧方位名归零"。真正的"零消费者检查"
+        // （声明了页必须有组、声明了组必须有动作/子组）在 GUI 全装配后的
+        // test_gui.cpp 里做——那里模块已 onAttach，消费者可见。
 
-        fprintf(stdout, "[ok] 死插槽检查：仅 RibbonPage/RibbonGroup 入注册表，旧 Dock/Canvas/Menu 槽归零\n");
+        fprintf(stdout, "[ok] 死插槽检查（headless）：仅 RibbonPage/RibbonGroup 入表，旧 Dock/Canvas/Menu 槽归零；零消费者检查见 test_gui\n");
     }
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）

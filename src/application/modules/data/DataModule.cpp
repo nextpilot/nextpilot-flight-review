@@ -127,6 +127,14 @@ QList<UiAction> DataModule::sourceGalleryActions(const QList<parser::IMessagePar
 
 void DataModule::onAttach(IUiContext &ui)
 {
+    // 语义色 token（验收 8）：数据源标识色由模块声明，壳零硬编码。
+    {
+        ThemeTokenSpec t;
+        t.id = QStringLiteral("data.source");
+        t.fallback = QStringLiteral("#4EC9B0");
+        t.description = QStringLiteral("数据源标识颜色");
+        ui.declareThemeToken(t);
+    }
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
     //
     // 模块只声明"我需要一个数据集树面板"，由 app 骨架的部件工厂决定用哪个实现——
@@ -143,8 +151,8 @@ void DataModule::onAttach(IUiContext &ui)
                           QStringLiteral("ribbon.page.data"), 1);
     ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.sources"), QStringLiteral("来源"),
                           QStringLiteral("ribbon.page.data"), 2);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.debug"), QStringLiteral("调试"),
-                          QStringLiteral("ribbon.page.data"), 3);
+    // 注：原 ribbon.group.data.debug「调试」组在 c7 解散 SkeletonSlots 时声明，
+    // 但从未有任何动作绑定（D13 零消费者死槽），验收 15 的零消费者检查抓到后删除。
 
     // 来源画廊：条目由已装载的格式驱动元数据派生（sourceGalleryActions），
     // 壳不保留格式常量表；装/卸解析器，图块随之增减。

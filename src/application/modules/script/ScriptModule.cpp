@@ -543,6 +543,14 @@ ScriptModule::~ScriptModule() = default;
 
 void ScriptModule::onAttach(IUiContext &ui)
 {
+    // 语义色 token（验收 8）：脚本断点色由模块声明，壳零硬编码。
+    {
+        ThemeTokenSpec t;
+        t.id = QStringLiteral("script.breakpoint");
+        t.fallback = QStringLiteral("#F14C4C");
+        t.description = QStringLiteral("脚本断点颜色");
+        ui.declareThemeToken(t);
+    }
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
     //
     // 三个侧边停靠面板随 attach 挂上（与既有面板同侧自动并成页签，零外壳改动）；

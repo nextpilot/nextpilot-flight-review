@@ -36,6 +36,7 @@ public:
     void declareRibbonGroup(const QString &id, const QString &label,
                             const QString &pageId, int order = 0) override;
     void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) override;
+    void declareThemeToken(const nextpilot::plotscope::registry::ThemeTokenSpec &token) override;
     void setActivityBadge(const QString &activityId, int count) override;
     void addAction(const nextpilot::plotscope::registry::UiAction &action) override;
     void bindActionProvider(
@@ -60,6 +61,13 @@ public:
     // 插槽登记表（MainWindow 用它声明骨架插槽）。
     nextpilot::plotscope::registry::UiSlotHub &slotHub() { return m_slots; }
 
+    // 模块在 onAttach 声明的语义色 token（验收 8）：MainWindow 装配后与包 token
+    // 合并灌进 ThemeManager。按 id 去重，先声明者优先。
+    const QList<nextpilot::plotscope::registry::ThemeTokenSpec> &moduleThemeTokens() const
+    {
+        return m_moduleTokens;
+    }
+
     // 应用上下文（视图用它取数据与共享状态）。
     nextpilot::plotscope::context::AppContext &app() { return m_appCtx; }
 
@@ -77,6 +85,9 @@ private:
     ShellBinder *m_binder = nullptr;
     nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::intent::IIntentExecutor *m_executor = nullptr;
+
+    // 模块贡献的语义色 token（验收 8）：onAttach 期间声明，装配后供主题汇总。
+    QList<nextpilot::plotscope::registry::ThemeTokenSpec> m_moduleTokens;
 
     // 面板去重（按 area/panelType）：重复 requestPanel 同一类型返回既有实例，
     // 不再新建页签（脚本编辑器/数据表格的"再打开"都是复用语义）。

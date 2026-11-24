@@ -82,6 +82,18 @@ void GuiContext::declareActivity(const ActivitySpec &activity)
         m_binder->rebuildActivityBar();
 }
 
+void GuiContext::declareThemeToken(const ThemeTokenSpec &token)
+{
+    ThemeTokenSpec spec = token;
+    if (spec.provider.isEmpty())
+        spec.provider = QStringLiteral("module");
+    // 按 id 去重：先声明者优先（与 UiSlotHub 同口径）。
+    for (const ThemeTokenSpec &existing : m_moduleTokens)
+        if (existing.id == spec.id)
+            return;
+    m_moduleTokens.append(spec);
+}
+
 void GuiContext::setActivityBadge(const QString &activityId, int count)
 {
     if (m_binder)

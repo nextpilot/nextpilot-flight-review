@@ -147,6 +147,8 @@ private:
     void applyWorkspaceUiConfig();
     void saveWorkspaceUiConfig();
     void refreshActivityBadges();
+    // 把包 token + 模块 onAttach 声明的语义色合并灌进主题（验收 8）。
+    void refreshThemeTokens();
     void toggleSideBar();
     // 退出钩子：把当前现场（源清单 + 画布布局 + 各面板会话态）写成会话快照。
     // 落盘失败只提示不阻断——退出路径不该因为磁盘问题卡住用户。

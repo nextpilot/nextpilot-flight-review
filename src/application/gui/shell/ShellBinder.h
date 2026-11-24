@@ -101,6 +101,11 @@ public:
     QString dockPageTitle(const QString &pageKey) const;
 
     // --- Activity Bar / Side Bar ---
+    // 启动期校验（验收 4）：所有 ActivitySpec.panelTypes 必须在面板工厂表命中。
+    // 返回未命中的 "activityId:panelType" 列表；空 = 全部命中。rebuildActivityBar
+    // 装配时自动调用并 qCritical 报警，测试直接断言此列表为空。
+    QStringList missingPanelTypes() const;
+
     // 按插槽表里已声明的 ActivitySpec 重建 Activity Bar（模块声明后调用）。
     void rebuildActivityBar();
     void setActivityBadge(const QString &activityId, int count);

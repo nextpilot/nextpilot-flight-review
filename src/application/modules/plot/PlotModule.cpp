@@ -646,6 +646,14 @@ void PlotModule::initialize(RuntimeHost &host)
 
 void PlotModule::onAttach(IUiContext &ui)
 {
+    // 语义色 token（验收 8）：游标色由模块声明，壳零硬编码。
+    {
+        ThemeTokenSpec t;
+        t.id = QStringLiteral("plot.cursor");
+        t.fallback = QStringLiteral("#FFB454");
+        t.description = QStringLiteral("绘图游标线颜色");
+        ui.declareThemeToken(t);
+    }
     // GUI 环境下：声明本模块的 Activity 与界面入口。
     //
     // Activity：plot 域的 Activity Bar 入口；工作区是中央画布（centralPanel），

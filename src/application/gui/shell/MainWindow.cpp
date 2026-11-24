@@ -355,8 +355,10 @@ void MainWindow::build(RuntimeHost &host)
     //    SARibbon/ADS 的地方"。注册为系统级 handler，theme.* 意图走与按钮/脚本
     //    同一条执行路径；headless 无此 handler，会诚实报"无模块能处理意图"。
     m_theme = new ThemeManager(host.app().settings(), &host);
-    // 包声明的语义色灌进主题：内置 token 优先，缺的才用包兜底色。
-    m_theme->setExtensionTokens(m_appCtx.toolbox().themeTokensAll());
+    // 包声明 + 模块声明的语义色一起灌进主题：内置 token 优先，缺的才用兜底色。
+    // 此刻模块尚未 onAttach（见下方 host.activate），先灌包 token；activate 后再
+    // refreshThemeTokens() 把模块经 declareThemeToken 声明的语义色合并进去（验收 8）。
+    refreshThemeTokens();
     host.registerSystemHandler(QStringLiteral("@system/theme"), m_theme);
     QObject::connect(m_theme, &ThemeManager::themeChanged, this,
                      [this](ThemeManager::Theme theme) {
@@ -378,6 +380,9 @@ void MainWindow::build(RuntimeHost &host)
 
     // 3) 装模块（GUI 模式：会调用 onAttach，模块可自带界面入口）
     host.activate(QStringList(), m_context);
+
+    // 3.0-) 模块 onAttach 已完成声明，把模块贡献的语义色合并进主题（验收 8）。
+    refreshThemeTokens();
 
     // 3.0) 默认面板布局：清单来自产品 spec（完整产品 / 裸壳各一份）。
     // 外壳只用**部件类型字符串**请求，不 include 任何 views/ 头文件——
@@ -1074,6 +1079,28 @@ void MainWindow::saveWorkspaceUiConfig()
     settings.setScopedValue(SettingsScope::Workspace, QStringLiteral("ui.sideBar.width"),
                             m_binder->sideBarWidth());
     saveKeybindingConfig();
+}
+
+void MainWindow::refreshThemeTokens()
+{
+    if (!m_theme)
+        return;
+    // 内置 token 优先，包 token 次之，模块 token 兜底；三者按 id 去重（先到者优先）。
+    QList<nextpilot::plotscope::registry::ThemeTokenSpec> allTokens =
+        m_appCtx.toolbox().themeTokensAll();
+    if (m_context)
+    {
+        for (const auto &t : m_context->moduleThemeTokens())
+        {
+            bool dup = false;
+            for (const auto &e : allTokens)
+                if (e.id == t.id)
+                { dup = true; break; }
+            if (!dup)
+                allTokens.append(t);
+        }
+    }
+    m_theme->setExtensionTokens(allTokens);
 }
 
 void MainWindow::refreshActivityBadges()
