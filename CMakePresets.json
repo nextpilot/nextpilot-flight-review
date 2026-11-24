@@ -6,13 +6,13 @@
       "displayName": "Release（日常构建）",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build",
-      "environment": {
-        "CCACHE_BASEDIR": "${sourceDir}"
-      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "PS_DEPS_FETCH": "ON",
         "CMAKE_PREFIX_PATH": "$env{PS_QT_DIR}"
+      },
+      "environment": {
+        "CCACHE_BASEDIR": "${sourceDir}"
       }
     },
     {

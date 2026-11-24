@@ -3,7 +3,7 @@
     "gcc": { "min": "9" },
     "cmake": { "min": "3.24" },
     "ninja": { "min": "1.10" },
-    "ccache": { "min": "4.5" },
+    "ccache": { "min": "4.5", "warm_min_mb": 12 },
     "python": { "min": "3.10", "configuration": "tools/requirements.txt" },
     "rust": { "min": "1.100", "configuration": "src/kernel/rust-toolchain.toml" },
     "qt": { "pin": "6.2.4", "abi": "gcc_64" }

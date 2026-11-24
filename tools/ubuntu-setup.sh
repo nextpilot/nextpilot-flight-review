@@ -7,6 +7,9 @@
 #   tools/ubuntu-setup.sh --install --qt          # 只处理 Qt
 #   tools/ubuntu-setup.sh --install --python      # 只处理 venv 与 pip 依赖
 #   tools/ubuntu-setup.sh --install --rust        # 只处理 rustup 工具链
+#   tools/ubuntu-setup.sh --warm-cache            # 用 preset 预热 ccache：Release + Debug 各跑一次全量
+#   tools/ubuntu-setup.sh --warm-cache --force    # 已达标也强制重跑
+#   tools/ubuntu-setup.sh --install --warm-cache  # 装环境时顺手预热
 #   tools/ubuntu-setup.sh --print-env             # 输出可 eval 的环境（CI 用）
 #   tools/ubuntu-setup.sh --uninstall             # 移除写进 shell 的块（保留已装目录）
 #
@@ -33,17 +36,22 @@ DO_TOOLCHAIN=1
 DO_QT=1
 DO_PYTHON=1
 DO_RUST=1
+DO_WARM=0
+DO_FORCE=0
 for arg in "$@"; do
   case "$arg" in
     --check | --install | --print-env | --uninstall) MODE="$arg" ;;
+    --warm-cache) DO_WARM=1 ;;
+    --force) DO_FORCE=1 ;;
     --toolchain) DO_QT=0; DO_PYTHON=0; DO_RUST=0 ;;
     --qt) DO_TOOLCHAIN=0; DO_PYTHON=0; DO_RUST=0 ;;
     --python) DO_TOOLCHAIN=0; DO_QT=0; DO_RUST=0 ;;
     --rust) DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0 ;;
-    -h | --help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$arg" >&2; exit 2 ;;
   esac
 done
+[ "$DO_WARM" = 1 ] && [ "$MODE" = "--check" ] && MODE="--warm-cache"
 
 log() { printf '[ubuntu-setup] %s\n' "$*"; }
 row() { printf '  %-8s %-10s %-12s %-10s %s\n' "$1" "$2" "$3" "$4" "$5"; }
@@ -197,6 +205,9 @@ write_block() {
         echo 'export CMAKE_PREFIX_PATH="$PS_QT_DIR${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"'
         echo 'export LD_LIBRARY_PATH="$PS_QT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"'
       }
+      # 分层：这里只放缓存物理位置；策略项进 ccache.conf，base_dir 进 preset。
+      # 不再 export CCACHE_MAXSIZE/BASEDIR —— 环境变量优先级高于 conf/preset，
+      # 会让未 source 脚本的 IDE/CI 与命令行行为不一致。
       echo "export CCACHE_DIR=\"$PS_DEPS_ROOT/caches/ccache\""
       rust_env
       echo "$MARK_END"
@@ -298,39 +309,6 @@ install_toolchain() {
   fi
 }
 
-# ccache 策略落配置文件，不落环境变量。
-# 分层理由：与路径无关的策略写 ccache.conf（$CCACHE_DIR 指到哪就跟着走，CI 与 IDE 都认，
-# 不受 .bashrc 只对交互式 shell 生效的限制）；与仓库绝对路径绑定的 base_dir 放在
-# CMakePresets.json 的 environment 里，由 ${sourceDir} 动态展开，换目录不用改配置。
-write_ccache_conf() {
-  local dir="$PS_DEPS_ROOT/caches/ccache"
-  local conf="$dir/ccache.conf"
-  mkdir -p "$dir" 2>/dev/null || { log "缓存目录不可写：$dir（跳过 ccache 配置）"; return 1; }
-  if cat >"$conf" <<'EOF'
-# 由 tools/ubuntu-setup.sh 生成，重跑 --install 会覆盖，不要手改。
-# 与路径无关的策略在此；base_dir 与仓库位置绑定，见 CMakePresets.json 的 environment。
-max_size = 5G
-
-# 忽略编译发生的工作目录，让 build/ 与 build-debug/ 共用同一份缓存。
-# 前提是产物里不嵌绝对路径；若代码把 __FILE__ 写进日志或错误串，
-# 需同时配 -ffile-prefix-map 再保留此项，否则命中会拿到旧路径。
-hash_dir = false
-
-# depend mode：用编译器 -MD 产出的依赖信息判命中，跳过完整预处理。
-# CMake 默认就生成 .d，无需额外开关；依赖文件缺失时会自动退化。
-depend_mode = true
-
-compression = true
-compression_level = 5
-EOF
-  then
-    log "ccache 策略写入 $conf"
-  else
-    log "写入 $conf 失败"
-    return 1
-  fi
-}
-
 # ccache 落持久目录：环境重置会清 /usr/bin 及 apt 带来的 libzstd/libhiredis，故连库一起拷
 make_ccache_selfcontained() {
   command -v ccache >/dev/null 2>&1 || { log "ccache 不可用，跳过固化"; return 1; }
@@ -352,6 +330,251 @@ exec -a ccache "$SELF_DIR/../libexec/ccache-real" "$@"
 WRAPPER
   chmod +x "$dst/bin/ccache" "$dst/libexec/ccache-real"
   log "ccache 固化到 $dst"
+}
+
+
+# ccache 预热：跑一次全量构建，把编译结果填进 ccache。
+#
+# 为什么值得单独做：冷构建约 90~210s（5 核实测，取决于 PCH 开关），
+# 缓存命中后同样的全量重建能降到个位数秒级。换机器、清缓存目录、
+# CI 冷 runner 都会撞上未命中那一条，预热一次把缓存填满即可。
+#
+# 幂等：缓存已达阈值时直接跳过（--force 可强制重跑）。阈值取 versions.json
+# 里 toolchains.ccache.warm_min_mb，避免每次 --install 都白跑几分钟。
+ccache_bin() {
+  if [ -x "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" ]; then
+    echo "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache"
+  else
+    command -v ccache 2>/dev/null || true
+  fi
+}
+
+# 把纯策略写进 $CCACHE_DIR/ccache.conf（与路径无关、持久、所有入口共享）。
+# 与 shell 环境变量的分工：
+#   - ccache.conf：max_size / hash_dir / depend_mode / sloppiness —— 纯策略，
+#     团队一致、CI 也认；ccache 不依赖 shell 是否 source 过脚本。
+#   - shell(CCACHE_DIR)：只在 .bashrc / --print-env 暴露缓存物理位置，
+#     让手动 `ccache -s` 能读到同一份缓存。
+#   - CMakePresets.json 的 environment(CCACHE_BASEDIR)：与仓库绝对路径绑定，
+#     随仓库版本化，IDE / CI / cmake --preset 都会读。
+# 关键点：conf 的优先级低于环境变量。所以 shell 里绝不能再 export 这些策略，
+# 否则会覆盖 conf，导致"未 source 脚本的入口"和"source 过的入口"行为不一致。
+write_ccache_conf() {
+  local dir="${CCACHE_DIR:-$PS_DEPS_ROOT/caches/ccache}"
+  local conf="$dir/ccache.conf"
+  mkdir -p "$dir" || return 1
+  cat >"$conf" <<'EOF'
+# 由 tools/ubuntu-setup.sh 生成；纯策略，与路径无关。
+# 改这里对命令行 / IDE / CI 同时生效（不要用 shell export 覆盖）。
+max_size = 5G
+# depend mode：用编译器 -MD 依赖信息判命中，跳过完整预处理（实测命中路径 90ms→65ms）。
+# GCC 支持；CMake 默认给 CXX 加 -MD -MT，无需额外参数。
+depend_mode = true
+# hash_dir=false：工作目录不进哈希。仅当源码用相对路径的 __FILE__ 时才有意义，
+# 本项目不用 __FILE__（已核查），设为 false 可让不同 CWD 的构建共享缓存。
+hash_dir = false
+# PCH 共存所需；源码不用 __TIME__/__DATE__，这两项无正确性风险。
+# 切勿加 include_file_mtime/ctime：会让改过头文件的 TU 命中旧缓存、编出过期代码。
+sloppiness = pch_defines,time_macros
+# 缓存压缩，省磁盘；ccache 4.x 默认已开，显式声明以求各版本一致。
+compression = true
+compression_level = 5
+EOF
+  log "已写入 ccache 策略 $conf"
+}
+
+# 缓存实际占用（MB）。优先用 ccache --print-stats 的 cache_size_kibibyte（机器可读，
+# 版本间格式稳定）；旧版 ccache 没有该选项时退化为量目录大小。
+ccache_cache_mb() {
+  local d="${CCACHE_DIR:-$PS_DEPS_ROOT/caches/ccache}"
+  local cc; cc="$(ccache_bin)"
+  if [ -n "$cc" ]; then
+    local kib
+    kib="$("$cc" --print-stats 2>/dev/null | awk '$1=="cache_size_kibibyte"{print $2}')"
+    if [ -n "$kib" ]; then echo $((kib / 1024)); return 0; fi
+  fi
+  [ -d "$d" ] || { echo 0; return 0; }
+  du -sm "$d" 2>/dev/null | awk '{print $1+0}'
+}
+
+# 预热状态标记：每个 preset 一份，跑完一次成功的预热才写。
+#
+# 为什么不能只看缓存大小：缓存目录是全局共享的，别人（或别的项目）留下的
+# 几 GB 缓存也会让 size 达标，但里面未必有本仓库的条目——那种情况下日常构建
+# 照样 miss，提示就失效了。标记文件绑定到本仓库的源码版本，才算数。
+#
+# 为什么要按 preset 分：Release(-O2) 和 Debug(-g) 是两套不同的编译命令，
+# ccache 哈希不同。只暖 build/ 不代表 build-debug/ 也暖，必须分别记录。
+WARM_PRESETS=("default" "debug")   # 与 CMakePresets.json 的 configurePresets 一致
+warm_stamp() { echo "$STATE_DIR/ccache-warm.$1.stamp"; }
+warm_stamp_valid() {
+  local p
+  for p in "${WARM_PRESETS[@]}"; do
+    local f; f="$(warm_stamp "$p")"
+    [ -f "$f" ] || return 1
+    local want cur
+    want="$(head -1 "$f" 2>/dev/null)"
+    cur="$(ps_source_rev)"
+    [ -n "$want" ] && [ "$want" = "$cur" ] || return 1
+  done
+}
+
+# 仓库当前版本标识。
+#
+# 不能只用 git HEAD：未提交的改动（正在写一半的代码）不会体现在 HEAD 里，
+# 那样"改完代码 → 缓存该失效"的判定就漏了。所以用 HEAD + 工作区差异 +
+# 未跟踪文件列表三者一起算指纹，任何一处变了标记就失效。
+ps_source_rev() {
+  # ccache 配置也进指纹：conf 或 preset 的 base_dir / depend_mode / hash_dir 一变，
+  # 哈希键就变、旧缓存作废。若指纹不含配置，改完配置后标记仍有效会跳过预热，
+  # 导致用旧缓存key全 miss 却不自知。
+  local cfg_fp
+  cfg_fp="$(
+    { cat "${CCACHE_DIR:-$PS_DEPS_ROOT/caches/ccache}/ccache.conf" 2>/dev/null
+      grep -E 'CCACHE_(BASEDIR|DEPEND|NOHASHDIR|SLOPPINESS|MAXSIZE)' "$ROOT/CMakePresets.json" 2>/dev/null
+    } | git hash-object --stdin 2>/dev/null || echo noconf
+  )"
+  if command -v git >/dev/null 2>&1 && [ -d "$ROOT/.git" ]; then
+    local head diff untracked
+    head="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+    diff="$(git -C "$ROOT" diff HEAD 2>/dev/null | git hash-object --stdin 2>/dev/null || true)"
+    untracked="$(git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null | sort | git hash-object --stdin 2>/dev/null || true)"
+    if [ -n "$head" ]; then
+      echo "git:${head}:${diff:-nodiff}:${untracked:-none}:cfg-${cfg_fp:-none}"
+      return 0
+    fi
+  fi
+  # 无 git：取所有 CMakeLists / cmake 文件的最新 mtime，作为粗粒度版本号
+  echo "mtime:$(find "$ROOT/src" "$ROOT/cmake" -name 'CMakeLists.txt' -o -name '*.cmake' 2>/dev/null \
+    | xargs stat -c %Y 2>/dev/null | sort -n | tail -1)"
+}
+
+# 累计命中/未命中（自上次 ccache -z 起），用于回答"这轮到底编了几个文件"
+#
+# pch_uncacheable 是 PCH 与 ccache 打架的探针：只要它不为 0，就说明有 TU
+# 因为用了预编译头而完全绕过了缓存（ccache 手册「Precompiled headers」：
+# 需要 sloppiness 含 pch_defines,time_macros）。此时缓存看着在涨，实际全在
+# 重新编译。
+ccache_counters() {
+  local cc; cc="$(ccache_bin)"
+  [ -n "$cc" ] || return 1
+  "$cc" --print-stats 2>/dev/null | awk '
+    $1=="direct_cache_hit"{h+=$2}
+    $1=="preprocessed_cache_hit"{h+=$2}
+    $1=="direct_cache_miss"{m+=$2}
+    $1=="preprocessed_cache_miss"{m+=$2}
+    $1=="could_not_use_precompiled_header"{p+=$2}
+    $1=="local_storage_hit"{lh+=$2}
+    $1=="local_storage_miss"{lm+=$2}
+    END{printf "hits=%d misses=%d storage_hit=%d storage_miss=%d pch_uncacheable=%d\n",h,m,lh,lm,p}'
+}
+
+# PCH 与 ccache 是否处于"打架"状态（缓存存在但命不中）
+ccache_pch_conflict() {
+  local c; c="$(ccache_counters 2>/dev/null || true)"
+  case "$c" in *"pch_uncacheable=0"|*"") return 1 ;; *) return 0 ;; esac
+}
+
+cache_is_warm() {
+  local mb; mb="$(ccache_cache_mb)"
+  [ "${mb:-0}" -ge "${V_CCACHE_WARM_MB:-12}" ] && warm_stamp_valid
+}
+
+warm_cache() {
+  local cc; cc="$(ccache_bin)"
+  if [ -z "$cc" ]; then
+    log "错误：找不到 ccache，先跑 --install --toolchain"
+    return 1
+  fi
+  export CCACHE_DIR="${CCACHE_DIR:-$PS_DEPS_ROOT/caches/ccache}"
+  export PATH="$PS_DEPS_ROOT/toolchain/ccache/bin:$PATH"
+  # 策略统一由 ccache.conf 提供（不在此处 export，避免覆盖 conf）。
+  # base_dir 由 CMakePresets.json 的 environment 注入。
+  write_ccache_conf
+
+  local mb; mb="$(ccache_cache_mb)"
+  if [ "$DO_FORCE" != 1 ] && cache_is_warm; then
+    log "ccache 已预热（Release+Debug 两套都达标，且与当前源码版本匹配），跳过。"
+    log "  需要强制重跑：tools/ubuntu-setup.sh --warm-cache --force"
+    return 0
+  fi
+
+  local qt qtlib
+  if ! qt="$(find_qt)"; then
+    log "错误：找不到 Qt $V_QT，预热构建无法 configure。"
+    log "  已知布局：$PS_DEPS_ROOT/toolchain/qt/$V_QT/$QT_ABI、$ROOT/deps/Qt/$V_QT/$QT_ABI、\$PS_DEPS_PREFIX/usr/lib/*/cmake/Qt6"
+    log "  若 Qt 装在别处，先 export PS_DEPS_PREFIX=<前缀> 再重试。"
+    return 1
+  fi
+  qtlib="$(qt_libdir || true)"
+  # preset 里 CMAKE_PREFIX_PATH=$env{PS_QT_DIR}，必须 export 这个变量，
+  # 否则 preset configure 时 CMAKE_PREFIX_PATH 为空、找不到 Qt。
+  export PS_QT_DIR="$qt"
+  export CMAKE_PREFIX_PATH="$qt${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+  [ -n "$qtlib" ] && export LD_LIBRARY_PATH="$qtlib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+  # 逐 preset 预热。关键约束（实测教训，别改）：
+  #   1) 必须用 preset itself 来 configure+build，不能自己拼 -G / -DCMAKE_BUILD_TYPE。
+  #      preset 里锁定了生成器（Unix Makefiles）与全部参数，手拼会与日常构建不一致——
+  #      生成器不同会让编译命令里的路径/参数不同，ccache 哈希对不上，预热白跑。
+  #   2) build 目录必须是 preset 的 binaryDir（default→build，debug→build-debug），
+  #      绝不能另开 build-warm/。ccache 哈希含 -I/-o 的绝对路径，换目录就 miss；
+  #      CCACHE_BASEDIR / hash_dir=false 都只归一化工作目录，救不了 -I/-o 里的路径。
+  #   3) Release(-O2) 与 Debug(-g) 是两套哈希，必须分别预热，否则只暖一套。
+  local p t0 t1 bd cfglog buildlog
+  for p in "${WARM_PRESETS[@]}"; do
+    case "$p" in
+      default) bd="$ROOT/build" ;;
+      debug)   bd="$ROOT/build-debug" ;;
+      *)       bd="$ROOT/build-$p" ;;
+    esac
+    mkdir -p "$bd"
+    cfglog="/tmp/ps-warm-$p-cfg.log"
+    buildlog="/tmp/ps-warm-$p-build.log"
+    log "预热 [$p]：cmake --preset $p → $bd"
+    t0="$(date +%s)"
+    # shellcheck disable=SC2086
+    if ! cmake --preset "$p" >"$cfglog" 2>&1; then
+      # 最常见的失败：build 目录是上次用 -G Ninja 手拼的，preset 要 Unix Makefiles，
+      # 生成器不匹配。给出可操作的修法，而不是甩 CMake 原始报错。
+      if grep -q "Does not match the generator used previously" "$cfglog"; then
+        local oldgen
+        oldgen="$(sed -n 's/.*previously: //p' "$cfglog" | head -1)"
+        log "错误：[$p] build 目录 $bd 的生成器是 [$oldgen]，但 preset 要求 [Unix Makefiles]。"
+        log "      两者不一致会导致 ccache 哈希对不上、预热白跑。"
+        log "      修法：rm -rf $bd 后重跑本命令（build 目录可安全重建）。"
+      else
+        log "错误：[$p] configure 失败，日志 $cfglog"
+        tail -5 "$cfglog" | sed 's/^/    /'
+      fi
+      return 1
+    fi
+    if ! cmake --build --preset "$p" -j"$(nproc 2>/dev/null || echo 2)" >"$buildlog" 2>&1; then
+      log "错误：[$p] 构建失败，日志 $buildlog"
+      tail -5 "$buildlog" | sed 's/^/    /'
+      return 1
+    fi
+    t1="$(date +%s)"
+    log "  [$p] 完成，用时 $((t1 - t0))s"
+    # 每个 preset 成功才写自己的标记：中途失败不会留下"已预热"的假象。
+    mkdir -p "$STATE_DIR"
+    ps_source_rev >"$(warm_stamp "$p")"
+  done
+
+  mb="$(ccache_cache_mb)"
+  log "预热完成，两套（Release+Debug）缓存共 ${mb}MB"
+  "$cc" -s 2>/dev/null | sed 's/^/  /'
+  local c; c="$(ccache_counters || true)"
+  [ -n "$c" ] && log "  累计计数（自上次 ccache -z 起）：$c"
+  if ccache_pch_conflict; then
+    log "警告：存在 pch_uncacheable，PCH 与 ccache 正在互相拖垮。"
+    log "      请确认 CCACHE_SLOPPINESS 含 pch_defines,time_macros。"
+  fi
+  log "已记录预热标记：$(warm_stamp default) / $(warm_stamp debug)"
+  if [ "${mb:-0}" -lt "${V_CCACHE_WARM_MB:-12}" ]; then
+    log "提示：缓存 ${mb}MB 小于阈值 ${V_CCACHE_WARM_MB:-12}MB（versions.json → toolchains.ccache.warm_min_mb）。"
+  fi
+  return 0
 }
 
 install_python() {
@@ -439,6 +662,10 @@ install_rust() {
 
 # ---------- 主流程 ----------
 case "$MODE" in
+  --warm-cache)
+    warm_cache
+    exit $?
+    ;;
   --check)
     check_all
     save_state
@@ -467,6 +694,15 @@ case "$MODE" in
     if [ "$fails" -ne 0 ]; then
       log "完成，但有 $fails 个步骤失败：按上表与上方提示补齐后重跑 --install"
       exit 1
+    fi
+    if [ "$DO_WARM" = 1 ]; then
+      warm_cache
+    else
+      mb="$(ccache_cache_mb)"
+      if ! cache_is_warm; then
+        log "提示：ccache 缓存当前 $(ccache_cache_mb)MB，首次全量约几分钟，可执行："
+        log "      tools/ubuntu-setup.sh --warm-cache   # 用 preset 分别预热 Release+Debug"
+      fi
     fi
     log "完成。新终端生效；当前终端可： source ~/.bashrc"
     exit 0
