@@ -672,7 +672,7 @@ gui/
                              不属于任何模块/领域；bench/shot 等工具也直接用它
 ```
 
-**plot 的演进方向**：绘图会被抽取成一个类似 Qwt 的独立库（`views/plot/` 是它的
+**plot 的演进方向**：绘图会被抽取成一个类似 Qwt 的独立库（`modules/plot/gui/` 是它的
 前身），所以它**不属于任何模块、不聚合进 `modules/`**——它是能力库，模块
 （`PlotModule`）只是通过 `requestPanel("canvas.center", "plot-axes")` 使用它。
 这也决定了它必须留在 `gui/views/`（或未来的 `libs/plot/`），而非功能目录。
@@ -720,7 +720,7 @@ modules/data/                     一个"数据"功能，物理聚合
 
 > **绘图内核已落地为 `libs/fastplot/`**（原"将来抽 Qwt-like 库"兑现）：纯 Qt Widgets、
 > 不依赖 core，含视口/刻度/轴/包络曲线/缩放平移读数/六仪表/频谱柱状等部件。
-> `gui/views/plot/AxesView` 退化为**宿主**：只做取数（Rust LOD）+ 把 LOD 喂给 fastplot，
+> `modules/plot/gui/AxesView` 退化为**宿主**：只做取数（Rust LOD）+ 把 LOD 喂给 fastplot，
 > **集成边界**：fastplot 库不认识主题/数据，
 > 颜色由宿主在 `applyPalette()` 里从 palette 注入，曲线色在 `pushToPlot` 时按当时主题取——
 > 库保持纯净，定制在宿主侧做。集成测试：`fastplot_*` 四套 + `ps_test_plot_io`。

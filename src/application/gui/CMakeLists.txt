@@ -13,19 +13,12 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 #   （部件工厂表 PanelFactoryHub 已下沉到 core —— 它是纯数据，
 #    知识包的呈现层要能注册领域面板，就不能依赖整个 gui 层）
 #
-#   views/                       通用绘图能力库（将来抽成 Qwt-like 独立库）
-#     plot/                       绘图画布 + 通道视图，不属于任何器官/领域
-#
-# 功能**专属**视图已聚合进对应 capabilities 目录（如 data 的树视图在
-# modules/data/DataManagerPanel.*），与器官同目录、靠 CMake 拆 headless/GUI
-# 两个 target。判据：只服务一个功能的专属 UI → 聚合进该功能目录；
-# 通用能力库（如绘图）→ 留 gui/views/；形态随领域变 → toolbox/<域>/gui/。
+# 绘图视图（原 views/plot）已下沉 modules/plot/gui（ps_module_plot_gui，c4）；
+# 通用面板只剩 PropertyPanel / diagnostics / output / problems / debugconsole。
 #
 # 关键约束：
-#   - **外壳不认识视图**。MainWindow 不 include 任何 views/ 下的头文件，
+#   - **外壳不认识视图**。MainWindow 不 include 任何业务视图头文件，
 #     视图之间的协作走 AppContext 的共享状态（星形而非网状）。
-#   - **一功能一目录**。加一个新功能 = 新建一个 views/<功能>/ 目录，
-#     外壳与其它功能的文件一律不动。
 #
 # OBJECT 库：承载视图层的自注册 TU（PS_REGISTER_PANEL）。
 # 静态库中未被引用的目标文件会被链接器丢弃、静态初始化不执行，
@@ -92,60 +85,6 @@ add_library(ps_gui OBJECT
     shell/PreferencesIntentHandler.h
     shell/ReportExporter.cpp
     shell/ReportExporter.h
-    # --- 通用绘图能力库 ---
-    # 数据集视图已聚合进 modules/data/（功能专属，见该目录 CMakeLists）；
-    # 这里只剩**通用绘图库**（将来抽成 Qwt-like 独立库，不属于任何器官/领域）：
-    # PlotModule 用它，bench/shot 工具也直接用它。
-    views/plot/AxesView.cpp
-    views/plot/AxesView.h
-    views/plot/ChannelView.cpp
-    views/plot/ChannelView.h
-    views/plot/InstrumentView.cpp
-    views/plot/InstrumentView.h
-    views/plot/PlotWorkspace.cpp
-    views/plot/WorkspaceHistory.cpp
-    views/plot/PlotWorkspace.h
-    views/plot/GridPickPopup.cpp
-    views/plot/GridPickPopup.h
-    views/plot/PlaybackEngine.cpp
-    views/plot/PlaybackEngine.h
-    views/plot/TimelineWidget.cpp
-    views/plot/TimelineWidget.h
-    # --- plot/chrome：格框上的小部件 ---
-    views/plot/chrome/AxesToolbar.cpp
-    views/plot/chrome/AxesToolbar.h
-    # --- plot/layout：页内停靠容器、每格面板与页签栏 ---
-    views/plot/layout/TabbedFigure.cpp
-    views/plot/layout/TabbedFigure.h
-    views/plot/layout/PlotLayout.cpp
-    views/plot/layout/PlotLayout.h
-    views/plot/layout/DockedAxes.cpp
-    views/plot/layout/DockedAxes.h
-
-    # --- plot/commands ---
-    views/plot/commands/PageActions.cpp
-    views/plot/commands/CanvasActions.cpp
-    views/plot/commands/SeriesActions.cpp
-    views/plot/commands/MarkupActions.cpp
-    views/plot/commands/PlaybackActions.cpp
-    views/plot/commands/PropertyProviders.cpp
-
-    # --- plot/playback ---
-    views/plot/playback/PlaybackController.cpp
-    views/plot/playback/PlaybackController.h
-
-    # --- plot/axes ---
-    views/plot/axes/PlotSeries.h
-    views/plot/axes/SeriesStore.cpp
-    views/plot/axes/SeriesStore.h
-    views/plot/axes/ContextMenuDecor.cpp
-    views/plot/axes/ContextMenuDecor.h
-    views/plot/axes/CursorReadout.cpp
-    views/plot/axes/Interaction.cpp
-    views/plot/axes/Interaction.h
-    views/plot/axes/CursorReadout.h
-    views/plot/axes/ViewState.cpp
-    views/plot/axes/ViewState.h
     # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
     views/PropertyPanel.cpp
     views/PropertyPanel.h
@@ -167,12 +106,16 @@ add_library(ps_gui OBJECT
 target_include_directories(ps_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/shell
-    ${CMAKE_CURRENT_SOURCE_DIR}/views/plot
     ${CMAKE_CURRENT_SOURCE_DIR}/theme)
 # fastplot：独立绘图库（只依赖 Qt Widgets）。绘图视图通过它绘制，
 # 因此 GUI 侧公共依赖；CLI 不链它，保持 headless 纯净。
+#
+# 注：ReportExporter 仍按 PlotWorkspace 类型 qobject_cast（c4 前的存量直链），
+# 故 ps_gui 暂以 PRIVATE 引用 ps_module_plot_gui 取其头文件包含路径；
+# shell→module 的编译依赖剥离归 c8（D18），本轮不处理。
 target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme ps_gui_transform ps_protocol ps_module_protocol fastplot Qt6::Widgets Qt6::Gui Qt6::Core
-                                    ads::ads SARibbonBar::SARibbonBar)
+                                    ads::ads SARibbonBar::SARibbonBar
+    PRIVATE ps_module_plot_gui)
 set_target_properties(ps_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 
 # 图形界面可执行文件：与 headless 入口（src/application/app 的 plotscope）并列，
@@ -188,7 +131,7 @@ target_link_libraries(plotscope-gui PRIVATE
     # AUTOMOC 产物一起进，故 moc 符号也一并满足）。
     ps_gui_theme
     ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
     ps_toolbox_automotive_gui
@@ -202,7 +145,7 @@ target_link_libraries(plotscope-gui-bench PRIVATE
     ps_gui
     ps_gui_theme
     ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_toolbox_automotive_gui
     ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -211,4 +154,3 @@ set_target_properties(plotscope-gui-bench PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
 # Windows：把 ads.dll 拷到本目录各可执行目标旁边，构建完即可直接运行/跑测试。
 ps_deploy_windows_runtime_all()
-

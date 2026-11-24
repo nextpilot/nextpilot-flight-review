@@ -4,7 +4,7 @@
 
 // 文档 spec 结构在模块层；与视图层的 layout/PlotLayout.h 同名不同物，
 // 靠路径区分：本文件读写的是"可存盘的布局声明"，不是 dock 布局容器。
-#include "../../../modules/plot/PlotDocument.h"
+#include "PlotDocument.h"
 
 namespace nextpilot::plotscope::gui
 {

@@ -5,3 +5,6 @@ add_library(ps_module_plot OBJECT PlotModule.cpp PlotModule.h PlotDocument.cpp P
 target_include_directories(ps_module_plot PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ps_module_plot PUBLIC ps_host)
 set_target_properties(ps_module_plot PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+
+# 呈现层（绘图画布等 QWidget）：单独产物，只被 GUI 链接，见 gui/CMakeLists.txt。
+add_subdirectory(gui)

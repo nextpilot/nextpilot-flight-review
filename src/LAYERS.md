@@ -180,7 +180,7 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 - 业务面板放 `gui/`（领域面板形态归扩展在包内 `gui/` 子目录注册实现）
 - 模块/扩展持有窗口对象、把运行态藏进 Widget
 
-> 存量特例（禁止新增模仿，处置待裁定）：`ps_module_data_gui` 链 `ps_gui_theme`/`ps_gui_transform`（gui/ 下横向基础设施库）并 include `gui/views/plot` 拖拽协议头——按矩阵 L4→L5 本应禁止，属历史过渡，方案（划 GUI 基础设施子层放行 或 迁 libs）待拍板。
+> 存量特例（禁止新增模仿，处置待裁定）：`ps_module_data_gui` 链 `ps_gui_theme`/`ps_gui_transform`（gui/ 下横向基础设施库）并 include `modules/plot/gui` 拖拽协议头——按矩阵 L4→L5 本应禁止，属历史过渡，方案（划 GUI 基础设施子层放行 或 迁 libs）待拍板。
 
 ## 支撑目录
 
