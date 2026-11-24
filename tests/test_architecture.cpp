@@ -47,6 +47,7 @@ using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
+namespace parser = nextpilot::plotscope::parser; // 限定名 parser:: 需别名
 using namespace nextpilot::plotscope::context;
 
 // ============================================================================
@@ -779,6 +780,7 @@ using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
+namespace parser = nextpilot::plotscope::parser; // 限定名 parser:: 需别名
 using namespace nextpilot::plotscope::context;
             // data.load（上面已成功加载 csv）应已把来源记入 ws/data/sources。
             WorkspaceDataConfig cfg = WorkspaceDataConfig::load(application.context().settings());
