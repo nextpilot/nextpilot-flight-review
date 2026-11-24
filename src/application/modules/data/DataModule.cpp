@@ -182,6 +182,20 @@ void DataModule::onAttach(IUiContext &ui)
         QObject::connect(&hub, &DatasetHub::datasetRemoved, this,
                          [refreshCount](DatasetId) { refreshCount(); });
         refreshCount();
+
+        // 加载进度：订阅上下文加载生命周期（真实 data.load 摄取入口驱动，非定时器刷值）。
+        // 开始摄取 → "加载中…"；摄取返回 → 成功回"空闲"，失败置"加载失败"。
+        AppContext &appCtx = m_host->app();
+        QObject::connect(&appCtx, &AppContext::dataLoadStarted, this, [this]() {
+            if (m_ui)
+                m_ui->updateStatus(QStringLiteral("data.loading.progress"),
+                                   QStringLiteral("加载中…"));
+        });
+        QObject::connect(&appCtx, &AppContext::dataLoadFinished, this, [this](bool ok) {
+            if (m_ui)
+                m_ui->updateStatus(QStringLiteral("data.loading.progress"),
+                                   ok ? QStringLiteral("空闲") : QStringLiteral("加载失败"));
+        });
     }
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
     //

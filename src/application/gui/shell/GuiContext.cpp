@@ -30,7 +30,19 @@ GuiContext::GuiContext(QMainWindow *window, UiSlotHub &slotReg, ShellBinder *bin
                        AppContext &appCtx, IIntentExecutor *executor, QObject *parent)
     : QObject(parent), m_window(window), m_slots(slotReg), m_binder(binder), m_appCtx(appCtx),
       m_executor(executor)
-{}
+{
+    // 状态栏中继：登记/文案/瞬时消息的真源在 AppContext::status()（libs/context），
+    // 这里只把 hub 事件转发成壳侧信号，MainWindow 的订阅代码不用动。
+    context::StatusHub &hub = m_appCtx.status();
+    QObject::connect(&hub, &context::StatusHub::statusChanged, this,
+                     [this](const QString &id, const QString &text) {
+                         Q_EMIT statusTextChanged(id, text);
+                     });
+    QObject::connect(&hub, &context::StatusHub::statusSpecDeclared, this,
+                     [this](const registry::StatusSpec &spec) { Q_EMIT statusSpecDeclared(spec); });
+    QObject::connect(&hub, &context::StatusHub::statusFlashed, this,
+                     [this](const QString &text) { Q_EMIT statusFlashed(text); });
+}
 
 void GuiContext::dockWidget(QWidget *widget, nextpilot::plotscope::registry::Region region,
                             const QString &title, const QString &pageKey)
@@ -98,47 +110,19 @@ void GuiContext::declareThemeToken(const ThemeTokenSpec &token)
 
 void GuiContext::declareStatus(const StatusSpec &status)
 {
-    StatusSpec spec = status;
-    if (spec.provider.isEmpty())
-        spec.provider = QStringLiteral("module");
-    // 按 id 去重：先声明者优先。
-    for (const StatusSpec &existing : m_statusSpecs)
-        if (existing.id == spec.id)
-            return;
-    m_statusSpecs.append(spec);
-    m_statusText.insert(spec.id, spec.text);
-    Q_EMIT statusSpecDeclared(spec);
+    // 元数据登记进 hub（同 id 先声明者优先、provider 缺省 module）；壳按 spec 建控件。
+    m_appCtx.status().registerSpec(status);
 }
 
 void GuiContext::updateStatus(const QString &id, const QString &text)
 {
-    if (!m_statusText.contains(id))
-        return; // 未声明的 id 忽略：避免模块推野键污染状态栏
-
-    // D2 游标 10Hz 节流：高频推送的项在 100ms 窗口内只发射一次。
-    // 仍更新缓存文本，保证下一次窗口发射的是最新值。
-    static const QSet<QString> kThrottled = { QStringLiteral("plot.axes.cursor") };
-    if (kThrottled.contains(id))
-    {
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        const qint64 last = m_statusLastEmitMs.value(id, -1000);
-        m_statusText.insert(id, text);
-        if (now - last < 100)
-            return;
-        m_statusLastEmitMs.insert(id, now);
-        Q_EMIT statusTextChanged(id, text);
-        return;
-    }
-
-    if (m_statusText.value(id) == text)
-        return; // 文本未变不刷新
-    m_statusText.insert(id, text);
-    Q_EMIT statusTextChanged(id, text);
+    // 推模式（D8）：未声明 id 由 hub 忽略；**不做节流**，限频是生产方的事。
+    m_appCtx.status().updateStatus(id, text);
 }
 
 void GuiContext::flashStatus(const QString &text)
 {
-    Q_EMIT statusFlashed(text);
+    m_appCtx.status().flash(text);
 }
 
 void GuiContext::setActivityBadge(const QString &activityId, int count)

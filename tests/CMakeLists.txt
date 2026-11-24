@@ -414,3 +414,9 @@ if(PS_BUILD_BARE AND TARGET ps_shell_bare)
     set_tests_properties(ps_shell_bare_smoke PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
+
+# 状态栏登记处（验收 7）：headless，纯数据，不链 Widgets。
+add_executable(ps_test_status_hub test_status_hub.cpp)
+target_link_libraries(ps_test_status_hub PRIVATE ps_context Qt6::Core Qt6::Test)
+set_target_properties(ps_test_status_hub PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_status_hub COMMAND ps_test_status_hub)

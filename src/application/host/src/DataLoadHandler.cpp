@@ -153,8 +153,12 @@ Result<IntentResult> DataLoadHandler::execute(const Intent &intent)
         options.parserOptions = prepared;
 
         IngestOrchestrator orchestrator(m_repo, m_sources, *m_pipeline);
+        // 加载生命周期：进入摄取前发 started，摄取返回后发 finished(ok)——
+        // 状态栏据此推"加载中…/空闲/加载失败"，由真实意图入口驱动，不轮询刷值。
+        m_app.dataLoadStarted();
         const Result<int> opened = orchestrator.openFile(path, QStringList{parserId},
                                                         QString(), options);
+        m_app.dataLoadFinished(opened.ok());
         if (!opened)
             return fail(opened.error().code, opened.error().message);
 
@@ -217,7 +221,9 @@ Result<IntentResult> DataLoadHandler::loadMcap(const QString &path, const Intent
         options.stableId = intent.params.value(QStringLiteral("id")).toInt();
 
     IngestOrchestrator orchestrator(m_repo, m_sources, *m_pipeline);
+    m_app.dataLoadStarted();
     const Result<int> opened = orchestrator.openSource(source, QStringList{parserId}, QString(), path, options);
+    m_app.dataLoadFinished(opened.ok());
     if (!opened)
         return fail(opened.error().code, opened.error().message);
 

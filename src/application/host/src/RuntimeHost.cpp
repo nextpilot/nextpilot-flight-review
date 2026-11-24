@@ -17,7 +17,7 @@ RuntimeHost::RuntimeHost(nextpilot::plotscope::context::AppContext &appCtx, QObj
       m_uiSlotHub(appCtx.registryTree()),
       // data.load 走统一摄取管道（读字节 -> 扇出 -> 落库）：
       // 格式驱动只声明 parserId，解析实现由 SPI 解析器提供。
-      m_dataLoadHandler(appCtx.toolbox(), appCtx.data(), appCtx.sources(),
+      m_dataLoadHandler(appCtx, appCtx.toolbox(), appCtx.data(), appCtx.sources(),
                          &appCtx.ingest(), &appCtx.settings()),
       m_dataCommandsHandler(appCtx, *this),
       m_aiToolsHandler(appCtx, *this, [this]() { return registeredOps(); })

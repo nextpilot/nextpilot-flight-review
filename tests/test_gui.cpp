@@ -74,6 +74,7 @@
 #include <QStatusBar>
 #include <QTemporaryDir>
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include <QToolButton>
 #include <QTimer>
 
@@ -257,19 +258,9 @@ int main(int argc, char *argv[])
         ui->updateStatus(QStringLiteral("data.loading.progress"), QStringLiteral("加载中 42%"));
         CHECK(ui->statusText(QStringLiteral("data.loading.progress")) == QStringLiteral("加载中 42%"));
 
-        // D2 游标 10Hz 节流：窗口内连推只更新缓存文本，信号最多发一次。
-        int cursorSignals = 0;
-        QObject::connect(ui, &GuiContext::statusTextChanged, &window,
-                         [&cursorSignals](const QString &id, const QString &) {
-                             if (id == QStringLiteral("plot.axes.cursor"))
-                                 ++cursorSignals;
-                         });
-        for (int i = 0; i < 20; ++i)
-            ui->updateStatus(QStringLiteral("plot.axes.cursor"),
-                             QStringLiteral("游标: %1").arg(i));
-        CHECK(cursorSignals <= 1); // 100ms 窗口内只发射一次
-        CHECK(ui->statusText(QStringLiteral("plot.axes.cursor")).contains(QStringLiteral("19")));
-        OK("状态栏契约：4 项在跑 + 推模式 + 游标 10Hz 节流");
+        // 注：游标 10Hz 节流已归位 plot 域（PlotWorkspace::pushCursorStatus，D2），
+        // 壳与 hub 不认识业务键；游标真实推送路径的断言见下文「游标读数」行为段。
+        OK("状态栏契约：4 项在跑 + 推模式（节流归 plot 域）");
     }
 
     // --- 0a2) 真跑一次 preferences.open：GUI 系统级 handler 必须弹得出、收得回 ---
@@ -888,11 +879,22 @@ int main(int argc, char *argv[])
 
     const QString fixture =
         QStringLiteral(PS_TEST_FIXTURE_DIR "/demo_flight.csv");
+    // 加载生命周期推送捕获：真实 data.load 入口应先推 "加载中…"，摄取结束回终态。
+    QStringList progressEvents;
+    QObject::connect(window.context(), &GuiContext::statusTextChanged, &window,
+                     [&progressEvents](const QString &id, const QString &text) {
+                         if (id == QStringLiteral("data.loading.progress"))
+                             progressEvents << text;
+                     });
     Intent load;
     load.op = QStringLiteral("data.load");
     load.params[QStringLiteral("path")] = fixture;
     const auto loaded = application.host().execute(load);
     CHECK(loaded);
+    // 真实摄取走完：生命周期信号把进度项复位为"空闲"；开始态 "加载中…" 也确实推过。
+    CHECK(progressEvents.contains(QStringLiteral("加载中…")));
+    CHECK(window.context()->statusText(QStringLiteral("data.loading.progress")) ==
+          QStringLiteral("空闲"));
     const int loadedDsId =
         loaded.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
     CHECK(loadedDsId >= 0);
@@ -2242,7 +2244,12 @@ int main(int argc, char *argv[])
             return application.context().interactions().dispatchViewAction(op, p, res);
         };
         CHECK(dispatchOk(QStringLiteral("playback.play")));
+        // 真实推送：引擎 playingChanged → PlotWorkspace → hub `playback.state`。
+        CHECK(window.context()->statusText(QStringLiteral("playback.state")) ==
+              QStringLiteral("播放中"));
         CHECK(dispatchOk(QStringLiteral("playback.pause")));
+        CHECK(window.context()->statusText(QStringLiteral("playback.state")) ==
+              QStringLiteral("已暂停"));
         CHECK(dispatchOk(QStringLiteral("playback.toggle")));
         CHECK(dispatchOk(QStringLiteral("playback.seek"), {{QStringLiteral("t"), 1.0}}));
         CHECK(dispatchOk(QStringLiteral("playback.rate"), {{QStringLiteral("rate"), 2.0}}));
@@ -2259,6 +2266,22 @@ int main(int argc, char *argv[])
         canvas->setCursorTime(1.25, false);
         CHECK(canvas->cursorActiveForTest());
         CHECK(std::fabs(canvas->cursorTime() - 1.25) < 1e-9);
+        // 真实推送路径：AxesView::setCursorTime → cursorTimeChanged → PlotWorkspace
+        // → hub `plot.axes.cursor`；文案形如 "游标: 1.25 s"（两位小数）。
+        // 节流是 10Hz 且带尾沿补发：转一下事件循环等补发定时器把终值落下去。
+        {
+            QElapsedTimer waiter;
+            waiter.start();
+            auto cur = [&]() { return window.context()->statusText(QStringLiteral("plot.axes.cursor")); };
+            while (waiter.elapsed() < 200 && !cur().contains(QStringLiteral("1.25")))
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        }
+        const QString cursorText =
+            window.context()->statusText(QStringLiteral("plot.axes.cursor"));
+        CHECK(!cursorText.isEmpty());
+        CHECK(cursorText.startsWith(QStringLiteral("游标: ")));
+        CHECK(cursorText.contains(QStringLiteral("1.25")));
+        CHECK(cursorText.endsWith(QStringLiteral(" s")));
         canvas->setCursorTime(1.25, true);
         CHECK(canvas->cursorPinned());
         canvas->clearCursor();

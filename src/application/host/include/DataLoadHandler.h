@@ -6,6 +6,7 @@
 #include "ToolboxHub.h"
 #include "Intent.h"
 #include "SourceHub.h"
+#include "AppContext.h"
 
 #include <QByteArray>
 
@@ -32,12 +33,13 @@
 class DataLoadHandler final : public nextpilot::plotscope::intent::IIntentHandler
 {
 public:
-    DataLoadHandler(nextpilot::plotscope::registry::ToolboxHub &registry,
+    DataLoadHandler(nextpilot::plotscope::context::AppContext &appCtx,
+                    nextpilot::plotscope::registry::ToolboxHub &registry,
                     nextpilot::plotscope::dataset::DatasetHub &repo,
                     nextpilot::plotscope::dataset::SourceHub &sources,
                     nextpilot::plotscope::context::IngestPipeline *pipeline = nullptr,
                     nextpilot::plotscope::context::SettingsStore *settings = nullptr)
-        : m_registry(registry), m_repo(repo), m_sources(sources),
+        : m_app(appCtx), m_registry(registry), m_repo(repo), m_sources(sources),
           m_pipeline(pipeline), m_settings(settings) {}
 
     bool canHandle(const nextpilot::plotscope::intent::Intent &intent) const override;
@@ -54,6 +56,7 @@ private:
     void recordSpec(const QString &path, const QStringList &parserIds, bool record,
                     const QByteArray &parserOptions = QByteArray());
 
+    nextpilot::plotscope::context::AppContext &m_app;
     nextpilot::plotscope::registry::ToolboxHub &m_registry;
     nextpilot::plotscope::dataset::DatasetHub &m_repo;
     nextpilot::plotscope::dataset::SourceHub &m_sources;
