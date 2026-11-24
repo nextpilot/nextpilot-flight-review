@@ -9,6 +9,9 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 
+mod watermark;
+pub use watermark::{Verdict, Watermark, classify};
+
 /// 一段派生序列：时间轴（秒）+ 值。与 ps-ops filter 的 (t, v) 输出同构。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Series {
@@ -247,6 +250,25 @@ struct NodeState {
     generation: u64,
     computed_len: usize,
     out: Series,
+    /// 已消费输入水位（BJ5 迟到检测）。None 表示尚未消费。
+    watermark: Option<Watermark>,
+    /// 上次失败回滚后置位：watermark 已失效，下次强制全量。
+    force_full: bool,
+    /// 输出修订号：每次成功重算 +1，下游据此检测上游输出改写。
+    out_rev: u64,
+}
+
+/// 重算撤销日志：失败时按逆序精确还原输出，保证事务性（BJ5）。
+#[derive(Debug)]
+enum Undo {
+    /// 该节点本次未触碰，无需还原。
+    None,
+    /// 全量重算：持有被替换的旧输出。
+    Original(Option<Series>),
+    /// Stateless 追加：记追加前的行数，回滚时截断。
+    Append(usize),
+    /// Window 拼接：记起点与被覆盖的原尾部，回滚时截断再补回。
+    Splice(usize, Vec<f64>, Vec<f64>),
 }
 
 /// 增量引擎：持有图 + 每节点的生成快照与已算结果。
@@ -280,9 +302,12 @@ impl IncrementalEngine {
         self.graph.add_edge(from, to)
     }
 
-    /// 增量求值。generation 未变且输入长度未变则整节点跳过。
-    /// 输入借用切片（不整条 clone），输出原地 append/splice（mem::take），
-    /// 使增量重算耗时随新增行数线性增长而非 O(N)。
+    /// 增量求值（事务化）。
+    ///
+    /// 每个节点先按 watermark 判定 verdict：Skip 跳过、Incremental 尾部增量、
+    /// Full 全量重算。迟到输入（中部插入）或上游改写会判为 Full 并沿拓扑传播。
+    /// 重算用 Undo 日志记录每一步的输出变形；任一算子失败则按日志精确回滚，
+    /// 旧输出完好（不清空、不重复），并把失败节点置 force_full 供下次全量恢复。
     pub fn evaluate(
         &mut self,
         generation: u64,
@@ -294,29 +319,48 @@ impl IncrementalEngine {
             }
         }
         let order = self.graph.topological_order()?;
+        let n_nodes = self.states.len();
+        // 标量快照：回滚时恢复 generation / computed_len / watermark / out_rev。
+        let snap: Vec<(u64, usize, Option<Watermark>, u64)> = self
+            .states
+            .iter()
+            .map(|s| (s.generation, s.computed_len, s.watermark, s.out_rev))
+            .collect();
+        let mut undo: Vec<Undo> = (0..n_nodes).map(|_| Undo::None).collect();
+        let mut failed: Option<GraphError> = None;
+        let recomputed_before = self.recomputed_rows;
+
         for id in order {
+            if failed.is_some() {
+                break;
+            }
             let source = self.graph.resolve_input(id);
             let node = &self.graph.nodes[id];
             // 拓扑序保证上游先于本节点，split_at_mut 同时借上游（不可变）与本节点（可变）。
             let (before, at) = self.states.split_at_mut(id);
             let st = &mut at[0];
-            let n = match &source {
+            let (n, up_rev) = match &source {
                 Source::Channel(name) => {
                     let s = channels.get(name).unwrap();
-                    s.t.len().min(s.v.len())
+                    (s.t.len().min(s.v.len()), 0u64)
                 }
                 Source::Node(up) => {
                     let s = &before[*up].out;
-                    s.t.len().min(s.v.len())
+                    (s.t.len().min(s.v.len()), before[*up].out_rev)
                 }
             };
 
-            // generation 未变 + 长度未变：完全跳过。
-            if st.generation == generation && st.computed_len == n {
+            // 迟到检测：本次输入 time 轴用于比对水位末行。
+            let in_t_probe: &[f64] = match &source {
+                Source::Channel(name) => &channels.get(name).unwrap().t,
+                Source::Node(up) => &before[*up].out.t,
+            };
+            let gen_changed = generation > st.generation;
+            let verdict = classify(gen_changed, st.watermark, st.force_full, n, in_t_probe, up_rev);
+            if verdict == Verdict::Skip {
                 continue;
             }
-            // 输入变短（上游全量算子输出收缩）：退回全量重算。
-            let can_incremental = n >= st.computed_len && generation > st.generation;
+
             let computed = st.computed_len;
             self.recomputed_rows = self.recomputed_rows.saturating_add(match node.memory {
                 Memory::Stateless => n.saturating_sub(computed),
@@ -336,54 +380,101 @@ impl IncrementalEngine {
                 }
             };
 
-            let out = if !can_incremental {
-                // 首次或输入收缩：全量。
-                let (t, v) = ps_ops::filters::apply(&node.filter_id, in_t, in_v, &node.params)
-                    .map_err(GraphError::OpFailed)?;
+            // verdict==Full（迟到/收缩/上游改写）或记忆跨度要求全量：从头算，旧输出整体搁置。
+            let full = verdict == Verdict::Full || node.memory == Memory::Full;
+            let out = if full {
+                let (t, v) = match ps_ops::filters::apply(&node.filter_id, in_t, in_v, &node.params) {
+                    Ok(r) => r,
+                    Err(e) => { failed = Some(GraphError::OpFailed(e)); break; }
+                };
+                undo[id] = Undo::Original(Some(std::mem::take(&mut st.out)));
                 Series { t, v }
             } else {
                 match node.memory {
-                    Memory::Full => {
-                        let (t, v) = ps_ops::filters::apply(&node.filter_id, in_t, in_v, &node.params)
-                            .map_err(GraphError::OpFailed)?;
-                        Series { t, v }
-                    }
+                    Memory::Full => unreachable!("Full 记忆跨度的 verdict 不可能为 Incremental"),
                     Memory::Stateless => {
-                        // 只算新增尾部，原地追加到已算结果。
-                        let (t, v) = ps_ops::filters::apply(
+                        let (t, v) = match ps_ops::filters::apply(
                             &node.filter_id,
                             &in_t[computed..n],
                             &in_v[computed..n],
                             &node.params,
-                        )
-                        .map_err(GraphError::OpFailed)?;
+                        ) {
+                            Ok(r) => r,
+                            Err(e) => { failed = Some(GraphError::OpFailed(e)); break; }
+                        };
                         let mut out = std::mem::take(&mut st.out);
+                        let keep = out.t.len();
+                        undo[id] = Undo::Append(keep);
                         out.append(&Series { t, v });
                         out
                     }
                     Memory::Window(w) => {
-                        // 回看 W-1 行重算尾部。切片起点 s = max(0, R-(W-1))，
-                        // R = computed-(W-1)，使重算段首行已脱离左 padding 区。
                         let pad = w.saturating_sub(1);
                         let r = computed.saturating_sub(pad);
                         let s = r.saturating_sub(pad);
-                        let (t, v) = ps_ops::filters::apply(
+                        let (t, v) = match ps_ops::filters::apply(
                             &node.filter_id,
                             &in_t[s..n],
                             &in_v[s..n],
                             &node.params,
-                        )
-                        .map_err(GraphError::OpFailed)?;
+                        ) {
+                            Ok(r) => r,
+                            Err(e) => { failed = Some(GraphError::OpFailed(e)); break; }
+                        };
                         let offset = r - s;
                         let mut out = std::mem::take(&mut st.out);
+                        // 记录被覆盖的原尾部 [r, len)，失败时精确还原。
+                        let tail_t = out.t[r.min(out.t.len())..].to_vec();
+                        let tail_v = out.v[r.min(out.v.len())..].to_vec();
+                        undo[id] = Undo::Splice(r, tail_t, tail_v);
                         out.splice_tail_from(r, &Series { t, v }, offset);
                         out
                     }
                 }
             };
+
             st.generation = generation;
             st.computed_len = n;
+            st.watermark = Some(Watermark::from_input(in_t, n, up_rev));
+            st.force_full = false;
+            // 仅全量重算才提升修订号：增量只追加/改尾部，不改写已消费前缀，
+            // 下游无需因普通 append 而退回全量。迟到(verdict=Full)必须提升，
+            // 让下游 detect 到上游改写并跟随全量重算。
+            if full {
+                st.out_rev = st.out_rev.wrapping_add(1);
+            }
             st.out = out;
+        }
+
+        if let Some(e) = failed {
+            // 全事务回滚：所有已触碰节点按 Undo 逆序还原，标量回快照。
+            self.recomputed_rows = recomputed_before;
+            for (id, u) in undo.into_iter().enumerate() {
+                let st = &mut self.states[id];
+                match u {
+                    Undo::None => continue,
+                    Undo::Original(old) => {
+                        if let Some(prev) = old { st.out = prev; }
+                    }
+                    Undo::Append(keep) => {
+                        st.out.t.truncate(keep);
+                        st.out.v.truncate(keep);
+                    }
+                    Undo::Splice(r, tail_t, tail_v) => {
+                        st.out.t.truncate(r);
+                        st.out.v.truncate(r);
+                        st.out.t.extend_from_slice(&tail_t);
+                        st.out.v.extend_from_slice(&tail_v);
+                    }
+                }
+                let (g, len, wm, rev) = snap[id];
+                st.generation = g;
+                st.computed_len = len;
+                st.watermark = wm;
+                st.out_rev = rev;
+                st.force_full = true; // watermark 已失效，下次强制全量恢复。
+            }
+            return Err(e);
         }
         Ok(())
     }
@@ -391,7 +482,14 @@ impl IncrementalEngine {
 
 impl NodeState {
     fn default_state() -> Self {
-        Self { generation: 0, computed_len: 0, out: Series::default() }
+        Self {
+            generation: 0,
+            computed_len: 0,
+            out: Series::default(),
+            watermark: None,
+            force_full: false,
+            out_rev: 0,
+        }
     }
 }
 

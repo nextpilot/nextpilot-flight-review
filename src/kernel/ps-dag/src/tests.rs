@@ -210,3 +210,144 @@ fn missing_channel_reports_error() {
     let err = g.evaluate_full(&HashMap::new()).unwrap_err();
     assert_eq!(err, GraphError::ChannelMissing("nonexistent".into()));
 }
+
+// ---- BJ5：迟到输入检测 + 事务性回滚 ----
+
+/// 断言两个 Series 逐位一致（NaN 视为相等）。
+fn assert_series_bitwise(a: &Series, b: &Series, label: &str) {
+    assert_eq!(a.t.len(), b.t.len(), "{label}: 时间轴长度 {} vs {}", a.t.len(), b.t.len());
+    assert_eq!(a.v.len(), b.v.len(), "{label}: 值长度 {} vs {}", a.v.len(), b.v.len());
+    for (i, (x, y)) in a.t.iter().zip(b.t.iter()).enumerate() {
+        assert!((x - y).abs() <= 1e-9 || (x.is_nan() && y.is_nan()), "{label}: t[{i}] {x} vs {y}");
+    }
+    for (i, (x, y)) in a.v.iter().zip(b.v.iter()).enumerate() {
+        assert!((x - y).abs() <= 1e-9 || (x.is_nan() && y.is_nan()), "{label}: v[{i}] {x} vs {y}");
+    }
+}
+
+/// 中部 backfill 后（前缀被改写），增量输出必须与全量重算逐位一致。
+/// 覆盖 Stateless / Window / Full 三种记忆跨度。
+#[test]
+fn late_backfill_matches_full_for_all_memory_kinds() {
+    fn run(filter: &str, params: Value) {
+        // 初次：时间 [0,10,20,30,40]，值随行号。
+        let t0 = vec![0.0, 10.0, 20.0, 30.0, 40.0];
+        let v0 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let mut eng = IncrementalEngine::new(Graph::new_full_single(filter, &params, "x"));
+        eng.evaluate(1, &channels_from(vec![ch("x", t0.clone(), v0.clone())])).unwrap();
+
+        // 中部 backfill 两行（时间 15、25），前缀末行从 40 后移 → 迟到。
+        let t1 = vec![0.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0];
+        let v1 = vec![1.0, 2.0, 99.0, 3.0, 88.0, 4.0, 5.0];
+        eng.evaluate(2, &channels_from(vec![ch("x", t1.clone(), v1.clone())])).unwrap();
+
+        let full = Graph::new_full_single(filter, &params, "x")
+            .evaluate_full(&channels_from(vec![ch("x", t1, v1)]))
+            .unwrap();
+        assert_series_bitwise(eng.output(0).unwrap(), &full[0], filter);
+    }
+    run("absolute", json!({}));                       // Stateless
+    run("moving_average", json!({"window": 3}));      // Window
+    run("integral", json!({}));                        // Full
+}
+
+/// 迟到沿拓扑传播：上游全量重算后 out_rev 变化，下游必须跟着重算。
+#[test]
+fn late_input_propagates_to_downstream() {
+    let params = json!({});
+    let t0 = vec![0.0, 10.0, 20.0, 30.0];
+    let v0 = vec![2.0, -3.0, 4.0, -5.0];
+
+    let mut eng = IncrementalEngine::new(Graph::new());
+    let a = eng.add_node(node("abs", "absolute", params.clone(), Source::Channel("x".into())));
+    let b = eng.add_node(node("scale", "scale", json!({"value_scale": 2.0}), Source::Node(a)));
+    eng.add_edge(a, b).unwrap();
+    eng.evaluate(1, &channels_from(vec![ch("x", t0.clone(), v0.clone())])).unwrap();
+
+    // 中部 backfill。
+    let t1 = vec![0.0, 10.0, 15.0, 20.0, 30.0];
+    let v1 = vec![2.0, -3.0, 7.0, 4.0, -5.0];
+    let chans = channels_from(vec![ch("x", t1.clone(), v1.clone())]);
+    eng.evaluate(2, &chans).unwrap();
+
+    // 与全量串联对拍。
+    let mut g = Graph::new();
+    let ga = g.add_node(node("abs", "absolute", params.clone(), Source::Channel("x".into())));
+    let gb = g.add_node(node("scale", "scale", json!({"value_scale": 2.0}), Source::Node(ga)));
+    g.add_edge(ga, gb).unwrap();
+    let full = g.evaluate_full(&chans).unwrap();
+    assert_series_bitwise(eng.output(a).unwrap(), &full[a], "abs");
+    assert_series_bitwise(eng.output(b).unwrap(), &full[b], "scale");
+}
+
+/// 上游纯追加（增量）不提升 out_rev，下游不应误退全量——守住 S8 增量契约。
+#[test]
+fn pure_append_does_not_force_downstream_full() {
+    let t0 = vec![0.0, 10.0, 20.0];
+    let v0 = vec![1.0, 2.0, 3.0];
+    let mut eng = IncrementalEngine::new(Graph::new());
+    let a = eng.add_node(node("abs", "absolute", json!({}), Source::Channel("x".into())));
+    let b = eng.add_node(node("scale", "scale", json!({"value_scale": 2.0}), Source::Node(a)));
+    eng.add_edge(a, b).unwrap();
+    eng.evaluate(1, &channels_from(vec![ch("x", t0.clone(), v0.clone())])).unwrap();
+    let base = eng.recomputed_rows;
+
+    // 纯追加 3 行：上游 Stateless 增量 3 行，下游 Stateless 增量 3 行 = 6。
+    let t1 = vec![0.0, 10.0, 20.0, 30.0, 40.0, 50.0];
+    let v1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    eng.evaluate(2, &channels_from(vec![ch("x", t1, v1)])).unwrap();
+    let delta = eng.recomputed_rows - base;
+    assert_eq!(delta, 6, "纯追加下游应走增量 3+3=6，实际 {delta}（误退全量？）");
+}
+
+/// 算子失败时事务回滚：旧输出完好（不清空、不重复），下次全量恢复。
+/// 用 expression 算子：首次合法表达式建立水位，之后注入非法表达式 + 迟到 → Full 失败。
+#[test]
+fn failed_recompute_rolls_back_and_recovers_full() {
+    let t0 = vec![0.0, 10.0, 20.0, 30.0];
+    let v0 = vec![1.0, 2.0, 3.0, 4.0];
+    let good = json!({"expr": "x"});
+    let mut eng = IncrementalEngine::new(Graph::new_full_single("expression", &good, "x"));
+    eng.evaluate(1, &channels_from(vec![ch("x", t0.clone(), v0.clone())])).unwrap();
+    let before = eng.output(0).unwrap().clone();
+
+    // 注入非法表达式（缺 expr）+ 中部 backfill 触发 Full → apply 失败。
+    eng.graph.nodes[0].params = json!({});
+    let t1 = vec![0.0, 10.0, 15.0, 20.0, 30.0];
+    let v1 = vec![1.0, 2.0, 9.0, 3.0, 4.0];
+    let bad = channels_from(vec![ch("x", t1.clone(), v1.clone())]);
+    assert!(eng.evaluate(2, &bad).is_err(), "非法表达式应导致算子错误");
+
+    // 回滚：输出与失败前逐位一致，不清空、不重复。
+    assert_series_bitwise(eng.output(0).unwrap(), &before, "rollback");
+
+    // 修复表达式 + 同样输入重跑：force_full 强制全量，恢复成功且与全量一致。
+    eng.graph.nodes[0].params = good.clone();
+    eng.evaluate(3, &bad).unwrap();
+    let full = Graph::new_full_single("expression", &good, "x")
+        .evaluate_full(&bad).unwrap();
+    assert_series_bitwise(eng.output(0).unwrap(), &full[0], "recover");
+}
+
+/// 多节点事务：上游成功、下游失败时，上游输出也必须回滚（全事务，不留半更新）。
+#[test]
+fn failed_downstream_rolls_back_upstream_too() {
+    let t0 = vec![0.0, 10.0, 20.0];
+    let v0 = vec![1.0, 2.0, 3.0];
+    let mut eng = IncrementalEngine::new(Graph::new());
+    let a = eng.add_node(node("abs", "absolute", json!({}), Source::Channel("x".into())));
+    let b = eng.add_node(node("bad", "expression", json!({"expr": "x"}), Source::Node(a)));
+    eng.add_edge(a, b).unwrap();
+    eng.evaluate(1, &channels_from(vec![ch("x", t0.clone(), v0.clone())])).unwrap();
+    let up_before = eng.output(a).unwrap().clone();
+    let down_before = eng.output(b).unwrap().clone();
+
+    // 下游注入非法表达式 + 中部 backfill → 上游成功全量、下游失败。
+    eng.graph.nodes[b].params = json!({});
+    let t1 = vec![0.0, 5.0, 10.0, 20.0];
+    let v1 = vec![1.0, 8.0, 2.0, 3.0];
+    assert!(eng.evaluate(2, &channels_from(vec![ch("x", t1, v1)])).is_err());
+
+    assert_series_bitwise(eng.output(a).unwrap(), &up_before, "upstream rolled back");
+    assert_series_bitwise(eng.output(b).unwrap(), &down_before, "downstream rolled back");
+}
