@@ -14,6 +14,31 @@ LD_LIBRARY_PATH="$HOME/.ps-dps/Qt/6.2.4/gcc_64/lib" \
   ctest --test-dir build -R ps_test_gui --output-on-failure
 ```
 
+## 快速迭代构建
+
+测试目标有 37 个可执行文件，改一行跨层头就要全编一遍。日常迭代关掉它们，验收前再开回来：
+
+```bash
+# 日常：只编主程序与 GUI，测试目标不生成
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPS_BUILD_TESTS=OFF
+cmake --build build -j2
+
+# 需要跑测试前，改回 ON 重新 configure（增量，不会全量重编）
+cmake -S . -B build -DPS_BUILD_TESTS=ON
+cmake --build build -j2 && ctest --test-dir build --output-on-failure
+```
+
+关闭测试后 `ctest` 无任何用例，报告 `0 tests` 是预期行为，不是失败。
+
+**编译缓存**。configure 时自动探测 ccache 并写入 `CMAKE_CXX_COMPILER_LAUNCHER`，探测不到则静默退化为直连编译器。缓存容量与命中率：
+
+```bash
+ccache --max-size 5G   # 缓存目录 <~/.cache/ccache>；容量给足，命中率才稳
+ccache -s              # 看 direct/预处理器命中与缓存占用
+```
+
+只有编到同内容的源文件才命中：切分支、清理重建、多个 target 重复编同一文件（如 `App.cpp` 被 11 个测试目标各编一遍）收益最大；改着头文件后的首次构建仍需真编。想强制不用缓存时加 `-DPS_USE_CCACHE=OFF`。
+
 ## 测试分层
 
 | 类型 | 位置 | 说明 |
