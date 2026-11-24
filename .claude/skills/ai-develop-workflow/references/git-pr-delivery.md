@@ -109,7 +109,7 @@ git push origin <特性分支>
 
 ## PR 规则
 
-1. 推送特性分支后建 PR：`base: main ← compare: 特性分支`。
+1. 推送特性分支后建 PR：`base: main ← compare: 特性分支`。建 PR 必须显式传 `close_related_issue: 0`，平台便不在合并时自动关闭任何 issue；建 PR 后回读 PR 详情确认该字段为 `0`。
 2. **标准流程 PR** 描述必含：
    - 首行 `Closes #<issue-id>`；
    - issue 链接；
@@ -117,6 +117,7 @@ git push origin <特性分支>
    - 验证方式与结果（测试数字）；
    - 提交清单（多提交逐条列出，见下节）；
    - 与 issue 的偏差（无则写 none）。
+   - 描述里可正常引用其他 issue 编号用于说明来源与关系，不因连带关闭风险而删减。
 3. **简单流程 PR** 描述必含：
    - `No-Issue: <理由>`；
    - `Change-Type: ...`；
@@ -131,7 +132,7 @@ git push origin <特性分支>
    - Gitee 侧 review 已通过、CI 门禁已过（操作见 `references/gitee-operations.md`）。
 5. 合并方式：普通 merge 或 squash（保持 `main` 历史线性、每节点语义完整）。
 6. 合并由 PM 或用户执行；Dev 不自行合并。
-7. 合并后按 `references/gitee-operations.md` 校验平台是否已自动关闭 issue、自动删除源分支，缺失项才手动兜底；本地分支始终手动删。
+7. 合并后按 `references/gitee-operations.md` 关闭目标 issue、校验源分支是否已删，缺失项才手动兜底；本地分支始终手动删。
 
 ## PR 描述随提交同步更新
 

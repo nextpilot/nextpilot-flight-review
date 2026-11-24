@@ -50,14 +50,14 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 | 读/列 issue | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues` | `number` 形如 `IKX6N2` |
 | 追加评论（回填） | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | 表单参数 `body`（Markdown） |
 | 读评论 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | enterprises 路径会因仓库级令牌报 403，用 repos 路径 |
-| 建 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls` | JSON body：`head`/`base`/`title`/`body` |
+| 建 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls` | JSON body：`head`/`base`/`title`/`body`/`close_related_issue`（**必须显式传 `0`**，见「issue 关闭由 AI 执行」） |
 | 更新 PR 描述 | `PATCH /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | JSON body：`body`（新描述全文，**整段替换**）；首行写 `Closes #IKxxxxx`；分支每新增提交都要刷新，多提交需全列 |
 | 审批 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review` | body 带 `event=APPROVE`；成功返回 204 |
-| 查 PR 状态 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | 看 `state`（`open`/`merged`/`closed`）、`mergeable` |
+| 查 PR 状态 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | 看 `state`（`open`/`merged`/`closed`）、`mergeable`、**`close_related_issue`** |
 | 合并 PR | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge` | body 带 `merge_style=merge`；**须先过 review + testers 两道门禁**（见下） |
 | 指定测试人 | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/testers` | body 带 `testers=<用户名>`（复数）；成功返回 201 |
 | 提交测试通过 | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/test` | body 带 `event=APPROVE`；成功返回 204 |
-| 关闭 issue | `PATCH /api/v5/repos/nextpilot/issues/<num>` | **兜底用**：正常由 PR 合并自动关闭，`state` 仍为 open 时才调；表单参数必须带 `repo=nextpilot-advance-plotscope` + `state=closed` |
+| 关闭 issue | `PATCH /api/v5/repos/nextpilot/issues/<num>` | **由 AI 显式执行**：表单参数必须带 `repo=nextpilot-advance-plotscope` + `state=closed`；只关目标 issue |
 | 删文件（免强推） | `DELETE /api/v5/repos/nextpilot/nextpilot-advance-plotscope/contents/<path>` | body 带 `sha`/`branch`/`message`；清理误传文件用，绕过保护分支 |
 
 ## 平台踩坑
@@ -75,30 +75,38 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 
   三道门禁的报错分别是 405「未通过设置的审查」（缺第 1 步）、405「未通过设置的测试」（缺第 2 或第 3 步）。第 2 步是「指定测试人」、第 3 步是「测试通过」，**两者都要做**，只做其一时 `can_merge_check` 仍为 `False`。
   合并参数用 `merge_style=merge`（保留原始提交与 `Refs:` footer）；用 squash 会把各提交的 `Refs:` 吃掉，历史里查不到追溯线索。
-- **⚠️ 描述里的 `#IKxxxxx` 字样会被连带关闭（本仓库最高频的坑，连踩三次）**：本仓库 `close_related_issue=1`，PR 合并时会把描述中**所有**带 `#` 的 issue ident 一并关闭——不只 `Closes #` 那一个。踩坑实录：PR !45 正文写了「按 `#IKXGYH` 评审裁定」→ 误关；PR !47 正文引用了 `#IKXGYH` → 又误关；**PR !48 连「文档里记录了这个坑」这句话本身都带着 `#IKXGYH`，于是第三次误关**。连写文档复盘都会被同一个坑绊倒，说明它必须靠机制拦，不能靠记性。
+- **issue 关闭由 AI 显式执行，不由平台自动关**：仓库设置已关闭「合并时自动关闭关联 issue」，建 PR 时仍显式传 `close_related_issue: 0`，避免仓库设置被改回后无声失效。该字段为 `1` 时，平台在 PR 合并时会把描述中**所有**带 `#` 的 issue ident 一并关闭——不只 `Closes #` 那一个，仅作引用、来源说明、评审裁定的 ident 同样会被连带关闭。为 `0` 时平台不关闭任何 issue，关闭动作由 AI 在合并后显式执行。
 
-  **规则**：PR 描述里**只允许出现要关闭的那个 issue 的 `#`**。其余 issue 一律去掉 `#`，并且**连编号都不要出现在正文里**——改写成「按另一个 issue 的评审裁定」「按前序 issue 的裁定」，避免为了说明出处而留下 ident。
-
-  **机制（合并前必跑）**：描述写完后、建 PR 之前，先用下面这段自检，确认描述里出现的 `#IKxxxxx` 恰好只有目标 issue 一个：
+  **建 PR 时必传**：
 
   ```bash
-  # 目标 issue 作为唯一参数传入；期望输出为空
-  grep -oE '#IKX[0-9A-Z]+' pr_body.md | grep -v '^#IKXG0M$'
+  curl -s -X POST "https://gitee.com/api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls" \
+    -H "Content-Type: application/json" \
+    -d '{"access_token":"<TOKEN>","title":"...","head":"<分支>","base":"main",
+         "body":"...","close_related_issue":0}'
   ```
 
-  输出非空就说明有多余 ident，去掉 `#` 或整段改写后再提交。合并完成后，另需 `GET` 一次相关 issue 的 `state` 与 `updated_at`，若 `updated_at` 与合并时刻同秒则说明又被连带关了，按下条恢复。
+  **PR 描述里的 issue 编号可以照常写**：目标 issue 写 `Closes #<目标>`，其他 issue 用 `#<编号>` 正常引用、出处、说明关系。追溯信息不再需要为了规避连带关闭而删减。
 
-  **误关的识别与恢复**：识别——`updated_at` 与 PR 合并时刻同秒（秒级一致）、`closed_at`/`closed_by` 为空。恢复——`PATCH /repos/nextpilot/issues/<num>` + `repo=nextpilot-advance-plotscope` + `state=open`；同时 `PATCH` 该 PR 的描述去掉多余的 `#`，否则下次合并会再关一次。
-- **自动关闭只认 `merged`**：PR 描述写 `Closes #IKxxxxx`（ident 带 `#`）后，合并时 issue 自动变 `closed`；PR 被**关闭但未合并**不触发，issue 保持 open。合并后仍要 `GET` 核实，未关才手动 PATCH。
+  **建 PR 后必须回读校验**：`GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` 看 `close_related_issue` 是否为 `0`。为 `1` 说明开关未生效，**先 PATCH 修正**（`PATCH .../pulls/<n>` 带 `close_related_issue: 0`）再合并；若修正后仍为 `1`，则本次 PR 的描述退回「只保留目标 issue 的 `#`」的严格写法，合并后再逐个 `GET` 描述里引用过的 issue，确认其 `state` 仍为 `open`，被连带关闭的用 `PATCH .../issues/<编号>` + `state=open` 恢复。
+
+  **关闭动作的唯一执行路径**（AI 在 PR 合并后执行，只关目标 issue）：
+
+  ```bash
+  # 只关目标 issue；表单参数必须带 repo=
+  curl -s -X PATCH "https://gitee.com/api/v5/repos/nextpilot/issues/<目标编号>" \
+    --data-urlencode "access_token=<TOKEN>" \
+    --data-urlencode "repo=nextpilot-advance-plotscope" \
+    --data-urlencode "state=closed"
+  ```
+
+  **合并后必须复查**：目标 issue 的 `state` 确认为 `closed`；描述里引用过的其他 issue 确认仍为 `open`。
 - **源分支自动删除看仓库设置**：设置「合并后删除源分支」开启才会自动删；未开启时远端分支仍在，需手动 `git push origin --delete`。本地分支任何情况下都手动删。
 - **不要把调试/截图图片传进仓库**。评论框「上传图片」是图床（存服务器、不进仓库），但只认网页登录 cookie，令牌调用返回 401；v5 API 无开放图床上传端点。需要内嵌图片时用网页登录后上传或外链，禁止 `git add` 截图。
 
-## PR 合并后的自动闭环与兜底校验（PM 执行）
+## PR 合并后的闭环校验（PM 执行）
 
-平台能力（本仓库实测：PR #8 合并后 issue IKX79J 自动 `closed`，未手动操作）
-
-- **自动关 issue**：描述含 `Closes #IKxxxxx`，PR 合并即关闭。
-- **自动删源分支**：取决于仓库设置「合并后删除源分支」，开启则合并即删。
+平台能力：建 PR 时传 `close_related_issue: 0`，平台在合并时**不自动关闭**任何 issue；源分支是否自动删除取决于仓库设置「合并后删除源分支」。
 
 ```text
 loop（每隔一段时间，设上限避免无限等待）：
@@ -107,11 +115,14 @@ loop（每隔一段时间，设上限避免无限等待）：
         POST /repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments
             # PM 回填验收结论：PR 号、提交号、变更摘要、
             # 测试结果（数字）、验收标准逐条结果、遗留项
-        GET issue 详情
-        if state != "closed":              # 兜底①：平台未自动关才手动关
-            PATCH /repos/nextpilot/issues/<issue编号>  { repo, state=closed }
+        GET 目标 issue 详情
+        if state != "closed":              # 关目标 issue
+            PATCH /repos/nextpilot/issues/<目标编号>  { repo, state=closed }
+        GET 描述里引用过的其他 issue
+        if 某个被误关:                      # 恢复
+            PATCH /repos/nextpilot/issues/<该编号>  { repo, state=open }
         GET 远端分支列表
-        if 源分支仍存在:                    # 兜底②：仓库未开自动删才手动删
+        if 源分支仍存在:                    # 仓库未开自动删才手动删
             git push origin --delete <特性分支>
         git branch -D <特性分支>           # 本地分支始终手动删
         结束
@@ -121,6 +132,6 @@ loop（每隔一段时间，设上限避免无限等待）：
         继续等待；若有 CI/review 未过则先修复
 ```
 
-- 校验口径以 `GET` 返回的**实际状态**为准，不以“平台应该会关”的推断为准。
+- 校验口径以 `GET` 返回的**实际状态**为准，不以推断代替校验。
 - 合并后另需确认 PR 描述与最终提交一致（多提交逐条列出），描述过期则先 PATCH 再收尾。
-- 若 CLI 会话无法持续轮询，交付说明中明确写下「PR 号 + 待合并后校验并兜底关闭 IKXxxxx」待办，由下次会话接续，不能默认已完成。
+- 若 CLI 会话无法持续轮询，交付说明中明确写下「PR 号 + 待合并后校验并关闭 IKXxxxx」待办，由下次会话接续，不能默认已完成。
