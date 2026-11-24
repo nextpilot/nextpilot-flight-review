@@ -20,6 +20,7 @@ using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
+namespace parser = nextpilot::plotscope::parser; // 限定名 parser:: 需要别名（using-directive 不引入命名空间名）
 using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::host;
 
