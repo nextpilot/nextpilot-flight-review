@@ -401,7 +401,11 @@ int main(int argc, char **argv)
             const QList<UiAction> fewerGallery = DataModule::sourceGalleryActions(fewer);
             CHECK(fewerGallery.size() == fewer.size() + qMin(4, int(fewer.size())));
         }
-        CHECK(toolbox.uiActions.count() == 6); // 飞控3 + 汽车1 + 机器人1 + 探针1
+        // c7 后登记表为 3 条：D13 删掉 Menu/DockPanel/Canvas 三种死槽，挂在死槽上的 3 条随之退役——
+        // 飞控 ap.dock.tuning（调参面板，原 dock.left）、ap.canvas.trajectory（航迹工具，原 canvas.tool）、
+        // 汽车 car.dock.can（CAN 报文面板，原 dock.right），均"待对应视图落地后回归"。
+        // 仍在表的：ap.plot.attitude（改挂 ribbon.group.plot.series）、rob.plot.tf、probe.ui.act。
+        CHECK(toolbox.uiActions.count() == 3); // 飞控1 + 机器人1 + 探针1（死槽退役 3 条）
         CHECK(toolbox.panels.count() == 1);
         CHECK(toolbox.scripts.count() == 2);
         CHECK(toolbox.dataAssets.count() == 1);
@@ -424,7 +428,8 @@ int main(int argc, char **argv)
         for (const UiAction &a : toolbox.uiActions.values())
             if (a.domain == Domain::Autopilot)
                 ++apUi;
-        CHECK(apUi == 3); // 飞控包的 3 个动作条目
+        // 同上：飞控包只剩 ap.plot.attitude 一条在登记表里（另 2 条已随死槽退役）。
+        CHECK(apUi == 1);
         for (const DocEntry &d : toolbox.docs.values())
             if (d.domain == Domain::General)
                 ++generalDocs;
