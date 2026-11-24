@@ -9,6 +9,7 @@
 #include "RuntimeHost.h"
 #include "Result.h"
 
+#include <QList>
 #include <QVariantMap>
 
 #include <cstdio>
@@ -45,6 +46,7 @@ ModuleInfo DataModule::info() const
 
 void DataModule::initialize(RuntimeHost &host)
 {
+    m_host = &host;
     // 只订阅仓库事件；不碰 UI、不认识格式。用 this 作 context object，
     // 模块析构时连接自动断开——不需要手动解绑。
     // PLOTSCOPE_QUIET_STDOUT：MCP stdio 桥等协议场景下 stdout 是协议通道，
@@ -84,6 +86,44 @@ void DataModule::initialize(RuntimeHost &host)
         });
 }
 
+QList<UiAction> DataModule::sourceGalleryActions(const QList<parser::IMessageParser *> &drivers)
+{
+    QList<UiAction> actions;
+    int fmtOrder = 100;
+    int common = 0;
+    for (parser::IMessageParser *driver : drivers)
+    {
+        if (!driver)
+            continue;
+        UiAction fmt;
+        fmt.id = QStringLiteral("data.source.") + driver->id();
+        fmt.label = driver->displayName();
+        fmt.area = QStringLiteral("ribbon.group.data.sources");
+        fmt.visual = driver->id();
+        fmt.galleryGroup = QStringLiteral("文件格式");
+        fmt.icon = QStringLiteral("file_open");
+        fmt.intentOp = QStringLiteral("data.load");
+        fmt.order = fmtOrder++;
+        actions.append(fmt);
+
+        // 前四个驱动同时进"常用"组；排序权重独立于文件格式组。
+        if (common < 4)
+        {
+            UiAction fav;
+            fav.id = QStringLiteral("data.source.common.") + driver->id();
+            fav.label = driver->displayName();
+            fav.area = fmt.area;
+            fav.visual = driver->id();
+            fav.galleryGroup = QStringLiteral("常用");
+            fav.icon = QStringLiteral("file_open");
+            fav.intentOp = QStringLiteral("data.load");
+            fav.order = common++;
+            actions.append(fav);
+        }
+    }
+    return actions;
+}
+
 void DataModule::onAttach(IUiContext &ui)
 {
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
@@ -93,10 +133,8 @@ void DataModule::onAttach(IUiContext &ui)
     m_ui = &ui;
 
     // 本域 Ribbon 页/组自声明（D13）：壳不再预置业务页。
-    // 开始页作为落地聚合页归数据域（高频入口：打开 / 最近）。
-    ui.declareRibbonPage(QStringLiteral("ribbon.page.home"), QStringLiteral("开始"), 0);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.home.data"), QStringLiteral("常用"),
-                          QStringLiteral("ribbon.page.home"), 0);
+    // 注：开始页 ribbon.page.home 是产品级聚合页，暂由壳 ShellContributions 声明；
+    // 本模块只把"打开/最近"作为业务条目挂进 home.data 组，不声明该页/组容器。
     ui.declareRibbonPage(QStringLiteral("ribbon.page.data"), QStringLiteral("数据"), 2);
     ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.common"), QStringLiteral("常用"),
                           QStringLiteral("ribbon.page.data"), 0);
@@ -106,6 +144,13 @@ void DataModule::onAttach(IUiContext &ui)
                           QStringLiteral("ribbon.page.data"), 2);
     ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.debug"), QStringLiteral("调试"),
                           QStringLiteral("ribbon.page.data"), 3);
+
+    // 来源画廊：条目由已装载的格式驱动元数据派生（sourceGalleryActions），
+    // 壳不保留格式常量表；装/卸解析器，图块随之增减。
+    const QList<parser::IMessageParser *> drivers =
+        m_host ? m_host->app().toolbox().drivers() : QList<parser::IMessageParser *>{};
+    for (const UiAction &a : sourceGalleryActions(drivers))
+        ui.addAction(a);
 
     ActivitySpec dataActivity;
     dataActivity.id = QStringLiteral("data");
@@ -119,6 +164,7 @@ void DataModule::onAttach(IUiContext &ui)
                     QStringLiteral("dataset-tree"));
 
     // 开始页"常用"组：打开 / 最近（落地页高频入口，id 与外壳文件对话框特判对齐）。
+    // 组容器由壳 ShellContributions 声明，这里只贡献业务条目。
     auto addHome = [&ui](const QString &id, const QString &label, const QString &op,
                          const QString &icon, const QString &shortcut, int order) {
         UiAction a;

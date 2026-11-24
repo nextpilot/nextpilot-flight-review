@@ -219,44 +219,8 @@ void MainWindow::declareStandardSlots()
     }
 
 
-    // --- 来源库 ---
-    // 由工具箱里已注册的格式驱动动态生成：每个驱动一项，放"文件格式"组；
-    // 实时源放"实时源"组。点击走 data.source.<id> → 按该格式直接弹文件对话框。
-    const QString srcArea = QStringLiteral("ribbon.group.data.sources");
-    // gallery 分组出现顺序按动作 order 聚合：常用(0..3) 必须排在文件格式(100+) 之前，
-    // 分组顺序："常用"→"文件格式"→"实时源"。
-    int fmtOrder = 100;
-    for (nextpilot::plotscope::parser::IMessageParser *driver : m_appCtx.toolbox().drivers())
-    {
-        UiAction a;
-        a.id = QStringLiteral("data.source.") + driver->id();
-        a.label = driver->displayName();
-        a.area = srcArea;
-        a.visual = driver->id();
-        a.galleryGroup = QStringLiteral("文件格式");
-        a.icon = QStringLiteral("file_open");
-        a.order = fmtOrder++;
-        slotReg.bindLocal(srcArea, a, QStringLiteral("app.skeleton"));
-    }
-    // 常用组：把前四个格式驱动也放进去。
-    {
-        int n = 0;
-        for (nextpilot::plotscope::parser::IMessageParser *driver : m_appCtx.toolbox().drivers())
-        {
-            if (n >= 4)
-                break;
-            UiAction a;
-            a.id = QStringLiteral("data.source.common.") + driver->id();
-            a.label = driver->displayName();
-            a.area = srcArea;
-            a.visual = driver->id();
-            a.galleryGroup = QStringLiteral("常用");
-            a.icon = QStringLiteral("file_open");
-            a.order = n;
-            slotReg.bindLocal(srcArea, a, QStringLiteral("app.skeleton"));
-            ++n;
-        }
-    }
+    // 来源画廊条目由 DataModule 按已装载的格式驱动元数据派生（sourceGalleryActions），
+    // 壳不遍历驱动、不保留格式常量表；这里只保留点击后的对话框分发入口。
 
     // 诊断归外壳：数据/脚本/分析/绘图由各自模块声明（plot 见 PlotModule::onAttach）。
     ActivitySpec diagnostics;
@@ -410,7 +374,7 @@ void MainWindow::build(RuntimeHost &host)
     // 3) 装模块（GUI 模式：会调用 onAttach，模块可自带界面入口）
     host.activate(QStringList(), m_context);
 
-    // 3.0) 属性面板占 dock.right（替换原 CAN 面板的默认占用）。
+    // 3.0) 属性面板占 SecondarySidebar（替换原 CAN 面板的默认占用）。
     // 外壳只用**部件类型字符串**请求，不 include 任何 views/ 头文件——
     // 具体 QWidget 由视图层自注册（PS_REGISTER_PANEL("property-panel")）。
     // 属性面板是 PropertySchema 契约的通用视图：选中什么、显示什么全由

@@ -15,6 +15,7 @@
 #include "DecodedFrame.h"
 #include "IMessageParser.h"
 #include "NmeaMessageParser.h"
+#include "DataModule.h"
 
 #include <QCoreApplication>
 #include <QSet>
@@ -356,6 +357,49 @@ int main(int argc, char **argv)
         // 内容全是数据，每种一张 Registry<T>：按类型读表，无 kind 字符串、无转型。
         // （计数含本测试文件自注册的探针包贡献：+1 个 UI 动作；条目数而非贡献对象数）
         CHECK(toolbox.drivers().size() == 7); // csv + ulog + custom-protocol + mdf4 + rosbag2 + blf + apbin
+
+        // 来源画廊条目严格派生自 toolbox 驱动元数据（DataModule::sourceGalleryActions），
+        // 不是壳里的格式常量表：驱动增减 → 条目随之增减；id/label/visual 逐一对应驱动。
+        {
+            const QList<parser::IMessageParser *> drv = toolbox.drivers();
+            const QList<UiAction> gallery = DataModule::sourceGalleryActions(drv);
+            const int common = qMin(4, int(drv.size()));
+            CHECK(gallery.size() == drv.size() + common);
+
+            QSet<QString> fmtIds;
+            for (int i = 0; i < drv.size(); ++i)
+            {
+                parser::IMessageParser *d = drv.at(i);
+                const QString fmtId = QStringLiteral("data.source.") + d->id();
+                const UiAction *fmt = nullptr;
+                const UiAction *fav = nullptr;
+                for (const UiAction &a : gallery)
+                {
+                    if (a.id == fmtId)
+                        fmt = &a;
+                    else if (a.id == QStringLiteral("data.source.common.") + d->id())
+                        fav = &a;
+                }
+                CHECK(fmt != nullptr);
+                if (fmt)
+                {
+                    CHECK(fmt->label == d->displayName());
+                    CHECK(fmt->visual == d->id());
+                    CHECK(fmt->area == QStringLiteral("ribbon.group.data.sources"));
+                    CHECK(fmt->galleryGroup == QStringLiteral("文件格式"));
+                    CHECK(fmt->intentOp == QStringLiteral("data.load"));
+                    fmtIds.insert(fmtId);
+                }
+                // 常用组只收前四个驱动；其余驱动不应有 common 条目。
+                CHECK(fav != nullptr == (i < 4));
+            }
+            CHECK(fmtIds.size() == drv.size());
+
+            // 裁掉一个驱动：派生集合同步收缩，证明条目数跟随元数据而非常量表。
+            const QList<parser::IMessageParser *> fewer = drv.mid(0, drv.size() - 1);
+            const QList<UiAction> fewerGallery = DataModule::sourceGalleryActions(fewer);
+            CHECK(fewerGallery.size() == fewer.size() + qMin(4, int(fewer.size())));
+        }
         CHECK(toolbox.uiActions.count() == 6); // 飞控3 + 汽车1 + 机器人1 + 探针1
         CHECK(toolbox.panels.count() == 1);
         CHECK(toolbox.scripts.count() == 2);
@@ -400,9 +444,10 @@ int main(int argc, char **argv)
         // UI 插槽：壳级页/组在 host 层 ShellContributions 唯一声明；业务页/组由模块
         // onAttach 自声明，headless 不调 onAttach，因此这里只看到壳的文件/视图两页。
         const auto &slotReg = application.host().uiSlots();
-        // 壳级两页：文件 / 视图（业务页在 GUI 激活模块后出现，见 test_gui）。
-        CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 2);
-        for (const char *p : {"ribbon.page.file", "ribbon.page.view"})
+        // 壳级页面：开始（产品级聚合页，暂留壳）/ 文件 / 视图（业务页在 GUI 激活
+        // 模块后出现，见 test_gui）。
+        CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 3);
+        for (const char *p : {"ribbon.page.home", "ribbon.page.file", "ribbon.page.view"})
             CHECK(slotReg.slot(QString::fromLatin1(p)) != nullptr);
         // 探针动作挂到绘图页"曲线与轴"组（该组由 PlotModule 在 GUI 侧声明；
         // headless 下无此槽，探针动作计入 unbound——GUI 装配时再校验归属）。

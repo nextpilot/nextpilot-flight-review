@@ -19,7 +19,14 @@ void declareShellContributions(nextpilot::plotscope::registry::UiSlotHub &regist
                              parent, order);
     };
 
-    // --- 壳级两页 ---
+    // --- 壳级页面 ---
+    // 开始页（order 0）：产品级聚合落地页，暂由壳声明；等出现独立 home 模块再迁。
+    // 边界：这里只给**容器**，页内具体业务条目仍由各模块贡献（如 DataModule 把
+    // 打开/最近挂到 home.data 组），壳不预置业务动作。
+    page(QStringLiteral("ribbon.page.home"), QStringLiteral("开始"), 0);
+    group(QStringLiteral("ribbon.group.home.data"), QStringLiteral("常用"),
+          QStringLiteral("ribbon.page.home"), 0);
+
     // 文件页（order 1）：文件 / 导出 / 截图 / 帮助四组。
     page(QStringLiteral("ribbon.page.file"), QStringLiteral("文件"), 1);
     group(QStringLiteral("ribbon.group.file.document"), QStringLiteral("文件"),
