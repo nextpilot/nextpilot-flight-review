@@ -656,17 +656,17 @@ void PlotModule::onAttach(IUiContext &ui)
     plotActivity.icon = QStringLiteral("plot_refresh");
     plotActivity.order = 3;
     plotActivity.ribbonPage = QStringLiteral("ribbon.page.plot");
-    plotActivity.centralPanel = QStringLiteral("plot-workspace");
+    plotActivity.centralPanel = QStringLiteral("plot.workspace");
     ui.declareActivity(plotActivity);
 
     // 导出组插槽：模块声明自己的 Ribbon 分组（c4c 起 plot 页/组归模块声明）。
     ui.declareSlot(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("导出"),
                    SlotKind::RibbonGroup, QStringLiteral("ribbon.page.plot"));
 
-    // 申请中央画布工作区：实现由绘图视图层自注册（"plot-workspace" 类型），
+    // 申请中央画布工作区：实现由绘图视图层自注册（"plot.workspace" 类型），
     // 它内部管理 N 个画布 cell（多曲线/拆分/网格），并集中路由 plot.* view action。
     // 本模块不依赖 Qt Widgets——CLI 构建保持纯净。
-    ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("plot-workspace"));
+    ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("plot.workspace"));
 
     UiAction action;
     action.id = QStringLiteral("plot.action.redraw");

@@ -762,7 +762,7 @@ void MainWindow::build(RuntimeHost &host)
                 if (!instrKind.isEmpty() && m_context)
                 {
                     QWidget *w = m_context->requestPanel(QStringLiteral("canvas.center"),
-                                                         QStringLiteral("plot-instrument"));
+                                                         QStringLiteral("plot.instrument"));
                     if (w)
                     {
                         QVariantMap ip;

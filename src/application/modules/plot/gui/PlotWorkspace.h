@@ -286,7 +286,7 @@ private:
                                           intent::IIntentExecutor &executor, QWidget *parent);
 };
 
-// 工厂：注册进部件表，供 PlotModule::onAttach 申请（"plot-workspace"）。
+// 工厂：注册进部件表，供 PlotModule::onAttach 申请（"plot.workspace"）。
 QWidget *createPlotWorkspace(context::AppContext &appCtx, intent::IIntentExecutor &executor,
                                QWidget *parent = nullptr);
 

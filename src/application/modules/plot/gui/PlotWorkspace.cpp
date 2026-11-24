@@ -1851,7 +1851,7 @@ QWidget *createPlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWid
 }
 
 // 视图层自注册：中央工作区，替代单画布承载多画布 grid。
-PS_REGISTER_PANEL("plot-workspace", plotWorkspace, createPlotWorkspace)
+PS_REGISTER_PANEL("plot.workspace", plotWorkspace, createPlotWorkspace)
 
 } // namespace nextpilot::plotscope::gui
 

@@ -324,13 +324,13 @@ int main(int argc, char *argv[])
         OK("柱状/直方/频谱：意图取数 + 专用 widget 出图（真实算法非折线）");
     }
 
-    // --- 8) 面板工厂自注册：plot-instrument 可按 id 取到 ---
-    CHECK(PanelFactoryHub::types().contains(QStringLiteral("plot-instrument")));
+    // --- 8) 面板工厂自注册：plot.instrument 可按 id 取到 ---
+    CHECK(PanelFactoryHub::types().contains(QStringLiteral("plot.instrument")));
     QWidget *panel = PanelFactoryHub::create(
-        QStringLiteral("plot-instrument"), application.context(), application.host(), nullptr);
+        QStringLiteral("plot.instrument"), application.context(), application.host(), nullptr);
     auto *factoryView = qobject_cast<InstrumentView *>(panel);
     CHECK(factoryView != nullptr);
-    OK("面板自注册：plot-instrument 进工厂表");
+    OK("面板自注册：plot.instrument 进工厂表");
 
     // --- 8b) gallery 切换数据绑定：setKind view action 自动从活动通道喂数据 ---
     // 这是"点仪表盘 gallery 项后不应留空表盘"的回归钉子。

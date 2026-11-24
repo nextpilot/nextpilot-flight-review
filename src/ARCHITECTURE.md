@@ -674,7 +674,7 @@ gui/
 
 **plot 的演进方向**：绘图会被抽取成一个类似 Qwt 的独立库（`modules/plot/gui/` 是它的
 前身），所以它**不属于任何模块、不聚合进 `modules/`**——它是能力库，模块
-（`PlotModule`）只是通过 `requestPanel("canvas.center", "plot-axes")` 使用它。
+（`PlotModule`）只是通过 `requestPanel("canvas.center", "plot.axes")` 使用它。
 这也决定了它必须留在 `gui/views/`（或未来的 `libs/plot/`），而非功能目录。
 
 #### 统一定则：物理位置与逻辑位置正交
@@ -977,7 +977,7 @@ headless 也能查到。
   与"常用/曲线/地图3D/仪表"分组。缩略图绘制在 `application/gui/theme/PlotThumbnails`，
   颜色走 `ThemeManager`（token 名 `panel`；未知 token 返回洋红 `#FF00FF`，误用即缩略图发紫）。
   点击走 `plot.setType`：曲线/散点在 AxesView 内切（`Curve::setScatter`）；
-  仪表/地图/3D 切到 `plot-instrument` 视图（`plot.instrument.setKind`）。
+  仪表/地图/3D 切到 `plot.instrument` 视图（`plot.instrument.setKind`）。
   数据绑定（把当前通道喂进仪表）属后续增量，gallery 切换本身已可用。
 - **parse 类型 gallery**（`ribbon.group.home.sources`）：由格式驱动动态生成图库项（CSV/ULOG/自定义协议…），点选按该驱动后缀弹文件对话框，
   仍走 `data.load` 意图——与通用导入、CLI/脚本同一加载路径。

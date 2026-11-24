@@ -586,7 +586,7 @@ bool AxesView::setPlotKind(const QString &kind)
 {
     // 本画布真正支持的图型：折线 / 散点 / XY 曲线（都是"曲线"模型，走 LOD 折线绘制）。
     // 柱状/直方/频谱是另一种模型（无时间轴、无 LOD），由 fastplot 的专用 Instrument
-    // widget 承载，走 plot-instrument 视图；仪表/地图/3D 同理。返回 false 让上层明确路由，
+    // widget 承载，走 plot.instrument 视图；仪表/地图/3D 同理。返回 false 让上层明确路由，
     // 不在这里假装支持。
     static const QStringList kHere = {QStringLiteral("timeseries"), QStringLiteral("scatter"),
                                       QStringLiteral("xy")};

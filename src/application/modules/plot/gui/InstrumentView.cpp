@@ -412,8 +412,8 @@ QWidget *createInstrumentPanel(AppContext &appCtx, IIntentExecutor &executor,
     return view;
 }
 
-// 视图层自注册：仪表面板类型 "plot-instrument"，模块按 id 请求，外壳不认识本类。
-PS_REGISTER_PANEL("plot-instrument", plotInstrument, createInstrumentPanel)
+// 视图层自注册：仪表面板类型 "plot.instrument"，模块按 id 请求，外壳不认识本类。
+PS_REGISTER_PANEL("plot.instrument", plotInstrument, createInstrumentPanel)
 
 } // namespace nextpilot::plotscope::gui
 

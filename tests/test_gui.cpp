@@ -441,7 +441,7 @@ int main(int argc, char *argv[])
     // 所以这里显式断言两个视图都已登记。
     CHECK(!nextpilot::plotscope::registry::PanelFactoryHub::types().isEmpty());
     CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("dataset-tree")));
-    CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("plot-axes")));
+    CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("plot.axes")));
     OK("视图层自注册生效：dataset-tree / plot-canvas 均已登记（OBJECT 库保证 TU 不被丢弃）");
 
     // --- 3b) 领域面板：形态随领域变时的解法 ---

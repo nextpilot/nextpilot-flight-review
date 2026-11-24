@@ -377,6 +377,6 @@ QWidget *createAxesView(AppContext &appCtx, IIntentExecutor &executor, QWidget *
 }
 
 // 视图层自注册：绘图视图的工厂登记。外壳与其它功能都不认识它。
-PS_REGISTER_PANEL("plot-axes", axesView, createAxesView)
+PS_REGISTER_PANEL("plot.axes", axesView, createAxesView)
 
 } // namespace nextpilot::plotscope::gui
