@@ -21,7 +21,7 @@
 
 ## 领域面板怎么写（契约见 `../LAYERS.md`「UI 归属与装载契约」）
 
-领域专属面板实现放本包 `gui/` 子目录，单独 `<x>_gui` target（**只被 GUI 可执行文件链接**，CLI 二进制里物理不存在）：面板 TU 里 `PS_REGISTER_PANEL(type, ...)` 自注册进 PanelFactory；包清单里以 PanelSpec 声明形态，GUI 经 `requestDomainPanel` 按需创建。工厂签名带 `AppContext + IIntentExecutor`——面板取数走意图层，禁止直捅 Dataset 内部。headless 包 target 严禁链 Qt Widgets。
+领域专属面板实现放本包 `gui/` 子目录，单独 `<x>_gui` target（**只被 GUI 可执行文件链接**，CLI 二进制里物理不存在）：面板 TU 里 `PS_REGISTER_PANEL(type, ...)` 自注册进 PanelFactory；包清单里以 PanelSpec 声明形态，GUI 经统一的 `requestPanel` 按需创建。工厂签名带 `AppContext + IIntentExecutor`——面板取数走意图层，禁止直捅 Dataset 内部。headless 包 target 严禁链 Qt Widgets。
 
 ## 动手前自查
 

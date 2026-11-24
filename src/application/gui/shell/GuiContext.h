@@ -41,13 +41,12 @@ public:
                           const QString &provider) override;
     void resetDynamicActions(const QString &provider) override;
 
-    // 请求 app 外壳提供一个部件，放到指定区域。
+    // 请求 app 外壳提供一个部件，放到指定区域（通用面板与扩展包领域面板同一入口）。
     QWidget *requestPanel(const QString &area, const QString &panelType) override;
 
-    // 领域面板（形态由扩展包决定）：清单 + 按 id 请求。
+    // 领域面板清单查询（纯数据）：请求仍走 requestPanel。
     QList<nextpilot::plotscope::registry::PanelSpec> availableDomainPanels(
         nextpilot::plotscope::registry::Domain domain) const override;
-    QWidget *requestDomainPanel(const QString &area, const QString &panelId) override;
 
     // 宿主执行器（模块在 GUI 里发意图用）。
     nextpilot::plotscope::intent::IIntentExecutor &executor() override;

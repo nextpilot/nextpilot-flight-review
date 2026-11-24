@@ -491,8 +491,9 @@ int main(int argc, char *argv[])
         CHECK(canSpec->label == QStringLiteral("CAN 报文"));
         CHECK(canSpec->area == QStringLiteral("dock.right"));
 
-        // 模块按清单里的 id 请求面板——它不知道这是领域面板还是通用面板。
-        QWidget *canPanel = ui->requestDomainPanel(canSpec->area, canSpec->id);
+        // 模块按清单里的 id 请求面板——它不知道这是领域面板还是通用面板，
+        // 两者走同一个 requestPanel 入口。
+        QWidget *canPanel = ui->requestPanel(canSpec->area, canSpec->id);
         CHECK(canPanel != nullptr);
         // CAN 面板能力仍在（工厂 + 清单 + 可请求），但不再占据 dock.right 主位。
         CHECK(binder->panelTitles(QStringLiteral("dock.right")).contains(QStringLiteral("属性"))); // 页签集里有属性面板（同区多面板后主位概念已废）

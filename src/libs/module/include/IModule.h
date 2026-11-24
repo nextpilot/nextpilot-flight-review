@@ -63,26 +63,21 @@ public:
     // 清空某动态 provider 的全部动作（外壳随后自动重建 ribbon）。
     virtual void resetDynamicActions(const QString &provider) = 0;
 
-    // 请求 app 骨架提供一个部件，放到指定区域。
+    // 请求 app 骨架提供一个部件，放到指定区域——通用面板与扩展包领域面板的唯一入口。
     //
-    // 模块只描述"我需要什么部件"（用部件类型标识，如 "dataset-tree"），
-    // 由 app 骨架决定用哪个 QWidget 实现并停靠。这样：
+    // 模块只描述"我需要什么部件"（用部件类型标识，如 "dataset-tree" / "car.can-browser"），
+    // 由 app 骨架决定用哪个 QWidget 实现并停靠。实现先查模块/视图工厂表，
+    // 未命中再按扩展包 PanelSpec 清单取标题/图标元数据；工厂未注册返回 nullptr。这样：
     //   - 模块不依赖 Qt Widgets，headless（CLI）构建保持纯净；
     //   - 新增模块自带界面 = 声明一个部件类型 + 动作，无需改 GUI 层。
     // 返回部件的宿主引用（QWidget 前置声明），模块可用它设置数据/标题等。
     virtual QWidget *requestPanel(const QString &area, const QString &panelType) = 0;
 
-    // 请求一个**领域面板**（形态由扩展包决定，模块不定义形态）。
-    //
-    // 适用场景：面板形态本身就是领域知识——
-    // CAN 报文浏览器长什么样取决于 DBC 定义的信号，波形调参器取决于参数表。
-    // 这类面板通用视图层不该认识，模块也给不出（模块是机制，不懂业务）。
-    // 形态归**扩展包**：它用 PanelSpec 数据声明
-    // "我提供 car.can-browser，标题'CAN 报文'"，并在 GUI 侧注册实现。
+    // 查询当前可用的领域面板清单（纯数据，headless 也能问）。
     //
     // 模块怎么知道该请求哪个？它不写死 id，而是先问
     // availableDomainPanels(domain)——拿到该领域提供的面板清单，
-    // 再按 id 请求。于是：
+    // 再按 id 走唯一入口 requestPanel 请求。于是：
     //   - 模块只认**领域**（它的业务范围），不认具体面板；
     //   - 面板清单由扩展包决定，装/卸扩展包即时反映；
     //   - headless 下也能问（清单是纯数据）。
@@ -90,12 +85,6 @@ public:
     // domain 传 Domain::General 表示不限领域，返回全部可用领域面板。
     virtual QList<nextpilot::plotscope::registry::PanelSpec> availableDomainPanels(
         nextpilot::plotscope::registry::Domain domain) const = 0;
-
-    // 按 id 请求领域面板（id 来自 availableDomainPanels）。
-    // 与 requestPanel 的区别：这里不要求 views/ 预先注册，
-    // 实现由**扩展包的呈现层**注册进同一张工厂表。
-    // 返回 nullptr 表示该面板当前不可用（如扩展包未装载）。
-    virtual QWidget *requestDomainPanel(const QString &area, const QString &panelId) = 0;
 
     // 宿主执行器：模块在 GUI 里点击动作后，用它发意图（与脚本/CLI 同一路径）。
     virtual nextpilot::plotscope::intent::IIntentExecutor &executor() = 0;

@@ -127,13 +127,26 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     }
 
     // 部件由**视图层自注册**的工厂提供：外壳与模块都不认识具体实现。
+    // 通用面板与扩展包领域面板共用同一张工厂表——领域实现（如 car.can-browser）
+    // 同样在呈现层 TU 里 PS_REGISTER_PANEL 自注册；工厂未注册即返回 nullptr。
     QWidget *widget = nextpilot::plotscope::registry::PanelFactoryHub::create(panelType, m_appCtx, executor(), m_window);
     if (!widget)
         return nullptr;
     if (singleton)
         m_panels.insert(panelType, widget);
-    // 图标随面板自注册而来（同一停靠区并列多个面板时靠它区分页签）。
-    const QString iconName = nextpilot::plotscope::registry::PanelFactoryHub::icon(panelType);
+
+    // 标题与图标：工厂登记优先；工厂缺标题/图标时回退扩展包 PanelSpec 描述
+    // （领域面板用自己的 label/icon，如"CAN 报文"），provider 区分来源。
+    QString title = nextpilot::plotscope::registry::PanelFactoryHub::title(panelType);
+    QString iconName = nextpilot::plotscope::registry::PanelFactoryHub::icon(panelType);
+    if (const nextpilot::plotscope::registry::PanelSpec *spec =
+            m_appCtx.toolbox().panels.find(panelType))
+    {
+        if (title.isEmpty())
+            title = spec->label;
+        if (iconName.isEmpty())
+            iconName = spec->icon;
+    }
     if (!iconName.isEmpty())
         m_panelIcon.insert(widget, iconName);
 
@@ -141,9 +154,9 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     // 标题用面板自注册的显示名（"脚本调试"/"数据源"…），不能用区域标签——
     // 否则同区多面板全是"属性"/"数据源"，页签没法分辨。
     if (area == QStringLiteral("canvas.center"))
-        dockCentral(widget, PanelFactoryHub::title(panelType));
+        dockCentral(widget, title);
     else
-        dockWidget(widget, area, PanelFactoryHub::title(panelType), panelType);
+        dockWidget(widget, area, title, panelType);
     return widget;
 }
 
@@ -167,45 +180,6 @@ QList<PanelSpec> GuiContext::availableDomainPanels(Domain domain) const
         return a.order != b.order ? a.order < b.order : a.id < b.id;
     });
     return out;
-}
-
-QWidget *GuiContext::requestDomainPanel(const QString &area, const QString &panelId)
-{
-    if (panelId.isEmpty())
-        return nullptr;
-    // 实现来自**扩展包的呈现层**（注册进同一张工厂表），
-    // 或通用视图层——两者共用一张表，模块不关心是谁提供的。
-    QWidget *widget = nextpilot::plotscope::registry::PanelFactoryHub::create(panelId, m_appCtx, executor(),
-                                                             m_window);
-    if (!widget)
-        return nullptr;
-
-    // 标题与图标优先用面板自己的描述（扩展包声明的"CAN 报文"），
-    // 否则退回插槽的 label。
-    QString title;
-    QString iconName;
-    for (const PanelSpec &spec : availableDomainPanels(Domain::General))
-    {
-        if (spec.id == panelId)
-        {
-            title = spec.label;
-            iconName = spec.icon;
-            break;
-        }
-    }
-    if (title.isEmpty())
-        title = area;
-    if (!iconName.isEmpty())
-        m_panelIcon.insert(widget, iconName);
-
-    // 中央画布区走 setCentralContent，其余区域走停靠。
-    // 把面板自己的描述传给 dockWidget 作标题——领域面板的形态（含标题）
-    // 由扩展包决定，而不是被通用插槽的"属性"覆盖掉。
-    if (area == QStringLiteral("canvas.center"))
-        dockCentral(widget, title);
-    else
-        dockWidget(widget, area, title, panelId);
-    return widget;
 }
 
 QString GuiContext::pickFilePath(const QString &title, const QString &filter)

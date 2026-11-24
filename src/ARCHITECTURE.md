@@ -797,11 +797,11 @@ toolbox/<域>/gui/              呈现层：QWidget 面板（只 GUI 链接）
 ```cpp
 // 1) 按领域问清单（纯数据，headless 也成立）
 auto specs = ui.availableDomainPanels(FormatDomain::Automotive);
-// 2) 按清单里的 id 请求；实现来自同一张工厂表
-QWidget *p = ui.requestDomainPanel(spec.area, spec.id);
+// 2) 按清单里的 id 请求；实现来自同一张工厂表，通用/领域面板同一入口
+QWidget *p = ui.requestPanel(spec.area, spec.id);
 ```
 
-`requestDomainPanel` 会用 `PanelSpec::label` 覆盖通用插槽的标题——
+`requestPanel` 在工厂缺标题/图标时回退 `PanelSpec::label/icon`——
 领域面板的形态（含标题）由扩展决定，而不是被 `dock.right` 的"属性"覆盖掉。
 
 **两条工程不变量**（都在契约测试里钉死）：
