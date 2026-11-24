@@ -49,6 +49,11 @@ struct Pack
     QList<DocEntry> docs;
     QList<ExampleEntry> examples;
     QList<ReportTemplate> reports;
+    // 四个"壳呈现、模块声明"的贡献点（契约 §3.8）：
+    QList<ViewTitleActionSpec> viewTitleActions;
+    QList<ItemContextSpec> itemContexts;
+    QList<SettingsPageSpec> settingsPages;
+    QList<ThemeTokenSpec> themeTokens;
 
     // 行为式条目：解析器（唯一有行为的贡献，所有权归包/注册表）。
     std::vector<std::unique_ptr<IMessageParser>> parsers;
@@ -87,6 +92,18 @@ public:
     Registry<DocEntry> docs;
     Registry<ExampleEntry> examples;
     Registry<ReportTemplate> reports;
+    Registry<ViewTitleActionSpec> viewTitleActions;
+    Registry<ItemContextSpec> itemContexts;
+    Registry<SettingsPageSpec> settingsPages;
+    Registry<ThemeTokenSpec> themeTokens;
+
+    // === 外壳查询面：按视图/使用者裁剪，壳不直接翻表 ===
+    QList<ViewTitleActionSpec> titleActionsFor(const QString &viewId) const;
+    QList<ItemContextSpec> itemContextsFor(const QString &viewId) const;
+    QList<SettingsPageSpec> settingsPagesSorted() const;
+    QList<ThemeTokenSpec> themeTokensAll() const;
+    // 主题令牌兜底色查询：未贡献返回空串（壳用它决定"用默认色还是用包声明的色"）。
+    QString themeFallback(const QString &tokenId) const;
 
     // === 解析器视图（行为式条目，所有权在注册表）===
     QList<IMessageParser *> parsers() const;

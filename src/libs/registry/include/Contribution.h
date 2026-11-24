@@ -15,9 +15,13 @@
 
 #include "Domain.h"
 
+#include <functional>
+
 #include <QList>
 #include <QString>
 #include <QStringList>
+
+class QWidget;
 
 namespace nextpilot::plotscope::registry
 {
@@ -96,6 +100,66 @@ struct PanelSpec
     // 是否单例：true=同一类型只允许一个实例，"再打开"是聚焦语义；
     // false=允许并排多实例（多文档视图、对比视图）。
     bool singleton = true;
+
+    QString provider;                 // mount() 自动写入
+    Domain domain = Domain::General;
+};
+
+// === VS Code 对位的四个贡献点（契约 §3.8）===
+//
+// 这四类都是"模块/包声明、壳呈现"的纯数据；壳只按描述建控件/求 when，
+// 不解释业务语义。没有它们，模块想加一个刷新按钮就得改 gui，域化就漏了。
+
+// 1) 视图标题栏动作（VS Code 的 `view/title`）：面板自己的刷新/固定/导出/关闭。
+//    commandId 指向命令层，点一下走同一条意图路径（与 Ribbon 按钮无差别）。
+struct ViewTitleActionSpec
+{
+    QString viewId;    // 哪个视图（PanelSpec::id）
+    QString commandId; // 命令 id
+    QString when;      // 上下文表达式（空=恒真）
+    int order = 0;     // 标题栏内排序
+    QString group;     // 分组（navigation / export …），壳按组排布，不逐条硬编码
+
+    QString provider;                 // mount() 自动写入
+    Domain domain = Domain::General;
+};
+
+// 2) 视图条目右键（VS Code 的 `view/item/context`）：菜单项绑定到"条目"而非视图。
+//    when 里可用 item.* 键，但**只在 View 作用域解析**（D19）：
+//    由持有该视图的模块在选中变化时写进 View 层，切视图即整层替换，跨域不可见。
+struct ItemContextSpec
+{
+    QString viewId;    // 条目所属视图
+    QString commandId; // 命令 id
+    QString when;      // 可含 item.kind / item.id / item.multiSelect
+    QString domain;    // 键空间归属域（data / plot / protocol …），跨层经 adapter 转（D19）
+    int order = 0;
+
+    QString provider;                 // mount() 自动写入
+    Domain packDomain = Domain::General;
+};
+
+// 3) 设置页（VS Code 的 `configuration`）：模块贡献自己的设置页，不写在外壳。
+//    create 由模块的呈现层实现（壳只给 parent），因为只有模块知道自己有哪些设置项。
+struct SettingsPageSpec
+{
+    QString id;     // 页标识（唯一）
+    QString title;  // 页标题（设置对话框左栏）
+    QString icon;   // 图标名（可选）
+    int order = 0;
+    std::function<QWidget *(QWidget *parent)> create;
+
+    QString provider;                 // mount() 自动写入
+    Domain domain = Domain::General;
+};
+
+// 4) 主题语义色（VS Code 的 `colors`）：模块声明的语义色，壳解析成实际画笔/调色板。
+//    只给"语义名 + 兜底色"，具体色值由主题决定——模块不该硬编码 RGB。
+struct ThemeTokenSpec
+{
+    QString id;          // 语义名，如 "plot.cursor" / "plot.abMeasure"
+    QString fallback;    // 主题未定义时的兜底色（#RRGGBB）
+    QString description; // 说明（设置页/诊断里显示）
 
     QString provider;                 // mount() 自动写入
     Domain domain = Domain::General;

@@ -108,6 +108,18 @@ bool ToolboxHub::mount(Pack pack)
     for (const ReportTemplate &r : pack.reports)
         if (!checkId(r.id) || reports.contains(r.id))
             return false;
+    for (const ViewTitleActionSpec &t : pack.viewTitleActions)
+        if (!checkId(t.commandId + QLatin1Char('@') + t.viewId) || viewTitleActions.contains(t.commandId + QLatin1Char('@') + t.viewId))
+            return false;
+    for (const ItemContextSpec &c : pack.itemContexts)
+        if (!checkId(c.commandId + QLatin1Char('@') + c.viewId) || itemContexts.contains(c.commandId + QLatin1Char('@') + c.viewId))
+            return false;
+    for (const SettingsPageSpec &p : pack.settingsPages)
+        if (!checkId(p.id) || settingsPages.contains(p.id))
+            return false;
+    for (const ThemeTokenSpec &t : pack.themeTokens)
+        if (!checkId(t.id) || themeTokens.contains(t.id))
+            return false;
     for (const auto &p : pack.parsers)
         if (!p || !checkId(p->id()) || parser(p->id()) != nullptr)
             return false;
@@ -154,6 +166,30 @@ bool ToolboxHub::mount(Pack pack)
         stamp(r);
         reports.insert(r.id, r);
     }
+    // 四个新贡献点：键用 `命令@视图`（同一命令可挂在多个视图的标题栏/右键上）。
+    for (ViewTitleActionSpec &t : pack.viewTitleActions)
+    {
+        stamp(t);
+        viewTitleActions.insert(t.commandId + QLatin1Char('@') + t.viewId, t);
+    }
+    for (ItemContextSpec &c : pack.itemContexts)
+    {
+        // 注意：本结构有**两个 domain**——`domain` 是键空间归属（字符串，D19），
+        // `packDomain` 是包的领域枚举。stamp() 只写后者，前者是作者意图，不改写。
+        c.provider = provider;
+        c.packDomain = domain;
+        itemContexts.insert(c.commandId + QLatin1Char('@') + c.viewId, c);
+    }
+    for (SettingsPageSpec &p : pack.settingsPages)
+    {
+        stamp(p);
+        settingsPages.insert(p.id, p);
+    }
+    for (ThemeTokenSpec &t : pack.themeTokens)
+    {
+        stamp(t);
+        themeTokens.insert(t.id, t);
+    }
     for (auto &p : pack.parsers)
     {
         p->setProvider(provider);
@@ -185,6 +221,10 @@ bool ToolboxHub::unmount(const QString &packId)
     dropByProvider(docs);
     dropByProvider(examples);
     dropByProvider(reports);
+    dropByProvider(viewTitleActions);
+    dropByProvider(itemContexts);
+    dropByProvider(settingsPages);
+    dropByProvider(themeTokens);
     m_parsers.erase(std::remove_if(m_parsers.begin(), m_parsers.end(),
                                    [&packId](const auto &p) {
                                        return p && p->provider() == packId;
@@ -193,6 +233,56 @@ bool ToolboxHub::unmount(const QString &packId)
     packs.remove(packId);
     Q_EMIT objectRemoved(QVariant(packId));
     return true;
+}
+
+// === 壳的查询面（按视图裁剪 + 排序，壳不直接翻表）===
+
+QList<ViewTitleActionSpec> ToolboxHub::titleActionsFor(const QString &viewId) const
+{
+    QList<ViewTitleActionSpec> out;
+    for (const ViewTitleActionSpec &t : viewTitleActions.values())
+        if (t.viewId == viewId)
+            out.append(t);
+    std::stable_sort(out.begin(), out.end(), [](const ViewTitleActionSpec &a, const ViewTitleActionSpec &b) {
+        return a.order != b.order ? a.order < b.order : a.commandId < b.commandId;
+    });
+    return out;
+}
+
+QList<ItemContextSpec> ToolboxHub::itemContextsFor(const QString &viewId) const
+{
+    QList<ItemContextSpec> out;
+    for (const ItemContextSpec &c : itemContexts.values())
+        if (c.viewId == viewId)
+            out.append(c);
+    std::stable_sort(out.begin(), out.end(), [](const ItemContextSpec &a, const ItemContextSpec &b) {
+        return a.order != b.order ? a.order < b.order : a.commandId < b.commandId;
+    });
+    return out;
+}
+
+QList<SettingsPageSpec> ToolboxHub::settingsPagesSorted() const
+{
+    QList<SettingsPageSpec> out = settingsPages.values();
+    std::stable_sort(out.begin(), out.end(), [](const SettingsPageSpec &a, const SettingsPageSpec &b) {
+        return a.order != b.order ? a.order < b.order : a.id < b.id;
+    });
+    return out;
+}
+
+QList<ThemeTokenSpec> ToolboxHub::themeTokensAll() const
+{
+    QList<ThemeTokenSpec> out = themeTokens.values();
+    std::stable_sort(out.begin(), out.end(), [](const ThemeTokenSpec &a, const ThemeTokenSpec &b) {
+        return a.id < b.id;
+    });
+    return out;
+}
+
+QString ToolboxHub::themeFallback(const QString &tokenId) const
+{
+    const ThemeTokenSpec *t = themeTokens.find(tokenId);
+    return t ? t->fallback : QString();
 }
 
 // === 解析器视图（行为式条目）===
