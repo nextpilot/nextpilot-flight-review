@@ -160,7 +160,10 @@ QList<BoundUiAction> UiSlotHub::actionsIn(const QString &area) const
     {
         for (auto lit = pit.value().constBegin(); lit != pit.value().constEnd(); ++lit)
         {
-            const QList<UiAction> supplied = lit.value() ? lit.value() : QList<UiAction>{};
+            QList<UiAction> supplied;
+            const ActionProvider &fn = lit.value();
+            if (fn)
+                supplied = fn();
             for (const UiAction &action : supplied)
                 out.append(BoundUiAction{action, lit.key()});
         }
