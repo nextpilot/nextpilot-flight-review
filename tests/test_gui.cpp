@@ -706,6 +706,38 @@ int main(int argc, char *argv[])
         OK("底部先到：dock() 先安装中央，Panel 仍挂 Editor 下方");
     }
 
+    // --- 4a3) 空容器不占像素（验收 14）：位置已开、零视图时该区域不存在、宽度 0 ---
+    {
+        RegistryTree emptyTree;
+        auto emptySlots = std::make_unique<UiSlotHub>(emptyTree);
+        QMainWindow emptyWindow;
+        ShellBinder emptyBinder{&emptyWindow, *emptySlots};
+        emptyWindow.resize(900, 640);
+        emptyWindow.show();
+        QEventLoop emptyLoop;
+        QTimer::singleShot(100, &emptyLoop, &QEventLoop::quit);
+        emptyLoop.exec();
+
+        const QJsonObject emptyGeo = emptyBinder.geometrySnapshot();
+        for (Region region : {Region::PrimarySidebar, Region::SecondarySidebar, Region::Panel})
+        {
+            // 零视图：区域没有 dock 条目，内容控件不存在。
+            CHECK(emptyBinder.panelWidget(region) == nullptr);
+            CHECK(emptyBinder.panelWidgets(region).isEmpty());
+        }
+        // 空区域不进几何快照（不存在 ≡ 宽度 0，不留一条空灰条）。
+        CHECK(!emptyGeo.contains(QStringLiteral("primarySidebar")));
+        CHECK(!emptyGeo.contains(QStringLiteral("secondarySidebar")));
+        CHECK(!emptyGeo.contains(QStringLiteral("panel")));
+        // 兜底：即便快照里出现，空区域宽度也必须为 0。
+        for (const char *key : {"primarySidebar", "secondarySidebar", "panel"})
+        {
+            const QJsonObject r = emptyGeo.value(QString::fromLatin1(key)).toObject();
+            CHECK(r.isEmpty() || r.value(QStringLiteral("w")).toInt() == 0);
+        }
+        OK("空容器：零视图区域不存在且宽度 0，不留空灰条");
+    }
+
     // --- 4b) 脚本工作台：侧栏面板就位 + 编辑器按需创建（中央区锚定画布）---
     {
         // 侧栏三面板随 attach 挂上（与既有面板同侧并成页签，顺序不定，按类型查）。
