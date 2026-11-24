@@ -30,11 +30,11 @@ LD_LIBRARY_PATH="${PS_QT_DIR:-$HOME/.ps-deps/toolchain/qt/6.2.4/gcc_64}/lib" \
 ```bash
 # 日常：只编主程序与 GUI，测试目标不生成
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPS_BUILD_TESTS=OFF
-cmake --build build -j2
+cmake --build build -j"${PS_JOBS:-$(nproc)}"
 
 # 需要跑测试前，改回 ON 重新 configure（增量，不会全量重编）
 cmake -S . -B build -DPS_BUILD_TESTS=ON
-cmake --build build -j2 && ctest --test-dir build --output-on-failure
+cmake --build build -j"${PS_JOBS:-$(nproc)}" && ctest --test-dir build --output-on-failure
 ```
 
 关闭测试后 `ctest` 无任何用例，报告 `0 tests` 是预期行为，不是失败。

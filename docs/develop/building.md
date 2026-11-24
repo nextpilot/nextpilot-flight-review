@@ -27,11 +27,17 @@ tools/ubuntu-setup.sh --install   # 补齐缺项并写入 shell 变量
 
 ```bash
 cmake --preset default                          # Release
-cmake --build --preset default -j2
+cmake --build --preset default -j"${PS_JOBS:-$(nproc)}"
 ctest --test-dir build --output-on-failure      # 无显示器环境自动走 offscreen
 
 cmake --preset fast                             # 关掉 37 个测试目标，改代码只编主程序
 cmake --preset debug                            # Debug + 断言，落在 build-debug/
+```
+
+并行度按本机核数自适应（`nproc`），不写死 `-j2`——小内存机器（如 2 核/2 GB 的 VM）临时收窄即可：
+
+```bash
+PS_JOBS=2 cmake --build --preset default
 ```
 
 `~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install --qt`。Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
