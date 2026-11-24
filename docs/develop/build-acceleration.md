@@ -124,6 +124,59 @@ Debug 共享缓存。实测 `-O2` 编完再 `-O2 -g`，开不开 `NOHASHDIR` 都
 参数差异，不是工作目录。`hash_dir` 只在"同参数、仅工作目录不同"时有用
 （实测 `-g` 跨 CWD：开则 8 miss，关则 8 hit）。
 
+### 多 worktree 并行开发：缓存必须落持久盘，`base_dir` 取公共父目录
+
+并行开发时每个分支一个 worktree（`wt-c6` / `wt-c7` / `wt-c9` …），每个 worktree 有自己的
+build 目录。若不做下面两件事，**每开一个新 worktree 都是百分百冷构建**，缓存工具形同虚设。
+
+#### 两个真实故障
+
+1. **`CCACHE_DIR` 在非交互 shell 里不生效。** 我们最初把 `CCACHE_DIR` 写在 `~/.bashrc`，
+   构建脚本跑在非交互 shell 中，不读 `.bashrc` → 变量为空 → ccache 回退到
+   `XDG_CACHE_HOME`（本机为 `/runtime/cache/user`，overlay 临时层，**环境回收即清空**）。
+   表象是"缓存目录只有 1.8MB、`Hits` 恒为 0"，一路以为是"没命中"，其实是**根本没走那个目录**
+   ——盘上那份 31MB / 1623 文件的真缓存从未被用过。
+2. **`CCACHE_BASEDIR` 取仓库根，兄弟 worktree 不归一化。** 若 `base_dir` 指到
+   `/home/user/nextpilot/nextpilot-flight-review`，而实际编译在 `/home/user/wt-c9`，
+   两者的 `-I` / `-o` 绝对路径都不在 base 之下，无法折算成相对路径 → 跨 worktree 永远 miss。
+
+#### 正确配置
+
+```bash
+export CCACHE_DIR=/home/user/.ps-deps/caches/ccache   # 持久盘（/home/user 卷），重置不丢
+export CCACHE_BASEDIR=/home/user                     # worktree 的**公共父目录**，不是仓库根
+export CCACHE_MAXSIZE=5G
+```
+
+- `base_dir` 取**所有 worktree 的共同祖先**（`/home/user`），这样 `wt-a/build`、`wt-b/build`
+  里的路径会被折算成同一套相对路径，条目可互相复用。
+- 该值同样建议写进 `CMakePresets.json` 的 `environment` 或由 `tools/ubuntu-setup.sh` 注入，
+  并**在非交互构建脚本里显式 export**（不依赖 `.bashrc`）。
+- 校验：`ccache -p | grep -E "cache_dir|base_dir"` 不得出现 `/runtime`、`/tmp`、`/var/tmp`。
+
+#### 实测：同仓库多 worktree 的命中率
+
+| 场景 | 配置 | 命中率 |
+|---|---|---:|
+| c7 全新 build 目录（首次） | 默认目录（落 `/runtime`） | **0 / 114（0%）** |
+| c7 同目录续编 | 持久目录 + `base_dir=/home/user` | 26 / 335（7.76%） |
+| c8 全量 | 同上 | **132 / 652（20.25%）** |
+| **c9 全新 worktree 首轮** | 同上 | **338 / 911（37.10%）** |
+
+最后一行是关键判据：**全新 worktree、全新 build 目录的首轮就能命中三分之一**，
+说明条目确实跨 worktree 复用（这些 TU 在 `wt-c8` 编过）。缓存体积随之从 1.8MB 长到 53MB。
+
+反过来若首轮命中率仍是 0%，先查两件事：`ccache -s` 的 `cache_dir` 是不是临时层、
+`base_dir` 是不是取成了仓库根。
+
+#### 仍会 miss 的部分（与上述配置无关）
+
+- **改 build 目录名**（`build` → `build-ninja`）：编译命令里带
+  `-ffile-prefix-map=<binaryDir>=build`，目录名进了哈希，**条目全部失效**。
+  `base_dir` 和 `hash_dir=false` 都救不回来——这一点在选生成器/换目录时必须有清醒预期。
+- `3rdparty`（`saribbon` / `lua` / `ads`）：各自源目录不同、参数不同，命中率天然偏低。
+- 改公共头文件：包含它的 TU 全部失效，这是正确行为，不是缓存失效。
+
 ### 预热缓存：--warm-cache
 
 ccache 的收益要等缓存里真有过东西才兑现。换机器、清过缓存目录、CI 冷 runner
