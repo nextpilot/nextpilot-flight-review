@@ -417,12 +417,40 @@ int32_t ps_dag_add_node(PsDag *dag, const char *name, const char *filter_id,
                         const char *params_json, const char *input_channel,
                         int32_t input_node, char *err, uint32_t err_cap);
 
+/* 加 MIMO 节点：n 路输入按时间戳精确 join（缺任一路不产出）。
+ * 第 i 路：node_ids[i] < 0 表示来自 channel_names[i]，否则来自该上游节点。
+ * filter_id 支持 join_equal / join_combine（params.op）/ join_count。
+ * n < 2 或指针为空 → -1 并写 err。返回节点 id（>=0）。 */
+int32_t ps_dag_add_node_multi(PsDag *dag, const char *name, const char *filter_id,
+                              const char *params_json,
+                              const char *const *channel_names,
+                              const int32_t *node_ids, uint32_t n,
+                              char *err, uint32_t err_cap);
+
 /* 加依赖边：0 成功；1 参数非法；2 循环或重复。 */
 int32_t ps_dag_add_edge(PsDag *dag, int32_t from, int32_t to,
                         char *err, uint32_t err_cap);
 
+/* 算子热替换：节点 id / 拓扑 / 下游引用不变，只换算子与参数。
+ * 下次 evaluate 整体成功才生效，失败则节点自动恢复旧算子。
+ * 返回 0 成功；1 参数非法；2 节点不存在。 */
+int32_t ps_dag_replace_node_op(PsDag *dag, int32_t id,
+                               const char *filter_id, const char *params_json,
+                               char *err, uint32_t err_cap);
+
 /* 按 generation 增量求值：0 成功；1 空句柄；2 图有环/缺通道；3 算子错误。 */
 int32_t ps_dag_evaluate(PsDag *dag, uint64_t generation, char *err, uint32_t err_cap);
+
+/* 分片回放：按 budget_ms 推进本 generation 的求值。
+ * 逐节点提交；成功时 *out_done=1 表示已完成。
+ * 返回 0 成功；1 参数非法；2 图/通道错误；3 算子错误。 */
+int32_t ps_dag_evaluate_step(PsDag *dag, uint64_t generation, uint32_t budget_ms,
+                             int32_t *out_done, char *err, uint32_t err_cap);
+
+/* 快照读屏障：把 generation 剩余回放推完再返回（单线程下的「等待」）。
+ * 返回 0 成功；1 空句柄；2 图/通道错误；3 算子错误。 */
+int32_t ps_dag_read_barrier(PsDag *dag, uint64_t generation,
+                            char *err, uint32_t err_cap);
 
 /* 输出：ps_dag_output_count 返回节点数；ps_dag_output 读某节点的 (t,v)。
  * 返回 0 成功；1 参数非法；2 未求值/越界；6 缓冲不足（*out_n 仍给出实际长度）。 */

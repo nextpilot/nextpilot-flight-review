@@ -242,6 +242,27 @@ fn require_name<'a>(ptr: *const c_char, what: &str) -> Result<&'a str, String> {
     unsafe { CStr::from_ptr(ptr).to_str().map_err(|_| format!("{what}不是合法 UTF-8")) }
 }
 
+/// 解析算子的 params_json：空指针 / 空白 → 空对象；非法 JSON 或非 UTF-8 → 写 err 并失败。
+unsafe fn parse_params(
+    params_json: *const c_char,
+    err: *mut c_char,
+    err_cap: u32,
+) -> Result<serde_json::Value, ()> {
+    if params_json.is_null() {
+        return Ok(serde_json::Value::Object(Default::default()));
+    }
+    match CStr::from_ptr(params_json).to_str() {
+        Ok(s) if s.trim().is_empty() => Ok(serde_json::Value::Object(Default::default())),
+        Ok(s) => serde_json::from_str(s).map_err(|e| {
+            write_err(err, err_cap, &format!("参数 JSON：{e}"));
+        }),
+        Err(_) => {
+            write_err(err, err_cap, "参数不是合法 UTF-8");
+            Err(())
+        }
+    }
+}
+
 /// 对一条通道应用 PJ4 过滤器，结果作为普通通道写回数据集。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dataset_apply_filter(
@@ -2507,6 +2528,188 @@ mod tests {
         }
     }
 
+    // BJ7 阶段三：分片回放与读屏障。
+    #[test]
+    fn dag_staged_replay_via_abi() {
+        use std::ffi::CString;
+        unsafe {
+            let dag = ps_dag_create();
+            let mut err = [0i8; 128];
+            let x = CString::new("x").unwrap();
+            let t = [0.0f64, 1.0];
+            let v = [1.0f64, 2.0];
+            assert_eq!(ps_dag_set_input(dag, x.as_ptr(), t.as_ptr(), v.as_ptr(), 2), 0);
+
+            let f = CString::new("scale").unwrap();
+            let p = CString::new("{\"value_scale\":2.0}").unwrap();
+            let n0 = CString::new("n0").unwrap();
+            let id0 = ps_dag_add_node(dag, n0.as_ptr(), f.as_ptr(), p.as_ptr(),
+                x.as_ptr(), -1, err.as_mut_ptr(), err.len() as u32);
+            assert!(id0 >= 0);
+            let n1 = CString::new("n1").unwrap();
+            let id1 = ps_dag_add_node(dag, n1.as_ptr(), f.as_ptr(), p.as_ptr(),
+                std::ptr::null(), id0, err.as_mut_ptr(), err.len() as u32);
+            assert!(id1 >= 0);
+
+            // budget=0：每步只推进 1 个节点，2 个节点不可能一步完成。
+            let mut done = 0i32;
+            assert_eq!(
+                ps_dag_evaluate_step(dag, 1, 0, &mut done, err.as_mut_ptr(), err.len() as u32),
+                0
+            );
+            assert_eq!(done, 0, "只推进了第一个节点");
+
+            // 屏障推完剩余节点。
+            assert_eq!(ps_dag_read_barrier(dag, 1, err.as_mut_ptr(), err.len() as u32), 0);
+            let mut ot = [0f64; 4];
+            let mut ov = [0f64; 4];
+            let mut on = 0u32;
+            assert_eq!(
+                ps_dag_output(dag, id1 as u32, ot.as_mut_ptr(), ov.as_mut_ptr(), 4, &mut on),
+                0
+            );
+            assert_eq!(&ov[..2], &[4.0, 8.0], "1*2*2 与 2*2*2");
+
+            // 参数校验。
+            assert_eq!(
+                ps_dag_evaluate_step(std::ptr::null_mut(), 1, 0, &mut done, err.as_mut_ptr(), err.len() as u32),
+                1
+            );
+            assert_eq!(
+                ps_dag_evaluate_step(dag, 1, 0, std::ptr::null_mut(), err.as_mut_ptr(), err.len() as u32),
+                1
+            );
+            assert_eq!(ps_dag_read_barrier(std::ptr::null_mut(), 1, err.as_mut_ptr(), err.len() as u32), 1);
+
+            ps_dag_free(dag);
+        }
+    }
+
+    // BJ7 阶段二：算子热替换。
+    #[test]
+    fn dag_hot_swap_via_abi() {
+        use std::ffi::CString;
+        unsafe {
+            let dag = ps_dag_create();
+            let mut err = [0i8; 128];
+            let x = CString::new("x").unwrap();
+            let t = [0.0f64, 1.0];
+            let v = [-1.0f64, 2.0];
+            assert_eq!(ps_dag_set_input(dag, x.as_ptr(), t.as_ptr(), v.as_ptr(), 2), 0);
+
+            let n = CString::new("n").unwrap();
+            let f_abs = CString::new("absolute").unwrap();
+            let p0 = CString::new("{}").unwrap();
+            let id = ps_dag_add_node(dag, n.as_ptr(), f_abs.as_ptr(), p0.as_ptr(),
+                x.as_ptr(), -1, err.as_mut_ptr(), err.len() as u32);
+            assert!(id >= 0);
+            assert_eq!(ps_dag_evaluate(dag, 1, err.as_mut_ptr(), err.len() as u32), 0);
+
+            let mut ot = [0f64; 4];
+            let mut ov = [0f64; 4];
+            let mut on = 0u32;
+            assert_eq!(ps_dag_output(dag, id as u32, ot.as_mut_ptr(), ov.as_mut_ptr(), 4, &mut on), 0);
+            assert_eq!(&ov[..2], &[1.0, 2.0]);
+
+            // 换成 scale(10)：输出变 [-10, 20]。
+            let f_scale = CString::new("scale").unwrap();
+            let p1 = CString::new("{\"value_scale\":10.0}").unwrap();
+            assert_eq!(ps_dag_replace_node_op(dag, id, f_scale.as_ptr(), p1.as_ptr(),
+                err.as_mut_ptr(), err.len() as u32), 0);
+            assert_eq!(ps_dag_evaluate(dag, 2, err.as_mut_ptr(), err.len() as u32), 0);
+            assert_eq!(ps_dag_output(dag, id as u32, ot.as_mut_ptr(), ov.as_mut_ptr(), 4, &mut on), 0);
+            assert_eq!(&ov[..2], &[-10.0, 20.0]);
+
+            // 换成非法 expression（缺 expr）→ 求值失败（3），算子恢复 scale。
+            let f_bad = CString::new("expression").unwrap();
+            let p2 = CString::new("{}").unwrap();
+            assert_eq!(ps_dag_replace_node_op(dag, id, f_bad.as_ptr(), p2.as_ptr(),
+                err.as_mut_ptr(), err.len() as u32), 0);
+            assert_eq!(ps_dag_evaluate(dag, 3, err.as_mut_ptr(), err.len() as u32), 3);
+
+            // 再求值成功，输出仍是 scale 的语义 → 证明旧算子已恢复。
+            assert_eq!(ps_dag_evaluate(dag, 4, err.as_mut_ptr(), err.len() as u32), 0);
+            assert_eq!(ps_dag_output(dag, id as u32, ot.as_mut_ptr(), ov.as_mut_ptr(), 4, &mut on), 0);
+            assert_eq!(&ov[..2], &[-10.0, 20.0], "失败后旧算子与输出完好");
+
+            // 越界节点 id 被拒绝。
+            assert_eq!(ps_dag_replace_node_op(dag, 99, f_scale.as_ptr(), p1.as_ptr(),
+                err.as_mut_ptr(), err.len() as u32), 2);
+
+            ps_dag_free(dag);
+        }
+    }
+
+    // BJ7 阶段一：MIMO 精确时间戳 join。
+    #[test]
+    fn dag_mimo_join_via_abi() {
+        use std::ffi::CString;
+        unsafe {
+            let dag = ps_dag_create();
+            assert!(!dag.is_null());
+            let mut err = [0i8; 128];
+            let a = CString::new("a").unwrap();
+            let b = CString::new("b").unwrap();
+            let ta = [0.0f64, 1.0, 2.0];
+            let va = [10.0f64, 11.0, 12.0];
+            let tb = [1.0f64, 2.0, 4.0];
+            let vb = [21.0f64, 22.0, 24.0];
+            assert_eq!(ps_dag_set_input(dag, a.as_ptr(), ta.as_ptr(), va.as_ptr(), 3), 0);
+            assert_eq!(ps_dag_set_input(dag, b.as_ptr(), tb.as_ptr(), vb.as_ptr(), 3), 0);
+
+            let mn = CString::new("m").unwrap();
+            let mf = CString::new("join_equal").unwrap();
+            let mp = CString::new("{}").unwrap();
+            let chans = [a.as_ptr(), b.as_ptr()];
+            let ids = [-1i32, -1];
+            let m = ps_dag_add_node_multi(
+                dag,
+                mn.as_ptr(),
+                mf.as_ptr(),
+                mp.as_ptr(),
+                chans.as_ptr(),
+                ids.as_ptr(),
+                2,
+                err.as_mut_ptr(),
+                err.len() as u32,
+            );
+            assert!(m >= 0, "add mimo failed: {}", cstr(err.as_ptr()));
+
+            assert_eq!(ps_dag_evaluate(dag, 1, err.as_mut_ptr(), err.len() as u32), 0);
+            let mut ot = [0f64; 8];
+            let mut ov = [0f64; 8];
+            let mut on = 0u32;
+            assert_eq!(
+                ps_dag_output(dag, m as u32, ot.as_mut_ptr(), ov.as_mut_ptr(), 8, &mut on),
+                0
+            );
+            assert_eq!(on, 2, "交集只有 1.0 与 2.0");
+            assert_eq!(&ot[..2], &[1.0, 2.0]);
+            assert_eq!(&ov[..2], &[11.0, 12.0]);
+
+            // 少于 2 路被拒绝。
+            assert_eq!(
+                ps_dag_add_node_multi(
+                    dag, mn.as_ptr(), mf.as_ptr(), mp.as_ptr(),
+                    chans.as_ptr(), ids.as_ptr(), 1,
+                    err.as_mut_ptr(), err.len() as u32
+                ),
+                -1
+            );
+            // 空句柄被拒绝。
+            assert_eq!(
+                ps_dag_add_node_multi(
+                    std::ptr::null_mut(), mn.as_ptr(), mf.as_ptr(), mp.as_ptr(),
+                    chans.as_ptr(), ids.as_ptr(), 2,
+                    err.as_mut_ptr(), err.len() as u32
+                ),
+                -1
+            );
+
+            ps_dag_free(dag);
+        }
+    }
+
     // BJ6：gap 上报与只读导出（段 id 水位，不看时间戳）。
     #[test]
     fn dag_gap_report_and_read_via_abi() {
@@ -3693,17 +3896,9 @@ pub unsafe extern "C" fn ps_dag_add_node(
         Ok(s) => s.to_string(),
         Err(e) => { write_err(err, err_cap, &e); return -1; }
     };
-    let params = if params_json.is_null() {
-        serde_json::Value::Object(Default::default())
-    } else {
-        match CStr::from_ptr(params_json).to_str() {
-            Ok(s) if s.trim().is_empty() => serde_json::Value::Object(Default::default()),
-            Ok(s) => match serde_json::from_str(s) {
-                Ok(v) => v,
-                Err(e) => { write_err(err, err_cap, &format!("参数 JSON：{e}")); return -1; }
-            },
-            Err(_) => { write_err(err, err_cap, "参数不是合法 UTF-8"); return -1; }
-        }
+    let params = match parse_params(params_json, err, err_cap) {
+        Ok(v) => v,
+        Err(_) => return -1,
     };
     let source = if input_node < 0 {
         let ch = match require_name(input_channel, "输入通道") {
@@ -3717,6 +3912,93 @@ pub unsafe extern "C" fn ps_dag_add_node(
     let node = ps_dag::Node::new(name, filter, params, source);
     // graph 与 states 同步扩展；约定建图完成后再 evaluate。
     ((*dag).engine.add_node(node)) as i32
+}
+
+/// 算子热替换：节点 id、拓扑与下游引用不变，只换算子与参数。
+///
+/// 新算子先暂存，下次 `ps_dag_evaluate` **整体成功**才正式生效；失败则该节点
+/// 自动恢复旧算子，输出一并回滚。调参改错公式不会把图弄坏。
+/// 返回 0 成功；1 参数非法；2 节点不存在。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_replace_node_op(
+    dag: *mut PsDag,
+    id: i32,
+    filter_id: *const c_char,
+    params_json: *const c_char,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if dag.is_null() || id < 0 {
+        return 1;
+    }
+    let filter = match require_name(filter_id, "算子") {
+        Ok(s) => s.to_string(),
+        Err(e) => { write_err(err, err_cap, &e); return 1; }
+    };
+    let params = match parse_params(params_json, err, err_cap) {
+        Ok(v) => v,
+        Err(_) => return 1,
+    };
+    match (*dag).engine.replace_node_op(id as usize, filter, params) {
+        Ok(()) => 0,
+        Err(ps_dag::GraphError::NodeNotFound(_)) => {
+            write_err(err, err_cap, "节点不存在");
+            2
+        }
+        Err(e) => {
+            write_err(err, err_cap, &format!("{:?}", e));
+            2
+        }
+    }
+}
+
+/// 加 MIMO 节点：`n` 路输入按时间戳精确 join（缺任一路不产出）。
+///
+/// 第 i 路：`node_ids[i] < 0` 表示来自 `channel_names[i]`，否则来自该上游节点。
+/// 每路至多一次 memcpy 级解析开销，`n < 2` 直接拒绝。
+/// 返回节点 id（>=0）；-1 失败并写 err。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_add_node_multi(
+    dag: *mut PsDag,
+    name: *const c_char,
+    filter_id: *const c_char,
+    params_json: *const c_char,
+    channel_names: *const *const c_char,
+    node_ids: *const i32,
+    n: u32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if dag.is_null() || n < 2 || channel_names.is_null() || node_ids.is_null() {
+        write_err(err, err_cap, "MIMO 节点需要至少 2 路输入");
+        return -1;
+    }
+    let name = match require_name(name, "节点名") {
+        Ok(s) => s.to_string(),
+        Err(e) => { write_err(err, err_cap, &e); return -1; }
+    };
+    let filter = match require_name(filter_id, "算子") {
+        Ok(s) => s.to_string(),
+        Err(e) => { write_err(err, err_cap, &e); return -1; }
+    };
+    let params = match parse_params(params_json, err, err_cap) {
+        Ok(v) => v,
+        Err(_) => return -1,
+    };
+    let chans = std::slice::from_raw_parts(channel_names, n as usize);
+    let ids = std::slice::from_raw_parts(node_ids, n as usize);
+    let mut inputs = Vec::with_capacity(n as usize);
+    for i in 0..n as usize {
+        if ids[i] < 0 {
+            match require_name(chans[i], "输入通道") {
+                Ok(s) => inputs.push(ps_dag::Source::Channel(s.to_string())),
+                Err(e) => { write_err(err, err_cap, &e); return -1; }
+            }
+        } else {
+            inputs.push(ps_dag::Source::Node(ids[i] as usize));
+        }
+    }
+    ((*dag).engine.add_node(ps_dag::Node::new_multi(name, filter, params, inputs))) as i32
 }
 
 /// 加依赖边。0 成功，1 参数非法，2 循环或重复。
@@ -3765,6 +4047,83 @@ pub unsafe extern "C" fn ps_dag_evaluate(dag: *mut PsDag, generation: u64, err: 
     }
 }
 
+/// 分片回放：按 `budget_ms` 推进本 generation 的求值。
+///
+/// 逐节点提交：某节点失败只影响该节点（输出不动、未提交的热替换算子被恢复），
+/// 已提交的上游不回滚。成功时 `*out_done = 1` 表示本 generation 已全部完成。
+/// 返回 0 成功；1 参数非法；2 图/通道错误；3 算子错误。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_evaluate_step(
+    dag: *mut PsDag,
+    generation: u64,
+    budget_ms: u32,
+    out_done: *mut i32,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if dag.is_null() || out_done.is_null() {
+        return 1;
+    }
+    let budget = std::time::Duration::from_millis(budget_ms as u64);
+    match (*dag).engine.evaluate_step(generation, &(*dag).channels, budget) {
+        Ok(done) => {
+            *out_done = if done { 1 } else { 0 };
+            0
+        }
+        Err(ps_dag::GraphError::Cycle) => {
+            write_err(err, err_cap, "图存在循环依赖");
+            2
+        }
+        Err(ps_dag::GraphError::ChannelMissing(n)) => {
+            write_err(err, err_cap, &format!("缺少输入通道：{n}"));
+            2
+        }
+        Err(ps_dag::GraphError::OpFailed(e)) => {
+            write_err(err, err_cap, &format!("算子失败：{e}"));
+            3
+        }
+        Err(e) => {
+            write_err(err, err_cap, &format!("{:?}", e));
+            3
+        }
+    }
+}
+
+/// 快照读屏障：把 generation 的剩余回放推完再返回，保证调用方读到完整结果。
+///
+/// 单线程库没有别的线程在推进，所以这里的「阻塞」= 自己推完（不限预算）。
+/// 返回 0 成功；1 空句柄；2 图/通道错误；3 算子错误。
+#[no_mangle]
+pub unsafe extern "C" fn ps_dag_read_barrier(
+    dag: *mut PsDag,
+    generation: u64,
+    err: *mut c_char,
+    err_cap: u32,
+) -> i32 {
+    if dag.is_null() {
+        return 1;
+    }
+    match (*dag).engine.read_barrier(generation, &(*dag).channels) {
+        Ok(()) => 0,
+        Err(ps_dag::GraphError::Cycle) => {
+            write_err(err, err_cap, "图存在循环依赖");
+            2
+        }
+        Err(ps_dag::GraphError::ChannelMissing(n)) => {
+            write_err(err, err_cap, &format!("缺少输入通道：{n}"));
+            2
+        }
+        Err(ps_dag::GraphError::OpFailed(e)) => {
+            write_err(err, err_cap, &format!("算子失败：{e}"));
+            3
+        }
+        Err(e) => {
+            write_err(err, err_cap, &format!("{:?}", e));
+            3
+        }
+    }
+}
+
 /// 节点输出数量。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dag_output_count(dag: *const PsDag) -> u32 {
@@ -3772,9 +4131,7 @@ pub unsafe extern "C" fn ps_dag_output_count(dag: *const PsDag) -> u32 {
         return 0;
     }
     (*dag).engine.graph.nodes.len() as u32
-}
-
-/// 读节点输出。0 成功；1 参数非法；2 未求值/越界；6 缓冲不足（out_n 仍给出实际长度）。
+}/// 读节点输出。0 成功；1 参数非法；2 未求值/越界；6 缓冲不足（out_n 仍给出实际长度）。
 #[no_mangle]
 pub unsafe extern "C" fn ps_dag_output(
     dag: *const PsDag,
