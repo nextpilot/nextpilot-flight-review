@@ -391,7 +391,7 @@ void MainWindow::declareStandardSlots()
         }
     }
 
-    // 诊断归外壳：数据/脚本/分析由各自模块声明，绘图不进 Activity Bar。
+    // 诊断归外壳：数据/脚本/分析/绘图由各自模块声明（plot 见 PlotModule::onAttach）。
     ActivitySpec diagnostics;
     diagnostics.id = QStringLiteral("diagnostics");
     diagnostics.label = QStringLiteral("诊断");

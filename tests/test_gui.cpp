@@ -674,7 +674,7 @@ int main(int argc, char *argv[])
         CHECK(activityIds.contains(QStringLiteral("script")));
         CHECK(activityIds.contains(QStringLiteral("analysis")));
         CHECK(activityIds.contains(QStringLiteral("diagnostics")));
-        CHECK(!activityIds.contains(QStringLiteral("plot"))); // 绘图不进 Activity Bar
+        CHECK(activityIds.contains(QStringLiteral("plot"))); // 绘图域 Activity（c4b 起归 PlotModule 声明）
 
         CHECK(binder->sideBarSectionCount() == 2);
         CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("data"));

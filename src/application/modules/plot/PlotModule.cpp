@@ -646,11 +646,20 @@ void PlotModule::initialize(RuntimeHost &host)
 
 void PlotModule::onAttach(IUiContext &ui)
 {
-    // GUI 环境下：声明本模块的界面入口。
+    // GUI 环境下：声明本模块的 Activity 与界面入口。
     //
-    // 绘图模块往 ribbon 的"视图"分组放一个动作，说明自己提供"重新渲染"能力；
-    // 插槽由 app 骨架声明，模块只往里填内容——新增模块自带界面时，
-    // 只需在自己的 onAttach 里 declareSlot/addAction，其他文件一律不动。
+    // Activity：plot 域的 Activity Bar 入口；工作区是中央画布（centralPanel），
+    // 本域没有左栏 section 面板，panelTypes 留空。
+    ActivitySpec plotActivity;
+    plotActivity.id = QStringLiteral("plot");
+    plotActivity.label = QStringLiteral("绘图");
+    plotActivity.icon = QStringLiteral("plot_refresh");
+    plotActivity.order = 3;
+    plotActivity.ribbonPage = QStringLiteral("ribbon.page.plot");
+    plotActivity.centralPanel = QStringLiteral("plot-workspace");
+    ui.declareActivity(plotActivity);
+
+    // 导出组插槽：模块声明自己的 Ribbon 分组（c4c 起 plot 页/组归模块声明）。
     ui.declareSlot(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("导出"),
                    SlotKind::RibbonGroup, QStringLiteral("ribbon.page.plot"));
 
