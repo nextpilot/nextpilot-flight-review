@@ -1,5 +1,14 @@
 # 测试
 
+首次搭建环境（工具链体检 + Qt + ccache 全部就位）：
+
+```bash
+tools/setup-dev-env.sh --check     # 只体检
+tools/setup-dev-env.sh --install   # 补齐并写入 shell 变量
+```
+
+跑完新开终端即可；没跑脚本的机器仍按下文手工带 `LD_LIBRARY_PATH`。
+
 ## 运行全量测试
 
 ```bash
