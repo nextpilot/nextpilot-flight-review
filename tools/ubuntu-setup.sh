@@ -13,12 +13,12 @@
 #   tools/ubuntu-setup.sh --print-env             # 输出可 eval 的环境（CI 用）
 #   tools/ubuntu-setup.sh --uninstall             # 移除写进 shell 的块（保留已装目录）
 #
-# 镜像：每个工具的下载地址写在 versions.json → toolchains.<工具>.mirrors，
+# 镜像：每个工具的下载地址写在 deps-version.json → toolchains.<工具>.mirrors，
 #   每个工具给一组 URL（国内在前、官方兜底），脚本按顺序轮询，第一个可达的即用，
-#   避免国内网络下官方源超时卡死。换源只改 versions.json，脚本无需改。
+#   避免国内网络下官方源超时卡死。换源只改 deps-version.json，脚本无需改。
 #
 # 原则：系统自带且版本达标就用系统，不达标统一装进 $PS_DEPS_ROOT；版本只从
-# 仓库根 versions.json 读，本脚本不写死任何版本号。
+# 仓库根 deps-version.json 读，本脚本不写死任何版本号。
 set -uo pipefail
 
 if [ ! -f /etc/debian_version ] || [ "$(uname -s)" != "Linux" ]; then
@@ -28,7 +28,7 @@ fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PS_DEPS_ROOT="${PS_DEPS_ROOT:-$HOME/.ps-deps}"
-MANIFEST="$ROOT/versions.json"
+MANIFEST="$ROOT/deps-version.json"
 STATE_DIR="$PS_DEPS_ROOT/state"
 STATE_FILE="$STATE_DIR/toolchain.json"
 MARK_BEGIN="# >>> plotscope build env >>>"
@@ -60,13 +60,13 @@ done
 log() { printf '[ubuntu-setup] %s\n' "$*"; }
 row() { printf '  %-8s %-10s %-12s %-10s %s\n' "$1" "$2" "$3" "$4" "$5"; }
 
-# ---------- versions.json ----------
+# ---------- deps-version.json ----------
 if [ ! -f "$MANIFEST" ]; then
   log "缺少 $MANIFEST"
   exit 1
 fi
 if ! python3 -m json.tool "$MANIFEST" >/dev/null 2>&1; then
-  log "versions.json 语法错误：$MANIFEST"
+  log "deps-version.json 语法错误：$MANIFEST"
   exit 1
 fi
 
@@ -80,7 +80,7 @@ print(d)' "$MANIFEST" "$@" 2>/dev/null
 
 ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]; }
 
-# 版本要求写成带运算符的表达式（见 versions.json → toolchains.*.version）：
+# 版本要求写成带运算符的表达式（见 deps-version.json → toolchains.*.version）：
 #   ">=3.24" 最低版本   "=6.2.4" 精确版本
 # ver_split 拆成 <运算符>TAB<版本号>；无运算符时默认 >=。
 ver_split() {
@@ -117,7 +117,7 @@ V_CCACHE_VER="$(json_get toolchains ccache version)";  IFS=$'\t' read -r _o V_CC
 V_PY_VER="$(json_get toolchains python version)";      IFS=$'\t' read -r _o V_PY_MIN < <(ver_split "$V_PY_VER")
 V_PY_REQ="$(json_get toolchains python configuration)"
 
-# Rust 的实际版本写在 rust-toolchain.toml（cargo 直读），versions.json 只给门槛与文件路径
+# Rust 的实际版本写在 rust-toolchain.toml（cargo 直读），deps-version.json 只给门槛与文件路径
 V_RUST_VER="$(json_get toolchains rust version)"; IFS=$'\t' read -r _o V_RUST_MIN < <(ver_split "$V_RUST_VER")
 V_RUST_CFG="$(json_get toolchains rust configuration)"
 RUST_TOML="$ROOT/${V_RUST_CFG:-src/kernel/rust-toolchain.toml}"
@@ -125,9 +125,9 @@ V_RUST_CHANNEL="$([ -f "$RUST_TOML" ] && sed -n 's/^channel *= *"\(.*\)"/\1/p' "
 V_RUST_REQ="${V_RUST_CHANNEL:-$V_RUST_MIN}"
 
 # ---------- 镜像轮询 ----------
-# versions.json → toolchains.<工具>.mirrors：每个工具给一组 URL（国内在前、官方兜底）。
+# deps-version.json → toolchains.<工具>.mirrors：每个工具给一组 URL（国内在前、官方兜底）。
 # 脚本按顺序逐个探测，第一个可达的即用；全不通则回显第一个，让安装阶段报真实错误。
-# 换源只改 versions.json，脚本无需改；某工具没配 mirrors 时回显空（调用方沿用原行为）。
+# 换源只改 deps-version.json，脚本无需改；某工具没配 mirrors 时回显空（调用方沿用原行为）。
 
 # 探测一个 URL 在 6s 内是否可达；只关心连通性，不下载正文。
 reachable() {
@@ -337,7 +337,7 @@ save_state() {
 }
 
 # ---------- 安装 ----------
-# apt 临时源：轮询 versions.json → toolchains.apt.mirrors，选第一个可达的镜像生成临时
+# apt 临时源：轮询 deps-version.json → toolchains.apt.mirrors，选第一个可达的镜像生成临时
 # sources.list，仅本次命令生效，不改系统 /etc/apt 配置。
 # 只对 Ubuntu 生效（Debian 的源结构与包名不同，禁止套用 Ubuntu 镜像源污染系统）。
 apt_mirror_opts() {
@@ -462,7 +462,7 @@ WRAPPER
 # 缓存命中后同样的全量重建能降到个位数秒级。换机器、清缓存目录、
 # CI 冷 runner 都会撞上未命中那一条，预热一次把缓存填满即可。
 #
-# 幂等：缓存已达阈值时直接跳过（--force 可强制重跑）。阈值取 versions.json
+# 幂等：缓存已达阈值时直接跳过（--force 可强制重跑）。阈值取 deps-version.json
 # 里 toolchains.ccache.warm_min_mb，避免每次 --install 都白跑几分钟。
 ccache_bin() {
   if [ -x "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" ]; then
@@ -695,7 +695,7 @@ warm_cache() {
   fi
   log "已记录预热标记：$(warm_stamp default) / $(warm_stamp debug)"
   if [ "${mb:-0}" -lt "${V_CCACHE_WARM_MB:-12}" ]; then
-    log "提示：缓存 ${mb}MB 小于阈值 ${V_CCACHE_WARM_MB:-12}MB（versions.json → toolchains.ccache.warm_min_mb）。"
+    log "提示：缓存 ${mb}MB 小于阈值 ${V_CCACHE_WARM_MB:-12}MB（deps-version.json → toolchains.ccache.warm_min_mb）。"
   fi
   return 0
 }
@@ -804,7 +804,7 @@ install_python() {
       return 1
     fi
   else
-    log "缺 $req（versions.json → toolchains.python.configuration），跳过 pip"
+    log "缺 $req（deps-version.json → toolchains.python.configuration），跳过 pip"
   fi
 }
 
@@ -825,7 +825,7 @@ install_qt() {
     return 1
   fi
 
-  # 轮询 versions.json → toolchains.qt.mirrors，选第一个可达的下载站传给 aqt --base
+  # 轮询 deps-version.json → toolchains.qt.mirrors，选第一个可达的下载站传给 aqt --base
   local base base_opt
   base="$(pick_url qt /online/qtsdkrepository/linux_x64/desktop/)"
   base_opt=()
@@ -846,12 +846,12 @@ install_qt() {
 
 install_rust() {
   if [ -n "$V_RUST_CHANNEL" ] && ! ver_satisfy "$V_RUST_CHANNEL" "$V_RUST_VER"; then
-    log "警告：$RUST_TOML 的 channel($V_RUST_CHANNEL) 低于 versions.json 门槛($V_RUST_MIN)"
+    log "警告：$RUST_TOML 的 channel($V_RUST_CHANNEL) 低于 deps-version.json 门槛($V_RUST_MIN)"
   fi
   mkdir -p "$PS_DEPS_ROOT/toolchain/rust"
   export RUSTUP_HOME="$PS_DEPS_ROOT/toolchain/rust/rustup" CARGO_HOME="$PS_DEPS_ROOT/toolchain/rust/cargo"
   if [ ! -x "$CARGO_HOME/bin/cargo" ]; then
-    # 轮询 versions.json → toolchains.rust.mirrors：逐个试 installer，第一个可达的用其
+    # 轮询 deps-version.json → toolchains.rust.mirrors：逐个试 installer，第一个可达的用其
     # 配套 dist_server/update_root，避免国内 static.rust-lang.org 卡死。
     local picked installer dist_server update_root
     picked="$(pick_rustup)"
@@ -888,7 +888,7 @@ case "$MODE" in
     mkdir -p "$PS_DEPS_ROOT/bin" "$PS_DEPS_ROOT/caches/ccache"
     write_ccache_conf
     fails=0
-    [ -n "$V_RUST_CHANNEL" ] && ! ver_satisfy "$V_RUST_CHANNEL" "$V_RUST_VER" && log "警告：$RUST_TOML channel($V_RUST_CHANNEL) 不满足 versions.json 要求($V_RUST_VER)"
+    [ -n "$V_RUST_CHANNEL" ] && ! ver_satisfy "$V_RUST_CHANNEL" "$V_RUST_VER" && log "警告：$RUST_TOML channel($V_RUST_CHANNEL) 不满足 deps-version.json 要求($V_RUST_VER)"
     if [ "$DO_PYTHON" = 1 ]; then install_python || fails=$((fails + 1)); fi
     if [ "$DO_TOOLCHAIN" = 1 ]; then install_toolchain || fails=$((fails + 1)); fi
     if [ "$DO_RUST" = 1 ]; then install_rust || fails=$((fails + 1)); fi

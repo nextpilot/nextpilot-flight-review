@@ -1,22 +1,22 @@
 include_guard(GLOBAL)
 
-# 唯一版本源是仓库根的 versions.json。本文件只做 JSON → CMake 变量的适配，
-# 不放任何版本常量；升级依赖改 versions.json，不改这里。
+# 唯一版本源是仓库根的 deps-version.json。本文件只做 JSON → CMake 变量的适配，
+# 不放任何版本常量；升级依赖改 deps-version.json，不改这里。
 #
-# versions.json 两个顶层段：
+# deps-version.json 两个顶层段：
 #   toolchains —— ubuntu-setup.sh 负责获取的工具，只由脚本体检，CMake 不消费。
 #   packages   —— 构建期由 FetchContent 拉源码的三方库，CMake 只解析这一段。
 #                 每个包自带 mirrors 数组（元素含 url + sha256），换源/加源只改 JSON。
-set(_ps_versions_json "${CMAKE_SOURCE_DIR}/versions.json")
+set(_ps_versions_json "${CMAKE_SOURCE_DIR}/deps-version.json")
 if(NOT EXISTS "${_ps_versions_json}")
-    message(FATAL_ERROR "缺少 versions.json：${_ps_versions_json}")
+    message(FATAL_ERROR "缺少 deps-version.json：${_ps_versions_json}")
 endif()
 file(READ "${_ps_versions_json}" _ps_versions_raw)
 
 # 先探一个字段做语法体检，坏 JSON 在这里就给可读报错，而不是等到拼 URL 时才炸
 string(JSON _ps_probe ERROR_VARIABLE _ps_json_err GET "${_ps_versions_raw}" packages zlib version)
 if(_ps_json_err)
-    message(FATAL_ERROR "versions.json 解析失败（${_ps_versions_json}）：${_ps_json_err}")
+    message(FATAL_ERROR "deps-version.json 解析失败（${_ps_versions_json}）：${_ps_json_err}")
 endif()
 
 # 版本/tag 供 find_package 版本探测与日志使用
@@ -82,7 +82,7 @@ function(_ps_pick_mirror pkg out_file out_hash out_url)
         set(${out_url} "${_u}" PARENT_SCOPE)
         return()
     endforeach()
-    message(FATAL_ERROR "${pkg}: 所有镜像都不可用或哈希不匹配（versions.json → packages.${pkg}.mirrors）")
+    message(FATAL_ERROR "${pkg}: 所有镜像都不可用或哈希不匹配（deps-version.json → packages.${pkg}.mirrors）")
 endfunction()
 
 set(PS_DEPS_MANIFEST "${_ps_versions_json}")

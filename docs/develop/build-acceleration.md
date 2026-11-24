@@ -128,7 +128,7 @@ tools/ubuntu-setup.sh --install --warm-cache  # 装环境时顺手预热
 ```
 
 不预热也不会坏，只是第一次构建仍是冷构建。脚本用 `ccache --print-stats` 的
-`cache_size_kibibyte` 判断缓存体积，阈值在 `versions.json` 的
+`cache_size_kibibyte` 判断缓存体积，阈值在 `deps-version.json` 的
 `toolchains.ccache.warm_min_mb`（默认 12MB，本仓库一次全量构建约产生 16.5MB）。
 
 判定还要求**预热标记与当前源码版本一致**
@@ -207,7 +207,7 @@ ccache --print-stats | grep -E "direct_cache_hit|preprocessed_cache_hit|cache_mi
 ## 工具安装镜像（rustup / pip / Qt / apt）
 
 源码依赖走构建期的 `FetchContent` 镜像（上文）；而**工具本身**的安装由 `tools/ubuntu-setup.sh` 负责，
-下载地址同样集中在 `versions.json → mirrors`。每个工具给一组 URL，脚本按顺序轮询、第一个可达的即用：
+下载地址同样集中在 `deps-version.json → mirrors`。每个工具给一组 URL，脚本按顺序轮询、第一个可达的即用：
 
 | 工具 | 注入方式 | 镜像列表（节选，国内在前、官方兜底） |
 |---|---|---|
@@ -219,7 +219,7 @@ ccache --print-stats | grep -E "direct_cache_hit|preprocessed_cache_hit|cache_mi
 **轮询机制**：6s 超时逐个探测，某源慢/不可达自动跳下一个，全部不可达用第一个并报真实错误。
 这直接解决国内网络下 rustup 卡在下载 toolchain、pip/Qt/apt 官方源超时的问题
 （实测 `static.rust-lang.org`、`pypi.org`、`archive.ubuntu.com` 在国内环境均超时，镜像全通）。
-换源或调优先级只改 `versions.json` 的数组顺序，脚本无需改。
+换源或调优先级只改 `deps-version.json` 的数组顺序，脚本无需改。
 pip 用户在 `pip.conf` 显式配过 index 时脚本不覆盖；apt 仅对 Ubuntu 生成临时源。
 
 ## 排查

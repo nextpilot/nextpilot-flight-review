@@ -3,14 +3,14 @@ include_guard(GLOBAL)
 include(FetchContent)
 include(GNUInstallDirs)
 
-# versions.json → CMake 变量：唯一版本源，本文件不再存版本常量
+# deps-version.json → CMake 变量：唯一版本源，本文件不再存版本常量
 include("${CMAKE_CURRENT_LIST_DIR}/deps-versions.cmake")
 
 option(PS_DEPS_FETCH "缺少 zlib/sqlite3/zstd/lz4/nanoarrow 时自动拉源码构建" ON)
 option(PS_DEPS_PREFER_SYSTEM "优先使用系统或 vcpkg 已安装的库" ON)
 option(PS_DEPS_INSTALL "为源码构建的依赖生成 install 规则（component=ps_deps）" OFF)
 set(PS_DEPS_ROOT "" CACHE PATH "已安装 zlib/sqlite3/zstd/lz4 的前缀，含 include 和 lib")
-# 源码包镜像在 versions.json → packages.<pkg>.mirrors；走到 FetchContent 分支时才用
+# 源码包镜像在 deps-version.json → packages.<pkg>.mirrors；走到 FetchContent 分支时才用
 # _ps_pick_mirror() 逐个探测下载+校验，选中文件交给 FetchContent（见各 ps_resolve_* 函数）。
 # 系统/vcpkg 已有库时完全不触发网络。
 

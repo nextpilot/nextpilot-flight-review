@@ -1,4 +1,4 @@
 [toolchain]
 # Rust 工具链版本唯一源：cargo 直读本文件，tools/ubuntu-setup.sh 也读它装 rustup。
-# 与 versions.json 的 toolchain.rust.pin 必须一致（--check 会校验）。
+# 与 deps-version.json 的 toolchain.rust.pin 必须一致（--check 会校验）。
 channel = "1.100.0"
