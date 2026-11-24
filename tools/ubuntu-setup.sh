@@ -13,7 +13,7 @@
 #   tools/ubuntu-setup.sh --print-env             # 输出可 eval 的环境（CI 用）
 #   tools/ubuntu-setup.sh --uninstall             # 移除写进 shell 的块（保留已装目录）
 #
-# 镜像：每个工具（rustup / pip / qt / apt）的下载地址写在 versions.json → mirrors，
+# 镜像：每个工具的下载地址写在 versions.json → toolchains.<工具>.mirrors，
 #   每个工具给一组 URL（国内在前、官方兜底），脚本按顺序轮询，第一个可达的即用，
 #   避免国内网络下官方源超时卡死。换源只改 versions.json，脚本无需改。
 #
@@ -78,26 +78,54 @@ for k in sys.argv[2:]:
 print(d)' "$MANIFEST" "$@" 2>/dev/null
 }
 
-V_QT="$(json_get toolchains qt pin)"
+ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]; }
+
+# 版本要求写成带运算符的表达式（见 versions.json → toolchains.*.version）：
+#   ">=3.24" 最低版本   "=6.2.4" 精确版本
+# ver_split 拆成 <运算符>TAB<版本号>；无运算符时默认 >=。
+ver_split() {
+  local expr="$1" op=">=" num="$1"
+  case "$expr" in
+    ">="*) op=">="; num="${expr#>=}" ;;
+    "=="*) op="=";  num="${expr#==}" ;;
+    "="*)  op="=";  num="${expr#=}" ;;
+  esac
+  num="$(printf '%s' "$num" | tr -d '[:space:]')"
+  printf '%s\t%s\n' "$op" "$num"
+}
+
+# ver_satisfy <实测版本> <表达式>：按表达式里的运算符判断是否满足。
+# 例：ver_satisfy 3.28.3 ">=3.24" → true；ver_satisfy 6.4.0 "=6.2.4" → false
+ver_satisfy() {
+  local actual="$1" expr="$2" op num
+  [ -z "$actual" ] && return 1
+  IFS=$'\t' read -r op num < <(ver_split "$expr")
+  case "$op" in
+    "=")  [ "$actual" = "$num" ] ;;
+    *)    ver_ge "$actual" "$num" ;;   # >= 及无运算符默认
+  esac
+}
+
+# 读版本表达式（*_VER，体检判断用）并拆出纯版本号（*_MIN，路径/文案/fallback 用）
+V_QT_VER="$(json_get toolchains qt version)"
+IFS=$'\t' read -r _qt_op V_QT < <(ver_split "$V_QT_VER")
 QT_ABI="$(json_get toolchains qt abi)"
-V_GCC_MIN="$(json_get toolchains gcc min)"
-V_CMAKE_MIN="$(json_get toolchains cmake min)"
-V_NINJA_MIN="$(json_get toolchains ninja min)"
-V_CCACHE_MIN="$(json_get toolchains ccache min)"
-V_PY_MIN="$(json_get toolchains python min)"
+V_GCC_VER="$(json_get toolchains gcc version)";        IFS=$'\t' read -r _o V_GCC_MIN < <(ver_split "$V_GCC_VER")
+V_CMAKE_VER="$(json_get toolchains cmake version)";    IFS=$'\t' read -r _o V_CMAKE_MIN < <(ver_split "$V_CMAKE_VER")
+V_NINJA_VER="$(json_get toolchains ninja version)";    IFS=$'\t' read -r _o V_NINJA_MIN < <(ver_split "$V_NINJA_VER")
+V_CCACHE_VER="$(json_get toolchains ccache version)";  IFS=$'\t' read -r _o V_CCACHE_MIN < <(ver_split "$V_CCACHE_VER")
+V_PY_VER="$(json_get toolchains python version)";      IFS=$'\t' read -r _o V_PY_MIN < <(ver_split "$V_PY_VER")
 V_PY_REQ="$(json_get toolchains python configuration)"
 
-# Rust 的实际版本写在 rust-toolchain.toml（cargo 直读），versions.json 只给门槛 min 与文件路径
-V_RUST_MIN="$(json_get toolchains rust min)"
+# Rust 的实际版本写在 rust-toolchain.toml（cargo 直读），versions.json 只给门槛与文件路径
+V_RUST_VER="$(json_get toolchains rust version)"; IFS=$'\t' read -r _o V_RUST_MIN < <(ver_split "$V_RUST_VER")
 V_RUST_CFG="$(json_get toolchains rust configuration)"
 RUST_TOML="$ROOT/${V_RUST_CFG:-src/kernel/rust-toolchain.toml}"
 V_RUST_CHANNEL="$([ -f "$RUST_TOML" ] && sed -n 's/^channel *= *"\(.*\)"/\1/p' "$RUST_TOML" | head -1)"
 V_RUST_REQ="${V_RUST_CHANNEL:-$V_RUST_MIN}"
 
-ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]; }
-
 # ---------- 镜像轮询 ----------
-# versions.json → mirrors 段：每个工具给一组 URL（国内在前、官方兜底）。
+# versions.json → toolchains.<工具>.mirrors：每个工具给一组 URL（国内在前、官方兜底）。
 # 脚本按顺序逐个探测，第一个可达的即用；全不通则回显第一个，让安装阶段报真实错误。
 # 换源只改 versions.json，脚本无需改；某工具没配 mirrors 时回显空（调用方沿用原行为）。
 
@@ -114,7 +142,7 @@ for k in sys.argv[2:]: d=d[k]
 for x in d: print(x)' "$MANIFEST" "$@" 2>/dev/null || true
 }
 
-# pick_url <工具名> <探测路径>：轮询 mirrors.<工具名> 的字符串数组，
+# pick_url <工具名> <探测路径>：轮询 toolchains.<工具名>.mirrors 的字符串数组，
 # 对每个 base 拼探测路径测连通性，回显第一个可达的 base；空配置回显空。
 pick_url() {
   local tool="$1" probe_path="${2:-/}" url first=""
@@ -122,11 +150,11 @@ pick_url() {
     [ -z "$url" ] && continue
     [ -z "$first" ] && first="$url"
     if reachable "${url%/}${probe_path}"; then echo "$url"; return 0; fi
-  done < <(json_array mirrors "$tool")
+  done < <(json_array toolchains "$tool" mirrors)
   echo "$first"
 }
 
-# pick_rustup：轮询 mirrors.rustup 的对象数组，对每个 installer 探测，
+# pick_rustup：轮询 toolchains.rust.mirrors 的对象数组，对每个 installer 探测，
 # 回显第一个可达条目的 installer<TAB>dist_server<TAB>update_root。
 pick_rustup() {
   local installer dist update first_i="" first_d="" first_u=""
@@ -141,7 +169,7 @@ pick_rustup() {
       printf '%s\t%s\t%s\n' "$installer" "$dist" "$update"; return 0
     fi
   done < <(python3 -c 'import json,sys
-d=json.load(open(sys.argv[1]))["mirrors"]["rustup"]
+d=json.load(open(sys.argv[1]))["toolchains"]["rust"]["mirrors"]
 for x in d: print(json.dumps(x,ensure_ascii=False))' "$MANIFEST" 2>/dev/null)
   [ -n "$first_i" ] && printf '%s\t%s\t%s\n' "$first_i" "$first_d" "$first_u"
 }
@@ -207,18 +235,18 @@ check_all() {
   printf '  %-8s %-10s %-12s %-10s %s\n' "工具" "实测" "要求" "来源" "结果"
   local v
 
-  v="$(probe_gcc)"; if [ -n "$v" ] && ver_ge "$v" "$V_GCC_MIN"; then record gcc "$V_GCC_MIN" "$v" "$(src_of gcc)" true; else record gcc "$V_GCC_MIN" "${v:-缺}" "$([ -n "$v" ] && src_of gcc || echo none)" false; fi
-  v="$(probe_cmake)"; if [ -n "$v" ] && ver_ge "$v" "$V_CMAKE_MIN"; then record cmake "$V_CMAKE_MIN" "$v" "$(src_of cmake)" true; else record cmake "$V_CMAKE_MIN" "${v:-缺}" "$([ -n "$v" ] && src_of cmake || echo none)" false; fi
-  v="$(probe_ninja)"; if [ -n "$v" ] && ver_ge "$v" "$V_NINJA_MIN"; then record ninja "$V_NINJA_MIN" "$v" "$(src_of ninja)" true; else record ninja "$V_NINJA_MIN" "${v:-缺}" none false; fi
-  v="$(probe_python)"; if [ -n "$v" ] && ver_ge "$v" "$V_PY_MIN"; then record python "$V_PY_MIN" "$v" "$(src_of python3)" true; else record python "$V_PY_MIN" "${v:-缺}" none false; fi
+  v="$(probe_gcc)"; if ver_satisfy "$v" "$V_GCC_VER"; then record gcc "$V_GCC_VER" "$v" "$(src_of gcc)" true; else record gcc "$V_GCC_VER" "${v:-缺}" "$([ -n "$v" ] && src_of gcc || echo none)" false; fi
+  v="$(probe_cmake)"; if ver_satisfy "$v" "$V_CMAKE_VER"; then record cmake "$V_CMAKE_VER" "$v" "$(src_of cmake)" true; else record cmake "$V_CMAKE_VER" "${v:-缺}" "$([ -n "$v" ] && src_of cmake || echo none)" false; fi
+  v="$(probe_ninja)"; if ver_satisfy "$v" "$V_NINJA_VER"; then record ninja "$V_NINJA_VER" "$v" "$(src_of ninja)" true; else record ninja "$V_NINJA_VER" "${v:-缺}" none false; fi
+  v="$(probe_python)"; if ver_satisfy "$v" "$V_PY_VER"; then record python "$V_PY_VER" "$v" "$(src_of python3)" true; else record python "$V_PY_VER" "${v:-缺}" none false; fi
 
   v="$(probe_ccache)"; if [ -z "$v" ]; then
     record ccache "$V_CCACHE_MIN" "缺" none false
   elif [ -x "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" ]; then
-    ver_ge "$v" "$V_CCACHE_MIN" && record ccache "$V_CCACHE_MIN" "$v" managed true || record ccache "$V_CCACHE_MIN" "$v" managed false
+    ver_satisfy "$v" "$V_CCACHE_VER" && record ccache "$V_CCACHE_VER" "$v" managed true || record ccache "$V_CCACHE_VER" "$v" managed false
   else
     # 系统 ccache 只要版本达标即可用于构建，与是否固化到持久目录无关
-    ver_ge "$v" "$V_CCACHE_MIN" && record ccache "$V_CCACHE_MIN" "$v" system true || record ccache "$V_CCACHE_MIN" "$v" system false
+    ver_satisfy "$v" "$V_CCACHE_VER" && record ccache "$V_CCACHE_VER" "$v" system true || record ccache "$V_CCACHE_VER" "$v" system false
   fi
 
   v="$(probe_rust)"; if [ -z "$v" ]; then
@@ -309,7 +337,7 @@ save_state() {
 }
 
 # ---------- 安装 ----------
-# apt 临时源：轮询 versions.json → mirrors.apt，选第一个可达的镜像生成临时
+# apt 临时源：轮询 versions.json → toolchains.apt.mirrors，选第一个可达的镜像生成临时
 # sources.list，仅本次命令生效，不改系统 /etc/apt 配置。
 # 只对 Ubuntu 生效（Debian 的源结构与包名不同，禁止套用 Ubuntu 镜像源污染系统）。
 apt_mirror_opts() {
@@ -366,7 +394,7 @@ install_toolchain() {
     local alt="$HOME/.local/bin/cmake" pip="$PS_DEPS_ROOT/toolchain/python/venv/bin/pip"
     local entry="$PS_DEPS_ROOT/toolchain/cmake/bin/cmake"
     mkdir -p "$PS_DEPS_ROOT/bin" "$PS_DEPS_ROOT/toolchain/cmake/bin"
-    if [ -x "$alt" ] && ver_ge "$("$alt" --version | head -1 | sed 's/cmake version //')" "$V_CMAKE_MIN"; then
+    if [ -x "$alt" ] && ver_satisfy "$("$alt" --version | head -1 | sed 's/cmake version //')" "$V_CMAKE_VER"; then
       ln -sf "$alt" "$entry"
       ln -sf "$entry" "$PS_DEPS_ROOT/bin/cmake"
       log "cmake 软链：bin/cmake → toolchain/cmake/bin/cmake → $alt"
@@ -380,7 +408,7 @@ install_toolchain() {
       # 走到这里说明：无持久软链、~/.local 不达标、pip 也失败，但系统有 cmake。
       # 系统版本可能达标（如 3.28.3 ≥ 3.24），此时只是「pip 没备好」，不是版本低，
       # 系统 cmake 已足以构建；只有确实低于门槛才需要升级。切勿一律报「低于」。
-      if ver_ge "$(probe_cmake)" "$V_CMAKE_MIN"; then
+      if ver_satisfy "$(probe_cmake)" "$V_CMAKE_VER"; then
         log "cmake 由系统提供 $(probe_cmake)（≥$V_CMAKE_MIN，够用）；pip 托管的 cmake 未就绪，可先跑 --install --python 统一版本"
       else
         log "系统 cmake $(probe_cmake) 低于 $V_CMAKE_MIN，且 venv/pip 未就绪：先跑 --install --python，或自行安装 ≥$V_CMAKE_MIN 的 cmake"
@@ -398,7 +426,7 @@ install_toolchain() {
   [ -z "$(probe_ccache)" ] || [ -x "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" ] || make_ccache_selfcontained
 
   # 工具链步骤的成败只看 cmake 是否真可用（其余项已由体检兜底）
-  if [ ! -x "$PS_DEPS_ROOT/bin/cmake" ] && ! { [ -n "$(probe_cmake)" ] && ver_ge "$(probe_cmake)" "$V_CMAKE_MIN"; }; then
+  if [ ! -x "$PS_DEPS_ROOT/bin/cmake" ] && ! ver_satisfy "$(probe_cmake)" "$V_CMAKE_VER"; then
     log "cmake 未就绪（需 ≥$V_CMAKE_MIN）"
     return 1
   fi
@@ -682,7 +710,7 @@ warm_cache() {
 #      不引入新的 host、不放宽其他源；并用 PIP_PIP_INSECURE=1 显式记录这次降级。
 # 用法：pip_install <pip绝对路径> <pip install 的其余参数...>
 PIP_CA=""  # 惰性探测，系统 CA bundle 存在才用
-PIP_INDEX_OPT=()  # 惰性：轮询 mirrors.pip 选第一个可达 index；用户已显式配源则不注入
+PIP_INDEX_OPT=()  # 惰性：轮询 toolchains.python.mirrors 选第一个可达 index；用户已显式配源则不注入
 PIP_INDEX_DONE=0
 pip_index_setup() {
   [ "$PIP_INDEX_DONE" = 1 ] && return 0
@@ -694,7 +722,7 @@ pip_index_setup() {
     log "pip 已有显式 index 配置，跳过镜像轮询"
     return 0
   fi
-  url="$(pick_url pip /)"
+  url="$(pick_url python /)"
   [ -z "$url" ] && return 0
   PIP_INDEX_OPT=(--index-url "$url")
   log "pip 轮询选源：$url"
@@ -797,7 +825,7 @@ install_qt() {
     return 1
   fi
 
-  # 轮询 versions.json → mirrors.qt，选第一个可达的下载站传给 aqt --base
+  # 轮询 versions.json → toolchains.qt.mirrors，选第一个可达的下载站传给 aqt --base
   local base base_opt
   base="$(pick_url qt /online/qtsdkrepository/linux_x64/desktop/)"
   base_opt=()
@@ -817,13 +845,13 @@ install_qt() {
 }
 
 install_rust() {
-  if [ -n "$V_RUST_CHANNEL" ] && ! ver_ge "$V_RUST_CHANNEL" "$V_RUST_MIN"; then
+  if [ -n "$V_RUST_CHANNEL" ] && ! ver_satisfy "$V_RUST_CHANNEL" "$V_RUST_VER"; then
     log "警告：$RUST_TOML 的 channel($V_RUST_CHANNEL) 低于 versions.json 门槛($V_RUST_MIN)"
   fi
   mkdir -p "$PS_DEPS_ROOT/toolchain/rust"
   export RUSTUP_HOME="$PS_DEPS_ROOT/toolchain/rust/rustup" CARGO_HOME="$PS_DEPS_ROOT/toolchain/rust/cargo"
   if [ ! -x "$CARGO_HOME/bin/cargo" ]; then
-    # 轮询 versions.json → mirrors.rustup：逐个试 installer，第一个可达的用其
+    # 轮询 versions.json → toolchains.rust.mirrors：逐个试 installer，第一个可达的用其
     # 配套 dist_server/update_root，避免国内 static.rust-lang.org 卡死。
     local picked installer dist_server update_root
     picked="$(pick_rustup)"
@@ -860,7 +888,7 @@ case "$MODE" in
     mkdir -p "$PS_DEPS_ROOT/bin" "$PS_DEPS_ROOT/caches/ccache"
     write_ccache_conf
     fails=0
-    [ -n "$V_RUST_CHANNEL" ] && ! ver_ge "$V_RUST_CHANNEL" "$V_RUST_MIN" && log "警告：$RUST_TOML channel($V_RUST_CHANNEL) < versions.json 门槛($V_RUST_MIN)"
+    [ -n "$V_RUST_CHANNEL" ] && ! ver_satisfy "$V_RUST_CHANNEL" "$V_RUST_VER" && log "警告：$RUST_TOML channel($V_RUST_CHANNEL) 不满足 versions.json 要求($V_RUST_VER)"
     if [ "$DO_PYTHON" = 1 ]; then install_python || fails=$((fails + 1)); fi
     if [ "$DO_TOOLCHAIN" = 1 ]; then install_toolchain || fails=$((fails + 1)); fi
     if [ "$DO_RUST" = 1 ]; then install_rust || fails=$((fails + 1)); fi

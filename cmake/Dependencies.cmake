@@ -10,17 +10,9 @@ option(PS_DEPS_FETCH "缺少 zlib/sqlite3/zstd/lz4/nanoarrow 时自动拉源码�
 option(PS_DEPS_PREFER_SYSTEM "优先使用系统或 vcpkg 已安装的库" ON)
 option(PS_DEPS_INSTALL "为源码构建的依赖生成 install 规则（component=ps_deps）" OFF)
 set(PS_DEPS_ROOT "" CACHE PATH "已安装 zlib/sqlite3/zstd/lz4 的前缀，含 include 和 lib")
-# 镜像仓库是 nphelper/arrow-nanoarrow（不是 nanoarrow，后者 404），归档为 gitee 重新打包的 zip。
-# 只有单一镜像 URL + 强制哈希：多候选 URL 无法共用同一哈希，兜底与可复现性互斥，这里取可复现。
-# URL 与哈希全部由 versions.json 派生；FORCE 用于刷新旧 build 目录里残留的 GitHub 时期缓存。
-set(PS_DEPS_ZLIB_URL "${PS_MIRROR_BASE}/zlib/repository/archive/v${PS_VER_ZLIB}.zip" CACHE STRING "zlib 源码包（版本见 versions.json）" FORCE)
-set(PS_DEPS_ZLIB_SHA256 "${PS_SHA_ZLIB}" CACHE STRING "zlib 源码包 SHA256" FORCE)
-set(PS_DEPS_ZSTD_URL "${PS_MIRROR_BASE}/zstd/repository/archive/v${PS_VER_ZSTD}.zip" CACHE STRING "zstd 源码包（版本见 versions.json）" FORCE)
-set(PS_DEPS_ZSTD_SHA256 "${PS_SHA_ZSTD}" CACHE STRING "zstd 源码包 SHA256" FORCE)
-set(PS_DEPS_LZ4_URL "${PS_MIRROR_BASE}/lz4/repository/archive/v${PS_VER_LZ4}.zip" CACHE STRING "lz4 源码包（版本见 versions.json）" FORCE)
-set(PS_DEPS_LZ4_SHA256 "${PS_SHA_LZ4}" CACHE STRING "lz4 源码包 SHA256" FORCE)
-set(PS_DEPS_NANOARROW_URL "${PS_MIRROR_BASE}/arrow-nanoarrow/repository/archive/${PS_TAG_NANOARROW}.zip" CACHE STRING "nanoarrow 源码包（版本见 versions.json）" FORCE)
-set(PS_DEPS_NANOARROW_SHA256 "${PS_SHA_NANOARROW}" CACHE STRING "nanoarrow 源码包 SHA256" FORCE)
+# 源码包镜像在 versions.json → packages.<pkg>.mirrors；走到 FetchContent 分支时才用
+# _ps_pick_mirror() 逐个探测下载+校验，选中文件交给 FetchContent（见各 ps_resolve_* 函数）。
+# 系统/vcpkg 已有库时完全不触发网络。
 
 if(PS_DEPS_ROOT)
     list(APPEND CMAKE_PREFIX_PATH "${PS_DEPS_ROOT}")
@@ -87,10 +79,11 @@ function(ps_resolve_zlib)
     endif()
 
     ps_dep_missing("zlib" "zlib")
-    message(STATUS "PlotScope deps: zlib = FetchContent Gitee")
+    _ps_pick_mirror(zlib _zf _zh _zu)
+    message(STATUS "PlotScope deps: zlib = FetchContent（镜像 ${_zu}）")
     FetchContent_Declare(zlib
-        URL ${PS_DEPS_ZLIB_URL}
-        URL_HASH SHA256=${PS_DEPS_ZLIB_SHA256}
+        URL "${_zf}"
+        URL_HASH SHA256=${_zh}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(ZLIB_BUILD_TESTING OFF CACHE BOOL "" FORCE)
@@ -143,10 +136,11 @@ function(ps_resolve_zstd)
     endif()
 
     ps_dep_missing("zstd" "zstd")
-    message(STATUS "PlotScope deps: zstd = FetchContent Gitee")
+    _ps_pick_mirror(zstd _sf _sh _su)
+    message(STATUS "PlotScope deps: zstd = FetchContent（镜像 ${_su}）")
     FetchContent_Declare(zstd
-        URL ${PS_DEPS_ZSTD_URL}
-        URL_HASH SHA256=${PS_DEPS_ZSTD_SHA256}
+        URL "${_sf}"
+        URL_HASH SHA256=${_sh}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     FetchContent_GetProperties(zstd)
     if(NOT zstd_POPULATED)
@@ -226,10 +220,11 @@ function(ps_resolve_lz4)
     endif()
 
     ps_dep_missing("lz4" "lz4")
-    message(STATUS "PlotScope deps: lz4 = FetchContent Gitee")
+    _ps_pick_mirror(lz4 _lf _lh _lu)
+    message(STATUS "PlotScope deps: lz4 = FetchContent（镜像 ${_lu}）")
     FetchContent_Declare(lz4
-        URL ${PS_DEPS_LZ4_URL}
-        URL_HASH SHA256=${PS_DEPS_LZ4_SHA256}
+        URL "${_lf}"
+        URL_HASH SHA256=${_lh}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
     FetchContent_GetProperties(lz4)
     if(NOT lz4_POPULATED)
@@ -347,23 +342,18 @@ function(ps_resolve_nanoarrow)
     endif()
 
     ps_dep_missing("nanoarrow" "nanoarrow")
-    message(STATUS "PlotScope deps: nanoarrow = FetchContent ${PS_VER_NANOARROW} (含 IPC)")
+    _ps_pick_mirror(nanoarrow _nf _nh _nu)
+    message(STATUS "PlotScope deps: nanoarrow = FetchContent ${PS_VER_NANOARROW} (含 IPC, 镜像 ${_nu})")
     if(POLICY CMP0135)
         cmake_policy(SET CMP0135 NEW)
     endif()
     set(NANOARROW_IPC ON CACHE BOOL "" FORCE)
     set(NANOARROW_IPC_WITH_ZSTD OFF CACHE BOOL "" FORCE)
     set(NANOARROW_IPC_WITH_LZ4 OFF CACHE BOOL "" FORCE)
-    # 多个候选 URL 共用一段 FetchContent 声明：CMake 依次尝试，第一个成功的即被采用。
-    # 哈希校验只在明确给出时才启用——gitee 归档 zip 与上游 release tar.gz 哈希不同，
-    # 混用会导致下载成功但校验失败。
-    set(_ps_nanoarrow_fetch_args
-        URL ${PS_DEPS_NANOARROW_URL}
+    FetchContent_Declare(nanoarrow
+        URL "${_nf}"
+        URL_HASH SHA256=${_nh}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-    if(PS_DEPS_NANOARROW_SHA256)
-        list(APPEND _ps_nanoarrow_fetch_args URL_HASH SHA256=${PS_DEPS_NANOARROW_SHA256})
-    endif()
-    FetchContent_Declare(nanoarrow ${_ps_nanoarrow_fetch_args})
     FetchContent_MakeAvailable(nanoarrow)
     # 上游同时定义 shared 与测试目标；只保留静态库被本工程链接，其余排除在 all 之外。
     if(nanoarrow_SOURCE_DIR)

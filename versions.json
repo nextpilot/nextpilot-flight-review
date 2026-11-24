@@ -1,55 +1,77 @@
 {
   "toolchains": {
-    "gcc": { "min": "9" },
-    "cmake": { "min": "3.24" },
-    "ninja": { "min": "1.10" },
-    "ccache": { "min": "4.5", "warm_min_mb": 12 },
-    "python": { "min": "3.10", "configuration": "tools/requirements.txt" },
-    "rust": { "min": "1.100", "configuration": "src/kernel/rust-toolchain.toml" },
-    "qt": { "pin": "6.2.4", "abi": "gcc_64" }
+    "gcc": { "version": ">=9" },
+    "cmake": { "version": ">=3.24" },
+    "ninja": { "version": ">=1.10" },
+    "ccache": { "version": ">=4.5", "warm_min_mb": 12 },
+
+    "python": {
+      "version": ">=3.10",
+      "configuration": "tools/requirements.txt",
+      "mirrors": [
+        "https://mirrors.aliyun.com/pypi/simple/",
+        "https://pypi.tuna.tsinghua.edu.cn/simple",
+        "https://pypi.org/simple/"
+      ]
+    },
+
+    "rust": {
+      "version": ">=1.100",
+      "configuration": "src/kernel/rust-toolchain.toml",
+      "mirrors": [
+        { "installer": "https://mirrors.ustc.edu.cn/misc/rustup-install.sh", "dist_server": "https://mirrors.ustc.edu.cn/rust-static", "update_root": "https://mirrors.ustc.edu.cn/rust-static/rustup" },
+        { "installer": "https://sh.rustup.rs", "dist_server": "https://static.rust-lang.org", "update_root": "https://static.rust-lang.org/rustup" }
+      ]
+    },
+
+    "qt": {
+      "version": "=6.2.4",
+      "abi": "gcc_64",
+      "mirrors": [
+        "https://mirrors.ustc.edu.cn/qtproject",
+        "https://mirrors.aliyun.com/qt",
+        "https://download.qt.io"
+      ]
+    },
+
+    "apt": {
+      "mirrors": [
+        "https://mirrors.ustc.edu.cn/ubuntu",
+        "https://mirrors.aliyun.com/ubuntu",
+        "http://archive.ubuntu.com/ubuntu"
+      ]
+    }
   },
 
   "packages": {
-    "mirror": "https://gitee.com/nphelper",
     "zlib": {
       "version": "1.3.1",
-      "sha256": "7c31009abc4e76ddc32e1448b6051bafe5f606aac158bb36166100a21ec170c6"
+      "mirrors": [
+        { "url": "https://gitee.com/nphelper/zlib/repository/archive/v1.3.1.zip", "sha256": "7c31009abc4e76ddc32e1448b6051bafe5f606aac158bb36166100a21ec170c6" },
+        { "url": "https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz", "sha256": "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c" }
+      ]
     },
     "zstd": {
       "version": "1.5.7",
-      "sha256": "847e3897fe0e3b42139f5c93218b5209bb9e7c513231869d7746ed8c7906900c"
+      "mirrors": [
+        { "url": "https://gitee.com/nphelper/zstd/repository/archive/v1.5.7.zip", "sha256": "847e3897fe0e3b42139f5c93218b5209bb9e7c513231869d7746ed8c7906900c" },
+        { "url": "https://github.com/facebook/zstd/archive/refs/tags/v1.5.7.tar.gz", "sha256": "37d7284556b20954e56e1ca85b80226768902e2edabd3b649e9e72c0c9012ee3" }
+      ]
     },
     "lz4": {
       "version": "1.10.0",
-      "sha256": "39899812e1ecbe5c126b3b360ca3e93e440493424c108c4db98d7502da0ebe43"
+      "mirrors": [
+        { "url": "https://gitee.com/nphelper/lz4/repository/archive/v1.10.0.zip", "sha256": "39899812e1ecbe5c126b3b360ca3e93e440493424c108c4db98d7502da0ebe43" },
+        { "url": "https://github.com/lz4/lz4/archive/refs/tags/v1.10.0.tar.gz", "sha256": "537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b" }
+      ]
     },
     "nanoarrow": {
       "version": "0.9.0",
       "tag": "apache-arrow-nanoarrow-0.9.0",
-      "sha256": "c38c77e982f41f8be2c5bf8c6194e5239be59d135ec8d743d137c4b89171f343"
+      "mirrors": [
+        { "url": "https://gitee.com/nphelper/arrow-nanoarrow/repository/archive/apache-arrow-nanoarrow-0.9.0.zip", "sha256": "c38c77e982f41f8be2c5bf8c6194e5239be59d135ec8d743d137c4b89171f343" },
+        { "url": "https://github.com/apache/arrow-nanoarrow/archive/refs/tags/apache-arrow-nanoarrow-0.9.0.tar.gz", "sha256": "22c3edeaa5cb384c6da091f32a4e1c937779f2d62f84d646028de658b03d4385" }
+      ]
     }
-  },
-
-  "mirrors": {
-    "_comment": "每个工具给一组 URL，按数组顺序逐个轮询，哪个可达用哪个。国内源在前、官方兜底。换源只改本段，脚本无需改。",
-    "rustup": [
-      { "installer": "https://mirrors.ustc.edu.cn/misc/rustup-install.sh", "dist_server": "https://mirrors.ustc.edu.cn/rust-static", "update_root": "https://mirrors.ustc.edu.cn/rust-static/rustup" },
-      { "installer": "https://sh.rustup.rs", "dist_server": "https://static.rust-lang.org", "update_root": "https://static.rust-lang.org/rustup" }
-    ],
-    "pip": [
-      "https://mirrors.aliyun.com/pypi/simple/",
-      "https://pypi.tuna.tsinghua.edu.cn/simple",
-      "https://pypi.org/simple/"
-    ],
-    "qt": [
-      "https://mirrors.ustc.edu.cn/qtproject",
-      "https://mirrors.aliyun.com/qt",
-      "https://download.qt.io"
-    ],
-    "apt": [
-      "https://mirrors.ustc.edu.cn/ubuntu",
-      "https://mirrors.aliyun.com/ubuntu",
-      "http://archive.ubuntu.com/ubuntu"
-    ]
   }
 }
