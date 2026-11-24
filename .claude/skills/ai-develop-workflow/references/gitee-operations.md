@@ -70,6 +70,17 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 - **合并的完整四步顺序**（本仓库三道门禁，缺一步都会被拦）：
   1. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review`（body 带 `event=APPROVE`）→ 204
   2. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/testers`（body 带 `testers=<用户名>`，**字段名是 `testers` 复数**，写 `tester` 会返回 400 `testers is missing`）→ 201
+
+     ⚠️ 这一步**必须用表单提交**，用 JSON body 会返回 400 `testers is invalid`：
+
+     ```bash
+     # 对：表单 → 201
+     curl -s -X POST ".../pulls/<n>/testers" \
+       -H "Authorization: token <TOKEN>" -d "testers=latercomer"
+     # 错：JSON body → 400 {"messages":["testers is invalid"]}
+     curl -s -X POST ".../pulls/<n>/testers" \
+       -H "Content-Type: application/json" -d '{"testers":["latercomer"]}'
+     ```
   3. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/test`（body 带 `event=APPROVE`）→ 204
   4. `PUT /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge`（body 带 `merge_method=squash`）→ 200
 
@@ -104,7 +115,9 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 
   **合并后必须复查**：目标 issue 的 `state` 确认为 `closed`；描述里引用过的其他 issue 确认仍为 `open`。
 - **源分支自动删除看仓库设置**：设置「合并后删除源分支」开启才会自动删；未开启时远端分支仍在，需手动 `git push origin --delete`。本地分支任何情况下都手动删。
-- **不要把调试/截图图片传进仓库**。评论框「上传图片」是图床（存服务器、不进仓库），但只认网页登录 cookie，令牌调用返回 401；v5 API 无开放图床上传端点。需要内嵌图片时用网页登录后上传或外链，禁止 `git add` 截图。
+- **删远端分支用 git，不用 API**：`DELETE /api/v5/repos/<org>/<repo>/branches/<分支名>` 返回 405 `Not Allowed`。改用 `git push <远端URL> --delete <分支名>`，实测正常。
+- **`review` / `test` 成功时返回 204 无 body**：不要对这俩响应做 JSON 解析，否则会误判成失败。判成功看 HTTP 状态码（204）。
+- **截图走图床，不进业务仓**。issue 评论框的「上传图片」只认网页登录 cookie，令牌调用返回 401；v5 API 无开放图床上传端点。改用独立图床仓库：contents API 上传后拿 `download_url` 外链（见 `issue-image-hosting.md`）。禁止 `git add` 截图进业务仓。
 
 ## PR 合并后的闭环校验（PM 执行）
 
