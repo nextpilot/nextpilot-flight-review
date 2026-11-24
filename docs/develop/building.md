@@ -8,7 +8,7 @@
 - Rust 工具链（`cargo` 在 `PATH`）
 - Python 3（仅部分 `tools/` 脚本需要）
 
-`versions.json` 分两段：`toolchains`（gcc / cmake / ninja / ccache / python / rust / qt，由 `tools/ubuntu-setup.sh` 体检与获取）与 `packages`（zlib / zstd / lz4 / nanoarrow，构建期由 `FetchContent` 拉源码，统一走 `mirror` + SHA256）。`cmake/deps-versions.cmake` 只解析 `packages` 段。升级依赖改 `versions.json`，脚本与 CMake 不必同步改。
+`versions.json` 分三段：`toolchains`（gcc / cmake / ninja / ccache / python / rust / qt，由 `tools/ubuntu-setup.sh` 体检与获取）、`packages`（zlib / zstd / lz4 / nanoarrow，构建期由 `FetchContent` 拉源码，统一走 `mirror` + SHA256）、`mirrors`（Rust / pip 等工具的官方与国内下载地址，见下）。`cmake/deps-versions.cmake` 只解析 `packages` 段。升级依赖改 `versions.json`，脚本与 CMake 不必同步改。
 
 Qt 可固定到用户目录 `~/.ps-deps`（在仓库与系统之外，不随提交走、不受仓库迁移影响），避免系统包被环境快照回退。
 
@@ -22,6 +22,21 @@ tools/ubuntu-setup.sh --install   # 补齐缺项并写入 shell 变量
 ```
 
 装到 `~/.ps-deps`（仓库外、随用户目录留存，不受 apt 快照回滚影响）。系统自带且版本达标的工具不重复安装，只有不达标的才落进统一目录。
+
+**工具下载镜像**：每个会联网的工具（rustup / pip / Qt / apt）在 `versions.json → mirrors` 给一组 URL，国内在前、官方兜底；安装时**按顺序逐个轮询，第一个可达的即用**——避免国内网络下官方源超时卡死。
+
+```json
+"mirrors": {
+  "rustup": [ { "installer": "...", "dist_server": "...", "update_root": "..." }, { ... } ],
+  "pip":    [ "https://.../simple", "https://pypi.org/simple/" ],
+  "qt":     [ "https://mirrors.ustc.edu.cn/qtproject", "https://download.qt.io" ],
+  "apt":    [ "https://mirrors.ustc.edu.cn/ubuntu", "http://archive.ubuntu.com/ubuntu" ]
+}
+```
+
+- 轮询用 6s 超时探测，某个源慢或不可达自动跳下一个；全部不可达时用第一个并报真实错误。
+- 换源/调优先级只需改 `versions.json` 的数组顺序，脚本无需改动；某工具未配 `mirrors` 时沿用原行为。
+- pip 若已在 `pip.conf` 显式配置了 index，脚本不覆盖用户配置；apt 仅对 Ubuntu 生成临时源，不改系统 `/etc/apt`。
 
 之后构建不需要任何 `-D` 参数：
 

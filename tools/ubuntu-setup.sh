@@ -13,6 +13,10 @@
 #   tools/ubuntu-setup.sh --print-env             # 输出可 eval 的环境（CI 用）
 #   tools/ubuntu-setup.sh --uninstall             # 移除写进 shell 的块（保留已装目录）
 #
+# 镜像：每个工具（rustup / pip / qt / apt）的下载地址写在 versions.json → mirrors，
+#   每个工具给一组 URL（国内在前、官方兜底），脚本按顺序轮询，第一个可达的即用，
+#   避免国内网络下官方源超时卡死。换源只改 versions.json，脚本无需改。
+#
 # 原则：系统自带且版本达标就用系统，不达标统一装进 $PS_DEPS_ROOT；版本只从
 # 仓库根 versions.json 读，本脚本不写死任何版本号。
 set -uo pipefail
@@ -47,7 +51,7 @@ for arg in "$@"; do
     --qt) DO_TOOLCHAIN=0; DO_PYTHON=0; DO_RUST=0 ;;
     --python) DO_TOOLCHAIN=0; DO_QT=0; DO_RUST=0 ;;
     --rust) DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0 ;;
-    -h | --help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$arg" >&2; exit 2 ;;
   esac
 done
@@ -91,6 +95,56 @@ V_RUST_CHANNEL="$([ -f "$RUST_TOML" ] && sed -n 's/^channel *= *"\(.*\)"/\1/p' "
 V_RUST_REQ="${V_RUST_CHANNEL:-$V_RUST_MIN}"
 
 ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]; }
+
+# ---------- 镜像轮询 ----------
+# versions.json → mirrors 段：每个工具给一组 URL（国内在前、官方兜底）。
+# 脚本按顺序逐个探测，第一个可达的即用；全不通则回显第一个，让安装阶段报真实错误。
+# 换源只改 versions.json，脚本无需改；某工具没配 mirrors 时回显空（调用方沿用原行为）。
+
+# 探测一个 URL 在 6s 内是否可达；只关心连通性，不下载正文。
+reachable() {
+  curl -fsS -o /dev/null --connect-timeout 3 --max-time 6 "$1" >/dev/null 2>&1
+}
+
+# json_array <键...>：把 JSON 数组逐行输出（元素为字符串时原样输出）。
+json_array() {
+  python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+for k in sys.argv[2:]: d=d[k]
+for x in d: print(x)' "$MANIFEST" "$@" 2>/dev/null || true
+}
+
+# pick_url <工具名> <探测路径>：轮询 mirrors.<工具名> 的字符串数组，
+# 对每个 base 拼探测路径测连通性，回显第一个可达的 base；空配置回显空。
+pick_url() {
+  local tool="$1" probe_path="${2:-/}" url first=""
+  while IFS= read -r url; do
+    [ -z "$url" ] && continue
+    [ -z "$first" ] && first="$url"
+    if reachable "${url%/}${probe_path}"; then echo "$url"; return 0; fi
+  done < <(json_array mirrors "$tool")
+  echo "$first"
+}
+
+# pick_rustup：轮询 mirrors.rustup 的对象数组，对每个 installer 探测，
+# 回显第一个可达条目的 installer<TAB>dist_server<TAB>update_root。
+pick_rustup() {
+  local installer dist update first_i="" first_d="" first_u=""
+  local row
+  while IFS= read -r row; do
+    [ -z "$row" ] && continue
+    installer="$(printf '%s' "$row" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("installer",""))' 2>/dev/null)"
+    dist="$(printf '%s' "$row" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("dist_server",""))' 2>/dev/null)"
+    update="$(printf '%s' "$row" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("update_root",""))' 2>/dev/null)"
+    [ -z "$first_i" ] && { first_i="$installer"; first_d="$dist"; first_u="$update"; }
+    if [ -n "$installer" ] && reachable "$installer"; then
+      printf '%s\t%s\t%s\n' "$installer" "$dist" "$update"; return 0
+    fi
+  done < <(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))["mirrors"]["rustup"]
+for x in d: print(json.dumps(x,ensure_ascii=False))' "$MANIFEST" 2>/dev/null)
+  [ -n "$first_i" ] && printf '%s\t%s\t%s\n' "$first_i" "$first_d" "$first_u"
+}
 
 # 来源判定看实际解析到的可执行文件：落在统一根下记为 managed（如软链的 cmake）
 src_of() {
@@ -255,10 +309,44 @@ save_state() {
 }
 
 # ---------- 安装 ----------
+# apt 临时源：轮询 versions.json → mirrors.apt，选第一个可达的镜像生成临时
+# sources.list，仅本次命令生效，不改系统 /etc/apt 配置。
+# 只对 Ubuntu 生效（Debian 的源结构与包名不同，禁止套用 Ubuntu 镜像源污染系统）。
+apt_mirror_opts() {
+  local codename keyring srcfile base
+  APT_OPTS=()
+  . /etc/os-release 2>/dev/null || true
+  if [ "${ID:-}" != ubuntu ]; then
+    log "当前非 Ubuntu（${ID:-unknown}），跳过 apt 镜像轮询，沿用系统源"
+    return 0
+  fi
+  codename="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
+  base="$(pick_url apt "/dists/${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}/Release")"
+  keyring=""
+  [ -r /usr/share/keyrings/ubuntu-archive-keyring.gpg ] && keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg
+  if [ -z "$codename" ] || [ -z "$base" ] || [ -z "$keyring" ]; then
+    log "apt 镜像信息不全（codename=$codename base=$base keyring=$keyring），沿用系统源"
+    return 0
+  fi
+  mkdir -p "$PS_DEPS_ROOT/caches"
+  srcfile="$PS_DEPS_ROOT/caches/apt-sources-mirror.list"
+  {
+    echo "deb [signed-by=$keyring] $base $codename main restricted universe multiverse"
+    echo "deb [signed-by=$keyring] $base ${codename}-updates main restricted universe multiverse"
+    echo "deb [signed-by=$keyring] $base ${codename}-security main restricted universe multiverse"
+    echo "deb [signed-by=$keyring] $base ${codename}-backports main restricted universe multiverse"
+  } >"$srcfile"
+  APT_OPTS=(-o "Dir::Etc::sourcelist=$srcfile" -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0)
+  log "apt 轮询选源：$base（codename=$codename）"
+}
+APT_OPTS=()
+
 apt_install() {
   local pkgs=("$@"); [ ${#pkgs[@]} -eq 0 ] && return 0
   log "apt 安装：${pkgs[*]}"
-  sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"
+  apt_mirror_opts
+  sudo apt-get "${APT_OPTS[@]}" update -qq && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y "${pkgs[@]}"
 }
 
 install_toolchain() {
@@ -594,10 +682,28 @@ warm_cache() {
 #      不引入新的 host、不放宽其他源；并用 PIP_PIP_INSECURE=1 显式记录这次降级。
 # 用法：pip_install <pip绝对路径> <pip install 的其余参数...>
 PIP_CA=""  # 惰性探测，系统 CA bundle 存在才用
+PIP_INDEX_OPT=()  # 惰性：轮询 mirrors.pip 选第一个可达 index；用户已显式配源则不注入
+PIP_INDEX_DONE=0
+pip_index_setup() {
+  [ "$PIP_INDEX_DONE" = 1 ] && return 0
+  PIP_INDEX_DONE=1
+  local url configured
+  # 尊重用户已有的显式 index（企业内网私有源优先），不覆盖
+  configured="$("$1" config list 2>/dev/null | grep -E '^global\.index-url=|^global\.extra-index-url=' || true)"
+  if [ -n "$configured" ]; then
+    log "pip 已有显式 index 配置，跳过镜像轮询"
+    return 0
+  fi
+  url="$(pick_url pip /)"
+  [ -z "$url" ] && return 0
+  PIP_INDEX_OPT=(--index-url "$url")
+  log "pip 轮询选源：$url"
+}
 pip_install() {
   local pip="$1"; shift
+  pip_index_setup "$pip"
   local err; err="$(mktemp)"
-  if "$pip" install --quiet --disable-pip-version-check "$@" 2>"$err"; then
+  if "$pip" install --quiet --disable-pip-version-check "${PIP_INDEX_OPT[@]}" "$@" 2>"$err"; then
     rm -f "$err"; return 0
   fi
   # 只在确认是证书校验问题时才降级，网络超时/404 等原样报错，不掩盖真实故障
@@ -609,18 +715,22 @@ pip_install() {
     if [ -n "$PIP_CA" ]; then
       log "pip 证书校验失败，尝试系统 CA bundle：$PIP_CA（保留校验）"
       : >"$err"
-      if "$pip" install --quiet --disable-pip-version-check --cert "$PIP_CA" "$@" 2>"$err"; then
+      if "$pip" install --quiet --disable-pip-version-check "${PIP_INDEX_OPT[@]}" --cert "$PIP_CA" "$@" 2>"$err"; then
         rm -f "$err"; return 0
       fi
     fi
     # 最后手段：仅信任当前 index 的 host，不改全局、不新增来源
     local host
     host="$("$pip" config list 2>/dev/null | sed -n 's/^global.index-url=.*:\/\/\([^/]*\).*/\1/p' | head -1)"
+    # 注入了国内 index 时，config list 看不到它，直接从注入的 URL 取 host
+    if [ -z "$host" ] && [ "${#PIP_INDEX_OPT[@]}" -gt 0 ]; then
+      host="$(printf '%s' "${PIP_INDEX_OPT[1]}" | sed -n 's#^[a-z]*://\([^/]*\).*#\1#p')"
+    fi
     [ -z "$host" ] && host="${PIP_TRUSTED_HOST:-}"
     if [ -n "$host" ]; then
       log "系统 CA 仍失败，降级为仅信任当前源 host：$host（关闭该 host 校验，仅此环境）"
       : >"$err"
-      if PIP_PIP_INSECURE=1 "$pip" install --quiet --disable-pip-version-check --trusted-host "$host" "$@" 2>"$err"; then
+      if PIP_PIP_INSECURE=1 "$pip" install --quiet --disable-pip-version-check "${PIP_INDEX_OPT[@]}" --trusted-host "$host" "$@" 2>"$err"; then
         rm -f "$err"; return 0
       fi
     fi
@@ -687,9 +797,15 @@ install_qt() {
     return 1
   fi
 
-  log "下载 Qt $V_QT 到 $PS_DEPS_ROOT/toolchain/qt（约 200MB）"
+  # 轮询 versions.json → mirrors.qt，选第一个可达的下载站传给 aqt --base
+  local base base_opt
+  base="$(pick_url qt /online/qtsdkrepository/linux_x64/desktop/)"
+  base_opt=()
+  [ -n "$base" ] && base_opt=(--base "$base")
+  log "下载 Qt $V_QT 到 $PS_DEPS_ROOT/toolchain/qt（约 200MB；镜像=${base:-aqt默认}）"
   "$aqt" install-qt linux desktop "$V_QT" "$QT_ABI" \
-    -O "$PS_DEPS_ROOT/toolchain/qt" --archives qtbase qtsvg qttools icu || {
+    -O "$PS_DEPS_ROOT/toolchain/qt" --archives qtbase qtsvg qttools icu \
+    "${base_opt[@]}" || {
     log "Qt 下载失败（检查网络与 aqt 源）"
     return 1
   }
@@ -707,8 +823,18 @@ install_rust() {
   mkdir -p "$PS_DEPS_ROOT/toolchain/rust"
   export RUSTUP_HOME="$PS_DEPS_ROOT/toolchain/rust/rustup" CARGO_HOME="$PS_DEPS_ROOT/toolchain/rust/cargo"
   if [ ! -x "$CARGO_HOME/bin/cargo" ]; then
-    log "安装 rustup + $V_RUST_REQ 到 $PS_DEPS_ROOT/toolchain/rust"
-    curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain "$V_RUST_REQ" || return 1
+    # 轮询 versions.json → mirrors.rustup：逐个试 installer，第一个可达的用其
+    # 配套 dist_server/update_root，避免国内 static.rust-lang.org 卡死。
+    local picked installer dist_server update_root
+    picked="$(pick_rustup)"
+    IFS=$'\t' read -r installer dist_server update_root <<<"$picked"
+    [ -z "$installer" ] && installer="https://sh.rustup.rs"
+    log "安装 rustup + $V_RUST_REQ 到 $PS_DEPS_ROOT/toolchain/rust（installer=$installer）"
+    if [ -n "$dist_server" ]; then export RUSTUP_DIST_SERVER="$dist_server"; fi
+    if [ -n "$update_root" ]; then export RUSTUP_UPDATE_ROOT="$update_root"; fi
+    curl -fsSL --connect-timeout 10 --retry 2 --retry-delay 1 "$installer" | \
+      sh -s -- -y --no-modify-path --default-toolchain "$V_RUST_REQ" || return 1
+    # 安装期镜像变量只作用于本次进程，不写进 shell 块：工具链已落地，后续 cargo 无需 dist 源。
   fi
   "$CARGO_HOME/bin/cargo" --version
 }

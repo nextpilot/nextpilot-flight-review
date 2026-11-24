@@ -204,10 +204,30 @@ ccache --print-stats | grep -E "direct_cache_hit|preprocessed_cache_hit|cache_mi
 注意 `ccache -s` 里的 Hits/Misses 是**累计值**（自上次 `ccache -z` 起），
 不是单轮。要看单轮数据，先 `ccache -z` 再构建。
 
+## 工具安装镜像（rustup / pip / Qt / apt）
+
+源码依赖走构建期的 `FetchContent` 镜像（上文）；而**工具本身**的安装由 `tools/ubuntu-setup.sh` 负责，
+下载地址同样集中在 `versions.json → mirrors`。每个工具给一组 URL，脚本按顺序轮询、第一个可达的即用：
+
+| 工具 | 注入方式 | 镜像列表（节选，国内在前、官方兜底） |
+|---|---|---|
+| rustup | `RUSTUP_DIST_SERVER` / `RUSTUP_UPDATE_ROOT` + installer | USTC `rust-static` → `sh.rustup.rs` |
+| pip | `pip --index-url`（未显式配源时） | 阿里云 → 清华 → `pypi.org` |
+| Qt | `aqt --base` | USTC `qtproject` → 阿里云 → `download.qt.io` |
+| apt | 临时 sources.list（仅 Ubuntu，不改系统源） | USTC → 阿里云 → `archive.ubuntu.com` |
+
+**轮询机制**：6s 超时逐个探测，某源慢/不可达自动跳下一个，全部不可达用第一个并报真实错误。
+这直接解决国内网络下 rustup 卡在下载 toolchain、pip/Qt/apt 官方源超时的问题
+（实测 `static.rust-lang.org`、`pypi.org`、`archive.ubuntu.com` 在国内环境均超时，镜像全通）。
+换源或调优先级只改 `versions.json` 的数组顺序，脚本无需改。
+pip 用户在 `pip.conf` 显式配过 index 时脚本不覆盖；apt 仅对 Ubuntu 生成临时源。
+
 ## 排查
 
 | 现象 | 原因与处理 |
 |---|---|
+| `--install --rust` 卡在下载 toolchain | 检查 `mirrors.rustup` 数组里各 installer/dist 地址可达性；轮询会自动跳过不可达项 |
+| `--install` 下载慢但没失败 | 轮询会逐个试，前面的源超时（6s）会拖慢；把最快的源调到数组首位即可 |
 | 配置阶段卡在下载 | 走了上游 URL。确认镜像仓库已推 tag，且 `PS_DEPS_NANOARROW_URL` 首项是 Gitee 地址 |
 | 解压后找不到 `CMakeLists.txt` | tag 没推上去，404 后被当成 zip 解压失败。`git ls-remote --tags <mirror>` 确认 |
 | `rcc: error while loading shared libraries: libQt6Core.so.6` | 跑构建时 `LD_LIBRARY_PATH` 没包含 Qt 的 lib 目录，与依赖镜像无关 |

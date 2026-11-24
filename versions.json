@@ -28,5 +28,28 @@
       "tag": "apache-arrow-nanoarrow-0.9.0",
       "sha256": "c38c77e982f41f8be2c5bf8c6194e5239be59d135ec8d743d137c4b89171f343"
     }
+  },
+
+  "mirrors": {
+    "_comment": "每个工具给一组 URL，按数组顺序逐个轮询，哪个可达用哪个。国内源在前、官方兜底。换源只改本段，脚本无需改。",
+    "rustup": [
+      { "installer": "https://mirrors.ustc.edu.cn/misc/rustup-install.sh", "dist_server": "https://mirrors.ustc.edu.cn/rust-static", "update_root": "https://mirrors.ustc.edu.cn/rust-static/rustup" },
+      { "installer": "https://sh.rustup.rs", "dist_server": "https://static.rust-lang.org", "update_root": "https://static.rust-lang.org/rustup" }
+    ],
+    "pip": [
+      "https://mirrors.aliyun.com/pypi/simple/",
+      "https://pypi.tuna.tsinghua.edu.cn/simple",
+      "https://pypi.org/simple/"
+    ],
+    "qt": [
+      "https://mirrors.ustc.edu.cn/qtproject",
+      "https://mirrors.aliyun.com/qt",
+      "https://download.qt.io"
+    ],
+    "apt": [
+      "https://mirrors.ustc.edu.cn/ubuntu",
+      "https://mirrors.aliyun.com/ubuntu",
+      "http://archive.ubuntu.com/ubuntu"
+    ]
   }
 }
