@@ -14,6 +14,7 @@
 #include "InstrumentView.h"
 #include "PanelFactoryHub.h"
 #include "AxesView.h"
+#include "WorkspaceHistory.h"
 #include "playback/PlaybackController.h"
 #include "DatasetHub.h"
 #include "Dataset.h"
@@ -107,6 +108,9 @@ QString toInstrumentKind(const QString &kind)
 PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
     : QWidget(parent), m_appCtx(appCtx), m_executor(executor)
 {
+    // 全工作区快照 undo（第3仗 3b）：最先创建——结构方法与信号都会打进动作流。
+    m_history = new WorkspaceHistory(this, this);
+
     // 外层纵向布局：网格画布区 + 底部时间条。
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
@@ -339,6 +343,11 @@ PlotWorkspace::Cell PlotWorkspace::makeCell(QWidget *parentForStack)
                      });
     // 画布选中请求 -> 统一 selection（属性面板据此刷新）。
     connectCanvasSignals(canvas);
+    // 全局 undo 动作流（第3仗 3b）：曲线增删/样式/挂轴（store changed 转发）与
+    // 显隐（单一出口广播）。结构操作（拆分/页操作）在各自方法起始处通知。
+    QObject::connect(canvas, &AxesView::seriesMutated, this, [this] { notifyHistoryMutation(); });
+    QObject::connect(canvas, &AxesView::seriesVisibilityChanged, this,
+                     [this](const QString &, bool) { notifyHistoryMutation(); });
     // 时间轴刻度按设置初始化：新格沿用当前全局偏好。
     canvas->setTimeFormatMode(m_appCtx.settings()
                                   .value(QStringLiteral("plot.time.format"), QStringLiteral("relative"))
@@ -432,6 +441,7 @@ PlotWorkspace::Cell PlotWorkspace::makeCell(QWidget *parentForStack)
 
 int PlotWorkspace::addCell()
 {
+    notifyHistoryMutation();
     m_cells.append(makeCell(nullptr));
     m_active = m_cells.size() - 1;
     // 加到当前页末尾：网格模式下按列数补位（新格落在下一行首列）。
@@ -763,6 +773,7 @@ void PlotWorkspace::syncPage()
 
 int PlotWorkspace::addPage(const QString &title)
 {
+    notifyHistoryMutation();
     auto *page = new Page;
     page->title = title.isEmpty() ? QStringLiteral("页 %1").arg(m_pages.size() + 1) : title;
 
@@ -811,6 +822,7 @@ void PlotWorkspace::switchPage(int index)
 
 bool PlotWorkspace::removePage(int index)
 {
+    notifyHistoryMutation();
     if (index < 0 || index >= m_pages.size() || m_pages.size() <= 1)
         return false;
 
@@ -847,6 +859,7 @@ bool PlotWorkspace::removePage(int index)
 
 bool PlotWorkspace::removeAt(int index)
 {
+    notifyHistoryMutation();
     if (index < 0 || index >= m_cells.size() || m_cells.size() <= 1)
         return false;
     Cell cell = m_cells.takeAt(index);
@@ -878,6 +891,7 @@ bool PlotWorkspace::removeAt(int index)
 
 bool PlotWorkspace::split(bool horizontal)
 {
+    notifyHistoryMutation();
     if (m_cells.isEmpty())
         return false;
     const int anchorIndex = qBound(0, m_active, m_cells.size() - 1);
@@ -917,6 +931,7 @@ bool PlotWorkspace::split(bool horizontal)
 
 bool PlotWorkspace::duplicateActive()
 {
+    notifyHistoryMutation();
     AxesView *src = activeCanvas();
     if (!src)
         return false;
@@ -941,6 +956,7 @@ bool PlotWorkspace::duplicateActive()
 
 bool PlotWorkspace::duplicatePage()
 {
+    notifyHistoryMutation();
     if (m_pages.isEmpty())
         return false;
     const QVector<Cell> srcCells = m_cells;
@@ -1016,6 +1032,7 @@ void PlotWorkspace::toggleFullscreen()
 
 bool PlotWorkspace::setGrid(int rows, int cols)
 {
+    notifyHistoryMutation();
     if (rows < 1 || cols < 1)
         return false;
     // 一条命令解决三件事：剔掉没曲线的空白格、容量不够自动加行、按 m×n 严格等分重排。
@@ -1025,6 +1042,7 @@ bool PlotWorkspace::setGrid(int rows, int cols)
 
 bool PlotWorkspace::setCellType(int index, const QString &kind)
 {
+    notifyHistoryMutation();
     if (index < 0 || index >= m_cells.size())
         return false;
     Cell &cell = m_cells[index];
@@ -1192,6 +1210,12 @@ void PlotWorkspace::registerViewActions()
     registerSeriesActions();
     registerMarkupActions();
     registerPlaybackActions();
+
+    // 全工作区快照 undo（第3仗 3b）：与画布局部视口撤销 plot.view.undo 分栈。
+    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.workspace.undo"),
+        [this](const QVariantMap &) -> Result<QVariant> {
+            return QVariant(undoHistory());
+        });
 }
 
 // ---- 文档作用域双向通道 ----
@@ -1295,6 +1319,10 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
     if (spec.pages.isEmpty())
         return false;
 
+    // 全局 undo 恢复期守卫：恢复过程触发的 store/结构信号不打进动作流（第3仗 3b）。
+    if (m_history)
+        m_history->setRestoring(true);
+
     // 新文档接管 pending 队列：旧文档挂起的绑定意图随旧文档作废。
     dropPendingBinds();
 
@@ -1361,6 +1389,7 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
             // 末两段即 table.column（与 CanvasSpec.channels 的 legendName 同口径）。
             // datasetId 是进程内 id、恢复后可能漂移，故按 table.column 匹配，不按整 key。
             QHash<QString, QColor> savedColorByChannel;
+            QHash<QString, bool> savedVisibleByChannel;
             const QJsonArray styleSeries = c.style.value(QStringLiteral("series")).toArray();
             for (const QJsonValue &sv : styleSeries)
             {
@@ -1372,6 +1401,8 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
                     const QColor col(so.value(QStringLiteral("color")).toString());
                     if (col.isValid())
                         savedColorByChannel.insert(ch, col);
+                    // 显隐随样式存盘（第3仗 3b）：undo/恢复链按通道回放。
+                    savedVisibleByChannel.insert(ch, so.value(QStringLiteral("visible")).toBool(true));
                 }
             }
 
@@ -1390,8 +1421,14 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
                     const int dot = channel.indexOf(QLatin1Char('.'));
                     const QString table = dot > 0 ? channel.left(dot) : QString();
                     const QString column = dot > 0 ? channel.mid(dot + 1) : channel;
-                    cell.view->addChannel(datasetId, table, column, nullptr, QString(),
-                                          savedColorByChannel.value(channel));
+                    if (cell.view->addChannel(datasetId, table, column, nullptr, QString(),
+                                              savedColorByChannel.value(channel)))
+                    {
+                        // 显隐回放（第3仗 3b）：addChannel 默认可见，存盘为隐藏的补一刀。
+                        if (!savedVisibleByChannel.value(channel, true))
+                            cell.canvas->setSeriesVisible(
+                                QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column), false);
+                    }
                 }
             }
             else if (!c.datasetOrigin.isEmpty())
@@ -1405,6 +1442,7 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
                 p.origin = c.datasetOrigin;
                 p.channels = c.channels;
                 p.colorByChannel = savedColorByChannel;
+                p.visibleByChannel = savedVisibleByChannel;
                 p.state = c.state;
                 p.title = c.title.isEmpty() ? c.id : c.title;
                 m_pendingBinds.append(p);
@@ -1423,6 +1461,12 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
 
         rebuildPageLayout();
         syncPage();
+    }
+    // 恢复链结束：动作流恢复监听，undo 基线对齐恢复后的状态。
+    if (m_history)
+    {
+        m_history->setRestoring(false);
+        m_history->noteRestored();
     }
     return true;
 }
@@ -1589,7 +1633,13 @@ void PlotWorkspace::tryBindPending()
             const QString column = dot > 0 ? channel.mid(dot + 1) : channel;
             if (cell.view->addChannel(datasetId, table, column, nullptr, QString(),
                                       p.colorByChannel.value(channel)))
+            {
                 boundAny = true;
+                // 显隐回放（第3仗 3b）：存盘为隐藏的通道接回后保持隐藏。
+                if (!p.visibleByChannel.value(channel, true))
+                    cell.canvas->setSeriesVisible(
+                        QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column), false);
+            }
         }
         if (!boundAny)
             continue; // 通道全没接上（表头变了）：条目保留，preflight 已报告原因

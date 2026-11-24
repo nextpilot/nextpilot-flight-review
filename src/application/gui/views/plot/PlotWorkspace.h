@@ -2,6 +2,7 @@
 
 #include "AppContext.h"
 #include "IIntentExecutor.h"
+#include "WorkspaceHistory.h"
 #include <QColor>
 #include <QHash>
 #include <QJsonObject>
@@ -86,6 +87,15 @@ public:
     plot::PlotDocumentSpec toDocumentSpec() const;
     bool applyDocumentSpec(const plot::PlotDocumentSpec &spec,
                            const dataset::SourceHub &sources);
+
+    // ---- 全工作区快照 undo（第3仗 3b，#IKXD1P）----
+    // 快照源与恢复执行都在本类，WorkspaceHistory 需要这两个口子。
+    dataset::SourceHub &sources() { return m_appCtx.sources(); }
+    WorkspaceHistory *history() const { return m_history; }
+    // 动作流入口：任何改变工作区形状的变更发生后调用（200ms 安静后结算一步）。
+    void notifyHistoryMutation() { m_history->notifyMutation(); }
+    // 撤销一步（未决手势先结算）。view action plot.workspace.undo / 测试共用。
+    bool undoHistory() { return m_history->undo(); }
 
     // ---- 多数据集选择与重绑（#IKXD1N v4 条目 2.7，对标 PJ4）----
     // planDatasetChoice：同一 origin 扇出/重复加载出多个数据集时，按"画布通道
@@ -221,6 +231,7 @@ private:
         QString origin;
         QStringList channels;
         QHash<QString, QColor> colorByChannel;
+        QHash<QString, bool> visibleByChannel; // 存盘显隐（第3仗 3b：undo/恢复链回放）
         QJsonObject state; // 存盘视口等画布状态（绑定后回放）
         QString title;     // 诊断信息用画布名
     };
@@ -261,6 +272,9 @@ private:
 
     // 悬浮工具栏的自动隐藏计时（鼠标停止移动一段时间后收起，避免遮挡曲线）。
     QTimer *m_hoverTimer = nullptr;
+
+    // 全工作区快照 undo 栈（第3仗 3b）：构造时最先创建（结构方法会调 notifyMutation）。
+    WorkspaceHistory *m_history = nullptr;
 
     friend QWidget *createPlotWorkspace(context::AppContext &appCtx,
                                           intent::IIntentExecutor &executor, QWidget *parent);
