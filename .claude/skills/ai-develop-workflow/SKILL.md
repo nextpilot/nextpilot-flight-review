@@ -164,7 +164,8 @@ Verification: <编译与测试结果>
 - 提交信息符合 Conventional Commits 且含 `Refs:`；
 - PR 描述与实际提交一致（多提交逐条列出）；
 - 特性分支已删除（远端与本地）；
-- 文档/配置同步已完成。
+- 文档/配置同步已完成；
+- **PR 描述里的 `#issue` ident 恰好只有要关闭的那一个**（本仓库 `close_related_issue=1`，描述中出现的所有 `#IKxxxxx` 都会在合并时被关闭；合并后须复查相关 issue 的 `state` 与 `updated_at`，若被误关须重新打开，详见 `references/gitee-operations.md`）。
 
 简单修改流程同时满足才算完成：
 
@@ -173,7 +174,8 @@ Verification: <编译与测试结果>
 - PR 中 `No-Issue` 理由成立；
 - 提交信息符合 Conventional Commits 且含 `Refs: none`；
 - PR 描述与实际提交一致（多提交逐条列出）；
-- 分支已删除。
+- 分支已删除；
+- **PR 描述里不含任何 `#IKxxxxx` ident**（简单流程无需关闭任何 issue）。
 
 ## 6. AI 执行纪律
 
