@@ -13,6 +13,7 @@
 #include <QResizeEvent>
 
 #include <algorithm>
+#include <vector>
 #include <cmath>
 #include <limits>
 
@@ -659,18 +660,58 @@ void Axes::paintCurves(QPainter &painter)
     auto drawEnvelope = [&](const QVector<LodPoint> &pts, AxisSide side) {
         if (pts.isEmpty())
             return;
+
+        // 缺测信号②（空桶 gap）的时间阈值：相邻 LOD 点 x 间距的中位数 × 3。
+        // 自适应采样间隔（1kHz 流和 10Hz 流各自的"正常间隔"差 100 倍，固定阈值必误判）。
+        double gapThreshold = 0.0;
+        if (pts.size() > 2)
+        {
+            std::vector<double> gaps;
+            gaps.reserve(size_t(pts.size() - 1));
+            for (int i = 1; i < pts.size(); ++i)
+            {
+                const double g = pts[i].x - pts[i - 1].x;
+                if (g > 0.0)
+                    gaps.push_back(g);
+            }
+            if (!gaps.empty())
+            {
+                std::sort(gaps.begin(), gaps.end());
+                const double median = gaps[gaps.size() / 2];
+                if (median > 0.0)
+                    gapThreshold = median * 3.0;
+            }
+        }
+
+        // 分段绘制：跨 gap / NaN 桶处 flush 当前段，绝不把缺测区间连成直线。
         QPolygonF mid;
         mid.reserve(pts.size());
-        for (const LodPoint &pt : pts)
+        auto flush = [&]() {
+            if (mid.size() > 1)
+                painter.drawPolyline(mid);
+            mid.clear();
+        };
+
+        for (int i = 0; i < pts.size(); ++i)
         {
+            const LodPoint &pt = pts[i];
+            // 缺测信号①：内核对全 null 桶输出 NaN,NaN —— 断开，且不画竖线。
+            if (!std::isfinite(pt.min) || !std::isfinite(pt.max))
+            {
+                flush();
+                continue;
+            }
+            // 缺测信号②：空桶被内核跳过，相邻点 x 间距远超正常采样间隔 —— 断开。
+            if (gapThreshold > 0.0 && i > 0 && (pt.x - pts[i - 1].x) > gapThreshold)
+                flush();
+
             const double px = m_vp.xToPixel(pt.x);
             const double pyMin = yToPixel(side, pt.min);
             const double pyMax = yToPixel(side, pt.max);
             painter.drawLine(QPointF(px, pyMin), QPointF(px, pyMax));
             mid.push_back(QPointF(px, (pyMin + pyMax) / 2.0));
         }
-        if (mid.size() > 1)
-            painter.drawPolyline(mid);
+        flush();
     };
 
     painter.save();
@@ -731,7 +772,10 @@ void Axes::paintCurves(QPainter &painter)
             if (c.scatter())
             {
                 for (const LodPoint &pt : c.m_lod)
-                    drawMarker(midPoint(pt, c.m_yAxis), c);
+                {
+                    if (std::isfinite(pt.min) && std::isfinite(pt.max))
+                        drawMarker(midPoint(pt, c.m_yAxis), c);
+                }
             }
             else
             {
@@ -747,28 +791,38 @@ void Axes::paintCurves(QPainter &painter)
         if (data->size() <= columns)
         {
             // 稀疏数据不聚合：逐点折线更真实（聚合会把峰值"抹平"到列内）。
+            // NaN / 非有限 y 是缺测信号：在此断开分段，不跨缺测连线。
             const double *px = nullptr;
             const double *py = nullptr;
             const bool direct = data->directAccess(&px, &py);
             QPolygonF poly;
             poly.reserve(data->size());
+            auto flushSparse = [&]() {
+                painter.setRenderHint(QPainter::Antialiasing, true);
+                if (c.scatter())
+                {
+                    for (const QPointF &pt : poly)
+                        drawMarker(pt, c);
+                }
+                else if (poly.size() > 1)
+                {
+                    painter.drawPolyline(poly);
+                }
+                painter.setRenderHint(QPainter::Antialiasing, false);
+                poly.clear();
+            };
             for (qsizetype i = 0; i < data->size(); ++i)
             {
                 const double x = direct ? px[i] : data->xAt(i);
                 const double y = direct ? py[i] : data->yAt(i);
+                if (!std::isfinite(x) || !std::isfinite(y))
+                {
+                    flushSparse(); // 缺测点：结束当前段，不连线
+                    continue;
+                }
                 poly.push_back(QPointF(m_vp.xToPixel(x), yToPixel(c.m_yAxis, y)));
             }
-            painter.setRenderHint(QPainter::Antialiasing, true);
-            if (c.scatter())
-            {
-                for (const QPointF &pt : poly)
-                    drawMarker(pt, c);
-            }
-            else
-            {
-                painter.drawPolyline(poly);
-            }
-            painter.setRenderHint(QPainter::Antialiasing, false);
+            flushSparse();
             continue;
         }
 
@@ -777,7 +831,10 @@ void Axes::paintCurves(QPainter &painter)
         if (c.scatter())
         {
             for (const LodPoint &pt : pts)
-                drawMarker(midPoint(pt, c.m_yAxis), c);
+            {
+                if (std::isfinite(pt.min) && std::isfinite(pt.max))
+                    drawMarker(midPoint(pt, c.m_yAxis), c);
+            }
         }
         else
         {

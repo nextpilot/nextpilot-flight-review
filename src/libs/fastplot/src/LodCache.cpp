@@ -53,6 +53,12 @@ const QVector<LodPoint> &LodCache::points(const IPlotData &data, const Viewport 
     {
         const double x = direct ? px[i] : data.xAt(i);
         const double y = direct ? py[i] : data.yAt(i);
+        // 缺测/NaN 不参与聚合，也不置列命中：纯 NaN 列不产点，
+        // 其两侧列在绘制端被时间间隙阈值判为 gap（缺测断线，不连直线）。
+        // 若不拦，首个 NaN 会毒化该列 min/max 且永不恢复（std::min 对 NaN 返回旧值，
+        // 但被 NaN 种子过的列 isfinite 检查全灭）。
+        if (!std::isfinite(x) || !std::isfinite(y))
+            continue;
         const double sx = vp.xToPixel(x);
         int col = static_cast<int>((sx - left) / width * columns);
         if (col < 0)

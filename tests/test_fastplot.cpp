@@ -293,6 +293,134 @@ int main(int argc, char **argv)
                 path.toUtf8().constData());
     }
 
+    // 6c) NaN gap 缺测断线（#IKXFP8）：全 null 桶（NaN,NaN）与空桶（时间间隙）
+    // 都必须断开，不把缺测区间连成直线；正常数据不留假 gap。
+    {
+        const QColor ink(0xE4, 0x57, 0x2E); // 独占色，避免与其他元素混淆
+
+        // 缺测像素检查：只统计 (x0,x1) 开区间内、曲线色带 y 邻域里的曲线像素。
+        auto inkPixelsBetween = [&](const QImage &img, double xa, double xb, double yLo, double yHi) {
+            int hits = 0;
+            const int colA = int(std::ceil(std::min(xa, xb))) + 1; // 端点各让 1px
+            const int colB = int(std::floor(std::max(xa, xb))) - 1;
+            for (int x = colA; x <= colB; ++x)
+                for (int y = int(yLo); y <= int(yHi); ++y)
+                    if (img.pixelColor(x, y) == ink)
+                        ++hits;
+            return hits;
+        };
+
+        // A) 全 null 桶 → Rust 输出 (NaN,NaN) 的 LodPoint：断开且不画竖线。
+        {
+            QVector<nextpilot::plotscope::fastplot::LodPoint> pts;
+            for (int i = 0; i <= 20; ++i)
+                pts.push_back({0.05 * i, -0.5, 0.5});
+            pts.push_back({1.05, std::numeric_limits<double>::quiet_NaN(),
+                           std::numeric_limits<double>::quiet_NaN()}); // 全 null 桶
+            for (int i = 0; i <= 20; ++i)
+                pts.push_back({1.1 + 0.05 * i, 0.2, 0.8});
+
+            nextpilot::plotscope::fastplot::PlotWidget plot;
+            plot.resize(800, 400);
+            plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(pts, ink, 1.4));
+            plot.setXRange(0.0, 2.2);
+            plot.setYRange(-1.0, 1.0);
+
+            const QImage img = plot.grabImage();
+            const auto &vp = plot.viewport();
+            // gap 区间 [1.0, 1.1] 内不允许任何曲线像素（NaN 桶竖线也必须消失）
+            const int hits = inkPixelsBetween(img, vp.xToPixel(1.0), vp.xToPixel(1.1),
+                                              vp.plotRect().top(), vp.plotRect().bottom());
+            CHECK(hits == 0);
+            // 两侧曲线本体还在
+            int body = 0;
+            for (int x = 0; x < img.width(); ++x)
+                for (int y = 0; y < img.height(); ++y)
+                    if (img.pixelColor(x, y) == ink)
+                        ++body;
+            CHECK(body > 200);
+        }
+
+        // B) 空桶（无 NaN 点，仅时间间隙 1.0 > 中位数 0.05 × 3）：同样断开。
+        {
+            QVector<nextpilot::plotscope::fastplot::LodPoint> pts;
+            for (int i = 0; i <= 20; ++i)
+                pts.push_back({0.05 * i, -0.5, 0.5});
+            for (int i = 0; i <= 20; ++i)
+                pts.push_back({2.0 + 0.05 * i, 0.2, 0.8}); // [1.0, 2.0) 无样本
+
+            nextpilot::plotscope::fastplot::PlotWidget plot;
+            plot.resize(800, 400);
+            plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(pts, ink, 1.4));
+            plot.setXRange(0.0, 3.0);
+            plot.setYRange(-1.0, 1.0);
+
+            const QImage img = plot.grabImage();
+            const auto &vp = plot.viewport();
+            const int hits = inkPixelsBetween(img, vp.xToPixel(1.05), vp.xToPixel(1.95),
+                                              vp.plotRect().top(), vp.plotRect().bottom());
+            CHECK(hits == 0);
+        }
+
+        // C) 正常连续数据不留假 gap：每列都有样本 → 每列都有竖线，无断口。
+        {
+            QVector<nextpilot::plotscope::fastplot::LodPoint> pts;
+            for (int i = 0; i <= 700; ++i)
+                pts.push_back({0.01 * i, std::sin(0.1 * i) - 0.1, std::sin(0.1 * i) + 0.1});
+
+            nextpilot::plotscope::fastplot::PlotWidget plot;
+            plot.resize(800, 400);
+            plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromLod(pts, ink, 1.4));
+            plot.setXRange(0.0, 7.0);
+            plot.setYRange(-1.2, 1.2);
+
+            const QImage img = plot.grabImage();
+            const auto &vp = plot.viewport();
+            // 数据覆盖的列区间内，有曲线像素的列数应接近全覆盖（无连续断口）
+            const int colA = int(vp.xToPixel(0.02)), colB = int(vp.xToPixel(6.9));
+            int withInk = 0, total = 0;
+            for (int x = colA; x <= colB; ++x)
+            {
+                ++total;
+                for (int y = 0; y < img.height(); ++y)
+                    if (img.pixelColor(x, y) == ink)
+                    {
+                        ++withInk;
+                        break;
+                    }
+            }
+            CHECK(total > 300);
+            CHECK(withInk >= total * 95 / 100); // ≥95% 列有曲线，无系统性断口
+        }
+
+        // D) 稀疏 ArrayData 含 NaN y：polyline 在缺测处断开。
+        {
+            const int n = 40;
+            std::vector<double> xs(n), ys(n);
+            for (int i = 0; i < n; ++i)
+            {
+                xs[i] = 0.1 * i;
+                ys[i] = (i >= 15 && i <= 24) ? std::numeric_limits<double>::quiet_NaN()
+                                             : std::sin(0.5 * i);
+            }
+            nextpilot::plotscope::fastplot::ArrayData data(xs.data(), ys.data(), n, 41);
+
+            nextpilot::plotscope::fastplot::PlotWidget plot;
+            plot.resize(800, 400);
+            plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromData(&data, ink, 1.4));
+            plot.setXRange(0.0, 3.9);
+            plot.setYRange(-1.5, 1.5);
+
+            const QImage img = plot.grabImage();
+            const auto &vp = plot.viewport();
+            const int hits = inkPixelsBetween(img, vp.xToPixel(1.55), vp.xToPixel(2.35),
+                                              vp.plotRect().top(), vp.plotRect().bottom());
+            CHECK(hits == 0);
+        }
+
+        fprintf(stdout, "[ok] NaN gap：全null桶/空桶/稀疏NaN 全部断线，正常数据无假 gap\n");
+    }
+
     // 7) 交互部件：缩放锚点不动、框选铺满、读数取最近样本
     {
         const int n = 3000;
