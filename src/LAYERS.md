@@ -92,12 +92,12 @@ L6  app                    组合根：创建并装配 AppContext + RuntimeHost 
 
 | 库 | 定位 |
 |---|---|
-| `dataset` | 数据集与仓库句柄（数据本体在 Rust kernel） |
+| `dataset` | 数据集与仓库句柄（数据本体在 Rust kernel）；通道/曲线拖拽 MIME 协议头（`ChannelMime.h`，纯逻辑标识，无 Widgets） |
 | `registry` | 最小 CRUD 注册表核 + 自注册助手 |
 | `intent` | 意向类型与执行契约、录制器 |
 | `parser` | 消息解析契约：IMessageParser / IByteSource / ParserHub / SPI 头 |
 | `protocol` | psproto 文档模型、编译、编解码、脚本后端 |
-| `uischema` | 字段契约树 + SchemaEngine + 唯一 Qt 渲染器（`uischema_widgets` 是渲染子库） |
+| `uischema` | 字段契约树 + SchemaEngine + 主题 token 纯色表（`ThemeTokens`，QColor 值类型，无 Widgets）；唯一 Qt 渲染器在 `uischema_widgets` 渲染子库 |
 | `fastplot` | 通用绘图能力库（将来独立为 Qwt-like 库） |
 | `context` | AppContext 运行态容器 + 设置 + 摄取 + 交互注册（唯一实例在 app，构造注入） |
 | `module` | 模块契约：IModule / ModuleInfo / IUiContext（纯接口面，运行时在 host） |
@@ -136,12 +136,14 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 
 | 项 | 内容 |
 |---|---|
-| 定位 | GUI 外壳 + 功能视图——唯一的 Widgets 装配层 |
-| 放什么 | MainWindow、Ribbon/Dock 容器、主题、参数表单渲染、视图工厂、各功能视图 |
+| 定位 | GUI 外壳 + 功能视图——Widgets 装配层（模块 `*_gui` 与 `uischema_widgets`/`fastplot` 同样构造控件，本层不是唯一控件来源） |
+| 放什么 | MainWindow、Ribbon/Dock 容器、主题状态与图标/缩略图渲染、参数表单渲染、视图工厂、各功能视图 |
 | 禁放什么 | 业务格式解析、数据源生命周期、领域判断逻辑 |
 | 可依赖 | L0–L4、Qt Widgets/Gui/Core |
 | 禁依赖 | L6 app |
-| 结构 | `shell/` 外壳装配 · `views/` 绘图视图 · 其余为共享 UI 基础设施 |
+| 结构 | `shell/` 外壳装配 · `views/` 通用面板 · 其余为共享 UI 基础设施 |
+
+> 留在 gui 的共享 UI 基础设施：`ps_gui_theme`（主题状态、QSS/palette 生成、图标与缩略图渲染）与 `ps_gui_transform`（`TransformEditorDialog`/`FilterEditorDialog` 等变换/过滤对话框）。它们直接构造 QWidget/对话框并依赖 `ps_uischema_widgets`，下沉 libs 会把 Widgets 带进机制层；纯 token 色表已下沉 `uischema`（`ThemeTokens`），拖拽 MIME 协议头已下沉 `dataset`（`ChannelMime.h`）。
 
 ### L6 `app`
 
@@ -179,8 +181,6 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 - 绕过工厂表互相 include、直接 `new` 其他功能的面板（面板类型一律经工厂表解析）
 - 业务面板放 `gui/`（领域面板形态归扩展在包内 `gui/` 子目录注册实现）
 - 模块/扩展持有窗口对象、把运行态藏进 Widget
-
-> 存量特例（禁止新增模仿，处置待裁定）：`ps_module_data_gui` 链 `ps_gui_theme`/`ps_gui_transform`（gui/ 下横向基础设施库）并 include `modules/plot/gui` 拖拽协议头——按矩阵 L4→L5 本应禁止，属历史过渡，方案（划 GUI 基础设施子层放行 或 迁 libs）待拍板。
 
 ## 支撑目录
 

@@ -827,11 +827,12 @@ headless 也能查到。
   视图只认 token      ThemeManager 认领 theme.* 意图
 ```
 
-**组成部分**（都在 `gui/theme/`，不进 core）：
+**组成部分**（c6 起纯 token 色表在 `libs/uischema`，状态/QSS/图标渲染在 `gui/theme/`）：
 
 | 部件 | 职责 | 关键约束 |
 |---|---|---|
-| `ThemeManager` | token 取色、双主题色表、QSS/palette 生成、当前主题状态与持久化、认领 `theme.set/toggle/get` | 十六进制色值**只在色表出现一次**；视图一律 `color(token)` / `styleSheet()` |
+| `uischema::ThemeTokens` | 双主题色表、纯取色函数、系列分类色与可读性适配（无状态、无 Widgets，只依赖 QtGui 值类型） | 十六进制色值**只在色表出现一次** |
+| `ThemeManager`（gui） | 当前主题状态与持久化、扩展包兜底色、QSS/palette 生成、认领 `theme.set/toggle/get`；静态取色入口委托 `ThemeTokens` | 视图一律 `color(token)` / `styleSheet()` |
 | `ShellBinder::applyTheme` | 把 token QSS 套到 SARibbon | 绑定器是唯一知道 SARibbon 的地方；不碰 ThemeManager 具体类型 |
 | `AxesView`（fastplot 画布宿主） | `changeEvent(PaletteChange)` 里调 `applyPalette()`，从 `palette()` 取色重设 fastplot 的画布/轴/标题 | fastplot 库内不认识主题、颜色在构造时定死；宿主侧用 palette 覆盖，库保持纯净；曲线色在 `pushToPlot` 时按当时 palette 取 |
 
@@ -919,8 +920,8 @@ headless 也能查到。
 字段树的"列"节点可拖到画布（`ChannelMime` 线协议：`datasetId|table|column` 逻辑标识，
 不传裸指针）。两端职责严格切开：
 
-- **数据树**只 `encode`，**画布**只 `decode`——两者唯一共享的是无依赖小头 `ChannelMime.h`，
-  互不 include（星形解耦，不是网状）。
+- **数据树**只 `encode`，**画布**只 `decode`——两者唯一共享的是无依赖小头 `ChannelMime.h`
+  （`libs/dataset`，c6 下沉），互不 include（星形解耦，不是网状）。
 - `AxesView::dropEvent` 解码合法 MIME 后**只发 `channelDropped` 信号**，不认识意图层；
   `ChannelView` 订阅后调 `setActiveChannel` → `activeChannelChanged` → `showChannel`
   → `plot.channel` 意图取数。**与双击同一条单一路径**，所以拖拽/双击/脚本三条入口
