@@ -6,6 +6,7 @@ add_library(ps_registry STATIC
     src/ToolboxHub.cpp
     src/UiSlotHub.cpp
     src/Region.cpp
+    src/ProductSpec.cpp
     src/RegistryNode.cpp
     src/RegistryTree.cpp
     include/Domain.h

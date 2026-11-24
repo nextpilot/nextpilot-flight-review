@@ -147,7 +147,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     App application;
-    MainWindow window(application.context());
+    MainWindow window(application.context(), nextpilot::plotscope::registry::plotScopeProductSpec());
     // derivedSeriesReady 的观察计数：lambda 以 &application 为接收者会活到 application 析构，
     // 故必须用 application 之前声明、之后的持久变量，不能捕获块内栈变量（悬空引用→堆损坏）。
     int g_derivedCount = 0, g_filterCount = 0, g_scriptFilterCount = 0;

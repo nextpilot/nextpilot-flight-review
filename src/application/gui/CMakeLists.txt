@@ -13,7 +13,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 #   （部件工厂表 PanelFactoryHub 已下沉到 core —— 它是纯数据，
 #    知识包的呈现层要能注册领域面板，就不能依赖整个 gui 层）
 #
-# 绘图视图（原 views/plot）已下沉 modules/plot/gui（ps_module_plot_gui，c4）；
+# 绘图视图（原 views/plot）已下沉到绘图模块的 gui 呈现层（c4）；
 # 通用面板只剩 PropertyPanel / diagnostics / output / problems / debugconsole。
 #
 # 关键约束：
@@ -115,7 +115,7 @@ target_include_directories(ps_gui PUBLIC
 # c8（契约 §11 链接关 / 验收 6）：ps_gui 的链接依赖**只许**是 libs 层
 # （ps_host / ps_context / ps_command / ps_gui_theme / ps_gui_transform /
 # ps_protocol / 其余 libs/*）、Qt 与 fastplot；不许出现任何
-# ps_module_* / ps_toolbox_* / ps_parser_*。装配权上移到组合根（exe / 装配层），
+# 任何业务模块、工具箱、解析器库。装配权上移到组合根（exe / 装配层），
 # 壳只接收"已装配好的 Pack + ToolboxHub"。下方护栏在 configure 期硬拦。
 target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme ps_gui_transform ps_protocol fastplot
                                     ads::ads SARibbonBar::SARibbonBar
@@ -127,25 +127,7 @@ set_target_properties(ps_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 include(${CMAKE_SOURCE_DIR}/cmake/ShellLinkGuard.cmake)
 ps_guard_shell_links(ps_gui)
 
-# 图形界面可执行文件：与 headless 入口（src/application/app 的 plotscope）并列，
-# App/诊断/MCP 桥来自同一个 ps_app，不再各编一份源码。
-add_executable(plotscope-gui gui_main.cpp)
-# OBJECT 库必须显式链接：模块/知识包靠 TU 静态对象自注册。
-target_link_libraries(plotscope-gui PRIVATE
-    ps_app
-    ps_gui
-    # 主题库必须**显式链到可执行文件**：OBJECT 库链 OBJECT 库只传播
-    # usage requirements，不传播目标文件——不显式链则 ThemeManager 的实现
-    # 不会进二进制，链接期报 undefined reference（与 ps_gui_theme 的
-    # AUTOMOC 产物一起进，故 moc 符号也一并满足）。
-    ps_gui_theme
-    ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
-    ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
-    # 领域面板的**呈现层**：只 GUI 链接，CLI 不含（保持 headless 纯净）。
-    ps_toolbox_automotive_gui
-    ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
-set_target_properties(plotscope-gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+# 完整产品的可执行已搬到装配层 src/application/assembly/（c8：壳目录不出现模块清单）。
 
 # 注：GUI 百万行基准 plotscope-gui-bench 已搬到装配层 src/application/tools/bench/
 # （c8b），壳目录不再持有引用模块呈现层头文件的源码。

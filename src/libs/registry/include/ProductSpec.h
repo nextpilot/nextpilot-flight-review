@@ -48,4 +48,8 @@ struct ProductSpec
     QStringList moduleIds;
 };
 
+// 完整产品（PlotScope）的身份清单——装配层与测试共用的唯一事实源。
+// 放在 libs 层是为了让测试也能拿到"真实产品布局"，避免测试自己复制一份常量。
+ProductSpec plotScopeProductSpec();
+
 } // namespace nextpilot::plotscope::registry

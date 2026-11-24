@@ -52,28 +52,8 @@ const char *u8(const QString &s)
 // moduleIds 为声明式清单：当前装配仍由组合根链接全部模块，后续按清单过滤装载。
 nextpilot::plotscope::registry::ProductSpec plotscopeProductSpec()
 {
-    using nextpilot::plotscope::registry::ProductPanelPlacement;
-    using nextpilot::plotscope::registry::ProductSpec;
-    using nextpilot::plotscope::registry::Region;
-    ProductSpec spec;
-    spec.id = QStringLiteral("plotscope");
-    spec.displayName = QStringLiteral("PlotScope");
-    spec.version = QStringLiteral("0.1.0");
-    spec.reportTitle = QStringLiteral("PlotScope 报告");
-    spec.defaultPanels = {
-        {Region::SecondarySidebar, QStringLiteral("property-panel"), QString(), false},
-        {Region::Panel, QStringLiteral("output-console"), QString(), false},
-        {Region::Panel, QStringLiteral("problems"), QString(), false},
-        {Region::Panel, QStringLiteral("debug-console"), QString(), false},
-        {Region::Panel, QStringLiteral("diagnostics"), QString(), false},
-        {Region::Panel, QStringLiteral("script-console"), QString(), true},
-    };
-    spec.moduleIds = {
-        QStringLiteral("mod.data"), QStringLiteral("mod.plot"), QStringLiteral("mod.script"),
-        QStringLiteral("mod.protocol"), QStringLiteral("mod.analysis"), QStringLiteral("mod.settings"),
-        QStringLiteral("mod.report"), QStringLiteral("mod.workspace"),
-    };
-    return spec;
+    // 布局与模块清单的唯一事实源在 libs 层（测试亦复用同一份，避免重复常量）。
+    return nextpilot::plotscope::registry::plotScopeProductSpec();
 }
 }
 
