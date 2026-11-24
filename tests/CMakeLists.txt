@@ -398,3 +398,12 @@ add_executable(ps_test_arrow test_arrow.cpp)
 target_link_libraries(ps_test_arrow PRIVATE ps_arrow ps_dataset ps_nanoarrow Qt6::Core)
 set_target_properties(ps_test_arrow PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
 add_test(NAME ps_arrow COMMAND ps_test_arrow)
+
+# 裸壳冒烟（验收 6/18/19/20）：ps_shell_bare --smoke 在 offscreen 下建窗、
+# 跑一轮事件循环后退出；壳内零模块装配，warning/critical/fatal 任一即非零退出。
+# PS_BUILD_BARE=OFF 时该用例一并跳过（只编完整产品）。
+if(PS_BUILD_BARE AND TARGET ps_shell_bare)
+    add_test(NAME ps_shell_bare_smoke COMMAND ps_shell_bare --smoke)
+    set_tests_properties(ps_shell_bare_smoke PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()

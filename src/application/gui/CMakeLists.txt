@@ -122,26 +122,9 @@ target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme p
                                     Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)
 
-# 壳链接护栏（契约 §11 链接关 / 验收 6）：
-# 壳 target（ps_gui 与裸壳 ps_shell_bare）的 PUBLIC/PRIVATE 依赖里一旦命中
-# ps_module_* / ps_toolbox_* / ps_parser_*，configure 期即 FATAL_ERROR。
-# 护栏比纪律可靠：后来者把模块塞回壳链接面，编译还没开始就红。
-function(ps_guard_shell_links _target)
-    foreach(_prop IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
-        get_target_property(_links ${_target} ${_prop})
-        if(NOT _links)
-            continue()
-        endif()
-        foreach(_l IN LISTS _links)
-            if(_l MATCHES "^ps_module_|^ps_toolbox_|^ps_parser_")
-                message(FATAL_ERROR
-                    "${_target} 链了业务模块 ${_l}：壳只许依赖 libs 层 + Qt + fastplot"
-                    "（契约 §11 链接关 / 验收 6），装配权归组合根。")
-            endif()
-        endforeach()
-    endforeach()
-endfunction()
-
+# 壳链接护栏（契约 §11 链接关 / 验收 6）：函数定义见 cmake/ShellLinkGuard.cmake，
+# 同时罩 ps_gui 与裸壳 ps_shell_bare。
+include(${CMAKE_SOURCE_DIR}/cmake/ShellLinkGuard.cmake)
 ps_guard_shell_links(ps_gui)
 
 # 图形界面可执行文件：与 headless 入口（src/application/app 的 plotscope）并列，

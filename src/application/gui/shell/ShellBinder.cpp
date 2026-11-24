@@ -26,6 +26,7 @@
 
 #include <QMenu>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QSplitter>
@@ -1051,7 +1052,22 @@ void ShellBinder::installCentral()
     // 中央区内容此刻可能还没到（画布模块可能尚未 attach）：
     // 先用一个占位容器占住"中央"这个位置，
     // 保证后续所有侧边 dock 都排在它之后——顺序约束由外壳兜住。
-    QWidget *content = m_centralContent ? m_centralContent : new QWidget();
+    // 占位是居中提示文字（空态），不是一块死灰面板；内容到达后由
+    // setCentralContent() 取走并 deleteLater。
+    QWidget *content;
+    if (m_centralContent)
+    {
+        content = m_centralContent;
+    }
+    else
+    {
+        auto *placeholder = new QLabel(QStringLiteral("暂无打开的视图"));
+        placeholder->setAlignment(Qt::AlignCenter);
+        placeholder->setObjectName(QStringLiteral("ps.editor.placeholder"));
+        auto *placeholderLayout = new QHBoxLayout(placeholder);
+        placeholderLayout->setContentsMargins(24, 24, 24, 24);
+        content = placeholder;
+    }
     m_centralDock = new ads::CDockWidget(m_dock, QStringLiteral("主视图"));
     m_centralDock->setObjectName(QStringLiteral("ps.dock.editor"));
     content->setMinimumWidth(320);
