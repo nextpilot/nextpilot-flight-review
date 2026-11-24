@@ -35,7 +35,6 @@ struct UiAction
     QString id;        // 稳定标识，如 "ap.plot.attitude"
     QString label;     // 显示文本，如 "姿态曲线"
     QString area;      // 目标插槽 id（Ribbon 页/组等挂载点），如 "ribbon.group.plot.series"
-    QString when;      // 可见条件（空=恒真）：与命令层同一套白名单语法；registry 只存串，求值归外壳
     QString intentOp;  // 点击后发射的意图 op（空=仅占位）；如 "plot.render"
     QString data;      // 附加数据（可选，如预置的 PlotSpec JSON）
     QString icon;      // 图标名（可选），如 "plot.refresh"；由外壳解析成 QIcon
@@ -64,6 +63,11 @@ struct UiAction
     // 归属（mount() 自动写入，包作者不填）。
     QString provider;                 // 来自哪个包（pack id），按包原子装卸的依据
     Domain domain = Domain::General;  // 所属领域 = 包的领域
+
+    // 可见条件（空=恒真）：与命令层同一套白名单语法；registry 只存串，求值归外壳。
+    // 放在结构末尾：既有包按位置初始化（id, label, area, intentOp, data…），
+    // 新字段插在中间会让 when 吃掉 intentOp、intentOp 吃掉 data——c7 首编已验证过这个坑。
+    QString when;
 };
 
 // 一个领域面板的描述——纯数据，不含 QWidget 指针。
