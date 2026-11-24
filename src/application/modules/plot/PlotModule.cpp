@@ -659,56 +659,123 @@ void PlotModule::onAttach(IUiContext &ui)
     plotActivity.centralPanel = QStringLiteral("plot.workspace");
     ui.declareActivity(plotActivity);
 
-    // 导出组插槽：模块声明自己的 Ribbon 分组（c4c 起 plot 页/组归模块声明）。
-    ui.declareSlot(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("导出"),
-                   SlotKind::RibbonGroup, QStringLiteral("ribbon.page.plot"));
+    // Ribbon 页/组槽容器仍由骨架 SkeletonSlots 声明（槽容器解散归 c7）；
+    // 本模块只往这些组里贡献动作声明（c4c）。
 
     // 申请中央画布工作区：实现由绘图视图层自注册（"plot.workspace" 类型），
     // 它内部管理 N 个画布 cell（多曲线/拆分/网格），并集中路由 plot.* view action。
     // 本模块不依赖 Qt Widgets——CLI 构建保持纯净。
     ui.requestPanel(QStringLiteral("canvas.center"), QStringLiteral("plot.workspace"));
 
-    UiAction action;
-    action.id = QStringLiteral("plot.action.redraw");
-    action.label = QStringLiteral("重绘");
-    action.area = QStringLiteral("ribbon.group.plot.display");
-    action.intentOp = QStringLiteral("plot.render");
-    // 图标名：外壳据此从资源里取 QIcon。图标名是**描述**，
-    // 具体资源由外壳管理——模块不直接依赖 GUI 资源。
-    action.icon = QStringLiteral("plot_refresh");
-    action.order = 0;   // 显示组首个大按钮（用户要求：重绘排第一）
-    action.large = true;
-    ui.addAction(action);
+    // 动作声明全是纯数据：处理器由画布视图登记到 AppContext（registerViewAction），
+    // 外壳按 action id 查 view action、未命中再回落意图层；模块不持有 QWidget。
+    // intentOp 留空 = 仅占位，走 view action 路径（与脚本/回放同一语义）。
+    const QString fig    = QStringLiteral("ribbon.group.plot.figure");
+    const QString layout = QStringLiteral("ribbon.group.plot.layout");
+    const QString disp   = QStringLiteral("ribbon.group.plot.display");
+    const QString tool   = QStringLiteral("ribbon.group.plot.tool");
+    const QString act    = QStringLiteral("ribbon.group.plot.action");
+    const QString type   = QStringLiteral("ribbon.group.plot.type");
+    auto add = [&ui](const QString &id, const QString &label, const QString &area,
+                     const QString &icon, int order, const QString &data = QString(),
+                     bool large = false, bool checkable = false,
+                     const QString &intentOp = QString(), const QString &visual = QString(),
+                     const QString &galleryGroup = QString()) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.area = area;
+        a.icon = icon;
+        a.order = order;
+        a.data = data;
+        a.large = large;
+        a.checkable = checkable;
+        a.intentOp = intentOp;
+        a.visual = visual;
+        a.galleryGroup = galleryGroup;
+        ui.addAction(a);
+    };
 
-    // 导出 / 图例：处理器由画布视图登记到 AppContext，外壳按 id 派发。
-    UiAction exportPng;
-    exportPng.id = QStringLiteral("plot.export.png");
-    exportPng.label = QStringLiteral("导出 PNG");
-    exportPng.area = QStringLiteral("ribbon.group.plot.action");
-    exportPng.intentOp = QStringLiteral("plot.export.png");
-    exportPng.icon = QStringLiteral("export");
-    exportPng.order = 1;
-    ui.addAction(exportPng);
+    // 页面组：新建页 / 删除页。
+    add(QStringLiteral("figure.new"), QStringLiteral("新建页"), fig,
+        QStringLiteral("newpage"), 0, QString(), true);
+    add(QStringLiteral("figure.closeCurrent"), QStringLiteral("删除页"), fig,
+        QStringLiteral("trash"), 1, QString(), true);
 
-    UiAction exportCsv;
-    exportCsv.id = QStringLiteral("plot.export.csv");
-    exportCsv.label = QStringLiteral("导出 CSV");
-    exportCsv.area = QStringLiteral("ribbon.group.plot.action");
-    exportCsv.intentOp = QStringLiteral("plot.export.csv");
-    exportCsv.icon = QStringLiteral("export_data");
-    exportCsv.order = 2;
-    ui.addAction(exportCsv);
+    // 布局组：网格 m×n 选择器（data="pick" 弹行列选择；visual 分格缩略图）+ 增删拆分。
+    add(QStringLiteral("figure.grid"), QStringLiteral("2×1"), layout,
+        QStringLiteral("grid"), 0, QStringLiteral("pick"), true, false,
+        QString(), QStringLiteral("layout:2x1"));
+    add(QStringLiteral("figure.addAxes"), QStringLiteral("添加"), layout,
+        QStringLiteral("plus"), 1);
+    add(QStringLiteral("figure.removeAxes"), QStringLiteral("删除"), layout,
+        QStringLiteral("trash"), 2);
+    add(QStringLiteral("figure.splitHorizontal"), QStringLiteral("左右"), layout,
+        QStringLiteral("split_h"), 3);
+    add(QStringLiteral("figure.splitVertical"), QStringLiteral("上下"), layout,
+        QStringLiteral("split_v"), 4);
 
-    UiAction legend;
+    // 显示组：重绘（大）/ 网格下拉（大）/ 边框 / 图例。
+    add(QStringLiteral("plot.action.redraw"), QStringLiteral("重绘"), disp,
+        QStringLiteral("plot_refresh"), 0, QString(), true, false,
+        QStringLiteral("plot.render"));
+    add(QStringLiteral("plot.grid.menu"), QStringLiteral("网格"), disp,
+        QStringLiteral("grid_lines"), 1, QString(), true);
+    add(QStringLiteral("plot.box"), QStringLiteral("边框"), disp,
+        QStringLiteral("box"), 2, QString(), false, true);
     // id 与 view action 同名：外壳先查视图登记的处理器，按钮点击直接命中，无需回落意图层。
-    legend.id = QStringLiteral("plot.legend.toggle");
-    legend.label = QStringLiteral("图例");
-    legend.area = QStringLiteral("ribbon.group.plot.display");
-    legend.intentOp = QStringLiteral("plot.legend.toggle");
-    legend.icon = QStringLiteral("legend");
-    legend.checkable = true;
-    legend.order = 3;
-    ui.addAction(legend);
+    add(QStringLiteral("plot.legend.toggle"), QStringLiteral("图例"), disp,
+        QStringLiteral("legend"), 3, QString(), false, true,
+        QStringLiteral("plot.legend.toggle"));
+
+    // 交互组：标记 / AB（切换型）+ 三个工具模式（data 带 tool 序号）+ 恢复自适应。
+    add(QStringLiteral("plot.bookmark.add"), QStringLiteral("标记"), tool,
+        QStringLiteral("marker"), 0, QString(), true);
+    add(QStringLiteral("plot.ab.toggle"), QStringLiteral("AB"), tool,
+        QStringLiteral("ruler"), 1, QString(), true, true);
+    add(QStringLiteral("plot.tool"), QStringLiteral("放大"), tool,
+        QStringLiteral("zoom_in"), 2, QStringLiteral("{\"tool\":1}"), false, true);
+    add(QStringLiteral("plot.tool"), QStringLiteral("移动"), tool,
+        QStringLiteral("hand"), 3, QStringLiteral("{\"tool\":0}"), false, true);
+    add(QStringLiteral("plot.tool"), QStringLiteral("缩小"), tool,
+        QStringLiteral("zoom_out"), 4, QStringLiteral("{\"tool\":2}"), false, true);
+    add(QStringLiteral("plot.autoscale"), QStringLiteral("恢复"), tool,
+        QStringLiteral("fit"), 5);
+
+    // 导出组：截图 + 导出 PNG / CSV。
+    add(QStringLiteral("plot.screenshot"), QStringLiteral("截图"), act,
+        QStringLiteral("screenshot"), 0);
+    add(QStringLiteral("plot.export.png"), QStringLiteral("导出 PNG"), act,
+        QStringLiteral("export"), 1, QString(), false, false,
+        QStringLiteral("plot.export.png"));
+    add(QStringLiteral("plot.export.csv"), QStringLiteral("导出 CSV"), act,
+        QStringLiteral("export_data"), 2, QString(), false, false,
+        QStringLiteral("plot.export.csv"));
+
+    // 图表类型库：12 种图型，纯 UiAction 进 gallery；点击走 view action plot.setType。
+    // 缩略图由 visual（图型 kind）交给 GUI 层绘制；order 十位=分类，个位=组内序。
+    struct PlotDef { const char *kind; QString label; QString group; int order; };
+    static const PlotDef kPlots[] = {
+        {"timeseries", QStringLiteral("时间序列"), QStringLiteral("常用"),       0},
+        {"xy",         QStringLiteral("XY 曲线"), QStringLiteral("常用"),       1},
+        {"scatter",    QStringLiteral("散点图"), QStringLiteral("常用"),       2},
+        {"traj3d",     QStringLiteral("3D 轨迹"), QStringLiteral("常用"),       3},
+        {"map",        QStringLiteral("GPS 地图"), QStringLiteral("常用"),      4},
+        {"bar",        QStringLiteral("柱状图"), QStringLiteral("曲线"),       10},
+        {"histogram",  QStringLiteral("直方图"), QStringLiteral("曲线"),       11},
+        {"fft",        QStringLiteral("频谱 FFT"), QStringLiteral("曲线"),     12},
+        {"surface3d",  QStringLiteral("3D 曲面"), QStringLiteral("地图 / 3D"), 20},
+        {"horizon",    QStringLiteral("地平仪"), QStringLiteral("仪表"),       30},
+        {"compass",    QStringLiteral("罗盘"),   QStringLiteral("仪表"),       31},
+        {"gauge",      QStringLiteral("仪表盘"), QStringLiteral("仪表"),       32},
+    };
+    for (const PlotDef &d : kPlots)
+    {
+        const QString kind = QString::fromLatin1(d.kind);
+        add(QStringLiteral("plot.type.") + kind, d.label, type,
+            QString(), d.order, kind, false, false,
+            QStringLiteral("plot.setType"), kind, d.group);
+    }
 }
 
 #include "PlotModule.moc"
